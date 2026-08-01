@@ -1,1 +1,0 @@
-SELECT m.id, m.code, m.name, m."stationId", m."isActive" FROM machines m WHERE m."stationId" = 3;

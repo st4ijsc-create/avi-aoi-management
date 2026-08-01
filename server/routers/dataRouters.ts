@@ -5,9 +5,15 @@ import { requirePermission } from "../_core/accessControl";
 import * as db from "../db";
 import * as cachedStats from "../functions/cachedStatistics";
 import { MACHINE_TYPES } from "../constants/machineTypes";
+import { resolveThresholdEditGate } from "../services/thresholdGovernanceService";
 
-export const importRouter = router({  
-  importFactories: adminProcedure
+// doc 54 P0.3 — bulk-import RBAC unify: import* were adminProcedure (single-admin
+// bottleneck at rollout). Gate them on the SAME per-entity permission as the single-row
+// create (settings_factory / settings_products / settings_measurement_points) so an
+// engineer who can create a row can also bulk-import — matching the doc-47 factory-config
+// RBAC. Export stays admin.
+export const importRouter = router({
+  importFactories: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         code: z.string(),
@@ -46,7 +52,7 @@ export const importRouter = router({
       return results;
     }),
 
-  importWorkshops: adminProcedure
+  importWorkshops: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         factoryCode: z.string(),
@@ -99,7 +105,7 @@ export const importRouter = router({
       return results;
     }),
 
-  importMachines: adminProcedure
+  importMachines: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         stationCode: z.string(),
@@ -162,7 +168,7 @@ export const importRouter = router({
       return results;
     }),
 
-  importProducts: adminProcedure
+  importProducts: protectedProcedure.use(requirePermission("settings_products", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         code: z.string(),
@@ -211,7 +217,7 @@ export const importRouter = router({
       return results;
     }),
 
-  importMeasurementPoints: adminProcedure
+  importMeasurementPoints: protectedProcedure.use(requirePermission("settings_measurement_points", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         productModelCode: z.string(),
@@ -223,22 +229,52 @@ export const importRouter = router({
         upperLimit: z.number().optional(),
         lowerLimit: z.number().optional(),
         isActive: z.boolean().optional(),
+        // Doc 54 §11 P0.1 — optional CAD/centroid coordinate payload. When a row
+        // carries real X/Y (from a pick-place export), the point is planted there
+        // instead of the legacy (0,0). Omitted → (0,0) as before (back-compat).
+        // For matching a whole file to EXISTING points, prefer cadImport.applyCoordinates.
+        positionX: z.number().optional(),
+        positionY: z.number().optional(),
+        rotation: z.number().optional(),
+        normalizedX: z.number().min(0).max(1).optional(),
+        normalizedY: z.number().min(0).max(1).optional(),
+        refDesignator: z.string().max(64).optional(),
+        componentCode: z.string().max(100).optional(),
       })),
       replaceIfExists: z.boolean().default(false),
     }))
-    .mutation(async ({ input }) => {
-      const results = { success: 0, failed: 0, errors: [] as string[] };
-      
+    .mutation(async ({ input, ctx }) => {
+      // Doc 31 B.6 — `skipped` counts points whose limit change was blocked by the
+      // lifecycle gate (live product → approval queue). Additive to the response.
+      const results = { success: 0, failed: 0, skipped: 0, errors: [] as string[] };
+
       for (const item of input.data) {
         try {
           const productModel = await db.getProductModelByCode(item.productModelCode);
           if (!productModel) {
             throw new Error(`Product model ${item.productModelCode} not found`);
           }
-          
+
           const existing = await db.getMeasurementPointDefByCode(productModel.id, item.code);
           if (existing) {
             if (input.replaceIfExists) {
+              // Doc 31 B.6 — a bulk import overwriting the limits of an EXISTING point
+              // is a direct limit-write and must respect the lifecycle gate (decision
+              // #4). Bulk import normally happens at setup on `development` products;
+              // on a live/released product the limit overwrite is BLOCKED (skipped
+              // with a clear message) so approved limits aren't silently replaced.
+              const touchesLimits =
+                item.upperLimit !== undefined ||
+                item.lowerLimit !== undefined ||
+                item.nominalValue !== undefined;
+              const gate = touchesLimits ? await resolveThresholdEditGate(existing.id) : null;
+              if (gate && gate.decision === "requires_approval" && gate.enforced) {
+                results.skipped++;
+                results.errors.push(
+                  `${item.code}: skipped — product ${gate.hasReleasedProgram ? "has a released program" : `is '${gate.lifecycleStatus}'`}; limit changes require approval (Threshold Approvals queue). / bị bỏ qua — thay đổi ngưỡng phải qua duyệt.`,
+                );
+                continue;
+              }
               await db.updateMeasurementPointDef(existing.id, {
                 name: item.name,
                 measurementType: item.measurementType,
@@ -247,12 +283,60 @@ export const importRouter = router({
                 upperLimit: item.upperLimit?.toString(),
                 lowerLimit: item.lowerLimit?.toString(),
                 isActive: item.isActive ?? true,
+                // Doc 54 §11 P0.1 — overwrite coordinates only when the row carries
+                // them (coords are not lifecycle-gated the way limits are).
+                ...(item.positionX != null ? { positionX: Math.max(0, Math.round(item.positionX)) } : {}),
+                ...(item.positionY != null ? { positionY: Math.max(0, Math.round(item.positionY)) } : {}),
+                ...(item.normalizedX != null ? { normalizedX: item.normalizedX.toFixed(8) } : {}),
+                ...(item.normalizedY != null ? { normalizedY: item.normalizedY.toFixed(8) } : {}),
+                ...(item.refDesignator ? { refDesignator: item.refDesignator.slice(0, 64) } : {}),
+                ...(item.componentCode ? { componentCode: item.componentCode.slice(0, 100) } : {}),
               });
+              // Audit the allowed direct limit edit (development products only).
+              if (gate) {
+                try {
+                  await db.createAuditLog({
+                    userId: (ctx as any)?.user?.id ?? null,
+                    userName: (ctx as any)?.user?.name ?? undefined,
+                    action: "threshold.directEdit",
+                    entityType: "measurement_point_def",
+                    entityId: existing.id,
+                    entityName: existing.code ?? item.code,
+                    details: {
+                      source: "bulkImport.importMeasurementPoints",
+                      productModelId: productModel.id,
+                      lifecycleStatus: gate.lifecycleStatus,
+                      gateDecision: gate.decision,
+                      gateEnforced: gate.enforced,
+                      hasReleasedProgram: gate.hasReleasedProgram,
+                      before: {
+                        lowerLimit: existing.lowerLimit ?? null,
+                        upperLimit: existing.upperLimit ?? null,
+                        nominalValue: existing.nominalValue ?? null,
+                      },
+                      after: {
+                        lowerLimit: item.lowerLimit?.toString() ?? null,
+                        upperLimit: item.upperLimit?.toString() ?? null,
+                        nominalValue: item.nominalValue?.toString() ?? null,
+                      },
+                    },
+                    status: "success",
+                  });
+                } catch {
+                  /* audit is best-effort — never fail the import on an audit write */
+                }
+              }
               results.success++;
             } else {
               throw new Error('Measurement point code already exists');
             }
           } else {
+            // Doc 54 §11 P0.1 — plant real coordinates when the import row supplies
+            // them (CAD/centroid/pick-place payload); otherwise fall back to (0,0)
+            // for backward compatibility with plain measurement-point imports.
+            const px = item.positionX != null ? Math.max(0, Math.round(item.positionX)) : 0;
+            const py = item.positionY != null ? Math.max(0, Math.round(item.positionY)) : 0;
+            const hasCoords = item.positionX != null || item.positionY != null || item.rotation != null;
             await db.createMeasurementPointDef({
               productModelId: productModel.id,
               code: item.code,
@@ -263,9 +347,22 @@ export const importRouter = router({
               upperLimit: item.upperLimit?.toString(),
               lowerLimit: item.lowerLimit?.toString(),
               isActive: item.isActive ?? true,
-              positionX: 0,
-              positionY: 0,
+              positionX: px,
+              positionY: py,
               radius: 20,
+              normalizedX: item.normalizedX != null ? item.normalizedX.toFixed(8) : undefined,
+              normalizedY: item.normalizedY != null ? item.normalizedY.toFixed(8) : undefined,
+              refDesignator: item.refDesignator?.slice(0, 64),
+              componentCode: item.componentCode?.slice(0, 100),
+              geometry: hasCoords
+                ? {
+                    shape: "circle",
+                    x: px,
+                    y: py,
+                    radius: 20,
+                    ...(item.rotation != null ? { centroid: { rotation: item.rotation } } : {}),
+                  }
+                : undefined,
             });
             results.success++;
           }
@@ -278,7 +375,7 @@ export const importRouter = router({
       return results;
     }),
 
-  importLines: adminProcedure
+  importLines: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         workshopCode: z.string(),
@@ -337,7 +434,7 @@ export const importRouter = router({
       return results;
     }),
 
-  importStations: adminProcedure
+  importStations: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         lineCode: z.string(),
@@ -393,7 +490,7 @@ export const importRouter = router({
       return results;
     }),
 
-  importWorkstations: adminProcedure
+  importWorkstations: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         code: z.string(),
@@ -475,6 +572,50 @@ export const importRouter = router({
 });
 
 export const exportRouter = router({
+  // doc 46 FE-W2 — GENERIC font-safe report renderer. Reuses the canonical engine
+  // (universalExportService.renderReport), which embeds BeVietnamPro for VN/Latin
+  // and Noto Sans SC for Chinese (doc 48 R4), so vi/en/zh all render real glyphs —
+  // unlike client-side jsPDF, which had no VN glyphs and stripped "Ngày xuất" →
+  // "Ngay xuat" (and no CJK glyphs, tofuing Chinese). Session-auth (protectedProcedure): any
+  // logged-in user renders their OWN already-displayed table data into a branded
+  // PDF/XLSX/CSV in the language they pick. Row/col-capped to bound memory.
+  renderReport: protectedProcedure
+    .input(z.object({
+      type: z.string().min(1).max(64).default("report"),
+      title: z.string().min(1).max(200),
+      subtitle: z.string().max(300).optional(),
+      format: z.enum(["pdf", "xlsx", "csv"]),
+      language: z.enum(["vi", "en", "zh"]).default("vi"),
+      columns: z.array(z.object({
+        key: z.string().min(1).max(64),
+        header: z.string().max(120),
+        width: z.number().int().positive().max(400).optional(),
+        format: z.enum(["number", "percentage", "date", "datetime", "text"]).optional(),
+      })).min(1).max(60),
+      data: z.array(z.record(z.string(), z.any())).max(20000),
+      fileName: z.string().max(120).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { renderReport } = await import("../services/universalExportService");
+      const out = await renderReport({
+        type: input.type,
+        title: input.title,
+        subtitle: input.subtitle,
+        format: input.format,
+        locale: input.language,
+        columns: input.columns,
+        data: input.data,
+        fileName: input.fileName,
+      });
+      // base64 so the (superjson) tRPC transport carries the binary safely; the
+      // client rebuilds a Blob and triggers a download.
+      return {
+        base64: out.buffer.toString("base64"),
+        mimeType: out.mimeType,
+        filename: out.filename,
+        format: out.format,
+      };
+    }),
   exportInspections: protectedProcedure
     .use(requirePermission('history_export', 'canExport'))
     .input(z.object({

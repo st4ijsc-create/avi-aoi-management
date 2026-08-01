@@ -18,10 +18,12 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader, PageContainer, StatusBadge, type BadgeVariant } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import ReportAggregatorsPanel from "@/components/analytics/ReportAggregatorsPanel";
 import {
   Lightbulb,
   Send,
@@ -43,14 +45,15 @@ const EXAMPLE_QUESTIONS = [
   { key: "q3", default: "Máy nào sắp cần bảo trì?" },
 ] as const;
 
-// Severity → badge style for ai_insights.
-function severityVariant(sev?: string): { variant: "default" | "secondary" | "destructive" | "outline"; cls: string } {
+// Severity → shared <StatusBadge> entry for ai_insights (solid, W4). Preserves
+// the exact prior variant + amber-warning override class.
+function severityVariant(sev?: string): { variant: BadgeVariant; cls: string } {
   switch ((sev ?? "").toLowerCase()) {
     case "critical":
     case "error":
       return { variant: "destructive", cls: "" };
     case "warning":
-      return { variant: "default", cls: "bg-amber-500/15 text-amber-600 border-amber-500/30" };
+      return { variant: "default", cls: "bg-warning/15 text-warning border-warning/30" };
     case "info":
       return { variant: "secondary", cls: "" };
     default:
@@ -171,31 +174,24 @@ export default function ManagementInsight() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-4 md:p-6">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
-              <Lightbulb className="h-6 w-6 text-amber-500" />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold">{t("mgmtInsight.title", "Insight Quản lý")}</h1>
-              <p className="text-sm text-muted-foreground">
-                {t("mgmtInsight.subtitle", "Hỏi đáp dữ liệu nhà máy + tóm tắt điều hành + cảnh báo AI (chỉ tư vấn)")}
-              </p>
-            </div>
-          </div>
-          <Badge variant="secondary">
-            <Info className="h-3 w-3 mr-1" />
-            {t("mgmtInsight.advisory", "Chỉ tư vấn / chỉ đọc")}
-          </Badge>
-        </div>
+      <PageContainer fluid>
+        <PageHeader
+          icon={<Lightbulb className="h-6 w-6 text-primary" />}
+          title={t("mgmtInsight.title", "Insight Quản lý")}
+          description={t("mgmtInsight.subtitle", "Hỏi đáp dữ liệu nhà máy + tóm tắt điều hành + cảnh báo AI (chỉ tư vấn)")}
+          actions={
+            <Badge variant="secondary">
+              <Info className="h-3 w-3 mr-1" />
+              {t("mgmtInsight.advisory", "Chỉ tư vấn / chỉ đọc")}
+            </Badge>
+          }
+        />
 
         {/* (a) NL Q&A */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <MessageSquare className="h-4 w-4 text-amber-500" />
+              <MessageSquare className="h-4 w-4 text-primary" />
               {t("mgmtInsight.qa.title", "Hỏi đáp dữ liệu nhà máy")}
             </CardTitle>
             <CardDescription>
@@ -216,7 +212,7 @@ export default function ManagementInsight() {
                     disabled={asking}
                     onClick={() => { setQuestion(label); ask(label); }}
                   >
-                    <Sparkles className="h-3 w-3 mr-1.5 text-amber-500" />
+                    <Sparkles className="h-3 w-3 mr-1.5 text-primary" />
                     {label}
                   </Button>
                 );
@@ -280,7 +276,7 @@ export default function ManagementInsight() {
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <FileBarChart className="h-4 w-4 text-blue-500" />
+                  <FileBarChart className="h-4 w-4 text-info" />
                   {t("mgmtInsight.exec.title", "Tóm tắt điều hành tự động")}
                 </CardTitle>
                 <CardDescription>
@@ -298,7 +294,7 @@ export default function ManagementInsight() {
           <CardContent className="flex flex-col gap-4">
             {/* Admin-only generate forbidden → friendly read-only note (still show latest below). */}
             {genForbidden && (
-              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5 text-xs text-amber-600 flex items-center gap-1.5">
+              <div className="rounded-md border border-warning/30 bg-warning/5 p-2.5 text-xs text-warning flex items-center gap-1.5">
                 <Info className="h-3.5 w-3.5 shrink-0" />
                 {t("mgmtInsight.exec.adminOnly", "Chỉ quản trị viên mới có thể tạo báo cáo. Hiển thị báo cáo gần nhất (chỉ đọc).")}
               </div>
@@ -338,6 +334,17 @@ export default function ManagementInsight() {
                   )}
                 </div>
 
+                {/* FE-W0.3 (doc 46 §2.3) — honest note when the AI narrative was
+                    rejected as a degenerate loop and this is the rule-based fallback. */}
+                {summary?.degraded && (
+                  <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+                    {t(
+                      "mgmtInsight.exec.degraded",
+                      "Tóm tắt AI tạm không đạt chất lượng — đang hiển thị bản tóm tắt theo quy tắc từ KPI thực.",
+                    )}
+                  </div>
+                )}
+
                 {/* Headline */}
                 {summary?.headline && (
                   <div className="rounded-md bg-muted/40 p-3 text-sm font-medium leading-relaxed whitespace-pre-wrap">
@@ -362,7 +369,7 @@ export default function ManagementInsight() {
                   {Array.isArray(summary?.highlights) && summary.highlights.length > 0 && (
                     <div>
                       <div className="text-sm font-medium mb-1.5 flex items-center gap-1.5">
-                        <TrendingUp className="h-4 w-4 text-emerald-500" />
+                        <TrendingUp className="h-4 w-4 text-success" />
                         {t("mgmtInsight.exec.highlights", "Điểm nổi bật")}
                       </div>
                       <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1">
@@ -373,7 +380,7 @@ export default function ManagementInsight() {
                   {Array.isArray(summary?.risks) && summary.risks.length > 0 && (
                     <div>
                       <div className="text-sm font-medium mb-1.5 flex items-center gap-1.5">
-                        <AlertTriangle className="h-4 w-4 text-amber-500" />
+                        <AlertTriangle className="h-4 w-4 text-warning" />
                         {t("mgmtInsight.exec.risks", "Rủi ro / Cần chú ý")}
                       </div>
                       <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1">
@@ -389,7 +396,7 @@ export default function ManagementInsight() {
                     <Separator />
                     <div>
                       <div className="text-sm font-medium mb-1.5 flex items-center gap-1.5">
-                        <Lightbulb className="h-4 w-4 text-blue-500" />
+                        <Lightbulb className="h-4 w-4 text-info" />
                         {t("mgmtInsight.exec.recommendations", "Khuyến nghị")}
                       </div>
                       <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1">
@@ -406,13 +413,16 @@ export default function ManagementInsight() {
           </CardContent>
         </Card>
 
+        {/* (d) Report aggregators — defect Pareto / yield-by-product / weekly-trend + recent artifacts (doc 32 R1/R2) */}
+        <ReportAggregatorsPanel />
+
         {/* (c) Active AI insights / alerts */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Bell className="h-4 w-4 text-fuchsia-500" />
+                  <Bell className="h-4 w-4 text-primary" />
                   {t("mgmtInsight.alerts.title", "Cảnh báo / Insight AI đang hoạt động")}
                 </CardTitle>
                 <CardDescription>
@@ -441,14 +451,14 @@ export default function ManagementInsight() {
                   <div key={ins?.id} className="rounded-lg border p-3 flex flex-col gap-1">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+                        <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
                         <span className="text-sm font-medium truncate">{ins?.title ?? "—"}</span>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         {ins?.machineCode && (
                           <Badge variant="outline" className="text-[10px] py-0 h-4">{ins.machineCode}</Badge>
                         )}
-                        <Badge variant={sev.variant} className={sev.cls}>{ins?.severity ?? "info"}</Badge>
+                        <StatusBadge status={ins?.severity ?? "info"} variant={sev.variant} className={sev.cls} />
                       </div>
                     </div>
                     {ins?.body && <p className="text-sm text-muted-foreground">{ins.body}</p>}
@@ -464,7 +474,7 @@ export default function ManagementInsight() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

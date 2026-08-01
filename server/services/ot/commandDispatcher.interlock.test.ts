@@ -108,6 +108,13 @@ vi.mock("./otManager", () => ({
   getActiveDriver: vi.fn((_id: number) => (driverConnected ? { isConnected: () => true, writeTags: (...a: any[]) => (writeTagsSpy as any)(...a) } : undefined)),
 }));
 
+// Doc 25 T1 — cổng interlock inline chỉ áp cho kind='hitl'; các test dưới đây dùng
+// kind='interlock' (verifyInterlockAuthorization, không phải cổng inline). Mock cho
+// luôn-qua để không ảnh hưởng, trừ test HITL regression (cũng mong không bị chặn).
+vi.mock("../interlock/interlockGate", () => ({
+  evaluateInterlockGate: vi.fn(async () => ({ blocked: false, failClosed: false, violations: [] })),
+}));
+
 import { dispatch } from "./commandDispatcher";
 
 // A fully-authorized interlock rule + event + writable tag on adapter 10.
@@ -138,6 +145,11 @@ beforeEach(() => {
   driverConnected = true;
   process.env.OT_CONTROL_ENABLED = "true";
   process.env.INTERLOCK_AUTO_BLOCK_ENABLED = "true";
+  // C2 (doc 24): these interlock tests predate the commissioning gate; opt it OUT so
+  // their legacy real-write semantics are preserved exactly (the new gate has its own
+  // suite in commandDispatcher.commissioning.test.ts, including an interlock case).
+  process.env.OT_COMMISSIONING_REQUIRED = "false";
+  process.env.OT_SAFETY_PREFLIGHT_ENABLED = "false"; // doc 48 R1 (T1): interlock-kind skips it anyway (hitl-only) — opt OUT for consistency
   seedAuthorized();
 });
 

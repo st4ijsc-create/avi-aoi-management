@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -115,41 +116,35 @@ export default function AIActiveLearningPage() {
     <DashboardLayout>
       <div className="flex flex-col gap-6 p-4 md:p-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
-              <GraduationCap className="h-6 w-6 text-purple-500" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">{t("al.title", "Active Learning")}</h1>
-              <p className="text-sm text-muted-foreground">
-                {t("al.subtitle", "Gán nhãn thông minh - Tối ưu hóa dữ liệu huấn luyện")}
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => scanUncertainty.mutate({ modelId: 1, sinceHours: 24 })}
-              disabled={scanUncertainty.isPending}
-            >
-              <GraduationCap className="h-4 w-4 mr-1.5" />
-              {t("al.scanHard", "Tự quét ảnh khó")}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => refetchRetrain()}>
-              {t("al.checkRetrain", "Kiểm tra retrain")}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => autoLabel.mutate({ modelId: 1, images: [] })}>
-              <Tag className="h-4 w-4 mr-1.5" />
-              {t("al.autoLabel", "Auto Label")}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => refetchQueue()}>
-              <RefreshCw className="h-4 w-4 mr-1.5" />
-              {t("common.refresh", "Làm mới")}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<GraduationCap className="h-6 w-6" />}
+          title={t("al.title", "Active Learning")}
+          description={t("al.subtitle", "Gán nhãn thông minh - Tối ưu hóa dữ liệu huấn luyện")}
+          actions={
+            <>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => scanUncertainty.mutate({ modelId: 1, sinceHours: 24 })}
+                disabled={scanUncertainty.isPending}
+              >
+                <GraduationCap className="h-4 w-4 mr-1.5" />
+                {t("al.scanHard", "Tự quét ảnh khó")}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => refetchRetrain()}>
+                {t("al.checkRetrain", "Kiểm tra retrain")}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => autoLabel.mutate({ modelId: 1, images: [] })}>
+                <Tag className="h-4 w-4 mr-1.5" />
+                {t("al.autoLabel", "Auto Label")}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => refetchQueue()}>
+                <RefreshCw className="h-4 w-4 mr-1.5" />
+                {t("common.refresh", "Làm mới")}
+              </Button>
+            </>
+          }
+        />
 
         {/* Stats Cards */}
         {stats && (
@@ -157,7 +152,7 @@ export default function AIActiveLearningPage() {
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <Inbox className="h-4 w-4 text-blue-500" />
+                  <Inbox className="h-4 w-4 text-info" />
                   <span className="text-sm text-muted-foreground">{t("al.queueSize", "Hàng đợi")}</span>
                 </div>
                 <p className="text-2xl font-bold mt-1">{stats.pending ?? 0}</p>
@@ -166,7 +161,7 @@ export default function AIActiveLearningPage() {
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
+                  <CheckCircle className="h-4 w-4 text-success" />
                   <span className="text-sm text-muted-foreground">{t("al.labeled", "Đã gán nhãn")}</span>
                 </div>
                 <p className="text-2xl font-bold mt-1">{stats.labeled ?? 0}</p>
@@ -175,7 +170,7 @@ export default function AIActiveLearningPage() {
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <SkipForward className="h-4 w-4 text-yellow-500" />
+                  <SkipForward className="h-4 w-4 text-warning" />
                   <span className="text-sm text-muted-foreground">{t("al.skippedCount", "Bỏ qua")}</span>
                 </div>
                 <p className="text-2xl font-bold mt-1">{stats.skipped ?? 0}</p>
@@ -184,7 +179,7 @@ export default function AIActiveLearningPage() {
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-purple-500" />
+                  <BarChart3 className="h-4 w-4 text-primary" />
                   <span className="text-sm text-muted-foreground">{t("al.accuracy", "Độ chính xác")}</span>
                 </div>
                 <p className="text-2xl font-bold mt-1">

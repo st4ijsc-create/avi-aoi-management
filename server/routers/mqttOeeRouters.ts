@@ -5,9 +5,43 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, router } from "../_core/trpc";
+// doc 54 Wave B — write-floor + module-permission gate for OEE/downtime/health/target
+// mutations that were bare protectedProcedure (P1-3/P1-5: any authenticated user, incl.
+// viewer, could write business data). writeProcedure blocks read-only roles; the
+// requirePermission bit adds a machine_monitoring module check. testNGAlert (MQTT+FCM
+// publish) is gated to qualityProcedure (admin/supervisor/quality_inspector + 2FA).
+import { protectedProcedure, writeProcedure, qualityProcedure, router } from "../_core/trpc";
+import { requirePermission } from "../_core/accessControl";
 import { adminProcedure } from "./_shared";
 import * as db from "../db";
+
+/**
+ * doc 54 P2.5 — resolve a downtime/reliability analytics scope (machineId | lineId |
+ * factoryId) to a concrete machineId[] . Returns undefined = "all machines" (no scope
+ * filter). An empty array = "scope resolved to nothing" (caller returns empty result).
+ */
+async function resolveAnalyticsMachineIds(scope: {
+  machineId?: number; lineId?: number; factoryId?: number;
+}): Promise<number[] | undefined> {
+  if (scope.machineId) return [scope.machineId];
+  if (!scope.lineId && !scope.factoryId) return undefined;
+  const { getDb } = await import("../db/connection");
+  const database = await getDb();
+  if (!database) return [];
+  const { sql } = await import("drizzle-orm");
+  const { executeRows } = await import("../utils/kpi");
+  const rows = executeRows(await database.execute(sql`
+    SELECT m."id" AS id
+    FROM machines m
+    JOIN stations s ON s."id" = m."stationId"
+    JOIN production_lines l ON l."id" = s."lineId"
+    JOIN workshops w ON w."id" = l."workshopId"
+    WHERE m."isActive" = true
+      ${scope.lineId ? sql`AND l."id" = ${scope.lineId}` : sql``}
+      ${scope.factoryId ? sql`AND w."factoryId" = ${scope.factoryId}` : sql``}
+  `)) as Array<{ id: number }>;
+  return rows.map((r) => Number(r.id));
+}
 
 // ============================================================
 // MQTT Client Router (lines 3859-4379)
@@ -189,7 +223,9 @@ export const mqttClientRouter = router({
     }),
 
   // Test NG Alert - Send test NG alert with full hierarchy and product measurement points
-  testNGAlert: protectedProcedure
+  // doc 54 Wave B — publishes to MQTT + FCM → gate to quality-floor (admin/supervisor/
+  // quality_inspector + 2FA) instead of any authenticated user.
+  testNGAlert: qualityProcedure
     .input(z.object({
       factoryId: z.number(),
       workshopId: z.number(),
@@ -419,7 +455,8 @@ export const mqttClientRouter = router({
   // `calculateOEE` is kept for backward-compat with manual/explicit inputs
   // (planned/run time + counts) — it persists a SEMI-E10 breakdown via the
   // canonical computeOEE rather than the old socket in-memory formula.
-  calculateOEE: protectedProcedure
+  calculateOEE: writeProcedure
+    .use(requirePermission("machine_monitoring", "canEdit"))
     .input(z.object({
       machineId: z.number(),
       machineCode: z.string(),
@@ -489,6 +526,9 @@ export const mqttClientRouter = router({
         performance: live.performance ?? 0,
         quality: live.quality ?? 0,
         oee: live.oee ?? 0,
+        // doc 54 P2.2 §3 — live availability is UPTIME% (online/(online+offline)),
+        // NOT the SEMI-E10 six-state availability. Surfaced so the UI can label it.
+        availabilityBasis: live.availabilityBasis,
         details: {
           plannedTime: onlineMin + offlineMin,
           runTime: onlineMin,
@@ -521,6 +561,8 @@ export const mqttClientRouter = router({
           performance: m.performance as number,
           quality: m.quality as number,
           oee: m.oee as number,
+          // doc 54 P2.2 §3 — UPTIME%-based availability (not SEMI-E10). Labelled for the UI.
+          availabilityBasis: m.availabilityBasis,
           // Legacy OEEMetrics.details shape consumed by OEEDashboard CSV/Excel export.
           details: {
             plannedTime: onlineMin + offlineMin,
@@ -557,7 +599,8 @@ export const mqttClientRouter = router({
     }),
 
   // ============ DOWNTIME TRACKING ============
-  startDowntime: protectedProcedure
+  startDowntime: writeProcedure
+    .use(requirePermission("machine_monitoring", "canCreate"))
     .input(z.object({
       machineId: z.number(),
       machineCode: z.string(),
@@ -569,7 +612,8 @@ export const mqttClientRouter = router({
       return startDowntime(input.machineId, input.machineCode, input.category, input.reason, ctx.user?.name ?? undefined);
     }),
 
-  endDowntime: protectedProcedure
+  endDowntime: writeProcedure
+    .use(requirePermission("machine_monitoring", "canEdit"))
     .input(z.object({
       machineId: z.number(),
       notes: z.string().optional(),
@@ -598,8 +642,59 @@ export const mqttClientRouter = router({
       return getDowntimeHistory(input);
     }),
 
+  // ============ DOWNTIME PARETO (doc 54 P2.5) ============
+  // Pareto of downtime by category (default) or reason from downtime_events over a
+  // window. Minutes are clipped to the window; overflow groups fold into "Other".
+  // Honest: hasData=false + empty rows when there is no downtime in the window.
+  downtimePareto: protectedProcedure
+    .input(z.object({
+      machineId: z.number().optional(),
+      lineId: z.number().optional(),
+      factoryId: z.number().optional(),
+      from: z.coerce.date(),
+      to: z.coerce.date(),
+      groupBy: z.enum(['category', 'reason']).default('category'),
+      limit: z.number().int().positive().max(100).default(20),
+    }))
+    .query(async ({ input }) => {
+      const { getDowntimePareto } = await import('../services/oeeService');
+      const machineIds = await resolveAnalyticsMachineIds(input);
+      return getDowntimePareto({
+        machineIds,
+        from: input.from,
+        to: input.to,
+        groupBy: input.groupBy,
+        limit: input.limit,
+      });
+    }),
+
+  // ============ RELIABILITY: MTBF / MTTR (doc 54 P2.5) ============
+  // MTBF (mean operating time between failures) + MTTR (mean repair time) from
+  // downtime_events. "Failures" default to unplanned/breakdown categories. Both are
+  // null (honest N/A) for a machine with no failures in the window.
+  reliabilityMetrics: protectedProcedure
+    .input(z.object({
+      machineId: z.number().optional(),
+      lineId: z.number().optional(),
+      factoryId: z.number().optional(),
+      from: z.coerce.date(),
+      to: z.coerce.date(),
+      failureCategories: z.array(z.enum(['planned', 'unplanned', 'breakdown', 'changeover', 'maintenance', 'other'])).optional(),
+    }))
+    .query(async ({ input }) => {
+      const { getReliabilityMetrics } = await import('../services/oeeService');
+      const machineIds = await resolveAnalyticsMachineIds(input);
+      return getReliabilityMetrics({
+        machineIds,
+        from: input.from,
+        to: input.to,
+        failureCategories: input.failureCategories,
+      });
+    }),
+
   // ============ PREDICTIVE MAINTENANCE ============
-  calculateMachineHealth: protectedProcedure
+  calculateMachineHealth: writeProcedure
+    .use(requirePermission("machine_monitoring", "canEdit"))
     .input(z.object({
       machineId: z.number(),
       machineCode: z.string(),
@@ -679,6 +774,26 @@ export const mqttClientRouter = router({
       const { getMachineHealthScore } = await import('../_core/socket');
       return getMachineHealthScore(input.machineId);
     }),
+
+  // Batched counterpart of getMachineHealth: returns the SAME real, in-memory
+  // health scores the Details tab reads (getMachineHealthScore is a synchronous
+  // Map lookup, so mapping it over the machine list is cheap). Machines with no
+  // calculated score yet are returned with healthScore: null so the fleet view
+  // can render an honest "—" instead of fabricating a value from OEE.
+  getAllMachineHealth: protectedProcedure.query(async () => {
+    const { getMachineHealthScore } = await import('../_core/socket');
+    const machines = await db.getMachines();
+    return machines.map((m) => {
+      const health = getMachineHealthScore(m.id);
+      return {
+        machineId: m.id,
+        machineCode: m.code,
+        healthScore: health ? health.score : null,
+        factors: health ? health.factors : null,
+        lastUpdated: health ? health.lastUpdated : null,
+      };
+    });
+  }),
 
   getMachineHealthHistory: protectedProcedure
     .input(z.object({
@@ -933,7 +1048,8 @@ export const oeeRouter = router({
   }),
 
   // Create OEE target
-  createTarget: protectedProcedure
+  createTarget: writeProcedure
+    .use(requirePermission("machine_monitoring", "canCreate"))
     .input(z.object({
       machineId: z.number().optional(),
       lineId: z.number().optional(),
@@ -947,33 +1063,31 @@ export const oeeRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const { getDb } = await import('../db');
-      const { sql } = await import('drizzle-orm');
+      const { oeeTargets } = await import('../../drizzle/schema');
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
-      
-      await db.execute(sql`
-        INSERT INTO oee_targets 
-         (machineId, lineId, targetOEE, targetAvailability, targetPerformance, targetQuality,
-          alertThreshold, criticalThreshold, setBy, notes)
-         VALUES (
-          ${input.machineId || null},
-          ${input.lineId || null},
-          ${input.targetOEE},
-          ${input.targetAvailability},
-          ${input.targetPerformance},
-          ${input.targetQuality},
-          ${input.alertThreshold},
-          ${input.criticalThreshold},
-          ${ctx.user?.id || 0},
-          ${input.notes || null}
-         )
-      `);
-      
+
+      // Hương-P0: dùng Drizzle thay raw SQL — identifier camelCase không quote bị
+      // Postgres fold về lowercase (machineId → machineid) gây "column does not exist".
+      await db.insert(oeeTargets).values({
+        machineId: input.machineId ?? null,
+        lineId: input.lineId ?? null,
+        targetOEE: input.targetOEE,
+        targetAvailability: input.targetAvailability,
+        targetPerformance: input.targetPerformance,
+        targetQuality: input.targetQuality,
+        alertThreshold: input.alertThreshold,
+        criticalThreshold: input.criticalThreshold,
+        setBy: ctx.user?.id || 0,
+        notes: input.notes ?? null,
+      });
+
       return { success: true };
     }),
 
   // Update OEE target
-  updateTarget: protectedProcedure
+  updateTarget: writeProcedure
+    .use(requirePermission("machine_monitoring", "canEdit"))
     .input(z.object({
       id: z.number(),
       machineId: z.number().optional(),
@@ -988,43 +1102,46 @@ export const oeeRouter = router({
     }))
     .mutation(async ({ input }) => {
       const { getDb } = await import('../db');
-      const { sql } = await import('drizzle-orm');
+      const { oeeTargets } = await import('../../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
-      
-      await db.execute(sql`
-        UPDATE oee_targets
-        SET machineId = ${input.machineId || null},
-            lineId = ${input.lineId || null},
-            targetOEE = ${input.targetOEE},
-            targetAvailability = ${input.targetAvailability},
-            targetPerformance = ${input.targetPerformance},
-            targetQuality = ${input.targetQuality},
-            alertThreshold = ${input.alertThreshold},
-            criticalThreshold = ${input.criticalThreshold},
-            notes = ${input.notes || null},
-            updatedAt = NOW()
-        WHERE id = ${input.id}
-      `);
-      
+
+      // Hương-P0: dùng Drizzle thay raw SQL không quote (camelCase bị fold lowercase).
+      await db.update(oeeTargets)
+        .set({
+          machineId: input.machineId ?? null,
+          lineId: input.lineId ?? null,
+          targetOEE: input.targetOEE,
+          targetAvailability: input.targetAvailability,
+          targetPerformance: input.targetPerformance,
+          targetQuality: input.targetQuality,
+          alertThreshold: input.alertThreshold,
+          criticalThreshold: input.criticalThreshold,
+          notes: input.notes ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(oeeTargets.id, input.id));
+
       return { success: true };
     }),
 
-  // Delete OEE target
-  deleteTarget: protectedProcedure
+  // Delete OEE target (soft-delete via isActive=false → canEdit floor)
+  deleteTarget: writeProcedure
+    .use(requirePermission("machine_monitoring", "canEdit"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import('../db');
-      const { sql } = await import('drizzle-orm');
+      const { oeeTargets } = await import('../../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
-      
-      await db.execute(sql`
-        UPDATE oee_targets
-        SET isActive = false
-        WHERE id = ${input.id}
-      `);
-      
+
+      // Hương-P0: soft-delete qua Drizzle thay raw SQL.
+      await db.update(oeeTargets)
+        .set({ isActive: false })
+        .where(eq(oeeTargets.id, input.id));
+
       return { success: true };
     }),
 });

@@ -1,0 +1,12 @@
+{
+  "machineCode": "CGX-1",
+  "job": "InSight_TopCam_A",
+  "id": "SN-2026-000129",
+  "status": "Fail",
+  "timestamp": "2026-07-04T08:37:00+07:00",
+  "cycleTimeMs": 420,
+  "results": [
+    { "tool": "PatMax_1", "pass": true, "score": 95.2, "offsetX": -3.1, "offsetY": 0.8, "angle": 1.2 },
+    { "tool": "Presence_2", "pass": false, "score": 10, "defect": "MISSING_COMPONENT", "severity": "major", "image": "SN-2026-000129_T2.jpg" }
+  ]
+}

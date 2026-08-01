@@ -1,6 +1,7 @@
-import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
@@ -20,6 +21,7 @@ import {
   ChevronRight,
   Settings,
   Radio,
+  Loader2,
 } from "lucide-react";
 
 import { useState, useEffect } from "react";
@@ -27,21 +29,30 @@ import { useLocation, useSearch } from "wouter";
 
 // Import content components from existing pages
 import { MachineRegistrationContent } from "@/pages/MachineRegistration";
-import { MqttClientManagementContent } from "@/pages/MqttClientManagement";
-import { MqttTopicsMessagesContent } from "@/pages/MqttTopicsMessages";
-import { MQTTReplayContent } from "@/pages/MQTTReplay";
-import { MqttProfileManagementContent } from "@/pages/MqttProfileManagement";
-import { MqttNgRateThresholdContent } from "@/pages/MqttNgRateThreshold";
+// doc 60 — 5 MQTT *Content imports GỠ (tab MQTT trùng đã bỏ; canonical = /connectivity).
 import MachineMapping from "@/components/MachineMapping";
 import ManualMachineMapping from "@/components/ManualMachineMapping";
 
 export default function MonitoringSettings() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { hasPermission, loading: permsLoading } = usePermissions();
+  // doc 40 DEV-02 — đồng bộ với nav row (machine_status). Trang này chỉ còn là
+  // đăng ký/gán thiết bị (device-mapping), không phải quản trị hệ thống.
+  const canView = hasPermission("machine_status", "canView");
 
   const search = useSearch();
   const [location, setLocation] = useLocation();
+
+  // doc 40 DEV-01 — 5 tab MQTT trùng 100% ConnectivityHub. Redirect deep-link
+  // ?tab=mqtt-* sang /connectivity (tab tương ứng); trang này chỉ giữ device-management
+  // + machine-registration.
+  const MQTT_TAB_REDIRECTS: Record<string, string> = {
+    'mqtt-clients': 'clients',
+    'mqtt-topics': 'topics',
+    'mqtt-replay': 'replay',
+    'mqtt-profiles': 'profiles',
+    'mqtt-ng-rate': 'ngrate',
+  };
 
   // Parse tab from URL query parameter
   const getTabFromUrl = () => {
@@ -59,6 +70,15 @@ export default function MonitoringSettings() {
     setLocation(`/monitoring-setting?tab=${tab}`);
   };
 
+  // doc 40 DEV-01 — redirect deep-link ?tab=mqtt-* sang hub /connectivity (no reload).
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    const tab = params.get('tab');
+    if (tab && MQTT_TAB_REDIRECTS[tab]) {
+      setLocation(`/connectivity?tab=${MQTT_TAB_REDIRECTS[tab]}`);
+    }
+  }, [search]);
+
   // Sync tab with URL on mount and URL changes
   useEffect(() => {
     const tabFromUrl = getTabFromUrl();
@@ -73,7 +93,17 @@ export default function MonitoringSettings() {
     setCollapsedCategories(prev => ({ ...prev, [category]: !prev[category] }));
   };
 
-  if (!isAdmin) {
+  if (permsLoading) {
+    return (
+      <DashboardLayout title={t("monitoringSettings.title")} navItems={navItems} currentPath="/monitoring-setting">
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canView) {
     return (
       <DashboardLayout title={t("monitoringSettings.title")} navItems={navItems} currentPath="/monitoring-setting">
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
@@ -87,22 +117,18 @@ export default function MonitoringSettings() {
 
   return (
     <DashboardLayout title={t("monitoringSettings.title")} navItems={navItems} currentPath="/monitoring-setting">
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Settings className="h-6 w-6 text-primary" />
-              {t("monitoringSettings.title")}
-            </h1>
-            <p className="text-muted-foreground">{t("monitoringSettings.description")}</p>
-          </div>
-        </div>
+      <PageContainer>
+        <PageHeader
+          icon={<Settings className="h-5 w-5 text-primary" />}
+          title={t("monitoringSettings.title")}
+          description={t("monitoringSettings.description")}
+        />
 
         <ErrorBoundary>
         <Tabs value={activeTab} onValueChange={handleTabChange}>
           <div className="flex gap-6">
             {/* Vertical Sidebar Navigation */}
-            <div className="w-64 shrink-0 space-y-1">
+            <div className="hidden" data-legacy-hub-menu="true">
 
               {/* Category: Machine Management */}
               <div className="space-y-1">
@@ -111,7 +137,7 @@ export default function MonitoringSettings() {
                   className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                 >
                   <div className="flex items-center gap-2">
-                    <HardDrive className="h-4 w-4 text-blue-500" />
+                    <HardDrive className="h-4 w-4 text-info" />
                     <span>{t("monitoringSettings.cat.machines")}</span>
                   </div>
                   {collapsedCategories['machines'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -147,7 +173,7 @@ export default function MonitoringSettings() {
                   className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                 >
                   <div className="flex items-center gap-2">
-                    <Radio className="h-4 w-4 text-green-500" />
+                    <Radio className="h-4 w-4 text-success" />
                     <span>{t("monitoringSettings.cat.mqtt")}</span>
                   </div>
                   {collapsedCategories['mqtt'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -214,11 +240,11 @@ export default function MonitoringSettings() {
 
               <TabsContent value="device-management" className="mt-0">
                 <div className="space-y-6">
-                  <Card className="glass-card border-blue-500/30 bg-blue-500/5">
+                  <Card className="glass-card border-info/30 bg-info/5">
                     <CardContent className="pt-6">
                       <div className="flex items-center gap-4">
-                        <div className="p-3 rounded-full bg-blue-500/20">
-                          <Wifi className="h-6 w-6 text-blue-400" />
+                        <div className="p-3 rounded-full bg-info/20">
+                          <Wifi className="h-6 w-6 text-info" />
                         </div>
                         <div className="flex-1">
                           <h3 className="font-semibold">{t("settings.mqttClientsTitle")}</h3>
@@ -226,10 +252,9 @@ export default function MonitoringSettings() {
                             {t("settings.mqttDescription")}
                           </p>
                         </div>
-                        <Button asChild>
-                          <a href="/mqtt-clients">
-                            {t("settings.goToMqttClients")}
-                          </a>
+                        {/* doc 40 DEV-01 — dùng wouter navigate (no full reload) thay raw <a>. */}
+                        <Button onClick={() => setLocation("/connectivity?tab=clients")}>
+                          {t("settings.goToMqttClients")}
                         </Button>
                       </div>
                     </CardContent>
@@ -266,41 +291,14 @@ export default function MonitoringSettings() {
                   </Card>
                 </div>
               </TabsContent>
-
-              <TabsContent value="mqtt-clients" className="mt-0">
-                <ErrorBoundary>
-                  <MqttClientManagementContent />
-                </ErrorBoundary>
-              </TabsContent>
-
-              <TabsContent value="mqtt-topics" className="mt-0">
-                <ErrorBoundary>
-                  <MqttTopicsMessagesContent />
-                </ErrorBoundary>
-              </TabsContent>
-
-              <TabsContent value="mqtt-replay" className="mt-0">
-                <ErrorBoundary>
-                  <MQTTReplayContent />
-                </ErrorBoundary>
-              </TabsContent>
-
-              <TabsContent value="mqtt-profiles" className="mt-0">
-                <ErrorBoundary>
-                  <MqttProfileManagementContent />
-                </ErrorBoundary>
-              </TabsContent>
-
-              <TabsContent value="mqtt-ng-rate" className="mt-0">
-                <ErrorBoundary>
-                  <MqttNgRateThresholdContent />
-                </ErrorBoundary>
-              </TabsContent>
+              {/* doc 60 — 5 tab MQTT (clients/topics/replay/profiles/ng-rate) GỠ: trùng 100%
+                  ConnectivityHub (/connectivity) là canonical; ?tab=mqtt-* đã redirect sang đó
+                  (MQTT_TAB_REDIRECTS). Trang này chỉ còn machine-registration + device-management. */}
             </div>
           </div>
         </Tabs>
         </ErrorBoundary>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

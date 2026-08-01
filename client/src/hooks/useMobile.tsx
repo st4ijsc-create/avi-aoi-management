@@ -28,8 +28,32 @@ export function useIsMobile() {
  * component opt into tablet-aware DENSITY (e.g. fewer grid columns) without changing the
  * mobile/sidebar behaviour.
  */
+/**
+ * True on devices whose primary pointer is touch (`pointer: coarse`) — phones,
+ * tablets, touch laptops — regardless of width. Used to switch the cascading nav
+ * from hover semantics (open/close on mouseenter/leave) to tap semantics, enlarge
+ * touch targets, and collapse the Level-2/3 cascade into a single inline drill.
+ */
+export function useIsCoarsePointer() {
+  const [coarse, setCoarse] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    const mql = window.matchMedia("(pointer: coarse)");
+    const onChange = () => setCoarse(mql.matches);
+    mql.addEventListener("change", onChange);
+    onChange();
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+
+  return coarse;
+}
+
 export function useIsTablet() {
-  const [isTablet, setIsTablet] = React.useState<boolean>(false);
+  const [isTablet, setIsTablet] = React.useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const w = window.innerWidth;
+    return w >= MOBILE_BREAKPOINT && w < TABLET_BREAKPOINT;
+  });
 
   React.useEffect(() => {
     const mql = window.matchMedia(

@@ -17,12 +17,17 @@
  *   delete = canDelete ; approve = admin-only.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PollFreshness } from "@/components/PollFreshness";
+import { ConfirmWithReason, PageContainer, PageHeader } from "@/components/patterns";
+import { buildBreadcrumbs } from "@/lib/breadcrumbs";
+import { useLocation } from "wouter";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,7 +46,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ShieldAlert, Plus, Pencil, Trash2, CheckCircle2, Play, Pause, FlaskConical } from "lucide-react";
+import { ShieldAlert, Plus, Pencil, Trash2, CheckCircle2, Play, Pause, FlaskConical, Info } from "lucide-react";
 import { toast } from "sonner";
 
 const SCOPES = ["line", "station", "machine"] as const;
@@ -99,15 +104,29 @@ function actionVariant(action: string): "default" | "secondary" | "destructive" 
 
 export default function InterlockRuleManagement() {
   const { t } = useTranslation();
+  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
+  const [location] = useLocation();
+  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission, isAdmin } = usePermissions();
   const canView = hasPermission("interlock", "canView");
   const canCreate = hasPermission("interlock", "canCreate");
   const canEdit = hasPermission("interlock", "canEdit");
   const canDelete = hasPermission("interlock", "canDelete");
+  // U4 (doc 26 §2.4) — hiện-nhưng-khoá: lý do khi thiếu quyền tương ứng.
+  const createReason = !canCreate ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "interlock" }) : undefined;
+  const editReason = !canEdit ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "interlock" }) : undefined;
+  const deleteReason = !canDelete ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "interlock" }) : undefined;
+  const approveReason = !isAdmin ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "admin" }) : undefined;
 
   const utils = trpc.useUtils();
   const rulesQuery = trpc.interlock.list.useQuery(undefined, { enabled: canView });
-  const eventsQuery = trpc.interlock.events.useQuery({ limit: 100 }, { enabled: canView });
+  // Realtime: refetch danh sách sự kiện định kỳ; dừng khi không có quyền xem
+  // hoặc khi tab bị ẩn (doc 27 B12 — usePollingInterval).
+  const eventsPolling = usePollingInterval(canView ? 5000 : false);
+  const eventsQuery = trpc.interlock.events.useQuery(
+    { limit: 100 },
+    { enabled: canView, ...eventsPolling },
+  );
 
   const invalidateRules = () => void utils.interlock.list.invalidate();
   const invalidateEvents = () => void utils.interlock.events.invalidate();
@@ -219,6 +238,54 @@ export default function InterlockRuleManagement() {
 
   const rules = rulesQuery.data ?? [];
   const events = eventsQuery.data ?? [];
+  // Map id→tên rule để hiển thị tên thay vì #ruleId trong bảng sự kiện.
+  const ruleNameById = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const r of rules) m.set(r.id, r.name);
+    return m;
+  }, [rules]);
+
+  // U13 (doc 26 §2.2) — lọc sự kiện open/resolved + đếm chưa xử lý cho badge tab.
+  const [eventFilter, setEventFilter] = useState<"all" | "open" | "resolved">("all");
+  const unresolvedCount = useMemo(
+    () => events.filter((e) => e.status !== "resolved").length,
+    [events],
+  );
+  const filteredEvents = useMemo(() => {
+    if (eventFilter === "open") return events.filter((e) => e.status !== "resolved");
+    if (eventFilter === "resolved") return events.filter((e) => e.status === "resolved");
+    return events;
+  }, [events, eventFilter]);
+  // "Dòng mới" = sự kiện vừa fire trong 2 phút gần đây & chưa xử lý → tô nổi để KTV chú ý.
+  const isRecentEvent = (firedAt: unknown, status: string) => {
+    if (status === "resolved" || !firedAt) return false;
+    const t0 = new Date(firedAt as string).getTime();
+    return Number.isFinite(t0) && Date.now() - t0 < 2 * 60 * 1000;
+  };
+
+  // ── U12 (doc 26 §2.3) — nhắc khi có SỰ KIỆN INTERLOCK MỚI chưa xử lý ─────────
+  // So sánh tập id sự kiện với lần poll trước; chỉ toast id MỚI & chưa resolved
+  // (chống spam, không báo lại sự kiện đã thấy hay đã xử lý).
+  const seenEventIdsRef = useRef<Set<number> | null>(null);
+  useEffect(() => {
+    if (eventsQuery.isLoading || eventsQuery.isError) return;
+    const ids = new Set(events.map((e) => e.id));
+    // Lần đầu (prime) chỉ ghi nhận baseline, KHÔNG toast.
+    if (seenEventIdsRef.current === null) {
+      seenEventIdsRef.current = ids;
+      return;
+    }
+    const prev = seenEventIdsRef.current;
+    const fresh = events.filter((e) => !prev.has(e.id) && e.status !== "resolved");
+    seenEventIdsRef.current = ids;
+    if (fresh.length > 0) {
+      toast.warning(
+        t("interlockRules.newEventToast", "Interlock triggered") +
+          (fresh.length > 1 ? ` (${fresh.length})` : ""),
+        { description: t("interlockRules.newEventDesc", "A new interlock event fired — open the Events tab to review.") },
+      );
+    }
+  }, [events, eventsQuery.isLoading, eventsQuery.isError, t]);
 
   if (!canView) {
     return (
@@ -230,23 +297,37 @@ export default function InterlockRuleManagement() {
 
   return (
     <DashboardLayout title={t("interlockRules.title")} navItems={navItems} currentPath="/interlock-rules">
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <ShieldAlert className="h-6 w-6 text-rose-600" />
-          <h1 className="text-2xl font-bold">{t("interlockRules.title")}</h1>
-          <ViewOnlyBadge module="interlock" />
-        </div>
-        {canCreate && (
-          <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" /> {t("interlockRules.newRule")}</Button>
-        )}
+    <PageContainer className="space-y-6">
+      <PageHeader
+        breadcrumbs={crumbs}
+        icon={<ShieldAlert className="h-6 w-6" />}
+        title={
+          <span className="flex items-center gap-2">
+            {t("interlockRules.title")}<ViewOnlyBadge module="interlock" />
+          </span>
+        }
+        description={t("interlockRules.subtitle")}
+        actions={
+          <Button onClick={openCreate} disabled={!canCreate} title={createReason}><Plus className="h-4 w-4 mr-1" /> {t("interlockRules.newRule")}</Button>
+        }
+      />
+
+      {/* U7 (doc 26 §2.1) — "Khi nào dùng": trang LÀ GÌ / DÙNG KHI NÀO cho KTV mới. */}
+      <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+        <span>{t("interlockRules.whenToUse", "Khi nào dùng — định nghĩa quy tắc an toàn tự động dừng/giảm tốc máy khi vượt giới hạn, và xem lại các sự kiện đã kích hoạt.")}</span>
       </div>
-      <p className="text-sm text-muted-foreground">{t("interlockRules.subtitle")}</p>
 
       <Tabs defaultValue="rules">
         <TabsList>
           <TabsTrigger value="rules">{t("interlockRules.tabRules")}</TabsTrigger>
-          <TabsTrigger value="events">{t("interlockRules.tabEvents")}</TabsTrigger>
+          <TabsTrigger value="events" className="gap-1.5">
+            {t("interlockRules.tabEvents")}
+            {/* U13 §2.2 — badge đếm sự kiện chưa xử lý. */}
+            {unresolvedCount > 0 && (
+              <Badge variant="destructive" className="h-4 min-w-4 px-1 text-[10px]">{unresolvedCount}</Badge>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         {/* ── Rules tab ── */}
@@ -294,15 +375,18 @@ export default function InterlockRuleManagement() {
                             <Button size="sm" variant="outline" onClick={() => { setTestRuleId(r.id); setObservedValue(""); setSeriesText(""); setTestEnabled(false); }}>
                               <FlaskConical className="h-4 w-4" />
                             </Button>
-                            {isAdmin && !approved && (
-                              <Button size="sm" variant="outline" disabled={approveRule.isPending}
+                            {/* Hiện-nhưng-khoá: duyệt chỉ dành cho admin (SoD giữ nguyên). */}
+                            {!approved && (
+                              <Button size="sm" variant="outline" disabled={!isAdmin || approveRule.isPending}
+                                title={approveReason}
                                 onClick={() => approveRule.mutate({ id: r.id })}>
                                 <CheckCircle2 className="h-4 w-4 mr-1" /> {t("interlockRules.approve")}
                               </Button>
                             )}
-                            {canEdit && !r.enabled && (
+                            {!r.enabled && (
                               approved ? (
-                                <Button size="sm" variant="outline" disabled={enableRule.isPending}
+                                <Button size="sm" variant="outline" disabled={!canEdit || enableRule.isPending}
+                                  title={editReason}
                                   onClick={() => enableRule.mutate({ id: r.id })}>
                                   <Play className="h-4 w-4 mr-1" /> {t("interlockRules.enable")}
                                 </Button>
@@ -310,7 +394,7 @@ export default function InterlockRuleManagement() {
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <span tabIndex={0}>
-                                      <Button size="sm" variant="outline" disabled>
+                                      <Button size="sm" variant="outline" disabled title={editReason}>
                                         <Play className="h-4 w-4 mr-1" /> {t("interlockRules.enable")}
                                       </Button>
                                     </span>
@@ -319,23 +403,55 @@ export default function InterlockRuleManagement() {
                                 </Tooltip>
                               )
                             )}
-                            {canEdit && r.enabled && (
-                              <Button size="sm" variant="outline" disabled={disableRule.isPending}
-                                onClick={() => disableRule.mutate({ id: r.id })}>
-                                <Pause className="h-4 w-4 mr-1" /> {t("interlockRules.disable")}
-                              </Button>
+                            {/* doc 44 G5.4 — tắt một rule an toàn đang chạy = gỡ lớp bảo vệ
+                                tự động → ConfirmWithReason (2 bước + lý do bắt buộc). */}
+                            {r.enabled && (
+                              <ConfirmWithReason
+                                trigger={
+                                  <Button size="sm" variant="outline" disabled={!canEdit || disableRule.isPending}
+                                    title={editReason}>
+                                    <Pause className="h-4 w-4 mr-1" /> {t("interlockRules.disable")}
+                                  </Button>
+                                }
+                                title={t("interlockRules.disableConfirmTitle", 'Tắt rule "{{name}}"?', { name: r.name })}
+                                description={t("interlockRules.disableConfirmDescription", "Rule sẽ ngừng giám sát điều kiện và ngừng kích hoạt hành động đã cấu hình.")}
+                                impact={t("interlockRules.disableImpact", "Lớp bảo vệ tự động này TẮT cho tới khi được bật lại — vượt ngưỡng sẽ không chặn/dừng/cảnh báo.")}
+                                riskLevel="low"
+                                disabled={!canEdit || disableRule.isPending}
+                                onConfirm={async (reason) => {
+                                  // TODO(doc 44 G5.4): interlock.disable chưa nhận `reason` trong
+                                  // input — khi backend thêm field, truyền reason vào mutation
+                                  // (audit server-side) thay vì chỉ log client-side như dưới.
+                                  console.info("[interlock.disable] reason:", { id: r.id, reason });
+                                  await disableRule.mutateAsync({ id: r.id });
+                                }}
+                              />
                             )}
-                            {canEdit && (
-                              <Button size="sm" variant="outline" onClick={() => openEdit(r)}>
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                            )}
-                            {canDelete && (
-                              <Button size="sm" variant="destructive" disabled={deleteRule.isPending}
-                                onClick={() => { if (confirm(t("interlockRules.confirmDelete", { name: r.name }))) deleteRule.mutate({ id: r.id }); }}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            )}
+                            <Button size="sm" variant="outline" disabled={!canEdit} title={editReason} onClick={() => openEdit(r)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            {/* doc 44 G5.4 — hard-delete rule an toàn: rủi ro cao → 2 bước
+                                + lý do + gõ chuỗi xác nhận (thay AlertDialog 1 bước cũ). */}
+                            <ConfirmWithReason
+                              trigger={
+                                <Button size="sm" variant="destructive" disabled={!canDelete || deleteRule.isPending}
+                                  title={deleteReason}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              }
+                              title={t("interlockRules.confirmDelete", { name: r.name })}
+                              description={t("interlockRules.deleteConfirmDescription", "Xoá vĩnh viễn — không thể hoàn tác (đã ghi audit trước khi xoá).")}
+                              impact={t("interlockRules.deleteImpact", "Định nghĩa rule và lớp bảo vệ tự động tương ứng biến mất khỏi hệ thống.")}
+                              riskLevel="high"
+                              disabled={!canDelete || deleteRule.isPending}
+                              onConfirm={async (reason) => {
+                                // TODO(doc 44 G5.4): interlock.delete chưa nhận `reason` trong
+                                // input — khi backend thêm field, truyền reason vào mutation
+                                // (audit server-side) thay vì chỉ log client-side như dưới.
+                                console.info("[interlock.delete] reason:", { id: r.id, reason });
+                                await deleteRule.mutateAsync({ id: r.id });
+                              }}
+                            />
                           </TableCell>
                         </TableRow>
                       );
@@ -350,7 +466,22 @@ export default function InterlockRuleManagement() {
         {/* ── Events tab ── */}
         <TabsContent value="events">
           <Card>
-            <CardHeader><CardTitle>{t("interlockRules.events")} ({events.length})</CardTitle></CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <CardTitle>{t("interlockRules.events")} ({filteredEvents.length})</CardTitle>
+              <div className="flex items-center gap-2">
+              {/* U12 §2.3 — độ tươi của dữ liệu poll (dataUpdatedAt của react-query). */}
+              <PollFreshness updatedAt={eventsQuery.dataUpdatedAt} isFetching={eventsQuery.isFetching} />
+              {/* U13 §2.2 — lọc open/resolved (lọc phía client). */}
+              <Select value={eventFilter} onValueChange={(v) => setEventFilter(v as "all" | "open" | "resolved")}>
+                <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("interlockRules.filterAll", "Tất cả")}</SelectItem>
+                  <SelectItem value="open">{t("interlockRules.filterOpen", "Chưa xử lý")}</SelectItem>
+                  <SelectItem value="resolved">{t("interlockRules.filterResolved", "Đã xử lý")}</SelectItem>
+                </SelectContent>
+              </Select>
+              </div>
+            </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
@@ -365,20 +496,27 @@ export default function InterlockRuleManagement() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {events.length === 0 && (
+                  {eventsQuery.isError && (
+                    <TableRow><TableCell colSpan={7} className="text-center text-destructive">{t("common.loadError")}</TableCell></TableRow>
+                  )}
+                  {!eventsQuery.isError && eventsQuery.isLoading && (
+                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow>
+                  )}
+                  {!eventsQuery.isError && !eventsQuery.isLoading && filteredEvents.length === 0 && (
                     <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">{t("interlockRules.empty")}</TableCell></TableRow>
                   )}
-                  {events.map((ev) => (
-                    <TableRow key={ev.id}>
-                      <TableCell className="font-medium">#{ev.ruleId}</TableCell>
+                  {filteredEvents.map((ev) => (
+                    <TableRow key={ev.id} className={isRecentEvent(ev.firedAt, ev.status) ? "bg-warning/10" : undefined}>
+                      <TableCell className="font-medium">{ruleNameById.get(ev.ruleId) ?? `#${ev.ruleId}`}</TableCell>
                       <TableCell className="text-xs">{ev.firedAt ? new Date(ev.firedAt).toLocaleString() : "—"}</TableCell>
                       <TableCell>{ev.observedValue ?? "—"}</TableCell>
                       <TableCell>{ev.threshold ?? "—"}</TableCell>
                       <TableCell>{ev.action ? <Badge variant={actionVariant(ev.action)}>{ev.action}</Badge> : "—"}</TableCell>
                       <TableCell><Badge variant="outline">{ev.status}</Badge></TableCell>
                       <TableCell className="text-right">
-                        {canEdit && ev.status !== "resolved" && (
-                          <Button size="sm" variant="outline" disabled={resolveEvent.isPending}
+                        {ev.status !== "resolved" && (
+                          <Button size="sm" variant="outline" disabled={!canEdit || resolveEvent.isPending}
+                            title={editReason}
                             onClick={() => resolveEvent.mutate({ id: ev.id })}>
                             {t("interlockRules.resolve")}
                           </Button>
@@ -533,7 +671,7 @@ export default function InterlockRuleManagement() {
             </Button>
 
             {testEnabled && testQuery.isLoading && <p className="text-sm text-muted-foreground">{t("interlockRules.testRunning")}</p>}
-            {testEnabled && testQuery.error && <p className="text-sm text-rose-600">{testQuery.error.message}</p>}
+            {testEnabled && testQuery.error && <p className="text-sm text-destructive">{testQuery.error.message}</p>}
             {testEnabled && testQuery.data && (
               <div className="rounded-md border p-3 text-sm space-y-1">
                 <div className="flex items-center gap-2">
@@ -554,7 +692,9 @@ export default function InterlockRuleManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+
+      {/* doc 44 G5.4 — delete confirm chuyển sang ConfirmWithReason per-row (2 bước + lý do). */}
+    </PageContainer>
     </DashboardLayout>
   );
 }

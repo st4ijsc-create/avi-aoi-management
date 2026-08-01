@@ -1,0 +1,59 @@
+namespace St4i.EngineApi.Policy.Rules;
+
+/// <summary>SAFETY-ADJACENT (not a safety function itself — see SM-4 below): refuses the
+/// production-resuming commands while the HALT latch (<see cref="St4i.EngineApi.Fleet.FleetHost.EstopEngaged"/>)
+/// is engaged, turning the engine's silent <c>StartLocked</c> no-op into an explicit, audited
+/// <see cref="PolicyReasonCode.SafetyBlocked"/> denial. Never blocks stop/estop/estop-reset/reads/config
+/// (returns <see langword="null"/> for anything outside <see cref="ActuatingActions"/>) — a halt and its
+/// reset must ALWAYS be reachable. This rule only ever blocks; it never permits (it leaves permitting to
+/// <see cref="RoleObligationRule"/>).
+///
+/// SM-4 — the class/route names here (<c>EstopGuardRule</c>, <c>fleet.estop</c>) are kept unchanged
+/// deliberately (API/identifier stability); the TRUTH this rule enforces is narrower than the name
+/// suggests: it gates whether THIS SOFTWARE resumes reading from its configured device(s), never
+/// anything about a physical machine's own state — see <see cref="St4i.EngineApi.Fleet.FleetHost.Estop"/>'s
+/// own doc comment. Task B-8: a real write path exists NOW (<see cref="St4i.EngineApi.Endpoints.MachineWriteEndpoints"/>,
+/// Modbus/OPC-UA) and <c>machine.setpoint.write</c>/<c>machine.command.invoke</c> are themselves in
+/// <see cref="ActuatingActions"/> below — while the latch is engaged, THIS rule is what stands between an
+/// operator and a device write, refusing it before any I/O. See README §1 for why HALT staying a
+/// software-only latch that never itself commands a stop is still the right call even though the write
+/// path now exists.
+///
+/// GĐ3 sub-4 LC-3 — <c>line.start</c>/<c>line.unhold</c> are the <see cref="St4i.EngineApi.Line.LineController"/>
+/// commands that ultimately call <see cref="St4i.EngineApi.Fleet.FleetHost.Start"/> (same as <c>fleet.start</c>
+/// itself), so they need the SAME halt guard — an operator must not be able to resume production through
+/// the line-panel route while <c>fleet.start</c> is blocked. <c>line.hold</c>/<c>line.stop</c>/<c>line.abort</c>/
+/// <c>line.reset</c> only ever STOP/halt/reset the fleet, never start it, so — like <c>fleet.stop</c>/
+/// <c>fleet.estop</c>/<c>fleet.estop_reset</c> above — they stay reachable while latched.</summary>
+public sealed class EstopGuardRule : IPolicyRule
+{
+    private static readonly HashSet<string> ActuatingActions = new(StringComparer.Ordinal)
+    {
+        "fleet.start", "scenario.burst", "line.start", "line.unhold",
+
+        // Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — THE
+        // non-negotiable invariant this task exists to deliver. A setpoint write or a command invocation
+        // physically changes/actuates a live device — strictly MORE consequential than any action already
+        // in this set (which, until B-4/B-5, never reached a device at all). If either action were missing
+        // here, the HALT latch would be engaged while an operator could still command the machine — exactly
+        // what the latch exists to prevent. See MachineWriteEndpointsTests' HALT-latched tests for the
+        // direct, unmistakable proof (latch HALT, attempt both, assert SAFETY_BLOCKED).
+        "machine.setpoint.write", "machine.command.invoke",
+    };
+
+    public PolicyDecision? Evaluate(PolicyRequest request)
+    {
+        if (!ActuatingActions.Contains(request.Action)) return null;
+        if (request.Safety.EstopEngaged)
+        {
+            return PolicyDecision.Deny(PolicyReasonCode.SafetyBlocked,
+                "The halt latch is engaged — this refuses the setpoint/command write itself (no device was " +
+                "touched) as well as blocking fleet.start, because the latch only ever stopped this software's " +
+                "own data collection, never any machine. Reset the latch (POST /v1/fleet/estop/reset) before " +
+                "writing to or starting production. (This is a supervisory SOFTWARE latch, NOT a substitute " +
+                "for the machine's own safety-rated emergency-stop circuit — SYNAPSE XC-R40 — which is exactly " +
+                "why it does not attempt to stop a machine even though this product can now write to one.)");
+        }
+        return null; // latch clear → let RoleObligation decide
+    }
+}

@@ -2,6 +2,7 @@
  * Shared SPC (Statistical Process Control) utility functions.
  * Used by both spcAdvancedRouter and stationAnalysisRouter.
  */
+import { sixSigmaFromCounts } from "./kpi";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Statistical Utility Functions
@@ -542,56 +543,27 @@ export const SPC_RULE_NAMES: Record<number, string> = {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DPMO & Sigma Level (Six Sigma metrics)
+// Canonical math lives in server/utils/kpi.ts (doc 27 decision #4 / gap A8);
+// this module re-exports/delegates so existing SPC callers keep working.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Inverse standard normal CDF (probit) via Acklam's rational approximation.
- * Returns z such that P(Z <= z) = p.
- */
-export function normInv(p: number): number {
-  if (p <= 0) return -Infinity;
-  if (p >= 1) return Infinity;
-  const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
-  const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01];
-  const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
-  const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00];
-  const pLow = 0.02425, pHigh = 1 - pLow;
-  let q: number, r: number;
-  if (p < pLow) {
-    q = Math.sqrt(-2 * Math.log(p));
-    return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
-      ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
-  }
-  if (p <= pHigh) {
-    q = p - 0.5; r = q * q;
-    return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q /
-      (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
-  }
-  q = Math.sqrt(-2 * Math.log(1 - p));
-  return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
-    ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
-}
+// Inverse standard normal CDF (probit) — moved to kpi.ts, re-exported for back-compat.
+export { normInv } from "./kpi";
 
 /**
- * Six Sigma metrics from a defect proportion.
- * DPMO = defectRate * 1e6.
+ * Six Sigma metrics from defect counts.
+ * DPMO = defects / (units × opportunitiesPerUnit) × 1e6.
  * Sigma level (with 1.5σ shift convention) = Z(1 - defectRate) + 1.5.
+ *
+ * `opportunitiesPerUnit` (gap A8) = number of measurement points evaluated
+ * per inspected unit. Defaults to 1 for back-compat (a single-point
+ * analysis where each sample is exactly one opportunity). Callers that
+ * aggregate at inspection/board level MUST pass the evaluated
+ * measurement-point count so DPMO is a true per-opportunity rate rather
+ * than a defective-PPM. (components × joints modelling deferred to M12.)
  */
-export function computeSixSigmaMetrics(defectCount: number, total: number) {
-  if (total <= 0) return { dpmo: 0, sigmaLevel: 0, yieldPercent: 100, defectRate: 0 };
-  const defectRate = Math.max(0, Math.min(1, defectCount / total));
-  const dpmo = defectRate * 1_000_000;
-  const yieldPercent = (1 - defectRate) * 100;
-  let sigmaLevel: number;
-  if (defectRate <= 0) sigmaLevel = 6; // cap perfect quality at 6σ
-  else if (defectRate >= 1) sigmaLevel = 0;
-  else sigmaLevel = normInv(1 - defectRate) + 1.5;
-  return {
-    dpmo: Math.round(dpmo),
-    sigmaLevel: Math.round(sigmaLevel * 100) / 100,
-    yieldPercent: Math.round(yieldPercent * 100) / 100,
-    defectRate,
-  };
+export function computeSixSigmaMetrics(defectCount: number, units: number, opportunitiesPerUnit = 1) {
+  return sixSigmaFromCounts({ defects: defectCount, units, opportunitiesPerUnit });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

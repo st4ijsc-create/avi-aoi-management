@@ -1,0 +1,27 @@
+{
+  "machineCode": "TRI-1",
+  "boardId": "SN-2026-000133",
+  "program": "TRI_SPI_Top",
+  "lotId": "LOT-80",
+  "verdict": "FAIL",
+  "machineType": "SPI",
+  "inspectedAt": "2026-07-04T08:39:00+07:00",
+  "windows": [
+    {
+      "windowId": "C10.1",
+      "judgement": "FAIL",
+      "volumePercent": 60.0,
+      "heightMicron": 95.0,
+      "areaPercent": 80.0,
+      "offsetX": -2.0,
+      "offsetY": 1.5,
+      "coplanarityMicron": 3.0,
+      "voidPercent": 2.4,
+      "bridge": true,
+      "defect": "INSUFFICIENT_SOLDER",
+      "defectClass": "critical",
+      "image": "SN-2026-000133_C10.1.jpg"
+    },
+    { "windowId": "C10.2", "judgement": "PASS", "volumePercent": 98.9, "heightMicron": 116.0, "areaPercent": 99.0 }
+  ]
+}

@@ -65,7 +65,7 @@ interface EmailTemplate {
 const defaultTemplate: Omit<EmailTemplate, 'id'> = {
   name: 'New Template',
   logoUrl: null,
-  companyName: 'AVI/AOI Management System',
+  companyName: 'SYNAPSE',
   primaryColor: '#2563eb',
   secondaryColor: '#64748b',
   accentColor: '#10b981',
@@ -73,7 +73,7 @@ const defaultTemplate: Omit<EmailTemplate, 'id'> = {
   dangerColor: '#ef4444',
   backgroundColor: '#f8fafc',
   fontFamily: 'Arial, sans-serif',
-  footerText: '© 2024 AVI/AOI Management System. All rights reserved.',
+  footerText: '© 2024 SYNAPSE. All rights reserved.',
   footerLinks: null,
   contactEmail: null,
   contactPhone: null,
@@ -386,6 +386,9 @@ export function EmailTemplateEditor() {
                 </TabsList>
 
                 <TabsContent value="branding" className="space-y-4 mt-4">
+                  <p className="text-xs text-muted-foreground rounded-md border border-border/60 bg-muted/40 px-3 py-2">
+                    {t('settings.email.reportBrandingNote', 'This branding (logo, company name, primary color, footer) is also applied to exported PDF/Excel/HTML reports. Set a template as default (⭐) to use it for reports.')}
+                  </p>
                   <div className="grid gap-4">
                     <div className="space-y-2">
                       <Label>{t('settings.email.templateName')}</Label>

@@ -23,6 +23,7 @@
  */
 import type { PackmlState } from "./packml";
 import type { MachineCapabilities } from "../../../drizzle/schema/hierarchy";
+import { deriveCapabilityFromSpecs, type CompanionSpecId } from "./companionSpecs";
 
 /** The machineType values (mirror drizzle machineTypeEnum). */
 export type EquipmentClass =
@@ -42,7 +43,16 @@ export type EquipmentClass =
   | "ROBOT_TEST"
   | "PACKAGING"
   | "PALLETIZER"
-  | "ROBOT";
+  | "ROBOT"
+  // ── doc 40 W5 (MTX-03) — SMT line machine classes ──
+  | "MOUNTER"
+  | "REFLOW"
+  | "STENCIL_PRINTER"
+  | "WAVE_SOLDER"
+  // ── doc 56 Đ0 (0287) — WELDER + self-developed IoT device classes ──
+  | "WELDER"
+  | "IOT_SENSOR"
+  | "IOT_GATEWAY";
 
 /**
  * How the unified EquipmentAdapter facade reaches the real driver/registry for a
@@ -60,7 +70,11 @@ export type AdapterKind =
   | "robot"
   | "mtconnect"
   | "secsgem"
-  | "vda5050";
+  | "vda5050"
+  // I1 (doc 16 §6 / §15) — multi-vendor equipment integration FRAMEWORKS (flag
+  // EQ_INTEG_ENABLED). Read-only monitoring by default; no real device attached.
+  | "focas" // Fanuc CNC (FOCAS): NC functions / cycle count / alarms.
+  | "euromap"; // Injection molding (Euromap 63/77/83): cycle / shot data / alarms.
 
 /** Risk band of a command — drives HITL gating + RBAC (mirrors the dispatcher). */
 export type RiskLevel = "read" | "low" | "high";
@@ -124,6 +138,15 @@ export interface EquipmentCapability {
   telemetryTags: TelemetryDescriptor[];
   /** The PackML states this class can occupy (subset of the 17). */
   supportedStates: PackmlState[];
+  /**
+   * Doc 56 Đ0 việc 7 (GAP-4) — whether this class participates in OEE/production
+   * analytics. Semantics: `undefined` = true (every production cell counts, the
+   * historical behaviour); declare `false` ONLY for classes that are not
+   * production equipment (IOT_SENSOR / IOT_GATEWAY). This wave adds the FIELD +
+   * profile values only — the consumers (oeeSnapshotScheduler / reportingMart)
+   * read it in Đ5 (no behaviour change here).
+   */
+  countsTowardOee?: boolean;
 }
 
 // ── reusable command building blocks (derived from writeHandlers/machineControl.ts) ──
@@ -240,6 +263,20 @@ const CMD_ROBOT_ABORT: CommandDescriptor = {
   requiredPermission: PERM_CONTROL,
   packmlCommand: "Abort",
 };
+// X1-e (doc 16 §5) — STANDARDIZED e-stop command descriptor. A high-risk command that
+// declares the RBAC permission the dispatcher enforces (under FIELD_V2_ENABLED). This
+// DESCRIBES the e-stop contract only; it opens NO new control path — an actual e-stop
+// still routes through the existing gated dispatcher (and, per doc 16 §8, a real
+// hardware-rated stop is the Safety PLC's job, deferred to S2). The command verb maps
+// to the robot 'abort' job at the dispatcher boundary.
+export const CMD_ESTOP: CommandDescriptor = {
+  name: "e_stop",
+  label: "Emergency stop",
+  paramsSchema: [],
+  riskLevel: "high",
+  requiredPermission: PERM_CONTROL,
+  packmlCommand: "Abort",
+};
 
 // ── reusable telemetry building blocks ──
 const T_YIELD: TelemetryDescriptor = { key: "yield", label: "Yield %", dataType: "float", unit: "%" };
@@ -253,6 +290,43 @@ const T_ESTOP: TelemetryDescriptor = { key: "estop", label: "E-stop", dataType: 
 const T_RESULT: TelemetryDescriptor = { key: "process_result", label: "Process result", dataType: "string" };
 const T_TORQUE: TelemetryDescriptor = { key: "torque", label: "Torque", dataType: "float", unit: "Nm" };
 const T_VOLUME: TelemetryDescriptor = { key: "dispense_volume", label: "Dispense volume", dataType: "float", unit: "mm3" };
+// ── doc 40 W5 (MTX-03) — SMT line telemetry building blocks ──
+// Mounter (chip-shooter / pick-and-place): throughput + placement quality.
+const T_CPH: TelemetryDescriptor = { key: "cph", label: "Components / hour", dataType: "float", unit: "cph" };
+const T_PICKUP_RATE: TelemetryDescriptor = { key: "pickup_rate", label: "Pickup success rate", dataType: "float", unit: "%" };
+const T_PLACEMENT: TelemetryDescriptor = { key: "placement_count", label: "Placements", dataType: "int" };
+// Reflow oven: per-zone temperatures (json array) + belt speed.
+const T_ZONE_TEMPS: TelemetryDescriptor = { key: "zone_temps", label: "Zone temperatures", dataType: "json", unit: "degC" };
+const T_CONVEYOR_SPEED: TelemetryDescriptor = { key: "conveyor_speed", label: "Conveyor speed", dataType: "float", unit: "mm/min" };
+// Stencil printer: squeegee pressure/speed + print cycle time.
+const T_SQUEEGEE_PRESSURE: TelemetryDescriptor = { key: "squeegee_pressure", label: "Squeegee pressure", dataType: "float", unit: "N" };
+const T_SQUEEGEE_SPEED: TelemetryDescriptor = { key: "squeegee_speed", label: "Squeegee speed", dataType: "float", unit: "mm/s" };
+const T_PRINT_CYCLE: TelemetryDescriptor = { key: "print_cycle_time", label: "Print cycle time", dataType: "float", unit: "s" };
+// Wave/selective solder: solder-pot temperature + preheat.
+const T_SOLDER_POT_TEMP: TelemetryDescriptor = { key: "solder_pot_temp", label: "Solder pot temp", dataType: "float", unit: "degC" };
+const T_PREHEAT_TEMP: TelemetryDescriptor = { key: "preheat_temp", label: "Preheat temp", dataType: "float", unit: "degC" };
+// ── doc 56 Đ0 việc 7 — welding cell + self-developed IoT telemetry blocks ──
+// Welder (spot/wave/soldering-iron cell): weld electrical + thermal profile.
+const T_WELD_CURRENT: TelemetryDescriptor = { key: "weld_current", label: "Weld current", dataType: "float", unit: "A" };
+const T_TIP_TEMP: TelemetryDescriptor = { key: "tip_temp", label: "Tip temperature", dataType: "float", unit: "degC" };
+const T_WELD_TIME: TelemetryDescriptor = { key: "weld_time", label: "Weld time", dataType: "float", unit: "s" };
+// IoT sensor (ESP32-class environment sensor): ambient readings + device health.
+const T_TEMPERATURE: TelemetryDescriptor = { key: "temperature", label: "Temperature", dataType: "float", unit: "degC" };
+const T_HUMIDITY: TelemetryDescriptor = { key: "humidity", label: "Humidity", dataType: "float", unit: "%RH" };
+// IoT gateway (relay/aggregator): fan-in health of the devices behind it.
+const T_CONNECTED_DEVICES: TelemetryDescriptor = { key: "connected_devices", label: "Connected devices", dataType: "int" };
+const T_MESSAGE_RATE: TelemetryDescriptor = { key: "message_rate", label: "Message rate", dataType: "float", unit: "msg/min" };
+// X1-a (doc 16 §5) — UDM/UEM extension telemetry for robots/AMRs. Surfaced on the
+// canonical model so the Unified Device Model exposes battery/joint/firmware/zone/
+// heartbeat regardless of vendor. battery_level is populated for AGVs (VDA5050);
+// joint_states/firmware_version are SEAMS (honest null until a driver provides them).
+const T_BATTERY: TelemetryDescriptor = { key: "battery_level", label: "Battery", dataType: "float", unit: "%" };
+const T_JOINTS: TelemetryDescriptor = { key: "joint_states", label: "Joint states", dataType: "json" };
+const T_SAFETY_ZONE: TelemetryDescriptor = { key: "safety_zone_id", label: "Safety zone", dataType: "int" };
+const T_FIRMWARE: TelemetryDescriptor = { key: "firmware_version", label: "Firmware", dataType: "string" };
+const T_HEARTBEAT: TelemetryDescriptor = { key: "last_heartbeat", label: "Last heartbeat", dataType: "string" };
+/** The shared UDM extension telemetry block for robot/AMR classes (X1-a). */
+const UDM_ROBOT_TELEMETRY: TelemetryDescriptor[] = [T_BATTERY, T_JOINTS, T_SAFETY_ZONE, T_FIRMWARE, T_HEARTBEAT];
 
 /** The PackML state set a typical production cell can occupy (the full cube). */
 const FULL_STATES: PackmlState[] = [
@@ -301,6 +375,11 @@ const AUTOMATION_TELEMETRY: TelemetryDescriptor[] = [T_RESULT, T_CYCLE, T_STATE,
 /**
  * DEFAULT capability profile per machineType — sensible, derived from the existing
  * write-tools / drivers. Override per machine via `machines.capabilities` jsonb.
+ *
+ * NOTE (U4b): this table is the SEED for the data-driven capability registry below.
+ * Every entry is registered via `registerCapabilityProfile` at module load, so
+ * resolution reads the registry — this is a behaviour-preserving refactor. A new
+ * equipment class registers its profile instead of editing this table (register-and-go).
  */
 const DEFAULT_PROFILES: Record<EquipmentClass, EquipmentCapability> = {
   // ── Inspection cells (vision ingest + recipe select) ──
@@ -324,9 +403,32 @@ const DEFAULT_PROFILES: Record<EquipmentClass, EquipmentCapability> = {
   PACKAGING: { equipmentClass: "PACKAGING", adapterKind: "ot-opcua", supportedCommands: AUTOMATION_COMMANDS, telemetryTags: AUTOMATION_TELEMETRY, supportedStates: FULL_STATES },
 
   // ── Robots / AGV (RobotDriver job verbs; ROBOT_TEST is a robotic test cell) ──
-  ROBOT: { equipmentClass: "ROBOT", adapterKind: "robot", supportedCommands: [CMD_START, CMD_PAUSE, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT], telemetryTags: [T_MODE, T_POSE, T_ESTOP, T_STATE], supportedStates: FULL_STATES },
-  ROBOT_TEST: { equipmentClass: "ROBOT_TEST", adapterKind: "robot", supportedCommands: [CMD_START, CMD_STOP, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT], telemetryTags: [T_MODE, T_POSE, T_RESULT, T_STATE], supportedStates: FULL_STATES },
-  PALLETIZER: { equipmentClass: "PALLETIZER", adapterKind: "robot", supportedCommands: [CMD_START, CMD_PAUSE, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT], telemetryTags: [T_MODE, T_POSE, T_ESTOP, T_STATE], supportedStates: FULL_STATES },
+  // X1-a — robot classes carry the UDM extension telemetry (battery/joint/firmware/zone/heartbeat).
+  ROBOT: { equipmentClass: "ROBOT", adapterKind: "robot", supportedCommands: [CMD_START, CMD_PAUSE, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT, CMD_ESTOP], telemetryTags: [T_MODE, T_POSE, T_ESTOP, T_STATE, ...UDM_ROBOT_TELEMETRY], supportedStates: FULL_STATES },
+  ROBOT_TEST: { equipmentClass: "ROBOT_TEST", adapterKind: "robot", supportedCommands: [CMD_START, CMD_STOP, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT, CMD_ESTOP], telemetryTags: [T_MODE, T_POSE, T_RESULT, T_STATE, ...UDM_ROBOT_TELEMETRY], supportedStates: FULL_STATES },
+  PALLETIZER: { equipmentClass: "PALLETIZER", adapterKind: "robot", supportedCommands: [CMD_START, CMD_PAUSE, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT, CMD_ESTOP], telemetryTags: [T_MODE, T_POSE, T_ESTOP, T_STATE, ...UDM_ROBOT_TELEMETRY], supportedStates: FULL_STATES },
+
+  // ── doc 40 W5 (MTX-03): SMT line cells (PLC tag control via OT; recipe-driven) ──
+  // Mounter (chip-shooter): start/stop/pause/reset/select_recipe/ack; throughput + pickup quality.
+  MOUNTER: { equipmentClass: "MOUNTER", adapterKind: "ot-opcua", supportedCommands: [...AUTOMATION_COMMANDS, CMD_SELECT_RECIPE], telemetryTags: [T_STATE, T_MODE, T_CPH, T_PICKUP_RATE, T_PLACEMENT, T_NG, T_CYCLE], supportedStates: FULL_STATES },
+  // Reflow oven: recipe (thermal profile) select; zone temps + belt speed telemetry.
+  REFLOW: { equipmentClass: "REFLOW", adapterKind: "ot-opcua", supportedCommands: [CMD_START, CMD_STOP, CMD_SELECT_RECIPE, CMD_SET_PARAM, CMD_ACK_ALARM], telemetryTags: [T_STATE, T_MODE, T_ZONE_TEMPS, T_CONVEYOR_SPEED], supportedStates: FULL_STATES },
+  // Solder-paste stencil printer: recipe select; squeegee pressure/speed + cycle time.
+  STENCIL_PRINTER: { equipmentClass: "STENCIL_PRINTER", adapterKind: "ot-opcua", supportedCommands: [...AUTOMATION_COMMANDS, CMD_SELECT_RECIPE], telemetryTags: [T_STATE, T_MODE, T_SQUEEGEE_PRESSURE, T_SQUEEGEE_SPEED, T_PRINT_CYCLE, T_CYCLE], supportedStates: FULL_STATES },
+  // Wave / selective solder: solder-pot + preheat temps + belt speed.
+  WAVE_SOLDER: { equipmentClass: "WAVE_SOLDER", adapterKind: "ot-opcua", supportedCommands: [CMD_START, CMD_STOP, CMD_SELECT_RECIPE, CMD_SET_PARAM, CMD_ACK_ALARM], telemetryTags: [T_STATE, T_MODE, T_SOLDER_POT_TEMP, T_PREHEAT_TEMP, T_CONVEYOR_SPEED], supportedStates: FULL_STATES },
+
+  // ── doc 56 Đ0 việc 7: WELDER + self-developed IoT device classes (0287) ──
+  // Welding cell: recipe-driven process automation (weld profile select via PLC).
+  WELDER: { equipmentClass: "WELDER", adapterKind: "ot-opcua", supportedCommands: [...AUTOMATION_COMMANDS, CMD_SELECT_RECIPE], telemetryTags: [T_STATE, T_MODE, T_WELD_CURRENT, T_TIP_TEMP, T_WELD_TIME, T_CYCLE], supportedStates: FULL_STATES },
+  // IoT sensor: TELEMETRY-ONLY — no recipe, no control verbs (read_tag is the only,
+  // read-risk, command so discovery/UI keep a non-empty contract). `state` stays in
+  // the tag set: the house conformance standard (equipment.state_telemetry) requires
+  // EVERY Equipment to surface it. Not production equipment → countsTowardOee=false
+  // (GAP-4; OEE consumers wire in Đ5).
+  IOT_SENSOR: { equipmentClass: "IOT_SENSOR", adapterKind: "ot-stub", supportedCommands: [CMD_READ_TAG], telemetryTags: [T_STATE, T_TEMPERATURE, T_HUMIDITY, T_BATTERY, T_FIRMWARE, T_HEARTBEAT], supportedStates: SIMPLE_STATES, countsTowardOee: false },
+  // IoT gateway: telemetry + relay health for the devices behind it (no control).
+  IOT_GATEWAY: { equipmentClass: "IOT_GATEWAY", adapterKind: "ot-stub", supportedCommands: [CMD_READ_TAG], telemetryTags: [T_STATE, T_CONNECTED_DEVICES, T_MESSAGE_RATE, T_FIRMWARE, T_HEARTBEAT], supportedStates: SIMPLE_STATES, countsTowardOee: false },
 };
 
 /** A minimal, read-only fallback profile for an unknown/unmodelled machineType. */
@@ -340,15 +442,51 @@ function fallbackProfile(equipmentClass: string): EquipmentCapability {
   };
 }
 
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * U4b (doc 21 §6 / G-8) — DATA-DRIVEN capability-profile registry.
+ *
+ * `DEFAULT_PROFILES` is the SEED; every class is registered through
+ * `registerCapabilityProfile` at module load, so resolution reads the registry and
+ * is IDENTICAL to the old table lookup (behaviour-preserving). A new equipment class
+ * registers its profile instead of editing the table (register-and-go). The
+ * `EquipmentClass` union is retained for compile-time exhaustiveness.
+ * ════════════════════════════════════════════════════════════════════════════
+ */
+const profileRegistry = new Map<string, EquipmentCapability>();
+
+/**
+ * Register (or override) the DEFAULT capability profile for an equipment class.
+ * Register-and-go: a new class needs only this call — no edit to `DEFAULT_PROFILES`.
+ */
+export function registerCapabilityProfile(equipmentClass: EquipmentClass | string, profile: EquipmentCapability): void {
+  profileRegistry.set(equipmentClass, profile);
+}
+
+// ── Seed the registry with every existing class (parity with the old table). ──
+for (const cls of Object.keys(DEFAULT_PROFILES) as EquipmentClass[]) {
+  registerCapabilityProfile(cls, DEFAULT_PROFILES[cls]);
+}
+
+/** The registered default profile for a class, or undefined if none. */
+function lookupProfile(equipmentClass: string): EquipmentCapability | undefined {
+  return profileRegistry.get(equipmentClass);
+}
+
 /** The default profile for a machineType (deep-cloned so callers can't mutate the table). */
 export function getDefaultCapability(machineType: string): EquipmentCapability {
-  const base = DEFAULT_PROFILES[machineType as EquipmentClass];
+  const base = lookupProfile(machineType);
   return cloneCapability(base ?? fallbackProfile(machineType));
 }
 
 /** All machineType → default profiles (read-only view, for discovery/UI). */
 export function listDefaultProfiles(): EquipmentCapability[] {
-  return (Object.keys(DEFAULT_PROFILES) as EquipmentClass[]).map((k) => cloneCapability(DEFAULT_PROFILES[k]));
+  return [...profileRegistry.values()].map((c) => cloneCapability(c));
+}
+
+/** Every registered equipment class (register-and-go view). */
+export function listCapabilityClasses(): string[] {
+  return [...profileRegistry.keys()];
 }
 
 function cloneCapability(c: EquipmentCapability): EquipmentCapability {
@@ -361,6 +499,8 @@ function cloneCapability(c: EquipmentCapability): EquipmentCapability {
     })),
     telemetryTags: c.telemetryTags.map((t) => ({ ...t })),
     supportedStates: [...c.supportedStates],
+    // Doc 56 Đ0 — preserve the OEE-participation flag (absent = counts, see interface).
+    ...(c.countsTowardOee !== undefined ? { countsTowardOee: c.countsTowardOee } : {}),
   };
 }
 
@@ -379,6 +519,13 @@ export interface CapabilityOverride extends MachineCapabilities {
   extraTelemetry?: TelemetryDescriptor[];
   /** Command names to REMOVE from the default set. */
   disabledCommands?: string[];
+  /**
+   * C5 (doc 24 Wave-4) — OPC-UA COMPANION SPECS this machine's server implements
+   * (e.g. ["Machinery","Robotics"]). Their spec-derived telemetry channels + PackML
+   * states are UNIONED into the capability (additive; unknown ids ignored). This is a
+   * metadata/type derivation — see companionSpecs.ts (no live OPC-UA server needed).
+   */
+  companionSpecs?: Array<CompanionSpecId | string>;
 }
 
 /**
@@ -425,6 +572,18 @@ export function mergeCapability(
   if (Array.isArray(override.extraTelemetry)) {
     for (const t of override.extraTelemetry) if (t && typeof t.key === "string") addTelemetry(t);
   }
+
+  // C5 — companion-spec sourcing: a machine declaring OPC-UA companion spec(s) gets the
+  // spec-derived telemetry channels + PackML states UNIONED in (additive, backward-compat;
+  // unknown spec ids are ignored). Metadata derivation — no live OPC-UA server needed.
+  if (Array.isArray(override.companionSpecs) && override.companionSpecs.length) {
+    const derived = deriveCapabilityFromSpecs(override.companionSpecs);
+    for (const t of derived.telemetry) addTelemetry(t);
+    for (const s of derived.states) {
+      if (!merged.supportedStates.includes(s)) merged.supportedStates.push(s);
+    }
+  }
+
   if (Array.isArray(override.disabledCommands) && override.disabledCommands.length) {
     const disabled = new Set(override.disabledCommands);
     merged.supportedCommands = merged.supportedCommands.filter((c) => !disabled.has(c.name));

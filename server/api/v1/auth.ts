@@ -27,7 +27,7 @@ import { ALL_SCOPES, scopeSatisfied, type ApiScope } from "./scopes";
 
 /** The authenticated principal attached to the request after auth succeeds. */
 export interface ApiPrincipal {
-  kind: "master" | "api-key" | "machine";
+  kind: "master" | "api-key" | "machine" | "oauth";
   /** Display name / id of the principal (for audit/logging). */
   name: string;
   /** Granted scopes (master & machine principals get a synthetic set). */
@@ -68,6 +68,21 @@ function extractKey(req: Request): string | null {
  * Tries: master key → api_keys table → per-machine apiKey. Never throws.
  */
 export async function resolvePrincipal(key: string): Promise<ApiPrincipal | null> {
+  // 0) OAuth2 client-credentials token (K0+-a) — ADDITIVE, flag-gated.
+  //    Only attempted when ERP_OAUTH_ENABLED is on AND the credential looks like a
+  //    JWS (three dot-separated segments). verifyToken returns null for anything
+  //    that is not a valid/current ERP token, so a plain API key falls straight
+  //    through to the existing paths below — existing auth is NEVER weakened.
+  try {
+    const { erpOauthEnabled, verifyToken, tokenToPrincipal } = await import("./erpOauth");
+    if (erpOauthEnabled() && key.split(".").length === 3) {
+      const verified = await verifyToken(key);
+      if (verified) return tokenToPrincipal(verified);
+    }
+  } catch {
+    /* fall through — never let OAuth resolution break the existing auth chain */
+  }
+
   // 1) Master super-key.
   try {
     if (isValidMasterKey(key)) {

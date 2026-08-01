@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import {
   Card,
@@ -68,11 +69,10 @@ import {
   RefreshCw,
   Server,
   Cpu,
-  Copy,
-  Eye,
-  EyeOff,
   AlertTriangle,
   HardDrive,
+  KeyRound,
+  Ticket,
   Wifi,
   WifiOff,
   Search,
@@ -82,9 +82,17 @@ import {
   Pencil,
   Undo2,
   Rocket,
+  Recycle,
+  QrCode,
+  Printer,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { vi, zhCN, enUS } from "date-fns/locale";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
+import CredentialShowOnceDialog, {
+  type CredentialShowOncePayload,
+} from "@/components/machineRegistration/CredentialShowOnceDialog";
 
 type PendingMachine = {
   id: number;
@@ -109,21 +117,75 @@ type AllMachine = {
   serialNumber?: string | null;
   firmwareVersion?: string | null;
   registrationStatus?: string | null;
+  lifecycleStatus?: string | null;
   syncMode?: string | null;
   model?: string | null;
   manufacturer?: string | null;
-  apiKey?: string | null;
+  /** Doc 56 Đ0 (REG-2) — listPaged no longer carries the plaintext apiKey;
+   *  the server only says WHETHER a key exists. */
+  hasApiKey?: boolean;
   createdAt?: string | Date | null;
   stationId: number;
 };
+
+// Doc 27 Đợt 3 / W3-B (M2) — client copy of the legal transition map. The
+// SERVER is the source of truth (drizzle/schema/hierarchy.ts,
+// MACHINE_LIFECYCLE_TRANSITIONS); this mirror only pre-filters the dialog's
+// options — an out-of-date choice still fails server-side with CONFLICT.
+const LIFECYCLE_TRANSITIONS: Record<string, string[]> = {
+  commissioning: ["active"],
+  active: ["maintenance", "decommissioned"],
+  maintenance: ["active", "decommissioned"],
+  decommissioned: ["retired", "active"],
+  retired: [],
+};
+const LIFECYCLE_REASON_REQUIRED = ["decommissioned", "retired"];
 
 export function MachineRegistrationContent() {
   const { t, i18n } = useTranslation();
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("pending");
+  // Doc 56 Đ0 — credential actions (rotate key / claim token) are admin-only
+  // server-side (adminProcedure); pre-gate the buttons client-side too.
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+
+  // Doc 56 Đ2b việc 7 (MGMTUI-8) — mirror the server `machineRegistrationGate`:
+  // approving needs machine_registration/canEdit, viewing pending needs /canView.
+  // `hasPermission` returns true for admin, so admin keeps full access unchanged; a
+  // non-admin without the grant gets disabled approve controls (+reason) and a
+  // permission notice on the Pending tab. reject stays admin-only server-side.
+  const { hasPermission } = usePermissions();
+  const canApproveMachines = hasPermission("machine_registration", "canEdit");
+  const canViewPending = hasPermission("machine_registration", "canView");
+  // Reason shown on a blocked approve control (undefined = allowed → no tooltip/wrapper).
+  const approveReason = canApproveMachines
+    ? undefined
+    : t('machineRegistration.rbac.noApprovePermission', 'Bạn không có quyền duyệt máy (cần quyền machine_registration).');
+  // A disabled Button is pointer-events-none, so hover-title must live on a wrapper.
+  // Admin (allowed) gets the node untouched → DOM unchanged.
+  const gateApprove = (node: ReactNode): ReactNode =>
+    canApproveMachines ? node : (
+      <span className="inline-flex cursor-not-allowed" title={approveReason}>{node}</span>
+    );
 
   const dateFnsLocale = i18n.language === 'vi' ? vi : i18n.language === 'zh' ? zhCN : enUS;
+
+  // ── F9 (doc 27 Đợt 5 / W5-E) — server-side search + pagination ──────────
+  const PAGE_SIZE = 50;
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+  // Search / tab changes restart at page 1.
+  useEffect(() => { setPage(1); }, [debouncedSearch, activeTab]);
+
+  // Bulk approve (pending tab) — multi-select re-using machine.approve per id.
+  const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
+  const [isBulkApproving, setIsBulkApproving] = useState(false);
 
   // Approve dialog
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
@@ -148,30 +210,166 @@ export function MachineRegistrationContent() {
   const [editName, setEditName] = useState("");
   const [editStationId, setEditStationId] = useState<number | undefined>();
 
-  // API Key visibility
-  const [visibleApiKeys, setVisibleApiKeys] = useState<Set<number>>(new Set());
+  // Lifecycle dialog (doc 27 Đợt 3 / W3-B — M2)
+  const [lifecycleDialogOpen, setLifecycleDialogOpen] = useState(false);
+  const [lifecycleMachine, setLifecycleMachine] = useState<AllMachine | null>(null);
+  const [lifecycleTarget, setLifecycleTarget] = useState<string>("");
+  const [lifecycleReason, setLifecycleReason] = useState("");
+
+  // ── Doc 56 Đ0 (nhóm B) — show-once credential dialog (REG-2/REG-3) ───────
+  // Holds the ONE-TIME plaintext (mct_ claim token from approve/issueClaimToken,
+  // or a rotated mach_ API key) ONLY while the dialog is open. Closing the
+  // dialog nulls it — the secret is never cached, persisted or re-shown.
+  const [credential, setCredential] = useState<CredentialShowOncePayload | null>(null);
+
+  // Rotate-API-key confirm dialog (rotation kills the old key immediately).
+  const [rotateKeyMachine, setRotateKeyMachine] = useState<AllMachine | null>(null);
+
+  // ── QR asset-tag (doc 40 Wave 4, persona operator) ────────────────────────
+  // Generate scan-to-open QR labels encoding the machine profile URL
+  // (`/machine/:id`). A technician sticks the printed tag on the machine and
+  // scans it to open the full cockpit. Uses the already-installed `qrcode` dep
+  // (dynamic import → out of the main bundle).
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrItems, setQrItems] = useState<
+    Array<{ id: number; code: string; name: string; url: string; dataUrl: string }>
+  >([]);
+
+  const openQrDialog = async (targets: Array<{ id: number; code: string; name: string }>) => {
+    if (targets.length === 0) {
+      toast.info(t('machineRegistration.qr.noMachines', 'Không có máy nào để tạo QR'));
+      return;
+    }
+    setQrItems([]);
+    setQrDialogOpen(true);
+    setQrLoading(true);
+    try {
+      const QRCode = await import('qrcode');
+      const origin = window.location.origin;
+      const items = await Promise.all(
+        targets.map(async (m) => {
+          const url = `${origin}/machine/${m.id}`;
+          const dataUrl = await QRCode.toDataURL(url, { width: 240, margin: 1 });
+          return { id: m.id, code: m.code, name: m.name, url, dataUrl };
+        }),
+      );
+      setQrItems(items);
+    } catch (err) {
+      console.error('QR generation failed', err);
+      toast.error(t('machineRegistration.qr.genError', 'Không tạo được mã QR'));
+      setQrDialogOpen(false);
+    } finally {
+      setQrLoading(false);
+    }
+  };
 
   // Queries
-  const pendingQuery = trpc.machine.listPending.useQuery();
-  const allMachinesQuery = trpc.machine.list.useQuery();
+  // Đ2b việc 7 — gate the listPending fetch on canView (admin=true) so a non-permitted
+  // non-admin doesn't fire a query the server would 403 (matches the server gate).
+  const pendingQuery = trpc.machine.listPending.useQuery(undefined, { enabled: canViewPending });
+  // F9: the table tabs read a PAGED server-side query (search + status filter +
+  // limit/offset) instead of filtering the full machine.list client-side.
+  const listStatusForTab =
+    activeTab === "approved" ? ("approved" as const)
+    : activeTab === "rejected" ? ("rejected" as const)
+    : undefined;
+  const pagedQuery = trpc.machine.listPaged.useQuery({
+    search: debouncedSearch || undefined,
+    registrationStatus: listStatusForTab,
+    limit: PAGE_SIZE,
+    offset: (page - 1) * PAGE_SIZE,
+  });
+  const summaryQuery = trpc.machine.registrationSummary.useQuery();
   const stationsQuery = trpc.station.list.useQuery();
   const utils = trpc.useUtils();
+
+  const invalidateMachines = () => {
+    utils.machine.listPending.invalidate();
+    utils.machine.list.invalidate();
+    utils.machine.listPaged.invalidate();
+    utils.machine.registrationSummary.invalidate();
+  };
 
   // Mutations
   const approveMutation = trpc.machine.approve.useMutation({
     onSuccess: (data) => {
-      toast.success(t('machineRegistration.toast.approveSuccess'), {
-        description: t('machineRegistration.toast.approveSuccessDesc', { apiKey: data.apiKey?.substring(0, 20) }),
-      });
+      // Label computed BEFORE clearing the dialog state.
+      const approvedLabel = [
+        approveCode || selectedMachine?.code,
+        approveName || selectedMachine?.name,
+      ].filter(Boolean).join(" — ");
+      toast.success(t('machineRegistration.toast.approveSuccess'));
       setApproveDialogOpen(false);
       setSelectedMachine(null);
-      utils.machine.listPending.invalidate();
-      utils.machine.list.invalidate();
+      invalidateMachines();
+      // Doc 56 Đ0 việc 4 (REG-3): surface the one-time mct_ claim token minted
+      // at approval — previously discarded. No plaintext apiKey is shown here.
+      if (data.claimToken) {
+        setCredential({
+          kind: "claimToken",
+          secret: data.claimToken,
+          machineLabel: approvedLabel,
+          expiresAt: data.claimExpiresAt ?? null,
+        });
+      } else {
+        // Server mints best-effort — on failure point the admin at reissue.
+        toast.warning(t('machineRegistration.credential.toast.claimMintFailedAfterApprove'));
+      }
     },
     onError: (err) => {
       toast.error(t('machineRegistration.toast.approveError'), { description: err.message });
     },
   });
+
+  // ── Doc 56 Đ0 việc 4 — (re)issue a one-time claim token (admin-only). The
+  // machine label is captured per-call so the show-once dialog is labelled
+  // correctly even after list state moves on.
+  const issueClaimTokenMutation = trpc.machine.issueClaimToken.useMutation();
+  const handleReissueClaimToken = (machine: AllMachine) => {
+    issueClaimTokenMutation.mutate(
+      { id: machine.id },
+      {
+        onSuccess: (data) => {
+          toast.success(t('machineRegistration.credential.toast.claimIssued'));
+          setCredential({
+            kind: "claimToken",
+            secret: data.claimToken,
+            machineLabel: `${machine.code} — ${machine.name}`,
+            expiresAt: data.expiresAt ?? null,
+          });
+        },
+        onError: (err) => {
+          toast.error(t('machineRegistration.credential.toast.claimIssueError'), { description: err.message });
+        },
+      },
+    );
+  };
+
+  // ── Doc 56 Đ0 việc 1-UI — rotate the machine API key (admin-only); the new
+  // key is revealed exactly once through the same show-once dialog.
+  const rotateKeyMutation = trpc.machine.regenerateApiKey.useMutation();
+  const handleConfirmRotateKey = () => {
+    const machine = rotateKeyMachine;
+    if (!machine) return;
+    rotateKeyMutation.mutate(
+      { id: machine.id },
+      {
+        onSuccess: (data) => {
+          toast.success(t('machineRegistration.credential.toast.rotateSuccess'));
+          invalidateMachines();
+          setCredential({
+            kind: "apiKey",
+            secret: data.apiKey,
+            machineLabel: `${machine.code} — ${machine.name}`,
+          });
+        },
+        onError: (err) => {
+          toast.error(t('machineRegistration.credential.toast.rotateError'), { description: err.message });
+        },
+      },
+    );
+  };
 
   const rejectMutation = trpc.machine.reject.useMutation({
     onSuccess: () => {
@@ -179,8 +377,7 @@ export function MachineRegistrationContent() {
       setRejectDialogOpen(false);
       setRejectMachineState(null);
       setRejectReason("");
-      utils.machine.listPending.invalidate();
-      utils.machine.list.invalidate();
+      invalidateMachines();
     },
     onError: (err) => {
       toast.error(t('machineRegistration.toast.rejectError'), { description: err.message });
@@ -193,11 +390,27 @@ export function MachineRegistrationContent() {
       toast.success(t('machineRegistration.toast.revokeSuccess'));
       setRevokeDialogOpen(false);
       setRevokeMachine(null);
-      utils.machine.listPending.invalidate();
-      utils.machine.list.invalidate();
+      invalidateMachines();
     },
     onError: (err) => {
       toast.error(t('machineRegistration.toast.revokeError'), { description: err.message });
+    },
+  });
+
+  // Set lifecycle status (M2). CONFLICT (illegal transition / duplicate code)
+  // surfaces err.message from the server as the toast description.
+  const setLifecycleMutation = trpc.machine.setLifecycleStatus.useMutation({
+    onSuccess: (data) => {
+      toast.success(t('machineRegistration.lifecycle.toast.success', {
+        status: t(`machineRegistration.lifecycle.status.${data.lifecycleStatus}`),
+      }));
+      setLifecycleDialogOpen(false);
+      setLifecycleMachine(null);
+      setLifecycleReason("");
+      invalidateMachines();
+    },
+    onError: (err) => {
+      toast.error(t('machineRegistration.lifecycle.toast.error'), { description: err.message });
     },
   });
 
@@ -207,8 +420,7 @@ export function MachineRegistrationContent() {
       toast.success(t('machineRegistration.toast.editSuccess'));
       setEditDialogOpen(false);
       setEditMachine(null);
-      utils.machine.listPending.invalidate();
-      utils.machine.list.invalidate();
+      invalidateMachines();
     },
     onError: (err) => {
       toast.error(t('machineRegistration.toast.editError'), { description: err.message });
@@ -216,25 +428,11 @@ export function MachineRegistrationContent() {
   });
 
   const pendingMachines = (pendingQuery.data ?? []) as PendingMachine[];
-  const allMachines = (allMachinesQuery.data ?? []) as AllMachine[];
-
-  // Filtered machines
-  const filteredAll = allMachines.filter((m) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      m.code.toLowerCase().includes(q) ||
-      m.name.toLowerCase().includes(q) ||
-      (m.serialNumber?.toLowerCase().includes(q) ?? false) ||
-      m.machineType.toLowerCase().includes(q)
-    );
-  });
-
-  const approvedMachines = filteredAll.filter((m) => m.registrationStatus === "approved");
-  const rejectedMachines = filteredAll.filter((m) => m.registrationStatus === "rejected");
-  const allRegistered = filteredAll.filter((m) =>
-    ["pending", "approved", "rejected"].includes(m.registrationStatus ?? "")
-  );
+  // F9 — page of machines for the current tab (search/status applied server-side).
+  const pagedMachines = (pagedQuery.data?.items ?? []) as AllMachine[];
+  const pagedTotal = pagedQuery.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(pagedTotal / PAGE_SIZE));
+  const registrationSummary = summaryQuery.data ?? { pending: 0, approved: 0, rejected: 0, total: 0 };
 
   // Handlers
   const handleOpenApprove = (machine: PendingMachine) => {
@@ -274,6 +472,42 @@ export function MachineRegistrationContent() {
     setRevokeDialogOpen(true);
   };
 
+  // ── F9 — bulk approve: one machine.approve call per selected id (no code /
+  // name / station overrides — the existing values are kept; individual
+  // failures are counted and reported, not silently swallowed). ─────────────
+  const bulkApproveMutation = trpc.machine.approve.useMutation();
+  const toggleBulkSelected = (id: number) => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const handleBulkApprove = async () => {
+    const ids = pendingMachines.filter((m) => bulkSelected.has(m.id)).map((m) => m.id);
+    if (ids.length === 0) return;
+    setIsBulkApproving(true);
+    let ok = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await bulkApproveMutation.mutateAsync({ id });
+        ok++;
+      } catch {
+        failed++;
+      }
+    }
+    setIsBulkApproving(false);
+    setBulkSelected(new Set());
+    invalidateMachines();
+    if (failed === 0) {
+      toast.success(t('machineRegistration.bulk.approveDone', { count: ok }));
+    } else {
+      toast.warning(t('machineRegistration.bulk.approvePartial', { ok, fail: failed }));
+    }
+  };
+
   const handleRevoke = () => {
     if (!revokeMachine) return;
     revokeApprovalMutation.mutate({
@@ -281,6 +515,27 @@ export function MachineRegistrationContent() {
       registrationStatus: "pending",
     });
   };
+
+  const handleOpenLifecycle = (machine: AllMachine) => {
+    setLifecycleMachine(machine);
+    const allowed = LIFECYCLE_TRANSITIONS[machine.lifecycleStatus ?? "active"] ?? [];
+    setLifecycleTarget(allowed[0] ?? "");
+    setLifecycleReason("");
+    setLifecycleDialogOpen(true);
+  };
+
+  const handleLifecycleSave = () => {
+    if (!lifecycleMachine || !lifecycleTarget) return;
+    setLifecycleMutation.mutate({
+      id: lifecycleMachine.id,
+      status: lifecycleTarget as "commissioning" | "active" | "maintenance" | "decommissioned" | "retired",
+      reason: lifecycleReason.trim() || undefined,
+    });
+  };
+
+  const lifecycleAllowed = LIFECYCLE_TRANSITIONS[lifecycleMachine?.lifecycleStatus ?? "active"] ?? [];
+  const lifecycleReasonMissing =
+    LIFECYCLE_REASON_REQUIRED.includes(lifecycleTarget) && lifecycleReason.trim().length === 0;
 
   const handleOpenEdit = (machine: AllMachine) => {
     setEditMachine(machine);
@@ -299,45 +554,60 @@ export function MachineRegistrationContent() {
     });
   };
 
-  const toggleApiKeyVisibility = (machineId: number) => {
-    setVisibleApiKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(machineId)) next.delete(machineId);
-      else next.add(machineId);
-      return next;
-    });
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success(t('machineRegistration.actions.copyApiKey'));
-  };
-
   const getStatusBadge = (status: string | null | undefined) => {
     switch (status) {
       case "approved":
         return (
-          <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+          <Badge variant="outline" className="border-success/30 bg-success/15 text-success">
             <CheckCircle2 className="h-3 w-3 mr-1" /> {t('machineRegistration.status.approved')}
           </Badge>
         );
       case "pending":
         return (
-          <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+          <Badge variant="outline" className="border-warning/30 bg-warning/15 text-warning">
             <Clock className="h-3 w-3 mr-1" /> {t('machineRegistration.status.pending')}
           </Badge>
         );
       case "rejected":
         return (
-          <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+          <Badge variant="outline" className="border-destructive/30 bg-destructive/15 text-destructive">
             <XCircle className="h-3 w-3 mr-1" /> {t('machineRegistration.status.rejected')}
           </Badge>
         );
       default:
         return (
-          <Badge variant="outline">
+          <Badge variant="outline" className="text-muted-foreground">
             <AlertTriangle className="h-3 w-3 mr-1" /> {t('machineRegistration.status.unregistered')}
           </Badge>
+        );
+    }
+  };
+
+  // M2 — asset lifecycle badge (semantic tones, mirrors getStatusBadge style)
+  const getLifecycleBadge = (status: string | null | undefined) => {
+    const s = status ?? "active";
+    const label = t(`machineRegistration.lifecycle.status.${s}`, { defaultValue: s });
+    switch (s) {
+      case "active":
+        return (
+          <Badge variant="outline" className="border-success/30 bg-success/15 text-success">{label}</Badge>
+        );
+      case "commissioning":
+        return (
+          <Badge variant="outline" className="border-info/30 bg-info/15 text-info">{label}</Badge>
+        );
+      case "maintenance":
+        return (
+          <Badge variant="outline" className="border-warning/30 bg-warning/15 text-warning">{label}</Badge>
+        );
+      case "retired":
+        return (
+          <Badge variant="outline" className="border-destructive/30 bg-destructive/15 text-destructive">{label}</Badge>
+        );
+      case "decommissioned":
+      default:
+        return (
+          <Badge variant="outline" className="text-muted-foreground">{label}</Badge>
         );
     }
   };
@@ -345,14 +615,14 @@ export function MachineRegistrationContent() {
   const getSyncModeBadge = (mode: string | null | undefined) => {
     if (mode === "online") {
       return (
-        <Badge variant="outline" className="text-green-600 border-green-300">
-          <Wifi className="h-3 w-3 mr-1" /> Online
+        <Badge variant="outline" className="border-success/30 text-success">
+          <Wifi className="h-3 w-3 mr-1" /> {t('machineRegistration.sync.online')}
         </Badge>
       );
     }
     return (
-      <Badge variant="outline" className="text-gray-500 border-gray-300">
-        <WifiOff className="h-3 w-3 mr-1" /> Offline
+      <Badge variant="outline" className="text-muted-foreground">
+        <WifiOff className="h-3 w-3 mr-1" /> {t('machineRegistration.sync.offline')}
       </Badge>
     );
   };
@@ -381,92 +651,69 @@ export function MachineRegistrationContent() {
 
   return (
     <>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <HardDrive className="h-6 w-6" />
-              {t('machineRegistration.pageTitle')}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('machineRegistration.pageSubtitle')}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              onClick={() => navigate("/machine-onboarding")}
-            >
-              <Rocket className="h-4 w-4 mr-1" /> {t('machineRegistration.openWizard')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                pendingQuery.refetch();
-                allMachinesQuery.refetch();
-              }}
-            >
-              <RefreshCw className="h-4 w-4 mr-1" /> {t('machineRegistration.refresh')}
-            </Button>
-          </div>
-        </div>
+      <PageContainer>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<HardDrive className="h-6 w-6" />}
+          title={t('machineRegistration.pageTitle')}
+          description={t('machineRegistration.pageSubtitle')}
+          actions={
+            <>
+              <Button
+                size="sm"
+                onClick={() => navigate("/machine-onboarding")}
+              >
+                <Rocket className="h-4 w-4 mr-1" /> {t('machineRegistration.openWizard')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pagedMachines.length === 0}
+                onClick={() => openQrDialog(pagedMachines)}
+              >
+                <QrCode className="h-4 w-4 mr-1" /> {t('machineRegistration.qr.bulkButton', 'In QR hàng loạt')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  pendingQuery.refetch();
+                  pagedQuery.refetch();
+                  summaryQuery.refetch();
+                }}
+              >
+                <RefreshCw className="h-4 w-4 mr-1" /> {t('machineRegistration.refresh')}
+              </Button>
+            </>
+          }
+        />
 
         {/* Summary cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-yellow-100 dark:bg-yellow-900/30">
-                  <Clock className="h-5 w-5 text-yellow-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{pendingMachines.length}</p>
-                  <p className="text-sm text-muted-foreground">{t('machineRegistration.summary.pending')}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
-                  <CheckCircle2 className="h-5 w-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{approvedMachines.length}</p>
-                  <p className="text-sm text-muted-foreground">{t('machineRegistration.summary.approved')}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
-                  <XCircle className="h-5 w-5 text-red-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{rejectedMachines.length}</p>
-                  <p className="text-sm text-muted-foreground">{t('machineRegistration.summary.rejected')}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
-                  <Server className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{allMachines.length}</p>
-                  <p className="text-sm text-muted-foreground">{t('machineRegistration.summary.total')}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<Clock className="h-5 w-5" />}
+            label={t('machineRegistration.summary.pending')}
+            value={pendingMachines.length}
+            tone={pendingMachines.length > 0 ? "warning" : "default"}
+          />
+          <MetricCard
+            icon={<CheckCircle2 className="h-5 w-5" />}
+            label={t('machineRegistration.summary.approved')}
+            value={registrationSummary.approved}
+            tone="success"
+          />
+          <MetricCard
+            icon={<XCircle className="h-5 w-5" />}
+            label={t('machineRegistration.summary.rejected')}
+            value={registrationSummary.rejected}
+            tone={registrationSummary.rejected > 0 ? "error" : "default"}
+          />
+          <MetricCard
+            icon={<Server className="h-5 w-5" />}
+            label={t('machineRegistration.summary.total')}
+            value={registrationSummary.total}
+            tone="info"
+          />
         </div>
 
         {/* Main content */}
@@ -497,10 +744,21 @@ export function MachineRegistrationContent() {
 
           {/* ── Pending Tab ── */}
           <TabsContent value="pending" className="space-y-4">
-            {pendingMachines.length === 0 ? (
+            {!canViewPending ? (
+              /* Đ2b việc 7 — no machine_registration/canView: hide the pending queue. */
               <Card>
                 <CardContent className="py-12 text-center">
-                  <CheckCircle2 className="h-12 w-12 mx-auto text-green-400 mb-3" />
+                  <ShieldX className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                  <h3 className="text-lg font-medium">{t('machineRegistration.rbac.noViewPendingTitle', 'Không có quyền xem máy chờ duyệt')}</h3>
+                  <p className="text-muted-foreground mt-1">
+                    {t('machineRegistration.rbac.noViewPendingDesc', 'Bạn cần quyền machine_registration để xem và duyệt máy chờ. Liên hệ quản trị viên.')}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : pendingMachines.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <CheckCircle2 className="h-12 w-12 mx-auto text-success mb-3" />
                   <h3 className="text-lg font-medium">{t('machineRegistration.pendingTab.emptyTitle')}</h3>
                   <p className="text-muted-foreground mt-1">
                     {t('machineRegistration.pendingTab.emptyDesc')}
@@ -509,16 +767,54 @@ export function MachineRegistrationContent() {
               </Card>
             ) : (
               <div className="grid gap-4">
+                {/* F9 — bulk approve bar */}
+                <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-4 py-2">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-primary"
+                      checked={bulkSelected.size > 0 && bulkSelected.size === pendingMachines.length}
+                      onChange={(e) =>
+                        setBulkSelected(e.target.checked
+                          ? new Set(pendingMachines.map((m) => m.id))
+                          : new Set())
+                      }
+                    />
+                    {t('machineRegistration.bulk.selectAll')}
+                  </label>
+                  {gateApprove(
+                    <Button
+                      size="sm"
+                      disabled={bulkSelected.size === 0 || isBulkApproving || !canApproveMachines}
+                      onClick={handleBulkApprove}
+                      className="bg-success text-success-foreground hover:bg-success/90"
+                    >
+                      {isBulkApproving ? (
+                        <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4 mr-1" />
+                      )}
+                      {t('machineRegistration.bulk.approveSelected', { count: bulkSelected.size })}
+                    </Button>
+                  )}
+                </div>
                 {pendingMachines.map((machine) => (
                   <Card
                     key={machine.id}
-                    className="border-yellow-200 dark:border-yellow-800/50"
+                    className="border-warning/40"
                   >
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-                            <Cpu className="h-5 w-5 text-yellow-600" />
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-primary"
+                            aria-label={t('machineRegistration.bulk.selectOne', { name: machine.name })}
+                            checked={bulkSelected.has(machine.id)}
+                            onChange={() => toggleBulkSelected(machine.id)}
+                          />
+                          <div className="p-2 bg-warning/15 rounded-lg">
+                            <Cpu className="h-5 w-5 text-warning" />
                           </div>
                           <div>
                             <CardTitle className="text-lg">{machine.name}</CardTitle>
@@ -574,19 +870,22 @@ export function MachineRegistrationContent() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleOpenReject(machine)}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
                         >
                           <XCircle className="h-4 w-4 mr-1" />
                           {t('machineRegistration.actions.reject')}
                         </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => handleOpenApprove(machine)}
-                          className="bg-green-600 hover:bg-green-700"
-                        >
-                          <CheckCircle2 className="h-4 w-4 mr-1" />
-                          {t('machineRegistration.actions.approveAllocate')}
-                        </Button>
+                        {gateApprove(
+                          <Button
+                            size="sm"
+                            disabled={!canApproveMachines}
+                            onClick={() => handleOpenApprove(machine)}
+                            className="bg-success text-success-foreground hover:bg-success/90"
+                          >
+                            <CheckCircle2 className="h-4 w-4 mr-1" />
+                            {t('machineRegistration.actions.approveAllocate')}
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -595,14 +894,9 @@ export function MachineRegistrationContent() {
             )}
           </TabsContent>
 
-          {/* ── All / Approved / Rejected Tabs ── */}
+          {/* ── All / Approved / Rejected Tabs — F9: server-side paged ── */}
           {(["all", "approved", "rejected"] as const).map((tab) => {
-            const data =
-              tab === "all"
-                ? filteredAll
-                : tab === "approved"
-                  ? approvedMachines
-                  : rejectedMachines;
+            const data = pagedMachines;
 
             return (
               <TabsContent key={tab} value={tab} className="space-y-4">
@@ -616,13 +910,17 @@ export function MachineRegistrationContent() {
                       className="pl-9"
                     />
                   </div>
+                  {pagedQuery.isFetching && (
+                    <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
                   <span className="text-sm text-muted-foreground">
-                    {t('machineRegistration.table.machineCount', { count: data.length })}
+                    {t('machineRegistration.table.machineCount', { count: pagedTotal })}
                   </span>
                 </div>
 
                 <Card>
                   <CardContent className="p-0">
+                    <div className="w-full overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -632,6 +930,7 @@ export function MachineRegistrationContent() {
                           <TableHead>{t('machineRegistration.table.serialNumber')}</TableHead>
                           <TableHead>{t('machineRegistration.table.type')}</TableHead>
                           <TableHead>{t('machineRegistration.table.status')}</TableHead>
+                          <TableHead>{t('machineRegistration.lifecycle.columnTitle')}</TableHead>
                           <TableHead>{t('machineRegistration.table.sync')}</TableHead>
                           <TableHead>{t('machineRegistration.table.firmware')}</TableHead>
                           {tab !== "rejected" && <TableHead>{t('machineRegistration.table.apiKey')}</TableHead>}
@@ -642,7 +941,7 @@ export function MachineRegistrationContent() {
                         {data.length === 0 ? (
                           <TableRow>
                             <TableCell
-                              colSpan={tab !== "rejected" ? 10 : 9}
+                              colSpan={tab !== "rejected" ? 11 : 10}
                               className="text-center py-8 text-muted-foreground"
                             >
                               {t('machineRegistration.table.noResults')}
@@ -668,6 +967,9 @@ export function MachineRegistrationContent() {
                                 {getStatusBadge(machine.registrationStatus)}
                               </TableCell>
                               <TableCell>
+                                {getLifecycleBadge(machine.lifecycleStatus)}
+                              </TableCell>
+                              <TableCell>
                                 {getSyncModeBadge(machine.syncMode)}
                               </TableCell>
                               <TableCell className="text-xs">
@@ -675,42 +977,17 @@ export function MachineRegistrationContent() {
                               </TableCell>
                               {tab !== "rejected" && (
                                 <TableCell>
-                                  {machine.apiKey ? (
-                                    <div className="flex items-center gap-1">
-                                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded max-w-[120px] truncate">
-                                        {visibleApiKeys.has(machine.id)
-                                          ? machine.apiKey
-                                          : "••••••••••••"}
-                                      </code>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6"
-                                        onClick={() =>
-                                          toggleApiKeyVisibility(machine.id)
-                                        }
-                                      >
-                                        {visibleApiKeys.has(machine.id) ? (
-                                          <EyeOff className="h-3 w-3" />
-                                        ) : (
-                                          <Eye className="h-3 w-3" />
-                                        )}
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6"
-                                        onClick={() =>
-                                          copyToClipboard(machine.apiKey!)
-                                        }
-                                      >
-                                        <Copy className="h-3 w-3" />
-                                      </Button>
-                                    </div>
+                                  {/* Doc 56 Đ0 (REG-2) — no plaintext key in the
+                                      list; only issued / not-issued state. */}
+                                  {machine.hasApiKey ? (
+                                    <Badge variant="outline" className="border-success/30 bg-success/15 text-success">
+                                      <KeyRound className="h-3 w-3 mr-1" />
+                                      {t('machineRegistration.credential.issued')}
+                                    </Badge>
                                   ) : (
-                                    <span className="text-xs text-muted-foreground">
-                                      —
-                                    </span>
+                                    <Badge variant="outline" className="text-muted-foreground">
+                                      {t('machineRegistration.credential.notIssued')}
+                                    </Badge>
                                   )}
                                 </TableCell>
                               )}
@@ -720,23 +997,26 @@ export function MachineRegistrationContent() {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-7 w-7 text-red-500 hover:text-red-700"
+                                      className="h-7 w-7 text-destructive hover:text-destructive"
                                       onClick={() =>
                                         handleOpenReject(machine as PendingMachine)
                                       }
                                     >
                                       <XCircle className="h-4 w-4" />
                                     </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7 text-green-500 hover:text-green-700"
-                                      onClick={() =>
-                                        handleOpenApprove(machine as PendingMachine)
-                                      }
-                                    >
-                                      <CheckCircle2 className="h-4 w-4" />
-                                    </Button>
+                                    {gateApprove(
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-success hover:text-success"
+                                        disabled={!canApproveMachines}
+                                        onClick={() =>
+                                          handleOpenApprove(machine as PendingMachine)
+                                        }
+                                      >
+                                        <CheckCircle2 className="h-4 w-4" />
+                                      </Button>
+                                    )}
                                   </div>
                                 )}
                                 {machine.registrationStatus === "approved" && (
@@ -746,7 +1026,74 @@ export function MachineRegistrationContent() {
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          className="h-7 w-7 text-blue-500 hover:text-blue-700"
+                                          className="h-7 w-7"
+                                          onClick={() => openQrDialog([machine])}
+                                        >
+                                          <QrCode className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>{t('machineRegistration.qr.rowAction', 'Tạo nhãn QR')}</TooltipContent>
+                                    </Tooltip>
+                                    {/* Doc 56 Đ0 việc 4 — reissue one-time claim token (show-once) */}
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          disabled={!isAdmin || issueClaimTokenMutation.isPending}
+                                          onClick={() => handleReissueClaimToken(machine)}
+                                        >
+                                          <Ticket className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        {isAdmin
+                                          ? t('machineRegistration.credential.reissueClaimToken')
+                                          : t('machineRegistration.credential.adminOnly')}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                    {/* Doc 56 Đ0 việc 1-UI — rotate API key (confirm → show-once) */}
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          disabled={!isAdmin}
+                                          onClick={() => setRotateKeyMachine(machine)}
+                                        >
+                                          <KeyRound className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        {isAdmin
+                                          ? (machine.hasApiKey
+                                              ? t('machineRegistration.credential.rotateKey')
+                                              : t('machineRegistration.credential.issueKey'))
+                                          : t('machineRegistration.credential.adminOnly')}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          disabled={(LIFECYCLE_TRANSITIONS[machine.lifecycleStatus ?? "active"] ?? []).length === 0}
+                                          onClick={() => handleOpenLifecycle(machine)}
+                                        >
+                                          <Recycle className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>{t('machineRegistration.lifecycle.action')}</TooltipContent>
+                                    </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7 text-info hover:text-info"
                                           onClick={() => handleOpenEdit(machine)}
                                         >
                                           <Pencil className="h-4 w-4" />
@@ -759,7 +1106,7 @@ export function MachineRegistrationContent() {
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          className="h-7 w-7 text-orange-500 hover:text-orange-700"
+                                          className="h-7 w-7 text-warning hover:text-warning"
                                           onClick={() => handleOpenRevoke(machine)}
                                         >
                                           <Undo2 className="h-4 w-4" />
@@ -769,11 +1116,12 @@ export function MachineRegistrationContent() {
                                     </Tooltip>
                                   </div>
                                 )}
-                                {machine.registrationStatus === "rejected" && (
+                                {machine.registrationStatus === "rejected" && gateApprove(
                                   <Button
                                     variant="ghost"
                                     size="sm"
                                     className="h-7 text-xs"
+                                    disabled={!canApproveMachines}
                                     onClick={() =>
                                       handleOpenApprove(machine as PendingMachine)
                                     }
@@ -787,25 +1135,60 @@ export function MachineRegistrationContent() {
                         )}
                       </TableBody>
                     </Table>
+                    </div>
                   </CardContent>
                 </Card>
+
+                {/* F9 — pagination controls */}
+                {pagedTotal > PAGE_SIZE && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      {t('machineRegistration.pagination.showing', {
+                        from: (page - 1) * PAGE_SIZE + 1,
+                        to: Math.min(page * PAGE_SIZE, pagedTotal),
+                        total: pagedTotal,
+                      })}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page <= 1 || pagedQuery.isFetching}
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      >
+                        {t('machineRegistration.pagination.prev')}
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        {t('machineRegistration.pagination.pageOf', { page, pages: totalPages })}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page >= totalPages || pagedQuery.isFetching}
+                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      >
+                        {t('machineRegistration.pagination.next')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </TabsContent>
             );
           })}
         </Tabs>
 
         {/* Info card */}
-        <Card className="border-blue-200 dark:border-blue-800/50">
+        <Card className="border-info/40">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm flex items-center gap-2">
-              <Info className="h-4 w-4 text-blue-500" />
+              <Info className="h-4 w-4 text-info" />
               {t('machineRegistration.guide.title')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid md:grid-cols-4 gap-4 text-sm">
               <div className="flex gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 font-bold">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-info/15 flex items-center justify-center text-info font-bold">
                   1
                 </div>
                 <div>
@@ -816,7 +1199,7 @@ export function MachineRegistrationContent() {
                 </div>
               </div>
               <div className="flex gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 font-bold">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-warning/15 flex items-center justify-center text-warning font-bold">
                   2
                 </div>
                 <div>
@@ -827,7 +1210,7 @@ export function MachineRegistrationContent() {
                 </div>
               </div>
               <div className="flex gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-600 font-bold">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-success/15 flex items-center justify-center text-success font-bold">
                   3
                 </div>
                 <div>
@@ -838,7 +1221,7 @@ export function MachineRegistrationContent() {
                 </div>
               </div>
               <div className="flex gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 font-bold">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center text-primary font-bold">
                   4
                 </div>
                 <div>
@@ -851,14 +1234,14 @@ export function MachineRegistrationContent() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
 
       {/* ── Approve Dialog ── */}
       <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-500" />
+              <CheckCircle2 className="h-5 w-5 text-success" />
               {t('machineRegistration.approveDialog.title')}
             </DialogTitle>
             <DialogDescription>
@@ -943,8 +1326,9 @@ export function MachineRegistrationContent() {
             </Button>
             <Button
               onClick={handleApprove}
-              disabled={approveMutation.isPending}
-              className="bg-green-600 hover:bg-green-700"
+              disabled={approveMutation.isPending || !canApproveMachines}
+              title={approveReason}
+              className="bg-success text-success-foreground hover:bg-success/90"
             >
               {approveMutation.isPending ? (
                 <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
@@ -962,7 +1346,7 @@ export function MachineRegistrationContent() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <XCircle className="h-5 w-5 text-red-500" />
+              <XCircle className="h-5 w-5 text-destructive" />
               {t('machineRegistration.rejectDialog.title')}
             </DialogTitle>
             <DialogDescription>
@@ -1012,7 +1396,7 @@ export function MachineRegistrationContent() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <Undo2 className="h-5 w-5 text-orange-500" />
+              <Undo2 className="h-5 w-5 text-warning" />
               {t('machineRegistration.revokeDialog.title')}
             </AlertDialogTitle>
             <AlertDialogDescription>
@@ -1022,7 +1406,7 @@ export function MachineRegistrationContent() {
           <AlertDialogFooter>
             <AlertDialogCancel>{t('machineRegistration.revokeDialog.cancel')}</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-orange-600 hover:bg-orange-700"
+              className="bg-warning text-warning-foreground hover:bg-warning/90"
               onClick={handleRevoke}
               disabled={revokeApprovalMutation.isPending}
             >
@@ -1037,12 +1421,51 @@ export function MachineRegistrationContent() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* ── Rotate API Key Confirm (doc 56 Đ0 việc 1-UI) ── */}
+      <AlertDialog
+        open={rotateKeyMachine !== null}
+        onOpenChange={(open) => { if (!open) setRotateKeyMachine(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-warning" />
+              {t('machineRegistration.credential.rotateDialog.title')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('machineRegistration.credential.rotateDialog.description', {
+                machine: rotateKeyMachine
+                  ? `${rotateKeyMachine.code} — ${rotateKeyMachine.name}`
+                  : '',
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('machineRegistration.credential.rotateDialog.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-warning text-warning-foreground hover:bg-warning/90"
+              onClick={handleConfirmRotateKey}
+              disabled={rotateKeyMutation.isPending}
+            >
+              <KeyRound className="h-4 w-4 mr-1" />
+              {t('machineRegistration.credential.rotateDialog.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Show-once credential dialog (claim token / rotated API key) ── */}
+      <CredentialShowOnceDialog
+        payload={credential}
+        onClose={() => setCredential(null)}
+      />
+
       {/* ── Edit Approved Machine Dialog ── */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Pencil className="h-5 w-5 text-blue-500" />
+              <Pencil className="h-5 w-5 text-info" />
               {t('machineRegistration.editDialog.title')}
             </DialogTitle>
             <DialogDescription>
@@ -1102,6 +1525,139 @@ export function MachineRegistrationContent() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Lifecycle Dialog (doc 27 Đợt 3 / W3-B — M2) ── */}
+      <Dialog open={lifecycleDialogOpen} onOpenChange={setLifecycleDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Recycle className="h-5 w-5" />
+              {t('machineRegistration.lifecycle.dialog.title')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('machineRegistration.lifecycle.dialog.description')}{" "}
+              <strong>{lifecycleMachine?.name ?? lifecycleMachine?.code}</strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="rounded-lg bg-muted/50 p-3 flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">{t('machineRegistration.lifecycle.dialog.currentLabel')}</span>
+              {getLifecycleBadge(lifecycleMachine?.lifecycleStatus)}
+            </div>
+            <div>
+              <Label htmlFor="lifecycle-target">{t('machineRegistration.lifecycle.dialog.targetLabel')}</Label>
+              <Select value={lifecycleTarget} onValueChange={setLifecycleTarget}>
+                <SelectTrigger id="lifecycle-target">
+                  <SelectValue placeholder={t('machineRegistration.lifecycle.dialog.targetPlaceholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {lifecycleAllowed.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {t(`machineRegistration.lifecycle.status.${s}`, { defaultValue: s })}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {lifecycleAllowed.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t('machineRegistration.lifecycle.dialog.noTransitions')}
+                </p>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="lifecycle-reason">
+                {LIFECYCLE_REASON_REQUIRED.includes(lifecycleTarget)
+                  ? t('machineRegistration.lifecycle.dialog.reasonRequiredLabel')
+                  : t('machineRegistration.lifecycle.dialog.reasonLabel')}
+              </Label>
+              <Textarea
+                id="lifecycle-reason"
+                value={lifecycleReason}
+                onChange={(e) => setLifecycleReason(e.target.value)}
+                placeholder={t('machineRegistration.lifecycle.dialog.reasonPlaceholder')}
+                rows={3}
+              />
+              {lifecycleReasonMissing && (
+                <p className="text-xs text-destructive mt-1">
+                  {t('machineRegistration.lifecycle.dialog.reasonRequiredHint')}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLifecycleDialogOpen(false)}>
+              {t('machineRegistration.lifecycle.dialog.cancel')}
+            </Button>
+            <Button
+              onClick={handleLifecycleSave}
+              disabled={setLifecycleMutation.isPending || !lifecycleTarget || lifecycleReasonMissing}
+            >
+              {setLifecycleMutation.isPending ? (
+                <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Recycle className="h-4 w-4 mr-1" />
+              )}
+              {t('machineRegistration.lifecycle.dialog.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── QR Asset-Tag Dialog (doc 40 Wave 4) ── */}
+      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="h-5 w-5" />
+              {t('machineRegistration.qr.dialogTitle', 'Nhãn QR dán lên máy')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('machineRegistration.qr.dialogDesc', 'Quét nhãn để mở hồ sơ máy (/machine/:id). In và dán lên thân máy.')}
+            </DialogDescription>
+          </DialogHeader>
+
+          {qrLoading ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
+              <RefreshCw className="h-5 w-5 animate-spin" />
+              {t('machineRegistration.qr.generating', 'Đang tạo mã QR…')}
+            </div>
+          ) : (
+            <div className="print-area grid grid-cols-2 gap-4 sm:grid-cols-3">
+              {qrItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex flex-col items-center gap-1 rounded-lg border p-3 text-center"
+                >
+                  <img
+                    src={item.dataUrl}
+                    alt={`QR ${item.code}`}
+                    className="h-32 w-32"
+                    width={128}
+                    height={128}
+                  />
+                  <p className="font-mono text-sm font-semibold">{item.code}</p>
+                  <p className="text-xs text-muted-foreground line-clamp-1">{item.name}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQrDialogOpen(false)}>
+              {t('machineRegistration.qr.close', 'Đóng')}
+            </Button>
+            <Button
+              onClick={() => window.print()}
+              disabled={qrLoading || qrItems.length === 0}
+            >
+              <Printer className="h-4 w-4 mr-1" />
+              {t('machineRegistration.qr.print', 'In nhãn')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -1109,7 +1665,7 @@ export function MachineRegistrationContent() {
 export default function MachineRegistration() {
   const { t } = useTranslation();
   return (
-    <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/machine-registration">
+    <DashboardLayout title="SYNAPSE" navItems={navItems} currentPath="/machine-registration">
       <MachineRegistrationContent />
     </DashboardLayout>
   );

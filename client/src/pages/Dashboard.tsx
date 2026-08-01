@@ -54,8 +54,17 @@ import {
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { EmptyState, NoWorkstationData } from "@/components/EmptyState";
+import {
+  PageHeader,
+  PageContainer,
+  StatusBadge,
+  chartTooltipStyle,
+  chartGridProps,
+  chartAxisTick,
+} from "@/components/patterns";
 import { WidgetStylePresetManager, useWidgetStyle, type WidgetStyle } from "@/components/WidgetStylePresetManager";
 import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
+import { RelatedViews } from "@/components/RelatedViews";
 import { ChartErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import { StatsCardSkeleton, ChartSkeleton, PieChartSkeleton, ListSkeleton, MachineGridSkeleton } from "@/components/AnalyticsSkeleton";
 import { WorkstationNGHeatmap, MeasurementPointNGList } from "@/components/NGVisualReflect";
@@ -90,7 +99,10 @@ type DashboardStats = {
   ok: number;
   ng: number;
   ntf: number;
+  /** Canonical FINAL yield % (NTF = pass) — decision #4 wire name. */
   yieldRate: number;
+  /** Canonical TRUE first-pass yield % (first inspection per serial). */
+  fpy: number;
 };
 
 type StatsWithComparison = {
@@ -99,6 +111,7 @@ type StatsWithComparison = {
   trends: {
     output: number;
     fpy: number;
+    finalYield: number;
     ok: number;
     ng: number;
     ntf: number;
@@ -208,6 +221,7 @@ export default function Dashboard() {
       borderRadius: '0.5rem',
       shadow: 'sm',
       opacity: '1.00',
+      mode: 'theme' as const, // follow the app dark/light theme by default
     };
   });
   
@@ -225,6 +239,21 @@ export default function Dashboard() {
       'lg': 'shadow-lg',
       'xl': 'shadow-xl',
     };
+    const shadow = shadowMap[widgetStyle.shadow] || '';
+    // THEME MODE (default + legacy): follow the app's dark/light theme via tokens — no
+    // forced bg/text/border colours, so cards match the rest of the system. Only an
+    // explicit 'custom' style overrides the theme with the user's picked colours.
+    if (widgetStyle.mode !== 'custom') {
+      return {
+        style: {
+          borderRadius: widgetStyle.borderRadius,
+          opacity: parseFloat(widgetStyle.opacity),
+        },
+        className: `border bg-card text-card-foreground ${shadow}`,
+        accentColor: widgetStyle.accentColor,
+        textColor: widgetStyle.textColor,
+      };
+    }
     return {
       style: {
         backgroundColor: widgetStyle.backgroundColor,
@@ -233,7 +262,7 @@ export default function Dashboard() {
         borderRadius: widgetStyle.borderRadius,
         opacity: parseFloat(widgetStyle.opacity),
       },
-      className: `border ${shadowMap[widgetStyle.shadow] || ''}`,
+      className: `border ${shadow}`,
       accentColor: widgetStyle.accentColor,
       textColor: widgetStyle.textColor,
     };
@@ -1105,13 +1134,17 @@ export default function Dashboard() {
     Boolean(statsWithComparison) &&
     (stats?.total ?? 0) <= 0;
 
-  // Prepare sparkline data
+  // Prepare sparkline data. Doc 27 Đợt 5 / W5-E (Đợt-1.4 leftover): fpy comes
+  // from the SERVER canonical fields (getDailyStats now returns true per-day
+  // FPY + finalYield) instead of the old client-side "(ok+ntf)/total" — that
+  // formula is final yield, and mislabelling it FPY overstated the KPI.
   const sparklineData = useMemo(() => {
     if (!dailyStats || !Array.isArray(dailyStats)) return [];
     return [...(dailyStats as any[])].reverse().map((d: any) => ({
       date: d.date,
       output: d.totalProducts,
-      fpy: d.totalProducts > 0 ? ((d.okCount + d.ntfCount) / d.totalProducts) * 100 : 0,
+      fpy: Number(d.fpy) || 0,
+      finalYield: Number(d.finalYield) || 0,
     }));
   }, [dailyStats]);
 
@@ -1123,31 +1156,31 @@ export default function Dashboard() {
     >
       {/* U11 — first-visit nudge to start from a role-aligned dashboard template */}
       <DashboardTemplatePrompt />
-      <div className="space-y-4 sm:space-y-6">
+      <PageContainer fluid className="p-0 md:p-0 space-y-4 sm:space-y-6">
         {/* Header with filters and auto-refresh controls */}
-        <div className="flex flex-col gap-3 sm:gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-foreground flex items-center gap-2">
-                <Activity className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />{t("dashboard.productionDashboard")}</h1>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mt-1">
-                <p className="text-muted-foreground text-xs sm:text-sm">{t("dashboard.monitoringQuality")}</p>
-                <RealtimeBadge connected={socketConnected} pollingFallback lastEventAt={lastRealtimeAt} />
-                <span className="text-xs text-muted-foreground">
-                  • {t("dashboard.updatedAt")} {lastRefreshTime.toLocaleTimeString('vi-VN')}
-                </span>
-              </div>
-            </div>
-            
+        <PageHeader
+          icon={<Activity className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
+          title={t("dashboard.productionDashboard")}
+          description={
+            <span className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <span className="text-xs sm:text-sm">{t("dashboard.monitoringQuality")}</span>
+              <RealtimeBadge connected={socketConnected} pollingFallback lastEventAt={lastRealtimeAt} />
+              <span className="text-xs text-muted-foreground">
+                • {t("dashboard.updatedAt")} {lastRefreshTime.toLocaleTimeString('vi-VN')}
+              </span>
+            </span>
+          }
+          actions={
+            <>
             {/* Quick actions - visible on mobile */}
             <div className="flex items-center gap-2 sm:hidden">
-              <Button variant="outline" size="icon" onClick={handleRefresh} className="h-9 w-9">
-                <RefreshCw className="h-4 w-4" />
+              <Button variant="outline" size="icon" aria-label={t('common.refresh')} onClick={handleRefresh} className="h-9 w-9">
+                <RefreshCw aria-hidden="true" className="h-4 w-4" />
               </Button>
               {(activeAlertsCount as number) > 0 && (
                 <Link href="/alerts">
-                  <Button variant="outline" size="icon" className="relative h-9 w-9">
-                    <Bell className="h-4 w-4" />
+                  <Button variant="outline" size="icon" aria-label={t('nav.alerts', 'Alerts')} className="relative h-9 w-9">
+                    <Bell aria-hidden="true" className="h-4 w-4" />
                     <Badge variant="destructive" className="absolute -top-2 -right-2 h-4 w-4 p-0 flex items-center justify-center text-[10px]">
                       {activeAlertsCount as number}
                     </Badge>
@@ -1155,8 +1188,7 @@ export default function Dashboard() {
                 </Link>
               )}
             </div>
-          </div>
-          
+
           {/* Filters - scrollable on mobile */}
           <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto pb-2 sm:pb-0 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap">
             {/* Alert Badge - hidden on mobile (shown in quick actions) */}
@@ -1212,7 +1244,7 @@ export default function Dashboard() {
 
             <Select value={selectedLine} onValueChange={setSelectedLine}>
               <SelectTrigger className="w-25 sm:w-40 shrink-0">
-                <SelectValue placeholder="Line" />
+                <SelectValue placeholder={t("dashboard.line", "Line")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t("dashboard.allLines")}</SelectItem>
@@ -1229,12 +1261,12 @@ export default function Dashboard() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="yesterday">Yesterday</SelectItem>
-                <SelectItem value="7days">7 Days</SelectItem>
-                <SelectItem value="15days">15 Days</SelectItem>
-                <SelectItem value="30days">30 Days</SelectItem>
-                <SelectItem value="custom">Custom</SelectItem>
+                <SelectItem value="today">{t("dashboard.rangeToday", "Today")}</SelectItem>
+                <SelectItem value="yesterday">{t("dashboard.rangeYesterday", "Yesterday")}</SelectItem>
+                <SelectItem value="7days">{t("dashboard.range7Days", "7 Days")}</SelectItem>
+                <SelectItem value="15days">{t("dashboard.range15Days", "15 Days")}</SelectItem>
+                <SelectItem value="30days">{t("dashboard.range30Days", "30 Days")}</SelectItem>
+                <SelectItem value="custom">{t("dashboard.rangeCustom", "Custom")}</SelectItem>
               </SelectContent>
             </Select>
 
@@ -1245,14 +1277,14 @@ export default function Dashboard() {
                   value={customFromDate}
                   onChange={(e) => setCustomFromDate(e.target.value)}
                   className="w-35 sm:w-40 shrink-0"
-                  aria-label="From date"
+                  aria-label={t("dashboard.fromDate", "From date")}
                 />
                 <Input
                   type="date"
                   value={customToDate}
                   onChange={(e) => setCustomToDate(e.target.value)}
                   className="w-35 sm:w-40 shrink-0"
-                  aria-label="To date"
+                  aria-label={t("dashboard.toDate", "To date")}
                 />
               </>
             )}
@@ -1292,8 +1324,8 @@ export default function Dashboard() {
             </div>
 
             {/* Refresh button - hidden on mobile (shown in quick actions) */}
-            <Button variant="outline" size="icon" onClick={handleRefresh} className="hidden sm:flex shrink-0">
-              <RefreshCw className="h-4 w-4" />
+            <Button variant="outline" size="icon" aria-label={t('common.refresh')} onClick={handleRefresh} className="hidden sm:flex shrink-0">
+              <RefreshCw aria-hidden="true" className="h-4 w-4" />
             </Button>
             
             {/* Widget Style Presets - hidden on mobile */}
@@ -1304,7 +1336,20 @@ export default function Dashboard() {
               />
             </div>
           </div>
-        </div>
+            </>
+          }
+        />
+
+        {/* U7 (doc 21 §3 G-11) — this operational dashboard stays as a rich landing;
+            point "see everything live" at the Command Center single pane of glass. */}
+        <RelatedViews
+          links={[
+            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+            { href: "/ops-console", labelKey: "nav.opsConsole", labelDefault: "Ops Console" },
+            // W5-C (doc 27 F7): open the dedicated TV board (add ?kiosk=1&cycle=30 on the TV itself).
+            { href: "/andon", labelKey: "nav.andonBoard", labelDefault: "Bảng Andon (TV)" },
+          ]}
+        />
 
         {showNoTodayDataBanner && (
           <Card className="border-warning/40 bg-warning/5">
@@ -1362,11 +1407,15 @@ export default function Dashboard() {
                   <div className="flex-1">
                     <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>{t("dashboard.fpy")}</p>
                     <div className="flex items-center gap-2 mt-1">
+                      {/* True FPY (server canonical) — was yieldRate (final yield) mislabelled as FPY */}
                       <p className="text-2xl font-bold text-success">
-                        {statsLoading ? "..." : `${stats?.yieldRate?.toFixed(1) || 0}%`}
+                        {statsLoading ? "..." : `${stats?.fpy?.toFixed(1) || 0}%`}
                       </p>
                       <TrendIndicator value={trends?.fpy} suffix="pp" />
                     </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      {t("dashboard.finalYield")}: {statsLoading ? "..." : `${stats?.yieldRate?.toFixed(1) || 0}%`}
+                    </p>
                     <Sparkline data={sparklineData} dataKey="fpy" color="oklch(0.72 0.17 145)" />
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
@@ -1517,12 +1566,12 @@ export default function Dashboard() {
                   <p className="text-lg font-bold">{machinesStats?.length || 0}</p>
                   <p className="text-[10px] text-muted-foreground">{t("common.total")}</p>
                 </div>
-                <div className="flex flex-col items-center p-2 rounded-lg bg-emerald-500/10">
-                  <p className="text-lg font-bold text-emerald-500">{onlineMachines.size}</p>
+                <div className="flex flex-col items-center p-2 rounded-lg bg-success/10">
+                  <p className="text-lg font-bold text-success">{onlineMachines.size}</p>
                   <p className="text-[10px] text-muted-foreground">{t("dashboard.online")}</p>
                 </div>
-                <div className="flex flex-col items-center p-2 rounded-lg bg-red-500/10">
-                  <p className="text-lg font-bold text-red-500">
+                <div className="flex flex-col items-center p-2 rounded-lg bg-destructive/10">
+                  <p className="text-lg font-bold text-destructive">
                     {Math.max(0, (machinesStats?.length || 0) - onlineMachines.size)}
                   </p>
                   <p className="text-[10px] text-muted-foreground">{t("dashboard.offline")}</p>
@@ -1540,14 +1589,14 @@ export default function Dashboard() {
 
         {/* Tabs for Overview and Layout */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "layout" | "ng-visual" | "corporate-stats" | "custom")} className="w-full">
-          <TabsList className="grid w-full max-w-2xl grid-cols-4">
-            <TabsTrigger value="overview" className="flex items-center gap-2">
+          <TabsList className="flex w-full max-w-2xl flex-wrap sm:grid sm:grid-cols-4 h-auto">
+            <TabsTrigger value="overview" className="flex flex-1 items-center gap-2">
               <BarChart3 className="h-4 w-4" />{t("dashboard.overviewTab")}</TabsTrigger>
-            <TabsTrigger value="ng-visual" className="flex items-center gap-2">
+            <TabsTrigger value="ng-visual" className="flex flex-1 items-center gap-2">
               <AlertTriangle className="h-4 w-4" />{t("dashboard.ngVisualTab")}</TabsTrigger>
-            <TabsTrigger value="layout" className="flex items-center gap-2">
+            <TabsTrigger value="layout" className="flex flex-1 items-center gap-2">
               <LayoutGrid className="h-4 w-4" />{t("dashboard.layoutTab")}</TabsTrigger>
-            <TabsTrigger value="custom" className="flex items-center gap-2">
+            <TabsTrigger value="custom" className="flex flex-1 items-center gap-2">
               <Palette className="h-4 w-4" />{t("dashboard.customTab")}</TabsTrigger>
           </TabsList>
 
@@ -1568,14 +1617,14 @@ export default function Dashboard() {
               const avgP = avgOf((m) => m.performance);
               const avgQ = avgOf((m) => m.quality);
               const avgOEE = avgOf((m) => m.oee);
-              const oeeColor = (v: number) => v >= 85 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
+              const oeeColor = (v: number) => v >= 85 ? 'var(--success)' : v >= 60 ? 'var(--warning)' : 'var(--destructive)';
               const fmt = (v: number | null) => v == null ? t("common.notAvailable", "N/A") : `${v.toFixed(1)}%`;
               return (
               <Card className={cardStyleProps.className} style={cardStyleProps.style}>
                 <CardHeader className="pb-2 flex flex-row items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Activity className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
-                    OEE — Overall Equipment Effectiveness
+                    {t("dashboard.oeeTitle", "OEE — Overall Equipment Effectiveness")}
                     <RealtimeBadge connected={oeeIsLive} pollingFallback lastEventAt={oeeIsLive ? lastRealtimeAt : null} />
                   </CardTitle>
                   <a href="/oee-dashboard" className="text-xs text-muted-foreground hover:underline">{t("common.viewAll", "Xem tất cả")}</a>
@@ -1584,14 +1633,14 @@ export default function Dashboard() {
                   {/* Aggregate 4-card OEE cluster */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {([
-                      { label: "Availability", value: avgA, icon: "A" },
-                      { label: "Performance", value: avgP, icon: "P" },
-                      { label: "Quality", value: avgQ, icon: "Q" },
+                      { label: t("dashboard.oeeAvailability", "Availability"), value: avgA, icon: "A" },
+                      { label: t("dashboard.oeePerformance", "Performance"), value: avgP, icon: "P" },
+                      { label: t("dashboard.oeeQuality", "Quality"), value: avgQ, icon: "Q" },
                       { label: "OEE", value: avgOEE, icon: "OEE" },
                     ] as const).map((item) => (
-                      <a key={item.label} href="/oee-dashboard" className="rounded-xl border bg-card p-3 text-center hover:shadow-md transition-shadow cursor-pointer block">
+                      <a key={item.icon} href="/oee-dashboard" className="rounded-xl border bg-card p-3 text-center hover:shadow-md transition-shadow cursor-pointer block">
                         <p className="text-xs text-muted-foreground font-medium">{item.icon}</p>
-                        <p className="text-2xl font-bold mt-1" style={{ color: item.value == null ? '#9ca3af' : oeeColor(item.value) }}>{fmt(item.value)}</p>
+                        <p className="text-2xl font-bold mt-1" style={{ color: item.value == null ? 'var(--muted-foreground)' : oeeColor(item.value) }}>{fmt(item.value)}</p>
                         <p className="text-[11px] text-muted-foreground">{item.label}</p>
                       </a>
                     ))}
@@ -1599,7 +1648,7 @@ export default function Dashboard() {
                   {/* Per-machine detail grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                     {oeeData.map((m) => {
-                      const color = m.oee == null ? '#9ca3af' : oeeColor(m.oee);
+                      const color = m.oee == null ? 'var(--muted-foreground)' : oeeColor(m.oee);
                       return (
                         <div key={m.machineId} className="rounded-lg border p-2 space-y-1">
                           <p className="text-xs font-medium truncate" title={m.machineCode}>{m.machineCode}</p>
@@ -1637,7 +1686,7 @@ export default function Dashboard() {
                         <span className="text-sm">{shift.shiftName}</span>
                       </div>
                       <div className="flex items-center gap-4 text-sm">
-                        <span className="text-muted-foreground">{shift.total} sp</span>
+                        <span className="text-muted-foreground">{shift.total} {t("dashboard.pcsUnit", "pcs")}</span>
                         <span className={shift.fpy >= 95 ? 'text-success' : shift.fpy >= 85 ? 'text-warning' : 'text-destructive'}>
                           {shift.fpy}%
                         </span>
@@ -1667,7 +1716,7 @@ export default function Dashboard() {
                       <span className="text-sm truncate max-w-30">{machine.name}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">{machine.total} sp</span>
+                      <span className="text-xs text-muted-foreground">{machine.total} {t("dashboard.pcsUnit", "pcs")}</span>
                       <Badge variant="outline" className="text-success border-success/50">
                         {machine.fpy}%
                       </Badge>
@@ -1696,7 +1745,7 @@ export default function Dashboard() {
                       <span className="text-sm truncate max-w-30">{machine.name}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">{machine.total} sp</span>
+                      <span className="text-xs text-muted-foreground">{machine.total} {t("dashboard.pcsUnit", "pcs")}</span>
                       <Badge variant="outline" className="text-destructive border-destructive/50">
                         {machine.fpy}%
                       </Badge>
@@ -1733,71 +1782,63 @@ export default function Dashboard() {
                     }))}
                     margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
-                    <XAxis 
-                      dataKey="time" 
-                      tick={{ fontSize: 10, fill: 'var(--foreground)' }}
+                    <CartesianGrid {...chartGridProps} opacity={0.3} />
+                    <XAxis
+                      dataKey="time"
+                      tick={chartAxisTick}
                       axisLine={{ stroke: 'var(--border)' }}
                       interval="preserveStartEnd"
                     />
-                    <YAxis 
+                    <YAxis
                       key="yaxis-left"
                       yAxisId="left"
-                      tick={{ fontSize: 10, fill: 'var(--foreground)' }}
+                      tick={chartAxisTick}
                       domain={[0, 100]}
                       label={{ value: '%', angle: -90, position: 'insideLeft', fontSize: 10 }}
                     />
-                    <YAxis 
+                    <YAxis
                       key="yaxis-right"
                       yAxisId="right"
                       orientation="right"
-                      tick={{ fontSize: 10, fill: 'var(--foreground)' }}
+                      tick={chartAxisTick}
                       label={{ value: 'Output', angle: 90, position: 'insideRight', fontSize: 10 }}
                     />
-                    <RechartsTooltip 
-                      contentStyle={{ 
-                        backgroundColor: 'var(--card)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        color: 'var(--foreground)'
-                      }}
-                    />
+                    <RechartsTooltip contentStyle={chartTooltipStyle} />
                     <Legend />
-                    <Line 
+                    <Line
                       key="line-fpy"
                       yAxisId="left"
-                      type="monotone" 
-                      dataKey="FPY" 
-                      stroke="#10b981" 
+                      type="monotone"
+                      dataKey="FPY"
+                      stroke="var(--success)"
                       strokeWidth={2}
                       dot={{ r: 3 }}
                       activeDot={{ r: 5 }}
                     />
-                    <Line 
+                    <Line
                       key="line-fy"
                       yAxisId="left"
-                      type="monotone" 
-                      dataKey="FY" 
-                      stroke="#ef4444" 
+                      type="monotone"
+                      dataKey="FY"
+                      stroke="var(--destructive)"
                       strokeWidth={2}
                       dot={{ r: 3 }}
                     />
-                    <Line 
+                    <Line
                       key="line-ntfy"
                       yAxisId="left"
-                      type="monotone" 
-                      dataKey="NTFY" 
-                      stroke="#f59e0b" 
+                      type="monotone"
+                      dataKey="NTFY"
+                      stroke="var(--warning)"
                       strokeWidth={2}
                       dot={{ r: 3 }}
                     />
-                    <Line 
+                    <Line
                       key="line-total"
                       yAxisId="right"
-                      type="monotone" 
-                      dataKey="Total" 
-                      stroke="#06b6d4" 
+                      type="monotone"
+                      dataKey="Total"
+                      stroke="var(--info)"
                       strokeWidth={2}
                       strokeDasharray="5 5"
                       dot={{ r: 3 }}
@@ -1840,7 +1881,7 @@ export default function Dashboard() {
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <RechartsTooltip />
+                      <RechartsTooltip contentStyle={chartTooltipStyle} />
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (
@@ -1875,10 +1916,10 @@ export default function Dashboard() {
                       layout="vertical"
                       margin={{ left: 60 }}
                     >
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
-                      <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
-                      <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
-                      <RechartsTooltip />
+                      <CartesianGrid {...chartGridProps} opacity={0.3} />
+                      <XAxis type="number" tick={chartAxisTick} axisLine={{ stroke: 'var(--border)' }} />
+                      <YAxis type="category" dataKey="name" tick={chartAxisTick} axisLine={{ stroke: 'var(--border)' }} />
+                      <RechartsTooltip contentStyle={chartTooltipStyle} />
                       <Bar dataKey="output" fill="var(--chart-1)" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -1919,11 +1960,11 @@ export default function Dashboard() {
                           </div>
                           <div className="flex items-center gap-4">
                             <div className="text-right">
-                              <div className="text-sm font-semibold text-red-600">{totalDefects}</div>
+                              <div className="text-sm font-semibold text-destructive">{totalDefects}</div>
                               <div className="text-xs text-muted-foreground">{t("common.error")}</div>
                             </div>
                             <div className="text-right">
-                              <div className="text-sm font-semibold text-blue-600">{yieldRate.toFixed(1)}%</div>
+                              <div className="text-sm font-semibold text-info">{yieldRate.toFixed(1)}%</div>
                               <div className="text-xs text-muted-foreground">{t("dashboard.yield")}</div>
                             </div>
                           </div>
@@ -1955,11 +1996,11 @@ export default function Dashboard() {
                 <div className="flex flex-wrap items-center gap-4 text-sm">
                   <span className="text-muted-foreground font-medium">{t("dashboard.ngSeverityLabel")}</span>
                   <div className="flex items-center gap-1">
-                    <div className="w-3 h-3 rounded bg-green-500" />
+                    <div className="w-3 h-3 rounded bg-success" />
                     <span>{t("dashboard.ngLevelGood")}</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <div className="w-3 h-3 rounded bg-yellow-500" />
+                    <div className="w-3 h-3 rounded bg-warning" />
                     <span>{t("dashboard.ngLevelAcceptable")}</span>
                   </div>
                   <div className="flex items-center gap-1">
@@ -1967,7 +2008,7 @@ export default function Dashboard() {
                     <span>{t("dashboard.ngLevelWarning")}</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <div className="w-3 h-3 rounded bg-red-500" />
+                    <div className="w-3 h-3 rounded bg-destructive" />
                     <span>{t("dashboard.ngLevelCritical")}</span>
                   </div>
                 </div>
@@ -2022,7 +2063,7 @@ export default function Dashboard() {
                         </div>
                         <div className="flex items-center gap-4 text-sm">
                           <span className="text-muted-foreground">{t("common.total")}: {(effectiveNGComparison as any).current.totalCount.toLocaleString()}</span>
-                          <span className="text-red-500">NG: {(effectiveNGComparison as any).current.ngCount.toLocaleString()}</span>
+                          <span className="text-destructive">NG: {(effectiveNGComparison as any).current.ngCount.toLocaleString()}</span>
                         </div>
                       </div>
                     ) : (
@@ -2051,7 +2092,7 @@ export default function Dashboard() {
                         </div>
                         <div className="flex items-center gap-4 text-sm">
                           <span className="text-muted-foreground">{t("common.total")}: {(effectiveNGComparison as any).previous.totalCount.toLocaleString()}</span>
-                          <span className="text-red-500">NG: {(effectiveNGComparison as any).previous.ngCount.toLocaleString()}</span>
+                          <span className="text-destructive">NG: {(effectiveNGComparison as any).previous.ngCount.toLocaleString()}</span>
                         </div>
                       </div>
                     ) : (
@@ -2061,7 +2102,7 @@ export default function Dashboard() {
                 </Card>
 
                 {/* Change Indicator */}
-                <Card className={`${cardStyleProps.className} ${(effectiveNGComparison as any)?.changes?.isImproved ? 'border-green-500/50' : 'border-red-500/50'}`} style={cardStyleProps.style}>
+                <Card className={`${cardStyleProps.className} ${(effectiveNGComparison as any)?.changes?.isImproved ? 'border-success/50' : 'border-destructive/50'}`} style={cardStyleProps.style}>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>{t("dashboard.ngCompare")}</CardTitle>
                   </CardHeader>
@@ -2074,21 +2115,21 @@ export default function Dashboard() {
                       <div className="space-y-2">
                         <div className="flex items-baseline gap-2">
                           {(effectiveNGComparison as any).changes.isImproved ? (
-                            <TrendingDown className="h-6 w-6 text-green-500" />
+                            <TrendingDown className="h-6 w-6 text-success" />
                           ) : (
-                            <TrendingUp className="h-6 w-6 text-red-500" />
+                            <TrendingUp className="h-6 w-6 text-destructive" />
                           )}
-                          <span className={`text-2xl font-bold ${(effectiveNGComparison as any).changes.isImproved ? 'text-green-500' : 'text-red-500'}`}>
+                          <span className={`text-2xl font-bold ${(effectiveNGComparison as any).changes.isImproved ? 'text-success' : 'text-destructive'}`}>
                             {(effectiveNGComparison as any).changes.ngRateChange > 0 ? '+' : ''}{(effectiveNGComparison as any).changes.ngRateChange.toFixed(2)}%
                           </span>
                         </div>
                         <div className="text-sm">
                           {(effectiveNGComparison as any).changes.isImproved ? (
-                            <span className="text-green-500">{t("dashboard.improvedVsPrevious")}</span>
+                            <span className="text-success">{t("dashboard.improvedVsPrevious")}</span>
                           ) : (effectiveNGComparison as any).changes.ngRateChange === 0 ? (
                             <span className="text-muted-foreground">{t("dashboard.noChange")}</span>
                           ) : (
-                            <span className="text-red-500">{t("dashboard.increasedVsPrevious")}</span>
+                            <span className="text-destructive">{t("dashboard.increasedVsPrevious")}</span>
                           )}
                         </div>
                       </div>
@@ -2187,23 +2228,19 @@ export default function Dashboard() {
                           totalCount: Number(item.totalCount),
                           ngCount: Number(item.ngCount),
                         }))}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                          <XAxis 
-                            dataKey="date" 
-                            tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
-                            axisLine={{ stroke: 'hsl(var(--border))' }}
+                          <CartesianGrid {...chartGridProps} />
+                          <XAxis
+                            dataKey="date"
+                            tick={chartAxisTick}
+                            axisLine={{ stroke: 'var(--border)' }}
                           />
-                          <YAxis 
-                            tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
-                            axisLine={{ stroke: 'hsl(var(--border))' }}
+                          <YAxis
+                            tick={chartAxisTick}
+                            axisLine={{ stroke: 'var(--border)' }}
                             tickFormatter={(value) => `${value}%`}
                           />
                           <RechartsTooltip
-                            contentStyle={{
-                              backgroundColor: 'hsl(var(--card))',
-                              border: '1px solid hsl(var(--border))',
-                              borderRadius: '8px',
-                            }}
+                            contentStyle={chartTooltipStyle}
                             formatter={(value: number, name: string) => {
                               if (name === 'ngRate') return [`${value.toFixed(2)}%`, t('dashboard.ngRate')];
                               if (name === 'totalCount') return [value.toLocaleString(), t('dashboard.totalInspections')];
@@ -2211,12 +2248,12 @@ export default function Dashboard() {
                               return [value, name];
                             }}
                           />
-                          <Line 
-                            type="monotone" 
-                            dataKey="ngRate" 
-                            stroke="hsl(var(--destructive))" 
+                          <Line
+                            type="monotone"
+                            dataKey="ngRate"
+                            stroke="var(--destructive)"
                             strokeWidth={2}
-                            dot={{ fill: 'hsl(var(--destructive))', strokeWidth: 2, r: 4 }}
+                            dot={{ fill: 'var(--destructive)', strokeWidth: 2, r: 4 }}
                             activeDot={{ r: 6 }}
                           />
                         </LineChart>
@@ -2334,14 +2371,14 @@ export default function Dashboard() {
                   <SelectItem value="all">{t("common.all")}</SelectItem>
                   <SelectItem value="online">
                     <span className="flex items-center gap-2">
-                      <Wifi className="h-3 w-3 text-green-500" />
-                      Online
+                      <Wifi className="h-3 w-3 text-success" />
+                      {t("dashboard.online")}
                     </span>
                   </SelectItem>
                   <SelectItem value="offline">
                     <span className="flex items-center gap-2">
-                      <WifiOff className="h-3 w-3 text-red-500" />
-                      Offline
+                      <WifiOff className="h-3 w-3 text-destructive" />
+                      {t("dashboard.offline")}
                     </span>
                   </SelectItem>
                 </SelectContent>
@@ -2459,31 +2496,31 @@ export default function Dashboard() {
                               onClick={() => openMachineDetail(machine)}
                             >
                               {/* Metrics Bar at Top - Customizable */}
-                              <div className="flex items-stretch bg-black/90 text-white">
+                              <div className="flex items-stretch bg-muted text-foreground">
                                 {visibleMetrics.fpy && (
-                                  <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                  <div className="flex-1 text-center py-2 px-1 border-r border-border/60">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.fpy")}</p>
-                                    <p className={`text-base font-bold ${fpyNum >= 90 ? 'text-emerald-400' : fpyNum >= 70 ? 'text-amber-400' : 'text-rose-400'}`}>
+                                    <p className={`text-base font-bold ${fpyNum >= 90 ? 'text-success' : fpyNum >= 70 ? 'text-warning' : 'text-destructive'}`}>
                                       {fpy}%
                                     </p>
                                   </div>
                                 )}
                                 {visibleMetrics.fy && (
-                                  <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                  <div className="flex-1 text-center py-2 px-1 border-r border-border/60">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.fy")}</p>
-                                    <p className="text-base font-bold text-rose-400">{fy}%</p>
+                                    <p className="text-base font-bold text-destructive">{fy}%</p>
                                   </div>
                                 )}
                                 {visibleMetrics.ntfy && (
-                                  <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                  <div className="flex-1 text-center py-2 px-1 border-r border-border/60">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.ntfy")}</p>
-                                    <p className="text-base font-bold text-amber-400">{ntfy}%</p>
+                                    <p className="text-base font-bold text-warning">{ntfy}%</p>
                                   </div>
                                 )}
                                 {visibleMetrics.output && (
                                   <div className="flex-1 text-center py-2 px-1 relative">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.output")}</p>
-                                    <p className="text-base font-bold text-cyan-400">{machine.total}</p>
+                                    <p className="text-base font-bold text-info">{machine.total}</p>
                                   </div>
                                 )}
                                 {/* Status indicator */}
@@ -2493,7 +2530,7 @@ export default function Dashboard() {
                               </div>
 
                               {/* Machine Image - Large */}
-                              <div className="relative h-40 w-full bg-linear-to-br from-slate-800 to-slate-900">
+                              <div className="relative h-40 w-full bg-linear-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900">
                                 {machineImage ? (
                                   <>
                                     <img
@@ -2524,7 +2561,7 @@ export default function Dashboard() {
                                         <TooltipTrigger asChild>
                                           <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs ${
                                             onlineMachines.has(machine.code)
-                                              ? 'bg-emerald-500/20 text-emerald-400'
+                                              ? 'bg-success/20 text-success'
                                               : 'bg-muted text-muted-foreground'
                                           }`}>
                                             {onlineMachines.has(machine.code) ? (
@@ -2563,7 +2600,7 @@ export default function Dashboard() {
             <CustomDashboardViewer />
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
 
       {/* Machine Detail Modal */
       <Dialog open={machineDetailOpen} onOpenChange={setMachineDetailOpen}>
@@ -2697,7 +2734,7 @@ export default function Dashboard() {
                               <Cell key={`cell-${index}`} fill={entry.color} />
                             ))}
                           </Pie>
-                          <RechartsTooltip />
+                          <RechartsTooltip contentStyle={chartTooltipStyle} />
                           <Legend />
                         </PieChart>
                       </ResponsiveContainer>
@@ -2710,10 +2747,10 @@ export default function Dashboard() {
                           { name: "NG", value: selectedMachine.ng, fill: "oklch(0.65 0.2 25)" },
                           { name: "NTF", value: selectedMachine.ntf, fill: "oklch(0.78 0.15 75)" },
                         ]}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
-                          <XAxis dataKey="name" tick={{ fontSize: 12, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
-                          <YAxis tick={{ fontSize: 11, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
-                          <RechartsTooltip />
+                          <CartesianGrid {...chartGridProps} opacity={0.3} />
+                          <XAxis dataKey="name" tick={chartAxisTick} axisLine={{ stroke: 'var(--border)' }} />
+                          <YAxis tick={chartAxisTick} axisLine={{ stroke: 'var(--border)' }} />
+                          <RechartsTooltip contentStyle={chartTooltipStyle} />
                           <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                             {[
                               { name: "OK", value: selectedMachine.ok, fill: "oklch(0.72 0.17 145)" },
@@ -2777,24 +2814,14 @@ export default function Dashboard() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Badge
-                              variant={
-                                inspection.overallResult === "OK"
-                                  ? "default"
-                                  : inspection.overallResult === "NG"
-                                  ? "destructive"
-                                  : "secondary"
-                              }
-                              className={
-                                inspection.overallResult === "OK"
-                                  ? "bg-success text-success-foreground"
-                                  : inspection.overallResult === "NTF"
-                                  ? "bg-warning text-warning-foreground"
-                                  : ""
-                              }
-                            >
-                              {inspection.overallResult}
-                            </Badge>
+                            <StatusBadge
+                              status={inspection.overallResult}
+                              map={{
+                                OK: { variant: "default", className: "bg-success text-success-foreground" },
+                                NG: { variant: "destructive" },
+                                NTF: { variant: "secondary", className: "bg-warning text-warning-foreground" },
+                              }}
+                            />
                             <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                           </div>
                         </div>
@@ -2839,8 +2866,8 @@ export default function Dashboard() {
           <div className="space-y-4 py-4">
             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                  <Target className="h-4 w-4 text-emerald-500" />
+                <div className="w-8 h-8 rounded-full bg-success/20 flex items-center justify-center">
+                  <Target className="h-4 w-4 text-success" />
                 </div>
                 <div>
                   <p className="font-medium">{t("dashboard.fpyFullName")}</p>
@@ -2857,8 +2884,8 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-rose-500/20 flex items-center justify-center">
-                  <ThumbsDown className="h-4 w-4 text-rose-500" />
+                <div className="w-8 h-8 rounded-full bg-destructive/20 flex items-center justify-center">
+                  <ThumbsDown className="h-4 w-4 text-destructive" />
                 </div>
                 <div>
                   <p className="font-medium">{t("dashboard.fyFullName")}</p>
@@ -2875,8 +2902,8 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                <div className="w-8 h-8 rounded-full bg-warning/20 flex items-center justify-center">
+                  <AlertTriangle className="h-4 w-4 text-warning" />
                 </div>
                 <div>
                   <p className="font-medium">{t("dashboard.ntfyFullName")}</p>
@@ -2893,8 +2920,8 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center">
-                  <BarChart3 className="h-4 w-4 text-cyan-500" />
+                <div className="w-8 h-8 rounded-full bg-info/20 flex items-center justify-center">
+                  <BarChart3 className="h-4 w-4 text-info" />
                 </div>
                 <div>
                   <p className="font-medium">{t("dashboard.outputLabel")}</p>
@@ -2946,10 +2973,10 @@ export default function Dashboard() {
                 {drilldownMeasurementPoints.map((mp: any) => {
                   const ngRate = mp.totalCount > 0 ? (mp.ngCount / mp.totalCount * 100) : 0;
                   const getNGColorClass = (rate: number) => {
-                    if (rate <= 2) return "text-green-500 bg-green-500/10 border-green-500/30";
-                    if (rate <= 5) return "text-yellow-500 bg-yellow-500/10 border-yellow-500/30";
+                    if (rate <= 2) return "text-success bg-success/10 border-success/30";
+                    if (rate <= 5) return "text-warning bg-warning/10 border-warning/30";
                     if (rate <= 10) return "text-orange-500 bg-orange-500/10 border-orange-500/30";
-                    return "text-red-500 bg-red-500/10 border-red-500/30";
+                    return "text-destructive bg-destructive/10 border-destructive/30";
                   };
                   return (
                     <div key={mp.measurementPointId} className={`p-4 rounded-lg border ${getNGColorClass(ngRate)}`}>
@@ -2969,15 +2996,15 @@ export default function Dashboard() {
                           <p className="text-xs text-muted-foreground">{t("common.total")}</p>
                         </div>
                         <div className="text-center p-2 bg-background/50 rounded">
-                          <p className="font-semibold text-green-500">{mp.okCount}</p>
+                          <p className="font-semibold text-success">{mp.okCount}</p>
                           <p className="text-xs text-muted-foreground">OK</p>
                         </div>
                         <div className="text-center p-2 bg-background/50 rounded">
-                          <p className="font-semibold text-red-500">{mp.ngCount}</p>
+                          <p className="font-semibold text-destructive">{mp.ngCount}</p>
                           <p className="text-xs text-muted-foreground">NG</p>
                         </div>
                         <div className="text-center p-2 bg-background/50 rounded">
-                          <p className="font-semibold text-yellow-500">{mp.ntfCount}</p>
+                          <p className="font-semibold text-warning">{mp.ntfCount}</p>
                           <p className="text-xs text-muted-foreground">NTF</p>
                         </div>
                       </div>
@@ -3071,18 +3098,18 @@ function MqttAlertWidget() {
   const hasCritical = (connectionAlerts?.critical || 0) > 0;
 
   return (
-    <Card className={`glass-card ${hasCritical ? 'border-red-500/50 bg-red-500/5' : 'border-yellow-500/50 bg-yellow-500/5'}`}>
+    <Card className={`glass-card ${hasCritical ? 'border-destructive/50 bg-destructive/5' : 'border-warning/50 bg-warning/5'}`}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
-            <AlertTriangle className={`w-5 h-5 ${hasCritical ? 'text-red-400' : 'text-yellow-400'}`} />
+            <AlertTriangle className={`w-5 h-5 ${hasCritical ? 'text-destructive' : 'text-warning'}`} />
             {t("dashboard.mqttAlerts")}
             <div className="flex gap-1 ml-2">
               {(connectionAlerts?.critical || 0) > 0 && (
                 <Badge variant="destructive">{connectionAlerts?.critical} {t("dashboard.criticalLabel")}</Badge>
               )}
               {(connectionAlerts?.warning || 0) > 0 && (
-                <Badge variant="outline" className="border-yellow-500 text-yellow-500">{connectionAlerts?.warning} {t("dashboard.warningLabel")}</Badge>
+                <Badge variant="outline" className="border-warning text-warning">{connectionAlerts?.warning} {t("dashboard.warningLabel")}</Badge>
               )}
               {totalRuleAlerts > 0 && (
                 <Badge variant="secondary">{totalRuleAlerts} {t("dashboard.rulesLabel")}</Badge>
@@ -3112,12 +3139,12 @@ function MqttAlertWidget() {
             <div
               key={alert.id}
               className={`flex items-start gap-3 p-3 rounded-lg bg-background/50 border ${
-                alert.severity === 'critical' ? 'border-red-500/20' : 'border-yellow-500/20'
+                alert.severity === 'critical' ? 'border-destructive/20' : 'border-warning/20'
               }`}
             >
               <div className="mt-0.5">
                 <AlertTriangle className={`w-4 h-4 ${
-                  alert.severity === 'critical' ? 'text-red-400' : 'text-yellow-400'
+                  alert.severity === 'critical' ? 'text-destructive' : 'text-warning'
                 }`} />
               </div>
               <div className="flex-1 min-w-0">

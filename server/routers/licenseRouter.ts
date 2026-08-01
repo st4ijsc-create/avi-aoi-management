@@ -38,7 +38,10 @@ import { router, publicProcedure, protectedProcedure, adminProcedure } from "../
 import * as db from "../db";
 import { licenseService } from "../license/license-service";
 import { licenseGuard } from "../license/license-guard";
+import { getDefaultProductCode } from "../license/productCode";
 import { SYSTEM_MODULES, toExportFormat, isRouteAllowed, CORE_MODULE_CODES, ALL_MODULE_CODES } from "@shared/module-registry";
+import { resolveEditionModules } from "@shared/editions"; // doc 33 I3 (F1): edition module-ceiling
+import { resolveDeploymentProfile } from "../_core/deploymentProfile";
 import { ENV } from "../_core/env";
 
 // ═══════════════════════════════════════════════════════════════
@@ -50,7 +53,13 @@ const publicLicenseRouter = router({
    * Activate a license key online via License Server, fallback to local DB
    * Flow: License Server API → store locally → return result
    */
-  activate: publicProcedure
+  // Doc 38 Đợt Q — was publicProcedure (NO auth): anyone could push a license key onto
+  // the deployment. Now admin-only (+2FA). RSA signature verification inside
+  // licenseService is unchanged. NOTE (bootstrap): CORE_ADMIN pages stay reachable in
+  // the no_license state, so an admin can always log in and activate; if a headless
+  // first-boot provisioning flow needs an unauthenticated path, add a separate
+  // rate-limited + audited bootstrap route instead of reopening this one.
+  activate: adminProcedure
     .input(z.object({
       licenseKey: z.string().min(1),
       productCode: z.string().min(1),
@@ -196,10 +205,17 @@ const publicLicenseRouter = router({
       licenseKey: z.string().min(1),
     }))
     .query(async ({ input }) => {
+      // doc 33 I3 (F1 · ADR-007): bound the licensed modules by the deployment EDITION's ceiling
+      // (a Machine edition never shows Site-only modules). Gated by EDITION_PROFILE (default OFF →
+      // pass-through, fully backward-compatible). Core modules always survive.
+      const profile = resolveDeploymentProfile();
+      const applyEditionCeiling = (mods: string[]): string[] =>
+        profile.profileEnforced ? resolveEditionModules(profile.edition, mods) : mods;
+
       // ── LICENSE_BYPASS: return all modules ──
       if (ENV.licenseBypass) {
         return {
-          modules: [...ALL_MODULE_CODES],
+          modules: applyEditionCeiling([...ALL_MODULE_CODES]),
           isLicensed: true,
           licenseStatus: 'normal',
           expiresAt: null,
@@ -261,8 +277,8 @@ const publicLicenseRouter = router({
         }
       }
 
-      // Merge core + aggregated modules
-      const uniqueModules = [...new Set([...CORE_MODULE_CODES, ...aggregatedModules])];
+      // Merge core + aggregated modules, then bound by the edition ceiling (I3).
+      const uniqueModules = applyEditionCeiling([...new Set([...CORE_MODULE_CODES, ...aggregatedModules])]);
 
       // Use the best license (or guard status) for metadata
       const refLicense = bestLicense || null;
@@ -353,7 +369,8 @@ const publicLicenseRouter = router({
    * Returns base64-encoded JSON with { licenseKey, hardwareFingerprint, productCode, timestamp }
    * Admin sends this data to License Server → offlineActivation.generatePackage
    */
-  generateOfflineRequest: publicProcedure
+  // Doc 38 Đợt Q — admin-only (was public). Emits a hardware-bound activation request.
+  generateOfflineRequest: adminProcedure
     .input(z.object({
       licenseKey: z.string().min(1),
     }))
@@ -372,7 +389,9 @@ const publicLicenseRouter = router({
    * Step 3: Apply offline license package
    * Validates the signed package from License Server, stores in DB, saves to disk
    */
-  applyOfflineLicense: publicProcedure
+  // Doc 38 Đợt Q — admin-only (was public). The signed package is still verified
+  // against the RSA public key inside licenseService before it is applied.
+  applyOfflineLicense: adminProcedure
     .input(z.object({
       offlinePackageBase64: z.string().min(1),
       licenseKey: z.string().min(1),
@@ -637,8 +656,8 @@ const moduleRouter = router({
    * Export toàn bộ module/feature theo mẫu JSON để gửi đến License Server đồng bộ
    */
   exportModules: adminProcedure.query(() => {
-    const productCode = ENV.licenseProductCode || 'AVI-AOI-MANAGEMENT';
-    return toExportFormat(productCode);
+    // R-2 rebrand: default export code is SYNAPSE-PLATFORM; LICENSE_PRODUCT_CODE wins.
+    return toExportFormat(getDefaultProductCode());
   }),
 });
 

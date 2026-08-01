@@ -129,22 +129,28 @@ describe("mqttClient router", () => {
   });
 
   describe("testNGAlert", () => {
+    // V3: testNGAlert was redesigned to take factory/workshop/station IDs and resolve
+    // machine/station from the DB (the old machineName/ngPointName/ngValue signature is gone).
+    // These tests were updated to the current schema. No live broker is required:
+    // publishNGAlert() returns false gracefully when the aedes broker isn't initialized
+    // (EXTERNAL_MQTT_ENABLED=false in vitest.setup), so the procedure still builds and
+    // returns its testData deterministically.
     it("publishes test NG alert successfully", async () => {
       const { ctx } = createAuthContext();
       const caller = appRouter.createCaller(ctx);
 
       const result = await caller.mqttClient.testNGAlert({
-        machineName: "Test Machine",
+        factoryId: 1,
+        workshopId: 1,
+        stationId: 1,
         serialNumber: "SN-TEST-001",
-        ngPointName: "Test Point",
-        ngValue: 0.5,
       });
 
       expect(result).toHaveProperty("success");
       expect(result.success).toBe(true);
       expect(result).toHaveProperty("message");
       expect(result).toHaveProperty("data");
-      expect(result.data).toHaveProperty("machineName", "Test Machine");
+      expect(result.data).toHaveProperty("machineName");
       expect(result.data).toHaveProperty("serialNumber", "SN-TEST-001");
       expect(result).toHaveProperty("mqttEnabled");
     });
@@ -154,12 +160,16 @@ describe("mqttClient router", () => {
       const caller = appRouter.createCaller(ctx);
 
       const result1 = await caller.mqttClient.testNGAlert({
-        machineName: "Test Machine 1",
+        factoryId: 1,
+        workshopId: 1,
+        stationId: 1,
         serialNumber: "SN-001",
       });
 
       const result2 = await caller.mqttClient.testNGAlert({
-        machineName: "Test Machine 2",
+        factoryId: 1,
+        workshopId: 1,
+        stationId: 1,
         serialNumber: "SN-002",
       });
 

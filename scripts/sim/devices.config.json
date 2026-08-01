@@ -1,0 +1,28 @@
+{
+  "$comment": "Cấu hình nhà máy ảo — 3 line (L1/L2/L3), vài thiết bị mỗi loại. Launcher sim-devices.mjs đọc file này, spawn mỗi device 1 process. Các trường ngoài type/id/enabled được truyền xuống simulator dưới dạng --key value. Đặt enabled=false để bỏ qua. mqttUrl trỏ tới broker Aedes nội bộ của app (mặc định 1883).",
+  "mqttUrl": "mqtt://127.0.0.1:1883",
+  "devices": [
+    { "type": "opcua", "id": "OPCUA-L1", "enabled": true, "port": 4840, "resource": "/UA/AviSim" },
+    { "type": "opcua", "id": "OPCUA-L2", "enabled": true, "port": 4841, "resource": "/UA/AviSim" },
+    { "type": "opcua", "id": "OPCUA-L3", "enabled": true, "port": 4842, "resource": "/UA/AviSim" },
+
+    { "type": "modbus", "id": "MODBUS-L1", "enabled": true, "port": 5020, "unit": 1 },
+    { "type": "modbus", "id": "MODBUS-L2", "enabled": true, "port": 5021, "unit": 1 },
+    { "type": "modbus", "id": "MODBUS-L3", "enabled": true, "port": 5022, "unit": 1 },
+
+    { "type": "hsms", "id": "HSMS-L1", "enabled": true, "port": 5000, "model": "AVI-SIM-EQ-L1", "softrev": "1.0.0", "alarmMs": 15000, "eventMs": 8000 },
+    { "type": "hsms", "id": "HSMS-L2", "enabled": true, "port": 5001, "model": "AVI-SIM-EQ-L2", "softrev": "1.0.0", "alarmMs": 18000, "eventMs": 9000 },
+    { "type": "hsms", "id": "HSMS-L3", "enabled": true, "port": 5002, "model": "AVI-SIM-EQ-L3", "softrev": "1.0.0", "alarmMs": 20000, "eventMs": 10000 },
+
+    { "type": "mtconnect", "id": "MTC-L1", "enabled": true, "port": 5010, "device": "CNC-L1" },
+    { "type": "mtconnect", "id": "MTC-L2", "enabled": true, "port": 5011, "device": "CNC-L2" },
+    { "type": "mtconnect", "id": "MTC-L3", "enabled": true, "port": 5012, "device": "CNC-L3" },
+
+    { "type": "vda5050", "id": "AGV-01", "enabled": true, "manufacturer": "st4i", "serial": "AGV01", "iface": "uagv" },
+    { "type": "vda5050", "id": "AGV-02", "enabled": true, "manufacturer": "st4i", "serial": "AGV02", "iface": "uagv" },
+
+    { "type": "sensor", "id": "SENSOR-L1", "enabled": true, "factory": 1, "machine": "SMT-01", "sensors": "vibration,current,temperature", "fault": "none" },
+    { "type": "sensor", "id": "SENSOR-L2", "enabled": true, "factory": 1, "machine": "SMT-02", "sensors": "vibration,current,temperature", "fault": "drift", "faultAt": 45 },
+    { "type": "sensor", "id": "SENSOR-L3", "enabled": true, "factory": 1, "machine": "AOI-01", "sensors": "vibration,current,pressure", "fault": "spike", "faultAt": 60 }
+  ]
+}

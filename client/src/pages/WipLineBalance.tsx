@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
+import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -29,15 +31,19 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import { chartColor, chartTooltipStyle, chartGridProps, chartAxisTick } from "@/components/patterns";
 
+// WIP status → themed colour. Semantically-loaded statuses map onto the shared
+// status tokens (blocked→destructive, starved/on_hold→warning, completed→success);
+// the rest fall back to the categorical chart palette so charts follow the theme.
 const STATUS_COLORS: Record<string, string> = {
-  queued: "#94a3b8",
-  in_process: "#3b82f6",
-  completed: "#22c55e",
-  blocked: "#ef4444",
-  starved: "#f59e0b",
-  scrapped: "#7c3aed",
-  on_hold: "#eab308",
+  queued: "var(--muted-foreground)",
+  in_process: "var(--info)",
+  completed: "var(--success)",
+  blocked: "var(--destructive)",
+  starved: "var(--warning)",
+  scrapped: "var(--chart-5)",
+  on_hold: "var(--warning)",
 };
 
 function reasonLabel(t: (k: string, d: string) => string, code: string): string {
@@ -102,34 +108,39 @@ export default function WipLineBalance() {
   return (
     <DashboardLayout>
       <div className="space-y-6 p-1">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <Boxes className="h-6 w-6 text-primary" />
-              {t("wipDashboard.title", "WIP & Cân bằng chuyền")}
-            </h1>
-            <p className="text-muted-foreground">
-              {t("wipDashboard.subtitle", "Theo dõi WIP realtime, dwell/bottleneck và điều phối thời gian thực")}
-            </p>
-          </div>
-          <div className="flex items-end gap-2">
-            <div>
-              <Label htmlFor="lineId" className="text-xs">{t("wipDashboard.lineFilter", "Lọc theo chuyền (ID)")}</Label>
-              <Input
-                id="lineId"
-                type="number"
-                min={1}
-                placeholder={t("wipDashboard.allLines", "Tất cả")}
-                value={lineInput}
-                onChange={(e) => setLineInput(e.target.value)}
-                className="w-40"
-              />
-            </div>
-            <Button variant="outline" size="icon" onClick={refetchAll} title={t("common.refresh", "Làm mới")}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Boxes className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
+          title={t("wipDashboard.title", "WIP & Cân bằng chuyền")}
+          description={t("wipDashboard.subtitle", "Theo dõi WIP realtime, dwell/bottleneck và điều phối thời gian thực")}
+          actions={
+            <>
+              <div>
+                <Label htmlFor="lineId" className="text-xs">{t("wipDashboard.lineFilter", "Lọc theo chuyền (ID)")}</Label>
+                <Input
+                  id="lineId"
+                  type="number"
+                  min={1}
+                  placeholder={t("wipDashboard.allLines", "Tất cả")}
+                  value={lineInput}
+                  onChange={(e) => setLineInput(e.target.value)}
+                  className="w-40"
+                />
+              </div>
+              <Button variant="outline" size="icon" onClick={refetchAll} title={t("common.refresh", "Làm mới")}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </>
+          }
+        />
+
+        {/* U7 cross-links — this is the deep WIP dispatch view; the MES Control
+            Tower folds WIP into a broader hub, Command Center gives the panorama. */}
+        <RelatedViews
+          links={[
+            { href: "/mes-control-tower", labelKey: "nav.mesControlTower", labelDefault: "MES Control Tower" },
+            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+          ]}
+        />
 
         {/* KPI */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
@@ -144,11 +155,11 @@ export default function WipLineBalance() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-500" /> {t("wipDashboard.blocked", "Blocked")}
+                <AlertTriangle className="h-4 w-4 text-warning" /> {t("wipDashboard.blocked", "Blocked")}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-red-600">
+              <div className="text-3xl font-bold text-destructive">
                 {(summary.data?.byStatus ?? []).find((s) => s.status === "blocked")?.count ?? 0}
               </div>
             </CardContent>
@@ -156,11 +167,11 @@ export default function WipLineBalance() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Clock className="h-4 w-4 text-amber-500" /> {t("wipDashboard.starved", "Starved")}
+                <Clock className="h-4 w-4 text-warning" /> {t("wipDashboard.starved", "Starved")}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-amber-600">
+              <div className="text-3xl font-bold text-warning">
                 {(summary.data?.byStatus ?? []).find((s) => s.status === "starved")?.count ?? 0}
               </div>
             </CardContent>
@@ -192,11 +203,11 @@ export default function WipLineBalance() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
-                      {pieData.map((entry) => (
-                        <Cell key={entry.name} fill={STATUS_COLORS[entry.name] ?? "#64748b"} />
+                      {pieData.map((entry, i) => (
+                        <Cell key={entry.name} fill={STATUS_COLORS[entry.name] ?? chartColor(i)} />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip contentStyle={chartTooltipStyle} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>
@@ -215,14 +226,14 @@ export default function WipLineBalance() {
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={dwellData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="station" fontSize={11} />
-                    <YAxis fontSize={11} />
-                    <Tooltip />
+                    <CartesianGrid {...chartGridProps} />
+                    <XAxis dataKey="station" tick={chartAxisTick} />
+                    <YAxis tick={chartAxisTick} />
+                    <Tooltip contentStyle={chartTooltipStyle} />
                     <Legend />
-                    <Bar dataKey="dwell" name={t("wipDashboard.dwell", "Dwell")} fill="#3b82f6" />
-                    <Bar dataKey="starved" name={t("wipDashboard.starved", "Starved")} fill="#f59e0b" />
-                    <Bar dataKey="blocked" name={t("wipDashboard.blocked", "Blocked")} fill="#ef4444" />
+                    <Bar dataKey="dwell" name={t("wipDashboard.dwell", "Dwell")} fill="var(--info)" />
+                    <Bar dataKey="starved" name={t("wipDashboard.starved", "Starved")} fill="var(--warning)" />
+                    <Bar dataKey="blocked" name={t("wipDashboard.blocked", "Blocked")} fill="var(--destructive)" />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -241,6 +252,7 @@ export default function WipLineBalance() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="w-full overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -274,6 +286,7 @@ export default function WipLineBalance() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
 
@@ -285,6 +298,7 @@ export default function WipLineBalance() {
               <CardDescription>{t("wipDashboard.lineBalanceDesc", "24 chu kỳ gần nhất")}</CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="w-full overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -312,6 +326,7 @@ export default function WipLineBalance() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             </CardContent>
           </Card>
         )}

@@ -28,6 +28,7 @@ import { ENV } from "../../_core/env";
 import { sites, type Site } from "../../../drizzle/schema";
 import { fetchSiteKpis } from "./siteClient";
 import { upsertSnapshot, writeSyncLog } from "./rollupStore";
+import { emitSiteUpdate } from "../../_core/socket";
 
 let timer: NodeJS.Timeout | null = null;
 let isRunning = false;
@@ -121,6 +122,34 @@ async function pollSite(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, site
     const rowsWritten = await upsertSnapshot(db, site, result.snapshot);
     // "partial" = summary OK but the optional pareto was missing.
     const partial = result.snapshot.defectPareto == null;
+
+    // U5-live — emit a compact site:update so the Command Center / Federation tree's
+    // SITE level is live (not just 30s-polled). Error-isolated: a socket failure must
+    // never break the ingest/persist path. Only reached when the aggregator flag is on
+    // (this whole scheduler is gated by FEDERATION_AGGREGATOR_ENABLED).
+    try {
+      const snap = result.snapshot;
+      emitSiteUpdate({
+        siteCode: site.code,
+        siteId: site.id,
+        status: "active",
+        freshness: "ok", // just fetched successfully → fresh by definition
+        asOf: snap.asOf.toISOString(),
+        fetchedAt: finishedAt.toISOString(),
+        kpi: {
+          yieldRate: snap.yieldRate,
+          ngRate: snap.ngRate,
+          throughput: snap.throughput,
+          oee: snap.oee,
+        },
+        alerts: snap.alertRollup
+          ? { open: snap.alertRollup.open, critical: snap.alertRollup.critical }
+          : null,
+        ts: Date.now(),
+      });
+    } catch (e) {
+      console.error("[Federation] site:update emit failed:", (e as Error).message);
+    }
 
     await writeSyncLog(db, {
       siteId: site.id,

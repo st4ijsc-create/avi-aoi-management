@@ -26,6 +26,16 @@
  *   - Mode gate: when OT_CONTROL_ENABLED !== "true" (the DEFAULT) the dispatcher
  *     NEVER calls driver.writeTags — it records a `simulated` commandLog row and
  *     returns { simulated: true }.
+ *   - C2 COMMISSIONING / FAT GATE (doc 24 Wave-1): an ADDITIONAL, stricter gate
+ *     layered ON TOP of the mode gate — it never removes or relaxes any existing
+ *     check. Flag OT_COMMISSIONING_REQUIRED (DEFAULT ON). Even when
+ *     OT_CONTROL_ENABLED==="true" AND every other gate would pass, if the target
+ *     adapter has NO active/non-expired/signed commissioning record, dispatch is
+ *     FORCED down the SAME 'simulated' path (a commandLog row with errorText
+ *     'not_commissioned: …'; driver.writeTags is NEVER called). PRECEDENCE:
+ *     not-commissioned ⇒ simulated REGARDLESS of OT_CONTROL_ENABLED. Mirrors the
+ *     proven sim-gate → deploy precondition (programmingService). Set the flag
+ *     false ONLY for legacy/dev.
  *   - F4b (OT_CONTROL_ENABLED==="true"): after ALL F4a gates pass, dispatch calls
  *     driver.writeTags() under a timeout (OT_CONTROL_TIMEOUT_MS, default 5000ms).
  *     write ok → status='acked'; write ok:false → 'failed'; timeout → 'timeout';
@@ -43,6 +53,26 @@
  *   - Idempotency: a prior terminal commandLog for the same idempotencyKey is
  *     returned as-is (no second dispatch / no blind retry).
  *   - NO auto-chaining: dispatch handles exactly one command request.
+ *   - G1.7 (doc 44 W0-D): every ledger row additionally carries `correlation_id`
+ *     (from DispatchInput.correlationId, else the AsyncLocalStorage correlation
+ *     backbone, else NULL) + `deadline_ms`. When `deadlineMs` is provided it
+ *     REPLACES the global OT_CONTROL_TIMEOUT_MS for THIS command (capped by
+ *     OT_CONTROL_TIMEOUT_MAX_MS when set); past-deadline unacked → 'timeout'
+ *     exactly like the existing flow. Absent → behaviour byte-for-byte unchanged.
+ *   - G1.6 (doc 44 W0-D): after a terminal result (any branch — simulated / acked*
+ *     / failed / timeout / rejected, including an idempotent cached replay) a
+ *     `cmd_ack` message { command_id, correlation_id, status, reason, ts, result? }
+ *     (LDS-L1 §8.5) is published to the UNS via unsPublisher.publishCmdAck.
+ *     FIRE-AND-FORGET: a publish error can NEVER fail or delay the dispatch
+ *     result. Flag UNS_CMD_ACK_ENABLED (default OFF ⇒ nothing is imported or
+ *     published). The publisher is loaded via dynamic import to avoid a module
+ *     cycle (unsPublisher statically imports this dispatcher).
+ *   - G1.9 (doc 44 W2-A3): when OT_CMD_SERIALIZE_ENABLED === "true" (default OFF)
+ *     real-writes to the SAME adapter are SERIALIZED through an in-process
+ *     per-adapter queue (spec §13.2 — "lệnh tới cùng asset xử lý tuần tự").
+ *     Bounded: queue depth ≥ OT_CMD_QUEUE_MAX (default 10) → immediate 'rejected'
+ *     reason 'BUSY' (spec §13.3). The lock wraps ONLY the write+verify section;
+ *     every gate above (and the simulated path) is unchanged.
  * ════════════════════════════════════════════════════════════════════════════
  */
 
@@ -61,6 +91,15 @@ import { getActiveDriver } from "./otManager";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
 import type { OtTagAddress } from "./otDriver";
 import { readbackMatches } from "./drivers/readbackCompare";
+import { isCommissioned, isCommissioningRequired } from "./commissioningService";
+// Doc 25 T1 — cổng interlock ĐỒNG BỘ, fail-closed chạy TRƯỚC mọi real-write HITL.
+// Import từ interlockGate (module chỉ đọc DB, KHÔNG import ngược commandDispatcher →
+// không tạo vòng phụ thuộc).
+import { evaluateInterlockGate } from "../interlock/interlockGate";
+import { evaluateCommandPolicy, secPlatformEnabled } from "../security/policyGate"; // doc 33 I2 (F5): policy-as-code gate
+// G1.7 (doc 44 W0-D) — correlation backbone (AsyncLocalStorage, opt-in): when the
+// caller did not pass an explicit correlationId we read the ambient one (if any).
+import { getCorrelationId } from "../observability/correlation";
 
 /** True when the operator has explicitly enabled real OT control (F4b). */
 export function isOtControlEnabled(): boolean {
@@ -98,6 +137,46 @@ const INTERLOCK_AUTO_ACTIONS: ReadonlySet<string> = new Set([
   "stop_line",
   "reduce_speed",
 ]);
+
+/**
+ * doc 48 R1 (T1) — SAFETY-PLC PREFLIGHT flag. Read at RUNTIME (tests/operators toggle).
+ * Default ON: safety should be on UNLESS an operator EXPLICITLY disables it
+ * (=== "false"). This is non-breaking despite being ON-by-default because an UNKNOWN
+ * safety status (no safety-PLC configured/enabled — the common case) still PASSES; only
+ * a real BLOCKED read denies. See readSafetyStateForPreflight + the (5a-safety) gate.
+ */
+export function isSafetyPreflightEnabled(): boolean {
+  return process.env.OT_SAFETY_PREFLIGHT_ENABLED !== "false";
+}
+
+/**
+ * doc 48 R1 (T1) — read the target adapter's READ-ONLY SafetyState for the pre-write
+ * preflight (spec invariant #1: a BLOCKED safety-PLC must deny actuation). Delegates to
+ * the adapter facade's getSafetyStatus (driver.getSafetyStatus → else the safety-PLC
+ * status adapter). The facade is HONEST: it returns 'UNKNOWN' (never a fabricated
+ * 'OK'/'BLOCKED') when no source is readable, and never actuates a safety function.
+ *
+ * Dynamic import avoids a STATIC module cycle (adapterFacade statically imports this
+ * dispatcher — mirrors the emitCmdAck/unsPublisher pattern). Belt-and-braces: any
+ * unexpected throw maps to 'UNKNOWN' (allow + warn), NEVER to a spurious 'BLOCKED' —
+ * a read error must not fabricate a trip, and UNKNOWN must not brick an unconfigured line.
+ */
+async function readSafetyStateForPreflight(
+  adapterId: number,
+  machineId: number | null,
+): Promise<"OK" | "BLOCKED" | "UNKNOWN"> {
+  try {
+    const { createAdapterFacade } = await import("./adapterFacade");
+    const state = await createAdapterFacade({ adapterId, machineId }).getSafetyStatus();
+    return state.state;
+  } catch (err) {
+    console.warn(
+      `[Dispatch] safety preflight read failed for adapter ${adapterId} (treated as UNKNOWN, not blocked):`,
+      (err as Error)?.message || err,
+    );
+    return "UNKNOWN";
+  }
+}
 
 export type DispatchStatus = CommandLog["status"]; // simulated | sent | acked | failed | timeout | rejected
 
@@ -140,6 +219,127 @@ export interface DispatchInput {
   lang?: "vi" | "en" | "zh";
   /** Unique key → at most one effective dispatch. */
   idempotencyKey: string;
+  /**
+   * doc 33 I2 (F5): optional policy-as-code CONTEXT for the SEC_PLATFORM governance gate —
+   * `{ zone, product, line, approved, role, fat_passed, … }`. doc 48 R1 (T3): the evaluated
+   * action is ALWAYS `ot.command.<commandType>` (namespaced so POLICY_DEFAULT_DENY_ACTIONS
+   * =ot.command.* actually gates this write path); any `action` supplied here is IGNORED for
+   * the OT write. `approved` satisfies a require_approval policy (four-eyes). Absent + no
+   * matching policy → allow. See server/services/security/policyGate.ts + contracts/policies/.
+   */
+  policyContext?: { approved?: boolean } & Record<string, unknown>;
+  /**
+   * G1.7 — optional cross-layer correlation id (order → work-order → command → ack).
+   * Absent → the ambient AsyncLocalStorage correlation context is used (if any),
+   * else NULL. Persisted on EVERY commandLog row (all branches) + echoed in cmd_ack.
+   */
+  correlationId?: string;
+  /**
+   * G1.7 — optional per-command ack deadline in ms. When provided (finite, > 0) it
+   * is used INSTEAD of the global OT_CONTROL_TIMEOUT_MS for this command (capped by
+   * OT_CONTROL_TIMEOUT_MAX_MS when configured); an unacked write past the deadline
+   * → status 'timeout' (the existing flow). Absent → behaviour unchanged.
+   */
+  deadlineMs?: number;
+}
+
+/** G1.7 — the (correlationId, deadlineMs) pair persisted on every ledger row. */
+function commandContext(input: DispatchInput): { correlationId: string | null; deadlineMs: number | null } {
+  const explicit =
+    typeof input.correlationId === "string" && input.correlationId.trim() ? input.correlationId.trim() : null;
+  const deadlineMs =
+    typeof input.deadlineMs === "number" && Number.isFinite(input.deadlineMs) && input.deadlineMs > 0
+      ? Math.trunc(input.deadlineMs)
+      : null;
+  return { correlationId: explicit ?? getCorrelationId() ?? null, deadlineMs };
+}
+
+/**
+ * G1.7 — the timeout used for THIS command's write (and read-back) race:
+ *   • deadlineMs absent/invalid → the global env timeout (OT_CONTROL_TIMEOUT_MS,
+ *     default 5000ms) — byte-for-byte the prior behaviour.
+ *   • deadlineMs provided → min(deadlineMs, OT_CONTROL_TIMEOUT_MAX_MS) when the
+ *     max is configured, else deadlineMs as-is.
+ */
+function effectiveTimeoutMs(deadlineMs?: number): number {
+  const envDefault = Number(process.env.OT_CONTROL_TIMEOUT_MS ?? 5000) || 5000;
+  if (typeof deadlineMs !== "number" || !Number.isFinite(deadlineMs) || deadlineMs <= 0) return envDefault;
+  const maxRaw = Number(process.env.OT_CONTROL_TIMEOUT_MAX_MS);
+  const max = Number.isFinite(maxRaw) && maxRaw > 0 ? maxRaw : null;
+  return max != null ? Math.min(Math.trunc(deadlineMs), max) : Math.trunc(deadlineMs);
+}
+
+// ─── G1.9 (doc 44 W2-A3) — per-adapter command serialization (spec §13.2) ──────
+//
+// "Lệnh tới cùng asset xử lý tuần tự (hoặc theo hàng đợi có khóa) để tránh tranh
+// chấp." Khi OT_CMD_SERIALIZE_ENABLED === "true" (default OFF) các REAL-WRITE tới
+// CÙNG adapterId được tuần tự hóa bằng một promise-chain in-process per adapter
+// (mutex kiểu tail-promise). Hàng đợi BOUNDED: khi depth (kể cả lệnh đang chạy)
+// đã ≥ OT_CMD_QUEUE_MAX (default 10) → lệnh mới bị REJECT NGAY reason 'BUSY'
+// (spec §13.3 — không chờ, không âm thầm treo).
+//
+// PHẠM VI: chỉ bọc quanh đoạn write+verify của NHÁNH THỰC THI THẬT — mọi gate
+// (authorization / idempotency / allowlist / mode / commissioning / policy /
+// interlock) chạy TRƯỚC và KHÔNG đổi; các nhánh simulated/rejected đã return
+// trước điểm khóa. Flag OFF → thực thi ngay như trước (byte-for-byte).
+
+/** G1.9 — cờ tuần tự hóa lệnh per-adapter, đọc tại call time (default OFF). */
+export function isCmdSerializeEnabled(): boolean {
+  return process.env.OT_CMD_SERIALIZE_ENABLED === "true";
+}
+
+/** Độ sâu hàng đợi tối đa per adapter (env OT_CMD_QUEUE_MAX, default 10). */
+function cmdQueueMax(): number {
+  const n = parseInt(String(process.env.OT_CMD_QUEUE_MAX ?? ""), 10);
+  return Number.isFinite(n) && n > 0 ? n : 10;
+}
+
+interface AdapterCommandQueue {
+  /** Promise của lệnh cuối trong chuỗi — đã "sanitize" (không bao giờ reject). */
+  tail: Promise<void>;
+  /** Số lệnh trong hàng (kể cả lệnh đang thực thi). */
+  depth: number;
+}
+
+const adapterCommandQueues = new Map<number, AdapterCommandQueue>();
+
+/** Chỉ dùng trong test — xóa mọi hàng đợi lệnh per-adapter. */
+export function _resetAdapterCommandQueuesForTests(): void {
+  adapterCommandQueues.clear();
+}
+
+type EnqueueOutcome<T> =
+  | { accepted: true; result: Promise<T> }
+  | { accepted: false; depth: number; max: number };
+
+/**
+ * Xếp `fn` vào hàng đợi tuần tự của adapter. Trả {accepted:false} NGAY (không
+ * side-effect) khi hàng đã đầy. `fn` chỉ chạy sau khi mọi lệnh xếp trước nó đã
+ * kết thúc (kể cả khi lệnh trước lỗi — tail được sanitize). Entry của adapter
+ * được dọn khỏi map khi hàng cạn (không rò rỉ theo số adapter đã từng dùng).
+ */
+function tryEnqueueAdapterCommand<T>(adapterId: number, fn: () => Promise<T>): EnqueueOutcome<T> {
+  const max = cmdQueueMax();
+  let q = adapterCommandQueues.get(adapterId);
+  if (!q) {
+    q = { tail: Promise.resolve(), depth: 0 };
+    adapterCommandQueues.set(adapterId, q);
+  }
+  if (q.depth >= max) return { accepted: false, depth: q.depth, max };
+  q.depth += 1;
+  const queue = q;
+  const run = queue.tail.then(fn);
+  queue.tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  const result = run.finally(() => {
+    queue.depth -= 1;
+    if (queue.depth === 0 && adapterCommandQueues.get(adapterId) === queue) {
+      adapterCommandQueues.delete(adapterId);
+    }
+  });
+  return { accepted: true, result };
 }
 
 /** Resolve the (requestedBy, confirmedBy) pair recorded on commandLog rows. */
@@ -200,13 +400,57 @@ const TERMINAL_STATUSES: ReadonlySet<DispatchStatus> = new Set([
   "rejected",
 ]);
 
+/** G1.6 — flag for the UNS cmd_ack publish (default OFF ⇒ dispatch is unchanged). */
+function unsCmdAckEnabled(): boolean {
+  return process.env.UNS_CMD_ACK_ENABLED === "true";
+}
+
+/**
+ * G1.6 — publish the terminal cmd_ack to the UNS, FIRE-AND-FORGET. Payload per
+ * LDS-L1 §8.5: { command_id, correlation_id, status, reason, ts, result? }.
+ * `command_id` = the caller's idempotencyKey (the identity the caller knows).
+ * Dynamic import (no static cycle: unsPublisher imports this module). Any error
+ * is logged + counted inside the publisher — it can NEVER affect the dispatch.
+ */
+function emitCmdAck(input: DispatchInput, result: DispatchResult): void {
+  if (!unsCmdAckEnabled()) return;
+  const ack = {
+    command_id: input.idempotencyKey,
+    correlation_id: commandContext(input).correlationId,
+    status: result.status,
+    reason: result.reason ?? null,
+    ts: new Date().toISOString(),
+    result: result.results,
+  };
+  void (async () => {
+    try {
+      const { publishCmdAck } = await import("../unsPublisher");
+      publishCmdAck(ack, { adapterId: input.adapterId, machineId: input.machineId ?? null });
+    } catch (err) {
+      // Fire-and-forget: NEVER propagate into the dispatch result.
+      console.error("[Dispatch] cmd_ack publish failed (ignored):", (err as Error)?.message || err);
+    }
+  })();
+}
+
 /**
  * Dispatch a machine command. In F4a this is always DRY-RUN unless
  * OT_CONTROL_ENABLED === "true" (reserved for F4b). Returns a structured result
  * and records commandLog rows on every branch. Never throws for the expected
  * failure modes (offline / not writable / not confirmed).
+ *
+ * G1.6: this exported wrapper publishes the terminal cmd_ack (fire-and-forget,
+ * flag UNS_CMD_ACK_ENABLED) AFTER the core dispatch resolved — every terminal
+ * branch (including an idempotent cached replay) emits exactly one ack per call.
+ * It adds NO gate and changes NO result: dispatchCore is the entire safety path.
  */
 export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
+  const result = await dispatchCore(input);
+  emitCmdAck(input, result);
+  return result;
+}
+
+async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   const db = await getDb();
   if (!db) {
     return { ok: false, simulated: false, status: "failed", reason: "DB_UNAVAILABLE", results: [], commandLogIds: [] };
@@ -321,42 +565,139 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
   const who = actors(input);
   const trig = triggerCols(input);
   if (!isOtControlEnabled()) {
-    const commandLogIds: number[] = [];
-    const results: DispatchPerWrite[] = [];
-    for (const r of resolved) {
-      const [row] = await db
-        .insert(commandLog)
-        .values({
-          actionId: who.actionId,
-          adapterId: input.adapterId,
-          machineId: input.machineId ?? null,
-          tagKey: r.write.tagKey,
-          address: r.address,
-          commandType: input.commandType,
-          requestedValue: r.write.value as any,
-          requestedBy: who.requestedBy,
-          confirmedBy: who.confirmedBy,
-          status: "simulated",
-          ...trig,
-          idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, results.length),
-        })
-        .returning({ id: commandLog.id });
-      commandLogIds.push(row.id);
-      results.push({ tagKey: r.write.tagKey, address: r.address, ok: true, status: "simulated" });
+    return writeSimulated(db, input, resolved, who, trig);
+  }
+
+  // ── (5a) C2 COMMISSIONING / FAT GATE (doc 24 Wave-1) — a STRICTER precondition
+  //         layered ON TOP of the mode gate. Reachable ONLY when control is enabled
+  //         (else step 5 already returned). When OT_COMMISSIONING_REQUIRED is on
+  //         (DEFAULT) and the target adapter is NOT commissioned (no active,
+  //         non-expired, signed commissioning record), FORCE the SAME 'simulated'
+  //         path — driver.writeTags is NEVER called. This can only ever DOWNGRADE a
+  //         would-be real write to simulated; it never enables a write, so it cannot
+  //         weaken any gate above. PRECEDENCE: not-commissioned ⇒ simulated even
+  //         though OT_CONTROL_ENABLED==="true".
+  if (isCommissioningRequired() && !(await isCommissioned(input.adapterId))) {
+    return writeSimulated(
+      db, input, resolved, who, trig,
+      "not_commissioned",
+      "adapter has no active, non-expired, signed commissioning record — real write refused (recorded simulated)",
+    );
+  }
+
+  // ── (5a-bis) INLINE INTERLOCK GATE (doc 25 T1) — fail-closed, ĐỒNG BỘ, TRƯỚC
+  //         mọi real-write cho lệnh HITL. Reachable ONLY khi OT_CONTROL_ENABLED==="true"
+  //         VÀ adapter đã commissioned (bước 5/5a đã trả simulated nếu không). Đánh giá
+  //         ĐỒNG BỘ các interlock rule enabled+approved có action chặn/dừng nhắm tới
+  //         máy/thiết bị này (theo targetAdapterId/targetMachineId/commandTag). Nếu có
+  //         rule đang vi phạm → TỪ CHỐI fail-closed (INTERLOCK_BLOCKED), driver.writeTags
+  //         KHÔNG được gọi. Lỗi đánh giá → cũng fail-closed (an toàn).
+  //         LƯU Ý: chỉ áp cho kind='hitl'. Lệnh kind='interlock' CHÍNH LÀ hành động
+  //         interlock (đã qua verifyInterlockAuthorization) — nếu chặn nó bằng cổng này
+  //         thì lệnh an toàn không bao giờ ghi được (tự khoá). Cổng KHÔNG áp cho
+  //         dry-run/emulator (đường đó đã trả simulated ở bước 5, không có real-write).
+  // ── (5a-policy) doc 33 I2 (F5 §5.11.2) — policy-as-code governance gate. SEC_PLATFORM
+  //         default OFF → skipped (fully non-breaking). When on, a high-risk command whose
+  //         policyContext matches a `deny` policy is REJECTED here; a `require_approval` policy
+  //         is rejected unless a four-eyes approval is present. hitl-only (never self-locks an
+  //         interlock action). Runs BEFORE the interlock gate (governance → safety).
+  if (input.triggeredBy.kind === "hitl" && secPlatformEnabled()) {
+    // doc 48 R1 (T3) — evaluate the PER-COMMAND action `ot.command.<verb>` (verb =
+    // commandType, e.g. ot.command.tag.write) so the OT write path aligns EXACTLY with
+    // the shipped deny-group + allow-policy namespace `ot.command.*` (contracts/policies/
+    // allow-ot-command-engineer-fat.policy.yaml). The coarse legacy action "device_write"
+    // matched NO `ot.command.*` policy, so enabling POLICY_DEFAULT_DENY_ACTIONS=ot.command.*
+    // did NOT actually gate this write. The namespaced action is applied AFTER the caller
+    // context so it can NEVER be overridden away from `ot.command.*` (the caller enriches
+    // context — role/fat_passed/zone/… — but does not change WHICH action is governed).
+    const verdict = evaluateCommandPolicy(
+      { ...(input.policyContext ?? {}), action: `ot.command.${input.commandType}` },
+      { enabled: true, approved: input.policyContext?.approved === true },
+    );
+    if (!verdict.allow) {
+      const reason = verdict.effect === "deny" ? "POLICY_DENIED" : "POLICY_APPROVAL_REQUIRED";
+      const ids = await writeRejected(db, input, reason, verdict.reason);
+      return { ok: false, simulated: false, status: "rejected", reason, results: failedResults(input, reason), commandLogIds: ids };
     }
-    if (input.triggeredBy.kind === "interlock") await auditInterlockAutoBlock(input, commandLogIds);
-    return { ok: true, simulated: true, status: "simulated", results, commandLogIds };
+  }
+
+  // ── (5a-safety) SAFETY-PLC PREFLIGHT (doc 48 R1 · T1 · spec invariant #1: "a BLOCKED
+  //         safety-PLC MUST deny actuation"). Reachable ONLY when OT_CONTROL_ENABLED==="true"
+  //         AND the adapter is commissioned (steps 5 / 5a already returned 'simulated'
+  //         otherwise) — i.e. immediately before a REAL device write. Reads the target
+  //         adapter's READ-ONLY SafetyState via the adapter facade (driver.getSafetyStatus →
+  //         else the safety-PLC status adapter); it NEVER actuates a safety function. Honest,
+  //         3-way:
+  //           • BLOCKED → REJECT (SAFETY_BLOCKED); driver.writeTags is NEVER called.
+  //           • UNKNOWN → ALLOW + WARN. UNKNOWN ≠ BLOCKED: a line with no safety-PLC
+  //                       configured/enabled must NOT be bricked (non-breaking) — the
+  //                       certified Safety-PLC still performs any rated stop in hardware.
+  //           • OK      → proceed.
+  //         Flag OT_SAFETY_PREFLIGHT_ENABLED — ON UNLESS explicitly "false" (safety should be
+  //         on by default). Because UNKNOWN passes, keeping the safety-PLC adapter's OWN flag
+  //         (SAFETY_PLC_ADAPTER_ENABLED) OFF is fully non-breaking. hitl-only (mirrors the
+  //         policy + interlock gates): a kind='interlock' command IS a safety de-energization
+  //         (block/stop/reduce) — blocking it here would self-lock the safety response. The
+  //         dry-run/simulated path never reaches here (no real write to guard).
+  if (input.triggeredBy.kind === "hitl" && isSafetyPreflightEnabled()) {
+    const safety = await readSafetyStateForPreflight(input.adapterId, input.machineId ?? null);
+    if (safety === "BLOCKED") {
+      const ids = await writeRejected(
+        db,
+        input,
+        "SAFETY_BLOCKED",
+        "safety-PLC reports BLOCKED/tripped — actuation denied before write (read-only preflight, spec invariant #1)",
+      );
+      return {
+        ok: false,
+        simulated: false,
+        status: "rejected",
+        reason: "SAFETY_BLOCKED",
+        results: failedResults(input, "SAFETY_BLOCKED"),
+        commandLogIds: ids,
+      };
+    }
+    if (safety === "UNKNOWN") {
+      console.warn(
+        `[Dispatch] safety preflight: UNKNOWN safety status for adapter ${input.adapterId} ` +
+          `(no safety-PLC configured/enabled) — allowing write (honest: UNKNOWN ≠ BLOCKED).`,
+      );
+    }
+  }
+
+  if (input.triggeredBy.kind === "hitl") {
+    const gate = await evaluateInterlockGate({
+      adapterId: input.adapterId,
+      machineId: input.machineId ?? null,
+      tagKeys: input.writes.map((w) => w.tagKey),
+    });
+    if (gate.blocked) {
+      const detail = gate.failClosed
+        ? "interlock evaluation error — fail-closed (no write)"
+        : `blocked by active interlock rule(s): ${gate.violations
+            .map((v) => `#${v.ruleId}(${v.action})`)
+            .join(", ")}`;
+      const ids = await writeRejected(db, input, "INTERLOCK_BLOCKED", detail);
+      return {
+        ok: false,
+        simulated: false,
+        status: "rejected",
+        reason: "INTERLOCK_BLOCKED",
+        results: failedResults(input, "INTERLOCK_BLOCKED"),
+        commandLogIds: ids,
+      };
+    }
   }
 
   // ── (5b) F4b — REAL WRITE PATH. Reachable ONLY when OT_CONTROL_ENABLED==="true"
-  //         AND only after every F4a gate above (confirm+owner, idempotency,
-  //         allowlist writable, driver active). driver.writeTags() reaches the
-  //         physical device. ack (F4b) = write returned ok. NO blind retry.
+  //         AND the adapter is commissioned (C2) AND only after every F4a gate above
+  //         (confirm+owner, idempotency, allowlist writable, driver active).
+  //         driver.writeTags() reaches the physical device. ack (F4b) = write
+  //         returned ok. NO blind retry.
   //         G2.1: when OT_READBACK_ENABLED, a SINGLE driver.readTags() verifies the
   //         acked writes (acked_verified / acked_unverified — WARN only). The
   //         per-write outcome + read-back status are computed BEFORE inserting the
   //         commandLog rows so the ledger stays append-only (insert ONCE, no update).
-  const sentAt = new Date();
   const commandLogIds: number[] = [];
 
   // Map resolved → driver writes (carry dataType/scale/offset for INVERSE scale).
@@ -369,24 +710,10 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
     offset: r.offset,
   }));
 
-  const timeoutMs = Number(process.env.OT_CONTROL_TIMEOUT_MS ?? 5000) || 5000;
+  // G1.7 — per-command deadline (when provided) replaces the global env timeout
+  // for THIS command; absent → OT_CONTROL_TIMEOUT_MS (default 5000ms) as before.
+  const timeoutMs = effectiveTimeoutMs(input.deadlineMs);
   const TIMEOUT = Symbol("timeout");
-
-  let writeResults: Awaited<ReturnType<typeof driver.writeTags>> | typeof TIMEOUT;
-  let threwError: string | null = null;
-  try {
-    writeResults = await Promise.race([
-      driver.writeTags(driverWrites),
-      new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), timeoutMs)),
-    ]);
-  } catch (err) {
-    threwError = (err as Error)?.message || String(err);
-    writeResults = [];
-  }
-
-  // Decide a per-write outcome from the write result (status BEFORE read-back).
-  const timedOut = writeResults === TIMEOUT;
-  const resultsArr = Array.isArray(writeResults) ? writeResults : [];
 
   // Pre-insert outcome per resolved write. `ok` is fixed by the WRITE result;
   // read-back only refines an acked write's status (verified/unverified) and
@@ -398,82 +725,132 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
     errorText: string | null;
     readBackValue: unknown;
   }
-  const outcomes: Outcome[] = resolved.map((r, i) => {
-    if (timedOut) {
-      return { idx: i, ok: false, status: "timeout", errorText: `write timeout after ${timeoutMs}ms`, readBackValue: null };
-    }
-    if (threwError) {
-      return { idx: i, ok: false, status: "failed", errorText: threwError, readBackValue: null };
-    }
-    const wr =
-      resultsArr.find((x) => x.tagKey === r.write.tagKey) ??
-      { tagKey: r.write.tagKey, ok: false, error: "no result" };
-    const ok = wr.ok === true;
-    return {
-      idx: i,
-      ok,
-      status: ok ? "acked" : "failed",
-      errorText: ok ? null : (wr.error ?? "write failed"),
-      readBackValue: null,
-    };
-  });
 
-  // ── G2.1 READ-BACK — ONLY when control + read-back enabled AND ≥1 write acked.
-  //    A SINGLE driver.readTags() (under the same timeout). readTags throwing /
-  //    timing out → ALL acked writes become acked_unverified (WARN only; NO retry).
-  if (isOtReadbackEnabled() && outcomes.some((o) => o.status === "acked")) {
-    const ackedIdx = outcomes.filter((o) => o.status === "acked").map((o) => o.idx);
-    const readTags: OtTagAddress[] = ackedIdx.map((i) => {
-      const r = resolved[i];
+  // ── G1.9 — the write+verify body, extracted UNCHANGED so it can run either
+  //    immediately (flag OFF — prior behaviour) or under the per-adapter queue.
+  //    It never throws for expected failure modes (driver errors are caught).
+  const executeWriteAndVerify = async (): Promise<{ sentAt: Date; timedOut: boolean; outcomes: Outcome[] }> => {
+    const sentAt = new Date();
+
+    let writeResults: Awaited<ReturnType<typeof driver.writeTags>> | typeof TIMEOUT;
+    let threwError: string | null = null;
+    try {
+      writeResults = await Promise.race([
+        driver.writeTags(driverWrites),
+        new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), timeoutMs)),
+      ]);
+    } catch (err) {
+      threwError = (err as Error)?.message || String(err);
+      writeResults = [];
+    }
+
+    // Decide a per-write outcome from the write result (status BEFORE read-back).
+    const timedOut = writeResults === TIMEOUT;
+    const resultsArr = Array.isArray(writeResults) ? writeResults : [];
+
+    const outcomes: Outcome[] = resolved.map((r, i) => {
+      if (timedOut) {
+        return { idx: i, ok: false, status: "timeout", errorText: `write timeout after ${timeoutMs}ms`, readBackValue: null };
+      }
+      if (threwError) {
+        return { idx: i, ok: false, status: "failed", errorText: threwError, readBackValue: null };
+      }
+      const wr =
+        resultsArr.find((x) => x.tagKey === r.write.tagKey) ??
+        { tagKey: r.write.tagKey, ok: false, error: "no result" };
+      const ok = wr.ok === true;
       return {
-        tagKey: r.write.tagKey,
-        address: r.address,
-        dataType: (r.dataType ?? "float") as OtTagAddress["dataType"],
-        scale: r.scale,
-        offset: r.offset,
+        idx: i,
+        ok,
+        status: ok ? "acked" : "failed",
+        errorText: ok ? null : (wr.error ?? "write failed"),
+        readBackValue: null,
       };
     });
 
-    const RB_TIMEOUT = Symbol("rb_timeout");
-    let samples: Awaited<ReturnType<typeof driver.readTags>> | typeof RB_TIMEOUT | null = null;
-    let readbackUnavailable = false;
-    try {
-      samples = await Promise.race([
-        driver.readTags(readTags),
-        new Promise<typeof RB_TIMEOUT>((resolve) => setTimeout(() => resolve(RB_TIMEOUT), timeoutMs)),
-      ]);
-      if (samples === RB_TIMEOUT) readbackUnavailable = true;
-    } catch {
-      // readTags throwing → read-back unavailable (NOT failed, NO retry).
-      readbackUnavailable = true;
+    // ── G2.1 READ-BACK — ONLY when control + read-back enabled AND ≥1 write acked.
+    //    A SINGLE driver.readTags() (under the same timeout). readTags throwing /
+    //    timing out → ALL acked writes become acked_unverified (WARN only; NO retry).
+    if (isOtReadbackEnabled() && outcomes.some((o) => o.status === "acked")) {
+      const ackedIdx = outcomes.filter((o) => o.status === "acked").map((o) => o.idx);
+      const readTags: OtTagAddress[] = ackedIdx.map((i) => {
+        const r = resolved[i];
+        return {
+          tagKey: r.write.tagKey,
+          address: r.address,
+          dataType: (r.dataType ?? "float") as OtTagAddress["dataType"],
+          scale: r.scale,
+          offset: r.offset,
+        };
+      });
+
+      const RB_TIMEOUT = Symbol("rb_timeout");
+      let samples: Awaited<ReturnType<typeof driver.readTags>> | typeof RB_TIMEOUT | null = null;
+      let readbackUnavailable = false;
+      try {
+        samples = await Promise.race([
+          driver.readTags(readTags),
+          new Promise<typeof RB_TIMEOUT>((resolve) => setTimeout(() => resolve(RB_TIMEOUT), timeoutMs)),
+        ]);
+        if (samples === RB_TIMEOUT) readbackUnavailable = true;
+      } catch {
+        // readTags throwing → read-back unavailable (NOT failed, NO retry).
+        readbackUnavailable = true;
+      }
+
+      const tol = readbackFloatTolerance();
+      const sampleArr = Array.isArray(samples) ? samples : [];
+      for (const i of ackedIdx) {
+        const o = outcomes[i];
+        const r = resolved[i];
+        if (readbackUnavailable) {
+          o.status = "acked_unverified";
+          o.errorText = "readback unavailable";
+          continue;
+        }
+        const s = sampleArr.find((x) => x.tagKey === r.write.tagKey);
+        const actual = s ? s.value : null;
+        const dataType = (r.dataType ?? "float") as OtTagAddress["dataType"];
+        const matched = s != null && readbackMatches(r.write.value, actual, dataType, tol);
+        if (matched) {
+          o.status = "acked_verified";
+          o.readBackValue = actual;
+        } else {
+          o.status = "acked_unverified";
+          o.readBackValue = actual;
+          o.errorText = `readback mismatch: expected=${String(r.write.value)} actual=${String(actual)}`;
+        }
+      }
     }
 
-    const tol = readbackFloatTolerance();
-    const sampleArr = Array.isArray(samples) ? samples : [];
-    for (const i of ackedIdx) {
-      const o = outcomes[i];
-      const r = resolved[i];
-      if (readbackUnavailable) {
-        o.status = "acked_unverified";
-        o.errorText = "readback unavailable";
-        continue;
-      }
-      const s = sampleArr.find((x) => x.tagKey === r.write.tagKey);
-      const actual = s ? s.value : null;
-      const dataType = (r.dataType ?? "float") as OtTagAddress["dataType"];
-      const matched = s != null && readbackMatches(r.write.value, actual, dataType, tol);
-      if (matched) {
-        o.status = "acked_verified";
-        o.readBackValue = actual;
-      } else {
-        o.status = "acked_unverified";
-        o.readBackValue = actual;
-        o.errorText = `readback mismatch: expected=${String(r.write.value)} actual=${String(actual)}`;
-      }
+    return { sentAt, timedOut, outcomes };
+  };
+
+  // ── (5c) G1.9 — PER-ADAPTER SERIALIZATION (flag OT_CMD_SERIALIZE_ENABLED,
+  //    default OFF → run immediately, prior behaviour byte-for-byte). Real-writes
+  //    to the SAME adapter run one-at-a-time; a full queue (depth ≥ OT_CMD_QUEUE_MAX)
+  //    rejects THIS command immediately with reason 'BUSY' (spec §13.3) — the
+  //    ledger records the rejection like every other rejected branch.
+  let executed: { sentAt: Date; timedOut: boolean; outcomes: Outcome[] };
+  if (isCmdSerializeEnabled()) {
+    const enq = tryEnqueueAdapterCommand(input.adapterId, executeWriteAndVerify);
+    if (!enq.accepted) {
+      const ids = await writeRejected(
+        db,
+        input,
+        "BUSY",
+        `adapter command queue full (depth ${enq.depth} >= max ${enq.max}) — command rejected, retry later`,
+      );
+      return { ok: false, simulated: false, status: "rejected", reason: "BUSY", results: failedResults(input, "BUSY"), commandLogIds: ids };
     }
+    executed = await enq.result;
+  } else {
+    executed = await executeWriteAndVerify();
   }
+  const { sentAt, timedOut, outcomes } = executed;
 
   // Insert one commandLog row per write (append-only — single insert per write).
+  const ctx = commandContext(input); // G1.7 — correlation_id + deadline_ms
   const results: DispatchPerWrite[] = [];
   for (const o of outcomes) {
     const r = resolved[o.idx];
@@ -491,6 +868,7 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
         confirmedBy: who.confirmedBy,
         status: o.status,
         ...trig,
+        ...ctx,
         readBackValue: o.readBackValue as any,
         errorText: o.errorText,
         idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, o.idx),
@@ -613,6 +991,58 @@ async function auditInterlockAutoBlock(input: DispatchInput, commandLogIds: numb
   );
 }
 
+/**
+ * Record a SIMULATED dispatch (one append-only commandLog row per resolved write)
+ * and return the { simulated: true } result. This is the SINGLE simulated-write
+ * implementation, shared by BOTH:
+ *   • the mode gate (OT_CONTROL_ENABLED !== "true") — the default dry-run, and
+ *   • the C2 commissioning gate (control on but adapter NOT commissioned) — which
+ *     passes `blockedReason="not_commissioned"` so the ledger records WHY the real
+ *     write was refused (errorText 'not_commissioned: …') and the result carries the
+ *     reason. Sharing one implementation guarantees the two paths cannot drift.
+ * driver.writeTags is NEVER called here. The interlock audit still fires for the
+ * interlock trigger (an auto-block that lands as simulated is still auditable).
+ */
+async function writeSimulated(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  input: DispatchInput,
+  resolved: Array<{ write: DispatchWrite; address: string; dataType?: string; scale?: number; offset?: number }>,
+  who: ReturnType<typeof actors>,
+  trig: ReturnType<typeof triggerCols>,
+  blockedReason?: string,
+  blockedDetail?: string,
+): Promise<DispatchResult> {
+  const commandLogIds: number[] = [];
+  const results: DispatchPerWrite[] = [];
+  const errorText = blockedReason ? `${blockedReason}: ${blockedDetail ?? "blocked"}` : null;
+  const ctx = commandContext(input); // G1.7 — correlation_id + deadline_ms (every branch)
+  for (const r of resolved) {
+    const [row] = await db
+      .insert(commandLog)
+      .values({
+        actionId: who.actionId,
+        adapterId: input.adapterId,
+        machineId: input.machineId ?? null,
+        tagKey: r.write.tagKey,
+        address: r.address,
+        commandType: input.commandType,
+        requestedValue: r.write.value as any,
+        requestedBy: who.requestedBy,
+        confirmedBy: who.confirmedBy,
+        status: "simulated",
+        ...trig,
+        ...ctx,
+        errorText,
+        idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, results.length),
+      })
+      .returning({ id: commandLog.id });
+    commandLogIds.push(row.id);
+    results.push({ tagKey: r.write.tagKey, address: r.address, ok: true, status: "simulated", error: errorText ?? undefined });
+  }
+  if (input.triggeredBy.kind === "interlock") await auditInterlockAutoBlock(input, commandLogIds);
+  return { ok: true, simulated: true, status: "simulated", reason: blockedReason, results, commandLogIds };
+}
+
 // ─── commandLog writers (one row per write so the ledger is complete) ─────────
 
 async function writeRejected(
@@ -647,6 +1077,7 @@ async function writeAll(
   const ids: number[] = [];
   const who = actors(input);
   const trig = triggerCols(input);
+  const ctx = commandContext(input); // G1.7 — correlation_id + deadline_ms (rejected/failed too)
   const writes = onlyTagKey ? input.writes.filter((w) => w.tagKey === onlyTagKey) : input.writes;
   const list = writes.length > 0 ? writes : [{ tagKey: null as any, value: null }];
   for (let i = 0; i < list.length; i++) {
@@ -665,6 +1096,7 @@ async function writeAll(
         confirmedBy: who.confirmedBy,
         status,
         ...trig,
+        ...ctx,
         errorText: `${reason}: ${detail}`,
         idempotencyKey: perWriteKey(input.idempotencyKey, w.tagKey ?? "_", i),
       })

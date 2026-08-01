@@ -1,0 +1,20 @@
+# Policy-as-code — SYNAPSE Tầng 3 §11 (doc 44 W3-A1 G3.13).
+# Chuyển từ DEFAULT_POLICIES (server/services/security/policyEngine.ts) — GIỮ NGUYÊN
+# ngữ nghĩa: cấm bỏ bước kiểm AOI với sản phẩm class-3 (không thương lượng).
+# Nhóm chính sách: Ràng buộc quy trình (spec §11.1 — "không bỏ qua quality gate").
+# Sync Git→DB lúc boot khi POLICY_STORE_ENABLED=true (bảng policy_definitions,
+# upsert theo policy_id+version — sửa nội dung PHẢI bump version).
+policy_id: deny-skip-aoi-class3
+version: 1
+effect: deny
+action_pattern: skip_step
+priority: 100
+status: active
+description: "Cấm bỏ bước kiểm AOI với sản phẩm class-3 (không thương lượng)."
+conditions:
+  - path: step.type
+    op: eq
+    value: AOI
+  - path: product.class
+    op: eq
+    value: 3

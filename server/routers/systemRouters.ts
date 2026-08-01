@@ -2,9 +2,36 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { pgTable, serial, integer, boolean, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
 import * as db from "../db";
+import { withDbErrors } from "../_core/dbErrors";
+import { requirePermission } from "../_core/accessControl";
 import * as cachedStats from "../functions/cachedStatistics";
 import { scheduleReport, stopScheduledReport } from "../services/reportScheduler";
+
+// doc 42 Đợt 4B (H2 — "Gán máy vào trạm") — bảng nối workstation ↔ machine
+// (migration 0244). Định nghĩa tại đây (không thuộc lãnh thổ schema chung của Đợt 4B)
+// để router truy vấn drizzle type-safe; DDL nằm trong drizzle/0244_workstation_machines.sql.
+const workstationMachines = pgTable("workstation_machines", {
+  id: serial("id").primaryKey(),
+  workstationId: integer("workstationId").notNull(),
+  machineId: integer("machineId").notNull(),
+  orderIndex: integer("orderIndex").default(0).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_workstation_machines_ws_machine").on(table.workstationId, table.machineId),
+  index("idx_workstation_machines_ws").on(table.workstationId),
+  index("idx_workstation_machines_machine").on(table.machineId),
+]);
+
+// doc 42 #11/theme RBAC — trạm (workstation) là master-data của "Quản lý dữ liệu".
+// FE gate module `settings_factory`; BE khớp permission thay vì hardgate role==='admin'.
+const wsCanView = protectedProcedure.use(requirePermission("settings_factory", "canView"));
+const wsCanCreate = protectedProcedure.use(requirePermission("settings_factory", "canCreate"));
+const wsCanEdit = protectedProcedure.use(requirePermission("settings_factory", "canEdit"));
+const wsCanDelete = protectedProcedure.use(requirePermission("settings_factory", "canDelete"));
 
 // ============ AUDIT ROUTER (inline version) ============
 export const inlineAuditRouter = router({
@@ -52,10 +79,10 @@ export const workstationRouter = router({
       return db.getWorkstationById(input);
     }),
 
-  create: adminProcedure
+  create: wsCanCreate
     .input(z.object({
-      code: z.string().min(1).max(50),
-      name: z.string().min(1).max(255),
+      code: z.string().min(1, "Mã trạm là bắt buộc").max(50),
+      name: z.string().min(1, "Tên trạm là bắt buộc").max(255),
       description: z.string().optional(),
       lineId: z.number().optional(),
       workshopId: z.number().optional(),
@@ -64,11 +91,11 @@ export const workstationRouter = router({
       orderIndex: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
-      const id = await db.createWorkstation(input);
+      const id = await withDbErrors(() => db.createWorkstation(input), { conflictMessage: `Mã trạm '${input.code}' đã tồn tại` });
       return { id };
     }),
 
-  update: adminProcedure
+  update: wsCanEdit
     .input(z.object({
       id: z.number(),
       code: z.string().min(1).max(50).optional(),
@@ -87,21 +114,100 @@ export const workstationRouter = router({
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: wsCanDelete
     .input(z.number())
     .mutation(async ({ input }) => {
       await db.deleteWorkstation(input);
       return { success: true };
     }),
 
-  listDeleted: adminProcedure.query(async () => {
+  listDeleted: wsCanView.query(async () => {
     return db.getDeletedWorkstations();
   }),
 
-  restore: adminProcedure
+  restore: wsCanEdit
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.restoreWorkstation(input.id);
+      return { success: true };
+    }),
+
+  // ── doc 42 Đợt 4B (H2 — gán máy vào trạm, §6.4 P1) ────────────────────────────
+  // Máy đang gán vào MỘT trạm (join machines để hiện code/name/type thay vì raw id).
+  machinesForWorkstation: protectedProcedure
+    .input(z.object({ workstationId: z.number() }))
+    .query(async ({ input }) => {
+      const database = await db.getDb();
+      if (!database) return [];
+      const { machines } = await import("../../drizzle/schema/hierarchy");
+      const { eq, and, asc } = await import("drizzle-orm");
+      return database
+        .select({
+          id: workstationMachines.id,
+          machineId: machines.id,
+          machineCode: machines.code,
+          machineName: machines.name,
+          machineType: machines.machineType,
+          orderIndex: workstationMachines.orderIndex,
+          assignedAt: workstationMachines.createdAt,
+        })
+        .from(workstationMachines)
+        .innerJoin(machines, eq(workstationMachines.machineId, machines.id))
+        .where(and(
+          eq(workstationMachines.workstationId, input.workstationId),
+          eq(workstationMachines.isActive, true),
+        ))
+        .orderBy(asc(workstationMachines.orderIndex), asc(machines.name));
+    }),
+
+  // Gán máy vào trạm. Idempotent: đã gán → trả về bản ghi cũ (không lỗi). Gate canEdit
+  // (thay đổi thành phần trạm), withDbErrors dịch 23505 (race) thành CONFLICT sạch.
+  assignMachine: wsCanEdit
+    .input(z.object({
+      workstationId: z.number(),
+      machineId: z.number(),
+      orderIndex: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      const { eq, and } = await import("drizzle-orm");
+      const existing = await database
+        .select({ id: workstationMachines.id })
+        .from(workstationMachines)
+        .where(and(
+          eq(workstationMachines.workstationId, input.workstationId),
+          eq(workstationMachines.machineId, input.machineId),
+        ))
+        .limit(1);
+      if (existing[0]) return { id: existing[0].id, alreadyAssigned: true };
+      const [row] = await withDbErrors(
+        () => database
+          .insert(workstationMachines)
+          .values({
+            workstationId: input.workstationId,
+            machineId: input.machineId,
+            orderIndex: input.orderIndex ?? 0,
+          })
+          .returning({ id: workstationMachines.id }),
+        { conflictMessage: "Máy đã được gán vào trạm này" },
+      );
+      return { id: row.id };
+    }),
+
+  // Gỡ máy khỏi trạm (hard-delete cặp; không để lại tombstone chặn gán lại).
+  unassignMachine: wsCanEdit
+    .input(z.object({ workstationId: z.number(), machineId: z.number() }))
+    .mutation(async ({ input }) => {
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      const { eq, and } = await import("drizzle-orm");
+      await database
+        .delete(workstationMachines)
+        .where(and(
+          eq(workstationMachines.workstationId, input.workstationId),
+          eq(workstationMachines.machineId, input.machineId),
+        ));
       return { success: true };
     }),
 
@@ -204,6 +310,27 @@ export const workstationRouter = router({
 });
 
 // ============ SCHEDULED REPORT ROUTER ============
+// W5-D (doc 27 §6 A11) — optional pluggable delivery-channel config. Absent/
+// null = legacy direct-e-mail semantics (behaviour unchanged).
+const deliveryChannelsSchema = z
+  .object({
+    email: z.object({ enabled: z.boolean() }).optional(),
+    webhook: z
+      .object({
+        enabled: z.boolean(),
+        url: z.string().url().max(500),
+        secret: z.string().max(200).optional(),
+      })
+      .optional(),
+    inApp: z
+      .object({
+        enabled: z.boolean(),
+        userIds: z.array(z.number().int().positive()).max(50).optional(),
+      })
+      .optional(),
+  })
+  .nullable();
+
 export const scheduledReportRouter = router({
   list: protectedProcedure
     .input(z.object({
@@ -244,6 +371,8 @@ export const scheduledReportRouter = router({
       logoUrl: z.string().optional(),
       primaryColor: z.string().optional(),
       footerText: z.string().optional(),
+      // W5-D (A11): pluggable delivery channels (optional; null/absent = legacy e-mail)
+      deliveryChannels: deliveryChannelsSchema.optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const id = await db.createScheduledReport({
@@ -292,6 +421,8 @@ export const scheduledReportRouter = router({
       logoUrl: z.string().optional(),
       primaryColor: z.string().optional(),
       footerText: z.string().optional(),
+      // W5-D (A11): pluggable delivery channels (null clears back to legacy e-mail)
+      deliveryChannels: deliveryChannelsSchema.optional(),
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
@@ -333,6 +464,30 @@ export const scheduledReportRouter = router({
     }))
     .query(async ({ input }) => {
       return db.getScheduledReportLogs(input.reportId, input.limit);
+    }),
+
+  // W5-D (A11) — per-channel delivery ledger for the history drawer.
+  deliveries: protectedProcedure
+    .input(z.object({
+      reportId: z.number(),
+      limit: z.number().min(1).max(200).default(50),
+    }))
+    .query(async ({ input }) => {
+      const { listReportDeliveries } = await import('../services/reportDeliveryService');
+      return listReportDeliveries(input.reportId, input.limit);
+    }),
+
+  // W5-D (A11) — requeue a dead/failed delivery + prompt drain.
+  retryDelivery: adminProcedure
+    .input(z.object({ deliveryId: z.number() }))
+    .mutation(async ({ input }) => {
+      const { retryReportDelivery, drainReportDeliveriesOnce } = await import('../services/reportDeliveryService');
+      const result = await retryReportDelivery(input.deliveryId);
+      if (!result.ok) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason ?? 'Retry failed' });
+      }
+      void drainReportDeliveriesOnce().catch(() => undefined);
+      return { success: true };
     }),
 
   sendTest: adminProcedure

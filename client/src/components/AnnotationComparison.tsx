@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider';
 import {
   GitCompare,
   Layers,
@@ -67,9 +68,9 @@ interface ComparisonGroup {
 }
 
 const resultColors: Record<string, string> = {
-  OK: 'text-green-500 bg-green-500/10',
-  NG: 'text-red-500 bg-red-500/10',
-  NTF: 'text-orange-500 bg-orange-500/10',
+  OK: 'text-success bg-success/10',
+  NG: 'text-destructive bg-destructive/10',
+  NTF: 'text-warning bg-warning/10',
 };
 
 const resultIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -134,12 +135,13 @@ export function AnnotationComparison() {
   // Export PDF mutation
   const exportPdfMutation = trpc.annotationComparison.generatePdfReport.useMutation({
     onSuccess: (data) => {
-      // Create downloadable JSON report (can be converted to PDF on client)
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      // Server now renders a REAL PDF (base64) via the canonical engine.
+      const bytes = Uint8Array.from(atob(data.pdfBase64), (c) => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: data.pdfMimeType || 'application/pdf' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `comparison-report-${data.inspection1.serialNumber}-${data.inspection2.serialNumber}.json`;
+      a.download = data.pdfFileName || `comparison-report-${data.inspection1.serialNumber}-${data.inspection2.serialNumber}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -684,8 +686,8 @@ export function AnnotationComparison() {
                   {/* Comparison View */}
                   {viewMode === 'side-by-side' ? (
                     <div className="flex gap-4">
-                      {renderImageWithAnnotations(leftItem, t('annotation.comparison.before'), 'border-blue-500')}
-                      {renderImageWithAnnotations(rightItem, t('annotation.comparison.after'), 'border-green-500')}
+                      {renderImageWithAnnotations(leftItem, t('annotation.comparison.before'), 'border-info')}
+                      {renderImageWithAnnotations(rightItem, t('annotation.comparison.after'), 'border-success')}
                     </div>
                   ) : (
                     <div className="relative min-h-100 bg-muted rounded-lg overflow-hidden">
@@ -719,13 +721,12 @@ export function AnnotationComparison() {
                       {/* Opacity slider */}
                       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-background/80 backdrop-blur-sm rounded-lg p-3 flex items-center gap-3">
                         <span className="text-xs text-muted-foreground">{t('annotation.comparison.before')}</span>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.1"
-                          value={overlayOpacity}
-                          onChange={(e) => setOverlayOpacity(parseFloat(e.target.value))}
+                        <Slider
+                          min={0}
+                          max={1}
+                          step={0.1}
+                          value={[overlayOpacity]}
+                          onValueChange={(v) => setOverlayOpacity(v[0])}
                           className="w-32"
                         />
                         <span className="text-xs text-muted-foreground">{t('annotation.comparison.after')}</span>
@@ -739,7 +740,7 @@ export function AnnotationComparison() {
                       <h4 className="text-sm font-medium mb-2">{t('annotation.comparison.compareAnnotations')}</h4>
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
-                          <span className="text-blue-500 font-medium">{t('annotation.comparison.before')}:</span>
+                          <span className="text-info font-medium">{t('annotation.comparison.before')}:</span>
                           <span className="ml-2">{annotationDiff.leftOnly} annotations</span>
                           <div className="flex items-center gap-2 mt-1">
                             {Object.entries(annotationDiff.leftByType).map(([type, count]) => {
@@ -754,7 +755,7 @@ export function AnnotationComparison() {
                           </div>
                         </div>
                         <div>
-                          <span className="text-green-500 font-medium">{t('annotation.comparison.after')}:</span>
+                          <span className="text-success font-medium">{t('annotation.comparison.after')}:</span>
                           <span className="ml-2">{annotationDiff.rightOnly} annotations</span>
                           <div className="flex items-center gap-2 mt-1">
                             {Object.entries(annotationDiff.rightByType).map(([type, count]) => {

@@ -10,16 +10,22 @@
  * Read-only / protected. Auto-degrade về rỗng khi DB chưa sẵn sàng.
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { moduleProcedure, router } from "../_core/trpc";
+// Doc 38 Đợt Q — license-gate this router behind MOD_PRODUCTION (moduleGate = pass-through
+// until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
+const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import { getDb } from "../db/connection";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, notInArray, sql } from "drizzle-orm";
 import {
   wipTracking,
   stationDwellTime,
   lineBalanceMetrics,
 } from "../../drizzle/schema";
 import { rankDispatch, type DispatchWipItem, type StationLoad } from "../services/dispatchingService";
+import { dispatchExcludedStatuses } from "../services/wipHoldPolicy"; // W4-B: quality-hold enforcement
 
+// Read-side filter values. Includes both the canonical enum value 'hold' and the
+// legacy 'on_hold' string plus the derived 'blocked'/'starved' views the UI uses.
 const wipStatusSchema = z.enum([
   "queued",
   "in_process",
@@ -27,6 +33,7 @@ const wipStatusSchema = z.enum([
   "blocked",
   "starved",
   "scrapped",
+  "hold",
   "on_hold",
 ]);
 
@@ -150,9 +157,12 @@ export const wipRouter = router({
         return { generatedAt: new Date(), bottleneckStationIds: [], totalItems: 0, recommendations: [] };
       }
 
-      // WIP đang hoạt động (chưa hoàn tất/loại bỏ).
+      // WIP đang hoạt động (chưa hoàn tất/loại bỏ). W4-B: when WIP_HOLD_ENFORCED
+      // is ON, held serials (status 'hold'/'on_hold') are ALSO excluded so a unit
+      // parked for disposition is never recommended for dispatch. Default OFF =
+      // prior behaviour (only completed/scrapped excluded).
       const activeConds = [
-        sql`${wipTracking.status} not in ('completed','scrapped')`,
+        notInArray(wipTracking.status, dispatchExcludedStatuses() as any),
       ] as any[];
       if (input?.lineId) activeConds.push(eq(wipTracking.lineId, input.lineId));
 

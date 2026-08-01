@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- GP-6 — the negative-control proof: deliberately non-conforming fake IDeviceDriver implementations
+         (see Fakes/) plus the tests proving DeviceDriverConformanceSuite's checks actually REJECT each one.
+         Plain net10.0, matching St4i.Connector.Conformance.csproj itself — no St4i.EdgeCore/EngineApi in
+         reach, same reasoning as St4i.Connector.Abstractions.Tests. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\St4i.Connector.Conformance\St4i.Connector.Conformance.csproj" />
+  </ItemGroup>
+</Project>

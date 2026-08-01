@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, StatusBadge as PatternStatusBadge, type BadgeVariant } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -17,29 +18,35 @@ import {
   Boxes,
   Truck,
   PackageCheck,
+  Radar,
 } from "lucide-react";
+import CartonGenealogyView from "@/components/traceability/CartonGenealogyView";
+import ForwardSearchPanel from "@/components/traceability/ForwardSearchPanel";
 
+// Domain status → solid shadcn <Badge> variant. Unified onto the shared
+// <StatusBadge> (W4): thin wrapper keeps the `value` API + em-dash empty state,
+// delegating rendering to the pattern component (identical solid look).
+function traceStatusVariant(v: string): BadgeVariant {
+  if (v.includes("COMPLETED") || v === "RELEASE" || v === "APPROVED" || v === "OK") return "default";
+  if (v.includes("HOLD") || v.includes("WAIT") || v === "QUARANTINE" || v === "REWORK") return "secondary";
+  if (v.includes("SCRAP") || v.includes("REJECT") || v.includes("RETURN")) return "destructive";
+  return "outline";
+}
 function StatusBadge({ value }: { value?: string | null }) {
   if (!value) return <span className="text-muted-foreground">—</span>;
-  const v = value.toUpperCase();
-  const variant =
-    v.includes("COMPLETED") || v === "RELEASE" || v === "APPROVED" || v === "OK"
-      ? "default"
-      : v.includes("HOLD") || v.includes("WAIT") || v === "QUARANTINE" || v === "REWORK"
-        ? "secondary"
-        : v.includes("SCRAP") || v.includes("REJECT") || v.includes("RETURN")
-          ? "destructive"
-          : "outline";
-  return <Badge variant={variant as any}>{value}</Badge>;
+  return <PatternStatusBadge status={value} variant={traceStatusVariant(value.toUpperCase())} />;
 }
 
 export default function TraceabilityLineage() {
   const { t } = useTranslation();
-  const [mode, setMode] = useState<"serial" | "lot">("serial");
+  const [mode, setMode] = useState<"serial" | "lot" | "carton" | "forward">("serial");
   const [serialInput, setSerialInput] = useState("");
   const [lotInput, setLotInput] = useState("");
   const [serialQuery, setSerialQuery] = useState("");
   const [lotQuery, setLotQuery] = useState("");
+  // Carton/pallet (container) view — its own lot-code lookup.
+  const [cartonInput, setCartonInput] = useState("");
+  const [cartonQuery, setCartonQuery] = useState("");
 
   const bySerial = trpc.traceability.bySerial.useQuery(
     { serialNumber: serialQuery },
@@ -52,8 +59,52 @@ export default function TraceabilityLineage() {
 
   const submit = () => {
     if (mode === "serial") setSerialQuery(serialInput.trim());
-    else setLotQuery(lotInput.trim());
+    else if (mode === "lot") setLotQuery(lotInput.trim());
+    else if (mode === "carton") setCartonQuery(cartonInput.trim());
   };
+
+  const search = useSearch();
+  const [, setLocation] = useLocation();
+
+  // Deep-link support: an inbound `/traceability?serial=...` (or `?lot=...`)
+  // seeds and runs the lookup so links from other pages (e.g. an inspection)
+  // land on a live genealogy instead of an empty form. Purely navigational —
+  // it prefills the existing search state; the queries/computation are unchanged.
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    const s = params.get("serial");
+    const l = params.get("lot");
+    if (s) {
+      setMode("serial");
+      setSerialInput(s);
+      setSerialQuery(s);
+    } else if (l) {
+      setMode("lot");
+      setLotInput(l);
+      setLotQuery(l);
+    }
+  }, [search]);
+
+  // Navigate to another serial's genealogy in-place (climb the parent chain or
+  // drill into a serial listed in a lot). Routes through the URL so the effect
+  // above re-seeds the search — keeps the address bar shareable/back-navigable.
+  const goToSerial = (sn: string) =>
+    setLocation(`/traceability?serial=${encodeURIComponent(sn)}`);
+
+  // A serial rendered as a subtle, keyboard-focusable link instead of dead text.
+  const renderSerialLink = (value?: string | null) =>
+    value ? (
+      <button
+        type="button"
+        onClick={() => goToSerial(value)}
+        title={t("trace.viewSerialGenealogy", "View this serial's genealogy")}
+        className="font-mono text-xs text-primary hover:underline focus-visible:underline focus-visible:outline-none"
+      >
+        {value}
+      </button>
+    ) : (
+      <span className="text-muted-foreground">—</span>
+    );
 
   const sData = bySerial.data;
   const lData = byLot.data;
@@ -61,20 +112,22 @@ export default function TraceabilityLineage() {
   return (
     <DashboardLayout>
       <div className="space-y-6 p-1">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <GitMerge className="h-6 w-6 text-primary" />
-            {t("trace.title", "Truy xuất nguồn gốc (Genealogy)")}
-          </h1>
-          <p className="text-muted-foreground">
-            {t("trace.subtitle", "Tra cứu lineage 2 chiều: nguyên vật liệu → serial → quyết định lô/khách hàng")}
-          </p>
-        </div>
+        <PageHeader
+          icon={<GitMerge className="h-6 w-6" />}
+          title={t("trace.title", "Truy xuất nguồn gốc (Genealogy)")}
+          description={t("trace.subtitle", "Tra cứu lineage 2 chiều: nguyên vật liệu → serial → quyết định lô/khách hàng")}
+        />
 
-        <Tabs value={mode} onValueChange={(v) => setMode(v as "serial" | "lot")}>
+        <Tabs value={mode} onValueChange={(v) => setMode(v as "serial" | "lot" | "carton" | "forward")}>
           <TabsList>
             <TabsTrigger value="serial">{t("trace.bySerial", "Theo Serial")}</TabsTrigger>
             <TabsTrigger value="lot">{t("trace.byLot", "Theo Lô")}</TabsTrigger>
+            <TabsTrigger value="carton">
+              <Boxes className="mr-1 h-4 w-4" /> {t("trace.tabCarton", "Carton / Pallet")}
+            </TabsTrigger>
+            <TabsTrigger value="forward">
+              <Radar className="mr-1 h-4 w-4" /> {t("trace.tabForward", "Forward / Recall")}
+            </TabsTrigger>
           </TabsList>
 
           {/* SERIAL */}
@@ -110,7 +163,7 @@ export default function TraceabilityLineage() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base">
-                      <ArrowUp className="h-4 w-4 text-blue-500" />
+                      <ArrowUp className="h-4 w-4 text-info" />
                       <Truck className="h-4 w-4" /> {t("trace.upstream", "Thượng nguồn — Nguyên vật liệu")}
                     </CardTitle>
                     <CardDescription>{t("trace.upstreamDesc", "Lô nhà cung cấp & phiếu nhập liên quan")}</CardDescription>
@@ -159,8 +212,8 @@ export default function TraceabilityLineage() {
                       <TableBody>
                         {(sData.wip ?? []).map((w: any) => (
                           <TableRow key={w.id}>
-                            <TableCell className="font-mono text-xs">{w.serialNumber ?? "—"}</TableCell>
-                            <TableCell className="font-mono text-xs">{w.parentSerialNumber ?? "—"}</TableCell>
+                            <TableCell className="font-mono text-xs">{renderSerialLink(w.serialNumber)}</TableCell>
+                            <TableCell className="font-mono text-xs">{renderSerialLink(w.parentSerialNumber)}</TableCell>
                             <TableCell>{w.lotNumber ?? "—"}</TableCell>
                             <TableCell>{w.productCode ?? "—"}</TableCell>
                             <TableCell><StatusBadge value={w.status} /></TableCell>
@@ -176,7 +229,7 @@ export default function TraceabilityLineage() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base">
-                      <ArrowDown className="h-4 w-4 text-emerald-500" />
+                      <ArrowDown className="h-4 w-4 text-success" />
                       <PackageCheck className="h-4 w-4" /> {t("trace.downstream", "Hạ nguồn — Quyết định lô / Khách hàng")}
                     </CardTitle>
                   </CardHeader>
@@ -264,7 +317,7 @@ export default function TraceabilityLineage() {
                         )}
                         {(lData.wip ?? []).map((w: any) => (
                           <TableRow key={w.id}>
-                            <TableCell className="font-mono text-xs">{w.serialNumber ?? "—"}</TableCell>
+                            <TableCell className="font-mono text-xs">{renderSerialLink(w.serialNumber)}</TableCell>
                             <TableCell>{w.productCode ?? "—"}</TableCell>
                             <TableCell><StatusBadge value={w.status} /></TableCell>
                             <TableCell className="text-xs">{w.enteredAt ? new Date(w.enteredAt).toLocaleString() : "—"}</TableCell>
@@ -308,6 +361,35 @@ export default function TraceabilityLineage() {
                 </Card>
               </div>
             )}
+          </TabsContent>
+
+          {/* CARTON / PALLET (container genealogy — IPC-1782) */}
+          <TabsContent value="carton" className="space-y-4">
+            <Card>
+              <CardContent className="flex items-end gap-2 pt-6">
+                <div className="flex-1">
+                  <Label htmlFor="carton-lot" className="text-xs">
+                    {t("trace.containerLotCode", "Lot code (production batch)")}
+                  </Label>
+                  <Input
+                    id="carton-lot"
+                    placeholder="SIM-BATCH-L1-..."
+                    value={cartonInput}
+                    onChange={(e) => setCartonInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && submit()}
+                  />
+                </div>
+                <Button onClick={submit} disabled={!cartonInput.trim()}>
+                  <Search className="h-4 w-4 mr-1" /> {t("common.search", "Tra cứu")}
+                </Button>
+              </CardContent>
+            </Card>
+            <CartonGenealogyView lotCode={cartonQuery} onOpenSerial={goToSerial} />
+          </TabsContent>
+
+          {/* FORWARD / RECALL search + saved searches */}
+          <TabsContent value="forward" className="space-y-4">
+            <ForwardSearchPanel onOpenSerial={goToSerial} />
           </TabsContent>
         </Tabs>
       </div>

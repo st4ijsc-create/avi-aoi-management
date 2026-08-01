@@ -27,9 +27,11 @@ import DashboardLayout from "@/components/DashboardLayout";
 import AIThresholdSuggestButton from "@/components/AIThresholdSuggestButton";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -85,9 +87,9 @@ type Lang = "vi" | "en" | "zh";
 
 // ─── Confidence → tone ──────────────────────────────────────────────────────────
 function confTone(c: number): { bar: string; text: string } {
-  if (c >= 0.7) return { bar: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400" };
-  if (c >= 0.4) return { bar: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" };
-  return { bar: "bg-red-500", text: "text-red-600 dark:text-red-400" };
+  if (c >= 0.7) return { bar: "bg-success", text: "text-success" };
+  if (c >= 0.4) return { bar: "bg-warning", text: "text-warning" };
+  return { bar: "bg-destructive", text: "text-destructive" };
 }
 
 export default function TechnicianCopilot() {
@@ -210,21 +212,13 @@ export default function TechnicianCopilot() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-4 md:p-6 max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="h-11 w-11 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-            <Wrench className="h-6 w-6 text-primary" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight">
-              {t("technicianCopilot.title", "Trợ lý Kỹ thuật")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("technicianCopilot.subtitle", "AI chẩn đoán nguyên nhân lỗi — bạn chỉ cần duyệt một chạm")}
-            </p>
-          </div>
-        </div>
+      <PageContainer className="max-w-4xl">
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<Wrench className="h-6 w-6" />}
+          title={t("technicianCopilot.title", "Trợ lý Kỹ thuật")}
+          description={t("technicianCopilot.subtitle", "AI chẩn đoán nguyên nhân lỗi — bạn chỉ cần duyệt một chạm")}
+        />
 
         {/* ── RCA Copilot section ─────────────────────────────────────────── */}
         <Card>
@@ -266,12 +260,12 @@ export default function TechnicianCopilot() {
                 <label className="text-sm font-medium text-muted-foreground">
                   {t("technicianCopilot.rca.defectLabel", "Loại lỗi (tuỳ chọn)")}
                 </label>
-                <input
+                <Input
                   type="text"
                   value={defectType}
                   onChange={(e) => setDefectType(e.target.value)}
                   placeholder={t("technicianCopilot.rca.defectPlaceholder", "VD: chân chì, lệch linh kiện...")}
-                  className="flex h-12 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="h-12 text-base"
                 />
               </div>
             </div>
@@ -287,7 +281,7 @@ export default function TechnicianCopilot() {
               ) : (
                 <Search className="mr-2 h-5 w-5" />
               )}
-              {t("technicianCopilot.rca.diagnoseBtn", "🔍 Chẩn đoán")}
+              {t("technicianCopilot.rca.diagnoseBtn", "Chẩn đoán")}
             </Button>
 
             {/* Loading state */}
@@ -322,13 +316,13 @@ export default function TechnicianCopilot() {
 
             {/* Needs-human / empty state */}
             {!diagnosing && needsHuman && (
-              <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
-                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4">
+                <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-base font-semibold text-amber-800 dark:text-amber-300">
+                  <p className="text-base font-semibold text-warning">
                     {t("technicianCopilot.rca.needsHuman", "Chưa đủ dữ liệu để chẩn đoán chắc chắn — cần người xem")}
                   </p>
-                  <p className="text-sm text-amber-700/90 dark:text-amber-300/80">
+                  <p className="text-sm text-muted-foreground">
                     {t("technicianCopilot.rca.needsHumanHint", "Hãy bổ sung dữ liệu hoặc kiểm tra trực tiếp tại máy.")}
                   </p>
                 </div>
@@ -407,7 +401,7 @@ export default function TechnicianCopilot() {
             "Sắp có: Trợ lý cài đặt máy mới.",
           )}
         </p>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }
@@ -506,7 +500,7 @@ function HypothesisCard({
 
       {/* Done banner */}
       {done && (
-        <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-success/40 bg-success/10 p-3 text-success">
           <CheckCircle2 className="h-5 w-5 shrink-0" />
           <span className="text-sm font-semibold">
             {t("technicianCopilot.card.doneBanner", "Đã xử lý xong.")}
@@ -525,7 +519,7 @@ function HypothesisCard({
               ) : (
                 <CheckCircle2 className="mr-2 h-5 w-5" />
               )}
-              {t("technicianCopilot.card.applyBtn", "✅ Đồng ý áp dụng")}
+              {t("technicianCopilot.card.applyBtn", "Đồng ý áp dụng")}
             </Button>
           )}
 
@@ -645,6 +639,7 @@ function ThresholdAdvisorSection() {
                   size="default"
                   variant="default"
                   onApplied={() => pointsQuery.refetch()}
+                  onSubmitted={() => pointsQuery.refetch()}
                 />
               ) : (
                 <Button size="default" disabled variant="default" className="gap-1">

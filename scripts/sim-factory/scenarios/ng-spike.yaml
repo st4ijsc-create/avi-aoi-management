@@ -1,0 +1,33 @@
+name: ng-spike
+description: >
+  Ép metric ng_rate (OPC-UA tag conveyor.ng_rate, line 1) vượt ngưỡng 20% → interlock
+  engine (telemetry_tag rule đã seed, alert-only) NỔ → ghi interlock_events + nâng Andon
+  vàng. Dữ liệu đi qua ĐÚNG OT gateway → ot_telemetry → interlock. Cần INTERLOCK_ENGINE_ENABLED
+  + OT gateway + đã seed interlock rule "SIM NG-rate spike (L1 CONVEYOR)".
+steps:
+  - name: baseline telemetry đang chảy
+    check: telemetry_fresh
+    line: 1
+    role: CONVEYOR
+    expect: true
+    maxAgeSec: 20
+    timeout: 60
+  - name: BƠM ng-spike (ng_rate → 35%)
+    sim: { action: ng.spike, line: 1, value: 35 }
+  - name: chờ OT poll + interlock poll (INTERLOCK_POLL_MS=3000)
+    wait: 12
+  - name: interlock rule ĐÃ NỔ
+    check: interlock_fired
+    ruleName: SIM NG-rate spike (L1 CONVEYOR)
+    sinceSec: 120
+    timeout: 60
+  - name: Andon hệ thống được nâng
+    check: andon_raised
+    line: 1
+    role: CONVEYOR
+    sinceSec: 120
+    timeout: 30
+  - name: xoá spike
+    sim: { action: ng.clear, line: 1 }
+teardown:
+  - sim: { action: ng.clear, line: 1 }

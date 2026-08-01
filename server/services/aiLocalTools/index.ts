@@ -8,6 +8,8 @@ import "./writeHandlers";
 // Sprint F6 — line-monitoring read + insight tools (side-effect registration).
 import "./handlersF6";
 import "./insightHandlersF6";
+// doc 56 Đ6 — device-standardization persona tools (device health + fleet process summary).
+import "./handlersF7";
 // Phase B4 — Management/Analytics READ tools (NL→analytics, forecasting, defect analytics).
 import "./analyticsTools";
 // Phase P2 (group A) — high-priority READ tools (work orders, alerts, thresholds, recipes).
@@ -16,6 +18,11 @@ import "./readToolsP2";
 import "./readToolsP2bc";
 // Phase P2 (group D) — anomalies, genealogy trace, energy/ENPI, routing.
 import "./readToolsP2d";
+// Doc 34 P2 — Automation Programming Copilot tools: READ (KB retrieve / error-code /
+// syntax-check / compile / simulate / generate / calc / read-file) + WRITE (workspace
+// file write, HITL). Safe adapters + confined workspace; no device, no DB writes.
+import "./readToolsProgramming";
+import "./writeHandlers/programmingFile";
 import { classifyToolIntent, classifyToolIntentLLM, type ToolContext } from "./intentClassifier";
 import { getTool, isWriteTool, isClientTool, listTools, type ClientActionDirective, type Tool, type ToolExecContext } from "./toolRegistry";
 import type { ToolResult } from "./toolRegistry";

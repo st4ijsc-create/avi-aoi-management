@@ -42,7 +42,7 @@ export function SMTPConfig() {
     username: "",
     password: "",
     fromEmail: "",
-    fromName: "AVI/AOI Management System",
+    fromName: "SYNAPSE",
   });
 
   useEffect(() => {

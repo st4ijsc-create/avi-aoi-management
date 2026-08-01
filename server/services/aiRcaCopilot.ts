@@ -21,6 +21,7 @@ import { getDb } from "../db/connection";
 import { rootCauseAnalysis } from "../../drizzle/schema";
 import { getTool, isWriteTool, type Tool, type ToolLang } from "./aiLocalTools/toolRegistry";
 import { proposeAction, type CopilotUser } from "./aiCopilotActions";
+import type { FactorCorrelation } from "./ai/defectCorrelationService";
 
 // ─── Flag ────────────────────────────────────────────────────────────────────
 export function isRcaCopilotEnabled(): boolean {
@@ -62,7 +63,14 @@ export interface EvidenceBundle {
   visionDescription: string | null;
   recentConfigChanges: Array<{ at: string; summary: string }>;
   similarIncidents: Array<{ title: string; sourcePath: string; score: number }>;
+  /** V20 (doc 27 Đợt 7.6): recent operator corrections (measurement_corrections —
+   *  W7-B's table, read DYNAMICALLY; [] when the table does not exist yet). */
+  recentCorrections: Array<{ at: string; summary: string }>;
   causalText: string;
+  /** W5-B2 (doc 44 G4.17) — QUANTITATIVE upstream-param ⇄ defect correlations
+   *  (Pearson/point-biserial + p-value + logistic direction). Additive alongside
+   *  the qualitative causalText; [] when disabled/insufficient data. */
+  quantitativeCorrelations: FactorCorrelation[];
   notes: string[];
 }
 
@@ -96,7 +104,9 @@ function emptyEvidence(): EvidenceBundle {
     visionDescription: null,
     recentConfigChanges: [],
     similarIncidents: [],
+    recentCorrections: [],
     causalText: "",
+    quantitativeCorrelations: [],
     notes: [],
   };
 }
@@ -122,7 +132,7 @@ async function gatherEvidence(input: RunRcaInput, lang: ToolLang): Promise<Evide
   const now = new Date();
   const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30d window
 
-  const [pareto, spc, anomaly, vision, audit, rag, causal] = await Promise.allSettled([
+  const [pareto, spc, anomaly, vision, audit, rag, corrections, causal, quant] = await Promise.allSettled([
     // (a) Pareto top defects
     (async () => {
       const { paretoByDefectType } = await import("./paretoAnalysisService");
@@ -145,12 +155,11 @@ async function gatherEvidence(input: RunRcaInput, lang: ToolLang): Promise<Evide
       const { getAnomalyStats } = await import("./aiAnomalyDetection");
       return (await getAnomalyStats({ machineId: input.machineId })) as Record<string, unknown>;
     })(),
-    // (d) vision description of a suspect image — optional; skipped when no image source.
-    (async () => {
-      // No deterministic suspect-image fetch wired here; left null unless a future
-      // hook supplies a buffer. describeDefect requires a Buffer we don't fabricate.
-      return null as string | null;
-    })(),
+    // (d) vision description of a suspect image — optional; null when no image source.
+    // doc 22 P2: wire the most-recent anomaly/NG defect image through the VL model so
+    // vision evidence actually contributes. Fail-safe + honest: returns null (no
+    // fabrication) when no defect image is available or vision degrades.
+    fetchSuspectImageDescription(input.machineId, input.defectType),
     // (e) recent config changes from audit
     (async () => {
       return await fetchRecentConfigChanges(input.machineId, start);
@@ -162,6 +171,8 @@ async function gatherEvidence(input: RunRcaInput, lang: ToolLang): Promise<Evide
       const r = await retrieveKnowledge(q, 5);
       return (r.citations ?? []).map((c: any) => ({ title: c.title, sourcePath: c.sourcePath, score: c.score }));
     })(),
+    // (g) V20 — recent operator corrections (W7-B's measurement_corrections; fail-open []).
+    fetchRecentCorrections(input.machineId, start),
     // causal-graph context (hybridDefectContext)
     (async () => {
       const { hybridDefectContext } = await import("./aiCausalGraph");
@@ -173,6 +184,14 @@ async function gatherEvidence(input: RunRcaInput, lang: ToolLang): Promise<Evide
         return (r.citations ?? []).map((c: any) => ({ id: String(c.id), title: c.title, sourcePath: c.sourcePath, score: c.score, text: c.title }));
       });
       return ctx.causalText;
+    })(),
+    // (h) W5-B2 (G4.17) — QUANTITATIVE upstream-param ⇄ defect correlation. Flag-
+    // gated (RCA_QUANTITATIVE_ENABLED) inside correlateStationDefect; returns []
+    // (ok:false) when disabled/insufficient — additive to the qualitative causal path.
+    (async () => {
+      const { correlateStationDefect } = await import("./ai/defectCorrelationService");
+      const r = await correlateStationDefect({ machineId: input.machineId, defectType: input.defectType });
+      return r.ok ? r.factors : [];
     })(),
   ]);
 
@@ -188,10 +207,55 @@ async function gatherEvidence(input: RunRcaInput, lang: ToolLang): Promise<Evide
   else bundle.notes.push("audit_unavailable");
   if (rag.status === "fulfilled") bundle.similarIncidents = rag.value;
   else bundle.notes.push("rag_unavailable");
+  if (corrections.status === "fulfilled") bundle.recentCorrections = corrections.value;
+  // (no note when corrections are unavailable — the table may legitimately not exist yet)
   if (causal.status === "fulfilled") bundle.causalText = causal.value;
   else bundle.notes.push("causal_unavailable");
+  if (quant.status === "fulfilled") bundle.quantitativeCorrelations = quant.value;
+  else bundle.notes.push("quantitative_correlation_unavailable");
 
   return bundle;
+}
+
+/**
+ * V20 (doc 27 Đợt 7.6) — recent OPERATOR CORRECTIONS as RCA evidence: when a human
+ * overrides machine verdicts (NG→OK/NTF …) around the incident window, that is a
+ * strong signal (false-call cluster / mis-threshold). The measurement_corrections
+ * table is created by W7-B and may NOT exist at runtime here — so this reads it
+ * with RAW SQL guarded by try/catch (fail-open []), never a compile-time schema
+ * coupling. READ-ONLY.
+ */
+async function fetchRecentCorrections(
+  machineId: number | undefined,
+  since: Date,
+): Promise<Array<{ at: string; summary: string }>> {
+  try {
+    const db = await getDb();
+    if (!db) return [];
+    const { sql } = await import("drizzle-orm");
+    const machineFilter =
+      machineId != null ? sql` AND pi."machineId" = ${machineId}` : sql``;
+    const result = await (db as any).execute(sql`
+      SELECT mc."createdAt" AS at,
+             mc."originalResult" AS original,
+             mc."correctedResult" AS corrected,
+             mc."reason" AS reason
+      FROM measurement_corrections mc
+      JOIN measurement_results mr ON mr."id" = mc."measurementResultId"
+      JOIN product_inspections pi ON pi."id" = mr."inspectionId"
+      WHERE mc."createdAt" >= ${since}${machineFilter}
+      ORDER BY mc."createdAt" DESC
+      LIMIT 10
+    `);
+    const rows = ((result as { rows?: unknown[] })?.rows ?? result ?? []) as Array<Record<string, unknown>>;
+    if (!Array.isArray(rows)) return [];
+    return rows.map((r) => ({
+      at: String(r.at ?? ""),
+      summary: `${String(r.original ?? "?")}→${String(r.corrected ?? "?")}${r.reason ? ` (${String(r.reason).slice(0, 120)})` : ""}`,
+    }));
+  } catch {
+    return []; // table absent / query shape mismatch → honest empty, never a throw
+  }
 }
 
 /** READ-ONLY audit query for recent config changes touching this machine. Fail-safe. */
@@ -230,6 +294,98 @@ async function fetchRecentConfigChanges(
     return out;
   } catch {
     return [];
+  }
+}
+
+/**
+ * doc 22 P2 — find the most-recent NG/suspect defect image for this machine and feed
+ * it to the VL model so vision evidence actually contributes to RCA hypotheses.
+ *
+ * HONEST-DEGRADE: returns null (never a fabricated description) whenever there is no
+ * stored defect image, storage can't produce a buffer, or the VL model degrades to
+ * its non-vision fallback. Fully fail-safe — never throws (runs inside allSettled).
+ *
+ * Source: the newest measurement_results row (for an inspection on this machine) that
+ * has an imageKey AND an NG result — i.e. an actual suspect image, not a golden/OK
+ * capture. The buffer is read via the shared readStorageBuffer helper (local-disk +
+ * object-store aware) and passed to describeDefect (routes to the local VL sidecar).
+ */
+async function fetchSuspectImageDescription(
+  machineId: number | undefined,
+  defectType: string | undefined,
+): Promise<string | null> {
+  try {
+    if (machineId == null) return null;
+    const db = await getDb();
+    if (!db) return null;
+
+    const { measurementResults } = await import("../../drizzle/schema");
+    const { productInspections } = await import("../../drizzle/schema");
+    const { isNotNull } = await import("drizzle-orm");
+
+    // Newest NG measurement WITH an image, on an inspection for this machine.
+    const [row] = await db
+      .select({
+        id: measurementResults.id,
+        imageKey: measurementResults.imageKey,
+        imageUrl: measurementResults.imageUrl,
+        aiAnalysisResult: measurementResults.aiAnalysisResult,
+      })
+      .from(measurementResults)
+      .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+      .where(
+        and(
+          eq(productInspections.machineId, machineId),
+          eq(measurementResults.result, "NG"),
+          isNotNull(measurementResults.imageKey),
+        ),
+      )
+      .orderBy(desc(measurementResults.id))
+      .limit(1);
+
+    // V20 — REUSE a persisted VLM description (measurement_results.aiAnalysisResult,
+    // written by the analyze pipeline or a previous RCA run) instead of re-running
+    // the VL model: the doc-27 finding was "output VLM không được tái dùng".
+    const stored = typeof row?.aiAnalysisResult === "string" ? row.aiAnalysisResult.trim() : "";
+    if (stored && !/VLM analysis unavailable|Detailed VLM description unavailable/i.test(stored)) {
+      return stored;
+    }
+
+    const storageKey = row?.imageKey || row?.imageUrl;
+    if (!storageKey) return null; // no suspect image on record → honest null
+
+    const { readStorageBuffer } = await import("./aiEdgeEnhanced");
+    const buffer = await readStorageBuffer(storageKey);
+    if (!buffer || buffer.length === 0) return null;
+
+    const { describeDefect } = await import("./aiVisionLanguage");
+    const result = await describeDefect(buffer, {
+      machineCode: `machine ${machineId}`,
+      inspectionPoint: defectType ?? undefined,
+      existingLabels: defectType ? [defectType] : undefined,
+    });
+    const visionDesc = result?.description?.trim();
+    // describeDefect degrades to a static "VLM unavailable" string when no vision is
+    // configured — treat that as no evidence rather than fabricated vision.
+    if (!visionDesc || /VLM analysis unavailable|Detailed VLM description unavailable/i.test(visionDesc)) return null;
+
+    // V20 — PERSIST the fresh per-NG description so advisors/inbox/next RCA runs can
+    // reuse it without re-running the VL model. Additive best-effort UPDATE: it only
+    // fills the column when the row had no stored description; failure never masks
+    // the evidence we already have.
+    if (row?.id != null) {
+      try {
+        await db
+          .update(measurementResults)
+          .set({ aiAnalysisResult: visionDesc.slice(0, 4000) })
+          .where(eq(measurementResults.id, row.id));
+      } catch {
+        /* persistence is best-effort */
+      }
+    }
+    return visionDesc;
+  } catch {
+    return null; // fail-safe: no vision evidence rather than a throw
   }
 }
 
@@ -287,7 +443,22 @@ function buildEvidenceDigest(ev: EvidenceBundle): string {
   if (ev.visionDescription) lines.push(`Vision: ${ev.visionDescription}`);
   if (ev.recentConfigChanges.length) lines.push(`Recent config changes: ${ev.recentConfigChanges.map((c) => c.summary).join("; ")}`);
   if (ev.similarIncidents.length) lines.push(`Similar past incidents: ${ev.similarIncidents.map((s) => s.title).join("; ")}`);
+  if (ev.recentCorrections.length) lines.push(`Recent operator corrections: ${ev.recentCorrections.map((c) => c.summary).join("; ")}`);
   if (ev.causalText) lines.push(`Causal graph:\n${ev.causalText}`);
+  // W5-B2 (G4.17) — QUANTITATIVE evidence: give the model the measured association
+  // (direction + r + p-value) so hypotheses cite numbers, not just a qualitative list.
+  if (ev.quantitativeCorrelations.length) {
+    lines.push(
+      "Quantitative upstream-parameter correlations (defect vs prior-station params):\n" +
+        ev.quantitativeCorrelations
+          .map(
+            (c) =>
+              `- ${c.factor}: ${c.direction === "higher_more_defects" ? "higher→more defects" : c.direction === "lower_more_defects" ? "lower→more defects" : "no clear direction"}` +
+              ` (r=${c.pearson}, p=${c.pValue}, logit_coef=${c.logisticCoef}, n=${c.n}, meanNG=${c.meanDefect} vs meanOK=${c.meanOk}${c.significant ? ", SIGNIFICANT" : ""})`,
+          )
+          .join("\n"),
+    );
+  }
   return lines.join("\n");
 }
 
@@ -299,7 +470,8 @@ function hasMeaningfulEvidence(ev: EvidenceBundle): boolean {
     ev.anomaly != null ||
     ev.visionDescription != null ||
     ev.similarIncidents.length > 0 ||
-    ev.causalText.length > 0
+    ev.causalText.length > 0 ||
+    ev.quantitativeCorrelations.length > 0
   );
 }
 
@@ -421,6 +593,15 @@ export async function runRca(input: RunRcaInput): Promise<RcaResult> {
     return { ...degradeResult(input, lang, emptyEvidence(), "AI_RCA_COPILOT_DISABLED"), ok: false };
   }
   try {
+    // Load-order VRAM fix (doc 34 §P4): warm the deep RCA model BEFORE gatherEvidence pulls in
+    // the small embedder (GraphRAG/similar-incidents). node-llama-cpp fragments VRAM when the
+    // 30B loads AFTER a small model — warming it first avoids a cold-start OOM. Best-effort.
+    try {
+      const { warmModel } = await import("./aiGgufEngine");
+      const { route } = await import("./aiModelRouter");
+      await warmModel(route({ task: "rca", text: input.defectType ?? "rca" }).modelId);
+    } catch { /* best-effort warm; RCA degrades gracefully if the model is unavailable */ }
+
     const evidence = await gatherEvidence(input, lang);
     if (!hasMeaningfulEvidence(evidence)) {
       return degradeResult(input, lang, evidence, "INSUFFICIENT_EVIDENCE");
@@ -484,6 +665,8 @@ export async function persistRca(input: PersistRcaInput): Promise<number | null>
       preventiveMeasures: [],
       // Structured RCA payload (full hypotheses incl. fix kind/tool/args/oneTap).
       rcaHypotheses: result.hypotheses,
+      // W5-B2 (G4.17) — quantitative upstream-param correlations (additive, may be []).
+      quantitativeCorrelations: result.evidence.quantitativeCorrelations,
       needsHumanInvestigation: result.needsHumanInvestigation,
     };
 

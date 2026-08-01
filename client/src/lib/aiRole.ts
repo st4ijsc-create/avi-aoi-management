@@ -26,6 +26,7 @@ const APP_ROLE_TO_AI_ROLE: Record<string, AiUserRole> = {
   supervisor: "manager",
   quality_inspector: "engineer",
   maintenance: "engineer",
+  engineer: "engineer",
   operator: "worker",
   viewer: "worker",
   user: "worker",

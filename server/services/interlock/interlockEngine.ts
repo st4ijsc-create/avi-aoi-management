@@ -28,15 +28,11 @@
  *   - NO auto-chaining: one rule fires exactly one command to one target. Cooldown held.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, eq, gte, sql, desc } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import {
   interlockRules,
   interlockEvents,
-  processResults,
-  spcRuleViolations,
-  cpkHistory,
-  otTelemetry,
   type InterlockRule,
 } from "../../../drizzle/schema";
 import { raiseAndon, type AndonState } from "../andon/andonService";
@@ -46,8 +42,9 @@ import {
   deriveObserved,
   type ComparisonOperator,
   type InterlockSourceType,
-  type ObservationContext,
 } from "./ruleEvaluator";
+// fetchObservation ĐÃ CHUYỂN sang interlockGate (dùng chung với cổng inline của dispatcher).
+import { fetchObservation } from "./interlockGate";
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let polling = false;
@@ -228,6 +225,51 @@ export async function evaluateRule(rule: InterlockRule): Promise<{ id: number; s
   // Back-link the Andon onto the event.
   await db.update(interlockEvents).set({ andonEventId: andon.id }).where(eq(interlockEvents.id, event.id));
 
+  // S1-b (doc 16 Khối 3) — ADVISORY safety audit when the interlock raises a
+  // stop/reduce (NOT a plain alert). Fire-and-forget + lazily imported + self-gated
+  // by SAFETY_AUDIT_ENABLED → no-op when off. This ONLY LOGS the event; it does NOT
+  // change the existing control behaviour above. detectedBy=interlock; outcome maps
+  // the engine's decision (auto-block writes are still NOT safety-rated stops).
+  if (action !== "alert") {
+    const safetyOutcome =
+      status === "fired" ? (action === "reduce_speed" ? "reduced_speed" : "stopped") : "logged_only";
+    const safetyType = action === "reduce_speed" ? "speed_violation" : "intrusion";
+    void import("../safety/safetyAuditService")
+      .then((m) => m.record({
+        eventType: safetyType,
+        robotId: rule.targetMachineId ?? rule.machineId ?? null,
+        lineId: rule.lineId ?? null,
+        stationId: rule.stationId ?? null,
+        sourceInterlockEventId: event.id,
+        detectedBy: "interlock",
+        handledBy: "interlock_engine",
+        outcome: safetyOutcome,
+        notes: `ADVISORY: interlock rule "${rule.name}" → ${action} [${status}] (advisory audit log — not a safety-rated stop)`,
+      }))
+      .catch((e) => console.error(`[Interlock] safety-audit hook failed for rule #${rule.id}:`, (e as Error)?.message || e));
+  }
+
+  // ── W1-5 (doc 25 §T1) — ĐƯỜNG E-STOP SAFETY-RATED ĐỘC LẬP (scaffold, mặc định OFF) ──
+  // Khi auto-block ở mức NGHIÊM TRỌNG (stop_line), gọi SafetyPlcAdapter SONG SONG với
+  // đường dispatcher phần mềm bên dưới. ĐÂY CHỈ LÀ SOFTWARE INTERLOCK — KHÔNG THAY THẾ
+  // SAFETY-RATED HARDWARE; đường phần cứng (khi có, doc 24 P6) mới là dừng khẩn được
+  // chứng nhận, độc lập với event-loop Node. Fire-and-forget + lazily imported + self-gated
+  // bởi SAFETY_ESTOP_ADAPTER_ENABLED → no-op khi off (Null adapter cũng no-op khi chưa cắm HW).
+  // KHÔNG chặn / KHÔNG đổi hành vi đường phần mềm hiện tại (chạy song song, bỏ qua kết quả).
+  if (willAutoBlock && action === "stop_line") {
+    void import("../safety/estop/safetyEstopAdapter")
+      .then((m) =>
+        m.requestEmergencyStop({
+          zoneId: null,
+          machineId: rule.targetMachineId ?? rule.machineId ?? null,
+          lineId: rule.lineId ?? null,
+          stationId: rule.stationId ?? null,
+          reason: `interlock rule "${rule.name}" auto-block (stop_line) — software interlock, không thay thế safety-rated hardware`,
+        }),
+      )
+      .catch((e) => console.error(`[Interlock] estop-adapter hook failed for rule #${rule.id}:`, (e as Error)?.message || e));
+  }
+
   // ── F5b — AUTO-BLOCK dispatch (deterministic, human-approved). ─────────────
   // dispatch is the ONLY caller of driver.writeTags and re-verifies authorization.
   // NO auto-chaining: one rule → one command → one target.
@@ -254,87 +296,4 @@ export async function evaluateRule(rule: InterlockRule): Promise<{ id: number; s
   }
 
   return { id: event.id, status: String(status) };
-}
-
-/** Window start = now - windowSeconds (default 300s). */
-function windowStart(rule: InterlockRule): Date {
-  const secs = rule.windowSeconds ?? 300;
-  return new Date(Date.now() - secs * 1000);
-}
-
-/**
- * Query the source feed for a rule and reduce it to an ObservationContext. PURE
- * derivation happens in ruleEvaluator.deriveObserved(). Each branch is scoped by
- * machine when machineId is set (best-effort; rules may be line/station scoped).
- */
-async function fetchObservation(rule: InterlockRule): Promise<ObservationContext> {
-  const db = await getDb();
-  if (!db) return {};
-  const since = windowStart(rule);
-
-  switch (rule.sourceType as InterlockSourceType) {
-    case "spc_violation": {
-      const conds = [gte(spcRuleViolations.detectedAt, since), eq(spcRuleViolations.isActive, true)];
-      if (rule.machineId != null) conds.push(eq(spcRuleViolations.machineId, rule.machineId));
-      const [r] = await db
-        .select({ c: sql<number>`count(*)::int` })
-        .from(spcRuleViolations)
-        .where(and(...conds));
-      return { count: r?.c ?? 0 };
-    }
-    case "process_result": {
-      // Count NG/fail process results in window (sourceKey may name a stepType).
-      const conds = [gte(processResults.measuredAt, since), eq(processResults.result, "fail")];
-      if (rule.machineId != null) conds.push(eq(processResults.machineId, rule.machineId));
-      if (rule.sourceKey) conds.push(eq(processResults.stepType, rule.sourceKey));
-      const [r] = await db
-        .select({ c: sql<number>`count(*)::int` })
-        .from(processResults)
-        .where(and(...conds));
-      return { count: r?.c ?? 0 };
-    }
-    case "ng_rate": {
-      // NG-rate (%) over process_results in window: fail / total * 100.
-      const conds = [gte(processResults.measuredAt, since)];
-      if (rule.machineId != null) conds.push(eq(processResults.machineId, rule.machineId));
-      const [r] = await db
-        .select({
-          total: sql<number>`count(*)::int`,
-          fail: sql<number>`count(*) filter (where ${processResults.result} = 'fail')::int`,
-        })
-        .from(processResults)
-        .where(and(...conds));
-      const total = r?.total ?? 0;
-      const fail = r?.fail ?? 0;
-      return { scalar: total > 0 ? (fail / total) * 100 : 0 };
-    }
-    case "cpk": {
-      const conds = [];
-      if (rule.machineId != null) conds.push(eq(cpkHistory.machineId, rule.machineId));
-      const [r] = await db
-        .select({ cpk: cpkHistory.cpk })
-        .from(cpkHistory)
-        .where(conds.length ? and(...conds) : undefined)
-        .orderBy(desc(cpkHistory.periodEnd))
-        .limit(1);
-      return { scalar: r?.cpk != null ? Number(r.cpk) : null };
-    }
-    case "telemetry_tag": {
-      // Canonical ot_telemetry (P2): ts/metric/numValue.
-      const conds = [gte(otTelemetry.ts, since)];
-      if (rule.machineId != null) conds.push(eq(otTelemetry.machineId, rule.machineId));
-      if (rule.sourceKey) conds.push(eq(otTelemetry.metric, rule.sourceKey));
-      const rows = await db
-        .select({ v: otTelemetry.numValue, t: otTelemetry.ts })
-        .from(otTelemetry)
-        .where(and(...conds))
-        .orderBy(otTelemetry.ts)
-        .limit(rule.windowSize ?? 50);
-      const series = rows.map((r) => (r.v != null ? Number(r.v) : null));
-      const latest = series.length ? series[series.length - 1] : null;
-      return { series, scalar: latest };
-    }
-    default:
-      return {};
-  }
 }

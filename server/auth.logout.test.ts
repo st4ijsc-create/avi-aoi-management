@@ -52,12 +52,38 @@ describe("auth.logout", () => {
     expect(result).toEqual({ success: true });
     expect(clearedCookies).toHaveLength(1);
     expect(clearedCookies[0]?.name).toBe(COOKIE_NAME);
+    // V3: assert the CURRENT intended cookie contract (Phase 180 getSessionCookieOptions).
+    // Outside production the Secure flag is off (so cookies still clear over plain HTTP on
+    // Windows Server / dev), and sameSite is "lax". `secure: true` only in production+HTTPS
+    // — verified separately below. httpOnly/path/maxAge are invariant.
     expect(clearedCookies[0]?.options).toMatchObject({
       maxAge: -1,
-      secure: true,
-      sameSite: "none",
+      secure: false,
+      sameSite: "lax",
       httpOnly: true,
       path: "/",
     });
+  });
+
+  it("sets the Secure flag when clearing in production over HTTPS", async () => {
+    const prevEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      const { ctx, clearedCookies } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.auth.logout();
+
+      expect(result).toEqual({ success: true });
+      expect(clearedCookies).toHaveLength(1);
+      expect(clearedCookies[0]?.options).toMatchObject({
+        maxAge: -1,
+        secure: true,
+        httpOnly: true,
+        path: "/",
+      });
+    } finally {
+      process.env.NODE_ENV = prevEnv;
+    }
   });
 });

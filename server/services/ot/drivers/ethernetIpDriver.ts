@@ -107,6 +107,11 @@ export class EthernetIpDriver extends NotImplementedDriver {
       this.connected = true;
       this.connectedAt = new Date();
       this.lastError = undefined;
+      // doc 40 OT-F1 — st-ethernet-ip Controller là EventEmitter; lắng 'close'/'error'/
+      // 'Disconnected' để phát hiện mất kết nối giữa phiên (rớt cáp / PLC reboot). Trước
+      // đây `connected` chỉ lật ở disconnect() → supervisor không thấy rớt. Lật
+      // connected=false → isConnected()/health() nói thật, supervisor reconnect/failover.
+      this.attachLinkLossHandlers(plc);
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
       try {
@@ -132,6 +137,32 @@ export class EthernetIpDriver extends NotImplementedDriver {
 
   override isConnected(): boolean {
     return this.connected;
+  }
+
+  /**
+   * doc 40 OT-F1 — gắn listener mất-kết-nối vào Controller (EventEmitter). Chỉ lật
+   * connected=false (reconnect do connectionSupervisor lo). Guard `this.plc===plc` chống
+   * listener của kết nối cũ lật nhầm kết nối mới. Bọc try/catch cho package tối giản/mock.
+   */
+  private attachLinkLossHandlers(plc: any): void {
+    if (!plc || typeof plc.on !== "function") return;
+    for (const ev of ["close", "error", "Disconnected"]) {
+      try {
+        plc.on(ev, (arg?: unknown) => {
+          if (this.plc === plc) this.markLinkLost(ev, arg);
+        });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
+  private markLinkLost(ev: string, arg?: unknown): void {
+    if (!this.connected) return;
+    this.connected = false;
+    const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
+    this.lastError = `ethernet-ip link lost (${ev})${detail}`;
   }
 
   /** Đọc một tag, trả OtSample. Lỗi → quality:"bad" (không throw). */

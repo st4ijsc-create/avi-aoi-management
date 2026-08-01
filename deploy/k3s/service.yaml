@@ -1,0 +1,23 @@
+# SYNAPSE — Line/edge Service (NodePort). doc 33 §11 / ADR-007.
+# NodePort so the edge appliance is reachable without an ingress controller. K3s also
+# ships Traefik; add an Ingress later if you prefer host-based routing.
+apiVersion: v1
+kind: Service
+metadata:
+  name: synapse-app
+  namespace: synapse-edge
+  labels:
+    app.kubernetes.io/name: synapse
+    app.kubernetes.io/component: server
+    app.kubernetes.io/part-of: synapse
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: synapse
+    app.kubernetes.io/component: server
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http # → container port 3000
+      nodePort: 30080 # http://<node-ip>:30080/health
+      protocol: TCP

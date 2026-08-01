@@ -220,6 +220,16 @@ export async function raiseAndon(input: RaiseAndonInput, actor?: AndonActor): Pr
   emit(row, "raised");
   await dispatchAndonNotifications(row);
   await audit(actor, AUDIT_ACTIONS.CREATE, row);
+
+  // S1-c (doc 16 Khối 3) — Andon → robot dispatch loop. Fire-and-forget + lazily
+  // imported so andonService keeps NO static dependency on the fleet module graph
+  // (andon unit tests stay green). Self-gated by ANDON_ROBOT_DISPATCH_ENABLED +
+  // FLEET_ORCH_ENABLED → a complete no-op (existing Andon behaviour unchanged) when
+  // off. Opens NO control path: it only creates an orchestration `tasks` row.
+  void import("./andonRobotDispatch")
+    .then((m) => m.maybeDispatchRobotForAndon(row))
+    .catch((e) => console.error("[Andon] robot-dispatch hook failed:", (e as Error)?.message ?? e));
+
   return row;
 }
 
@@ -285,6 +295,84 @@ export async function escalateAndon(id: number, actor?: AndonActor): Promise<And
   emit(row, "escalated");
   await audit(actor, AUDIT_ACTIONS.UPDATE, row, { escalationLevel: row.escalationLevel });
   return row;
+}
+
+/**
+ * Per-state SLA threshold (minutes) for auto-escalation — env-tunable, sensible
+ * defaults. state doubles as severity (red/call = urgent, yellow = softer). green
+ * is a normal/OK signal → never SLA-escalated (returns null).
+ */
+function andonSlaThresholdMin(state: AndonState): number | null {
+  switch (state) {
+    case "red":
+      return Math.max(1, Number(process.env.ANDON_SLA_RED_MIN) || 15);
+    case "call":
+      return Math.max(1, Number(process.env.ANDON_SLA_CALL_MIN) || 10);
+    case "yellow":
+      return Math.max(1, Number(process.env.ANDON_SLA_YELLOW_MIN) || 30);
+    default:
+      return null; // green → no SLA escalation
+  }
+}
+
+const ANDON_SLA_BATCH_LIMIT = 100; // bound per-sweep work
+
+/**
+ * SLA-breach sweep (doc 35 quy-trình-7) — ADVISORY ONLY. Finds still-open
+ * andon_events (resolvedAt IS NULL — i.e. raised or merely acknowledged but not
+ * resolved) whose age-since-raise exceeds the per-state SLA threshold for the NEXT
+ * escalation tier, and bumps escalationLevel via escalateAndon (which emits the
+ * 'escalated' socket phase + writes an audit row). Best-effort owner notification is
+ * added for the urgent states so an SLA breach reaches someone beyond the floor light.
+ *
+ * TIERED GUARD (no notify-storm): an andon already at level L re-escalates only once
+ * its age ≥ threshold*(L+1); each sweep therefore bumps a given andon AT MOST one
+ * level, and the cadence is bounded by age/threshold.
+ *
+ * SAFETY: this NEVER writes a command to any machine — escalateAndon only increments a
+ * counter + emits/notifies. Called by the flag-gated scheduler in backgroundJobs.ts.
+ */
+export async function sweepAndonSlaBreaches(now: Date = new Date()): Promise<{ escalated: number }> {
+  const d = await db();
+  const rows = await d
+    .select()
+    .from(andonEvents)
+    .where(isNull(andonEvents.resolvedAt))
+    .orderBy(desc(andonEvents.raisedAt))
+    .limit(ANDON_SLA_BATCH_LIMIT);
+
+  let escalated = 0;
+  for (const row of rows) {
+    const threshold = andonSlaThresholdMin(row.state as AndonState);
+    if (threshold == null) continue;
+    const ageMin = (now.getTime() - new Date(row.raisedAt).getTime()) / 60000;
+    const level = row.escalationLevel ?? 0;
+    // Next tier breaches at threshold*(level+1); bump at most one level per sweep.
+    if (ageMin < threshold * (level + 1)) continue;
+
+    const updated = await escalateAndon(row.id, { id: null, name: "sla-monitor" });
+    if (!updated) continue;
+    escalated++;
+
+    // Advisory owner notification for the urgent states (best-effort, isolated).
+    if (row.state === "red" || row.state === "call") {
+      try {
+        await notifyOwner({
+          title: `⏫ Andon SLA breach: ${row.title}`,
+          content: `Andon #${row.id} (${row.state}/${row.reason}) unresolved for ${Math.round(
+            ageMin,
+          )} min (SLA ${threshold} min) — escalated to level ${updated.escalationLevel}.`,
+        });
+      } catch (err) {
+        console.error(`[Andon] SLA notify failed for #${row.id}:`, (err as Error).message);
+      }
+    }
+  }
+
+  if (escalated > 0) {
+    console.log(`[Andon] SLA sweep: ${escalated} andon(s) escalated`);
+  }
+  return { escalated };
 }
 
 /** List active (not-yet-resolved) Andons, newest first. */

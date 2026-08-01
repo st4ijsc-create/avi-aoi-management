@@ -2,8 +2,9 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { establishSession, LoginError, verifyCredentials } from "./_core/authService";
 import { systemRouter } from "./_core/systemRouter";
-import { isManusOAuthEnabled, listEnabledExternalProviders } from "./_core/oauthProviders";
+import { listEnabledSsoMethods } from "./_core/oauthProviders";
 import { publicProcedure, router } from "./_core/trpc";
+import { invalidateAuthSession } from "./services/authSessionCache";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
@@ -26,8 +27,9 @@ import { webhookRouter } from "./routers/webhookRouter";
 import { spcConfigRouter, workstationSpcRouter, correlationRouter, spcRuleViolationRouter, cpkTrendRouter, qualityGateRouter } from "./routers/spcAdvancedRouter";
 
 // ─── Extracted domain router imports ─────────────────────────────────────────
-import { factoryRouter, workshopRouter, lineRouter, stationRouter, machineRouter } from "./routers/hierarchyRouters";
+import { factoryRouter, factoryZoneRouter, workshopRouter, lineRouter, stationRouter, machineRouter } from "./routers/hierarchyRouters";
 import { productModelRouter, measurementPointRouter, productMachineMappingRouter, productCategoryRouter, productDocumentRouter, fiducialMarkRouter, measurementTypeCatalogRouter, defectCatalogRouter, measurementInstrumentRouter, samplingPlanRouter, productViewRouter, msaWizardRouter, instrumentCalibrationRouter, instrumentMsaRecordRouter, mpLightingProfileRouter, measurementSamplesRouter, spcAlertsRouter, mpDefectStatsRouter, msaAdvancedRouter, cadImportRouter } from "./routers/productRouters";
+import { productVariantRouter } from "./routers/productVariantRouter"; // doc 55 Item 3 / PV3: product-variant master-data admin
 import { inspectionRouter, measurementResultRouter } from "./routers/inspectionRouters";
 import { layoutRouter } from "./routers/layoutRouters";
 import { dashboardRouter, seedDataRouter } from "./routers/dashboardStatsRouters";
@@ -39,7 +41,9 @@ import { alertRouter, yieldThresholdRouter } from "./routers/alertRouters";
 import { productionOrderRouter, lineStageRouter, lineProductAssignmentRouter } from "./routers/productionRouters";
 import { productionSessionRouter } from "./routers/productionSessionRouter";
 import { machineStatusRouter, templateRouter, bulkImportRouter, manualMappingRouter } from "./routers/statusTemplateRouters";
+import { productPackageRouter } from "./routers/productPackageRouter"; // doc 31 Đợt C (PM3): portable product package JSON
 import { mqttClientRouter, oeeRouter, mqttAlertRouter } from "./routers/mqttOeeRouters";
+import { alertEscalationRouter } from "./routers/alertEscalationRouter"; // doc 27 MB6: escalation rules CRUD (consumed by mqttAlertScheduler sweep)
 import { inlineAuditRouter, workstationRouter, scheduledReportRouter, smtpRouter, systemConfigRouter, corporateFactoryStatsRouter } from "./routers/systemRouters";
 import { importRouter, exportRouter } from "./routers/dataRouters";
 import { notificationRouter } from "./routers/notificationRouters";
@@ -48,6 +52,7 @@ import { drillDownRouter, annotationRouter, annotationTemplateRouter, annotation
 import { rootCauseRouter, predictiveAlertRouter } from "./routers/aiRouters";
 import { causalGraphRouter } from "./routers/causalGraphRouter"; // Causal knowledge-graph admin CRUD (validated + atomic write to knowledge/causal-graph.json)
 import { predictiveMaintenanceRouter } from "./routers/predictiveMaintenanceRouter";
+import { sensorRouter } from "./routers/sensorRouter"; // doc 40 Wave 3A: read machine_sensor_readings (telemetry trend)
 import { mesControlTowerRouter } from "./routers/mesControlTowerRouter";
 import { maintenanceRouter } from "./routers/maintenanceRouter"; // Work-order CRUD + close→MTTR (machine_monitoring RBAC)
 import { digitalTwinRouter } from "./routers/digitalTwinRouter";
@@ -64,8 +69,20 @@ import { reportBuilderRouter } from "./routers/reportBuilderRouter";
 import { executiveReportRouter } from "./routers/executiveReportRouter"; // Phase B4.3: automated AI executive reports
 import { enhancedAuditRouter } from "./routers/enhancedAuditRouter";
 import { paretoAnalysisRouter } from "./routers/paretoAnalysisRouter";
+import { reportAggregatorsRouter } from "./routers/reportAggregatorsRouter"; // Wave R1 (doc 32): defect-category Pareto / yield-by-product / yield-trend-by-week
+import { reportArtifactRouter } from "./routers/reportArtifactRouter"; // Wave R2 (doc 32): persisted report artifact store (list/get/download/delete)
 import { qualityGateTemplateRouter } from "./routers/qualityGateTemplateRouter";
 import { licenseRouter } from "./routers/licenseRouter";
+import { editionRouter } from "./routers/editionRouter"; // doc 33 F1 (SYNAPSE ADR-007): READ-ONLY edition + deployment-profile info
+import { pluginRouter } from "./routers/pluginRouter"; // doc 33 F2 (SYNAPSE ADR-008): READ-ONLY plugin manifest catalogue + auto-form config
+import { securityRouter } from "./routers/securityRouter"; // doc 33 F5 (SYNAPSE §5.11): READ-ONLY policy-as-code governance
+import { securityIdentityRouter } from "./services/security/securityIdentityRouter"; // doc 37 C2: device X.509 PKI + service (SPIFFE-lite) identity — admin issue/verify/rotate/revoke (flags DEVICE_PKI_ENABLED/SERVICE_MTLS_ENABLED OFF)
+import { observabilityRouter } from "./routers/observabilityRouter"; // doc 33 F6 (SYNAPSE §5.12): READ-ONLY SLO/burn-rate + decision-trace
+import { contractsRouter } from "./routers/contractsRouter"; // doc 33 F7 (SYNAPSE §5.6/§8): READ-ONLY OpenAPI/AsyncAPI + schema BACKWARD gate + reconciliation
+import { orchestrationGovRouter } from "./routers/orchestrationGovRouter"; // doc 33 F8 (SYNAPSE §5.1/§5.3): READ-ONLY DAG validate + priority/SLA + four-eyes
+import { trafficGovRouter } from "./routers/trafficGovRouter"; // doc 33 H4 (SYNAPSE §5.4): READ-ONLY space-time route preview
+import { twinGovRouter } from "./routers/twinGovRouter"; // doc 33 H6 (SYNAPSE §5.7/§5.8): READ-ONLY twin-drift + RL advice preview
+import { devPortalRouter } from "./routers/devPortalRouter"; // doc 33 P6 (SYNAPSE R3): READ-ONLY developer portal (specs + plugin scaffold + sandbox)
 import { ngRateThresholdRouter } from "./routers/ngRateThresholdRouter";
 import { productionDashboardRouter } from "./routers/productionDashboardRouter";
 import { stationAnalysisRouter } from "./routers/stationAnalysisRouter";
@@ -103,6 +120,7 @@ import { aiInspectionAnalyticsRouter } from "./routers/aiInspectionAnalyticsRout
 import { aiAdvancedVisionRouter } from "./routers/aiAdvancedVisionRouter";
 import { aiSpecialistAgentRouter } from "./routers/aiSpecialistAgentRouter";
 import { aiLocalKbRouter } from "./routers/aiLocalKbRouter";
+import { aiProgrammingKbRouter } from "./routers/aiProgrammingKbRouter"; // doc 34 · P1: programming (vendor-manual) KB retrieval
 import { aiCopilotRouter } from "./routers/aiCopilotRouter"; // GĐ2: HITL write-action confirm/cancel
 import { aiRcaCopilotRouter } from "./routers/aiRcaCopilotRouter"; // Technician Copilot ③: RCA diagnose + 1-tap fix
 import { aiThresholdAdvisorRouter } from "./routers/aiThresholdAdvisorRouter"; // Technician Copilot ②: Threshold/Param Advisor (recommend + HITL apply)
@@ -115,31 +133,85 @@ import { aiVisionRouter } from "./routers/aiVisionRouter"; // P4-F: vision-close
 import { andonRouter } from "./routers/andonRouter"; // F5a: Andon (ALERT-ONLY)
 import { interlockRouter } from "./routers/interlockRouter"; // F5a: Interlock rules (ALERT-ONLY, no command path)
 import { deviceAdapterRouter } from "./routers/deviceAdapterRouter"; // G2.2a: OT adapter/tag CONFIG + read-only testConnection (no write path)
+import { mappingAsCodeRouter } from "./routers/mappingAsCodeRouter"; // W2-B3 (doc 44 G1.13): mapping-as-code — export/preview/apply YAML per-adapter (contracts/mappings, versioned trong Git)
 import { visionAdapterRouter } from "./routers/visionAdapterRouter"; // P1a: vendor-agnostic vision/inspection adapter ingest (VISION_ADAPTERS_ENABLED)
+import { hotFolderRouter } from "./routers/hotFolderRouter"; // Doc 27 C1 (W2-A): AOI/AVI hot-folder file-drop ingestion — config CRUD + status + dry-run (HOT_FOLDER_INGEST_ENABLED)
 import { mtconnectRouter } from "./routers/mtconnectRouter"; // P1b: MTConnect (CNC) test/status
 import { masterDataRouter } from "./routers/masterDataRouter"; // P1c: MES master data (suppliers/materials/customers/skills/tools)
+import { componentLibraryRouter } from "./routers/componentLibraryRouter"; // W8-A (doc 27 M12a / doc 29 §1): component package/footprint master + materials↔package link
 import { equipmentRouter } from "./routers/equipmentRouter"; // E0: unified equipment capability model + PackML (read-only)
 import { orchestrationRouter } from "./routers/orchestrationRouter"; // E2: Factory Orchestration Engine (FOE_ENABLED)
+import { simulationRouter } from "./routers/simulationRouter"; // T5: discrete-event throughput/bottleneck what-if (read-only, pure)
 import { aiOrchestrationRouter } from "./routers/aiOrchestrationRouter"; // E5: AI-assisted orchestration advisor (AI_ORCHESTRATION_ADVISOR_ENABLED; advisory, HITL)
 import { edgeRuntimeRouter } from "./routers/edgeRuntimeRouter"; // E4: edge control runtime coordinator (EDGE_RUNTIME_ENABLED)
 import { programmingRouter } from "./routers/programmingRouter"; // Doc 09 / D0: Device Programming & Control (DPC_DEPLOY_ENABLED; build/sim safe, deploy gated)
+import { irRouter } from "./routers/irRouter"; // Doc 16 §11.1 / D1: IR programming layer (motion/IO block AST + semantic safety linter + URScript/ROS2 transpilers; DPC_IR_V2_ENABLED; flows through the EXISTING programming gate)
 import { apiKeyRouter } from "./routers/apiKeyRouter"; // Control plane: scoped API-key admin CRUD (create-show-once + sha256 hash reuse)
+import { erpAdminRouter } from "./routers/erpAdminRouter"; // K0+ (doc 16 Khối 0): ERP gateway admin — OAuth clients (create-show-once) + outbox status/dead-letter retry (ERP_OAUTH_ENABLED for client mutations)
+import { enterpriseIntegrationRouter } from "./routers/enterpriseIntegrationRouter"; // W6-5 (doc 44 G5.24): WMS/PLM/CMMS connector admin — sync status/id-map (read) + manual sync/reconciliation (adminProcedure); WMS/PLM/CMMS_INTEGRATION_ENABLED default OFF
+import { ecosystemAdminRouter } from "./routers/ecosystemAdminRouter"; // U6-c (doc 21 §6 / G-12): admin-only READ — soft-ref integrity report (asset↔task↔program↔genealogy orphans)
 import { machineRecipeRouter } from "./routers/machineRecipeRouter"; // G2.2a: recipe versioning + deploy (catalog/ledger only, no device push)
 import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command audit log (READ-ONLY)
+import { commissioningRouter } from "./routers/commissioningRouter"; // C2 (doc 24 Wave-1): hardware commissioning/FAT gate — admin sign-off ledger (OT_COMMISSIONING_REQUIRED, default ON; no device write path)
+import { unsMappingRouter } from "./routers/unsMappingRouter"; // Doc 24 (Connectivity): no-code Tag → UNS mapping designer (config + pure preview; UNS_MAPPING_ENABLED, default OFF; read-direction only, no device write path)
+import { systemHealthRouter } from "./routers/systemHealthRouter"; // Tier-1b (doc 24): READ-ONLY health getters — OT store-and-forward buffer + connection HA supervisors + DINOv2 model tier
 import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/telemetry/jobs (control via internal dispatcher)
 import { secsGemRouter } from "./routers/secsGemRouter"; // P3a: SECS/GEM framework (SECS_GEM_ENABLED)
 import { vda5050Router } from "./routers/vda5050Router"; // P3b: VDA 5050 AGV/AMR framework (VDA5050_ENABLED)
+import { simTargetsRouter } from "./routers/simTargetsRouter"; // I3a (doc 20 §3/§5): URSim + ROS2 validation harness (URSIM_ENABLED / ROS2_BRIDGE_ENABLED)
+import { fleetRouter } from "./routers/fleetRouter"; // G1 (doc 16 Khối 2): Fleet & Task Orchestration (FLEET_ORCH_ENABLED)
+import { twinRouter } from "./routers/twinRouter"; // T1 (doc 16 Khối 7): Digital Twin — models/sceneGraph/replay/occupancyGrid (TWIN_LIVE_ENABLED)
+import { safetyRouter } from "./routers/safetyRouter"; // S1 (doc 16 Khối 3): Safety audit + mixed workforce + near-miss advisory (ADVISORY; SAFETY_AUDIT_ENABLED / WORKFORCE_ENABLED)
+import { oversightRouter } from "./routers/oversightRouter"; // U5 (doc 26 §2.3): "Hộp phê duyệt" gộp — đếm việc chờ duyệt/xử lý toàn tầng Kỹ thuật & Điều khiển (READ-ONLY, fail-safe)
+import { equipmentStandardsRouter } from "./routers/equipmentStandardsRouter"; // E1 (doc 16 Khối 5): Equipment standardization governance — device type registry/alarm taxonomy/CR workflow/conformance/compliance (EQ_GOVERN_ENABLED)
+import { equipmentIntegrationRouter } from "./routers/equipmentIntegrationRouter"; // I1 (doc 16 Khối 1B): multi-vendor integration — FOCAS/Euromap frameworks (read-only) + recipe versioning genealogy + alarm normalization (EQ_INTEG_ENABLED)
+import { fieldRouter } from "./routers/fieldRouter"; // X1 (doc 16 Khối 1): Field & device abstraction — UDM state/staleness, field health, hot-plug discovery (FIELD_V2_ENABLED)
+import { aiRobotAnomalyRouter } from "./routers/aiRobotAnomalyRouter"; // I2 (doc 16 Khối 4): robot-behaviour anomaly (advisory) + model auto-rollback history/trigger (AI_ROBOT_ANOMALY_ENABLED / AI_MODEL_AUTOROLLBACK_ENABLED)
 import { aiInsightRouter } from "./routers/aiInsightRouter"; // Phase 4: AI orchestration insights (advisory, read + ack)
 import { aiInboxRouter } from "./routers/aiInboxRouter"; // AI Action Inbox: push + 1-tap approve/dismiss/ask
 import { aiTodayRouter } from "./routers/aiTodayRouter"; // "Today" briefing: role-aware zero-click login summary
 import { kbVectorRouter } from "./routers/kbVectorRouter"; // Phase 4: KB pgvector store (ingest + search)
 import { sitesRouter } from "./routers/sitesRouter"; // Doc 13 / F0: Multi-site Federation sites registry (admin CRUD + probe + self-enroll-local; read-only)
 import { federationRouter } from "./routers/federationRouter"; // Doc 13 / F1: Federation roll-up read API (siteRollups/history/syncLog/aggregateSummary; read-only)
+import { commandCenterRouter } from "./routers/commandCenterRouter"; // Doc 21 / U2: Ecosystem Command Center aggregation (hierarchy tree + KPI strip + seed alerts; read-only)
+import { assetCockpitRouter } from "./routers/assetCockpitRouter"; // Doc 21 / U3: Machine & Robot Cockpit aggregation (machineDetail/robotDetail/machineAlarms; read-only)
+import { aoiOnboardingRouter } from "./routers/aoiOnboardingRouter"; // W2-D (doc 27 §3 C4 + §2 M8): AOI/AVI onboarding wizard — draft CRUD + dry-run normalize + commissioning sign-off (SOFT gate: tag-only, never blocks ingest)
+import { productOnboardingRouter } from "./routers/productOnboardingRouter"; // WD-1 (doc 31 Đợt D · UX1): product-side onboarding wizard — resumable draft CRUD (orchestration only; governance stays in the embedded panels)
+import { inspectionProgramRouter } from "./routers/inspectionProgramRouter"; // W3-C (doc 27 §2 M9): inspection-program release workflow — snapshot point-set, SoD approve, atomic release/supersede (catalog/ledger only, no device push)
+import { defectDispositionRouter } from "./routers/defectDispositionRouter"; // W5-B (doc 27 §5 F2): NG/NTF → disposition (rework/repair/scrap/…) + repair lifecycle + re-inspect linkage (WO link-only soft ref)
+import { goldenSampleRouter } from "./routers/goldenSampleRouter"; // W5-B read surface + W7-C (doc 27 Đợt 7.4 V7/V8/V11/V15): capture → approve (SoD) → normalize → align → diff (quality RBAC, audited)
+import { integrityRouter } from "./routers/integrityRouter"; // W3-A (doc 27 §2 M1/M6/M11): master-data FK/unique integrity — enforcement state + orphan-scan snapshots + on-demand scan (ADMIN, read-only + scan trigger)
+import { measurementCorrectionsRouter } from "./routers/measurementCorrectionsRouter"; // W7-B (doc 27 §9 V2): harvested operator-corrections analytics — per-machine false-call/agreement + daily trend (READ-ONLY; writes happen fail-open inside correctResult/confirmNTF)
+import { productPanelRouter } from "./routers/productPanelRouter"; // W8-B (doc 29 §2 / doc 27 M12b): PCB panel N-up master — panel defs + per-board offset/rotation/mirror/X-out (master data only)
+import { operatorBadgeRouter } from "./routers/operatorBadgeRouter"; // W8-B (doc 29 §3 / doc 27 M14): operator/badge master — badgeCode→users.id with validity windows (issue/revoke/re-issue)
+import { ncrRouter } from "./routers/ncrRouter"; // doc 35 W4-B — nonconformance reports (NCR/MRB)
+import { feederVerifyRouter } from "./routers/feederVerifyRouter"; // doc 35 W4-C — SMT feeder-setup scan verification
+import { lineControllerRouter } from "./routers/lineControllerRouter"; // doc 44 W3-A2 — Line Controller FSM (G3.1)
+import { orderLifecycleRouter } from "./routers/orderLifecycleRouter"; // doc 44 W3-A3 — order lifecycle §13.1
+import { msdRouter } from "./routers/msdRouter"; // doc 35 W4-C — MSD floor-life clock (J-STD-020)
+import { stencilRouter } from "./routers/stencilRouter"; // doc 35 W4-C — stencil cycle counter
+import { ecnRouter } from "./routers/ecnRouter"; // doc 35 W4-D — engineering change control (ECN/ECO)
+import { routingRouter } from "./routers/routingRouter"; // doc 35 W4-E — ISA-95 routing master
+import { bootstrapRouter } from "./routers/bootstrapRouter"; // doc 54 §11 P0.5 — first-run bootstrap (corporate + factory shell + prod/sim flag)
+import { reportingMartRouter } from "./routers/reportingMartRouter"; // doc 35 W5-B — dim/fact reporting mart
+import { readinessRouter } from "./routers/readinessRouter"; // doc 40 Wave 3A (§11): READ-ONLY Control/Trust readiness matrix — gate/flag runtime state (no behavior change)
+import { factoryCommandRouter } from "./routers/factoryCommandRouter"; // doc 40 Wave 4d (§13.1-13.3): READ-ONLY whole-factory command view aggregation (overview + machineDetail; set-based, no control path)
+import { warRoomRouter } from "./routers/warRoomRouter"; // doc 40 Wave 4c (§11): READ-ONLY war-room shift briefing — line OEE/output/ng + shift compare + plan-vs-actual (set-based, no control path)
+import { maintenanceScheduleRouter } from "./routers/maintenanceScheduleRouter"; // doc 40 Wave 4c (§11): CMMS PM-schedule CRUD (maintenance_schedules; read machine_status, write machine_control; no auto-gen)
+import { rumRouter } from "./routers/rumRouter"; // doc 44 G5.9: client RUM web-vitals ingest (public, zod-strict + per-IP throttle) → Prometheus histograms
+import { semanticsRouter } from "./routers/semanticsRouter"; // doc 44 W2-A4 (G2.14/G2.15): semantic metric registry — as-code versioned definitions (contracts/metrics/*.yaml) + MetricResult compute qua hàm canonical (read-only)
+import { parameterGuardrailRouter } from "./routers/parameterGuardrailRouter"; // doc 44 W5-A2 (G4.18-G4.21): engineer min-max guardrails CRUD + change log + material time-to-empty forecast
+import { ntfClassifierRouter } from "./routers/ntfClassifierRouter"; // doc 44 W5-B1 (G4.12): trained NTF/false-call classifier lifecycle (train/eval-gate/activate) + serve method
+import { doraRouter } from "./routers/doraRouter"; // doc 44 W6-4 (G5.20): DORA metrics (deploy-freq/lead-time/change-fail/MTTR) — read + admin record (DORA_ENABLED OFF)
+import { sopRouter } from "./routers/sopRouter"; // doc 44 W6-1 (G5.14): e-SOP CRUD + execution (start/confirm-step/finish) — LDS-L5 §6.2
+import { alarmKpiRouter } from "./routers/alarmKpiRouter"; // doc 44 W6-1 (G5.11 đo): READ-ONLY ISA-18.2 alarm KPI (rate/flood/standing/bad-actors/distribution)
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
 export const appRouter = router({
   system: systemRouter,
+  // doc 44 G5.9: client RUM web-vitals ingest (public; đo được cả trước login)
+  rum: rumRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     checkSetupRequired: publicProcedure.query(async () => {
@@ -149,13 +221,15 @@ export const appRouter = router({
         message: existingAdmins.length === 0 ? 'Cần tạo tài khoản admin đầu tiên' : 'Hệ thống đã được cài đặt'
       };
     }),
-    oauthProviders: publicProcedure.query(() => ({
-      manus: isManusOAuthEnabled(),
-      providers: listEnabledExternalProviders(),
-    })),
-    logout: publicProcedure.mutation(({ ctx }) => {
+    oauthProviders: publicProcedure.query(() => listEnabledSsoMethods()),
+    logout: publicProcedure.mutation(async ({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      // W4-B (doc 27 B4): evict the short-TTL auth cache entry for this
+      // session so a captured cookie cannot ride the cache after logout.
+      if (ctx.sessionToken) {
+        await invalidateAuthSession(ctx.sessionToken);
+      }
       return { success: true } as const;
     }),
     login: publicProcedure
@@ -238,13 +312,16 @@ export const appRouter = router({
 
   // Hierarchy
   factory: factoryRouter,
+  factoryZone: factoryZoneRouter,
   workshop: workshopRouter,
   line: lineRouter,
   station: stationRouter,
   machine: machineRouter,
 
   // Products
+  productOnboarding: productOnboardingRouter,
   productModel: productModelRouter,
+  variant: productVariantRouter, // doc 55 Item 3 / PV3: product-variant master-data admin
   measurementPoint: measurementPointRouter,
   productMachineMapping: productMachineMappingRouter,
   productCategory: productCategoryRouter,
@@ -269,10 +346,18 @@ export const appRouter = router({
   msaAdvanced: msaAdvancedRouter,
   // P4.B G9 CAD import
   cadImport: cadImportRouter,
+  // W8-B (doc 29 §2): panel N-up master for a product model
+  productPanel: productPanelRouter,
+  // Doc 31 Đợt C (PM3): portable product package export / import (JSON)
+  productPackage: productPackageRouter,
 
   // Inspection
   inspection: inspectionRouter,
   measurementResult: measurementResultRouter,
+  // W5-B (doc 27 §5 F2): repair/rework loop — disposition ledger + lifecycle + re-inspect linkage
+  defectDisposition: defectDispositionRouter,
+  // W5-B (doc 27 §5 F8): golden-sample read-only surfacing for the operator flow
+  goldenSample: goldenSampleRouter,
 
   // Layout & Dashboard
   layout: layoutRouter,
@@ -311,6 +396,7 @@ export const appRouter = router({
   // MQTT & OEE
   mqttClient: mqttClientRouter,
   mqttAlert: mqttAlertRouter,
+  alertEscalation: alertEscalationRouter,
   oee: oeeRouter,
 
   // System & Admin
@@ -339,8 +425,23 @@ export const appRouter = router({
   causalGraph: causalGraphRouter,
   predictiveAlert: predictiveAlertRouter,
   predictiveMaintenance: predictiveMaintenanceRouter,
+  sensor: sensorRouter, // doc 40 Wave 3A: machine_sensor_readings telemetry trend
   mesControlTower: mesControlTowerRouter,
   maintenance: maintenanceRouter,
+  ncr: ncrRouter, // doc 35 W4-B
+  feederVerify: feederVerifyRouter, // doc 35 W4-C
+  lineController: lineControllerRouter, // doc 44 W3-A2 — Line Controller FSM (G3.1)
+  parameterGuardrail: parameterGuardrailRouter, // doc 44 W5-A2 — engineer min-max guardrails + change log + material time-to-empty forecast (G4.18-G4.21)
+  ntfClassifier: ntfClassifierRouter, // doc 44 W5-B1 — trained NTF/false-call classifier (G4.12)
+  sop: sopRouter, // doc 44 W6-1 — e-SOP CRUD + execution (LDS-L5 §6.2, G5.14)
+  alarmKpi: alarmKpiRouter, // doc 44 W6-1 — ISA-18.2 alarm KPI dashboard aggregation (G5.11 đo)
+  orderLifecycle: orderLifecycleRouter, // doc 44 W3-A3 — order lifecycle §13.1 (G3.6/G3.7)
+  msd: msdRouter, // doc 35 W4-C
+  stencil: stencilRouter, // doc 35 W4-C
+  ecn: ecnRouter, // doc 35 W4-D
+  routing: routingRouter, // doc 35 W4-E
+  bootstrap: bootstrapRouter, // doc 54 §11 P0.5 — first-run bootstrap (corporate + factory shell + prod/sim flag)
+  reportingMart: reportingMartRouter, // doc 35 W5-B
   digitalTwin: digitalTwinRouter,
   realtimeReport: realtimeReportRouter,
   machineContract: machineContractRouter,
@@ -353,19 +454,40 @@ export const appRouter = router({
 
   // G2.2a — OT machine-control CONFIG + audit (config/query only; no write-to-device path)
   deviceAdapter: deviceAdapterRouter,
+  mappingAsCode: mappingAsCodeRouter, // W2-B3 (doc 44 G1.13): mapping.yaml as-code — export/diff/import, versioned trong Git
   visionAdapter: visionAdapterRouter,
+  hotFolder: hotFolderRouter, // Doc 27 C1 (W2-A): hot-folder file-drop ingestion — config CRUD + status + dry-run (HOT_FOLDER_INGEST_ENABLED)
   mtconnect: mtconnectRouter,
   equipment: equipmentRouter,
   orchestration: orchestrationRouter,
   aiOrchestration: aiOrchestrationRouter,
   edgeRuntime: edgeRuntimeRouter,
   programming: programmingRouter,
+  ir: irRouter, // D1 (doc 16 §11.1 / Khối 6): IR programming layer (linter + URScript/ROS2 transpilers; DPC_IR_V2_ENABLED)
   apiKey: apiKeyRouter,
+  erpAdmin: erpAdminRouter, // K0+ (doc 16 Khối 0): ERP gateway admin — OAuth2 clients + outbox ops
+  enterpriseIntegration: enterpriseIntegrationRouter, // W6-5 (doc 44 G5.24): WMS/PLM/CMMS connectors + enterprise reconciliation (admin)
+  ecosystemAdmin: ecosystemAdminRouter, // U6-c (doc 21 §6 / G-12): soft-ref integrity report (READ-ONLY, admin)
   machineRecipe: machineRecipeRouter,
   commandLog: commandLogRouter,
+  commissioning: commissioningRouter, // C2 (doc 24 Wave-1): hardware commissioning/FAT gate — admin sign-off ledger (no device write path)
+  unsMapping: unsMappingRouter, // Doc 24 (Connectivity): no-code Tag → UNS mapping designer (config + pure preview; UNS_MAPPING_ENABLED, default OFF)
+  systemHealth: systemHealthRouter, // Tier-1b (doc 24): READ-ONLY health getters — OT store-and-forward + connection HA supervisors + DINOv2 model tier
+  readiness: readinessRouter, // doc 40 Wave 3A (§11): READ-ONLY Control/Trust readiness matrix (gate/flag runtime state; RBAC admin_system|machine_control)
   robot: robotRouter,
   secsGem: secsGemRouter,
   vda5050: vda5050Router,
+  simTargets: simTargetsRouter, // I3a (doc 20 §3/§5): URSim + ROS2 validation harness (URSIM_ENABLED / ROS2_BRIDGE_ENABLED)
+  fleet: fleetRouter, // G1 (doc 16 Khối 2): Fleet & Task Orchestration (FLEET_ORCH_ENABLED)
+  twin: twinRouter, // T1 (doc 16 Khối 7): Digital Twin — models/sceneGraph/replay/occupancyGrid (TWIN_LIVE_ENABLED)
+  simulation: simulationRouter, // T5 (doc 24 Wave-4): discrete-event throughput/bottleneck what-if + scheduling advisory (read-only, pure)
+  safety: safetyRouter, // S1 (doc 16 Khối 3): Safety audit + mixed workforce + near-miss advisory (ADVISORY ONLY; SAFETY_AUDIT_ENABLED / WORKFORCE_ENABLED)
+  oversight: oversightRouter, // U5 (doc 26 §2.3): "Hộp phê duyệt" gộp — đếm việc chờ duyệt/xử lý toàn tầng Kỹ thuật & Điều khiển (READ-ONLY, fail-safe)
+  integrity: integrityRouter, // W3-A (doc 27 §2 M1/M6/M11): master-data FK/unique integrity — DB enforcement state + orphan/duplicate scan (ADMIN)
+  equipmentStandards: equipmentStandardsRouter, // E1 (doc 16 Khối 5): Equipment standardization governance (EQ_GOVERN_ENABLED)
+  equipmentIntegration: equipmentIntegrationRouter, // I1 (doc 16 Khối 1B): multi-vendor integration — FOCAS/Euromap frameworks + recipe versioning genealogy + alarm normalization (EQ_INTEG_ENABLED)
+  field: fieldRouter, // X1 (doc 16 Khối 1): Field & device abstraction — UDM state/staleness, field health, hot-plug discovery (FIELD_V2_ENABLED)
+  aiRobotAnomaly: aiRobotAnomalyRouter, // I2 (doc 16 Khối 4): robot-behaviour anomaly (advisory) + model auto-rollback history/trigger (AI_ROBOT_ANOMALY_ENABLED / AI_MODEL_AUTOROLLBACK_ENABLED)
   aiInsight: aiInsightRouter,
   aiInbox: aiInboxRouter,
   aiToday: aiTodayRouter,
@@ -375,6 +497,21 @@ export const appRouter = router({
   sites: sitesRouter,
   // Federation (doc 13 / F1) — roll-up read API over the core aggregator (read-only)
   federation: federationRouter,
+  // Ecosystem Command Center (doc 21 / U2) — whole-ecosystem hierarchy + KPI aggregation (read-only)
+  commandCenter: commandCenterRouter,
+  assetCockpit: assetCockpitRouter,
+  // doc 40 Wave 4d (§13.1-13.3): whole-factory command view — overview + machineDetail (read-only aggregation, set-based)
+  factoryCommand: factoryCommandRouter,
+  // doc 40 Wave 4c (§11): war-room shift briefing — line OEE/output/ng + shift compare + plan-vs-actual (read-only, set-based)
+  warRoom: warRoomRouter,
+  // doc 44 W2-A4 (G2.14/G2.15): semantic layer — governed metric definitions (list/get) + compute → MetricResult kèm definition_version (read-only)
+  semantics: semanticsRouter,
+  // doc 40 Wave 4c (§11): CMMS PM-schedule CRUD (maintenance_schedules; read machine_status / write machine_control)
+  maintenanceSchedule: maintenanceScheduleRouter,
+  // W2-D (doc 27 §3 C4): AOI/AVI onboarding wizard — draft CRUD + dry-run + commissioning sign-off (SOFT gate)
+  aoiOnboarding: aoiOnboardingRouter,
+  // W3-C (doc 27 §2 M9): inspection-program release workflow (SoD + atomic supersede; ledger only)
+  inspectionProgram: inspectionProgramRouter,
 
   // Process & SPC
   process: processRouter,
@@ -391,6 +528,8 @@ export const appRouter = router({
   // AI Feedback & Training
   aiFeedback: aiFeedbackRouter,
   trainingBatchComments: trainingBatchCommentsRouter,
+  // W7-B (doc 27 V2): harvested operator-corrections analytics (read-only)
+  measurementCorrections: measurementCorrectionsRouter,
 
   // MQTT Management
   mqttClientManagement: mqttClientManagementRouter,
@@ -420,10 +559,24 @@ export const appRouter = router({
   executiveReport: executiveReportRouter,
   enhancedAudit: enhancedAuditRouter,
   paretoAnalysis: paretoAnalysisRouter,
+  reportAggregators: reportAggregatorsRouter,
+  reportArtifact: reportArtifactRouter,
   qualityGateTemplate: qualityGateTemplateRouter,
 
   // License Management
   license: licenseRouter,
+  edition: editionRouter, // doc 33 F1 (SYNAPSE ADR-007): READ-ONLY edition + deployment profile
+  plugin: pluginRouter, // doc 33 F2 (SYNAPSE ADR-008): READ-ONLY plugin manifest catalogue
+  security: securityRouter, // doc 33 F5 (SYNAPSE §5.11): READ-ONLY policy-as-code governance
+  securityIdentity: securityIdentityRouter, // doc 37 C2: device X.509 PKI + service (SPIFFE-lite) identity (admin; enforcement flags OFF)
+  observability: observabilityRouter, // doc 33 F6 (SYNAPSE §5.12): READ-ONLY SLO + decision-trace
+  dora: doraRouter, // doc 44 W6-4 (G5.20): DORA metrics — deploy-freq/lead-time/change-fail/MTTR (read) + admin record (DORA_ENABLED OFF)
+  contracts: contractsRouter, // doc 33 F7 (SYNAPSE §5.6/§8): READ-ONLY OpenAPI/AsyncAPI + schema gate
+  orchestrationGov: orchestrationGovRouter, // doc 33 F8 (SYNAPSE §5.1/§5.3): READ-ONLY DAG + priority/SLA + four-eyes
+  trafficGov: trafficGovRouter, // doc 33 H4 (SYNAPSE §5.4): READ-ONLY space-time route preview
+  twinGov: twinGovRouter, // doc 33 H6 (SYNAPSE §5.7/§5.8): READ-ONLY twin-drift + RL advice preview
+  devPortal: devPortalRouter, // doc 33 P6 (SYNAPSE R3): READ-ONLY developer portal (specs + plugin scaffold)
+
 
   // NG Rate Threshold Alerts
   ngRateThreshold: ngRateThresholdRouter,
@@ -438,6 +591,10 @@ export const appRouter = router({
   processResult: processResultRouter,
   bom: bomRouter,
   masterData: masterDataRouter,
+  // W8-A (doc 29 §1): component package/footprint master + materials↔package link
+  componentLibrary: componentLibraryRouter,
+  // W8-B (doc 29 §3): operator/badge master (badgeCode → users.id, time-windowed)
+  operatorBadge: operatorBadgeRouter,
   energy: energyRouter,
   thresholdSuggestion: thresholdSuggestionRouter,
   thresholdApproval: thresholdApprovalRouter,
@@ -502,6 +659,8 @@ export const appRouter = router({
   aiAdvancedVision: aiAdvancedVisionRouter,
   // AI Local Knowledge Base — Phase 2 codebase Q&A
   aiLocalKb: aiLocalKbRouter,
+  // AI Programming KB — doc 34 · P1: vendor-manual retrieval (page-cited), separate from ops KB
+  aiProgrammingKb: aiProgrammingKbRouter,
   // AI Copilot — GĐ2 HITL write-action confirm/cancel/get
   aiCopilot: aiCopilotRouter,
   aiRcaCopilot: aiRcaCopilotRouter,

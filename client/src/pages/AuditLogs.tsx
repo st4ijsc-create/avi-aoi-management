@@ -1,8 +1,11 @@
-import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
+import {
+  PageHeader, PageContainer, MetricCard, StatusBadge, SectionCard, EmptyState,
+  chartColor, chartTooltipStyle, chartGridProps, chartAxisTick,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -10,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import {
-  Activity, Shield, User, Clock, Search, Filter,
+  Activity, Shield, User, Clock, Filter,
   LogIn, LogOut, Plus, Edit, Trash2, Key, RefreshCw,
   TrendingUp, Users, AlertTriangle, CheckCircle, XCircle,
   Download, ScrollText, History
@@ -19,7 +22,7 @@ import { EnhancedAuditLogsContent } from "@/pages/EnhancedAuditLogs";
 import { CommandAuditLogContent } from "@/pages/CommandAuditLog";
 import { toast } from "sonner";
 import { useTranslation } from 'react-i18next';
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearch } from "wouter";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { 
@@ -53,8 +56,6 @@ const ENTITY_LABELS: Record<string, string> = {
   mapping: "audit.entityMapping",
   order: "audit.entityOrder",
 };
-
-const CHART_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
 
 /**
  * Embeddable audit log content component (no DashboardLayout wrapper).
@@ -175,14 +176,7 @@ export function AuditLogContent() {
 
         <TabsContent value="logs" className="space-y-4">
           {/* Filters */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Filter className="h-4 w-4" />
-                {t('audit.filters')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+          <SectionCard icon={<Filter className="h-4 w-4" />} title={t('audit.filters')}>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label>{t('audit.action')}</Label>
@@ -249,35 +243,32 @@ export function AuditLogContent() {
                   </Button>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+          </SectionCard>
 
           {/* Logs Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  <Activity className="h-5 w-5" />
-                  {t('audit.activityLog')}
-                </span>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">{logsData?.total || 0} {t('audit.records')}</Badge>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={handleExportCSV}
-                    disabled={!logsData?.logs || logsData.logs.length === 0}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    {t('audit.exportCSV')}
-                  </Button>
-                </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+          <SectionCard
+            icon={<Activity className="h-5 w-5" />}
+            title={t('audit.activityLog')}
+            action={
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">{logsData?.total || 0} {t('audit.records')}</Badge>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportCSV}
+                  disabled={!logsData?.logs || logsData.logs.length === 0}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  {t('audit.exportCSV')}
+                </Button>
+              </div>
+            }
+          >
               {isLoading ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {t('common.loading')}
+                <div className="space-y-2">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
                 </div>
               ) : (
                 <>
@@ -353,15 +344,17 @@ export function AuditLogContent() {
                             </TableCell>
                             <TableCell>
                               {log.status === "success" ? (
-                                <Badge variant="outline" className="text-green-600 border-green-600">
-                                  <CheckCircle className="h-3 w-3 mr-1" />
-                                  OK
-                                </Badge>
+                                <StatusBadge
+                                  status="success"
+                                  tone="success"
+                                  label={<span className="inline-flex items-center"><CheckCircle className="h-3 w-3 mr-1" />OK</span>}
+                                />
                               ) : (
-                                <Badge variant="outline" className="text-red-600 border-red-600">
-                                  <XCircle className="h-3 w-3 mr-1" />
-                                  {t('audit.statusError')}
-                                </Badge>
+                                <StatusBadge
+                                  status="error"
+                                  tone="error"
+                                  label={<span className="inline-flex items-center"><XCircle className="h-3 w-3 mr-1" />{t('audit.statusError')}</span>}
+                                />
                               )}
                             </TableCell>
                           </TableRow>
@@ -369,8 +362,8 @@ export function AuditLogContent() {
                       })}
                       {(!logsData?.logs || logsData.logs.length === 0) && (
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                            {t('audit.noData')}
+                          <TableCell colSpan={6} className="p-0">
+                            <EmptyState variant="no-data" title={t('audit.noData')} compact />
                           </TableCell>
                         </TableRow>
                       )}
@@ -405,68 +398,35 @@ export function AuditLogContent() {
                   )}
                 </>
               )}
-            </CardContent>
-          </Card>
+          </SectionCard>
         </TabsContent>
 
         <TabsContent value="stats" className="space-y-4">
           {/* Stats Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-lg bg-blue-500/10">
-                    <Activity className="h-6 w-6 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">{t('audit.totalActivities')}</p>
-                    <p className="text-2xl font-bold">{stats?.totalActions || 0}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-lg bg-green-500/10">
-                    <LogIn className="h-6 w-6 text-green-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">{t('audit.actionLogin')}</p>
-                    <p className="text-2xl font-bold">{stats?.loginCount || 0}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-lg bg-red-500/10">
-                    <AlertTriangle className="h-6 w-6 text-red-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">{t('audit.actionLoginFailed')}</p>
-                    <p className="text-2xl font-bold">{stats?.failedLogins || 0}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-lg bg-purple-500/10">
-                    <Users className="h-6 w-6 text-purple-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">{t('audit.activeUsers')}</p>
-                    <p className="text-2xl font-bold">{stats?.topUsers?.length || 0}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <MetricCard
+              icon={<Activity className="h-5 w-5" />}
+              label={t('audit.totalActivities')}
+              value={stats?.totalActions || 0}
+            />
+            <MetricCard
+              icon={<LogIn className="h-5 w-5" />}
+              label={t('audit.actionLogin')}
+              value={stats?.loginCount || 0}
+              tone="success"
+            />
+            <MetricCard
+              icon={<AlertTriangle className="h-5 w-5" />}
+              label={t('audit.actionLoginFailed')}
+              value={stats?.failedLogins || 0}
+              tone="warning"
+            />
+            <MetricCard
+              icon={<Users className="h-5 w-5" />}
+              label={t('audit.activeUsers')}
+              value={stats?.topUsers?.length || 0}
+              tone="info"
+            />
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
@@ -480,18 +440,19 @@ export function AuditLogContent() {
                 <div className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={stats?.actionsByDay?.slice().reverse() || []}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis 
-                        dataKey="date" 
+                      <CartesianGrid {...chartGridProps} />
+                      <XAxis
+                        dataKey="date"
                         tickFormatter={(v) => new Date(v).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}
-                        className="text-xs"
+                        tick={chartAxisTick}
                       />
-                      <YAxis className="text-xs" />
-                      <Tooltip 
+                      <YAxis tick={chartAxisTick} />
+                      <Tooltip
+                        contentStyle={chartTooltipStyle}
                         labelFormatter={(v) => new Date(v).toLocaleDateString("vi-VN")}
                         formatter={(v: number) => [v, t('audit.activities')]}
                       />
-                      <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="count" fill={chartColor(0)} radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -519,10 +480,10 @@ export function AuditLogContent() {
                         label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                       >
                         {pieData.map((_, index) => (
-                          <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                          <Cell key={`cell-${index}`} fill={chartColor(index)} />
                         ))}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip contentStyle={chartTooltipStyle} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -550,9 +511,7 @@ export function AuditLogContent() {
                   </div>
                 ))}
                 {(!stats?.topUsers || stats.topUsers.length === 0) && (
-                  <p className="text-center py-4 text-muted-foreground">
-                    {t('audit.noData')}
-                  </p>
+                  <EmptyState variant="no-data" title={t('audit.noData')} compact />
                 )}
               </div>
             </CardContent>
@@ -572,9 +531,8 @@ export function AuditLogContent() {
  */
 export default function AuditLogs() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const { hasPermission } = usePermissions();
-  const isAdmin = (user as any)?.role === "admin";
+  const { hasPermission, loading: permsLoading } = usePermissions();
+  const canView = hasPermission("admin_system", "canView");
 
   // The command-audit tab reads trpc.commandLog.* which requires machine_control/canView.
   // This page is admin-gated (admins always pass), but to avoid a hard FORBIDDEN for any
@@ -583,38 +541,55 @@ export default function AuditLogs() {
 
   // Honour ?tab=command / ?tab=enhanced (used by the /command-audit and /enhanced-audit redirects).
   const search = useSearch();
-  const requestedTab = new URLSearchParams(search).get("tab");
-  const defaultTab =
-    requestedTab === "command" && canViewCommand ? "command"
-    : requestedTab === "enhanced" ? "enhanced"
-    : "activity";
+  const deriveTab = () => {
+    const requestedTab = new URLSearchParams(search).get("tab");
+    return requestedTab === "command" && canViewCommand ? "command"
+      : requestedTab === "enhanced" ? "enhanced"
+      : "activity";
+  };
+  const [activeTab, setActiveTab] = useState<string>(deriveTab);
+  // React to ?tab= changes while already mounted (e.g. sidebar deep-links).
+  // deriveTab only ever yields a KNOWN tab, so an invalid param falls back to "activity".
+  useEffect(() => {
+    const next = deriveTab();
+    if (next !== activeTab) setActiveTab(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
-  if (!isAdmin) {
+  if (permsLoading) {
     return (
       <DashboardLayout title={t('audit.title')} currentPath="/audit-logs">
-        <div className="container py-12 text-center">
-          <Shield className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-          <h2 className="text-xl font-semibold">{t('audit.accessDenied')}</h2>
-          <p className="text-muted-foreground mt-2">
-            {t('audit.adminOnlyMessage')}
-          </p>
-        </div>
+        <PageContainer>
+          <Skeleton className="h-64 w-full" />
+        </PageContainer>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <DashboardLayout title={t('audit.title')} currentPath="/audit-logs">
+        <PageContainer>
+          <EmptyState
+            icon={Shield}
+            title={t('audit.accessDenied')}
+            description={t('audit.adminOnlyMessage')}
+          />
+        </PageContainer>
       </DashboardLayout>
     );
   }
 
   return (
     <DashboardLayout title={t('audit.title')} currentPath="/audit-logs">
-      <div className="container py-6 space-y-6">
-        <div className="flex items-center gap-2">
-          <Activity className="h-6 w-6 text-primary" />
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{t('audit.title')}</h1>
-            <p className="text-sm text-muted-foreground">{t('audit.unifiedSubtitle', 'Hoạt động hệ thống, lệnh điều khiển máy và lịch sử thay đổi — một nơi duy nhất')}</p>
-          </div>
-        </div>
+      <PageContainer>
+        <PageHeader
+          icon={<Activity className="h-6 w-6" />}
+          title={t('audit.title')}
+          description={t('audit.unifiedSubtitle', 'Hoạt động hệ thống, lệnh điều khiển máy và lịch sử thay đổi — một nơi duy nhất')}
+        />
 
-        <Tabs defaultValue={defaultTab}>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="activity" className="gap-2">
               <Activity className="h-4 w-4" />
@@ -644,7 +619,7 @@ export default function AuditLogs() {
             <EnhancedAuditLogsContent />
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

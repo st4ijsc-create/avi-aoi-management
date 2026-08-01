@@ -35,13 +35,19 @@ interface ConnectionEvent {
 }
 
 type ConnectionListener = (event: ConnectionEvent) => void;
+type InvalidateListener = (pattern: string) => void;
 
 class RedisService {
   private redis: Redis | null = null;
   private subscriber: Redis | null = null;
   private isConnected = false;
+  private configured = false;
   private lastError: string | null = null;
   private startTime = Date.now();
+  // W4-B (doc 27 B8): listeners notified when a cache-invalidation broadcast
+  // arrives from ANOTHER instance (Redis pub/sub) so upper cache tiers
+  // (cacheService L1) can drop matching keys too.
+  private invalidateListeners: InvalidateListener[] = [];
   
   // In-memory fallback
   private memoryCache: Map<string, { data: string; expiresAt: number }> = new Map();
@@ -71,6 +77,7 @@ class RedisService {
       console.log('[Redis] REDIS_URL not configured, using in-memory cache fallback');
       return;
     }
+    this.configured = true;
 
     try {
       this.redis = new Redis(redisUrl, {
@@ -157,6 +164,11 @@ class RedisService {
           console.log(`[Redis] Received invalidation broadcast: ${pattern}`);
           // Clear local memory cache for the pattern
           this.clearMemoryCacheByPattern(pattern);
+          // W4-B (B8): propagate to registered upper tiers (cacheService L1)
+          // so cross-instance invalidations clear EVERY layer, not just this
+          // service's fallback map. Self-published messages also land here —
+          // the extra local clear is idempotent.
+          this.notifyInvalidateListeners(pattern);
         }
       });
 
@@ -238,6 +250,30 @@ class RedisService {
       expiresAt: Date.now() + (ttl * 1000),
     });
     console.log(`[Memory] SET: ${key} (TTL: ${ttl}s)`);
+  }
+
+  /**
+   * P2.3 (doc 54) — ATOMIC cluster-wide cooldown/dedup claim (`SET key 1 EX ttl NX`).
+   *
+   * Trả về:
+   *   • true  — GIÀNH được khoá (key chưa tồn tại) → caller là instance ĐƯỢC PHÉP kích hoạt.
+   *   • false — key đã tồn tại (đang cooldown do instance khác / lần trước) → caller BỎ QUA.
+   *   • null  — Redis không sẵn sàng / lỗi → caller TỰ fallback sang bộ nhớ cục bộ (single-node).
+   *
+   * Best-effort theo hợp đồng: MỌI lỗi Redis → null (KHÔNG BAO GIỜ throw), nên vòng đánh giá
+   * cảnh báo không bao giờ vỡ vì Redis. TTL ≤ 0 → null (không có cửa sổ cooldown để giữ).
+   */
+  async acquireCooldown(key: string, ttlSeconds: number): Promise<boolean | null> {
+    if (!(this.isConnected && this.redis) || !(ttlSeconds > 0)) return null;
+    const fullKey = this.getFullKey(key);
+    try {
+      // SET NX + EX là NGUYÊN TỬ: đúng một instance trong cụm set thành công mỗi cửa sổ.
+      const res = await this.redis.set(fullKey, '1', 'EX', Math.ceil(ttlSeconds), 'NX');
+      return res === 'OK';
+    } catch (err: any) {
+      console.error(`[Redis] acquireCooldown error: ${err?.message ?? err}`);
+      return null; // báo hiệu fallback sang bộ nhớ
+    }
   }
 
   /**
@@ -470,6 +506,38 @@ class RedisService {
   }
 
   /**
+   * True when REDIS_URL was set at startup (regardless of current connection
+   * health — when down, this service degrades to its in-memory map).
+   * The cacheService facade uses this to decide whether an L2 tier exists.
+   */
+  isConfigured(): boolean {
+    return this.configured;
+  }
+
+  /**
+   * Register a listener fired when a cache-invalidation broadcast arrives on
+   * the `cache:invalidate` pub/sub channel (typically published by another
+   * instance). Returns an unsubscribe function. (W4-B, doc 27 B8)
+   */
+  onInvalidateBroadcast(listener: InvalidateListener): () => void {
+    this.invalidateListeners.push(listener);
+    return () => {
+      const index = this.invalidateListeners.indexOf(listener);
+      if (index > -1) this.invalidateListeners.splice(index, 1);
+    };
+  }
+
+  private notifyInvalidateListeners(pattern: string): void {
+    for (const listener of this.invalidateListeners) {
+      try {
+        listener(pattern);
+      } catch (err: any) {
+        console.error('[Redis] Invalidate listener error:', err?.message ?? err);
+      }
+    }
+  }
+
+  /**
    * Add connection event listener
    */
   onConnectionChange(listener: ConnectionListener): () => void {
@@ -520,6 +588,7 @@ class RedisService {
     }
     this.memoryCache.clear();
     this.connectionListeners = [];
+    this.invalidateListeners = [];
   }
 }
 

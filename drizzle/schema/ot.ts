@@ -5,8 +5,11 @@
 //   - deviceAdapters: one configured connection to a PLC/SCADA/device (protocol + endpoint)
 //   - deviceTags:     individual addressable points read from an adapter
 //   - otTelemetry:    time-series samples ingested from tags
-import { pgTable, serial, bigserial, integer, text, timestamp, varchar, decimal, boolean, doublePrecision, json, jsonb, index, unique } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key
+import { pgTable, serial, bigserial, integer, text, timestamp, varchar, decimal, boolean, doublePrecision, json, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key; `uniqueIndex` used by the partial active-recipe index
+import { sql } from "drizzle-orm"; // partial-index predicate (WHERE status='active')
 import { otProtocolEnum, otDataTypeEnum, otAdapterStatusEnum, machineTypeEnum, recipeStatusEnum, deploymentStatusEnum, commandStatusEnum, commandTriggerKindEnum, telemetryProtocolEnum, telemetryQualityEnum } from "./enums";
+// W3-A (doc 27 M1, 0180): machineRecipes/recipeDeployments now carry real FKs to machines.
+import { machines } from "./hierarchy";
 
 /**
  * Device Adapters — một kết nối OT đã cấu hình (protocol + endpoint) tới PLC/SCADA/thiết bị.
@@ -19,6 +22,12 @@ export const deviceAdapters = pgTable("device_adapters", {
   name: varchar("name", { length: 255 }).notNull(),
   protocol: otProtocolEnum("protocol").notNull(),
   endpoint: varchar("endpoint", { length: 500 }).notNull(),
+  // Free-form driver options. doc 24 Wave-3 / C3: the OPTIONAL secondary
+  // (hot-standby) endpoint for connection HA/failover lives ADDITIVELY inside
+  // this json under `ha` — connectionOptions.ha.secondaryEndpoint (string)
+  // [+ optional .secondaryOptions] — so no schema migration is needed and older
+  // rows without it remain single-endpoint (backward-compatible). Consumed only
+  // when OT_CONN_HA_ENABLED === "true" (see connectionSupervisor.ts).
   connectionOptions: json("connectionOptions").$type<Record<string, unknown>>(),
   pollIntervalMs: integer("pollIntervalMs").default(5000).notNull(),
   status: otAdapterStatusEnum("status").default("disabled").notNull(),
@@ -52,6 +61,15 @@ export const deviceTags = pgTable("device_tags", {
   offset: decimal("offset", { precision: 18, scale: 6 }).default("0"),
   writable: boolean("writable").default(false).notNull(),
   isEnabled: boolean("isEnabled").default(true).notNull(),
+  // ── G1.4 (doc 44 W2-A3, migration 0253 — additive, nullable) ────────────────
+  // Report-by-exception per tag (LDS-L1 §A.2 / §5.1), đánh giá ở otManager CHỈ khi
+  // OT_TAG_DEADBAND_ENABLED === "true" (default OFF ⇒ hành vi cũ, forward mọi sample):
+  //   • deadband:   numeric — chỉ forward khi |value − lastForwarded| ≥ deadband.
+  //   • samplingMs: throttle — chỉ forward khi đã qua samplingMs từ lần forward trước.
+  // NULL = không lọc tag đó. Liveness được giữ bởi heartbeat 60s (DEADBAND_HEARTBEAT_MS)
+  // + LUÔN forward khi: giá trị đầu tiên / quality đổi / giá trị không phải number.
+  deadband: doublePrecision("deadband"),
+  samplingMs: integer("samplingMs"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -106,6 +124,14 @@ export const otTelemetry = pgTable("ot_telemetry", {
   index("idx_ot_telemetry_machine_ts").on(table.machineId, table.ts.desc()),
   index("idx_ot_telemetry_metric_ts").on(table.metric, table.ts.desc()),
   index("idx_ot_telemetry_protocol_ts").on(table.protocol, table.ts.desc()),
+  // G2.9 (doc 44 W0-D, migration 0247) — replay idempotency: at most ONE row per
+  // (deviceId, metric, ts). Matches the store-forward natural key semantics
+  // (deviceId = adapter.code for OT samples; see ot/ingest.ts + storeForward.ts).
+  // Includes the partition column `ts` so the index is legal on the Timescale
+  // hypertable too (0172). Rows with NULL deviceId are EXEMPT (PG NULLS DISTINCT)
+  // — deliberate: two unmapped readers must never collide on (metric, ts). The
+  // insert path (telemetryBus persistRows fallback) is ON CONFLICT DO NOTHING.
+  uniqueIndex("uq_ot_telemetry_device_metric_ts").on(table.deviceId, table.metric, table.ts),
 ]);
 
 export type OtTelemetry = typeof otTelemetry.$inferSelect;
@@ -124,7 +150,10 @@ export type InsertOtTelemetry = typeof otTelemetry.$inferInsert;
  */
 export const machineRecipes = pgTable("machine_recipes", {
   id: serial("id").primaryKey(),
-  machineId: integer("machineId"),
+  // W3-A (doc 27 M1, 0180): fk_machine_recipes_machine, ON DELETE RESTRICT —
+  // recipes are audit lineage; NULL is legitimate (machine-TYPE recipe).
+  machineId: integer("machineId")
+    .references(() => machines.id, { onDelete: "restrict" }),
   machineType: machineTypeEnum("machineType"),
   code: varchar("code", { length: 64 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -134,6 +163,15 @@ export const machineRecipes = pgTable("machine_recipes", {
   status: recipeStatusEnum("status").default("draft").notNull(),
   notes: text("notes"),
   createdBy: integer("createdBy"),
+  // W5-22 (doc 25 (a), migration 0170) — cờ GOLDEN/master: đánh dấu phiên bản
+  // baseline (bộ tham số chuẩn) của một code để đối chiếu khi deploy/diff. Curator
+  // flag ở tầng app (không ràng buộc unique ở DB).
+  isGolden: boolean("isGolden").default(false).notNull(),
+  // W2-9 (doc 25 T6, migration 0165) — second-approver (segregation of duties):
+  // recipe phải được một người KHÁC người tạo (createdBy) trình duyệt trước khi deploy.
+  approvedBy: integer("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  approvalNote: text("approvalNote"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -141,6 +179,12 @@ export const machineRecipes = pgTable("machine_recipes", {
   index("idx_machine_recipes_machine").on(table.machineId),
   index("idx_machine_recipes_type").on(table.machineType),
   index("idx_machine_recipes_status").on(table.status),
+  // W2-6 (doc 25 T5, migration 0164): DB-level guard for the "exactly one active
+  // (=released) version per code" invariant. Also covers the equipment-integration
+  // 'released' status which maps 1:1 onto the DB enum value 'active'.
+  uniqueIndex("uq_machine_recipes_active_code").on(table.code).where(sql`${table.status} = 'active'`),
+  // W5-22 (0170) — tra cứu nhanh phiên bản golden theo code.
+  index("idx_machine_recipes_golden").on(table.code).where(sql`${table.isGolden} = true`),
 ]);
 
 export type MachineRecipe = typeof machineRecipes.$inferSelect;
@@ -153,12 +197,19 @@ export type InsertMachineRecipe = typeof machineRecipes.$inferInsert;
  */
 export const recipeDeployments = pgTable("recipe_deployments", {
   id: serial("id").primaryKey(),
-  recipeId: integer("recipeId").notNull(),
-  machineId: integer("machineId").notNull(),
+  // W3-A (doc 27 M1, 0180): audit-grade deploy records — RESTRICT on both the
+  // deployed recipe and the machine (a deploy record must never dangle).
+  recipeId: integer("recipeId").notNull()
+    .references(() => machineRecipes.id, { onDelete: "restrict" }),
+  machineId: integer("machineId").notNull()
+    .references(() => machines.id, { onDelete: "restrict" }),
   adapterId: integer("adapterId"),
   deployedBy: integer("deployedBy").notNull(),
   deployedAt: timestamp("deployedAt").defaultNow().notNull(),
-  previousRecipeId: integer("previousRecipeId"),
+  // W3-A (0180): one-step-rollback pointer — SET NULL (losing it degrades
+  // gracefully; it must not block deleting an old archived recipe forever).
+  previousRecipeId: integer("previousRecipeId")
+    .references(() => machineRecipes.id, { onDelete: "set null" }),
   status: deploymentStatusEnum("status").default("pending").notNull(),
   commandLogId: integer("commandLogId"),
   notes: text("notes"),
@@ -167,6 +218,8 @@ export const recipeDeployments = pgTable("recipe_deployments", {
   index("idx_recipe_deployments_recipe").on(table.recipeId),
   index("idx_recipe_deployments_machine").on(table.machineId),
   index("idx_recipe_deployments_deployed").on(table.deployedAt),
+  // W3-A (0180): supports the ON DELETE SET NULL scan on machine_recipes deletes.
+  index("idx_recipe_deployments_previous").on(table.previousRecipeId).where(sql`${table.previousRecipeId} IS NOT NULL`),
 ]);
 
 export type RecipeDeployment = typeof recipeDeployments.$inferSelect;
@@ -207,6 +260,16 @@ export const commandLog = pgTable("command_log", {
   readBackValue: jsonb("readBackValue"),
   errorText: text("errorText"),
   idempotencyKey: varchar("idempotencyKey", { length: 128 }).unique(),
+  // ── G1.7 (doc 44 W0-D, migration 0246 — additive, nullable) ────────────────
+  // Cross-layer trace: the correlation id flowing order → command → ack (LDS-L1).
+  // Filled from DispatchInput.correlationId, else the AsyncLocalStorage backbone
+  // (observability/correlation.ts), else NULL. Written on EVERY ledger branch
+  // (rejected / simulated / acked / failed / timeout).
+  correlationId: text("correlation_id"),
+  // Per-command ack deadline (ms) the caller requested. When set, dispatch uses it
+  // instead of the global OT_CONTROL_TIMEOUT_MS for THIS command (capped by
+  // OT_CONTROL_TIMEOUT_MAX_MS when configured). NULL = global env timeout.
+  deadlineMs: integer("deadline_ms"),
   sentAt: timestamp("sentAt"),
   ackedAt: timestamp("ackedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -216,7 +279,123 @@ export const commandLog = pgTable("command_log", {
   index("idx_command_log_machine").on(table.machineId),
   index("idx_command_log_status").on(table.status),
   index("idx_command_log_created").on(table.createdAt),
+  // G1.7/G1.16 — trace lookups + cmd→ack latency SLI scan by correlation id.
+  index("idx_command_log_correlation").on(table.correlationId).where(sql`${table.correlationId} IS NOT NULL`),
 ]);
 
 export type CommandLog = typeof commandLog.$inferSelect;
 export type InsertCommandLog = typeof commandLog.$inferInsert;
+
+// ─── Doc 24 / Wave-1 C2 — Hardware commissioning / FAT gate ───────────────────
+//
+// SAFETY (an ADDITIONAL gate, layered ON TOP of the mode gate; never weakens it):
+//   A real (non-simulated) control write to an adapter is BLOCKED unless that
+//   adapter has an ACTIVE, non-expired, SIGNED commissioning record — mirroring the
+//   proven sim-gate → deploy precondition (programmingService). When the flag
+//   OT_COMMISSIONING_REQUIRED is on (the DEFAULT) and the adapter is not commissioned,
+//   commandDispatcher FORCES the 'simulated' path regardless of OT_CONTROL_ENABLED
+//   (records a command_log row with errorText 'not_commissioned: …'; NO driver write).
+//   This table is the sign-off ledger the gate consults.
+//
+// `status` is a plain varchar (NOT a pg enum) so the migration stays additive +
+// idempotent (no ALTER TYPE): one of 'active' | 'revoked' | 'expired'. Only an
+// 'active' row with (expiresAt IS NULL OR expiresAt > now()) commissions the adapter.
+
+/**
+ * Commissioning Records — an append-mostly sign-off ledger: proof that an adapter
+ * passed its Factory Acceptance Test (FAT) / hardware commissioning and MAY receive
+ * real control writes. Admin-gated create (sign) / revoke. `signedBy`/`signedAt`
+ * capture who accepted responsibility; `fatReference` links the external FAT report.
+ */
+export const commissioningRecords = pgTable("commissioning_records", {
+  id: serial("id").primaryKey(),
+  adapterId: integer("adapterId").notNull(),
+  // 'active' (signed & in force) | 'revoked' (manually rescinded) | 'expired'.
+  // Only 'active' + non-expired commissions the adapter for real writes.
+  status: varchar("status", { length: 16 }).default("active").notNull(),
+  /** External FAT / commissioning report reference (doc id, ticket, checklist). */
+  fatReference: varchar("fatReference", { length: 255 }),
+  /** User (users.id) who signed off the commissioning — owns responsibility. */
+  signedBy: integer("signedBy").notNull(),
+  signedAt: timestamp("signedAt").defaultNow().notNull(),
+  /** Optional validity expiry; NULL = no expiry. A past expiry ⇒ NOT commissioned. */
+  expiresAt: timestamp("expiresAt"),
+  /** Set when status becomes 'revoked' (who + when + why). */
+  revokedBy: integer("revokedBy"),
+  revokedAt: timestamp("revokedAt"),
+  revokeReason: text("revokeReason"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_commissioning_records_adapter").on(table.adapterId),
+  index("idx_commissioning_records_status").on(table.status),
+  // Fast "is this adapter commissioned?" probe (adapter + status).
+  index("idx_commissioning_records_adapter_status").on(table.adapterId, table.status),
+]);
+
+export type CommissioningRecord = typeof commissioningRecords.$inferSelect;
+export type InsertCommissioningRecord = typeof commissioningRecords.$inferInsert;
+
+// ─── Doc 24 / Connectivity — No-code Tag → UNS mapping designer ────────────────
+//
+// A HighByte-style "Intelligence Hub" model: map a raw OT adapter tag → an ISA-95
+// UNS topic + a Sparkplug metric name, with per-tag CONDITIONING (rename, scale,
+// offset, unit, type cast, deadband) configured in the UI instead of in code.
+//
+// SAFETY / SCOPE: this is a READ-DIRECTION publish concern ONLY. It reshapes how a
+// telemetry sample is PUBLISHED to the UNS; it opens NO control path and never
+// influences the inbound NCMD/DCMD → commandDispatcher safety. Consulted at publish
+// time ONLY when UNS_MAPPING_ENABLED === "true" (default OFF ⇒ today's normalization
+// is unchanged, and an unmapped tag always keeps the default behaviour).
+
+/**
+ * Per-tag conditioning applied to a raw value before it is published to the UNS.
+ * All fields optional; an empty transform is a pass-through (value unchanged).
+ *   - rename:   output metric/leaf name override (does NOT change the value); also
+ *               usable as the {rename} placeholder in a unsTopic template.
+ *   - scale/offset: numeric conditioning — value := value*scale + offset.
+ *   - unit:     unit label attached to the published (JSON) payload.
+ *   - cast:     coerce the final value to a concrete scalar type.
+ *   - deadband: suppress a publish when |new − lastPublished| < deadband (numeric).
+ */
+export interface UnsTagTransform {
+  rename?: string;
+  scale?: number;
+  offset?: number;
+  unit?: string;
+  cast?: "number" | "bool" | "string";
+  deadband?: number;
+}
+
+/**
+ * UNS Tag Mappings — one row maps (adapterId, tag) → a UNS topic template +
+ * Sparkplug metric name + a conditioning transform. Unique per (adapterId, tag).
+ */
+export const unsTagMappings = pgTable("uns_tag_mappings", {
+  id: serial("id").primaryKey(),
+  adapterId: integer("adapterId").notNull(),
+  /** Raw source tag key (matches deviceTags.tagKey / OtSample.tagKey). */
+  tag: varchar("tag", { length: 128 }).notNull(),
+  /**
+   * Target UNS topic — an ISA-95 path. May be a literal path
+   * (e.g. "AVI-AOI/Factory1/Line3/Press/temperature") or a template with
+   * {enterprise} {adapterCode} {tag} {rename} {machineId} placeholders.
+   */
+  unsTopic: varchar("unsTopic", { length: 500 }).notNull(),
+  /** Sparkplug-B metric name (nullable → falls back to rename, then tag). */
+  sparkplugMetric: varchar("sparkplugMetric", { length: 255 }),
+  /** Conditioning applied to the value before publish. */
+  transform: jsonb("transform").$type<UnsTagTransform>(),
+  enabled: boolean("enabled").default(true).notNull(),
+  notes: text("notes"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  unique("uq_uns_tag_mappings_adapter_tag").on(table.adapterId, table.tag),
+  index("idx_uns_tag_mappings_adapter").on(table.adapterId),
+  index("idx_uns_tag_mappings_enabled").on(table.enabled),
+]);
+
+export type UnsTagMapping = typeof unsTagMappings.$inferSelect;
+export type InsertUnsTagMapping = typeof unsTagMappings.$inferInsert;

@@ -1,0 +1,11 @@
+{
+  "name": "dispensing",
+  "deviceClass": "Automation",
+  "defaultStepType": "glue_dispense",
+  "defaultRecipeCode": "RC-DISP-A",
+  "unitMap": {
+    "mL": "mL",
+    "kPa": "kPa",
+    "C": "°C"
+  }
+}

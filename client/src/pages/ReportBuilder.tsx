@@ -1,6 +1,17 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, chartColor, chartTooltipStyle, chartGridProps, chartAxisTick } from "@/components/patterns";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,15 +30,16 @@ import {
   BarChart3, LineChart, PieChart, Table2, Type, Image,
   Minus, Activity, Cpu, Clock, GripVertical, Settings,
   Loader2, ArrowLeft, X, LayoutGrid, Maximize2, FileText,
+  Download, Mail, CalendarClock,
 } from "lucide-react";
+import { Link } from "wouter";
 import { toast } from "sonner";
 import { useState, useCallback, useMemo } from "react";
+import { buildOnDemandReportFilters } from "@/lib/reportsData";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart as RechartsLineChart, Line, PieChart as RechartsPieChart, Pie, Cell, Legend,
 } from "recharts";
-
-const CHART_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#f97316"];
 
 const WIDGET_ICONS: Record<string, React.ReactNode> = {
   kpi_card: <Activity className="h-4 w-4" />,
@@ -78,6 +90,7 @@ export function ReportBuilderContent() {
   const [editingReport, setEditingReport] = useState<ReportDefinition | null>(null);
   const [showWidgetPicker, setShowWidgetPicker] = useState(false);
   const [editingWidget, setEditingWidget] = useState<string | null>(null);
+  const [reportToDelete, setReportToDelete] = useState<any | null>(null);
 
   // Queries
   const { data: reports, refetch } = trpc.reportBuilder.list.useQuery();
@@ -119,6 +132,75 @@ export function ReportBuilderContent() {
     },
     onError: (err) => toast.error(err.message),
   });
+
+  // ── On-demand production export (doc 32 R4 items 15/16) ─────────────────────
+  // Filters + a real export button + "email me this report", all wired to the
+  // externalReportService pipeline (R1 aggregators → renderReport → persistArtifact).
+  const [reportType, setReportType] = useState<
+    "daily" | "weekly" | "shift" | "defect" | "product" | "station" | "oee"
+  >("daily");
+  const [exportFormat, setExportFormat] = useState<"pdf" | "xlsx" | "csv" | "html">("pdf");
+  const [dateFrom, setDateFrom] = useState(() =>
+    new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10),
+  );
+  const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [filterLineId, setFilterLineId] = useState<string>("all");
+  const [filterStationId, setFilterStationId] = useState<string>("all");
+  const [filterProductId, setFilterProductId] = useState<string>("all");
+  const [filterShift, setFilterShift] = useState<string>("");
+
+  const { data: lines } = trpc.line.list.useQuery();
+  const { data: stations } = trpc.station.list.useQuery();
+  const { data: products } = trpc.productModel.list.useQuery();
+
+  const buildOnDemandFilters = useCallback(
+    () =>
+      buildOnDemandReportFilters({
+        lineId: filterLineId,
+        stationId: filterStationId,
+        productModelId: filterProductId,
+        shift: filterShift,
+      }),
+    [filterLineId, filterStationId, filterProductId, filterShift],
+  );
+
+  const generateReport = trpc.reportArtifact.generate.useMutation({
+    onSuccess: (res: any) => {
+      if (res.emailedTo > 0) {
+        toast.success(t('reports.reportEmailed', { count: res.emailedTo, defaultValue: 'Report emailed' }));
+      } else {
+        toast.success(t('reports.reportGeneratedDownload', 'Report generated — downloading'));
+        // Session-cookie-authed REST route → browser downloads the persisted file.
+        window.open(res.downloadUrl, '_blank');
+      }
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleExport = () =>
+    generateReport.mutate({
+      reportType,
+      format: exportFormat,
+      dateFrom,
+      dateTo,
+      filters: buildOnDemandFilters(),
+    });
+
+  const handleEmailMe = () => {
+    const email = (user as any)?.email as string | undefined;
+    if (!email) {
+      toast.error(t('reports.noEmailOnAccount', 'Your account has no email address'));
+      return;
+    }
+    generateReport.mutate({
+      reportType,
+      format: exportFormat,
+      dateFrom,
+      dateTo,
+      filters: buildOnDemandFilters(),
+      emailTo: [email],
+    });
+  };
 
   // Add widget
   const addWidget = useCallback((type: string) => {
@@ -221,26 +303,22 @@ export function ReportBuilderContent() {
   return (
     <>
       <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <LayoutTemplate className="h-6 w-6 text-primary" />
-              Report Builder
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('reports.reportBuilderDescription')}
-            </p>
-          </div>
-          {activeTab === "list" && (
-            <Button onClick={() => {
-              setEditingReport({ ...DEFAULT_REPORT });
-              setActiveTab("editor");
-            }}>
-              <Plus className="h-4 w-4 mr-1" /> {t('reports.createNew')}
-            </Button>
-          )}
-        </div>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<LayoutTemplate className="h-6 w-6" />}
+          title="Report Builder"
+          description={t('reports.reportBuilderDescription')}
+          actions={
+            activeTab === "list" ? (
+              <Button onClick={() => {
+                setEditingReport({ ...DEFAULT_REPORT });
+                setActiveTab("editor");
+              }}>
+                <Plus className="h-4 w-4 mr-1" /> {t('reports.createNew')}
+              </Button>
+            ) : undefined
+          }
+        />
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
@@ -292,9 +370,7 @@ export function ReportBuilderContent() {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={() => {
-                          if (confirm(t('reports.confirmDeleteReport'))) deleteMutation.mutate(report.id);
-                        }}
+                        onClick={() => setReportToDelete(report)}
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>
@@ -389,6 +465,118 @@ export function ReportBuilderContent() {
                           </button>
                         ))}
                       </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* On-demand export & data filters (doc 32 R4 items 15/16) */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Download className="h-4 w-4" /> {t('reports.exportAndFilters', 'Export & Filters')}
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        {t('reports.onDemandExportDesc', 'Generate a production report from live data')}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">{t('reports.reportType', 'Report type')}</Label>
+                        <Select value={reportType} onValueChange={(v: any) => setReportType(v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="daily">{t('reports.rtDaily', 'Daily')}</SelectItem>
+                            <SelectItem value="weekly">{t('reports.rtWeekly', 'Weekly')}</SelectItem>
+                            <SelectItem value="shift">{t('reports.rtShift', 'Shift')}</SelectItem>
+                            <SelectItem value="defect">{t('reports.rtDefect', 'Defect Pareto')}</SelectItem>
+                            <SelectItem value="product">{t('reports.rtProduct', 'By product')}</SelectItem>
+                            <SelectItem value="station">{t('reports.rtStation', 'By workstation')}</SelectItem>
+                            <SelectItem value="oee">OEE</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">{t('reports.from', 'From')}</Label>
+                          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">{t('reports.to', 'To')}</Label>
+                          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">{t('reports.line', 'Line')}</Label>
+                        <Select value={filterLineId} onValueChange={setFilterLineId}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">{t('common.all', 'All')}</SelectItem>
+                            {(lines || []).map((l: any) => (
+                              <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">{t('reports.station', 'Station')}</Label>
+                        <Select value={filterStationId} onValueChange={setFilterStationId}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">{t('common.all', 'All')}</SelectItem>
+                            {(stations || []).map((s: any) => (
+                              <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">{t('reports.product', 'Product')}</Label>
+                        <Select value={filterProductId} onValueChange={setFilterProductId}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">{t('common.all', 'All')}</SelectItem>
+                            {(products || []).map((p: any) => (
+                              <SelectItem key={p.id} value={String(p.id)}>{p.name || p.code}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">{t('reports.shift', 'Shift')}</Label>
+                        <Input
+                          value={filterShift}
+                          onChange={(e) => setFilterShift(e.target.value)}
+                          placeholder={t('reports.shiftPlaceholder', 'e.g. A / Ca 1')}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">{t('reports.format', 'Format')}</Label>
+                        <Select value={exportFormat} onValueChange={(v: any) => setExportFormat(v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pdf">PDF</SelectItem>
+                            <SelectItem value="xlsx">Excel</SelectItem>
+                            <SelectItem value="csv">CSV</SelectItem>
+                            <SelectItem value="html">HTML</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button className="flex-1" onClick={handleExport} disabled={generateReport.isPending}>
+                          {generateReport.isPending
+                            ? <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                            : <Download className="h-4 w-4 mr-1" />}
+                          {t('reports.export', 'Export')}
+                        </Button>
+                        <Button variant="outline" onClick={handleEmailMe} disabled={generateReport.isPending}>
+                          <Mail className="h-4 w-4 mr-1" /> {t('reports.emailMe', 'Email me')}
+                        </Button>
+                      </div>
+                      <Link href="/scheduled-reports">
+                        <Button variant="ghost" size="sm" className="w-full justify-start text-xs">
+                          <CalendarClock className="h-4 w-4 mr-1" />
+                          {t('reports.scheduleThis', 'Schedule recurring reports')}
+                        </Button>
+                      </Link>
                     </CardContent>
                   </Card>
 
@@ -527,6 +715,27 @@ export function ReportBuilderContent() {
             {editingReport && <ReportPreview report={editingReport} />}
           </TabsContent>
         </Tabs>
+
+        <AlertDialog open={!!reportToDelete} onOpenChange={(open) => !open && setReportToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('reports.deleteReportTitle', 'Delete report?')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('reports.confirmDeleteReport')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (reportToDelete) deleteMutation.mutate(reportToDelete.id);
+                  setReportToDelete(null);
+                }}
+              >
+                {t('common.delete')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </>
   );
@@ -598,7 +807,7 @@ function WidgetPreview({ widget, days }: { widget: ReportWidget; days: number })
             {data?.value != null ? data.value.toLocaleString() : "—"}
           </div>
           {(data as any)?.change != null && (
-            <Badge variant="outline" className={`mt-1 text-xs ${(data as any).change >= 0 ? "text-green-400" : "text-red-400"}`}>
+            <Badge variant="outline" className={`mt-1 text-xs ${(data as any).change >= 0 ? "text-success" : "text-destructive"}`}>
               {(data as any).change >= 0 ? "+" : ""}{(data as any).change.toFixed(1)}%
             </Badge>
           )}
@@ -618,15 +827,13 @@ function WidgetPreview({ widget, days }: { widget: ReportWidget; days: number })
           <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={(data as any)?.data || []}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} />
-                <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }}
-                />
-                <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]}>
+                <CartesianGrid {...chartGridProps} />
+                <XAxis dataKey="name" tick={chartAxisTick} />
+                <YAxis tick={chartAxisTick} />
+                <Tooltip contentStyle={chartTooltipStyle} />
+                <Bar dataKey="value" fill={chartColor(0)} radius={[4, 4, 0, 0]}>
                   {((data as any)?.data || []).map((_: any, i: number) => (
-                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    <Cell key={i} fill={chartColor(i)} />
                   ))}
                 </Bar>
               </BarChart>
@@ -647,13 +854,11 @@ function WidgetPreview({ widget, days }: { widget: ReportWidget; days: number })
           <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <RechartsLineChart data={(data as any)?.data || []}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} />
-                <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }}
-                />
-                <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+                <CartesianGrid {...chartGridProps} />
+                <XAxis dataKey="name" tick={chartAxisTick} />
+                <YAxis tick={chartAxisTick} />
+                <Tooltip contentStyle={chartTooltipStyle} />
+                <Line type="monotone" dataKey="value" stroke={chartColor(1)} strokeWidth={2} dot={{ r: 3 }} />
               </RechartsLineChart>
             </ResponsiveContainer>
           </div>
@@ -683,10 +888,10 @@ function WidgetPreview({ widget, days }: { widget: ReportWidget; days: number })
                   label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
                 >
                   {((data as any)?.data || []).map((_: any, i: number) => (
-                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    <Cell key={i} fill={chartColor(i)} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip contentStyle={chartTooltipStyle} />
               </RechartsPieChart>
             </ResponsiveContainer>
           </div>

@@ -1,0 +1,3 @@
+Date,Time,MachineName,JobName,BoardSerial,BoardResult,Lot,CircuitNo,PartsName,PartsNo,WindowNo,Algorithm,Judge,DefectName,X,Y,Width,Height,ImageFile
+2026/07/04,08:40:11,SAKI-BF3,MB-X1-TOP,SN-2026-000130,OK,LOT-77,1,R12,RC0402-103,12,Solder,OK,,,,,
+2026/07/04,08:40:11,SAKI-BF3,MB-X1-TOP,SN-2026-000130,OK,LOT-77,1,U1,IC-QFP64,3,Polarity,OK,,,,,

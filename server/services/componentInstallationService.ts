@@ -20,11 +20,14 @@
  */
 import * as db from "../db";
 import {
-  GENESIS_HASH,
   hashEntry,
   type GenealogyInput,
 } from "../utils/genealogyChain";
+// doc 44 W2-B2 (G5.17) — stamp the ALS correlation id on the genealogy row (trace
+// metadata, OUTSIDE the hash input → verifyChain unaffected).
+import { getCorrelationId } from "./observability/correlation";
 import { raiseAndon } from "./andon/andonService";
+import { publishToOutbox } from "./integration/outboxProducers"; // K0+-c: ADDITIVE ERP outbox (ERP_OUTBOX_ENABLED)
 import type { InsertComponentInstallation } from "../../drizzle/schema";
 
 export interface RecordComponentInstallationInput {
@@ -107,7 +110,6 @@ export async function recordComponentInstallation(
   let genealogy: RecordComponentInstallationOutput["genealogy"] = null;
   try {
     const recordedAt = new Date();
-    const prevHash = (await db.getLastGenealogyHash()) ?? GENESIS_HASH;
     const eventInput: GenealogyInput = {
       serialNumber: input.serialNumber,
       parentSerial: input.componentSerial ?? null,
@@ -127,10 +129,14 @@ export async function recordComponentInstallation(
       },
       recordedAt,
     };
-    const currHash = hashEntry(prevHash, eventInput);
-    const inserted = await db.insertGenealogyChainRow({
+    // G5.17 (0255) — trace id; null outside an ALS context. NOT hashed.
+    const correlationId = getCorrelationId() ?? null;
+    // R4 fork-fix: read-tail → compute currHash → insert ATOMICALLY (serialised
+    // advisory lock inside appendGenealogyChainRow) so concurrent installs cannot
+    // fork the tamper-evident hash-chain.
+    const inserted = await db.appendGenealogyChainRow((prevHash) => ({
       prevHash,
-      currHash,
+      currHash: hashEntry(prevHash, eventInput),
       serialNumber: input.serialNumber,
       parentSerial: input.componentSerial ?? null,
       eventType: "merge",
@@ -140,8 +146,32 @@ export async function recordComponentInstallation(
       payload: eventInput.payload as Record<string, any>,
       recordedBy: userId,
       recordedAt,
-    });
+      // Conditional so pre-0255 databases keep working when no context is active.
+      ...(correlationId ? { correlationId } : {}),
+    }));
+    const { prevHash, currHash } = inserted;
     genealogy = { id: inserted.id, prevHash, currHash };
+
+    // K0+-c: ADDITIVELY publish the genealogy (merge) record to the durable ERP
+    // outbox. Fire-and-forget + error-isolated (never blocks capture); gated by
+    // ERP_OUTBOX_ENABLED (no-op when off). Idempotent per genealogy row id.
+    publishToOutbox({
+      eventType: "genealogy-record",
+      payload: {
+        genealogyId: inserted.id,
+        installationId,
+        eventType: "merge",
+        serialNumber: input.serialNumber,
+        parentSerial: input.componentSerial ?? null,
+        componentCode: input.componentCode,
+        lotCode: input.lotCode ?? null,
+        currHash,
+        prevHash,
+        recordedAt: recordedAt.toISOString(),
+      },
+      idempotencyKey: `gen-${inserted.id}`,
+    });
+
     // Best-effort link the hash back onto the installation row.
     try {
       await db.updateComponentInstallationGenealogyHash(installationId, currHash);

@@ -29,6 +29,7 @@ import { trpc } from "@/lib/trpc";
 import { getSharedSocket } from "@/lib/socketManager";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -67,17 +68,17 @@ interface NormalAlert {
 const SEVERITY_RANK: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 const SEVERITY_TILE: Record<Severity, string> = {
-  critical: "bg-red-600 text-white border-red-700",
-  high: "bg-orange-500 text-white border-orange-600",
-  medium: "bg-yellow-500 text-black border-yellow-600",
-  low: "bg-blue-500 text-white border-blue-600",
+  critical: "bg-destructive text-white border-destructive",
+  high: "bg-warning text-white border-warning",
+  medium: "bg-warning/70 text-black border-warning",
+  low: "bg-info text-white border-info",
 };
 
 const SEVERITY_DOT: Record<Severity, string> = {
-  critical: "bg-red-600",
-  high: "bg-orange-500",
-  medium: "bg-yellow-500",
-  low: "bg-blue-500",
+  critical: "bg-destructive",
+  high: "bg-warning",
+  medium: "bg-warning/70",
+  low: "bg-info",
 };
 
 const SOURCE_ICON: Record<AlertSource, React.ReactNode> = {
@@ -402,37 +403,38 @@ export default function OpsConsole() {
     <DashboardLayout title={t("opsConsole.title", "Ops Console")} navItems={navItems} currentPath="/ops-console">
       <div
         ref={rootRef}
-        className={`space-y-6 p-6 transition-colors ${flash ? "animate-pulse bg-red-950/40" : ""} ${isFs ? "min-h-screen bg-background" : ""}`}
+        className={`space-y-6 p-6 transition-colors ${flash ? "animate-pulse bg-destructive/20" : ""} ${isFs ? "min-h-screen bg-background" : ""}`}
       >
         {/* Header / KPI strip */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="flex items-center gap-2 text-2xl font-bold">
-              <Activity className="h-7 w-7 text-primary" />
-              {t("opsConsole.title", "Ops Console")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("opsConsole.subtitle", "Unified War-Room + Alert Center — signal only, never controls a machine")}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={refreshAll}>
-              <RefreshCw className="mr-1 h-4 w-4" /> {t("common.refresh", "Refresh")}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setSoundOn((s) => !s)}>
-              {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-            </Button>
-            <Button variant="outline" size="sm" onClick={toggleFs}>
-              {isFs ? <Minimize2 className="mr-1 h-4 w-4" /> : <Maximize2 className="mr-1 h-4 w-4" />}
-              {t("opsConsole.tvMode", "TV mode")}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Activity className="h-6 w-6" />}
+          title={t("opsConsole.title", "Ops Console")}
+          description={t("opsConsole.subtitle", "Unified War-Room + Alert Center — signal only, never controls a machine")}
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={refreshAll}>
+                <RefreshCw className="mr-1 h-4 w-4" /> {t("common.refresh", "Refresh")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSoundOn((s) => !s)}
+                aria-label={soundOn ? t("opsConsole.soundOn", "Sound on") : t("opsConsole.soundOff", "Sound off")}
+              >
+                {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+              </Button>
+              <Button variant="outline" size="sm" onClick={toggleFs}>
+                {isFs ? <Minimize2 className="mr-1 h-4 w-4" /> : <Maximize2 className="mr-1 h-4 w-4" />}
+                {t("opsConsole.tvMode", "TV mode")}
+              </Button>
+            </>
+          }
+        />
 
         <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-          <Kpi label={t("opsConsole.kpiCritical", "Critical")} value={counts.critical} accent="text-red-500" />
-          <Kpi label={t("opsConsole.kpiHigh", "High")} value={counts.high} accent="text-orange-500" />
-          <Kpi label={t("opsConsole.kpiUnacked", "Unacknowledged")} value={counts.unacked} accent="text-yellow-500" />
+          <Kpi label={t("opsConsole.kpiCritical", "Critical")} value={counts.critical} accent="text-destructive" />
+          <Kpi label={t("opsConsole.kpiHigh", "High")} value={counts.high} accent="text-warning" />
+          <Kpi label={t("opsConsole.kpiUnacked", "Unacknowledged")} value={counts.unacked} accent="text-warning" />
           <Kpi label={t("opsConsole.kpiOpen", "Open total")} value={counts.total} />
           <Kpi label={t("opsConsole.kpiMtta", "MTTA (s, 24h)")} value={andonMetrics.data?.avgMttaSeconds ?? 0} />
         </div>
@@ -452,7 +454,7 @@ export default function OpsConsole() {
             {grouped.length === 0 ? (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                  <CheckCircle2 className="mb-3 h-12 w-12 text-green-500/60" />
+                  <CheckCircle2 className="mb-3 h-12 w-12 text-success/60" />
                   <p className="text-lg">{t("opsConsole.allClear", "All clear — no open alerts")}</p>
                 </CardContent>
               </Card>

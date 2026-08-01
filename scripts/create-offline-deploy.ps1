@@ -1,9 +1,10 @@
 # =============================================================================
-# AVI-AOI Management — Offline Deployment Package Builder
-# Usage: .\scripts\create-offline-deploy.ps1 [-OutputDir "C:\deploy\avi-aoi"]
+# SYNAPSE Platform — Offline Deployment Package Builder
+# (REBRAND R-2: artifact was previously avi-aoi-management-*)
+# Usage: .\scripts\create-offline-deploy.ps1 [-OutputDir "C:\deploy\synapse-platform"]
 # =============================================================================
 param(
-    [string]$OutputDir = "C:\deploy\avi-aoi-management",
+    [string]$OutputDir = "C:\deploy\synapse-platform",
     [switch]$SkipBuild,
     [switch]$SkipZip
 )
@@ -11,7 +12,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 
-Write-Host "=== AVI-AOI Offline Deployment Builder ===" -ForegroundColor Cyan
+Write-Host "=== SYNAPSE Platform Offline Deployment Builder ===" -ForegroundColor Cyan
 Write-Host "  Source : $ProjectRoot"
 Write-Host "  Output : $OutputDir"
 Write-Host ""
@@ -110,7 +111,7 @@ Copy-Item "$ProjectRoot\.env.example" "$OutputDir\.env.example"
 # Start scripts
 @"
 @echo off
-REM AVI-AOI Management Server — Windows Start Script
+REM SYNAPSE Platform Server — Windows Start Script
 REM Copy .env.example to .env and configure before first run.
 if not exist .env (
     echo ERROR: .env file not found. Copy .env.example to .env and configure it.
@@ -123,7 +124,7 @@ node dist/index.js
 
 @"
 #!/bin/bash
-# AVI-AOI Management Server — Linux Start Script
+# SYNAPSE Platform Server — Linux Start Script
 # Copy .env.example to .env and configure before first run.
 if [ ! -f .env ]; then
   echo "ERROR: .env file not found. Copy .env.example to .env and configure it."
@@ -160,7 +161,7 @@ console.log('Apply them with: psql $DATABASE_URL -f drizzle/<migration>.sql');
 
 # README
 @"
-# AVI-AOI Management — Offline Deployment
+# SYNAPSE Platform — Offline Deployment
 
 ## Requirements
 - Node.js >= 20.x (LTS)
@@ -215,7 +216,7 @@ if (-not $SkipZip) {
     Write-Host "[5/5] Creating ZIP archive..." -ForegroundColor Yellow
     $version = $pkgJson.version
     $timestamp = Get-Date -Format "yyyyMMdd_HHmm"
-    $zipPath = "C:\deploy\avi-aoi-management-${version}-${timestamp}.zip"
+    $zipPath = "C:\deploy\synapse-platform-${version}-${timestamp}.zip"
     
     if (-not (Test-Path "C:\deploy")) { New-Item -ItemType Directory "C:\deploy" | Out-Null }
     

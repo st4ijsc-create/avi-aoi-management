@@ -1,0 +1,62 @@
+name: machine-down-10min
+description: >
+  Máy (line 1 CONVEYOR) rớt kết nối → kỳ vọng chuỗi presence(offline) → downtime →
+  OEE(availability giảm) → Andon. Nén "10 phút" bằng cách hạ TTL/ngưỡng trong .env.sim
+  (MACHINE_PRESENCE_TTL_SECONDS=30, DOWNTIME_INACTIVITY_MINUTES=1). Cần server(.env.sim)
+  + simulator + đã seed. presence(offline) là cửa BẮT BUỘC; downtime/andon là quan sát.
+steps:
+  - name: baseline telemetry đang chảy
+    check: telemetry_fresh
+    line: 1
+    role: CONVEYOR
+    expect: true
+    maxAgeSec: 20
+    timeout: 60
+  - name: baseline presence online
+    check: presence
+    line: 1
+    role: CONVEYOR
+    expect: online
+    timeout: 90
+  - name: GIẾT máy (dừng OPC-UA server line 1)
+    sim: { action: machine.stop, line: 1 }
+  - name: chờ quá TTL + sweep presence
+    wait: 45
+  - name: presence chuyển OFFLINE
+    check: presence
+    line: 1
+    role: CONVEYOR
+    expect: offline
+    timeout: 120
+  - name: telemetry đã NGỪNG (không còn mẫu mới)
+    check: telemetry_fresh
+    line: 1
+    role: CONVEYOR
+    expect: false
+    maxAgeSec: 20
+    timeout: 30
+  - name: (quan sát) downtime_event được mở
+    check: downtime_open
+    line: 1
+    role: CONVEYOR
+    expect: true
+    timeout: 150
+    optional: true
+  - name: (quan sát) Andon hệ thống được nâng
+    check: andon_raised
+    line: 1
+    role: CONVEYOR
+    sinceSec: 240
+    timeout: 30
+    optional: true
+  - name: khôi phục máy (dựng lại OPC-UA line 1)
+    sim: { action: machine.start, line: 1 }
+  - name: (quan sát) presence trở lại ONLINE
+    check: presence
+    line: 1
+    role: CONVEYOR
+    expect: online
+    timeout: 90
+    optional: true
+teardown:
+  - sim: { action: machine.start, line: 1 }

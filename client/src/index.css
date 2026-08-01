@@ -44,6 +44,18 @@
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  /* DS F1b — additive semantic tokens (info + error alias of destructive) */
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-error: var(--destructive);
+  --color-error-foreground: var(--destructive-foreground);
+  /* DS F1b — surface elevation + text emphasis ramps (additive) */
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
@@ -97,7 +109,22 @@
   
   --warning: oklch(0.78 0.15 75);
   --warning-foreground: oklch(0.145 0.015 260);
-  
+
+  /* DS F1b — info (blue, aligned to chart-5/primary hue family); additive only.
+     --error is an ALIAS of --destructive (see @theme), no separate value. */
+  --info: oklch(0.70 0.13 250);
+  --info-foreground: oklch(0.145 0.015 260);
+
+  /* DS F1b — surface elevation ramp (1 = page bg → 3 = raised panel). Derived
+     from the existing background/card scale so it composes with current cards. */
+  --surface-1: oklch(0.145 0.015 260); /* = --background */
+  --surface-2: oklch(0.18 0.015 260);  /* = --card */
+  --surface-3: oklch(0.22 0.015 260);  /* = --muted (raised) */
+  /* DS F1b — text emphasis ramp (1 = primary text → 3 = subtle/disabled). */
+  --text-1: oklch(0.96 0.01 260);  /* = --foreground */
+  --text-2: oklch(0.80 0.015 260); /* secondary */
+  --text-3: oklch(0.65 0.02 260);  /* = --muted-foreground */
+
   --border: oklch(0.28 0.02 260);
   --input: oklch(0.25 0.015 260);
   --ring: oklch(0.72 0.14 185);
@@ -142,7 +169,18 @@
   
   --warning: oklch(0.65 0.15 75);
   --warning-foreground: oklch(0.15 0.02 260);
-  
+
+  /* DS F1b — info + surface/text ramps for light theme (additive). */
+  --info: oklch(0.52 0.15 250);
+  --info-foreground: oklch(0.98 0.005 260);
+
+  --surface-1: oklch(0.98 0.005 260); /* = --background */
+  --surface-2: oklch(1 0 0);          /* = --card */
+  --surface-3: oklch(0.94 0.01 260);  /* = --muted (raised) */
+  --text-1: oklch(0.15 0.02 260);  /* = --foreground */
+  --text-2: oklch(0.32 0.02 260);  /* secondary */
+  --text-3: oklch(0.45 0.02 260);  /* = --muted-foreground */
+
   --border: oklch(0.88 0.01 260);
   --input: oklch(0.88 0.01 260);
   --ring: oklch(0.55 0.14 185);
@@ -304,6 +342,28 @@
   .status-ntf {
     @apply bg-warning/20 text-warning border border-warning/30;
   }
+  /* DS F1b — info status tint, completes the set (additive). */
+  .status-info {
+    @apply bg-info/20 text-info border border-info/30;
+  }
+
+  /* ===================================================================== */
+  /* DS F1b — TYPOGRAPHY SCALE (16px base, ~1.25 modular).                  */
+  /* Additive utility classes — opt-in, do NOT change any existing text.    */
+  /* Use <Heading> / <Text> pattern components, or these classes directly.  */
+  /* Scale:  display 36 · h1 30 · h2 24 · h3 20 · h4 18 · h5 16 · h6 14     */
+  /*         body 16 · body-sm 14 · caption 12                              */
+  /* ===================================================================== */
+  .ds-display { font-size: 2.25rem;  line-height: 1.1;  font-weight: 700; letter-spacing: -0.02em; }
+  .ds-h1      { font-size: 1.875rem; line-height: 1.2;  font-weight: 700; letter-spacing: -0.02em; }
+  .ds-h2      { font-size: 1.5rem;   line-height: 1.25; font-weight: 600; letter-spacing: -0.01em; }
+  .ds-h3      { font-size: 1.25rem;  line-height: 1.3;  font-weight: 600; }
+  .ds-h4      { font-size: 1.125rem; line-height: 1.4;  font-weight: 600; }
+  .ds-h5      { font-size: 1rem;     line-height: 1.4;  font-weight: 600; }
+  .ds-h6      { font-size: 0.875rem; line-height: 1.4;  font-weight: 600; letter-spacing: 0.01em; }
+  .ds-body    { font-size: 1rem;     line-height: 1.6;  font-weight: 400; }
+  .ds-body-sm { font-size: 0.875rem; line-height: 1.55; font-weight: 400; }
+  .ds-caption { font-size: 0.75rem;  line-height: 1.4;  font-weight: 400; }
 
   /* Glass morphism effect for cards */
   .glass-card {
@@ -568,4 +628,80 @@
 }
 .kiosk-mode main {
   padding: 0 !important;
+}
+
+/* ── Doc 27 Đợt 5 / W5-E — gap F12: print stylesheet for reports ──────────
+   Pages that wrap their output in `.print-area` (Reports.tsx) print clean:
+   app chrome hidden, black-on-white, sensible page breaks for tables. */
+@media print {
+  /* Hide everything, then re-show only the print area (visibility keeps the
+     layout box so the area's position is preserved before we lift it out). */
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* App chrome never prints, even outside .print-area pages. */
+  [data-app-chrome="sidebar"],
+  [data-app-chrome="header"],
+  nav,
+  aside {
+    display: none !important;
+  }
+
+  /* Black on white regardless of theme. */
+  .print-area,
+  .print-area * {
+    background: transparent !important;
+    color: #000 !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+  }
+  body,
+  .print-area {
+    background: #fff !important;
+  }
+  .print-area [class*="border"] {
+    border-color: #bbb !important;
+  }
+
+  /* Page-break hygiene. */
+  .print-area table {
+    page-break-inside: auto;
+    width: 100%;
+  }
+  .print-area tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  .print-area thead {
+    display: table-header-group;
+  }
+  .print-area h1,
+  .print-area h2,
+  .print-area h3 {
+    page-break-after: avoid;
+  }
+  /* Cards / chart blocks should not be split across pages. */
+  .print-area .print-avoid-break,
+  .print-area [data-slot="card"] {
+    break-inside: avoid;
+  }
+
+  /* Interactive controls make no sense on paper. */
+  .print-area button,
+  .print-area [role="tablist"] {
+    display: none !important;
+  }
 }

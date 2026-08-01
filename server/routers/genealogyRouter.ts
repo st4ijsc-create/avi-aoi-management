@@ -7,15 +7,20 @@
  * confirm no row was tampered with.
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { moduleProcedure, router } from "../_core/trpc";
+// Doc 38 Đợt Q — license-gate this router behind MOD_PRODUCTION (moduleGate = pass-through
+// until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
+const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import * as db from "../db";
 import { TRPCError } from "@trpc/server";
 import {
-  GENESIS_HASH,
   hashEntry,
   verifyChain,
   type ChainRow,
 } from "../utils/genealogyChain";
+// doc 44 W2-B2 (G5.17) — cross-layer trace: stamp the ALS correlation id (if any)
+// on appended rows. OUTSIDE the hash input → verifyChain unaffected.
+import { getCorrelationId } from "../services/observability/correlation";
 
 const eventTypeSchema = z.enum([
   "born",
@@ -42,6 +47,8 @@ function rowsToChainRows(rows: any[]): ChainRow[] {
     payload: (r.payload ?? {}) as Record<string, any>,
     recordedBy: r.recordedBy ?? null,
     recordedAt: r.recordedAt instanceof Date ? r.recordedAt : new Date(r.recordedAt),
+    // G5.17 (0255): trace metadata — read-side passthrough, never part of the hash.
+    correlationId: r.correlationId ?? null,
   }));
 }
 
@@ -60,20 +67,24 @@ export const genealogyRouter = router({
     .mutation(async ({ input, ctx }) => {
       const recordedAt = new Date();
       const recordedBy = (ctx as any)?.user?.id ?? null;
-      const prevHash = (await db.getLastGenealogyHash()) ?? GENESIS_HASH;
-      const currHash = hashEntry(prevHash, {
-        serialNumber: input.serialNumber,
-        parentSerial: input.parentSerial ?? null,
-        eventType: input.eventType,
-        stationCode: input.stationCode ?? null,
-        lotCode: input.lotCode ?? null,
-        productModelId: input.productModelId ?? null,
-        payload: input.payload,
-        recordedAt,
-      });
-      const inserted = await db.insertGenealogyChainRow({
+      // G5.17 (0255) — trace id from the ALS backbone; null outside a context.
+      // NOT part of hashEntry's input (fixed field list) → chain hashes unchanged.
+      const correlationId = getCorrelationId() ?? null;
+      // R4 fork-fix: read-tail → compute currHash → insert ATOMICALLY (serialised
+      // advisory lock inside appendGenealogyChainRow) so concurrent manual appends
+      // cannot fork the tamper-evident hash-chain.
+      const inserted = await db.appendGenealogyChainRow((prevHash) => ({
         prevHash,
-        currHash,
+        currHash: hashEntry(prevHash, {
+          serialNumber: input.serialNumber,
+          parentSerial: input.parentSerial ?? null,
+          eventType: input.eventType,
+          stationCode: input.stationCode ?? null,
+          lotCode: input.lotCode ?? null,
+          productModelId: input.productModelId ?? null,
+          payload: input.payload,
+          recordedAt,
+        }),
         serialNumber: input.serialNumber,
         parentSerial: input.parentSerial ?? null,
         eventType: input.eventType,
@@ -83,8 +94,15 @@ export const genealogyRouter = router({
         payload: input.payload as Record<string, any>,
         recordedBy,
         recordedAt,
-      });
-      return { id: inserted.id, prevHash, currHash };
+        // Conditional so pre-0255 databases keep working when no context is active.
+        ...(correlationId ? { correlationId } : {}),
+      }));
+      return {
+        id: inserted.id,
+        prevHash: inserted.prevHash,
+        currHash: inserted.currHash,
+        correlationId,
+      };
     }),
 
   /** Get the full chain for a serial. */
@@ -96,6 +114,28 @@ export const genealogyRouter = router({
     .query(async ({ input }) => {
       const rows = await db.listGenealogyChainBySerial(input.serialNumber, input.limit ?? 1000);
       return rowsToChainRows(rows);
+    }),
+
+  /**
+   * doc 54 P2.5 — RECURSIVE lineage walk over the parent→child edges of the
+   * genealogy chain. Unlike getBySerial (one serial's own events), this traces the
+   * full multi-level tree: descendants (parent→child→…), ancestors (child→parent→…),
+   * or both. Cycle-safe + depth-bounded. Honest: a serial with no edges returns a
+   * single-node tree (itself), never a fabricated relationship.
+   */
+  getLineage: protectedProcedure
+    .input(z.object({
+      serialNumber: z.string().min(1).max(128),
+      direction: z.enum(["ancestors", "descendants", "both"]).default("both"),
+      maxDepth: z.number().int().positive().max(100).default(20),
+    }))
+    .query(async ({ input }) => {
+      const { getGenealogyLineage } = await import("../services/genealogyLineageService");
+      return getGenealogyLineage({
+        rootSerial: input.serialNumber,
+        direction: input.direction,
+        maxDepth: input.maxDepth,
+      });
     }),
 
   /** Get the full chain for a lot. */

@@ -45,12 +45,26 @@ export const COMPARE_OPS = ["eq", "neq", "lt", "lte", "gt", "gte", "in", "nin", 
  * A single editor step — a superset of every server step type, with all
  * type-specific fields optional (the editor fills them in over time).
  */
+/** Hành vi khi precondition/interlock KHÔNG thỏa (mirror server OnPreconditionFail). */
+export type OnPreconditionFail = "hold" | "abort" | "skip";
+export const ON_PRECONDITION_FAIL: OnPreconditionFail[] = ["hold", "abort", "skip"];
+
 export interface StudioStep {
   id: string;
   type: StepKind;
   label?: string;
+  /**
+   * T-2 (doc 38) — persisted node-graph coordinate for the Orchestration Studio "Sơ đồ"
+   * view. Editor-only presentation (mirror IR block.ui): when present the canvas honours it
+   * instead of the deterministic auto-layout, so drag-and-drop positions survive save/load.
+   * `serializeStep` emits it so the server-side WorkflowDefinition round-trips the layout.
+   */
+  ui?: { x: number; y: number };
+  // ── base (mọi loại) — mirror server BaseStep ──
   precondition?: Record<string, unknown>;
+  onPreconditionFail?: OnPreconditionFail;
   compensation?: StudioStep;
+  maxAttempts?: number;
   // command
   machineId?: number;
   command?: string;
@@ -62,13 +76,15 @@ export interface StudioStep {
   condition?: Record<string, unknown>;
   then?: StudioStep[];
   else?: StudioStep[];
-  // wait_state
+  // wait_state / wait_telemetry
   targetStates?: string[];
   timeoutMs?: number;
+  pollMs?: number;
   // delay
   ms?: number;
   // hitl_gate
   prompt?: string;
+  approverRoles?: string[];
 }
 
 export interface StudioParam {
@@ -197,6 +213,30 @@ export function moveStep(steps: StudioStep[], id: string, dir: -1 | 1): boolean 
   return false;
 }
 
+/**
+ * U14 — Sắp lại thứ tự: đưa `sourceId` xuống NGAY SAU `targetId` NẾU hai bước cùng
+ * một danh sách anh-em. Dùng cho thao tác nối-cạnh trên sơ đồ (kéo cạnh next từ node
+ * này tới node kia). KHÔNG di chuyển xuyên cấp — nếu khác danh sách thì bỏ qua an toàn.
+ * Trả true nếu đã đổi (mutate-in-place, giống moveStep).
+ */
+export function reorderToSibling(steps: StudioStep[], sourceId: string, targetId: string): boolean {
+  const si = steps.findIndex((s) => s.id === sourceId);
+  const ti = steps.findIndex((s) => s.id === targetId);
+  if (si >= 0 && ti >= 0 && si !== ti) {
+    const [moved] = steps.splice(si, 1);
+    const insertAt = steps.findIndex((s) => s.id === targetId) + 1;
+    steps.splice(insertAt, 0, moved);
+    return true;
+  }
+  // Chỉ MỘT danh sách chứa cả hai anh-em; đệ quy tìm đúng danh sách đó.
+  for (const s of steps) {
+    if (s.steps && reorderToSibling(s.steps, sourceId, targetId)) return true;
+    if (s.then && reorderToSibling(s.then, sourceId, targetId)) return true;
+    if (s.else && reorderToSibling(s.else, sourceId, targetId)) return true;
+  }
+  return false;
+}
+
 /** Append a child step into a container's slot (steps/then/else). */
 export function addChild(steps: StudioStep[], parentId: string, slot: "steps" | "then" | "else", child: StudioStep): void {
   const parent = findStep(steps, parentId);
@@ -211,8 +251,14 @@ export function addChild(steps: StudioStep[], parentId: string, slot: "steps" | 
 function serializeStep(s: StudioStep): Record<string, unknown> {
   const out: Record<string, unknown> = { id: s.id, type: s.type };
   if (s.label) out.label = s.label;
+  // T-2 (doc 38) — persist the node-graph coordinate (editor-only presentation). Only emit
+  // when both axes are finite so a partial/NaN drag never pollutes the definition JSON.
+  if (s.ui && Number.isFinite(s.ui.x) && Number.isFinite(s.ui.y)) out.ui = { x: s.ui.x, y: s.ui.y };
+  // ── base optional fields (mirror server BaseStep) — chỉ emit khi có giá trị ──
   if (s.precondition) out.precondition = s.precondition;
+  if (s.onPreconditionFail) out.onPreconditionFail = s.onPreconditionFail;
   if (s.compensation) out.compensation = serializeStep(s.compensation);
+  if (typeof s.maxAttempts === "number" && s.maxAttempts > 0) out.maxAttempts = s.maxAttempts;
   switch (s.type) {
     case "command":
       out.machineId = s.machineId;
@@ -233,13 +279,16 @@ function serializeStep(s: StudioStep): Record<string, unknown> {
       out.machineId = s.machineId;
       out.targetStates = s.targetStates ?? [];
       out.timeoutMs = s.timeoutMs ?? 30000;
+      if (typeof s.pollMs === "number" && s.pollMs > 0) out.pollMs = s.pollMs;
       break;
     case "wait_telemetry":
       out.condition = s.condition;
       out.timeoutMs = s.timeoutMs ?? 30000;
+      if (typeof s.pollMs === "number" && s.pollMs > 0) out.pollMs = s.pollMs;
       break;
     case "hitl_gate":
       out.prompt = s.prompt ?? "";
+      if (s.approverRoles && s.approverRoles.length) out.approverRoles = s.approverRoles;
       break;
     case "delay":
       out.ms = s.ms ?? 0;

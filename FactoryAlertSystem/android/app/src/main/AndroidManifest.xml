@@ -1,0 +1,134 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Basic permissions -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    
+    <!-- Notification permissions (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    
+    <!-- Boot receiver for auto-start -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    
+    <!-- Foreground service permissions -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    
+    <!-- Full-screen intent (for critical alerts) -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    
+    <!-- Schedule exact alarms (for notifications) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    
+    <!-- Disable battery optimization dialog -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    
+    <!-- SYSTEM_ALERT_WINDOW - Draw over other apps (Floating Bubble) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- Install APK from unknown sources (OTA update) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- Android 11+ (API 30+): Declare URL schemes for Linking.canOpenURL/openURL -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
+    <!-- MB7: cleartext policy moved from usesCleartextTraffic to an explicit,
+         documented networkSecurityConfig (res/xml/network_security_config.xml).
+         Cleartext stays permitted because LAN broker IPs are user-configured at
+         runtime and NSC cannot express IP ranges — see the XML for the full
+         rationale and the tighten-later path. Prefer useSSL (mqtts/wss/https). -->
+    <!-- Wave 2D: largeHeap="true" is intentionally KEPT for now. Full-resolution
+         inspection images are still decoded into memory in a few places, and on
+         the low-RAM (<3GB) field tablets the larger per-process heap prevents OOM
+         during image decode. REVISIT after Wave 2F image downsizing lands (card
+         thumbnails now use ?w= resize; once the viewer paths are fully capped this
+         can likely be dropped to reduce memory pressure / GC on old devices). -->
+    <application
+        android:name=".MainApplication"
+        android:label="@string/app_name"
+        android:icon="@drawable/ic_launcher"
+        android:allowBackup="false"
+        android:theme="@style/AppTheme"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:largeHeap="true">
+        
+        <!-- Main Activity with showWhenLocked for critical alerts -->
+        <activity
+            android:name=".MainActivity"
+            android:label="@string/app_name"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Floating Bubble Service -->
+        <service
+            android:name=".FloatingBubbleService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="floating_bubble_overlay" />
+        </service>
+
+        <!-- Notifee Foreground Service -->
+        <service
+            android:name="io.invertase.notifee.ForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
+        <!-- MB3: Headless JS bootstrap service started by BootReceiver after reboot.
+             Runs the "FactoryAlertBootTask" registered in index.js (reconnect MQTT,
+             then hand over to the Notifee dataSync foreground service). -->
+        <service
+            android:name=".BootHeadlessTaskService"
+            android:enabled="true"
+            android:exported="false" />
+
+        <!-- Boot Receiver - Auto start monitoring on device boot (MB3: starts the
+             headless service above; startActivity from boot is blocked on Android 10+) -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Notifee Boot Receiver - Reschedule notifications after reboot -->
+        <receiver
+            android:name="io.invertase.notifee.NotifeeRebootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+            
+    </application>
+</manifest>

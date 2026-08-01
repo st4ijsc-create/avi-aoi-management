@@ -1,0 +1,16 @@
+# Policy-as-code — SYNAPSE Tầng 3 §11 (doc 44 W3-A1 G3.13).
+# Chuyển từ DEFAULT_POLICIES (server/services/security/policyEngine.ts) — GIỮ NGUYÊN
+# ngữ nghĩa: ghi đè khi robot đang ở zone đông người → cần phê duyệt quản lý (four-eyes).
+# Nhóm chính sách: An toàn (spec §11.1). effect require_approval = PERMIT kèm
+# obligation "require_approval" (spec §11.2 "Nghĩa vụ") — CALLER cưỡng chế phê duyệt.
+policy_id: approve-override-crowded-zone
+version: 1
+effect: require_approval
+action_pattern: manual_override
+priority: 100
+status: active
+description: "Ghi đè khi robot đang ở zone đông người → cần phê duyệt quản lý (four-eyes)."
+conditions:
+  - path: zone.density
+    op: gt
+    value: 0.7

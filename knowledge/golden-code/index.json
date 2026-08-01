@@ -1,0 +1,152 @@
+[
+  {
+    "id": "iec61131-st/moving-average",
+    "lang": "iec61131-st",
+    "title": "N-sample moving average (ring buffer)",
+    "task": "Smooth a noisy analog reading with an N-sample moving average using a ring buffer.",
+    "file": "iec61131-st/moving-average.st",
+    "kind": "iec61131-st",
+    "tier": "A",
+    "tags": ["structured-text", "iec61131-3", "filter", "moving-average", "ring-buffer", "analog", "for-loop"]
+  },
+  {
+    "id": "iec61131-st/debounce-ton",
+    "lang": "iec61131-st",
+    "title": "Digital input debounce with a TON timer",
+    "task": "Debounce a noisy digital input using a TON on-delay timer; accept a change only after it is stable.",
+    "file": "iec61131-st/debounce-ton.st",
+    "kind": "iec61131-st",
+    "tier": "A",
+    "tags": ["structured-text", "iec61131-3", "debounce", "timer", "ton", "function-block", "signal-conditioning"]
+  },
+  {
+    "id": "iec61131-ld/conveyor-sealin",
+    "lang": "iec61131-ld",
+    "title": "Motor seal-in (latch) + running lamp",
+    "task": "Start/stop seal-in latch to run a conveyor motor with a running lamp; multi-rung scan order.",
+    "file": "iec61131-ld/conveyor-sealin.ld",
+    "kind": "iec61131-ld",
+    "tier": "A",
+    "tags": ["ladder", "ladder-dsl", "seal-in", "latch", "motor", "boolean", "scan-order"]
+  },
+  {
+    "id": "iec61131-ld/station-ready",
+    "lang": "iec61131-ld",
+    "title": "Station-ready permissive + XOR jam lamp",
+    "task": "Compute a station cycle-ready permissive from sensors/flags and an XOR-based jam lamp.",
+    "file": "iec61131-ld/station-ready.ld",
+    "kind": "iec61131-ld",
+    "tier": "A",
+    "tags": ["ladder", "ladder-dsl", "permissive", "xor", "combinational", "interlock-free", "scan-order"]
+  },
+  {
+    "id": "ir-flow/pick-and-place",
+    "lang": "ir-flow",
+    "title": "Pick-and-place (move_linear / grip / release)",
+    "task": "Author an IR pick-and-place for a collaborative robot: approach, descend, grip, traverse, place, release.",
+    "file": "ir-flow/pick-and-place.ir.json",
+    "kind": "ir-flow",
+    "tier": "A",
+    "tags": ["ir", "flow", "universal-robots", "pick-and-place", "move_linear", "grip", "release", "iso-ts-15066"]
+  },
+  {
+    "id": "ir-flow/palletize-loop",
+    "lang": "ir-flow",
+    "title": "Palletize / stack loop (loop + counter + handshake)",
+    "task": "Author an IR palletize loop repeating a pick/place cycle N times, counting placed parts with a digital handshake.",
+    "file": "ir-flow/palletize-loop.ir.json",
+    "kind": "ir-flow",
+    "tier": "A",
+    "tags": ["ir", "flow", "universal-robots", "palletize", "loop", "counter", "set_output", "wait", "handshake"]
+  },
+  {
+    "id": "urscript/linear-move-gripper",
+    "lang": "urscript",
+    "title": "Linear move + gripper (transpiler-target dialect)",
+    "task": "URScript with movel linear moves and gripper open/close, in the exact style the IR->URScript transpiler emits.",
+    "file": "urscript/linear-move-gripper.script",
+    "kind": "urscript",
+    "tier": "A",
+    "tags": ["urscript", "universal-robots", "movel", "gripper", "transpiler-target", "no-direct-adapter", "hil-ursim"]
+  },
+  {
+    "id": "zmotion-basic/axis-absolute-move",
+    "lang": "zmotion-basic",
+    "title": "Single-axis absolute move (MOVEABS)",
+    "task": "Configure axis 0 and perform one absolute positioning move, waiting for the axis to stop.",
+    "file": "zmotion-basic/axis-absolute-move.bas",
+    "kind": "zmotion-basic",
+    "tier": "A",
+    "tags": ["zmotion", "zbasic", "rtbasic", "zmc", "motion", "moveabs", "axis-setup"]
+  },
+  {
+    "id": "zmotion-basic/feeder-index-loop",
+    "lang": "zmotion-basic",
+    "title": "FOR/NEXT feeder index loop",
+    "task": "Index a feeder N relative steps with a dwell between each, using a FOR/NEXT loop.",
+    "file": "zmotion-basic/feeder-index-loop.bas",
+    "kind": "zmotion-basic",
+    "tier": "A",
+    "tags": ["zmotion", "zbasic", "zmc", "motion", "loop", "for-next", "relative-move", "feeder"]
+  },
+  {
+    "id": "mitsubishi-engineering/injection-recipe",
+    "lang": "mitsubishi-engineering",
+    "title": "MELSEC device/recipe parameter table",
+    "task": "Create a MELSEC device/recipe table: D-register setpoints and M-bit mode flags for a product recipe.",
+    "file": "mitsubishi-engineering/injection-recipe.dev",
+    "kind": "mitsubishi-engineering",
+    "tier": "A",
+    "tags": ["mitsubishi", "melsec", "recipe", "device-table", "parameters", "gx-works", "d-register", "m-bit"]
+  },
+  {
+    "id": "robot-tm/pick-place-job",
+    "lang": "robot-tm",
+    "title": "Techman TMflow pick-and-place job-list",
+    "task": "Techman job-list with taught POINTs: home, pick at A, place at B with a gripper dwell, return home.",
+    "file": "robot-tm/pick-place-job.tmscript",
+    "kind": "robot-tm",
+    "tier": "A",
+    "tags": ["techman", "tmflow", "job-list", "teach-points", "pick-and-place", "grip", "release"]
+  },
+  {
+    "id": "karel/_placeholder",
+    "lang": "karel",
+    "title": "Fanuc KAREL / TP (Tier B placeholder)",
+    "task": "RAG-first; no sim substrate yet. Examples pending Fanuc manual ingestion (P1).",
+    "file": "karel/README.md",
+    "kind": null,
+    "tier": "B",
+    "tags": ["placeholder", "rag-first", "fanuc", "karel", "tp", "no-substrate", "pending-ingestion"]
+  },
+  {
+    "id": "rapid/_placeholder",
+    "lang": "rapid",
+    "title": "ABB RAPID (Tier B placeholder)",
+    "task": "RAG-first; no sim substrate yet. Examples pending ABB manual ingestion (P1).",
+    "file": "rapid/README.md",
+    "kind": null,
+    "tier": "B",
+    "tags": ["placeholder", "rag-first", "abb", "rapid", "no-substrate", "pending-ingestion"]
+  },
+  {
+    "id": "melfa/_placeholder",
+    "lang": "melfa",
+    "title": "Mitsubishi MELFA-BASIC V/VI (Tier B placeholder)",
+    "task": "RAG-first; no sim substrate yet. Examples pending Mitsubishi MELFA manual ingestion (P1). Not the same as mitsubishi-engineering (PLC).",
+    "file": "melfa/README.md",
+    "kind": null,
+    "tier": "B",
+    "tags": ["placeholder", "rag-first", "mitsubishi", "melfa", "robot", "no-substrate", "pending-ingestion"]
+  },
+  {
+    "id": "delta-robot/_placeholder",
+    "lang": "delta-robot",
+    "title": "Delta robot DRAS / DIAStudio (Tier B placeholder)",
+    "task": "RAG-first; no sim substrate yet. Examples pending Delta manual ingestion (P1).",
+    "file": "delta-robot/README.md",
+    "kind": null,
+    "tier": "B",
+    "tags": ["placeholder", "rag-first", "delta", "dras", "diastudio", "robot", "no-substrate", "pending-ingestion"]
+  }
+]

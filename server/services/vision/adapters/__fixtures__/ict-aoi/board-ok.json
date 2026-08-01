@@ -1,0 +1,12 @@
+{
+  "machine": "ICT-AI5146",
+  "sn": "SN-2026-000126",
+  "pcb_code": "MB-X1",
+  "program": "MB-X1-TOP-V2",
+  "test_time": "2026-07-04 08:33:10",
+  "result": "PASS",
+  "components": [
+    { "designator": "R7", "part_no": "RC0402-102", "result": "OK" },
+    { "designator": "D2", "part_no": "LED-0603", "result": "OK" }
+  ]
+}

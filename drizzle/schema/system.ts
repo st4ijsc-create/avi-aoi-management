@@ -1,5 +1,5 @@
 // Schema domain: System tables
-import { pgTable, serial, integer, text, timestamp, varchar, boolean, json, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar, boolean, json, jsonb, index } from "drizzle-orm/pg-core";
 import { statusEnum_2, reportTypeEnum, scheduleEnum, reportFormatEnum, statusEnum_3, dataTypeEnum, typeEnum, priorityEnum, templateTypeEnum_1 } from "./enums";
 import { users } from "./auth";
 
@@ -67,6 +67,14 @@ export const scheduledReports = pgTable("scheduled_reports", {
   primaryColor: varchar("primaryColor", { length: 20 }).default("#3b82f6"), // Primary color for email
   footerText: text("footerText"), // Custom footer text
   isActive: boolean("isActive").default(true).notNull(),
+  // W5-D (doc 27 A11) — optional pluggable delivery-channel config. NULL =
+  // legacy semantics (direct e-mail to `recipients`, exactly the pre-0185
+  // behaviour). See DeliveryChannelsConfig in services/reportDeliveryService.
+  deliveryChannels: jsonb("deliveryChannels").$type<{
+    email?: { enabled: boolean };
+    webhook?: { enabled: boolean; url: string; secret?: string };
+    inApp?: { enabled: boolean; userIds?: number[] };
+  } | null>(),
   lastSentAt: timestamp("lastSentAt"),
   nextScheduledAt: timestamp("nextScheduledAt"),
   createdBy: integer("createdBy").notNull(),
@@ -105,6 +113,37 @@ export const scheduledReportLogs = pgTable("scheduled_report_logs", {
 
 export type ScheduledReportLog = typeof scheduledReportLogs.$inferSelect;
 export type InsertScheduledReportLog = typeof scheduledReportLogs.$inferInsert;
+
+/**
+ * Report Deliveries (W5-D, doc 27 §6 A11) — per-channel delivery ledger for
+ * scheduled reports. One row per (report run × channel); the delivery worker
+ * drains queued/failed rows with exponential backoff and dead-letters rows
+ * that exhaust the attempt budget. Migration 0185.
+ */
+export const reportDeliveries = pgTable("report_deliveries", {
+  id: serial("id").primaryKey(),
+  scheduledReportId: integer("scheduledReportId").notNull(),
+  /** 'email' | 'webhook' | 'in_app' */
+  channel: varchar("channel", { length: 20 }).notNull(),
+  /** email: comma-joined recipients · webhook: URL · in_app: user id list */
+  target: text("target").notNull(),
+  /** 'queued' | 'sent' | 'failed' | 'dead' */
+  status: varchar("status", { length: 10 }).default("queued").notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  lastError: text("lastError"),
+  /** Subject / reportType / attachment name+size snapshot for the history UI. */
+  payloadMeta: jsonb("payloadMeta").$type<Record<string, unknown> | null>(),
+  nextAttemptAt: timestamp("nextAttemptAt").defaultNow().notNull(),
+  sentAt: timestamp("sentAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_report_deliveries_report").on(table.scheduledReportId, table.createdAt),
+  index("idx_report_deliveries_due").on(table.status, table.nextAttemptAt),
+]);
+
+export type ReportDelivery = typeof reportDeliveries.$inferSelect;
+export type InsertReportDelivery = typeof reportDeliveries.$inferInsert;
 
 // SMTP Configuration Table
 export const smtpConfig = pgTable("smtp_config", {

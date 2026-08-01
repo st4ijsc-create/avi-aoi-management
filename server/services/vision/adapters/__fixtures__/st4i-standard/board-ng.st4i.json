@@ -1,0 +1,63 @@
+{
+  "spec_version": 1,
+  "header": {
+    "machine_code": "AOI-01",
+    "serial_number": "SN-2026-000123",
+    "program_name": "MB-X1-TOP",
+    "program_version": "1.4.0",
+    "lot_code": "LOT-77",
+    "panel_id": "PNL-88",
+    "board_index": 2,
+    "operator_id": "OP-0009",
+    "started_at": "2026-07-04T08:30:00+07:00",
+    "finished_at": "2026-07-04T08:30:12.480+07:00",
+    "cycle_time_sec": 12.48,
+    "result": "NG"
+  },
+  "measurements": [
+    {
+      "point_name": "R12.1",
+      "type": "solder_joint",
+      "value": 61.2,
+      "unit": "%",
+      "lsl": 70,
+      "usl": 130,
+      "nominal": 100,
+      "result": "NG",
+      "defect_code": "INSUFFICIENT_SOLDER",
+      "severity": "major",
+      "bbox_px": { "x": 120, "y": 340, "w": 48, "h": 32 },
+      "image_ref": "SN-2026-000123__R12.1.jpg",
+      "values_3d": {
+        "height_um": 95.0,
+        "area_pct": 88.0,
+        "volume_pct": 61.2,
+        "void_pct": 2.1,
+        "coplanarity_um": 3.0,
+        "warpage_um": 1.2,
+        "offset_x_um": -3.5,
+        "offset_y_um": 1.1,
+        "tilt_deg": 0.4,
+        "thickness_um": 40,
+        "z_um": 130
+      },
+      "remark": "insufficient fillet on pad 1"
+    },
+    {
+      "point_name": "C3",
+      "type": "component",
+      "value": 99.1,
+      "unit": "%",
+      "result": "OK"
+    },
+    {
+      "point_name": "U1.pin5",
+      "type": "solder_joint",
+      "result": "NTF",
+      "defect_code": "BRIDGING",
+      "severity": "minor",
+      "bbox_px": { "x": 610, "y": 900, "w": 22, "h": 18 },
+      "image_ref": "SN-2026-000123__U1.pin5.jpg"
+    }
+  ]
+}

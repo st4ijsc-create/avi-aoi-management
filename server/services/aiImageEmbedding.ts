@@ -8,6 +8,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { getAiModelById, getActiveModelForProduct, getAiModels } from "../db/ai";
 import type { AiModel } from "../../drizzle/schema";
 import { describeDefect } from "./aiVisionLanguage";
+import { gpuSessionSemaphore } from "./aiInferenceEngine";
 
 // B4.1 — nguồn embedding ảnh trả về UI (trung thực):
 //  - "onnx":          model ONNX embedding ACTIVE (vector thật, khác chiều 1024).
@@ -68,6 +69,117 @@ const GGUF_EMBED_MODEL_ID = path.basename(
 );
 /** Giới hạn số dòng quét cho brute-force cosine trong Node (bảo vệ RAM/CPU). */
 const BRUTEFORCE_SCAN_LIMIT = Number(process.env.IMG_EMB_BRUTEFORCE_LIMIT ?? 5000);
+
+// ─── DINOv2 ONNX model path (AOI-A: configurable, honest degradation) ──────────
+//
+// AOI-A — CẤU HÌNH ĐƯỜNG DẪN MODEL (không còn hardcode absolute).
+//   AI_DINOV2_MODEL_PATH  đường dẫn tới file .onnx (DINOv2). Có thể absolute hoặc
+//                         relative theo repo root. Mặc định: models/dinov2.onnx.
+//   DINOV2_MODEL_PATH     alias LEGACY (script cũ) — vẫn được đọc để backward-compat.
+//
+// Nếu file KHÔNG tồn tại → loader/registry degrade TRUNG THỰC theo tier hiện có
+// (ONNX → text-of-image → heuristic/metadata). KHÔNG BAO GIỜ bịa embedding.
+
+/** Default repo-relative path (documented models dir). Không commit binary. */
+export const DEFAULT_DINOV2_MODEL_PATH = "models/dinov2.onnx";
+
+/**
+ * Resolve đường dẫn tuyệt đối tới file DINOv2 ONNX từ env (AOI-A).
+ * Ưu tiên AI_DINOV2_MODEL_PATH → DINOV2_MODEL_PATH (legacy) → default repo-relative.
+ * Đường dẫn relative được resolve theo process.cwd() (repo root khi chạy server/script).
+ */
+export function getDinov2ModelPath(): string {
+  const raw =
+    process.env.AI_DINOV2_MODEL_PATH ||
+    process.env.DINOV2_MODEL_PATH ||
+    DEFAULT_DINOV2_MODEL_PATH;
+  return path.isAbsolute(raw) ? raw : path.resolve(process.cwd(), raw);
+}
+
+/** File model DINOv2 có tồn tại tại đường dẫn cấu hình không? (best-effort, không ném). */
+export function dinov2ModelExists(): boolean {
+  try {
+    return fs.existsSync(getDinov2ModelPath());
+  } catch {
+    return false;
+  }
+}
+
+export type EmbeddingTier = "onnx" | "text-of-image" | "heuristic";
+
+export interface Dinov2ModelHealth {
+  /** Đường dẫn tuyệt đối đã resolve từ env (AI_DINOV2_MODEL_PATH / legacy / default). */
+  modelPath: string;
+  /** Giá trị env thô đã dùng (để debug cấu hình). */
+  configuredPath: string;
+  /** Nguồn cấu hình: "AI_DINOV2_MODEL_PATH" | "DINOV2_MODEL_PATH" | "default". */
+  source: "AI_DINOV2_MODEL_PATH" | "DINOV2_MODEL_PATH" | "default";
+  /** File .onnx có tồn tại tại modelPath không. */
+  modelPresent: boolean;
+  /**
+   * Tier embedding sẽ được dùng cho ẢNH khi model vắng mặt:
+   *   • "onnx"          — file model có mặt (vector DINOv2 thật).
+   *   • "text-of-image" — không có model nhưng GGUF khả dụng (mô tả→embed 1024-d).
+   *   • "heuristic"     — không model + không GGUF (sharp handcrafted, anomaly fallback).
+   */
+  activeTier: EmbeddingTier;
+  /** true khi tier != "onnx" (không dùng feature học sâu thật) → phải báo cho UI/health. */
+  degraded: boolean;
+  /** Ghi chú người-đọc-được, trung thực. */
+  note: string;
+}
+
+/**
+ * AOI-A — Health check cho DINOv2 ONNX (dùng được cho health endpoint tương lai).
+ * KHÔNG UI. Báo trung thực: đường dẫn cấu hình, file có mặt?, tier embedding đang hiệu lực.
+ *
+ * Khi model vắng mặt, tier hiệu lực được suy từ GGUF (text-of-image) hoặc heuristic —
+ * đúng chuỗi degrade mà loader/anomaly áp dụng, nên health khớp hành vi thực tế.
+ */
+export async function getDinov2ModelHealth(): Promise<Dinov2ModelHealth> {
+  const configuredPath =
+    process.env.AI_DINOV2_MODEL_PATH ||
+    process.env.DINOV2_MODEL_PATH ||
+    DEFAULT_DINOV2_MODEL_PATH;
+  const source: Dinov2ModelHealth["source"] = process.env.AI_DINOV2_MODEL_PATH
+    ? "AI_DINOV2_MODEL_PATH"
+    : process.env.DINOV2_MODEL_PATH
+      ? "DINOV2_MODEL_PATH"
+      : "default";
+  const modelPath = getDinov2ModelPath();
+  const modelPresent = dinov2ModelExists();
+
+  let activeTier: EmbeddingTier;
+  let note: string;
+  if (modelPresent) {
+    activeTier = "onnx";
+    note = `DINOv2 ONNX present at ${modelPath} — real visual embeddings active.`;
+  } else {
+    // Model vắng mặt → suy tier degrade y hệt anomaly/embedding pipeline.
+    let ggufAvailable = false;
+    try {
+      const { isGgufAvailable } = await import("./aiGgufEngine");
+      ggufAvailable = await isGgufAvailable();
+    } catch {
+      ggufAvailable = false;
+    }
+    activeTier = ggufAvailable ? "text-of-image" : "heuristic";
+    note =
+      `DINOv2 ONNX NOT found at ${modelPath} (source=${source}); ` +
+      `falling back to ${activeTier} tier — embeddings are degraded, NOT fabricated. ` +
+      `Drop a real DINOv2 .onnx at the configured path to activate the onnx tier.`;
+  }
+
+  return {
+    modelPath,
+    configuredPath,
+    source,
+    modelPresent,
+    activeTier,
+    degraded: activeTier !== "onnx",
+    note,
+  };
+}
 
 // ─── Vector math helpers (exported for unit tests) ─────────────────────────────
 
@@ -329,8 +441,24 @@ async function getEmbeddingSession(model: AiModel): Promise<ort.InferenceSession
     modelPath = path.join(uploadsRoot, modelPath.replace("/uploads/", ""));
   }
 
+  // AOI-A — nếu đường DB (có thể là absolute cũ) không tồn tại, thử đường cấu hình env
+  // (AI_DINOV2_MODEL_PATH / default repo-relative) trước khi ném. Loader vẫn TRUNG THỰC:
+  // không có file ở CẢ HAI nơi → ném lỗi rõ ràng → caller degrade sang tier khác.
   if (!fs.existsSync(modelPath)) {
-    throw new Error(`Embedding model file not found: ${modelPath}`);
+    const envPath = getDinov2ModelPath();
+    if (envPath !== modelPath && fs.existsSync(envPath)) {
+      console.warn(
+        `[aiImageEmbedding] model ${model.code} DB filePath not found (${modelPath}); ` +
+          `using configured AI_DINOV2_MODEL_PATH instead: ${envPath}`,
+      );
+      modelPath = envPath;
+    } else {
+      throw new Error(
+        `Embedding model file not found for ${model.code}: DB path ${modelPath}` +
+          (envPath !== modelPath ? ` (also absent at configured path ${envPath})` : "") +
+          ` — falling back to degraded embedding tier (text-of-image/heuristic); no embedding fabricated.`,
+      );
+    }
   }
 
   const providers: string[] = [];
@@ -454,7 +582,10 @@ export async function extractEmbedding(
   const inputName = session.inputNames[0];
   if (!inputName) throw new Error("Model has no input names");
 
-  const results = await session.run({ [inputName]: inputTensor });
+  // W7-D (gap V6): embedding extraction shares the per-GPU concurrency
+  // semaphore (AI_GPU_CONCURRENCY) with the inference engine so DINOv2 +
+  // classifier sessions cannot thrash the GPU concurrently.
+  const results = await gpuSessionSemaphore.run(() => session.run({ [inputName]: inputTensor }));
 
   // Try to find an "embedding" or "feature" output, otherwise use last output
   const embOutputName =

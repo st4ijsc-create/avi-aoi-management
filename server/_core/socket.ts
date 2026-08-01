@@ -4,7 +4,27 @@ import { nanoid } from "nanoid";
 import * as db from "../db";
 import { sdk } from "./sdk";
 import { attachRedisAdapter } from "./socketRedisAdapter";
-import { eventBus, EventTypes } from "./eventBus";
+import { getMachinePresenceStore } from "./machinePresenceStore";
+import { eventBus, EventTypes, type DomainEvent } from "./eventBus";
+import { toEcosystemEvent, isAlertKind, type EcosystemEvent } from "../services/ecosystem/ecosystemEvents";
+// ── doc 44 W2-B1 (G2.12 + G2.17) — state-store ingest hooks + UNS snapshot-then-
+// stream gateway. Both default OFF (STATE_STORE_ENABLED / WS_UNS_STREAM_ENABLED).
+import { stateStoreEnabled } from "../services/stateStore/stateStore";
+import {
+  stateStoreOnMachineStatus,
+  stateStoreOnMachineSocketDisconnect,
+  trackMachineSocket,
+} from "../services/stateStore/ingest";
+import { registerUnsStreamHandlers } from "../services/stateStore/unsStreamGateway";
+// ── doc 56 Đ0-A (RTM-6 + GAP-1) — machine-event auth on the socket channel.
+// SOCKET_MACHINE_AUTH_MODE default `off` keeps today's behaviour byte-identical;
+// `log`/`enforce` accept legacy-OR-mk_ so a rotated (mk_-only) machine keeps
+// presence after runbook 52 §3.f nulls machines.apiKey.
+import {
+  socketMachineAuthMode,
+  verifyMachineSocketAuth,
+  recordSocketMachineAuthMismatch,
+} from "./socketMachineAuth";
 
 let io: Server | null = null;
 
@@ -26,9 +46,17 @@ interface PendingMachineRegistration {
 }
 
 const pendingRegistrations: Map<string, PendingMachineRegistration> = new Map();
+// ── PER-INSTANCE local presence (socketId identity guards + disconnect reverse
+// lookup — inherently local). doc 51 §5.3 P2: these are now MIRRORED into a
+// SHARED store (`machinePresenceStore`, Redis when REDIS_URL is set, else an
+// in-memory fallback) so fleet-wide readers (admin:get_online_machines,
+// admin:connected_machines) see the UNION across load-balanced instances and
+// survive restarts. Both are updated at the same call sites. `presence` is the
+// shared mirror; the Maps below stay authoritative for THIS instance's sockets.
 const connectedMachines: Map<number, { socketId: string; ipAddress: string; lastHeartbeat: Date; machineCode: string }> = new Map();
 // Map machineId -> machineCode for quick lookup
 const onlineMachineCodesMap: Map<number, string> = new Map();
+const presence = getMachinePresenceStore();
 
 export interface InspectionAlert {
   type: "NG_ALERT" | "YIELD_WARNING" | "NEW_INSPECTION";
@@ -132,6 +160,50 @@ export function initializeSocket(server: HttpServer): Server {
         socket.join(`line:${data.lineId}`);
         console.log(`[Socket.io] ${socket.id} joined line:${data.lineId}`);
       }
+      // T1-c — Digital Twin live stream room (per factory). A 3D twin viewer joins
+      // `twin:{factoryId}` to receive throttled device state/position deltas.
+      if ((data as any).twinFactoryId) {
+        socket.join(`twin:${(data as any).twinFactoryId}`);
+        console.log(`[Socket.io] ${socket.id} joined twin:${(data as any).twinFactoryId}`);
+      }
+      // X1-c (doc 16 §5) — Device live stream room (per device). A device-monitor
+      // viewer joins `device:{deviceId}` to receive TIERED-sampled UDM state/position
+      // deltas (deviceStream gateway, gated by FIELD_V2_ENABLED). Producer-gated; no
+      // gate here. `deviceStreamId` is the logical key ("robot:1"/"machine:7").
+      if ((data as any).deviceStreamId) {
+        socket.join(`device:${(data as any).deviceStreamId}`);
+        console.log(`[Socket.io] ${socket.id} joined device:${(data as any).deviceStreamId}`);
+      }
+      // U3-live (doc 21 §6 / G-5) — Robot live-telemetry room (per robot). The Robot
+      // Cockpit joins `robot:{robotId}` to receive compact live UDM deltas emitted by
+      // robotIngest on every polled snapshot (previously robot pages were poll/static).
+      if ((data as any).robotId) {
+        socket.join(`robot:${(data as any).robotId}`);
+        console.log(`[Socket.io] ${socket.id} joined robot:${(data as any).robotId}`);
+      }
+      // U5-live (doc 21 §6 / G-7) — Federation SITE room. The Command Center /
+      // Federation tree joins `site:{siteCode}` (a specific site) and/or `sites:global`
+      // (all sites) to receive `site:update` when the aggregator refreshes a site's
+      // roll-up — so the site level is live, not just 30s-polled. Producer-gated by the
+      // aggregator flag; no gate here (a room join is harmless).
+      if ((data as any).siteCode) {
+        socket.join(`site:${(data as any).siteCode}`);
+        console.log(`[Socket.io] ${socket.id} joined site:${(data as any).siteCode}`);
+      }
+      if ((data as any).sitesGlobal) {
+        socket.join("sites:global");
+        console.log(`[Socket.io] ${socket.id} joined sites:global`);
+      }
+      // MON-F6 (doc 40) — OPT-IN telemetry firehose room. `telemetry:sample` is a
+      // high-rate stream; it used to fan out to `global` (which EVERY client joins),
+      // so a 100+ machine fleet flooded every browser. Now only clients that
+      // explicitly opt in — the admin telemetry monitor — join `telemetry:all`.
+      // Per-machine subscribers still receive just their machine's subset via
+      // `machine:{id}` (unchanged).
+      if ((data as any).telemetryAll) {
+        socket.join("telemetry:all");
+        console.log(`[Socket.io] ${socket.id} joined telemetry:all`);
+      }
       // Everyone joins the global room for all alerts
       socket.join("global");
     });
@@ -141,6 +213,15 @@ export function initializeSocket(server: HttpServer): Server {
       if (data.workshopId) socket.leave(`workshop:${data.workshopId}`);
       if (data.machineId) socket.leave(`machine:${data.machineId}`);
       if (data.lineId) socket.leave(`line:${data.lineId}`);
+      if ((data as any).twinFactoryId) socket.leave(`twin:${(data as any).twinFactoryId}`);
+      if ((data as any).deviceStreamId) socket.leave(`device:${(data as any).deviceStreamId}`);
+      // U3-live — leave the per-robot live-telemetry room.
+      if ((data as any).robotId) socket.leave(`robot:${(data as any).robotId}`);
+      // U5-live — leave the federation site room(s).
+      if ((data as any).siteCode) socket.leave(`site:${(data as any).siteCode}`);
+      if ((data as any).sitesGlobal) socket.leave("sites:global");
+      // MON-F6 — leave the opt-in telemetry firehose room.
+      if ((data as any).telemetryAll) socket.leave("telemetry:all");
     });
 
     // Doc 09 / D6 — Engineering Online-Monitor room. A workspace client joins
@@ -163,6 +244,12 @@ export function initializeSocket(server: HttpServer): Server {
           const machineCode = info.machineCode;
           connectedMachines.delete(machineId);
           onlineMachineCodesMap.delete(machineId);
+          // Shared-store mirror: drop presence, but only if THIS socket still
+          // owns it (a machine that migrated to another instance keeps its newer
+          // entry — see setOffline's socketId guard). Fire-and-forget.
+          void presence.setOffline(machineId, socket.id).catch((err) =>
+            console.error("[Socket.io] presence setOffline failed:", err?.message ?? err),
+          );
           console.log(`[Socket.io] Machine ${machineId} (${machineCode}) disconnected`);
           
           // Log status change to database
@@ -228,7 +315,16 @@ export function initializeSocket(server: HttpServer): Server {
       if (machineInfo && machineInfo.socketId === socket.id) {
         machineInfo.lastHeartbeat = new Date();
         connectedMachines.set(data.machineId, machineInfo);
-        
+        // Shared-store mirror: refresh TTL so a live machine never self-expires.
+        void presence.refresh({
+          machineId: data.machineId,
+          machineCode: machineInfo.machineCode,
+          socketId: socket.id,
+          ipAddress: machineInfo.ipAddress,
+          lastHeartbeat: machineInfo.lastHeartbeat.getTime(),
+          status: data.status,
+        }).catch((err) => console.error("[Socket.io] presence refresh failed:", err?.message ?? err));
+
         // Broadcast machine status update
         io?.to("global").emit("machine:status_update", {
           machineId: data.machineId,
@@ -240,43 +336,94 @@ export function initializeSocket(server: HttpServer): Server {
     });
 
     // Machine confirms mapping
+    // Doc 56 Đ0-A (RTM-6/GAP-1): historically this event verified NOTHING before
+    // setOnline + broadcast — anyone on the LAN could mark any machine online.
+    // SOCKET_MACHINE_AUTH_MODE gates the fix:
+    //   off (default) — byte-identical legacy behaviour (no check, synchronous);
+    //   log           — verify legacy-OR-mk_, count/log mismatches, STILL allow
+    //                   (GAP-1 observation week);
+    //   enforce       — mismatch → drop: no setOnline, no broadcast, no
+    //                   machine_status_logs write.
+    // NOTE: in log/enforce the apply step runs AFTER an async DB verify, so the
+    // additive state-store confirm_mapping listener below (registration order)
+    // no longer sees connectedMachines populated — with STATE_STORE_ENABLED on,
+    // tracking then starts at the machine's first heartbeat instead (the same
+    // documented limitation sync_started already has; see stateStore/ingest.ts).
     socket.on("machine:confirm_mapping", (data: { machineId: number; machineCode: string; apiKey: string }) => {
-      const ipAddress = socket.handshake.address;
-      connectedMachines.set(data.machineId, {
-        socketId: socket.id,
-        ipAddress,
-        lastHeartbeat: new Date(),
-        machineCode: data.machineCode,
-      });
-      onlineMachineCodesMap.set(data.machineId, data.machineCode);
-      
-      socket.join(`machine:${data.machineId}`);
-      console.log(`[Socket.io] Machine ${data.machineId} (${data.machineCode}) mapped successfully from ${ipAddress}`);
-      
-      // Log status change to database
-      db.createMachineStatusLog({
-        machineId: data.machineId,
-        status: 'online',
-        ipAddress,
-      }).catch(err => console.error('[Socket.io] Failed to log machine online status:', err));
-      
-      // Notify admin dashboard
-      io?.to("admin").emit("machine:connected", {
-        machineId: data.machineId,
-        machineCode: data.machineCode,
-        ipAddress,
-        timestamp: new Date(),
-      });
-      
-      // Broadcast status change to all clients
-      io?.emit("machine:status_change", { machineCode: data.machineCode, status: "online" });
+      const applyConfirmMapping = () => {
+        const ipAddress = socket.handshake.address;
+        connectedMachines.set(data.machineId, {
+          socketId: socket.id,
+          ipAddress,
+          lastHeartbeat: new Date(),
+          machineCode: data.machineCode,
+        });
+        onlineMachineCodesMap.set(data.machineId, data.machineCode);
+        // Shared-store mirror: mark online across the fleet (TTL-bounded).
+        void presence.setOnline({
+          machineId: data.machineId,
+          machineCode: data.machineCode,
+          socketId: socket.id,
+          ipAddress,
+          lastHeartbeat: Date.now(),
+          status: "online",
+        }).catch((err) => console.error("[Socket.io] presence setOnline failed:", err?.message ?? err));
+
+        socket.join(`machine:${data.machineId}`);
+        console.log(`[Socket.io] Machine ${data.machineId} (${data.machineCode}) mapped successfully from ${ipAddress}`);
+
+        // Log status change to database
+        db.createMachineStatusLog({
+          machineId: data.machineId,
+          status: 'online',
+          ipAddress,
+        }).catch(err => console.error('[Socket.io] Failed to log machine online status:', err));
+
+        // Notify admin dashboard
+        io?.to("admin").emit("machine:connected", {
+          machineId: data.machineId,
+          machineCode: data.machineCode,
+          ipAddress,
+          timestamp: new Date(),
+        });
+
+        // Broadcast status change to all clients
+        io?.emit("machine:status_change", { machineCode: data.machineCode, status: "online" });
+      };
+
+      const mode = socketMachineAuthMode();
+      if (mode === "off") {
+        applyConfirmMapping(); // legacy: no credential check (today's behaviour)
+        return;
+      }
+      void (async () => {
+        let machine: Awaited<ReturnType<typeof db.getMachineById>>;
+        try {
+          machine = await db.getMachineById(data.machineId);
+        } catch (err: any) {
+          console.error("[Socket.io] confirm_mapping machine lookup failed:", err?.message ?? err);
+          machine = undefined;
+        }
+        const auth = await verifyMachineSocketAuth(machine, data.apiKey, "socket:machine:confirm_mapping");
+        if (!auth.ok) {
+          recordSocketMachineAuthMismatch({
+            event: "machine:confirm_mapping",
+            mode,
+            machineId: data.machineId,
+            machineCode: machine?.code ?? data.machineCode,
+            method: auth.method,
+          });
+          if (mode === "enforce") return; // reject: no setOnline, no broadcast, no status log
+        }
+        applyConfirmMapping();
+      })();
     });
 
     // Admin joins admin room for machine management
-    socket.on("admin:join", () => {
+    socket.on("admin:join", async () => {
       socket.join("admin");
       console.log(`[Socket.io] Admin ${socket.id} joined admin room`);
-      
+
       // Send current pending registrations
       const pending = Array.from(pendingRegistrations.entries()).map(([id, reg]) => ({
         requestSocketId: id,
@@ -286,19 +433,40 @@ export function initializeSocket(server: HttpServer): Server {
         status: reg.status,
       }));
       socket.emit("admin:pending_registrations", pending);
-      
-      // Send connected machines status
-      const connected = Array.from(connectedMachines.entries()).map(([machineId, info]) => ({
-        machineId,
-        ...info,
-      }));
+
+      // Send connected machines status — UNION across all instances via the
+      // shared presence store (doc 51 §5.3 P2). Falls back to the local Map if
+      // the store read fails, so a Redis blip never blanks the admin view.
+      let connected: Array<{ machineId: number; socketId?: string; ipAddress?: string; lastHeartbeat: Date; machineCode: string }>;
+      try {
+        const entries = await presence.listOnline();
+        connected = entries.map((e) => ({
+          machineId: e.machineId,
+          socketId: e.socketId,
+          ipAddress: e.ipAddress,
+          lastHeartbeat: new Date(e.lastHeartbeat),
+          machineCode: e.machineCode,
+        }));
+      } catch (err: any) {
+        console.error("[Socket.io] presence listOnline failed, using local map:", err?.message ?? err);
+        connected = Array.from(connectedMachines.entries()).map(([machineId, info]) => ({
+          machineId,
+          ...info,
+        }));
+      }
       socket.emit("admin:connected_machines", connected);
     });
 
-    // Dashboard requests online machines list
-    socket.on("admin:get_online_machines", () => {
-      // Get machine codes from connectedMachines
-      const onlineMachineCodes = Array.from(onlineMachineCodesMap.values());
+    // Dashboard requests online machines list — UNION across all instances via
+    // the shared presence store (doc 51 §5.3 P2). Falls back to the local Map.
+    socket.on("admin:get_online_machines", async () => {
+      let onlineMachineCodes: string[];
+      try {
+        onlineMachineCodes = await presence.listOnlineCodes();
+      } catch (err: any) {
+        console.error("[Socket.io] presence listOnlineCodes failed, using local map:", err?.message ?? err);
+        onlineMachineCodes = Array.from(onlineMachineCodesMap.values());
+      }
       socket.emit("machine:online_list", { machines: onlineMachineCodes });
       console.log(`[Socket.io] Sent online machines list to ${socket.id}: ${onlineMachineCodes.length} machines`);
     });
@@ -416,10 +584,37 @@ export function initializeSocket(server: HttpServer): Server {
       try {
         // Verify machine and API Key
         const machine = await db.getMachineById(data.machineId);
-        if (!machine || machine.apiKey !== data.apiKey) {
-          socket.emit("machine:config_error", {
-            message: "Invalid machine ID or API Key",
-          });
+        // Doc 56 Đ0-A follow-up (Đ2a) — request_config used to compare ONLY the
+        // legacy plaintext machines.apiKey, so a rotated (mk_-only) machine could
+        // never fetch its config once runbook 52 §3.f NULLed the column. `off`
+        // (default) keeps that plaintext comparison byte-identical; `log`/`enforce`
+        // accept legacy-OR-mk_ via the SAME verifier as sync_started/confirm_mapping
+        // (per SOCKET_MACHINE_AUTH_MODE) and count every mismatch. A total mismatch
+        // is still rejected exactly like today (no mode weakens this event).
+        const mode = socketMachineAuthMode();
+        if (mode === "off") {
+          if (!machine || machine.apiKey !== data.apiKey) {
+            socket.emit("machine:config_error", { message: "Invalid machine ID or API Key" });
+            return;
+          }
+        } else {
+          const auth = await verifyMachineSocketAuth(machine, data.apiKey, "socket:machine:request_config");
+          if (!machine || !auth.ok) {
+            recordSocketMachineAuthMismatch({
+              event: "machine:request_config",
+              mode,
+              machineId: data.machineId,
+              machineCode: machine?.code,
+              method: auth.method,
+            });
+            socket.emit("machine:config_error", { message: "Invalid machine ID or API Key" });
+            return;
+          }
+        }
+        // Both branches above return on a missing machine; this guard also narrows
+        // `machine` to non-null for the config build below.
+        if (!machine) {
+          socket.emit("machine:config_error", { message: "Invalid machine ID or API Key" });
           return;
         }
 
@@ -468,9 +663,30 @@ export function initializeSocket(server: HttpServer): Server {
       try {
         // Verify machine
         const machine = await db.getMachineById(data.machineId);
-        if (!machine || machine.apiKey !== data.apiKey) {
-          socket.emit("machine:sync_error", { message: "Invalid machine ID or API Key" });
-          return;
+        // Doc 56 Đ0-A (RTM-6/GAP-1): `off` (default) keeps the legacy PLAINTEXT
+        // comparison byte-identical. `log`/`enforce` accept legacy-OR-mk_ — so a
+        // rotated machine (machines.apiKey NULLed per runbook 52 §3.f) still
+        // syncs with its mk_ key — and count/log every mismatch; a total
+        // mismatch is rejected exactly like today (no mode weakens this event).
+        const mode = socketMachineAuthMode();
+        if (mode === "off") {
+          if (!machine || machine.apiKey !== data.apiKey) {
+            socket.emit("machine:sync_error", { message: "Invalid machine ID or API Key" });
+            return;
+          }
+        } else {
+          const auth = await verifyMachineSocketAuth(machine, data.apiKey, "socket:machine:sync_started");
+          if (!machine || !auth.ok) {
+            recordSocketMachineAuthMismatch({
+              event: "machine:sync_started",
+              mode,
+              machineId: data.machineId,
+              machineCode: machine?.code ?? data.machineCode,
+              method: auth.method,
+            });
+            socket.emit("machine:sync_error", { message: "Invalid machine ID or API Key" });
+            return;
+          }
         }
 
         const ipAddress = socket.handshake.address;
@@ -483,6 +699,15 @@ export function initializeSocket(server: HttpServer): Server {
           machineCode: data.machineCode,
         });
         onlineMachineCodesMap.set(data.machineId, data.machineCode);
+        // Shared-store mirror: mark online across the fleet (TTL-bounded).
+        void presence.setOnline({
+          machineId: data.machineId,
+          machineCode: data.machineCode,
+          socketId: socket.id,
+          ipAddress,
+          lastHeartbeat: Date.now(),
+          status: "online",
+        }).catch((err) => console.error("[Socket.io] presence setOnline failed:", err?.message ?? err));
 
         // Join machine-specific room
         socket.join(`machine:${data.machineId}`);
@@ -522,6 +747,41 @@ export function initializeSocket(server: HttpServer): Server {
         socket.emit("machine:sync_error", { message: `Failed to start sync: ${error.message}` });
       }
     });
+
+    // ============ doc 44 W2-B1 — ADDITIVE listeners ONLY (G2.12 + G2.17) ============
+    //
+    // G2.12 state-store ingest (flag STATE_STORE_ENABLED, default OFF → no-op):
+    // EXTRA listeners on the SAME machine events the primary handlers above own.
+    // socket.io invokes listeners in registration order, so the primary
+    // `machine:heartbeat` / `machine:confirm_mapping` handlers have already
+    // updated `connectedMachines` when these fire — the identity guard below is
+    // therefore the SAME one the primary heartbeat handler applies.
+    // (`machine:sync_started` verifies its apiKey asynchronously, so a machine
+    // that never confirms a mapping lands in the state store on its FIRST
+    // heartbeat instead — documented honest limitation in stateStore/ingest.ts.)
+    socket.on("machine:heartbeat", (data: { machineId: number; status: string; metrics?: any }) => {
+      if (!stateStoreEnabled()) return;
+      const info = connectedMachines.get(data?.machineId);
+      if (!info || info.socketId !== socket.id) return; // same guard as the primary handler
+      trackMachineSocket(socket.id, data.machineId);
+      void stateStoreOnMachineStatus({ machineId: data.machineId, status: data.status, metrics: data.metrics });
+    });
+    socket.on("machine:confirm_mapping", (data: { machineId: number }) => {
+      if (!stateStoreEnabled()) return;
+      const info = connectedMachines.get(data?.machineId);
+      if (!info || info.socketId !== socket.id) return; // primary handler registered the mapping synchronously
+      trackMachineSocket(socket.id, data.machineId);
+      void stateStoreOnMachineStatus({ machineId: data.machineId, status: "online" });
+    });
+    socket.on("disconnect", () => {
+      // No-op unless this socket was tracked as a machine (ingest.ts keeps its
+      // own map — the primary disconnect handler clears connectedMachines first).
+      void stateStoreOnMachineSocketDisconnect(socket.id);
+    });
+
+    // G2.17 — UNS snapshot-then-stream subscription handlers
+    // (flag WS_UNS_STREAM_ENABLED, default OFF → 'uns:subscribe' is a no-op).
+    registerUnsStreamHandlers(socket as never);
   });
 
   // Initialize notification service with Socket.io
@@ -541,6 +801,94 @@ export function initializeSocket(server: HttpServer): Server {
 
 export function getIO(): Server | null {
   return io;
+}
+
+// ============ U1-c — UNIFIED NORMALIZED EVENT/ALERT STREAM (client) ============
+//
+// ONE re-broadcast: subscribe to the server eventBus, normalize each domain event
+// into the compact `EcosystemEvent` envelope, and emit it to the client on a single
+// `ecosystem:event` channel (plus a filtered `alerts:stream` for alert-class events).
+// This is ADDITIVE — the existing per-event socket emits (inspection:alert,
+// andon:event, …) are untouched; this is a NEW stream the Command Center (U2) +
+// cockpits (U3) + the global NotificationCenter consume.
+//
+// RBAC / tenant isolation: routed to `global` PLUS the scoped rooms the client
+// already joins (factory:/line:/machine:) — so a client only receives events for
+// scopes it subscribed to. Cross-tenant leakage is bounded by the same room model
+// the legacy emits use. (Redis cross-instance fan-out is still U6.)
+let ecosystemBridgeInstalled = false;
+let ecosystemBridgeUnsub: (() => void) | null = null;
+
+/** Which bus event types feed the unified client stream (legacy + new U1 events). */
+const UNIFIED_STREAM_TYPES: string[] = [
+  EventTypes.INSPECTION_ALERT,
+  EventTypes.NG_ALERT,
+  EventTypes.YIELD_WARNING,
+  EventTypes.SPC_VIOLATION,
+  EventTypes.ANDON,
+  EventTypes.SAFETY_EVENT,
+  "quality_gate.breach",
+  "alert.escalation",
+  "maintenance.alert",
+  "downtime.start",
+  "downtime.end",
+  "oee.update",
+  // new U1 domain events
+  "task.assigned",
+  "task.completed",
+  "task.failed",
+  "workorder.created",
+  "anomaly.detected",
+  "program.deployed",
+  "twin.derived",
+];
+
+function broadcastEcosystemEvent(evt: EcosystemEvent): void {
+  if (!io) return;
+  // Global room — every subscribed client (the NotificationCenter joins global).
+  io.to("global").emit("ecosystem:event", evt);
+  if (isAlertKind(evt.kind)) io.to("global").emit("alerts:stream", evt);
+
+  // Scoped fan-out — mirror to the specific rooms the client may have joined so a
+  // machine/line/factory dashboard receives its own slice without the global noise.
+  const rooms: string[] = [];
+  if (evt.scope.factoryId != null) rooms.push(`factory:${evt.scope.factoryId}`);
+  if (evt.scope.lineId != null) rooms.push(`line:${evt.scope.lineId}`);
+  if (evt.scope.machineId != null) rooms.push(`machine:${evt.scope.machineId}`);
+  for (const room of rooms) {
+    io.to(room).emit("ecosystem:event", evt);
+    if (isAlertKind(evt.kind)) io.to(room).emit("alerts:stream", evt);
+  }
+}
+
+/**
+ * Install the eventBus→socket re-broadcast. Idempotent + safe at startup. No-op emit
+ * when io is not initialized (the handler still runs but broadcastEcosystemEvent
+ * guards on io). Subscribes per-type (not the wildcard) so bus-internal events like
+ * `orchestration.triggered` / `ai.insight` never reach the client.
+ */
+export function installEcosystemSocketBridge(): void {
+  if (ecosystemBridgeInstalled) return;
+  ecosystemBridgeInstalled = true;
+  const unsubs: Array<() => void> = [];
+  const handle = (e: DomainEvent) => {
+    try {
+      const evt = toEcosystemEvent(e);
+      if (evt) broadcastEcosystemEvent(evt);
+    } catch (err) {
+      console.error("[U1] ecosystem socket re-broadcast failed:", (err as Error)?.message ?? err);
+    }
+  };
+  for (const t of UNIFIED_STREAM_TYPES) unsubs.push(eventBus.subscribe(t, handle));
+  ecosystemBridgeUnsub = () => { while (unsubs.length) unsubs.pop()!(); };
+  console.log(`[U1] ecosystem socket bridge installed (${UNIFIED_STREAM_TYPES.length} event types → ecosystem:event / alerts:stream)`);
+}
+
+/** Tear down the re-broadcast (tests / shutdown). */
+export function uninstallEcosystemSocketBridge(): void {
+  if (ecosystemBridgeUnsub) ecosystemBridgeUnsub();
+  ecosystemBridgeUnsub = null;
+  ecosystemBridgeInstalled = false;
 }
 
 // Test manual connection to a machine via IP:Port
@@ -718,13 +1066,69 @@ export interface TelemetryBroadcastSample {
 /**
  * P2 — broadcast a batch of canonical telemetry samples on the ONE unified bus
  * channel. SIGNAL ONLY (never writes to a device or DB; the bus already persisted).
- * No-op when io is not initialized (tests / headless). Emits the whole batch to the
- * `global` room, and additionally fans each sample out to its per-machine room so a
- * client subscribed to `machine:{id}` receives only that machine's samples.
+ * No-op when io is not initialized (tests / headless). MON-F6 (doc 40): the whole
+ * batch goes to the OPT-IN `telemetry:all` room (admin telemetry monitor) — NOT the
+ * everyone-joins `global` room — and each sample is additionally fanned out to its
+ * per-machine room so a client subscribed to `machine:{id}` receives only that
+ * machine's samples. This stops the firehose from flooding every connected client.
  */
 export function emitTelemetrySamples(samples: TelemetryBroadcastSample[]): void {
   if (!io || samples.length === 0) return;
-  io.to("global").emit("telemetry:sample", { samples });
+  // R-2a (doc 38 P1-I) — optional emit coalescing for the `telemetry:sample` firehose.
+  // TELEMETRY_EMIT_COALESCE_MS > 0 buffers samples and emits ONE merged frame per
+  // window (bounded by TELEMETRY_EMIT_MAX_BATCH, default 1000). Default 0 = emit
+  // immediately (unchanged behaviour). Order is preserved (FIFO).
+  const ms = telemetryEmitCoalesceMs();
+  if (ms <= 0) {
+    doEmitTelemetrySamples(samples);
+    return;
+  }
+  for (const s of samples) telemetryEmitBuffer.push(s);
+  const max = telemetryEmitMaxBatch();
+  if (telemetryEmitBuffer.length >= max) {
+    flushTelemetryEmit();
+    return;
+  }
+  if (!telemetryEmitTimer) {
+    const t = setTimeout(flushTelemetryEmit, ms);
+    if (typeof (t as { unref?: () => void }).unref === "function") (t as { unref: () => void }).unref();
+    telemetryEmitTimer = t;
+  }
+}
+
+function telemetryEmitCoalesceMs(): number {
+  const n = parseInt(String(process.env.TELEMETRY_EMIT_COALESCE_MS ?? ""), 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function telemetryEmitMaxBatch(): number {
+  const n = parseInt(String(process.env.TELEMETRY_EMIT_MAX_BATCH ?? ""), 10);
+  return Number.isFinite(n) && n >= 1 ? n : 1000;
+}
+
+let telemetryEmitBuffer: TelemetryBroadcastSample[] = [];
+let telemetryEmitTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Flush the coalesced telemetry emit buffer as ONE merged frame. Never throws. */
+function flushTelemetryEmit(): void {
+  if (telemetryEmitTimer) {
+    clearTimeout(telemetryEmitTimer);
+    telemetryEmitTimer = null;
+  }
+  if (telemetryEmitBuffer.length === 0) return;
+  const batch = telemetryEmitBuffer;
+  telemetryEmitBuffer = [];
+  try {
+    doEmitTelemetrySamples(batch);
+  } catch (e) {
+    console.error("[Socket.io] telemetry emit flush failed:", (e as any)?.message ?? e);
+  }
+}
+
+/** The actual room fan-out (immediate). Shared by the direct + coalesced paths. */
+function doEmitTelemetrySamples(samples: TelemetryBroadcastSample[]): void {
+  if (!io || samples.length === 0) return;
+  // MON-F6 (doc 40): full batch → opt-in `telemetry:all`, not the `global` firehose.
+  io.to("telemetry:all").emit("telemetry:sample", { samples });
   // Per-machine fan-out: group by machineId so each machine room gets its subset.
   const byMachine = new Map<number, TelemetryBroadcastSample[]>();
   for (const s of samples) {
@@ -924,6 +1328,32 @@ export function emitAndonEvent(event: AndonRealtimeEvent): void {
   console.log(`[Andon] ${event.state.toUpperCase()} (${event.reason}) #${event.id} — ${event.event ?? "raised"}`);
 }
 
+// ─── S1 (doc 16 Khối 3) — Safety event realtime broadcast (ADVISORY) ─────────
+//
+// ⚠ ADVISORY ONLY. This broadcasts a safety_events record (e-stop/intrusion/
+// near-miss/…) the software OBSERVED — it is NOT a safety-rated signal and the
+// software performs NO safety-rated stop. A real hardware-rated stop is deferred
+// to S2. This emit never writes to any device.
+export interface SafetyRealtimeEvent {
+  id: number;
+  eventType: string;
+  robotId?: number | null;
+  lineId?: number | null;
+  stationId?: number | null;
+  detectedBy?: string | null;
+  outcome: string;
+  isNearMiss: boolean;
+  createdAt: Date | string;
+}
+
+export function emitSafetyEvent(event: SafetyRealtimeEvent): void {
+  eventBus.publish(EventTypes.SAFETY_EVENT, event, "socket");
+  if (!io) return;
+  io.to("global").emit("safety:event", event);
+  if (event.lineId) io.to(`line:${event.lineId}`).emit("safety:event", event);
+  console.log(`[Safety] ADVISORY ${event.eventType} #${event.id} (detectedBy ${event.detectedBy ?? "?"}, outcome ${event.outcome})`);
+}
+
 // ============ G2.7 — DIGITAL TWIN STREAM (signal-only, gated) ============
 
 /**
@@ -993,6 +1423,145 @@ export function stopTwinBroadcaster(): void {
   }
 }
 
+// ============ T1-c — DIGITAL TWIN LIVE DEVICE STREAM (signal-only, gated) ======
+
+/**
+ * A coalesced per-device delta pushed to twin viewers (room `twin:{factoryId}`).
+ * Carries only what MOVED — position and/or state — so the FE can translate the
+ * model without a full scene-graph refetch. SIGNAL ONLY: never writes a device/DB.
+ *
+ * doc 24 Wave-1 T1 — OPTIONAL articulation payload (additive, backward-compatible):
+ *   • joints  — the robot's joint-angle vector (radians for revolute, mm for
+ *               prismatic), indexed over the model's non-fixed joints. When present
+ *               the FE poses an ARTICULATED link chain via client-side FK instead of
+ *               sliding a block. Absent → the FE renders exactly as before.
+ *   • modelId — which kinematic model the joints index into (e.g. "sample-arm-6dof").
+ *               Lets the FE pick the matching FK chain without guessing.
+ * A device with no joints simply omits both fields (the wire shape is unchanged for
+ * every existing producer/consumer).
+ */
+export interface TwinDeviceDelta {
+  equipmentId: string; // "machine:<id>" | "robot:<id>" | "device:<deviceId>"
+  position?: { x: number; y: number; z?: number };
+  state?: string;
+  metric?: string;
+  joints?: number[];
+  modelId?: string;
+  ts: number;
+}
+
+/**
+ * Push a batch of device deltas to the per-factory twin room. No-op when io is not
+ * initialized (tests / headless). The PRODUCER (twinStream gateway) is gated by
+ * TWIN_LIVE_ENABLED; this is a thin transport with no gate of its own (so when the
+ * gateway is off, it is simply never called → FE keeps polling, backward-compatible).
+ */
+export function emitTwinDeviceDeltas(factoryId: number, deltas: TwinDeviceDelta[]): void {
+  if (!io || deltas.length === 0) return;
+  io.to(`twin:${factoryId}`).emit("twin:device", { factoryId, deltas, ts: Date.now() });
+}
+
+// ============ X1-c — DEVICE LIVE STREAM (UDM, tiered sampling, gated) ==========
+
+/**
+ * A coalesced per-device UDM delta pushed to the per-device room `device:{deviceId}`.
+ * Carries only the metrics that changed since the last flush for this device (each
+ * metric coalesced to its latest value, at a rate bounded by its tier). SIGNAL ONLY:
+ * never writes a device or DB (the unified bus already persisted the sample).
+ */
+export interface DeviceStreamDelta {
+  deviceId: string; // logical key "robot:<id>" | "machine:<id>" | "device:<externalId>"
+  metrics: Record<string, number | string | boolean | null>;
+  ts: number;
+}
+
+/**
+ * Push a batch of device UDM deltas to their per-device rooms. No-op when io is not
+ * initialized (tests / headless). The PRODUCER (deviceStream gateway) is gated by
+ * FIELD_V2_ENABLED; this is a thin transport with no gate of its own — so when the
+ * gateway is off it is simply never called (FE keeps its 5s poll, backward-compatible).
+ */
+export function emitDeviceDeltas(deltas: DeviceStreamDelta[]): void {
+  if (!io || deltas.length === 0) return;
+  for (const d of deltas) {
+    io.to(`device:${d.deviceId}`).emit("device:state", d);
+  }
+}
+
+// ============ U3-live — ROBOT LIVE TELEMETRY (doc 21 §6 / G-5) =================
+
+/**
+ * A compact live snapshot of a robot's UDM, pushed to the per-robot room
+ * `robot:{robotId}` on every polled ingest. Carries only the small, UI-relevant
+ * fields the Robot Cockpit renders live (mode/busy/estop/speed/pose/joints/battery/
+ * safetyZone/firmware/heartbeat) — NOT the full DB row. SIGNAL ONLY: robotIngest has
+ * already persisted the robot_telemetry row; this is a thin transport with NO gate of
+ * its own (safe to emit — telemetry is not a control path). When io is not initialized
+ * (tests / headless) it is a no-op, so the FE simply keeps its existing poll.
+ */
+export interface RobotTelemetryLive {
+  robotId: number;
+  robotCode?: string;
+  mode?: string | null;
+  busy?: boolean | null;
+  estop?: boolean | null;
+  speedPct?: number | null;
+  pose?: Record<string, unknown> | null;
+  jointStates?: Array<Record<string, unknown>> | null;
+  batteryPct?: number | null;
+  safetyZoneId?: number | null;
+  firmwareVersion?: string | null;
+  error?: string | null;
+  status?: string | null;
+  ts: number;
+}
+
+/**
+ * Push one robot's live UDM snapshot to its per-robot room. No-op when io is not
+ * initialized. Additive + error-isolated at the call site (robotIngest wraps it in a
+ * try/catch so a socket failure can never break the ingest/persist path).
+ */
+export function emitRobotTelemetry(evt: RobotTelemetryLive): void {
+  if (!io) return;
+  io.to(`robot:${evt.robotId}`).emit("robot:telemetry", evt);
+}
+
+// ============ U5-live — FEDERATION SITE ROLL-UP LIVE (doc 21 §6 / G-7) =========
+
+/**
+ * A compact live projection of a site's refreshed roll-up, pushed to the per-site
+ * room `site:{siteCode}` + `sites:global` on each aggregator cycle that lands new
+ * data for the site. Carries only the small, UI-relevant fields the Federation tree
+ * / Command Center site level renders live (freshness + headline KPIs + alert
+ * counts) — NOT the full roll-up rows (those stay behind the federationRouter reads).
+ * SIGNAL ONLY: the aggregator has already persisted the roll-up; this is a thin
+ * transport with NO gate of its own (the PRODUCER — the aggregator — is gated by
+ * FEDERATION_AGGREGATOR_ENABLED, so when off it is simply never called and the FE
+ * keeps its 30s poll, backward-compatible). No-op when io is not initialized.
+ */
+export interface SiteUpdateEvent {
+  siteCode: string;
+  siteId: number;
+  status: string; // active | error | ...
+  freshness?: "ok" | "stale" | "down";
+  asOf?: string | null; // ISO
+  fetchedAt?: string | null; // ISO
+  kpi?: {
+    yieldRate?: number | null;
+    ngRate?: number | null;
+    throughput?: number | null;
+    oee?: number | null;
+  } | null;
+  alerts?: { open: number; critical: number } | null;
+  ts: number;
+}
+
+export function emitSiteUpdate(evt: SiteUpdateEvent): void {
+  if (!io) return;
+  io.to(`site:${evt.siteCode}`).emit("site:update", evt);
+  io.to("sites:global").emit("site:update", evt);
+}
+
 // Emit alert escalation event
 export interface AlertEscalationEvent {
   alertId: number;
@@ -1006,6 +1575,9 @@ export interface AlertEscalationEvent {
 }
 
 export function emitAlertEscalation(event: AlertEscalationEvent): void {
+  // U1 — also publish on the bus so the unified stream (alerts:stream) + subscribers
+  // see escalations (previously emit-only / a dead end per the audit).
+  eventBus.publish("alert.escalation", event, "socket");
   if (!io) return;
   io.to("global").emit("alert:escalation", event);
   if (event.machineId) {
@@ -1026,10 +1598,17 @@ export function emitMqttMessage(event: MqttMessageEvent): void {
   
   // Emit to global room
   io.to("global").emit("mqtt:message", event);
-  
-  // If machine code is known, emit to machine-specific room
+
+  // If machine code is known, emit to the machine-specific room. U1-d BUGFIX: rooms
+  // are keyed by NUMERIC machineId (see subscribe: `machine:${machineId}`), NOT the
+  // machineCode — the previous `machine:${machineCode}` targeted a room no client
+  // ever joins. Resolve the id from the online-machines map and emit to the id room.
   if (event.machineCode) {
-    io.to(`machine:${event.machineCode}`).emit("mqtt:message", event);
+    let machineId: number | undefined;
+    for (const [id, code] of onlineMachineCodesMap) {
+      if (code === event.machineCode) { machineId = id; break; }
+    }
+    if (machineId != null) io.to(`machine:${machineId}`).emit("mqtt:message", event);
   }
 }
 
@@ -1271,137 +1850,164 @@ export interface DowntimeEvent {
   reportedBy?: string;
 }
 
-const activeDowntimes: Map<number, DowntimeEvent> = new Map();
-const downtimeHistory: DowntimeEvent[] = [];
+// Hương-P0: downtime giờ đọc/ghi thẳng vào bảng downtime_events (Drizzle) để bền
+// vững qua restart và không lệch với dữ liệu thật. Bỏ mảng in-memory trước đây
+// (activeDowntimes/downtimeHistory) vì mất khi restart và dễ lệch với DB.
 
-// Start downtime tracking
-export function startDowntime(
+// Ánh xạ một row downtime_events (id số, reportedBy là user id) sang shape
+// DowntimeEvent mà UI/API đang dùng (id chuỗi, reportedBy chuỗi).
+function rowToDowntimeEvent(row: {
+  id: number;
+  machineId: number;
+  machineCode: string;
+  category: DowntimeEvent['category'];
+  reason: string | null;
+  startTime: Date | string;
+  endTime: Date | string | null;
+  duration: number | null;
+  resolution: string | null;
+  reportedBy: number | null;
+}): DowntimeEvent {
+  return {
+    id: String(row.id),
+    machineId: row.machineId,
+    machineCode: row.machineCode,
+    startTime: new Date(row.startTime),
+    endTime: row.endTime ? new Date(row.endTime) : undefined,
+    duration: row.duration ?? undefined,
+    category: row.category,
+    reason: row.reason ?? undefined,
+    notes: row.resolution ?? undefined,
+    reportedBy: row.reportedBy != null ? String(row.reportedBy) : undefined,
+  };
+}
+
+// Start downtime tracking — ném lỗi nếu ghi DB thất bại (không nuốt để UI biết thật).
+export async function startDowntime(
   machineId: number,
   machineCode: string,
   category: DowntimeEvent['category'],
   reason?: string,
-  reportedBy?: string
-): DowntimeEvent {
-  const event: DowntimeEvent = {
-    id: `DT-${Date.now()}-${machineId}`,
-    machineId,
-    machineCode,
-    startTime: new Date(),
-    category,
-    reason,
-    reportedBy,
-  };
-  
-  activeDowntimes.set(machineId, event);
-  
-  // Save to database
-  (async () => {
-    try {
-      const { getDb } = await import('../db');
-      const dbConnection = await getDb();
-      if (!dbConnection) return;
-      const { sql } = await import('drizzle-orm');
-      await dbConnection.execute(sql`
-        INSERT INTO downtime_events 
-         (machineId, machineCode, category, reason, startTime, detectionMethod)
-         VALUES (
-          ${machineId},
-          ${machineCode},
-          ${category},
-          ${reason || 'No reason provided'},
-          ${event.startTime},
-          'MANUAL'
-         )
-      `);
-    } catch (error) {
-      console.error('[Downtime] Failed to save start event:', error);
-    }
-  })();
-  
+  _reportedBy?: string
+): Promise<DowntimeEvent> {
+  const { getDb } = await import('../db');
+  const dbConnection = await getDb();
+  if (!dbConnection) throw new Error('[Downtime] Database not available');
+  const { downtimeEvents } = await import('../../drizzle/schema');
+
+  const [row] = await dbConnection
+    .insert(downtimeEvents)
+    .values({
+      machineId,
+      machineCode,
+      category,
+      reason: reason || 'No reason provided',
+      startTime: new Date(),
+      detectionMethod: 'MANUAL',
+    })
+    .returning();
+
+  const event = rowToDowntimeEvent(row as any);
+
+  // U1 — publish on the bus so downtime feeds the unified stream.
+  eventBus.publish("downtime.start", event, "socket");
   // Emit downtime start event
   if (io) {
     io.to("global").emit("downtime:start", event);
     io.to(`machine:${machineId}`).emit("downtime:start", event);
   }
-  
+
   return event;
 }
 
-// End downtime tracking
-export function endDowntime(machineId: number, notes?: string): DowntimeEvent | null {
-  const event = activeDowntimes.get(machineId);
-  if (!event) return null;
-  
-  event.endTime = new Date();
-  event.duration = Math.round((event.endTime.getTime() - event.startTime.getTime()) / 60000);
-  event.notes = notes;
-  
-  activeDowntimes.delete(machineId);
-  downtimeHistory.push(event);
-  
-  // Keep only last 1000 events
-  if (downtimeHistory.length > 1000) {
-    downtimeHistory.shift();
-  }
-  
-  // Update database
-  (async () => {
-    try {
-      const { getDb } = await import('../db');
-      const dbConnection = await getDb();
-      if (!dbConnection) return;
-      const { sql } = await import('drizzle-orm');
-      await dbConnection.execute(sql`
-        UPDATE downtime_events 
-        SET endTime = ${event.endTime},
-            duration = ${event.duration}
-        WHERE machineId = ${machineId}
-          AND endTime IS NULL
-        ORDER BY startTime DESC
-        LIMIT 1
-      `);
-    } catch (error) {
-      console.error('[Downtime] Failed to update end event:', error);
-    }
-  })();
-  
+// End downtime tracking — đóng sự kiện downtime đang mở mới nhất của máy trong DB.
+export async function endDowntime(machineId: number, notes?: string): Promise<DowntimeEvent | null> {
+  const { getDb } = await import('../db');
+  const dbConnection = await getDb();
+  if (!dbConnection) throw new Error('[Downtime] Database not available');
+  const { downtimeEvents } = await import('../../drizzle/schema');
+  const { and, eq, isNull, desc } = await import('drizzle-orm');
+
+  // Tìm sự kiện downtime đang mở (endTime IS NULL) mới nhất của máy.
+  const [open] = await dbConnection
+    .select()
+    .from(downtimeEvents)
+    .where(and(eq(downtimeEvents.machineId, machineId), isNull(downtimeEvents.endTime)))
+    .orderBy(desc(downtimeEvents.startTime))
+    .limit(1);
+  if (!open) return null;
+
+  const endTime = new Date();
+  const duration = Math.round((endTime.getTime() - new Date(open.startTime).getTime()) / 60000);
+
+  const [updated] = await dbConnection
+    .update(downtimeEvents)
+    .set({
+      endTime,
+      duration,
+      resolution: notes ?? open.resolution ?? null,
+      updatedAt: new Date(),
+    })
+    .where(eq(downtimeEvents.id, open.id))
+    .returning();
+
+  const event = rowToDowntimeEvent(updated as any);
+
+  // U1 — publish on the bus so downtime feeds the unified stream.
+  eventBus.publish("downtime.end", event, "socket");
   // Emit downtime end event
   if (io) {
     io.to("global").emit("downtime:end", event);
     io.to(`machine:${machineId}`).emit("downtime:end", event);
   }
-  
+
   return event;
 }
 
-// Get active downtime for a machine
-export function getActiveDowntime(machineId: number): DowntimeEvent | undefined {
-  return activeDowntimes.get(machineId);
+// Get active downtime for a machine — đọc từ DB (sự kiện đang mở mới nhất).
+export async function getActiveDowntime(machineId: number): Promise<DowntimeEvent | undefined> {
+  const { getDb } = await import('../db');
+  const dbConnection = await getDb();
+  if (!dbConnection) return undefined;
+  const { downtimeEvents } = await import('../../drizzle/schema');
+  const { and, eq, isNull, desc } = await import('drizzle-orm');
+
+  const [open] = await dbConnection
+    .select()
+    .from(downtimeEvents)
+    .where(and(eq(downtimeEvents.machineId, machineId), isNull(downtimeEvents.endTime)))
+    .orderBy(desc(downtimeEvents.startTime))
+    .limit(1);
+  return open ? rowToDowntimeEvent(open as any) : undefined;
 }
 
-// Get downtime history
-export function getDowntimeHistory(options?: {
+// Get downtime history — đọc từ DB, lọc theo machineId/category/khoảng thời gian.
+export async function getDowntimeHistory(options?: {
   machineId?: number;
   category?: DowntimeEvent['category'];
   startDate?: Date;
   endDate?: Date;
-}): DowntimeEvent[] {
-  let filtered = [...downtimeHistory];
-  
-  if (options?.machineId) {
-    filtered = filtered.filter(d => d.machineId === options.machineId);
-  }
-  if (options?.category) {
-    filtered = filtered.filter(d => d.category === options.category);
-  }
-  if (options?.startDate) {
-    filtered = filtered.filter(d => d.startTime >= options.startDate!);
-  }
-  if (options?.endDate) {
-    filtered = filtered.filter(d => d.startTime <= options.endDate!);
-  }
-  
-  return filtered;
+}): Promise<DowntimeEvent[]> {
+  const { getDb } = await import('../db');
+  const dbConnection = await getDb();
+  if (!dbConnection) return [];
+  const { downtimeEvents } = await import('../../drizzle/schema');
+  const { and, eq, gte, lte, desc } = await import('drizzle-orm');
+
+  const conds = [];
+  if (options?.machineId) conds.push(eq(downtimeEvents.machineId, options.machineId));
+  if (options?.category) conds.push(eq(downtimeEvents.category, options.category));
+  if (options?.startDate) conds.push(gte(downtimeEvents.startTime, options.startDate));
+  if (options?.endDate) conds.push(lte(downtimeEvents.startTime, options.endDate));
+
+  const rows = await dbConnection
+    .select()
+    .from(downtimeEvents)
+    .where(conds.length ? and(...conds) : undefined)
+    .orderBy(desc(downtimeEvents.startTime))
+    .limit(1000);
+
+  return rows.map((r) => rowToDowntimeEvent(r as any));
 }
 
 // ============ PREDICTIVE MAINTENANCE ============
@@ -1496,12 +2102,14 @@ export function calculateMachineHealth(
       timestamp: new Date(),
     };
     
+    // U1 — publish on the bus so the maintenance alert reaches the unified stream.
+    eventBus.publish("maintenance.alert", alert, "socket");
     if (io) {
       io.to("global").emit("maintenance:alert", alert);
       io.to(`machine:${machineId}`).emit("maintenance:alert", alert);
     }
   }
-  
+
   return healthScore;
 }
 

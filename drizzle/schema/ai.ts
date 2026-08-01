@@ -1,5 +1,5 @@
 // Schema domain: AI & Annotation tables
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, index, uniqueIndex, customType } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, jsonb, index, uniqueIndex, customType } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -131,6 +131,13 @@ export const predictiveAlerts = pgTable("predictive_alerts", {
   // Escalation tracking (0=none, 1=supervisor, 2=manager, 3=executive)
   escalationLevel: integer("escalationLevel").default(0).notNull(),
   lastEscalatedAt: timestamp("lastEscalatedAt"),
+  // ── W0-F G5.5 (doc 44, migration 0249; additive, nullable) ──
+  // runbook_ref: pointer to the runbook/SOP for THIS alert (e.g. an SLO target's
+  // runbook path or a doc/KB id). recommendation_ref: pointer to a recommended
+  // action/AI-proposal record. Written only when the raiser actually has one
+  // (SLO burn-rate alerts carry their catalogue runbook) — never fabricated.
+  runbookRef: text("runbook_ref"),
+  recommendationRef: text("recommendation_ref"),
   // Timestamps
   expiresAt: timestamp("expiresAt"), // Alert expiration
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -636,6 +643,17 @@ export const modelVersions = pgTable("model_versions", {
   datasetId: integer("datasetId"),                 // training_datasets.id used to train
   baselineVersionId: integer("baselineVersionId"), // version compared against for the gate
   evalReport: json("evalReport"),                  // full before/after CompareReport
+  // ── W5-A4 G4.24 (doc 44, migration 0262; additive, nullable) — Model Registry STAGE ──
+  // MLOps lifecycle stage (SYNAPSE LDS-L4 §11.1). null = legacy version (no stage).
+  // Projection is explicit: status=ACTIVE ⇔ stage='production' (see aiModelService).
+  stage: text("stage").$type<ModelStage>(),
+  // Append-only stage-transition ledger — every promoteStage/activate appends here.
+  stageHistory: jsonb("stage_history").$type<ModelStageHistoryEntry[]>(),
+  // When the version entered its CURRENT stage — measures the shadow ≥ N-hour gate.
+  stageEnteredAt: timestamp("stage_entered_at"),
+  // ── ModelCard §12.2 (additive, nullable) ──
+  owner: varchar("owner", { length: 255 }),        // ModelCard.owner (owning team)
+  trainedOn: text("trained_on"),                   // ModelCard.trained_on (training data window)
   createdBy: integer("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
@@ -643,6 +661,20 @@ export const modelVersions = pgTable("model_versions", {
   index("idx_model_versions_version").on(table.modelId, table.version),
   index("idx_model_versions_status").on(table.status),
 ]);
+
+/** MLOps lifecycle stage (SYNAPSE LDS-L4 §11.1 + Model Registry §3.2). */
+export type ModelStage = "staging" | "shadow" | "canary" | "production" | "retired";
+
+/** One append-only entry in model_versions.stage_history. */
+export interface ModelStageHistoryEntry {
+  from: ModelStage | null;
+  to: ModelStage;
+  at: string;               // ISO timestamp
+  actor?: number | null;    // user id that performed the transition
+  approver?: number | null; // second approver (canary→production 2-person rule)
+  via: string;              // "promote" | "activate" | "rollback" | "manual"
+  reason?: string;
+}
 
 export type ModelVersion = typeof modelVersions.$inferSelect;
 export type InsertModelVersion = typeof modelVersions.$inferInsert;
@@ -994,6 +1026,13 @@ export const edgeDeployments = pgTable("edge_deployments", {
     runtime?: "ONNX" | "TENSORRT" | "OPENVINO";
     maxBatchSize?: number;
     optimizationLevel?: "basic" | "extended" | "full";
+    // ── W7-D (doc 27 gap V19) — delivery verification, additive (NO DDL):
+    // stamped by confirmDeployment when the device-reported sha256 matches
+    // packageHash. Absent on legacy rows / unverified status reports.
+    deployVerifiedAt?: string;
+    verifiedHash?: string;
+    // used by rollbackDevice (previously an untyped cast)
+    previousDeploymentId?: number;
   }>(),
   lastSyncAt: timestamp("lastSyncAt"),
   lastHeartbeatAt: timestamp("lastHeartbeatAt"),
@@ -1413,6 +1452,10 @@ export const aiAnomalyMemoryBank = pgTable("ai_anomaly_memory_bank", {
   // "onnx" | "text-of-image" | "heuristic" — nguồn embedding (degrade trung thực).
   source: varchar("source", { length: 32 }).notNull(),
   imageUrl: text("imageUrl"),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). NULL =
+  // unscoped (allow-all under the inert app_tenant_allows policy). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_anomaly_bank_scope").on(table.productModelId, table.machineId, table.modelCode),
@@ -1448,6 +1491,9 @@ export const aiAnomalyProfiles = pgTable("ai_anomaly_profiles", {
   // Nguồn embedding chủ đạo dùng khi build (cờ degrade trung thực).
   source: varchar("source", { length: 32 }).notNull(),
   degraded: boolean("degraded").default(false).notNull(),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   builtAt: timestamp("builtAt").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uq_anomaly_profile_scope").on(table.productModelId, table.machineId, table.modelCode),

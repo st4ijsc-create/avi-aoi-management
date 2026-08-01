@@ -1,0 +1,26 @@
+# Policy-as-code — SYNAPSE Tầng 3 §11 (doc 48 R1 · T3).
+# POLICY MẪU cho nhóm hành động ORDER LIFECYCLE dưới chế độ DEFAULT-DENY: khi
+# POLICY_DEFAULT_DENY_ACTIONS chứa "order.command.*", MỌI chuyển trạng thái vòng đời
+# đơn hàng bị TỪ CHỐI trừ khi một allow-policy tường minh như policy này match. NẾU
+# KHÔNG ship policy này, bật default-deny sẽ VỠ máy trạng thái đơn hàng (spec §8.2).
+#
+# Context do orderLifecycleService.applyTransitionInTx cung cấp:
+#   action = order.command.{toState}, orderId, orderCode, fromState, toState,
+#   actor (người dùng HOẶC 'system'), reason?.
+# canTransition(from,to) đã kiểm HỢP LỆ TRƯỚC seam policy ⇒ toState luôn là một trạng
+# thái vòng đời hợp pháp (created/allocated/running/held/compensating/done/failed/rejected).
+# Điều kiện = "phải có trạng thái đích + actor định danh": mọi transition hợp lệ đều mang
+# toState và actor ⇒ PERMIT; lệnh dị dạng (thiếu toState hoặc actor) KHÔNG match ⇒ DENY
+# dưới default-deny. (Có thể siết thành role-based khi context RBAC được luồng qua seam.)
+policy_id: allow-order-command-lifecycle
+version: 1
+effect: allow
+action_pattern: "order.command.*"
+priority: 10
+status: active
+description: "Cho phép chuyển trạng thái vòng đời đơn hàng (order.command.*) khi có trạng thái đích và actor định danh."
+conditions:
+  - path: context.toState
+    op: exists
+  - path: context.actor
+    op: exists

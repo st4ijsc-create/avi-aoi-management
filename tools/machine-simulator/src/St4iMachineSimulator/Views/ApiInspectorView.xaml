@@ -1,0 +1,136 @@
+<UserControl x:Class="St4iMachineSimulator.Views.ApiInspectorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:St4iMachineSimulator.Converters"
+             xmlns:vm="clr-namespace:St4iMachineSimulator.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:InspectorViewModel}"
+             d:DesignWidth="1100" d:DesignHeight="700">
+    <!--
+        Task 17 — API Inspector: the exhibition centerpiece. A live, filterable, pausable stream of
+        every ApiTraceEvent the running fleet's EdgePipeline(s) publish through the shared EventBus —
+        every row here is a REAL request/response the app just made (or, once Task 19 defaults the app
+        to Demo mode, a real DemoTransport fabrication — either way, not a mock). Layout, top to bottom:
+        header strip (title + live counters + Pause/Clear/Export) → filter combo row (Machine/Kind/
+        Status) → the trace DataGrid itself, row-colored by outcome.
+    -->
+    <UserControl.Resources>
+        <conv:ApiTraceRowBrushConverter x:Key="ApiTraceRowBrushConverter" />
+        <conv:ApiTraceDupErrorConverter x:Key="ApiTraceDupErrorConverter" />
+
+        <Style x:Key="InspectorLabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+
+        <!-- Pause/Resume toggles its own label off IsPaused, same "one command, state-driven label"
+             shape as nothing else in this app yet — everywhere else (Start/Stop Fleet) uses two
+             separate buttons instead, but a single toggle reads better for a rapid pause/inspect/resume
+             workflow at a booth. -->
+        <Style x:Key="PauseResumeButtonStyle" TargetType="Button" BasedOn="{StaticResource TopBarButtonStyle}">
+            <Setter Property="Content" Value="{DynamicResource Str_Inspector_Pause}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsPaused}" Value="True">
+                    <Setter Property="Content" Value="{DynamicResource Str_Inspector_Resume}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Row background: green/amber/red tint by outcome (see ApiTraceRowBrushConverter), applied
+             to the whole DataGridRow rather than a single cell so a fast-scrolling stream is scannable
+             at a glance from across a booth. -->
+        <Style x:Key="ApiTraceRowStyle" TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+            <Setter Property="Background" Value="{Binding Converter={StaticResource ApiTraceRowBrushConverter}}" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ═══ Header: title + live counter + Pause/Clear/Export ═══════════════ -->
+        <Grid Grid.Row="0" Margin="0,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="{DynamicResource Str_Inspector_Title}" FontSize="20" FontWeight="Bold" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding TotalEventCount, StringFormat={}{0:N0} total}"
+                           Style="{StaticResource InspectorLabelStyle}"
+                           Margin="18,4,0,0" VerticalAlignment="Center" />
+                <!-- Primary number is ShownCount (the FILTERED row count actually in the grid right
+                     now), not Events.Count — fix for a demo-visible bug where this read e.g. "96 shown"
+                     while the grid displayed 20 filtered rows. Events.Count still shown after the
+                     slash for context (the unfiltered ring size). -->
+                <TextBlock Style="{StaticResource InspectorLabelStyle}"
+                           Margin="14,4,0,0" VerticalAlignment="Center">
+                    <TextBlock.Text>
+                        <MultiBinding StringFormat="{}{0:N0} / {1:N0} shown">
+                            <Binding Path="ShownCount" Mode="OneWay" />
+                            <Binding Path="Events.Count" Mode="OneWay" />
+                        </MultiBinding>
+                    </TextBlock.Text>
+                </TextBlock>
+                <Border Background="{StaticResource Brush.Badge.Fallback.Bg}"
+                        BorderBrush="{StaticResource Brush.Badge.Fallback.Border}"
+                        BorderThickness="1" CornerRadius="4" Padding="8,2"
+                        Margin="14,0,0,0" VerticalAlignment="Center"
+                        Visibility="{Binding IsPaused, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="{DynamicResource Str_Inspector_Paused}" Foreground="{StaticResource Brush.Badge.Fallback.Fg}" FontWeight="Bold" FontSize="11" />
+                </Border>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button Style="{StaticResource PauseResumeButtonStyle}" Command="{Binding PauseResumeCommand}" Margin="0,0,8,0" />
+                <Button Content="{DynamicResource Str_Inspector_Clear}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding ClearCommand}" Margin="0,0,8,0" />
+                <Button Content="{DynamicResource Str_Inspector_Export}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding ExportCommand}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ═══ Filters ═══════════════════════════════════════════════════════ -->
+        <Border Grid.Row="1"
+                Background="{StaticResource Brush.Bg.Panel}"
+                BorderBrush="{StaticResource Brush.Border}"
+                BorderThickness="1" CornerRadius="8" Padding="16,10" Margin="0,0,0,14">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{DynamicResource Str_Inspector_Machine}" Style="{StaticResource InspectorLabelStyle}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <ComboBox ItemsSource="{Binding MachineOptions}" SelectedItem="{Binding FilterMachine, Mode=TwoWay}" Width="140" />
+
+                <TextBlock Text="{DynamicResource Str_Inspector_Kind}" Style="{StaticResource InspectorLabelStyle}" VerticalAlignment="Center" Margin="20,0,8,0" />
+                <ComboBox ItemsSource="{Binding KindOptions}" SelectedItem="{Binding FilterKind, Mode=TwoWay}" Width="140" />
+
+                <TextBlock Text="{DynamicResource Str_Field_Status}" Style="{StaticResource InspectorLabelStyle}" VerticalAlignment="Center" Margin="20,0,8,0" />
+                <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding FilterStatus, Mode=TwoWay}" Width="120" />
+
+                <TextBlock Text="{Binding ExportStatus}"
+                           Style="{StaticResource InspectorLabelStyle}"
+                           Margin="24,4,0,0" VerticalAlignment="Center"
+                           Visibility="{Binding ExportStatus, Converter={StaticResource NullToVisibilityConverter}}" />
+            </StackPanel>
+        </Border>
+
+        <!-- ═══ Trace grid ════════════════════════════════════════════════════ -->
+        <DataGrid Grid.Row="2"
+                  ItemsSource="{Binding FilteredEvents}"
+                  RowStyle="{StaticResource ApiTraceRowStyle}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Time" Binding="{Binding At, StringFormat={}{0:HH:mm:ss.fff}}" Width="110" />
+                <DataGridTextColumn Header="Machine" Binding="{Binding MachineCode}" Width="90" />
+                <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="90" />
+                <DataGridTextColumn Header="Method" Binding="{Binding Method}" Width="70" />
+                <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="*" />
+                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="70" />
+                <DataGridTextColumn Header="Latency (ms)" Binding="{Binding LatencyMs}" Width="100" />
+                <DataGridTextColumn Header="Mode" Binding="{Binding Mode}" Width="70" />
+                <DataGridTextColumn Header="Dup/Error" Binding="{Binding Converter={StaticResource ApiTraceDupErrorConverter}}" Width="200" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</UserControl>

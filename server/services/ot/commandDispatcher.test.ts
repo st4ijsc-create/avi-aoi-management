@@ -110,6 +110,12 @@ vi.mock("./otManager", () => ({
   getActiveDriver: vi.fn((_id: number) => (driverConnected ? { isConnected: () => true, writeTags: (...a: any[]) => (writeTagsSpy as any)(...a), readTags: (...a: any[]) => (readTagsSpy as any)(...a) } : undefined)),
 }));
 
+// Doc 25 T1 — cổng interlock inline được test riêng (interlockGate.test.ts). Ở đây
+// mock cho luôn-qua để giữ nguyên ngữ nghĩa F4a/F4b/G2.1 gốc (không liên quan interlock).
+vi.mock("../interlock/interlockGate", () => ({
+  evaluateInterlockGate: vi.fn(async () => ({ blocked: false, failClosed: false, violations: [] })),
+}));
+
 import { dispatch } from "./commandDispatcher";
 
 const baseInput = (over: Partial<Parameters<typeof dispatch>[0]> = {}) => ({
@@ -129,6 +135,13 @@ beforeEach(() => {
   lastWriteValueByKey.clear();
   driverConnected = true;
   process.env.OT_CONTROL_ENABLED = "false";
+  // C2 (doc 24): these F4a/F4b/G2.1 tests predate the commissioning gate and assert
+  // the mode-gate behaviour directly. Opt the NEW gate OUT so their legacy semantics
+  // are preserved exactly (dedicated coverage lives in commandDispatcher.commissioning.test.ts).
+  process.env.OT_COMMISSIONING_REQUIRED = "false";
+  // doc 48 R1 (T1): these F4a/F4b/G2.1 tests predate the safety-PLC preflight; opt it OUT
+  // so their legacy real-write semantics stay exact (dedicated coverage: commandDispatcher.safety.test.ts).
+  process.env.OT_SAFETY_PREFLIGHT_ENABLED = "false";
   delete process.env.OT_READBACK_ENABLED;
   delete process.env.OT_READBACK_FLOAT_TOLERANCE;
   // restore default writeTags impl after clearAllMocks wiped it.

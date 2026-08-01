@@ -1,0 +1,63 @@
+# syntax=docker/dockerfile:1.7
+# ─────────────────────────────────────────────────────────────────────────────
+# SYNAPSE EDGE GATEWAY image (doc 44 W7-1 / gap G1.14, SYNAPSE Tầng-1 §5.2).
+#
+# A STANDALONE edge-gateway process (`dist/edgeGatewayMain.js`, `npm run start:edge`)
+# that runs AT THE EDGE, near the devices — one container per line/cell. It runs ONLY
+# the southbound OT collectors + the northbound UNS bridge + the edge store-and-forward.
+# It binds NO HTTP API / Socket.IO / MQTT broker (contrast the all-in-one `Dockerfile`,
+# which CMDs `dist/index.js` and EXPOSEs 3000).
+#
+# Build (from repo root):
+#   docker build -f deploy/edge/Dockerfile.edge -t synapse-edge-gateway:latest .
+# ─────────────────────────────────────────────────────────────────────────────
+ARG NODE_VERSION=20-bookworm-slim
+
+# ---- deps stage: install all deps (incl. dev) for build ----
+FROM node:${NODE_VERSION} AS deps
+WORKDIR /app
+ENV NODE_LLAMA_CPP_SKIP_DOWNLOAD=true
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 make g++ ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
+COPY package.json pnpm-lock.yaml ./
+COPY patches ./patches
+RUN pnpm install --frozen-lockfile --prod=false
+
+# ---- build stage (produces dist/edgeGatewayMain.js among others) ----
+FROM deps AS build
+COPY . .
+RUN pnpm run build
+
+# ---- runtime stage ----
+FROM node:${NODE_VERSION} AS runtime
+WORKDIR /app
+ENV NODE_ENV=production \
+    NODE_LLAMA_CPP_SKIP_DOWNLOAD=true \
+    EDGE_GATEWAY_MODE=true \
+    EDGE_UNS_STORE_FORWARD_FILE=/app/data/edge-uns-store-forward.jsonl \
+    EDGE_GATEWAY_LIVENESS_FILE=/app/data/edge-gateway.alive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      tini ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system app && useradd --system --gid app --home-dir /app app
+RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
+
+COPY package.json pnpm-lock.yaml ./
+COPY patches ./patches
+RUN pnpm install --frozen-lockfile --prod && pnpm store prune
+
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/drizzle ./drizzle
+
+# Durable store-and-forward WAL + liveness marker live under /app/data (mount a volume).
+RUN mkdir -p /app/data && chown -R app:app /app
+USER app
+
+# No HTTP port. Liveness = the heartbeat-refreshed marker file is fresh (< 2 min).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD node -e "const fs=require('fs');const f=process.env.EDGE_GATEWAY_LIVENESS_FILE||'/app/data/edge-gateway.alive';try{process.exit(Date.now()-fs.statSync(f).mtimeMs<120000?0:1)}catch(e){process.exit(1)}"
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["node", "dist/edgeGatewayMain.js"]

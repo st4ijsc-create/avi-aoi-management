@@ -1,15 +1,31 @@
 import { trpc } from "@/lib/trpc";
 import { UNAUTHED_ERR_MSG } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpLink, TRPCClientError } from "@trpc/client";
+import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
+import { initRum } from "./lib/rum";
 import "./index.css";
 import "./i18n"; // Initialize i18n
 
-const queryClient = new QueryClient();
+// Wave 1 (foundation): sane query defaults for the whole app. Previously the
+// client was constructed bare — staleTime 0 + refetchOnWindowFocus on = every
+// page re-fetched all of its tRPC queries on mount AND on every tab-focus,
+// which was the single biggest source of repo-wide over-fetching (audit T5).
+// Pages that need live data keep using refetchInterval / sockets, which still
+// win over staleTime; this only stops the redundant background churn.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000, // 30s — treat data as fresh; kills mount/focus refetch storms
+      gcTime: 5 * 60_000, // keep unused cache 5 min for instant back-nav
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
@@ -38,11 +54,33 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
+// Doc 44 G5.17 — phát x-correlation-id cho mỗi batch tRPC (1 "tick" thao tác người
+// dùng). Server đọc header này vào AsyncLocalStorage → mọi log/lệnh/genealogy phía
+// server mang cùng correlation_id → trace "nút bấm → lệnh → máy". Fallback an toàn khi
+// crypto.randomUUID không có (http LAN, secure-context off).
+function newCorrelationId(): string {
+  try {
+    const c = globalThis.crypto;
+    if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  } catch {
+    /* fall through */
+  }
+  return `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// Doc 44 G5.3 — httpBatchLink thay httpLink: N query cùng tick (dashboard nhiều
+// widget) gộp thành 1 HTTP request thay vì N request rời. Server dùng
+// createExpressMiddleware mặc định (không tắt batching) nên an toàn; batching
+// còn GIẢM số request tính vào rate-limit /api (300 req/phút). Giữ nguyên
+// transformer + credentials như httpLink cũ (mutation vẫn là POST).
 const trpcClient = trpc.createClient({
   links: [
-    httpLink({
+    httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
+      headers() {
+        return { "x-correlation-id": newCorrelationId() };
+      },
       fetch(input, init) {
         return globalThis.fetch(input, {
           ...(init ?? {}),
@@ -61,10 +99,28 @@ createRoot(document.getElementById("root")!).render(
   </trpc.Provider>
 );
 
-// Phase 5 WS5.1 — register the PWA service worker (production only, to avoid
-// stale-cache surprises during dev/HMR).
-if ("serviceWorker" in navigator && import.meta.env.PROD) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
-  });
+// Doc 44 G5.9 — client RUM (web-vitals qua PerformanceObserver, không dep mới).
+// Gọi SAU render, fire-and-forget — không bao giờ chặn hay làm hỏng app.
+initRum();
+
+// Phase 5 WS5.1 — PWA service worker. Đăng ký CHỈ khi VITE_ENABLE_SW='true'
+// (production PWA). Mặc định TẮT + tự UNREGISTER mọi SW cũ + xoá cache của nó:
+// trong lúc dev/test rebuild liên tục, SW stale-while-revalidate phục vụ main-bundle
+// cũ trỏ tới chunk hash đã chết → chunk 404 → server trả index.html → lỗi MIME
+// "Failed to load module script". Tắt SW cho luồng test sạch; bật lại khi ship PWA.
+if ("serviceWorker" in navigator) {
+  const enableSw = import.meta.env.PROD && import.meta.env.VITE_ENABLE_SW === "true";
+  if (enableSw) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  } else {
+    // Gỡ mọi SW đang kiểm soát + xoá cache của chúng để hết stale-chunk.
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      for (const r of regs) r.unregister().catch(() => {});
+    }).catch(() => {});
+    if ("caches" in window) {
+      caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => {});
+    }
+  }
 }

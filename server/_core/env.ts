@@ -23,6 +23,16 @@ export const ENV = {
   licenseFilePath: clean(process.env.LICENSE_FILE_PATH),
   /** Set LICENSE_BYPASS=true in .env to skip all license checks (offline deployment) */
   licenseBypass: process.env.LICENSE_BYPASS === 'true',
+  /**
+   * Doc 37 P0-3 / Doc 38 Đợt Q — SERVER-SIDE per-module license enforcement (moduleGate).
+   * DEFAULT ON (set LICENSE_MODULE_GATE_ENABLED="false" to disable). A tRPC call into a
+   * NOT-licensed optional module (MOD_*) is refused with FORBIDDEN. Core modules (CORE_*)
+   * and LICENSE_BYPASS are always allowed. NO-BRICK guarantee (see moduleGate.ts): the
+   * gate enforces ONLY when the deployment's SKU is explicitly populated (≥1 license row
+   * lists allowed_modules); a system that never declared its modules fails OPEN, so
+   * flipping this on can never lock out an unconfigured deployment.
+   */
+  licenseModuleGate: process.env.LICENSE_MODULE_GATE_ENABLED !== 'false',
 
   // ── P2 (doc 12) — Unified Telemetry Bus: protocol enable flags ──────────────
   // Honest defaults: every protocol reader is OFF unless explicitly enabled, and

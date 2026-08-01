@@ -7,17 +7,58 @@
  * - avi/factory/{factoryId}/workshop/{workshopId}/station/{stationId}/summary/weekly - Weekly summary
  * - avi/client/{clientId}/commands - Commands to specific client
  * - avi/system/broadcast - System-wide broadcasts
+ *
+ * doc 44 §11 R-3 — the `avi/` wire namespace is being rebranded to `synapse/`. Rather than a
+ * breaking flip, every publish goes through dualAedesPublish / dualExternalPublish which, when
+ * MQTT_TOPIC_DUAL_PUBLISH is on, ALSO emit the `synapse/…` twin (keeping `avi/…` until the
+ * owner sets MQTT_TOPIC_LEGACY_DISABLE after all field clients migrate). Inbound topics are
+ * canonicalised synapse/→avi/ (dual-subscribe). Both flags default OFF = legacy-only. See
+ * ./mqtt/topicRebrand.ts and docs/REBRAND_R3.md.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ * doc 51 P0 (R3) — TOPIC ACL.  ENV FLAGS (add to .env.example — see report):
+ *
+ *   MQTT_TOPIC_ACL_ENABLED    default TRUE  — secure-by-default. Set "false"/"0"/"off"
+ *                                             to disable enforcement entirely (escape hatch).
+ *   MQTT_TOPIC_ACL_WARN_ONLY  default FALSE — when "true"/"1"/"on", a violation is LOGGED
+ *                                             but ALLOWED. Rollout aid per QĐ#1: run
+ *                                             warn-only first, watch the logs for a shift,
+ *                                             then flip to enforce.
+ *
+ * Before this, the broker had NO authorizePublish/authorizeSubscribe → every authenticated
+ * client could pub/sub EVERY topic, including command topics (`avi/client/{any}/configure`).
+ * See ./mqtt/topicAcl policy summary in the ACL section below.
  */
 
 import Aedes from 'aedes';
 import { createServer } from 'aedes-server-factory';
 import { readFileSync } from 'fs';
+import { timingSafeEqual } from 'node:crypto';
 import { initUnsPublisher, publishNormalized, publishAoiBridge, publishNdeathGraceful, shutdownUnsPublisher } from './unsPublisher';
 import { mapAoiTopicToSparkplug } from './uns/aoiBridge';
+// G2.6 (doc 44 W2-B2) — contract validation at the machine-inbound seam. Gated by
+// CONTRACT_VALIDATE_INGEST_MODE (default "off" → validateInboundMqtt returns immediately).
+import { validateInboundMqtt } from './contracts/ingestValidation';
+// doc 44 §11 R-3 — MQTT topic rebrand avi/ ↔ synapse/ via dual-publish + dual-subscribe.
+// PURE helper; all behaviour is gated by MQTT_TOPIC_DUAL_PUBLISH / MQTT_TOPIC_LEGACY_DISABLE
+// (both default OFF → publish avi/ only, byte-identical to pre-R-3).
+import {
+  LEGACY_TOPIC_ROOT,
+  SYNAPSE_TOPIC_ROOT,
+  dualPublish,
+  canonicalizeInboundTopic,
+  planPublishTopics,
+  resolveServerClientId,
+  toSynapseExternalPrefix,
+} from './mqtt/topicRebrand';
 import { drizzle } from 'drizzle-orm/mysql2';
 import { eq, and, sql, lt } from 'drizzle-orm';
 import * as schema from '../../drizzle/schema';
 import mqtt, { MqttClient } from 'mqtt';
+// Doc 56 Đ2a Việc 9 — TYPE-ONLY (erased at compile → no runtime import / no cycle).
+// The bus itself is dynamically imported inside handleTelemetryBridge, only when the
+// bridge flag is on and a telemetry frame actually arrives.
+import type { CanonicalSample } from './telemetryBus';
 
 // Types
 interface MqttClientInfo {
@@ -142,6 +183,89 @@ export function handleAoiPublish(topic: string, payload: Buffer | string | unkno
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 56 Đ2a Việc 9 — MQTT → TELEMETRY BUS BRIDGE (default OFF = byte-identical)
+// ════════════════════════════════════════════════════════════════════════════
+// A device (fleet-new, per-device password hash-at-rest) publishing a canonical
+// telemetry frame on `synapse/…/telemetry` is bridged into the ONE unified ingest
+// path (telemetryBus.ingestTelemetry) — the same sink the HTTP /api/ot/ingest and
+// the OT adapters use. QĐ2: the CANONICAL wire namespace is `synapse/` (the R-3
+// rebrand root), NOT the contract SUBJECT root `syn/…` (that is the internal
+// validator subject; devices publish on synapse/). Flag OFF (default) → no-op.
+
+/** Việc 9 — is the synapse/…/telemetry → bus bridge enabled? Default OFF. */
+export function mqttTelemetryBridgeEnabled(): boolean {
+  return process.env.MQTT_TELEMETRY_BRIDGE_ENABLED === 'true';
+}
+
+/** Canonical telemetry topic on the rebrand namespace (synapse/, per QĐ2). */
+const SYNAPSE_TELEMETRY_TOPIC = /^synapse\/.+\/telemetry$/;
+
+/**
+ * Parse ONE canonical telemetry message (telemetry.schema.json: asset_id/ts/metrics[])
+ * into CanonicalSample[]. `asset_id` of the form "machine:<n>" resolves to machineId;
+ * anything else is treated as a deviceId (the bus resolves machineId by machines.code).
+ * PURE + fail-safe: a non-telemetry / non-JSON payload yields [] (never throws).
+ * Exported for direct unit testing.
+ */
+export function parseCanonicalTelemetry(topic: string, payload: Buffer | string | unknown): CanonicalSample[] {
+  let msg: any;
+  try {
+    const raw = Buffer.isBuffer(payload)
+      ? payload.toString()
+      : typeof payload === 'string'
+        ? payload
+        : JSON.stringify(payload);
+    msg = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!msg || typeof msg !== 'object' || !Array.isArray(msg.metrics)) return [];
+  const assetId = typeof msg.asset_id === 'string' ? msg.asset_id : null;
+  if (!assetId) return [];
+
+  const machineMatch = /^machine:(\d+)$/.exec(assetId);
+  const machineId = machineMatch ? Number(machineMatch[1]) : null;
+  const deviceId = machineMatch ? null : assetId;
+  const batchTs = typeof msg.ts === 'string' ? new Date(msg.ts) : undefined;
+  const validTs = (d: Date | undefined): Date | undefined => (d && !Number.isNaN(d.getTime()) ? d : undefined);
+
+  const out: CanonicalSample[] = [];
+  for (const m of msg.metrics) {
+    if (!m || typeof m.name !== 'string') continue;
+    const v = m.value;
+    const value = typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean' ? v : null;
+    out.push({
+      ts: validTs(typeof m.ts === 'string' ? new Date(m.ts) : batchTs),
+      machineId,
+      deviceId,
+      protocol: 'mqtt',
+      metric: m.name,
+      value,
+      unit: typeof m.unit === 'string' ? m.unit : null,
+      quality: m.quality === 'good' || m.quality === 'bad' || m.quality === 'uncertain' ? m.quality : 'good',
+      meta: { topic, ...(typeof msg.seq === 'number' ? { seq: msg.seq } : {}) },
+    });
+  }
+  return out;
+}
+
+/**
+ * Bridge an inbound `synapse/…/telemetry` frame into the unified telemetry bus.
+ * NO-OP unless MQTT_TELEMETRY_BRIDGE_ENABLED=true AND the topic matches. Dynamic
+ * import keeps the bus off this module's static graph; fire-and-forget + fail-safe
+ * so a bad frame never throws into the aedes publish handler.
+ */
+export function handleTelemetryBridge(topic: string, payload: Buffer | string | unknown): void {
+  if (!mqttTelemetryBridgeEnabled()) return;
+  if (!SYNAPSE_TELEMETRY_TOPIC.test(topic)) return;
+  const samples = parseCanonicalTelemetry(topic, payload);
+  if (samples.length === 0) return;
+  void import('./telemetryBus')
+    .then(({ ingestTelemetry }) => ingestTelemetry(samples))
+    .catch((err) => console.error('[MQTT] telemetry bridge ingest failed:', (err as Error)?.message || err));
+}
+
 /**
  * F3b — Thân (đã tách) của handler aedes.on('publish') cho phần mirror/bridge UNS.
  *
@@ -151,12 +275,155 @@ export function handleAoiPublish(topic: string, payload: Buffer | string | unkno
  * publishNormalized không phụ thuộc cờ Sparkplug và luôn chạy trước nhánh bridge.
  */
 export function processAedesPublish(topic: string, payload: Buffer | string | unknown): void {
+  // G2.6 (doc 44 W2-B2) — enforce message contracts at the ONE inbound seam. Default OFF
+  // (CONTRACT_VALIDATE_INGEST_MODE=off → immediate return, zero added cost). Only topics
+  // under a canonical contract (syn/…/telemetry|state|events|health|cmd[/ack]) are checked;
+  // everything else (avi/…, legacy) is skipped. In mode "quarantine" an invalid frame is
+  // BLOCKED from the whole pipeline (UNS mirror + Sparkplug bridge + sensor ingest) and
+  // recorded in contract_quarantine; mode "log" only counts+warns. validateInboundMqtt is
+  // fail-safe by contract (internal validator errors → pass-through, never block).
+  if (!validateInboundMqtt(topic, payload).ok) return;
+
   // G1 — Mirror message sang UNS broker (ISA-95/Sparkplug). No-op khi flag tắt.
   publishNormalized(topic, payload);
 
   // F3b — Bridge topic AOI cũ → Sparkplug-B telemetry. No-op khi cờ tắt; KHÔNG
   // đổi topic gốc, KHÔNG chặn luồng cũ (try/catch nội bộ).
   handleAoiPublish(topic, payload);
+
+  // R0-1 (doc 16 §9 Khối 4) — Sensor ingest → machine_sensor_readings.
+  // Topic: factory/{factoryId}/{machineCode}/sensor/{sensorType}. No-op khi cờ
+  // PDM_SENSOR_INGEST_ENABLED tắt hoặc topic không khớp. Fire-and-forget: lỗi
+  // nội bộ tự nuốt (handleSensorMessage không bao giờ throw), KHÔNG chặn broker.
+  void import('./sensorIngestService')
+    .then(({ handleSensorMessage }) => handleSensorMessage(topic, payload))
+    .catch((err) => console.error('[MQTT] sensor ingest failed:', (err as Error)?.message || err));
+
+  // Doc 56 Đ2a Việc 9 — bridge synapse/…/telemetry frames into the unified
+  // telemetry bus. No-op unless MQTT_TELEMETRY_BRIDGE_ENABLED=true and the topic
+  // matches (fire-and-forget + fail-safe inside).
+  handleTelemetryBridge(topic, payload);
+}
+
+/**
+ * Doc 27 W2-C (R12) — per-device MQTT password verification, HASH AT REST.
+ *
+ * Verification order:
+ *   1. `passwordHash` set → bcrypt.compare (the at-rest credential).
+ *   2. else legacy plaintext `password` set → constant-time compare; on match
+ *      return `upgradeHash` so the caller persists { passwordHash, password: null }
+ *      — transparent upgrade-in-place on the device's next successful connect.
+ *   3. neither set → not enforced ({ ok: true }); enabling MQTT_REQUIRE_PASSWORD
+ *      never locks out devices that have no password configured (existing rule).
+ *
+ * NOTE: before migration 0178 the mqtt_clients table had NO password column at
+ * all — the old `mqttClient.password` check could never enforce. 0178 adds both
+ * columns; this function makes the feature real.
+ */
+export async function verifyMqttDevicePassword(
+  client: { password?: string | null; passwordHash?: string | null },
+  supplied: string,
+): Promise<{ ok: boolean; upgradeHash?: string }> {
+  const bcrypt = (await import('bcryptjs')).default;
+  if (client.passwordHash) {
+    const ok = await bcrypt.compare(supplied, client.passwordHash).catch(() => false);
+    return { ok };
+  }
+  if (client.password) {
+    const a = Buffer.from(String(client.password), 'utf8');
+    const b = Buffer.from(supplied, 'utf8');
+    const match = a.length === b.length && timingSafeEqual(a, b);
+    if (!match) return { ok: false };
+    const upgradeHash = await bcrypt.hash(supplied, 10);
+    return { ok: true, upgradeHash };
+  }
+  return { ok: true };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 27 W2-C (C5 — AOI bridge reliability): bounded in-memory RETRY BUFFER for
+// inbound MQTT handlers that write the DB (DEVICE_INFO update, CONFIGURE_ACK
+// log). Before this, a DB hiccup dropped the write with only a console.error.
+// Inspection results do NOT flow inbound over MQTT (inbound = DEVICE_INFO +
+// CONFIGURE_ACK only) — the heavy disk-WAL durability lives on the HTTP ingest
+// path (services/inspection/inspectionStoreForward). This lighter buffer covers
+// the low-stakes metadata writes: retries every 30s with attempt/age/size
+// bounds, drops are counted + warned (never silent).
+// ════════════════════════════════════════════════════════════════════════════
+interface InboundDbRetryEntry {
+  label: string;
+  attempts: number;
+  enqueuedAt: number;
+  run: () => Promise<void>;
+}
+
+const inboundDbRetryQueue: InboundDbRetryEntry[] = [];
+const INBOUND_RETRY_MAX_ENTRIES = 1000;
+const INBOUND_RETRY_MAX_ATTEMPTS = 10;
+const INBOUND_RETRY_MAX_AGE_MS = 60 * 60 * 1000; // 1h
+const INBOUND_RETRY_FLUSH_MS = 30_000;
+let inboundDbRetryTimer: NodeJS.Timeout | null = null;
+let inboundDbRetryDropped = 0;
+
+function queueInboundDbRetry(label: string, run: () => Promise<void>): void {
+  inboundDbRetryQueue.push({ label, attempts: 0, enqueuedAt: Date.now(), run });
+  while (inboundDbRetryQueue.length > INBOUND_RETRY_MAX_ENTRIES) {
+    inboundDbRetryQueue.shift();
+    inboundDbRetryDropped += 1;
+  }
+  if (inboundDbRetryDropped > 0 && inboundDbRetryQueue.length === INBOUND_RETRY_MAX_ENTRIES) {
+    console.warn(`[MQTT] inbound DB-retry buffer full — dropped ${inboundDbRetryDropped} oldest write(s) so far`);
+  }
+  console.warn(`[MQTT] DB write failed for ${label} — queued for retry (queue=${inboundDbRetryQueue.length})`);
+  if (!inboundDbRetryTimer) {
+    inboundDbRetryTimer = setInterval(() => void flushInboundDbRetryQueue(), INBOUND_RETRY_FLUSH_MS);
+    inboundDbRetryTimer.unref?.();
+  }
+}
+
+async function flushInboundDbRetryQueue(): Promise<void> {
+  const now = Date.now();
+  for (let i = 0; i < inboundDbRetryQueue.length; ) {
+    const entry = inboundDbRetryQueue[i];
+    if (now - entry.enqueuedAt > INBOUND_RETRY_MAX_AGE_MS || entry.attempts >= INBOUND_RETRY_MAX_ATTEMPTS) {
+      inboundDbRetryQueue.splice(i, 1);
+      inboundDbRetryDropped += 1;
+      console.warn(`[MQTT] gave up retrying inbound DB write ${entry.label} (attempts=${entry.attempts})`);
+      continue;
+    }
+    try {
+      await entry.run();
+      inboundDbRetryQueue.splice(i, 1);
+      console.log(`[MQTT] retried inbound DB write ${entry.label} OK (queue=${inboundDbRetryQueue.length})`);
+    } catch {
+      entry.attempts += 1;
+      i += 1; // still failing — leave queued, move on
+    }
+  }
+  if (inboundDbRetryQueue.length === 0 && inboundDbRetryTimer) {
+    clearInterval(inboundDbRetryTimer);
+    inboundDbRetryTimer = null;
+  }
+}
+
+/** Observability snapshot for the inbound retry buffer (health/status use). */
+export function getInboundDbRetryStatus(): { queued: number; dropped: number } {
+  return { queued: inboundDbRetryQueue.length, dropped: inboundDbRetryDropped };
+}
+
+/** Test helper — clears the inbound retry buffer + timer. */
+export function _resetInboundDbRetry(): void {
+  inboundDbRetryQueue.length = 0;
+  inboundDbRetryDropped = 0;
+  if (inboundDbRetryTimer) {
+    clearInterval(inboundDbRetryTimer);
+    inboundDbRetryTimer = null;
+  }
+}
+
+/** Test helper — runs one retry flush pass immediately. */
+export async function _flushInboundDbRetryOnce(): Promise<void> {
+  await flushInboundDbRetryQueue();
 }
 
 // MQTT Broker instance (local)
@@ -171,6 +438,26 @@ let mqttPortConflictDetected = false;
 // External MQTT client (for cloud broker)
 let externalMqttClient: MqttClient | null = null;
 let staleClientTimer: NodeJS.Timeout | null = null;
+
+// ════════════════════════════════════════════════════════════════════════════
+// doc 54 P2.3 — CONNECTION-STATE tracking so alertEvaluationService can compute REAL
+// minutes for BROKER_DISCONNECT / CLIENT_OFFLINE rules (both previously hard-coded to 0).
+//   • externalBroker{Connected,DisconnectedSince}: external cloud broker link, driven by the
+//     mqtt.js client connect/close/offline/error/reconnect events below. `DisconnectedSince`
+//     is the epoch-ms the link went (or started) down; null while connected.
+//   • lastClientSeenAt: epoch-ms we last SAW any LOCAL device (aedes connect / ping / publish).
+//     Used to infer offline duration only when NO client is currently connected.
+// All best-effort in-memory markers — never persisted, reset on process restart.
+// ════════════════════════════════════════════════════════════════════════════
+let externalBrokerConnected = false;
+let externalBrokerDisconnectedSince: number | null = null;
+let lastClientSeenAt: number | null = null;
+
+/** Mark the external broker link as DOWN, stamping the disconnect start once (idempotent). */
+function markExternalBrokerDown(): void {
+  externalBrokerConnected = false;
+  if (externalBrokerDisconnectedSince == null) externalBrokerDisconnectedSince = Date.now();
+}
 
 // Configuration
 const MQTT_PORT = parseInt(process.env.MQTT_PORT || '1883');
@@ -189,6 +476,483 @@ const MQTT_TLS_KEY = process.env.MQTT_TLS_KEY || '';
 // password keep working (so enabling this never locks out existing devices).
 const MQTT_REQUIRE_PASSWORD = process.env.MQTT_REQUIRE_PASSWORD === 'true';
 
+// ════════════════════════════════════════════════════════════════════════════
+// doc 44 G5.22 — device mTLS wire (additive, DEFAULT OFF = server-TLS only, fully
+// bit-compatible with existing clients). When MQTT_MTLS_ENABLED the MQTTS listener
+// asks for a client certificate (requestCert) and pins the internal CA (ca), and
+// the authenticate handler verifies the presented device cert via
+// deviceIdentityService.verifyDeviceCert. rejectUnauthorized stays FALSE so the
+// TLS layer never hard-drops a connection — the soft-verify + MQTT_MTLS_MODE
+// decides admission at the app layer:
+//   • "permissive" (default) → a missing/invalid client cert is LOGGED and ALLOWED
+//     (safe rollout: existing server-TLS clients keep connecting),
+//   • "strict"               → a missing/invalid client cert is REJECTED.
+// This ONLY affects the MQTTS (TLS) listener; the plaintext TCP/WS listeners and
+// their auth are untouched.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Is device mTLS ENFORCEMENT active on the MQTTS listener? Default OFF. */
+export function mqttMtlsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.MQTT_MTLS_ENABLED === 'true' || env.MQTT_MTLS_ENABLED === '1';
+}
+
+/** mTLS admission mode for a missing/invalid client cert. Default "permissive". */
+export function mqttMtlsMode(env: NodeJS.ProcessEnv = process.env): 'permissive' | 'strict' {
+  return env.MQTT_MTLS_MODE === 'strict' ? 'strict' : 'permissive';
+}
+
+export interface MqttTlsBaseOpts {
+  key: Buffer | string;
+  cert: Buffer | string;
+}
+
+/**
+ * PURE builder for the TLS listener options. Given the already-read key/cert (+
+ * optional CA PEMs when mTLS is on), returns the exact options object passed to
+ * aedes-server-factory's `tls`.
+ *   • mtlsEnabled=false → { key, cert } EXACTLY as before (bit-compat, no requestCert).
+ *   • mtlsEnabled=true  → adds requestCert:true, rejectUnauthorized:false, ca:[…].
+ * Kept pure (no CA/DB access) so it is directly unit-testable.
+ */
+export function buildMqttTlsOptions(
+  base: MqttTlsBaseOpts,
+  opts: { mtlsEnabled: boolean; caPems?: Array<Buffer | string> } = { mtlsEnabled: false },
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { key: base.key, cert: base.cert };
+  if (opts.mtlsEnabled) {
+    out.requestCert = true;
+    // Soft-verify at the app layer (deviceIdentityService) so we can honour
+    // MQTT_MTLS_MODE instead of a hard TLS-level drop.
+    out.rejectUnauthorized = false;
+    const cas = (opts.caPems ?? []).filter((c) => c != null && String(c).length > 0);
+    if (cas.length > 0) out.ca = cas;
+  }
+  return out;
+}
+
+/**
+ * PURE admission decision for a peer certificate under mTLS. Given the flag/mode
+ * and whether a (valid) client cert was presented, returns whether the client may
+ * proceed. Mirrors the deviceIdentityService fail-safe policy.
+ */
+export function decideMtlsAdmission(input: {
+  enabled: boolean;
+  mode: 'permissive' | 'strict';
+  hasCert: boolean;
+  certValid: boolean;
+}): { allow: boolean; reason: string } {
+  if (!input.enabled) return { allow: true, reason: 'mtls-off' };
+  if (input.hasCert && input.certValid) return { allow: true, reason: 'ok' };
+  const what = input.hasCert ? 'invalid client certificate' : 'no client certificate';
+  if (input.mode === 'strict') return { allow: false, reason: `${what} (strict)` };
+  return { allow: true, reason: `${what} (permissive — allowed, logged)` };
+}
+
+/** Convert a DER certificate buffer to PEM (for deviceIdentityService verify). */
+export function derToPem(der: Buffer): string {
+  const b64 = der.toString('base64').replace(/(.{64})/g, '$1\n');
+  return `-----BEGIN CERTIFICATE-----\n${b64}\n-----END CERTIFICATE-----\n`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// doc 51 P0 (R3) — MQTT TOPIC ACL  (authorizePublish / authorizeSubscribe)
+//
+// VERIFIED GAP: `grep authorizePublish|authorizeSubscribe server/` = 0 → aedes ran its
+// defaults, which allow EVERY authenticated client to pub/sub EVERY topic. A tablet could
+// publish `avi/client/{someone-else}/configure` (a COMMAND to another device) or subscribe
+// to another device's private branch. This section closes that.
+//
+// POLICY (evaluated on the CANONICAL `avi/` form, so `synapse/…` is covered identically):
+//
+//   PUBLISH — a device may publish ONLY:
+//     • `avi/client/{ownDeviceId}/…`  minus the server-only leaves (configure, commands)
+//     • `avi/edge/{ownDeviceId}/…`    minus the server-only leaf  (model-update)
+//     • `avi/test/…`                  (explicit test namespace)
+//     • anything NOT rooted at `avi`  → OUT OF SCOPE, allowed (see SCOPE note below)
+//     Everything else under `avi/` (factory/…/errors|summary|bulletin, escalations/,
+//     system/, points-config-changed/, factory-alert/update) is SERVER-ONLY → denied.
+//
+//   SUBSCRIBE — a device may subscribe to anything EXCEPT a filter that can reach ANOTHER
+//     device's private branch (`avi/client/{other}/…`, `avi/edge/{other}/…`). This is
+//     deliberately narrow: the FactoryAlertSystem APK legitimately subscribes with broad
+//     wildcards (`avi/factory/+/workshop/+/station/+/errors`, `avi/escalations/#`, …) —
+//     those are BROADCAST alert topics and keep working. But `avi/client/+/configure`,
+//     `avi/client/B/#` and `avi/#` are denied because they span foreign devices.
+//
+// SCOPE note (deliberate, QĐ#1 — do not kill machines mid-shift): topics NOT rooted at the
+// brand namespace are untouched. That keeps the sensor-ingest path
+// (`factory/{fId}/{machineCode}/sensor/{type}`) and the `syn/…` contract topics working.
+// Tightening those is a separate, later step.
+//
+// SERVER identity is NEVER derived from a client-supplied clientId — that would be trivially
+// spoofable (a device could just connect as `avi-aoi-server-1` and gain full rights). The
+// server publishes via `aedes.publish()` (Aedes.prototype.publish), which does NOT route
+// through authorizePublish at all; when a hook IS invoked with no client context we treat it
+// as internal → allowed. `isServer` can only be set by trusted in-process code.
+//
+// Overriding aedes' defaults also drops its built-in `$SYS/` publish guard, so it is
+// re-implemented here (defaultAuthorizePublish in aedes/aedes.js).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Property stamped on the aedes client at authenticate time (the AUTHENTICATED deviceId). */
+export const MQTT_ACL_DEVICE_ID_PROP = '__aviAclDeviceId';
+/**
+ * doc 51 P1 (§5.3) — the device's approvalStatus at authenticate time, stamped on the aedes
+ * client so the admission gate can confine an un-APPROVED device to the pairing scope WITHOUT
+ * a DB round-trip per message (per-connection cache; see staleness note on the gate below).
+ */
+export const MQTT_ACL_APPROVAL_PROP = '__aviAclApprovalStatus';
+
+/** Who is asking. `deviceId` is the value proven at authenticate, NOT a client-supplied id. */
+export interface MqttAclContext {
+  clientId: string;
+  /** The authenticated deviceId. Absent → unscoped client → strictest device rules. */
+  deviceId?: string;
+  /** Trusted in-process publisher. Only ever set by server-side code, never inferred. */
+  isServer?: boolean;
+  /**
+   * doc 51 P1 (§5.3) — the device's approval status as of authenticate. When present and NOT
+   * 'APPROVED' the admission gate confines the device to pairing/enrollment topics. ABSENT →
+   * gate does not apply (backward-compatible: server callers and legacy contexts are untouched).
+   */
+  approvalStatus?: string;
+}
+
+export interface MqttAclDecision {
+  /** May the action proceed? (true in warn-only mode even when `violation` is true.) */
+  allow: boolean;
+  /** Did this BREAK the policy? Stays true in warn-only mode — that is the whole point. */
+  violation: boolean;
+  reason: string;
+}
+
+/** Is topic-ACL enforcement wired in? DEFAULT TRUE (secure by default). */
+export function mqttTopicAclEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = String(env.MQTT_TOPIC_ACL_ENABLED ?? '').trim().toLowerCase();
+  return !(v === 'false' || v === '0' || v === 'off');
+}
+
+/** Warn-only rollout mode: violations are LOGGED but ALLOWED. DEFAULT FALSE (enforce). */
+export function mqttTopicAclWarnOnly(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = String(env.MQTT_TOPIC_ACL_WARN_ONLY ?? '').trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'on';
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// doc 51 P1 (§5.3) — ADMISSION GATE. Even after P0's topic ACL, a device that
+// self-registers stays `approvalStatus='PENDING'` yet can pub/sub its OWN branch
+// and read broadcast alert topics — i.e. an unapproved tablet joins the business
+// data flow before an operator ever admits it. This gate confines a not-yet-
+// APPROVED device to a minimal PAIRING/ENROLLMENT scope (announce itself + learn
+// its pairing status), blocking business traffic (configure/ack, model-update,
+// errors/summary/bulletin broadcasts, …).
+//
+// QĐ#1 (controlled tightening): gated by MQTT_ADMISSION_ENFORCE. DEFAULT FALSE =
+// keep today's behaviour (allow) but FLAG+LOG every admission violation so ops can
+// watch for a shift before flipping to TRUE = block. A PENDING device mid-demo is
+// never cut off until the operator opts in. The global MQTT_TOPIC_ACL_WARN_ONLY /
+// MQTT_TOPIC_ACL_ENABLED escape hatches still apply on top.
+//
+// STALENESS (accepted, documented): approvalStatus is read ONCE at authenticate and
+// cached on the connection (no per-message DB query, per the touchLastUsed pattern).
+// A device APPROVED while connected keeps its stamped PENDING until it reconnects,
+// so under enforce it stays in pairing scope until the next connect. MQTT clients
+// reconnect readily; the gate defaults to warn, so this bites only after opt-in.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Admission-gate ENFORCEMENT. DEFAULT FALSE = flag+log only (backward-compatible). */
+export function mqttAdmissionEnforce(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = String(env.MQTT_ADMISSION_ENFORCE ?? '').trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'on';
+}
+
+/**
+ * Leaves under the device's OWN `avi/client/{ownId}/…` branch that constitute PAIRING/
+ * ENROLLMENT (safe for a not-yet-APPROVED device). `info` is how the device announces itself
+ * so it appears in the approval queue (the real enrollment channel); `pairing`/`enroll`/
+ * `enrollment`/`heartbeat` are reserved minimal channels. Everything else on the branch
+ * (`configure`, `commands`, `ack`, …) is BUSINESS flow → denied until APPROVED.
+ */
+const ACL_PAIRING_LEAVES = new Set(['info', 'pairing', 'enroll', 'enrollment', 'heartbeat']);
+
+/** Is `approvalStatus` a value that must be gated (present and not APPROVED)? */
+function isUnapproved(status: string | undefined): boolean {
+  return typeof status === 'string' && status.length > 0 && status.toUpperCase() !== 'APPROVED';
+}
+
+/**
+ * Is the CANONICAL `avi/…` topic/filter a pairing-scope address on the device's OWN branch?
+ * Requires an EXACT 4-segment `avi/client/{own}/{pairingLeaf}` — no wildcard can widen this
+ * (a `+`/`#` segment never equals `own` nor a literal pairing leaf), so a PENDING device
+ * cannot use pairing scope to fan out onto foreign/business topics.
+ */
+function isPairingScope(own: string | undefined, canonical: string): boolean {
+  if (!own) return false;
+  const segs = canonical.split('/');
+  return (
+    segs.length === 4 &&
+    segs[0] === LEGACY_TOPIC_ROOT &&
+    segs[1] === 'client' &&
+    segs[2] === own &&
+    ACL_PAIRING_LEAVES.has(segs[3])
+  );
+}
+
+/** Leaves under `avi/client/{id}/…` only the SERVER may publish (they are commands). */
+const ACL_SERVER_ONLY_CLIENT_LEAVES = new Set(['configure', 'commands']);
+/** Leaves under `avi/edge/{id}/…` only the SERVER may publish. */
+const ACL_SERVER_ONLY_EDGE_LEAVES = new Set(['model-update']);
+/** Second segment of the two per-device PRIVATE branches (`avi/client/…`, `avi/edge/…`). */
+const ACL_PRIVATE_BRANCHES = ['client', 'edge'] as const;
+
+/**
+ * Standard MQTT topic-filter match (`+` = one level, `#` = zero-or-more trailing levels).
+ * Exported because the subscribe policy is only as good as this matcher.
+ */
+export function matchesMqttFilter(filter: string, topic: string): boolean {
+  const f = filter.split('/');
+  const t = topic.split('/');
+  for (let i = 0; i < f.length; i++) {
+    if (f[i] === '#') return i === f.length - 1; // '#' is only legal as the last level
+    if (i >= t.length) return false;
+    if (f[i] !== '+' && f[i] !== t[i]) return false;
+  }
+  return f.length === t.length;
+}
+
+/**
+ * PUBLISH policy for one already-canonical (`avi/…`) topic. Pure; no flags, no logging —
+ * `canPublish` layers the enabled/warn-only flags on top.
+ */
+function evaluatePublishPolicy(ctx: MqttAclContext, topic: string): MqttAclDecision {
+  const allow = (reason: string): MqttAclDecision => ({ allow: true, violation: false, reason });
+  const deny = (reason: string): MqttAclDecision => ({ allow: false, violation: true, reason });
+
+  // Re-implement aedes' default `$SYS/` guard (we replaced the default hook).
+  if (topic.startsWith('$SYS/')) return deny('$SYS/ topic is reserved');
+  // A PUBLISH may never carry wildcards (aedes rejects these earlier; defence in depth).
+  if (topic.includes('+') || topic.includes('#')) return deny('wildcard not allowed in PUBLISH');
+
+  const segs = topic.split('/');
+  if (segs[0] !== LEGACY_TOPIC_ROOT) return allow('outside brand namespace (out of ACL scope)');
+  if (segs[1] === 'test') return allow('test namespace');
+
+  const branch = segs[1];
+  if (branch === 'client' || branch === 'edge') {
+    const ownerId = segs[2];
+    const leaf = segs[3];
+    const serverOnly = branch === 'client' ? ACL_SERVER_ONLY_CLIENT_LEAVES : ACL_SERVER_ONLY_EDGE_LEAVES;
+    if (leaf !== undefined && serverOnly.has(leaf)) {
+      return deny(`avi/${branch}/*/${leaf} is server-only`);
+    }
+    if (!ctx.deviceId) return deny(`client has no authenticated deviceId — cannot own avi/${branch}/${ownerId}`);
+    if (ownerId !== ctx.deviceId) {
+      return deny(`device ${ctx.deviceId} may not publish on another device's branch (${ownerId})`);
+    }
+    return allow('own device branch');
+  }
+
+  // avi/factory/…, avi/escalations/…, avi/system/…, avi/points-config-changed/…,
+  // avi/factory-alert/… — all server-published broadcast namespaces.
+  return deny(`avi/${branch ?? ''} is a server-only namespace`);
+}
+
+/**
+ * The per-device topics that actually exist on this broker, used as probes below.
+ * `{leaf}` values come from the real clients: FactoryAlertSystem publishes info/ack and
+ * subscribes configure; edge devices subscribe model-update.
+ */
+const ACL_PRIVATE_LEAVES: Record<(typeof ACL_PRIVATE_BRANCHES)[number], string[]> = {
+  client: ['info', 'ack', 'configure', 'commands'],
+  edge: ['model-update'],
+};
+/** A device id no real device can have — stands in for "some other device" when probing. */
+const ACL_FOREIGN_PROBE_ID = '__acl_probe_foreign_device__';
+
+/**
+ * Can this SUBSCRIBE filter reach a private branch belonging to a device OTHER than `own`?
+ *
+ * Two complementary rules — being merely "conservative" here is NOT free: over-denying breaks
+ * shipping clients (QĐ#1). Notably `avi/+/workshop/+/station/+/errors` (the APK's legacy,
+ * factory-segment-less broadcast filter) has `+` in the branch slot yet can only ever reach a
+ * *private* topic of a device literally named "workshop" — it must stay ALLOWED.
+ *
+ *   Rule A (structural) — the filter PINS the branch slot to the literal `client`/`edge`
+ *     (or swallows it with `#`). Then the id slot decides: `+`/`#` spans every device, and a
+ *     literal id other than our own is impersonation. Catches `avi/client/B/#`,
+ *     `avi/client/+/configure`, `avi/#`, `#`, `+/client/B/info`.
+ *   Rule B (probe) — the branch slot is a `+`, so the shape is ambiguous. Instead of guessing,
+ *     test the filter against the private topics that REALLY exist for a foreign id. Catches
+ *     `avi/+/B/info` (which does match `avi/client/B/info`) while clearing the APK filter
+ *     above (7 levels deep — it matches none of the real 4-level private topics).
+ *
+ * Residual, accepted: an exotic filter that both wildcards the branch slot AND targets a
+ * non-standard deep sub-topic of a foreign device (`avi/+/B/deep/custom`). No such topic is
+ * produced by this system; the direct form (`avi/client/B/deep/custom`) IS caught by Rule A.
+ */
+function reachesForeignPrivateBranch(filter: string, own: string | undefined): boolean {
+  const segs = filter.split('/');
+  const idSeg = segs[2];
+
+  for (const branch of ACL_PRIVATE_BRANCHES) {
+    // ── Rule A: branch slot pinned to a literal (or swallowed by '#').
+    const s0 = segs[0];
+    if (s0 === '#') return true; // '#' → literally everything
+    if (s0 === LEGACY_TOPIC_ROOT || s0 === '+') {
+      const s1 = segs[1];
+      if (s1 === '#') return true; // 'avi/#' → everything under the brand root
+      // length 1 ('avi') matches only the topic 'avi'; length 2 ('avi/client') is not a
+      // per-device topic — neither reaches a private branch.
+      if (s1 === branch && segs.length > 2) {
+        if (idSeg === '#' || idSeg === '+') return true; // spans EVERY device id
+        if (own === undefined || idSeg !== own) return true; // literal id that isn't ours
+        // idSeg === own → legitimately this client's own branch.
+      }
+    }
+
+    // ── Rule B: ambiguous branch slot → probe the private topics that really exist.
+    const candidateIds: string[] = [];
+    if (idSeg === undefined || idSeg === '+' || idSeg === '#') candidateIds.push(ACL_FOREIGN_PROBE_ID);
+    else if (idSeg !== own) candidateIds.push(idSeg);
+    for (const id of candidateIds) {
+      for (const leaf of ACL_PRIVATE_LEAVES[branch]) {
+        if (matchesMqttFilter(filter, `${LEGACY_TOPIC_ROOT}/${branch}/${id}/${leaf}`)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Apply the rollout flags to a raw policy decision. A non-violation passes through untouched.
+ * A violation is softened to `allow:true` (while KEEPING `violation:true` so the caller still
+ * logs it) when the relevant warn switch is on:
+ *   • base ACL violation  → softened by MQTT_TOPIC_ACL_WARN_ONLY.
+ *   • admission violation  → softened by MQTT_ADMISSION_ENFORCE=false (its default) OR the
+ *                            global MQTT_TOPIC_ACL_WARN_ONLY.
+ */
+function finalizeAclDecision(
+  decision: MqttAclDecision,
+  isAdmission: boolean,
+  env: NodeJS.ProcessEnv,
+): MqttAclDecision {
+  if (!decision.violation) return decision;
+  const globalWarn = mqttTopicAclWarnOnly(env);
+  const admissionSoft = isAdmission && !mqttAdmissionEnforce(env);
+  if (globalWarn || admissionSoft) {
+    const tag = admissionSoft && !globalWarn ? 'admission warn → allowed' : 'warn-only → allowed';
+    return { ...decision, allow: true, reason: `${decision.reason} [${tag}]` };
+  }
+  return decision;
+}
+
+/**
+ * Decide whether `ctx` may PUBLISH `topic`. Honours MQTT_TOPIC_ACL_ENABLED (default on),
+ * MQTT_TOPIC_ACL_WARN_ONLY (default off) and — for an un-APPROVED device — the doc 51 P1
+ * admission gate under MQTT_ADMISSION_ENFORCE (default off = flag+log). In any warn mode
+ * `allow` is true while `violation` stays true, so the caller still logs it.
+ */
+export function canPublish(
+  ctx: MqttAclContext,
+  topic: string,
+  env: NodeJS.ProcessEnv = process.env,
+): MqttAclDecision {
+  if (!mqttTopicAclEnabled(env)) return { allow: true, violation: false, reason: 'acl-disabled' };
+  if (ctx.isServer) return { allow: true, violation: false, reason: 'server (internal publish)' };
+
+  const canonical = canonicalizeInboundTopic(topic);
+  const base = evaluatePublishPolicy(ctx, canonical);
+
+  // doc 51 P1 — admission gate. Applies ONLY when the base policy already allows (a base
+  // violation — impersonation / server-only — is the stronger verdict and keeps its own path).
+  // A not-yet-APPROVED device is confined to its own pairing scope.
+  if (!base.violation && isUnapproved(ctx.approvalStatus) && !isPairingScope(ctx.deviceId, canonical)) {
+    return finalizeAclDecision(
+      {
+        allow: false,
+        violation: true,
+        reason: `device not approved (status=${ctx.approvalStatus}) — publish outside pairing scope`,
+      },
+      true,
+      env,
+    );
+  }
+  return finalizeAclDecision(base, false, env);
+}
+
+/**
+ * Decide whether `ctx` may SUBSCRIBE to `filter`. A filter that can reach ANOTHER device's
+ * private branch is denied (broadcast alert wildcards keep working — see POLICY). Additionally,
+ * per the doc 51 P1 admission gate, a not-yet-APPROVED device may subscribe ONLY its own pairing
+ * scope — the business broadcast topics (errors/summary/bulletin) are withheld until approval.
+ */
+export function canSubscribe(
+  ctx: MqttAclContext,
+  filter: string,
+  env: NodeJS.ProcessEnv = process.env,
+): MqttAclDecision {
+  if (!mqttTopicAclEnabled(env)) return { allow: true, violation: false, reason: 'acl-disabled' };
+  if (ctx.isServer) return { allow: true, violation: false, reason: 'server (internal subscribe)' };
+
+  const canonical = canonicalizeInboundTopic(filter);
+
+  if (reachesForeignPrivateBranch(canonical, ctx.deviceId)) {
+    return finalizeAclDecision(
+      {
+        allow: false,
+        violation: true,
+        reason: ctx.deviceId
+          ? `device ${ctx.deviceId} may not subscribe to another device's private branch`
+          : 'client has no authenticated deviceId — cannot subscribe to a per-device branch',
+      },
+      false,
+      env,
+    );
+  }
+
+  // doc 51 P1 — admission gate on subscribe: an un-APPROVED device is confined to its own
+  // pairing scope; every business/broadcast filter is an admission violation.
+  if (isUnapproved(ctx.approvalStatus) && !isPairingScope(ctx.deviceId, canonical)) {
+    return finalizeAclDecision(
+      {
+        allow: false,
+        violation: true,
+        reason: `device not approved (status=${ctx.approvalStatus}) — subscribe outside pairing scope`,
+      },
+      true,
+      env,
+    );
+  }
+
+  return { allow: true, violation: false, reason: 'in scope' };
+}
+
+/**
+ * Build the ACL context from an aedes client. A missing client means the publish came from
+ * `aedes.publish()` (in-process server code) → trusted. The deviceId is read from the
+ * property stamped by `aedes.authenticate`, never from the client-chosen clientId.
+ */
+export function aclContextFromClient(client: unknown): MqttAclContext {
+  if (!client) return { clientId: '<internal>', isServer: true };
+  const c = client as { id?: string; [k: string]: unknown };
+  const deviceId = c[MQTT_ACL_DEVICE_ID_PROP];
+  const approval = c[MQTT_ACL_APPROVAL_PROP];
+  return {
+    clientId: c.id ?? '<unknown>',
+    deviceId: typeof deviceId === 'string' && deviceId.length > 0 ? deviceId : undefined,
+    approvalStatus: typeof approval === 'string' && approval.length > 0 ? approval : undefined,
+  };
+}
+
+/** One-line structured warning for an ACL violation (device, topic, action). */
+function logAclViolation(action: 'publish' | 'subscribe', ctx: MqttAclContext, topic: string, decision: MqttAclDecision): void {
+  console.warn(
+    `[MQTT ACL] ${decision.allow ? 'WARN' : 'DENY'} ${action} ` +
+      `device=${ctx.deviceId ?? '<unauthenticated>'} clientId=${ctx.clientId} ` +
+      `topic="${topic}" reason=${decision.reason}`,
+  );
+}
+
 // External MQTT broker configuration (HiveMQ Public or custom)
 const EXTERNAL_MQTT_ENABLED = process.env.EXTERNAL_MQTT_ENABLED === 'true';
 const EXTERNAL_MQTT_BROKER = process.env.EXTERNAL_MQTT_BROKER || 'mqtt://broker.hivemq.com';
@@ -196,7 +960,10 @@ const EXTERNAL_MQTT_PORT = parseInt(process.env.EXTERNAL_MQTT_PORT || '1883');
 const EXTERNAL_MQTT_USERNAME = process.env.EXTERNAL_MQTT_USERNAME || '';
 const EXTERNAL_MQTT_PASSWORD = process.env.EXTERNAL_MQTT_PASSWORD || '';
 const EXTERNAL_MQTT_TOPIC_PREFIX = process.env.EXTERNAL_MQTT_TOPIC_PREFIX || 'avi-aoi';
-const EXTERNAL_MQTT_USE_TLS = process.env.EXTERNAL_MQTT_USE_TLS === 'true' || 
+// doc 44 §11 R-3 — synapse form of the external prefix (avi-aoi → synapse) for dual-publish
+// to the cloud broker. A custom, non-brand prefix maps to itself → external mirror no-ops.
+const EXTERNAL_MQTT_TOPIC_PREFIX_SYNAPSE = toSynapseExternalPrefix(EXTERNAL_MQTT_TOPIC_PREFIX);
+const EXTERNAL_MQTT_USE_TLS = process.env.EXTERNAL_MQTT_USE_TLS === 'true' ||
   EXTERNAL_MQTT_BROKER.startsWith('mqtts://') || 
   EXTERNAL_MQTT_BROKER.startsWith('wss://');
 
@@ -279,20 +1046,14 @@ export function initMqttBroker() {
 
   // Phase 1 WS1.3 — Optional MQTTS (TLS) listener. Additive: existing plaintext
   // listeners are untouched. Requires MQTT_TLS_CERT + MQTT_TLS_KEY (PEM files).
+  // doc 44 G5.22 — when MQTT_MTLS_ENABLED, the options gain requestCert + the
+  // pinned internal CA (loaded async), so the listener setup is deferred to a
+  // helper. mTLS OFF path stays option-identical to the prior behaviour.
   if (MQTT_TLS_ENABLED) {
     if (!MQTT_TLS_CERT || !MQTT_TLS_KEY) {
       console.error('[MQTT] MQTT_TLS_ENABLED but MQTT_TLS_CERT/MQTT_TLS_KEY not set — skipping TLS listener.');
     } else {
-      try {
-        const tlsOpts = { key: readFileSync(MQTT_TLS_KEY), cert: readFileSync(MQTT_TLS_CERT) };
-        mqttTlsServer = createServer(aedes, { tls: tlsOpts });
-        attachServerErrorHandler(mqttTlsServer, 'TLS broker', MQTT_TLS_PORT);
-        mqttTlsServer.listen(MQTT_TLS_PORT, '0.0.0.0', () => {
-          console.log(`[MQTT] TLS (MQTTS) broker started on 0.0.0.0:${MQTT_TLS_PORT}`);
-        });
-      } catch (err) {
-        console.error('[MQTT] Failed to start TLS listener:', (err as Error)?.message ?? err);
-      }
+      void startMqttTlsListener();
     }
   }
 
@@ -311,6 +1072,102 @@ export function initMqttBroker() {
 
   // Start stale client detection
   startStaleClientChecker();
+}
+
+/**
+ * doc 44 G5.22 — start the MQTTS (TLS) listener, wiring device mTLS when enabled.
+ * Async because pinning the internal CA (buildCaCert) is async. When mTLS is OFF
+ * the options are IDENTICAL to the prior { key, cert } (bit-compat); when ON they
+ * add requestCert + rejectUnauthorized:false + the pinned CA (internal CA cert
+ * plus an optional external CA bundle from MQTT_MTLS_CA).
+ */
+async function startMqttTlsListener(): Promise<void> {
+  if (!aedes) return;
+  try {
+    const base = { key: readFileSync(MQTT_TLS_KEY), cert: readFileSync(MQTT_TLS_CERT) };
+    const mtlsOn = mqttMtlsEnabled();
+    const caPems: Array<Buffer | string> = [];
+    if (mtlsOn) {
+      // Pin the internal CA so aedes advertises it in the client-cert request.
+      try {
+        const { buildCaCert } = await import('./security/internalCa');
+        const ca = await buildCaCert();
+        if (ca?.certPem) caPems.push(ca.certPem);
+      } catch (caErr) {
+        console.warn('[MQTT] mTLS: could not load internal CA (continuing without pin):', (caErr as Error)?.message ?? caErr);
+      }
+      // Optional additional CA bundle (e.g. an external device CA).
+      const extCaPath = (process.env.MQTT_MTLS_CA || '').trim();
+      if (extCaPath) {
+        try { caPems.push(readFileSync(extCaPath)); }
+        catch (e) { console.warn('[MQTT] mTLS: MQTT_MTLS_CA unreadable:', (e as Error)?.message ?? e); }
+      }
+    }
+    const tlsOpts = buildMqttTlsOptions(base, { mtlsEnabled: mtlsOn, caPems });
+    mqttTlsServer = createServer(aedes, { tls: tlsOpts });
+    attachServerErrorHandler(mqttTlsServer, 'TLS broker', MQTT_TLS_PORT);
+    mqttTlsServer.listen(MQTT_TLS_PORT, '0.0.0.0', () => {
+      console.log(
+        `[MQTT] TLS (MQTTS) broker started on 0.0.0.0:${MQTT_TLS_PORT}` +
+          (mtlsOn ? ` (mTLS=${mqttMtlsMode()}, client cert requested)` : ''),
+      );
+    });
+  } catch (err) {
+    console.error('[MQTT] Failed to start TLS listener:', (err as Error)?.message ?? err);
+  }
+}
+
+/**
+ * doc 44 G5.22 — evaluate a connecting client's TLS peer certificate against the
+ * device PKI and decide admission per MQTT_MTLS_MODE. Returns {allow:true,
+ * reason:'mtls-off'} immediately when mTLS is disabled (callers guard on the flag
+ * too, so this is doubly safe / non-breaking). Never throws.
+ */
+export async function evaluateMqttPeerCert(
+  client: { conn?: unknown; id?: string } | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ allow: boolean; reason: string; spiffeId?: string; deviceId?: string }> {
+  const enabled = mqttMtlsEnabled(env);
+  if (!enabled) return { allow: true, reason: 'mtls-off' };
+  const mode = mqttMtlsMode(env);
+
+  // Extract the peer certificate DER from the underlying TLS socket, if any.
+  let pem: string | undefined;
+  try {
+    const conn = client?.conn as { getPeerCertificate?: (detailed?: boolean) => { raw?: Buffer } } | undefined;
+    const cert = conn?.getPeerCertificate?.(true);
+    if (cert?.raw && cert.raw.length > 0) pem = derToPem(cert.raw);
+  } catch {
+    /* no TLS socket / plaintext client → treated as "no cert" below */
+  }
+
+  const hasCert = !!pem;
+  let certValid = false;
+  let spiffeId: string | undefined;
+  let deviceId: string | undefined;
+  let verifyReason: string | undefined;
+  if (hasCert) {
+    try {
+      const { verifyDeviceCert } = await import('./security/deviceIdentityService');
+      // enabled:true forces a REAL crypto verdict (not the device-PKI soft-allow),
+      // because inside the mTLS path we genuinely want to validate the presented cert.
+      const v = await verifyDeviceCert(pem!, { enabled: true });
+      certValid = v.valid;
+      spiffeId = v.spiffeId;
+      deviceId = v.deviceId;
+      verifyReason = v.reason;
+    } catch (e) {
+      verifyReason = `verify error: ${(e as Error)?.message ?? e}`;
+    }
+  }
+
+  const decision = decideMtlsAdmission({ enabled, mode, hasCert, certValid });
+  return {
+    allow: decision.allow,
+    reason: verifyReason && hasCert ? `${decision.reason} [${verifyReason}]` : decision.reason,
+    spiffeId,
+    deviceId,
+  };
 }
 
 /**
@@ -339,7 +1196,10 @@ function initExternalMqttClient() {
   console.log(`[MQTT External] Connecting to ${brokerUrl}...`);
 
   const options: mqtt.IClientOptions = {
-    clientId: `avi-aoi-server-${Date.now()}`,
+    // doc 44 §11 R-3 — clientId brand flips avi-aoi-server → synapse-server only at the
+    // FINAL cutover (MQTT_TOPIC_LEGACY_DISABLE); stays legacy through the dual-publish grace
+    // window so a broker ACL that admits `avi-aoi-server*` is not self-broken mid-rollout.
+    clientId: `${resolveServerClientId(process.env)}-${Date.now()}`,
     clean: true,
     reconnectPeriod: 5000,
     connectTimeout: 30000,
@@ -352,20 +1212,102 @@ function initExternalMqttClient() {
 
   externalMqttClient = mqtt.connect(brokerUrl, options);
 
+  // doc 54 P2.3 — before the first successful connect the link is effectively DOWN; stamp the
+  // start so a BROKER_DISCONNECT rule has a baseline even if the broker is never reached.
+  markExternalBrokerDown();
+
   externalMqttClient.on('connect', () => {
     console.log(`[MQTT External] Connected to ${brokerUrl}`);
+    // doc 54 P2.3 — link UP: clear the disconnect marker so duration reads 0.
+    externalBrokerConnected = true;
+    externalBrokerDisconnectedSince = null;
   });
 
   externalMqttClient.on('error', (error) => {
     console.error('[MQTT External] Connection error:', error.message);
+    markExternalBrokerDown(); // doc 54 P2.3
   });
 
   externalMqttClient.on('close', () => {
     console.log('[MQTT External] Connection closed');
+    markExternalBrokerDown(); // doc 54 P2.3
+  });
+
+  externalMqttClient.on('offline', () => {
+    console.log('[MQTT External] Client offline');
+    markExternalBrokerDown(); // doc 54 P2.3
   });
 
   externalMqttClient.on('reconnect', () => {
     console.log('[MQTT External] Reconnecting...');
+    // still down until the next 'connect'; keep the existing disconnect start.
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// doc 44 §11 R-3 — dual-publish wrappers (thin; the PURE topic plan lives in
+// mqtt/topicRebrand). Both flags OFF (default) → a single publish on the legacy
+// topic, byte-identical to pre-R-3. Exported so the broker can be injected in tests.
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Publish a packet on the LOCAL Aedes broker under BOTH the legacy `avi/` root and the
+ * `synapse/` root, per the R-3 rollout flags. The PRIMARY topic keeps the caller's `cb`
+ * (so promise-resolve / logging semantics are unchanged); a mirror publish logs its own
+ * error only. A non-`avi/` topic (or flags OFF) → exactly one publish, as before.
+ */
+export function dualAedesPublish(
+  broker: Pick<Aedes, 'publish'>,
+  packet: { topic: string } & Record<string, unknown>,
+  cb?: (err?: Error) => void,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  dualPublish(
+    packet,
+    (p, isPrimary) => {
+      broker.publish(
+        p as any,
+        (isPrimary
+          ? cb
+          : (err?: Error) => {
+              if (err) console.error(`[MQTT] dual-publish mirror error on ${p.topic}:`, err);
+            }) as any,
+      );
+    },
+    { fromRoot: LEGACY_TOPIC_ROOT, toRoot: SYNAPSE_TOPIC_ROOT, env },
+  );
+}
+
+/**
+ * Publish to the EXTERNAL cloud broker under BOTH the legacy prefix (`avi-aoi/…`) and the
+ * synapse prefix (`synapse/…`), per the R-3 flags. Same primary/mirror callback split.
+ */
+export function dualExternalPublish(
+  client: Pick<MqttClient, 'publish'>,
+  topic: string,
+  message: string | Buffer,
+  opts: mqtt.IClientPublishOptions,
+  cb?: mqtt.PacketCallback,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  // External topics arrive in TWO shapes: prefixed (`avi-aoi/…`, built from the summary/NG/bulletin
+  // external patterns) and RAW `avi/…` (publishToExternalMqtt callers e.g. points-config/model-update).
+  // Rebrand whichever brand root actually applies so BOTH get a synapse/ twin.
+  let topics = planPublishTopics(topic, EXTERNAL_MQTT_TOPIC_PREFIX, EXTERNAL_MQTT_TOPIC_PREFIX_SYNAPSE, env);
+  if (topics.length === 1 && topics[0] === topic) {
+    topics = planPublishTopics(topic, LEGACY_TOPIC_ROOT, SYNAPSE_TOPIC_ROOT, env);
+  }
+  topics.forEach((t, i) => {
+    client.publish(
+      t,
+      message,
+      opts,
+      i === 0
+        ? cb
+        : (err) => {
+            if (err) console.error(`[MQTT External] dual-publish mirror error on ${t}:`, err);
+          },
+    );
   });
 }
 
@@ -381,6 +1323,21 @@ function setupEventHandlers() {
   // Client authentication
   aedes.authenticate = async (client, username, password, callback) => {
     try {
+      // doc 44 G5.22 — device mTLS admission (additive; guarded by MQTT_MTLS_ENABLED,
+      // default OFF → skipped entirely = bit-compat). In "strict" mode a missing/invalid
+      // client certificate is rejected here; in "permissive" mode it is logged + allowed.
+      if (mqttMtlsEnabled()) {
+        const admission = await evaluateMqttPeerCert(client);
+        if (!admission.allow) {
+          console.warn(`[MQTT] mTLS admission denied for ${client.id}: ${admission.reason}`);
+          callback({ returnCode: 5 } as any, false);
+          return;
+        }
+        if (admission.reason !== 'ok') {
+          console.warn(`[MQTT] mTLS admission (${mqttMtlsMode()}) for ${client.id}: ${admission.reason}`);
+        }
+      }
+
       // Extract device info from username (format: deviceId:deviceName:deviceModel)
       const [deviceId, deviceName, deviceModel] = (username?.toString() || '').split(':');
       
@@ -388,6 +1345,12 @@ function setupEventHandlers() {
         callback({ returnCode: 4 } as any, false);
         return;
       }
+
+      // doc 51 P0 (R3) — stamp the AUTHENTICATED deviceId on the client so the topic ACL can
+      // scope it to its own branch. This is the ONLY trusted binding between a connection and
+      // a deviceId: `client.id` (clientId) is chosen freely by the device and must never be
+      // used for authorisation. Stamped before any callback(null, true) below.
+      (client as any)[MQTT_ACL_DEVICE_ID_PROP] = deviceId;
 
       // Check if client exists in database
       const existingClient = await db!.select()
@@ -398,16 +1361,29 @@ function setupEventHandlers() {
       if (existingClient.length > 0) {
         const mqttClient = existingClient[0];
 
-        // Phase 1 WS1.3 — per-device password enforcement (opt-in). Only enforced
-        // when this device has a password configured, so enabling the flag never
-        // locks out existing password-less devices. (Stored plaintext per the
-        // existing column design.)
-        if (MQTT_REQUIRE_PASSWORD && mqttClient.password) {
+        // Phase 1 WS1.3 + doc 27 W2-C (R12) — per-device password enforcement
+        // (opt-in), HASH AT REST. Only enforced when this device has a
+        // credential configured, so enabling the flag never locks out existing
+        // password-less devices. Legacy plaintext values are transparently
+        // upgraded to a bcrypt hash on the first successful connect.
+        if (MQTT_REQUIRE_PASSWORD && (mqttClient.passwordHash || mqttClient.password)) {
           const supplied = password?.toString() ?? '';
-          if (supplied !== mqttClient.password) {
+          const verdict = await verifyMqttDevicePassword(mqttClient, supplied);
+          if (!verdict.ok) {
             console.warn(`[MQTT] Auth rejected (bad password) for device ${deviceId}`);
             callback({ returnCode: 4 } as any, false);
             return;
+          }
+          if (verdict.upgradeHash) {
+            try {
+              await db!.update(schema.mqttClients)
+                .set({ passwordHash: verdict.upgradeHash, password: null })
+                .where(eq(schema.mqttClients.id, mqttClient.id));
+              console.log(`[MQTT] Upgraded device ${deviceId} password to hash-at-rest`);
+            } catch (upErr) {
+              // Non-fatal: plaintext stays until the next successful connect retries.
+              console.warn(`[MQTT] Password hash upgrade failed for ${deviceId}:`, (upErr as Error)?.message || upErr);
+            }
           }
         }
 
@@ -436,6 +1412,10 @@ function setupEventHandlers() {
           .set(reactivateFields)
           .where(eq(schema.mqttClients.id, mqttClient.id));
 
+        // doc 51 P1 (§5.3) — stamp the effective approval status for the admission gate. A
+        // re-activated soft-deleted client is forced back to PENDING (see reactivateFields).
+        (client as any)[MQTT_ACL_APPROVAL_PROP] = !mqttClient.isActive ? 'PENDING' : mqttClient.approvalStatus;
+
         console.log(`[MQTT] Client reconnected${!mqttClient.isActive ? ' (re-activated)' : ''}: ${client.id} (${deviceId})`);
         callback(null, true);
       } else {
@@ -453,6 +1433,10 @@ function setupEventHandlers() {
           isActive: true,
         });
 
+        // doc 51 P1 (§5.3) — a freshly self-registered device is PENDING → admission gate confines
+        // it to pairing scope (under MQTT_ADMISSION_ENFORCE; flag+log only by default).
+        (client as any)[MQTT_ACL_APPROVAL_PROP] = 'PENDING';
+
         console.log(`[MQTT] New client registered (pending approval): ${client.id} (${deviceId})`);
         callback(null, true);
       }
@@ -460,6 +1444,54 @@ function setupEventHandlers() {
       console.error('[MQTT] Authentication error:', error);
       callback({ returnCode: 4 } as any, false);
     }
+  };
+
+  // ────────────────────────────────────────────────────────────────────────
+  // doc 51 P0 (R3) — TOPIC ACL hooks. Replaces aedes' allow-everything defaults.
+  // Both are no-ops when MQTT_TOPIC_ACL_ENABLED=false, and log-only when
+  // MQTT_TOPIC_ACL_WARN_ONLY=true (QĐ#1 rollout: observe a full shift, then enforce).
+  // ────────────────────────────────────────────────────────────────────────
+
+  // Denying a PUBLISH via callback(Error) is the aedes-documented refusal and closes the
+  // offending connection — intended: a device publishing another device's command topic is
+  // either misconfigured or hostile. Use warn-only mode to find such clients without cutting
+  // them off. NOTE: `client` is null for `aedes.publish()` (server-internal) → allowed.
+  aedes.authorizePublish = (client, packet, callback) => {
+    const ctx = aclContextFromClient(client);
+    const decision = canPublish(ctx, packet.topic);
+    if (decision.violation) logAclViolation('publish', ctx, packet.topic, decision);
+    if (!decision.allow) {
+      callback(new Error(`[MQTT ACL] publish denied on ${packet.topic}: ${decision.reason}`));
+      return;
+    }
+    callback(null);
+  };
+
+  // Denying a SUBSCRIBE via callback(null, null) makes aedes return SUBACK 0x80 (failure) for
+  // that filter WITHOUT dropping the connection, so a client with one bad filter among many
+  // keeps its good subscriptions. Gentler than the publish path — and correct per MQTT 3.1.1
+  // §3.9.3 (aedes/lib/handlers/subscribe.js storeSubscriptions → granted = 128).
+  aedes.authorizeSubscribe = (client, sub, callback) => {
+    const ctx = aclContextFromClient(client);
+    const decision = canSubscribe(ctx, sub.topic);
+    if (decision.violation) logAclViolation('subscribe', ctx, sub.topic, decision);
+    if (!decision.allow) {
+      callback(null, null);
+      return;
+    }
+    callback(null, sub);
+  };
+
+  // R-2a (doc 38 P1-I) — coalesce the per-keepalive heartbeat write. A client PING
+  // fires every keepalive interval and each historically did one UPDATE of
+  // mqttClients.lastHeartbeat. When MQTT_HEARTBEAT_THROTTLE_MS > 0 (default 0 = OFF,
+  // i.e. the prior write-every-ping behaviour) we skip the write if the last one for
+  // this client was within the window — collapsing a ping storm to at most one write
+  // per window while keeping heartbeat resolution bounded by the configured value.
+  const lastHeartbeatWriteAt = new Map<string, number>();
+  const heartbeatThrottleMs = (): number => {
+    const n = parseInt(String(process.env.MQTT_HEARTBEAT_THROTTLE_MS ?? ''), 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
   };
 
   // Client-level errors (e.g., protocol violations, write failures)
@@ -475,7 +1507,8 @@ function setupEventHandlers() {
   // Client connected
   aedes.on('client', async (client) => {
     console.log(`[MQTT] Client connected: ${client.id}`);
-    
+    lastClientSeenAt = Date.now(); // doc 54 P2.3 — presence baseline for CLIENT_OFFLINE
+
     try {
       await db!.update(schema.mqttClients)
         .set({
@@ -492,7 +1525,8 @@ function setupEventHandlers() {
   // Client disconnected
   aedes.on('clientDisconnect', async (client) => {
     console.log(`[MQTT] Client disconnected: ${client.id}`);
-    
+    lastHeartbeatWriteAt.delete(client.id); // R-2a — release throttle bookkeeping
+
     try {
       await db!.update(schema.mqttClients)
         .set({
@@ -536,6 +1570,15 @@ function setupEventHandlers() {
 
   // Heartbeat/ping handler
   aedes.on('ping', async (packet, client) => {
+    lastClientSeenAt = Date.now(); // doc 54 P2.3 — refresh presence on every heartbeat
+    // R-2a — throttle/coalesce the heartbeat write (no-op window when flag is 0).
+    const throttle = heartbeatThrottleMs();
+    if (throttle > 0 && client) {
+      const now = Date.now();
+      const last = lastHeartbeatWriteAt.get(client.id) ?? 0;
+      if (now - last < throttle) return; // within window → coalesce (skip write)
+      lastHeartbeatWriteAt.set(client.id, now);
+    }
     try {
       await db!.update(schema.mqttClients)
         .set({ lastHeartbeat: new Date() })
@@ -549,14 +1592,20 @@ function setupEventHandlers() {
   aedes.on('publish', async (packet, client) => {
     // Ignore system messages (starting with $) and messages without a client
     if (!client || packet.topic.startsWith('$')) return;
+    lastClientSeenAt = Date.now(); // doc 54 P2.3 — a publishing client is present
 
     // G1/F3b — Mirror UNS (publishNormalized, vô điều kiện) RỒI bridge AOI→Sparkplug
     // (handleAoiPublish, no-op khi cờ tắt). Tách thành processAedesPublish để test.
     processAedesPublish(packet.topic, packet.payload);
 
     try {
-      // Handle DEVICE_INFO messages: avi/client/{deviceId}/info
-      const deviceInfoMatch = packet.topic.match(/^avi\/client\/([^/]+)\/info$/);
+      // doc 44 §11 R-3 — DUAL-SUBSCRIBE: canonicalise `synapse/…` inbound back to `avi/…` so
+      // a migrated device that now publishes on synapse/ is still understood. Always-on and
+      // safe (a device only publishes synapse/ after it migrated). `avi/…` is unchanged.
+      const inboundTopic = canonicalizeInboundTopic(packet.topic);
+
+      // Handle DEVICE_INFO messages: avi/client/{deviceId}/info (or synapse/client/…/info)
+      const deviceInfoMatch = inboundTopic.match(/^avi\/client\/([^/]+)\/info$/);
       if (deviceInfoMatch) {
         const payload = JSON.parse(packet.payload.toString());
         if (payload.type === 'DEVICE_INFO') {
@@ -587,37 +1636,54 @@ function setupEventHandlers() {
             updateData.deviceName = payload.deviceName;
           }
 
-          await db!.update(schema.mqttClients)
-            .set(updateData)
-            .where(eq(schema.mqttClients.deviceId, deviceId));
-
-          console.log(`[MQTT] Updated device info for ${deviceId}:`, Object.keys(updateData).join(', '));
+          // C5: a DB hiccup must not silently drop the write — queue for retry.
+          const writeDeviceInfo = async () => {
+            await db!.update(schema.mqttClients)
+              .set(updateData)
+              .where(eq(schema.mqttClients.deviceId, deviceId));
+          };
+          try {
+            await writeDeviceInfo();
+            console.log(`[MQTT] Updated device info for ${deviceId}:`, Object.keys(updateData).join(', '));
+          } catch {
+            queueInboundDbRetry(`device-info:${deviceId}`, writeDeviceInfo);
+          }
         }
         return;
       }
 
-      // Handle CONFIGURE_ACK messages: avi/client/{deviceId}/ack
-      const ackMatch = packet.topic.match(/^avi\/client\/([^/]+)\/ack$/);
+      // Handle CONFIGURE_ACK messages: avi/client/{deviceId}/ack (or synapse/client/…/ack)
+      const ackMatch = inboundTopic.match(/^avi\/client\/([^/]+)\/ack$/);
       if (ackMatch) {
         const payload = JSON.parse(packet.payload.toString());
         if (payload.type === 'CONFIGURE_ACK') {
           console.log(`[MQTT] Configure ACK from ${ackMatch[1]}: command=${payload.commandId} status=${payload.status}`);
-          // Look up client for targetClientId
-          const ackClient = await db!.select({ id: schema.mqttClients.id, stationId: schema.mqttClients.stationId })
-            .from(schema.mqttClients)
-            .where(eq(schema.mqttClients.deviceId, ackMatch[1]))
-            .limit(1);
-          // Log the ACK
-          await db!.insert(schema.mqttMessageLogs).values({
-            messageType: 'COMMAND',
-            topic: packet.topic,
-            payload: payload,
-            targetClientId: ackClient[0]?.id ?? null,
-            stationId: ackClient[0]?.stationId ?? null,
-            deliveryStatus: payload.status === 'applied' ? 'DELIVERED' : 'FAILED',
-            deliveredAt: new Date(),
-            errorMessage: payload.error || null,
-          });
+          const ackTopic = packet.topic;
+          const ackDeviceId = ackMatch[1];
+          // C5: a DB hiccup must not silently drop the ACK log — queue for retry.
+          const writeAckLog = async () => {
+            // Look up client for targetClientId
+            const ackClient = await db!.select({ id: schema.mqttClients.id, stationId: schema.mqttClients.stationId })
+              .from(schema.mqttClients)
+              .where(eq(schema.mqttClients.deviceId, ackDeviceId))
+              .limit(1);
+            // Log the ACK
+            await db!.insert(schema.mqttMessageLogs).values({
+              messageType: 'COMMAND',
+              topic: ackTopic,
+              payload: payload,
+              targetClientId: ackClient[0]?.id ?? null,
+              stationId: ackClient[0]?.stationId ?? null,
+              deliveryStatus: payload.status === 'applied' ? 'DELIVERED' : 'FAILED',
+              deliveredAt: new Date(),
+              errorMessage: payload.error || null,
+            });
+          };
+          try {
+            await writeAckLog();
+          } catch {
+            queueInboundDbRetry(`configure-ack:${ackDeviceId}`, writeAckLog);
+          }
         }
         return;
       }
@@ -657,7 +1723,7 @@ export async function sendConfigureCommand(deviceId: string, command: {
       retain: false,
     };
 
-    aedes!.publish(packet as any, (err) => {
+    dualAedesPublish(aedes!, packet, (err) => {
       if (err) {
         console.error(`[MQTT] Error sending configure to ${deviceId}:`, err);
         reject(err);
@@ -715,7 +1781,7 @@ export async function sendSoftwareUpdateCommand(deviceId: string, command: 'CHEC
       retain: false,
     };
 
-    aedes!.publish(packet as any, (err) => {
+    dualAedesPublish(aedes!, packet, (err) => {
       if (err) {
         console.error(`[MQTT] Error sending SOFTWARE_UPDATE to ${deviceId}:`, err);
         reject(err);
@@ -770,7 +1836,7 @@ export async function publishFactoryAlertUpdate(versionInfo: Record<string, any>
       retain: false,
     };
 
-    aedes!.publish(packet as any, (err) => {
+    dualAedesPublish(aedes!, packet, (err) => {
       if (err) {
         console.error(`[MQTT] Error publishing factory alert update:`, err);
         reject(err);
@@ -789,6 +1855,39 @@ export async function publishFactoryAlertUpdate(versionInfo: Record<string, any>
       }
 
       resolve({ success: true });
+    });
+  });
+}
+
+/**
+ * Generic publish on the LOCAL Aedes broker (the broker FactoryAlertSystem devices
+ * connect to). Used by the escalation sweep (doc 27 MB6) to push ALERT_ESCALATION
+ * notices to mobile clients. Returns false (never throws) when the broker is down
+ * so schedulers can degrade gracefully.
+ */
+export async function publishLocalMqtt(
+  topic: string,
+  payload: Record<string, any>,
+  options?: { retain?: boolean; qos?: 0 | 1 | 2 },
+): Promise<boolean> {
+  if (!aedes) {
+    console.warn('[MQTT] publishLocalMqtt skipped — broker not initialized');
+    return false;
+  }
+  return new Promise((resolve) => {
+    const packet = {
+      topic,
+      payload: Buffer.from(JSON.stringify(payload)),
+      qos: (options?.qos ?? 1) as 0 | 1 | 2,
+      retain: options?.retain ?? false,
+    };
+    dualAedesPublish(aedes!, packet, (err) => {
+      if (err) {
+        console.error(`[MQTT] publishLocalMqtt error on ${topic}:`, err);
+        resolve(false);
+        return;
+      }
+      resolve(true);
     });
   });
 }
@@ -967,7 +2066,7 @@ export async function publishNGAlert(data: {
     {
       const message = JSON.stringify(payload);
       const retainFlag = ngAlertConfig?.retain ?? true;
-      aedes.publish({
+      dualAedesPublish(aedes!, {
         topic,
         payload: Buffer.from(message),
         qos: (ngAlertConfig?.qos ?? 1) as 0 | 1 | 2,
@@ -1001,7 +2100,7 @@ export async function publishNGAlert(data: {
         .replace('{factoryId}', String(factory.id))
         .replace('{workshopId}', String(workshop.id))
         .replace('{stationId}', String(stationId));
-      externalMqttClient.publish(externalTopic, message, { qos: (ngAlertConfig?.qos ?? 1) as 0 | 1 | 2 }, (error) => {
+      dualExternalPublish(externalMqttClient, externalTopic, message, { qos: (ngAlertConfig?.qos ?? 1) as 0 | 1 | 2 }, (error) => {
         if (error) {
           console.error('[MQTT External] Publish error:', error);
         } else {
@@ -1088,7 +2187,7 @@ export async function publishSummary(
 
     // Publish message
     const message = JSON.stringify(payload);
-    aedes.publish({
+    dualAedesPublish(aedes!, {
       topic,
       payload: Buffer.from(message),
       qos: 1,
@@ -1116,7 +2215,7 @@ export async function publishSummary(
     // Also publish to external MQTT broker if enabled
     if (externalMqttClient && externalMqttClient.connected) {
       const externalTopic = `${EXTERNAL_MQTT_TOPIC_PREFIX}/factory/${factory.id}/workshop/${workshop.id}/station/${stationId}/summary/${summaryPath}`;
-      externalMqttClient.publish(externalTopic, message, { qos: 1, retain: true }, (error) => {
+      dualExternalPublish(externalMqttClient, externalTopic, message, { qos: 1, retain: true }, (error) => {
         if (error) {
           console.error('[MQTT External] Publish error:', error);
         } else {
@@ -1191,7 +2290,7 @@ export async function publishBulletin(
 
     // Publish message
     const message = JSON.stringify(payload);
-    aedes.publish({
+    dualAedesPublish(aedes!, {
       topic,
       payload: Buffer.from(message),
       qos: 1,
@@ -1219,7 +2318,7 @@ export async function publishBulletin(
     // Also publish to external MQTT broker if enabled
     if (options.sendToExternal && externalMqttClient && externalMqttClient.connected) {
       const externalTopic = `${EXTERNAL_MQTT_TOPIC_PREFIX}/factory/${factory.id}/workshop/${workshop.id}/station/${stationId}/bulletin/periodic`;
-      externalMqttClient.publish(externalTopic, message, { qos: 1, retain: true }, (error) => {
+      dualExternalPublish(externalMqttClient, externalTopic, message, { qos: 1, retain: true }, (error) => {
         if (error) {
           console.error('[MQTT External] Bulletin publish error:', error);
         } else {
@@ -1287,7 +2386,7 @@ export async function sendClientCommand(
     const topic = `avi/client/${client[0].clientId}/commands`;
     const payload = JSON.stringify({ command, data, timestamp: new Date().toISOString() });
 
-    aedes.publish({
+    dualAedesPublish(aedes!, {
       topic,
       payload: Buffer.from(payload),
       qos: 2, // Exactly once for commands
@@ -1382,6 +2481,70 @@ export function getConnectedClientsCount(): number {
   return aedes.connectedClients;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// doc 54 P2.3 — connection-state getters + PURE duration math (exported for
+// alertEvaluationService + unit tests). The getters read the live in-memory markers;
+// the compute* helpers are pure (state + now → minutes) so they are directly testable.
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface BrokerConnectionState {
+  /** Is the external cloud-broker feature enabled at all? */
+  enabled: boolean;
+  /** Currently connected to the external broker? */
+  connected: boolean;
+  /** epoch-ms the link went (or started) down; null while connected. */
+  disconnectedSince: number | null;
+}
+
+/** Live external-broker connection state (for BROKER_DISCONNECT evaluation). */
+export function getBrokerConnectionState(): BrokerConnectionState {
+  return {
+    enabled: EXTERNAL_MQTT_ENABLED,
+    connected: externalBrokerConnected,
+    disconnectedSince: externalBrokerDisconnectedSince,
+  };
+}
+
+export interface ClientPresenceState {
+  /** How many local devices are connected to the aedes broker right now. */
+  connectedClients: number;
+  /** epoch-ms we last saw any local device (connect/ping/publish); null if never. */
+  lastSeenAt: number | null;
+}
+
+/** Live local-client presence state (for CLIENT_OFFLINE evaluation). */
+export function getClientPresenceState(): ClientPresenceState {
+  return {
+    connectedClients: aedes ? aedes.connectedClients : 0,
+    lastSeenAt: lastClientSeenAt,
+  };
+}
+
+/** epoch-ms we last saw any local device, or null. Small getter for callers/tests. */
+export function getLastClientSeenAt(): number | null {
+  return lastClientSeenAt;
+}
+
+/**
+ * PURE — minutes the external broker has been disconnected. Returns 0 when the feature is
+ * disabled or the link is up (or has no recorded down-start). Never negative.
+ */
+export function computeBrokerDisconnectMinutes(state: BrokerConnectionState, nowMs: number): number {
+  if (!state.enabled) return 0;
+  if (state.connected || state.disconnectedSince == null) return 0;
+  return Math.max(0, (nowMs - state.disconnectedSince) / 60000);
+}
+
+/**
+ * PURE — minutes with NO local client online. Returns 0 when at least one client is connected
+ * or we have never seen a client (no baseline to measure from). Never negative.
+ */
+export function computeClientOfflineMinutes(state: ClientPresenceState, nowMs: number): number {
+  if (state.connectedClients > 0) return 0;
+  if (state.lastSeenAt == null) return 0;
+  return Math.max(0, (nowMs - state.lastSeenAt) / 60000);
+}
+
 /**
  * Check if MQTT is enabled and running
  */
@@ -1463,7 +2626,7 @@ export function publishToExternalMqtt(topic: string, payload: string): boolean {
     return false;
   }
   
-  externalMqttClient.publish(topic, payload, { qos: 1 }, (error) => {
+  dualExternalPublish(externalMqttClient, topic, payload, { qos: 1 }, (error) => {
     if (error) {
       console.error('[MQTT External] Publish error:', error);
     } else {
@@ -1498,21 +2661,64 @@ export function getExternalMqttInfo(): {
 }
 
 /**
- * Publish points config changed notification via local MQTT
+ * Publish points config changed notification via local MQTT.
+ *
+ * Doc 55 Item 3 PV2 (QĐ#14) — OPTIONAL `variantCode`. When present (non-empty after
+ * trim) the notify is scoped to the variant: the topic gains a `/{variantCode}` level
+ * (`avi/points-config-changed/{code}/{variantCode}`) and the payload carries the
+ * `variantCode` field, so a machine can subscribe to just its variant. When ABSENT the
+ * topic AND payload are byte-identical to the pre-variant behaviour, so a machine still
+ * subscribed to `avi/points-config-changed/{code}` (base/model fan-out) is not broken.
+ * The topic stays inside the server-only `points-config-changed` namespace, so the P0
+ * publish/subscribe ACL (server-published, device-readable) is unaffected by the extra
+ * level (see canPublish/canSubscribe — neither special-cases the leaf depth).
  */
-export function publishPointsConfigChanged(productModelCode: string, version: number, machineCode?: string): void {
-  if (!MQTT_ENABLED || !aedes) return;
-
-  const topic = `avi/points-config-changed/${productModelCode}`;
+/**
+ * PURE builder for the points-config-changed topic + payload (no broker, no clock in
+ * the caller's way — `timestamp` is injected). Extracted so the QĐ#14 variant scoping
+ * is unit-testable without an aedes instance. Absent/blank `variantCode` ⇒ the topic
+ * AND payload are byte-identical to the pre-variant message.
+ */
+export function buildPointsConfigChangedMessage(
+  productModelCode: string,
+  version: number,
+  machineCode?: string,
+  variantCode?: string,
+  timestamp: string = new Date().toISOString(),
+): { topic: string; payload: string; variantCode?: string } {
+  const trimmedVariant = variantCode?.trim() || undefined;
+  const topic = trimmedVariant
+    ? `avi/points-config-changed/${productModelCode}/${trimmedVariant}`
+    : `avi/points-config-changed/${productModelCode}`;
   const payload = JSON.stringify({
     type: 'POINTS_CONFIG_CHANGED',
     productModelCode,
     pointsConfigVersion: version,
     machineCode: machineCode ?? null,
-    timestamp: new Date().toISOString(),
+    // Additive: only present when a variant is targeted ⇒ the ABSENT-variant payload
+    // stays byte-identical (no `variantCode` key at all) for legacy machines.
+    ...(trimmedVariant ? { variantCode: trimmedVariant } : {}),
+    timestamp,
   });
+  return { topic, payload, variantCode: trimmedVariant };
+}
 
-  aedes.publish({
+export function publishPointsConfigChanged(
+  productModelCode: string,
+  version: number,
+  machineCode?: string,
+  variantCode?: string,
+): void {
+  if (!MQTT_ENABLED || !aedes) return;
+
+  const { topic, payload, variantCode: trimmedVariant } = buildPointsConfigChangedMessage(
+    productModelCode,
+    version,
+    machineCode,
+    variantCode,
+  );
+
+  dualAedesPublish(aedes!, {
     topic,
     payload: Buffer.from(payload),
     qos: 1 as 0 | 1 | 2,
@@ -1524,9 +2730,62 @@ export function publishPointsConfigChanged(productModelCode: string, version: nu
       console.error('[MQTT] Points config publish error:', error);
     }
   });
-  console.log(`[MQTT] Published points config changed to ${topic} (v${version})`);
+  console.log(
+    `[MQTT] Published points config changed to ${topic} (v${version}` +
+      `${trimmedVariant ? `, variant=${trimmedVariant}` : ''})`,
+  );
 
   // Also publish to external broker
+  publishToExternalMqtt(topic, payload);
+}
+
+/**
+ * doc 56 Đ4 (CONFIG-SYNC-3) — Publish a GENERIC config-changed *notify* to a machine
+ * (best-effort, retained). Topic: `synapse/v1/machine/{machineCode}/config/{configKind}`
+ * (the REAL synapse namespace — already synapse-rooted, so the avi→synapse dual-publish
+ * rebrand is a no-op here, exactly as intended).
+ *
+ * IMPORTANT: the payload carries ONLY the descriptor {code, version, checksum} — never
+ * the config body. The machine PULLS the full payload over the apiKey-verified HTTP
+ * endpoint (machineApi.getActiveConfig); poll of checkConfigVersion is the backstop.
+ * retain=true so a machine that reconnects still receives the latest desired descriptor.
+ *
+ * Gated by the CALLER (CONFIG_SYNC_GENERIC_ENABLED) — this function is only invoked
+ * when the flag is on, so it is inert (never called) by default.
+ */
+export function publishConfigChanged(
+  machineCode: string,
+  configKind: string,
+  descriptor: { code: string | null; version: string | number | null; checksum: string | null },
+): void {
+  if (!MQTT_ENABLED || !aedes) return;
+
+  const topic = `synapse/v1/machine/${machineCode}/config/${configKind}`;
+  const payload = JSON.stringify({
+    type: "CONFIG_CHANGED",
+    machineCode,
+    configKind,
+    code: descriptor.code ?? null,
+    version: descriptor.version != null ? String(descriptor.version) : null,
+    checksum: descriptor.checksum ?? null,
+    timestamp: new Date().toISOString(),
+  });
+
+  dualAedesPublish(aedes!, {
+    topic,
+    payload: Buffer.from(payload),
+    qos: 1 as 0 | 1 | 2,
+    retain: true,
+    cmd: 'publish',
+    dup: false,
+  }, (error) => {
+    if (error) {
+      console.error('[MQTT] Config changed publish error:', error);
+    }
+  });
+  console.log(`[MQTT] Published config changed to ${topic} (${descriptor.code ?? '?'}@${descriptor.version ?? '?'})`);
+
+  // Also mirror to the external broker (best-effort).
   publishToExternalMqtt(topic, payload);
 }
 
@@ -1557,7 +2816,7 @@ export function publishModelUpdate(
     timestamp: new Date().toISOString(),
   });
 
-  aedes.publish({
+  dualAedesPublish(aedes!, {
     topic,
     payload: Buffer.from(payload),
     qos: 1 as 0 | 1 | 2,

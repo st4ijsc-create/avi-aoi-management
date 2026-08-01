@@ -1,0 +1,26 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# DPMO (Defects Per Million Opportunities) — metric definition AS-CODE
+# (doc 44 Batch W2-A4 · SYNAPSE Tầng 2 §9). Canonical math lives in
+# server/utils/kpi.ts (kpi.dpmo — doc 27 gap A8); the registry only fetches
+# the declared input counts and delegates the formula. Changing `formula`
+# REQUIRES a version bump (guarded by verifyDefinitionsIntegrity + snapshot).
+# ═══════════════════════════════════════════════════════════════════════════
+metric: DPMO
+version: 1
+scope: [equipment, factory]
+formula: defects / opportunities * 1000000
+implementation: kpi.dpmo                    # server/utils/kpi.ts — canonical pure math (all scopes)
+inputs:
+  - name: opportunities
+    source: >-
+      measurement_results — rows evaluated inside [from, to] (one row = one
+      evaluated measurement point = one opportunity, per the kpi.ts docblock;
+      full IPC components×joints opportunity modelling is DEFERRED to gap M12)
+  - name: defects
+    source: measurement_results — rows with result = 'NG' inside [from, to]
+notes: >-
+  Window/machine filtering joins measurement_results → product_inspections on
+  inspectionId (window on product_inspections.inspectionTime; equipment scope
+  adds machineId). HONEST-NULL when opportunities = 0 in the window (no data is
+  NOT zero defects). Sigma level (Φ⁻¹(1−rate)+1.5) derives from this same DPMO
+  via kpi.sigmaLevelFromDpmo. Result value is defects-per-million (0..1e6).

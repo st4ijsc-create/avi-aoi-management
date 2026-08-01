@@ -1,13 +1,14 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
-import { toast } from "sonner";
+import { PageHeader, MetricCard } from "@/components/patterns";
 import { ArrowRight, Plus, Minus } from "lucide-react";
 
 export function ProductComparison() {
@@ -50,15 +51,63 @@ export function ProductComparison() {
     setProduct2Id(temp);
   };
 
+  // Full localized export (PDF / XLSX / HTML) — this page previously had none.
+  const getExportConfig = (): ReportExportConfig => {
+    const sections: ReportExportConfig["sections"] = [];
+    if (comparison) {
+      sections.push({
+        title: t('reports.summary', 'Summary'),
+        type: 'stats',
+        stats: [
+          { label: `${product1?.code ?? 'P1'} · ${t('products.totalPoints')}`, value: comparison.totalPoints1 },
+          { label: t('products.commonPoints'), value: comparison.common.length },
+          { label: `${product2?.code ?? 'P2'} · ${t('products.totalPoints')}`, value: comparison.totalPoints2 },
+        ],
+      });
+      if (comparison.onlyInProduct1.length)
+        sections.push({
+          title: `${t('products.onlyIn')} ${product1?.code ?? 'P1'}`,
+          type: 'table',
+          tableHeaders: [t('products.code'), t('products.name'), t('products.type')],
+          tableRows: comparison.onlyInProduct1.map((p) => [p.code, p.name, p.measurementType]),
+        });
+      if (comparison.onlyInProduct2.length)
+        sections.push({
+          title: `${t('products.onlyIn')} ${product2?.code ?? 'P2'}`,
+          type: 'table',
+          tableHeaders: [t('products.code'), t('products.name'), t('products.type')],
+          tableRows: comparison.onlyInProduct2.map((p) => [p.code, p.name, p.measurementType]),
+        });
+      if (comparison.common.length)
+        sections.push({
+          title: t('products.commonPoints'),
+          type: 'table',
+          tableHeaders: [
+            t('products.code'), t('products.name'), t('products.type'),
+            t('products.unit'), t('products.lowerLimit'), t('products.upperLimit'),
+          ],
+          tableRows: comparison.common.map((p) => [
+            p.code, p.name, p.measurementType, p.unit || '-', p.lowerLimit ?? '-', p.upperLimit ?? '-',
+          ]),
+        });
+    }
+    return {
+      title: t('products.comparison'),
+      subtitle: `${product1?.code ?? ''} vs ${product2?.code ?? ''}`,
+      sections,
+      filenamePrefix: 'product_comparison',
+      orientation: 'landscape',
+    };
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">{t('products.comparison')}</h1>
-          <p className="text-muted-foreground mt-2">
-            {t('products.comparisonDescription')}
-          </p>
-        </div>
+        <PageHeader
+          title={t('products.comparison')}
+          description={t('products.comparisonDescription')}
+          actions={comparison ? <ReportExportButton getConfig={getExportConfig} /> : undefined}
+        />
 
         {/* Product Selection */}
         <Card>
@@ -111,35 +160,19 @@ export function ProductComparison() {
           <>
             {/* Summary */}
             <div className="grid grid-cols-3 gap-4">
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium">{t('products.totalPoints')}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{comparison.totalPoints1}</div>
-                  <p className="text-xs text-muted-foreground">{product1?.code}</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium">{t('products.commonPoints')}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-green-600">{comparison.common.length}</div>
-                  <p className="text-xs text-muted-foreground">{t('products.identical')}</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium">{t('products.totalPoints')}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{comparison.totalPoints2}</div>
-                  <p className="text-xs text-muted-foreground">{product2?.code}</p>
-                </CardContent>
-              </Card>
+              <MetricCard
+                label={`${t('products.totalPoints')} · ${product1?.code ?? ''}`}
+                value={comparison.totalPoints1}
+              />
+              <MetricCard
+                label={`${t('products.commonPoints')} · ${t('products.identical')}`}
+                value={comparison.common.length}
+                tone="success"
+              />
+              <MetricCard
+                label={`${t('products.totalPoints')} · ${product2?.code ?? ''}`}
+                value={comparison.totalPoints2}
+              />
             </div>
 
             {/* Detailed Comparison */}
@@ -148,7 +181,7 @@ export function ProductComparison() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
-                    <Minus className="h-4 w-4 text-red-500" />
+                    <Minus className="h-4 w-4 text-destructive" />
                     {t('products.onlyIn')} {product1?.code}
                   </CardTitle>
                   <CardDescription>
@@ -161,7 +194,7 @@ export function ProductComparison() {
                   ) : (
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {comparison.onlyInProduct1.map((point) => (
-                        <div key={point.id} className="p-2 bg-muted/50 rounded border border-red-200">
+                        <div key={point.id} className="p-2 bg-muted/50 rounded border border-destructive/30">
                           <p className="font-medium text-sm">{point.code} - {point.name}</p>
                           <p className="text-xs text-muted-foreground">{point.measurementType}</p>
                         </div>
@@ -175,7 +208,7 @@ export function ProductComparison() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
-                    <Plus className="h-4 w-4 text-blue-500" />
+                    <Plus className="h-4 w-4 text-info" />
                     {t('products.onlyIn')} {product2?.code}
                   </CardTitle>
                   <CardDescription>
@@ -188,7 +221,7 @@ export function ProductComparison() {
                   ) : (
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {comparison.onlyInProduct2.map((point) => (
-                        <div key={point.id} className="p-2 bg-muted/50 rounded border border-blue-200">
+                        <div key={point.id} className="p-2 bg-muted/50 rounded border border-info/30">
                           <p className="font-medium text-sm">{point.code} - {point.name}</p>
                           <p className="text-xs text-muted-foreground">{point.measurementType}</p>
                         </div>

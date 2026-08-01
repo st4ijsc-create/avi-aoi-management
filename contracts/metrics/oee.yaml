@@ -1,0 +1,45 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# OEE — metric definition AS-CODE (doc 44 Batch W2-A4, gap G2.14/G2.15).
+# SYNAPSE Tầng 2 §9 (Semantic Layer) / §10.2 (MetricResult).
+#
+# ONE governed definition — every consumer must compute OEE through
+# server/services/semantics/metricRegistry.computeMetric("OEE", …), which
+# DELEGATES to the canonical implementation below (server/services/oeeService.ts,
+# self-declared CANONICAL SOURCE OF TRUTH at oeeService.ts:27-51).
+#
+# GOVERNANCE: changing `formula` (or the meaning of an input) REQUIRES bumping
+# `version` — guarded by metricRegistry.verifyDefinitionsIntegrity() + the
+# pinned fingerprint snapshot in metricRegistry.test.ts.
+# ═══════════════════════════════════════════════════════════════════════════
+metric: OEE
+version: 1
+scope: [equipment, line]
+formula: availability * performance * quality
+# Con trỏ tới hàm canonical THẬT (per scope) — resolved by the EXPLICIT static
+# handler map in metricRegistry.ts (no string eval):
+implementation:
+  equipment: oeeService.getMachineOEELive   # trailing window anchored at NOW (live path)
+  line: oeeService.getLineOEE               # explicit [from, to] rollup (warRoom convention)
+inputs:                                     # lineage — matches the REAL code paths
+  - name: online_seconds / offline_seconds
+    source: >-
+      machine_status_logs — interval sum per status ('online' vs not), equipment via
+      getMachineUptimeStats, line via set-based LEAD() window clipped to [from, to]
+  - name: total_count / ok_count / ng_count / ntf_count
+    source: daily_statistics — SUM over the window per machine (goodCount = ok + ntf)
+  - name: ideal_cycle_time_sec
+    source: >-
+      oee_metrics.idealCycleTime (latest persisted per machine); when flag
+      OEE_IDEAL_FROM_TARGET is armed, the active oee_targets implied ideal
+      (avgCycleTime × targetPerformance/10000) wins (MON-F8, doc 40)
+notes: >-
+  SEMI E10-0701 / SEMI E79-0200 / ISO 22400-2. HONEST-NULL: any factor whose
+  inputs are absent is null and OEE is null unless all three factors exist —
+  never a fabricated number. Availability = online/(online+offline);
+  Performance = min(1, ideal_cycle_time_sec × total_count / online_seconds)
+  (null when no ideal cycle time is configured); Quality = (ok+ntf)/total
+  (NTF = no-trouble-found counted as PASS — the system-wide yield convention).
+  MetricResult value/parts are normalized FRACTIONS 0..1 (spec §10.2); the
+  underlying service returns percentages 0..100 for the legacy UI contract.
+  Equipment scope only supports trailing windows ending ~now (live path);
+  line scope accepts any explicit [from, to].

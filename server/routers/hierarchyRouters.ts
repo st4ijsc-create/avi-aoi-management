@@ -1,11 +1,151 @@
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { publicProcedure, protectedProcedure, router, roleProcedure } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
 import * as db from "../db";
 import { storagePut } from "../storage";
-import { MACHINE_TYPES } from "../constants/machineTypes";
+import { MACHINE_TYPES, DEVICE_CLASS_BY_TYPE, deviceClassOf } from "../constants/machineTypes";
+import { requirePermission } from "../_core/accessControl";
+import {
+  eqGovernEnabled,
+  buildSeedTypes,
+  resolveType,
+  resolveDeviceTypeKeyForMachineType,
+} from "../services/standards/deviceTypeRegistry";
+// W8-A (doc 27 M13 / doc 29 §4): soft 2-tier capabilities gate + weekly drift scan.
+import {
+  validateCapabilities,
+  toStamp,
+  loadDeviceTypeNodes,
+  capabilitiesValidationEnforced,
+  runCapabilitiesDriftScanNow,
+  getCapabilitiesDriftStatus,
+} from "../services/standards/capabilitiesValidation";
+import { runConformance, subjectFromResolved } from "../services/standards/conformanceTest";
+import {
+  createAuditContext,
+  logCreate,
+  logUpdate,
+  logDelete,
+  logCrudOperation,
+  ENTITY_TYPES,
+} from "../services/auditTrailService";
+import { recordAuditEvent } from "../services/audit/controlAuditService";
+import { withDbErrors, rethrowDbError } from "../_core/dbErrors";
+import { logger } from "../logger";
+import { MACHINE_LIFECYCLE_STATUSES, MACHINE_LIFECYCLE_TRANSITIONS } from "../../drizzle/schema";
+// Doc 51 P3 §5.1 — enroll issues the scoped mk_ key through the SAME issuer as
+// rotation/wizard, and reuses its published-scope validator.
+// Doc 56 Đ2a — issueFleetMachineKey (fleet TTL) + the mk_-only fleet flag.
+import {
+  issueMachineKey,
+  isValidScopeGrant,
+  issueFleetMachineKey,
+  machineCredMkOnlyEnabled,
+} from "../services/machineAuthService";
+
+// ── Doc 56 Đ2a — credential/identity flags (default OFF = byte-identical) ─────
+/** Việc 7 — open machine-approval RBAC from admin-only to a module permission. */
+function machineApproveRbacOpenEnabled(): boolean {
+  return process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED === "true";
+}
+/** Việc 4 — IoT device-class behaviour (virtual station on approve). */
+function iotDeviceClassEnabled(): boolean {
+  return process.env.IOT_DEVICE_CLASS_ENABLED === "true";
+}
+
+/**
+ * Việc 7 — approval-gate factory. Default (flag OFF) is byte-identical to
+ * `adminProcedure` (admin-only, same FORBIDDEN message). When
+ * MACHINE_APPROVE_RBAC_OPEN_ENABLED=true it delegates to a module permission
+ * (`machine_registration`) so a non-admin with that grant can approve/list-pending.
+ * regenerateApiKey stays admin-only (never uses this gate). SoD (creator ≠ approver)
+ * lives in the lifecycle layer and is untouched.
+ *
+ * NOTE (orchestrator): `machine_registration` is a NEW moduleName — see report;
+ * non-admins need it seeded (checkPermission reads per-USER rows).
+ */
+function machineRegistrationGate(action: "canView" | "canEdit") {
+  return async (opts: { ctx: any; next: any }) => {
+    if (machineApproveRbacOpenEnabled()) {
+      return requirePermission("machine_registration", action)(opts);
+    }
+    if (opts.ctx.user?.role !== "admin") {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+    }
+    return opts.next({ ctx: opts.ctx });
+  };
+}
+
+// ── Doc 27 Đợt 3 / W3-B — M5 audit helpers ──────────────────────────────────
+// EVERY master-data mutation in this file (corporate hierarchy + machines) now
+// writes an audit row via auditTrailService (db.createAuditLog / audit_logs —
+// same mechanism W1-D used for inspection.bulkAcknowledge). Snapshots are
+// DIFF-ONLY (before is picked down to the mutated keys), sanitized by the
+// service (apiKey/token/secret → ***REDACTED***) and bounded (no base64 image
+// payloads are ever logged — uploads log the storage key only). Machine
+// lifecycle transitions ADDITIONALLY go to the append-only control_audit_log
+// (control-grade, doc 25 T6).
+
+/** Domain errors from server/db are detected by NAME so tests can mock ../db. */
+function isErrorNamed(e: unknown, name: string): boolean {
+  return e instanceof Error && e.name === name;
+}
+
+/** Pick only `keys` from a row — the diff-only "before" snapshot for logUpdate. */
+function pickBefore(row: Record<string, unknown> | null | undefined, keys: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!row) return out;
+  for (const k of keys) {
+    if (k in row) out[k] = row[k];
+  }
+  return out;
+}
+
+type AuditableCtx = Parameters<typeof createAuditContext>[0];
+
+/** Audit an action that is not a plain create/update/delete (approve, reject, restore, lifecycle…). */
+async function auditAction(
+  ctx: AuditableCtx,
+  entry: {
+    action: string;
+    entityType: string;
+    entityId?: number | null;
+    entityName?: string | null;
+    before?: Record<string, unknown>;
+    after?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+  },
+): Promise<void> {
+  await logCrudOperation(createAuditContext(ctx), {
+    action: entry.action,
+    entityType: entry.entityType,
+    entityId: entry.entityId ?? null,
+    entityName: entry.entityName ?? null,
+    details: {
+      operation: entry.action,
+      before: entry.before,
+      after: entry.after,
+      metadata: entry.metadata,
+    },
+    status: "success",
+  });
+}
+
+/**
+ * W5-20 (4) — Enforcement nghiệm thu khi tạo máy. Khi EQ_GOVERN_ENABLED bật, kiểm tra
+ * machineType có device-type đã xuất bản + đạt conformance. Ở mức CẢNH BÁO (không chặn)
+ * — trả về chuỗi cảnh báo để UI hiển thị; không lưu deviceTypeVersion (cần migration).
+ */
+function commissionGovernanceWarning(machineType: string): string | undefined {
+  if (!eqGovernEnabled()) return undefined;
+  const resolved = resolveType(machineType, buildSeedTypes());
+  if (!resolved) return `No published device type for machineType '${machineType}'`;
+  const conf = runConformance(subjectFromResolved(resolved));
+  if (!conf.pass) return `Device type '${machineType}' fails conformance: ${conf.violations.map((v) => v.rule).join("; ")}`;
+  return undefined;
+}
 
 // ============ FACTORY ROUTER ============
 export const factoryRouter = router({
@@ -19,19 +159,20 @@ export const factoryRouter = router({
       return db.getFactoryById(input.id);
     }),
 
-  create: adminProcedure
+  create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
-      code: z.string().min(1).max(50),
-      name: z.string().min(1).max(255),
+      code: z.string().min(1, "Mã nhà máy là bắt buộc").max(50),
+      name: z.string().min(1, "Tên nhà máy là bắt buộc").max(255),
       description: z.string().optional(),
       address: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
-      const id = await db.createFactory(input);
+    .mutation(async ({ input, ctx }) => {
+      const id = await withDbErrors(() => db.createFactory(input), { conflictMessage: `Mã nhà máy '${input.code}' đã tồn tại` });
+      await logCreate(createAuditContext(ctx), ENTITY_TYPES.FACTORY, id, input.name, input);
       return { id };
     }),
 
-  update: adminProcedure
+  update: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       id: z.number(),
       code: z.string().min(1).max(50).optional(),
@@ -42,54 +183,173 @@ export const factoryRouter = router({
       mapPositionX: z.number().min(0).max(1).optional(),
       mapPositionY: z.number().min(0).max(1).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, mapPositionX, mapPositionY, ...rest } = input;
       const data: Record<string, unknown> = { ...rest };
       if (mapPositionX !== undefined) data.mapPositionX = mapPositionX.toString();
       if (mapPositionY !== undefined) data.mapPositionY = mapPositionY.toString();
-      await db.updateFactory(id, data);
+      const before = await db.getFactoryById(id);
+      await withDbErrors(() => db.updateFactory(id, data), { conflictMessage: "Mã nhà máy đã tồn tại" });
+      await logUpdate(createAuditContext(ctx), ENTITY_TYPES.FACTORY, id, before?.name ?? `factory#${id}`, pickBefore(before, Object.keys(data)), data);
       return { success: true };
     }),
 
-  updateMapPosition: adminProcedure
+  updateMapPosition: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       id: z.number(),
       mapPositionX: z.number().min(0).max(1),
       mapPositionY: z.number().min(0).max(1),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await db.updateFactory(input.id, {
         mapPositionX: input.mapPositionX.toString(),
         mapPositionY: input.mapPositionY.toString(),
       });
+      await auditAction(ctx, {
+        action: "update", entityType: ENTITY_TYPES.FACTORY, entityId: input.id,
+        metadata: { mapPositionX: input.mapPositionX, mapPositionY: input.mapPositionY },
+      });
       return { success: true };
     }),
 
-  delete: adminProcedure
+  // W6-25 — Upload ảnh nền mặt bằng (CAD/ảnh). Gated machine_control/canEdit như layout máy.
+  // Mẫu theo machine.uploadImage: nhận base64, đẩy storagePut, lưu url+key vào factory.
+  uploadFloorPlan: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({
+      id: z.number(),
+      imageData: z.string(), // base64
+      fileName: z.string().min(1).max(255),
+      contentType: z.string().min(1).max(100),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { id, imageData, fileName, contentType } = input;
+      const buffer = Buffer.from(imageData, "base64");
+      const fileKey = `factories/${id}/floorplan-${Date.now()}-${fileName}`;
+      const { url } = await storagePut(fileKey, buffer, contentType);
+      await db.updateFactory(id, { floorPlanImageUrl: url, floorPlanImageKey: fileKey });
+      // M5: metadata only — NEVER the base64 payload.
+      await auditAction(ctx, {
+        action: "update", entityType: ENTITY_TYPES.FACTORY, entityId: id,
+        metadata: { uploaded: "floorPlanImage", fileKey },
+      });
+      return { url, key: fileKey };
+    }),
+
+  // W6-25 — Kích thước sàn thật (mét) + tuỳ chọn xoá ảnh nền. Gated machine_control/canEdit.
+  updateFloorDims: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({
+      id: z.number(),
+      floorWidthM: z.number().positive().max(10000).optional(),
+      floorDepthM: z.number().positive().max(10000).optional(),
+      clearImage: z.boolean().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { id, floorWidthM, floorDepthM, clearImage } = input;
+      const data: Record<string, unknown> = {};
+      if (floorWidthM !== undefined) data.floorWidthM = floorWidthM.toString();
+      if (floorDepthM !== undefined) data.floorDepthM = floorDepthM.toString();
+      if (clearImage) { data.floorPlanImageUrl = null; data.floorPlanImageKey = null; }
+      const before = await db.getFactoryById(id);
+      await db.updateFactory(id, data);
+      await logUpdate(createAuditContext(ctx), ENTITY_TYPES.FACTORY, id, before?.name ?? `factory#${id}`, pickBefore(before, Object.keys(data)), data);
+      return { success: true };
+    }),
+
+  delete: protectedProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const before = await db.getFactoryById(input.id);
       if (input.cascade) {
         await db.cascadeDeleteFactory(input.id);
       } else {
         await db.deleteFactory(input.id);
       }
+      await logDelete(createAuditContext(ctx), ENTITY_TYPES.FACTORY, input.id, before?.name ?? `factory#${input.id}`,
+        { code: before?.code, name: before?.name }, { cascade: input.cascade === true });
       return { success: true };
     }),
 
-  cascadeInfo: adminProcedure
+  cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       return db.getFactoryCascadeInfo(input.id);
     }),
 
-  listDeleted: adminProcedure.query(async () => {
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
     return db.getDeletedFactories();
   }),
 
-  restore: adminProcedure
+  restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await db.restoreFactory(input.id);
+      await auditAction(ctx, { action: "factory.restore", entityType: ENTITY_TYPES.FACTORY, entityId: input.id });
+      return { success: true };
+    }),
+});
+
+// ============ FACTORY ZONE ROUTER (W6-25) ============
+// Vùng polygon vẽ trên mặt bằng. Đọc mở cho user đăng nhập; ghi phải machine_control/canEdit.
+const zonePointsSchema = z.array(z.object({
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+})).max(200);
+
+export const factoryZoneRouter = router({
+  listByFactory: protectedProcedure
+    .input(z.object({ factoryId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getFactoryZones(input.factoryId);
+    }),
+
+  create: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({
+      factoryId: z.number(),
+      name: z.string().min(1).max(120),
+      color: z.string().min(1).max(24).optional(),
+      points: zonePointsSchema.optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const id = await db.createFactoryZone({
+        factoryId: input.factoryId,
+        name: input.name,
+        color: input.color ?? "#0ea5e9",
+        points: input.points ?? [],
+      });
+      await auditAction(ctx, {
+        action: "create", entityType: "factory_zone", entityId: id, entityName: input.name,
+        metadata: { factoryId: input.factoryId, pointCount: input.points?.length ?? 0 },
+      });
+      return { id };
+    }),
+
+  update: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(120).optional(),
+      color: z.string().min(1).max(24).optional(),
+      points: zonePointsSchema.optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { id, ...rest } = input;
+      await db.updateFactoryZone(id, rest);
+      await auditAction(ctx, {
+        action: "update", entityType: "factory_zone", entityId: id,
+        metadata: { name: rest.name, color: rest.color, pointCount: rest.points?.length },
+      });
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      await db.deleteFactoryZone(input.id);
+      await auditAction(ctx, { action: "delete", entityType: "factory_zone", entityId: input.id });
       return { success: true };
     }),
 });
@@ -106,56 +366,63 @@ export const workshopRouter = router({
       return db.getWorkshopsByFactory(input.factoryId);
     }),
 
-  create: adminProcedure
+  create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
-      factoryId: z.number(),
-      code: z.string().min(1).max(50),
-      name: z.string().min(1).max(255),
+      factoryId: z.number({ error: "Vui lòng chọn nhà máy" }),
+      code: z.string().min(1, "Mã xưởng là bắt buộc").max(50),
+      name: z.string().min(1, "Tên xưởng là bắt buộc").max(255),
       description: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
-      const id = await db.createWorkshop(input);
+    .mutation(async ({ input, ctx }) => {
+      const id = await withDbErrors(() => db.createWorkshop(input), { conflictMessage: `Mã xưởng '${input.code}' đã tồn tại` });
+      await logCreate(createAuditContext(ctx), ENTITY_TYPES.WORKSHOP, id, input.name, input);
       return { id };
     }),
 
-  update: adminProcedure
+  update: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       id: z.number(),
       factoryId: z.number().optional(),
       name: z.string().min(1).max(255).optional(),
       description: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      const before = await db.getWorkshopById(id);
       await db.updateWorkshop(id, data);
+      await logUpdate(createAuditContext(ctx), ENTITY_TYPES.WORKSHOP, id, before?.name ?? `workshop#${id}`, pickBefore(before, Object.keys(data)), data);
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: protectedProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const before = await db.getWorkshopById(input.id);
       if (input.cascade) {
         await db.cascadeDeleteWorkshop(input.id);
       } else {
         await db.deleteWorkshop(input.id);
       }
+      await logDelete(createAuditContext(ctx), ENTITY_TYPES.WORKSHOP, input.id, before?.name ?? `workshop#${input.id}`,
+        { code: before?.code, name: before?.name }, { cascade: input.cascade === true });
       return { success: true };
     }),
 
-  cascadeInfo: adminProcedure
+  cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       return db.getWorkshopCascadeInfo(input.id);
     }),
 
-  listDeleted: adminProcedure.query(async () => {
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
     return db.getDeletedWorkshops();
   }),
 
-  restore: adminProcedure
+  restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await db.restoreWorkshop(input.id);
+      await auditAction(ctx, { action: "workshop.restore", entityType: ENTITY_TYPES.WORKSHOP, entityId: input.id });
       return { success: true };
     }),
 });
@@ -172,56 +439,63 @@ export const lineRouter = router({
       return db.getProductionLinesByWorkshop(input.workshopId);
     }),
 
-  create: adminProcedure
+  create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
-      workshopId: z.number(),
-      code: z.string().min(1).max(50),
-      name: z.string().min(1).max(255),
+      workshopId: z.number({ error: "Vui lòng chọn xưởng" }),
+      code: z.string().min(1, "Mã line là bắt buộc").max(50),
+      name: z.string().min(1, "Tên line là bắt buộc").max(255),
       description: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
-      const id = await db.createProductionLine(input);
+    .mutation(async ({ input, ctx }) => {
+      const id = await withDbErrors(() => db.createProductionLine(input), { conflictMessage: `Mã line '${input.code}' đã tồn tại` });
+      await logCreate(createAuditContext(ctx), ENTITY_TYPES.LINE, id, input.name, input);
       return { id };
     }),
 
-  update: adminProcedure
+  update: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       id: z.number(),
       workshopId: z.number().optional(),
       name: z.string().min(1).max(255).optional(),
       description: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      const before = await db.getLineById(id);
       await db.updateProductionLine(id, data);
+      await logUpdate(createAuditContext(ctx), ENTITY_TYPES.LINE, id, before?.name ?? `line#${id}`, pickBefore(before, Object.keys(data)), data);
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: protectedProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const before = await db.getLineById(input.id);
       if (input.cascade) {
         await db.cascadeDeleteLine(input.id);
       } else {
         await db.deleteProductionLine(input.id);
       }
+      await logDelete(createAuditContext(ctx), ENTITY_TYPES.LINE, input.id, before?.name ?? `line#${input.id}`,
+        { code: before?.code, name: before?.name }, { cascade: input.cascade === true });
       return { success: true };
     }),
 
-  cascadeInfo: adminProcedure
+  cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       return db.getLineCascadeInfo(input.id);
     }),
 
-  listDeleted: adminProcedure.query(async () => {
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
     return db.getDeletedLines();
   }),
 
-  restore: adminProcedure
+  restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await db.restoreLine(input.id);
+      await auditAction(ctx, { action: "line.restore", entityType: ENTITY_TYPES.LINE, entityId: input.id });
       return { success: true };
     }),
 });
@@ -238,20 +512,21 @@ export const stationRouter = router({
       return db.getStationsByLine(input.lineId);
     }),
 
-  create: adminProcedure
+  create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
-      lineId: z.number(),
-      code: z.string().min(1).max(50),
-      name: z.string().min(1).max(255),
+      lineId: z.number({ error: "Vui lòng chọn line" }),
+      code: z.string().min(1, "Mã trạm là bắt buộc").max(50),
+      name: z.string().min(1, "Tên trạm là bắt buộc").max(255),
       description: z.string().optional(),
       orderIndex: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
-      const id = await db.createStation(input);
+    .mutation(async ({ input, ctx }) => {
+      const id = await withDbErrors(() => db.createStation(input), { conflictMessage: `Mã trạm '${input.code}' đã tồn tại` });
+      await logCreate(createAuditContext(ctx), ENTITY_TYPES.STATION, id, input.name, input);
       return { id };
     }),
 
-  update: adminProcedure
+  update: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       id: z.number(),
       lineId: z.number().optional(),
@@ -259,42 +534,204 @@ export const stationRouter = router({
       description: z.string().optional(),
       orderIndex: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      const before = await db.getStationById(id);
       await db.updateStation(id, data);
+      await logUpdate(createAuditContext(ctx), ENTITY_TYPES.STATION, id, before?.name ?? `station#${id}`, pickBefore(before, Object.keys(data)), data);
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: protectedProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const before = await db.getStationById(input.id);
       if (input.cascade) {
         await db.cascadeDeleteStation(input.id);
       } else {
         await db.deleteStation(input.id);
       }
+      await logDelete(createAuditContext(ctx), ENTITY_TYPES.STATION, input.id, before?.name ?? `station#${input.id}`,
+        { code: before?.code, name: before?.name }, { cascade: input.cascade === true });
       return { success: true };
     }),
 
-  cascadeInfo: adminProcedure
+  cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       return db.getStationCascadeInfo(input.id);
     }),
 
-  listDeleted: adminProcedure.query(async () => {
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
     return db.getDeletedStations();
   }),
 
-  restore: adminProcedure
+  restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await db.restoreStation(input.id);
+      await auditAction(ctx, { action: "station.restore", entityType: ENTITY_TYPES.STATION, entityId: input.id });
       return { success: true };
     }),
 });
 
 // ============ MACHINE ROUTER ============
+
+// ── Doc 27 W2-C — gap M4 (throttle + validate parts ONLY; full lifecycle = Đợt 3) ──
+// The public `register` endpoint had no rate limit and hardcoded stationId: 1
+// (which may not even exist) → orphan rows / pending-queue DoS. This adds:
+//   • per-IP fixed-window throttle (MACHINE_REGISTER_RATE_LIMIT_PER_HOUR, default 20/h; 0 = off)
+//   • a global pending-registration cap  (MACHINE_REGISTER_PENDING_CAP, default 200; 0 = off)
+//   • the default station is RESOLVED via the (previously unused) db.getDefaultStation()
+//     and validated to exist instead of assuming id 1.
+const registerIpWindows = new Map<string, { start: number; count: number }>();
+const REGISTER_WINDOW_MS = 60 * 60 * 1000;
+
+function registerRateLimitPerHour(): number {
+  const n = parseInt(process.env.MACHINE_REGISTER_RATE_LIMIT_PER_HOUR || "20", 10);
+  return Number.isFinite(n) && n >= 0 ? n : 20;
+}
+
+function registerPendingCap(): number {
+  const n = parseInt(process.env.MACHINE_REGISTER_PENDING_CAP || "200", 10);
+  return Number.isFinite(n) && n >= 0 ? n : 200;
+}
+
+/** Shared fixed-window per-IP throttle body (register + claimKey both use it). */
+function enforceIpWindow(
+  windows: Map<string, { start: number; count: number }>,
+  ip: string | undefined | null,
+  limit: number,
+  windowMs: number,
+  message: string,
+): void {
+  const key = ip && ip.length > 0 ? ip : "unknown";
+  const now = Date.now();
+  const win = windows.get(key);
+  if (!win || now - win.start >= windowMs) {
+    windows.set(key, { start: now, count: 1 });
+    if (windows.size > 10_000) {
+      for (const [k, v] of windows) {
+        if (now - v.start >= windowMs) windows.delete(k);
+      }
+    }
+    return;
+  }
+  win.count += 1;
+  if (win.count > limit) {
+    throw new TRPCError({ code: "TOO_MANY_REQUESTS", message });
+  }
+}
+
+function enforceRegisterThrottle(ip: string | undefined | null): void {
+  const limit = registerRateLimitPerHour();
+  if (limit <= 0) return;
+  enforceIpWindow(registerIpWindows, ip, limit, REGISTER_WINDOW_MS,
+    `Too many machine registrations from this address (limit ${limit}/hour)`);
+}
+
+/** Test helper — clears the per-IP registration throttle windows. */
+export function _resetRegisterThrottle(): void {
+  registerIpWindows.clear();
+}
+
+// ── Doc 51 P0 / R1 — machine credential delivery ────────────────────────────
+// `config` is a publicProcedure keyed ONLY by serialNumber (a number printed on
+// the machine's label) and it used to return machines.apiKey in PLAINTEXT — an
+// unauthenticated credential leak to anyone who can read a label or guess a
+// serial. It no longer returns the key. A machine now redeems a short-lived,
+// SINGLE-USE claim token (issued to the admin at approval) via `claimKey`.
+//
+// QĐ#1 (siết auth máy theo MIGRATION CÓ KIỂM SOÁT): flipping this off could
+// brick a fleet whose firmware still polls `config` for its key, so
+// MACHINE_CONFIG_EXPOSE_APIKEY=true is a controlled way back. It is OFF by
+// default (safe), and every use logs a throttled warning naming the machine so
+// the dependency is visible instead of silent.
+
+/** Legacy: does `config` still hand out the plaintext apiKey? Default FALSE. */
+function machineConfigExposesApiKey(): boolean {
+  return process.env.MACHINE_CONFIG_EXPOSE_APIKEY === "true";
+}
+
+/** Claim attempts allowed per IP per hour (brute-force floor). 0 disables. */
+function claimRateLimitPerHour(): number {
+  const n = parseInt(process.env.MACHINE_CLAIM_RATE_LIMIT_PER_HOUR || "30", 10);
+  return Number.isFinite(n) && n >= 0 ? n : 30;
+}
+
+const claimIpWindows = new Map<string, { start: number; count: number }>();
+const CLAIM_WINDOW_MS = 60 * 60 * 1000;
+
+function enforceClaimThrottle(ip: string | undefined | null): void {
+  const limit = claimRateLimitPerHour();
+  if (limit <= 0) return;
+  enforceIpWindow(claimIpWindows, ip, limit, CLAIM_WINDOW_MS,
+    `Too many claim attempts from this address (limit ${limit}/hour)`);
+}
+
+/** Test helper — clears the per-IP claim throttle windows. */
+export function _resetClaimThrottle(): void {
+  claimIpWindows.clear();
+  legacyConfigKeyWarnAt.clear();
+}
+
+/** Throttled legacy-exposure warnings: one per machine per 10 min. */
+const legacyConfigKeyWarnAt = new Map<string, number>();
+const LEGACY_CONFIG_WARN_MIN_MS = 10 * 60 * 1000;
+
+function warnLegacyConfigApiKey(serialNumber: string, code: string): void {
+  const now = Date.now();
+  const prev = legacyConfigKeyWarnAt.get(serialNumber) ?? 0;
+  if (now - prev < LEGACY_CONFIG_WARN_MIN_MS) return;
+  legacyConfigKeyWarnAt.set(serialNumber, now);
+  if (legacyConfigKeyWarnAt.size > 10_000) {
+    for (const [k, t] of legacyConfigKeyWarnAt) {
+      if (now - t >= LEGACY_CONFIG_WARN_MIN_MS) legacyConfigKeyWarnAt.delete(k);
+    }
+  }
+  logger.warn(
+    { machineCode: code, serialNumber },
+    "[MachineConfig] INSECURE: MACHINE_CONFIG_EXPOSE_APIKEY=true — machine.config served a plaintext apiKey " +
+      "to an UNAUTHENTICATED caller that only knew the serial number (doc 51 P0/R1). This is a temporary " +
+      "compatibility escape hatch: migrate this machine to the claim-token flow (machine.issueClaimToken → " +
+      "machine.claimKey) and unset the flag.",
+  );
+}
+
+// ── Doc 51 P3 / §5.1 — ZERO-TOUCH ENROLLMENT (gỡ nghẽn single-admin) ─────────
+// A valid machine self-approves + self-arms with a scoped mk_ key by redeeming
+// an admin-issued enrollment token, instead of an admin approving+keying each
+// machine by hand. High-risk-by-nature (it auto-approves WITHOUT an admin click),
+// so the public `enroll` endpoint is gated behind ENROLLMENT_ENABLED (default
+// OFF, QĐ#1 — controlled activation) and per-IP throttled. Admin token issuance
+// stays available regardless so tokens can be pre-staged before the flag flips.
+
+/** Is zero-touch enrollment turned on? Default FALSE (safe). */
+function enrollmentEnabled(): boolean {
+  return process.env.ENROLLMENT_ENABLED === "true";
+}
+
+/** Enroll attempts allowed per IP per hour (brute-force floor). 0 disables. */
+function enrollRateLimitPerHour(): number {
+  const n = parseInt(process.env.MACHINE_ENROLL_RATE_LIMIT_PER_HOUR || "30", 10);
+  return Number.isFinite(n) && n >= 0 ? n : 30;
+}
+
+const enrollIpWindows = new Map<string, { start: number; count: number }>();
+const ENROLL_WINDOW_MS = 60 * 60 * 1000;
+
+function enforceEnrollThrottle(ip: string | undefined | null): void {
+  const limit = enrollRateLimitPerHour();
+  if (limit <= 0) return;
+  enforceIpWindow(enrollIpWindows, ip, limit, ENROLL_WINDOW_MS,
+    `Too many enrollment attempts from this address (limit ${limit}/hour)`);
+}
+
+/** Test helper — clears the per-IP enrollment throttle windows. */
+export function _resetEnrollThrottle(): void {
+  enrollIpWindows.clear();
+}
+
 export const machineRouter = router({
   // ============ MACHINE SYNC APIs (Public - cho AOI/AVI) ============
 
@@ -309,10 +746,22 @@ export const machineRouter = router({
       firmwareVersion: z.string().optional(),
       syncMode: z.enum(["online", "offline"]).optional(),
     }))
-    .mutation(async ({ input }) => {
-      // Tìm máy theo serialNumber
+    .mutation(async ({ input, ctx }) => {
+      // M4: per-IP throttle on this public endpoint (create AND update paths).
+      enforceRegisterThrottle((ctx as { req?: { ip?: string } })?.req?.ip);
+
+      // Tìm máy theo serialNumber (M3: ACTIVE rows only — tombstones are never resurrected here)
       const existing = await db.getMachineBySerialNumber(input.serialNumber);
       if (existing) {
+        // M2: a decommissioned/retired asset must NOT silently re-enter the
+        // approval queue — re-commissioning is an explicit admin decision.
+        const lifecycle = (existing as { lifecycleStatus?: string | null }).lifecycleStatus;
+        if (lifecycle === "retired" || lifecycle === "decommissioned") {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Machine '${existing.code}' is ${lifecycle} — an admin must re-commission it before it can register again`,
+          });
+        }
         // Nếu đã có, cập nhật thông tin (trừ APIKey)
         await db.updateMachine(existing.id, {
           name: input.name,
@@ -324,25 +773,93 @@ export const machineRouter = router({
           syncMode: input.syncMode || "online",
           registrationStatus: "pending",
         });
+        await auditAction(ctx as AuditableCtx, {
+          action: "machine.register", entityType: ENTITY_TYPES.MACHINE, entityId: existing.id, entityName: existing.code,
+          metadata: { mode: "updated", serialNumber: input.serialNumber, machineType: input.machineType },
+        });
         return { id: existing.id, registrationStatus: "pending", message: "Machine info updated, awaiting approval" };
       }
-      // Tạo mới máy với trạng thái pending, chưa có APIKey
-      const id = await db.createMachine({
-        code: `SN-${input.serialNumber}`,
-        name: input.name,
-        machineType: input.machineType,
-        model: input.model,
-        manufacturer: input.manufacturer,
-        firmwareVersion: input.firmwareVersion,
-        serialNumber: input.serialNumber,
-        syncMode: input.syncMode || "online",
-        registrationStatus: "pending",
-        stationId: 1, // Tạm gán station mặc định, admin sẽ mapping sau
-      });
-      return { id, registrationStatus: "pending", message: "Machine registered, awaiting admin approval" };
+
+      // M4: global pending cap — an unauthenticated flood must not grow the
+      // approval queue unbounded.
+      const cap = registerPendingCap();
+      if (cap > 0) {
+        const pending = await db.getPendingMachines();
+        if (Array.isArray(pending) && pending.length >= cap) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Registration queue is full (${cap} pending machines) — ask an admin to approve/reject pending registrations first`,
+          });
+        }
+      }
+
+      // M4: resolve + validate the default station instead of hardcoding id 1.
+      const defaultStation = await db.getDefaultStation();
+      if (!defaultStation) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "No active station configured — create the factory hierarchy before registering machines",
+        });
+      }
+
+      // M7: the generated SN-code can collide with an ACTIVE machine that has a
+      // different serial. Policy (documented): RETRY WITH A NUMERIC SUFFIX (an
+      // unattended machine must not dead-end on a name clash — the admin
+      // normalises the code at approval anyway); only after 5 attempts → CONFLICT.
+      let code = `SN-${input.serialNumber}`;
+      if (await db.getMachineByCode(code)) {
+        let resolved: string | undefined;
+        for (let i = 2; i <= 5 && !resolved; i++) {
+          const candidate = `SN-${input.serialNumber}-${i}`;
+          if (!(await db.getMachineByCode(candidate))) resolved = candidate;
+        }
+        if (!resolved) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Machine code '${code}' (and suffixed variants) are already in use by active machines — contact an admin`,
+          });
+        }
+        code = resolved;
+      }
+
+      // Tạo mới máy với trạng thái pending, chưa có APIKey.
+      // M2: register flow starts life as 'commissioning' (admin approval advances it to 'active').
+      try {
+        const id = await db.createMachine({
+          code,
+          name: input.name,
+          machineType: input.machineType,
+          model: input.model,
+          manufacturer: input.manufacturer,
+          firmwareVersion: input.firmwareVersion,
+          serialNumber: input.serialNumber,
+          syncMode: input.syncMode || "online",
+          registrationStatus: "pending",
+          lifecycleStatus: "commissioning",
+          stationId: defaultStation.id, // Station mặc định THẬT — admin sẽ mapping lại sau
+        });
+        await auditAction(ctx as AuditableCtx, {
+          action: "machine.register", entityType: ENTITY_TYPES.MACHINE, entityId: id, entityName: code,
+          metadata: { mode: "created", serialNumber: input.serialNumber, machineType: input.machineType, stationId: defaultStation.id },
+        });
+        return { id, registrationStatus: "pending", message: "Machine registered, awaiting admin approval" };
+      } catch (e) {
+        // Concurrent register racing the pre-check — clean CONFLICT, not a raw 500.
+        if (isErrorNamed(e, "MachineCodeCollisionError")) {
+          throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
+        }
+        throw e;
+      }
     }),
 
-  // Lấy cấu hình máy (trả về mapping, APIKey, trạng thái, ...)
+  // Lấy cấu hình máy (trả về mapping, trạng thái, ... — KHÔNG trả APIKey).
+  //
+  // Doc 51 P0 / R1: this endpoint is PUBLIC and keyed only by serialNumber, so
+  // it must never carry a secret. The mapping/status fields stay exactly as they
+  // were (clients poll this every 10s for approval state + station mapping); the
+  // credential now travels the `claimKey` path instead. `apiKey` is KEPT in the
+  // response shape as `null` so existing clients keep parsing — they just stop
+  // receiving a usable secret.
   config: publicProcedure
     .input(z.object({
       serialNumber: z.string().min(1).max(100),
@@ -354,12 +871,19 @@ export const machineRouter = router({
       const station = await db.getStationById(machine.stationId);
       const line = await db.getLineByStationId(machine.stationId);
 
+      const isApproved = machine.registrationStatus === "approved";
+      // Compat escape hatch ONLY (default off) — QĐ#1, loudly logged per use.
+      const legacyExposure = machineConfigExposesApiKey() && isApproved && !!machine.apiKey;
+      if (legacyExposure) warnLegacyConfigApiKey(input.serialNumber, machine.code);
+
       return {
         machineId: machine.id,
         name: machine.name,
         code: machine.code,
         serialNumber: machine.serialNumber || input.serialNumber,
-        apiKey: machine.registrationStatus === "approved" ? machine.apiKey : null, // Chỉ trả APIKey nếu đã duyệt
+        apiKey: legacyExposure ? machine.apiKey : null,
+        /** The machine must exchange an admin-issued claim token for its key. */
+        requiresClaim: !legacyExposure,
         machineType: machine.machineType,
         model: machine.model,
         manufacturer: machine.manufacturer,
@@ -380,34 +904,366 @@ export const machineRouter = router({
   // ============ ADMIN: Quản lý đăng ký máy ============
 
   // Danh sách máy chờ duyệt
-  listPending: adminProcedure
+  // Doc 56 Đ2a Việc 7 — admin-only by default; machine_registration/canView when
+  // MACHINE_APPROVE_RBAC_OPEN_ENABLED=true (gate is byte-identical to adminProcedure OFF).
+  listPending: protectedProcedure
+    .use(machineRegistrationGate("canView"))
     .query(async () => {
       return db.getPendingMachines();
     }),
 
   // Admin duyệt máy + mapping
-  approve: adminProcedure
+  // Doc 56 Đ2a Việc 7 — admin-only by default; machine_registration/canEdit when the flag is on.
+  approve: protectedProcedure
+    .use(machineRegistrationGate("canEdit"))
     .input(z.object({
       id: z.number(),
       code: z.string().min(1).max(50).optional(),     // Đặt lại mã máy chuẩn hoá
       name: z.string().min(1).max(255).optional(),     // Đổi tên máy
       stationId: z.number().optional(),                // Gán vào station/line
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const machine = await db.getMachineById(input.id);
       if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
 
-      // Sinh APIKey nếu chưa có
-      const apiKey = machine.apiKey || `mach_${nanoid(32)}`;
+      // M7: the admin may normalise the code at approval — pre-check it against
+      // ACTIVE machines so the rename fails as a clean CONFLICT, not a raw 500.
+      if (input.code && input.code !== machine.code) {
+        const holder = await db.getMachineByCode(input.code);
+        if (holder && holder.id !== input.id) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Machine code '${input.code}' is already in use by machine #${holder.id} (${holder.name})`,
+          });
+        }
+      }
+
+      // Doc 56 Đ2a Việc 2/4 — resolve the credential + station policy for this fleet.
+      const deviceClass = deviceClassOf(machine.machineType);
+      const mkOnly = machineCredMkOnlyEnabled() && deviceClass !== "aoi_avi";
+
+      // Việc 4 — an IoT device the admin did NOT explicitly place is parked on the
+      // workshop's virtual IOT station (analytics-excluded). Best-effort + gated by
+      // IOT_DEVICE_CLASS_ENABLED (OFF → stationId is exactly today's value).
+      let stationId = input.stationId || machine.stationId;
+      if (iotDeviceClassEnabled() && deviceClass === "iot" && !input.stationId) {
+        try {
+          const line = machine.stationId ? await db.getLineByStationId(machine.stationId) : null;
+          const workshop = line ? await db.getWorkshopById(line.workshopId) : null;
+          stationId = await db.ensureIotVirtualStation(workshop?.code ?? "");
+        } catch (e) {
+          logger.warn(
+            { err: e, machineId: input.id },
+            "[MachineApprove] IoT virtual-station assignment failed — keeping the current station",
+          );
+        }
+      }
+
+      // Việc 2 — the mk_-only fleet does NOT persist a plaintext machines.apiKey; it
+      // mints a per-device mk_ (below). The AOI/AVI fleet keeps today's mach_ key.
+      const legacyApiKey = mkOnly ? undefined : (machine.apiKey || `mach_${nanoid(32)}`);
 
       await db.approveMachine(input.id, {
         code: input.code || machine.code,
         name: input.name || machine.name,
-        stationId: input.stationId || machine.stationId,
-        apiKey,
+        stationId,
+        ...(legacyApiKey !== undefined ? { apiKey: legacyApiKey } : {}),
       });
 
-      return { success: true, apiKey, message: "Machine approved and mapped" };
+      // Doc 56 Đ0 việc 8 — stamp the governance key machines.device_type_key at
+      // approval (machineType → newest published leaf, DB-published types first
+      // via loadDeviceTypeNodes, seed fallback). Best-effort BY DESIGN: the
+      // approval is already committed, so a resolve/write failure must never 500
+      // the admin; machines approved before 0287 (or a null resolve) are
+      // backfilled by scripts/seed-device-types.mjs.
+      try {
+        const deviceTypeKey = resolveDeviceTypeKeyForMachineType(
+          machine.machineType,
+          await loadDeviceTypeNodes(),
+        );
+        if (deviceTypeKey) await db.updateMachine(input.id, { deviceTypeKey });
+      } catch (e) {
+        logger.warn(
+          { err: e, machineId: input.id },
+          "[MachineApprove] device_type_key stamp failed — machine approved without one; backfill via scripts/seed-device-types.mjs",
+        );
+      }
+
+      // Credential handoff. mk_-only fleet: a per-device mk_ shown ONCE (no claim
+      // token, no machines.apiKey). AOI fleet: the ONE-TIME claim token the technician
+      // types into the machine (Doc 51 P0 / R1). BOTH best-effort BY DESIGN — the
+      // approval is already committed, so a credential failure must not 500 the admin.
+      let mkKey: Awaited<ReturnType<typeof issueFleetMachineKey>> | null = null;
+      let claim: { token: string; tokenPrefix: string; expiresAt: Date } | null = null;
+      if (mkOnly) {
+        try {
+          mkKey = await issueFleetMachineKey({
+            machineId: input.id,
+            name: `approve:${input.code || machine.code}`,
+            createdBy: ctx.user?.id ?? null,
+          });
+        } catch (e) {
+          logger.warn(
+            { err: e, machineId: input.id },
+            "[MachineApprove] mk_ key mint failed — machine approved without a credential; re-issue via machineApi.issueKey",
+          );
+        }
+      } else {
+        try {
+          claim = await db.issueMachineClaimToken({ machineId: input.id, issuedBy: ctx.user?.id ?? null });
+        } catch (e) {
+          logger.warn(
+            { err: e, machineId: input.id },
+            "[MachineApprove] could not mint a claim token — machine approved without one; re-issue via machine.issueClaimToken",
+          );
+        }
+      }
+
+      // M5: audit — snapshots NEVER include a plaintext key, and NEVER the claim
+      // token plaintext (only its non-secret prefix + expiry).
+      await auditAction(ctx, {
+        action: "machine.approve", entityType: ENTITY_TYPES.MACHINE, entityId: input.id, entityName: input.code || machine.code,
+        before: { code: machine.code, name: machine.name, stationId: machine.stationId, registrationStatus: machine.registrationStatus },
+        after: { code: input.code || machine.code, name: input.name || machine.name, stationId, registrationStatus: "approved" },
+        metadata: mkOnly
+          ? { mkOnly: true, deviceClass, ...(mkKey ? { keyPrefix: mkKey.keyPrefix, keyId: mkKey.id } : {}) }
+          : (claim ? { claimPrefix: claim.tokenPrefix, claimExpiresAt: claim.expiresAt.toISOString() } : undefined),
+      });
+
+      return {
+        success: true,
+        /** mk_-only → the per-device mk_ (shown ONCE, never stored); AOI fleet → mach_ key. */
+        apiKey: mkOnly ? (mkKey?.plaintextKey ?? null) : legacyApiKey!,
+        keyId: mkKey?.id ?? null,
+        mkOnly,
+        /** Shown to the admin ONCE — hand to the technician, expires shortly (AOI fleet only). */
+        claimToken: claim?.token ?? null,
+        claimExpiresAt: claim?.expiresAt ?? null,
+        message: mkOnly ? "Machine approved — per-device key (mk_) issued (shown once)" : "Machine approved and mapped",
+      };
+    }),
+
+  // ── Doc 51 P0 / R1 — (re)issue a one-time claim token ────────────────────
+  // Needed independently of `approve`: tokens are short-lived, so the token
+  // minted at approval is usually dead by the time a technician reaches the
+  // machine. Admin-only; the plaintext is returned EXACTLY ONCE.
+  issueClaimToken: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const machine = await db.getMachineById(input.id);
+      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+      if (machine.registrationStatus !== "approved") {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Machine must be approved before a claim token can be issued",
+        });
+      }
+      if (machine.isActive === false) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Machine is deleted" });
+      }
+      const lifecycle = (machine as { lifecycleStatus?: string | null }).lifecycleStatus;
+      if (lifecycle === "retired" || lifecycle === "decommissioned") {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Machine is ${lifecycle} — re-commission it before issuing a new claim token`,
+        });
+      }
+
+      const claim = await db.issueMachineClaimToken({ machineId: input.id, issuedBy: ctx.user?.id ?? null });
+
+      // Audit the ISSUANCE (prefix only — never the plaintext).
+      await auditAction(ctx, {
+        action: "machine.issueClaimToken", entityType: ENTITY_TYPES.MACHINE,
+        entityId: input.id, entityName: machine.code,
+        metadata: { prefix: claim.tokenPrefix, expiresAt: claim.expiresAt.toISOString() },
+      });
+
+      return { claimToken: claim.token, prefix: claim.tokenPrefix, expiresAt: claim.expiresAt };
+    }),
+
+  // ── Doc 51 P0 / R1 — redeem a claim token for the machine's apiKey ───────
+  // The ONLY unauthenticated way to obtain a machine credential, and it costs a
+  // single-use, short-lived, high-entropy secret that an admin handed out
+  // out-of-band. Every attempt (success AND failure) is audited.
+  claimKey: publicProcedure
+    .input(z.object({
+      serialNumber: z.string().min(1).max(100),
+      claimToken: z.string().min(8).max(200),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const ip = (ctx as { req?: { ip?: string } })?.req?.ip;
+      enforceClaimThrottle(ip);
+
+      try {
+        const claimed = await db.redeemMachineClaimToken({
+          serialNumber: input.serialNumber,
+          claimToken: input.claimToken,
+          fromIp: ip ?? null,
+        });
+        await auditAction(ctx as AuditableCtx, {
+          action: "machine.claimKey", entityType: ENTITY_TYPES.MACHINE,
+          entityId: claimed.machineId, entityName: claimed.machineCode,
+          metadata: { outcome: "success", serialNumber: input.serialNumber, ip: ip ?? null },
+        });
+        return {
+          apiKey: claimed.apiKey,
+          machineId: claimed.machineId,
+          code: claimed.machineCode,
+          message: "API key claimed — store it securely; this token is now spent",
+        };
+      } catch (e) {
+        if (!isErrorNamed(e, "ClaimTokenError")) throw e;
+        const reason = (e as { reason?: string }).reason ?? "invalid";
+        // A failed claim is the signal that matters for detecting brute force —
+        // audit it BEFORE bouncing the caller.
+        await auditAction(ctx as AuditableCtx, {
+          action: "machine.claimKey", entityType: ENTITY_TYPES.MACHINE, entityId: null,
+          metadata: { outcome: "failed", reason, serialNumber: input.serialNumber, ip: ip ?? null },
+        });
+        throw new TRPCError({
+          code: reason === "no_key" ? "PRECONDITION_FAILED" : "UNAUTHORIZED",
+          message: (e as Error).message,
+        });
+      }
+    }),
+
+  // ── Doc 51 P3 / §5.1 — zero-touch enroll (public, flag-gated) ────────────
+  // The ONLY endpoint that approves a machine WITHOUT an admin action. It costs
+  // a single-use (or allowlisted) high-entropy token an admin handed out, and it
+  // hands back a freshly minted scoped mk_ key ONCE. Every attempt is audited.
+  enroll: publicProcedure
+    .input(z.object({
+      serialNumber: z.string().min(1).max(100),
+      enrollmentToken: z.string().min(8).max(200),
+      // Optional — lets enroll ALSO create a never-registered machine in one call
+      // (machineType is then required by the db layer). Omit it to enroll a
+      // machine that already registered via `register`.
+      machineInfo: z.object({
+        name: z.string().min(1).max(255).optional(),
+        machineType: z.enum(MACHINE_TYPES).optional(),
+        model: z.string().max(100).optional(),
+        manufacturer: z.string().max(100).optional(),
+        firmwareVersion: z.string().max(50).optional(),
+        syncMode: z.enum(["online", "offline"]).optional(),
+      }).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const ip = (ctx as { req?: { ip?: string } })?.req?.ip;
+      enforceEnrollThrottle(ip);
+      if (!enrollmentEnabled()) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Zero-touch enrollment is disabled on this server (set ENROLLMENT_ENABLED=true to enable)",
+        });
+      }
+
+      try {
+        const enrolled = await db.redeemMachineEnrollmentToken({
+          serialNumber: input.serialNumber,
+          enrollmentToken: input.enrollmentToken,
+          machineInfo: input.machineInfo,
+          fromIp: ip ?? null,
+        });
+        // Mint the scoped mk_ key via the SHARED issuer (default TTL applies).
+        const key = await issueMachineKey({
+          machineId: enrolled.machineId,
+          name: `enroll:${enrolled.machineCode}`,
+          scopes: enrolled.scopes,
+        });
+        await auditAction(ctx as AuditableCtx, {
+          action: "machine.enroll", entityType: ENTITY_TYPES.MACHINE,
+          entityId: enrolled.machineId, entityName: enrolled.machineCode,
+          metadata: {
+            outcome: "success", created: enrolled.created,
+            keyPrefix: key.keyPrefix, scopes: enrolled.scopes, ip: ip ?? null,
+          },
+        });
+        return {
+          apiKey: key.plaintextKey,
+          keyId: key.id,
+          machineId: enrolled.machineId,
+          code: enrolled.machineCode,
+          scopes: enrolled.scopes,
+          created: enrolled.created,
+          message: "Machine enrolled — store this key securely; it is shown only once",
+        };
+      } catch (e) {
+        if (!isErrorNamed(e, "EnrollmentTokenError")) throw e;
+        const reason = (e as { reason?: string }).reason ?? "invalid";
+        // Audit the FAILURE (the brute-force signal) before bouncing the caller.
+        await auditAction(ctx as AuditableCtx, {
+          action: "machine.enroll", entityType: ENTITY_TYPES.MACHINE, entityId: null,
+          metadata: { outcome: "failed", reason, serialNumber: input.serialNumber, ip: ip ?? null },
+        });
+        const code =
+          reason === "needs_info" ? "BAD_REQUEST" :
+          reason === "machine_locked" || reason === "no_station" ? "PRECONDITION_FAILED" :
+          "UNAUTHORIZED"; // invalid | expired | exhausted
+        throw new TRPCError({ code, message: (e as Error).message });
+      }
+    }),
+
+  // ── Doc 51 P3 / §5.1 — admin: mint an enrollment token ───────────────────
+  // Plaintext returned EXACTLY ONCE. Defaults to a one-time token; pass
+  // serialPattern (+ maxUses) for a batch allowlist. Scopes default to the
+  // minimal ingest set and are validated against the published vocabulary here.
+  issueEnrollmentToken: adminProcedure
+    .input(z.object({
+      serialPattern: z.string().trim().min(1).max(120).optional(),
+      scopes: z.array(z.string().min(1).max(64)).max(20).optional(),
+      maxUses: z.number().int().min(1).max(100_000).optional(),
+      ttlMinutes: z.number().int().min(1).max(30 * 24 * 60).optional(),
+      note: z.string().max(255).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (input.scopes && !input.scopes.every(isValidScopeGrant)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "One or more scopes are not in the published scope vocabulary",
+        });
+      }
+      const token = await db.issueMachineEnrollmentToken({
+        serialPattern: input.serialPattern ?? null,
+        scopes: input.scopes && input.scopes.length > 0 ? input.scopes : undefined,
+        maxUses: input.maxUses,
+        ttlMinutes: input.ttlMinutes,
+        note: input.note ?? null,
+        issuedBy: ctx.user?.id ?? null,
+      });
+      // Audit issuance — prefix/pattern/scopes only, NEVER the plaintext.
+      await auditAction(ctx, {
+        action: "machine.issueEnrollmentToken", entityType: ENTITY_TYPES.MACHINE, entityId: null,
+        metadata: {
+          prefix: token.tokenPrefix, serialPattern: token.serialPattern,
+          scopes: token.scopes, maxUses: token.maxUses, expiresAt: token.expiresAt.toISOString(),
+        },
+      });
+      return {
+        enrollmentToken: token.token,
+        prefix: token.tokenPrefix,
+        serialPattern: token.serialPattern,
+        scopes: token.scopes,
+        maxUses: token.maxUses,
+        expiresAt: token.expiresAt,
+        /** So the admin sees a token was minted while the feature is still OFF. */
+        enrollmentEnabled: enrollmentEnabled(),
+      };
+    }),
+
+  // ── Doc 51 P3 / §5.1 — admin: list / revoke enrollment tokens ────────────
+  listEnrollmentTokens: adminProcedure.query(async () => {
+    return db.listMachineEnrollmentTokens();
+  }),
+
+  revokeEnrollmentToken: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const row = await db.revokeMachineEnrollmentToken(input.id);
+      await auditAction(ctx, {
+        action: "machine.revokeEnrollmentToken", entityType: ENTITY_TYPES.MACHINE, entityId: null,
+        metadata: { tokenId: input.id, prefix: row.tokenPrefix },
+      });
+      return { success: true };
     }),
 
   // Admin từ chối máy
@@ -416,14 +1272,88 @@ export const machineRouter = router({
       id: z.number(),
       reason: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await db.rejectMachine(input.id, input.reason);
+      await auditAction(ctx, {
+        action: "machine.reject", entityType: ENTITY_TYPES.MACHINE, entityId: input.id,
+        metadata: { reason: input.reason ?? null },
+      });
       return { success: true, message: "Machine registration rejected" };
     }),
 
   list: protectedProcedure.query(async () => {
-    return db.getMachines();
+    // Doc 42 (theme 10) — KHÔNG trả apiKey trong list (kể cả admin); màn hình
+    // cần key dùng endpoint theo-máy (getById/approve/regenerateApiKey).
+    const rows = await db.getMachines();
+    return rows.map(({ apiKey: _apiKey, ...rest }) => rest);
   }),
+
+  // ── Doc 56 Đ0 việc 6 (TAX-1/TAX-3) — machine-type vocabulary, ONE source ──
+  // The full 24-type taxonomy with its DERIVED deviceClass, served from
+  // server/constants/machineTypes.ts so the client stops forking compile-time
+  // type lists (Step1MachineInfo / MachinesTab / FactorySetupWizard / MQTTReplay
+  // / factoryConfigIO.IMPORT_MACHINE_TYPES). labelKey follows the existing i18n
+  // convention `machineType_<TYPE>`. Pure constant projection — no db access.
+  listTypes: protectedProcedure.query(() => {
+    return MACHINE_TYPES.map((type) => ({
+      type,
+      deviceClass: DEVICE_CLASS_BY_TYPE[type],
+      labelKey: `machineType_${type}` as const,
+    }));
+  }),
+
+  // ── Doc 27 Đợt 5 / W5-E — gap F9: server-side search + pagination ────────
+  // `list` above stays a full list (30+ consumers); this is the paged variant
+  // used by MachineRegistration. Bounded: default 50, hard max 200.
+  listPaged: protectedProcedure
+    .input(z.object({
+      search: z.string().trim().max(100).optional(),
+      registrationStatus: z.enum(["pending", "approved", "rejected", "unmapped"]).optional(),
+      limit: z.number().int().min(1).max(200).default(50),
+      offset: z.number().int().min(0).default(0),
+    }).default({ limit: 50, offset: 0 }))
+    .query(async ({ input }) => {
+      // Doc 56 Đ0-A (MGMTUI-3/REG-1) — db.getMachinesPaged already strips the
+      // plaintext apiKey (and derives hasApiKey); this belt-and-braces strip
+      // keeps the ROUTE sealed even if the db layer ever regresses to full rows
+      // (doc 54 P0-1 precedent: the sibling list/getById strip at the router).
+      const { items, total } = await db.getMachinesPaged(input);
+      return {
+        items: items.map((m) => {
+          const { apiKey: _omitApiKey, ...safe } = m as typeof m & { apiKey?: string | null };
+          return safe;
+        }),
+        total,
+      };
+    }),
+
+  // F9 — registration-status counts for the summary cards (replaces counting a
+  // full client-side list).
+  registrationSummary: protectedProcedure.query(async () => {
+    return db.getMachineRegistrationSummary();
+  }),
+
+  // ── Doc 27 Đợt 5 / W5-E — gap F3: onboarding duplicate-code pre-check ────
+  // Đợt-3 partial-unique semantics (uq_machines_code_active): only ACTIVE
+  // machines hold a code — getMachineByCode already filters isActive, so a
+  // soft-deleted tombstone does NOT block reuse. This is advisory (the create
+  // path still enforces CONFLICT server-side on the race).
+  checkCode: protectedProcedure
+    .input(z.object({
+      code: z.string().trim().min(1).max(50),
+      /** When editing an existing machine, its own code is not a conflict. */
+      excludeId: z.number().int().optional(),
+    }))
+    .query(async ({ input }) => {
+      const holder = await db.getMachineByCode(input.code);
+      if (!holder || (input.excludeId !== undefined && holder.id === input.excludeId)) {
+        return { available: true as const, holder: null };
+      }
+      return {
+        available: false as const,
+        holder: { id: holder.id, code: holder.code, name: holder.name },
+      };
+    }),
 
   listByStation: protectedProcedure
     .input(z.object({ stationId: z.number() }))
@@ -434,7 +1364,15 @@ export const machineRouter = router({
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
-      return db.getMachineById(input.id);
+      const m = await db.getMachineById(input.id);
+      if (!m) return m;
+      // doc 54 P0-1 — NEVER expose the plaintext ingest apiKey on a read path. The
+      // sibling `list` already strips it; `getById` did not, leaking the machine
+      // credential to any authenticated user (incl. viewer). Only the admin-only
+      // regenerateApiKey / claim-token flow may ever reveal a key. Strip it here
+      // (destructure the TYPED row so callers keep the full non-secret shape).
+      const { apiKey: _omitApiKey, ...safe } = m;
+      return safe;
     }),
 
   getStats: protectedProcedure
@@ -447,11 +1385,15 @@ export const machineRouter = router({
       return db.getMachineStats(input.id, input.startDate, input.endDate);
     }),
 
-  create: adminProcedure
+  // Doc 40 W1 (Minh-P1) — role-floor: engineer/supervisor may ONBOARD (create) a
+  // machine (master-data write, not device actuation). NB: update/delete/regenerateApiKey
+  // vẫn adminProcedure (admin-only) — cố ý để onboarding mở nhưng sửa/xoá vòng đời vẫn
+  // do admin; nếu cần nhất quán thì mở cùng role-floor ở đợt sau (QA-1b ghi nhận).
+  create: roleProcedure("admin", "supervisor", "engineer")
     .input(z.object({
-      stationId: z.number(),
-      code: z.string().min(1).max(50),
-      name: z.string().min(1).max(255),
+      stationId: z.number({ error: "Vui lòng chọn trạm" }),
+      code: z.string().min(1, "Mã máy là bắt buộc").max(50),
+      name: z.string().min(1, "Tên máy là bắt buộc").max(255),
       machineType: z.enum(MACHINE_TYPES),
       model: z.string().optional(),
       manufacturer: z.string().optional(),
@@ -460,27 +1402,55 @@ export const machineRouter = router({
       image2DKey: z.string().optional(),
       image3DUrl: z.string().optional(),
       image3DKey: z.string().optional(),
+      // Doc 40 W1 (Tuấn-P0, 0238) — địa chỉ kết nối từ onboarding wizard. Optional
+      // để không phá caller cũ; lưu thẳng vào bản ghi máy qua createMachine(...input).
+      ipAddress: z.string().min(1).max(45).optional(),
+      port: z.number().int().min(1).max(65535).optional(),
+      connectionProtocol: z.enum(["websocket", "tcp", "http"]).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // M7: pre-check duplicate code among ACTIVE machines → clean CONFLICT
+      // instead of a raw 500 from the unique index.
+      const dup = await db.getMachineByCode(input.code);
+      if (dup) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Mã máy '${input.code}' đã được dùng bởi máy #${dup.id} (${dup.name})`,
+        });
+      }
+
+      const governanceWarning = commissionGovernanceWarning(input.machineType);
       const apiKey = `mach_${nanoid(32)}`;
-      const id = await db.createMachine({ ...input, apiKey });
-      return { id, apiKey };
+      try {
+        const id = await db.createMachine({ ...input, apiKey });
+        // M5: audit the created payload (input carries no secrets; the generated
+        // apiKey is deliberately NOT logged).
+        await logCreate(createAuditContext(ctx), ENTITY_TYPES.MACHINE, id, input.name, { ...input });
+        return { id, apiKey, governanceWarning };
+      } catch (e) {
+        if (isErrorNamed(e, "MachineCodeCollisionError")) {
+          throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
+        }
+        rethrowDbError(e, { conflictMessage: `Mã máy '${input.code}' đã tồn tại` });
+      }
     }),
 
   regenerateApiKey: adminProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const apiKey = `mach_${nanoid(32)}`;
       const dbInstance = await db.getDb();
       if (!dbInstance) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-      
+
       const { machines } = await import("../../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       await dbInstance.update(machines).set({ apiKey }).where(eq(machines.id, input.id));
+      // M5: record THAT the key rotated — never the key value.
+      await auditAction(ctx, { action: "machine.regenerateApiKey", entityType: ENTITY_TYPES.MACHINE, entityId: input.id });
       return { apiKey };
     }),
 
-  update: adminProcedure
+  update: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       id: z.number(),
       stationId: z.number().optional(),
@@ -496,13 +1466,102 @@ export const machineRouter = router({
       syncMode: z.enum(["online", "offline"]).optional(),
       serialNumber: z.string().optional(),
       firmwareVersion: z.string().optional(),
-      apiKey: z.string().optional(), // Cho phép admin mapping/gán APIKey
+      // doc 54 P0-2 — `apiKey` REMOVED from the general update. Setting an arbitrary
+      // ingest credential here (settings_factory = engineer-reachable) let a non-admin
+      // pin a known key and impersonate the machine. Key rotation is admin-only via
+      // `regenerateApiKey` (generates a strong key, never accepts one).
+      // `registrationStatus` stays but is admin-gated inside the mutation below.
+      // W8-A (M13): capability flags. When present the payload is validated
+      // against the deviceTypes attributesSchema contract (doc 29 §4.2) —
+      // warning-only by default; CAPABILITIES_VALIDATION_ENFORCED rejects on
+      // required-attribute violations. null clears the payload + stamp.
+      capabilities: z.record(z.string(), z.unknown()).nullable().optional(),
     }))
-    .mutation(async ({ input }) => {
-      const { id, ...data } = input;
-      await db.updateMachine(id, data);
-      return { success: true };
+    .mutation(async ({ input, ctx }) => {
+      const { id, capabilities, ...data } = input;
+      // doc 54 P0-2 — registrationStatus is a lifecycle/approval write: gate it to
+      // admin so a non-admin (engineer via settings_factory) cannot self-approve a
+      // machine registration, bypassing the admin-only `approve` path.
+      if (data.registrationStatus !== undefined && ctx.user.role !== "admin") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Chỉ admin được đổi trạng thái đăng ký máy (dùng duyệt/approve).",
+        });
+      }
+      const before = await db.getMachineById(id);
+
+      // ── M13 tier-1/tier-2 soft gate (only when the caller touches capabilities) ──
+      let capabilitiesValidation: ReturnType<typeof toStamp> | null | undefined;
+      if (capabilities !== undefined) {
+        if (!before) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+        }
+        if (capabilities === null) {
+          capabilitiesValidation = null; // cleared payload → cleared stamp
+        } else {
+          const nodes = await loadDeviceTypeNodes();
+          const result = validateCapabilities(before.machineType, capabilities, nodes);
+          if (capabilitiesValidationEnforced() && result.blockingErrors.length > 0) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                `Capabilities rejected (CAPABILITIES_VALIDATION_ENFORCED): required attribute(s) invalid — ` +
+                result.blockingErrors.map((e) => `${e.path} (expected ${e.expected}, got ${e.got})`).join("; "),
+            });
+          }
+          capabilitiesValidation = toStamp(result, "save");
+        }
+      }
+
+      const patch = {
+        ...data,
+        ...(capabilities !== undefined ? { capabilities, capabilitiesValidation } : {}),
+      } as Parameters<typeof db.updateMachine>[1];
+      await db.updateMachine(id, patch);
+      // M5: diff-only snapshot; auditTrailService sanitises apiKey → ***REDACTED***.
+      await logUpdate(createAuditContext(ctx), ENTITY_TYPES.MACHINE, id, before?.code ?? `machine#${id}`, pickBefore(before, Object.keys(patch)), patch as Record<string, unknown>);
+      return {
+        success: true,
+        // Additive: surfaces the tier-1 warning payload to the caller/UI.
+        ...(capabilitiesValidation !== undefined ? { capabilitiesValidation } : {}),
+      };
     }),
+
+  // ── W8-A (doc 27 M13 / doc 29 §4.2) — capabilities validation surface ───────
+  /** Stored stamp + a FRESH re-check of a machine's capabilities vs its device type. */
+  checkCapabilities: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const machine = await db.getMachineById(input.id);
+      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+      const nodes = await loadDeviceTypeNodes();
+      const fresh = validateCapabilities(machine.machineType, (machine as { capabilities?: unknown }).capabilities ?? null, nodes);
+      return {
+        machineId: machine.id,
+        machineType: machine.machineType,
+        enforced: capabilitiesValidationEnforced(),
+        stored: (machine as { capabilitiesValidation?: unknown }).capabilitiesValidation ?? null,
+        fresh,
+      };
+    }),
+
+  /** Tier-2 weekly drift report — status + last run (admin). */
+  capabilitiesDriftStatus: adminProcedure.query(() => getCapabilitiesDriftStatus()),
+
+  /** Run the drift scan on demand (admin; re-stamps machines that declare capabilities). */
+  runCapabilitiesDriftScan: adminProcedure.mutation(async ({ ctx }) => {
+    const report = await runCapabilitiesDriftScanNow();
+    await auditAction(ctx, {
+      action: "machine.capabilitiesDriftScan",
+      entityType: ENTITY_TYPES.MACHINE,
+      metadata: {
+        machinesChecked: report.machinesChecked,
+        drifted: report.drifted.length,
+        unmappedMachineTypes: report.unmappedMachineTypes,
+      },
+    });
+    return report;
+  }),
 
   // Upload machine image
   uploadImage: adminProcedure
@@ -513,58 +1572,175 @@ export const machineRouter = router({
       fileName: z.string(),
       contentType: z.string(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, imageType, imageData, fileName, contentType } = input;
-      
+
       // Convert base64 to buffer
       const buffer = Buffer.from(imageData, 'base64');
-      
+
       // Generate unique file key
       const fileKey = `machines/${id}/${imageType.toLowerCase()}-${Date.now()}-${fileName}`;
-      
+
       // Upload to S3
       const { url } = await storagePut(fileKey, buffer, contentType);
-      
+
       // Update machine record
-      const updateData = imageType === "2D" 
+      const updateData = imageType === "2D"
         ? { image2DUrl: url, image2DKey: fileKey }
         : { image3DUrl: url, image3DKey: fileKey };
-      
+
       await db.updateMachine(id, updateData);
-      
+      // M5: metadata only — NEVER the base64 payload.
+      await auditAction(ctx, {
+        action: "update", entityType: ENTITY_TYPES.MACHINE, entityId: id,
+        metadata: { uploaded: `image${imageType}`, fileKey },
+      });
+
       return { url, key: fileKey };
     }),
 
-  delete: adminProcedure
+  delete: protectedProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // M3: soft-delete keeps the code as a tombstone (partial unique index
+      // frees it for re-registration) and force-stamps lifecycle 'retired'.
+      const before = await db.getMachineById(input.id);
       await db.deleteMachine(input.id);
+      await logDelete(createAuditContext(ctx), ENTITY_TYPES.MACHINE, input.id, before?.code ?? `machine#${input.id}`, {
+        code: before?.code, name: before?.name, stationId: before?.stationId,
+        lifecycleStatus: (before as { lifecycleStatus?: string } | undefined)?.lifecycleStatus,
+      });
       return { success: true };
     }),
 
-  listDeleted: adminProcedure.query(async () => {
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
     return db.getDeletedMachines();
   }),
 
-  restore: adminProcedure
+  restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      await db.restoreMachine(input.id);
+    .mutation(async ({ input, ctx }) => {
+      // M3: restoring a tombstone whose code was reused by a newer active
+      // machine is a CONFLICT (clear message from db.restoreMachine).
+      try {
+        await db.restoreMachine(input.id);
+      } catch (e) {
+        if (isErrorNamed(e, "MachineCodeCollisionError")) {
+          throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
+        }
+        if (e instanceof Error && e.message === "Machine not found") {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+        }
+        throw e;
+      }
+      await auditAction(ctx, {
+        action: "machine.restore", entityType: ENTITY_TYPES.MACHINE, entityId: input.id,
+        // db.restoreMachine lands the asset on 'decommissioned' (excluded from
+        // auto-assign) until someone re-commissions it — record that fact.
+        after: { isActive: true, lifecycleStatus: "decommissioned" },
+      });
       return { success: true };
     }),
 
-  // Update machine layout position
+  // ── Doc 27 Đợt 3 / W3-B — gap M2: asset lifecycle transition ──────────────
+  // RBAC per existing patterns in this router: machine_control/canEdit module
+  // permission (admin always passes; engineers get the module grant).
+  // A reason is MANDATORY for decommissioned/retired. Illegal transitions →
+  // CONFLICT. Writes BOTH audit_logs (master-data trail, M5) and the
+  // append-only control_audit_log (control-grade event).
+  setLifecycleStatus: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({
+      id: z.number(),
+      status: z.enum(MACHINE_LIFECYCLE_STATUSES),
+      reason: z.string().max(500).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if ((input.status === "decommissioned" || input.status === "retired") && !input.reason?.trim()) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "A reason is required when decommissioning or retiring a machine",
+        });
+      }
+
+      let result: Awaited<ReturnType<typeof db.transitionMachineLifecycle>>;
+      try {
+        result = await db.transitionMachineLifecycle(input.id, input.status);
+      } catch (e) {
+        if (isErrorNamed(e, "LifecycleTransitionError")) {
+          throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
+        }
+        if (e instanceof Error && e.message === "Machine not found") {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+        }
+        throw e;
+      }
+
+      // Doc 51 P0 / R2: retiring/decommissioning ALSO revoked every credential
+      // (atomically, in the db layer) — record WHAT was killed so the trail
+      // explains why the machine stopped authenticating.
+      const revoked = result.revoked;
+
+      await auditAction(ctx, {
+        action: "machine.setLifecycleStatus", entityType: ENTITY_TYPES.MACHINE,
+        entityId: input.id, entityName: result.after.code,
+        before: { lifecycleStatus: result.before.lifecycleStatus },
+        after: { lifecycleStatus: result.after.lifecycleStatus },
+        metadata: {
+          reason: input.reason ?? null,
+          ...(revoked ? { credentialsRevoked: revoked } : {}),
+        },
+      });
+
+      // Control-grade append-only ledger (doc 25 T6 mechanism).
+      const dbInstance = await db.getDb();
+      if (dbInstance) {
+        await recordAuditEvent(dbInstance, {
+          entityType: "machine",
+          entityId: input.id,
+          action: `lifecycle.${input.status}`,
+          actorId: ctx.user.id,
+          before: { lifecycleStatus: result.before.lifecycleStatus },
+          after: { lifecycleStatus: result.after.lifecycleStatus },
+          reason: input.reason ?? null,
+        });
+      }
+
+      // `credentialsRevoked` is UNDEFINED (absent) for transitions that revoke
+      // nothing — only retired/decommissioned carry it.
+      return { success: true, lifecycleStatus: result.after.lifecycleStatus, credentialsRevoked: revoked };
+    }),
+
+  // Legal next lifecycle states for a machine (single source of truth for the UI).
+  lifecycleTransitions: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const machine = await db.getMachineById(input.id);
+      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+      const current = ((machine as { lifecycleStatus?: string }).lifecycleStatus ?? "active") as keyof typeof MACHINE_LIFECYCLE_TRANSITIONS;
+      return {
+        current,
+        allowed: [...(MACHINE_LIFECYCLE_TRANSITIONS[current] ?? [])],
+      };
+    }),
+
+  // Update machine layout position — ghi vị trí máy nên phải có quyền machine_control/canEdit
   updateLayoutPosition: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({
       id: z.number(),
       layoutPositionX: z.number().min(0).max(1),
       layoutPositionY: z.number().min(0).max(1),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, layoutPositionX, layoutPositionY } = input;
       await db.updateMachine(id, {
         layoutPositionX: layoutPositionX.toString(),
         layoutPositionY: layoutPositionY.toString(),
+      });
+      await auditAction(ctx, {
+        action: "update", entityType: ENTITY_TYPES.MACHINE, entityId: id,
+        metadata: { layoutPositionX, layoutPositionY },
       });
       return { success: true };
     }),
@@ -572,6 +1748,7 @@ export const machineRouter = router({
   // Full floor-plan transform: position (0–1) + rotation + footprint. Writes the
   // x/y decimal columns (for legacy consumers) AND a `layout` jsonb with the rest.
   updateLayout: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({
       id: z.number(),
       x: z.number().min(0).max(1),
@@ -580,12 +1757,16 @@ export const machineRouter = router({
       footprintW: z.number().min(0.3).max(20).optional(),
       footprintD: z.number().min(0.3).max(20).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, x, y, rotationDeg, footprintW, footprintD } = input;
       await db.updateMachine(id, {
         layoutPositionX: x.toString(),
         layoutPositionY: y.toString(),
         layout: { x, y, rotationDeg, footprintW, footprintD },
+      });
+      await auditAction(ctx, {
+        action: "update", entityType: ENTITY_TYPES.MACHINE, entityId: id,
+        metadata: { layout: { x, y, rotationDeg, footprintW, footprintD } },
       });
       return { success: true };
     }),

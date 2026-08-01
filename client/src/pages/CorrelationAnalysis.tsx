@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, type CSSProperties } from "react";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer, StatusBadge } from "@/components/patterns";
 import {
   Card,
   CardContent,
@@ -19,7 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -51,20 +51,37 @@ import {
 
 // --- Helpers ---
 
-function getCellColor(r: number, isDiagonal: boolean): string {
-  if (isDiagonal) return "bg-blue-100 text-blue-900";
-  const abs = Math.abs(r);
-  if (abs < 0.1) return "bg-gray-50 text-gray-700";
-  if (r > 0) {
-    if (abs >= 0.7) return "bg-green-600 text-white";
-    if (abs >= 0.5) return "bg-green-400 text-white";
-    if (abs >= 0.3) return "bg-green-200 text-green-900";
-    return "bg-green-100 text-green-800";
+/**
+ * Theme-safe heatmap cell colour. Returns an inline style that tints a semantic
+ * token (success = positive, destructive = negative, info = diagonal) into the
+ * card surface via `color-mix`, so the matrix is legible in BOTH light and dark
+ * mode (the old literal `bg-green-600 …` palette was light-only). Stronger |r|
+ * → denser tint; at ≥50 % the token foreground is used for AA contrast.
+ */
+function getCellStyle(r: number, isDiagonal: boolean): CSSProperties {
+  if (isDiagonal) {
+    return {
+      backgroundColor: "color-mix(in oklch, var(--info) 20%, var(--card))",
+      color: "var(--foreground)",
+    };
   }
-  if (abs >= 0.7) return "bg-red-600 text-white";
-  if (abs >= 0.5) return "bg-red-400 text-white";
-  if (abs >= 0.3) return "bg-red-200 text-red-900";
-  return "bg-red-100 text-red-800";
+  const abs = Math.abs(r);
+  if (abs < 0.1) {
+    return {
+      backgroundColor: "color-mix(in oklch, var(--muted) 60%, var(--card))",
+      color: "var(--muted-foreground)",
+    };
+  }
+  const token = r > 0 ? "var(--success)" : "var(--destructive)";
+  // Map |r| (0.1–1) → tint density (~18%–85%).
+  const pct = Math.round(Math.min(85, 15 + abs * 80));
+  const strong = abs >= 0.5;
+  return {
+    backgroundColor: `color-mix(in oklch, ${token} ${pct}%, var(--card))`,
+    color: strong
+      ? (r > 0 ? "var(--success-foreground)" : "var(--destructive-foreground)")
+      : "var(--foreground)",
+  };
 }
 
 function strengthLabelKey(r: number): string {
@@ -195,7 +212,13 @@ export function CorrelationAnalysisContent() {
   // --- Render ---
   return (
     <>
-      <div className="space-y-6 p-4 md:p-6">
+      <PageContainer>
+        <PageHeader
+          icon={<Grid3X3 className="h-6 w-6" />}
+          title={t('reports.correlationAnalysis', 'Correlation Analysis')}
+          description={t('reports.correlationAnalysisDesc', 'Pearson correlation across measurement points to surface related dimensions.')}
+        />
+
         {/* ===== Section 1: Analysis Setup ===== */}
         <Card>
           <CardHeader>
@@ -396,27 +419,27 @@ export function CorrelationAnalysisContent() {
               <div className="mb-4 flex flex-wrap items-center gap-3 text-xs">
                 <span className="font-medium">{t('common.legend')}:</span>
                 <span className="inline-flex items-center gap-1">
-                  <span className="inline-block h-4 w-4 rounded bg-green-600" />
+                  <span className="inline-block h-4 w-4 rounded" style={getCellStyle(0.8, false)} />
                   {t('reports.strongPositive')}
                 </span>
                 <span className="inline-flex items-center gap-1">
-                  <span className="inline-block h-4 w-4 rounded bg-green-300" />
+                  <span className="inline-block h-4 w-4 rounded" style={getCellStyle(0.4, false)} />
                   {t('reports.moderatePositive')}
                 </span>
                 <span className="inline-flex items-center gap-1">
-                  <span className="inline-block h-4 w-4 rounded bg-gray-100 border" />
+                  <span className="inline-block h-4 w-4 rounded border" style={getCellStyle(0, false)} />
                   {t('reports.nearZero')}
                 </span>
                 <span className="inline-flex items-center gap-1">
-                  <span className="inline-block h-4 w-4 rounded bg-red-300" />
+                  <span className="inline-block h-4 w-4 rounded" style={getCellStyle(-0.4, false)} />
                   {t('reports.moderateNegative')}
                 </span>
                 <span className="inline-flex items-center gap-1">
-                  <span className="inline-block h-4 w-4 rounded bg-red-600" />
+                  <span className="inline-block h-4 w-4 rounded" style={getCellStyle(-0.8, false)} />
                   {t('reports.strongNegative')}
                 </span>
                 <span className="inline-flex items-center gap-1">
-                  <span className="inline-block h-4 w-4 rounded bg-blue-100 border" />
+                  <span className="inline-block h-4 w-4 rounded border" style={getCellStyle(1, true)} />
                   {t('reports.diagonal')}
                 </span>
               </div>
@@ -450,10 +473,8 @@ export function CorrelationAnalysisContent() {
                             return (
                               <td
                                 key={ci}
-                                className={`px-2 py-1 text-center font-mono text-xs ${getCellColor(
-                                  r,
-                                  isDiag
-                                )}`}
+                                className="px-2 py-1 text-center font-mono text-xs"
+                                style={getCellStyle(r, isDiag)}
                                 title={`r = ${r.toFixed(4)}`}
                               >
                                 {r.toFixed(3)}
@@ -530,34 +551,26 @@ export function CorrelationAnalysisContent() {
                                 {Number(c.tStat).toFixed(3)}
                               </TableCell>
                               <TableCell className="text-center">
-                                <Badge
-                                  variant={
-                                    c.significant ? "default" : "secondary"
-                                  }
-                                  className={
-                                    c.significant
-                                      ? "bg-green-600 hover:bg-green-700"
-                                      : ""
-                                  }
-                                >
-                                  {c.significant
+                                <StatusBadge
+                                  status={c.significant ? "significant" : "not-significant"}
+                                  tone={c.significant ? "success" : "default"}
+                                  label={c.significant
                                     ? t('reports.significant')
                                     : t('reports.notSignificant')}
-                                </Badge>
+                                />
                               </TableCell>
                               <TableCell className="text-center">
-                                <Badge
-                                  variant="outline"
-                                  className={
+                                <StatusBadge
+                                  status={`strength-${Math.abs(c.r).toFixed(2)}`}
+                                  tone={
                                     Math.abs(c.r) >= 0.7
-                                      ? "border-green-600 text-green-700"
+                                      ? "success"
                                       : Math.abs(c.r) >= 0.5
-                                      ? "border-yellow-600 text-yellow-700"
-                                      : ""
+                                      ? "warning"
+                                      : "default"
                                   }
-                                >
-                                  {t(strengthLabelKey(c.r))}
-                                </Badge>
+                                  label={t(strengthLabelKey(c.r))}
+                                />
                               </TableCell>
                             </TableRow>
                           ))}
@@ -714,10 +727,8 @@ export function CorrelationAnalysisContent() {
                               return (
                                 <td
                                   key={ci}
-                                  className={`px-2 py-1 text-center font-mono text-xs ${getCellColor(
-                                    r,
-                                    isDiag
-                                  )}`}
+                                  className="px-2 py-1 text-center font-mono text-xs"
+                                  style={getCellStyle(r, isDiag)}
                                 >
                                   {r.toFixed(3)}
                                 </td>
@@ -737,7 +748,7 @@ export function CorrelationAnalysisContent() {
             )}
           </DialogContent>
         </Dialog>
-      </div>
+      </PageContainer>
     </>
   );
 }

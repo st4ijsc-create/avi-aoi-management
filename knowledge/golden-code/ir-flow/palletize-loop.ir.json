@@ -1,0 +1,23 @@
+{
+  "_safety_note": "AI-assisted golden example. The author reviews it; the platform validates it through the IR safety-linter (ISO/TS 15066 speed<=250mm/s, force<=150N, workspace AABB, blend<=100mm) then the kinematic sim gate and HIL URSim before any gated (HITL) deploy. Motion/process only. This underscore field is ignored by flowSchema (unknown keys are stripped).",
+  "flow_id": "palletize_stack_loop",
+  "target_device_type": "universal-robots",
+  "version": 1,
+  "author": "st4i-golden-code",
+  "blocks": [
+    { "type": "set_variable", "name": "placed", "expr": { "kind": "lit", "value": 0 } },
+    { "type": "loop", "count": 4, "body": [
+      { "type": "move_linear", "target_pose": { "x": 350, "y": -250, "z": 250, "rx": 3.14159, "ry": 0, "rz": 0 }, "speed_mms": 200, "acceleration": 0.8, "blend_radius": 10 },
+      { "type": "move_linear", "target_pose": { "x": 350, "y": -250, "z": 100, "rx": 3.14159, "ry": 0, "rz": 0 }, "speed_mms": 60, "acceleration": 0.4, "blend_radius": 0 },
+      { "type": "grip", "tool_id": "vacuum_gripper", "force_limit_n": 50, "timeout_ms": 1200 },
+      { "type": "move_linear", "target_pose": { "x": 350, "y": -250, "z": 250, "rx": 3.14159, "ry": 0, "rz": 0 }, "speed_mms": 150, "acceleration": 0.8, "blend_radius": 10 },
+      { "type": "move_linear", "target_pose": { "x": 600, "y": 250, "z": 250, "rx": 3.14159, "ry": 0, "rz": 0 }, "speed_mms": 200, "acceleration": 0.8, "blend_radius": 10 },
+      { "type": "move_linear", "target_pose": { "x": 600, "y": 250, "z": 120, "rx": 3.14159, "ry": 0, "rz": 0 }, "speed_mms": 60, "acceleration": 0.4, "blend_radius": 0 },
+      { "type": "release", "tool_id": "vacuum_gripper" },
+      { "type": "counter", "name": "placed", "op": "increment", "amount": 1 },
+      { "type": "set_output", "signal": "1", "value": true },
+      { "type": "wait", "ms": 200 },
+      { "type": "set_output", "signal": "1", "value": false }
+    ] }
+  ]
+}

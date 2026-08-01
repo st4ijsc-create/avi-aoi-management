@@ -1,0 +1,13 @@
+' SAFETY: AI-assisted golden example. The author reviews & validates the recipe, then a human
+' approves the gated push (HITL). This writes PROCESS parameters (device/recipe values) only -
+' it authors NO ladder and NO safety logic; E-stop / SIL stay in GX Works on the certified PLC.
+'
+' MELSEC device / recipe parameter table for injection-mould product "A".
+' Word devices (D) carry setpoints; bit devices (M) carry mode flags. Decimal addresses.
+D100 = 2200      ' barrel zone-1 temperature setpoint (x0.1 degC -> 220.0)
+D101 = 2350      ' barrel zone-2 temperature setpoint (x0.1 degC -> 235.0)
+D102 = 1800      ' injection pressure setpoint (bar)
+D110 = 45        ' cycle-time setpoint (x0.1 s -> 4.5 s)
+D111 = 12        ' cooling-time setpoint (x0.1 s -> 1.2 s)
+M20 = 1          ' auto-mode enable flag
+M21 = 0          ' purge-mode disable flag

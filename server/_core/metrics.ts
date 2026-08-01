@@ -19,6 +19,14 @@ let httpDurationHistogram: {
 } | null = null;
 let initialized = false;
 
+// Doc 44 G5.9 — RUM web-vitals histograms (route-labelled), feed từ rumRouter.
+type HistogramLike = { observe: (labels: Record<string, string>, value: number) => void };
+export type RumWebVitalMetric = "lcp" | "cls" | "inp" | "ttfb";
+let rumHistograms: Record<RumWebVitalMetric, HistogramLike> | null = null;
+
+// Doc 44 W0-I (G5.7) — security telemetry: CSP violations + origin-check mismatches.
+let securityEventCounter: { inc: (labels: Record<string, string>) => void } | null = null;
+
 function metricsEnabled(): boolean {
   return process.env.METRICS_ENABLED === "true";
 }
@@ -62,6 +70,50 @@ export async function initMetrics(): Promise<boolean> {
       registers: [reg],
     });
 
+    // Doc 44 G5.9 — RUM web-vitals từ client (rumRouter.report). Label duy nhất
+    // là route (đã chuẩn hoá :id phía client + server) để không nổ cardinality.
+    // Đăng ký vào CẢ default registry (client.register): SLO provider screen-load-p95
+    // (sloMetricsProvider) tra cứu bằng client.register.getSingleMetric theo tên.
+    const rumRegisters = [reg, client.register];
+    rumHistograms = {
+      lcp: new client.Histogram({
+        name: "rum_web_vitals_lcp_ms",
+        help: "RUM Largest Contentful Paint (ms) theo route",
+        labelNames: ["route"],
+        buckets: [500, 1000, 1500, 2000, 3000, 5000, 8000],
+        registers: rumRegisters,
+      }),
+      cls: new client.Histogram({
+        name: "rum_web_vitals_cls",
+        help: "RUM Cumulative Layout Shift (không đơn vị) theo route",
+        labelNames: ["route"],
+        buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5],
+        registers: rumRegisters,
+      }),
+      inp: new client.Histogram({
+        name: "rum_web_vitals_inp_ms",
+        help: "RUM Interaction to Next Paint xấp xỉ (ms, max event duration) theo route",
+        labelNames: ["route"],
+        buckets: [100, 200, 300, 500, 800, 1500, 3000],
+        registers: rumRegisters,
+      }),
+      ttfb: new client.Histogram({
+        name: "rum_web_vitals_ttfb_ms",
+        help: "RUM Time To First Byte (ms) theo route",
+        labelNames: ["route"],
+        buckets: [100, 200, 400, 800, 1500, 3000, 8000],
+        registers: rumRegisters,
+      }),
+    };
+
+    // Doc 44 W0-I (G5.7) — CSP report + origin-check violation counter.
+    securityEventCounter = new client.Counter({
+      name: "avi_aoi_security_events_total",
+      help: "Security telemetry: csp_violation / origin_mismatch (label mode = report-only|enforce|log)",
+      labelNames: ["type", "mode"],
+      registers: [reg],
+    });
+
     // B0.3 — AI Brain runtime telemetry (tier throughput, latency, queue,
     // resident models, VRAM). Collected read-only from router/engine getters
     // on each scrape. Fail-safe: never throws into init.
@@ -81,31 +133,70 @@ export async function initMetrics(): Promise<boolean> {
   }
 }
 
+// doc 38 Đợt P — the same request `finish` hook also feeds the SLO rolling-window tracker, so the
+// burn-rate evaluator gets a REAL (good,total) feed. Imported statically (light module, no cycle:
+// sloMetricsProvider imports slo/sloAlerting, never metrics). Both fns self-gate — cost when
+// inactive is one boolean read.
+import { recordHttpForSlo, sloHttpTrackingActive } from "../services/observability/sloMetricsProvider";
+
 /**
- * Express middleware ghi nhận latency + đếm request. No-op khi metrics chưa bật.
+ * Express middleware ghi nhận latency + đếm request (prom-client) và cấp feed cho SLO evaluator.
+ * No-op khi CẢ METRICS_ENABLED (prom) LẪN OBSERVABILITY (SLO tracker) đều tắt — không đính listener.
  */
 export function metricsMiddleware() {
   return (req: any, res: any, next: () => void) => {
-    if (!registry || !httpRequestCounter || !httpDurationHistogram) return next();
+    const promActive = !!(registry && httpRequestCounter && httpDurationHistogram);
+    const sloActive = sloHttpTrackingActive();
+    if (!promActive && !sloActive) return next();
     const start = process.hrtime.bigint();
     res.on("finish", () => {
       try {
         const durationSec = Number(process.hrtime.bigint() - start) / 1e9;
-        // Dùng route pattern nếu có để tránh nổ cardinality từ path động.
-        const route = (req.route?.path as string) || req.baseUrl || req.path || "unknown";
-        const labels = {
-          method: String(req.method),
-          route: String(route),
-          status: String(res.statusCode),
-        };
-        httpRequestCounter!.inc(labels);
-        httpDurationHistogram!.observe(labels, durationSec);
+        const statusCode = Number(res.statusCode);
+        if (promActive) {
+          // Dùng route pattern nếu có để tránh nổ cardinality từ path động.
+          const route = (req.route?.path as string) || req.baseUrl || req.path || "unknown";
+          const labels = {
+            method: String(req.method),
+            route: String(route),
+            status: String(statusCode),
+          };
+          httpRequestCounter!.inc(labels);
+          httpDurationHistogram!.observe(labels, durationSec);
+        }
+        if (sloActive) {
+          recordHttpForSlo(durationSec * 1000, statusCode);
+        }
       } catch {
         /* no-op: không để metrics làm hỏng request */
       }
     });
     next();
   };
+}
+
+/**
+ * Doc 44 G5.9 — ghi 1 mẫu RUM web-vital vào histogram tương ứng.
+ * No-op an toàn khi METRICS_ENABLED tắt / prom-client thiếu / chưa init.
+ */
+export function observeRumWebVital(metric: RumWebVitalMetric, route: string, value: number): void {
+  try {
+    rumHistograms?.[metric]?.observe({ route }, value);
+  } catch {
+    /* no-op: metrics không được làm hỏng request */
+  }
+}
+
+/**
+ * Doc 44 W0-I (G5.7) — đếm 1 security event (csp_violation / origin_mismatch).
+ * No-op an toàn khi METRICS_ENABLED tắt / prom-client thiếu / chưa init.
+ */
+export function incSecurityEvent(type: string, mode: string): void {
+  try {
+    securityEventCounter?.inc({ type, mode });
+  } catch {
+    /* no-op: metrics không được làm hỏng request */
+  }
 }
 
 /**

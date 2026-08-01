@@ -1,0 +1,11 @@
+{
+  "machineCode": "KEY-1",
+  "program": "CVX_Prog_3",
+  "workId": "SN-2026-000132",
+  "totalJudge": "NG",
+  "time": "2026-07-04T08:38:00+07:00",
+  "tools": [
+    { "toolNo": 12, "judge": "OK", "measured": 1024.5, "lower": 900, "upper": 1100 },
+    { "toolNo": 13, "toolName": "Scratch_Check", "judge": "NG", "measured": 5, "defectName": "SCRATCH", "level": "minor", "image": "SN-2026-000132_T13.jpg" }
+  ]
+}

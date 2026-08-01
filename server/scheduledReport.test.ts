@@ -23,7 +23,17 @@ vi.mock("./storage", () => ({
   storagePut: vi.fn().mockResolvedValue({ url: "https://s3.example.com/test-logo.png" }),
 }));
 
+// Mock email/notification transports so importing scheduledReportService stays hermetic
+vi.mock("./_core/email", () => ({
+  sendEmail: vi.fn(),
+  createTransporterFromConfig: vi.fn(),
+}));
+vi.mock("./_core/notification", () => ({
+  notifyOwner: vi.fn(),
+}));
+
 import * as db from "./db";
+import { scheduledReportService } from "./services/scheduledReportService";
 
 describe("Scheduled Report API", () => {
   beforeEach(() => {
@@ -208,6 +218,114 @@ describe("Report Customization Fields", () => {
   it("should accept valid S3 URL for logoUrl", () => {
     const logoUrl = "https://s3.amazonaws.com/bucket/logo.png";
     expect(logoUrl).toMatch(/^https?:\/\/.+/);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 27 §6 gap A1 (P0) — computeNextRun must be evaluated on the FACTORY
+// timezone wall clock (env FACTORY_TZ, default Asia/Ho_Chi_Minh), never the
+// server/OS timezone. All expectations below are absolute UTC instants, so
+// these tests prove server-TZ independence: they pass identically on a UTC
+// host and on an Asia/Ho_Chi_Minh host.
+// ════════════════════════════════════════════════════════════════════════════
+describe("computeNextRun — factory timezone (doc 27 A1)", () => {
+  // computeNextRun is private; exercise it directly via an any-cast.
+  const svc = scheduledReportService as any;
+
+  beforeEach(() => {
+    vi.stubEnv("FACTORY_TZ", ""); // force the Asia/Ho_Chi_Minh default
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("daily 06:00 = 06:00 Asia/Ho_Chi_Minh, not 06:00 server time", () => {
+    // 2026-07-04T01:00Z is 08:00 VN → today's 06:00 VN slot already passed.
+    const next: Date = svc.computeNextRun("daily", "06:00", {
+      after: new Date("2026-07-04T01:00:00Z"),
+    });
+    // Next run = 2026-07-05 06:00 VN = 2026-07-04T23:00:00Z.
+    // (Old bug: bare new Date().setHours(6) on a UTC server produced
+    // 2026-07-05T06:00:00Z = 13:00 VN — a 7-hour drift.)
+    expect(next.toISOString()).toBe("2026-07-04T23:00:00.000Z");
+  });
+
+  it("daily 06:00 fires later the same factory day when still ahead", () => {
+    // 2026-07-03T22:00Z = 05:00 VN Jul 4 → today's slot is 1h away.
+    const next: Date = svc.computeNextRun("daily", "06:00", {
+      after: new Date("2026-07-03T22:00:00Z"),
+    });
+    expect(next.toISOString()).toBe("2026-07-03T23:00:00.000Z"); // Jul 4 06:00 VN
+  });
+
+  it("weekly honors scheduleDayOfWeek on the factory wall clock", () => {
+    // after = Saturday 2026-07-04 08:00 VN; scheduled Monday 06:00 VN.
+    const next: Date = svc.computeNextRun("weekly", "06:00", {
+      dayOfWeek: 1,
+      after: new Date("2026-07-04T01:00:00Z"),
+    });
+    expect(next.toISOString()).toBe("2026-07-05T23:00:00.000Z"); // Mon Jul 6, 06:00 VN
+  });
+
+  it("monthly clamps dayOfMonth to the target month length", () => {
+    // after = Jan 31 09:00 VN, scheduled day 31 → February run clamps to Feb 28.
+    const next: Date = svc.computeNextRun("monthly", "06:00", {
+      dayOfMonth: 31,
+      after: new Date("2026-01-31T02:00:00Z"),
+    });
+    expect(next.toISOString()).toBe("2026-02-27T23:00:00.000Z"); // Feb 28 06:00 VN
+  });
+
+  it("respects a FACTORY_TZ override", () => {
+    vi.stubEnv("FACTORY_TZ", "Asia/Tokyo"); // UTC+9, no DST
+    const next: Date = svc.computeNextRun("daily", "06:00", {
+      after: new Date("2026-07-04T01:00:00Z"), // 10:00 Tokyo → slot passed
+    });
+    expect(next.toISOString()).toBe("2026-07-04T21:00:00.000Z"); // Jul 5 06:00 JST
+  });
+
+  it("invalid scheduleTime falls back to 08:00 factory time", () => {
+    const next: Date = svc.computeNextRun("daily", "not-a-time", {
+      after: new Date("2026-07-04T05:00:00Z"), // 12:00 VN → 08:00 slot passed
+    });
+    expect(next.toISOString()).toBe("2026-07-05T01:00:00.000Z"); // Jul 5 08:00 VN
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// doc 32 R4 (item 7) — the standalone setInterval scheduler was RETIRED (the live
+// scheduler is the node-cron reportScheduler). These assertions prove the dead
+// loop is gone while the content library the live path consumes is intact.
+// ════════════════════════════════════════════════════════════════════════════
+describe("scheduler retirement + content library (doc 32 R4)", () => {
+  const svc = scheduledReportService as any;
+
+  it("retired the dead setInterval scheduler methods", () => {
+    expect(svc.start).toBeUndefined();
+    expect(svc.stop).toBeUndefined();
+    expect(svc.runReport).toBeUndefined();
+    expect(svc.checkAndRunReports).toBeUndefined();
+    expect(svc.getDueReports).toBeUndefined();
+  });
+
+  it("keeps the content-generation library consumed by reportScheduler + systemRouters", () => {
+    for (const method of [
+      "generateReportContent",
+      "formatReportHtml",
+      "previewReport",
+      "generateAndSendReport",
+      "generateOEEReportContent",
+      "formatOEEReportHtml",
+      "generateMachineHealthReportContent",
+      "formatMachineHealthReportHtml",
+    ]) {
+      expect(typeof svc[method]).toBe("function");
+    }
+  });
+
+  it("retains computeNextRun (factory-TZ correctness helper)", () => {
+    expect(typeof svc.computeNextRun).toBe("function");
   });
 });
 

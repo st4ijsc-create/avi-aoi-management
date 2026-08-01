@@ -14,6 +14,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
+import { requirePermission } from "../_core/accessControl";
 import * as db from "../db";
 import { getDb } from "../db/connection";
 import { sql } from "drizzle-orm";
@@ -214,7 +215,7 @@ export const enhancedAuditRouter = router({
           COUNT(*) FILTER (WHERE action = 'delete')::int as "deletes",
           COUNT(*) FILTER (WHERE action LIKE 'login%')::int as "logins"
         FROM audit_logs
-        WHERE "createdAt" >= ${since}
+        WHERE "createdAt" >= ${since.toISOString()}
       `);
       const summaryRows = summaryResult.rows || summaryResult;
       const summary = summaryRows[0] || {};
@@ -229,7 +230,7 @@ export const enhancedAuditRouter = router({
               COUNT(*)::int as count,
               COUNT(*) FILTER (WHERE status = 'failure')::int as "failureCount"
             FROM audit_logs
-            WHERE "createdAt" >= ${since}
+            WHERE "createdAt" >= ${since.toISOString()}
             GROUP BY DATE_TRUNC('day', "createdAt")
             ORDER BY label DESC
           `;
@@ -241,7 +242,7 @@ export const enhancedAuditRouter = router({
               COUNT(*)::int as count,
               COUNT(*) FILTER (WHERE status = 'failure')::int as "failureCount"
             FROM audit_logs
-            WHERE "createdAt" >= ${since}
+            WHERE "createdAt" >= ${since.toISOString()}
             GROUP BY DATE_TRUNC('week', "createdAt")
             ORDER BY label DESC
           `;
@@ -253,7 +254,7 @@ export const enhancedAuditRouter = router({
               COUNT(*)::int as count,
               COUNT(*) FILTER (WHERE status = 'failure')::int as "failureCount"
             FROM audit_logs
-            WHERE "createdAt" >= ${since}
+            WHERE "createdAt" >= ${since.toISOString()}
             GROUP BY "entityType"
             ORDER BY count DESC
             LIMIT 20
@@ -266,7 +267,7 @@ export const enhancedAuditRouter = router({
               COUNT(*)::int as count,
               COUNT(*) FILTER (WHERE status = 'failure')::int as "failureCount"
             FROM audit_logs
-            WHERE "createdAt" >= ${since}
+            WHERE "createdAt" >= ${since.toISOString()}
             GROUP BY "action"
             ORDER BY count DESC
             LIMIT 20
@@ -280,7 +281,7 @@ export const enhancedAuditRouter = router({
               COUNT(*) FILTER (WHERE al.status = 'failure')::int as "failureCount"
             FROM audit_logs al
             LEFT JOIN users u ON u.id = al."userId"
-            WHERE al."createdAt" >= ${since}
+            WHERE al."createdAt" >= ${since.toISOString()}
             GROUP BY COALESCE(u."name", 'System')
             ORDER BY count DESC
             LIMIT 20
@@ -441,9 +442,214 @@ export const enhancedAuditRouter = router({
         contentType: "text/csv; charset=utf-8",
       };
     }),
+
+  // ── doc 42 Đợt 4B (H4) — MASTER-DATA AUDIT TRAIL (read-only) ────────────────
+  // Surfaces "ai đổi gì, khi nào" cho module Quản lý dữ liệu. Đọc audit_logs
+  // THẬT (chủ yếu bản ghi trpc_mutation với action = đường dẫn router; kèm các
+  // bản ghi domain có entityName). Gate bằng quyền module "masterdata" (admin
+  // luôn qua) — KHÔNG dùng adminProcedure để người dùng có canView masterdata
+  // cũng xem được (doc 42 §9 Đợt 4 mục 2). Chỉ ĐỌC — không ghi/không sửa audit.
+
+  /**
+   * Tùy chọn bộ lọc cho trang audit master-data: danh mục "thực thể" (key→nhãn)
+   * và danh sách người dùng đã có thao tác (lấy TỪ dữ liệu audit thật, nên luôn
+   * hợp quyền — không phụ thuộc user.list admin-only).
+   */
+  masterDataAuditFilters: protectedProcedure
+    .use(requirePermission("masterdata", "canView"))
+    .query(async () => {
+      const domains = Object.entries(MASTER_DATA_DOMAINS).map(([key, v]) => ({
+        key,
+        label: v.label,
+      }));
+      const conn = await getDb();
+      if (!conn) return { domains, users: [] as { id: number; name: string }[] };
+
+      const allPrefixes = Object.values(MASTER_DATA_DOMAINS).flatMap((d) => d.prefixes);
+      const prefixCond = sql.join(
+        allPrefixes.map((p) => sql`al."action" LIKE ${p + "%"}`),
+        sql` OR `,
+      );
+
+      const result: any = await conn.execute(sql`
+        SELECT DISTINCT al."userId" AS id, COALESCE(u."name", al."userName") AS name
+        FROM audit_logs al
+        LEFT JOIN users u ON u.id = al."userId"
+        WHERE (${prefixCond}) AND al."userId" IS NOT NULL
+        ORDER BY name
+      `);
+      const rows = result.rows || result;
+      return {
+        domains,
+        users: rows.map((r: any) => ({
+          id: r.id as number,
+          name: (r.name as string) || `User #${r.id}`,
+        })),
+      };
+    }),
+
+  /**
+   * Danh sách bản ghi kiểm toán của master data — lọc theo thực thể (nhóm router),
+   * hành động (create/update/delete), người dùng, khoảng thời gian và tìm kiếm tự do.
+   */
+  masterDataList: protectedProcedure
+    .use(requirePermission("masterdata", "canView"))
+    .input(
+      z.object({
+        domain: z.string().optional(),
+        op: z.enum(["create", "update", "delete"]).optional(),
+        userId: z.number().optional(),
+        search: z.string().optional(),
+        startDate: z.coerce.date().optional(),
+        endDate: z.coerce.date().optional(),
+        limit: z.number().min(1).max(500).default(200),
+        offset: z.number().min(0).default(0),
+      }),
+    )
+    .query(async ({ input }) => {
+      const conn = await getDb();
+      if (!conn) return { items: [] as MasterDataAuditItem[], total: 0 };
+
+      // Path-prefixes to match on al.action (either the selected domain, or all).
+      const prefixes =
+        input.domain && MASTER_DATA_DOMAINS[input.domain]
+          ? MASTER_DATA_DOMAINS[input.domain].prefixes
+          : Object.values(MASTER_DATA_DOMAINS).flatMap((d) => d.prefixes);
+
+      const prefixCond = sql.join(
+        prefixes.map((p) => sql`al."action" LIKE ${p + "%"}`),
+        sql` OR `,
+      );
+
+      // Classify a router path into create/update/delete/other. Used by BOTH the
+      // SELECT column and the op filter so display and filtering always agree.
+      const opClassSql = sql`CASE
+        WHEN al."action" ~* 'delete|revoke|remove|cleanup' THEN 'delete'
+        WHEN al."action" ~* 'create|issue|grant|add|import|clone|upsert' THEN 'create'
+        WHEN al."action" ~* 'update|reorder|reissue|savedraft|complete|restore|move|position' THEN 'update'
+        ELSE 'other' END`;
+
+      const conditions: ReturnType<typeof sql>[] = [sql`(${prefixCond})`];
+      if (input.userId) conditions.push(sql`al."userId" = ${input.userId}`);
+      if (input.startDate) conditions.push(sql`al."createdAt" >= ${input.startDate}`);
+      if (input.endDate) conditions.push(sql`al."createdAt" <= ${input.endDate}`);
+      if (input.op) conditions.push(sql`(${opClassSql}) = ${input.op}`);
+      if (input.search) {
+        const like = `%${input.search}%`;
+        conditions.push(
+          sql`(al."entityName" ILIKE ${like} OR al."action" ILIKE ${like} OR al."userName" ILIKE ${like})`,
+        );
+      }
+
+      const whereClause = sql.join(conditions, sql` AND `);
+
+      const result: any = await conn.execute(sql`
+        SELECT al.id, al."action", al."entityType", al."entityId", al."entityName",
+               al."userId", al."userName", al."status", al."createdAt", al."details",
+               (${opClassSql}) AS "opClass",
+               u."name" AS "displayUserName"
+        FROM audit_logs al
+        LEFT JOIN users u ON u.id = al."userId"
+        WHERE ${whereClause}
+        ORDER BY al."createdAt" DESC
+        LIMIT ${input.limit} OFFSET ${input.offset}
+      `);
+      const rows = result.rows || result;
+
+      const countResult: any = await conn.execute(sql`
+        SELECT COUNT(*)::int AS total FROM audit_logs al WHERE ${whereClause}
+      `);
+      const countRows = countResult.rows || countResult;
+
+      return {
+        items: rows.map(normalizeMasterDataAuditRow) as MasterDataAuditItem[],
+        total: countRows[0]?.total || 0,
+      };
+    }),
 });
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+// ── doc 42 Đợt 4B (H4) — master-data audit helpers ───────────────────────────
+
+export interface MasterDataAuditItem {
+  id: number;
+  createdAt: string | Date;
+  path: string;
+  opClass: "create" | "update" | "delete" | "other";
+  entityType: string | null;
+  entityName: string | null;
+  userId: number | null;
+  userName: string | null;
+  status: string;
+  summary: string;
+}
+
+/**
+ * Nhóm "thực thể" master data → tiền tố đường dẫn router (al.action). Đây là NGUỒN
+ * LỌC DUY NHẤT (server-owned) để lọc audit_logs theo từng khu vực dữ liệu; UI chỉ
+ * cần gửi `key`, nhãn `label` được trả về cho dropdown (giữ FE/BE không lệch nhau).
+ */
+const MASTER_DATA_DOMAINS: Record<string, { label: string; prefixes: string[] }> = {
+  tradePartners: { label: "Nhà cung cấp & Khách hàng", prefixes: ["masterData.suppliers.", "masterData.customers."] },
+  materialsUom: { label: "Vật tư & Đơn vị", prefixes: ["masterData.materials.", "masterData.uom."] },
+  calendarInventory: { label: "Lịch & Kho", prefixes: ["masterData.calendar.", "masterData.inventory."] },
+  workforce: { label: "Kỹ năng & Dụng cụ", prefixes: ["masterData.skills.", "masterData.tools."] },
+  componentLibrary: { label: "Thư viện linh kiện", prefixes: ["componentLibrary."] },
+  operatorBadges: { label: "Thẻ vận hành", prefixes: ["operatorBadge."] },
+  products: { label: "Sản phẩm", prefixes: ["productModel.", "product.", "productOnboarding.", "fiducialMark."] },
+  productMapping: { label: "Gán sản phẩm ↔ máy", prefixes: ["productMachineMapping."] },
+  workstations: { label: "Trạm làm việc", prefixes: ["workstation."] },
+  processes: { label: "Quy trình", prefixes: ["process."] },
+  factoryConfig: { label: "Cấu hình nhà máy", prefixes: ["factory.", "workshop.", "line.", "station.", "machine."] },
+  layout: { label: "Sơ đồ bố trí", prefixes: ["layout."] },
+};
+
+/** Parse cột details (TEXT chứa JSON) an toàn → object rỗng nếu thiếu/hỏng. */
+function parseAuditDetails(raw: unknown): Record<string, any> {
+  if (raw == null) return {};
+  if (typeof raw === "object") return raw as Record<string, any>;
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+/** Tóm tắt thay đổi (vi) đọc TỪ details thật — không bịa; chuỗi rỗng nếu không rõ. */
+function summarizeAudit(details: Record<string, any>): string {
+  if (typeof details.total === "number" && ("inserted" in details || "updated" in details)) {
+    const parts = [`thêm ${details.inserted ?? 0}`, `cập nhật ${details.updated ?? 0}`];
+    if (details.failed) parts.push(`lỗi ${details.failed}`);
+    return `Nhập ${details.total} dòng (${parts.join(", ")})`;
+  }
+  if (typeof details.deleted === "number") return `Đã xoá ${details.deleted} bản ghi`;
+  if (details.soft === true) return "Xoá mềm (giữ lịch sử)";
+  if (Array.isArray(details.changes) && details.changes.length > 0) {
+    return `${details.changes.length} trường thay đổi`;
+  }
+  if (details.metadata && details.metadata.ok === false) return "Thao tác thất bại";
+  return "";
+}
+
+function normalizeMasterDataAuditRow(r: any): MasterDataAuditItem {
+  const details = parseAuditDetails(r.details);
+  return {
+    id: r.id,
+    createdAt: r.createdAt,
+    path: r.action,
+    opClass: (r.opClass as MasterDataAuditItem["opClass"]) || "other",
+    entityType: r.entityType ?? null,
+    entityName: r.entityName ?? null,
+    userId: r.userId ?? null,
+    userName: r.displayUserName || r.userName || null,
+    status: r.status || "success",
+    summary: summarizeAudit(details),
+  };
+}
 
 function generateActivityMessage(row: any): string {
   const actionMap: Record<string, string> = {

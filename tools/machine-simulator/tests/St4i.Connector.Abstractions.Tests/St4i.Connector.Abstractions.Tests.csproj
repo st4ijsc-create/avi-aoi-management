@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- GP-2 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-2-brief.md) — plain
+         net10.0 (not -windows), matching St4i.Connector.Abstractions.csproj itself. This test project
+         references ONLY that one assembly (see the ProjectReference below) — deliberately: a third-party
+         driver author's own test suite for a sidecar built against the published contract would look
+         exactly like this, with no St4i.EdgeCore/EngineApi/WPF host code in reach. If the round-trip test
+         below only compiled because some host assembly's JSON options leaked in, that would prove
+         nothing about the connector wire format actually being self-contained. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\St4i.Connector.Abstractions\St4i.Connector.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

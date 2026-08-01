@@ -50,6 +50,11 @@ import {
   type NgRecommendation,
   type PointRecommendation,
 } from "./aiThresholdAdvisor";
+// doc 44 W5-A2 (G4.19) — twin-first: an AI proposal touching a machine whose engineer
+// marked a sensitive param as requiring twin validation gets a twinValidation flag
+// (passed|untrusted|skipped). This ANNOTATES the proposal — hard blocking stays the
+// Policy/HITL (A3) contract, not this advisory producer (SYNAPSE §16 step 2).
+import { evaluateTwinValidation, type TwinValidationStatus } from "./ai/parameterGuardrailService";
 
 // ─── Config (env, safe defaults) ──────────────────────────────────────────────
 
@@ -249,6 +254,18 @@ async function proposeNgTune(scope: NgTuneScope, rec: NgRecommendation): Promise
   const targets = await findResponsibleUsers(factoryCode, tool.requiredPermission, MAX_PER_RUN);
   if (targets.length === 0) return 0;
 
+  // G4.19 twin-first — evaluate the machine's twin trust for the record. The NG
+  // proposal rides strict tool args (no free-form payload) so the verdict is surfaced
+  // in the log rather than the args; hard blocking remains the Policy/HITL contract.
+  try {
+    const twinValidation = await evaluateTwinValidation(scope.machineId ?? undefined);
+    if (twinValidation && twinValidation !== "passed") {
+      console.warn(`[aiThresholdTuneScheduler] ng#${scope.ngThresholdId} twin-first: ${twinValidation} (twin not trusted for auto decisions)`);
+    }
+  } catch {
+    /* twin-first is advisory — never block the proposal */
+  }
+
   const args: Record<string, unknown> = {
     thresholdId: scope.ngThresholdId,
     warningThreshold: rec.recommended.warning,
@@ -282,6 +299,71 @@ async function proposeNgTune(scope: NgTuneScope, rec: NgRecommendation): Promise
   return proposed;
 }
 
+// ─── V20 (doc 27 Đợt 7.6) — image evidence for the approval reviewer ───────────
+
+export interface NgEvidenceItem {
+  measurementId: number;
+  inspectionId: number;
+  at: string | null;
+  /** Renderable image URL of the NG measurement (thumbnail in the approval UI). */
+  imageUrl: string | null;
+  /** Storage key (server-side re-reads / audits). */
+  imageKey: string | null;
+  /** Persisted VLM description (measurement_results.aiAnalysisResult) when one exists. */
+  aiDescription: string | null;
+}
+
+/**
+ * Recent NG measurements for this point WITH an image — the reviewer sees WHAT
+ * the machine flagged, not just the numbers. Reuses persisted VLM descriptions
+ * (aiAnalysisResult — written by the analyze pipeline) instead of re-running any
+ * model. READ-ONLY + fail-safe: any error → [] (the proposal is still created).
+ */
+async function collectNgEvidence(pointDefId: number, limit = 3): Promise<NgEvidenceItem[]> {
+  try {
+    const { getDb } = await import("../db/connection");
+    const db = await getDb();
+    if (!db) return [];
+    const { and, desc, eq, isNotNull } = await import("drizzle-orm");
+    const { measurementResults } = await import("../../drizzle/schema");
+
+    const rows = await db
+      .select({
+        id: measurementResults.id,
+        inspectionId: measurementResults.inspectionId,
+        imageUrl: measurementResults.imageUrl,
+        imageKey: measurementResults.imageKey,
+        aiAnalysisResult: measurementResults.aiAnalysisResult,
+        createdAt: measurementResults.createdAt,
+      })
+      .from(measurementResults)
+      .where(
+        and(
+          eq(measurementResults.pointDefId, pointDefId),
+          eq(measurementResults.result, "NG"),
+          isNotNull(measurementResults.imageUrl),
+        ),
+      )
+      .orderBy(desc(measurementResults.id))
+      .limit(Math.max(1, Math.min(5, limit)));
+
+    return rows.map((r) => ({
+      measurementId: r.id,
+      inspectionId: r.inspectionId,
+      at: r.createdAt ? new Date(r.createdAt as unknown as string | Date).toISOString() : null,
+      imageUrl: r.imageUrl ?? null,
+      imageKey: r.imageKey ?? null,
+      aiDescription:
+        typeof r.aiAnalysisResult === "string" && r.aiAnalysisResult.trim()
+          ? r.aiAnalysisResult.trim().slice(0, 500)
+          : null,
+    }));
+  } catch (err) {
+    console.warn("[aiThresholdTuneScheduler] collectNgEvidence failed:", (err as Error)?.message ?? err);
+    return [];
+  }
+}
+
 /**
  * Create a measurement-point threshold-approval REQUEST (the existing human-approval
  * queue) → shows in the approval queue for a quality manager. Never applies.
@@ -301,16 +383,36 @@ async function requestPointTune(scope: PointTuneScope, rec: PointRecommendation)
       return false;
     }
 
+    // V20 — attach recent NG thumbnails + persisted VLM descriptions (fail-open).
+    const recentNg = await collectNgEvidence(scope.pointDefId);
+
+    // G4.19 twin-first — annotate whether the machine's twin is trusted enough for
+    // this auto-tune proposal (only when an engineer flagged a param requires it).
+    let twinValidation: TwinValidationStatus | undefined;
+    try {
+      twinValidation = await evaluateTwinValidation(scope.machineId ?? undefined);
+    } catch {
+      /* twin-first is advisory — never block the proposal */
+    }
+
     await db.insert(thresholdApprovals).values({
       pointDefId: scope.pointDefId,
-      // System-generated proposal; requestedBy 0 marks "AI auto-tune" (no human author).
+      // System-generated proposal; requestedBy 0 stays as the no-human sentinel —
+      // the EXPLICIT provenance lives in suggestion.source / proposedBy (V25):
+      // jsonb surfacing is sufficient, so no schema column was added (no 0190).
       requestedBy: 0,
       suggestion: {
         source: "ai_threshold_autotune",
+        // V25 — explicit machine-readable + UI-labelable provenance marker.
+        proposedBy: "ai_autotune",
         currentCpk: rec.current.cpk,
         projectedCpk: rec.recommended.projectedCpk,
         sampleSize: rec.sampleSize,
         basis: rec.basis,
+        // G4.19 — twin-first verdict (undefined when not required → key omitted).
+        ...(twinValidation ? { twinValidation } : {}),
+        // V20 — additive image-evidence payload (approval UI renders thumbnails).
+        evidence: recentNg.length > 0 ? { recentNg } : undefined,
       } as any,
       currentLsl: rec.current.lsl != null ? (String(rec.current.lsl) as any) : undefined,
       currentUsl: rec.current.usl != null ? (String(rec.current.usl) as any) : undefined,

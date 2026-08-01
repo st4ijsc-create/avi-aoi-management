@@ -1,10 +1,25 @@
 // Schema domain: Inspection tables
-import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, decimal, boolean, bigint, index, json, jsonb } from "drizzle-orm/pg-core";
+//
+// W3-A (doc 27 §2 M1/M11, migrations 0179/0180): FK declarations below mirror
+// what 0180 enforces at the DB. ⚠ CONDITIONAL-ENFORCEMENT CAVEAT: when 0172 has
+// converted product_inspections/measurement_results to TimescaleDB hypertables,
+// the DB CANNOT hold an FK **to** a hypertable — 0180 then SKIPS
+// fk_measurement_results_inspection (recorded in db_feature_status) and the
+// weekly integrityScanService orphan scan covers it. The .references() here are
+// metadata-only for runtime queries (migrations are hand-written SQL).
+import { sql } from "drizzle-orm";
+import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, decimal, boolean, bigint, index, uniqueIndex, primaryKey, json, jsonb, real } from "drizzle-orm/pg-core";
 import { overallResultEnum, originalResultEnum, aiDecisionEnum } from "./enums";
+import { machines } from "./hierarchy";
+import { measurementPointDefs, defectCatalog } from "./product";
 
 export const productInspections = pgTable("product_inspections", {
   id: serial("id").primaryKey(),
-  machineId: integer("machineId").notNull(),
+  // W3-A (0180): fk_product_inspections_machine, ON DELETE RESTRICT — a machine
+  // with inspection history cannot be hard-deleted (deletes are soft anyway).
+  // High-volume table: FK adds a cheap per-insert PK lookup on `machines`.
+  machineId: integer("machineId").notNull()
+    .references(() => machines.id, { onDelete: "restrict" }),
   productModelId: integer("productModelId"), // Liên kết với Product Model
   corporateCode: varchar("corporateCode", { length: 50 }), // Mã tập đoàn
   factoryCode: varchar("factoryCode", { length: 50 }), // Mã nhà máy
@@ -12,7 +27,10 @@ export const productInspections = pgTable("product_inspections", {
   lineCode: varchar("lineCode", { length: 50 }), // Mã dây chuyền
   stageCode: varchar("stageCode", { length: 50 }), // Mã công đoạn
   productionOrderCode: varchar("productionOrderCode", { length: 100 }), // Mã lệnh sản xuất
-  operatorId: varchar("operatorId", { length: 50 }), // Mã công nhân vận hành
+  // Mã công nhân vận hành — doc 29 §3.2: re-defined as the BADGE CODE the machine
+  // sends (operator_badges.badgeCode). Kept varchar (hypertable — no type rewrite);
+  // resolve to users.id via operatorBadgeService / the stamped operatorUserId below.
+  operatorId: varchar("operatorId", { length: 50 }),
   serialNumber: varchar("serialNumber", { length: 100 }).notNull(),
   productModel: varchar("productModel", { length: 100 }), // Backward compatibility
   batchNumber: varchar("batchNumber", { length: 100 }),
@@ -41,6 +59,13 @@ export const productInspections = pgTable("product_inspections", {
     ensembleResults?: Array<{ modelId: number; topLabel: string; confidence: number }>;
     processingTimeMs?: number;
     reviewReason?: string;
+    // Doc 27 W7-A (V18) — honest AI-down marker from the INLINE ingest path:
+    // 'ai_unavailable' (circuit breaker open) | 'ai_error' (gate threw).
+    // Present ⇒ aiDecision=NEEDS_REVIEW was routed WITHOUT an inference verdict
+    // (aiConfidence/aiModelId stay NULL).
+    skipped?: "ai_unavailable" | "ai_error";
+    inline?: boolean;
+    source?: string;
   }>(),
   // ============ P4.C G16 — Specialized subforms ============
   // Discriminator (e.g. "FAI" | "IQC" | "OQC" | "AOI" | "FCT" ...). NULLABLE for back-compat.
@@ -48,6 +73,99 @@ export const productInspections = pgTable("product_inspections", {
   // Polymorphic payload validated server-side via inspectionVariant.validatePayload.
   variantPayload: jsonb("variantPayload").$type<Record<string, unknown>>(),
   // ============ end G16 ============
+  // Doc 27 W2-C/W2-D (gap C4/M8, migration 0178) — SOFT commissioning gate tag.
+  // "commissioning" = the machine had no signed commissioning record at ingest
+  // time (submission accepted but TAGGED, never rejected). NULL = production.
+  ingestMode: varchar("ingestMode", { length: 20 }),
+  // Doc 27 W7-A (Đợt 7, migration 0187) — Đợt-3 deferred stamping: the RELEASED
+  // inspection_program_releases.id in force for (productModelId, machineId) at
+  // ingest time. SOFT ref (product_inspections may be a hypertable — see file
+  // header; 0182/0183 convention). NULL = no released program / legacy row.
+  // Stamped fail-open by processInspectionSubmission via getActiveRelease.
+  programReleaseId: integer("programReleaseId"),
+  // Doc 27 W7-B (gap V3, migration 0188) — heuristic false-call likelihood
+  // (0..1) from ntfPredictorService (repeat-offender + near-limit margin +
+  // machine trend). NULL = not scored. ADVISORY ONLY: pre-sorts the operator
+  // verify queue and drives the "Nghi báo giả" badge — never changes a verdict.
+  ntfScore: real("ntfScore"),
+  // ── Doc 29 §2.3/§3.2 — W8-B (migration 0192, hypertable-safe metadata-only adds) ──
+  // Panel multi-up: the machine-reported panel serial/identifier (st4i header
+  // panel_id) and 1-based board index inside the panel (product_panel_boards.
+  // boardIndex of the product's panel def). NULL = single-board / legacy ingest;
+  // analytics must stay null-safe (COALESCE(boardIndex, 1)).
+  panelSerial: varchar("panelSerial", { length: 100 }),
+  boardIndex: integer("boardIndex"),
+  // Operator/badge master: users.id resolved from operatorId (the BADGE CODE the
+  // machine sends — see operator_badges) at ingest time. Stamped fail-open by
+  // processInspectionSubmission via operatorBadgeService; NULL = badge unknown/
+  // unassigned or pre-0192 row (those resolve on read).
+  operatorUserId: integer("operatorUserId"),
+  // ── Doc 51 P1 (migration 0275) — INGEST PROVENANCE. All nullable, never
+  // backfilled: a NULL means "this row predates 0275 / was never measured",
+  // which is the truth. See drizzle/0275_inspection_provenance.sql.
+  //
+  // CASE #3 (clock skew). `inspectionTime` is whatever the MACHINE said; nothing
+  // ever compared it to the server's clock, so a machine 6h off silently filed
+  // boards into the wrong shift/day and no column could even identify the damage
+  // afterwards. These four make it measurable on EVERY row:
+  //   serverReceivedAt — when the SERVER received the submission. The one clock a
+  //     machine cannot lie about. For a WAL replay this is the ORIGINAL receive
+  //     time (stamped by the mutation BEFORE buffering), not the replay time.
+  serverReceivedAt: timestamp("serverReceivedAt"),
+  //   timeSkewSeconds — SIGNED (machineTime − serverReceivedAt). The sign matters:
+  //     "machine runs behind" and "machine runs ahead" are different faults.
+  timeSkewSeconds: integer("timeSkewSeconds"),
+  //   clockSkewFlagged — |skew| exceeded INGEST_CLOCK_SKEW_WARN_SECONDS (default
+  //     300) at ingest. NULL ≠ false: NULL = never evaluated (pre-0275 row).
+  clockSkewFlagged: boolean("clockSkewFlagged"),
+  //   timeSource — 'machine_utc' (timestamp carried an offset/Z → absolute instant,
+  //     skew is trustworthy) | 'machine_naive' (no offset → the server had to ASSUME
+  //     its own local zone, so a machine off by a whole number of hours measures
+  //     skew ≈ 0 — this is exactly what INGEST_REQUIRE_TIME_OFFSET exists to stop)
+  //     | 'server' (machine sent no time; server stamped now() — skew 0 by
+  //     definition, and this board is NOT covered by 0272's natural key).
+  timeSource: varchar("timeSource", { length: 20 }),
+  // Idempotency (doc 51 P1, closing the 0272 hole) — AUDIT ONLY. The ENFORCEMENT
+  // lives in `inspectionIdempotencyKeys` below: product_inspections is a Timescale
+  // hypertable, and a unique index on it MUST contain the partition column
+  // `inspectionTime` — the very column that changes on every retry of a machine
+  // that omits it. Verified on the dev DB: "cannot create a unique index without
+  // the column inspectionTime (used in partitioning)".
+  idempotencyKey: varchar("idempotencyKey", { length: 200 }),
+  // CASE #12 (version pinning) — the points-config version the MACHINE DECLARED it
+  // was grading with, stamped VERBATIM (it is the machine's claim, not the server's
+  // verdict). Without it "which thresholds graded this board?" is unanswerable,
+  // because product_models.pointsConfigVersion is LIVE and moves under your feet.
+  // ★ This column is the seam QĐ#2 rests on: re-grade against the SNAPSHOT of THIS
+  //   version — never against the live limits.
+  pointsConfigVersion: integer("pointsConfigVersion"),
+  // Server's SOFT verdict on that claim: 'current' | 'stale' (machine grading with
+  // outdated thresholds — TAGGED, never rejected, QĐ#3) | 'ahead' (machine claims
+  // newer than the server — config rollback / lying machine / restored DB) |
+  // 'unknown' (machine didn't declare, or no product model resolved).
+  configVersionStatus: varchar("configVersionStatus", { length: 20 }),
+  // ── Doc 51 P2 (CASE #8, migration 0281) — SERIAL-COLLISION SOFT DETECT. ──────
+  // The column `suspectedDuplicateSerial timestamp` is provisioned by migration
+  // 0281 and written BEST-EFFORT via a raw UPDATE (machineApiRouters.
+  // persistSuspectedDuplicateSerial), NOT declared here — same fail-open pattern
+  // as gateConfigVersion (0276): keeping it out of the drizzle table means the
+  // generated INSERT never references it, so ingest cannot break on a DB where
+  // 0281 has not been applied yet. It records the instant the SAME serial was
+  // already on record from a DIFFERENT machine in the recent window (QĐ#3: the
+  // board is TAGGED, never rejected). Distinct from an idempotency retry (same
+  // machine + same key ⇒ short-circuited as a duplicate long before this check).
+  //
+  // ── Doc 55 Item 3 PV0/PV2 (migration 0286) — PRODUCT VARIANT stamp. ──────────
+  // Which product_variants.id this board was inspected AS. Nullable + never
+  // backfilled: NULL = legacy/pre-0286 row OR ingest ran with PRODUCT_VARIANT_ENABLED
+  // OFF (the whole variant layer inert ⇒ variantId stays NULL, byte-identical to
+  // pre-variant). Under the flag, submitInspection stamps the resolved variant's id
+  // (the BASE variant's id when the machine sends no variantCode — QĐ#12; the
+  // matched non-base variant's id when it does). Soft ref (product_inspections is a
+  // Timescale hypertable → no FK); analytics must stay null-safe. Declared here so
+  // the generated INSERT carries it when set — additive on a DB where 0286 added
+  // the column, and an omitted (undefined) value simply never references it.
+  variantId: integer("variantId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -65,18 +183,98 @@ export const productInspections = pgTable("product_inspections", {
   index("idx_inspections_line").on(table.lineCode),
   index("idx_inspections_production_order").on(table.productionOrderCode),
   index("idx_inspections_type").on(table.inspectionType),
+  // Doc 51 P0 (R2, migration 0272) — INGEST IDEMPOTENCY natural key. A machine
+  // that retries the SAME board (network timeout on the ACK, agent restart, WAL
+  // replay racing a live retry) must never produce a SECOND product_inspections
+  // row: that double-counts completedQuantity/yield and re-fires the NG alert.
+  //   • Partition column `inspectionTime` IS in the key → valid on plain PG AND
+  //     on the Timescale hypertable (0172: every unique index must carry the
+  //     partition column). Equal inspectionTime ⇒ same chunk ⇒ uniqueness is
+  //     global, not per-chunk.
+  //   • PARTIAL (serialNumber <> ''): legacy/empty-serial rows are EXEMPT so a
+  //     pre-existing batch of blank serials can never collide with each other.
+  //     New ingest can't create them anyway (submitInspection zod min(1)).
+  //   • App side: createProductInspection uses ON CONFLICT DO NOTHING and
+  //     resolves the existing row — inert (harmless no-op) if the DB index is
+  //     not in force yet (0272 records 'partial' in db_feature_status then).
+  // ⚠ LIMIT: keyed on the machine-sent inspectionTime. A machine that OMITS it
+  // gets a fresh receive-time stamp per retry → different key → NOT caught here.
+  // That case is doc 51 P1 (explicit idempotencyKey in the machine contract).
+  uniqueIndex("uq_inspections_machine_serial_time")
+    .on(table.machineId, table.serialNumber, table.inspectionTime)
+    .where(sql`${table.serialNumber} <> ''`),
 ]);
 
 export type ProductInspection = typeof productInspections.$inferSelect;
 export type InsertProductInspection = typeof productInspections.$inferInsert;
 
 /**
+ * Doc 51 P1 (migration 0275) — EXPLICIT INGEST IDEMPOTENCY LEDGER.
+ *
+ * WHY A SEPARATE TABLE AND NOT AN INDEX ON product_inspections:
+ * 0272 keys idempotency on (machineId, serialNumber, inspectionTime). A machine
+ * that OMITS inspectionTime gets a fresh now() stamp on every retry → a different
+ * key each time → 0272 never fires and the board is double-counted. The fix is a
+ * client-generated key that is STABLE across retries — but it cannot be a unique
+ * index on product_inspections, because that table is a TimescaleDB hypertable and
+ * Timescale requires every unique index to carry the partition column
+ * `inspectionTime`. Verified directly against the dev DB:
+ *
+ *     CREATE UNIQUE INDEX ... ON product_inspections ("machineId", <col>)
+ *     → ERROR: cannot create a unique index without the column "inspectionTime"
+ *              (used in partitioning)
+ *
+ * (Same rule forced 0172 to rewrite the PK to (id, inspectionTime).) Putting
+ * inspectionTime back into the key defeats the entire purpose. So the constraint
+ * moves to a PLAIN table where PK (machineId, idempotencyKey) is legal and global.
+ *
+ * ⚠ NEVER convert this table to a hypertable — that would silently re-open the hole.
+ *
+ * Write protocol (server/db/inspection.ts createProductInspection): claim → insert
+ * header → back-fill inspectionId, ALL in ONE transaction. Postgres' ON CONFLICT
+ * DO NOTHING waits on an in-flight conflicting insert before deciding, so two
+ * concurrent retries of the same key serialise correctly and exactly one wins.
+ */
+export const inspectionIdempotencyKeys = pgTable("inspection_idempotency_keys", {
+  machineId: integer("machineId").notNull(),
+  /** Client-generated, stable across retries of the SAME board. */
+  idempotencyKey: varchar("idempotencyKey", { length: 200 }).notNull(),
+  /**
+   * The inspection this key produced. NULL exists ONLY inside the claiming
+   * transaction; a COMMITTED row with NULL here means the invariant broke — the
+   * app throws (transient → WAL buffers) rather than invent an id.
+   */
+  inspectionId: integer("inspectionId"),
+  /** Copy of the header's inspectionTime so the ledger can be pruned on the same
+   *  horizon as product_inspections without joining back into the hypertable. */
+  inspectionTime: timestamp("inspectionTime"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.machineId, table.idempotencyKey] }),
+  // Age-based pruning (retention). Without it, cleaning the ledger seq-scans.
+  index("idx_inspection_idem_created").on(table.createdAt),
+]);
+
+export type InspectionIdempotencyKey = typeof inspectionIdempotencyKeys.$inferSelect;
+export type InsertInspectionIdempotencyKey = typeof inspectionIdempotencyKeys.$inferInsert;
+
+/**
  * Measurement Result - Kết quả đo thực tế
  */
 export const measurementResults = pgTable("measurement_results", {
   id: serial("id").primaryKey(),
-  inspectionId: integer("inspectionId").notNull(),
-  pointDefId: integer("pointDefId").notNull(),
+  // W3-A (0180): fk_measurement_results_inspection, ON DELETE CASCADE — results
+  // die with their inspection. ⚠ DB enforcement is CONDITIONAL: skipped when the
+  // two tables are hypertables (Timescale forbids FKs referencing a hypertable);
+  // the weekly orphan scan covers it there. See file header.
+  inspectionId: integer("inspectionId").notNull()
+    .references(() => productInspections.id, { onDelete: "cascade" }),
+  // W3-A (0180): fk_measurement_results_point_def, ON DELETE RESTRICT (column is
+  // NOT NULL so SET NULL is impossible; point defs are app-soft-deleted anyway).
+  // Legacy hard-deleted defs left orphans → 0180 may leave this NOT VALID until
+  // repaired (see integrity_scan_results).
+  pointDefId: integer("pointDefId").notNull()
+    .references(() => measurementPointDefs.id, { onDelete: "restrict" }),
   measuredValue: decimal("measuredValue", { precision: 15, scale: 6 }),
   measuredValueText: varchar("measuredValueText", { length: 255 }), // Giá trị dạng texts
   result: overallResultEnum("result").notNull(),
@@ -99,9 +297,16 @@ export const measurementResults = pgTable("measurement_results", {
   valueOffsetY: decimal("valueOffsetY", { precision: 15, scale: 6 }),
   valueTilt: decimal("valueTilt", { precision: 15, scale: 6 }),
   valueThickness: decimal("valueThickness", { precision: 15, scale: 6 }),
-  // Optional FK to defect_catalog.id (no DB constraint — soft reference for back-compat).
-  defectCatalogId: integer("defectCatalogId"),
+  // W3-A (doc 27 M11, 0180): now a REAL FK — fk_measurement_results_defect_catalog,
+  // ON DELETE SET NULL (deleting a catalog entry detaches, never breaks, results).
+  defectCatalogId: integer("defectCatalogId")
+    .references(() => defectCatalog.id, { onDelete: "set null" }),
   defectSeverity: varchar("defectSeverity", { length: 20 }),
+  // Doc 31 Đợt B (OP3, migration 0194) — the RAW defect code as reported by the
+  // machine/AI, retained even when it did NOT resolve to a defect_catalog row
+  // (then defectCatalogId stays NULL). Honest, never-dropped fallback so an
+  // unmatched code can be recovered/curated later (see unmatched_defect_codes).
+  defectCodeRaw: varchar("defectCodeRaw", { length: 50 }),
   // ============ Defect location on board image (pixel coordinates) ============
   // Bounding box of defect region on the full board/panel image.
   // Enables: visual overlay in UI, AI training data (YOLO/COCO format), defect density heatmap.
@@ -121,6 +326,14 @@ export const measurementResults = pgTable("measurement_results", {
   // Composite indexes for optimized queries
   index("idx_results_inspection_result").on(table.inspectionId, table.result),
   index("idx_results_point_result").on(table.pointDefId, table.result),
+  // R-1 (doc 38, migration 0234): time-ordered scans of the hottest table by
+  // measurement point (per-point trend / SPC / recent-results queries). The
+  // (pointDefId, createdAt) composite lets the planner range-scan by point AND
+  // time without a separate sort. Additive — see drizzle/0234_perf_indexes.sql.
+  index("idx_results_pointdef_created").on(table.pointDefId, table.createdAt),
+  // W3-A (0180): supports the ON DELETE SET NULL scan when a defect_catalog row
+  // is deleted (partial — only rows that actually reference a defect).
+  index("idx_results_defect_catalog").on(table.defectCatalogId).where(sql`${table.defectCatalogId} IS NOT NULL`),
 ]);
 
 export type MeasurementResult = typeof measurementResults.$inferSelect;

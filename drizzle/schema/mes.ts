@@ -213,6 +213,10 @@ export const maintenanceSchedules = pgTable("maintenance_schedules", {
   lastPerformedAt: timestamp("lastPerformedAt"),
   nextDueAt: timestamp("nextDueAt"),
   isActive: boolean("isActive").default(true).notNull(),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). NULL =
+  // unscoped (allow-all under the inert app_tenant_allows policy). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -249,6 +253,9 @@ export const maintenanceWorkOrders = pgTable("maintenance_work_orders", {
   closedAt: timestamp("closedAt"),
   downtimeMinutes: integer("downtimeMinutes"),
   resolutionNotes: text("resolutionNotes"),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [

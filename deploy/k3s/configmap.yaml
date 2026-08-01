@@ -1,0 +1,29 @@
+# SYNAPSE — Line/edge NON-secret env. doc 33 §11 / ADR-007.
+# Single-node K3s, EMBEDDED infra: EDITION=line + INFRA_PROFILE=embedded →
+# in-process Aedes broker + time-series degrades to the main DB (honest). We do NOT
+# set UNS_BROKER_URL or TSDB_URL, so deploymentProfile reports broker=embedded-aedes,
+# ts=main-db. Secrets (DATABASE_URL/JWT_SECRET/…) live in the `synapse-secrets` Secret,
+# created by install-edge.sh.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: synapse-config
+  namespace: synapse-edge
+  labels:
+    app.kubernetes.io/name: synapse
+    app.kubernetes.io/part-of: synapse
+    synapse.io/edition: line
+data:
+  NODE_ENV: production
+  PORT: "3000"
+  # ── Edition / deployment profile (ADR-007) ──
+  EDITION: line
+  INFRA_PROFILE: embedded
+  EDITION_PROFILE: "true"
+  # ── Runtime ──
+  ALLOWED_ORIGINS: "http://localhost:3000"
+  LOCAL_STORAGE_DIR: /app/uploads
+  LICENSE_FILE_PATH: /app/license.lic
+  LOG_LEVEL: info
+  # Redis is co-located (infra.yaml); no password → safe in the ConfigMap.
+  REDIS_URL: redis://synapse-redis:6379

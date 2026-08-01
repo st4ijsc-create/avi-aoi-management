@@ -1,13 +1,16 @@
 /*
- * Phase 5 WS5.1 — Conservative service worker for the AVI/AOI PWA.
+ * Phase 5 WS5.1 — Conservative service worker for the SYNAPSE PWA.
  *
  * Deliberately cautious to avoid stale-content footguns on a factory terminal:
  *  - NEVER caches API / tRPC / socket / SSE (always network).
- *  - Navigations: network-first, falling back to the cached app shell offline.
- *  - Static assets (Vite hashed js/css/img/font): stale-while-revalidate.
+ *  - Navigations: network-first; on success it REFRESHES the cached app shell,
+ *    and offline it falls back to that shell so a reload still renders the SPA
+ *    (B11 — reload-while-offline previously showed a blank white screen).
+ *  - Static assets (Vite hashed js/css/img/font): stale-while-revalidate, so the
+ *    core bundle the shell needs is kept warm for offline reloads.
  *  - skipWaiting + clients.claim so updates apply promptly; old caches pruned.
  */
-const CACHE = "avi-aoi-v1";
+const CACHE = "avi-aoi-v2";
 const SHELL = ["/", "/index.html"];
 
 self.addEventListener("install", (event) => {
@@ -32,16 +35,31 @@ function isBypassed(url) {
   );
 }
 
+// Serve the cached SPA shell for any navigation (covers deep SPA routes like
+// /operator, /andon — none of which are their own cached document).
+function offlineShell() {
+  return caches.match("/index.html").then((r) => r || caches.match("/"));
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin || isBypassed(url)) return; // always network
 
-  // Navigations → network-first with offline shell fallback.
+  // Navigations → network-first; keep the cached shell FRESH on every success so
+  // an offline reload renders the last-known-good SPA instead of a blank page.
   if (req.mode === "navigate") {
     event.respondWith(
-      fetch(req).catch(() => caches.match("/index.html").then((r) => r || caches.match("/"))),
+      fetch(req)
+        .then((res) => {
+          if (res && res.status === 200 && res.type === "basic") {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put("/index.html", copy)).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() => offlineShell()),
     );
     return;
   }

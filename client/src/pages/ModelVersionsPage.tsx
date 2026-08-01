@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
+import { PageHeader, PageContainer } from '@/components/patterns';
 import { trpc } from '@/lib/trpc';
 import { navItems } from '@/lib/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -8,6 +9,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Table,
   TableBody,
@@ -37,6 +48,11 @@ export default function ModelVersionsPage() {
   const { t } = useTranslation();
   const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
   const [activatingId, setActivatingId] = useState<number | null>(null);
+  // WS-1: pending activation of a version that FAILED the quality gate — confirmed
+  // via <AlertDialog> instead of a blocking window.confirm().
+  const [gateWarn, setGateWarn] = useState<
+    { modelId: number; versionId: number; reason?: string } | null
+  >(null);
 
   // Fetch all models
   const { data: models, isLoading: modelsLoading } = trpc.aiModel.list.useQuery({
@@ -65,48 +81,45 @@ export default function ModelVersionsPage() {
     },
   });
 
-  const handleActivate = (modelId: number, versionId: number, gatePass?: boolean, gateReason?: string) => {
-    // WS-1: warn before activating a version that FAILED the quality gate
-    // (accuracy regressed vs. baseline).
-    if (gatePass === false) {
-      const ok = window.confirm(
-        t('mv.gateWarn', 'Phiên bản này KHÔNG vượt quality gate (accuracy giảm so với baseline). Vẫn kích hoạt?') +
-          (gateReason ? `\n\n${gateReason}` : ''),
-      );
-      if (!ok) return;
-    }
+  const doActivate = (modelId: number, versionId: number) => {
     setActivatingId(versionId);
     activateVersion.mutate({ modelId, versionId });
+  };
+
+  const handleActivate = (modelId: number, versionId: number, gatePass?: boolean, gateReason?: string) => {
+    // WS-1: warn before activating a version that FAILED the quality gate
+    // (accuracy regressed vs. baseline) via a confirmation dialog.
+    if (gatePass === false) {
+      setGateWarn({ modelId, versionId, reason: gateReason });
+      return;
+    }
+    doActivate(modelId, versionId);
   };
 
   const selectedModel = models?.find(m => m.id === selectedModelId);
 
   return (
     <DashboardLayout title="Model Version Registry" navItems={navItems} currentPath="/model-versions">
-      <div className="space-y-6">
+      <PageContainer>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <GitBranch className="h-6 w-6 text-primary" />
-              Model Version Registry
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Manage, compare and activate model versions across your AI models
-            </p>
-          </div>
-          {selectedModelId && (
-            <Button variant="outline" size="sm" onClick={() => refetchVersions()}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh
-            </Button>
-          )}
-        </div>
+        <PageHeader
+          icon={<GitBranch className="h-6 w-6 text-primary" />}
+          title={t('mv.title', 'Model Version Registry')}
+          description={t('mv.subtitle', 'Manage, compare and activate model versions across your AI models')}
+          actions={
+            selectedModelId ? (
+              <Button variant="outline" size="sm" onClick={() => refetchVersions()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t('common.refresh', 'Refresh')}
+              </Button>
+            ) : undefined
+          }
+        />
 
         {/* Model Selector */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Select Model</CardTitle>
+            <CardTitle className="text-base">{t('mv.selectModel', 'Select Model')}</CardTitle>
           </CardHeader>
           <CardContent>
             {modelsLoading ? (
@@ -117,7 +130,7 @@ export default function ModelVersionsPage() {
                 onValueChange={(v) => setSelectedModelId(Number(v))}
               >
                 <SelectTrigger className="w-72">
-                  <SelectValue placeholder="Choose an AI model..." />
+                  <SelectValue placeholder={t('mv.chooseModel', 'Choose an AI model...')} />
                 </SelectTrigger>
                 <SelectContent>
                   {models?.map((m) => (
@@ -138,10 +151,10 @@ export default function ModelVersionsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <GitBranch className="h-4 w-4" />
-                {selectedModel?.name ?? 'Model'} — Versions
+                {t('mv.versionsFor', '{{name}} — Versions', { name: selectedModel?.name ?? 'Model' })}
               </CardTitle>
               <CardDescription>
-                Click "Activate" to make a version the live inference model. This will evict the session cache.
+                {t('mv.activateHint', 'Click "Activate" to make a version the live inference model. This will evict the session cache.')}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -154,21 +167,21 @@ export default function ModelVersionsPage() {
               ) : !versions || versions.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                   <Archive className="h-10 w-10 mb-3 opacity-40" />
-                  <p className="text-sm">No versions found for this model</p>
-                  <p className="text-xs mt-1">Upload a model file to create the first version</p>
+                  <p className="text-sm">{t('mv.noVersions', 'No versions found for this model')}</p>
+                  <p className="text-xs mt-1">{t('mv.noVersionsHint', 'Upload a model file to create the first version')}</p>
                 </div>
               ) : (
                 <ScrollArea className="max-h-[480px]">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Version</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead>{t('mv.version', 'Version')}</TableHead>
+                        <TableHead>{t('common.status', 'Status')}</TableHead>
                         <TableHead>{t('mv.metrics', 'Metrics (Acc / F1)')}</TableHead>
                         <TableHead>{t('mv.gate', 'Quality Gate')}</TableHead>
-                        <TableHead>Changelog</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead className="text-right">Action</TableHead>
+                        <TableHead>{t('mv.changelog', 'Changelog')}</TableHead>
+                        <TableHead>{t('mv.created', 'Created')}</TableHead>
+                        <TableHead className="text-right">{t('common.action', 'Action')}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -208,7 +221,7 @@ export default function ModelVersionsPage() {
                             </TableCell>
                             <TableCell className="max-w-xs">
                               <p className="text-sm text-muted-foreground truncate">
-                                {v.changeLog ?? <span className="italic opacity-50">No changelog</span>}
+                                {v.changeLog ?? <span className="italic opacity-50">{t('mv.noChangelog', 'No changelog')}</span>}
                               </p>
                             </TableCell>
                             <TableCell className="text-sm text-muted-foreground">
@@ -232,7 +245,7 @@ export default function ModelVersionsPage() {
                                   ) : (
                                     <ChevronRight className="h-3 w-3 mr-1" />
                                   )}
-                                  Activate
+                                  {t('mv.activate', 'Activate')}
                                 </Button>
                               )}
                             </TableCell>
@@ -249,11 +262,35 @@ export default function ModelVersionsPage() {
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
               <GitBranch className="h-12 w-12 mb-4 opacity-30" />
-              <p>Select a model above to view its version history</p>
+              <p>{t('mv.selectPrompt', 'Select a model above to view its version history')}</p>
             </CardContent>
           </Card>
         )}
-      </div>
+
+        {/* WS-1: gate-fail activation confirmation */}
+        <AlertDialog open={gateWarn !== null} onOpenChange={(open) => { if (!open) setGateWarn(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('mv.gateWarnTitle', 'Kích hoạt phiên bản không đạt Quality Gate?')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('mv.gateWarn', 'Phiên bản này KHÔNG vượt quality gate (accuracy giảm so với baseline). Vẫn kích hoạt?')}
+                {gateWarn?.reason ? <span className="mt-2 block text-xs">{gateWarn.reason}</span> : null}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel', 'Hủy')}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (gateWarn) doActivate(gateWarn.modelId, gateWarn.versionId);
+                  setGateWarn(null);
+                }}
+              >
+                {t('mv.activateAnyway', 'Vẫn kích hoạt')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </PageContainer>
     </DashboardLayout>
   );
 }

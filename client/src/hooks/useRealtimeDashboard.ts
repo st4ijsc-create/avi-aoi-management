@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { io, Socket } from "socket.io-client";
+import { Socket } from "socket.io-client";
+import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
+import type { EcosystemEvent } from "@/hooks/useEcosystemEvents";
 
 interface UseAutoRefreshOptions {
   /** Refresh interval in seconds. 0 = disabled */
@@ -63,8 +65,6 @@ export function useAutoRefresh({ intervalSeconds, onRefresh, enabled = true }: U
 }
 
 interface UseRealtimeAlertsOptions {
-  /** Socket.io path (defaults to /api/socket.io) */
-  socketPath?: string;
   /** Callback when urgent alert is received */
   onUrgentAlert?: (alert: UrgentAlert) => void;
   /** Callback when dashboard update is pushed */
@@ -87,11 +87,15 @@ export interface UrgentAlert {
 }
 
 /**
- * Hook for real-time WebSocket alerts (Socket.io).
- * Connects to the server and listens for push events.
+ * Hook for real-time WebSocket alerts.
+ *
+ * U1-d FIX: this previously opened a SECOND socket and listened for `yield:warning`
+ * / `ng:alert` / `qualityGate:triggered` — event names the server NEVER emits (dead
+ * hook). It now reuses the SHARED socket (socketManager) and consumes the unified
+ * U1 `alerts:stream` (every alert class, normalized), plus the still-live
+ * `inspection:alert` + `dashboard:update` channels. No duplicate connection.
  */
 export function useRealtimeAlerts({
-  socketPath = "/api/socket.io",
   onUrgentAlert,
   onDashboardUpdate,
   onYieldWarning,
@@ -102,96 +106,79 @@ export function useRealtimeAlerts({
   const [alerts, setAlerts] = useState<UrgentAlert[]>([]);
   const socketRef = useRef<Socket | null>(null);
 
+  // Keep latest callbacks in refs so the socket effect doesn't re-subscribe on each render.
+  const cbRef = useRef({ onUrgentAlert, onDashboardUpdate, onYieldWarning, onNGAlert });
+  useEffect(() => {
+    cbRef.current = { onUrgentAlert, onDashboardUpdate, onYieldWarning, onNGAlert };
+  }, [onUrgentAlert, onDashboardUpdate, onYieldWarning, onNGAlert]);
+
   useEffect(() => {
     if (!enabled) return;
 
-    const socket = io({
-      path: socketPath,
-      transports: ["polling", "websocket"],
-      reconnectionDelay: 2000,
-      reconnectionDelayMax: 10000,
-      reconnectionAttempts: 10,
-    });
-
+    const socket = getSharedSocket();
     socketRef.current = socket;
 
-    socket.on("connect", () => {
+    const onConnect = () => {
       setIsConnected(true);
-      // Subscribe to dashboard room
-      socket.emit("subscribe:dashboard");
-    });
+      socket.emit("subscribe", {}); // join the global room (source of the unified stream)
+    };
+    const onDisconnect = () => setIsConnected(false);
 
-    socket.on("disconnect", () => {
-      setIsConnected(false);
-    });
-
-    // Listen for inspection alerts (urgent)
-    socket.on("inspection:alert", (data) => {
+    // Legacy inspection alert (still emitted per-inspection) → map to inspection.
+    const onInspection = (data: any) => {
       const alert: UrgentAlert = {
         type: "inspection",
         severity: data.severity || "warning",
-        title: data.title || "Cảnh báo kiểm tra",
+        title: data.title || data.message || "Cảnh báo kiểm tra",
         message: data.message || JSON.stringify(data),
         data,
         timestamp: new Date(),
       };
       setAlerts((prev) => [alert, ...prev].slice(0, 50));
-      onUrgentAlert?.(alert);
-    });
+      cbRef.current.onUrgentAlert?.(alert);
+    };
 
-    // Listen for dashboard updates
-    socket.on("dashboard:update", (data) => {
-      onDashboardUpdate?.(data);
-    });
+    const onDashUpdate = (data: any) => cbRef.current.onDashboardUpdate?.(data);
 
-    // Listen for yield warnings
-    socket.on("yield:warning", (data) => {
+    // U1 unified alert stream — one channel, every alert class (normalized envelope).
+    const onAlertsStream = (evt: EcosystemEvent) => {
+      const severity: UrgentAlert["severity"] =
+        evt.severity === "critical" || evt.severity === "high" ? "critical" : "warning";
+      const type: UrgentAlert["type"] =
+        evt.kind === "ng" ? "ng"
+        : evt.kind === "yield" ? "yield"
+        : evt.kind === "quality_gate" ? "quality_gate"
+        : "inspection";
       const alert: UrgentAlert = {
-        type: "yield",
-        severity: "warning",
-        title: "Cảnh báo Yield thấp",
-        message: `Yield: ${data.yieldRate?.toFixed(1)}% - ${data.machineName || ""}`,
-        data,
-        timestamp: new Date(),
+        type,
+        severity,
+        title: evt.title,
+        message: evt.title,
+        data: evt,
+        timestamp: new Date(evt.ts),
       };
       setAlerts((prev) => [alert, ...prev].slice(0, 50));
-      onYieldWarning?.(data);
-      onUrgentAlert?.(alert);
-    });
+      cbRef.current.onUrgentAlert?.(alert);
+      if (evt.kind === "yield") cbRef.current.onYieldWarning?.(evt.detail ?? evt);
+      if (evt.kind === "ng") cbRef.current.onNGAlert?.(evt.detail ?? evt);
+    };
 
-    // Listen for NG alerts  
-    socket.on("ng:alert", (data) => {
-      const alert: UrgentAlert = {
-        type: "ng",
-        severity: "critical",
-        title: "Cảnh báo NG",
-        message: `NG count: ${data.ngCount} - ${data.machineName || ""}`,
-        data,
-        timestamp: new Date(),
-      };
-      setAlerts((prev) => [alert, ...prev].slice(0, 50));
-      onNGAlert?.(data);
-      onUrgentAlert?.(alert);
-    });
-
-    // Listen for quality gate events
-    socket.on("qualityGate:triggered", (data) => {
-      const alert: UrgentAlert = {
-        type: "quality_gate",
-        severity: data.action === "stop" ? "critical" : "warning",
-        title: "Quality Gate triggered",
-        message: data.message || `${data.gateType} ${data.comparison} ${data.threshold}`,
-        data,
-        timestamp: new Date(),
-      };
-      setAlerts((prev) => [alert, ...prev].slice(0, 50));
-      onUrgentAlert?.(alert);
-    });
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+    socket.on("inspection:alert", onInspection);
+    socket.on("dashboard:update", onDashUpdate);
+    socket.on("alerts:stream", onAlertsStream);
+    if (socket.connected) onConnect();
 
     return () => {
-      socket.disconnect();
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+      socket.off("inspection:alert", onInspection);
+      socket.off("dashboard:update", onDashUpdate);
+      socket.off("alerts:stream", onAlertsStream);
+      releaseSharedSocket();
     };
-  }, [enabled, socketPath]);
+  }, [enabled]);
 
   return {
     isConnected,

@@ -17,7 +17,7 @@
  * we reuse it for the measurement-point path rather than re-implementing it.
  */
 
-import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, notExists, sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import * as productDb from "../db/product";
 import { suggestThresholds } from "../utils/thresholdSuggestion";
@@ -25,6 +25,7 @@ import {
   measurementResults,
   productInspections,
   mqttNgRateThresholds,
+  measurementCorrections,
 } from "../../drizzle/schema";
 
 // ─── Flags / constants ────────────────────────────────────────────────────────
@@ -36,6 +37,18 @@ export function isThresholdAdvisorEnabled(): boolean {
 export function minSamples(): number {
   const n = Number(process.env.AI_THRESHOLD_ADVISOR_MIN_SAMPLES ?? 300);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 300;
+}
+
+/**
+ * OP6 (doc 31) — exclude measurement rows the operator overturned from a defect
+ * verdict (corrected to NTF = "no trouble found", or to OK) before recomputing
+ * limits. A false-call reading is typically near/outside the current limit — the
+ * very reason it got flagged — so counting it would bias suggested limits toward
+ * chasing noise. Default ON; set AI_THRESHOLD_ADVISOR_EXCLUDE_NTF=false to keep
+ * the raw (pre-doc-31) behaviour.
+ */
+export function isAdvisorExcludeCorrectedEnabled(): boolean {
+  return (process.env.AI_THRESHOLD_ADVISOR_EXCLUDE_NTF ?? "true").toLowerCase() !== "false";
 }
 
 /** Bounds of the adjust_ng_threshold tool (warning/critical are NG-rate %). */
@@ -274,13 +287,28 @@ async function getPointValues(
   const db = await getDb();
   if (db) {
     try {
-      const where = since
-        ? and(
-            eq(measurementResults.pointDefId, pointDefId),
-            isNotNull(measurementResults.measuredValue),
-            gte(productInspections.inspectionTime, since),
-          )
-        : and(eq(measurementResults.pointDefId, pointDefId), isNotNull(measurementResults.measuredValue));
+      const conds: any[] = [
+        eq(measurementResults.pointDefId, pointDefId),
+        isNotNull(measurementResults.measuredValue),
+      ];
+      if (since) conds.push(gte(productInspections.inspectionTime, since));
+      // OP6 — drop rows an operator overturned to NTF/OK (false calls) so their
+      // near-limit readings don't skew the suggested limits. Correlated anti-join
+      // on measurement_corrections (soft ref by measurement_results.id).
+      if (isAdvisorExcludeCorrectedEnabled()) {
+        conds.push(
+          notExists(
+            db
+              .select({ x: sql`1` })
+              .from(measurementCorrections)
+              .where(and(
+                eq(measurementCorrections.measurementResultId, measurementResults.id),
+                inArray(measurementCorrections.correctedResult, ["NTF", "OK"]),
+              )),
+          ),
+        );
+      }
+      const where = and(...conds);
       const rows = await db
         .select({ v: measurementResults.measuredValue })
         .from(measurementResults)

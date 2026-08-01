@@ -4,7 +4,6 @@ import { adminProcedure, protectedProcedure, publicProcedure, router } from "./t
 import {
   getSlowQueries,
   getQueryStats,
-  getRecentQueries,
   analyzeQueryPatterns,
   clearMetricsHistory,
 } from "../queryMonitor";
@@ -103,7 +102,11 @@ export const systemRouter = router({
       } as const;
     }),
 
-  // Query Monitoring APIs
+  // Query Monitoring APIs — real data since W4-A (doc 27 gap B1): the drizzle
+  // postgres-js client is instrumented in server/db/connection.ts. Only slow
+  // queries (≥ SLOW_QUERY_MS) are kept individually; per-pattern aggregates
+  // cover everything. getRecentQueries was removed — an all-query history is
+  // no longer stored (bounded-memory design).
   queryMonitoring: router({
     getSlowQueries: adminProcedure
       .input(
@@ -118,16 +121,6 @@ export const systemRouter = router({
     getStats: adminProcedure
       .query(() => {
         return getQueryStats();
-      }),
-
-    getRecentQueries: adminProcedure
-      .input(
-        z.object({
-          limit: z.number().min(1).max(100).default(50),
-        })
-      )
-      .query(({ input }) => {
-        return getRecentQueries(input.limit);
       }),
 
     analyzePatterns: adminProcedure

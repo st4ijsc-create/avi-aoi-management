@@ -2,6 +2,7 @@ import cron, { ScheduledTask } from "node-cron";
 import * as db from "../db";
 import { sendEmail, createTransporterFromConfig } from "../_core/email";
 import { generateNGVisualReport, generateNGVisualEmailHTML, generateReport, ReportCustomization } from "./reportGenerator";
+import { getFactoryTimezone, isValidTimeZone } from "../utils/factoryTime";
 
 // Store active cron jobs
 const activeCronJobs = new Map<number, ScheduledTask>();
@@ -180,6 +181,87 @@ export async function buildScheduledReportEmail(
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// doc 54 §11 P2.4 #3 — server-render a scheduled run to a re-downloadable ARTIFACT
+//
+// The scheduler already server-renders each run (buildScheduledReportEmail →
+// HTML body + optional PDF/Excel attachment) and delivers it. This wires that
+// SAME rendered output into the canonical report_artifacts archive (source
+// "scheduled"), so a scheduled report is re-downloadable from the artifact store
+// exactly like the on-demand/external path — closing the "scheduled → artifact"
+// gap. ADDITIVE + flag-gated: default OFF (SCHEDULED_REPORT_ARCHIVE_ENABLED),
+// wrapped in try/catch, never blocks or breaks delivery.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Master switch for scheduled-run artifact archiving. Default OFF. */
+export function scheduledReportArchiveEnabled(): boolean {
+  return String(process.env.SCHEDULED_REPORT_ARCHIVE_ENABLED ?? "false").toLowerCase() === "true";
+}
+
+/** Map an attachment (contentType/filename) to an archivable artifact format. */
+function attachmentArtifactFormat(att: { filename: string; contentType: string }): "pdf" | "xlsx" | null {
+  const ct = (att.contentType || "").toLowerCase();
+  const fn = (att.filename || "").toLowerCase();
+  if (ct.includes("pdf") || fn.endsWith(".pdf")) return "pdf";
+  if (ct.includes("spreadsheet") || ct.includes("excel") || fn.endsWith(".xlsx") || fn.endsWith(".xls")) return "xlsx";
+  return null;
+}
+
+/**
+ * Archive a scheduled run's rendered output into report_artifacts. Persists the
+ * HTML body (always — so every run has a downloadable artifact) plus the PDF/
+ * Excel attachment when present. No-op when the flag is off. Never throws.
+ */
+export async function archiveScheduledReport(
+  report: { id: number; name: string; reportType?: string | null; createdBy?: number | null },
+  built: BuiltReportEmail,
+): Promise<void> {
+  if (!scheduledReportArchiveEnabled()) return;
+  try {
+    const { persistArtifact } = await import("./reportArtifactService");
+    const reportType = String(report.reportType ?? "scheduled");
+    const createdBy = report.createdBy ?? null;
+
+    const htmlArtifact = await persistArtifact({
+      buffer: Buffer.from(built.html, "utf8"),
+      format: "html",
+      reportType,
+      title: report.name,
+      params: { scheduledReportId: report.id, subject: built.subject },
+      createdBy,
+      source: "scheduled",
+    });
+
+    let docId: number | undefined;
+    if (built.attachment) {
+      const fmt = attachmentArtifactFormat(built.attachment);
+      if (fmt) {
+        const buf = Buffer.isBuffer(built.attachment.content)
+          ? built.attachment.content
+          : Buffer.from(String(built.attachment.content));
+        const docArtifact = await persistArtifact({
+          buffer: buf,
+          format: fmt,
+          reportType,
+          title: report.name,
+          params: { scheduledReportId: report.id, filename: built.attachment.filename },
+          createdBy,
+          source: "scheduled",
+          contentType: built.attachment.contentType,
+        });
+        docId = docArtifact.id;
+      }
+    }
+
+    console.log(
+      `[ReportScheduler] archived scheduled report ${report.id} → artifacts ` +
+        `(html=${htmlArtifact.id}${docId ? `, doc=${docId}` : ""})`,
+    );
+  } catch (err) {
+    console.error(`[ReportScheduler] artifact archive failed for report ${report.id}:`, (err as any)?.message || err);
+  }
+}
+
 /**
  * Convert schedule configuration to cron expression
  */
@@ -213,10 +295,17 @@ function scheduleToCronExpression(schedule: {
 
 /**
  * Execute a scheduled report
+ *
+ * DELIVERY (W5-D, doc 27 §6 A11): when the report row has an OPTED-IN
+ * `deliveryChannels` config (email/webhook/in-app), generation ENQUEUES one
+ * ledger row per enabled channel into `report_deliveries` and the delivery
+ * worker drains them with retry/backoff (see reportDeliveryService). When
+ * `deliveryChannels` is NULL/absent — every pre-0185 report — the LEGACY
+ * direct-e-mail path below runs UNCHANGED.
  */
 async function executeScheduledReport(reportId: number) {
   console.log(`[ReportScheduler] Executing scheduled report ${reportId}`);
-  
+
   try {
     // Get report configuration
     const report = await db.getScheduledReportById(reportId);
@@ -225,6 +314,14 @@ async function executeScheduledReport(reportId: number) {
       return;
     }
 
+    // ── Channel-based delivery (opt-in per report; default unchanged) ────────
+    const { hasConfiguredChannels } = await import("./reportDeliveryService");
+    if (hasConfiguredChannels((report as { deliveryChannels?: unknown }).deliveryChannels)) {
+      await executeScheduledReportViaChannels(report as never);
+      return;
+    }
+
+    // ── LEGACY path (deliveryChannels not configured) — unchanged ────────────
     // Get SMTP config
     const smtpConfig = await db.getSmtpConfig();
     if (!smtpConfig) {
@@ -241,6 +338,10 @@ async function executeScheduledReport(reportId: number) {
     // is derived from report.schedule and the content from report.reportType.
     const built = await buildScheduledReportEmail(report as any);
     const emailHTML = built.html;
+
+    // doc 54 P2.4 #3 — archive the rendered output as a re-downloadable artifact
+    // (flag-gated default OFF; never blocks delivery).
+    void archiveScheduledReport(report as any, built).catch(() => undefined);
 
     // Send email to all recipients
     const recipients = report.recipients || [];
@@ -290,12 +391,70 @@ async function executeScheduledReport(reportId: number) {
 
   } catch (error: any) {
     console.error(`[ReportScheduler] Error executing report ${reportId}:`, error);
-    
+
     // Log error
     await db.createScheduledReportLog({
       reportId,
       status: "FAILED",
       errorMessage: error.message || "Unknown error",
+    });
+  }
+}
+
+/**
+ * W5-D (doc 27 §6 A11) — channel-based delivery for a report that OPTED IN via
+ * `deliveryChannels`: build the content once, enqueue one `report_deliveries`
+ * ledger row per enabled channel, kick an immediate drain (prompt first
+ * attempt; the background worker owns retries/backoff afterwards).
+ */
+async function executeScheduledReportViaChannels(report: {
+  id: number;
+  name: string;
+  reportType: ScheduledReportType;
+  schedule: "DAILY" | "WEEKLY" | "MONTHLY";
+  recipients: string[] | null;
+  createdBy: number;
+  deliveryChannels: unknown;
+}): Promise<void> {
+  try {
+    const built = await buildScheduledReportEmail(report as never);
+
+    // doc 54 P2.4 #3 — archive the rendered output (flag-gated; non-blocking).
+    void archiveScheduledReport(report as never, built).catch(() => undefined);
+
+    const { enqueueReportDeliveries, drainReportDeliveriesOnce } = await import("./reportDeliveryService");
+    const enqueued = await enqueueReportDeliveries(report, built);
+
+    if (!enqueued.ok) {
+      await db.createScheduledReportLog({
+        reportId: report.id,
+        status: "FAILED",
+        errorMessage: `Delivery enqueue failed: ${enqueued.reason ?? "unknown"}`,
+      });
+      return;
+    }
+
+    console.log(
+      `[ReportScheduler] Report ${report.id} (type=${report.reportType}) enqueued ` +
+        `${enqueued.deliveryIds.length} deliveries [${enqueued.channels.join(", ")}]`,
+    );
+    // PENDING here = handed to the delivery ledger; per-channel outcomes
+    // (sent/failed/dead + attempts + lastError) live in report_deliveries.
+    await db.createScheduledReportLog({
+      reportId: report.id,
+      status: "PENDING",
+      recipientCount: enqueued.deliveryIds.length,
+    });
+    await db.updateScheduledReport(report.id, { lastSentAt: new Date() });
+
+    // Prompt first attempt — never blocks/throws into the cron.
+    void drainReportDeliveriesOnce().catch(() => undefined);
+  } catch (error: any) {
+    console.error(`[ReportScheduler] channel delivery error for report ${report.id}:`, error);
+    await db.createScheduledReportLog({
+      reportId: report.id,
+      status: "FAILED",
+      errorMessage: error?.message || "Unknown channel-delivery error",
     });
   }
 }
@@ -316,12 +475,23 @@ export function scheduleReport(report: {
   try {
     // Convert to cron expression
     const cronExpression = scheduleToCronExpression(report);
-    console.log(`[ReportScheduler] Scheduling report ${report.id} with cron: ${cronExpression}`);
 
-    // Create cron job
-    const task = cron.schedule(cronExpression, () => {
-      executeScheduledReport(report.id);
-    });
+    // Doc 27 §6 A1 (P0): the cron MUST fire on the factory wall clock, not the
+    // server/OS timezone. Before this fix cron.schedule was called without
+    // { timezone }, so a "06:00 daily" report fired at 06:00 SERVER time —
+    // hours off on a UTC host — which once required a manual +7h data patch
+    // (doc 27 §6 A1; patch SQL removed from the repo root in the Đợt-4 cleanup).
+    const timezone = getFactoryTimezone();
+    console.log(`[ReportScheduler] Scheduling report ${report.id} with cron: ${cronExpression} (${timezone})`);
+
+    // Create cron job pinned to the factory timezone
+    const task = cron.schedule(
+      cronExpression,
+      () => {
+        executeScheduledReport(report.id);
+      },
+      { timezone },
+    );
 
     // Store task
     activeCronJobs.set(report.id, task);
@@ -417,7 +587,21 @@ export function shutdownScheduledReports() {
 import type { ReportPeriod, ReportLang } from "./aiExecutiveReport";
 
 const EXEC_REPORT_ENABLED = String(process.env.EXEC_REPORT_ENABLED ?? "false").toLowerCase() === "true";
-const EXEC_REPORT_TZ = process.env.EXEC_REPORT_TZ || "Asia/Ho_Chi_Minh";
+
+/**
+ * Executive-report timezone (doc 27 A1 — one TZ convention for every cron in
+ * this file): EXEC_REPORT_TZ acts as an explicit override when set and valid,
+ * otherwise the shared factory timezone (FACTORY_TZ, default Asia/Ho_Chi_Minh)
+ * from server/utils/factoryTime is used. Read at call time, not import time.
+ */
+function execReportTimezone(): string {
+  const override = (process.env.EXEC_REPORT_TZ ?? "").trim();
+  if (override) {
+    if (isValidTimeZone(override)) return override;
+    console.warn(`[ExecReportScheduler] Invalid EXEC_REPORT_TZ '${override}' — using factory timezone`);
+  }
+  return getFactoryTimezone();
+}
 
 // Default cron per period: shift = every 8h, day = 06:00 daily, week = 07:00 Monday.
 const EXEC_CRON: Record<ReportPeriod, string> = {
@@ -458,6 +642,7 @@ export function startExecutiveReportScheduler(): void {
     return;
   }
   if (execReportJobs.size > 0) return; // already started
+  const timezone = execReportTimezone();
   for (const period of enabledExecPeriods()) {
     const expr = EXEC_CRON[period];
     try {
@@ -466,10 +651,10 @@ export function startExecutiveReportScheduler(): void {
         () => {
           runExecutiveReport(period).catch((e) => console.error("[ExecReportScheduler] cron error:", e));
         },
-        { timezone: EXEC_REPORT_TZ },
+        { timezone },
       );
       execReportJobs.set(period, task);
-      console.log(`[ExecReportScheduler] scheduled ${period} '${expr}' (${EXEC_REPORT_TZ})`);
+      console.log(`[ExecReportScheduler] scheduled ${period} '${expr}' (${timezone})`);
     } catch (err) {
       console.error(`[ExecReportScheduler] failed to schedule ${period}:`, (err as any)?.message || err);
     }
@@ -489,7 +674,7 @@ export function stopExecutiveReportScheduler(): void {
 export function getExecutiveReportSchedulerStatus() {
   return {
     enabled: EXEC_REPORT_ENABLED,
-    timezone: EXEC_REPORT_TZ,
+    timezone: execReportTimezone(),
     periods: enabledExecPeriods(),
     crons: EXEC_CRON,
     running: execReportJobs.size > 0,

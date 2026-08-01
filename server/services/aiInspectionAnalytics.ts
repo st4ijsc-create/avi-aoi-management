@@ -19,11 +19,21 @@ import {
   measurementPointDefs,
   dailyStatistics,
   machines,
+  stations,
+  productionLines,
+  workshops,
+  defectCatalog,
   spcRuleViolations,
 } from "../../drizzle/schema";
 import { cacheService } from "./cacheService";
 import { emitSpcViolationAlert } from "../_core/socket";
 import { calculateCapabilityIndices } from "../utils/spc";
+// Canonical KPI math + factory-timezone bucketing (doc 27 decision #4, gaps A2/A4).
+import {
+  finalYieldPassCondSql,
+  factoryDayTextSql,
+  factoryHourOfDaySql,
+} from "../utils/kpi";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -426,20 +436,26 @@ export async function getDefectTrend(params: AnalyticsPeriod): Promise<DefectTre
     productModel: true,
   });
 
+  // Day bucket in the FACTORY timezone (gap A2). Note: the previous
+  // `IN ('OK', 'PASS')` / `IN ('NG', 'FAIL')` literals were invalid for the
+  // overallresultenum (OK/NG/NTF only) and made this query THROW at runtime;
+  // the canonical pass condition (OK + NTF, decision #4) also fixes that.
+  const dayBucket = factoryDayTextSql(productInspections.inspectionTime);
   const rows = await db.select({
-    date: sql<string>`DATE(${productInspections.inspectionTime})`.as("date"),
+    date: sql<string>`${dayBucket}`.as("date"),
     total: count().as("total"),
-    pass: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} IN ('OK', 'PASS'))`.as("pass"),
-    fail: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} IN ('NG', 'FAIL'))`.as("fail"),
+    pass: sql<number>`COUNT(*) FILTER (WHERE ${finalYieldPassCondSql(productInspections.overallResult)})`.as("pass"),
+    fail: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} = 'NG')`.as("fail"),
   })
     .from(productInspections)
     .where(and(...conditions))
-    .groupBy(sql`DATE(${productInspections.inspectionTime})`)
-    .orderBy(asc(sql`DATE(${productInspections.inspectionTime})`));
+    .groupBy(dayBucket)
+    .orderBy(asc(dayBucket));
 
   return rows.map(r => ({
     date: String(r.date),
     total: Number(r.total),
+    // pass now follows the canonical FINAL-yield definition (OK + NTF).
     pass: Number(r.pass),
     fail: Number(r.fail),
     yieldRate: r.total > 0 ? (Number(r.pass) / Number(r.total)) * 100 : 0,
@@ -464,7 +480,8 @@ export async function getDefectPareto(params: AnalyticsPeriod): Promise<DefectPa
       lineCode: true,
       productModel: true,
     }),
-    sql`${measurementResults.result} IN ('NG', 'FAIL')`,
+    // 'FAIL' is not a valid overallresultenum value (would throw); NG only.
+    sql`${measurementResults.result} = 'NG'`,
   ];
 
   const rows = await db.select({
@@ -493,6 +510,190 @@ export async function getDefectPareto(params: AnalyticsPeriod): Promise<DefectPa
   });
 }
 
+// ─── Defect-CLASS Pareto (doc 27 gap A6, W5-A) ─────────────────────────────
+// The point-name Pareto above answers "WHERE on the board do we fail?".
+// This one answers "WHAT KIND of defect do we produce?" by aggregating
+// measurement_results.defectCatalogId against the IPC-A-610 defect_catalog.
+// Both remain available — they are different questions.
+
+export interface DefectClassParetoItem {
+  defectCatalogId: number | null;
+  /** Catalog code (e.g. "BRIDGING"), or "UNCLASSIFIED" / "OTHERS" buckets. */
+  code: string;
+  name: string;
+  severity: string | null;
+  category: string | null;
+  ipcReference: string | null;
+  count: number;
+  percentage: number;
+  /** TRUE cumulative % over ALL defects in scope — reaches 100 at the last item. */
+  cumulativePercentage: number;
+  bucket: "class" | "unclassified" | "others";
+}
+
+export interface DefectClassParetoResult {
+  items: DefectClassParetoItem[];
+  totalDefects: number;
+  classifiedDefects: number;
+  /** NG rows with defectCatalogId IS NULL (legacy / vendor without class mapping). */
+  unclassifiedDefects: number;
+  topN: number;
+}
+
+export interface DefectClassParetoParams {
+  startDate: Date;
+  endDate: Date;
+  machineId?: number;
+  lineId?: number;
+  workshopId?: number;
+  factoryId?: number;
+  productModelId?: number;
+  /** Named classes kept before folding the tail into "OTHERS" (default 10). */
+  topN?: number;
+}
+
+interface DefectClassCountRow {
+  defectCatalogId: number | null;
+  code: string | null;
+  name: string | null;
+  severity: string | null;
+  category: string | null;
+  ipcReference: string | null;
+  count: number;
+}
+
+/**
+ * Pure Pareto builder (unit-tested): true cumulative % over the FULL defect
+ * population, top-N named classes + one "OTHERS" tail bucket, and an honest
+ * "UNCLASSIFIED" bucket for rows without a defectCatalogId (it competes in
+ * the ranking like any class — hiding it would fake the distribution).
+ */
+export function buildDefectClassPareto(
+  rows: DefectClassCountRow[],
+  topN = 10,
+): DefectClassParetoResult {
+  const normalized = rows
+    .map((r) => ({
+      defectCatalogId: r.defectCatalogId,
+      code: r.defectCatalogId == null ? "UNCLASSIFIED" : (r.code ?? `#${r.defectCatalogId}`),
+      name: r.defectCatalogId == null ? "Unclassified" : (r.name ?? `#${r.defectCatalogId}`),
+      severity: r.defectCatalogId == null ? null : r.severity,
+      category: r.defectCatalogId == null ? null : r.category,
+      ipcReference: r.defectCatalogId == null ? null : r.ipcReference,
+      count: Number(r.count) || 0,
+      bucket: (r.defectCatalogId == null ? "unclassified" : "class") as DefectClassParetoItem["bucket"],
+    }))
+    .filter((r) => r.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  const totalDefects = normalized.reduce((s, r) => s + r.count, 0);
+  const unclassifiedDefects = normalized
+    .filter((r) => r.bucket === "unclassified")
+    .reduce((s, r) => s + r.count, 0);
+
+  const head = normalized.slice(0, Math.max(1, topN));
+  const tail = normalized.slice(Math.max(1, topN));
+
+  const emitted: Array<Omit<DefectClassParetoItem, "percentage" | "cumulativePercentage">> = [...head];
+  if (tail.length > 0) {
+    emitted.push({
+      defectCatalogId: null,
+      code: "OTHERS",
+      name: `Others (${tail.length} classes)`,
+      severity: null,
+      category: null,
+      ipcReference: null,
+      count: tail.reduce((s, r) => s + r.count, 0),
+      bucket: "others",
+    });
+  }
+
+  let cumulative = 0;
+  const items: DefectClassParetoItem[] = emitted.map((r) => {
+    const pct = totalDefects > 0 ? (r.count / totalDefects) * 100 : 0;
+    cumulative += pct;
+    return {
+      ...r,
+      percentage: Math.round(pct * 100) / 100,
+      cumulativePercentage: Math.round(cumulative * 100) / 100,
+    };
+  });
+
+  return {
+    items,
+    totalDefects,
+    classifiedDefects: totalDefects - unclassifiedDefects,
+    unclassifiedDefects,
+    topN,
+  };
+}
+
+/**
+ * Defect-class Pareto over a window. Filters: machine / line / workshop /
+ * factory (via the machines→stations→lines→workshops chain) / product model.
+ * Callers resolving date-only UI strings should use
+ * `resolveFactoryDateWindow` (utils/kpi.ts) so the window is factory-local.
+ */
+export async function getDefectClassPareto(
+  params: DefectClassParetoParams,
+): Promise<DefectClassParetoResult> {
+  const db = await getDb();
+  if (!db) {
+    console.error("[getDefectClassPareto] Database connection unavailable (DB_UNAVAILABLE)");
+    return { items: [], totalDefects: 0, classifiedDefects: 0, unclassifiedDefects: 0, topN: params.topN ?? 10 };
+  }
+
+  const conditions: SQL[] = [
+    gte(productInspections.inspectionTime, params.startDate),
+    lte(productInspections.inspectionTime, params.endDate),
+    sql`${measurementResults.result} = 'NG'`,
+  ];
+  if (params.machineId) conditions.push(eq(productInspections.machineId, params.machineId));
+  if (params.productModelId) conditions.push(eq(productInspections.productModelId, params.productModelId));
+
+  const needsHierarchy = !!(params.lineId || params.workshopId || params.factoryId);
+  if (params.lineId) conditions.push(eq(stations.lineId, params.lineId));
+  if (params.workshopId) conditions.push(eq(productionLines.workshopId, params.workshopId));
+  if (params.factoryId) conditions.push(eq(workshops.factoryId, params.factoryId));
+
+  let query = db
+    .select({
+      defectCatalogId: measurementResults.defectCatalogId,
+      code: defectCatalog.code,
+      name: defectCatalog.name,
+      severity: defectCatalog.severity,
+      category: defectCatalog.category,
+      ipcReference: defectCatalog.ipcReference,
+      count: sql<number>`COUNT(*)`.as("count"),
+    })
+    .from(measurementResults)
+    .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+    .leftJoin(defectCatalog, eq(measurementResults.defectCatalogId, defectCatalog.id))
+    .$dynamic();
+
+  if (needsHierarchy) {
+    query = query
+      .innerJoin(machines, eq(productInspections.machineId, machines.id))
+      .innerJoin(stations, eq(machines.stationId, stations.id))
+      .innerJoin(productionLines, eq(stations.lineId, productionLines.id))
+      .innerJoin(workshops, eq(productionLines.workshopId, workshops.id));
+  }
+
+  const rows = await query
+    .where(and(...conditions))
+    .groupBy(
+      measurementResults.defectCatalogId,
+      defectCatalog.code,
+      defectCatalog.name,
+      defectCatalog.severity,
+      defectCatalog.category,
+      defectCatalog.ipcReference,
+    )
+    .orderBy(desc(sql`COUNT(*)`));
+
+  return buildDefectClassPareto(rows as DefectClassCountRow[], params.topN ?? 10);
+}
+
 /**
  * Machine performance comparison
  */
@@ -510,13 +711,15 @@ export async function getMachinePerformance(params: AnalyticsPeriod): Promise<Ma
     productModel: true,
   });
 
+  // Canonical pass = OK + NTF (decision #4); also fixes the previously
+  // invalid 'PASS'/'FAIL' enum literals that made this query throw.
   const rows = await db.select({
     machineId: productInspections.machineId,
     machineCode: machines.code,
     machineName: machines.name,
     total: count().as("total"),
-    pass: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} IN ('OK', 'PASS'))`.as("pass"),
-    fail: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} IN ('NG', 'FAIL'))`.as("fail"),
+    pass: sql<number>`COUNT(*) FILTER (WHERE ${finalYieldPassCondSql(productInspections.overallResult)})`.as("pass"),
+    fail: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} = 'NG')`.as("fail"),
     avgCycleTime: avg(productInspections.cycleTime).as("avgCycleTime"),
   })
     .from(productInspections)
@@ -525,15 +728,19 @@ export async function getMachinePerformance(params: AnalyticsPeriod): Promise<Ma
     .groupBy(productInspections.machineId, machines.code, machines.name)
     .orderBy(desc(count()));
 
-  // Determine trend by comparing first half vs second half — single batch query
-  const midDate = new Date((params.startDate.getTime() + params.endDate.getTime()) / 2);
+  // Determine trend by comparing first half vs second half — single batch query.
+  // NOTE: raw Date params inside sql`` templates crash postgres.js (it only
+  // serializes Dates for typed columns); pass an ISO string instead. This was
+  // a latent bug masked by the old invalid 'PASS' enum literal that made the
+  // query throw before reaching the driver.
+  const midDate = new Date((params.startDate.getTime() + params.endDate.getTime()) / 2).toISOString();
 
   const trendRows = await db.select({
     machineId: productInspections.machineId,
     firstHalfTotal: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.inspectionTime} < ${midDate})`.as("firstHalfTotal"),
-    firstHalfPass: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.inspectionTime} < ${midDate} AND ${productInspections.overallResult} IN ('OK', 'PASS'))`.as("firstHalfPass"),
+    firstHalfPass: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.inspectionTime} < ${midDate} AND ${finalYieldPassCondSql(productInspections.overallResult)})`.as("firstHalfPass"),
     secondHalfTotal: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.inspectionTime} >= ${midDate})`.as("secondHalfTotal"),
-    secondHalfPass: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.inspectionTime} >= ${midDate} AND ${productInspections.overallResult} IN ('OK', 'PASS'))`.as("secondHalfPass"),
+    secondHalfPass: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.inspectionTime} >= ${midDate} AND ${finalYieldPassCondSql(productInspections.overallResult)})`.as("secondHalfPass"),
   })
     .from(productInspections)
     .where(and(...conditions))
@@ -559,6 +766,7 @@ export async function getMachinePerformance(params: AnalyticsPeriod): Promise<Ma
       machineCode: r.machineCode ?? "",
       machineName: r.machineName ?? "",
       totalInspections: total,
+      // passCount follows the canonical FINAL-yield definition (OK + NTF).
       passCount: pass,
       failCount: fail,
       yieldRate: total > 0 ? (pass / total) * 100 : 0,
@@ -854,20 +1062,22 @@ export async function getCorrelationAnalysis(params: AnalyticsPeriod): Promise<C
     productModel: true,
   });
 
-  // OPTIMIZATION: Get daily data per machine (aggregated)
+  // OPTIMIZATION: Get daily data per machine (aggregated).
+  // Day bucket in the FACTORY timezone (gap A2); 'FAIL' enum literal removed.
+  const corrDayBucket = factoryDayTextSql(productInspections.inspectionTime);
   const rows = await db.select({
-    date: sql<string>`DATE(${productInspections.inspectionTime})`.as("date"),
+    date: sql<string>`${corrDayBucket}`.as("date"),
     machineId: productInspections.machineId,
     machineCode: machines.code,
     total: count().as("total"),
-    fail: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} IN ('NG', 'FAIL'))`.as("fail"),
+    fail: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} = 'NG')`.as("fail"),
     avgCycleTime: avg(productInspections.cycleTime).as("avgCycleTime"),
   })
     .from(productInspections)
     .innerJoin(machines, eq(productInspections.machineId, machines.id))
     .where(and(...conditions))
-    .groupBy(sql`DATE(${productInspections.inspectionTime})`, productInspections.machineId, machines.code)
-    .orderBy(asc(sql`DATE(${productInspections.inspectionTime})`));
+    .groupBy(corrDayBucket, productInspections.machineId, machines.code)
+    .orderBy(asc(corrDayBucket));
 
   const correlations: CorrelationResult[] = [];
 
@@ -1152,24 +1362,23 @@ export async function getShiftAnalysis(params: AnalyticsPeriod): Promise<ShiftAn
     productModel: true,
   });
 
-  // Group by shift (morning 6-14, afternoon 14-22, night 22-6)
-  const rows = await db.select({
-    shift: sql<string>`CASE 
-      WHEN EXTRACT(HOUR FROM ${productInspections.inspectionTime}) BETWEEN 6 AND 13 THEN 'Morning'
-      WHEN EXTRACT(HOUR FROM ${productInspections.inspectionTime}) BETWEEN 14 AND 21 THEN 'Afternoon'
+  // Group by shift (morning 6-14, afternoon 14-22, night 22-6),
+  // classified by FACTORY-LOCAL hour (gap A2). Canonical pass = OK + NTF.
+  const localHour = factoryHourOfDaySql(productInspections.inspectionTime);
+  const shiftExpr = sql<string>`CASE
+      WHEN ${localHour} BETWEEN 6 AND 13 THEN 'Morning'
+      WHEN ${localHour} BETWEEN 14 AND 21 THEN 'Afternoon'
       ELSE 'Night'
-    END`.as("shift"),
+    END`;
+  const rows = await db.select({
+    shift: shiftExpr.as("shift"),
     total: count().as("total"),
-    pass: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} IN ('OK', 'PASS'))`.as("pass"),
+    pass: sql<number>`COUNT(*) FILTER (WHERE ${finalYieldPassCondSql(productInspections.overallResult)})`.as("pass"),
     avgCycleTime: avg(productInspections.cycleTime).as("avgCycleTime"),
   })
     .from(productInspections)
     .where(and(...conditions))
-    .groupBy(sql`CASE 
-      WHEN EXTRACT(HOUR FROM ${productInspections.inspectionTime}) BETWEEN 6 AND 13 THEN 'Morning'
-      WHEN EXTRACT(HOUR FROM ${productInspections.inspectionTime}) BETWEEN 14 AND 21 THEN 'Afternoon'
-      ELSE 'Night'
-    END`);
+    .groupBy(shiftExpr);
 
   return rows.map(r => ({
     shift: r.shift,
@@ -1202,17 +1411,19 @@ export async function getDefectHeatmap(params: AnalyticsPeriod): Promise<Array<{
     productModel: true,
   });
 
+  // Hour-of-day in the FACTORY timezone (gap A2); 'FAIL' enum literal removed.
+  const heatmapHour = factoryHourOfDaySql(productInspections.inspectionTime);
   const rows = await db.select({
     machineCode: machines.code,
-    hour: sql<number>`EXTRACT(HOUR FROM ${productInspections.inspectionTime})`.as("hour"),
+    hour: sql<number>`${heatmapHour}`.as("hour"),
     total: count().as("total"),
-    fail: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} IN ('NG', 'FAIL'))`.as("fail"),
+    fail: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} = 'NG')`.as("fail"),
   })
     .from(productInspections)
     .innerJoin(machines, eq(productInspections.machineId, machines.id))
     .where(and(...conditions))
-    .groupBy(machines.code, sql`EXTRACT(HOUR FROM ${productInspections.inspectionTime})`)
-    .orderBy(machines.code, asc(sql`EXTRACT(HOUR FROM ${productInspections.inspectionTime})`));
+    .groupBy(machines.code, heatmapHour)
+    .orderBy(machines.code, asc(heatmapHour));
 
   return rows.map(r => ({
     machineCode: r.machineCode ?? "",

@@ -9,9 +9,11 @@ import { toast } from "sonner";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
 import { useTranslation } from 'react-i18next';
 import { Loader2, Shield } from "lucide-react";
+import { BRAND } from "@/config/brand";
 
 export default function Setup() {
   const { t } = useTranslation();
+  const BrandMark = BRAND.logoIcon;
   const [form, setForm] = useState({
     username: "",
     email: "",
@@ -81,7 +83,20 @@ export default function Setup() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4">
+      {/* SYNAPSE identity — first-run value line */}
+      <div className="mb-6 flex flex-col items-center text-center">
+        <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 text-primary">
+          <BrandMark className="h-8 w-8" />
+        </div>
+        <h1 className="text-2xl font-bold text-foreground">{BRAND.name}</h1>
+        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+          {t(BRAND.taglineKey, BRAND.tagline)}
+        </p>
+        <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+          {t("setup.welcomeValue", "Let's get your operations platform started — create the first administrator to begin.")}
+        </p>
+      </div>
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">

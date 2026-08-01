@@ -1,0 +1,46 @@
+name: opcua-kill-midsession
+description: >
+  Giết OPC-UA server giữa phiên (line 2) → connectionSupervisor phải PHÁT HIỆN mất kết
+  nối (doc 40 OT-F1) và telemetry ngừng; sau khi dựng lại server, supervisor RECONNECT và
+  telemetry TIẾP TỤC chảy. Dùng line 2 để độc lập với line 1. Cần OT_GATEWAY_ENABLED +
+  OT_CONN_HA_ENABLED (supervisor reconnect). Đây là bài test khả năng tự phục hồi kết nối.
+steps:
+  - name: baseline telemetry line 2 đang chảy
+    check: telemetry_fresh
+    line: 2
+    role: CONVEYOR
+    expect: true
+    maxAgeSec: 20
+    timeout: 60
+  - name: GIẾT OPC-UA server line 2 giữa phiên
+    sim: { action: opcua.kill, line: 2 }
+  - name: chờ supervisor phát hiện link-loss
+    wait: 10
+  - name: telemetry đã NGỪNG (mất kết nối)
+    check: telemetry_fresh
+    line: 2
+    role: CONVEYOR
+    expect: false
+    maxAgeSec: 20
+    timeout: 45
+  - name: DỰNG LẠI OPC-UA server line 2
+    sim: { action: opcua.restart, line: 2 }
+  - name: chờ supervisor reconnect + poll
+    wait: 15
+  - name: telemetry TIẾP TỤC chảy (reconnect thành công)
+    check: telemetry_fresh
+    line: 2
+    role: CONVEYOR
+    expect: true
+    maxAgeSec: 25
+    timeout: 120
+    interval: 5
+  - name: (quan sát) presence line 2 online
+    check: presence
+    line: 2
+    role: CONVEYOR
+    expect: online
+    timeout: 90
+    optional: true
+teardown:
+  - sim: { action: opcua.restart, line: 2 }

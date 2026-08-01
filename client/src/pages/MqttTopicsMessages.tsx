@@ -1,6 +1,8 @@
 import { useState, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -101,11 +103,11 @@ export function MqttTopicsMessagesContent() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "DELIVERED":
-        return <CheckCircle className="w-4 h-4 text-green-500" />;
+        return <CheckCircle className="w-4 h-4 text-success" />;
       case "FAILED":
-        return <XCircle className="w-4 h-4 text-red-500" />;
+        return <XCircle className="w-4 h-4 text-destructive" />;
       case "PENDING":
-        return <Clock className="w-4 h-4 text-yellow-500" />;
+        return <Clock className="w-4 h-4 text-warning" />;
       default:
         return <AlertTriangle className="w-4 h-4 text-muted-foreground" />;
     }
@@ -163,73 +165,50 @@ export function MqttTopicsMessagesContent() {
 
   return (
     <>
-      <div className="space-y-6">
+      <PageContainer>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">MQTT Topics & Messages</h1>
-            <p className="text-muted-foreground">
-              {t('mqtt.topicsMessages.pageDesc')}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => refetchMessages()}>
-              <RefreshCw className="w-4 h-4 mr-2" />
-              {t('common.refresh')}
-            </Button>
-            <Button variant="outline" onClick={handleExportMessages}>
-              <Download className="w-4 h-4 mr-2" />
-              {t('mqtt.topicsMessages.exportJson')}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<MessageSquare className="w-6 h-6" />}
+          title={t('mqtt.topicsMessages.title', 'MQTT Topics & Messages')}
+          description={t('mqtt.topicsMessages.pageDesc')}
+          actions={
+            <>
+              <Button variant="outline" onClick={() => refetchMessages()}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                {t('common.refresh')}
+              </Button>
+              <Button variant="outline" onClick={handleExportMessages}>
+                <Download className="w-4 h-4 mr-2" />
+                {t('mqtt.topicsMessages.exportJson')}
+              </Button>
+            </>
+          }
+        />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {t('mqtt.topicsMessages.totalTopics')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{topicStats.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {t('mqtt.topicsMessages.totalMessages')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{messageLogs.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Delivered
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-500">
-                {messageLogs.filter((m: any) => m.deliveryStatus === "DELIVERED").length}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Failed
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-500">
-                {messageLogs.filter((m: any) => m.deliveryStatus === "FAILED").length}
-              </div>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<Radio className="w-4 h-4" />}
+            label={t('mqtt.topicsMessages.totalTopics')}
+            value={topicStats.length}
+          />
+          <MetricCard
+            icon={<MessageSquare className="w-4 h-4" />}
+            label={t('mqtt.topicsMessages.totalMessages')}
+            value={messageLogs.length}
+          />
+          <MetricCard
+            icon={<CheckCircle className="w-4 h-4" />}
+            label={t('mqtt.topicsMessages.delivered', 'Delivered')}
+            value={messageLogs.filter((m: any) => m.deliveryStatus === "DELIVERED").length}
+            tone="success"
+          />
+          <MetricCard
+            icon={<XCircle className="w-4 h-4" />}
+            label={t('mqtt.topicsMessages.failed', 'Failed')}
+            value={messageLogs.filter((m: any) => m.deliveryStatus === "FAILED").length}
+            tone="error"
+          />
         </div>
 
         {/* Tabs */}
@@ -237,15 +216,15 @@ export function MqttTopicsMessagesContent() {
           <TabsList>
             <TabsTrigger value="topics">
               <Radio className="w-4 h-4 mr-2" />
-              Topics
+              {t('mqtt.topicsMessages.topicsTab', 'Topics')}
             </TabsTrigger>
             <TabsTrigger value="messages">
               <MessageSquare className="w-4 h-4 mr-2" />
-              Messages
+              {t('mqtt.topicsMessages.messagesTab', 'Messages')}
             </TabsTrigger>
             <TabsTrigger value="recent">
               <Inbox className="w-4 h-4 mr-2" />
-              Recent Activity
+              {t('mqtt.topicsMessages.recentActivityTab', 'Recent Activity')}
             </TabsTrigger>
           </TabsList>
 
@@ -253,7 +232,7 @@ export function MqttTopicsMessagesContent() {
           <TabsContent value="topics" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Topic Statistics</CardTitle>
+                <CardTitle>{t('mqtt.topicsMessages.topicStatistics', 'Topic Statistics')}</CardTitle>
                 <CardDescription>
                   {t('mqtt.topicsMessages.topicStats')}
                 </CardDescription>
@@ -262,10 +241,10 @@ export function MqttTopicsMessagesContent() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Topic</TableHead>
-                      <TableHead>Message Count</TableHead>
-                      <TableHead>Types</TableHead>
-                      <TableHead>Last Message</TableHead>
+                      <TableHead>{t('mqtt.topicsMessages.colTopic', 'Topic')}</TableHead>
+                      <TableHead>{t('mqtt.topicsMessages.colMessageCount', 'Message Count')}</TableHead>
+                      <TableHead>{t('mqtt.topicsMessages.colTypes', 'Types')}</TableHead>
+                      <TableHead>{t('mqtt.topicsMessages.colLastMessage', 'Last Message')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -327,7 +306,7 @@ export function MqttTopicsMessagesContent() {
                   </div>
                   <Select value={messageTypeFilter} onValueChange={setMessageTypeFilter}>
                     <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="Message Type" />
+                      <SelectValue placeholder={t('mqtt.topicsMessages.messageTypePlaceholder', 'Message Type')} />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">{t('mqtt.topicsMessages.allTypes')}</SelectItem>
@@ -339,7 +318,7 @@ export function MqttTopicsMessagesContent() {
                   </Select>
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
                     <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="Status" />
+                      <SelectValue placeholder={t('common.status', 'Status')} />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">{t('mqtt.topicsMessages.allStatus')}</SelectItem>
@@ -358,20 +337,22 @@ export function MqttTopicsMessagesContent() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Topic</TableHead>
-                      <TableHead>Time</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead>{t('common.status', 'Status')}</TableHead>
+                      <TableHead>{t('mqtt.topicsMessages.colType', 'Type')}</TableHead>
+                      <TableHead>{t('mqtt.topicsMessages.colTopic', 'Topic')}</TableHead>
+                      <TableHead>{t('mqtt.topicsMessages.colTime', 'Time')}</TableHead>
+                      <TableHead className="text-right">{t('common.actions', 'Actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {loadingMessages ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8">
-                          {t('common.loading')}
-                        </TableCell>
-                      </TableRow>
+                      Array.from({ length: 5 }).map((_, i) => (
+                        <TableRow key={i}>
+                          <TableCell colSpan={5}>
+                            <Skeleton className="h-6 w-full" />
+                          </TableCell>
+                        </TableRow>
+                      ))
                     ) : filteredMessages.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
@@ -433,7 +414,7 @@ export function MqttTopicsMessagesContent() {
           <TabsContent value="recent" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Recent Messages</CardTitle>
+                <CardTitle>{t('mqtt.topicsMessages.recentMessagesTitle', 'Recent Messages')}</CardTitle>
                 <CardDescription>
                   {t('mqtt.topicsMessages.recentMessages')}
                 </CardDescription>
@@ -442,9 +423,9 @@ export function MqttTopicsMessagesContent() {
                 <ScrollArea className="h-[500px]">
                   <div className="space-y-2">
                     {loadingRecent ? (
-                      <div className="text-center py-8 text-muted-foreground">
-                        {t('common.loading')}
-                      </div>
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                      ))
                     ) : recentMessages.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
                         {t('mqtt.topicsMessages.noMessages')}
@@ -486,7 +467,7 @@ export function MqttTopicsMessagesContent() {
         <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Message Detail</DialogTitle>
+              <DialogTitle>{t('mqtt.topicsMessages.messageDetailTitle', 'Message Detail')}</DialogTitle>
               <DialogDescription>
                 {t('mqtt.topicsMessages.messageDetail')}
               </DialogDescription>
@@ -495,7 +476,7 @@ export function MqttTopicsMessagesContent() {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-muted-foreground">Type</Label>
+                    <Label className="text-muted-foreground">{t('mqtt.topicsMessages.colType', 'Type')}</Label>
                     <div className="mt-1">
                       <Badge variant={getMessageTypeColor(selectedMessage.messageType) as any}>
                         {selectedMessage.messageType}
@@ -503,29 +484,29 @@ export function MqttTopicsMessagesContent() {
                     </div>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">Status</Label>
+                    <Label className="text-muted-foreground">{t('common.status', 'Status')}</Label>
                     <div className="mt-1 flex items-center gap-2">
                       {getStatusIcon(selectedMessage.deliveryStatus)}
                       <span>{selectedMessage.deliveryStatus}</span>
                     </div>
                   </div>
                   <div className="col-span-2">
-                    <Label className="text-muted-foreground">Topic</Label>
+                    <Label className="text-muted-foreground">{t('mqtt.topicsMessages.colTopic', 'Topic')}</Label>
                     <p className="mt-1 font-mono text-sm bg-muted p-2 rounded">
                       {selectedMessage.topic}
                     </p>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">Created At</Label>
+                    <Label className="text-muted-foreground">{t('mqtt.topicsMessages.createdAt', 'Created At')}</Label>
                     <p className="mt-1">{formatDate(selectedMessage.createdAt)}</p>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">Delivered At</Label>
+                    <Label className="text-muted-foreground">{t('mqtt.topicsMessages.deliveredAt', 'Delivered At')}</Label>
                     <p className="mt-1">{formatDate(selectedMessage.deliveredAt)}</p>
                   </div>
                 </div>
                 <div>
-                  <Label className="text-muted-foreground">Payload</Label>
+                  <Label className="text-muted-foreground">{t('mqtt.topicsMessages.payloadLabel', 'Payload')}</Label>
                   <ScrollArea className="h-[200px] mt-1">
                     <pre className="text-sm bg-muted p-3 rounded font-mono whitespace-pre-wrap">
                       {JSON.stringify(selectedMessage.payload, null, 2)}
@@ -534,7 +515,7 @@ export function MqttTopicsMessagesContent() {
                 </div>
                 {selectedMessage.errorMessage && (
                   <div>
-                    <Label className="text-muted-foreground text-destructive">Error</Label>
+                    <Label className="text-muted-foreground text-destructive">{t('mqtt.topicsMessages.errorLabel', 'Error')}</Label>
                     <p className="mt-1 text-destructive text-sm">
                       {selectedMessage.errorMessage}
                     </p>
@@ -545,7 +526,7 @@ export function MqttTopicsMessagesContent() {
             <DialogFooter>
               <Button variant="outline" onClick={() => handleCopyPayload(selectedMessage?.payload)}>
                 <Copy className="w-4 h-4 mr-2" />
-                Copy Payload
+                {t('mqtt.topicsMessages.copyPayload', 'Copy Payload')}
               </Button>
               <Button onClick={() => setIsDetailOpen(false)}>
                 {t('common.close')}
@@ -558,7 +539,7 @@ export function MqttTopicsMessagesContent() {
         <Dialog open={isReplayOpen} onOpenChange={setIsReplayOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Replay Message</DialogTitle>
+              <DialogTitle>{t('mqtt.topicsMessages.replayMessageTitle', 'Replay Message')}</DialogTitle>
               <DialogDescription>
                 {t('mqtt.topicsMessages.replayMessage')}
               </DialogDescription>
@@ -566,11 +547,11 @@ export function MqttTopicsMessagesContent() {
             {replayMessage && (
               <div className="space-y-4">
                 <div>
-                  <Label>Topic</Label>
+                  <Label>{t('mqtt.topicsMessages.colTopic', 'Topic')}</Label>
                   <Input value={replayMessage.topic} readOnly className="mt-1" />
                 </div>
                 <div>
-                  <Label>Payload</Label>
+                  <Label>{t('mqtt.topicsMessages.payloadLabel', 'Payload')}</Label>
                   <Textarea 
                     value={JSON.stringify(replayMessage.payload, null, 2)} 
                     readOnly 
@@ -583,17 +564,19 @@ export function MqttTopicsMessagesContent() {
               <Button variant="outline" onClick={() => setIsReplayOpen(false)}>
                 {t('common.cancel')}
               </Button>
-              <Button onClick={() => {
-                toast.info(t('mqtt.topicsMessages.replayInDev'));
-                setIsReplayOpen(false);
-              }}>
+              {/* Honest state: no server-side MQTT republish endpoint exists yet,
+                  so this control is disabled rather than faking a resend. */}
+              <Button
+                disabled
+                title={t('mqtt.topicsMessages.resendUnavailableHint', 'Message resend is not available yet')}
+              >
                 <Send className="w-4 h-4 mr-2" />
-                {t('mqtt.topicsMessages.resend')}
+                {t('mqtt.topicsMessages.resendUnavailable', 'Resend (not available yet)')}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+      </PageContainer>
     </>
   );
 }

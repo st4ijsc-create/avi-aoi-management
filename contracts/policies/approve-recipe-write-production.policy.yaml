@@ -1,0 +1,15 @@
+# Policy-as-code — SYNAPSE Tầng 3 §11 (doc 44 W3-A1 G3.13).
+# Chuyển từ DEFAULT_POLICIES (server/services/security/policyEngine.ts) — GIỮ NGUYÊN
+# ngữ nghĩa: ghi recipe khi line đang chạy sản xuất → cần phê duyệt + khoá phiên bản.
+# Nhóm chính sách: Ràng buộc quy trình (spec §11.1 — "đúng recipe đã khóa").
+policy_id: approve-recipe-write-production
+version: 1
+effect: require_approval
+action_pattern: recipe_write
+priority: 100
+status: active
+description: "Ghi recipe khi line đang chạy sản xuất → cần phê duyệt + khoá phiên bản."
+conditions:
+  - path: line.state
+    op: eq
+    value: running

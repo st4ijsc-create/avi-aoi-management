@@ -1,0 +1,1 @@
+﻿{"success":true,"data":{"groupBy":"day","dateRange":{"startDate":"2026-04-02T17:00:00.000Z","endDate":"2026-04-03T16:59:59.999Z"},"trend":[{"period":"2026-04-03 00:00:00","totalInspections":6,"okCount":0,"ngCount":6,"ntfCount":0,"yieldRate":0}]}}

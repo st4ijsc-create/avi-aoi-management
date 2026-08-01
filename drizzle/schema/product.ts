@@ -1,6 +1,9 @@
 // Schema domain: Product tables
+import { sql } from "drizzle-orm";
 import { pgTable, serial, integer, bigint, text, timestamp, varchar, decimal, boolean, json, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { lifecycleStatusEnum, measurementTypeEnum, syncOperationEnum, syncStatusEnum } from "./enums";
+// W3-A (doc 27 M1/M6, 0180): productMachineMappings now carries real FKs to machines.
+import { machines } from "./hierarchy";
 
 /**
  * Product Model - Mẫu sản phẩm với ảnh tham chiếu
@@ -14,9 +17,21 @@ export const productModels = pgTable("product_models", {
   category: varchar("category", { length: 100 }), // Product family/category (legacy text field)
   categoryId: integer("categoryId"), // Foreign key to product_categories table
   productLine: varchar("productLine", { length: 100 }), // Product line
-  variant: varchar("variant", { length: 100 }), // Product variant
+  // @deprecated doc 55 PV0 (QĐ#13) — legacy free-text variant LABEL. Superseded by
+  // the first-class `product_variants` table (+ inheritance/override). NOT dropped
+  // (existing rows keep their label); no longer the source of truth for variants.
+  variant: varchar("variant", { length: 100 }), // Product variant (legacy label)
   // Lifecycle status
   lifecycleStatus: lifecycleStatusEnum("lifecycleStatus").default("active").notNull(),
+  // Doc 31 PM2 (decision #6, migration 0197) — free-text engineering revision
+  // (e.g. "A", "B", "Rev2"). NOT a genealogy table: revisions are created by
+  // cloning (PM1) into a new code and bumping this field. Nullable, no default.
+  revision: varchar("revision", { length: 32 }),
+  // Doc 31 PM1/PM2 (0197) — lightweight provenance. When this product was created
+  // via productModel.clone, this holds the source product's id. Plain int, NO hard
+  // FK (soft-ref convention) so deleting the source never blocks the clone. NULL =
+  // authored from scratch.
+  clonedFromId: integer("clonedFromId"),
   // Reference image
   referenceImageUrl: text("referenceImageUrl"), // Ảnh mẫu sản phẩm
   referenceImageKey: varchar("referenceImageKey", { length: 255 }),
@@ -191,20 +206,60 @@ export const measurementPointDefs = pgTable("measurement_point_defs", {
   // P3.4: optional product view/camera this point is measured from (e.g., top | bottom | side).
   // NULL = point applies to all views (default legacy behavior).
   productViewId: integer("productViewId"),
+  // ── Doc 29 §1.2 / W8-A (0191) — component linkage for package-level Pareto ──
+  // Which COMPONENT this point measures. componentCode relates BY CODE to
+  // materials.code (same convention as bomLineItems/feederMaterials.componentCode);
+  // refDesignator is the board position (e.g. "R12", "U3"). Both NULLABLE plain
+  // ADD COLUMN (this is a regular table, not a hypertable). The Pareto chain:
+  // measurement_results → pointDef.componentCode → materials.packageId → component_packages.
+  componentCode: varchar("componentCode", { length: 100 }),
+  refDesignator: varchar("refDesignator", { length: 64 }),
+  // ── doc 55 Item 3 / PV0 (0286) — product-variant linkage ──────────────────
+  // NULL = BASE/common point: shared by the model and inherited by EVERY variant
+  // (resolveEffectivePoints returns it unless a variant excludes/patches it via
+  // variant_point_overrides). Non-NULL (→ product_variants.id) = a point ADDED by
+  // that specific variant (QĐ#11 — added points live HERE, not in the override
+  // table). All pre-0286 points are NULL (no backfill). ⚠ May be ABSENT at runtime
+  // until 0286 applies; the db layer treats absent/NULL as base, so behaviour is
+  // identical to pre-variant. Soft-ref (no hard FK — claim/panel convention).
+  variantId: integer("variantId"),
   isActive: boolean("isActive").default(true).notNull(),
   // P0 soft-delete marker. NULL = live row. Set when row is logically deleted.
   deletedAt: timestamp("deletedAt"),
+  // Doc 51 P1 / CASE #4 (0274) — the product's pointsConfigVersion AT THE MOMENT
+  // this point was soft-deleted. Lets deltaSync ship a tombstone only to machines
+  // still below that version. NULL = deleted before 0274 (version unknown) → the
+  // tombstone is shipped unconditionally (over-ship beats a point that never dies).
+  deletedAtVersion: integer("deletedAtVersion"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_point_defs_product").on(table.productModelId),
   index("idx_point_defs_machine").on(table.machineId),
   index("idx_point_defs_code").on(table.code),
+  // Doc 51 P2 (0274) → doc 55 PV0 (0286) — a product may hold only ONE live def per
+  // (variant, code). PARTIAL on "deletedAt" IS NULL so soft-deleted history never
+  // blocks re-creating a code. variantId is folded via COALESCE(variantId, 0) so
+  // base points (variantId NULL) keep the exact (productModelId, code) uniqueness
+  // 0274 gave them, while a variant may add its own point sharing a base code. Two
+  // DIFFERENT variants may reuse the same code; the SAME variant may not.
+  // Matches the identity the app assumes (getMeasurementPointDefByCode / resolver /
+  // remapMeasurementPoints key on productModelId+variant+code) — this only stops the
+  // check-then-insert race from minting a second live row.
+  // ⚠ May be ABSENT (or still be the pre-0286 uq_point_defs_product_code) at runtime:
+  //   0286 is guarded and keeps the old index when pre-existing duplicates block the
+  //   swap. All writers use bare ON CONFLICT DO NOTHING so they behave identically
+  //   either way.
+  uniqueIndex("uq_point_defs_product_variant_code")
+    .on(table.productModelId, sql`COALESCE("variantId", 0)`, table.code)
+    .where(sql`${table.deletedAt} IS NULL`),
   index("idx_point_defs_last_modified").on(table.lastModifiedAt),
   index("idx_point_defs_product_modified").on(table.productModelId, table.lastModifiedAt),
   index("idx_point_defs_image_hash").on(table.imageHash),
   index("idx_point_defs_deleted_at").on(table.deletedAt),
   index("idx_point_defs_type_code").on(table.measurementTypeCode),
+  // W8-A (0191): partial — the column is sparse until points are linked.
+  index("idx_point_defs_component_code").on(table.componentCode).where(sql`${table.componentCode} IS NOT NULL`),
 ]);
 
 export type MeasurementPointDef = typeof measurementPointDefs.$inferSelect;
@@ -223,6 +278,16 @@ export const measurementPointVersions = pgTable("measurement_point_versions", {
   snapshotJson: json("snapshotJson").$type<Record<string, any>>().notNull(),
   changedBy: integer("changedBy"),             // users.id (nullable for system edits)
   changeReason: varchar("changeReason", { length: 500 }),
+  // Doc 51 P2 batch-2 (§12.2 #2, migration 0282) — VERSION-EXACT spec-gate
+  // provenance. The product's pointsConfigVersion that the pre-edit limits in
+  // snapshotJson were live UNDER (read inside updateMeasurementPointDef's tx, just
+  // before the router bumps the product +1). Lets the spec-gate reconstruct limits
+  // by the MACHINE-DECLARED version V (smallest stamp >= V) rather than by the
+  // server-received instant. NULL = snapshot written before 0282 (unknown version)
+  // → the gate falls back to the instant-based reconstruction (0276/P1), no
+  // regression. ⚠ May be ABSENT at runtime (0282 guarded): writers only include it
+  // when a probe detects the column, and the read path projects it conditionally.
+  productPointsConfigVersion: integer("productPointsConfigVersion"),
   changedAt: timestamp("changedAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_point_versions_point").on(table.pointDefId),
@@ -232,6 +297,83 @@ export const measurementPointVersions = pgTable("measurement_point_versions", {
 
 export type MeasurementPointVersion = typeof measurementPointVersions.$inferSelect;
 export type InsertMeasurementPointVersion = typeof measurementPointVersions.$inferInsert;
+
+// ============================================================
+// doc 55 Item 3 / PV0 (migration 0286) — PRODUCT VARIANTS (PA2 first-class)
+// ------------------------------------------------------------
+// A variant is a first-class build option of a product model (e.g. a region SKU, a
+// with/without-connector option). Every product_models row has EXACTLY ONE BASE
+// variant (isBase=true, backfilled by 0286); non-base variants inherit the base
+// point set and diverge only through:
+//   • variant_point_overrides — exclude / patch a BASE point (QĐ#11), and
+//   • measurement_point_defs rows carrying variantId — points the variant ADDS.
+// Points config is versioned PER VARIANT (pointsConfigVersion, QĐ#10); the base
+// variant's version tracks product_models.pointsConfigVersion (kept in lock-step by
+// bumpPointsConfigVersion's fan-out).
+// SOFT ref productModelId (no hard FK — claim/enrollment/panel convention).
+// ============================================================
+export const productVariants = pgTable("product_variants", {
+  id: serial("id").primaryKey(),
+  productModelId: integer("productModelId").notNull(),
+  code: varchar("code", { length: 100 }).notNull(), // 'BASE' for the base variant
+  name: varchar("name", { length: 255 }),
+  isBase: boolean("isBase").default(false).notNull(),
+  // QĐ#10 — per-variant points config version (machines re-fetch when it moves).
+  pointsConfigVersion: integer("pointsConfigVersion").default(1).notNull(),
+  // Optional per-variant OVERRIDE of the model's reference image / coordinate mode.
+  // NULL = inherit the product_models value.
+  referenceImageUrl: text("referenceImageUrl"),
+  referenceImageKey: varchar("referenceImageKey", { length: 255 }),
+  coordinateMode: varchar("coordinateMode", { length: 20 }),
+  lifecycleStatus: varchar("lifecycleStatus", { length: 20 }).default("active").notNull(),
+  deletedAt: timestamp("deletedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  // At most ONE live variant per (model, code). PARTIAL on deletedAt IS NULL so a
+  // retired code can be reused. Also the guard behind "one base per model" (code
+  // 'BASE' can exist once live per model).
+  uniqueIndex("uq_product_variants_model_code")
+    .on(table.productModelId, table.code)
+    .where(sql`${table.deletedAt} IS NULL`),
+  index("idx_product_variants_model").on(table.productModelId),
+  index("idx_product_variants_base")
+    .on(table.productModelId, table.isBase)
+    .where(sql`${table.isBase} = true`),
+  index("idx_product_variants_deleted_at").on(table.deletedAt),
+]);
+
+export type ProductVariant = typeof productVariants.$inferSelect;
+export type InsertProductVariant = typeof productVariants.$inferInsert;
+
+/**
+ * doc 55 PV0 (0286) — how a non-base variant diverges from a BASE/common point.
+ *   • action='exclude'  → the variant DROPS this base point.
+ *   • action='override' → the variant PATCHES the base point (patchJson carries the
+ *     changed limit/geometry fields, shallow-merged onto the base def).
+ * A variant's ADDED points are NOT here — they are measurement_point_defs rows with
+ * variantId set (QĐ#11). Soft-ref variantId → product_variants.id and
+ * basePointDefId → measurement_point_defs.id (a base point, variantId NULL).
+ */
+export const variantPointOverrides = pgTable("variant_point_overrides", {
+  id: serial("id").primaryKey(),
+  variantId: integer("variantId").notNull(),
+  basePointDefId: integer("basePointDefId").notNull(),
+  // 'exclude' | 'override' (CHECK enforced in 0286).
+  action: varchar("action", { length: 20 }).notNull(),
+  // Patch payload for action='override' (e.g. { lowerLimit, upperLimit, geometry }).
+  // NULL for 'exclude'.
+  patchJson: jsonb("patchJson").$type<Record<string, unknown>>(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_variant_overrides_variant_point").on(table.variantId, table.basePointDefId),
+  index("idx_variant_overrides_variant").on(table.variantId),
+  index("idx_variant_overrides_base_point").on(table.basePointDefId),
+]);
+
+export type VariantPointOverride = typeof variantPointOverrides.$inferSelect;
+export type InsertVariantPointOverride = typeof variantPointOverrides.$inferInsert;
 
 // ============================================================
 // P4.A G17 — Measurement Point Lighting / Illumination Profile
@@ -355,6 +497,14 @@ export const defectCatalog = pgTable("defect_catalog", {
   // Optional photo / illustration in storage.
   referenceImageUrl: text("referenceImageUrl"),
   referenceImageKey: varchar("referenceImageKey", { length: 255 }),
+  // Doc 31 Đợt B (OP4, migration 0194) — free-text repair / disposition guidance
+  // shown at RepairStation / InspectionDetail when this defect is classified.
+  repairGuidance: text("repairGuidance"),
+  repairGuidanceVi: text("repairGuidanceVi"),
+  // Doc 31 Đợt E (WE-3, migration 0201) — taxonomy consolidation. When a duplicate
+  // code is retired (isActive=false), this points at the SURVIVING canonical code so
+  // an incoming duplicate code still resolves forward (see getDefectCatalogByCode).
+  aliasOfCode: varchar("aliasOfCode", { length: 50 }),
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -366,10 +516,39 @@ export const defectCatalog = pgTable("defect_catalog", {
   index("idx_defect_catalog_active").on(table.isActive),
   index("idx_defect_catalog_deleted_at").on(table.deletedAt),
   index("idx_defect_catalog_ipc_section").on(table.ipcSection),
+  index("idx_defect_catalog_alias_of_code").on(table.aliasOfCode).where(sql`${table.aliasOfCode} IS NOT NULL`),
 ]);
 
 export type DefectCatalog = typeof defectCatalog.$inferSelect;
 export type InsertDefectCatalog = typeof defectCatalog.$inferInsert;
+
+// ============================================================
+// Doc 31 Đợt B (OP3, migration 0194) — Unmatched defect-code rollup
+// ------------------------------------------------------------
+// When an inspection reports a defect code that does NOT resolve to a
+// defect_catalog row, ingest records it here (aggregate: one row per code) so
+// engineers get visibility ("code X seen 400× but not in catalog") and can
+// curate it in. machineId/productModelId are LAST-seen sample context.
+// resolvedCatalogId is stamped once the code is added to the catalog.
+// ============================================================
+export const unmatchedDefectCodes = pgTable("unmatched_defect_codes", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 50 }).notNull(),
+  machineId: integer("machineId"),
+  productModelId: integer("productModelId"),
+  seenCount: integer("seenCount").default(0).notNull(),
+  resolvedCatalogId: integer("resolvedCatalogId"),
+  firstSeenAt: timestamp("firstSeenAt").defaultNow().notNull(),
+  lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_unmatched_defect_code").on(table.code),
+  index("idx_unmatched_defect_last_seen").on(table.lastSeenAt),
+]);
+
+export type UnmatchedDefectCode = typeof unmatchedDefectCodes.$inferSelect;
+export type InsertUnmatchedDefectCode = typeof unmatchedDefectCodes.$inferInsert;
 
 // ============================================================
 // P3.1 — Measurement Instrument Registry
@@ -634,16 +813,35 @@ export type InsertMsaCsvMappingPreset = typeof msaCsvMappingPresets.$inferInsert
  */
 export const productMachineMappings = pgTable("product_machine_mappings", {
   id: serial("id").primaryKey(),
-  productModelId: integer("productModelId").notNull(),
-  machineId: integer("machineId").notNull(),
+  // W3-A (doc 27 M1/M6, 0180): real FKs both sides, ON DELETE CASCADE — a
+  // mapping is a pure join row and dies with either end.
+  productModelId: integer("productModelId").notNull()
+    .references(() => productModels.id, { onDelete: "cascade" }),
+  machineId: integer("machineId").notNull()
+    .references(() => machines.id, { onDelete: "cascade" }),
   isActive: boolean("isActive").default(true).notNull(),
   priority: integer("priority").default(0).notNull(), // Ưu tiên sản phẩm trên máy
+  // Doc 54 P2.2 (OEE-trust, migration 0285) — CONFIGURED ideal/standard cycle time
+  // (giây/đơn vị) cho ĐÚNG cặp (sản phẩm, máy) này. Đây là nguồn CHỦ ĐỘNG cho hệ số
+  // Performance của OEE (Performance = ideal × count / runTime). Trước đây "ideal" duy
+  // nhất chỉ đến từ việc ĐỌC LẠI một dòng oee_metrics cũ (bài toán con-gà-quả-trứng) hoặc
+  // ideal-suy-ra từ oee_targets. NULL = chưa cấu hình → Performance rơi về các nguồn cũ
+  // (target-implied / oee_metrics gần nhất / avg cycle quan sát) và HONEST-NULL khi không
+  // có gì phân giải — KHÔNG bao giờ bịa một ideal giả làm phồng OEE.
+  // ⚠ CÓ THỂ VẮNG lúc chạy: 0285 chỉ ADD COLUMN nhưng app dò cột trước khi đọc
+  //   (resolveIdealCycleTimeSec → productMachineMappingHasIdealColumn) và rơi về nguồn cũ
+  //   khi cột chưa có, nên hành vi y hệt cho tới khi migration được áp.
+  idealCycleTimeSec: integer("idealCycleTimeSec"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_pm_mapping_product").on(table.productModelId),
   index("idx_pm_mapping_machine").on(table.machineId),
+  // W3-A (doc 27 M6, 0180): a (product, machine) pair exists at most ONCE —
+  // FULL unique (re-mapping must reactivate/update the existing row, not
+  // insert a duplicate). Conditional build: 0180 defers if duplicates exist.
+  uniqueIndex("uq_pm_mappings_pair").on(table.productModelId, table.machineId),
 ]);
 
 export type ProductMachineMapping = typeof productMachineMappings.$inferSelect;
@@ -903,6 +1101,70 @@ export const thresholdApprovals = pgTable("threshold_approvals", {
 export type ThresholdApproval = typeof thresholdApprovals.$inferSelect;
 export type InsertThresholdApproval = typeof thresholdApprovals.$inferInsert;
 
+// ============================================================
+// W3-C (doc 27 §2 M9) — Inspection-program approval/release workflow.
+// ------------------------------------------------------------
+// A "program release" is an immutable, checksummed SNAPSHOT of the FULL
+// measurement-point set (+ thresholds) of a product model at a point in time,
+// promoted through draft → pending_approval → approved → released →
+// superseded (or rejected). Mirrors the proven machine_recipes pattern:
+//   • SoD: creator ≠ approver (enforced in inspectionProgramService)
+//   • Atomic release: FOR UPDATE lock per productModelId; the previously
+//     released version of the SAME scope is superseded in the same tx
+//   • Append-only: rows are never deleted; every transition is audited
+// Editing measurement_point_defs stays allowed (implicit draft state) — the
+// release ledger records what was signed off, and getActiveRelease exposes
+// the production-truth program version to ingest/analytics.
+// status/varchar on purpose (no new pg enum → migration stays additive).
+// ============================================================
+export const inspectionProgramReleases = pgTable("inspection_program_releases", {
+  id: serial("id").primaryKey(),
+  productModelId: integer("productModelId").notNull(),
+  // NULL = product-level program; set = machine-specific program (mirrors the
+  // optional machineId scoping on measurement_point_defs / productMachineMappings).
+  machineId: integer("machineId"),
+  // Monotonic per productModelId (across machine scopes) — computed in service.
+  version: integer("version").notNull(),
+  // draft | pending_approval | approved | released | superseded | rejected
+  status: varchar("status", { length: 20 }).default("draft").notNull(),
+  // Full point-set + thresholds captured at createRelease time (immutable).
+  snapshot: jsonb("snapshot").$type<Record<string, any>>().notNull(),
+  // sha256 of the stable-stringified snapshot points (dedup/diff/tamper check).
+  checksum: varchar("checksum", { length: 64 }).notNull(),
+  pointCount: integer("pointCount").default(0).notNull(),
+  notes: text("notes"),
+  createdBy: integer("createdBy"),
+  submittedAt: timestamp("submittedAt"),
+  // MUST differ from createdBy — segregation of duties (service-enforced).
+  approvedBy: integer("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  approvalNote: text("approvalNote"),
+  rejectedBy: integer("rejectedBy"),
+  rejectedAt: timestamp("rejectedAt"),
+  rejectReason: text("rejectReason"),
+  releasedBy: integer("releasedBy"),
+  releasedAt: timestamp("releasedAt"),
+  supersededAt: timestamp("supersededAt"),
+  // Genealogy: the release this one superseded when it went live (nullable).
+  previousReleaseId: integer("previousReleaseId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_prog_rel_product").on(table.productModelId),
+  index("idx_prog_rel_machine").on(table.machineId),
+  index("idx_prog_rel_status").on(table.status),
+  index("idx_prog_rel_created_by").on(table.createdBy),
+  uniqueIndex("uq_prog_rel_product_version").on(table.productModelId, table.version),
+  // At most ONE released program per (productModelId, machine-scope); NULL machineId
+  // is folded to 0 so the product-level scope is also single-released (see 0182).
+  uniqueIndex("uq_prog_rel_one_released")
+    .on(table.productModelId, sql`(COALESCE("machineId", 0))`)
+    .where(sql`"status" = 'released'`),
+]);
+
+export type InspectionProgramRelease = typeof inspectionProgramReleases.$inferSelect;
+export type InsertInspectionProgramRelease = typeof inspectionProgramReleases.$inferInsert;
+
 // (P4.B G9 CAD import tables appended)
 
 // ============================================================
@@ -981,7 +1243,16 @@ export const stationTraces = pgTable("station_traces", {
   summary: jsonb("summary").$type<Record<string, any>>(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
-  uniqueIndex("uq_station_traces_serial").on(table.serialNumber),
+  // Doc 51 P3 batch-2 (CASE #8, migration 0284) — genealogy scope. The old
+  // UNIQUE(serialNumber) collapsed two different boards sharing a printed serial
+  // (or a blank serial) into ONE trace. Scope by (serialNumber, productModelId).
+  // ⚠ May be ABSENT at runtime: 0284 is guarded and records 'partial' when
+  //   pre-existing duplicate (serial, model) pairs block the rebuild; upsertStationTrace
+  //   scopes in the app either way (SELECT-then-write), so behaviour is identical.
+  //   NULL productModelId rows are NULLS-DISTINCT here (Postgres default) — two blank-
+  //   model boards with the same serial are indistinguishable and still merge; the app
+  //   matches them null-safe so a single blank-model board stays one row.
+  uniqueIndex("uq_station_traces_serial_model").on(table.serialNumber, table.productModelId),
   index("idx_station_traces_product").on(table.productModelId),
   index("idx_station_traces_lot").on(table.lotCode),
   index("idx_station_traces_first_escape").on(table.firstEscapeStation),
@@ -1010,12 +1281,22 @@ export const genealogyChain = pgTable("genealogy_chain", {
   payload: jsonb("payload").$type<Record<string, any>>().notNull(),
   recordedBy: integer("recordedBy"),
   recordedAt: timestamp("recordedAt").defaultNow().notNull(),
+  // ── doc 44 W2-B2 (G5.17, migration 0255 — additive, nullable) ──────────────
+  // Cross-layer trace id (order → work-order → command → genealogy event) from
+  // the AsyncLocalStorage backbone (server/services/observability/correlation.ts).
+  // DELIBERATELY OUTSIDE the hash-chain: utils/genealogyChain.hashEntry hashes a
+  // FIXED field list that does not include this column, so old rows (NULL) and
+  // new rows (set) verify identically. Trade-off (honest): correlation_id is
+  // trace metadata and is NOT tamper-protected by the chain.
+  correlationId: text("correlation_id"),
 }, (table) => [
   uniqueIndex("uq_genealogy_chain_curr_hash").on(table.currHash),
   index("idx_genealogy_chain_serial").on(table.serialNumber),
   index("idx_genealogy_chain_parent").on(table.parentSerial),
   index("idx_genealogy_chain_lot").on(table.lotCode),
   index("idx_genealogy_chain_recorded").on(table.recordedAt),
+  // 0255 — partial (skip NULL): most historical rows carry no correlation id.
+  index("idx_genealogy_chain_correlation").on(table.correlationId).where(sql`${table.correlationId} IS NOT NULL`),
 ]);
 
 export type GenealogyChain = typeof genealogyChain.$inferSelect;

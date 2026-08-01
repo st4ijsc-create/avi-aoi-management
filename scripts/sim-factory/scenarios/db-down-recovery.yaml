@@ -1,0 +1,34 @@
+name: db-down-recovery
+description: >
+  DB sập giữa chừng → inspection ingest phải rơi vào store-forward WAL (máy nhận ACK
+  queued), rồi khi DB trở lại, worker backfill DRAIN hết WAL. Việc TẮT/BẬT DB là thao
+  tác NGOÀI (manual) — runner in hướng dẫn + chờ, và kiểm tra độ sâu WAL (đọc FILE, không
+  cần DB). Cần INSPECTION_STORE_FORWARD_ENABLED=true. Bước burst nhắm line 1.
+  LƯU Ý: kiểm tra dựa trên FILE nên vẫn chạy được trong lúc DB đang tắt.
+steps:
+  - name: (manual) TẮT PostgreSQL để mô phỏng DB sập
+    manual:
+      prompt: >
+        Hãy TẮT Postgres đang phục vụ DB _sim (vd `docker stop <pg>` hoặc dừng service).
+        KHÔNG tắt DB production. Sau khi tắt xong hãy để nguyên tới hết bước kế.
+      waitSec: 25
+  - name: BƠM 20 inspection trong lúc DB sập (kỳ vọng vào store-forward)
+    sim: { action: inspection.burst, line: 1, count: 20 }
+  - name: store-forward WAL đã tích luỹ (>0)
+    check: storeforward_depth
+    op: gt
+    value: 0
+    timeout: 30
+    interval: 3
+  - name: (manual) BẬT LẠI PostgreSQL
+    manual:
+      prompt: >
+        Hãy BẬT LẠI Postgres (_sim). Worker backfill sẽ tự drain WAL (idempotent).
+      waitSec: 40
+  - name: store-forward WAL đã DRAIN về 0
+    check: storeforward_depth
+    op: eq
+    value: 0
+    timeout: 180
+    interval: 5
+teardown: []

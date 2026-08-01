@@ -1,0 +1,92 @@
+# ROS2 MoveIt program generated from IR flow "pick_and_place" v1
+# BOUND to MoveIt: motion (if any) emits real set_pose_target / set_joint_value_target
+#   -> plan() -> execute() on a MoveGroupCommander; I/O via std_msgs publishers;
+#   if/loop -> Python control flow. Each group carries its "# [IR ...]" marker.
+# HONEST: deterministic GENERATED MoveIt Python source (not a live ROS2 runtime) —
+#   bind the planning group + IO topics to your MoveIt config and validate before use.
+# SAFETY: deploy only via the gated programmingService (DPC_DEPLOY_ENABLED + HITL + sim-gate).
+import rclpy
+from rclpy.node import Node
+import time
+from std_msgs.msg import Bool, Float64
+import moveit_commander
+
+# The MoveIt planning group this flow drives (override to match your SRDF).
+PLANNING_GROUP = "manipulator"
+
+
+class PickAndPlaceNode(Node):
+    def __init__(self):
+        super().__init__("pick_and_place")
+        moveit_commander.roscpp_initialize([])
+        self.robot = moveit_commander.RobotCommander()
+        self.scene = moveit_commander.PlanningSceneInterface()
+        self.move_group = moveit_commander.MoveGroupCommander(PLANNING_GROUP)
+        self._io_pubs = {}
+        self._io_state = {}
+
+    def _plan_and_execute(self):
+        # BOUND MoveIt plan -> execute. On ROS2 plan() returns (ok, traj, time, err).
+        success, plan, _planning_time, _err = self.move_group.plan()
+        if success:
+            self.move_group.execute(plan, wait=True)
+        self.move_group.stop()
+        self.move_group.clear_pose_targets()
+        return success
+
+    def _gripper(self, close, tool_id, force_limit_n=0.0, timeout_ms=0):
+        # Gripper command over a Bool topic — bind to your gripper action/driver.
+        msg = Bool()
+        msg.data = bool(close)
+        self._io_pub("gripper/" + str(tool_id), Bool).publish(msg)
+
+    def _io_pub(self, name, msg_type):
+        pub = self._io_pubs.get(name)
+        if pub is None:
+            pub = self.create_publisher(msg_type, "io/" + str(name), 10)
+            self._io_pubs[name] = pub
+        return pub
+
+    def set_io(self, signal, value):
+        msg = Bool()
+        msg.data = bool(value)
+        self._io_pub(signal, Bool).publish(msg)
+
+    def read_io(self, signal):
+        # Latest value cached from an input subscription (bind a subscriber to populate).
+        return self._io_state.get(str(signal), False)
+
+    def wait_signal(self, signal):
+        while not self.read_io(signal):
+            rclpy.spin_once(self, timeout_sec=0.05)
+
+    def run(self):
+        # [IR move_joint #b1]
+        self.move_group.set_max_velocity_scaling_factor(0.5)
+        self.move_group.set_joint_value_target([0, -1.57, 1.57, 0, 1.57, 0])
+        self._plan_and_execute()
+        # [IR move_linear #b2]
+        self.move_group.set_max_velocity_scaling_factor(0.2)
+        self.move_group.set_pose_target([0.3, 0.1, 0.2, 0, 3.14, 0])
+        self._plan_and_execute()
+        # [IR grip #b3]
+        self._gripper(True, "gripper_a", force_limit_n=40, timeout_ms=2000)
+        # [IR if_condition #b4]
+        if self.read_io("1") == True:
+            # [IR move_linear #b5]
+            self.move_group.set_max_velocity_scaling_factor(0.15)
+            self.move_group.set_pose_target([0.3, -0.1, 0.2, 0, 3.14, 0])
+            self._plan_and_execute()
+        else:
+            # [IR wait #b6]
+            time.sleep(0.5)
+        # [IR loop #b7]
+        for _ in range(3):
+            # [IR set_output #b8]
+            self.set_io("2", True)
+            # [IR wait #b9]
+            self.wait_signal("3")
+        # [IR release #b10]
+        self._gripper(False, "gripper_a")
+        # [IR set_output #b11]
+        self.set_io("2", False)

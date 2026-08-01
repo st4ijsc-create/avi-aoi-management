@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+// Doc 38 Đợt Q — import the CANONICAL adminProcedure (admin role + 2FA enforced)
+// instead of the local no-2FA shim that used to live in this file.
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { eq, and } from "drizzle-orm";
 import { getDb as getDbRaw } from "../db";
@@ -91,6 +93,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'production', moduleName: 'production_orders', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
     { category: 'production', moduleName: 'production_layout', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'production', moduleName: 'production_line_assignments', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    // doc 40 Lan-P0 — phiên sản xuất (vào ca/tạm dừng/kết thúc/bàn giao). Tách khỏi production_orders.
+    { category: 'production', moduleName: 'production_session', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     // Machine Monitoring
     { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'machine_monitoring', moduleName: 'machine_alerts', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
@@ -155,6 +159,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'production', moduleName: 'production_orders', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
     { category: 'production', moduleName: 'production_layout', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'production', moduleName: 'production_line_assignments', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // doc 40 Lan-P0 — supervisor quản lý phiên sản xuất của line.
+    { category: 'production', moduleName: 'production_session', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     // Machine Monitoring
     { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
@@ -213,7 +219,13 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'history', moduleName: 'history_detail', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
+    // doc 54 Wave B (Đ3) — read-only visibility of the MQTT/Connectivity hub. View ONLY;
+    // every mqtt mutation stays gated (writeProcedure + mqtt permission bit).
+    { category: 'mqtt', moduleName: 'mqtt_monitoring', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'production', moduleName: 'production_orders', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // doc 40 Lan-P0 — operator TỰ mở/tạm dừng/kết thúc/bàn giao ca của mình (không cần
+    // quyền tạo đơn sản xuất). Mở khóa OperatorSessionControl + ShiftHandoverDialog.
+    { category: 'production', moduleName: 'production_session', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     // Andon (F5a) — operators raise/ack/resolve Andons from the line
     { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     // Energy advanced (G2.6a) — operators view + manually record energy readings (telemetry, no machine write)
@@ -241,6 +253,45 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     // but NOT execute high-risk commands (canCreate:false → start/stop/recipe gated to supervisor/admin)
     { category: 'machine_control', moduleName: 'machine_control', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
   ],
+  engineer: [
+    // Automation-programming engineer (PLC/robot/Zmotion) — machine setup + control,
+    // measurement/product/alert authoring (canCreate/canEdit); read-only across quality
+    // surfaces. (doc 34 P3 / decision D6)
+    // Dashboard
+    { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // History
+    { category: 'history', moduleName: 'history_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'history', moduleName: 'history_detail', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // Analytics
+    { category: 'analytics', moduleName: 'analytics_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'analytics', moduleName: 'analytics_spc', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'analytics', moduleName: 'analytics_machine_health', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // Reports
+    { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // Settings — engineer authors measurement points, products + alert thresholds
+    // doc 54 P0.3 — settings_factory in the DEFAULT matrix too (existing engineers got it
+    // via mig 0269; this keeps freshly-seeded engineers consistent for factory-config +
+    // hierarchy bulk-import). canDelete stays admin-only.
+    { category: 'settings', moduleName: 'settings_factory', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'settings', moduleName: 'settings_measurement_points', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'settings', moduleName: 'settings_products', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'settings', moduleName: 'settings_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // Machine Monitoring
+    { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'machine_monitoring', moduleName: 'machine_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // doc 54 Wave B (Đ3) — read-only visibility of the MQTT/Connectivity hub. View ONLY;
+    // every mqtt mutation stays gated (writeProcedure + mqtt permission bit).
+    { category: 'mqtt', moduleName: 'mqtt_monitoring', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // Machine Control (Sprint F4a) — engineer can execute (canCreate) + set param/ack (canEdit)
+    { category: 'machine_control', moduleName: 'machine_control', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // Andon (F5a) — engineer raises/ack/resolve
+    { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // Interlock (F5a) — read-only view
+    { category: 'interlock', moduleName: 'interlock', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // MES BOM (G2.4) — read-only view
+    { category: 'mes_bom', moduleName: 'mes_bom', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+  ],
   viewer: [
     // Viewer has read-only access to dashboards and reports
     { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
@@ -258,30 +309,10 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
   ]
 };
 
-// Admin procedure - only admin users can access
-const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== 'admin') {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
-  }
-  return next({ ctx });
-});
-
-// Supervisor procedure - admin or supervisor can access
-const supervisorProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== 'admin' && ctx.user.role !== 'supervisor') {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Supervisor access required' });
-  }
-  return next({ ctx });
-});
-
-// Quality inspector procedure - admin, supervisor, or quality_inspector can access
-const qualityProcedure = protectedProcedure.use(({ ctx, next }) => {
-  const allowedRoles = ['admin', 'supervisor', 'quality_inspector'];
-  if (!allowedRoles.includes(ctx.user.role)) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Quality inspector access required' });
-  }
-  return next({ ctx });
-});
+// Doc 38 Đợt Q — the local admin/supervisor/quality procedure shims (which did NOT
+// enforce 2FA and thus undercut the canonical guards) have been removed. `adminProcedure`
+// now comes from _core/trpc (admin + 2FA). The supervisor/quality shims were dead code
+// (every handler used adminProcedure) and were dropped.
 
 // Permission category enum for validation
 const permissionCategoryEnum = z.enum([
@@ -345,6 +376,13 @@ export const permissionsRouter = router({
           color: 'orange'
         },
         {
+          value: 'engineer',
+          label: 'Engineer',
+          description: 'Automation-programming engineer (PLC/robot/Zmotion)',
+          icon: 'cpu',
+          color: 'cyan'
+        },
+        {
           value: 'viewer',
           label: 'Viewer',
           description: 'Read-only access - can only view dashboards and reports',
@@ -365,7 +403,7 @@ export const permissionsRouter = router({
   updateUserRole: adminProcedure
     .input(z.object({
       userId: z.number(),
-      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'viewer', 'user'])
+      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'engineer', 'viewer', 'user'])
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -404,7 +442,7 @@ export const permissionsRouter = router({
   // Get default permissions for a role
   getDefaultPermissionsForRole: adminProcedure
     .input(z.object({
-      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'viewer', 'user'])
+      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'engineer', 'viewer', 'user'])
     }))
     .query(({ input }) => {
       return DEFAULT_ROLE_PERMISSIONS[input.role] || [];
@@ -414,7 +452,7 @@ export const permissionsRouter = router({
   applyRolePermissions: adminProcedure
     .input(z.object({
       userId: z.number(),
-      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'viewer', 'user'])
+      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'engineer', 'viewer', 'user'])
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -769,6 +807,7 @@ export const permissionsRouter = router({
         { category: 'production', moduleName: 'production_orders', displayName: 'QL Đơn sản xuất', description: 'Tạo/sửa/xóa đơn hàng sản xuất, lên lịch' },
         { category: 'production', moduleName: 'production_layout', displayName: 'Bố trí Xưởng', description: 'Quản lý layout xưởng sản xuất, vị trí máy' },
         { category: 'production', moduleName: 'production_line_assignments', displayName: 'Gán SP-Dây chuyền', description: 'Gán sản phẩm cho dây chuyền sản xuất' },
+        { category: 'production', moduleName: 'production_session', displayName: 'Phiên sản xuất (Ca)', description: 'Vào ca/tạm dừng/kết thúc/bàn giao ca của operator. Tách khỏi QL Đơn sản xuất — operator mở ca của mình không cần quyền tạo đơn.' },
 
         // ======================== MACHINE MONITORING ========================
         { category: 'machine_monitoring', moduleName: 'machine_status', displayName: 'Trạng thái Máy', description: 'Giám sát trạng thái máy real-time, uptime' },

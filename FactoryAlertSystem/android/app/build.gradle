@@ -1,0 +1,222 @@
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "com.facebook.react"
+}
+
+/**
+ * This is the configuration block to customize your React Native Android app.
+ * By default you don't need to apply any configuration, just uncomment the lines you need.
+ */
+react {
+    /* Folders */
+    //   The root of your project, i.e. where "package.json" lives. Default is '..'
+    // root = file("../")
+    //   The folder where the react-native NPM package is. Default is ../node_modules/react-native
+    // reactNativeDir = file("../node_modules/react-native")
+    //   The folder where the react-native Codegen package is. Default is ../node_modules/@react-native/codegen
+    // codegenDir = file("../node_modules/@react-native/codegen")
+    //   The cli.js file which is the React Native CLI entrypoint. Default is ../node_modules/react-native/cli.js
+    // cliFile = file("../node_modules/react-native/cli.js")
+
+    /* Variants */
+    //   The list of variants to that are debuggable. For those we're going to
+    //   skip the bundling of the JS bundle and the assets. By default is just 'debug'.
+    //   If you add flavors like lite, entity, etc. you'll have to list your debuggableVariants.
+    // debuggableVariants = ["liteDebug", "entityDebug"]
+
+    /* Bundling */
+    //   A list containing the node command and its flags. Default is just 'node'.
+    // nodeExecutableAndArgs = ["node"]
+    //
+    //   The command to run when bundling. By default is 'bundle'
+    // bundleCommand = "ram-bundle"
+    //
+    //   The path to the CLI configuration file. Default is empty.
+    // bundleConfig = file(googlebundleConfigFile)
+    //
+    //   The name of the generated asset file containing your JS bundle
+    // bundleAssetName = "MyApplication.android.bundle"
+    //
+    //   The entry file for bundle generation. Default is 'index.android.js' or 'index.js'
+    // entryFile = file("../js/MyApplication.android.js")
+    //
+    //   A list of extra flags to pass to the 'bundle' commands.
+    //   See https://github.com/react-native-community/cli/blob/main/docs/commands.md#bundle
+    // extraPackagerArgs = []
+
+    /* Hermes Commands */
+    //   The hermes compiler command to run. By default it is 'hermesc'
+    // hermesCommand = "$rootDir/my-hierarchyoldercontaining/hermesc"
+    //
+    //   The list of flags to pass to the Hermes compiler. By default is "-O", "-output-source-map"
+    // hermesFlags = ["-O", "-output-source-map"]
+}
+
+/**
+ * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
+ *
+ * Wave 2D (perf): enabled for release. This flips BOTH minifyEnabled and
+ * shrinkResources (see buildTypes.release below) so R8 strips unused Java/Kotlin
+ * bytecode and unused resources — a meaningful APK-size + install-footprint win
+ * for the old <3GB / 64GB tablets. Reflection-using native libs are protected by
+ * explicit -keep rules in proguard-rules.pro. Debug builds are unaffected.
+ * If a release ever crashes with a ClassNotFound/NoSuchMethod, add a -keep for
+ * that library rather than reverting this flag.
+ */
+def enableProguardInReleaseBuilds = true
+
+/**
+ * The preferred build flavor of JavaScriptCore (Hermes)
+ */
+def jscFlavor = 'org.webkit:android-jsc:+'
+
+android {
+    ndkVersion rootProject.ext.ndkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+    compileSdk rootProject.ext.compileSdkVersion
+
+    namespace "com.foutec.FactoryAlertSystem"
+    defaultConfig {
+        applicationId "com.foutec.FactoryAlertSystem"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        // MB2/MB3/MB7/MB8/MB9 — doc 27 Đợt 6 (background FGS reliability, boot
+        // auto-start, transport hardening, reproducible signed builds).
+        // Keep in sync with src/services/updateService.ts CURRENT_VERSION(_CODE).
+        versionCode 16
+        versionName "1.0.16"
+    }
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        release {
+            if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
+                storeFile file(MYAPP_UPLOAD_STORE_FILE)
+                storePassword MYAPP_UPLOAD_STORE_PASSWORD
+                keyAlias MYAPP_UPLOAD_KEY_ALIAS
+                keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled enableProguardInReleaseBuilds
+            shrinkResources enableProguardInReleaseBuilds
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+    }
+
+    // Wave 2D (perf): build ONE APK per ARM ABI (armeabi-v7a + arm64-v8a) instead
+    // of a single fat APK that also carries x86/x86_64 (no emulator targets in the
+    // field). Each per-ABI APK is roughly half the native-lib size — smaller
+    // download + install footprint for the old <3GB / 64GB tablets. The set of
+    // ABIs here is kept in sync with `reactNativeArchitectures` in gradle.properties.
+    splits {
+        abi {
+            enable true
+            reset()
+            include "armeabi-v7a", "arm64-v8a"
+            universalApk false
+        }
+    }
+
+    // MB8 (doc 27 Đợt 6): deterministic, reproducible artifact names — no
+    // build timestamp. Wave 2D extends this for per-ABI outputs.
+    // Release outputs: FactoryAlertSystem-v<versionName>-release-<abi>.apk
+    //
+    // Per-ABI versionCode scheme: baseCode*10 + abiOffset guarantees every APK has
+    // a unique, monotonically-increasing versionCode (required only if ever
+    // uploaded to a store). IMPORTANT — this override is OTA-SAFE: the in-app
+    // update check (src/services/updateService.ts) compares its OWN JS constant
+    // CURRENT_VERSION_CODE, NOT the native package versionCode, so overriding the
+    // native code here does not affect update logic.
+    def abiVersionCodes = ['armeabi-v7a': 1, 'arm64-v8a': 2]
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def abiName = output.getFilter(com.android.build.OutputFile.ABI)
+            if (abiName != null) {
+                output.versionCodeOverride =
+                    defaultConfig.versionCode * 10 + (abiVersionCodes.get(abiName) ?: 0)
+            }
+            def abiSuffix = abiName != null ? "-${abiName}" : ""
+            output.outputFileName =
+                "FactoryAlertSystem-v${defaultConfig.versionName}-${variant.name}${abiSuffix}.apk"
+        }
+    }
+}
+
+// MB8 (doc 27 Đợt 6): fail release builds LOUDLY when signing props are missing.
+// Previously the release signingConfig silently produced an UNSIGNED APK when
+// MYAPP_UPLOAD_STORE_FILE was absent. The check runs in taskGraph.whenReady
+// (not inside signingConfigs{}) so debug builds / `gradlew clean` still work;
+// it only fires when a Release packaging task is actually scheduled.
+// Escape hatch for CI experiments: -PallowUnsigned=true
+gradle.taskGraph.whenReady { graph ->
+    def releaseRequested = graph.allTasks.any { task ->
+        task.project == project && task.name ==~ /(package|assemble|bundle).*Release.*/
+    }
+    if (!releaseRequested) return
+    def allowUnsigned = project.hasProperty('allowUnsigned') && project.property('allowUnsigned') == 'true'
+    if (allowUnsigned) {
+        logger.warn("WARNING: building UNSIGNED release APK (-PallowUnsigned=true)")
+        return
+    }
+    def requiredProps = ['MYAPP_UPLOAD_STORE_FILE', 'MYAPP_UPLOAD_STORE_PASSWORD', 'MYAPP_UPLOAD_KEY_ALIAS', 'MYAPP_UPLOAD_KEY_PASSWORD']
+    def missing = requiredProps.findAll { !project.hasProperty(it) }
+    if (!missing.isEmpty()) {
+        throw new org.gradle.api.GradleException(
+            "Release signing properties missing: ${missing.join(', ')}.\n" +
+            "Set them in ~/.gradle/gradle.properties (preferred) or android/gradle.properties,\n" +
+            "or pass -PallowUnsigned=true to knowingly build an unsigned APK. (MB8, doc 27 Đợt 6)")
+    }
+    def storeFile = project.file(project.property('MYAPP_UPLOAD_STORE_FILE'))
+    def storeFileInApp = new File(project.projectDir, project.property('MYAPP_UPLOAD_STORE_FILE').toString())
+    if (!storeFile.exists() && !storeFileInApp.exists()) {
+        throw new org.gradle.api.GradleException(
+            "Release keystore not found: '${project.property('MYAPP_UPLOAD_STORE_FILE')}'.\n" +
+            "The APK would be built UNSIGNED. Provide the keystore file or pass -PallowUnsigned=true. (MB8, doc 27 Đợt 6)")
+    }
+}
+
+configurations.all { config ->
+    config.resolutionStrategy.eachDependency { details ->
+        if (details.requested.group == "androidx.core" &&
+                (details.requested.name == "core" || details.requested.name == "core-ktx")) {
+            details.useVersion "1.12.0"
+            details.because "Align androidx.core to 1.12.0 for compatibility with AGP 8.1.4 and compileSdk 34"
+        }
+    }
+}
+
+dependencies {
+    // The version of react-native is set by the React Native Gradle Plugin
+    implementation("com.facebook.react:react-android")
+    // Wave 2D (perf): Flipper is a debug-only profiling tool (extra native libs +
+    // startup cost). Gate it to debug builds so it never ships in release. The
+    // init call in MainApplication.kt is loaded reflectively + guarded by
+    // BuildConfig.DEBUG so the release classpath (without this dep) still compiles.
+    debugImplementation("com.facebook.react:flipper-integration")
+
+    // Vector Icons
+    implementation project(':react-native-vector-icons')
+
+    if (hermesEnabled.toBoolean()) {
+        implementation("com.facebook.react:hermes-android")
+    } else {
+        implementation jscFlavor
+    }
+}
+
+// Apply vector icons fonts
+apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
+
+apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)

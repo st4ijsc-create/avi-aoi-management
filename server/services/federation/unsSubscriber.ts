@@ -51,6 +51,8 @@ interface SiteConnection {
   rowsUpserted: number;
   /** Latest decoded metric values (by metric name) for this site's overall KPIs. */
   latest: Map<string, number | null>;
+  /** R-2a — pending coalesced snapshot-land timer (null when none scheduled). */
+  snapFlushTimer?: ReturnType<typeof setTimeout> | null;
 }
 
 let isRunning = false;
@@ -150,8 +152,51 @@ function buildSnapshot(conn: SiteConnection): SiteKpiSnapshot | null {
     oee: l.get("oee") ?? null,
     avgCycleTime: l.get("avgCycleTime") ?? null,
     defectPareto: null, // pareto is not streamed via UNS; F1 pull supplies it
+    // U5 — the UNS (Sparkplug) stream carries only inspection KPIs, so the deepened
+    // categories are honest-null here; the F1 pull path supplies detail/fleet/safety/
+    // pdm/alerts. Leaving these null means upsertSnapshot won't overwrite a richer
+    // pull-landed row's detail with nulls beyond the "overall" KPI it refreshes.
+    detailRows: null,
+    fleet: null,
+    safety: null,
+    pdm: null,
+    alertRollup: null,
     endpointsHit: [],
   };
+}
+
+/**
+ * R-2a (doc 38 P1-I) — coalesce the per-message snapshot upsert. Each Sparkplug
+ * DDATA/DBIRTH message historically triggered ONE upsertSnapshot. Since a land always
+ * writes the LATEST folded snapshot (last-writer-wins over conn.latest), bursts can be
+ * collapsed: when UNS_SNAPSHOT_COALESCE_MS > 0 (default 0 = OFF, immediate = prior
+ * behaviour) the first message arms a timer and later messages within the window just
+ * update conn.latest — one upsert lands the merged result. Never throws.
+ */
+function coalesceLandMs(): number {
+  const n = parseInt(String(process.env.UNS_SNAPSHOT_COALESCE_MS ?? ""), 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function scheduleLandSnapshot(conn: SiteConnection): void {
+  const ms = coalesceLandMs();
+  if (ms <= 0) {
+    // Immediate (unchanged default behaviour).
+    void (async () => {
+      const db = await getDb();
+      if (db) await landSnapshot(db, conn);
+    })();
+    return;
+  }
+  if (conn.snapFlushTimer) return; // already armed → coalesce this message in
+  const t = setTimeout(() => {
+    conn.snapFlushTimer = null;
+    void (async () => {
+      const db = await getDb();
+      if (db) await landSnapshot(db, conn);
+    })();
+  }, ms);
+  if (typeof (t as { unref?: () => void }).unref === "function") (t as { unref: () => void }).unref();
+  conn.snapFlushTimer = t;
 }
 
 /** Land the latest streamed snapshot for a site (source='uns'). Never throws. */
@@ -251,8 +296,8 @@ function connectSite(site: Site): void {
           applyMetrics(conn, decoded.metrics);
           conn.messagesReceived++;
           conn.lastMessageAt = new Date();
-          const db = await getDb();
-          if (db) await landSnapshot(db, conn);
+          // R-2a — coalesce the upsert (no-op window when UNS_SNAPSHOT_COALESCE_MS=0).
+          scheduleLandSnapshot(conn);
         } catch (e) {
           conn.lastError = (e as Error).message;
           console.error(`[Federation/UNS] message decode failed for ${site.code}:`, (e as Error).message);
@@ -318,6 +363,15 @@ export async function stopFederationUnsSubscriber(): Promise<void> {
   const conns = [...connections.values()];
   connections.clear();
   isRunning = false;
+  // R-2a — flush any coalesced snapshot still pending so shutdown loses no upsert.
+  const db = await getDb();
+  for (const c of conns) {
+    if (c.snapFlushTimer) {
+      clearTimeout(c.snapFlushTimer);
+      c.snapFlushTimer = null;
+      if (db) await landSnapshot(db, c);
+    }
+  }
   await Promise.allSettled(
     conns.map(
       (c) =>

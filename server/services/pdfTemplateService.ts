@@ -12,16 +12,43 @@
 // @ts-ignore - pdfkit has no bundled type declarations
 import PDFDocument from "pdfkit";
 import * as db from "../db";
+import {
+  registerVietnameseFontPdfKit,
+  registerCjkFontPdfKit,
+  containsCjk,
+  VN_FONT_FAMILY,
+} from "./fontAssets";
+
+/** {regular,bold} CJK family names once registered, or null when not installed. */
+type CjkFonts = { regular: string; bold: string } | null;
+
+/**
+ * doc 48 R4 — draw `text` using the CJK font (Noto Sans SC) for runs that contain
+ * Chinese, so ideographs render instead of tofu, then restore the VN font. When
+ * the CJK font is not installed (`cjk == null`) this is a plain `doc.text(...)` —
+ * Be Vietnam Pro still covers Latin/VN. The static VN section labels keep using
+ * Be Vietnam Pro (Noto Sans SC lacks full Vietnamese coverage); only the dynamic,
+ * user-supplied fields (names, notes, measurements) are routed through here.
+ */
+function cjkText(doc: any, cjk: CjkFonts, text: string, ...args: any[]): void {
+  if (cjk && containsCjk(text)) {
+    doc.font(cjk.regular).text(text, ...args);
+    doc.font(VN_FONT_FAMILY);
+  } else {
+    doc.text(text, ...args);
+  }
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface PDFReportConfig {
   title: string;
   subtitle?: string;
-  logoUrl?: string;
+  logoUrl?: string;        // company logo (http(s) URL or data: URI) — drawn in header
   companyName?: string;
   primaryColor?: string;   // hex color
   accentColor?: string;
+  footerText?: string;     // branding footer line (falls back to companyName)
   generatedBy?: string;
   confidential?: boolean;
   pageSize?: "A4" | "LETTER";
@@ -118,6 +145,65 @@ function lightenColor(hex: string, amount: number): string {
   return `#${lr.toString(16).padStart(2, "0")}${lg.toString(16).padStart(2, "0")}${lb.toString(16).padStart(2, "0")}`;
 }
 
+// ─── Logo / letterhead (doc 32 §2 P3 #17) ────────────────────────────────────
+
+/**
+ * Resolve a company-profile logo (http(s) URL or data: URI) into a raster Buffer
+ * that PDFKit's `doc.image()` can embed. Best-effort: returns undefined on any
+ * failure (bad URL, non-image, oversized, fetch error) so the report always
+ * renders name-only rather than crashing. PDFKit only supports PNG/JPEG — other
+ * formats will throw at draw time and are caught by the caller.
+ */
+export async function resolveLogoBuffer(logoUrl?: string | null): Promise<Buffer | undefined> {
+  if (!logoUrl) return undefined;
+  try {
+    if (logoUrl.startsWith("data:")) {
+      const comma = logoUrl.indexOf(",");
+      if (comma < 0) return undefined;
+      const meta = logoUrl.slice(5, comma); // e.g. "image/png;base64"
+      if (!/^image\//i.test(meta)) return undefined;
+      const isB64 = /;base64/i.test(meta);
+      const buf = isB64
+        ? Buffer.from(logoUrl.slice(comma + 1), "base64")
+        : Buffer.from(decodeURIComponent(logoUrl.slice(comma + 1)), "utf8");
+      return buf.length > 0 && buf.length <= 2_000_000 ? buf : undefined;
+    }
+    if (!/^https?:\/\//i.test(logoUrl)) return undefined;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(logoUrl, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return undefined;
+    const mime = res.headers.get("content-type") || "";
+    if (mime && !/^image\//i.test(mime)) return undefined;
+    const buf = Buffer.from(await res.arrayBuffer());
+    return buf.length > 0 && buf.length <= 2_000_000 ? buf : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Draw the letterhead logo into the coloured header band, best-effort. Returns
+ * true when an image was actually embedded (so the caller can indent the title
+ * text to make room). Never throws.
+ */
+function drawHeaderLogo(
+  doc: any,
+  logoBuf: Buffer | undefined,
+  x: number,
+  y: number,
+  fit: [number, number],
+): boolean {
+  if (!logoBuf) return false;
+  try {
+    doc.image(logoBuf, x, y, { fit, align: "left", valign: "center" });
+    return true;
+  } catch {
+    return false; // unsupported format (e.g. SVG/WEBP) → name-only fallback
+  }
+}
+
 // ─── PDF Generation Functions ───────────────────────────────────────────────
 
 /**
@@ -131,6 +217,9 @@ export async function generateInspectionReportPDF(
   const accent = config.accentColor || "#10b981";
   const [pr, pg, pb] = hexToRgb(primary);
 
+  // Resolve the branding logo before the synchronous PDFKit draw (best-effort).
+  const logoBuf = await resolveLogoBuffer(config.logoUrl);
+
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: config.pageSize || "A4",
@@ -138,10 +227,18 @@ export async function generateInspectionReportPDF(
       bufferPages: true,
       info: {
         Title: config.title,
-        Author: config.companyName || "AVI/AOI Management System",
+        Author: config.companyName || "SYNAPSE",
         Subject: `Inspection Report - ${data.inspection.serialNumber}`,
       },
     });
+
+    // Embed the Vietnamese font so diacritics render (was mojibake with the
+    // WinAnsi core font — doc 32 §2 P0 #4). Sets BeVietnamPro as the default.
+    registerVietnameseFontPdfKit(doc);
+    // doc 48 R4 — also register the CJK font so Chinese in user data (names,
+    // notes, measurements) renders instead of tofu. null when not installed;
+    // PDFKit only embeds a font once it is actually used, so this adds no bloat.
+    const cjk = registerCjkFontPdfKit(doc);
 
     const chunks: Buffer[] = [];
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -153,15 +250,15 @@ export async function generateInspectionReportPDF(
       .rect(0, 0, doc.page.width, 100)
       .fill(primary);
 
-    doc
-      .fontSize(22)
-      .fillColor("white")
-      .text(config.title, 40, 25, { align: "left" });
+    // Letterhead logo (doc 32 §2 P3 #17) — indent the title when drawn.
+    const logoDrawn = drawHeaderLogo(doc, logoBuf, 40, 22, [46, 56]);
+    const headTextX = logoDrawn ? 96 : 40;
 
-    doc
-      .fontSize(10)
-      .fillColor("rgba(255,255,255,0.8)")
-      .text(config.companyName || "AVI/AOI Factory Management", 40, 55, { align: "left" });
+    doc.fontSize(22).fillColor("white");
+    cjkText(doc, cjk, config.title, headTextX, 25, { align: "left" });
+
+    doc.fontSize(10).fillColor("rgba(255,255,255,0.8)");
+    cjkText(doc, cjk, config.companyName || "SYNAPSE", headTextX, 55, { align: "left" });
 
     doc
       .fontSize(10)
@@ -232,10 +329,12 @@ export async function generateInspectionReportPDF(
     doc.fontSize(10);
     for (const row of infoRows) {
       doc.fillColor("#666").text(row[0].label, leftCol, y, { width: labelWidth });
-      doc.fillColor("#333").text(row[0].value, leftCol + labelWidth, y);
+      doc.fillColor("#333");
+      cjkText(doc, cjk, row[0].value, leftCol + labelWidth, y);
       if (row[1]) {
         doc.fillColor("#666").text(row[1].label, rightCol, y, { width: labelWidth });
-        doc.fillColor("#333").text(row[1].value, rightCol + labelWidth, y);
+        doc.fillColor("#333");
+        cjkText(doc, cjk, row[1].value, rightCol + labelWidth, y);
       }
       y += 18;
     }
@@ -244,7 +343,8 @@ export async function generateInspectionReportPDF(
     if (data.productModel) {
       y += 5;
       doc.fillColor("#666").text("Sản phẩm:", leftCol, y, { width: labelWidth });
-      doc.fillColor("#333").text(`${data.productModel.name} (${data.productModel.code})`, leftCol + labelWidth, y);
+      doc.fillColor("#333");
+      cjkText(doc, cjk, `${data.productModel.name} (${data.productModel.code})`, leftCol + labelWidth, y);
       y += 18;
     }
 
@@ -298,17 +398,22 @@ export async function generateInspectionReportPDF(
       let rx = tableLeft + 5;
       doc.fillColor("#666").text(String(index + 1), rx, y + 5, { width: colWidths[0] - 10 });
       rx += colWidths[0];
-      doc.fillColor("#333").text(m.pointName, rx, y + 5, { width: colWidths[1] - 10 });
+      doc.fillColor("#333");
+      cjkText(doc, cjk, m.pointName, rx, y + 5, { width: colWidths[1] - 10 });
       rx += colWidths[1];
-      doc.fillColor("#666").text(m.measurementType, rx, y + 5, { width: colWidths[2] - 10 });
+      doc.fillColor("#666");
+      cjkText(doc, cjk, m.measurementType, rx, y + 5, { width: colWidths[2] - 10 });
       rx += colWidths[2];
       doc.fillColor(resultColor).text(m.result, rx, y + 5, { width: colWidths[3] - 10, align: "center" });
       rx += colWidths[3];
-      doc.fillColor("#333").text(m.measuredValue || "-", rx, y + 5, { width: colWidths[4] - 10, align: "center" });
+      doc.fillColor("#333");
+      cjkText(doc, cjk, m.measuredValue || "-", rx, y + 5, { width: colWidths[4] - 10, align: "center" });
       rx += colWidths[4];
-      doc.fillColor("#666").text(m.standardValue || "-", rx, y + 5, { width: colWidths[5] - 10, align: "center" });
+      doc.fillColor("#666");
+      cjkText(doc, cjk, m.standardValue || "-", rx, y + 5, { width: colWidths[5] - 10, align: "center" });
       rx += colWidths[5];
-      doc.fillColor("#666").text(m.remark || "", rx, y + 5, { width: colWidths[6] - 10 });
+      doc.fillColor("#666");
+      cjkText(doc, cjk, m.remark || "", rx, y + 5, { width: colWidths[6] - 10 });
 
       // Bottom border
       doc.moveTo(tableLeft, y + 20).lineTo(doc.page.width - 40, y + 20).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
@@ -341,7 +446,8 @@ export async function generateInspectionReportPDF(
       y += 70;
       doc.fontSize(12).fillColor(primary).text("Ghi chú", 40, y);
       y += 20;
-      doc.fontSize(9).fillColor("#555").text(data.inspection.notes, 40, y, { width: doc.page.width - 80 });
+      doc.fontSize(9).fillColor("#555");
+      cjkText(doc, cjk, data.inspection.notes, 40, y, { width: doc.page.width - 80 });
     }
 
     // ─── Footer on all pages ─────────────────────────────
@@ -352,7 +458,7 @@ export async function generateInspectionReportPDF(
         .fontSize(7)
         .fillColor("#999")
         .text(
-          `${config.companyName || "AVI/AOI Management"} | Page ${i + 1} of ${pages.count} | ${new Date().toLocaleString("vi-VN")}`,
+          `${config.footerText || config.companyName || "SYNAPSE"} | Page ${i + 1} of ${pages.count} | ${new Date().toLocaleString("vi-VN")}`,
           40,
           doc.page.height - 30,
           { align: "center", width: doc.page.width - 80 }
@@ -373,6 +479,9 @@ export async function generateQualityReportPDF(
   const primary = config.primaryColor || "#2563eb";
   const accent = config.accentColor || "#10b981";
 
+  // Resolve the branding logo before the synchronous PDFKit draw (best-effort).
+  const logoBuf = await resolveLogoBuffer(config.logoUrl);
+
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: config.pageSize || "A4",
@@ -380,9 +489,14 @@ export async function generateQualityReportPDF(
       bufferPages: true,
       info: {
         Title: config.title,
-        Author: config.companyName || "AVI/AOI Management System",
+        Author: config.companyName || "SYNAPSE",
       },
     });
+
+    // Embed the Vietnamese font so diacritics render (doc 32 §2 P0 #4).
+    registerVietnameseFontPdfKit(doc);
+    // doc 48 R4 — CJK font for Chinese in machine/point names (null if absent).
+    const cjk = registerCjkFontPdfKit(doc);
 
     const chunks: Buffer[] = [];
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -391,9 +505,14 @@ export async function generateQualityReportPDF(
 
     // ─── Header ──────────────────────────────────────────
     doc.rect(0, 0, doc.page.width, 90).fill(primary);
-    doc.fontSize(22).fillColor("white").text(config.title, 40, 20);
+
+    // Letterhead logo (doc 32 §2 P3 #17) — indent the title when drawn.
+    const logoDrawn = drawHeaderLogo(doc, logoBuf, 40, 18, [44, 54]);
+    const headTextX = logoDrawn ? 94 : 40;
+
+    doc.fontSize(22).fillColor("white").text(config.title, headTextX, 20);
     doc.fontSize(11).fillColor("rgba(255,255,255,0.85)")
-      .text(`${formatDateVN(data.period.start)} - ${formatDateVN(data.period.end)}`, 40, 48);
+      .text(`${formatDateVN(data.period.start)} - ${formatDateVN(data.period.end)}`, headTextX, 48);
 
     if (data.filters) {
       const parts: string[] = [];
@@ -401,7 +520,7 @@ export async function generateQualityReportPDF(
       if (data.filters.workshopName) parts.push(`Xưởng: ${data.filters.workshopName}`);
       if (data.filters.lineName) parts.push(`Line: ${data.filters.lineName}`);
       if (parts.length > 0) {
-        doc.fontSize(9).fillColor("rgba(255,255,255,0.7)").text(parts.join(" • "), 40, 65);
+        doc.fontSize(9).fillColor("rgba(255,255,255,0.7)").text(parts.join(" • "), headTextX, 65);
       }
     }
 
@@ -452,8 +571,10 @@ export async function generateQualityReportPDF(
       const yieldColor = machine.yieldRate >= 95 ? "#10b981" : machine.yieldRate >= 90 ? "#f59e0b" : "#ef4444";
 
       let rx = 45;
-      doc.fillColor("#333").text(machine.machineName, rx, y + 4, { width: mWidths[0] - 10 }); rx += mWidths[0];
-      doc.fillColor("#666").text(machine.machineCode, rx, y + 4, { width: mWidths[1] - 10 }); rx += mWidths[1];
+      doc.fillColor("#333");
+      cjkText(doc, cjk, machine.machineName, rx, y + 4, { width: mWidths[0] - 10 }); rx += mWidths[0];
+      doc.fillColor("#666");
+      cjkText(doc, cjk, machine.machineCode, rx, y + 4, { width: mWidths[1] - 10 }); rx += mWidths[1];
       doc.fillColor("#333").text(String(machine.totalInspections), rx, y + 4, { width: mWidths[2] - 10, align: "center" }); rx += mWidths[2];
       doc.fillColor("#10b981").text(String(machine.okCount), rx, y + 4, { width: mWidths[3] - 10, align: "center" }); rx += mWidths[3];
       doc.fillColor("#ef4444").text(String(machine.ngCount), rx, y + 4, { width: mWidths[4] - 10, align: "center" }); rx += mWidths[4];
@@ -475,7 +596,8 @@ export async function generateQualityReportPDF(
 
       const barWidth = Math.max(5, (point.percentage / (data.topNGPoints[0]?.percentage || 1)) * 200);
       
-      doc.fontSize(9).fillColor("#333").text(`${idx + 1}. ${point.pointName}`, 40, y);
+      doc.fontSize(9).fillColor("#333");
+      cjkText(doc, cjk, `${idx + 1}. ${point.pointName}`, 40, y);
       doc.rect(200, y + 2, barWidth, 10).fill("#ef4444");
       doc.fontSize(8).fillColor("#666").text(`${point.ngCount} (${point.percentage.toFixed(1)}%)`, 200 + barWidth + 5, y + 1);
       y += 18;
@@ -523,7 +645,7 @@ export async function generateQualityReportPDF(
     for (let i = 0; i < pages.count; i++) {
       doc.switchToPage(i);
       doc.fontSize(7).fillColor("#999").text(
-        `${config.companyName || "AVI/AOI Management"} | Page ${i + 1} of ${pages.count} | ${new Date().toLocaleString("vi-VN")}`,
+        `${config.footerText || config.companyName || "SYNAPSE"} | Page ${i + 1} of ${pages.count} | ${new Date().toLocaleString("vi-VN")}`,
         40, doc.page.height - 30, { align: "center", width: doc.page.width - 80 }
       );
     }

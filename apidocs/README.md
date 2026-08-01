@@ -73,14 +73,21 @@ Với lỗi:
 
 ## Xác thực / Authentication
 
-Tất cả API cho app bên thứ 3 sử dụng phương thức xác thực bằng **API Key** hoặc **Machine Code**.
+Phương thức **KHUYẾN NGHỊ** là **khóa per-máy `mk_...`** gửi qua header
+`Authorization: Bearer <key>` hoặc `X-API-Key: <key>`. Khóa được băm SHA-256 lưu trong `api_keys`,
+có scope (`ingest:write` / `equipment:read` / `edge:sync`), issue/rotate/revoke được.
 
-| Phương thức | Trường | Mô tả |
-|-------------|--------|-------|
-| API Key | `apiKey` | API key được cấp cho từng máy |
-| Machine Code | `machineCode` | Mã máy đã được đăng ký trên hệ thống |
+| Phương thức | Trường / Header | Trạng thái |
+|-------------|-----------------|------------|
+| Machine key (mk_) | `Authorization: Bearer` / `X-API-Key` (ưu tiên) hoặc `apiKey` trong body | ✅ KHUYẾN NGHỊ |
+| Shared apiKey cũ | `apiKey` trong body | ⚠️ DEPRECATED — gated `MACHINE_SHARED_KEY_ALLOWED` |
+| Machine Code | `machineCode` trong body | ⚠️ DEPRECATED (không có bí mật) — gated `MACHINE_CODE_ONLY_ALLOWED` |
 
-> Phải cung cấp ít nhất 1 trong 2 trường. Dữ liệu máy được tạo và quản lý tại giao diện admin.
+> Với các procedure yêu cầu (`submitInspection`…), body vẫn phải mang `apiKey` HOẶC `machineCode` để
+> qua kiểm tra input; khi có header `Bearer`/`X-API-Key` thì **header được ưu tiên** để xác thực.
+>
+> **MỚI (doc 51 P0):** `machine.config` KHÔNG còn trả `apiKey`. Máy mới nhận khóa qua **claim token
+> một lần** (admin duyệt → cấp token → máy gọi `machine.claimKey` / `POST /api/machine/claim`).
 
 Chi tiết → xem [AUTHENTICATION.md](AUTHENTICATION.md)
 
@@ -219,13 +226,43 @@ Chi tiết → xem [SYNC_API.md](SYNC_API.md#8-rest-proxy-endpoints)
 
 ---
 
+## Topo triển khai — một nhà máy / một database (doc 51 QĐ#4)
+
+> **Ràng buộc quan trọng khi tích hợp / vận hành đa nhà máy.**
+
+Một deployment (một database) phục vụ **không gian mã máy của MỘT nhà máy**:
+
+- **`machineCode` và `URN` là DUY NHẤT TOÀN CỤC trong một database** (partial-unique `uq_machines_code_active` — chỉ máy `isActive` giữ mã). KHÔNG có namespace theo site/factory ở tầng khóa.
+- Các trường `companyCode` / `factoryCode` / `workshopCode` / `lineCode` / `stageCode` trong `submitInspection` chỉ là **ngữ cảnh phân cấp free-text** để định tuyến/hiển thị — **KHÔNG phải khóa ngoại**, KHÔNG tạo namespace tách biệt cho mã máy.
+- ⇒ Hai nhà máy **không thể** dùng chung một database nếu có convention mã máy trùng nhau — mã sẽ va chạm.
+
+**Đa nhà máy / đa site = FEDERATION (database tách rời)**, không phải multi-tenant cùng-DB:
+
+- Mỗi site chạy database + deployment riêng; roll-up liên-site qua federation read API (xem doc 13 / `federationRouter`: `siteRollups` / `aggregateSummary` — chỉ đọc).
+- Đây là **quyết định kiến trúc đã chốt** (doc 51 QĐ#4): không đầu tư multi-factory cùng-DB (sẽ cần đưa `siteId` vào mọi unique key máy); federation giữ cách ly dữ liệu + đơn giản khóa.
+
+> Nếu bạn cần một hệ phục vụ nhiều nhà máy trên **cùng** một database, đó là thay đổi kiến trúc lớn (namespace mọi khóa máy theo site) — hiện KHÔNG hỗ trợ; hãy dùng federation.
+
+---
+
 ## Rate Limiting
 
-| Endpoint | Giới hạn |
-|----------|---------|
-| `/api/trpc/*` | 1000 requests / 15 phút |
-| `/api/auth/*` | 30 requests / 15 phút |
+> Số cũ "1000 req / 15 phút" là **SAI**. Bảng dưới đọc từ `server/_core/rateLimitConfig.ts`.
+> Chi tiết đầy đủ + biến môi trường → [ERROR_CODES.md §Rate Limiting](ERROR_CODES.md#rate-limiting).
+
+| Đường | Giới hạn mặc định | Cửa sổ |
+|-------|-------------------|--------|
+| `/api/*` (browser + tRPC chung) | 300 request / credential | 60 giây |
+| `/api/machine/*` + `machineApi.*` ingest (có credential) | 60 000 request / máy (tầng HTTP) | 60 giây |
+| `submitInspection` / `uploadImage` (tầng ứng dụng per-máy) | 600 request / máy | 60 giây |
+| `/api/ot/ingest` | 300 000 request / khóa | 60 giây |
+| `/api/auth/*` | 30 request | 15 phút |
+| `machine.claimKey` | 30 / IP | 1 giờ |
+
+Vượt giới hạn → HTTP `429` kèm header `Retry-After`.
 
 ## Body Size Limit
 
-Maximum request body: **50 MB** (hỗ trợ upload ảnh base64 lớn)
+- `/api/trpc/*`, `/api/machine/*`, `/api/ai/*`: **200 MB** (`LARGE_BODY_LIMIT`).
+- Các đường khác: **25 MB** mặc định (`HTTP_BODY_LIMIT`).
+- Giới hạn từng ảnh base64 trong 1 inspection: `MACHINE_INGEST_MAX_IMAGE_B64` (mặc định 20 000 000 ký tự base64 ≈ ~15 MB đã giải mã).

@@ -19,8 +19,63 @@ registerSecsGem("secsgem", createSkeletonSecsGem);
 export * from "./secsMessages";
 export * from "./hsmsClient";
 export * from "./gemModel";
+// doc 35 W2-C — structured honest health (mode: framework-only, liveIngest: false)
+export { getSecsGemHealth, type SecsGemHealth } from "./secsGemRegistry";
+// Full SECS-II item codec (all standard format codes) + the standard S1 messages
+// built on it. `encodeItem`/`decodeItem` are aliased to avoid colliding with the
+// legacy skeleton codec re-exported from ./secsMessages.
+export {
+  Secs2Format,
+  I as Secs2ItemFactory,
+  encodeItem as encodeSecs2Item,
+  decodeItem as decodeSecs2Item,
+  decodeItemWithLength as decodeSecs2ItemWithLength,
+  type Secs2Item,
+  type Secs2FormatCode,
+} from "./secs2Codec";
+// S1 builders/parsers on the new codec. The s1f* builders here return the new
+// `Secs2Message` type; they are exported under `secs2`-prefixed names to avoid
+// colliding with the legacy `secsMessages.ts` s1f* factories (which return the
+// legacy `SecsMessage`). Parsers keep their own unambiguous names.
+export {
+  s1f1 as secs2S1F1,
+  s1f2 as secs2S1F2,
+  s1f13 as secs2S1F13,
+  s1f14 as secs2S1F14,
+  s1f17 as secs2S1F17,
+  s1f18 as secs2S1F18,
+  parseS1F2,
+  parseS1F13,
+  parseS1F14,
+  parseS1F18,
+  encodeBody as encodeSecs2Body,
+  decodeBody as decodeSecs2Body,
+  COMMACK,
+  ONLACK,
+  type Secs2Message,
+  type OnlineData,
+  type EstablishCommsAck,
+  type OnlineAck,
+} from "./s1Messages";
+// E30 Communication + Control state models (pure reducers + observable holder).
+export {
+  nextCommState,
+  nextControlState,
+  isCommunicating,
+  isOnline,
+  controlSuperState,
+  GemStateMachine,
+  type GemCommState as E30CommState,
+  type GemCommEvent,
+  type GemControlState as E30ControlState,
+  type GemControlEvent,
+  type GemStateListeners,
+  type CommStateChange,
+  type ControlStateChange,
+} from "./gemStateModel";
 export {
   isSecsGemEnabled,
+  isSecsGemLiveEnabled,
   registerSecsGem,
   createSecsGem,
   listSecsGemKeys,
@@ -28,3 +83,33 @@ export {
   type SecsGemConnector,
   type SecsGemFactory,
 } from "./secsGemRegistry";
+// doc 37 P0-6 — S5 (alarm) + S6 (event) message builders/parsers on the SECS-II
+// codec, and the live inbound message-dispatch wiring that binds an HSMS session's
+// UNSOLICITED S5F1 alarms to raiseFromGemAlarm (the E1 taxonomy → Andon path) and
+// S6F11 events to an optional sink. Flag chain: SECS_GEM_ENABLED +
+// SECS_GEM_LIVE_ENABLED (loop) + EQ_INTEG_ENABLED (Andon raise). Names are
+// s5s6-prefixed where they could collide with the S1/S2 factories.
+export {
+  s5f1 as secs2S5F1,
+  s5f2 as secs2S5F2,
+  s6f11 as secs2S6F11,
+  s6f12 as secs2S6F12,
+  parseS5F1,
+  parseS5F2,
+  parseS6F11,
+  parseS6F12,
+  ACKC5,
+  ACKC6,
+  type ParsedS5F1,
+  type ParsedS6F11,
+  type ParsedReport,
+  type LiveDispatchHandlers,
+} from "./s5s6Messages";
+export { attachGemAlarmDispatch, type GemAlarmDispatchOptions } from "./liveDispatch";
+// GEM300 message-stream layer (S2 equipment control + S7 process program/recipe),
+// built on the SECS-II codec. Exposed under a namespace to avoid name collisions
+// with the legacy skeleton codec's re-exported `encodeItem`/`decodeItem`. Flag:
+// GEM300_ENABLED (default OFF). Host commands are gated HITL proposals — never
+// ungated actuations (see gem300.ts header). PP = a versioned recipe (reuses recipe
+// storage; no migration).
+export * as gem300 from "./gem300";

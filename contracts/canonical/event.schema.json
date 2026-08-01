@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "contracts/canonical/event.schema.json",
+  "title": "Event",
+  "description": "LDS-L1 canonical equipment event (doc 44 G2.5). Published on syn/{site}/{area}/{line}/{cell}/{equip}/events. Enum values may be ADDED later (BACKWARD-safe) but never removed. additionalProperties stays open.",
+  "x-subject": "syn/+/+/+/+/+/events",
+  "x-owner": "platform",
+  "type": "object",
+  "properties": {
+    "event_id": { "type": "string", "description": "Globally-unique event id (uuid) for dedup/traceability" },
+    "asset_id": { "type": "string", "description": "Canonical asset identifier" },
+    "type": { "type": "string", "enum": ["state_change", "fault", "alarm", "handover", "lifecycle"], "description": "Normalised event class" },
+    "severity": { "type": "string", "enum": ["info", "warning", "error", "critical"], "description": "Normalised severity" },
+    "ts": { "type": "string", "description": "ISO-8601 timestamp the event occurred" },
+    "state": { "type": "string", "description": "Machine state at/after the event (for state_change: the new state)" },
+    "cause": { "type": "string", "description": "Human/vendor cause text (e.g. alarm code + message)" },
+    "payload": { "type": "object", "description": "Vendor-specific detail (raw CEID/alarm payload)" }
+  },
+  "required": ["event_id", "asset_id", "type", "severity", "ts"]
+}

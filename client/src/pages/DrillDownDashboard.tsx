@@ -1,574 +1,446 @@
-import { useState, useMemo } from "react";
-import { useTranslation } from 'react-i18next';
+/**
+ * doc 46 FE-W3.2 — DRILL-DOWN DASHBOARD (the interactive Corporate→Machine spine).
+ *
+ * ONE consistent hierarchical drill-down over the `drillDown.*` router:
+ *   Corporate → Factory → (Workshop*) → Line → (Station*) → Machine
+ *
+ * Each tier shows its real inspection KPI rollup (Output / OK / NG / Yield). The
+ * drill is a continuous NAVIGATION SPINE, not a dead-end dashboard: clicking a
+ * node continues drilling, a Line row exposes "Open Line View →" (/line-view/:id)
+ * and a Machine row "Open Cockpit →" (/machine/:id).
+ *
+ * HONEST-DEGRADATION: (*) the Workshop & Station tiers are NOT rolled up by the
+ * drillDown backend — `linesByFactory` collapses workshops (no workshopId in its
+ * output) and `machinesByLine` collapses stations (no stationId) — so those two
+ * tiers are shown in the canonical spine but carry NO fabricated numbers. OEE is
+ * likewise not part of this inspection-based rollup, so it is not displayed.
+ *
+ * Realtime: U1 socket-first (invalidate drillDown on inspection/ng/yield/quality
+ * events, debounced) + a 60s poll fallback so the numbers never freeze.
+ */
+import { useMemo, useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useLocation } from "wouter";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "../../../server/routers";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { RelatedViews } from "@/components/RelatedViews";
+import {
+  useEcosystemEvents,
+  type EcosystemEvent,
+  type EcosystemKind,
+} from "@/hooks/useEcosystemEvents";
+import {
+  MetricCard,
+  EmptyState,
+  SectionCard,
+  chartTooltipStyle,
+  chartGridProps,
+  chartAxisTick,
+} from "@/components/patterns";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
-import { 
-  Building2, 
-  Factory, 
-  GitBranch, 
-  Cpu, 
-  ChevronRight, 
-  Home,
+import {
+  DrillSpine,
+  type DrillLevel,
+  type DrillDownState,
+} from "@/components/drilldown/DrillSpine";
+import { DrillNode, type DrillRow } from "@/components/drilldown/DrillNode";
+import {
+  Building2,
+  Factory,
+  GitBranch,
+  Cpu,
   TrendingUp,
-  TrendingDown,
   CheckCircle2,
   XCircle,
   AlertTriangle,
-  ArrowLeft,
+  Activity,
   BarChart3,
-  Activity
+  Info,
 } from "lucide-react";
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
-  Legend
+  Legend,
 } from "recharts";
 
-// Drill-down levels
-type DrillLevel = "corporate" | "factory" | "line" | "machine";
+// ── Typesafe drillDown router output shapes (converged to the CommandCenter
+//    pattern: inferred router types instead of `any`). ─────────────────────────
+type RouterOutputs = inferRouterOutputs<AppRouter>;
+type CorporateStat = RouterOutputs["drillDown"]["corporateStats"][number];
+type FactoryStat = RouterOutputs["drillDown"]["factoriesByCorporate"][number];
+type LineStat = RouterOutputs["drillDown"]["linesByFactory"][number];
+type MachineStat = RouterOutputs["drillDown"]["machinesByLine"][number];
+type AnyStat = CorporateStat | FactoryStat | LineStat | MachineStat;
 
-interface DrillDownState {
-  level: DrillLevel;
-  corporateCode?: string;
-  corporateName?: string;
-  factoryId?: number;
-  factoryName?: string;
-  lineId?: number;
-  lineName?: string;
-  machineId?: number;
-  machineName?: string;
-}
+/**
+ * U1 (ecosystem:event) kinds that move drill-down production numbers (OK/NG/NTF/
+ * yield). These are the real inspection/NG/yield/quality-gate alert-layer kinds
+ * in the server stream; routine inspections often don't hit this stream, so the
+ * 60s poll fallback keeps background freshness.
+ */
+const DRILLDOWN_EVENT_KINDS: ReadonlySet<EcosystemKind> = new Set<EcosystemKind>([
+  "inspection",
+  "ng",
+  "yield",
+  "quality_gate",
+]);
 
-const COLORS = ["#22c55e", "#ef4444", "#f59e0b", "#3b82f6", "#8b5cf6", "#ec4899"];
-
-// Breadcrumb component
-function Breadcrumb({ 
-  state, 
-  onNavigate 
-}: { 
-  state: DrillDownState; 
-  onNavigate: (level: DrillLevel, data?: Partial<DrillDownState>) => void;
-}) {
-  const { t } = useTranslation();
-  const items = [
-    { level: "corporate" as DrillLevel, label: t('dashboard.overview'), icon: Building2 },
-  ];
-
-  if (state.corporateCode) {
-    items.push({ 
-      level: "factory" as DrillLevel, 
-      label: state.corporateName || state.corporateCode, 
-      icon: Factory 
-    });
-  }
-
-  if (state.factoryId) {
-    items.push({ 
-      level: "line" as DrillLevel, 
-      label: state.factoryName || `Factory ${state.factoryId}`, 
-      icon: GitBranch 
-    });
-  }
-
-  if (state.lineId) {
-    items.push({ 
-      level: "machine" as DrillLevel, 
-      label: state.lineName || `Line ${state.lineId}`, 
-      icon: Cpu 
-    });
-  }
-
-  return (
-    <nav className="flex items-center gap-2 text-sm mb-6">
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => onNavigate("corporate")}
-        className="gap-1"
-      >
-        <Home className="h-4 w-4" />
-      </Button>
-      {items.map((item, index) => (
-        <div key={item.level} className="flex items-center gap-2">
-          {index > 0 && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-          <Button
-            variant={index === items.length - 1 ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => {
-              if (item.level === "corporate") {
-                onNavigate("corporate");
-              } else if (item.level === "factory" && state.corporateCode) {
-                onNavigate("factory", { corporateCode: state.corporateCode, corporateName: state.corporateName });
-              } else if (item.level === "line" && state.factoryId) {
-                onNavigate("line", { 
-                  corporateCode: state.corporateCode, 
-                  corporateName: state.corporateName,
-                  factoryId: state.factoryId, 
-                  factoryName: state.factoryName 
-                });
-              }
-            }}
-            className="gap-1"
-          >
-            <item.icon className="h-4 w-4" />
-            {item.label}
-          </Button>
-        </div>
-      ))}
-    </nav>
-  );
-}
-
-// Stats card component
-function StatsCard({ 
-  title, 
-  value, 
-  subtitle, 
-  trend, 
-  icon: Icon,
-  color = "blue"
-}: {
-  title: string;
-  value: string | number;
-  subtitle?: string;
-  trend?: number;
-  icon: React.ComponentType<{ className?: string }>;
-  color?: "blue" | "green" | "red" | "yellow";
-}) {
-  const { t } = useTranslation();
-  const colorClasses = {
-    blue: "bg-blue-500/10 text-blue-500",
-    green: "bg-green-500/10 text-green-500",
-    red: "bg-red-500/10 text-red-500",
-    yellow: "bg-yellow-500/10 text-yellow-500",
+/** Normalise any tier's stat into the shared KPI row. */
+function toRow(item: AnyStat): DrillRow {
+  const id = "id" in item ? item.id : undefined;
+  return {
+    key: String(id ?? item.code ?? item.name),
+    id,
+    code: item.code,
+    name: item.name,
+    total: item.total ?? 0,
+    ok: item.ok ?? 0,
+    ng: item.ng ?? 0,
+    ntf: item.ntf ?? 0,
+    yieldRate: item.yieldRate ?? (item.total > 0 ? (item.ok / item.total) * 100 : 0),
   };
-
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold mt-1">{value}</p>
-            {subtitle && (
-              <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
-            )}
-          </div>
-          <div className={`p-2 rounded-lg ${colorClasses[color]}`}>
-            <Icon className="h-5 w-5" />
-          </div>
-        </div>
-        {trend !== undefined && (
-          <div className={`flex items-center gap-1 mt-2 text-sm ${trend >= 0 ? "text-green-500" : "text-red-500"}`}>
-            {trend >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-            <span>{Math.abs(trend).toFixed(1)}%</span>
-            <span className="text-muted-foreground">{t('dashboard.vsYesterday')}</span>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
 }
 
-// Clickable bar chart item
-function ClickableBarItem({ 
-  data, 
-  onClick, 
-  maxValue 
-}: { 
-  data: { name: string; code?: string; total: number; ok: number; ng: number; yieldRate: number }; 
-  onClick: () => void;
-  maxValue: number;
-}) {
-  return (
-    <div 
-      className="p-4 border rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
-      onClick={onClick}
-    >
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <span className="font-medium">{data.name}</span>
-          {data.code && (
-            <Badge variant="outline" className="ml-2 text-xs">{data.code}</Badge>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant={data.yieldRate >= 95 ? "default" : data.yieldRate >= 90 ? "secondary" : "destructive"}>
-            {data.yieldRate.toFixed(1)}%
-          </Badge>
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        </div>
-      </div>
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground w-12">OK</span>
-          <Progress value={(data.ok / maxValue) * 100} className="h-2 flex-1" />
-          <span className="text-xs font-medium w-16 text-right">{data.ok.toLocaleString()}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground w-12">NG</span>
-          <Progress value={(data.ng / maxValue) * 100} className="h-2 flex-1 [&>div]:bg-red-500" />
-          <span className="text-xs font-medium w-16 text-right">{data.ng.toLocaleString()}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function DrillDownDashboard() {
+export default function DrillDownDashboard(): React.JSX.Element {
   const { t } = useTranslation();
+  const [, setLocation] = useLocation();
   const [drillState, setDrillState] = useState<DrillDownState>({ level: "corporate" });
 
-  // Queries based on drill level
+  // ── Queries per level. Realtime = socket-first (U1 invalidate); refetchInterval
+  //    60s is the POLL FALLBACK so an enabled level never freezes if the socket
+  //    drops. Only the enabled level polls. ────────────────────────────────────
   const { data: corporateStats, isLoading: corporateLoading } = trpc.drillDown.corporateStats.useQuery(
     undefined,
-    { enabled: drillState.level === "corporate" }
+    { enabled: drillState.level === "corporate", refetchInterval: 60_000 },
   );
-
   const { data: factoryStats, isLoading: factoryLoading } = trpc.drillDown.factoriesByCorporate.useQuery(
     { corporateCode: drillState.corporateCode! },
-    { enabled: drillState.level === "factory" && !!drillState.corporateCode }
+    { enabled: drillState.level === "factory" && !!drillState.corporateCode, refetchInterval: 60_000 },
   );
-
   const { data: lineStats, isLoading: lineLoading } = trpc.drillDown.linesByFactory.useQuery(
     { factoryId: drillState.factoryId! },
-    { enabled: drillState.level === "line" && !!drillState.factoryId }
+    { enabled: drillState.level === "line" && !!drillState.factoryId, refetchInterval: 60_000 },
   );
-
   const { data: machineStats, isLoading: machineLoading } = trpc.drillDown.machinesByLine.useQuery(
     { lineId: drillState.lineId! },
-    { enabled: drillState.level === "machine" && !!drillState.lineId }
+    { enabled: drillState.level === "machine" && !!drillState.lineId, refetchInterval: 60_000 },
   );
 
-  // Navigation handler
-  const handleNavigate = (level: DrillLevel, data?: Partial<DrillDownState>) => {
-    if (level === "corporate") {
-      setDrillState({ level: "corporate" });
-    } else {
-      setDrillState({ level, ...data } as DrillDownState);
-    }
-  };
+  // ── Realtime U1: socket-first + poll fallback ──
+  const utils = trpc.useUtils();
+  const invalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleDrillRefresh = useCallback(() => {
+    if (invalidateTimer.current) clearTimeout(invalidateTimer.current);
+    invalidateTimer.current = setTimeout(() => {
+      void utils.drillDown.invalidate();
+    }, 1_500);
+  }, [utils]);
+  const onEcoEvent = useCallback(
+    (evt: EcosystemEvent) => {
+      if (DRILLDOWN_EVENT_KINDS.has(evt.kind)) scheduleDrillRefresh();
+    },
+    [scheduleDrillRefresh],
+  );
+  const { isConnected: liveConnected } = useEcosystemEvents({ onEvent: onEcoEvent });
+  useEffect(
+    () => () => {
+      if (invalidateTimer.current) clearTimeout(invalidateTimer.current);
+    },
+    [],
+  );
 
-  // Click handlers for drill-down
-  const handleCorporateClick = (corporateCode: string, corporateName: string) => {
-    setDrillState({
-      level: "factory",
-      corporateCode,
-      corporateName,
+  // ── Navigation within the drill ──
+  const handleNavigate = useCallback((level: DrillLevel, data?: Partial<DrillDownState>) => {
+    if (level === "corporate") setDrillState({ level: "corporate" });
+    else setDrillState({ level, ...data } as DrillDownState);
+  }, []);
+
+  const drillInto = useCallback((row: DrillRow) => {
+    setDrillState((prev) => {
+      if (prev.level === "corporate") {
+        return { level: "factory", corporateCode: row.code, corporateName: row.name };
+      }
+      if (prev.level === "factory") {
+        return { ...prev, level: "line", factoryId: row.id, factoryName: row.name };
+      }
+      if (prev.level === "line") {
+        return { ...prev, level: "machine", lineId: row.id, lineName: row.name };
+      }
+      return prev;
     });
-  };
+  }, []);
 
-  const handleFactoryClick = (factoryId: number, factoryName: string) => {
-    setDrillState({
-      ...drillState,
-      level: "line",
-      factoryId,
-      factoryName,
-    });
-  };
+  // ── Leaf-out navigation (continuous spine) ──
+  const openLineView = useCallback((lineId: number) => setLocation(`/line-view/${lineId}`), [setLocation]);
+  const openCockpit = useCallback((machineId: number) => setLocation(`/machine/${machineId}`), [setLocation]);
 
-  const handleLineClick = (lineId: number, lineName: string) => {
-    setDrillState({
-      ...drillState,
-      level: "machine",
-      lineId,
-      lineName,
-    });
-  };
-
-  // Calculate totals for current level
-  const currentStats = useMemo(() => {
-    let data: any[] = [];
-    let total = 0, ok = 0, ng = 0, ntf = 0;
-
-    if (drillState.level === "corporate" && corporateStats) {
-      data = corporateStats;
-    } else if (drillState.level === "factory" && factoryStats) {
-      data = factoryStats;
-    } else if (drillState.level === "line" && lineStats) {
-      data = lineStats;
-    } else if (drillState.level === "machine" && machineStats) {
-      data = machineStats;
-    }
-
-    data.forEach((item: any) => {
-      total += item.total || 0;
-      ok += item.ok || 0;
-      ng += item.ng || 0;
-      ntf += item.ntf || 0;
-    });
-
-    return {
-      data,
-      total,
-      ok,
-      ng,
-      ntf,
-      yieldRate: total > 0 ? (ok / total) * 100 : 0,
-    };
+  // ── Current level's rows + rollup ──
+  const rows = useMemo<DrillRow[]>(() => {
+    let data: AnyStat[] = [];
+    if (drillState.level === "corporate" && corporateStats) data = corporateStats;
+    else if (drillState.level === "factory" && factoryStats) data = factoryStats;
+    else if (drillState.level === "line" && lineStats) data = lineStats;
+    else if (drillState.level === "machine" && machineStats) data = machineStats;
+    return data.map(toRow);
   }, [drillState.level, corporateStats, factoryStats, lineStats, machineStats]);
 
-  const isLoading = corporateLoading || factoryLoading || lineLoading || machineLoading;
-
-  // Pie chart data
-  const pieData = [
-    { name: "OK", value: currentStats.ok, color: "#22c55e" },
-    { name: "NG", value: currentStats.ng, color: "#ef4444" },
-    { name: "NTF", value: currentStats.ntf, color: "#f59e0b" },
-  ].filter(d => d.value > 0);
-
-  // Get level title
-  const getLevelTitle = () => {
-    switch (drillState.level) {
-      case "corporate": return t('dashboard.overviewByCorporate');
-      case "factory": return t('dashboard.factoriesOf', { name: drillState.corporateName || drillState.corporateCode });
-      case "line": return t('dashboard.linesOf', { name: drillState.factoryName });
-      case "machine": return t('dashboard.machinesOf', { name: drillState.lineName });
+  const rollup = useMemo(() => {
+    let total = 0, ok = 0, ng = 0, ntf = 0;
+    for (const r of rows) {
+      total += r.total;
+      ok += r.ok;
+      ng += r.ng;
+      ntf += r.ntf;
     }
+    return { total, ok, ng, ntf, yieldRate: total > 0 ? (ok / total) * 100 : 0 };
+  }, [rows]);
+
+  const isLoading = corporateLoading || factoryLoading || lineLoading || machineLoading;
+  const maxValue = Math.max(...rows.map((r) => r.total), 1);
+
+  const pieData = [
+    { name: "OK", value: rollup.ok, color: "var(--success)" },
+    { name: "NG", value: rollup.ng, color: "var(--destructive)" },
+    { name: "NTF", value: rollup.ntf, color: "var(--warning)" },
+  ].filter((d) => d.value > 0);
+
+  // ── Level presentation (title + node icon + how a row behaves) ──
+  const levelMeta = {
+    corporate: {
+      title: t("dashboard.drill.corporatesTitle", "All corporates"),
+      icon: <Building2 className="h-4 w-4" />,
+      hint: t("dashboard.clickToViewDetails", "Click to view details"),
+    },
+    factory: {
+      title: t("dashboard.drill.factoriesTitle", "Factories in {{name}}", {
+        name: drillState.corporateName || drillState.corporateCode,
+      }),
+      icon: <Factory className="h-4 w-4" />,
+      hint: t("dashboard.clickToViewDetails", "Click to view details"),
+    },
+    line: {
+      title: t("dashboard.drill.linesTitle", "Lines in {{name}}", { name: drillState.factoryName }),
+      icon: <GitBranch className="h-4 w-4" />,
+      hint: t("dashboard.drill.lineHint", "Drill into this line's machines, or open the full Line View."),
+    },
+    machine: {
+      title: t("dashboard.drill.machinesTitle", "Machines in {{name}}", { name: drillState.lineName }),
+      icon: <Cpu className="h-4 w-4" />,
+      hint: t("dashboard.drill.machineHint", "Machine is the leaf tier — open its cockpit for full detail."),
+    },
+  }[drillState.level];
+
+  // Build the correct per-row behaviour for the active tier.
+  const rowFor = (row: DrillRow) => {
+    if (drillState.level === "line") {
+      return {
+        onDrill: () => drillInto(row),
+        leafAction:
+          row.id != null
+            ? {
+                label: t("dashboard.drill.openLineView", "Open Line View"),
+                ariaLabel: t("dashboard.drill.openLineViewAria", "Open Line View for {{name}}", { name: row.name }),
+                onClick: () => openLineView(row.id!),
+              }
+            : undefined,
+      };
+    }
+    if (drillState.level === "machine") {
+      // Leaf tier: the whole row opens the cockpit (no deeper drill).
+      return {
+        onDrill: undefined,
+        leafAction:
+          row.id != null
+            ? {
+                label: t("dashboard.drill.openCockpit", "Open Cockpit"),
+                ariaLabel: t("dashboard.drill.openCockpitAria", "Open cockpit for {{name}}", { name: row.name }),
+                onClick: () => openCockpit(row.id!),
+              }
+            : undefined,
+      };
+    }
+    // corporate / factory: click continues drilling, no leaf-out.
+    return { onDrill: () => drillInto(row), leafAction: undefined };
   };
 
-  const maxValue = Math.max(...currentStats.data.map((d: any) => d.total || 0), 1);
-
   return (
-    <DashboardLayout title={t('dashboard.drillDownDashboard')}>
+    <DashboardLayout title={t("dashboard.drillDownDashboard", "Drill down dashboard")}>
       <div className="space-y-6">
-        {/* Breadcrumb */}
-        <Breadcrumb state={drillState} onNavigate={handleNavigate} />
+        {/* Canonical spine: breadcrumb + 6-tier stepper (honest degradation) */}
+        <DrillSpine state={drillState} onNavigate={handleNavigate} live={liveConnected} />
 
-        {/* Back button */}
-        {drillState.level !== "corporate" && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              if (drillState.level === "factory") {
-                handleNavigate("corporate");
-              } else if (drillState.level === "line") {
-                handleNavigate("factory", { 
-                  corporateCode: drillState.corporateCode, 
-                  corporateName: drillState.corporateName 
-                });
-              } else if (drillState.level === "machine") {
-                handleNavigate("line", { 
-                  corporateCode: drillState.corporateCode,
-                  corporateName: drillState.corporateName,
-                  factoryId: drillState.factoryId,
-                  factoryName: drillState.factoryName
-                });
-              }
-            }}
-            className="gap-2"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            {t('common.goBack')}
-          </Button>
-        )}
+        {/* U7 cross-links — the Command Center offers the live hierarchy TREE +
+            factory twin of the same estate; this page is the interactive drill. */}
+        <RelatedViews
+          links={[
+            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+            { href: "/corporate-dashboard", labelKey: "nav.corporateDashboard", labelDefault: "Corporate Dashboard" },
+          ]}
+        />
 
-        {/* Summary Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatsCard
-            title={t('dashboard.totalProduction')}
-            value={currentStats.total.toLocaleString()}
-            icon={Activity}
-            color="blue"
+        {/* Summary rollup — real inspection metrics only (no fabricated OEE). */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <MetricCard
+            label={t("dashboard.totalProduction", "Output")}
+            value={rollup.total.toLocaleString()}
+            icon={<Activity className="h-5 w-5" />}
+            tone="info"
           />
-          <StatsCard
-            title={t('dashboard.okProducts')}
-            value={currentStats.ok.toLocaleString()}
-            subtitle={`${((currentStats.ok / currentStats.total) * 100 || 0).toFixed(1)}%`}
-            icon={CheckCircle2}
-            color="green"
+          <MetricCard
+            label={t("dashboard.okProducts", "OK")}
+            value={rollup.ok.toLocaleString()}
+            delta={`${((rollup.ok / rollup.total) * 100 || 0).toFixed(1)}%`}
+            icon={<CheckCircle2 className="h-5 w-5" />}
+            tone="good"
           />
-          <StatsCard
-            title={t('dashboard.ngProducts')}
-            value={currentStats.ng.toLocaleString()}
-            subtitle={`${((currentStats.ng / currentStats.total) * 100 || 0).toFixed(1)}%`}
-            icon={XCircle}
-            color="red"
+          <MetricCard
+            label={t("dashboard.ngProducts", "NG")}
+            value={rollup.ng.toLocaleString()}
+            delta={`${((rollup.ng / rollup.total) * 100 || 0).toFixed(1)}%`}
+            icon={<XCircle className="h-5 w-5" />}
+            tone="danger"
           />
-          <StatsCard
-            title="Yield Rate"
-            value={`${currentStats.yieldRate.toFixed(2)}%`}
-            icon={TrendingUp}
-            color={currentStats.yieldRate >= 95 ? "green" : currentStats.yieldRate >= 90 ? "yellow" : "red"}
+          <MetricCard
+            label={t("dashboard.yieldRate", "Yield")}
+            value={`${rollup.yieldRate.toFixed(2)}%`}
+            icon={<TrendingUp className="h-5 w-5" />}
+            tone={rollup.yieldRate >= 95 ? "good" : rollup.yieldRate >= 90 ? "warning" : "danger"}
           />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Honest note on rollup source */}
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          {t(
+            "dashboard.drill.metricsSource",
+            "Rollup from inspection results (OK / NG / NTF). OEE isn't part of this inspection-based drill.",
+          )}
+        </p>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Main drill-down list */}
           <div className="lg:col-span-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5" />
-                  {getLevelTitle()}
-                </CardTitle>
-                <CardDescription>
-                  {t('dashboard.clickToViewDetails')}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {isLoading ? (
-                  <div className="space-y-4">
-                    {[1, 2, 3, 4].map(i => (
-                      <Skeleton key={i} className="h-24 w-full" />
-                    ))}
-                  </div>
-                ) : currentStats.data.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <AlertTriangle className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>{t('common.noData')}</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {currentStats.data.map((item: any) => (
-                      <ClickableBarItem
-                        key={item.id || item.code || item.name}
-                        data={{
-                          name: item.name,
-                          code: item.code,
-                          total: item.total || 0,
-                          ok: item.ok || 0,
-                          ng: item.ng || 0,
-                          yieldRate: item.yieldRate || (item.total > 0 ? (item.ok / item.total) * 100 : 0),
-                        }}
+            <SectionCard
+              icon={<BarChart3 className="h-5 w-5" />}
+              title={levelMeta.title}
+              description={levelMeta.hint}
+            >
+              {isLoading ? (
+                <div className="space-y-4">
+                  {[1, 2, 3, 4].map((i) => (
+                    <Skeleton key={i} className="h-24 w-full" />
+                  ))}
+                </div>
+              ) : rows.length === 0 ? (
+                <EmptyState variant="no-data" icon={AlertTriangle} title={t("common.noData", "No data")} compact />
+              ) : (
+                <div className="space-y-3">
+                  {rows.map((row) => {
+                    const behaviour = rowFor(row);
+                    return (
+                      <DrillNode
+                        key={row.key}
+                        data={row}
                         maxValue={maxValue}
-                        onClick={() => {
-                          if (drillState.level === "corporate") {
-                            handleCorporateClick(item.code, item.name);
-                          } else if (drillState.level === "factory") {
-                            handleFactoryClick(item.id, item.name);
-                          } else if (drillState.level === "line") {
-                            handleLineClick(item.id, item.name);
-                          }
-                        }}
+                        icon={levelMeta.icon}
+                        onDrill={behaviour.onDrill}
+                        leafAction={behaviour.leafAction}
                       />
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </SectionCard>
           </div>
 
-          {/* Pie chart */}
-          <div>
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('dashboard.resultDistribution')}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isLoading ? (
-                  <Skeleton className="h-64 w-full" />
-                ) : pieData.length === 0 ? (
-                  <div className="h-64 flex items-center justify-center text-muted-foreground">
-                    {t('common.noData')}
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height={250}>
-                    <PieChart>
-                      <Pie
-                        data={pieData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="value"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {pieData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip 
-                        formatter={(value: number) => value.toLocaleString()}
-                      />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
+          {/* Pie + quick stats */}
+          <div className="space-y-4">
+            <SectionCard title={t("dashboard.resultDistribution", "Result distribution")}>
+              {isLoading ? (
+                <Skeleton className="h-64 w-full" />
+              ) : pieData.length === 0 ? (
+                <div className="flex h-64 items-center justify-center text-muted-foreground">
+                  {t("common.noData", "No data")}
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={250}>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                      label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={chartTooltipStyle} formatter={(value: number) => value.toLocaleString()} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </SectionCard>
 
-            {/* Quick stats */}
-            <Card className="mt-4">
-              <CardHeader>
-                <CardTitle className="text-sm">{t('dashboard.quickStats')}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">{t('common.quantity')}</span>
-                  <Badge variant="outline">{currentStats.data.length}</Badge>
+            <SectionCard title={t("dashboard.quickStats", "Quick stats")}>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">{t("common.quantity", "Quantity")}</span>
+                  <Badge variant="outline">{rows.length}</Badge>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">{t('dashboard.highestYield')}</span>
-                  <Badge variant="default">
-                    {Math.max(...currentStats.data.map((d: any) => d.yieldRate || 0), 0).toFixed(1)}%
-                  </Badge>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">{t("dashboard.highestYield", "Highest yield")}</span>
+                  <Badge variant="default">{Math.max(...rows.map((r) => r.yieldRate), 0).toFixed(1)}%</Badge>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">{t('dashboard.lowestYield')}</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">{t("dashboard.lowestYield", "Lowest yield")}</span>
                   <Badge variant="destructive">
-                    {currentStats.data.length > 0 
-                      ? Math.min(...currentStats.data.map((d: any) => d.yieldRate || 100)).toFixed(1) 
-                      : 0}%
+                    {rows.length > 0 ? Math.min(...rows.map((r) => r.yieldRate)).toFixed(1) : 0}%
                   </Badge>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </SectionCard>
           </div>
         </div>
 
         {/* Bar chart comparison */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('dashboard.productionComparison')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-80 w-full" />
-            ) : currentStats.data.length === 0 ? (
-              <div className="h-80 flex items-center justify-center text-muted-foreground">
-                {t('common.noData')}
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={currentStats.data.slice(0, 10)}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="name" 
-                    tick={{ fontSize: 12 }}
-                    interval={0}
-                    angle={-45}
-                    textAnchor="end"
-                    height={80}
-                  />
-                  <YAxis />
-                  <Tooltip 
-                    formatter={(value: number) => value.toLocaleString()}
-                  />
-                  <Legend />
-                  <Bar dataKey="ok" name="OK" fill="#22c55e" />
-                  <Bar dataKey="ng" name="NG" fill="#ef4444" />
-                  <Bar dataKey="ntf" name="NTF" fill="#f59e0b" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
+        <SectionCard title={t("dashboard.productionComparison", "Production comparison")}>
+          {isLoading ? (
+            <Skeleton className="h-80 w-full" />
+          ) : rows.length === 0 ? (
+            <div className="flex h-80 items-center justify-center text-muted-foreground">
+              {t("common.noData", "No data")}
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={rows.slice(0, 10)}>
+                <CartesianGrid {...chartGridProps} />
+                <XAxis dataKey="name" tick={chartAxisTick} interval={0} angle={-45} textAnchor="end" height={80} />
+                <YAxis tick={chartAxisTick} />
+                <Tooltip contentStyle={chartTooltipStyle} formatter={(value: number) => value.toLocaleString()} />
+                <Legend />
+                <Bar dataKey="ok" name="OK" fill="var(--success)" />
+                <Bar dataKey="ng" name="NG" fill="var(--destructive)" />
+                <Bar dataKey="ntf" name="NTF" fill="var(--warning)" />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </SectionCard>
       </div>
     </DashboardLayout>
   );

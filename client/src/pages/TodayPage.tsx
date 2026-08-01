@@ -8,15 +8,16 @@
  */
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageContainer } from "@/components/patterns";
 import { TodayBriefing } from "@/components/TodayBriefing";
 
 export default function TodayPage() {
   const { t } = useTranslation();
   return (
     <DashboardLayout title={t("today.title", "Today")} currentPath="/today">
-      <div className="mx-auto w-full max-w-5xl">
+      <PageContainer className="max-w-5xl">
         <TodayBriefing />
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

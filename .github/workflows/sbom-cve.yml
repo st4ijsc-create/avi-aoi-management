@@ -1,0 +1,65 @@
+# SBOM + CVE scan — SYNAPSE §5.11 / §9.6 (doc 33 F5 · H1 Security).
+# Weekly + on-demand software bill-of-materials + vulnerability scan.
+#
+# W0-I (doc 44 G5.7): tách 2 mức —
+#   - CRITICAL + có bản vá (fixable) → BLOCKING (grype `severity-cutoff: critical`
+#     + `only-fixed: true`, fail-build). Không cần secret ngoài GITHUB_TOKEN.
+#   - HIGH trở xuống → advisory như cũ (pnpm audit, continue-on-error).
+name: sbom-cve
+
+on:
+  schedule:
+    - cron: "0 3 * * 1" # Mondays 03:00 UTC
+  workflow_dispatch: {}
+  push:
+    branches: [main, synapse-foundation]
+    paths: ["package.json", "pnpm-lock.yaml", "package-lock.json", ".github/workflows/sbom-cve.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  sbom-cve:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install (no scripts — supply-chain safety)
+        run: pnpm install --frozen-lockfile --ignore-scripts || pnpm install --no-frozen-lockfile --ignore-scripts
+
+      - name: Generate CycloneDX SBOM
+        continue-on-error: true
+        run: pnpm dlx @cyclonedx/cyclonedx-npm --output-file sbom.cdx.json || echo "sbom generation skipped"
+
+      # BLOCKING: CVE CRITICAL đã có bản vá. `only-fixed: true` bỏ qua CVE chưa có
+      # fix (không thể hành động); severity-cutoff critical để HIGH-trở-xuống không chặn.
+      - name: CVE scan — CRITICAL fixable (BLOCKING)
+        uses: anchore/scan-action@v6
+        with:
+          path: "."
+          severity-cutoff: critical
+          only-fixed: true
+          fail-build: true
+          output-format: table
+
+      # Advisory (như cũ): toàn cảnh HIGH+ để theo dõi, không chặn.
+      - name: CVE audit — HIGH and below (advisory)
+        continue-on-error: true
+        run: pnpm audit --audit-level=high || echo "pnpm audit reported findings (advisory)"
+
+      - name: Upload SBOM artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          if-no-files-found: ignore

@@ -12,14 +12,18 @@
  *    ALSO publish here. Nothing depends on the bus unless it subscribes.
  *  - Fault-isolated: a subscriber error (sync or async) never propagates back to
  *    the publisher.
- *  - Cross-instance fan-out (Redis Streams/pub-sub) is a documented future
- *    extension behind this same API — not wired yet.
+ *  - Cross-instance fan-out (Redis pub/sub) is now available behind this SAME API
+ *    via server/_core/busFanout.ts (U6-b, G-10). It is OPT-IN
+ *    (EVENTBUS_REDIS_ENABLED=true + REDIS_URL) and defaults OFF → this bus stays a
+ *    pure in-process EventEmitter unless explicitly enabled. Loopback-safe: an
+ *    event received from Redis is injected locally but NOT re-published to Redis.
  *
  * SAFETY: the bus carries notifications/telemetry only. It MUST NOT be used to
  * issue device-control commands — those go exclusively through the HITL/interlock
  * commandDispatcher.
  */
 import { EventEmitter } from "events";
+import { createBusFanout, type BusFanout } from "./busFanout";
 
 export const EventTypes = {
   NG_ALERT: "ng.alert",
@@ -27,6 +31,8 @@ export const EventTypes = {
   ANDON: "andon.event",
   YIELD_WARNING: "yield.warning",
   INSPECTION_ALERT: "inspection.alert",
+  // S1 (doc 16 Khối 3) — ADVISORY safety event (NOT a safety-rated signal).
+  SAFETY_EVENT: "safety.event",
 } as const;
 
 export type EventType = (typeof EventTypes)[keyof typeof EventTypes] | string;
@@ -44,20 +50,46 @@ const WILDCARD = "*";
 
 class EventBus {
   private emitter = new EventEmitter();
+  private fanout: BusFanout;
 
   constructor() {
     this.emitter.setMaxListeners(200);
+    // U6-b (G-10): optional cross-instance fan-out. Default OFF → pure in-process.
+    // A message from a REMOTE instance is injected via emitLocal (which does NOT
+    // re-publish to Redis) — loopback-safe.
+    this.fanout = createBusFanout("event");
+    this.fanout.onRemote((payload) => {
+      const evt = payload as DomainEvent;
+      if (evt && typeof evt.type === "string") this.emitLocal(evt);
+    });
   }
 
-  /** Publish a domain event. Never throws to the caller. */
-  publish<T>(type: EventType, payload: T, source?: string): void {
-    const evt: DomainEvent<T> = { type, payload, ts: Date.now(), source };
+  /** True when Redis cross-instance fan-out is actually active. */
+  get fanoutActive(): boolean {
+    return this.fanout.active;
+  }
+
+  /** Emit a fully-formed event onto the LOCAL emitter only (no Redis re-publish). */
+  private emitLocal<T>(evt: DomainEvent<T>): void {
     try {
-      this.emitter.emit(type, evt);
+      this.emitter.emit(evt.type, evt);
       this.emitter.emit(WILDCARD, evt);
     } catch (err) {
-      console.error(`[EventBus] publish ${type} failed:`, (err as Error)?.message ?? err);
+      console.error(`[EventBus] emit ${evt.type} failed:`, (err as Error)?.message ?? err);
     }
+  }
+
+  /** Publish a locally-originated domain event. Never throws to the caller. */
+  publish<T>(type: EventType, payload: T, source?: string): void {
+    const evt: DomainEvent<T> = { type, payload, ts: Date.now(), source };
+    this.emitLocal(evt);
+    // Fan out to remote instances (no-op unless the flag is on + Redis is up).
+    this.fanout.publish(evt);
+  }
+
+  /** Tear down the fan-out adapter (tests / graceful shutdown). */
+  async close(): Promise<void> {
+    await this.fanout.close();
   }
 
   /** Subscribe to one event type. Returns an unsubscribe fn. */

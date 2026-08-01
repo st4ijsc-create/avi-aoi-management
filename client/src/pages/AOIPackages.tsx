@@ -5,6 +5,7 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -54,21 +55,21 @@ import {
 function StatusBadge({ status }: { status: string }) {
   const { t } = useTranslation();
   const variants: Record<string, { labelKey: string; className: string }> = {
-    pending: { labelKey: "packages.pending", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
-    uploading: { labelKey: "packages.uploading", className: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
-    uploaded: { labelKey: "packages.uploaded", className: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200" },
-    committed: { labelKey: "packages.committed", className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
-    failed: { labelKey: "common.error", className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200" },
+    pending: { labelKey: "packages.pending", className: "bg-warning/15 text-warning border-warning/30" },
+    uploading: { labelKey: "packages.uploading", className: "bg-info/15 text-info border-info/30" },
+    uploaded: { labelKey: "packages.uploaded", className: "bg-info/15 text-info border-info/30" },
+    committed: { labelKey: "packages.committed", className: "bg-success/15 text-success border-success/30" },
+    failed: { labelKey: "common.error", className: "bg-destructive/15 text-destructive border-destructive/30" },
   };
-  const v = variants[status] || { labelKey: "", className: "bg-gray-100 text-gray-800" };
+  const v = variants[status] || { labelKey: "", className: "bg-muted text-muted-foreground" };
   return <Badge className={v.className}>{v.labelKey ? t(v.labelKey) : status}</Badge>;
 }
 
 function ResultBadge({ result }: { result: string | null }) {
   if (!result) return <Badge variant="outline">N/A</Badge>;
-  if (result === "OK") return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">OK</Badge>;
-  if (result === "NG") return <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">NG</Badge>;
-  return <Badge className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">{result}</Badge>;
+  if (result === "OK") return <Badge className="bg-success/15 text-success border-success/30">OK</Badge>;
+  if (result === "NG") return <Badge className="bg-destructive/15 text-destructive border-destructive/30">NG</Badge>;
+  return <Badge className="bg-warning/15 text-warning border-warning/30">{result}</Badge>;
 }
 
 function formatBytes(bytes: number | null): string {
@@ -134,36 +135,32 @@ export default function AOIPackages() {
     <DashboardLayout>
       <div className="space-y-6 p-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-              <Camera className="h-8 w-8 text-primary" />
-              {t('packages.title')}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('packages.description')}
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              packagesQuery.refetch();
-              statsQuery.refetch();
-              queueQuery.refetch();
-            }}
-          >
-            <RefreshCcw className="h-4 w-4 mr-2" />
-            {t('common.refresh')}
-          </Button>
-        </div>
+        <PageHeader
+          icon={<Camera className="h-6 w-6" />}
+          title={t('packages.title')}
+          description={t('packages.description')}
+          actions={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                packagesQuery.refetch();
+                statsQuery.refetch();
+                queueQuery.refetch();
+              }}
+            >
+              <RefreshCcw className="h-4 w-4 mr-2" />
+              {t('common.refresh')}
+            </Button>
+          }
+        />
 
         {/* Stats Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <Package className="h-8 w-8 text-blue-500" />
+                <Package className="h-8 w-8 text-info" />
                 <div>
                   <p className="text-sm text-muted-foreground">{t('packages.totalPackages')}</p>
                   <p className="text-2xl font-bold">{statsQuery.data?.summary?.total || 0}</p>
@@ -174,7 +171,7 @@ export default function AOIPackages() {
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <CheckCircle2 className="h-8 w-8 text-green-500" />
+                <CheckCircle2 className="h-8 w-8 text-success" />
                 <div>
                   <p className="text-sm text-muted-foreground">{t('packages.committedCount')}</p>
                   <p className="text-2xl font-bold">{statsQuery.data?.summary?.committed || 0}</p>
@@ -185,7 +182,7 @@ export default function AOIPackages() {
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <XCircle className="h-8 w-8 text-red-500" />
+                <XCircle className="h-8 w-8 text-destructive" />
                 <div>
                   <p className="text-sm text-muted-foreground">{t('packages.failedCount')}</p>
                   <p className="text-2xl font-bold">{statsQuery.data?.summary?.failed || 0}</p>
@@ -196,7 +193,7 @@ export default function AOIPackages() {
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <ImageIcon className="h-8 w-8 text-purple-500" />
+                <ImageIcon className="h-8 w-8 text-primary" />
                 <div>
                   <p className="text-sm text-muted-foreground">{t('packages.totalImages')}</p>
                   <p className="text-2xl font-bold">{statsQuery.data?.summary?.totalImages || 0}</p>
@@ -207,7 +204,7 @@ export default function AOIPackages() {
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <HardDrive className="h-8 w-8 text-orange-500" />
+                <HardDrive className="h-8 w-8 text-warning" />
                 <div>
                   <p className="text-sm text-muted-foreground">{t('packages.totalSize')}</p>
                   <p className="text-2xl font-bold">{formatBytes(statsQuery.data?.summary?.totalSize || 0)}</p>
@@ -242,6 +239,7 @@ export default function AOIPackages() {
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
+                        aria-label="Serial Number"
                         placeholder={t('packages.searchBySerial')}
                         className="pl-10"
                         value={searchSerial}
@@ -252,6 +250,7 @@ export default function AOIPackages() {
                   <div className="min-w-32.5">
                     <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('packages.machineCode')}</label>
                     <Input
+                      aria-label={t('packages.machineCode')}
                       placeholder={t('packages.machineCodePlaceholder')}
                       value={filterMachineCode}
                       onChange={(e) => { setFilterMachineCode(e.target.value); setPage(1); }}
@@ -283,11 +282,11 @@ export default function AOIPackages() {
                   </div>
                   <div className="min-w-35">
                     <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('packages.fromDate')}</label>
-                    <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} />
+                    <Input type="date" aria-label={t('packages.fromDate')} value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} />
                   </div>
                   <div className="min-w-35">
                     <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('packages.toDate')}</label>
-                    <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} />
+                    <Input type="date" aria-label={t('packages.toDate')} value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} />
                   </div>
                 </div>
               </CardContent>
@@ -342,7 +341,7 @@ export default function AOIPackages() {
                               <span className="text-xs">
                                 {pkg.imageCount || 0}
                                 {pkg.ngCount && pkg.ngCount > 0 ? (
-                                  <span className="text-red-500 ml-1">({pkg.ngCount} NG)</span>
+                                  <span className="text-destructive ml-1">({pkg.ngCount} NG)</span>
                                 ) : null}
                               </span>
                             </td>
@@ -396,18 +395,20 @@ export default function AOIPackages() {
                       <Button
                         variant="outline"
                         size="sm"
+                        aria-label={t('common.previous', 'Previous')}
                         disabled={page <= 1}
                         onClick={() => setPage(page - 1)}
                       >
-                        <ChevronLeft className="h-4 w-4" />
+                        <ChevronLeft aria-hidden="true" className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
+                        aria-label={t('common.next', 'Next')}
                         disabled={page >= packagesQuery.data.totalPages}
                         onClick={() => setPage(page + 1)}
                       >
-                        <ChevronRight className="h-4 w-4" />
+                        <ChevronRight aria-hidden="true" className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
@@ -440,7 +441,7 @@ export default function AOIPackages() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {queueQuery.data.map((metric, i) => (
-                      <Card key={i} className="border-l-4 border-l-blue-500">
+                      <Card key={i} className="border-l-4 border-l-info">
                         <CardContent className="p-4 space-y-3">
                           <div className="flex items-center justify-between">
                             <Badge variant="outline" className="font-mono">
@@ -452,19 +453,19 @@ export default function AOIPackages() {
                           </div>
                           <div className="grid grid-cols-2 gap-2 text-sm">
                             <div className="flex items-center gap-2">
-                              <Clock className="h-4 w-4 text-yellow-500" />
+                              <Clock className="h-4 w-4 text-warning" />
                               <span>Queued: <strong>{metric.queuedCount}</strong></span>
                             </div>
                             <div className="flex items-center gap-2">
-                              <Activity className="h-4 w-4 text-blue-500" />
+                              <Activity className="h-4 w-4 text-info" />
                               <span>Uploading: <strong>{metric.uploadingCount}</strong></span>
                             </div>
                             <div className="flex items-center gap-2">
-                              <CheckCircle2 className="h-4 w-4 text-green-500" />
+                              <CheckCircle2 className="h-4 w-4 text-success" />
                               <span>Done: <strong>{metric.completedCount}</strong></span>
                             </div>
                             <div className="flex items-center gap-2">
-                              <XCircle className="h-4 w-4 text-red-500" />
+                              <XCircle className="h-4 w-4 text-destructive" />
                               <span>Failed: <strong>{metric.failedCount}</strong></span>
                             </div>
                           </div>
@@ -477,8 +478,8 @@ export default function AOIPackages() {
                                   <div
                                     className={`h-full rounded-full ${
                                       metric.diskUsedBytes / ((metric.diskUsedBytes || 1) + (metric.diskFreeBytes || 1)) > 0.85
-                                        ? "bg-red-500"
-                                        : "bg-blue-500"
+                                        ? "bg-destructive"
+                                        : "bg-info"
                                     }`}
                                     style={{
                                       width: `${Math.min(100, (metric.diskUsedBytes / ((metric.diskUsedBytes || 1) + (metric.diskFreeBytes || 1))) * 100)}%`,
@@ -494,7 +495,7 @@ export default function AOIPackages() {
                             </div>
                           )}
                           {metric.lastErrorMessage && (
-                            <div className="text-xs text-red-500 flex items-start gap-1">
+                            <div className="text-xs text-destructive flex items-start gap-1">
                               <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
                               {metric.lastErrorMessage}
                             </div>
@@ -543,8 +544,8 @@ export default function AOIPackages() {
                               </Badge>
                             </td>
                             <td className="p-3 text-right font-medium">{m.total}</td>
-                            <td className="p-3 text-right text-green-600">{m.committed}</td>
-                            <td className="p-3 text-right text-red-600">{m.failed}</td>
+                            <td className="p-3 text-right text-success">{m.committed}</td>
+                            <td className="p-3 text-right text-destructive">{m.failed}</td>
                             <td className="p-3 text-right">
                               {m.total > 0
                                 ? `${((m.committed / m.total) * 100).toFixed(1)}%`
@@ -590,7 +591,7 @@ export default function AOIPackages() {
                   <TabsTrigger value="logs" className="gap-1.5">
                     <ScrollText className="h-4 w-4" /> {t('packages.logsTab')}
                     {packageDetailQuery.data.status === "failed" && (
-                      <span className="ml-1 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                      <span className="ml-1 h-2 w-2 rounded-full bg-destructive animate-pulse" />
                     )}
                   </TabsTrigger>
                 </TabsList>
@@ -601,12 +602,12 @@ export default function AOIPackages() {
                     <div className="space-y-6">
                       {/* Error Message Alert */}
                       {packageDetailQuery.data.errorMessage && (
-                        <div className="rounded-lg border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950 p-4">
+                        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
                           <div className="flex items-start gap-3">
-                            <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+                            <AlertCircle className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
                             <div>
-                              <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">{t('packages.uploadError')}</h4>
-                              <p className="text-sm text-red-700 dark:text-red-300 mt-1 whitespace-pre-wrap break-all">
+                              <h4 className="text-sm font-semibold text-destructive">{t('packages.uploadError')}</h4>
+                              <p className="text-sm text-destructive/90 mt-1 whitespace-pre-wrap break-all">
                                 {packageDetailQuery.data.errorMessage}
                               </p>
                             </div>
@@ -700,7 +701,7 @@ export default function AOIPackages() {
                           <Card
                             key={img.id}
                             className={`cursor-pointer hover:ring-2 hover:ring-primary transition-all ${
-                              img.result === "NG" ? "border-red-300 dark:border-red-700" : ""
+                              img.result === "NG" ? "border-destructive/40" : ""
                             }`}
                             onClick={() =>
                               setViewImageDialog({
@@ -760,31 +761,31 @@ export default function AOIPackages() {
                         <div className="space-y-0">
                           {logsQuery.data.logs.map((log: any, i: number) => {
                             const eventConfig: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
-                              presign: { icon: <Clock className="h-3.5 w-3.5" />, color: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300", label: t('packages.logInit') },
-                              upload_start: { icon: <ArrowUpCircle className="h-3.5 w-3.5" />, color: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-300", label: t('packages.logUploadStart') },
-                              upload_success: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300", label: t('packages.logUploadSuccess') },
-                              upload_fail: { icon: <XCircle className="h-3.5 w-3.5" />, color: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300", label: t('packages.logUploadFail') },
-                              commit_start: { icon: <Activity className="h-3.5 w-3.5" />, color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300", label: t('packages.logCommitStart') },
-                              commit_success: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300", label: t('packages.logCommitSuccess') },
-                              commit_fail: { icon: <XCircle className="h-3.5 w-3.5" />, color: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300", label: t('packages.logCommitFail') },
-                              retry: { icon: <RefreshCcw className="h-3.5 w-3.5" />, color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300", label: t('packages.logRetry') },
-                              image_view: { icon: <Eye className="h-3.5 w-3.5" />, color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300", label: t('packages.logImageView') },
-                              zip_download: { icon: <ArrowDownCircle className="h-3.5 w-3.5" />, color: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300", label: t('packages.logZipDownload') },
-                              status_change: { icon: <Activity className="h-3.5 w-3.5" />, color: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300", label: t('packages.logStatusChange') },
+                              presign: { icon: <Clock className="h-3.5 w-3.5" />, color: "bg-info/15 text-info border-info/30", label: t('packages.logInit') },
+                              upload_start: { icon: <ArrowUpCircle className="h-3.5 w-3.5" />, color: "bg-info/15 text-info border-info/30", label: t('packages.logUploadStart') },
+                              upload_success: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-success/15 text-success border-success/30", label: t('packages.logUploadSuccess') },
+                              upload_fail: { icon: <XCircle className="h-3.5 w-3.5" />, color: "bg-destructive/15 text-destructive border-destructive/30", label: t('packages.logUploadFail') },
+                              commit_start: { icon: <Activity className="h-3.5 w-3.5" />, color: "bg-primary/15 text-primary border-primary/30", label: t('packages.logCommitStart') },
+                              commit_success: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-success/15 text-success border-success/30", label: t('packages.logCommitSuccess') },
+                              commit_fail: { icon: <XCircle className="h-3.5 w-3.5" />, color: "bg-destructive/15 text-destructive border-destructive/30", label: t('packages.logCommitFail') },
+                              retry: { icon: <RefreshCcw className="h-3.5 w-3.5" />, color: "bg-warning/15 text-warning border-warning/30", label: t('packages.logRetry') },
+                              image_view: { icon: <Eye className="h-3.5 w-3.5" />, color: "bg-muted text-muted-foreground border-border", label: t('packages.logImageView') },
+                              zip_download: { icon: <ArrowDownCircle className="h-3.5 w-3.5" />, color: "bg-primary/15 text-primary border-primary/30", label: t('packages.logZipDownload') },
+                              status_change: { icon: <Activity className="h-3.5 w-3.5" />, color: "bg-warning/15 text-warning border-warning/30", label: t('packages.logStatusChange') },
                             };
-                            const cfg = eventConfig[log.event] || { icon: <Info className="h-3.5 w-3.5" />, color: "bg-gray-100 text-gray-700", label: log.event };
+                            const cfg = eventConfig[log.event] || { icon: <Info className="h-3.5 w-3.5" />, color: "bg-muted text-muted-foreground border-border", label: log.event };
                             const levelColors: Record<string, string> = {
-                              error: "border-l-red-500",
-                              warn: "border-l-yellow-500",
-                              info: "border-l-blue-500",
+                              error: "border-l-destructive",
+                              warn: "border-l-warning",
+                              info: "border-l-info",
                             };
-                            const borderColor = levelColors[log.level] || "border-l-gray-300";
+                            const borderColor = levelColors[log.level] || "border-l-border";
 
                             return (
                               <div key={log.id || i} className="relative pl-10 pb-4">
                                 {/* Timeline dot */}
                                 <div className={`absolute left-2.5 top-1.5 h-3 w-3 rounded-full border-2 border-background ${
-                                  log.level === "error" ? "bg-red-500" : log.level === "warn" ? "bg-yellow-500" : "bg-blue-500"
+                                  log.level === "error" ? "bg-destructive" : log.level === "warn" ? "bg-warning" : "bg-info"
                                 }`} />
 
                                 <div className={`rounded-lg border border-l-4 ${borderColor} p-3 space-y-2`}>
@@ -799,7 +800,7 @@ export default function AOIPackages() {
                                         <Badge variant="destructive" className="text-xs">ERROR</Badge>
                                       )}
                                       {log.level === "warn" && (
-                                        <Badge className="text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">WARN</Badge>
+                                        <Badge className="text-xs bg-warning/15 text-warning border-warning/30">WARN</Badge>
                                       )}
                                     </div>
                                     <span className="text-xs text-muted-foreground whitespace-nowrap">
@@ -915,13 +916,15 @@ export default function AOIPackages() {
                 const idx = images.findIndex((img) => img.fileName === viewImageDialog.fileName);
                 return idx > 0 ? (
                   <button
+                    type="button"
+                    aria-label={t('common.previous', 'Previous')}
                     className="absolute left-2 z-10 p-1.5 rounded-full bg-background/80 hover:bg-background shadow-md border opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={() => {
                       const prev = images[idx - 1];
                       setViewImageDialog({ packageId: viewImageDialog.packageId, pointCode: prev.pointCode, fileName: prev.fileName });
                     }}
                   >
-                    <ChevronLeft className="h-5 w-5" />
+                    <ChevronLeft aria-hidden="true" className="h-5 w-5" />
                   </button>
                 ) : null;
               })()}
@@ -945,13 +948,15 @@ export default function AOIPackages() {
                 const idx = images.findIndex((img) => img.fileName === viewImageDialog.fileName);
                 return idx >= 0 && idx < images.length - 1 ? (
                   <button
+                    type="button"
+                    aria-label={t('common.next', 'Next')}
                     className="absolute right-2 z-10 p-1.5 rounded-full bg-background/80 hover:bg-background shadow-md border opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={() => {
                       const next = images[idx + 1];
                       setViewImageDialog({ packageId: viewImageDialog.packageId, pointCode: next.pointCode, fileName: next.fileName });
                     }}
                   >
-                    <ChevronRight className="h-5 w-5" />
+                    <ChevronRight aria-hidden="true" className="h-5 w-5" />
                   </button>
                 ) : null;
               })()}

@@ -1,0 +1,261 @@
+# 20 — Phân tích lại Nhóm C & Kế hoạch làm-trước-khi-có-phần-cứng
+
+> Tiếp nối doc 18 §6 (Nhóm C: S2/T2/I3) — soi lại từng hạng mục "cần phần cứng" và tách ra **phần có thể làm + validate NGAY bằng phần mềm/simulator** vs **phần thực sự bị chặn bởi thiết bị vật lý**.
+> Ngày: 2026-07-01 · Nhánh: `automation-orchestration-r0`.
+
+---
+
+## 0. Luận điểm
+
+**"Cần phần cứng" đang bị phóng đại.** Ba nhóm C thực chất là:
+- **T2 (physics-sim)** — chạy trên **máy tính**, KHÔNG phải trên robot. Không có blocker phần cứng thật cho bản thân sim; chỉ cần model + engine sim.
+- **S2 (safety zoning)** — logic vùng/phản ứng/tracking là phần mềm; chỉ **rated-stop SIL + cảm biến UWB/LiDAR** là phần cứng.
+- **I3 (connector)** — hầu hết hãng có **emulator/simulator MIỄN PHÍ** (URSim, ROS2/Gazebo, OPC-UA sim, MTConnect sim) chạy chính firmware/giao thức thật mà không cần thiết bị.
+
+→ Ước tính **có thể hoàn thành 55–80% Nhóm C ngay bây giờ** bằng software + sim, để khi thiết bị về chỉ còn *đấu nối + hiệu chuẩn + chứng nhận*.
+
+**Ràng buộc môi trường (trung thực):**
+- **Python không có trên PATH** hiện tại → ưu tiên Node/TS thuần hoặc ONNX-Node. PyBullet/YOLO-Python cần *dựng Python sidecar một lần* (setup, không phải thiết bị).
+- URSim/Gazebo/OPC-UA-sim chạy trong **Docker/VM** — là *hạ tầng mô phỏng* (cần công sức dựng), KHÁC hoàn toàn *thiết bị sản xuất* (cần vốn + commissioning).
+
+---
+
+## 1. T2 — Physics Simulation Gate  ·  ~80% làm được ngay
+
+| | |
+|---|---|
+| **Blocker phần cứng THẬT** | KHÔNG có (sim chạy trên máy). Chỉ *hiệu chuẩn cycle-time cuối* cần robot thật. |
+| **Đã có sẵn** | D1 IR + transpiler + `simulate()` (structural preview) · T1 model registry với seam `conversionStatus` (pending→ready/external) + `isModelRenderable` · Deploy gate HITL. |
+
+**Làm được NGAY (thuần phần mềm):**
+
+- **T2a — Pipeline CAD/URDF → glTF** (điền `conversionStatus='ready'` cho model registry):
+  - **URDF → glTF**: thuần Node (`gltf-transform` + parse URDF mesh refs) — làm ngay.
+  - **STEP/IGES → glTF**: cần CAD kernel — hoặc `assimp` (native, có Node binding) hoặc FreeCAD headless / dịch vụ converter. Nặng hơn, có thể pha 2.
+  - Kết quả: DigitalTwinCenter render model thật thay vì primitive block.
+
+- **T2b — Simulation Gate ĐỘNG HỌC (Node/TS)** *(giá trị cao nhất)*:
+  - Từ URDF (forward-kinematics) + IR/transpiled program → tính quỹ đạo joint → kiểm tra **collision hình học** (bounding volume vs scene-graph geometry), **joint-limit violation**, **workspace bound**, **cycle-time ước lượng**, **safety-zone violation**.
+  - Trả đúng contract Simulation-Gate của thiết kế: `{pass, collision_events, joint_limit_violations, cycle_time_actual, safety_zone_violations}`.
+  - **Thay `simulate()` structural-stub của D1 bằng sim động học thật** → biến "preview" thành **cổng chặn thật**: chương trình va chạm / vượt giới hạn bị chặn TRƯỚC khi deploy. Đây chính là mục tiêu an toàn cốt lõi của cả pipeline IR.
+  - Backend swappable: khi có Isaac/RoboDK/PyBullet (full contact dynamics) thì thay engine, contract giữ nguyên.
+
+**Cần phần cứng thật:** chỉ *hiệu chuẩn cycle-time/độ chính xác cuối* trên robot thật (sim động học đủ để bắt collision/joint-limit — 90% giá trị an toàn).
+
+---
+
+## 2. S2 — Dynamic Safety Zoning  ·  ~60% làm được ngay
+
+| | |
+|---|---|
+| **Blocker phần cứng THẬT** | **Rated-stop SIL 2/3** (Safety PLC Pilz/Sick + safety I/O + <100ms) và **cảm biến người thật** (UWB/LiDAR). Không thể thay bằng phần mềm. |
+| **Đã có sẵn** | S1: `safety_events` SIL-tagged (advisory), near-miss advisor nhận input proximity, workforce/handover, Safety Cockpit UI. |
+
+**Làm được NGAY (thuần phần mềm):**
+
+- **S2a — Mô hình vùng an toàn + logic 3 cấp phản ứng**:
+  - Schema vùng (polygon/AABB) + gán robot/trạm + ngưỡng 3 cấp (speed-reduce → stop-zone → rated-stop).
+  - **Zone-intrusion evaluator**: cho vị trí người (từ tracker) → tính khoảng cách người↔robot → quyết định cấp phản ứng. **Pure function, test được ngay** với track người mô phỏng.
+  - Trực quan hoá vùng + người mô phỏng + cấp phản ứng trong DigitalTwinCenter (twin đã có scene-graph).
+
+- **S2b — Producer + adapter (sim backend)**:
+  - **Vision human-detection producer** (YOLO-pose, `yolo26n.pt` đã có): phát hiện người/skeleton từ camera → feed vị trí vào near-miss advisor S1 (**advisory**). Chạy được ngay trên ảnh test/recorded (ONNX-Node để tránh cần Python; hoặc Python sidecar một lần).
+  - **Safety-PLC adapter framework** (sim backend): Pilz PNOZ/PSS & Sick Flexi nói Modbus-TCP/OPC-UA/CIP-Safety → tái dùng OT driver cho **đường đọc không-rated** (trạng thái e-stop/zone/reset); sim backend đến khi có PLC thật. Trung thực: đây là *giám sát*, không phải rated-stop.
+
+**Cần phần cứng thật:** rated-stop SIL (Safety PLC + contactor + <100ms dual-channel), cảm biến UWB/LiDAR thật, chứng nhận ISO/TS 15066 & 10218. → Phần mềm chuẩn bị toàn bộ *ngoại trừ* actuation rated + sensor thật.
+
+---
+
+## 3. I3 — Connector thiết bị thật  ·  ~50–70% làm được ngay (qua emulator)
+
+| Hãng/Giao thức | Emulator MIỄN PHÍ? | Làm + validate ngay? |
+|---|---|---|
+| **Universal Robots (URScript)** | ✅ **URSim** (chạy firmware controller thật trong VM) | ✅ **CAO** — validate D1 transpiler end-to-end trên controller thật, không cần cánh tay |
+| **ROS2/DDS (humanoid/AMR)** | ✅ ROS2 + **Gazebo/fake_joint** | ✅ **CAO** — build bridge ROS2↔UNS + test với node sim |
+| **Máy CNC (MTConnect)** | ✅ MTConnect agent simulator (public) | ✅ — hoàn thiện MTConnect adapter (field-map) với sim |
+| **Euromap 77/83 (OPC-UA/MQTT)** | ✅ OPC-UA sim server (open62541/Prosys) | ✅ — adapter Euromap OPC-UA vs sim |
+| **Fanuc FOCAS** | ❌ (Fwlib32 độc quyền, không emulator free) | ⚠️ Giữ framework; cần Fanuc thật + license |
+| **Mitsubishi/ABB/KUKA/Fanuc robot** | ⚠️ Vendor sim (RT ToolBox/RobotStudio/OfficeLite/ROBOGUIDE — license) | ⚠️ Nếu có license sim; nếu không → giữ scaffold |
+| **EtherCAT** | ⚠️ SOEM master + slave sim (một phần; real-time cần HW) | ⚠️ Một phần |
+
+**Làm được NGAY (giá trị cao nhất):**
+- **I3a — ROS2/DDS bridge** (test vs ROS2 Gazebo) + **URSim validation harness**: deploy code URScript (từ D1 transpiler) xuống **URSim** — validate toàn chuỗi IR→lint→transpile→Simulation-Gate→deploy trên **controller UR thật (ảo)**, không cần cánh tay. Đây là bằng chứng end-to-end mạnh nhất cho cả Khối 6.
+- **I3b — Euromap OPC-UA + MTConnect adapter** vs sim server: điền field-map thật, chạy `mapAlarm`→Andon với alarm sim.
+
+**Cần phần cứng thật:** FOCAS (Fanuc + license), EtherCAT real-time, và *commissioning cuối* trên máy thật. Các hãng còn lại chỉ cần *đổi endpoint sim → endpoint thật* khi thiết bị về.
+
+---
+
+## 4. Bảng tổng: phần mềm-ngay vs phần cứng-thật
+
+| Hạng mục | Làm được ngay (sw/sim) | Còn lại chờ phần cứng |
+|---|---|---|
+| **T2** | ~80% — CAD/URDF→glTF, **Simulation-Gate động học thật** | Hiệu chuẩn cycle-time cuối |
+| **S2** | ~60% — vùng+3-cấp+evaluator, vision human-detect (advisory), safety-PLC adapter (sim) | **Rated-stop SIL**, UWB/LiDAR thật, chứng nhận |
+| **I3** | ~55% — URSim harness, ROS2 bridge, Euromap/MTConnect vs sim | FOCAS, EtherCAT real-time, commissioning |
+
+---
+
+## 5. Kế hoạch đề xuất (pre-hardware phases)
+
+Ưu tiên theo **giá trị đóng-vòng-an-toàn** (biến các seam thành thật):
+
+| GĐ | Tên | Nội dung | Phụ thuộc | Cờ |
+|---|---|---|---|---|
+| **T2b** | Kinematic Simulation Gate | URDF FK + geometric collision + joint-limit + cycle-time → thay `simulate()` stub của D1 bằng cổng chặn THẬT (Node/TS, engine swappable) | D1, T1 | `SIM_KINEMATIC_ENABLED` |
+| **T2a** ✅ **DONE** | Model pipeline | ✅ URDF→glTF THẬT (hand-rolled emitter box/cylinder/sphere → POSITION/NORMAL/indices + node hierarchy từ joint tree) điền `equipment_3d_models` với `conversionStatus='ready'` → twin render model thật. ✅ Cùng parse feed T2b: `urdfToChainStub` giờ trả **chuỗi động học THẬT** (rest transform + axis + limits + BV từ URDF) → sim gate chạy trên hình học robot thật. External `<mesh>` không phải ASCII-STL → placeholder box (ghi nhận, không bịa). **STEP/IGES→glTF = seam pha-2** (cần CAD kernel occt-import-js WASM / assimp) → đăng ký `pending`, KHÔNG bịa. Reuse `equipment_3d_models` (không cần migration). | T1 | `MODEL_PIPELINE_ENABLED` |
+| **I3a** | URSim + ROS2 harness | Deploy URScript(D1)→**URSim** validate end-to-end; ROS2/DDS bridge↔UNS vs Gazebo | D1, X1 | `ROS2_BRIDGE_ENABLED` |
+| **S2a** ✅ **DONE** | Zone geometry + 3-level evaluator | ✅ `safety_zones` table (migration 0153, additive/idempotent, inert RLS) với **3 ngưỡng graduated** (speedReduce ≥ stop ≥ ratedStop, mm) + geometry AABB/polygon. ✅ **PURE** `zoneIntrusionEvaluator.evaluateZones()` (distance3 / distanceToAabb / pointInAabb / pointInPolygon / levelForDistance) → mỗi robot một reaction `none｜speed_reduce｜stop｜rated_stop` (nearest-human, closest-threshold-wins). ✅ Wire vào S1 advisory (`safetyZoneService`): mỗi reaction ghi 1 `safety_event` (reuse, eventType `zone_intrusion`/`speed_violation`); speed_reduce/stop **PROPOSE** qua **đúng gate cũ** (INTERLOCK_AUTO_BLOCK + OT_CONTROL + HITL), **rated_stop chỉ LOG** kèm ghi chú "Safety PLC chứng nhận phải thực hiện rated-stop thật (S2 hardware)" — **phần mềm KHÔNG bao giờ actuate rated-stop**. ✅ Router `safety.*`: listZones/evaluateZones/zoneStatus (read) + createZone/updateZone/ingestSimulatedHuman (mutation, gated). ✅ `ingestProximity` giờ ALSO drive evaluator (additive, S1 giữ nguyên). ✅ vitest pure + service. **TRUNG THỰC: advisory, KHÔNG SIL; human MÔ PHỎNG cho tới khi có UWB/LiDAR thật (S2b).** Trực quan hoá twin = seam S2b. | S1, T1 | `SAFETY_ZONE_SW_ENABLED` |
+| **S2b** ✅ **DONE** | Vision human-detect + safety-PLC adapter(sim) | ✅ **Vision producer** (`safety/vision/humanDetectionProducer.ts`, flag `SAFETY_VISION_ENABLED`): turns PERSON DETECTIONS (pixel bbox `{x,y,w,h,confidence}`) + a per-camera **pixel→floor HOMOGRAPHY** (real DLT solve + apply, pure `safety/vision/homography.ts` — foot-point = bbox bottom-centre) into FLOOR positions → drives the **S2a evaluator** (advisory). Pluggable inference backend: **(a) INJECTED** (test/external detector — value delivered now), **(b) optional ONNX hook**, **(c) NO-BACKEND default = produces NOTHING** (never fabricates a person). Per-camera **`camera_calibrations`** store (homography jsonb OR ≥4 image↔floor pairs → solved + residual metric). ✅ **Safety-PLC adapter** (`safety/plc/safetyPlcAdapter.ts`, flag `SAFETY_PLC_ADAPTER_ENABLED`): **READ-ONLY** status (Pilz PNOZ/PSS, Sick Flexi) — **sim** backend (scripted, default) + **real** modbus/opcua read **reusing the existing OT driver read path** (never `writeTags`); status (e-stop/zone/reset/muting) → advisory `safety_events`. **`safety_plc_configs`** table. Migration **0154** (additive/idempotent, inert RLS) + schema `drizzle/schema/safetyVision.ts`. Router `safety.*`: visionStatus/listCameraCalibrations + upsertCameraCalibration/ingestDetectionFrame; plcStatus/listSafetyPlcConfigs + upsertSafetyPlcConfig/readSafetyPlc. vitest `safety.s2b.test.ts` (24 cases: homography solve/apply/singular, producer no-backend honesty, PLC sim + mocked-OT real read + flag-off). **TRUNG THỰC: advisory, NEVER a rated stop — the certified Safety PLC actuates the rated stop itself in hardware; software only OBSERVES.** **⚠ YOLO ONNX-EXPORT SEAM** (see below). | S1, S2a | `SAFETY_VISION_ENABLED` + `SAFETY_PLC_ADAPTER_ENABLED` (reuse `SAFETY_AUDIT` to persist) |
+| **I3b** ✅ **DONE** | Euromap/MTConnect vs sim | ✅ **MTConnect field-map THẬT** (`mtconnect/mtconnectFieldMap.ts`): DataItem→UEM — `Program`→recipe_id, `PartCount` (GOOD→production_counter, ALL→cycle_count), `Execution`+`ControllerMode`+`PathFeedrate/SpindleSpeed`→exec-state + utilization proxy, `Condition` Fault/Warning→alarm carrying the Condition's **own `nativeCode`/`nativeSeverity`**. Poller now derives the UEM per poll (read-only, nothing fabricated) + routes alarms through I2's `raiseFromMtconnectCondition` với **vendor** (device manufacturer, 4th source field) → per-vendor `mapAlarm`. ✅ **Euromap 77 OPC-UA adapter** (`euromap/euromapOpcuaReader.ts` + `EuromapAdapter.pollOverOpcua`): **REUSES the existing `opcuaDriver`** via a configured `EuromapNodeMap` (UEM-field→nodeId) — connect→`readTags`→assemble native readout→ingest→UEM + active-alarm→`raiseFromEuromapAlarm`→Andon (vendor-threaded). **READ-ONLY** (never `writeTags`); unreachable/empty-map → **honest error**, cache untouched, no fabrication. ✅ Validated vs **mocks**: MTConnect `/current` fixture (real sample shape) → UEM + Condition→normalized alarm; Euromap OPC-UA mock node-set → UEM + alarm; unknown-code passthrough; flag-off no-op (`mtconnectFieldMap.test.ts`, `euromapOpcua.test.ts`). **No migration** (reuse `device_adapters`/equipment config + env node-map). Config additive: `MTCONNECT_SOURCES` gains optional vendor; `EUROMAP_OPCUA_ENDPOINT`/`_NODEMAP`/`_VENDOR`. Runbook §7.4/§7.5. **TRUNG THỰC: sim/máy thật để go-live; field-map per-vendor-configurable.** | I1 | reuse `EQ_INTEG` |
+
+**Thứ tự khuyến nghị:** `T2b` (cổng sim thật — giá trị an toàn cao nhất, đóng vòng D1) → `I3a` (URSim validate cả chuỗi IR trên controller thật-ảo) → `T2a` (model 3D thật) → `S2a`/`S2b` (zoning + vision advisory) → `I3b`.
+
+**Ghi chú setup (một lần, không phải thiết bị):** URSim/ROS2-Gazebo/OPC-UA-sim chạy Docker; YOLO-pose ưu tiên ONNX-Node (tránh Python) hoặc dựng Python sidecar; STEP→glTF cần assimp/FreeCAD.
+
+**⚠ S2b — YOLO ONNX-EXPORT SEAM (trung thực, chưa bịa detection):** `onnxruntime-node` (v1.24.x) ĐÃ có trong deps và chạy thật (`aiInferenceEngine.ts` + `decodeYoloSeg`), NHƯNG `yolo26n.pt` là **PyTorch checkpoint** — onnxruntime KHÔNG nạp được `.pt`. Cần **export MỘT LẦN** (Python, off-box/sidecar):
+```bash
+yolo export model=yolo26n.pt format=onnx opset=13 imgsz=640   # → yolo26n.onnx
+```
+rồi đăng ký `.onnx` thành `ai_model` **ACTIVE** có nhãn `person` (tái dùng `scripts/ai-kb/register-seg-model.mjs`, đặt `postprocessConfig.format='yolo-pose'` + viết `decodeYoloPose` theo mẫu `decodeYoloSeg`). CHỈ khi đó ONNX hook (`OnnxPersonDetectionBackend`) mới trả detection. **Cho tới lúc đó producer KHÔNG bịa người** — dùng đường INJECTED (test/detector ngoài). Giá trị giao NGAY = **producer contract + homography thật + wiring + camera calibration store**; model inference là seam có tài liệu. Cần thêm: **camera thật + hiệu chuẩn homography** (đo ≥4 điểm sàn thấy trong ảnh + toạ độ pixel) cho mỗi camera; **safety-PLC thật** (đổi backend sim→modbus/opcua + endpoint) — nhưng rated-stop luôn do PLC chứng nhận thực hiện, phần mềm chỉ QUAN SÁT.
+
+---
+
+## 6. Kết luận
+
+Nhóm C **không phải "khối chờ phần cứng"** — chỉ ~1/3 thực sự bị chặn (rated-stop SIL, cảm biến UWB/LiDAR, FOCAS, commissioning). Phần còn lại (**Simulation-Gate động học thật, URSim/ROS2 validation, model pipeline, zone evaluator, vision advisory, Euromap/MTConnect field-map**) đều làm + test được ngay bằng simulator/emulator miễn phí, biến hàng loạt "seam trung thực" hiện tại thành **năng lực chạy thật** — để khi thiết bị về chỉ còn đổi endpoint sim→thật và hiệu chuẩn/chứng nhận.
+
+---
+
+## 7. RUNBOOK — dựng simulator cho I3a (URSim + ROS2)
+
+> Cả hai harness **mock-backed** (test chạy xanh **không cần** sim). Để validate end-to-end thật, operator dựng sim **MIỄN PHÍ** trong Docker (một lần — là *hạ tầng*, không phải thiết bị) rồi trỏ endpoint qua ENV. Tất cả flag **mặc định OFF**; OFF = không mở socket. **TRUNG THỰC:** endpoint không reachable → harness trả lỗi rõ ràng, **không bao giờ** giả success.
+
+### 7.1 URSim (Universal Robots controller simulator — `URSIM_ENABLED`)
+
+Chạy firmware controller UR **thật** trong VM/Docker — validate toàn chuỗi `IR → lint → transpile → Simulation-Gate → deploy` trên controller UR **thật (ảo)**, **không cần cánh tay**.
+
+```bash
+# 1) Chạy URSim e-Series (UR5). Publish các cổng UR: dashboard 29999, primary/secondary
+#    30001/30002, RTDE 30003/30004; VNC 5900 + noVNC 6080 để xem teach-pendant.
+docker run --rm -it \
+  -e ROBOT_MODEL=UR5 \
+  -p 5900:5900 -p 6080:6080 \
+  -p 29999:29999 -p 30001-30004:30001-30004 \
+  universalrobots/ursim_e-series
+# 2) Mở http://localhost:6080/vnc.html → power on robot trên teach-pendant (hoặc để harness
+#    tự `power on` + `brake release` qua dashboard).
+```
+
+Trỏ harness qua ENV rồi bật flag:
+
+```bash
+URSIM_ENABLED=true
+URSIM_HOST=127.0.0.1          # host Docker
+# URSIM_PRIMARY_PORT=30001    # gửi URScript (primary; 30002 = secondary)
+# URSIM_DASHBOARD_PORT=29999  # load/play/stop/power/robotmode/programState
+```
+
+Chạy validation: tRPC `simTargets.validateUrscript({ urscript })` (hoặc gọi trực tiếp
+`validateUrscriptOnUrsim(urscript, endpoint)`). Kết quả `{ sent, accepted, running,
+robotMode, programState }` là **bằng chứng end-to-end**: `sent` = transport OK; `accepted`+`running`
+= controller UR **thật đã compile + chạy** code transpile ra (transpile hỏng cú pháp → UR runtime từ chối → `running=false`). Deploy-qua-URSim đi qua **đúng gate cũ** (`DPC_DEPLOY_ENABLED` + HITL), ghi vào `program_deployments` (`stage='staging'`, `detailJson.target='ursim'`) — URSim là **thiết bị ảo an toàn**, không mở control-path mới.
+
+### 7.2 ROS2 bridge (via `rosbridge_server` — `ROS2_BRIDGE_ENABLED`)
+
+Bridge ROS2↔platform bằng **JS thuần** qua rosbridge WebSocket (không cần rclnodejs/DDS native).
+
+```bash
+# 1) Cài + chạy rosbridge (trong môi trường có ROS2, ví dụ Humble). Mặc định ws://HOST:9090.
+sudo apt install ros-humble-rosbridge-suite   # một lần
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+# 2) Có node phát telemetry (Gazebo / robot_state_publisher / fake node) publish
+#    /joint_states, /odom, /tf để bridge subscribe.
+```
+
+Trỏ bridge qua ENV rồi bật flag:
+
+```bash
+ROS2_BRIDGE_ENABLED=true
+ROSBRIDGE_URL=ws://127.0.0.1:9090
+```
+
+Khi bật, bridge tự connect lúc startup (`_core/index.ts`) hoặc qua tRPC `simTargets.ros2Connect`.
+Telemetry vào: `/joint_states`,`/odom`,`/tf` → normalize → `telemetryBus.ingestTelemetry` (→ `ot_telemetry` + broadcast `telemetry:sample`, tái dùng field X1 nơi map được). Lệnh ra: **chỉ** qua `robotCommandDispatcher` (idempotency + HITL + dry-run) — dry-run (`ROBOT_CONTROL_ENABLED` off) → **không publish gì** lên ROS2. Bridge chỉ là **đường truyền**, gate ở nguyên chỗ cũ.
+
+### 7.3 Ghi chú trung thực
+
+- Không có sim đang chạy → **cả hai** harness trả lỗi reachable/connect rõ ràng; startup log cảnh báo & **không connect gì**; process **không** crash.
+- **Không migration**: URSim deploy dùng `program_deployments` sẵn có (`stage='staging'` + `detailJson.target='ursim'`); ROS2 telemetry dùng `ot_telemetry` với `protocol='other'` + `meta.source='ros2'`.
+- Không thêm dep native/nặng: URSim dùng `net` (built-in), ROS2 dùng `ws` (đã có).
+
+---
+
+## 7.4 MTConnect agent simulator (I3b-1 — reuse `MTCONNECT_ENABLED` + `EQ_INTEG_ENABLED`)
+
+> Tests chạy xanh **không cần** sim (fixture `/current` XML). Để validate end-to-end thật, dựng một MTConnect Agent simulator **MIỄN PHÍ** rồi trỏ `MTCONNECT_SOURCES` vào nó.
+
+```bash
+# Cách A — public MTConnect `agent` (mtconnect.org) với adapter simulator (SHDR).
+#   Agent phục vụ /probe, /current, /sample trên cổng 5000 (mặc định).
+docker run --rm -p 5000:5000 mtconnect/agent
+# (hoặc build agent C++ từ mtconnect/cppagent; sample device files có sẵn PROGRAM,
+#  EXECUTION, CONTROLLER_MODE, PART_COUNT, PATH_FEEDRATE, và Condition — đúng field-map.)
+
+# Cách B — một /current tĩnh (đủ để smoke field-map): phục vụ file XML mẫu.
+#   python -m http.server, nginx… trả về .../current — poller đọc như agent thật.
+```
+
+Trỏ poller qua ENV rồi bật cờ:
+
+```bash
+MTCONNECT_ENABLED=true
+EQ_INTEG_ENABLED=true                      # để alarm CONDITION→Andon (nếu không: no-op)
+# vendor (field thứ 4) = manufacturer của máy → per-vendor mapAlarm; vắng → 'mtconnect'.
+MTCONNECT_SOURCES=[{"agentUrl":"http://127.0.0.1:5000","machineCode":"CNC-01","pollMs":3000,"vendor":"fanuc"}]
+```
+
+Poller mỗi vòng: numeric SAMPLE→telemetry bus, EVENT/CONDITION→`process_results`, **UEM
+projection** (`mtconnectFieldMap.mapMtconnectToUem`) vào `getMtconnectStats().sources[].lastUem`
+(recipe_id/cycle_count/production_counter/utilization), và **CONDITION Fault/Warning**→
+`raiseFromMtconnectCondition` (E1 taxonomy→Andon, mang theo `nativeCode`/`nativeSeverity` của
+chính Condition + vendor). Agent không reachable → poller log lỗi rõ ràng, **không bịa** đọc số.
+
+## 7.5 Euromap 77 OPC-UA sim server (I3b-2 — reuse `EQ_INTEG_ENABLED`)
+
+> Reader `euromapOpcuaReader` **tái dùng `opcuaDriver` thật** (node-opcua). Tests dùng mock
+> driver (không cần server). Để chạy thật, dựng một OPC-UA sim server **MIỄN PHÍ** với các node
+> hình Euromap-77 rồi trỏ endpoint + node-map qua ENV.
+
+```bash
+# Cách A — open62541 (C, MIT). Build một server nhỏ expose các node:
+#   ActiveMould(String), ActualCycleTime(Double), ShotCounter(Int),
+#   GoodPartsCounter(Int), TargetCycleTime(Double), MachineMode(String),
+#   Alarm.HotRunner(Boolean)… trên opc.tcp://0.0.0.0:4840.
+#   (hoặc dùng ví dụ server có sẵn của open62541 rồi thêm các biến trên.)
+
+# Cách B — Prosys OPC UA Simulation Server (free, GUI): tạo các node string/nodeId ở trên,
+#   endpoint mặc định opc.tcp://<host>:53530/OPCUA/SimulationServer.
+```
+
+Trỏ adapter qua ENV rồi bật cờ:
+
+```bash
+EQ_INTEG_ENABLED=true
+EUROMAP_OPCUA_ENDPOINT=opc.tcp://127.0.0.1:4840
+# node-map: UEM-field → nodeId THẬT của server sim (browse address space một lần để lấy).
+EUROMAP_OPCUA_NODEMAP={"activeMould":"ns=1;s=ActiveMould","actualCycleTime":"ns=1;s=ActualCycleTime","shotCounter":"ns=1;s=ShotCounter","goodPartsCounter":"ns=1;s=GoodPartsCounter","targetCycleTime":"ns=1;s=TargetCycleTime","machineMode":"ns=1;s=MachineMode","alarmNodes":[{"nodeId":"ns=1;s=Alarm.HotRunner","code":"E77-1200","message":"Hot runner over-temp"}]}
+# EUROMAP_OPCUA_VENDOR=euromap        # per-máy override cho mapAlarm (mặc định 'euromap')
+```
+
+Gọi `EuromapAdapter.pollOverOpcua(opcuaDriver, cfg)` (driver lấy từ
+`ot/driverRegistry.createDriver('opcua')`): connect→`readTags(nodeMap)`→native readout→
+`ingest()`→UEM (recipe/cycle/production/utilization) + mỗi alarm **active**→
+`raiseFromEuromapAlarm`→Andon. **READ-ONLY** — chỉ `readTags`, **không bao giờ** `writeTags`.
+Endpoint không reachable / node-map rỗng → **lỗi rõ ràng** (cache giữ nguyên, không bịa số).
+
+### Ghi chú trung thực (I3b)
+- Không migration: reuse `device_adapters`/equipment config + env node-map; UEM types tái dùng
+  `UnifiedEquipmentSnapshot` (focas) + `EuromapNativeReadout` (I1). Cờ dùng lại `EQ_INTEG_ENABLED`.
+- Field-map **per-vendor-configurable**: MTConnect DataItem type sets + Euromap node-map + alarm
+  taxonomy rows đều điền theo hãng/máy khi commissioning. Go-live = đổi endpoint sim→thật.

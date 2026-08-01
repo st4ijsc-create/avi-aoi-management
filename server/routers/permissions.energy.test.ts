@@ -12,7 +12,9 @@
 import { describe, it, expect } from "vitest";
 import { permissionsRouter } from "./permissionsRouter";
 
-const adminCtx = { user: { id: 1, role: "admin", name: "Admin" } } as any;
+// Doc 38 Đợt Q — permissionsRouter now uses the CANONICAL adminProcedure (admin + 2FA),
+// replacing the old local no-2FA shim. The admin fixture must therefore have 2FA on.
+const adminCtx = { user: { id: 1, role: "admin", name: "Admin", twoFactorEnabled: true } } as any;
 const caller = permissionsRouter.createCaller(adminCtx);
 
 async function energy(role: string) {

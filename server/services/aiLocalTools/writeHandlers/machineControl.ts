@@ -291,6 +291,40 @@ registerTool<SetParamParams, unknown>({
   summarize: summarizeSetParam,
   preview: async (p, ctx): Promise<ActionPreview> => {
     const r = await resolveTarget(p.machineId, p.tagKey, ctx.lang);
+    // doc 44 W5-A2 (G4.18) — surface the engineer guardrail to the reviewer when
+    // enforcement is on. Bit-compat: OFF (default) → no extra work, no new warning.
+    const { paramGuardrailEnabled } = await import("../../ai/parameterGuardrailService");
+    if (paramGuardrailEnabled()) {
+      try {
+        const { resolveGuardrail, checkAgainstGuardrail, paramGuardrailStrict, lastKnownValue } = await import(
+          "../../ai/parameterGuardrailService"
+        );
+        const guardrail = await resolveGuardrail(p.machineId, p.tagKey);
+        const oldValue = await lastKnownValue(p.machineId, p.tagKey);
+        const check = checkAgainstGuardrail(guardrail, p.value, oldValue, { strict: paramGuardrailStrict() });
+        if (!check.ok) {
+          r.warnings.push(
+            w(
+              ctx.lang,
+              `⚠️ GUARDRAIL (${check.code}): ${check.detail} — lệnh sẽ bị TỪ CHỐI khi thực thi.`,
+              `⚠️ GUARDRAIL (${check.code}): ${check.detail} — the command will be REJECTED on execute.`,
+              `⚠️ GUARDRAIL (${check.code}): ${check.detail} — 执行时命令将被拒绝。`,
+            ),
+          );
+        } else if (guardrail) {
+          r.warnings.push(
+            w(
+              ctx.lang,
+              `Trong dải an toàn [${guardrail.minValue}, ${guardrail.maxValue}]${guardrail.unit ? ` ${guardrail.unit}` : ""}.`,
+              `Within the safe range [${guardrail.minValue}, ${guardrail.maxValue}]${guardrail.unit ? ` ${guardrail.unit}` : ""}.`,
+              `在安全范围内 [${guardrail.minValue}, ${guardrail.maxValue}]${guardrail.unit ? ` ${guardrail.unit}` : ""}。`,
+            ),
+          );
+        }
+      } catch {
+        /* preview guardrail check is best-effort — never block the preview */
+      }
+    }
     return {
       entityType: "machine",
       entityId: p.machineId,
@@ -301,7 +335,52 @@ registerTool<SetParamParams, unknown>({
   },
   execute: async (p, ctx) => {
     const adapterId = await adapterIdForMachine(p.machineId);
-    return runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "set_param", writes: [{ tagKey: p.tagKey, value: p.value }] });
+    // doc 44 W5-A2 (G4.18) — HARD guardrail enforcement (SYNAPSE §9.2/§18.1): a
+    // value that violates the engineer min–max / max-step is REJECTED HONESTLY
+    // (never silently clamped, never dispatched). Bit-compat: PARAM_GUARDRAIL_ENABLED
+    // OFF (default) → identical to the pre-batch path (no check, no change-log write).
+    const { paramGuardrailEnabled } = await import("../../ai/parameterGuardrailService");
+    if (!paramGuardrailEnabled()) {
+      return runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "set_param", writes: [{ tagKey: p.tagKey, value: p.value }] });
+    }
+    const { resolveGuardrail, checkAgainstGuardrail, paramGuardrailStrict, lastKnownValue, recordChange } = await import(
+      "../../ai/parameterGuardrailService"
+    );
+    const guardrail = await resolveGuardrail(p.machineId, p.tagKey);
+    const oldValue = await lastKnownValue(p.machineId, p.tagKey);
+    const check = checkAgainstGuardrail(guardrail, p.value, oldValue, { strict: paramGuardrailStrict() });
+    if (!check.ok) {
+      // Rejection mirrors a dispatcher refusal (return a result, do NOT throw / dispatch).
+      const range = check.guardrail ? ` [${check.guardrail.min}, ${check.guardrail.max}]${check.guardrail.unit ? ` ${check.guardrail.unit}` : ""}` : "";
+      const title = w(
+        ctx.lang,
+        `Guardrail TỪ CHỐI đặt "${p.tagKey}"=${String(p.value)} cho máy #${p.machineId}`,
+        `Guardrail REJECTED set "${p.tagKey}"=${String(p.value)} on machine #${p.machineId}`,
+        `Guardrail 拒绝为机器 #${p.machineId} 设置 "${p.tagKey}"=${String(p.value)}`,
+      );
+      return {
+        type: "action_result",
+        title,
+        data: { ok: false, rejected: true, code: check.code, detail: check.detail, guardrail: check.guardrail ?? null },
+        textSummary: `set_param → REJECTED (${check.code})${range}`,
+        note: check.detail,
+      };
+    }
+    const result = await runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "set_param", writes: [{ tagKey: p.tagKey, value: p.value }] });
+    // Record the applied change (append-only) so the closed-loop verify sweep can
+    // later judge whether it helped or hurt. Fail-safe (never affects the result).
+    if ((result.data as { ok?: boolean } | undefined)?.ok !== false) {
+      await recordChange({
+        machineId: p.machineId,
+        paramKey: p.tagKey,
+        oldValue,
+        newValue: p.value,
+        source: "ai_proposal",
+        guardrailId: guardrail?.id ?? null,
+        correlationId: ctx.actionId ?? null,
+      });
+    }
+    return result;
   },
 });
 

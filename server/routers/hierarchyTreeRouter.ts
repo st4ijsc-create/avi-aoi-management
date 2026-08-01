@@ -169,11 +169,15 @@ function buildTree(rows: Awaited<ReturnType<typeof db.getFullHierarchyFlat>>): F
  * Generate MQTT subscription topics based on scope level.
  * 
  * Scope levels:
- *  - "all"       → subscribe mọi factory dùng wildcard `avi/+/workshop/+/station/+/#`
- *  - "factory"   → `avi/{factoryId}/workshop/+/station/+/#`
- *  - "workshop"  → `avi/{factoryId}/workshop/{workshopId}/station/+/#`
+ * Topics use the canonical published prefix `avi/factory/...` so they match what the
+ * publishers (mqttService NG alerts/summary/bulletin, ngRateAlertService) actually emit.
+ *
+ * Scope levels:
+ *  - "all"       → subscribe mọi factory dùng wildcard `avi/factory/+/workshop/+/station/+/#`
+ *  - "factory"   → `avi/factory/{factoryId}/workshop/+/station/+/#`
+ *  - "workshop"  → `avi/factory/{factoryId}/workshop/{workshopId}/station/+/#`
  *  - "line"      → list các station topics thuộc line đó
- *  - "station"   → `avi/{factoryId}/workshop/{workshopId}/station/{stationId}/#`
+ *  - "station"   → `avi/factory/{factoryId}/workshop/{workshopId}/station/{stationId}/#`
  */
 function generateMqttTopics(
   tree: FactoryNode[],
@@ -196,10 +200,10 @@ function generateMqttTopics(
   if (scope.level === "all") {
     if (types) {
       for (const t of types) {
-        topics.push({ topic: `avi/+/workshop/+/station/+/${t}`, description: `All factories - ${t}`, qos: qosFor(t) });
+        topics.push({ topic: `avi/factory/+/workshop/+/station/+/${t}`, description: `All factories - ${t}`, qos: qosFor(t) });
       }
     } else {
-      topics.push({ topic: `avi/+/workshop/+/station/+/#`, description: "All factories - all messages", qos: 1 });
+      topics.push({ topic: `avi/factory/+/workshop/+/station/+/#`, description: "All factories - all messages", qos: 1 });
     }
     return topics;
   }
@@ -210,10 +214,10 @@ function generateMqttTopics(
     const desc = factory ? factory.name : `Factory ${fId}`;
     if (types) {
       for (const t of types) {
-        topics.push({ topic: `avi/${fId}/workshop/+/station/+/${t}`, description: `${desc} - ${t}`, qos: qosFor(t) });
+        topics.push({ topic: `avi/factory/${fId}/workshop/+/station/+/${t}`, description: `${desc} - ${t}`, qos: qosFor(t) });
       }
     } else {
-      topics.push({ topic: `avi/${fId}/workshop/+/station/+/#`, description: `${desc} - all messages`, qos: 1 });
+      topics.push({ topic: `avi/factory/${fId}/workshop/+/station/+/#`, description: `${desc} - all messages`, qos: 1 });
     }
     return topics;
   }
@@ -226,10 +230,10 @@ function generateMqttTopics(
     const desc = workshop ? `${factory!.name} / ${workshop.name}` : `Workshop ${wId}`;
     if (types) {
       for (const t of types) {
-        topics.push({ topic: `avi/${fId}/workshop/${wId}/station/+/${t}`, description: `${desc} - ${t}`, qos: qosFor(t) });
+        topics.push({ topic: `avi/factory/${fId}/workshop/${wId}/station/+/${t}`, description: `${desc} - ${t}`, qos: qosFor(t) });
       }
     } else {
-      topics.push({ topic: `avi/${fId}/workshop/${wId}/station/+/#`, description: `${desc} - all messages`, qos: 1 });
+      topics.push({ topic: `avi/factory/${fId}/workshop/${wId}/station/+/#`, description: `${desc} - all messages`, qos: 1 });
     }
     return topics;
   }
@@ -244,14 +248,14 @@ function generateMqttTopics(
               if (types) {
                 for (const t of types) {
                   topics.push({
-                    topic: `avi/${factory.id}/workshop/${workshop.id}/station/${station.id}/${t}`,
+                    topic: `avi/factory/${factory.id}/workshop/${workshop.id}/station/${station.id}/${t}`,
                     description: `${factory.name} / ${workshop.name} / ${line.name} / ${station.name} - ${t}`,
                     qos: qosFor(t),
                   });
                 }
               } else {
                 topics.push({
-                  topic: `avi/${factory.id}/workshop/${workshop.id}/station/${station.id}/#`,
+                  topic: `avi/factory/${factory.id}/workshop/${workshop.id}/station/${station.id}/#`,
                   description: `${factory.name} / ${workshop.name} / ${line.name} / ${station.name} - all`,
                   qos: 1,
                 });
@@ -273,14 +277,14 @@ function generateMqttTopics(
               if (types) {
                 for (const t of types) {
                   topics.push({
-                    topic: `avi/${factory.id}/workshop/${workshop.id}/station/${station.id}/${t}`,
+                    topic: `avi/factory/${factory.id}/workshop/${workshop.id}/station/${station.id}/${t}`,
                     description: `${station.name} - ${t}`,
                     qos: qosFor(t),
                   });
                 }
               } else {
                 topics.push({
-                  topic: `avi/${factory.id}/workshop/${workshop.id}/station/${station.id}/#`,
+                  topic: `avi/factory/${factory.id}/workshop/${workshop.id}/station/${station.id}/#`,
                   description: `${station.name} - all messages`,
                   qos: 1,
                 });

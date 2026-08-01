@@ -25,11 +25,28 @@ export type Capability = "text" | "json" | "vision";
 export interface NarrativeRequest {
   systemPrompt?: string;
   prompt: string;
+  /**
+   * doc 48 R1 — PIN the GGUF model for this generation (basename sans ".gguf", e.g. the
+   * Model Router's `decision.modelId`). Threaded straight into the engine's getOrLoadModel(),
+   * exactly like RCA/codegen/chat already pin their model. When undefined the engine falls back
+   * to its default resolution (GGUF_DEFAULT_MODEL / the first RESIDENT model) — which is why the
+   * exec-summary & ops-chat callers MUST pass this: without it, generation can land on the
+   * resident embedding model and emit gibberish instead of a coherent narrative.
+   */
+  modelId?: string;
   maxTokens?: number;
   temperature?: number;
   language?: "en" | "vi";
   cacheKey?: string;
   cacheTtlMs?: number;
+  // FE-W0.3 (doc 46 §2.3) — optional anti-degenerate-loop decode params. All
+  // OPTIONAL so existing callers are unaffected; the GGUF engine keeps its own
+  // defaults (repeatPenalty 1.1) when these are absent. exec-summary/chat pass a
+  // stronger repeatPenalty + stop sequences to reduce the odds of a "cell cell…" loop.
+  repeatPenalty?: number;
+  topP?: number;
+  topK?: number;
+  stopSequences?: string[];
 }
 
 export interface NarrativeResult {
@@ -145,7 +162,13 @@ async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
       maxTokens: req.maxTokens ?? 1024,
       temperature: req.temperature ?? 0.7,
       language: req.language,
-    });
+      // FE-W0.3 (doc 46 §2.3) — forward optional anti-loop decode params when supplied.
+      ...(req.repeatPenalty != null ? { repeatPenalty: req.repeatPenalty } : {}),
+      ...(req.topP != null ? { topP: req.topP } : {}),
+      ...(req.topK != null ? { topK: req.topK } : {}),
+      ...(req.stopSequences ? { stopSequences: req.stopSequences } : {}),
+    // doc 48 R1 — PIN the model (2nd arg → engine getOrLoadModel). undefined = engine default.
+    }, req.modelId);
     const result: NarrativeResult = {
       text: r.text,
       provider: "gguf",
@@ -212,7 +235,8 @@ export async function generateInsightJson<T = unknown>(
         maxTokens: req.maxTokens ?? 1024,
         temperature: req.temperature ?? 0.2,
         language: req.language,
-      });
+      // doc 48 R1 — PIN the model (3rd arg → engine getOrLoadModel). undefined = engine default.
+      }, req.modelId);
       const result: InsightJsonResult<T> = {
         data: r.data,
         raw: r.raw,
@@ -359,7 +383,9 @@ export async function* generateNarrativeStream(
         temperature: req.temperature ?? 0.7,
         language: req.language,
       },
-      undefined,
+      // doc 48 R1 — PIN the model (2nd arg → engine getOrLoadModel) instead of dropping it to
+      // undefined; the streaming exec-summary/chat path otherwise lands on the resident embedder.
+      req.modelId,
       signal,
     )) {
       if (c.type === "token") {

@@ -8,7 +8,8 @@ import { toast } from "sonner";
 
 export default function LanguageSettings() {
   const { t, i18n } = useTranslation();
-  const currentLang = i18n.language as LanguageCode;
+  // Normalize region-tagged codes (e.g. 'en-US' → 'en') before matching.
+  const currentLang = ((i18n.language || 'vi').split('-')[0]) as LanguageCode;
 
   const handleChange = (code: LanguageCode) => {
     i18n.changeLanguage(code);

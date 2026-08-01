@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/patterns";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -53,16 +54,19 @@ function cpkBg(value: number | null | undefined): string {
   return "bg-red-500";
 }
 
+// Severity → shared <StatusBadge> (solid, W4). critical→destructive,
+// warning→literal amber fill (default variant + bg override — unchanged look),
+// info→secondary, else→outline. i18n labels preserved.
 function severityBadge(severity: string, t: (key: string) => string) {
   switch (severity) {
     case "critical":
-      return <Badge variant="destructive">{t('spc.critical')}</Badge>;
+      return <StatusBadge status="critical" variant="destructive" label={t('spc.critical')} />;
     case "warning":
-      return <Badge className="bg-yellow-500 text-white hover:bg-yellow-600">{t('spc.warning')}</Badge>;
+      return <StatusBadge status="warning" variant="default" className="bg-yellow-500 text-white hover:bg-yellow-600" label={t('spc.warning')} />;
     case "info":
-      return <Badge variant="secondary">{t('spc.info')}</Badge>;
+      return <StatusBadge status="info" variant="secondary" label={t('spc.info')} />;
     default:
-      return <Badge variant="outline">{severity}</Badge>;
+      return <StatusBadge status={severity} variant="outline" />;
   }
 }
 

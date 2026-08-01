@@ -41,6 +41,8 @@ export const alertHistory = pgTable("alert_history", {
   sentInApp: boolean("sentInApp").default(false).notNull(),
   acknowledgedAt: timestamp("acknowledgedAt"),
   acknowledgedBy: integer("acknowledgedBy"),
+  acknowledgedByName: varchar("acknowledgedByName", { length: 255 }), // 0186: human-readable identity (mobile / master-key auth)
+  ackComment: text("ackComment"), // 0186: lý do/ghi chú khi acknowledge (MB6)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_alert_history_setting").on(table.alertSettingId),

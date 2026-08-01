@@ -1,0 +1,17 @@
+' SAFETY: AI-assisted golden example. The author reviews, validates and simulates the job,
+' then a human approves the gated push (HITL). Authors a MOTION job-list only; collision
+' zones, safety planes and E-stop stay on the TMflow robot controller, never in this job.
+'
+' Techman TMflow job-list: pick from A, place at B, return home.
+' POINTs are taught poses (x, y, z, rx, ry, rz) in the robot base frame [mm, rad].
+POINT PICKA  = (450, -150, 200, 3.142, 0, 0)
+POINT PLACEB = (450, 150, 200, 3.142, 0, 0)
+
+HOME
+MOVE PICKA
+GRIP
+WAIT t=300
+MOVEL PLACEB
+RELEASE
+WAIT t=300
+HOME

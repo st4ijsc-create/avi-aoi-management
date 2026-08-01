@@ -101,7 +101,7 @@ function defaultTitle(lang: ClassifyLang, machineCode?: string): string {
 function buildPrompt(description: string, lang: ClassifyLang, machineCode?: string): string {
   const ctx = machineCode ? `Máy/thiết bị liên quan: ${machineCode}.` : "";
   return [
-    "Bạn là bộ phân loại sự cố cho hệ thống sản xuất AVI/AOI. Một công nhân vừa báo một vấn đề.",
+    "Bạn là bộ phân loại sự cố cho hệ thống sản xuất SYNAPSE. Một công nhân vừa báo một vấn đề.",
     "Hãy chọn DUY NHẤT một loại (reason) và một mức cảnh báo (state) phù hợp nhất.",
     "",
     "reason (loại sự cố):",

@@ -6,8 +6,14 @@ import { machineTypeEnum, processResultEnum } from "../drizzle/schema/enums";
 import { MACHINE_TYPES } from "./constants/machineTypes";
 
 describe("F2 — machineTypeEnum", () => {
-  it("has exactly 17 values", () => {
-    expect(machineTypeEnum.enumValues).toHaveLength(17);
+  it("has exactly 21 values (17 F2 + 4 SMT-core doc40 W5)", () => {
+    expect(machineTypeEnum.enumValues).toHaveLength(21);
+  });
+
+  it("contains the 4 SMT-core values (doc 40 W5 MTX-03)", () => {
+    for (const v of ["MOUNTER", "REFLOW", "STENCIL_PRINTER", "WAVE_SOLDER"]) {
+      expect(machineTypeEnum.enumValues).toContain(v);
+    }
   });
 
   it("does not duplicate FCT", () => {

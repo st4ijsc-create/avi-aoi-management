@@ -281,7 +281,7 @@ function buildSuggestPrompt(
   if (input.context?.hint) ctxLines.push(`RCA/CAUSAL HINTS:\n${input.context.hint}`);
 
   return [
-    "You are an industrial process-orchestration planner for an AVI/AOI factory control plane.",
+    "You are an industrial process-orchestration planner for the SYNAPSE factory control plane.",
     "Design a SAFE multi-machine workflow (ISA-88-style) that achieves the goal/problem below.",
     "You may ONLY use the machines and the command verbs listed (do NOT invent commands or machineIds).",
     "Each step needs a UNIQUE short `id`. Use these step types:",
@@ -310,7 +310,7 @@ function buildSuggestPrompt(
 function buildOptimizePrompt(input: OptimizeWorkflowInput, machineBlock: string): string {
   const lang = input.lang ?? "vi";
   return [
-    "You are optimizing an EXISTING industrial workflow for an AVI/AOI factory control plane.",
+    "You are optimizing an EXISTING industrial workflow for the SYNAPSE factory control plane.",
     "Improve it WITHOUT changing its goal: parallelize independent steps, add missing safety",
     "interlocks/preconditions, add hitl_gate before risky actions, and reorder to shorten cycle time.",
     "You may ONLY use the machines and command verbs listed (do NOT invent commands or machineIds).",

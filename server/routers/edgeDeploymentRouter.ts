@@ -9,9 +9,12 @@
  * on /api/trpc). There is no per-procedure license hook in this repo, so the
  * whole tRPC surface (incl. this router) is covered by that middleware.
  *
- * All procedures are admin-only (adminProcedure → role admin + 2FA, IEC 62443).
+ * Procedures are admin-only (adminProcedure → role admin + 2FA, IEC 62443),
+ * EXCEPT the read-only onboarding reachability probe `testConnection`, which sits
+ * on the actuation role-floor (admin/supervisor/engineer + 2FA) so the engineer
+ * role that owns onboarding can run it (doc 40 W1 / Minh-P1).
  */
-import { router, adminProcedure } from "../_core/trpc";
+import { router, adminProcedure, actuationProcedure } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as aiAdvancedDb from "../db/aiAdvanced";
@@ -129,6 +132,14 @@ export const edgeDeploymentRouter = router({
     return getFleetOverview();
   }),
 
+  // Doc 38 T-1 (P1) — UNIFIED fleet-status view: edge_deployments + edge_nodes +
+  // device_adapters in one read-only overview (getFleetOverview only covers
+  // deployments). Read-only aggregation; admin-only like the rest of this router.
+  getUnifiedFleetStatus: adminProcedure.query(async () => {
+    const { getUnifiedFleetStatus } = await import("../services/fleetStatusService");
+    return getUnifiedFleetStatus();
+  }),
+
   // redeploy — re-package an existing deployment (e.g. after a failed/outdated
   // state) and re-notify the device.
   redeploy: adminProcedure
@@ -151,7 +162,13 @@ export const edgeDeploymentRouter = router({
   // testConnection — ad-hoc reachability test for the onboarding wizard (Step 2).
   // Reuses the socket layer's testManualConnection (HTTP/TCP/WS) without needing
   // a persisted manualConnection row. Returns latency + reachability.
-  testConnection: adminProcedure
+  //
+  // Doc 40 W1 (Minh-P1) — role-floor lowered admin → actuationProcedure
+  // (admin/supervisor/engineer + mandatory 2FA). This is a READ-ONLY reachability
+  // probe (no write to the device), so gating it behind full-admin blocked the
+  // engineer role that owns onboarding. actuationProcedure still enforces the
+  // OT role-floor + 2FA, so no read-only role is ever admitted.
+  testConnection: actuationProcedure
     .input(z.object({
       ipAddress: z.string().min(1).max(45),
       port: z.number().int().min(1).max(65535),

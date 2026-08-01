@@ -1,0 +1,102 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <!--
+        Task 20 — Vietnamese strings (the exhibit's PRIMARY language — see LocalizationService's class
+        remarks). Merged into Application.Resources by default at startup; every {DynamicResource Str_*}
+        in the shell/screens' XAML resolves here until SettingsViewModel.Language (or F11-adjacent
+        Settings screen) switches to Strings.en.xaml. Keep this file's key SET identical to
+        Strings.en.xaml's — LocalizationService.GetString falls back to the raw key when one is missing,
+        which is visibly wrong on screen.
+    -->
+
+    <!-- ═══ Nav (AppShellViewModel.Nav) ═══════════════════════════════════════ -->
+    <sys:String x:Key="Str_Nav_Dashboard">Bảng điều khiển</sys:String>
+    <sys:String x:Key="Str_Nav_Machines">Máy</sys:String>
+    <sys:String x:Key="Str_Nav_Onboarding">Khởi tạo máy</sys:String>
+    <sys:String x:Key="Str_Nav_Inspector">Theo dõi API</sys:String>
+    <sys:String x:Key="Str_Nav_Scenario">Kịch bản</sys:String>
+    <sys:String x:Key="Str_Nav_Settings">Cài đặt</sys:String>
+
+    <!-- ═══ Shell top bar (ShellView.xaml) ════════════════════════════════════ -->
+    <sys:String x:Key="Str_Shell_Transport">Kết nối</sys:String>
+    <sys:String x:Key="Str_Shell_StartFleet">Chạy Fleet</sys:String>
+    <sys:String x:Key="Str_Shell_StopFleet">Dừng Fleet</sys:String>
+    <sys:String x:Key="Str_Shell_DemoFallback">DỰ PHÒNG DEMO</sys:String>
+
+    <!-- ═══ Shared field labels (used across several screens) ════════════════ -->
+    <sys:String x:Key="Str_Field_Status">Trạng thái</sys:String>
+    <sys:String x:Key="Str_Field_PassRate">Tỷ lệ đạt</sys:String>
+    <sys:String x:Key="Str_Field_Cycles">Số chu kỳ</sys:String>
+
+    <!-- ═══ Dashboard (DashboardView.xaml) ════════════════════════════════════ -->
+    <sys:String x:Key="Str_Dashboard_FleetHeader">Đội máy</sys:String>
+
+    <!-- ═══ KPI tiles (KpiViewModel.Label, via FleetViewModel) ════════════════ -->
+    <sys:String x:Key="Str_Kpi_Online">ĐANG HOẠT ĐỘNG</sys:String>
+    <sys:String x:Key="Str_Kpi_TotalCycles">TỔNG CHU KỲ</sys:String>
+    <sys:String x:Key="Str_Kpi_Fpy">FPY</sys:String>
+
+    <!-- ═══ Machine Detail (MachineDetailView.xaml) ═══════════════════════════ -->
+    <sys:String x:Key="Str_MachineDetail_Back">← Bảng điều khiển</sys:String>
+    <sys:String x:Key="Str_MachineDetail_LastCycle">Chu kỳ gần nhất</sys:String>
+    <sys:String x:Key="Str_MachineDetail_Spc">SPC — biểu đồ cá thể (xấp xỉ I-MR)</sys:String>
+    <sys:String x:Key="Str_MachineDetail_Telemetry">Dữ liệu cảm biến</sys:String>
+    <sys:String x:Key="Str_MachineDetail_Board">Bo mạch — lần kiểm tra gần nhất</sys:String>
+    <sys:String x:Key="Str_MachineDetail_ConfigSync">Đồng bộ cấu hình</sys:String>
+    <sys:String x:Key="Str_MachineDetail_SyncRecipe">Đồng bộ công thức</sys:String>
+    <sys:String x:Key="Str_MachineDetail_DriftState">Trạng thái lệch</sys:String>
+    <sys:String x:Key="Str_MachineDetail_CycleLog">Nhật ký chu kỳ</sys:String>
+
+    <!-- ═══ API Inspector (ApiInspectorView.xaml) ═════════════════════════════ -->
+    <sys:String x:Key="Str_Inspector_Title">Theo dõi API</sys:String>
+    <sys:String x:Key="Str_Inspector_Pause">Tạm dừng</sys:String>
+    <sys:String x:Key="Str_Inspector_Resume">Tiếp tục</sys:String>
+    <sys:String x:Key="Str_Inspector_Clear">Xóa</sys:String>
+    <sys:String x:Key="Str_Inspector_Export">Xuất…</sys:String>
+    <sys:String x:Key="Str_Inspector_Paused">TẠM DỪNG</sys:String>
+    <sys:String x:Key="Str_Inspector_Machine">Máy</sys:String>
+    <sys:String x:Key="Str_Inspector_Kind">Loại</sys:String>
+
+    <!-- ═══ Onboarding (OnboardingView.xaml) ══════════════════════════════════ -->
+    <sys:String x:Key="Str_Onboarding_Title">Khởi tạo máy</sys:String>
+    <sys:String x:Key="Str_Onboarding_Step1">1. Đăng ký</sys:String>
+    <sys:String x:Key="Str_Onboarding_Register">Đăng ký</sys:String>
+    <sys:String x:Key="Str_Onboarding_PollApproval">Kiểm tra duyệt</sys:String>
+    <sys:String x:Key="Str_Onboarding_ClaimEnroll">2. Nhận khóa (Claim / Enroll)</sys:String>
+    <sys:String x:Key="Str_Onboarding_Claim">Nhận khóa</sys:String>
+    <sys:String x:Key="Str_Onboarding_Enroll">Ghi danh</sys:String>
+    <sys:String x:Key="Str_Onboarding_PasteKey">Dán khóa mk_</sys:String>
+    <sys:String x:Key="Str_Onboarding_Save">Lưu</sys:String>
+    <sys:String x:Key="Str_Onboarding_LoadFleet">Tải fleet.json</sys:String>
+    <sys:String x:Key="Str_Onboarding_Browse">Duyệt…</sys:String>
+    <sys:String x:Key="Str_Onboarding_Load">Tải</sys:String>
+    <sys:String x:Key="Str_Onboarding_ActivityLog">Nhật ký hoạt động</sys:String>
+    <sys:String x:Key="Str_Onboarding_DemoToggle">Chế độ Demo (không cần server)</sys:String>
+
+    <!-- ═══ Settings (SettingsView.xaml) ══════════════════════════════════════ -->
+    <sys:String x:Key="Str_Settings_Title">Cài đặt</sys:String>
+    <sys:String x:Key="Str_Settings_ConnectionHeader">Kết nối &amp; chế độ truyền</sys:String>
+    <sys:String x:Key="Str_Settings_CheckServer">Kiểm cờ / Kiểm tra server</sys:String>
+    <sys:String x:Key="Str_Settings_CredentialsHeader">Khóa mk_ đã lưu</sys:String>
+    <sys:String x:Key="Str_Settings_Refresh">Làm mới</sys:String>
+    <sys:String x:Key="Str_Settings_Check">Kiểm tra</sys:String>
+    <sys:String x:Key="Str_Settings_Save">Lưu</sys:String>
+    <sys:String x:Key="Str_Settings_ExhibitHeader">Trưng bày (Kiosk / Attract / Ngôn ngữ)</sys:String>
+    <sys:String x:Key="Str_Settings_Kiosk">Chế độ Kiosk (F11)</sys:String>
+    <sys:String x:Key="Str_Settings_Attract">Chế độ tự giới thiệu</sys:String>
+    <sys:String x:Key="Str_Settings_Language">Ngôn ngữ</sys:String>
+
+    <!-- ═══ Scenario (ScenarioView.xaml) ══════════════════════════════════════ -->
+    <sys:String x:Key="Str_Scenario_Title">Kịch bản</sys:String>
+    <sys:String x:Key="Str_Scenario_StatusHeader">Trạng thái kịch bản hiện tại</sys:String>
+    <sys:String x:Key="Str_Scenario_LiveAdjustHeader">Điều chỉnh trực tiếp</sys:String>
+    <sys:String x:Key="Str_Scenario_PresetsHeader">Kịch bản dựng sẵn</sys:String>
+    <sys:String x:Key="Str_Scenario_CycleRate">Tốc độ chu kỳ</sys:String>
+    <sys:String x:Key="Str_Scenario_DefectRate">Tỷ lệ lỗi</sys:String>
+    <sys:String x:Key="Str_Scenario_FaultRate">Tỷ lệ sự cố</sys:String>
+    <sys:String x:Key="Str_Scenario_NetworkOutage">Sự cố mạng (mất mạng)</sys:String>
+    <sys:String x:Key="Str_Scenario_Burst">Tăng tốc (6x trong 4 giây)</sys:String>
+
+</ResourceDictionary>

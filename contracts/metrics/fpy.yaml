@@ -1,0 +1,32 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# FPY (true First Pass Yield) — metric definition AS-CODE (doc 44 Batch W2-A4 ·
+# SYNAPSE Tầng 2 §9). Canonical math + SQL fragments live in
+# server/utils/kpi.ts (doc 27 decision #4, LOCKED 2026-07-04) — the registry
+# delegates there; nothing re-derives the formula. Changing `formula` REQUIRES
+# a version bump (guarded by verifyDefinitionsIntegrity + test snapshot).
+# ═══════════════════════════════════════════════════════════════════════════
+metric: FPY
+version: 1
+scope: [equipment, factory]
+formula: first_pass / first_total
+implementation:
+  equipment: statisticsDb.getMachineStats   # server/db/statistics.ts — already delegates to kpi.fpyAggregateSql + kpi.fpyFromFirstInspections
+  factory: kpi.fpyAggregateSql              # server/utils/kpi.ts canonical SQL fragment + kpi.fpyFromFirstInspections math
+inputs:
+  - name: first_total
+    source: >-
+      product_inspections — DISTINCT first inspection per serialNumber inside the
+      window (ORDER BY inspectionTime ASC, id ASC — kpi.firstInspectionsSql);
+      empty-string serials are excluded (cannot be grouped)
+  - name: first_pass
+    source: >-
+      the subset of first inspections with overallResult = 'OK' — NTF is EXCLUDED
+      from the numerator (machine flagged the board) but stays in the denominator;
+      re-tests (2nd..nth rows per serial) are excluded entirely
+notes: >-
+  doc 27 decision #4 (server/utils/kpi.ts docblock). HONEST LIMITATION: the schema
+  has no retest linkage, so "first inspection" = first record per serial WITHIN
+  the query window. HONEST-NULL when the window contains no usable first
+  inspections (first_total = 0). Factory scope = all inspections in the window
+  (single-factory deployment; per-line rollup deferred — product_inspections
+  carries lineCode varchar, not a line FK). Result value is a fraction 0..1.

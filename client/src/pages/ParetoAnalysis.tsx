@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageHeader, chartColor } from "@/components/patterns";
 import {
   BarChart3,
   RefreshCw,
@@ -45,12 +46,6 @@ function getDefaultDateRange() {
   };
 }
 
-const COLORS = [
-  "#ef4444", "#f97316", "#eab308", "#22c55e", "#06b6d4",
-  "#3b82f6", "#8b5cf6", "#ec4899", "#f43f5e", "#14b8a6",
-  "#a855f7", "#64748b", "#d946ef", "#0ea5e9", "#84cc16",
-];
-
 export default function ParetoAnalysis() {
   return (
     <DashboardLayout>
@@ -68,6 +63,11 @@ export function ParetoAnalysisContent() {
   const [selectedLine, setSelectedLine] = useState<string>("all");
   const [selectedMachine, setSelectedMachine] = useState<string>("all");
   const [timePeriod, setTimePeriod] = useState<"hour" | "shift" | "day" | "week">("day");
+  // Doc 27 gap A6 (W5-A) + M12a (W8-A): the "defect type" tab answers three
+  // different questions — "point" = WHERE we fail (measurement-point Pareto,
+  // legacy), "ipcClass" = WHAT KIND of defect (defect_catalog / IPC-A-610),
+  // "package" = WHICH COMPONENT PACKAGE fails (component library, doc 29 §1.3).
+  const [typeMode, setTypeMode] = useState<"point" | "ipcClass" | "package">("point");
 
   const { data: factories } = trpc.factory.list.useQuery();
   const { data: lines } = trpc.line.list.useQuery();
@@ -84,6 +84,16 @@ export function ParetoAnalysisContent() {
   const { data: byTypeData, isLoading: byTypeLoading, refetch: refetchByType } =
     trpc.paretoAnalysis.byDefectType.useQuery(commonFilter);
 
+  const { data: byClassData, isLoading: byClassLoading, refetch: refetchByClass } =
+    trpc.paretoAnalysis.byDefectClass.useQuery(commonFilter, {
+      enabled: typeMode === "ipcClass",
+    });
+
+  const { data: byPackageData, isLoading: byPackageLoading, refetch: refetchByPackage } =
+    trpc.paretoAnalysis.byPackage.useQuery(commonFilter, {
+      enabled: typeMode === "package",
+    });
+
   const { data: byMachineData, isLoading: byMachineLoading, refetch: refetchByMachine } =
     trpc.paretoAnalysis.byMachine.useQuery(commonFilter);
 
@@ -95,6 +105,8 @@ export function ParetoAnalysisContent() {
 
   const handleRefresh = () => {
     refetchByType();
+    if (typeMode === "ipcClass") refetchByClass();
+    if (typeMode === "package") refetchByPackage();
     refetchByMachine();
     refetchByLine();
     refetchByTime();
@@ -119,21 +131,17 @@ export function ParetoAnalysisContent() {
   return (
       <div className="space-y-6 p-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-2">
-              <BarChart3 className="h-8 w-8 text-primary" />
-              {t("pareto.title", "Phân tích Pareto")}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t("pareto.description", "Phân tích 80/20 - xác định nguyên nhân chính gây lỗi")}
-            </p>
-          </div>
-          <Button onClick={handleRefresh} variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            {t("common.refresh", "Làm mới")}
-          </Button>
-        </div>
+        <PageHeader
+          icon={<BarChart3 className="h-8 w-8 text-primary" />}
+          title={t("pareto.title", "Phân tích Pareto")}
+          description={t("pareto.description", "Phân tích 80/20 - xác định nguyên nhân chính gây lỗi")}
+          actions={
+            <Button onClick={handleRefresh} variant="outline" size="sm">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              {t("common.refresh", "Làm mới")}
+            </Button>
+          }
+        />
 
         {/* Filters */}
         <Card>
@@ -222,15 +230,84 @@ export function ParetoAnalysisContent() {
             </TabsTrigger>
           </TabsList>
 
-          {/* By Defect Type */}
+          {/* By Defect Type — toggle between measurement-point ("where") and
+              IPC defect-class ("what kind", doc 27 A6) Pareto */}
           <TabsContent value="byType">
-            <ParetoTabContent
-              data={byTypeData}
-              isLoading={byTypeLoading}
-              title={t("pareto.defectTypeTitle", "Phân tích Pareto theo loại lỗi")}
-              onExport={() => handleExportCSV(byTypeData, "pareto_by_type")}
-              t={t}
-            />
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Label>{t("pareto.typeMode", "Nhóm theo")}</Label>
+                <div className="inline-flex rounded-md border overflow-hidden">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={typeMode === "point" ? "default" : "ghost"}
+                    className="rounded-none"
+                    onClick={() => setTypeMode("point")}
+                  >
+                    {t("pareto.byMeasurementPoint", "Theo điểm đo")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={typeMode === "ipcClass" ? "default" : "ghost"}
+                    className="rounded-none"
+                    onClick={() => setTypeMode("ipcClass")}
+                  >
+                    {t("pareto.byIpcClass", "Theo loại lỗi (IPC)")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={typeMode === "package" ? "default" : "ghost"}
+                    className="rounded-none"
+                    onClick={() => setTypeMode("package")}
+                  >
+                    {t("pareto.byPackage", "Theo package linh kiện")}
+                  </Button>
+                </div>
+                {typeMode === "ipcClass" && (byClassData as any)?.unclassifiedDefects > 0 && (
+                  <Badge variant="outline">
+                    {t("pareto.unclassifiedNote", {
+                      count: (byClassData as any).unclassifiedDefects,
+                      defaultValue: "{{count}} lỗi chưa phân loại IPC (defectCatalogId trống)",
+                    })}
+                  </Badge>
+                )}
+                {typeMode === "package" && (byPackageData as any)?.unlinkedDefects > 0 && (
+                  <Badge variant="outline">
+                    {t("pareto.packageUnlinkedNote", {
+                      count: (byPackageData as any).unlinkedDefects,
+                      defaultValue: "{{count}} lỗi chưa gán package (điểm đo thiếu componentCode / vật liệu thiếu packageId)",
+                    })}
+                  </Badge>
+                )}
+              </div>
+              {typeMode === "point" ? (
+                <ParetoTabContent
+                  data={byTypeData}
+                  isLoading={byTypeLoading}
+                  title={t("pareto.defectTypeTitle", "Phân tích Pareto theo điểm đo")}
+                  onExport={() => handleExportCSV(byTypeData, "pareto_by_point")}
+                  t={t}
+                />
+              ) : typeMode === "ipcClass" ? (
+                <ParetoTabContent
+                  data={byClassData}
+                  isLoading={byClassLoading}
+                  title={t("pareto.defectClassTitle", "Phân tích Pareto theo loại lỗi IPC-A-610")}
+                  onExport={() => handleExportCSV(byClassData, "pareto_by_ipc_class")}
+                  t={t}
+                />
+              ) : (
+                <ParetoTabContent
+                  data={byPackageData}
+                  isLoading={byPackageLoading}
+                  title={t("pareto.packageTitle", "Phân tích Pareto theo package linh kiện")}
+                  onExport={() => handleExportCSV(byPackageData, "pareto_by_package")}
+                  t={t}
+                />
+              )}
+            </div>
           </TabsContent>
 
           {/* By Machine */}
@@ -324,7 +401,7 @@ function ParetoTabContent({
     count: item.count,
     percentage: item.percentage,
     cumulative: item.cumulativePercentage,
-    fill: COLORS[index % COLORS.length],
+    fill: chartColor(index),
   }));
 
   return (
@@ -360,7 +437,7 @@ function ParetoTabContent({
             <div className="text-sm text-muted-foreground">
               {t("pareto.pareto80Categories", "Top 80% danh mục")}
             </div>
-            <div className="text-2xl font-bold text-orange-500">
+            <div className="text-2xl font-bold text-warning">
               {data.pareto80Categories?.join(", ") || "-"}
             </div>
           </CardContent>
@@ -403,10 +480,10 @@ function ParetoTabContent({
                 }}
               />
               <Legend />
-              <ReferenceLine yAxisId="right" y={80} stroke="#ef4444" strokeDasharray="5 5" label="80%" />
+              <ReferenceLine yAxisId="right" y={80} stroke="var(--destructive)" strokeDasharray="5 5" label="80%" />
               <Bar yAxisId="left" dataKey="count" name={t("pareto.count", "Số lượng")} radius={[4, 4, 0, 0]}>
                 {chartData.map((entry: any, index: number) => (
-                  <Cell key={`cell-${index}`} fill={entry.cumulative <= 80 ? "#ef4444" : "#94a3b8"} />
+                  <Cell key={`cell-${index}`} fill={entry.cumulative <= 80 ? "var(--destructive)" : "var(--muted-foreground)"} />
                 ))}
               </Bar>
               <Line
@@ -414,9 +491,9 @@ function ParetoTabContent({
                 type="monotone"
                 dataKey="cumulative"
                 name={t("pareto.cumulative", "% Tích lũy")}
-                stroke="#f97316"
+                stroke={chartColor(1)}
                 strokeWidth={2}
-                dot={{ fill: "#f97316", r: 4 }}
+                dot={{ fill: chartColor(1), r: 4 }}
               />
             </ComposedChart>
           </ResponsiveContainer>

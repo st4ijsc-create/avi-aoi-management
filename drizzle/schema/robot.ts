@@ -8,9 +8,13 @@ import {
   pgTable, serial, integer, varchar, text, boolean, timestamp, jsonb, decimal, index, unique, pgEnum,
 } from "drizzle-orm/pg-core";
 
-export const robotVendorEnum = pgEnum("robotvendorenum", ["fanuc", "mitsubishi", "delta", "techman", "sim"]);
+// "vda5050" added by migration 0161 (doc 24 C4) so an AGV/AMR driven over the open
+// VDA 5050 MQTT standard is a first-class robot vendor (motion still gated by the
+// robotCommandDispatcher HITL/dry-run path — this is only a registry vendor).
+export const robotVendorEnum = pgEnum("robotvendorenum", ["fanuc", "mitsubishi", "delta", "techman", "sim", "vda5050", "ur"]);
 export const robotKindEnum = pgEnum("robotkindenum", ["arm", "scara", "cobot", "agv"]);
-export const robotJobTypeEnum = pgEnum("robotjobtypeenum", ["move", "pick_place", "dispense", "screw", "home", "abort", "custom"]);
+// 'weld' appended last to mirror ALTER TYPE ... ADD VALUE order (drizzle/0287, doc 56 Đ0)
+export const robotJobTypeEnum = pgEnum("robotjobtypeenum", ["move", "pick_place", "dispense", "screw", "home", "abort", "custom", "weld"]);
 export const robotJobStatusEnum = pgEnum("robotjobstatusenum", ["draft", "pending", "confirmed", "running", "done", "failed", "simulated", "rejected"]);
 
 /** Robot registry — one row per physical robot/AGV the platform manages. */
@@ -48,6 +52,19 @@ export const robotTelemetry = pgTable("robot_telemetry", {
   payloadKg: decimal("payloadKg", { precision: 8, scale: 3 }),
   speedPct: integer("speedPct"),
   errorText: text("errorText"),
+  // X1-a (doc 16 §5) — UDM/UEM extension columns (additive, nullable). Behind
+  // FIELD_V2_ENABLED on the read/surface side; the columns themselves are always
+  // safe to write (a producer that has no value writes an honest NULL).
+  //   batteryLevel    — AGV charge % (wired from the VDA5050 battery extraction).
+  //   jointStates     — per-joint pose/velocity (SEAM: only when a driver provides it).
+  //   safetyZoneId    — the zone the device occupies (best-effort; null otherwise).
+  //   firmwareVersion — device firmware (SEAM: only when a driver provides it).
+  //   lastHeartbeat   — liveness timestamp; drives the X1-b heartbeat TTL stale sweep.
+  batteryLevel: decimal("battery_level", { precision: 6, scale: 2 }),
+  jointStates: jsonb("joint_states").$type<Array<Record<string, unknown>>>(),
+  safetyZoneId: integer("safety_zone_id"),
+  firmwareVersion: varchar("firmware_version", { length: 64 }),
+  lastHeartbeat: timestamp("last_heartbeat"),
   timestamp: timestamp("timestamp").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,12 +13,16 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
+import { EmptyState } from "@/components/EmptyState";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { 
-  Users as UsersIcon, 
-  Shield, 
-  User, 
+import {
+  Users as UsersIcon,
+  Shield,
+  User,
   Search,
   Pencil,
   Trash2,
@@ -57,7 +62,10 @@ type UserType = {
 export default function Users() {
   const { t } = useTranslation();
   const { user: currentUser } = useAuth();
-  const isAdmin = currentUser?.role === "admin";
+  const { hasPermission, loading: permsLoading } = usePermissions();
+  const canView = hasPermission("admin_users", "canView");
+  // Same gate the single-row edit action uses; drives the bulk bar + selection UI.
+  const canEdit = hasPermission("admin_users", "canEdit");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
@@ -100,7 +108,14 @@ export default function Users() {
   // Delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserType | null>(null);
-  
+
+  // Bulk multi-select (mirrors ThresholdApprovalsPage): a Set of user ids picked
+  // from the current filtered view, plus a role to apply and a pending confirm.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkRole, setBulkRole] = useState<"user" | "admin">("user");
+  const [bulkConfirm, setBulkConfirm] = useState<"activate" | "deactivate" | "setRole" | null>(null);
+  const [isBulkRunning, setIsBulkRunning] = useState(false);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { data: users, refetch: refetchUsers, isLoading } = trpc.user.list.useQuery();
@@ -151,6 +166,12 @@ export default function Users() {
       toast.error(error.message || t('users.deleteError'));
     },
   });
+
+  // Bulk hooks reuse the SAME endpoints as the single-row actions (user.update /
+  // user.updateRole) but without onSuccess/onError so looping them doesn't emit
+  // one toast per id — we tally results ourselves and toast a single summary.
+  const bulkUpdateMutation = trpc.user.update.useMutation();
+  const bulkUpdateRoleMutation = trpc.user.updateRole.useMutation();
 
   const resetCreateForm = () => {
     setCreateForm({
@@ -283,6 +304,67 @@ export default function Users() {
     return matchesSearch && matchesRole && matchesStatus;
   }) || [];
 
+  // ---- Bulk selection over the CURRENT filtered view ----
+  const filteredUserIds: number[] = filteredUsers.map((u: { id: number }) => u.id);
+  const allSelected = filteredUserIds.length > 0 && filteredUserIds.every((id) => selected.has(id));
+  const someSelected = filteredUserIds.some((id) => selected.has(id));
+  const headerChecked: boolean | "indeterminate" = allSelected ? true : someSelected ? "indeterminate" : false;
+  const selectedCount = filteredUserIds.filter((id) => selected.has(id)).length;
+
+  const toggleAll = (checked: boolean) =>
+    setSelected(checked ? new Set(filteredUserIds) : new Set());
+  const toggleOne = (id: number, checked: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  const clearSelection = () => setSelected(new Set());
+
+  // Run a bulk action by calling the existing single mutation per selected id.
+  // Deactivate + role-change skip the current admin's own id (server rejects it
+  // too); activate is harmless on self so it's kept. We tally ok/failed/skipped.
+  const runBulk = async (action: "activate" | "deactivate" | "setRole") => {
+    const ids = filteredUserIds.filter((id) => selected.has(id));
+    const skipSelf = action !== "activate";
+    const targetIds = skipSelf ? ids.filter((id) => id !== currentUser?.id) : ids;
+    const skippedSelf = ids.length - targetIds.length;
+
+    setIsBulkRunning(true);
+    try {
+      const results = await Promise.all(
+        targetIds.map(async (id) => {
+          try {
+            if (action === "setRole") {
+              await bulkUpdateRoleMutation.mutateAsync({ userId: id, role: bulkRole });
+            } else {
+              await bulkUpdateMutation.mutateAsync({ id, isActive: action === "activate" });
+            }
+            return true;
+          } catch {
+            return false;
+          }
+        }),
+      );
+      const updated = results.filter(Boolean).length;
+      const failed = results.length - updated;
+      toast.success(
+        t("users.bulkSummary", "Updated {{updated}}, failed {{failed}}{{skipped}}", {
+          updated,
+          failed,
+          skipped: skippedSelf > 0
+            ? t("users.bulkSkippedSelf", " (skipped yourself)")
+            : "",
+        }),
+      );
+      refetchUsers();
+      clearSelection();
+    } finally {
+      setIsBulkRunning(false);
+      setBulkConfirm(null);
+    }
+  };
+
   const formatDate = (date: Date) => {
     return new Date(date).toLocaleDateString("vi-VN", {
       year: "numeric",
@@ -293,7 +375,17 @@ export default function Users() {
     });
   };
 
-  if (!isAdmin) {
+  if (permsLoading) {
+    return (
+      <DashboardLayout title={t('users.title')} navItems={navItems}>
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canView) {
     return (
       <DashboardLayout title={t('users.title')} navItems={navItems}>
         <div className="flex items-center justify-center h-[60vh]">
@@ -313,77 +405,58 @@ export default function Users() {
 
   return (
     <DashboardLayout title={t('users.management')} navItems={navItems}>
-      <div className="space-y-6">
+      <PageContainer>
+        <PageHeader
+          icon={<UsersIcon className="h-6 w-6 text-primary" />}
+          title={t('users.management')}
+          description={t('users.manageAccounts')}
+          badge={<ViewOnlyBadge module="admin_users" />}
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => refetchUsers()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t('common.refresh')}
+              </Button>
+              <PermissionGate module="admin_users" action="canCreate">
+                <Button onClick={() => setCreateDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  {t('users.addUser')}
+                </Button>
+              </PermissionGate>
+            </>
+          }
+        />
+
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{t('users.totalUsers')}</CardTitle>
-              <UsersIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{users?.length || 0}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Admin</CardTitle>
-              <Shield className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {users?.filter((u: any) => u.role === "admin").length || 0}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{t('users.active')}</CardTitle>
-              <UserCheck className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {users?.filter((u: any) => u.isActive).length || 0}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{t('users.disabled')}</CardTitle>
-              <UserX className="h-4 w-4 text-red-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">
-                {users?.filter((u: any) => !u.isActive).length || 0}
-              </div>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<UsersIcon className="h-5 w-5" />}
+            label={t('users.totalUsers')}
+            value={users?.length || 0}
+          />
+          <MetricCard
+            icon={<Shield className="h-5 w-5" />}
+            label="Admin"
+            value={users?.filter((u: any) => u.role === "admin").length || 0}
+          />
+          <MetricCard
+            icon={<UserCheck className="h-5 w-5" />}
+            label={t('users.active')}
+            value={users?.filter((u: any) => u.isActive).length || 0}
+            tone="success"
+          />
+          <MetricCard
+            icon={<UserX className="h-5 w-5" />}
+            label={t('users.disabled')}
+            value={users?.filter((u: any) => !u.isActive).length || 0}
+            tone="danger"
+          />
         </div>
 
         {/* Main Card */}
         <Card>
           <CardHeader>
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <CardTitle>{t('users.userList')}</CardTitle>
-                  <ViewOnlyBadge module="admin_users" />
-                </div>
-                <CardDescription>{t('users.manageAccounts')}</CardDescription>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => refetchUsers()}>
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  {t('common.refresh')}
-                </Button>
-                <PermissionGate module="admin_users" action="canCreate">
-                  <Button onClick={() => setCreateDialogOpen(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    {t('users.addUser')}
-                  </Button>
-                </PermissionGate>
-              </div>
-            </div>
+            <CardTitle>{t('users.userList')}</CardTitle>
           </CardHeader>
           <CardContent>
             {/* Filters */}
@@ -399,7 +472,7 @@ export default function Users() {
               </div>
               <Select value={roleFilter} onValueChange={setRoleFilter}>
                 <SelectTrigger className="w-37.5">
-                  <SelectValue placeholder="Vai trò" />
+                  <SelectValue placeholder={t('users.role')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t('users.allRoles')}</SelectItem>
@@ -409,7 +482,7 @@ export default function Users() {
               </Select>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-37.5">
-                  <SelectValue placeholder="Trạng thái" />
+                  <SelectValue placeholder={t('common.status')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t('common.all')}</SelectItem>
@@ -419,21 +492,93 @@ export default function Users() {
               </Select>
             </div>
 
+            {/* Bulk action bar — same gate as the single-row edit action */}
+            {canEdit && selectedCount > 0 && (
+              <div className="flex flex-wrap items-center gap-2 mb-4 rounded-md border bg-muted/40 p-3">
+                <span className="text-sm font-medium mr-1">
+                  {t("users.bulkSelected", "{{count}} selected", { count: selectedCount })}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isBulkRunning}
+                  aria-label={t("users.bulkActivate", "Activate selected")}
+                  onClick={() => setBulkConfirm("activate")}
+                >
+                  <UserCheck className="h-4 w-4 mr-2" aria-hidden="true" />
+                  {t("users.bulkActivate", "Activate selected")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive hover:text-destructive/80"
+                  disabled={isBulkRunning}
+                  aria-label={t("users.bulkDeactivate", "Deactivate selected")}
+                  onClick={() => setBulkConfirm("deactivate")}
+                >
+                  <UserX className="h-4 w-4 mr-2" aria-hidden="true" />
+                  {t("users.bulkDeactivate", "Deactivate selected")}
+                </Button>
+                <div className="flex items-center gap-2">
+                  <Select value={bulkRole} onValueChange={(v) => setBulkRole(v as "user" | "admin")}>
+                    <SelectTrigger className="w-32" aria-label={t("users.bulkRoleSelect", "Role to apply")}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="user">{t("users.roleUser", "User")}</SelectItem>
+                      <SelectItem value="admin">{t("users.roleAdmin", "Admin")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={isBulkRunning}
+                    aria-label={t("users.bulkSetRoleApply", "Apply role to selected")}
+                    onClick={() => setBulkConfirm("setRole")}
+                  >
+                    {isBulkRunning && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
+                    {t("users.bulkSetRole", "Set role")}
+                  </Button>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={isBulkRunning}
+                  onClick={clearSelection}
+                >
+                  {t("users.bulkClear", "Clear")}
+                </Button>
+              </div>
+            )}
+
             {/* Table */}
             {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <div className="space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-14 w-full" />
+                ))}
               </div>
             ) : filteredUsers.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <UsersIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>{t('users.noUsersFound')}</p>
-              </div>
+              <EmptyState
+                variant="no-results"
+                icon={UsersIcon}
+                title={t('users.noUsersFound')}
+              />
             ) : (
               <div className="rounded-md border overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      {canEdit && (
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={headerChecked}
+                            disabled={filteredUserIds.length === 0}
+                            onCheckedChange={(v) => toggleAll(v === true)}
+                            aria-label={t("users.selectAll", "Select all users in view")}
+                          />
+                        </TableHead>
+                      )}
                       <TableHead>{t('users.user')}</TableHead>
                       <TableHead>Username</TableHead>
                       <TableHead>{t('users.department')}</TableHead>
@@ -446,6 +591,15 @@ export default function Users() {
                   <TableBody>
                     {filteredUsers.map((user: any) => (
                       <TableRow key={user.id}>
+                        {canEdit && (
+                          <TableCell>
+                            <Checkbox
+                              checked={selected.has(user.id)}
+                              onCheckedChange={(v) => toggleOne(user.id, v === true)}
+                              aria-label={t("users.selectRow", "Select {{name}}", { name: user.name || user.username || `#${user.id}` })}
+                            />
+                          </TableCell>
+                        )}
                         <TableCell>
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full bg-linear-to-br from-teal-500 to-cyan-600 flex items-center justify-center text-white font-semibold">
@@ -508,9 +662,10 @@ export default function Users() {
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                aria-label={t("common.edit", "Edit")}
                                 onClick={() => handleEdit(user)}
                               >
-                                <Pencil className="h-4 w-4" />
+                                <Pencil aria-hidden="true" className="h-4 w-4" />
                               </Button>
                             </PermissionGate>
                             {user.loginMethod === "local" && (
@@ -518,9 +673,10 @@ export default function Users() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
+                                  aria-label={t("users.changePassword", "Change password")}
                                   onClick={() => handleChangePassword(user)}
                                 >
-                                  <Key className="h-4 w-4" />
+                                  <Key aria-hidden="true" className="h-4 w-4" />
                                 </Button>
                               </PermissionGate>
                             )}
@@ -528,11 +684,12 @@ export default function Users() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="text-red-500 hover:text-red-600"
+                                aria-label={t("common.delete", "Delete")}
+                                className="text-destructive hover:text-destructive/80"
                                 onClick={() => handleDelete(user)}
                                 disabled={user.id === currentUser?.id}
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Trash2 aria-hidden="true" className="h-4 w-4" />
                               </Button>
                             </PermissionGate>
                           </div>
@@ -545,7 +702,7 @@ export default function Users() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
 
       {/* Create Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
@@ -818,10 +975,42 @@ export default function Users() {
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-red-500 hover:bg-red-600"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={confirmDelete}
             >
               {t('common.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Action Confirmation Dialog */}
+      <AlertDialog open={bulkConfirm !== null} onOpenChange={(o) => { if (!o && !isBulkRunning) setBulkConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {bulkConfirm === "activate" && t("users.bulkConfirmActivateTitle", "Activate selected users?")}
+              {bulkConfirm === "deactivate" && t("users.bulkConfirmDeactivateTitle", "Deactivate selected users?")}
+              {bulkConfirm === "setRole" && t("users.bulkConfirmSetRoleTitle", "Change role for selected users?")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {bulkConfirm === "activate" &&
+                t("users.bulkConfirmActivateDesc", "This will activate {{count}} user(s).", { count: selectedCount })}
+              {bulkConfirm === "deactivate" &&
+                t("users.bulkConfirmDeactivateDesc", "This will deactivate {{count}} user(s). Your own account is skipped.", { count: selectedCount })}
+              {bulkConfirm === "setRole" &&
+                t("users.bulkConfirmSetRoleDesc", "This will set the role of {{count}} user(s) to {{role}}. Your own account is skipped.", { count: selectedCount, role: bulkRole })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkRunning}>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              className={bulkConfirm === "deactivate" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : undefined}
+              disabled={isBulkRunning}
+              onClick={(e) => { e.preventDefault(); if (bulkConfirm) void runBulk(bulkConfirm); }}
+            >
+              {isBulkRunning && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
+              {t('common.confirm', 'Confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -92,8 +92,8 @@ export const twoFactorRouter = router({
 
     // Generate new TOTP secret
     const secret = speakeasy.generateSecret({
-      name: `AVI-AOI:${user[0].email || user[0].name || ctx.user.openId}`,
-      issuer: "AVI-AOI Management",
+      name: `SYNAPSE:${user[0].email || user[0].name || ctx.user.openId}`,
+      issuer: "SYNAPSE",
       length: 32,
     });
 

@@ -160,14 +160,17 @@ Hệ thống cung cấp 3 nhóm API chính cho bên thứ 3:
 
 ### Machine API (tRPC + REST)
 
-| Phương thức | Header/Field | Mô tả |
-|-------------|-------------|-------|
-| API Key (tRPC) | `apiKey` trong input JSON | API key được cấp cho máy |
-| Machine Code (tRPC) | `machineCode` trong input JSON | Mã máy đã đăng ký |
-| API Key (REST) | `X-API-Key` header | API key qua HTTP header |
-| Machine Code (REST) | `X-Machine-Code` header | Mã máy qua HTTP header |
+| Phương thức | Header/Field | Trạng thái |
+|-------------|-------------|------------|
+| Machine key `mk_` | `Authorization: Bearer <mk_...>` hoặc `X-API-Key: <mk_...>` (ưu tiên); `apiKey` trong body | ✅ KHUYẾN NGHỊ |
+| Shared apiKey cũ | `apiKey` (input JSON) / `X-API-Key` header | ⚠️ DEPRECATED — gated `MACHINE_SHARED_KEY_ALLOWED` |
+| Machine Code | `machineCode` (input JSON) / `X-Machine-Code` header | ⚠️ DEPRECATED — gated `MACHINE_CODE_ONLY_ALLOWED` |
 
-> Bắt buộc cung cấp ít nhất 1 trong 2. Ưu tiên dùng `apiKey` cho bảo mật cao hơn.
+> Header `Bearer`/`X-API-Key` được **ưu tiên** hơn `apiKey` body. Với procedure có ràng buộc
+> `apiKey||machineCode`, body vẫn cần một trong hai để qua kiểm tra input.
+>
+> **MỚI (doc 51 P0):** `machine.config` KHÔNG còn phát `apiKey`; máy nhận khóa lần đầu qua **claim
+> token một lần** (`machine.claimKey` / `POST /api/machine/claim`). Chi tiết: [AUTHENTICATION.md](AUTHENTICATION.md).
 
 ### External Admin API
 
@@ -492,6 +495,12 @@ Lấy chỉ những điểm đo đã thay đổi kể từ version chỉ định
 }
 ```
 
+> **Bổ sung P1 (doc 51):** response còn kèm các field additive `coordinateMode`, `fiducials[]`
+> (top-level), và mỗi point có thêm `shape`/`geometry`/`cells` (khi `shape="array"`), bộ limit 3D
+> (`heightMin/Max`, `coplanarityMax`…), `lighting[]`. Đặc biệt có **`deletedCodes` / `deletedPoints`**
+> (tombstone) — máy PHẢI NGỪNG kiểm các code trong danh sách này. Xem shape đầy đủ ~30 field/điểm tại
+> [MACHINE_API.md §11](MACHINE_API.md#11-deltasyncpoints).
+
 #### Output (không có thay đổi)
 
 ```json
@@ -500,7 +509,9 @@ Lấy chỉ những điểm đo đã thay đổi kể từ version chỉ định
   "hasChanges": false,
   "currentVersion": 3,
   "sinceVersion": 3,
-  "points": []
+  "points": [],
+  "deletedCodes": [],
+  "deletedPoints": []
 }
 ```
 

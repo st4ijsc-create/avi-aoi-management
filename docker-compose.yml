@@ -1,17 +1,23 @@
 services:
-  # ── Cơ sở dữ liệu chính (PG16 + pgvector cho RAG / KB embeddings) ──────────
-  # Dùng image pgvector để migration 0121 tạo được EXTENSION vector + HNSW index.
-  # (postgres:16-alpine KHÔNG có extension vector → RAG rớt về brute-force chậm.)
+  # ── Cơ sở dữ liệu chính (TimescaleDB + pgvector) ────────────────────────────
+  # Doc 27 §11 quyết định #1: TimescaleDB BẮT BUỘC trên DB CHÍNH (hypertable cho
+  # product_inspections / measurement_results / telemetry — migration 0172/0173).
+  # Image timescale/timescaledb-ha:pg17 có SẴN CẢ timescaledb LẪN pgvector, nên
+  # vừa thỏa 0121 (EXTENSION vector + HNSW cho RAG) vừa thỏa 0172 (hypertables).
+  # ⚠️ ĐỔI IMAGE = ĐỔI MAJOR/DATA-DIR: volume PG16 cũ (`pgdata`) KHÔNG dùng lại
+  #   trực tiếp được — dump/restore theo runbook scripts/migrate-to-timescaledb.md.
+  #   Volume mới `pgdata_ts` mount vào /home/postgres/pgdata/data (PGDATA của
+  #   image timescaledb-ha, khác image postgres chuẩn).
   postgres:
-    image: pgvector/pgvector:pg16
+    image: timescale/timescaledb-ha:pg17
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-aoi}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aoi}
       POSTGRES_DB: ${POSTGRES_DB:-aoi_management}
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      # Tạo extension `vector` ngay khi init volume (trước mọi migration — xem file SQL).
+      - pgdata_ts:/home/postgres/pgdata/data
+      # Tạo extension `vector` + `timescaledb` ngay khi init volume (trước mọi migration).
       - ./deploy/postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
@@ -53,6 +59,33 @@ services:
       interval: 10s
       timeout: 5s
       retries: 6
+
+  # ── NATS JetStream — durable log cho tầng streaming W4 (doc 44 G2.7) ────────
+  # Quyết định D2 (doc 44 §12): NATS JetStream TRƯỚC, Kafka CHỈ KHI Site Edition
+  # cần scale vượt NATS. Đây là hạ tầng TÙY CHỌN theo kiến trúc "gập được":
+  # nằm dưới compose profile `bus` → `docker compose up` mặc định KHÔNG chạy nó
+  # (single-node giữ nguyên gọn nhẹ, không thêm container nào).
+  #   Bật:    docker compose --profile bus up -d nats
+  #   Kiểm:   curl http://localhost:8222/healthz   → {"status":"ok"}
+  # Vai trò (W4): bridge MQTT→NATS, consumer group, replay/backfill idempotent —
+  # app CHƯA có client NATS (wire ở SYN-W4); env dự kiến NATS_URL=nats://localhost:4222.
+  nats:
+    image: nats:2.10-alpine
+    profiles: ["bus"]
+    restart: unless-stopped
+    # -js = bật JetStream (stream/consumer bền) · -sd = store dir trên volume bền
+    # -m 8222 = HTTP monitoring (/healthz /varz /jsz) · --server_name để lg/cluster rõ tên
+    command: ["-js", "-sd", "/data", "-m", "8222", "--server_name", "avi-nats-1"]
+    volumes:
+      - natsdata:/data
+    ports:
+      - "4222:4222"   # client (NATS protocol)
+      - "8222:8222"   # monitoring HTTP (healthz/varz/jsz — KHÔNG phải Prometheus format)
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # G1/G3 — TimescaleDB cho time-series (energy_readings). Cổng host 5433 để KHÔNG đụng PG16 chính (5432).
   timescaledb:
@@ -172,9 +205,15 @@ services:
       start_period: 30s
 
 volumes:
+  # pgdata: volume PG16 cũ (pgvector/pgvector:pg16) — GIỮ để dump dữ liệu cũ khi
+  # chuyển sang pgdata_ts theo scripts/migrate-to-timescaledb.md; xóa sau khi xong.
   pgdata:
+  # pgdata_ts: dữ liệu PG17 + TimescaleDB (doc 27 quyết định #1).
+  pgdata_ts:
   redisdata:
   appuploads:
   appbackups:
   emqxdata:
   tsdbdata:
+  # natsdata: JetStream store (profile `bus` — chỉ tạo khi bật NATS, doc 44 G2.7/D2).
+  natsdata:

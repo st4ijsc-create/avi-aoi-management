@@ -90,7 +90,7 @@ export class MyVendorAdapter implements EquipmentAdapter {
 }
 ```
 
-To register it, add the `kind` to `ADAPTER_KINDS` and its `build()` branch in `equipmentAdapter.ts` (core change, reviewed), or — for an OT transport — register a new driver in `server/services/ot/driverRegistry` and reuse the existing `ot-*` kinds.
+To register it, call **`registerEquipmentAdapter(kind, factory)`** at module load (register-and-go — no core switch edit; see §8), or — for an OT transport — register a new driver in `server/services/ot/driverRegistry` and reuse the existing `ot-*` kinds.
 
 ---
 
@@ -134,6 +134,14 @@ Three credential kinds are accepted:
 | `ingest:write` | Ingest inspection results. |
 | `orchestration:read` | Read workflows / run status (E2). |
 | `orchestration:write` | Create workflows / start runs (E2). |
+| `erp:write` | Inbound ERP intake: production orders + BOM master data (R0). |
+| `fleet:read` | **U4a** — read fleet tasks + zones (occupancy). |
+| `safety:read` | **U4a** — read ADVISORY safety events + zones (not safety-rated). |
+| `twin:read` | **U4a** — read digital-twin scene graph + 3D model registry. |
+| `programs:read` | **U4a** — read device programs (projects) + deployments. |
+| `pdm:read` | **U4a** — read predictive-maintenance failure risk for a machine. |
+| `anomaly:read` | **U4a** — read ADVISORY robot-behaviour anomaly events. |
+| `standards:read` | **U4a** — read device types, ISA-18.2 alarm taxonomy, compliance. |
 
 Wildcards: `*` = all scopes; `equipment:*` = the whole `equipment` namespace. Missing auth → **401**; insufficient scope → **403**.
 
@@ -151,6 +159,30 @@ Wildcards: `*` = all scopes; `equipment:*` = the whole `equipment` namespace. Mi
 | `POST /api/v1/orchestration/runs` | `orchestration:write` | **501** — coming in E2. |
 | `GET /api/v1/orchestration/runs/:id` | `orchestration:read` | **501** — coming in E2. |
 | `GET /api/v1/openapi.json` | (public) | This contract. |
+
+**U4a — upper-layer module READ endpoints** (all READ-ONLY; each REUSES the same service function the corresponding tRPC router calls — no logic duplication; no new device-control path):
+
+| Method & path | Scope | Purpose (reused service) |
+|---|---|---|
+| `GET /api/v1/fleet/tasks?status=&deviceId=&limit=` | `fleet:read` | Fleet tasks (same query as `fleetRouter.listTasks`). |
+| `GET /api/v1/fleet/zones` | `fleet:read` | Fleet zones + derived occupancy (`trafficManager.getZoneOccupancy`). |
+| `GET /api/v1/safety/events?eventType=&robotId=&sinceHours=&limit=` | `safety:read` | ADVISORY safety events (`safetyAuditService.queryFeed`). |
+| `GET /api/v1/safety/zones?robotId=&stationId=&lineId=` | `safety:read` | ADVISORY safety zones (`safetyZoneService.listZones`). Rated stop is hardware. |
+| `GET /api/v1/twin/scene-graph?factoryId=` | `twin:read` | Twin scene graph (`twin/sceneGraph.buildSceneGraph`). |
+| `GET /api/v1/twin/models?equipmentClass=&status=&limit=` | `twin:read` | 3D model registry (`twin/modelRegistry.listModels`). |
+| `GET /api/v1/programs?limit=` | `programs:read` | Programming projects (same query as `programmingRouter.listProjects`). |
+| `GET /api/v1/programs/:id/deployments` | `programs:read` | A program's deployments (same query as `programmingRouter.listDeployments`). |
+| `GET /api/v1/pdm/risk?machineId=&windowHours=` | `pdm:read` | Failure risk (`predictiveMaintenanceService.computeFailureRisk`). |
+| `GET /api/v1/anomaly/events?robotId=&status=&limit=` | `anomaly:read` | ADVISORY robot-behaviour anomalies (same query as `aiRobotAnomalyRouter.listAnomalies`). |
+| `GET /api/v1/standards/device-types` | `standards:read` | Device-type hierarchy tree, SEED ∪ published (`deviceTypeRegistry.buildTree`). |
+| `GET /api/v1/standards/alarm-taxonomy?vendor=` | `standards:read` | ISA-18.2 alarm taxonomy, SEED ∪ persisted (`alarmTaxonomy`). |
+| `GET /api/v1/standards/compliance` | `standards:read` | Governance compliance metrics (`complianceService.computeCompliance`). |
+| `GET /api/v1/ecosystem/hierarchy?factoryId=&corporateCode=` | `equipment:read` | Single-pane live hierarchy roll-up (`commandCenterService.buildHierarchy`). |
+| `GET /api/v1/ecosystem/kpi?factoryId=&corporateCode=` | `equipment:read` | Ecosystem KPI strip, honest nulls (`commandCenterService.buildKpiSummary`). |
+| `GET /api/v1/machines/:id/detail` | `equipment:read` | Full per-machine cockpit (`assetCockpitService.machineDetail`). `gatedActions` are metadata only. |
+| `GET /api/v1/robots/:id/detail` | `equipment:read` | Full per-robot cockpit (`assetCockpitService.robotDetail`). `gatedActions` are metadata only. |
+
+> **U4a scope — deliberately READ-ONLY.** No write/action is exposed. Every mutation on these modules (create/allocate task, deploy/rollback a build, record/audit a safety event, publish a device type, roll a model back, acknowledge an anomaly) stays behind the **existing gated tRPC flow** (RBAC permission + module flag + HITL). The ecosystem roll-up + cockpit reuse `equipment:read` (a caller already trusted to read equipment gets the whole-ecosystem view); the KPI endpoint runs `buildKpiSummary` under a synthetic `id:0` api principal (reads only, never writes).
 
 ### 4.4 Response envelope
 
@@ -228,7 +260,7 @@ interface ProgrammingAdapter {
 }
 ```
 
-**Register** a new kind in `programmingAdapter.ts → build()`, and add the enum value in `drizzle/schema/enums.ts (programmingKindEnum)`.
+**Register** a new kind by calling **`registerProgrammingAdapter(kind, factory)`** at module load (register-and-go — no `build()` switch edit; see §8), and add the enum value in `drizzle/schema/enums.ts (programmingKindEnum)`.
 
 ### Safety invariants (non-negotiable)
 - **The deploy GATE lives in `programmingService.deployBuild`, not in the adapter or router.** `deploy()` reaches a device ONLY when `DPC_DEPLOY_ENABLED` is on **AND** a human signed off (`hitl.confirmedBy`). Otherwise the deploy is recorded **`simulated`** and the adapter's hardware path is never invoked. Every attempt writes an append-only `program_deployments` row (idempotent).
@@ -244,3 +276,50 @@ High-rate symbol watches stream over the Socket.IO room `engineering:{machineId}
 
 ### Flags (all default OFF)
 `DPC_DEPLOY_ENABLED` · `DPC_STREAMING_ENABLED` · `DPC_ONLINE_FORCE_ENABLED` · `AI_PROGRAMMING_COPILOT_ENABLED`. Migration `0130_device_programming.sql` provisions the `program_*` tables (operator applies).
+
+---
+
+## 8. Register-and-go — adding a vendor / kind / module (U4b · doc 21 §6 / G-8)
+
+Adapter/kind/module resolution is now **data-driven** — a `Map<key, factory>` per family, seeded at module load, exactly like `server/services/ot/driverRegistry`. Adding a new vendor/kind/module is **one `register…()` call at load — no core switch/array edit**. The compile-time **union types are retained** for exhaustiveness (`AdapterKind`, `EquipmentClass`, `ProgrammingKind`); only the *runtime* resolution is registry-driven.
+
+| Family | Register API | Resolution | Seeded from |
+|---|---|---|---|
+| Equipment adapter | `registerEquipmentAdapter(kind, (kind)=>adapter)` | `equipmentRegistry.getAdapter(kind)` (memoised) | historical kinds at load |
+| Capability profile | `registerCapabilityProfile(equipmentClass, profile)` | `getDefaultCapability(machineType)` | the 17 `DEFAULT_PROFILES` at load |
+| Programming adapter | `registerProgrammingAdapter(kind, ()=>adapter)` | `programmingRegistry.getAdapter(kind)` (memoised) | implemented kinds at load |
+| System module | `registerModule(manifest)` | `getModuleByCode/Route/NavGroup`, `listModules()` | `SEED_MODULES` at load |
+
+### Add a new equipment vendor/kind (no core edit)
+```ts
+import { registerEquipmentAdapter } from "server/services/equipment/equipmentAdapter";
+import { registerCapabilityProfile } from "server/services/equipment/capabilityModel";
+
+// 1) register the adapter factory (register-and-go — no build() switch edit)
+registerEquipmentAdapter("acme-laser", (kind) => new AcmeLaserAdapter(kind));
+
+// 2) (optional) register a default capability profile for a new equipment class
+registerCapabilityProfile("LASER", {
+  equipmentClass: "LASER", adapterKind: "acme-laser",
+  supportedCommands: [/* … */], telemetryTags: [/* … */], supportedStates: ["Idle","Execute","Stopped"],
+});
+```
+Both calls run once at module load (put them in the adapter's own module, imported for its side-effect — same as `ot/index.ts` registering the 6 OT drivers). Existing kinds already seed themselves, so resolution for every current kind is **identical** — this is behaviour-preserving.
+
+### Add a new programming kind
+```ts
+import { registerProgrammingAdapter } from "server/services/programming/programmingAdapter";
+registerProgrammingAdapter("acme-lang", () => new AcmeLangAdapter());
+// + add the enum value to drizzle/schema/enums.ts (programmingKindEnum)
+```
+A **planned** kind (declared in `PROGRAMMING_KINDS` but not yet registered — e.g. `gcode`) still resolves to the honest `"not yet implemented"` error; an entirely unknown kind still errors `"Unknown"`.
+
+### Add a new system module
+```ts
+import { registerModule } from "shared/module-registry";
+registerModule({ code: "MOD_ACME", name: "Acme", description: "…", version: "1.0.0",
+  isCore: false, routes: ["/acme"], permissionCategories: ["admin"], features: [], navGroupId: "acme" });
+```
+Re-registering an existing `code` **replaces** that manifest in place (no duplicate). `SYSTEM_MODULES` remains a load-time snapshot for backward-compat; use `listModules()` to see modules registered after load.
+
+> **Behaviour-preserving guarantee.** Every existing adapter kind / programming kind / equipment class / module resolves **exactly as before** — proven by `registryU4b.test.ts` (equipment + programming) and `module-registry.test.ts`, plus the full equipment/programming/standards/fleet regression suites (all green).

@@ -1,0 +1,5 @@
+# Internal CA private key material — NEVER commit. Generated once, kept out of git
+# (mirrors server/license/keys discipline). Operators inject via INTERNAL_CA_PRIVATE_KEY_PEM
+# or INTERNAL_CA_KEY_FILE in production.
+.keystore/
+*.key.pem

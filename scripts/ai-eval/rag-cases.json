@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "description": "Doc 34 · P4 programming-KB retrieval golden set. Each query is grounded in a manual actually ingested into knowledge/programming (verified on disk: docTitles + tokens + pages exist). A retrieved top-K chunk is a HIT when its docTitle/sourcePath contains any expectDocContains entry OR its text contains any expectKeywords entry (case-insensitive) — mirrors scripts/ai-kb/eval-rag.mjs isHit. vendor scopes retrieval to that corpus. Covers all 6 ingested vendors (universal-robots, zmotion, mitsubishi, omron, fanuc, delta) + one multilingual (vi) query + one unfiltered query.",
+  "cases": [
+    {
+      "id": "ur-movel-gripper",
+      "query": "How do I command a linear move with movel and control the gripper in URScript?",
+      "vendor": "universal-robots",
+      "expectDocContains": ["URScript", "User_Manual"],
+      "expectKeywords": ["movel", "gripper"]
+    },
+    {
+      "id": "ur-movej",
+      "query": "URScript joint move movej syntax and joint speed and acceleration parameters",
+      "vendor": "universal-robots",
+      "expectDocContains": ["URScript", "User_Manual"],
+      "expectKeywords": ["movej"]
+    },
+    {
+      "id": "ur-error-codes",
+      "query": "Universal Robots controller error code list and what each fault means",
+      "vendor": "universal-robots",
+      "expectDocContains": ["ErrorCodes"],
+      "expectKeywords": ["error"]
+    },
+    {
+      "id": "zm-moveabs",
+      "query": "Zmotion RTBasic absolute axis move MOVEABS command syntax and parameters",
+      "vendor": "zmotion",
+      "expectDocContains": ["RTBasic"],
+      "expectKeywords": ["MOVEABS"]
+    },
+    {
+      "id": "zm-axis-config",
+      "query": "Zmotion RTBasic configure an axis type using ATYPE and UNITS",
+      "vendor": "zmotion",
+      "expectDocContains": ["RTBasic", "Programming Manual"],
+      "expectKeywords": ["ATYPE", "UNITS"]
+    },
+    {
+      "id": "zm-datum-home",
+      "query": "Zmotion homing a servo axis with the DATUM command",
+      "vendor": "zmotion",
+      "expectDocContains": ["RTBasic"],
+      "expectKeywords": ["DATUM"]
+    },
+    {
+      "id": "mit-melservo-alarm",
+      "query": "MELSERVO J4 servo alarm and error code list and meaning",
+      "vendor": "mitsubishi",
+      "expectDocContains": ["MELSERVO"],
+      "expectKeywords": ["alarm"]
+    },
+    {
+      "id": "mit-mov-instruction",
+      "query": "MELSEC GX Works3 MOV transfer instruction usage in a program",
+      "vendor": "mitsubishi",
+      "expectDocContains": ["GX Works", "MELSEC"],
+      "expectKeywords": ["MOV"]
+    },
+    {
+      "id": "omron-ton-timer",
+      "query": "Omron Sysmac NJ NX TON on-delay timer instruction reference",
+      "vendor": "omron",
+      "expectDocContains": ["W502", "Instructions Reference"],
+      "expectKeywords": ["TON", "timer"]
+    },
+    {
+      "id": "omron-structured-text",
+      "query": "Omron NJ structured text function block programming instruction reference",
+      "vendor": "omron",
+      "expectDocContains": ["W502", "Instructions Reference"],
+      "expectKeywords": ["structured text", "function block"]
+    },
+    {
+      "id": "fanuc-karel-move",
+      "query": "FANUC KAREL move instruction to move the robot to a position",
+      "vendor": "fanuc",
+      "expectDocContains": ["KAREL"],
+      "expectKeywords": ["KAREL", "MOVE"]
+    },
+    {
+      "id": "fanuc-karel-vi",
+      "query": "Lệnh KAREL để di chuyển robot Fanuc tới một vị trí đã dạy",
+      "vendor": "fanuc",
+      "expectDocContains": ["KAREL"],
+      "expectKeywords": ["KAREL"]
+    },
+    {
+      "id": "delta-asda-alarm",
+      "query": "Delta ASDA servo drive alarm code AL. list and troubleshooting",
+      "vendor": "delta",
+      "expectDocContains": ["ASDA", "AS300"],
+      "expectKeywords": ["ASDA", "AL."]
+    },
+    {
+      "id": "delta-dvp-instruction",
+      "query": "Delta DVP PLC applied instruction reference and usage",
+      "vendor": "delta",
+      "expectDocContains": ["DVP", "AS300"],
+      "expectKeywords": ["DVP", "instruction"]
+    },
+    {
+      "id": "any-movel-unfiltered",
+      "query": "linear move movel command to move a robot tool along a straight line",
+      "expectKeywords": ["movel"]
+    }
+  ]
+}

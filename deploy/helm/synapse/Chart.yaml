@@ -1,0 +1,30 @@
+# SYNAPSE Helm chart — doc 33 §11 / ADR-007 "collapsible deployment".
+# ONE app image, three editions (machine | line | site). This chart targets the
+# SITE edition (whole plant, HA, EXTERNAL managed infra) by default; single-node
+# editions ship via deploy/compose/docker-compose.machine.yml (machine) and
+# deploy/k3s (line/edge). The app image is the SAME across all editions — infra
+# (EMQX / TimescaleDB / Redis) is a PROFILE, never a hard prerequisite.
+apiVersion: v2
+name: synapse
+description: >-
+  SYNAPSE — collapsible AVI/AOI automation platform (ADR-007). Site edition (K8s,
+  HA, external managed Postgres/TimescaleDB/EMQX/Redis) by default; the same image
+  collapses down to line/edge (deploy/k3s) and single-node machine (compose).
+type: application
+# Chart version is independent of the app; appVersion tracks package.json (1.0.0).
+version: 0.1.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.24.0-0"
+home: https://github.com/ST4I/avi-aoi-management
+sources:
+  - https://github.com/ST4I/avi-aoi-management
+keywords:
+  - aoi
+  - avi
+  - mes
+  - manufacturing
+  - synapse
+  - edition
+maintainers:
+  - name: ST4I
+    email: st4ijsc@gmail.com

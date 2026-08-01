@@ -1,0 +1,17 @@
+<Application x:Class="St4iMachineSimulator.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--
+        No StartupUri: the DI composition root in App.xaml.cs's OnStartup decides what to show (the
+        real ShellView, or nothing at all when running headless with the selftest arg) — auto
+        instantiating a window via StartupUri would race that decision.
+    -->
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/Colors.xaml" />
+                <ResourceDictionary Source="Themes/Dark.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

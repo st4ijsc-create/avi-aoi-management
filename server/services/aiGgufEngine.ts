@@ -291,13 +291,18 @@ async function readVramState(): Promise<{ used: number; total: number } | null> 
     }
   }
   // 2) nvidia-smi fallback (bytes = MiB * 1024 * 1024).
+  // R-1 (doc 38): use the ASYNC execFile so the ~3s nvidia-smi call never blocks
+  // the event loop (the sync variant froze all request handling for its duration).
   try {
-    const { execFileSync } = await import("child_process");
-    const out = execFileSync(
+    const { execFile } = await import("child_process");
+    const { promisify } = await import("util");
+    const execFileAsync = promisify(execFile);
+    const { stdout } = await execFileAsync(
       "nvidia-smi",
       ["--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
       { timeout: 3000, windowsHide: true },
-    ).toString();
+    );
+    const out = stdout.toString();
     const first = out.split(/\r?\n/).find((l) => l.trim().length > 0) || "";
     const [usedMib, totalMib] = first.split(",").map((s) => parseInt(s.trim(), 10));
     if (Number.isFinite(usedMib) && Number.isFinite(totalMib) && totalMib > 0) {
@@ -582,13 +587,41 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
   console.log(`[aiGgufEngine] Loading model: ${resolvedPath}`);
   const startTime = Date.now();
 
-  const model = await llama.loadModel({
-    modelPath: resolvedPath,
-    // "max" offloads ALL layers to GPU (full speed). When the engine runs CPU-only
-    // (GGUF_GPU=false → getLlama gpu:false), node-llama-cpp ignores this. Never pass -1
-    // here: node-llama-cpp 3.x interprets -1 as 0 layers → silent CPU inference.
-    gpuLayers: config.gpuLayers ?? "max",
-  } as any);
+  const requestedGpuLayers = config.gpuLayers ?? "max";
+  let model;
+  try {
+    model = await llama.loadModel({
+      modelPath: resolvedPath,
+      // "max" offloads ALL layers to GPU (full speed). When the engine runs CPU-only
+      // (GGUF_GPU=false → getLlama gpu:false), node-llama-cpp ignores this. Never pass -1
+      // here: node-llama-cpp 3.x interprets -1 as 0 layers → silent CPU inference.
+      gpuLayers: requestedGpuLayers,
+    } as any);
+  } catch (err: any) {
+    // VRAM OOM on a FULL GPU offload — the VRAM guard only checks current-usage %,
+    // it can't know the incoming model's size, so a large model (e.g. the 30B deep
+    // tier) can still exceed free VRAM. Recover instead of failing the load: free
+    // every idle model, then retry with gpuLayers:"auto" so node-llama-cpp offloads
+    // as many layers as fit and runs the rest on CPU (slower, but the model loads).
+    const msg = String(err?.message ?? err).toLowerCase();
+    const isOom =
+      msg.includes("out of memory") ||
+      msg.includes("cudamalloc") ||
+      msg.includes("failed to allocate") ||
+      msg.includes("unable to allocate");
+    if (!isOom || requestedGpuLayers === "auto" || requestedGpuLayers === 0) throw err;
+
+    console.warn(
+      `[aiGgufEngine] ${modelId}: full GPU offload ran out of VRAM — freeing idle models and retrying with gpuLayers:"auto" (partial offload, CPU fallback for the rest).`,
+    );
+    while (await evictLRU()) {
+      /* evict every idle (refCount===0) model to reclaim maximum VRAM */
+    }
+    model = await llama.loadModel({
+      modelPath: resolvedPath,
+      gpuLayers: "auto",
+    } as any);
+  }
 
   // B0.2 — respect a requested per-task contextSize (clamped); else GGUF_DEFAULT_CTX.
   const resolvedCtx = resolveContextSize(config.contextSize);
@@ -704,9 +737,44 @@ async function getOrLoadModel(modelId?: string, contextSize?: number): Promise<{
 // ─── Text Generation ───────────────────────────────────────────
 
 /**
+ * Warm (pre-load) a model into GPU memory so the LARGE model is resident BEFORE any small one.
+ * node-llama-cpp fragments VRAM when a large model (30B ~16.7 GB) loads AFTER a small one (e.g.
+ * the 0.6B embedder pulled in by RAG) — the large alloc then fails even with plenty of free VRAM.
+ * Warming the deep model first (a 1-token generation) sidesteps it. Best-effort: never throws.
+ * Returns true if the model is now resident. Callers that do RAG-embed-THEN-deep (codegen, and
+ * ideally the ops chat/RCA paths) should call this before the RAG step. See doc 34 §P4.
+ */
+export async function warmModel(modelId?: string, contextSize?: number): Promise<boolean> {
+  try {
+    if (!(await isGgufAvailable())) return false;
+    await generateText({ prompt: "ok", maxTokens: 1, contextSize }, modelId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Generate text using a loaded GGUF model
  */
 export async function generateText(options: GgufGenerateOptions, modelId?: string): Promise<GgufGenerateResult> {
+  // R5 — offload deep-model text generation to a PERSISTENT llama-server (own
+  // VRAM) when configured, keeping the in-process embedder free of contention.
+  // OFF by default → falls straight through to the in-process path below.
+  {
+    const srv = await import("./aiLlamaServerClient");
+    if (srv.shouldUseServerForText(modelId)) {
+      try {
+        return await srv.serverGenerateText(options, modelId);
+      } catch (e) {
+        if (srv.llamaServerStrict()) throw e;
+        console.warn(
+          `[aiGgufEngine] llama-server generation failed, falling back in-process: ${(e as Error)?.message || e}`,
+        );
+      }
+    }
+  }
+
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
   const startTime = Date.now();
 
@@ -840,6 +908,22 @@ export async function generateJSON<T = unknown>(
   options: GgufGenerateOptions,
   modelId?: string,
 ): Promise<{ data: T; raw: string; tokensGenerated: number; tokensPrompt: number; totalTimeMs: number; tokensPerSecond: number; modelId: string; }> {
+  // R5 — schema-constrained JSON via the PERSISTENT llama-server when configured
+  // (own VRAM), keeping the in-process embedder free. OFF by default → in-process.
+  {
+    const srv = await import("./aiLlamaServerClient");
+    if (srv.shouldUseServerForText(modelId)) {
+      try {
+        return await srv.serverGenerateJSON<T>(jsonSchema, options, modelId);
+      } catch (e) {
+        if (srv.llamaServerStrict()) throw e;
+        console.warn(
+          `[aiGgufEngine] llama-server JSON generation failed, falling back in-process: ${(e as Error)?.message || e}`,
+        );
+      }
+    }
+  }
+
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
   const startTime = Date.now();
 
@@ -910,6 +994,208 @@ export async function generateJSON<T = unknown>(
       releaseModel(loaded);
     }
   });
+}
+
+// ─── Doc 34 (P0) — Code / FIM model resolution + fill-in-middle ─
+
+/**
+ * Doc 34 (P0) — Resolve the CODE model basename (sans ".gguf") for the Automation Programming
+ * Copilot. Reads GGUF_CODE_MODEL; when unset, falls back to GGUF_DEFAULT_MODEL (decision D2
+ * §VI-bis: reuse the resident 30B-A3B-Instruct rather than downloading a separate coder model).
+ * Returns an EXPLICIT basename — never undefined for a configured system — so callers pin the
+ * intended model instead of reusing whatever is hot. Returns undefined ONLY when neither env is set.
+ * Mirrors aiModelRouter.codeModelId(); exposed here for the OpenAI gateway / codegen callers.
+ */
+export function codeModelBasename(): string | undefined {
+  const v = (process.env.GGUF_CODE_MODEL || "").trim();
+  if (v) return path.basename(v).replace(/\.gguf$/i, "");
+  const d = (process.env.GGUF_DEFAULT_MODEL || "").trim();
+  return d ? path.basename(d).replace(/\.gguf$/i, "") : undefined;
+}
+
+/**
+ * Doc 34 (P0) — Resolve the FIM (fill-in-middle / inline-completion) model basename. Reads
+ * GGUF_FIM_MODEL; when unset, falls back to the fast model (GGUF_FAST_MODEL) and finally to
+ * GGUF_DEFAULT_MODEL, so autocomplete degrades gracefully on a system with no dedicated small FIM
+ * model. Never undefined for a configured system. Mirrors aiModelRouter.fimModelId().
+ */
+export function fimModelBasename(): string | undefined {
+  const v = (process.env.GGUF_FIM_MODEL || "").trim();
+  if (v) return path.basename(v).replace(/\.gguf$/i, "");
+  const fast = (process.env.GGUF_FAST_MODEL || "").trim();
+  if (fast) return path.basename(fast).replace(/\.gguf$/i, "");
+  const d = (process.env.GGUF_DEFAULT_MODEL || "").trim();
+  return d ? path.basename(d).replace(/\.gguf$/i, "") : undefined;
+}
+
+export interface GgufFimOptions {
+  /** Code BEFORE the cursor (required for a meaningful completion). */
+  prefix: string;
+  /** Code AFTER the cursor (optional — enables true fill-in-middle context). */
+  suffix?: string;
+  /** Max tokens for the infill. Default 128 (autocomplete is short). */
+  maxTokens?: number;
+  /** Temperature. Default 0.1 (deterministic inline completion). */
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  /** Extra stop sequences appended to the FIM sentinels. */
+  stopSequences?: string[];
+  /** KV-cache sizing hint (n_ctx on first load). Small by default (see router `fim` tier). */
+  contextSize?: number;
+}
+
+/**
+ * Standard FIM sentinel strings for the Qwen2.5/3-Coder & StarCoder families. These are used only
+ * as TEXT markers to shape the prompt for a coder model — genuine special-token infill decoding
+ * (plus prefix-cache) is the job of the persistent llama-server coder gateway (doc 34 §3.3a / P0).
+ */
+const FIM_SENTINELS = {
+  prefix: "<|fim_prefix|>",
+  suffix: "<|fim_suffix|>",
+  middle: "<|fim_middle|>",
+} as const;
+const FIM_STOP = ["<|endoftext|>", "<|fim_pad|>", "<|file_sep|>", "<|repo_name|>"];
+
+/**
+ * Best-effort signal that the resolved model supports fill-in-middle. Authoritative when the model
+ * is already resident (node-llama-cpp exposes `model.tokens.infill.*` for FIM-capable GGUFs);
+ * otherwise heuristic: trust FIM only when a DEDICATED GGUF_FIM_MODEL is configured. The reused
+ * default instruct model (D2 fallback) is deliberately NOT treated as FIM-capable, so we do not
+ * feed it raw sentinels it never trained on — we degrade to plain prefix completion instead.
+ * Fully fail-safe: any error → false (→ prefix completion).
+ */
+function modelSupportsFim(modelId?: string): boolean {
+  try {
+    if (modelId && loadedModels.has(modelId)) {
+      const infill = (loadedModels.get(modelId) as any)?.model?.tokens?.infill;
+      return !!(infill && (infill.prefix != null || infill.middle != null || infill.suffix != null));
+    }
+  } catch {
+    /* fall through to the config heuristic */
+  }
+  return !!(process.env.GGUF_FIM_MODEL || "").trim();
+}
+
+/**
+ * Doc 34 (P0) — Best-effort fill-in-middle (inline autocomplete) using the resident coder/fast
+ * model. IMPORTANT: high-quality FIM with native special-token infill + prefix-cache is the job of
+ * the persistent llama-server coder gateway (doc 34 §3.3a / P0). node-llama-cpp's in-process
+ * `LlamaChatSession` does not expose native infill decoding here, so this method is a FAIL-SAFE
+ * fallback so autocomplete still works WITHOUT the gateway:
+ *   • If the resolved model advertises FIM tokens (or a dedicated GGUF_FIM_MODEL is configured) AND
+ *     a suffix is given, assemble a Prefix–Suffix–Middle (PSM) template with the standard sentinels.
+ *   • Otherwise degrade to a plain PREFIX completion, passing the suffix as trailing context so the
+ *     model stays consistent with the code that follows.
+ * Reuses generateText() so it inherits the GGUF concurrency slot, latency telemetry and KV sizing.
+ * Never throws for a missing FIM model — falls back to the fast/default model. New signature; no
+ * existing method is modified.
+ */
+export async function generateFim(
+  options: GgufFimOptions,
+  modelId?: string,
+): Promise<GgufGenerateResult> {
+  const prefix = typeof options.prefix === "string" ? options.prefix : "";
+  const suffix = typeof options.suffix === "string" ? options.suffix : "";
+  // Resolve the model: explicit arg → FIM model → fast → default (fimModelBasename()).
+  const effectiveId = modelId ?? fimModelBasename();
+
+  // Prefer TRUE native infill via node-llama-cpp's LlamaCompletion — it feeds the raw
+  // prefix/suffix through the model's own FIM tokens (no chat template), so a coder model
+  // like Qwen2.5-Coder returns clean inline code instead of a chat reply. Falls back to the
+  // chat-wrapped path below if the binding/model doesn't support infill or anything throws.
+  try {
+    return await generateFimNative(prefix, suffix, options, effectiveId);
+  } catch (e) {
+    console.warn("[aiGgufEngine] native FIM unavailable, using chat-wrap fallback:", (e as Error)?.message ?? e);
+    return generateFimChatFallback(prefix, suffix, options, effectiveId);
+  }
+}
+
+/** True native fill-in-middle via LlamaCompletion.generateInfillCompletion (no chat template). */
+async function generateFimNative(
+  prefix: string,
+  suffix: string,
+  options: GgufFimOptions,
+  effectiveId: string | undefined,
+): Promise<GgufGenerateResult> {
+  const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId, options.contextSize);
+  const startTime = Date.now();
+  const { LlamaCompletion } = await import("node-llama-cpp");
+  const stops = [...(options.stopSequences ?? []), ...FIM_STOP].filter((s) => !!s);
+  return withGgufSlot(async () => {
+    const sequence = loaded.context.getSequence();
+    const completion = new (LlamaCompletion as any)({ contextSequence: sequence });
+    try {
+      const genOpts: any = {
+        maxTokens: options.maxTokens ?? 128,
+        temperature: options.temperature ?? 0.1,
+        topP: options.topP ?? 0.9,
+        ...(options.topK != null ? { topK: options.topK } : {}),
+        ...(stops.length ? { customStopTriggers: stops } : {}),
+      };
+      // Use real infill when we have a suffix AND the loaded model advertises infill support;
+      // otherwise a plain raw completion of the prefix (still no chat template).
+      const text: string =
+        suffix && completion.infillSupported
+          ? await completion.generateInfillCompletion(prefix, suffix, genOpts)
+          : await completion.generateCompletion(prefix, genOpts);
+      const totalTimeMs = Date.now() - startTime;
+      recordInferenceLatency(resolvedId, startTime);
+      const tokensGenerated = loaded.model.tokenize(text || "").length;
+      const tokensPrompt = loaded.model.tokenize(prefix + suffix).length;
+      const tokensPerSecond = totalTimeMs > 0 ? (tokensGenerated / totalTimeMs) * 1000 : 0;
+      return {
+        text: text || "",
+        tokensGenerated,
+        tokensPrompt,
+        totalTimeMs,
+        tokensPerSecond: Number(tokensPerSecond.toFixed(1)),
+        modelId: resolvedId,
+      };
+    } finally {
+      try { completion.dispose?.(); } catch { /* best-effort */ }
+      sequence.dispose();
+      releaseModel(loaded);
+    }
+  });
+}
+
+/** Fallback: FIM-sentinel prompt (or prefix + suffix-as-context) routed through the chat path. */
+async function generateFimChatFallback(
+  prefix: string,
+  suffix: string,
+  options: GgufFimOptions,
+  effectiveId: string | undefined,
+): Promise<GgufGenerateResult> {
+  const useFim = !!suffix && modelSupportsFim(effectiveId);
+  const stop = [...(options.stopSequences ?? []), ...FIM_STOP].filter((s) => !!s);
+  let systemPrompt: string | undefined;
+  let prompt: string;
+  if (useFim) {
+    prompt = `${FIM_SENTINELS.prefix}${prefix}${FIM_SENTINELS.suffix}${suffix}${FIM_SENTINELS.middle}`;
+  } else {
+    systemPrompt = suffix
+      ? "You are an inline code completion engine. Continue the code at the cursor so it fits the " +
+        "code that FOLLOWS. Output ONLY the missing code, no explanation, no fences.\n\n" +
+        `// ---- code after the cursor ----\n${suffix}`
+      : "You are an inline code completion engine. Continue the code at the cursor. Output ONLY the " +
+        "missing code, no explanation, no fences.";
+    prompt = prefix;
+  }
+  return generateText(
+    {
+      systemPrompt,
+      prompt,
+      maxTokens: options.maxTokens ?? 128,
+      temperature: options.temperature ?? 0.1,
+      topP: options.topP ?? 0.9,
+      topK: options.topK,
+      stopSequences: stop.length ? stop : undefined,
+      contextSize: options.contextSize,
+    },
+    effectiveId,
+  );
 }
 
 // ─── Vision (LLaVA) ────────────────────────────────────────────
@@ -1209,8 +1495,8 @@ export async function analyzeDefect(
   language: "en" | "vi" = "vi",
 ): Promise<string> {
   const systemPrompt = language === "vi"
-    ? `Bạn là chuyên gia phân tích chất lượng trong nhà máy sản xuất AOI/AVI. Phân tích ngắn gọn và chính xác về lỗi kiểm tra.`
-    : `You are a quality analysis expert in an AOI/AVI manufacturing factory. Provide concise and accurate defect analysis.`;
+    ? `Bạn là chuyên gia phân tích chất lượng của hệ thống SYNAPSE trong nhà máy dùng kiểm tra AOI/AVI. Phân tích ngắn gọn và chính xác về lỗi kiểm tra.`
+    : `You are a quality analysis expert for the SYNAPSE system in a factory using AOI/AVI inspection. Provide concise and accurate defect analysis.`;
 
   const prompt = language === "vi"
     ? `Phân tích lỗi kiểm tra:

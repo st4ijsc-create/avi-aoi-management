@@ -8,6 +8,7 @@ export const roleEnum = pgEnum("roleenum", [
   "quality_inspector", // QC specialist - focus on quality control and reports
   "operator",        // Machine operator - submit inspections, view assigned machines
   "maintenance",     // Maintenance technician - machine status and logs
+  "engineer",        // Automation-programming engineer (PLC/robot/Zmotion)
   "viewer",          // Read-only access - dashboards and reports only
   "user"             // Basic user access (default)
 ]);
@@ -30,6 +31,15 @@ export const machineTypeEnum = pgEnum("machinetypeenum", [
   "PACKAGING",  // Packaging station
   "PALLETIZER", // Palletizer
   "ROBOT",      // Generic industrial robot
+  // --- doc 40 W5 (MTX-03): SMT line machine types (migration 0241_smt_machine_types) ---
+  "MOUNTER",         // SMT pick-and-place mounter
+  "REFLOW",          // Reflow soldering oven
+  "STENCIL_PRINTER", // Solder-paste stencil printer
+  "WAVE_SOLDER",     // Wave / selective soldering
+  // --- doc 56 Đ0 việc 5 (migration 0287_device_class_types): WELDER + IoT device classes ---
+  "WELDER",          // Welding cell (process automation; deviceClass "automation")
+  "IOT_SENSOR",      // Self-developed IoT sensor — telemetry-only (deviceClass "iot")
+  "IOT_GATEWAY",     // Self-developed IoT gateway / relay (deviceClass "iot")
 ]);
 // Sprint F2 — outcome of a generic process/station step (telemetry RESULT, not a control command)
 export const processResultEnum = pgEnum("processresultenum", ["pass", "fail", "warn", "skip"]);
@@ -208,7 +218,9 @@ export const drCheckStatusEnum = pgEnum("drcheckstatusenum", ["passed", "failed"
 
 // === Sprint F1.1 — OT Connectivity Framework ===
 // Industrial protocol of an OT device adapter (driver scaffold; only "stub" is functional in F1.1)
-export const otProtocolEnum = pgEnum("otprotocolenum", ["opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip", "stub"]);
+// doc 40 Wave 5 OT-F8 — 'slmp' = SLMP 3E/4E binary (Mitsubishi FX5U/iQ-R) qua node:net
+// (driver slmpDriver.ts). Bổ khuyết 'mitsubishi-mc' (chỉ 1E frame). Migration 0241.
+export const otProtocolEnum = pgEnum("otprotocolenum", ["opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip", "stub", "slmp"]);
 // Logical data type of an OT tag value
 export const otDataTypeEnum = pgEnum("otdatatypeenum", ["bool", "int", "float", "string", "json"]);
 // Runtime connection state of an OT adapter
@@ -302,7 +314,8 @@ export const certificationLevelEnum = pgEnum("certificationlevelenum", ["trainee
 
 // === Doc 07 §③ — MASTER DATA EXTRAS (UoM / Plant Calendar / Warehouse-Inventory) ===
 // Physical dimension a unit-of-measure belongs to (for safe conversions).
-export const uomDimensionEnum = pgEnum("uomdimensionenum", ["length", "mass", "volume", "time", "temperature", "count", "percent", "other"]);
+// doc 56 Đ1 (mig 0290a) — +torque/pressure/flow/current/frequency cho máy automation (torque siết vít, áp lực keo, dòng/tần hàn)
+export const uomDimensionEnum = pgEnum("uomdimensionenum", ["length", "mass", "volume", "time", "temperature", "count", "percent", "other", "torque", "pressure", "flow", "current", "frequency"]);
 // Day classification in a plant/shift calendar (drives takt / OEE-availability / APS).
 export const calendarDayTypeEnum = pgEnum("calendardaytypeenum", ["working", "holiday", "planned_downtime"]);
 // Warehouse kind (raw / work-in-progress / finished-goods / spare / other).
@@ -368,6 +381,8 @@ export const programmingKindEnum = pgEnum("programmingkindenum", [
   "robot-tm",                // D4 — Techman teach/job-list (TMSCT)
   "iec61131-st",             // D5 — native Structured Text → OpenPLC
   "iec61131-ld",             // D5 — native Ladder → OpenPLC
+  "iec61131-pou",            // P4 (doc 24 Wave-3) — structured graphical POU (LAD/FBD/SFC, JSON) + PLCopen XML → ST → OpenPLC
+  "ir-flow",                 // D1 (doc 16 §11.1) — IR motion/IO Flow (JSON AST) → URScript/ROS2
 ]);
 // Lifecycle of a program ARTIFACT (one immutable source version on a branch).
 export const programArtifactStatusEnum = pgEnum("programartifactstatusenum", [
@@ -375,6 +390,14 @@ export const programArtifactStatusEnum = pgEnum("programartifactstatusenum", [
   "validated",
   "released",
   "archived",
+]);
+// doc 38 T-2 — FOUR-EYES AT THE VERSION: review lifecycle of a program_artifacts row.
+// A version must be 'approved' by a SECOND person (reviewer ≠ author) before it can be
+// built/deployed. Enforcement is flag-gated (DPC_VERSION_REVIEW_ENABLED, default OFF).
+export const programArtifactReviewStatusEnum = pgEnum("programartifactreviewstatusenum", [
+  "pending_review",
+  "approved",
+  "rejected",
 ]);
 // Outcome of a compile/build.
 export const programBuildStatusEnum = pgEnum("programbuildstatusenum", ["pending", "ok", "failed"]);
@@ -384,6 +407,9 @@ export const programDeployStageEnum = pgEnum("programdeploystageenum", ["staging
 // default outcome when DPC_DEPLOY_ENABLED is off — nothing reaches the device.
 export const programDeployStatusEnum = pgEnum("programdeploystatusenum", [
   "pending",
+  // doc 40 ENG-F2 — a production real-deploy queued for a SECOND person to sign off
+  // in the Approval Inbox (two-phase request→approve). Migration 0239.
+  "awaiting_approval",
   "simulated",
   "deployed",
   "verified",

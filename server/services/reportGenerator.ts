@@ -93,13 +93,16 @@ export async function generateNGVisualReport(options: {
     limit: 10,
   });
 
-  // Get workstation heatmap (mock data for now - would need new DB function)
-  const heatmapData: Array<{
-    workstationName: string;
-    ngCount: number;
-    inspectionCount: number;
-    ngRate: number;
-  }> = [];
+  // Get workstation NG heatmap (Wave R1, doc 32 §2 item 10 — was a mock empty
+  // array). Real query grouping NG measurement_results by workstation over the
+  // same window/hierarchy the report is scoped to (db.getWorkstationHeatmap).
+  const heatmapData = await db.getWorkstationHeatmap({
+    startDate,
+    endDate,
+    factoryId,
+    workshopId,
+    lineId,
+  });
 
   // Get trend data (last 30 days)
   const trendStartDate = new Date(endDate);
@@ -149,7 +152,7 @@ export function generateNGVisualEmailHTML(
 ): string {
   const primaryColor = customization?.primaryColor || "#667eea";
   const logoUrl = customization?.logoUrl;
-  const footerText = customization?.footerText || "Báo cáo tự động từ hệ thống AVI/AOI Factory Management";
+  const footerText = customization?.footerText || "Báo cáo tự động từ hệ thống SYNAPSE";
 
   // Generate gradient colors based on primary color
   const gradientEnd = adjustColor(primaryColor, -20);

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Background circle -->
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M54,54m-50,0a50,50 0,1 1,100 0a50,50 0,1 1,-100 0"/>
+    <!-- Factory building -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,55 L30,80 L50,80 L50,55 L30,55 Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M55,45 L55,80 L78,80 L78,45 L55,45 Z"/>
+    <!-- Chimneys -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M33,40 L33,55 L40,55 L40,40 L33,40 Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M60,28 L60,45 L68,45 L68,28 L60,28 Z"/>
+    <!-- Alert dot -->
+    <path
+        android:fillColor="#DC2626"
+        android:pathData="M75,35m-10,0a10,10 0,1 1,20 0a10,10 0,1 1,-20 0"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M74,28 L76,28 L76,38 L74,38 L74,28 Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M74,40 L76,40 L76,42 L74,42 L74,40 Z"/>
+</vector>

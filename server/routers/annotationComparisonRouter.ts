@@ -14,6 +14,96 @@ import {
   productModels
 } from "../../drizzle/schema";
 import { eq, and, inArray, desc, sql, between } from "drizzle-orm";
+import { renderReport, resolveBranding, type ReportLocale } from "../services/universalExportService";
+
+// ── Pure comparison helpers (exported for unit tests) ────────────────────────
+
+export interface ComparisonDetailRow {
+  pointId: number;
+  result1: string | null;
+  result2: string | null;
+  value1: string | null;
+  value2: string | null;
+  status: "matching" | "different" | "only1" | "only2";
+}
+
+export interface MeasurementComparison {
+  matching: number;
+  different: number;
+  onlyIn1: number;
+  onlyIn2: number;
+  details: ComparisonDetailRow[];
+}
+
+interface MinimalResult {
+  pointDefId: number;
+  result: string | null;
+  measuredValue: string | null;
+}
+
+/**
+ * Diff two inspections' measurement results by point definition. PURE — the
+ * substance behind the annotation "report" (unit-tested independently of the DB
+ * and the PDF renderer).
+ */
+export function buildMeasurementComparison(
+  results1: MinimalResult[],
+  results2: MinimalResult[],
+): MeasurementComparison {
+  const out: MeasurementComparison = { matching: 0, different: 0, onlyIn1: 0, onlyIn2: 0, details: [] };
+  const map2 = new Map<number, MinimalResult>();
+  results2.forEach((r) => map2.set(r.pointDefId, r));
+
+  for (const r1 of results1) {
+    const r2 = map2.get(r1.pointDefId);
+    if (r2) {
+      if (r1.result === r2.result) {
+        out.matching++;
+        out.details.push({ pointId: r1.pointDefId, result1: r1.result, result2: r2.result, value1: r1.measuredValue, value2: r2.measuredValue, status: "matching" });
+      } else {
+        out.different++;
+        out.details.push({ pointId: r1.pointDefId, result1: r1.result, result2: r2.result, value1: r1.measuredValue, value2: r2.measuredValue, status: "different" });
+      }
+      map2.delete(r1.pointDefId);
+    } else {
+      out.onlyIn1++;
+      out.details.push({ pointId: r1.pointDefId, result1: r1.result, result2: null, value1: r1.measuredValue, value2: null, status: "only1" });
+    }
+  }
+  map2.forEach((r2, pointId) => {
+    out.onlyIn2++;
+    out.details.push({ pointId, result1: null, result2: r2.result, value1: null, value2: r2.measuredValue, status: "only2" });
+  });
+  return out;
+}
+
+export interface ComparisonPattern {
+  type: string;
+  severity: string;
+  description: string;
+  frequency: number;
+}
+
+/** Recurring/intermittent defect patterns across both inspections. PURE. */
+export function detectComparisonPatterns(results: Array<{ pointDefId: number; result: string | null }>): ComparisonPattern[] {
+  const pointStats = new Map<number, { ng: number; total: number }>();
+  for (const r of results) {
+    const s = pointStats.get(r.pointDefId) || { ng: 0, total: 0 };
+    s.total++;
+    if (r.result === "NG") s.ng++;
+    pointStats.set(r.pointDefId, s);
+  }
+  const patterns: ComparisonPattern[] = [];
+  pointStats.forEach((s, pointId) => {
+    const ngRate = s.total > 0 ? s.ng / s.total : 0;
+    if (ngRate >= 0.8) {
+      patterns.push({ type: "Recurring Defect", severity: "Critical", description: `Point ${pointId} có tỷ lệ NG ${(ngRate * 100).toFixed(1)}%`, frequency: s.ng });
+    } else if (ngRate >= 0.3) {
+      patterns.push({ type: "Intermittent Defect", severity: "Warning", description: `Point ${pointId} có tỷ lệ NG ${(ngRate * 100).toFixed(1)}%`, frequency: s.ng });
+    }
+  });
+  return patterns;
+}
 
 export const annotationComparisonRouter = router({
   // Tạo phiên so sánh mới
@@ -324,13 +414,17 @@ export const annotationComparisonRouter = router({
       return { patterns };
     }),
 
-  // Generate PDF Report for Annotation Comparison
+  // Generate a REAL PDF report for an annotation comparison (doc 32 §2 item 20).
+  // Historically this returned JSON despite the "Pdf" name; it now renders an
+  // actual branded, VN-font PDF through the canonical renderReport engine (R2-A)
+  // and returns it as base64 alongside the structured summary.
   generatePdfReport: protectedProcedure
     .input(z.object({
       inspectionId1: z.number(),
       inspectionId2: z.number(),
       includeImages: z.boolean().default(true),
       includePatterns: z.boolean().default(true),
+      locale: z.enum(["vi", "en", "zh"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -375,77 +469,14 @@ export const annotationComparisonRouter = router({
           .where(eq(measurementResults.inspectionId, input.inspectionId2)),
       ]);
 
-      // Calculate comparison stats
-      const comparison = {
-        matching: 0,
-        different: 0,
-        onlyIn1: 0,
-        onlyIn2: 0,
-        details: [] as Array<{
-          pointId: number;
-          result1: string | null;
-          result2: string | null;
-          value1: string | null;
-          value2: string | null;
-          status: 'matching' | 'different' | 'only1' | 'only2';
-        }>,
-      };
+      // Calculate comparison stats (pure helper — unit-tested).
+      const comparison = buildMeasurementComparison(results1, results2);
 
-      type MeasurementResultType = typeof results1[0];
-      const results2Map = new Map<number, MeasurementResultType>();
-      results2.forEach(r => results2Map.set(r.pointDefId, r));
+      const patterns: ComparisonPattern[] = input.includePatterns
+        ? detectComparisonPatterns([...results1, ...results2])
+        : [];
 
-      for (const r1 of results1) {
-        const r2 = results2Map.get(r1.pointDefId);
-        if (r2) {
-          if (r1.result === r2.result) {
-            comparison.matching++;
-            comparison.details.push({
-              pointId: r1.pointDefId,
-              result1: r1.result,
-              result2: r2.result,
-              value1: r1.measuredValue,
-              value2: r2.measuredValue,
-              status: 'matching',
-            });
-          } else {
-            comparison.different++;
-            comparison.details.push({
-              pointId: r1.pointDefId,
-              result1: r1.result,
-              result2: r2.result,
-              value1: r1.measuredValue,
-              value2: r2.measuredValue,
-              status: 'different',
-            });
-          }
-          results2Map.delete(r1.pointDefId);
-        } else {
-          comparison.onlyIn1++;
-          comparison.details.push({
-            pointId: r1.pointDefId,
-            result1: r1.result,
-            result2: null,
-            value1: r1.measuredValue,
-            value2: null,
-            status: 'only1',
-          });
-        }
-      }
-
-      results2Map.forEach((r2, pointId) => {
-        comparison.onlyIn2++;
-        comparison.details.push({
-          pointId,
-          result1: null,
-          result2: r2.result,
-          value1: null,
-          value2: r2.measuredValue,
-          status: 'only2',
-        });
-      });
-
-      // Generate report data
+      // Structured summary (kept for the caller / audit).
       const reportData = {
         title: "Báo cáo so sánh Annotation",
         generatedAt: new Date().toISOString(),
@@ -477,53 +508,56 @@ export const annotationComparisonRouter = router({
           differentCount: comparison.different,
           onlyIn1Count: comparison.onlyIn1,
           onlyIn2Count: comparison.onlyIn2,
-          matchPercentage: results1.length > 0 
-            ? ((comparison.matching / results1.length) * 100).toFixed(1) 
+          matchPercentage: results1.length > 0
+            ? ((comparison.matching / results1.length) * 100).toFixed(1)
             : '0',
           details: comparison.details,
         },
-        patterns: [] as Array<{
-          type: string;
-          severity: string;
-          description: string;
-          frequency: number;
-        }>,
+        patterns,
       };
 
-      // Detect patterns if requested
-      if (input.includePatterns) {
-        const pointStats = new Map<number, { ng: number; ok: number; total: number }>();
-        
-        [...results1, ...results2].forEach(result => {
-          const stats = pointStats.get(result.pointDefId) || { ng: 0, ok: 0, total: 0 };
-          stats.total++;
-          if (result.result === "NG") stats.ng++;
-          else if (result.result === "OK") stats.ok++;
-          pointStats.set(result.pointDefId, stats);
-        });
+      // ── Render a REAL PDF through the canonical engine (R2-A) ──────────────
+      const locale = (input.locale ?? "vi") as ReportLocale;
+      const branding = await resolveBranding().catch(() => ({}));
+      const statusLabel: Record<ComparisonDetailRow["status"], string> = {
+        matching: "Trùng khớp",
+        different: "Khác biệt",
+        only1: "Chỉ có ở #1",
+        only2: "Chỉ có ở #2",
+      };
+      const rendered = await renderReport({
+        type: "annotation_comparison",
+        title: reportData.title,
+        subtitle: `#${reportData.inspection1.id} (${reportData.inspection1.serialNumber ?? "?"}) ↔ #${reportData.inspection2.id} (${reportData.inspection2.serialNumber ?? "?"}) · khớp ${reportData.comparison.matchPercentage}%`,
+        format: "pdf",
+        locale,
+        branding,
+        fileName: `comparison-${reportData.inspection1.serialNumber ?? reportData.inspection1.id}-${reportData.inspection2.serialNumber ?? reportData.inspection2.id}`,
+        columns: [
+          { key: "pointId", header: "Điểm", format: "number" },
+          { key: "result1", header: "KQ #1" },
+          { key: "value1", header: "Giá trị #1" },
+          { key: "result2", header: "KQ #2" },
+          { key: "value2", header: "Giá trị #2" },
+          { key: "statusLabel", header: "Trạng thái" },
+        ],
+        data: comparison.details.map((d) => ({
+          pointId: d.pointId,
+          result1: d.result1 ?? "",
+          value1: d.value1 ?? "",
+          result2: d.result2 ?? "",
+          value2: d.value2 ?? "",
+          statusLabel: statusLabel[d.status],
+        })),
+      });
 
-        pointStats.forEach((stats, pointId) => {
-          const ngRate = stats.ng / stats.total;
-          
-          if (ngRate >= 0.8) {
-            reportData.patterns.push({
-              type: "Recurring Defect",
-              severity: "Critical",
-              description: `Point ${pointId} có tỷ lệ NG ${(ngRate * 100).toFixed(1)}%`,
-              frequency: stats.ng,
-            });
-          } else if (ngRate >= 0.3) {
-            reportData.patterns.push({
-              type: "Intermittent Defect",
-              severity: "Warning",
-              description: `Point ${pointId} có tỷ lệ NG ${(ngRate * 100).toFixed(1)}%`,
-              frequency: stats.ng,
-            });
-          }
-        });
-      }
-
-      return reportData;
+      return {
+        ...reportData,
+        // The actual rendered PDF — the caller downloads this instead of JSON.
+        pdfBase64: rendered.buffer.toString("base64"),
+        pdfFileName: rendered.filename,
+        pdfMimeType: rendered.mimeType,
+      };
     }),
 
   // Get trend data for defects over time

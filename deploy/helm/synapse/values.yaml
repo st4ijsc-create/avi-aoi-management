@@ -1,0 +1,178 @@
+# =============================================================================
+# SYNAPSE Helm values — DEFAULT = SITE edition (K8s HA). doc 33 §11 / ADR-007.
+# The SAME app image runs in every edition; infra (EMQX / TimescaleDB / Redis) is
+# a PROFILE. Site = EXTERNAL managed infra → this chart takes CONNECTION STRINGS
+# for those services and does NOT bundle them. For single-node embedded editions
+# use deploy/compose/docker-compose.machine.yml (machine) or deploy/k3s (line/edge).
+# Env var names below match .env.example EXACTLY (server/_core/deploymentProfile.ts).
+# =============================================================================
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  # No public registry ships in-repo. Build & push the repo-root Dockerfile first:
+  #   docker build -t <your-registry>/synapse:1.0.0 . && docker push <your-registry>/synapse:1.0.0
+  # then set image.repository to <your-registry>/synapse.
+  repository: synapse
+  tag: "" # empty → defaults to .Chart.AppVersion (1.0.0)
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Server (ROLE=api) replicas. Ignored when autoscaling.enabled=true (HPA owns replicas).
+replicaCount: 2
+
+# ── Edition / deployment profile (shared/editions.ts + server/_core/deploymentProfile.ts) ──
+# code:         EDITION         = machine | line | site   (site = full, unrestricted)
+# infraProfile: INFRA_PROFILE   = embedded | external     (site → external managed infra)
+# enforceProfile: EDITION_PROFILE = "true"|"false" flag — true → profile reported/enforced (F1)
+edition:
+  code: site
+  infraProfile: external
+  enforceProfile: true
+
+# ── Non-secret runtime env (rendered into the ConfigMap). ──
+env:
+  NODE_ENV: production
+  PORT: "3000" # MUST stay in sync with service.port + the container port (see deployment.yaml)
+  ALLOWED_ORIGINS: "https://app.example.com" # CORS + Socket.IO handshake allow-list (comma-separated)
+  LOCAL_STORAGE_DIR: /app/uploads
+  LICENSE_FILE_PATH: /app/license.lic
+  LOG_LEVEL: info
+# Extra free-form NON-secret env merged into the ConfigMap (feature flags, etc.).
+extraEnv: {}
+
+# ── External infra connection strings + app secrets (rendered into the Secret). ──
+# Site edition consumes EXTERNAL managed services — provide these AT INSTALL, never
+# commit real values. Inject via --set-string, a private values override, or (best for
+# prod) existingSecret / an ExternalSecret operator.
+#   TSDB_URL set      → deploymentProfile reports ts=dedicated-timescale (else main-db degrade).
+#   UNS_BROKER_URL set → deploymentProfile reports broker=external-emqx  (else embedded-aedes).
+secrets:
+  databaseUrl: "" # DATABASE_URL   postgres://user:pass@pg-host:5432/aoi_management  (external HA Postgres/Timescale)
+  redisUrl: "" # REDIS_URL      redis://redis-host:6379
+  tsdbUrl: "" # TSDB_URL       postgres://user:pass@tsdb-host:5432/avi_aoi_ts     (dedicated TimescaleDB)
+  unsBrokerUrl: "" # UNS_BROKER_URL mqtt://emqx-host:1883                              (external EMQX cluster)
+  jwtSecret: "" # JWT_SECRET      openssl rand -base64 64
+  signoffSecret: "" # SIGNOFF_SECRET  >= 16 chars (21 CFR Part 11 §11.70 sign-off HMAC)
+  masterApiKey: "" # MASTER_API_KEY  machine/device integration key
+# Use a pre-existing Secret (with the same KEYS as secret.yaml) instead of the chart-managed
+# one — recommended for prod / ExternalSecret. When set, secret.yaml renders nothing.
+existingSecret: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+service:
+  type: ClusterIP
+  port: 3000 # matches the app PORT (server listens on process.env.PORT || 3000)
+  # nodePort: 30080   # only used when type=NodePort
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: synapse.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: synapse-tls
+  #    hosts: [synapse.example.com]
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+# Probes against the REAL endpoint: GET /health (200 when DB up, 503 degraded).
+# readiness gates traffic strictly; liveness is lenient (a DB blip must not restart
+# the pod); startup covers slow first boot. All three hit the same real endpoint.
+probes:
+  liveness:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 6
+  readiness:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  startup:
+    enabled: true
+    path: /health
+    periodSeconds: 10
+    failureThreshold: 30 # up to ~5 min for first boot
+
+# ── Worker (ROLE=worker) — the cron/scheduler process (doc 27 B7 · node dist/worker.js).
+# SINGLE instance only: the schedulers have NO leader election yet, so the worker
+# Deployment is pinned to replicas=1 (see worker-deployment.yaml) and the HPA never
+# targets it. Two workers would double-run every cron job. ──
+worker:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+# ── HPA for the SERVER deployment only (never the worker). ──
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+  # targetMemoryUtilizationPercentage: 80
+
+# ── PodDisruptionBudget for the SERVER deployment. ──
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1   # set EITHER minAvailable OR maxUnavailable, not both
+
+# Spread server pods across zones/nodes (see values-site-ha.yaml for the HA set).
+topologySpreadConstraints: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+
+# The image already runs as the non-root system user `app` (Dockerfile USER app), so we
+# do NOT force runAsNonRoot/runAsUser here (the image user has a non-numeric name, and
+# pinning a wrong UID would break the chown'd /app/uploads + /app/backups dirs).
+podSecurityContext: {}
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# Uploads/backups volume. Site edition SHOULD use external object storage
+# (STORAGE_MODE=forge / S3 — see .env.example); the default emptyDir is per-pod and
+# NOT shared across replicas. Enable a PVC only for single-replica setups.
+persistence:
+  enabled: false
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 20Gi
+
+# One-shot schema migration as a Helm pre-install/pre-upgrade hook Job. Mirrors the
+# compose `migrate` service (node scripts/migrate-standalone.mjs + core-table verify).
+# Needs DATABASE_URL from the Secret. Disable if migrations run out-of-band.
+migrations:
+  enabled: true
+  backoffLimit: 1

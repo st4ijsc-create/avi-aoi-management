@@ -58,7 +58,10 @@ export type ToolResultType =
   | "anomaly_list"
   | "genealogy_trace"
   | "energy_metrics"
-  | "routing_steps";
+  | "routing_steps"
+  // ── doc 56 Đ6 — device-standardization persona tools (process + drift + SPC + fleet) ──
+  | "device_health"
+  | "fleet_process_summary";
 
 export interface ToolResult<T = unknown> {
   type: ToolResultType;

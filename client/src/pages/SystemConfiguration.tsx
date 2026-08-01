@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer, StatusBadge } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Settings, RefreshCw, AlertTriangle, CheckCircle2, Power } from "lucide-react";
@@ -70,39 +71,37 @@ export function SystemConfigContent() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <RefreshCw className="w-8 h-8 animate-spin text-muted-foreground" />
+      <div className="space-y-6">
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-40 w-full" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Settings className="w-8 h-8" />
-            {t('admin.systemConfiguration')}
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            {t('admin.manageSettings')}
-          </p>
-        </div>
-        {hasPendingChanges && (
-          <Button onClick={handleSave} disabled={updateConfig.isPending}>
-            {updateConfig.isPending && <RefreshCw className="w-4 h-4 mr-2 animate-spin" />}
-            {t('common.saveChanges')}
-          </Button>
-        )}
-      </div>
+      {/* Header — DS PageHeader (shared pattern) */}
+      <PageHeader
+        icon={<Settings className="h-6 w-6" />}
+        title={t('admin.systemConfiguration')}
+        description={t('admin.manageSettings')}
+        actions={
+          hasPendingChanges ? (
+            <Button onClick={handleSave} disabled={updateConfig.isPending}>
+              {updateConfig.isPending && <RefreshCw className="w-4 h-4 mr-2 animate-spin" />}
+              {t('common.saveChanges')}
+            </Button>
+          ) : undefined
+        }
+      />
 
       {/* Warning Banner */}
       {hasPendingChanges && (
-        <Card className="border-orange-500/50 bg-orange-500/5">
+        <Card className="border-warning/50 bg-warning/5">
           <CardContent className="pt-6">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-orange-400 mt-0.5" />
+              <AlertTriangle className="w-5 h-5 text-warning mt-0.5" />
               <div>
                 <p className="font-medium">{t('admin.pendingChanges')}</p>
                 <p className="text-sm text-muted-foreground">
@@ -121,14 +120,9 @@ export function SystemConfigContent() {
             <Power className="w-5 h-5" />
             {t('admin.mqttBroker')}
             {getMqttValue() ? (
-              <Badge variant="default" className="ml-2">
-                <CheckCircle2 className="w-3 h-3 mr-1" />
-                {t('common.enabled')}
-              </Badge>
+              <StatusBadge status="enabled" tone="success" label={<span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />{t('common.enabled')}</span>} className="ml-2" />
             ) : (
-              <Badge variant="secondary" className="ml-2">
-                {t('common.disabled')}
-              </Badge>
+              <StatusBadge status="disabled" tone="default" label={t('common.disabled')} className="ml-2" />
             )}
           </CardTitle>
           <CardDescription>
@@ -152,7 +146,7 @@ export function SystemConfigContent() {
             />
           </div>
           {mqttConfig?.requiresRestart && (
-            <p className="text-xs text-orange-400 mt-4 flex items-center gap-1">
+            <p className="text-xs text-warning mt-4 flex items-center gap-1">
               <AlertTriangle className="w-3 h-3" />
               {t('admin.requiresRestart')}
             </p>
@@ -167,14 +161,9 @@ export function SystemConfigContent() {
             <Power className="w-5 h-5" />
             {t('admin.websocketServer')}
             {getWebSocketValue() ? (
-              <Badge variant="default" className="ml-2">
-                <CheckCircle2 className="w-3 h-3 mr-1" />
-                {t('common.enabled')}
-              </Badge>
+              <StatusBadge status="enabled" tone="success" label={<span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />{t('common.enabled')}</span>} className="ml-2" />
             ) : (
-              <Badge variant="secondary" className="ml-2">
-                {t('common.disabled')}
-              </Badge>
+              <StatusBadge status="disabled" tone="default" label={t('common.disabled')} className="ml-2" />
             )}
           </CardTitle>
           <CardDescription>
@@ -198,19 +187,19 @@ export function SystemConfigContent() {
             />
           </div>
           {websocketConfig?.requiresRestart && (
-            <p className="text-xs text-orange-400 mt-4 flex items-center gap-1">
+            <p className="text-xs text-warning mt-4 flex items-center gap-1">
               <AlertTriangle className="w-3 h-3" />
-              Requires server restart to take effect
+              {t('admin.requiresRestart')}
             </p>
           )}
         </CardContent>
       </Card>
 
       {/* Restart Instructions */}
-      <Card className="border-blue-500/50 bg-blue-500/5">
+      <Card className="border-info/50 bg-info/5">
         <CardContent className="pt-6">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-blue-400 mt-0.5" />
+            <AlertTriangle className="w-5 h-5 text-info mt-0.5" />
             <div>
               <p className="font-medium">{t('admin.serverRestartRequired')}</p>
               <p className="text-sm text-muted-foreground">
@@ -227,7 +216,9 @@ export function SystemConfigContent() {
 export default function SystemConfiguration() {
   return (
     <DashboardLayout>
-      <SystemConfigContent />
+      <PageContainer>
+        <SystemConfigContent />
+      </PageContainer>
     </DashboardLayout>
   );
 }

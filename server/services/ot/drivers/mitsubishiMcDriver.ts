@@ -1,6 +1,51 @@
 /**
  * Sprint F1.3 — Mitsubishi MELSEC MC driver THẬT (package `mcprotocol`, nạp qua loadPackage()).
  *
+ * ⚠️ doc 37 §6.2 / M7 — GIỚI HẠN THƯ VIỆN (spec-verified vs manual):
+ *   `mcprotocol` mã hoá **1E frame nhị phân (A-compatible)**. Xác nhận theo MELSEC
+ *   Communication Protocol Reference Manual (SH-081227ENG), Ch.18 "Communicating
+ *   Using 1E Frames" p391-396:
+ *     • Subheader = mã lệnh nhị phân: 00H batch-read bit / 01H batch-read word /
+ *       02H batch-write bit / 03H batch-write word; response = request|80H, tức
+ *       80H/81H/82H/83H (p392 "Subheader").
+ *     • PC No. (station): FFH = trạm host (kết nối trực tiếp); 01H–40H (1–64) =
+ *       trạm khác qua network module (p393). 1E frame KHÔNG có trường Network No.
+ *       (SH-081227: "1C/1E frame do not have the setting of network No.").
+ *     • Bộ device 1E chỉ là TẬP CON A-compatible: X Y M L S F B, T(TN/TS/TC),
+ *       C(CN/CS/CC), D W R; SM/SD truy cập qua M9000/D9000 — KHÔNG có
+ *       ZR SB SW V DX DY Z RD STS/long-timer/long-counter (p351-352). Địa chỉ
+ *       ngoài tập này KHÔNG map được qua 1E frame.
+ *   → iQ-R/iQ-F MẶC ĐỊNH SLMP 3E frame: subheader request '5000' (50 00) / response
+ *   'D000' (D0 00); 4E frame request '5400' / response 'D400' + serial-No 2 byte
+ *   (SH-081227 "Message Format" p42/p48, Access route p45; SLMP Reference Manual
+ *   SH-080956ENG §"3E/4E frame message format"). Muốn dùng lib này với iQ-R: hoặc
+ *   (a) bật "A-compatible 1E frame" trong Open Setting của GX Works3, hoặc (b) thay
+ *   bằng encoder SLMP 3E/4E (xem TODO dưới). Port KHÔNG có mặc định chuẩn — set ở
+ *   Open Setting của module (SH-080956 §3.1/3.2 TCP/UDP), kỹ sư phải nhập đúng.
+ *
+ * TODO — SLMP 3E encoder (KHÔNG thêm npm dep; tự viết trên node:net đã có):
+ *   Request batch-read-word (command 0401H, subcommand 0000H) nhị phân, LE:
+ *     [50 00]            subheader 3E
+ *     [00]               network No.  (mặc định 00 = host)
+ *     [FF]               PC No.       (mặc định FF = host)
+ *     [FF 03]            request dest module I/O No. (0x03FF = host CPU)
+ *     [00]               request dest multidrop station No.
+ *     [len 2B]           request-data length (byte sau trường này)
+ *     [timer 2B]         monitoring timer (0 = wait)
+ *     [01 04]            command 0401H
+ *     [00 00]            subcommand 0000H (Q/L 1-byte device-code)
+ *     [devNo 3B]         head device No. (LE, 3 byte)
+ *     [devCode 1B]       device-code 1 byte: D=A8 W=B4 M=90 X=9C Y=9D R=AF
+ *                        B=A0 SD=A9 SM=91 … (bảng đầy đủ ở mcAddress.ts)
+ *     [points 2B]        số điểm (LE)
+ *   Response OK: [D0 00][00 FF FF 03 00][resLen 2B][endCode 2B=00 00][data…].
+ *   iQ-R subcommand 0002/0003 → device-code 2 byte (00A8H…) + devNo 4 byte.
+ *   Ref: SLMP Reference Manual SH-080956 §5.1-5.2 p17-37.
+ *   Khi có encoder, bổ sung config: networkNo (byte "Network No", mặc định 00H),
+ *   stationNo (byte "PC No", mặc định FFH), octalInputOutput (X/Y hệ bát phân cho
+ *   dòng FX; Q/iQ-R dùng hệ 16 — SH-081227 p68). `mcprotocol.initiateConnection`
+ *   CHỈ nhận {port,host,ascii} nên 3 field này CHƯA nối được nếu chưa thay lib.
+ *
  * mcprotocol có API callback + translation giống NodeS7:
  *   - new MC(); initiateConnection({port,host,ascii}, cb(err))
  *   - setTranslationCB(tag => address); addItems([...]); readAllItems(cb(anythingBad, values))
@@ -111,6 +156,10 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       this.connected = true;
       this.connectedAt = new Date();
       this.lastError = undefined;
+      // doc 40 OT-F1 — mcprotocol là fork của NodeS7 (callback-based, cùng API), KHÔNG
+      // có event channel ổn định. Gắn 'error'/'close' phòng hờ; đường phát hiện CHÍNH là
+      // isConnected()/health() đọc `isoConnectionState` thật + fallback đếm-lỗi ở supervisor.
+      this.attachLinkLossHandlers(conn);
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
       try {
@@ -136,8 +185,39 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     this.connected = false;
   }
 
+  /**
+   * doc 40 OT-F1 — isConnected() nói THẬT khi rớt kết nối giữa phiên. mcprotocol (fork
+   * NodeS7) giữ `isoConnectionState` (4 = connected); lib tự hạ khi transport đứt. Ưu tiên
+   * trạng thái lib (guarded) rồi mới tới cờ nội bộ để supervisor phát hiện & reconnect.
+   * Mock không có field → lui về cờ `connected` (không đổi hành vi test).
+   */
   override isConnected(): boolean {
+    if (!this.connected) return false;
+    const st = (this.conn as { isoConnectionState?: unknown } | null)?.isoConnectionState;
+    if (typeof st === "number") return st === 4;
     return this.connected;
+  }
+
+  /** doc 40 OT-F1 — gắn listener 'error'/'close' phòng hờ (no-op nếu lib không emit). */
+  private attachLinkLossHandlers(conn: any): void {
+    if (!conn || typeof conn.on !== "function") return;
+    for (const ev of ["error", "close"]) {
+      try {
+        conn.on(ev, (arg?: unknown) => {
+          if (this.conn === conn) this.markLinkLost(ev, arg);
+        });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
+  private markLinkLost(ev: string, arg?: unknown): void {
+    if (!this.connected) return;
+    this.connected = false;
+    const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
+    this.lastError = `mitsubishi-mc link lost (${ev})${detail}`;
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
@@ -295,7 +375,8 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
   override async health(): Promise<OtHealth> {
     return {
       protocol: this.protocol,
-      connected: this.connected,
+      // doc 40 OT-F1 — báo trạng thái THẬT (đọc isoConnectionState), không phải cờ nội bộ.
+      connected: this.isConnected(),
       lastOkAt: this.lastOkAt ?? this.connectedAt ?? undefined,
       lastError: this.lastError,
       latencyMs: this.lastLatencyMs,

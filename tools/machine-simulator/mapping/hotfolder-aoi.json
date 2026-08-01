@@ -1,0 +1,9 @@
+{
+  "name": "hotfolder-aoi",
+  "deviceClass": "AoiAvi",
+  "defaultStepType": "inspection",
+  "defaultRecipeCode": "RC-HOTFOLDER-DEMO",
+  "unitMap": {
+    "score": "score"
+  }
+}

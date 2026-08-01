@@ -5,6 +5,25 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+// ── Wave 1 (foundation) shared primitives — showcased below ──────────────────
+import { z } from "zod";
+import { DataTable, type DataTableColumn } from "@/components/DataTable";
+import { AsyncBoundary } from "@/components/AsyncBoundary";
+import { FilterBar, type FilterDef } from "@/components/FilterBar";
+import { FormScaffold, TextField, SelectField } from "@/components/FormScaffold";
+// ── Wave 2 (shared UI kit) primitives — showcased below ──────────────────────
+import {
+  MachineSelect,
+  EntityPicker,
+  ConfirmDeleteDialog,
+  ImportExportBar,
+  type MasterDataColumn,
+  ScopeFilterBar,
+  RadialGauge,
+  Sparkline,
+  ConnectionChip,
+  ThemedLineChart,
+} from "@/components/patterns";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -167,9 +186,10 @@ import {
   Clock,
   Moon,
   Sun,
+  Trash2,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast as sonnerToast } from "sonner";
 import { AIChatBox, type Message } from "@/components/AIChatBox";
 
@@ -243,6 +263,12 @@ export default function ComponentsShowcase() {
         </div>
 
         <div className="space-y-12">
+          {/* Wave 1 foundation primitives (DataTable / AsyncBoundary / FilterBar / FormScaffold) */}
+          <Wave1PrimitivesShowcase />
+
+          {/* Wave 2 shared UI kit (EntityPicker / ScopeFilterBar / gauges / charts) */}
+          <Wave2KitShowcase />
+
           {/* Text Colors Section */}
           <section className="space-y-4">
             <h3 className="text-2xl font-semibold">Text Colors</h3>
@@ -1433,5 +1459,373 @@ export default function ComponentsShowcase() {
         </div>
       </footer>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave 1 (foundation) — live demos of the four shared primitives every page will
+// adopt: DataTable, AsyncBoundary, FilterBar (URL-synced), FormScaffold (zod).
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface DemoMachine {
+  id: number;
+  name: string;
+  line: string;
+  status: "running" | "idle" | "down";
+  oee: number;
+}
+
+const DEMO_MACHINES: DemoMachine[] = [
+  { id: 1, name: "AOI-01", line: "SMT-A", status: "running", oee: 92.4 },
+  { id: 2, name: "AOI-02", line: "SMT-A", status: "idle", oee: 74.1 },
+  { id: 3, name: "AVI-01", line: "SMT-B", status: "down", oee: 0 },
+  { id: 4, name: "AVI-02", line: "SMT-B", status: "running", oee: 88.7 },
+  { id: 5, name: "SPI-01", line: "SMT-C", status: "running", oee: 95.2 },
+  { id: 6, name: "SPI-02", line: "SMT-C", status: "idle", oee: 61.3 },
+];
+
+const demoFormSchema = z.object({
+  name: z.string().min(2, "At least 2 characters"),
+  role: z.string().min(1, "Pick a role"),
+});
+
+function Wave1PrimitivesShowcase() {
+  const [selected, setSelected] = useState<Array<string | number>>([]);
+  const [asyncPhase, setAsyncPhase] = useState<"loaded" | "loading" | "error" | "empty">("loaded");
+
+  const columns: DataTableColumn<DemoMachine>[] = [
+    { id: "name", header: "Machine", cell: (r) => <span className="font-medium">{r.name}</span>, sortValue: (r) => r.name, filterValue: (r) => r.name },
+    { id: "line", header: "Line", cell: (r) => r.line, sortValue: (r) => r.line, filterValue: (r) => r.line },
+    {
+      id: "status", header: "Status",
+      cell: (r) => (
+        <Badge variant={r.status === "running" ? "default" : r.status === "idle" ? "secondary" : "destructive"}>
+          {r.status}
+        </Badge>
+      ),
+      sortValue: (r) => r.status, filterValue: (r) => r.status,
+    },
+    { id: "oee", header: "OEE %", align: "right", cell: (r) => <span className="tabular-nums">{r.oee.toFixed(1)}</span>, sortValue: (r) => r.oee },
+  ];
+
+  const filters: FilterDef[] = [
+    { key: "q", type: "search", label: "Search", placeholder: "Search machines…" },
+    { key: "line", type: "select", label: "Line", options: [
+      { value: "SMT-A", label: "SMT-A" }, { value: "SMT-B", label: "SMT-B" }, { value: "SMT-C", label: "SMT-C" },
+    ] },
+    { key: "shift", type: "daterange", label: "Date range" },
+  ];
+
+  // doc 44 G5.21 — large synthetic dataset to demo pure row virtualization.
+  const bigData = useMemo<DemoMachine[]>(
+    () =>
+      Array.from({ length: 1000 }, (_, i) => ({
+        id: i + 1,
+        name: `AOI-${String(i + 1).padStart(4, "0")}`,
+        line: ["SMT-A", "SMT-B", "SMT-C"][i % 3],
+        status: (["running", "idle", "down"] as const)[i % 3],
+        oee: Math.round(((i * 37) % 100) * 10) / 10,
+      })),
+    [],
+  );
+
+  return (
+    <section className="space-y-6">
+      <div>
+        <h3 className="text-2xl font-semibold">Foundation primitives (Wave 1)</h3>
+        <p className="text-sm text-muted-foreground">
+          Shared building blocks introduced by the platform upgrade — adopt these instead of hand-rolling tables, async states, filters, and forms.
+        </p>
+      </div>
+
+      {/* DataTable */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">DataTable</CardTitle>
+          <CardDescription>Sort · global search · pagination · selection · keyboard-operable rows. {selected.length} selected.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DataTable
+            columns={columns}
+            data={DEMO_MACHINES}
+            getRowId={(r) => r.id}
+            searchable
+            searchPlaceholder="Search machines…"
+            pageSize={4}
+            selectable
+            selectedIds={selected}
+            onSelectionChange={setSelected}
+            onRowClick={(r) => sonnerToast.info(`Row clicked: ${r.name}`)}
+            initialSort={{ columnId: "oee", dir: "desc" }}
+          />
+        </CardContent>
+      </Card>
+
+      {/* DataTable — virtualized (doc 44 G5.21) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">DataTable — virtualized (1,000 rows)</CardTitle>
+          <CardDescription>
+            Opt-in <code>virtualized</code> row windowing (pure, no dependency): only the visible band is mounted, sort/search still run over the full set. Scroll the table.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DataTable
+            columns={columns}
+            data={bigData}
+            getRowId={(r) => r.id}
+            searchable
+            searchPlaceholder="Search 1,000 machines…"
+            virtualized
+            virtualMaxHeight={420}
+            rowHeight={44}
+            initialSort={{ columnId: "name", dir: "asc" }}
+          />
+        </CardContent>
+      </Card>
+
+      {/* AsyncBoundary */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">AsyncBoundary</CardTitle>
+          <CardDescription>One primitive for loading / error / empty / loaded. Toggle a phase:</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {(["loaded", "loading", "error", "empty"] as const).map((p) => (
+              <Button key={p} size="sm" variant={asyncPhase === p ? "default" : "outline"} onClick={() => setAsyncPhase(p)}>
+                {p}
+              </Button>
+            ))}
+          </div>
+          <div className="rounded-lg border p-4">
+            <AsyncBoundary
+              isLoading={asyncPhase === "loading"}
+              isError={asyncPhase === "error"}
+              error={new Error("Demo: upstream request failed (503)")}
+              isEmpty={asyncPhase === "empty"}
+              onRetry={() => setAsyncPhase("loaded")}
+              preset="table"
+              errorTitle="Couldn’t load machines"
+            >
+              <p className="text-sm text-foreground">✓ Loaded content renders here.</p>
+            </AsyncBoundary>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* FilterBar */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">FilterBar (URL-synced)</CardTitle>
+          <CardDescription>Filter state persists in the URL query string — shareable &amp; bookmarkable. Check the address bar as you change filters.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FilterBar filters={filters} />
+        </CardContent>
+      </Card>
+
+      {/* FormScaffold */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">FormScaffold (react-hook-form + zod)</CardTitle>
+          <CardDescription>Schema-validated form in ~10 lines. Try submitting empty.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FormScaffold
+            schema={demoFormSchema}
+            defaultValues={{ name: "", role: "" }}
+            onSubmit={(values) => { sonnerToast.success("Submitted", { description: JSON.stringify(values) }); }}
+            submitLabel="Create user"
+          >
+            {(form) => (
+              <div className="space-y-4">
+                <TextField form={form} name="name" label="Name" placeholder="Jane Operator" />
+                <SelectField form={form} name="role" label="Role" options={[
+                  { value: "operator", label: "Operator" },
+                  { value: "supervisor", label: "Supervisor" },
+                  { value: "admin", label: "Admin" },
+                ]} />
+              </div>
+            )}
+          </FormScaffold>
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave 2 (shared UI kit) — EntityPicker, ScopeFilterBar, gauges/sparkline/chip,
+// and themed charts. These retire raw-ID inputs and per-page chart/hex drift.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DEMO_TREND = [
+  { month: "Jan", ng: 42, yield: 96.1 },
+  { month: "Feb", ng: 38, yield: 96.8 },
+  { month: "Mar", ng: 51, yield: 95.2 },
+  { month: "Apr", ng: 29, yield: 97.4 },
+  { month: "May", ng: 33, yield: 97.0 },
+  { month: "Jun", ng: 22, yield: 98.1 },
+];
+
+// doc 42 INFRA-4A — cột + dữ liệu mẫu cho ImportExportBar.
+const SHOWCASE_MASTER_COLUMNS: MasterDataColumn[] = [
+  { field: "code", header: "Mã", required: true, type: "string", example: "M-001" },
+  { field: "name", header: "Tên vật liệu", required: true, type: "string", example: "Nhôm 6061" },
+  { field: "qty", header: "Số lượng", type: "number", example: 10 },
+  { field: "active", header: "Kích hoạt", type: "boolean", example: true },
+];
+
+const SHOWCASE_MASTER_DATA = [
+  { code: "M-001", name: "Nhôm 6061", qty: 120, active: true },
+  { code: "M-002", name: "Thép SUS304", qty: 45, active: true },
+  { code: "M-003", name: "Đồng C1100", qty: 8, active: false },
+];
+
+function Wave2KitShowcase() {
+  const [machineId, setMachineId] = useState<string | number | null>(null);
+
+  return (
+    <section className="space-y-6">
+      <div>
+        <h3 className="text-2xl font-semibold">Shared UI kit (Wave 2)</h3>
+        <p className="text-sm text-muted-foreground">
+          Pickers &amp; visual primitives that replace raw numeric-ID inputs and per-page chart/badge reinvention.
+        </p>
+      </div>
+
+      {/* EntityPicker + ScopeFilterBar */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">EntityPicker &amp; ScopeFilterBar</CardTitle>
+          <CardDescription>Searchable pickers over real endpoints (no more typing DB IDs). Scope bar persists to the URL.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="max-w-xs space-y-1">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">MachineSelect</p>
+            <MachineSelect value={machineId} onChange={setMachineId} aria-label="Machine" />
+            <p className="text-xs text-muted-foreground">Selected id: {machineId ?? "—"}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">ScopeFilterBar</p>
+            <ScopeFilterBar show={["line", "machine", "dateRange"]} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* doc 42 INFRA-1: EntityPicker invalid-value guard + ConfirmDeleteDialog */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">EntityPicker "Không tồn tại" &amp; ConfirmDeleteDialog</CardTitle>
+          <CardDescription>Cảnh báo liên kết code rác + xác nhận xoá/lưu-trữ thống nhất (doc 42 Đợt 1).</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-8">
+          <div className="max-w-xs space-y-1">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Value không khớp option</p>
+            <EntityPicker
+              options={[
+                { value: "M-001", label: "Nhôm 6061", sublabel: "M-001" },
+                { value: "M-002", label: "Thép SUS304", sublabel: "M-002" },
+              ]}
+              value="M-DELETED"
+              onChange={() => {}}
+              placeholder="Chọn vật liệu…"
+            />
+          </div>
+          <div className="flex flex-col gap-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">ConfirmDeleteDialog</p>
+            <div className="flex flex-wrap gap-3">
+              <ConfirmDeleteDialog
+                trigger={
+                  <Button variant="destructive" size="sm">
+                    <Trash2 /> Xoá vĩnh viễn
+                  </Button>
+                }
+                itemLabel="vật liệu M-001"
+                referenceCount={3}
+                referenceLabel="phiếu nhập kho"
+                onConfirm={() => new Promise((r) => setTimeout(r, 800))}
+              />
+              <ConfirmDeleteDialog
+                trigger={
+                  <Button variant="outline" size="sm">
+                    <Trash2 /> Lưu trữ
+                  </Button>
+                }
+                itemLabel="line SMT-1"
+                isSoftDelete
+                onConfirm={() => new Promise((r) => setTimeout(r, 800))}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* doc 42 INFRA-4A: ImportExportBar */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">ImportExportBar (doc 42 Đợt 4A)</CardTitle>
+          <CardDescription>
+            Xuất Excel/CSV client-side · Tải mẫu · Nhập với preview + validate (dòng lỗi tô đỏ). Luật
+            parse/validate dùng chung server qua <code>@shared/masterDataIO</code>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <ImportExportBar
+            entityLabel="vật liệu"
+            columns={SHOWCASE_MASTER_COLUMNS}
+            data={SHOWCASE_MASTER_DATA}
+            onImport={async (rows) => {
+              // Demo: giả lập upsert — coi mọi dòng hợp lệ là thành công.
+              await new Promise((r) => setTimeout(r, 500));
+              return { inserted: rows.length, failed: 0 };
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            Thử: bấm <strong>Tải mẫu</strong> → sửa vài dòng (bỏ trống Mã, nhập chữ vào Số lượng) →{" "}
+            <strong>Nhập</strong> lại để xem preview highlight lỗi.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Gauges / Sparkline / ConnectionChip */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">RadialGauge · Sparkline · ConnectionChip</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-8">
+          <RadialGauge value={92} unit="%" label="OEE" tone="auto" />
+          <RadialGauge value={41} unit="%" label="Health" tone="auto" />
+          <div className="space-y-2">
+            <Sparkline data={[42, 38, 51, 29, 33, 22]} tone="good" showArea showEndDot />
+            <p className="text-xs text-muted-foreground">NG trend</p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <ConnectionChip state="connected" pulse />
+            <ConnectionChip state="connecting" pulse />
+            <ConnectionChip state="disconnected" />
+            <ConnectionChip state="error" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ThemedCharts */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">ThemedCharts</CardTitle>
+          <CardDescription>recharts wrapped with the design-system palette — correct in light &amp; dark, zero hex passed in.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ThemedLineChart
+            data={DEMO_TREND}
+            xKey="month"
+            series={[{ key: "yield", name: "Yield %" }, { key: "ng", name: "NG count" }]}
+            height={260}
+            aria-label="Yield and NG trend"
+          />
+        </CardContent>
+      </Card>
+    </section>
   );
 }

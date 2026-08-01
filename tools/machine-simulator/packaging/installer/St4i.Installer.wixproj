@@ -1,0 +1,62 @@
+<Project Sdk="WixToolset.Sdk/4.0.5">
+  <!-- WS-F1-T3 — the WiX v4 MSI installer project for the packaged `publish-desktop\` deliverable
+       (St4i.DesktopShell.exe + the spawned engine + wwwroot + fleet/mapping, per README.md §13.2).
+
+       Deliberately NOT added to St4iMachineSimulator.sln (see README.md §13's build-installer.ps1
+       note) — it needs the WiX v4 SDK (`WixToolset.Sdk`/`WixToolset.Heat` NuGet packages, restored
+       from nuget.org the first time this builds) which the ordinary `dotnet build`/`dotnet test` on
+       the main solution must never be made to depend on. Build this standalone via
+       `packaging/installer/build-installer.ps1`, never via `St4iMachineSimulator.sln`.
+
+       Toolchain note (see packaging/installer/README.md "Toolchain" section for the full story):
+       this targets WiX v4.0.5 specifically, not the newest `wix` CLI — WiX v7+ gates the CLI behind
+       an "Open Source Maintenance Fee" EULA acceptance (`wix eula accept wix7`) introduced by the
+       new steward of the project; v4.0.5 (like v5/v6) has no such gate and is unambiguously the
+       classic .NET Foundation-era Apache-2.0/MS-RL toolset the "WiX v4" in this task's title refers
+       to. Pin `WixToolset.Sdk`/`WixToolset.Heat` here to `4.0.5` (do not float to a `4.*` wildcard)
+       so a future `wix` CLI bump on the build box can't silently change this project's behavior. -->
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <OutputName>St4iMachineSimulator</OutputName>
+    <!-- Fixed x64 to match the win-x64 self-contained `publish-desktop\` payload (README §13.2) —
+         override on the command line only if you know what you're doing. -->
+    <Platform>x64</Platform>
+    <!-- ICE43/ICE57/ICE64 are well-known, widely-documented false positives for a per-machine
+         (Scope="perMachine", ALLUSERS=1) package that also authors a plain (non-advertised) Start
+         Menu shortcut: the standard MSI validation suite flags ProgramMenuFolder as an inherently
+         "per-user" location regardless of the package's own ALLUSERS setting, which is exactly our
+         case (see Package.wxs's ShellExeComponent). This is the standard, widely-cited workaround —
+         not a way of hiding a real defect — and is scoped to just these three IDs, nothing broader. -->
+    <SuppressIces>ICE43;ICE57;ICE64</SuppressIces>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WixToolset.Heat brings back heat.exe's directory-harvesting MSBuild tasks (HarvestDirectory
+         below) — WiX v4's own `wix build` CLI harvesting element (`<Files Include="...">`) is a v5+
+         feature, not available in the pinned v4.0.5 toolset (confirmed empirically while authoring
+         this project), so the heat-based MSBuild harvest is the correct v4 mechanism, exactly as
+         README §13's task brief anticipated ("a <Files Include=.../> ... or an explicit component
+         group — pick what WiX v4 supports cleanly"). -->
+    <PackageReference Include="WixToolset.Heat" Version="4.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Harvests the ENTIRE published payload (..\..\publish-desktop\**) into components under
+         INSTALLFOLDER, preserving the engine\, engine\wwwroot\, engine\mapping\, engine\ecosystem\
+         subtree exactly as `dotnet publish`/`npm run build` produced it (README §13.2). -->
+    <HarvestDirectory Include="..\..\publish-desktop">
+      <ComponentGroupName>HarvestedFiles</ComponentGroupName>
+      <DirectoryRefId>INSTALLFOLDER</DirectoryRefId>
+      <!-- Without this, heat nests everything one level under a spurious "publish-desktop" folder
+           inside INSTALLFOLDER instead of placing files directly in it. -->
+      <SuppressRootDirectory>true</SuppressRootDirectory>
+      <!-- Excludes the two files Package.wxs authors explicitly (St4i.DesktopShell.exe — carries the
+           Start Menu/Startup shortcuts; engine\St4i.EngineApi.exe — carries the ServiceInstall) so
+           they aren't installed by two different components pointing at the same target path. -->
+      <Transforms>exclude-shell-and-engine-exe.xslt</Transforms>
+    </HarvestDirectory>
+    <!-- Lets the linker resolve the "SourceDir\..." source paths heat emits for the harvested files
+         back to the real publish-desktop\ tree. -->
+    <BindPath Include="..\..\publish-desktop" />
+  </ItemGroup>
+</Project>

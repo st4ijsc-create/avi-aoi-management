@@ -6,6 +6,10 @@ import type { Request } from "express";
 import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
+import {
+  getCachedAuthUser,
+  setCachedAuthUser,
+} from "../services/authSessionCache";
 import { ENV } from "./env";
 import type {
   ExchangeTokenRequest,
@@ -284,6 +288,18 @@ class SDKServer {
       throw ForbiddenError("Invalid session cookie");
     }
 
+    // W4-B (doc 27 B4): short-TTL session→user cache. The JWT signature was
+    // verified above (stateless, no DB); a cache hit means the FULL auth path
+    // below — user lookup, revocation check, lastSignedIn touch — completed
+    // successfully within the last AUTH_CACHE_TTL_S seconds, so we skip its
+    // 3 DB round-trips. Staleness window (role change / ban / revocation on
+    // an instance that missed the invalidation broadcast) is bounded by the
+    // TTL (≤60s) — see services/authSessionCache.ts.
+    const cachedUser = await getCachedAuthUser(sessionCookie!);
+    if (cachedUser) {
+      return cachedUser;
+    }
+
     const sessionUserId = session.openId;
     const signedInAt = new Date();
     let user = await db.getUserByOpenId(sessionUserId);
@@ -361,6 +377,11 @@ class SDKServer {
       openId: user.openId,
       lastSignedIn: signedInAt,
     });
+
+    // Cache only after EVERY check passed (user found + active session).
+    // NOTE: this also throttles the lastSignedIn write above to once per
+    // TTL window per session instead of once per request.
+    await setCachedAuthUser(sessionCookie!, user);
 
     return user;
   }

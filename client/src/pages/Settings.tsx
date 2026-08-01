@@ -1,6 +1,7 @@
-import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer, EmptyState } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,8 +64,8 @@ type AlertSetting = {
 
 export default function Settings() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { hasPermission, loading: permsLoading } = usePermissions();
+  const canView = hasPermission("settings_view", "canView");
 
   const search = useSearch();
   const [location, setLocation] = useLocation();
@@ -174,7 +175,17 @@ export default function Settings() {
     onError: (err) => toast.error(err.message),
   });
 
-  if (!isAdmin) {
+  if (permsLoading) {
+    return (
+      <DashboardLayout title={t("settings.title")} navItems={navItems} currentPath="/settings">
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canView) {
     return (
       <DashboardLayout title={t("settings.title")} navItems={navItems} currentPath="/settings">
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
@@ -188,23 +199,19 @@ export default function Settings() {
 
   return (
     <DashboardLayout title={t("settings.title")} navItems={navItems} currentPath="/settings">
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <SettingsIcon className="h-6 w-6 text-primary" />
-              {t("settings.systemSettings")}
-              <ViewOnlyBadge module="settings_view" />
-            </h1>
-            <p className="text-muted-foreground">{t("settings.systemDescription")}</p>
-          </div>
-        </div>
+      <PageContainer>
+        <PageHeader
+          icon={<SettingsIcon className="h-6 w-6" />}
+          title={t("settings.systemSettings")}
+          description={t("settings.systemDescription")}
+          badge={<ViewOnlyBadge module="settings_view" />}
+        />
 
         <ErrorBoundary>
         <Tabs value={activeTab} onValueChange={handleTabChange}>
           <div className="flex gap-6">
             {/* Vertical Sidebar Navigation */}
-            <div className="w-64 shrink-0 space-y-1">
+            <div className="hidden" data-legacy-hub-menu="true">
 
               {/* Category: Chất lượng */}
               <div className="space-y-1">
@@ -487,15 +494,15 @@ export default function Settings() {
                     >
                       <div className="flex items-center gap-4">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                          alert.alertType === 'yield_rate' ? 'bg-emerald-500/20' :
-                          alert.alertType === 'ng_count' ? 'bg-rose-500/20' : 'bg-amber-500/20'
+                          alert.alertType === 'yield_rate' ? 'bg-success/20' :
+                          alert.alertType === 'ng_count' ? 'bg-destructive/20' : 'bg-warning/20'
                         }`}>
                           {alert.alertType === 'yield_rate' ? (
-                            <Target className="h-5 w-5 text-emerald-500" />
+                            <Target className="h-5 w-5 text-success" />
                           ) : alert.alertType === 'ng_count' ? (
-                            <ThumbsDown className="h-5 w-5 text-rose-500" />
+                            <ThumbsDown className="h-5 w-5 text-destructive" />
                           ) : (
-                            <AlertTriangle className="h-5 w-5 text-amber-500" />
+                            <AlertTriangle className="h-5 w-5 text-warning" />
                           )}
                         </div>
                         <div>
@@ -557,11 +564,11 @@ export default function Settings() {
                     </div>
                   ))}
                   {(!alerts || alerts.length === 0) && (
-                    <div className="text-center py-12">
-                      <Bell className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                      <p className="text-muted-foreground">{t("settings.noAlerts")}</p>
-                      <p className="text-sm text-muted-foreground mt-1">{t("settings.noAlertsDesc")}</p>
-                    </div>
+                    <EmptyState
+                      icon={Bell}
+                      title={t("settings.noAlerts")}
+                      description={t("settings.noAlertsDesc")}
+                    />
                   )}
                 </div>
               </CardContent>
@@ -587,7 +594,7 @@ export default function Settings() {
           </div>
         </Tabs>
         </ErrorBoundary>
-      </div>
+      </PageContainer>
 
       {/* Edit Alert Dialog */}
       <Dialog open={editAlertDialogOpen} onOpenChange={setEditAlertDialogOpen}>

@@ -283,9 +283,16 @@ export const apiKeys = pgTable("api_keys", {
   createdBy: integer("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  // Doc 27 W2-C (C7, migration 0178): when set, this key is a PER-MACHINE
+  // credential (soft-ref → machines.id) accepted by the machine ingest router
+  // (machineApiRouters) in addition to /api/v1. Null = general external client.
+  machineId: integer("machineId"),
+  // Revocation audit stamp (isActive=false remains the enforcement bit).
+  revokedAt: timestamp("revokedAt"),
 }, (table) => [
   index("idx_api_keys_hash").on(table.keyHash),
   index("idx_api_keys_active").on(table.isActive),
+  index("idx_api_keys_machine").on(table.machineId),
 ]);
 
 export type ApiKey = typeof apiKeys.$inferSelect;

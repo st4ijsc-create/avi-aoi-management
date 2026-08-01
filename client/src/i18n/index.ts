@@ -27,7 +27,14 @@ i18n
     resources,
     fallbackLng: 'vi',
     defaultNS: 'translation',
-    
+    // Normalize region-tagged detections (e.g. 'en-US' → 'en') so i18n.language
+    // always resolves to a supported base code. Without this, a browser reporting
+    // 'en-US' left i18n.language === 'en-US', which failed exact-match lookups in
+    // the language switcher and silently fell back to the first entry (Vietnamese).
+    supportedLngs: ['vi', 'en', 'zh'],
+    nonExplicitSupportedLngs: true,
+    load: 'languageOnly',
+
     detection: {
       order: ['localStorage', 'navigator', 'htmlTag'],
       caches: ['localStorage'],

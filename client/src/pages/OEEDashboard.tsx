@@ -1,7 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Redirect } from "wouter";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
-import DashboardLayout from "@/components/DashboardLayout";
+import { useEcosystemEvents } from "@/hooks/useEcosystemEvents";
+import { PageHeader } from "@/components/patterns";
+import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +35,9 @@ import {
   Wrench,
   Settings2,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Wifi,
+  WifiOff
 } from "lucide-react";
 import { 
   LineChart, 
@@ -52,6 +57,7 @@ import {
   Pie
 } from "recharts";
 import { toast } from "sonner";
+import { chartColor, chartGridProps, chartAxisProps, chartTooltipStyle } from "@/components/patterns";
 
 interface OEEMetrics {
   machineId: number;
@@ -133,7 +139,13 @@ function DowntimeCategoryBadge({ category }: { category: DowntimeEvent['category
   return <Badge variant={variant}>{label}</Badge>;
 }
 
-export default function OEEDashboard() {
+/**
+ * doc 40 Wave 4 DEV-10 — OEE & Downtime body, extracted WITHOUT its own
+ * DashboardLayout so it can render as the "oee" tab of DeviceHub (/device-monitor
+ * ?tab=oee) alongside Fleet / Health / Field. The standalone /oee-dashboard route
+ * now just redirects here (see the thin default export below), keeping deep-links.
+ */
+export function OEEDashboardContent() {
   const { t } = useTranslation();
   const [selectedMachine, setSelectedMachine] = useState<number | null>(null);
   const [showCalculator, setShowCalculator] = useState(false);
@@ -156,7 +168,10 @@ export default function OEEDashboard() {
 
   // Queries
   const { data: machines } = trpc.machine.list.useQuery();
-  const { data: allOEE, refetch: refetchOEE } = trpc.mqttClient.getAllOEE.useQuery();
+  // doc 40 DEV-10 — auto-refresh mỗi 60s (trước đây chỉ cập nhật khi bấm Refresh).
+  const { data: allOEE, refetch: refetchOEE } = trpc.mqttClient.getAllOEE.useQuery(undefined, {
+    refetchInterval: 60_000,
+  });
   const { data: machineOEE } = trpc.mqttClient.getMachineOEE.useQuery(
     { machineId: selectedMachine! },
     { enabled: !!selectedMachine }
@@ -181,6 +196,36 @@ export default function OEEDashboard() {
     },
     { enabled: !!selectedMachine && !!machineOEE, refetchInterval: 60_000 },
   );
+
+  // doc 46 FE-W2 — socket-first freshness. The OEE/downtime/health data is driven by
+  // the unified U1 stream: an `oee` / `downtime` / `maintenance` ecosystem event
+  // invalidates the relevant mqttClient queries so the board updates live. A short
+  // trailing debounce collapses a burst of events into ONE refetch. The 60s polls
+  // above stay as the fallback backstop for when the socket is down.
+  const utils = trpc.useUtils();
+  const oeeInvalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleOeeInvalidate = useCallback(() => {
+    if (oeeInvalidateTimer.current) clearTimeout(oeeInvalidateTimer.current);
+    oeeInvalidateTimer.current = setTimeout(() => {
+      utils.mqttClient.getAllOEE.invalidate();
+      utils.mqttClient.getMachineOEE.invalidate();
+      utils.mqttClient.getActiveDowntime.invalidate();
+      utils.mqttClient.getDowntimeHistory.invalidate();
+      utils.mqttClient.semiE10Breakdown.invalidate();
+      utils.mqttClient.getMachineHealth.invalidate();
+    }, 1500);
+  }, [utils]);
+  useEffect(() => () => { if (oeeInvalidateTimer.current) clearTimeout(oeeInvalidateTimer.current); }, []);
+  // Full `ecosystem:event` stream (NOT alertsOnly) — `oee` + `downtime` are not
+  // alert-class kinds, so they only ride the unfiltered channel.
+  const { isConnected: liveConnected } = useEcosystemEvents({
+    bufferSize: 1,
+    onEvent: (evt) => {
+      if (evt.kind === "oee" || evt.kind === "downtime" || evt.kind === "maintenance") {
+        scheduleOeeInvalidate();
+      }
+    },
+  });
 
   // Mutations
   const calculateOEEMutation = trpc.mqttClient.calculateOEE.useMutation({
@@ -236,7 +281,7 @@ export default function OEEDashboard() {
     value: duration,
   }));
 
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+  const COLORS = [chartColor(0), chartColor(1), chartColor(2), chartColor(3), chartColor(4), chartColor(0)];
 
   // Export OEE data to CSV
   const exportToCSV = () => {
@@ -372,17 +417,23 @@ export default function OEEDashboard() {
   };
 
   return (
-    <DashboardLayout>
       <div className="space-y-4 sm:space-y-6 mobile-safe-bottom">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold">OEE Dashboard</h1>
-            <p className="text-sm sm:text-base text-muted-foreground">
-              {t('oee.subtitle')}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+        <PageHeader
+          icon={<Gauge className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
+          title="OEE Dashboard"
+          description={t('oee.subtitle')}
+          actions={
+            <>
+            {liveConnected ? (
+              <Badge variant="outline" className="gap-1 border-success/40 text-success">
+                <Wifi className="h-3.5 w-3.5" /> {t('common.live', 'Live')}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="gap-1 text-muted-foreground">
+                <WifiOff className="h-3.5 w-3.5" /> {t('common.polling', 'Polling')}
+              </Badge>
+            )}
             <Button variant="outline" onClick={exportToCSV}>
               <Download className="h-4 w-4 mr-2" />
               {t('oee.exportCsv')}
@@ -506,15 +557,25 @@ export default function OEEDashboard() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          </div>
-        </div>
+            </>
+          }
+        />
+
+        {/* U7 cross-links — OEE-focused view; the Command Center KPI strip + the
+            device monitor give the wider live picture. */}
+        <RelatedViews
+          links={[
+            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+            { href: "/device-monitor", labelKey: "nav.deviceMonitor", labelDefault: "Device Monitor" },
+          ]}
+        />
 
         {/* Overview Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <Gauge className="h-3 w-3 sm:h-4 sm:w-4 text-blue-500" />
+                <Gauge className="h-3 w-3 sm:h-4 sm:w-4 text-info" />
                 <span className="hidden sm:inline">{t('oee.avgOee')}</span>
                 <span className="sm:hidden">{t('oee.avgOeeShort')}</span>
               </CardTitle>
@@ -531,7 +592,7 @@ export default function OEEDashboard() {
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-green-500" />
+                <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-success" />
                 <span className="hidden sm:inline">{t('oee.machinesMonitored')}</span>
                 <span className="sm:hidden">{t('oee.machinesShort')}</span>
               </CardTitle>
@@ -547,7 +608,7 @@ export default function OEEDashboard() {
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-orange-500" />
+                <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-warning" />
                 <span className="hidden sm:inline">{t('oee.downtimeToday')}</span>
                 <span className="sm:hidden">Downtime</span>
               </CardTitle>
@@ -565,7 +626,7 @@ export default function OEEDashboard() {
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-red-500" />
+                <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-destructive" />
                 {t('oee.alerts')}
               </CardTitle>
             </CardHeader>
@@ -643,22 +704,22 @@ export default function OEEDashboard() {
                         <OEEGauge
                           value={machineOEE.availability}
                           label="Availability"
-                          color="#22c55e"
+                          color="var(--success)"
                         />
                         <OEEGauge
                           value={machineOEE.performance}
                           label="Performance"
-                          color="#3b82f6"
+                          color="var(--info)"
                         />
                         <OEEGauge
                           value={machineOEE.quality}
                           label="Quality"
-                          color="#f59e0b"
+                          color="var(--warning)"
                         />
                         <OEEGauge
                           value={machineOEE.oee}
                           label="OEE"
-                          color="#8b5cf6"
+                          color="var(--primary)"
                         />
                       </div>
 
@@ -675,7 +736,7 @@ export default function OEEDashboard() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Downtime:</span>
-                            <span className="font-medium text-red-500">{machineOEE.details.downtime} {t('oee.minutes')}</span>
+                            <span className="font-medium text-destructive">{machineOEE.details.downtime} {t('oee.minutes')}</span>
                           </div>
                         </div>
                         <div className="space-y-2">
@@ -685,11 +746,11 @@ export default function OEEDashboard() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">{t('oee.goodProducts')}:</span>
-                            <span className="font-medium text-green-500">{machineOEE.details.goodCount}</span>
+                            <span className="font-medium text-success">{machineOEE.details.goodCount}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">{t('oee.rejects')}:</span>
-                            <span className="font-medium text-red-500">{machineOEE.details.rejectCount}</span>
+                            <span className="font-medium text-destructive">{machineOEE.details.rejectCount}</span>
                           </div>
                         </div>
                       </div>
@@ -748,16 +809,16 @@ export default function OEEDashboard() {
                     const a = semiE10Q.data.alert;
                     const banner =
                       a.level === "critical"
-                        ? "bg-red-500/10 border-red-500 text-red-700 dark:text-red-300"
+                        ? "bg-destructive/10 border-destructive/50 text-destructive"
                         : a.level === "warning"
-                          ? "bg-amber-500/10 border-amber-500 text-amber-700 dark:text-amber-300"
-                          : "bg-green-500/10 border-green-500 text-green-700 dark:text-green-300";
+                          ? "bg-warning/10 border-warning/50 text-warning"
+                          : "bg-success/10 border-success/50 text-success";
                     const tiles: Array<{ k: keyof typeof b.states; label: string; color: string }> = [
-                      { k: "PT", label: "Productive (PT)", color: "text-green-600" },
-                      { k: "SB", label: "Standby (SB)", color: "text-blue-600" },
-                      { k: "ET", label: "Engineering (ET)", color: "text-indigo-600" },
-                      { k: "SD", label: "Sched. Downtime (SD)", color: "text-amber-600" },
-                      { k: "UD", label: "Unsched. Down (UD)", color: "text-red-600" },
+                      { k: "PT", label: "Productive (PT)", color: "text-success" },
+                      { k: "SB", label: "Standby (SB)", color: "text-info" },
+                      { k: "ET", label: "Engineering (ET)", color: "text-primary" },
+                      { k: "SD", label: "Sched. Downtime (SD)", color: "text-warning" },
+                      { k: "UD", label: "Unsched. Down (UD)", color: "text-destructive" },
                       { k: "NS", label: "Non-Scheduled (NS)", color: "text-muted-foreground" },
                     ];
                     return (
@@ -821,14 +882,14 @@ export default function OEEDashboard() {
                   <div className="h-80">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={allOEE}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="machineCode" />
-                        <YAxis domain={[0, 100]} />
-                        <Tooltip />
+                        <CartesianGrid {...chartGridProps} />
+                        <XAxis dataKey="machineCode" {...chartAxisProps} />
+                        <YAxis domain={[0, 100]} {...chartAxisProps} />
+                        <Tooltip contentStyle={chartTooltipStyle} />
                         <Legend />
-                        <Bar dataKey="availability" name="Availability" fill="#22c55e" />
-                        <Bar dataKey="performance" name="Performance" fill="#3b82f6" />
-                        <Bar dataKey="quality" name="Quality" fill="#f59e0b" />
+                        <Bar dataKey="availability" name="Availability" fill="var(--success)" />
+                        <Bar dataKey="performance" name="Performance" fill="var(--info)" />
+                        <Bar dataKey="quality" name="Quality" fill="var(--warning)" />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -857,14 +918,14 @@ export default function OEEDashboard() {
                             labelLine={false}
                             label={({ name, value }) => `${name}: ${value}m`}
                             outerRadius={80}
-                            fill="#8884d8"
+                            fill={chartColor(0)}
                             dataKey="value"
                           >
                             {downtimePieData.map((_, index) => (
                               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                             ))}
                           </Pie>
-                          <Tooltip />
+                          <Tooltip contentStyle={chartTooltipStyle} />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
@@ -1015,9 +1076,9 @@ export default function OEEDashboard() {
                             innerRadius="60%"
                             outerRadius="100%"
                             barSize={10}
-                            data={[{ value: machineHealth.score, fill: 
-                              machineHealth.score >= 80 ? '#22c55e' :
-                              machineHealth.score >= 50 ? '#f59e0b' : '#ef4444'
+                            data={[{ value: machineHealth.score, fill:
+                              machineHealth.score >= 80 ? 'var(--success)' :
+                              machineHealth.score >= 50 ? 'var(--warning)' : 'var(--destructive)'
                             }]}
                             startAngle={180}
                             endAngle={0}
@@ -1058,6 +1119,14 @@ export default function OEEDashboard() {
           </TabsContent>
         </Tabs>
       </div>
-    </DashboardLayout>
   );
+}
+
+/**
+ * doc 40 Wave 4 DEV-10 — OEE & Downtime is now the 4th tab of DeviceHub. The
+ * legacy /oee-dashboard route stays as a thin redirect into the hub so bookmarks,
+ * the nav item, and cross-links keep working.
+ */
+export default function OEEDashboard() {
+  return <Redirect to="/device-monitor?tab=oee" />;
 }

@@ -96,6 +96,23 @@
       "sinceVersion": 5,
       "serverImageWidth": 1920,
       "serverImageHeight": 1080,
+      "coordinateMode": "pixel",
+      "fiducials": [
+        {
+          "id": 1,
+          "code": "F1",
+          "name": "Top-Left",
+          "type": "cross",
+          "positionX": 50,
+          "positionY": 50,
+          "normalizedX": 0.026,
+          "normalizedY": 0.046,
+          "searchWindowW": 64,
+          "searchWindowH": 64,
+          "templateImageUrl": null,
+          "orderIndex": 0
+        }
+      ],
       "points": [
         {
           "id": 101,
@@ -103,6 +120,7 @@
           "name": "Diem check 1",
           "description": "Kiem tra vet tray",
           "measurementType": "VISUAL",
+          "measurementTypeCode": null,
           "unit": null,
           "lowerLimit": null,
           "upperLimit": null,
@@ -117,8 +135,47 @@
           "cropHeight": 100,
           "orderIndex": 0,
           "isActive": true,
+          "shape": "circle",
+          "geometry": null,
+          "heightMin": null,
+          "heightMax": null,
+          "coplanarityMax": null,
+          "criteria": null,
+          "lighting": [],
           "lastModifiedAt": "2026-04-21T08:30:00.000Z"
+        },
+        {
+          "id": 102,
+          "code": "CHECK-02",
+          "name": "Solder array",
+          "measurementType": "SURFACE",
+          "positionX": 500,
+          "positionY": 320,
+          "radius": 24,
+          "orderIndex": 1,
+          "isActive": true,
+          "shape": "array",
+          "geometry": {
+            "shape": "array",
+            "rows": 2,
+            "cols": 3,
+            "pitchX": 24,
+            "pitchY": 24,
+            "originX": 480,
+            "originY": 300,
+            "cellShape": "circle",
+            "cellGeometry": { "radius": 8 }
+          },
+          "cells": [
+            { "rowIndex": 0, "colIndex": 0, "shape": "circle", "geometry": { "shape": "circle", "x": 480, "y": 300, "radius": 8 } },
+            { "rowIndex": 0, "colIndex": 1, "shape": "circle", "geometry": { "shape": "circle", "x": 504, "y": 300, "radius": 8 } },
+            { "rowIndex": 1, "colIndex": 2, "shape": "circle", "geometry": { "shape": "circle", "x": 528, "y": 324, "radius": 8 } }
+          ]
         }
+      ],
+      "deletedCodes": ["OLD-P07"],
+      "deletedPoints": [
+        { "id": 88, "code": "OLD-P07", "deletedAt": "2026-04-20T02:11:00.000Z", "deletedAtVersion": 4 }
       ]
     },
     "responseNoChanges": {
@@ -126,7 +183,9 @@
       "hasChanges": false,
       "currentVersion": 6,
       "sinceVersion": 6,
-      "points": []
+      "points": [],
+      "deletedCodes": [],
+      "deletedPoints": []
     }
   },
   "getPoints": {

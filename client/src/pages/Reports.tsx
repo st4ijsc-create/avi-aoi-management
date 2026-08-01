@@ -2,6 +2,9 @@ import { useState, useMemo, useRef } from "react";
 import { useTranslation } from 'react-i18next';
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, chartGridProps, chartAxisProps, chartTooltipStyle, chartTooltipLabelStyle } from "@/components/patterns";
+import { EmptyState } from "@/components/EmptyState";
+import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,7 +29,8 @@ import {
   FileText,
   FileSpreadsheet,
   File,
-  ChevronDown
+  ChevronDown,
+  Printer
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import {
@@ -56,18 +60,25 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { jsPDF } from "jspdf";
 import * as XLSX from "xlsx";
+import { buildMachineComparison, buildFactoryComparison } from "@/lib/reportsData";
 
+// Result colours map to semantic tokens (success/destructive/warning) so charts
+// follow the theme; series colours use the DS chart palette.
 const COLORS = {
-  ok: "#10b981",
-  ng: "#ef4444",
-  ntf: "#f59e0b",
-  primary: "#06b6d4",
-  secondary: "#8b5cf6",
+  ok: "var(--success)",
+  ng: "var(--destructive)",
+  ntf: "var(--warning)",
+  primary: "var(--chart-1)",
+  secondary: "var(--chart-4)",
 };
 
 type TimeRange = "7d" | "30d" | "90d" | "365d";
 
-export default function Reports() {
+// doc 60 G — body without DashboardLayout so it embeds as the Reporting Studio
+// "Tổng quan/Phân tích" tab. NB: this is the quality-analytics dashboard (yield/trends/
+// COPQ), NOT the saved-reports list (that's the Build tab). Default export below keeps
+// the standalone /reports route.
+export function ReportsContent() {
   const { t } = useTranslation();
   const { user, loading: authLoading } = useAuth();
   const [selectedFactory, setSelectedFactory] = useState<string>("all");
@@ -95,6 +106,28 @@ export default function Reports() {
   const { data: weeklyCOPQ } = trpc.corporateFactoryStats.weeklyCOPQ.useQuery({
     weeks: timeRange === "7d" ? 4 : timeRange === "30d" ? 12 : timeRange === "90d" ? 13 : 52,
     factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+  });
+
+  // Report window mirroring the yield window — feeds the real per-machine /
+  // per-factory aggregates below (doc 32 P0 #2: these were hardcoded []).
+  const reportWindow = useMemo(() => {
+    const days = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : timeRange === "90d" ? 90 : 365;
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    return { startDate, endDate };
+  }, [timeRange]);
+
+  // Top + bottom machines (name/code/total/finalYield/ng) for the machine tab.
+  const { data: topBottomMachines } = trpc.dashboard.getTopBottomMachines.useQuery({
+    startDate: reportWindow.startDate,
+    endDate: reportWindow.endDate,
+    limit: 10,
+  });
+  // Per-factory yield rollup (final yield, decision #4) for the factory tab.
+  const { data: factoryYield } = trpc.corporateFactoryStats.yieldRateByFactory.useQuery({
+    startDate: reportWindow.startDate,
+    endDate: reportWindow.endDate,
   });
 
   // Define type for daily stats
@@ -180,21 +213,12 @@ export default function Reports() {
       });
   }, [dailyStats]);
 
-  // Machine comparison data
-  const machineComparisonData = useMemo(() => {
-    if (!machines || !dailyStats) return [];
-
-    // Group by machine (simplified - in real app would query per machine)
-    const machineStats = machines.map((machine: { id: number; name: string; code: string }) => ({
-      name: machine.name,
-      code: machine.code,
-      total: Math.floor(Math.random() * 1000) + 500, // Placeholder
-      yieldRate: 85 + Math.random() * 15, // Placeholder
-      ngRate: 2 + Math.random() * 8, // Placeholder
-    }));
-
-    return machineStats.sort((a, b) => b.yieldRate - a.yieldRate);
-  }, [machines, dailyStats]);
+  // Machine comparison data — real per-machine rollup from getTopBottomMachines
+  // (top + bottom performers, deduped). See lib/reportsData.buildMachineComparison.
+  const machineComparisonData = useMemo(
+    () => buildMachineComparison(topBottomMachines as any, machines as any, selectedFactory),
+    [topBottomMachines, machines, selectedFactory],
+  );
 
   // Result distribution data
   const resultDistributionData = useMemo(() => {
@@ -205,18 +229,12 @@ export default function Reports() {
     ];
   }, [aggregatedStats]);
 
-  // Factory comparison data
-  const factoryComparisonData = useMemo(() => {
-    if (!factories) return [];
-
-    return factories.map((factory: { id: number; name: string; code: string }) => ({
-      name: factory.name,
-      code: factory.code,
-      total: Math.floor(Math.random() * 5000) + 2000, // Placeholder
-      yieldRate: 88 + Math.random() * 10, // Placeholder
-      machines: machines?.filter((m: { stationId: number }) => m.stationId > 0).length || 0,
-    }));
-  }, [factories, machines]);
+  // Factory comparison data — real per-factory yield rollup (final yield). See
+  // lib/reportsData.buildFactoryComparison.
+  const factoryComparisonData = useMemo(
+    () => buildFactoryComparison(factoryYield as any, factories as any, machines as any, selectedFactory),
+    [factoryYield, factories, machines, selectedFactory],
+  );
 
   // Export to CSV
   const handleExportCSV = () => {
@@ -441,18 +459,27 @@ export default function Reports() {
 
   if (authLoading) {
     return (
-      <DashboardLayout title={t('reports.title')} navItems={navItems} currentPath="/reports">
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="space-y-4">
+        <Skeleton className="h-9 w-64" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 w-full" />
+          ))}
         </div>
-      </DashboardLayout>
+        <Skeleton className="h-72 w-full" />
+      </div>
     );
   }
 
   return (
-    <DashboardLayout title={t('reports.title')} navItems={navItems} currentPath="/reports">
+    <>
+      <PageHeader
+        icon={<BarChart3 className="h-6 w-6" />}
+        title={t('reports.title')}
+        description={t('reports.subtitle', 'Quality yield, defect trends and cost-of-poor-quality analytics')}
+      />
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-4 mb-6 mt-4">
         <div className="flex items-center gap-2">
           <Factory className="h-4 w-4 text-muted-foreground" />
           <Select value={selectedFactory} onValueChange={setSelectedFactory}>
@@ -491,7 +518,14 @@ export default function Reports() {
           <RefreshCw className="h-4 w-4 mr-2" />
           {t('common.refresh')}
         </Button>
-        
+
+        {/* F12 (doc 27 Đợt 5 / W5-E) — browser print of the visible report area
+            (@media print rules in index.css hide the app chrome). */}
+        <Button variant="outline" size="sm" onClick={() => window.print()}>
+          <Printer className="h-4 w-4 mr-2" />
+          {t('reports.print')}
+        </Button>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button size="sm" disabled={isExporting}>
@@ -508,21 +542,23 @@ export default function Reports() {
             <DropdownMenuLabel>{t('reports.selectFormat')}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleExportPDF} className="cursor-pointer">
-              <FileText className="h-4 w-4 mr-2 text-red-500" />
+              <FileText className="h-4 w-4 mr-2 text-destructive" />
               {t('reports.exportPDF')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleExportExcel} className="cursor-pointer">
-              <FileSpreadsheet className="h-4 w-4 mr-2 text-green-500" />
+              <FileSpreadsheet className="h-4 w-4 mr-2 text-success" />
               {t('reports.exportExcel')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer">
-              <File className="h-4 w-4 mr-2 text-blue-500" />
+              <File className="h-4 w-4 mr-2 text-info" />
               {t('reports.exportCSV')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
+      {/* F12 — print-area wraps the report output (summary + active tab) */}
+      <div className="print-area">
       {/* Summary Cards */}
       <div ref={reportRef} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <Card>
@@ -544,10 +580,10 @@ export default function Reports() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">{t('reports.okProducts')}</p>
-                <p className="text-2xl font-bold text-green-500">{aggregatedStats.okCount.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-success">{aggregatedStats.okCount.toLocaleString()}</p>
               </div>
-              <div className="p-3 rounded-full bg-green-500/10">
-                <CheckCircle2 className="h-6 w-6 text-green-500" />
+              <div className="p-3 rounded-full bg-success/10">
+                <CheckCircle2 className="h-6 w-6 text-success" />
               </div>
             </div>
           </CardContent>
@@ -558,10 +594,10 @@ export default function Reports() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">{t('reports.ngProducts')}</p>
-                <p className="text-2xl font-bold text-red-500">{aggregatedStats.ngCount.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-destructive">{aggregatedStats.ngCount.toLocaleString()}</p>
               </div>
-              <div className="p-3 rounded-full bg-red-500/10">
-                <XCircle className="h-6 w-6 text-red-500" />
+              <div className="p-3 rounded-full bg-destructive/10">
+                <XCircle className="h-6 w-6 text-destructive" />
               </div>
             </div>
           </CardContent>
@@ -572,10 +608,10 @@ export default function Reports() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">{t('reports.ntfProducts')}</p>
-                <p className="text-2xl font-bold text-amber-500">{aggregatedStats.ntfCount.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-warning">{aggregatedStats.ntfCount.toLocaleString()}</p>
               </div>
-              <div className="p-3 rounded-full bg-amber-500/10">
-                <AlertTriangle className="h-6 w-6 text-amber-500" />
+              <div className="p-3 rounded-full bg-warning/10">
+                <AlertTriangle className="h-6 w-6 text-warning" />
               </div>
             </div>
           </CardContent>
@@ -612,7 +648,7 @@ export default function Reports() {
           <TabsTrigger value="trend">{t('reports.tabTrend')}</TabsTrigger>
           <TabsTrigger value="machines">{t('reports.tabByMachine')}</TabsTrigger>
           <TabsTrigger value="factories">{t('reports.tabByFactory')}</TabsTrigger>
-          <TabsTrigger value="quality-cost">Chi phí chất lượng</TabsTrigger>
+          <TabsTrigger value="quality-cost">{t('reports.tabQualityCost', 'Chi phí chất lượng')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="executive" className="space-y-4">
@@ -632,7 +668,7 @@ export default function Reports() {
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
                       <div 
-                        className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-500"
+                        className="h-full bg-gradient-to-r from-success to-success rounded-full transition-all duration-500"
                         style={{ width: `${Math.min(aggregatedStats.yieldRate, 100)}%` }}
                       />
                     </div>
@@ -647,11 +683,11 @@ export default function Reports() {
                   <h4 className="font-medium text-muted-foreground">{t('reports.vsPreviousPeriod')}</h4>
                   <div className="flex items-center gap-2">
                     {aggregatedStats.trend >= 0 ? (
-                      <TrendingUp className="h-6 w-6 text-green-500" />
+                      <TrendingUp className="h-6 w-6 text-success" />
                     ) : (
-                      <TrendingDown className="h-6 w-6 text-red-500" />
+                      <TrendingDown className="h-6 w-6 text-destructive" />
                     )}
-                    <span className={`text-2xl font-bold ${aggregatedStats.trend >= 0 ? "text-green-500" : "text-red-500"}`}>
+                    <span className={`text-2xl font-bold ${aggregatedStats.trend >= 0 ? "text-success" : "text-destructive"}`}>
                       {aggregatedStats.trend >= 0 ? "+" : ""}{aggregatedStats.trend.toFixed(2)}%
                     </span>
                   </div>
@@ -664,15 +700,15 @@ export default function Reports() {
                   <h4 className="font-medium text-muted-foreground">{t('reports.resultDistribution')}</h4>
                   <div className="space-y-1">
                     <div className="flex justify-between text-sm">
-                      <span className="text-green-500">OK</span>
+                      <span className="text-success">OK</span>
                       <span>{aggregatedStats.totalProducts > 0 ? ((aggregatedStats.okCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}%</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-red-500">NG</span>
+                      <span className="text-destructive">NG</span>
                       <span>{aggregatedStats.totalProducts > 0 ? ((aggregatedStats.ngCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}%</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-amber-500">NTF</span>
+                      <span className="text-warning">NTF</span>
                       <span>{aggregatedStats.totalProducts > 0 ? ((aggregatedStats.ntfCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}%</span>
                     </div>
                   </div>
@@ -688,6 +724,9 @@ export default function Reports() {
               <CardDescription>{t('reports.machinePerformanceDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
+              {machineComparisonData.length === 0 ? (
+                <EmptyState variant="no-analytics" compact title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
+              ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -712,9 +751,9 @@ export default function Reports() {
                         </TableCell>
                         <TableCell>
                           {machine.yieldRate >= 95 ? (
-                            <Badge className="bg-green-500">{t('reports.excellent')}</Badge>
+                            <Badge className="bg-success">{t('reports.excellent')}</Badge>
                           ) : machine.yieldRate >= 90 ? (
-                            <Badge className="bg-amber-500">{t('reports.pass')}</Badge>
+                            <Badge className="bg-warning">{t('reports.pass')}</Badge>
                           ) : (
                             <Badge variant="destructive">{t('reports.needsImprovement')}</Badge>
                           )}
@@ -724,6 +763,7 @@ export default function Reports() {
                   })}
                 </TableBody>
               </Table>
+              )}
             </CardContent>
           </Card>
 
@@ -736,28 +776,28 @@ export default function Reports() {
             <CardContent>
               <div className="space-y-3">
                 {aggregatedStats.yieldRate < 95 && (
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                    <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5" />
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-warning/10 border border-warning/20">
+                    <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
                     <div>
-                      <p className="font-medium text-amber-600">{t('reports.yieldBelowTarget')}</p>
+                      <p className="font-medium text-warning">{t('reports.yieldBelowTarget')}</p>
                       <p className="text-sm text-muted-foreground">{t('reports.yieldBelowTargetDesc')}</p>
                     </div>
                   </div>
                 )}
                 {aggregatedStats.trend < 0 && (
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                    <TrendingDown className="h-5 w-5 text-red-500 mt-0.5" />
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                    <TrendingDown className="h-5 w-5 text-destructive mt-0.5" />
                     <div>
-                      <p className="font-medium text-red-600">{t('reports.downTrendVsPrevious')}</p>
+                      <p className="font-medium text-destructive">{t('reports.downTrendVsPrevious')}</p>
                       <p className="text-sm text-muted-foreground">{t('reports.downTrendVsPreviousDesc')}</p>
                     </div>
                   </div>
                 )}
                 {aggregatedStats.yieldRate >= 95 && aggregatedStats.trend >= 0 && (
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                    <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-success/10 border border-success/20">
+                    <CheckCircle2 className="h-5 w-5 text-success mt-0.5" />
                     <div>
-                      <p className="font-medium text-green-600">{t('reports.goodPerformance')}</p>
+                      <p className="font-medium text-success">{t('reports.goodPerformance')}</p>
                       <p className="text-sm text-muted-foreground">{t('reports.goodPerformanceDesc')}</p>
                     </div>
                   </div>
@@ -772,20 +812,20 @@ export default function Reports() {
             {/* Yield Rate Trend */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Xu hướng Yield Rate</CardTitle>
-                <CardDescription>Biểu đồ Yield Rate theo thời gian</CardDescription>
+                <CardTitle className="text-lg">{t('reports.yieldTrendTitle', 'Xu hướng Yield Rate')}</CardTitle>
+                <CardDescription>{t('reports.yieldTrendDesc', 'Biểu đồ Yield Rate theo thời gian')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={yieldTrendData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-                      <YAxis yAxisId="left" stroke="#9ca3af" fontSize={12} />
-                      <YAxis yAxisId="right" orientation="right" stroke="#9ca3af" fontSize={12} domain={[0, 100]} />
+                      <CartesianGrid {...chartGridProps} />
+                      <XAxis dataKey="date" {...chartAxisProps} fontSize={12} />
+                      <YAxis yAxisId="left" {...chartAxisProps} fontSize={12} />
+                      <YAxis yAxisId="right" orientation="right" {...chartAxisProps} fontSize={12} domain={[0, 100]} />
                       <Tooltip
-                        contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                        labelStyle={{ color: "#f3f4f6" }}
+                        contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
                       />
                       <Legend />
                       <Bar yAxisId="left" dataKey="total" name={t('reports.totalProducts')} fill={COLORS.primary} opacity={0.5} />
@@ -829,7 +869,8 @@ export default function Reports() {
                         ))}
                       </Pie>
                       <Tooltip
-                        contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
+                        contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
                       />
                       <Legend />
                     </PieChart>
@@ -849,12 +890,12 @@ export default function Reports() {
               <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={yieldTrendData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-                    <YAxis stroke="#9ca3af" fontSize={12} />
+                    <CartesianGrid {...chartGridProps} />
+                    <XAxis dataKey="date" {...chartAxisProps} fontSize={12} />
+                    <YAxis {...chartAxisProps} fontSize={12} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                      labelStyle={{ color: "#f3f4f6" }}
+                      contentStyle={chartTooltipStyle}
+                      labelStyle={chartTooltipLabelStyle}
                     />
                     <Legend />
                     <Bar dataKey="ok" name="OK" stackId="a" fill={COLORS.ok} />
@@ -877,12 +918,12 @@ export default function Reports() {
               <div className="h-[400px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={yieldTrendData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-                    <YAxis domain={[0, 100]} stroke="#9ca3af" fontSize={12} />
+                    <CartesianGrid {...chartGridProps} />
+                    <XAxis dataKey="date" {...chartAxisProps} fontSize={12} />
+                    <YAxis domain={[0, 100]} {...chartAxisProps} fontSize={12} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                      labelStyle={{ color: "#f3f4f6" }}
+                      contentStyle={chartTooltipStyle}
+                      labelStyle={chartTooltipLabelStyle}
                     />
                     <Legend />
                     <Area
@@ -899,7 +940,7 @@ export default function Reports() {
                       type="monotone"
                       dataKey={() => 95}
                       name={t('reports.target95')}
-                      stroke="#f59e0b"
+                      stroke={COLORS.ntf}
                       strokeDasharray="5 5"
                       dot={false}
                     />
@@ -931,9 +972,9 @@ export default function Reports() {
                     <TableRow key={row.fullDate}>
                       <TableCell>{row.fullDate}</TableCell>
                       <TableCell className="text-right">{row.total.toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-green-500">{row.ok.toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-red-500">{row.ng.toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-amber-500">{row.ntf.toLocaleString()}</TableCell>
+                      <TableCell className="text-right text-success">{row.ok.toLocaleString()}</TableCell>
+                      <TableCell className="text-right text-destructive">{row.ng.toLocaleString()}</TableCell>
+                      <TableCell className="text-right text-warning">{row.ntf.toLocaleString()}</TableCell>
                       <TableCell className="text-right">
                         <Badge variant={row.yieldRate >= 95 ? "default" : row.yieldRate >= 90 ? "secondary" : "destructive"}>
                           {row.yieldRate}%
@@ -954,15 +995,18 @@ export default function Reports() {
               <CardDescription>{t('reports.machineComparisonDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
+              {machineComparisonData.length === 0 ? (
+                <EmptyState variant="no-analytics" title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
+              ) : (
               <div className="h-[400px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={machineComparisonData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis type="number" domain={[0, 100]} stroke="#9ca3af" fontSize={12} />
-                    <YAxis type="category" dataKey="name" stroke="#9ca3af" fontSize={12} width={120} />
+                    <CartesianGrid {...chartGridProps} />
+                    <XAxis type="number" domain={[0, 100]} {...chartAxisProps} fontSize={12} />
+                    <YAxis type="category" dataKey="name" {...chartAxisProps} fontSize={12} width={120} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                      labelStyle={{ color: "#f3f4f6" }}
+                      contentStyle={chartTooltipStyle}
+                      labelStyle={chartTooltipLabelStyle}
                       formatter={(value: number) => [`${value.toFixed(2)}%`, "Yield Rate"]}
                     />
                     <Bar dataKey="yieldRate" name="Yield Rate" fill={COLORS.primary}>
@@ -976,6 +1020,7 @@ export default function Reports() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              )}
             </CardContent>
           </Card>
 
@@ -985,6 +1030,9 @@ export default function Reports() {
               <CardTitle className="text-lg">{t('reports.machineDetail')}</CardTitle>
             </CardHeader>
             <CardContent>
+              {machineComparisonData.length === 0 ? (
+                <EmptyState variant="no-analytics" compact title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
+              ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1007,20 +1055,21 @@ export default function Reports() {
                           {machine.yieldRate.toFixed(2)}%
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right text-red-500">{machine.ngRate.toFixed(2)}%</TableCell>
+                      <TableCell className="text-right text-destructive">{machine.ngRate.toFixed(2)}%</TableCell>
                       <TableCell>
                         {machine.yieldRate >= 95 ? (
-                          <Badge variant="outline" className="text-green-500 border-green-500">{t('reports.good')}</Badge>
+                          <Badge variant="outline" className="text-success border-success">{t('reports.good')}</Badge>
                         ) : machine.yieldRate >= 90 ? (
-                          <Badge variant="outline" className="text-amber-500 border-amber-500">{t('reports.needsImprovement')}</Badge>
+                          <Badge variant="outline" className="text-warning border-warning">{t('reports.needsImprovement')}</Badge>
                         ) : (
-                          <Badge variant="outline" className="text-red-500 border-red-500">{t('reports.warning')}</Badge>
+                          <Badge variant="outline" className="text-destructive border-destructive">{t('reports.warning')}</Badge>
                         )}
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1032,15 +1081,18 @@ export default function Reports() {
               <CardDescription>{t('reports.factoryComparisonDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
+              {factoryComparisonData.length === 0 ? (
+                <EmptyState variant="no-analytics" title={t('reports.factoryStatsEmpty', 'Per-factory statistics are not available yet.')} />
+              ) : (
               <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={factoryComparisonData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} />
-                    <YAxis domain={[0, 100]} stroke="#9ca3af" fontSize={12} />
+                    <CartesianGrid {...chartGridProps} />
+                    <XAxis dataKey="name" {...chartAxisProps} fontSize={12} />
+                    <YAxis domain={[0, 100]} {...chartAxisProps} fontSize={12} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                      labelStyle={{ color: "#f3f4f6" }}
+                      contentStyle={chartTooltipStyle}
+                      labelStyle={chartTooltipLabelStyle}
                     />
                     <Legend />
                     <Bar dataKey="yieldRate" name="Yield Rate (%)" fill={COLORS.primary}>
@@ -1054,6 +1106,7 @@ export default function Reports() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1094,14 +1147,14 @@ export default function Reports() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Target className="h-5 w-5" />
-                Cấu hình chi phí tái chế
+                {t('reports.reworkCostConfig', 'Cấu hình chi phí tái chế')}
               </CardTitle>
-              <CardDescription>Thiết lập chi phí rework cho từng loại lỗi để tính COPQ</CardDescription>
+              <CardDescription>{t('reports.reworkCostConfigDesc', 'Thiết lập chi phí rework cho từng loại lỗi để tính COPQ')}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Chi phí rework / NG (VNĐ)</label>
+                  <label className="text-sm font-medium">{t('reports.reworkCostNg', 'Chi phí rework / NG (VNĐ)')}</label>
                   <input
                     type="number"
                     min={0}
@@ -1115,7 +1168,7 @@ export default function Reports() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Chi phí rework / NTF (VNĐ)</label>
+                  <label className="text-sm font-medium">{t('reports.reworkCostNtf', 'Chi phí rework / NTF (VNĐ)')}</label>
                   <input
                     type="number"
                     min={0}
@@ -1137,9 +1190,9 @@ export default function Reports() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <TrendingUp className="h-5 w-5" />
-                Xu hướng COPQ theo tuần
+                {t('reports.copqTrendTitle', 'Xu hướng COPQ theo tuần')}
               </CardTitle>
-              <CardDescription>Chi phí chất lượng kém (Cost of Poor Quality) = NG × đơn giá NG + NTF × đơn giá NTF</CardDescription>
+              <CardDescription>{t('reports.copqTrendDesc', 'Chi phí chất lượng kém (Cost of Poor Quality) = NG × đơn giá NG + NTF × đơn giá NTF')}</CardDescription>
             </CardHeader>
             <CardContent>
               {weeklyCOPQ && (weeklyCOPQ as any[]).length > 0 ? (() => {
@@ -1167,43 +1220,45 @@ export default function Reports() {
                   <div className="space-y-4">
                     {/* Summary Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                      <div className="p-4 rounded-lg bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800">
-                        <div className="text-sm text-red-600 dark:text-red-400">Tổng COPQ</div>
-                        <div className="text-xl font-bold text-red-700 dark:text-red-300">{totalCOPQ.toLocaleString()} đ</div>
+                      <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
+                        <div className="text-sm text-destructive">{t('reports.copqTotal', 'Tổng COPQ')}</div>
+                        <div className="text-xl font-bold text-destructive">{totalCOPQ.toLocaleString()} đ</div>
                       </div>
-                      <div className="p-4 rounded-lg bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800">
-                        <div className="text-sm text-orange-600 dark:text-orange-400">Chi phí NG</div>
-                        <div className="text-xl font-bold text-orange-700 dark:text-orange-300">{(totalNG * reworkCostNG).toLocaleString()} đ</div>
+                      <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
+                        <div className="text-sm text-destructive">{t('reports.copqNgCost', 'Chi phí NG')}</div>
+                        <div className="text-xl font-bold text-destructive">{(totalNG * reworkCostNG).toLocaleString()} đ</div>
                       </div>
-                      <div className="p-4 rounded-lg bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800">
-                        <div className="text-sm text-yellow-600 dark:text-yellow-400">Chi phí NTF</div>
-                        <div className="text-xl font-bold text-yellow-700 dark:text-yellow-300">{(totalNTF * reworkCostNTF).toLocaleString()} đ</div>
+                      <div className="p-4 rounded-lg bg-warning/10 border border-warning/20">
+                        <div className="text-sm text-warning">{t('reports.copqNtfCost', 'Chi phí NTF')}</div>
+                        <div className="text-xl font-bold text-warning">{(totalNTF * reworkCostNTF).toLocaleString()} đ</div>
                       </div>
-                      <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
-                        <div className="text-sm text-blue-600 dark:text-blue-400">Tổng sản phẩm lỗi</div>
-                        <div className="text-xl font-bold text-blue-700 dark:text-blue-300">{(totalNG + totalNTF).toLocaleString()}</div>
+                      <div className="p-4 rounded-lg bg-info/10 border border-info/20">
+                        <div className="text-sm text-info">{t('reports.copqDefectTotal', 'Tổng sản phẩm lỗi')}</div>
+                        <div className="text-xl font-bold text-info">{(totalNG + totalNTF).toLocaleString()}</div>
                       </div>
                     </div>
 
                     {/* Chart */}
                     <ResponsiveContainer width="100%" height={400}>
                       <ComposedChart data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="week" tick={{ fontSize: 12 }} />
-                        <YAxis yAxisId="left" tick={{ fontSize: 12 }} />
-                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} unit="%" />
+                        <CartesianGrid {...chartGridProps} />
+                        <XAxis dataKey="week" {...chartAxisProps} />
+                        <YAxis yAxisId="left" {...chartAxisProps} />
+                        <YAxis yAxisId="right" orientation="right" {...chartAxisProps} unit="%" />
                         <Tooltip
+                          contentStyle={chartTooltipStyle}
+                          labelStyle={chartTooltipLabelStyle}
                           formatter={(value: any, name: string) => {
                             if (name === 'copqNG') return [`${Number(value).toLocaleString()} đ`, 'COPQ (NG)'];
                             if (name === 'copqNTF') return [`${Number(value).toLocaleString()} đ`, 'COPQ (NTF)'];
-                            if (name === 'defectRate') return [`${Number(value).toFixed(2)}%`, 'Tỷ lệ NG'];
+                            if (name === 'defectRate') return [`${Number(value).toFixed(2)}%`, t('reports.ngRateShort', 'Tỷ lệ NG')];
                             return [value, name];
                           }}
                         />
                         <Legend />
                         <Bar yAxisId="left" dataKey="copqNG" stackId="copq" fill={COLORS.ng} name="COPQ (NG)" />
                         <Bar yAxisId="left" dataKey="copqNTF" stackId="copq" fill={COLORS.ntf} name="COPQ (NTF)" />
-                        <Line yAxisId="right" type="monotone" dataKey="defectRate" stroke={COLORS.secondary} strokeWidth={2} name="Tỷ lệ NG (%)" dot={{ r: 3 }} />
+                        <Line yAxisId="right" type="monotone" dataKey="defectRate" stroke={COLORS.secondary} strokeWidth={2} name={t('reports.ngRatePercent', 'Tỷ lệ NG (%)')} dot={{ r: 3 }} />
                       </ComposedChart>
                     </ResponsiveContainer>
 
@@ -1211,14 +1266,14 @@ export default function Reports() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Tuần</TableHead>
-                          <TableHead className="text-right">Tổng SP</TableHead>
+                          <TableHead>{t('reports.week', 'Tuần')}</TableHead>
+                          <TableHead className="text-right">{t('reports.totalProductsShort', 'Tổng SP')}</TableHead>
                           <TableHead className="text-right">NG</TableHead>
                           <TableHead className="text-right">NTF</TableHead>
                           <TableHead className="text-right">COPQ (NG)</TableHead>
                           <TableHead className="text-right">COPQ (NTF)</TableHead>
-                          <TableHead className="text-right">Tổng COPQ</TableHead>
-                          <TableHead className="text-right">Tỷ lệ NG</TableHead>
+                          <TableHead className="text-right">{t('reports.copqTotal', 'Tổng COPQ')}</TableHead>
+                          <TableHead className="text-right">{t('reports.ngRateShort', 'Tỷ lệ NG')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1226,8 +1281,8 @@ export default function Reports() {
                           <TableRow key={row.week}>
                             <TableCell>{row.week}</TableCell>
                             <TableCell className="text-right">{row.totalCount.toLocaleString()}</TableCell>
-                            <TableCell className="text-right text-red-600">{row.ngCount.toLocaleString()}</TableCell>
-                            <TableCell className="text-right text-yellow-600">{row.ntfCount.toLocaleString()}</TableCell>
+                            <TableCell className="text-right text-destructive">{row.ngCount.toLocaleString()}</TableCell>
+                            <TableCell className="text-right text-warning">{row.ntfCount.toLocaleString()}</TableCell>
                             <TableCell className="text-right">{row.copqNG.toLocaleString()} đ</TableCell>
                             <TableCell className="text-right">{row.copqNTF.toLocaleString()} đ</TableCell>
                             <TableCell className="text-right font-medium">{row.copqTotal.toLocaleString()} đ</TableCell>
@@ -1243,14 +1298,26 @@ export default function Reports() {
                   </div>
                 );
               })() : (
-                <div className="flex items-center justify-center h-48 text-muted-foreground">
-                  Không có dữ liệu COPQ cho khoảng thời gian đã chọn
-                </div>
+                <EmptyState
+                  variant="no-data"
+                  title={t('reports.copqEmpty', 'Không có dữ liệu COPQ cho khoảng thời gian đã chọn')}
+                />
               )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+      </div>
+    </>
+  );
+}
+
+// Standalone /reports route — frames the analytics body in the app shell.
+export default function Reports() {
+  const { t } = useTranslation();
+  return (
+    <DashboardLayout title={t('reports.title')} navItems={navItems} currentPath="/reports">
+      <ReportsContent />
     </DashboardLayout>
   );
 }

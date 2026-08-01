@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- GP-6 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-6-brief.md) — the
+         conformance suite that turns IDeviceDriver's doc comments from prose into an enforced contract. A
+         SEPARATE project from St4i.Connector.Abstractions on purpose: Abstractions stays a plain,
+         zero-PackageReference/zero-ProjectReference contract assembly a third party compiles a driver
+         against (GP-1), so a test-framework dependency (xunit, right below) must never land in it. This
+         project is deliberately still plain net10.0 (not -windows) and shippable on its own — a third-party
+         driver author references THIS project/package (never St4i.EdgeCore/EngineApi) to run the exact same
+         suite against their own driver before shipping it. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\St4i.Connector.Abstractions\St4i.Connector.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Only xunit itself (Assert/Record) — NOT Microsoft.NET.Test.Sdk/xunit.runner.visualstudio. This
+         project is a plain library a consuming TEST project references and runs from (that consumer already
+         carries the test host/runner); it is not a test entry point in its own right. Same version already
+         pinned everywhere else in this repo (e.g. tests/St4i.Connector.Abstractions.Tests). -->
+    <PackageReference Include="xunit" Version="2.9.2" />
+  </ItemGroup>
+</Project>

@@ -95,6 +95,11 @@ export const materials = pgTable("materials", {
   mpn: varchar("mpn", { length: 128 }),                    // manufacturer part number
   manufacturer: varchar("manufacturer", { length: 256 }),
   packageType: varchar("packageType", { length: 64 }),     // e.g. 0402, QFN-48, SOT-23
+  // Doc 29 §1.2 / W8-A (0191): normalized package master link. Soft ref ->
+  // component_packages.id (componentLibrary.ts), NULLABLE — packageType stays
+  // the free-text legacy field; 0191 backfills packageId best-effort where
+  // packageType ≈ component_packages.code (mirrors the 0134 materialId backfill).
+  packageId: integer("packageId"),
   msl: varchar("msl", { length: 8 }),                      // moisture sensitivity level: 1..6
   rohs: boolean("rohs").default(true).notNull(),
   unit: varchar("unit", { length: 16 }).default("pcs").notNull(),
@@ -110,6 +115,7 @@ export const materials = pgTable("materials", {
   index("idx_materials_code").on(table.code),
   index("idx_materials_class").on(table.materialClass),
   index("idx_materials_mpn").on(table.mpn),
+  index("idx_materials_package").on(table.packageId),
   index("idx_materials_supplier").on(table.defaultSupplierCode),
   index("idx_materials_active").on(table.isActive),
 ]);
@@ -333,6 +339,29 @@ export const calendarDays = pgTable("calendar_days", {
 
 export type CalendarDay = typeof calendarDays.$inferSelect;
 export type InsertCalendarDay = typeof calendarDays.$inferInsert;
+
+/**
+ * Calendar Day Shifts (doc 42 T9) — ca làm việc áp dụng cho MỘT ngày lịch cụ thể.
+ * Bảng nối many-to-many calendar_days ↔ shift_configs (production.ts): 1 ngày chạy
+ * nhiều ca, 1 ca dùng lại cho nhiều ngày. calendarDayId -> calendar_days.id,
+ * shiftConfigId -> shift_configs.id (relate by id). Unique per (day, shift) chống
+ * gán trùng. Feeds takt-time / OEE-availability theo ca của từng ngày.
+ */
+export const calendarDayShifts = pgTable("calendar_day_shifts", {
+  id: serial("id").primaryKey(),
+  calendarDayId: integer("calendarDayId").notNull(), // FK -> calendar_days.id
+  shiftConfigId: integer("shiftConfigId").notNull(),  // FK -> shift_configs.id
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_caldayshifts_day").on(table.calendarDayId),
+  index("idx_caldayshifts_shift").on(table.shiftConfigId),
+  uniqueIndex("uq_caldayshifts_day_shift").on(table.calendarDayId, table.shiftConfigId),
+]);
+
+export type CalendarDayShift = typeof calendarDayShifts.$inferSelect;
+export type InsertCalendarDayShift = typeof calendarDayShifts.$inferInsert;
 
 // =============================================================
 // Warehouse / Inventory master

@@ -19,7 +19,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
+import { protectedProcedure, adminProcedure, qualityProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   mqttNgRateThresholds,
@@ -128,7 +128,7 @@ export const ngRateThresholdRouter = router({
   /**
    * Create new threshold
    */
-  create: protectedProcedure
+  create: qualityProcedure
     .input(
       z.object({
         stationId: z.number(),
@@ -186,7 +186,7 @@ export const ngRateThresholdRouter = router({
   /**
    * Update threshold
    */
-  update: protectedProcedure
+  update: qualityProcedure
     .input(
       z.object({
         id: z.number(),
@@ -256,7 +256,7 @@ export const ngRateThresholdRouter = router({
   /**
    * Delete threshold
    */
-  delete: protectedProcedure
+  delete: qualityProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -269,7 +269,7 @@ export const ngRateThresholdRouter = router({
   /**
    * Toggle enabled/disabled
    */
-  toggle: protectedProcedure
+  toggle: qualityProcedure
     .input(z.object({ id: z.number(), isEnabled: z.boolean() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -332,7 +332,7 @@ export const ngRateThresholdRouter = router({
   /**
    * Resolve an alert
    */
-  resolveAlert: protectedProcedure
+  resolveAlert: qualityProcedure
     .input(
       z.object({
         id: z.number(),

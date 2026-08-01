@@ -7,7 +7,10 @@
  * SDK/protocol library + hardware are wired. Motion commands (runJob) are gated
  * by robotCommandDispatcher (dry-run by default).
  */
-export type RobotVendor = "fanuc" | "mitsubishi" | "delta" | "techman" | "sim";
+// "vda5050" (AGV/AMR over the open VDA 5050 MQTT standard) is a first-class vendor
+// as of doc 24 C4 (DB enum widened by migration 0161). Its driver lives under
+// server/services/vda5050 and is registered into the driver registry on import.
+export type RobotVendor = "fanuc" | "mitsubishi" | "delta" | "techman" | "sim" | "vda5050" | "ur";
 
 export type RobotJobType = "move" | "pick_place" | "dispense" | "screw" | "home" | "abort" | "custom";
 
@@ -26,6 +29,14 @@ export interface RobotState {
   payloadKg?: number;
   speedPct?: number;
   error?: string;
+  // X1-a (doc 16 §5) — UDM/UEM extension fields. All OPTIONAL + best-effort: a driver
+  // that has no value leaves them undefined (an honest NULL in robot_telemetry), never
+  // fabricated. batteryPct is wired from the VDA5050 battery extraction for AGVs;
+  // jointStates/firmwareVersion are SEAMS (only populated when a driver provides them).
+  batteryPct?: number;                       // 0..100 charge %
+  jointStates?: Array<Record<string, unknown>>; // per-joint pos/vel (seam)
+  safetyZoneId?: number;                     // zone the device occupies (best-effort)
+  firmwareVersion?: string;                  // device firmware (seam)
   timestamp: Date;
 }
 

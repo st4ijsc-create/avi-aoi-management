@@ -11,6 +11,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db/connection";
+import { createNcr } from "../services/ncrService"; // W4-B: optional lot-disposition → NCR link
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import {
   wipTracking,
@@ -346,6 +347,9 @@ export const mesControlTowerRouter = router({
       quantity: z.number().positive(),
       reason: z.string().optional(),
       defectCode: z.string().max(64).optional(),
+      // W4-B — optionally raise a linked NCR/MRB for this lot (typically for
+      // scrap/return/quarantine). Additive & opt-in: default false = prior behaviour.
+      raiseNcr: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const database = await getDb();
@@ -360,6 +364,25 @@ export const mesControlTowerRouter = router({
         defectCode: input.defectCode ?? null,
         decidedBy: ctx.user?.id ?? null,
       }).returning({ id: lotDisposition.id });
-      return { id: row.id };
+
+      // Optional lot → NCR link. Fail-soft: an NCR-create issue must never fail
+      // the disposition write that already committed.
+      let ncrId: number | null = null;
+      if (input.raiseNcr) {
+        try {
+          const ncr = await createNcr({
+            source: "lot",
+            raisedBy: ctx.user?.id ?? 0,
+            lotNumber: input.lotNumber,
+            serialNumber: input.serialNumber ?? null,
+            defectSummary: input.defectCode ? `Defect ${input.defectCode}` : null,
+            reason: `Lot disposition '${input.disposition}': ${input.reason ?? ""}`.trim(),
+          });
+          ncrId = ncr.id;
+        } catch (err) {
+          console.error("[mesControlTower] raiseNcr failed (suppressed):", (err as any)?.message ?? err);
+        }
+      }
+      return { id: row.id, ncrId };
     }),
 });

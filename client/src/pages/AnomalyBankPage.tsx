@@ -20,12 +20,14 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PageHeader, PageContainer, EmptyState } from "@/components/patterns";
+import { ProductModelSelect, MachineSelect } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -76,14 +78,14 @@ export default function AnomalyBankPage() {
   const admin = isAdmin === true;
 
   const utils = trpc.useUtils();
-  const [productModelId, setProductModelId] = useState<string>("");
-  const [machineId, setMachineId] = useState<string>("");
+  const [productModelId, setProductModelId] = useState<number | null>(null);
+  const [machineId, setMachineId] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Profile | null>(null);
 
   const statsQ = trpc.aiAnomaly.stats.useQuery(
     {
-      productModelId: productModelId ? Number(productModelId) : null,
-      machineId: machineId ? Number(machineId) : null,
+      productModelId: productModelId ?? null,
+      machineId: machineId ?? null,
     },
     { enabled: canView },
   );
@@ -117,8 +119,8 @@ export default function AnomalyBankPage() {
 
   const buildGlobal = () => {
     rebuildM.mutate({
-      machineId: machineId ? Number(machineId) : null,
-      productModelId: productModelId ? Number(productModelId) : null,
+      machineId: machineId ?? null,
+      productModelId: productModelId ?? null,
       okOnly: true,
     });
   };
@@ -126,38 +128,49 @@ export default function AnomalyBankPage() {
   if (!canView) {
     return (
       <DashboardLayout title={t("anomalyBanks.title")} navItems={navItems} currentPath="/anomaly-banks">
-        <div className="p-6">
-          <Card><CardContent className="py-10 text-center text-muted-foreground">
-            <AlertTriangle className="mx-auto mb-2 h-6 w-6" />
-            {t("anomalyBanks.noPermission")}
-          </CardContent></Card>
-        </div>
+        <PageContainer>
+          <Card>
+            <EmptyState
+              variant="error"
+              icon={AlertTriangle}
+              title={t("anomalyBanks.noPermission")}
+              description={t("common.noPermissionDesc", "You do not have permission to view this page.")}
+            />
+          </Card>
+        </PageContainer>
       </DashboardLayout>
     );
   }
 
   return (
     <DashboardLayout title={t("anomalyBanks.title")} navItems={navItems} currentPath="/anomaly-banks">
-      <div className="p-6 space-y-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Database className="h-6 w-6" />
-          <h1 className="text-2xl font-semibold">{t("anomalyBanks.title")}</h1>
-          <ViewOnlyBadge module="analytics_ai_performance" />
-          <Badge variant="outline">PatchCore</Badge>
-          <Badge variant="secondary">{t("anomalyBanks.totalVectors")}: {totalVectors}</Badge>
-        </div>
+      <PageContainer>
+        <PageHeader
+          icon={<Database className="h-6 w-6" />}
+          title={t("anomalyBanks.title")}
+          description={t("anomalyBanks.subtitle", "Manage PatchCore-style anomaly memory banks per machine / product scope.")}
+          badge={<ViewOnlyBadge module="analytics_ai_performance" />}
+          actions={
+            <>
+              <Badge variant="outline">PatchCore</Badge>
+              <Badge variant="secondary">{t("anomalyBanks.totalVectors")}: {totalVectors}</Badge>
+            </>
+          }
+        />
 
         {/* Scope filter + global build-from-vectors trigger */}
         <div className="flex gap-3 flex-wrap items-end">
           <div className="grid gap-1">
             <Label>{t("anomalyBanks.machineId")}</Label>
-            <Input type="number" className="w-40" value={machineId}
-              onChange={(e) => setMachineId(e.target.value)} placeholder={t("anomalyBanks.optional")} />
+            <MachineSelect value={machineId}
+              onChange={(v) => setMachineId(v == null ? null : Number(v))}
+              aria-label={t("anomalyBanks.machineId")} clearable />
           </div>
           <div className="grid gap-1">
             <Label>{t("anomalyBanks.productModelId")}</Label>
-            <Input type="number" className="w-40" value={productModelId}
-              onChange={(e) => setProductModelId(e.target.value)} placeholder={t("anomalyBanks.optional")} />
+            <ProductModelSelect value={productModelId}
+              onChange={(v) => setProductModelId(v == null ? null : Number(v))}
+              aria-label={t("anomalyBanks.productModelId")} clearable />
           </div>
           <Button variant="outline" onClick={() => statsQ.refetch()}>
             <RefreshCw className="h-4 w-4 mr-1" /> {t("anomalyBanks.refresh")}
@@ -172,6 +185,7 @@ export default function AnomalyBankPage() {
 
         <Card>
           <CardContent className="p-0">
+            <div className="w-full overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -187,10 +201,26 @@ export default function AnomalyBankPage() {
               </TableHeader>
               <TableBody>
                 {statsQ.isLoading && (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">{t("anomalyBanks.loading")}</TableCell></TableRow>
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <TableRow key={`sk-${i}`}>
+                      {Array.from({ length: 8 }).map((__, j) => (
+                        <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
+                      ))}
+                    </TableRow>
+                  ))
                 )}
                 {!statsQ.isLoading && profiles.length === 0 && (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">{t("anomalyBanks.empty")}</TableCell></TableRow>
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-4">
+                      <EmptyState
+                        variant="no-data"
+                        icon={Database}
+                        title={t("anomalyBanks.empty")}
+                        description={t("anomalyBanks.emptyDesc", "No anomaly banks for this scope yet. Build one from stored vectors.")}
+                        compact
+                      />
+                    </TableCell>
+                  </TableRow>
                 )}
                 {profiles.map((p) => {
                   const boot = isBootstrap(p);
@@ -224,9 +254,10 @@ export default function AnomalyBankPage() {
                 })}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>

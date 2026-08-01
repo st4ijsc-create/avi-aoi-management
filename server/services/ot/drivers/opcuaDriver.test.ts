@@ -13,6 +13,7 @@ const tags: OtTagAddress[] = [
 describe("OpcuaDriver (mocked node-opcua)", () => {
   beforeEach(() => {
     vi.resetModules();
+    delete process.env.OT_OPCUA_MONITORED_ITEMS;
   });
 
   function mockOpcua(readImpl: (nodes: any[]) => any, writeImpl?: (nodes: any[]) => any) {
@@ -179,6 +180,88 @@ describe("OpcuaDriver (mocked node-opcua)", () => {
     const { OpcuaDriver } = await import("./opcuaDriver");
     const d = new OpcuaDriver();
     await expect(d.readTags(tags)).rejects.toThrow(/not connected/);
+  });
+
+  // doc 22 P3 — OPC-UA monitored-item PUSH path (flag OT_OPCUA_MONITORED_ITEMS).
+  function mockOpcuaWithSubscriptions(readImpl: (nodes: any[]) => any) {
+    const { client, session } = mockOpcua(readImpl);
+    // Add subscription support to the session + package.
+    const subscription = { terminate: vi.fn(async () => {}) };
+    (session as any).createSubscription2 = vi.fn(async () => subscription);
+    // Each created monitored item exposes an EventEmitter-like .on("changed", cb).
+    const createdItems: Array<{ on: any; fire: (dv: any) => void }> = [];
+    const ClientMonitoredItem = {
+      create: vi.fn(async () => {
+        let handler: ((dv: any) => void) | null = null;
+        const item = {
+          on: (evt: string, cb: (dv: any) => void) => { if (evt === "changed") handler = cb; },
+          fire: (dv: any) => handler && handler(dv),
+        };
+        createdItems.push(item);
+        return item;
+      }),
+    };
+    // Re-mock node-opcua to ALSO expose the subscription symbols.
+    vi.doMock("node-opcua", () => ({
+      OPCUAClient: { create: vi.fn(() => client) },
+      AttributeIds: { Value: 13 },
+      DataType: { Boolean: 1, Int32: 6, Double: 11, String: 12 },
+      Variant: class Variant { constructor(o: any) { Object.assign(this, o); } },
+      ClientSubscription: { create: vi.fn(async () => subscription) },
+      ClientMonitoredItem,
+      TimestampsToReturn: { Both: 2 },
+      MonitoringMode: { Reporting: 1 },
+    }));
+    return { client, session, subscription, ClientMonitoredItem, createdItems };
+  }
+
+  it("flag ON → subscribe uses monitored items and pushes normalized samples on change", async () => {
+    process.env.OT_OPCUA_MONITORED_ITEMS = "true";
+    const { subscription, ClientMonitoredItem, createdItems } = mockOpcuaWithSubscriptions(() => []);
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://x" });
+
+    const received: any[] = [];
+    const handle = await d.subscribe(tags, (s) => { received.push(s); }, 1000);
+    // One monitored item per tag.
+    expect(ClientMonitoredItem.create).toHaveBeenCalledTimes(2);
+
+    // Fire a change on the "temp" tag (float scale 10 offset 1): raw 2 → 21.
+    createdItems[0].fire({ statusCode: { value: 0 }, sourceTimestamp: new Date(), value: { value: 2 } });
+    expect(received).toHaveLength(1);
+    expect(received[0].tagKey).toBe("temp");
+    expect(received[0].value).toBe(21);
+    expect(received[0].quality).toBe("good");
+
+    await handle.close();
+    expect(subscription.terminate).toHaveBeenCalled();
+  });
+
+  it("flag OFF (default) → subscribe stays on the poll path (no subscription created)", async () => {
+    const { session } = mockOpcuaWithSubscriptions((nodes) =>
+      nodes.map(() => ({ statusCode: { value: 0 }, value: { value: 3 } })),
+    );
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://x" });
+    const handle = await d.subscribe(tags, () => {}, 5000);
+    // Poll path → createSubscription2 was never used.
+    expect((session as any).createSubscription2).not.toHaveBeenCalled();
+    await handle.close();
+  });
+
+  it("flag ON but package lacks subscription support → falls back to poll", async () => {
+    process.env.OT_OPCUA_MONITORED_ITEMS = "true";
+    // Plain mock WITHOUT subscription symbols.
+    mockOpcua((nodes) => nodes.map(() => ({ statusCode: { value: 0 }, value: { value: 1 } })));
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://x" });
+    // Must not throw — returns a working (poll) handle.
+    const handle = await d.subscribe(tags, () => {}, 5000);
+    expect(typeof handle.close).toBe("function");
+    await handle.close();
   });
 
   it("connect throws 'node-opcua not installed' when package missing", async () => {

@@ -1,0 +1,101 @@
+<Window x:Class="St4iMachineSimulator.Views.ShellView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:St4iMachineSimulator.Controls"
+        xmlns:vm="clr-namespace:St4iMachineSimulator.ViewModels"
+        d:DataContext="{d:DesignInstance Type=vm:AppShellViewModel}"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="ST4I Machine Simulator Studio"
+        Height="720" Width="1280" MinHeight="560" MinWidth="960">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="220" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ═══ Sidebar ═══════════════════════════════════════════════════ -->
+        <Border Grid.Column="0"
+                Background="{StaticResource Brush.Bg.Sidebar}"
+                BorderBrush="{StaticResource Brush.Border}"
+                BorderThickness="0,0,1,0">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Top" Margin="20,24,20,20">
+                    <TextBlock Text="ST4I" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Brush.Accent}" />
+                    <TextBlock Text="Machine Simulator Studio"
+                               FontSize="12" Foreground="{StaticResource Brush.Text.Secondary}"
+                               Margin="0,4,0,0" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <ItemsControl ItemsSource="{Binding Nav}" Margin="10,0,10,10">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:NavItem}">
+                            <Button Content="{Binding Title}"
+                                    Style="{StaticResource NavItemButtonStyle}"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding DataContext.SelectNavItemCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                    CommandParameter="{Binding}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </DockPanel>
+        </Border>
+
+        <!-- ═══ Top bar + content ═══════════════════════════════════════ -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="64" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0"
+                    Background="{StaticResource Brush.Bg.TopBar}"
+                    BorderBrush="{StaticResource Brush.Border}"
+                    BorderThickness="0,0,0,1">
+                <Grid Margin="24,0">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
+                        <!-- Task 20 — branding: small logo mark in the top bar (Assets/logo.png,
+                             embedded as a WPF Resource — see St4iMachineSimulator.csproj). Leading "/"
+                             is required: this XAML file lives under Views/, so a source WITHOUT it would
+                             resolve relative to Views/ (i.e. "Views/Assets/logo.png", which doesn't
+                             exist) instead of the project root — unlike App.xaml's
+                             Source="Themes/Colors.xaml", which needs no leading "/" only because App.xaml
+                             itself already lives at the root. -->
+                        <Image Source="/Assets/logo.png" Height="28" Stretch="Uniform"
+                               VerticalAlignment="Center" Margin="0,0,20,0" />
+
+                        <TextBlock Text="{DynamicResource Str_Shell_Transport}"
+                                   Foreground="{StaticResource Brush.Text.Secondary}"
+                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ComboBox ItemsSource="{Binding AvailableModes}"
+                                  SelectedItem="{Binding Mode, Mode=TwoWay}"
+                                  Width="110" />
+
+                        <Button Content="{DynamicResource Str_Shell_StartFleet}"
+                                Style="{StaticResource TopBarButtonStyle}"
+                                Command="{Binding StartFleetCommand}"
+                                Margin="24,0,8,0" />
+                        <Button Content="{DynamicResource Str_Shell_StopFleet}"
+                                Style="{StaticResource TopBarButtonStyle}"
+                                Command="{Binding StopFleetCommand}" />
+
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="28,0,0,0">
+                            <controls:StatusLight IsFallback="{Binding IsFallingBack}"
+                                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock Text="{Binding ServerStatus}" Style="{StaticResource StatusTextStyle}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Border Style="{StaticResource FallbackBadgeStyle}"
+                            HorizontalAlignment="Right" VerticalAlignment="Center"
+                            Visibility="{Binding IsFallingBack, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <TextBlock Text="{DynamicResource Str_Shell_DemoFallback}" Style="{StaticResource FallbackBadgeTextStyle}" />
+                    </Border>
+                </Grid>
+            </Border>
+
+            <ContentControl Grid.Row="1" Content="{Binding CurrentView}" Margin="28" FontSize="16" />
+        </Grid>
+    </Grid>
+</Window>

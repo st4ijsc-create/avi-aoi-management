@@ -1,4 +1,8 @@
-import { protectedProcedure, router } from "../_core/trpc";
+import { moduleProcedure, moduleGate, writeProcedure, router } from "../_core/trpc";
+import { requirePermission } from "../_core/accessControl";
+// Doc 38 Đợt Q — license-gate this router behind MOD_PRODUCTION (moduleGate = pass-through
+// until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
+const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -31,7 +35,7 @@ export const productionOrderRouter = router({
       return db.getProductionOrderByCode(input.orderCode);
     }),
 
-  create: adminProcedure
+  create: writeProcedure.use(requirePermission("production_orders", "canCreate"))
     .input(z.object({
       orderCode: z.string().min(1).max(100),
       companyCode: z.string().min(1).max(50),
@@ -53,7 +57,7 @@ export const productionOrderRouter = router({
       return { id };
     }),
 
-  update: adminProcedure
+  update: writeProcedure.use(requirePermission("production_orders", "canEdit"))
     .input(z.object({
       id: z.number(),
       orderCode: z.string().min(1).max(100).optional(),
@@ -71,11 +75,34 @@ export const productionOrderRouter = router({
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
+
+      // Doc 38 T-1 (P0 #4) — feeder-verify RUN-GATE. Transitioning an order to
+      // in_progress IS the production-run start; block it (fail-closed) when
+      // FEEDER_VERIFY_ENFORCED is ON and a feeder-bearing machine on the order's
+      // line has an unverified/mismatched setup (wrong-part guard). Advisory no-op
+      // when the flag is OFF. Read the order to resolve line + product when the
+      // caller only sent { id, status }.
+      if (data.status === "in_progress") {
+        const order = await db.getProductionOrderById(id);
+        const lineId = data.lineId ?? order?.lineId ?? null;
+        const productModelId = data.productModelId ?? order?.productModelId ?? null;
+        if (lineId != null) {
+          const { assertLineSetupOkForRun } = await import("../services/feederVerifyService");
+          const gate = await assertLineSetupOkForRun(lineId, productModelId);
+          if (gate.blocked) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: `Cannot start production run: ${gate.reason}`,
+            });
+          }
+        }
+      }
+
       await db.updateProductionOrder(id, data);
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: writeProcedure.use(requirePermission("production_orders", "canDelete"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteProductionOrder(input.id);
@@ -129,7 +156,7 @@ export const productionOrderRouter = router({
       };
     }),
 
-  reschedule: adminProcedure
+  reschedule: writeProcedure.use(requirePermission("production_orders", "canEdit"))
     .input(z.object({
       id: z.number(),
       scheduledStartDate: z.date(),
@@ -260,7 +287,7 @@ export const productionOrderRouter = router({
       return db.getOrderTemplate(input.id);
     }),
 
-  createTemplate: adminProcedure
+  createTemplate: writeProcedure.use(requirePermission("production_orders", "canCreate"))
     .input(z.object({
       name: z.string().min(1).max(255),
       description: z.string().optional(),
@@ -275,7 +302,7 @@ export const productionOrderRouter = router({
       return db.createOrderTemplate({ ...input, createdBy: ctx.user.id });
     }),
 
-  updateTemplate: adminProcedure
+  updateTemplate: writeProcedure.use(requirePermission("production_orders", "canEdit"))
     .input(z.object({
       id: z.number(),
       name: z.string().min(1).max(255).optional(),
@@ -294,14 +321,17 @@ export const productionOrderRouter = router({
       return { success: true };
     }),
 
-  deleteTemplate: adminProcedure
+  deleteTemplate: writeProcedure.use(requirePermission("production_orders", "canDelete"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteOrderTemplate(input.id);
       return { success: true };
     }),
 
-  createFromTemplate: protectedProcedure
+  // Doc 38 Đợt Q — write floor (block read-only viewer/user) + keep the MOD_PRODUCTION
+  // license gate. Creating a production order from a template is a write op.
+  createFromTemplate: writeProcedure
+    .use(moduleGate("MOD_PRODUCTION"))
     .input(z.object({
       templateId: z.number(),
       orderCode: z.string().min(1),
@@ -709,7 +739,7 @@ export const lineStageRouter = router({
       return db.getLineStageById(input.id);
     }),
 
-  create: adminProcedure
+  create: writeProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       lineId: z.number(),
       code: z.string().min(1).max(20),
@@ -724,7 +754,7 @@ export const lineStageRouter = router({
       return { id };
     }),
 
-  update: adminProcedure
+  update: writeProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       id: z.number(),
       code: z.string().min(1).max(20).optional(),
@@ -741,14 +771,14 @@ export const lineStageRouter = router({
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: writeProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteLineStage(input.id);
       return { success: true };
     }),
 
-  reorder: adminProcedure
+  reorder: writeProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       lineId: z.number(),
       stageIds: z.array(z.number()),
@@ -772,7 +802,7 @@ export const lineProductAssignmentRouter = router({
       return db.getLineProductAssignments(input);
     }),
 
-  create: adminProcedure
+  create: writeProcedure.use(requirePermission("production_line_assignments", "canCreate"))
     .input(z.object({
       lineId: z.number(),
       productModelId: z.number(),
@@ -786,7 +816,7 @@ export const lineProductAssignmentRouter = router({
       return { id };
     }),
 
-  update: adminProcedure
+  update: writeProcedure.use(requirePermission("production_line_assignments", "canEdit"))
     .input(z.object({
       id: z.number(),
       lineId: z.number().optional(),
@@ -803,7 +833,7 @@ export const lineProductAssignmentRouter = router({
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: writeProcedure.use(requirePermission("production_line_assignments", "canDelete"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteLineProductAssignment(input.id);

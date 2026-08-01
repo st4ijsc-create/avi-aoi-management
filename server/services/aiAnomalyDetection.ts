@@ -33,6 +33,9 @@ import {
   type AnomalyScope,
   type ProfileInput,
 } from "../db/aiAnomaly";
+// Type-only import (erased at compile time → no runtime import cycle with the
+// value imports aiPatchAnomaly makes back into this module).
+import type { PatchScoreResult } from "./aiPatchAnomaly";
 
 // ─── Cờ cấu hình (env, có default an toàn) ─────────────────────────────────────
 
@@ -71,6 +74,12 @@ export interface ScoreResult {
   k: number;
   /** Lý do (i18n key-free, để router/UI map). */
   reason?: string;
+  /**
+   * PATCH-LEVEL localization (pixel heatmap + hotspots). ONLY present when
+   * ANOMALY_PATCH_ENABLED=true AND a patch bank exists for the scope. Flag OFF →
+   * undefined → whole-image behaviour byte-for-byte unchanged. Additive.
+   */
+  patch?: PatchScoreResult;
 }
 
 export interface BuildBankResult {
@@ -705,7 +714,27 @@ export async function scoreImage(params: ScoreParams): Promise<ScoreResult> {
     modelCode: anomalyModelCode(emb.source, params.modelId ?? null),
   };
 
-  return scoreFromVector(emb.vector, scope, { source: emb.source, degraded: emb.degraded });
+  const result = await scoreFromVector(emb.vector, scope, { source: emb.source, degraded: emb.degraded });
+
+  // ADDITIVE patch-level localization (heatmap + hotspots). Gated by ANOMALY_PATCH_ENABLED
+  // (default OFF). Flag OFF → env read is false → `result` is returned untouched (whole-image
+  // path unchanged). Flag ON → augment with `patch`; any failure is swallowed (best-effort
+  // hot path). Env read inline (not a static import) to avoid an import cycle at module eval.
+  if ((process.env.ANOMALY_PATCH_ENABLED ?? "false").toLowerCase() === "true") {
+    try {
+      const { scoreImagePatch } = await import("./aiPatchAnomaly");
+      result.patch = await scoreImagePatch({
+        buffer: params.buffer,
+        productModelId: params.productModelId ?? null,
+        machineId: params.machineId ?? null,
+        modelId: params.modelId ?? null,
+      });
+    } catch (e) {
+      console.warn("[aiAnomalyDetection] patch localization skipped:", (e as Error)?.message);
+    }
+  }
+
+  return result;
 }
 
 // ─── Score from VECTOR (pure kNN-vs-threshold core, exported) ──────────────────

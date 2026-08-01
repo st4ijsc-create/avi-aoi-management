@@ -21,7 +21,7 @@
  */
 import { eq } from "drizzle-orm";
 import { getDb } from "../../db/connection";
-import { robots } from "../../../drizzle/schema";
+import { robots, robotJobs } from "../../../drizzle/schema";
 import type { Robot } from "../../../drizzle/schema/robot";
 import { ingestRobotState } from "../robot/robotIngest";
 import type { RuntimeRobot } from "../robot/robotAdapter";
@@ -210,6 +210,64 @@ export class Vda5050Adapter {
       nodes: opts.nodes,
       headerId: nextHeaderId(),
     });
+
+    // W3-B2 (doc 44 G3.14) — "MỘT CỬA": fleet-level policy seam TRƯỚC khi dispatch
+    // (và do đó TRƯỚC mọi khả năng publish MQTT). SEC_PLATFORM OFF (mặc định) → bỏ qua
+    // hoàn toàn (hành vi cũ, 0 khác biệt). DENY → KHÔNG dispatch, KHÔNG publish, ghi
+    // ledger robot_jobs status='rejected' (append-only, fail-safe) + decision-log/trace
+    // do evaluateActionPolicy tự ghi. Lưu ý: lệnh qua dispatchRobotJob phía dưới còn
+    // đi qua seam robot.command.* của dispatcher — đây là CỬA fleet-scope bổ sung.
+    {
+      const { evaluateActionPolicy, secPlatformEnabled } = await import("../security/policyGate");
+      if (secPlatformEnabled()) {
+        const verdict = evaluateActionPolicy(
+          `user:${opts.confirmedBy ?? opts.requestedBy}`,
+          "fleet.vda5050.send_order",
+          `robot:${this.config.robotId}`,
+          {
+            robotId: this.config.robotId,
+            code: this.config.code,
+            orderId: order.orderId,
+            nodesCount: order.nodes.length,
+            triggerKind: opts.triggerKind ?? "hitl",
+            requestedBy: opts.requestedBy,
+            ...(opts.confirmedBy != null ? { confirmedBy: opts.confirmedBy } : {}),
+          },
+          { requestId: opts.idempotencyKey ?? null },
+        );
+        if (!verdict.allow) {
+          const code = verdict.effect === "deny" ? "POLICY_DENIED" : "POLICY_APPROVAL_REQUIRED";
+          const errorText = `${code}: ${verdict.reason}${verdict.policyId ? ` (policy ${verdict.policyId})` : ""}`;
+          let jobId: number | undefined;
+          try {
+            const db = await getDb();
+            if (db) {
+              const now = new Date();
+              const [row] = await db
+                .insert(robotJobs)
+                .values({
+                  robotId: this.config.robotId,
+                  jobType: "move",
+                  params: { vda5050: "order", orderId: order.orderId, nodesCount: order.nodes.length },
+                  status: "rejected",
+                  triggerKind: opts.triggerKind ?? "hitl",
+                  requestedBy: opts.requestedBy,
+                  confirmedBy: opts.confirmedBy,
+                  idempotencyKey: opts.idempotencyKey,
+                  errorText,
+                  startedAt: now,
+                  completedAt: now,
+                })
+                .returning({ id: robotJobs.id });
+              jobId = row?.id;
+            }
+          } catch (err) {
+            console.error(`[VDA5050] "${this.config.code}" policy-reject ledger write failed:`, (err as Error)?.message ?? err);
+          }
+          return { ok: false, status: "rejected", jobId, order, published: false, error: code };
+        }
+      }
+    }
 
     const { dispatchRobotJob } = await import("../robot/robotCommandDispatcher");
     let published = false;

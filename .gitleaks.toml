@@ -1,0 +1,22 @@
+# W0-I (doc 44 G5.7) — cấu hình gitleaks cho .github/workflows/security-sast.yml.
+# Kế thừa toàn bộ rule mặc định; allowlist các đường KHÔNG phải secret thật:
+#   - .env.example: giá trị placeholder có chủ đích
+#   - test fixture / *.test.*: khoá giả trong unit test
+#   - uploads/, attached_assets/: artifact runtime / tài liệu đính kèm
+title = "avi-aoi-management gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholder values, test fixtures, runtime artifacts"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)uploads/''',
+  '''(^|/)attached_assets/''',
+  '''\.test\.(ts|tsx|js|mjs|cjs)$''',
+  '''\.spec\.(ts|tsx|js|mjs|cjs)$''',
+  '''(^|/)tests?/fixtures?/''',
+  '''(^|/)fixtures?/''',
+  '''(^|/)__fixtures__/''',
+]

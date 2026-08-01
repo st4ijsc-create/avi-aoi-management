@@ -1,9 +1,9 @@
 # Phase 1 WS1.5 — Grafana dashboard provider.
 apiVersion: 1
 providers:
-  - name: avi-aoi
+  - name: synapse
     orgId: 1
-    folder: AVI-AOI
+    folder: SYNAPSE
     type: file
     disableDeletion: false
     updateIntervalSeconds: 30

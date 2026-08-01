@@ -12,6 +12,8 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Text, PerspectiveCamera, Environment, Grid } from "@react-three/drei";
 import { useMemo, useRef, useState, Suspense } from "react";
 import * as THREE from "three";
+// doc 44 G5.12 — PHÂN LOẠI trạng thái đi qua nguồn canonical DUY NHẤT.
+import { statusTone, type SemanticTone } from "@/lib/canonicalStatusColor";
 
 export interface MachineNode {
   id: number;
@@ -40,12 +42,26 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : NaN;
 }
 
-/** Live status → colour (digital shadow of the real machine). */
+/**
+ * doc 44 G5.12 — WebGL cần giá trị màu THREE parse được (không đọc oklch token);
+ * vì vậy giữ bảng hex CỤC BỘ cho 3D (xấp xỉ token index.css), NHƯNG việc PHÂN LOẠI
+ * trạng thái → tông đi qua nguồn canonical (statusTone) — 1 nguồn logic thống nhất.
+ */
+const TONE_HEX_3D: Record<SemanticTone, string> = {
+  success: "#10b981", // ~ --success
+  info: "#06b6d4",    // ~ --info (cyan)
+  warning: "#f59e0b", // ~ --warning
+  danger: "#ef4444",  // ~ --destructive
+  neutral: "#94a3b8", // ~ --muted-foreground
+};
+
+/** Live status → colour (digital shadow — phân loại qua canonical, hex chỉ để WebGL render). */
 export function statusColor(m: { latestStatus: string; heartbeatStatus: string }): string {
-  if (m.latestStatus !== "online") return "#ef4444"; // offline/down → red
-  if (m.heartbeatStatus === "idle") return "#f59e0b"; // online but idle → amber
-  if (m.heartbeatStatus === "stopped") return "#f97316"; // online, stopped → orange
-  return "#10b981"; // running → green
+  // Mất kết nối = "down" (danger/đỏ) để KHÔNG giấu sự cố trên sơ đồ nhà máy.
+  if (m.latestStatus !== "online") return TONE_HEX_3D[statusTone("down")];
+  if (m.heartbeatStatus === "idle") return TONE_HEX_3D[statusTone("idle")];       // → neutral (ISA-101)
+  if (m.heartbeatStatus === "stopped") return TONE_HEX_3D[statusTone("stopped")]; // → warning
+  return TONE_HEX_3D[statusTone("running")];                                       // → success
 }
 export function statusLabel(m: { latestStatus: string; heartbeatStatus: string }): string {
   if (m.latestStatus !== "online") return "Offline";

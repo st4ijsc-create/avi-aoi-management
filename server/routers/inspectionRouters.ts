@@ -40,6 +40,9 @@ export const inspectionRouter = router({
       endDate: z.date().optional(),
       limit: z.number().min(1).max(1000).optional(),
       offset: z.number().min(0).optional(),
+      // W7-B (doc 27 V3): "ntfScore" pre-sorts the verify queue by suspected
+      // false-call likelihood (DESC NULLS LAST). Default: newest first.
+      sortBy: z.enum(["time", "ntfScore"]).optional(),
     }))
     .query(async ({ input, ctx }) => {
       return db.searchInspections({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
@@ -72,9 +75,61 @@ export const inspectionRouter = router({
       if (inspection.originalResult !== 'NG') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only NG results can be marked as NTF' });
       }
-      
+
       await db.updateProductInspectionNTF(input.id, ctx.user.id, input.reason);
+
+      // W7-B (doc 27 V2) — harvest the human verdict as structured labels
+      // (measurement_corrections + ai_label_queue feed). ADDITIVE + FAIL-OPEN:
+      // the NTF confirm above already happened and is never blocked by harvest.
+      try {
+        const { harvestNtfConfirmation } = await import("../services/ai/measurementCorrectionsService");
+        await harvestNtfConfirmation({
+          inspectionId: input.id,
+          machineId: inspection.machineId,
+          operatorUserId: ctx.user.id,
+          reason: input.reason,
+          aiModelId: inspection.aiModelId ?? null,
+        });
+      } catch (err) {
+        console.warn("[inspection.confirmNTF] correction harvest skipped (fail-open):", err instanceof Error ? err.message : err);
+      }
+
       return { success: true };
+    }),
+
+  // Bulk acknowledge (doc 27 gap F1) — real disposition for History bulk action.
+  // Idempotent (first acknowledger wins), audited, returns honest counts.
+  bulkAcknowledge: protectedProcedure
+    .input(z.object({
+      ids: z.array(z.number().int().positive()).min(1).max(500),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const ids = Array.from(new Set(input.ids));
+      const { updatedIds, alreadyAcknowledgedIds } = await db.bulkAcknowledgeInspections({
+        ids,
+        userId: ctx.user.id,
+      });
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name ?? undefined,
+        action: "inspection.bulkAcknowledge",
+        entityType: "inspection",
+        details: {
+          requestedCount: ids.length,
+          acknowledgedCount: updatedIds.length,
+          alreadyAcknowledgedCount: alreadyAcknowledgedIds.length,
+          acknowledgedIds: updatedIds,
+        },
+        status: "success",
+      });
+
+      return {
+        success: true,
+        acknowledgedCount: updatedIds.length,
+        alreadyAcknowledgedCount: alreadyAcknowledgedIds.length,
+        notFoundCount: ids.length - updatedIds.length - alreadyAcknowledgedIds.length,
+      };
     }),
 
   // Cursor-based pagination for large datasets
@@ -445,14 +500,16 @@ Respond in JSON format:
         });
 
         const messageContent = response.choices[0].message.content;
-        const contentStr = typeof messageContent === 'string' 
-          ? messageContent 
-          : Array.isArray(messageContent) 
+        const contentStr = typeof messageContent === 'string'
+          ? messageContent
+          : Array.isArray(messageContent)
             ? (messageContent.find((c: { type: string; text?: string }) => c.type === 'text') as { type: string; text?: string } | undefined)?.text || '{}'
             : '{}';
         const analysisResult = JSON.parse(contentStr);
-        
-        // Update the measurement result with AI analysis
+
+        // Update the measurement result with AI analysis.
+        // Re-running is allowed (V24) — a second analyze simply overwrites; the
+        // client asks for confirm-overwrite before calling again.
         const { measurementResults } = await import("../../drizzle/schema");
         if (dbInstance) {
           await dbInstance.update(measurementResults).set({
@@ -461,34 +518,89 @@ Respond in JSON format:
           }).where(eq(measurementResults.id, input.id));
         }
 
-        return analysisResult;
+        // W7-C (doc 27 V9) — PRODUCER for AISuggestionsPanel: the VLM verdict also
+        // lands in ai_suggestions (same shape aiFeedback.createSuggestion writes),
+        // so the panel fills, feedback buttons work, and the correction/training
+        // export gains a source. Direct db insert — the orphan endpoint stays unused.
+        // Best-effort: a suggestion-write failure must not fail the analysis itself.
+        try {
+          if (dbInstance) {
+            const { aiSuggestions } = await import("../../drizzle/schema");
+            const confidence01 = Math.max(0, Math.min(1, (Number(analysisResult.confidence) || 0) / 100));
+            const defects: string[] = Array.isArray(analysisResult.defects)
+              ? analysisResult.defects.map((d: unknown) => String(d)).filter(Boolean)
+              : [];
+            const suggestionText = analysisResult.assessment === "NG"
+              ? (defects.length > 0 ? `NG — ${defects.join("; ")}` : "NG — defect detected (unspecified)")
+              : "OK — no defect detected by VLM analysis";
+            await dbInstance.insert(aiSuggestions).values({
+              inspectionId: result.inspectionId,
+              measurementResultId: input.id,
+              // NG verdicts are defect classifications; OK verdicts are quality predictions.
+              suggestionType: analysisResult.assessment === "NG" ? "DEFECT_CLASSIFICATION" : "QUALITY_PREDICTION",
+              suggestion: suggestionText,
+              confidence: confidence01.toFixed(4),
+              reasoning: typeof analysisResult.recommendations === "string" && analysisResult.recommendations.length > 0
+                ? analysisResult.recommendations
+                : null,
+              modelVersion: "1.0.0",
+              modelName: "vlm-inspection-analyze",
+              status: "PENDING",
+            });
+          }
+        } catch (suggestionErr) {
+          console.warn("[analyzeWithAI] ai_suggestions write failed (non-fatal):", suggestionErr);
+        }
+
+        return { ...analysisResult, degraded: false as const };
       } catch (error) {
+        // W7-C (doc 27 V24) — HONEST fallback instead of a hard
+        // INTERNAL_SERVER_ERROR: surface the provider's degradation reason so the
+        // UI can tell the user AI vision is unavailable. Nothing is written to the
+        // measurement (no fake result), so the analyze button stays actionable.
         console.error("AI analysis error:", error);
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI analysis failed' });
+        const reason = error instanceof Error ? error.message : String(error);
+        return {
+          degraded: true as const,
+          assessment: null,
+          defects: [] as string[],
+          confidence: 0,
+          recommendations: "",
+          message: `Phân tích AI không khả dụng: ${reason}`,
+        };
       }
     }),
 
-  // Batch operations for history
+  // Batch operations for history.
+  // NOTE: legacy namespace — despite living under measurementResult, this
+  // acknowledges product_inspections rows (ids are inspection ids as strings).
+  // Delegates to the same idempotent + audited path as inspection.bulkAcknowledge.
   batchAcknowledge: protectedProcedure
     .input(z.object({
-      ids: z.array(z.string()),
+      ids: z.array(z.string().regex(/^\d+$/)).min(1).max(500),
     }))
     .mutation(async ({ input, ctx }) => {
-      const { productInspections } = await import("../../drizzle/schema");
-      const { inArray } = await import("drizzle-orm");
-      const dbInstance = await db.getDb();
-      
-      if (!dbInstance) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
-      }
+      const ids = Array.from(new Set(input.ids.map((id) => parseInt(id, 10))));
+      const { updatedIds, alreadyAcknowledgedIds } = await db.bulkAcknowledgeInspections({
+        ids,
+        userId: ctx.user.id,
+      });
 
-      // Update acknowledged status for all selected inspections
-      await dbInstance.update(productInspections).set({
-        acknowledgedBy: ctx.user.id,
-        acknowledgedAt: new Date(),
-      }).where(inArray(productInspections.id, input.ids.map(id => parseInt(id))));
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name ?? undefined,
+        action: "inspection.bulkAcknowledge",
+        entityType: "inspection",
+        details: {
+          requestedCount: ids.length,
+          acknowledgedCount: updatedIds.length,
+          alreadyAcknowledgedCount: alreadyAcknowledgedIds.length,
+          acknowledgedIds: updatedIds,
+        },
+        status: "success",
+      });
 
-      return { success: true, count: input.ids.length };
+      return { success: true, count: updatedIds.length };
     }),
 
   batchAddNote: protectedProcedure
@@ -596,6 +708,8 @@ Respond in JSON format:
       if (!result) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement result not found' });
       }
+      // W7-B (doc 27 V2): capture the pre-update verdict for the harvest below.
+      const originalResult = result.result;
 
       // Update the measurement result
       await dbInstance.update(measurementResults).set({
@@ -607,7 +721,7 @@ Respond in JSON format:
       const allResults = await db.getMeasurementResultsByInspection(result.inspectionId);
       const hasNG = allResults.some(r => r.id === input.id ? input.result === "NG" : r.result === "NG");
       const hasNTF = allResults.some(r => r.id === input.id ? input.result === "NTF" : r.result === "NTF");
-      
+
       let overallResult: "OK" | "NG" | "NTF" = "OK";
       if (hasNG) overallResult = "NG";
       else if (hasNTF) overallResult = "NTF";
@@ -615,6 +729,35 @@ Respond in JSON format:
       await dbInstance.update(productInspections).set({
         overallResult,
       }).where(eq(productInspections.id, result.inspectionId));
+
+      // W7-B (doc 27 V2) — harvest the correction as a structured label
+      // (measurement_corrections ledger + ai_label_queue feed). ADDITIVE +
+      // FAIL-OPEN: everything above (the original behaviour) already happened
+      // and is never blocked/reverted by harvest problems.
+      if (originalResult !== input.result) {
+        try {
+          const inspection = await db.getProductInspectionById(result.inspectionId);
+          if (inspection) {
+            const { recordCorrection } = await import("../services/ai/measurementCorrectionsService");
+            await recordCorrection({
+              measurementResultId: result.id,
+              inspectionId: result.inspectionId,
+              machineId: inspection.machineId,
+              pointDefId: result.pointDefId,
+              originalResult,
+              correctedResult: input.result,
+              reason: input.reason ?? null,
+              operatorUserId: ctx.user.id,
+              imageKey: result.imageKey,
+              imageUrl: result.imageUrl,
+              source: "correct_result",
+              aiModelId: inspection.aiModelId ?? null,
+            });
+          }
+        } catch (err) {
+          console.warn("[measurementResult.correctResult] correction harvest skipped (fail-open):", err instanceof Error ? err.message : err);
+        }
+      }
 
       return { success: true, newOverallResult: overallResult };
     }),

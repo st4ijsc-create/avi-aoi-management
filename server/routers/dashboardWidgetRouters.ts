@@ -715,4 +715,108 @@ h1 { margin-bottom: 8px; } p { color: #666; margin-bottom: 24px; }
         createdBy: ctx.user.id,
       });
     }),
+
+  // ============ ROLE → DEFAULT DASHBOARD (doc 27 A12 / W5-C, migration 0184) ============
+
+  // Admin: all role bindings (for the admin section on /dashboard-templates).
+  listRoleDefaults: adminProcedure
+    .query(async () => {
+      return db.listRoleDashboardDefaults();
+    }),
+
+  // Admin: upsert one role's binding. The FULL desired state is sent each time
+  // (null clears a field). At most ONE dashboard target may be set.
+  setRoleDefault: adminProcedure
+    .input(z.object({
+      role: z.string().min(1).max(50),
+      dashboardTemplateId: z.number().int().positive().nullable().default(null),
+      customDashboardId: z.number().int().positive().nullable().default(null),
+      landingPath: z.string().max(255).regex(/^\//, 'landingPath must start with "/"').nullable().default(null),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (input.dashboardTemplateId != null && input.customDashboardId != null) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Set either a template or a custom dashboard, not both' });
+      }
+      if (input.dashboardTemplateId != null) {
+        const template = await db.getDashboardTemplateById(input.dashboardTemplateId);
+        if (!template) throw new TRPCError({ code: 'NOT_FOUND', message: 'Template not found' });
+      }
+      if (input.customDashboardId != null) {
+        const dashboard = await db.getUserCustomDashboardById(input.customDashboardId);
+        if (!dashboard) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dashboard not found' });
+        if (!dashboard.isPublic) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Role default dashboard must be a PUBLIC custom dashboard' });
+        }
+      }
+      return db.upsertRoleDashboardDefault({
+        role: input.role,
+        dashboardTemplateId: input.dashboardTemplateId,
+        customDashboardId: input.customDashboardId,
+        landingPath: input.landingPath,
+        updatedBy: ctx.user.id,
+      });
+    }),
+
+  clearRoleDefault: adminProcedure
+    .input(z.object({ role: z.string().min(1).max(50) }))
+    .mutation(async ({ input }) => {
+      await db.deleteRoleDashboardDefault(input.role);
+      return { success: true };
+    }),
+
+  /**
+   * Effective default dashboard for the CURRENT user.
+   * Resolution rule (personal > role > global default):
+   *   1. the user owns ≥1 custom dashboard → source 'personal' (the existing
+   *      favorite-first auto-select keeps working untouched);
+   *   2. else their role's binding: a public custom dashboard to auto-select,
+   *      or a template (widgets+layout) the client materializes read-only;
+   *   3. else source 'none' → the client keeps its built-in defaults.
+   * landingPath is returned regardless of source (it only affects the "/"
+   * front-door redirect, not the dashboard layout).
+   */
+  getMyEffectiveDashboard: protectedProcedure
+    .query(async ({ ctx }) => {
+      const roleDefault = await db.getRoleDashboardDefault(ctx.user.role);
+      const landingPath = roleDefault?.landingPath ?? null;
+
+      const mine = await db.getUserCustomDashboards(ctx.user.id);
+      if (mine.length > 0) {
+        return { source: 'personal' as const, role: ctx.user.role, landingPath, customDashboardId: null, template: null };
+      }
+
+      if (roleDefault?.customDashboardId != null) {
+        const dashboard = await db.getUserCustomDashboardById(roleDefault.customDashboardId);
+        if (dashboard && dashboard.isPublic) {
+          return {
+            source: 'role' as const,
+            role: ctx.user.role,
+            landingPath,
+            customDashboardId: dashboard.id,
+            template: null,
+          };
+        }
+      }
+
+      if (roleDefault?.dashboardTemplateId != null) {
+        const template = await db.getDashboardTemplateById(roleDefault.dashboardTemplateId);
+        if (template) {
+          return {
+            source: 'role' as const,
+            role: ctx.user.role,
+            landingPath,
+            customDashboardId: null,
+            template: {
+              id: template.id,
+              name: template.name,
+              description: template.description,
+              widgets: template.widgets,
+              layout: template.layout,
+            },
+          };
+        }
+      }
+
+      return { source: 'none' as const, role: ctx.user.role, landingPath, customDashboardId: null, template: null };
+    }),
 });

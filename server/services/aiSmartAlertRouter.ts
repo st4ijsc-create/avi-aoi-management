@@ -174,6 +174,21 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
     aiAnalysisPayload.modelUsed = "smart-alert-router+gguf";
   }
 
+  // W0-F G5.5 (doc 44, mig 0249): persist runbook/recommendation pointers when the
+  // RAISER supplied one (e.g. SLO burn-rate alerts pass data.runbook from the SLO
+  // catalogue). Columns are included ONLY when present so alert paths that carry
+  // no reference keep the exact pre-0249 INSERT shape (safe on an un-migrated DB).
+  const runbookRef =
+    typeof event.data.runbookRef === "string" && event.data.runbookRef.trim()
+      ? event.data.runbookRef.trim()
+      : typeof event.data.runbook === "string" && event.data.runbook.trim()
+        ? event.data.runbook.trim()
+        : null;
+  const recommendationRef =
+    typeof event.data.recommendationRef === "string" && event.data.recommendationRef.trim()
+      ? event.data.recommendationRef.trim()
+      : null;
+
   // Step 5: Record in predictive_alerts table
   const [alertRecord] = await db
     .insert(predictiveAlerts)
@@ -193,6 +208,8 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
       status: "ACTIVE",
       notificationSent: true,
       notificationSentAt: new Date(),
+      ...(runbookRef ? { runbookRef } : {}),
+      ...(recommendationRef ? { recommendationRef } : {}),
     } as any)
     .returning({ id: predictiveAlerts.id });
 
@@ -460,7 +477,11 @@ export async function processAutoEscalation(): Promise<number> {
         eq(predictiveAlerts.status, "ACTIVE"),
         isNull(predictiveAlerts.acknowledgedAt),
         sql`${predictiveAlerts.escalationLevel} < 3`,
-        sql`COALESCE(${predictiveAlerts.lastEscalatedAt}, ${predictiveAlerts.createdAt}) <= ${cutoff}`,
+        // NOTE: pass the cutoff as an ISO string, not a JS Date. Inside a raw `sql`
+        // fragment drizzle's postgres-js prepared path cannot serialize a Date
+        // (postgres.js falls back to its string writer → Buffer.byteLength(Date)
+        // throws ERR_INVALID_ARG_TYPE). Postgres coerces the ISO text to timestamp.
+        sql`COALESCE(${predictiveAlerts.lastEscalatedAt}, ${predictiveAlerts.createdAt}) <= ${cutoff.toISOString()}`,
       ),
     );
 
@@ -549,7 +570,7 @@ async function checkPatterns(
       COUNT(*) as occurrences
     FROM ${predictiveAlerts}
     WHERE ${predictiveAlerts.alertType} = ${event.type}
-      AND ${predictiveAlerts.createdAt} >= ${thirtyDaysAgo}
+      AND ${predictiveAlerts.createdAt} >= ${thirtyDaysAgo.toISOString()}
       ${event.machineId ? sql`AND ${predictiveAlerts.machineId} = ${event.machineId}` : sql``}
     GROUP BY day_of_week, hour_of_day
     HAVING COUNT(*) >= 4

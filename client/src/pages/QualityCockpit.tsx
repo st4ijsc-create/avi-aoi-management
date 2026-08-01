@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSearch } from "wouter";
+import { useSearch, useLocation } from "wouter";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,13 +21,30 @@ import {
   ShieldCheck,
   PenTool,
   Radio,
+  Gauge,
+  FlaskConical,
+  BellRing,
+  ClipboardCheck,
+  Stethoscope,
 } from "lucide-react";
 
 import { SPCAnalysisContent } from "./SPCAnalysis";
+import { DiagnoseTabGroup } from "./quality/DiagnoseTabGroup"; // doc 59 Cụm F
 import { ParetoAnalysisContent } from "./ParetoAnalysis";
 import { QualityGatesContent } from "./QualityGates";
 import { AnnotationComparisonPageContent } from "./AnnotationComparisonPage";
 import { ProductDefectHeatmap } from "@/components/ProductDefectHeatmap";
+// Doc 35 F1/F4 (W3-B) — surface orphaned quality/MSA/SPC/calibration backends.
+import { InstrumentCalibrationPanel } from "@/components/quality/InstrumentCalibrationPanel";
+import { MsaGaugeRRPanel } from "@/components/quality/MsaGaugeRRPanel";
+import { SpcAlertsPanel } from "@/components/quality/SpcAlertsPanel";
+import { IpcAcceptancePanel } from "@/components/quality/IpcAcceptancePanel";
+// Doc 27 gap A9 (W5-A): paired false-call ↔ escape tuning-tradeoff KPI.
+import { FalseCallEscapePanel } from "@/components/FalseCallEscapePanel";
+// Doc 27 gap V2 (W7-B): "Máy hay báo giả" — per-machine agreement/false-call
+// ranking from the HARVESTED corrections ledger (complementary to the panel
+// above, which reads inspection-row NTF flips only).
+import { FalseCallTrendCard } from "@/components/FalseCallTrendCard";
 
 function getDefaultDateRange() {
   const end = new Date();
@@ -111,6 +129,7 @@ function ScopeSelector({
             <Label>{t("common.startDate")}</Label>
             <Input
               type="date"
+              aria-label={t("common.startDate")}
               value={scope.startDate}
               onChange={(e) => onChange({ ...scope, startDate: e.target.value })}
             />
@@ -119,6 +138,7 @@ function ScopeSelector({
             <Label>{t("common.endDate")}</Label>
             <Input
               type="date"
+              aria-label={t("common.endDate")}
               value={scope.endDate}
               onChange={(e) => onChange({ ...scope, endDate: e.target.value })}
             />
@@ -166,19 +186,19 @@ function RealtimeGateStatus() {
   const activeCount = activeEventsQuery.data?.length ?? 0;
 
   return (
-    <Card className={activeCount > 0 ? "border-red-500 bg-red-50 dark:bg-red-950/20" : "border-green-500 bg-green-50 dark:bg-green-950/20"}>
+    <Card className={activeCount > 0 ? "border-destructive/50 bg-destructive/5" : "border-success/50 bg-success/5"}>
       <CardHeader className="py-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-2">
             {activeCount > 0 ? (
-              <ShieldAlert className="h-5 w-5 text-red-600" />
+              <ShieldAlert className="h-5 w-5 text-destructive" />
             ) : (
-              <ShieldCheck className="h-5 w-5 text-green-600" />
+              <ShieldCheck className="h-5 w-5 text-success" />
             )}
             {t("qualityCockpit.gates.realtimeStatus")}
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Radio className="h-3.5 w-3.5 text-green-500 animate-pulse" />
+            <Radio className="h-3.5 w-3.5 text-success animate-pulse" />
             <Badge variant={activeCount > 0 ? "destructive" : "secondary"}>
               {t("qualityCockpit.gates.activeBreaches", { count: activeCount })}
             </Badge>
@@ -195,7 +215,11 @@ function RealtimeGateStatus() {
 }
 
 // Valid cockpit tab ids (also the deep-link `?tab=` targets the redirects use).
-const VALID_TABS = ["spc", "pareto", "heatmap", "gates", "annotation"] as const;
+const VALID_TABS = [
+  "spc", "pareto", "heatmap", "gates", "annotation",
+  "alerts", "calibration", "msa", "ipc",
+  "diagnose", // doc 59 Cụm F — nhóm điều tra (RCA/dự đoán/nhân quả/tương quan)
+] as const;
 
 export default function QualityCockpit() {
   const { t } = useTranslation();
@@ -209,6 +233,15 @@ export default function QualityCockpit() {
   })();
   const [scope, setScope] = useState<CockpitScope>(() => getDefaultDateRange());
   const [activeTab, setActiveTab] = useState(initialTab);
+  const [, setLocation] = useLocation();
+
+  // doc 36 W2 — write the active tab back to the URL so cockpit views are deep-linkable
+  // from the app menu (and the browser's active-route highlight matches). Replace (no
+  // history spam).
+  const handleTabChange = (v: string) => {
+    setActiveTab(v);
+    setLocation(`/quality-cockpit?tab=${v}`, { replace: true });
+  };
 
   const heatmapScope = useMemo(
     () => ({
@@ -223,17 +256,36 @@ export default function QualityCockpit() {
   return (
     <DashboardLayout title={t("qualityCockpit.title")}>
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Activity className="h-6 w-6 text-primary" />
-            {t("qualityCockpit.title")}
-          </h1>
-          <p className="text-muted-foreground">{t("qualityCockpit.subtitle")}</p>
-        </div>
+        <PageHeader
+          icon={<Activity className="h-6 w-6" />}
+          title={t("qualityCockpit.title")}
+          description={t("qualityCockpit.subtitle")}
+        />
 
         <ScopeSelector scope={scope} onChange={setScope} />
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        {/* Doc 27 A9 — false-call ↔ escape paired KPI (AOI tuning trade-off),
+            driven by the shared cockpit scope. */}
+        <FalseCallEscapePanel
+          scope={{
+            machineId: scope.machineId,
+            productModelId: scope.productModelId,
+            startDate: scope.startDate,
+            endDate: scope.endDate,
+          }}
+        />
+
+        {/* Doc 27 V2 (W7-B) — "Máy hay báo giả": harvested-corrections agreement
+            card (labels banked for training + per-machine false-call ranking). */}
+        <FalseCallTrendCard
+          scope={{
+            machineId: scope.machineId,
+            startDate: scope.startDate,
+            endDate: scope.endDate,
+          }}
+        />
+
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
           <TabsList>
             <TabsTrigger value="spc" className="gap-2">
               <Activity className="h-4 w-4" />
@@ -254,6 +306,26 @@ export default function QualityCockpit() {
             <TabsTrigger value="annotation" className="gap-2">
               <PenTool className="h-4 w-4" />
               {t("qualityCockpit.tabs.annotation")}
+            </TabsTrigger>
+            <TabsTrigger value="alerts" className="gap-2">
+              <BellRing className="h-4 w-4" />
+              {t("qualityCockpit.tabs.alerts")}
+            </TabsTrigger>
+            <TabsTrigger value="calibration" className="gap-2">
+              <Gauge className="h-4 w-4" />
+              {t("qualityCockpit.tabs.calibration")}
+            </TabsTrigger>
+            <TabsTrigger value="msa" className="gap-2">
+              <FlaskConical className="h-4 w-4" />
+              {t("qualityCockpit.tabs.msa")}
+            </TabsTrigger>
+            <TabsTrigger value="ipc" className="gap-2">
+              <ClipboardCheck className="h-4 w-4" />
+              {t("qualityCockpit.tabs.ipc")}
+            </TabsTrigger>
+            <TabsTrigger value="diagnose" className="gap-2">
+              <Stethoscope className="h-4 w-4" />
+              {t("qualityCockpit.tabs.diagnose", "Chẩn đoán")}
             </TabsTrigger>
           </TabsList>
 
@@ -281,6 +353,37 @@ export default function QualityCockpit() {
           {/* Annotation — single canvas comparison tool */}
           <TabsContent value="annotation">
             <AnnotationComparisonPageContent />
+          </TabsContent>
+
+          {/* SPC OOC alerts (mp_spc_alerts) + top defect measurement points */}
+          <TabsContent value="alerts">
+            <SpcAlertsPanel
+              scope={{
+                productModelId: scope.productModelId,
+                startDate: scope.startDate,
+                endDate: scope.endDate,
+              }}
+            />
+          </TabsContent>
+
+          {/* Instrument calibration certificates + MSA records + RAG health */}
+          <TabsContent value="calibration">
+            <InstrumentCalibrationPanel />
+          </TabsContent>
+
+          {/* Advanced MSA / Gauge R&R (ANOVA) calculator */}
+          <TabsContent value="msa">
+            <MsaGaugeRRPanel />
+          </TabsContent>
+
+          {/* IPC-A-610 per-class acceptance profile */}
+          <TabsContent value="ipc">
+            <IpcAcceptancePanel />
+          </TabsContent>
+
+          {/* doc 59 Cụm F — điều tra (RCA/dự đoán/nhân quả/tương quan) cạnh SPC/Pareto */}
+          <TabsContent value="diagnose">
+            <DiagnoseTabGroup />
           </TabsContent>
         </Tabs>
       </div>

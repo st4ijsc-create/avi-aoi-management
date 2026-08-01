@@ -1,0 +1,47 @@
+# WS-A — Historian, OEE & Reporting — Blueprint (code-grounded)
+
+> Design reference for the 14 TDD tasks. Grounded in the real codebase (file:line cited). Execution: subagent-driven, one task at a time, review between.
+
+## Grounding — hook points (do NOT touch the pipeline seam)
+- `EdgePipeline.RunAsync` fires `event Action<DeviceReading,TransportAck>? Committed` at `src/St4i.EdgeCore/Engine/EdgePipeline.cs:82` (declared line 35) — single per-reading extension point.
+- Current subscriber: `FleetHost.OnPipelineCommitted` (`src/St4i.EngineApi/Fleet/FleetHost.cs:423-440`), subscribed at `FleetHost.cs:324`. This resolves `MachineState` (carries `Descriptor`, `MachineState.cs:82`) per reading → **the historian write hook goes here, ALONGSIDE the RAM path, never replacing it.**
+- RAM ring buffers to leave untouched: `MachineState` `_spark`(30)/`_spcValues`(50)/`_cycleLog`(**200**)/`_boardPoints`/`_currentPlan` (`src/St4i.EngineApi/Fleet/MachineState.cs:35-41`). FPY = `Verdict!=Skip`→judged, `Pass|Warn`→pass (`MachineState.cs:125-129`; fleet-wide in `FleetHost.Snapshot()` 445-478). **Unchanged.**
+- `DeviceReading` (`src/St4i.EdgeCore/Models/DeviceReading.cs:34-56`): `MachineCode, Kind(ProcessResult|Telemetry|Inspection), SerialNumber, Verdict, RecipeCode, RecipeVersion, Metrics, Measurements, Telemetry, CycleCounter, Timestamp, Genealogy?, Plan?`. `TransportAck`: `Success, Duplicate, Queued, HttpStatus, LatencyMs, Error`. `MachineDescriptor`: `Code, DeviceClass, MachineType, CycleSeconds` (only nominal cycle-time proxy that exists — from fleet.json).
+- Persistence idiom to mirror (atomic write mechanics): `MachineConfigStore`/`ProductConfigStore` (single lock, deep-clone, temp-file + `File.Move` overwrite) — but those root at `AppContext.BaseDirectory` (beside exe). `CredentialStore.cs:70-72` roots durable data at `%ProgramData%\ST4I\sim\...`. **Historian DB uses `%ProgramData%\ST4I\sim\historian\` (durable data must survive reinstall).**
+- DI/endpoint style: flat `Program.cs` composition root; endpoint files = static class w/ `MapXEndpoints(this IEndpointRouteBuilder)`; JSON camelCase + `JsonStringEnumConverter`.
+- Web: `web/src/lib/api.ts` (typed DTOs 1:1 + TanStack Query), routes in `web/src/shell/Shell.tsx:40-53`, nav in `Sidebar.tsx:26-34` (`NAV_ITEMS` also feeds `CommandPalette`), i18n hand-rolled dot-path (`vi.ts` source-of-truth, `en.ts` mirror). Reuse: `KpiTile`, `CycleLogTable` (exports `verdictMeta`/`VERDICT_META`), `TelemetryChart`/`SpcChart` (`useChartTokens`). recharts/tanstack-query/wouter already deps.
+- Test idiom: xUnit, `Directory.CreateTempSubdirectory("st4i-...")` per class; `FleetHost` tests use fakes + `WaitUntilAsync` poll.
+
+## Contracts (T1)
+`IHistorianStore` (`src/St4i.EdgeCore/Historian/IHistorianStore.cs`) — pure primitives/records, NO SQLite leak (Postgres-swappable):
+`AppendResultsAsync(IReadOnlyList<HistorianResultRecord>, ct)` · `AppendRunEventAsync(HistorianRunEvent, ct)` · `QueryResultsAsync(HistorianResultQuery, ct)→HistorianResultsPage` · `QueryBySerialAsync(serial, ct)` · `QueryTelemetryAsync(machine, metric, from, to, ct)` · `AggregateForOeeAsync(machine, from, to, ct)→OeeInputAggregate` · `QueryRunEventsAsync(from, to, ct)` · `PruneOlderThanAsync(cutoffUtc, ct)→int` · `GetStatsAsync(ct)→HistorianStats`.
+Records: `HistorianResultRecord` (+ static `From(descriptor,reading,ack,ingestedAtUtc)`), `HistorianResultRow(Id,Record)`, `TelemetrySampleRecord`, `HistorianRunEvent(EventType[Start|Stop|Estop|EstopReset],AtUtc,Note?)`, `HistorianResultQuery`, `HistorianResultsPage`, `TelemetrySamplePoint`, `OeeInputAggregate(machine,from,to,TotalCount,GoodCount,RunTime)`, `HistorianStats`. AOI per-point data carried ONLY as opaque `MeasurementsJson` + `NgCount`/`PointCount` (constraint #5). Persist RAW `DeviceReading.CycleCounter` (diagnostic); DB `AUTOINCREMENT id` is authoritative order.
+
+## Storage (T2–T3) — `SqliteHistorianStore` (raw `Microsoft.Data.Sqlite`, no ORM)
+DB `%ProgramData%\ST4I\sim\historian\historian.db`; `PRAGMA journal_mode=WAL; synchronous=NORMAL; busy_timeout=5000; foreign_keys=ON` per open; short-lived pooled connections. Schema version via `PRAGMA user_version` + hand-rolled migration ladder.
+Tables: `historian_results` (id PK AUTOINC, machine_code, device_class, machine_type, reading_kind, cycle_counter, serial_number, verdict, recipe_code?, recipe_version?, key_metric_name?/value?/unit?, ng_count, point_count, ack_success/duplicate/queued, genealogy_json?, measurements_json?, event_time_utc, ingested_at_utc; indexes on (machine_code,event_time_utc),(serial_number),(event_time_utc)); `historian_telemetry` (id, result_id FK CASCADE, machine_code, metric, value, unit?, quality, event_time_utc; index (machine_code,metric,event_time_utc)); `historian_run_events` (id, event_type, at_utc, note?; index at_utc).
+
+## OEE (T4–T5)
+`OeeCalculator` (`src/St4i.EdgeCore/Metrics/OeeCalculator.cs`) — pure static, zero I/O. `Calculate(OeeInputAggregate, plannedProductionTime, idealCycleSeconds)→OeeResult`. A=clamp(RunTime/Planned,0,1); P=clamp(idealCycle*Total/RunTimeSec,0,1); Q=Good/Total; OEE=A*P*Q. Good = Pass+Warn (same as MachineState). Loss buckets **honestly 3** (Downtime/Speed/Quality) — true six-big-losses needs reason codes/minor-stop/warm-up that don't exist until Alarm/Andon (GĐ2); do NOT fabricate 6.
+Inputs & gaps: TotalCount/GoodCount ← SQL aggregate (OK). RunTime ← new `historian_run_events` timeline (fleet-wide Start/Stop/Estop intervals). PlannedProductionTime ← `(To-From) * OeeSettingsStore.PlannedProductionRatio` (NEW — no planned-time concept exists). IdealCycleSeconds ← `OeeSettingsStore.IdealCycleSecondsOverride ?? MachineDescriptor.CycleSeconds`.
+`OeeSettingsStore` (`src/St4i.EdgeCore/Historian/OeeSettingsStore.cs`) — atomic-JSON idiom, `oee-settings.json` in the historian folder; `OeeMachineSettings{MachineCode, IdealCycleSecondsOverride?, PlannedProductionRatio=1.0}`; ratio guardrail [0,1] (reject, not clamp).
+
+## Write-behind (T6) — `HistorianWriter` (`src/St4i.EdgeCore/Historian/HistorianWriter.cs`)
+Bounded `Channel<HistorianResultRecord>` (cap 10k, `FullMode=DropOldest`, SingleReader) + background flush loop (batch ≤256). `Enqueue()` non-blocking (TryWrite; log on drop) — **NEVER backpressures the pipeline**. Throwing store must not kill loop. `IAsyncDisposable` drains on shutdown (DI singleton auto-disposed). Run events NOT via channel — `RecordRunEventFireAndForget` wraps `AppendRunEventAsync` in logged `Task.Run`.
+
+## FleetHost hook (T7) — ONE-line-each additions
+Add optional ctor param `HistorianWriter? historianWriter = null` (same idiom as `_configStore`). In `OnPipelineCommitted`: after `state.ApplyReading(...)`, `_historianWriter?.Enqueue(HistorianResultRecord.From(state.Descriptor, reading, ack, DateTimeOffset.UtcNow));`. In `StartLocked`/`StopLocked`/`Estop`/`ResetEstop`: one `RecordRunEventFireAndForget(...)` each. RAM path untouched; all pre-existing FleetHost tests must pass unmodified.
+
+## API (T8–T11) — `HistorianEndpoints` + `HistorianDtos` (`src/St4i.EngineApi/Endpoints/`)
+`GET /v1/historian/results` (machine?,from?,to?,serial?,verdict?,kind?,limit?,offset?) · `GET /v1/historian/serial/{serial}` · `GET /v1/historian/telemetry` (machine,metric,from,to) · `GET /v1/historian/stats` · `GET /v1/historian/oee` (machine req, from?/to? default 24h; 404 if not in fleet) · `GET /v1/historian/oee/fleet` · `GET|PUT /v1/historian/oee/settings` · `GET /v1/historian/results/export.csv` (full filtered set, RFC-4180 hand-rolled) · `GET /v1/historian/report.pdf` · `POST /v1/historian/prune`. DI: register `IHistorianStore`→`SqliteHistorianStore`, `OeeSettingsStore`, `HistorianWriter`; `app.MapHistorianEndpoints()`. Endpoints unauth today (WS-D adds auth).
+
+## Web (T12–T13)
+`api.ts`: wire types 1:1 + hooks `useHistorianResults/useHistorianBySerial/useOee/useOeeFleet/useOeeSettings/useUpdateOeeSettings/useHistorianStats` (on-demand, no polling). `Historian.tsx` (filter bar + `HistorianResultsTable` modeled on `CycleLogTable`, reuse `verdictMeta`; genealogy dialog; CSV export via `<a download>`). `Reports.tsx` (4 `KpiTile` A/P/Q/OEE + `OeeLossChart` 3 buckets + Targets editor + PDF `<a>`). Wire `Sidebar.NAV_ITEMS` (→ palette free) + `Shell` routes + `vi.ts`/`en.ts` `historian.*`/`reports.*`/`shell.nav.*` (mirror exactly).
+
+## Export server-side (decisive): CSV hand-rolled; PDF **PdfSharp+MigraDoc** (MIT-ish, no revenue-license risk) NOT QuestPDF (Community license has revenue threshold — risk for a product sold).
+
+## 14 tasks (ordered)
+T1 IHistorianStore+records (mapping test) · T2 SqliteHistorianStore schema+results/run-events round-trip (+restart-survival) · T3 telemetry/serial/prune/stats · T4 OeeCalculator (pure math edge cases) · T5 OeeSettingsStore · T6 HistorianWriter non-blocking write-behind · T7 FleetHost wiring (RAM untouched, existing tests green) · T8 endpoints read surface · T9 endpoints OEE surface · T10 CSV export · T11 PDF report · T12 web Historian + nav/i18n/route · T13 web Reports · T14 E2E restart-survival + full suite (~360) green = WS-A done.
+
+## Flagged decisions (defaults chosen; user may override)
+- SQLite raw ADO.NET (matches repo's zero-ORM style). · PDF = PdfSharp+MigraDoc (licensing-safe). · Historian in `%ProgramData%` (survive reinstall). · Retention: unbounded default + manual prune endpoint. · OEE losses = 3 honest buckets until Alarm/Andon (GĐ2). · OEE needs new `OeeSettingsStore` (planned-time/ideal-cycle) + `run_events` timeline (RunTime).

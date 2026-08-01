@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Task 9 — the standalone offline desktop package (Deliverable A). A small WPF host whose ONLY
+         job is: spawn the published St4i.EngineApi.exe as a child process (which itself now serves the
+         built web UI — see St4i.EngineApi.csproj's wwwroot Content item + Program.cs's
+         UseStaticFiles/MapFallbackToFile), wait for it to come up, then point a WebView2 control at it.
+         No Rust/Tauri needed (environment has no rustup — see task-9-report.md) — this is the same
+         "native window + embedded Chromium" shape Tauri would have produced, built entirely from the
+         .NET/WebView2 toolchain already on this box (WebView2 Runtime + .NET SDK 10 both confirmed
+         present). -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Fixed win-x64 (exhibition target — Windows 11, WebView2 Runtime already installed) so
+         `dotnet publish` below can produce a genuinely standalone single-file exe with no "which SDK
+         is on this machine" ambiguity. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <!-- Reuses St4iMachineSimulator's existing exhibition-branding .ico (Task 20) rather than
+         duplicating the file — this project has no Assets/ of its own. -->
+    <ApplicationIcon>..\St4iMachineSimulator\Assets\icon.ico</ApplicationIcon>
+    <AssemblyName>St4i.DesktopShell</AssemblyName>
+    <AssemblyTitle>ST4I Machine Simulator</AssemblyTitle>
+    <Product>ST4I Machine Simulator</Product>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- WebView2 Runtime itself is NOT bundled (and doesn't need to be — the env probe confirmed Edge
+         WebView2 150.x already installed, and it ships in-box on Windows 11 by default) — this NuGet
+         package is only the .NET WPF control + loader that talks to whatever runtime is present. -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+  </ItemGroup>
+</Project>

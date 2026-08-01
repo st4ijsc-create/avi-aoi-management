@@ -65,6 +65,12 @@ export interface WidgetStyle {
   borderRadius: string;
   shadow: 'none' | 'sm' | 'md' | 'lg' | 'xl';
   opacity: string;
+  /**
+   * 'theme' (default) → cards follow the app's dark/light theme via tokens (no forced
+   * bg/text/border colours). 'custom' → the user explicitly picked colours, which
+   * override the theme. Legacy saved styles (no mode) are treated as 'theme'.
+   */
+  mode?: 'theme' | 'custom';
 }
 
 // Default style
@@ -76,6 +82,7 @@ export const DEFAULT_WIDGET_STYLE: WidgetStyle = {
   borderRadius: '0.5rem',
   shadow: 'sm',
   opacity: '1.00',
+  mode: 'theme', // default follows the app theme (light/dark), not a forced white
 };
 
 // Shadow options
@@ -297,8 +304,13 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
   useEffect(() => { if (currentStyle) setEditingStyle(currentStyle); }, [currentStyle]);
 
   const handleApplyStyle = (style: WidgetStyle, presetId?: number) => {
-    setEditingStyle(style);
-    if (onStyleChange) onStyleChange(style);
+    // Applying a style via the manager is a DELIBERATE custom choice → mode 'custom'
+    // (so the picked colours override the theme). The only exception is a style that
+    // explicitly carries mode:'theme' (e.g. the built-in "Default/Theme" preset), which
+    // keeps cards following the app's dark/light theme.
+    const applied: WidgetStyle = { ...style, mode: style.mode ?? 'custom' };
+    setEditingStyle(applied);
+    if (onStyleChange) onStyleChange(applied);
     if (presetId) applyPresetMutation.mutate({ id: presetId });
     toast.success('Style applied');
   };

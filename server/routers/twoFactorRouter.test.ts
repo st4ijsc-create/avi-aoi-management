@@ -24,7 +24,7 @@ vi.mock('speakeasy', () => ({
   default: {
     generateSecret: vi.fn().mockReturnValue({
       base32: 'TESTBASE32SECRET',
-      otpauth_url: 'otpauth://totp/AVI-AOI:test@example.com?secret=TESTBASE32SECRET&issuer=AVI-AOI%20Management',
+      otpauth_url: 'otpauth://totp/SYNAPSE:test@example.com?secret=TESTBASE32SECRET&issuer=SYNAPSE',
     }),
     totp: {
       verify: vi.fn().mockReturnValue(true),

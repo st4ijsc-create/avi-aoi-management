@@ -2,14 +2,16 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
+import { withDbErrors } from "../_core/dbErrors";
+import { requirePermission } from "../_core/accessControl";
 
-// Admin procedure - only admin users can access
-const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== 'admin') {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
-  }
-  return next({ ctx });
-});
+// doc 42 #15 — RBAC split-brain: quy trình là master-data của app "Quản lý dữ liệu".
+// FE gate module `settings_factory`; BE phải khớp (không hardgate role==='admin').
+// Admin luôn qua; user được cấp settings_factory qua RoleBuilder thao tác được.
+const MODULE = "settings_factory";
+const canCreate = protectedProcedure.use(requirePermission(MODULE, "canCreate"));
+const canEdit = protectedProcedure.use(requirePermission(MODULE, "canEdit"));
+const canDelete = protectedProcedure.use(requirePermission(MODULE, "canDelete"));
 
 export const processRouter = router({
   // List all processes
@@ -34,10 +36,10 @@ export const processRouter = router({
     }),
 
   // Create new process
-  create: adminProcedure
+  create: canCreate
     .input(z.object({
-      code: z.string().min(1).max(50),
-      name: z.string().min(1).max(255),
+      code: z.string().min(1, 'Mã quy trình là bắt buộc').max(50),
+      name: z.string().min(1, 'Tên quy trình là bắt buộc').max(255),
       description: z.string().optional(),
       processType: z.enum(['SMT', 'DIP', 'ASSEMBLY', 'TESTING', 'PACKAGING', 'INSPECTION', 'OTHER']).default('OTHER'),
       cycleTimeTarget: z.number().optional(),
@@ -49,18 +51,18 @@ export const processRouter = router({
       // Check if code already exists
       const existing = await db.getProcessByCode(input.code);
       if (existing) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Process code already exists' });
+        throw new TRPCError({ code: 'CONFLICT', message: `Mã quy trình '${input.code}' đã tồn tại` });
       }
-      
-      const result = await db.createProcess({
+
+      const result = await withDbErrors(() => db.createProcess({
         ...input,
         cycleTimeTarget: input.cycleTimeTarget?.toString(),
-      });
+      }), { conflictMessage: `Mã quy trình '${input.code}' đã tồn tại` });
       return result;
     }),
 
   // Update process
-  update: adminProcedure
+  update: canEdit
     .input(z.object({
       id: z.number(),
       code: z.string().min(1).max(50).optional(),
@@ -86,19 +88,19 @@ export const processRouter = router({
       if (rest.code && rest.code !== existing.code) {
         const codeExists = await db.getProcessByCode(rest.code);
         if (codeExists) {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Process code already exists' });
+          throw new TRPCError({ code: 'CONFLICT', message: `Mã quy trình '${rest.code}' đã tồn tại` });
         }
       }
-      
-      await db.updateProcess(id, {
+
+      await withDbErrors(() => db.updateProcess(id, {
         ...rest,
         cycleTimeTarget: cycleTimeTarget?.toString(),
-      });
+      }), { conflictMessage: 'Mã quy trình đã tồn tại' });
       return { success: true };
     }),
 
   // Delete process
-  delete: adminProcedure
+  delete: canDelete
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const existing = await db.getProcessById(input.id);
@@ -111,7 +113,7 @@ export const processRouter = router({
     }),
 
   // Reorder processes
-  reorder: adminProcedure
+  reorder: canEdit
     .input(z.object({
       orderedIds: z.array(z.number()),
     }))
@@ -127,8 +129,40 @@ export const processRouter = router({
       return db.getLineProcessAssignments(input.lineId);
     }),
 
+  // doc 42 Đợt 4B (H2 #process→line) — assignments của MỘT quy trình (chọn quy
+  // trình → xem nó được gán vào những dây chuyền/trạm nào). getLineProcessAssignments
+  // đánh index theo lineId nên không phục vụ chiều này; join line + station để hiện
+  // nhãn người-đọc thay vì raw id. Read-only (protectedProcedure, khớp getLineAssignments).
+  getAssignmentsByProcess: protectedProcedure
+    .input(z.object({ processId: z.number() }))
+    .query(async ({ input }) => {
+      const database = await db.getDb();
+      if (!database) return [];
+      const { lineProcessAssignments } = await import("../../drizzle/schema/production");
+      const { productionLines, stations } = await import("../../drizzle/schema/hierarchy");
+      const { eq, asc } = await import("drizzle-orm");
+      return database
+        .select({
+          id: lineProcessAssignments.id,
+          lineId: lineProcessAssignments.lineId,
+          lineName: productionLines.name,
+          lineCode: productionLines.code,
+          stationId: lineProcessAssignments.stationId,
+          stationName: stations.name,
+          stationCode: stations.code,
+          orderIndex: lineProcessAssignments.orderIndex,
+          cycleTimeTarget: lineProcessAssignments.cycleTimeTarget,
+          isActive: lineProcessAssignments.isActive,
+        })
+        .from(lineProcessAssignments)
+        .leftJoin(productionLines, eq(lineProcessAssignments.lineId, productionLines.id))
+        .leftJoin(stations, eq(lineProcessAssignments.stationId, stations.id))
+        .where(eq(lineProcessAssignments.processId, input.processId))
+        .orderBy(asc(lineProcessAssignments.orderIndex));
+    }),
+
   // Create line process assignment
-  createLineAssignment: adminProcedure
+  createLineAssignment: canCreate
     .input(z.object({
       lineId: z.number(),
       processId: z.number(),
@@ -146,7 +180,7 @@ export const processRouter = router({
     }),
 
   // Update line process assignment
-  updateLineAssignment: adminProcedure
+  updateLineAssignment: canEdit
     .input(z.object({
       id: z.number(),
       orderIndex: z.number().optional(),
@@ -164,7 +198,7 @@ export const processRouter = router({
     }),
 
   // Delete line process assignment
-  deleteLineAssignment: adminProcedure
+  deleteLineAssignment: canDelete
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteLineProcessAssignment(input.id);
@@ -172,7 +206,7 @@ export const processRouter = router({
     }),
 
   // Reorder line process assignments
-  reorderLineAssignments: adminProcedure
+  reorderLineAssignments: canEdit
     .input(z.object({
       lineId: z.number(),
       orderedIds: z.array(z.number()),

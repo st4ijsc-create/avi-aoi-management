@@ -1,0 +1,28 @@
+-- ============================================================================
+-- Migration 0161: robot vendor "vda5050" (doc 24 Wave-3 / C4 — vendor coverage)
+--
+-- Adds the "vda5050" value to the existing `robotvendorenum` pg enum so an AGV/AMR
+-- driven over the open **VDA 5050** MQTT standard can be registered as a first-class
+-- robot (robots.vendor='vda5050') and flow through the EXISTING robot framework:
+-- driver registry → robotManager active list → robotCommandDispatcher HITL/dry-run
+-- gate. Until now the VDA 5050 RobotDriver existed but was ENUM-BLOCKED — a
+-- vda5050 robot row could not be persisted because the DB enum lacked the value,
+-- so the driver was only reachable via the standalone vda5050 adapter manager.
+--
+--   • ONLY change: ADD VALUE IF NOT EXISTS 'vda5050' to robotvendorenum.
+--   • ADDITIVE + IDEMPOTENT: re-running is a no-op. No table/column change, no new
+--     enum TYPE, no policy change. Existing vendors (fanuc/mitsubishi/delta/techman/
+--     sim) and existing robot rows are untouched.
+--
+-- ⚠ SAFETY: this migration only widens a vendor enumeration. It opens NO motion
+--   path. AGV Orders/InstantActions still route ONLY through robotCommandDispatcher
+--   (HITL 2-eyes + dry-run unless ROBOT_CONTROL_ENABLED='true'); dry-run builds the
+--   VDA 5050 Order JSON but publishes NOTHING to MQTT. Topic/field mapping must be
+--   validated against a real AGV before going live.
+--
+-- NOTE: ALTER TYPE ... ADD VALUE cannot run inside a transaction block in older
+-- Postgres; run this file OUTSIDE an explicit transaction (the migration runner
+-- applies it standalone). The IF NOT EXISTS guard makes it safe to re-apply.
+-- ============================================================================
+
+ALTER TYPE "robotvendorenum" ADD VALUE IF NOT EXISTS 'vda5050';

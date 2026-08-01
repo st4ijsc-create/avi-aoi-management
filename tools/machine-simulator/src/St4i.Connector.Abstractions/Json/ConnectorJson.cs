@@ -1,0 +1,111 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace St4i.Connector.Abstractions.Json;
+
+/// <summary>
+/// GP-2 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-2-brief.md) — the ONE
+/// <see cref="JsonSerializerOptions"/> instance that defines the connector wire format: the contract a
+/// vendor driver running in a future out-of-process sidecar and the host reading it back on the other
+/// side of that process boundary BOTH compile against. Unlike an in-process call, there is no shared CLR
+/// type on the other end of a sidecar boundary — only this class's choices — so every setting below is
+/// deliberate and documented, not "whatever <see cref="JsonSerializerOptions"/>'s parameterless
+/// constructor happens to default to".
+/// </summary>
+public static class ConnectorJson
+{
+    /// <summary>
+    /// The cached, canonical wire-format options. <c>static readonly</c> is load-bearing, not
+    /// stylistic: constructing a <see cref="JsonSerializerOptions"/> triggers System.Text.Json's
+    /// per-instance reflection/plan caching, so building a fresh instance per call would silently defeat
+    /// that cache and re-pay the cost on every single <c>DeviceReading</c> once this sits on the sidecar's
+    /// per-reading hot path.
+    /// </summary>
+    public static readonly JsonSerializerOptions Options = Build();
+
+    private static JsonSerializerOptions Build()
+    {
+        var options = new JsonSerializerOptions
+        {
+            // camelCase property names — matches every other wire-facing JsonSerializerOptions already
+            // in this codebase (St4i.EdgeCore.Site.UnsBridge.ResyncJsonOptions,
+            // St4i.EdgeCore.Uns.UnsPublisher.SemanticJsonOptions, St4i.EngineApi.JsonConfig/ConfigJson) —
+            // a third-party driver author has exactly one naming convention to learn across this product,
+            // not a bespoke one for the connector seam.
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+
+            // Lenient on READ only. A sidecar built in another stack/language has no guarantee of sharing
+            // this process's exact casing habits; refusing to bind "Metric" to "metric" would silently
+            // drop a field for no reason a driver author could easily diagnose. WRITE is unaffected by
+            // this flag — this process still always emits strict camelCase.
+            PropertyNameCaseInsensitive = true,
+
+            // Nulls stay explicit. Set explicitly (review round 1) rather than left as an implicit
+            // default — the same instinct already applied to NumberHandling below: a future
+            // System.Text.Json default change must never silently alter this wire format out from under
+            // us. DeviceReading is a full point-in-time snapshot, not a partial PATCH: an omitted field
+            // must never be confused with a field that is explicitly null (e.g. Plan is genuinely absent
+            // for most reading kinds). Dropping null members to save wire bytes is a false economy for a
+            // contract that has no shared source on the other side of the boundary to fall back on.
+            DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+
+            // Strict number handling (the default, set explicitly for the same reason as
+            // DefaultIgnoreCondition above). This is a machine-to-machine wire format — a real sidecar
+            // process emits genuine JSON number tokens — not a user-facing form, so
+            // AllowReadingFromString-style laxity would only paper over a producer bug. Strict also means
+            // NaN/±Infinity are REJECTED rather than silently coerced; ConnectorObjectConverter enforces
+            // the same policy explicitly for the object? domain (decision (b) — see its own doc comment).
+            NumberHandling = JsonNumberHandling.Strict,
+
+            // Enums as camelCase strings, never bare ints. Enums.cs has already grown once (GP-1 moved 5
+            // enums into this assembly) and nothing stops a member being inserted/reordered later — a
+            // wire format serializing ReadingKind.Telemetry as the bare int 1 would silently reinterpret
+            // every value the moment that happens on either side of a sidecar boundary that isn't
+            // recompiled in lockstep. Spelling the name out costs a few bytes and buys total immunity to
+            // that reordering hazard.
+            //
+            // The object? converter — see ConnectorObjectConverter's own class doc comment for the full
+            // domain/decision (a)/decision (b) story. Registered for `object` so it covers BOTH
+            // TelemetrySample.Value and every value inside Genealogy (a Dictionary<string, object>) —
+            // System.Text.Json consults it for any property/dictionary-value slot typed exactly `object`.
+            Converters =
+            {
+                // Fix round 1 (task-1-report.md, task-1-brief.md's write contract) — allowIntegerValues:
+                // false, explicitly. JsonStringEnumConverter defaults to allowIntegerValues: true, which
+                // means an integer JSON token binds to an enum BY ORDINAL even though this options instance
+                // never intentionally emits one (every write path here is the camelCase-string converter
+                // above) — {"outcome":1} silently becomes WriteOutcome.Rejected, and worse, an out-of-range
+                // ordinal like {"outcome":99} deserializes into a defined-looking enum value that
+                // Enum.IsDefined reports false for and no switch arm matches, with NO exception anywhere.
+                // An unknown STRING already throws correctly; an unknown/out-of-range INTEGER did not. This
+                // is exactly the same "reject loudly, never silently accept" discipline
+                // ConnectorObjectConverter's own decision (b) already applies to the object? domain, now
+                // applied to every enum on this wire format — DeviceReading's own ReadingKind/Verdict/
+                // DriverHealthState/DeviceClass enums were already NEVER intentionally serialized as bare
+                // ints (GP-2's own doc comment: "a wire format serializing ReadingKind.Telemetry as the bare
+                // int 1 would silently reinterpret every value"), so this closes a gap in behavior that
+                // contradicted an already-stated design intent — it does not change what this options
+                // instance produces or accepts for any currently-passing round trip (re-confirmed: the full
+                // existing ConnectorRoundTripTests suite for DeviceReading passes unchanged after this
+                // change, because no existing payload — hand-written or round-tripped — ever encodes an
+                // enum as an integer).
+                new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false),
+                new ConnectorObjectConverter(),
+            },
+        };
+
+        // Review round 1: without this, `ConnectorJson.Options` — despite being the doc comment's "ONE
+        // instance that defines the connector wire format" — stays a plain mutable object until the
+        // first Serialize/Deserialize call auto-freezes it. Any consumer holding the reference could
+        // `Options.Converters.Add(...)` (or change any other setting) and silently redefine the wire
+        // format process-wide before that first call. MakeReadOnly() closes the window entirely: any
+        // such mutation attempt now throws InvalidOperationException immediately, at the mutation site,
+        // instead of silently succeeding or racing the first real use. `populateMissingResolver: true`
+        // is required here (not just stylistic) — this options instance relies on System.Text.Json's
+        // default reflection-based metadata resolution (no source-generated JsonSerializerContext; see
+        // task-2-report.md's AOT/trimming note), and MakeReadOnly() with no resolver already populated
+        // throws InvalidOperationException rather than silently picking one.
+        options.MakeReadOnly(populateMissingResolver: true);
+        return options;
+    }
+}

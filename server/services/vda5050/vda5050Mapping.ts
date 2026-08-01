@@ -74,6 +74,12 @@ export function mapStateToRobotTelemetry(state: Vda5050State): RobotState {
 
   const errorText = buildErrorText(state);
 
+  // X1-a (doc 16 §5) — wire the AGV battery charge % through onto the canonical
+  // RobotState so robotIngest persists robot_telemetry.battery_level. VDA5050
+  // batteryCharge is already a percentage (0..100). Also keep it in the pose JSON
+  // (unchanged) so the existing fleet allocator's pose-battery reader keeps working.
+  const battery = extractBattery(state);
+
   return {
     mode: mapOperatingMode(state.operatingMode),
     busy: !!state.driving && !state.paused,
@@ -82,11 +88,14 @@ export function mapStateToRobotTelemetry(state: Vda5050State): RobotState {
       ? {
           cartesian: { x: pos.x, y: pos.y, z: 0, rz: pos.theta },
           frame: pos.mapId,
-        }
+          ...(battery.charge != null ? { battery: { charge: battery.charge, charging: battery.charging } } : {}),
+        } as RobotState["pose"]
       : undefined,
     // payload mass is not part of VDA 5050 State — left undefined.
     payloadKg: undefined,
     speedPct,
+    // X1-a — surface battery % as a first-class UDM field (honest undefined when absent).
+    batteryPct: typeof battery.charge === "number" ? battery.charge : undefined,
     error: errorText,
     timestamp: parseTimestamp(state.timestamp),
   };

@@ -10,7 +10,12 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, router } from "../_core/trpc";
+// doc 54 Wave B — bulletin config + publish mutations were bare protectedProcedure (any
+// authenticated user, incl. viewer, could publish/config). writeProcedure blocks read-only
+// roles; requirePermission("mqtt_bulletin", ...) adds the module check (admin-effective by
+// default; reads stay open). All bulletin MUTATIONS gated → the Đ3 read-only grant is safe.
+import { protectedProcedure, writeProcedure, router } from "../_core/trpc";
+import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db";
 import { mqttBulletinSettings, mqttBulletinHistory, stations, factories, workshops, productionLines } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte, asc } from "drizzle-orm";
@@ -86,7 +91,8 @@ export const mqttBulletinRouter = router({
   /**
    * Create or update bulletin setting for a station (upsert)
    */
-  upsertSetting: protectedProcedure
+  upsertSetting: writeProcedure
+    .use(requirePermission("mqtt_bulletin", "canEdit"))
     .input(z.object({
       stationId: z.number(),
       enabled: z.boolean().default(true),
@@ -158,7 +164,8 @@ export const mqttBulletinRouter = router({
   /**
    * Delete bulletin setting for a station
    */
-  deleteSetting: protectedProcedure
+  deleteSetting: writeProcedure
+    .use(requirePermission("mqtt_bulletin", "canEdit"))
     .input(z.object({ stationId: z.number() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
@@ -174,7 +181,8 @@ export const mqttBulletinRouter = router({
   /**
    * Toggle bulletin enabled/disabled for a station
    */
-  toggleEnabled: protectedProcedure
+  toggleEnabled: writeProcedure
+    .use(requirePermission("mqtt_bulletin", "canEdit"))
     .input(z.object({ stationId: z.number(), enabled: z.boolean() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
@@ -191,7 +199,8 @@ export const mqttBulletinRouter = router({
   /**
    * Bulk enable/disable bulletins for multiple stations
    */
-  bulkToggle: protectedProcedure
+  bulkToggle: writeProcedure
+    .use(requirePermission("mqtt_bulletin", "canEdit"))
     .input(z.object({
       stationIds: z.array(z.number()),
       enabled: z.boolean(),
@@ -212,7 +221,8 @@ export const mqttBulletinRouter = router({
   /**
    * Manually trigger bulletin for a station
    */
-  triggerNow: protectedProcedure
+  triggerNow: writeProcedure
+    .use(requirePermission("mqtt_bulletin", "canEdit"))
     .input(z.object({ stationId: z.number() }))
     .mutation(async ({ input }) => {
       await triggerBulletinForStation(input.stationId);
@@ -391,7 +401,8 @@ export const mqttBulletinRouter = router({
   /**
    * Quick setup: Enable bulletin for multiple stations at once
    */
-  quickSetup: protectedProcedure
+  quickSetup: writeProcedure
+    .use(requirePermission("mqtt_bulletin", "canEdit"))
     .input(z.object({
       stationIds: z.array(z.number()).min(1),
       intervalMinutes: z.number().min(5).max(1440).default(60),
@@ -450,7 +461,8 @@ export const mqttBulletinRouter = router({
   /**
    * Send a test bulletin with random data - for connectivity testing
    */
-  sendTestBulletin: protectedProcedure
+  sendTestBulletin: writeProcedure
+    .use(requirePermission("mqtt_bulletin", "canEdit"))
     .input(z.object({
       stationId: z.number(),
       sendToExternal: z.boolean().default(true),

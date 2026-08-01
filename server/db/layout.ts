@@ -57,6 +57,14 @@ export async function updateFactoryLayout(id: number, data: Partial<InsertFactor
   await db.update(factoryLayouts).set(data).where(eq(factoryLayouts.id, id));
 }
 
+// doc 42 #17 — xoá layout (soft-delete qua isActive; list đã lọc isActive=true nên
+// layout biến khỏi UI mà không để lại machine_positions mồ côi như hard-delete).
+export async function deleteFactoryLayout(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(factoryLayouts).set({ isActive: false }).where(eq(factoryLayouts.id, id));
+}
+
 // ============ MACHINE POSITION FUNCTIONS ============
 export async function createMachinePosition(data: InsertMachinePosition) {
   const db = await getDb();

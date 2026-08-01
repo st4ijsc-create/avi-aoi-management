@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
+import { PageHeader } from '@/components/patterns';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -67,17 +68,11 @@ export default function AIDataProcessingPage() {
     <DashboardLayout>
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Database className="h-6 w-6" />
-              {t('aiDataProcessing.title', 'Data Processing')}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('aiDataProcessing.description', 'Process, augment, and prepare image data for AI model training')}
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Database className="h-6 w-6" />}
+          title={t('aiDataProcessing.title', 'Data Processing')}
+          description={t('aiDataProcessing.description', 'Process, augment, and prepare image data for AI model training')}
+        />
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -191,19 +186,19 @@ function DatasetSplitSection() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-2xl font-bold text-blue-600">{result.split.train.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-info">{result.split.train.toLocaleString()}</p>
                 <p className="text-xs text-muted-foreground">Train ({pct(result.split.train)}%)</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-2xl font-bold text-amber-600">{result.split.val.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-warning">{result.split.val.toLocaleString()}</p>
                 <p className="text-xs text-muted-foreground">Val ({pct(result.split.val)}%)</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-2xl font-bold text-green-600">{result.split.test.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-success">{result.split.test.toLocaleString()}</p>
                 <p className="text-xs text-muted-foreground">Test ({pct(result.split.test)}%)</p>
               </CardContent>
             </Card>
@@ -216,9 +211,9 @@ function DatasetSplitSection() {
             </CardHeader>
             <CardContent>
               <div className="flex h-4 w-full overflow-hidden rounded-full">
-                <div className="bg-blue-500" style={{ width: `${pct(result.split.train)}%` }} title={`Train ${pct(result.split.train)}%`} />
-                <div className="bg-amber-500" style={{ width: `${pct(result.split.val)}%` }} title={`Val ${pct(result.split.val)}%`} />
-                <div className="bg-green-500" style={{ width: `${pct(result.split.test)}%` }} title={`Test ${pct(result.split.test)}%`} />
+                <div className="bg-info" style={{ width: `${pct(result.split.train)}%` }} title={`Train ${pct(result.split.train)}%`} />
+                <div className="bg-warning" style={{ width: `${pct(result.split.val)}%` }} title={`Val ${pct(result.split.val)}%`} />
+                <div className="bg-success" style={{ width: `${pct(result.split.test)}%` }} title={`Test ${pct(result.split.test)}%`} />
               </div>
             </CardContent>
           </Card>
@@ -312,8 +307,8 @@ function DataPipelineSection() {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-500/10">
-                <FileImage className="h-5 w-5 text-blue-600" />
+              <div className="p-2 rounded-lg bg-info/10">
+                <FileImage className="h-5 w-5 text-info" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.totalImages.toLocaleString()}</p>
@@ -326,8 +321,8 @@ function DataPipelineSection() {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-green-500/10">
-                <CheckCircle2 className="h-5 w-5 text-green-600" />
+              <div className="p-2 rounded-lg bg-success/10">
+                <CheckCircle2 className="h-5 w-5 text-success" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.processedImages.toLocaleString()}</p>
@@ -340,8 +335,8 @@ function DataPipelineSection() {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-yellow-500/10">
-                <Clock className="h-5 w-5 text-yellow-600" />
+              <div className="p-2 rounded-lg bg-warning/10">
+                <Clock className="h-5 w-5 text-warning" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.pendingImages.toLocaleString()}</p>
@@ -354,8 +349,8 @@ function DataPipelineSection() {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-red-500/10">
-                <AlertTriangle className="h-5 w-5 text-red-600" />
+              <div className="p-2 rounded-lg bg-destructive/10">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.failedImages.toLocaleString()}</p>
@@ -472,9 +467,9 @@ function PipelineRunHistory() {
                   </span>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span className="text-green-600">{run.processedCount ?? 0} {t('aiDataProcessing.pipeline.ok', 'ok')}</span>
+                  <span className="text-success">{run.processedCount ?? 0} {t('aiDataProcessing.pipeline.ok', 'ok')}</span>
                   {(run.failedCount ?? 0) > 0 && (
-                    <span className="text-red-500">{run.failedCount} {t('aiDataProcessing.pipeline.failed', 'failed')}</span>
+                    <span className="text-destructive">{run.failedCount} {t('aiDataProcessing.pipeline.failed', 'failed')}</span>
                   )}
                 </div>
               </div>

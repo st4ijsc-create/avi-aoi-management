@@ -2,6 +2,9 @@ import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer, MetricCard, EmptyState, MachineSelect, ConfirmDeleteDialog } from "@/components/patterns";
+import { DataTable } from "@/components/DataTable";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { navItems } from "@/lib/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,24 +13,22 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { 
-  Plus, 
-  Search, 
-  MoreHorizontal, 
-  Edit, 
-  Trash2, 
-  Factory, 
-  Layers,
-  Settings2,
+import { toastTrpcError } from "@/lib/trpcErrors";
+import {
+  Plus,
+  MoreHorizontal,
+  Edit,
+  Trash2,
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  BarChart3
+  BarChart3,
+  Cpu
 } from "lucide-react";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -49,23 +50,39 @@ type Workstation = {
 };
 
 const PROCESS_TYPES = [
-  { value: "SMT", label: "SMT", color: "bg-blue-500" },
-  { value: "DIP", label: "DIP", color: "bg-green-500" },
-  { value: "ASSEMBLY", label: "machines.assembly", color: "bg-yellow-500" },
-  { value: "TESTING", label: "machines.testing", color: "bg-purple-500" },
-  { value: "PACKAGING", label: "machines.packaging", color: "bg-orange-500" },
-  { value: "OTHER", label: "machines.other", color: "bg-gray-500" },
+  { value: "SMT", color: "bg-primary/15 text-primary border border-primary/30" },
+  { value: "DIP", color: "bg-success/15 text-success border border-success/30" },
+  { value: "ASSEMBLY", color: "bg-warning/15 text-warning border border-warning/30" },
+  { value: "TESTING", color: "bg-info/15 text-info border border-info/30" },
+  { value: "PACKAGING", color: "bg-accent text-accent-foreground border border-border" },
+  { value: "OTHER", color: "bg-muted text-muted-foreground border border-border" },
 ];
 
 export default function WorkstationManagement() {
   const { t } = useTranslation();
-  const [searchQuery, setSearchQuery] = useState("");
+  const { hasPermission } = usePermissions();
+  const canCreate = hasPermission("settings_factory", "canCreate");
+
+  // Enum → nhãn tiếng Việt (Đợt 3 dọn locale; inline defaultValue tại đây).
+  const processTypeLabel = (value: string | null): string => {
+    switch (value) {
+      case "SMT": return "SMT";
+      case "DIP": return "DIP";
+      case "ASSEMBLY": return t("machines.assembly", "Lắp ráp");
+      case "TESTING": return t("machines.testing", "Kiểm tra");
+      case "PACKAGING": return t("machines.packaging", "Đóng gói");
+      default: return t("machines.other", "Khác");
+    }
+  };
+
   const [filterLineId, setFilterLineId] = useState<string>("all");
   const [filterFactoryId, setFilterFactoryId] = useState<string>("all");
   const [filterProcessType, setFilterProcessType] = useState<string>("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingWorkstation, setEditingWorkstation] = useState<Workstation | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  // doc 42 Đợt 4B (H2) — trạm đang mở panel "Máy thuộc trạm".
+  const [machineDialogWs, setMachineDialogWs] = useState<Workstation | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -97,7 +114,7 @@ export default function WorkstationManagement() {
       setIsCreateDialogOpen(false);
       resetForm();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const updateMutation = trpc.workstation.update.useMutation({
@@ -107,7 +124,7 @@ export default function WorkstationManagement() {
       setEditingWorkstation(null);
       resetForm();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteMutation = trpc.workstation.delete.useMutation({
@@ -116,23 +133,16 @@ export default function WorkstationManagement() {
       refetch();
       setDeleteConfirmId(null);
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
-  // Filter workstations
+  // Lọc theo loại công đoạn (search/sort/paginate do DataTable đảm nhiệm).
   const filteredWorkstations = useMemo(() => {
     if (!workstations) return [];
-    
-    return workstations.filter((ws) => {
-      const matchesSearch = 
-        ws.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ws.name.toLowerCase().includes(searchQuery.toLowerCase());
-      
-      const matchesProcessType = filterProcessType === "all" || ws.processType === filterProcessType;
-      
-      return matchesSearch && matchesProcessType;
-    });
-  }, [workstations, searchQuery, filterProcessType]);
+    return workstations.filter(
+      (ws) => filterProcessType === "all" || ws.processType === filterProcessType,
+    );
+  }, [workstations, filterProcessType]);
 
   // Stats
   const stats = useMemo(() => {
@@ -228,77 +238,57 @@ export default function WorkstationManagement() {
 
   return (
     <DashboardLayout navItems={navItems}>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">{t('machines.title')}</h1>
-              <ViewOnlyBadge module="settings_factory" />
-            </div>
-            <p className="text-muted-foreground">
-              {t('machines.subtitle')}
-            </p>
-          </div>
-          <PermissionGate module="settings_factory" action="canCreate">
-            <Button onClick={() => setIsCreateDialogOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              {t('machines.addWorkstation')}
-            </Button>
-          </PermissionGate>
-        </div>
+      <PageContainer>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          title={
+            <span className="flex items-center gap-2">
+              {t('machines.title')}<ViewOnlyBadge module="settings_factory" />
+            </span>
+          }
+          description={t('machines.subtitle')}
+          actions={
+            <PermissionGate module="settings_factory" action="canCreate">
+              <Button onClick={() => setIsCreateDialogOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                {t('machines.addWorkstation')}
+              </Button>
+            </PermissionGate>
+          }
+        />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {t('machines.totalWorkstations')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.total}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-green-500" />
-                {t('machines.activeStatus')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{stats.active}</div>
-            </CardContent>
-          </Card>
+          <MetricCard
+            label={t('machines.totalWorkstations')}
+            value={stats.total}
+          />
+          <MetricCard
+            icon={<CheckCircle2 className="h-5 w-5" />}
+            label={t('machines.activeStatus')}
+            value={stats.active}
+            tone="success"
+          />
+          <MetricCard
+            icon={<XCircle className="h-5 w-5" />}
+            label={t('machines.pausedStatus')}
+            value={stats.inactive}
+            tone="danger"
+          />
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <XCircle className="w-4 h-4 text-red-500" />
-                {t('machines.pausedStatus')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">{stats.inactive}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-blue-500" />
+                <BarChart3 className="w-4 h-4 text-info" />
                 {t('machines.byType')}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-1">
-                {Object.entries(stats.byProcessType).map(([type, count]) => {
-                  const info = getProcessTypeInfo(type);
-                  return (
-                    <Badge key={type} variant="secondary" className="text-xs">
-                      {info.label.startsWith('machines.') ? t(info.label) : info.label}: {count}
-                    </Badge>
-                  );
-                })}
+                {Object.entries(stats.byProcessType).map(([type, count]) => (
+                  <Badge key={type} variant="secondary" className="text-xs">
+                    {processTypeLabel(type)}: {count}
+                  </Badge>
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -311,17 +301,6 @@ export default function WorkstationManagement() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-4">
-              <div className="flex-1 min-w-50">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    placeholder={t('machines.searchPlaceholder')}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
-              </div>
               <Select value={filterFactoryId} onValueChange={setFilterFactoryId}>
                 <SelectTrigger className="w-45">
                   <SelectValue placeholder={t('machines.factory')} />
@@ -356,7 +335,7 @@ export default function WorkstationManagement() {
                   <SelectItem value="all">{t('machines.allTypes')}</SelectItem>
                   {PROCESS_TYPES.map((pt) => (
                     <SelectItem key={pt.value} value={pt.value}>
-                      {pt.label.startsWith('machines.') ? t(pt.label) : pt.label}
+                      {processTypeLabel(pt.value)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -374,84 +353,85 @@ export default function WorkstationManagement() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('machines.code')}</TableHead>
-                  <TableHead>{t('machines.name')}</TableHead>
-                  <TableHead>{t('machines.type')}</TableHead>
-                  <TableHead>{t('machines.factory')}</TableHead>
-                  <TableHead>{t('machines.line')}</TableHead>
-                  <TableHead>{t('machines.order')}</TableHead>
-                  <TableHead>{t('common.status')}</TableHead>
-                  <TableHead className="w-12.5"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
-                      {t('machines.loading')}
-                    </TableCell>
-                  </TableRow>
-                ) : filteredWorkstations.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                      {t('machines.noWorkstations')}
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredWorkstations.map((ws) => {
-                    const processInfo = getProcessTypeInfo(ws.processType);
-                    return (
-                      <TableRow key={ws.id}>
-                        <TableCell className="font-mono">{ws.code}</TableCell>
-                        <TableCell className="font-medium">{ws.name}</TableCell>
-                        <TableCell>
-                          <Badge className={`${processInfo.color} text-white`}>
-                            {processInfo.label.startsWith('machines.') ? t(processInfo.label) : processInfo.label}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{getFactoryName(ws.factoryId)}</TableCell>
-                        <TableCell>{getLineName(ws.lineId)}</TableCell>
-                        <TableCell>{ws.orderIndex}</TableCell>
-                        <TableCell>
-                          <Badge variant={ws.isActive ? "default" : "secondary"}>
-                            {ws.isActive ? t('machines.active') : t('machines.paused')}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreHorizontal className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <PermissionGate module="settings_factory" action="canEdit">
-                                <DropdownMenuItem onClick={() => openEditDialog(ws)}>
-                                  <Edit className="w-4 h-4 mr-2" />
-                                  {t('machines.edit')}
-                                </DropdownMenuItem>
-                              </PermissionGate>
-                              <PermissionGate module="settings_factory" action="canDelete">
-                                <DropdownMenuItem
-                                  className="text-red-600"
-                                  onClick={() => setDeleteConfirmId(ws.id)}
-                                >
-                                  <Trash2 className="w-4 h-4 mr-2" />
-                                  {t('machines.delete')}
-                                </DropdownMenuItem>
-                              </PermissionGate>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
+            <DataTable<Workstation>
+              data={filteredWorkstations}
+              getRowId={(ws) => ws.id}
+              loading={isLoading}
+              searchable
+              searchPlaceholder={t('machines.searchPlaceholder')}
+              initialSort={{ columnId: 'code', dir: 'asc' }}
+              emptyState={
+                <EmptyState
+                  variant="no-data"
+                  title={t('machines.noWorkstations')}
+                  description={t('machines.noWorkstationsHint', 'Chưa có trạm/máy nào khớp bộ lọc. Thêm trạm mới để bắt đầu.')}
+                  actionLabel={canCreate ? t('machines.addWorkstation') : undefined}
+                  onAction={canCreate ? () => setIsCreateDialogOpen(true) : undefined}
+                />
+              }
+              columns={[
+                { id: 'code', header: t('machines.code'), sortValue: (ws) => ws.code, filterValue: (ws) => `${ws.code} ${ws.name}`, cell: (ws) => <span className="font-mono">{ws.code}</span> },
+                { id: 'name', header: t('machines.name'), sortValue: (ws) => ws.name, cell: (ws) => <span className="font-medium">{ws.name}</span> },
+                {
+                  id: 'type',
+                  header: t('machines.type'),
+                  sortValue: (ws) => ws.processType ?? '',
+                  cell: (ws) => (
+                    <Badge variant="outline" className={getProcessTypeInfo(ws.processType).color}>
+                      {processTypeLabel(ws.processType)}
+                    </Badge>
+                  ),
+                },
+                { id: 'factory', header: t('machines.factory'), sortValue: (ws) => getFactoryName(ws.factoryId), cell: (ws) => getFactoryName(ws.factoryId) },
+                { id: 'line', header: t('machines.line'), sortValue: (ws) => getLineName(ws.lineId), cell: (ws) => getLineName(ws.lineId) },
+                { id: 'order', header: t('machines.order'), align: 'right', sortValue: (ws) => ws.orderIndex, cell: (ws) => ws.orderIndex.toLocaleString('vi-VN') },
+                {
+                  id: 'status',
+                  header: t('common.status'),
+                  sortValue: (ws) => (ws.isActive ? 1 : 0),
+                  cell: (ws) => (
+                    <Badge variant={ws.isActive ? 'default' : 'secondary'}>
+                      {ws.isActive ? t('machines.active') : t('machines.paused')}
+                    </Badge>
+                  ),
+                },
+                {
+                  id: 'actions',
+                  header: '',
+                  align: 'right',
+                  cell: (ws) => (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setMachineDialogWs(ws)}>
+                          <Cpu className="w-4 h-4 mr-2" />
+                          {t('machines.assignMachines', 'Gán máy vào trạm')}
+                        </DropdownMenuItem>
+                        <PermissionGate module="settings_factory" action="canEdit">
+                          <DropdownMenuItem onClick={() => openEditDialog(ws)}>
+                            <Edit className="w-4 h-4 mr-2" />
+                            {t('machines.edit')}
+                          </DropdownMenuItem>
+                        </PermissionGate>
+                        <PermissionGate module="settings_factory" action="canDelete">
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => setDeleteConfirmId(ws.id)}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            {t('machines.delete')}
+                          </DropdownMenuItem>
+                        </PermissionGate>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ),
+                },
+              ]}
+            />
           </CardContent>
         </Card>
 
@@ -524,7 +504,7 @@ export default function WorkstationManagement() {
                     <SelectContent>
                       {PROCESS_TYPES.map((pt) => (
                         <SelectItem key={pt.value} value={pt.value}>
-                          {pt.label.startsWith('machines.') ? t(pt.label) : pt.label}
+                          {processTypeLabel(pt.value)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -613,33 +593,161 @@ export default function WorkstationManagement() {
           </DialogContent>
         </Dialog>
 
-        {/* Delete Confirmation Dialog */}
-        <Dialog open={!!deleteConfirmId} onOpenChange={() => setDeleteConfirmId(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-red-600">
+        {/* doc 42 Đợt 4B (H2) — panel gán máy vào trạm */}
+        <WorkstationMachinesDialog
+          workstation={machineDialogWs}
+          onOpenChange={(open) => { if (!open) setMachineDialogWs(null); }}
+        />
+
+        {/* Delete Confirmation */}
+        <AlertDialog open={!!deleteConfirmId} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-destructive">
                 <AlertTriangle className="w-5 h-5" />
                 {t('machines.confirmDelete')}
-              </DialogTitle>
-              <DialogDescription>
+              </AlertDialogTitle>
+              <AlertDialogDescription>
                 {t('machines.deleteConfirmMessage')}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>
-                {t('common.cancel')}
-              </Button>
-              <Button 
-                variant="destructive" 
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
                 onClick={() => deleteConfirmId && deleteMutation.mutate(deleteConfirmId)}
                 disabled={deleteMutation.isPending}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
                 {t('machines.delete')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </PageContainer>
     </DashboardLayout>
+  );
+}
+
+// ── doc 42 Đợt 4B (H2 — gán máy vào trạm) ────────────────────────────────────
+// Nối junction workstation ↔ machine: machinesForWorkstation + assign/unassignMachine.
+type AssignedMachine = {
+  id: number;
+  machineId: number;
+  machineCode: string;
+  machineName: string;
+  machineType: string;
+  orderIndex: number;
+  assignedAt: Date;
+};
+
+function WorkstationMachinesDialog({
+  workstation,
+  onOpenChange,
+}: {
+  workstation: Workstation | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const utils = trpc.useUtils();
+  const workstationId = workstation?.id ?? 0;
+  const [machineId, setMachineId] = useState<number | null>(null);
+
+  const { data: assigned, isLoading } = trpc.workstation.machinesForWorkstation.useQuery(
+    { workstationId },
+    { enabled: !!workstation },
+  );
+
+  const invalidate = () => utils.workstation.machinesForWorkstation.invalidate({ workstationId });
+
+  const assignMutation = trpc.workstation.assignMachine.useMutation({
+    onSuccess: () => { toast.success(t('machines.assignMachineSuccess', 'Đã gán máy vào trạm')); setMachineId(null); invalidate(); },
+    onError: (e) => toastTrpcError(e),
+  });
+  const unassignMutation = trpc.workstation.unassignMachine.useMutation({
+    onSuccess: () => { toast.success(t('machines.unassignMachineSuccess', 'Đã gỡ máy khỏi trạm')); invalidate(); },
+    onError: (e) => toastTrpcError(e),
+  });
+
+  const rows = (assigned ?? []) as AssignedMachine[];
+  const assignedIds = new Set(rows.map((r) => r.machineId));
+
+  const handleAssign = () => {
+    if (machineId == null) return;
+    if (assignedIds.has(machineId)) { toast.info(t('machines.alreadyAssigned', 'Máy đã được gán vào trạm này')); return; }
+    assignMutation.mutate({ workstationId, machineId });
+  };
+
+  return (
+    <Dialog open={!!workstation} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{t('machines.assignMachines', 'Gán máy vào trạm')}</DialogTitle>
+          <DialogDescription>{workstation ? `${workstation.name} (${workstation.code})` : ''}</DialogDescription>
+        </DialogHeader>
+
+        {/* Gán thêm máy — gate canEdit (đổi thành phần trạm) */}
+        <PermissionGate module="settings_factory" action="canEdit">
+          <div className="rounded-lg border p-4 flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
+            <div className="flex-1 space-y-1.5">
+              <Label>{t('machines.machine', 'Máy')}</Label>
+              <MachineSelect
+                value={machineId}
+                onChange={(v) => setMachineId(v == null ? null : Number(v))}
+                placeholder={t('machines.selectMachine', 'Chọn máy…')}
+              />
+            </div>
+            <Button onClick={handleAssign} disabled={machineId == null || assignMutation.isPending}>
+              <Plus className="w-4 h-4 mr-2" />
+              {t('machines.assign', 'Gán')}
+            </Button>
+          </div>
+        </PermissionGate>
+
+        <DataTable<AssignedMachine>
+          data={rows}
+          getRowId={(r) => r.id}
+          loading={isLoading}
+          paginated={false}
+          emptyState={
+            <EmptyState
+              variant="no-data"
+              title={t('machines.noAssignedMachines', 'Chưa gán máy nào')}
+              description={t('machines.noAssignedMachinesDesc', 'Chọn máy ở trên để gán vào trạm này.')}
+            />
+          }
+          columns={[
+            { id: 'code', header: t('machines.code'), cell: (r) => <span className="font-mono">{r.machineCode}</span> },
+            { id: 'name', header: t('machines.name'), cell: (r) => <span className="font-medium">{r.machineName}</span> },
+            { id: 'type', header: t('machines.type'), cell: (r) => <Badge variant="outline">{r.machineType}</Badge> },
+            {
+              id: 'actions',
+              header: '',
+              align: 'right',
+              cell: (r) => (
+                <PermissionGate module="settings_factory" action="canEdit">
+                  <ConfirmDeleteDialog
+                    trigger={
+                      <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    }
+                    itemLabel={t('machines.assignmentOf', 'gán máy {{code}}', { code: r.machineCode })}
+                    isSoftDelete
+                    confirmLabel={t('machines.unassign', 'Gỡ khỏi trạm')}
+                    title={t('machines.unassignTitle', 'Gỡ máy {{code}} khỏi trạm?', { code: r.machineCode })}
+                    description={t('machines.unassignDesc', 'Máy không bị xoá — chỉ gỡ liên kết với trạm này.')}
+                    onConfirm={async () => { await unassignMutation.mutateAsync({ workstationId, machineId: r.machineId }); }}
+                  />
+                </PermissionGate>
+              ),
+            },
+          ]}
+        />
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.close', 'Đóng')}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

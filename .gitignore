@@ -14,6 +14,7 @@ build/
 .env.development.local
 .env.test.local
 .env.production.local
+.env.sim
 
 # IDE and editor files
 .vscode/
@@ -97,6 +98,7 @@ jspm_packages/
 # Storybook build outputs
 .out
 .storybook-out
+storybook-static/
 
 # Temporary folders
 tmp/
@@ -107,10 +109,32 @@ temp/
 *.sqlite
 *.sqlite3
 
-# Project-specific build directories (unversioned subprojects)
-FactoryAlertSystem/
-android-mqtt-app/android/.gradle/
-mobile-app/node_modules/
+# doc48 R3 — cold-tier lake sink output (LAKE_DIR); never commit archived telemetry
+data/lake/
+/data/
+
+# FactoryAlertSystem (production mobile app) — SOURCE IS TRACKED (MB1, doc 27).
+# Only dependencies, build outputs, binaries and signing material are ignored.
+FactoryAlertSystem/node_modules/
+FactoryAlertSystem/android/build/
+FactoryAlertSystem/android/app/build/
+FactoryAlertSystem/android/.gradle/
+FactoryAlertSystem/android/tmp-wrapper/
+FactoryAlertSystem/ios/Pods/
+FactoryAlertSystem/*.apk
+FactoryAlertSystem/*.aab
+FactoryAlertSystem/google-play-release/
+FactoryAlertSystem/build_output.txt
+FactoryAlertSystem/tsc_check.txt
+FactoryAlertSystem/tsc_output*.txt
+FactoryAlertSystem/.env
+FactoryAlertSystem/.env.*
+# Signing material & machine-local config — NEVER commit
+# (android/gradle.properties currently holds keystore passwords in plaintext)
+FactoryAlertSystem/android/gradle.properties
+FactoryAlertSystem/android/local.properties
+*.keystore
+*.jks
 
 # Deployment packages
 offline-deploy/
@@ -119,8 +143,10 @@ _deploy/
 # Large binary upload artifacts (never push to GitHub — >100MB limit)
 uploads/gguf-models/
 uploads/factory-alert-releases/
+uploads/mqtt-releases/
 *.gguf
 *.apk
+*.aab
 # Edge model packages produced by WS-2 deployment
 uploads/edge-packages/
 
@@ -137,5 +163,29 @@ __pycache__/
 # Large archives / backups (NEVER commit — e.g. 13GB repo archive)
 *.7z
 avi-aoi-management.7z
+synapse-platform.7z
 knowledge/embeddings.jsonl.*-bak
 *.mxbai-bak
+
+# doc 34 — generated programming KB corpus (~2GB: vendor-manual chunks + embeddings).
+# Regenerate on the server via: node scripts/ai-kb/ingest-manuals.mjs && node scripts/ai-kb/embed-programming.mjs
+# (source PDFs live at PROG_KB_MANUALS_DIR, not in the repo). Never commit the corpus.
+knowledge/programming/
+
+# doc 34 P2 — AI programming-copilot workspace (read/write_project_file confined here).
+# Keep the dir (README) but never commit AI-written files.
+programming-workspace/*
+!programming-workspace/README.md
+
+# doc 27 V17 — vision validation harness output (npm run vision:validate)
+validation-reports/
+
+# doc 34 P4 — eval run reports (regenerate via scripts/ai-eval/*). Keep cases/harness, not runs.
+scripts/ai-eval/reports/
+
+# FE live-verify session cookies (never commit — contain auth tokens)
+scripts/.fe-auth/
+
+# doc 54 — tool output + local model binaries (not source)
+.playwright-mcp/
+uploads/models/

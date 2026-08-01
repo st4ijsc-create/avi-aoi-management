@@ -14,8 +14,10 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useLicenseModules } from "@/hooks/useLicenseModules";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer, StatusBadge as DsStatusBadge } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   LayoutGrid,
   Lock,
@@ -36,28 +38,46 @@ interface ModuleWithStatus {
   allowed: boolean;
 }
 
-function StatusBadge({ allowed, isCore, t }: { allowed: boolean; isCore: boolean; t: (k: string, d: string) => string }) {
+function ModuleStatusBadge({ allowed, isCore, t }: { allowed: boolean; isCore: boolean; t: (k: string, d: string) => string }) {
   if (isCore) {
     return (
-      <Badge className="bg-sky-500 text-white">
-        <ShieldCheck className="mr-1 h-3 w-3" />
-        {t("modules.badgeCore", "Core")}
-      </Badge>
+      <DsStatusBadge
+        status="core"
+        tone="info"
+        label={
+          <span className="flex items-center gap-1">
+            <ShieldCheck className="h-3 w-3" />
+            {t("modules.badgeCore", "Core")}
+          </span>
+        }
+      />
     );
   }
   if (allowed) {
     return (
-      <Badge className="bg-emerald-500 text-white">
-        <CheckCircle2 className="mr-1 h-3 w-3" />
-        {t("modules.badgeLicensed", "Licensed")}
-      </Badge>
+      <DsStatusBadge
+        status="licensed"
+        tone="success"
+        label={
+          <span className="flex items-center gap-1">
+            <CheckCircle2 className="h-3 w-3" />
+            {t("modules.badgeLicensed", "Licensed")}
+          </span>
+        }
+      />
     );
   }
   return (
-    <Badge variant="outline" className="border-amber-400 text-amber-600">
-      <Lock className="mr-1 h-3 w-3" />
-      {t("modules.badgeLocked", "Locked")}
-    </Badge>
+    <DsStatusBadge
+      status="locked"
+      tone="warning"
+      label={
+        <span className="flex items-center gap-1">
+          <Lock className="h-3 w-3" />
+          {t("modules.badgeLocked", "Locked")}
+        </span>
+      }
+    />
   );
 }
 
@@ -71,7 +91,7 @@ function ModuleCard({ m, t }: { m: ModuleWithStatus; t: (k: string, d: string) =
             <Package className="h-4 w-4 text-primary" />
             {m.name}
           </CardTitle>
-          <StatusBadge allowed={m.allowed} isCore={m.isCore} t={t} />
+          <ModuleStatusBadge allowed={m.allowed} isCore={m.isCore} t={t} />
         </div>
         <p className="font-mono text-[11px] text-muted-foreground">{m.code} · v{m.version}</p>
       </CardHeader>
@@ -92,7 +112,7 @@ function ModuleCard({ m, t }: { m: ModuleWithStatus; t: (k: string, d: string) =
           </div>
         )}
         {locked && (
-          <p className="text-xs text-amber-600">
+          <p className="text-xs text-warning">
             {t("modules.upgradeHint", "Contact your administrator to license this module.")}
           </p>
         )}
@@ -124,32 +144,26 @@ export default function ModulesMarketplace() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-4 p-4 md:p-6">
-        {/* Header */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <LayoutGrid className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight">
-              {t("modules.title", "Modules Marketplace")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t(
-                "modules.subtitle",
-                "All platform modules and their licensed status for this deployment (read-only).",
-              )}
-            </p>
-          </div>
-          <Badge variant="outline" className="text-xs">
-            {licensedCount}/{(modulesWithStatus as unknown[]).length}{" "}
-            {t("modules.licensedCount", "licensed")}
-          </Badge>
-        </div>
+      <PageContainer>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<LayoutGrid className="h-6 w-6" />}
+          title={t("modules.title", "Modules Marketplace")}
+          description={t(
+            "modules.subtitle",
+            "All platform modules and their licensed status for this deployment (read-only).",
+          )}
+          actions={
+            <Badge variant="outline" className="text-xs">
+              {licensedCount}/{(modulesWithStatus as unknown[]).length}{" "}
+              {t("modules.licensedCount", "licensed")}
+            </Badge>
+          }
+        />
 
         {/* Honest license-state banner */}
         {(noLicenseKey || !isLicensed || isUsingCache) && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               {noLicenseKey
@@ -169,7 +183,11 @@ export default function ModulesMarketplace() {
         )}
 
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">{t("modules.loading", "Loading modules…")}</p>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-40 w-full rounded-xl" />
+            ))}
+          </div>
         ) : (
           <>
             {/* Core */}
@@ -197,7 +215,7 @@ export default function ModulesMarketplace() {
             </section>
           </>
         )}
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

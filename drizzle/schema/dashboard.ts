@@ -189,3 +189,29 @@ export const widgetStylePresets = pgTable("widget_style_presets", {
 
 export type WidgetStylePreset = typeof widgetStylePresets.$inferSelect;
 export type InsertWidgetStylePreset = typeof widgetStylePresets.$inferInsert;
+
+
+// ============= Role → default dashboard binding (doc 27 A12, migration 0184) =============
+
+/**
+ * Role Dashboard Defaults — binds a ROLE to a default dashboard surface.
+ * Resolution (dashboardWidget.getMyEffectiveDashboard): personal dashboards
+ * ALWAYS win; only a user with none falls back to their role's binding
+ * (template to materialize, or a public custom dashboard to auto-select).
+ * `landingPath` optionally overrides the static roleLanding map on "/".
+ * `role` is plain varchar (not roleenum) so future roles need no enum change.
+ */
+export const roleDashboardDefaults = pgTable("role_dashboard_defaults", {
+  id: serial("id").primaryKey(),
+  role: varchar("role", { length: 50 }).notNull().unique("uq_role_dashboard_defaults_role"),
+  // At most one of the two targets is expected (enforced in the router).
+  dashboardTemplateId: integer("dashboardTemplateId"), // FK dashboard_templates.id ON DELETE SET NULL (0184)
+  customDashboardId: integer("customDashboardId"), // FK user_custom_dashboards.id ON DELETE SET NULL (0184)
+  landingPath: varchar("landingPath", { length: 255 }),
+  updatedBy: integer("updatedBy"), // FK to users (admin who set it)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type RoleDashboardDefault = typeof roleDashboardDefaults.$inferSelect;
+export type InsertRoleDashboardDefault = typeof roleDashboardDefaults.$inferInsert;

@@ -23,13 +23,17 @@
  * persists each step's state as it walks.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { eq } from "drizzle-orm";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
+import { appendRunEvent } from "../runEventStore"; // doc 33 W4 (F8): durable RunEvent log (FOE_DURABLE)
 import {
   orchestrationWorkflows,
+  orchestrationWorkflowVersions,
   orchestrationRuns,
   orchestrationRunSteps,
   machines,
+  aiPendingActions,
   type OrchestrationRun,
 } from "../../../../drizzle/schema";
 import {
@@ -61,6 +65,108 @@ export function foeEnabled(): boolean {
   return process.env.FOE_ENABLED === "true" || process.env.FOE_ENABLED === "1";
 }
 
+/**
+ * doc 33 I5 (F8 §5.1.6) — durable execution. When on, an interrupted run (marked 'held' by
+ * rehydrateInterruptedRuns after a crash) is AUTO-continued rather than waiting for a human to
+ * resume it manually. Default OFF → current behavior (manual resume). Requires FOE_ENABLED.
+ */
+export function foeDurableEnabled(): boolean {
+  return process.env.FOE_DURABLE === "true" || process.env.FOE_DURABLE === "1";
+}
+
+/**
+ * doc 40 ENG-F4 (P0 tồn từ doc 22) — SIM-GATE cho deploy workflow FOE. Khi BẬT, deployWorkflow
+ * CHỈ chấp nhận một definition ĐÃ mô phỏng ĐẠT (feasible) trên digital twin — bằng chứng là một
+ * sim-token (HMAC) do orchestration.simulate phát hành cho ĐÚNG definition đó — TRỪ KHI có override
+ * kèm lý do (được ghi audit). Mặc định OFF → hành vi cũ (không đổi gì, giữ green). Fail-closed:
+ * bật mà không có sim-pass hợp lệ ⇒ TỪ CHỐI honest (an toàn hơn deploy mù). KHÔNG nới lỏng gate nào.
+ */
+export function foeSimGateRequired(): boolean {
+  return process.env.FOE_SIM_GATE_REQUIRED === "true" || process.env.FOE_SIM_GATE_REQUIRED === "1";
+}
+
+/**
+ * Bí mật ký sim-token. Ưu tiên env cố định (bền qua khởi-động-lại / đa-instance); nếu không có
+ * thì sinh NGẪU NHIÊN mỗi tiến trình — token khi đó chỉ sống trong vòng đời tiến trình, và mất
+ * token ⇒ deploy fail-closed (buộc mô phỏng lại) → hướng AN TOÀN, không nới lỏng.
+ */
+const SIM_TOKEN_SECRET =
+  process.env.FOE_SIM_TOKEN_SECRET || process.env.SESSION_SECRET || randomBytes(32).toString("hex");
+
+/** Canonical JSON (khóa sắp xếp, đệ quy) → hash ĐỊNH NGHĨA ổn định bất kể thứ tự khóa. */
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return Object.keys(obj)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, k) => {
+        acc[k] = canonicalize(obj[k]);
+        return acc;
+      }, {});
+  }
+  return value;
+}
+
+/** Hash ổn định (sha256) của một WorkflowDefinition — khóa dùng cho sim-gate binding. */
+export function hashWorkflowDefinition(def: WorkflowDefinition): string {
+  return createHash("sha256").update(JSON.stringify(canonicalize(def))).digest("hex");
+}
+
+/**
+ * Phát hành sim-token (HMAC) cho một definition ĐÃ mô phỏng ĐẠT. CHỈ gọi khi sim.ok === true
+ * (router chịu trách nhiệm điều kiện đó). Token là attestation stateless: deployWorkflow xác minh
+ * lại bằng cách tính lại HMAC trên định nghĩa được nộp — không cần DB/bộ nhớ trung gian.
+ */
+export function issueSimToken(def: WorkflowDefinition): string {
+  const hash = hashWorkflowDefinition(def);
+  return createHmac("sha256", SIM_TOKEN_SECRET).update(`simpass:${hash}`).digest("hex");
+}
+
+/** Xác minh sim-token khớp ĐÚNG definition (so sánh constant-time). Thiếu token → false. */
+function verifySimToken(def: WorkflowDefinition, token: string | undefined | null): boolean {
+  if (!token) return false;
+  const expected = issueSimToken(def);
+  const a = Buffer.from(expected, "utf8");
+  const b = Buffer.from(token, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+/**
+ * Ghi audit best-effort cho quyết định sim-gate ở deploy (từ chối / override). Fail-safe — lỗi
+ * audit KHÔNG chặn deploy path. Dùng dynamic import để tránh coupling load-order.
+ */
+async function auditDeploySimGate(
+  user: FoeUser,
+  def: WorkflowDefinition,
+  outcome: "rejected" | "override",
+  reason: string | null,
+): Promise<void> {
+  try {
+    const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
+    await logCrudOperation(
+      createAuditContext({ user: { id: user.id || 0, name: user.name ?? user.role } }),
+      {
+        action: "config_change",
+        entityType: "orchestration_workflow",
+        entityName: def.ref,
+        details: {
+          operation:
+            outcome === "rejected" ? "foe_deploy_sim_gate_rejected" : "foe_deploy_sim_gate_override",
+          metadata: { ref: def.ref, hash: hashWorkflowDefinition(def), reason },
+        },
+        status: outcome === "rejected" ? "failure" : "success",
+      },
+    );
+  } catch {
+    /* audit best-effort — không được chặn deploy */
+  }
+}
+
+/** System actor recorded on an auto-resume (never a real human). */
+const SYSTEM_FOE_USER: FoeUser = { id: 0, role: "system", name: "FOE auto-resume" };
+
 // ── Public result shapes ─────────────────────────────────────────────────────────
 
 export interface FoeUser {
@@ -77,6 +183,14 @@ export interface DeployResult {
   version?: number;
   errors?: ValidationError[];
   message?: string;
+}
+
+/** doc 40 ENG-F4 — tuỳ chọn deploy để đi qua sim-gate. */
+export interface DeployOpts {
+  /** Sim-token do orchestration.simulate phát hành cho ĐÚNG định nghĩa này (bằng chứng sim ĐẠT). */
+  simToken?: string | null;
+  /** Lý do override sim-gate (bắt buộc để bỏ qua khi gate BẬT mà không có token) — được ghi audit. */
+  overrideReason?: string | null;
 }
 
 export interface StartRunResult {
@@ -126,6 +240,13 @@ interface RunContext {
   pausedAtStepId?: string;
   /** True once an abort/fatal interlock has been requested — unwind toward 'failed'. */
   aborting?: boolean;
+  /**
+   * Doc 25 T1 — RESUME idempotent: stepId đã 'completed'/'skipped' ở lần chạy trước
+   * (nguồn chân lý = bảng _run_steps). execStep BỎ QUA mọi bước trong tập này nên khi
+   * resume KHÔNG tái-dispatch lệnh đã gửi và KHÔNG re-pause gate đã duyệt — kể cả gate
+   * lồng trong parallel/branch (vì mọi walker đều đi qua execStep). Rỗng khi chạy mới.
+   */
+  completed: Set<string>;
 }
 
 /** Outcome of executing a step subtree. */
@@ -158,6 +279,25 @@ async function loadMachines(ids: number[]): Promise<Map<number, MachineForValida
   return map;
 }
 
+/**
+ * Doc 25 T1 — nạp tập stepId ĐÃ HOÀN TẤT (completed/skipped) của một run từ _run_steps.
+ * Dùng cho RESUME idempotent: execStep bỏ qua các bước này. Fail-safe: DB lỗi → tập rỗng
+ * (walk sẽ chạy lại — an toàn hơn là bỏ sót bước; với control OFF mọi dispatch là dry-run).
+ */
+async function loadCompletedSteps(runId: number): Promise<Set<string>> {
+  const set = new Set<string>();
+  const d = await getDb();
+  if (!d) return set;
+  const rows = await d
+    .select()
+    .from(orchestrationRunSteps)
+    .where(eq(orchestrationRunSteps.runId, runId));
+  for (const r of rows) {
+    if (r.status === "completed" || r.status === "skipped") set.add(r.stepId);
+  }
+  return set;
+}
+
 async function setRunStatus(
   runId: number,
   status: OrchestrationRun["status"],
@@ -169,6 +309,9 @@ async function setRunStatus(
     .update(orchestrationRuns)
     .set({ status, updatedAt: new Date(), ...patch })
     .where(eq(orchestrationRuns.id, runId));
+  // doc 33 D1 (F8 §5.1.2) — durable RunEvent log: terminal run transitions (FOE_DURABLE, best-effort).
+  if (status === "completed") void appendRunEvent(runId, "RUN_COMPLETED", { ts: Date.now() });
+  else if (status === "failed" || status === "aborted") void appendRunEvent(runId, "RUN_FAILED", { ts: Date.now(), data: { status } });
 }
 
 async function upsertStep(
@@ -211,6 +354,16 @@ async function upsertStep(
         finishedAt: patch.finishedAt ?? undefined,
       },
     });
+  // doc 33 D1 (F8) — durable RunEvent log: step transitions (FOE_DURABLE, best-effort).
+  const stepEvt =
+    patch.status === "running"
+      ? "TASK_STARTED"
+      : patch.status === "completed"
+        ? "TASK_COMPLETED"
+        : patch.status === "failed"
+          ? "TASK_FAILED"
+          : null;
+  if (stepEvt) void appendRunEvent(runId, stepEvt, { taskId: stepId, ts: Date.now() });
 }
 
 async function persistContext(rc: RunContext): Promise<void> {
@@ -266,6 +419,59 @@ async function refreshReadbacks(rc: RunContext, machineId: number | undefined): 
 
 // ── command building (mirrors api/v1 buildCommand; HITL trigger synthesized) ─────
 
+/**
+ * Doc 25 T1 — actionId hợp lệ cho lệnh FOE. Trước đây FOE gắn `foe-<key>` KHÔNG tồn
+ * tại trong ai_pending_actions → dispatcher OT tái-xác-minh và TỪ CHỐI (NOT_CONFIRMED);
+ * test cũ chỉ xanh vì mock dispatcher. Giờ FOE tạo bản ghi ai_pending_actions CONFIRMED
+ * thật với đúng id này (ensureOrchestrationAction) nên cả cổng OT lẫn robot đều qua HỢP LỆ.
+ * id là khóa chính ai_pending_actions (varchar 64) → cắt cho vừa.
+ */
+function orchestrationActionId(idempotencyKey: string): string {
+  const id = `foe-${idempotencyKey}`;
+  return id.length <= 64 ? id : id.slice(0, 64);
+}
+
+/**
+ * Tạo (idempotent, fail-safe) một bản ghi ai_pending_actions ĐÃ CONFIRMED cho một
+ * bước lệnh của run — chủ sở hữu là user đã khởi động run. Đây là ủy quyền THẬT mà
+ * dispatcher OT/robot tái-xác-minh (status confirmed/executed + đúng owner) trước khi
+ * ghi. Dùng status 'executed' (terminal) nên KHÔNG lọt vào action inbox (inbox chỉ hiện
+ * 'proposed'). Lỗi tạo bản ghi → nuốt: bản ghi không có ⇒ dispatcher fail-closed (từ chối),
+ * an toàn hơn là để lệnh lọt.
+ */
+async function ensureOrchestrationAction(
+  user: FoeUser,
+  idempotencyKey: string,
+  step: WorkflowStep,
+  args: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const d = await getDb();
+    if (!d) return;
+    const actionId = orchestrationActionId(idempotencyKey);
+    const [existing] = await d
+      .select()
+      .from(aiPendingActions)
+      .where(eq(aiPendingActions.id, actionId))
+      .limit(1);
+    if (existing) return; // resume/retry → tái dùng bản ghi cũ
+    await d.insert(aiPendingActions).values({
+      id: actionId,
+      tool: "foe.orchestration",
+      argsJson: args ?? {},
+      userId: user.id || 0,
+      userRole: user.role || "system",
+      summary: `FOE orchestration: step ${step.id}`,
+      status: "executed",
+      idempotencyKey: actionId,
+      expiresAt: new Date(Date.now() + 3_600_000),
+      executedAt: new Date(),
+    });
+  } catch {
+    // fail-safe: không tạo được ⇒ cổng dispatcher sẽ fail-closed (an toàn).
+  }
+}
+
 function buildEquipmentCommand(
   descriptor: CommandDescriptor,
   capability: EquipmentCapability,
@@ -280,8 +486,13 @@ function buildEquipmentCommand(
     machineId,
     idempotencyKey,
     // FOE is an automated multi-step actor; the dispatcher STILL applies its dry-run
-    // gate. actionId tags the audit trail; requestedBy carries the run's user.
-    hitl: { actionId: `foe-${idempotencyKey}`, requestedBy: user.id || 0 },
+    // gate. actionId TRỎ tới bản ghi ai_pending_actions confirmed thật (ensureOrchestrationAction);
+    // requestedBy/confirmedBy = user đã khởi động run (owner của bản ghi) → cổng OT/robot qua hợp lệ.
+    hitl: {
+      actionId: orchestrationActionId(idempotencyKey),
+      requestedBy: user.id || 0,
+      confirmedBy: user.id || 0,
+    },
   };
   if (isRobot) {
     cmd.robotId = typeof args.robotId === "number" ? args.robotId : machineId;
@@ -341,6 +552,13 @@ async function refreshConditionReadbacks(rc: RunContext, c: Condition | undefine
 /** Execute ONE step subtree. Persists state; routes commands via E0. Fail-safe. */
 async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome> {
   if (rc.aborting) return { kind: "aborted", error: "Run is aborting." };
+
+  // Doc 25 T1 — RESUME idempotent: bước đã hoàn tất ở lần chạy trước thì KHÔNG chạy lại.
+  // Tránh tái-dispatch lệnh OT (mất idempotency khi OT thật) và tránh re-pause gate đã
+  // duyệt — áp cho MỌI loại bước, kể cả gate/lệnh lồng trong parallel/branch/sequence.
+  if (rc.completed.has(step.id)) {
+    return { kind: "ok" };
+  }
 
   // Precondition / interlock
   const pre = await checkPrecondition(rc, step);
@@ -406,9 +624,18 @@ async function runStepBody(rc: RunContext, step: WorkflowStep, attempt: number):
       case "parallel":
         return await execParallel(rc, step.steps, step.failFast === true);
       case "branch": {
-        await refreshConditionReadbacks(rc, step.condition);
-        const take = evaluateCondition(step.condition, evalCtxOf(rc));
-        rc.context[`branch:${step.id}`] = take ? "then" : "else";
+        // Doc 25 T1 — RESUME: nếu nhánh đã chọn ở lần chạy trước (persist trong context),
+        // GIỮ nguyên nhánh đó để re-enter đúng đường-dẫn đã đi (idempotent), không đánh giá
+        // lại điều kiện (telemetry có thể đã đổi → tránh nhảy sang nhánh khác nửa chừng).
+        const prior = rc.context[`branch:${step.id}`];
+        let take: boolean;
+        if (prior === "then" || prior === "else") {
+          take = prior === "then";
+        } else {
+          await refreshConditionReadbacks(rc, step.condition);
+          take = evaluateCondition(step.condition, evalCtxOf(rc));
+          rc.context[`branch:${step.id}`] = take ? "then" : "else";
+        }
         await upsertStep(rc.runId, step.id, step.type, {
           status: "running",
           result: { branch: take ? "then" : "else" },
@@ -447,6 +674,48 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
     return { kind: "failed", error: `Command "${step.command}" not supported by machine ${step.machineId}.` };
   }
   const idempotencyKey = `run${rc.runId}-${step.id}-a${attempt}`;
+
+  // W3-B2 (doc 44 G3.14) — "MỘT CỬA": mọi bước lệnh FOE qua policy seam TRƯỚC khi tạo
+  // ủy quyền/dispatch. SEC_PLATFORM OFF (mặc định) → bỏ qua hoàn toàn (hành vi cũ).
+  // DENY → bước FAIL với lý do honest và đi vào flow tự nhiên của engine (retry-budget
+  // → compensation qua execStep) — KHÔNG BAO GIỜ throw sập run-loop (runStepBody đã bọc
+  // try/catch, và ta return outcome chứ không throw). require_approval → FOE không có
+  // kênh phê duyệt per-step ngoài hitl_gate khai báo trong workflow ⇒ reject honest
+  // POLICY_APPROVAL_REQUIRED (tác giả workflow thêm hitl_gate TRƯỚC bước lệnh nếu muốn).
+  {
+    const { evaluateActionPolicy, secPlatformEnabled } = await import("../../security/policyGate");
+    if (secPlatformEnabled()) {
+      const verdict = evaluateActionPolicy(
+        `foe-run:${rc.runId}`,
+        `foe.command.${step.command}`,
+        `machine:${step.machineId}`,
+        {
+          runId: rc.runId,
+          workflowRef: rc.def.ref,
+          stepId: step.id,
+          stepType: step.type,
+          command: step.command,
+          machineId: step.machineId,
+          role: rc.user.role,
+          startedBy: rc.user.id,
+          attempt,
+        },
+        { requestId: idempotencyKey },
+      );
+      if (!verdict.allow) {
+        const code = verdict.effect === "deny" ? "POLICY_DENIED" : "POLICY_APPROVAL_REQUIRED";
+        return {
+          kind: "failed",
+          error: `${code}: ${verdict.reason}${verdict.policyId ? ` (policy ${verdict.policyId})` : ""}`,
+        };
+      }
+    }
+  }
+
+  // Doc 25 T1 — tạo ủy quyền ai_pending_actions confirmed THẬT trước khi dispatch để
+  // cổng HITL của dispatcher (OT/robot) tái-xác-minh và cho qua HỢP LỆ (không còn phụ
+  // thuộc mock). Fail-safe: nếu không tạo được, dispatcher fail-closed từ chối.
+  await ensureOrchestrationAction(rc.user, idempotencyKey, step, step.args ?? {});
   const cmd = buildEquipmentCommand(descriptor, cap, step.machineId, step.args ?? {}, idempotencyKey, rc.user);
 
   // ROUTE THROUGH E0 → existing HITL/dry-run dispatcher. NEVER a direct device path.
@@ -585,8 +854,9 @@ async function driveRun(rc: RunContext): Promise<OrchestrationRun["status"]> {
 }
 
 /**
- * Build a RunContext from a persisted run + its workflow. Loads referenced machines.
- * `resolvedGates` are gate stepIds already approved (so the walk skips past them).
+ * Build a RunContext from a persisted run + its workflow. Loads referenced machines and
+ * the set of steps ĐÃ HOÀN TẤT (từ _run_steps) để RESUME idempotent (execStep bỏ qua
+ * chúng). Với run mới, _run_steps rỗng → completed rỗng → hành vi không đổi.
  */
 async function buildRunContext(
   run: OrchestrationRun,
@@ -602,6 +872,7 @@ async function buildRunContext(
   const states = new Map<number, string>(
     Object.entries((context.states as Record<string, string>) ?? {}).map(([k, v]) => [Number(k), v]),
   );
+  const completed = await loadCompletedSteps(run.id);
   return {
     runId: run.id,
     def,
@@ -611,6 +882,7 @@ async function buildRunContext(
     machineById: machineMap,
     telemetry,
     states,
+    completed,
   };
 }
 
@@ -622,7 +894,11 @@ async function buildRunContext(
  * Deploy (validate + persist) a workflow definition. Upserts by ref (bumps version).
  * Flag-gated: FOE_ENABLED off → a disabled result (no persistence).
  */
-export async function deployWorkflow(def: WorkflowDefinition, user: FoeUser): Promise<DeployResult> {
+export async function deployWorkflow(
+  def: WorkflowDefinition,
+  user: FoeUser,
+  opts?: DeployOpts,
+): Promise<DeployResult> {
   if (!foeEnabled()) {
     return { ok: false, enabled: false, message: "FOE is disabled (set FOE_ENABLED=true)." };
   }
@@ -636,6 +912,26 @@ export async function deployWorkflow(def: WorkflowDefinition, user: FoeUser): Pr
     const full = validateWorkflow(def, [...machineMap.values()]);
     if (!full.ok) return { ok: false, enabled: true, errors: full.errors };
 
+    // doc 40 ENG-F4 — SIM-GATE (sau khi validate, TRƯỚC khi persist). Khi cờ FOE_SIM_GATE_REQUIRED
+    // bật: chỉ deploy definition có sim-token hợp lệ (đã mô phỏng ĐẠT) HOẶC có override kèm lý do
+    // (ghi audit). Mặc định OFF → bỏ qua hoàn toàn (hành vi cũ). Fail-closed khi thiếu cả hai.
+    if (foeSimGateRequired()) {
+      const simOk = verifySimToken(def, opts?.simToken);
+      const reason = opts?.overrideReason?.trim() || "";
+      if (!simOk && !reason) {
+        void auditDeploySimGate(user, def, "rejected", null);
+        return {
+          ok: false,
+          enabled: true,
+          message:
+            "Chưa mô phỏng đạt (sim-gate): hãy Simulate workflow đến khi feasible rồi Deploy, hoặc deploy kèm lý do override.",
+        };
+      }
+      if (!simOk && reason) {
+        void auditDeploySimGate(user, def, "override", reason);
+      }
+    }
+
     const d = await db();
     const existing = await d
       .select()
@@ -645,6 +941,7 @@ export async function deployWorkflow(def: WorkflowDefinition, user: FoeUser): Pr
     const nextVersion = existing.length ? (existing[0].version ?? 1) + 1 : def.version ?? 1;
     const definitionJson: WorkflowDefinition = { ...def, version: nextVersion };
 
+    let workflowId: number;
     if (existing.length) {
       await d
         .update(orchestrationWorkflows)
@@ -657,35 +954,119 @@ export async function deployWorkflow(def: WorkflowDefinition, user: FoeUser): Pr
           updatedAt: new Date(),
         })
         .where(eq(orchestrationWorkflows.id, existing[0].id));
-      return { ok: true, enabled: true, workflowId: existing[0].id, ref: def.ref, version: nextVersion };
+      workflowId = existing[0].id;
+    } else {
+      const [row] = await d
+        .insert(orchestrationWorkflows)
+        .values({
+          ref: def.ref,
+          name: def.name,
+          description: def.description ?? null,
+          definitionJson,
+          version: nextVersion,
+          status: "active",
+          createdBy: user.id || null,
+        })
+        .returning();
+      workflowId = row.id;
     }
-    const [row] = await d
-      .insert(orchestrationWorkflows)
-      .values({
-        ref: def.ref,
-        name: def.name,
-        description: def.description ?? null,
-        definitionJson,
-        version: nextVersion,
-        status: "active",
-        createdBy: user.id || null,
-      })
-      .returning();
-    return { ok: true, enabled: true, workflowId: row.id, ref: def.ref, version: nextVersion };
+
+    // W3-11 — SNAPSHOT this version (append-only) so the head-row overwrite above no
+    // longer loses history; enables version diff + rollback in the Studio.
+    await snapshotWorkflowVersion(d, {
+      workflowId,
+      ref: def.ref,
+      version: nextVersion,
+      name: def.name,
+      description: def.description ?? null,
+      definitionJson,
+      createdBy: user.id || null,
+    });
+
+    return { ok: true, enabled: true, workflowId, ref: def.ref, version: nextVersion };
   } catch (err) {
     return { ok: false, enabled: true, message: err instanceof Error ? err.message : String(err) };
   }
 }
 
 /**
+ * W3-11 — persist a version snapshot (best-effort; a snapshot failure must NOT fail
+ * the deploy — the head row is already written and startRun uses that). Records at
+ * most one row per (workflowId, version); a duplicate is swallowed.
+ */
+async function snapshotWorkflowVersion(
+  d: Awaited<ReturnType<typeof db>>,
+  snap: {
+    workflowId: number;
+    ref: string;
+    version: number;
+    name: string;
+    description: string | null;
+    definitionJson: WorkflowDefinition;
+    createdBy: number | null;
+  },
+): Promise<void> {
+  try {
+    const dupes = await d
+      .select()
+      .from(orchestrationWorkflowVersions)
+      .where(eq(orchestrationWorkflowVersions.workflowId, snap.workflowId));
+    if (dupes.some((v) => v.version === snap.version)) return; // đã snapshot version này
+    await d.insert(orchestrationWorkflowVersions).values(snap);
+  } catch {
+    // best-effort — không chặn deploy nếu bảng versions chưa có (migration chưa chạy).
+  }
+}
+
+/**
+ * W3-11 — ROLL BACK a workflow to an earlier snapshotted version by RE-DEPLOYING that
+ * version's definition as a NEW version (append-only; never mutates history). Routes
+ * through the same validated + flag-gated deployWorkflow path.
+ */
+export async function rollbackWorkflow(
+  workflowId: number,
+  version: number,
+  user: FoeUser,
+): Promise<DeployResult> {
+  if (!foeEnabled()) {
+    return { ok: false, enabled: false, message: "FOE is disabled (set FOE_ENABLED=true)." };
+  }
+  const d = await db();
+  const snaps = await d
+    .select()
+    .from(orchestrationWorkflowVersions)
+    .where(eq(orchestrationWorkflowVersions.workflowId, workflowId));
+  const target = snaps.find((s) => s.version === version);
+  if (!target) {
+    return { ok: false, enabled: true, message: `No snapshot for workflow ${workflowId} version ${version}.` };
+  }
+  // Re-deploy the old definition → bumps to a fresh version with the old content.
+  // doc 40 ENG-F4 — rollback re-deploy nội dung ĐÃ từng deploy+validate → qua sim-gate bằng
+  // override có lý do (được ghi audit), không buộc mô phỏng lại một bản đã biết-tốt.
+  return deployWorkflow(target.definitionJson as WorkflowDefinition, user, {
+    overrideReason: `rollback to v${version} (previously deployed, validated content)`,
+  });
+}
+
+/**
  * Start a run of a deployed workflow (by ref). Creates the run row, then kicks the
  * executor. The executor is fail-safe — any error transitions the run to 'failed'.
- * Flag-gated. Returns once the run reaches a terminal/paused state (awaitable).
+ * Flag-gated.
+ *
+ * MODES (W4-17 · durable execution):
+ *   • DEFAULT (đồng bộ) — drive tới khi run đạt trạng thái terminal/paused rồi mới trả
+ *     về (awaitable). Đây là hành vi hiện có mà router + toàn bộ FOE test đang dựa vào —
+ *     GIỮ NGUYÊN, không đổi chữ ký gọi mặc định.
+ *   • opts.async === true (OPT-IN) — tạo run 'queued', TRẢ runId NGAY, rồi drive nền
+ *     trong-tiến-trình qua setImmediate (không block request tRPC). Fail-safe: lỗi nền
+ *     đưa run về 'failed'. Nếu tiến trình chết giữa chừng, rehydrateInterruptedRuns()
+ *     lúc khởi động lại sẽ đánh dấu run 'interrupted' (không kẹt im lặng).
  */
 export async function startRun(
   workflowRef: string,
   params: Record<string, unknown>,
   user: FoeUser,
+  opts?: { async?: boolean },
 ): Promise<StartRunResult> {
   if (!foeEnabled()) {
     return { ok: false, enabled: false, message: "FOE is disabled (set FOE_ENABLED=true)." };
@@ -714,6 +1095,26 @@ export async function startRun(
       })
       .returning();
     runId = run.id;
+    // doc 33 W4 (F8 §5.1.2) — durable event log: record RUN_CREATED (best-effort, FOE_DURABLE-gated).
+    void appendRunEvent(run.id, "RUN_CREATED", { ts: Date.now(), data: { workflowRef: wf.ref } });
+
+    // OPT-IN async: tách drive khỏi request. Trả 'queued' + runId ngay; drive nền.
+    if (opts?.async) {
+      const asyncRunId = run.id;
+      setImmediate(() => {
+        void (async () => {
+          try {
+            const rc = await buildRunContext(run, def, user);
+            await driveRun(rc);
+          } catch (err) {
+            // FAIL-SAFE — drive nền không được ném ra ngoài (không có ai await).
+            const message = err instanceof Error ? err.message : String(err);
+            await setRunStatus(asyncRunId, "failed", { finishedAt: new Date(), error: message }).catch(() => undefined);
+          }
+        })();
+      });
+      return { ok: true, enabled: true, runId: run.id, status: "queued" };
+    }
 
     const rc = await buildRunContext(run, def, user);
     const status = await driveRun(rc);
@@ -777,13 +1178,20 @@ export async function resumeRun(
     const gateStepId = run.currentStepId ?? undefined;
 
     if (!decision.approved) {
+      // U6 (doc 26) — kèm lý do từ chối (note) vào audit của run + bước để truy vết.
+      const reason = decision.note?.trim();
       await setRunStatus(runId, "aborted", {
         finishedAt: new Date(),
-        error: `Gate "${gateStepId ?? "?"}" rejected by user ${user.id}.`,
+        error: `Gate "${gateStepId ?? "?"}" rejected by user ${user.id}.${reason ? ` Reason: ${reason}` : ""}`,
       });
       if (gateStepId) {
         const [wf2] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1);
-        await upsertStep(runId, gateStepId, "hitl_gate", { status: "failed", error: "Rejected", finishedAt: new Date() }).catch(() => undefined);
+        await upsertStep(runId, gateStepId, "hitl_gate", {
+          status: "failed",
+          error: reason ? `Rejected: ${reason}` : "Rejected",
+          result: { approved: false, note: reason ?? null, rejectedBy: user.id },
+          finishedAt: new Date(),
+        }).catch(() => undefined);
         void wf2;
       }
       return { ok: false, enabled: true, runId, status: "aborted" };
@@ -802,13 +1210,10 @@ export async function resumeRun(
       });
     }
 
+    // buildRunContext nạp rc.completed từ _run_steps (đã gồm gate vừa đánh dấu completed
+    // ở trên + mọi bước đã xong lần trước) → execStep bỏ qua chúng khi đi lại.
     const rc = await buildRunContext(run, def, user);
-    // record resolved gates in context so the walker skips them
-    const resolved = new Set<string>(((rc.context.resolvedGates as string[]) ?? []));
-    if (gateStepId) resolved.add(gateStepId);
-    rc.context.resolvedGates = [...resolved];
-
-    const status = await driveRunFromResume(rc, resolved);
+    const status = await driveRunFromResume(rc);
     return { ok: status !== "failed" && status !== "aborted", enabled: true, runId, status };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -818,14 +1223,14 @@ export async function resumeRun(
 }
 
 /**
- * Like driveRun, but a hitl_gate whose id is in `resolvedGates` is treated as already
- * completed (skipped) so the walk continues past it. This is the resume path.
+ * Đường RESUME. KHÔNG reset startedAt. Đi lại từ đầu bằng execSequence THƯỜNG: mọi bước
+ * đã hoàn tất (gồm gate vừa duyệt) nằm trong rc.completed nên execStep bỏ qua — không
+ * tái-dispatch lệnh, không re-pause gate đã duyệt, kể cả gate lồng trong parallel/branch.
+ * Gate CHƯA duyệt (nếu có) sẽ pause lại như thường.
  */
-async function driveRunFromResume(rc: RunContext, resolvedGates: Set<string>): Promise<OrchestrationRun["status"]> {
-  // wrap execStep's hitl_gate handling: monkey-patch via context flag.
-  rc.context.__resolvedGates = [...resolvedGates];
+async function driveRunFromResume(rc: RunContext): Promise<OrchestrationRun["status"]> {
   await setRunStatus(rc.runId, "running");
-  const out = await execSequenceResume(rc, rc.def.steps, resolvedGates);
+  const out = await execSequence(rc, rc.def.steps);
 
   if (out.kind === "paused") {
     await setRunStatus(rc.runId, "awaiting_confirm", { currentStepId: out.stepId });
@@ -847,20 +1252,120 @@ async function driveRunFromResume(rc: RunContext, resolvedGates: Set<string>): P
   return "completed";
 }
 
-/** Sequence walker for resume: a resolved hitl_gate is skipped, not re-paused. */
-async function execSequenceResume(rc: RunContext, steps: WorkflowStep[], resolved: Set<string>): Promise<StepOutcome> {
-  for (const child of steps) {
-    if (child.type === "hitl_gate" && resolved.has(child.id)) {
-      continue; // already approved → skip past
+// ── W4-17 — DURABLE EXECUTION: rehydrate-on-boot ─────────────────────────────────
+
+export interface RehydrateResult {
+  enabled: boolean;
+  /** Số run ĐANG-CHẠY (không phải wait bền vững) phát hiện lúc khởi động. */
+  scanned: number;
+  /** Số run được đánh dấu 'interrupted' dạng RESUMABLE (status 'held'). */
+  interrupted: number;
+  /** Số run được đưa về terminal 'failed' (đang compensating → không tự tiếp tục được). */
+  failed: number;
+  runIds: number[];
+  /** doc 33 I5 — số run được AUTO-resume (chỉ khi FOE_DURABLE). undefined nếu không bật. */
+  autoResumed?: number;
+}
+
+/**
+ * doc 33 I5 (F8 §5.1.6) — AUTO-continue interrupted runs. For each run that rehydrate marked
+ * 'held' with context.interrupted, re-drive it via the proven idempotent resumeRun (re-walk from
+ * the resume point; already-completed steps are idempotent, re-dispatch is dry-run-safe). Only
+ * touches interrupted runs — a human gate ('awaiting_confirm', or 'held' WITHOUT interrupted) is
+ * left for a person. No-op unless FOE_DURABLE && FOE_ENABLED. Best-effort; never throws on boot.
+ */
+export async function autoResumeInterruptedRuns(runIds: number[]): Promise<{ enabled: boolean; resumed: number; runIds: number[] }> {
+  if (!foeDurableEnabled() || !foeEnabled()) return { enabled: false, resumed: 0, runIds: [] };
+  const resumed: number[] = [];
+  try {
+    const d = await getDb();
+    if (!d) return { enabled: true, resumed: 0, runIds: [] };
+    for (const runId of runIds) {
+      const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
+      if (!run || run.status !== "held") continue; // skip failed/terminal
+      const ctx = (run.contextJson as Record<string, unknown>) ?? {};
+      if (ctx.interrupted !== true) continue; // NEVER auto-resume a human gate
+      const res = await resumeRun(runId, { approved: true, note: "auto-resume (FOE_DURABLE)" }, SYSTEM_FOE_USER);
+      if (res.ok) resumed.push(runId);
     }
-    // For nested containers, recurse with the resolved set so inner gates skip too.
-    const out =
-      child.type === "sequence"
-        ? await execSequenceResume(rc, child.steps, resolved)
-        : await execStep(rc, child);
-    if (out.kind === "paused" || out.kind === "failed" || out.kind === "aborted") return out;
+  } catch (err) {
+    console.error("[FOE] autoResumeInterruptedRuns failed:", err instanceof Error ? err.message : String(err));
   }
-  return { kind: "ok" };
+  return { enabled: true, resumed: resumed.length, runIds: resumed };
+}
+
+/**
+ * W4-17 — REHYDRATE khi server khởi động. driveRun/resumeRun chạy TRONG-TIẾN-TRÌNH; nếu
+ * server chết giữa chừng, một run có thể kẹt ở trạng thái ĐANG-CHẠY mà KHÔNG còn driver
+ * sống để tiếp tục. Hàm này quét các run như vậy và đánh dấu chúng "interrupted" để:
+ *   • KHÔNG kẹt im lặng ở 'running'/'queued'/'compensating' mãi mãi;
+ *   • cho phép RESUME THỦ CÔNG an toàn (idempotent) qua resumeRun (run 'held' là resumable;
+ *     approve → đi lại bỏ qua bước đã hoàn tất, reject → abort).
+ *
+ * PHÂN LOẠI (an toàn trên hết):
+ *   • 'queued' / 'running' → 'held' + cờ context.interrupted → RESUMABLE. Đi lại là idempotent
+ *     (execStep bỏ qua bước đã 'completed'/'skipped'; với control OFF mọi dispatch là dry-run).
+ *   • 'compensating' → 'failed' (terminal). Run đang UNWIND một lỗi; drive-lại về phía trước
+ *     là KHÔNG an toàn, nên chốt terminal + ghi lý do.
+ *   • 'awaiting_confirm' / 'held' → BỎ QUA. Đây là WAIT BỀN VỮNG chờ người — không cần
+ *     rehydrate; một người sẽ resume qua resumeRun như thường.
+ *
+ * FAIL-SAFE tuyệt đối: KHÔNG bao giờ ném ra ngoài (không được chặn khởi động server). DB chưa
+ * kết nối → trả kết quả rỗng. KHÔNG flag-gated: dọn cả run cũ tạo khi FOE còn bật.
+ */
+export async function rehydrateInterruptedRuns(): Promise<RehydrateResult> {
+  const result: RehydrateResult = { enabled: foeEnabled(), scanned: 0, interrupted: 0, failed: 0, runIds: [] };
+  try {
+    const d = await getDb();
+    if (!d) return result;
+    // Các trạng thái ĐANG-CHẠY (không tự tiếp tục được sau restart). awaiting_confirm/held là
+    // wait bền vững → cố ý loại trừ.
+    const activeStatuses: OrchestrationRun["status"][] = ["queued", "running", "compensating"];
+    const runsRows = await d
+      .select()
+      .from(orchestrationRuns)
+      .where(inArray(orchestrationRuns.status, activeStatuses));
+    // Lọc lại trong JS (chân lý cuối cùng) — chống mọi khác biệt where của driver.
+    const stuck = runsRows.filter((r) => activeStatuses.includes(r.status));
+    result.scanned = stuck.length;
+    const now = new Date();
+    for (const run of stuck) {
+      const ctx = (run.contextJson as Record<string, unknown>) ?? {};
+      const markedCtx = {
+        ...ctx,
+        interrupted: true,
+        interruptedAt: now.toISOString(),
+        interruptedFrom: run.status,
+      };
+      if (run.status === "compensating") {
+        await setRunStatus(run.id, "failed", {
+          finishedAt: now,
+          error: `Interrupted by server restart while compensating (run ${run.id}); not auto-resumed.`,
+          contextJson: markedCtx,
+        });
+        result.failed += 1;
+      } else {
+        // queued/running → resumable 'held'.
+        await setRunStatus(run.id, "held", {
+          error: `Interrupted by server restart (was ${run.status}); awaiting manual resume.`,
+          contextJson: markedCtx,
+        });
+        result.interrupted += 1;
+      }
+      result.runIds.push(run.id);
+    }
+  } catch (err) {
+    // nuốt — một lỗi rehydrate KHÔNG được chặn khởi động server.
+    console.error("[FOE] rehydrateInterruptedRuns failed:", err instanceof Error ? err.message : String(err));
+  }
+  // doc 33 I5 (F8) — durable execution: when FOE_DURABLE, auto-continue the interrupted runs
+  // instead of leaving them 'held' for manual resume. Default off → unchanged behavior.
+  if (foeDurableEnabled() && result.runIds.length > 0) {
+    const ar = await autoResumeInterruptedRuns(result.runIds);
+    result.autoResumed = ar.resumed;
+    if (ar.resumed > 0) console.log(`[FOE] durable: auto-resumed ${ar.resumed} interrupted run(s)`);
+  }
+  return result;
 }
 
 /** Abort a run (terminal). Records the reason; does not crash on a missing run. */

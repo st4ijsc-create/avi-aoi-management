@@ -1,0 +1,90 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- St4i.EdgeCore is net10.0-windows (it links the WPF-adjacent device-client SDK sample and
+         DPAPI-based CredentialStore), so this host must target the same TFM to reference it. The
+         Microsoft.NET.Sdk.Web SDK (below) still gets the full ASP.NET Core runtime under a "-windows"
+         TFM — it implicitly adds a FrameworkReference to Microsoft.AspNetCore.App itself (confirmed: an
+         explicit one here produced build warning NETSDK1086 "already implicitly referenced", so it was
+         removed); the "-windows" suffix only adds Windows-specific APIs on top, it does not drop ASP.NET
+         Core. This box has Microsoft.AspNetCore.App 10.0.10 installed (see the "dotnet list-runtimes"
+         output in task-3-report.md), so a plain "dotnet run" resolves it with no self-contained publish
+         needed (verified). -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\St4i.EdgeCore\St4i.EdgeCore.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Same packaging convention as St4iMachineSimulator.csproj (Task 22): ships the default
+         fleet.json + mapping/*.json presets next to the built/run exe so FleetHost's
+         AppContext.BaseDirectory lookup (mirrors FleetService.ResolveFleetPath) finds them with no
+         extra configuration. -->
+    <None Include="..\..\fleet.json" CopyToOutputDirectory="PreserveNewest" Link="fleet.json" />
+    <!-- GP-5 (task-5-brief.md item 2) — same shipping convention as fleet.json above: a loose,
+         hand-editable-post-publish file next to the exe. Ships as an empty array so its mere presence is
+         byte-identical to "connectors.json absent" (ConnectorsConfig.Load returns an empty list either
+         way) — an operator adds entries to it, this repo does not ship any by default. -->
+    <None Include="..\..\connectors.json" CopyToOutputDirectory="PreserveNewest" Link="connectors.json" />
+    <None Include="..\..\mapping\*.json" CopyToOutputDirectory="PreserveNewest" Link="mapping\%(Filename)%(Extension)" />
+    <!-- H4 job 1 — reference board images (ProductConfigStore.SeedModelA/B's "assets/products/model-a
+         -board.png"/"model-b-board.png"). Copied straight from the web project's public/ folder into
+         wwwroot/assets/products at BUILD time, same "always present regardless of what else has been
+         built" pattern as fleet.json/mapping above — deliberately NOT routed through the web/dist copy
+         below (that ItemGroup is conditioned on `web/dist` existing, i.e. `npm run build` having already
+         run). This way a dev session that only runs `dotnet run` here, with Vite serving the UI
+         separately on :5173, still gets working board images from this engine at :5199 (BoardCanvas
+         resolves image URLs against the engine origin, not Vite's). The published single-file build
+         carries its own copy too, since Vite bundles public/ verbatim into web/dist. -->
+    <None Include="..\..\web\public\assets\products\*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="wwwroot\assets\products\%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup Condition="Exists('..\..\web\dist')">
+    <!-- Task 9 — copies the ALREADY-BUILT web UI bundle (run `npm run build` in ../../web first; this
+         does not invoke npm itself) into wwwroot/ next to the built/published exe, so Program.cs's
+         UseStaticFiles/MapFallbackToFile can serve it. Condition guards a plain `dotnet build` on a
+         fresh checkout (before anyone has run `npm run build`) from failing — the ItemGroup simply
+         contributes zero items and the API-only host still builds and runs fine, just without a UI to
+         serve at "/". PreserveNewest (not Always) so an incremental `dotnet build` doesn't re-copy ~1-2MB
+         of assets every time when the dist/ bundle hasn't changed. -->
+    <Content Include="..\..\web\dist\**\*">
+      <Link>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- GĐ3 closeout WI-1 (.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-1-brief.md)
+         Part A — MOVED here from St4i.EdgeCore.csproj (same exact pinned version — see that project's own
+         comment for the full de-risk-gate history/licensing write-up this repeats): Site/SiteDiscovery.cs
+         (browse) and the new Site/SiteAdvertiser.cs (Part B, advertise) both live in THIS project now, and
+         St4i.EdgeService/St4iMachineSimulator (WPF) never needed this package at all — they only
+         ProjectReference EdgeCore, never EngineApi, and never touch mDNS. -->
+    <PackageReference Include="Makaretu.Dns.Multicast.New" Version="0.38.0" />
+    <PackageReference Include="PDFsharp-MigraDoc-GDI" Version="6.2.4" />
+    <!-- WS-F1-T1 — Windows Service essentials: AddWindowsService's self-gating lifetime (Program.cs) and
+         ServiceInstallVerbs' status verb (ServiceController), both pinned to the same 10.0.x line as
+         this project's other Microsoft.* references (e.g. Microsoft.Data.Sqlite 10.0.10 in St4i.EdgeCore). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.10" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.10" />
+  </ItemGroup>
+
+  <!-- Final-review I-2 guard: the Content ItemGroup above quietly contributes zero items (and thus an
+       empty wwwroot/) when `web/dist` doesn't exist yet — the right behavior for a bare `dotnet build`
+       on a fresh checkout (Program.cs still serves the API fine with no UI to host), but NOT for a
+       `dotnet publish` someone is about to hand off/deploy: Program.cs's UseStaticFiles/
+       MapFallbackToFile still starts and still answers GET /v1/fleet with an empty wwwroot, so a
+       readiness probe (e.g. St4i.DesktopShell's) lies and the shell navigates a WebView2 to a raw 404.
+       Hard-fail any publish (any configuration) the moment web/dist/index.html is missing, naming the
+       exact fix, instead of silently producing that broken package. The correct-order publish (npm run
+       build THEN dotnet publish, per README.md §Publish) is unaffected — this Error never evaluates
+       true in that path. -->
+  <Target Name="St4iRequireWebUiBeforePublish" BeforeTargets="Publish">
+    <Error
+      Condition="!Exists('$(MSBuildProjectDirectory)\..\..\web\dist\index.html')"
+      Text="Refusing to publish St4i.EngineApi: web/dist/index.html not found. Run `npm run build` in tools/machine-simulator/web/ BEFORE `dotnet publish` (see README.md's publish order) -- otherwise wwwroot ships empty, the engine still answers /v1/fleet, and the desktop shell/WebView2 ends up showing a raw 404 instead of the UI." />
+  </Target>
+</Project>

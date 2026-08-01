@@ -1,13 +1,25 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
+import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, PieChart, BarChart3, TrendingUp, Package, RefreshCw, Download, Calendar } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  PageHeader,
+  MetricCard,
+  EmptyState,
+  chartColor,
+  chartTooltipStyle,
+  chartGridProps,
+  chartAxisTick,
+} from "@/components/patterns";
+import { PieChart, BarChart3, TrendingUp, Package, RefreshCw, Download, Calendar } from "lucide-react";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { vi } from "date-fns/locale";
 import {
@@ -25,9 +37,6 @@ import {
   LineChart,
   Line,
 } from "recharts";
-
-// Color palette for charts
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
 export default function CategoryAnalytics() {
   const { t } = useTranslation();
@@ -103,7 +112,7 @@ export default function CategoryAnalytics() {
         id: cat.id,
         name: cat.name,
         code: cat.code,
-        color: cat.color || '#3b82f6',
+        color: cat.color || 'var(--chart-1)',
         total: stats.total,
         ok: stats.ok,
         ng: stats.ng,
@@ -187,108 +196,145 @@ export default function CategoryAnalytics() {
     URL.revokeObjectURL(url);
   };
 
+  // Full localized export (PDF / XLSX / HTML) in addition to the raw CSV above.
+  const getExportConfig = (): ReportExportConfig => {
+    const d = analyticsData;
+    const sections: ReportExportConfig["sections"] = [];
+    if (d) {
+      sections.push({
+        title: t('reports.summary', 'Summary'),
+        type: 'stats',
+        stats: [
+          { label: t('dashboard.totalProduction'), value: d.totals.total },
+          { label: 'OK', value: d.totals.ok },
+          { label: 'NG', value: d.totals.ng },
+          { label: 'NTF', value: d.totals.ntf },
+          { label: t('reports.yieldRate', 'Yield Rate'), value: `${d.totals.yieldRate}%` },
+        ],
+      });
+      sections.push({
+        title: t('reports.detailByCategory', 'By category'),
+        type: 'table',
+        tableHeaders: [
+          t('common.category', 'Category'), t('common.total', 'Total'), 'OK', 'NG', 'NTF',
+          t('reports.yieldRate', 'Yield Rate'),
+        ],
+        tableRows: d.categoryData.map((c) => [c.name, c.total, c.ok, c.ng, c.ntf, `${c.yieldRate}%`]),
+      });
+    }
+    return {
+      title: t('reports.categoryAnalytics'),
+      subtitle: `${format(dateRange.start, 'yyyy-MM-dd')} → ${format(dateRange.end, 'yyyy-MM-dd')}`,
+      sections,
+      filenamePrefix: 'category_analytics',
+      orientation: 'landscape',
+    };
+  };
+
   return (
     <DashboardLayout title={t('dashboard.aviAoiManagement')} currentPath="/category-analytics">
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <PieChart className="h-6 w-6 text-primary" />
-              {t('reports.categoryAnalytics')}
-            </h1>
-            <p className="text-muted-foreground">
-              {t('reports.categoryAnalyticsDesc')}
-            </p>
-          </div>
+        <PageHeader
+          icon={<PieChart className="h-6 w-6 text-primary" />}
+          title={t('reports.categoryAnalytics')}
+          description={t('reports.categoryAnalyticsDesc')}
+          actions={
+            <>
+              {/* Time Range */}
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <Select value={timeRange} onValueChange={(v: any) => setTimeRange(v)}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">{t('common.today')}</SelectItem>
+                    <SelectItem value="week">{t('common.sevenDays')}</SelectItem>
+                    <SelectItem value="month">{t('common.thirtyDays')}</SelectItem>
+                    <SelectItem value="quarter">{t('common.ninetyDays')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <div className="flex items-center gap-3">
-            {/* Time Range */}
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <Select value={timeRange} onValueChange={(v: any) => setTimeRange(v)}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue />
+              {/* Factory Filter */}
+              <Select value={selectedFactory} onValueChange={setSelectedFactory}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder={t('common.allFactories')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="today">{t('common.today')}</SelectItem>
-                  <SelectItem value="week">{t('common.sevenDays')}</SelectItem>
-                  <SelectItem value="month">{t('common.thirtyDays')}</SelectItem>
-                  <SelectItem value="quarter">{t('common.ninetyDays')}</SelectItem>
+                  <SelectItem value="all">{t('common.allFactories')}</SelectItem>
+                  {factories?.map(f => (
+                    <SelectItem key={f.id} value={f.id.toString()}>{f.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-            </div>
 
-            {/* Factory Filter */}
-            <Select value={selectedFactory} onValueChange={setSelectedFactory}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder={t('common.allFactories')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t('common.allFactories')}</SelectItem>
-                {factories?.map(f => (
-                  <SelectItem key={f.id} value={f.id.toString()}>{f.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <Button variant="outline" size="icon" onClick={() => refetch()}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
 
-            <Button variant="outline" size="icon" onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+              <Button variant="outline" onClick={handleExport} disabled={!analyticsData}>
+                <Download className="h-4 w-4 mr-2" />
+                {t('common.exportCSV')}
+              </Button>
 
-            <Button variant="outline" onClick={handleExport} disabled={!analyticsData}>
-              <Download className="h-4 w-4 mr-2" />
-              {t('common.exportCSV')}
-            </Button>
-          </div>
-        </div>
+              {analyticsData && <ReportExportButton getConfig={getExportConfig} />}
+            </>
+          }
+        />
 
         {isLoading ? (
-          <div className="flex items-center justify-center h-96">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-24 w-full" />
+              ))}
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Skeleton className="h-[380px] w-full" />
+              <Skeleton className="h-[380px] w-full" />
+            </div>
+            <Skeleton className="h-[480px] w-full" />
           </div>
         ) : !analyticsData || analyticsData.categoryData.length === 0 ? (
           <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Package className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">{t('reports.noDataInTimeRange')}</p>
-              <p className="text-sm text-muted-foreground">{t('reports.ensureCategoryAssigned')}</p>
+            <CardContent className="py-4">
+              <EmptyState
+                icon={Package}
+                title={t('reports.noDataInTimeRange')}
+                description={t('reports.ensureCategoryAssigned')}
+              />
             </CardContent>
           </Card>
         ) : (
           <>
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-2xl font-bold">{analyticsData.totals.total.toLocaleString()}</div>
-                  <p className="text-sm text-muted-foreground">{t('dashboard.totalProduction')}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-2xl font-bold text-green-500">{analyticsData.totals.ok.toLocaleString()}</div>
-                  <p className="text-sm text-muted-foreground">OK</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-2xl font-bold text-red-500">{analyticsData.totals.ng.toLocaleString()}</div>
-                  <p className="text-sm text-muted-foreground">NG</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-2xl font-bold text-orange-500">{analyticsData.totals.ntf.toLocaleString()}</div>
-                  <p className="text-sm text-muted-foreground">NTF</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-2xl font-bold text-primary">{analyticsData.totals.yieldRate}%</div>
-                  <p className="text-sm text-muted-foreground">Yield Rate</p>
-                </CardContent>
-              </Card>
+              <MetricCard
+                label={t('dashboard.totalProduction')}
+                value={analyticsData.totals.total.toLocaleString()}
+              />
+              <MetricCard
+                label={t('common.ok', 'OK')}
+                value={analyticsData.totals.ok.toLocaleString()}
+                tone="success"
+              />
+              <MetricCard
+                label={t('common.ng', 'NG')}
+                value={analyticsData.totals.ng.toLocaleString()}
+                tone="danger"
+              />
+              <MetricCard
+                label={t('common.ntf', 'NTF')}
+                value={analyticsData.totals.ntf.toLocaleString()}
+                tone="warning"
+              />
+              <MetricCard
+                label={t('reports.yieldRate', 'Yield Rate')}
+                value={`${analyticsData.totals.yieldRate}%`}
+                tone="info"
+              />
             </div>
 
             {/* Charts Row 1 */}
@@ -313,14 +359,14 @@ export default function CategoryAnalytics() {
                           labelLine={false}
                           label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
                           outerRadius={100}
-                          fill="#8884d8"
+                          fill={chartColor(0)}
                           dataKey="value"
                         >
                           {analyticsData.productionPieData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color || COLORS[index % COLORS.length]} />
+                            <Cell key={`cell-${index}`} fill={entry.color || chartColor(index)} />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(value: number) => value.toLocaleString()} />
+                        <Tooltip contentStyle={chartTooltipStyle} formatter={(value: number) => value.toLocaleString()} />
                       </RechartsPie>
                     </ResponsiveContainer>
                   </div>
@@ -340,18 +386,19 @@ export default function CategoryAnalytics() {
                   <div className="h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={analyticsData.categoryData} layout="vertical">
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis type="number" domain={[0, 100]} unit="%" />
-                        <YAxis dataKey="code" type="category" width={80} />
-                        <Tooltip 
+                        <CartesianGrid {...chartGridProps} />
+                        <XAxis type="number" domain={[0, 100]} unit="%" tick={chartAxisTick} />
+                        <YAxis dataKey="code" type="category" width={80} tick={chartAxisTick} />
+                        <Tooltip
+                          contentStyle={chartTooltipStyle}
                           formatter={(value: number) => `${value}%`}
                           labelFormatter={(label) => analyticsData.categoryData.find(d => d.code === label)?.name || label}
                         />
-                        <Bar dataKey="yieldRate" name="Yield Rate">
+                        <Bar dataKey="yieldRate" name={t('reports.yieldRate', 'Yield Rate')}>
                           {analyticsData.categoryData.map((entry, index) => (
-                            <Cell 
-                              key={`cell-${index}`} 
-                              fill={entry.yieldRate >= 95 ? '#10b981' : entry.yieldRate >= 90 ? '#f59e0b' : '#ef4444'} 
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={entry.yieldRate >= 95 ? 'var(--success)' : entry.yieldRate >= 90 ? 'var(--warning)' : 'var(--destructive)'}
                             />
                           ))}
                         </Bar>
@@ -375,16 +422,17 @@ export default function CategoryAnalytics() {
                 <div className="h-[400px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={analyticsData.barChartData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip 
+                      <CartesianGrid {...chartGridProps} />
+                      <XAxis dataKey="name" tick={chartAxisTick} />
+                      <YAxis tick={chartAxisTick} />
+                      <Tooltip
+                        contentStyle={chartTooltipStyle}
                         labelFormatter={(label) => analyticsData.barChartData.find(d => d.name === label)?.fullName || label}
                       />
                       <Legend />
-                      <Bar dataKey="OK" stackId="a" fill="#10b981" name="OK" />
-                      <Bar dataKey="NG" stackId="a" fill="#ef4444" name="NG" />
-                      <Bar dataKey="NTF" stackId="a" fill="#f59e0b" name="NTF" />
+                      <Bar dataKey="OK" stackId="a" fill="var(--success)" name="OK" />
+                      <Bar dataKey="NG" stackId="a" fill="var(--destructive)" name="NG" />
+                      <Bar dataKey="NTF" stackId="a" fill="var(--warning)" name="NTF" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -398,45 +446,45 @@ export default function CategoryAnalytics() {
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left py-3 px-4">Category</th>
-                        <th className="text-right py-3 px-4">{t('common.total')}</th>
-                        <th className="text-right py-3 px-4">OK</th>
-                        <th className="text-right py-3 px-4">NG</th>
-                        <th className="text-right py-3 px-4">NTF</th>
-                        <th className="text-right py-3 px-4">Yield Rate</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('common.category', 'Category')}</TableHead>
+                        <TableHead className="text-right">{t('common.total')}</TableHead>
+                        <TableHead className="text-right">{t('common.ok', 'OK')}</TableHead>
+                        <TableHead className="text-right">{t('common.ng', 'NG')}</TableHead>
+                        <TableHead className="text-right">{t('common.ntf', 'NTF')}</TableHead>
+                        <TableHead className="text-right">{t('reports.yieldRate', 'Yield Rate')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {analyticsData.categoryData.map(cat => (
-                        <tr key={cat.id} className="border-b hover:bg-muted/50">
-                          <td className="py-3 px-4">
+                        <TableRow key={cat.id}>
+                          <TableCell>
                             <div className="flex items-center gap-2">
-                              <div 
-                                className="w-3 h-3 rounded-full" 
+                              <div
+                                className="w-3 h-3 rounded-full"
                                 style={{ backgroundColor: cat.color }}
                               />
                               <span className="font-medium">{cat.name}</span>
                               <Badge variant="outline" className="text-xs">{cat.code}</Badge>
                             </div>
-                          </td>
-                          <td className="text-right py-3 px-4 font-medium">{cat.total.toLocaleString()}</td>
-                          <td className="text-right py-3 px-4 text-green-500">{cat.ok.toLocaleString()}</td>
-                          <td className="text-right py-3 px-4 text-red-500">{cat.ng.toLocaleString()}</td>
-                          <td className="text-right py-3 px-4 text-orange-500">{cat.ntf.toLocaleString()}</td>
-                          <td className="text-right py-3 px-4">
-                            <Badge 
+                          </TableCell>
+                          <TableCell className="text-right font-medium">{cat.total.toLocaleString()}</TableCell>
+                          <TableCell className="text-right text-success">{cat.ok.toLocaleString()}</TableCell>
+                          <TableCell className="text-right text-destructive">{cat.ng.toLocaleString()}</TableCell>
+                          <TableCell className="text-right text-warning">{cat.ntf.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">
+                            <Badge
                               variant={cat.yieldRate >= 95 ? 'default' : cat.yieldRate >= 90 ? 'secondary' : 'destructive'}
                             >
                               {cat.yieldRate}%
                             </Badge>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               </CardContent>
             </Card>

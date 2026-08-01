@@ -4,20 +4,26 @@
  *
  * Idempotent: nếu code đã tồn tại → UPDATE; chưa có → INSERT. In ra modelId + code.
  *
- * Model thật: D:/16.AI/model.onnx = DINOv2-small
+ * Model DINOv2-small:
  *   input  pixel_values [1,3,224,224]
  *   output last_hidden_state [1,257,384]  (token 0 = CLS → embedding 384-dim)
  *   normalize: ImageNet (mean .485/.456/.406, std .229/.224/.225)
  *
  * Cách dùng:
  *   node scripts/ai-kb/register-dinov2.mjs
- *   DINOV2_MODEL_PATH=D:/16.AI/model.onnx node scripts/ai-kb/register-dinov2.mjs
+ *   AI_DINOV2_MODEL_PATH=/abs/or/repo-relative/model.onnx node scripts/ai-kb/register-dinov2.mjs
  *
- * ENV:
- *   DATABASE_URL        (bắt buộc)
- *   DINOV2_MODEL_PATH   (mặc định D:/16.AI/model.onnx) — đường ABSOLUTE tới .onnx
- *   DINOV2_MODEL_CODE   (mặc định "dinov2-small")
- *   DINOV2_EMBED_DIM    (mặc định 384) — D của last_hidden_state
+ * ENV (AOI-A — đường dẫn model CẤU HÌNH ĐƯỢC, không còn hardcode absolute):
+ *   DATABASE_URL          (bắt buộc)
+ *   AI_DINOV2_MODEL_PATH  đường tới .onnx (absolute HOẶC relative theo repo root).
+ *                         Mặc định: models/dinov2.onnx (thư mục models/ trong repo).
+ *   DINOV2_MODEL_PATH     alias LEGACY — vẫn đọc để backward-compat.
+ *   DINOV2_MODEL_CODE     (mặc định "dinov2-small")
+ *   DINOV2_EMBED_DIM      (mặc định 384) — D của last_hidden_state
+ *
+ * Honest-degradation: nếu file model KHÔNG tồn tại tại đường dẫn cấu hình → script VẪN
+ * đăng ký row ai_models nhưng để status="INACTIVE" + cảnh báo rõ (loader sẽ degrade sang
+ * text-of-image/heuristic). KHÔNG bịa model. Có file → status="ACTIVE".
  */
 
 import fs from "node:fs";
@@ -53,13 +59,25 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-const MODEL_PATH = process.env.DINOV2_MODEL_PATH ?? "D:/SOURCES/16.AI/model.onnx";
+// AOI-A — đường dẫn model cấu hình được (AI_DINOV2_MODEL_PATH → legacy → default repo-relative).
+const DEFAULT_MODEL_PATH = "models/dinov2.onnx";
+const RAW_MODEL_PATH =
+  process.env.AI_DINOV2_MODEL_PATH || process.env.DINOV2_MODEL_PATH || DEFAULT_MODEL_PATH;
+const MODEL_PATH = path.isAbsolute(RAW_MODEL_PATH)
+  ? RAW_MODEL_PATH
+  : path.resolve(PROJECT_ROOT, RAW_MODEL_PATH);
 const MODEL_CODE = process.env.DINOV2_MODEL_CODE ?? "dinov2-small";
 const EMBED_DIM = Number(process.env.DINOV2_EMBED_DIM ?? 384);
 
-if (!fs.existsSync(MODEL_PATH)) {
-  console.error(`ERROR: model file not found: ${MODEL_PATH}`);
-  process.exit(1);
+// Honest-degradation: file vắng → VẪN đăng ký nhưng INACTIVE (loader degrade sang tier khác).
+const MODEL_PRESENT = fs.existsSync(MODEL_PATH);
+const MODEL_STATUS = MODEL_PRESENT ? "ACTIVE" : "INACTIVE";
+if (!MODEL_PRESENT) {
+  console.warn(
+    `WARN: DINOv2 model file NOT found at ${MODEL_PATH} — registering row as INACTIVE. ` +
+      `Embedding will degrade honestly to text-of-image/heuristic until a real .onnx is placed ` +
+      `at the configured AI_DINOV2_MODEL_PATH (default ${DEFAULT_MODEL_PATH}). No model fabricated.`,
+  );
 }
 
 const inputShape = [1, 3, 224, 224];
@@ -100,6 +118,7 @@ console.log("  B4 — Register DINOv2 ONNX embedding model");
 console.log("══════════════════════════════════════════════════════════════");
 console.log(`  code:     ${MODEL_CODE}`);
 console.log(`  filePath: ${MODEL_PATH}`);
+console.log(`  present:  ${MODEL_PRESENT}  → status: ${MODEL_STATUS}`);
 console.log(`  dim:      ${EMBED_DIM}  pooling: cls`);
 
 try {
@@ -121,7 +140,7 @@ try {
         "inputShape"     = ${sql.json(inputShape)},
         labels           = ${sql.json(labels)},
         "preprocessConfig" = ${sql.json(preprocessConfig)},
-        status           = ${"ACTIVE"},
+        status           = ${MODEL_STATUS},
         metadata         = ${sql.json(metadata)},
         "updatedAt"      = now()
       WHERE id = ${modelId}
@@ -138,7 +157,7 @@ try {
          ${"DINOv2-small ONNX — CLS-token visual embedding (B4 image search / B3 anomaly)."},
          ${"embedding"}, ${"ONNX"}, ${MODEL_PATH}, ${fileSize},
          ${sql.json(inputShape)}, ${sql.json(labels)}, ${sql.json(preprocessConfig)},
-         ${"ACTIVE"}, ${sql.json(metadata)})
+         ${MODEL_STATUS}, ${sql.json(metadata)})
       RETURNING id
     `;
     modelId = row.id;

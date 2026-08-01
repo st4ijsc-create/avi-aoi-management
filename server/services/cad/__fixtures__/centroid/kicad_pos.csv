@@ -1,0 +1,8 @@
+# KiCad Pick and Place file (units mm) — this comment line is ignored
+### Module positions - created 2026-07-05
+Ref,Val,Package,PosX,PosY,Rot,Side
+"R1","10K","R_0402_1005Metric",10.5000,20.0000,0.0000,top
+
+"R2","4K7","R_0402_1005Metric",15.5000,20.0000,90.0000,top
+"U1","STM32","QFN-48",30.0000,40.0000,270.0000,top
+"J1","CONN,2P","Header_1x02",5.0000,5.0000,0.0000,bottom

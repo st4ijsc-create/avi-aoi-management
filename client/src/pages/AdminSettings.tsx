@@ -1,6 +1,7 @@
-import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
@@ -56,8 +57,8 @@ import { BackupRestorePageContent } from "@/pages/BackupRestore";
 
 export default function AdminSettings() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { hasPermission, loading: permsLoading } = usePermissions();
+  const canView = hasPermission("admin_system", "canView");
 
   const search = useSearch();
   const [location, setLocation] = useLocation();
@@ -97,7 +98,17 @@ export default function AdminSettings() {
     onError: (error) => toast.error(error.message),
   });
 
-  if (!isAdmin) {
+  if (permsLoading) {
+    return (
+      <DashboardLayout title={t("adminSettings.title")} navItems={navItems} currentPath="/admin-setting">
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canView) {
     return (
       <DashboardLayout title={t("adminSettings.title")} navItems={navItems} currentPath="/admin-setting">
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
@@ -170,22 +181,18 @@ export default function AdminSettings() {
 
   return (
     <DashboardLayout title={t("adminSettings.title")} navItems={navItems} currentPath="/admin-setting">
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Settings className="h-6 w-6 text-primary" />
-              {t("adminSettings.title")}
-            </h1>
-            <p className="text-muted-foreground">{t("adminSettings.description")}</p>
-          </div>
-        </div>
+      <PageContainer>
+        <PageHeader
+          icon={<Settings className="h-6 w-6" />}
+          title={t("adminSettings.title")}
+          description={t("adminSettings.description")}
+        />
 
         <ErrorBoundary>
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <div className="flex gap-6">
               {/* Vertical Sidebar Navigation */}
-              <div className="w-64 shrink-0 space-y-1">
+              <div className="hidden" data-legacy-hub-menu="true">
                 {/* Overview button */}
                 <button
                   onClick={() => handleTabChange("overview")}
@@ -436,7 +443,7 @@ export default function AdminSettings() {
             </div>
           </Tabs>
         </ErrorBoundary>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

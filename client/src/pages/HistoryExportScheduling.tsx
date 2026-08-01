@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
+import { PageHeader, MetricCard, StatusBadge } from '@/components/patterns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,11 +18,15 @@ import { toast } from 'sonner';
 import {
   Calendar, Clock, Download, Mail, Plus, Play, Pause, Trash2,
   Edit, CheckCircle, XCircle, AlertTriangle, FileSpreadsheet,
-  FileJson, FileText, RefreshCw, History, Send, Settings, Eye
+  FileCode, FileText, RefreshCw, History, Send, Settings, Eye
 } from 'lucide-react';
+import { Link } from 'wouter';
 
 type ScheduleType = 'DAILY' | 'WEEKLY' | 'MONTHLY';
-type ExportFormat = 'CSV' | 'JSON' | 'EXCEL' | 'PDF';
+// doc 32 item 9 — honest format list: the scheduler (reportScheduler +
+// scheduledReportService) only ever generates HTML (email body), PDF or Excel.
+// The old CSV/JSON options were a lie — the server silently mapped them to HTML.
+type ExportFormat = 'HTML' | 'EXCEL' | 'PDF';
 type TimeRangeType = 'LAST_24H' | 'LAST_7D' | 'LAST_30D' | 'LAST_MONTH' | 'CUSTOM';
 type ResultFilter = 'ALL' | 'OK' | 'NG' | 'NTF';
 
@@ -64,7 +69,8 @@ interface ExportLog {
 
 // Map server scheduled report to client Schedule interface
 function mapServerToSchedule(server: any): Schedule {
-  const formatMap: Record<string, ExportFormat> = { HTML: 'CSV', PDF: 'PDF', EXCEL: 'EXCEL' };
+  // 1:1 with the server truth (no more HTML→CSV cover-up).
+  const formatMap: Record<string, ExportFormat> = { HTML: 'HTML', PDF: 'PDF', EXCEL: 'EXCEL' };
   return {
     id: server.id,
     name: server.name,
@@ -73,7 +79,7 @@ function mapServerToSchedule(server: any): Schedule {
     scheduleTime: server.scheduleTime ?? '08:00',
     scheduleDayOfWeek: server.scheduleDayOfWeek ?? undefined,
     scheduleDayOfMonth: server.scheduleDayOfMonth ?? undefined,
-    exportFormat: formatMap[server.reportFormat] ?? 'CSV',
+    exportFormat: formatMap[server.reportFormat] ?? 'HTML',
     resultFilter: 'ALL',
     timeRangeType: 'LAST_24H',
     recipients: server.recipients ?? [],
@@ -115,7 +121,9 @@ const DAYS_OF_WEEK = [
   { value: 6, labelKey: 'reports.saturday' },
 ];
 
-export default function HistoryExportScheduling() {
+// doc 60 G — body without DashboardLayout so it embeds in the Reporting Studio Export
+// group. Default export below keeps the standalone /history-export-scheduling route.
+export function HistoryExportContent() {
   const { t } = useTranslation();
   // tRPC queries & mutations
   const utils = trpc.useUtils();
@@ -178,7 +186,7 @@ export default function HistoryExportScheduling() {
     description: '',
     scheduleType: 'DAILY',
     scheduleTime: '08:00',
-    exportFormat: 'CSV',
+    exportFormat: 'HTML',
     resultFilter: 'ALL',
     timeRangeType: 'LAST_24H',
     recipients: [],
@@ -207,13 +215,13 @@ export default function HistoryExportScheduling() {
   const getStatusBadge = (status?: string) => {
     switch (status) {
       case 'SUCCESS':
-        return <Badge className="bg-green-500/20 text-green-400 border-green-500/30"><CheckCircle className="w-3 h-3 mr-1" />{t('reports.success')}</Badge>;
+        return <StatusBadge status="SUCCESS" tone="success" label={<><CheckCircle aria-hidden="true" className="w-3 h-3 mr-1 inline" />{t('reports.success')}</>} />;
       case 'FAILED':
-        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><XCircle className="w-3 h-3 mr-1" />{t('reports.failed')}</Badge>;
+        return <StatusBadge status="FAILED" tone="error" label={<><XCircle aria-hidden="true" className="w-3 h-3 mr-1 inline" />{t('reports.failed')}</>} />;
       case 'RUNNING':
-        return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30"><RefreshCw className="w-3 h-3 mr-1 animate-spin" />{t('reports.running')}</Badge>;
+        return <StatusBadge status="RUNNING" tone="info" label={<><RefreshCw aria-hidden="true" className="w-3 h-3 mr-1 inline animate-spin" />{t('reports.running')}</>} />;
       case 'PENDING':
-        return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="w-3 h-3 mr-1" />{t('reports.pending')}</Badge>;
+        return <StatusBadge status="PENDING" tone="warning" label={<><Clock aria-hidden="true" className="w-3 h-3 mr-1 inline" />{t('reports.pending')}</>} />;
       default:
         return <Badge variant="outline">-</Badge>;
     }
@@ -221,15 +229,18 @@ export default function HistoryExportScheduling() {
 
   const getFormatIcon = (format: ExportFormat) => {
     switch (format) {
-      case 'CSV':
       case 'EXCEL':
         return <FileSpreadsheet className="h-4 w-4" />;
-      case 'JSON':
-        return <FileJson className="h-4 w-4" />;
+      case 'HTML':
+        return <FileCode className="h-4 w-4" />;
       case 'PDF':
         return <FileText className="h-4 w-4" />;
     }
   };
+
+  // Extension shown in the email-preview attachment card (honest per format).
+  const formatExt = (format: ExportFormat) =>
+    format === 'EXCEL' ? 'xlsx' : format === 'PDF' ? 'pdf' : 'html';
 
   const handleToggleActive = (id: number) => {
     const schedule = schedules.find(s => s.id === id);
@@ -268,7 +279,8 @@ export default function HistoryExportScheduling() {
   };
 
   const mapFormToServer = (data: Partial<Schedule>) => {
-    const formatMap: Record<string, string> = { CSV: 'HTML', JSON: 'HTML', EXCEL: 'EXCEL', PDF: 'PDF' };
+    // 1:1 map — every option here is a format the scheduler actually produces.
+    const formatMap: Record<string, string> = { HTML: 'HTML', EXCEL: 'EXCEL', PDF: 'PDF' };
     return {
       name: data.name!,
       description: data.description,
@@ -277,7 +289,7 @@ export default function HistoryExportScheduling() {
       scheduleDayOfWeek: data.scheduleDayOfWeek,
       scheduleDayOfMonth: data.scheduleDayOfMonth,
       recipients: data.recipients ?? [],
-      reportFormat: (formatMap[data.exportFormat ?? 'CSV'] ?? 'HTML') as 'HTML' | 'PDF' | 'EXCEL',
+      reportFormat: (formatMap[data.exportFormat ?? 'HTML'] ?? 'HTML') as 'HTML' | 'PDF' | 'EXCEL',
       includeWorkstationHeatmap: data.includeImages ?? false,
       includeTopNGPoints: data.includeAnnotations ?? true,
       includeTrendChart: data.includeMeasurements ?? true,
@@ -328,7 +340,7 @@ export default function HistoryExportScheduling() {
       description: '',
       scheduleType: 'DAILY',
       scheduleTime: '08:00',
-      exportFormat: 'CSV',
+      exportFormat: 'HTML',
       resultFilter: 'ALL',
       timeRangeType: 'LAST_24H',
       recipients: [],
@@ -347,57 +359,52 @@ export default function HistoryExportScheduling() {
   };
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Calendar className="h-6 w-6" />
-              {t('reports.autoExportSchedule')}
-            </h1>
-            <p className="text-muted-foreground">
-              {t('reports.autoExportDescription')}
-            </p>
-          </div>
-          <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
-            <Plus className="h-4 w-4 mr-2" />
-            {t('reports.createNewSchedule')}
-          </Button>
-        </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <PageHeader
+          icon={<Calendar className="h-6 w-6" />}
+          title={t('reports.autoExportSchedule')}
+          description={t('reports.autoExportDescription')}
+          actions={
+            <div className="flex items-center gap-2">
+              {/* Consolidation (doc 32 item 9): both this page and /scheduled-reports
+                  drive the SAME report scheduler engine. Cross-link so they read
+                  as one surface. */}
+              <Link href="/scheduled-reports">
+                <Button variant="outline">
+                  <Settings className="h-4 w-4 mr-2" />
+                  {t('reports.openScheduledReports', 'Scheduled Reports')}
+                </Button>
+              </Link>
+              <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
+                <Plus className="h-4 w-4 mr-2" />
+                {t('reports.createNewSchedule')}
+              </Button>
+            </div>
+          }
+        />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>{t('reports.totalSchedules')}</CardDescription>
-              <CardTitle className="text-2xl">{schedules.length}</CardTitle>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>{t('reports.active')}</CardDescription>
-              <CardTitle className="text-2xl text-green-500">
-                {schedules.filter(s => s.isActive).length}
-              </CardTitle>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>{t('reports.success7days')}</CardDescription>
-              <CardTitle className="text-2xl text-blue-500">
-                {logs.filter(l => l.status === 'SUCCESS').length}
-              </CardTitle>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>{t('reports.failed7days')}</CardDescription>
-              <CardTitle className="text-2xl text-red-500">
-                {logs.filter(l => l.status === 'FAILED').length}
-              </CardTitle>
-            </CardHeader>
-          </Card>
+          <MetricCard
+            label={t('reports.totalSchedules')}
+            value={schedules.length}
+          />
+          <MetricCard
+            label={t('reports.active')}
+            value={schedules.filter(s => s.isActive).length}
+            tone="success"
+          />
+          <MetricCard
+            label={t('reports.success7days')}
+            value={logs.filter(l => l.status === 'SUCCESS').length}
+            tone="info"
+          />
+          <MetricCard
+            label={t('reports.failed7days')}
+            value={logs.filter(l => l.status === 'FAILED').length}
+            tone="error"
+          />
         </div>
 
         <Tabs defaultValue="schedules">
@@ -420,7 +427,7 @@ export default function HistoryExportScheduling() {
               </Card>
             ) : schedulesQuery.isError ? (
               <Card className="p-12 text-center">
-                <AlertTriangle className="h-12 w-12 mx-auto text-red-400 mb-4" />
+                <AlertTriangle className="h-12 w-12 mx-auto text-destructive mb-4" />
                 <h3 className="text-lg font-medium mb-2">{t('reports.loadError')}</h3>
                 <p className="text-muted-foreground mb-4">{schedulesQuery.error?.message}</p>
                 <Button onClick={() => schedulesQuery.refetch()} variant="outline">
@@ -447,7 +454,7 @@ export default function HistoryExportScheduling() {
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded-lg ${schedule.isActive ? 'bg-green-500/20' : 'bg-muted'}`}>
+                          <div className={`p-2 rounded-lg ${schedule.isActive ? 'bg-success/20' : 'bg-muted'}`}>
                             {getFormatIcon(schedule.exportFormat)}
                           </div>
                           <div>
@@ -468,23 +475,26 @@ export default function HistoryExportScheduling() {
                           <Button
                             variant="outline"
                             size="sm"
+                            aria-label={t('reports.runNow', 'Run now')}
                             onClick={() => handleRunNow(schedule)}
                           >
-                            <Play className="h-4 w-4" />
+                            <Play aria-hidden="true" className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
+                            aria-label={t('common.edit', 'Edit')}
                             onClick={() => openEditDialog(schedule)}
                           >
-                            <Edit className="h-4 w-4" />
+                            <Edit aria-hidden="true" className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
+                            aria-label={t('common.delete', 'Delete')}
                             onClick={() => handleDelete(schedule.id)}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 aria-hidden="true" className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>
@@ -560,7 +570,7 @@ export default function HistoryExportScheduling() {
                         {log.deliveredCount}/{log.recipientCount}
                       </TableCell>
                       <TableCell>{formatDate(log.startedAt)}</TableCell>
-                      <TableCell className="max-w-[200px] truncate text-red-400">
+                      <TableCell className="max-w-[200px] truncate text-destructive">
                         {log.errorMessage || '-'}
                       </TableCell>
                     </TableRow>
@@ -605,10 +615,9 @@ export default function HistoryExportScheduling() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="CSV">CSV</SelectItem>
-                      <SelectItem value="EXCEL">Excel</SelectItem>
-                      <SelectItem value="JSON">JSON</SelectItem>
+                      <SelectItem value="HTML">{t('reports.htmlEmail', 'HTML (Email)')}</SelectItem>
                       <SelectItem value="PDF">PDF</SelectItem>
+                      <SelectItem value="EXCEL">Excel</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -744,14 +753,14 @@ export default function HistoryExportScheduling() {
                     />
                   </div>
                   <div className="flex items-center justify-between">
-                    <Label className="font-normal">Annotations</Label>
+                    <Label className="font-normal">{t('reports.annotations', 'Annotations')}</Label>
                     <Switch
                       checked={formData.includeAnnotations}
                       onCheckedChange={(v) => setFormData({ ...formData, includeAnnotations: v })}
                     />
                   </div>
                   <div className="flex items-center justify-between">
-                    <Label className="font-normal">Measurements</Label>
+                    <Label className="font-normal">{t('reports.measurements', 'Measurements')}</Label>
                     <Switch
                       checked={formData.includeMeasurements}
                       onCheckedChange={(v) => setFormData({ ...formData, includeMeasurements: v })}
@@ -787,6 +796,8 @@ export default function HistoryExportScheduling() {
                       <Mail className="h-3 w-3" />
                       {email}
                       <button
+                        type="button"
+                        aria-label={t('common.remove', 'Remove')}
                         onClick={() => handleRemoveRecipient(email)}
                         className="ml-1 hover:text-destructive"
                       >
@@ -832,7 +843,7 @@ export default function HistoryExportScheduling() {
               <div className="bg-muted p-4 border-b space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-muted-foreground w-16">{t('reports.from')}:</span>
-                  <span className="text-sm">AVI/AOI Management System &lt;noreply@avi-aoi.system&gt;</span>
+                  <span className="text-sm">SYNAPSE &lt;noreply@avi-aoi.system&gt;</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-muted-foreground w-16">{t('reports.to')}:</span>
@@ -848,7 +859,7 @@ export default function HistoryExportScheduling() {
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-muted-foreground w-16">{t('reports.subject')}:</span>
                   <span className="text-sm font-medium">
-                    [AVI/AOI] {formData.name || t('reports.report')} - {new Date().toLocaleDateString('vi-VN')}
+                    [SYNAPSE] {formData.name || t('reports.report')} - {new Date().toLocaleDateString('vi-VN')}
                   </span>
                 </div>
               </div>
@@ -858,7 +869,7 @@ export default function HistoryExportScheduling() {
                 <div className="max-w-2xl mx-auto space-y-6">
                   {/* Logo/Header */}
                   <div className="text-center pb-4 border-b">
-                    <h2 className="text-xl font-bold text-primary">AVI/AOI Management System</h2>
+                    <h2 className="text-xl font-bold text-primary">SYNAPSE</h2>
                     <p className="text-sm text-muted-foreground">{t('reports.autoReport')}</p>
                   </div>
 
@@ -880,7 +891,7 @@ export default function HistoryExportScheduling() {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('reports.format')}:</span>
-                        <span>{formData.exportFormat || 'CSV'}</span>
+                        <span>{formData.exportFormat || 'HTML'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('reports.filterResults')}:</span>
@@ -903,8 +914,8 @@ export default function HistoryExportScheduling() {
                     <h3 className="font-semibold text-sm">{t('reports.includeContent')}</h3>
                     <div className="flex flex-wrap gap-2">
                       {formData.includeImages && <Badge variant="outline">{t('reports.images')}</Badge>}
-                      {formData.includeAnnotations && <Badge variant="outline">Annotations</Badge>}
-                      {formData.includeMeasurements && <Badge variant="outline">Measurements</Badge>}
+                      {formData.includeAnnotations && <Badge variant="outline">{t('reports.annotations', 'Annotations')}</Badge>}
+                      {formData.includeMeasurements && <Badge variant="outline">{t('reports.measurements', 'Measurements')}</Badge>}
                       {formData.includeSummaryStats && <Badge variant="outline">{t('reports.stats')}</Badge>}
                       {!formData.includeImages && !formData.includeAnnotations && !formData.includeMeasurements && !formData.includeSummaryStats && (
                         <span className="text-sm text-muted-foreground italic">{t('reports.noContentSelected')}</span>
@@ -921,16 +932,16 @@ export default function HistoryExportScheduling() {
                           <div className="text-2xl font-bold">1,234</div>
                           <div className="text-xs text-muted-foreground">{t('reports.total')}</div>
                         </div>
-                        <div className="bg-green-500/10 rounded p-3">
-                          <div className="text-2xl font-bold text-green-500">1,180</div>
+                        <div className="bg-success/10 rounded p-3">
+                          <div className="text-2xl font-bold text-success">1,180</div>
                           <div className="text-xs text-muted-foreground">OK</div>
                         </div>
-                        <div className="bg-red-500/10 rounded p-3">
-                          <div className="text-2xl font-bold text-red-500">54</div>
+                        <div className="bg-destructive/10 rounded p-3">
+                          <div className="text-2xl font-bold text-destructive">54</div>
                           <div className="text-xs text-muted-foreground">NG</div>
                         </div>
-                        <div className="bg-blue-500/10 rounded p-3">
-                          <div className="text-2xl font-bold text-blue-500">95.6%</div>
+                        <div className="bg-info/10 rounded p-3">
+                          <div className="text-2xl font-bold text-info">95.6%</div>
                           <div className="text-xs text-muted-foreground">{t('reports.okRate')}</div>
                         </div>
                       </div>
@@ -939,10 +950,10 @@ export default function HistoryExportScheduling() {
 
                   {/* Attachment Info */}
                   <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                    {getFormatIcon(formData.exportFormat || 'CSV')}
+                    {getFormatIcon(formData.exportFormat || 'HTML')}
                     <div>
                       <p className="text-sm font-medium">
-                        {formData.name || 'report'}_{new Date().toISOString().split('T')[0]}.{(formData.exportFormat || 'CSV').toLowerCase()}
+                        {formData.name || 'report'}_{new Date().toISOString().split('T')[0]}.{formatExt(formData.exportFormat || 'HTML')}
                       </p>
                       <p className="text-xs text-muted-foreground">{t('reports.attachment')}</p>
                     </div>
@@ -977,6 +988,14 @@ export default function HistoryExportScheduling() {
           </DialogContent>
         </Dialog>
       </div>
+  );
+}
+
+// Standalone /history-export-scheduling route.
+export default function HistoryExportScheduling() {
+  return (
+    <DashboardLayout>
+      <HistoryExportContent />
     </DashboardLayout>
   );
 }

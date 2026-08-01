@@ -58,12 +58,17 @@ export interface ExportModule {
 }
 
 /**
- * Danh sách tất cả system modules
- * 
+ * Danh sách seed (nguồn) của tất cả system modules.
+ *
  * Module `isCore: true` luôn hoạt động kể cả khi không có license.
  * Module `isCore: false` chỉ hoạt động khi license có chứa module code tương ứng.
+ *
+ * U4b (doc 21 §6 / G-8): đây là SEED cho registry data-driven bên dưới. Mỗi manifest
+ * được đăng ký qua `registerModule` khi load, nên `SYSTEM_MODULES` được DERIVE từ
+ * registry (backward-compatible). Một module mới `registerModule(manifest)` thay vì
+ * sửa mảng này (register-and-go). Thứ tự đăng ký == thứ tự khai báo ở đây.
  */
-export const SYSTEM_MODULES: SystemModule[] = [
+const SEED_MODULES: SystemModule[] = [
   // ─── CORE MODULES (luôn bao gồm) ──────────────────────
   {
     code: "CORE_AUTH",
@@ -71,10 +76,15 @@ export const SYSTEM_MODULES: SystemModule[] = [
     description: "Đăng nhập, phân quyền, quản lý phiên, 2FA, hồ sơ cá nhân",
     version: "1.0.0",
     isCore: true,
-    routes: ["/login", "/setup", "/setup-admin", "/profile", "/change-password"],
+    routes: [
+      "/login", "/setup", "/setup-admin", "/profile", "/change-password",
+      // doc 36 — personal ("Me") read-open self-pages belong to the always-on CORE_AUTH app.
+      "/inbox", "/today", "/operator", "/maintenance-home", "/supervisor-home",
+      "/viewer-home", "/request-role", "/about-system",
+    ],
     permissionCategories: [],
     features: [],
-    navGroupId: undefined,
+    navGroupId: "me",
   },
   {
     code: "CORE_DASHBOARD",
@@ -82,7 +92,11 @@ export const SYSTEM_MODULES: SystemModule[] = [
     description: "Bảng điều khiển chính, drill-down analysis, custom dashboard, templates, marketplace",
     version: "1.0.0",
     isCore: true,
-    routes: ["/", "/dashboard", "/drill-down", "/custom-dashboard", "/dashboard-templates", "/template-marketplace", "/dashboard-marketplace"],
+    routes: [
+      "/", "/dashboard", "/drill-down", "/command-center", "/ops-console", "/andon",
+      "/predictive-alerts", "/dashboard-center",
+      "/custom-dashboard", "/dashboard-templates", "/template-marketplace", "/dashboard-marketplace",
+    ],
     permissionCategories: ["dashboard"],
     features: [
       { code: "DASHBOARD_VIEW", name: "Xem Dashboard", featureType: "boolean", defaultValue: "true" },
@@ -90,7 +104,7 @@ export const SYSTEM_MODULES: SystemModule[] = [
       { code: "DASHBOARD_DRILLDOWN", name: "Drill-Down Chi tiết", featureType: "boolean", defaultValue: "true" },
       { code: "DASHBOARD_TEMPLATES", name: "Mẫu Dashboard", featureType: "boolean", defaultValue: "true" },
     ],
-    navGroupId: "dashboard",
+    navGroupId: "overview",
   },
   {
     code: "CORE_SETTINGS",
@@ -119,7 +133,16 @@ export const SYSTEM_MODULES: SystemModule[] = [
     description: "Quản trị hệ thống, quản lý user, role, audit, license, backup, sessions, user assignments",
     version: "1.0.0",
     isCore: true,
-    routes: ["/admin", "/users", "/role-builder", "/enhanced-audit", "/audit-logs", "/api-docs", "/user-guide", "/license", "/backup-restore", "/sessions", "/user-assignments"],
+    routes: [
+      "/admin", "/admin-home", "/users", "/role-builder",
+      "/enhanced-audit", "/audit-logs", "/command-audit",
+      "/api-docs", "/api-keys", "/user-guide", "/license",
+      "/backup-restore", "/sessions", "/user-assignments",
+      "/admin-setting", "/import-export", "/synapse-platform",
+      // doc 36 W3 — the modules marketplace is the UPSELL target; keep it core so a
+      // license-blocked user can always reach it to upgrade (never a lock-out trap).
+      "/modules",
+    ],
     permissionCategories: ["admin"],
     features: [
       { code: "ADMIN_USERS", name: "QL Người dùng", featureType: "boolean", defaultValue: "true" },
@@ -156,11 +179,23 @@ export const SYSTEM_MODULES: SystemModule[] = [
     version: "1.0.0",
     isCore: false,
     routes: [
-      "/machine-status", "/machine-registration",
+      // doc 36 — full "Giám sát máy" app surface. Absorbs alerts (D3: MOD_ALERTS folded here).
+      // doc 39 Wave 4 — /connectivity is the MQTT/UNS hub (the /mqtt-* + /uns-mapping routes
+      // below now redirect into its tabs). It MUST be owned here so the hub nav row resolves
+      // to the Devices app under scopeGroupsToApp (otherwise it's silently dropped).
+      "/connectivity",
+      // doc 44 W3-B4 (G5.10) — Line View HMI (LDS-L5 Ch.4.2): giám sát tuyến + lệnh tuyến
+      // (mutation tự gate actuationProcedure server-side) → app Giám sát máy.
+      "/line-view",
+      "/device-monitor", "/machine-status", "/machine-registration",
+      "/machine-onboarding", "/aoi-onboarding",
       "/mqtt-dashboard", "/mqtt-clients", "/mqtt-topics", "/mqtt-replay",
-      "/mqtt-profiles", "/mqtt-bulletin", "/mqtt-ng-rate",
-      "/oee-dashboard", "/machine-health",
-      "/workstation-management",
+      "/mqtt-profiles", "/mqtt-bulletin", "/mqtt-ng-rate", "/mqtt-alerts",
+      "/oee-dashboard", "/machine-health", "/factory-live-map", "/field-devices",
+      "/device-adapters", "/uns-mapping", "/hot-folders", "/edge-nodes",
+      "/system-health", "/digital-twin-center",
+      "/technician-copilot", "/work-orders",
+      "/alerts", "/monitoring-setting",
     ],
     permissionCategories: ["machine_monitoring", "mqtt", "analytics"],
     features: [
@@ -183,15 +218,15 @@ export const SYSTEM_MODULES: SystemModule[] = [
       { code: "ANALYTICS_MACHINE_HEALTH", name: "Sức khỏe Máy", featureType: "boolean", defaultValue: "true" },
       { code: "ANALYTICS_WORKSTATION", name: "Analytics Trạm Làm việc", featureType: "boolean", defaultValue: "true" },
     ],
-    navGroupId: "monitoring",
+    navGroupId: "devices",
   },
   {
     code: "MOD_ALERTS",
-    name: "Alert Management",
-    description: "Cảnh báo, quy tắc cảnh báo MQTT, cảnh báo dự đoán, mục tiêu OEE",
+    name: "Alert Management (deprecated)",
+    description: "DEPRECATED (doc 36 D3): gộp vào MOD_MONITORING (alerts/mqtt-alerts) + MOD_ANALYTICS (oee-target-settings). Giữ đăng ký để tương thích license cũ; không sở hữu route nào.",
     version: "1.0.0",
     isCore: false,
-    routes: ["/alerts", "/mqtt-alerts", "/predictive-alerts", "/oee-target-settings"],
+    routes: [],
     permissionCategories: ["mqtt", "analytics"],
     features: [
       { code: "MQTT_ALERTS", name: "Cảnh báo MQTT", featureType: "boolean", defaultValue: "true" },
@@ -206,7 +241,15 @@ export const SYSTEM_MODULES: SystemModule[] = [
     description: "Lệnh sản xuất, lịch sử kiểm tra, AOI packages, lịch trình xuất dữ liệu, quản lý quy trình",
     version: "1.0.0",
     isCore: false,
-    routes: ["/production-orders", "/history", "/aoi-packages", "/history-export-scheduling", "/production-scheduling", "/inspection", "/process-management"],
+    routes: [
+      // doc 36 — full "Sản xuất (MES)" app. Absorbs MES/twin/trace + feeder/routing (from devices) + product-comparison (from analytics) + bom (from OT).
+      "/production-dashboard", "/mes-control-tower", "/wip-dashboard",
+      "/traceability", "/digital-twin",
+      "/history", "/inspection", "/aoi-packages", "/product-comparison",
+      "/production-orders", "/production-scheduling", "/production-signoff",
+      "/history-export-scheduling", "/bom-management",
+      "/routing-master", "/feeder-verify",
+    ],
     permissionCategories: ["production", "history", "reports"],
     features: [
       // Production
@@ -239,14 +282,15 @@ export const SYSTEM_MODULES: SystemModule[] = [
     version: "1.0.0",
     isCore: false,
     routes: [
-      "/reports", "/scheduled-reports", "/category-analytics",
-      "/spc-analysis", "/spc-advanced", "/correlation-analysis",
-      "/quality-gates", "/pareto-analysis", "/quality-gate-templates",
-      "/annotation-statistics", "/annotation-comparison",
-      "/defect-heatmap", "/defect-prediction", "/root-cause-analysis",
-      "/pdf-reports", "/data-comparison", "/report-builder",
-      "/powerpoint-export", "/enhanced-scheduled-reports",
-      "/product-comparison", "/test-annotation",
+      // doc 36 D1 — quality routes (spc/pareto/gates/annotation/heatmap/prediction/root-cause/
+      // nonconformance/threshold-approvals) MOVED to MOD_QUALITY. product-comparison → MOD_PRODUCTION.
+      // engineering-changes (ECN) → MOD_ENGINEERING. This app = reporting + cross-analysis + energy.
+      "/reports", "/scheduled-reports", "/enhanced-scheduled-reports",
+      "/report-builder", "/category-analytics", "/correlation-analysis",
+      "/data-comparison", "/realtime-report",
+      "/energy-analytics", "/carbon-dashboard",
+      "/pdf-reports", "/powerpoint-export",
+      "/oee-target-settings", "/analytics-setting",
       // NOTE: AI routes (/ai-performance, /ai-batch-jobs, /ai-ab-testing,
       // /ai-monitoring, /model-versions, ...) đã chuyển sang module MOD_AI.
     ],
@@ -280,7 +324,13 @@ export const SYSTEM_MODULES: SystemModule[] = [
     description: "Quản lý sản phẩm, product mapping, factory layout, cài đặt dữ liệu, import/export, thiết bị, điểm đo, workstation",
     version: "1.0.0",
     isCore: false,
-    routes: ["/products", "/product-mapping", "/layout", "/datasettings", "/import-export"],
+    routes: [
+      // 2026-07-11 — surface của app "Quản lý dữ liệu" riêng (tách khỏi app Quản trị,
+      // thay quyết định D5 doc 36). import-export → CORE_ADMIN.
+      "/master-data", "/operator-badges", "/component-library",
+      "/products", "/product-onboarding", "/product-mapping",
+      "/layout", "/workstation-management", "/process-management", "/datasettings",
+    ],
     permissionCategories: ["settings"],
     features: [
       { code: "SETTINGS_PRODUCTS", name: "QL Sản phẩm", featureType: "boolean", defaultValue: "true" },
@@ -302,12 +352,15 @@ export const SYSTEM_MODULES: SystemModule[] = [
     version: "1.0.0",
     isCore: false,
     routes: [
-      "/ai-hub", "/ai-chat", "/ai-quality-gate", "/ai-active-learning",
+      "/ai-hub", "/ai-chat", "/management-insight", "/ai-brain",
+      "/ai-quality-gate", "/ai-active-learning",
       "/ai-image-search", "/ai-reports", "/ai-time-series", "/ai-data-processing",
       "/ai-performance", "/ai-batch-jobs", "/ai-ab-testing", "/ai-monitoring",
-      "/ai-models", "/model-versions", "/ai-settings",
+      "/ai-models", "/model-versions", "/ai-settings", "/robot-model-health",
       "/ai-inspection-analytics", "/ai-advanced-vision-lab",
       "/ai-gguf-models", "/ai-local-kb", "/mask-annotation",
+      // doc 22 P3 — AI cockpits that previously escaped the registry (license bypass).
+      "/anomaly-banks", "/causal-graph",
     ],
     permissionCategories: ["analytics"],
     features: [
@@ -323,11 +376,14 @@ export const SYSTEM_MODULES: SystemModule[] = [
       { code: "AI_MONITORING", name: "Giám sát Model (drift)", featureType: "boolean", defaultValue: "true" },
       { code: "AI_LOCAL_KB", name: "Knowledge Base cục bộ (RAG)", featureType: "boolean", defaultValue: "true" },
       { code: "AI_GGUF_LOCAL_LLM", name: "Local LLM (GGUF)", featureType: "boolean", defaultValue: "true" },
+      // doc 22 P3 — feature entries clarifying the newly-gated AI cockpits.
+      { code: "AI_ANOMALY_BANKS", name: "Anomaly Banks", featureType: "boolean", defaultValue: "true" },
+      { code: "AI_CAUSAL_GRAPH", name: "Causal Graph Editor", featureType: "boolean", defaultValue: "true" },
       // Limits
       { code: "MAX_AI_MODELS", name: "Giới hạn Model AI", featureType: "limit", defaultValue: "999" },
       { code: "MAX_AI_BATCH_JOBS", name: "Giới hạn Batch Job", featureType: "limit", defaultValue: "100" },
     ],
-    navGroupId: "ai-analytics",
+    navGroupId: "ai",
   },
   {
     code: "MOD_OT_CONTROL",
@@ -335,7 +391,15 @@ export const SYSTEM_MODULES: SystemModule[] = [
     description: "Kết nối & điều khiển thiết bị OT: Andon, device adapters (OPC-UA/Modbus/S7/...), recipes, interlock an toàn, command audit, BOM/material. Mọi lệnh ghi đi qua HITL + interlock + audit append-only.",
     version: "1.0.0",
     isCore: false,
-    routes: ["/andon", "/device-adapters", "/recipes", "/interlock-rules", "/command-audit", "/bom-management"],
+    routes: [
+      // doc 36 D2 — authoring/programming (engineering/recipes/ir/pou/copilot/orchestration) SPLIT
+      // to MOD_ENGINEERING. This module keeps the DEVICE-CONTROL / safety / fleet / twin-cell surface.
+      // (andon→CORE_DASHBOARD, device-adapters→MOD_MONITORING, command-audit→CORE_ADMIN, bom→MOD_PRODUCTION.)
+      "/interlock-rules", "/fleet-orchestration", "/safety-workforce",
+      "/equipment-standards", "/equipment-integration",
+      "/factory-floor-editor", "/control-plane", "/robot-control",
+      "/rf-test-cell", "/cell-twin",
+    ],
     permissionCategories: ["machine_control", "andon", "interlock", "mes_bom"],
     features: [
       { code: "OT_ANDON", name: "Andon Board", featureType: "boolean", defaultValue: "true" },
@@ -344,11 +408,17 @@ export const SYSTEM_MODULES: SystemModule[] = [
       { code: "OT_INTERLOCK", name: "Interlock Rules", featureType: "boolean", defaultValue: "true" },
       { code: "OT_COMMAND_AUDIT", name: "Command Audit Log", featureType: "boolean", defaultValue: "true" },
       { code: "OT_MES_BOM", name: "BOM/Material Management", featureType: "boolean", defaultValue: "true" },
+      // doc 22 P3 — feature entries clarifying the newly-gated automation cockpits.
+      { code: "OT_FLEET_ORCHESTRATION", name: "Fleet Orchestration", featureType: "boolean", defaultValue: "true" },
+      { code: "OT_SAFETY_WORKFORCE", name: "Safety & Workforce", featureType: "boolean", defaultValue: "true" },
+      { code: "OT_ENGINEERING_WORKSPACE", name: "Engineering Workspace", featureType: "boolean", defaultValue: "true" },
+      { code: "OT_ORCHESTRATION_STUDIO", name: "Orchestration Studio", featureType: "boolean", defaultValue: "true" },
+      { code: "OT_CELL_TWIN", name: "Cell Twin / RF Test Cell", featureType: "boolean", defaultValue: "true" },
       // OT control là quyền nhạy cảm — mặc định TẮT, license phải bật tường minh
       { code: "OT_DEVICE_WRITE", name: "Cho phép ghi lệnh thiết bị (nhạy cảm)", featureType: "boolean", defaultValue: "false" },
       { code: "MAX_DEVICE_ADAPTERS", name: "Giới hạn Device Adapter", featureType: "limit", defaultValue: "500" },
     ],
-    navGroupId: "ot-control",
+    navGroupId: "engineering",
   },
   {
     code: "MOD_FEDERATION",
@@ -356,7 +426,8 @@ export const SYSTEM_MODULES: SystemModule[] = [
     description: "Đăng ký & tổng hợp nhiều site (đa nhà máy): sites registry, enrollment, probe read-only; cross-site roll-up dashboard (F1+). Core CHỈ đọc — không điều khiển site.",
     version: "1.0.0",
     isCore: false,
-    routes: ["/sites", "/federation-dashboard", "/modules"],
+    // doc 36 W3 — /modules moved to CORE_ADMIN (always-reachable upsell page).
+    routes: ["/sites", "/federation-dashboard"],
     permissionCategories: ["admin"],
     features: [
       { code: "FEDERATION_SITES", name: "Sites Registry & Enrollment", featureType: "boolean", defaultValue: "true" },
@@ -366,7 +437,100 @@ export const SYSTEM_MODULES: SystemModule[] = [
     ],
     navGroupId: "admin",
   },
+  {
+    // doc 36 D1 — Quality split out of MOD_ANALYTICS so it is sellable on its own
+    // (khách chỉ cần QC không phải mua cả Analytics).
+    code: "MOD_QUALITY",
+    name: "Quality Management",
+    description: "Kiểm soát chất lượng: Quality Cockpit (SPC/Pareto/Heatmap/Gates/Annotation), golden-sample, defect catalog, repair station, NCR/MRB, threshold approvals, RCA lỗi, dự đoán lỗi",
+    version: "1.0.0",
+    isCore: false,
+    routes: [
+      "/quality-cockpit", "/quality-home", "/quality-gate-templates",
+      "/quality-gates", "/spc-analysis", "/spc-advanced", "/pareto-analysis",
+      "/annotation-statistics", "/annotation-comparison",
+      "/golden-samples", "/defect-catalog", "/measurement-point-health",
+      "/repair-station", "/defect-heatmap", "/defect-prediction",
+      "/root-cause-analysis", "/nonconformance", "/threshold-approvals",
+    ],
+    permissionCategories: ["history", "analytics", "annotations"],
+    features: [
+      { code: "QUALITY_COCKPIT", name: "Quality Cockpit", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_SPC", name: "Phân tích SPC", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_DEFECT_HEATMAP", name: "Heatmap Lỗi", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_DEFECT_PREDICTION", name: "Dự đoán Lỗi", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_ROOT_CAUSE", name: "Phân tích Nguyên nhân gốc", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_GOLDEN_SAMPLE", name: "Golden Sample", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_REPAIR_STATION", name: "Trạm Sửa chữa", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_NCR_MRB", name: "NCR / MRB", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_ANNOTATION", name: "Annotation", featureType: "boolean", defaultValue: "true" },
+    ],
+    navGroupId: "quality",
+  },
+  {
+    // doc 36 D2 — Engineering/Programming split out of MOD_OT_CONTROL so the
+    // authoring surface (lập trình) can be sold apart from sensitive OT device-control.
+    code: "MOD_ENGINEERING",
+    name: "Engineering & Programming",
+    description: "Lập trình & tác giả tự động hóa: Engineering Workspace, IR Editor, IEC-61131 POU Studio, Recipe, Orchestration Studio, AI Programming Copilot, Engineering Change (ECN)",
+    version: "1.0.0",
+    isCore: false,
+    routes: [
+      "/engineering-home", "/engineering", "/engineering-changes", "/recipes",
+      "/ir-editor", "/pou-studio", "/programming-copilot",
+      "/orchestration-studio",
+    ],
+    permissionCategories: ["machine_control", "machine_monitoring", "masterdata"],
+    features: [
+      { code: "ENG_WORKSPACE", name: "Engineering Workspace", featureType: "boolean", defaultValue: "true" },
+      { code: "ENG_IR_EDITOR", name: "IR Editor", featureType: "boolean", defaultValue: "true" },
+      { code: "ENG_POU_STUDIO", name: "POU Studio (IEC-61131)", featureType: "boolean", defaultValue: "true" },
+      { code: "ENG_RECIPES", name: "Recipe Management", featureType: "boolean", defaultValue: "true" },
+      { code: "ENG_ORCHESTRATION_STUDIO", name: "Orchestration Studio", featureType: "boolean", defaultValue: "true" },
+      { code: "ENG_PROGRAMMING_COPILOT", name: "AI Programming Copilot", featureType: "boolean", defaultValue: "true" },
+      { code: "ENG_CHANGE_ECN", name: "Engineering Change (ECN)", featureType: "boolean", defaultValue: "true" },
+    ],
+    navGroupId: "engineering",
+  },
 ];
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * U4b (doc 21 §6 / G-8) — DATA-DRIVEN module registry (mirrors ot/driverRegistry).
+ *
+ * `SEED_MODULES` is registered through `registerModule` at load; `SYSTEM_MODULES` is
+ * DERIVED from the registry so it stays backward-compatible (same array shape, same
+ * order). A new module registers its manifest instead of editing the seed array
+ * (register-and-go). Registering an existing `code` REPLACES that manifest in place
+ * (order preserved) so callers/derived lists never see duplicates.
+ * ════════════════════════════════════════════════════════════════════════════
+ */
+const moduleRegistry = new Map<string, SystemModule>();
+
+/**
+ * Register (or replace) a system-module manifest. Register-and-go: a new module needs
+ * only this call — no edit to the seed array. Replacing an existing `code` keeps its
+ * original position (Map preserves first-insertion order).
+ */
+export function registerModule(manifest: SystemModule): void {
+  moduleRegistry.set(manifest.code, manifest);
+}
+
+// ── Seed the registry with every declared module (parity with the old array). ──
+for (const m of SEED_MODULES) registerModule(m);
+
+/**
+ * Danh sách tất cả system modules (DERIVED từ registry — backward-compatible).
+ *
+ * LƯU Ý: đây là snapshot tại load-time để giữ nguyên hành vi cũ (một mảng const).
+ * Module đăng ký thêm sau load hiển thị qua `listModules()`.
+ */
+export const SYSTEM_MODULES: SystemModule[] = [...moduleRegistry.values()];
+
+/** Mọi module đã đăng ký (register-and-go view — phản ánh cả module thêm sau load). */
+export function listModules(): SystemModule[] {
+  return [...moduleRegistry.values()];
+}
 
 /**
  * Module codes cho tất cả core modules
@@ -388,24 +552,27 @@ export const OPTIONAL_MODULE_CODES = SYSTEM_MODULES
 export const ALL_MODULE_CODES = SYSTEM_MODULES.map(m => m.code);
 
 /**
- * Tra cứu module theo route path
+ * Tra cứu module theo route path (đọc live từ registry → thấy cả module đăng ký thêm).
  */
 export function getModuleByRoute(routePath: string): SystemModule | undefined {
-  return SYSTEM_MODULES.find(m => m.routes.includes(routePath));
+  // doc 36 — tolerate query strings so deep-link hrefs (e.g. "/quality-cockpit?tab=spc")
+  // resolve to their owning module for license gating + app resolution.
+  const path = (routePath || "").split("?")[0];
+  return listModules().find(m => m.routes.includes(path));
 }
 
 /**
- * Tra cứu module theo code
+ * Tra cứu module theo code (đọc trực tiếp từ registry Map — O(1)).
  */
 export function getModuleByCode(code: string): SystemModule | undefined {
-  return SYSTEM_MODULES.find(m => m.code === code);
+  return moduleRegistry.get(code);
 }
 
 /**
- * Tra cứu module theo nav group ID
+ * Tra cứu module theo nav group ID (đọc live từ registry).
  */
 export function getModuleByNavGroup(navGroupId: string): SystemModule | undefined {
-  return SYSTEM_MODULES.find(m => m.navGroupId === navGroupId);
+  return listModules().find(m => m.navGroupId === navGroupId);
 }
 
 /**
@@ -433,7 +600,7 @@ export function toExportFormat(productCode: string, appVersion: string = "1.0.0"
   return {
     productCode,
     version: appVersion,
-    modules: SYSTEM_MODULES.map(m => ({
+    modules: listModules().map(m => ({
       code: m.code,
       name: m.name,
       isCore: m.isCore,

@@ -1,16 +1,19 @@
 /**
- * Scheduled Report Service
- * 
- * Features:
- * - Schedule daily/weekly reports
- * - Generate report content (statistics summary)
- * - Send reports via email
- * - Store report history
+ * Scheduled Report Content Library
+ *
+ * doc 32 R4: this is NO LONGER a scheduler. The standalone setInterval loop
+ * (start/stop/checkAndRunReports/getDueReports/runReport) was RETIRED — the live
+ * scheduler is the node-cron `reportScheduler` (server/services/reportScheduler.ts).
+ *
+ * What remains here is a CONTENT LIBRARY consumed by the live path:
+ * - statistics / OEE / machine-health report content builders,
+ * - the branded HTML formatters,
+ * - previewReport / generateAndSendReport (used by reportScheduler + systemRouters).
  */
 
 import * as db from '../db';
 import { sendEmail } from '../_core/email';
-import { notifyOwner } from '../_core/notification';
+import { getFactoryTimezone, nextRunInZone } from '../utils/factoryTime';
 
 // Email template config interface - matches db schema
 interface EmailTemplateConfig {
@@ -53,6 +56,12 @@ export interface ScheduledReport {
   isEnabled: boolean;
   lastRunAt?: Date;
   nextRunAt?: Date;
+  /** Wall-clock fire time "HH:mm" in the FACTORY timezone (doc 27 A1). */
+  scheduleTime?: string;
+  /** 0 (Sunday) – 6, weekly schedules only. */
+  scheduleDayOfWeek?: number | null;
+  /** 1–31, monthly schedules only. */
+  scheduleDayOfMonth?: number | null;
   createdBy: number;
   createdAt: Date;
 }
@@ -156,129 +165,30 @@ export interface MachineHealthReportContent {
 }
 
 class ScheduledReportService {
-  private intervalId: NodeJS.Timeout | null = null;
-  private isRunning = false;
-
   /**
-   * Start the scheduler
+   * Compute the next scheduled run strictly after `after` (default: now).
+   *
+   * Doc 27 §6 A1 (P0): scheduleTime is a FACTORY-timezone wall-clock time.
+   * The old implementation used bare `new Date()` + setHours, i.e. the
+   * server/OS timezone — on a UTC host a "06:00 daily" report drifted to
+   * 06:00 UTC (13:00 Asia/Ho_Chi_Minh), the +7h manual-data-patch incident
+   * (doc 27 §6 A1). Now delegates to nextRunInZone, which evaluates
+   * the schedule on the factory wall clock (env FACTORY_TZ, default
+   * Asia/Ho_Chi_Minh) and returns the correct UTC instant, DST-safe.
    */
-  start(): void {
-    if (this.isRunning) {
-      console.log('[ScheduledReport] Scheduler already running');
-      return;
-    }
-
-    console.log('[ScheduledReport] Starting scheduler...');
-    this.isRunning = true;
-
-    // Check every hour for reports to run
-    this.intervalId = setInterval(() => {
-      this.checkAndRunReports();
-    }, 60 * 60 * 1000); // 1 hour
-
-    // Also run immediately on start
-    this.checkAndRunReports();
-  }
-
-  /**
-   * Stop the scheduler
-   */
-  stop(): void {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
-    this.isRunning = false;
-    console.log('[ScheduledReport] Scheduler stopped');
-  }
-
-  /**
-   * Check and run due reports
-   */
-  private async checkAndRunReports(): Promise<void> {
-    try {
-      const reports = await this.getDueReports();
-      
-      for (const report of reports) {
-        try {
-          await this.runReport(report);
-        } catch (err: any) {
-          console.error(`[ScheduledReport] Failed to run report ${report.id}:`, err.message);
-        }
-      }
-    } catch (err: any) {
-      console.error('[ScheduledReport] Error checking reports:', err.message);
-    }
-  }
-
-  /**
-   * Get reports that are due to run, queried from the database.
-   */
-  private async getDueReports(): Promise<ScheduledReport[]> {
-    const rows = await db.getReportsDueForSending();
-    return rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      type: (r.reportType ?? "statistics") as ReportType,
-      frequency: (r.schedule?.toLowerCase() ?? "daily") as ReportFrequency,
-      recipients: (r.recipients as string[]) ?? [],
-      isEnabled: r.isActive,
-      lastRunAt: r.lastSentAt ?? undefined,
-      nextRunAt: r.nextScheduledAt ?? undefined,
-      createdBy: r.createdBy,
-      createdAt: r.createdAt,
-    }));
-  }
-
-  /** Compute the next scheduled Date after now based on frequency + scheduleTime (HH:mm). */
-  private computeNextRun(frequency: ReportFrequency, scheduleTime: string): Date {
-    const [hh, mm] = (scheduleTime ?? "08:00").split(":").map(Number);
-    const next = new Date();
-    next.setSeconds(0, 0);
-    next.setHours(hh, mm);
-    switch (frequency) {
-      case "daily":
-        next.setDate(next.getDate() + 1);
-        break;
-      case "weekly":
-        next.setDate(next.getDate() + 7);
-        break;
-      case "monthly":
-        next.setMonth(next.getMonth() + 1);
-        break;
-    }
-    return next;
-  }
-
-  /**
-   * Run a specific report
-   */
-  async runReport(report: ScheduledReport): Promise<void> {
-    console.log(`[ScheduledReport] Running report: ${report.name}`);
-
-    const content = await this.generateReportContent(report);
-    const html = await this.formatReportHtml(content);
-
-    // Send to all recipients
-    for (const email of report.recipients) {
-      await sendEmail({
-        to: email,
-        subject: `[AVI/AOI] ${content.title}`,
-        html,
-      });
-    }
-
-    // Advance nextScheduledAt so this report is not re-triggered immediately
-    const nextRun = this.computeNextRun(report.frequency, "08:00");
-    await db.updateReportNextSchedule(report.id, nextRun);
-
-    // Also notify owner
-    await notifyOwner({
-      title: `Báo cáo tự động: ${report.name}`,
-      content: `Đã gửi báo cáo ${report.frequency} đến ${report.recipients.length} người nhận.\nTổng kiểm tra: ${content.summary.totalInspections}\nYield Rate: ${content.summary.yieldRate}%`,
+  private computeNextRun(
+    frequency: ReportFrequency,
+    scheduleTime: string,
+    opts?: { dayOfWeek?: number | null; dayOfMonth?: number | null; after?: Date },
+  ): Date {
+    return nextRunInZone({
+      frequency,
+      time: scheduleTime,
+      dayOfWeek: opts?.dayOfWeek,
+      dayOfMonth: opts?.dayOfMonth,
+      timeZone: getFactoryTimezone(),
+      after: opts?.after,
     });
-
-    console.log(`[ScheduledReport] Report sent to ${report.recipients.length} recipients. Next run: ${nextRun.toISOString()}`);
   }
 
   /**
@@ -405,7 +315,7 @@ class ScheduledReportService {
     const linkColor = templateConfig?.linkColor || '#2563eb';
     const fontFamily = templateConfig?.fontFamily || 'Arial, sans-serif';
     const headingFontFamily = templateConfig?.headingFontFamily || fontFamily;
-    const companyName = templateConfig?.companyName || 'AVI/AOI Factory Management System';
+    const companyName = templateConfig?.companyName || 'SYNAPSE';
     const logoUrl = templateConfig?.logoUrl;
     const footerText = templateConfig?.footerText || 'Báo cáo được tạo tự động bởi hệ thống';
     const copyrightText = templateConfig?.copyrightText || `© ${new Date().getFullYear()} ${companyName}`;
@@ -591,7 +501,7 @@ class ScheduledReportService {
     for (const email of params.recipients) {
       await sendEmail({
         to: email,
-        subject: `[AVI/AOI] ${content.title}`,
+        subject: `[SYNAPSE] ${content.title}`,
         html,
       });
     }
@@ -775,7 +685,7 @@ class ScheduledReportService {
     const primaryColor = templateConfig?.primaryColor || '#2563eb';
     const secondaryColor = templateConfig?.secondaryColor || '#1e40af';
     const backgroundColor = templateConfig?.backgroundColor || '#f0f9ff';
-    const companyName = templateConfig?.companyName || 'AVI/AOI Factory Management System';
+    const companyName = templateConfig?.companyName || 'SYNAPSE';
     const logoUrl = templateConfig?.logoUrl;
     const footerText = templateConfig?.footerText || 'Báo cáo được tạo tự động bởi hệ thống';
     
@@ -911,7 +821,7 @@ class ScheduledReportService {
     const primaryColor = templateConfig?.primaryColor || '#2563eb';
     const secondaryColor = templateConfig?.secondaryColor || '#1e40af';
     const backgroundColor = templateConfig?.backgroundColor || '#f0f9ff';
-    const companyName = templateConfig?.companyName || 'AVI/AOI Factory Management System';
+    const companyName = templateConfig?.companyName || 'SYNAPSE';
     const logoUrl = templateConfig?.logoUrl;
     const footerText = templateConfig?.footerText || 'Báo cáo được tạo tự động bởi hệ thống';
     

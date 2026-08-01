@@ -13,14 +13,17 @@ import { appRouter } from "../routers";
 import { getDb } from "../db";
 import { MACHINE_TYPES } from "../constants/machineTypes";
 import { createContext } from "./context";
+import { sendMachineProxyError, safeMachineLogMeta } from "./machineProxyError";
 import { isValidMasterKey } from "./masterKey";
 import { serveStatic, setupVite } from "./vite";
 import { initializeSocket } from "./socket";
 import { uploadGuard } from "./uploadValidation";
 import { startOfflineMonitor } from "./offlineMonitor";
 import { initializeEmailTransporter } from "./email";
-import { initializeScheduledReports, shutdownScheduledReports } from "../services/reportScheduler";
-import { initializeScheduledBackups, shutdownScheduledBackups } from "../services/backupSchedulerService";
+// W4-D (B7): initializeScheduledReports/Backups now start via backgroundJobs
+// (skipped when ROLE=api); only the shutdown hooks remain wired here.
+import { shutdownScheduledReports } from "../services/reportScheduler";
+import { shutdownScheduledBackups } from "../services/backupSchedulerService";
 import { initMqttBroker, shutdownMqttBroker, publishFactoryAlertUpdate } from "../services/mqttService";
 import { startAlertEvaluationJob, stopAlertEvaluationJob } from "../services/alertEvaluationService";
 import { startEscalationScheduler, stopEscalationScheduler } from "../services/alertEscalationService";
@@ -32,10 +35,14 @@ import { initializeLicenseSystem, licenseEnforcementMiddleware } from "../licens
 import { initializeRuntimeSecurity, shutdownRuntimeSecurity } from "../license/runtime-security";
 import { registerExternalInspectionRoutes } from "../routes/externalInspectionApi";
 import { registerAiStreamingRoutes } from "../routes/aiStreamingApi";
+import { registerOpenAiGateway } from "../routes/openaiGateway";
 import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
 import logger, { installConsoleBridge } from "../logger";
-import { createApiLimiter, createAuthLimiter } from "./rateLimitConfig";
+import { correlationRequestMiddleware } from "./correlationMiddleware";
+import { livenessProbe, readinessProbe } from "./healthProbes";
+import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, OT_INGEST_PATHS } from "./rateLimitConfig";
+import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
 
 // Chuẩn hoá log sang structured khi LOG_JSON=1 / LOG_BRIDGE_CONSOLE=1 (no-op nếu tắt).
 installConsoleBridge();
@@ -55,6 +62,15 @@ function parseLocalDate(dateStr: string, endOfDay = false): Date {
 }
 
 const HTTPS_ENABLED = process.env.HTTPS_ENABLED === "true";
+
+// W4-D (doc 27 §8 gap B7) — process role.
+//   ""       (default) → all-in-one: HTTP + socket + MQTT + ALL schedulers (unchanged)
+//   "api"              → HTTP/socket/MQTT/ingest only; cron-like schedulers are
+//                        SKIPPED (run them in the worker: `npm run start:worker`)
+//   "worker"           → schedulers only, no HTTP bind (delegates to
+//                        server/_core/backgroundJobs.runWorkerProcess)
+// Single-worker assumption: no leader election — run exactly ONE worker.
+const SERVER_ROLE = (process.env.ROLE ?? "").trim().toLowerCase();
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -76,6 +92,19 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  // W4-D (B7): ROLE=worker → scheduler-only process. Delegate BEFORE any
+  // express/socket/MQTT setup; the worker never binds HTTP.
+  if (SERVER_ROLE === "worker") {
+    const { runWorkerProcess } = await import("./backgroundJobs");
+    await runWorkerProcess();
+    return;
+  }
+  if (SERVER_ROLE && SERVER_ROLE !== "api") {
+    console.warn(
+      `[Role] Unknown ROLE="${process.env.ROLE}" — running all-in-one (expected "api" or "worker")`,
+    );
+  }
+
   // QW4 — Observability bootstrap (Sentry / OpenTelemetry). No-op unless the
   // corresponding env vars and packages are present. Must run before app init.
   try {
@@ -186,10 +215,10 @@ async function startServer() {
     }
 
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", 
-      "Content-Type, Authorization, x-api-key, x-machine-code, X-API-Key, X-Machine-Code, User-Agent, Content-Length, Accept, Origin");
-    res.setHeader("Access-Control-Expose-Headers", 
-      "Content-Length, Content-Type, ETag, X-Request-Id");
+    res.setHeader("Access-Control-Allow-Headers",
+      "Content-Type, Authorization, x-api-key, x-machine-code, X-API-Key, X-Machine-Code, User-Agent, Content-Length, Accept, Origin, x-correlation-id, traceparent");
+    res.setHeader("Access-Control-Expose-Headers",
+      "Content-Length, Content-Type, ETag, X-Request-Id, X-Correlation-Id");
     res.setHeader("Access-Control-Max-Age", "86400"); // 24 hours
 
     // Handle preflight OPTIONS requests
@@ -200,26 +229,84 @@ async function startServer() {
     next();
   });
 
+  // doc 44 W6-4 (G5.17) — correlation backbone: pick up x-correlation-id / traceparent
+  // from the client (or mint one) into AsyncLocalStorage so every downstream tRPC handler,
+  // command dispatch, genealogy write, and pino log line shares ONE id (nút bấm→lệnh→máy).
+  // Mount EARLY (before body parser + all routes). Additive, non-gated.
+  app.use(correlationRequestMiddleware());
+
   // Configure body parser with larger size limit for file uploads
   // Skip JSON parsing for raw binary upload routes (APK uploads etc.)
   const rawUploadPaths = ["/api/factory-alert/upload", "/api/aoi/upload/"];
+  // R-1 (doc 38): scope the 200MB ceiling to the routes that legitimately carry
+  // large base64/JSON bodies, and cap everything else at a sane default so a
+  // single oversized POST to a generic endpoint can't force a 200MB in-memory
+  // parse (memory-exhaustion DoS). Large-body prefixes:
+  //   /api/trpc/    — tRPC mutations incl. twin.models.uploadAndRegister /
+  //                   documents.upload (base64 files) and AOI package commit
+  //                   metadata. (The tRPC router is mounted at /api/trpc — the bare
+  //                   /trpc/ prefix never matched req.path, so large uploads were
+  //                   silently capped at DEFAULT and 413'd. doc 48 fix.)
+  //   /api/machine/ — machine REST proxies that embed base64 images
+  //                   (submit-inspection, upload-image, sync-*-image).
+  //   /api/ai/      — local-KB / streaming endpoints that accept an inline
+  //                   base64 image for the Qwen3-VL vision model.
+  // The OpenAI gateway (/v1) mounts its OWN json({limit: OPENAI_GATEWAY_BODY_LIMIT
+  // || "20mb"}); the default below is ≥ that so it is unaffected. Override the
+  // default with HTTP_BODY_LIMIT.
+  const LARGE_BODY_LIMIT = "200mb";
+  const DEFAULT_BODY_LIMIT = process.env.HTTP_BODY_LIMIT || "25mb";
+  const largeBodyPrefixes = ["/api/trpc/", "/trpc/", "/api/machine/", "/api/ai/"];
+  const bodyLimitFor = (p: string): string =>
+    largeBodyPrefixes.some((x) => p.startsWith(x)) ? LARGE_BODY_LIMIT : DEFAULT_BODY_LIMIT;
   app.use((req, res, next) => {
     if (rawUploadPaths.some((p) => req.path.startsWith(p))) return next();
-    express.json({ limit: "200mb" })(req, res, next);
+    express.json({ limit: bodyLimitFor(req.path) })(req, res, next);
   });
   app.use((req, res, next) => {
     if (rawUploadPaths.some((p) => req.path.startsWith(p))) return next();
-    express.urlencoded({ limit: "200mb", extended: true })(req, res, next);
+    express.urlencoded({ limit: bodyLimitFor(req.path), extended: true })(req, res, next);
   });
 
   // Security headers
   app.use(helmet({
-    contentSecurityPolicy: false, // Disable CSP as it's a SPA with inline scripts
+    contentSecurityPolicy: false, // CSP handled by securityHeaders.ts below (SEC_CSP_MODE, default off)
     crossOriginEmbedderPolicy: false, // Allow cross-origin resources for LAN devices
   }));
 
+  // W0-I (doc 44 G5.7a) — CSP theo SEC_CSP_MODE (off|report-only|enforce, default
+  // off = hành vi cũ) + Permissions-Policy/Referrer-Policy bổ sung (chỉ khi helmet
+  // chưa set). Mount NGAY SAU helmet. Fail-safe: lỗi wiring không chặn boot.
+  try {
+    const { securityHeadersMiddleware } = await import("./securityHeaders");
+    app.use(securityHeadersMiddleware());
+  } catch (err) {
+    console.error("[Security] headers middleware wiring failed:", (err as any)?.message || err);
+  }
+
   // Rate limiting for API endpoints
   const apiLimiter = createApiLimiter();
+  // doc 48 R3 — DEDICATED high-throughput OT telemetry ingest tier. Machine→server
+  // telemetry (POST /api/ot/ingest) is authenticated by a per-machine key, not a
+  // browser session, so it must NOT share the 300/60 browser bucket (a real benchmark
+  // hit that ceiling at ~2541 pts/s). Mount its own per-machine high limiter BEFORE
+  // the general /api limiter; the general limiter `skip`s these exact paths
+  // (OT_INGEST_PATHS) so the two never double-count. Tune via OT_INGEST_RATE_MAX.
+  const otIngestLimiter = createOtIngestLimiter();
+  app.use([...OT_INGEST_PATHS], otIngestLimiter);
+  // doc 51 R6 — DEDICATED machine data-plane tier (CASE #2/#9 mất dữ liệu). AVI/AOI
+  // machines submit inspections via /api/trpc/machineApi.* and /api/machine/*, which
+  // both rode the 300/60 BROWSER bucket; worse, a machine sending its key in the tRPC
+  // BODY (not a header) fell through to the IP key, so 100 machines behind ONE factory
+  // NAT shared ONE 300/min bucket against ~6000 req/min offered → ~95% 429. The 429
+  // fires here, BEFORE tRPC, so the inspection store-forward WAL cannot buffer it →
+  // inspections LOST. This limiter keys per machine credential (header/body/query) and
+  // raises the ceiling for credentialed machines only; keyless callers keep 300/min.
+  // Mounted BEFORE the general limiter, which `skip`s these exact requests (no
+  // double-counting). Tune via MACHINE_INGEST_RATE_MAX; RATE_LIMIT_BODY_KEY=false
+  // restores pre-R6 header-only keying.
+  const machineIngestLimiter = createMachineIngestLimiter();
+  app.use('/api/', machineIngestLimiter);
   app.use('/api/', apiLimiter);
   app.use('/trpc/', apiLimiter);
 
@@ -242,6 +329,82 @@ async function startServer() {
     app.get("/api/stream", sseHandler);
   } catch (err) {
     console.error("[SSE] route wiring failed:", (err as any)?.message || err);
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // doc 48 R3 — HIGH-THROUGHPUT OT TELEMETRY INGEST (machine-to-machine).
+  //   POST /api/ot/ingest     Body: { samples: CanonicalSample[] }
+  // Auth: per-machine key (x-api-key header / body.apiKey / machineCode), scope
+  //   "ingest:write" — the SAME credential model every other machine endpoint uses;
+  //   NOT weakened to raise throughput. Rate limit: the dedicated high tier mounted
+  //   above (createOtIngestLimiter), NOT the 300/60 browser /api limiter (which skips
+  //   this path). Samples funnel straight into the ONE unified telemetry bus
+  //   (ingestTelemetry) → one bulk insert per batch. Module resolved ONCE at boot.
+  // ────────────────────────────────────────────────────────────────────────────
+  {
+    const { authenticateMachine } = await import("../services/machineAuthService");
+    const { ingestTelemetry } = await import("../services/telemetryBus");
+    const OT_PROTOCOLS = new Set<string>([
+      "mqtt", "opcua", "modbus", "s7", "ethernet_ip", "mtconnect", "sparkplug", "inspection", "other",
+    ]);
+    const OT_QUALITY = new Set<string>(["good", "bad", "uncertain"]);
+    const normProtocol = (p: unknown): TelemetryProtocol =>
+      typeof p === "string" && OT_PROTOCOLS.has(p) ? (p as TelemetryProtocol) : "other";
+    const normQuality = (q: unknown): TelemetryQuality =>
+      typeof q === "string" && OT_QUALITY.has(q) ? (q as TelemetryQuality) : "good";
+
+    app.post("/api/ot/ingest", async (req, res) => {
+      try {
+        const body = (req.body ?? {}) as any;
+        const rawSamples = Array.isArray(body) ? body : body.samples;
+        if (!Array.isArray(rawSamples) || rawSamples.length === 0) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "Body must be { samples: [ ... ] } with at least one sample" });
+        }
+
+        // Auth (per-machine key) — preserved, NOT weakened. Throws TRPCError on failure.
+        const auth = await authenticateMachine({
+          headerKey: req.header("x-api-key") || null,
+          apiKey: typeof body.apiKey === "string" ? body.apiKey : null,
+          machineCode:
+            typeof body.machineCode === "string" ? body.machineCode : req.header("x-machine-code") || null,
+          scope: "ingest:write",
+        });
+
+        // Map → CanonicalSample[]. deviceId is preserved so the bus resolves the soft
+        // machineId itself (one gateway credential forwards many devices).
+        const samples: CanonicalSample[] = rawSamples.map((s: any): CanonicalSample => ({
+          ts: s?.ts ? new Date(s.ts) : undefined,
+          machineId: typeof s?.machineId === "number" ? s.machineId : null,
+          deviceId: typeof s?.deviceId === "string" ? s.deviceId : null,
+          protocol: normProtocol(s?.protocol),
+          metric: String(s?.metric ?? ""),
+          value:
+            typeof s?.value === "number" || typeof s?.value === "string" || typeof s?.value === "boolean"
+              ? s.value
+              : null,
+          unit: typeof s?.unit === "string" ? s.unit : null,
+          quality: normQuality(s?.quality),
+          meta: s?.meta && typeof s.meta === "object" ? s.meta : null,
+        }));
+
+        const accepted = await ingestTelemetry(samples);
+        res.json({ ok: true, accepted, received: samples.length, machine: auth.machine.code });
+      } catch (error: any) {
+        // Auth failures (TRPCError) → 401/403; DB down → 503; everything else → 500.
+        const code = error?.code;
+        if (code === "UNAUTHORIZED")
+          return res.status(401).json({ ok: false, error: error?.message || "Unauthorized" });
+        if (code === "FORBIDDEN")
+          return res.status(403).json({ ok: false, error: error?.message || "Forbidden" });
+        if (error?.name === "DbUnavailableError")
+          return res.status(503).json({ ok: false, error: "Database unavailable — retry" });
+        console.error("[OT ingest] error:", error?.message || error);
+        res.status(500).json({ ok: false, error: error?.message || "Ingest failed" });
+      }
+    });
+    console.log("[OT] high-throughput ingest route ready: POST /api/ot/ingest (dedicated rate tier)");
   }
 
   // Health check endpoint (rich diagnostics for Docker HEALTHCHECK / orchestrators)
@@ -270,6 +433,39 @@ async function startServer() {
       timestamp: new Date().toISOString(),
     });
   });
+
+  // doc 44 W6-4 (G5.25) — split liveness/readiness for shadow→canary rollout gating.
+  //   /livez  — process alive (never dependency-checked → no restart on a DB blip)
+  //   /readyz — can serve traffic (DB hard gate + broker informational) → the canary gate
+  app.get('/livez', (_req, res) => {
+    res.status(200).json(livenessProbe());
+  });
+  app.get('/readyz', async (_req, res) => {
+    try {
+      const result = await readinessProbe();
+      res.status(result.ready ? 200 : 503).json(result);
+    } catch {
+      res.status(503).json({ status: 'not_ready', ready: false, ts: new Date().toISOString() });
+    }
+  });
+
+  // W0-I (doc 44 G5.7) — CSP violation report endpoint + origin-check chống CSRF.
+  // Mount SAU health/metrics (không chạm health probe), TRƯỚC mọi route /api & tRPC.
+  // /api/csp-report vẫn đi qua apiLimiter (mounted trên /api/ ở trên) nên được
+  // rate-limit chung. Origin-check: SEC_ORIGIN_CHECK_MODE off|log|enforce (default
+  // off — pass-through, zero behaviour change). Fail-safe wiring.
+  try {
+    const { registerCspReportEndpoint } = await import("./securityHeaders");
+    registerCspReportEndpoint(app);
+  } catch (err) {
+    console.error("[Security] CSP report endpoint wiring failed:", (err as any)?.message || err);
+  }
+  try {
+    const { originCheckMiddleware } = await import("./originCheck");
+    app.use(originCheckMiddleware());
+  } catch (err) {
+    console.error("[Security] origin-check wiring failed:", (err as any)?.message || err);
+  }
 
   // ============================================================
   // Network monitoring endpoints (for FactoryAlertSystem)
@@ -373,29 +569,33 @@ async function startServer() {
     console.log(`[Storage] FactoryAlertSystem releases folder: ${factoryAlertReleasesDir}`);
   }
 
-  // REST endpoints for external machines (proxy to tRPC machineApi router)
+  // REST endpoints for external machines (proxy to tRPC machineApi router).
+  // Error contract + safe logging live in ./machineProxyError (doc 51 P2, CASE #2).
   app.post("/api/machine/submit-inspection", async (req, res) => {
-    let input: any;
     try {
       const ctx = await createContext({ req, res });
       const caller = appRouter.createCaller(ctx);
 
       const apiKey = req.header("x-api-key") || req.body.apiKey;
-      input = { ...req.body, apiKey };
+      const input = { ...req.body, apiKey };
 
-      // DEBUG: Log measurements to find invalid result value
-      console.log("[MachineAPI] submit-inspection request:");
-      console.log("  - measurements count:", input.measurements?.length);
-      input.measurements?.forEach((m: any, idx: number) => {
-        console.log(`  - measurements[${idx}].result:`, JSON.stringify(m.result), `(type: ${typeof m.result})`);
-      });
+      // Safe metadata only — NEVER log the payload: measurements carry base64 image
+      // data and `input.apiKey` is a live credential (doc 51 P2 / CASE #2).
+      const meta = safeMachineLogMeta(req.body);
+      console.log(
+        "[MachineAPI] submit-inspection:",
+        `machine=${meta.machineCode}`,
+        `serial=${meta.serialNumber}`,
+        `measurements=${meta.measurements}`,
+      );
 
       const result = await caller.machineApi.submitInspection(input as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] submit-inspection error:", error);
-      console.error("[MachineAPI] Invalid input was:", JSON.stringify(input, null, 2));
-      res.status(400).json({ success: false, message: error?.message || "Submit inspection failed" });
+      // Log the code/message only — the caught error's context may reference the
+      // base64 payload; do NOT stringify the input.
+      console.error("[MachineAPI] submit-inspection error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Submit inspection failed");
     }
   });
 
@@ -410,8 +610,9 @@ async function startServer() {
       const result = await caller.machineApi.uploadImage(input as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] upload-image error:", error);
-      res.status(400).json({ success: false, message: error?.message || "Upload image failed" });
+      // Error message only — the request body carries base64 image data.
+      console.error("[MachineAPI] upload-image error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Upload image failed");
     }
   });
 
@@ -681,8 +882,8 @@ async function startServer() {
       const result = await caller.machineApi.syncMeasurementPoints(input as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] sync-points error:", error);
-      res.status(400).json({ success: false, message: error?.message || "Sync points failed" });
+      console.error("[MachineAPI] sync-points error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Sync points failed");
     }
   });
 
@@ -701,8 +902,8 @@ async function startServer() {
       const result = await caller.machineApi.getPoints(input as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] get-points error:", error);
-      res.status(400).json({ success: false, message: error?.message || "Get points failed" });
+      console.error("[MachineAPI] get-points error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Get points failed");
     }
   });
 
@@ -716,9 +917,8 @@ async function startServer() {
       const result = await caller.machine.register(req.body as any);
       res.json({ success: true, ...result });
     } catch (error: any) {
-      console.error("[MachineAPI] register error:", error);
-      const status = error?.code === 'BAD_REQUEST' ? 400 : error?.code === 'NOT_FOUND' ? 404 : 500;
-      res.status(status).json({ success: false, message: error?.message || "Registration failed" });
+      console.error("[MachineAPI] register error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Registration failed");
     }
   });
 
@@ -734,9 +934,38 @@ async function startServer() {
       const result = await caller.machine.config({ serialNumber } as any);
       res.json({ success: true, ...result });
     } catch (error: any) {
-      console.error("[MachineAPI] config error:", error);
-      const status = error?.code === 'NOT_FOUND' ? 404 : 500;
-      res.status(status).json({ success: false, message: error?.message || "Config fetch failed" });
+      console.error("[MachineAPI] config error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Config fetch failed");
+    }
+  });
+
+  // REST proxy: Machine key claim (doc 51 P0 / R1).
+  // Counterpart of GET /api/machine/config — which NO LONGER returns apiKey (it
+  // leaked a plaintext credential to anyone who knew the serialNumber). Machines
+  // on the REST path redeem their one-time claim token here instead; without this
+  // proxy a REST client would have no way to obtain its key at all.
+  app.post("/api/machine/claim", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+      const serialNumber = req.body?.serialNumber;
+      const claimToken = req.body?.claimToken;
+      if (!serialNumber || !claimToken) {
+        return res.status(400).json({ success: false, message: "serialNumber and claimToken are required" });
+      }
+      const result = await caller.machine.claimKey({ serialNumber, claimToken } as any);
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      // Map the tRPC code to a real HTTP status: a claim failure is the client's
+      // (bad/burnt/expired token → 400), not a server fault, and throttling must
+      // surface as 429 so clients back off instead of hammering.
+      console.error("[MachineAPI] claim error:", error?.code || error?.message);
+      const status =
+        error?.code === "NOT_FOUND" ? 404 :
+        error?.code === "TOO_MANY_REQUESTS" ? 429 :
+        error?.code === "UNAUTHORIZED" || error?.code === "BAD_REQUEST" ? 400 :
+        500;
+      res.status(status).json({ success: false, message: error?.message || "Claim failed" });
     }
   });
 
@@ -752,8 +981,84 @@ async function startServer() {
       const result = await caller.machineApi.heartbeat({ apiKey } as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] heartbeat error:", error);
-      res.status(400).json({ success: false, message: error?.message || "Heartbeat failed" });
+      console.error("[MachineAPI] heartbeat error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Heartbeat failed");
+    }
+  });
+
+  // ── doc 56 Đ4 (CONFIG-SYNC) — REST proxies for the generic config-sync endpoints.
+  // Gated server-side by CONFIG_SYNC_GENERIC_ENABLED (PRECONDITION_FAILED when off).
+  // Accept the machine key from X-API-Key, `Authorization: Bearer …`, OR ?apiKey= —
+  // so a device using Bearer auth (as doc 58 recommends for ingest) also satisfies the
+  // config-sync input refine (apiKey|machineCode) instead of getting BAD_REQUEST.
+  const machineBearer = (req: express.Request): string | undefined => {
+    const auth = req.header("authorization");
+    if (typeof auth === "string" && /^bearer\s+/i.test(auth)) {
+      const t = auth.replace(/^bearer\s+/i, "").trim();
+      if (t) return t;
+    }
+    return undefined;
+  };
+  // GET /api/machine/config-sync/check?configKind=&apiKey=&configCode=&productModelCode=&variantCode=
+  app.get("/api/machine/config-sync/check", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+      const apiKey = req.header("x-api-key") || machineBearer(req) || (req.query.apiKey as string | undefined);
+      const result = await caller.machineApi.checkConfigVersion({
+        configKind: req.query.configKind as any,
+        apiKey,
+        machineCode: req.query.machineCode as string | undefined,
+        configCode: req.query.configCode as string | undefined,
+        productModelCode: req.query.productModelCode as string | undefined,
+        variantCode: req.query.variantCode as string | undefined,
+      } as any);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[MachineAPI] config-sync check error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Config-sync check failed");
+    }
+  });
+
+  // GET /api/machine/config-sync/get?configKind=&apiKey=&... — full payload + checksum
+  app.get("/api/machine/config-sync/get", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+      const apiKey = req.header("x-api-key") || machineBearer(req) || (req.query.apiKey as string | undefined);
+      const result = await caller.machineApi.getActiveConfig({
+        configKind: req.query.configKind as any,
+        apiKey,
+        machineCode: req.query.machineCode as string | undefined,
+        configCode: req.query.configCode as string | undefined,
+        productModelCode: req.query.productModelCode as string | undefined,
+        variantCode: req.query.variantCode as string | undefined,
+      } as any);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[MachineAPI] config-sync get error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Config-sync get failed");
+    }
+  });
+
+  // POST /api/machine/config-sync/ack — machine reports the config it applied.
+  app.post("/api/machine/config-sync/ack", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+      const apiKey = req.header("x-api-key") || machineBearer(req) || req.body?.apiKey;
+      const result = await caller.machineApi.ackConfigApplied({
+        configKind: req.body?.configKind,
+        apiKey,
+        machineCode: req.body?.machineCode,
+        code: req.body?.code,
+        version: req.body?.version,
+        checksum: req.body?.checksum,
+      } as any);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[MachineAPI] config-sync ack error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Config-sync ack failed");
     }
   });
 
@@ -801,7 +1106,40 @@ async function startServer() {
     }
   });
 
-  // GET /api/factory-alert/version.json — Returns active version info for FactoryAlertSystem OTA
+  // doc 33 §11 (R3 "publish") — public machine-readable API specs for the Developer Portal.
+  // DEV_PORTAL-gated (404 when off). Stable REST URLs so external tooling (Postman / Swagger import)
+  // can consume the OpenAPI 3.1 + AsyncAPI 2.6 surface without an authenticated tRPC call.
+  const specDevPortalOn = () => process.env.DEV_PORTAL === "true" || process.env.DEV_PORTAL === "1";
+  app.get("/api/v1/openapi.json", async (_req, res, next) => {
+    // DEV_PORTAL on → serve the broader Developer-Portal seed spec (OpenAPI 3.1).
+    // DEV_PORTAL off (default) → fall through to the versioned machine/equipment
+    // contract served by createV1Router() (api/v1/router.ts → buildV1OpenApiSpec).
+    // Previously this returned 404 when off, which SHADOWED and hid the machine API
+    // doc entirely; falling through makes it reachable by default (doc 61 APIdocs).
+    if (!specDevPortalOn()) return next();
+    try {
+      const { buildSeedSpecs } = await import("../services/contracts/apiSpec");
+      res.json(buildSeedSpecs().openapi);
+    } catch (error: any) {
+      console.error("[DevPortal] openapi.json error:", error);
+      res.status(500).json({ error: "spec build failed" });
+    }
+  });
+  app.get("/api/v1/asyncapi.json", async (_req, res) => {
+    if (!specDevPortalOn()) return res.status(404).json({ error: "Developer Portal disabled" });
+    try {
+      const { buildSeedSpecs } = await import("../services/contracts/apiSpec");
+      res.json(buildSeedSpecs().asyncapi);
+    } catch (error: any) {
+      console.error("[DevPortal] asyncapi.json error:", error);
+      res.status(500).json({ error: "spec build failed" });
+    }
+  });
+
+  // GET /api/factory-alert/version.json — Returns active version info for FactoryAlertSystem OTA.
+  // MB7 (doc 27 Đợt 6): also mints a short-lived signed `downloadToken` (HMAC,
+  // 15-min TTL) that the app appends to the download URL as ?token= — see
+  // server/_core/factoryAlertDownloadToken.ts for the full design + tighten path.
   app.get("/api/factory-alert/version.json", async (_req, res) => {
     try {
       const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
@@ -812,13 +1150,18 @@ async function startServer() {
       if (!active) {
         return res.status(404).json({ error: "No active version" });
       }
+      const activeVersion = active.version?.trim() ?? "";
+      const activeApkName = active.apkFileName?.trim() ?? "";
+      const { mintDownloadToken } = await import("./factoryAlertDownloadToken");
       res.json({
-        version: active.version?.trim(),
+        version: activeVersion,
         versionCode: active.versionCode,
         releaseDate: active.releaseDate ? new Date(active.releaseDate).toISOString().split("T")[0] : null,
-        apkUrl: `download/${active.version?.trim()}/${active.apkFileName?.trim()}`,
+        apkUrl: `download/${activeVersion}/${activeApkName}`,
         changelog: active.changelog ? active.changelog.split("\n").filter(Boolean) : [],
         mandatory: active.mandatory,
+        // Short-lived signed token for the download route (MB7)
+        downloadToken: mintDownloadToken(activeVersion, activeApkName),
       });
     } catch (error: any) {
       console.error("[FactoryAlert] version.json error:", error);
@@ -841,7 +1184,16 @@ async function startServer() {
     }
   });
 
-  // GET /api/factory-alert/download/:version/:filename — Download APK from versioned folder
+  // GET /api/factory-alert/download/:version/:filename — Download APK from versioned folder.
+  // MB7 (doc 27 Đợt 6) auth: accepts EITHER
+  //   (a) ?token= — short-lived HMAC token minted by /version.json (the app's
+  //       DownloadManager carries no cookies, so query token is the mechanism),
+  //   (b) a valid admin session cookie or x-master-key (browser downloads from
+  //       the Software tab), OR
+  //   (c) legacy open mode: FACTORY_ALERT_DOWNLOAD_OPEN unset/true (current
+  //       default) — token-less requests allowed so pre-1.0.16 fleet devices
+  //       can still update. DEPRECATED: set FACTORY_ALERT_DOWNLOAD_OPEN=false
+  //       once the fleet is on ≥ 1.0.16 to enforce (a)/(b) only.
   app.get("/api/factory-alert/download/:version/:filename", async (req, res) => {
     try {
       const { version, filename } = req.params;
@@ -849,6 +1201,49 @@ async function startServer() {
       const safeVersion = path.basename(version);
       if (!safeName.endsWith(".apk")) {
         return res.status(400).json({ error: "Invalid file type" });
+      }
+
+      // ── Auth (MB7) ──
+      const { verifyDownloadToken, isDownloadOpen } = await import("./factoryAlertDownloadToken");
+      const token = typeof req.query.token === "string" ? req.query.token : undefined;
+      let authorized = false;
+
+      if (token) {
+        const check = verifyDownloadToken(token, safeVersion, safeName);
+        if (check.ok) {
+          authorized = true;
+        } else {
+          logger.warn({ version: safeVersion, reason: check.reason }, "[FactoryAlert] download token rejected");
+        }
+      }
+
+      if (!authorized) {
+        // Admin browser session (cookie) or master key header
+        const headerKey = req.header("x-master-key");
+        if (headerKey && isValidMasterKey(headerKey)) {
+          authorized = true;
+        } else {
+          try {
+            const { sdk } = await import("./sdk");
+            const user = await sdk.authenticateRequest(req);
+            if (user) authorized = true;
+          } catch {
+            // no valid session — fall through
+          }
+        }
+      }
+
+      if (!authorized) {
+        if (isDownloadOpen()) {
+          // Legacy fleet path — allowed but logged so operators can see when
+          // it is safe to flip FACTORY_ALERT_DOWNLOAD_OPEN=false.
+          logger.warn(
+            { version: safeVersion, ip: req.ip },
+            "[FactoryAlert] token-less APK download allowed by FACTORY_ALERT_DOWNLOAD_OPEN (deprecated — set to false once fleet ≥ 1.0.16)",
+          );
+        } else {
+          return res.status(401).json({ error: "Unauthorized: download token required" });
+        }
       }
 
       const uploadsRoot = process.env.LOCAL_STORAGE_DIR
@@ -1057,9 +1452,8 @@ async function startServer() {
       const result = await caller.machineApi.getProductImage({ apiKey, machineCode, productModelCode } as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] get-product-image error:", error);
-      const status = error?.code === "NOT_FOUND" ? 404 : error?.code === "UNAUTHORIZED" ? 401 : 400;
-      res.status(status).json({ success: false, message: error?.message || "Get product image failed" });
+      console.error("[MachineAPI] get-product-image error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Get product image failed");
     }
   });
 
@@ -1075,9 +1469,8 @@ async function startServer() {
       const result = await caller.machineApi.syncProductImage(input as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] sync-product-image error:", error);
-      const status = error?.code === "NOT_FOUND" ? 404 : error?.code === "UNAUTHORIZED" ? 401 : 400;
-      res.status(status).json({ success: false, message: error?.message || "Sync product image failed" });
+      console.error("[MachineAPI] sync-product-image error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Sync product image failed");
     }
   });
 
@@ -1093,9 +1486,8 @@ async function startServer() {
       const result = await caller.machineApi.syncPointImage(input as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] sync-point-image error:", error);
-      const status = error?.code === "NOT_FOUND" ? 404 : error?.code === "UNAUTHORIZED" ? 401 : 400;
-      res.status(status).json({ success: false, message: error?.message || "Sync point image failed" });
+      console.error("[MachineAPI] sync-point-image error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Sync point image failed");
     }
   });
 
@@ -1120,9 +1512,8 @@ async function startServer() {
       const result = await caller.machineApi.getPointImage({ apiKey, machineCode, productModelCode, pointCode } as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] get-point-image error:", error);
-      const status = error?.code === "NOT_FOUND" ? 404 : error?.code === "UNAUTHORIZED" ? 401 : 400;
-      res.status(status).json({ success: false, message: error?.message || "Get point image failed" });
+      console.error("[MachineAPI] get-point-image error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Get point image failed");
     }
   });
 
@@ -1140,9 +1531,8 @@ async function startServer() {
       const result = await caller.machineApi.checkPointsVersion({ apiKey, machineCode, productModelCode } as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] check-points-version error:", error);
-      const status = error?.code === "NOT_FOUND" ? 404 : error?.code === "UNAUTHORIZED" ? 401 : 400;
-      res.status(status).json({ success: false, message: error?.message || "Check points version failed" });
+      console.error("[MachineAPI] check-points-version error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Check points version failed");
     }
   });
 
@@ -1168,9 +1558,8 @@ async function startServer() {
       const result = await caller.machineApi.deltaSyncPoints({ apiKey, machineCode, productModelCode, sinceVersion } as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] delta-sync-points error:", error);
-      const status = error?.code === "NOT_FOUND" ? 404 : error?.code === "UNAUTHORIZED" ? 401 : 400;
-      res.status(status).json({ success: false, message: error?.message || "Delta sync points failed" });
+      console.error("[MachineAPI] delta-sync-points error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Delta sync points failed");
     }
   });
 
@@ -1195,9 +1584,8 @@ async function startServer() {
       } as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] sync-history error:", error);
-      const status = error?.code === "UNAUTHORIZED" ? 401 : 400;
-      res.status(status).json({ success: false, message: error?.message || "Get sync history failed" });
+      console.error("[MachineAPI] sync-history error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Get sync history failed");
     }
   });
 
@@ -1820,6 +2208,7 @@ async function startServer() {
           results.push({
             id: `conn-${r.id}`,
             source: "connection",
+            stationId: r.targetType === "station" ? r.targetId : undefined,
             alertType: r.alertType,
             severity: r.severity,
             title: r.title,
@@ -1833,6 +2222,21 @@ async function startServer() {
             createdAt: r.triggeredAt,
           });
         }
+      }
+
+      // Enrich rows that carry a station id (connection alerts) with the station name.
+      // Single cheap lookup, only when needed; app has a fallback if absent.
+      const stationIds = new Set<number>();
+      for (const r of results) if (typeof r.stationId === "number") stationIds.add(r.stationId);
+      if (stationIds.size > 0) {
+        try {
+          const { getStations } = await import("../db");
+          const allStations = await getStations();
+          const nameById = new Map<number, string>(allStations.map((s: any) => [s.id, s.name]));
+          for (const r of results) {
+            if (typeof r.stationId === "number") r.stationName = nameById.get(r.stationId);
+          }
+        } catch { /* leave stationName undefined */ }
       }
 
       // Sort combined results by createdAt descending
@@ -1925,6 +2329,20 @@ async function startServer() {
       const { eq: eqOp } = await import("drizzle-orm");
 
       const alertId = req.params.alertId;
+      // Live per-inspection NG (ALT-*) and NG-rate (NGRATE-*) alerts are ephemeral MQTT
+      // events with no ack-able DB row (published from inspection flow, not persisted as
+      // an alert). Accept as a 200 no-op so the app's postAction succeeds; the ack stays
+      // client/local-only. See ngRateAlertService / mqttService.publishNGAlert.
+      if (/^(ALT|NGRATE)-/.test(alertId)) {
+        return res.json({
+          success: true,
+          message: "Live inspection alert acknowledged (no server-side alert record to persist)",
+          alertId,
+          acknowledgedAt: new Date().toISOString(),
+          persisted: false,
+          localOnly: true,
+        });
+      }
       const [source, idStr] = alertId.split("-");
       const numId = parseInt(idStr, 10);
       if (!source || isNaN(numId)) {
@@ -1962,14 +2380,29 @@ async function startServer() {
     try {
       const database = await getDb();
       if (!database) return res.status(500).json({ success: false, message: "Database not available" });
-      const { mqttAlertHistory, mqttConnectionAlerts } = await import("../../drizzle/schema");
+      const { mqttAlertHistory, mqttConnectionAlerts, mqttNgRateAlertHistory } = await import("../../drizzle/schema");
       const { eq: eqOp } = await import("drizzle-orm");
 
       const alertId = req.params.alertId;
+      // Ephemeral per-inspection NG (ALT-*) and business-id NG-rate (NGRATE-*, uppercase)
+      // alerts have no resolvable DB row reachable via this endpoint. Accept as a 200
+      // no-op so the app's postAction succeeds; the resolve stays local-only. NOTE: the
+      // match is case-SENSITIVE — the lowercase `ngrate-{id}` server id (carried as
+      // serverAlertId in the payload) DOES resolve below.
+      if (/^(ALT|NGRATE)-/.test(alertId)) {
+        return res.json({
+          success: true,
+          message: "Live inspection alert resolved (no server-side alert record to persist)",
+          alertId,
+          resolvedAt: new Date().toISOString(),
+          persisted: false,
+          localOnly: true,
+        });
+      }
       const [source, idStr] = alertId.split("-");
       const numId = parseInt(idStr, 10);
       if (!source || isNaN(numId)) {
-        return res.status(400).json({ success: false, message: "Invalid alertId format. Expected: mqtt-{id} or conn-{id}" });
+        return res.status(400).json({ success: false, message: "Invalid alertId format. Expected: mqtt-{id}, conn-{id} or ngrate-{id}" });
       }
 
       const user = (req as any).externalUser;
@@ -1989,8 +2422,14 @@ async function startServer() {
           .where(eqOp(mqttConnectionAlerts.id, numId))
           .returning({ id: mqttConnectionAlerts.id });
         if (updated.length === 0) return res.status(404).json({ success: false, message: "Connection alert not found" });
+      } else if (source === "ngrate") {
+        const updated = await database.update(mqttNgRateAlertHistory)
+          .set({ isResolved: true, resolvedAt: now, resolvedBy: userId, resolutionNote })
+          .where(eqOp(mqttNgRateAlertHistory.id, numId))
+          .returning({ id: mqttNgRateAlertHistory.id });
+        if (updated.length === 0) return res.status(404).json({ success: false, message: "NG-rate alert not found" });
       } else {
-        return res.status(400).json({ success: false, message: "Resolve is supported for mqtt-{id} and conn-{id} types" });
+        return res.status(400).json({ success: false, message: "Resolve is supported for mqtt-{id}, conn-{id} and ngrate-{id} types" });
       }
 
       res.json({ success: true, message: "Alert resolved", alertId, resolvedAt: now.toISOString() });
@@ -2030,11 +2469,20 @@ async function startServer() {
         .limit(limit)
         .offset(offset);
 
+      // Enrich with station name (single cheap lookup; app has a fallback if absent)
+      let stationNameById = new Map<number, string>();
+      try {
+        const { getStations } = await import("../db");
+        const allStations = await getStations();
+        stationNameById = new Map(allStations.map((s: any) => [s.id, s.name]));
+      } catch { /* leave stationName undefined */ }
+
       res.json({
         success: true,
         data: rows.map((r: any) => ({
           id: r.id,
           stationId: r.stationId,
+          stationName: stationNameById.get(r.stationId),
           bulletinType: r.bulletinType,
           periodStart: r.periodStart,
           periodEnd: r.periodEnd,
@@ -2135,59 +2583,132 @@ async function startServer() {
 
   // ============================================================
   // Report Generation API — on-demand reports for mobile/third-party
-  // POST /api/external/reports/generate
+  // POST /api/external/reports/generate            — build a REAL report file, returns downloadUrl
+  // GET  /api/external/reports/:reportId/download  — stream the persisted artifact
   // ============================================================
+  // Wave R3 (doc 32 §2 P0 #1): the old summary-only stub (in-memory Map, TTL 30',
+  // ignored `format`, counted alerts) is RETIRED. Reports now run through
+  // externalReportService: R1 aggregators → renderReport (R2-A, honors pdf/xlsx/csv)
+  // → persistArtifact (R2-B report_artifacts store, 1-year retention). The report id
+  // IS the artifact row id; the download route streams the persisted file. Auth
+  // preserved (validateExternalAuth: x-master-key OR JWT bearer).
   app.post("/api/external/reports/generate", validateExternalAuth, async (req, res) => {
     try {
-      const database = await getDb();
-      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+      const { reportType, format, dateFrom, dateTo, filters, locale } = req.body || {};
+      // JWT callers carry a user (→ createdBy); master-key server-to-server does not.
+      const createdBy = (req as any).externalUser?.id ?? null;
 
-      const { reportType, format, filters } = req.body || {};
-      const validTypes = ["daily_summary", "shift_report", "defect_analysis", "station_report"];
-      const validFormats = ["pdf", "csv", "excel"];
-
-      if (!reportType || !validTypes.includes(reportType)) {
-        return res.status(400).json({ success: false, message: `Invalid reportType. Must be one of: ${validTypes.join(", ")}` });
-      }
-      if (!format || !validFormats.includes(format)) {
-        return res.status(400).json({ success: false, message: `Invalid format. Must be one of: ${validFormats.join(", ")}` });
-      }
-
-      const { alertHistory, mqttAlertHistory, mqttConnectionAlerts, mqttBulletinHistory } = await import("../../drizzle/schema");
-      const { sql, count, gte, lte, and, eq: eqOp } = await import("drizzle-orm");
-
-      // Parse filters
-      const startDate = filters?.startDate ? parseLocalDate(filters.startDate) : new Date(new Date().setHours(0, 0, 0, 0));
-      const endDate = filters?.endDate ? parseLocalDate(filters.endDate) : new Date();
-      const stationIds: number[] = (filters?.stationIds || []).map((id: string) => parseInt(id, 10)).filter((id: number) => !isNaN(id));
-
-      // Gather summary data for the report
-      const conditions: any[] = [gte(alertHistory.createdAt, startDate), lte(alertHistory.createdAt, endDate)];
-      const [alertCount] = await database.select({ total: count() }).from(alertHistory).where(and(...conditions));
-      const [mqttAlertCount] = await database.select({ total: count() }).from(mqttAlertHistory)
-        .where(and(gte(mqttAlertHistory.triggeredAt, startDate), lte(mqttAlertHistory.triggeredAt, endDate)));
-      const [bulletinCount] = await database.select({ total: count() }).from(mqttBulletinHistory)
-        .where(and(gte(mqttBulletinHistory.createdAt, startDate), lte(mqttBulletinHistory.createdAt, endDate)));
-
-      // Generate a report ID (timestamp-based)
-      const reportId = `RPT-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-
-      res.json({
-        success: true,
-        reportId,
-        downloadUrl: `/api/external/reports/${reportId}/download`,
-        generatedAt: new Date().toISOString(),
-        summary: {
+      const { generateExternalReport, ExternalReportError } = await import("../services/externalReportService");
+      try {
+        const result = await generateExternalReport({
           reportType,
           format,
-          period: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
-          alerts: { total: (alertCount?.total || 0) + (mqttAlertCount?.total || 0) },
-          bulletins: { total: bulletinCount?.total || 0 },
-        },
-      });
+          dateFrom,
+          dateTo,
+          filters,
+          locale,
+          createdBy,
+          source: "external",
+        });
+        return res.json({
+          success: true,
+          reportId: result.reportId,
+          // External-auth download path (works with x-master-key — backward-compatible
+          // with the current mobile client). See artifactUrl for the canonical link.
+          downloadUrl: `/api/external/reports/${result.reportId}/download`,
+          // Canonical auth-gated artifact link (web session / scoped export:read key).
+          artifactUrl: result.downloadUrl,
+          format: result.format,
+          reportType: result.reportType,
+          title: result.title,
+          rowCount: result.rowCount,
+          fileSize: result.fileSize,
+          generatedAt: result.generatedAt,
+          expiresAt: result.expiresAt.toISOString(),
+          emptyState: result.emptyState,
+          ...(result.emptyReason ? { emptyReason: result.emptyReason } : {}),
+          deduped: result.deduped,
+        });
+      } catch (err: any) {
+        if (err instanceof ExternalReportError) {
+          return res.status(err.status).json({ success: false, message: err.message });
+        }
+        throw err;
+      }
     } catch (error: any) {
       console.error("[External] report generate error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to generate report" });
+    }
+  });
+
+  // GET /api/external/reports/:reportId/download — stream the persisted artifact.
+  // :reportId is the report_artifacts row id (returned by generate). Auth preserved
+  // (validateExternalAuth): x-master-key callers are trusted server-to-server
+  // (privileged) readers; JWT callers read their own artifacts (or any, when their
+  // role is privileged). Retired: the old in-memory Map / 1-line-CSV / JSON-summary.
+  app.get("/api/external/reports/:reportId/download", validateExternalAuth, async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.reportId), 10);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ success: false, message: "Invalid reportId (expected an artifact id)." });
+      }
+
+      const externalUser = (req as any).externalUser;
+      const viewer = externalUser
+        ? { id: externalUser.id, role: (externalUser as any).role }
+        : { privileged: true }; // trusted x-master-key server-to-server caller
+
+      const { getDownloadTarget, ArtifactError } = await import("../services/reportArtifactService");
+      let target;
+      try {
+        target = await getDownloadTarget(id, viewer);
+      } catch (err: any) {
+        if (err instanceof ArtifactError) {
+          const status = err.reason === "forbidden" ? 403 : err.reason === "expired" ? 410 : 404;
+          return res.status(status).json({ success: false, reason: err.reason, message: err.message });
+        }
+        throw err;
+      }
+
+      const { artifact, directUrl, filename } = target;
+      res.setHeader("Content-Type", artifact.contentType || "application/octet-stream");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("X-Artifact-Sha256", artifact.fileHash);
+      res.setHeader("Cache-Control", "private, no-store");
+
+      // Local-disk storage: stream from the uploads root (path-guarded).
+      if (directUrl.startsWith("/uploads/")) {
+        const uploadsRoot = process.env.LOCAL_STORAGE_DIR
+          ? path.resolve(process.env.LOCAL_STORAGE_DIR)
+          : path.join(process.cwd(), "uploads");
+        const resolved = path.resolve(path.join(uploadsRoot, directUrl.replace("/uploads/", "")));
+        if (!resolved.startsWith(path.resolve(uploadsRoot) + path.sep)) {
+          return res.status(400).json({ success: false, message: "Invalid artifact path" });
+        }
+        if (!fs.existsSync(resolved)) {
+          return res.status(404).json({ success: false, message: "Artifact file missing from storage" });
+        }
+        res.setHeader("Content-Length", fs.statSync(resolved).size);
+        return fs.createReadStream(resolved).pipe(res);
+      }
+
+      // Remote storage (Forge/S3): fetch upstream + pipe through.
+      const { Readable } = await import("stream");
+      const upstream = await fetch(directUrl);
+      if (!upstream.ok) {
+        return res.status(502).json({ success: false, message: "Upstream storage fetch failed" });
+      }
+      const cl = upstream.headers.get("content-length");
+      if (cl) res.setHeader("Content-Length", cl);
+      if (!upstream.body) return res.end();
+      return Readable.fromWeb(upstream.body as never).pipe(res);
+    } catch (error: any) {
+      console.error("[External] report download error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: error?.message || "Failed to download report" });
+      } else {
+        res.end();
+      }
     }
   });
 
@@ -2202,7 +2723,10 @@ async function startServer() {
       if (!database) return res.status(500).json({ success: false, message: "Database not available" });
 
       // Extract userId from auth context (set by validateExternalAuth when JWT is present)
-      const userId = (req as any).userId || (req as any).user?.id;
+      // validateExternalAuth sets req.externalUser for Bearer (JWT) callers.
+      // Prefer it so authenticated external users resolve a userId (master-key
+      // server-to-server auth has no user context and still 401s below).
+      const userId = (req as any).externalUser?.id || (req as any).userId || (req as any).user?.id;
       if (!userId) {
         return res.status(401).json({ success: false, message: "User context required. Please authenticate with JWT." });
       }
@@ -2248,7 +2772,10 @@ async function startServer() {
       const database = await getDb();
       if (!database) return res.status(500).json({ success: false, message: "Database not available" });
 
-      const userId = (req as any).userId || (req as any).user?.id;
+      // validateExternalAuth sets req.externalUser for Bearer (JWT) callers.
+      // Prefer it so authenticated external users resolve a userId (master-key
+      // server-to-server auth has no user context and still 401s below).
+      const userId = (req as any).externalUser?.id || (req as any).userId || (req as any).user?.id;
       if (!userId) {
         return res.status(401).json({ success: false, message: "User context required. Please authenticate with JWT." });
       }
@@ -4378,6 +4905,10 @@ async function startServer() {
 
   // Register AI SSE streaming routes (before tRPC mount)
   registerAiStreamingRoutes(app);
+  // Doc 34 §IV-P0 — OpenAI-compatible gateway (/v1/*). Gated by OPENAI_GATEWAY_ENABLED
+  // (default OFF) and fail-closed on a missing API key. Mounted before license
+  // middleware so trusted-LAN IDE tooling (VS Code + Continue) can reach it.
+  registerOpenAiGateway(app);
   registerAiLocalKnowledgeRoutes(app);
   // WS-2 — edge model package download proxy (apiKey-verified, Range resume)
   registerEdgeDownloadRoute(app);
@@ -4391,12 +4922,214 @@ async function startServer() {
   try {
     const { createV1Router } = await import("../api/v1/router");
     const { installWebhookBridge } = await import("../api/v1/webhookBridge");
+    // W2-D (doc 35 W0.3a → W2): license (never-stop-production) + audit guard,
+    // mounted BEFORE the router so it wraps every /api/v1 route.
+    const { v1Guard } = await import("../api/v1/guard");
+    app.use("/api/v1", v1Guard());
     app.use("/api/v1", createV1Router());
     installWebhookBridge(); // outbound POST still gated by WEBHOOKS_ENABLED (default off)
     console.log("[ControlPlane] Unified Machine API mounted at /api/v1");
   } catch (err) {
     console.error("[ControlPlane] /api/v1 mount failed:", (err as any)?.message || err);
   }
+
+  // ============================================================
+  // W5-D (doc 27 §6 A10) — raw export + BI dataset feed. Additive.
+  //   /api/export/inspections.csv|.json, /api/export/measurements.csv|.json
+  //     — streaming, session or export:read API key, window-guarded, audited.
+  //   /api/bi/datasets(/:name) — paged JSON + nextToken for Power BI/Tableau,
+  //     bi:read API key. Docs: docs/ECOSYSTEM/30_BI_EXPORT_API.md.
+  // ============================================================
+  try {
+    const { createExportRouter } = await import("../api/export/exportRouter");
+    const { createBiRouter } = await import("../api/export/biRouter");
+    app.use("/api/export", createExportRouter());
+    app.use("/api/bi", createBiRouter());
+    console.log("[Export] streaming export mounted at /api/export, BI feed at /api/bi");
+  } catch (err) {
+    console.error("[Export] /api/export + /api/bi mount failed:", (err as any)?.message || err);
+  }
+
+  // ============================================================
+  // Doc 32 Wave R2 (decision #4/#5) — persisted report-artifact re-download.
+  //   GET /api/reports/artifacts/:id/download — auth-gated (session or
+  //   export:read API key), access + expiry checked, streams the stored file.
+  // ============================================================
+  try {
+    const { registerReportArtifactRoutes } = await import("../routes/reportArtifactRoutes");
+    registerReportArtifactRoutes(app);
+  } catch (err) {
+    console.error("[ReportArtifact] download route mount failed:", (err as any)?.message || err);
+  }
+
+  // ============================================================
+  // doc 37 C1 (P2) — Observability health plane. Read-only, admin/supervisor-gated:
+  //   GET /api/observability/health  — OT store-forward buffer + connection supervisors
+  //                                     + SLO burn-rate rollup + decision-trace ring depth
+  //   GET /api/observability/slo      — SLO catalogue + latest status + burn-rate
+  //   GET /api/observability/metrics  — SLO + decision-trace signals in Prometheus text format
+  // Surfaces the honest health-getters that already existed but were never exposed over HTTP.
+  // ============================================================
+  try {
+    const { registerObservabilityRoutes } = await import("../routes/observabilityRoutes");
+    registerObservabilityRoutes(app);
+  } catch (err) {
+    console.error("[Observability] health route mount failed:", (err as any)?.message || err);
+  }
+
+  // U1 (doc 21 §6) — Unified Event Backbone: (a) subscribe the ecosystem bridge so
+  // the orphaned (safety.event, quality_gate.breach) + new (anomaly/workorder/task/
+  // program) domain events fan out to webhooks + KB — OUTBOUND gated by
+  // ECOSYSTEM_EVENTS_ENABLED (default OFF); in-process registration is harmless.
+  // (b) attach the eventBus→socket re-broadcast so ALL event classes reach the
+  // client on ONE normalized `ecosystem:event` / `alerts:stream` (U1-c).
+  try {
+    const { installEcosystemEventBridge } = await import("../services/ecosystem/ecosystemEvents");
+    installEcosystemEventBridge();
+    const { installEcosystemSocketBridge } = await import("./socket");
+    installEcosystemSocketBridge();
+  } catch (err) {
+    console.error("[U1] ecosystem event backbone install failed:", (err as any)?.message || err);
+  }
+
+  // R0 (doc 16 Khối 0) — ERP outbox drain worker: MOVED to the W4-D background
+  // scheduler set (server/_core/backgroundJobs.ts) — started below unless
+  // ROLE=api. Inbound intake (POST /orders,/bom) stays on the /api/v1 router.
+
+  // G1 (doc 16 Khối 2) — Fleet & Task Orchestration: subscribe to order.created on
+  // the eventBus → decompose orders into `tasks` + allocate. The subscriber is
+  // always registered (cheap) but its handler is a no-op unless FLEET_ORCH_ENABLED.
+  // Opens NO control path — dispatch stays with the gated robot/command dispatchers.
+  try {
+    const { installFleetOrchestrator } = await import("../services/fleet/fleetOrchestrator");
+    installFleetOrchestrator();
+  } catch (err) {
+    console.error("[Fleet] orchestrator install failed:", (err as any)?.message || err);
+  }
+
+  // doc 22 P3 — Fleet pending-drain sweep + G2 predictive charging sweep:
+  // MOVED to the W4-D background scheduler set (backgroundJobs.ts) — DB-state
+  // sweeps, no socket/event-bus coupling.
+
+  // T1 (doc 16 Khối 7) — Digital Twin live streaming gateway: subscribe to the
+  // unified telemetry bus (in-process tap) and push throttled device deltas to the
+  // per-factory room `twin:{factoryId}` (<=10Hz). A NO-OP unless TWIN_LIVE_ENABLED —
+  // when off, the FE keeps its 5s poll fallback (digitalTwin.* queries) unchanged.
+  // Opens NO control path: signal-only (no device/DB write).
+  try {
+    const { startTwinStreamGateway } = await import("../services/twin/twinStream");
+    startTwinStreamGateway();
+  } catch (err) {
+    console.error("[TwinStream] gateway start failed:", (err as any)?.message || err);
+  }
+
+  // X1 (doc 16 Khối 1) — Field & device abstraction. Two flag-gated startups (no-ops
+  // unless FIELD_V2_ENABLED). Both open NO control path (monitoring/signal only):
+  //   (a) heartbeat TTL stale-detection sweep — marks a device 'lost_connection' once
+  //       its heartbeat exceeds the TTL + emits an advisory event (safety/fleet react
+  //       via the existing gated paths). Unref'd, non-overlapping (mirrors the outbox).
+  //   (b) device push-streaming gateway — taps the SAME unified telemetry bus as the
+  //       twin stream and pushes TIERED-sampled UDM deltas to `device:{id}` (FE keeps
+  //       its 5s poll fallback when off).
+  try {
+    const { startFieldHealthSweep } = await import("../services/field/fieldHealthService");
+    startFieldHealthSweep();
+  } catch (err) {
+    console.error("[FieldHealth] sweep start failed:", (err as any)?.message || err);
+  }
+  try {
+    const { startDeviceStreamGateway } = await import("../services/field/deviceStream");
+    startDeviceStreamGateway();
+  } catch (err) {
+    console.error("[DeviceStream] gateway start failed:", (err as any)?.message || err);
+  }
+
+  // doc 48 R1 (T2 / doc 44 G2.7) — SYNAPSE telemetry STREAM TAP: bridge telemetryBus
+  // → StreamBridge (the durable NATS JetStream bus when STREAM_BRIDGE_BACKEND=nats +
+  // NATS_URL; the in-process ring otherwise). Taps the SAME unified telemetry bus as
+  // the twin/device gateways above (registerTelemetryTap — fired AFTER canonical
+  // persist + broadcast) and republishes each ingested batch as one
+  // `syn/telemetry/{line}` message so the StreamProcessor / consumer groups / lake
+  // sink can replay-reprocess WITHOUT a second reader. Opens NO control path
+  // (telemetry replay only; same invariant as the twin/device taps).
+  //
+  // HONEST-DEGRADE: a clean no-op unless STREAM_TELEMETRY_TAP_ENABLED=true (default
+  // OFF — the orchestrator flips it on during staged activation). When enabled with
+  // the nats backend unreachable, the adapter refuses each publish with
+  // NATS_NOT_AVAILABLE (never fakes durability); a publish error is isolated from
+  // ingest and a bad broker never blocks boot. ONE honest boot status line below:
+  // disabled | installed (transport ready) | installed (transport UNAVAILABLE).
+  try {
+    const { installTelemetryStreamTap } = await import("../services/streaming/telemetryStreamTap");
+    const handle = await installTelemetryStreamTap();
+    if (!handle) {
+      console.log("[StreamTelemetryTap] disabled (set STREAM_TELEMETRY_TAP_ENABLED=true to enable)");
+    } else {
+      // Enabled: report the SELECTED backend + whether its transport is actually
+      // usable right now (nats connect probe is fail-safe → false, never throws).
+      const { getStreamBridge } = await import("../services/streaming/streamBridge");
+      const bridge = await getStreamBridge();
+      const usable = await bridge.available().catch(() => false);
+      console.log(
+        `[StreamTelemetryTap] installed → StreamBridge backend=${bridge.backend} ` +
+          `(durable=${bridge.crossProcessDurable}, transport ${
+            usable ? "ready" : "UNAVAILABLE — publishes refuse with NATS_NOT_AVAILABLE until reachable"
+          })`,
+      );
+    }
+  } catch (err) {
+    console.error("[StreamTelemetryTap] install failed:", (err as any)?.message || err);
+  }
+
+  // doc 48 R3 — COLD-TIER LAKE SINK: a DURABLE NATS JetStream consumer that archives
+  // the telemetry stream (the `syn/telemetry/{line}` messages the tap above publishes)
+  // into a time-partitioned, columnar-ready COLD TIER — gzipped-NDJSON files under
+  // LAKE_DIR (default ./data/lake) or MinIO/S3 (LAKE_S3_ENDPOINT). Closes the L2 audit
+  // gap "no lake/Parquet cold tier for telemetry; marts are plain-PG". Reads the durable
+  // log ONLY (never a control path; same invariant as the tap).
+  //
+  // HONEST-DEGRADE: clean no-op unless LAKE_SINK_ENABLED=true (default OFF — the
+  // orchestrator flips it on). With nats selected but unreachable it refuses cleanly
+  // (never fakes a lake, never falls back to the in-process ring pretending durability,
+  // never blocks boot). On the in-process backend it archives as a NON-durable source
+  // (labelled). ONE honest boot status line below.
+  try {
+    const { startLakeSink } = await import("../services/streaming/lakeSink");
+    const res = await startLakeSink();
+    if (!res) {
+      console.log("[LakeSink] disabled (set LAKE_SINK_ENABLED=true to archive telemetry → cold-tier lake)");
+    } else if (res.mode === "nats-durable") {
+      console.log(`[LakeSink] ENABLED — durable NATS consumer → ${res.target}`);
+    } else if (res.mode === "bridge") {
+      console.log(`[LakeSink] ENABLED — in-process NON-durable source → ${res.target}`);
+    } else {
+      console.log(
+        `[LakeSink] enabled but source UNAVAILABLE (${res.mode}) — NATS unreachable; no files written until it is`,
+      );
+    }
+  } catch (err) {
+    console.error("[LakeSink] start failed:", (err as any)?.message || err);
+  }
+
+  // doc 51 P3 / QĐ#5 — STREAM PROCESSOR: consume syn/telemetry/* từ StreamBridge →
+  // event-time tumbling window + watermark + late-correction → phát _line rollup.
+  // No-op trừ khi STREAM_PROCESSOR_ENABLED=true. Honest NATS-readiness qua `available`.
+  try {
+    const { startStreamProcessor } = await import("../services/streaming/streamProcessor");
+    const sp = await startStreamProcessor();
+    if (!sp) {
+      console.log("[StreamProcessor] disabled (set STREAM_PROCESSOR_ENABLED=true to derive _line rollups from the telemetry stream)");
+    } else if (sp.available) {
+      console.log(`[StreamProcessor] ENABLED — consuming ${sp.sourceTopic} (backend=${sp.backend}) → ${sp.emitTopic}`);
+    } else {
+      console.log(`[StreamProcessor] enabled but bridge transport UNAVAILABLE (backend=${sp.backend}) — no events consumed until reachable (npm i nats + NATS_URL)`);
+    }
+  } catch (err) {
+    console.error("[StreamProcessor] start failed:", (err as any)?.message || err);
+  }
+
+  // I2-b model auto-rollback sweep + doc 22 P2 model perf snapshot producer:
+  // MOVED to the W4-D background scheduler set (backgroundJobs.ts).
 
   app.use("/api/trpc", licenseEnforcementMiddleware());
   // tRPC API
@@ -4421,34 +5154,64 @@ async function startServer() {
   
   // Initialize email transporter
   initializeEmailTransporter();
-  
-  // Initialize scheduled reports (non-blocking with retry)
-  initializeScheduledReports().catch((err) => {
-    console.error("[ReportScheduler] Initialization failed, server continues without scheduled reports:", err?.message || err);
-  });
 
-  // Initialize scheduled backups (ISO 22301 DR — non-blocking)
-  initializeScheduledBackups().catch((err) => {
-    console.error("[BackupScheduler] Initialization failed:", err?.message || err);
-  });
+  // W4-D (doc 27 §8 B7) — cron-like background schedulers (reports, backups,
+  // retention, integrity scan, AI cron jobs, ERP outbox drain, fleet DB
+  // sweeps, model sweeps, PdM, DR, …) now live in ONE shared bootstrap:
+  // server/_core/backgroundJobs.ts. Default (ROLE unset): started here exactly
+  // as before — all-in-one behaviour unchanged. ROLE=api: SKIPPED — run them
+  // in the dedicated worker (`npm run start:worker`). Request-coupled services
+  // (socket gateways, MQTT broker, event-bus subscribers, ingest paths, device
+  // gateways) are NOT part of this set and keep starting below.
+  if (SERVER_ROLE === "api") {
+    console.log(
+      "[Role] ROLE=api — cron schedulers skipped; run the worker process (`npm run start:worker`)",
+    );
+  } else {
+    try {
+      const { startBackgroundSchedulers } = await import("./backgroundJobs");
+      await startBackgroundSchedulers();
+    } catch (err) {
+      console.error("[BackgroundJobs] start failed:", (err as any)?.message || err);
+    }
 
-  // S3.4 — AI batch RCA cron (daily 02:00 by default)
-  try {
-    const { initBatchRcaScheduler } = await import("../services/aiBatchRcaScheduler");
-    initBatchRcaScheduler();
-  } catch (err) {
-    console.error("[aiBatchRcaScheduler] init failed:", (err as any)?.message || err);
+    // doc 54 §11 P1.2 ⭐ — LIVE daily_statistics rollup writer. Populates
+    // daily_statistics (source for getAllOEE / OEE dashboards / warRoom line-OEE)
+    // from REAL ingested product_inspections per ACTIVE machine (absolute,
+    // idempotent, self-healing) — previously only the sim-daemon wrote this table.
+    // Cron-like data writer → belongs with the ROLE=api-skipped scheduler set (only
+    // runs in default all-in-one / worker, not in the stateless api tier). Self-gates
+    // LIVE_STATS_ROLLUP_ENABLED (default OFF) + is idempotent, so this is safe when
+    // the flag is off. ⚠ Do NOT enable alongside the sim-live-daemon (double-write —
+    // cumulative vs absolute); the two are mutually exclusive sources (see .env).
+    try {
+      const { startLiveStatsRollup } = await import("../services/liveStatsRollupService");
+      startLiveStatsRollup();
+    } catch (err) {
+      console.error("[liveStatsRollup] start failed:", (err as any)?.message || err);
+    }
+
+    // doc 40 MON-F1 — machine presence sweep (ot_telemetry recency → machine_status_logs
+    // for EVERY transport, feeding OEE availability/health). CONFIRMED already wired at
+    // boot inside startBackgroundSchedulers() above (backgroundJobs.ts, with its stop
+    // counterpart). It self-gates MACHINE_PRESENCE_ENABLED (default OFF) + is idempotent,
+    // so it is NOT re-called here — backgroundJobs.ts owns its start/stop lifecycle.
+
+    // doc 54 §11 P1.1 ⭐ — Full-Sim OT telemetry emitter. Periodically pushes synthetic
+    // heartbeat/state/cycle/temp telemetry for each ACTIVE machine THROUGH the real
+    // unified telemetry bus (→ ot_telemetry), so the (already-wired) machine presence
+    // sweep flips those machines ONLINE without real hardware. Self-gates
+    // SIM_OT_TELEMETRY_ENABLED (default OFF) + is idempotent + never throws (DB-missing
+    // = no-op). ⚠ Full-Sim ONLY — do NOT enable where ot_telemetry comes from real
+    // adapters/machines (see .env).
+    try {
+      const { startSimOtTelemetry } = await import("../services/simOtTelemetryService");
+      startSimOtTelemetry();
+    } catch (err) {
+      console.error("[simOtTelemetry] start failed:", (err as any)?.message || err);
+    }
   }
 
-  // WS-1 — AI self-learning scan (auto active-learning + retrain flagging).
-  // Disabled by default; opt in via AI_SELF_LEARNING_ENABLED=true.
-  try {
-    const { initSelfLearningScheduler } = await import("../services/aiSelfLearningScheduler");
-    initSelfLearningScheduler();
-  } catch (err) {
-    console.error("[aiSelfLearningScheduler] init failed:", (err as any)?.message || err);
-  }
-  
   // Initialize MQTT broker (if enabled)
   if (process.env.MQTT_ENABLED === 'true') {
     initMqttBroker();
@@ -4473,90 +5236,120 @@ async function startServer() {
     console.error("[AlertEvaluator] init failed:", (err as any)?.message || err);
   }
 
-  // WS-4 — Predictive maintenance cycle (statistical risk + RUL -> alerts).
-  // Disabled by default; opt in via PREDICTIVE_MAINTENANCE_ENABLED=true.
+  // WS-4 predictive maintenance + WS-2 edge stale checker + E4 edge node
+  // heartbeat checker: MOVED to the W4-D background scheduler set
+  // (backgroundJobs.ts) — DB-only sweeps.
+
+  // W4-17 — FOE DURABLE EXECUTION: rehydrate-on-boot. driveRun/resumeRun chạy trong-tiến-trình;
+  // một restart giữa chừng có thể để lại run FOE kẹt ở 'running'/'queued'/'compensating' mà
+  // không còn driver sống. Quét + đánh dấu 'interrupted' (held=resumable / failed=terminal) để
+  // không kẹt im lặng + cho phép resume thủ công. Fail-safe + non-blocking: không chặn/không
+  // crash khởi động (DB chưa nối → no-op).
   try {
-    const { startPredictiveMaintenanceJob } = await import("../services/predictiveMaintenanceService");
-    startPredictiveMaintenanceJob(30); // every 30 minutes
+    const { rehydrateInterruptedRuns } = await import("../services/orchestration/foe/foeEngine");
+    rehydrateInterruptedRuns()
+      .then((r) => {
+        if (r.scanned > 0) {
+          console.log(
+            `[FOE] Rehydrate: ${r.scanned} interrupted run(s) — ${r.interrupted} held(resumable), ` +
+              `${r.failed} failed. ids=${r.runIds.join(",")}`,
+          );
+        }
+      })
+      .catch((err) => console.error("[FOE] rehydrate failed:", (err as any)?.message || err));
   } catch (err) {
-    console.error("[PredictiveMaintenance] init failed:", (err as any)?.message || err);
+    console.error("[FOE] rehydrate wiring failed:", (err as any)?.message || err);
   }
 
-  // WS-2 — Edge stale-deployment checker (marks ACTIVE→OUTDATED past threshold)
+  // QW3 — Materialized view refresh: MOVED to the W4-D background scheduler
+  // set (backgroundJobs.ts); it now also runs on the dedicated jobs DB pool.
+
+  // Doc 27 §11 decision #1 — TimescaleDB is MANDATORY on the main DB. Non-fatal
+  // check that prints a prominent error banner when the extension / hypertables
+  // are missing (no more silent 0118-style no-op). See drizzle/0172 + runbook
+  // scripts/migrate-to-timescaledb.md.
   try {
-    const { startEdgeStaleScheduler } = await import("../services/edgeStaleScheduler");
-    startEdgeStaleScheduler();
+    const { checkDbRequirements } = await import("../services/dbRequirementsCheck");
+    await checkDbRequirements();
   } catch (err) {
-    console.error("[EdgeStale] init failed:", (err as any)?.message || err);
+    console.error("[DbRequirements] init failed:", (err as any)?.message || err);
   }
 
-  // E4 — Edge control runtime: central-side node heartbeat checker (marks edge nodes
-  // online→offline when their heartbeat goes stale). Flag-gated no-op: when
-  // EDGE_RUNTIME_ENABLED is off the scheduler starts no timer. Additive + fail-safe.
+  // Doc 27 Đợt 7 W7-D (gap V4) — AI model availability honesty: ONE consolidated
+  // startup line (which manifest models are present/missing + the embedding tier
+  // actually in effect) + a db_feature_status row ('ai_models') so the admin
+  // DB & Ingest health card shows model state. Non-fatal; models are provisioned
+  // via `node scripts/fetch-models.mjs` (models/README.md — weights are NOT in git).
   try {
-    const { startEdgeNodeHealthChecker } = await import("../services/edge/edgeNodeHealthScheduler");
-    startEdgeNodeHealthChecker();
+    const { reportAiModelAvailability } = await import("../services/aiModelAvailability");
+    await reportAiModelAvailability();
   } catch (err) {
-    console.error("[EdgeNodeHealth] init failed:", (err as any)?.message || err);
+    console.error("[AIModels] init failed:", (err as any)?.message || err);
   }
 
-  // QW3 — Materialized view refresh (machine_status_latest, hourly_yield_cache).
-  // Disabled by default; opt in via MATVIEW_REFRESH_ENABLED=true after 0111.
+  // P1 WS1.1 — Data retention pruning: MOVED to the W4-D background scheduler
+  // set (backgroundJobs.ts); it now also runs on the dedicated jobs DB pool.
+
+  // Doc 27 Đợt 2 / W2-C (gap C3/R11) — inspection ingest store-and-forward:
+  // restores the disk WAL of submissions buffered while the DB was down and
+  // starts the backfill worker (replays through the REAL submitInspection
+  // pipeline with idempotency). Safe no-op unless INSPECTION_STORE_FORWARD_ENABLED
+  // / OT_STORE_FORWARD_ENABLED is on.
   try {
-    const { startMaterializedViewRefresh } = await import("../services/materializedViewRefreshService");
-    startMaterializedViewRefresh();
+    const { initInspectionStoreForward } = await import("../services/inspection/inspectionStoreForward");
+    await initInspectionStoreForward();
   } catch (err) {
-    console.error("[MatviewRefresh] init failed:", (err as any)?.message || err);
+    console.error("[InspectionSF] init failed:", (err as any)?.message || err);
   }
 
-  // P1 WS1.1 — Data retention pruning for high-volume time-series/log tables.
-  // Disabled by default (it deletes data). Opt in via DATA_RETENTION_ENABLED=true;
-  // use DATA_RETENTION_DRY_RUN=true for a safe first pass.
+  // doc 56 Đ1 (Trục 2) — PROCESS FEED store-and-forward: mirror của inspection SF cho
+  // process_results (máy bắt vít/điểm keo/hàn). Restore WAL đĩa + khởi động backfill
+  // worker replay qua submitProcessResult (idempotency). No-op trừ khi
+  // PROCESS_STORE_FORWARD_ENABLED / OT_STORE_FORWARD_ENABLED bật.
   try {
-    const { startDataRetention } = await import("../services/dataRetentionService");
-    startDataRetention();
+    const { initProcessStoreForward } = await import("../services/process/processStoreForward");
+    await initProcessStoreForward();
   } catch (err) {
-    console.error("[Retention] init failed:", (err as any)?.message || err);
+    console.error("[ProcessSF] init failed:", (err as any)?.message || err);
   }
 
-  // B4.3 — Automated executive reports (AI exec summary, shift/day/week).
-  // Disabled by default; opt in via EXEC_REPORT_ENABLED=true. Safe no-op when OFF.
+  // Doc 27 §11 decisions #2/#5 — image lifecycle: MOVED to the W4-D background
+  // scheduler set (backgroundJobs.ts). NOTE: in a split topology the worker
+  // must mount the SAME uploads volume as the API.
+
+  // Doc 27 §3 gap C1 (W2-A) — HOT-FOLDER ingestion: watch per-machine result-file
+  // folders (CSV/XML/JSON drops from real AOI/AVI machines), normalize via the
+  // registered vision adapter and persist through the EXISTING submitInspection
+  // path. Disabled by default; opt in via HOT_FOLDER_INGEST_ENABLED=true. Safe
+  // no-op when OFF; a bad folder/config never blocks boot.
   try {
-    const { startExecutiveReportScheduler } = await import("../services/reportScheduler");
-    startExecutiveReportScheduler();
+    const { startHotFolderIngest } = await import("../services/vision/hotFolderService");
+    void startHotFolderIngest().catch((err) =>
+      console.error("[HotFolder] start failed:", (err as any)?.message || err),
+    );
   } catch (err) {
-    console.error("[ExecReportScheduler] init failed:", (err as any)?.message || err);
+    console.error("[HotFolder] init failed:", (err as any)?.message || err);
   }
 
-  // B3 — Anomaly bank auto-rebuild (PatchCore memory banks per scope from stored OK
-  // DINOv2 vectors). Disabled by default; opt in via ANOMALY_BANK_AUTO_REBUILD_ENABLED=true.
-  // Safe no-op when OFF; a bad scope never aborts the run.
+  // Doc 27 §9 V14 (W7-E) — ACQUISITION WORKER autostart: grab→quality→(optional)
+  // submit loops over file/mock image sources (the first runtime consumer of the
+  // acquisition framework). Gated by LIVE_ACQUISITION_ENABLED + the
+  // ACQUISITION_WORKER_AUTOSTART JSON config. Safe no-op when unset; never blocks boot.
   try {
-    const { startAnomalyBankScheduler } = await import("../services/aiAnomalyBankScheduler");
-    startAnomalyBankScheduler();
+    const { startAcquisitionWorkersFromEnv } = await import(
+      "../services/vision/acquisition/acquisitionWorker"
+    );
+    void startAcquisitionWorkersFromEnv().catch((err) =>
+      console.error("[AcqWorker] autostart failed:", (err as any)?.message || err),
+    );
   } catch (err) {
-    console.error("[anomalyBankScheduler] init failed:", (err as any)?.message || err);
+    console.error("[AcqWorker] init failed:", (err as any)?.message || err);
   }
 
-  // Threshold auto-tune — proposes (HITL) tuned NG / measurement-point limits once
-  // enough new data shows the current value is suboptimal. Disabled by default; opt
-  // in via AI_THRESHOLD_AUTOTUNE_ENABLED=true. Safe no-op when OFF; never auto-applies.
-  try {
-    const { startThresholdTuneScheduler } = await import("../services/aiThresholdTuneScheduler");
-    startThresholdTuneScheduler();
-  } catch (err) {
-    console.error("[aiThresholdTuneScheduler] init failed:", (err as any)?.message || err);
-  }
-
-  // doc 11 · W1.2 — KB auto-sync: keep the AI knowledge base fresh by running the
-  // incremental kb:sync pipeline on a nightly cron. Disabled by default; opt in via
-  // KB_AUTOSYNC_ENABLED=true. Safe no-op when OFF; never blocks boot.
-  try {
-    const { startKbSyncScheduler } = await import("../services/kbSyncScheduler");
-    startKbSyncScheduler();
-  } catch (err) {
-    console.error("[kbSyncScheduler] init failed:", (err as any)?.message || err);
-  }
+  // B4.3 executive reports, B3 anomaly-bank auto-rebuild, threshold auto-tune,
+  // doc 11 KB auto-sync and W3-A weekly integrity scan: MOVED to the W4-D
+  // background scheduler set (backgroundJobs.ts) — cron jobs with no
+  // socket/event-bus coupling (integrity scan also runs on the jobs DB pool).
 
   // P2 WS2.3 — Orchestration rules engine (subscribes to the event bus).
   // Disabled by default; opt in via ORCHESTRATION_ENABLED=true. Notify/audit only.
@@ -4591,6 +5384,20 @@ async function startServer() {
     console.error("[Federation] UNS subscriber init failed:", (err as any)?.message || err);
   }
 
+  // doc 22 · P2 (Khối 3) — SIMULATED safety-track publisher: periodically synthesises
+  // person↔robot proximity tracks and drives them through the EXISTING advisory ingest
+  // path (nearMissAdvisor + safety-zone evaluator) so the 3-tier zone evaluator +
+  // 'safety:event' socket + Safety Cockpit are exercised end-to-end. Every track is
+  // SIMULATED (source 'test'), clearly labelled — NOT a real sensor. Commands NO device,
+  // actuates NO stop. Disabled by default; opt in via SAFETY_SIM_TRACKS_ENABLED=true.
+  // Advisory events only persist when SAFETY_AUDIT_ENABLED is also on. Safe no-op OFF.
+  try {
+    const { startSimTrackPublisher } = await import("../services/safety/simTrackPublisher");
+    startSimTrackPublisher();
+  } catch (err) {
+    console.error("[SafetySim] init failed:", (err as any)?.message || err);
+  }
+
   // P4 WS4.2 — AI orchestration watcher (event bus → local LLM advisory).
   // Disabled by default; opt in via AI_ORCHESTRATION_ENABLED=true. Advisory only.
   try {
@@ -4607,6 +5414,46 @@ async function startServer() {
     startAutoProposer();
   } catch (err) {
     console.error("[aiAutoProposer] init failed:", (err as any)?.message || err);
+  }
+
+  // W1-3 (doc 25 T2) — Fail-fast: cảnh báo đỏ nếu *_CONTROL_ENABLED=true nhưng
+  // *_GATEWAY_ENABLED tắt (control trang bị đường ghi thật nhưng không adapter nào
+  // start → lệnh rơi ADAPTER_OFFLINE âm thầm). KHÔNG tự bật gateway (fail-closed).
+  try {
+    const { logControlGatewayConsistency } = await import("../services/controlGatewayConsistency");
+    logControlGatewayConsistency();
+  } catch (err) {
+    console.error("[ControlGatewayConsistency] check failed:", (err as any)?.message || err);
+  }
+
+  // doc 40 Wave 3A (§11 · OT-F2) — Connectivity / flag summary lúc boot. Operator nhìn
+  // MỘT log biết đường/gate nào ARMED (đang thật) vs DORMANT (cờ tắt) vs BYPASS (một lớp
+  // enforcement bị tắt). Nguồn: cùng ma trận READ-ONLY của readinessRouter (single source
+  // of truth). KHÔNG đổi hành vi — chỉ đọc process.env + getter thuần và IN. Toàn bộ chi
+  // tiết trực quan xem tại trang /control-readiness (Trust & Enforcement Center).
+  try {
+    const { collectFlagMatrix } = await import("../routers/readinessRouter");
+    const items = collectFlagMatrix();
+    const tag = (s: string) =>
+      s === "armed" ? "ARMED" : s === "bypass" ? "BYPASS" : s === "warn" ? "WARN " : "dormant";
+    const s = {
+      armed: items.filter((i) => i.state === "armed").length,
+      dormant: items.filter((i) => i.state === "dormant").length,
+      bypass: items.filter((i) => i.state === "bypass").length,
+      warn: items.filter((i) => i.state === "warn").length,
+    };
+    console.log(
+      `[Readiness] Control/Trust flag summary — ${s.armed} armed · ${s.dormant} dormant · ${s.bypass} bypass · ${s.warn} warn ` +
+        `(chi tiết: /control-readiness)`,
+    );
+    // Chỉ liệt kê những mục CẦN CHÚ Ý (bypass/warn) để log gọn; dormant/armed đã tổng hợp ở trên.
+    for (const i of items) {
+      if (i.state === "bypass" || i.state === "warn") {
+        console.log(`[Readiness]   ${tag(i.state)} · ${i.key} — ${i.reason}`);
+      }
+    }
+  } catch (err) {
+    console.error("[Readiness] flag summary failed:", (err as any)?.message || err);
   }
 
   // P3 — Robotics framework (Fanuc/Mitsubishi/Delta/Techman + sim). Importing the
@@ -4627,6 +5474,18 @@ async function startServer() {
     await startVda5050();
   } catch (err) {
     console.error("[VDA5050] init failed:", (err as any)?.message || err);
+  }
+
+  // I3a (doc 20 §3/§5) — ROS2 ↔ platform bridge over rosbridge WebSocket (pure JS, no
+  // native ROS2 dep). Subscribes ROS2 telemetry topics → telemetryBus; platform commands
+  // still route through robotCommandDispatcher (no new control path). Disabled by default;
+  // opt in via ROS2_BRIDGE_ENABLED=true + ROSBRIDGE_URL. HONEST: rosbridge unreachable →
+  // logged + connects nothing (never crashes the process, never fabricates a connection).
+  try {
+    const { startRos2Bridge } = await import("../services/ros2");
+    await startRos2Bridge();
+  } catch (err) {
+    console.error("[ROS2] bridge init failed:", (err as any)?.message || err);
   }
 
   // G1 — Edge Gateway OPC-UA/Modbus ingest (scaffold).
@@ -4656,6 +5515,37 @@ async function startServer() {
     console.error("[MTConnect] init failed:", (err as any)?.message || err);
   }
 
+  // G1.2 (doc 44 W0-D) — IPC-CFX (IPC-2591) telemetry client: subscribe CFX JSON
+  // envelopes from SMT machines (mounters / reflow / stencil printers) over AMQP 1.0
+  // → CanonicalSample → the ONE unified telemetry bus. INBOUND-ONLY (monitoring, no
+  // control path). No-op unless CFX_ENABLED=true + CFX_ENDPOINTS configured. A CFX
+  // startup error NEVER crashes the server (mirrors the MTConnect bring-up above).
+  try {
+    const { startCfxClient } = await import("../services/cfx");
+    await startCfxClient();
+  } catch (err) {
+    console.error("[CFX] init failed:", (err as any)?.message || err);
+  }
+
+  // G2.5 (doc 44 W0-E) — Contract Schema Registry: hydrate persisted schemas +
+  // seed canonical contracts (contracts/canonical/*.json) through the BACKWARD
+  // compat gate. No-op unless CONTRACT_REGISTRY_PERSIST_ENABLED=true; never throws.
+  try {
+    const { initContractRegistry } = await import("../services/contracts/schemaRegistry");
+    await initContractRegistry();
+  } catch (err) {
+    console.error("[Contracts] registry init failed:", (err as any)?.message || err);
+  }
+
+  // W3-A1 (doc 44 G3.13) — Policy store: sync as-code Git→DB + load snapshot.
+  // No-op unless POLICY_STORE_ENABLED=true; never throws.
+  try {
+    const { initPolicyStore } = await import("../services/security/policyStore");
+    await initPolicyStore();
+  } catch (err) {
+    console.error("[Policy] store init failed:", (err as any)?.message || err);
+  }
+
   // F5a — Interlock engine (ALERT-ONLY). No-op unless INTERLOCK_ENGINE_ENABLED=true.
   // SAFETY: this engine raises Andon + records interlock_events ONLY; it has NO
   // path to commandDispatcher / driver.writeTags (auto block/stop → 'skipped').
@@ -4666,23 +5556,30 @@ async function startServer() {
     console.error("[Interlock] init failed:", (err as any)?.message || err);
   }
 
-  // G2/G7 — PdM closed-loop: tự sinh maintenance work-order từ predictedFailureRisk.
-  // Disabled by default; opt in via PDM_WORKORDER_ENABLED=true.
+  // S2b (doc 20 §2/§5) — Vision human-detection producer + Safety-PLC status adapter.
+  // Both are ADVISORY and ON-DEMAND (driven by safety.ingestDetectionFrame /
+  // safety.readSafetyPlc), so there is NO persistent poller/socket to start — this
+  // block only ANNOUNCES the flag state honestly (no work, no control path). Disabled
+  // by default; opt in via SAFETY_VISION_ENABLED / SAFETY_PLC_ADAPTER_ENABLED.
+  // HONEST: SAFETY_VISION needs a real camera + calibration + an exported ONNX person
+  // model (yolo26n.pt is PyTorch → export to .onnx once); with no backend it produces
+  // NOTHING. SAFETY_PLC is READ-ONLY monitoring — the certified Safety PLC performs the
+  // rated stop itself in hardware; this only OBSERVES and LOGS advisory events.
   try {
-    const { startPdmWorkOrderService } = await import("../services/pdmWorkOrderService");
-    startPdmWorkOrderService();
+    const { safetyVisionEnabled } = await import("../services/safety/vision/humanDetectionProducer");
+    const { safetyPlcAdapterEnabled } = await import("../services/safety/plc/safetyPlcAdapter");
+    if (safetyVisionEnabled()) {
+      console.log("[SafetyVision] SAFETY_VISION_ENABLED=true — ADVISORY producer ready (on-demand; needs real camera+calibration+ONNX person model; no fabricated detections).");
+    }
+    if (safetyPlcAdapterEnabled()) {
+      console.log("[SafetyPLC] SAFETY_PLC_ADAPTER_ENABLED=true — READ-ONLY status adapter ready (on-demand; sim backend by default; NEVER actuates a rated stop).");
+    }
   } catch (err) {
-    console.error("[PdmWorkOrder] init failed:", (err as any)?.message || err);
+    console.error("[S2b] init failed:", (err as any)?.message || err);
   }
 
-  // G3/G12 — Disaster-Recovery verify-restore cadence (no-op khi cờ tắt).
-  // Opt in via DR_VERIFY_ENABLED=true.
-  try {
-    const { startDisasterRecoveryService } = await import("../services/disasterRecoveryService");
-    startDisasterRecoveryService();
-  } catch (err) {
-    console.error("[DR] init failed:", (err as any)?.message || err);
-  }
+  // G2/G7 PdM work-order closed-loop + G3/G12 DR verify-restore: MOVED to the
+  // W4-D background scheduler set (backgroundJobs.ts).
 
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
@@ -4700,9 +5597,40 @@ async function startServer() {
 
   const protocol = HTTPS_ENABLED ? "https" : "http";
 
+  // ── R-1 (doc 38): HTTP timeouts — slow-loris / slow-body hardening ──────────
+  // requestTimeout bounds the time to receive an ENTIRE request (headers+body).
+  // Node clears this timer the moment the request is fully parsed, so long-lived
+  // RESPONSES are NOT affected: the SSE stream (/api/stream), socket.io upgrades
+  // and any long-poll all complete their request quickly and keep streaming.
+  //   • headersTimeout — max time to receive request headers (the primary
+  //     slow-loris defense); must sit slightly above requestTimeout.
+  //   • keepAliveTimeout — idle window BETWEEN requests on a kept-alive socket.
+  // NOTE for operators: requestTimeout also bounds large UPLOADS (200MB APK /
+  // AOI ZIP). On a factory LAN a 200MB body finishes well under 60s; if you push
+  // very large uploads over a slow WAN, raise HTTP_REQUEST_TIMEOUT_MS accordingly
+  // (set 0 to disable the request-receipt bound entirely).
+  const httpRequestTimeoutMs = Number(process.env.HTTP_REQUEST_TIMEOUT_MS);
+  const httpHeadersTimeoutMs = Number(process.env.HTTP_HEADERS_TIMEOUT_MS);
+  server.requestTimeout =
+    Number.isFinite(httpRequestTimeoutMs) && httpRequestTimeoutMs >= 0
+      ? httpRequestTimeoutMs
+      : 60_000;
+  server.headersTimeout =
+    Number.isFinite(httpHeadersTimeoutMs) && httpHeadersTimeoutMs > 0
+      ? httpHeadersTimeoutMs
+      : 65_000;
+  server.keepAliveTimeout = 61_000;
+
   server.listen(port, () => {
     logger.info({ port, protocol }, `Server running on ${protocol}://localhost:${port}/`);
-    
+
+    // doc 33 F1 (SYNAPSE ADR-007): report the resolved edition + infra profile (advisory).
+    import("./deploymentProfile")
+      .then(({ describeDeployment, resolveDeploymentProfile }) => {
+        logger.info({ deployment: resolveDeploymentProfile() }, describeDeployment());
+      })
+      .catch(() => {});
+
     // Initialize cache warming service
     cacheWarmingService.initialize().catch(err => {
       logger.error({ err }, '[CacheWarming] Failed to initialize');
@@ -4719,6 +5647,12 @@ async function startServer() {
     }
     isShuttingDown = true;
     logger.info(`${signal} received, shutting down gracefully...`);
+    // W4-D (B7): stop the whole cron-scheduler set in one call (covers movers
+    // like batch-RCA/predictive/edge/model sweeps/outbox/fleet timers). Every
+    // stop is idempotent, so the individual stops below remain harmless.
+    import("./backgroundJobs")
+      .then((m) => m.stopBackgroundSchedulers())
+      .catch(() => {});
     shutdownScheduledReports();
     import("../services/reportScheduler")
       .then((m) => m.stopExecutiveReportScheduler())
@@ -4732,6 +5666,10 @@ async function startServer() {
     import("../services/kbSyncScheduler")
       .then((m) => m.stopKbSyncScheduler())
       .catch(() => {});
+    // W3-A (doc 27) — stop weekly integrity scan (no-op if not running)
+    import("../services/integrityScanService")
+      .then((m) => m.stopIntegrityScanScheduler())
+      .catch(() => {});
     // doc 13 · F1 — stop federation aggregator (no-op if not running)
     import("../services/federation/aggregatorService")
       .then((m) => m.stopFederationAggregator())
@@ -4740,11 +5678,25 @@ async function startServer() {
     import("../services/federation/unsSubscriber")
       .then((m) => m.stopFederationUnsSubscriber())
       .catch(() => {});
+    // doc 22 · P2 — stop SIMULATED safety-track publisher (no-op if not running)
+    import("../services/safety/simTrackPublisher")
+      .then((m) => m.stopSimTrackPublisher())
+      .catch(() => {});
     shutdownScheduledBackups();
     shutdownRuntimeSecurity();
     cacheWarmingService.stop();
     stopEscalationScheduler();
     stopAlertEvaluatorScheduler();
+    // doc 54 §11 P1.2 — stop LIVE daily_statistics rollup (idempotent no-op if the
+    // flag was off / it never started). Started in the ROLE!=api block above.
+    import("../services/liveStatsRollupService")
+      .then((m) => m.stopLiveStatsRollup())
+      .catch(() => {});
+    // doc 54 §11 P1.1 — stop Full-Sim OT telemetry emitter (idempotent no-op if the
+    // flag was off / it never started). Started in the ROLE!=api block above.
+    import("../services/simOtTelemetryService")
+      .then((m) => m.stopSimOtTelemetry())
+      .catch(() => {});
     if (process.env.MQTT_ENABLED === 'true') {
       // F3b — shutdownMqttBroker() đã lo graceful NDEATH (+DDEATH) best-effort TRƯỚC
       // khi đóng UNS publisher (xem mqttService.shutdownMqttBroker). NBIRTH-on-connect
@@ -4764,6 +5716,10 @@ async function startServer() {
     import("../services/mtconnect/mtconnectPoller")
       .then((m) => m.stopMtconnectPoller())
       .catch(() => {});
+    // G1.2 — dừng CFX client (no-op nếu chưa chạy)
+    import("../services/cfx")
+      .then((m) => m.stopCfxClient())
+      .catch(() => {});
     // F5a — dừng interlock engine (no-op nếu chưa chạy)
     import("../services/interlock")
       .then((m) => m.stopInterlock())
@@ -4779,6 +5735,14 @@ async function startServer() {
     // P1 WS1.1 — dừng data retention sweeper (no-op nếu chưa chạy)
     import("../services/dataRetentionService")
       .then((m) => m.stopDataRetention())
+      .catch(() => {});
+    // Doc 27 #2/#5 — dừng image lifecycle (no-op nếu chưa chạy)
+    import("../services/imageLifecycleService")
+      .then((m) => m.stopImageLifecycle())
+      .catch(() => {});
+    // Doc 27 C1 (W2-A) — dừng hot-folder watchers (no-op nếu chưa chạy)
+    import("../services/vision/hotFolderService")
+      .then((m) => m.stopHotFolderIngest())
       .catch(() => {});
     // P2 WS2.3 — dừng orchestration rules engine (no-op nếu chưa chạy)
     import("../services/orchestration/rulesEngine")

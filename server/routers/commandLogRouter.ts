@@ -12,7 +12,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { and, eq, gte, desc, sql } from "drizzle-orm";
+import { and, eq, gte, desc, sql, isNotNull } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb as getDbRaw } from "../db";
@@ -83,5 +83,46 @@ export const commandLogRouter = router({
         .where(gte(commandLog.createdAt, since))
         .groupBy(commandLog.triggerKind);
       return { byStatus, byTrigger };
+    }),
+
+  /**
+   * Thời lượng lệnh TRUNG BÌNH thật, suy ra từ lịch sử (ackedAt − sentAt), gộp theo
+   * commandType. Dùng cho cell-twin truyền `commandDurations` vào orchestration.simulate
+   * để KPI nhịp chu kỳ dựa trên số liệu thật thay vì mặc định. Read-only; nếu chưa có
+   * lịch sử → durations rỗng (twin tự dùng mặc định).
+   */
+  avgDurations: protectedProcedure
+    .use(requirePermission("machine_control", "canView"))
+    .input(z.object({ sinceHours: z.number().int().min(1).max(24 * 90).default(24 * 30) }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      const sinceHours = input?.sinceHours ?? 24 * 30;
+      const since = new Date(Date.now() - sinceHours * 3600 * 1000);
+      const rows = await db
+        .select({
+          commandType: commandLog.commandType,
+          avgMs: sql<number>`avg(extract(epoch from (${commandLog.ackedAt} - ${commandLog.sentAt})) * 1000)::float`,
+          n: sql<number>`count(*)::int`,
+        })
+        .from(commandLog)
+        .where(
+          and(
+            gte(commandLog.createdAt, since),
+            isNotNull(commandLog.sentAt),
+            isNotNull(commandLog.ackedAt),
+            isNotNull(commandLog.commandType),
+            sql`${commandLog.ackedAt} > ${commandLog.sentAt}`,
+          ),
+        )
+        .groupBy(commandLog.commandType);
+      const durations: Record<string, number> = {};
+      let samples = 0;
+      for (const r of rows) {
+        if (r.commandType && Number.isFinite(r.avgMs) && r.avgMs > 0) {
+          durations[r.commandType] = Math.round(r.avgMs);
+          samples += r.n;
+        }
+      }
+      return { durations, samples, sinceHours };
     }),
 });

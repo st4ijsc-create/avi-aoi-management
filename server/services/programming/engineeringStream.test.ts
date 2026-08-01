@@ -8,6 +8,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   EngineeringStreamManager,
   streamingEnabled,
+  getEngineeringStreamManager,
+  defaultSampleSource,
   type SymbolSample,
 } from "./engineeringStream";
 
@@ -91,5 +93,16 @@ describe("EngineeringStreamManager", () => {
     expect(streamingEnabled()).toBe(true);
     process.env.DPC_STREAMING_ENABLED = "false";
     expect(streamingEnabled()).toBe(false);
+  });
+
+  it("getEngineeringStreamManager returns a stable singleton", () => {
+    const a = getEngineeringStreamManager();
+    const b = getEngineeringStreamManager();
+    expect(a).toBe(b);
+    expect(a).toBeInstanceOf(EngineeringStreamManager);
+  });
+
+  it("defaultSampleSource is honest — returns [] without a reachable device", async () => {
+    await expect(defaultSampleSource(1, ["X0", "Y0"])).resolves.toEqual([]);
   });
 });

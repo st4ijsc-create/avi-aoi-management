@@ -2,6 +2,7 @@ import { getDb } from "./connection";
 import { eq, and, desc, asc, gte, lte, gt, lt, like, sql, or, isNull, isNotNull, inArray, SQL } from "drizzle-orm";
 import {
   productInspections, InsertProductInspection,
+  inspectionIdempotencyKeys,
   measurementResults, InsertMeasurementResult,
   measurementPointDefs,
   productModels,
@@ -16,12 +17,438 @@ import {
 } from "../../drizzle/schema";
 import { getUserCorporateAssignments, getUserFactoryAssignments } from "./auth";
 
+// ============ LIST PROJECTION (doc 27 gap B9) ============
+/**
+ * Columns actually consumed by the LIST consumers of product_inspections
+ * (inspection.list / inspection.listCursor / inspection.search →
+ * History, Dashboard widgets, HistoryInfiniteScroll, drill-down, exports,
+ * cachedStatistics). Heavy/detail-only columns are deliberately NOT read on
+ * these hot paths: notes, tags, ntfConfirmedBy/At, ntfReason, isArchived,
+ * archivedAt/By, aiConfidence, aiModelId, aiProcessedAt, aiDetails (json),
+ * inspectionType, variantPayload (jsonb), operatorId, productionOrderCode,
+ * ingestMode, updatedAt. Detail views (inspection.getById) keep full rows.
+ */
+export const inspectionListProjection = {
+  id: productInspections.id,
+  machineId: productInspections.machineId,
+  productModelId: productInspections.productModelId,
+  corporateCode: productInspections.corporateCode,
+  factoryCode: productInspections.factoryCode,
+  workshopCode: productInspections.workshopCode,
+  lineCode: productInspections.lineCode,
+  stageCode: productInspections.stageCode,
+  serialNumber: productInspections.serialNumber,
+  productModel: productInspections.productModel,
+  batchNumber: productInspections.batchNumber,
+  overallResult: productInspections.overallResult,
+  originalResult: productInspections.originalResult,
+  inspectionTime: productInspections.inspectionTime,
+  cycleTime: productInspections.cycleTime,
+  acknowledgedBy: productInspections.acknowledgedBy,
+  acknowledgedAt: productInspections.acknowledgedAt,
+  aiDecision: productInspections.aiDecision,
+  // W7-B (doc 27 V3): heuristic false-call likelihood — History queue sort +
+  // "Nghi báo giả" badge read it from the list projection (advisory only).
+  ntfScore: productInspections.ntfScore,
+  createdAt: productInspections.createdAt,
+} as const;
+
+/** Row shape returned by the projected list reads. */
+export type InspectionListRow = Pick<
+  typeof productInspections.$inferSelect,
+  keyof typeof inspectionListProjection
+>;
+
 // ============ PRODUCT INSPECTION FUNCTIONS ============
-export async function createProductInspection(data: InsertProductInspection) {
+
+/**
+ * Doc 51 P0 (R2) — OPTIONAL out-param of {@link createProductInspection}.
+ *
+ * WHY an out-param and not a richer return type: `createProductInspection` is
+ * called by ~20 seeds/tests/analytics fixtures that all consume `Promise<number>`.
+ * Widening the return would churn every one of them; the ingest path is the ONLY
+ * caller that needs to know an insert was swallowed by the idempotency index.
+ * Pass an object, read `.duplicate` after the await. Callers that don't care stay
+ * byte-for-byte unchanged.
+ */
+export interface CreateInspectionOutcome {
+  /**
+   * true ⇒ the row ALREADY existed (natural key uq_inspections_machine_serial_time
+   * from 0272, or — doc 51 P1 — the explicit idempotency ledger from 0275) and the
+   * returned id is the ORIGINAL row's — the caller MUST skip every side-effect
+   * (order quantities, ERP outbox, NG alerts, measurement inserts), otherwise the
+   * de-duplication is pointless.
+   */
+  duplicate: boolean;
+}
+
+/**
+ * Minimal surface of a drizzle db/tx handle used by the insert helpers below, so
+ * the SAME code runs on the pooled handle and inside a transaction.
+ */
+type InsertRunner = Pick<NonNullable<Awaited<ReturnType<typeof getDb>>>, "insert" | "select">;
+
+/**
+ * Doc 51 P0 (R2) — the idempotent header insert, shared by both paths below.
+ *
+ * ON CONFLICT DO NOTHING with NO conflict target: ANY unique violation (in
+ * practice uq_inspections_machine_serial_time, the partial natural key from
+ * migration 0272) returns zero rows instead of throwing. Inert when the index is
+ * absent — then nothing ever conflicts and this behaves exactly like a plain
+ * insert. On conflict, resolves the EXISTING row (lowest id = the original) so
+ * the machine gets the same inspectionId back.
+ */
+async function insertInspectionHeader(
+  runner: InsertRunner,
+  data: InsertProductInspection,
+): Promise<{ id: number; duplicate: boolean }> {
+  const inserted = await runner
+    .insert(productInspections)
+    .values(data)
+    .onConflictDoNothing()
+    .returning({ id: productInspections.id });
+
+  const newId: number | undefined = inserted[0]?.id;
+  if (newId !== undefined) return { id: newId, duplicate: false };
+
+  const existing = await runner
+    .select({ id: productInspections.id })
+    .from(productInspections)
+    .where(and(
+      eq(productInspections.machineId, data.machineId),
+      eq(productInspections.serialNumber, data.serialNumber),
+      eq(productInspections.inspectionTime, data.inspectionTime as Date),
+    ))
+    .orderBy(asc(productInspections.id))
+    .limit(1);
+  const existingId: number | undefined = existing[0]?.id;
+  if (existingId === undefined) {
+    // Conflicted on something OTHER than the natural key (or the row vanished
+    // between the two statements). Never invent an id — fail loudly; the ingest
+    // path treats this as transient and buffers to the WAL.
+    throw new Error(
+      `createProductInspection: insert conflicted but no existing row for ` +
+        `(machineId=${data.machineId}, serialNumber=${data.serialNumber}, ` +
+        `inspectionTime=${String(data.inspectionTime)})`,
+    );
+  }
+  return { id: existingId, duplicate: true };
+}
+
+export async function createProductInspection(
+  data: InsertProductInspection,
+  outcome?: CreateInspectionOutcome,
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [result] = await db.insert(productInspections).values(data).returning({ id: productInspections.id });
-  return result.id;
+
+  const idempotencyKey = data.idempotencyKey?.trim() || undefined;
+
+  let id: number;
+  let duplicate: boolean;
+
+  if (idempotencyKey) {
+    // ══ Doc 51 P1 — EXPLICIT IDEMPOTENCY KEY (closes the 0272 hole) ═════════
+    // 0272's natural key needs inspectionTime; a machine that omits it gets a
+    // fresh now() per retry ⇒ a different key per retry ⇒ no protection at all.
+    // A client-generated key is stable across retries, but CANNOT be a unique
+    // index on product_inspections (Timescale hypertable — every unique index
+    // must carry the partition column inspectionTime; see the ledger's doc
+    // comment in drizzle/schema/inspection.ts). So the constraint lives in the
+    // plain ledger table and the two writes are made atomic here.
+    //
+    // Ordering is deliberate: CLAIM FIRST. Postgres' ON CONFLICT DO NOTHING
+    // waits on an in-flight conflicting insert before deciding, so two
+    // concurrent retries of the same key serialise — the loser sees the winner's
+    // COMMITTED row (inspectionId already back-filled in the same transaction)
+    // and reports duplicate. A crash mid-way rolls the claim back with the
+    // header, so a lost board never leaves a poisoned key behind.
+    ({ id, duplicate } = await db.transaction(async (tx) => {
+      const claimed = await tx
+        .insert(inspectionIdempotencyKeys)
+        .values({
+          machineId: data.machineId,
+          idempotencyKey,
+          inspectionTime: (data.inspectionTime as Date | undefined) ?? null,
+        })
+        .onConflictDoNothing()
+        .returning({ machineId: inspectionIdempotencyKeys.machineId });
+
+      if (claimed.length === 0) {
+        // Key already used by a COMMITTED submission → this is a retry.
+        const prior = await tx
+          .select({ inspectionId: inspectionIdempotencyKeys.inspectionId })
+          .from(inspectionIdempotencyKeys)
+          .where(and(
+            eq(inspectionIdempotencyKeys.machineId, data.machineId),
+            eq(inspectionIdempotencyKeys.idempotencyKey, idempotencyKey),
+          ))
+          .limit(1);
+        const priorId = prior[0]?.inspectionId;
+        if (priorId == null) {
+          // A committed claim with no inspectionId breaks the write protocol's
+          // invariant. Never invent an id — throw; the ingest path treats this
+          // as transient and buffers to the WAL.
+          throw new Error(
+            `createProductInspection: idempotency key claimed but unresolved ` +
+              `(machineId=${data.machineId}, idempotencyKey=${idempotencyKey})`,
+          );
+        }
+        return { id: priorId, duplicate: true };
+      }
+
+      // We own the key. The header can STILL collide on 0272's natural key (same
+      // serial+time re-sent under a NEW idempotency key) — then we point this
+      // key at the original row and report duplicate, which is exactly right.
+      const header = await insertInspectionHeader(tx, data);
+      await tx
+        .update(inspectionIdempotencyKeys)
+        .set({ inspectionId: header.id })
+        .where(and(
+          eq(inspectionIdempotencyKeys.machineId, data.machineId),
+          eq(inspectionIdempotencyKeys.idempotencyKey, idempotencyKey),
+        ));
+      return header;
+    }));
+  } else {
+    // No explicit key → 0272 natural-key protection only. Byte-for-byte the P0
+    // behaviour (single statement, no transaction) for the ~20 seed/test/
+    // analytics callers and every machine that hasn't adopted the key yet.
+    ({ id, duplicate } = await insertInspectionHeader(db, data));
+  }
+
+  if (outcome) outcome.duplicate = duplicate;
+
+  // Doc 38 T-1 (P0 #3) — an inspection submit is also machine "activity". Feed the
+  // downtime auto-detector so machines that report only via inspection (no separate
+  // heartbeat) still avoid false-positive downtime. Fire-and-forget + dynamic import
+  // (avoids a db⇄service require cycle); inert unless DOWNTIME_DETECTION_ENABLED.
+  if (typeof data.machineId === "number") {
+    const mid = data.machineId;
+    void import("../services/downtimeDetectionService")
+      .then((m) => m.recordMachineActivity(mid))
+      .catch(() => {});
+  }
+
+  return id;
+}
+
+/**
+ * Doc 55 Item 1 (PA-A "reserve-id") — reserve a product_inspections surrogate id
+ * from its sequence WITHOUT inserting a row.
+ *
+ * THIS is what makes a single physical transaction reachable from the ingest path
+ * (see the deleteInspectionForCompensation doc-comment below for why it was NOT,
+ * before): the measurement images are stored under object keys that EMBED the
+ * inspection id, and those uploads must stay OUTSIDE any DB transaction — so the id
+ * has to exist before the header row does. `serial("id")` (drizzle/schema/
+ * inspection.ts) owns the sequence product_inspections_id_seq; nextval advances it
+ * atomically and never hands the same value to two callers, so concurrent
+ * reservations can never collide. A reserved id that is never inserted (a
+ * duplicate, or a rolled-back tx) simply leaves a GAP — sequences are explicitly
+ * allowed to, and every downstream reader keys off the row, never off contiguity.
+ *
+ * On a Timescale hypertable the column's sequence still exists and behaves
+ * identically (verified on the dev/test DB). Returns a plain positive integer
+ * (nextval comes back as a bigint string over postgres-js → coerced + validated).
+ */
+export async function reserveInspectionId(): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const res = await db.execute(sql`SELECT nextval('product_inspections_id_seq') AS id`);
+  const rows = ((res as { rows?: unknown[] })?.rows ?? (res as unknown[])) as Array<{ id?: unknown }>;
+  const raw = rows?.[0]?.id;
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error(`reserveInspectionId: unexpected nextval result ${String(raw)}`);
+  }
+  return id;
+}
+
+/**
+ * Doc 55 Item 1 (PA-A) — persist an inspection HEADER together with its measurement
+ * rows (and the optional spec-gate overall→NG promotion) in ONE physical
+ * transaction, closing the two-phase crash window that leaves an EMPTY header (the
+ * gap the OFF-path deleteInspectionForCompensation below only *mitigates*).
+ *
+ * `data.id` MUST be a caller-reserved id (reserveInspectionId) — the SAME id the
+ * caller already embedded in the pre-uploaded image object keys AND in every
+ * `measurementRows[i].inspectionId` — so header, measurements and images all agree.
+ *
+ * Dedup semantics are byte-for-byte IDENTICAL to createProductInspection (they MUST
+ * be — the WAL replay + machine-retry short-circuit depend on it):
+ *   • idempotencyKey present → CLAIM the ledger (0275) FIRST. Claim lost ⇒ this is a
+ *     retry: return the PRIOR row's id, duplicate=true, and write NO measurements.
+ *   • header still natural-key-collides (0272: same serial+time, possibly under a
+ *     NEW key) ⇒ point the key at the ORIGINAL row, duplicate=true, write NO
+ *     measurements (they belong to the row that already exists).
+ *   • genuinely new board ⇒ insert measurements + promote + back-fill the ledger id,
+ *     ALL inside the same tx, duplicate=false.
+ *
+ * On duplicate the caller MUST skip every side-effect (order qty, ERP outbox, NG
+ * alerts) exactly as with createProductInspection's duplicate short-circuit.
+ * `opts.outcome.duplicate` is set for the out-param contract callers already use.
+ */
+export async function persistInspectionAtomic(
+  data: InsertProductInspection & { id: number },
+  measurementRows: InsertMeasurementResult[],
+  opts?: { promoteOverallToNg?: boolean; outcome?: CreateInspectionOutcome },
+): Promise<{ id: number; duplicate: boolean }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const idempotencyKey = data.idempotencyKey?.trim() || undefined;
+
+  const { id, duplicate } = await db.transaction(async (tx) => {
+    // ── 1) LEDGER CLAIM (only when the machine sent an explicit key) ───────────
+    // Same protocol + ordering as createProductInspection: CLAIM FIRST so two
+    // concurrent retries of one key serialise and the loser reports duplicate.
+    if (idempotencyKey) {
+      const claimed = await tx
+        .insert(inspectionIdempotencyKeys)
+        .values({
+          machineId: data.machineId,
+          idempotencyKey,
+          inspectionTime: (data.inspectionTime as Date | undefined) ?? null,
+        })
+        .onConflictDoNothing()
+        .returning({ machineId: inspectionIdempotencyKeys.machineId });
+
+      if (claimed.length === 0) {
+        // Key already used by a COMMITTED submission → retry. Resolve its row.
+        const prior = await tx
+          .select({ inspectionId: inspectionIdempotencyKeys.inspectionId })
+          .from(inspectionIdempotencyKeys)
+          .where(and(
+            eq(inspectionIdempotencyKeys.machineId, data.machineId),
+            eq(inspectionIdempotencyKeys.idempotencyKey, idempotencyKey),
+          ))
+          .limit(1);
+        const priorId = prior[0]?.inspectionId;
+        if (priorId == null) {
+          throw new Error(
+            `persistInspectionAtomic: idempotency key claimed but unresolved ` +
+              `(machineId=${data.machineId}, idempotencyKey=${idempotencyKey})`,
+          );
+        }
+        return { id: priorId, duplicate: true };
+      }
+    }
+
+    // ── 2) HEADER (natural-key idempotent, 0272) ───────────────────────────────
+    // We own the key (or there is none). The header can STILL collide on the
+    // natural key (same serial+time under a NEW key) — then point the key at the
+    // original row and report duplicate, exactly like createProductInspection.
+    const header = await insertInspectionHeader(tx, data);
+
+    if (header.duplicate) {
+      if (idempotencyKey) {
+        await tx
+          .update(inspectionIdempotencyKeys)
+          .set({ inspectionId: header.id })
+          .where(and(
+            eq(inspectionIdempotencyKeys.machineId, data.machineId),
+            eq(inspectionIdempotencyKeys.idempotencyKey, idempotencyKey),
+          ));
+      }
+      return { id: header.id, duplicate: true };
+    }
+
+    // ── 3) NEW board → MEASUREMENTS + overall-NG promotion IN THE SAME TX ───────
+    // THE point of PA-A: if either write throws, the WHOLE tx (header + ledger
+    // claim + measurements + promotion) rolls back, so a retry re-inserts a
+    // COMPLETE board instead of the P0 short-circuit resolving to an empty header.
+    if (measurementRows.length > 0) {
+      await tx.insert(measurementResults).values(measurementRows);
+    }
+    if (opts?.promoteOverallToNg) {
+      await tx
+        .update(productInspections)
+        .set({ overallResult: "NG", updatedAt: new Date() })
+        .where(and(
+          eq(productInspections.id, header.id),
+          eq(productInspections.overallResult, "OK"),
+        ));
+    }
+    // ── 4) BACK-FILL the ledger claim with the header id ───────────────────────
+    if (idempotencyKey) {
+      await tx
+        .update(inspectionIdempotencyKeys)
+        .set({ inspectionId: header.id })
+        .where(and(
+          eq(inspectionIdempotencyKeys.machineId, data.machineId),
+          eq(inspectionIdempotencyKeys.idempotencyKey, idempotencyKey),
+        ));
+    }
+    return { id: header.id, duplicate: false };
+  });
+
+  if (opts?.outcome) opts.outcome.duplicate = duplicate;
+
+  // Parity with createProductInspection — an inspection submit is also machine
+  // "activity" for the downtime auto-detector. Fire-and-forget + dynamic import;
+  // inert unless DOWNTIME_DETECTION_ENABLED. Kept identical so the single-tx path
+  // does not silently drop the heartbeat-less-machine downtime feed.
+  if (typeof data.machineId === "number") {
+    const mid = data.machineId;
+    void import("../services/downtimeDetectionService")
+      .then((m) => m.recordMachineActivity(mid))
+      .catch(() => {});
+  }
+
+  return { id, duplicate };
+}
+
+/**
+ * Doc 51 P2 (§11.2 residual #1) — COMPENSATE an orphaned inspection header.
+ *
+ * THE RESIDUAL P1 GAP: createProductInspection commits the header in its own
+ * transaction; the measurement rows are then written in a SEPARATE transaction by
+ * the ingest router. If that second transaction fails, the header is already
+ * committed — an EMPTY inspection — and the P0 duplicate short-circuit means a
+ * retry resolves to that empty header and never writes the measurements.
+ *
+ * A single physical transaction spanning both writes is not reachable from the
+ * ingest path (the image object-storage uploads that populate the measurement
+ * rows must stay OUTSIDE any DB transaction, and they are keyed by the header's
+ * generated id — so the header must be inserted first to obtain the id). This
+ * helper instead COMPENSATES: when the measurement transaction throws, the caller
+ * deletes the just-created header so the next retry re-inserts a COMPLETE board
+ * (header + measurements) rather than short-circuiting to the empty one.
+ *
+ * It also removes the idempotency-ledger claim (0275) for the same key: the claim
+ * points at the header we are deleting, so leaving it would make every retry
+ * resolve to a now-nonexistent id. Best-effort, transactional, never throws for a
+ * missing ledger/row; the ONLY id deleted is the one passed in.
+ *
+ * ⚠ Residual after compensation: a process crash in the window between the header
+ * commit and this delete still leaves an empty header (documented; the crash-safe
+ * fix is a schema/flow change tracked in the P2 report). This closes the dominant
+ * failure mode — a measurement-write error while the process is alive.
+ */
+export async function deleteInspectionForCompensation(params: {
+  inspectionId: number;
+  machineId: number;
+  idempotencyKey?: string | null;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const key = params.idempotencyKey?.trim() || undefined;
+  await db.transaction(async (tx) => {
+    // measurement_results has an ON DELETE CASCADE FK to product_inspections (when
+    // not on a hypertable); explicitly clear them too so the delete is clean under
+    // the hypertable path where the FK is skipped (see schema file header).
+    await tx.delete(measurementResults).where(eq(measurementResults.inspectionId, params.inspectionId));
+    await tx.delete(productInspections).where(eq(productInspections.id, params.inspectionId));
+    if (key) {
+      await tx
+        .delete(inspectionIdempotencyKeys)
+        .where(and(
+          eq(inspectionIdempotencyKeys.machineId, params.machineId),
+          eq(inspectionIdempotencyKeys.idempotencyKey, key),
+        ));
+    }
+  });
 }
 
 export async function getProductInspections(filters: {
@@ -79,7 +506,8 @@ export async function getProductInspections(filters: {
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
   const [data, countResult] = await Promise.all([
-    db.select().from(productInspections)
+    // Projected hot-path read (gap B9) — see inspectionListProjection.
+    db.select(inspectionListProjection).from(productInspections)
       .where(whereClause)
       .orderBy(desc(productInspections.inspectionTime))
       .limit(filters.limit || 50)
@@ -150,6 +578,74 @@ export async function updateProductInspectionNTF(id: number, userId: number, rea
   }).where(eq(productInspections.id, id));
 }
 
+/**
+ * Doc 31 MP6 — server spec-gate reconciliation. When the per-point evaluator
+ * (pointResultEvaluator) downgraded at least one point to NG on an inspection
+ * the machine reported OK, promote overallResult to NG so board yield/FPY stays
+ * consistent with the per-point verdicts. Only touches rows STILL recorded OK
+ * (never overrides a machine NG/NTF); leaves `originalResult` = the machine's
+ * original verdict intact for audit. Best-effort — returns whether it changed a row.
+ */
+export async function reconcileInspectionOverallNG(id: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const rows = await db
+    .update(productInspections)
+    .set({ overallResult: "NG", updatedAt: new Date() })
+    .where(and(eq(productInspections.id, id), eq(productInspections.overallResult, "OK")))
+    .returning({ id: productInspections.id });
+  return rows.length > 0;
+}
+
+/**
+ * Bulk-acknowledge inspections (doc 27 gap F1).
+ *
+ * Stamps acknowledgedBy/acknowledgedAt on the requested rows. Idempotent:
+ * rows that are already acknowledged are left untouched (first acknowledger
+ * wins) and reported separately so callers can give an honest count. Ids that
+ * match no row are simply not counted.
+ */
+export async function bulkAcknowledgeInspections(params: {
+  ids: number[];
+  userId: number;
+}): Promise<{ updatedIds: number[]; alreadyAcknowledgedIds: number[] }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (params.ids.length === 0) return { updatedIds: [], alreadyAcknowledgedIds: [] };
+
+  const now = new Date();
+  const updated = await db
+    .update(productInspections)
+    .set({
+      acknowledgedBy: params.userId,
+      acknowledgedAt: now,
+      updatedAt: now,
+    })
+    .where(and(
+      inArray(productInspections.id, params.ids),
+      isNull(productInspections.acknowledgedAt),
+    ))
+    .returning({ id: productInspections.id });
+
+  const updatedIds = updated.map((r) => r.id);
+  const updatedSet = new Set(updatedIds);
+  // Whatever was requested but not updated is either already acknowledged or nonexistent.
+  const remaining = params.ids.filter((id) => !updatedSet.has(id));
+  let alreadyAcknowledgedIds: number[] = [];
+  if (remaining.length > 0) {
+    const rows = await db
+      .select({ id: productInspections.id })
+      .from(productInspections)
+      .where(and(
+        inArray(productInspections.id, remaining),
+        isNotNull(productInspections.acknowledgedAt),
+      ));
+    alreadyAcknowledgedIds = rows.map((r) => r.id);
+  }
+
+  return { updatedIds, alreadyAcknowledgedIds };
+}
+
 // ============ MEASUREMENT RESULT FUNCTIONS ============
 export async function createMeasurementResult(data: InsertMeasurementResult) {
   const db = await getDb();
@@ -185,9 +681,14 @@ export async function getMeasurementResultsByInspection(inspectionId: number) {
     // Defect classification (NG → defect-code link)
     defectCatalogId: measurementResults.defectCatalogId,
     defectSeverity: measurementResults.defectSeverity,
+    // Doc 31 OP3 — raw code retained when it did NOT resolve to a catalog row.
+    defectCodeRaw: measurementResults.defectCodeRaw,
     defectCode: defectCatalog.code,
     defectName: defectCatalog.name,
     defectNameVi: defectCatalog.nameVi,
+    // Doc 31 OP4 — repair guidance surfaced at RepairStation / InspectionDetail.
+    repairGuidance: defectCatalog.repairGuidance,
+    repairGuidanceVi: defectCatalog.repairGuidanceVi,
     // Point def info
     pointCode: measurementPointDefs.code,
     pointName: measurementPointDefs.name,
@@ -263,7 +764,7 @@ export async function getProductInspectionsCursor(params: CursorPaginationParams
   factoryCode?: string;
   userId?: number;
   userRole?: string;
-}): Promise<CursorPaginationResult<typeof productInspections.$inferSelect>> {
+}): Promise<CursorPaginationResult<InspectionListRow>> {
   const db = await getDb();
   if (!db) return { data: [], nextCursor: null, prevCursor: null, hasMore: false };
 
@@ -317,8 +818,9 @@ export async function getProductInspectionsCursor(params: CursorPaginationParams
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-  // Fetch one extra to check if there are more
-  const results = await db.select()
+  // Fetch one extra to check if there are more.
+  // Projected hot-path read (gap B9) — see inspectionListProjection.
+  const results = await db.select(inspectionListProjection)
     .from(productInspections)
     .where(whereClause)
     .orderBy(

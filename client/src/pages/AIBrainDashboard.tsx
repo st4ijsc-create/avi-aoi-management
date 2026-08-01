@@ -10,6 +10,8 @@
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { usePollingInterval } from "@/hooks/usePollingInterval";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -57,10 +59,13 @@ function fmtNum(n?: number): string {
 
 export default function AIBrainDashboard() {
   const { t } = useTranslation();
-  const router = trpc.aiGguf.routerStats.useQuery(undefined, { refetchInterval: 5000 });
-  const health = trpc.aiGguf.health.useQuery(undefined, { refetchInterval: 5000 });
+  // Poll hygiene (doc 27 B12): pause the 3×5s pollers when the tab is hidden,
+  // refetch immediately on return — see usePollingInterval.
+  const polling = usePollingInterval(5000);
+  const router = trpc.aiGguf.routerStats.useQuery(undefined, { ...polling });
+  const health = trpc.aiGguf.health.useQuery(undefined, { ...polling });
   // AI Gateway stats — DB-backed tokens / latency / rate-limit / A/B over the last 24h.
-  const gateway = trpc.aiGguf.gatewayStats.useQuery({ sinceHours: 24 }, { refetchInterval: 5000 });
+  const gateway = trpc.aiGguf.gatewayStats.useQuery({ sinceHours: 24 }, { ...polling });
 
   const stats = router.data;
   const total = stats?.total ?? 0;
@@ -74,25 +79,18 @@ export default function AIBrainDashboard() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-4 md:p-6">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-              <Brain className="h-6 w-6 text-indigo-500" />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold">{t("aiBrain.title", "AI Brain")}</h1>
-              <p className="text-sm text-muted-foreground">
-                {t("aiBrain.subtitle", "Giám sát bộ não AI cục bộ — phân tầng độ khó & sức khỏe engine")}
-              </p>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" onClick={refreshAll}>
-            <RefreshCw className="h-4 w-4 mr-1.5" />
-            {t("common.refresh", "Làm mới")}
-          </Button>
-        </div>
+      <PageContainer>
+        <PageHeader
+          icon={<Brain className="h-6 w-6 text-primary" />}
+          title={t("aiBrain.title", "AI Brain")}
+          description={t("aiBrain.subtitle", "Giám sát bộ não AI cục bộ — phân tầng độ khó & sức khỏe engine")}
+          actions={
+            <Button variant="outline" size="sm" onClick={refreshAll}>
+              <RefreshCw className="h-4 w-4 mr-1.5" />
+              {t("common.refresh", "Làm mới")}
+            </Button>
+          }
+        />
 
         {/* Engine health summary */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -124,7 +122,7 @@ export default function AIBrainDashboard() {
                 <>
                   <div className="text-lg font-semibold">{fmtGB(vram.used)} <span className="text-sm text-muted-foreground font-normal">/ {fmtGB(vram.total)}</span></div>
                   <div className="mt-2 h-2 w-full rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${vramPct}%` }} />
+                    <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${vramPct}%` }} />
                   </div>
                 </>
               ) : <div className="text-sm text-muted-foreground">{t("aiBrain.noVram", "CPU / không có VRAM")}</div>}
@@ -167,7 +165,7 @@ export default function AIBrainDashboard() {
           <CardHeader>
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
-                <CardTitle className="text-base flex items-center gap-2"><Brain className="h-4 w-4 text-indigo-500" />{t("aiBrain.ladder", "Thang leo nhận thức (dễ → khó)")}</CardTitle>
+                <CardTitle className="text-base flex items-center gap-2"><Brain className="h-4 w-4 text-primary" />{t("aiBrain.ladder", "Thang leo nhận thức (dễ → khó)")}</CardTitle>
                 <CardDescription>{t("aiBrain.ladderDesc", "Phân bố yêu cầu theo tầng kể từ lần khởi động server gần nhất")}</CardDescription>
               </div>
               <div className="flex items-center gap-2">
@@ -219,7 +217,7 @@ export default function AIBrainDashboard() {
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Gauge className="h-4 w-4 text-indigo-500" />
+                  <Gauge className="h-4 w-4 text-primary" />
                   {t("aiBrain.gateway", "AI Gateway — đo lường suy luận (24h)")}
                 </CardTitle>
                 <CardDescription>
@@ -301,7 +299,7 @@ export default function AIBrainDashboard() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

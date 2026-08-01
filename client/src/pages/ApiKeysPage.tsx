@@ -13,6 +13,7 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PageHeader, PageContainer, StatusBadge, EmptyState } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -152,20 +153,22 @@ export default function ApiKeysPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-4 p-4 md:p-6">
-        {/* Header */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <KeyRound className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">{t("apiKeys.title", "Khoá API")}<ViewOnlyBadge module="admin_system" /></h1>
-            <p className="text-sm text-muted-foreground">{t("apiKeys.subtitle", "Khoá truy cập có phạm vi (scope) cho Unified Machine API (/api/v1)")}</p>
-          </div>
-          <Button onClick={() => setCreateOpen(true)} disabled={!canCreate}>
-            <Plus className="mr-1.5 h-4 w-4" /> {t("apiKeys.create", "Tạo khoá")}
-          </Button>
-        </div>
+      <PageContainer>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<KeyRound className="h-6 w-6" />}
+          title={
+            <span className="flex items-center gap-2">
+              {t("apiKeys.title", "Khoá API")}<ViewOnlyBadge module="admin_system" />
+            </span>
+          }
+          description={t("apiKeys.subtitle", "Khoá truy cập có phạm vi (scope) cho Unified Machine API (/api/v1)")}
+          actions={
+            <Button onClick={() => setCreateOpen(true)} disabled={!canCreate}>
+              <Plus className="mr-1.5 h-4 w-4" /> {t("apiKeys.create", "Tạo khoá")}
+            </Button>
+          }
+        />
 
         <Card>
           <CardHeader className="pb-2">
@@ -186,7 +189,11 @@ export default function ApiKeysPage() {
               </TableHeader>
               <TableBody>
                 {rows.length === 0 && (
-                  <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground">{t("apiKeys.empty", "Chưa có khoá nào.")}</TableCell></TableRow>
+                  <TableRow>
+                    <TableCell colSpan={7} className="p-0">
+                      <EmptyState variant="no-data" icon={KeyRound} compact title={t("apiKeys.empty", "Chưa có khoá nào.")} />
+                    </TableCell>
+                  </TableRow>
                 )}
                 {rows.map((r) => {
                   const expired = isExpired(r.expiresAt);
@@ -197,11 +204,11 @@ export default function ApiKeysPage() {
                       <TableCell className="max-w-[260px]"><div className="flex flex-wrap">{scopeBadges(r.scopes)}</div></TableCell>
                       <TableCell>
                         {!r.isActive ? (
-                          <Badge variant="outline" className="text-amber-600">{t("apiKeys.revoked", "Đã thu hồi")}</Badge>
+                          <StatusBadge status="revoked" tone="warning" label={t("apiKeys.revoked", "Đã thu hồi")} />
                         ) : expired ? (
-                          <Badge variant="outline" className="text-red-600">{t("apiKeys.expired", "Hết hạn")}</Badge>
+                          <StatusBadge status="expired" tone="error" label={t("apiKeys.expired", "Hết hạn")} />
                         ) : (
-                          <Badge className="bg-emerald-500 text-white">{t("apiKeys.active", "Đang hoạt động")}</Badge>
+                          <StatusBadge status="active" tone="success" label={t("apiKeys.active", "Đang hoạt động")} />
                         )}
                       </TableCell>
                       <TableCell className="text-xs">{fmtDate(r.expiresAt)}</TableCell>
@@ -212,7 +219,7 @@ export default function ApiKeysPage() {
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                           {r.isActive && (
-                            <Button size="icon" variant="ghost" className="h-7 w-7 text-amber-600" disabled={!canEdit} onClick={() => revokeM.mutate({ id: r.id })} title={t("apiKeys.revoke", "Thu hồi")}>
+                            <Button size="icon" variant="ghost" className="h-7 w-7 text-warning" disabled={!canEdit} onClick={() => revokeM.mutate({ id: r.id })} title={t("apiKeys.revoke", "Thu hồi")}>
                               <Ban className="h-3.5 w-3.5" />
                             </Button>
                           )}
@@ -228,7 +235,7 @@ export default function ApiKeysPage() {
             </Table>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
 
       {/* ── Create dialog ── */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -281,7 +288,7 @@ export default function ApiKeysPage() {
       <Dialog open={plaintext != null} onOpenChange={(o) => !o && setPlaintext(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-500" /> {t("apiKeys.showOnceTitle", "Sao chép khoá ngay")}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-warning" /> {t("apiKeys.showOnceTitle", "Sao chép khoá ngay")}</DialogTitle>
             <DialogDescription>{t("apiKeys.showOnceDesc", "Đây là lần DUY NHẤT khoá này hiển thị. Sau khi đóng hộp thoại sẽ không thể lấy lại — chỉ có thể tạo khoá mới.")}</DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-2 rounded-md border bg-muted/40 p-2">

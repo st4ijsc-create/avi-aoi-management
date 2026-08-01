@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\..\..\examples\device-client\csharp\St4iDeviceClient.cs" Link="Sdk\St4iDeviceClient.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- GP-1 — the driver contract (IDeviceDriver, DeviceReading, CyclePlan, TelemetryNumeric, and the
+         contract enums) now lives in this plain-net10.0, zero-dependency project so a third party can
+         compile a driver against it without pulling in EdgeCore's Windows-only DPAPI/vendored-SDK
+         surface. See task-1-report.md for the full rationale. -->
+    <ProjectReference Include="..\St4i.Connector.Abstractions\St4i.Connector.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- GĐ3 closeout WI-1 (.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-1-brief.md)
+         Part A — the Makaretu.Dns.Multicast.New PackageReference that SD-1 originally added here MOVED to
+         St4i.EngineApi.csproj: Site/SiteDiscovery.cs (the only consumer) moved there with it, and
+         St4i.EngineApi is EngineApi's only consumer of ISiteDiscovery (SiteEndpoints.DiscoverAsync).
+         St4i.EdgeService/St4iMachineSimulator (the WPF exhibition app) both ONLY ProjectReference this
+         project, never EngineApi, and never touch mDNS at all — so they were carrying Makaretu's (and its
+         transitive Common.Logging's) DLLs in their own build output for no reason (NuGet's
+         ProjectReference-transitive-package-copy propagates a package to every downstream consumer's
+         output regardless of whether that consumer's own code uses it). See
+         St4i.EdgeCore.Tests.MakaretuNotShippedTests for the proof those two outputs are now clean, and the
+         task-1-report.md for the full rationale. -->
+    <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
+    <PackageReference Include="MQTTnet.Server" Version="5.2.0.1603" />
+    <!-- G2-2 (UNS spine) — the ONE new NuGet this task adds: runtime-only, used by
+         Uns/Sparkplug/SparkplugPayload.cs's hand-rolled Sparkplug B encoder/decoder (CodedOutputStream/
+         CodedInputStream low-level tag/value primitives), deliberately WITHOUT protoc/Grpc.Tools — no
+         .proto files, no generated code, just the wire-format primitives this runtime package ships. -->
+    <PackageReference Include="Google.Protobuf" Version="3.35.1" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+    <!-- FF-2 / NU1903: Microsoft.Data.Sqlite 10.0.10 pins the transitive SQLitePCLRaw.bundle_e_sqlite3
+         (and, through it, SQLitePCLRaw.lib.e_sqlite3) at 2.1.11, which the NuGet audit flags via
+         GHSA-2m69-gcr7-jv3q / CVE-2025-6965 (bundled SQLite < 3.50.2, a memory-corruption issue).
+         2.1.12 is the first patched release (confirmed: a scratch project pinned to this version
+         reports `select sqlite_version()` = 3.53.3, well past the 3.50.2 fix line, and a fresh
+         `dotnet restore` against it emits no NU1903). Pinning it explicitly here — NuGet's
+         nearest-wins resolution picks this direct reference over the 2.1.11 transitive minimum
+         Microsoft.Data.Sqlite declares — clears the advisory without touching Microsoft.Data.Sqlite
+         itself. See README "NU1903" note for the full rationale. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />
+    <!-- G2-6 (Modbus TCP driver) — the ONE new NuGet this task adds: NModbus 3.0.83, the maintained
+         `rich.quackenbush` fork (NOT the abandoned NModbus4) — provides the TCP master
+         (Drivers/Modbus/ModbusTcpDriver.cs) and, test-only, the in-process TCP slave/slave-network the
+         loopback test stands up (no real hardware). MIT-licensed. -->
+    <PackageReference Include="NModbus" Version="3.0.83" />
+    <!-- GĐ3 sub-3 OU-1 (OPC-UA driver) — the ONE new NuGet this task adds: the OPC Foundation .NET
+         reference-stack CLIENT library, relicensed GPLv2/RCL -> MIT on 2025-12-04 (see the licensing
+         spike write-up in docs/plans/2026-07-27-giaidoan3-opcua-driver-blueprint.md). Pinned EXACT
+         (never a floating range) — the relicense is recent, so drifting below this exact MIT release
+         would silently re-expose the old GPLv2/RCL terms. -->
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="1.5.378.156" />
+  </ItemGroup>
+</Project>

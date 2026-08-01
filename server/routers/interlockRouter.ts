@@ -19,11 +19,30 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, eq, desc } from "drizzle-orm";
-import { router, protectedProcedure } from "../_core/trpc";
+import {
+  router,
+  moduleProcedure,
+  moduleGate,
+  actuationProcedure as actuationBase,
+  adminProcedure as adminBase,
+} from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb as getDbRaw } from "../db";
+// Doc 37 P0-3 — gate every procedure in this OT-control router behind the
+// MOD_OT_CONTROL license (flag LICENSE_MODULE_GATE_ENABLED, default OFF → no-op).
+// Shadowing `protectedProcedure` keeps existing procedure definitions untouched;
+// RBAC via `.use(requirePermission(...))` still composes on top.
+const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
+// Doc 54 Wave B (P1) — interlock rule writes are OT-control actuation surfaces:
+// add a role-floor (admin/supervisor/engineer) + 2FA ON TOP of the per-user
+// `interlock` bit, keeping the MOD_OT_CONTROL license gate. `approve` is a
+// privileged safety decision → admin + 2FA (adminProcedure enforces 2FA,
+// replacing the old inline `role !== "admin"` check that BYPASSED 2FA).
+const actuationProcedure = actuationBase.use(moduleGate("MOD_OT_CONTROL"));
+const adminProcedure = adminBase.use(moduleGate("MOD_OT_CONTROL"));
 import { interlockRules, interlockEvents } from "../../drizzle/schema";
 import { evaluateCondition, deriveObserved, type ComparisonOperator, type InterlockSourceType } from "../services/interlock/ruleEvaluator";
+import { recordAuditEvent } from "../services/audit/controlAuditService";
 
 async function getDb() {
   const db = await getDbRaw();
@@ -75,7 +94,7 @@ export const interlockRouter = router({
       return row;
     }),
 
-  create: protectedProcedure
+  create: actuationProcedure
     .use(requirePermission("interlock", "canCreate"))
     .input(ruleInput)
     .mutation(async ({ input, ctx }) => {
@@ -93,10 +112,12 @@ export const interlockRouter = router({
           createdBy: ctx.user.id,
         })
         .returning();
+      // Audit bất biến: tạo rule an toàn.
+      await recordAuditEvent(db, { entityType: "interlock_rule", entityId: row.id, action: "create", actorId: ctx.user.id, before: null, after: row });
       return row;
     }),
 
-  update: protectedProcedure
+  update: actuationProcedure
     .use(requirePermission("interlock", "canEdit"))
     .input(ruleInput.partial().extend({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
@@ -107,25 +128,30 @@ export const interlockRouter = router({
       const patch: Record<string, unknown> = { ...rest, updatedAt: new Date(), updatedBy: ctx.user.id };
       if (threshold !== undefined) patch.threshold = threshold != null ? String(threshold) : null;
       const [row] = await db.update(interlockRules).set(patch).where(eq(interlockRules.id, id)).returning();
+      // Audit bất biến: sửa rule (before/after để truy vết cấu hình an toàn).
+      await recordAuditEvent(db, { entityType: "interlock_rule", entityId: id, action: "update", actorId: ctx.user.id, before: existing, after: row });
       return row;
     }),
 
-  delete: protectedProcedure
+  delete: actuationProcedure
     .use(requirePermission("interlock", "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
+      // Ghi audit TRƯỚC khi hard-delete rule an toàn (giữ lại chuỗi bất biến about the deleted rule).
+      const [existing] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Rule không tồn tại." });
+      await recordAuditEvent(db, { entityType: "interlock_rule", entityId: input.id, action: "delete", actorId: ctx.user.id, before: existing, after: null });
       await db.delete(interlockRules).where(eq(interlockRules.id, input.id));
       return { success: true };
     }),
 
-  approve: protectedProcedure
+  approve: adminProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
-      // ADMIN-ONLY: approving a rule is a privileged safety decision.
-      if (ctx.user.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin được duyệt interlock rule." });
-      }
+      // ADMIN-ONLY + 2FA: approving a rule is a privileged safety decision.
+      // adminProcedure enforces role==='admin' AND twoFactorEnabled (doc 54 Wave B),
+      // closing the old inline check that bypassed the 2FA requirement.
       const db = await getDb();
       const [existing] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
       if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Rule không tồn tại." });
@@ -134,10 +160,12 @@ export const interlockRouter = router({
         .set({ approvedBy: ctx.user.id, approvedAt: new Date(), updatedAt: new Date(), updatedBy: ctx.user.id })
         .where(eq(interlockRules.id, input.id))
         .returning();
+      // Audit bất biến: duyệt rule (quyết định an toàn có đặc quyền).
+      await recordAuditEvent(db, { entityType: "interlock_rule", entityId: input.id, action: "approve", actorId: ctx.user.id, before: existing, after: row });
       return row;
     }),
 
-  enable: protectedProcedure
+  enable: actuationProcedure
     .use(requirePermission("interlock", "canEdit"))
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
@@ -153,20 +181,25 @@ export const interlockRouter = router({
         .set({ enabled: true, updatedAt: new Date(), updatedBy: ctx.user.id })
         .where(eq(interlockRules.id, input.id))
         .returning();
+      // Audit bất biến: bật rule an toàn.
+      await recordAuditEvent(db, { entityType: "interlock_rule", entityId: input.id, action: "enable", actorId: ctx.user.id, before: existing, after: row });
       return row;
     }),
 
-  disable: protectedProcedure
+  disable: actuationProcedure
     .use(requirePermission("interlock", "canEdit"))
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
+      const [existing] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Rule không tồn tại." });
       const [row] = await db
         .update(interlockRules)
         .set({ enabled: false, updatedAt: new Date(), updatedBy: ctx.user.id })
         .where(eq(interlockRules.id, input.id))
         .returning();
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Rule không tồn tại." });
+      // Audit bất biến: tắt rule an toàn.
+      await recordAuditEvent(db, { entityType: "interlock_rule", entityId: input.id, action: "disable", actorId: ctx.user.id, before: existing, after: row });
       return row;
     }),
 
@@ -186,7 +219,7 @@ export const interlockRouter = router({
         .limit(input?.limit ?? 100);
     }),
 
-  resolveEvent: protectedProcedure
+  resolveEvent: actuationProcedure
     .use(requirePermission("interlock", "canEdit"))
     .input(z.object({ id: z.number().int().positive(), notes: z.string().max(2000).optional() }))
     .mutation(async ({ input, ctx }) => {

@@ -1,5 +1,7 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { useTranslation } from 'react-i18next';
+import { PageHeader, PageContainer } from "@/components/patterns";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +33,7 @@ import {
 import { toast } from "sonner";
 import { navItems } from "@/lib/navigation";
 import { useState } from "react";
+import { useCanWrite, ViewOnlyBadge } from "@/components/PermissionGate";
 
 const ALERT_TYPE_LABELS: Record<string, { label: string; icon: React.ReactNode; description: string }> = {
   yield_rate: { 
@@ -75,6 +78,10 @@ export default function Alerts() {
     notifyInApp: true,
     cooldownMinutes: 60,
   });
+
+  // W3-batch2 (doc 35 F3): gate write actions for read-only roles (route module = mqtt_alerts).
+  const { canCreate, canEdit, canDelete } = useCanWrite("mqtt_alerts");
+  const readOnlyTitle = t("common.viewOnlyHint", "Bạn chỉ có quyền xem");
 
   const utils = trpc.useUtils();
   const { data: alerts, isLoading } = trpc.alert.list.useQuery();
@@ -161,26 +168,22 @@ export default function Alerts() {
 
   return (
     <DashboardLayout navItems={navItems} currentPath="/alerts">
-      <div className="space-y-6">
+      <PageContainer>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
-              <Bell className="h-7 w-7 text-primary" />
-              {t('alerts.title')}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('alerts.subtitle')}
-            </p>
-          </div>
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
-                {t('alerts.createNew')}
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg">
+        <PageHeader
+          icon={<Bell className="h-5 w-5 text-primary" />}
+          title={t('alerts.title')}
+          description={t('alerts.subtitle')}
+          badge={<ViewOnlyBadge module="mqtt_alerts" />}
+          actions={
+            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+              <DialogTrigger asChild>
+                <Button className="gap-2" disabled={!canCreate} title={!canCreate ? readOnlyTitle : undefined}>
+                  <Plus className="h-4 w-4" />
+                  {t('alerts.createNew')}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg">
               <DialogHeader>
                 <DialogTitle>{t('alerts.createNew')}</DialogTitle>
                 <DialogDescription>
@@ -276,12 +279,17 @@ export default function Alerts() {
                         onCheckedChange={(v) => setFormData({ ...formData, notifyInApp: v })}
                       />
                     </div>
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/30 opacity-50">
+                    {/* MON-F10 — SMS là no-op (dispatchAlert không có nhánh SMS). Tắt hẳn
+                        switch + tooltip 'sắp có' để không hứa hẹn thông báo sẽ gửi. */}
+                    <div
+                      className="flex items-center justify-between p-3 rounded-lg bg-secondary/30 opacity-50"
+                      title={t('alerts.smsComingTooltip', 'SMS chưa được hỗ trợ — sắp có')}
+                    >
                       <div className="flex items-center gap-2">
                         <Smartphone className="h-4 w-4 text-muted-foreground" />
                         <span>{t('alerts.smsComing')}</span>
                       </div>
-                      <Switch disabled checked={false} />
+                      <Switch disabled checked={false} title={t('alerts.smsComingTooltip', 'SMS chưa được hỗ trợ — sắp có')} />
                     </div>
                   </div>
                 </div>
@@ -298,9 +306,10 @@ export default function Alerts() {
                   {t('alerts.createAlert')}
                 </Button>
               </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
+              </DialogContent>
+            </Dialog>
+          }
+        />
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -318,12 +327,22 @@ export default function Alerts() {
           {/* Settings Tab */}
           <TabsContent value="settings" className="space-y-4">
             {isLoading ? (
-              <Card className="glass-card">
-                <CardContent className="py-12 text-center">
-                  <Loader2 className="h-8 w-8 mx-auto animate-spin text-primary" />
-                  <p className="text-muted-foreground mt-2">{t('alerts.loading')}</p>
-                </CardContent>
-              </Card>
+              <div className="grid gap-4">
+                {[0, 1, 2].map((i) => (
+                  <Card key={i} className="glass-card">
+                    <CardContent className="pt-6">
+                      <div className="flex items-start gap-4">
+                        <Skeleton className="h-11 w-11 rounded-lg" />
+                        <div className="flex-1 space-y-2">
+                          <Skeleton className="h-5 w-40" />
+                          <Skeleton className="h-4 w-56" />
+                          <Skeleton className="h-4 w-32" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             ) : alerts && alerts.length > 0 ? (
               <div className="grid gap-4">
                 {alerts.map((alert) => (
@@ -368,22 +387,27 @@ export default function Alerts() {
                           <Switch
                             checked={alert.isActive}
                             onCheckedChange={() => handleToggleActive(alert)}
+                            disabled={!canEdit}
+                            title={!canEdit ? readOnlyTitle : undefined}
                           />
                           <Button
                             variant="ghost"
                             size="icon"
                             onClick={() => testMutation.mutate({ id: alert.id })}
-                            disabled={testMutation.isPending}
+                            disabled={!canEdit || testMutation.isPending}
+                            title={!canEdit ? readOnlyTitle : undefined}
                           >
                             <Play className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => deleteMutation.mutate({ id: alert.id })}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                          {canDelete && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => deleteMutation.mutate({ id: alert.id })}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </CardContent>
@@ -433,6 +457,8 @@ export default function Alerts() {
                             variant="outline"
                             size="sm"
                             onClick={() => acknowledgeMutation.mutate({ id: item.id })}
+                            disabled={!canEdit}
+                            title={!canEdit ? readOnlyTitle : undefined}
                           >
                             {t('alerts.acknowledge')}
                           </Button>
@@ -452,7 +478,7 @@ export default function Alerts() {
             )}
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

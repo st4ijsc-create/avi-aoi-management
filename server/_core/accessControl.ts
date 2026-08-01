@@ -16,6 +16,10 @@ import { permissions } from "../../drizzle/schema";
 import { protectedProcedure } from "./trpc";
 import { initTRPC } from "@trpc/server";
 import type { TrpcContext } from "./context";
+// doc 40 Lan-P0/DEV-02 — resolve "permission ma" (moduleName = category `machine_monitoring`)
+// về module THẬT (machine_status) tại một điểm trung tâm. Sửa MỌI gate `machine_monitoring`
+// trên toàn server (kể cả router chưa đụng tới) mà không cần migration.
+import { resolvePermissionModule } from "@shared/permissions";
 
 // Cache for user assignments (per-request, short-lived)
 const assignmentCache = new Map<string, { corporateCodes: string[]; factoryCodes: string[]; timestamp: number }>();
@@ -103,8 +107,24 @@ export async function getAccessFilterConditions(
 }
 
 /**
+ * doc 48 R4 — SCOPED ADMIN. Historically `admin` short-circuits every permission
+ * check (`admin=god`), so admin authority could never be scoped or audited per
+ * module. When RBAC_SCOPED_ADMIN=true, admin is instead subject to EXPLICIT
+ * restriction: an admin still passes a module UNLESS a permission row exists that
+ * denies that action (row present with action=false). No row / expired row /
+ * DB-down → admin still passes (never lock an admin out of an unconfigured
+ * module). This makes admin authority restrictable + auditable without any
+ * lockout risk, and is a no-op for non-admins. Default OFF preserves the exact
+ * legacy behaviour.
+ */
+function scopedAdminEnabled(): boolean {
+  return process.env.RBAC_SCOPED_ADMIN === 'true';
+}
+
+/**
  * Check if user has a specific module permission.
- * Admin users always pass.
+ * Admin users pass by default (legacy) or are subject to explicit restriction
+ * rows when RBAC_SCOPED_ADMIN=true (see scopedAdminEnabled).
  */
 export async function checkPermission(
   userId: number,
@@ -112,25 +132,35 @@ export async function checkPermission(
   moduleName: string,
   action: 'canView' | 'canCreate' | 'canEdit' | 'canDelete' | 'canExport',
 ): Promise<boolean> {
-  if (userRole === 'admin') return true;
+  const isAdmin = userRole === 'admin';
+  // Legacy god-mode (default): admin short-circuits. Non-admins fall through.
+  if (isAdmin && !scopedAdminEnabled()) return true;
 
   const db = await getDb();
-  if (!db) return false;
+  // DB unavailable: deny non-admins (unchanged); never lock a scoped-admin out.
+  if (!db) return isAdmin;
+
+  // doc 40 — áp alias: `machine_monitoring` (category dùng nhầm làm module) → `machine_status`.
+  const resolvedModule = resolvePermissionModule(moduleName);
 
   const [perm] = await db
     .select()
     .from(permissions)
     .where(and(
       eq(permissions.userId, userId),
-      eq(permissions.moduleName, moduleName),
+      eq(permissions.moduleName, resolvedModule),
     ))
     .limit(1);
 
-  if (!perm) return false;
+  // No explicit grant: non-admin denied (unchanged); scoped-admin still passes
+  // (unconfigured module must never lock an admin out).
+  if (!perm) return isAdmin;
 
-  // Check if permission has expired
-  if (perm.expiresAt && perm.expiresAt < new Date()) return false;
+  // Expired grant: treat as no restriction for admin; denial for non-admin.
+  if (perm.expiresAt && perm.expiresAt < new Date()) return isAdmin;
 
+  // An explicit row is authoritative for BOTH: a false action now genuinely
+  // restricts a scoped-admin (the whole point), a true action allows.
   return perm[action] === true;
 }
 

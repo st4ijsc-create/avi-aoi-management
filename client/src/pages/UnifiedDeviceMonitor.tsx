@@ -25,14 +25,24 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { getSharedSocket } from "@/lib/socketManager";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import DeviceOnboardingWizard from "@/components/DeviceOnboardingWizard";
+import {
+  PageHeader, PageContainer, StatChip, StatChipRow,
+  useDensity,
+} from "@/components/patterns";
+import { useFullscreen } from "@/hooks/useFullscreen";
+import {
+  useMachineTypes, DEVICE_CLASS_ORDER, isDeviceClassUiEnabled, type DeviceClass,
+} from "@/hooks/useMachineTypes";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -41,7 +51,7 @@ import {
 } from "@/components/ui/table";
 import {
   Wifi, WifiOff, HelpCircle, RefreshCw, Search, Plus, Activity, Server, Plug, Cpu,
-  ChevronRight, ChevronDown, ExternalLink, Loader2,
+  ChevronRight, ChevronDown, ExternalLink, Loader2, Maximize2, Minimize2, Rows3, Unplug,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -76,6 +86,9 @@ interface DeviceRow {
   machineId: number | null;
   /** For adapters: the adapter id, used by testConnection. */
   adapterId: number | null;
+  /** doc 56 Đ2b — deviceClass of a machine row (aoi_avi/automation/iot) for the class
+   *  filter; null for adapters/edge nodes (not part of the machine-type taxonomy). */
+  deviceClass?: DeviceClass | null;
   detail?: string;        // small secondary line (location / endpoint / lines)
 }
 
@@ -85,6 +98,17 @@ interface LastTelemetry {
   unit: string | null;
   ts: number;
   protocol: string;
+}
+
+/** doc 56 Đ2b — a device sending telemetry that has no machineId yet (not onboarded /
+ *  approved). Kept in its own cache keyed by deviceId so its telemetry is NOT dropped. */
+interface UnmappedDevice {
+  deviceId: string;
+  protocol: string;
+  metric: string;
+  value: string;
+  unit: string | null;
+  ts: number;
 }
 
 const STALE_MS = 2 * 60_000;
@@ -135,10 +159,10 @@ function Sparkline({ points }: { points: number[] }) {
 
 function ConnChip({ state, t }: { state: ConnState; t: (k: string, f: string) => string }) {
   if (state === "online")
-    return <Badge className="bg-emerald-500 text-white"><Wifi className="mr-1 h-3 w-3" />{t("deviceMonitor.online", "Trực tuyến")}</Badge>;
+    return <Badge className="bg-success text-white"><Wifi className="mr-1 h-3 w-3" />{t("deviceMonitor.online", "Trực tuyến")}</Badge>;
   if (state === "offline")
     return <Badge variant="outline" className="text-muted-foreground"><WifiOff className="mr-1 h-3 w-3" />{t("deviceMonitor.offline", "Ngoại tuyến")}</Badge>;
-  return <Badge variant="outline" className="border-amber-400 text-amber-600"><HelpCircle className="mr-1 h-3 w-3" />{t("deviceMonitor.unknown", "Chưa rõ")}</Badge>;
+  return <Badge variant="outline" className="border-warning text-warning"><HelpCircle className="mr-1 h-3 w-3" />{t("deviceMonitor.unknown", "Chưa rõ")}</Badge>;
 }
 
 function SourceIcon({ source }: { source: SourceKind }) {
@@ -147,14 +171,20 @@ function SourceIcon({ source }: { source: SourceKind }) {
   return <Cpu className="h-4 w-4 text-violet-500" />;
 }
 
-export default function UnifiedDeviceMonitor() {
+export function UnifiedDeviceMonitorContent() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
 
+  // doc 40 §13.3 content-first — mật độ hiển thị + fullscreen cho bảng fleet.
+  const { density, toggle: toggleDensity } = useDensity();
+  const fs = useFullscreen();
+
   const [search, setSearch] = useState("");
   const [filterSource, setFilterSource] = useState<string>("all");
   const [filterConn, setFilterConn] = useState<string>("all");
+  // doc 56 Đ2b — deviceClass facet (all | aoi_avi | automation | iot).
+  const [filterClass, setFilterClass] = useState<"all" | DeviceClass>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
 
@@ -164,11 +194,34 @@ export default function UnifiedDeviceMonitor() {
   const [, forceSpark] = useState(0); // bump to re-render sparklines
   const [liveStatus, setLiveStatus] = useState<Record<number, { status: string; ts: number }>>({});
 
+  // doc 56 Đ2b — telemetry from devices with NO machineId is no longer dropped; it's
+  // gathered here (keyed by deviceId) to feed the "unmapped devices" panel.
+  const [unmappedDevices, setUnmappedDevices] = useState<Record<string, UnmappedDevice>>({});
+
+  // doc 54 cosmetic — the OT adapter + edge-runtime queries require machine_control;
+  // gate them so a machine_monitoring-only role (e.g. operator) doesn't fire a query it
+  // can't read → no 403 console noise. The machines/health data (machine_monitoring)
+  // still loads for everyone.
+  const { hasPermission } = usePermissions();
+  const canReadControl = hasPermission("machine_control", "canView");
+
+  // doc 56 Đ2b — machineType → deviceClass lookup (server taxonomy via useMachineTypes,
+  // static fallback while loading). Powers the deviceClass filter so IoT machines (IoT
+  // sensor/gateway rows after Đ2a) land in the `iot` group. The flag gates only the
+  // filter UI — default OFF keeps the flat list byte-identical.
+  const { byClass } = useMachineTypes();
+  const classByType = useMemo(() => {
+    const m = new Map<string, DeviceClass>();
+    for (const cls of DEVICE_CLASS_ORDER) for (const e of byClass[cls]) m.set(e.type, cls);
+    return m;
+  }, [byClass]);
+  const deviceClassUi = isDeviceClassUiEnabled();
+
   // ── Data sources (slow refetch only for membership; live bits come via socket) ──
   const machinesQ = trpc.machineStatus.listWithStatus.useQuery(undefined, { refetchInterval: 60_000 });
-  const adaptersQ = trpc.deviceAdapter.list.useQuery(undefined, { refetchInterval: 60_000 });
-  const edgeStatusQ = trpc.edgeRuntime.status.useQuery();
-  const edgeNodesQ = trpc.edgeRuntime.listNodes.useQuery(undefined, { refetchInterval: 60_000 });
+  const adaptersQ = trpc.deviceAdapter.list.useQuery(undefined, { refetchInterval: 60_000, enabled: canReadControl });
+  const edgeStatusQ = trpc.edgeRuntime.status.useQuery(undefined, { enabled: canReadControl });
+  const edgeNodesQ = trpc.edgeRuntime.listNodes.useQuery(undefined, { refetchInterval: 60_000, enabled: canReadControl });
 
   // ── Protocol framework status strip (real flag state) ──
   const mtconnectQ = trpc.mtconnect.status.useQuery(undefined, { retry: false });
@@ -187,10 +240,17 @@ export default function UnifiedDeviceMonitor() {
     const socket = getSharedSocket();
     const onTelemetry = (data: { samples?: TelemetrySample[] }) => {
       if (!data?.samples?.length) return;
+      // doc 56 Đ2b — samples with no machineId used to be dropped here. Instead we
+      // collect the ones that carry a deviceId into the unmapped batch (applied to its
+      // own cache below) so their telemetry surfaces in the "unmapped devices" panel.
+      const unmapped: TelemetrySample[] = [];
       setLastTelemetry((prev) => {
         const next = { ...prev };
         for (const s of data.samples!) {
-          if (s.machineId == null) continue;
+          if (s.machineId == null) {
+            if (s.deviceId != null) unmapped.push(s);
+            continue;
+          }
           next[s.machineId] = {
             metric: s.metric,
             value: sampleToValue(s),
@@ -207,9 +267,28 @@ export default function UnifiedDeviceMonitor() {
         }
         return next;
       });
+      if (unmapped.length) {
+        setUnmappedDevices((prev) => {
+          const next = { ...prev };
+          for (const s of unmapped) {
+            const id = s.deviceId!;
+            next[id] = {
+              deviceId: id,
+              protocol: s.protocol,
+              metric: s.metric,
+              value: sampleToValue(s),
+              unit: s.unit,
+              ts: new Date(s.ts).getTime(),
+            };
+          }
+          return next;
+        });
+      }
       forceSpark((n) => n + 1);
     };
     const onStatus = (data: { machineId: number; status: string }) => {
+      // doc 56 Đ2b — status_update carries only {machineId,status} (no deviceId/metric),
+      // so a null machineId cannot form an unmapped-device row; keep the mapped-only guard.
       if (data?.machineId == null) return;
       setLiveStatus((prev) => ({ ...prev, [data.machineId]: { status: data.status, ts: Date.now() } }));
     };
@@ -252,6 +331,7 @@ export default function UnifiedDeviceMonitor() {
         lastSeen,
         machineId: m.id,
         adapterId: null,
+        deviceClass: classByType.get(m.machineType) ?? null,
         detail: [m.factory?.name, m.workshop?.name, m.line?.name].filter(Boolean).join(" → "),
       });
     }
@@ -274,6 +354,7 @@ export default function UnifiedDeviceMonitor() {
         lastSeen,
         machineId: a.machineId ?? null,
         adapterId: a.id,
+        deviceClass: null,
         detail: a.endpoint,
       });
     }
@@ -296,22 +377,25 @@ export default function UnifiedDeviceMonitor() {
         lastSeen,
         machineId: null,
         adapterId: null,
+        deviceClass: null,
         detail: (n.assignedLineCodes ?? []).join(", ") || n.factoryCode || undefined,
       });
     }
 
     return out;
-  }, [machinesQ.data, adaptersQ.data, edgeNodesQ.data, liveStatus, t]);
+  }, [machinesQ.data, adaptersQ.data, edgeNodesQ.data, liveStatus, t, classByType]);
 
   const filtered = useMemo(() => rows.filter((r) => {
     if (filterSource !== "all" && r.source !== filterSource) return false;
     if (filterConn !== "all" && r.conn !== filterConn) return false;
+    // doc 56 Đ2b — deviceClass facet only narrows machine rows (adapters/edge = null).
+    if (filterClass !== "all" && r.deviceClass !== filterClass) return false;
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       if (!`${r.name} ${r.code} ${r.protocol} ${r.type}`.toLowerCase().includes(q)) return false;
     }
     return true;
-  }), [rows, filterSource, filterConn, search]);
+  }), [rows, filterSource, filterConn, filterClass, search]);
 
   const counts = useMemo(() => ({
     total: rows.length,
@@ -319,6 +403,18 @@ export default function UnifiedDeviceMonitor() {
     offline: rows.filter((r) => r.conn === "offline").length,
     unknown: rows.filter((r) => r.conn === "unknown").length,
   }), [rows]);
+
+  // doc 56 Đ2b — unmapped devices (latest telemetry first) for the attention panel.
+  const unmappedList = useMemo(
+    () => Object.values(unmappedDevices).sort((a, b) => b.ts - a.ts),
+    [unmappedDevices],
+  );
+
+  const classFilterLabel = (c: "all" | DeviceClass): string =>
+    c === "all" ? t("deviceMonitor.classAll", "Tất cả")
+    : c === "aoi_avi" ? t("deviceMonitor.classAoiAvi", "AVI/AOI")
+    : c === "automation" ? t("deviceMonitor.classAutomation", "Tự động hóa")
+    : t("deviceMonitor.classIot", "IoT");
 
   const isLoading = machinesQ.isLoading || adaptersQ.isLoading || edgeNodesQ.isLoading;
 
@@ -329,96 +425,216 @@ export default function UnifiedDeviceMonitor() {
   };
 
   return (
-    <DashboardLayout title={t("deviceMonitor.title", "Giám sát thiết bị hợp nhất")} navItems={navItems} currentPath="/device-monitor">
-      <div className="space-y-6 p-4 md:p-6">
-        {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="flex items-center gap-2 text-2xl font-bold">
-              <Activity className="h-6 w-6 text-primary" />
-              {t("deviceMonitor.title", "Giám sát thiết bị hợp nhất")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("deviceMonitor.subtitle", "Mọi thiết bị (máy · adapter OT · node biên) trong một bảng — trạng thái kết nối, telemetry trực tiếp & test kết nối")}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={() => setWizardOpen(true)}>
-              <Plus className="mr-1.5 h-4 w-4" />{t("deviceMonitor.onboard", "Kết nối thiết bị mới")}
-            </Button>
-            <Button variant="outline" onClick={refetchAll}>
-              <RefreshCw className="mr-1.5 h-4 w-4" />{t("common.refresh", "Làm mới")}
-            </Button>
-          </div>
-        </div>
+    <>
+      <PageContainer
+        fluid
+        className="flex min-h-[calc(100vh-8rem)] flex-col gap-3 py-3 md:py-4 [&>*]:!mt-0"
+      >
+        {/* Header — gọn 1 hàng (content-first) */}
+        <PageHeader
+          className="shrink-0"
+          icon={<Activity className="h-5 w-5 text-primary" />}
+          title={t("deviceMonitor.title", "Giám sát thiết bị hợp nhất")}
+          actions={
+            <>
+              <Button size="sm" onClick={() => setWizardOpen(true)}>
+                <Plus className="mr-1.5 h-4 w-4" />{t("deviceMonitor.onboard", "Kết nối thiết bị mới")}
+              </Button>
+              <Button size="sm" variant="outline" onClick={refetchAll}>
+                <RefreshCw className="mr-1.5 h-4 w-4" />{t("common.refresh", "Làm mới")}
+              </Button>
+            </>
+          }
+        />
 
-        {/* Summary */}
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <Card><CardContent className="flex items-center gap-3 pt-4">
-            <Server className="h-7 w-7 text-muted-foreground" />
-            <div><p className="text-2xl font-bold">{counts.total}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.totalDevices", "Tổng thiết bị")}</p></div>
-          </CardContent></Card>
-          <Card className="border-emerald-500/40"><CardContent className="flex items-center gap-3 pt-4">
-            <Wifi className="h-7 w-7 text-emerald-500" />
-            <div><p className="text-2xl font-bold text-emerald-500">{counts.online}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.online", "Trực tuyến")}</p></div>
-          </CardContent></Card>
-          <Card className="border-red-500/40"><CardContent className="flex items-center gap-3 pt-4">
-            <WifiOff className="h-7 w-7 text-red-500" />
-            <div><p className="text-2xl font-bold text-red-500">{counts.offline}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.offline", "Ngoại tuyến")}</p></div>
-          </CardContent></Card>
-          <Card className="border-amber-400/40"><CardContent className="flex items-center gap-3 pt-4">
-            <HelpCircle className="h-7 w-7 text-amber-500" />
-            <div><p className="text-2xl font-bold text-amber-500">{counts.unknown}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.unknown", "Chưa rõ")}</p></div>
-          </CardContent></Card>
-        </div>
-
-        {/* Protocol framework status strip (honest flag state) */}
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-muted-foreground">{t("deviceMonitor.frameworks", "Khung giao thức")}:</span>
+        {/* KPI strip — StatChip 1 dòng (thay lưới MetricCard 110px). Bấm để lọc theo kết nối. */}
+        <StatChipRow className="shrink-0">
+          <StatChip
+            icon={<Server />}
+            label={t("deviceMonitor.totalDevices", "Tổng")}
+            value={counts.total}
+            onClick={() => setFilterConn("all")}
+            active={filterConn === "all"}
+          />
+          <StatChip
+            label={t("deviceMonitor.online", "Trực tuyến")}
+            value={counts.online}
+            tone="success"
+            onClick={() => setFilterConn(filterConn === "online" ? "all" : "online")}
+            active={filterConn === "online"}
+          />
+          <StatChip
+            label={t("deviceMonitor.offline", "Ngoại tuyến")}
+            value={counts.offline}
+            tone="error"
+            onClick={() => setFilterConn(filterConn === "offline" ? "all" : "offline")}
+            active={filterConn === "offline"}
+          />
+          <StatChip
+            label={t("deviceMonitor.unknown", "Chưa rõ")}
+            value={counts.unknown}
+            tone="warning"
+            onClick={() => setFilterConn(filterConn === "unknown" ? "all" : "unknown")}
+            active={filterConn === "unknown"}
+          />
+          <span className="mx-0.5 h-4 w-px shrink-0 bg-border" aria-hidden="true" />
+          {/* Khung giao thức — trạng thái cờ thật, cùng hàng để tiết kiệm chiều dọc */}
           <FrameworkChip label="MTConnect" enabled={!!(mtconnectQ.data as any)?.enabled} loading={mtconnectQ.isLoading} t={t} />
           <FrameworkChip label="SECS/GEM" enabled={!!(secsQ.data as any)?.enabled} loading={secsQ.isLoading} t={t} />
-          <FrameworkChip label="VDA5050 (AMR)" enabled={undefined} loading={false} t={t} />
+          {/* DEV-09 — chip VDA5050 gỡ bỏ: không có endpoint framework-status toàn cục
+              (vda5050.status yêu cầu robotId, chỉ per-robot). Không hiện "chưa rõ" vĩnh viễn
+              để giữ đúng cam kết honesty. Trạng thái VDA5050 xem tại từng robot (Fleet/Robot). */}
           <FrameworkChip label="Edge runtime" enabled={!!(edgeStatusQ.data as any)?.enabled} loading={edgeStatusQ.isLoading} onClick={() => setLocation("/edge-nodes")} t={t} />
-          <Button variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs" onClick={() => setLocation("/device-adapters")}>
-            {t("deviceMonitor.manageAdapters", "Quản lý adapter")}<ExternalLink className="h-3 w-3" />
-          </Button>
-        </div>
+        </StatChipRow>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} className="w-64 pl-8"
-              placeholder={t("deviceMonitor.searchPlaceholder", "Tìm theo tên / mã / giao thức…")} />
-          </div>
-          <Select value={filterSource} onValueChange={setFilterSource}>
-            <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("deviceMonitor.allSources", "Mọi nguồn")}</SelectItem>
-              <SelectItem value="machine">{t("deviceMonitor.sourceMachine", "Máy")}</SelectItem>
-              <SelectItem value="adapter">{t("deviceMonitor.typeAdapter", "Adapter OT")}</SelectItem>
-              <SelectItem value="edge">{t("deviceMonitor.typeEdge", "Node biên")}</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={filterConn} onValueChange={setFilterConn}>
-            <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("common.all", "Tất cả")}</SelectItem>
-              <SelectItem value="online">{t("deviceMonitor.online", "Trực tuyến")}</SelectItem>
-              <SelectItem value="offline">{t("deviceMonitor.offline", "Ngoại tuyến")}</SelectItem>
-              <SelectItem value="unknown">{t("deviceMonitor.unknown", "Chưa rõ")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {/* doc 56 Đ2b — "Thiết bị chưa map": devices sending telemetry that aren't bound
+            to any machine yet. Self-hiding when empty (byte-identical default). Each row
+            offers a "register this device" shortcut into the onboarding wizard. */}
+        {unmappedList.length > 0 && (
+          <Card className="shrink-0 border-warning/40">
+            <CardHeader className="flex flex-row flex-wrap items-center gap-x-2 gap-y-1 space-y-0 py-2">
+              <Unplug className="h-4 w-4 shrink-0 text-warning" />
+              <CardTitle className="text-sm">
+                {t("deviceMonitor.unmapped.title", "Thiết bị chưa map")}{" "}
+                <span className="tabular-nums text-muted-foreground">({unmappedList.length})</span>
+              </CardTitle>
+              <span className="text-xs text-muted-foreground">
+                {t("deviceMonitor.unmapped.hint", "Đang gửi telemetry nhưng chưa gắn với máy nào — đăng ký để theo dõi đầy đủ.")}
+              </span>
+            </CardHeader>
+            <CardContent className="max-h-44 overflow-auto p-0 [&>[data-slot=table-container]]:overflow-visible">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-card">
+                  <TableRow>
+                    <TableHead>{t("deviceMonitor.unmapped.colDevice", "Mã thiết bị")}</TableHead>
+                    <TableHead>{t("deviceMonitor.colProtocol", "Giao thức")}</TableHead>
+                    <TableHead>{t("deviceMonitor.colLastSeen", "Lần cuối")}</TableHead>
+                    <TableHead>{t("deviceMonitor.colTelemetry", "Telemetry mới nhất")}</TableHead>
+                    <TableHead className="text-right">{t("common.actions", "Thao tác")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {unmappedList.map((u) => (
+                    <TableRow key={u.deviceId}>
+                      <TableCell className="font-mono text-xs">{u.deviceId}</TableCell>
+                      <TableCell className="text-xs">{u.protocol}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {fmtAgo(new Date(u.ts), t("deviceMonitor.never", "chưa"))}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <span className="text-muted-foreground">{u.metric}: </span>
+                        <span className="font-semibold tabular-nums">{u.value}</span>
+                        {u.unit && <span className="text-muted-foreground"> {u.unit}</span>}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          title={t("deviceMonitor.unmapped.registerHint", "Đăng ký thiết bị này") + ` (${u.deviceId})`}
+                          onClick={() => setWizardOpen(true)}
+                        >
+                          <Plus className="mr-1 h-3.5 w-3.5" />
+                          {t("deviceMonitor.unmapped.register", "Đăng ký")}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Master table */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">{t("deviceMonitor.allDevices", "Tất cả thiết bị")} ({filtered.length})</CardTitle>
+        {/* Master table — chiếm ≥70% chiều cao (flex-1), cuộn nội bộ, sticky header */}
+        <Card
+          ref={fs.ref}
+          className={cn(
+            "flex min-h-0 flex-1 flex-col gap-2 py-3",
+            fs.usingFallback && fs.isFullscreen && "fixed inset-0 z-50 rounded-none",
+            fs.isFullscreen && "bg-background",
+          )}
+        >
+          <CardHeader className="shrink-0 gap-2 pb-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle className="mr-auto text-base">
+                {t("deviceMonitor.allDevices", "Tất cả thiết bị")}{" "}
+                <span className="tabular-nums text-muted-foreground">({filtered.length})</span>
+              </CardTitle>
+              {/* Bộ lọc trong header bảng — gọn cùng hàng với tiêu đề */}
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input value={search} onChange={(e) => setSearch(e.target.value)} className="h-8 w-52 pl-8"
+                  placeholder={t("deviceMonitor.searchPlaceholder", "Tìm tên / mã / giao thức…")} />
+              </div>
+              <Select value={filterSource} onValueChange={setFilterSource}>
+                <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("deviceMonitor.allSources", "Mọi nguồn")}</SelectItem>
+                  <SelectItem value="machine">{t("deviceMonitor.sourceMachine", "Máy")}</SelectItem>
+                  <SelectItem value="adapter">{t("deviceMonitor.typeAdapter", "Adapter OT")}</SelectItem>
+                  <SelectItem value="edge">{t("deviceMonitor.typeEdge", "Node biên")}</SelectItem>
+                </SelectContent>
+              </Select>
+              {/* doc 56 Đ2b — deviceClass facet (segmented control). Gated by the
+                  DEVICE_CLASS_UI flag; OFF (default) hides it and keeps filterClass="all". */}
+              {deviceClassUi && (
+                <div
+                  className="inline-flex h-8 items-center gap-0.5 rounded-md border p-0.5"
+                  role="group"
+                  aria-label={t("deviceMonitor.classFilterLabel", "Lọc theo nhóm thiết bị")}
+                >
+                  {(["all", ...DEVICE_CLASS_ORDER] as const).map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setFilterClass(c)}
+                      aria-pressed={filterClass === c}
+                      className={cn(
+                        "h-7 whitespace-nowrap rounded px-2 text-xs transition-colors",
+                        filterClass === c
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:bg-accent",
+                      )}
+                    >
+                      {classFilterLabel(c)}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <Button
+                variant="outline" size="icon-sm" onClick={toggleDensity}
+                title={density === "compact"
+                  ? t("common.densityComfortable", "Mật độ thoải mái")
+                  : t("common.densityCompact", "Mật độ gọn")}
+                aria-pressed={density === "compact"}
+              >
+                <Rows3 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline" size="icon-sm" onClick={fs.toggle}
+                title={fs.isFullscreen
+                  ? t("common.exitFullscreen", "Thoát toàn màn hình")
+                  : t("common.fullscreen", "Toàn màn hình")}
+                aria-pressed={fs.isFullscreen}
+              >
+                {fs.isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </Button>
+              <Button variant="ghost" size="sm" className="h-8 gap-1 px-2 text-xs" onClick={() => setLocation("/device-adapters")}>
+                {t("deviceMonitor.manageAdapters", "Quản lý adapter")}<ExternalLink className="h-3 w-3" />
+              </Button>
+            </div>
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
+          {/* CardContent là khối cao cố định (flex-1); bộ cuộn thật là
+              [data-slot=table-container] bên trong Table → sticky header hoạt động. */}
+          <CardContent className="min-h-0 flex-1 p-0 [&>[data-slot=table-container]]:h-full [&>[data-slot=table-container]]:overflow-auto">
+            <Table
+              className={cn(
+                // Mật độ gọn: giảm padding ô + cỡ chữ để hiện nhiều hàng hơn.
+                density === "compact" &&
+                  "text-xs [&_td]:px-2 [&_td]:py-1 [&_th]:px-2 [&_th]:py-1.5",
+              )}
+            >
+              <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
                   <TableHead className="w-8" />
                   <TableHead>{t("deviceMonitor.colName", "Tên / Mã")}</TableHead>
@@ -484,7 +700,7 @@ export default function UnifiedDeviceMonitor() {
                               {t("deviceMonitor.test", "Test")}
                             </Button>
                           ) : r.source === "machine" ? (
-                            <Button size="sm" variant="ghost" onClick={() => setLocation("/machine-status")}>
+                            <Button size="sm" variant="ghost" onClick={() => setLocation(`/machine/${r.id}`)}>
                               {t("deviceMonitor.details", "Chi tiết")}
                             </Button>
                           ) : (
@@ -525,9 +741,18 @@ export default function UnifiedDeviceMonitor() {
             </Table>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
 
       <DeviceOnboardingWizard open={wizardOpen} onOpenChange={setWizardOpen} onChanged={refetchAll} />
+    </>
+  );
+}
+
+export default function UnifiedDeviceMonitor() {
+  const { t } = useTranslation();
+  return (
+    <DashboardLayout title={t("deviceMonitor.title", "Giám sát thiết bị hợp nhất")} navItems={navItems} currentPath="/device-monitor">
+      <UnifiedDeviceMonitorContent />
     </DashboardLayout>
   );
 }
@@ -541,13 +766,13 @@ function FrameworkChip({
   onClick?: () => void;
   t: (k: string, f: string) => string;
 }) {
-  let cls = "border-amber-400 text-amber-600";
+  let cls = "border-warning text-warning";
   let txt = t("deviceMonitor.flagUnknown", "chưa rõ");
   if (loading) { txt = "…"; }
-  else if (enabled === true) { cls = "border-emerald-500 text-emerald-600"; txt = t("deviceMonitor.flagOn", "bật"); }
+  else if (enabled === true) { cls = "border-success text-success"; txt = t("deviceMonitor.flagOn", "bật"); }
   else if (enabled === false) { cls = "border-muted-foreground/40 text-muted-foreground"; txt = t("deviceMonitor.flagOff", "tắt"); }
   const inner = <>{label}<span className="opacity-70">· {txt}</span></>;
-  const base = `inline-flex items-center gap-1 rounded-full border px-2 py-0.5 ${cls}`;
+  const base = `inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs ${cls}`;
   if (!onClick) return <span className={base} title={label}>{inner}</span>;
   return <button onClick={onClick} className={`${base} hover:opacity-80`}>{inner}</button>;
 }

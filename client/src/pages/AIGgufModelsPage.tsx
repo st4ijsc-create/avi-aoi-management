@@ -10,6 +10,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -62,31 +63,25 @@ export default function AIGgufModelsPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-4 md:p-6">
+      <PageContainer>
         {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-violet-500/10 flex items-center justify-center">
-            <Cpu className="h-6 w-6 text-violet-500" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              {t("gguf.title", "GGUF Model Manager")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("gguf.subtitle", "Quản lý và sử dụng local LLM models (.gguf)")}
-            </p>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            {status.data?.available ? (
-              <Badge variant="default" className="gap-1"><CheckCircle2 className="h-3 w-3" /> {t("gguf.available", "Sẵn sàng")}</Badge>
-            ) : (
-              <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> {t("gguf.unavailable", "Chưa cài đặt")}</Badge>
-            )}
-            <Button variant="outline" size="sm" onClick={() => { status.refetch(); models.refetch(); }}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Cpu className="h-6 w-6" />}
+          title={t("gguf.title", "GGUF Model Manager")}
+          description={t("gguf.subtitle", "Quản lý và sử dụng local LLM models (.gguf)")}
+          actions={
+            <>
+              {status.data?.available ? (
+                <Badge variant="default" className="gap-1"><CheckCircle2 className="h-3 w-3" /> {t("gguf.available", "Sẵn sàng")}</Badge>
+              ) : (
+                <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> {t("gguf.unavailable", "Chưa cài đặt")}</Badge>
+              )}
+              <Button variant="outline" size="sm" onClick={() => { status.refetch(); models.refetch(); }}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </>
+          }
+        />
 
         {/* Status Strip */}
         {status.data && (
@@ -97,18 +92,18 @@ export default function AIGgufModelsPage() {
                 <CardContent className="py-3 flex items-center gap-3">
                   {/* X2 cleanup: OpenAI branch removed — system is 100% local. */}
                   {providerStatus.data.activeProvider === "gguf" ? (
-                    <Server className="h-4 w-4 text-violet-500" />
+                    <Server className="h-4 w-4 text-primary" />
                   ) : (
-                    <WifiOff className="h-4 w-4 text-gray-400" />
+                    <WifiOff className="h-4 w-4 text-muted-foreground" />
                   )}
                   <div>
                     <p className="text-xs text-muted-foreground">{t("gguf.activeProvider", "AI Provider")}</p>
                     <p className="text-sm font-bold">
                       {providerStatus.data.activeProvider === "gguf" && (
-                        <span className="text-violet-600">Local GGUF {providerStatus.data.gguf.modelName ? `(${providerStatus.data.gguf.modelName})` : ""}</span>
+                        <span className="text-primary">Local GGUF {providerStatus.data.gguf.modelName ? `(${providerStatus.data.gguf.modelName})` : ""}</span>
                       )}
                       {providerStatus.data.activeProvider === "offline" && (
-                        <span className="text-gray-500">{t("gguf.offlineMode", "Offline (quy tắc)")}</span>
+                        <span className="text-muted-foreground">{t("gguf.offlineMode", "Offline (quy tắc)")}</span>
                       )}
                     </p>
                   </div>
@@ -117,7 +112,7 @@ export default function AIGgufModelsPage() {
             )}
             <Card className="flex-1 min-w-50">
               <CardContent className="py-3 flex items-center gap-3">
-                <Zap className="h-4 w-4 text-yellow-500" />
+                <Zap className="h-4 w-4 text-warning" />
                 <div>
                   <p className="text-xs text-muted-foreground">{t("gguf.loadedModels", "Models đang chạy")}</p>
                   <p className="text-lg font-bold">{status.data.loadedModels?.length ?? 0}</p>
@@ -126,7 +121,7 @@ export default function AIGgufModelsPage() {
             </Card>
             <Card className="flex-1 min-w-50">
               <CardContent className="py-3 flex items-center gap-3">
-                <HardDrive className="h-4 w-4 text-blue-500" />
+                <HardDrive className="h-4 w-4 text-info" />
                 <div>
                   <p className="text-xs text-muted-foreground">{t("gguf.availableModels", "Models có sẵn")}</p>
                   <p className="text-lg font-bold">{models.data?.length ?? 0}</p>
@@ -164,10 +159,10 @@ export default function AIGgufModelsPage() {
                   {models.data.map((m: any) => {
                     const isLoaded = status.data?.loadedModels?.some((lm: any) => lm.config?.modelPath === m.filePath || lm.modelId === m.id);
                     return (
-                      <Card key={m.id} className={`transition-colors ${isLoaded ? "border-green-500/50 bg-green-500/5" : ""}`}>
+                      <Card key={m.id} className={`transition-colors ${isLoaded ? "border-success/50 bg-success/5" : ""}`}>
                         <CardContent className="py-3 flex items-center gap-4">
-                          <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${isLoaded ? "bg-green-500/10" : "bg-muted"}`}>
-                            <HardDrive className={`h-5 w-5 ${isLoaded ? "text-green-500" : "text-muted-foreground"}`} />
+                          <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${isLoaded ? "bg-success/10" : "bg-muted"}`}>
+                            <HardDrive className={`h-5 w-5 ${isLoaded ? "text-success" : "text-muted-foreground"}`} />
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-sm truncate">{m.filename}</p>
@@ -226,7 +221,7 @@ export default function AIGgufModelsPage() {
             </TabsContent>
           </Tabs>
         )}
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }
@@ -250,7 +245,7 @@ function TextGenerationPlayground() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-amber-500" />
+            <Sparkles className="h-4 w-4 text-warning" />
             {t("gguf.textGen", "Text Generation")}
           </CardTitle>
         </CardHeader>
@@ -297,7 +292,7 @@ function TextGenerationPlayground() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <FileText className="h-4 w-4 text-blue-500" />
+            <FileText className="h-4 w-4 text-info" />
             {t("gguf.output", "Kết quả")}
           </CardTitle>
         </CardHeader>
@@ -354,7 +349,7 @@ function ChatInterface() {
     <Card className="flex flex-col h-150">
       <CardHeader className="pb-2 border-b">
         <CardTitle className="text-sm flex items-center gap-2">
-          <MessageSquare className="h-4 w-4 text-blue-500" />
+          <MessageSquare className="h-4 w-4 text-info" />
           {t("gguf.chatTitle", "Local LLM Chat")}
         </CardTitle>
         <CardDescription className="text-xs">
@@ -376,8 +371,8 @@ function ChatInterface() {
               {messages.map((msg, i) => (
                 <div key={`${msg.role}-${i}`} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                   {msg.role === "assistant" && (
-                    <div className="h-7 w-7 rounded-full bg-violet-500/10 flex items-center justify-center shrink-0">
-                      <Bot className="h-4 w-4 text-violet-500" />
+                    <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                      <Bot className="h-4 w-4 text-primary" />
                     </div>
                   )}
                   <div className={`max-w-[80%] rounded-lg px-4 py-2 text-sm leading-relaxed ${
@@ -388,16 +383,16 @@ function ChatInterface() {
                     <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
                   </div>
                   {msg.role === "user" && (
-                    <div className="h-7 w-7 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
-                      <User className="h-4 w-4 text-blue-500" />
+                    <div className="h-7 w-7 rounded-full bg-info/10 flex items-center justify-center shrink-0">
+                      <User className="h-4 w-4 text-info" />
                     </div>
                   )}
                 </div>
               ))}
               {chat.isPending && (
                 <div className="flex gap-3">
-                  <div className="h-7 w-7 rounded-full bg-violet-500/10 flex items-center justify-center shrink-0">
-                    <Bot className="h-4 w-4 text-violet-500" />
+                  <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <Bot className="h-4 w-4 text-primary" />
                   </div>
                   <div className="bg-muted rounded-lg px-4 py-3">
                     <Loader2 className="h-4 w-4 animate-spin" />

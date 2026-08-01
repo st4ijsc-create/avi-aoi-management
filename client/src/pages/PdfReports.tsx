@@ -6,16 +6,25 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import {
   FileText, Download, Loader2, CheckCircle, Search,
-  Plus, Settings, Eye, Printer, Calendar, BarChart3,
-  Building2, Factory, Cpu, Filter,
+  Plus, Settings, Eye, BarChart3,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
@@ -78,18 +87,12 @@ export function PdfReportsContent() {
   return (
     <>
       <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <FileText className="h-6 w-6 text-primary" />
-              {t('reports.pdfReports')}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('reports.pdfReportsDescription')}
-            </p>
-          </div>
-        </div>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<FileText className="h-6 w-6" />}
+          title={t('reports.pdfReports')}
+          description={t('reports.pdfReportsDescription')}
+        />
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
@@ -159,7 +162,7 @@ export function PdfReportsContent() {
                       inspectionMutation.mutate({
                         inspectionId: parseInt(inspectionForm.inspectionId),
                         config: {
-                          companyName: inspectionForm.factoryName || "AVI AOI Management",
+                          companyName: inspectionForm.factoryName || "SYNAPSE",
                         },
                       });
                     }}
@@ -183,28 +186,28 @@ export function PdfReportsContent() {
                 <CardContent>
                   <div className="space-y-3">
                     <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                      <CheckCircle className="h-5 w-5 text-green-500 shrink-0" />
+                      <CheckCircle className="h-5 w-5 text-success shrink-0" />
                       <div>
                         <div className="text-sm font-medium">{t('reports.overviewInfo')}</div>
                         <div className="text-xs text-muted-foreground">{t('reports.overviewInfoDesc')}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                      <CheckCircle className="h-5 w-5 text-green-500 shrink-0" />
+                      <CheckCircle className="h-5 w-5 text-success shrink-0" />
                       <div>
                         <div className="text-sm font-medium">{t('reports.measurementResults')}</div>
                         <div className="text-xs text-muted-foreground">{t('reports.measurementResultsDesc')}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                      <CheckCircle className="h-5 w-5 text-green-500 shrink-0" />
+                      <CheckCircle className="h-5 w-5 text-success shrink-0" />
                       <div>
-                        <div className="text-sm font-medium">KPI Cards</div>
-                        <div className="text-xs text-muted-foreground">Yield, total, OK rate, NG rate</div>
+                        <div className="text-sm font-medium">{t('reports.kpiCards', 'KPI Cards')}</div>
+                        <div className="text-xs text-muted-foreground">{t('reports.kpiCardsDesc', 'Yield, total, OK rate, NG rate')}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                      <CheckCircle className="h-5 w-5 text-green-500 shrink-0" />
+                      <CheckCircle className="h-5 w-5 text-success shrink-0" />
                       <div>
                         <div className="text-sm font-medium">{t('reports.professionalHeaderFooter')}</div>
                         <div className="text-xs text-muted-foreground">{t('reports.headerFooterDesc')}</div>
@@ -280,7 +283,7 @@ export function PdfReportsContent() {
                         endDate: new Date(qualityForm.dateTo),
                         factoryId: qualityForm.factoryId,
                         config: {
-                          companyName: "AVI AOI Management",
+                          companyName: "SYNAPSE",
                         },
                       });
                     }}
@@ -302,10 +305,10 @@ export function PdfReportsContent() {
                 </CardHeader>
                 <CardContent>
                   <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                    <div className="w-32 h-40 mx-auto bg-linear-to-br from-red-500/20 to-blue-500/20 rounded-lg flex flex-col items-center justify-center mb-4 border">
+                    <div className="w-32 h-40 mx-auto bg-linear-to-br from-primary/15 to-info/15 rounded-lg flex flex-col items-center justify-center mb-4 border">
                       <FileText className="h-10 w-10 text-primary mb-2" />
-                      <div className="text-xs text-muted-foreground">Quality Report</div>
-                      <div className="text-[10px] text-muted-foreground mt-1">PDF Template</div>
+                      <div className="text-xs text-muted-foreground">{t('reports.qualityReport')}</div>
+                      <div className="text-[10px] text-muted-foreground mt-1">{t('reports.pdfTemplate', 'PDF Template')}</div>
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {t('reports.pdfTemplateDesc')}
@@ -330,6 +333,7 @@ function TemplateManager() {
   const { t } = useTranslation();
   const { data: templates, refetch } = trpc.pdfReport.listTemplates.useQuery();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [templateToDelete, setTemplateToDelete] = useState<any | null>(null);
   const [newTemplate, setNewTemplate] = useState({
     name: "",
     type: "CUSTOM" as "DAILY" | "WEEKLY" | "MONTHLY" | "CUSTOM",
@@ -380,11 +384,7 @@ function TemplateManager() {
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={() => {
-                    if (confirm(t('reports.confirmDeleteTemplate'))) {
-                      deleteMutation.mutate(tmpl.id);
-                    }
-                  }}
+                  onClick={() => setTemplateToDelete(tmpl)}
                 >
                   <Settings className="h-3 w-3" />
                 </Button>
@@ -447,7 +447,7 @@ function TemplateManager() {
                     includeTrend: true,
                   },
                   config: {
-                    companyName: "AVI AOI Management",
+                    companyName: "SYNAPSE",
                   },
                 });
               }}
@@ -459,6 +459,27 @@ function TemplateManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!templateToDelete} onOpenChange={(open) => !open && setTemplateToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('reports.deleteTemplateTitle', 'Delete template?')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('reports.confirmDeleteTemplate')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (templateToDelete) deleteMutation.mutate(templateToDelete.id);
+                setTemplateToDelete(null);
+              }}
+            >
+              {t('common.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

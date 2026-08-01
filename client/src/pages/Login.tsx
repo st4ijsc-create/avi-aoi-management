@@ -7,13 +7,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Loader2, LogIn, ExternalLink, Factory, Shield, ShieldCheck, ArrowLeft, Chrome, Github, Globe } from "lucide-react";
+import { Loader2, LogIn, ExternalLink, Shield, ShieldCheck, ArrowLeft, Chrome, Github, Globe } from "lucide-react";
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { landingPathForRole } from "@/lib/roleLanding";
+import { BRAND } from "@/config/brand";
 
 export default function Login() {
   const { t } = useTranslation();
+  const BrandMark = BRAND.logoIcon;
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -233,12 +235,10 @@ export default function Login() {
         {/* Logo and Title */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 mb-4">
-            <Factory className="h-8 w-8 text-white" />
+            <BrandMark className="h-8 w-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white">
-            <span className="text-teal-400">AVI</span>/AOI Management
-          </h1>
-          <p className="text-slate-400 mt-2">{t('auth.systemDescription')}</p>
+          <h1 className="text-2xl font-bold text-white">{BRAND.name}</h1>
+          <p className="text-slate-400 mt-2">{t(BRAND.taglineKey, BRAND.tagline)}</p>
         </div>
 
         <Card className="border-slate-700 bg-slate-800/50 backdrop-blur">
@@ -374,7 +374,7 @@ export default function Login() {
 
         {/* Footer */}
         <p className="text-center text-slate-500 text-sm mt-6">
-          © 2024 AVI/AOI Management System
+          © {new Date().getFullYear()} {BRAND.name}
         </p>
       </div>
     </div>

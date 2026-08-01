@@ -13,6 +13,9 @@ import {
   summarizeConfidences,
   psiFromHistograms,
   checkConfidenceDrift,
+  ksTwoSample,
+  kolmogorovProb,
+  checkConceptDriftKS,
 } from "./aiDriftMonitor";
 
 describe("summarizeConfidences", () => {
@@ -70,6 +73,70 @@ describe("checkConfidenceDrift (sample-injection path)", () => {
 
   it("too few samples → not evaluated (no false alarm)", async () => {
     const res = await checkConfidenceDrift({ modelId: 1, samples: { baseline: [0.9, 0.9], recent: [0.5, 0.5] } });
+    expect(res.evaluated).toBe(false);
+    expect(res.drift).toBe(false);
+    expect(res.reasons.some((r) => r.includes("insufficient samples"))).toBe(true);
+  });
+});
+
+// ─── G4.28 — two-sample KS concept-drift test ───────────────────────────────────
+
+describe("kolmogorovProb", () => {
+  it("λ→0 ≈ 1 (no evidence of difference)", () => {
+    expect(kolmogorovProb(0)).toBe(1);
+    expect(kolmogorovProb(0.01)).toBeGreaterThan(0.99);
+  });
+  it("large λ → ~0", () => {
+    expect(kolmogorovProb(3)).toBeLessThan(1e-6);
+  });
+  it("is monotonically decreasing in λ", () => {
+    expect(kolmogorovProb(0.5)).toBeGreaterThan(kolmogorovProb(1.5));
+  });
+});
+
+describe("ksTwoSample", () => {
+  it("identical distributions → D≈0, p≈1", () => {
+    const a = Array.from({ length: 200 }, (_, i) => (i % 100) / 100);
+    const b = a.slice();
+    const ks = ksTwoSample(a, b);
+    expect(ks.d).toBeCloseTo(0, 6);
+    expect(ks.pValue).toBeGreaterThan(0.9);
+  });
+
+  it("shifted distributions → large D, tiny p", () => {
+    const a = Array.from({ length: 200 }, (_, i) => i / 400);        // ~[0,0.5)
+    const b = Array.from({ length: 200 }, (_, i) => 0.5 + i / 400);  // ~[0.5,1)
+    const ks = ksTwoSample(a, b);
+    expect(ks.d).toBeGreaterThan(0.9);
+    expect(ks.pValue).toBeLessThan(0.01);
+  });
+
+  it("empty input → D=0, p=1 (fail-safe)", () => {
+    expect(ksTwoSample([], [1, 2, 3])).toMatchObject({ d: 0, pValue: 1 });
+  });
+});
+
+describe("checkConceptDriftKS (sample-injection path)", () => {
+  it("same distribution → no concept drift, high p", async () => {
+    const base = Array.from({ length: 200 }, (_, i) => 0.8 + ((i % 10) - 5) * 0.01);
+    const res = await checkConceptDriftKS({ modelId: 9, samples: { baseline: base, recent: base.slice() } });
+    expect(res.evaluated).toBe(true);
+    expect(res.drift).toBe(false);
+    expect(res.pValue).toBeGreaterThan(0.05);
+  });
+
+  it("shifted distribution → concept drift flagged, p < 0.01", async () => {
+    const baseline = Array.from({ length: 200 }, (_, i) => 0.2 + (i % 20) * 0.001); // ~0.2
+    const recent = Array.from({ length: 200 }, (_, i) => 0.8 + (i % 20) * 0.001);   // ~0.8
+    const res = await checkConceptDriftKS({ modelId: 9, samples: { baseline, recent } });
+    expect(res.evaluated).toBe(true);
+    expect(res.drift).toBe(true);
+    expect(res.pValue).toBeLessThan(0.01);
+    expect(res.reasons[0]).toMatch(/concept drift/i);
+  });
+
+  it("too few samples → not evaluated (no false alarm)", async () => {
+    const res = await checkConceptDriftKS({ modelId: 9, samples: { baseline: [0.2, 0.2], recent: [0.8, 0.8] } });
     expect(res.evaluated).toBe(false);
     expect(res.drift).toBe(false);
     expect(res.reasons.some((r) => r.includes("insufficient samples"))).toBe(true);

@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "wouter";
+import { Link, useSearch, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer, MetricCard, StatusBadge as PatternStatusBadge, type BadgeVariant } from "@/components/patterns";
+import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,18 +32,18 @@ import {
   ArrowRight,
 } from "lucide-react";
 
+// Domain status → solid shadcn <Badge> variant. Unified onto the shared
+// <StatusBadge> (W4): this thin wrapper keeps the `value` API + em-dash empty
+// state, delegating rendering to the pattern component (identical look).
+function mesStatusVariant(v: string): BadgeVariant {
+  if (v.includes("COMPLETED") || v === "RELEASE" || v === "APPROVED" || v === "SIGNED_OFF") return "default";
+  if (v.includes("HOLD") || v.includes("WAIT") || v === "QUARANTINE" || v === "PAUSED") return "secondary";
+  if (v.includes("SCRAP") || v.includes("REJECT") || v === "BREAKDOWN") return "destructive";
+  return "outline";
+}
 function StatusBadge({ value }: { value?: string | null }) {
   if (!value) return <span className="text-muted-foreground">—</span>;
-  const v = value.toUpperCase();
-  const variant =
-    v.includes("COMPLETED") || v === "RELEASE" || v === "APPROVED" || v === "SIGNED_OFF"
-      ? "default"
-      : v.includes("HOLD") || v.includes("WAIT") || v === "QUARANTINE" || v === "PAUSED"
-        ? "secondary"
-        : v.includes("SCRAP") || v.includes("REJECT") || v === "BREAKDOWN"
-          ? "destructive"
-          : "outline";
-  return <Badge variant={variant as any}>{value}</Badge>;
+  return <PatternStatusBadge status={value} variant={mesStatusVariant(value.toUpperCase())} />;
 }
 
 /**
@@ -67,9 +69,23 @@ function useNames() {
   }, [lookup.data]);
 }
 
+const MES_TABS = ["wip", "balance", "trace", "orders", "sessions", "maintenance"] as const;
+
 export default function MESControlTower() {
   const { t } = useTranslation();
-  const [tab, setTab] = useState("wip");
+  const search = useSearch();
+  const [, setLocation] = useLocation();
+  // doc 36 W2 — deep-linkable tabs: honour inbound `?tab=` and write it back on change
+  // so MES cockpit views are reachable directly from the app menu.
+  const initialTab = (() => {
+    const q = new URLSearchParams(search).get("tab");
+    return q && (MES_TABS as readonly string[]).includes(q) ? q : "wip";
+  })();
+  const [tab, setTab] = useState(initialTab);
+  const handleTabChange = (v: string) => {
+    setTab(v);
+    setLocation(`/mes-control-tower?tab=${v}`, { replace: true });
+  };
   const names = useNames();
 
   const wipSummary = trpc.mesControlTower.wipSummary.useQuery(undefined, { refetchInterval: 30_000 });
@@ -87,62 +103,46 @@ export default function MESControlTower() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 p-1">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Activity className="h-6 w-6 text-primary" />
-            {t("mesControlTower.titleHub", "MES Operations Hub")}
-          </h1>
-          <p className="text-muted-foreground">
-            {t("mesControlTower.subtitleHub", "WIP · cân bằng chuyền · truy xuất serial · lệnh sản xuất · phiên sản xuất")}
-          </p>
-        </div>
+      <PageContainer>
+        <PageHeader
+          icon={<Activity className="h-6 w-6" />}
+          title={t("mesControlTower.titleHub", "MES Operations Hub")}
+          description={t("mesControlTower.subtitleHub", "WIP · cân bằng chuyền · truy xuất serial · lệnh sản xuất · phiên sản xuất")}
+        />
+
+        {/* U7 cross-links to the deep WIP dispatch view + the panorama. */}
+        <RelatedViews
+          links={[
+            { href: "/wip-dashboard", labelKey: "nav.wipDashboard", labelDefault: "WIP & Line Balance (dispatch)" },
+            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+          ]}
+        />
 
         {/* KPI cards */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Boxes className="h-4 w-4" /> {t("mesControlTower.wipTotal", "Tổng WIP")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{wipTotal}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Gauge className="h-4 w-4" /> {t("mesControlTower.lines", "Chuyền theo dõi")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{lineBalance.data?.length ?? 0}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Wrench className="h-4 w-4" /> {t("mesControlTower.openWorkOrders", "Lệnh bảo trì mở")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{openWo}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <GitMerge className="h-4 w-4" /> {t("mesControlTower.dispositions", "Quyết định lô")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{dispositions.data?.length ?? 0}</div>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<Boxes className="h-5 w-5" />}
+            label={t("mesControlTower.wipTotal", "Tổng WIP")}
+            value={wipTotal}
+          />
+          <MetricCard
+            icon={<Gauge className="h-5 w-5" />}
+            label={t("mesControlTower.lines", "Chuyền theo dõi")}
+            value={lineBalance.data?.length ?? 0}
+          />
+          <MetricCard
+            icon={<Wrench className="h-5 w-5" />}
+            label={t("mesControlTower.openWorkOrders", "Lệnh bảo trì mở")}
+            value={openWo}
+          />
+          <MetricCard
+            icon={<GitMerge className="h-5 w-5" />}
+            label={t("mesControlTower.dispositions", "Quyết định lô")}
+            value={dispositions.data?.length ?? 0}
+          />
         </div>
 
-        <Tabs value={tab} onValueChange={setTab}>
+        <Tabs value={tab} onValueChange={handleTabChange}>
           <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="wip">{t("mesControlTower.tabWip", "WIP")}</TabsTrigger>
             <TabsTrigger value="balance">{t("mesControlTower.tabBalance", "Cân bằng chuyền")}</TabsTrigger>
@@ -274,8 +274,8 @@ export default function MESControlTower() {
                         <TableCell>{names.line(d.lineId)}</TableCell>
                         <TableCell>{d.dwellMs ?? "—"}</TableCell>
                         <TableCell>{d.processingMs ?? "—"}</TableCell>
-                        <TableCell className="text-amber-600">{d.starvedMs ?? "—"}</TableCell>
-                        <TableCell className="text-red-600">{d.blockedMs ?? "—"}</TableCell>
+                        <TableCell className="text-warning">{d.starvedMs ?? "—"}</TableCell>
+                        <TableCell className="text-destructive">{d.blockedMs ?? "—"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -368,7 +368,7 @@ export default function MESControlTower() {
                       <TableRow key={w.id}>
                         <TableCell className="font-mono text-xs">{w.workOrderNumber}</TableCell>
                         <TableCell>{w.machineCode ?? names.machine(w.machineId)}</TableCell>
-                        <TableCell>{w.type}{w.trigger === "PREDICTED_FAILURE" && <AlertTriangle className="inline h-3 w-3 ml-1 text-amber-500" />}</TableCell>
+                        <TableCell>{w.type}{w.trigger === "PREDICTED_FAILURE" && <AlertTriangle className="inline h-3 w-3 ml-1 text-warning" />}</TableCell>
                         <TableCell>{w.trigger}</TableCell>
                         <TableCell><StatusBadge value={w.status} /></TableCell>
                         <TableCell className="text-xs">{w.openedAt ? new Date(w.openedAt).toLocaleString() : "—"}</TableCell>
@@ -380,7 +380,7 @@ export default function MESControlTower() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }
@@ -418,6 +418,7 @@ function SerialTracePanel({ names }: { names: Names }) {
           <div className="flex-1 max-w-sm">
             <Label>{t("mesControlTower.serial", "Serial")}</Label>
             <Input
+              aria-label={t("mesControlTower.serial", "Serial")}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && input.trim()) setSerial(input.trim()); }}
@@ -514,8 +515,8 @@ function SerialTracePanel({ names }: { names: Names }) {
                       <TableRow key={d.id}>
                         <TableCell>{names.station(d.stationId)}</TableCell>
                         <TableCell>{d.dwellMs ?? "—"}</TableCell>
-                        <TableCell className="text-amber-600">{d.starvedMs ?? "—"}</TableCell>
-                        <TableCell className="text-red-600">{d.blockedMs ?? "—"}</TableCell>
+                        <TableCell className="text-warning">{d.starvedMs ?? "—"}</TableCell>
+                        <TableCell className="text-destructive">{d.blockedMs ?? "—"}</TableCell>
                         <TableCell className="text-xs">{d.enteredAt ? new Date(d.enteredAt).toLocaleString() : "—"}</TableCell>
                       </TableRow>
                     ))}
@@ -760,7 +761,7 @@ function MaterialFlowPanel() {
         <CardContent className="flex flex-wrap items-end gap-2">
           <div>
             <Label>{t("mesControlTower.lot", "Lô")}</Label>
-            <Input value={d.lotNumber} onChange={(e) => setD({ ...d, lotNumber: e.target.value })} className="w-40" placeholder="LOT-..." />
+            <Input aria-label={t("mesControlTower.lot", "Lô")} value={d.lotNumber} onChange={(e) => setD({ ...d, lotNumber: e.target.value })} className="w-40" placeholder="LOT-..." />
           </div>
           <div>
             <Label>{t("mesControlTower.disposition", "Quyết định")}</Label>
@@ -775,11 +776,11 @@ function MaterialFlowPanel() {
           </div>
           <div>
             <Label>{t("mesControlTower.quantity", "Số lượng")}</Label>
-            <Input value={d.quantity} onChange={(e) => setD({ ...d, quantity: e.target.value })} className="w-24" />
+            <Input aria-label={t("mesControlTower.quantity", "Số lượng")} value={d.quantity} onChange={(e) => setD({ ...d, quantity: e.target.value })} className="w-24" />
           </div>
           <div className="flex-1 min-w-40">
             <Label>{t("mesControlTower.reason", "Lý do")}</Label>
-            <Input value={d.reason} onChange={(e) => setD({ ...d, reason: e.target.value })} placeholder="..." />
+            <Input aria-label={t("mesControlTower.reason", "Lý do")} value={d.reason} onChange={(e) => setD({ ...d, reason: e.target.value })} placeholder="..." />
           </div>
           <Button
             disabled={!d.lotNumber || createDisp.isPending}

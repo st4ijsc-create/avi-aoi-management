@@ -1,0 +1,16 @@
+<Project>
+  <!-- WS-F1-T1 — the single source of the machine-simulator product's version. Every csproj under this
+       directory (src/* and tests/*) automatically inherits this via MSBuild's own "walk up from each
+       project file to the nearest Directory.Build.props" convention — confirmed no such file exists
+       anywhere above this one (repo root included), so nothing here shadows/gets shadowed by a parent.
+       St4i.EngineApi.Endpoints.CapabilitiesEndpoints reads this back at runtime off its own built
+       assembly's Version (Assembly.GetName().Version, populated from AssemblyVersion below) and reports
+       it on GET /v1/capabilities; the installer (a later WS-F1 task) will read this SAME property to
+       decide upgrade-vs-fresh-install. Bump this ONE value when the product version changes — every
+       assembly + the capabilities endpoint stay in lock-step automatically. -->
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+  </PropertyGroup>
+</Project>

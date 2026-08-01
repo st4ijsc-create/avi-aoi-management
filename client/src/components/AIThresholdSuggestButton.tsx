@@ -4,15 +4,20 @@
  * A reusable "🤖 AI đề xuất" button that, given a target (a measurement-point
  * id OR an ng-threshold id), fetches an AI recommendation and shows a
  * decision-ready card: current vs recommended values, Cpk before→after with a
- * colored indicator (MP), sampleSize + basis ("Vì sao"), and an "✅ Áp dụng"
- * action that applies via the correct HITL path:
- *   - measurement point → thresholdApproval.request → thresholdApproval.approve
- *     ({ apply: true }) — the EXISTING approve/apply path.
+ * colored indicator (MP), sampleSize + basis ("Vì sao").
+ *
+ * Governance (doc 31 OP1/MP2 — no self-approval):
+ *   - measurement point → thresholdApproval.request ONLY. This creates a
+ *     threshold-change request (advisor's suggested limits + reasoning +
+ *     evidence in the payload); a DIFFERENT reviewer must approve it in the
+ *     Threshold Approvals queue. The button never approves/applies — the server
+ *     enforces decidedBy ≠ requestedBy, so self-approval is impossible and the
+ *     UI does not even offer an approve action here.
  *   - ng-threshold → aiThresholdAdvisor.applyNgThreshold (proposeAction) →
  *     aiCopilot.confirmAction (token == actionId) — the EXISTING HITL confirm.
  *
  * Honest-degrade: shows the "chưa đủ mẫu (cần ≥N)" note and still allows a
- * cautious apply. Flag-off / not-found → friendly disabled note. vi/en/zh.
+ * cautious submit. Flag-off / not-found → friendly disabled note. vi/en/zh.
  * Everything optional-chained; renders fine while loading / empty / disabled.
  */
 
@@ -38,8 +43,10 @@ type Target =
 
 interface Props {
   target: Target;
-  /** Called after a successful apply so the parent can refetch. */
+  /** Called after a successful NG-threshold apply so the parent can refetch. */
   onApplied?: () => void;
+  /** Called after a measurement-point request is submitted for approval. */
+  onSubmitted?: () => void;
   className?: string;
   size?: "sm" | "default";
   variant?: "outline" | "secondary" | "default" | "ghost";
@@ -60,6 +67,7 @@ function fmt(v: number | null | undefined, unit?: string | null): string {
 export default function AIThresholdSuggestButton({
   target,
   onApplied,
+  onSubmitted,
   className,
   size = "sm",
   variant = "outline",
@@ -67,7 +75,9 @@ export default function AIThresholdSuggestButton({
   const { t, i18n } = useTranslation();
   const lang = (i18n.language?.startsWith("vi") ? "vi" : i18n.language?.startsWith("zh") ? "zh" : "en") as Lang;
   const [open, setOpen] = useState(false);
-  const [applied, setApplied] = useState(false);
+  // Point path ends in "submitted" (request queued for a different reviewer);
+  // NG path ends in "applied" (HITL confirm writes the threshold). Never both.
+  const [outcome, setOutcome] = useState<null | "submitted" | "applied">(null);
 
   const isPoint = target.kind === "point";
 
@@ -81,17 +91,17 @@ export default function AIThresholdSuggestButton({
     { enabled: open && !isPoint, retry: false, staleTime: 30_000 },
   );
 
-  // ── Mutations (apply paths) ───────────────────────────────────────────────────
+  // ── Mutations ─────────────────────────────────────────────────────────────────
+  // Point path is REQUEST-ONLY (no approve mutation here) — self-approval is a
+  // governance violation (doc 31 OP1). NG path keeps its HITL confirm flow.
   const requestMutation = trpc.thresholdApproval.request.useMutation();
-  const approveMutation = trpc.thresholdApproval.approve.useMutation();
   const applyNgMutation = trpc.aiThresholdAdvisor.applyNgThreshold.useMutation();
   const confirmActionMutation = trpc.aiCopilot.confirmAction.useMutation();
 
   const loading = isPoint ? pointQuery.isLoading : ngQuery.isLoading;
   const data: any = isPoint ? pointQuery.data : ngQuery.data;
-  const applying =
+  const busy =
     requestMutation.isPending ||
-    approveMutation.isPending ||
     applyNgMutation.isPending ||
     confirmActionMutation.isPending;
 
@@ -100,8 +110,11 @@ export default function AIThresholdSuggestButton({
   const degraded = data?.degraded === true;
   const needsReview = (data as any)?.needsReview === true;
 
-  // ── Apply: measurement point → request + approve(apply:true) ──────────────────
-  const applyPoint = async () => {
+  // ── Submit: measurement point → thresholdApproval.request ONLY ────────────────
+  // Creates a change request carrying the advisor's suggested limits + reasoning
+  // + any evidence so the reviewer can decide. A DIFFERENT reviewer must approve
+  // it (server enforces SoD) — this button never approves/applies.
+  const submitPoint = async () => {
     if (!data?.recommended) return;
     try {
       const req = await requestMutation.mutateAsync({
@@ -109,20 +122,38 @@ export default function AIThresholdSuggestButton({
         proposedLsl: data.recommended.lsl,
         proposedUsl: data.recommended.usl,
         proposedNominal: data.recommended.target,
-        suggestion: { source: "aiThresholdAdvisor", basis: data.basis, sampleSize: data.sampleSize },
-        comment: t("thresholdAdvisor.applyComment", "Áp dụng đề xuất ngưỡng từ AI"),
+        suggestion: {
+          source: "aiThresholdAdvisor",
+          basis: data.basis,
+          sampleSize: data.sampleSize,
+          confidence: data.confidence,
+          currentCpk: data.current?.cpk,
+          // page reads s.cpk ?? s.Cpk ?? s.proposedCpk → surface projected Cpk
+          proposedCpk: data.recommended?.projectedCpk,
+          code: data.code,
+          name: data.name,
+          unit: data.unit,
+          degraded: data.degraded === true,
+          needsReview: data.needsReview === true,
+          recommended: {
+            lsl: data.recommended.lsl,
+            usl: data.recommended.usl,
+            target: data.recommended.target,
+          },
+          ...(Array.isArray(data.evidence?.recentNg) ? { evidence: { recentNg: data.evidence.recentNg } } : {}),
+        },
+        comment: t("thresholdAdvisor.requestComment", "AI-suggested threshold — submitted for review"),
       });
       const id = (req as any)?.id;
       if (!id) {
-        toast.error(t("thresholdAdvisor.applyFailed", "Áp dụng thất bại"));
+        toast.error(t("thresholdAdvisor.submitFailed", "Submit failed"));
         return;
       }
-      await approveMutation.mutateAsync({ id, apply: true, comment: t("thresholdAdvisor.applyComment", "Áp dụng đề xuất ngưỡng từ AI") });
-      setApplied(true);
-      toast.success(t("thresholdAdvisor.applied", "Đã áp dụng ngưỡng mới"));
-      onApplied?.();
+      setOutcome("submitted");
+      toast.success(t("thresholdAdvisor.submitted", "Submitted for approval — a different reviewer must approve"));
+      onSubmitted?.();
     } catch {
-      toast.error(t("thresholdAdvisor.applyFailed", "Áp dụng thất bại"));
+      toast.error(t("thresholdAdvisor.submitFailed", "Submit failed"));
     }
   };
 
@@ -143,7 +174,7 @@ export default function AIThresholdSuggestButton({
       }
       const confirmed = await confirmActionMutation.mutateAsync({ actionId, token: actionId, lang });
       if (confirmed?.ok) {
-        setApplied(true);
+        setOutcome("applied");
         toast.success(confirmed.message ?? t("thresholdAdvisor.applied", "Đã áp dụng ngưỡng mới"));
         onApplied?.();
       } else {
@@ -154,10 +185,10 @@ export default function AIThresholdSuggestButton({
     }
   };
 
-  const onApply = () => (isPoint ? applyPoint() : applyNg());
+  const onAction = () => (isPoint ? submitPoint() : applyNg());
 
   return (
-    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) setApplied(false); }}>
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) setOutcome(null); }}>
       <PopoverTrigger asChild>
         <Button type="button" variant={variant} size={size} className={cn("gap-1", className)}>
           <Sparkles className="h-3.5 w-3.5" />
@@ -276,17 +307,34 @@ export default function AIThresholdSuggestButton({
                 </div>
               )}
 
-              {/* Apply / done */}
-              {applied ? (
+              {/* Submit (point) / Apply (ng) / done */}
+              {outcome === "submitted" ? (
+                <div className="flex items-start gap-2 rounded-md border border-sky-300 bg-sky-50 p-2.5 text-sm text-sky-800 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-300">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{t("thresholdAdvisor.submitted", "Submitted for approval — a different reviewer must approve")}</span>
+                </div>
+              ) : outcome === "applied" ? (
                 <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-2.5 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
                   {t("thresholdAdvisor.applied", "Đã áp dụng ngưỡng mới")}
                 </div>
               ) : (
-                <Button className="w-full gap-1.5" disabled={applying || needsReview} onClick={onApply}>
-                  {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  {needsReview ? t("thresholdAdvisor.reviewFirst", "Cần xem lại trước") : t("thresholdAdvisor.applyBtn", "✅ Áp dụng")}
-                </Button>
+                <>
+                  <Button className="w-full gap-1.5" disabled={busy || needsReview} onClick={onAction}>
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    {needsReview
+                      ? t("thresholdAdvisor.reviewFirst", "Cần xem lại trước")
+                      : isPoint
+                        ? t("thresholdAdvisor.submitBtn", "Submit for approval")
+                        : t("thresholdAdvisor.applyBtn", "✅ Áp dụng")}
+                  </Button>
+                  {isPoint && !needsReview && (
+                    <p className="flex items-start gap-1 text-[11px] leading-snug text-muted-foreground">
+                      <Info className="mt-0.5 h-3 w-3 shrink-0" />
+                      {t("thresholdAdvisor.sodHint", "This only submits a request — a different reviewer must approve it (you cannot approve your own).")}
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}

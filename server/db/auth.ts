@@ -8,8 +8,15 @@ import {
   userFactoryAssignments, InsertUserFactoryAssignment,
 } from "../../drizzle/schema";
 import { ENV } from '../_core/env';
+// W4-B (doc 27 B4): the auth layer caches session→user for AUTH_CACHE_TTL_S.
+// Every mutation below that changes what authenticateRequest returns (role,
+// isActive/ban, password, 2FA, session revocation) MUST explicitly evict the
+// affected user's cached sessions so the change takes effect immediately on
+// this instance (cross-instance propagation: Redis broadcast when available,
+// otherwise bounded by the ≤TTL staleness window).
+import { invalidateAuthUser } from '../services/authSessionCache';
 
-export type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'maintenance' | 'viewer' | 'user';
+export type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'maintenance' | 'engineer' | 'viewer' | 'user';
 
 // ============ USER FUNCTIONS ============
 export async function upsertUser(user: InsertUser): Promise<void> {
@@ -66,6 +73,20 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       target: users.openId,
       set: updateSet,
     });
+
+    // Auth-cache invalidation — only when the CALLER changed profile fields
+    // (OAuth sync / admin edit). The per-request lastSignedIn touch from
+    // authenticateRequest passes none of these and must NOT evict the entry
+    // it just created. (The owner auto-promotion above rewrites the same
+    // 'admin' role every time — not a caller-driven change either.)
+    if (
+      user.role !== undefined ||
+      user.name !== undefined ||
+      user.email !== undefined ||
+      user.loginMethod !== undefined
+    ) {
+      await invalidateAuthUser(undefined, user.openId);
+    }
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
@@ -93,12 +114,14 @@ export async function updateUserRole(userId: number, role: UserRole) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
   await db.update(users).set({ role }).where(eq(users.id, userId));
+  await invalidateAuthUser(userId); // role change must bite within this request
 }
 
 export async function deleteUser(userId: number) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
   await db.delete(users).where(eq(users.id, userId));
+  await invalidateAuthUser(userId);
 }
 
 export async function getUserById(userId: number) {
@@ -159,12 +182,14 @@ export async function updateUser(userId: number, data: {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
   await db.update(users).set(data).where(eq(users.id, userId));
+  await invalidateAuthUser(userId); // covers role change + ban (isActive:false)
 }
 
 export async function updateUserPassword(userId: number, passwordHash: string) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
   await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+  await invalidateAuthUser(userId);
 }
 
 export async function getActiveUsers() {
@@ -250,6 +275,7 @@ export async function enable2FA(userId: number) {
   await db.update(users)
     .set({ twoFactorEnabled: true })
     .where(eq(users.id, userId));
+  await invalidateAuthUser(userId); // twoFactorEnabled gates adminProcedure
 }
 
 export async function disable2FA(userId: number) {
@@ -258,6 +284,7 @@ export async function disable2FA(userId: number) {
   await db.update(users)
     .set({ twoFactorSecret: null, twoFactorEnabled: false })
     .where(eq(users.id, userId));
+  await invalidateAuthUser(userId);
 }
 
 export async function get2FAStatus(userId: number) {
@@ -413,6 +440,9 @@ export async function revokeSession(sessionId: number, userId: number) {
         eq(userSessions.userId, userId)
       )
     );
+  // Coarse but safe: we only have the session id here, so evict ALL of the
+  // user's cached sessions — the surviving ones re-cache on next request.
+  await invalidateAuthUser(userId);
 }
 
 export async function revokeAllSessions(userId: number, exceptSessionId?: number) {
@@ -433,6 +463,7 @@ export async function revokeAllSessions(userId: number, exceptSessionId?: number
       .set({ isActive: false })
       .where(eq(userSessions.userId, userId));
   }
+  await invalidateAuthUser(userId);
 }
 
 export async function cleanupExpiredSessions() {

@@ -1,5 +1,5 @@
 // Schema domain: MQTT tables
-import { pgTable, serial, integer, varchar, decimal, boolean, timestamp, text, json, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, varchar, decimal, boolean, timestamp, text, json, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { approvalStatusEnum, mappingTypeEnum, connectionStatusEnum_1, summaryTypeEnum, messageTypeEnum, deliveryStatusEnum, ruleTypeEnum, comparisonOperatorEnum_2, protocolEnum_1, defaultQosEnum, targetTypeEnum, eventTypeEnum, deviceTypeEnum, messageFormatEnum, eventTypeEnum_1, statusEnum_11, alertTypeEnum_2, severityEnum } from "./enums";
 
 export const mqttClients = pgTable("mqtt_clients", {
@@ -18,6 +18,13 @@ export const mqttClients = pgTable("mqtt_clients", {
   // Mapping to station
   stationId: integer("stationId"), // Công trạm được gán
   processId: integer("processId"), // Công đoạn được gán (optional, for filtering)
+  // Doc 56 Đ2a Việc 4 (IoT identity, migration 0292) — soft link mqtt_clients → machines.id.
+  // Column name kept camelCase ("machineId") to match this table's convention (stationId /
+  // deviceId / processId). Nullable; the migration adds the FK (ON DELETE SET NULL) — kept
+  // as a soft-ref here (no .references()) exactly like stationId/processId in this table, so
+  // the schema does not diverge from the hand-written migration. Populated when an IoT device
+  // is bound to its machines row; a retired/rejected machine's link is revoked (hierarchy.ts).
+  machineId: integer("machineId"),
   // Approval status
   approvalStatus: approvalStatusEnum("approvalStatus").default("PENDING").notNull(),
   approvedBy: integer("approvedBy"), // User ID who approved
@@ -36,6 +43,13 @@ export const mqttClients = pgTable("mqtt_clients", {
   receiveDailySummary: boolean("receiveDailySummary").default(true).notNull(), // Nhận tổng hợp ngày
   receiveWeeklySummary: boolean("receiveWeeklySummary").default(true).notNull(), // Nhận tổng hợp tuần
   fcmToken: varchar("fcmToken", { length: 500 }), // Firebase Cloud Messaging token for push notifications
+  // Doc 27 W2-C (R12, migration 0178) — per-device MQTT password.
+  // `passwordHash` (bcrypt) is the AT-REST credential the broker verifies against.
+  // `password` is a LEGACY plaintext staging column: ops may set it once; on the
+  // device's next successful connect it is transparently upgraded into
+  // passwordHash and cleared (see mqttService.verifyMqttDevicePassword).
+  password: varchar("password", { length: 255 }),
+  passwordHash: varchar("passwordHash", { length: 255 }),
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -43,6 +57,8 @@ export const mqttClients = pgTable("mqtt_clients", {
   index("idx_mqtt_clients_clientId").on(table.clientId),
   index("idx_mqtt_clients_deviceId").on(table.deviceId),
   index("idx_mqtt_clients_station").on(table.stationId),
+  // Doc 56 Đ2a Việc 4 — lookup a machine's linked MQTT devices (lifecycle revoke).
+  index("idx_mqtt_clients_machine").on(table.machineId),
   index("idx_mqtt_clients_approval").on(table.approvalStatus),
   index("idx_mqtt_clients_connection").on(table.connectionStatus),
   index("idx_mqtt_clients_active").on(table.isActive),
@@ -189,7 +205,10 @@ export const mqttAlertHistory = pgTable("mqtt_alert_history", {
   isResolved: boolean("isResolved").default(false).notNull(),
   resolvedAt: timestamp("resolvedAt"),
   resolvedBy: integer("resolvedBy"), // FK to users
+  resolvedByName: varchar("resolvedByName", { length: 255 }), // Human-readable identity (mobile / master-key auth)
   resolutionNote: text("resolutionNote"),
+  // Escalation (0186 — set ONCE by mqttAlertScheduler sweep)
+  escalatedAt: timestamp("escalatedAt"),
   // Timestamps
   triggeredAt: timestamp("triggeredAt").defaultNow().notNull(),
 }, (table) => [
@@ -201,6 +220,33 @@ export const mqttAlertHistory = pgTable("mqtt_alert_history", {
 
 export type MqttAlertHistory = typeof mqttAlertHistory.$inferSelect;
 export type InsertMqttAlertHistory = typeof mqttAlertHistory.$inferInsert;
+
+/**
+ * Alert Escalation Rules (0186, doc 27 MB6) — minimal honest escalation for MQTT alerts.
+ * A rule matches open alerts (mqtt_connection_alerts not acked/resolved; mqtt_alert_history
+ * not resolved) older than escalateAfterMin. severity filter applies to connection alerts
+ * only (mqtt_alert_history has no severity column). The scheduler sweep marks escalatedAt
+ * exactly once (WHERE escalatedAt IS NULL) — no re-storm.
+ */
+export const alertEscalationRules = pgTable("alert_escalation_rules", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  severity: varchar("severity", { length: 20 }), // null = any; 'info'|'warning'|'critical'
+  alertType: varchar("alertType", { length: 50 }), // null = any; conn alertType or history ruleType
+  escalateAfterMin: integer("escalateAfterMin").default(15).notNull(),
+  notifyRoles: jsonb("notifyRoles").$type<string[]>().default([]).notNull(),
+  notifyUserIds: jsonb("notifyUserIds").$type<number[]>().default([]).notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_alert_escalation_rules_enabled").on(table.enabled),
+]);
+
+export type AlertEscalationRule = typeof alertEscalationRules.$inferSelect;
+export type InsertAlertEscalationRule = typeof alertEscalationRules.$inferInsert;
 
 export const mqttMessageHistory = pgTable("mqtt_message_history", {
   id: serial("id").primaryKey(),
@@ -500,15 +546,22 @@ export const mqttConnectionAlerts = pgTable("mqtt_connection_alerts", {
   triggeredAt: timestamp("triggeredAt").defaultNow().notNull(),
   acknowledgedAt: timestamp("acknowledgedAt"),
   acknowledgedBy: integer("acknowledgedBy"),
+  acknowledgedByName: varchar("acknowledgedByName", { length: 255 }), // Human-readable identity (mobile / master-key auth)
+  ackComment: text("ackComment"), // Lý do/ghi chú khi acknowledge (MB6)
   resolvedAt: timestamp("resolvedAt"),
-  
+  resolvedByName: varchar("resolvedByName", { length: 255 }),
+  resolutionNote: text("resolutionNote"),
+
+  // Escalation (0186 — set ONCE by mqttAlertScheduler sweep)
+  escalatedAt: timestamp("escalatedAt"),
+
   // Threshold Config
   thresholdMinutes: integer("thresholdMinutes").default(5), // Ngưỡng thời gian mất kết nối (phút)
-  
+
   // Status
   isAcknowledged: boolean("isAcknowledged").default(false).notNull(),
   isResolved: boolean("isResolved").default(false).notNull(),
-  
+
   // Metadata
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),

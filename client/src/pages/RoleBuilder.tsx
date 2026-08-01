@@ -35,6 +35,7 @@ import {
 import { toast } from 'sonner';
 import { Plus, Copy, Trash2, Shield, Users, Send, Eye, Edit, FileDown, FilePlus, X } from 'lucide-react';
 import { PermissionGate, ViewOnlyBadge } from '@/components/PermissionGate';
+import { PageHeader, EmptyState } from '@/components/patterns';
 
 const ACTION_LABELS: Record<string, { labelKey: string; icon: React.ReactNode }> = {
   canView: { labelKey: 'roles.view', icon: <Eye className="h-3 w-3" /> },
@@ -286,18 +287,13 @@ export function RoleBuilderContent() {
     <>
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Shield className="h-6 w-6" />
-              {t('roles.customRoleManagement')}
-              <ViewOnlyBadge module="admin_users" />
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('roles.roleManagementDescription')}
-            </p>
-          </div>
-          <div className="flex gap-2">
+        <PageHeader
+          icon={<Shield className="h-6 w-6 text-primary" />}
+          title={t('roles.customRoleManagement')}
+          description={t('roles.roleManagementDescription')}
+          badge={<ViewOnlyBadge module="admin_users" />}
+          actions={
+            <>
             {/* Create Role Dialog */}
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
               <DialogTrigger asChild>
@@ -435,8 +431,9 @@ export function RoleBuilderContent() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {/* Roles List */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -469,7 +466,7 @@ export function RoleBuilderContent() {
                     <div className="font-medium flex items-center gap-2">
                       {role.name}
                       {role.isSystem && (
-                        <Badge variant="secondary" className="text-xs">System</Badge>
+                        <Badge variant="secondary" className="text-xs">{t('roles.system')}</Badge>
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground">
@@ -519,9 +516,12 @@ export function RoleBuilderContent() {
               ))}
 
               {(!roles || roles.length === 0) && (
-                <div className="text-center text-muted-foreground py-8">
-                  {t('roles.noCustomRoles')}
-                </div>
+                <EmptyState
+                  variant="no-data"
+                  icon={Shield}
+                  compact
+                  title={t('roles.noCustomRoles')}
+                />
               )}
             </CardContent>
           </Card>
@@ -559,18 +559,30 @@ export function RoleBuilderContent() {
                     return (
                       <AccordionItem key={category} value={category}>
                         <AccordionTrigger className="text-sm font-medium">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span>{t(CATEGORY_LABELS[category] || category)}</span>
                             <Badge variant="outline" className="text-xs">
-                              {modules.length} modules
+                              {t('roles.modulesCount', { count: modules.length })}
                             </Badge>
+                            {/* doc 40 ENG-F3/Tuấn — cảnh báo role-floor: kể cả khi cấp bit
+                                machine_control cho role bất kỳ, server vẫn CHẶN thực thi lệnh
+                                nếu không phải admin/supervisor/engineer + 2FA (actuationProcedure). */}
+                            {category === 'machine_control' && (
+                              <Badge variant="destructive" className="text-xs gap-1">
+                                <Shield className="h-3 w-3" />
+                                {t(
+                                  'roles.machineControlFloorWarning',
+                                  'Chỉ admin/supervisor/engineer + 2FA mới thực thi được lệnh',
+                                )}
+                              </Badge>
+                            )}
                           </div>
                         </AccordionTrigger>
                         <AccordionContent>
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead className="w-[200px]">Module</TableHead>
+                                <TableHead className="w-[200px]">{t('roles.module')}</TableHead>
                                 {Object.entries(ACTION_LABELS).map(([action, { labelKey, icon }]) => (
                                   <TableHead key={action} className="text-center w-[80px]">
                                     <div className="flex flex-col items-center gap-1">

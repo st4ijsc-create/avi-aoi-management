@@ -1,0 +1,98 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <!--
+        Task 20 — English strings. Same key SET as Strings.vi.xaml (see that file's own remarks) —
+        LocalizationService.SetLanguage("en") swaps this dictionary in wholesale.
+    -->
+
+    <!-- ═══ Nav (AppShellViewModel.Nav) ═══════════════════════════════════════ -->
+    <sys:String x:Key="Str_Nav_Dashboard">Dashboard</sys:String>
+    <sys:String x:Key="Str_Nav_Machines">Machines</sys:String>
+    <sys:String x:Key="Str_Nav_Onboarding">Onboarding</sys:String>
+    <sys:String x:Key="Str_Nav_Inspector">API Inspector</sys:String>
+    <sys:String x:Key="Str_Nav_Scenario">Scenario</sys:String>
+    <sys:String x:Key="Str_Nav_Settings">Settings</sys:String>
+
+    <!-- ═══ Shell top bar (ShellView.xaml) ════════════════════════════════════ -->
+    <sys:String x:Key="Str_Shell_Transport">Transport</sys:String>
+    <sys:String x:Key="Str_Shell_StartFleet">Start Fleet</sys:String>
+    <sys:String x:Key="Str_Shell_StopFleet">Stop Fleet</sys:String>
+    <sys:String x:Key="Str_Shell_DemoFallback">DEMO FALLBACK</sys:String>
+
+    <!-- ═══ Shared field labels (used across several screens) ════════════════ -->
+    <sys:String x:Key="Str_Field_Status">Status</sys:String>
+    <sys:String x:Key="Str_Field_PassRate">Pass rate</sys:String>
+    <sys:String x:Key="Str_Field_Cycles">Cycles</sys:String>
+
+    <!-- ═══ Dashboard (DashboardView.xaml) ════════════════════════════════════ -->
+    <sys:String x:Key="Str_Dashboard_FleetHeader">Fleet</sys:String>
+
+    <!-- ═══ KPI tiles (KpiViewModel.Label, via FleetViewModel) ════════════════ -->
+    <sys:String x:Key="Str_Kpi_Online">ONLINE</sys:String>
+    <sys:String x:Key="Str_Kpi_TotalCycles">TOTAL CYCLES</sys:String>
+    <sys:String x:Key="Str_Kpi_Fpy">FPY</sys:String>
+
+    <!-- ═══ Machine Detail (MachineDetailView.xaml) ═══════════════════════════ -->
+    <sys:String x:Key="Str_MachineDetail_Back">← Dashboard</sys:String>
+    <sys:String x:Key="Str_MachineDetail_LastCycle">Last cycle</sys:String>
+    <sys:String x:Key="Str_MachineDetail_Spc">SPC — individuals chart (I-MR approx.)</sys:String>
+    <sys:String x:Key="Str_MachineDetail_Telemetry">Telemetry</sys:String>
+    <sys:String x:Key="Str_MachineDetail_Board">Board — latest inspection</sys:String>
+    <sys:String x:Key="Str_MachineDetail_ConfigSync">Config sync</sys:String>
+    <sys:String x:Key="Str_MachineDetail_SyncRecipe">Sync recipe</sys:String>
+    <sys:String x:Key="Str_MachineDetail_DriftState">Drift state</sys:String>
+    <sys:String x:Key="Str_MachineDetail_CycleLog">Cycle log</sys:String>
+
+    <!-- ═══ API Inspector (ApiInspectorView.xaml) ═════════════════════════════ -->
+    <sys:String x:Key="Str_Inspector_Title">API Inspector</sys:String>
+    <sys:String x:Key="Str_Inspector_Pause">Pause</sys:String>
+    <sys:String x:Key="Str_Inspector_Resume">Resume</sys:String>
+    <sys:String x:Key="Str_Inspector_Clear">Clear</sys:String>
+    <sys:String x:Key="Str_Inspector_Export">Export…</sys:String>
+    <sys:String x:Key="Str_Inspector_Paused">PAUSED</sys:String>
+    <sys:String x:Key="Str_Inspector_Machine">Machine</sys:String>
+    <sys:String x:Key="Str_Inspector_Kind">Kind</sys:String>
+
+    <!-- ═══ Onboarding (OnboardingView.xaml) ══════════════════════════════════ -->
+    <sys:String x:Key="Str_Onboarding_Title">Onboarding</sys:String>
+    <sys:String x:Key="Str_Onboarding_Step1">1. Register</sys:String>
+    <sys:String x:Key="Str_Onboarding_Register">Register</sys:String>
+    <sys:String x:Key="Str_Onboarding_PollApproval">Poll approval</sys:String>
+    <sys:String x:Key="Str_Onboarding_ClaimEnroll">2. Claim or enroll</sys:String>
+    <sys:String x:Key="Str_Onboarding_Claim">Claim</sys:String>
+    <sys:String x:Key="Str_Onboarding_Enroll">Enroll</sys:String>
+    <sys:String x:Key="Str_Onboarding_PasteKey">Paste mk_ key</sys:String>
+    <sys:String x:Key="Str_Onboarding_Save">Save</sys:String>
+    <sys:String x:Key="Str_Onboarding_LoadFleet">Load fleet.json</sys:String>
+    <sys:String x:Key="Str_Onboarding_Browse">Browse…</sys:String>
+    <sys:String x:Key="Str_Onboarding_Load">Load</sys:String>
+    <sys:String x:Key="Str_Onboarding_ActivityLog">Activity log</sys:String>
+    <sys:String x:Key="Str_Onboarding_DemoToggle">Demo mode (no server needed)</sys:String>
+
+    <!-- ═══ Settings (SettingsView.xaml) ══════════════════════════════════════ -->
+    <sys:String x:Key="Str_Settings_Title">Settings</sys:String>
+    <sys:String x:Key="Str_Settings_ConnectionHeader">Connection &amp; transport mode</sys:String>
+    <sys:String x:Key="Str_Settings_CheckServer">Check flags / Check server</sys:String>
+    <sys:String x:Key="Str_Settings_CredentialsHeader">Stored mk_ keys</sys:String>
+    <sys:String x:Key="Str_Settings_Refresh">Refresh</sys:String>
+    <sys:String x:Key="Str_Settings_Check">Check</sys:String>
+    <sys:String x:Key="Str_Settings_Save">Save</sys:String>
+    <sys:String x:Key="Str_Settings_ExhibitHeader">Exhibition (Kiosk / Attract / Language)</sys:String>
+    <sys:String x:Key="Str_Settings_Kiosk">Kiosk mode (F11)</sys:String>
+    <sys:String x:Key="Str_Settings_Attract">Attract mode</sys:String>
+    <sys:String x:Key="Str_Settings_Language">Language</sys:String>
+
+    <!-- ═══ Scenario (ScenarioView.xaml) ══════════════════════════════════════ -->
+    <sys:String x:Key="Str_Scenario_Title">Scenario</sys:String>
+    <sys:String x:Key="Str_Scenario_StatusHeader">Current scenario status</sys:String>
+    <sys:String x:Key="Str_Scenario_LiveAdjustHeader">Live adjustments</sys:String>
+    <sys:String x:Key="Str_Scenario_PresetsHeader">Presets</sys:String>
+    <sys:String x:Key="Str_Scenario_CycleRate">Cycle rate</sys:String>
+    <sys:String x:Key="Str_Scenario_DefectRate">Defect rate</sys:String>
+    <sys:String x:Key="Str_Scenario_FaultRate">Fault rate</sys:String>
+    <sys:String x:Key="Str_Scenario_NetworkOutage">Network outage</sys:String>
+    <sys:String x:Key="Str_Scenario_Burst">Burst (6x for 4s)</sys:String>
+
+</ResourceDictionary>

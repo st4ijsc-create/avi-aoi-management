@@ -36,7 +36,10 @@ async function getDb() {
   return db;
 }
 
-const protocolEnum = z.enum(["opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip", "stub"]);
+// doc 54 P1.5 — add "slmp" (Mitsubishi SLMP 3E/4E): the runtime driver (slmpDriver.ts)
+// + the DB protocol enum already support it; the CRUD zod enum was the only thing blocking
+// FX5U/iQ-R SLMP adapters from being created via the UI/API.
+const protocolEnum = z.enum(["opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip", "slmp", "stub"]);
 const dataTypeEnum = z.enum(["bool", "int", "float", "string", "json"]);
 
 const adapterCreateInput = z.object({
@@ -60,6 +63,10 @@ const tagCreateInput = z.object({
   offset: z.number().nullable().optional(),
   writable: z.boolean().default(false),
   isEnabled: z.boolean().default(true),
+  // G1.4 (doc 44 W2-A3, mig 0253) — report-by-exception per tag, OPTIONAL (client
+  // cũ không gửi → NULL, hành vi cũ). Chỉ có tác dụng khi OT_TAG_DEADBAND_ENABLED.
+  deadband: z.number().positive().nullable().optional(),
+  samplingMs: z.number().int().min(1).max(86_400_000).nullable().optional(),
 });
 
 const DEFAULT_TEST_TIMEOUT_MS = 8000;
@@ -277,6 +284,9 @@ export const deviceAdapterRouter = router({
               offset: input.offset != null ? String(input.offset) : undefined,
               writable: input.writable,
               isEnabled: input.isEnabled,
+              // G1.4 — deadband/samplingMs (double precision / integer, nullable)
+              deadband: input.deadband ?? null,
+              samplingMs: input.samplingMs ?? null,
             })
             .returning();
           return row;

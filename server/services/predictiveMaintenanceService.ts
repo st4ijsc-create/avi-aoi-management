@@ -19,10 +19,11 @@
  */
 
 import { getDb } from "../db/connection";
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lte, ne } from "drizzle-orm";
 import {
   machineHeartbeats,
   machineHealthHistory,
+  machineSensorReadings,
   downtimeEvents,
   machines,
 } from "../../drizzle/schema";
@@ -35,20 +36,41 @@ import {
   type MultivariatePoint,
 } from "./aiTimeSeriesEngine";
 import { recordMachineHealthSnapshot } from "../db/machine";
+import type { RulEstimate } from "./ai/rulEstimatorService";
+import type { FailureModeResult } from "./ai/failureModeClassifier";
 
 // ─── Tunables (env-overridable) ──────────────────────────────────────────────
 
 const DANGER_HEALTH_THRESHOLD = 40; // healthScore below this = danger zone
 const RISK_ALERT_THRESHOLD = Number(process.env.PM_RISK_THRESHOLD ?? 60); // 0-100
 const CONFIDENCE_ALERT_THRESHOLD = Number(process.env.PM_CONFIDENCE_THRESHOLD ?? 50); // 0-100
-const TIMEFRAME_ALERT_HOURS = Number(process.env.PM_TIMEFRAME_HOURS ?? 24); // alert if failure <= X hours
+/**
+ * G4.9 (doc 44 W0-F) — alert lead-time gate. Default was 24h, which silently
+ * suppressed every prediction whose ETA was 1–7 days out (exactly the window a
+ * planner needs to schedule maintenance). Default is now 168h (1 week); the env
+ * override keeps the same name. HONEST: the "RUL" behind this gate is still a
+ * heuristic proxy (EWMA health-forecast crossing + MTBF cap), NOT a trained
+ * survival/RUL model — treat the timeframe as a planning hint, not a guarantee.
+ */
+const TIMEFRAME_ALERT_HOURS = Number(process.env.PM_TIMEFRAME_HOURS ?? 168); // alert if failure <= X hours
 const MIN_HEALTH_POINTS = 5; // below this, trend/forecast are unreliable
+/** Upper bound on forecast steps so a dense series can't explode the EWMA loop. */
+const MAX_FORECAST_STEPS = 720;
 
 // Feature weights (sum need not be 1; we normalize by sum of active weights)
 const W_RELIABILITY = 0.35;
 const W_TREND = 0.30;
 const W_ANOMALY = 0.20;
 const W_TEMP = 0.15;
+
+/**
+ * calculationMethod tag this service writes onto its own health snapshots.
+ * MON-F15: the risk-trend feature must NOT eat these PdM-written rows (that would
+ * be self-referential — PdM predicting on its own predictions). The trend feature
+ * only consumes MEASURED health (calculationMethod != PDM_CALC_METHOD, i.e. the
+ * 'WEIGHTED' snapshots derived from real OEE / error-rate / cycle-time).
+ */
+export const PDM_CALC_METHOD = "PREDICTIVE_WS4";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -80,6 +102,21 @@ export interface FailureRiskResult {
   maintenanceUrgency: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   factors: RiskFactor[];
   dataPoints: number;
+  // ── G4.7 (doc 44 W5-B3) — RUL provenance. rulMethod is HONEST: 'weibull' only
+  // when a survival fit backed the timeframe; otherwise 'heuristic' (EWMA/MTBF
+  // proxy) or 'insufficient_data'. rulHours is the number used for planning. ──
+  rulMethod: "weibull" | "heuristic" | "insufficient_data";
+  rulHours: number | null;
+  rulConfidence: number | null;
+  rulNote: string | null;
+  // ── G4.8 (doc 44 W5-B3) — likely failure mode + maintenance direction, or null
+  // when the classifier is off / has no vibration signal ('unknown'). ──
+  failureMode: {
+    mode: string;
+    reason: string;
+    confidence: number;
+    recommendedAction: string;
+  } | null;
 }
 
 /** Raw inputs for pure risk computation — enables unit testing without a DB. */
@@ -94,6 +131,11 @@ export interface RiskInputs {
   tempSeries: TimeSeriesPoint[];
   /** uptime (hours) since the last unplanned-downtime event. */
   uptimeSinceLastHours: number | null;
+  /** G4.7 — optional survival RUL estimate; when method='weibull' it overrides the
+   *  heuristic timeframe. NULL/absent ⇒ heuristic path (unchanged behaviour). */
+  rul?: RulEstimate | null;
+  /** G4.8 — optional failure-mode verdict to attach to the prediction. */
+  failureMode?: FailureModeResult | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -115,6 +157,80 @@ function describeTimeframe(hours: number | null): string | null {
   if (hours <= 24) return `within ${Math.max(1, Math.round(hours))} hours`;
   const days = Math.round(hours / 24);
   return `within ${days} day${days > 1 ? "s" : ""}`;
+}
+
+// ─── MON-F2: machine_sensor_readings → PdM feature mapping ────────────────────
+// machine_sensor_readings carries the REAL telemetry (vibration / current /
+// temperature / torque, ingested via sensorIngestService). machine_heartbeats has
+// no writer, so PdM's anomaly + temperature features used to be dead. Map:
+//   vibration, current, torque → multivariate anomaly (Isolation Forest)
+//   temperature                → CUSUM change-point series
+
+export type SensorFeature = "vibration" | "current" | "temperature" | "torque" | "other";
+
+/** Classify a raw sensorType string into a PdM feature (tolerant of synonyms). */
+export function sensorFeature(sensorType: string): SensorFeature {
+  const s = (sensorType ?? "").toLowerCase();
+  if (s.includes("vib")) return "vibration";
+  // G4.10 (doc 44 W0-F): torque/mô-men used to fall into "other" and was DROPPED.
+  // Checked BEFORE "current" because "motor torque" would otherwise match "motor".
+  if (s.includes("torq") || s.includes("moment") || s.includes("momen") || s.includes("mô-men")) return "torque";
+  if (s.includes("current") || s.includes("amp") || s.includes("motor")) return "current";
+  if (s.includes("temp")) return "temperature";
+  return "other";
+}
+
+export interface SensorReadingPoint {
+  sensorType: string;
+  value: number;
+  timestamp: number; // epoch ms
+}
+
+/**
+ * Build PdM feature series from raw machine_sensor_readings rows.
+ *  - `multivariate`: forward-filled {vibration, current, torque} vectors for anomaly share.
+ *    Only sensor types that actually have data become dimensions (honest — no
+ *    fabricated zeros for absent sensors). Points are emitted only once every
+ *    present dimension has at least one observation.
+ *  - `tempSeries`: temperature readings for CUSUM change-point detection.
+ */
+export function buildSensorFeatureSeries(rows: SensorReadingPoint[]): {
+  multivariate: MultivariatePoint[];
+  tempSeries: TimeSeriesPoint[];
+} {
+  const sorted = [...rows].sort((a, b) => a.timestamp - b.timestamp);
+
+  const tempSeries: TimeSeriesPoint[] = sorted
+    .filter((r) => sensorFeature(r.sensorType) === "temperature")
+    .map((r) => ({ timestamp: r.timestamp, value: r.value }));
+
+  // Which anomaly dimensions are present at all? (torque is consumed exactly like
+  // current — an extra Isolation-Forest dimension when the sensor stream has it.)
+  const present = new Set<Exclude<SensorFeature, "temperature" | "other">>();
+  for (const r of sorted) {
+    const f = sensorFeature(r.sensorType);
+    if (f === "vibration" || f === "current" || f === "torque") present.add(f);
+  }
+  const dims = [...present];
+
+  const multivariate: MultivariatePoint[] = [];
+  if (dims.length > 0) {
+    const last: Record<string, number> = {};
+    for (const r of sorted) {
+      const f = sensorFeature(r.sensorType);
+      if (f !== "vibration" && f !== "current" && f !== "torque") continue;
+      last[f] = r.value;
+      // Emit only after every present dimension has at least one observation,
+      // so early points aren't forward-filled from nothing.
+      if (dims.every((d) => last[d] != null)) {
+        const values: Record<string, number> = {};
+        for (const d of dims) values[d] = last[d];
+        multivariate.push({ timestamp: r.timestamp, values });
+      }
+    }
+  }
+
+  return { multivariate, tempSeries };
 }
 
 // ─── Reliability statistics (MTBF / MTTR / frequency / trend) ────────────────
@@ -172,9 +288,29 @@ export async function computeReliabilityStats(
   const totalUnplannedMinutes = states.UD;
   const uptimeMinutes = states.equipmentUptime; // PT + SB + ET + UD
 
-  const mtbfHours = unplannedEvents > 0 ? uptimeMinutes / unplannedEvents / 60 : null;
-  const mttrHours = unplannedEvents > 0 ? totalUnplannedMinutes / unplannedEvents / 60 : null;
+  let mtbfHours = unplannedEvents > 0 ? uptimeMinutes / unplannedEvents / 60 : null;
+  let mttrHours = unplannedEvents > 0 ? totalUnplannedMinutes / unplannedEvents / 60 : null;
   const failuresPerDay = unplannedEvents / Math.max(1, windowHours / 24);
+
+  // ── W4-A (doc 35 §W4.2) — UNIFY MTTR/MTBF ──────────────────────────────────
+  // Historically this service derived MTTR/MTBF from downtimeEvents while the MES
+  // Control Tower derived them from COMPLETED maintenance_work_orders
+  // (pdmWorkOrderService.computeMttrMtbf) — the two UIs showed divergent numbers.
+  // The work-order source is authoritative (openedAt/repairStartedAt/closedAt are
+  // precise repair spans), so we DELEGATE these two fields to it when work orders
+  // exist for the window. Everything else (event counts / uptime / trend /
+  // frequency) still comes from the SEMI-E10 downtime view. Fail-safe: on any
+  // error we keep the event-derived numbers. Return shape is unchanged.
+  try {
+    const { computeMttrMtbf } = await import("./pdmWorkOrderService");
+    const wo = await computeMttrMtbf(machineId, from, to);
+    if (wo.failureCount > 0) {
+      if (wo.mtbfHours != null) mtbfHours = wo.mtbfHours;
+      if (wo.mttrMinutes != null) mttrHours = wo.mttrMinutes / 60;
+    }
+  } catch {
+    /* keep downtime-event-derived MTTR/MTBF as fallback */
+  }
 
   // Failure-frequency trend: compare first vs second half of window
   const mid = from.getTime() + (to.getTime() - from.getTime()) / 2;
@@ -197,6 +333,15 @@ export async function computeReliabilityStats(
   };
 }
 
+/**
+ * W4-A (doc 35) — public alias. `getReliabilityStats` is the intent-revealing
+ * name for the unified reliability read; it delegates to computeReliabilityStats
+ * (whose MTTR/MTBF now come from the authoritative work-order source, so this and
+ * the MES Control Tower's reliability read agree). New call sites should prefer
+ * this name; computeReliabilityStats is kept for existing callers.
+ */
+export const getReliabilityStats = computeReliabilityStats;
+
 // ─── Pure risk computation (testable, no DB) ─────────────────────────────────
 
 /**
@@ -205,7 +350,7 @@ export async function computeReliabilityStats(
  * SHARE is stable for clearly anomalous vs. normal series).
  */
 export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskResult {
-  const { machineId, reliability, healthSeries, heartbeatSeries, tempSeries, uptimeSinceLastHours } = inputs;
+  const { machineId, reliability, healthSeries, heartbeatSeries, tempSeries, uptimeSinceLastHours, rul, failureMode } = inputs;
   const factors: RiskFactor[] = [];
 
   let weightSum = 0;
@@ -233,7 +378,19 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
   let riskTrend = 0;
   let timeframeHours: number | null = null;
   if (healthSeries.length >= MIN_HEALTH_POINTS) {
-    const forecast = ewmaForecast(healthSeries, 0.3, 48);
+    // G4.9 (doc 44 W0-F): widen the forecast horizon to cover the (now 168h)
+    // alert lead-time. Horizon is in STEPS of the series' average interval, so a
+    // fixed 48 steps of hourly snapshots could only ever "see" ~2 days ahead —
+    // predictions 3–7 days out were structurally impossible. Steps are derived
+    // from the interval so the forecast reaches TIMEFRAME_ALERT_HOURS (bounded).
+    const avgIntervalMs = healthSeries.length > 1
+      ? (healthSeries[healthSeries.length - 1].timestamp - healthSeries[0].timestamp) / (healthSeries.length - 1)
+      : 3600_000;
+    const horizonSteps = Math.min(
+      MAX_FORECAST_STEPS,
+      Math.max(48, Math.ceil((TIMEFRAME_ALERT_HOURS * 3600_000) / Math.max(1, avgIntervalMs))),
+    );
+    const forecast = ewmaForecast(healthSeries, 0.3, horizonSteps);
     const last = healthSeries[healthSeries.length - 1].value;
     const first = healthSeries[0].value;
     const slope = (last - first) / Math.max(1, healthSeries.length - 1); // per step
@@ -243,10 +400,8 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     weightSum += W_TREND;
     if (riskTrend > 50) agreeingFeatures++;
 
-    // RUL: first forecast horizon whose lower-CI crosses the danger threshold.
-    const avgIntervalMs = healthSeries.length > 1
-      ? (healthSeries[healthSeries.length - 1].timestamp - healthSeries[0].timestamp) / (healthSeries.length - 1)
-      : 3600_000;
+    // "RUL" (heuristic proxy — NOT a trained survival model): first forecast
+    // horizon whose lower-CI crosses the danger threshold.
     for (const fp of forecast) {
       if (fp.lower <= DANGER_HEALTH_THRESHOLD) {
         timeframeHours = Math.max(0, (fp.timestamp - healthSeries[healthSeries.length - 1].timestamp) / 3600_000);
@@ -257,7 +412,6 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     if (timeframeHours != null && reliability?.mtbfHours) {
       timeframeHours = Math.min(timeframeHours, reliability.mtbfHours);
     }
-    void avgIntervalMs;
     factors.push({
       name: "trend",
       contribution: Math.round(riskTrend),
@@ -278,7 +432,7 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     factors.push({
       name: "anomaly",
       contribution: Math.round(riskAnomaly),
-      description: `${anomalies.length}/${heartbeatSeries.length} heartbeat points anomalous (${(share * 100).toFixed(1)}%)`,
+      description: `${anomalies.length}/${heartbeatSeries.length} telemetry points anomalous (${(share * 100).toFixed(1)}%)`,
     });
   }
 
@@ -323,9 +477,42 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     timeframeHours = Math.max(0, reliability.mtbfHours - uptimeSinceLastHours);
   }
 
+  // ── G4.7 (doc 44 W5-B3) — RUL provenance + Weibull override ──────────────────
+  // When a trained survival (Weibull) RUL is available it OVERRIDES the heuristic
+  // timeframe (honest: method='weibull'). Otherwise the timeframe stays the EWMA/
+  // MTBF proxy and rulMethod is reported as 'heuristic' | 'insufficient_data'.
+  let rulMethod: "weibull" | "heuristic" | "insufficient_data" = "heuristic";
+  let rulConfidence: number | null = null;
+  let rulNote: string | null = null;
+  if (rul) {
+    rulMethod = rul.method;
+    rulConfidence = rul.confidence;
+    rulNote = rul.note;
+    if (rul.method === "weibull" && rul.rulHours != null && Number.isFinite(rul.rulHours)) {
+      timeframeHours = rul.rulHours;
+      factors.push({
+        name: "rul_weibull",
+        contribution: 0, // informational (a timeframe, not a risk contributor)
+        description:
+          `Weibull RUL ≈ ${rul.rulHours.toFixed(0)}h ` +
+          `(k=${rul.shape?.toFixed(2)}, λ=${rul.scale?.toFixed(0)}h, ${rul.failures} failure obs, ` +
+          `conf ${Math.round(rul.confidence * 100)}%)`,
+      });
+    }
+  }
+
   const recommendedMaintenanceDate = timeframeHours != null
     ? new Date(Date.now() + timeframeHours * 3600_000)
     : null;
+
+  // ── G4.8 — attach the failure mode when the classifier produced a usable one.
+  if (failureMode && failureMode.mode !== "unknown") {
+    factors.push({
+      name: "failure_mode",
+      contribution: 0,
+      description: `Likely mode: ${failureMode.mode} (${Math.round(failureMode.confidence * 100)}%) — ${failureMode.recommendedAction}`,
+    });
+  }
 
   return {
     machineId,
@@ -337,6 +524,18 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     maintenanceUrgency: urgencyFromRisk(failureRisk),
     factors,
     dataPoints,
+    rulMethod,
+    rulHours: timeframeHours != null ? Math.round(timeframeHours) : null,
+    rulConfidence,
+    rulNote,
+    failureMode: failureMode
+      ? {
+          mode: failureMode.mode,
+          reason: failureMode.reason,
+          confidence: failureMode.confidence,
+          recommendedAction: failureMode.recommendedAction,
+        }
+      : null,
   };
 }
 
@@ -358,6 +557,11 @@ export async function computeFailureRisk(
       maintenanceUrgency: "LOW",
       factors: [],
       dataPoints: 0,
+      rulMethod: "insufficient_data",
+      rulHours: null,
+      rulConfidence: null,
+      rulNote: null,
+      failureMode: null,
     };
   }
 
@@ -366,7 +570,11 @@ export async function computeFailureRisk(
 
   const reliability = await computeReliabilityStats(machineId, windowHours);
 
-  // Health score series (oldest -> newest)
+  // Health score series (oldest -> newest).
+  // MON-F15: consume only MEASURED health — exclude this service's OWN snapshots
+  // (calculationMethod = PDM_CALC_METHOD) so the trend feature isn't fed by its
+  // own predictions. What remains are the 'WEIGHTED' snapshots derived from real
+  // OEE / error-rate / cycle-time.
   const healthRows = await db
     .select({
       timestamp: machineHealthHistory.timestamp,
@@ -376,6 +584,7 @@ export async function computeFailureRisk(
     .where(and(
       eq(machineHealthHistory.machineId, machineId),
       gte(machineHealthHistory.timestamp, from),
+      ne(machineHealthHistory.calculationMethod, PDM_CALC_METHOD),
     ))
     .orderBy(machineHealthHistory.timestamp);
 
@@ -384,35 +593,69 @@ export async function computeFailureRisk(
     value: Number(r.healthScore),
   }));
 
-  // Heartbeat metrics
-  const hbRows = await db
+  // MON-F2: anomaly + temperature features come from the REAL sensor stream
+  // (machine_sensor_readings). vibration/current → multivariate anomaly,
+  // temperature → CUSUM. machine_heartbeats has no writer, so it is used only as
+  // a fallback (keeps a future heartbeat writer contributing without a code change).
+  const sensorRows = await db
     .select({
-      timestamp: machineHeartbeats.timestamp,
-      cpuUsage: machineHeartbeats.cpuUsage,
-      memoryUsage: machineHeartbeats.memoryUsage,
-      diskUsage: machineHeartbeats.diskUsage,
-      temperature: machineHeartbeats.temperature,
+      sensorType: machineSensorReadings.sensorType,
+      value: machineSensorReadings.value,
+      timestamp: machineSensorReadings.timestamp,
     })
-    .from(machineHeartbeats)
+    .from(machineSensorReadings)
     .where(and(
-      eq(machineHeartbeats.machineId, machineId),
-      gte(machineHeartbeats.timestamp, from),
+      eq(machineSensorReadings.machineId, machineId),
+      gte(machineSensorReadings.timestamp, from),
     ))
-    .orderBy(machineHeartbeats.timestamp);
+    .orderBy(machineSensorReadings.timestamp);
 
-  const heartbeatSeries: MultivariatePoint[] = hbRows.map((r) => ({
-    timestamp: new Date(r.timestamp).getTime(),
-    values: {
-      cpu: Number(r.cpuUsage ?? 0),
-      mem: Number(r.memoryUsage ?? 0),
-      disk: Number(r.diskUsage ?? 0),
-      temp: Number(r.temperature ?? 0),
-    },
-  }));
+  const sensorFeatures = buildSensorFeatureSeries(
+    sensorRows.map((r) => ({
+      sensorType: r.sensorType,
+      value: Number(r.value),
+      timestamp: new Date(r.timestamp).getTime(),
+    })),
+  );
 
-  const tempSeries: TimeSeriesPoint[] = hbRows
-    .filter((r) => r.temperature != null)
-    .map((r) => ({ timestamp: new Date(r.timestamp).getTime(), value: Number(r.temperature) }));
+  let heartbeatSeries: MultivariatePoint[];
+  let tempSeries: TimeSeriesPoint[];
+
+  if (sensorFeatures.multivariate.length > 0 || sensorFeatures.tempSeries.length > 0) {
+    // Real sensor telemetry present → use it.
+    heartbeatSeries = sensorFeatures.multivariate;
+    tempSeries = sensorFeatures.tempSeries;
+  } else {
+    // Fallback: legacy heartbeat metrics (cpu/mem/disk/temperature).
+    const hbRows = await db
+      .select({
+        timestamp: machineHeartbeats.timestamp,
+        cpuUsage: machineHeartbeats.cpuUsage,
+        memoryUsage: machineHeartbeats.memoryUsage,
+        diskUsage: machineHeartbeats.diskUsage,
+        temperature: machineHeartbeats.temperature,
+      })
+      .from(machineHeartbeats)
+      .where(and(
+        eq(machineHeartbeats.machineId, machineId),
+        gte(machineHeartbeats.timestamp, from),
+      ))
+      .orderBy(machineHeartbeats.timestamp);
+
+    heartbeatSeries = hbRows.map((r) => ({
+      timestamp: new Date(r.timestamp).getTime(),
+      values: {
+        cpu: Number(r.cpuUsage ?? 0),
+        mem: Number(r.memoryUsage ?? 0),
+        disk: Number(r.diskUsage ?? 0),
+        temp: Number(r.temperature ?? 0),
+      },
+    }));
+
+    tempSeries = hbRows
+      .filter((r) => r.temperature != null)
+      .map((r) => ({ timestamp: new Date(r.timestamp).getTime(), value: Number(r.temperature) }));
+  }
 
   // Uptime since last UD event (hours)
   let uptimeSinceLastHours: number | null = null;
@@ -433,6 +676,38 @@ export async function computeFailureRisk(
     uptimeSinceLastHours = (to.getTime() - healthSeries[0].timestamp) / 3600_000;
   }
 
+  // ── G4.7 — survival RUL (flag RUL_WEIBULL_ENABLED). Skipped entirely (no import,
+  // no query) when the flag is OFF, so the heuristic path is zero-overhead by
+  // default. Errors are swallowed → heuristic timeframe stands. ──
+  let rul: RulEstimate | null = null;
+  if (process.env.RUL_WEIBULL_ENABLED === "true") {
+    try {
+      const { estimateRulForMachine } = await import("./ai/rulEstimatorService");
+      rul = await estimateRulForMachine(machineId, { ageHours: uptimeSinceLastHours });
+    } catch (err) {
+      console.error(`[PredictiveMaintenance] RUL estimate failed for machine ${machineId}:`, (err as Error)?.message ?? err);
+    }
+  }
+
+  // ── G4.8 — failure-mode classification from the REAL sensor stream (flag
+  // FAILURE_MODE_ENABLED). Honest 'unknown' when no vibration tag. Skipped when
+  // off (no import, no work). ──
+  let failureMode: FailureModeResult | null = null;
+  if (process.env.FAILURE_MODE_ENABLED === "true") {
+    try {
+      const { classifyForMachine } = await import("./ai/failureModeClassifier");
+      failureMode = classifyForMachine(
+        sensorRows.map((r) => ({
+          sensorType: r.sensorType,
+          value: Number(r.value),
+          timestamp: new Date(r.timestamp).getTime(),
+        })),
+      );
+    } catch (err) {
+      console.error(`[PredictiveMaintenance] failure-mode classify failed for machine ${machineId}:`, (err as Error)?.message ?? err);
+    }
+  }
+
   return computeFailureRiskFromInputs({
     machineId,
     reliability,
@@ -440,6 +715,8 @@ export async function computeFailureRisk(
     heartbeatSeries,
     tempSeries,
     uptimeSinceLastHours,
+    rul,
+    failureMode,
   });
 }
 
@@ -454,13 +731,15 @@ export async function computeFailureRisk(
 export async function runPredictiveMaintenanceCycle(): Promise<{
   evaluated: number;
   alertsEmitted: number;
+  workOrdersCreated: number;
   errors: number;
 }> {
   const db = await getDb();
-  if (!db) return { evaluated: 0, alertsEmitted: 0, errors: 0 };
+  if (!db) return { evaluated: 0, alertsEmitted: 0, workOrdersCreated: 0, errors: 0 };
 
   let evaluated = 0;
   let alertsEmitted = 0;
+  let workOrdersCreated = 0;
   let errors = 0;
 
   const activeMachines = await db
@@ -485,7 +764,8 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
         })
         .from(machineHealthHistory)
         .where(eq(machineHealthHistory.machineId, m.id))
-        .orderBy(machineHealthHistory.timestamp)
+        // MON-F5: sắp xếp DESC để lấy bản ghi MỚI NHẤT (trước đây ASC → lấy cũ nhất).
+        .orderBy(desc(machineHealthHistory.timestamp))
         .limit(1);
 
       const base = latestHealth[0];
@@ -503,9 +783,23 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
         predictedFailureRisk: risk.failureRisk,
         recommendedMaintenanceDate: risk.recommendedMaintenanceDate,
         maintenanceUrgency: risk.maintenanceUrgency as any,
-        calculationMethod: "PREDICTIVE_WS4",
+        calculationMethod: PDM_CALC_METHOD,
         notes: risk.predictedTimeframe,
       } as any);
+
+      // G4.7 (doc 44 W5-B3) — persist a survival RUL estimate row for this machine.
+      // Only when RUL_WEIBULL_ENABLED is on (so the cycle writes rul_estimates only
+      // under the flag). Isolated: a failure here never affects the
+      // snapshot/alert/work-order path.
+      if (process.env.RUL_WEIBULL_ENABLED === "true") {
+        try {
+          const { estimateRulForMachine, persistRulEstimate } = await import("./ai/rulEstimatorService");
+          const est = await estimateRulForMachine(m.id);
+          if (est) await persistRulEstimate(est);
+        } catch (rulErr) {
+          console.error(`[PredictiveMaintenance] RUL persist failed for machine ${m.id}:`, (rulErr as Error)?.message ?? rulErr);
+        }
+      }
 
       // Alert gating: avoid false positives on sparse/low-confidence data.
       const timeframeOk =
@@ -538,13 +832,31 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
           console.error(`[PredictiveMaintenance] routeAlert failed for machine ${m.id}:`, alertErr);
         }
       }
+
+      // R0-2 (doc 16 §9 Khối 4) — close the risk→work-order loop. When risk is
+      // above the alert threshold, auto-create an idempotent PREDICTIVE work
+      // order. No-op unless PDM_AUTO_WORKORDER_ENABLED=true; isolated so a
+      // failure here never affects the snapshot/alert path above.
+      if (risk.failureRisk >= RISK_ALERT_THRESHOLD) {
+        try {
+          const { maybeCreatePredictiveWorkOrder } = await import("./pdmAutoWorkOrderService");
+          const created = await maybeCreatePredictiveWorkOrder(
+            { id: m.id, code: m.code },
+            risk,
+            { healthScore: Math.round(healthScore) },
+          );
+          if (created) workOrdersCreated++;
+        } catch (woErr) {
+          console.error(`[PredictiveMaintenance] auto work-order failed for machine ${m.id}:`, woErr);
+        }
+      }
     } catch (err) {
       errors++;
       console.error(`[PredictiveMaintenance] machine ${m.id} failed:`, (err as Error)?.message ?? err);
     }
   }
 
-  return { evaluated, alertsEmitted, errors };
+  return { evaluated, alertsEmitted, workOrdersCreated, errors };
 }
 
 // ─── Background job (pattern: alertEvaluationService) ────────────────────────

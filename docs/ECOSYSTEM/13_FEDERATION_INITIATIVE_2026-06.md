@@ -206,6 +206,8 @@ Chi tiết:
   `subscribe` topic của site (`unsTopicPrefix`), giải mã Sparkplug bằng `uns/sparkplugEncoder.ts`, cập nhật
   roll-up "live" (near-real-time) chèn lên cạnh số poll. Không publish gì.
 
+> **▸ U5 — Federation Panorama (doc 21 §6, 2026-07, BE done).** Aggregator giờ **giữ `details[]`** (per-machine/station rows — trước bị vứt) vào `site_kpi_rollup.detailRows` → drill site→station→device (`federation.siteDetail`). Roll-up **per-`category`** dùng đúng cột `category` đã reserve: `overall`/`inspection`/`oee` luôn ghi + `fleet`/`safety`/`pdm` chỉ khi feed trả lời (honest absence). **OEE thật** từ feed site-side mới `GET /api/external/oee/summary` (không còn hard-code null). **Alert roll-up** từ `GET /api/external/alerts/summary` (andon+safety) → `site_kpi_rollup.alertRollup` + `federation.alertRollup()`. Thêm feeds đọc-only `fleet`/`safety`/`pdm`/`oee`/`alerts` summary. **`site:` live layer:** room `site:{code}`+`sites:global`, emit `site:update` mỗi cycle poll thành công (gated bởi `FEDERATION_AGGREGATOR_ENABLED`, error-isolated). Migration **0155**: 3 cột jsonb additive (`detailRows`/`alertRollup`/`metrics`). Giữ nguyên circuit-breaker/allSettled/honest-staleness/read-only. Site REMOTE cũ không phục vụ feed mới ⇒ category vắng = **honest-null**, không bịa 0.
+
 ---
 
 ## 5. Cross-site dashboard

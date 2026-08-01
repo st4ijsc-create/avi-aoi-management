@@ -18,6 +18,15 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import {
+  PageHeader,
+  PageContainer,
+  chartColor,
+  chartAxisTick,
+  chartGridProps,
+  chartTooltipStyle,
+  chartTooltipLabelStyle,
+} from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -230,33 +239,26 @@ export default function EnergyAnalyticsPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-4 md:p-6">
-        {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
-              <Zap className="h-6 w-6 text-amber-500" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">{t("energy.title", "Phân tích năng lượng")}</h1>
-              <p className="text-sm text-muted-foreground">
-                {t("energy.subtitle", "Phân tích kWh/recipe, đỉnh công suất, hệ số công suất, dự báo & EnPI (ISO 50001)")}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={refetchAll}>
-              <RefreshCw className="h-4 w-4 mr-1.5" />
-              {t("energy.refresh", "Làm mới")}
-            </Button>
-            {canCreate && (
-              <Button size="sm" onClick={() => setReadingOpen(true)}>
-                <Plus className="h-4 w-4 mr-1.5" />
-                {t("energy.recordReading", "Nhập chỉ số")}
+      <PageContainer className="flex flex-col gap-6 space-y-0">
+        <PageHeader
+          icon={<Zap className="h-6 w-6" />}
+          title={t("energy.title", "Phân tích năng lượng")}
+          description={t("energy.subtitle", "Phân tích kWh/recipe, đỉnh công suất, hệ số công suất, dự báo & EnPI (ISO 50001)")}
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={refetchAll}>
+                <RefreshCw className="h-4 w-4 mr-1.5" />
+                {t("energy.refresh", "Làm mới")}
               </Button>
-            )}
-          </div>
-        </div>
+              {canCreate && (
+                <Button size="sm" onClick={() => setReadingOpen(true)}>
+                  <Plus className="h-4 w-4 mr-1.5" />
+                  {t("energy.recordReading", "Nhập chỉ số")}
+                </Button>
+              )}
+            </>
+          }
+        />
 
         {/* Filter bar */}
         <Card>
@@ -583,7 +585,7 @@ export default function EnergyAnalyticsPage() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
 
       {/* Manual reading dialog (telemetry — canCreate) */}
       {canCreate && (

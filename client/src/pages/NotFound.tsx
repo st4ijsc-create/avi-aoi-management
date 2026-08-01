@@ -4,42 +4,38 @@ import { AlertCircle, Home } from "lucide-react";
 import { useLocation } from "wouter";
 import { useTranslation } from 'react-i18next';
 
+// B16 (doc 46 FE-W1) — 404 renders OUTSIDE the app-shell by design, so it carries its own
+// chrome. Restyled to the SYNAPSE design tokens (teal `--primary`, `bg-background`/`bg-card`,
+// `text-foreground`) so it stays on-brand and theme-aware in both light and dark modes.
 export default function NotFound() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
 
-  const handleGoHome = () => {
-    setLocation("/");
-  };
-
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
-      <Card className="w-full max-w-lg mx-4 shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-        <CardContent className="pt-8 pb-8 text-center">
+    <div className="min-h-screen w-full flex items-center justify-center bg-background px-4">
+      <Card className="w-full max-w-lg border-border bg-card shadow-lg">
+        <CardContent className="pt-10 pb-10 text-center">
           <div className="flex justify-center mb-6">
-            <div className="relative">
-              <div className="absolute inset-0 bg-red-100 rounded-full animate-pulse" />
-              <AlertCircle className="relative h-16 w-16 text-red-500" />
+            <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 glow-primary">
+              <AlertCircle className="h-9 w-9 text-primary" />
             </div>
           </div>
 
-          <h1 className="text-4xl font-bold text-slate-900 mb-2">404</h1>
+          <p className="text-5xl font-bold tracking-tight text-primary mb-2">404</p>
 
-          <h2 className="text-xl font-semibold text-slate-700 mb-4">
+          <h1 className="text-xl font-semibold text-foreground mb-3">
             {t('errors.pageNotFound')}
-          </h2>
+          </h1>
 
-          <p className="text-slate-600 mb-8 leading-relaxed">
+          <p className="text-sm text-muted-foreground mb-8 leading-relaxed max-w-sm mx-auto">
             {t('errors.pageNotFoundDesc')}
           </p>
 
-          <div
-            id="not-found-button-group"
-            className="flex flex-col sm:flex-row gap-3 justify-center"
-          >
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Button
-              onClick={handleGoHome}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg transition-all duration-200 shadow-md hover:shadow-lg"
+              onClick={() => setLocation("/")}
+              size="lg"
+              className="shadow-lg hover:shadow-xl transition-all"
             >
               <Home className="w-4 h-4 mr-2" />
               {t('errors.goHome')}

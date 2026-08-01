@@ -59,6 +59,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          # depth 2 → HEAD~1 exists, so the contract BACKWARD gate can diff vs the parent/base
+          fetch-depth: 2
 
       - uses: pnpm/action-setup@v4
         with:
@@ -74,6 +77,9 @@ jobs:
 
       - name: Typecheck
         run: pnpm run check
+
+      - name: Contract schema BACKWARD gate (doc 44 G2.5)
+        run: node scripts/contracts-compat-check.mjs
 
       - name: Unit tests (vitest)
         run: pnpm test
@@ -131,6 +137,43 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # doc 44 §9 / DEVPLAN §9.8 — EDITION ANTI-DRIFT. Build + import-smoke the SAME codebase under
+  # BOTH the collapsed single-node (machine) and full cluster (site) profiles, on every PR. A
+  # change that keeps one edition green while silently breaking the other fails HERE — cheap,
+  # no containers. (The heavy docker-compose boot of both profiles lives in edition-smoke.yml,
+  # gated to deploy/** changes.)
+  edition-matrix:
+    name: Edition ${{ matrix.edition }} (build + import smoke)
+    runs-on: ubuntu-latest
+    needs: build-test
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: [machine, site] # single-node (embedded) + full cluster (external)
+    env:
+      EDITION: ${{ matrix.edition }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build app (per edition — catches edition-conditional bundle breaks)
+        run: pnpm run build
+
+      - name: Edition import smoke (anti-drift — resolves the collapsed shape, asserts consistency)
+        run: pnpm exec tsx scripts/edition-smoke-import.mjs
+
   docker:
     name: Docker build
     runs-on: ubuntu-latest
@@ -145,6 +188,6 @@ jobs:
           context: .
           push: false
           load: false
-          tags: avi-aoi-management:ci
+          tags: synapse-platform:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max

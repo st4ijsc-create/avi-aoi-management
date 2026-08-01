@@ -129,25 +129,60 @@ export default function MachineQuickScan({
   const { data: machines } = trpc.machine.list.useQuery(undefined, { enabled: open });
   const machineList = (machines ?? []) as MachineLite[];
 
-  // ─── Resolve a scanned/typed code → navigate to the scoped assistant ──────────
+  // ─── Resolve a scanned/typed code → navigate to the machine COCKPIT ───────────
+  // U3 (doc 21 §6 G-4) fix: the scan lands on the per-machine cockpit (/machine/:id),
+  // NOT the AI assistant. We resolve code→numeric id from the loaded machine list
+  // (the cockpit route is keyed by numeric id). If the list has not resolved the
+  // code to an id yet, we fall back to the scoped AI assistant (which re-validates
+  // the code) so the flow never dead-ends. The AI assistant also stays available as
+  // an explicit SECONDARY action (`goAiChat`) on a resolved code.
+  const resolveTarget = useCallback(
+    (rawValue: string): { code: string; id: number | null } | null => {
+      const code = extractMachineCode(rawValue);
+      if (!code) return null;
+      const match = machineList.find((m) => m.code.toLowerCase() === code.toLowerCase());
+      return { code: match?.code ?? code, id: match?.id ?? null };
+    },
+    [machineList],
+  );
+
   const resolveAndGo = useCallback(
     (rawValue: string) => {
       if (resolvedRef.current) return;
-      const code = extractMachineCode(rawValue);
-      if (!code) {
+      const target = resolveTarget(rawValue);
+      if (!target) {
         setErrorKey("machineScan.errorNoCode");
         return;
       }
-      // Best-effort validation against the known machine list (case-insensitive).
-      // If the list isn't loaded yet we still navigate — AIChatPage re-validates.
-      const match = machineList.find((m) => m.code.toLowerCase() === code.toLowerCase());
-      const finalCode = match?.code ?? code;
       resolvedRef.current = true;
-      const q = t("machineScan.statusQuestion", "Tình trạng máy {{code}}?", { code: finalCode });
       setOpen(false);
-      navigate(`/ai-chat?machine=${encodeURIComponent(finalCode)}&q=${encodeURIComponent(q)}`);
+      if (target.id != null) {
+        // Primary: open the unified machine cockpit for the resolved id.
+        navigate(`/machine/${target.id}`);
+      } else {
+        // Fallback: no id yet — scope the AI assistant to the code (it re-validates).
+        const q = t("machineScan.statusQuestion", "Tình trạng máy {{code}}?", { code: target.code });
+        navigate(`/ai-chat?machine=${encodeURIComponent(target.code)}&q=${encodeURIComponent(q)}`);
+      }
     },
-    [machineList, navigate, t],
+    [resolveTarget, navigate, t],
+  );
+
+  /** Secondary action: open the AI assistant scoped to a machine code (not the cockpit). */
+  const goAiChat = useCallback(
+    (rawValue: string) => {
+      if (resolvedRef.current) return;
+      const target = resolveTarget(rawValue);
+      if (!target) {
+        setErrorKey("machineScan.errorNoCode");
+        return;
+      }
+      resolvedRef.current = true;
+      setOpen(false);
+      const q = t("machineScan.statusQuestion", "Tình trạng máy {{code}}?", { code: target.code });
+      navigate(`/ai-chat?machine=${encodeURIComponent(target.code)}&q=${encodeURIComponent(q)}`);
+    },
+    [resolveTarget, navigate, t],
   );
 
   // ─── Camera teardown (stops BOTH tiers + releases tracks) ─────────────────────

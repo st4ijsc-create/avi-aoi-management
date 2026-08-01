@@ -8,28 +8,65 @@
  * This is the factory-scale layer above the per-cell 2D twin (/rf-test-cell):
  *   plant (this page) → line → machine → cell twin.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
+import { usePollingInterval } from "@/hooks/usePollingInterval";
+import { PollFreshness } from "@/components/PollFreshness";
+import {
+  useUnsStream,
+  unsMachineSnapshot,
+  isa95Slug,
+  type UnsClientSnapshot,
+} from "@/lib/unsStreamClient";
 import FactoryFloor3D, { statusColor, statusLabel, type MachineNode } from "@/components/FactoryFloor3D";
-import { Factory, Cpu, Activity, CheckCircle2, PauseCircle, XCircle, FlaskConical, Info, RefreshCw, Box, Move } from "lucide-react";
+import { Factory, Cpu, Activity, CheckCircle2, PauseCircle, XCircle, FlaskConical, Info, RefreshCw, Box, Move, Radio, WifiOff } from "lucide-react";
+
+/**
+ * doc 44 W6-2 (G5.13) — overlay a LIVE UNS state snapshot onto a polled machine
+ * row (canonical PackML state + health → the latestStatus/heartbeatStatus the 3D
+ * scene colours by). Only applied when the stream is live; otherwise the poll is
+ * the source of truth (honest fallback).
+ */
+function overlayFromUns<T extends MachineNode>(row: T, snap: UnsClientSnapshot | null): T {
+  if (!snap) return row;
+  const state = String(snap.state ?? "").toUpperCase();
+  const latestStatus = snap.health === "offline" ? "offline" : "online";
+  let heartbeatStatus = row.heartbeatStatus;
+  if (["EXECUTE", "STARTING", "RUNNING", "PRODUCING", "PROCESSING"].includes(state)) heartbeatStatus = "running";
+  else if (["IDLE", "STANDBY", "READY"].includes(state)) heartbeatStatus = "idle";
+  else if (["STOPPED", "HELD", "HOLD", "ABORTED", "SUSPENDED", "COMPLETE", "OFFLINE"].includes(state)) heartbeatStatus = "stopped";
+  return { ...row, latestStatus, heartbeatStatus };
+}
 
 interface Row extends MachineNode {
   factory: { id: number; name: string; code: string };
 }
 
-export default function FactoryLiveMap3D() {
+export function FactoryLiveMap3DContent() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  const machinesQ = trpc.machineStatus.listWithStatus.useQuery(undefined, { refetchInterval: 5000 });
   const [factoryId, setFactoryId] = useState<number | null>(null);
   const [selected, setSelected] = useState<Row | null>(null);
+
+  // ── doc 44 W6-2 (G5.13) — WS snapshot+stream instead of a hard 5s poll.
+  // The stream keys on the factory's ISA-95 site prefix (slug of factory code).
+  // When live, we overlay live state and SLOW the poll to a 30s safety net;
+  // when the server flag is OFF (no snapshot ever arrives) we keep polling 5s.
+  //
+  // Poll hygiene (doc 27 B12): pause the poll when the tab is hidden, refetch on
+  // return. Interval adapts to the WS state (`uns.live`, wired below).
+  const [wsLive, setWsLive] = useState(false);
+  const polling = usePollingInterval(wsLive ? 30000 : 5000);
+  const machinesQ = trpc.machineStatus.listWithStatus.useQuery(undefined, { ...polling });
 
   const rows = (machinesQ.data ?? []) as unknown as Row[];
 
@@ -41,7 +78,24 @@ export default function FactoryLiveMap3D() {
   }, [rows]);
 
   const activeFactoryId = factoryId ?? factories[0]?.id ?? null;
-  const machines = useMemo(() => rows.filter((r) => r.factory?.id === activeFactoryId), [rows, activeFactoryId]);
+  const activeFactory = useMemo(
+    () => factories.find((f) => f.id === activeFactoryId) ?? null,
+    [factories, activeFactoryId],
+  );
+  const sitePrefix = activeFactory ? isa95Slug(activeFactory.code) : null;
+
+  const uns = useUnsStream({ pathPrefix: sitePrefix, aspects: ["state"], enabled: true });
+  // Keep the poll-interval state in sync with the live flag (one source of truth).
+  useEffect(() => {
+    setWsLive(uns.live);
+  }, [uns.live]);
+
+  const machines = useMemo(() => {
+    const inFactory = rows.filter((r) => r.factory?.id === activeFactoryId);
+    if (!uns.live) return inFactory;
+    // Overlay live UNS state (by machineId) when the stream is live.
+    return inFactory.map((r) => overlayFromUns(r, unsMachineSnapshot(uns, r.id)));
+  }, [rows, activeFactoryId, uns.live, uns.byMachineId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const kpi = useMemo(() => {
     let running = 0, idle = 0, offline = 0, up = 0;
@@ -55,45 +109,57 @@ export default function FactoryLiveMap3D() {
   }, [machines]);
 
   return (
-    <DashboardLayout>
-      <div className="space-y-4 p-1">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h1 className="text-xl font-semibold flex items-center gap-2">
-              <Factory className="h-5 w-5 text-primary" /> {t("flm.title", "Bản đồ nhà máy 3D (live)")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("flm.subtitle", "Mỗi máy là một khối 3D tô màu theo trạng thái thực — bấm để xem chi tiết & mở mô phỏng cụm")}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Select value={activeFactoryId ? String(activeFactoryId) : undefined} onValueChange={(v) => { setFactoryId(Number(v)); setSelected(null); }}>
-              <SelectTrigger className="w-[220px]"><SelectValue placeholder={t("flm.pickFactory", "Chọn nhà máy")} /></SelectTrigger>
-              <SelectContent>
-                {factories.map((f) => <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Button size="sm" variant="outline" onClick={() => setLocation("/factory-floor-editor")}>
-              <Move className="h-4 w-4 mr-1" /> {t("flm.editLayout", "Sửa mặt bằng")}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => machinesQ.refetch()}>
-              <RefreshCw className={`h-4 w-4 mr-1 ${machinesQ.isFetching ? "animate-spin" : ""}`} /> {t("flm.refresh", "Làm mới")}
-            </Button>
-          </div>
-        </div>
+    <>
+      <PageContainer fluid className="space-y-4">
+        <PageHeader
+          icon={<Factory className="h-6 w-6" />}
+          title={t("flm.title", "Bản đồ nhà máy 3D (live)")}
+          description={t("flm.subtitle", "Mỗi máy là một khối 3D tô màu theo trạng thái thực — bấm để xem chi tiết & mở mô phỏng cụm")}
+          actions={
+            <>
+              {/* doc 44 G5.13 — honest live/poll indicator. WS live (snapshot+stream)
+                  vs 5s poll fallback; "chậm" when the stream goes silent. */}
+              {uns.live ? (
+                <Badge variant="outline" className={uns.stale ? "gap-1 border-amber-500/40 text-amber-600 dark:text-amber-400" : "gap-1 border-emerald-500/40 text-emerald-600 dark:text-emerald-400"}>
+                  <Radio className="h-3 w-3" />
+                  {uns.stale ? t("flm.wsStale", "Trực tiếp (chậm)") : t("flm.wsLive", "Trực tiếp (WS)")}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="gap-1 text-muted-foreground">
+                  <WifiOff className="h-3 w-3" />
+                  {t("flm.wsPoll", "Poll 5s")}
+                </Badge>
+              )}
+              {/* Stale badge (audit F10): honest "updated Ns ago" for the poll. */}
+              <PollFreshness updatedAt={machinesQ.dataUpdatedAt} isFetching={machinesQ.isFetching} />
+              <Select value={activeFactoryId ? String(activeFactoryId) : undefined} onValueChange={(v) => { setFactoryId(Number(v)); setSelected(null); }}>
+                <SelectTrigger className="w-[220px]"><SelectValue placeholder={t("flm.pickFactory", "Chọn nhà máy")} /></SelectTrigger>
+                <SelectContent>
+                  {factories.map((f) => <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Button size="sm" variant="outline" onClick={() => setLocation("/factory-floor-editor")}>
+                <Move className="h-4 w-4 mr-1" /> {t("flm.editLayout", "Sửa mặt bằng")}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => machinesQ.refetch()}>
+                <RefreshCw className={`h-4 w-4 mr-1 ${machinesQ.isFetching ? "animate-spin" : ""}`} /> {t("flm.refresh", "Làm mới")}
+              </Button>
+            </>
+          }
+        />
 
-        <div className="rounded-md border border-sky-300 bg-sky-50 dark:bg-sky-950/30 px-3 py-2 text-xs text-sky-800 dark:text-sky-200 flex items-start gap-2">
+        <div className="rounded-md border border-info/30 bg-info/10 px-3 py-2 text-xs text-info flex items-start gap-2">
           <Info className="h-4 w-4 mt-0.5 shrink-0" />
           <span>{t("flm.shadowNote", "Đây là digital SHADOW — màu phản ánh telemetry/heartbeat THỰC của máy, tự cập nhật ~5s. Khác với digital TWIN (mô phỏng what-if) ở trang cụm.")}</span>
         </div>
 
         {/* KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <Kpi label={t("flm.total", "Tổng máy")} value={String(kpi.total)} icon={<Cpu className="h-4 w-4" />} />
-          <Kpi label="Running" value={String(kpi.running)} cls="text-emerald-600" icon={<CheckCircle2 className="h-4 w-4" />} />
-          <Kpi label="Idle/Stopped" value={String(kpi.idle)} cls="text-amber-600" icon={<PauseCircle className="h-4 w-4" />} />
-          <Kpi label="Offline" value={String(kpi.offline)} cls="text-red-600" icon={<XCircle className="h-4 w-4" />} />
-          <Kpi label={t("flm.avgUptime", "Uptime TB")} value={`${kpi.avgUptime.toFixed(0)}%`} icon={<Activity className="h-4 w-4" />} />
+          <MetricCard label={t("flm.total", "Tổng máy")} value={kpi.total} icon={<Cpu className="h-4 w-4" />} />
+          <MetricCard label={t("flm.running", "Đang chạy")} value={kpi.running} tone="success" icon={<CheckCircle2 className="h-4 w-4" />} />
+          <MetricCard label={t("flm.idleStopped", "Chờ/Dừng")} value={kpi.idle} tone="warning" icon={<PauseCircle className="h-4 w-4" />} />
+          <MetricCard label={t("flm.offline", "Ngoại tuyến")} value={kpi.offline} tone="danger" icon={<XCircle className="h-4 w-4" />} />
+          <MetricCard label={t("flm.avgUptime", "Uptime TB")} value={`${kpi.avgUptime.toFixed(0)}%`} icon={<Activity className="h-4 w-4" />} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -102,7 +168,7 @@ export default function FactoryLiveMap3D() {
             <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Box className="h-4 w-4" /> {t("flm.floor", "Sàn nhà máy")} — {machines.length} {t("flm.machines", "máy")}</CardTitle></CardHeader>
             <CardContent>
               {machinesQ.isLoading ? (
-                <div className="h-[560px] flex items-center justify-center text-muted-foreground">{t("flm.loading", "Đang tải trạng thái máy…")}</div>
+                <Skeleton className="h-[560px] w-full rounded-md" />
               ) : machines.length === 0 ? (
                 <div className="h-[560px] flex items-center justify-center text-muted-foreground text-sm">
                   {t("flm.empty", "Chưa có máy (đang hoạt động) trong nhà máy này. Thêm máy ở Master Data / Cấu trúc nhà máy.")}
@@ -111,10 +177,10 @@ export default function FactoryLiveMap3D() {
                 <FactoryFloor3D machines={machines} selectedId={selected?.id ?? null} onSelect={(m) => setSelected(m as Row)} />
               )}
               <div className="flex flex-wrap gap-3 mt-2 text-[11px] text-muted-foreground">
-                <Legend color="#10b981" label="Running" />
-                <Legend color="#f59e0b" label="Idle" />
-                <Legend color="#f97316" label="Stopped" />
-                <Legend color="#ef4444" label="Offline" />
+                <Legend color="#10b981" label={t("flm.running", "Đang chạy")} />
+                <Legend color="#f59e0b" label={t("flm.idle", "Chờ")} />
+                <Legend color="#f97316" label={t("flm.stopped", "Dừng")} />
+                <Legend color="#ef4444" label={t("flm.offline", "Ngoại tuyến")} />
                 <span className="ml-auto">{t("flm.tip", "Kéo để xoay • lăn chuột để zoom • bấm khối máy để chọn")}</span>
               </div>
             </CardContent>
@@ -137,15 +203,15 @@ export default function FactoryLiveMap3D() {
                     <span className="text-xs text-muted-foreground">{selected.line?.name}</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-sm">
-                    <Kpi label={t("flm.uptime", "Uptime 24h")} value={`${(selected.uptimePercent ?? 0).toFixed(0)}%`} />
-                    <Kpi label={t("flm.heartbeat", "Heartbeat")} value={selected.heartbeatStatus || "—"} />
+                    <MetricCard label={t("flm.uptime", "Uptime 24h")} value={`${(selected.uptimePercent ?? 0).toFixed(0)}%`} />
+                    <MetricCard label={t("flm.heartbeat", "Heartbeat")} value={selected.heartbeatStatus || "—"} />
                   </div>
                   <div className="space-y-2 pt-1">
                     <Button size="sm" className="w-full" onClick={() => setLocation("/rf-test-cell")}>
                       <FlaskConical className="h-4 w-4 mr-1" /> {t("flm.openTwin", "Mở mô phỏng cụm (twin)")}
                     </Button>
-                    <Button size="sm" variant="outline" className="w-full" onClick={() => setLocation("/machine-status")}>
-                      <Activity className="h-4 w-4 mr-1" /> {t("flm.openMonitor", "Giám sát chi tiết")}
+                    <Button size="sm" variant="outline" className="w-full" onClick={() => setLocation(`/machine/${selected.id}`)}>
+                      <Activity className="h-4 w-4 mr-1" /> {t("flm.openCockpit", "Mở cockpit máy")}
                     </Button>
                     <Button size="sm" variant="outline" className="w-full" onClick={() => setLocation("/orchestration-studio")}>
                       <Box className="h-4 w-4 mr-1" /> {t("flm.openStudio", "Lập trình quy trình")}
@@ -156,19 +222,19 @@ export default function FactoryLiveMap3D() {
             </CardContent>
           </Card>
         </div>
-      </div>
+      </PageContainer>
+    </>
+  );
+}
+
+export default function FactoryLiveMap3D() {
+  return (
+    <DashboardLayout>
+      <FactoryLiveMap3DContent />
     </DashboardLayout>
   );
 }
 
-function Kpi({ label, value, cls, icon }: { label: string; value: string; cls?: string; icon?: React.ReactNode }) {
-  return (
-    <div className="rounded-md border p-2">
-      <div className="text-[10px] text-muted-foreground flex items-center gap-1">{icon}{label}</div>
-      <div className={`text-lg font-semibold ${cls ?? ""}`}>{value}</div>
-    </div>
-  );
-}
 function Legend({ color, label }: { color: string; label: string }) {
   return <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: color }} /> {label}</span>;
 }

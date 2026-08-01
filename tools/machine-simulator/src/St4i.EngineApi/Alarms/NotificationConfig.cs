@@ -1,0 +1,549 @@
+namespace St4i.EngineApi.Alarms;
+
+/// <summary>
+/// Task C-2 (.superpowers/sdd/2026-07-30-dotC-alarm-notification-blueprint/task-2-brief.md) — the four
+/// channels the owner approved in the Đợt C blueprint (§2). One row per member in
+/// <see cref="NotificationConfigStore"/>'s <c>notification_channels</c> table, and the member NAME is what
+/// is persisted (never its ordinal — same discipline <see cref="AlarmStore"/> already uses for
+/// <see cref="AlarmPriority"/>/<see cref="AlarmSource"/>, so reordering this enum can never silently
+/// re-point an operator's stored configuration at a different channel).
+/// </summary>
+public enum NotificationChannel
+{
+    /// <summary>C-3 — an HTTP POST to a URL an operator supplies (Slack/Teams/MES/Zabbix all accept
+    /// one), signed with <see cref="NotificationSecretNames.WebhookSigningSecret"/> so the receiver can
+    /// verify the POST really came from this machine.</summary>
+    Webhook,
+
+    /// <summary>C-4 — e-mail via <see cref="System.Net.Mail.SmtpClient"/> (BCL; this batch adds no
+    /// NuGet). See <see cref="SmtpTlsMode"/> for the one place that BCL choice constrains what an
+    /// operator may configure.</summary>
+    Smtp,
+
+    /// <summary>
+    /// C-5 — noise and light at the machine itself: an SSE stream (<c>GET /v1/alarms/annunciations</c>)
+    /// into every open page of this product's own web UI, which sounds and shows the alarm. The only
+    /// channel in this batch that still works with no network at all, which is what makes it the one that
+    /// honours Đợt A's standalone single-machine deployment. Reaches only somebody with the UI open, and
+    /// needs no configuration beyond on/off and a threshold. See
+    /// <see cref="LocalAnnunciationChannel"/>.
+    ///
+    /// <para>🔴 <b>There is NO Windows desktop toast, and this doc comment used to say there was.</b> C-2
+    /// wrote "web audio + a Windows toast across the DesktopShell process boundary" as a prediction about a
+    /// channel that did not exist; C-5 built the channel and established that the toast half is not
+    /// reachable under this batch's constraints. Three independent reasons, each sufficient on its own:
+    /// <list type="number">
+    /// <item><description><b>There is no IPC to carry it.</b> The alarm engine runs ONLY in this process.
+    /// <c>St4i.DesktopShell</c> does not reference this assembly at all — it spawns
+    /// <c>St4i.EngineApi.exe</c> as an opaque child and points a WebView2 at it — and its only two channels
+    /// to this process are anonymous HTTP probes of <c>/v1/health</c> and <c>/</c>, and the child's
+    /// stdout/stderr drained to a log file. <c>/v1/alarms*</c> is <c>Policies.Operator</c> and the shell
+    /// never logs in, so it would 401 on a real deployment while succeeding on a Demo one (where
+    /// <c>DemoAutoLoginMiddleware</c> signs every request in); and the stdout pipe does not exist at all
+    /// when the shell ATTACHES to an already-running engine instead of spawning it. Both routes therefore
+    /// work in one supported launch mode and are silently dark in the other.</description></item>
+    /// <item><description><b>The API is not on the shell's target framework.</b>
+    /// <c>Windows.UI.Notifications</c> does not resolve at <c>net10.0-windows</c> (measured: CS0103); it
+    /// needs <c>net10.0-windows10.0.19041.0</c>, which changes the shipped desktop package's build and its
+    /// minimum OS floor. <c>CommunityToolkit</c>/<c>Microsoft.Toolkit.Uwp.Notifications</c> is a new NuGet,
+    /// which this batch forbids.</description></item>
+    /// <item><description>🔴 <b>And the API cannot tell you whether it annunciated.</b> Measured on this
+    /// platform at the raised framework: an UNPACKAGED exe with an AppUserModelID registered nowhere (which
+    /// is what the desktop shell is — a single self-contained exe with no installer and no Start-Menu
+    /// shortcut) had <c>ToastNotifier.Show()</c> return normally and <c>NotificationSetting</c> report
+    /// <c>Enabled</c>, while Windows' own notification store held ZERO handler rows and ZERO notifications
+    /// for it. A channel built on that would report success while nothing annunciated, with no way from
+    /// inside the API to know — which is the one thing this task was told not to
+    /// ship.</description></item>
+    /// </list>
+    /// What this channel delivers instead reaches the desktop shell anyway whenever its window is up, since
+    /// the WebView2 IS the web UI and plays its sound; the honest gap is a shell that is minimised or behind
+    /// another window. Closing it needs an IPC seam this product does not have, and inventing one is not
+    /// C-5's to do.</para></summary>
+    LocalAnnunciation,
+
+    /// <summary>🔴 C-6 — energising a real annunciator/beacon through a declared writable point or
+    /// command. The highest-risk item in the batch: it is an ordinary machine write, it passes through
+    /// <c>EstopGuardRule</c> unchanged, and it is therefore dark while HALT is latched. Never a safety
+    /// device — see the blueprint §4 and <see cref="RelayChannelConfig"/>.</summary>
+    Relay,
+}
+
+/// <summary>
+/// Task C-2 — how <see cref="System.Net.Mail.SmtpClient"/> (which C-4 must use: BCL only, no NuGet) is
+/// allowed to secure the connection.
+///
+/// <para>🔴 <b>Why there is no <c>ImplicitTls</c>/SMTPS/port-465 member, and why that absence is
+/// deliberate rather than an oversight:</b> <see cref="System.Net.Mail.SmtpClient"/> is compat-only and
+/// implements exactly ONE TLS mode — connect in the clear, then issue <c>STARTTLS</c> (that is all
+/// <c>SmtpClient.EnableSsl</c> does). It cannot negotiate TLS at connect time, which is what port 465
+/// requires. Offering an <c>ImplicitTls</c> option here would let an operator save a configuration that
+/// C-4 provably cannot honour without taking a NuGet dependency this batch forbids — a config store whose
+/// values the implementing task must silently ignore is worse than one that never accepted them. An
+/// operator who needs SMTPS must point this at a relay that speaks STARTTLS.</para>
+/// </summary>
+public enum SmtpTlsMode
+{
+    /// <summary>No transport security at all — a plain SMTP conversation. Legitimate for an in-plant
+    /// relay on an isolated network (the Đợt A target deployment), and dangerous anywhere else: the
+    /// <see cref="NotificationSecretNames.SmtpPassword"/> travels in the clear under this mode.</summary>
+    None,
+
+    /// <summary>Connect in the clear, then upgrade with <c>STARTTLS</c> (<c>SmtpClient.EnableSsl =
+    /// true</c>). The only secured mode the BCL client can actually perform.</summary>
+    StartTls,
+}
+
+/// <summary>
+/// Task C-2 — which of the two, mutually exclusive, machine-write shapes a relay target is.
+///
+/// <para><b>This enum is new, and it had to be:</b> nothing in this solution discriminates "writable
+/// point" from "command" with a value — the separation is carried STRUCTURALLY everywhere else (two
+/// request records <c>SetpointWriteRequest</c>/<c>CommandRequest</c>, two result records, two rejection
+/// enums, two endpoints, and two different RBAC policies — Engineer for a setpoint, Admin for a command).
+/// A stored configuration cannot carry that structure, so it must carry a discriminator instead; the
+/// alternative — one "target name" field that C-6 probes against both — would collapse a distinction Đợt B
+/// spent a whole task establishing, and would let a config intended for a setpoint fire a command.</para>
+/// </summary>
+public enum RelayTargetKind
+{
+    /// <summary>A declared WRITABLE POINT (<c>SetpointWriteRequest.Point</c>) — a value written to a
+    /// named point, bounds-checked against the register map. Engineer-authorised on the HTTP path.</summary>
+    Point,
+
+    /// <summary>A declared COMMAND (<c>CommandRequest.Command</c>) — a named, argument-less action (a
+    /// Modbus coil pulse, an OPC-UA method call). Admin-authorised on the HTTP path.</summary>
+    Command,
+}
+
+/// <summary>
+/// Task C-2 — the well-known names under which a channel's encrypted secrets are stored in
+/// <see cref="NotificationConfigStore"/>'s <c>notification_secrets</c> table.
+///
+/// <para>Secrets are addressed by NAME rather than by column precisely so that adding a second secret to
+/// a channel is a new ROW, never a new column — which is what keeps the credential-free read projection
+/// safe by construction instead of by a maintainer remembering a rule. See
+/// <see cref="NotificationConfigStore"/>'s own doc comment.</para>
+/// </summary>
+public static class NotificationSecretNames
+{
+    /// <summary>
+    /// 🔴 C-3 — the webhook's destination URL, stored ENCRYPTED rather than as a plain column.
+    ///
+    /// <para><b>Review round 1 (I2) moved it here, and the reasoning is worth keeping.</b> The original
+    /// C-2 shape classified the URL secret-bearing and then stored it in the clear, on the argument that
+    /// its realistic exposure was this product's own read API (which the projection split already covers)
+    /// rather than another local account (which the directory ACL covers). That argument missed the
+    /// residual value DPAPI has OVER the ACL under
+    /// <see cref="System.Security.Cryptography.DataProtectionScope.LocalMachine"/>: <b>machine-binding</b>.
+    /// An ACL protects a file that stays put; it does nothing once <c>notifications.db</c> leaves the
+    /// machine in a backup, a support bundle or a <c>%ProgramData%</c> snapshot. A Slack/Teams incoming
+    /// webhook URL is a bearer capability — whoever holds it can post — so a copied database was handing
+    /// over a working capability while the HMAC signing secret sitting in the very same file was not.
+    /// Two capability-grade values in one file with opposite treatment is not a defensible line.</para>
+    ///
+    /// <para><see cref="WebhookChannelConfig.Endpoint"/> and
+    /// <see cref="WebhookChannelConfig.UrlFingerprint"/> remain plain columns — they are derived,
+    /// non-secret facts ABOUT the URL, and they are what makes the capability's absence from every public
+    /// read survivable for an operator (see <see cref="WebhookChannelConfig.UrlFingerprint"/>).</para>
+    /// </summary>
+    public const string WebhookUrl = "webhook.url";
+
+    /// <summary>C-3 — the HMAC key the webhook POST is signed with, so the receiver can verify the
+    /// request really came from this machine.</summary>
+    public const string WebhookSigningSecret = "webhook.signing_secret";
+
+    /// <summary>
+    /// 🔴 C-3 (schema v2) — the COMPLETE value of the header named by
+    /// <see cref="WebhookChannelConfig.AuthHeaderName"/>, for a receiver that authenticates by a static
+    /// token rather than by verifying a signature.
+    ///
+    /// <para>This is the escape hatch C-2 designed and left to C-3: a named secret plus a NON-secret
+    /// header-name column, rather than the free-form header blob C-2 refused (a blob cannot be structurally
+    /// partitioned into secret and non-secret, which is the whole basis of this store's projection
+    /// discipline). See <see cref="WebhookAuthHeader"/> for why the HMAC signature does not cover this case
+    /// and why the stored value is the complete header value, scheme word included.</para>
+    /// </summary>
+    public const string WebhookAuthToken = "webhook.auth_token";
+
+    /// <summary>C-4 — the password for <see cref="SmtpChannelConfig.Username"/>. The one value in this
+    /// product that belongs to a THIRD PARTY (a mail server operator), not to this machine — which is
+    /// exactly why it does not live in <c>CredentialStore</c>; see
+    /// <see cref="NotificationConfigStore"/>'s own doc comment.</summary>
+    public const string SmtpPassword = "smtp.password";
+}
+
+/// <summary>
+/// Task C-2 — the two facts EVERY channel carries, and the one operation every channel performs on them.
+///
+/// <para>🔴 <b><see cref="MinPriority"/> is a THRESHOLD, never an override.</b> It decides whether an
+/// alarm that already has a priority is worth delivering; nothing here can change what an alarm's
+/// priority IS. That distinction is load-bearing rather than pedantic:
+/// <see cref="AlarmSource.Identity"/> is capped at <see cref="AlarmPriority.High"/> by deliberate design
+/// (an expiring certificate feeds a machine-write gate and must never be able to halt production), and a
+/// configuration store that could promote a priority would let an operator's notification setting quietly
+/// undo a safety decision made somewhere else entirely. There is therefore no "treat X as Critical" knob
+/// in this type, and adding one later would need this paragraph answered first.</para>
+/// </summary>
+public interface INotificationChannelConfig
+{
+    /// <summary>Whether this channel should deliver at all. The ONLY enable mechanism in the product —
+    /// Task C-2 deleted C-1's placeholder <c>ST4I_ALARM_NOTIFY_ENABLED</c> env gate rather than leave two
+    /// (see <see cref="NotificationStartupNotices"/>).</summary>
+    bool Enabled { get; }
+
+    /// <summary>The LEAST severe priority worth delivering on this channel. Only
+    /// <see cref="AlarmPriority.Critical"/> and <see cref="AlarmPriority.High"/> actually occur in this
+    /// build (Policy is Critical; NgRate, DriverHealth and Identity are High), so
+    /// <see cref="AlarmPriority.High"/> means "everything" and <see cref="AlarmPriority.Critical"/> means
+    /// "only the ones that gate the line".</summary>
+    AlarmPriority MinPriority { get; }
+}
+
+/// <summary>
+/// 🔴 Task C-7 — what one SEND TEST established, and — the field this record exists for — what it did
+/// <b>not</b>.
+///
+/// <para><b>Why an outcome type with a stated limit rather than a bare boolean.</b> C-4 measured that a send
+/// test built on <see cref="System.Net.Mail.SmtpClient"/> reports SUCCESS in all three shapes where the
+/// stored SMTP password is never used — including the reachable one, a relay that advertises <c>AUTH</c>
+/// only after <c>STARTTLS</c> while the channel is configured for <see cref="SmtpTlsMode.None"/>:
+/// <c>SmtpClient</c> proceeds unauthenticated after any failed OR absent <c>AUTH</c> and exposes no
+/// authentication result at all. A green tick beside "Test" would therefore tell an operator their
+/// credential works when nothing in this product can know that. Since the limitation cannot be engineered
+/// away without speaking SMTP directly, <b>stating it is the deliverable</b> — and a field is the only place
+/// a statement survives contact with a UI, because a caller that renders <see cref="Ok"/> alone has visibly
+/// dropped something.</para>
+/// </summary>
+/// <param name="Ok">Whether the test message was accepted by the destination. Never more than that.</param>
+/// <param name="Detail">One sentence an operator can act on — what happened, and for a failure what to
+/// change. 🔴 Never contains a credential: it names destinations by the same non-secret identity the
+/// channels' own log lines use.</param>
+/// <param name="Proves">On success, exactly what a green result establishes. <see langword="null"/> on
+/// failure, where <paramref name="Detail"/> is the whole answer.</param>
+/// <param name="DoesNotProve">🔴 On success, the honest limit — including the SMTP authentication gap above,
+/// and whether the channel is currently DISABLED (a test sends regardless, because configuring and testing
+/// before switching on is the sane order; a green test on a disabled channel must not read as "alarms are
+/// being delivered"). <see langword="null"/> on failure.</param>
+public sealed record NotificationTestOutcome(
+    bool Ok,
+    string Detail,
+    string? Proves = null,
+    string? DoesNotProve = null);
+
+/// <summary>Task C-2 — the severity comparison every channel needs, in ONE place.</summary>
+public static class NotificationDelivery
+{
+    /// <summary>🔴 <see cref="AlarmPriority"/> is declared MOST-SEVERE-FIRST (<c>Critical = 0</c> …
+    /// <c>Low = 3</c>), so "at least as severe as the threshold" is <c>&lt;=</c>, NOT <c>&gt;=</c>. This
+    /// lives here, once, rather than in each of C-3..C-6 because the inversion is exactly the kind of
+    /// thing four independent implementations get wrong in at least one of them — and getting it
+    /// backwards would mean a channel that delivers everything EXCEPT the alarms that matter.
+    /// <see cref="AlarmNotifier"/> already had to document the same inversion for its own
+    /// <c>IsMoreSevere</c>.</summary>
+    public static bool MeetsThreshold(AlarmPriority priority, AlarmPriority minPriority) =>
+        priority <= minPriority;
+
+    /// <summary>Whether <paramref name="config"/> should deliver an alarm of this
+    /// <paramref name="priority"/> — the whole question C-3..C-6 ask. A <see langword="null"/> config
+    /// (the channel was never configured) delivers nothing.</summary>
+    public static bool Delivers(this INotificationChannelConfig? config, AlarmPriority priority) =>
+        config is { Enabled: true } && MeetsThreshold(priority, config.MinPriority);
+}
+
+/// <summary>
+/// Task C-2 — the FULL webhook configuration, including <see cref="Url"/>. Engine-internal only (C-3);
+/// never routed to an HTTP response. The credential-free shape is <see cref="WebhookChannelSummary"/>.
+/// </summary>
+/// <param name="Url">🔴 The bearer capability, DPAPI-sealed in <c>notification_secrets</c> under
+/// <see cref="NotificationSecretNames.WebhookUrl"/> — see there for why it is encrypted rather than a
+/// plain column. Populated only by the ENGINE-INTERNAL read
+/// (<see cref="NotificationConfigStore.GetWebhookAsync"/>, for C-3); no public projection can reach it,
+/// because it is not a column of <c>webhook_config</c> at all. <see langword="null"/> if the secret is
+/// missing or its blob cannot be unprotected — a channel that cannot be posted to, which C-3 must
+/// handle rather than assume away.</param>
+/// <param name="Endpoint">The derived, deliberately NON-secret display form — scheme, host and
+/// non-default port only, with the path, query, fragment AND userinfo (i.e. every part that can carry a
+/// capability token) discarded. Computed once by <see cref="NotificationConfigStore"/> at save time and
+/// stored as its own column, the same pattern <c>ConnectorConfigStore</c> uses for <c>host</c>/<c>port</c>
+/// alongside the opaque <c>map_json</c> it cannot expose.
+///
+/// <para><b>Known limitation, doc-only:</b> a token embedded in a SUBDOMAIN would survive this
+/// truncation, since the host is exactly what <see cref="Endpoint"/> preserves. Not live for any target
+/// in the blueprint's list — Slack, Teams, Discord and Zapier all carry their secret in the PATH — but
+/// worth stating rather than letting a future integration assume the host is always safe.</para></param>
+/// <param name="UrlFingerprint">
+/// 🔴 Review round 1 (I3) — what makes the URL's absence from every public read SURVIVABLE.
+///
+/// <para><see cref="Endpoint"/> alone identifies nothing: it is <c>https://hooks.slack.com</c> for EVERY
+/// Slack webhook on earth. So an operator asking "is this still pointed at #line-alerts, or at the
+/// channel we deleted last month?" could not answer it from any read the product offered, and the only
+/// remedy was to blind-re-enter the URL. That is the pressure that would have pushed C-7/C-8 into either
+/// shipping an unverifiable configuration screen or exposing the URL — undoing the encryption
+/// entirely.</para>
+///
+/// <para>A truncated SHA-256 of the full URL answers "did this change?" and "are these two the same?"
+/// without ever returning the capability — the same "opaque token obtainable only by having seen the real
+/// thing" role <c>ConnectorWriteCapability.ComputeFingerprint</c>, <c>DeviceIdentity.Fingerprint</c> and
+/// <c>SiteEndpoints.PemFingerprint</c> already play in this codebase.</para>
+///
+/// <para>🔴 <b>Review round 2 — that precedent is doing slightly more work than it has earned, so state
+/// the difference.</b> All three of those digest PUBLIC or non-secret material: a map's declared grants, a
+/// certificate's public bytes, a trust-pin PEM. <b>This is the first fingerprint in this repository taken
+/// over material that is itself a credential.</b> The consequence is a confirm-a-guess oracle that does not
+/// arise for any of them: somebody holding this value can test a candidate URL and learn whether it is the
+/// configured one. That is bounded only by the URL's own entropy — ample for a Slack or Teams webhook
+/// (a long random path), and thin for a guessable internal one like <c>https://mes.plant/alarm</c>, where
+/// the fingerprint confirms what an attacker had probably already guessed and could confirm by simply
+/// POSTing to it. Judged acceptable because the alternative — no fingerprint — pushes C-7/C-8 into
+/// exposing the URL outright, which is strictly worse. Truncation does not make this worse and arguably
+/// makes it better: at 64 bits a brute-force search yields many false positives that a full digest would
+/// eliminate, so the shorter value is the weaker oracle.</para></param>
+/// <param name="Label">Review round 1 (I3) — an optional operator-supplied name ("Ops Slack #line-alerts").
+/// Free text, never derived, never a credential, and shown by every public read: the fingerprint proves
+/// two configurations are the SAME, and this is what tells a human WHICH one it is. Deliberately not
+/// validated beyond a length bound — it is a note to the next operator, not an identifier.</param>
+/// <param name="AuthHeaderName">
+/// 🔴 Task C-3 (schema v2) — the name of the header carrying
+/// <see cref="NotificationSecretNames.WebhookAuthToken"/>, or <see langword="null"/> for a receiver that
+/// needs no static credential (Slack, Teams — the URL is the credential there).
+///
+/// <para><b>Deliberately NOT secret, and visible in every public read.</b> Knowing that a webhook
+/// authenticates with <c>X-Api-Key</c> rather than <c>Authorization</c> authorises nobody, and hiding it
+/// would make the configuration undiagnosable for no gain — the same argument
+/// <see cref="SmtpChannelConfig.Username"/> already makes. The VALUE is the DPAPI blob; the partition
+/// between the two lives in the schema, not in a convention. Validated at save time by
+/// <see cref="WebhookAuthHeader.IsValidName"/>, which rejects the headers the channel sets itself — an
+/// operator must not be able to configure a webhook that overwrites its own signature.</para></param>
+public sealed record WebhookChannelConfig(
+    bool Enabled,
+    AlarmPriority MinPriority,
+    string Instance,
+    string? Url,
+    string Endpoint,
+    string UrlFingerprint,
+    string? Label,
+    string? AuthHeaderName) : INotificationChannelConfig;
+
+/// <summary>Task C-2 — the credential-free webhook projection. The URL is absent because it is not a
+/// column of <c>webhook_config</c> at all — it is an encrypted row in another table — not because it was
+/// removed after being fetched.</summary>
+/// <param name="HasUrl">Whether a destination is stored AND could be decrypted. <see langword="false"/>
+/// means this channel cannot post anywhere, which is exactly the kind of thing an operator must be able
+/// to see without being handed the URL.</param>
+/// <param name="HasSigningSecret">Whether <see cref="NotificationSecretNames.WebhookSigningSecret"/> is
+/// set. Derived from the PRESENCE of a row (its <c>name</c> column), never by reading the secret.
+/// <see langword="false"/> means the POST is sent UNSIGNED — legitimate for Slack/Teams, and something an
+/// operator pointing this at an MES needs to be able to see.</param>
+/// <param name="AuthHeaderName">Task C-3 — see <see cref="WebhookChannelConfig.AuthHeaderName"/> for why
+/// the header NAME is not a credential.</param>
+/// <param name="HasAuthToken">Whether <see cref="NotificationSecretNames.WebhookAuthToken"/> is set.
+/// <see cref="AuthHeaderName"/> set with this <see langword="false"/> is a webhook that cannot post at all
+/// — the one combination an operator most needs surfaced.</param>
+public sealed record WebhookChannelSummary(
+    string Endpoint,
+    string UrlFingerprint,
+    string? Label,
+    bool HasUrl,
+    bool HasSigningSecret,
+    string? AuthHeaderName,
+    bool HasAuthToken);
+
+/// <summary>Task C-2 — the FULL SMTP configuration. Note the password is NOT here: it lives in
+/// <c>notification_secrets</c> under <see cref="NotificationSecretNames.SmtpPassword"/> and is fetched
+/// separately by <see cref="NotificationConfigStore.GetSecretAsync"/>, so no read of this record can ever
+/// carry it.</summary>
+/// <param name="Username">Deliberately NOT treated as a secret and visible in the summary: an operator
+/// diagnosing an authentication failure needs to see WHICH account is configured, a username alone
+/// authorises nothing, and hiding it would make the configuration unreadable for no security gain.</param>
+public sealed record SmtpChannelConfig(
+    bool Enabled,
+    AlarmPriority MinPriority,
+    string Instance,
+    string Host,
+    int Port,
+    SmtpTlsMode Tls,
+    string FromAddress,
+    IReadOnlyList<string> Recipients,
+    string? Username) : INotificationChannelConfig;
+
+/// <summary>Task C-2 — the credential-free SMTP projection. Every field of
+/// <see cref="SmtpChannelConfig"/> is present because none of them is secret-bearing; the password was
+/// never a column of <c>smtp_config</c> in the first place.</summary>
+public sealed record SmtpChannelSummary(
+    string Host,
+    int Port,
+    SmtpTlsMode Tls,
+    string FromAddress,
+    IReadOnlyList<string> Recipients,
+    string? Username,
+    bool HasPassword);
+
+/// <summary>Task C-2 — local annunciation carries nothing beyond the two universal facts. C-5 owns
+/// everything else (which sound, how loud, how long) and would add columns through the migration ladder if
+/// it needed them.
+///
+/// <para>🔴 <b>Task C-5 added no column, and that is a decision rather than an omission.</b> Everything
+/// about HOW the annunciation presents — the tone, its length, whether the browser's autoplay policy is
+/// currently holding it muted, whether the operator has silenced it on this screen — is a property of the
+/// SCREEN, not of the engine: two browsers pointed at one engine can legitimately differ on all of it, and
+/// only the browser can observe the autoplay state at all. Storing it here would make one machine-wide
+/// setting out of something that is genuinely per-session, and the store would then hold values the channel
+/// provably could not honour — the exact fault C-2 refused an <c>ImplicitTls</c> member over. The channel
+/// therefore consumes exactly <see cref="Enabled"/> and <see cref="MinPriority"/>, and the schema stays at
+/// v2. (The stale "which browsers/toasts" in the original wording is also gone — see
+/// <see cref="NotificationChannel.LocalAnnunciation"/> for why there is no toast.)</para></summary>
+public sealed record LocalAnnunciationChannelConfig(
+    bool Enabled,
+    AlarmPriority MinPriority,
+    string Instance) : INotificationChannelConfig;
+
+/// <summary>
+/// 🔴 Task C-6 — the two values a <see cref="RelayTargetKind.Point"/> relay writes to assert and to release
+/// its latch, and the ONE place they are parsed.
+///
+/// <para><b>Stored as raw JSON scalar TEXT, and read back through
+/// <see cref="St4i.Connector.Abstractions.Json.ConnectorJson.Options"/>' own <c>object?</c> converter</b> —
+/// the SAME converter <c>MachineWriteEndpoints</c> re-parses an HTTP request body through, so the value
+/// domain a relay may write (<c>double | bool | string | null</c>) is defined once and cannot drift from
+/// the domain <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.WriteSetpointAsync"/> accepts. A
+/// column typed <c>REAL</c> or <c>INTEGER</c> would have silently narrowed it — an OPC-UA <c>Boolean</c>
+/// setpoint wants <c>true</c>, a Modbus holding register wants <c>1</c>, and those are genuinely different
+/// values, not two spellings of one.</para>
+///
+/// <para><b>Validated at SAVE time, never only at fire time.</b> C-2 refused an <c>ImplicitTls</c> member on
+/// the principle that a store which accepts a configuration the channel provably cannot honour is worse
+/// than one that never accepted it. The same principle applies harder here, because the thing that cannot
+/// be honoured is a beacon.</para>
+/// </summary>
+public static class RelayValue
+{
+    /// <summary>Upper bound on a stored value's JSON text. Generous for a scalar and bounded for the same
+    /// reason <see cref="NotificationConfigStore.MaxLabelLength"/> is.</summary>
+    public const int MaxJsonLength = 200;
+
+    /// <summary>Parses one stored value. Never throws: a malformed value is a configuration fault the caller
+    /// must report, not an exception on the drain thread.</summary>
+    /// <param name="json">The raw JSON scalar as persisted (<c>true</c>, <c>0</c>, <c>"ON"</c>).</param>
+    /// <param name="value">The connector-domain value, or <see langword="null"/> on failure OR for a
+    /// legitimate JSON <c>null</c> — use the return value to tell those apart, never the out
+    /// parameter.</param>
+    public static bool TryParse(string? json, out object? value, out string? error)
+    {
+        value = null;
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            error = "a relay value is required and must be a JSON scalar (for example: true, false, 1, 0).";
+            return false;
+        }
+
+        if (json.Length > MaxJsonLength)
+        {
+            error = $"a relay value may be at most {MaxJsonLength} characters.";
+            return false;
+        }
+
+        try
+        {
+            value = System.Text.Json.JsonSerializer.Deserialize<object?>(
+                json, St4i.Connector.Abstractions.Json.ConnectorJson.Options);
+            error = null;
+            return true;
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            // ConnectorJson's object? converter rejects arrays/objects/decimals outright — exactly the
+            // out-of-domain values a driver could not write anyway.
+            error = $"a relay value must be a JSON scalar the driver can write: {ex.Message}";
+            return false;
+        }
+    }
+}
+
+/// <summary>
+/// 🔴 Task C-2 — the relay target: WHICH machine, and WHICH declared writable point or command.
+///
+/// <para><b>No address, ever.</b> Đợt B settled that points and commands are NAMED and that the register
+/// map is the entire safety boundary; a configuration that stored a coil address would be a second,
+/// unvalidated boundary sitting beside the real one. Resolving <see cref="TargetName"/> to whatever the
+/// driver actually writes is C-6's problem, performed through the ordinary
+/// <c>FleetHost.TryWriteSetpointAsync</c>/<c>TryInvokeCommandAsync</c> path, which means the map's own
+/// bounds and <c>EstopGuardRule</c> both still apply.</para>
+///
+/// <para>🔴 <b>Task C-6 CLOSED C-2's deliberate gap — the energise/de-energise VALUES — as the ladder entry
+/// C-2 predicted (schema v3, two nullable columns, no rebuild).</b> The decision C-2 left open, and the
+/// answer:
+/// <list type="bullet">
+/// <item><description>A <see cref="RelayTargetKind.Point"/> target REQUIRES both
+/// <see cref="OnValueJson"/> and <see cref="OffValueJson"/>. There is deliberately NO default. A default
+/// would be this product choosing what to write to a coil it cannot prove is a lamp rather than a conveyor
+/// — which is the one thing the blueprint §4 said it must not do — and <c>true</c>/<c>false</c> is simply
+/// wrong for a Modbus holding register, where the answer is <c>1</c>/<c>0</c>. The store REFUSES to save a
+/// point relay without both, on C-2's own <c>ImplicitTls</c> principle.</description></item>
+/// <item><description>A <see cref="RelayTargetKind.Command"/> target must have NEITHER, and the store
+/// refuses both. A command is an argument-less pulse; storing a value it provably ignores is the same
+/// defect in the other direction. See <see cref="RelayNotificationChannel"/> for what a command target can
+/// and cannot express — it can assert the latch and it CANNOT release it, which is stated plainly rather
+/// than papered over.</description></item>
+/// </list></para>
+/// </summary>
+/// <param name="OnValueJson">🔴 Task C-6 (schema v3) — the value written to <see cref="TargetName"/> when
+/// the first qualifying alarm becomes active, as a raw JSON scalar; see <see cref="RelayValue"/> for the
+/// domain and why it is TEXT. Required for <see cref="RelayTargetKind.Point"/>, forbidden for
+/// <see cref="RelayTargetKind.Command"/>. Deliberately NOT a secret and visible in every public read: "what
+/// exactly does this product write to that coil?" is the single most important thing an operator can audit
+/// about this channel.</param>
+/// <param name="OffValueJson">The value written when the LAST qualifying alarm clears. Same rules as
+/// <see cref="OnValueJson"/>. It is a separate value rather than a derived inverse because the map's
+/// declared range for the point is the authority on what "off" is, and this product must not infer
+/// it.</param>
+/// <param name="MachineCode">Stored verbatim. Resolved case-INSENSITIVELY against the live roster at fire
+/// time (the convention every endpoint in this codebase already uses), and deliberately not validated
+/// against the roster at save time: the roster changes at runtime, so a save-time check would prove
+/// nothing and would forbid configuring a machine before it is registered.</param>
+/// <param name="TargetName">Stored verbatim and matched case-SENSITIVELY (ordinal) — the drivers'
+/// own <c>FindRegisterByMetric</c>/<c>FindCommandByName</c> lookups are ordinal, so folding case here
+/// would make this store disagree with the thing that ultimately performs the write.</param>
+public sealed record RelayChannelConfig(
+    bool Enabled,
+    AlarmPriority MinPriority,
+    string Instance,
+    string MachineCode,
+    RelayTargetKind TargetKind,
+    string TargetName,
+    string? OnValueJson = null,
+    string? OffValueJson = null) : INotificationChannelConfig;
+
+/// <summary>Task C-2 — the credential-free relay projection. Identical in content to
+/// <see cref="RelayChannelConfig"/>'s target fields because a machine code and a DECLARED point/command
+/// name are not secrets — they are exactly what an operator must be able to audit ("what is this product
+/// allowed to energise?"), and Đợt B's own framing argues FOR maximum visibility of what a map
+/// grants. 🔴 Task C-6 added the two latch values for the same reason, one step further: knowing the coil is
+/// named <c>beacon</c> is not the same as knowing this product writes <c>1</c> to it.</summary>
+public sealed record RelayChannelSummary(
+    string MachineCode,
+    RelayTargetKind TargetKind,
+    string TargetName,
+    string? OnValueJson = null,
+    string? OffValueJson = null);
+
+/// <summary>
+/// Task C-2 — the ONE credential-free shape every public read returns, and the shape C-7's endpoint will
+/// serialise directly. Exactly one of <see cref="Webhook"/>/<see cref="Smtp"/>/<see cref="Relay"/> is
+/// non-<see langword="null"/>, selected by <see cref="Channel"/>; all three are
+/// <see langword="null"/> for <see cref="NotificationChannel.LocalAnnunciation"/>, which has no
+/// configuration of its own.
+/// </summary>
+/// <param name="Instance">Review round 1 (I4) — which configured instance of
+/// <paramref name="Channel"/> this is. <c>"default"</c> for every row this build writes; part of the
+/// primary key from v1 so that a second webhook (Slack AND the MES) is a new ROW rather than a three-table
+/// rebuild after field data exists. See <see cref="NotificationConfigStore.DefaultInstance"/>.</param>
+public sealed record NotificationChannelSummary(
+    NotificationChannel Channel,
+    string Instance,
+    bool Enabled,
+    AlarmPriority MinPriority,
+    DateTimeOffset UpdatedAtUtc,
+    WebhookChannelSummary? Webhook = null,
+    SmtpChannelSummary? Smtp = null,
+    RelayChannelSummary? Relay = null);

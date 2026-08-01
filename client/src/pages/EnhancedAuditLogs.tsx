@@ -1,7 +1,12 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
+import {
+  PageHeader, PageContainer, MetricCard, EmptyState,
+  chartColor, chartTooltipStyle, chartGridProps, chartAxisTick,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -39,8 +44,6 @@ const ACTION_ICONS: Record<string, { label: string; icon: React.ReactNode; color
   bulk_update: { label: "audit.actionBulkUpdate", icon: <Edit className="h-3 w-3" />, color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
   bulk_delete: { label: "audit.actionBulkDelete", icon: <Trash2 className="h-3 w-3" />, color: "bg-red-500/20 text-red-400 border-red-500/30" },
 };
-
-const CHART_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#f97316"];
 
 export function EnhancedAuditLogsContent() {
   const { t } = useTranslation();
@@ -127,80 +130,54 @@ export function EnhancedAuditLogsContent() {
 
   if (!isAdmin) {
     return (
-      <>
-        <div className="flex items-center justify-center h-96">
-          <Card className="p-8 text-center">
-            <Shield className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-            <h2 className="text-xl font-semibold mb-2">{t('audit.accessDenied')}</h2>
-            <p className="text-muted-foreground">{t('audit.adminRequired')}</p>
-          </Card>
-        </div>
-      </>
+      <PageContainer>
+        <EmptyState
+          icon={Shield}
+          title={t('audit.accessDenied')}
+          description={t('audit.adminRequired')}
+        />
+      </PageContainer>
     );
   }
 
   return (
     <>
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Activity className="h-6 w-6 text-primary" />
-              {t('audit.title')}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('audit.subtitle')}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4 mr-1" /> {t('common.refresh')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => exportMutation.mutate({
-                action: filters.action === "all" ? undefined : filters.action,
-                entityType: filters.entityType === "all" ? undefined : filters.entityType,
-                startDate: dateRange.from ? new Date(dateRange.from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-                endDate: dateRange.to ? new Date(dateRange.to) : new Date(),
-                userId: filters.userId ? parseInt(filters.userId) : undefined,
-              })}
-              disabled={exportMutation.isPending}
-            >
-              <Download className="h-4 w-4 mr-1" /> {t('audit.exportCsv')}
-            </Button>
-          </div>
-        </div>
+      <PageContainer>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<Activity className="h-6 w-6" />}
+          title={t('audit.title')}
+          description={t('audit.subtitle')}
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                <RefreshCw className="h-4 w-4 mr-1" /> {t('common.refresh')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => exportMutation.mutate({
+                  action: filters.action === "all" ? undefined : filters.action,
+                  entityType: filters.entityType === "all" ? undefined : filters.entityType,
+                  startDate: dateRange.from ? new Date(dateRange.from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+                  endDate: dateRange.to ? new Date(dateRange.to) : new Date(),
+                  userId: filters.userId ? parseInt(filters.userId) : undefined,
+                })}
+                disabled={exportMutation.isPending}
+              >
+                <Download className="h-4 w-4 mr-1" /> {t('audit.exportCsv')}
+              </Button>
+            </>
+          }
+        />
 
         {/* Summary cards */}
         {statsData?.summary && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="p-4">
-                <div className="text-sm text-muted-foreground">{t('audit.totalActions')}</div>
-                <div className="text-2xl font-bold">{statsData.summary.totalActions.toLocaleString()}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="text-sm text-muted-foreground">{t('audit.activeUsers')}</div>
-                <div className="text-2xl font-bold">{statsData.summary.uniqueUsers}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="text-sm text-muted-foreground">{t('audit.actionTypes')}</div>
-                <div className="text-2xl font-bold">{statsData.summary.uniqueActions}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="text-sm text-muted-foreground">{t('audit.entityTypes')}</div>
-                <div className="text-2xl font-bold">{statsData.summary.uniqueEntityTypes}</div>
-              </CardContent>
-            </Card>
+            <MetricCard label={t('audit.totalActions')} value={statsData.summary.totalActions.toLocaleString()} />
+            <MetricCard label={t('audit.activeUsers')} value={statsData.summary.uniqueUsers} />
+            <MetricCard label={t('audit.actionTypes')} value={statsData.summary.uniqueActions} />
+            <MetricCard label={t('audit.entityTypes')} value={statsData.summary.uniqueEntityTypes} />
           </div>
         )}
 
@@ -306,15 +283,17 @@ export function EnhancedAuditLogsContent() {
                   </TableHeader>
                   <TableBody>
                     {isLoading ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                          {t('common.loading')}
-                        </TableCell>
-                      </TableRow>
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <TableRow key={`sk-${i}`}>
+                          <TableCell colSpan={6} className="py-2">
+                            <Skeleton className="h-8 w-full" />
+                          </TableCell>
+                        </TableRow>
+                      ))
                     ) : !logsData?.items?.length ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                          {t('audit.noData')}
+                        <TableCell colSpan={6} className="p-0">
+                          <EmptyState variant="no-data" title={t('audit.noData')} compact />
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -425,7 +404,7 @@ export function EnhancedAuditLogsContent() {
                     );
                   })}
                   {(!activityFeed || activityFeed.length === 0) && (
-                    <p className="text-center py-8 text-muted-foreground">{t('audit.noActivity')}</p>
+                    <EmptyState variant="no-data" title={t('audit.noActivity')} compact />
                   )}
                 </div>
               </CardContent>
@@ -456,17 +435,11 @@ export function EnhancedAuditLogsContent() {
                   <div className="h-75">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={statsData?.stats || []}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                        <XAxis dataKey="label" className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-                        <YAxis className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: "hsl(var(--card))",
-                            border: "1px solid hsl(var(--border))",
-                            borderRadius: "8px",
-                          }}
-                        />
-                        <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                        <CartesianGrid {...chartGridProps} />
+                        <XAxis dataKey="label" tick={chartAxisTick} />
+                        <YAxis tick={chartAxisTick} />
+                        <Tooltip contentStyle={chartTooltipStyle} />
+                        <Bar dataKey="count" fill={chartColor(0)} radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -493,10 +466,10 @@ export function EnhancedAuditLogsContent() {
                           label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                         >
                           {(statsData?.stats || []).map((_: any, i: number) => (
-                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                            <Cell key={i} fill={chartColor(i)} />
                           ))}
                         </Pie>
-                        <Tooltip />
+                        <Tooltip contentStyle={chartTooltipStyle} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -551,14 +524,14 @@ export function EnhancedAuditLogsContent() {
                           <div className="text-sm font-medium text-primary">{change.field}</div>
                           <div className="grid grid-cols-2 gap-2 text-sm">
                             <div>
-                              <span className="text-xs text-red-400 block mb-1">{t('audit.oldValue')}</span>
-                              <pre className="bg-red-500/10 border border-red-500/20 rounded p-2 text-xs whitespace-pre-wrap">
+                              <span className="text-xs text-destructive block mb-1">{t('audit.oldValue')}</span>
+                              <pre className="bg-destructive/10 border border-destructive/20 rounded p-2 text-xs whitespace-pre-wrap">
                                 {change.oldValue != null ? JSON.stringify(change.oldValue, null, 2) : t('audit.empty')}
                               </pre>
                             </div>
                             <div>
-                              <span className="text-xs text-green-400 block mb-1">{t('audit.newValue')}</span>
-                              <pre className="bg-green-500/10 border border-green-500/20 rounded p-2 text-xs whitespace-pre-wrap">
+                              <span className="text-xs text-success block mb-1">{t('audit.newValue')}</span>
+                              <pre className="bg-success/10 border border-success/20 rounded p-2 text-xs whitespace-pre-wrap">
                                 {change.newValue != null ? JSON.stringify(change.newValue, null, 2) : t('audit.empty')}
                               </pre>
                             </div>
@@ -572,7 +545,7 @@ export function EnhancedAuditLogsContent() {
                         <div className="grid grid-cols-2 gap-2">
                           {changeDiff.before && (
                             <div>
-                              <span className="text-xs text-red-400 block mb-1">{t('audit.before')}</span>
+                              <span className="text-xs text-destructive block mb-1">{t('audit.before')}</span>
                               <pre className="bg-muted rounded p-2 text-xs whitespace-pre-wrap overflow-auto max-h-75">
                                 {JSON.stringify(changeDiff.before, null, 2)}
                               </pre>
@@ -580,7 +553,7 @@ export function EnhancedAuditLogsContent() {
                           )}
                           {changeDiff.after && (
                             <div>
-                              <span className="text-xs text-green-400 block mb-1">{t('audit.after')}</span>
+                              <span className="text-xs text-success block mb-1">{t('audit.after')}</span>
                               <pre className="bg-muted rounded p-2 text-xs whitespace-pre-wrap overflow-auto max-h-75">
                                 {JSON.stringify(changeDiff.after, null, 2)}
                               </pre>
@@ -634,8 +607,8 @@ export function EnhancedAuditLogsContent() {
                             {entry.changes.slice(0, 3).map((c: any, i: number) => (
                               <div key={i} className="text-xs bg-muted/50 rounded px-2 py-1">
                                 <span className="font-medium">{c.field}:</span>{" "}
-                                <span className="text-red-400">{String(c.oldValue ?? "")}</span> →{" "}
-                                <span className="text-green-400">{String(c.newValue ?? "")}</span>
+                                <span className="text-destructive">{String(c.oldValue ?? "")}</span> →{" "}
+                                <span className="text-success">{String(c.newValue ?? "")}</span>
                               </div>
                             ))}
                           </div>
@@ -645,13 +618,13 @@ export function EnhancedAuditLogsContent() {
                   );
                 })}
                 {(!entityHistory || entityHistory.history.length === 0) && (
-                    <p className="text-center py-8 text-muted-foreground">{t('audit.noEntityHistory')}</p>
+                  <EmptyState variant="no-data" title={t('audit.noEntityHistory')} compact />
                 )}
               </div>
             </ScrollArea>
           </DialogContent>
         </Dialog>
-      </div>
+      </PageContainer>
     </>
   );
 }

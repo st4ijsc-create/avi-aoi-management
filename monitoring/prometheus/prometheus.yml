@@ -21,3 +21,28 @@ scrape_configs:
           - host.docker.internal:3000   # app /metrics (change to app:3000 if same network)
         labels:
           service: avi-aoi-app
+
+  # ── SYN-W0 (doc 44) — hạ tầng TÙY CHỌN: bỏ comment khi bật profile tương ứng ──
+
+  # EMQX 5.x xuất Prometheus native tại /api/v5/prometheus/stats (cổng dashboard).
+  # Dùng cho cả emqx đơn (compose chính, dashboard 18083) lẫn cluster HA
+  # (deploy/compose/docker-compose.uns-ha.yml — node1 expose 18083; endpoint trả
+  # metric cluster-wide). Bỏ comment khi broker chạy:
+  # - job_name: emqx
+  #   metrics_path: /api/v5/prometheus/stats
+  #   static_configs:
+  #     - targets:
+  #         - host.docker.internal:18083
+  #       labels:
+  #         service: emqx
+
+  # NATS (profile `bus`, doc 44 G2.7/D2): cổng monitoring 8222 là JSON
+  # (/varz /jsz /healthz), KHÔNG phải Prometheus format — cần sidecar
+  # `natsio/prometheus-nats-exporter` (vd. `-varz -jsz=all http://nats:8222`,
+  # exporter nghe 7777) rồi mới scrape được. Bỏ comment khi có exporter:
+  # - job_name: nats
+  #   static_configs:
+  #     - targets:
+  #         - host.docker.internal:7777   # prometheus-nats-exporter (không phải 8222)
+  #       labels:
+  #         service: nats

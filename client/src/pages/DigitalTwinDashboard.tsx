@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader, LineSelect } from "@/components/patterns";
 import {
   Boxes,
   Activity,
@@ -22,13 +24,14 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useTwinStream } from "@/hooks/useTwinStream";
+import { RelatedViews } from "@/components/RelatedViews";
 
 /** Màu nền semantic theo màu twin trả về từ server (status+health). */
 function twinDot(color?: string | null) {
   return (
     <span
-      className="inline-block h-3 w-3 rounded-full ring-1 ring-black/10"
-      style={{ backgroundColor: color || "#94a3b8" }}
+      className="inline-block h-3 w-3 rounded-full ring-1 ring-border"
+      style={{ backgroundColor: color || "var(--muted-foreground)" }}
     />
   );
 }
@@ -39,7 +42,7 @@ function healthBadge(score?: number | null) {
   return <Badge variant={variant as any}>{score}</Badge>;
 }
 
-export default function DigitalTwinDashboard() {
+export function DigitalTwinDashboardContent() {
   const { t } = useTranslation();
 
   // --- Twin state (trạng thái máy + health + màu) ---
@@ -116,19 +119,21 @@ export default function DigitalTwinDashboard() {
   };
 
   return (
-    <DashboardLayout>
+    <>
       <div className="space-y-6 p-4 md:p-6">
-        <div className="flex items-center gap-3">
-          <Boxes className="h-7 w-7 text-primary" />
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              {t("nav.digitalTwin", "Digital Twin")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("digitalTwin.subtitle", "Trạng thái máy realtime · heatmap lỗi · mô phỏng what-if")}
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Boxes className="h-6 w-6" />}
+          title={t("nav.digitalTwin", "Digital Twin")}
+          description={t("digitalTwin.subtitle", "Trạng thái máy realtime · heatmap lỗi · mô phỏng what-if")}
+        />
+
+        {/* U7 cross-links to the differentiated twin/overview surfaces. */}
+        <RelatedViews
+          links={[
+            { href: "/digital-twin-center", labelKey: "nav.digitalTwinCenter", labelDefault: "3D Digital Twin Center" },
+            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+          ]}
+        />
 
         {/* KPI */}
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -144,28 +149,28 @@ export default function DigitalTwinDashboard() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{t("digitalTwin.running", "Đang chạy")}</CardTitle>
-              <Activity className="h-4 w-4 text-emerald-500" />
+              <Activity className="h-4 w-4 text-success" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-emerald-600">{kpis.running}</div>
+              <div className="text-2xl font-bold text-success">{kpis.running}</div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{t("digitalTwin.atRisk", "Nguy cơ hỏng")}</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <AlertTriangle className="h-4 w-4 text-warning" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-amber-600">{kpis.atRisk}</div>
+              <div className="text-2xl font-bold text-warning">{kpis.atRisk}</div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{t("digitalTwin.lowHealth", "Health thấp")}</CardTitle>
-              <Heart className="h-4 w-4 text-rose-500" />
+              <Heart className="h-4 w-4 text-destructive" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-rose-600">{kpis.lowHealth}</div>
+              <div className="text-2xl font-bold text-destructive">{kpis.lowHealth}</div>
             </CardContent>
           </Card>
         </div>
@@ -209,7 +214,11 @@ export default function DigitalTwinDashboard() {
               </CardHeader>
               <CardContent>
                 {twin.isLoading ? (
-                  <p className="text-sm text-muted-foreground">{t("common.loading", "Đang tải...")}</p>
+                  <div className="space-y-2">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <Skeleton key={i} className="h-10 w-full" />
+                    ))}
+                  </div>
                 ) : twinRows.length === 0 ? (
                   <p className="text-sm text-muted-foreground">{t("common.noData", "Không có dữ liệu")}</p>
                 ) : (
@@ -272,14 +281,20 @@ export default function DigitalTwinDashboard() {
               </CardHeader>
               <CardContent>
                 {heatmap.isLoading ? (
-                  <p className="text-sm text-muted-foreground">{t("common.loading", "Đang tải...")}</p>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <Skeleton key={i} className="h-20 w-full rounded-lg" />
+                    ))}
+                  </div>
                 ) : heatRows.length === 0 ? (
                   <p className="text-sm text-muted-foreground">{t("common.noData", "Không có dữ liệu")}</p>
                 ) : (
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
                     {heatRows.map((r) => {
                       const intensity = maxNg > 0 ? r.ngCount / maxNg : 0;
-                      const bg = `rgba(239, 68, 68, ${0.12 + intensity * 0.78})`;
+                      // Themed defect-intensity tint (dark-first): destructive token
+                      // mixed into transparent, alpha 12%→90% by NG intensity.
+                      const bg = `color-mix(in srgb, var(--destructive) ${Math.round((0.12 + intensity * 0.78) * 100)}%, transparent)`;
                       return (
                         <div
                           key={r.machineId}
@@ -344,7 +359,14 @@ export default function DigitalTwinDashboard() {
                     {t("digitalTwin.whatIfHint", "Nhấn \"Chạy mô phỏng\" để ước lượng năng suất theo các trạm hiện có.")}
                   </p>
                 ) : whatIf.isLoading ? (
-                  <p className="text-sm text-muted-foreground">{t("common.loading", "Đang tải...")}</p>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <Skeleton key={i} className="h-20 w-full rounded-lg" />
+                      ))}
+                    </div>
+                    <Skeleton className="h-32 w-full" />
+                  </div>
                 ) : !whatIf.data ? (
                   <p className="text-sm text-muted-foreground">{t("common.noData", "Không có dữ liệu")}</p>
                 ) : (
@@ -374,11 +396,11 @@ export default function DigitalTwinDashboard() {
                 <div className="flex items-end gap-2 pt-2">
                   <div className="space-y-1">
                     <Label className="text-xs">{t("digitalTwin.station", "Trạm")} / Line ID</Label>
-                    <Input
-                      type="number"
-                      min={1}
+                    <LineSelect
                       value={lineId}
-                      onChange={(e) => setLineId(Math.max(1, Number(e.target.value) || 1))}
+                      onChange={(v) => setLineId(v == null ? 1 : Number(v))}
+                      clearable={false}
+                      aria-label={`${t("digitalTwin.station", "Trạm")} / Line ID`}
                       className="w-28"
                     />
                   </div>
@@ -422,7 +444,11 @@ export default function DigitalTwinDashboard() {
               </CardHeader>
               <CardContent>
                 {stationLoad.isLoading ? (
-                  <p className="text-sm text-muted-foreground">{t("common.loading", "Đang tải...")}</p>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <Skeleton key={i} className="h-20 w-full rounded-lg" />
+                    ))}
+                  </div>
                 ) : !stationLoad.data || stationLoad.data.cells.length === 0 ? (
                   <p className="text-sm text-muted-foreground">{t("common.noData", "Không có dữ liệu")}</p>
                 ) : (
@@ -464,7 +490,11 @@ export default function DigitalTwinDashboard() {
               </CardHeader>
               <CardContent>
                 {prediction.isLoading ? (
-                  <p className="text-sm text-muted-foreground">{t("common.loading", "Đang tải...")}</p>
+                  <div className="space-y-3">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                    ))}
+                  </div>
                 ) : !prediction.data || !prediction.data.available ? (
                   <p className="text-sm text-muted-foreground">
                     {t("digitalTwin.prediction.unavailable", "Chưa đủ dữ liệu để dự báo")}
@@ -502,6 +532,14 @@ export default function DigitalTwinDashboard() {
           </TabsContent>
         </Tabs>
       </div>
+    </>
+  );
+}
+
+export default function DigitalTwinDashboard() {
+  return (
+    <DashboardLayout>
+      <DigitalTwinDashboardContent />
     </DashboardLayout>
   );
 }

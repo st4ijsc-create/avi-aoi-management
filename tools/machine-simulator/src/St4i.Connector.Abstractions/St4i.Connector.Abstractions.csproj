@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- GP-1 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-1-brief.md) — the driver
+         contract has to be a plain, dependency-free assembly a third-party vendor can compile a driver
+         against outside this repo. St4i.EdgeCore is net10.0-windows (DPAPI CredentialStore, a
+         WPF-adjacent vendored SDK) and is never published, so this project exists to be the thing that
+         IS publishable later. Plain net10.0 — NOT -windows — is load-bearing: it is the whole reason
+         this assembly exists. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+</Project>

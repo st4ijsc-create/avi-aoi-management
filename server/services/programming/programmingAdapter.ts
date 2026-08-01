@@ -25,7 +25,8 @@
 import { ZmotionBasicAdapter } from "./zmotion/zmotionBasicAdapter";
 import { MitsubishiEngineeringAdapter } from "./mitsubishi/mitsubishiEngineeringAdapter";
 import { RobotTmAdapter } from "./robot/robotTmAdapter";
-import { Iec61131StAdapter, Iec61131LdAdapter } from "./iec61131/iec61131Adapter";
+import { Iec61131StAdapter, Iec61131LdAdapter, Iec61131PouAdapter } from "./iec61131/iec61131Adapter";
+import { IrProgrammingAdapter } from "./ir/irAdapter";
 
 /** Target classes the DPC tier can address (1:1 onto programmingKindEnum). */
 export type ProgrammingKind =
@@ -35,8 +36,16 @@ export type ProgrammingKind =
   | "mitsubishi-engineering"
   | "robot-tm"
   | "iec61131-st"
-  | "iec61131-ld";
+  | "iec61131-ld"
+  | "iec61131-pou"
+  | "ir-flow";
 
+/**
+ * All target classes (1:1 onto programmingKindEnum). U4b: DERIVED from the registry
+ * seed below so the array stays in lock-step with what is registered. `gcode` has NO
+ * factory registered (it is a planned kind) yet is still an addressable enum value —
+ * hence it is listed here explicitly alongside the registered kinds.
+ */
 export const PROGRAMMING_KINDS: ProgrammingKind[] = [
   "stub",
   "zmotion-basic",
@@ -45,6 +54,8 @@ export const PROGRAMMING_KINDS: ProgrammingKind[] = [
   "robot-tm",
   "iec61131-st",
   "iec61131-ld",
+  "iec61131-pou",
+  "ir-flow",
 ];
 
 /** What an adapter can do (drives UI affordances + service guards). */
@@ -238,28 +249,62 @@ export class StubProgrammingAdapter implements ProgrammingAdapter {
   }
 }
 
-// ── Registry FACADE (mirrors equipmentRegistry). Memoised, lazy. ──
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * U4b (doc 21 §6 / G-8) — DATA-DRIVEN programming-adapter registry (mirrors
+ * ot/driverRegistry + equipmentRegistry). A `Map<kind, factory>` +
+ * `registerProgrammingAdapter(kind, factory)` replaces the `build()` switch. Every
+ * IMPLEMENTED kind seeds itself at module load (below), so resolution is IDENTICAL —
+ * behaviour-preserving. A planned kind (e.g. `gcode`) stays in `PROGRAMMING_KINDS`
+ * with NO factory registered → resolves to the same honest "not yet implemented"
+ * error as before. A new kind is now ONE `registerProgrammingAdapter(...)` call.
+ *
+ * The `ProgrammingKind` union is retained for compile-time exhaustiveness.
+ * ════════════════════════════════════════════════════════════════════════════
+ */
+export type ProgrammingAdapterFactory = () => ProgrammingAdapter;
+
+const adapterFactories = new Map<ProgrammingKind, ProgrammingAdapterFactory>();
 const adapterCache = new Map<ProgrammingKind, ProgrammingAdapter>();
 
-function build(kind: ProgrammingKind): ProgrammingAdapter {
-  if (kind === "stub") return new StubProgrammingAdapter();
-  if (kind === "zmotion-basic") return new ZmotionBasicAdapter();
-  if (kind === "mitsubishi-engineering") return new MitsubishiEngineeringAdapter();
-  if (kind === "robot-tm") return new RobotTmAdapter();
-  if (kind === "iec61131-st") return new Iec61131StAdapter();
-  if (kind === "iec61131-ld") return new Iec61131LdAdapter();
-  throw new Error(`Programming adapter "${kind}" is not yet implemented (lands in a later DPC phase).`);
+/**
+ * Register (or override) the factory for a programming kind. Register-and-go: a new
+ * target class needs only this call (+ the `programmingKindEnum` DB value). Overriding
+ * clears the memoised instance so the next `getAdapter` rebuilds.
+ */
+export function registerProgrammingAdapter(kind: ProgrammingKind, factory: ProgrammingAdapterFactory): void {
+  adapterFactories.set(kind, factory);
+  adapterCache.delete(kind);
 }
+
+// ── Seed every IMPLEMENTED kind (parity with the old switch). `gcode` is a PLANNED
+//    kind — intentionally NOT registered, so it resolves to "not yet implemented". ──
+registerProgrammingAdapter("stub", () => new StubProgrammingAdapter());
+registerProgrammingAdapter("zmotion-basic", () => new ZmotionBasicAdapter());
+registerProgrammingAdapter("mitsubishi-engineering", () => new MitsubishiEngineeringAdapter());
+registerProgrammingAdapter("robot-tm", () => new RobotTmAdapter());
+registerProgrammingAdapter("iec61131-st", () => new Iec61131StAdapter());
+registerProgrammingAdapter("iec61131-ld", () => new Iec61131LdAdapter());
+registerProgrammingAdapter("iec61131-pou", () => new Iec61131PouAdapter());
+registerProgrammingAdapter("ir-flow", () => new IrProgrammingAdapter());
 
 export const programmingRegistry = {
   /** Resolve (memoised) the adapter for a kind. Throws for unknown/unsupported kinds. */
   getAdapter(kind: ProgrammingKind): ProgrammingAdapter {
-    if (!PROGRAMMING_KINDS.includes(kind)) {
+    // A kind is addressable if it is registered (register-and-go) OR a known enum
+    // value in PROGRAMMING_KINDS (a planned kind → "not yet implemented"). Anything
+    // else is genuinely unknown.
+    if (!adapterFactories.has(kind) && !PROGRAMMING_KINDS.includes(kind)) {
       throw new Error(`Unknown programming adapter kind "${kind}".`);
     }
     let a = adapterCache.get(kind);
     if (!a) {
-      a = build(kind);
+      const factory = adapterFactories.get(kind);
+      if (!factory) {
+        // A known enum value with no registered factory = a planned kind (e.g. gcode).
+        throw new Error(`Programming adapter "${kind}" is not yet implemented (lands in a later DPC phase).`);
+      }
+      a = factory();
       adapterCache.set(kind, a);
     }
     return a;
@@ -287,7 +332,12 @@ export const programmingRegistry = {
     });
   },
 
-  /** Test-only: clear the memoised adapters. */
+  /** Every kind with a registered factory (register-and-go view). */
+  listRegisteredKinds(): ProgrammingKind[] {
+    return [...adapterFactories.keys()];
+  },
+
+  /** Test-only: clear the memoised adapters (registrations survive). */
   _clear(): void {
     adapterCache.clear();
   },

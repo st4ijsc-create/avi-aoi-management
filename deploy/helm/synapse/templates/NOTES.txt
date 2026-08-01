@@ -1,0 +1,45 @@
+SYNAPSE — {{ .Values.edition.code | upper }} edition installed as release "{{ .Release.Name }}".
+(doc 33 §11 / ADR-007 "collapsible deployment")
+
+  Edition       : {{ .Values.edition.code }}  (EDITION)
+  Infra profile : {{ .Values.edition.infraProfile }}  (INFRA_PROFILE)
+  Profile flag  : EDITION_PROFILE={{ .Values.edition.enforceProfile }}
+  Image         : {{ include "synapse.image" . }}
+  Server pods   : {{ if .Values.autoscaling.enabled }}{{ .Values.autoscaling.minReplicas }}–{{ .Values.autoscaling.maxReplicas }} (HPA){{ else }}{{ .Values.replicaCount }}{{ end }}
+  Worker        : {{ if .Values.worker.enabled }}enabled (1 instance, ROLE=worker){{ else }}disabled{{ end }}
+
+1. Wait for the server to become Ready:
+     kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "synapse.fullname" . }}
+
+2. Liveness / readiness endpoint (real): GET /health on port {{ .Values.service.port }}
+{{- if .Values.ingress.enabled }}
+   Reachable via Ingress:
+   {{- range .Values.ingress.hosts }}
+     http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/health
+   {{- end }}
+{{- else if eq .Values.service.type "NodePort" }}
+     export NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+     export NODE_PORT=$(kubectl -n {{ .Release.Namespace }} get svc {{ include "synapse.fullname" . }} -o jsonpath='{.spec.ports[0].nodePort}')
+     curl http://$NODE_IP:$NODE_PORT/health
+{{- else }}
+   Port-forward and curl:
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "synapse.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+     curl http://127.0.0.1:{{ .Values.service.port }}/health     # → {"status":"ok",...} when the DB is connected
+{{- end }}
+
+3. Confirm the resolved edition (anti-drift) in the startup log:
+     kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "synapse.fullname" . }} | grep '\[edition\]'
+   Expect: [edition] ... ({{ .Values.edition.code }}) · infra={{ .Values.edition.infraProfile }} · ...
+
+{{- if not .Values.existingSecret }}
+{{- if or (not .Values.secrets.jwtSecret) (not .Values.secrets.databaseUrl) }}
+
+⚠️  WARNING: secrets.databaseUrl / secrets.jwtSecret look empty. The app fail-fasts
+    without JWT_SECRET/SIGNOFF_SECRET/MASTER_API_KEY and a valid DATABASE_URL. Reinstall with:
+      --set-string secrets.databaseUrl='postgres://…' \
+      --set-string secrets.jwtSecret="$(openssl rand -base64 64)" \
+      --set-string secrets.signoffSecret="$(openssl rand -base64 24)" \
+      --set-string secrets.masterApiKey="$(openssl rand -hex 24)"
+    or use existingSecret / an ExternalSecret operator.
+{{- end }}
+{{- end }}

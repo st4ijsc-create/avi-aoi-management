@@ -90,11 +90,11 @@ export function DefectTrendPrediction() {
     if (!data) return <Minus className="h-5 w-5" />;
     switch (data.statistics.trendDirection) {
       case 'increasing':
-        return <TrendingUp className="h-5 w-5 text-red-500" />;
+        return <TrendingUp className="h-5 w-5 text-destructive" />;
       case 'decreasing':
-        return <TrendingDown className="h-5 w-5 text-green-500" />;
+        return <TrendingDown className="h-5 w-5 text-success" />;
       default:
-        return <Minus className="h-5 w-5 text-yellow-500" />;
+        return <Minus className="h-5 w-5 text-warning" />;
     }
   };
 
@@ -102,20 +102,20 @@ export function DefectTrendPrediction() {
     if (!data) return 'text-muted-foreground';
     switch (data.statistics.trendDirection) {
       case 'increasing':
-        return 'text-red-500';
+        return 'text-destructive';
       case 'decreasing':
-        return 'text-green-500';
+        return 'text-success';
       default:
-        return 'text-yellow-500';
+        return 'text-warning';
     }
   };
 
   const getConfidenceBadge = () => {
     if (!data) return null;
     const colors: Record<string, string> = {
-      high: 'bg-green-500/10 text-green-500',
-      medium: 'bg-yellow-500/10 text-yellow-500',
-      low: 'bg-red-500/10 text-red-500',
+      high: 'bg-success/10 text-success',
+      medium: 'bg-warning/10 text-warning',
+      low: 'bg-destructive/10 text-destructive',
     };
     return (
       <Badge variant="outline" className={cn('ml-2', colors[data.statistics.confidence])}>
@@ -323,13 +323,13 @@ export function DefectTrendPrediction() {
                           {format(parseISO(label), 'dd/MM/yyyy', { locale: vi })}
                         </p>
                         {data.actual !== null && (
-                          <p className="text-sm text-blue-500">
+                          <p className="text-sm text-primary">
                             {t('defects.trend.actualValue', { count: data.actual })}
                           </p>
                         )}
                         {data.predicted !== null && (
                           <>
-                            <p className="text-sm text-orange-500">
+                            <p className="text-sm text-warning">
                               {t('defects.trend.predictedValue', { count: data.predicted })}
                             </p>
                             <p className="text-xs text-muted-foreground">
@@ -460,7 +460,7 @@ export function DefectTrendPrediction() {
                         </td>
                         <td className={cn(
                           'text-right py-2 px-4',
-                          diff > 0 ? 'text-red-500' : diff < 0 ? 'text-green-500' : 'text-muted-foreground'
+                          diff > 0 ? 'text-destructive' : diff < 0 ? 'text-success' : 'text-muted-foreground'
                         )}>
                           {diff > 0 ? '+' : ''}{diff} ({diffPercent > 0 ? '+' : ''}{diffPercent}%)
                         </td>

@@ -1,0 +1,78 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        ST4I Machine Simulator Studio — dark industrial palette (doc 62 §10: "theme công nghiệp tối
+        + accent, font lớn, layout thoáng"). Raw Color/SolidColorBrush resources only — no styles here
+        (those live in Dark.xaml) so any future light theme can reuse the same brush KEYS with different
+        values without touching Dark.xaml's control styles.
+    -->
+
+    <!-- Surfaces -->
+    <Color x:Key="Color.Bg.App">#0B0F14</Color>
+    <Color x:Key="Color.Bg.Sidebar">#0F1620</Color>
+    <Color x:Key="Color.Bg.TopBar">#121A24</Color>
+    <Color x:Key="Color.Bg.Panel">#161F2B</Color>
+    <Color x:Key="Color.Bg.PanelRaised">#1C2734</Color>
+    <Color x:Key="Color.Border">#26313F</Color>
+
+    <!-- Text -->
+    <Color x:Key="Color.Text.Primary">#E8EDF4</Color>
+    <Color x:Key="Color.Text.Secondary">#8FA1B3</Color>
+    <Color x:Key="Color.Text.Muted">#5B6B7C</Color>
+
+    <!-- Accent (ST4I brand cyan) -->
+    <Color x:Key="Color.Accent">#2FD3E0</Color>
+    <Color x:Key="Color.Accent.Hover">#57DEE9</Color>
+    <Color x:Key="Color.Accent.Pressed">#1FA9B4</Color>
+    <Color x:Key="Color.Accent.Muted">#1A3A40</Color>
+
+    <!-- Status -->
+    <Color x:Key="Color.Status.Online">#33D17A</Color>
+    <Color x:Key="Color.Status.Warn">#F2C744</Color>
+    <Color x:Key="Color.Status.Offline">#E85D5D</Color>
+    <Color x:Key="Color.Status.Unknown">#5B6B7C</Color>
+
+    <!-- Fallback / demo badge -->
+    <Color x:Key="Color.Badge.Fallback.Bg">#4A2E12</Color>
+    <Color x:Key="Color.Badge.Fallback.Fg">#F2A544</Color>
+    <Color x:Key="Color.Badge.Fallback.Border">#B4741F</Color>
+
+    <!-- Task 17 (API Inspector): low-alpha tints of the Status colors above, sized for a full
+         DataGridRow background rather than a small dot — a fast-scrolling trace stream stays
+         readable at ~16% alpha instead of a wall of saturated color. -->
+    <Color x:Key="Color.Status.OnlineRowBg">#2A33D17A</Color>
+    <Color x:Key="Color.Status.WarnRowBg">#2AF2C744</Color>
+    <Color x:Key="Color.Status.OfflineRowBg">#2AE85D5D</Color>
+
+    <!-- Brushes (derived 1:1 from the colors above) -->
+    <SolidColorBrush x:Key="Brush.Bg.App" Color="{StaticResource Color.Bg.App}" />
+    <SolidColorBrush x:Key="Brush.Bg.Sidebar" Color="{StaticResource Color.Bg.Sidebar}" />
+    <SolidColorBrush x:Key="Brush.Bg.TopBar" Color="{StaticResource Color.Bg.TopBar}" />
+    <SolidColorBrush x:Key="Brush.Bg.Panel" Color="{StaticResource Color.Bg.Panel}" />
+    <SolidColorBrush x:Key="Brush.Bg.PanelRaised" Color="{StaticResource Color.Bg.PanelRaised}" />
+    <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}" />
+
+    <SolidColorBrush x:Key="Brush.Text.Primary" Color="{StaticResource Color.Text.Primary}" />
+    <SolidColorBrush x:Key="Brush.Text.Secondary" Color="{StaticResource Color.Text.Secondary}" />
+    <SolidColorBrush x:Key="Brush.Text.Muted" Color="{StaticResource Color.Text.Muted}" />
+
+    <SolidColorBrush x:Key="Brush.Accent" Color="{StaticResource Color.Accent}" />
+    <SolidColorBrush x:Key="Brush.Accent.Hover" Color="{StaticResource Color.Accent.Hover}" />
+    <SolidColorBrush x:Key="Brush.Accent.Pressed" Color="{StaticResource Color.Accent.Pressed}" />
+    <SolidColorBrush x:Key="Brush.Accent.Muted" Color="{StaticResource Color.Accent.Muted}" />
+
+    <SolidColorBrush x:Key="Brush.Status.Online" Color="{StaticResource Color.Status.Online}" />
+    <SolidColorBrush x:Key="Brush.Status.Warn" Color="{StaticResource Color.Status.Warn}" />
+    <SolidColorBrush x:Key="Brush.Status.Offline" Color="{StaticResource Color.Status.Offline}" />
+    <SolidColorBrush x:Key="Brush.Status.Unknown" Color="{StaticResource Color.Status.Unknown}" />
+
+    <SolidColorBrush x:Key="Brush.Badge.Fallback.Bg" Color="{StaticResource Color.Badge.Fallback.Bg}" />
+    <SolidColorBrush x:Key="Brush.Badge.Fallback.Fg" Color="{StaticResource Color.Badge.Fallback.Fg}" />
+    <SolidColorBrush x:Key="Brush.Badge.Fallback.Border" Color="{StaticResource Color.Badge.Fallback.Border}" />
+
+    <SolidColorBrush x:Key="Brush.Status.OnlineRowBg" Color="{StaticResource Color.Status.OnlineRowBg}" />
+    <SolidColorBrush x:Key="Brush.Status.WarnRowBg" Color="{StaticResource Color.Status.WarnRowBg}" />
+    <SolidColorBrush x:Key="Brush.Status.OfflineRowBg" Color="{StaticResource Color.Status.OfflineRowBg}" />
+
+</ResourceDictionary>

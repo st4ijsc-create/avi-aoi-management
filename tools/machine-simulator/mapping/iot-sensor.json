@@ -1,0 +1,11 @@
+{
+  "name": "iot-sensor",
+  "deviceClass": "Iot",
+  "defaultStepType": "telemetry",
+  "defaultRecipeCode": null,
+  "unitMap": {
+    "C": "°C",
+    "%RH": "%RH",
+    "A": "A"
+  }
+}

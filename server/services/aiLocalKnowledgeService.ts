@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import { tryExecuteTool, type ToolResult, type ToolExecContext, type PendingActionDTO, type ClientActionDirective } from "./aiLocalTools";
 import { rerank, isRerankerEnabled, type RerankCandidate } from "./aiReranker";
 import { loadSemanticGraph, expandWithGraph } from "./aiSemanticGraph";
+// FE-W0.3 (doc 46 §2.3) — degenerate-loop guard (pure, dependency-free).
+import { guardGeneratedText, isDegenerateStream } from "./ai/generationGuard";
 
 export type KbIntent =
   | "how_to"
@@ -308,6 +310,17 @@ const CONTEXT_CHUNK_CHAR_CAP = Number(process.env.KB_QA_CTX_CAP ?? 1200);
 // num_predict — cap LLM output length. 800 was overkill; most useful answers
 // fit in 400-500 tokens. Lower = faster TTLT (time-to-last-token).
 const LLM_NUM_PREDICT = Number(process.env.KB_QA_NUM_PREDICT ?? 512);
+
+// FE-W0.3 (doc 46 §2.3) — anti-degenerate-loop decode + streaming-guard cadence.
+// Stronger repeat penalty than the engine default (1.1) to discourage token loops;
+// the incremental stream guard re-checks every STEP chars once past MIN chars so a
+// "cell cell cell…" loop is caught within a few tokens instead of thousands.
+const KB_QA_REPEAT_PENALTY = (() => {
+  const n = Number(process.env.KB_QA_REPEAT_PENALTY ?? 1.2);
+  return Number.isFinite(n) && n >= 1 ? n : 1.2;
+})();
+const STREAM_GUARD_MIN_CHARS = Number(process.env.KB_QA_STREAM_GUARD_MIN ?? 160);
+const STREAM_GUARD_STEP_CHARS = Number(process.env.KB_QA_STREAM_GUARD_STEP ?? 160);
 
 // Lever 8.D — per-intent token budget. Tool-summarised and general questions
 // rarely need >220 tokens; how_to/architecture deserve room for full
@@ -808,32 +821,32 @@ function getSystemPromptForRole(
   if (language === "zh") {
     const fmt = isDef ? ZH_DEF_FORMAT : isList ? ZH_LIST_FORMAT : ZH_FORMAT;
     if (userLevel === "basic") {
-      return `面向一线操作工的 AVI/AOI 本地部署系统助手。用简体中文、通俗易懂、完整地回答。${fmt} ${ZH_GUARD}`;
+      return `面向一线操作工的 SYNAPSE 本地部署系统助手。用简体中文、通俗易懂、完整地回答。${fmt} ${ZH_GUARD}`;
     }
     if (userLevel === "manager") {
-      return `面向管理者的 AVI/AOI 本地部署系统分析助手。用简体中文回答，聚焦 KPI/趋势/运营影响，并给出优先级行动建议。${fmt} ${ZH_GUARD}`;
+      return `面向管理者的 SYNAPSE 本地部署系统分析助手。用简体中文回答，聚焦 KPI/趋势/运营影响，并给出优先级行动建议。${fmt} ${ZH_GUARD}`;
     }
-    return `面向工程师的 AVI/AOI 本地部署系统技术助手。用简体中文回答，给出具体的 API/数据结构/配置/命令；解释设计与错误处理。${fmt} ${ZH_GUARD}`;
+    return `面向工程师的 SYNAPSE 本地部署系统技术助手。用简体中文回答，给出具体的 API/数据结构/配置/命令；解释设计与错误处理。${fmt} ${ZH_GUARD}`;
   }
 
   if (language === "vi") {
     const fmt = isDef ? VI_DEF_FORMAT : isList ? VI_LIST_FORMAT : VI_FORMAT;
     if (userLevel === "basic") {
-      return `Trợ lý hệ thống AVI/AOI on-prem cho công nhân. Trả lời tiếng Việt, dễ hiểu, đầy đủ. ${fmt} ${VI_GUARD}`;
+      return `Trợ lý hệ thống SYNAPSE on-prem cho công nhân. Trả lời tiếng Việt, dễ hiểu, đầy đủ. ${fmt} ${VI_GUARD}`;
     }
     if (userLevel === "manager") {
-      return `Trợ lý phân tích AVI/AOI on-prem cho quản lý. Trả lời tiếng Việt, tập trung KPI/xu hướng/tác động vận hành, đề xuất hành động ưu tiên. ${fmt} ${VI_GUARD}`;
+      return `Trợ lý phân tích SYNAPSE on-prem cho quản lý. Trả lời tiếng Việt, tập trung KPI/xu hướng/tác động vận hành, đề xuất hành động ưu tiên. ${fmt} ${VI_GUARD}`;
     }
-    return `Trợ lý kỹ thuật AVI/AOI on-prem cho kỹ sư. Trả lời tiếng Việt, kèm API/schema/cấu hình/CLI cụ thể; giải thích thiết kế và xử lý lỗi. ${fmt} ${VI_GUARD}`;
+    return `Trợ lý kỹ thuật SYNAPSE on-prem cho kỹ sư. Trả lời tiếng Việt, kèm API/schema/cấu hình/CLI cụ thể; giải thích thiết kế và xử lý lỗi. ${fmt} ${VI_GUARD}`;
   }
   const fmt = isDef ? EN_DEF_FORMAT : isList ? EN_LIST_FORMAT : EN_FORMAT;
   if (userLevel === "basic") {
-    return `Support assistant for AVI/AOI on-prem system, for line workers. ${fmt} ${EN_GUARD}`;
+    return `Support assistant for SYNAPSE on-prem system, for line workers. ${fmt} ${EN_GUARD}`;
   }
   if (userLevel === "manager") {
-    return `Analytical assistant for AVI/AOI on-prem system, for managers. Focus on KPIs, trends, operational impact, prioritized actions. ${fmt} ${EN_GUARD}`;
+    return `Analytical assistant for SYNAPSE on-prem system, for managers. Focus on KPIs, trends, operational impact, prioritized actions. ${fmt} ${EN_GUARD}`;
   }
-  return `Technical assistant for AVI/AOI on-prem system, for engineers. Include APIs, schemas, config, CLI; explain design and error handling. ${fmt} ${EN_GUARD}`;
+  return `Technical assistant for SYNAPSE on-prem system, for engineers. Include APIs, schemas, config, CLI; explain design and error handling. ${fmt} ${EN_GUARD}`;
 }
 
 // Lever 9.A/9.B — extract concrete facts (API paths, screen paths, env vars,
@@ -1012,6 +1025,24 @@ function formatHistoryBlock(history: ConversationMessage[]): string {
     .join("\n");
 }
 
+/**
+ * FE-W0.3 (doc 46 §2.3) — run the degenerate-loop guard over a completed LLM
+ * answer. Returns the clean text (or a salvaged head) or NULL when the output is
+ * unsalvageable garbage — NULL makes the caller fall back to the extractive/tool
+ * answer instead of showing "cell cell cell…". Never throws.
+ */
+function guardKbAnswer(raw: string | null | undefined): string | null {
+  const g = guardGeneratedText(raw);
+  if (g.degraded) {
+    console.warn(
+      `[aiLocalKnowledge] degenerate LLM answer rejected (${g.reason}) — ` +
+        `${g.text ? "using salvaged head" : "falling back to extractive/tool"}.`,
+    );
+  }
+  const t = g.text.trim();
+  return t.length > 0 ? t : null;
+}
+
 async function generateWithOllama(
   question: string,
   retrieve: KbRetrieveResult,
@@ -1064,13 +1095,21 @@ async function generateWithOllama(
     try {
       const { generateText: ggufGen, isGgufAvailable } = await import("./aiGgufEngine");
       if (await isGgufAvailable()) {
+        // doc 48 R1 — PIN a generative model. Without a modelId the engine's
+        // getOrLoadModel(undefined) reuses the FIRST resident model, which is the RAG
+        // embedder → gibberish answers. Mirror the chat path (aiChatAssistant): let the
+        // Model Router pick the tier by difficulty and pass decision.modelId to the engine.
+        const { route } = await import("./aiModelRouter");
+        const decision = route({ task: "chat", text: question });
         const result = await ggufGen({
           prompt,
           maxTokens: numPredict,
           temperature: 0.15,
           topP: 0.9,
-        });
-        return result.text?.trim() || null;
+          repeatPenalty: KB_QA_REPEAT_PENALTY,
+        }, decision.modelId);
+        // FE-W0.3 (doc 46 §2.3) — guard the completed answer; degenerate → null → fallback.
+        return guardKbAnswer(result.text);
       }
       // GGUF not available — fall through to Ollama path.
     } catch (err) {
@@ -1105,7 +1144,8 @@ async function generateWithOllama(
     });
     if (!res.ok) return null;
     const json = (await res.json()) as { response?: string };
-    return json.response?.trim() || null;
+    // FE-W0.3 (doc 46 §2.3) — guard the completed answer; degenerate → null → fallback.
+    return guardKbAnswer(json.response);
   } catch (err) {
     if ((err as { name?: string })?.name === "AbortError") {
       console.warn(`[aiLocalKnowledge] Ollama generate aborted after ${LLM_TIMEOUT_MS}ms — falling back to extractive`);
@@ -1170,12 +1210,17 @@ export async function* generateWithOllamaStream(
     try {
       const { generateTextStream: ggufStream, isGgufAvailable } = await import("./aiGgufEngine");
       if (await isGgufAvailable()) {
+        // doc 48 R1 — PIN a generative model (see generateWithOllama above). modelId is the 2nd
+        // arg to generateTextStream; without it the stream lands on the resident embedder.
+        const { route } = await import("./aiModelRouter");
+        const decision = route({ task: "chat", text: question });
         for await (const chunk of ggufStream({
           prompt,
           maxTokens: numPredict,
           temperature: 0.15,
           topP: 0.9,
-        })) {
+          repeatPenalty: KB_QA_REPEAT_PENALTY,
+        }, decision.modelId)) {
           // GGUF engine yields { type: "token" | "done" | "error", token?, ... }
           // We must extract the string token, not yield the whole object
           // (which would stringify to "[object Object]" downstream).
@@ -1769,6 +1814,13 @@ export type StreamEvent =
       followUpSuggestions: string[];
       answer: string;
       structured?: KbStructuredResponse;
+      /**
+       * FE-W0.3 (doc 46 §2.3) — true when the streamed LLM output was rejected as
+       * a degenerate loop and `answer` carries a clean fallback INSTEAD. The client
+       * must REPLACE the accumulated streamed tokens with `answer` when this is set.
+       */
+      degraded?: boolean;
+      degradedReason?: string;
     };
 
 export async function* streamAnswer(
@@ -1889,6 +1941,10 @@ export async function* streamAnswer(
 
   let provider: "ollama" | "extractive" | "tool" = "extractive";
   let accumulated = "";
+  // FE-W0.3 (doc 46 §2.3) — set when the streamed output degenerated into a loop;
+  // the streamed garbage is discarded and a clean fallback is sent on `done`.
+  let streamDegraded = false;
+  let streamDegradedReason: string | undefined;
 
   const shouldUseLlm = !!toolResult || retrieve.confidence >= 0.30;
 
@@ -1901,13 +1957,38 @@ export async function* streamAnswer(
         userLevel,
         toolResult?.textSummary,
       );
+      // FE-W0.3 (doc 46 §2.3) — incremental degenerate-loop guard: re-check the
+      // accumulated text every STREAM_GUARD_STEP_CHARS once past the min, and BREAK
+      // the moment it loops so we emit a handful of repeated tokens instead of
+      // thousands. The client resets to the clean `answer` on the degraded `done`.
+      let nextCheckAt = STREAM_GUARD_MIN_CHARS;
       for await (const piece of iter) {
         if (!piece) continue;
         accumulated += piece;
         yield { type: "token", token: piece };
+        if (accumulated.length >= nextCheckAt) {
+          nextCheckAt = accumulated.length + STREAM_GUARD_STEP_CHARS;
+          if (isDegenerateStream(accumulated)) {
+            streamDegraded = true;
+            streamDegradedReason = "stream_loop";
+            break;
+          }
+        }
       }
-      if (accumulated.trim()) {
-        provider = "ollama";
+      if (streamDegraded) {
+        // Discard the looped output; the fallback block below produces a clean answer.
+        console.warn("[aiLocalKnowledge] degenerate stream detected — discarding looped output, sending clean fallback.");
+        accumulated = "";
+      } else if (accumulated.trim()) {
+        // Final full-output guard (catches a loop that only crossed threshold at the tail).
+        const g = guardGeneratedText(accumulated);
+        if (g.degraded) {
+          streamDegraded = true;
+          streamDegradedReason = g.reason;
+          accumulated = g.text.trim(); // salvaged head or "" → fallback block runs
+          console.warn(`[aiLocalKnowledge] degenerate stream (final guard: ${g.reason}) — ${accumulated ? "using salvaged head" : "clean fallback"}.`);
+        }
+        if (accumulated.trim()) provider = "ollama";
       }
     } catch {
       // fall through to extractive/tool fallback below
@@ -1943,7 +2024,8 @@ export async function* streamAnswer(
   );
 
   // Backfill the answer cache so the next identical question is instant.
-  if (history.length === 0 && !toolResult && provider !== "extractive") {
+  // FE-W0.3 (doc 46 §2.3) — NEVER cache a degraded/salvaged answer.
+  if (history.length === 0 && !toolResult && provider !== "extractive" && !streamDegraded) {
     const cacheValue: KbAnswerResult = {
       ...retrieve,
       answer: accumulated,
@@ -1967,6 +2049,9 @@ export async function* streamAnswer(
     followUpSuggestions,
     answer: accumulated,
     structured: extractStructuredResponse(accumulated),
+    // FE-W0.3 (doc 46 §2.3) — signal the client to REPLACE the streamed tokens
+    // with `answer` when the LLM output was rejected as a degenerate loop.
+    ...(streamDegraded ? { degraded: true, degradedReason: streamDegradedReason } : {}),
   };
 }
 
@@ -1978,7 +2063,30 @@ export function warmUpOllamaModels(): void {
   if (warmupStarted) return;
   warmupStarted = true;
   setTimeout(() => {
-    void embedQuestion("warmup").catch(() => {});
+    // doc 48 R1 — WARM ORDER FIX: make a GENERATIVE model resident BEFORE the RAG embedder.
+    // The embedder warm below (embedQuestion) loads the small embedding model; if it lands first
+    // it becomes the FIRST resident GGUF model, and any generate call that does NOT pin a model
+    // (engine getOrLoadModel(undefined)) reuses it → gibberish narratives/chat. Warming the deep
+    // model first also avoids VRAM fragmentation (load the large model before small ones; see
+    // aiGgufEngine.warmModel docs / doc 34 §P4). Best-effort + fail-safe: if the deep model cannot
+    // load (VRAM), warmModel returns false and the callers' honest-degrade guards still render the
+    // offline template — never gibberish. Embedder is still warmed right after (RAG needs it).
+    void (async () => {
+      if (!USE_LEGACY_OLLAMA) {
+        try {
+          const { warmModel } = await import("./aiGgufEngine");
+          // Basename sans ".gguf" — the engine appends it, matching the Model Router's basenames
+          // so a later route({task:"report"|"chat"}).modelId pin finds this exact model resident.
+          const deep = (process.env.GGUF_DEFAULT_MODEL || process.env.GGUF_FAST_MODEL || "")
+            .trim()
+            .replace(/\.gguf$/i, "");
+          await warmModel(deep || undefined);
+        } catch { /* best-effort — never blocks the embedder warm below */ }
+      }
+      // Keep the embedder warm too (RAG retrieval needs it resident).
+      await embedQuestion("warmup").catch(() => {});
+    })().catch(() => {});
+    // Legacy Ollama QA warm — a no-op unless USE_LEGACY_OLLAMA (nothing listens on the GGUF path).
     void fetch(`${OLLAMA_BASE_URL}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

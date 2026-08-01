@@ -107,6 +107,13 @@ export async function runPdmWorkOrderCycle(): Promise<number> {
 /**
  * Tính MTTR (phút) và MTBF (giờ) cho một máy trong khoảng thời gian.
  * MTTR = trung bình downtime của các WO đã đóng; MTBF = trung bình khoảng cách giữa các lần hỏng.
+ *
+ * W4-A (doc 35 §W4.2) — AUTHORITATIVE MTTR/MTBF source. Both the MES Control
+ * Tower (mesControlTowerRouter.reliability) AND the Predictive-Maintenance
+ * reliability read (predictiveMaintenanceService.computeReliabilityStats, which
+ * now delegates its mtbfHours/mttrHours here) use THIS function, so the two UIs
+ * no longer diverge. Precise because it uses real repair spans
+ * (openedAt/repairStartedAt/closedAt) on COMPLETED work orders.
  */
 export async function computeMttrMtbf(
   machineId: number,

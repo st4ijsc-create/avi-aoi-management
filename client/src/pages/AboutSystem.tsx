@@ -1,5 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
+import { PageContainer, PageHeader } from "@/components/patterns";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Building2, Cpu, Sparkles, UserRound, Wrench } from "lucide-react";
@@ -24,23 +25,19 @@ export default function AboutSystem() {
 
   return (
     <DashboardLayout title={t("aboutPage.layoutTitle")} navItems={navItems} currentPath="/about-system">
-      <div className="space-y-6 p-6">
+      <PageContainer>
         <div className="rounded-2xl border bg-linear-to-r from-primary/10 via-primary/5 to-transparent p-6">
-          <div className="flex items-start gap-4">
-            <div className="rounded-xl bg-primary/15 p-3 text-primary">
-              <Cpu className="h-6 w-6" />
-            </div>
-            <div className="space-y-2">
-              <h1 className="text-2xl font-bold tracking-tight">{t("aboutPage.hero.title")}</h1>
-              <p className="text-muted-foreground max-w-3xl">
-                {t("aboutPage.hero.description")}
-              </p>
-              <div className="flex flex-wrap gap-2">
+          <PageHeader
+            icon={<Cpu className="h-6 w-6" />}
+            title={t("aboutPage.hero.title")}
+            description={t("aboutPage.hero.description")}
+            badge={
+              <div className="mt-2 flex flex-wrap gap-2">
                 <Badge variant="secondary">{t("aboutPage.hero.version")}</Badge>
                 <Badge variant="outline">{t("aboutPage.hero.updated")}</Badge>
               </div>
-            </div>
-          </div>
+            }
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -121,7 +118,7 @@ export default function AboutSystem() {
             </CardContent>
           </Card>
         </div>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

@@ -297,3 +297,216 @@ export function getDriftMetrics(): { enabled: boolean; counters: Record<string, 
 export function isDriftMonitorEnabled(): boolean {
   return ENABLED;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// G4.28 (doc 44 W5-A4) — CONCEPT-DRIFT via two-sample Kolmogorov–Smirnov (additive).
+//
+// PSI above answers "did the confidence HISTOGRAM shift?" (data drift). The KS test
+// here answers "did the underlying CONFIDENCE/LABEL DISTRIBUTION shift?" using the
+// full empirical CDF (no binning) with a real significance test — SYNAPSE LDS-L4
+// §11.3 "trôi khái niệm" (concept drift). Pure TS: D-statistic + asymptotic p-value.
+// Advisory only; the PSI path above is left completely intact.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** p-value cutoff below which the KS test flags concept drift (default 0.01). */
+function ksPValueThreshold(): number {
+  const n = Number(process.env.AI_DRIFT_KS_PVALUE || "0.01");
+  return Number.isFinite(n) && n > 0 ? n : 0.01;
+}
+
+/**
+ * Kolmogorov distribution  Q_KS(λ) = 2 Σ_{j≥1} (−1)^{j−1} e^{−2 j² λ²}.
+ * Numerical-Recipes `probks` (14.3): the alternating series converges fast for λ
+ * of practical size; for very small λ the terms barely shrink → it fails to converge
+ * and correctly returns 1.0 (p ≈ 1, i.e. no evidence of a difference). Result ∈ [0,1].
+ */
+export function kolmogorovProb(lambda: number): number {
+  if (!(lambda > 0)) return 1;
+  const a2 = -2 * lambda * lambda;
+  const EPS1 = 1e-3;
+  const EPS2 = 1e-8;
+  let fac = 2; // carries the leading 2 and the alternating sign
+  let sum = 0;
+  let termbf = 0;
+  for (let j = 1; j <= 100; j++) {
+    const term = fac * Math.exp(a2 * j * j);
+    sum += term;
+    if (Math.abs(term) <= EPS1 * termbf || Math.abs(term) <= EPS2 * sum) {
+      return sum < 0 ? 0 : sum > 1 ? 1 : sum;
+    }
+    fac = -fac;
+    termbf = Math.abs(term);
+  }
+  return 1; // failed to converge (tiny λ) → p ≈ 1
+}
+
+export interface KsResult {
+  n1: number;
+  n2: number;
+  /** KS D-statistic = max |F1(x) − F2(x)| over the pooled support (0..1). */
+  d: number;
+  /** Two-sided asymptotic p-value (Kolmogorov distribution). */
+  pValue: number;
+}
+
+/**
+ * Two-sample Kolmogorov–Smirnov test (pure, no I/O). D = max gap between the two
+ * empirical CDFs; p-value via the asymptotic Kolmogorov distribution with the
+ * standard small-sample correction en + 0.12 + 0.11/en (Numerical Recipes 14.3).
+ * Identical distributions → D≈0, p≈1; a shifted distribution → large D, small p.
+ */
+export function ksTwoSample(a: number[], b: number[]): KsResult {
+  const x = a.filter((v) => Number.isFinite(v)).slice().sort((p, q) => p - q);
+  const y = b.filter((v) => Number.isFinite(v)).slice().sort((p, q) => p - q);
+  const n1 = x.length;
+  const n2 = y.length;
+  if (n1 === 0 || n2 === 0) return { n1, n2, d: 0, pValue: 1 };
+
+  let i = 0;
+  let j = 0;
+  let d = 0;
+  while (i < n1 && j < n2) {
+    const vx = x[i];
+    const vy = y[j];
+    if (vx <= vy) i++;
+    if (vy <= vx) j++;
+    const gap = Math.abs(i / n1 - j / n2);
+    if (gap > d) d = gap;
+  }
+
+  const en = Math.sqrt((n1 * n2) / (n1 + n2));
+  const pValue = kolmogorovProb((en + 0.12 + 0.11 / en) * d);
+  return { n1, n2, d, pValue };
+}
+
+export interface ConceptDriftKsResult {
+  enabled: boolean;
+  modelId: number;
+  evaluated: boolean;
+  drift: boolean;
+  d: number;
+  pValue: number;
+  n1: number;
+  n2: number;
+  reasons: string[];
+  /** id of the model_drift_alerts row created (when drift + DB available). */
+  alertId?: number;
+}
+
+/**
+ * Concept-drift check via KS on RECENT vs BASELINE confidence distributions.
+ * Mirrors checkConfidenceDrift's windowing + sample-injection (tests bypass the DB
+ * and the ENABLED flag). Flags drift when p < AI_DRIFT_KS_PVALUE (default 0.01).
+ * Advisory only — never swaps/retrains/deactivates a model.
+ */
+export async function checkConceptDriftKS(opts: {
+  modelId: number;
+  modelVersion?: string;
+  now?: Date;
+  emitAlert?: boolean;
+  samples?: { baseline: number[]; recent: number[] };
+}): Promise<ConceptDriftKsResult> {
+  const base: ConceptDriftKsResult = {
+    enabled: ENABLED,
+    modelId: opts.modelId,
+    evaluated: false,
+    drift: false,
+    d: 0,
+    pValue: 1,
+    n1: 0,
+    n2: 0,
+    reasons: [],
+  };
+
+  if (!ENABLED && !opts.samples) {
+    base.reasons.push("AI_DRIFT_MONITOR_ENABLED is off — no-op");
+    return base;
+  }
+
+  let baselineVals: number[];
+  let recentVals: number[];
+
+  if (opts.samples) {
+    baselineVals = opts.samples.baseline;
+    recentVals = opts.samples.recent;
+  } else {
+    const db = await getDb();
+    if (!db) {
+      base.reasons.push("db unavailable — no-op");
+      return base;
+    }
+    const now = opts.now ?? new Date();
+    const recentStart = new Date(now.getTime() - RECENT_HOURS * 3600_000);
+    const baselineStart = new Date(recentStart.getTime() - BASELINE_HOURS * 3600_000);
+    try {
+      [baselineVals, recentVals] = await Promise.all([
+        loadConfidences(db, opts.modelId, baselineStart, recentStart),
+        loadConfidences(db, opts.modelId, recentStart, now),
+      ]);
+    } catch (err) {
+      base.reasons.push(`query failed: ${(err as Error)?.message ?? err}`);
+      return base;
+    }
+  }
+
+  const finiteBase = baselineVals.filter((v) => Number.isFinite(v));
+  const finiteRecent = recentVals.filter((v) => Number.isFinite(v));
+  base.n1 = finiteBase.length;
+  base.n2 = finiteRecent.length;
+  if (finiteBase.length < MIN_SAMPLES || finiteRecent.length < MIN_SAMPLES) {
+    base.reasons.push(
+      `insufficient samples (baseline=${finiteBase.length}, recent=${finiteRecent.length}, need ≥${MIN_SAMPLES} each)`,
+    );
+    return base;
+  }
+
+  const ks = ksTwoSample(finiteBase, finiteRecent);
+  const threshold = ksPValueThreshold();
+  const drift = ks.pValue < threshold;
+  const result: ConceptDriftKsResult = {
+    ...base,
+    evaluated: true,
+    drift,
+    d: Number(ks.d.toFixed(4)),
+    pValue: Number(ks.pValue.toPrecision(6)),
+    n1: ks.n1,
+    n2: ks.n2,
+    reasons: drift
+      ? [`KS p-value ${ks.pValue.toExponential(2)} < ${threshold} (D=${ks.d.toFixed(3)}) — input↔output distribution shifted (concept drift)`]
+      : [`no concept drift: KS p-value ${ks.pValue.toFixed(3)} ≥ ${threshold} (D=${ks.d.toFixed(3)})`],
+  };
+
+  if (drift) {
+    incrementDriftMetric(opts.modelId, "CONCEPT_DRIFT");
+    if (opts.emitAlert !== false && !opts.samples) {
+      try {
+        const advanced = await import("../db/aiAdvanced");
+        const alert = await advanced.createDriftAlert({
+          modelId: opts.modelId,
+          modelVersion: opts.modelVersion ?? null,
+          // driftAlertTypeEnum has no dedicated concept-drift value; use the generic
+          // DRIFT_DETECTED and carry the method/type in details (type='concept_drift_ks').
+          alertType: "DRIFT_DETECTED",
+          severity: "HIGH",
+          message: `Concept drift (KS test): p=${result.pValue}, D=${result.d}`,
+          details: {
+            type: "concept_drift_ks",
+            method: "ks-test",
+            d: result.d,
+            pValue: result.pValue,
+            n1: ks.n1,
+            n2: ks.n2,
+            source: "aiDriftMonitor",
+          } as any,
+          currentValue: String(result.d),
+          baselineValue: "0",
+        } as any);
+        result.alertId = (alert as any)?.id;
+      } catch (err) {
+        result.reasons.push(`alert persist failed (advisory): ${(err as Error)?.message ?? err}`);
+      }
+    }
+  }
+
+  return result;
+}

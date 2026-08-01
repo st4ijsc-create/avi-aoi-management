@@ -1,15 +1,28 @@
-import { protectedProcedure, qualityProcedure, router } from "../_core/trpc";
+import { protectedProcedure, qualityProcedure, writeProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
+import { requirePermission } from "../_core/accessControl";
 import { z } from "zod";
 import * as db from "../db";
+import { withDbErrors } from "../_core/dbErrors";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
-import { storagePut } from "../storage";
+import { storagePut, resolveImageToDataUrl } from "../storage";
 import { detectSpcViolations, detectEwma, rollingCapability } from "../utils/spcRules";
 import { publishSpcAlert, loadDefaultSinksFromEnv } from "../utils/spcAlertSink";
+import { routeSpcViolationsToCentral } from "../services/spcCentralAlertBridge";
 import { calculateAnovaGrr, calculateBias, calculateLinearity, calculateStability } from "../utils/msaAdvanced";
 import { assertInstrumentReady } from "../utils/instrumentGate";
 import { parseCad } from "../utils/cadParsers";
+// Doc 31 MP5/PM4 (Đợt C, decision #5) — generic centroid/pick-place import.
+import { inspectCentroidHeaders } from "../services/cad/centroidParser";
+import {
+  previewCentroidImport,
+  commitCentroidImport,
+  applyCentroidImport,
+  // Doc 54 §11 P0.1 — apply CAD/centroid coords onto EXISTING points (fix 0,0).
+  previewCoordinateApply,
+  applyCoordinatesToPoints,
+} from "../services/cad/centroidImportService";
 import { createHash } from "node:crypto";
 import {
   measurementGeometrySchema,
@@ -17,9 +30,201 @@ import {
   deriveLegacyAnchor,
   type MeasurementGeometry,
 } from "../lib/measurementGeometry";
+// Doc 31 OP2 (decision #4) — lifecycle gate for direct threshold edits.
+import {
+  assertThresholdEditAllowed,
+  type ThresholdGateResult,
+} from "../services/thresholdGovernanceService";
+// Doc 31 MP1/PM6 — BOM-driven componentCode backfill (lights up Pareto-by-package).
+import { backfillComponentCodesFromBom } from "../services/componentLinkBackfill";
+// Doc 31 MP3 (WB-2) — __UNMAPPED__ unmatched-rate metric + remap helpers.
+import {
+  getUnmappedPointRate,
+  getUnmappedProductModelId,
+  type UnmappedRateFilter,
+} from "../services/measurementPointResolver";
+// Doc 31 UX2/PM9 (WD-2) — product config-completeness ("readiness") score.
+import {
+  computeProductReadiness,
+  computeProductReadinessBatch,
+} from "../services/productReadinessService";
+// Doc 31 OP5 (decision #3) — AQL lot-acceptance engine consuming sampling plans.
+import {
+  evaluateLotAcceptance,
+  listLotDispositions,
+} from "../services/lotAcceptanceService";
+// Doc 42 Đợt 4A (APPLY-B) — engine import/export dùng chung cho danh sách sản phẩm.
+import { exportRows, type MasterDataColumn } from "../services/masterDataIO";
+// Doc 51 P1 (R4) — machines learn about point-config changes off this MQTT topic.
+import { publishPointsConfigChanged } from "../services/mqttService";
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Doc 51 P1 (R4) — pointsConfigVersion propagation
+// ──────────────────────────────────────────────────────────────────────────────
+// THE BUG this closes: `pointsConfigVersion` was bumped in exactly ONE place in
+// this file — CAD applyJob — so measurementPoint.create / update / delete through
+// the UI left the version untouched. checkPointsVersion then answered "no changes"
+// and deltaSyncPoints returned an empty set FOREVER: every AOI/AVI machine kept
+// inspecting against the config it happened to fetch first. New points never got
+// inspected, retired points kept failing boards, and re-tuned limits never landed —
+// silently, with a green UI telling the engineer the edit was saved.
+//
+// Every mutation that touches measurement_point_defs MUST route through here.
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Bump a product's pointsConfigVersion and tell the machines to re-fetch.
+ *
+ * Failure policy is deliberately split:
+ *  • The DB bump PROPAGATES. Swallowing it would silently reproduce the exact bug
+ *    this fixes. It is safe to surface: the point write itself is now idempotent
+ *    (0274 + ON CONFLICT), so the client's retry converges instead of duplicating.
+ *  • The MQTT publish is BEST-EFFORT. It is only a latency optimisation — machines
+ *    also poll checkPointsVersion, so a dead broker delays convergence to the next
+ *    poll rather than losing it. Never fail an engineer's save over that.
+ *
+ * `bumped === null` ⇒ the product row is gone (soft-deleted) → nothing to notify.
+ */
+async function bumpAndNotifyPointsConfig(
+  productModelId: number | null | undefined,
+  // Doc 55 Item 3 PV2 (QĐ#14) — OPTIONAL variant to scope the MQTT notify to. Absent
+  // ⇒ the legacy base topic (byte-identical). See publishPointsConfigChanged.
+  variantCode?: string,
+) {
+  if (productModelId == null) return null;
+  const bumped = await db.bumpPointsConfigVersion(productModelId);
+  if (!bumped) return null;
+  try {
+    publishPointsConfigChanged(bumped.code, bumped.version, undefined, variantCode);
+  } catch (err) {
+    console.warn("[doc51 R4] publishPointsConfigChanged failed (machines will pick it up on next poll)", err);
+  }
+  return bumped;
+}
+
+/**
+ * Doc 55 Item 3 PV2 (QĐ#14) — resolve the variant CODE to scope a config-changed
+ * notify to, from the point row being edited. Flag-gated + forgiving:
+ *   • PRODUCT_VARIANT_ENABLED off, no point, or a NULL/base variantId ⇒ undefined
+ *     (the base/model fan-out topic — byte-identical to the pre-variant behaviour).
+ *   • a NON-BASE variant point ⇒ that variant's code.
+ * Best-effort: any lookup failure degrades to undefined (base topic), never throws
+ * into an engineer's save.
+ */
+async function variantCodeForPointNotify(
+  point: { variantId?: number | null } | null | undefined,
+): Promise<string | undefined> {
+  if (!productVariantEnabledPR() || point?.variantId == null) return undefined;
+  try {
+    const v = await db.getVariantById(point.variantId);
+    return v && !v.isBase ? v.code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Local mirror of machineApiRouters.productVariantEnabled (avoids a router↔router import cycle). */
+function productVariantEnabledPR(): boolean {
+  const s = String(process.env.PRODUCT_VARIANT_ENABLED ?? "").trim().toLowerCase();
+  return s === "true" || s === "1" || s === "yes" || s === "on";
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Doc 51 P2 (CASE #6) — recover inspections that arrived BEFORE their product model
+// ──────────────────────────────────────────────────────────────────────────────
+// THE BUG this closes: an AOI/AVI machine can post an inspection for a product
+// model that does not exist in the DB yet (new SKU on the line before engineering
+// onboards it). The machine-API ingest stores `productModelId = NULL` but keeps the
+// raw `productModel` code string for backward compatibility. When the engineer
+// later creates that model, the historical inspections STAY NULL forever — and
+// every by-model report GROUP/JOINs on `productModelId`, so those inspections
+// silently vanish from the model's yield/defect/SPC history.
+//
+// Fix: the moment a model with code `C` exists (create — and, defensively, an
+// update that touches an existing model), stamp `productModelId` onto every
+// inspection whose raw `productModel = C` and whose id is still NULL. This is a
+// pure data-RECOVERY UPDATE (NULL → the now-known id); it never overwrites an
+// existing link and cannot change any already-attributed row.
+//
+// Isolation contract: best-effort. It is awaited (so the count is logged
+// deterministically and it is testable end-to-end) but wrapped so it can NEVER
+// throw into — or otherwise fail — the model create/update mutation. Gated by
+// INSPECTION_MODEL_BACKFILL_ENABLED (default "true"; QĐ#1 controllable switch) so
+// ops can disable it if the sweep is ever too heavy on a very large hypertable.
+export function isInspectionModelBackfillEnabled(): boolean {
+  return String(process.env.INSPECTION_MODEL_BACKFILL_ENABLED ?? "true").toLowerCase() !== "false";
+}
+
+/**
+ * Backfill `product_inspections.productModelId` for a newly-known model.
+ * Returns the number of inspection rows re-anchored (0 on any failure / when
+ * disabled). NEVER throws — safe to call from inside a mutation.
+ */
+export async function backfillInspectionsForModel(
+  productModelId: number,
+  code: string,
+): Promise<number> {
+  if (!isInspectionModelBackfillEnabled()) return 0;
+  if (!Number.isInteger(productModelId) || productModelId <= 0 || !code) return 0;
+  try {
+    const { sql } = await import("drizzle-orm");
+    const database = await db.getDb();
+    if (!database) return 0;
+    // CTE so a single round-trip both UPDATEs and returns the affected count,
+    // without RETURNING every id of a potentially large backlog.
+    const rows = (await database.execute(sql`
+      WITH upd AS (
+        UPDATE product_inspections
+           SET "productModelId" = ${productModelId}
+         WHERE "productModel" = ${code}
+           AND "productModelId" IS NULL
+        RETURNING 1
+      )
+      SELECT count(*)::int AS n FROM upd`)) as unknown as Array<{ n: number }>;
+    const n = Number(rows?.[0]?.n ?? 0);
+    if (n > 0) {
+      console.log(`[doc51 P2] backfilled ${n} orphan inspection(s) → productModelId=${productModelId} (code='${code}')`);
+    }
+    return n;
+  } catch (err) {
+    console.warn(`[doc51 P2] inspection backfill failed for code='${code}' (best-effort, ignored)`, (err as Error)?.message);
+    return 0;
+  }
+}
 
 const legacyMeasurementTypeValues = ["DIMENSION", "VISUAL", "ELECTRICAL", "POSITION", "COLOR", "SURFACE", "OTHER"] as const;
 const legacyMeasurementTypeSchema = z.enum(legacyMeasurementTypeValues);
+
+// Doc 31 MP5/PM4 — centroid import Zod schemas (configurable column map + opts).
+const centroidColumnRef = z.union([z.number().int().nonnegative(), z.string()]);
+const centroidColumnMapSchema = z.object({
+  refDesignator: centroidColumnRef,
+  x: centroidColumnRef,
+  y: centroidColumnRef,
+  rotation: centroidColumnRef.optional(),
+  side: centroidColumnRef.optional(),
+  package: centroidColumnRef.optional(),
+  componentCode: centroidColumnRef.optional(),
+  placedStatus: centroidColumnRef.optional(),
+  name: centroidColumnRef.optional(),
+});
+const centroidParseOptionsSchema = z.object({
+  delimiter: z.enum([",", ";", "\t", "auto"]).optional(),
+  decimal: z.enum([".", ","]).optional(),
+  hasHeader: z.boolean().optional(),
+  commentPrefixes: z.array(z.string().max(4)).max(8).optional(),
+});
+const centroidTransformOptionsSchema = z.object({
+  unit: z.enum(["mm", "cm", "mil", "inch", "um"]).optional(),
+  flipX: z.boolean().optional(),
+  flipY: z.boolean().optional(),
+  targetMode: z.enum(["mm", "pixel"]).optional(),
+  fitToImage: z.boolean().optional(),
+  marginPct: z.number().min(0).max(45).optional(),
+  scale: z.number().positive().max(100000).optional(),
+  offsetX: z.number().optional(),
+  offsetY: z.number().optional(),
+});
 
 const toleranceModeSchema = z.enum(["min_only", "max_only", "range", "bilateral"]);
 const materialConditionSchema = z.enum(["MMC", "LMC", "RFS"]);
@@ -110,7 +315,65 @@ async function resolveLegacyMeasurementType(measurementTypeCode?: string, fallba
   return fallback ?? "VISUAL";
 }
 
+// ── Doc 31 PM8 — image-dimension enforcement flags (read per-call) ────────────
+// A reference image MUST resolve to width/height so point coordinates can be
+// stored resolution-independently (normalized). Default: enforced on upload.
+// Break-glass: PRODUCT_IMAGE_DIMS_REQUIRED=false lets an image through without
+// extractable dims (dev/legacy only).
+function isProductImageDimsRequired(): boolean {
+  return process.env.PRODUCT_IMAGE_DIMS_REQUIRED !== "false";
+}
+// Blocking point-save when the owning product has no dims is OPT-IN (default
+// off) — turning it on before the 4 dev products are backfilled would break
+// authoring, and WC-1 (centroid import) also needs dims. Set
+// PRODUCT_POINT_REQUIRE_DIMS=true once every live product carries dims.
+function isPointSaveDimsRequired(): boolean {
+  return process.env.PRODUCT_POINT_REQUIRE_DIMS === "true";
+}
+// Extract (width,height) from a base64 data URL via sharp. Independent of the
+// storage backend so dims are known even when Forge is not configured.
+async function extractDimsFromDataUrl(
+  dataUrl: string,
+): Promise<{ width?: number; height?: number }> {
+  const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!matches) return {};
+  try {
+    const buffer = Buffer.from(matches[2], "base64");
+    const sharp = (await import("sharp")).default;
+    const metadata = await sharp(buffer).metadata();
+    return { width: metadata.width, height: metadata.height };
+  } catch {
+    return {};
+  }
+}
+
 // ============ PRODUCT MODEL ROUTER ============
+// ─── Doc 42 Đợt 4A (APPLY-B) — import/export danh sách sản phẩm ────────────────
+// Trạng thái vòng đời hợp lệ (khớp lifecycleStatusEnum + productModel.create).
+const productLifecycleValues = ["development", "active", "eol", "archived"] as const;
+
+// Cột NHẬP (parse + validate) & mẫu — trùng khớp cột client trong ProductModels.tsx
+// (cả hai phía validate cùng luật @shared/masterDataIO nên không lệch).
+const PRODUCT_IMPORT_COLUMNS: MasterDataColumn[] = [
+  { field: "code", header: "Mã sản phẩm", required: true, type: "string", example: "SP-001" },
+  { field: "name", header: "Tên sản phẩm", required: true, type: "string", example: "Bảng mạch A" },
+  { field: "description", header: "Mô tả", type: "string" },
+  { field: "category", header: "Nhóm", type: "string", example: "PCBA" },
+  { field: "productLine", header: "Dòng sản phẩm", type: "string" },
+  { field: "variant", header: "Biến thể", type: "string" },
+  { field: "revision", header: "Phiên bản (Rev)", type: "string", example: "A" },
+  { field: "lifecycleStatus", header: "Trạng thái vòng đời", type: "string", example: "active" },
+  { field: "targetYieldRate", header: "FPY mục tiêu (%)", type: "number", example: 98 },
+  { field: "minYieldRate", header: "FPY tối thiểu (%)", type: "number", example: 95 },
+];
+
+// Cột XUẤT = cột nhập + ngày tạo/cập nhật (chỉ đọc, không dùng khi nhập).
+const PRODUCT_EXPORT_COLUMNS: MasterDataColumn[] = [
+  ...PRODUCT_IMPORT_COLUMNS,
+  { field: "createdAt", header: "Ngày tạo", type: "date" },
+  { field: "updatedAt", header: "Ngày cập nhật", type: "date" },
+];
+
 export const productModelRouter = router({
   list: protectedProcedure
     .input(z.object({
@@ -140,15 +403,35 @@ export const productModelRouter = router({
       return { productModel, measurementPoints };
     }),
 
-  create: adminProcedure
+  // Doc 31 UX2/PM9 — config-completeness ("readiness") of ONE product: weighted
+  // 0..100 score + per-item checklist (image/dims, points, limits%, componentCode%,
+  // fiducials, golden, release, mapping, panel). Also consumed by WD-1's onboarding
+  // wizard via computeProductReadiness(). Returns null when the product is unknown.
+  getReadiness: protectedProcedure
+    .input(z.object({ productModelId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      return computeProductReadiness(input.productModelId);
+    }),
+
+  // Batched readiness for the product-list badges — CONSTANT query cost (no N+1).
+  getReadinessBatch: protectedProcedure
+    .input(z.object({ ids: z.array(z.number().int().positive()).max(300) }))
+    .query(async ({ input }) => {
+      if (input.ids.length === 0) return [];
+      return computeProductReadinessBatch(input.ids);
+    }),
+
+  create: protectedProcedure.use(requirePermission("settings_products", "canCreate"))
     .input(z.object({
-      code: z.string().min(1).max(100).regex(/^[A-Za-z0-9_\-]+$/, "Code may only contain letters, digits, underscore, dash"),
-      name: z.string().min(1).max(255),
+      code: z.string().min(1, "Mã sản phẩm là bắt buộc").max(100).regex(/^[A-Za-z0-9_\-]+$/, "Mã chỉ được chứa chữ, số, gạch dưới, gạch ngang"),
+      name: z.string().min(1, "Tên sản phẩm là bắt buộc").max(255),
       description: z.string().optional(),
       category: z.string().optional(),
       categoryId: z.number().int().positive().optional(),
       productLine: z.string().optional(),
       variant: z.string().optional(),
+      // Doc 31 PM2 (decision #6) — free-text engineering revision ("A", "B", "Rev2").
+      revision: z.string().trim().max(32).optional(),
       lifecycleStatus: z.enum(["development", "active", "eol", "archived"]).optional(),
       targetYieldRate: z.string().optional(),
       minYieldRate: z.string().optional(),
@@ -166,6 +449,13 @@ export const productModelRouter = router({
       let autoImageWidth: number | undefined;
       let autoImageHeight: number | undefined;
       if (input.referenceImageUrl && input.referenceImageUrl.startsWith('data:')) {
+        // PM8: extract dims FIRST, independent of the storage backend — dims are
+        // a property of the image, not of whether Forge is configured.
+        if (!input.imageWidth || !input.imageHeight) {
+          const dims = await extractDimsFromDataUrl(input.referenceImageUrl);
+          autoImageWidth = dims.width;
+          autoImageHeight = dims.height;
+        }
         const isForgeConfigured = !!(process.env.BUILT_IN_FORGE_API_URL && process.env.BUILT_IN_FORGE_API_KEY);
         if (!isForgeConfigured) {
           // Forge storage is not configured – skip external upload but do not fail creation
@@ -178,7 +468,7 @@ export const productModelRouter = router({
               const mimeType = matches[1];
               const base64Data = matches[2];
               const buffer = Buffer.from(base64Data, 'base64');
-              
+
               // Determine file extension
               const extMap: Record<string, string> = {
                 'image/jpeg': 'jpg',
@@ -188,38 +478,43 @@ export const productModelRouter = router({
               };
               const ext = extMap[mimeType] || 'jpg';
               const fileKey = `product-models/${input.code}-${nanoid(8)}.${ext}`;
-              
+
               // Upload to S3
               const { url, key } = await storagePut(fileKey, buffer, mimeType);
               finalImageUrl = url;
               finalImageKey = key;
-
-              // Auto-extract image dimensions if not provided
-              if (!input.imageWidth || !input.imageHeight) {
-                try {
-                  const sharp = (await import("sharp")).default;
-                  const metadata = await sharp(buffer).metadata();
-                  if (metadata.width && metadata.height) {
-                    autoImageWidth = metadata.width;
-                    autoImageHeight = metadata.height;
-                  }
-                } catch { /* sharp unavailable or invalid image */ }
-              }
             }
           } catch (error) {
             console.error('Failed to upload product model image to S3:', error);
             throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to upload image' });
           }
         }
+        // PM8 enforcement: an image was supplied but we could not determine its
+        // dimensions and none were provided manually → refuse (coords would be
+        // raw pixels, not portable). Break-glass via PRODUCT_IMAGE_DIMS_REQUIRED=false.
+        const w = input.imageWidth ?? autoImageWidth;
+        const h = input.imageHeight ?? autoImageHeight;
+        if ((!w || !h) && isProductImageDimsRequired()) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'Could not determine reference image dimensions. Provide imageWidth/imageHeight or upload a valid image. ' +
+              'Không xác định được kích thước ảnh — cung cấp imageWidth/imageHeight hoặc tải ảnh hợp lệ.',
+          });
+        }
       }
-      
-      const id = await db.createProductModel({
+
+      const id = await withDbErrors(() => db.createProductModel({
         ...input,
         referenceImageUrl: finalImageUrl,
         referenceImageKey: finalImageKey,
         imageWidth: input.imageWidth ?? autoImageWidth,
         imageHeight: input.imageHeight ?? autoImageHeight,
-      });
+      }), { conflictMessage: `Mã sản phẩm '${input.code}' đã tồn tại` });
+      // Doc 51 P2 (CASE #6): re-anchor any inspections that arrived before this
+      // model existed. Best-effort + error-isolated (never blocks the create); the
+      // recovered row count is logged inside the helper. Return shape unchanged.
+      await backfillInspectionsForModel(id, input.code);
       try {
         await db.createAuditLog({
           userId: ctx.user.id,
@@ -237,7 +532,7 @@ export const productModelRouter = router({
       return { id };
     }),
 
-  update: adminProcedure
+  update: protectedProcedure.use(requirePermission("settings_products", "canEdit"))
     .input(z.object({
       id: z.number().int().positive(),
       code: z.string().min(1).max(100).regex(/^[A-Za-z0-9_\-]+$/, "Code may only contain letters, digits, underscore, dash").optional(),
@@ -247,6 +542,8 @@ export const productModelRouter = router({
       categoryId: z.number().int().positive().optional(),
       productLine: z.string().optional(),
       variant: z.string().optional(),
+      // Doc 31 PM2 (decision #6) — free-text engineering revision ("A", "B", "Rev2").
+      revision: z.string().trim().max(32).optional(),
       lifecycleStatus: z.enum(["development", "active", "eol", "archived"]).optional(),
       targetYieldRate: z.string().optional(),
       minYieldRate: z.string().optional(),
@@ -262,17 +559,25 @@ export const productModelRouter = router({
       const { id, changeReason, ...rest } = input;
       const data = rest;
       let finalData = { ...data };
-      
+
+      // Doc 31 WE-2 bug #1: verify the target exists so a bad id returns
+      // NOT_FOUND (was a silent no-op that still wrote a phantom audit row),
+      // consistent with measurementPoint/fiducial/panel update.
+      const existing = await db.getProductModelById(id);
+      if (!existing) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy sản phẩm' });
+      }
+
       // Check if code is being updated and if it's a duplicate
       if (data.code) {
-        const existing = await db.getProductModelById(id);
-        if (existing && existing.code !== data.code) {
+        if (existing.code !== data.code) {
           // Code is changing, check for duplicates
           const duplicate = await db.getProductModelByCode(data.code);
           if (duplicate) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mã sản phẩm đã tồn tại' });
+            // WE-2 bug #2: CONFLICT for consistency with productModel.clone.
+            throw new TRPCError({ code: 'CONFLICT', message: 'Mã sản phẩm đã tồn tại' });
           }
-        } else if (existing && existing.code === data.code) {
+        } else {
           // Code is not changing, remove it from update data to avoid duplicate key error
           delete finalData.code;
         }
@@ -280,6 +585,14 @@ export const productModelRouter = router({
       
       // Check if referenceImageUrl is a base64 data URL and upload to S3
       if (data.referenceImageUrl && data.referenceImageUrl.startsWith('data:')) {
+        // PM8: extract dims first, independent of the storage backend.
+        if (!data.imageWidth || !data.imageHeight) {
+          const dims = await extractDimsFromDataUrl(data.referenceImageUrl);
+          if (dims.width && dims.height) {
+            finalData.imageWidth = finalData.imageWidth ?? dims.width;
+            finalData.imageHeight = finalData.imageHeight ?? dims.height;
+          }
+        }
         const isForgeConfigured = !!(process.env.BUILT_IN_FORGE_API_URL && process.env.BUILT_IN_FORGE_API_KEY);
         if (!isForgeConfigured) {
           // Forge storage is not configured – skip external upload but do not fail update
@@ -291,7 +604,7 @@ export const productModelRouter = router({
               const mimeType = matches[1];
               const base64Data = matches[2];
               const buffer = Buffer.from(base64Data, 'base64');
-              
+
               const extMap: Record<string, string> = {
                 'image/jpeg': 'jpg',
                 'image/png': 'png',
@@ -301,31 +614,41 @@ export const productModelRouter = router({
               const ext = extMap[mimeType] || 'jpg';
               const code = data.code || `product-${id}`;
               const fileKey = `product-models/${code}-${nanoid(8)}.${ext}`;
-              
+
               const { url, key } = await storagePut(fileKey, buffer, mimeType);
               finalData.referenceImageUrl = url;
               finalData.referenceImageKey = key;
-
-              // Auto-extract image dimensions if not provided
-              if (!data.imageWidth || !data.imageHeight) {
-                try {
-                  const sharp = (await import("sharp")).default;
-                  const metadata = await sharp(buffer).metadata();
-                  if (metadata.width && metadata.height) {
-                    finalData.imageWidth = finalData.imageWidth ?? metadata.width;
-                    finalData.imageHeight = finalData.imageHeight ?? metadata.height;
-                  }
-                } catch { /* sharp unavailable or invalid image */ }
-              }
             }
           } catch (error) {
             console.error('Failed to upload product model image to S3:', error);
             throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to upload image' });
           }
         }
+        // PM8 enforcement: a new image without resolvable dims is refused.
+        if ((!finalData.imageWidth || !finalData.imageHeight) && isProductImageDimsRequired()) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'Could not determine reference image dimensions. Provide imageWidth/imageHeight or upload a valid image. ' +
+              'Không xác định được kích thước ảnh — cung cấp imageWidth/imageHeight hoặc tải ảnh hợp lệ.',
+          });
+        }
       }
-      
-      await db.updateProductModel(id, finalData);
+
+      await withDbErrors(() => db.updateProductModel(id, finalData), { conflictMessage: "Mã sản phẩm đã tồn tại" });
+      // Doc 51 P2 (CASE #6): defensive backfill for models that already existed
+      // before this fix shipped (e.g. now being activated/renamed) — re-anchor any
+      // still-NULL inspections carrying this model's code. Best-effort + isolated.
+      await backfillInspectionsForModel(id, finalData.code ?? existing.code);
+      // PM8: when dims are now known, recompute normalized coords for all points
+      // (+ fiducials) so existing pixel coordinates become resolution-independent.
+      if (finalData.imageWidth && finalData.imageHeight) {
+        try {
+          await db.backfillNormalizedCoordsForProduct(id, finalData.imageWidth, finalData.imageHeight);
+        } catch (err) {
+          console.warn("normalized-coord backfill failed (product.update)", err);
+        }
+      }
       try {
         await db.createAuditLog({
           userId: ctx.user.id,
@@ -343,7 +666,7 @@ export const productModelRouter = router({
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: protectedProcedure.use(requirePermission("settings_products", "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const existing = await db.getProductModelById(input.id);
@@ -363,6 +686,300 @@ export const productModelRouter = router({
         console.warn("audit log failed (product.delete)", err);
       }
       return { success: true };
+    }),
+
+  // Doc 31 PM1 (WC-2) — deep clone a product model into a new code. In ONE tx the
+  // clone deep-copies measurement points (every column incl. componentCode/limits/
+  // geometry/3D), fiducials, panel defs+boards, sampling plans, and OPTIONALLY
+  // machine mappings (copyMappings, default false). It does NOT copy inspection
+  // results, golden samples, or program releases (fresh start). Lifecycle resets to
+  // 'development'; clonedFromId records provenance; the reference image is shared.
+  clone: protectedProcedure.use(requirePermission("settings_products", "canCreate"))
+    .input(z.object({
+      sourceId: z.number().int().positive(),
+      newCode: z.string().min(1).max(100).regex(/^[A-Za-z0-9_\-]+$/, "Code may only contain letters, digits, underscore, dash"),
+      newName: z.string().min(1).max(255).optional(),
+      newRevision: z.string().trim().max(32).optional(),
+      copyMappings: z.boolean().optional().default(false),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const source = await db.getProductModelById(input.sourceId);
+      if (!source) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Sản phẩm nguồn không tồn tại" });
+      }
+      // Code collision → CONFLICT (the unique index is the tx-level backstop below).
+      const duplicate = await db.getProductModelByCode(input.newCode);
+      if (duplicate) {
+        throw new TRPCError({ code: "CONFLICT", message: "Mã sản phẩm đã tồn tại" });
+      }
+
+      let result: Awaited<ReturnType<typeof db.cloneProductModel>>;
+      try {
+        result = await db.cloneProductModel({
+          sourceId: input.sourceId,
+          newCode: input.newCode,
+          newName: input.newName,
+          newRevision: input.newRevision,
+          copyMappings: input.copyMappings,
+        });
+      } catch (err: any) {
+        // Backstop for a race that slips past the pre-check.
+        if (err?.code === "23505" || /product_models_code/.test(String(err?.message))) {
+          throw new TRPCError({ code: "CONFLICT", message: "Mã sản phẩm đã tồn tại" });
+        }
+        throw err;
+      }
+
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "product.clone",
+          entityType: "product",
+          entityId: result.newProductId,
+          entityName: input.newCode,
+          details: {
+            sourceId: input.sourceId,
+            sourceCode: source.code,
+            newCode: input.newCode,
+            copyMappings: input.copyMappings,
+            summary: result.summary,
+          },
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (product.clone)", err);
+      }
+      return { id: result.newProductId, summary: result.summary };
+    }),
+
+  // ── Doc 31 PM8 — backfill image dimensions for existing products ──
+  // For products that have a reference image but no imageWidth/imageHeight (all 4
+  // dev products today), read the stored image, extract dims via sharp, persist
+  // them, and recompute normalized coords for their points + fiducials. Pass a
+  // productModelId to target one; omit to sweep every product missing dims.
+  backfillImageDimensions: adminProcedure
+    .input(z.object({ productModelId: z.number().int().positive().optional() }).optional())
+    .mutation(async ({ ctx, input }) => {
+      const targets = input?.productModelId
+        ? [await db.getProductModelById(input.productModelId)].filter(Boolean)
+        : await db.getProductModels({});
+      const results: Array<{
+        productModelId: number; code: string; status: string;
+        width?: number; height?: number; pointsNormalized?: number; fiducialsNormalized?: number;
+      }> = [];
+
+      for (const pm of targets as any[]) {
+        if (!pm) continue;
+        if (pm.imageWidth && pm.imageHeight) {
+          // Already has dims — just (re)compute normals so points stay consistent.
+          const bf = await db.backfillNormalizedCoordsForProduct(pm.id, pm.imageWidth, pm.imageHeight);
+          results.push({ productModelId: pm.id, code: pm.code, status: "already_had_dims", width: pm.imageWidth, height: pm.imageHeight, pointsNormalized: bf.points, fiducialsNormalized: bf.fiducials });
+          continue;
+        }
+        if (!pm.referenceImageUrl) {
+          results.push({ productModelId: pm.id, code: pm.code, status: "no_image" });
+          continue;
+        }
+        // Resolve the image bytes: data:/uploads → data URL; http(s) → fetch.
+        let buffer: Buffer | null = null;
+        try {
+          const dataUrl = await resolveImageToDataUrl(pm.referenceImageUrl);
+          if (dataUrl && dataUrl.startsWith("data:")) {
+            const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+            if (m) buffer = Buffer.from(m[2], "base64");
+          } else if (pm.referenceImageUrl.startsWith("http")) {
+            const fetchFn = (globalThis as any).fetch;
+            if (fetchFn) {
+              const resp = await fetchFn(pm.referenceImageUrl);
+              if (resp.ok) buffer = Buffer.from(await resp.arrayBuffer());
+            }
+          }
+        } catch (err) {
+          console.warn("backfillImageDimensions: fetch failed", pm.code, err);
+        }
+        if (!buffer) {
+          results.push({ productModelId: pm.id, code: pm.code, status: "image_unreadable" });
+          continue;
+        }
+        let width: number | undefined;
+        let height: number | undefined;
+        try {
+          const sharp = (await import("sharp")).default;
+          const meta = await sharp(buffer).metadata();
+          width = meta.width; height = meta.height;
+        } catch { /* sharp unavailable */ }
+        if (!width || !height) {
+          results.push({ productModelId: pm.id, code: pm.code, status: "dims_undetermined" });
+          continue;
+        }
+        await db.updateProductModel(pm.id, { imageWidth: width, imageHeight: height });
+        const bf = await db.backfillNormalizedCoordsForProduct(pm.id, width, height);
+        results.push({ productModelId: pm.id, code: pm.code, status: "backfilled", width, height, pointsNormalized: bf.points, fiducialsNormalized: bf.fiducials });
+      }
+
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "product.backfillImageDimensions",
+          entityType: "product",
+          entityId: input?.productModelId ?? 0,
+          entityName: input?.productModelId ? String(input.productModelId) : "ALL",
+          details: { results },
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (product.backfillImageDimensions)", err);
+      }
+      return { results };
+    }),
+
+  // ── Doc 42 Đợt 4A (APPLY-B) — xuất danh sách sản phẩm ra Excel/CSV ──
+  // Xuất theo BỘ LỌC hiện tại (khớp productModel.list). Trả buffer base64 để
+  // client tải về, giữ header brand + tiếng Việt (qua masterDataIO/exportRows).
+  exportList: protectedProcedure
+    .input(z.object({
+      search: z.string().optional(),
+      lifecycleStatus: z.enum(productLifecycleValues).optional(),
+      sortBy: z.enum(["code", "name", "createdAt", "updatedAt"]).optional(),
+      sortOrder: z.enum(["asc", "desc"]).optional(),
+      format: z.enum(["csv", "xlsx"]).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const format = input?.format ?? "xlsx";
+      const products = await db.getProductModels({
+        search: input?.search,
+        lifecycleStatus: input?.lifecycleStatus,
+        sortBy: input?.sortBy,
+        sortOrder: input?.sortOrder,
+      });
+      const rows = (products as any[]).map((p) => ({
+        code: p.code,
+        name: p.name,
+        description: p.description ?? "",
+        category: p.category ?? "",
+        productLine: p.productLine ?? "",
+        variant: p.variant ?? "",
+        revision: p.revision ?? "",
+        lifecycleStatus: p.lifecycleStatus ?? "",
+        targetYieldRate: p.targetYieldRate ?? "",
+        minYieldRate: p.minYieldRate ?? "",
+        createdAt: p.createdAt ?? null,
+        updatedAt: p.updatedAt ?? null,
+      }));
+      const buffer = await exportRows(rows, PRODUCT_EXPORT_COLUMNS, format);
+      const ext = format === "csv" ? "csv" : "xlsx";
+      const mimeType =
+        format === "csv"
+          ? "text/csv;charset=utf-8"
+          : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      return {
+        fileName: `san_pham_${new Date().toISOString().slice(0, 10)}.${ext}`,
+        mimeType,
+        base64: buffer.toString("base64"),
+        count: rows.length,
+      };
+    }),
+
+  // ── Doc 42 Đợt 4A (APPLY-B) — nhập danh sách sản phẩm (upsert theo mã) ──
+  // Nhận các dòng ĐÃ ánh xạ field (client preview qua @shared/masterDataIO) rồi
+  // RE-VALIDATE phía server (không bỏ qua validation): mã trùng → UPDATE, chưa có
+  // → INSERT, thiếu trường bắt buộc/không hợp lệ → lỗi theo dòng. UPDATE chỉ ghi
+  // các field có giá trị (không xoá trắng dữ liệu cũ). Trả {inserted,updated,failed,errors}.
+  // doc 54 P0.3 — bulk product import gated on settings_products (same as create),
+  // was adminProcedure → single-admin bottleneck at rollout.
+  importList: protectedProcedure.use(requirePermission("settings_products", "canCreate"))
+    .input(z.object({
+      rows: z.array(z.record(z.string(), z.unknown())).max(5000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      let inserted = 0;
+      let updated = 0;
+      const errors: Array<{ row: number; message: string }> = [];
+
+      const str = (v: unknown): string | undefined => {
+        const s = v == null ? "" : String(v).trim();
+        return s === "" ? undefined : s;
+      };
+      const dec = (v: unknown): string | undefined => {
+        if (v == null || String(v).trim() === "") return undefined;
+        const n = Number(String(v).trim());
+        return Number.isFinite(n) ? String(n) : undefined;
+      };
+
+      for (let i = 0; i < input.rows.length; i++) {
+        const rowNo = i + 1;
+        const raw = input.rows[i] ?? {};
+        try {
+          const code = String(raw.code ?? "").trim();
+          const name = String(raw.name ?? "").trim();
+          if (!code) { errors.push({ row: rowNo, message: '"Mã sản phẩm" bắt buộc nhập' }); continue; }
+          if (!/^[A-Za-z0-9_\-]+$/.test(code)) {
+            errors.push({ row: rowNo, message: `Mã '${code}' chỉ được chứa chữ, số, gạch dưới, gạch ngang` });
+            continue;
+          }
+          if (!name) { errors.push({ row: rowNo, message: '"Tên sản phẩm" bắt buộc nhập' }); continue; }
+
+          // Trạng thái vòng đời (nếu có) phải hợp lệ.
+          let lifecycleStatus: (typeof productLifecycleValues)[number] | undefined;
+          const rawLifecycle = raw.lifecycleStatus == null ? "" : String(raw.lifecycleStatus).trim().toLowerCase();
+          if (rawLifecycle) {
+            if (!(productLifecycleValues as readonly string[]).includes(rawLifecycle)) {
+              errors.push({ row: rowNo, message: `Trạng thái '${rawLifecycle}' không hợp lệ (development/active/eol/archived)` });
+              continue;
+            }
+            lifecycleStatus = rawLifecycle as (typeof productLifecycleValues)[number];
+          }
+
+          const fields: Record<string, unknown> = {
+            name,
+            description: str(raw.description),
+            category: str(raw.category),
+            productLine: str(raw.productLine),
+            variant: str(raw.variant),
+            revision: str(raw.revision),
+            lifecycleStatus,
+            targetYieldRate: dec(raw.targetYieldRate),
+            minYieldRate: dec(raw.minYieldRate),
+          };
+          // Bỏ field undefined để UPDATE không ghi đè null lên dữ liệu cũ.
+          const data: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(fields)) if (v !== undefined) data[k] = v;
+
+          const existing = await db.getProductModelByCode(code);
+          if (existing) {
+            await withDbErrors(() => db.updateProductModel(existing.id, data as any));
+            updated++;
+          } else {
+            await withDbErrors(
+              () => db.createProductModel({ code, ...data } as any),
+              { conflictMessage: `Mã sản phẩm '${code}' đã tồn tại` },
+            );
+            inserted++;
+          }
+        } catch (err: any) {
+          errors.push({ row: rowNo, message: err?.message ? String(err.message) : "Lỗi không xác định" });
+        }
+      }
+
+      const failed = errors.length;
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "product.import",
+          entityType: "product",
+          entityId: 0,
+          entityName: `import ${inserted + updated}/${input.rows.length}`,
+          details: { inserted, updated, failed, total: input.rows.length },
+          status: inserted + updated === 0 && failed > 0 ? "failure" : "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (product.import)", err);
+      }
+
+      return { inserted, updated, failed, errors };
     }),
 });
 
@@ -391,7 +1008,7 @@ export const measurementPointRouter = router({
       return db.getMeasurementPointDefById(input.id);
     }),
 
-  create: adminProcedure
+  create: protectedProcedure.use(requirePermission("settings_measurement_points", "canCreate"))
     .input(z.object({
       productModelId: z.number().int().positive(),
       machineId: z.number().int().positive().optional(),
@@ -448,6 +1065,14 @@ export const measurementPointRouter = router({
       preferredInstrumentId: z.number().int().positive().optional(),
       preferredSamplingPlanId: z.number().int().positive().optional(),
       productViewId: z.number().int().positive().optional(), // P3.4: multi-camera binding
+      // Doc 31 MP1/PM6 — WHICH component this point measures. componentCode
+      // relates BY CODE to materials.code (this is what lights up the
+      // Pareto-by-package chain — W8-A/0191); refDesignator is the board
+      // position (e.g. "R12"). NEITHER is a limit field, so they never touch
+      // WA-1's threshold gate (which only fires on lowerLimit/upperLimit/
+      // nominalValue/toleranceMode/tolPlus/tolMinus).
+      componentCode: z.string().trim().max(100).optional(),
+      refDesignator: z.string().trim().max(64).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       // P1: when caller supplies a geometry, derive legacy positionX/Y/radius
@@ -473,6 +1098,17 @@ export const measurementPointRouter = router({
           if (radius != null) {
             normalizedRadius = (radius / productModel.imageWidth).toFixed(8);
           }
+        } else if (isPointSaveDimsRequired()) {
+          // PM8 (opt-in): without image dims the coordinate is a raw pixel that is
+          // not portable across machines — block the save until dims are set
+          // (via image upload or product.backfillImageDimensions). Default off so
+          // the current dim-less dev products still allow authoring.
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "This product has no reference image dimensions; set them before adding points. " +
+              "Sản phẩm chưa có kích thước ảnh — hãy đặt kích thước trước khi thêm điểm đo.",
+          });
         }
       }
       // P3: Validate preferredInstrument if provided
@@ -524,6 +1160,9 @@ export const measurementPointRouter = router({
         upperLimit: input.upperLimit,
       });
 
+      // Doc 51 P2 — out-param: `duplicate` ⇒ an active def with this code already
+      // existed and `id` is ITS id; nothing was written (see createMeasurementPointDef).
+      const createOutcome = { duplicate: false };
       const id = await db.createMeasurementPointDef({
         ...input,
         measurementType: legacyMeasurementType,
@@ -535,7 +1174,14 @@ export const measurementPointRouter = router({
         normalizedX,
         normalizedY,
         normalizedRadius,
-      });
+      }, createOutcome);
+
+      // Doc 51 P1 (R4) — a NEW point the machines cannot see is a point that never
+      // gets inspected. Skip the bump when nothing was actually written: a losing
+      // racer must not churn the version and trigger a pointless fleet re-fetch.
+      if (!createOutcome.duplicate) {
+        await bumpAndNotifyPointsConfig(input.productModelId);
+      }
       try {
         await db.createAuditLog({
           userId: ctx.user.id,
@@ -550,16 +1196,20 @@ export const measurementPointRouter = router({
             measurementType: legacyMeasurementType,
             measurementTypeCode: input.measurementTypeCode,
             shape: input.shape ?? "circle",
+            // Doc 51 P2 — audit must not claim a create that never happened.
+            duplicate: createOutcome.duplicate,
           },
           status: "success",
         });
       } catch (err) {
         console.warn("audit log failed (measurementPoint.create)", err);
       }
-      return { id };
+      // `duplicate` is ADDITIVE (existing clients read only `id`): true ⇒ the code
+      // was already live and `id` points at the pre-existing def.
+      return { id, duplicate: createOutcome.duplicate };
     }),
 
-  update: adminProcedure
+  update: protectedProcedure.use(requirePermission("settings_measurement_points", "canEdit"))
     .input(z.object({
       id: z.number().int().positive(),
       code: z.string().min(1).max(50).regex(/^[A-Za-z0-9_\-]+$/, "Code may only contain letters, digits, underscore, dash").optional(),
@@ -613,17 +1263,43 @@ export const measurementPointRouter = router({
       preferredInstrumentId: z.number().int().positive().optional(),
       preferredSamplingPlanId: z.number().int().positive().optional(),
       productViewId: z.number().int().positive().optional(), // P3.4: multi-camera binding
+      // Doc 31 MP1/PM6 — component linkage (see create input). Non-limit fields:
+      // editing them alone must NOT route through the approval queue, so they are
+      // deliberately excluded from the `touchesLimits` check below.
+      componentCode: z.string().trim().max(100).optional(),
+      refDesignator: z.string().trim().max(64).optional(),
       isActive: z.boolean().optional(),
       shape: pointShapeEnum.optional(),
       geometry: measurementGeometrySchema.optional(),
       changeReason: z.string().max(500).optional(),
+      // Doc 31 UX3 — optimistic lock: the updatedAt the editor loaded. When present
+      // the write is a compare-and-set; a mismatch throws CONFLICT. Optional →
+      // omitting it keeps the legacy blind-update behaviour (backward compatible).
+      expectedUpdatedAt: z.coerce.date().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { id, changeReason, ...rest } = input;
+      const { id, changeReason, expectedUpdatedAt, ...rest } = input;
       const data: Record<string, unknown> = { ...rest };
       const existingPoint = await db.getMeasurementPointDefById(id);
       if (!existingPoint) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Measurement point not found" });
+      }
+
+      // Doc 31 OP2 (decision #4) — a DIRECT limit change is only allowed while the
+      // owning product is in `development` (and has no released program); on a live
+      // product it must go through the approval queue. Non-limit edits (name/shape/
+      // position/…) are never gated. The audit row below records every direct edit.
+      const touchesLimits =
+        rest.lowerLimit !== undefined ||
+        rest.upperLimit !== undefined ||
+        rest.nominalValue !== undefined ||
+        rest.toleranceMode !== undefined ||
+        rest.tolPlus !== undefined ||
+        rest.tolMinus !== undefined;
+      let thresholdGate: ThresholdGateResult | null = null;
+      if (touchesLimits) {
+        // Throws FORBIDDEN (→ approval queue) when the product is live + enforced.
+        thresholdGate = await assertThresholdEditAllowed(id);
       }
 
       // P3: Validate preferredInstrument if provided or changed
@@ -707,10 +1383,105 @@ export const measurementPointRouter = router({
           }
         }
       }
-      await db.updateMeasurementPointDef(id, normalizedData, {
-        changedBy: ctx.user.id,
-        changeReason: changeReason ?? null,
-      });
+      try {
+        await db.updateMeasurementPointDef(id, normalizedData, {
+          changedBy: ctx.user.id,
+          changeReason: changeReason ?? null,
+          expectedUpdatedAt, // UX3 optimistic lock (undefined → skip check)
+        });
+      } catch (err) {
+        // Doc 31 UX3 — a stale compare-and-set surfaces as CONFLICT. Forward the
+        // CURRENT row (selected fields) so the client can show "someone else
+        // changed X" and offer reload / overwrite-anyway. Duck-typed by `.code`
+        // (db module is mocked in some tests → never `instanceof`).
+        if (err && (err as { code?: string }).code === "MP_STALE_WRITE") {
+          const conflictErr = err as {
+            current?: Record<string, unknown>;
+            expectedUpdatedAt?: string | null;
+            actualUpdatedAt?: string | null;
+          };
+          const cur = conflictErr.current ?? {};
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "Điểm đo đã bị người khác thay đổi kể từ khi bạn mở. Tải lại để xem thay đổi, hoặc ghi đè. " +
+              "This measurement point was changed by someone else since you opened it.",
+            cause: {
+              // Read by the additive errorFormatter forward (trpc.ts) → data.conflict.
+              mpConflict: {
+                pointDefId: id,
+                expectedUpdatedAt: conflictErr.expectedUpdatedAt ?? null,
+                actualUpdatedAt: conflictErr.actualUpdatedAt ?? null,
+                current: {
+                  code: cur.code ?? null,
+                  name: cur.name ?? null,
+                  lowerLimit: cur.lowerLimit ?? null,
+                  upperLimit: cur.upperLimit ?? null,
+                  nominalValue: cur.nominalValue ?? null,
+                  componentCode: cur.componentCode ?? null,
+                  refDesignator: cur.refDesignator ?? null,
+                  positionX: cur.positionX ?? null,
+                  positionY: cur.positionY ?? null,
+                  radius: cur.radius ?? null,
+                  updatedAt: cur.updatedAt ?? null,
+                },
+              },
+            } as unknown as Error,
+          });
+        }
+        throw err;
+      }
+      // Doc 51 P1 (R4) — THE fix: an edited limit/position/name that machines never
+      // re-fetch means the engineer's change exists only in the UI while the fleet
+      // keeps grading boards against the old spec. Bump AFTER the write succeeds
+      // (a rejected optimistic-lock write above threw, so no version churn for it).
+      // Doc 55 Item 3 PV2 (QĐ#14) — scope the notify to the point's variant (base
+      // point / flag OFF ⇒ undefined ⇒ base topic, byte-identical).
+      await bumpAndNotifyPointsConfig(
+        existingPoint.productModelId,
+        await variantCodeForPointNotify(existingPoint),
+      );
+      // Doc 31 OP2 — every DIRECT limit change leaves a dedicated audit row with
+      // before/after limits + the gate decision (development-direct or override).
+      if (touchesLimits) {
+        try {
+          await db.createAuditLog({
+            userId: ctx.user.id,
+            userName: ctx.user.name ?? undefined,
+            action: "threshold.directEdit",
+            entityType: "measurement_point_def",
+            entityId: id,
+            entityName: (data.code as string | undefined) ?? existingPoint.code ?? undefined,
+            details: {
+              productModelId: existingPoint.productModelId,
+              lifecycleStatus: thresholdGate?.lifecycleStatus ?? null,
+              gateDecision: thresholdGate?.decision ?? null,
+              gateEnforced: thresholdGate?.enforced ?? null,
+              hasReleasedProgram: thresholdGate?.hasReleasedProgram ?? null,
+              before: {
+                lowerLimit: existingPoint.lowerLimit,
+                upperLimit: existingPoint.upperLimit,
+                nominalValue: existingPoint.nominalValue,
+                toleranceMode: existingPoint.toleranceMode,
+                tolPlus: existingPoint.tolPlus,
+                tolMinus: existingPoint.tolMinus,
+              },
+              after: {
+                lowerLimit: normalizedData.lowerLimit ?? null,
+                upperLimit: normalizedData.upperLimit ?? null,
+                nominalValue: normalizedData.nominalValue ?? null,
+                toleranceMode: normalizedData.toleranceMode ?? null,
+                tolPlus: normalizedData.tolPlus ?? null,
+                tolMinus: normalizedData.tolMinus ?? null,
+              },
+              changeReason: changeReason ?? null,
+            },
+            status: "success",
+          });
+        } catch (err) {
+          console.warn("audit log failed (threshold.directEdit)", err);
+        }
+      }
       try {
         await db.createAuditLog({
           userId: ctx.user.id,
@@ -733,11 +1504,65 @@ export const measurementPointRouter = router({
       return { success: true };
     }),
 
-  delete: adminProcedure
+  // Doc 31 MP1/PM6 — fill empty componentCode on a product's points from its BOM
+  // (refDesignator match). Non-destructive (never overwrites an existing link);
+  // dryRun previews the plan. Returns {matched, updated, unmatched[]}.
+  backfillComponentCodesFromBom: adminProcedure
+    .input(z.object({
+      productModelId: z.number().int().positive(),
+      dryRun: z.boolean().optional().default(false),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await backfillComponentCodesFromBom(input.productModelId, { dryRun: input.dryRun });
+      if (!input.dryRun && result.updated > 0) {
+        // Doc 51 P1 (R4) — componentCode is carried on the point def the machine
+        // syncs. dryRun writes nothing and updated===0 changed nothing → no bump
+        // (a version bump with no payload change is a wasted fleet-wide re-fetch).
+        await bumpAndNotifyPointsConfig(input.productModelId);
+        try {
+          await db.createAuditLog({
+            userId: ctx.user.id,
+            userName: ctx.user.name ?? undefined,
+            action: "measurementPoint.backfillComponentCodes",
+            entityType: "product",
+            entityId: input.productModelId,
+            details: {
+              bomDefinitionId: result.bomDefinitionId,
+              matched: result.matched,
+              updated: result.updated,
+              skippedAlreadyLinked: result.skippedAlreadyLinked,
+              unmatched: result.unmatched.length,
+            },
+            status: "success",
+          });
+        } catch (err) {
+          console.warn("audit log failed (measurementPoint.backfillComponentCodes)", err);
+        }
+      }
+      return result;
+    }),
+
+  delete: protectedProcedure.use(requirePermission("settings_measurement_points", "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const existing = await db.getMeasurementPointDefById(input.id);
-      await db.deleteMeasurementPointDef(input.id);
+      // Doc 51 P1 (R4 + CASE #4): deleteMeasurementPointDef bumps pointsConfigVersion
+      // and stamps the tombstone's deletedAtVersion INSIDE its own transaction — the
+      // two must never diverge, so the bump cannot be lifted out to this layer.
+      // Returns the new version (null = the point was already deleted → no-op).
+      const bumped = await db.deleteMeasurementPointDef(input.id);
+      if (bumped) {
+        // Best-effort nudge; machines otherwise converge on their next poll.
+        // Doc 55 Item 3 PV2 (QĐ#14) — scope to the deleted point's variant (a
+        // variant-added point → that variant's topic; base point / flag OFF ⇒ base
+        // topic, byte-identical).
+        const notifyVariantCode = await variantCodeForPointNotify(existing);
+        try {
+          publishPointsConfigChanged(bumped.code, bumped.version, undefined, notifyVariantCode);
+        } catch (err) {
+          console.warn("[doc51 R4] publishPointsConfigChanged failed after point delete", err);
+        }
+      }
       try {
         await db.createAuditLog({
           userId: ctx.user.id,
@@ -746,13 +1571,19 @@ export const measurementPointRouter = router({
           entityType: "product",
           entityId: input.id,
           entityName: existing?.code ?? undefined,
-          details: { soft: true, productModelId: existing?.productModelId },
+          details: {
+            soft: true,
+            productModelId: existing?.productModelId,
+            // Doc 51 — which config version retired this point (answers
+            // "the machine was still on v7, did it ever get the tombstone?").
+            pointsConfigVersion: bumped?.version ?? null,
+          },
           status: "success",
         });
       } catch (err) {
         console.warn("audit log failed (measurementPoint.delete)", err);
       }
-      return { success: true };
+      return { success: true, pointsConfigVersion: bumped?.version ?? null };
     }),
 
   // Upload cropped reference image for measurement point
@@ -785,6 +1616,11 @@ export const measurementPointRouter = router({
         changeReason: "uploadCroppedImage",
       });
 
+      // Doc 51 P1 (R4) — the crop IS part of the point config the machine syncs
+      // (referenceImageUrl/Key); without a bump the fleet keeps matching against
+      // the previous template image.
+      await bumpAndNotifyPointsConfig(point.productModelId);
+
       try {
         await db.createAuditLog({
           userId: ctx.user.id,
@@ -801,6 +1637,146 @@ export const measurementPointRouter = router({
       }
 
       return { success: true, imageUrl: url, imageKey: key };
+    }),
+
+  // ── Doc 31 Đợt B (MP3) — __UNMAPPED__ visibility + bulk remap ──
+
+  /** Unmatched-rate metric: % of results resolving under __UNMAPPED__. */
+  unmappedRate: protectedProcedure
+    .input(z.object({
+      machineId: z.number().int().positive().optional(),
+      productModelId: z.number().int().positive().optional(),
+      fromTs: z.coerce.date().optional(),
+      toTs: z.coerce.date().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const filter: UnmappedRateFilter = {
+        machineId: input?.machineId,
+        productModelId: input?.productModelId,
+        fromTs: input?.fromTs,
+        toTs: input?.toTs,
+      };
+      return getUnmappedPointRate(filter);
+    }),
+
+  /** List __UNMAPPED__ point defs with result counts + a remap suggestion. */
+  listUnmapped: protectedProcedure
+    .query(async () => {
+      const unmappedModelId = await getUnmappedProductModelId();
+      if (!unmappedModelId) return { unmappedModelId: null, points: [] };
+      const points = await db.listUnmappedPointDefsWithStats(unmappedModelId);
+      return { unmappedModelId, points };
+    }),
+
+  /**
+   * Bulk-remap __UNMAPPED__ points to a real product model. Merges into an
+   * existing same-code target def (re-pointing its results) or moves the def.
+   */
+  remapUnmapped: adminProcedure
+    .input(z.object({
+      pointDefIds: z.array(z.number().int().positive()).min(1).max(2000),
+      targetProductModelId: z.number().int().positive(),
+      targetMachineId: z.number().int().positive().nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const unmappedModelId = await getUnmappedProductModelId();
+      if (!unmappedModelId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "No __UNMAPPED__ model exists — nothing to remap." });
+      }
+      const target = await db.getProductModelById(input.targetProductModelId);
+      if (!target) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `Target product model ${input.targetProductModelId} not found.` });
+      }
+      if (input.targetProductModelId === unmappedModelId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot remap into the __UNMAPPED__ model itself." });
+      }
+      const summary = await db.remapMeasurementPoints({
+        pointDefIds: input.pointDefIds,
+        targetProductModelId: input.targetProductModelId,
+        unmappedModelId,
+        targetMachineId: input.targetMachineId ?? undefined,
+      });
+      // Doc 51 P1 (R4) — a MOVE adds real defs to the target product's point set,
+      // so the machines running that product must re-fetch. Only when something
+      // actually landed. (MERGE re-points results onto an existing target def and
+      // changes nothing the machine reads, but it is cheaper to bump once than to
+      // reason per-branch.) The __UNMAPPED__ source is a synthetic placeholder no
+      // machine ever syncs against → deliberately not bumped.
+      if (summary.moved > 0 || summary.merged > 0) {
+        await bumpAndNotifyPointsConfig(input.targetProductModelId);
+      }
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name ?? undefined,
+        action: "measurementPoint.remapUnmapped",
+        entityType: "product",
+        entityId: input.targetProductModelId,
+        entityName: target.code,
+        details: { requested: input.pointDefIds.length, ...summary },
+        status: "success",
+      });
+      return summary;
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Doc 51 P3 batch-2 (§5.2 P3) — VERSION-ROLLBACK. Reconstruct the point set as it
+  // stood at an earlier pointsConfigVersion, then bump the version FORWARD so the
+  // fleet re-fetches. This is "revert CONTENT, advance VERSION" — the number never
+  // goes backwards, so delta-sync / version-gate stay monotonic (see db function).
+  // Gated by canEdit (rewrites this product's measurement config for every machine).
+  // ══════════════════════════════════════════════════════════════════════════
+  revertPointsConfigToVersion: protectedProcedure.use(requirePermission("settings_measurement_points", "canEdit"))
+    .input(z.object({
+      productModelId: z.number().int().positive(),
+      targetVersion: z.number().int().positive(),
+      reason: z.string().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await withDbErrors(() =>
+        db.revertPointsConfigToVersion(input.productModelId, input.targetVersion, {
+          changedBy: ctx.user.id,
+          changeReason: input.reason ?? `revert to pointsConfigVersion ${input.targetVersion}`,
+        }),
+      ).catch((err) => {
+        // Out-of-range target (target >= current, or non-positive) → 400, not 500.
+        if (err instanceof db.RevertVersionError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+        }
+        throw err;
+      });
+      if (!result) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `Product model ${input.productModelId} not found.` });
+      }
+      // Best-effort nudge; machines otherwise converge on their next poll.
+      try {
+        publishPointsConfigChanged(result.code, result.newVersion);
+      } catch (err) {
+        console.warn("[doc51 P3] publishPointsConfigChanged failed after points-config revert", err);
+      }
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "measurementPoint.revertPointsConfig",
+          entityType: "product",
+          entityId: input.productModelId,
+          entityName: result.code,
+          details: {
+            targetVersion: result.targetVersion,
+            fromVersion: result.fromVersion,
+            newVersion: result.newVersion,
+            pointsReverted: result.pointsReverted,
+            pointsUnchanged: result.pointsUnchanged,
+            pointsSkipped: result.pointsSkipped,
+            skippedPointIds: result.skippedPointIds,
+            reason: input.reason ?? null,
+          },
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (measurementPoint.revertPointsConfig)", err);
+      }
+      return result;
     }),
 });
 
@@ -827,15 +1803,57 @@ export const productMachineMappingRouter = router({
       return db.getMappingsByProduct(input.productModelId);
     }),
 
-  create: protectedProcedure
+  create: writeProcedure
     .input(z.object({
-      productModelId: z.number().int().positive(),
-      machineId: z.number().int().positive(),
+      productModelId: z.number({ error: "Vui lòng chọn sản phẩm" }).int().positive(),
+      machineId: z.number({ error: "Vui lòng chọn máy" }).int().positive(),
       priority: z.number().int().nonnegative().optional(),
       notes: z.string().optional(),
+      // doc 54 P0.4 — override the readiness go-live gate (admin/intentional).
+      force: z.boolean().optional().default(false),
     }))
     .mutation(async ({ ctx, input }) => {
-      const result = await db.createProductMachineMapping(input);
+      // Doc 42 #40 — orphan guard: chặn tạo mapping trỏ tới sản phẩm/máy không tồn
+      // tại (hoặc đã xoá) — nguồn gốc của các mapping mồ côi "N/A".
+      const [product, machine] = await Promise.all([
+        db.getProductModelById(input.productModelId),
+        db.getMachineById(input.machineId),
+      ]);
+      if (!product) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Sản phẩm không tồn tại hoặc đã bị xoá — vui lòng chọn lại.",
+        });
+      }
+      if (!machine) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Máy không tồn tại hoặc đã bị xoá — vui lòng chọn lại.",
+        });
+      }
+      // doc 54 P0.4 — GO-LIVE READINESS GATE: don't let an under-configured product
+      // (points with no thresholds / no coordinates / no golden) be mapped to a machine,
+      // where it would silently feed Phase-1 with junk spec-gates. Block "blocked"-band
+      // products unless the caller explicitly forces it.
+      if (!input.force) {
+        try {
+          const readiness = await computeProductReadiness(input.productModelId);
+          if (readiness && readiness.band === "blocked") {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                `Sản phẩm "${product.code}" chưa đủ cấu hình để gán máy (readiness ${readiness.score}% — band "blocked"). ` +
+                `Hoàn thiện điểm-đo (ngưỡng/tọa độ/golden) trước, hoặc gán với force=true nếu cố ý.`,
+            });
+          }
+        } catch (e) {
+          if (e instanceof TRPCError) throw e;
+          // readiness compute failed (non-blocking) — fail-open, don't block a legit map.
+          console.warn("productMachineMapping readiness gate: compute failed, allowing", e);
+        }
+      }
+      const { force: _force, ...mappingInput } = input;
+      const result = await db.createProductMachineMapping(mappingInput);
       try {
         await db.createAuditLog({
           userId: ctx.user.id,
@@ -852,7 +1870,7 @@ export const productMachineMappingRouter = router({
       return result;
     }),
 
-  update: protectedProcedure
+  update: writeProcedure
     .input(z.object({
       id: z.number().int().positive(),
       priority: z.number().int().nonnegative().optional(),
@@ -878,7 +1896,7 @@ export const productMachineMappingRouter = router({
       return { success: true };
     }),
 
-  delete: protectedProcedure
+  delete: writeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       await db.deleteProductMachineMapping(input.id);
@@ -895,6 +1913,25 @@ export const productMachineMappingRouter = router({
         console.warn("audit log failed (productMachineMapping.delete)", err);
       }
       return { success: true };
+    }),
+
+  // Doc 42 Đợt 1 (#11) — dọn mapping mồ côi (sản phẩm/máy đã xoá) cho admin.
+  cleanupOrphans: writeProcedure
+    .mutation(async ({ ctx }) => {
+      const deleted = await db.deleteOrphanProductMachineMappings();
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "productMachineMapping.cleanupOrphans",
+          entityType: "mapping",
+          details: { deleted },
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (productMachineMapping.cleanupOrphans)", err);
+      }
+      return { deleted };
     }),
 });
 
@@ -1007,7 +2044,7 @@ export const productDocumentRouter = router({
         .orderBy(desc(productDocuments.createdAt));
     }),
 
-  upload: protectedProcedure
+  upload: writeProcedure
     .input(z.object({
       productModelId: z.number(),
       fileName: z.string().min(1).max(255),
@@ -1342,12 +2379,17 @@ export const defectCatalogRouter = router({
       description: z.string().optional(),
       nameVi: z.string().max(255).optional(),
       descriptionVi: z.string().optional(),
+      repairGuidance: z.string().optional(),
+      repairGuidanceVi: z.string().optional(),
       referenceImageKey: z.string().max(255).optional(),
       referenceImageUrl: z.string().url().optional(),
       isActive: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const id = await db.createDefectCatalog(input);
+      // Doc 31 OP3: if this code was previously seen but unmatched, mark the
+      // rollup row resolved so the curation panel stops flagging it.
+      try { await db.markUnmatchedDefectCodeResolved(input.code, id); } catch { /* best-effort */ }
       await db.createAuditLog({
         userId: ctx.user.id,
         userName: ctx.user.name ?? undefined,
@@ -1377,6 +2419,8 @@ export const defectCatalogRouter = router({
       description: z.string().optional(),
       nameVi: z.string().max(255).optional(),
       descriptionVi: z.string().optional(),
+      repairGuidance: z.string().optional(),
+      repairGuidanceVi: z.string().optional(),
       referenceImageKey: z.string().max(255).optional(),
       referenceImageUrl: z.string().url().optional(),
       isActive: z.boolean().optional(),
@@ -1412,6 +2456,39 @@ export const defectCatalogRouter = router({
         status: "success",
       });
       return { success: true };
+    }),
+
+  // ── Doc 31 Đợt B (OP3) — unmatched-code telemetry for curation ──
+  // Codes reported by machines/AI that did NOT resolve to a catalog row.
+  listUnmatchedCodes: protectedProcedure
+    .input(z.object({
+      onlyUnresolved: z.boolean().optional().default(true),
+      limit: z.number().int().positive().max(1000).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.listUnmatchedDefectCodes({
+        onlyUnresolved: input?.onlyUnresolved ?? true,
+        limit: input?.limit,
+      });
+    }),
+
+  // ── Doc 31 Đợt B (OP4) — per-component defect tendency (Pareto-by-package) ──
+  // Joins classified NG results → point-def componentCode → defect class.
+  // Tolerates empty componentCode (WB-1 fills it) — returns [] gracefully.
+  defectTendency: protectedProcedure
+    .input(z.object({
+      productModelId: z.number().int().positive().optional(),
+      fromTs: z.coerce.date().optional(),
+      toTs: z.coerce.date().optional(),
+      limit: z.number().int().positive().max(500).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getDefectTendencyByComponent({
+        productModelId: input?.productModelId,
+        fromTs: input?.fromTs,
+        toTs: input?.toTs,
+        limit: input?.limit,
+      });
     }),
 });
 
@@ -1610,6 +2687,50 @@ export const defectCatalogRouter = router({
           status: "success",
         });
         return { success: true };
+      }),
+
+    // ── Doc 31 OP5 (decision #3) — AQL lot acceptance ────────────────────────
+    // Evaluate a single lot (by batchNumber) against the product's AQL sampling
+    // plan → accept / reject / pending disposition.
+    evaluateLot: protectedProcedure
+      .input(z.object({
+        productModelId: z.number().int().positive(),
+        samplingPlanId: z.number().int().positive().optional(),
+        batchNumber: z.string().max(100).nullable().optional(),
+        startDate: z.string().datetime().optional(),
+        endDate: z.string().datetime().optional(),
+        machineId: z.number().int().positive().optional(),
+      }))
+      .query(async ({ input }) => {
+        return evaluateLotAcceptance({
+          productModelId: input.productModelId,
+          samplingPlanId: input.samplingPlanId,
+          batchNumber: input.batchNumber ?? undefined,
+          startDate: input.startDate ? new Date(input.startDate) : undefined,
+          endDate: input.endDate ? new Date(input.endDate) : undefined,
+          machineId: input.machineId,
+        });
+      }),
+
+    // List recent lots + their dispositions for a product (accept/reject board).
+    listLots: protectedProcedure
+      .input(z.object({
+        productModelId: z.number().int().positive(),
+        samplingPlanId: z.number().int().positive().optional(),
+        startDate: z.string().datetime().optional(),
+        endDate: z.string().datetime().optional(),
+        machineId: z.number().int().positive().optional(),
+        limit: z.number().int().min(1).max(200).optional(),
+      }))
+      .query(async ({ input }) => {
+        return listLotDispositions({
+          productModelId: input.productModelId,
+          samplingPlanId: input.samplingPlanId,
+          startDate: input.startDate ? new Date(input.startDate) : undefined,
+          endDate: input.endDate ? new Date(input.endDate) : undefined,
+          machineId: input.machineId,
+          limit: input.limit,
+        });
       }),
   });
 
@@ -2416,6 +3537,12 @@ export const measurementSamplesRouter = router({
             summary: v.summary,
           }, sinks).catch(() => undefined);
         }
+        // W5-A: additionally route persisted OOC violations into the CENTRAL
+        // alert/Andon path (predictive_alerts + notify, optional advisory Andon).
+        // Flag-gated (SPC_CENTRAL_ALERT_ENABLED, default OFF); fire-and-forget and
+        // de-duped per (pointDefId, ruleCode) inside the bridge — never blocks this
+        // mutation nor the SPC-only sink fan-out above.
+        routeSpcViolationsToCentral(allViolations, { pointDefId: input.pointDefId });
       }
       if (input.persistRolling) {
         await db.upsertRollingSpc({
@@ -2696,15 +3823,13 @@ export const cadImportRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "CAD import job already applied" });
       }
       const count = await db.applyCadImportJob(input.jobId, ctx.user.id);
-      // Bump pointsConfigVersion so machines re-fetch
-      try {
-        const pm = await db.getProductModelById(job.productModelId);
-        const next = (pm?.pointsConfigVersion ?? 1) + 1;
-        await db.updateProductModel(job.productModelId, {
-          pointsConfigVersion: next,
-          updatedAt: new Date(),
-        } as any);
-      } catch {}
+      // Doc 51 P1 (R4 / CASE #12) — was a READ-MODIFY-WRITE (read version, +1,
+      // write it back) wrapped in a bare `try {} catch {}`: two concurrent config
+      // changes both reading v7 both wrote v8, so one change shipped under a
+      // version some machine already held and was never re-fetched — and the empty
+      // catch hid every failure. Now one atomic `col = col + 1` (+ MQTT nudge),
+      // and a bump failure surfaces instead of silently stranding the fleet.
+      await bumpAndNotifyPointsConfig(job.productModelId);
       await db.createAuditLog({
         userId: ctx.user.id,
         userName: ctx.user.name ?? undefined,
@@ -2716,5 +3841,170 @@ export const cadImportRouter = router({
         status: "success",
       });
       return { applied: count };
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Doc 31 MP5 / PM4 (Đợt C, decision #5) — GENERIC centroid / pick-place import.
+  // A configurable column map (like the hot-folder adapter) defers all
+  // vendor-specific work to UI mapping — no code change to onboard a real
+  // Fuji / Panasonic / Siemens / KiCad file. Flow: inspect → preview → commit
+  // → apply, reusing cad_import_jobs / cad_import_candidates (no migration).
+  // ══════════════════════════════════════════════════════════════════════════
+  centroidInspect: adminProcedure
+    .input(z.object({
+      content: z.string().min(1).max(50 * 1024 * 1024),
+      isBase64: z.boolean().default(false),
+      delimiter: z.enum([",", ";", "\t", "auto"]).optional(),
+      hasHeader: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const text = input.isBase64
+        ? Buffer.from(input.content, "base64").toString("utf-8")
+        : input.content;
+      return inspectCentroidHeaders(text, {
+        delimiter: input.delimiter,
+        hasHeader: input.hasHeader,
+      });
+    }),
+
+  centroidPreview: adminProcedure
+    .input(z.object({
+      productModelId: z.number().int().positive(),
+      content: z.string().min(1).max(50 * 1024 * 1024),
+      isBase64: z.boolean().default(false),
+      columnMap: centroidColumnMapSchema.optional(),
+      parseOptions: centroidParseOptionsSchema.optional(),
+      transformOptions: centroidTransformOptionsSchema.optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const text = input.isBase64
+        ? Buffer.from(input.content, "base64").toString("utf-8")
+        : input.content;
+      return previewCentroidImport({
+        productModelId: input.productModelId,
+        text,
+        columnMap: input.columnMap,
+        parseOptions: input.parseOptions,
+        transformOptions: input.transformOptions,
+      });
+    }),
+
+  centroidCommit: adminProcedure
+    .input(z.object({
+      productModelId: z.number().int().positive(),
+      fileName: z.string().min(1).max(255),
+      content: z.string().min(1).max(50 * 1024 * 1024),
+      isBase64: z.boolean().default(false),
+      columnMap: centroidColumnMapSchema,
+      parseOptions: centroidParseOptionsSchema.optional(),
+      transformOptions: centroidTransformOptionsSchema.optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const text = input.isBase64
+        ? Buffer.from(input.content, "base64").toString("utf-8")
+        : input.content;
+      const buf = Buffer.from(text, "utf-8");
+      return commitCentroidImport({
+        productModelId: input.productModelId,
+        fileName: input.fileName,
+        text,
+        fileSha256: createHash("sha256").update(buf).digest("hex"),
+        fileSizeBytes: buf.length,
+        uploadedBy: ctx.user.id,
+        columnMap: input.columnMap,
+        parseOptions: input.parseOptions,
+        transformOptions: input.transformOptions,
+      });
+    }),
+
+  centroidApply: adminProcedure
+    .input(z.object({
+      jobId: z.number().int().positive(),
+      measurementType: legacyMeasurementTypeSchema.optional(),
+      radius: z.number().int().min(1).max(100000).optional(),
+      cropWidth: z.number().int().min(1).max(100000).optional(),
+      cropHeight: z.number().int().min(1).max(100000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const job = await db.getCadImportJobById(input.jobId);
+      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Centroid import job not found" });
+      return applyCentroidImport({
+        jobId: input.jobId,
+        appliedBy: ctx.user.id,
+        appliedByName: ctx.user.name ?? undefined,
+        defaults: {
+          measurementType: input.measurementType,
+          radius: input.radius,
+          cropWidth: input.cropWidth,
+          cropHeight: input.cropHeight,
+        },
+      });
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Doc 54 §11 P0.1 — apply CAD/centroid coordinates onto EXISTING points.
+  // The centroidCommit/centroidApply pair above CREATES new points; these two
+  // instead MATCH a pick-place file to points that already exist and WRITE their
+  // real X/Y — the fix for points bulk-imported at (0,0). Gated on
+  // settings_measurement_points/canCreate (same as measurementPoint.create and
+  // importList) so engineers — not only admins — can run it.
+  // ══════════════════════════════════════════════════════════════════════════
+  parsePreview: protectedProcedure.use(requirePermission("settings_measurement_points", "canCreate"))
+    .input(z.object({
+      productModelId: z.number().int().positive(),
+      content: z.string().min(1).max(50 * 1024 * 1024),
+      isBase64: z.boolean().default(false),
+      columnMap: centroidColumnMapSchema.optional(),
+      parseOptions: centroidParseOptionsSchema.optional(),
+      transformOptions: centroidTransformOptionsSchema.optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const text = input.isBase64
+        ? Buffer.from(input.content, "base64").toString("utf-8")
+        : input.content;
+      return previewCoordinateApply({
+        productModelId: input.productModelId,
+        text,
+        columnMap: input.columnMap,
+        parseOptions: input.parseOptions,
+        transformOptions: input.transformOptions,
+      });
+    }),
+
+  applyCoordinates: protectedProcedure.use(requirePermission("settings_measurement_points", "canCreate"))
+    .input(z.object({
+      productModelId: z.number().int().positive(),
+      fileName: z.string().min(1).max(255).default("coordinates.csv"),
+      content: z.string().min(1).max(50 * 1024 * 1024),
+      isBase64: z.boolean().default(false),
+      columnMap: centroidColumnMapSchema.optional(),
+      parseOptions: centroidParseOptionsSchema.optional(),
+      transformOptions: centroidTransformOptionsSchema.optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const text = input.isBase64
+        ? Buffer.from(input.content, "base64").toString("utf-8")
+        : input.content;
+      const buf = Buffer.from(text, "utf-8");
+      const res = await applyCoordinatesToPoints({
+        productModelId: input.productModelId,
+        fileName: input.fileName,
+        text,
+        fileSha256: createHash("sha256").update(buf).digest("hex"),
+        fileSizeBytes: buf.length,
+        uploadedBy: ctx.user.id,
+        columnMap: input.columnMap,
+        parseOptions: input.parseOptions,
+        transformOptions: input.transformOptions,
+      });
+      // MQTT nudge (best-effort) so AOI/AVI machines re-fetch the bumped config.
+      if (res.bumped) {
+        try {
+          publishPointsConfigChanged(res.bumped.code, res.bumped.version);
+        } catch {
+          /* machines pick it up on the next poll */
+        }
+      }
+      return res;
     }),
 });

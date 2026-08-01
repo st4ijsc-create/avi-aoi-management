@@ -47,7 +47,7 @@ function maxWritesPerSession(): number {
  *  (technician) per user decision — they run multi-step sessions; every write step
  *  still goes through HITL propose→confirm gated by per-tool RBAC. (manager/it_admin
  *  are legacy labels not in roleEnum; kept harmless.) */
-const AGENTIC_ROLES = new Set(["manager", "it_admin", "admin", "supervisor", "maintenance"]);
+const AGENTIC_ROLES = new Set(["manager", "it_admin", "admin", "supervisor", "maintenance", "engineer"]);
 
 /** Session TTL (mirrors the pending-action 5' but generous for a multi-step flow). */
 const SESSION_TTL_MS = 30 * 60 * 1000;

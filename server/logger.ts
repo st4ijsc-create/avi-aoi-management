@@ -1,12 +1,26 @@
 import pino from "pino";
+import { getCorrelationId } from "./services/observability/correlation";
 
 const isProduction = process.env.NODE_ENV === "production";
 // LOG_JSON=1 buộc xuất JSON structured ngay cả ở môi trường dev (đồng bộ aggregator).
 const forceJson = process.env.LOG_JSON === "1" || process.env.LOG_JSON === "true";
 const usePretty = !isProduction && !forceJson;
 
+/**
+ * G5.17 (doc 44 W6-4) — pino mixin đọc correlation_id từ AsyncLocalStorage backbone
+ * (server/services/observability/correlation.ts). Khi request/lệnh đang chạy trong một
+ * withCorrelation(...) context, MỌI log line tự động mang `correlation_id` → nối được
+ * "nút bấm → lệnh → máy" qua log. Ngoài context ⇒ trả {} (không thêm field, an toàn).
+ * Cheap + đồng bộ; không cờ (chỉ enrich log).
+ */
+export function correlationMixin(): Record<string, string> {
+  const cid = getCorrelationId();
+  return cid ? { correlation_id: cid } : {};
+}
+
 export const logger = pino({
   level: process.env.LOG_LEVEL || (isProduction ? "info" : "debug"),
+  mixin: correlationMixin,
   ...(usePretty
     ? {
         transport: {

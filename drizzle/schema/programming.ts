@@ -25,6 +25,7 @@ import {
 import {
   programmingKindEnum,
   programArtifactStatusEnum,
+  programArtifactReviewStatusEnum,
   programBuildStatusEnum,
   programDeployStageEnum,
   programDeployStatusEnum,
@@ -43,6 +44,10 @@ export const programProjects = pgTable("program_projects", {
   description: text("description"),
   defaultBranch: varchar("defaultBranch", { length: 64 }).default("main").notNull(),
   createdBy: integer("createdBy"),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). NULL =
+  // unscoped (allow-all under the inert app_tenant_allows policy until backfilled). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -63,13 +68,25 @@ export const programArtifacts = pgTable("program_artifacts", {
   content: text("content"),
   contentHash: varchar("contentHash", { length: 64 }),
   status: programArtifactStatusEnum("status").default("draft").notNull(),
+  // ── doc 38 T-2 — FOUR-EYES AT THE VERSION (additive; migration 0236). A version must
+  //    be 'approved' by a SECOND person (reviewedBy ≠ createdBy) before it can be
+  //    built/deployed. Enforcement is flag-gated (DPC_VERSION_REVIEW_ENABLED, default OFF).
+  reviewStatus: programArtifactReviewStatusEnum("reviewStatus").default("pending_review").notNull(),
+  /** The reviewer who approved/rejected this version (must differ from createdBy). */
+  reviewedBy: integer("reviewedBy"),
+  /** When the review decision was recorded. */
+  reviewedAt: timestamp("reviewedAt"),
   /** Last validate() diagnostics (errors/warnings). */
   diagnosticsJson: jsonb("diagnosticsJson").$type<Record<string, unknown>>(),
   createdBy: integer("createdBy"),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_prog_artifacts_project").on(table.projectId),
   index("idx_prog_artifacts_status").on(table.status),
+  index("idx_prog_artifacts_review").on(table.reviewStatus),
   unique("uq_prog_artifact_version").on(table.projectId, table.branch, table.version),
 ]);
 
@@ -85,6 +102,9 @@ export const programBuilds = pgTable("program_builds", {
   outputRef: text("outputRef"),
   durationMs: integer("durationMs"),
   createdBy: integer("createdBy"),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_prog_builds_artifact").on(table.artifactId),
@@ -101,6 +121,9 @@ export const programSimRuns = pgTable("program_sim_runs", {
   warningsJson: jsonb("warningsJson").$type<string[]>(),
   durationMs: integer("durationMs"),
   createdBy: integer("createdBy"),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_prog_sim_runs_build").on(table.buildId),
@@ -127,6 +150,9 @@ export const programDeployments = pgTable("program_deployments", {
   rolledBackFromId: integer("rolledBackFromId"),
   detailJson: jsonb("detailJson").$type<Record<string, unknown>>(),
   error: text("error"),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_prog_deploy_project").on(table.projectId),
@@ -145,6 +171,9 @@ export const programSymbols = pgTable("program_symbols", {
   comment: varchar("comment", { length: 500 }),
   watchable: boolean("watchable").default(true).notNull(),
   forceable: boolean("forceable").default(false).notNull(),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [

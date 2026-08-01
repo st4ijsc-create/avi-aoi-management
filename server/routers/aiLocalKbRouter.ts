@@ -3,7 +3,7 @@
  * Integrates codebase knowledge retrieval with chat system
  */
 
-import { router, publicProcedure } from "../_core/trpc";
+import { router, publicProcedure, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { z } from "zod";
 import { logger } from "../logger";
 
@@ -119,7 +119,7 @@ export const aiLocalKbRouter = router({
    * Input: question + optional topK
    * Output: intent, language, entities, confidence, citations, contexts
    */
-  retrieve: publicProcedure.input(RetrieveInputSchema).mutation(async ({ input }) => {
+  retrieve: protectedProcedure.input(RetrieveInputSchema).mutation(async ({ input }) => {
     try {
       const result = await fetchKbApi<KbApiResult>("/api/ai/local-kb/retrieve", "POST", input);
       if (result.success) {
@@ -145,7 +145,7 @@ export const aiLocalKbRouter = router({
    * Input: question + optional topK
    * Output: answer, intent, language, entities, confidence, citations, provider, cached
    */
-  ask: publicProcedure.input(AskInputSchema).mutation(async ({ input }) => {
+  ask: protectedProcedure.input(AskInputSchema).mutation(async ({ input }) => {
     try {
       const result = await fetchKbApi<KbApiResult>("/api/ai/local-kb/ask", "POST", input);
       if (result.success) {
@@ -169,7 +169,7 @@ export const aiLocalKbRouter = router({
    * Reload KB artifacts (admin operation)
    * Used after rebuilding the knowledge base via Phase 1 pipeline
    */
-  reload: publicProcedure.mutation(async () => {
+  reload: adminProcedure.mutation(async () => {
     try {
       const result = await fetchKbApi("/api/ai/local-kb/reload", "POST");
       return {
@@ -187,7 +187,7 @@ export const aiLocalKbRouter = router({
   /**
    * Submit feedback (thumbs up/down) for a KB answer
    */
-  feedback: publicProcedure.input(FeedbackInputSchema).mutation(async ({ input }) => {
+  feedback: protectedProcedure.input(FeedbackInputSchema).mutation(async ({ input }) => {
     try {
       const result = await fetchKbApi("/api/ai/local-kb/feedback", "POST", input);
       return { success: true, data: result };

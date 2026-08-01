@@ -1,6 +1,18 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
+import {
+  PageHeader,
+  PageContainer,
+  MetricCard,
+  StatusBadge,
+  EmptyState,
+  chartColor,
+  chartTooltipStyle,
+  chartTooltipLabelStyle,
+  chartGridProps,
+  chartAxisTick,
+} from '@/components/patterns';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -10,13 +22,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Brain,
   TrendingUp,
   TrendingDown,
   Target,
-  Activity,
   BarChart3,
   PieChart,
   RefreshCw,
@@ -26,7 +38,6 @@ import {
   AlertTriangle,
   Clock,
   Database,
-  Zap,
   Award,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -38,6 +49,7 @@ import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { ModelSelect, DatasetSelect } from '@/components/ai/ModelSelect';
 import { ReliabilityDiagram } from '@/components/ReliabilityDiagram';
+import AnalysisHubSection from '@/components/analytics/AnalysisHubSection';
 import {
   BarChart,
   Bar,
@@ -67,200 +79,114 @@ export default function AIPerformanceDashboard() {
     limit: 20,
   });
 
-  // Calculate confusion matrix data
-  const confusionMatrix = useMemo(() => {
-    if (!dashboardStats || !dashboardStats.recentFeedback) return null;
+  // Accuracy is the only classification KPI backed by real data: the backend
+  // (aiFeedback.getDashboardStats) computes it as CORRECT / total-feedback over
+  // the ai_feedback table. Precision / Recall / F1 / a confusion matrix require
+  // labeled per-class ground-truth outcomes (predicted vs actual class), which
+  // this system does not capture — ai_feedback only records a subjective
+  // CORRECT/INCORRECT/PARTIAL/UNSURE verdict per suggestion. We therefore refuse
+  // to synthesize those metrics and surface an honest empty state instead.
+  const hasAccuracy = !!dashboardStats && dashboardStats.accuracy > 0;
+  const accuracyPct = dashboardStats?.accuracy ?? 0;
 
-    // Calculate from recentFeedback
-    const feedback = dashboardStats.recentFeedback;
-    const correct = feedback.filter((f: any) => f.feedbackType === 'CORRECT').length;
-    const incorrect = feedback.filter((f: any) => f.feedbackType === 'INCORRECT').length;
+  const getStatusBadge = (status: string) => (
+    <StatusBadge
+      status={status}
+      map={{
+        COMPLETED: { tone: 'success', label: t('common.completed') },
+        PROCESSING: { tone: 'info', label: t('common.processing') },
+        PENDING: { tone: 'warning', label: t('common.pending') },
+        FAILED: { tone: 'error', label: t('common.failed') },
+      }}
+    />
+  );
 
-    // For binary classification: Predicted vs Actual
-    return {
-      truePositive: Math.round(correct * 0.6) || 1,
-      falsePositive: Math.round(incorrect * 0.4) || 1,
-      trueNegative: Math.round(correct * 0.4) || 1,
-      falseNegative: Math.round(incorrect * 0.6) || 1,
-    };
-  }, [dashboardStats]);
-
-  // Calculate metrics
-  const metrics = useMemo(() => {
-    if (!confusionMatrix) return null;
-
-    const { truePositive, falsePositive, trueNegative, falseNegative } = confusionMatrix;
-    const total = truePositive + falsePositive + trueNegative + falseNegative;
-
-    const precision = truePositive / (truePositive + falsePositive) || 0;
-    const recall = truePositive / (truePositive + falseNegative) || 0;
-    const f1Score = 2 * (precision * recall) / (precision + recall) || 0;
-    const accuracy = (truePositive + trueNegative) / total || 0;
-
-    return {
-      precision: precision * 100,
-      recall: recall * 100,
-      f1Score: f1Score * 100,
-      accuracy: accuracy * 100,
-    };
-  }, [confusionMatrix]);
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'COMPLETED':
-        return <Badge className="bg-green-500/10 text-green-500">{t('common.completed')}</Badge>;
-      case 'PROCESSING':
-        return <Badge className="bg-blue-500/10 text-blue-500">{t('common.processing')}</Badge>;
-      case 'PENDING':
-        return <Badge className="bg-yellow-500/10 text-yellow-500">{t('common.pending')}</Badge>;
-      case 'FAILED':
-        return <Badge className="bg-red-500/10 text-red-500">{t('common.failed')}</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
-  };
-
-  const getFeedbackBadge = (feedback: string) => {
-    switch (feedback) {
-      case 'CORRECT':
-        return <Badge className="bg-green-500/10 text-green-500">{t('reports.correct')}</Badge>;
-      case 'INCORRECT':
-        return <Badge className="bg-red-500/10 text-red-500">{t('reports.incorrect')}</Badge>;
-      case 'PARTIAL':
-        return <Badge className="bg-yellow-500/10 text-yellow-500">{t('reports.partial')}</Badge>;
-      case 'UNSURE':
-        return <Badge className="bg-gray-500/10 text-gray-500">{t('reports.unsure')}</Badge>;
-      default:
-        return <Badge variant="outline">{feedback}</Badge>;
-    }
-  };
+  const getFeedbackBadge = (feedback: string) => (
+    <StatusBadge
+      status={feedback}
+      map={{
+        CORRECT: { tone: 'success', label: t('reports.correct') },
+        INCORRECT: { tone: 'error', label: t('reports.incorrect') },
+        PARTIAL: { tone: 'warning', label: t('reports.partial') },
+        UNSURE: { tone: 'default', label: t('reports.unsure') },
+      }}
+    />
+  );
 
   return (
     <DashboardLayout>
-      <div className="container py-6 space-y-6">
+      <PageContainer fluid>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Brain className="h-6 w-6" />
-              {t('reports.aiModelPerformanceDashboard')}
-            </h1>
-            <p className="text-muted-foreground">
-              {t('reports.aiModelPerformanceDesc')}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Select value={dateRange} onValueChange={(v: '7d' | '30d' | '90d' | 'all') => setDateRange(v)}>
-              <SelectTrigger className="w-37.5">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="7d">{t('common.sevenDays')}</SelectItem>
-                <SelectItem value="30d">{t('common.thirtyDays')}</SelectItem>
-                <SelectItem value="90d">{t('common.ninetyDays')}</SelectItem>
-                <SelectItem value="all">{t('common.all')}</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button variant="outline" onClick={() => refetchStats()}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {t('common.refresh')}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Brain className="h-6 w-6" />}
+          title={t('reports.aiModelPerformanceDashboard')}
+          description={t('reports.aiModelPerformanceDesc')}
+          actions={
+            <>
+              <Select value={dateRange} onValueChange={(v: '7d' | '30d' | '90d' | 'all') => setDateRange(v)}>
+                <SelectTrigger className="w-37.5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7d">{t('common.sevenDays')}</SelectItem>
+                  <SelectItem value="30d">{t('common.thirtyDays')}</SelectItem>
+                  <SelectItem value="90d">{t('common.ninetyDays')}</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={() => refetchStats()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t('common.refresh')}
+              </Button>
+            </>
+          }
+        />
 
-        {/* Key Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Accuracy</p>
-                  <div className="text-3xl font-bold">
-                    {statsLoading ? <Skeleton className="h-9 w-20" /> : `${(metrics?.accuracy || 0).toFixed(1)}%`}
-                  </div>
-                </div>
-                <div className={cn(
-                  "p-3 rounded-full",
-                  (metrics?.accuracy || 0) >= 80 ? "bg-green-500/10" : "bg-yellow-500/10"
-                )}>
-                  <Target className={cn(
-                    "h-6 w-6",
-                    (metrics?.accuracy || 0) >= 80 ? "text-green-500" : "text-yellow-500"
-                  )} />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                {(metrics?.accuracy || 0) >= 80 ? t('reports.targetMet') : t('reports.needsImprovement')}
-              </p>
-            </CardContent>
-          </Card>
+        {/* Key Metrics — only Accuracy is backed by real labeled feedback.
+            Precision / Recall / F1 need a ground-truth confusion matrix that
+            this system does not capture, so we show an honest notice instead of
+            fabricated numbers. */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <MetricCard
+            icon={<Target className="h-5 w-5" />}
+            label={t('reports.accuracy', 'Accuracy')}
+            value={statsLoading ? '…' : hasAccuracy ? `${accuracyPct.toFixed(1)}%` : t('common.notAvailable', 'N/A')}
+            tone={!hasAccuracy ? 'default' : accuracyPct >= 80 ? 'success' : 'warning'}
+            delta={
+              !hasAccuracy
+                ? t('reports.noFeedbackYet', 'No reviewed feedback yet')
+                : accuracyPct >= 80
+                  ? t('reports.targetMet')
+                  : t('reports.needsImprovement')
+            }
+          />
 
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Precision</p>
-                  <div className="text-3xl font-bold">
-                    {statsLoading ? <Skeleton className="h-9 w-20" /> : `${(metrics?.precision || 0).toFixed(1)}%`}
-                  </div>
-                </div>
-                <div className="p-3 rounded-full bg-blue-500/10">
-                  <Zap className="h-6 w-6 text-blue-500" />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                {t('reports.precisionDesc')}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Recall</p>
-                  <div className="text-3xl font-bold">
-                    {statsLoading ? <Skeleton className="h-9 w-20" /> : `${(metrics?.recall || 0).toFixed(1)}%`}
-                  </div>
-                </div>
-                <div className="p-3 rounded-full bg-purple-500/10">
-                  <Activity className="h-6 w-6 text-purple-500" />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                {t('reports.recallDesc')}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">F1 Score</p>
-                  <div className="text-3xl font-bold">
-                    {statsLoading ? <Skeleton className="h-9 w-20" /> : `${(metrics?.f1Score || 0).toFixed(1)}%`}
-                  </div>
-                </div>
-                <div className="p-3 rounded-full bg-orange-500/10">
-                  <Award className="h-6 w-6 text-orange-500" />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                {t('reports.f1ScoreDesc')}
-              </p>
+          <Card className="md:col-span-3">
+            <CardContent className="h-full p-0">
+              <EmptyState
+                variant="no-analytics"
+                icon={Award}
+                compact
+                title={t('reports.classMetricsUnavailable', 'Precision / Recall / F1 unavailable')}
+                description={t(
+                  'reports.classMetricsUnavailableDesc',
+                  'These metrics require labeled ground-truth outcomes (predicted vs actual class per sample). Feedback here records only a correct/incorrect verdict, so they cannot be computed without fabricating numbers.',
+                )}
+                className="h-full"
+              />
             </CardContent>
           </Card>
         </div>
 
         {/* Main Content */}
         <Tabs defaultValue="overview" className="space-y-4">
-          <TabsList>
+          <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
             <TabsTrigger value="overview">{t('dashboard.overview')}</TabsTrigger>
             <TabsTrigger value="confusion">{t('reports.confusionMatrix')}</TabsTrigger>
             <TabsTrigger value="evaluation">{t('aiEval.beforeAfterTab', 'Eval (Before/After)')}</TabsTrigger>
             <TabsTrigger value="canary">{t('canary.tab', 'A/B Canary')}</TabsTrigger>
             <TabsTrigger value="calibration">{t('calibration.tab', 'Calibration')}</TabsTrigger>
+            <TabsTrigger value="analysisHub">{t('analysisHub.tab', 'Analysis Hub')}</TabsTrigger>
             <TabsTrigger value="batches">{t('reports.trainingBatches')}</TabsTrigger>
             <TabsTrigger value="suggestions">{t('reports.suggestionsHistory')}</TabsTrigger>
           </TabsList>
@@ -283,19 +209,19 @@ export default function AIPerformanceDashboard() {
                     <div className="space-y-4">
                       <div className="flex items-center justify-center gap-8">
                         <div className="text-center">
-                          <div className="text-3xl font-bold text-green-500">
+                          <div className="text-3xl font-bold text-success">
                             {dashboardStats.recentFeedback?.filter((f: any) => f.feedbackType === 'CORRECT').length || 0}
                           </div>
                           <div className="text-sm text-muted-foreground">{t('reports.correct')}</div>
                         </div>
                         <div className="text-center">
-                          <div className="text-3xl font-bold text-red-500">
+                          <div className="text-3xl font-bold text-destructive">
                             {dashboardStats.recentFeedback?.filter((f: any) => f.feedbackType === 'INCORRECT').length || 0}
                           </div>
                           <div className="text-sm text-muted-foreground">{t('reports.incorrect')}</div>
                         </div>
                         <div className="text-center">
-                          <div className="text-3xl font-bold text-yellow-500">
+                          <div className="text-3xl font-bold text-warning">
                             {dashboardStats.recentFeedback?.filter((f: any) => f.feedbackType === 'PARTIAL').length || 0}
                           </div>
                           <div className="text-sm text-muted-foreground">{t('reports.partial')}</div>
@@ -314,21 +240,21 @@ export default function AIPerformanceDashboard() {
                               <div className="flex items-center gap-2">
                                 <span className="w-20 text-sm">{t('reports.correct')}</span>
                                 <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
-                                  <div className="h-full bg-green-500 transition-all" style={{ width: `${total ? (correct / total) * 100 : 0}%` }} />
+                                  <div className="h-full bg-success transition-all" style={{ width: `${total ? (correct / total) * 100 : 0}%` }} />
                                 </div>
                                 <span className="w-12 text-sm text-right">{total ? ((correct / total) * 100).toFixed(0) : 0}%</span>
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className="w-20 text-sm">{t('reports.incorrect')}</span>
                                 <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
-                                  <div className="h-full bg-red-500 transition-all" style={{ width: `${total ? (incorrect / total) * 100 : 0}%` }} />
+                                  <div className="h-full bg-destructive transition-all" style={{ width: `${total ? (incorrect / total) * 100 : 0}%` }} />
                                 </div>
                                 <span className="w-12 text-sm text-right">{total ? ((incorrect / total) * 100).toFixed(0) : 0}%</span>
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className="w-20 text-sm">{t('reports.partial')}</span>
                                 <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
-                                  <div className="h-full bg-yellow-500 transition-all" style={{ width: `${total ? (partial / total) * 100 : 0}%` }} />
+                                  <div className="h-full bg-warning transition-all" style={{ width: `${total ? (partial / total) * 100 : 0}%` }} />
                                 </div>
                                 <span className="w-12 text-sm text-right">{total ? ((partial / total) * 100).toFixed(0) : 0}%</span>
                               </div>
@@ -338,9 +264,7 @@ export default function AIPerformanceDashboard() {
                       </div>
                     </div>
                   ) : (
-                    <div className="h-50 flex items-center justify-center text-muted-foreground">
-                      {t('common.noData')}
-                    </div>
+                    <EmptyState variant="no-data" compact className="h-50" />
                   )}
                 </CardContent>
               </Card>
@@ -375,14 +299,12 @@ export default function AIPerformanceDashboard() {
                           <div className="text-2xl font-bold">
                             {dashboardStats.accuracy ? `${dashboardStats.accuracy.toFixed(0)}%` : 'N/A'}
                           </div>
-                          <div className="text-sm text-muted-foreground">Accuracy</div>
+                          <div className="text-sm text-muted-foreground">{t('reports.accuracy', 'Accuracy')}</div>
                         </div>
                       </div>
                     </div>
                   ) : (
-<div className="h-50 flex items-center justify-center text-muted-foreground">
-                      {t('common.noData')}
-                    </div>
+                    <EmptyState variant="no-data" compact className="h-50" />
                   )}
                 </CardContent>
               </Card>
@@ -399,77 +321,24 @@ export default function AIPerformanceDashboard() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {confusionMatrix ? (
-                  <div className="flex flex-col items-center space-y-4">
-                    <div className="grid grid-cols-3 gap-2 max-w-md">
-                      {/* Header row */}
-                      <div className="p-4" />
-                      <div className="p-4 text-center font-medium bg-muted rounded-lg">
-                        {t('reports.predictedPositive')}
-                      </div>
-                      <div className="p-4 text-center font-medium bg-muted rounded-lg">
-                        {t('reports.predictedNegative')}
-                      </div>
-                      
-                      {/* Actual Positive row */}
-                      <div className="p-4 text-center font-medium bg-muted rounded-lg">
-                        {t('reports.actualPositive')}
-                      </div>
-                      <div className="p-8 text-center bg-green-500/20 rounded-lg border-2 border-green-500">
-                        <div className="text-3xl font-bold text-green-600">{confusionMatrix.truePositive}</div>
-                        <div className="text-sm text-muted-foreground">True Positive</div>
-                      </div>
-                      <div className="p-8 text-center bg-red-500/20 rounded-lg border-2 border-red-500">
-                        <div className="text-3xl font-bold text-red-600">{confusionMatrix.falseNegative}</div>
-                        <div className="text-sm text-muted-foreground">False Negative</div>
-                      </div>
-                      
-                      {/* Actual Negative row */}
-                      <div className="p-4 text-center font-medium bg-muted rounded-lg">
-                        {t('reports.actualNegative')}
-                      </div>
-                      <div className="p-8 text-center bg-red-500/20 rounded-lg border-2 border-red-500">
-                        <div className="text-3xl font-bold text-red-600">{confusionMatrix.falsePositive}</div>
-                        <div className="text-sm text-muted-foreground">False Positive</div>
-                      </div>
-                      <div className="p-8 text-center bg-green-500/20 rounded-lg border-2 border-green-500">
-                        <div className="text-3xl font-bold text-green-600">{confusionMatrix.trueNegative}</div>
-                        <div className="text-sm text-muted-foreground">True Negative</div>
-                      </div>
-                    </div>
-
-                    {/* Metrics explanation */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-2xl mt-8">
-                      <div className="p-4 rounded-lg border text-center">
-                        <div className="text-lg font-bold">{metrics?.accuracy.toFixed(1)}%</div>
-                        <div className="text-xs text-muted-foreground">Accuracy</div>
-                        <div className="text-xs text-muted-foreground mt-1">(TP+TN)/(Total)</div>
-                      </div>
-                      <div className="p-4 rounded-lg border text-center">
-                        <div className="text-lg font-bold">{metrics?.precision.toFixed(1)}%</div>
-                        <div className="text-xs text-muted-foreground">Precision</div>
-                        <div className="text-xs text-muted-foreground mt-1">TP/(TP+FP)</div>
-                      </div>
-                      <div className="p-4 rounded-lg border text-center">
-                        <div className="text-lg font-bold">{metrics?.recall.toFixed(1)}%</div>
-                        <div className="text-xs text-muted-foreground">Recall</div>
-                        <div className="text-xs text-muted-foreground mt-1">TP/(TP+FN)</div>
-                      </div>
-                      <div className="p-4 rounded-lg border text-center">
-                        <div className="text-lg font-bold">{metrics?.f1Score.toFixed(1)}%</div>
-                        <div className="text-xs text-muted-foreground">F1 Score</div>
-                        <div className="text-xs text-muted-foreground mt-1">2*(P*R)/(P+R)</div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="h-75 flex items-center justify-center text-muted-foreground">
-                    <div className="text-center">
-                      <Brain className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>{t('reports.needMoreFeedback')}</p>
-                    </div>
-                  </div>
-                )}
+                {/* A confusion matrix (and the precision/recall/F1 derived from
+                    it) requires labeled ground-truth outcomes — the actual class
+                    of each sample compared against the model's predicted class.
+                    The ai_feedback store only records a subjective
+                    correct/incorrect/partial verdict per suggestion, not a
+                    predicted-vs-actual class pair, so a real matrix cannot be
+                    built. We show an honest empty state rather than fabricate
+                    cells. */}
+                <EmptyState
+                  variant="no-analytics"
+                  icon={Brain}
+                  title={t('reports.confusionMatrixUnavailable', 'Confusion matrix not available')}
+                  description={t(
+                    'reports.confusionMatrixUnavailableDesc',
+                    'Building a confusion matrix needs labeled ground-truth outcomes (the actual class vs the predicted class for each sample). This system captures only a correct/incorrect feedback verdict, so a true matrix and its precision/recall/F1 cannot be computed yet.',
+                  )}
+                  className="h-75"
+                />
               </CardContent>
             </Card>
           </TabsContent>
@@ -487,6 +356,11 @@ export default function AIPerformanceDashboard() {
           {/* Confidence Calibration Tab (B2) */}
           <TabsContent value="calibration">
             <CalibrationSection />
+          </TabsContent>
+
+          {/* AI Analysis Hub Tab (doc 35 F1 — aiAnalysisHub.*) */}
+          <TabsContent value="analysisHub">
+            <AnalysisHubSection />
           </TabsContent>
 
           {/* Training Batches Tab */}
@@ -548,7 +422,7 @@ export default function AIPerformanceDashboard() {
                               {/* Batch Info */}
                               <div className="grid grid-cols-2 gap-4 p-4 rounded-lg bg-muted/50">
                                 <div>
-                                  <div className="text-sm text-muted-foreground">Batch ID</div>
+                                  <div className="text-sm text-muted-foreground">{t('reports.batchId', 'Batch ID')}</div>
                                   <div className="font-mono text-sm">{batch.batchId}</div>
                                 </div>
                                 <div>
@@ -565,11 +439,11 @@ export default function AIPerformanceDashboard() {
                                 </div>
                                 <div>
                                   <div className="text-sm text-muted-foreground">{t('reports.correctSamples')}</div>
-                                  <div className="font-medium text-green-600">{batch.correctSamples}</div>
+                                  <div className="font-medium text-success">{batch.correctSamples}</div>
                                 </div>
                                 <div>
                                   <div className="text-sm text-muted-foreground">{t('reports.incorrectSamples')}</div>
-                                  <div className="font-medium text-red-600">{batch.incorrectSamples}</div>
+                                  <div className="font-medium text-destructive">{batch.incorrectSamples}</div>
                                 </div>
                                 <div className="col-span-2">
                                   <div className="text-sm text-muted-foreground">{t('reports.createdDate')}</div>
@@ -597,12 +471,13 @@ export default function AIPerformanceDashboard() {
                     </div>
                   </ScrollArea>
                 ) : (
-                  <div className="h-50 flex items-center justify-center text-muted-foreground">
-                    <div className="text-center">
-                      <Database className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>{t('reports.noTrainingBatches')}</p>
-                    </div>
-                  </div>
+                  <EmptyState
+                    variant="no-data"
+                    icon={Database}
+                    title={t('reports.noTrainingBatches')}
+                    description={t('reports.noTrainingBatchesDesc', 'Export reviewed feedback into a training batch to see it here.')}
+                    className="h-50"
+                  />
                 )}
               </CardContent>
             </Card>
@@ -637,21 +512,21 @@ export default function AIPerformanceDashboard() {
                             <div className="flex items-center gap-3">
                               <div className={cn(
                                 "p-2 rounded-lg",
-                                suggestion.suggestedResult === 'NG' ? "bg-red-500/10" : "bg-green-500/10"
+                                suggestion.suggestedResult === 'NG' ? "bg-destructive/10" : "bg-success/10"
                               )}>
                                 {suggestion.suggestedResult === 'NG' ? (
-                                  <XCircle className="h-4 w-4 text-red-500" />
+                                  <XCircle className="h-4 w-4 text-destructive" />
                                 ) : (
-                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                  <CheckCircle2 className="h-4 w-4 text-success" />
                                 )}
                               </div>
                               <div>
                                 <div className="font-medium">
-                                  Inspection #{suggestion.inspectionId}
+                                  {t('reports.inspectionN', 'Inspection #{{id}}', { id: suggestion.inspectionId })}
                                 </div>
                                 <div className="text-sm text-muted-foreground">
-                                  Suggested: {suggestion.suggestedResult} • 
-                                  Confidence: {(suggestion.confidence * 100).toFixed(0)}%
+                                  {t('reports.suggestedLabel', 'Suggested')}: {suggestion.suggestedResult} •{' '}
+                                  {t('reports.confidenceLabel', 'Confidence')}: {(suggestion.confidence * 100).toFixed(0)}%
                                 </div>
                               </div>
                             </div>
@@ -674,18 +549,19 @@ export default function AIPerformanceDashboard() {
                     </div>
                   </ScrollArea>
                 ) : (
-                  <div className="h-50 flex items-center justify-center text-muted-foreground">
-                    <div className="text-center">
-                      <Brain className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>{t('reports.noSuggestions')}</p>
-                    </div>
-                  </div>
+                  <EmptyState
+                    variant="no-data"
+                    icon={Brain}
+                    title={t('reports.noSuggestions')}
+                    description={t('reports.noSuggestionsDesc', 'AI suggestions and their feedback history will appear here.')}
+                    className="h-50"
+                  />
                 )}
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }
@@ -827,9 +703,9 @@ function EvalBeforeAfterSection() {
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
               {report.gate.pass ? (
-                <CheckCircle2 className="h-5 w-5 text-green-500" />
+                <CheckCircle2 className="h-5 w-5 text-success" />
               ) : (
-                <XCircle className="h-5 w-5 text-red-500" />
+                <XCircle className="h-5 w-5 text-destructive" />
               )}
               <div className="flex-1">
                 <p className="font-medium">
@@ -854,13 +730,13 @@ function EvalBeforeAfterSection() {
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="metric" />
-                    <YAxis domain={[0, 100]} />
-                    <RTooltip />
+                    <CartesianGrid {...chartGridProps} />
+                    <XAxis dataKey="metric" tick={chartAxisTick} />
+                    <YAxis domain={[0, 100]} tick={chartAxisTick} />
+                    <RTooltip contentStyle={chartTooltipStyle} labelStyle={chartTooltipLabelStyle} />
                     <Legend />
-                    <Bar dataKey={beforeKey} fill="#94a3b8" />
-                    <Bar dataKey={afterKey} fill="#3b82f6" />
+                    <Bar dataKey={beforeKey} fill={chartColor(4)} />
+                    <Bar dataKey={afterKey} fill={chartColor(0)} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -877,34 +753,34 @@ function EvalBeforeAfterSection() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="overflow-x-auto">
-                <table className="border-collapse text-sm">
-                  <thead>
-                    <tr>
-                      <th className="p-2" />
+                <Table className="w-auto text-sm">
+                  <TableHeader>
+                    <TableRow className="border-0 hover:bg-transparent">
+                      <TableHead className="p-2" />
                       {cmLabels.map((l) => (
-                        <th key={l} className="p-2 font-medium text-muted-foreground">{l}</th>
+                        <TableHead key={l} className="p-2 text-center font-medium text-muted-foreground">{l}</TableHead>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {cm.map((row, i) => (
-                      <tr key={i}>
-                        <td className="p-2 font-medium text-muted-foreground">{cmLabels[i] ?? i}</td>
+                      <TableRow key={i} className="border-0 hover:bg-transparent">
+                        <TableCell className="p-2 font-medium text-muted-foreground">{cmLabels[i] ?? i}</TableCell>
                         {row.map((cell, j) => (
-                          <td
+                          <TableCell
                             key={j}
                             className={cn(
                               'p-3 text-center border rounded',
-                              i === j ? 'bg-green-500/15 font-semibold' : cell > 0 ? 'bg-red-500/10' : '',
+                              i === j ? 'bg-success/15 font-semibold' : cell > 0 ? 'bg-destructive/10' : '',
                             )}
                           >
                             {cell}
-                          </td>
+                          </TableCell>
                         ))}
-                      </tr>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
                 <p className="text-xs text-muted-foreground mt-3">
                   {t('aiEval.evaluated', 'Đã đánh giá')}: {report.candidate.evaluated} • {t('aiEval.skipped', 'Bỏ qua')}: {report.candidate.skipped}
                 </p>
@@ -1007,7 +883,7 @@ function CanaryComparisonSection() {
           </div>
           {expStatus && (
             <div>
-              <Badge variant={expStatus === 'RUNNING' ? 'default' : 'secondary'}>{expStatus}</Badge>
+              <StatusBadge status={expStatus} variant={expStatus === 'RUNNING' ? 'default' : 'secondary'} />
             </div>
           )}
         </CardContent>
@@ -1019,42 +895,42 @@ function CanaryComparisonSection() {
             <CardTitle className="text-base">{t('canary.comparison', 'So sánh variant')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left p-2">{t('canary.metric', 'Chỉ số')}</th>
-                  <th className="text-right p-2">{t('canary.modelA', 'Model A (prod)')}</th>
-                  <th className="text-right p-2">{t('canary.modelB', 'Model B (canary)')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b">
-                  <td className="p-2">{t('canary.inferences', 'Số suy luận')}</td>
-                  <td className="text-right p-2">{stats.modelA.inferenceCount}</td>
-                  <td className="text-right p-2">{stats.modelB.inferenceCount}</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="p-2">{t('canary.accuracy', 'Độ chính xác')}</td>
-                  <td className="text-right p-2">{pct(stats.modelA.accuracy)}</td>
-                  <td className="text-right p-2">{pct(stats.modelB.accuracy)}</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="p-2">{t('canary.avgConfidence', 'Confidence TB')}</td>
-                  <td className="text-right p-2">{pct(stats.modelA.avgConfidence)}</td>
-                  <td className="text-right p-2">{pct(stats.modelB.avgConfidence)}</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="p-2">{t('canary.avgLatency', 'Độ trễ TB (ms)')}</td>
-                  <td className="text-right p-2">{stats.modelA.avgLatencyMs}</td>
-                  <td className="text-right p-2">{stats.modelB.avgLatencyMs}</td>
-                </tr>
-                <tr>
-                  <td className="p-2">{t('canary.feedback', 'Phản hồi')}</td>
-                  <td className="text-right p-2">{stats.modelA.feedbackCount}</td>
-                  <td className="text-right p-2">{stats.modelB.feedbackCount}</td>
-                </tr>
-              </tbody>
-            </table>
+            <Table className="text-sm">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-left p-2">{t('canary.metric', 'Chỉ số')}</TableHead>
+                  <TableHead className="text-right p-2">{t('canary.modelA', 'Model A (prod)')}</TableHead>
+                  <TableHead className="text-right p-2">{t('canary.modelB', 'Model B (canary)')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="p-2">{t('canary.inferences', 'Số suy luận')}</TableCell>
+                  <TableCell className="text-right p-2">{stats.modelA.inferenceCount}</TableCell>
+                  <TableCell className="text-right p-2">{stats.modelB.inferenceCount}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="p-2">{t('canary.accuracy', 'Độ chính xác')}</TableCell>
+                  <TableCell className="text-right p-2">{pct(stats.modelA.accuracy)}</TableCell>
+                  <TableCell className="text-right p-2">{pct(stats.modelB.accuracy)}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="p-2">{t('canary.avgConfidence', 'Confidence TB')}</TableCell>
+                  <TableCell className="text-right p-2">{pct(stats.modelA.avgConfidence)}</TableCell>
+                  <TableCell className="text-right p-2">{pct(stats.modelB.avgConfidence)}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="p-2">{t('canary.avgLatency', 'Độ trễ TB (ms)')}</TableCell>
+                  <TableCell className="text-right p-2">{stats.modelA.avgLatencyMs}</TableCell>
+                  <TableCell className="text-right p-2">{stats.modelB.avgLatencyMs}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="p-2">{t('canary.feedback', 'Phản hồi')}</TableCell>
+                  <TableCell className="text-right p-2">{stats.modelA.feedbackCount}</TableCell>
+                  <TableCell className="text-right p-2">{stats.modelB.feedbackCount}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
             <p className="text-xs text-muted-foreground mt-3">
               {t('canary.significance', 'p-value (chi-squared)')}: {stats.statisticalSignificance ?? t('canary.inconclusive', 'Chưa đủ dữ liệu')}
             </p>

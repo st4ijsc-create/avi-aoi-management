@@ -15,8 +15,49 @@ import {
   productModels,
 } from "../../drizzle/schema";
 import { statsCache, CACHE_KEYS, CACHE_TTL } from "../_core/cache";
+import { resolveFactoryDateWindow } from "../utils/kpi";
+import { getFalseCallEscapeKpi } from "../services/falseCallEscapeService";
 
 export const productionDashboardRouter = router({
+  /**
+   * Doc 27 gap A9 (W5-A) — paired false-call ↔ escape KPI (the AOI tuning
+   * trade-off). falseCallRate = NTF / machine-NG-calls (honest rename of the
+   * old NTF/total `retestRate` proxy); escapeRate comes from station_traces
+   * (stationTriangulation). Definitions, scope caveats and the visual-only
+   * threshold wiring are documented in services/falseCallEscapeService.ts.
+   * Date-only strings are resolved as FACTORY-local calendar days.
+   */
+  getFalseCallEscape: protectedProcedure
+    .input(z.object({
+      startDate: z.string(),
+      endDate: z.string(),
+      machineId: z.number().optional(),
+      lineId: z.number().optional(),
+      factoryId: z.number().optional(),
+      productModelId: z.number().optional(),
+    }))
+    .query(async ({ input }) => {
+      const window = resolveFactoryDateWindow(input.startDate, input.endDate);
+
+      // Resolve machine scope from hierarchy filters (single machine wins).
+      let machineIds: number[] | undefined;
+      if (input.machineId) {
+        machineIds = [input.machineId];
+      } else if (input.lineId || input.factoryId) {
+        const database = await getDb();
+        machineIds = database
+          ? await resolveMachineIds(database, { factoryId: input.factoryId, lineId: input.lineId })
+          : [];
+      }
+
+      return getFalseCallEscapeKpi({
+        startDate: window.start,
+        endDate: window.end,
+        machineIds,
+        productModelId: input.productModelId,
+      });
+    }),
+
   /**
    * Get per-station production overview.
    * Each row = 1 station with yield, output, retests, top defects.
@@ -469,8 +510,15 @@ export const productionDashboardRouter = router({
         const ucl = Math.min(mean + 3 * stddev, 100);
         const lcl = Math.max(mean - 3 * stddev, 0);
 
-        // Cpk estimate (target = 100% yield, USL=100, LSL=0)
-        const cpk = stddev > 0 ? Math.min((ucl - mean) / (3 * stddev), (mean - lcl) / (3 * stddev)) : 0;
+        // Cpk vs the SPEC limits (yield ∈ [0,100]), NOT the control limits.
+        // doc 54 P2.1 — was `min((ucl-mean)/3σ, (mean-lcl)/3σ)` with ucl/lcl = mean±3σ
+        // ⇒ 3σ/3σ = 1.0 by construction (control limits used as spec limits) → a
+        // fabricated "always-capable" reading. Use USL=100 / LSL=0 so Cpk actually
+        // reflects how far the mean yield sits from the bounds relative to spread.
+        const YIELD_USL = 100, YIELD_LSL = 0;
+        const cpk = stddev > 0
+          ? Math.min((YIELD_USL - mean) / (3 * stddev), (mean - YIELD_LSL) / (3 * stddev))
+          : 0;
 
         return {
           stationId: Number(row.stationId),
@@ -492,6 +540,34 @@ export const productionDashboardRouter = router({
       }));
 
       return results.filter(Boolean);
+    }),
+
+  /**
+   * doc 54 P2.5 — Takt / utilization / per-station line-balance for the analytics
+   * dashboard. Computes (from real sources, honest-null when data is sparse):
+   *   • takt time            = window / demand   (demand = line.capacityPerHour × hours;
+   *                            null when no capacity configured — never fabricated)
+   *   • actual cycle time    = window / producedUnits
+   *   • time utilization     = Σonline / Σ(online+offline)   (machine_status_logs)
+   *   • capacity utilization = producedUnits / demand
+   *   • per-station balance  = mean/max station cycle time + bottleneck station
+   * One row per production line in scope.
+   */
+  getLineBalance: protectedProcedure
+    .input(z.object({
+      factoryId: z.number().optional(),
+      lineId: z.number().optional(),
+      startDate: z.coerce.date(),
+      endDate: z.coerce.date(),
+    }))
+    .query(async ({ input }) => {
+      const { getLineTaktUtilization } = await import("../services/oeeService");
+      return getLineTaktUtilization({
+        lineId: input.lineId,
+        factoryId: input.factoryId,
+        from: input.startDate,
+        to: input.endDate,
+      });
     }),
 });
 

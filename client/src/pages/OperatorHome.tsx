@@ -7,38 +7,69 @@
  * the operator's role-aware "Today" summary right at the top — zero clicks to a
  * personalized status.
  *
- * Everything here REUSES existing, battle-tested components — nothing is rebuilt:
- *   - <TodayBriefing/>        role-aware glanceable summary (top of page)
- *   - <MachineQuickScan/>     "Quét máy" → QR/NFC → /ai-chat?machine=…
- *   - <QuickIssueReport/>     "Báo sự cố" → AI-classified Andon
- *   - <AIActionInbox/>        "Việc cần xử lý" → 1-tap approve inbox
- *   - navigation to /production-dashboard and /ai-chat
+ * Doc 40 Wave 4 (persona operator) adds:
+ *   - KIOSK mode polish (?kiosk=1): oversized tiles + a prominent RED emergency
+ *     row ("Báo sự cố" + "Gọi bảo trì") pinned to the top.
+ *   - "Line của tôi": defaults the line-status view to the operator's assigned
+ *     factory (userAssignment.getMyAssignments) with a "Xem cả nhà máy" escape.
+ *   - "Gọi bảo trì": 1-tap raises a maintenance-reason Andon (alert-only — it
+ *     never actuates a machine).
+ *   - "Đổi sản phẩm": deep-links to the 4-step ProductChangeoverWizard.
  *
- * Rendered inside DashboardLayout like the other pages. Not role-locked: any
- * authenticated role can view it (each underlying action enforces its own RBAC),
- * but it is purpose-built for operators and is their default landing.
+ * Everything REUSES existing, battle-tested components. Rendered inside
+ * DashboardLayout. Not role-locked (each underlying action enforces its own RBAC).
  */
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { TodayBriefing } from "@/components/TodayBriefing";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import MachineQuickScan from "@/components/MachineQuickScan";
 import QuickIssueReport from "@/components/QuickIssueReport";
+import OperatorSessionControl from "@/components/OperatorSessionControl";
 import { AIActionInbox } from "@/components/AIActionInbox";
-import { FirstRunTour } from "@/components/FirstRunTour";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   ScanLine,
   AlertTriangle,
   Factory,
   MessageSquare,
   Inbox,
+  Wrench,
+  Package,
+  Building2,
+  Loader2,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
+
+// localStorage key: the operator welcome/onboarding modal shows exactly ONCE
+// (dismissal persists here) so it never re-covers the first-tap controls (B15).
+const WELCOME_DISMISSED_KEY = "synapse.operator.welcomeDismissed";
 
 // ─── A single large tile (≥96px, big icon + label, high contrast) ──────────────
 
@@ -50,27 +81,32 @@ interface TileProps {
   accent: string;
   /** Optional count badge (e.g. pending inbox items). */
   badge?: number;
+  /** Kiosk mode → oversized tile for viewing distance. */
+  big?: boolean;
 }
 
-function Tile({ icon: Icon, label, onClick, accent, badge }: TileProps) {
+function Tile({ icon: Icon, label, onClick, accent, badge, big }: TileProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "relative flex min-h-[96px] flex-col items-center justify-center gap-2 rounded-2xl border-2 p-4 text-center",
+        "relative flex flex-col items-center justify-center gap-2 rounded-2xl border-2 p-4 text-center",
         "transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40",
         "bg-card hover:bg-muted/60 shadow-sm",
+        big ? "min-h-[140px]" : "min-h-[96px]",
         accent,
       )}
     >
       {badge != null && badge > 0 && (
-        <span className="absolute right-2 top-2 flex h-7 min-w-7 items-center justify-center rounded-full bg-red-500 px-2 text-sm font-bold text-white">
+        <span className="absolute right-2 top-2 flex h-7 min-w-7 items-center justify-center rounded-full bg-destructive px-2 text-sm font-bold text-destructive-foreground">
           {badge > 99 ? "99+" : badge}
         </span>
       )}
-      <Icon className="h-10 w-10 shrink-0" strokeWidth={2.25} />
-      <span className="text-lg font-bold leading-tight tracking-tight">{label}</span>
+      <Icon className={cn("shrink-0", big ? "h-14 w-14" : "h-10 w-10")} strokeWidth={2.25} />
+      <span className={cn("font-bold leading-tight tracking-tight", big ? "text-2xl" : "text-lg")}>
+        {label}
+      </span>
     </button>
   );
 }
@@ -79,6 +115,35 @@ export default function OperatorHome() {
   const { t } = useTranslation();
   const [, navigate] = useLocation();
   const [inboxOpen, setInboxOpen] = useState(false);
+  // B14 — confirm gate before the maintenance Andon fires (no accidental spam).
+  const [confirmMaintenance, setConfirmMaintenance] = useState(false);
+  // B15 — one-time welcome/onboarding modal.
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+
+  // ── Kiosk mode (?kiosk=1) — bigger tiles + pinned emergency row ──────────────
+  const isKiosk = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const p = new URLSearchParams(window.location.search);
+    return p.get("kiosk") === "1" || p.get("kiosk") === "true";
+  }, []);
+
+  // ── B15: welcome modal shows ONCE (kiosk skips it entirely) ──────────────────
+  useEffect(() => {
+    if (isKiosk) return;
+    try {
+      if (window.localStorage.getItem(WELCOME_DISMISSED_KEY) !== "1") setWelcomeOpen(true);
+    } catch {
+      /* localStorage blocked → never block the controls behind onboarding */
+    }
+  }, [isKiosk]);
+  const dismissWelcome = () => {
+    try {
+      window.localStorage.setItem(WELCOME_DISMISSED_KEY, "1");
+    } catch {
+      /* best-effort persistence */
+    }
+    setWelcomeOpen(false);
+  };
 
   // Pending action count for the "Việc cần xử lý" tile badge (best-effort).
   const countQuery = trpc.aiInbox.count.useQuery(undefined, {
@@ -88,29 +153,130 @@ export default function OperatorHome() {
   });
   const pendingCount = countQuery.data?.count ?? 0;
 
+  // ── "Line của tôi": resolve the operator's assigned factory (honest-null) ────
+  const assignmentsQuery = trpc.userAssignment.getMyAssignments.useQuery(undefined, {
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const factoriesQuery = trpc.factory.list.useQuery(undefined, {
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const myFactories = useMemo(() => {
+    const codes = new Set(
+      (assignmentsQuery.data?.factories ?? []).map((f: any) => f.factoryCode).filter(Boolean),
+    );
+    const all = (factoriesQuery.data ?? []) as Array<{ id: number; code: string; name: string }>;
+    return all.filter((f) => codes.has(f.code));
+  }, [assignmentsQuery.data, factoriesQuery.data]);
+  const singleFactory = myFactories.length === 1 ? myFactories[0] : null;
+
+  const goMyLine = () => {
+    // Default to the operator's factory when they own exactly one; otherwise the
+    // full production dashboard (honest — no fabricated line filter).
+    navigate(singleFactory ? `/production-dashboard?factory=${singleFactory.id}` : "/production-dashboard");
+  };
+
+  // ── "Gọi bảo trì" — 1-tap maintenance Andon (ALERT-ONLY, no actuation) ───────
+  const callMaintenance = trpc.andon.raise.useMutation({
+    onSuccess: () => {
+      toast.success(t("operator.maintenanceCalled", "Đã gọi bảo trì — đội bảo trì sẽ được báo"));
+    },
+    onError: (err) => {
+      toast.error(t("operator.maintenanceCallError", "Không gọi được bảo trì"), {
+        description: err.message,
+      });
+    },
+  });
+  const handleCallMaintenance = () => {
+    callMaintenance.mutate({
+      state: "call",
+      reason: "maintenance",
+      title: t("operator.maintenanceCallTitle", "Yêu cầu bảo trì từ vận hành"),
+    });
+  };
+
+  // Emergency buttons — rendered big in kiosk, still present otherwise.
+  const emergencyRow = (
+    <div className="grid grid-cols-2 gap-3 sm:gap-4">
+      <QuickIssueReport
+        trigger={
+          <button
+            type="button"
+            className={cn(
+              "flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-red-500/60 bg-red-500/10 p-4 text-red-600 shadow-sm dark:text-red-400",
+              "transition-colors active:scale-[0.98] hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-500/40",
+              isKiosk ? "min-h-[140px]" : "min-h-[110px]",
+            )}
+          >
+            <AlertTriangle className={cn(isKiosk ? "h-14 w-14" : "h-11 w-11")} strokeWidth={2.5} />
+            <span className={cn("font-extrabold", isKiosk ? "text-2xl" : "text-xl")}>
+              {t("operator.reportIssue", "Báo sự cố")}
+            </span>
+          </button>
+        }
+      />
+      <button
+        type="button"
+        onClick={() => setConfirmMaintenance(true)}
+        disabled={callMaintenance.isPending}
+        className={cn(
+          "flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-amber-500/60 bg-amber-500/10 p-4 text-amber-600 shadow-sm dark:text-amber-400",
+          "transition-colors active:scale-[0.98] hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-amber-500/40 disabled:opacity-60",
+          isKiosk ? "min-h-[140px]" : "min-h-[110px]",
+        )}
+      >
+        {callMaintenance.isPending ? (
+          <Loader2 className={cn("animate-spin", isKiosk ? "h-14 w-14" : "h-11 w-11")} />
+        ) : (
+          <Wrench className={cn(isKiosk ? "h-14 w-14" : "h-11 w-11")} strokeWidth={2.5} />
+        )}
+        <span className={cn("font-extrabold", isKiosk ? "text-2xl" : "text-xl")}>
+          {t("operator.callMaintenance", "Gọi bảo trì")}
+        </span>
+      </button>
+    </div>
+  );
+
   return (
     <DashboardLayout>
-      <div className="mx-auto w-full max-w-4xl space-y-6 p-2 sm:p-4">
+      <PageContainer className="max-w-4xl">
         {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary">
-            <Factory className="h-7 w-7" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              {t("operator.title", "Màn hình vận hành")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("operator.subtitle", "Chạm một nút để bắt đầu")}
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Factory className="h-6 w-6" />}
+          title={t("operator.title", "Màn hình vận hành")}
+          description={t("operator.subtitle", "Chạm một nút để bắt đầu")}
+        />
 
         {/* U16 — offline indicator (sets expectations when connectivity drops) */}
         <OfflineBanner />
 
-        {/* Role-aware "Today" summary (zero-click) */}
-        <TodayBriefing />
+        {/* KIOSK: emergency row pinned to the very top (biggest, red/amber). */}
+        {isKiosk && emergencyRow}
+
+        {/* Role-aware "Today" summary (zero-click) — hidden in kiosk to keep it lean */}
+        {!isKiosk && <TodayBriefing />}
+
+        {/* Clock-in / start-stop production session (W4-E) */}
+        <OperatorSessionControl />
+
+        {/* "Line của tôi" strip */}
+        {myFactories.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/40 px-4 py-3">
+            <div className="flex items-center gap-2 text-sm">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">
+                {t("operator.myFactory", "Nhà máy của tôi")}:
+              </span>
+              <span className="font-semibold">
+                {myFactories.map((f) => f.name).join(", ")}
+              </span>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => navigate("/production-dashboard")}>
+              {t("operator.viewWholePlant", "Xem cả nhà máy")}
+            </Button>
+          </div>
+        )}
 
         {/* Big-button task grid */}
         <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
@@ -122,29 +288,56 @@ export default function OperatorHome() {
                 label={t("operator.scanMachine", "Quét máy")}
                 accent="border-sky-500/30 text-sky-600 dark:text-sky-400"
                 onClick={() => {}}
+                big={isKiosk}
               />
             }
           />
 
-          {/* Báo sự cố → QuickIssueReport (custom big-tile trigger) */}
-          <QuickIssueReport
-            trigger={
-              <Tile
-                icon={AlertTriangle}
-                label={t("operator.reportIssue", "Báo sự cố")}
-                accent="border-red-500/40 text-red-600 dark:text-red-400"
-                onClick={() => {}}
-              />
-            }
+          {/* Đổi sản phẩm → ProductChangeoverWizard */}
+          <Tile
+            icon={Package}
+            label={t("operator.changeover", "Đổi sản phẩm")}
+            accent="border-teal-500/30 text-teal-600 dark:text-teal-400"
+            onClick={() => navigate("/product-changeover")}
+            big={isKiosk}
           />
 
-          {/* Trạng thái dây chuyền → /production-dashboard */}
+          {/* Trạng thái dây chuyền (của tôi) → /production-dashboard[?factory] */}
           <Tile
             icon={Factory}
-            label={t("operator.lineStatus", "Trạng thái dây chuyền")}
+            label={
+              singleFactory
+                ? t("operator.myLine", "Dây chuyền của tôi")
+                : t("operator.lineStatus", "Trạng thái dây chuyền")
+            }
             accent="border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
-            onClick={() => navigate("/production-dashboard")}
+            onClick={goMyLine}
+            big={isKiosk}
           />
+
+          {/* Non-kiosk: Báo sự cố tile (kiosk shows the big red row instead) */}
+          {!isKiosk && (
+            <QuickIssueReport
+              trigger={
+                <Tile
+                  icon={AlertTriangle}
+                  label={t("operator.reportIssue", "Báo sự cố")}
+                  accent="border-red-500/40 text-red-600 dark:text-red-400"
+                  onClick={() => {}}
+                />
+              }
+            />
+          )}
+
+          {/* Non-kiosk: Gọi bảo trì tile */}
+          {!isKiosk && (
+            <Tile
+              icon={Wrench}
+              label={t("operator.callMaintenance", "Gọi bảo trì")}
+              accent="border-amber-500/40 text-amber-600 dark:text-amber-400"
+              onClick={() => setConfirmMaintenance(true)}
+            />
+          )}
 
           {/* Hỏi AI → /ai-chat */}
           <Tile
@@ -152,6 +345,7 @@ export default function OperatorHome() {
             label={t("operator.askAI", "Hỏi AI")}
             accent="border-violet-500/30 text-violet-600 dark:text-violet-400"
             onClick={() => navigate("/ai-chat")}
+            big={isKiosk}
           />
 
           {/* Việc cần xử lý → AIActionInbox */}
@@ -161,15 +355,77 @@ export default function OperatorHome() {
             accent="border-amber-500/30 text-amber-600 dark:text-amber-400"
             badge={pendingCount}
             onClick={() => setInboxOpen(true)}
+            big={isKiosk}
           />
         </div>
-      </div>
+      </PageContainer>
 
       {/* Controlled inbox dialog (1-tap approve) */}
       <AIActionInbox open={inboxOpen} onOpenChange={setInboxOpen} />
 
-      {/* First-run coach — shown once per user on their landing */}
-      <FirstRunTour />
+      {/* B14 — confirm before raising the maintenance Andon (no misclick spam) */}
+      <AlertDialog open={confirmMaintenance} onOpenChange={setConfirmMaintenance}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("operator.confirmMaintenanceTitle", "Gọi đội bảo trì?")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                "operator.confirmMaintenanceBody",
+                "Thao tác này báo cho đội bảo trì ngay. Chỉ gọi khi thực sự cần hỗ trợ.",
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel", "Hủy")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCallMaintenance}
+              className="bg-amber-600 text-white hover:bg-amber-700 focus-visible:ring-amber-500/40"
+            >
+              {t("operator.confirmMaintenanceConfirm", "Gọi bảo trì")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* B15 — one-time welcome coach: shows ONCE (persisted), never re-covers controls */}
+      <Dialog open={welcomeOpen} onOpenChange={(o) => (o ? setWelcomeOpen(true) : dismissWelcome())}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              {t("tour.title", "Chào mừng bạn!")}
+            </DialogTitle>
+            <DialogDescription>
+              {t("tour.subtitle", "Đây là vài chỗ để bắt đầu nhanh nhất cho công việc của bạn.")}
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-2 py-2">
+            {[
+              { icon: ScanLine, label: t("operator.scanMachine", "Quét máy") },
+              { icon: AlertTriangle, label: t("operator.reportIssue", "Báo sự cố") },
+              { icon: Inbox, label: t("operator.actionInbox", "Việc cần xử lý") },
+              { icon: MessageSquare, label: t("operator.askAI", "Hỏi AI") },
+            ].map((tip) => {
+              const Icon = tip.icon;
+              return (
+                <li key={tip.label} className="flex items-center gap-3 rounded-lg border p-2">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="text-sm font-medium text-foreground">{tip.label}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <DialogFooter>
+            <Button onClick={dismissWelcome} className="w-full sm:w-auto">
+              {t("tour.start", "Bắt đầu")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

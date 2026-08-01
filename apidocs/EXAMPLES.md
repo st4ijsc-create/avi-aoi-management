@@ -34,8 +34,12 @@ from typing import Optional
 class AviAoiClient:
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
+        self.api_key = api_key          # khóa mk_... (khuyến nghị)
         self.session = requests.Session()
+        # KHUYẾN NGHỊ: gửi khóa qua header (được ưu tiên hơn body apiKey).
+        # Các procedure có ràng buộc apiKey||machineCode vẫn cần apiKey trong body
+        # để qua kiểm tra input, nên _query/_mutate dưới đây vẫn gắn apiKey vào body.
+        self.session.headers.update({"Authorization": f"Bearer {api_key}"})
 
     def _query(self, path: str, input_data: dict) -> dict:
         """Gọi tRPC query (GET)."""
@@ -60,26 +64,34 @@ class AviAoiClient:
             "machineCode": machine_code
         })
 
-    def check_points_version(self, product_code: str) -> dict:
+    def check_points_version(self, product_model_code: str) -> dict:
         return self._query("machineApi.checkPointsVersion", {
-            "productCode": product_code
+            "productModelCode": product_model_code
         })
 
-    def get_points(self, product_code: str) -> dict:
+    def get_points(self, product_model_code: str) -> dict:
         return self._query("machineApi.getPoints", {
-            "productCode": product_code
+            "productModelCode": product_model_code
         })
 
-    def submit_inspection(self, product_code: str, measurements: list,
-                          lot_number: str = None, serial_number: str = None,
-                          operator_name: str = None) -> dict:
+    def submit_inspection(self, serial_number: str, overall_result: str,
+                          measurements: list, product_model: str = None,
+                          batch_number: str = None, idempotency_key: str = None,
+                          points_config_version: int = None,
+                          inspection_time: str = None) -> dict:
+        # BẮT BUỘC: serial_number, overall_result ("OK"|"NG"|"NTF"),
+        #           và mỗi measurement phải có "result".
         data = {
-            "productCode": product_code,
+            "serialNumber": serial_number,       # BẮT BUỘC
+            "overallResult": overall_result,     # BẮT BUỘC — "OK"|"NG"|"NTF"
             "measurements": measurements,
         }
-        if lot_number: data["lotNumber"] = lot_number
-        if serial_number: data["serialNumber"] = serial_number
-        if operator_name: data["operatorName"] = operator_name
+        if product_model: data["productModel"] = product_model
+        if batch_number: data["batchNumber"] = batch_number
+        if inspection_time: data["inspectionTime"] = inspection_time  # ISO, NÊN kèm offset
+        if idempotency_key: data["idempotencyKey"] = idempotency_key  # ổn định qua retry
+        if points_config_version is not None:
+            data["pointsConfigVersion"] = points_config_version
         return self._mutate("machineApi.submitInspection", data)
 
     def upload_image(self, inspection_id: int, image_path: str,
@@ -96,21 +108,21 @@ class AviAoiClient:
             data["measurementResultId"] = measurement_result_id
         return self._mutate("machineApi.uploadImage", data)
 
-    def sync_measurement_points(self, product_code: str, points: list,
-                                 image_width: int = None,
-                                 image_height: int = None) -> dict:
+    def sync_measurement_points(self, product_model_code: str, points: list,
+                                 source_image_width: int = None,
+                                 source_image_height: int = None) -> dict:
         data = {
-            "productCode": product_code,
+            "productModelCode": product_model_code,
             "points": points,
         }
-        if image_width: data["imageWidth"] = image_width
-        if image_height: data["imageHeight"] = image_height
+        if source_image_width: data["sourceImageWidth"] = source_image_width
+        if source_image_height: data["sourceImageHeight"] = source_image_height
         return self._mutate("machineApi.syncMeasurementPoints", data)
 
-    def delta_sync_points(self, product_code: str, last_version: int) -> dict:
+    def delta_sync_points(self, product_model_code: str, since_version: int) -> dict:
         return self._query("machineApi.deltaSyncPoints", {
-            "productCode": product_code,
-            "lastVersion": last_version,
+            "productModelCode": product_model_code,
+            "sinceVersion": since_version,
         })
 
     # ─── Product API ──────────────────────────────────────
@@ -152,35 +164,42 @@ if __name__ == "__main__":
     print(f"Có {products['total']} sản phẩm")
 
     # 3. Lấy điểm đo
-    product_code = "PROD-A"
-    version_info = client.check_points_version(product_code)
-    points = client.get_points(product_code)
-    print(f"Product {product_code} có {len(points['data'])} điểm đo")
+    product_model_code = "PROD-A"
+    version_info = client.check_points_version(product_model_code)
+    points = client.get_points(product_model_code)
 
-    # 4. Submit inspection
+    # 4. Submit inspection — serialNumber + overallResult BẮT BUỘC;
+    #    mỗi measurement PHẢI có "result".
+    import uuid
     result = client.submit_inspection(
-        product_code=product_code,
-        lot_number="LOT-2024-001",
         serial_number="SN-00001",
+        overall_result="OK",                 # "OK" | "NG" | "NTF"
+        product_model=product_model_code,
+        batch_number="LOT-2024-001",
+        idempotency_key=str(uuid.uuid4()),   # tái dùng cho mọi lần retry của board này
+        inspection_time="2026-07-16T08:00:00+07:00",
         measurements=[
+            { "pointCode": "CHECK-01", "measuredValue": 5.02, "result": "OK" },
+            { "pointCode": "VISUAL-01", "measuredValue": "OK", "result": "OK" },
             {
-                "pointId": 101,
-                "numericValue": 5.02,
-            },
-            {
-                "pointCode": "VISUAL-01",
-                "textValue": "OK",
-            },
-            {
-                "pointId": 102,
-                "numericValue": 3.8,
+                "pointCode": "CHECK-02",
+                "measuredValue": 3.8,
+                "result": "OK",
+                "valueHeight": 0.21,
                 "imageBase64": base64.b64encode(
                     open("check_102.jpg", "rb").read()
                 ).decode()
             }
         ]
     )
-    print(f"Inspection #{result['inspectionId']}: {result['overallResult']}")
+    # Response: {success, inspectionId} — có thể kèm duplicate:true (retry đã nhận)
+    # hoặc queued:true + inspectionId:null (store-forward khi DB tạm sập).
+    if result.get("queued"):
+        print(f"Đã đệm store-forward: submissionId={result['submissionId']}")
+    elif result.get("duplicate"):
+        print(f"Trùng (đã ghi trước đó): inspectionId={result['inspectionId']}")
+    else:
+        print(f"Inspection #{result['inspectionId']}: success={result['success']}")
 ```
 
 ---
@@ -217,6 +236,10 @@ public class AviAoiClient : IDisposable
         _baseUrl = baseUrl.TrimEnd('/');
         _apiKey = apiKey;
         _http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        // Khóa mk_ qua header (ưu tiên hơn body). MergeApiKey vẫn gắn apiKey vào
+        // body vì các procedure có ràng buộc apiKey||machineCode.
+        _http.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
     }
 
     private async Task<JsonElement> QueryAsync(string path, object input)
@@ -255,25 +278,33 @@ public class AviAoiClient : IDisposable
     public Task<JsonElement> HeartbeatAsync(string machineCode)
         => MutateAsync("machineApi.heartbeat", new { machineCode });
 
-    public Task<JsonElement> CheckPointsVersionAsync(string productCode)
-        => QueryAsync("machineApi.checkPointsVersion", new { productCode });
+    public Task<JsonElement> CheckPointsVersionAsync(string productModelCode)
+        => QueryAsync("machineApi.checkPointsVersion", new { productModelCode });
 
-    public Task<JsonElement> GetPointsAsync(string productCode)
-        => QueryAsync("machineApi.getPoints", new { productCode });
+    public Task<JsonElement> GetPointsAsync(string productModelCode)
+        => QueryAsync("machineApi.getPoints", new { productModelCode });
 
     public async Task<JsonElement> SubmitInspectionAsync(
-        string productCode,
-        object[] measurements,
-        string? lotNumber = null,
-        string? serialNumber = null)
+        string serialNumber,           // BẮT BUỘC
+        string overallResult,          // BẮT BUỘC — "OK"|"NG"|"NTF"
+        object[] measurements,         // mỗi phần tử phải có "result"
+        string? productModel = null,
+        string? batchNumber = null,
+        string? idempotencyKey = null,
+        int? pointsConfigVersion = null,
+        string? inspectionTime = null)
     {
         var data = new Dictionary<string, object>
         {
-            ["productCode"] = productCode,
+            ["serialNumber"] = serialNumber,
+            ["overallResult"] = overallResult,
             ["measurements"] = measurements,
         };
-        if (lotNumber != null) data["lotNumber"] = lotNumber;
-        if (serialNumber != null) data["serialNumber"] = serialNumber;
+        if (productModel != null) data["productModel"] = productModel;
+        if (batchNumber != null) data["batchNumber"] = batchNumber;
+        if (idempotencyKey != null) data["idempotencyKey"] = idempotencyKey;
+        if (inspectionTime != null) data["inspectionTime"] = inspectionTime;
+        if (pointsConfigVersion.HasValue) data["pointsConfigVersion"] = pointsConfigVersion.Value;
         return await MutateAsync("machineApi.submitInspection", data);
     }
 
@@ -306,15 +337,18 @@ public class AviAoiClient : IDisposable
 }
 
 // ─── Sử dụng ────────────────────────────────────────────
-// using var client = new AviAoiClient("http://192.168.1.100:3000", "your-api-key");
+// using var client = new AviAoiClient("http://192.168.1.100:3000", "mk_your-machine-key");
 // var result = await client.SubmitInspectionAsync(
-//     "PROD-A",
-//     new object[]
+//     serialNumber: "SN-00001",
+//     overallResult: "OK",
+//     measurements: new object[]
 //     {
-//         new { pointId = 101, numericValue = 5.02 },
-//         new { pointCode = "VISUAL-01", textValue = "OK" },
+//         new { pointCode = "CHECK-01", measuredValue = 5.02, result = "OK" },
+//         new { pointCode = "VISUAL-01", measuredValue = "OK", result = "OK" },
 //     },
-//     lotNumber: "LOT-2024-001"
+//     productModel: "PROD-A",
+//     batchNumber: "LOT-2024-001",
+//     idempotencyKey: Guid.NewGuid().ToString()
 // );
 ```
 
@@ -324,14 +358,15 @@ public class AviAoiClient : IDisposable
 
 ```javascript
 const BASE_URL = "http://192.168.1.100:3000";
-const API_KEY = "your-machine-api-key";
+const API_KEY = "mk_your-machine-key";
+const AUTH_HEADERS = { "Authorization": `Bearer ${API_KEY}` }; // ưu tiên hơn body apiKey
 
 // ─── Query helper (GET) ──────────────────────────────────
 async function trpcQuery(path, input) {
-  input.apiKey = API_KEY;
+  input.apiKey = API_KEY; // vẫn cần trong body cho procedure có ràng buộc
   const encoded = encodeURIComponent(JSON.stringify({ json: input }));
   const url = `${BASE_URL}/api/trpc/${path}?input=${encoded}`;
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: AUTH_HEADERS });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
   const data = await res.json();
   return data.result.data.json;
@@ -343,7 +378,7 @@ async function trpcMutate(path, input) {
   const url = `${BASE_URL}/api/trpc/${path}`;
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...AUTH_HEADERS },
     body: JSON.stringify({ json: input }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
@@ -354,34 +389,35 @@ async function trpcMutate(path, input) {
 // ─── Sử dụng ─────────────────────────────────────────────
 async function main() {
   // Heartbeat
-  await trpcMutate("machineApi.heartbeat", { machineCode: "MACHINE-001" });
+  await trpcMutate("machineApi.heartbeat", { apiKey: API_KEY });
 
-  // Lấy sản phẩm
-  const products = await trpcQuery("publicProductApi.listProducts", {
-    search: "PROD",
-    limit: 10,
-  });
-  console.log(`Tìm thấy ${products.total} sản phẩm`);
-
-  // Submit inspection
+  // Submit inspection — serialNumber + overallResult BẮT BUỘC; mỗi measurement có "result".
   const result = await trpcMutate("machineApi.submitInspection", {
-    productCode: "PROD-A",
-    lotNumber: "LOT-2024-001",
+    serialNumber: "SN-00001",
+    overallResult: "OK",              // "OK" | "NG" | "NTF"
+    productModel: "PROD-A",
+    batchNumber: "LOT-2024-001",
+    idempotencyKey: crypto.randomUUID(),
+    inspectionTime: new Date().toISOString(),
     measurements: [
-      { pointId: 101, numericValue: 5.02 },
-      { pointCode: "VISUAL-01", textValue: "OK" },
+      { pointCode: "CHECK-01", measuredValue: 5.02, result: "OK" },
+      { pointCode: "VISUAL-01", measuredValue: "OK", result: "OK" },
     ],
   });
-  console.log(`Kết quả: ${result.overallResult}`);
+  // { success, inspectionId } — hoặc { duplicate:true } / { queued:true, inspectionId:null }
+  console.log(result.queued ? `Queued ${result.submissionId}` : `Inspection #${result.inspectionId}`);
 
-  // Upload ảnh (Node.js with fs)
+  // Upload ảnh bổ sung cho 1 điểm (Node.js with fs)
   const fs = require("fs");
   const imageBase64 = fs.readFileSync("check.jpg").toString("base64");
-  await trpcMutate("machineApi.uploadImage", {
-    inspectionId: result.inspectionId,
-    imageBase64,
-    imageType: "inspection",
-  });
+  if (result.inspectionId) {
+    await trpcMutate("machineApi.uploadImage", {
+      apiKey: API_KEY,
+      inspectionId: result.inspectionId,
+      pointCode: "CHECK-01",
+      imageBase64,
+    });
+  }
 }
 
 main().catch(console.error);
@@ -399,29 +435,34 @@ INPUT='{"json":{"apiKey":"your-key","search":"PROD","limit":10}}'
 curl "http://localhost:3000/api/trpc/publicProductApi.listProducts?input=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$INPUT'))")"
 
 # Kiểm tra version điểm đo
-INPUT='{"json":{"apiKey":"your-key","productCode":"PROD-A"}}'
+INPUT='{"json":{"apiKey":"mk_your-key","productModelCode":"PROD-A"}}'
 curl "http://localhost:3000/api/trpc/machineApi.checkPointsVersion?input=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$INPUT'))")"
 ```
 
 ### Mutation (POST)
 
 ```bash
-# Heartbeat
+# Heartbeat (khóa mk_ qua header Bearer + body)
 curl -X POST http://localhost:3000/api/trpc/machineApi.heartbeat \
   -H "Content-Type: application/json" \
-  -d '{"json":{"apiKey":"your-key","machineCode":"MACHINE-001"}}'
+  -H "Authorization: Bearer mk_your-key" \
+  -d '{"json":{"apiKey":"mk_your-key"}}'
 
-# Submit inspection
+# Submit inspection — serialNumber + overallResult BẮT BUỘC; mỗi measurement có "result".
 curl -X POST http://localhost:3000/api/trpc/machineApi.submitInspection \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer mk_your-key" \
   -d '{
     "json": {
-      "apiKey": "your-key",
-      "productCode": "PROD-A",
-      "lotNumber": "LOT-001",
+      "apiKey": "mk_your-key",
+      "serialNumber": "SN-00001",
+      "overallResult": "OK",
+      "productModel": "PROD-A",
+      "batchNumber": "LOT-001",
+      "idempotencyKey": "3f9c1a7e-8b2d-4e11-9c33-aa0011223344",
       "measurements": [
-        {"pointId": 101, "numericValue": 5.02},
-        {"pointCode": "VISUAL-01", "textValue": "OK"}
+        {"pointCode": "CHECK-01", "measuredValue": 5.02, "result": "OK"},
+        {"pointCode": "VISUAL-01", "measuredValue": "OK", "result": "OK"}
       ]
     }
   }'
@@ -434,38 +475,38 @@ curl -X POST http://localhost:3000/api/trpc/machineApi.submitInspection \
 ### Pattern 1: Khởi động máy
 
 ```
-1. heartbeat(machineCode)           → Đăng ký máy online
-2. listProducts()                    → Lấy danh sách sản phẩm
-3. getPoints(productCode)           → Tải điểm đo
-4. getProductImage(productCode)     → Tải ảnh tham chiếu
-5. Cho từng point có ảnh:
-   getPointImage(pointCode, productCode) → Tải ảnh tham chiếu điểm
+1. heartbeat(apiKey)                        → Đăng ký máy online
+2. getPoints(productModelCode)              → Tải điểm đo (machineApi.getPoints)
+3. getProductImage(productModelCode)        → Tải ảnh tham chiếu (machineApi.getProductImage)
+4. Cho từng point có ảnh:
+   getPointImage(productModelCode, pointCode) → Tải ảnh tham chiếu điểm
 ```
 
 ### Pattern 2: Vòng lặp kiểm tra
 
 ```
 Repeat:
-  1. submitInspection(productCode, measurements)
-     → Nhận inspectionId, overallResult
-  2. Nếu có ảnh cần upload:
-     uploadImage(inspectionId, imageBase64)
-  3. Kiểm tra overallResult:
+  1. submitInspection(serialNumber, overallResult, measurements[, productModel, idempotencyKey])
+     → Nhận { success, inspectionId } (hoặc duplicate:true / queued:true)
+  2. Nếu cần upload thêm ảnh cho 1 điểm:
+     uploadImage(inspectionId, pointCode, imageBase64)
+  3. Xử lý theo overallResult ĐÃ GỬI:
      - "OK"  → tiếp tục
      - "NG"  → xử lý cảnh báo, có thể dừng line
+  Lưu ý: kết quả OK/NG do MÁY quyết định trong request; response KHÔNG trả lại overallResult.
 ```
 
 ### Pattern 3: Đồng bộ định kỳ
 
 ```
-Lưu lastVersion local.
+Lưu lastVersion local theo productModelCode.
 
 Mỗi 5 phút:
-  1. checkPointsVersion(productCode)
-     → So sánh version với lastVersion
-  2. Nếu version mới hơn:
-     deltaSyncPoints(productCode, lastVersion)
-     → Chỉ nhận points đã thay đổi
+  1. checkPointsVersion(productModelCode)
+     → So sánh pointsConfigVersion với lastVersion
+  2. Nếu version server mới hơn:
+     deltaSyncPoints(productModelCode, sinceVersion = lastVersion)
+     → Nhận points đã thay đổi + deletedCodes (điểm phải NGỪNG kiểm)
      → Cập nhật lastVersion = currentVersion
 ```
 
@@ -485,9 +526,16 @@ Mỗi 5 phút:
 
 ## Lưu ý quan trọng
 
-1. **Rate Limiting**: Tối đa 1000 requests / 15 phút. Implement retry logic cho 429.
-2. **Body Size**: Tối đa 50MB. Ảnh base64 sẽ lớn hơn ~33% so với file gốc.
-3. **Encoding**: Tất cả string phải là UTF-8.
-4. **Base64**: Sử dụng standard base64 (không phải URL-safe base64).
-5. **Timeout**: Khuyến nghị timeout 30s cho query, 60s cho mutation (đặc biệt upload ảnh).
-6. **Connection Reuse**: Sử dụng connection pooling / session để tái sử dụng TCP connection.
+1. **Rate Limiting**: KHÔNG phải "1000/15 phút" (số cũ SAI). Ingest inspection mặc định **600
+   request/phút/máy** (tầng ứng dụng) dưới trần HTTP 60 000/phút/máy; login 30/15 phút. Vượt → `429`
+   kèm `Retry-After`. Xem [ERROR_CODES.md §Rate Limiting](ERROR_CODES.md#rate-limiting). Retry `429`, `503` (DB tạm sập), `500`.
+2. **Idempotency**: gửi `idempotencyKey` ỔN ĐỊNH qua mọi lần retry của cùng board để chống ghi trùng.
+   Response có thể là `{duplicate:true}` (đã ghi) hoặc `{queued:true, inspectionId:null}` (đã đệm store-forward).
+3. **Body Size**: `/api/trpc/*` & `/api/machine/*` tối đa **200MB**; đường khác 25MB. Từng ảnh base64 ≤
+   `MACHINE_INGEST_MAX_IMAGE_B64` (~15MB giải mã). Ảnh base64 lớn hơn ~33% file gốc.
+4. **Tên field (tRPC)**: `productModel`/`productModelCode` (KHÔNG `productCode`), `batchNumber` (KHÔNG
+   `lotNumber`), `measuredValue` (KHÔNG `numericValue`/`textValue`). `serialNumber`, `overallResult`,
+   và mỗi `measurements[].result` là BẮT BUỘC.
+5. **Encoding**: UTF-8. **Base64**: standard (không URL-safe).
+6. **Timeout**: khuyến nghị 30s cho query, 60s cho mutation (nhất là upload ảnh).
+7. **Connection Reuse**: dùng connection pooling / session.

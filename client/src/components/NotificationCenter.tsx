@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { useSocket, InspectionAlert } from "@/hooks/useSocket";
+import { useEcosystemEvents, type EcosystemEvent } from "@/hooks/useEcosystemEvents";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { loadNotifPrefs, saveNotifPrefs, filterAlertsByPrefs, type NotificationPrefs } from "@/lib/notificationPrefs";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,32 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
     onAlert: handleAlert,
   });
 
+  // U1-c — subscribe to the UNIFIED alert stream so ALL alert classes (safety,
+  // andon, SPC, escalation, maintenance, anomaly, quality-gate, …) reach the global
+  // notifier — not just inspection:alert. Toast the significant bands; keep a list.
+  const seenEcoIds = useRef<Set<string>>(new Set());
+  const handleEcoAlert = (evt: EcosystemEvent) => {
+    if (seenEcoIds.current.has(evt.id)) return;
+    seenEcoIds.current.add(evt.id);
+    if (evt.severity === "critical") {
+      toast.error(evt.title, { duration: 6000, icon: <XCircle className="h-4 w-4 text-red-500" /> });
+    } else if (evt.severity === "high") {
+      toast.warning(evt.title, { duration: 5000, icon: <AlertTriangle className="h-4 w-4 text-amber-500" /> });
+    }
+  };
+  const { events: ecoAlerts, clear: clearEcoAlerts, dismiss: dismissEcoAlert } = useEcosystemEvents({
+    factoryId,
+    workshopId,
+    machineId,
+    alertsOnly: true,
+    onEvent: handleEcoAlert,
+  });
+  // Skip inspection/ng/yield here — those already arrive via useSocket (avoid dupes).
+  const extraEcoAlerts = useMemo(
+    () => ecoAlerts.filter((e) => e.kind !== "inspection" && e.kind !== "ng" && e.kind !== "yield"),
+    [ecoAlerts],
+  );
+
   // U8 — per-user notification prefs (high-priority-only / snooze). Presentation filter only.
   const { user } = useAuth();
   const userKey = String((user as any)?.id ?? (user as any)?.openId ?? "anon");
@@ -61,7 +88,14 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
     });
   };
   const visibleAlerts = useMemo(() => filterAlertsByPrefs(alerts, prefs), [alerts, prefs]);
-  const unreadCount = visibleAlerts.length;
+  // U8 prefs (high-priority-only / snooze) apply to the ecosystem alerts too.
+  const visibleEcoAlerts = useMemo(() => {
+    if (prefs.snoozeUntil > Date.now()) return [];
+    if (prefs.highPriorityOnly) return extraEcoAlerts.filter((e) => e.severity === "high" || e.severity === "critical");
+    return extraEcoAlerts;
+  }, [extraEcoAlerts, prefs]);
+  const unreadCount = visibleAlerts.length + visibleEcoAlerts.length;
+  const clearAll = () => { clearAlerts(); clearEcoAlerts(); };
 
   const getAlertIcon = (type: InspectionAlert["type"]) => {
     switch (type) {
@@ -118,8 +152,8 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
                 <WifiOff className="h-4 w-4 text-red-500" />
               )}
             </SheetTitle>
-            {alerts.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={clearAlerts}>
+            {(alerts.length > 0 || extraEcoAlerts.length > 0) && (
+              <Button variant="ghost" size="sm" onClick={clearAll}>
                 {t('notifications.clearAll')}
               </Button>
             )}
@@ -155,13 +189,50 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
         </SheetHeader>
 
         <ScrollArea className="h-[calc(100vh-150px)] mt-4">
-          {visibleAlerts.length === 0 ? (
+          {visibleAlerts.length === 0 && visibleEcoAlerts.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
               <Bell className="h-12 w-12 mb-2 opacity-20" />
               <p>{t('notifications.noNew')}</p>
             </div>
           ) : (
             <div className="space-y-3">
+              {/* U1-c — unified alert-stream items (safety/andon/SPC/escalation/…) */}
+              {visibleEcoAlerts.map((evt, index) => (
+                <div
+                  key={`eco-${evt.id}`}
+                  className="flex items-start gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                >
+                  <div className="mt-0.5">
+                    {evt.severity === "critical" ? (
+                      <XCircle className="h-4 w-4 text-red-500" />
+                    ) : evt.severity === "high" ? (
+                      <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 text-blue-500" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Badge
+                        variant={evt.severity === "critical" ? "destructive" : "secondary"}
+                        className="text-xs uppercase"
+                      >
+                        {evt.kind}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">{formatTime(new Date(evt.ts))}</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{evt.title}</p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => dismissEcoAlert(index)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
               {visibleAlerts.map((alert, index) => (
                 <div
                   key={`${alert.timestamp}-${index}`}

@@ -29,23 +29,16 @@ import type { DispatchInput, DispatchTrigger } from "../ot/commandDispatcher";
 import { dispatchRobotJob } from "../robot/robotCommandDispatcher";
 import type { RobotJobSpec, RobotJobType } from "../robot/robotDriver";
 
-/** All adapter kinds this facade can address (1:1 onto an existing registry). */
-export const ADAPTER_KINDS: AdapterKind[] = [
-  "ot-opcua",
-  "ot-modbus",
-  "ot-s7",
-  "ot-mitsubishi-mc",
-  "ot-ethernet-ip",
-  "ot-stub",
-  "vision",
-  "robot",
-  "mtconnect",
-  "secsgem",
-  "vda5050",
-];
-
 /** Which existing registry/manager a kind delegates to (for discovery/UI). */
-export type DelegateRegistry = "ot" | "vision" | "robot" | "mtconnect" | "secsgem" | "vda5050";
+export type DelegateRegistry =
+  | "ot"
+  | "vision"
+  | "robot"
+  | "mtconnect"
+  | "secsgem"
+  | "vda5050"
+  | "focas"
+  | "euromap";
 
 /** Generic connection descriptor passed to read/test ops (kept loose — the real shape lives in the delegated driver). */
 export interface EquipmentConnConfig {
@@ -270,31 +263,85 @@ class ReadOnlyEquipmentAdapter implements EquipmentAdapter {
 }
 
 /**
- * The equipmentRegistry FACADE. Builds (lazily, memoised) one adapter per kind that
- * delegates to the matching existing registry. NO protocol logic lives here.
+ * ════════════════════════════════════════════════════════════════════════════
+ * U4b (doc 21 §6 / G-8) — DATA-DRIVEN adapter registry (mirrors ot/driverRegistry).
+ *
+ * A `Map<kind, factory>` + `registerEquipmentAdapter(kind, factory)` replaces the
+ * hard-coded `ADAPTER_KINDS` array + `build()` switch. Every EXISTING kind seeds
+ * itself through the registry at module load (below), so resolution is IDENTICAL —
+ * this is a behaviour-preserving refactor. A new vendor/kind is now ONE
+ * `registerEquipmentAdapter(...)` call (register-and-go); no core switch edit.
+ *
+ * The `AdapterKind` union is retained for compile-time exhaustiveness; runtime
+ * resolution is registry-driven. A brand-new kind can register under a widened
+ * string key without a union edit (see `registerEquipmentAdapter`).
+ * ════════════════════════════════════════════════════════════════════════════
  */
+
+/** A factory that builds the unified adapter for a kind (memoised by the facade). */
+export type EquipmentAdapterFactory = (kind: AdapterKind) => EquipmentAdapter;
+
+/** The plug-in registry: kind → factory. Seeded at load; extensible at runtime. */
+const adapterFactories = new Map<AdapterKind, EquipmentAdapterFactory>();
+/** Lazily-built, memoised adapter instances (one per kind). */
 const adapterCache = new Map<AdapterKind, EquipmentAdapter>();
 
-function build(kind: AdapterKind): EquipmentAdapter {
-  const proto = OT_KIND_TO_PROTOCOL[kind];
-  if (proto) return new OtEquipmentAdapter(kind, proto);
-  if (kind === "robot") return new RobotEquipmentAdapter(kind, "robot");
-  if (kind === "vda5050") return new RobotEquipmentAdapter(kind, "vda5050");
-  if (kind === "vision") return new ReadOnlyEquipmentAdapter(kind, "vision");
-  if (kind === "mtconnect") return new ReadOnlyEquipmentAdapter(kind, "mtconnect");
-  if (kind === "secsgem") return new ReadOnlyEquipmentAdapter(kind, "secsgem");
-  throw new Error(`No equipment adapter for kind "${kind}"`);
+/**
+ * Register (or override) the factory for an adapter kind. Register-and-go: a new
+ * vendor/kind needs only this call (+ optionally a capability profile). Overriding
+ * an existing kind clears its memoised instance so the next `getAdapter` rebuilds.
+ */
+export function registerEquipmentAdapter(kind: AdapterKind, factory: EquipmentAdapterFactory): void {
+  adapterFactories.set(kind, factory);
+  adapterCache.delete(kind);
 }
 
+// ── Seed every EXISTING kind through the registry (parity with the old switch) ──
+// OT family (opcua/modbus/s7/mitsubishi-mc/ethernet-ip/stub) → OtEquipmentAdapter.
+for (const [kind, proto] of Object.entries(OT_KIND_TO_PROTOCOL) as Array<[AdapterKind, OtProtocol]>) {
+  registerEquipmentAdapter(kind, (k) => new OtEquipmentAdapter(k, proto));
+}
+// Robot / AGV → RobotEquipmentAdapter (routes through robotCommandDispatcher).
+registerEquipmentAdapter("robot", (k) => new RobotEquipmentAdapter(k, "robot"));
+registerEquipmentAdapter("vda5050", (k) => new RobotEquipmentAdapter(k, "vda5050"));
+// Telemetry-only kinds → ReadOnlyEquipmentAdapter (sendCommand rejected, never dropped).
+registerEquipmentAdapter("vision", (k) => new ReadOnlyEquipmentAdapter(k, "vision"));
+registerEquipmentAdapter("mtconnect", (k) => new ReadOnlyEquipmentAdapter(k, "mtconnect"));
+registerEquipmentAdapter("secsgem", (k) => new ReadOnlyEquipmentAdapter(k, "secsgem"));
+// I1 — FOCAS/Euromap are READ-ONLY monitoring frameworks (no real device, no
+// fabricated telemetry, no control path). Their live snapshot is served by their own
+// framework adapter; the facade exposes them as read-only kinds so command attempts
+// are rejected (never silently dropped).
+registerEquipmentAdapter("focas", (k) => new ReadOnlyEquipmentAdapter(k, "focas"));
+registerEquipmentAdapter("euromap", (k) => new ReadOnlyEquipmentAdapter(k, "euromap"));
+
+/**
+ * All adapter kinds this facade can address (1:1 onto an existing registry). DERIVED
+ * from the registry keys (register-and-go) so callers still get a stable array; the
+ * insertion order mirrors the historical hard-coded list. Kept as a getter-backed
+ * const view — reads are live against the registry.
+ */
+export const ADAPTER_KINDS: AdapterKind[] = listRegisteredAdapterKinds();
+
+/** The registered kinds, in registration (== historical) order. */
+function listRegisteredAdapterKinds(): AdapterKind[] {
+  return [...adapterFactories.keys()];
+}
+
+/**
+ * The equipmentRegistry FACADE. Builds (lazily, memoised) one adapter per kind by
+ * looking the factory up in the data-driven registry. NO protocol logic lives here.
+ */
 export const equipmentRegistry = {
   /** Resolve (memoised) the unified adapter for a kind. Throws for an unknown kind. */
   getAdapter(kind: AdapterKind): EquipmentAdapter {
-    if (!ADAPTER_KINDS.includes(kind)) {
+    const factory = adapterFactories.get(kind);
+    if (!factory) {
       throw new Error(`Unknown equipment adapter kind "${kind}"`);
     }
     let a = adapterCache.get(kind);
     if (!a) {
-      a = build(kind);
+      a = factory(kind);
       adapterCache.set(kind, a);
     }
     return a;
@@ -302,10 +349,15 @@ export const equipmentRegistry = {
 
   /** List every adapter kind + the registry it delegates to (discovery/UI). */
   listAdapters(): Array<{ kind: AdapterKind; delegatesTo: DelegateRegistry }> {
-    return ADAPTER_KINDS.map((kind) => {
+    return listRegisteredAdapterKinds().map((kind) => {
       const a = equipmentRegistry.getAdapter(kind);
       return { kind: a.kind, delegatesTo: a.delegatesTo };
     });
+  },
+
+  /** Every registered kind (register-and-go view; == derived ADAPTER_KINDS). */
+  listKinds(): AdapterKind[] {
+    return listRegisteredAdapterKinds();
   },
 
   /**
@@ -316,7 +368,7 @@ export const equipmentRegistry = {
     return listProtocols();
   },
 
-  /** Test-only: clear the memoised adapters. */
+  /** Test-only: clear the memoised adapters (registrations survive). */
   _clear(): void {
     adapterCache.clear();
   },

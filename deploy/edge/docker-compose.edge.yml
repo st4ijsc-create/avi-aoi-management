@@ -1,0 +1,93 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SYNAPSE EDGE GATEWAY — one gateway per LINE, deployed AT THE EDGE (doc 44 W7-1,
+# gap G1.14, SYNAPSE Tầng-1 §5.2 "mô hình triển khai").
+#
+# This is NOT the central platform. It runs ONE process — the edge gateway
+# (dist/edgeGatewayMain.js) — near the devices of a single line/cell:
+#   • southbound: OT adapters (otManager + ConnectionSupervisor)  [OT_GATEWAY_ENABLED]
+#   • northbound: UNS bridge (Sparkplug/normalized) to the CENTRAL broker
+#   • autonomy:   store-and-forward WAL (≥24h) when the central broker is unreachable
+# It binds NO HTTP API / Socket.IO and, by default, NO local broker.
+#
+# Deploy one stack PER LINE (override EDGE_GATEWAY_NODE_CODE / _LINE_CODES / the
+# broker URL per line). Point UNS_BROKER_URL at the central EMQX (deploy/emqx).
+#
+# Run:
+#   docker compose -f deploy/edge/docker-compose.edge.yml --env-file .env.edge up -d
+#
+# ⚠️ SAFETY: the gateway is READ + publish + buffer only. It runs on the edge
+#    server, SEPARATE from the certified safety-PLC — it never writes safety
+#    functions (SYNAPSE Tầng-1 §18 "ranh giới an toàn").
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  # OPTIONAL embedded broker at the edge (store-and-forward store, or a local UNS
+  # island). Disabled by default — the gateway publishes straight to the central
+  # broker (UNS_BROKER_URL). Enable with:  docker compose --profile embedded-broker up
+  edge-broker:
+    image: emqx/emqx:5.8
+    profiles: ["embedded-broker"]
+    restart: unless-stopped
+    environment:
+      EMQX_NODE__COOKIE: ${EDGE_BROKER_COOKIE:-edgecookie}
+    ports:
+      - "1883:1883"
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  edge-gateway:
+    build:
+      context: ../..
+      dockerfile: deploy/edge/Dockerfile.edge
+    image: synapse-edge-gateway:latest
+    restart: unless-stopped
+    # No ports published — the gateway binds no HTTP/socket. Egress only (UNS + DB).
+    env_file:
+      - ../../.env.edge
+    environment:
+      NODE_ENV: production
+
+      # ── Edge-gateway mode (activates the autonomous-edge behaviours) ──
+      EDGE_GATEWAY_MODE: "true"
+      EDGE_RUNTIME_ENABLED: "true"                 # edge_nodes registry + heartbeat
+      EDGE_GATEWAY_NODE_CODE: ${EDGE_GATEWAY_NODE_CODE:-edge-line1}
+      EDGE_GATEWAY_NODE_NAME: ${EDGE_GATEWAY_NODE_NAME:-Edge Gateway Line 1}
+      EDGE_GATEWAY_FACTORY_CODE: ${EDGE_GATEWAY_FACTORY_CODE:-}
+      EDGE_GATEWAY_LINE_CODES: ${EDGE_GATEWAY_LINE_CODES:-LINE1}
+      EDGE_GATEWAY_HEARTBEAT_INTERVAL_MS: "30000"
+      # Config-as-code (GitOps): identity/scope + declarative tag mappings.
+      EDGE_GATEWAY_CONFIG_FILE: /app/config/edge-node.yaml
+
+      # ── Southbound (OT adapters — sourced from the Asset Registry / DB) ──
+      OT_GATEWAY_ENABLED: "true"
+      OT_CONN_HA_ENABLED: "true"                   # reconnect + dual-endpoint failover
+      OT_STORE_FORWARD_ENABLED: "true"             # DB-down buffer (local persist path)
+      OT_INGEST_TO_UNS: "true"                     # publish samples northbound to UNS
+
+      # ── Northbound (central UNS broker) ──
+      UNS_BRIDGE_ENABLED: "true"
+      UNS_SPARKPLUG_ENABLED: "true"                # this gateway = one Sparkplug Edge Node
+      UNS_BROKER_URL: ${UNS_BROKER_URL:?set UNS_BROKER_URL to the CENTRAL EMQX (e.g. mqtts://central:8883)}
+      UNS_BROKER_USERNAME: ${UNS_BROKER_USERNAME:-}
+      UNS_BROKER_PASSWORD: ${UNS_BROKER_PASSWORD:-}
+      UNS_SPARKPLUG_EDGE_NODE_ID: ${EDGE_GATEWAY_NODE_CODE:-edge-line1}
+
+      # ── Edge autonomy: store-and-forward WAL (≥24h) when central unreachable ──
+      EDGE_UNS_STORE_FORWARD_FILE: /app/data/edge-uns-store-forward.jsonl
+      EDGE_UNS_STORE_FORWARD_MAX_AGE_MS: "86400000"   # 24h
+      EDGE_UNS_STORE_FORWARD_DRAIN_MS: "30000"
+      EDGE_GATEWAY_LIVENESS_FILE: /app/data/edge-gateway.alive
+
+      # ── Control-plane DB (Asset Registry + edge_nodes registry). Point at the
+      #    central DB reachable from the edge; the DB store-forward rides DB-down. ──
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the central control-plane DB}
+    volumes:
+      # Durable WAL + liveness marker survive restarts (≥24h backlog).
+      - edgedata:/app/data
+      # GitOps config (edge-node.yaml + contracts/mappings) mounted read-only.
+      - ./config:/app/config:ro
+
+volumes:
+  edgedata:

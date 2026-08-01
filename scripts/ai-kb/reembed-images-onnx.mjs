@@ -19,13 +19,19 @@
  *   node scripts/ai-kb/reembed-images-onnx.mjs --dry-run
  *   node scripts/ai-kb/reembed-images-onnx.mjs            (toàn bộ)
  *
- * ENV:
- *   DATABASE_URL        (bắt buộc)
- *   DINOV2_MODEL_PATH   (mặc định D:/16.AI/model.onnx)
- *   DINOV2_MODEL_CODE   (mặc định "dinov2-small")
- *   LOCAL_STORAGE_DIR   (gốc giải package ZIP, mặc định ./uploads)
- *   AOI_CACHE_DIR       (cache ảnh đã giải, mặc định {LOCAL_STORAGE_DIR}/aoi-cache)
- *   ENABLE_CUDA=true    (tuỳ chọn EP)
+ * ENV (AOI-A — đường dẫn model CẤU HÌNH ĐƯỢC, không hardcode absolute):
+ *   DATABASE_URL          (bắt buộc)
+ *   AI_DINOV2_MODEL_PATH  đường tới .onnx (absolute HOẶC relative theo repo root).
+ *                         Mặc định: models/dinov2.onnx.
+ *   DINOV2_MODEL_PATH     alias LEGACY — vẫn đọc để backward-compat.
+ *   DINOV2_MODEL_CODE     (mặc định "dinov2-small")
+ *   LOCAL_STORAGE_DIR     (gốc giải package ZIP, mặc định ./uploads)
+ *   AOI_CACHE_DIR         (cache ảnh đã giải, mặc định {LOCAL_STORAGE_DIR}/aoi-cache)
+ *   ENABLE_CUDA=true      (tuỳ chọn EP)
+ *
+ * Script này CHẠY inference ONNX thật → BẮT BUỘC có file model. Vắng file → exit rõ ràng
+ * (KHÔNG bịa vector). Muốn embedding degrade tự động khi thiếu model → dùng embed-at-ingest
+ * worker (aoiImageEmbeddingWorker) / anomaly pipeline, không phải script backfill này.
  */
 
 import fs from "node:fs";
@@ -68,7 +74,13 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-const MODEL_PATH = process.env.DINOV2_MODEL_PATH ?? "D:/SOURCES/16.AI/model.onnx";
+// AOI-A — đường dẫn model cấu hình được (AI_DINOV2_MODEL_PATH → legacy → default repo-relative).
+const DEFAULT_MODEL_PATH = "models/dinov2.onnx";
+const RAW_MODEL_PATH =
+  process.env.AI_DINOV2_MODEL_PATH || process.env.DINOV2_MODEL_PATH || DEFAULT_MODEL_PATH;
+const MODEL_PATH = path.isAbsolute(RAW_MODEL_PATH)
+  ? RAW_MODEL_PATH
+  : path.resolve(PROJECT_ROOT, RAW_MODEL_PATH);
 const MODEL_CODE = process.env.DINOV2_MODEL_CODE ?? "dinov2-small";
 const LOCAL_STORAGE_DIR = process.env.LOCAL_STORAGE_DIR
   ? path.resolve(process.env.LOCAL_STORAGE_DIR)
@@ -82,7 +94,12 @@ const IMAGENET_STD = [0.229, 0.224, 0.225];
 const INPUT_SIZE = 224;
 
 if (!fs.existsSync(MODEL_PATH)) {
-  console.error(`ERROR: model file not found: ${MODEL_PATH}`);
+  console.error(
+    `ERROR: DINOv2 model file not found: ${MODEL_PATH}\n` +
+      `Set AI_DINOV2_MODEL_PATH (absolute or repo-relative) to a real .onnx, ` +
+      `or place one at the default ${DEFAULT_MODEL_PATH}. This backfill script needs a real ` +
+      `model and will NOT fabricate embeddings.`,
+  );
   process.exit(1);
 }
 

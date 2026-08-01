@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer, StatusBadge } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,8 +10,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { 
-  Play, 
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import type { MachineType } from "@/constants/machineTypes";
+// doc 56 Đ0 việc 6 — dropdown loại máy dùng MỘT nguồn (machine.listTypes qua hook).
+import { MachineTypeSelectOptions } from "@/components/MachineTypeSelectOptions";
+import {
+  Play,
   Pause, 
   SkipForward, 
   SkipBack, 
@@ -20,8 +25,6 @@ import {
   Download,
   Clock,
   Radio,
-  Wifi,
-  WifiOff,
   MessageSquare,
   Cpu,
   Plus,
@@ -58,6 +61,13 @@ export function MQTTReplayContent() {
   const [selectedMessage, setSelectedMessage] = useState<MqttMessage | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Register-discovered-machine dialog state (wired to machine.create)
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [regCode, setRegCode] = useState("");
+  const [regName, setRegName] = useState("");
+  const [regType, setRegType] = useState<MachineType>("AUTOMATION");
+  const [regStationId, setRegStationId] = useState<number | undefined>(undefined);
+
   // Queries
   const { data: messageHistory, refetch: refetchHistory } = trpc.mqttClient.messageHistory.useQuery({
     topic: filterTopic || undefined,
@@ -66,6 +76,39 @@ export function MQTTReplayContent() {
   });
   const { data: discoveredMachines, refetch: refetchDiscovered } = trpc.mqttClient.discoveredMachines.useQuery();
   const { data: machines } = trpc.machine.list.useQuery();
+  const { data: stations } = trpc.station.list.useQuery();
+  const utils = trpc.useUtils();
+
+  // Create a real machine record from a discovered MQTT device.
+  const registerMachineMutation = trpc.machine.create.useMutation({
+    onSuccess: () => {
+      toast.success(t('mqtt.replayPage.registerSuccess', { code: regCode, defaultValue: 'Machine {{code}} registered' }));
+      setRegisterOpen(false);
+      utils.machine.list.invalidate();
+      refetchDiscovered();
+    },
+    onError: (err) => {
+      toast.error(t('mqtt.replayPage.registerError', 'Failed to register machine'), { description: err.message });
+    },
+  });
+
+  const handleOpenRegister = (machine: DiscoveredMachine) => {
+    setRegCode(machine.machineCode);
+    setRegName(machine.machineCode);
+    setRegType("AUTOMATION");
+    setRegStationId(stations && stations.length > 0 ? stations[0].id : undefined);
+    setRegisterOpen(true);
+  };
+
+  const handleRegisterSubmit = () => {
+    if (!regStationId || !regCode.trim() || !regName.trim()) return;
+    registerMachineMutation.mutate({
+      stationId: regStationId,
+      code: regCode.trim(),
+      name: regName.trim(),
+      machineType: regType,
+    });
+  };
 
   // Socket.io connection for live messages
   useEffect(() => {
@@ -148,36 +191,35 @@ export function MQTTReplayContent() {
 
   return (
     <>
-      <div className="space-y-6">
+      <PageContainer>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">MQTT Message Replay</h1>
-            <p className="text-muted-foreground">
-              {t('mqtt.replayPage.pageDesc')}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant={connected ? "default" : "destructive"} className="gap-1">
-              {connected ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-              {connected ? t('mqtt.replayPage.connected') : t('mqtt.replayPage.disconnected')}
-            </Badge>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Radio className="h-6 w-6" />}
+          title={t('mqtt.replayPage.title', 'MQTT Message Replay')}
+          description={t('mqtt.replayPage.pageDesc')}
+          actions={
+            <StatusBadge
+              status={connected ? "connected" : "disconnected"}
+              tone={connected ? "success" : "error"}
+              label={connected ? t('mqtt.replayPage.connected') : t('mqtt.replayPage.disconnected')}
+              className="gap-1"
+            />
+          }
+        />
 
         <Tabs defaultValue="live" className="space-y-4">
           <TabsList>
             <TabsTrigger value="live" className="gap-2">
               <Radio className="h-4 w-4" />
-              Live Stream
+              {t('mqtt.replayPage.liveStream', 'Live Stream')}
             </TabsTrigger>
             <TabsTrigger value="history" className="gap-2">
               <Clock className="h-4 w-4" />
-              History
+              {t('mqtt.replayPage.historyTab', 'History')}
             </TabsTrigger>
             <TabsTrigger value="discovery" className="gap-2">
               <Cpu className="h-4 w-4" />
-              Auto-Discovery
+              {t('mqtt.replayPage.autoDiscoveryTab', 'Auto-Discovery')}
             </TabsTrigger>
           </TabsList>
 
@@ -195,11 +237,11 @@ export function MQTTReplayContent() {
                     >
                       {isPlaying ? (
                         <>
-                          <Pause className="h-4 w-4 mr-1" /> Pause
+                          <Pause className="h-4 w-4 mr-1" /> {t('mqtt.replayPage.pause', 'Pause')}
                         </>
                       ) : (
                         <>
-                          <Play className="h-4 w-4 mr-1" /> Play
+                          <Play className="h-4 w-4 mr-1" /> {t('mqtt.replayPage.play', 'Play')}
                         </>
                       )}
                     </Button>
@@ -208,26 +250,26 @@ export function MQTTReplayContent() {
                       size="sm"
                       onClick={() => setLiveMessages([])}
                     >
-                      <RefreshCw className="h-4 w-4 mr-1" /> Clear
+                      <RefreshCw className="h-4 w-4 mr-1" /> {t('common.clear', 'Clear')}
                     </Button>
                     <Button variant="outline" size="sm" onClick={exportMessages}>
-                      <Download className="h-4 w-4 mr-1" /> Export
+                      <Download className="h-4 w-4 mr-1" /> {t('common.export', 'Export')}
                     </Button>
                   </div>
                   <div className="flex-1" />
                   <div className="flex items-center gap-2">
                     <Input
-                      placeholder="Filter by topic..."
+                      placeholder={t('mqtt.replayPage.filterByTopic', 'Filter by topic...')}
                       value={filterTopic}
                       onChange={(e) => setFilterTopic(e.target.value)}
                       className="w-48"
                     />
                     <Select value={filterMachine || 'all'} onValueChange={(v) => setFilterMachine(v === 'all' ? '' : v)}>
                       <SelectTrigger className="w-40">
-                        <SelectValue placeholder="All machines" />
+                        <SelectValue placeholder={t('mqtt.replayPage.allMachines', 'All machines')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All machines</SelectItem>
+                        <SelectItem value="all">{t('mqtt.replayPage.allMachines', 'All machines')}</SelectItem>
                         {machines?.map((m) => (
                           <SelectItem key={m.id} value={m.code || String(m.id)}>
                             {m.code || String(m.id)}
@@ -246,7 +288,7 @@ export function MQTTReplayContent() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg flex items-center gap-2">
                     <MessageSquare className="h-5 w-5" />
-                    Messages ({filteredLiveMessages.length})
+                    {t('mqtt.replayPage.messagesTitle', 'Messages')} ({filteredLiveMessages.length})
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -300,23 +342,23 @@ export function MQTTReplayContent() {
                   {selectedMessage ? (
                     <div className="space-y-4">
                       <div>
-                        <Label className="text-xs text-muted-foreground">Topic</Label>
+                        <Label className="text-xs text-muted-foreground">{t('mqtt.replayPage.topicLabel', 'Topic')}</Label>
                         <p className="font-mono text-sm break-all">{selectedMessage.topic}</p>
                       </div>
                       <div>
-                        <Label className="text-xs text-muted-foreground">Timestamp</Label>
+                        <Label className="text-xs text-muted-foreground">{t('mqtt.replayPage.timestampLabel', 'Timestamp')}</Label>
                         <p className="text-sm">
                           {new Date(selectedMessage.timestamp).toLocaleString("vi-VN")}
                         </p>
                       </div>
                       {selectedMessage.machineCode && (
                         <div>
-                          <Label className="text-xs text-muted-foreground">Machine Code</Label>
+                          <Label className="text-xs text-muted-foreground">{t('mqtt.replayPage.machineCodeLabel', 'Machine Code')}</Label>
                           <p className="text-sm">{selectedMessage.machineCode}</p>
                         </div>
                       )}
                       <div>
-                        <Label className="text-xs text-muted-foreground">Payload</Label>
+                        <Label className="text-xs text-muted-foreground">{t('mqtt.replayPage.payloadLabel', 'Payload')}</Label>
                         <pre className="mt-1 p-2 bg-muted rounded text-xs overflow-auto max-h-48">
                           {formatPayload(selectedMessage.payload)}
                         </pre>
@@ -345,17 +387,17 @@ export function MQTTReplayContent() {
               <CardContent>
                 <div className="flex items-center gap-4 mb-4">
                   <Input
-                    placeholder="Filter by topic..."
+                    placeholder={t('mqtt.replayPage.filterByTopic', 'Filter by topic...')}
                     value={filterTopic}
                     onChange={(e) => setFilterTopic(e.target.value)}
                     className="w-64"
                   />
                   <Select value={filterMachine || 'all'} onValueChange={(v) => setFilterMachine(v === 'all' ? '' : v)}>
                     <SelectTrigger className="w-40">
-                      <SelectValue placeholder="All machines" />
+                      <SelectValue placeholder={t('mqtt.replayPage.allMachines', 'All machines')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All machines</SelectItem>
+                      <SelectItem value="all">{t('mqtt.replayPage.allMachines', 'All machines')}</SelectItem>
                       {machines?.map((m) => (
                         <SelectItem key={m.id} value={m.code || String(m.id)}>
                           {m.code || String(m.id)}
@@ -408,7 +450,7 @@ export function MQTTReplayContent() {
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Cpu className="h-5 w-5" />
-                  Machine Auto-Discovery
+                  {t('mqtt.replayPage.machineAutoDiscovery', 'Machine Auto-Discovery')}
                 </CardTitle>
                 <CardDescription>
                   {t('mqtt.replayPage.autoDiscoveryDesc')}
@@ -436,9 +478,9 @@ export function MQTTReplayContent() {
                               </p>
                             </div>
                             {isRegistered ? (
-                              <Badge variant="default">{t('mqtt.replayPage.registered')}</Badge>
+                              <StatusBadge status="registered" tone="success" label={t('mqtt.replayPage.registered')} />
                             ) : (
-                              <Badge variant="secondary">{t('mqtt.replayPage.new')}</Badge>
+                              <StatusBadge status="new" tone="info" label={t('mqtt.replayPage.new')} />
                             )}
                           </div>
                           <div className="space-y-1 text-sm">
@@ -456,7 +498,12 @@ export function MQTTReplayContent() {
                             </div>
                           </div>
                           {!isRegistered && (
-                            <Button size="sm" className="w-full mt-3" variant="outline">
+                            <Button
+                              size="sm"
+                              className="w-full mt-3"
+                              variant="outline"
+                              onClick={() => handleOpenRegister(machine)}
+                            >
                               <Plus className="h-4 w-4 mr-2" />
                               {t('mqtt.replayPage.registerMachine')}
                             </Button>
@@ -479,7 +526,81 @@ export function MQTTReplayContent() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+
+        {/* Register discovered machine — calls machine.create (admin). Success
+            toast fires ONLY on a real mutation success. */}
+        <Dialog open={registerOpen} onOpenChange={setRegisterOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t('mqtt.replayPage.registerDialogTitle', 'Register Machine')}</DialogTitle>
+              <DialogDescription>
+                {t('mqtt.replayPage.registerDialogDesc', 'Create a machine record from this discovered MQTT device.')}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>{t('mqtt.replayPage.registerCodeLabel', 'Machine code')}</Label>
+                <Input value={regCode} onChange={(e) => setRegCode(e.target.value)} className="mt-1" />
+              </div>
+              <div>
+                <Label>{t('mqtt.replayPage.registerNameLabel', 'Machine name')}</Label>
+                <Input value={regName} onChange={(e) => setRegName(e.target.value)} className="mt-1" />
+              </div>
+              <div>
+                <Label>{t('mqtt.replayPage.registerTypeLabel', 'Machine type')}</Label>
+                <Select value={regType} onValueChange={(v) => setRegType(v as MachineType)}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <MachineTypeSelectOptions />
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{t('mqtt.replayPage.registerStationLabel', 'Station')}</Label>
+                <Select
+                  value={regStationId ? String(regStationId) : ''}
+                  onValueChange={(v) => setRegStationId(Number(v))}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder={t('mqtt.replayPage.registerStationPlaceholder', 'Select a station')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {stations?.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>
+                        {s.code ? `${s.code} — ${s.name}` : s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {(!stations || stations.length === 0) && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('mqtt.replayPage.registerNoStations', 'No stations configured — create a station first.')}
+                  </p>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRegisterOpen(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button
+                onClick={handleRegisterSubmit}
+                disabled={
+                  registerMachineMutation.isPending ||
+                  !regStationId ||
+                  !regCode.trim() ||
+                  !regName.trim()
+                }
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                {t('mqtt.replayPage.registerConfirm', 'Register')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </PageContainer>
     </>
   );
 }

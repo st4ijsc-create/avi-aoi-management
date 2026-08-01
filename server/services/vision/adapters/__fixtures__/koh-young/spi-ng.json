@@ -1,0 +1,27 @@
+{
+  "machineId": "KY-SPI-3",
+  "barcode": "PNL-2026-0099",
+  "recipe": "MB-X1-PASTE-TOP",
+  "lot": "LOT-77",
+  "judgement": "FAIL",
+  "inspectedAt": "2026-07-04T08:28:30+07:00",
+  "pads": [
+    {
+      "padId": "R12.1",
+      "result": "FAIL",
+      "volumePct": 60.0,
+      "heightUm": 112.0,
+      "areaPct": 80.5,
+      "coplanarityUm": 4.5,
+      "offsetXUm": -3.2,
+      "offsetYUm": 1.1,
+      "warpageUm": 2.0,
+      "tiltDeg": 0.4,
+      "voidPct": 1.5,
+      "defectCode": "VOLUME_OUT",
+      "defectLevel": "major",
+      "imageUrl": "PNL-2026-0099_R12.1.jpg"
+    },
+    { "padId": "R12.2", "result": "PASS", "volumePct": 101.3, "heightUm": 118.0, "areaPct": 99.8 }
+  ]
+}

@@ -32,12 +32,49 @@ export interface ParsedMcAddress {
 // Device CHỈ ĐỌC (input) — không cho ghi.
 const READ_ONLY_DEVICES = new Set(["X", "DX"]);
 
-// Device kiểu BIT trong MELSEC (đọc về boolean).
-const BIT_DEVICES = new Set(["M", "X", "Y", "B", "S", "L", "F", "SM", "SB", "DX", "DY", "V"]);
-// Device kiểu WORD hợp lệ (gồm tiền tố FLOAT).
-const WORD_DEVICES = new Set([
-  "D", "R", "W", "ZR", "SD", "SW", "Z", "TN", "CN", "TS", "CS", "DFLOAT", "RFLOAT", "ZRFLOAT", "WFLOAT", "TC", "CC",
+/**
+ * ── BẢNG DEVICE-CODE HEX THẬT (spec-verified) ──────────────────────────────
+ * Nguồn: MELSEC Communication Protocol Reference Manual (SH-081227ENG) §8.1
+ *   "Device code list" p68; và SLMP Reference Manual (SH-080956ENG) §5.2
+ *   "Device (Device Access)" p35-36. Binary code — iQ-R subcommand 0002/0003 =
+ *   2 byte (00xxH); Q/L subcommand 0000/0001 = 1 byte (giá trị trong ngoặc):
+ *
+ *     SM 0091H(91)  SD 00A9H(A9)  X 009CH(9C)  Y 009DH(9D)  M 0090H(90)
+ *     L 0092H(92)   F 0093H(93)   V 0094H(94)  B 00A0H(A0)  D 00A8H(A8)
+ *     W 00B4H(B4)   TS 00C1H(C1)  TC 00C0H(C0) TN 00C2H(C2)
+ *     STS 00C7H(C7="SS")  STC 00C6H(C6="SC")  STN 00C8H(C8="SN")
+ *     CS 00C4H(C4)  CC 00C3H(C3)  CN 00C5H(C5) SB 00A1H(A1)  SW 00B5H(B5)
+ *     S 0098H(98, step relay)     DX 00A2H(A2) DY 00A3H(A3)  Z 00CCH(CC)
+ *     R 00AFH(AF)   ZR 00B0H(B0)  RD 002CH     LZ 0062H
+ *     Long timer  LTS 0051H / LTC 0050H / LTN 0052H
+ *     Long ret. timer  LSTS 0059H / LSTC 0058H / LSTN 005AH
+ *     Long counter LCS 0055H / LCC 0054H / LCN 0056H   (iQ-R, subcmd 0002/0003)
+ *     Module access U\G 00ABH · CPU buffer HG 002EH
+ *   Notation (radix của SỐ device): HEX cho X Y B W SB SW DX DY Z; DECIMAL cho
+ *   phần còn lại (SH-081227 p68, cột "Notation").
+ *
+ * ⚠️ Các mã hex TRÊN chỉ dùng khi mã hoá SLMP/MC 3E/4E frame — `mcprotocol`
+ *   (1E frame) KHÔNG dùng: nó gửi ASCII device name (1 ký tự; 2 ký tự cho T/C).
+ *   Bảng để lại cho SLMP-3E encoder tương lai (xem TODO M7 trong driver).
+ * ───────────────────────────────────────────────────────────────────────────
+ */
+
+// Device kiểu BIT trong MELSEC (đọc về boolean). SỬA: TS/TC (timer contact/coil)
+// và CS/CC (counter contact/coil) là BIT (00C1H/00C0H/00C4H/00C3H) — trước đây bị
+// xếp NHẦM sang WORD (SH-081227 p68 / SLMP p35-36). S = step relay (0098H, bit).
+const BIT_DEVICES = new Set([
+  "M", "X", "Y", "B", "S", "L", "F", "SM", "SB", "DX", "DY", "V",
+  "TS", "TC", "CS", "CC",
 ]);
+// Device kiểu WORD hợp lệ (gồm tiền tố FLOAT). Trong nhóm timer/counter CHỈ
+// TN (timer current 00C2H) và CN (counter current 00C5H) là WORD.
+const WORD_DEVICES = new Set([
+  "D", "R", "W", "ZR", "SD", "SW", "Z", "TN", "CN", "DFLOAT", "RFLOAT", "ZRFLOAT", "WFLOAT",
+]);
+
+// Device có SỐ viết HỆ 16 (Notation=Hexadecimal, SH-081227 p68). Còn lại hệ 10.
+// SỬA: parser cũ chỉ nhận \d+ → LOẠI SAI địa chỉ hex hợp lệ ("X1A", "B1F0").
+const HEX_NOTATION_DEVICES = new Set(["X", "Y", "B", "W", "SB", "SW", "DX", "DY", "Z"]);
 
 /**
  * Parse + validate địa chỉ MELSEC MC.
@@ -53,12 +90,19 @@ export function parseMcAddress(address: string): ParsedMcAddress {
   if (!a) throw new Error(`invalid MC address: ${address}`);
   const up = a.toUpperCase();
 
-  // <DEVICE letters><digits>[.<bit digits>]
-  const m = up.match(/^([A-Z]+)(\d+)(?:\.(\d+))?$/);
+  // <DEVICE letters><number>[.<bit>]. Số device có thể HỆ 16 cho device thuộc
+  // HEX_NOTATION_DEVICES (X/Y/B/W/SB/SW/DX/DY/Z), HỆ 10 cho phần còn lại.
+  const m = up.match(/^([A-Z]+)([0-9A-F]+)(?:\.([0-9A-F]+))?$/);
   if (!m) throw new Error(`invalid MC address: ${address}`);
 
   const device = m[1];
+  const numPart = m[2];
   const hasBit = m[3] !== undefined;
+
+  // Device hệ 10 nhưng số chứa A–F → địa chỉ sai (vd "D1A").
+  if (!HEX_NOTATION_DEVICES.has(device) && /[A-F]/.test(numPart)) {
+    throw new Error(`invalid MC address (decimal device with hex digit): ${address}`);
+  }
 
   const isReadOnly = READ_ONLY_DEVICES.has(device);
   if (BIT_DEVICES.has(device)) {

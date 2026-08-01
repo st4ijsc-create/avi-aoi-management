@@ -1,5 +1,6 @@
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer, StatusBadge } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,12 +14,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { 
-  AlertTriangle, Bell, Plus, Trash2, Edit, CheckCircle, XCircle, 
-  Clock, Activity, Wifi, WifiOff, RefreshCw, History, Settings
+import {
+  AlertTriangle, Bell, Plus, Trash2, Edit, CheckCircle, XCircle,
+  Clock, Activity, Wifi, WifiOff, RefreshCw, History, Settings, ArrowUpCircle
 } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
+// W8-C (doc 27 Đợt 6 leftover): escalation rules admin + activity (alertEscalationRouter).
+import EscalationRulesSection from "@/components/EscalationRulesSection";
 
 const RULE_TYPE_KEYS = [
   { value: 'LATENCY_THRESHOLD', labelKey: 'mqtt.alertRulesPage.types.latencyThreshold', unit: 'ms', descKey: 'mqtt.alertRulesPage.types.latencyThresholdDesc' },
@@ -37,7 +40,7 @@ const COMPARISON_OPERATORS = [
   { value: 'EQ', label: '=' },
 ];
 
-export default function MqttAlertRules() {
+export function MqttAlertRulesContent() {
   const { t } = useTranslation();
   const RULE_TYPES = RULE_TYPE_KEYS.map(rt => ({ ...rt, label: t(rt.labelKey), description: t(rt.descKey) }));
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -169,13 +172,14 @@ export default function MqttAlertRules() {
   };
 
   const getRuleTypeBadge = (type: string) => {
-    const colors: Record<string, string> = {
-      'LATENCY_THRESHOLD': 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-      'BROKER_DISCONNECT': 'bg-red-500/20 text-red-400 border-red-500/30',
-      'MESSAGE_FAILURE_RATE': 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-      'THROUGHPUT_LOW': 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-      'THROUGHPUT_HIGH': 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
-      'CLIENT_OFFLINE': 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+    // Map each rule type to a semantic tone (dark/light aware, token-driven).
+    const tones: Record<string, "default" | "success" | "warning" | "error" | "info"> = {
+      'LATENCY_THRESHOLD': 'info',
+      'BROKER_DISCONNECT': 'error',
+      'MESSAGE_FAILURE_RATE': 'warning',
+      'THROUGHPUT_LOW': 'warning',
+      'THROUGHPUT_HIGH': 'info',
+      'CLIENT_OFFLINE': 'default',
     };
     const labels: Record<string, string> = {
       'LATENCY_THRESHOLD': 'Latency',
@@ -185,23 +189,19 @@ export default function MqttAlertRules() {
       'THROUGHPUT_HIGH': 'High Throughput',
       'CLIENT_OFFLINE': 'Client Offline',
     };
-    return <Badge className={colors[type] || 'bg-gray-500/20'}>{labels[type] || type}</Badge>;
+    return <StatusBadge status={type} tone={tones[type] || 'default'} label={labels[type] || type} />;
   };
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
+    <PageContainer>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <AlertTriangle className="w-6 h-6 text-yellow-400" />
-              MQTT Alert Rules
-              <ViewOnlyBadge module="mqtt_alerts" />
-            </h1>
-            <p className="text-muted-foreground">{t('mqtt.alertRulesPage.description')}</p>
-          </div>
-          <div className="flex items-center gap-2">
+        <PageHeader
+          icon={<AlertTriangle className="h-5 w-5 text-warning" />}
+          title="MQTT Alert Rules"
+          description={t('mqtt.alertRulesPage.description')}
+          badge={<ViewOnlyBadge module="mqtt_alerts" />}
+          actions={
+            <>
             <Button variant="outline" size="sm" onClick={() => { refetchRules(); refetchHistory(); refetchUnresolved(); }}>
               <RefreshCw className="w-4 h-4 mr-2" />
               {t('common.refresh')}
@@ -327,7 +327,7 @@ export default function MqttAlertRules() {
                         {categories?.map(cat => (
                           <SelectItem key={cat.id} value={cat.id.toString()}>
                             <div className="flex items-center gap-2">
-                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color || '#3b82f6' }} />
+                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color || 'var(--primary)' }} />
                               {cat.name}
                             </div>
                           </SelectItem>
@@ -378,14 +378,15 @@ export default function MqttAlertRules() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {/* Unresolved Alerts Banner */}
         {unresolvedAlerts && unresolvedAlerts.length > 0 && (
-          <Card className="border-red-500/50 bg-red-500/10">
+          <Card className="border-destructive/50 bg-destructive/10">
             <CardHeader className="pb-2">
-              <CardTitle className="text-red-400 flex items-center gap-2">
+              <CardTitle className="text-destructive flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5" />
                 {unresolvedAlerts.length} {t('mqtt.alertRulesPage.unprocessedAlerts')}
               </CardTitle>
@@ -425,6 +426,10 @@ export default function MqttAlertRules() {
             <TabsTrigger value="history" className="flex items-center gap-2">
               <History className="w-4 h-4" />
               {t('mqtt.alertRulesPage.history')}
+            </TabsTrigger>
+            <TabsTrigger value="escalation" className="flex items-center gap-2">
+              <ArrowUpCircle className="w-4 h-4" />
+              {t('escalation.tab', 'Escalation')}
             </TabsTrigger>
           </TabsList>
 
@@ -499,7 +504,7 @@ export default function MqttAlertRules() {
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                className="text-red-400 hover:text-red-300"
+                                className="text-destructive hover:text-destructive/80"
                                 onClick={() => deleteMutation.mutate({ id: rule.id })}
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -557,15 +562,17 @@ export default function MqttAlertRules() {
                         <TableCell className="max-w-xs truncate">{alert.message}</TableCell>
                         <TableCell>
                           {alert.isResolved ? (
-                            <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              {t('mqtt.alertRulesPage.resolved')}
-                            </Badge>
+                            <StatusBadge
+                              status="resolved"
+                              tone="success"
+                              label={<span className="flex items-center"><CheckCircle className="w-3 h-3 mr-1" />{t('mqtt.alertRulesPage.resolved')}</span>}
+                            />
                           ) : (
-                            <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
-                              <XCircle className="w-3 h-3 mr-1" />
-                              {t('mqtt.alertRulesPage.unresolved')}
-                            </Badge>
+                            <StatusBadge
+                              status="unresolved"
+                              tone="error"
+                              label={<span className="flex items-center"><XCircle className="w-3 h-3 mr-1" />{t('mqtt.alertRulesPage.unresolved')}</span>}
+                            />
                           )}
                         </TableCell>
                         <TableCell className="text-right">
@@ -595,8 +602,20 @@ export default function MqttAlertRules() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* W8-C (doc 27 Đợt 6 leftover): escalation rules CRUD + escalated-alert ledger. */}
+          <TabsContent value="escalation">
+            <EscalationRulesSection />
+          </TabsContent>
         </Tabs>
-      </div>
+    </PageContainer>
+  );
+}
+
+export default function MqttAlertRules() {
+  return (
+    <DashboardLayout>
+      <MqttAlertRulesContent />
     </DashboardLayout>
   );
 }

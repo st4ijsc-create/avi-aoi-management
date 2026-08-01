@@ -1,0 +1,717 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden fixture conformance (all vision adapters) > cognex > normalizes job-ng.json to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "cycleTime": 0.42,
+  "inspectionTime": "2026-07-04T08:37:00+07:00",
+  "machineCode": "CGX-1",
+  "measurements": [
+    {
+      "measuredValue": 95.2,
+      "pointCode": "PatMax_1",
+      "remark": undefined,
+      "result": "OK",
+      "valueOffsetX": -3.1,
+      "valueOffsetY": 0.8,
+      "valueTilt": 1.2,
+    },
+    {
+      "defectCatalogCode": "MISSING_COMPONENT",
+      "defectSeverity": "major",
+      "imageBase64": "SN-2026-000129_T2.jpg",
+      "measuredValue": 10,
+      "pointCode": "Presence_2",
+      "remark": undefined,
+      "result": "NG",
+      "valueOffsetX": undefined,
+      "valueOffsetY": undefined,
+      "valueTilt": undefined,
+    },
+  ],
+  "overallResult": "NG",
+  "productModel": "InSight_TopCam_A",
+  "serialNumber": "SN-2026-000129",
+}
+`;
+
+exports[`golden fixture conformance (all vision adapters) > generic-json > normalizes board-ng.json to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "batchNumber": "LOT-79",
+  "cycleTime": 11.2,
+  "inspectionTime": "2026-07-04T08:35:00+07:00",
+  "machineCode": "AOI-01",
+  "measurements": [
+    {
+      "measuredValue": 0.42,
+      "pointCode": "MP001",
+      "remark": undefined,
+      "result": "OK",
+    },
+    {
+      "defectCatalogCode": "BRIDGING",
+      "defectSeverity": "major",
+      "imageBase64": "SN-2026-000128_MP002.jpg",
+      "measuredValue": 1.9,
+      "pointCode": "MP002",
+      "remark": undefined,
+      "result": "NG",
+    },
+  ],
+  "overallResult": "NG",
+  "productModel": "MB-X1",
+  "serialNumber": "SN-2026-000128",
+}
+`;
+
+exports[`golden fixture conformance (all vision adapters) > ict-aoi > normalizes board-ng.csv to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "inspectionTime": "2026-07-04T08:32:40+07:00",
+  "machineCode": "ICT-AI5146",
+  "measurements": [
+    {
+      "defectBboxH": 30,
+      "defectBboxW": 40,
+      "defectBboxX": 300,
+      "defectBboxY": 520,
+      "defectCatalogCode": "MISSING_COMPONENT",
+      "imageBase64": "SN-2026-000125_R7.jpg",
+      "pointCode": "R7",
+      "rawExtras": {
+        "part_no": "RC0402-102",
+        "vendor_defect_code": "E02",
+        "vendor_defect_name": "Missing",
+      },
+      "result": "NG",
+    },
+    {
+      "defectBboxH": 36,
+      "defectBboxW": 44,
+      "defectBboxX": 610,
+      "defectBboxY": 900,
+      "defectCatalogCode": "REVERSE_POLARITY",
+      "imageBase64": "SN-2026-000125_D2.jpg",
+      "pointCode": "D2",
+      "rawExtras": {
+        "part_no": "LED-0603",
+        "vendor_defect_code": "E07",
+        "vendor_defect_name": "Polarity",
+      },
+      "result": "NG",
+    },
+  ],
+  "overallResult": "NG",
+  "productModel": "MB-X1-TOP-V2",
+  "rawExtras": {
+    "pcb_code": "MB-X1",
+    "vendor": "ict",
+  },
+  "serialNumber": "SN-2026-000125",
+}
+`;
+
+exports[`golden fixture conformance (all vision adapters) > ict-aoi > normalizes board-ok.json to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "inspectionTime": "2026-07-04T08:33:10+07:00",
+  "machineCode": "ICT-AI5146",
+  "measurements": [
+    {
+      "pointCode": "R7",
+      "rawExtras": {
+        "part_no": "RC0402-102",
+      },
+      "result": "OK",
+    },
+    {
+      "pointCode": "D2",
+      "rawExtras": {
+        "part_no": "LED-0603",
+      },
+      "result": "OK",
+    },
+  ],
+  "overallResult": "OK",
+  "productModel": "MB-X1-TOP-V2",
+  "rawExtras": {
+    "pcb_code": "MB-X1",
+    "vendor": "ict",
+  },
+  "serialNumber": "SN-2026-000126",
+}
+`;
+
+exports[`golden fixture conformance (all vision adapters) > keyence > normalizes program-ng.json to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "cycleTime": undefined,
+  "inspectionTime": "2026-07-04T08:38:00+07:00",
+  "machineCode": "KEY-1",
+  "measurements": [
+    {
+      "measuredValue": 1024.5,
+      "pointCode": "T12",
+      "remark": "spec[900..1100]",
+      "result": "OK",
+    },
+    {
+      "defectCatalogCode": "SCRATCH",
+      "defectSeverity": "minor",
+      "imageBase64": "SN-2026-000132_T13.jpg",
+      "measuredValue": 5,
+      "pointCode": "Scratch_Check",
+      "remark": undefined,
+      "result": "NG",
+    },
+  ],
+  "overallResult": "NG",
+  "productModel": "CVX_Prog_3",
+  "serialNumber": "SN-2026-000132",
+}
+`;
+
+exports[`golden fixture conformance (all vision adapters) > koh-young > normalizes spi-ng.json to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "batchNumber": "LOT-77",
+  "cycleTime": undefined,
+  "inspectionTime": "2026-07-04T08:28:30+07:00",
+  "machineCode": "KY-SPI-3",
+  "measurements": [
+    {
+      "defectCatalogCode": "VOLUME_OUT",
+      "defectSeverity": "major",
+      "imageBase64": "PNL-2026-0099_R12.1.jpg",
+      "measuredValue": 60,
+      "pointCode": "R12.1",
+      "result": "NG",
+      "valueArea": 80.5,
+      "valueCoplanarity": 4.5,
+      "valueHeight": 112,
+      "valueOffsetX": -3.2,
+      "valueOffsetY": 1.1,
+      "valueTilt": 0.4,
+      "valueVoidPct": 1.5,
+      "valueVolume": 60,
+      "valueWarpage": 2,
+    },
+    {
+      "measuredValue": 101.3,
+      "pointCode": "R12.2",
+      "result": "OK",
+      "valueArea": 99.8,
+      "valueCoplanarity": undefined,
+      "valueHeight": 118,
+      "valueOffsetX": undefined,
+      "valueOffsetY": undefined,
+      "valueTilt": undefined,
+      "valueVoidPct": undefined,
+      "valueVolume": 101.3,
+      "valueWarpage": undefined,
+    },
+  ],
+  "overallResult": "NG",
+  "productModel": "MB-X1-PASTE-TOP",
+  "serialNumber": "PNL-2026-0099",
+}
+`;
+
+exports[`golden fixture conformance (all vision adapters) > mirtec > normalizes board-ng.xml to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "batchNumber": "LOT-78",
+  "cycleTime": 9,
+  "inspectionTime": "2026-07-04T08:34:09+07:00",
+  "machineCode": "MIRTEC-MV6",
+  "measurements": [
+    {
+      "defectBboxH": 48,
+      "defectBboxW": 64,
+      "defectBboxX": 1120,
+      "defectBboxY": 2340,
+      "defectCatalogCode": "TOMBSTONING",
+      "imageBase64": "SN-2026-000127_R12.jpg",
+      "pointCode": "R12",
+      "rawExtras": {
+        "part_name": "RC0402-103",
+        "vendor_defect_code": "D021",
+        "vendor_defect_name": "Tombstone",
+      },
+      "result": "NG",
+    },
+    {
+      "defectBboxH": 40,
+      "defectBboxW": 52,
+      "defectBboxX": 400,
+      "defectBboxY": 780,
+      "defectCatalogCode": "BRIDGING",
+      "imageBase64": "SN-2026-000127_U3.jpg",
+      "pointCode": "U3",
+      "rawExtras": {
+        "part_name": "IC-SOIC8",
+        "vendor_defect_code": "D012",
+        "vendor_defect_name": "Bridge",
+      },
+      "result": "NG",
+    },
+  ],
+  "overallResult": "NG",
+  "productModel": "MB-X1",
+  "rawExtras": {
+    "started_at": "2026-07-04T08:34:00+07:00",
+    "vendor": "mirtec",
+  },
+  "serialNumber": "SN-2026-000127",
+}
+`;
+
+exports[`golden fixture conformance (all vision adapters) > mirtec > normalizes board-ok.xml to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "batchNumber": "LOT-78",
+  "cycleTime": 8,
+  "inspectionTime": "2026-07-04T08:41:08+07:00",
+  "machineCode": "MIRTEC-MV6",
+  "measurements": [],
+  "overallResult": "OK",
+  "productModel": "MB-X1",
+  "rawExtras": {
+    "started_at": "2026-07-04T08:41:00+07:00",
+    "vendor": "mirtec",
+  },
+  "serialNumber": "SN-2026-000131",
+}
+`;
+
+exports[`golden fixture conformance (all vision adapters) > saki-aoi > normalizes board-ng.csv to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "batchNumber": "LOT-77",
+  "inspectionTime": "2026-07-04T08:31:05+07:00",
+  "machineCode": "SAKI-BF3",
+  "measurements": [
+    {
+      "defectBboxH": 48,
+      "defectBboxW": 64,
+      "defectBboxX": 1120,
+      "defectBboxY": 2340,
+      "defectCatalogCode": "INSUFFICIENT_SOLDER",
+      "imageBase64": "SN-2026-000124_R12.jpg",
+      "pointCode": "R12",
+      "rawExtras": {
+        "circuit_no": "1",
+        "part_number": "RC0402-103",
+        "vendor_defect_name": "Insufficient",
+        "window_no": "12",
+      },
+      "remark": "algo:Solder",
+      "result": "NG",
+    },
+    {
+      "pointCode": "C3",
+      "rawExtras": {
+        "circuit_no": "1",
+        "part_number": "CC0603-104",
+        "window_no": "7",
+      },
+      "remark": "algo:Placement",
+      "result": "OK",
+    },
+    {
+      "defectBboxH": 120,
+      "defectBboxW": 120,
+      "defectBboxX": 880,
+      "defectBboxY": 410,
+      "defectCatalogCode": "REVERSE_POLARITY",
+      "imageBase64": "SN-2026-000124_U1.jpg",
+      "pointCode": "U1",
+      "rawExtras": {
+        "circuit_no": "1",
+        "part_number": "IC-QFP64",
+        "vendor_defect_name": "Reverse",
+        "window_no": "3",
+      },
+      "remark": "algo:Polarity",
+      "result": "NG",
+    },
+  ],
+  "overallResult": "NG",
+  "productModel": "MB-X1-TOP",
+  "rawExtras": {
+    "circuit_no": "1",
+    "vendor": "saki",
+  },
+  "serialNumber": "SN-2026-000124",
+}
+`;
+
+exports[`golden fixture conformance (all vision adapters) > saki-aoi > normalizes board-ok.csv to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "batchNumber": "LOT-77",
+  "inspectionTime": "2026-07-04T08:40:11+07:00",
+  "machineCode": "SAKI-BF3",
+  "measurements": [
+    {
+      "pointCode": "R12",
+      "rawExtras": {
+        "circuit_no": "1",
+        "part_number": "RC0402-103",
+        "window_no": "12",
+      },
+      "remark": "algo:Solder",
+      "result": "OK",
+    },
+    {
+      "pointCode": "U1",
+      "rawExtras": {
+        "circuit_no": "1",
+        "part_number": "IC-QFP64",
+        "window_no": "3",
+      },
+      "remark": "algo:Polarity",
+      "result": "OK",
+    },
+  ],
+  "overallResult": "OK",
+  "productModel": "MB-X1-TOP",
+  "rawExtras": {
+    "circuit_no": "1",
+    "vendor": "saki",
+  },
+  "serialNumber": "SN-2026-000130",
+}
+`;
+
+exports[`golden fixture conformance (all vision adapters) > st4i-standard > normalizes board-ng.st4i.csv to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "batchNumber": "LOT-77",
+  "boardIndex": 2,
+  "cycleTime": 12.48,
+  "inspectionTime": "2026-07-04T08:30:12.480+07:00",
+  "machineCode": "AOI-01",
+  "measurements": [
+    {
+      "defectBboxH": 32,
+      "defectBboxW": 48,
+      "defectBboxX": 120,
+      "defectBboxY": 340,
+      "defectCatalogCode": "INSUFFICIENT_SOLDER",
+      "defectSeverity": "major",
+      "imageBase64": "SN-2026-000123__R12.1.jpg",
+      "measuredValue": 61.2,
+      "pointCode": "R12.1",
+      "rawExtras": {
+        "lsl": 70,
+        "nominal": 100,
+        "type": "solder_joint",
+        "unit": "%",
+        "usl": 130,
+      },
+      "remark": "insufficient fillet on pad 1; spec[70..130]; nominal=100; unit=%",
+      "result": "NG",
+      "valueArea": 88,
+      "valueCoplanarity": 3,
+      "valueHeight": 95,
+      "valueOffsetX": -3.5,
+      "valueOffsetY": 1.1,
+      "valueThickness": 40,
+      "valueTilt": 0.4,
+      "valueVoidPct": 2.1,
+      "valueVolume": 61.2,
+      "valueWarpage": 1.2,
+      "valueZ": 130,
+    },
+    {
+      "measuredValue": 99.1,
+      "pointCode": "C3",
+      "rawExtras": {
+        "type": "component",
+        "unit": "%",
+      },
+      "remark": "unit=%",
+      "result": "OK",
+    },
+    {
+      "defectBboxH": 18,
+      "defectBboxW": 22,
+      "defectBboxX": 610,
+      "defectBboxY": 900,
+      "defectCatalogCode": "BRIDGING",
+      "defectSeverity": "minor",
+      "imageBase64": "SN-2026-000123__U1.pin5.jpg",
+      "measuredValue": undefined,
+      "pointCode": "U1.pin5",
+      "rawExtras": {
+        "type": "solder_joint",
+      },
+      "remark": undefined,
+      "result": "NTF",
+    },
+  ],
+  "operatorId": "OP-0009",
+  "overallResult": "NG",
+  "panelId": "PNL-88",
+  "productModel": "MB-X1-TOP",
+  "rawExtras": {
+    "board_index": 2,
+    "panel_id": "PNL-88",
+    "program_version": "1.4.0",
+    "spec_version": 1,
+    "started_at": "2026-07-04T08:30:00+07:00",
+  },
+  "serialNumber": "SN-2026-000123",
+}
+`;
+
+exports[`golden fixture conformance (all vision adapters) > st4i-standard > normalizes board-ng.st4i.json to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "batchNumber": "LOT-77",
+  "boardIndex": 2,
+  "cycleTime": 12.48,
+  "inspectionTime": "2026-07-04T08:30:12.480+07:00",
+  "machineCode": "AOI-01",
+  "measurements": [
+    {
+      "defectBboxH": 32,
+      "defectBboxW": 48,
+      "defectBboxX": 120,
+      "defectBboxY": 340,
+      "defectCatalogCode": "INSUFFICIENT_SOLDER",
+      "defectSeverity": "major",
+      "imageBase64": "SN-2026-000123__R12.1.jpg",
+      "measuredValue": 61.2,
+      "pointCode": "R12.1",
+      "rawExtras": {
+        "lsl": 70,
+        "nominal": 100,
+        "type": "solder_joint",
+        "unit": "%",
+        "usl": 130,
+      },
+      "remark": "insufficient fillet on pad 1; spec[70..130]; nominal=100; unit=%",
+      "result": "NG",
+      "valueArea": 88,
+      "valueCoplanarity": 3,
+      "valueHeight": 95,
+      "valueOffsetX": -3.5,
+      "valueOffsetY": 1.1,
+      "valueThickness": 40,
+      "valueTilt": 0.4,
+      "valueVoidPct": 2.1,
+      "valueVolume": 61.2,
+      "valueWarpage": 1.2,
+      "valueZ": 130,
+    },
+    {
+      "measuredValue": 99.1,
+      "pointCode": "C3",
+      "rawExtras": {
+        "type": "component",
+        "unit": "%",
+      },
+      "remark": "unit=%",
+      "result": "OK",
+    },
+    {
+      "defectBboxH": 18,
+      "defectBboxW": 22,
+      "defectBboxX": 610,
+      "defectBboxY": 900,
+      "defectCatalogCode": "BRIDGING",
+      "defectSeverity": "minor",
+      "imageBase64": "SN-2026-000123__U1.pin5.jpg",
+      "measuredValue": undefined,
+      "pointCode": "U1.pin5",
+      "rawExtras": {
+        "type": "solder_joint",
+      },
+      "remark": undefined,
+      "result": "NTF",
+    },
+  ],
+  "operatorId": "OP-0009",
+  "overallResult": "NG",
+  "panelId": "PNL-88",
+  "productModel": "MB-X1-TOP",
+  "rawExtras": {
+    "board_index": 2,
+    "panel_id": "PNL-88",
+    "program_version": "1.4.0",
+    "spec_version": 1,
+    "started_at": "2026-07-04T08:30:00+07:00",
+  },
+  "serialNumber": "SN-2026-000123",
+}
+`;
+
+exports[`golden fixture conformance (all vision adapters) > st4i-standard > normalizes board-ng.st4i.xml to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "batchNumber": "LOT-77",
+  "boardIndex": 2,
+  "cycleTime": 12.48,
+  "inspectionTime": "2026-07-04T08:30:12.480+07:00",
+  "machineCode": "AOI-01",
+  "measurements": [
+    {
+      "defectBboxH": 32,
+      "defectBboxW": 48,
+      "defectBboxX": 120,
+      "defectBboxY": 340,
+      "defectCatalogCode": "INSUFFICIENT_SOLDER",
+      "defectSeverity": "major",
+      "imageBase64": "SN-2026-000123__R12.1.jpg",
+      "measuredValue": 61.2,
+      "pointCode": "R12.1",
+      "rawExtras": {
+        "lsl": 70,
+        "nominal": 100,
+        "type": "solder_joint",
+        "unit": "%",
+        "usl": 130,
+      },
+      "remark": "insufficient fillet on pad 1; spec[70..130]; nominal=100; unit=%",
+      "result": "NG",
+      "valueArea": 88,
+      "valueCoplanarity": 3,
+      "valueHeight": 95,
+      "valueOffsetX": -3.5,
+      "valueOffsetY": 1.1,
+      "valueThickness": 40,
+      "valueTilt": 0.4,
+      "valueVoidPct": 2.1,
+      "valueVolume": 61.2,
+      "valueWarpage": 1.2,
+      "valueZ": 130,
+    },
+    {
+      "measuredValue": 99.1,
+      "pointCode": "C3",
+      "rawExtras": {
+        "type": "component",
+        "unit": "%",
+      },
+      "remark": "unit=%",
+      "result": "OK",
+    },
+    {
+      "defectBboxH": 18,
+      "defectBboxW": 22,
+      "defectBboxX": 610,
+      "defectBboxY": 900,
+      "defectCatalogCode": "BRIDGING",
+      "defectSeverity": "minor",
+      "imageBase64": "SN-2026-000123__U1.pin5.jpg",
+      "measuredValue": undefined,
+      "pointCode": "U1.pin5",
+      "rawExtras": {
+        "type": "solder_joint",
+      },
+      "remark": undefined,
+      "result": "NTF",
+    },
+  ],
+  "operatorId": "OP-0009",
+  "overallResult": "NG",
+  "panelId": "PNL-88",
+  "productModel": "MB-X1-TOP",
+  "rawExtras": {
+    "board_index": 2,
+    "panel_id": "PNL-88",
+    "program_version": "1.4.0",
+    "spec_version": 1,
+    "started_at": "2026-07-04T08:30:00+07:00",
+  },
+  "serialNumber": "SN-2026-000123",
+}
+`;
+
+exports[`golden fixture conformance (all vision adapters) > st4i-standard > normalizes board-ok.st4i.json to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "batchNumber": undefined,
+  "boardIndex": undefined,
+  "cycleTime": 8,
+  "inspectionTime": "2026-07-04T09:00:08Z",
+  "machineCode": "AVI-02",
+  "measurements": [
+    {
+      "measuredValue": undefined,
+      "pointCode": "board",
+      "rawExtras": {
+        "extra": {
+          "algo": "avi-clean-check",
+          "surface_score": 0.98,
+        },
+        "type": "surface",
+      },
+      "remark": undefined,
+      "result": "OK",
+    },
+  ],
+  "operatorId": undefined,
+  "overallResult": "OK",
+  "panelId": undefined,
+  "productModel": "MB-X1-BOT",
+  "rawExtras": {
+    "attachments": {
+      "image_dir": ".",
+      "images": [
+        "SN-2026-000200__board.jpg",
+      ],
+    },
+    "spec_version": 1,
+    "started_at": "2026-07-04T09:00:00Z",
+  },
+  "serialNumber": "SN-2026-000200",
+}
+`;
+
+exports[`golden fixture conformance (all vision adapters) > tri > normalizes spi-ng.json to a valid canonical inspection 1`] = `
+{
+  "apiKey": undefined,
+  "batchNumber": "LOT-80",
+  "cycleTime": undefined,
+  "inspectionTime": "2026-07-04T08:39:00+07:00",
+  "machineCode": "TRI-1",
+  "measurements": [
+    {
+      "defectCatalogCode": "INSUFFICIENT_SOLDER",
+      "defectSeverity": "critical",
+      "imageBase64": "SN-2026-000133_C10.1.jpg",
+      "measuredValue": 60,
+      "pointCode": "C10.1",
+      "remark": "type:SPI; bridge",
+      "result": "NG",
+      "valueArea": 80,
+      "valueCoplanarity": 3,
+      "valueHeight": 95,
+      "valueOffsetX": -2,
+      "valueOffsetY": 1.5,
+      "valueVoidPct": 2.4,
+      "valueVolume": 60,
+    },
+    {
+      "measuredValue": 98.9,
+      "pointCode": "C10.2",
+      "remark": "type:SPI",
+      "result": "OK",
+      "valueArea": 99,
+      "valueCoplanarity": undefined,
+      "valueHeight": 116,
+      "valueOffsetX": undefined,
+      "valueOffsetY": undefined,
+      "valueVoidPct": undefined,
+      "valueVolume": 98.9,
+    },
+  ],
+  "overallResult": "NG",
+  "productModel": "TRI_SPI_Top",
+  "serialNumber": "SN-2026-000133",
+}
+`;

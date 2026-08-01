@@ -1,8 +1,9 @@
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageContainer, PageHeader, StatusBadge, EmptyState } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -85,38 +86,36 @@ export default function SessionManagement() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">{t('session.title')}</h1>
-            <p className="text-muted-foreground">
-              {t('session.description')}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {t('common.refresh')}
-            </Button>
-            {sessions && sessions.length > 1 && (
-              <Button 
-                variant="destructive" 
-                onClick={() => setShowRevokeAllDialog(true)}
-              >
-                <LogOut className="h-4 w-4 mr-2" />
-                {t('session.logoutAll')}
+      <PageContainer>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          title={t('session.title')}
+          description={t('session.description')}
+          actions={
+            <>
+              <Button variant="outline" onClick={() => refetch()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t('common.refresh')}
               </Button>
-            )}
-          </div>
-        </div>
+              {sessions && sessions.length > 1 && (
+                <Button
+                  variant="destructive"
+                  onClick={() => setShowRevokeAllDialog(true)}
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  {t('session.logoutAll')}
+                </Button>
+              )}
+            </>
+          }
+        />
 
         {/* Security Notice */}
-        <Card className="border-blue-500/50 bg-blue-500/5">
+        <Card className="border-info/50 bg-info/5">
           <CardContent className="flex items-start gap-4 pt-6">
-            <Shield className="h-6 w-6 text-blue-500 flex-shrink-0" />
+            <Shield className="h-6 w-6 text-info flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-blue-500">{t('session.accountSecurity')}</h3>
+              <h3 className="font-semibold text-info">{t('session.accountSecurity')}</h3>
               <p className="text-sm text-muted-foreground mt-1">
                 {t('session.securityNotice')}
               </p>
@@ -136,11 +135,11 @@ export default function SessionManagement() {
             {isLoading ? (
               <div className="space-y-4">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="animate-pulse flex items-center gap-4 p-4 border rounded-lg">
-                    <div className="h-10 w-10 bg-muted rounded-full" />
+                  <div key={i} className="flex items-center gap-4 p-4 border rounded-lg">
+                    <Skeleton className="h-10 w-10 rounded-full" />
                     <div className="flex-1 space-y-2">
-                      <div className="h-4 bg-muted rounded w-1/3" />
-                      <div className="h-3 bg-muted rounded w-1/2" />
+                      <Skeleton className="h-4 w-1/3" />
+                      <Skeleton className="h-3 w-1/2" />
                     </div>
                   </div>
                 ))}
@@ -148,27 +147,25 @@ export default function SessionManagement() {
             ) : sessions && sessions.length > 0 ? (
               <div className="space-y-4">
                 {sessions.map((session, index) => (
-                  <div 
-                    key={session.id} 
+                  <div
+                    key={session.id}
                     className={`flex items-center gap-4 p-4 border rounded-lg ${
-                      index === 0 ? "border-green-500/50 bg-green-500/5" : ""
+                      index === 0 ? "border-success/50 bg-success/5" : ""
                     }`}
                   >
                     <div className={`p-2 rounded-full ${
-                      index === 0 ? "bg-green-500/20 text-green-500" : "bg-muted"
+                      index === 0 ? "bg-success/20 text-success" : "bg-muted"
                     }`}>
                       {getDeviceIcon(session.deviceType)}
                     </div>
-                    
+
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium truncate">
-                          {session.browser || "Unknown Browser"} trên {session.os || "Unknown OS"}
+                          {session.browser || t('session.unknownBrowser', 'Unknown browser')} {t('session.deviceOn', 'on')} {session.os || t('session.unknownOs', 'Unknown OS')}
                         </span>
                         {index === 0 && (
-                          <Badge variant="outline" className="text-green-500 border-green-500">
-                            {t('session.currentSession')}
-                          </Badge>
+                          <StatusBadge status={t('session.currentSession')} tone="success" />
                         )}
                       </div>
                       
@@ -210,10 +207,12 @@ export default function SessionManagement() {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <Monitor className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>{t('session.noSessions')}</p>
-              </div>
+              <EmptyState
+                variant="no-data"
+                icon={Monitor}
+                title={t('session.noSessions')}
+                description={t('session.noSessionsDescription', 'No active login sessions were found for this account.')}
+              />
             )}
           </CardContent>
         </Card>
@@ -259,7 +258,7 @@ export default function SessionManagement() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

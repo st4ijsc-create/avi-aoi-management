@@ -64,6 +64,22 @@ vi.mock("../db/machineRecipe", () => ({
     deployments.push(dep);
     return dep;
   }),
+  setGoldenRecipe: vi.fn(async (id: number, isGolden: boolean) => {
+    const r = catalog.find((x) => x.id === id); if (r) r.isGolden = isGolden;
+    return r;
+  }),
+}));
+
+// W5-22 (b) — genealogy is recorded via the versioning service; mock it so we can assert
+// EVERY /recipes op writes a recipe_load_log trail (fail-soft, no real DB needed here).
+const genealogyLog: any[] = [];
+vi.mock("../services/equipment/recipeVersioningService", () => ({
+  recordEvent: vi.fn(async (action: string, recipe: any, ctx: any) => {
+    const row = { id: genealogyLog.length + 1, action, recipeCode: recipe.code, recipeVersion: recipe.version, ...ctx };
+    genealogyLog.push(row);
+    return row;
+  }),
+  listCodeHistory: vi.fn(async (code: string) => genealogyLog.filter((g) => g.recipeCode === code)),
 }));
 
 const perm = { allow: true };
@@ -79,12 +95,16 @@ vi.mock("../_core/accessControl", () => ({
 
 import { machineRecipeRouter } from "./machineRecipeRouter";
 
-const ctx = { user: { id: 7, role: "supervisor", name: "Sup" } } as any;
+// Doc 38 Đợt Q — recipes.approve/deploy/rollback are now actuationProcedure
+// (role-floor admin/supervisor/engineer + 2FA). The privileged supervisor fixture
+// must have 2FA enabled to reach these paths.
+const ctx = { user: { id: 7, role: "supervisor", name: "Sup", twoFactorEnabled: true } } as any;
 const caller = machineRecipeRouter.createCaller(ctx);
 
 beforeEach(() => {
   catalog.length = 0;
   deployments.length = 0;
+  genealogyLog.length = 0;
   rseq = 1;
   fake.store.clear();
   resetSeq();
@@ -152,6 +172,70 @@ describe("RBAC", () => {
   it("denies create when caller lacks machine_control", async () => {
     perm.allow = false;
     await expect(caller.recipes.create({ code: "X", name: "x", payload: {} })).rejects.toThrow(/machine_control|FORBIDDEN/i);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// W5-22 (a) — Golden/master flag.
+// ════════════════════════════════════════════════════════════════════════════
+describe("golden flag (W5-22a)", () => {
+  it("setGolden marks and unmarks a recipe version", async () => {
+    const v1 = await caller.recipes.create({ code: "G", name: "g", payload: { a: 1 } });
+    const marked = await caller.recipes.setGolden({ id: v1.id, isGolden: true });
+    expect(marked.isGolden).toBe(true);
+    const unmarked = await caller.recipes.setGolden({ id: v1.id, isGolden: false });
+    expect(unmarked.isGolden).toBe(false);
+  });
+
+  it("setGolden on a missing recipe throws NOT_FOUND", async () => {
+    await expect(caller.recipes.setGolden({ id: 999, isGolden: true })).rejects.toThrow(/không tồn tại|NOT_FOUND/i);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// W5-22 (b) — genealogy unification: every /recipes op writes recipe_load_log.
+// ════════════════════════════════════════════════════════════════════════════
+describe("genealogy trail (W5-22b)", () => {
+  it("create writes a 'create' genealogy event with the actor", async () => {
+    await caller.recipes.create({ code: "H", name: "h", payload: { a: 1 } });
+    expect(genealogyLog.filter((g) => g.action === "create")).toHaveLength(1);
+    expect(genealogyLog[0].performedBy).toBe(7);
+    expect(genealogyLog[0].recipeCode).toBe("H");
+  });
+
+  it("deploy writes a 'load' genealogy event onto the machine", async () => {
+    const v1 = await caller.recipes.create({ code: "H", name: "h", payload: { a: 1 } });
+    genealogyLog.length = 0;
+    await caller.recipes.deploy({ recipeId: v1.id, machineId: 100 });
+    const load = genealogyLog.find((g) => g.action === "load");
+    expect(load).toBeTruthy();
+    expect(load.machineId).toBe(100);
+    expect(load.performedBy).toBe(7);
+  });
+
+  it("archive writes an 'archive' genealogy event capturing the actor (no more lost actor)", async () => {
+    const v1 = await caller.recipes.create({ code: "H", name: "h", payload: { a: 1 } });
+    genealogyLog.length = 0;
+    await caller.recipes.archive({ id: v1.id });
+    const arch = genealogyLog.find((g) => g.action === "archive");
+    expect(arch).toBeTruthy();
+    expect(arch.performedBy).toBe(7);
+  });
+
+  it("rollback writes a 'rollback' genealogy event", async () => {
+    const v1 = await caller.recipes.create({ code: "H", name: "h", payload: { a: 1 } });
+    const v2 = await caller.recipes.create({ code: "H", name: "h", payload: { a: 2 } });
+    await caller.recipes.deploy({ recipeId: v1.id, machineId: 100 });
+    await caller.recipes.deploy({ recipeId: v2.id, machineId: 100 });
+    genealogyLog.length = 0;
+    await caller.recipes.rollback({ machineId: 100 });
+    expect(genealogyLog.find((g) => g.action === "rollback")).toBeTruthy();
+  });
+
+  it("recipes.genealogy returns the code history", async () => {
+    await caller.recipes.create({ code: "H", name: "h", payload: { a: 1 } });
+    const rows = await caller.recipes.genealogy({ code: "H" });
+    expect(rows.length).toBeGreaterThanOrEqual(1);
   });
 });
 

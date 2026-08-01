@@ -1,7 +1,8 @@
-import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -24,6 +25,7 @@ import {
   ChevronRight,
   Settings,
   BarChart3,
+  Loader2,
 } from "lucide-react";
 
 import { useState, useEffect } from "react";
@@ -46,8 +48,8 @@ import { PowerPointExportContent } from "@/pages/PowerPointExport";
 
 export default function AnalyticsSettings() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { hasPermission, loading: permsLoading } = usePermissions();
+  const canView = hasPermission("settings_view", "canView");
 
   const search = useSearch();
   const [location, setLocation] = useLocation();
@@ -77,7 +79,17 @@ export default function AnalyticsSettings() {
     setCollapsedCategories((prev) => ({ ...prev, [category]: !prev[category] }));
   };
 
-  if (!isAdmin) {
+  if (permsLoading) {
+    return (
+      <DashboardLayout title={t("analyticsSettings.title")} navItems={navItems} currentPath="/analytics-setting">
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canView) {
     return (
       <DashboardLayout title={t("analyticsSettings.title")} navItems={navItems} currentPath="/analytics-setting">
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
@@ -105,21 +117,17 @@ export default function AnalyticsSettings() {
   return (
     <DashboardLayout title={t("analyticsSettings.title")} navItems={navItems} currentPath="/analytics-setting">
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Settings className="h-6 w-6 text-primary" />
-              {t("analyticsSettings.title")}
-            </h1>
-            <p className="text-muted-foreground">{t("analyticsSettings.description")}</p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Settings className="h-6 w-6" />}
+          title={t("analyticsSettings.title")}
+          description={t("analyticsSettings.description")}
+        />
 
         <ErrorBoundary>
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <div className="flex gap-6">
               {/* Vertical Sidebar Navigation */}
-              <div className="w-64 shrink-0 space-y-1">
+              <div className="hidden" data-legacy-hub-menu="true">
 
                 {/* Category: Reports */}
                 <div className="space-y-1">
@@ -128,7 +136,7 @@ export default function AnalyticsSettings() {
                     className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-blue-500" />
+                      <FileText className="h-4 w-4 text-info" />
                       <span>{t("analyticsSettings.cat.reports")}</span>
                     </div>
                     {collapsedCategories["reports"] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -150,7 +158,7 @@ export default function AnalyticsSettings() {
                     className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <Brain className="h-4 w-4 text-purple-500" />
+                      <Brain className="h-4 w-4 text-primary" />
                       <span>{t("analyticsSettings.cat.spc")}</span>
                     </div>
                     {collapsedCategories["spc"] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -173,7 +181,7 @@ export default function AnalyticsSettings() {
                     className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <Tags className="h-4 w-4 text-orange-500" />
+                      <Tags className="h-4 w-4 text-warning" />
                       <span>{t("analyticsSettings.cat.annotations")}</span>
                     </div>
                     {collapsedCategories["annotations"] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -193,7 +201,7 @@ export default function AnalyticsSettings() {
                     className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-emerald-500" />
+                      <Sparkles className="h-4 w-4 text-success" />
                       <span>{t("analyticsSettings.cat.predictions")}</span>
                     </div>
                     {collapsedCategories["predictions"] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}

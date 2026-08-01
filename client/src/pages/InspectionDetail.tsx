@@ -1,5 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { useTranslation } from 'react-i18next';
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,15 +31,19 @@ import {
   Save,
   List,
   X,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Layers,
+  ClipboardX,
+  GitMerge
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useParams, Link } from "wouter";
 import { format } from "date-fns";
 import { AISuggestionsPanel } from "@/components/AISuggestionsPanel";
+import { DispositionPanel } from "@/components/DispositionPanel";
 import { useIsReadOnly, ViewOnlyBadge } from "@/components/PermissionGate";
-import { Tag } from "lucide-react";
+import { Tag, Star } from "lucide-react";
 
 interface MeasurementPoint {
   id: number;
@@ -136,6 +141,32 @@ export default function InspectionDetail() {
     { enabled: !!data?.inspection?.productModel }
   );
 
+  // W8-B (doc 29 §2.3) — "Board i/n" chip: when the machine reported a panel
+  // boardIndex (0192), resolve the product's ACTIVE panel def for the n-up
+  // total. Absent def → chip shows just "Board i" (honest, no fabricated n).
+  const boardIndex: number | null = (data?.inspection as { boardIndex?: number | null } | undefined)?.boardIndex ?? null;
+  const panelSerial: string | null = (data?.inspection as { panelSerial?: string | null } | undefined)?.panelSerial ?? null;
+  const { data: activePanelDef } = trpc.productPanel.getActive.useQuery(
+    { productModelId: data?.inspection?.productModelId ?? 0 },
+    { enabled: boardIndex != null && !!data?.inspection?.productModelId, retry: false, staleTime: 60_000 }
+  );
+
+  // W5-B (doc 27 F8) — ACTIVE golden reference for this product (per-ROI first,
+  // product-level fallback). Display-only surfacing: thumbnail + version badge
+  // in the compare dialog. Automatic golden-diff wiring is Đợt 7.4 (gap V8).
+  const goldenQuery = trpc.goldenSample.getActiveForKey.useQuery(
+    {
+      productCode: data?.inspection?.productModel || "",
+      roiKey: selectedMeasurement?.pointCode ?? undefined,
+    },
+    {
+      enabled: compareMode && !!data?.inspection?.productModel,
+      retry: false,
+      staleTime: 60_000,
+    }
+  );
+  const golden = goldenQuery.data?.found ? goldenQuery.data : undefined;
+
   const confirmNTFMutation = trpc.inspection.confirmNTF.useMutation({
     onSuccess: () => {
       toast.success(t('inspection.ntfConfirmedSuccess'));
@@ -178,9 +209,24 @@ export default function InspectionDetail() {
     classifyDefectMutation.mutate({ id: measurementId, defectCatalogId });
   };
 
+  // W7-C (doc 27 V24) — the server no longer hard-errors when the VLM is
+  // unavailable: it returns { degraded:true, message } (nothing written), so we
+  // surface the provider's honest reason and keep the button actionable.
   const analyzeWithAIMutation = trpc.measurementResult.analyzeWithAI.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data && (data as { degraded?: boolean }).degraded) {
+        toast.warning((data as { message?: string }).message || t('inspection.aiUnavailable', 'Phân tích AI hiện không khả dụng'));
+        return;
+      }
       toast.success(t('inspection.aiAnalysisComplete'));
+      // Reflect the fresh result inside the open compare dialog immediately
+      // (selectedMeasurement is a snapshot — refetch alone would not update it).
+      const { degraded: _d, ...analysis } = (data ?? {}) as Record<string, unknown>;
+      setSelectedMeasurement(prev => prev ? {
+        ...prev,
+        aiAnalysisResult: JSON.stringify(analysis),
+        aiConfidence: typeof analysis.confidence === 'number' ? String((analysis.confidence as number) / 100) : prev.aiConfidence,
+      } : prev);
       refetch();
     },
     onError: (error) => {
@@ -188,6 +234,38 @@ export default function InspectionDetail() {
     },
     onSettled: () => {
       setAnalyzingId(null);
+    },
+  });
+
+  // W7-C (doc 27 V7 — surfaced) — diff the measurement's stored image against the
+  // resolved APPROVED golden: normalize → sub-pixel align (per-golden flag) → heatmap.
+  const [goldenDiffOpen, setGoldenDiffOpen] = useState(false);
+  const goldenDiffMutation = trpc.goldenSample.diffForMeasurement.useMutation({
+    onSuccess: (r) => {
+      if (!r.found) {
+        toast.warning(t('inspection.goldenDiffNoGolden', 'Không có golden đã duyệt cho sản phẩm/ROI này'));
+        return;
+      }
+      setGoldenDiffOpen(true);
+    },
+    onError: (error) => {
+      toast.error(t('common.error') + ': ' + error.message);
+    },
+  });
+  const goldenDiff = goldenDiffMutation.data?.found ? goldenDiffMutation.data : undefined;
+
+  // W7-C (V24) — confirm-overwrite before re-running an existing analysis.
+  const [reanalyzeConfirmOpen, setReanalyzeConfirmOpen] = useState(false);
+
+  // W7-C (V8) — capture this OK point's image as a new golden DRAFT (server
+  // enforces quality RBAC + known-good guard; approval by a second person).
+  const captureGoldenMutation = trpc.goldenSample.captureFromInspection.useMutation({
+    onSuccess: (r) => {
+      toast.success(t('inspection.goldenCaptured', 'Đã lưu golden nháp v{{version}} — chờ người khác phê duyệt tại trang Golden samples', { version: r.version }));
+      goldenQuery.refetch();
+    },
+    onError: (error) => {
+      toast.error(t('common.error') + ': ' + error.message);
     },
   });
 
@@ -213,14 +291,19 @@ export default function InspectionDetail() {
     analyzeWithAIMutation.mutate({ id: measurementId });
   };
 
+  // Semantic theme tokens (CSS vars) so the point overlay tints follow the
+  // light/dark palette instead of hard-coded hex. Consumed in inline styles.
   const getResultColor = (result: string) => {
     switch (result) {
-      case "OK": return "#22c55e";
-      case "NG": return "#ef4444";
-      case "NTF": return "#f97316";
-      default: return "#6b7280";
+      case "OK": return "var(--success)";
+      case "NG": return "var(--destructive)";
+      case "NTF": return "var(--warning)";
+      default: return "var(--muted-foreground)";
     }
   };
+  // Same token at a low alpha for idle circle fills (color-mix keeps it theme-aware).
+  const getResultTint = (result: string, pct: number) =>
+    `color-mix(in oklab, ${getResultColor(result)} ${pct}%, transparent)`;
 
   const getResultBadge = (result: string, size: "sm" | "lg" = "sm") => {
     const baseClass = size === "lg" ? "text-base px-4 py-2" : "";
@@ -287,7 +370,7 @@ export default function InspectionDetail() {
 
   if (isLoading) {
     return (
-      <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/history">
+      <DashboardLayout title="SYNAPSE" navItems={navItems} currentPath="/history">
         <div className="flex items-center justify-center h-[60vh]">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
@@ -297,7 +380,7 @@ export default function InspectionDetail() {
 
   if (!data) {
     return (
-      <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/history">
+      <DashboardLayout title="SYNAPSE" navItems={navItems} currentPath="/history">
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
           <p className="text-muted-foreground">{t('inspection.notFound')}</p>
           <Link href="/history">
@@ -321,65 +404,89 @@ export default function InspectionDetail() {
   const yieldRate = total > 0 ? ((okCount + ntfCount) / total * 100).toFixed(1) : "0";
 
   return (
-    <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/history">
-      <div className="space-y-6">
+    <DashboardLayout title="SYNAPSE" navItems={navItems} currentPath="/history">
+      <PageContainer>
+        {/* Back link (kept above the title; PageHeader's icon chip is decorative). */}
+        <Link href="/history">
+          <Button variant="outline" size="sm" className="gap-2">
+            <ArrowLeft className="h-4 w-4" />
+            {t('inspection.goBack')}
+          </Button>
+        </Link>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/history">
-              <Button variant="outline" size="icon">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">{t('inspection.inspectionDetail')}</h1>
-              <p className="text-muted-foreground">SN: {inspection.serialNumber}</p>
-            </div>
-          </div>
-          
-          {inspection.overallResult === "NG" && inspection.originalResult === "NG" && (
-            <Dialog open={ntfDialogOpen} onOpenChange={setNtfDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="gap-2 border-warning text-warning hover:bg-warning/10">
-                  <AlertTriangle className="h-4 w-4" />
-                  {t('inspection.confirmNTF')}
+        <PageHeader
+          title={t('inspection.inspectionDetail')}
+          description={`SN: ${inspection.serialNumber}`}
+          badge={
+            /* W8-B (doc 29 §2.3) — panel board chip (only when the machine reported one) */
+            boardIndex != null ? (
+              <Badge variant="outline" className="gap-1 text-xs" data-testid="board-chip">
+                <Layers className="h-3 w-3" />
+                {activePanelDef?.nUp
+                  ? t('inspection.boardChip', { index: boardIndex, total: activePanelDef.nUp })
+                  : t('inspection.boardChipNoTotal', { index: boardIndex })}
+                {panelSerial ? ` · ${panelSerial}` : ''}
+              </Badge>
+            ) : undefined
+          }
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Quick "Raise NCR" hand-off. The NCR page reads ?serial / ?inspectionId
+                  on mount to auto-open + prefill the create dialog (both map to the
+                  createNcr serialNumber / linkedInspectionId inputs). */}
+              <Link
+                href={`/nonconformance?serial=${encodeURIComponent(inspection.serialNumber)}&inspectionId=${inspectionId}`}
+              >
+                <Button variant="outline" size="sm" className="gap-2">
+                  <ClipboardX className="h-4 w-4" />
+                  {t('inspection.raiseNcr', 'Raise NCR')}
                 </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>{t('inspection.confirmNTFTitle')}</DialogTitle>
-                  <DialogDescription>
-                    {t('inspection.confirmNTFDescription')}
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">{t('inspection.ntfReasonLabel')}</label>
-                    <Textarea
-                      placeholder={t('inspection.ntfReasonPlaceholder')}
-                      value={ntfReason}
-                      onChange={(e) => setNtfReason(e.target.value)}
-                      rows={4}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setNtfDialogOpen(false)}>
-                    {t('common.cancel')}
-                  </Button>
-                  <Button 
-                    onClick={handleConfirmNTF}
-                    disabled={confirmNTFMutation.isPending}
-                    className="gap-2"
-                  >
-                    {confirmNTFMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              </Link>
+              {inspection.overallResult === "NG" && inspection.originalResult === "NG" ? (
+              <Dialog open={ntfDialogOpen} onOpenChange={setNtfDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="gap-2 border-warning text-warning hover:bg-warning/10">
+                    <AlertTriangle className="h-4 w-4" />
                     {t('inspection.confirmNTF')}
                   </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
-        </div>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>{t('inspection.confirmNTFTitle')}</DialogTitle>
+                    <DialogDescription>
+                      {t('inspection.confirmNTFDescription')}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">{t('inspection.ntfReasonLabel')}</label>
+                      <Textarea
+                        placeholder={t('inspection.ntfReasonPlaceholder')}
+                        value={ntfReason}
+                        onChange={(e) => setNtfReason(e.target.value)}
+                        rows={4}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setNtfDialogOpen(false)}>
+                      {t('common.cancel')}
+                    </Button>
+                    <Button
+                      onClick={handleConfirmNTF}
+                      disabled={confirmNTFMutation.isPending}
+                      className="gap-2"
+                    >
+                      {confirmNTFMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {t('inspection.confirmNTF')}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              ) : null}
+            </div>
+          }
+        />
 
         {/* Row 1: Inspection Info + Machine Info */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -391,7 +498,18 @@ export default function InspectionDetail() {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
                 <div>
                   <p className="text-sm text-muted-foreground">Serial Number</p>
-                  <p className="font-semibold text-foreground">{inspection.serialNumber}</p>
+                  {inspection.serialNumber ? (
+                    <Link
+                      href={`/traceability?serial=${encodeURIComponent(inspection.serialNumber)}`}
+                      className="font-semibold text-primary hover:underline focus-visible:underline focus-visible:outline-none inline-flex items-center gap-1"
+                      title={t('inspection.viewGenealogy', "View this serial's genealogy")}
+                    >
+                      <GitMerge className="h-3.5 w-3.5" />
+                      {inspection.serialNumber}
+                    </Link>
+                  ) : (
+                    <p className="font-semibold text-foreground">-</p>
+                  )}
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">{t('inspection.result')}</p>
@@ -441,7 +559,17 @@ export default function InspectionDetail() {
             <CardContent className="space-y-4">
               <div>
                 <p className="text-sm text-muted-foreground">{t('inspection.machineName')}</p>
-                <p className="font-semibold text-foreground">{machine?.name || "-"}</p>
+                {inspection.machineId ? (
+                  <Link
+                    href={`/machine/${inspection.machineId}`}
+                    className="font-semibold text-primary hover:underline focus-visible:underline focus-visible:outline-none"
+                    title={t('inspection.viewMachine', 'Open machine cockpit')}
+                  >
+                    {machine?.name || t('inspection.viewMachine', 'Open machine cockpit')}
+                  </Link>
+                ) : (
+                  <p className="font-semibold text-foreground">{machine?.name || "-"}</p>
+                )}
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">{t('inspection.machineCode')}</p>
@@ -458,6 +586,16 @@ export default function InspectionDetail() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Row 1b (W5-B, doc 27 F2): Disposition / repair loop — visible for NG/NTF
+            boards (or when disposition history exists). Create decision → walk the
+            repair lifecycle → re-inspect chip links the later same-serial inspection. */}
+        <DispositionPanel
+          inspectionId={inspectionId}
+          machineId={inspection.machineId}
+          overallResult={inspection.overallResult}
+          readOnly={readOnly}
+        />
 
         {/* Row 2: Product Image with Points (Left) + Measurement List (Right) */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -520,16 +658,16 @@ export default function InspectionDetail() {
                             className="absolute inset-0 rounded-full border-2 flex items-center justify-center transition-all shadow-lg"
                             style={{
                               borderColor: getResultColor(m.result),
-                              backgroundColor: isActive || isHovered 
-                                ? getResultColor(m.result) 
-                                : `${getResultColor(m.result)}30`,
+                              backgroundColor: isActive || isHovered
+                                ? getResultColor(m.result)
+                                : getResultTint(m.result, 19),
                               transform: isActive || isHovered ? 'scale(1.3)' : 'scale(1)',
                             }}
                           >
-                            <span 
+                            <span
                               className="text-xs font-bold"
-                              style={{ 
-                                color: isActive || isHovered ? '#fff' : getResultColor(m.result) 
+                              style={{
+                                color: isActive || isHovered ? 'white' : getResultColor(m.result)
                               }}
                             >
                               {index + 1}
@@ -620,10 +758,10 @@ export default function InspectionDetail() {
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <span 
+                            <span
                               className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
-                              style={{ 
-                                backgroundColor: `${getResultColor(measurement.result)}20`,
+                              style={{
+                                backgroundColor: getResultTint(measurement.result, 12),
                                 color: getResultColor(measurement.result),
                                 border: `2px solid ${getResultColor(measurement.result)}`
                               }}
@@ -686,12 +824,12 @@ export default function InspectionDetail() {
 
         {/* Row 3: AI Suggestions Panel */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <AISuggestionsPanel 
-            inspectionId={inspectionId} 
+          <AISuggestionsPanel
+            inspectionId={inspectionId}
             onFeedbackSubmitted={() => refetch()}
           />
         </div>
-      </div>
+      </PageContainer>
 
       {/* Image Compare Dialog */}
       <Dialog open={compareMode} onOpenChange={(open) => { 
@@ -766,6 +904,62 @@ export default function InspectionDetail() {
                   </div>
                 </div>
               </div>
+
+              {/* W5-B (doc 27 F8) — Golden reference surfacing; W7-C (Đợt 7.4) —
+                  the approval badge is now REAL (status column, 0189) and the
+                  "So với golden" action runs the full normalize→align→diff chain
+                  against the measurement's stored image. */}
+              {golden?.reference && (
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 border border-border">
+                  <img
+                    src={golden.reference.thumbnailDataUrl}
+                    alt="Golden reference"
+                    className="h-16 w-16 object-contain rounded border border-border bg-secondary/40 cursor-zoom-in hover:opacity-90 transition-opacity"
+                    onClick={() => openLightbox(golden.reference.thumbnailDataUrl, t('inspection.goldenRef', 'Golden mẫu chuẩn'))}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground flex items-center gap-2 flex-wrap">
+                      <Star className="h-4 w-4 text-warning" />
+                      {t('inspection.goldenRef', 'Golden mẫu chuẩn')}
+                      <Badge variant="secondary" className="text-[10px]">v{golden.reference.version}</Badge>
+                      {golden.reference.status === 'approved' && (
+                        <Badge className="bg-success/20 text-success border-success/30 text-[10px]">
+                          {t('inspection.goldenApproved', 'ĐÃ DUYỆT')}
+                        </Badge>
+                      )}
+                      {golden.reference.active && (
+                        <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px]">
+                          {t('inspection.goldenActive', 'ACTIVE')}
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className="text-[10px]">
+                        {golden.matchedLevel === 'exact'
+                          ? t('inspection.goldenRoiLevel', 'Đúng ROI')
+                          : t('inspection.goldenProductLevel', 'Cấp sản phẩm')}
+                      </Badge>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                      {golden.reference.notes || t('inspection.goldenHint', 'So với golden: chuẩn hóa ánh sáng → căn chỉnh sub-pixel → diff heatmap.')}
+                    </p>
+                  </div>
+                  {selectedMeasurement.imageUrl && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 shrink-0"
+                      disabled={goldenDiffMutation.isPending}
+                      onClick={() => goldenDiffMutation.mutate({ measurementResultId: selectedMeasurement.id })}
+                    >
+                      {goldenDiffMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <SplitSquareVertical className="h-4 w-4" />
+                      )}
+                      {t('inspection.goldenDiffRun', 'So với golden')}
+                    </Button>
+                  )}
+                </div>
+              )}
 
               {/* Measurement Details */}
               <div className="grid grid-cols-3 gap-4 p-4 bg-secondary/30 rounded-lg">
@@ -847,12 +1041,20 @@ export default function InspectionDetail() {
               {/* Actions */}
               <div className="flex items-center justify-between p-4 bg-secondary/30 rounded-lg">
                 <div className="flex gap-2">
-                  {selectedMeasurement.imageUrl && !selectedMeasurement.aiAnalysisResult && (
+                  {/* W7-C (V24) — the analyze button no longer disappears after a
+                      result: re-analysis is allowed with confirm-overwrite. */}
+                  {selectedMeasurement.imageUrl && (
                     <Button
                       variant="outline"
                       size="sm"
                       className="gap-1"
-                      onClick={() => handleAnalyzeWithAI(selectedMeasurement.id)}
+                      onClick={() => {
+                        if (selectedMeasurement.aiAnalysisResult) {
+                          setReanalyzeConfirmOpen(true);
+                        } else {
+                          handleAnalyzeWithAI(selectedMeasurement.id);
+                        }
+                      }}
                       disabled={analyzingId === selectedMeasurement.id}
                     >
                       {analyzingId === selectedMeasurement.id ? (
@@ -860,7 +1062,27 @@ export default function InspectionDetail() {
                       ) : (
                         <Brain className="h-4 w-4" />
                       )}
-                      {t('inspection.aiAnalyze')}
+                      {selectedMeasurement.aiAnalysisResult
+                        ? t('inspection.aiReanalyze', 'Phân tích lại')
+                        : t('inspection.aiAnalyze')}
+                    </Button>
+                  )}
+                  {/* W7-C (V8) — capture-from-inspection: OK points only (server
+                      re-checks known-good + quality RBAC + SoD on approval). */}
+                  {!readOnly && selectedMeasurement.imageUrl && selectedMeasurement.result === 'OK' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 border-warning text-warning hover:bg-warning/10"
+                      disabled={captureGoldenMutation.isPending}
+                      onClick={() => captureGoldenMutation.mutate({ measurementResultId: selectedMeasurement.id })}
+                    >
+                      {captureGoldenMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Star className="h-4 w-4" />
+                      )}
+                      {t('inspection.captureGolden', 'Chụp làm golden')}
                     </Button>
                   )}
                 </div>
@@ -908,6 +1130,88 @@ export default function InspectionDetail() {
         </DialogContent>
       </Dialog>
 
+      {/* W7-C (V24) — confirm-overwrite before re-analysis */}
+      <Dialog open={reanalyzeConfirmOpen} onOpenChange={setReanalyzeConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5" />
+              {t('inspection.aiReanalyze', 'Phân tích lại')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('inspection.aiReanalyzeConfirm', 'Điểm đo này đã có kết quả phân tích AI. Phân tích lại sẽ GHI ĐÈ kết quả cũ. Tiếp tục?')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReanalyzeConfirmOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onClick={() => {
+                setReanalyzeConfirmOpen(false);
+                if (selectedMeasurement) handleAnalyzeWithAI(selectedMeasurement.id);
+              }}
+              className="gap-2"
+            >
+              <Brain className="h-4 w-4" />
+              {t('inspection.aiReanalyze', 'Phân tích lại')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* W7-C (V7 surfaced) — golden-diff result: heatmap + diff score + alignment */}
+      <Dialog open={goldenDiffOpen && !!goldenDiff} onOpenChange={(open) => { if (!open) setGoldenDiffOpen(false); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Star className="h-5 w-5 text-warning" />
+              {t('inspection.goldenDiffTitle', 'Diff với golden')}
+              {goldenDiff && (
+                <Badge variant="secondary" className="text-[10px]">
+                  v{goldenDiff.golden.version} · {goldenDiff.golden.matchedLevel === 'exact'
+                    ? t('inspection.goldenRoiLevel', 'Đúng ROI')
+                    : t('inspection.goldenProductLevel', 'Cấp sản phẩm')}
+                </Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {t('inspection.goldenDiffDesc', 'Chuỗi thực: chuẩn hóa ánh sáng → căn chỉnh sub-pixel → diff pixel. Vùng đỏ = khác biệt so với golden.')}
+            </DialogDescription>
+          </DialogHeader>
+          {goldenDiff && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="outline">
+                  {t('inspection.goldenDiffScore', 'Điểm khác biệt')}: {goldenDiff.diffScore}%
+                </Badge>
+                <Badge variant={goldenDiff.aligned ? 'default' : 'secondary'}>
+                  {goldenDiff.aligned
+                    ? t('inspection.goldenAligned', 'Căn chỉnh OK ({{c}}%)', { c: Math.round((goldenDiff.alignment?.confidence ?? 0) * 100) })
+                    : t('inspection.goldenNotAligned', 'Không căn chỉnh')}
+                </Badge>
+                <Badge variant="secondary">
+                  {goldenDiff.normalized
+                    ? t('inspection.goldenNormalized', 'Đã chuẩn hóa ánh sáng')
+                    : t('inspection.goldenNotNormalized', 'Không chuẩn hóa')}
+                </Badge>
+              </div>
+              {!goldenDiff.aligned && goldenDiff.alignment?.reason && (
+                <p className="text-xs text-muted-foreground">
+                  {t('inspection.goldenAlignReason', 'Lý do')}: {goldenDiff.alignment.reason}
+                </p>
+              )}
+              <img
+                src={`data:image/png;base64,${goldenDiff.heatmapPngBase64}`}
+                alt="Golden diff heatmap"
+                className="max-w-full max-h-[55vh] object-contain rounded-lg border border-border mx-auto cursor-zoom-in"
+                onClick={() => openLightbox(`data:image/png;base64,${goldenDiff.heatmapPngBase64}`, t('inspection.goldenDiffTitle', 'Diff với golden'))}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Lightbox – fullscreen image viewer with zoom/pan */}
       <Dialog open={!!lightboxSrc} onOpenChange={(open) => { if (!open) closeLightbox(); }}>
         <DialogContent className="max-w-[85vh] w-[85vh] max-h-[85vh] h-[85vh] aspect-square p-0 overflow-hidden flex flex-col bg-black/95 border-0">
@@ -918,14 +1222,14 @@ export default function InspectionDetail() {
           <div className="flex items-center justify-between px-4 py-2 bg-black/80 shrink-0 z-10">
             <span className="text-white text-sm font-medium truncate max-w-[60%]">{lightboxTitle}</span>
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={lbZoomOut} title="Thu nhỏ">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={lbZoomOut} title={t('inspectionDetail.zoomOut', 'Thu nhỏ')}>
                 <ZoomOut className="h-4 w-4" />
               </Button>
               <span className="text-white text-xs w-12 text-center tabular-nums">{Math.round(lightboxZoom * 100)}%</span>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={lbZoomIn} title="Phóng to">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={lbZoomIn} title={t('inspectionDetail.zoomIn', 'Phóng to')}>
                 <ZoomIn className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={lbReset} title="Đặt lại">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={lbReset} title={t('inspectionDetail.resetZoom', 'Đặt lại')}>
                 <RotateCcw className="h-4 w-4" />
               </Button>
               {/* Switch to other image button */}
@@ -941,7 +1245,7 @@ export default function InspectionDetail() {
                 );
               })()}
               <div className="w-px h-5 bg-white/20 mx-1" />
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={closeLightbox} title="Đóng">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={closeLightbox} title={t('common.close', 'Đóng')}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -974,7 +1278,7 @@ export default function InspectionDetail() {
             )}
           </div>
           {/* Hint */}
-          <p className="text-center text-white/40 text-xs pb-2 shrink-0">Cuộn chuột để zoom · Kéo để di chuyển</p>
+          <p className="text-center text-white/40 text-xs pb-2 shrink-0">{t('inspectionDetail.lightboxHint', 'Cuộn chuột để zoom · Kéo để di chuyển')}</p>
         </DialogContent>
       </Dialog>
 

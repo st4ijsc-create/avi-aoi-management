@@ -5,18 +5,107 @@
  * mutation — reachable only from an internal caller (an AI write-tool after HITL
  * confirm, or a server-side operator action). Gates, in order:
  *   1. idempotency (per key, terminal job returned as-is — no blind re-run),
- *   2. HITL: triggerKind='hitl' requires a confirmedBy user,
+ *   2. HITL: triggerKind='hitl' requires a confirmedBy user AND — when an actionId is
+ *      supplied — a re-verified ai_pending_actions row (confirmed/executed + owner match),
+ *      symmetric to the OT commandDispatcher (doc 25 T1); fail-closed on any mismatch,
  *   3. active + connected driver,
  *   4. MODE GATE: ROBOT_CONTROL_ENABLED!=='true' → record status 'simulated',
  *      never call driver.runJob (default is dry-run),
+ *   4a. commissioning/FAT gate, 4a-policy. policy-as-code seam (W3-B2, SEC_PLATFORM,
+ *      action robot.command.{verb} — DENY → rejected POLICY_DENIED), 4b. interlock gate,
  *   5. real run under timeout → record done/failed.
  * Every branch writes an append-only robot_jobs row.
  */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { pgTable, serial, integer, varchar, timestamp, text } from "drizzle-orm/pg-core";
 import { getDb } from "../../db/connection";
-import { robotJobs } from "../../../drizzle/schema";
+import { robotJobs, robots, aiPendingActions } from "../../../drizzle/schema";
 import { getActiveRobot } from "./robotManager";
 import type { RobotJobSpec, RobotJobResult } from "./robotDriver";
+
+/**
+ * CTL-02 (doc 40) — ROBOT COMMISSIONING / FAT LEDGER (bảng migration 0240). Định nghĩa
+ * table INLINE ở đây (đúng shape với 0240_robot_commissioning.sql) vì đây là consumer duy
+ * nhất và schema robot.ts nằm ngoài phạm vi sửa của Wave 2. Song song với OT
+ * commissioning_records nhưng khoá theo robotId (KHÔNG tái dùng adapterId để tránh trùng
+ * khoá số giữa robot và OT-adapter). Chỉ bản ghi status='active' + chưa hết hạn mới
+ * commission một robot cho real-motion.
+ */
+const robotCommissioningRecords = pgTable("robot_commissioning_records", {
+  id: serial("id").primaryKey(),
+  robotId: integer("robotId").notNull(),
+  status: varchar("status", { length: 16 }).default("active").notNull(),
+  fatReference: varchar("fatReference", { length: 255 }),
+  signedBy: integer("signedBy").notNull(),
+  signedAt: timestamp("signedAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt"),
+  revokedBy: integer("revokedBy"),
+  revokedAt: timestamp("revokedAt"),
+  revokeReason: text("revokeReason"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+/**
+ * Cờ chủ cho CTL-02 gate. Khi ON (MẶC ĐỊNH — an toàn theo mặc định) dispatcher đòi robot
+ * đã commissioned TRƯỚC một real-write; robot chưa commissioned bị ÉP xuống nhánh 'simulated'.
+ * Chỉ "false"/"0" tường minh mới tắt (legacy/dev). Đọc ở RUNTIME (không phải lúc load module).
+ * Đối xứng OT_COMMISSIONING_REQUIRED.
+ */
+export function isRobotCommissioningRequired(): boolean {
+  const v = process.env.ROBOT_COMMISSIONING_REQUIRED;
+  return !(v === "false" || v === "0"); // DEFAULT ON: chỉ opt-out tường minh mới tắt.
+}
+
+/**
+ * TRUE iff `robotId` có ≥1 bản ghi commissioning status='active', chưa hết hạn, đã ký.
+ * Fail-safe: DB không sẵn ⇒ FALSE (⇒ dispatcher KHÔNG real-write; degrade về simulated).
+ * Chỉ có thể NGHIÊM NGẶT hơn hành vi trước — không bao giờ cho phép một write chưa được phép.
+ */
+export async function isRobotCommissioned(robotId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false; // fail-safe: no DB ⇒ coi như CHƯA commissioned.
+  const rows = await db
+    .select()
+    .from(robotCommissioningRecords)
+    .where(and(eq(robotCommissioningRecords.robotId, robotId), eq(robotCommissioningRecords.status, "active")));
+  if (!Array.isArray(rows)) return false; // fail-safe: kết quả bất thường ⇒ coi như CHƯA commissioned.
+  const now = Date.now();
+  return rows.some((r) => {
+    if (r.status !== "active") return false;
+    if (r.expiresAt == null) return true;
+    return new Date(r.expiresAt).getTime() > now;
+  });
+}
+
+/**
+ * X1-e — resolve the (equipmentClass, userRole) the command-authz guard needs.
+ * equipmentClass maps the robot kind → a capability class (mirrors taskAllocator's
+ * robotKindToCapabilityClass — robots resolve to "ROBOT"). Fail-safe defaults so the
+ * guard can still decide (a missing user → role "user", which lacks control perms →
+ * denied under the strict flag, which is the safe outcome).
+ */
+async function resolveRobotAuthzContext(
+  robotId: number,
+  userId: number,
+): Promise<{ equipmentClass: string; userRole: string }> {
+  let equipmentClass = "ROBOT";
+  let userRole = "user";
+  try {
+    const db = await getDb();
+    if (db) {
+      const [r] = await db.select({ kind: robots.kind }).from(robots).where(eq(robots.id, robotId)).limit(1);
+      // All robot kinds (arm/scara/cobot/agv) resolve to the ROBOT capability class.
+      if (r) equipmentClass = "ROBOT";
+      const { getUserById } = await import("../../db/auth");
+      const user = await getUserById(userId);
+      if (user?.role) userRole = user.role;
+    }
+  } catch {
+    /* fail-safe defaults (user role lacks control perms → denied under strict flag) */
+  }
+  return { equipmentClass, userRole };
+}
 
 export interface RobotDispatchInput {
   robotId: number;
@@ -88,10 +177,57 @@ export async function dispatchRobotJob(input: RobotDispatchInput): Promise<Robot
     }
   }
 
-  // 2) HITL gate.
-  if (triggerKind === "hitl" && !input.confirmedBy) {
-    const jobId = await record(input, "rejected", undefined, "HITL required: no confirmedBy");
-    return { ok: false, status: "rejected", jobId, error: "HITL confirmation required" };
+  // 2) HITL gate — ĐỐI XỨNG với OT commandDispatcher (doc 25 T1).
+  if (triggerKind === "hitl") {
+    // 2.a Bắt buộc có người xác nhận.
+    if (!input.confirmedBy) {
+      const jobId = await record(input, "rejected", undefined, "HITL required: no confirmedBy");
+      return { ok: false, status: "rejected", jobId, error: "HITL confirmation required" };
+    }
+    // 2.b Defense-in-depth: khi có actionId, PHẢI tái-xác-minh bản ghi ai_pending_actions
+    //     đã confirmed/executed VÀ đúng owner (=confirmedBy) — hệt OT. KHÔNG tin confirmedBy
+    //     tự-điền vô điều kiện (trước đây robot bỏ qua bước này → lệnh FOE robot lọt trong khi
+    //     FOE OT bị chặn). Fail-closed: DB không sẵn / bản ghi thiếu / sai owner → TỪ CHỐI.
+    if (input.actionId) {
+      const db = await getDb();
+      if (!db) {
+        const jobId = await record(input, "rejected", undefined, "DB unavailable — HITL verify fail-closed");
+        return { ok: false, status: "rejected", jobId, error: "HITL verify unavailable" };
+      }
+      const [pending] = await db
+        .select()
+        .from(aiPendingActions)
+        .where(eq(aiPendingActions.id, input.actionId))
+        .limit(1);
+      const confirmedOk =
+        !!pending &&
+        (pending.status === "confirmed" || pending.status === "executed") &&
+        pending.userId === input.confirmedBy;
+      if (!confirmedOk) {
+        const jobId = await record(input, "rejected", undefined, "HITL action not confirmed or owner mismatch");
+        return { ok: false, status: "rejected", jobId, error: "NOT_CONFIRMED" };
+      }
+    }
+  }
+
+  // 2b) X1-e (doc 16 §5) — COMMAND-LEVEL AUTHORIZATION (ADDITIVE, flag-gated).
+  //     When FIELD_V2_ENABLED is on, the caller must hold the descriptor's
+  //     requiredPermission for this robot job verb. This NEVER weakens the HITL gate
+  //     above or the dry-run mode gate below — it can only DENY before any write.
+  //     Flag OFF (default) → authorizeCommand returns skipped:true → pass-through
+  //     (current behaviour, unchanged). A rejected command writes an append-only row.
+  {
+    const { authorizeCommand, fieldV2Enabled } = await import("../field/commandAuthz");
+    if (fieldV2Enabled()) {
+      const actorId = input.confirmedBy ?? input.requestedBy;
+      const { equipmentClass, userRole } = await resolveRobotAuthzContext(input.robotId, actorId);
+      const verb = input.job.jobType === "abort" ? "abort" : "run_job";
+      const authz = await authorizeCommand({ equipmentClass, verb, userId: actorId, userRole });
+      if (!authz.ok) {
+        const jobId = await record(input, "rejected", { requiredPermission: authz.requiredPermission }, authz.reason ?? "command authorization denied");
+        return { ok: false, status: "rejected", jobId, error: authz.reason ?? "command authorization denied" };
+      }
+    }
   }
 
   // 3) Active + connected driver.
@@ -105,6 +241,95 @@ export async function dispatchRobotJob(input: RobotDispatchInput): Promise<Robot
   if (!controlEnabled()) {
     const jobId = await record(input, "simulated", { dryRun: true });
     return { ok: true, status: "simulated", jobId };
+  }
+
+  // 4a) COMMISSIONING / FAT GATE (CTL-02, doc 40) — ĐỐI XỨNG với OT commandDispatcher.
+  //     Reachable CHỈ khi ROBOT_CONTROL_ENABLED==='true' (bước 4 đã trả 'simulated' nếu
+  //     không). Khi ROBOT_COMMISSIONING_REQUIRED bật (MẶC ĐỊNH) và robot CHƯA có bản ghi
+  //     commissioning active/chưa hết hạn/đã ký → ÉP xuống nhánh 'simulated' (y như OT).
+  //     Chỉ HẠ một would-be real-write xuống simulated; KHÔNG bao giờ mở một write nên
+  //     không thể nới lỏng bất kỳ gate nào ở trên. PRECEDENCE: chưa-commissioned ⇒ simulated.
+  if (isRobotCommissioningRequired() && !(await isRobotCommissioned(input.robotId))) {
+    const jobId = await record(
+      input,
+      "simulated",
+      { dryRun: true, notCommissioned: true },
+      "not_commissioned: robot has no active, non-expired, signed commissioning record — real motion refused (recorded simulated)",
+    );
+    return { ok: true, status: "simulated", jobId };
+  }
+
+  // 4a-policy) W3-B2 (doc 44 G3.14) — "MỘT CỬA": policy-as-code seam TRƯỚC nhánh thực
+  //     thi thật, ĐỐI XỨNG với OT commandDispatcher (5a-policy: governance → safety, tức
+  //     TRƯỚC interlock 4b). Reachable CHỈ khi ROBOT_CONTROL_ENABLED==='true' VÀ đã qua
+  //     mọi gate phía trên (idempotency/HITL/authz/driver/FAT) — seam CHỈ có thể TỪ CHỐI
+  //     thêm, không bao giờ nới lỏng gate nào. SEC_PLATFORM OFF (mặc định) → bỏ qua hoàn
+  //     toàn (0 khác biệt hành vi, không thêm DB read nào). DENY → reject + ledger row
+  //     POLICY_DENIED; obligations require_approval → dispatcher robot KHÔNG có kênh
+  //     four-eyes riêng ⇒ reject honest POLICY_APPROVAL_REQUIRED (không giả vờ đã duyệt).
+  {
+    const { evaluateActionPolicy, secPlatformEnabled } = await import("../security/policyGate");
+    if (secPlatformEnabled()) {
+      const actorId = input.confirmedBy ?? input.requestedBy;
+      // Best-effort role (fail-safe "user" → policy role-floor không match ⇒ hướng DENY an toàn
+      // dưới default-deny). fat = có bản ghi commissioning active (cùng nguồn với gate 4a).
+      const { userRole } = await resolveRobotAuthzContext(input.robotId, actorId);
+      const fatPassed = await isRobotCommissioned(input.robotId);
+      const verb = input.job.jobType;
+      const verdict = evaluateActionPolicy(
+        `user:${actorId}`,
+        `robot.command.${verb}`,
+        `robot:${input.robotId}`,
+        {
+          verb,
+          argsKeys: Object.keys(input.job.params ?? {}), // args-summary: chỉ TÊN khóa, không leak giá trị
+          robotId: input.robotId,
+          triggerKind,
+          role: userRole,
+          fat_passed: fatPassed,
+          mode: "real", // nhánh này chỉ reachable khi ROBOT_CONTROL_ENABLED==='true'
+          requestedBy: input.requestedBy,
+          ...(input.confirmedBy != null ? { confirmedBy: input.confirmedBy } : {}),
+        },
+      );
+      if (!verdict.allow) {
+        const reason = verdict.effect === "deny" ? "POLICY_DENIED" : "POLICY_APPROVAL_REQUIRED";
+        const jobId = await record(
+          input,
+          "rejected",
+          { policyRef: verdict.policyId, effect: verdict.effect, reasonCode: verdict.reasonCode },
+          `${reason}: ${verdict.reason}`,
+        );
+        return { ok: false, status: "rejected", jobId, error: reason };
+      }
+    }
+  }
+
+  // 4b) INTERLOCK GATE (doc 35 quy-trình-6) — fail-closed, ĐỒNG BỘ, TRƯỚC driver.runJob.
+  //     ĐỐI XỨNG với OT commandDispatcher (bước 5a-bis). Reachable ONLY khi
+  //     ROBOT_CONTROL_ENABLED==="true" (bước 4 đã trả 'simulated' nếu không) → chỉ gate
+  //     nhánh REAL-MOTION. Robot được định danh trong interlock rule qua targetMachineId
+  //     (quy ước xuyên suốt interlockEngine: robotId = rule.targetMachineId ?? rule.machineId),
+  //     nên map machineId=robotId. Robot không có OT-adapter/tag → adapterId sentinel (-1, không
+  //     serial thật nào khớp) + tagKeys rỗng, vì vậy CHỈ rule nhắm targetMachineId=robotId (action
+  //     chặn/dừng, enabled+approved) mới chặn. Rule đang vi phạm HOẶC lỗi đánh giá (failClosed) →
+  //     TỪ CHỐI, KHÔNG gọi driver.runJob.
+  {
+    const { evaluateInterlockGate } = await import("../interlock/interlockGate");
+    const gate = await evaluateInterlockGate({
+      adapterId: -1,
+      machineId: input.robotId,
+      tagKeys: [],
+    });
+    if (gate.blocked) {
+      const detail = gate.failClosed
+        ? "interlock evaluation error — fail-closed (no run)"
+        : `blocked by active interlock rule(s): ${gate.violations
+            .map((v) => `#${v.ruleId}(${v.action})`)
+            .join(", ")}`;
+      const jobId = await record(input, "rejected", { interlock: gate.violations }, `INTERLOCK_BLOCKED: ${detail}`);
+      return { ok: false, status: "rejected", jobId, error: "INTERLOCK_BLOCKED" };
+    }
   }
 
   // 5) Real run under timeout.

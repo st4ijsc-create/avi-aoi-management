@@ -1,6 +1,9 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer, EmptyState, LineSelect, EntityPicker, ConfirmDeleteDialog } from "@/components/patterns";
+import type { EntityOption } from "@/components/patterns";
+import { DataTable } from "@/components/DataTable";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,16 +11,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { AsyncBoundary } from "@/components/AsyncBoundary";
 import { toast } from "sonner";
-import { 
-  Plus, 
-  Edit, 
-  Trash2, 
+import { toastTrpcError } from "@/lib/trpcErrors";
+import {
+  Plus,
+  Edit,
+  Trash2,
   GripVertical,
   Workflow,
-  Factory
+  Factory,
+  Route
 } from "lucide-react";
 import {
   DndContext,
@@ -71,17 +77,19 @@ const defaultFormData: ProcessFormData = {
 };
 
 // Sortable Process Item Component
-function SortableProcessItem({ 
-  process, 
-  index, 
-  onEdit, 
-  onDelete, 
-  getProcessTypeInfo 
-}: { 
-  process: any; 
-  index: number; 
-  onEdit: (process: any) => void; 
+function SortableProcessItem({
+  process,
+  index,
+  onEdit,
+  onDelete,
+  onAssign,
+  getProcessTypeInfo
+}: {
+  process: any;
+  index: number;
+  onEdit: (process: any) => void;
   onDelete: (id: number) => void;
+  onAssign: (process: any) => void;
   getProcessTypeInfo: (type: string) => { value: string; label: string; color: string };
 }) {
   const { t } = useTranslation();
@@ -148,6 +156,14 @@ function SortableProcessItem({
         )}
       </div>
       <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onAssign(process)}
+          title={t('process.assignToLine', 'Gán vào dây chuyền / trạm')}
+        >
+          <Route className="h-4 w-4" />
+        </Button>
         <PermissionGate module="settings_factory" action="canEdit">
         <Button
           variant="ghost"
@@ -162,7 +178,7 @@ function SortableProcessItem({
           variant="ghost"
           size="icon"
           onClick={() => onDelete(process.id)}
-          className="text-red-500 hover:text-red-600"
+          className="text-destructive hover:text-destructive"
         >
           <Trash2 className="h-4 w-4" />
         </Button>
@@ -179,11 +195,14 @@ export function ProcessManagementContent() {
   const [selectedProcess, setSelectedProcess] = useState<number | null>(null);
   const [formData, setFormData] = useState<ProcessFormData>(defaultFormData);
   const [filterType, setFilterType] = useState<string>("all");
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  // doc 42 Đợt 4B (H2) — quy trình đang mở panel "Gán vào dây chuyền/trạm".
+  const [assignProcess, setAssignProcess] = useState<{ id: number; name: string } | null>(null);
 
   const utils = trpc.useUtils();
 
   // Fetch processes
-  const { data: processes, isLoading } = trpc.process.list.useQuery(
+  const { data: processes, isLoading, isError, error, refetch } = trpc.process.list.useQuery(
     filterType !== "all" ? { processType: filterType as ProcessType } : undefined
   );
 
@@ -196,7 +215,7 @@ export function ProcessManagementContent() {
       utils.process.list.invalidate();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -209,7 +228,7 @@ export function ProcessManagementContent() {
       utils.process.list.invalidate();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -219,7 +238,7 @@ export function ProcessManagementContent() {
       utils.process.list.invalidate();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -229,7 +248,7 @@ export function ProcessManagementContent() {
       utils.process.list.invalidate();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -293,8 +312,13 @@ export function ProcessManagementContent() {
   };
 
   const handleDelete = (id: number) => {
-    if (confirm(t('process.deleteConfirm'))) {
-      deleteMutation.mutate({ id });
+    setDeleteId(id);
+  };
+
+  const confirmDelete = () => {
+    if (deleteId != null) {
+      deleteMutation.mutate({ id: deleteId });
+      setDeleteId(null);
     }
   };
 
@@ -318,49 +342,45 @@ export function ProcessManagementContent() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Workflow className="h-6 w-6" />
-            {t('process.title')}
-            <ViewOnlyBadge module="settings_factory" />
-          </h1>
-          <p className="text-muted-foreground">
-            {t('process.subtitle')}
-          </p>
-        </div>
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <PermissionGate module="settings_factory" action="canCreate">
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              {t('process.addProcess')}
-            </Button>
-          </DialogTrigger>
-          </PermissionGate>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>{t('process.createTitle')}</DialogTitle>
-              <DialogDescription>
-                {t('process.createDesc')}
-              </DialogDescription>
-            </DialogHeader>
-            <ProcessForm 
-              formData={formData} 
-              setFormData={setFormData} 
-            />
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-                {t('common.cancel')}
+      {/* Header — DS PageHeader (shared pattern) */}
+      <PageHeader
+        icon={<Workflow className="h-6 w-6" />}
+        title={t('process.title')}
+        description={t('process.subtitle')}
+        badge={<ViewOnlyBadge module="settings_factory" />}
+        actions={
+          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+            <PermissionGate module="settings_factory" action="canCreate">
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                {t('process.addProcess')}
               </Button>
-              <Button onClick={handleCreate} disabled={createMutation.isPending}>
-                {createMutation.isPending ? t('process.creating') : t('process.create')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+            </DialogTrigger>
+            </PermissionGate>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>{t('process.createTitle')}</DialogTitle>
+                <DialogDescription>
+                  {t('process.createDesc')}
+                </DialogDescription>
+              </DialogHeader>
+              <ProcessForm
+                formData={formData}
+                setFormData={setFormData}
+              />
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button onClick={handleCreate} disabled={createMutation.isPending}>
+                  {createMutation.isPending ? t('process.creating') : t('process.create')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       {/* Filter */}
       <Card>
@@ -393,13 +413,23 @@ export function ProcessManagementContent() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-20 w-full" />
-              ))}
-            </div>
-          ) : sortedProcesses.length > 0 ? (
+          <AsyncBoundary
+            isLoading={isLoading}
+            isError={isError}
+            error={error}
+            isEmpty={sortedProcesses.length === 0}
+            onRetry={() => refetch()}
+            preset="list"
+            errorTitle={t('process.loadError', 'Không tải được danh sách quy trình')}
+            retryLabel={t('common.retry', 'Thử lại')}
+            emptyState={
+              <EmptyState
+                icon={Factory}
+                title={t('process.noProcesses')}
+                description={t('process.noProcessesDesc')}
+              />
+            }
+          >
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
@@ -417,19 +447,14 @@ export function ProcessManagementContent() {
                       index={index}
                       onEdit={handleEdit}
                       onDelete={handleDelete}
+                      onAssign={(p) => setAssignProcess({ id: p.id, name: p.name })}
                       getProcessTypeInfo={getProcessTypeInfo}
                     />
                   ))}
                 </div>
               </SortableContext>
             </DndContext>
-          ) : (
-            <div className="text-center py-12 text-muted-foreground">
-              <Factory className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>{t('process.noProcesses')}</p>
-              <p className="text-sm">{t('process.noProcessesDesc')}</p>
-            </div>
-          )}
+          </AsyncBoundary>
         </CardContent>
       </Card>
 
@@ -456,6 +481,31 @@ export function ProcessManagementContent() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={deleteId != null} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('process.deleteTitle', 'Delete process')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('process.deleteConfirm')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('common.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* doc 42 Đợt 4B (H2) — panel gán quy trình vào dây chuyền/trạm */}
+      <ProcessLineAssignmentDialog
+        process={assignProcess}
+        onOpenChange={(open) => { if (!open) setAssignProcess(null); }}
+      />
     </div>
   );
 }
@@ -464,7 +514,9 @@ export default function ProcessManagement() {
   const { t } = useTranslation();
   return (
     <DashboardLayout title={t('process.title')}>
-      <ProcessManagementContent />
+      <PageContainer>
+        <ProcessManagementContent />
+      </PageContainer>
     </DashboardLayout>
   );
 }
@@ -561,5 +613,224 @@ function ProcessForm({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── doc 42 Đợt 4B (H2 #process→line) — panel gán quy trình vào dây chuyền/trạm ──
+// Nối API mồ côi processRouter.getAssignmentsByProcess + create/update/deleteLineAssignment.
+type ProcessAssignment = {
+  id: number;
+  lineId: number;
+  lineName: string | null;
+  lineCode: string | null;
+  stationId: number | null;
+  stationName: string | null;
+  stationCode: string | null;
+  orderIndex: number;
+  cycleTimeTarget: string | null;
+  isActive: boolean;
+};
+
+const emptyAssignForm = { lineId: null as number | null, stationId: null as number | null, orderIndex: "0", cycleTimeTarget: "" };
+
+function ProcessLineAssignmentDialog({
+  process,
+  onOpenChange,
+}: {
+  process: { id: number; name: string } | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const utils = trpc.useUtils();
+  const processId = process?.id ?? 0;
+
+  const [form, setForm] = useState(emptyAssignForm);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  const { data: assignments, isLoading } = trpc.process.getAssignmentsByProcess.useQuery(
+    { processId },
+    { enabled: !!process },
+  );
+  const { data: stations } = trpc.station.list.useQuery(undefined, { enabled: !!process });
+
+  const stationOptions: EntityOption[] = useMemo(() => {
+    if (!stations || form.lineId == null) return [];
+    return stations
+      .filter((s: any) => s.lineId === form.lineId)
+      .map((s: any) => ({ value: s.id, label: s.name, sublabel: s.code ?? undefined }));
+  }, [stations, form.lineId]);
+
+  const resetForm = () => { setForm(emptyAssignForm); setEditingId(null); };
+
+  const invalidate = () => utils.process.getAssignmentsByProcess.invalidate({ processId });
+
+  const createMutation = trpc.process.createLineAssignment.useMutation({
+    onSuccess: () => { toast.success(t('process.assignSuccess', 'Đã gán quy trình vào dây chuyền')); resetForm(); invalidate(); },
+    onError: (e) => toastTrpcError(e),
+  });
+  const updateMutation = trpc.process.updateLineAssignment.useMutation({
+    onSuccess: () => { toast.success(t('process.assignUpdateSuccess', 'Đã cập nhật gán')); resetForm(); invalidate(); },
+    onError: (e) => toastTrpcError(e),
+  });
+  const deleteMutation = trpc.process.deleteLineAssignment.useMutation({
+    onSuccess: () => { toast.success(t('process.assignDeleteSuccess', 'Đã gỡ gán')); invalidate(); },
+    onError: (e) => toastTrpcError(e),
+  });
+
+  const handleSubmit = () => {
+    const orderIndex = Number(form.orderIndex) || 0;
+    const cycleTimeTarget = form.cycleTimeTarget ? Number(form.cycleTimeTarget) : undefined;
+    const stationId = form.stationId ?? undefined;
+    if (editingId != null) {
+      updateMutation.mutate({ id: editingId, orderIndex, cycleTimeTarget, stationId });
+    } else {
+      if (form.lineId == null) return;
+      createMutation.mutate({ lineId: form.lineId, processId, orderIndex, cycleTimeTarget, stationId });
+    }
+  };
+
+  const startEdit = (a: ProcessAssignment) => {
+    setEditingId(a.id);
+    setForm({
+      lineId: a.lineId,
+      stationId: a.stationId,
+      orderIndex: String(a.orderIndex),
+      cycleTimeTarget: a.cycleTimeTarget ?? "",
+    });
+  };
+
+  const rows = (assignments ?? []) as ProcessAssignment[];
+  const submitting = createMutation.isPending || updateMutation.isPending;
+
+  return (
+    <Dialog open={!!process} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{t('process.assignToLine', 'Gán vào dây chuyền / trạm')}</DialogTitle>
+          <DialogDescription>{process?.name}</DialogDescription>
+        </DialogHeader>
+
+        {/* Form thêm / sửa gán — gate canCreate (thêm) / canEdit (sửa) */}
+        <PermissionGate module="settings_factory" action={editingId != null ? "canEdit" : "canCreate"}>
+          <div className="rounded-lg border p-4 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>{t('process.line', 'Dây chuyền')}</Label>
+                <LineSelect
+                  value={form.lineId}
+                  onChange={(v) => setForm((p) => ({ ...p, lineId: v == null ? null : Number(v), stationId: null }))}
+                  disabled={editingId != null}
+                  placeholder={t('process.selectLine', 'Chọn dây chuyền…')}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t('process.station', 'Trạm (tuỳ chọn)')}</Label>
+                <EntityPicker
+                  options={stationOptions}
+                  value={form.stationId}
+                  onChange={(v) => setForm((p) => ({ ...p, stationId: v == null ? null : Number(v) }))}
+                  disabled={form.lineId == null}
+                  placeholder={t('process.selectStation', 'Chọn trạm…')}
+                  emptyText={t('process.noStationForLine', 'Dây chuyền chưa có trạm')}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t('process.order', 'Thứ tự')}</Label>
+                <Input
+                  type="number"
+                  value={form.orderIndex}
+                  onChange={(e) => setForm((p) => ({ ...p, orderIndex: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t('process.targetCycleTime', 'Chu kỳ mục tiêu (giây)')}</Label>
+                <Input
+                  type="number"
+                  value={form.cycleTimeTarget}
+                  onChange={(e) => setForm((p) => ({ ...p, cycleTimeTarget: e.target.value }))}
+                  placeholder={t('process.cycleTimePlaceholder', 'Bỏ trống = dùng mặc định')}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              {editingId != null && (
+                <Button variant="outline" onClick={resetForm}>{t('common.cancel', 'Huỷ')}</Button>
+              )}
+              <Button
+                onClick={handleSubmit}
+                disabled={submitting || (editingId == null && form.lineId == null)}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                {editingId != null ? t('process.saveChanges', 'Lưu thay đổi') : t('process.addAssignment', 'Thêm gán')}
+              </Button>
+            </div>
+          </div>
+        </PermissionGate>
+
+        <DataTable<ProcessAssignment>
+          data={rows}
+          getRowId={(r) => r.id}
+          loading={isLoading}
+          paginated={false}
+          emptyState={
+            <EmptyState
+              icon={Route}
+              title={t('process.noAssignments', 'Chưa gán vào dây chuyền nào')}
+              description={t('process.noAssignmentsDesc', 'Chọn dây chuyền ở trên để gán quy trình này.')}
+            />
+          }
+          columns={[
+            {
+              id: 'line',
+              header: t('process.line', 'Dây chuyền'),
+              cell: (r) => (
+                <span className="flex items-center gap-2">
+                  <span className="font-medium">{r.lineName ?? `#${r.lineId}`}</span>
+                  {r.lineCode && <Badge variant="outline" className="font-mono text-xs">{r.lineCode}</Badge>}
+                </span>
+              ),
+            },
+            {
+              id: 'station',
+              header: t('process.station', 'Trạm'),
+              cell: (r) => r.stationId
+                ? <span className="flex items-center gap-2">{r.stationName ?? `#${r.stationId}`}{r.stationCode && <Badge variant="outline" className="font-mono text-xs">{r.stationCode}</Badge>}</span>
+                : <span className="text-muted-foreground">—</span>,
+            },
+            { id: 'order', header: t('process.order', 'Thứ tự'), align: 'right', cell: (r) => r.orderIndex },
+            { id: 'cycle', header: t('process.targetCycleTimeLabel', 'Chu kỳ (s)'), align: 'right', cell: (r) => r.cycleTimeTarget ?? '—' },
+            {
+              id: 'actions',
+              header: '',
+              align: 'right',
+              cell: (r) => (
+                <div className="flex items-center justify-end gap-1">
+                  <PermissionGate module="settings_factory" action="canEdit">
+                    <Button variant="ghost" size="icon" onClick={() => startEdit(r)}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  </PermissionGate>
+                  <PermissionGate module="settings_factory" action="canDelete">
+                    <ConfirmDeleteDialog
+                      trigger={
+                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      }
+                      itemLabel={t('process.assignmentLabel', 'gán vào {{line}}', { line: r.lineName ?? `#${r.lineId}` })}
+                      onConfirm={async () => { await deleteMutation.mutateAsync({ id: r.id }); }}
+                    />
+                  </PermissionGate>
+                </div>
+              ),
+            },
+          ]}
+        />
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.close', 'Đóng')}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

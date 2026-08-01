@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "contracts/canonical/state.schema.json",
+  "title": "State",
+  "description": "LDS-L1 canonical asset-state snapshot (doc 44 G2.5). Published on syn/{site}/{area}/{line}/{cell}/{equip}/state (retained). additionalProperties stays open (BACKWARD-safe extension).",
+  "x-subject": "syn/+/+/+/+/+/state",
+  "x-owner": "platform",
+  "type": "object",
+  "properties": {
+    "path": { "type": "string", "description": "ISA-95 asset path (site/area/line/cell/equip)" },
+    "ts": { "type": "string", "description": "ISO-8601 timestamp the snapshot was taken" },
+    "state": { "type": "string", "description": "Normalised machine state (PackML-ish: IDLE/EXECUTE/HELD/STOPPED/ABORTED/...)" },
+    "values": { "type": "object", "description": "Last-known key metric values (name → value)" },
+    "health": { "type": "string", "description": "Coarse health summary (online/degraded/offline)" }
+  },
+  "required": ["path", "ts", "state"]
+}

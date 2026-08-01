@@ -18,13 +18,13 @@ steps:
       en: "Prepare the measurement point info: product model, code, type, USL/LSL/Target."
       zh: "准备测量点信息：产品型号、编号、类型、USL/LSL/Target。"
   - type: navigate
-    route: /datasettings
+    route: /products
     text:
-      vi: "Mở trang Cài đặt dữ liệu để quản lý điểm đo."
-      en: "Open Data Settings to manage measurement points."
-      zh: "打开数据设置以管理测量点。"
+      vi: "Mở trang Sản phẩm & điểm đo (/products), chọn sản phẩm rồi bật chế độ sửa điểm đo."
+      en: "Open Products & measurement points (/products), pick the product, then enter point-edit mode."
+      zh: "打开产品与测量点页面（/products），选择产品后进入测量点编辑模式。"
   - type: prefill
-    route: /datasettings
+    route: /products
     valuesTemplate:
       code: "{{code}}"
       name: "{{name}}"

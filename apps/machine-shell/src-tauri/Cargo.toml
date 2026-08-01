@@ -1,0 +1,24 @@
+# doc 33 W5 / ADR-006 — SYNAPSE Machine Edition desktop shell (Tauri 2). SCAFFOLD.
+# Requires the Rust toolchain + `cargo install tauri-cli` to build (not built in this env).
+[package]
+name = "synapse-machine-shell"
+version = "0.1.0"
+description = "SYNAPSE Machine Edition desktop kiosk (wraps the web Control Tower)"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# doc 44 W7-2 §9 — Machine Edition kiosk plugins (wire in src/main.rs when building; see README):
+#   • autostart      → launch the shell on OS login (unattended IPC that reboots after power loss)
+#   • single-instance→ one kiosk window only (a second launch focuses the first, never duplicates)
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

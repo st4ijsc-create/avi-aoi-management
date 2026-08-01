@@ -22,6 +22,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { PageHeader, chartColor, chartTooltipStyle, chartTooltipLabelStyle, chartGridProps, chartAxisTick } from "@/components/patterns";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { format, subDays } from "date-fns";
@@ -161,16 +162,14 @@ export function RootCauseAnalysisPageContent() {
     });
   };
 
-  const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'];
-
   const getTrendIcon = (trend: string) => {
     switch (trend) {
       case 'increasing':
-        return <TrendingUp className="h-4 w-4 text-red-500" />;
+        return <TrendingUp className="h-4 w-4 text-destructive" />;
       case 'decreasing':
-        return <TrendingDown className="h-4 w-4 text-green-500" />;
+        return <TrendingDown className="h-4 w-4 text-success" />;
       default:
-        return <Minus className="h-4 w-4 text-gray-500" />;
+        return <Minus className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
@@ -178,14 +177,12 @@ export function RootCauseAnalysisPageContent() {
     <>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="flex items-center gap-2 text-2xl font-bold">{t('reports.rootCauseAnalysis')}<ViewOnlyBadge module="analytics_root_cause" /></h1>
-            <p className="text-muted-foreground">
-              {t('reports.rootCauseAnalysisDesc')}
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Search className="h-6 w-6 text-primary" />}
+          title={t('reports.rootCauseAnalysis')}
+          description={t('reports.rootCauseAnalysisDesc')}
+          badge={<ViewOnlyBadge module="analytics_root_cause" />}
+        />
 
         {/* Analysis Configuration */}
         <Card>
@@ -399,9 +396,9 @@ export function RootCauseAnalysisPageContent() {
               {analysisDetail ? (
                 <Tabs defaultValue="factors">
                   <TabsList className="grid w-full grid-cols-4">
-                    <TabsTrigger value="factors">Top Factors</TabsTrigger>
-                    <TabsTrigger value="pareto">Pareto</TabsTrigger>
-                    <TabsTrigger value="insights">AI Insights</TabsTrigger>
+                    <TabsTrigger value="factors">{t('reports.topFactors', 'Top Factors')}</TabsTrigger>
+                    <TabsTrigger value="pareto">{t('reports.pareto', 'Pareto')}</TabsTrigger>
+                    <TabsTrigger value="insights">{t('reports.aiInsights', 'AI Insights')}</TabsTrigger>
                     <TabsTrigger value="recommendations">{t('reports.recommendations')}</TabsTrigger>
                   </TabsList>
 
@@ -427,29 +424,29 @@ export function RootCauseAnalysisPageContent() {
                     <div className="h-[400px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <ComposedChart data={analysisDetail.paretoData?.slice(0, 10)}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis 
-                            dataKey="category" 
+                          <CartesianGrid {...chartGridProps} />
+                          <XAxis
+                            dataKey="category"
                             angle={-45}
                             textAnchor="end"
                             height={80}
-                            fontSize={10}
+                            tick={chartAxisTick}
                           />
-                          <YAxis yAxisId="left" />
-                          <YAxis yAxisId="right" orientation="right" domain={[0, 100]} />
-                          <Tooltip />
+                          <YAxis yAxisId="left" tick={chartAxisTick} />
+                          <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={chartAxisTick} />
+                          <Tooltip contentStyle={chartTooltipStyle} labelStyle={chartTooltipLabelStyle} />
                           <Legend />
-                          <Bar yAxisId="left" dataKey="count" name={t('common.quantity')} fill="#3b82f6">
+                          <Bar yAxisId="left" dataKey="count" name={t('common.quantity')} fill={chartColor(0)}>
                             {analysisDetail.paretoData?.slice(0, 10).map((_: any, index: number) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                              <Cell key={`cell-${index}`} fill={chartColor(index)} />
                             ))}
                           </Bar>
-                          <Line 
-                            yAxisId="right" 
-                            type="monotone" 
-                            dataKey="cumulativePercentage" 
-                            name={t('reports.cumulativePercent')} 
-                            stroke="#ef4444" 
+                          <Line
+                            yAxisId="right"
+                            type="monotone"
+                            dataKey="cumulativePercentage"
+                            name={t('reports.cumulativePercent')}
+                            stroke="var(--destructive)"
                             strokeWidth={2}
                           />
                         </ComposedChart>
@@ -471,7 +468,7 @@ export function RootCauseAnalysisPageContent() {
                       {/* Root Causes */}
                       <div>
                         <h4 className="font-medium flex items-center gap-2 mb-3">
-                          <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                          <AlertTriangle className="h-4 w-4 text-warning" />
                           {t('reports.rootCauses')}
                         </h4>
                         <div className="space-y-2">
@@ -496,7 +493,7 @@ export function RootCauseAnalysisPageContent() {
                       {/* Recommendations */}
                       <div>
                         <h4 className="font-medium flex items-center gap-2 mb-3">
-                          <Lightbulb className="h-4 w-4 text-yellow-500" />
+                          <Lightbulb className="h-4 w-4 text-warning" />
                           {t('reports.actionRecommendations')}
                         </h4>
                         <div className="space-y-2">
@@ -512,13 +509,13 @@ export function RootCauseAnalysisPageContent() {
                       {/* Preventive Measures */}
                       <div>
                         <h4 className="font-medium flex items-center gap-2 mb-3">
-                          <CheckCircle className="h-4 w-4 text-green-500" />
+                          <CheckCircle className="h-4 w-4 text-success" />
                           {t('reports.preventiveMeasures')}
                         </h4>
                         <div className="space-y-2">
                           {analysisDetail.aiInsights?.preventiveMeasures?.map((measure: string, index: number) => (
                             <div key={`measure-${index}`} className="flex items-start gap-3 p-3 rounded-lg border">
-                              <CheckCircle className="h-4 w-4 mt-0.5 text-green-500" />
+                              <CheckCircle className="h-4 w-4 mt-0.5 text-success" />
                               <span className="text-sm">{measure}</span>
                             </div>
                           ))}

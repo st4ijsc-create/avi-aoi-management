@@ -1,0 +1,818 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Industrial HMI type system — Barlow Condensed (signage/headings/readouts) + Barlow (body/UI).
+   Self-hosted via @fontsource, Vietnamese subset bundled automatically (each weight file below
+   ships latin + latin-ext + vietnamese @font-face blocks) — never resolves to fonts.googleapis.com.
+   See docs/HMI_DESIGN_SPEC.md §3. */
+@import "@fontsource/barlow/400.css";
+@import "@fontsource/barlow/500.css";
+@import "@fontsource/barlow/700.css";
+@import "@fontsource/barlow-condensed/600.css";
+
+/* WS1 (docs/PRODUCTION_UI_DESIGN.md) — the dark "world" is now the Console theme, not a bare
+   light/dark toggle. `dark:` utilities throughout the app (button/badge/tabs/select hover states,
+   mostly) keep working unchanged — they just activate under Console instead of the old generic
+   "dark". Glass/Warmth are both light-ground themes and intentionally do NOT trigger `dark:` —
+   anywhere a `dark:` rule would need to differ between Glass and Warmth specifically, prefer a
+   plain token read instead (WS1-T1 found none that needed it; every existing `dark:` use is a
+   console-only hover/tint tweak that's correct to skip on the two light themes). */
+@custom-variant dark (&:is([data-theme="console"] *));
+
+/* ==========================================================================
+   ST4I Industrial HMI Design System — "Bản vẽ kỹ thuật sống" (living blueprint)
+   Single source of truth: docs/HMI_DESIGN_SPEC.md (H1 foundation) + WS1's
+   docs/PRODUCTION_UI_DESIGN.md (3-theme system). Raw palette lives in the
+   :root / [data-theme="…"] blocks below; the @theme block only maps those
+   custom properties onto Tailwind utility names. NEVER hardcode a hex value
+   in a component — use these tokens.
+
+   Three selectable themes — Glass (default, light) / Console (dark) / Warmth
+   (warm) — see docs/PRODUCTION_UI_DESIGN.md WS1.1/1.2. WS1 amends
+   HMI_DESIGN_SPEC.md §1's old "radius 0 / no shadows everywhere" ground rule:
+   radius and elevation are now per-theme parameters (--radius, --elevation,
+   --glow-run, --panel-fill, --glass-blur, --focus below); the STRUCTURAL +
+   SAFETY rules (hairline dividers as the base idiom, tabular numerals,
+   bilingual micro-labels, flat status fills, offline fonts, status colors
+   carry state meaning only) hold unchanged across all three themes — see
+   PRODUCTION_UI_DESIGN.md §4.
+
+   Theme blocks are plain `[data-theme="…"]` attribute selectors (not
+   `:root[data-theme="…"]`): an attribute selector matches the attribute
+   wherever it's stamped, so the SAME rule applies both at the root (the
+   `<html>` element the ThemeProvider stamps) and on any nested element — the
+   Settings screen's live theme-preview swatches stamp `data-theme="console"`
+   on a small nested `<div>` to render a pixel-accurate Console preview while
+   the rest of the app stays on whichever theme is actually active, with zero
+   duplicated hex (custom properties inherit down from the nested element to
+   its own descendants same as they would from :root). Bare `:root` below
+   carries the Glass values and doubles as the safe pre-hydration default
+   (first paint, before the provider's effect stamps the attribute) — Glass
+   being both the default theme AND the fallback is exactly what "default
+   Glass" already implies, so there's nothing left for a dedicated
+   `[data-theme="glass"]` block to override; it exists as an explicit anchor
+   only (see the empty block right after :root). Console/Warmth blocks below
+   only redeclare what differs from :root — the navy ramp, radius-pill,
+   typography, and shadow-scale are theme-invariant and declared once.
+   ========================================================================== */
+
+:root {
+  /* ==== GLASS (default) — cool off-white, layered "glass" panels + soft light, spec §1.2 ==== */
+  --color-bg: #eef1f7; /* cool off-white ground */
+  --color-surface: #ffffff; /* panels float ABOVE the ground (elevation does the separating, not a sunken fill) */
+  --color-text: #1b2233;
+  --color-divider: color-mix(in srgb, #1b2233 12%, transparent);
+  --color-divider-strong: color-mix(in srgb, #1b2233 24%, transparent);
+
+  /* ---- Surfaces (component-facing names — same tiers as --color-bg/-surface above, kept
+     so existing components that already consume the bg-surface- and border- utilities need no
+     renaming). ---- */
+  --surface-base: var(--color-surface);
+  --surface-subtle: var(--color-bg);
+  --surface-muted: #e6ebf3; /* one notch darker than --surface-base — input/chip fill */
+  --surface-card: var(--color-surface);
+  --border: #d6dce7;
+  --border-strong: #b7c1d6;
+
+  /* ---- Navy — ST4I brand accent ramp (spec §2, FIXED across all 3 themes; only --color-accent
+     and the --accent-100/500/600 aliases below shift per theme). ---- */
+  --navy-50: #f0f3fa;
+  --navy-100: #dde4f4;
+  --navy-200: #c0cdea;
+  --navy-300: #97abdc;
+  --navy-400: #6b84c8;
+  --navy-500: #4762ae;
+  --navy-600: #30498f;
+  --navy-700: #1e3a8a; /* BASE brand navy */
+  --navy-800: #16295f;
+  --navy-900: #0f1c42;
+  /* Glass lifts its live/interactive accent off the flat brand navy onto a brighter azure — the
+     "navy → azure" pairing in the mock (PRODUCTION_UI_DESIGN.md §1.2). Solid navy-700 stays the
+     PRIMARY button fill (--primary below); --color-accent is the livelier azure used for focus
+     rings, links, and anything reading as "interactive/live". */
+  --color-accent: #2f6bff;
+
+  /* ---- Text ---- */
+  --text-strong: var(--color-text);
+  --text-body: #333c52;
+  /* Mock gives #66708a; darkened here — measured 4.37:1 against --color-bg (hand-calculated sRGB
+     relative luminance), just under the 4.5:1 AA floor for this (small, 10-13px) text. Darkened
+     for margin (~5.0:1 against --color-bg, ~5.3:1 against the white --surface-card tier). */
+  --text-muted: #5d6780;
+
+  /* ---- Secondary accent — Glass keeps this on the azure family (light tint for badge/hover
+     fills), distinct from Console's cyan and Warmth's amber. ---- */
+  --accent-100: #dce7ff;
+  --accent-500: #2f6bff;
+  --accent-600: #1d4fd1;
+
+  /* ---- Status ramp (spec §2 — identical MEANING across all 3 themes; only lightness is tuned per
+     ground for AA, never the hue/meaning). ---- */
+  --status-run: #1f9d57;
+  --status-warn: #c68717;
+  --status-fault: #d84437;
+  --status-idle: #7d8598;
+  /* AA-safe text-on-tint variants (status hue composited on its own ~10-20% tint fill). Live axe
+     (WS1-T1 verify pass) measured the FIRST attempt here (#157a43) at 4.3:1 against a real
+     `StatusBadge`'s `bg-ok/10` tint on `Machines.tsx` (composited background #d9e9e7) — under the
+     4.5:1 floor. Darkened all three for real margin (hand-calculated ≥5.6:1 against that same
+     #d9e9e7 tint) rather than re-tuning to just clear one measured case. */
+  --status-run-text: #0f6636;
+  --status-warn-text: #6b490c;
+  --status-fault-text: #8f241a;
+  --status-idle-text: var(--text-muted);
+
+  --ok: var(--status-run);
+  --warn: var(--status-warn);
+  --danger: var(--status-fault);
+  --neutral: var(--status-idle);
+  --ok-text: var(--status-run-text);
+  --warn-text: var(--status-warn-text);
+  --danger-text: var(--status-fault-text);
+  /* "info" is not a machine state (the spec ramp is run/warn/fault/idle only) — routed onto the
+     navy accent instead of the status ramp, for things like mode badges / connectivity chips. */
+  --info: var(--navy-600);
+  --info-text: var(--navy-700);
+
+  /* ---- Radius — per-theme now (WS1 amends HMI_DESIGN_SPEC.md §1's old "0 everywhere"). Glass:
+     8px, soft/premium. Downstream --radius-sm..4xl in the @theme inline block below all derive
+     from --radius/--radius-card/--radius-pill via var(), so they re-resolve per theme
+     automatically — no per-theme duplication needed there. Most existing primitives (Badge,
+     Select, Tabs, Sheet, …) hardcode `rounded-none` today regardless of this token — bringing
+     each onto `rounded-[var(--radius)]` is Task 2 (per-theme signature), so this alone is not
+     yet visually complete everywhere; it's the foundation Task 2 builds on. ---- */
+  --radius: 8px;
+  --radius-card: 8px;
+  /* Invariant across all 3 themes (not redeclared below) — a real pill now instead of 0, ready
+     for Task 2 to apply via `rounded-4xl`. `rounded-full` (used ad hoc for small status dots) is
+     a plain Tailwind default, not derived from this token, so it's unaffected either way. */
+  --radius-pill: 999px;
+
+  /* ---- Form tokens (new, WS1 §1.1 "hình thức theo theme") — Glass: soft ambient light, no glow,
+     translucent glass-panel fill. Not yet wired into any component (Task 2 adopts these); defined
+     now so Task 2 has a real value to read per theme. ---- */
+  --shadow-color: 222 45% 22%;
+  --elevation: 0 1px 2px color-mix(in srgb, #1b2233 6%, transparent), 0 10px 28px -10px color-mix(in srgb, #1b2233 22%, transparent);
+  --glow-run: none;
+  --panel-fill: color-mix(in srgb, #ffffff 70%, transparent);
+  --glass-blur: 16px;
+  --focus: var(--color-accent);
+
+  /* WS1-T2 — `.hmi-graph-paper` ground signature (see that utility's own doc comment). Glass: a
+     soft top-lit "light table" wash behind the grid, on top of the plain divider-colour lines. */
+  --graph-paper-line: var(--color-divider);
+  --graph-paper-wash: radial-gradient(
+    ellipse 100% 62% at 50% 26%,
+    color-mix(in srgb, var(--color-surface) 65%, transparent),
+    transparent 72%
+  );
+
+  /* ---- Shadows — the shadcn shadow SCALE stays "none" (unchanged from the pre-WS1 flat ground
+     rule): no current component reads --shadow-2xs..2xl via Tailwind's shadow-* utilities (they
+     were deliberately avoided app-wide, see routes/_tokens.tsx's own doc comment on this). The new
+     --elevation above is the per-theme replacement Task 2 wires up instead of resurrecting these. ---- */
+  --shadow-2xs: none;
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+  --shadow-2xl: none;
+
+  /* --- shadcn semantic tokens, repointed onto the palette above --- */
+  --background: var(--surface-base);
+  --foreground: var(--text-strong);
+  --card: var(--surface-card);
+  --card-foreground: var(--text-strong);
+  --popover: var(--surface-base);
+  --popover-foreground: var(--text-strong);
+  --primary: var(--navy-700);
+  --primary-foreground: #ffffff;
+  --primary-text: var(--primary);
+  --secondary: var(--navy-100);
+  --secondary-foreground: var(--navy-800);
+  --muted: var(--surface-muted);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--accent-100);
+  --accent-foreground: var(--accent-600);
+  --destructive: var(--danger-text);
+  --input: var(--border);
+  --ring: var(--focus);
+  --chart-1: var(--navy-700);
+  --chart-2: var(--navy-400);
+  --chart-3: var(--navy-300);
+  --chart-4: var(--ok);
+  --chart-5: var(--warn);
+  --sidebar: var(--surface-subtle);
+  --sidebar-foreground: var(--text-strong);
+  --sidebar-primary: var(--navy-700);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--navy-100);
+  --sidebar-accent-foreground: var(--navy-800);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--focus);
+}
+
+/* Explicit anchor for when `data-theme="glass"` is stamped (the common case — ThemeProvider always
+   stamps SOME value, including "glass"). Intentionally empty: :root above already defines every
+   Glass value and, being unattributed, already applies regardless of which/whether an attribute is
+   present — see this file's top doc comment. Kept as a real (if empty) rule so `[data-theme="glass"]`
+   resolves the same predictable way the other two themes' blocks do, and so a future Glass-only
+   override has an obvious home instead of going back into the bare :root block above. */
+[data-theme="glass"] {
+}
+
+[data-theme="console"] {
+  /* ==== CONSOLE — near-black "control room", cyan glow on live elements, spec §1.2 ==== */
+  --color-bg: #12171f;
+  --color-surface: #161d27;
+  --color-text: #e9f1fb;
+  --color-divider: color-mix(in srgb, #e9f1fb 14%, transparent);
+  --color-divider-strong: color-mix(in srgb, #e9f1fb 26%, transparent);
+
+  --surface-base: var(--color-surface);
+  --surface-subtle: var(--color-bg);
+  --surface-muted: #1c2430;
+  --surface-card: var(--color-surface);
+  --border: #26303f;
+  --border-strong: #3c4a61;
+
+  /* Navy is too dark to read on a near-black ground (unchanged reasoning from the old dark theme) —
+     Console's accent is its own cyan instead of a lifted navy, matching the mock's "azure/cyan
+     glow" direction. Never place navy-700 text on this ground. */
+  --color-accent: #38d6ff;
+
+  --text-strong: var(--color-text);
+  --text-body: #c3cede;
+  /* Mock value as-is — hand-calculated ~5.0-5.3:1 against both --color-bg and --color-surface, AA
+     margin confirmed live via axe (see WS1-T1 report). */
+  --text-muted: #7f8ca4;
+
+  --accent-100: #123244;
+  --accent-500: #38d6ff;
+  --accent-600: #8be8ff;
+
+  /* Status ramp — SAME hues as Glass/Warmth (safety meaning is fixed); only text-on-tint pairing
+     lifts for legibility on this near-black ground, tuned against the destructive button's resting
+     dark fill (the most saturated tint any of these sit on), same approach as the pre-WS1 dark theme. */
+  --status-run: #2ee88f;
+  --status-warn: #ffb63a;
+  --status-fault: #ff5c52;
+  --status-idle: #7f8ca4;
+  --status-run-text: #86f0c1;
+  --status-warn-text: #ffcf8a;
+  --status-fault-text: #ff9d94;
+  --status-idle-text: var(--text-muted);
+
+  --ok-text: var(--status-run-text);
+  --warn-text: var(--status-warn-text);
+  --danger-text: var(--status-fault-text);
+  --info: var(--color-accent);
+  --info-text: var(--color-accent);
+
+  --radius: 6px;
+  --radius-card: 6px;
+
+  --shadow-color: 200 60% 4%;
+  /* Console's signature — "phần tử live tỏa sáng" (live elements glow): a hairline cyan ring plus a
+     deep drop shadow, vs. Glass's soft ambient lift. */
+  --elevation: 0 0 0 1px color-mix(in srgb, #38d6ff 10%, transparent), 0 18px 44px -14px rgba(0, 0, 0, 0.7);
+  --glow-run: 0 0 18px 2px color-mix(in srgb, #2ee88f 55%, transparent);
+  --panel-fill: color-mix(in srgb, #161d27 80%, transparent);
+  --glass-blur: 20px;
+  --focus: var(--color-accent);
+
+  /* WS1-T2 — Console's ground signature is "luminous data lines" (spec brief), not a flood-lit
+     wash (that would compete with `--glow-run`'s own reserved-for-live-elements glow) — just the
+     grid lines themselves tinted toward the accent cyan instead of a plain divider tone.
+     `--graph-paper-wash` is explicitly turned off here (custom properties don't "fall through" to
+     :root for a property this rule already matches the element on — unlike the truly invariant
+     tokens like the navy ramp, this one must be redeclared per theme, same as `--elevation`). */
+  --graph-paper-line: color-mix(in srgb, var(--color-accent) 16%, var(--color-divider));
+  --graph-paper-wash: none;
+
+  --background: var(--surface-base);
+  --foreground: var(--text-strong);
+  --card: var(--surface-card);
+  --card-foreground: var(--text-strong);
+  --popover: var(--surface-base);
+  --popover-foreground: var(--text-strong);
+  --primary: var(--color-accent);
+  --primary-foreground: #062733;
+  --primary-text: var(--color-accent);
+  --secondary: #123244;
+  --secondary-foreground: #cdeefc;
+  --muted: var(--surface-muted);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--accent-100);
+  --accent-foreground: var(--accent-600);
+  --destructive: var(--danger-text);
+  --input: var(--border);
+  --ring: var(--focus);
+  --chart-1: var(--color-accent);
+  --chart-2: var(--navy-300);
+  --chart-3: var(--navy-200);
+  --chart-4: var(--ok);
+  --chart-5: var(--warn);
+  --sidebar: var(--surface-subtle);
+  --sidebar-foreground: var(--text-strong);
+  --sidebar-primary: var(--color-accent);
+  --sidebar-primary-foreground: #062733;
+  --sidebar-accent: #123244;
+  --sidebar-accent-foreground: #cdeefc;
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--focus);
+}
+
+[data-theme="warmth"] {
+  /* ==== WARMTH — warm paper + soft graphite, physical-material depth, spec §1.2 ==== */
+  --color-bg: #f4f1ea;
+  --color-surface: #ebe7dd;
+  /* Mock gives #26221B; darkened slightly — live axe (WS1-T1 verify pass) measured `tabs.tsx`'s
+     inactive-tab `text-foreground/65` (65%-opacity ink over `--surface-muted`) at 4.4:1, under the
+     4.5:1 floor. #26221B itself has huge headroom at FULL opacity (~15:1+) — it's specifically the
+     opacity reduction that erodes the margin, so the fix is here (more headroom in the base ink)
+     rather than in the shared `tabs.tsx` primitive: hand-calculated ~4.76:1 for that same composite
+     with this value. */
+  --color-text: #1e1a13;
+  --color-divider: color-mix(in srgb, #1e1a13 14%, transparent);
+  --color-divider-strong: color-mix(in srgb, #1e1a13 26%, transparent);
+
+  --surface-base: var(--color-surface);
+  --surface-subtle: var(--color-bg);
+  --surface-muted: #e3ddd0;
+  --surface-card: var(--color-surface);
+  --border: #d3ccbd;
+  --border-strong: #b8ae99;
+
+  /* Warmth keeps the flat brand navy as its primary interactive accent (no azure lift, unlike
+     Glass) — its own signature is the amber SECONDARY accent below instead. */
+  --color-accent: var(--navy-700);
+
+  --text-strong: var(--color-text);
+  --text-body: #4a453a;
+  /* Mock gives #6f695c; darkened here — hand-calculated ~4.42:1 against --color-surface (the tier
+     most muted text actually sits on, inside a Sheet card), under the 4.5:1 AA floor. Darkened for
+     margin (~5.4:1 against --color-surface, ~5.9:1 against --color-bg). */
+  --text-muted: #625c4f;
+
+  /* ---- Secondary accent — Warmth's amber, distinct from the status-warn hue it sits near (used
+     for hover/secondary fills, not state). ---- */
+  --accent-100: #f3e6cf;
+  --accent-500: #b0691a;
+  --accent-600: #8f5414;
+
+  --status-run: #3f8c4f;
+  --status-warn: #bd851b;
+  --status-fault: #bb3b2e;
+  --status-idle: #8a8371;
+  --status-run-text: #2c6b3a;
+  --status-warn-text: #7c530f;
+  --status-fault-text: #8c291f;
+  --status-idle-text: var(--text-muted);
+
+  --ok-text: var(--status-run-text);
+  --warn-text: var(--status-warn-text);
+  --danger-text: var(--status-fault-text);
+  --info: var(--navy-600);
+  --info-text: var(--navy-700);
+
+  --radius: 5px;
+  --radius-card: 5px;
+
+  --shadow-color: 32 25% 14%;
+  /* Warmth's signature — real-but-soft physical material depth (spec: "nút bấm chiều sâu vật lý
+     thật-mà-mềm"): a soft contact shadow, no glow (that's Console's device), no blur/translucency
+     (opaque material, not glass). */
+  --elevation: 0 1px 1px color-mix(in srgb, #1e1a13 10%, transparent), 0 8px 18px -8px color-mix(in srgb, #1e1a13 30%, transparent);
+  --glow-run: none;
+  --panel-fill: color-mix(in srgb, #ebe7dd 85%, transparent);
+  --glass-blur: 0px;
+  --focus: var(--navy-700);
+
+  /* WS1-T2 — Warmth's ground stays plain (`--color-divider` lines, no wash) — its material
+     signature lives in `--elevation` on the panels sitting ABOVE this ground (real-but-soft
+     contact shadow), not in the ground itself. Explicit `none` for the same reason as Console's
+     own override above (this property isn't theme-invariant, so it must be redeclared here, not
+     left to fall through to :root's Glass wash). */
+  --graph-paper-wash: none;
+
+  --background: var(--surface-base);
+  --foreground: var(--text-strong);
+  --card: var(--surface-card);
+  --card-foreground: var(--text-strong);
+  --popover: var(--surface-base);
+  --popover-foreground: var(--text-strong);
+  --primary: var(--navy-700);
+  --primary-foreground: #ffffff;
+  --primary-text: var(--primary);
+  --secondary: var(--navy-100);
+  --secondary-foreground: var(--navy-800);
+  --muted: var(--surface-muted);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--accent-100);
+  --accent-foreground: var(--accent-600);
+  --destructive: var(--danger-text);
+  --input: var(--border);
+  --ring: var(--focus);
+  --chart-1: var(--navy-700);
+  --chart-2: var(--navy-400);
+  --chart-3: var(--navy-300);
+  --chart-4: var(--ok);
+  --chart-5: var(--warn);
+  --sidebar: var(--surface-subtle);
+  --sidebar-foreground: var(--text-strong);
+  --sidebar-primary: var(--navy-700);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--navy-100);
+  --sidebar-accent-foreground: var(--navy-800);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--focus);
+}
+
+@theme inline {
+  /* Typography (spec §3) — fixed across themes, so declared directly here rather than via a
+     :root custom property (a self-referential `--font-heading: var(--font-heading)` inside this
+     `@theme inline` block would be an invalid CSS cycle). */
+  --font-heading: "Barlow Condensed", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Barlow", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-body);
+  --font-mono: ui-monospace, Menlo, Consolas, monospace;
+
+  /* Surfaces */
+  --color-surface-base: var(--surface-base);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-card: var(--surface-card);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  /* Blueprint base — direct spec token names, for primitives that want them literally */
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-text: var(--color-text);
+  --color-divider: var(--color-divider);
+  --color-divider-strong: var(--color-divider-strong);
+  --color-accent-brand: var(--color-accent);
+
+  /* Navy scale */
+  --color-navy-50: var(--navy-50);
+  --color-navy-100: var(--navy-100);
+  --color-navy-200: var(--navy-200);
+  --color-navy-300: var(--navy-300);
+  --color-navy-400: var(--navy-400);
+  --color-navy-500: var(--navy-500);
+  --color-navy-600: var(--navy-600);
+  --color-navy-700: var(--navy-700);
+  --color-navy-800: var(--navy-800);
+  --color-navy-900: var(--navy-900);
+
+  /* Text */
+  --color-text-strong: var(--text-strong);
+  --color-text-body: var(--text-body);
+  --color-text-muted: var(--text-muted);
+
+  /* Accent */
+  --color-accent-100: var(--accent-100);
+  --color-accent-500: var(--accent-500);
+  --color-accent-600: var(--accent-600);
+
+  /* Status ramp */
+  --color-status-run: var(--status-run);
+  --color-status-warn: var(--status-warn);
+  --color-status-fault: var(--status-fault);
+  --color-status-idle: var(--status-idle);
+
+  /* Status — solid hue: dots, borders, chart series, ≥10% tint fills */
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-neutral: var(--neutral);
+  /* Status text — always use these (not the solid hue above) for colored
+     type, to hold AA 4.5:1 on white/tint backgrounds. */
+  --color-ok-text: var(--ok-text);
+  --color-warn-text: var(--warn-text);
+  --color-danger-text: var(--danger-text);
+  --color-info-text: var(--info-text);
+
+  /* Radius — per-theme now (WS1); `inline` keeps these as var() refs (not baked constants), so
+     they re-resolve against whichever [data-theme] scope actually contains the element using the
+     utility — including a nested theme-preview swatch, not just :root. */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius-card);
+  --radius-2xl: calc(var(--radius-card) * 1.34);
+  --radius-3xl: calc(var(--radius-card) * 1.6);
+  --radius-4xl: var(--radius-pill);
+
+  /* shadcn semantic colors */
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-text: var(--primary-text);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-variant-numeric: tabular-nums;
+  }
+  html {
+    @apply font-sans;
+  }
+  ::selection {
+    background-color: var(--navy-200);
+    color: var(--navy-900);
+  }
+  [data-theme="console"] ::selection {
+    background-color: var(--navy-700);
+    color: #f0f3fa;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  .font-heading {
+    font-family: var(--font-heading);
+    letter-spacing: -0.01em;
+  }
+}
+
+@layer components {
+  /* ==========================================================================
+     Blueprint registration corners — spec §4. The `.sheet` signature: four
+     L-shaped marks that OVERHANG the panel border. `<Sheet>` (industrial/Sheet.tsx)
+     is the only place that should render `.corner` spans — never hand-write them
+     at a call site. Because the marks sit outside the box, a `.sheet` must never
+     live inside `overflow:hidden`.
+
+     WS1-T2 — `.sheet` is the ONE rule every panel in the app shares, so it's where
+     the per-theme signature lives: `border-radius: var(--radius-card)` (was a flat
+     0, per-theme now — Glass 8px soft/premium, Console 6px, Warmth 5px) and
+     `box-shadow: var(--elevation)` (Glass: whisper-soft ambient shadow; Console: a
+     hairline cyan ring + a deep drop shadow, its own "depth" signature distinct
+     from `--glow-run` below, which is reserved for LIVE/active elements only, not
+     every panel; Warmth: a real-but-soft physical contact shadow). The registration
+     corners still overhang square at `-6px` regardless of the panel's own radius —
+     at these small radii (5–8px) they read as external drafting marks near the
+     corner, not as part of the panel's own curve, so this doesn't fight the theme's
+     rounding. */
+  .sheet {
+    position: relative;
+    border: 1px solid var(--color-divider);
+    border-radius: var(--radius-card);
+    box-shadow: var(--elevation);
+  }
+  .sheet > .corner {
+    position: absolute;
+    width: 11px;
+    height: 11px;
+    color: color-mix(in srgb, var(--color-text) 55%, transparent);
+    pointer-events: none;
+  }
+  .sheet > .corner::before,
+  .sheet > .corner::after {
+    content: "";
+    position: absolute;
+    background: currentColor;
+  }
+  .sheet > .corner::before {
+    left: 5px;
+    top: 0;
+    width: 1px;
+    height: 100%;
+  }
+  .sheet > .corner::after {
+    top: 5px;
+    left: 0;
+    width: 100%;
+    height: 1px;
+  }
+  .sheet > .corner.tl {
+    top: -6px;
+    left: -6px;
+  }
+  .sheet > .corner.tr {
+    top: -6px;
+    right: -6px;
+  }
+  .sheet > .corner.bl {
+    bottom: -6px;
+    left: -6px;
+  }
+  .sheet > .corner.br {
+    bottom: -6px;
+    right: -6px;
+  }
+}
+
+@layer utilities {
+  /* Numeric readouts (KPI tiles, tables, counters) always align on tabular figures */
+  .font-numeric {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* Micro-label — the bilingual workhorse (spec §3): uppercase, tracked out, muted. */
+  .hmi-micro {
+    font-size: 10px;
+    line-height: 1.3;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+
+  /* Thin square scrollbar — spec §5. Panels scroll internally; the shell page never scrolls. */
+  .hmi-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  .hmi-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .hmi-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .hmi-scroll::-webkit-scrollbar-thumb {
+    background-color: var(--border-strong);
+    border-radius: 0;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  .hmi-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: var(--text-muted);
+  }
+
+  /* 28px graph-paper ground — spec §5/§7, backdrop for schematic/canvas (BoardCanvas) areas.
+     WS1-T2 — the ground itself now carries part of the per-theme signature, via two tokens
+     declared once in :root (`--graph-paper-line`/`--graph-paper-wash`, defaulting to Glass's own
+     values) and overridden only where a theme actually differs (same "declare once, override the
+     delta" convention as the navy ramp/--radius-pill): Glass adds a soft radial "light table" wash
+     — the schematic reads as lit from above, per the brief's "bàn sáng gradient". Console instead
+     tints the grid LINES themselves toward the accent cyan (`--graph-paper-line` override, no
+     wash) — "thin luminous data lines" rather than a flood-lit surface, so it doesn't compete with
+     `--glow-run`'s own reserved-for-live-elements glow. Warmth turns the wash off too but leaves
+     `--graph-paper-line` at its :root default (plain `--color-divider`) — its material signature
+     lives in `--elevation` on the panels sitting above this ground, not in the ground itself. */
+  .hmi-graph-paper {
+    background-image: var(--graph-paper-wash, none),
+      repeating-linear-gradient(
+        0deg,
+        var(--graph-paper-line, var(--color-divider)) 0,
+        var(--graph-paper-line, var(--color-divider)) 1px,
+        transparent 1px,
+        transparent 28px
+      ),
+      repeating-linear-gradient(
+        90deg,
+        var(--graph-paper-line, var(--color-divider)) 0,
+        var(--graph-paper-line, var(--color-divider)) 1px,
+        transparent 1px,
+        transparent 28px
+      );
+    background-color: var(--color-bg);
+  }
+
+  /* Pulsing "live" dot — spec §5 StatusLamp. Killed by prefers-reduced-motion. */
+  @keyframes hmi-blip {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.45;
+      transform: scale(0.85);
+    }
+  }
+  .hmi-blip {
+    animation: hmi-blip 1.6s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hmi-blip {
+      animation: none;
+    }
+  }
+
+  /* Non-scaling stroke for wireframe schematic SVGs (spec §7) — a hairline drawing that stays a
+     hairline regardless of the viewBox scale factor. */
+  .hmi-wire {
+    vector-effect: non-scaling-stroke;
+  }
+
+  /* ==========================================================================
+     WS1-T2 — per-theme signature utilities. Every one of these is a thin wrapper
+     around a single already-defined form token (index.css's :root/`[data-theme]`
+     blocks) — no new hex, no per-theme branching at the call site.
+     ========================================================================== */
+
+  /* A live/active accent glow — `--glow-run` is a real box-shadow only on Console (a soft green
+     halo, tuned off the run-state hue); `none` on Glass/Warmth, so applying this class on those two
+     themes is always a no-op. Reserve it for the few things that are genuinely LIVE right now (a
+     running StatusLamp dot, the connectivity chip while online, an active/selected nav item) — NOT
+     every border or every "ok" badge, or Console reads as busy instead of high-tech (see this
+     class's call sites for the actual restraint being applied). */
+  .hmi-glow-run {
+    box-shadow: var(--glow-run);
+  }
+
+  /* Frosted overlay panel — `--panel-fill` (a translucent surface tint) + `--glass-blur` (backdrop
+     blur, 0px on Warmth = no blur at all, an intentionally OPAQUE material rather than glass) for
+     dialogs/drawers/popovers. Glass: soft frosted glass. Console: glassy translucent panel, "control
+     room" glass over whatever's behind it. Warmth: `--glass-blur: 0px` makes `backdrop-filter` a
+     no-op and `--panel-fill` alone (85% opaque) reads as a solid physical card, not glass — by
+     design, not by omission (Warmth's signature is material, not translucency). */
+  .hmi-panel-glass {
+    background: var(--panel-fill);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+  }
+
+  /* ==========================================================================
+     Living schematic animations (spec §7; WS3-T2 docs/PRODUCTION_UI_DESIGN.md §3.3). Every rule lives
+     INSIDE the `no-preference` media query, so `prefers-reduced-motion: reduce` kills every one of
+     them at the source, unconditionally. Idle/static is the DEFAULT: an element only animates once its
+     schematic root also carries `.hmi-schematic-run` (applied by React only while `animate` — real
+     cycle plan in hand, fleet actually running, motion not reduced; `SchematicPanel.tsx`'s own doc
+     comment), so a stopped/faulted/idle machine renders a genuinely static drawing, not a paused one.
+
+     WS3-T2 retired the fixed-cadence loops that used to drive DISCRETE, per-point motion with no link
+     to real data — `hmi-kf-gantry-sweep`/`hmi-kf-camera-sweep` (the head/carriage's own position is now
+     a plain SVG-attribute transform recomputed every frame from the real cycle clock,
+     `useCycleTwin.ts`) and `hmi-kf-packet-travel`/`hmi-kf-tick-blip` (the IoT packet's position and the
+     sample-tick row's lit count are likewise real-clock-driven attributes now, not a guessed loop
+     period). What's left here is genuinely AMBIENT motion — a conveyor belt running, a sensor radiating
+     — that never claimed a specific data value in the first place, so a cadence loop stays honest for
+     it; and `hmi-kf-bit-spin`/`hmi-kf-z-stroke`, retargeted from "spins/strokes for the whole time the
+     machine runs" to "spins/strokes only while a schematic component's own `dwelling` state (from the
+     real cycle clock) says the head is actually parked on a point taking the reading" — see
+     `AutomationSchematic.tsx`'s `.hmi-driving` class toggle. */
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes hmi-kf-bit-spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes hmi-kf-z-stroke {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(12px); }
+    }
+    @keyframes hmi-kf-belt-dash {
+      to { stroke-dashoffset: -32px; }
+    }
+    @keyframes hmi-kf-signal-pulse {
+      0% { transform: scale(0.35); opacity: 0.75; }
+      100% { transform: scale(1.7); opacity: 0; }
+    }
+
+    /* C-4: SVG elements default to `transform-box: view-box`, so a bare `transform-origin: center`
+       resolves to the centre of the whole viewBox, not of the element itself — the driver bit orbited
+       a ~278-unit radius around the drawing's centre instead of spinning in place (measured live:
+       bounding-rect x 490→1459 for a viewBox spanning x 25…923). `transform-box: fill-box` re-anchors
+       `center` to the element's OWN bounding-box centre, matching every browser's non-SVG-legacy
+       default and what "spin in place" actually requires. WS3-T2: gated on `.hmi-driving` (a real,
+       per-frame `dwelling` boolean from the cycle clock), not unconditionally on `.hmi-schematic-run`
+       — the bit/Z-axis now only animate while a real fastening step is actually being driven. */
+    .hmi-gantry-bit.hmi-driving { animation: hmi-kf-bit-spin 0.5s linear infinite; transform-box: fill-box; transform-origin: center; }
+    .hmi-gantry-zmarker.hmi-driving { animation: hmi-kf-z-stroke 1.7s ease-in-out infinite; }
+    .hmi-schematic-run .hmi-aoi-belt-ticks { animation: hmi-kf-belt-dash 0.9s linear infinite; }
+    /* C-4: same view-box-vs-fill-box bug — each arc scaled from the drawing's centre instead of the
+       sensor node it's drawn around, so on IOT-01 the arcs swept in from off-canvas instead of
+       radiating from the node. `fill-box` anchors the scale on the circle's own centre (already at the
+       node, by construction), which is what "emanating from the sensor" requires. */
+    .hmi-schematic-run .hmi-iot-arc { animation: hmi-kf-signal-pulse 2.2s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+  }
+}

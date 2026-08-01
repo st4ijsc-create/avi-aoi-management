@@ -1,0 +1,23 @@
+# Policy-as-code — SYNAPSE Tầng 3 §11 (doc 44 W3-A1 G3.11 + G3.13).
+# POLICY MẪU cho nhóm actuation dưới chế độ DEFAULT-DENY: khi
+# POLICY_DEFAULT_DENY_ACTIONS chứa "ot.command.*", mọi lệnh OT bị TỪ CHỐI
+# (NO_MATCHING_ALLOW_POLICY) trừ khi một allow-policy tường minh như policy này
+# match. Đây là "chính sách cho phép rõ ràng" theo spec §11.2 (default-deny).
+# Nhóm chính sách: Quyền (RBAC/ABAC) + Trạng thái (spec §11.1).
+#   • context.role       — vai trò người/hệ phát lệnh (engineer/admin).
+#   • context.fat_passed — thiết bị đã qua FAT (factory acceptance test) — cùng
+#     ngữ nghĩa gate FAT của robot commissioning (doc 40 W3).
+policy_id: allow-ot-command-engineer-fat
+version: 1
+effect: allow
+action_pattern: "ot.command.*"
+priority: 10
+status: active
+description: "Cho phép lệnh OT (ot.command.*) khi vai trò engineer/admin và thiết bị đã qua FAT (context.fat_passed=true)."
+conditions:
+  - path: context.role
+    op: in
+    value: [engineer, admin]
+  - path: context.fat_passed
+    op: eq
+    value: true

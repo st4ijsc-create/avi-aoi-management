@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
+import { PageContainer } from '@/components/patterns';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -398,19 +399,19 @@ export function ImportExportContent() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-4">
                     <span className="flex items-center gap-1">
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      <CheckCircle2 className="h-4 w-4 text-success" />
                       {t('importExport.successCount')}: {importResult.success}
                     </span>
                     {importResult.failed > 0 && (
                       <span className="flex items-center gap-1">
-                        <AlertCircle className="h-4 w-4 text-red-500" />
+                        <AlertCircle className="h-4 w-4 text-destructive" />
                         {t('importExport.failedCount')}: {importResult.failed}
                       </span>
                     )}
                   </div>
                   {importResult.errors.length > 0 && (
                     <div className="mt-2">
-                      <p className="font-semibold text-sm">Errors:</p>
+                      <p className="font-semibold text-sm">{t('importExport.errorsLabel')}</p>
                       <ul className="list-disc list-inside text-xs space-y-1 max-h-40 overflow-y-auto">
                         {importResult.errors.slice(0, 10).map((err, idx) => (
                           <li key={idx}>{err}</li>
@@ -460,7 +461,7 @@ export function ImportExportContent() {
                   className="w-full"
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  Export Inspections
+                  {t('importExport.exportInspections')}
                 </Button>
 
                 <Button
@@ -470,7 +471,7 @@ export function ImportExportContent() {
                   className="w-full"
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  Export Statistics
+                  {t('importExport.exportStatistics')}
                 </Button>
               </div>
             </CardContent>
@@ -494,7 +495,7 @@ export function ImportExportContent() {
                   className="w-full"
                 >
                   <Factory className="h-4 w-4 mr-2" />
-                  Export Factories
+                  {t('importExport.exportFactories')}
                 </Button>
 
                 <Button
@@ -504,7 +505,7 @@ export function ImportExportContent() {
                   className="w-full"
                 >
                   <Building2 className="h-4 w-4 mr-2" />
-                  Export Workshops
+                  {t('importExport.exportWorkshops')}
                 </Button>
 
                 <Button
@@ -514,7 +515,7 @@ export function ImportExportContent() {
                   className="w-full"
                 >
                   <Cpu className="h-4 w-4 mr-2" />
-                  Export Machines
+                  {t('importExport.exportMachines')}
                 </Button>
 
                 <Button
@@ -524,7 +525,7 @@ export function ImportExportContent() {
                   className="w-full"
                 >
                   <Package className="h-4 w-4 mr-2" />
-                  Export Products
+                  {t('importExport.exportProducts')}
                 </Button>
 
                 <Button
@@ -534,7 +535,7 @@ export function ImportExportContent() {
                   className="w-full"
                 >
                   <Ruler className="h-4 w-4 mr-2" />
-                  Export Measurement Points
+                  {t('importExport.exportMeasurementPoints')}
                 </Button>
               </div>
             </CardContent>
@@ -559,7 +560,9 @@ export default function ImportExport() {
       navItems={navItems}
       currentPath="/import-export"
     >
-      <ImportExportContent />
+      <PageContainer>
+        <ImportExportContent />
+      </PageContainer>
     </DashboardLayout>
   );
 }

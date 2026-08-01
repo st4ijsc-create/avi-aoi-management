@@ -75,9 +75,15 @@ Rules:
 
   try {
     const systemPrompt = "You are an AOI quality engineering expert. Respond ONLY with valid JSON.";
+    // doc 48 R1 — PIN the deep model the router chose for RCA (Tier 2). Grammar-constrained JSON
+    // from the resident EMBEDDING model is structurally valid but semantically garbage; passing
+    // decision.modelId lands this on a real generative model, mirroring aiRcaCopilot.
+    const { route } = await import("./aiModelRouter");
+    const decision = route({ task: "rca", requiredQuality: "high" });
     const result = await generateInsightJson<RCAInsight>({
       systemPrompt,
       prompt,
+      modelId: decision.modelId,
       maxTokens: 1024,
       temperature: 0.2,
       jsonSchema: RCA_INSIGHT_SCHEMA,

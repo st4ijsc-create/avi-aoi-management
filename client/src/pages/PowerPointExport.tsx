@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import {
   Presentation, Download, Loader2, BarChart3, GitCompareArrows,
@@ -127,7 +128,7 @@ export function PowerPointExportContent() {
 
   const addCustomSlide = (type: string) => {
     const slideLabels: Record<string, string> = {
-      kpi: "KPI Dashboard",
+      kpi: t('reports.kpiDashboard', 'KPI Dashboard'),
       bar_chart: t('reports.barChart'),
       line_chart: t('reports.lineChart'),
       pie_chart: t('reports.pieChart'),
@@ -163,45 +164,41 @@ export function PowerPointExportContent() {
   return (
     <>
       <div className="p-6 space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Presentation className="h-6 w-6 text-primary" />
-            {t('reports.exportPowerPoint')}
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            {t('reports.exportPptxDescription')}
-          </p>
-        </div>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<Presentation className="h-6 w-6" />}
+          title={t('reports.exportPowerPoint')}
+          description={t('reports.exportPptxDescription')}
+        />
 
         {/* Summary cards */}
         <div className="grid md:grid-cols-3 gap-4">
           <Card className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => setActiveTab("quality")}>
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                <Monitor className="h-5 w-5 text-blue-500" />
+              <div className="h-10 w-10 rounded-lg bg-info/10 flex items-center justify-center">
+                <Monitor className="h-5 w-5 text-info" />
               </div>
               <div>
                 <div className="font-medium text-sm">{t('reports.qualityReport')}</div>
-                <div className="text-xs text-muted-foreground">KPI, yield, NG analysis</div>
+                <div className="text-xs text-muted-foreground">{t('reports.qualityReportSummary', 'KPI, yield, NG analysis')}</div>
               </div>
             </CardContent>
           </Card>
           <Card className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => setActiveTab("comparison")}>
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                <GitCompareArrows className="h-5 w-5 text-green-500" />
+              <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
+                <GitCompareArrows className="h-5 w-5 text-success" />
               </div>
               <div>
                 <div className="font-medium text-sm">{t('reports.dataComparison')}</div>
-                <div className="text-xs text-muted-foreground">Week-over-week, month</div>
+                <div className="text-xs text-muted-foreground">{t('reports.comparisonSummary', 'Week-over-week, month')}</div>
               </div>
             </CardContent>
           </Card>
           <Card className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => setActiveTab("custom")}>
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                <Settings2 className="h-5 w-5 text-purple-500" />
+              <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Settings2 className="h-5 w-5 text-primary" />
               </div>
               <div>
                 <div className="font-medium text-sm">{t('reports.custom')}</div>
@@ -293,29 +290,29 @@ export function PowerPointExportContent() {
                   <div className="text-xs font-medium mb-2">{t('reports.pptxContents')}:</div>
                   <div className="space-y-1.5 text-xs text-muted-foreground">
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-3 w-3 text-green-500" /> {t('reports.titleSlide')}
+                      <CheckCircle2 className="h-3 w-3 text-success" /> {t('reports.titleSlide')}
                     </div>
                     {includeSummary && (
                       <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-3 w-3 text-green-500" /> {t('reports.kpiOverviewSlide')}
+                        <CheckCircle2 className="h-3 w-3 text-success" /> {t('reports.kpiOverviewSlide')}
                       </div>
                     )}
                     {includeCharts && (
                       <>
                         <div className="flex items-center gap-2">
-                          <CheckCircle2 className="h-3 w-3 text-green-500" /> {t('reports.yieldByDayChart')}
+                          <CheckCircle2 className="h-3 w-3 text-success" /> {t('reports.yieldByDayChart')}
                         </div>
                         <div className="flex items-center gap-2">
-                          <CheckCircle2 className="h-3 w-3 text-green-500" /> {t('reports.ngAnalysisChart')}
+                          <CheckCircle2 className="h-3 w-3 text-success" /> {t('reports.ngAnalysisChart')}
                         </div>
                         <div className="flex items-center gap-2">
-                          <CheckCircle2 className="h-3 w-3 text-green-500" /> {t('reports.machineComparisonChart')}
+                          <CheckCircle2 className="h-3 w-3 text-success" /> {t('reports.machineComparisonChart')}
                         </div>
                       </>
                     )}
                     {includeTables && (
                       <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-3 w-3 text-green-500" /> {t('reports.topNgPointsTable')}
+                        <CheckCircle2 className="h-3 w-3 text-success" /> {t('reports.topNgPointsTable')}
                       </div>
                     )}
                   </div>
@@ -383,16 +380,16 @@ export function PowerPointExportContent() {
                   <div className="text-xs font-medium mb-2">{t('reports.pptxContents')}:</div>
                   <div className="space-y-1.5 text-xs text-muted-foreground">
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-3 w-3 text-green-500" /> {t('reports.titleSlide')}
+                      <CheckCircle2 className="h-3 w-3 text-success" /> {t('reports.titleSlide')}
                     </div>
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-3 w-3 text-green-500" /> {t('reports.kpiComparisonOverview')}
+                      <CheckCircle2 className="h-3 w-3 text-success" /> {t('reports.kpiComparisonOverview')}
                     </div>
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-3 w-3 text-green-500" /> {t('reports.dailyTrendChart')}
+                      <CheckCircle2 className="h-3 w-3 text-success" /> {t('reports.dailyTrendChart')}
                     </div>
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-3 w-3 text-green-500" /> {t('reports.machinePerformanceComparison')}
+                      <CheckCircle2 className="h-3 w-3 text-success" /> {t('reports.machinePerformanceComparison')}
                     </div>
                   </div>
                 </div>
@@ -436,7 +433,7 @@ export function PowerPointExportContent() {
                   <Label className="text-xs">{t('reports.addSlide')}</Label>
                   <div className="flex flex-wrap gap-2">
                     {[
-                      { type: "kpi", icon: <Layout className="h-3 w-3" />, label: "KPI Dashboard" },
+                      { type: "kpi", icon: <Layout className="h-3 w-3" />, label: t('reports.kpiDashboard', 'KPI Dashboard') },
                       { type: "bar_chart", icon: <BarChart3 className="h-3 w-3" />, label: t('reports.barChart') },
                       { type: "line_chart", icon: <LineChart className="h-3 w-3" />, label: t('reports.lineChart') },
                       { type: "pie_chart", icon: <PieChart className="h-3 w-3" />, label: t('reports.pieChart') },

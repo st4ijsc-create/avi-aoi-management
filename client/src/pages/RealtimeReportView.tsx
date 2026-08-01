@@ -2,9 +2,16 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import {
+  PageHeader,
+  MachineSelect,
+  chartColor,
+  chartTooltipStyle,
+  chartGridProps,
+  chartAxisTick,
+} from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,7 +31,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { Activity, Download, Search, Leaf } from "lucide-react";
+import { Activity, Download, Leaf } from "lucide-react";
 
 type ComplianceView =
   | "CFR21_PART11"
@@ -60,7 +67,6 @@ function exportCsv(filename: string, columns: { key: string; label: string }[], 
 
 export default function RealtimeReportView() {
   const { t } = useTranslation();
-  const [machineInput, setMachineInput] = useState("");
   const [machineId, setMachineId] = useState<number | null>(null);
   const [hours, setHours] = useState(168);
   const [view, setView] = useState<ComplianceView>("CFR21_PART11");
@@ -85,11 +91,6 @@ export default function RealtimeReportView() {
     [healthSeries.data],
   );
 
-  const submit = () => {
-    const n = parseInt(machineInput.trim(), 10);
-    setMachineId(Number.isFinite(n) && n > 0 ? n : null);
-  };
-
   const enpiRows = enpiSummary.data ?? [];
 
   const handleExportEnpi = () => {
@@ -109,27 +110,24 @@ export default function RealtimeReportView() {
   return (
     <DashboardLayout>
       <div className="space-y-6 p-1">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Activity className="h-6 w-6 text-primary" />
-            {t("rtReport.title", "Báo cáo realtime & drill-down")}
-          </h1>
-          <p className="text-muted-foreground">
-            {t("rtReport.subtitle", "Chuỗi sức khỏe máy (downsampled), EnPI/carbon và export theo chuẩn tuân thủ")}
-          </p>
-        </div>
+        <PageHeader
+          icon={<Activity className="h-6 w-6" />}
+          title={t("rtReport.title", "Báo cáo realtime & drill-down")}
+          description={t("rtReport.subtitle", "Chuỗi sức khỏe máy (downsampled), EnPI/carbon và export theo chuẩn tuân thủ")}
+        />
 
         {/* Bộ lọc */}
         <Card>
           <CardContent className="flex flex-wrap items-end gap-3 pt-6">
             <div className="w-40">
               <Label htmlFor="machine" className="text-xs">{t("rtReport.machineId", "Mã máy (ID)")}</Label>
-              <Input
+              <MachineSelect
                 id="machine"
-                placeholder="123"
-                value={machineInput}
-                onChange={(e) => setMachineInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && submit()}
+                value={machineId}
+                onChange={(v) => setMachineId(v == null || Number(v) <= 0 ? null : Number(v))}
+                aria-label={t("rtReport.machineId", "Mã máy (ID)")}
+                placeholder={t("rtReport.machineId", "Mã máy (ID)")}
+                clearable
               />
             </div>
             <div className="w-40">
@@ -159,10 +157,6 @@ export default function RealtimeReportView() {
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={submit}>
-              <Search className="h-4 w-4 mr-1" />
-              {t("rtReport.apply", "Áp dụng")}
-            </Button>
           </CardContent>
         </Card>
 
@@ -180,11 +174,11 @@ export default function RealtimeReportView() {
             {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <CartesianGrid {...chartGridProps} />
                   <XAxis dataKey="time" hide />
-                  <YAxis domain={[0, 100]} width={36} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="value" stroke="#2563eb" dot={false} strokeWidth={2} />
+                  <YAxis domain={[0, 100]} width={36} tick={chartAxisTick} />
+                  <Tooltip contentStyle={chartTooltipStyle} />
+                  <Line type="monotone" dataKey="value" stroke={chartColor(0)} dot={false} strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
@@ -215,7 +209,7 @@ export default function RealtimeReportView() {
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-base flex items-center gap-2">
-                <Leaf className="h-4 w-4 text-emerald-600" />
+                <Leaf className="h-4 w-4 text-success" />
                 {t("rtReport.enpi", "EnPI & Carbon (ISO 50001)")}
               </CardTitle>
               <CardDescription>{t("rtReport.enpiDesc", "Tiêu thụ năng lượng và phát thải gần nhất theo máy")}</CardDescription>

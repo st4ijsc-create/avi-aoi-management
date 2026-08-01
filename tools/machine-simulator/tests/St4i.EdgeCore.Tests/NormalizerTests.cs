@@ -1,0 +1,57 @@
+using St4i.Connector.Abstractions.Models; using St4i.EdgeCore.Mapping; using Xunit;
+public class NormalizerTests {
+  [Fact] public void IdempotencyKey_is_stable_and_min_8() {
+    var r = new DeviceReading{ MachineCode="SCRW-01", RecipeCode="RC1", CycleCounter=1, Kind=ReadingKind.ProcessResult, SerialNumber="SN1", StepType="screw_tightening" };
+    var k = Normalizer.BuildIdempotencyKey(r);
+    Assert.Equal("SCRW-01:RC1:000001", k);
+    Assert.True(k.Length >= 8);
+  }
+  [Fact] public void Process_reading_maps_to_process_result_path_with_numeric_value() {
+    var r = new DeviceReading{ MachineCode="SCRW-01", Kind=ReadingKind.ProcessResult, SerialNumber="SN1",
+      StepType="screw_tightening", Verdict=Verdict.Pass, RecipeCode="RC1", CycleCounter=2,
+      Timestamp=DateTimeOffset.Parse("2026-07-18T10:00:00+07:00"),
+      Metrics=new(){ new MetricSample("torque",12.1,"Nm",10.5,13.5,12.0) } };
+    var env = Normalizer.Normalize(r, MappingProfile.ForClass(DeviceClass.Automation));
+    Assert.Equal("/api/v1/ingest/process-result", env.Path);
+    Assert.Equal(ReadingKind.ProcessResult, env.Kind);
+    Assert.Equal("pass", env.Payload["result"]);
+    var metrics = (System.Collections.IEnumerable)env.Payload["metrics"];
+    Assert.NotNull(metrics);
+  }
+  [Fact] public void Inspection_reading_uppercases_overallResult() {
+    var r = new DeviceReading{ MachineCode="AOI-01", Kind=ReadingKind.Inspection, SerialNumber="SN1",
+      Verdict=Verdict.Fail, CycleCounter=1, Timestamp=DateTimeOffset.Parse("2026-07-18T10:00:00+07:00"),
+      Measurements=new(){ new MeasurementResult("R12","NG",DefectCatalogCode:"BRIDGING") } };
+    var env = Normalizer.Normalize(r, MappingProfile.ForClass(DeviceClass.AoiAvi));
+    Assert.Equal("/api/v1/ingest/inspection", env.Path);
+    Assert.Equal("NG", env.Payload["overallResult"]);
+  }
+  [Fact] public void Inspection_key_differs_by_serialNumber_same_machine_recipe_cycle0() {
+    // Two different boards inspected on the same machine+program, CycleCounter always 0 for
+    // INSPECTION readings (doc-28 files) — without SerialNumber in the key these collide and the
+    // server's (machineId, idempotencyKey) dedup would silently drop the second board.
+    var r1 = new DeviceReading{ MachineCode="AOI-01", Kind=ReadingKind.Inspection, RecipeCode="MB-X1", CycleCounter=0, SerialNumber="SN-AAA" };
+    var r2 = new DeviceReading{ MachineCode="AOI-01", Kind=ReadingKind.Inspection, RecipeCode="MB-X1", CycleCounter=0, SerialNumber="SN-BBB" };
+    var k1 = Normalizer.BuildIdempotencyKey(r1);
+    var k2 = Normalizer.BuildIdempotencyKey(r2);
+    Assert.NotEqual(k1, k2);
+    Assert.True(k1.Length >= 8);
+    Assert.True(k2.Length >= 8);
+  }
+  [Fact] public void ProcessResult_key_unchanged_by_inspection_fix() {
+    var r = new DeviceReading{ MachineCode="SCRW-01", RecipeCode="RC1", CycleCounter=1, Kind=ReadingKind.ProcessResult, SerialNumber="SN1", StepType="screw_tightening" };
+    Assert.Equal("SCRW-01:RC1:000001", Normalizer.BuildIdempotencyKey(r));
+  }
+  [Fact] public void Genealogy_LongValue_from_a_round_tripped_reading_passes_through_verbatim() {
+    // GP-2 (task-2-brief.md decision (a)): St4i.Connector.Abstractions.Json.ConnectorObjectConverter
+    // returns `long` for an integral Genealogy value (e.g. boardIndex) once a reading has crossed a
+    // sidecar boundary — Doc28Parser itself only ever produces `int` today, so Normalizer's per-key
+    // genealogy loop (verbatim copy for every key except "stationId") had never seen a `long` here
+    // before this task. Confirms it still just passes through untouched.
+    var r = new DeviceReading{ MachineCode="AOI-01", Kind=ReadingKind.ProcessResult, SerialNumber="SN1",
+      StepType="reflow", CycleCounter=1, Genealogy=new(){ ["boardIndex"]=5L, ["lotCode"]="LOT1" } };
+    var env = Normalizer.Normalize(r, MappingProfile.ForClass(DeviceClass.Automation));
+    Assert.Equal(5L, env.Payload["boardIndex"]);
+    Assert.Equal("LOT1", env.Payload["lotCode"]);
+  }
+}

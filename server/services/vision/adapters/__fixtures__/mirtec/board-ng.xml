@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MirtecResult>
+  <BoardInfo>
+    <Machine>MIRTEC-MV6</Machine>
+    <Model>MB-X1</Model>
+    <Barcode>SN-2026-000127</Barcode>
+    <Lot>LOT-78</Lot>
+    <StartTime>2026-07-04 08:34:00</StartTime>
+    <EndTime>2026-07-04 08:34:09</EndTime>
+    <Result>NG</Result>
+  </BoardInfo>
+  <DefectList>
+    <Defect>
+      <Location>R12</Location>
+      <PartName>RC0402-103</PartName>
+      <DefectName>Tombstone</DefectName>
+      <DefectCode>D021</DefectCode>
+      <X>1120</X>
+      <Y>2340</Y>
+      <Width>64</Width>
+      <Height>48</Height>
+      <ImagePath>SN-2026-000127_R12.jpg</ImagePath>
+      <Judge>NG</Judge>
+    </Defect>
+    <Defect>
+      <Location>U3</Location>
+      <PartName>IC-SOIC8</PartName>
+      <DefectName>Bridge</DefectName>
+      <DefectCode>D012</DefectCode>
+      <X>400</X>
+      <Y>780</Y>
+      <Width>52</Width>
+      <Height>40</Height>
+      <ImagePath>SN-2026-000127_U3.jpg</ImagePath>
+      <Judge>NG</Judge>
+    </Defect>
+  </DefectList>
+</MirtecResult>

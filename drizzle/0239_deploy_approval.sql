@@ -1,0 +1,26 @@
+-- doc 40 ENG-F2 + Minh-P0 — DEPLOY APPROVAL INBOX (two-phase request→approve).
+--
+-- ════════════════════════════════════════════════════════════════════════════
+-- Today a PRODUCTION deploy lets the REQUESTER pick an approver's name from a
+-- dropdown and click Deploy themselves (confirmedBy is just a client-sent number)
+-- → four-eyes is a FORMALITY, the approver never acts. This migration adds a new
+-- 'awaiting_approval' status to program_deployments so a production real-deploy can
+-- become a REQUEST that a SECOND person signs off from THEIR OWN session (the
+-- approveDeployment actuation procedure), which then runs the existing deploy gate
+-- with a REAL server-issued actionId (an ai_pending_actions row) — so the
+-- mitsubishi/robot dispatcher's ai_pending_actions re-verification passes instead of
+-- rejecting with NOT_CONFIRMED forever.
+--
+-- Additive + idempotent. Adds ONE enum value; needs no new column (the pending
+-- ai_pending_actions.id + approval metadata live in program_deployments.detailJson,
+-- already jsonb). ENFORCEMENT of the two-phase flow is flag-gated in code
+-- (DPC_DEPLOY_APPROVAL_ENABLED, default OFF): applying this migration alone changes
+-- NO behaviour — with the flag OFF the legacy four-eyes path is untouched; with the
+-- flag ON a production deploy is queued for a second person to sign off in the
+-- Approval Inbox. Staging / simulated deploys are unchanged either way.
+-- Numbered 0239 (0238 = machine_connection_fields).
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- ADD VALUE must be its own auto-commit statement (cannot run inside a tx block that
+-- later uses the value). We do NOT reference the value elsewhere in this migration.
+ALTER TYPE "programdeploystatusenum" ADD VALUE IF NOT EXISTS 'awaiting_approval';

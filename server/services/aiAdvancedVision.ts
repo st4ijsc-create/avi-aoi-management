@@ -18,10 +18,17 @@
 
 import sharp from "sharp";
 import { describeImage } from "./aiProviderRouter";
-import { alignToReference, type GrayImage, type AlignmentResult } from "./imageAlignment";
+import { registerToReference, type GrayImage } from "./imageRegistration";
 
-// B4.2 — căn golden-sample trước pixel-diff. Opt-in, default OFF (trung thực).
+// B4.2 / AOI-B — align golden-sample before pixel-diff on the LAB two-upload paths
+// (compareOkVsNg / generateDefectHeatmap). Opt-in, default OFF (honest) — unchanged.
 const ALIGN_BEFORE_DIFF = (process.env.ALIGN_BEFORE_DIFF ?? "false").toLowerCase() === "true";
+
+// W7-C (doc 27 V7) — GLOBAL KILL-SWITCH for the STORED-GOLDEN diff path
+// (goldenDiffForKey): alignment there is enabled PER GOLDEN ROW (alignBeforeDiff,
+// default true); setting ALIGN_BEFORE_DIFF=false in env disables it everywhere.
+// (Unset/other values do NOT disable — the per-row flag governs.)
+const ALIGN_KILLED_GLOBALLY = (process.env.ALIGN_BEFORE_DIFF ?? "").toLowerCase() === "false";
 
 export interface AlignmentInfo {
   aligned: boolean;
@@ -29,6 +36,13 @@ export interface AlignmentInfo {
   dy: number;
   angle: number;
   confidence: number;
+  // AOI-B — richer sub-pixel registration diagnostics (present on the affine path).
+  method?: "subpixel-affine" | "subpixel-homography" | "none";
+  scale?: number;
+  rmsResidual?: number;
+  overlap?: number;
+  /** Reason when aligned=false (e.g. low confidence / high residual) — honest gate. */
+  reason?: string;
 }
 
 // ─── Types ────────────────────────────────────────────────────
@@ -73,6 +87,15 @@ export interface ExtractedText {
   language: "en" | "vi" | "auto";
   confidence: "high" | "medium" | "low";
   generatedBy: "openai" | "gguf" | "offline";
+  // W5-B2 (doc 44 G4.13) — present when the REAL OCR engine ran (OCR_ENGINE_ENABLED).
+  /** "onnx" | "vlm" | "none" — which engine produced the text. */
+  engine?: "onnx" | "vlm" | "none";
+  /** REAL numeric recognition score 0..1 (from CTC rec-score), NOT string length. */
+  score?: number;
+  /** True when the engine degraded honestly (e.g. model absent) — text is empty. */
+  degraded?: boolean;
+  /** Honest degrade reason, e.g. "OCR_MODEL_NOT_AVAILABLE". */
+  reason?: string;
 }
 
 export interface RoiBox {
@@ -160,11 +183,16 @@ function meanStd(buf: Buffer): { mean: number; std: number } {
 }
 
 /**
- * B4.2 — Thử căn `candidate` (grayscale raw) về `reference` trước khi diff.
- * Chỉ chạy khi cờ ALIGN_BEFORE_DIFF bật. Khi confidence < ngưỡng → aligned:false,
- * trả candidate NGUYÊN (caller dùng diff cũ) → degrade trung thực.
+ * AOI-B — Register `candidate` (grayscale raw) onto `reference` before diff.
  *
- * `ref`/`cand` đã resize về cùng W×H (grayscale raw 1-channel).
+ * Only runs when ALIGN_BEFORE_DIFF is on. Uses SUB-PIXEL affine registration
+ * (imageRegistration.registerToReference: inverse-compositional / ECC-style
+ * Gauss–Newton on a Gaussian pyramid) with a CONFIDENCE + RESIDUAL GATE. When the
+ * gate fails (low confidence / high residual / insufficient overlap) it returns the
+ * candidate UNCHANGED (caller diffs the raw pair) and reports aligned:false with a
+ * reason — honest degradation, never a fake pass on a bad alignment.
+ *
+ * `ref`/`cand` are already resized to the same W×H (grayscale raw 1-channel).
  */
 async function maybeAlign(
   ref: { data: Buffer; width: number; height: number },
@@ -173,28 +201,339 @@ async function maybeAlign(
   if (!ALIGN_BEFORE_DIFF) {
     return {
       candData: cand.data,
-      info: { aligned: false, dx: 0, dy: 0, angle: 0, confidence: 0 },
+      info: { aligned: false, dx: 0, dy: 0, angle: 0, confidence: 0, method: "none" },
     };
   }
   try {
     const refImg: GrayImage = ref;
     const testImg: GrayImage = cand;
-    const res: AlignmentResult = await alignToReference(refImg, testImg, {});
+    const res = await registerToReference(refImg, testImg, {});
     const info: AlignmentInfo = {
       aligned: res.aligned,
-      dx: res.dx,
-      dy: res.dy,
-      angle: res.angle,
+      dx: Math.round(res.dx),
+      dy: Math.round(res.dy),
+      angle: res.rotationDeg,
       confidence: res.confidence,
+      method: res.model === "homography" ? "subpixel-homography" : "subpixel-affine",
+      scale: res.scale,
+      rmsResidual: res.rmsResidual,
+      overlap: res.overlap,
+      reason: res.reason,
     };
-    // confidence thấp → dùng candidate gốc (không align) nhưng vẫn báo cờ thật.
+    // Gate fails → use the raw candidate (no warp) but report the honest flag/reason.
     return { candData: res.aligned ? Buffer.from(res.alignedBuffer) : cand.data, info };
-  } catch {
+  } catch (err) {
     return {
       candData: cand.data,
-      info: { aligned: false, dx: 0, dy: 0, angle: 0, confidence: 0 },
+      info: {
+        aligned: false, dx: 0, dy: 0, angle: 0, confidence: 0, method: "none",
+        reason: `registration error: ${err instanceof Error ? err.message : String(err)}`,
+      },
     };
   }
+}
+
+// ─── W7-C (doc 27 V15) — Illumination (flat-field) normalization ─────────────
+//
+// ALGORITHM (pure TS + sharp on the gray plane — honest about scope):
+//   1. Estimate the illumination field B as a LARGE-KERNEL GAUSSIAN BLUR of the
+//      gray plane (σ defaults to min(w,h)/8, ≥8): smooth-varying background ≈
+//      lamp falloff / vignetting / brightness gradient.
+//   2. Flat-field DIVISION: out(x) = I(x) · mean(B) / max(B(x), ε) — corrects a
+//      MULTIPLICATIVE smooth illumination model and re-anchors the global mean,
+//      so the same board under a tilted lamp normalizes to near-identical planes.
+//
+// LIMITS (documented honestly):
+//   * Corrects smooth ILLUMINATION drift only — NOT lens geometric distortion
+//     (no camera calibration / undistort here) and NOT specular highlights.
+//   * Assumes the illumination varies at a scale ≫ defect size; defects smaller
+//     than ~σ are preserved, illumination structure at or below defect scale is
+//     indistinguishable from content and cannot be separated by this method.
+//   * ε-clamp (default 8) prevents noise blow-up in near-black regions, which
+//     means truly dark regions are normalized conservatively.
+//   * Output is a normalized-intensity plane: diff both images through the SAME
+//     normalization so thresholds stay comparable.
+
+export interface NormalizeIlluminationOptions {
+  /** Gaussian σ for the background estimate. Default max(8, min(w,h)/8). */
+  sigma?: number;
+  /** Lower clamp for the background divisor (noise guard in dark areas). Default 8. */
+  epsilon?: number;
+}
+
+export async function normalizeIllumination(
+  img: GrayImage,
+  opts: NormalizeIlluminationOptions = {},
+): Promise<{ data: Buffer; width: number; height: number }> {
+  const w = img.width;
+  const h = img.height;
+  const src = Buffer.isBuffer(img.data) ? img.data : Buffer.from(img.data);
+  const sigma = Math.min(1000, Math.max(0.3, opts.sigma ?? Math.max(8, Math.min(w, h) / 8)));
+  const epsilon = Math.max(1, opts.epsilon ?? 8);
+
+  // 1. Background (illumination field) estimate.
+  // NOTE: .toColourspace("b-w") pins the output to ONE channel — sharp raw
+  // pipelines otherwise promote 1-channel input to 3-channel sRGB on output,
+  // which would silently triple the buffer and scramble plane math.
+  const bg = await sharp(src, { raw: { width: w, height: h, channels: 1 } })
+    .blur(sigma)
+    .toColourspace("b-w")
+    .raw()
+    .toBuffer();
+
+  // 2. Flat-field division, re-anchored to the background's global mean.
+  let sum = 0;
+  for (let i = 0; i < bg.length; i++) sum += bg[i];
+  const meanBg = bg.length > 0 ? sum / bg.length : 1;
+
+  const out = Buffer.alloc(w * h);
+  for (let i = 0; i < out.length; i++) {
+    const b = Math.max(bg[i], epsilon);
+    const v = Math.round((src[i] * meanBg) / b);
+    out[i] = v < 0 ? 0 : v > 255 ? 255 : v;
+  }
+  return { data: out, width: w, height: h };
+}
+
+// ─── W7-C — shared pixel-diff → heatmap core (used by C. and goldenDiff) ─────
+
+interface DiffHeatmapCoreResult {
+  heatmapPng: Buffer;
+  hotspots: Array<{ x: number; y: number; w: number; h: number; intensity: number }>;
+  totalDiffPixels: number;
+  diffRatio: number;
+}
+
+/**
+ * Per-pixel |a−b| over two same-size gray planes → red-overlay heatmap PNG +
+ * coarse-grid hotspots + diff ratio. Extracted verbatim from generateDefectHeatmap
+ * so the stored-golden path (goldenDiffAgainstGray) reuses the EXACT diff logic.
+ */
+async function renderDiffHeatmap(
+  aR: Buffer,
+  bR: Buffer,
+  W: number,
+  H: number,
+  threshold = 25,
+): Promise<DiffHeatmapCoreResult> {
+  const rgba = Buffer.alloc(W * H * 4);
+  let totalDiff = 0;
+  const diff = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    const d = Math.abs(aR[i] - bR[i]);
+    diff[i] = d;
+    if (d > threshold) totalDiff++;
+    rgba[i * 4 + 0] = d > threshold ? 255 : 0;                    // R
+    rgba[i * 4 + 1] = 0;                                          // G
+    rgba[i * 4 + 2] = d > threshold ? 0 : Math.min(255, bR[i]);   // B fallback shows context
+    rgba[i * 4 + 3] = d > threshold ? 200 : 60;                   // A
+  }
+
+  const heatmapPng = await sharp(rgba, { raw: { width: W, height: H, channels: 4 } })
+    .png()
+    .toBuffer();
+
+  // Connected-region hotspot extraction (coarse grid 32px cells).
+  const cell = 32;
+  const hotspots: Array<{ x: number; y: number; w: number; h: number; intensity: number }> = [];
+  for (let y = 0; y < H; y += cell) {
+    for (let x = 0; x < W; x += cell) {
+      let acc = 0;
+      const hh = Math.min(cell, H - y);
+      const ww = Math.min(cell, W - x);
+      for (let yy = 0; yy < hh; yy++) {
+        for (let xx = 0; xx < ww; xx++) {
+          acc += diff[(y + yy) * W + (x + xx)];
+        }
+      }
+      const avg = acc / (hh * ww);
+      if (avg > 30) {
+        hotspots.push({ x, y, w: ww, h: hh, intensity: Number(avg.toFixed(1)) });
+      }
+    }
+  }
+  hotspots.sort((p, q) => q.intensity - p.intensity);
+
+  return {
+    heatmapPng,
+    hotspots: hotspots.slice(0, 20),
+    totalDiffPixels: totalDiff,
+    diffRatio: Number((totalDiff / (W * H)).toFixed(4)),
+  };
+}
+
+// ─── W7-C (doc 27 V7 + V15) — STORED-GOLDEN diff pipeline ────────────────────
+// normalize (V15) → register candidate onto golden (V7, sub-pixel — REAL
+// imageRegistration.registerToReference) → pixel-diff heatmap (same core as C.).
+// Honest degradation at every stage: failed registration diffs the raw pair and
+// reports aligned:false + reason; normalization is optional per call.
+
+export interface GoldenDiffOptions {
+  /** Apply flat-field illumination normalization to BOTH planes first. Default true. */
+  normalize?: boolean;
+  /** Run sub-pixel registration before diff. Default true (caller resolves the
+   *  per-golden flag + env kill-switch — see goldenDiffForKey). */
+  align?: boolean;
+  /** Per-pixel diff threshold (0..255). Default 25 (same as generateDefectHeatmap). */
+  diffThreshold?: number;
+}
+
+export interface GoldenDiffResult {
+  width: number;
+  height: number;
+  heatmapPng: Buffer;
+  hotspots: Array<{ x: number; y: number; w: number; h: number; intensity: number }>;
+  totalDiffPixels: number;
+  /** Fraction of pixels above the diff threshold, 0..1. */
+  diffRatio: number;
+  /** diffRatio as a 0..100 score (percent of differing pixels). */
+  diffScore: number;
+  /** Whether flat-field normalization ran on both planes. */
+  normalized: boolean;
+  /** Whether the candidate was warped onto the golden (gate passed). */
+  aligned: boolean;
+  /** Full registration diagnostics (null when align was disabled). */
+  alignment: AlignmentInfo | null;
+}
+
+/**
+ * Diff an encoded candidate image against a golden GRAY plane (pure — no DB).
+ * The candidate is decoded to gray at the golden's exact W×H first.
+ */
+export async function goldenDiffAgainstGray(
+  golden: GrayImage,
+  candidate: Buffer,
+  opts: GoldenDiffOptions = {},
+): Promise<GoldenDiffResult> {
+  const W = golden.width;
+  const H = golden.height;
+  const candRaw = await sharp(candidate)
+    .grayscale()
+    .resize(W, H, { fit: "fill" })
+    .raw()
+    .toBuffer();
+
+  const normalize = opts.normalize ?? true;
+  let refPlane: { data: Buffer; width: number; height: number } = {
+    data: Buffer.isBuffer(golden.data) ? golden.data : Buffer.from(golden.data),
+    width: W,
+    height: H,
+  };
+  let candPlane: { data: Buffer; width: number; height: number } = { data: candRaw, width: W, height: H };
+  if (normalize) {
+    // V15 — both planes through the SAME normalization so thresholds stay comparable.
+    refPlane = await normalizeIllumination(refPlane);
+    candPlane = await normalizeIllumination(candPlane);
+  }
+
+  let alignment: AlignmentInfo | null = null;
+  let candForDiff = candPlane.data;
+  if (opts.align ?? true) {
+    try {
+      const res = await registerToReference(refPlane, candPlane, {});
+      alignment = {
+        aligned: res.aligned,
+        dx: Math.round(res.dx),
+        dy: Math.round(res.dy),
+        angle: res.rotationDeg,
+        confidence: res.confidence,
+        method: res.model === "homography" ? "subpixel-homography" : "subpixel-affine",
+        scale: res.scale,
+        rmsResidual: res.rmsResidual,
+        overlap: res.overlap,
+        reason: res.reason,
+      };
+      // Gate fails → diff the raw pair, report honestly (never diff on a bad warp).
+      if (res.aligned) candForDiff = Buffer.from(res.alignedBuffer);
+    } catch (err) {
+      alignment = {
+        aligned: false, dx: 0, dy: 0, angle: 0, confidence: 0, method: "none",
+        reason: `registration error: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
+
+  // Same σ=2 pre-blur as generateDefectHeatmap (suppresses sensor noise).
+  // toColourspace("b-w") keeps the planes single-channel (see normalizeIllumination).
+  const refBlur = await sharp(refPlane.data, { raw: { width: W, height: H, channels: 1 } })
+    .blur(2).toColourspace("b-w").raw().toBuffer();
+  const candBlur = await sharp(candForDiff, { raw: { width: W, height: H, channels: 1 } })
+    .blur(2).toColourspace("b-w").raw().toBuffer();
+
+  const core = await renderDiffHeatmap(refBlur, candBlur, W, H, opts.diffThreshold ?? 25);
+  return {
+    width: W,
+    height: H,
+    heatmapPng: core.heatmapPng,
+    hotspots: core.hotspots,
+    totalDiffPixels: core.totalDiffPixels,
+    diffRatio: core.diffRatio,
+    diffScore: Number((core.diffRatio * 100).toFixed(2)),
+    normalized: normalize,
+    aligned: alignment?.aligned ?? false,
+    alignment,
+  };
+}
+
+export interface GoldenDiffForKeyResult extends GoldenDiffResult {
+  golden: {
+    id: number;
+    version: number;
+    productCode: string | null;
+    recipeCode: string | null;
+    stationCode: string | null;
+    roiKey: string | null;
+    matchedLevel: "exact" | "product";
+    alignBeforeDiff: boolean;
+    status: string;
+  };
+}
+
+/**
+ * Resolve the ACTIVE APPROVED golden for a key (exact → product-level fallback,
+ * W5-B resolver) and diff the candidate against it. Alignment runs when the
+ * golden row's `alignBeforeDiff` is true AND the ALIGN_BEFORE_DIFF env kill-switch
+ * is not "false". Returns null when no approved golden exists (honest — caller
+ * decides how to surface "no golden").
+ */
+export async function goldenDiffForKey(
+  key: { productCode?: string | null; recipeCode?: string | null; stationCode?: string | null; roiKey?: string | null },
+  candidate: Buffer,
+  opts: { normalize?: boolean; diffThreshold?: number; fallbackToProductLevel?: boolean } = {},
+): Promise<GoldenDiffForKeyResult | null> {
+  const { resolveActiveReference, decodeReference } = await import("./goldenSampleService");
+  const resolved = await resolveActiveReference(key, {
+    fallbackToProductLevel: opts.fallbackToProductLevel ?? true,
+  });
+  if (!resolved) return null;
+  const { row, matchedLevel } = resolved;
+
+  const goldenGray = decodeReference({
+    grayBase64: row.grayBase64,
+    width: row.width,
+    height: row.height,
+    format: "gray-raw",
+  });
+  const align = row.alignBeforeDiff !== false && !ALIGN_KILLED_GLOBALLY;
+  const result = await goldenDiffAgainstGray(goldenGray, candidate, {
+    normalize: opts.normalize,
+    align,
+    diffThreshold: opts.diffThreshold,
+  });
+  return {
+    ...result,
+    golden: {
+      id: row.id,
+      version: row.version,
+      productCode: row.productCode,
+      recipeCode: row.recipeCode,
+      stationCode: row.stationCode,
+      roiKey: row.roiKey,
+      matchedLevel,
+      alignBeforeDiff: row.alignBeforeDiff,
+      status: row.status,
+    },
+  };
 }
 
 // ─── A. Compare OK vs NG ──────────────────────────────────────
@@ -209,10 +548,11 @@ export async function compareOkVsNg(
   // Resize to common size for diff
   const W = Math.min(a.width, b.width);
   const H = Math.min(a.height, b.height);
+  // W7-C fix — pin single-channel output (see generateDefectHeatmap comment).
   const aResized = (await sharp(a.data, { raw: { width: a.width, height: a.height, channels: 1 } })
-    .resize(W, H, { fit: "fill" }).raw().toBuffer());
+    .resize(W, H, { fit: "fill" }).toColourspace("b-w").raw().toBuffer());
   const bResizedRaw = (await sharp(b.data, { raw: { width: b.width, height: b.height, channels: 1 } })
-    .resize(W, H, { fit: "fill" }).raw().toBuffer());
+    .resize(W, H, { fit: "fill" }).toColourspace("b-w").raw().toBuffer());
 
   // B4.2 — căn candidate (b) ↔ reference (a) trước diff nếu cờ bật.
   const { candData: bResized, info: alignment } = await maybeAlign(
@@ -316,10 +656,14 @@ export async function generateDefectHeatmap(
   const [a, b] = await Promise.all([toGrayRaw(okReference), toGrayRaw(candidate)]);
   const W = Math.min(a.width, b.width);
   const H = Math.min(a.height, b.height);
+  // W7-C fix — .toColourspace("b-w") pins single-channel output: sharp raw
+  // pipelines otherwise promote to 3-channel sRGB, which previously made these
+  // planes 3×W×H (diff values were still correct per byte since channels are
+  // replicated, but heatmap geometry and the alignment input were scrambled).
   const aR = await sharp(a.data, { raw: { width: a.width, height: a.height, channels: 1 } })
-    .resize(W, H, { fit: "fill" }).blur(2).raw().toBuffer();
+    .resize(W, H, { fit: "fill" }).blur(2).toColourspace("b-w").raw().toBuffer();
   const bRraw = await sharp(b.data, { raw: { width: b.width, height: b.height, channels: 1 } })
-    .resize(W, H, { fit: "fill" }).blur(2).raw().toBuffer();
+    .resize(W, H, { fit: "fill" }).blur(2).toColourspace("b-w").raw().toBuffer();
 
   // B4.2 — căn candidate (bR) ↔ reference (aR) trước diff nếu cờ bật.
   const { candData: bR, info: alignment } = await maybeAlign(
@@ -327,63 +671,63 @@ export async function generateDefectHeatmap(
     { data: bRraw, width: W, height: H },
   );
 
-  // RGBA heatmap — red intensity proportional to abs difference
-  const rgba = Buffer.alloc(W * H * 4);
-  let totalDiff = 0;
-  const diff = new Uint8Array(W * H);
-  for (let i = 0; i < aR.length; i++) {
-    const d = Math.abs(aR[i] - bR[i]);
-    diff[i] = d;
-    if (d > 25) totalDiff++;
-    rgba[i * 4 + 0] = d > 25 ? 255 : 0;          // R
-    rgba[i * 4 + 1] = 0;                          // G
-    rgba[i * 4 + 2] = d > 25 ? 0 : Math.min(255, bR[i]); // B fallback shows context
-    rgba[i * 4 + 3] = d > 25 ? 200 : 60;          // A
-  }
-
-  const heatmapPng = await sharp(rgba, { raw: { width: W, height: H, channels: 4 } })
-    .png()
-    .toBuffer();
-
-  // Connected-region hotspot extraction (coarse grid 16x16)
-  const cell = 32;
-  const hotspots: Array<{ x: number; y: number; w: number; h: number; intensity: number }> = [];
-  for (let y = 0; y < H; y += cell) {
-    for (let x = 0; x < W; x += cell) {
-      let acc = 0;
-      const hh = Math.min(cell, H - y);
-      const ww = Math.min(cell, W - x);
-      for (let yy = 0; yy < hh; yy++) {
-        for (let xx = 0; xx < ww; xx++) {
-          acc += diff[(y + yy) * W + (x + xx)];
-        }
-      }
-      const avg = acc / (hh * ww);
-      if (avg > 30) {
-        hotspots.push({ x, y, w: ww, h: hh, intensity: Number(avg.toFixed(1)) });
-      }
-    }
-  }
-  hotspots.sort((p, q) => q.intensity - p.intensity);
+  // W7-C — diff core extracted to renderDiffHeatmap (shared with goldenDiff);
+  // behavior identical to the previous inline block.
+  const core = await renderDiffHeatmap(aR, bR, W, H, 25);
 
   return {
     width: W,
     height: H,
-    heatmapPng,
-    hotspots: hotspots.slice(0, 20),
-    totalDiffPixels: totalDiff,
-    diffRatio: Number((totalDiff / (W * H)).toFixed(4)),
+    heatmapPng: core.heatmapPng,
+    hotspots: core.hotspots,
+    totalDiffPixels: core.totalDiffPixels,
+    diffRatio: core.diffRatio,
     aligned: alignment.aligned,
     alignment,
   };
 }
 
-// ─── D. Extract Text (OCR via LLaVA) ─────────────────────────
+// ─── D. Extract Text (OCR) ────────────────────────────────────
+//
+// W5-B2 (doc 44 G4.13): when OCR_ENGINE_ENABLED, route through the REAL OCR engine
+// (ocrService — ONNX PaddleOCR/RapidOCR CTC, honest confidence from rec-score, or
+// honest OCR_MODEL_NOT_AVAILABLE degrade when the model is absent). When the flag
+// is OFF (default) the LEGACY VLM path below runs UNCHANGED (bit-compat).
+//
+// Barcode/label verification (checkLabel) is re-exported at the OCR point below.
+export { checkLabel, labelMatch, similarityRatio } from "./ai/ocrService";
+export type { LabelCheckResult, OcrResult, OcrEngine } from "./ai/ocrService";
+
+/** Map a 0..1 rec-score to the coarse confidence band. Honest — from real score. */
+function scoreToBand(score: number): ExtractedText["confidence"] {
+  if (score >= 0.85) return "high";
+  if (score >= 0.6) return "medium";
+  return "low";
+}
 
 export async function extractText(
   image: Buffer,
   language: "en" | "vi" | "auto" = "auto",
 ): Promise<ExtractedText> {
+  // ── W5-B2 — REAL OCR engine path (flag-gated) ──────────────────────────────
+  const { isOcrEngineEnabled } = await import("./ai/ocrService");
+  if (isOcrEngineEnabled()) {
+    const { runOcr } = await import("./ai/ocrService");
+    const r = await runOcr(image, { language });
+    return {
+      text: r.text,
+      language,
+      // Confidence from REAL rec-score; degrade → low. Never from string length.
+      confidence: r.degraded ? "low" : scoreToBand(r.confidence),
+      generatedBy: r.engine === "vlm" ? "gguf" : "offline",
+      engine: r.engine,
+      score: Number(r.confidence.toFixed(4)),
+      degraded: r.degraded,
+      reason: r.reason,
+    };
+  }
+
+  // ── LEGACY VLM path (UNCHANGED — OFF bit-compat) ───────────────────────────
   const prompt = language === "vi"
     ? "Hãy trích xuất CHÍNH XÁC mọi văn bản (chữ, số, mã serial, nhãn) hiển thị trong ảnh. Trả về NGUYÊN văn, mỗi dòng văn bản trên một dòng. Nếu không có chữ, trả về 'NO_TEXT'."
     : "Extract EXACTLY all visible text (letters, digits, serial numbers, labels) in the image. Return verbatim, one line per text block. If no text, return 'NO_TEXT'.";

@@ -184,7 +184,7 @@ describe("notifyExecutiveSummary", () => {
     expect(stats.emailsSent).toBe(1);
     expect(sendEmail).toHaveBeenCalledTimes(1);
     expect(sendEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ to: "a@x.com", subject: expect.stringContaining("[AVI/AOI]"), html: expect.any(String) }),
+      expect.objectContaining({ to: "a@x.com", subject: expect.stringContaining("[SYNAPSE]"), html: expect.any(String) }),
     );
   });
 

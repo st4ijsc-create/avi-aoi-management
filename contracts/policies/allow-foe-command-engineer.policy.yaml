@@ -1,0 +1,21 @@
+# Policy-as-code — SYNAPSE Tầng 3 §11 (doc 44 W3-B2 G3.14 "một cửa duy nhất").
+# POLICY MẪU cho nhóm hành động FOE dưới chế độ DEFAULT-DENY: khi
+# POLICY_DEFAULT_DENY_ACTIONS chứa "foe.command.*", mọi bước lệnh của Factory
+# Orchestration Engine bị TỪ CHỐI (NO_MATCHING_ALLOW_POLICY) trừ khi một
+# allow-policy tường minh như policy này match. Context do foeEngine.execCommand
+# cung cấp: runId, workflowRef, stepId, stepType, command, machineId, role
+# (vai trò user đã KHỞI ĐỘNG run), startedBy, attempt.
+# LƯU Ý vận hành: run auto-resume sau crash chạy dưới role "system" — nếu site
+# dùng FOE_DURABLE + default-deny, thêm một policy riêng cho role đó (quyết định
+# quản trị tường minh, không gộp mặc định vào đây).
+policy_id: allow-foe-command-engineer
+version: 1
+effect: allow
+action_pattern: "foe.command.*"
+priority: 10
+status: active
+description: "Cho phép bước lệnh FOE (foe.command.*) khi run do engineer/admin khởi động."
+conditions:
+  - path: context.role
+    op: in
+    value: [engineer, admin]

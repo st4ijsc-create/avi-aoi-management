@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -115,27 +116,19 @@ export default function AIImageSearchPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-4 md:p-6">
+      <PageContainer>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
-              <Search className="h-6 w-6 text-orange-500" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">{t("is.title", "Tìm kiếm ảnh AI")}</h1>
-              <p className="text-sm text-muted-foreground">
-                {t("is.subtitle", "Tìm kiếm ảnh tương tự bằng AI - Phân cụm lỗi tự động")}
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
+        <PageHeader
+          icon={<Search className="h-6 w-6" />}
+          title={t("is.title", "Tìm kiếm ảnh AI")}
+          description={t("is.subtitle", "Tìm kiếm ảnh tương tự bằng AI - Phân cụm lỗi tự động")}
+          actions={
             <Button variant="outline" size="sm" onClick={() => runClustering()} disabled={isClustering}>
               <Layers className="h-4 w-4 mr-1.5" />
               {t("is.cluster", "Phân cụm")}
             </Button>
-          </div>
-        </div>
+          }
+        />
 
         {/* Stats */}
         {searchStats && (
@@ -143,7 +136,7 @@ export default function AIImageSearchPage() {
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <ImageIcon className="h-4 w-4 text-blue-500" />
+                  <ImageIcon className="h-4 w-4 text-info" />
                   <span className="text-sm text-muted-foreground">{t("is.totalImages", "Tổng ảnh")}</span>
                 </div>
                 <p className="text-2xl font-bold mt-1">{searchStats.totalEmbeddings ?? 0}</p>
@@ -152,12 +145,12 @@ export default function AIImageSearchPage() {
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-green-500" />
+                  <BarChart3 className="h-4 w-4 text-success" />
                   <span className="text-sm text-muted-foreground">{t("is.indexed", "Đã index")}</span>
                 </div>
                 <p className="text-2xl font-bold mt-1">{(searchStats as any).indexedCount ?? 0}</p>
                 {!(searchStats as any).pgvectorAvailable && (
-                  <p className="text-[11px] text-amber-600 mt-0.5">
+                  <p className="text-[11px] text-warning mt-0.5">
                     {t("is.pgvectorOff", "pgvector chưa sẵn sàng — dùng fallback")}
                   </p>
                 )}
@@ -166,7 +159,7 @@ export default function AIImageSearchPage() {
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <Layers className="h-4 w-4 text-purple-500" />
+                  <Layers className="h-4 w-4 text-primary" />
                   <span className="text-sm text-muted-foreground">{t("is.clusters", "Cụm lỗi")}</span>
                 </div>
                 <p className="text-2xl font-bold mt-1">{(searchStats as any).distinctLabels ?? 0}</p>
@@ -272,17 +265,17 @@ export default function AIImageSearchPage() {
                       </p>
                       <div className="grid grid-cols-3 gap-2 p-2 rounded border border-dashed bg-muted/20">
                         <div className="space-y-1">
-                          <Label className="text-[11px]">Measurement result #</Label>
+                          <Label className="text-[11px]">{t("is.measurementResult", "Measurement result #")}</Label>
                           <Input type="number" value={defectMeasResultId}
                             onChange={(e) => setDefectMeasResultId(e.target.value)} placeholder={t("is.attach", "gắn vào")} />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-[11px]">Inspection #</Label>
+                          <Label className="text-[11px]">{t("is.inspectionNum", "Inspection #")}</Label>
                           <Input type="number" value={defectInspectionId}
                             onChange={(e) => setDefectInspectionId(e.target.value)} placeholder={t("is.createNew", "tạo mới")} />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-[11px]">Point def #</Label>
+                          <Label className="text-[11px]">{t("is.pointDef", "Point def #")}</Label>
                           <Input type="number" value={defectPointDefId}
                             onChange={(e) => setDefectPointDefId(e.target.value)} placeholder={t("is.createNew", "tạo mới")} />
                         </div>
@@ -435,7 +428,7 @@ export default function AIImageSearchPage() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

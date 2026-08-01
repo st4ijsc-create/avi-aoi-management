@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, Link, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -7,6 +7,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
+import {
+  OFFSCREEN_PRINT_STYLE,
+  withScope,
+  buildScopeMeta,
+  buildStationAnalysisSections,
+  flattenNgImages,
+  waitForChartRender,
+  STATION_FAIL_HISTORY_CAP,
+  type ReportTFn,
+} from "@/lib/reportSections";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import type { DateRange } from "react-day-picker";
@@ -58,6 +68,7 @@ import {
   Area,
   AreaChart,
 } from "recharts";
+import { chartColor, chartTooltipStyle, chartGridProps } from "@/components/patterns";
 
 type DatePreset = "today" | "yesterday" | "1w" | "1m" | "year" | "custom";
 
@@ -87,11 +98,34 @@ function getPresetDateRange(preset: DatePreset): { from: Date; to: Date } {
   }
 }
 
-const PARETO_COLORS = [
-  "#a855f7", "#8b5cf6", "#6366f1", "#3b82f6", "#06b6d4",
-  "#14b8a6", "#22c55e", "#eab308", "#f97316", "#ef4444",
-  "#ec4899", "#d946ef", "#64748b", "#78716c", "#0ea5e9",
-];
+const PARETO_COLORS = Array.from({ length: 15 }, (_, i) => chartColor(i));
+
+/* Western-Electric rule palette/labels for the measurement-SPC print view (mirror
+   of the constants inside SpcContent — kept module-level so the off-screen
+   MeasurementSpcView can render without SpcContent's local state). */
+const MP_RULE_COLORS: Record<number, string> = { 1: "var(--destructive)", 2: "var(--warning)", 3: "var(--warning)", 4: "var(--success)", 5: "var(--chart-5)", 6: "var(--info)", 7: "var(--primary)", 8: "var(--chart-4)" };
+const MP_RULE_LABELS: Record<number, string> = {
+  1: "1σ Beyond 3σ", 2: "9 Same Side", 3: "6 Increasing/Decreasing",
+  4: "14 Alternating", 5: "2/3 Beyond 2σ", 6: "4/5 Beyond 1σ",
+  7: "15 Within 1σ", 8: "8 Beyond 1σ Both",
+};
+
+/* Report print-view data snapshot — all charts mounted off-screen for export. */
+interface StationPrintData {
+  summary?: any;
+  hourlyData?: any;
+  defectData?: any;
+  spcData?: any;
+  failHistory?: any;
+  diagnostics?: any;
+  histogramData?: any;
+  scatterData?: any;
+  stratData?: any;
+  aiData?: any;
+  stationDetail?: any;
+  mpSpc?: any;
+  ngImages: Array<{ id: any; url: string; label: string }>;
+}
 
 const TABS = [
   { id: "overview", label: "Overview", icon: Activity },
@@ -182,17 +216,27 @@ export default function StationAnalysis() {
   // tRPC utils for prefetching data during export
   const utils = trpc.useUtils();
 
-  // Export config builder — async to prefetch all data from non-active tabs
-  const getExportConfig = useCallback(async (): Promise<ReportExportConfig> => {
-    const e = (k: string) => t(`stationAnalysis.export.${k}`);
+  // Snapshot of prefetched data that the off-screen print view renders EVERY chart
+  // from (so the export captures all charts, not just the active tab — §6.3/§6.5).
+  const [printData, setPrintData] = useState<StationPrintData | null>(null);
+  const printCleanupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const schedulePrintCleanup = useCallback(() => {
+    if (printCleanupRef.current) clearTimeout(printCleanupRef.current);
+    printCleanupRef.current = setTimeout(() => setPrintData(null), 20000);
+  }, []);
+  useEffect(() => () => { if (printCleanupRef.current) clearTimeout(printCleanupRef.current); }, []);
 
+  // Export config builder — async to prefetch all data from every tab, mount an
+  // off-screen print view with all charts, then delegate section building to the
+  // shared (unit-tested) buildStationAnalysisSections helper.
+  const getExportConfig = useCallback(async (): Promise<ReportExportConfig> => {
     // Prefetch all queries in parallel (returns cached data if already fetched)
     const results = await Promise.allSettled([
       utils.stationAnalysis.getStationSummary.fetch(commonInput),
       utils.stationAnalysis.getHourlyYield.fetch(commonInput),
       utils.stationAnalysis.getStationDefects.fetch(commonInput),
       utils.stationAnalysis.getYieldControlChart.fetch(commonInput),
-      utils.stationAnalysis.getFailHistory.fetch({ ...commonInput, limit: 50 }),
+      utils.stationAnalysis.getFailHistory.fetch({ ...commonInput, limit: STATION_FAIL_HISTORY_CAP }),
       utils.stationAnalysis.getDiagnostics.fetch(commonInput),
       utils.stationAnalysis.getHistogramData.fetch(commonInput),
       utils.stationAnalysis.getScatterData.fetch(commonInput),
@@ -201,16 +245,17 @@ export default function StationAnalysis() {
       utils.stationAnalysis.getStratificationData.fetch(commonInput),
       utils.stationAnalysis.getAiAnalysis.fetch(commonInput),
       utils.stationAnalysis.getStationDetail.fetch(commonInput),
+      utils.stationAnalysis.getStationMeasurementPoints.fetch({ stationId, productModelId }),
     ]);
 
     const val = <T,>(r: PromiseSettledResult<T>): T | undefined =>
       r.status === "fulfilled" ? r.value : undefined;
 
-    const summary = val(results[0]);
-    const hourlyData = val(results[1]);
-    const defectData = val(results[2]);
+    const summary = val(results[0]) as any;
+    const hourlyData = val(results[1]) as any;
+    const defectData = val(results[2]) as any;
     const spcData = val(results[3]) as any;
-    const failHistory = val(results[4]);
+    const failHistory = val(results[4]) as any;
     const diagnostics = val(results[5]) as any;
     const histogramData = val(results[6]) as any;
     const scatterData = val(results[7]) as any;
@@ -219,336 +264,70 @@ export default function StationAnalysis() {
     const stratData = val(results[10]) as any;
     const aiData = val(results[11]) as any;
     const stationDetail = val(results[12]) as any;
+    const mpPoints = ((val(results[13]) as any[]) || []) as any[];
 
-    const stationName = summary ? `${(summary as any).station.code}: ${(summary as any).station.name}` : `Station ${stationId}`;
+    // Measurement-mode SPC for the first measurement point (§6.4 #3).
+    let mpSpc: any = undefined;
+    if (mpPoints.length > 0) {
+      try {
+        mpSpc = await utils.stationAnalysis.getMeasurementPointSPC.fetch({
+          stationId,
+          measurementPointDefId: mpPoints[0].id,
+          productModelId,
+          startDate: dateRange.from,
+          endDate: dateRange.to,
+          subgroupSize: 5,
+          enabledRules: [1, 2, 3, 4, 5, 6, 7, 8],
+        });
+      } catch { /* measurement SPC optional */ }
+    }
+
+    const ngImages = flattenNgImages(stationDetail);
+
+    // Mount the off-screen print view (every chart) + wait for recharts layout.
+    setPrintData({
+      summary, hourlyData, defectData, spcData, failHistory, diagnostics,
+      histogramData, scatterData, stratData, aiData, stationDetail, mpSpc, ngImages,
+    });
+    await waitForChartRender();
+    schedulePrintCleanup();
+
+    const sections = buildStationAnalysisSections({
+      t: t as unknown as ReportTFn,
+      stationId,
+      summary, hourlyData, defectData, spcData, failHistory, diagnostics,
+      histogramData, scatterData, checkSheetData, causeEffectData, stratData,
+      aiData, stationDetail, mpSpc,
+      ngImageCount: ngImages.length,
+      hasBoardImage: !!stationDetail?.productImage?.url,
+    });
+
+    const stationName = summary ? `${summary.station.code}: ${summary.station.name}` : `Station ${stationId}`;
     const dateStr = `${dateRange.from.toLocaleDateString()} — ${dateRange.to.toLocaleDateString()}`;
-    const sections: ReportExportConfig["sections"] = [];
+    const pm = productModelId ? stationProductModels?.find((x: any) => x.id === productModelId) : undefined;
+    const scope = buildScopeMeta({
+      factory: summary?.factory?.name,
+      workshop: summary?.workshop?.name,
+      line: summary?.line?.name,
+      station: stationName,
+      product: pm ? `${pm.code} - ${pm.name}` : undefined,
+      dateRange: dateStr,
+      datePreset,
+    });
 
-    /* ── 1. Overview stats ───────────────────────────── */
-    if (summary) {
-      const s = summary as any;
-      sections.push({
-        title: e("overviewSection"),
-        type: "stats",
-        stats: [
-          { label: "FPY", value: `${s.firstPassYield}%` },
-          { label: "Final Yield", value: `${s.finalYield}%` },
-          { label: e("total"), value: s.totalInspections.toLocaleString() },
-          { label: "NG", value: s.ngCount },
-          { label: "Retest", value: `${s.retestRate}%` },
-        ],
-      });
-    }
+    return withScope(
+      {
+        title: `${t("stationAnalysis.export.reportTitle")} — ${stationName}`,
+        subtitle: dateStr,
+        sections,
+        filenamePrefix: `station_analysis_${stationId}`,
+        orientation: "landscape",
+      } as ReportExportConfig,
+      { scope, filters: scope },
+    );
+  }, [t, utils, commonInput, stationId, dateRange, productModelId, datePreset, stationProductModels, schedulePrintCleanup]);
 
-    /* ── 2. Hourly yield chart + table ───────────────── */
-    if (hourlyData && (hourlyData as any[])?.length) {
-      sections.push({
-        title: e("hourlyYieldSection"),
-        type: "chart",
-        chartElementId: "chart-hourly-yield",
-      });
-      sections.push({
-        title: e("hourlyYieldSection"),
-        type: "table",
-        tableHeaders: [e("hour"), e("total"), e("ng"), e("yield")],
-        tableRows: (hourlyData as any[]).map((h: any) => [`${h.hour}:00`, h.total, h.ng, `${h.yield}%`]),
-      });
-    }
 
-    /* ── 3. Top defects table ────────────────────────── */
-    if (defectData?.length) {
-      const defects = Array.isArray(defectData) ? defectData : [];
-      if (defects.length) {
-        sections.push({
-          title: e("topDefectsSection"),
-          type: "table",
-          tableHeaders: [e("code"), e("name"), e("count"), e("rate")],
-          tableRows: defects.map((d: any) => [d.code, d.name, d.ngCount, `${d.percentage?.toFixed(1)}%`]),
-        });
-      }
-    }
-
-    /* ── 4. Pareto chart ─────────────────────────────── */
-    if (defectData?.length) {
-      sections.push({
-        title: e("topDefectsSection") + " — Pareto",
-        type: "chart",
-        chartElementId: "chart-pareto",
-      });
-    }
-
-    /* ── 5. Fail history table ───────────────────────── */
-    if (failHistory?.length) {
-      const records = Array.isArray(failHistory) ? failHistory : [];
-      if (records.length) {
-        sections.push({
-          title: e("failHistorySection"),
-          type: "table",
-          tableHeaders: [e("time"), e("barcode"), e("failedPoints"), e("machine")],
-          tableRows: records.map((r: any) => [
-            new Date(r.inspectionTime).toLocaleString(),
-            r.barcode || "—",
-            r.failedPoints?.map((fp: any) => `${fp.pointCode}: ${fp.pointName}`).join(", ") || "—",
-            r.machineCode || "—",
-          ]),
-        });
-      }
-    }
-
-    /* ── 6. SPC charts ───────────────────────────────── */
-    if (spcData?.points?.length > 1) {
-      sections.push({
-        title: e("spcSection") + " — X̄",
-        type: "chart",
-        chartElementId: "chart-spc-xbar",
-      });
-      sections.push({
-        title: e("spcSection") + " — MR",
-        type: "chart",
-        chartElementId: "chart-spc-mr",
-      });
-      sections.push({
-        title: e("spcSection"),
-        type: "table",
-        tableHeaders: [e("day"), e("yieldPct"), e("zone"), e("violatedRules")],
-        tableRows: spcData.points.map((p: any) => [
-          p.day, `${p.yield}%`, p.zone || "—",
-          (p.violatedRules || []).join(", ") || "—",
-        ]),
-      });
-    }
-
-    /* ── 7. Histogram chart + stats ──────────────────── */
-    if (histogramData?.bins?.length) {
-      sections.push({
-        title: e("histogramSection"),
-        type: "chart",
-        chartElementId: "chart-histogram",
-      });
-      const s = histogramData.stats;
-      if (s) {
-        sections.push({
-          title: e("histogramSection"),
-          type: "stats",
-          stats: [
-            { label: "Mean", value: `${s.mean}%` },
-            { label: "Median", value: `${s.median}%` },
-            { label: "Std Dev", value: s.stddev?.toFixed(2) },
-            { label: "Skewness", value: s.skewness?.toFixed(2) },
-            { label: "Kurtosis", value: s.kurtosis?.toFixed(2) },
-            { label: "N", value: String(s.n) },
-            { label: "Min", value: `${s.min}%` },
-            { label: "Max", value: `${s.max}%` },
-          ],
-        });
-      }
-    }
-
-    /* ── 8. Scatter chart + correlation stats ─────────── */
-    if (scatterData?.points?.length) {
-      sections.push({
-        title: e("scatterSection"),
-        type: "chart",
-        chartElementId: "chart-scatter",
-      });
-      sections.push({
-        title: e("scatterSection"),
-        type: "stats",
-        stats: [
-          { label: e("correlation"), value: String(scatterData.correlation) },
-          { label: e("rSquared"), value: String(scatterData.rSquared) },
-          { label: e("relationship"), value: `${Math.abs(scatterData.correlation) > 0.7 ? "Strong" : Math.abs(scatterData.correlation) > 0.3 ? "Moderate" : "Weak"} ${scatterData.correlation >= 0 ? "+" : "−"}` },
-        ],
-      });
-    }
-
-    /* ── 9. Ishikawa (Cause-Effect) ──────────────────── */
-    if (causeEffectData?.categories?.length) {
-      const catText = causeEffectData.categories.map((cat: any) => {
-        const causes = cat.causes?.map((c: any) => `  • [${c.severity}] ${c.cause}: ${c.detail}`).join("\n") || "";
-        return `${cat.name}:\n${causes}`;
-      }).join("\n\n");
-      sections.push({
-        title: e("ishikawaSection"),
-        type: "text",
-        text: catText,
-      });
-    }
-
-    /* ── 10. Check sheet ─────────────────────────────── */
-    if (checkSheetData?.matrix?.length) {
-      const dt = checkSheetData.defectTypes || [];
-      sections.push({
-        title: e("checkSheetSection"),
-        type: "table",
-        tableHeaders: [e("date"), ...dt.map((d: any) => d.code), e("total")],
-        tableRows: checkSheetData.matrix.map((row: any) => [
-          row.period,
-          ...dt.map((d: any) => row[`d${d.id}`] || 0),
-          checkSheetData.totals?.byPeriod?.[row.period] || 0,
-        ]),
-      });
-    }
-
-    /* ── 11. Stratification charts + tables ───────────── */
-    if (stratData?.byMachine?.length) {
-      sections.push({
-        title: e("stratByMachine"),
-        type: "chart",
-        chartElementId: "chart-strat-machine",
-      });
-      sections.push({
-        title: e("stratByMachine"),
-        type: "table",
-        tableHeaders: [e("machineCode"), e("ok"), e("ng"), e("ntf"), e("yield")],
-        tableRows: stratData.byMachine.map((m: any) => [m.machineCode, m.ok, m.ng, m.ntf, `${m.yield}%`]),
-      });
-    }
-    if (stratData?.byShift?.length) {
-      sections.push({
-        title: e("stratByShift"),
-        type: "chart",
-        chartElementId: "chart-strat-shift",
-      });
-      sections.push({
-        title: e("stratByShift"),
-        type: "table",
-        tableHeaders: [e("shift"), e("ok"), e("ng"), e("yield")],
-        tableRows: stratData.byShift.map((s: any) => [s.shift, s.ok, s.ng, `${s.yield}%`]),
-      });
-    }
-    if (stratData?.byDay?.length) {
-      sections.push({
-        title: e("stratByDay"),
-        type: "chart",
-        chartElementId: "chart-strat-day",
-      });
-      sections.push({
-        title: e("stratByDay"),
-        type: "table",
-        tableHeaders: [e("dayOfWeek"), e("total"), e("ng"), e("yield")],
-        tableRows: stratData.byDay.map((d: any) => [d.day, d.total, d.ng, `${d.yield}%`]),
-      });
-    }
-
-    /* ── 12. AI insights text ────────────────────────── */
-    if (aiData?.insights?.length) {
-      sections.push({
-        title: e("aiInsightsSection"),
-        type: "text",
-        text: aiData.insights.map((ins: any) => `[${ins.severity}] ${ins.title}: ${ins.description}`).join("\n"),
-      });
-    }
-
-    /* ── 13. Process capability stats ────────────────── */
-    if (aiData?.processCapability) {
-      const pc = aiData.processCapability;
-      sections.push({
-        title: e("processCapSection"),
-        type: "stats",
-        stats: [
-          { label: "Cp", value: pc.cp },
-          { label: "Cpk", value: pc.cpk },
-          { label: "PPM", value: pc.ppm },
-          { label: "USL", value: `${pc.usl}%` },
-          { label: "LSL", value: `${pc.lsl}%` },
-          { label: "Mean", value: `${pc.mean}%` },
-          { label: "Std Dev", value: pc.stddev },
-        ],
-      });
-    }
-
-    /* ── 14. AI forecast chart ───────────────────────── */
-    if (aiData?.forecast?.length) {
-      sections.push({
-        title: e("forecastSection"),
-        type: "chart",
-        chartElementId: "chart-ai-forecast",
-      });
-      sections.push({
-        title: e("forecastSection"),
-        type: "table",
-        tableHeaders: [e("day"), e("predicted"), e("upper"), e("lower")],
-        tableRows: aiData.forecast.map((f: any) => [
-          (() => { try { return new Date(f.day).toLocaleDateString(); } catch { return f.day; } })(),
-          `${f.predicted}%`, `${f.upper}%`, `${f.lower}%`,
-        ]),
-      });
-    }
-
-    /* ── 15. AI anomalies table ──────────────────────── */
-    if (aiData?.anomalies?.length) {
-      sections.push({
-        title: e("anomaliesSection"),
-        type: "table",
-        tableHeaders: [e("day"), e("yield"), e("type"), e("zScore")],
-        tableRows: aiData.anomalies.map((a: any) => [
-          (() => { try { return new Date(a.day).toLocaleDateString(); } catch { return a.day; } })(),
-          `${a.yield}%`, a.type?.replace("_", " "), a.zScore,
-        ]),
-      });
-    }
-
-    /* ── 16. AI clustering stats ─────────────────────── */
-    if (aiData?.clusters?.length) {
-      sections.push({
-        title: e("clusterSection"),
-        type: "stats",
-        stats: aiData.clusters.map((cl: any) => ({
-          label: `${cl.label} (${cl.count} ${e("days")})`,
-          value: `${e("centroid")}: ${cl.centroid}%`,
-        })),
-      });
-    }
-
-    /* ── 17. Diagnostics ─────────────────────────────── */
-    if (diagnostics?.alerts?.length) {
-      sections.push({
-        title: e("diagnosticsAlertsSection"),
-        type: "table",
-        tableHeaders: [e("severity"), e("alertTitle"), e("description")],
-        tableRows: diagnostics.alerts.map((a: any) => [a.severity, a.title, a.description]),
-      });
-    }
-    if (diagnostics?.patterns?.length) {
-      sections.push({
-        title: e("diagnosticsPatternsSection"),
-        type: "table",
-        tableHeaders: [e("type"), e("confidence"), e("description")],
-        tableRows: diagnostics.patterns.map((p: any) => [p.type, `${Math.round(p.confidence * 100)}%`, p.description]),
-      });
-    }
-    if (diagnostics?.recommendations?.length) {
-      sections.push({
-        title: e("diagnosticsRecsSection"),
-        type: "table",
-        tableHeaders: [e("priority"), e("action"), e("rationale")],
-        tableRows: diagnostics.recommendations.map((r: any) => [r.priority, r.action, r.rationale]),
-      });
-    }
-
-    /* ── 18. Station detail — inspection points ──────── */
-    if (stationDetail?.points?.length) {
-      sections.push({
-        title: e("stationDetailSection"),
-        type: "table",
-        tableHeaders: [e("pointCode"), e("pointName"), e("status"), e("totalInspected"), e("totalDefects"), e("defectRate")],
-        tableRows: stationDetail.points.map((p: any) => [
-          p.pointCode, p.pointName, p.status,
-          p.totalInspected ?? "—", p.totalDefects ?? "—",
-          p.defectRate != null ? `${p.defectRate}%` : "—",
-        ]),
-      });
-    }
-
-    return {
-      title: `${e("reportTitle")} — ${stationName}`,
-      subtitle: dateStr,
-      sections,
-      filenamePrefix: `station_analysis_${stationId}`,
-      orientation: "landscape",
-    };
-  }, [t, utils, commonInput, stationId, dateRange]);
 
   if (isNaN(stationId)) {
     return (
@@ -556,7 +335,7 @@ export default function StationAnalysis() {
         <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
           <ShieldAlert className="h-12 w-12 mb-3" />
           <p>{t("stationAnalysis.invalidStationId")}</p>
-          <Link href="/production-dashboard" className="text-purple-400 hover:underline mt-2 text-sm">
+          <Link href="/production-dashboard" className="text-primary hover:underline mt-2 text-sm">
             {t("stationAnalysis.backToDashboard")}
           </Link>
         </div>
@@ -566,6 +345,63 @@ export default function StationAnalysis() {
 
   return (
     <DashboardLayout>
+      {/* ── Off-screen report print view: mounts EVERY chart (all tabs + the
+          measurement-mode SPC + board image + NG gallery) from prefetched data so
+          ReportExportButton captures them regardless of the active tab (§6.3/§6.5).
+          Rendered first so getElementById resolves these light-themed copies. ── */}
+      {printData && (
+        <div style={OFFSCREEN_PRINT_STYLE} aria-hidden data-report-print-view>
+          <div style={{ padding: 24 }}>
+            <OverviewContent
+              hourlyData={printData.hourlyData} hourlyLoading={false}
+              defectData={printData.defectData} defectLoading={false}
+              spcData={printData.spcData} spcLoading={false}
+              diagnostics={printData.diagnostics} diagLoading={false}
+              t={t}
+            />
+            <DefectsContent data={printData.defectData} isLoading={false} failHistory={printData.failHistory} failLoading={false} t={t} />
+            <YieldSpcView data={printData.spcData} isLoading={false} t={t} />
+            <HistogramContent data={printData.histogramData} isLoading={false} t={t} />
+            <ScatterContent data={printData.scatterData} isLoading={false} t={t} />
+            <StratificationContent data={printData.stratData} isLoading={false} t={t} />
+            <AiAnalysisContent data={printData.aiData} isLoading={false} t={t} />
+            {printData.mpSpc && (
+              <MeasurementSpcView
+                data={printData.mpSpc} isLoading={false} t={t}
+                RULE_COLORS={MP_RULE_COLORS} RULE_LABELS={MP_RULE_LABELS}
+                showSampleTable={false} setShowSampleTable={() => {}}
+              />
+            )}
+            {/* Board reference image + inspection-point markers */}
+            {printData.stationDetail?.productImage?.url && (
+              <div id="chart-board-image" style={{ position: "relative", width: 760, background: "#0b1e16", marginTop: 24, borderRadius: 8, overflow: "hidden" }}>
+                <img src={printData.stationDetail.productImage.url} alt="board" crossOrigin="anonymous" style={{ width: "100%", display: "block", opacity: 0.85 }} />
+                {(printData.stationDetail.points || []).map((pt: any) => {
+                  const bw = printData.stationDetail.productImage?.width || 800;
+                  const bh = printData.stationDetail.productImage?.height || 600;
+                  const x = ((pt.positionX ?? 0) / bw) * 100;
+                  const y = ((pt.positionY ?? 0) / bh) * 100;
+                  const color = pt.status === "fail" ? "#ff3d5a" : pt.status === "warn" ? "#ffbb33" : "#10e878";
+                  return (
+                    <div key={pt.id} style={{ position: "absolute", left: `${x}%`, top: `${y}%`, width: 10, height: 10, borderRadius: "50%", background: color, transform: "translate(-50%, -50%)", border: "1px solid #ffffff" }} />
+                  );
+                })}
+              </div>
+            )}
+            {/* NG defect image gallery (URLs already available) */}
+            {printData.ngImages.length > 0 && (
+              <div id="chart-ng-gallery" style={{ width: 1040, background: "#ffffff", marginTop: 24, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+                {printData.ngImages.map((img) => (
+                  <div key={img.id} style={{ border: "1px solid #e2e8f0", borderRadius: 6, overflow: "hidden" }}>
+                    <img src={img.url} alt={img.label} crossOrigin="anonymous" style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }} />
+                    <div style={{ fontSize: 9, padding: "2px 4px", color: "#334155" }}>{img.label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <div className="flex flex-col h-full bg-background">
         {/* ── Header ── */}
         <div className="border-b border-border bg-card px-7 py-4">
@@ -605,17 +441,17 @@ export default function StationAnalysis() {
 
               {/* KPI strip */}
               <div className="flex gap-6">
-                <KpiMini label={t("stationAnalysis.kpi.fpy")} value={`${summary.firstPassYield}%`} color={summary.firstPassYield >= 90 ? "text-emerald-500" : summary.firstPassYield >= 70 ? "text-yellow-500" : "text-red-500"} />
-                <KpiMini label={t("stationAnalysis.kpi.finalYield")} value={`${summary.finalYield}%`} color="text-blue-400" />
+                <KpiMini label={t("stationAnalysis.kpi.fpy")} value={`${summary.firstPassYield}%`} color={summary.firstPassYield >= 90 ? "text-success" : summary.firstPassYield >= 70 ? "text-warning" : "text-destructive"} />
+                <KpiMini label={t("stationAnalysis.kpi.finalYield")} value={`${summary.finalYield}%`} color="text-info" />
                 <KpiMini
                   label={t("stationAnalysis.kpi.change")}
                   value={`${summary.yieldChange >= 0 ? "+" : ""}${summary.yieldChange}%`}
-                  color={summary.yieldChange >= 0 ? "text-emerald-500" : "text-red-500"}
+                  color={summary.yieldChange >= 0 ? "text-success" : "text-destructive"}
                   icon={summary.yieldChange >= 0 ? TrendingUp : TrendingDown}
                 />
                 <KpiMini label={t("stationAnalysis.kpi.output")} value={summary.totalInspections.toLocaleString()} color="" />
-                <KpiMini label={t("stationAnalysis.kpi.ng")} value={String(summary.ngCount)} color={summary.ngCount > 0 ? "text-red-400" : ""} />
-                <KpiMini label={t("stationAnalysis.kpi.retest")} value={`${summary.retestRate}%`} color={summary.retestRate > 5 ? "text-yellow-500" : ""} />
+                <KpiMini label={t("stationAnalysis.kpi.ng")} value={String(summary.ngCount)} color={summary.ngCount > 0 ? "text-destructive" : ""} />
+                <KpiMini label={t("stationAnalysis.kpi.retest")} value={`${summary.retestRate}%`} color={summary.retestRate > 5 ? "text-warning" : ""} />
               </div>
             </div>
           ) : (
@@ -631,7 +467,7 @@ export default function StationAnalysis() {
               <select
                 value={productModelId ?? ""}
                 onChange={(e) => setProductModelId(e.target.value ? Number(e.target.value) : undefined)}
-                className="px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-background border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-purple-500/50 min-w-30"
+                className="px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-background border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 min-w-30"
               >
                 <option value="">{t("stationAnalysis.allProducts", "All Products")}</option>
                 {stationProductModels.map((pm) => (
@@ -648,7 +484,7 @@ export default function StationAnalysis() {
                   onClick={() => setActiveTab(id)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     activeTab === id
-                      ? "bg-purple-600/15 text-purple-400 border border-purple-500/20"
+                      ? "bg-primary/15 text-primary border border-primary/20"
                       : "text-muted-foreground/60 hover:text-muted-foreground"
                   }`}
                 >
@@ -670,7 +506,7 @@ export default function StationAnalysis() {
                 onClick={() => setDatePreset(key)}
                 className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
                   datePreset === key
-                    ? "bg-purple-600/15 text-purple-400 border border-purple-500/20"
+                    ? "bg-primary/15 text-primary border border-primary/20"
                     : "text-muted-foreground/60 hover:text-muted-foreground border border-transparent"
                 }`}
               >
@@ -684,7 +520,7 @@ export default function StationAnalysis() {
                   onClick={() => setDatePreset("custom")}
                   className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
                     datePreset === "custom"
-                      ? "bg-purple-600/15 text-purple-400 border border-purple-500/20"
+                      ? "bg-primary/15 text-primary border border-primary/20"
                       : "text-muted-foreground/60 hover:text-muted-foreground border border-transparent"
                   }`}
                 >
@@ -740,7 +576,7 @@ export default function StationAnalysis() {
                     onClick={() => setQcSubTab(id)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                       qcSubTab === id
-                        ? "bg-purple-600/15 text-purple-400 border border-purple-500/20"
+                        ? "bg-primary/15 text-primary border border-primary/20"
                         : "text-muted-foreground/60 hover:text-muted-foreground"
                     }`}
                   >
@@ -766,7 +602,7 @@ export default function StationAnalysis() {
                     onClick={() => setAiSubTab(id)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                       aiSubTab === id
-                        ? "bg-purple-600/15 text-purple-400 border border-purple-500/20"
+                        ? "bg-primary/15 text-primary border border-primary/20"
                         : "text-muted-foreground/60 hover:text-muted-foreground"
                     }`}
                   >
@@ -821,10 +657,10 @@ function OverviewContent({
               key={i}
               className={`flex items-start gap-3 p-3 rounded-lg border ${
                 a.severity === "critical"
-                  ? "bg-red-500/10 border-red-500/25 text-red-400"
+                  ? "bg-destructive/10 border-destructive/25 text-destructive"
                   : a.severity === "warning"
-                  ? "bg-yellow-500/10 border-yellow-500/25 text-yellow-400"
-                  : "bg-blue-500/10 border-blue-500/25 text-blue-400"
+                  ? "bg-warning/10 border-warning/25 text-warning"
+                  : "bg-info/10 border-info/25 text-info"
               }`}
             >
               <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
@@ -841,7 +677,7 @@ function OverviewContent({
         {/* Hourly yield chart */}
         <div id="chart-hourly-yield" className="bg-card border border-border rounded-xl p-5">
           <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <Clock className="h-4 w-4 text-blue-400" />
+            <Clock className="h-4 w-4 text-info" />
             {t("stationAnalysis.overview.hourlyYield")}
           </h3>
           {hourlyLoading ? (
@@ -849,14 +685,14 @@ function OverviewContent({
           ) : (
             <ResponsiveContainer width="100%" height={220}>
               <ComposedChart data={hourlyData || []} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                <CartesianGrid {...chartGridProps} opacity={0.3} />
                 <XAxis dataKey="hour" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(h) => `${h}:00`} />
                 <YAxis yAxisId="left" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
                 <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `${v}%`} />
-                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }} />
-                <Bar yAxisId="left" dataKey="total" name="Total" fill="#6366f1" opacity={0.3} radius={[3, 3, 0, 0]} />
-                <Bar yAxisId="left" dataKey="ng" name="NG" fill="#ef4444" opacity={0.7} radius={[3, 3, 0, 0]} />
-                <Line yAxisId="right" type="monotone" dataKey="yield" name="Yield %" stroke="#22c55e" strokeWidth={2} dot={{ r: 2 }} />
+                <Tooltip contentStyle={chartTooltipStyle} />
+                <Bar yAxisId="left" dataKey="total" name="Total" fill="var(--chart-1)" opacity={0.3} radius={[3, 3, 0, 0]} />
+                <Bar yAxisId="left" dataKey="ng" name="NG" fill="var(--destructive)" opacity={0.7} radius={[3, 3, 0, 0]} />
+                <Line yAxisId="right" type="monotone" dataKey="yield" name="Yield %" stroke="var(--success)" strokeWidth={2} dot={{ r: 2 }} />
               </ComposedChart>
             </ResponsiveContainer>
           )}
@@ -865,7 +701,7 @@ function OverviewContent({
         {/* Top defects mini */}
         <div className="bg-card border border-border rounded-xl p-5">
           <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-purple-400" />
+            <BarChart3 className="h-4 w-4 text-primary" />
             {t("stationAnalysis.overview.topDefects")}
           </h3>
           {defectLoading ? (
@@ -893,13 +729,13 @@ function OverviewContent({
         {/* Mini SPC chart */}
         <div id="chart-overview-spc" className="bg-card border border-border rounded-xl p-5">
           <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <Target className="h-4 w-4 text-emerald-400" />
+            <Target className="h-4 w-4 text-success" />
             {t("stationAnalysis.overview.yieldControlChart")}
             {spcData && (
               <span className={`text-[10px] ml-auto font-mono px-1.5 py-0.5 rounded border ${
-                spcData.cpk >= 1.33 ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/25"
-                : spcData.cpk >= 1 ? "bg-yellow-500/15 text-yellow-400 border-yellow-500/25"
-                : "bg-red-500/15 text-red-400 border-red-500/25"
+                spcData.cpk >= 1.33 ? "bg-success/15 text-success border-success/25"
+                : spcData.cpk >= 1 ? "bg-warning/15 text-warning border-warning/25"
+                : "bg-destructive/15 text-destructive border-destructive/25"
               }`}>
                 Cpk: {spcData.cpk}
               </span>
@@ -910,7 +746,7 @@ function OverviewContent({
           ) : spcData?.points?.length > 1 ? (
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={spcData.points} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+                <CartesianGrid {...chartGridProps} opacity={0.2} />
                 <XAxis dataKey="day" tick={false} />
                 <YAxis
                   domain={[Math.max(0, Math.floor(spcData.lcl - 5)), Math.min(100, Math.ceil(spcData.ucl + 5))]}
@@ -919,18 +755,18 @@ function OverviewContent({
                   width={40}
                 />
                 <Tooltip
-                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }}
+                  contentStyle={chartTooltipStyle}
                   formatter={(v: any) => [`${Number(v).toFixed(1)}%`, "Yield"]}
                   labelFormatter={(l) => { try { return new Date(l).toLocaleDateString(); } catch { return l; } }}
                 />
-                <ReferenceLine y={spcData.ucl} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: "UCL", position: "right", fontSize: 9 }} />
-                <ReferenceLine y={spcData.mean} stroke="#a855f7" strokeDasharray="2 2" strokeWidth={1} label={{ value: "X̄", position: "right", fontSize: 9 }} />
-                <ReferenceLine y={spcData.lcl} stroke="#ef4444" strokeDasharray="4 4" strokeWidth={1} label={{ value: "LCL", position: "right", fontSize: 9 }} />
-                <Line type="monotone" dataKey="yield" stroke="#3b82f6" strokeWidth={1.5}
+                <ReferenceLine y={spcData.ucl} stroke="var(--success)" strokeDasharray="4 4" strokeWidth={1} label={{ value: "UCL", position: "right", fontSize: 9 }} />
+                <ReferenceLine y={spcData.mean} stroke="var(--primary)" strokeDasharray="2 2" strokeWidth={1} label={{ value: "X̄", position: "right", fontSize: 9 }} />
+                <ReferenceLine y={spcData.lcl} stroke="var(--destructive)" strokeDasharray="4 4" strokeWidth={1} label={{ value: "LCL", position: "right", fontSize: 9 }} />
+                <Line type="monotone" dataKey="yield" stroke="var(--info)" strokeWidth={1.5}
                   dot={(props: any) => {
                     const { cx, cy, payload } = props;
                     const ooc = payload.outOfControl;
-                    return <circle key={`d-${cx}-${cy}`} cx={cx} cy={cy} r={ooc ? 4 : 2} fill={ooc ? "#ef4444" : "#3b82f6"} stroke={ooc ? "#ef4444" : "none"} strokeWidth={ooc ? 2 : 0} />;
+                    return <circle key={`d-${cx}-${cy}`} cx={cx} cy={cy} r={ooc ? 4 : 2} fill={ooc ? "var(--destructive)" : "var(--info)"} stroke={ooc ? "var(--destructive)" : "none"} strokeWidth={ooc ? 2 : 0} />;
                   }}
                 />
               </LineChart>
@@ -943,7 +779,7 @@ function OverviewContent({
         {/* AI Insights mini */}
         <div className="bg-card border border-border rounded-xl p-5">
           <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <Lightbulb className="h-4 w-4 text-yellow-400" />
+            <Lightbulb className="h-4 w-4 text-warning" />
             {t("stationAnalysis.overview.aiInsights")}
           </h3>
           {diagLoading ? (
@@ -953,7 +789,7 @@ function OverviewContent({
               {diagnostics?.patterns?.map((p: any, i: number) => (
                 <div key={i} className="bg-muted/30 rounded-lg p-2.5">
                   <div className="flex items-center gap-2 text-xs font-semibold">
-                    <span className="text-purple-400">{p.type}</span>
+                    <span className="text-primary">{p.type}</span>
                     <span className="ml-auto text-[10px] font-mono text-muted-foreground/50">{Math.round(p.confidence * 100)}% conf.</span>
                   </div>
                   <p className="text-[11px] text-muted-foreground/70 mt-1">{p.description}</p>
@@ -962,9 +798,9 @@ function OverviewContent({
               {diagnostics?.recommendations?.slice(0, 2).map((r: any, i: number) => (
                 <div key={i} className="flex items-start gap-2 text-xs">
                   <span className={`shrink-0 mt-0.5 px-1 py-0.5 rounded text-[9px] font-mono border ${
-                    r.priority === "high" ? "bg-red-500/15 text-red-400 border-red-500/25"
-                    : r.priority === "medium" ? "bg-yellow-500/15 text-yellow-400 border-yellow-500/25"
-                    : "bg-blue-500/15 text-blue-400 border-blue-500/25"
+                    r.priority === "high" ? "bg-destructive/15 text-destructive border-destructive/25"
+                    : r.priority === "medium" ? "bg-warning/15 text-warning border-warning/25"
+                    : "bg-info/15 text-info border-info/25"
                   }`}>{r.priority}</span>
                   <span className="text-muted-foreground">{r.action}</span>
                 </div>
@@ -1010,17 +846,17 @@ function DefectsContent({ data, isLoading, failHistory, failLoading, t }: any) {
       {/* Pareto chart */}
       <div id="chart-pareto" className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <BarChart3 className="h-4 w-4 text-purple-400" />
+          <BarChart3 className="h-4 w-4 text-primary" />
           {t("stationAnalysis.defectsTab.paretoChart")}
         </h3>
         <ResponsiveContainer width="100%" height={350}>
           <ComposedChart data={defects} margin={{ top: 5, right: 20, bottom: 60, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+            <CartesianGrid {...chartGridProps} opacity={0.3} />
             <XAxis dataKey="code" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} angle={-35} textAnchor="end" interval={0} />
             <YAxis yAxisId="left" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
             <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `${v}%`} />
             <Tooltip
-              contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+              contentStyle={chartTooltipStyle}
               formatter={(value: any, name: string) => name === "cumPercentage" ? [`${value}%`, "Cumulative %"] : [value, "NG Count"]}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -1029,8 +865,8 @@ function DefectsContent({ data, isLoading, failHistory, failLoading, t }: any) {
                 <Cell key={i} fill={PARETO_COLORS[i % PARETO_COLORS.length]} />
               ))}
             </Bar>
-            <Line yAxisId="right" type="monotone" dataKey="cumPercentage" name="Cumulative %" stroke="#a855f7" strokeWidth={2} dot={{ r: 3 }} />
-            <ReferenceLine yAxisId="right" y={80} stroke="#ef4444" strokeDasharray="4 4" label={{ value: "80%", position: "right", fill: "#ef4444", fontSize: 10 }} />
+            <Line yAxisId="right" type="monotone" dataKey="cumPercentage" name="Cumulative %" stroke="var(--primary)" strokeWidth={2} dot={{ r: 3 }} />
+            <ReferenceLine yAxisId="right" y={80} stroke="var(--destructive)" strokeDasharray="4 4" label={{ value: "80%", position: "right", fill: "var(--destructive)", fontSize: 10 }} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -1060,7 +896,7 @@ function DefectsContent({ data, isLoading, failHistory, failLoading, t }: any) {
       {/* Fail History section */}
       <div className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <XCircle className="h-4 w-4 text-red-400" />
+          <XCircle className="h-4 w-4 text-destructive" />
           {t("stationAnalysis.tabs.history")}
         </h3>
         {failLoading ? (
@@ -1085,7 +921,7 @@ function DefectsContent({ data, isLoading, failHistory, failLoading, t }: any) {
                 <span className="text-xs font-mono truncate">{rec.barcode || "\u2014"}</span>
                 <div className="flex flex-wrap gap-1">
                   {rec.failedPoints.map((fp: any, i: number) => (
-                    <span key={i} className="text-[10px] bg-red-500/15 text-red-400 border border-red-500/25 rounded px-1.5 py-0.5 font-mono">
+                    <span key={i} className="text-[10px] bg-destructive/15 text-destructive border border-destructive/25 rounded px-1.5 py-0.5 font-mono">
                       {fp.pointCode}: {fp.pointName}
                     </span>
                   ))}
@@ -1144,7 +980,7 @@ function SpcContent({ data, isLoading, t, stationId, productModelId, dateRange }
     setEnabledRules(prev => prev.includes(rule) ? prev.filter(r => r !== rule) : [...prev, rule].sort());
   };
 
-  const RULE_COLORS: Record<number, string> = { 1: "#ef4444", 2: "#f97316", 3: "#eab308", 4: "#22c55e", 5: "#06b6d4", 6: "#3b82f6", 7: "#8b5cf6", 8: "#ec4899" };
+  const RULE_COLORS: Record<number, string> = { 1: "var(--destructive)", 2: "var(--warning)", 3: "var(--warning)", 4: "var(--success)", 5: "var(--chart-5)", 6: "var(--info)", 7: "var(--primary)", 8: "var(--chart-4)" };
   const RULE_LABELS: Record<number, string> = {
     1: "1σ Beyond 3σ", 2: "9 Same Side", 3: "6 Increasing/Decreasing",
     4: "14 Alternating", 5: "2/3 Beyond 2σ", 6: "4/5 Beyond 1σ",
@@ -1157,10 +993,10 @@ function SpcContent({ data, isLoading, t, stationId, productModelId, dateRange }
       <div className="bg-card border border-border rounded-xl p-4 space-y-4">
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex gap-0.5 bg-background border border-border rounded-lg p-0.5">
-            <button onClick={() => setSpcMode("yield")} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${spcMode === "yield" ? "bg-purple-600/15 text-purple-400 border border-purple-500/20" : "text-muted-foreground/60 hover:text-muted-foreground"}`}>
+            <button onClick={() => setSpcMode("yield")} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${spcMode === "yield" ? "bg-primary/15 text-primary border border-primary/20" : "text-muted-foreground/60 hover:text-muted-foreground"}`}>
               {t("stationAnalysis.spc.yieldMode")}
             </button>
-            <button onClick={() => setSpcMode("measurement")} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${spcMode === "measurement" ? "bg-blue-600/15 text-blue-400 border border-blue-500/20" : "text-muted-foreground/60 hover:text-muted-foreground"}`}>
+            <button onClick={() => setSpcMode("measurement")} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${spcMode === "measurement" ? "bg-info/15 text-info border border-info/20" : "text-muted-foreground/60 hover:text-muted-foreground"}`}>
               {t("stationAnalysis.spc.measurementMode")}
             </button>
           </div>
@@ -1247,35 +1083,35 @@ function YieldSpcView({ data, isLoading, t }: any) {
   }
 
   const oocCount = data.points.filter((p: any) => p.outOfControl).length;
-  const RULE_COLORS: Record<number, string> = { 1: "#ef4444", 2: "#f97316", 3: "#eab308", 4: "#22c55e", 5: "#06b6d4", 6: "#3b82f6", 7: "#8b5cf6", 8: "#ec4899" };
+  const RULE_COLORS: Record<number, string> = { 1: "var(--destructive)", 2: "var(--warning)", 3: "var(--warning)", 4: "var(--success)", 5: "var(--chart-5)", 6: "var(--info)", 7: "var(--primary)", 8: "var(--chart-4)" };
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
         <SpcCard label={t("stationAnalysis.spc.meanLabel")} value={`${data.mean}%`} />
         <SpcCard label={t("stationAnalysis.spc.stdDevLabel")} value={data.stddev.toFixed(2)} />
-        <SpcCard label="UCL" value={`${data.ucl}%`} color="text-emerald-400" />
-        <SpcCard label="LCL" value={`${data.lcl}%`} color="text-red-400" />
-        <SpcCard label="Cpk" value={data.cpk.toFixed(2)} color={data.cpk < 1 ? "text-red-500" : data.cpk >= 1.33 ? "text-emerald-500" : "text-yellow-500"} />
-        <SpcCard label="Ppk" value={data.ppk.toFixed(2)} color={data.ppk < 1 ? "text-red-500" : "text-emerald-500"} />
-        <SpcCard label={t("stationAnalysis.spc.outOfControl")} value={`${oocCount} / ${data.points.length}`} color={oocCount > 0 ? "text-red-500" : "text-emerald-500"} />
+        <SpcCard label="UCL" value={`${data.ucl}%`} color="text-success" />
+        <SpcCard label="LCL" value={`${data.lcl}%`} color="text-destructive" />
+        <SpcCard label="Cpk" value={data.cpk.toFixed(2)} color={data.cpk < 1 ? "text-destructive" : data.cpk >= 1.33 ? "text-success" : "text-warning"} />
+        <SpcCard label="Ppk" value={data.ppk.toFixed(2)} color={data.ppk < 1 ? "text-destructive" : "text-success"} />
+        <SpcCard label={t("stationAnalysis.spc.outOfControl")} value={`${oocCount} / ${data.points.length}`} color={oocCount > 0 ? "text-destructive" : "text-success"} />
       </div>
 
       {data.ruleSummary && data.ruleSummary.length > 0 && (
         <div className="bg-card border border-border rounded-xl p-6">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4 text-red-400" />
+            <ShieldAlert className="h-4 w-4 text-destructive" />
             {t("stationAnalysis.spc.westernViolations")}
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {data.ruleSummary.map((rs: any) => (
               <div key={rs.rule} className="flex items-center gap-2 bg-muted/30 rounded-lg p-3 border border-border">
-                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: RULE_COLORS[rs.rule] || "#888" }} />
+                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: RULE_COLORS[rs.rule] || "var(--muted-foreground)" }} />
                 <div className="min-w-0 flex-1">
                   <div className="text-[11px] font-semibold truncate">{t("stationAnalysis.spc.rule")} {rs.rule}</div>
                   <div className="text-[10px] text-muted-foreground truncate">{rs.name}</div>
                 </div>
-                <span className="text-xs font-mono font-bold text-red-400">{rs.count}</span>
+                <span className="text-xs font-mono font-bold text-destructive">{rs.count}</span>
               </div>
             ))}
           </div>
@@ -1284,12 +1120,12 @@ function YieldSpcView({ data, isLoading, t }: any) {
 
       <div id="chart-spc-xbar" className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <Target className="h-4 w-4 text-emerald-400" />
+          <Target className="h-4 w-4 text-success" />
           {t("stationAnalysis.spc.xBarChart")}
         </h3>
         <ResponsiveContainer width="100%" height={400}>
           <LineChart data={data.points} margin={{ top: 10, right: 30, bottom: 20, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+            <CartesianGrid {...chartGridProps} opacity={0.2} />
             <XAxis dataKey="day" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(d) => { try { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }); } catch { return d; } }} angle={-30} textAnchor="end" />
             <YAxis domain={[Math.max(0, Math.floor(data.lcl - 5)), Math.min(100, Math.ceil(data.ucl + 5))]} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `${v}%`} />
             <Tooltip content={({ active, payload, label }: any) => {
@@ -1302,32 +1138,32 @@ function YieldSpcView({ data, isLoading, t }: any) {
                   <div>Zone: <span className="font-mono">{pt.zone}</span></div>
                   {pt.violatedRules?.length > 0 && (
                     <div className="mt-1.5 pt-1.5 border-t border-border space-y-0.5">
-                      <div className="text-red-400 font-semibold">{t("stationAnalysis.spc.ruleViolations")}</div>
+                      <div className="text-destructive font-semibold">{t("stationAnalysis.spc.ruleViolations")}</div>
                       {pt.ruleDescriptions?.map((rd: string, i: number) => (
-                        <div key={i} className="flex items-start gap-1.5"><div className="w-2 h-2 rounded-full mt-0.5 shrink-0" style={{ backgroundColor: RULE_COLORS[pt.violatedRules[i]] || "#888" }} /><span className="text-muted-foreground">{rd}</span></div>
+                        <div key={i} className="flex items-start gap-1.5"><div className="w-2 h-2 rounded-full mt-0.5 shrink-0" style={{ backgroundColor: RULE_COLORS[pt.violatedRules[i]] || "var(--muted-foreground)" }} /><span className="text-muted-foreground">{rd}</span></div>
                       ))}
                     </div>
                   )}
                 </div>
               );
             }} />
-            <ReferenceLine y={data.ucl} stroke="#22c55e" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${data.ucl}%`, position: "insideTopRight", fontSize: 10, fill: "#22c55e" }} />
-            <ReferenceLine y={data.mean} stroke="#a855f7" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `X̄: ${data.mean}%`, position: "insideTopRight", fontSize: 10, fill: "#a855f7" }} />
-            <ReferenceLine y={data.lcl} stroke="#ef4444" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${data.lcl}%`, position: "insideBottomRight", fontSize: 10, fill: "#ef4444" }} />
-            <ReferenceLine y={data.mean + 2 * data.stddev} stroke="#22c55e" strokeDasharray="2 4" strokeWidth={0.5} opacity={0.4} />
-            <ReferenceLine y={data.mean - 2 * data.stddev} stroke="#ef4444" strokeDasharray="2 4" strokeWidth={0.5} opacity={0.4} />
-            <ReferenceLine y={data.mean + data.stddev} stroke="#6366f1" strokeDasharray="2 4" strokeWidth={0.5} opacity={0.3} />
-            <ReferenceLine y={data.mean - data.stddev} stroke="#6366f1" strokeDasharray="2 4" strokeWidth={0.5} opacity={0.3} />
-            <Line type="monotone" dataKey="yield" stroke="#3b82f6" strokeWidth={2} dot={(props: any) => {
+            <ReferenceLine y={data.ucl} stroke="var(--success)" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${data.ucl}%`, position: "insideTopRight", fontSize: 10, fill: "var(--success)" }} />
+            <ReferenceLine y={data.mean} stroke="var(--primary)" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `X̄: ${data.mean}%`, position: "insideTopRight", fontSize: 10, fill: "var(--primary)" }} />
+            <ReferenceLine y={data.lcl} stroke="var(--destructive)" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${data.lcl}%`, position: "insideBottomRight", fontSize: 10, fill: "var(--destructive)" }} />
+            <ReferenceLine y={data.mean + 2 * data.stddev} stroke="var(--success)" strokeDasharray="2 4" strokeWidth={0.5} opacity={0.4} />
+            <ReferenceLine y={data.mean - 2 * data.stddev} stroke="var(--destructive)" strokeDasharray="2 4" strokeWidth={0.5} opacity={0.4} />
+            <ReferenceLine y={data.mean + data.stddev} stroke="var(--chart-1)" strokeDasharray="2 4" strokeWidth={0.5} opacity={0.3} />
+            <ReferenceLine y={data.mean - data.stddev} stroke="var(--chart-1)" strokeDasharray="2 4" strokeWidth={0.5} opacity={0.3} />
+            <Line type="monotone" dataKey="yield" stroke="var(--info)" strokeWidth={2} dot={(props: any) => {
               const { cx, cy, payload } = props;
               const ooc = payload.outOfControl;
               const rules = payload.violatedRules || [];
-              const mainColor = rules.length > 0 ? (RULE_COLORS[rules[0]] || "#ef4444") : "#3b82f6";
+              const mainColor = rules.length > 0 ? (RULE_COLORS[rules[0]] || "var(--destructive)") : "var(--info)";
               return (
                 <g key={`spc-${cx}-${cy}`}>
                   {ooc && <circle cx={cx} cy={cy} r={8} fill={mainColor} opacity={0.15} />}
-                  <circle cx={cx} cy={cy} r={ooc ? 5 : 3} fill={ooc ? mainColor : "#3b82f6"} stroke={ooc ? "#fff" : "none"} strokeWidth={ooc ? 2 : 0} />
-                  {rules.length > 1 && <circle cx={cx} cy={cy} r={7} fill="none" stroke="#f97316" strokeWidth={1.5} strokeDasharray="3 2" />}
+                  <circle cx={cx} cy={cy} r={ooc ? 5 : 3} fill={ooc ? mainColor : "var(--info)"} stroke={ooc ? "var(--background)" : "none"} strokeWidth={ooc ? 2 : 0} />
+                  {rules.length > 1 && <circle cx={cx} cy={cy} r={7} fill="none" stroke="var(--warning)" strokeWidth={1.5} strokeDasharray="3 2" />}
                 </g>
               );
             }} />
@@ -1339,12 +1175,12 @@ function YieldSpcView({ data, isLoading, t }: any) {
         <h3 className="text-sm font-semibold mb-4">{t("stationAnalysis.spc.movingRange")}</h3>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={data.points.slice(1)} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+            <CartesianGrid {...chartGridProps} opacity={0.2} />
             <XAxis dataKey="day" tick={false} />
             <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-            <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }} />
-            <ReferenceLine y={data.avgMovingRange} stroke="#a855f7" strokeDasharray="4 4" label={{ value: `MR̄: ${data.avgMovingRange}`, position: "right", fontSize: 9 }} />
-            <Bar dataKey="movingRange" name="Moving Range" fill="#6366f1" opacity={0.6} radius={[3, 3, 0, 0]} />
+            <Tooltip contentStyle={chartTooltipStyle} />
+            <ReferenceLine y={data.avgMovingRange} stroke="var(--primary)" strokeDasharray="4 4" label={{ value: `MR̄: ${data.avgMovingRange}`, position: "right", fontSize: 9 }} />
+            <Bar dataKey="movingRange" name="Moving Range" fill="var(--chart-1)" opacity={0.6} radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -1438,21 +1274,21 @@ function MeasurementSpcView({ data, isLoading, t, RULE_COLORS, RULE_LABELS, show
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
         <SpcCard label="X̄ (CL)" value={String(cl.xBar.CL)} />
-        <SpcCard label="UCL" value={String(cl.xBar.UCL)} color="text-emerald-400" />
-        <SpcCard label="LCL" value={String(cl.xBar.LCL)} color="text-red-400" />
+        <SpcCard label="UCL" value={String(cl.xBar.UCL)} color="text-success" />
+        <SpcCard label="LCL" value={String(cl.xBar.LCL)} color="text-destructive" />
         <SpcCard label="σ̂" value={String(cl.estimatedSigma)} />
-        {cap?.cpk != null && <SpcCard label="Cpk" value={String(cap.cpk)} color={cap.cpk < 1 ? "text-red-500" : cap.cpk >= 1.33 ? "text-emerald-500" : "text-yellow-500"} />}
-        {cap?.ppk != null && <SpcCard label="Ppk" value={String(cap.ppk)} color={cap.ppk < 1 ? "text-red-500" : "text-emerald-500"} />}
-        <SpcCard label={t("stationAnalysis.spc.outOfControl")} value={`${data.oocCount} / ${data.totalSubgroups}`} color={data.oocCount > 0 ? "text-red-500" : "text-emerald-500"} />
+        {cap?.cpk != null && <SpcCard label="Cpk" value={String(cap.cpk)} color={cap.cpk < 1 ? "text-destructive" : cap.cpk >= 1.33 ? "text-success" : "text-warning"} />}
+        {cap?.ppk != null && <SpcCard label="Ppk" value={String(cap.ppk)} color={cap.ppk < 1 ? "text-destructive" : "text-success"} />}
+        <SpcCard label={t("stationAnalysis.spc.outOfControl")} value={`${data.oocCount} / ${data.totalSubgroups}`} color={data.oocCount > 0 ? "text-destructive" : "text-success"} />
         <SpcCard label={t("stationAnalysis.spc.samples")} value={String(data.totalSamples)} />
       </div>
 
       {/* Spec limits info */}
       {(data.specLimits?.usl != null || data.specLimits?.lsl != null) && (
         <div className="flex flex-wrap gap-3 text-xs">
-          {data.specLimits.usl != null && <span className="bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full border border-emerald-500/20">USL: {data.specLimits.usl}</span>}
-          {data.specLimits.nominal != null && <span className="bg-purple-500/10 text-purple-400 px-3 py-1 rounded-full border border-purple-500/20">Nominal: {data.specLimits.nominal}</span>}
-          {data.specLimits.lsl != null && <span className="bg-red-500/10 text-red-400 px-3 py-1 rounded-full border border-red-500/20">LSL: {data.specLimits.lsl}</span>}
+          {data.specLimits.usl != null && <span className="bg-success/10 text-success px-3 py-1 rounded-full border border-success/20">USL: {data.specLimits.usl}</span>}
+          {data.specLimits.nominal != null && <span className="bg-primary/10 text-primary px-3 py-1 rounded-full border border-primary/20">Nominal: {data.specLimits.nominal}</span>}
+          {data.specLimits.lsl != null && <span className="bg-destructive/10 text-destructive px-3 py-1 rounded-full border border-destructive/20">LSL: {data.specLimits.lsl}</span>}
         </div>
       )}
 
@@ -1460,18 +1296,18 @@ function MeasurementSpcView({ data, isLoading, t, RULE_COLORS, RULE_LABELS, show
       {data.ruleSummary && data.ruleSummary.length > 0 && (
         <div className="bg-card border border-border rounded-xl p-6">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4 text-red-400" />
+            <ShieldAlert className="h-4 w-4 text-destructive" />
             {t("stationAnalysis.spc.westernViolations")}
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {data.ruleSummary.map((rs: any) => (
               <div key={rs.rule} className="flex items-center gap-2 bg-muted/30 rounded-lg p-3 border border-border">
-                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: RULE_COLORS[rs.rule] || "#888" }} />
+                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: RULE_COLORS[rs.rule] || "var(--muted-foreground)" }} />
                 <div className="min-w-0 flex-1">
                   <div className="text-[11px] font-semibold truncate">{t("stationAnalysis.spc.rule")} {rs.rule}</div>
                   <div className="text-[10px] text-muted-foreground truncate">{rs.name}</div>
                 </div>
-                <span className="text-xs font-mono font-bold text-red-400">{rs.count}</span>
+                <span className="text-xs font-mono font-bold text-destructive">{rs.count}</span>
               </div>
             ))}
           </div>
@@ -1481,12 +1317,12 @@ function MeasurementSpcView({ data, isLoading, t, RULE_COLORS, RULE_LABELS, show
       {/* X-bar Chart */}
       <div id="chart-spc-xbar-mp" className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <Target className="h-4 w-4 text-emerald-400" />
+          <Target className="h-4 w-4 text-success" />
           X̄ Chart — {data.pointDef?.code || ""} {data.pointDef?.name || ""}
         </h3>
         <ResponsiveContainer width="100%" height={400}>
           <LineChart data={data.xBarPoints} margin={{ top: 10, right: 30, bottom: 20, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+            <CartesianGrid {...chartGridProps} opacity={0.2} />
             <XAxis dataKey="index" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} label={{ value: t("stationAnalysis.spc.subgroupIndex"), position: "bottom", fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
             <YAxis domain={xBarYDomain} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
             <Tooltip content={({ active, payload }: any) => {
@@ -1500,31 +1336,31 @@ function MeasurementSpcView({ data, isLoading, t, RULE_COLORS, RULE_LABELS, show
                   {pt.timestamp && <div className="text-muted-foreground">{new Date(pt.timestamp).toLocaleString()}</div>}
                   {pt.violatedRules?.length > 0 && (
                     <div className="mt-1.5 pt-1.5 border-t border-border space-y-0.5">
-                      <div className="text-red-400 font-semibold">{t("stationAnalysis.spc.ruleViolations")}</div>
+                      <div className="text-destructive font-semibold">{t("stationAnalysis.spc.ruleViolations")}</div>
                       {pt.ruleDescriptions?.map((rd: string, i: number) => (
-                        <div key={i} className="flex items-start gap-1.5"><div className="w-2 h-2 rounded-full mt-0.5 shrink-0" style={{ backgroundColor: RULE_COLORS[pt.violatedRules[i]] || "#888" }} /><span className="text-muted-foreground">{rd}</span></div>
+                        <div key={i} className="flex items-start gap-1.5"><div className="w-2 h-2 rounded-full mt-0.5 shrink-0" style={{ backgroundColor: RULE_COLORS[pt.violatedRules[i]] || "var(--muted-foreground)" }} /><span className="text-muted-foreground">{rd}</span></div>
                       ))}
                     </div>
                   )}
                 </div>
               );
             }} />
-            <ReferenceLine y={cl.xBar.UCL} stroke="#22c55e" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${cl.xBar.UCL}`, position: "insideTopRight", fontSize: 10, fill: "#22c55e" }} />
-            <ReferenceLine y={cl.xBar.CL} stroke="#a855f7" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `X̄: ${cl.xBar.CL}`, position: "insideTopRight", fontSize: 10, fill: "#a855f7" }} />
-            <ReferenceLine y={cl.xBar.LCL} stroke="#ef4444" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${cl.xBar.LCL}`, position: "insideBottomRight", fontSize: 10, fill: "#ef4444" }} />
-            {data.specLimits?.usl != null && <ReferenceLine y={data.specLimits.usl} stroke="#10b981" strokeDasharray="8 4" strokeWidth={1} label={{ value: `USL: ${data.specLimits.usl}`, position: "insideTopLeft", fontSize: 9, fill: "#10b981" }} />}
-            {data.specLimits?.lsl != null && <ReferenceLine y={data.specLimits.lsl} stroke="#f43f5e" strokeDasharray="8 4" strokeWidth={1} label={{ value: `LSL: ${data.specLimits.lsl}`, position: "insideBottomLeft", fontSize: 9, fill: "#f43f5e" }} />}
-            <Line type="monotone" dataKey="mean" stroke="#3b82f6" strokeWidth={2} dot={(props: any) => {
+            <ReferenceLine y={cl.xBar.UCL} stroke="var(--success)" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${cl.xBar.UCL}`, position: "insideTopRight", fontSize: 10, fill: "var(--success)" }} />
+            <ReferenceLine y={cl.xBar.CL} stroke="var(--primary)" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `X̄: ${cl.xBar.CL}`, position: "insideTopRight", fontSize: 10, fill: "var(--primary)" }} />
+            <ReferenceLine y={cl.xBar.LCL} stroke="var(--destructive)" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${cl.xBar.LCL}`, position: "insideBottomRight", fontSize: 10, fill: "var(--destructive)" }} />
+            {data.specLimits?.usl != null && <ReferenceLine y={data.specLimits.usl} stroke="var(--success)" strokeDasharray="8 4" strokeWidth={1} label={{ value: `USL: ${data.specLimits.usl}`, position: "insideTopLeft", fontSize: 9, fill: "var(--success)" }} />}
+            {data.specLimits?.lsl != null && <ReferenceLine y={data.specLimits.lsl} stroke="var(--destructive)" strokeDasharray="8 4" strokeWidth={1} label={{ value: `LSL: ${data.specLimits.lsl}`, position: "insideBottomLeft", fontSize: 9, fill: "var(--destructive)" }} />}
+            <Line type="monotone" dataKey="mean" stroke="var(--info)" strokeWidth={2} dot={(props: any) => {
               const { cx, cy, payload } = props;
               if (cx == null || cy == null) return <g key="empty" />;
               const ooc = payload.outOfControl;
               const rules = payload.violatedRules || [];
-              const mainColor = rules.length > 0 ? (RULE_COLORS[rules[0]] || "#ef4444") : "#3b82f6";
+              const mainColor = rules.length > 0 ? (RULE_COLORS[rules[0]] || "var(--destructive)") : "var(--info)";
               return (
                 <g key={`mp-xbar-${payload.index}`}>
                   {ooc && <circle cx={cx} cy={cy} r={8} fill={mainColor} opacity={0.15} />}
-                  <circle cx={cx} cy={cy} r={ooc ? 5 : 3} fill={ooc ? mainColor : "#3b82f6"} stroke={ooc ? "#fff" : "none"} strokeWidth={ooc ? 2 : 0} />
-                  {rules.length > 1 && <circle cx={cx} cy={cy} r={7} fill="none" stroke="#f97316" strokeWidth={1.5} strokeDasharray="3 2" />}
+                  <circle cx={cx} cy={cy} r={ooc ? 5 : 3} fill={ooc ? mainColor : "var(--info)"} stroke={ooc ? "var(--background)" : "none"} strokeWidth={ooc ? 2 : 0} />
+                  {rules.length > 1 && <circle cx={cx} cy={cy} r={7} fill="none" stroke="var(--warning)" strokeWidth={1.5} strokeDasharray="3 2" />}
                 </g>
               );
             }} />
@@ -1535,12 +1371,12 @@ function MeasurementSpcView({ data, isLoading, t, RULE_COLORS, RULE_LABELS, show
       {/* R Chart */}
       <div id="chart-spc-r-mp" className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <BarChart3 className="h-4 w-4 text-blue-400" />
+          <BarChart3 className="h-4 w-4 text-info" />
           R Chart — {t("stationAnalysis.spc.rangeChart")}
         </h3>
         <ResponsiveContainer width="100%" height={250}>
           <LineChart data={data.rPoints} margin={{ top: 10, right: 30, bottom: 20, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+            <CartesianGrid {...chartGridProps} opacity={0.2} />
             <XAxis dataKey="index" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
             <YAxis domain={rYDomain} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
             <Tooltip content={({ active, payload }: any) => {
@@ -1553,16 +1389,16 @@ function MeasurementSpcView({ data, isLoading, t, RULE_COLORS, RULE_LABELS, show
                 </div>
               );
             }} />
-            <ReferenceLine y={cl.range.UCL} stroke="#22c55e" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${cl.range.UCL}`, position: "insideTopRight", fontSize: 10, fill: "#22c55e" }} />
-            <ReferenceLine y={cl.range.CL} stroke="#a855f7" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `R̄: ${cl.range.CL}`, position: "insideTopRight", fontSize: 10, fill: "#a855f7" }} />
-            <ReferenceLine y={cl.range.LCL} stroke="#ef4444" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${cl.range.LCL}`, position: "insideBottomRight", fontSize: 10, fill: "#ef4444" }} />
-            <Line type="monotone" dataKey="range" stroke="#6366f1" strokeWidth={2} dot={(props: any) => {
+            <ReferenceLine y={cl.range.UCL} stroke="var(--success)" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${cl.range.UCL}`, position: "insideTopRight", fontSize: 10, fill: "var(--success)" }} />
+            <ReferenceLine y={cl.range.CL} stroke="var(--primary)" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `R̄: ${cl.range.CL}`, position: "insideTopRight", fontSize: 10, fill: "var(--primary)" }} />
+            <ReferenceLine y={cl.range.LCL} stroke="var(--destructive)" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${cl.range.LCL}`, position: "insideBottomRight", fontSize: 10, fill: "var(--destructive)" }} />
+            <Line type="monotone" dataKey="range" stroke="var(--chart-1)" strokeWidth={2} dot={(props: any) => {
               const { cx, cy, payload } = props;
               if (cx == null || cy == null) return <g key="empty" />;
               const ooc = payload.outOfControl;
               return (
                 <g key={`mp-r-${payload.index}`}>
-                  <circle cx={cx} cy={cy} r={ooc ? 5 : 3} fill={ooc ? "#ef4444" : "#6366f1"} stroke={ooc ? "#fff" : "none"} strokeWidth={ooc ? 2 : 0} />
+                  <circle cx={cx} cy={cy} r={ooc ? 5 : 3} fill={ooc ? "var(--destructive)" : "var(--chart-1)"} stroke={ooc ? "var(--background)" : "none"} strokeWidth={ooc ? 2 : 0} />
                 </g>
               );
             }} />
@@ -1575,10 +1411,10 @@ function MeasurementSpcView({ data, isLoading, t, RULE_COLORS, RULE_LABELS, show
         <div className="bg-card border border-border rounded-xl p-6">
           <h3 className="text-sm font-semibold mb-4">{t("stationAnalysis.spc.capabilityIndices")}</h3>
           <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-            {cap.cp != null && <SpcCard label="Cp" value={String(cap.cp)} color={cap.cp < 1 ? "text-red-500" : cap.cp >= 1.33 ? "text-emerald-500" : "text-yellow-500"} />}
-            {cap.cpk != null && <SpcCard label="Cpk" value={String(cap.cpk)} color={cap.cpk < 1 ? "text-red-500" : cap.cpk >= 1.33 ? "text-emerald-500" : "text-yellow-500"} />}
-            {cap.pp != null && <SpcCard label="Pp" value={String(cap.pp)} color={cap.pp < 1 ? "text-red-500" : "text-emerald-500"} />}
-            {cap.ppk != null && <SpcCard label="Ppk" value={String(cap.ppk)} color={cap.ppk < 1 ? "text-red-500" : "text-emerald-500"} />}
+            {cap.cp != null && <SpcCard label="Cp" value={String(cap.cp)} color={cap.cp < 1 ? "text-destructive" : cap.cp >= 1.33 ? "text-success" : "text-warning"} />}
+            {cap.cpk != null && <SpcCard label="Cpk" value={String(cap.cpk)} color={cap.cpk < 1 ? "text-destructive" : cap.cpk >= 1.33 ? "text-success" : "text-warning"} />}
+            {cap.pp != null && <SpcCard label="Pp" value={String(cap.pp)} color={cap.pp < 1 ? "text-destructive" : "text-success"} />}
+            {cap.ppk != null && <SpcCard label="Ppk" value={String(cap.ppk)} color={cap.ppk < 1 ? "text-destructive" : "text-success"} />}
             {cap.cpu != null && <SpcCard label="Cpu" value={String(cap.cpu)} />}
             {cap.cpl != null && <SpcCard label="Cpl" value={String(cap.cpl)} />}
           </div>
@@ -1589,32 +1425,32 @@ function MeasurementSpcView({ data, isLoading, t, RULE_COLORS, RULE_LABELS, show
       {data.xBarHistogram?.length > 0 && (
         <div id="chart-xbar-histogram" className="bg-card border border-border rounded-xl p-6">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-            <FileBarChart className="h-4 w-4 text-blue-400" />
+            <FileBarChart className="h-4 w-4 text-info" />
             X̄ {t("stationAnalysis.spc.histogram")}
           </h3>
           <ResponsiveContainer width="100%" height={320}>
             <ComposedChart data={data.xBarHistogram} margin={{ top: 10, right: 20, bottom: 40, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+              <CartesianGrid {...chartGridProps} opacity={0.2} />
               <XAxis type="number" dataKey="binMid" domain={xBarHistXDomain} tick={{ fontSize: 8, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v: number) => v.toFixed(2)} />
               <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-              <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }} labelFormatter={(v: number) => `Bin: ${v.toFixed(3)}`} />
-              <Bar dataKey="count" name="Frequency" fill="#3b82f6" opacity={0.7} radius={[3, 3, 0, 0]} barSize={xBarHistBarSize} />
-              <Line type="monotone" dataKey="normalCount" name="Normal Dist." stroke="#ef4444" strokeWidth={2.5} dot={false} />
-              <ReferenceLine x={Number(cl.xBar.CL)} stroke="#a855f7" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `X̄: ${cl.xBar.CL}`, position: "top", fontSize: 9, fill: "#a855f7" }} />
-              <ReferenceLine x={Number(cl.xBar.UCL)} stroke="#22c55e" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${cl.xBar.UCL}`, position: "top", fontSize: 9, fill: "#22c55e" }} />
-              <ReferenceLine x={Number(cl.xBar.LCL)} stroke="#ef4444" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${cl.xBar.LCL}`, position: "top", fontSize: 9, fill: "#ef4444" }} />
-              {data.specLimits?.usl != null && <ReferenceLine x={Number(data.specLimits.usl)} stroke="#10b981" strokeDasharray="8 4" strokeWidth={1.5} label={{ value: `USL: ${data.specLimits.usl}`, position: "top", fontSize: 9, fill: "#10b981" }} />}
-              {data.specLimits?.lsl != null && <ReferenceLine x={Number(data.specLimits.lsl)} stroke="#f43f5e" strokeDasharray="8 4" strokeWidth={1.5} label={{ value: `LSL: ${data.specLimits.lsl}`, position: "top", fontSize: 9, fill: "#f43f5e" }} />}
+              <Tooltip contentStyle={chartTooltipStyle} labelFormatter={(v: number) => `Bin: ${v.toFixed(3)}`} />
+              <Bar dataKey="count" name="Frequency" fill="var(--info)" opacity={0.7} radius={[3, 3, 0, 0]} barSize={xBarHistBarSize} />
+              <Line type="monotone" dataKey="normalCount" name="Normal Dist." stroke="var(--destructive)" strokeWidth={2.5} dot={false} />
+              <ReferenceLine x={Number(cl.xBar.CL)} stroke="var(--primary)" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `X̄: ${cl.xBar.CL}`, position: "top", fontSize: 9, fill: "var(--primary)" }} />
+              <ReferenceLine x={Number(cl.xBar.UCL)} stroke="var(--success)" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${cl.xBar.UCL}`, position: "top", fontSize: 9, fill: "var(--success)" }} />
+              <ReferenceLine x={Number(cl.xBar.LCL)} stroke="var(--destructive)" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${cl.xBar.LCL}`, position: "top", fontSize: 9, fill: "var(--destructive)" }} />
+              {data.specLimits?.usl != null && <ReferenceLine x={Number(data.specLimits.usl)} stroke="var(--success)" strokeDasharray="8 4" strokeWidth={1.5} label={{ value: `USL: ${data.specLimits.usl}`, position: "top", fontSize: 9, fill: "var(--success)" }} />}
+              {data.specLimits?.lsl != null && <ReferenceLine x={Number(data.specLimits.lsl)} stroke="var(--destructive)" strokeDasharray="8 4" strokeWidth={1.5} label={{ value: `LSL: ${data.specLimits.lsl}`, position: "top", fontSize: 9, fill: "var(--destructive)" }} />}
             </ComposedChart>
           </ResponsiveContainer>
           {/* Legend for reference lines */}
           <div className="flex flex-wrap gap-3 mt-3 justify-center text-[10px]">
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#ef4444] inline-block" /> Normal Distribution</span>
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#a855f7] inline-block" style={{ borderTop: "2px dashed #a855f7" }} /> X̄ (CL)</span>
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#22c55e] inline-block" style={{ borderTop: "2px dashed #22c55e" }} /> UCL</span>
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#ef4444] inline-block" style={{ borderTop: "2px dashed #ef4444" }} /> LCL</span>
-            {data.specLimits?.usl != null && <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#10b981] inline-block" style={{ borderTop: "2px dashed #10b981" }} /> USL</span>}
-            {data.specLimits?.lsl != null && <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#f43f5e] inline-block" style={{ borderTop: "2px dashed #f43f5e" }} /> LSL</span>}
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-destructive inline-block" /> Normal Distribution</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-primary inline-block" style={{ borderTop: "2px dashed var(--primary)" }} /> X̄ (CL)</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-success inline-block" style={{ borderTop: "2px dashed var(--success)" }} /> UCL</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-destructive inline-block" style={{ borderTop: "2px dashed var(--destructive)" }} /> LCL</span>
+            {data.specLimits?.usl != null && <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-success inline-block" style={{ borderTop: "2px dashed var(--success)" }} /> USL</span>}
+            {data.specLimits?.lsl != null && <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-destructive inline-block" style={{ borderTop: "2px dashed var(--destructive)" }} /> LSL</span>}
           </div>
         </div>
       )}
@@ -1623,26 +1459,26 @@ function MeasurementSpcView({ data, isLoading, t, RULE_COLORS, RULE_LABELS, show
       {data.rHistogram?.length > 0 && (
         <div id="chart-r-histogram" className="bg-card border border-border rounded-xl p-6">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-            <FileBarChart className="h-4 w-4 text-purple-400" />
+            <FileBarChart className="h-4 w-4 text-primary" />
             R {t("stationAnalysis.spc.histogram")}
           </h3>
           <ResponsiveContainer width="100%" height={280}>
             <ComposedChart data={data.rHistogram} margin={{ top: 10, right: 20, bottom: 40, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+              <CartesianGrid {...chartGridProps} opacity={0.2} />
               <XAxis type="number" dataKey="binMid" domain={rHistXDomain} tick={{ fontSize: 8, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v: number) => v.toFixed(2)} />
               <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-              <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }} labelFormatter={(v: number) => `Bin: ${v.toFixed(3)}`} />
-              <Bar dataKey="count" name="Frequency" fill="#8b5cf6" opacity={0.7} radius={[3, 3, 0, 0]} barSize={rHistBarSize} />
-              <Line type="monotone" dataKey="normalCount" name="Normal Dist." stroke="#ef4444" strokeWidth={2.5} dot={false} />
-              <ReferenceLine x={Number(cl.range.CL)} stroke="#a855f7" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `R̄: ${cl.range.CL}`, position: "top", fontSize: 9, fill: "#a855f7" }} />
-              <ReferenceLine x={Number(cl.range.UCL)} stroke="#22c55e" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${cl.range.UCL}`, position: "top", fontSize: 9, fill: "#22c55e" }} />
-              {cl.range.LCL > 0 && <ReferenceLine x={Number(cl.range.LCL)} stroke="#ef4444" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${cl.range.LCL}`, position: "top", fontSize: 9, fill: "#ef4444" }} />}
+              <Tooltip contentStyle={chartTooltipStyle} labelFormatter={(v: number) => `Bin: ${v.toFixed(3)}`} />
+              <Bar dataKey="count" name="Frequency" fill="var(--primary)" opacity={0.7} radius={[3, 3, 0, 0]} barSize={rHistBarSize} />
+              <Line type="monotone" dataKey="normalCount" name="Normal Dist." stroke="var(--destructive)" strokeWidth={2.5} dot={false} />
+              <ReferenceLine x={Number(cl.range.CL)} stroke="var(--primary)" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `R̄: ${cl.range.CL}`, position: "top", fontSize: 9, fill: "var(--primary)" }} />
+              <ReferenceLine x={Number(cl.range.UCL)} stroke="var(--success)" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${cl.range.UCL}`, position: "top", fontSize: 9, fill: "var(--success)" }} />
+              {cl.range.LCL > 0 && <ReferenceLine x={Number(cl.range.LCL)} stroke="var(--destructive)" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${cl.range.LCL}`, position: "top", fontSize: 9, fill: "var(--destructive)" }} />}
             </ComposedChart>
           </ResponsiveContainer>
           <div className="flex flex-wrap gap-3 mt-3 justify-center text-[10px]">
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#ef4444] inline-block" /> Normal Distribution</span>
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#a855f7] inline-block" style={{ borderTop: "2px dashed #a855f7" }} /> R̄ (CL)</span>
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#22c55e] inline-block" style={{ borderTop: "2px dashed #22c55e" }} /> UCL</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-destructive inline-block" /> Normal Distribution</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-primary inline-block" style={{ borderTop: "2px dashed var(--primary)" }} /> R̄ (CL)</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-success inline-block" style={{ borderTop: "2px dashed var(--success)" }} /> UCL</span>
           </div>
         </div>
       )}
@@ -1651,7 +1487,7 @@ function MeasurementSpcView({ data, isLoading, t, RULE_COLORS, RULE_LABELS, show
       <div className="bg-card border border-border rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold flex items-center gap-2">
-            <Table2 className="h-4 w-4 text-blue-400" />
+            <Table2 className="h-4 w-4 text-info" />
             {t("stationAnalysis.spc.sampleTable")}
           </h3>
           <button onClick={() => setShowSampleTable(!showSampleTable)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
@@ -1673,7 +1509,7 @@ function MeasurementSpcView({ data, isLoading, t, RULE_COLORS, RULE_LABELS, show
               </thead>
               <tbody>
                 {data.sampleTable?.map((row: any) => (
-                  <tr key={row.index} className={`border-b border-border/50 ${row.outOfControl ? "bg-red-500/5" : ""}`}>
+                  <tr key={row.index} className={`border-b border-border/50 ${row.outOfControl ? "bg-destructive/5" : ""}`}>
                     <td className="p-2 font-mono">{row.index}</td>
                     <td className="p-2 font-mono text-muted-foreground">{row.values.join(", ")}</td>
                     <td className="p-2 text-right font-mono font-semibold">{row.mean}</td>
@@ -1683,7 +1519,7 @@ function MeasurementSpcView({ data, isLoading, t, RULE_COLORS, RULE_LABELS, show
                       {row.violatedRules?.length > 0 && (
                         <div className="flex gap-1">
                           {row.violatedRules.map((r: number) => (
-                            <span key={r} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold" style={{ backgroundColor: `${RULE_COLORS[r]}20`, color: RULE_COLORS[r] }}>
+                            <span key={r} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold" style={{ backgroundColor: `color-mix(in srgb, ${RULE_COLORS[r]} 12.5%, transparent)`, color: RULE_COLORS[r] }}>
                               R{r}
                             </span>
                           ))}
@@ -1735,7 +1571,7 @@ function HistogramContent({ data, isLoading, t }: any) {
       {/* Histogram chart with normal overlay */}
       <div id="chart-histogram" className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <FileBarChart className="h-4 w-4 text-blue-400" />
+          <FileBarChart className="h-4 w-4 text-info" />
           {t("stationAnalysis.histogram.yieldDistribution")}
           <span className="ml-auto text-[10px] text-muted-foreground/50 font-mono">
             {t("stationAnalysis.histogram.skew")}: {stats.skewness > 0.5 ? t("stationAnalysis.histogram.rightSkewed") : stats.skewness < -0.5 ? t("stationAnalysis.histogram.leftSkewed") : t("stationAnalysis.histogram.symmetric")}
@@ -1743,13 +1579,13 @@ function HistogramContent({ data, isLoading, t }: any) {
         </h3>
         <ResponsiveContainer width="100%" height={400}>
           <ComposedChart data={bins} margin={{ top: 10, right: 20, bottom: 40, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+            <CartesianGrid {...chartGridProps} opacity={0.2} />
             <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" />
             <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-            <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }} />
-            <Bar dataKey="count" name="Frequency" fill="#6366f1" opacity={0.7} radius={[3, 3, 0, 0]} />
-            <Line type="monotone" dataKey="normalCount" name="Normal Dist." stroke="#22c55e" strokeWidth={2} dot={false} strokeDasharray="4 4" />
-            <ReferenceLine x={bins.findIndex((b: any) => b.binStart <= stats.mean && b.binEnd >= stats.mean) >= 0 ? bins[bins.findIndex((b: any) => b.binStart <= stats.mean && b.binEnd >= stats.mean)]?.label : undefined} stroke="#a855f7" strokeDasharray="3 3" label={{ value: `μ=${stats.mean}%`, position: "top", fontSize: 10, fill: "#a855f7" }} />
+            <Tooltip contentStyle={chartTooltipStyle} />
+            <Bar dataKey="count" name="Frequency" fill="var(--chart-1)" opacity={0.7} radius={[3, 3, 0, 0]} />
+            <Line type="monotone" dataKey="normalCount" name="Normal Dist." stroke="var(--success)" strokeWidth={2} dot={false} strokeDasharray="4 4" />
+            <ReferenceLine x={bins.findIndex((b: any) => b.binStart <= stats.mean && b.binEnd >= stats.mean) >= 0 ? bins[bins.findIndex((b: any) => b.binStart <= stats.mean && b.binEnd >= stats.mean)]?.label : undefined} stroke="var(--primary)" strokeDasharray="3 3" label={{ value: `μ=${stats.mean}%`, position: "top", fontSize: 10, fill: "var(--primary)" }} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -1780,26 +1616,26 @@ function ScatterContent({ data, isLoading, t }: any) {
     <div className="space-y-6">
       {/* Correlation info */}
       <div className="grid grid-cols-3 gap-4">
-        <SpcCard label="Correlation (r)" value={String(correlation)} color={Math.abs(correlation) > 0.5 ? "text-yellow-400" : ""} />
+        <SpcCard label="Correlation (r)" value={String(correlation)} color={Math.abs(correlation) > 0.5 ? "text-warning" : ""} />
         <SpcCard label="R²" value={String(rSquared)} />
-        <SpcCard label={t("stationAnalysis.scatter.relationship")} value={`${corrStrength} ${corrDir}`} color={Math.abs(correlation) > 0.5 ? "text-red-400" : "text-emerald-400"} />
+        <SpcCard label={t("stationAnalysis.scatter.relationship")} value={`${corrStrength} ${corrDir}`} color={Math.abs(correlation) > 0.5 ? "text-destructive" : "text-success"} />
       </div>
 
       {/* Scatter chart */}
       <div id="chart-scatter" className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <ScatterIcon className="h-4 w-4 text-cyan-400" />
+          <ScatterIcon className="h-4 w-4 text-info" />
           {t("stationAnalysis.scatter.outputVsNgRate")}
         </h3>
         <ResponsiveContainer width="100%" height={400}>
           <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+            <CartesianGrid {...chartGridProps} opacity={0.2} />
             <XAxis dataKey="x" type="number" name="Output" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} label={{ value: t("stationAnalysis.scatter.hourlyOutput"), position: "bottom", fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
             <YAxis dataKey="y" type="number" name="NG Rate %" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickFormatter={v => `${v}%`} label={{ value: t("stationAnalysis.scatter.ngRate"), angle: -90, position: "insideLeft", fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
             <ZAxis range={[40, 120]} />
-            <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }} formatter={(v: any, name: string) => [name === "NG Rate %" ? `${v}%` : v, name]} />
-            <Scatter data={points} fill="#6366f1" opacity={0.7} />
-            <Line data={trendData} dataKey="y" stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" dot={false} type="linear" legendType="line" name="Trend" />
+            <Tooltip contentStyle={chartTooltipStyle} formatter={(v: any, name: string) => [name === "NG Rate %" ? `${v}%` : v, name]} />
+            <Scatter data={points} fill="var(--chart-1)" opacity={0.7} />
+            <Line data={trendData} dataKey="y" stroke="var(--destructive)" strokeWidth={2} strokeDasharray="6 3" dot={false} type="linear" legendType="line" name="Trend" />
           </ScatterChart>
         </ResponsiveContainer>
       </div>
@@ -1811,8 +1647,8 @@ function ScatterContent({ data, isLoading, t }: any) {
    Ishikawa (Cause-Effect / Fishbone) Tab
    ══════════════════════════════════════════════════════════ */
 const ISHIKAWA_COLORS: Record<string, string> = {
-  "Man (People)": "#3b82f6", "Machine": "#ef4444", "Material": "#22c55e",
-  "Method": "#a855f7", "Measurement": "#f97316", "Environment": "#06b6d4",
+  "Man (People)": "var(--info)", "Machine": "var(--destructive)", "Material": "var(--success)",
+  "Method": "var(--primary)", "Measurement": "var(--warning)", "Environment": "var(--chart-5)",
 };
 
 function IshikawaContent({ data, isLoading, t }: any) {
@@ -1825,10 +1661,10 @@ function IshikawaContent({ data, isLoading, t }: any) {
     <div className="space-y-6">
       {/* Top defect banner */}
       {topDefect && (
-        <div className="bg-red-500/10 border border-red-500/25 rounded-xl p-4 flex items-center gap-4">
-          <AlertTriangle className="h-6 w-6 text-red-400 shrink-0" />
+        <div className="bg-destructive/10 border border-destructive/25 rounded-xl p-4 flex items-center gap-4">
+          <AlertTriangle className="h-6 w-6 text-destructive shrink-0" />
           <div>
-            <div className="text-sm font-semibold text-red-400">{t("stationAnalysis.ishikawa.topDefect")}: {topDefect.code}</div>
+            <div className="text-sm font-semibold text-destructive">{t("stationAnalysis.ishikawa.topDefect")}: {topDefect.code}</div>
             <p className="text-xs text-muted-foreground">{topDefect.name} — {topDefect.count} {t("stationAnalysis.ishikawa.occurrences")}</p>
           </div>
         </div>
@@ -1837,13 +1673,13 @@ function IshikawaContent({ data, isLoading, t }: any) {
       {/* Fishbone / 6M Categories */}
       <div className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-sm font-semibold mb-5 flex items-center gap-2">
-          <GitBranch className="h-4 w-4 text-purple-400" />
+          <GitBranch className="h-4 w-4 text-primary" />
           {t("stationAnalysis.ishikawa.rootCause")}
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {categories.map((cat: any) => {
-            const color = ISHIKAWA_COLORS[cat.name] || "#888";
+            const color = ISHIKAWA_COLORS[cat.name] || "var(--muted-foreground)";
             return (
               <div key={cat.name} className="border border-border rounded-lg overflow-hidden">
                 <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border" style={{ backgroundColor: `${color}15` }}>
@@ -1854,7 +1690,7 @@ function IshikawaContent({ data, isLoading, t }: any) {
                   {cat.causes.map((c: any, i: number) => (
                     <div key={i} className="px-4 py-2.5 flex items-start gap-2">
                       <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${
-                        c.severity === "high" ? "bg-red-500" : c.severity === "medium" ? "bg-yellow-500" : "bg-blue-400"
+                        c.severity === "high" ? "bg-destructive" : c.severity === "medium" ? "bg-warning" : "bg-info"
                       }`} />
                       <div>
                         <div className="text-xs font-medium">{c.cause}</div>
@@ -1885,7 +1721,7 @@ function CheckSheetContent({ data, isLoading, t }: any) {
     <div className="space-y-6">
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4">
-        <SpcCard label={t("stationAnalysis.checksheet.totalDefects")} value={String(totals.grand)} color="text-red-400" />
+        <SpcCard label={t("stationAnalysis.checksheet.totalDefects")} value={String(totals.grand)} color="text-destructive" />
         <SpcCard label={t("stationAnalysis.checksheet.defectTypes")} value={String(defectTypes.length)} />
         <SpcCard label={t("stationAnalysis.checksheet.periods")} value={String(matrix.length)} />
       </div>
@@ -1893,7 +1729,7 @@ function CheckSheetContent({ data, isLoading, t }: any) {
       {/* Matrix table */}
       <div className="bg-card border border-border rounded-xl p-6 overflow-x-auto">
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <Table2 className="h-4 w-4 text-cyan-400" />
+          <Table2 className="h-4 w-4 text-info" />
           {t("stationAnalysis.checksheet.defectCheckSheet")}
         </h3>
         <table className="w-full text-xs border-collapse">
@@ -1917,7 +1753,7 @@ function CheckSheetContent({ data, isLoading, t }: any) {
                   return (
                     <td key={dt.id} className="text-center py-2 px-2">
                       {val > 0 ? (
-                        <span className={`font-mono font-semibold ${val > 5 ? "text-red-400" : val > 2 ? "text-yellow-400" : "text-muted-foreground"}`}>{val}</span>
+                        <span className={`font-mono font-semibold ${val > 5 ? "text-destructive" : val > 2 ? "text-warning" : "text-muted-foreground"}`}>{val}</span>
                       ) : (
                         <span className="text-muted-foreground/20">—</span>
                       )}
@@ -1934,7 +1770,7 @@ function CheckSheetContent({ data, isLoading, t }: any) {
               {defectTypes.map((dt: any) => (
                 <td key={dt.id} className="text-center py-2 px-2 font-mono">{totals.byDefect[`d${dt.id}`] || 0}</td>
               ))}
-              <td className="text-center py-2 px-2 font-mono text-red-400">{totals.grand}</td>
+              <td className="text-center py-2 px-2 font-mono text-destructive">{totals.grand}</td>
             </tr>
           </tfoot>
         </table>
@@ -1946,7 +1782,7 @@ function CheckSheetContent({ data, isLoading, t }: any) {
 /* ══════════════════════════════════════════════════════════
    Stratification Tab — Breakdown by Machine/Shift/Day
    ══════════════════════════════════════════════════════════ */
-const STRAT_COLORS = ["#a855f7", "#6366f1", "#3b82f6", "#22c55e", "#eab308", "#ef4444", "#06b6d4", "#ec4899"];
+const STRAT_COLORS = Array.from({ length: 8 }, (_, i) => chartColor(i));
 
 function StratificationContent({ data, isLoading, t }: any) {
   if (isLoading) return <div className="space-y-6"><Skeleton className="h-87.5 rounded-xl" /><Skeleton className="h-75 rounded-xl" /></div>;
@@ -1960,21 +1796,21 @@ function StratificationContent({ data, isLoading, t }: any) {
       {byMachine.length > 0 && (
         <div id="chart-strat-machine" className="bg-card border border-border rounded-xl p-6">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-            <Layers className="h-4 w-4 text-purple-400" />
+            <Layers className="h-4 w-4 text-primary" />
             {t("stationAnalysis.stratification.byMachine")}
           </h3>
           <ResponsiveContainer width="100%" height={300}>
             <ComposedChart data={byMachine} margin={{ top: 5, right: 20, bottom: 40, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+              <CartesianGrid {...chartGridProps} opacity={0.2} />
               <XAxis dataKey="machineCode" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} angle={-25} textAnchor="end" />
               <YAxis yAxisId="left" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
               <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickFormatter={v => `${v}%`} />
-              <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }} />
+              <Tooltip contentStyle={chartTooltipStyle} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar yAxisId="left" dataKey="ok" name="OK" stackId="a" fill="#22c55e" opacity={0.7} />
-              <Bar yAxisId="left" dataKey="ng" name="NG" stackId="a" fill="#ef4444" opacity={0.7} />
-              <Bar yAxisId="left" dataKey="ntf" name="NTF" stackId="a" fill="#eab308" opacity={0.5} radius={[3, 3, 0, 0]} />
-              <Line yAxisId="right" type="monotone" dataKey="yield" name="Yield %" stroke="#a855f7" strokeWidth={2} dot={{ r: 3, fill: "#a855f7" }} />
+              <Bar yAxisId="left" dataKey="ok" name="OK" stackId="a" fill="var(--success)" opacity={0.7} />
+              <Bar yAxisId="left" dataKey="ng" name="NG" stackId="a" fill="var(--destructive)" opacity={0.7} />
+              <Bar yAxisId="left" dataKey="ntf" name="NTF" stackId="a" fill="var(--warning)" opacity={0.5} radius={[3, 3, 0, 0]} />
+              <Line yAxisId="right" type="monotone" dataKey="yield" name="Yield %" stroke="var(--primary)" strokeWidth={2} dot={{ r: 3, fill: "var(--primary)" }} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -1987,20 +1823,20 @@ function StratificationContent({ data, isLoading, t }: any) {
             <h3 className="text-sm font-semibold mb-4">{t("stationAnalysis.stratification.byShift")}</h3>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={byShift} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+                <CartesianGrid {...chartGridProps} opacity={0.2} />
                 <XAxis dataKey="shift" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
                 <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }} />
+                <Tooltip contentStyle={chartTooltipStyle} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="ok" name="OK" fill="#22c55e" opacity={0.7} />
-                <Bar dataKey="ng" name="NG" fill="#ef4444" opacity={0.7} />
+                <Bar dataKey="ok" name="OK" fill="var(--success)" opacity={0.7} />
+                <Bar dataKey="ng" name="NG" fill="var(--destructive)" opacity={0.7} />
               </BarChart>
             </ResponsiveContainer>
             {/* Yield per shift text */}
             <div className="flex gap-3 mt-3 justify-center">
               {byShift.map((s: any) => (
                 <div key={s.shift} className="text-center">
-                  <div className={`text-sm font-mono font-bold ${s.yield >= 90 ? "text-emerald-400" : s.yield >= 70 ? "text-yellow-400" : "text-red-400"}`}>{s.yield}%</div>
+                  <div className={`text-sm font-mono font-bold ${s.yield >= 90 ? "text-success" : s.yield >= 70 ? "text-warning" : "text-destructive"}`}>{s.yield}%</div>
                   <div className="text-[10px] text-muted-foreground/50">{s.shift}</div>
                 </div>
               ))}
@@ -2014,14 +1850,14 @@ function StratificationContent({ data, isLoading, t }: any) {
             <h3 className="text-sm font-semibold mb-4">{t("stationAnalysis.stratification.byDayOfWeek")}</h3>
             <ResponsiveContainer width="100%" height={250}>
               <ComposedChart data={byDay} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+                <CartesianGrid {...chartGridProps} opacity={0.2} />
                 <XAxis dataKey="day" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
                 <YAxis yAxisId="left" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
                 <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickFormatter={v => `${v}%`} />
-                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }} />
-                <Bar yAxisId="left" dataKey="total" name="Total" fill="#6366f1" opacity={0.3} radius={[3, 3, 0, 0]} />
-                <Bar yAxisId="left" dataKey="ng" name="NG" fill="#ef4444" opacity={0.7} radius={[3, 3, 0, 0]} />
-                <Line yAxisId="right" type="monotone" dataKey="yield" name="Yield %" stroke="#22c55e" strokeWidth={2} dot={{ r: 3, fill: "#22c55e" }} />
+                <Tooltip contentStyle={chartTooltipStyle} />
+                <Bar yAxisId="left" dataKey="total" name="Total" fill="var(--chart-1)" opacity={0.3} radius={[3, 3, 0, 0]} />
+                <Bar yAxisId="left" dataKey="ng" name="NG" fill="var(--destructive)" opacity={0.7} radius={[3, 3, 0, 0]} />
+                <Line yAxisId="right" type="monotone" dataKey="yield" name="Yield %" stroke="var(--success)" strokeWidth={2} dot={{ r: 3, fill: "var(--success)" }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -2047,20 +1883,20 @@ function AiAnalysisContent({ data, isLoading, t }: any) {
         <div className="space-y-3">
           {insights.map((ins: any, i: number) => (
             <div key={i} className={`flex items-start gap-3 p-4 rounded-xl border ${
-              ins.severity === "critical" ? "bg-red-500/10 border-red-500/25"
-              : ins.severity === "warning" ? "bg-yellow-500/10 border-yellow-500/25"
-              : "bg-blue-500/10 border-blue-500/25"
+              ins.severity === "critical" ? "bg-destructive/10 border-destructive/25"
+              : ins.severity === "warning" ? "bg-warning/10 border-warning/25"
+              : "bg-info/10 border-info/25"
             }`}>
               <Brain className={`h-5 w-5 mt-0.5 shrink-0 ${
-                ins.severity === "critical" ? "text-red-400" : ins.severity === "warning" ? "text-yellow-400" : "text-blue-400"
+                ins.severity === "critical" ? "text-destructive" : ins.severity === "warning" ? "text-warning" : "text-info"
               }`} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold">{ins.title}</span>
                   <span className={`text-[9px] uppercase font-mono px-1.5 py-0.5 rounded border ${
-                    ins.severity === "critical" ? "bg-red-500/20 text-red-400 border-red-500/30"
-                    : ins.severity === "warning" ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
-                    : "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                    ins.severity === "critical" ? "bg-destructive/20 text-destructive border-destructive/30"
+                    : ins.severity === "warning" ? "bg-warning/20 text-warning border-warning/30"
+                    : "bg-info/20 text-info border-info/30"
                   }`}>{ins.type}</span>
                   <span className="text-[10px] font-mono text-muted-foreground/50 ml-auto">{Math.round(ins.confidence * 100)}% conf.</span>
                 </div>
@@ -2075,15 +1911,15 @@ function AiAnalysisContent({ data, isLoading, t }: any) {
       {pc && (
         <div className="bg-card border border-border rounded-xl p-6">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-            <Target className="h-4 w-4 text-emerald-400" />
+            <Target className="h-4 w-4 text-success" />
             {t("stationAnalysis.ai.processCapability")}
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
-            <SpcCard label="Cp" value={String(pc.cp)} color={pc.cp >= 1.33 ? "text-emerald-400" : pc.cp >= 1 ? "text-yellow-400" : "text-red-400"} />
-            <SpcCard label="Cpk" value={String(pc.cpk)} color={pc.cpk >= 1.33 ? "text-emerald-400" : pc.cpk >= 1 ? "text-yellow-400" : "text-red-400"} />
-            <SpcCard label="PPM" value={String(pc.ppm)} color={pc.ppm > 10000 ? "text-red-400" : ""} />
-            <SpcCard label="USL" value={`${pc.usl}%`} color="text-emerald-400" />
-            <SpcCard label="LSL" value={`${pc.lsl}%`} color="text-red-400" />
+            <SpcCard label="Cp" value={String(pc.cp)} color={pc.cp >= 1.33 ? "text-success" : pc.cp >= 1 ? "text-warning" : "text-destructive"} />
+            <SpcCard label="Cpk" value={String(pc.cpk)} color={pc.cpk >= 1.33 ? "text-success" : pc.cpk >= 1 ? "text-warning" : "text-destructive"} />
+            <SpcCard label="PPM" value={String(pc.ppm)} color={pc.ppm > 10000 ? "text-destructive" : ""} />
+            <SpcCard label="USL" value={`${pc.usl}%`} color="text-success" />
+            <SpcCard label="LSL" value={`${pc.lsl}%`} color="text-destructive" />
             <SpcCard label="Mean" value={`${pc.mean}%`} />
             <SpcCard label="Std Dev" value={String(pc.stddev)} />
           </div>
@@ -2095,19 +1931,19 @@ function AiAnalysisContent({ data, isLoading, t }: any) {
         {forecast.length > 0 && (
           <div id="chart-ai-forecast" className="bg-card border border-border rounded-xl p-6">
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-blue-400" />
+              <TrendingUp className="h-4 w-4 text-info" />
               {t("stationAnalysis.ai.forecast7Day")}
             </h3>
             <ResponsiveContainer width="100%" height={250}>
               <AreaChart data={forecast} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+                <CartesianGrid {...chartGridProps} opacity={0.2} />
                 <XAxis dataKey="day" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={d => { try { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }); } catch { return d; } }} />
                 <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickFormatter={v => `${v}%`} />
-                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }} formatter={(v: any) => [`${v}%`]} />
-                <Area dataKey="upper" stroke="none" fill="#3b82f6" fillOpacity={0.1} />
-                <Area dataKey="lower" stroke="none" fill="#fff" fillOpacity={1} />
-                <Area dataKey="upper" stroke="none" fill="#3b82f6" fillOpacity={0.1} stackId="ci" />
-                <Line dataKey="predicted" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3, fill: "#3b82f6" }} name="Predicted Yield" />
+                <Tooltip contentStyle={chartTooltipStyle} formatter={(v: any) => [`${v}%`]} />
+                <Area dataKey="upper" stroke="none" fill="var(--info)" fillOpacity={0.1} />
+                <Area dataKey="lower" stroke="none" fill="var(--card)" fillOpacity={1} />
+                <Area dataKey="upper" stroke="none" fill="var(--info)" fillOpacity={0.1} stackId="ci" />
+                <Line dataKey="predicted" stroke="var(--info)" strokeWidth={2} dot={{ r: 3, fill: "var(--info)" }} name="Predicted Yield" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -2117,18 +1953,18 @@ function AiAnalysisContent({ data, isLoading, t }: any) {
         {anomalies.length > 0 && (
           <div className="bg-card border border-border rounded-xl p-6">
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-400" />
+              <AlertTriangle className="h-4 w-4 text-destructive" />
               {t("stationAnalysis.ai.detectedAnomalies")} ({anomalies.length})
             </h3>
             <div className="space-y-2 max-h-62.5 overflow-y-auto">
               {anomalies.map((a: any, i: number) => (
                 <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${
-                  a.type === "unusually_low" ? "bg-red-500/10 border-red-500/25" : "bg-blue-500/10 border-blue-500/25"
+                  a.type === "unusually_low" ? "bg-destructive/10 border-destructive/25" : "bg-info/10 border-info/25"
                 }`}>
                   <span className="text-xs font-mono text-muted-foreground">{(() => { try { return new Date(a.day).toLocaleDateString(); } catch { return a.day; } })()}</span>
                   <span className="text-xs font-mono font-bold">{a.yield}%</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono border ${
-                    a.type === "unusually_low" ? "bg-red-500/20 text-red-400 border-red-500/30" : "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                    a.type === "unusually_low" ? "bg-destructive/20 text-destructive border-destructive/30" : "bg-info/20 text-info border-info/30"
                   }`}>{a.type.replace("_", " ")}</span>
                   <span className="text-[10px] font-mono text-muted-foreground ml-auto">z={a.zScore}</span>
                 </div>
@@ -2142,14 +1978,14 @@ function AiAnalysisContent({ data, isLoading, t }: any) {
       {clusters.length > 0 && (
         <div className="bg-card border border-border rounded-xl p-6">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-            <Layers className="h-4 w-4 text-purple-400" />
+            <Layers className="h-4 w-4 text-primary" />
             {t("stationAnalysis.ai.performanceClustering")}
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {clusters.map((cl: any) => (
               <div key={cl.id} className={`border rounded-lg p-4 ${
-                cl.label === "Low Performance" ? "border-red-500/25 bg-red-500/5"
-                : cl.label === "High Performance" ? "border-emerald-500/25 bg-emerald-500/5"
+                cl.label === "Low Performance" ? "border-destructive/25 bg-destructive/5"
+                : cl.label === "High Performance" ? "border-success/25 bg-success/5"
                 : "border-border bg-muted/30"
               }`}>
                 <div className="text-sm font-semibold mb-1">{cl.label}</div>
@@ -2205,7 +2041,7 @@ function HistoryContent({ data, isLoading, t }: any) {
           <span className="text-xs font-mono truncate">{rec.barcode || "—"}</span>
           <div className="flex flex-wrap gap-1">
             {rec.failedPoints.map((fp: any, i: number) => (
-              <span key={i} className="text-[10px] bg-red-500/15 text-red-400 border border-red-500/25 rounded px-1.5 py-0.5 font-mono">
+              <span key={i} className="text-[10px] bg-destructive/15 text-destructive border border-destructive/25 rounded px-1.5 py-0.5 font-mono">
                 {fp.pointCode}: {fp.pointName}
               </span>
             ))}
@@ -2239,7 +2075,7 @@ function DiagnosticsContent({ data, isLoading, t }: any) {
       {/* Alerts */}
       <div className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4 text-yellow-400" />
+          <AlertTriangle className="h-4 w-4 text-warning" />
           {t("stationAnalysis.diagnostics.activeAlerts")}
         </h3>
         {alerts.length === 0 ? (
@@ -2251,22 +2087,22 @@ function DiagnosticsContent({ data, isLoading, t }: any) {
                 key={i}
                 className={`flex items-start gap-3 p-4 rounded-lg border ${
                   a.severity === "critical"
-                    ? "bg-red-500/10 border-red-500/25"
+                    ? "bg-destructive/10 border-destructive/25"
                     : a.severity === "warning"
-                    ? "bg-yellow-500/10 border-yellow-500/25"
-                    : "bg-blue-500/10 border-blue-500/25"
+                    ? "bg-warning/10 border-warning/25"
+                    : "bg-info/10 border-info/25"
                 }`}
               >
                 <ShieldAlert className={`h-5 w-5 mt-0.5 shrink-0 ${
-                  a.severity === "critical" ? "text-red-400" : a.severity === "warning" ? "text-yellow-400" : "text-blue-400"
+                  a.severity === "critical" ? "text-destructive" : a.severity === "warning" ? "text-warning" : "text-info"
                 }`} />
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold">{a.title}</span>
                     <span className={`text-[9px] uppercase tracking-wider font-mono px-1.5 py-0.5 rounded border ${
-                      a.severity === "critical" ? "bg-red-500/20 text-red-400 border-red-500/30"
-                      : a.severity === "warning" ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
-                      : "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                      a.severity === "critical" ? "bg-destructive/20 text-destructive border-destructive/30"
+                      : a.severity === "warning" ? "bg-warning/20 text-warning border-warning/30"
+                      : "bg-info/20 text-info border-info/30"
                     }`}>{a.severity}</span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">{a.description}</p>
@@ -2280,7 +2116,7 @@ function DiagnosticsContent({ data, isLoading, t }: any) {
       {/* Detected patterns */}
       <div className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <Activity className="h-4 w-4 text-purple-400" />
+          <Activity className="h-4 w-4 text-primary" />
           {t("stationAnalysis.diagnostics.detectedPatterns")}
         </h3>
         {patterns.length === 0 ? (
@@ -2290,10 +2126,10 @@ function DiagnosticsContent({ data, isLoading, t }: any) {
             {patterns.map((p: any, i: number) => (
               <div key={i} className="bg-muted/30 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-semibold text-purple-400">{p.type}</span>
+                  <span className="text-sm font-semibold text-primary">{p.type}</span>
                   <div className="flex items-center gap-1">
                     <div className="w-16 h-1.5 bg-border rounded-full overflow-hidden">
-                      <div className="h-full bg-purple-500 rounded-full" style={{ width: `${p.confidence * 100}%` }} />
+                      <div className="h-full bg-primary rounded-full" style={{ width: `${p.confidence * 100}%` }} />
                     </div>
                     <span className="text-[10px] font-mono text-muted-foreground/50">{Math.round(p.confidence * 100)}%</span>
                   </div>
@@ -2308,7 +2144,7 @@ function DiagnosticsContent({ data, isLoading, t }: any) {
       {/* Recommendations */}
       <div className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <Lightbulb className="h-4 w-4 text-yellow-400" />
+          <Lightbulb className="h-4 w-4 text-warning" />
           {t("stationAnalysis.diagnostics.recommendations")}
         </h3>
         {recommendations.length === 0 ? (
@@ -2318,9 +2154,9 @@ function DiagnosticsContent({ data, isLoading, t }: any) {
             {recommendations.map((r: any, i: number) => (
               <div key={i} className="flex items-start gap-3 p-4 rounded-lg border border-border bg-background">
                 <span className={`shrink-0 mt-0.5 px-2 py-0.5 rounded text-[10px] font-mono border font-semibold ${
-                  r.priority === "high" ? "bg-red-500/15 text-red-400 border-red-500/25"
-                  : r.priority === "medium" ? "bg-yellow-500/15 text-yellow-400 border-yellow-500/25"
-                  : "bg-blue-500/15 text-blue-400 border-blue-500/25"
+                  r.priority === "high" ? "bg-destructive/15 text-destructive border-destructive/25"
+                  : r.priority === "medium" ? "bg-warning/15 text-warning border-warning/25"
+                  : "bg-info/15 text-info border-info/25"
                 }`}>{r.priority}</span>
                 <div>
                   <p className="text-sm font-medium">{r.action}</p>
@@ -2432,10 +2268,10 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
     );
   }
 
-  const statusColor = (s: string) => s === "fail" ? "text-red-400" : s === "warn" ? "text-yellow-400" : "text-emerald-400";
-  const statusBg = (s: string) => s === "fail" ? "bg-red-500" : s === "warn" ? "bg-yellow-500" : "bg-emerald-500";
-  const statusBorder = (s: string) => s === "fail" ? "border-red-500/30" : s === "warn" ? "border-yellow-500/30" : "border-emerald-500/30";
-  const statusBgDim = (s: string) => s === "fail" ? "bg-red-500/10" : s === "warn" ? "bg-yellow-500/10" : "bg-emerald-500/10";
+  const statusColor = (s: string) => s === "fail" ? "text-destructive" : s === "warn" ? "text-warning" : "text-success";
+  const statusBg = (s: string) => s === "fail" ? "bg-destructive" : s === "warn" ? "bg-warning" : "bg-success";
+  const statusBorder = (s: string) => s === "fail" ? "border-destructive/30" : s === "warn" ? "border-warning/30" : "border-success/30";
+  const statusBgDim = (s: string) => s === "fail" ? "bg-destructive/10" : s === "warn" ? "bg-warning/10" : "bg-success/10";
 
   return (
     <div className="grid grid-cols-[220px_1fr] gap-0 h-[calc(100vh-220px)] -m-7 relative">
@@ -2450,9 +2286,9 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
         <div className="flex gap-1 px-2.5 py-2 border-b border-border flex-wrap">
           {([
             ["all", t("stationAnalysis.stationDetail.all"), "bg-muted/40 text-muted-foreground border-border"],
-            ["fail", t("stationAnalysis.stationDetail.fail"), "bg-red-500/10 text-red-400 border-red-500/25"],
-            ["warn", t("stationAnalysis.stationDetail.warn"), "bg-yellow-500/10 text-yellow-400 border-yellow-500/25"],
-            ["pass", t("stationAnalysis.stationDetail.pass"), "bg-emerald-500/10 text-emerald-400 border-emerald-500/25"],
+            ["fail", t("stationAnalysis.stationDetail.fail"), "bg-destructive/10 text-destructive border-destructive/25"],
+            ["warn", t("stationAnalysis.stationDetail.warn"), "bg-warning/10 text-warning border-warning/25"],
+            ["pass", t("stationAnalysis.stationDetail.pass"), "bg-success/10 text-success border-success/25"],
           ] as const).map(([key, label, cls]) => (
             <button
               key={key}
@@ -2475,7 +2311,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
               onClick={() => setSelectedPointId(selectedPointId === pt.id ? null : pt.id)}
               className={`w-full flex items-center gap-2 px-3 py-2 text-left border-l-2 transition-colors hover:bg-accent/30 ${
                 selectedPointId === pt.id
-                  ? "bg-accent/40 border-l-cyan-400"
+                  ? "bg-accent/40 border-l-info"
                   : "border-l-transparent"
               }`}
             >
@@ -2501,7 +2337,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
             onClick={() => setShowMarkers(!showMarkers)}
             className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-colors ${
               showMarkers
-                ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400"
+                ? "bg-info/10 border-info/30 text-info"
                 : "bg-muted/30 border-border text-muted-foreground/60 hover:text-muted-foreground"
             }`}
           >
@@ -2511,7 +2347,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
             onClick={() => setShowHeatmap(!showHeatmap)}
             className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-colors ${
               showHeatmap
-                ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400"
+                ? "bg-info/10 border-info/30 text-info"
                 : "bg-muted/30 border-border text-muted-foreground/60 hover:text-muted-foreground"
             }`}
           >
@@ -2592,10 +2428,10 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
                 const x = (pt.positionX / boardW) * 100;
                 const y = (pt.positionY / boardH) * 100;
                 const isActive = selectedPointId === pt.id;
-                const ringColor = pt.status === "fail" ? "border-red-400 shadow-[0_0_7px_theme(colors.red.400)]"
-                  : pt.status === "warn" ? "border-yellow-400 shadow-[0_0_7px_theme(colors.yellow.400)]"
-                  : "border-emerald-400 shadow-[0_0_7px_theme(colors.emerald.400)]";
-                const dotColor = pt.status === "fail" ? "bg-red-400" : pt.status === "warn" ? "bg-yellow-400" : "bg-emerald-400";
+                const ringColor = pt.status === "fail" ? "border-destructive shadow-[0_0_7px_var(--destructive)]"
+                  : pt.status === "warn" ? "border-warning shadow-[0_0_7px_var(--warning)]"
+                  : "border-success shadow-[0_0_7px_var(--success)]";
+                const dotColor = pt.status === "fail" ? "bg-destructive" : pt.status === "warn" ? "bg-warning" : "bg-success";
 
                 return (
                   <div
@@ -2611,9 +2447,9 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
                     </div>
                     {/* Label on hover/active */}
                     <div className={`absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[8px] font-bold px-1 py-px rounded border bg-background ${
-                      pt.status === "fail" ? "text-red-400 border-red-500/30"
-                      : pt.status === "warn" ? "text-yellow-400 border-yellow-500/30"
-                      : "text-emerald-400 border-emerald-500/30"
+                      pt.status === "fail" ? "text-destructive border-destructive/30"
+                      : pt.status === "warn" ? "text-warning border-warning/30"
+                      : "text-success border-success/30"
                     } ${isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"} transition-opacity pointer-events-none`}>
                       {pt.code}
                     </div>
@@ -2625,12 +2461,12 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
               {showHeatmap && (
                 <div className="absolute bottom-3 left-3 bg-background/90 border border-border rounded-md px-3 py-2 z-20">
                   <div className="text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider mb-1.5">{t("stationAnalysis.stationDetail.defectRateHeatmap")}</div>
-                  <div className="w-36 h-2 rounded-full bg-linear-to-r from-emerald-400/60 via-yellow-400/60 to-red-400/70 mb-1" />
+                  <div className="w-36 h-2 rounded-full bg-linear-to-r from-success/60 via-warning/60 to-destructive/70 mb-1" />
                   <div className="flex justify-between text-[9px] text-muted-foreground/50">
-                    <span className="text-emerald-400">0%</span>
+                    <span className="text-success">0%</span>
                     <span>1%</span>
                     <span>2%</span>
-                    <span className="text-red-400">3%+</span>
+                    <span className="text-destructive">3%+</span>
                   </div>
                 </div>
               )}
@@ -2640,9 +2476,9 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
 
         {/* Info bar */}
         <div className="flex items-center gap-4 px-3 py-1.5 border-t border-border bg-card/60 shrink-0 text-[10px] text-muted-foreground/60">
-          <span className="flex items-center gap-1.5"><span className="w-1.75 h-1.75 rounded-full bg-red-400" />{t("stationAnalysis.stationDetail.fail")} <strong className="text-foreground/80">{counts.fail}</strong></span>
-          <span className="flex items-center gap-1.5"><span className="w-1.75 h-1.75 rounded-full bg-yellow-400" />{t("stationAnalysis.stationDetail.warn")} <strong className="text-foreground/80">{counts.warn}</strong></span>
-          <span className="flex items-center gap-1.5"><span className="w-1.75 h-1.75 rounded-full bg-emerald-400" />{t("stationAnalysis.stationDetail.pass")} <strong className="text-foreground/80">{counts.pass}</strong></span>
+          <span className="flex items-center gap-1.5"><span className="w-1.75 h-1.75 rounded-full bg-destructive" />{t("stationAnalysis.stationDetail.fail")} <strong className="text-foreground/80">{counts.fail}</strong></span>
+          <span className="flex items-center gap-1.5"><span className="w-1.75 h-1.75 rounded-full bg-warning" />{t("stationAnalysis.stationDetail.warn")} <strong className="text-foreground/80">{counts.warn}</strong></span>
+          <span className="flex items-center gap-1.5"><span className="w-1.75 h-1.75 rounded-full bg-success" />{t("stationAnalysis.stationDetail.pass")} <strong className="text-foreground/80">{counts.pass}</strong></span>
           <div className="flex-1" />
           {boardInfo && <span>{t("stationAnalysis.stationDetail.board")}: {boardInfo.code} · {boardInfo.model}</span>}
         </div>
@@ -2663,7 +2499,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
                 <div className="text-[10.5px] text-muted-foreground/60 mt-0.5 truncate">{selectedPoint.name}</div>
                 <div className="flex gap-1.5 mt-1.5">
                   {selectedPoint.type && (
-                    <span className="px-2 py-0.5 rounded text-[9.5px] font-semibold bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                    <span className="px-2 py-0.5 rounded text-[9.5px] font-semibold bg-info/10 border border-info/30 text-info">
                       {selectedPoint.type}
                     </span>
                   )}
@@ -2713,7 +2549,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
                     <div className="text-[9.5px] text-muted-foreground/50 mt-0.5">{t("stationAnalysis.stationDetail.defectRate")}</div>
                   </div>
                   <div className="bg-muted/30 border border-border rounded px-2.5 py-2">
-                    <div className="text-xl font-mono font-bold leading-none text-red-400">{selectedPoint.ngCount}</div>
+                    <div className="text-xl font-mono font-bold leading-none text-destructive">{selectedPoint.ngCount}</div>
                     <div className="text-[9.5px] text-muted-foreground/50 mt-0.5">{t("stationAnalysis.stationDetail.totalDefects")}</div>
                   </div>
                   <div className="bg-muted/30 border border-border rounded px-2.5 py-2">
@@ -2751,7 +2587,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
                           <td className="py-1.5 px-1.5 text-muted-foreground">{t("stationAnalysis.stationDetail.nominal")}</td>
                           <td className="py-1.5 px-1.5 font-mono font-semibold">{selectedPoint.lastValue ?? "—"} {selectedPoint.unit || ""}</td>
                           <td className="py-1.5 px-1.5 text-muted-foreground/60 text-[10px]">{selectedPoint.nominalValue} {selectedPoint.unit || ""}</td>
-                          <td className={`py-1.5 px-1.5 text-right text-[10px] font-bold ${selectedPoint.lastResult === "NG" ? "text-red-400" : "text-emerald-400"}`}>
+                          <td className={`py-1.5 px-1.5 text-right text-[10px] font-bold ${selectedPoint.lastResult === "NG" ? "text-destructive" : "text-success"}`}>
                             {selectedPoint.lastResult || "—"}
                           </td>
                         </tr>
@@ -2762,7 +2598,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
                           <td className="py-1.5 px-1.5 font-mono font-semibold">{selectedPoint.lastValue ?? "—"}</td>
                           <td className="py-1.5 px-1.5 text-muted-foreground/60 text-[10px]">≥ {selectedPoint.lowerLimit} {selectedPoint.unit || ""}</td>
                           <td className={`py-1.5 px-1.5 text-right text-[10px] font-bold ${
-                            selectedPoint.lastValue != null && Number(selectedPoint.lastValue) < selectedPoint.lowerLimit ? "text-red-400" : "text-emerald-400"
+                            selectedPoint.lastValue != null && Number(selectedPoint.lastValue) < selectedPoint.lowerLimit ? "text-destructive" : "text-success"
                           }`}>
                             {selectedPoint.lastValue != null && Number(selectedPoint.lastValue) < selectedPoint.lowerLimit ? "NG" : "OK"}
                           </td>
@@ -2774,7 +2610,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
                           <td className="py-1.5 px-1.5 font-mono font-semibold">{selectedPoint.lastValue ?? "—"}</td>
                           <td className="py-1.5 px-1.5 text-muted-foreground/60 text-[10px]">≤ {selectedPoint.upperLimit} {selectedPoint.unit || ""}</td>
                           <td className={`py-1.5 px-1.5 text-right text-[10px] font-bold ${
-                            selectedPoint.lastValue != null && Number(selectedPoint.lastValue) > selectedPoint.upperLimit ? "text-red-400" : "text-emerald-400"
+                            selectedPoint.lastValue != null && Number(selectedPoint.lastValue) > selectedPoint.upperLimit ? "text-destructive" : "text-success"
                           }`}>
                             {selectedPoint.lastValue != null && Number(selectedPoint.lastValue) > selectedPoint.upperLimit ? "NG" : "OK"}
                           </td>
@@ -2796,7 +2632,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
                     {selectedPoint.events.map((ev: any, i: number) => (
                       <div key={i} className="flex items-start gap-2 text-[11px]">
                         <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
-                          ev.result === "NG" ? "bg-red-400" : ev.result === "OK" ? "bg-emerald-400" : "bg-yellow-400"
+                          ev.result === "NG" ? "bg-destructive" : ev.result === "OK" ? "bg-success" : "bg-warning"
                         }`} />
                         <span className="text-muted-foreground/50 text-[10px] min-w-9 shrink-0">{ev.time}</span>
                         <span className="text-muted-foreground leading-snug">
@@ -2812,7 +2648,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
               {galleryImages.length > 0 && (
                 <div className="px-3.5 py-3 border-b border-border">
                   <h4 className="text-xs font-semibold mb-2 flex items-center gap-1.5">
-                    <ImageIcon className="h-3.5 w-3.5 text-red-400" />
+                    <ImageIcon className="h-3.5 w-3.5 text-destructive" />
                     {selectedPoint.code} — {t("stationAnalysis.stationDetail.errorImages", "Ảnh lỗi")} ({galleryImages.length})
                   </h4>
 
@@ -2833,7 +2669,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
                       <Maximize2 className="h-3.5 w-3.5 text-white/80 shrink-0" />
                     </div>
                     <div className="absolute top-1.5 left-2">
-                      <span className="text-[9px] font-semibold bg-red-500/80 text-white px-1.5 py-0.5 rounded">NG</span>
+                      <span className="text-[9px] font-semibold bg-destructive/80 text-white px-1.5 py-0.5 rounded">NG</span>
                     </div>
                   </div>
 
@@ -2857,7 +2693,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
                             <span className="text-[9px] text-white/90 truncate block">{img.description}</span>
                           </div>
                           <div className="absolute top-0.5 right-1">
-                            <span className="text-[8px] font-semibold bg-red-500/70 text-white px-1 py-0.5 rounded">NG</span>
+                            <span className="text-[8px] font-semibold bg-destructive/70 text-white px-1 py-0.5 rounded">NG</span>
                           </div>
                         </div>
                       ))}

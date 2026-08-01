@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageContainer } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -67,9 +68,9 @@ export default function ChangePassword() {
     if (/[0-9]/.test(password)) strength++;
     if (/[^A-Za-z0-9]/.test(password)) strength++;
     
-    if (strength <= 2) return { level: strength, text: t('auth.passwordWeak'), color: "bg-red-500" };
-    if (strength <= 3) return { level: strength, text: t('auth.passwordMedium'), color: "bg-yellow-500" };
-    return { level: strength, text: t('auth.passwordStrong'), color: "bg-green-500" };
+    if (strength <= 2) return { level: strength, text: t('auth.passwordWeak'), color: "bg-destructive" };
+    if (strength <= 3) return { level: strength, text: t('auth.passwordMedium'), color: "bg-warning" };
+    return { level: strength, text: t('auth.passwordStrong'), color: "bg-success" };
   };
 
   const passwordStrength = getPasswordStrength(formData.newPassword);
@@ -79,7 +80,7 @@ export default function ChangePassword() {
       title={t('auth.changePassword')}
       currentPath="/change-password"
     >
-      <div className="container py-6 max-w-md">
+      <PageContainer className="max-w-md">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -186,13 +187,13 @@ export default function ChangePassword() {
                     <div className="flex items-center gap-1 text-xs">
                       {formData.newPassword === formData.confirmPassword ? (
                         <>
-                          <CheckCircle className="h-3 w-3 text-green-500" />
-                          <span className="text-green-500">{t('auth.passwordMatch')}</span>
+                          <CheckCircle className="h-3 w-3 text-success" />
+                          <span className="text-success">{t('auth.passwordMatch')}</span>
                         </>
                       ) : (
                         <>
-                          <AlertCircle className="h-3 w-3 text-red-500" />
-                          <span className="text-red-500">{t('auth.passwordMismatch')}</span>
+                          <AlertCircle className="h-3 w-3 text-destructive" />
+                          <span className="text-destructive">{t('auth.passwordMismatch')}</span>
                         </>
                       )}
                     </div>
@@ -219,7 +220,7 @@ export default function ChangePassword() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

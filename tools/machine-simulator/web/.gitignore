@@ -1,0 +1,40 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Tauri
+src-tauri/target
+src-tauri/gen/schemas
+
+# Playwright (Task 10) — run artifacts, not the intentional visual baselines. Baselines live under
+# tests/**/*-snapshots/ (Playwright's default location for `toHaveScreenshot`) and ARE committed.
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# SM-6 — the isolated %ProgramData%\ST4I\sim\* stand-in playwright.config.ts's webServer env block
+# redirects the engine to (security/assets/alarms/etc.). Wiped before every run by
+# scripts/reset-engine-state.mjs; never intentionally committed content.
+/.e2e-data/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
