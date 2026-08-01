@@ -55,7 +55,10 @@ set -uo pipefail
 # not a number to be pasted over.
 EXPECT_ABSTRACTIONS=151
 EXPECT_CONFORMANCE=22
-EXPECT_EDGECORE=735
+# chore/test-hygiene raised this 735 -> 741 (+6): guards proving the test-isolation seam added to
+# CredentialStore, which was the only one of FOURTEEN stores without one — which is exactly why
+# 2,999 DPAPI blobs accumulated in the product's REAL credential directory, dating to 2026-07-18.
+EXPECT_EDGECORE=741
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
@@ -120,7 +123,12 @@ EXPECT_EDGESERVICE=28
 # three ModbusTcpDriverWriteTests' teardown into a `finally` and rewrites three EngineApi tests' timing,
 # but RESTRUCTURES them — it adds no test and deletes none. A moved total on any suite other than
 # EngineApi would mean something unintended happened.
-EXPECT_ENGINEAPI=1135
+# chore/test-hygiene raised this 1135 -> 1136 (+1): a guard proving the Playwright harness really
+# does isolate the creds directory. The config previously justified leaving it un-isolated with
+# "this suite never calls anything that writes there" — FALSE: 613 of the 2,999 leaked blobs carry
+# exactly the prefixes 04-onboarding.spec.ts mints, one per e2e run. A claim in a comment, believed
+# because nobody measured it, is what kept this leak open.
+EXPECT_ENGINEAPI=1136
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
