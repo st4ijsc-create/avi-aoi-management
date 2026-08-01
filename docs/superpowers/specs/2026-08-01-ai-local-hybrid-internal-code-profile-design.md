@@ -5,6 +5,18 @@
 **Tài liệu mẹ:** `docs/superpowers/specs/2026-08-01-ai-local-model-strategy-design.md` — đọc §2 (số đo nền) và §4 (kiến trúc) trước.
 **Nguồn số liệu:** Đợt 0, `docs/superpowers/reports/2026-08-01-do0-roster-survey.md`.
 
+
+> ## ✅ CẬP NHẬT 2026-08-02 — CHỦ DỰ ÁN ĐÃ CHẤM A/B TIẾNG VIỆT
+>
+> **Kết quả: model CHUYÊN CODE viết tiếng Việt NHỈNH HƠN model general** (mức độ **nhẹ**; chủ dự án nói *"cả hai đều trả lời tiếng Việt ổn, chỉ là văn phong của Model 2 dễ hơn với dẫn kỹ thuật và người mới"*). Ánh xạ: Model 1 = General, Model 2 = Coder. Chi tiết + cách khôi phục ánh xạ: `docs/superpowers/reports/2026-08-01-do0-vi-ab.md`.
+>
+> ⚠ **Lo ngại nêu trong tài liệu này — "model chuyên code viết văn xuôi tiếng Việt thường khô và hay lẫn thuật ngữ Anh" — ĐÃ BỊ ĐO THẬT BÁC BỎ.**
+>
+> **Ba hệ quả:**
+> 1. Điều kiện *"nếu tiếng Việt của Coder-30B chấp nhận được → roster A"* ⇒ **ĐẠT**. Không còn biến chờ chấm.
+> 2. Hồ sơ `balanced` **mất lý do tồn tại chính** — nó là phương án dự phòng phòng khi Coder viết tệ; rủi ro đó không xảy ra.
+> 3. **Nút thắt còn lại KHÔNG phải chọn model** mà là **ngân sách thị giác** + **bí ẩn CUDA context** (§5 bước A/B/C).
+
 ---
 
 ## 1. Vì sao NỘI BỘ trước — lý do mạnh hơn "ít rủi ro"
