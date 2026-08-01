@@ -26,12 +26,20 @@ public class OpcUaConnectorFactoryTests
 
         var ok = factory.TryCreate(ValidNodeMapJson, out var driver, out var error);
 
-        Assert.True(ok);
-        Assert.NotNull(driver);
-        Assert.Null(error);
-        Assert.Equal(DriverKinds.OpcUa, driver!.Kind);
-
-        await driver.DisposeAsync();
+        // 🔴 backlog-test-deadlines — disposal in a `finally` rather than as the last statement below four
+        // assertions. Recorded honestly: IN-MEMORY ONLY — the OPC-UA Session is created lazily on first
+        // read/write, which this test never triggers, so nothing here holds a socket. Fixed for uniformity.
+        try
+        {
+            Assert.True(ok);
+            Assert.NotNull(driver);
+            Assert.Null(error);
+            Assert.Equal(DriverKinds.OpcUa, driver!.Kind);
+        }
+        finally
+        {
+            if (driver is not null) await driver.DisposeAsync();
+        }
     }
 
     [Fact]
@@ -70,11 +78,17 @@ public class OpcUaConnectorFactoryTests
         factory.TryCreate(ValidNodeMapJson, out var first, out _);
         factory.TryCreate(ValidNodeMapJson, out var second, out _);
 
-        Assert.NotNull(first);
-        Assert.NotNull(second);
-        Assert.NotSame(first, second);
-
-        await first!.DisposeAsync();
-        await second!.DisposeAsync();
+        // 🔴 backlog-test-deadlines — see the sibling test above; in-memory only.
+        try
+        {
+            Assert.NotNull(first);
+            Assert.NotNull(second);
+            Assert.NotSame(first, second);
+        }
+        finally
+        {
+            if (first is not null) await first.DisposeAsync();
+            if (second is not null) await second.DisposeAsync();
+        }
     }
 }

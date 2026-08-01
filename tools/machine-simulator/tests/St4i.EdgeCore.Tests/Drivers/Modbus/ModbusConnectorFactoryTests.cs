@@ -29,12 +29,22 @@ public class ModbusConnectorFactoryTests
 
         var ok = factory.TryCreate(ValidRegisterMapJson, out var driver, out var error);
 
-        Assert.True(ok);
-        Assert.NotNull(driver);
-        Assert.Null(error);
-        Assert.Equal(DriverKinds.Modbus, driver!.Kind);
-
-        await driver.DisposeAsync();
+        // 🔴 backlog-test-deadlines — disposal in a `finally` rather than as the last statement below four
+        // assertions. Recorded honestly: the leak here is IN-MEMORY ONLY. Construction_IsNonBlocking_AndPerformsNoIO
+        // pins that a freshly-built ModbusTcpDriver opens nothing — the NModbus TcpClient is created lazily on
+        // first I/O, which this test never triggers. Fixed for uniformity with the rest of the sweep, not
+        // because a socket is at stake.
+        try
+        {
+            Assert.True(ok);
+            Assert.NotNull(driver);
+            Assert.Null(error);
+            Assert.Equal(DriverKinds.Modbus, driver!.Kind);
+        }
+        finally
+        {
+            if (driver is not null) await driver.DisposeAsync();
+        }
     }
 
     [Fact]
@@ -73,11 +83,17 @@ public class ModbusConnectorFactoryTests
         factory.TryCreate(ValidRegisterMapJson, out var first, out _);
         factory.TryCreate(ValidRegisterMapJson, out var second, out _);
 
-        Assert.NotNull(first);
-        Assert.NotNull(second);
-        Assert.NotSame(first, second);
-
-        await first!.DisposeAsync();
-        await second!.DisposeAsync();
+        // 🔴 backlog-test-deadlines — see the sibling test above; in-memory only.
+        try
+        {
+            Assert.NotNull(first);
+            Assert.NotNull(second);
+            Assert.NotSame(first, second);
+        }
+        finally
+        {
+            if (first is not null) await first.DisposeAsync();
+            if (second is not null) await second.DisposeAsync();
+        }
     }
 }

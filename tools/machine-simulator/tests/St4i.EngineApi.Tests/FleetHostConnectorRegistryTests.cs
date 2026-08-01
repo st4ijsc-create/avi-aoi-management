@@ -361,26 +361,44 @@ public sealed class FleetHostConnectorRegistryTests
         registry.Register(new RejectsButReturnsDriverFactory("vendor.acme.slow", slowDriver), config: "x");
         var host = CreateHost(registry);
 
+        // 🔴 backlog-test-deadlines — this method's `slowDriver.ReleaseDispose(); await startTask;` pair is
+        // cited elsewhere as a reference for "release + await BEFORE the timing assertion", and in that
+        // respect it was right. But it guarded only what was BELOW it: `WaitUntilAsync` asserts on its own
+        // deadline, and `host.Estop()` can throw, and either of those returned from the method with
+        // `startTask` parked forever inside `SlowDisposeDriver.DisposeAsync` awaiting a
+        // TaskCompletionSource that ONLY the release below ever completes. This was also the only test in
+        // the file with no `host.Stop()` at all — the eight siblings all use `try { … } finally { host.Stop(); }`
+        // — so it additionally left a running FleetHost, its per-slot enumeration tasks and its
+        // LiveTransport HttpClient behind. Both halves are now in the `finally`.
         var startTask = Task.Run(() => host.Start());
-        await WaitUntilAsync(() => slowDriver.DisposeStarted, "the orphaned driver's DisposeAsync to begin");
+        try
+        {
+            await WaitUntilAsync(() => slowDriver.DisposeStarted, "the orphaned driver's DisposeAsync to begin");
 
-        // At this instant, per the fix, StartLocked has already RETURNED and _gate has already been
-        // released — DisposeOrphanedConnectorDrivers (currently blocked on slowDriver.DisposeAsync, since
-        // we haven't released it yet) runs entirely off that lock. Time a concurrent Estop() call: it must
-        // not be stuck waiting for _gate.
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        host.Estop();
-        stopwatch.Stop();
+            // At this instant, per the fix, StartLocked has already RETURNED and _gate has already been
+            // released — DisposeOrphanedConnectorDrivers (currently blocked on slowDriver.DisposeAsync, since
+            // we haven't released it yet) runs entirely off that lock. Time a concurrent Estop() call: it must
+            // not be stuck waiting for _gate.
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            host.Estop();
+            stopwatch.Stop();
 
-        // Let the in-flight disposal (and Start()'s blocked Wait on it) finish, then make sure Start()
-        // itself actually returns — cleanup happens regardless of the assertion outcome below.
-        slowDriver.ReleaseDispose();
-        await startTask;
+            // Let the in-flight disposal (and Start()'s blocked Wait on it) finish, then make sure Start()
+            // itself actually returns — cleanup happens regardless of the assertion outcome below.
+            slowDriver.ReleaseDispose();
+            await startTask;
 
-        Assert.True(
-            stopwatch.Elapsed < TimeSpan.FromSeconds(1),
-            $"Estop() took {stopwatch.Elapsed} while the orphaned connector driver's disposal was still in flight — " +
-            "_gate must be free during that disposal (off-lock), not held for its duration.");
+            Assert.True(
+                stopwatch.Elapsed < TimeSpan.FromSeconds(1),
+                $"Estop() took {stopwatch.Elapsed} while the orphaned connector driver's disposal was still in flight — " +
+                "_gate must be free during that disposal (off-lock), not held for its duration.");
+        }
+        finally
+        {
+            slowDriver.ReleaseDispose();
+            try { await startTask; } catch { /* teardown */ }
+            host.Stop();
+        }
     }
 
     [Fact]

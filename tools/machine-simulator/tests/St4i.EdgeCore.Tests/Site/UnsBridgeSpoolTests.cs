@@ -429,10 +429,20 @@ public sealed class UnsBridgeSpoolTests : IAsyncLifetime
 
         var spool = new FakeBridgeSpool { ThrowEverything = true };
         var warnings = new List<string>();
-        var bridge = new UnsBridge(localUns, siteLink, deviceCert, "FP-THROWS", spool: spool, logWarning: w =>
+        // 🔴 backlog-test-deadlines — `Track(...)`, which every other bridge and broker in this file already
+        // uses. This was the ONE bridge in the class that was not registered for teardown, and its only
+        // disposal was the `Record.ExceptionAsync(... bridge.DisposeAsync())` assertion far below — under
+        // `WaitUntilAsync` (which asserts on its deadline) and `Assert.Null(snapshotException)`. Either of
+        // those failing left the bridge's four background loops running and, with them, TWO live MQTTnet
+        // sockets: a connected session to the local broker on this test's port, and a remote client in a
+        // permanent TLS reconnect-with-backoff loop against an unreachable port. The local broker was then
+        // disposed out from under a still-connected client at class teardown.
+        // `UnsBridge.DisposeAsync` is idempotent (guarded by its own `_disposed`), so the explicit dispose
+        // below still runs first and its assertion is unchanged; this only guarantees the failure path.
+        var bridge = Track(new UnsBridge(localUns, siteLink, deviceCert, "FP-THROWS", spool: spool, logWarning: w =>
         {
             lock (warnings) warnings.Add(w);
-        });
+        }));
 
         using var localPublisher = await ConnectLocalPublisherAsync(localPort);
         for (var i = 0; i < 5; i++)
@@ -481,8 +491,15 @@ public sealed class UnsBridgeSpoolTests : IAsyncLifetime
         var unreachableSitePort = GetFreePort();
         var preRestartLink = BuildEnabledLink(unreachableSitePort, siteCa.ExportCertificatePem());
 
+        // 🔴 backlog-test-deadlines — `Track(...)` for the same reason as the throwing-spool test above.
+        // `bridgeA`'s only disposal was line 504, below `PublishUntilObservedAsync` and `WaitUntilAsync`,
+        // both of which assert on their deadline. On that path this leaked bridgeA's two MQTT sockets AND
+        // skipped the `SqliteConnection.ClearAllPools()` that releases `spoolA`'s pooled handles on
+        // `spoolDir` — which is why the class's own temp-directory cleanup could silently fail too.
+        // The explicit `await bridgeA.DisposeAsync()` below is unchanged and still runs first; disposal is
+        // idempotent, and the class teardown calls ClearAllPools() unconditionally.
         var spoolA = new BridgeSpool(spoolDir);
-        var bridgeA = new UnsBridge(localUns, preRestartLink, deviceCert, "FP-RESTART-A", spool: spoolA);
+        var bridgeA = Track(new UnsBridge(localUns, preRestartLink, deviceCert, "FP-RESTART-A", spool: spoolA));
 
         using (var localPublisher = await ConnectLocalPublisherAsync(localPort))
         {

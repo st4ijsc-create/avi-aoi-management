@@ -186,15 +186,26 @@ public sealed class FleetHostProductModeRosterTests
     {
         var host = CreateHost(demoModeGate: new DemoModeGate(""));
 
-        for (var i = 0; i < 3; i++)
+        // 🔴 backlog-test-deadlines — `Assert.True(host.IsRunning)` sits between Start() and Stop(), so a red
+        // assertion left the host started. The roster here is empty, so almost nothing is actually running;
+        // the durable residue is the undisposed LiveTransport HttpClient from CreateHost. Cheap to close, and
+        // closed for consistency with the rest of this sweep rather than for resource pressure.
+        try
         {
-            var startEx = Record.Exception(() => host.Start());
-            Assert.Null(startEx);
-            Assert.True(host.IsRunning);
+            for (var i = 0; i < 3; i++)
+            {
+                var startEx = Record.Exception(() => host.Start());
+                Assert.Null(startEx);
+                Assert.True(host.IsRunning);
 
-            var stopEx = Record.Exception(() => host.Stop());
-            Assert.Null(stopEx);
-            Assert.False(host.IsRunning);
+                var stopEx = Record.Exception(() => host.Stop());
+                Assert.Null(stopEx);
+                Assert.False(host.IsRunning);
+            }
+        }
+        finally
+        {
+            host.Stop();
         }
     }
 
@@ -224,11 +235,17 @@ public sealed class FleetHostProductModeRosterTests
         var host = CreateHost(demoModeGate: new DemoModeGate(""));
         host.RegisterMachine(NewModbusDescriptor("MODBUS-ONLY-01"));
 
+        // 🔴 backlog-test-deadlines — `host.Stop()` was the last statement, below two assertions.
         var ex = Record.Exception(() => host.Start());
-
-        Assert.Null(ex);
-        Assert.Empty(host.GetDriverHealth());
-        host.Stop();
+        try
+        {
+            Assert.Null(ex);
+            Assert.Empty(host.GetDriverHealth());
+        }
+        finally
+        {
+            host.Stop();
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────

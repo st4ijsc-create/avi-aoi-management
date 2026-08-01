@@ -80,18 +80,28 @@ public sealed class FleetHostUnsLifecycleTests
     {
         var (host, publisher) = CreateHostWithUns();
 
+        // 🔴 backlog-test-deadlines — both `WaitUntilAsync` calls above the first `host.Stop()` assert on
+        // their deadline, and this test's only teardown was that Stop(). A red wait therefore left the fleet
+        // running for the rest of the process. Two siblings in this same file already used try/finally.
         host.Start();
-        await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "fleet online after Start");
-        await WaitUntilAsync(() => publisher.NodeBirthCount == 1, "node birth published on Start");
+        try
+        {
+            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "fleet online after Start");
+            await WaitUntilAsync(() => publisher.NodeBirthCount == 1, "node birth published on Start");
 
-        host.Stop();
-        await WaitUntilAsync(() => publisher.NodeDeathCount == 1, "exactly one node death published on Stop");
+            host.Stop();
+            await WaitUntilAsync(() => publisher.NodeDeathCount == 1, "exactly one node death published on Stop");
 
-        // Same synchronous, in-line, still-under-_gate call as Start()'s — no wait needed to prove "no
-        // second death": assert directly.
-        host.Stop(); // already stopped — StopLocked no-ops, so no second death
+            // Same synchronous, in-line, still-under-_gate call as Start()'s — no wait needed to prove "no
+            // second death": assert directly.
+            host.Stop(); // already stopped — StopLocked no-ops, so no second death
 
-        Assert.Equal(1, publisher.NodeDeathCount);
+            Assert.Equal(1, publisher.NodeDeathCount);
+        }
+        finally
+        {
+            host.Stop();
+        }
     }
 
     [Fact]
