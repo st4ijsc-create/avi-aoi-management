@@ -319,3 +319,147 @@ Cả hai đều mô tả đúng nội dung ảnh (PCB xanh, linh kiện điện 
 - Thay đổi vẫn được giữ lại (`-np 1`) vì vô hại, dọn dẹp về mặt logic (hệ chỉ gửi 1 ảnh/lượt, không cần 4 khe), và là phòng vệ rẻ tiền cho trường hợp một build `llama-server` tương lai đổi mặc định `kv_unified` — nhưng **không phải là khoản "giành lại VRAM"** như tên Đợt 1 kỳ vọng.
 - Nếu Đợt 1/Task 4 cần thật sự giảm 7,8 GB của sidecar thị giác, hướng khả thi duy nhất còn lại (ngoài phạm vi Task 3, cần bàn riêng) là: giảm `LLAMA_VISION_CTX` (hiện 8192, có thể thử ~4096 nếu prompt thực tế không cần cửa sổ lớn), đổi sang bản quant nhỏ hơn của model/mmproj, hoặc unload sidecar tích cực hơn khi idle (`IDLE_TIMEOUT_MS`, đã có sẵn cơ chế, không thuộc Task 3).
 - Không tìm thấy vấn đề tương tự "công cụ đo tự chứa, không import mã sản xuất" như Task 2 (`bench.mjs`/`_gguf-embed.mjs`) — phép đo Task 3 không dùng công cụ trung gian nào, đo trực tiếp trên tiến trình `llama-server.exe` thật.
+
+---
+
+## §4 Tổng hợp — nghiệm thu app thật và cộng lại bảng roster (Task 4)
+
+### ⚠ KẾT QUẢ CHÍNH 1: app VẪN không nạp được model 30B — nhưng KHÔNG còn vì race
+
+Nghiệm thu bằng app thật (`npm run dev`, **3 lượt boot**, đợi qua cả hai mốc warm 2000ms và 3000ms):
+
+| Chỉ số | Kỳ vọng của brief | THỰC TẾ (cả 3 lượt) |
+|---|---|---|
+| `cudaMalloc failed` | **0** | **1 mỗi lượt boot** ❌ |
+| Số lần nạp model mặc định | **1** (không phải 2) | **1** ✅ |
+
+**Hai kết quả này phải đọc CÙNG NHAU.** Đợt 0 thấy 45/45 lượt lỗi vì **hai** lượt nạp song song. Nay chỉ còn **một** lượt nạp — nghĩa là **khoá in-flight của Task 1 hoạt động đúng trong app thật** — nhưng chính lượt nạp duy nhất đó vẫn lỗi:
+
+```
+[aiGgufEngine] Loading model: D:\SOURCES\16.AI\Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf
+[node-llama-cpp] ggml_backend_cuda_buffer_type_alloc_buffer: allocating 16698.37 MiB on device 0: cudaMalloc failed: out of memory
+[node-llama-cpp] alloc_tensor_range: failed to allocate CUDA0 buffer of size 17509509120
+[aiGgufEngine] deep model warm FAILED for "Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL" — ...
+```
+
+Hai đường warm (`aiLocalKnowledgeService.ts:2431` mốc 2000ms · `aiGgufEngine.initDeepModelWarmup` mốc 3000ms) **đều gọi cùng `GGUF_DEFAULT_MODEL`** — đúng cặp gây 45/45 lỗi ở Đợt 0. Log chỉ còn **một** dòng `Loading model:` cho model 30B ⇒ khoá đã gộp hai lượt thành một.
+
+⇒ **Có một nguyên nhân THỨ BA, khác hẳn race, chưa từng được biết tới.** Ba phép đo phân biệt sau đây khoanh vùng nó:
+
+| # | Phép thử | Kết quả |
+|---|---|---|
+| 1 | `bench.mjs --models deep` (tiến trình gọn, cùng máy, cùng lúc) | **NẠP ĐƯỢC**, 19,3 s, không lỗi |
+| 2 | Script tạm gọi **thẳng `warmModel()` của mã sản xuất** (`aiGgufEngine.ts`), tiến trình gọn, không boot Express | **NẠP ĐƯỢC**, 18,1 s, delta **19.094 MiB** |
+| 3 | App thật, warm hoãn tới **120 giây** (`GGUF_WARM_DELAY_MS=120000`) để loại trừ tranh chấp lúc boot | **VẪN LỖI**, y hệt |
+
+**Kết luận có bằng chứng:**
+- **Đường nạp model của mã sản xuất KHÔNG hỏng** (phép thử 2 — cùng hàm, cùng `getLlama({gpu:"auto"})`, cùng `loadModel({gpuLayers:"max"})`).
+- **Không phải tranh chấp thời điểm boot** (phép thử 3 — sau 120 s, app đã lắng, vẫn lỗi).
+- **Không phải hết VRAM thiết bị.** Lấy mẫu `nvidia-smi` mỗi giây suốt lượt boot: VRAM **chưa bao giờ vượt 1.208 MiB** trước lúc lỗi, và ở lượt hoãn-120s app chỉ giữ **5.496 MiB** — nghĩa là còn **~27 GB trống** khi một lệnh `cudaMalloc` 16.698 MiB bị từ chối.
+- ⇒ Nguyên nhân nằm ở **trạng thái của chính tiến trình app** (một giới hạn cấp-tiến-trình, không phải cấp-thiết-bị). **Chưa truy được nguyên nhân cụ thể — cần một đợt riêng.** Không suy đoán thêm ở đây; đúng bài học Task 3 đã trả giá.
+
+### ✅ Đã đóng được một khoản nợ của Task 1 — bằng bằng chứng sống
+
+Task 1 để lại Minor: *"chưa có test cho nhánh nạp THẤT BẠI → `finally` xoá `inFlightLoads` → lượt sau tự thử lại"*. Lượt boot thứ 3 chứng minh điều đó **trên app thật**: lượt nạp #1 (mốc 2000ms) thất bại → lượt nạp #2 (mốc 120 s) **chạy một lượt nạp MỚI** (dòng log `Loading model:` xuất hiện lần thứ hai), chứ không nhận lại promise lỗi đã ghi nhớ. Khoá được giải phóng đúng. **Minor này đóng.**
+
+### ⚠ KẾT QUẢ CHÍNH 2: nhánh `catch` "âm thầm tụt tier" KHÔNG chạy — và đó là tin XẤU hơn
+
+Bốn dòng cảnh báo mà spec hồ sơ §4 yêu cầu canh, `grep -nE "evicted LRU model|no idle model to evict|At capacity|gpuLayers.*auto"` trên **cả 3 lượt boot**:
+
+| Dòng log | Xuất hiện? |
+|---|---|
+| `evicted LRU model "<id>" before loading` | **không** |
+| `no idle model to evict — deferring/allowing load with OOM risk` | **không** |
+| `At capacity (4/4)` | **không** |
+| cảnh báo nhánh `catch` nạp lại `gpuLayers:"auto"` | **không** |
+
+Dòng thứ tư vắng mặt là điều đáng chú ý nhất. Mã có sẵn nhánh phục hồi (`aiGgufEngine.ts:648-681`): gặp OOM thì đuổi hết model rảnh rồi **nạp lại với `gpuLayers:"auto"`** (offload một phần, phần còn lại chạy CPU). Nhánh này **không chạy lần nào** trong 3 lượt boot.
+
+Đọc mã cho thấy lý do khả dĩ: `isOom` kiểm tra `err.message` của JS có chứa `"out of memory"`/`"cudamalloc"`/`"failed to allocate"`/`"unable to allocate"` không — nhưng những chữ đó nằm ở **stderr của lớp C++ node-llama-cpp**, không nằm trong `err.message` mà JS nhận được. ⚠ **Đây là suy luận từ mã cộng với sự VẮNG MẶT của dòng log — chưa bắt được nguyên văn `err.message` để xác nhận.** Cần một phép đo riêng mới kết luận chắc.
+
+**Hệ quả thực tế thì đã chắc, không cần suy luận:** app **không** rơi xuống tier chậm ~2,9 tok/s như spec cảnh báo — nó **không có model sinh chữ sâu nào cả**. Về mặt vận hành, đây **tệ hơn** kịch bản "âm thầm chậm" mà spec hồ sơ §4 lo. Bù lại, nó **hỏng ồn ào** (`deep model warm FAILED`) chứ không im lặng, nên vẫn phát hiện được — nhưng chỉ khi có người đọc log.
+
+### ⚠ KẾT QUẢ CHÍNH 3: bảng roster Đợt 0 sai theo HAI hướng, cộng lại thiếu ~3.400 MiB
+
+Đây là điểm quan trọng nhất của Task 4. Bảng số đo nền của Đợt 0 (spec chiến lược §2) **đánh giá thấp chi phí thật ở hai chỗ độc lập**, cả hai đều do `scripts/ai-bench/bench.mjs` **không đi qua mã sản xuất**:
+
+**(a) Model nhúng — thiếu 2.030 MiB.** Đợt 0 ghi `embed = 5.664 MiB`. Nhưng `bench.mjs:321` tự gọi `createEmbeddingContext({contextSize:"auto"})` **hard-code, không import `aiGgufEngine.ts`**, và **không** gọi `model.createContext()` — trong khi `loadGgufModel()` sản xuất tạo **cả hai** context. Chi phí THẬT trước khi sửa: **7.694 MiB** (Task 2, §2).
+
+**(b) MỌI model text GGUF — thiếu ~1.350 MiB mỗi model.** Phát hiện MỚI ở Task 4. `bench.mjs:249` tạo context bằng `model.createContext({contextSize, batchSize:512, flashAttention:true})` — **không truyền `sequences`** (mặc định **1**) và `contextSize` suy từ độ dài prefill của bài đo. Đường sản xuất (`aiGgufEngine.ts:684-689`) tạo `contextSize = GGUF_DEFAULT_CTX = 4096` với `sequences = GGUF_SEQUENCES = 4`. Đo trực tiếp qua `warmModel()` sản xuất:
+
+| Model | Đợt 0 (`bench.mjs`) | Đường SẢN XUẤT (Task 4) | Thiếu |
+|---|---|---|---|
+| Qwen3-30B-A3B-Instruct | 17.750 | **19.094** | **+1.344** |
+| Qwen3-Coder-30B-A3B | 17.698 | **19.077** | **+1.379** |
+| Qwen3-4B-Instruct | 3.464 | *(chưa đo lại)* | *(chưa biết)* |
+| Qwen2.5-Coder-1.5B (FIM) | 1.774 | *(chưa đo lại)* | *(chưa biết)* |
+
+⇒ Đây là **lần thứ BA** harness đo có điểm mù đúng chỗ quan trọng (Đợt 0: `bench.mjs` không biết "vision" ⇒ sót 7,8 GB · Task 2: `bench.mjs`/`_gguf-embed.mjs` hard-code `"auto"` ⇒ sót 2,0 GB · Task 4: `bench.mjs` tạo context 1 sequence ⇒ sót ~1,35 GB **mỗi model text**).
+
+**Xác nhận độc lập trong app SỐNG:** lấy mẫu `nvidia-smi` lúc app nạp model nhúng ⇒ 5.520 − 1.203 = **4.317 MiB**, khớp số 4.321 MiB của Task 2 (lệch 0,1%). Đây là lần đầu con số Task 2 được xác nhận **trong tiến trình app thật**, không phải script đo.
+
+### Bảng số đo nền — cộng lại
+
+| Thành phần | Đợt 0 công bố | TRƯỚC Đợt 1 (thật, đường sản xuất) | SAU Đợt 1 | Nguồn |
+|---|---|---|---|---|
+| Nền hệ điều hành | ~1.200 | ~1.200 (đo 1.194-1.211) | ~1.200 | Task 4 |
+| Qwen3-Coder-30B-A3B | 17.698 | **19.077** | **19.077** (Đợt 1 không đụng) | Task 4 |
+| Qwen3-30B-A3B-Instruct | 17.750 | **19.094** | **19.094** (Đợt 1 không đụng) | Task 4 |
+| Qwen3-4B-Instruct | 3.464 | *chưa đo lại* (≥3.464) | *chưa đo lại* | Đợt 0 |
+| Qwen2.5-Coder-1.5B (FIM) | 1.774 | *chưa đo lại* (≥1.774) | *chưa đo lại* | Đợt 0 |
+| **Qwen3-Embedding-0.6B** | 5.664 ❌ **sai** | **7.694** | **4.321** | Task 2 |
+| **Vision sidecar** | 7.821 | 7.826-7.830 | **7.827 — KHÔNG giảm** | Task 3 |
+| **Trần thiết bị** | 32.607 | 32.607 | 32.607 | `nvidia-smi` |
+
+**Tổng giành lại của cả Đợt 1: 3.373 MiB (~3,3 GiB), TOÀN BỘ đến từ model nhúng.**
+
+| Nguồn | Kế hoạch kỳ vọng | Thực tế |
+|---|---|---|
+| Embedding (`"auto"` → `EMBED_CTX=2048`) | ~4,5 GB | **7.694 → 4.321 = giành lại 3.373 MiB** |
+| Sidecar (`-np 1`) | ~1,9 GB | **~0 — tiền đề của kế hoạch SAI** (`kv_unified=true`) |
+| **Tổng** | **~6,4 GB** | **~3,37 GB — bằng khoảng MỘT NỬA kỳ vọng** |
+
+⚠ Con số 4.321 MiB **đã bao gồm** context thường (4096 × 4 sequences) mà `loadGgufModel()` vẫn tạo cho model nhúng dù nó không bao giờ sinh chữ (`aiGgufEngine.ts:684-689`, Minor 2 của Task 2). Task 2 mới xử lý **một nửa** khoản "trả tiền hai lần" ⇒ **còn dư địa cho đợt sau**, chưa phải mức sàn.
+
+### Bảng bốn case — cộng lại bằng số thật
+
+Trần **32.607 MiB**. Mọi số là **lúc nghỉ**; cột "dưới tải" cộng thêm **+470-940 MiB mỗi model GGUF đang sinh** (mốc Đợt 0 §3) và **+117 MiB** cho sidecar thị giác đang suy luận (đo ở review Task 3, 4 lượt ảnh đồng thời).
+
+| Case | TRƯỚC Đợt 1 (thật) | SAU Đợt 1 | Đổi kết luận? |
+|---|---|---|---|
+| **1 — một model xuyên suốt**, lúc nghỉ | 27.971 (85,8%) | **24.598 (75,4%)** | không đổi — vốn đã vừa, nay rộng hơn |
+| **1 — khi vision thức** | 35.792 (**109,8% ❌**) | **32.419 (99,4%)** | ★ **ĐỔI MỘT NỬA** — hết "không thể tồn tại", nhưng **dưới tải 33.476 = 102,7% VẪN VƯỢT TRẦN** |
+| **2 — đồng thời đủ bộ** | 47.065 (**144,3% ❌**) | **43.692 (134,0% ❌)** | **KHÔNG ĐỔI — vẫn KHÔNG KHẢ THI** |
+| **3 — thị giác thường trú** | 35.792 (**109,8% ❌**) | **32.419 (99,4%)** | ★ **ĐỔI MỘT NỬA** — như Case 1 vision thức |
+| **4 — hybrid `balanced`**, lúc nghỉ | 31.435 (96,4%) | **28.062 (86,1%)** | ★ **ĐỔI** — từ "sát trần, không còn chỗ sinh" thành "có biên thật" (2 model cùng sinh = 29.942, 91,8%) |
+| **4 — `balanced` + vision thức** | 39.256 (**120,4% ❌**) | **35.883 (110,0% ❌)** | **KHÔNG ĐỔI — vẫn vượt trần** |
+
+Thành phần từng case (cột SAU Đợt 1):
+- Case 1 / 3: `1.200 + 19.077 (Coder-30B) + 4.321 (embed) = 24.598`; `+ 7.821 (vision) = 32.419`.
+- Case 2 (mức **tối thiểu**, chỉ 2 model 30B + embed): `1.200 + 19.077 + 19.094 + 4.321 = 43.692`. Đủ bộ thật (thêm 4B + FIM + vision) = **56.751 (174,0%)**.
+- Case 4: `1.200 + 19.077 + 3.464 (4B, số Đợt 0 chưa đo lại ⇒ đây là SÀN) + 4.321 = 28.062`; `+ 7.821 = 35.883`.
+
+⚠ **Case 4 dùng số 4B của Đợt 0 (`bench.mjs`) nên là số SÀN.** Nếu model 4B cũng đắt thêm ~1.350 MiB như hai model 30B thì Case 4 lúc nghỉ ≈ **29.412 (90,2%)** — **ước lượng, CHƯA ĐO**. Kết luận "có biên thật" vẫn đứng ở cả hai mức, nhưng biên hẹp hơn nhiều so với con số 86,1%.
+
+### Kết luận nào ĐỔI, kết luận nào KHÔNG — nói thẳng
+
+**ĐỔI:**
+1. **Case 4 `balanced` là case được lợi rõ nhất.** Từ 96,4% (sát trần, không đủ chỗ cho buffer sinh) xuống 86,1% — nay chịu được hai model cùng sinh (91,8%). Đây là khoản giành lại **có giá trị vận hành thật**.
+2. **Case 1/3 khi vision thức thôi "không thể tồn tại"** — 109,8% ❌ xuống 99,4%. Nhưng xem mục KHÔNG ĐỔI #2.
+3. **Bảng roster Đợt 0 phải bị coi là KHÔNG ĐÁNG TIN cho tới khi đo lại bằng đường sản xuất.** Đợt 0 công bố Case 1 + vision = 32.383 MiB (99,3%, "sát trần"). Số thật lúc đó là **35.792 MiB (109,8%)** — **một cấu hình đã VƯỢT TRẦN được công bố là vừa.** Sai lệch 3.409 MiB.
+
+**KHÔNG ĐỔI:**
+1. **Case 2 vẫn KHÔNG KHẢ THI — và không phải chuyện gần.** Chỉ riêng nền + hai model 30B đã là `1.200 + 19.077 + 19.094 = 39.371 MiB`, **vượt trần 6.764 MiB khi embedding bằng KHÔNG**. Khoản giành lại 3.373 MiB **không tới một nửa** chỗ còn thiếu. Câu của spec §3 giữ nguyên: *trên 32,6 GB, KHÔNG cấu hình nào cho phép đủ bộ cùng lúc.*
+2. **Case 1/3 vẫn không chịu được tải khi vision thức.** 32.419 + 940 (30B sinh) + 117 (vision sinh) = **33.476 = 102,7%**, vượt trần. Lúc nghỉ thì vừa, hễ có người dùng thật là vỡ. **Đừng đọc 99,4% là "đã giải quyết".**
+3. **Hồ sơ `balanced` vẫn KHÔNG được để vision thức** (110,0%). Đợt 1 không đổi điều này.
+4. **Dự đoán của spec chiến lược §5 SAI.** Spec viết: *"Nếu giải phóng được 6,4 GB thì Case 3 từ 99,3% xuống ~79%"*. Thực tế giải phóng **3,37 GB** (một nửa), và Case 3 xuống **99,4%** — **không phải 79%**, mà gần như đúng bằng con số 99,3% cũ, vì con số 99,3% cũ vốn đã sai (thật là 109,8%). Hai sai số gần như triệt tiêu nhau, che mất cả hai.
+5. **Spec hồ sơ nội bộ §5 cũng SAI**: dự đoán hồ sơ `internal-code` "từ 75,3% xuống ~61%, đỉnh vision từ 99,3% xuống ~85%". Thực tế: **75,4%** và **99,4%**.
+
+### Mối lo
+
+1. **Điều kiện 1 của spec hồ sơ nội bộ CHƯA ĐẠT.** Spec ghi rõ: không bật hồ sơ khi app chưa nạp nổi 30B. Race đã vá, nhưng **app vẫn không nạp được** vì nguyên nhân thứ ba. **Chưa được bật hồ sơ `internal-code`.**
+2. **Nguyên nhân thứ ba chưa truy được** — đã khoanh vùng ("tiến trình app, không phải thiết bị, không phải thời điểm, không phải mã nạp"), chưa có gốc rễ. Cần một đợt riêng, và nó **chặn toàn bộ bước D** của lộ trình.
+3. **`bench.mjs` đã sai ba lần liên tiếp ở đúng chỗ quyết định.** Mọi số Đợt 0 chưa được đo lại bằng đường sản xuất (4B, FIM) phải coi là **sàn, không phải giá trị**. Khuyến nghị mạnh: sửa `bench.mjs` gọi qua mã sản xuất, hoặc bỏ nó và đo bằng `warmModel()` — nếu không, đợt sau lại quyết trên số sai.
+4. **Nhánh `catch` `gpuLayers:"auto"` có thể là mã chết.** Nếu đúng như suy luận (`err.message` không mang chữ OOM), thì cơ chế phục hồi mà spec hồ sơ §4 coi là "nguy hiểm nhất vì âm thầm" thực ra **chưa từng chạy** — cần một phép đo riêng để xác nhận, và nếu đúng thì bốn dòng log phải canh của spec chỉ còn ba.
+5. **Khoản "trả tiền hai lần" mới trả một nửa**: context thường 4096 × 4 sequences vẫn được tạo cho model nhúng. Còn dư địa, chưa đo được bao nhiêu.
+6. **Chưa nghiệm thu chức năng qua giao diện.** Task 4 chỉ đo VRAM và đọc log; không mở trình duyệt, không thử một lượt hỏi-đáp thật. App **không có model sinh chữ sâu** nên lượt thử đó chắc chắn hỏng — nhưng điều đó **chưa được kiểm chứng**, chỉ suy ra từ log.

@@ -4,6 +4,16 @@
 
 **Nguồn số liệu:** toàn bộ con số trong tài liệu này đến từ Đợt 0 (`docs/superpowers/reports/2026-08-01-do0-roster-survey.md`, §1-§7, PUSHED `b0f2c350`) hoặc từ phép đo trực tiếp ghi trong §. **Không có số nào ước lượng mà không ghi rõ.**
 
+> ## ⚠ CẬP NHẬT SAU ĐỢT 1 (2026-08-01) — ĐỌC TRƯỚC KHI DÙNG BẤT KỲ SỐ NÀO
+>
+> Đợt 1 (`docs/superpowers/reports/2026-08-01-dot1-vram-reclaim.md`) đã **sửa mã và đo lại bằng đường sản xuất**. Ba điều làm đổi nội dung tài liệu này:
+>
+> 1. **Bảng số đo nền của Đợt 0 SAI theo hai hướng, cộng lại thiếu ~3.400 MiB** — vì `scripts/ai-bench/bench.mjs` **không đi qua mã sản xuất**. Xem §2.
+> 2. **Đợt 1 giành lại 3.373 MiB**, không phải ~6,4 GB như §5 bước C kỳ vọng — sidecar `-np 1` giành lại **~0** (tiền đề sai, `kv_unified=true`).
+> 3. **Bước B (vá race) đã làm, nhưng app VẪN không nạp được 30B** vì một nguyên nhân **thứ ba** chưa truy được. Bước D vẫn bị chặn.
+>
+> Các số **Đợt 0** được **giữ nguyên** ở dưới để không ghi đè lịch sử; số **Đợt 1** đứng cạnh và là số **phải dùng**.
+
 ---
 
 ## 1. Hai phát hiện đổi hẳn bài toán
@@ -32,36 +42,79 @@ Hai nguyên nhân đã truy được:
 ⇒ **Khoảng 6,4 GB đang bị buffer mặc định chiếm** ở hai chỗ. Đó là **nhiều hơn cả một model 4B**.
 ⇒ **Đòn bẩy lớn nhất không phải đổi model — là chỉnh buffer.** Nhưng cả hai đều **cần sửa mã**, nên ngoài phạm vi Đợt 0.
 
+> **⚠ Đợt 1 đã kiểm chứng — một nửa đúng, một nửa sai:**
+> - **Embedding: ĐÚNG, và còn nặng hơn Đợt 0 tưởng.** Nguyên nhân đã truy được: `getEmbeddingContext()` gọi `contextSize:"auto"` (cấp toàn bộ cửa sổ ngữ cảnh model). Chi phí thật **7.694 MiB** (không phải 5.664 — Đợt 0 đo bằng `bench.mjs` nên hụt 2.030 MiB). Đổi sang `EMBED_CTX=2048` ⇒ **4.321 MiB, giành lại 3.373 MiB**.
+> - **Sidecar: SAI.** Giả thuyết "`n_parallel=4` ⇒ nhân bốn KV-cache" **bị đo thật phủ định**. Log runtime của `llama-server.exe` đang cài in `kv_unified = true` **ngay ở `n_parallel=4` mặc định** ⇒ KV-cache là **một khối dùng chung** cỡ `-c`, **không nhân theo số khe**. Thêm `-np 1` giành lại **~1 MiB (trong nhiễu đo)**. 7,8 GB của sidecar là chi phí **cố định** của model + mmproj (1.502 MiB) + một khối KV 8192, **không phải buffer lãng phí**.
+> - ⇒ Con số "6,4 GB buffer" của Đợt 0 phải đọc lại thành: **~3,4 GB là buffer chỉnh được (đã chỉnh), phần còn lại KHÔNG phải buffer.**
+
 ---
 
 ## 2. Số đo nền — mọi case dưới đây tính từ bảng này
 
-| Thành phần | VRAM delta (MiB) | Nguồn |
-|---|---|---|
-| Nền hệ điều hành | ~1.200 | §3 baseline |
-| Qwen3-Coder-30B-A3B | **17.698** | §3 roster A |
-| Qwen3-30B-A3B-Instruct | 17.750 | §3 hiện trạng |
-| Qwen3-4B-Instruct | 3.464 | §3 roster A |
-| Qwen2.5-Coder-1.5B (FIM) | 1.774 | §3 roster A |
-| Qwen3-Embedding-0.6B | **5.664** | §3 hiện trạng |
-| bge-reranker-v2-m3 | (chạy CPU — `RAG_RERANKER_GPU=false`) | §7.7 |
-| **Vision sidecar** (tiến trình riêng) | **7.821** | đo trực tiếp, đợt sửa cuối |
-| **Trần thiết bị** | **32.607** | `nvidia-smi` |
+| Thành phần | Đợt 0 công bố | **TRƯỚC Đợt 1** (thật, đường sản xuất) | **SAU Đợt 1** | Nguồn số mới |
+|---|---|---|---|---|
+| Nền hệ điều hành | ~1.200 | ~1.200 (đo 1.194-1.211) | ~1.200 | Đợt 1 §4 |
+| Qwen3-Coder-30B-A3B | 17.698 | **19.077** | **19.077** (không đụng) | Đợt 1 §4 |
+| Qwen3-30B-A3B-Instruct | 17.750 | **19.094** | **19.094** (không đụng) | Đợt 1 §4 |
+| Qwen3-4B-Instruct | 3.464 | *chưa đo lại* (≥3.464) | *chưa đo lại* | Đợt 0 §3 |
+| Qwen2.5-Coder-1.5B (FIM) | 1.774 | *chưa đo lại* (≥1.774) | *chưa đo lại* | Đợt 0 §3 |
+| **Qwen3-Embedding-0.6B** | 5.664 ❌ **sai** | **7.694** | **4.321** | Đợt 1 §2 |
+| bge-reranker-v2-m3 | (chạy CPU — `RAG_RERANKER_GPU=false`) | (không đổi) | (không đổi) | Đợt 0 §7.7 |
+| **Vision sidecar** (tiến trình riêng) | 7.821 | 7.826-7.830 | **7.827 — KHÔNG giảm** | Đợt 1 §3 |
+| **Trần thiết bị** | **32.607** | 32.607 | 32.607 | `nvidia-smi` |
 
-⚠ **Cộng thêm khi ĐANG SINH**: +470-940 MiB mỗi model hoạt động (§3). Mọi con số dưới đây là **lúc nghỉ** — dưới tải phải cộng thêm.
+⚠ **Cộng thêm khi ĐANG SINH**: +470-940 MiB mỗi model GGUF hoạt động (Đợt 0 §3) và **+117 MiB** cho sidecar thị giác đang suy luận (Đợt 1 §3, đo với 4 lượt ảnh đồng thời). Mọi con số dưới đây là **lúc nghỉ** — dưới tải phải cộng thêm.
+
+### ⚠ Vì sao cột "Đợt 0 công bố" sai — hai điểm mù độc lập của `bench.mjs`
+
+Cả hai đều do công cụ đo **tự chứa, không import mã sản xuất** (`bench.mjs` có comment ở đầu file: *"does NOT import any server/ source"*):
+
+**(a) Model nhúng — hụt 2.030 MiB.** `bench.mjs:321` tự gọi `createEmbeddingContext({contextSize:"auto"})` hard-code, và **không** gọi `model.createContext()`. Đường sản xuất (`loadGgufModel()`) tạo **cả hai** context cho model nhúng.
+
+**(b) MỌI model text GGUF — hụt ~1.350 MiB mỗi model.** `bench.mjs:249` tạo context **không truyền `sequences`** (mặc định **1**) và `contextSize` suy từ độ dài prefill của bài đo. Đường sản xuất (`aiGgufEngine.ts:684-689`) tạo `contextSize = GGUF_DEFAULT_CTX = 4096` với `sequences = GGUF_SEQUENCES = 4`. Đo qua `warmModel()` sản xuất: 30B-Instruct **17.750 → 19.094** (+1.344) · Coder-30B **17.698 → 19.077** (+1.379).
+
+⇒ **Mọi số Đợt 0 chưa được đo lại bằng đường sản xuất (4B, FIM) phải coi là SÀN, không phải giá trị.**
+⇒ Đây là **lần thứ ba** harness đo có điểm mù đúng chỗ quyết định (Đợt 0: `bench.mjs` không biết "vision" ⇒ sót 7,8 GB · Đợt 1 Task 2: hard-code `"auto"` ⇒ sót 2,0 GB · Đợt 1 Task 4: context 1 sequence ⇒ sót ~1,35 GB **mỗi model text**).
 
 ---
 
 ## 3. Bốn case, bảng chi tiết
+
+### 3.0 ⚠ BẢNG TỔNG HỢP SAU ĐỢT 1 — dùng bảng này, không dùng số trong các ô "Lúc nghỉ" bên dưới
+
+Trần **32.607 MiB**. Cột "TRƯỚC Đợt 1" là **số thật đo bằng đường sản xuất**, khác với số Đợt 0 công bố (xem §2).
+
+| Case | Đợt 0 công bố | **TRƯỚC Đợt 1** (thật) | **SAU Đợt 1** | Đổi kết luận? |
+|---|---|---|---|---|
+| **1** — một model xuyên suốt, lúc nghỉ | 24.562 (75,3%) | 27.971 (85,8%) | **24.598 (75,4%)** | không đổi — vốn đã vừa, nay rộng hơn |
+| **1** — khi vision thức | 32.383 (99,3%) | 35.792 (**109,8% ❌**) | **32.419 (99,4%)** | ★ **ĐỔI MỘT NỬA** — hết "không thể tồn tại", nhưng **dưới tải 33.476 = 102,7% VẪN VƯỢT TRẦN** |
+| **2** — đồng thời đủ bộ | 42.312 (130% ❌) | 47.065 (**144,3% ❌**) | **43.692 (134,0% ❌)** | **KHÔNG ĐỔI — vẫn KHÔNG KHẢ THI** |
+| **3** — thị giác thường trú | 32.383 (99,3%) | 35.792 (**109,8% ❌**) | **32.419 (99,4%)** | ★ **ĐỔI MỘT NỬA** — như Case 1 vision thức |
+| **4** — hybrid `balanced`, lúc nghỉ | 28.026 (86%) | 31.435 (96,4%) | **28.062 (86,1%)** | ★ **ĐỔI** — từ "sát trần, không còn chỗ sinh" thành "có biên thật" (2 model cùng sinh = 29.942, **91,8%**) |
+| **4** — `balanced` + vision thức | *(Đợt 0 không tính)* | 39.256 (**120,4% ❌**) | **35.883 (110,0% ❌)** | **KHÔNG ĐỔI — vẫn vượt trần** |
+
+Thành phần cột "SAU Đợt 1":
+- Case 1 / 3: `1.200 + 19.077 (Coder-30B) + 4.321 (embed) = 24.598` · `+ 7.821 (vision) = 32.419`
+- Case 2 (mức **tối thiểu**, chỉ 2 model 30B + embed): `1.200 + 19.077 + 19.094 + 4.321 = 43.692`. Đủ bộ thật (thêm 4B + FIM + vision) = **56.751 (174,0%)**
+- Case 4: `1.200 + 19.077 + 3.464 (4B — số Đợt 0 chưa đo lại ⇒ SÀN) + 4.321 = 28.062` · `+ 7.821 = 35.883`
+
+⚠ **Case 4 là số SÀN.** Nếu model 4B cũng đắt thêm ~1.350 MiB như hai model 30B thì lúc nghỉ ≈ **29.412 (90,2%)** — **ước lượng, CHƯA ĐO**. Kết luận "có biên thật" vẫn đứng ở cả hai mức, nhưng biên hẹp hơn 86,1% nhiều.
+
+**Ba điều phải nói thẳng:**
+1. **Case 2 không phải "gần khả thi".** Riêng nền + hai model 30B đã là `1.200 + 19.077 + 19.094 = 39.371 MiB`, **vượt trần 6.764 MiB khi embedding bằng KHÔNG**. Khoản giành lại 3.373 MiB **không tới một nửa** chỗ thiếu.
+2. **99,4% của Case 1/3 không có nghĩa là "đã giải quyết".** Đó là lúc nghỉ. Có người dùng thật là **102,7%**.
+3. **Đợt 0 đã công bố một cấu hình VƯỢT TRẦN là "sát trần"**: Case 1 + vision công bố 32.383 (99,3%), số thật lúc đó là **35.792 (109,8%)**.
+
+---
 
 ### Case 1 — MỘT MODEL XUYÊN SUỐT (roster A, vision theo yêu cầu)
 
 | | |
 |---|---|
 | **Cấu hình** | `GGUF_DEFAULT_MODEL` = `GGUF_CODE_MODEL` = Coder-30B · embedding · **không** model FIM riêng · vision bật khi cần |
-| **Lúc nghỉ** | 1.200 + 17.698 + 5.664 = **24.562 MiB (75,3%)** |
-| **Khi vision thức** | 24.562 + 7.821 = **32.383 MiB (99,3%)** |
-| **Dưới tải** | vượt trần — buffer sinh +470-940 không còn chỗ |
+| **Lúc nghỉ** | ~~1.200 + 17.698 + 5.664 = 24.562 MiB (75,3%)~~ *(Đợt 0)* → **Đợt 1: 1.200 + 19.077 + 4.321 = 24.598 MiB (75,4%)** |
+| **Khi vision thức** | ~~32.383 MiB (99,3%)~~ *(Đợt 0 — số thật lúc đó là 35.792, **109,8%**)* → **Đợt 1: 32.419 MiB (99,4%)** |
+| **Dưới tải** | vision ngủ: **25.538 (78,3%) — vừa**. Vision thức: 32.419 + 940 + 117 = **33.476 (102,7%) — VẪN VƯỢT TRẦN** |
 | **Đổi/quay lui** | **một dòng** `.env:120` |
 | **Điểm mạnh** | đơn giản nhất · KV cache rộng nhất khi vision ngủ · khớp ưu tiên "nghiêng code" |
 | **Điểm yếu** | **không có model general riêng** — chất lượng văn xuôi tiếng Việt phụ thuộc Coder-30B (**chờ chủ dự án chấm**) · 10 phút vision thức là 10 phút sát trần |
@@ -72,19 +125,21 @@ Hai nguyên nhân đã truy được:
 | | |
 |---|---|
 | **Cấu hình** | Coder-30B + General-30B + 4B + FIM + embedding + vision |
-| **Lúc nghỉ** | ≥ 1.200 + 17.698 + 17.750 + 5.664 = **42.312 MiB (130%)** |
-| **Kết luận** | ❌ **KHÔNG KHẢ THI** — đã xác nhận **đo trực tiếp**: nạp model 30B thứ hai bị từ chối nguyên văn `Not enough VRAM to fit the model with the specified settings` |
+| **Lúc nghỉ** | ~~≥ 1.200 + 17.698 + 17.750 + 5.664 = 42.312 MiB (130%)~~ *(Đợt 0)* → **Đợt 1: 1.200 + 19.077 + 19.094 + 4.321 = 43.692 MiB (134,0%)**; đủ bộ thật (thêm 4B + FIM + vision) = **56.751 (174,0%)** |
+| **Kết luận** | ❌ **KHÔNG KHẢ THI — Đợt 1 KHÔNG ĐỔI kết luận này.** Đã xác nhận **đo trực tiếp**: nạp model 30B thứ hai bị từ chối nguyên văn `Not enough VRAM to fit the model with the specified settings` |
 | **Hợp với** | — |
 
 ⚠ **Đây là điều quan trọng nhất phải nói thẳng: trên 32,6 GB, KHÔNG cấu hình nào cho phép đủ bộ cùng lúc.** Mọi lựa chọn đều là đánh đổi.
+
+⚠ **Và không phải "gần khả thi".** Riêng nền + hai model 30B (đường sản xuất) = `1.200 + 19.077 + 19.094 = 39.371 MiB`, **vượt trần 6.764 MiB ngay cả khi embedding bằng KHÔNG**. Khoản Đợt 1 giành lại (3.373 MiB) **không tới một nửa** chỗ còn thiếu. Muốn Case 2 khả thi thì phải đổi phần cứng hoặc đổi hẳn hạng model, không phải chỉnh buffer.
 
 ### Case 3 — THỊ GIÁC ƯU TIÊN (vision thường trú, tắt idle-timeout)
 
 | | |
 |---|---|
 | **Cấu hình** | vision **giữ thường trú** (`LLAMA_VISION_IDLE_TIMEOUT_MS` rất lớn) + Coder-30B + embedding |
-| **Lúc nghỉ** | 1.200 + 7.821 + 17.698 + 5.664 = **32.383 MiB (99,3%)** |
-| **Dưới tải** | vượt trần |
+| **Lúc nghỉ** | ~~1.200 + 7.821 + 17.698 + 5.664 = 32.383 MiB (99,3%)~~ *(Đợt 0 — số thật lúc đó là **35.792, 109,8% ❌ đã vượt trần**)* → **Đợt 1: 1.200 + 7.821 + 19.077 + 4.321 = 32.419 MiB (99,4%)** |
+| **Dưới tải** | **33.476 (102,7%) — VẪN VƯỢT TRẦN.** Đợt 1 đưa case này từ "không thể tồn tại" về "tồn tại được lúc nghỉ", **không** đưa nó thành dùng được dưới tải |
 | **Điểm mạnh** | ảnh xử lý **không phải chờ 40 giây khởi sidecar** mỗi lần nguội |
 | **Điểm yếu** | **không còn chỗ cho bất kỳ model nào khác** · sát trần liên tục · `evictLRU()` **không đuổi được** sidecar (khác tiến trình) ⇒ khi vượt, nhánh `catch` **lặng lẽ nạp lại `gpuLayers:"auto"`** — tier âm thầm tụt tốc độ, dấu vết duy nhất là một dòng `console.warn` |
 | **Hợp với** | khách nặng kiểm tra ảnh, gần như không dùng lập trình |
@@ -94,7 +149,9 @@ Hai nguyên nhân đã truy được:
 | | |
 |---|---|
 | **Cấu hình** | Bó cấu hình **đặt tên**, chọn lúc triển khai. Không ép một roster cho mọi khách |
-| **Hồ sơ** | `code-heavy` (Case 1) · `vision-heavy` (Case 3) · `balanced` (Coder-30B + 4B general + embedding, vision theo yêu cầu = 1.200+17.698+3.464+5.664 = **28.026 MiB, 86%**) |
+| **Hồ sơ** | `code-heavy` (Case 1) · `vision-heavy` (Case 3) · `balanced` (Coder-30B + 4B general + embedding, vision theo yêu cầu): ~~1.200+17.698+3.464+5.664 = 28.026 MiB, 86%~~ *(Đợt 0)* → **Đợt 1: 1.200+19.077+3.464+4.321 = 28.062 MiB, 86,1%** |
+| **⚠ `balanced` — điều Đợt 0 không tính** | **Khi vision thức: 35.883 MiB = 110,0% ❌ VƯỢT TRẦN.** Hồ sơ `balanced` **không được** để sidecar thị giác thường trú. Đợt 1 **không** đổi điều này (trước Đợt 1: 120,4%) |
+| **⚠ `balanced` là số SÀN** | Số 4B (3.464) là của Đợt 0, đo bằng `bench.mjs` ⇒ **chưa đo lại bằng đường sản xuất**. Nếu 4B cũng đắt thêm ~1.350 MiB như hai model 30B thì lúc nghỉ ≈ **29.412 (90,2%)** — ước lượng, **CHƯA ĐO** |
 | **Điểm mạnh** | mỗi nhà máy có nhu cầu khác nhau — đây là **điểm bán hàng**, không phải chi phí · mỗi hồ sơ quay lui được độc lập |
 | **Điểm yếu** | phải **dựng cơ chế hồ sơ** (chưa có) · phải tài liệu hoá đánh đổi từng hồ sơ cho đội triển khai |
 | **Hợp với** | **sản phẩm bán cho nhiều khách** — đúng mô hình của dự án này |
@@ -148,6 +205,21 @@ Làm sai thứ tự là chọn trên nền cát.
 
 ⚠ **Bước C có thể làm đổi kết luận của bước D.** Nếu giải phóng được 6,4 GB thì Case 3 (thị giác thường trú) từ 99,3% xuống ~79% — và bảng đánh đổi viết lại hoàn toàn.
 
+> **⚠ Đợt 1 đã làm bước B và C. Kết quả thật, và dự đoán trên SAI:**
+>
+> | | Kỳ vọng của §5 | Thực tế Đợt 1 |
+> |---|---|---|
+> | Giải phóng được | ~6,4 GB | **3.373 MiB (~3,3 GiB)** — bằng khoảng **một nửa** |
+> | Case 3 sau khi chỉnh | ~79% | **99,4%** |
+>
+> **Vì sao lệch xa đến thế** — hai sai số gần như triệt tiêu nhau, che mất cả hai: con số "99,3%" của Đợt 0 vốn đã sai (số thật là **109,8%**, vì `bench.mjs` hụt cả embedding lẫn context sản xuất). Giành lại 3,37 GB từ 109,8% ⇒ 99,4%. Nhìn bề ngoài "không đổi gì", thực chất là **giành lại thật 3,37 GB từ một điểm xuất phát tệ hơn tưởng 3,4 GB**.
+>
+> **Trạng thái các bước sau Đợt 1:**
+> - **A** (thành phần nắm ngân sách VRAM) — **chưa làm**, vẫn là nợ lớn nhất.
+> - **B** (vá race) — **ĐÃ LÀM** (Đợt 1 Task 1, khoá in-flight, đã nghiệm thu trên app thật: chỉ còn **1** lượt nạp thay vì 2). ⚠ **NHƯNG app VẪN không nạp được 30B** vì một nguyên nhân **thứ ba** khác hẳn race, **chưa truy được** — đã loại trừ: mã nạp sản xuất (chạy tốt ở tiến trình gọn), thời điểm boot (hoãn 120 s vẫn lỗi), dung lượng thiết bị (còn ~27 GB trống lúc lỗi). Cần **một đợt riêng**.
+> - **C** (chỉnh buffer) — **ĐÃ LÀM một nửa**: embedding xong (3.373 MiB); sidecar `-np 1` giành lại **~0** vì tiền đề sai. Còn dư địa: context thường 4096×4 vẫn được tạo cho model nhúng.
+> - **D** (chốt roster) — **VẪN BỊ CHẶN**, giờ bởi nguyên nhân thứ ba ở bước B chứ không phải bởi race.
+
 ---
 
 ## 6. Khi nào cần đổi model — tiêu chí, không phải danh sách
@@ -172,10 +244,18 @@ Trung thực về chỗ yếu, để chủ dự án không quyết dựa trên k
 - **Chất lượng tiếng Việt của Coder-30B** — 3 cặp A/B đang chờ chấm. Đây là **biến quyết định** giữa Case 1 và Case 4/`balanced`.
 - **§4 không đo model 4B** ⇒ hồ sơ `balanced` thiếu bằng chứng cho **chính model general nó sẽ dùng**.
 - **Lưu lượng thật của tier code/fim** — không đo được cho tới khi vá 4.2.
-- **Buffer embedding 4,5 GB** — biết có, **chưa truy nguyên nhân**.
-- **Hiệu quả của `-np 1`** — chưa đo, **cần sửa mã**.
-- **Roster C chưa chạy qua boot app thật**; **KV cache cho 30B chưa bao giờ đo được**.
-- **Tất cả số là lúc nghỉ** — dưới tải phải cộng +470-940 MiB mỗi model hoạt động.
+- ~~**Buffer embedding 4,5 GB** — biết có, **chưa truy nguyên nhân**.~~ ✅ **Đợt 1 ĐÃ TRẢ LỜI**: nguyên nhân là `contextSize:"auto"` trong `getEmbeddingContext()`; chi phí thật 7.694 MiB (không phải 5.664); sau khi đổi sang `EMBED_CTX=2048` còn **4.321 MiB**.
+- ~~**Hiệu quả của `-np 1`** — chưa đo, **cần sửa mã**.~~ ✅ **Đợt 1 ĐÃ TRẢ LỜI**: **~0 MiB** (trong nhiễu đo). Tiền đề "n_parallel=4 nhân bốn KV-cache" **sai** — build `llama-server` đang cài dùng `kv_unified=true`.
+- **Roster C chưa chạy qua boot app thật.** ⚠ **Đợt 1 làm rõ thêm: KHÔNG roster nào chạy được qua boot app thật** — app không nạp nổi model 30B (xem §5).
+- ~~**KV cache cho 30B chưa bao giờ đo được**.~~ ✅ **Đợt 1 đo được gián tiếp**: context sản xuất (4096 token × 4 sequences) tốn **+1.344 MiB** cho 30B-Instruct và **+1.379 MiB** cho Coder-30B (hiệu số giữa `warmModel()` sản xuất và `bench.mjs`). Đây chính là khoản Đợt 0 bỏ sót.
+- **Tất cả số là lúc nghỉ** — dưới tải phải cộng +470-940 MiB mỗi model GGUF, +117 MiB cho sidecar đang suy luận.
+
+**Đợt 1 để lại những câu hỏi MỚI chưa trả lời được:**
+
+- **Vì sao app không nạp được 30B trong khi tiến trình gọn nạp được?** Đã khoanh vùng là giới hạn **cấp tiến trình app**, chưa có gốc rễ. **Đây là thứ chặn bước D.**
+- **Model 4B và FIM chưa được đo lại bằng đường sản xuất** — số Đợt 0 cho hai model này là **sàn**, và hồ sơ `balanced` phụ thuộc trực tiếp vào số 4B.
+- **Nhánh `catch` nạp lại `gpuLayers:"auto"` có phải mã chết không?** Không chạy lần nào trong 3 lượt boot có OOM. Nếu đúng thì cơ chế phục hồi mà §3 Case 3 mô tả **chưa từng hoạt động**.
+- **Còn giành lại được bao nhiêu từ context thường của model nhúng?** Biết là còn, **chưa đo**.
 
 ---
 
