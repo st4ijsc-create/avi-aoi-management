@@ -507,22 +507,38 @@ node scripts/ai-bench/bench.mjs --models fim --warmup 2 --iters 5 --maxTokens 32
 
 Chênh lệch tuyệt đối (30B − 1.5B): TTFT +26.3ms (@153tok) / +49.8ms (@533tok); tổng thời gian tới gợi ý đầy đủ +64.8ms (@153tok) / +98.5ms (@533tok).
 
-**Bằng ngôn ngữ người dùng:** khoảng dừng gõ phím "cảm nhận được" thường ở 300-500ms (đúng mô tả "dừng nửa giây, chờ gợi ý" của câu hỏi). Model hiện tại (1.5B) trả gợi ý đầy đủ sau 84-89ms — nhanh hơn ngưỡng đó 4-6 lần. Đổi sang Coder-30B, gợi ý đầy đủ sau 149-188ms — chậm hơn 1.5B 2-3 lần về SỐ TƯƠNG ĐỐI, nhưng vẫn chỉ bằng 1/3-1/2 ngưỡng dừng-gõ-phím: người dùng sẽ không phân biệt được trong 2 ngữ cảnh đã đo.
+**Bằng ngôn ngữ người dùng:** ⚠ ngưỡng "dừng gõ phím ~300-500ms" dùng để so sánh dưới đây là **giả định của điều phối viên (controller) nêu trong lệnh giao việc gửi agent thực thi task này — KHÔNG có trong `task-5-brief.md`, kế hoạch, hay bất kỳ spec nào, và chưa có nguồn kiểm chứng** (không phải số đo, không trích dẫn chuẩn UX nào). Task 7/chủ dự án cần tự đặt ngưỡng thật nếu muốn kết luận chắc chắn hơn — dưới đây chỉ dùng để có một mốc tham chiếu, không phải tiêu chí đã chốt.
 
-### Câu hỏi phụ — dùng lại model đã nạp sẵn có "miễn phí" không?
+So với khoảng giả định đó, nêu ĐỦ cả 2 đầu (không chỉ đầu có lợi):
 
-VRAM đo được trực tiếp: model 1.5B resident chiếm delta **~1774 MiB**. Thời gian nạp "miễn phí nếu dùng chung" suy từ đọc mã (không đo trực tiếp): `loadGgufModel()` (`aiGgufEngine.ts:593-599`) trả về ngay nếu `modelId` đã có trong `loadedModels` — nếu FIM trỏ đúng basename Coder-30B đang thường trú cho "code", lượt gọi FIM đi thẳng cache-hit, 0ms nạp thêm. Nhưng `.env` hiện có `GGUF_MAX_LOADED_MODELS=4` (dòng 124) — thiết kế hiện tại đã cho phép FIM (1.5B) và code (30B) cùng thường trú, không tranh chỗ nhau, nên phần "tốn thêm VRAM" là đánh đổi thật nhưng KHÔNG cấp bách.
+| Kịch bản | Tổng thời gian tới gợi ý đầy đủ | % của đầu THẤP (300ms) | % của đầu CAO (500ms) |
+|---|---|---|---|
+| Tốt nhất — 1.5B, ngữ cảnh ngắn | 83.8 ms | 28% | 17% |
+| Xấu nhất — 30B, ngữ cảnh dài | 187.8 ms | **63%** | 38% |
+
+Tức là: xấu nhất đo được (đổi sang 30B, ngữ cảnh dài, so với đầu thấp 300ms của khoảng giả định) chiếm **63%** ngưỡng — gần 2/3, không phải "1/2" như bản trước viết (đó là kết quả của việc ghép số tốt (149ms) với ngưỡng thấp — chọn đầu có lợi). Vẫn dưới 100% (chưa vượt ngưỡng ở cả 2 đầu, tại 2 ngữ cảnh đã đo) nhưng biên an toàn hẹp hơn nhiều so với "1/3-1/2" ban đầu mô tả.
+
+### Câu hỏi phụ — dùng lại model đã nạp sẵn: MỘT đánh đổi có hai mặt, không phải hai ghi chú độc lập
+
+Đọc mã `loadGgufModel()` (`aiGgufEngine.ts:593-599`): engine cache theo **basename file** (`modelId = path.basename(resolvedPath, ".gguf")`). Nghĩa là hành động trỏ `GGUF_FIM_MODEL` vào **đúng file** đang dùng cho `GGUF_CODE_MODEL` — thứ tạo ra "0ms nạp thêm, không tốn VRAM thêm" — **CHÍNH LÀ** hành động khiến FIM và code dùng chung 1 model instance. Không có cách nào lấy lợi ích load mà tránh việc chia sẻ instance — hai điều này là MỘT hành động, không phải hai lựa chọn tách rời.
+
+- **Mặt lợi (VRAM đo trực tiếp, phần load suy từ đọc mã):** model 1.5B riêng resident chiếm delta **~1774 MiB** đo được. Nếu trỏ chung file với code, khoản này biến mất + lượt gọi FIM đi thẳng cache-hit (0ms nạp thêm).
+- **Mặt rủi ro (đọc mã thêm, KHÔNG ĐO trực tiếp):** đọc `server/services/ggufConcurrency.ts` cho thấy bức tranh rộng hơn cả việc chia sẻ file — MỌI lượt gọi GGUF (FIM/chat/code/RCA/report...) đã đi qua **một semaphore FIFO toàn cục** (`withGgufSlot()`), hiện `.env` đặt `GGUF_MAX_CONCURRENCY=4` (dòng 125, không phải default 1). Đồng thời mỗi context model được tạo với `sequences: GGUF_SEQUENCES` (default 4, không bị override trong `.env`) — tức MỘT model instance có thể phục vụ tới 4 chuỗi sinh song song, không nhất thiết phải xếp hàng cứng chỉ vì trùng file. Nói cách khác: rủi ro "ghost-text xếp hàng sau code-gen dài" **không phải đặc thù của việc chia sẻ file** (nó tồn tại ngay hôm nay, ở tầng semaphore toàn cục, bất kể FIM dùng model riêng hay chung) — nhưng **cạnh tranh COMPUTE GPU thật (không phải hàng đợi logic) thì vẫn còn nguyên**: 1 GPU vật lý, dù API cho phép 4 sequence "song song", tổng thông lượng vẫn bị chia sẻ — 1 lượt sinh code dài chạy cùng lúc nhiều khả năng làm CHẬM (không nhất thiết chặn cứng) lượt ghost-text đang chờ token đầu tiên.
+- Cả điểm này (mức độ chậm thêm khi có tải đồng thời thật) **CHƯA ĐƯỢC ĐO** — `bench.mjs` chỉ chạy cô lập (1 model/1 lượt gọi tại 1 thời điểm), không mô phỏng 2 lượt gọi chạy cùng lúc trên cùng GPU.
+- Giữ model FIM riêng (tốn thêm ~1.7GB VRAM đo được, `.env` hiện `GGUF_MAX_LOADED_MODELS=4` nên không tranh CHỖ NẠP với model code) không loại bỏ rủi ro cạnh tranh compute (vẫn qua chung semaphore + chung 1 GPU) nhưng giữ 2 model **instance** tách biệt — mức độ điều đó có thực sự giảm độ trễ ghost-text khi có tải đồng thời hay không thì **chưa đo**.
 
 ### Khuyến nghị
 
-**Số liệu ỦNG HỘ đổi** — không phải vì "mới hơn thì tốt hơn": chênh lệch tuyệt đối lớn nhất đo được (98.5ms) vẫn nhỏ hơn nhiều so với ngưỡng dừng-gõ-phím nửa giây mà use-case mô tả, cả 2 lựa chọn đều nằm trong vùng "cảm nhận như tức thời". **Nhưng có 2 điều kiện chưa đo trong task này:** (1) chỉ an toàn nếu Coder-30B ĐƯỢC ĐẢM BẢO thường trú trước lượt gọi FIM đầu tiên — nếu cold-load, Task 3 đo được 40969ms cho đúng file này (đọc nguội); (2) nếu chọn phương án DÙNG CHUNG 1 model instance với "code" (không phải model riêng trỏ cùng file), chưa đo rủi ro ghost-text phải xếp hàng phía sau 1 lượt sinh code dài đang chạy (bench.mjs đo cô lập, không mô phỏng tải đồng thời).
+**Số liệu ỦNG HỘ đổi về mặt độ trễ thuần (model đã resident, không tải đồng thời)** — không phải vì "mới hơn thì tốt hơn": ở cả 2 đầu ngưỡng giả định (xem bảng trên), kịch bản xấu nhất đo được vẫn dưới 100% (63% ở đầu thấp, 38% ở đầu cao). **Nhưng đây là số liệu TỐT NHẤT có thể (best-case), đi kèm 2 điều kiện chưa đo trong task này — không tách rời nhau:**
+1. **Residency:** chỉ an toàn nếu Coder-30B ĐƯỢC ĐẢM BẢO thường trú trước lượt gọi FIM đầu tiên — nếu cold-load, Task 3 đo được 40969ms cho đúng file này (đọc nguội).
+2. **Đánh đổi chia-sẻ-instance (xem "Câu hỏi phụ" trên):** lợi ích "0ms nạp thêm/tiết kiệm VRAM" và rủi ro "cạnh tranh GPU compute khi có tải đồng thời" là HAI MẶT của CÙNG một quyết định trỏ chung file — không đo được mức độ chậm thêm thực tế khi ghost-text và code-gen chạy cùng lúc trên 1 GPU.
 
 ### Mối lo / giới hạn
 
 1. Chỉ đo 2 ngữ cảnh (153/533 token) — xu hướng cho thấy khoảng cách TTFT MỞ RỘNG khi ngữ cảnh dài hơn (+26.3ms→+49.8ms khi prompt tăng ~3.5×); ngữ cảnh rất lớn (1500-3000+ token) chưa đo, ngoại suy cẩn trọng.
 2. Không mô phỏng tải GPU đồng thời (mối lo #2 ở khuyến nghị).
 3. `loadTimeMs` quan sát được (2948ms/8713ms) gần như chắc chắn ĐỌC NÓNG (cache ấm từ Task 3/4 cùng ngày, cùng 2 file) — Task 3 đo NGUỘI cùng file Coder-30B ra 40969ms, gấp ~4.7 lần. Không suy "cold start server" từ 2 số này.
-4. n=5/ngữ cảnh — đủ thấy xu hướng (dao động <10% trung vị) nhưng KHÔNG đủ để tính p95 có ý nghĩa thống kê; báo cáo chỉ đưa median/min/max, không bịa p95.
+4. n=5/ngữ cảnh — đủ thấy xu hướng, dao động (max−min)/trung vị ở 3/4 hàng dưới 10% (533tok 1.5B 7.5%, 153tok 30B 4.8%, 533tok 30B 3.8%) nhưng **1/4 hàng vượt: 153tok/1.5B lệch 17.4%** (range 2.3ms trên trung vị 13.2ms — nhỏ về số tuyệt đối nhưng KHÔNG đúng nếu gộp chung "mọi hàng <10%"). Dù vậy KHÔNG đủ mẫu để tính p95 có ý nghĩa thống kê; báo cáo chỉ đưa median/min/max, không bịa p95.
 5. Chỉ đo compute thuần trên GPU rảnh, KHÔNG gồm chi phí mạng/HTTP client↔server.
 
 ### Xác nhận `.env` hoàn nguyên + VRAM baseline
@@ -535,3 +551,7 @@ grep -n "^GGUF_FIM_MODEL=" .env
 `diff` rỗng → hoàn nguyên đúng. VRAM: 1208 MiB trước → 1210 MiB sau (khớp baseline, lệch trong dao động nền). Không `node.exe` treo sau cả 2 lượt bench.
 
 Bản đầy đủ (bảng tham số chọn khác default harness, JSON thô, mọi lý do): `.superpowers/sdd/2026-08-01-do0-model-roster-survey/task-5-report.md` (không commit).
+
+### Vòng sửa 1 (review)
+
+Reviewer xác nhận spec ✅ (TTFT đo thật khớp `bench.mjs:259-280`, mọi số khớp JSON đến từng ms, chạy lại độc lập ra 12.8ms so với 13.2ms báo cáo — cùng thứ tự độ lớn). Chất lượng cần sửa — 2 Important + 1 Minor, cả 3 đã xử lý, KHÔNG chạy lại model: (1) ngưỡng "300-500ms" được gắn nhãn rõ là **giả định của điều phối viên trong lệnh giao việc, không phải yêu cầu từ brief/spec, chưa có nguồn** — và câu "1/3-1/2 ngưỡng" (ghép mỗi kịch bản với đầu ngưỡng có lợi) sửa thành bảng nêu đủ 2 đầu, xấu nhất = 62.6% (đầu thấp), không phải 1/2; (2) "miễn phí nạp" và "rủi ro hàng đợi" viết lại thành MỘT đánh đổi có hai mặt (trỏ chung file = cùng lúc được lợi + chịu rủi ro), đào sâu thêm phát hiện `server/services/ggufConcurrency.ts` (semaphore toàn cục `GGUF_MAX_CONCURRENCY=4` + `sequences: GGUF_SEQUENCES` cho phép 4 chuỗi song song/model) — rủi ro "xếp hàng cứng" không đặc thù riêng việc share file, nhưng cạnh tranh GPU compute thật thì còn, CHƯA ĐO; (3) "dao động <10%" sửa vì sai với 1/4 hàng (153tok/1.5B = 17.4%). Chi tiết đầy đủ: `task-5-report.md` mục "Vòng sửa 1".
