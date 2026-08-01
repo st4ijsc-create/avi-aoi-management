@@ -230,13 +230,27 @@ function resolveContextSize(requested?: number): number {
   return Math.min(Math.max(Math.floor(requested), 256), GGUF_MAX_CTX);
 }
 
-/** Đợt 1 Task 2 — "auto" cấp TOÀN BỘ cửa sổ ngữ cảnh model được huấn luyện, trong
- *  khi chunk RAG dài nhất chỉ ~600 token (knowledge/chunks-stats.json:
- *  maxChunkChars=1800). Đo được: embedding 0.6B (file 1,2 GB) chiếm 5.664 MiB —
- *  ~4,5 GB là buffer. 1024 cho biên an toàn ~70%. */
+/** Đợt 1 Task 2 — "auto" cấp TOÀN BỘ cửa sổ ngữ cảnh model được huấn luyện, trong khi
+ *  chunk RAG dài nhất chỉ cần một phần nhỏ của cửa sổ đó. Đo được: embedding 0.6B (file
+ *  1,2 GB) chiếm 5.664 MiB — phần lớn là buffer.
+ *  SỬA review vòng 1 (Important): mặc định 1024 ban đầu dựa trên `maxChunkChars=1800`
+ *  (knowledge/chunks-stats.json) ⇒ ước ~600 token — đây là TRẦN CÔNG BỐ, không phải trần
+ *  được thực thi (build-knowledge-chunks.mjs không chặn cứng khi gặp khối không có ranh
+ *  giới câu/đoạn, ví dụ bảng markdown). Đo THẬT bằng tokenizer của chính model nhúng trên
+ *  chunk dài nhất thực tế trong knowledge/chunks.jsonl (6.135 ký tự,
+ *  "doc:docs/ECOSYSTEM/27_AOI_AVI_END_TO_END_AUDIT_UPGRADE_PLAN_2026-07.md#23"): 1.879
+ *  token — vượt 1024 tới 83%. node-llama-cpp KHÔNG cắt âm thầm khi input vượt contextSize,
+ *  nó THROW; throw đó bị kbVectorStore.ts (ingestKbChunks) nuốt thành skipped++ nên nội
+ *  dung âm thầm vắng mặt khỏi kb_chunks. Nâng lên 2048 (biên ~9% so với 1.879) — vẫn giữ
+ *  phần lớn khoản tiết kiệm so với "auto" trong khi phủ được chunk dài nhất THẬT. */
 const EMBED_CTX = (() => {
   const raw = Number(process.env.GGUF_EMBED_CTX);
-  return Number.isFinite(raw) && raw >= 256 ? Math.floor(raw) : 1024;
+  const DEFAULT_EMBED_CTX = 2048;
+  const value = Number.isFinite(raw) && raw >= 256 ? Math.floor(raw) : DEFAULT_EMBED_CTX;
+  // Minor 1 (review vòng 1): trần trên nhất quán với resolveContextSize()/GGUF_MAX_CTX ở trên
+  // — cùng mục đích (chặn KV-cache phi lý) áp dụng cho cùng file, không có lý do EMBED_CTX
+  // là ngoại lệ duy nhất không có trần.
+  return Math.min(value, GGUF_MAX_CTX);
 })();
 
 /** TASK A — Basename of the configured fast model (GGUF_FAST_MODEL), sans ".gguf". Empty if unset. */

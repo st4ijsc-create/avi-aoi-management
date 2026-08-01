@@ -161,7 +161,71 @@ Số THẬT (7.694 MiB) cao hơn số `bench.mjs` báo (5.624 MiB) vì `bench.mj
 
 Sau mỗi lượt đo (bench.mjs và script tạm): `nvidia-smi` xác nhận VRAM về gần baseline (~1.0-1.5 GB, dao động bình thường), không còn `node.exe` treo (kiểm bằng `tasklist`/quan sát tiến trình thoát).
 
-### Mối lo / việc để lại cho task sau
+### Mối lo / việc để lại cho task sau (trước review vòng 1)
 
-- **Công cụ đo trong brief (`bench.mjs`) và cổng an toàn (`kb:eval` → `_gguf-embed.mjs`) đều không đi qua `aiGgufEngine.ts`** — bất kỳ thay đổi tương lai nào ở `EMBED_CTX`/`getEmbeddingContext()` sẽ **không** được hai công cụ này phát hiện. Task 4 (roster VRAM) nên dùng số thật (4.204 MiB / giảm 45,4%) thay vì số `bench.mjs` báo (5.618 MiB / gần như không đổi).
-- `GGUF_EMBED_CTX` là biến môi trường mới, chưa có trong `.env` hiện tại của máy này (không sửa `.env` theo đúng ràng buộc của task) — mặc định `1024` trong mã đã đủ dùng, không bắt buộc set.
+- **Công cụ đo trong brief (`bench.mjs`) và cổng an toàn (`kb:eval` → `_gguf-embed.mjs`) đều không đi qua `aiGgufEngine.ts`** — bất kỳ thay đổi tương lai nào ở `EMBED_CTX`/`getEmbeddingContext()` sẽ **không** được hai công cụ này phát hiện. Task 4 (roster VRAM) nên dùng số thật (xem số đã cập nhật ở mục review vòng 1 bên dưới) thay vì số `bench.mjs` báo.
+- `GGUF_EMBED_CTX` là biến môi trường mới, chưa có trong `.env` hiện tại của máy này (không sửa `.env` theo đúng ràng buộc của task) — mặc định trong mã đã đủ dùng, không bắt buộc set.
+
+---
+
+### ⚠ Review vòng 1 — Important: 1024 KHÔNG đủ, sửa lên 2048
+
+**Phát hiện của reviewer**: brief gốc ước lượng chunk RAG dài nhất "~600 token" từ `maxChunkChars=1800` (`knowledge/chunks-stats.json`) — đây là **trần công bố**, không phải trần được thực thi. `scripts/ai-kb/build-knowledge-chunks.mjs` (`chunkText()`) không chặn cứng khi gặp khối văn bản không có ranh giới đoạn/câu (ví dụ bảng markdown). Đo THẬT bằng tokenizer của chính model nhúng (Qwen3-Embedding-0.6B) trên chunk dài nhất thực tế đang có trong `knowledge/chunks.jsonl` (đã tự kiểm chứng lại độc lập, khớp số reviewer đưa ra):
+
+- Chunk `doc:docs/ECOSYSTEM/27_AOI_AVI_END_TO_END_AUDIT_UPGRADE_PLAN_2026-07.md#23`: **6.135 ký tự → 1.879 token thật** (đo bằng `model.tokenize()` thật, không phải ước lượng ký tự/4).
+- Vượt `EMBED_CTX=1024` cũ tới **83%**.
+- node-llama-cpp xác nhận thực nghiệm: input vượt `contextSize` thì **THROW** (`"Input is longer than the context size that this LlamaContext was created with..."`), không cắt âm thầm.
+- Đường sản xuất thật `server/services/kb/kbVectorStore.ts:68` (`ingestKbChunks()`) gọi `generateEmbedding(content)` với `chunk.text` chưa cắt — throw đó bị `try/catch` nuốt thành `skipped++`, khiến nội dung **âm thầm vắng mặt** khỏi `kb_chunks`. Đường này hiện dormant (`KB_PGVECTOR_ENABLED` chưa bật) nhưng route không tự kiểm cờ trước khi chạy. **Đây là lỗi Task 2 mang vào** — trước Task 2 (còn `"auto"`) đường này chưa từng throw kiểu đó.
+
+**Lựa chọn: (a) nâng `EMBED_CTX` mặc định lên 2048.** Lý do: sửa đúng lỗi vừa tạo ra bằng thay đổi tối thiểu, không mở thêm mặt trận hành vi mới (không đụng tới cách `kbVectorStore.ts` xử lý input — đó là thay đổi hành vi cần cân nhắc riêng, ngoài phạm vi task này). 2048/1879 ≈ **biên an toàn ~9%** — sát nhưng đủ cho chunk dài nhất hiện có; vẫn giữ phần lớn khoản tiết kiệm so với `"auto"`.
+
+**Sửa mã**: `EMBED_CTX` mặc định `2048` (thay `1024`), cộng **Minor 1**: thêm trần trên `Math.min(value, GGUF_MAX_CTX)` — nhất quán với `resolveContextSize()`/`GGUF_MAX_CTX` đã có sẵn trong cùng file cho đúng mục đích (chặn KV-cache phi lý).
+
+**TDD — test mới, ĐỎ trước khi sửa** (thêm vào `aiGgufEngine.embedCtx.test.ts`, mock `createEmbeddingContext`/`getEmbeddingFor` được nâng cấp để **mô phỏng đúng hành vi throw thật** của node-llama-cpp khi input vượt `contextSize`, thay vì im lặng chấp nhận mọi độ dài như mock cũ):
+```
+ ❯ server/services/aiGgufEngine.embedCtx.test.ts (3 tests | 2 failed) 132ms
+   × ngữ cảnh đủ chứa chunk dài nhất THẬT (1.879 token đo bằng tokenizer thật) và có biên an toàn 14ms
+     → expected 1024 to be greater than or equal to 1879
+   × KHÔNG throw khi nhúng input dài bằng đúng chunk RAG thật dài nhất (1.879 token) — review round 1 Important 15ms
+     → promise rejected "Error: Input is longer than the context s…" instead of resolving
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  server/services/aiGgufEngine.embedCtx.test.ts > ... > ngữ cảnh đủ chứa chunk dài nhất THẬT ...
+AssertionError: expected 1024 to be greater than or equal to 1879
+
+ FAIL  server/services/aiGgufEngine.embedCtx.test.ts > ... > KHÔNG throw khi nhúng input dài bằng đúng chunk RAG thật dài nhất ...
+AssertionError: promise rejected "Error: Input is longer than the context s…" instead of resolving
+Caused by: Error: Input is longer than the context size that this LlamaContext was created with (1879 > 1024)
+ ❯ Object.getEmbeddingFor server/services/aiGgufEngine.embedCtx.test.ts:25:21
+ ❯ server/services/aiGgufEngine.ts:2214:48
+```
+Test dài (test thứ 3) dùng chuỗi giả 1.879 "từ" (tokenize giả đếm theo khoảng trắng, không phụ thuộc nội dung thật trên đĩa) — mô phỏng đúng độ dài token đã đo được, không đọc file `knowledge/chunks.jsonl` thật trong test (giữ test tự chứa, nhanh, không phụ thuộc dữ liệu kho tri thức có thể đổi).
+
+**Sau khi vá (2048)**: `npx vitest run server/services/aiGgufEngine.embedCtx.test.ts` → **3/3 xanh**. Toàn bộ họ `aiGgufEngine.*.test.ts` (7 file, gồm file mới) → **67/67 xanh**, không hồi quy. `tsc --noEmit` chỉ còn lỗi tiền tồn tại `SessionManagement.tsx:195`.
+
+**Đo VRAM thật sau khi đổi 1024→2048** (cùng phương pháp script tạm `_tmp-real-embed-check.mjs`, import thẳng `generateEmbedding()` sản xuất, không boot app; đã xoá sau khi đo, không commit; chạy 2 lần để kiểm tính ổn định):
+
+| Cấu hình | VRAM delta thật (model + context thường 4096 + embedding context) |
+|---|---|
+| TRƯỚC (`"auto"`) | 7.694 MiB |
+| SAU — 1024 (đã bị review bác vì không đủ) | 4.204 MiB |
+| **SAU — 2048 (giá trị cuối, đã chọn)** | **4.321-4.324 MiB** (2 lần đo, ổn định) |
+| **Giảm so với `"auto"`** | **~3.370-3.373 MiB (~43,8%)** |
+
+So với 1024, 2048 chỉ tốn thêm **~120 MiB** (~2,9%) — vẫn giữ được phần lớn khoản tiết kiệm 45,4%→43,8% (chênh ~1,6 điểm phần trăm) trong khi phủ đúng chunk dài nhất THẬT thay vì chunk ước lượng sai.
+
+**`npm run kb:eval` sau khi đổi**: **`recall@5 = 151/151 = 1.000`** — không đổi (nhắc lại: gate này không đi qua `aiGgufEngine.ts` — xem giải thích ở mục an toàn phía trên — nên không phải bằng chứng recall cho 2048, chỉ xác nhận không hồi quy kho tri thức hiện có). `knowledge/rag-eval-results.json` đổi lại lần nữa (hợp lệ), đã đưa vào commit review vòng 1.
+
+### Minor 2 — GHI NHẬN, KHÔNG SỬA trong task này: khoản "trả tiền hai lần" mới xử lý MỘT NỬA
+
+Task 2 chỉ sửa `embeddingContext` (dòng ~2271). **Context thường vẫn được tạo cho model nhúng** — `loadGgufModel()` (`aiGgufEngine.ts:672-677`) gọi `model.createContext({ contextSize: GGUF_DEFAULT_CTX=4096, sequences: GGUF_SEQUENCES=4, ... })` cho **MỌI** model được nạp qua đường này, kể cả model nhúng chỉ dùng cho `getEmbeddingFor()` chứ không bao giờ `session.prompt()`. Đây là khoản còn tồn, **không thuộc phạm vi Task 2** (Task 2 chỉ giao "Modify: `aiGgufEngine.ts:2235-2241`"), để lại cho đợt sau:
+
+- Số đo thật ở trên (4.321-4.324 MiB) **đã bao gồm** cả context thường 4096 này — nếu đợt sau loại bỏ nó cho model nhúng (ví dụ: bỏ qua `createContext()` khi `purpose==="embed"` và model chỉ từng được dùng cho embedding), VRAM embedding có thể còn giảm thêm đáng kể.
+- Task 4 (cộng bảng roster VRAM toàn hệ) cần biết con số 4.321-4.324 MiB là "đã trừ được nửa vấn đề", không phải mức sàn tuyệt đối.
+
+### Mối lo / việc để lại cho task sau (cập nhật sau review vòng 1)
+
+- Biên an toàn 2048/1879 (~9%) là **sát**, không phải rộng rãi — nếu kho tri thức tương lai sinh ra chunk dài hơn (ví dụ bảng markdown lớn hơn), có thể lại vượt trần và throw/skip âm thầm như lần này. Khuyến nghị thật sự triệt để (ngoài phạm vi Đợt 1): chặn cứng `chunkText()` ở `build-knowledge-chunks.mjs` theo đúng `maxChunkChars` đã công bố, VÀ/HOẶC thêm phòng vệ ở tầng `generateEmbedding()`/`ingestKbChunks()` để throw do vượt `contextSize` không bị nuốt âm thầm thành `skipped++` mà log rõ ràng.
+- Minor 2 ở trên: context thường 4096 cho model nhúng vẫn chưa bị động tới — còn dư địa tiết kiệm VRAM cho đợt sau.
+- Công cụ đo (`bench.mjs`) và cổng an toàn (`kb:eval` → `_gguf-embed.mjs`) vẫn không đi qua `aiGgufEngine.ts` như đã nêu trước review vòng 1 — chưa có gì thay đổi ở điểm này.
