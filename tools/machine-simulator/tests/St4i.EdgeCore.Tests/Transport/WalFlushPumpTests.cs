@@ -195,6 +195,12 @@ public sealed class WalFlushPumpTests
         var pump = new WalFlushPump(getLive: () => null, interval: TimeSpan.FromMilliseconds(20));
 
         var disposeTask = pump.DisposeAsync().AsTask();
+
+        // 🔴 backlog-test-deadlines — DELIBERATELY LEFT as a bounded abandon, noted so the next sweep does not
+        // "fix" it into a hang. `DisposeAsync` is the thing under test and accepts no cancellation token, and
+        // this pump was built with `getLive: () => null` — it opens no socket and no file, so a lost WhenAny
+        // leaves only an unobserved in-memory Task. There is nothing to cancel, and an unconditional join in a
+        // `finally` would turn the one failure this test exists to report into a wedged test host.
         var winner = await Task.WhenAny(disposeTask, Task.Delay(TimeSpan.FromSeconds(5)));
 
         Assert.Same(disposeTask, winner);
