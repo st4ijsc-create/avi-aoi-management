@@ -155,6 +155,13 @@ interface LoadedModel {
 const loadedModels = new Map<string, LoadedModel>();
 let llamaInstance: any = null;
 
+/** Đợt 1 Task 1 — chống race double-warm: hai nơi độc lập cùng gọi warmModel()
+ *  (backgroundJobs.ts:126-127 delay 3000ms và aiLocalKnowledgeApi.ts:268 delay
+ *  2000ms) khiến cùng một model 17 GB bị nạp hai lần chồng nhau ⇒ cudaMalloc lỗi
+ *  (30B) hoặc rò bản sao mồ côi (4B, ~3.474 MiB, evictLRU không với tới).
+ *  Khoá theo modelId: lượt thứ hai chờ lượt đầu thay vì nạp song song. */
+const inFlightLoads = new Map<string, Promise<string>>();
+
 const GGUF_MODELS_DIR = process.env.GGUF_MODELS_DIR
   ? path.resolve(process.env.GGUF_MODELS_DIR)
   : path.join(process.cwd(), "uploads", "gguf-models");
@@ -601,75 +608,91 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
     return modelId;
   }
 
-  const llama = await getLlama();
+  // Đợt 1 Task 1 — khoá in-flight: nếu modelId này đang được nạp bởi một lượt gọi khác
+  // (xem giải thích ở khai báo inFlightLoads), CHỜ lượt đó thay vì nạp song song.
+  const pending = inFlightLoads.get(modelId);
+  if (pending) return pending;
 
-  // Free memory before loading another model (LRU + VRAM guard).
-  await ensureCapacity();
+  const loadPromise = (async () => {
+    const llama = await getLlama();
 
-  console.log(`[aiGgufEngine] Loading model: ${resolvedPath}`);
-  const startTime = Date.now();
+    // Free memory before loading another model (LRU + VRAM guard).
+    await ensureCapacity();
 
-  const requestedGpuLayers = config.gpuLayers ?? "max";
-  let model;
-  try {
-    model = await llama.loadModel({
-      modelPath: resolvedPath,
-      // "max" offloads ALL layers to GPU (full speed). When the engine runs CPU-only
-      // (GGUF_GPU=false → getLlama gpu:false), node-llama-cpp ignores this. Never pass -1
-      // here: node-llama-cpp 3.x interprets -1 as 0 layers → silent CPU inference.
-      gpuLayers: requestedGpuLayers,
-    } as any);
-  } catch (err: any) {
-    // VRAM OOM on a FULL GPU offload — the VRAM guard only checks current-usage %,
-    // it can't know the incoming model's size, so a large model (e.g. the 30B deep
-    // tier) can still exceed free VRAM. Recover instead of failing the load: free
-    // every idle model, then retry with gpuLayers:"auto" so node-llama-cpp offloads
-    // as many layers as fit and runs the rest on CPU (slower, but the model loads).
-    const msg = String(err?.message ?? err).toLowerCase();
-    const isOom =
-      msg.includes("out of memory") ||
-      msg.includes("cudamalloc") ||
-      msg.includes("failed to allocate") ||
-      msg.includes("unable to allocate");
-    if (!isOom || requestedGpuLayers === "auto" || requestedGpuLayers === 0) throw err;
+    console.log(`[aiGgufEngine] Loading model: ${resolvedPath}`);
+    const startTime = Date.now();
 
-    console.warn(
-      `[aiGgufEngine] ${modelId}: full GPU offload ran out of VRAM — freeing idle models and retrying with gpuLayers:"auto" (partial offload, CPU fallback for the rest).`,
-    );
-    while (await evictLRU()) {
-      /* evict every idle (refCount===0) model to reclaim maximum VRAM */
+    const requestedGpuLayers = config.gpuLayers ?? "max";
+    let model;
+    try {
+      model = await llama.loadModel({
+        modelPath: resolvedPath,
+        // "max" offloads ALL layers to GPU (full speed). When the engine runs CPU-only
+        // (GGUF_GPU=false → getLlama gpu:false), node-llama-cpp ignores this. Never pass -1
+        // here: node-llama-cpp 3.x interprets -1 as 0 layers → silent CPU inference.
+        gpuLayers: requestedGpuLayers,
+      } as any);
+    } catch (err: any) {
+      // VRAM OOM on a FULL GPU offload — the VRAM guard only checks current-usage %,
+      // it can't know the incoming model's size, so a large model (e.g. the 30B deep
+      // tier) can still exceed free VRAM. Recover instead of failing the load: free
+      // every idle model, then retry with gpuLayers:"auto" so node-llama-cpp offloads
+      // as many layers as fit and runs the rest on CPU (slower, but the model loads).
+      const msg = String(err?.message ?? err).toLowerCase();
+      const isOom =
+        msg.includes("out of memory") ||
+        msg.includes("cudamalloc") ||
+        msg.includes("failed to allocate") ||
+        msg.includes("unable to allocate");
+      if (!isOom || requestedGpuLayers === "auto" || requestedGpuLayers === 0) throw err;
+
+      console.warn(
+        `[aiGgufEngine] ${modelId}: full GPU offload ran out of VRAM — freeing idle models and retrying with gpuLayers:"auto" (partial offload, CPU fallback for the rest).`,
+      );
+      while (await evictLRU()) {
+        /* evict every idle (refCount===0) model to reclaim maximum VRAM */
+      }
+      model = await llama.loadModel({
+        modelPath: resolvedPath,
+        gpuLayers: "auto",
+      } as any);
     }
-    model = await llama.loadModel({
-      modelPath: resolvedPath,
-      gpuLayers: "auto",
-    } as any);
+
+    // B0.2 — respect a requested per-task contextSize (clamped); else GGUF_DEFAULT_CTX.
+    const resolvedCtx = resolveContextSize(config.contextSize);
+    const context = await model.createContext({
+      contextSize: resolvedCtx,
+      batchSize: config.batchSize ?? 512,
+      flashAttention: config.flashAttention !== false,
+      sequences: GGUF_SEQUENCES,
+    });
+
+    const loadTimeMs = Date.now() - startTime;
+    console.log(`[aiGgufEngine] Model loaded in ${loadTimeMs}ms: ${modelId}`);
+
+    loadedModels.set(modelId, {
+      llama,
+      model,
+      context,
+      config,
+      loadedAt: new Date(),
+      lastUsedAt: new Date(),
+      useCount: 0,
+      sizeBytes: typeof model.size === "number" ? model.size : 0,
+      refCount: 0,
+    });
+
+    return modelId;
+  })();
+
+  inFlightLoads.set(modelId, loadPromise);
+  try {
+    return await loadPromise;
+  } finally {
+    // Bắt buộc: nạp thất bại mà không xoá khỏi map thì mọi lượt sau sẽ nhận lại đúng
+    // promise lỗi đó vĩnh viễn (không bao giờ thử nạp lại).
+    inFlightLoads.delete(modelId);
   }
-
-  // B0.2 — respect a requested per-task contextSize (clamped); else GGUF_DEFAULT_CTX.
-  const resolvedCtx = resolveContextSize(config.contextSize);
-  const context = await model.createContext({
-    contextSize: resolvedCtx,
-    batchSize: config.batchSize ?? 512,
-    flashAttention: config.flashAttention !== false,
-    sequences: GGUF_SEQUENCES,
-  });
-
-  const loadTimeMs = Date.now() - startTime;
-  console.log(`[aiGgufEngine] Model loaded in ${loadTimeMs}ms: ${modelId}`);
-
-  loadedModels.set(modelId, {
-    llama,
-    model,
-    context,
-    config,
-    loadedAt: new Date(),
-    lastUsedAt: new Date(),
-    useCount: 0,
-    sizeBytes: typeof model.size === "number" ? model.size : 0,
-    refCount: 0,
-  });
-
-  return modelId;
 }
 
 /**
