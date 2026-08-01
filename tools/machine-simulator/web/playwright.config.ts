@@ -33,8 +33,24 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   forbidOnly: !!process.env.CI,
+  // backlog-test-deadlines task 2 — MEASURED, not assumed. A full run of all 210 tests on an idle
+  // machine: median 2 130 ms, p90 4 316 ms, p99 10 386 ms, max 18 161 ms. The slowest test in the
+  // suite therefore uses 40% of this ceiling and the median uses 5%, so 45 000 ms is not the
+  // constraint anybody thought it was and raising it would buy nothing real. What was over the
+  // ceiling was the DECLARED total: 45 of 137 test bodies summed their own explicit bounds past it,
+  // so those bounds could never have been spent. `scripts/check-test-budgets.mjs` is the gate that
+  // keeps that true; run it with `--measured <playwright json>` to re-check both halves against a
+  // real run.
   timeout: 45_000,
   expect: {
+    // The single most load-bearing number in the suite: with the 63 ritual `{ timeout: 15_000 }` /
+    // `{ timeout: 10_000 }` annotations removed (see `tests/support/deadlines.ts` for the measurement
+    // that condemned them), this is the bound on almost every wait in it. Measured worst case for a
+    // wait that carries no bound of its own: 8 520 ms — but that one site (`24-connectors`, whose
+    // cost is a server-side 8 s connection-test timeout) is now annotated with a bound that says so,
+    // and the worst remaining un-annotated wait measures 596 ms (`waitForEngineConnected`, over 137
+    // calls). 10 000 ms is ~17x that, and it is a TIGHTENING of the 15 000 ms that used to be pasted
+    // at 40 of these sites.
     timeout: 10_000,
     toHaveScreenshot: {
       // Freezes CSS transitions/animations and finite Web Animations (Framer Motion's enter

@@ -27,7 +27,7 @@ test.describe("assets — asset registry list + detail", () => {
     await gotoAssets(page)
 
     const firstRow = page.locator("tbody tr").first()
-    await expect(firstRow).toBeVisible({ timeout: 15_000 })
+    await expect(firstRow).toBeVisible()
 
     await firstRow.click()
 
@@ -51,7 +51,7 @@ test.describe("assets — asset registry list + detail", () => {
     await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
     await page.goto("/assets")
     await expect(page.getByRole("heading", { name: en.assets.title, level: 1 })).toBeVisible()
-    await expect(page.getByRole("columnheader", { name: en.assets.table.code })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("columnheader", { name: en.assets.table.code })).toBeVisible()
 
     await expect(page.getByText(/assets\.[a-zA-Z.]+/)).toHaveCount(0)
 

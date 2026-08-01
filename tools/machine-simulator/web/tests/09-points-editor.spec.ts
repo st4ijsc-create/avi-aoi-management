@@ -221,7 +221,7 @@ test.describe("points editor — board canvas + points list + full-spec form + f
     // directly instead of through the shared vi-flavored helpers.
     await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
     await page.goto(`/products/${THROWAWAY_CODE}`)
-    await expect(page.getByRole("heading", { name: THROWAWAY_CODE, level: 1 })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: THROWAWAY_CODE, level: 1 })).toBeVisible()
     await page.getByRole("tab", { name: en.productConfigDetail.tabs.points }).click()
 
     await expect(page.getByRole("heading", { name: en.pointsEditor.title, level: 2 })).toBeVisible()

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
+import { LIVE_CYCLES_MS } from "./support/deadlines"
 import { setFleetRunning } from "./support/engine"
 import { gotoMachineDetail } from "./support/screens"
 import { vi as viDict } from "../src/i18n/vi"
@@ -27,7 +28,7 @@ test.describe("machine detail", () => {
     // SPC is this class's primary tab — switch to it and wait for real data past the "needs ≥2
     // judged readings" placeholder (SCRW-01 cycles every 0.8s, so this clears quickly once running).
     await page.getByRole("tab", { name: viDict.machineDetail.tabs.spc }).click()
-    await expect(page.getByText(viDict.spcChart.waiting)).toHaveCount(0, { timeout: 30_000 })
+    await expect(page.getByText(viDict.spcChart.waiting)).toHaveCount(0, { timeout: LIVE_CYCLES_MS })
     // `.first()` — "Trung bình" legitimately appears twice (the summary stat readout AND the chart
     // legend use the same i18n string for two different pieces of UI).
     await expect(page.getByText(viDict.spcChart.mean).first()).toBeVisible()
@@ -37,18 +38,16 @@ test.describe("machine detail", () => {
     // recipe) — the engine auto-resolves SCREWDRIVE-M4 by machine type (`ConfigSyncEngine.CheckAsync`),
     // Pull applies it, and the pull result panel renders a real applied version.
     await page.getByRole("tab", { name: viDict.machineDetail.tabs.config }).click()
-    await expect(page.getByRole("button", { name: viDict.configSyncPanel.recipe.pullBtn })).toBeVisible({
-      timeout: 15_000,
-    })
+    await expect(page.getByRole("button", { name: viDict.configSyncPanel.recipe.pullBtn })).toBeVisible()
     await page.getByRole("button", { name: viDict.configSyncPanel.recipe.pullBtn }).click()
-    await expect(page.getByText(viDict.configSyncPanel.pullResult.title)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(viDict.configSyncPanel.pullResult.title)).toBeVisible()
     // Recipe machines don't get a push affordance from this panel (server: recipes are human-authored
     // in SYNAPSE) — the honest "not available here" note plus a link to the Demo-only authoring page.
     await expect(page.getByText(viDict.configSyncPanel.recipe.pushUnavailable)).toBeVisible()
 
     // Log tab — real cycle rows, newest first (header row + at least one data row).
     await page.getByRole("tab", { name: viDict.machineDetail.tabs.log }).click()
-    await expect.poll(() => page.getByRole("row").count(), { timeout: 15_000 }).toBeGreaterThan(1)
+    await expect.poll(() => page.getByRole("row").count()).toBeGreaterThan(1)
 
     await assertNoSeriousA11yViolations(page)
   })
@@ -56,7 +55,7 @@ test.describe("machine detail", () => {
   test("AOI/AVI machine (AOI-01): Board tab renders inspected points", async ({ page }) => {
     await gotoMachineDetail(page, "AOI-01")
     await page.getByRole("tab", { name: viDict.machineDetail.tabs.board }).click()
-    await expect(page.getByText(viDict.boardView.waiting)).toHaveCount(0, { timeout: 30_000 })
+    await expect(page.getByText(viDict.boardView.waiting)).toHaveCount(0, { timeout: LIVE_CYCLES_MS })
     // Not `getByRole` — BoardView.tsx's <svg> is `role="img"` for a clean board but `role="group"`
     // once it has real, individually-focusable defect points (BoardView.tsx's own comment explains
     // why); either is correct depending on whether AOI-01 has produced an NG yet, so this matches on
@@ -75,20 +74,16 @@ test.describe("machine detail", () => {
     // single fixed product, see `ConfigSyncEngine.CheckAsync`'s own doc comment) renders past its
     // skeleton and auto-selects one product into the detail panel below, which fetches a real
     // field-level diff BEFORE anything is applied.
-    await expect(page.getByRole("heading", { name: viDict.configSyncPanel.products.title, level: 3 })).toBeVisible({
-      timeout: 15_000,
-    })
+    await expect(page.getByRole("heading", { name: viDict.configSyncPanel.products.title, level: 3 })).toBeVisible()
     // Not `getByText` — the panel's own description paragraph contains this same phrase as a
     // substring ("...xem khác biệt trước khi áp dụng..."), which makes a plain text locator ambiguous
     // (strict-mode violation); the diff section's own `<h4>` heading is unambiguous.
-    await expect(page.getByRole("heading", { name: viDict.configSyncPanel.diff.title, level: 4 })).toBeVisible({
-      timeout: 15_000,
-    })
+    await expect(page.getByRole("heading", { name: viDict.configSyncPanel.diff.title, level: 4 })).toBeVisible()
 
     // Pull applies whatever the ecosystem currently holds for the selected product — idempotent to
     // re-run (a pull on an already-in-sync product still reports `applied: true`, just 0 changes).
     await page.getByRole("button", { name: viDict.configSyncPanel.detail.pullBtn }).click()
-    await expect(page.getByText(viDict.configSyncPanel.pullResult.title)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(viDict.configSyncPanel.pullResult.title)).toBeVisible()
 
     // Push opens the guarded confirm dialog — Demo mode by default (no live-server warning) — then,
     // once confirmed, surfaces a real result panel (never a silent no-op).
@@ -97,11 +92,11 @@ test.describe("machine detail", () => {
     await expect(dialog).toBeVisible()
     await expect(dialog.getByText(viDict.configSyncPanel.pushConfirm.demoNote)).toBeVisible()
     await dialog.getByRole("button", { name: viDict.configSyncPanel.pushConfirm.submit }).click()
-    await expect(page.getByText(viDict.configSyncPanel.pushResult.title)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(viDict.configSyncPanel.pushResult.title)).toBeVisible()
 
     // Sync history — the audit trail — gains rows for both operations just performed.
     await expect(page.getByText(viDict.configSyncPanel.history.title)).toBeVisible()
-    await expect.poll(() => page.getByRole("row").count(), { timeout: 10_000 }).toBeGreaterThan(1)
+    await expect.poll(() => page.getByRole("row").count()).toBeGreaterThan(1)
 
     await assertNoSeriousA11yViolations(page)
   })
@@ -121,7 +116,7 @@ test.describe("machine detail", () => {
     await expect(passRateValue).toHaveText("—")
 
     await page.getByRole("tab", { name: viDict.machineDetail.tabs.telemetry }).click()
-    await expect(page.getByText(viDict.telemetryChart.noSamples)).toHaveCount(0, { timeout: 30_000 })
+    await expect(page.getByText(viDict.telemetryChart.noSamples)).toHaveCount(0, { timeout: LIVE_CYCLES_MS })
     await expect(page.locator(".recharts-surface").first()).toBeVisible()
     await assertNoSeriousA11yViolations(page)
   })
@@ -130,8 +125,6 @@ test.describe("machine detail", () => {
     // Not `gotoMachineDetail` — that helper waits for an <h1> matching the machine CODE, which a
     // 404 response never renders (the not-found card's own heading is a fixed i18n string instead).
     await page.goto("/machines/DOES-NOT-EXIST")
-    await expect(page.getByRole("heading", { name: viDict.machineDetail.notFoundState.title })).toBeVisible({
-      timeout: 15_000,
-    })
+    await expect(page.getByRole("heading", { name: viDict.machineDetail.notFoundState.title })).toBeVisible()
   })
 })

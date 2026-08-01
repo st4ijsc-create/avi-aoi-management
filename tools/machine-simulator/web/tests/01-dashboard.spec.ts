@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
+import { LIVE_CYCLES_MS } from "./support/deadlines"
 import { ENGINE_URL, setFleetRunning } from "./support/engine"
 import { gotoDashboard } from "./support/screens"
 import { vi as viDict } from "../src/i18n/vi"
@@ -60,10 +61,10 @@ test.describe("dashboard — fleet start/stop", () => {
     // The grid replaces the empty state once real cycles land — `<main>` holds exactly one `button`
     // per roster machine once populated (the empty-state CTA button it replaces is the only other
     // candidate, and it's gone by construction: Dashboard renders the grid XOR the empty state).
-    await expect(page.locator("main").getByRole("button")).toHaveCount(11, { timeout: 20_000 })
+    await expect(page.locator("main").getByRole("button")).toHaveCount(11, { timeout: LIVE_CYCLES_MS })
 
     // At least one machine has actually cycled — the KPI's "online" count left zero.
-    await expect(page.getByText(viDict.dashboard.kpi.onlineNone)).toHaveCount(0, { timeout: 20_000 })
+    await expect(page.getByText(viDict.dashboard.kpi.onlineNone)).toHaveCount(0, { timeout: LIVE_CYCLES_MS })
 
     // A representative card rendered with its real identity (deterministic — machine codes come from
     // the checked-in fleet.json roster, not simulated data).

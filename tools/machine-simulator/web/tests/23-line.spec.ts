@@ -27,7 +27,7 @@ test.describe("line — PackML state badge + transition-gated command buttons", 
     await gotoLineControl(page)
 
     // The deterministic initial commanded state — see this file's own doc comment.
-    await expect(page.getByText(viDict.line.state.Stopped, { exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(viDict.line.state.Stopped, { exact: true })).toBeVisible()
 
     // Matched by each button's own `aria-label` (`line.commands.*Aria`), not its short visible text —
     // TopBar's Fleet-level Stop button renders the SAME bare "Dừng" text as this page's own Line Stop
@@ -57,7 +57,7 @@ test.describe("line — PackML state badge + transition-gated command buttons", 
     await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
     await page.goto("/line")
     await expect(page.getByRole("heading", { name: en.line.title, level: 1 })).toBeVisible()
-    await expect(page.getByText(en.line.state.Stopped, { exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(en.line.state.Stopped, { exact: true })).toBeVisible()
 
     await expect(page.getByText(/line\.[a-zA-Z.]+/)).toHaveCount(0)
 

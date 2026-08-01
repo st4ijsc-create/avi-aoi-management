@@ -1,6 +1,8 @@
 import AxeBuilder from "@axe-core/playwright"
 import { expect, type Page } from "@playwright/test"
 
+import { ANIMATIONS_SETTLE_MS } from "./deadlines"
+
 /**
  * Waits for every FINITE, in-progress animation to settle before axe samples computed styles.
  * Every screen mounts its content through `fadeSlideUp`/`staggerContainer` (`theme/motion.ts`) —
@@ -21,11 +23,21 @@ async function waitForAnimationsToSettle(page: Page): Promise<void> {
           const isInfinite = timing?.iterations === Infinity
           return isInfinite || a.playState !== "running"
         }),
-      { timeout: 5_000 }
+      { timeout: ANIMATIONS_SETTLE_MS }
     )
     .catch(() => {
       // Best-effort — proceeding with a possibly-still-settling animation is preferable to failing
       // the whole a11y gate on a wait timeout; axe still runs and reports whatever is real.
+      //
+      // But it must not be SILENT. This is the one wait in the suite that cannot fail, so a page
+      // whose animations never settle burns the full bound on every a11y test (~94 of them) and
+      // nothing anywhere says so — and any contrast finding it then produces is being sampled mid
+      // fade, which is exactly the false positive this function exists to prevent. Measured over a
+      // full run: max 2 446 ms, mean 204 ms, so reaching the bound is a real signal, not noise.
+      console.warn(
+        `[a11y] animations did not settle within ${ANIMATIONS_SETTLE_MS}ms on ${page.url()} — ` +
+          `axe is sampling a page that may still be fading, so a contrast finding here may be an artefact`
+      )
     })
 }
 

@@ -32,14 +32,12 @@ test.describe("alarms — alarm center active table + history", () => {
 
     // Either genuinely no active alarms (the calm empty state) or a real carried-over one (at least
     // one table row) — either is a legitimate "loaded" state, never a stuck skeleton.
-    await expect(page.getByText(viDict.alarms.table.empty).or(page.locator("tbody tr").first())).toBeVisible({
-      timeout: 15_000,
-    })
+    await expect(page.getByText(viDict.alarms.table.empty).or(page.locator("tbody tr").first())).toBeVisible()
 
     await page.getByRole("radio", { name: viDict.alarms.tabs.history }).click()
     await expect(
       page.getByText(viDict.alarms.history.table.empty).or(page.locator("tbody tr").first())
-    ).toBeVisible({ timeout: 15_000 })
+    ).toBeVisible()
 
     await assertNoSeriousA11yViolations(page)
   })
@@ -48,9 +46,7 @@ test.describe("alarms — alarm center active table + history", () => {
     await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
     await page.goto("/alarms")
     await expect(page.getByRole("heading", { name: en.alarms.title, level: 1 })).toBeVisible()
-    await expect(page.getByText(en.alarms.table.empty).or(page.locator("tbody tr").first())).toBeVisible({
-      timeout: 15_000,
-    })
+    await expect(page.getByText(en.alarms.table.empty).or(page.locator("tbody tr").first())).toBeVisible()
 
     await expect(page.getByText(/alarms\.[a-zA-Z.]+/)).toHaveCount(0)
 

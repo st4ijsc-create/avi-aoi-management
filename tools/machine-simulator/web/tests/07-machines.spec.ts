@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
+import { LIVE_CYCLES_MS } from "./support/deadlines"
 import { setFleetRunning } from "./support/engine"
 import { gotoMachines } from "./support/screens"
 import { en } from "../src/i18n/en"
@@ -54,13 +55,13 @@ test.describe("machines — list, filter/search, live updates, row → detail", 
     await expect(page.getByText(viDict.toast.fleetStarted)).toBeVisible()
 
     // Real cycles land — at least one row leaves Idle for a real verdict.
-    await expect.poll(() => tbody.getByText(viDict.status.idle).count(), { timeout: 20_000 }).toBeLessThan(rosterSize)
+    await expect.poll(() => tbody.getByText(viDict.status.idle).count(), { timeout: LIVE_CYCLES_MS }).toBeLessThan(rosterSize)
 
     // SCRW-01 cycles every 0.8s — its Cycles cell (6th column) climbs off zero for real.
     const scrwRow = page.getByRole("row", { name: "SCRW-01" })
     const scrwCycles = scrwRow.locator("td").nth(5)
     await expect
-      .poll(async () => Number((await scrwCycles.textContent())?.replace(/[^\d]/g, "")), { timeout: 20_000 })
+      .poll(async () => Number((await scrwCycles.textContent())?.replace(/[^\d]/g, "")), { timeout: LIVE_CYCLES_MS })
       .toBeGreaterThan(0)
 
     await assertNoSeriousA11yViolations(page)
@@ -127,7 +128,7 @@ test.describe("machines — list, filter/search, live updates, row → detail", 
   test("clicking a row navigates to that machine's detail page", async ({ page }) => {
     await gotoMachines(page)
     await page.getByRole("row", { name: "AOI-01" }).click()
-    await expect(page.getByRole("heading", { name: "AOI-01", level: 1 })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: "AOI-01", level: 1 })).toBeVisible()
   })
 
   test("a row is keyboard-activatable with Enter", async ({ page }) => {
@@ -135,7 +136,7 @@ test.describe("machines — list, filter/search, live updates, row → detail", 
     const row = page.getByRole("row", { name: "SCRW-02" })
     await row.focus()
     await row.press("Enter")
-    await expect(page.getByRole("heading", { name: "SCRW-02", level: 1 })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: "SCRW-02", level: 1 })).toBeVisible()
   })
 
   test("English strings render with no raw i18n keys leaking through", async ({ page }) => {
@@ -145,7 +146,7 @@ test.describe("machines — list, filter/search, live updates, row → detail", 
     await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
     await page.goto("/machines")
     await expect(page.getByRole("heading", { name: en.machines.title, level: 1 })).toBeVisible()
-    await expect(page.getByRole("columnheader", { name: en.machines.table.code })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("columnheader", { name: en.machines.table.code })).toBeVisible()
     await expect(page.getByRole("columnheader", { name: en.machines.table.passRate })).toBeVisible()
     await expect(page.getByLabel(en.machines.filters.type)).toBeVisible()
 

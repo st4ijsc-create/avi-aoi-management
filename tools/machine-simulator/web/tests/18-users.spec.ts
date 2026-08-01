@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
+import { REQUEST_ROUND_TRIP_MS } from "./support/deadlines"
 import { gotoUsers } from "./support/screens"
 import { vi as viDict } from "../src/i18n/vi"
 
@@ -64,7 +65,8 @@ test.describe("users — admin roster management + TopBar logout affordance", ()
     // top comment for why that's the expected, not a failed, outcome here) — so this only asserts the
     // real request happened and succeeded, not that the user stays logged out afterward.
     const logoutResponsePromise = page.waitForResponse(
-      (res) => res.url().endsWith("/v1/auth/logout") && res.request().method() === "POST"
+      (res) => res.url().endsWith("/v1/auth/logout") && res.request().method() === "POST",
+      { timeout: REQUEST_ROUND_TRIP_MS }
     )
     await logoutItem.click()
     const logoutResponse = await logoutResponsePromise
