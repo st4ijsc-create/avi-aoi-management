@@ -92,7 +92,8 @@ Tổng số dòng (lệnh `SELECT count(*) FROM ai_gateway_metrics;`): **38** (1
 
 Đây là phát hiện quan trọng nhất của §1, quan trọng hơn cả bảng số ở trên: quét sơ bộ đếm 20 file `code`/`coder` + 5 file `fim`, nhưng **0 trong 38 dòng** của bảng là `task='code'` hay `task='fim'` — kể cả sau khi tôi gọi `programming.copilotGenerate` **5 lần** (đều lỗi VRAM, xem "Mối lo") và `programming.copilotComplete` **1 lần** (**thành công**, model trả về completion thật, xem log dưới). Lý do không phải "chưa ai gọi" hay "chưa đủ dữ liệu" — mà là **lỗ hổng nối dây trong mã**:
 
-- `server/services/programming/aiProgrammingCopilot.ts` (dùng cho cả `code` và `fim`) gọi thẳng `aiGgufEngine.chatCompletion`/`generateJSON`/`generateFim` (dòng 372, 390, 440, 458, 771, 801) và chỉ dùng `aiModelRouter.route()` (pure, không mét) để lấy tham số model.
+- `server/services/programming/aiProgrammingCopilot.ts` (dùng cho cả `code` và `fim`) gọi thẳng `aiGgufEngine.chatCompletion`/`generateJSON`/`generateFim` (dòng 372, 390, 440, 458, 771, **807**) và chỉ dùng `aiModelRouter.route()` (pure, không mét) để lấy tham số model.
+  *(Vòng sửa 2 — sửa số dòng: bản trước ghi **801**. Dòng 801 là `route({ task: "fim", … })` — bộ **định tuyến**, không phải lời gọi engine; dòng **807** mới là `await generateFim(`. Xác nhận bằng `sed -n '798,810p' server/services/programming/aiProgrammingCopilot.ts`. §7.8 #4 ghi 807 là đúng; §1 sai, nay đã thống nhất.)*
 - File này **không hề import** `server/services/aiGateway.ts` (đã `grep` xác nhận: không khớp `aiGateway|planInference|routeInference`). Toàn bộ 6 lượt tier chat/rca/report/vision đều đi qua `aiGateway.ts`'s `planInference`/`routeInference` → hàm `enqueue(toRow(...))` mới là chỗ **thực sự ghi** vào `ai_gateway_metrics`.
 - Bằng chứng thực nghiệm: lệnh dưới chạy SAU khi đã có 1 lượt `copilotComplete` **thành công** (sinh mã thật `"1;\n  Y2 := 2;..."`) vẫn ra 0 dòng:
   ```bash
@@ -121,7 +122,9 @@ MSYS_NO_PATHCONV=1 docker exec avi-aoi-management-postgres-1 psql -U aoi -d aoi_
 
 1. **VRAM rò rỉ khi `cudaMalloc` thất bại nhiều lần liên tiếp.** Máy đo: RTX 5090 32.607 MiB (`nvidia-smi`). Baseline lúc app mới khởi động: **~8,7 GB đã dùng** trước khi app tải bất kỳ model nào (desktop Windows + trình nền, không phải app). 5 lần thử tải `Qwen3-Coder-30B` (16,5 GB) đều lỗi `cudaMalloc failed: out of memory`, và **mỗi lần lỗi làm VRAM đã dùng tăng thêm** (8,7 GB → 13,7 GB sau 4 lần thất bại, đo bằng `nvidia-smi --query-gpu=memory.used --format=csv`) dù không có model nào tải thành công — tức bộ nhớ không được giải phóng đúng sau một lần `cudaMalloc` lỗi. Phải `Stop-Process` tiến trình `node` (tsx watch) và khởi động lại `npm run dev` để VRAM về mốc sạch (965 MiB). Đây là quan sát thật trong phiên đo, không phải kết luận — Task 2/3 (đo tráo model) nên lưu ý hiện tượng này khi đo VRAM đỉnh.
 2. **Ngay cả khi KHÔNG có model 30B nào khác đang tải, một mình `Qwen3-Coder-30B` (16,5 GB trọng số) cũng không tải được** trong 4/5 lần thử ở phiên này (VRAM free báo 18-24 GB theo `aiGguf.health`/`nvidia-smi` tại thời điểm thử, về lý thuyết đủ chỗ) — nghi vấn context size (`code` task dùng ctx 16384 theo test `aiModelRouter.code.test.ts:108`) cộng buffer runtime của kiến trúc MoE 30B cần nhiều hơn phần trăm free hiển thị bởi `nvidia-smi`/health endpoint tại thời điểm đo. Task 2/3 cần đo trực tiếp VRAM đỉnh lúc tải, không suy từ "free" báo trước khi tải.
-3. **`vision` ghi `model='default'`** trong `ai_gateway_metrics` thay vì tên file GGUF thật (`Qwen3-VL-8B-Instruct-UD-Q4_K_XL`) — route quyết định tier vision không set `modelId` tường minh nên cột `model` rơi về default schema (`drizzle/schema/ai.ts`). Không sai chức năng (ảnh vẫn được phân tích đúng, xem câu trả lời "Cổng kết nối... lệch vị trí 0.26 mm" cho ảnh thật), nhưng làm bảng task 7 khó phân biệt "vision dùng model nào" nếu sau này có nhiều hơn 1 model vision. Ghi nhận, không sửa (ngoài phạm vi "chỉ đo").
+3. **`vision` ghi `model='default'`** trong `ai_gateway_metrics` thay vì tên file GGUF thật (`Qwen3-VL-8B-Instruct-UD-Q4_K_XL`) — route quyết định tier vision không set `modelId` tường minh nên cột `model` rơi về default schema (`drizzle/schema/ai.ts`). Không sai chức năng (ảnh vẫn được phân tích đúng, xem câu trả lời "Cổng kết nối... lệch vị trí 0.26 mm" cho ảnh thật). Ghi nhận, không sửa (ngoài phạm vi "chỉ đo").
+
+   ⚠ **NÂNG MỨC (vòng sửa 2) — đây không còn là phiền toái nhãn mác.** Nhãn `default` này là **lý do trực tiếp khiến suốt cả Đợt 0 không ai nhìn thấy một model 8B đang cư trú trên GPU**. Model thật phục vụ 6 lượt vision ở bảng Bước 3 **không chạy trong tiến trình chính** — nó chạy trong một tiến trình `llama-server` **riêng** (`server/services/llamaVisionSidecar.ts`), chiếm **7 821 MiB đo trực tiếp** (§7.1a). Vì cột `model` ghi `default`, bảng lưu lượng **không hề tiết lộ** rằng dòng `vision` ứng với một hộ tiêu thụ VRAM lớn thứ hai trong hệ; vì nó là tiến trình khác, `loadedModels` của `aiGgufEngine` cũng không thấy nó. Hai lớp mù cộng lại ⇒ **mọi phép cộng VRAM của Đợt 0 (§2, §3, và bảng quyết định §7.1 bản đầu) đều thiếu nó**. Xem §7.1a để biết đầy đủ hậu quả và số đo.
 4. 13/16 dòng `report` (cả trước và sau) là traffic **nền tự động** — nên con số "lượt gọi" của `report` không so sánh ngang hàng được với `chat`/`vision` (loại người dùng chủ động). **Nguồn đúng (vòng sửa 1) là `ExecReportScheduler`**, không phải `aiBatchRcaScheduler` như bản đầu ghi nhầm:
    - `aiBatchRcaScheduler` chỉ dùng `task:"rca"` — xác nhận `server/services/aiInsightsService.ts:82` (`route({ task: "rca", requiredQuality: "high" })`) và `grep -n "task" server/services/aiBatchRcaScheduler.ts` không ra kết quả nào (file này không tự set task nào, uỷ quyền cho `aiInsightsService`).
    - Nguồn thật: `server/services/reportScheduler.ts:576-668` (`runExecutiveReport` → `aiExecutiveReport.ts:489` `route({task:"report", requiredQuality:"high"})`), cron `EXEC_REPORT_SHIFT_CRON` mặc định `"0 0 6,14,22 * * *"` (không bị override trong `.env`) + cron `day` mặc định `EXEC_REPORT_DAY_CRON="0 5 6 * * *"`, giờ `EXEC_REPORT_TZ=Asia/Ho_Chi_Minh`, `EXEC_REPORT_ENABLED=true`.
@@ -192,13 +195,14 @@ Vượt khỏi yêu cầu tối thiểu của brief, nhưng cần thiết để 
 node scripts/ai-bench/bench.mjs --models deep --iters 1 --warmup 0
 # [bench] loaded in 8307.2ms
 # [bench]   prefill@128 (153tok): prefill 559.7 tok/s, decode 292.7 tok/s
-# vram: baselineUsedMib=1164, peakUsedMib=18896, modelDeltaMib=17732 (baseline JSON: scripts/ai-bench/baselines/2026-07-31T21-52-29-887Z.json)
+# vram: baselineUsedMib=1164, peakUsedMib=18896, modelDeltaMib=17732
 
 node scripts/ai-bench/bench.mjs --models code --iters 1 --warmup 0
 # [bench] loaded in 39902.3ms
 # [bench]   prefill@128 (153tok): prefill 464.5 tok/s, decode 285.9 tok/s
-# (baseline JSON: scripts/ai-bench/baselines/2026-07-31T21-53-00-652Z.json)
 ```
+
+⚠ **Mức lưu bằng chứng của §2 (sửa ở vòng sửa 2 — bản trước trích 2 file JSON KHÔNG TỒN TẠI).** Bản trước ghi kèm hai đường dẫn `scripts/ai-bench/baselines/2026-07-31T21-52-29-887Z.json` và `…21-53-00-652Z.json`. Hai file đó **đã bị dọn** cùng đám tệp tạm cuối Task 2 và **không còn trên đĩa** — kiểm lại: `ls scripts/ai-bench/baselines/2026-07-31T21-5*.json` → `No such file or directory`. Trích một đường dẫn không tồn tại là tệ hơn không trích: người đọc sau tưởng có bằng chứng thô để mở ra. Đã **gỡ hai đường dẫn đó**; số liệu trên là **output nguyên văn của lệnh, JSON thô KHÔNG được giữ lại**. Muốn dựng lại thì chạy đúng hai lệnh trên kèm `--label` (mỗi lệnh ~1 phút) — chúng sẽ sinh JSON mới. Ba mức lưu bằng chứng của Đợt 0 nay được nói rõ ở §7.7 #13.
 **CẢ HAI** model 30B (`Qwen3-30B-A3B-Instruct` VÀ `Qwen3-Coder-30B-A3B`) nạp **thành công ngay lần đầu** qua `bench.mjs` — script tự nạp `node-llama-cpp` trực tiếp, **không boot app**, nên không đi qua đường có race điều kiện. Cả hai lần, tiến trình thoát sạch, VRAM về baseline (1163/1157 MiB) — không leak. Đây là bằng chứng trực tiếp, đối lập 2/2 thành công (race-free) với 45/45 thất bại (qua app) trên **cùng model, cùng máy, cùng driver, cùng cấu hình BAR1**.
 
 **Hai giả thuyết cho "vì sao đường app hỏng" — đặt cạnh nhau, không để giả thuyết yếu hơn đứng đầu:**
@@ -550,6 +554,8 @@ grep -n "^GGUF_FIM_MODEL=" .env
 ```
 `diff` rỗng → hoàn nguyên đúng. VRAM: 1208 MiB trước → 1210 MiB sau (khớp baseline, lệch trong dao động nền). Không `node.exe` treo sau cả 2 lượt bench.
 
+**Bằng chứng thô (vòng sửa 2):** hai file JSON của §5 — `scripts/ai-bench/baselines/do0-task5-fim-1p5b.json` và `do0-task5-fim-30b-coder.json` — trước đây **có trên đĩa nhưng chưa commit** (untracked). Nay **đã commit** cùng đợt sửa này, nên mọi con số ở bảng TTFT trên đều mở lại kiểm chứng được sau khi nhánh rời máy. Xem §7.7 #13 về ba mức lưu bằng chứng của cả đợt.
+
 Bản đầy đủ (bảng tham số chọn khác default harness, JSON thô, mọi lý do): `.superpowers/sdd/2026-08-01-do0-model-roster-survey/task-5-report.md` (không commit).
 
 ### Vòng sửa 1 (review)
@@ -756,15 +762,120 @@ Bản đầy đủ (bảng 7×7 đầy đủ, mọi lệnh + output nguyên văn
 | **Lưu lượng — cột "bao nhiêu lượt"** | **KHÔNG DÙNG ĐƯỢC** để cân roster | 20/38 dòng là do chính agent gọi trong một phiên 20 phút; 13/16 dòng `report` là cron nền; tier `code`/`fim` **về nguyên tắc** không vào được bảng (§1). |
 | **Lưu lượng — cột "model nào phục vụ việc gì"** | TRUNG BÌNH-CAO | Cặp `task × model` là sự thật ghi lại từ đường chạy thật, **độc lập với việc gọi bao nhiêu lần**. Đây là phần duy nhất của trục lưu lượng còn dùng được. |
 
+### 7.1a 🔴 Hộ tiêu thụ VRAM thứ năm: sidecar thị giác — ĐO TRỰC TIẾP (bổ sung ở vòng sửa 2)
+
+**Bản đầu của §7 — và của cả §2, §3 — bỏ sót hoàn toàn khoản này.** Mọi phép cộng VRAM của Đợt 0 chỉ đếm các model nằm trong `loadedModels` của `aiGgufEngine`. Tier `vision` **không nằm ở đó**: nó chạy trong một **tiến trình `llama-server` riêng biệt** do `server/services/llamaVisionSidecar.ts` sinh ra (`spawn()`, dòng 220). Vì thế nó vô hình với mọi trục đo của đợt: `bench.mjs` **không có một chữ "vision" nào** (`grep -ic vision scripts/ai-bench/bench.mjs` → **0**), `loadedModels` không thấy tiến trình khác, và bảng `ai_gateway_metrics` ghi nó là `model='default'` (§1 Mối lo #3).
+
+**Nó đang sống trong sản xuất hôm nay**, không phải khả năng lý thuyết — cả ba điều kiện của `isVisionSidecarAvailable()` (`llamaVisionSidecar.ts:122-134`) đều thoả:
+
+```bash
+grep -n "LLAMA_SERVER_BIN\|GGUF_VISION_MODEL\|GGUF_VISION_MMPROJ\|LLAMA_VISION_" .env
+# 142:GGUF_VISION_MODEL=D:/SOURCES/16.AI/Qwen3-VL-8B-Instruct-UD-Q4_K_XL.gguf
+# 143:GGUF_VISION_MMPROJ=D:/SOURCES/16.AI/Qwen3-VL-8B-mmproj-F16.gguf
+# 265:LLAMA_SERVER_BIN=D:/SOURCES/16.AI/llama-cuda/llama-server.exe
+# 269:LLAMA_VISION_GPU_LAYERS=999      ← nạp TOÀN BỘ lên GPU
+# 271:LLAMA_VISION_CTX=8192
+# 275:LLAMA_VISION_IDLE_TIMEOUT_MS=600000   ← giữ 10 phút sau mỗi lần dùng
+```
+Cả ba file đều tồn tại trên đĩa (`ls -l` xác nhận), và §1 ghi **6 lượt vision thật, 5/5 thành công trên ảnh thật**.
+
+#### Phép đo trực tiếp (không ước lượng)
+
+Tôi **không** dùng con số suy từ kích thước file. Tôi khởi chính binary `llama-server` với **đúng bộ tham số mà mã sản xuất truyền** (`llamaVisionSidecar.ts:208-217`: `-m … --mmproj … --host 127.0.0.1 --port 8081 -ngl 999 -c 8192 --jinja`), đo `nvidia-smi` trước/sau, chạy một lượt suy luận thật trên ảnh thật, rồi tắt. **Đây là tiến trình riêng — không khởi động app, không chạm race double-warm.**
+
+```bash
+nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits      # trước
+D:/SOURCES/16.AI/llama-cuda/llama-server.exe \
+  -m D:/SOURCES/16.AI/Qwen3-VL-8B-Instruct-UD-Q4_K_XL.gguf \
+  --mmproj D:/SOURCES/16.AI/Qwen3-VL-8B-mmproj-F16.gguf \
+  --host 127.0.0.1 --port 8081 -ngl 999 -c 8192 --jinja &
+# poll /health tới khi {"status":"ok"} (giống probeHealth() của sidecar)
+nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits      # sau
+curl -s -X POST http://127.0.0.1:8081/v1/chat/completions -d @req.json  # 1 ảnh PCB thật
+```
+
+| Mốc | VRAM đã dùng (MiB) | Δ so với baseline |
+|---|---|---|
+| Baseline (GPU rảnh, không app, không model) | **1 239** | — |
+| Sidecar **sẵn sàng, chưa suy luận** (`/health` = ok sau **16 s**) | **9 060** | **+7 821** |
+| **Đỉnh trong lượt suy luận thật** (ảnh PCB 227 KB, 270 tok nhắc → 512 tok ra) | **9 159** | **+7 920** |
+| Sau khi tắt tiến trình | **1 233** | +0 (sạch) |
+
+⇒ **Số dùng cho mọi phép cộng dưới đây: 7 821 MiB** (trạng thái thường trú, dè dặt hơn đỉnh). Lượt suy luận trả về 1 630 ký tự tiếng Việt mô tả bo mạch — **sidecar hoạt động thật, không phải cấu hình chết**.
+
+⚠ **Số đo được LỚN HƠN ĐÁNG KỂ mọi ước lượng từ kích thước file.** Trọng số trên đĩa chỉ 6 015 MiB (4 910 + 1 105); áp hệ số file→delta của chính đợt này (17 750/16 872 = ×1,052) ra ~6 330 MiB. **Thực đo 7 821 MiB — cao hơn ước lượng ~1 490 MiB.** Log của `llama-server` giải thích chỗ chênh, và đây là chi tiết quan trọng cho đợt sau:
+```
+srv llama_server: n_parallel is set to auto, using n_parallel = 4 and kv_unified = true
+srv    load_model: initializing slots, n_slots = 4          ← 4 khe × n_ctx 8192
+srv    load_model: [mtmd] estimated worst-case memory usage of mmproj is 1502.33 MiB
+```
+Sidecar **không truyền `-np`**, nên `llama-server` **tự chọn 4 khe song song**, mỗi khe ctx 8192 ⇒ KV-cache ×4 cộng buffer mtmd 1 502 MiB. Bài học lặp lại đúng lớp lỗi của cả đợt: **ước lượng từ hằng số cấu hình (kích thước file, `-c 8192`) mà không đo hàm/tiến trình thật thì thiếu ~19%.**
+
+#### Ba câu hỏi phải trả lời bằng mã, không bằng suy đoán
+
+**(1) Sidecar có thường trú không? — KHÔNG thường trú, nhưng "tạm thời" ở đây dài 10 phút và tự kích hoạt.**
+`ensureSidecar()` **chỉ** được gọi từ `describeImageViaSidecar()` — không có lời gọi nào lúc boot (`grep -rn "ensureSidecar" server/` → 0 call site ngoài chính module). Nó là **nạp-theo-yêu-cầu**. Sau mỗi lượt dùng, `touchIdle()` (`:149-160`) đặt hẹn giờ `LLAMA_VISION_IDLE_TIMEOUT_MS=600000` ⇒ **giữ nguyên 7,8 GB thêm 10 phút** rồi mới `stopSidecar()`.
+⚠ Nhưng **nó không chỉ được kích hoạt bởi thao tác tay của người dùng**: `aoiImageEmbeddingWorker.ts:322-328` gọi `describeImageViaSidecar()` **tự động** mỗi khi một lượt kiểm tra AOI bị đánh giá là bất thường (`decision.escalate`), và hàng đợi đó được nạp từ `aoiPackageRouter.ts:907` — tức **do lưu lượng máy đẩy lên, không do người bấm nút**. Cờ đang BẬT: `.env:301 AOI_EMBEDDING_ENABLED=true`. ⇒ Trên dây chuyền chạy thật, sidecar **lên xuống theo nhịp ảnh NG**, và mỗi lần lên là giữ 10 phút. **Không được coi đây là sự kiện hiếm.**
+
+**(2) Có tắt được không? — CÓ, bằng `.env`, nhưng cái giá là mất hẳn tính năng thị giác.**
+`getVisionSidecarConfig()` (`:104-116`) trả `null` nếu **thiếu bất kỳ** biến nào trong `LLAMA_SERVER_BIN` / `GGUF_VISION_MODEL` / `GGUF_VISION_MMPROJ` ⇒ `isVisionSidecarAvailable()` = false. **Mọi** call site đều kiểm cờ này trước và **suy giảm trung thực** (`aiGgufEngine.ts:1653`, `aiVisionLanguage.ts:135/206`, `aiProviderRouter.ts:398`, `kbImageDescriber.ts:64`, `aoiImageEmbeddingWorker.ts:324`, `aiLocalKnowledgeApi.ts:233`) — không có đường nào âm thầm hỏng. ⇒ **Đây là một lựa chọn thật của chủ dự án:** đổi 7,8 GB VRAM lấy việc **không còn mô tả/hỏi đáp ảnh kiểm tra**. Không có nút chỉnh trung gian: `LLAMA_VISION_GPU_LAYERS` hạ xuống sẽ đẩy sidecar sang CPU (chậm, chưa đo), nhưng **không tồn tại** cơ chế giới hạn VRAM nào khác cho tiến trình này.
+
+**(3) Có phải tính vào ngân sách không? — PHẢI, và đây là chỗ bản đầu sai nhất.**
+Vì nó không thường trú vĩnh viễn, cám dỗ là để nó ngoài bảng. **Sai** — vì ngân sách VRAM không phải bài toán trung bình mà là bài toán **đỉnh đồng thời**: câu hỏi đúng không phải "sidecar chạy bao nhiêu % thời gian" mà **"khi nó chạy, roster có sống không?"**. Và nó có thể chạy **bất cứ lúc nào** 4 model kia đang thường trú, do máy đẩy lên. ⇒ Bảng 7.1 dưới đây tính nó vào, kèm một cột riêng cho trạng thái "sidecar đang ngủ" để chủ dự án thấy cả hai mặt.
+
+#### Hậu quả 1 — cộng lại toàn bộ ba roster
+
+| Roster | §7 bản đầu (không sidecar) | **+ sidecar 7 821** | So với 32 607 MiB |
+|---|---|---|---|
+| **Hiện trạng** (2×30B) | 36 667 · vượt 4 060 ❌ | **44 488** | ❌ **vượt 11 881** |
+| **A** (Coder-30B dùng chung) | 29 717 · dư 2 890 ✅ | **37 538** | ❌ **vượt 4 931** |
+| **B** (4B + Coder-30B) | 29 741 · dư 2 866 ✅ | **37 562** | ❌ **vượt 4 955** |
+| **C** (4 model, General partial) | 30 685 · dư 1 922 ✅ | **38 506** | ❌ **vượt 5 899** |
+
+*(Phép cộng: delta sidecar đo trên baseline 1 239 MiB, các tổng roster đã gồm baseline riêng của chúng (1 122/1 113/1 180) — nên cộng delta-vào-tổng là đúng, không đếm baseline hai lần.)*
+
+⚠ **Đọc kỹ dòng A và B: mức vượt 4 931 / 4 955 MiB LỚN HƠN chính con số 4 060 MiB mà cả Đợt 0 dùng để kết án hiện trạng là "không dùng được".** Ô trung tâm của bảng quyết định — "vừa 32,6 GB? ✅" — **không đúng cho bất kỳ roster nào** khi sidecar thức.
+
+#### Hậu quả 2 — cách nó thực sự hỏng: **thu nhỏ roster, không phải OOM ngay**
+
+Đừng đọc "vượt 4 931 MiB" thành "sập". Cơ chế thật tinh vi hơn, và tệ hơn về mặt chẩn đoán. Khi sidecar thức, dư địa còn lại cho các model GGUF là:
+```
+32 607 − 1 240 (nền desktop) − 7 821 (sidecar) = 23 546 MiB
+Roster A cần:  17 729 (Coder-30B) + 3 464 (4B) + 1 774 (fim) + 5 628 (embed) = 28 595 MiB
+                                                              ⇒ THIẾU 5 049 MiB
+```
+Tập con **lớn nhất còn vừa**: Coder-30B + embed = 17 729 + 5 628 = **23 357 MiB** (còn dư 189). Thêm bất kỳ model thứ ba nào cũng vỡ. ⇒ **Khi có ảnh đi qua, roster A co từ 4 model xuống còn 2**, và hai model bị đuổi phải nạp lại — **8 828 ms nếu file còn nóng, 40 969 ms nếu nguội** (§3). Người dùng không thấy lỗi; họ thấy "AI thỉnh thoảng chậm kinh khủng".
+
+#### Hậu quả 3 — sidecar ĐẾM VÀO guard nhưng KHÔNG BỊ ĐUỔI ĐƯỢC
+
+Đây là điểm lật lại kết luận Critical của vòng sửa 1. Tôi tự đọc `readVramState()` (`aiGgufEngine.ts:303-336`): **cả hai** nguồn đều đo **toàn thiết bị**, không phải riêng tiến trình —
+- nguồn 1: `llamaInstance.getVramState()`;
+- nguồn 2 (fallback): `nvidia-smi --query-gpu=memory.used,memory.total` — theo định nghĩa là **toàn card**.
+
+⇒ 7 821 MiB của sidecar **được cộng vào `vram.used` mà guard đọc**. Nhưng `evictLRU()` (`:375-390`) **chỉ duyệt `loadedModels`** — một `Map` của tiến trình chính. Sidecar là **tiến trình khác**, không có entry nào, **không thể bị đuổi**.
+
+| | Bản đầu §7.1 (không sidecar) | Với sidecar thức |
+|---|---|---|
+| Mức guard đọc được, roster A, thứ tự bất lợi nhất | (29 717 − 1 774)/32 607 = **85,7%** → dưới ngưỡng 90 | (27 943 + 7 821)/32 607 = **109,7%** |
+| Ngưỡng 90% = 29 346 MiB — bị vượt khi? | không bao giờ (trần là 29 717 và guard đọc trước lượt nạp cuối) | **ngay khi nền 1 240 + sidecar 7 821 + Coder-30B 17 729 = 26 790 rồi nạp thêm model thứ ba bất kỳ** |
+
+⇒ Câu **"guard KHÔNG kích hoạt lần nào — A và B giữ đủ 4 model"** (bản đầu ở 7.1, 7.5, 7.6 bước 8) **chỉ đúng khi sidecar đang ngủ**. Khi nó thức, guard **kích hoạt**, và vì thứ chiếm chỗ nhiều nhất (sidecar) lại là thứ duy nhất nó **không** đuổi được, nó sẽ đuổi **các model GGUF vô can** — rồi nếu tất cả đều `refCount > 0` thì rơi vào nhánh `console.warn` `"no idle model to evict — deferring/allowing load with OOM risk"` (`:358`) và **vẫn cho nạp**.
+
+**⚠ Kết luận thẳng, không cứu:** con số 85,7% và câu "giữ đủ 4 model" của vòng sửa 1 là **phân tích trạng thái tĩnh trong một hệ mà tôi chưa đếm hết hộ tiêu thụ**. Nó không sai về số học; nó sai về phạm vi. Cả A lẫn B **đều không vừa** khi tính đủ.
+
+---
+
 ### 7.1 Bảng quyết định — ba roster ứng viên + hiện trạng, trên mọi trục đã đo
 
 Định nghĩa roster (§3): **A** = một model 30B duy nhất (Coder) làm cả `deep` lẫn `code`. **B** = `deep` là Qwen3-4B, `code` là Coder-30B. **C** = giữ cả hai 30B, model General bị đẩy phần lớn sang RAM (`gpuLayers=8/48`).
 
 | Trục | Hiện trạng (2×30B) | A (Coder-30B dùng chung) | B (4B + Coder-30B) | C (General partial + Coder full) | Nguồn |
 |---|---|---|---|---|---|
-| **VRAM — cấu hình chính** | **36 667 MiB · vượt 4 060 MiB** ❌ | 29 717 MiB · dư 2 890 | 29 741 MiB · dư 2 866 | **23 283 MiB · 71,4% · dư 9 324** (đo trực tiếp 2 model cùng cư trú) | §3 "Xác nhận bằng đo lường" (cộng dồn từ `scripts/ai-bench/baselines/roster-*.json`) · ô C từ §3 "Roster C" (script import thẳng `loadGgufModel`) |
-| **VRAM — khi MỌI tier cùng thường trú [suy luận]** | 47 633 MiB — không khả thi | 29 717 (4 model) | 29 741 (4 model) | 30 685 (4 model) — hoặc **34 159 · vượt** nếu giữ thêm khe `fast` 4B (5 model) | Phép cộng của tôi, cùng phương pháp §3, trên chính các delta §3. `GGUF_MAX_LOADED_MODELS=4` (`.env:124`) chặn ở 4 model ⇒ model thứ 5 bị đuổi thay vì cộng thêm |
-| **Ngưỡng đuổi LRU 90% có kích hoạt không?** *(sửa sau vòng review — bản đầu kết luận NGƯỢC, xem 7.9)* | không tới lượt — model 30B thứ hai bị từ chối trước đó | **KHÔNG kích hoạt** — mức guard đọc được cao nhất là **85,7%** ⇒ **giữ đủ 4 model ở 91,1%** | **KHÔNG kích hoạt** — **85,7%** ⇒ giữ đủ 4 model ở 91,2% | 2 model lớn: **71,4%**, dưới ngưỡng (§3 đã đo) | Đọc mã: `enforceVramGuard()` (`aiGgufEngine.ts:346`) chỉ tới được từ `ensureCapacity()` (dòng 435), và `ensureCapacity()` có **đúng một** call site (dòng 607) — chạy **TRƯỚC mỗi lượt nạp**; cả file **không có `setInterval`**, không có bộ quét nền. Guard so **mức đang dùng hiện tại**, **không biết kích thước model sắp nạp** (chú thích mã dòng 620-627 nói đúng như vậy) |
+| **VRAM — cấu hình chính, sidecar thị giác ĐANG NGỦ** | **36 667 MiB · vượt 4 060 MiB** ❌ | 29 717 MiB · dư 2 890 | 29 741 MiB · dư 2 866 | **23 283 MiB · 71,4% · dư 9 324** (đo trực tiếp 2 model cùng cư trú) | §3 "Xác nhận bằng đo lường" (cộng dồn từ `scripts/ai-bench/baselines/roster-*.json`) · ô C từ §3 "Roster C" (script import thẳng `loadGgufModel`) |
+| **🔴 Sidecar thị giác `Qwen3-VL-8B` (tiến trình `llama-server` RIÊNG)** | **+7 821 MiB** — cộng vào **MỌI** cột, vì nó độc lập với lựa chọn roster | +7 821 | +7 821 | +7 821 | **§7.1a — ĐO TRỰC TIẾP** (spawn `llama-server` đúng args sản xuất, `nvidia-smi` trước/sau: 1 239 → 9 060 MiB; đỉnh lúc suy luận thật 9 159) |
+| **🔴 VRAM — cấu hình chính, sidecar THỨC (trạng thái phải sống được)** | **44 488 · vượt 11 881** ❌ | **37 538 · vượt 4 931** ❌ | **37 562 · vượt 4 955** ❌ | **31 104 · dư 1 503** ⚠ (chỉ 2 model lớn, chưa gồm fim/embed) | §7.1a bảng "Hậu quả 1". Mức vượt của A/B **lớn hơn** chính 4 060 MiB dùng để kết án hiện trạng |
+| **VRAM — khi MỌI tier cùng thường trú [suy luận]** | 47 633 MiB — không khả thi | 29 717 (4 model) / **37 538 nếu sidecar thức** | 29 741 (4 model) / **37 562 nếu sidecar thức** | 30 685 (4 model) / **38 506 nếu sidecar thức** — hoặc **34 159 · vượt** nếu giữ thêm khe `fast` 4B (5 model) | Phép cộng của tôi, cùng phương pháp §3, trên chính các delta §3 + delta sidecar §7.1a. `GGUF_MAX_LOADED_MODELS=4` (`.env:124`) chặn ở 4 model ⇒ model thứ 5 bị đuổi thay vì cộng thêm |
+| **Ngưỡng đuổi LRU 90% có kích hoạt không?** *(sửa 2 lần — xem 7.9 và 7.10)* | không tới lượt — model 30B thứ hai bị từ chối trước đó | **sidecar ngủ: KHÔNG** (85,7%) · **sidecar thức: CÓ** — và đuổi nhầm đối tượng, xem ⚠ dưới bảng | **sidecar ngủ: KHÔNG** (85,7%) · **sidecar thức: CÓ** | 2 model lớn: **71,4%** khi sidecar ngủ; thức thì **95,4%** ⇒ vượt ngưỡng | Đọc mã: `enforceVramGuard()` (`aiGgufEngine.ts:346`) chỉ tới được từ `ensureCapacity()` (dòng 435), call site duy nhất dòng 607 — chạy **TRƯỚC mỗi lượt nạp**; không `setInterval`. **`readVramState()` (`:303-336`) đo TOÀN THIẾT BỊ** (cả `getVramState()` lẫn `nvidia-smi --query-gpu`) ⇒ sidecar **đếm vào** guard; nhưng `evictLRU()` (`:375-390`) **chỉ duyệt `loadedModels`** ⇒ **không đuổi được sidecar** |
 | **Số lần đuổi LRU (evict) đo được** | **0** — nhưng đây là **BẪY ĐỌC** | **0** — cùng bẫy | chưa đo | chưa đo | §2 bảng kết quả, đếm cả **hai** đường log (`grep -c "evicted LRU model"` và `grep -c "Evicted LRU model:"`) |
 | **KV cache ở ngữ cảnh tối đa (32 768)** | **chưa đo** cho model 30B ở mọi roster — trọng số không nạp nổi qua đường app nên không tách được ảnh hưởng riêng của ngữ cảnh | chưa đo | chưa đo | chưa đo | §2 "KV cache" — đo **thay thế** bằng model 4B: 4/4 thành công ctx 4096→32768, VRAM 6 702→22 819 MiB, 32768 mới tốn 68% nên **không tìm được điểm hỏng**. Không đại diện cho 30B |
 | **Hai bộ não 30B cùng thường trú được không?** | **❌ KHÔNG** — model #2 bị từ chối, có nguyên văn | không áp dụng (chỉ còn 1 model 30B) | không áp dụng | **✅ CÓ** — đo trực tiếp, cả hai cùng cư trú, không lỗi `cudaMalloc` | §3 `_double-load-probe.mjs` (3 người chạy độc lập, cùng kết quả) · ô C: §3 "Roster C" |
@@ -772,7 +883,7 @@ Bản đầy đủ (bảng 7×7 đầy đủ, mọi lệnh + output nguyên văn
 | **Tốc độ khe "code"** | 265,9 ‡ | 268,3 ‡ | 267,4 ‡ | 30,5 tok/s ‡‡ (và **không có tranh chấp GPU** khi hai model cùng cư trú — re-reviewer đo Coder 126,7 tok/s một mình vs **134,4** lúc co-resident) | §3 bảng 3-roster · sổ tiến độ Task 3 (đo lại độc lập) |
 | **TTFT gợi ý mã (FIM)** | Giữ 1.5B: 13,2 / 26,8 ms · trỏ sang Coder-30B: 39,5 / 76,6 ms | **giống hệt** — cả ba roster đều giữ Coder-30B thường trú | giống hệt | giống hệt (Coder chạy full GPU ở C) | §5 bảng TTFT (`bench.mjs`, mốc sự kiện thật `onTextChunk`, không suy từ tok/s) |
 | **Lưu lượng phục vụ được** | **Trục này không phân biệt được roster nào** — xem 7.4(b): tier code/fim về cấu trúc không vào được bảng, và 20/38 dòng là lưu lượng dựng | ← | ← | ← | §1 bảng Bước 3 + §1 "Phát hiện quan trọng" |
-| **Đổi được bằng MỘT dòng `.env`?** | (hiện trạng) | **✅ dòng 120** | **✅ dòng 120** | **❌ KHÔNG** — không tồn tại biến env nào cho `gpuLayers` (quét toàn repo: chỉ có `LLAMA_VISION_GPU_LAYERS` cho sidecar thị giác) ⇒ phải sửa mã đường boot | `grep -rniE "GGUF_GPU_LAYERS\|GPU_LAYERS" --include=*.ts --include=*.mjs server/ scripts/ .env` (chạy trong Task 7) |
+| **Đổi được bằng MỘT dòng `.env`?** | (hiện trạng) | **✅ dòng 120** | **✅ dòng 120** | **❌ KHÔNG** — không tồn tại biến env nào cho `gpuLayers` của engine chính ⇒ phải sửa mã đường boot | `grep -rniE "GGUF_GPU_LAYERS\|GPU_LAYERS" --include=*.ts --include=*.mjs server/ scripts/ .env` (chạy trong Task 7) |
 | **Sống được qua đường boot app hôm nay (race chưa vá)?** *(ô B sửa sau vòng review — bản đầu kết luận NGƯỢC, xem 7.9)* | **❌ 24 lượt / 0 thành công** | **❌ 21 lượt / 0 thành công** | **chưa đo — và [suy luận] TỆ HƠN A/hiện trạng, không phải tốt hơn**: model mặc định 4B đủ nhỏ để **cả hai** lượt nạp chồng nhau **cùng thành công**, lượt sau ghi đè entry lượt trước **mà không `dispose()`** ⇒ **rò ~3 474 MiB mồ côi** mà `evictLRU()` không với tới được ⇒ 29 741 + 3 474 = **33 215 > 32 607** | **chưa đo qua boot app** (§3 đo bằng script import thẳng module, né cả hai racer bằng cấu trúc) | §2 bảng kết quả · ô B: đọc mã `aiGgufEngine.ts:659-670` — `loadedModels.set()` là **vô điều kiện**, không kiểm tra entry cũ, không `dispose()`; `evictLRU()` (dòng 375) chỉ duyệt `loadedModels` nên không thấy bản mồ côi |
 
 ‡ Số của `bench.mjs` (có warmup, tách riêng prefill/decode). ‡‡ Số của `generateText()` (gộp prefill+decode, **không warmup**). **Hai thang đo này không so trực tiếp được với nhau** — chỉ so trong cùng một thang (§3 đã cảnh báo). Trong bảng, hãy so cột-với-cột ở cùng ký hiệu, đừng so 265,9 ‡ với 30,5 ‡‡.
@@ -781,7 +892,19 @@ Bản đầy đủ (bảng 7×7 đầy đủ, mọi lệnh + output nguyên văn
 
 ⚠ **Rủi ro thật của mức 91% không phải là bị đuổi model — mà là hỏng im lặng** (sửa sau vòng review, thay cho suy luận sai ở bản đầu): guard **không bảo vệ** khoảng dư ~2,9 GB, vì nó chạy trước lượt nạp và không biết model sắp nạp to bao nhiêu. Khi một lượt nạp thực sự vượt VRAM, nhánh `catch` (`aiGgufEngine.ts:620-645`) **không báo lỗi lên trên**: nó **đuổi sạch mọi model đang rảnh**, rồi **nạp lại với `gpuLayers:"auto"`** — tức đẩy bớt lớp sang CPU. Kết quả: **tier đó âm thầm tụt xuống tốc độ kiểu roster C**, chỉ để lại **một dòng `console.warn` trong log máy chủ**, không lỗi, không tín hiệu nào tới người dùng, và các tier khác vừa bị đuổi sẽ phải nạp lại (8 828 ms nếu file còn nóng, 40 969 ms nếu nguội — §3). Đây đúng lớp **"hỏng im lặng"** mà cả Đợt 0 đang đuổi. ⇒ Việc cần làm sau khi đổi roster không phải chỉnh ngưỡng, mà là **theo dõi dòng cảnh báo đó** (7.6 bước 8).
 
+⚠ **Mọi con số guard ở trên là PHÂN TÍCH TRẠNG THÁI TĨNH — nêu rõ điều kiện, đừng đọc thành vô điều kiện** (bổ sung ở vòng sửa 2). Phép tính "tổng − model nhỏ nhất" chỉ đúng khi **không model nào đang sinh token**. Nhưng chính §3 ghi: mỗi model tốn **thêm 470-940 MiB lúc sinh token thật**, và `.env:125` đặt `GGUF_MAX_CONCURRENCY=4` ⇒ hệ cho phép **tới 4 lượt sinh đồng thời**. Cộng vào:
+
+| Trạng thái | Roster A | % của 32 607 |
+|---|---|---|
+| 4 model thường trú, **không ai sinh** (con số của vòng sửa 1) | 29 717 | 91,1% |
+| + **2 lượt sinh** đồng thời (~940-1 880 MiB) | 30 657-31 597 | **94-97%** |
+| + **4 lượt sinh** đồng thời (trần `GGUF_MAX_CONCURRENCY`) | 31 597-33 477 | **97-103%** |
+
+⇒ Phát biểu đúng là: ***"ở trạng thái tĩnh và khi sidecar thị giác đang ngủ, guard không kích hoạt; khi có sinh token đồng thời — hoặc khi sidecar thức — thì có, và đúng lúc đó `evictLRU()` lại bất lực: model đang bận thì `refCount > 0` nên bị bỏ qua (`:379`), còn sidecar thì không nằm trong `loadedModels`."*** Cả hai đường đều dẫn về cùng một nhánh `:358` — *"no idle model to evict — deferring/allowing load with OOM risk"* — tức **vẫn cho nạp** dù biết rủi ro.
+
 **Kết luận không phụ thuộc bất kỳ điều gì còn chờ:** hiện trạng **không thể giữ cả hai model 30B cùng thường trú** (đo trực tiếp trên đường race-free, model thứ hai bị từ chối nguyên văn), **và** không nạp nổi model 30B nào **qua đường boot hiện tại của app** (45/45 lượt lỗi, §2). Hai model 30B riêng cần ~35,5-36,7 GB trên một cỗ máy có 32,6 GB — xác nhận bằng **ba nguồn độc lập**: phép cộng delta (§3), delta 17,7 GB × 2 ≈ 35,4 GB đo ở Task 2 qua đường race-free (sổ tiến độ Task 2), và phép nạp-chồng trực tiếp bị từ chối (§3).
+
+⚠ **Nhưng "hiện trạng không dùng được" KHÔNG còn kéo theo "A hoặc B thì dùng được"** (sửa ở vòng sửa 2). Với sidecar thị giác tính vào, **A vượt 4 931 MiB và B vượt 4 955 MiB** — **nhiều hơn** chính 4 060 MiB đã dùng để kết án hiện trạng (§7.1a). Kết luận trung thực: **không roster nào trong bảng vừa 32,6 GB một cách vô điều kiện.** Việc phải làm không chỉ là chọn roster mà là **quyết định xem tính năng thị giác có nằm trong ngân sách hay không** — xem 7.5.
 
 ### 7.2 Trục tốc độ, nói bằng ngôn ngữ người dùng
 
@@ -821,10 +944,11 @@ Ngưỡng "nửa giây / 300-500 ms" dùng ở §5 là **giả định của đi
 
 ### 7.4 ⚠ Ba chỗ số liệu KHÔNG quyết được
 
-**(a) Chất lượng tiếng Việt — đang chờ chủ dự án chấm.** 4 cặp câu ẩn danh ở `docs/superpowers/reports/2026-08-01-do0-vi-ab.md`. Khảo sát này **không chấm và không đoán trước**. Hai điều nên biết **trước khi** chấm (đây là bối cảnh, không phải gợi ý kết quả):
+**(a) Chất lượng tiếng Việt — đang chờ chủ dự án chấm.** File ẩn danh: `docs/superpowers/reports/2026-08-01-do0-vi-ab.md`. Khảo sát này **không chấm và không đoán trước**. Ba điều nên biết **trước khi** chấm (đây là bối cảnh, không phải gợi ý kết quả):
 
+- ⚠ **Có 4 cặp được sinh ra, nhưng chỉ 3 cặp CHẤM ĐƯỢC** (nói rõ ở vòng sửa 2 — bản đầu chỉ nói nhẹ "nên cân trọng số"). **Prompt 1 (RCA) không đóng góp gì** cho câu hỏi "tiếng Việt của model nào tốt hơn" vì **cả hai model đều trả lời bằng tiếng Anh** — do `synthesize()` nhận tham số `lang` nhưng không hề dùng (7.8 #3), không phải do model. Chấm P1 là chấm một thứ mà **sản xuất không bao giờ sinh ra bằng tiếng Việt**. ⇒ Phán quyết tổng hợp phải dựa trên **P2/P3/P4**.
 - §4 chỉ so **30B-Instruct vs 30B-Coder**. **Model 4B không có mặt trong phép so.** ⇒ Nếu kết quả chấm nghiêng về "cần một model general giỏi tiếng Việt", thì roster B **vẫn chưa có bằng chứng chất lượng nào** và phải qua một lượt chấm nữa trước khi chọn.
-- Prompt 1 (RCA) đang chấm thứ mà **sản xuất không bao giờ sinh ra bằng tiếng Việt**: `synthesize()` nhận tham số `lang` nhưng không hề dùng, cả hai model đều trả lời tiếng Anh (mục 7.8 #3). Nên cân trọng số Prompt 1 tương ứng; ba prompt còn lại đại diện đường chạy thật tốt hơn.
+- Nhãn **"Model 1" là CÙNG MỘT model xuyên suốt cả 4 prompt** (Model 2 cũng vậy) — gán một lần, không đảo giữa các prompt. Không biết điều này thì không thể ra phán quyết tổng hợp. File A/B nay nói rõ điều đó ngay đầu trang và có sẵn phiếu ghi phán quyết.
 
 **(b) Lưu lượng tier code/fim — đây là lỗ ĐO LƯỜNG, không phải lỗ NHU CẦU.** `aiProgrammingCopilot.ts` gọi thẳng engine, **không bao giờ** đi qua `aiGateway.ts` — nơi thực sự ghi bảng; 6 lượt gọi thật (có lượt sinh ra mã thật) ⇒ **0 dòng**. Bảng thứ hai `ai_model_metrics` cũng **0 dòng**, không có nguồn thay thế trong DB (§1). ⇒ **Không được đọc "code/fim = 0 lượt" thành "code/fim ít được dùng".** Hệ quả cho quyết định hôm nay rất cụ thể: **trục lẽ ra dùng để kiểm chứng — hoặc bác bỏ — ưu tiên "nghiêng code" của chủ dự án đang câm.** Ưu tiên đó vì thế vẫn phải giữ đúng vai trò đã thống nhất: **quy tắc phá hoà khi số liệu ngang nhau**, không phải bằng chứng.
 
@@ -836,7 +960,18 @@ Ngưỡng "nửa giây / 300-500 ms" dùng ở §5 là **giả định của đi
 
 ### 7.5 Khuyến nghị — dạng ĐIỀU KIỆN, chờ §4
 
-**Điều kiện áp cho mọi nhánh (không có ngoại lệ): vá race double-warm TRƯỚC khi đổi.** Không vá thì mọi roster có model 30B ở khe mặc định đều không nạp nổi qua đường boot app — đã đo **45/45 lượt lỗi** (§2), và mọi phép nghiệm thu sau khi đổi sẽ đo lỗi hạ tầng chứ không đo roster.
+**Điều kiện 0 (mới ở vòng sửa 2, đứng TRƯỚC cả việc chọn roster): quyết định ngân sách cho sidecar thị giác.**
+Đây không còn là chi tiết kỹ thuật — nó là **câu hỏi sản phẩm** mà chỉ chủ dự án trả lời được, và nó **chi phối cả ba nhánh dưới đây**. Với 7 821 MiB đo được (§7.1a), **không roster nào vừa** nếu tính năng thị giác được giữ nguyên như hôm nay. Ba đường đi, nêu đủ, không giấu cái nào:
+
+| Đường | Cách làm | Cái giá | Trạng thái bằng chứng |
+|---|---|---|---|
+| **(i) Tắt hẳn thị giác** | Bỏ trống 1 trong 3 biến `LLAMA_SERVER_BIN` / `GGUF_VISION_MODEL` / `GGUF_VISION_MMPROJ` ⇒ mọi call site suy giảm trung thực | **Mất hẳn** mô tả/hỏi đáp ảnh kiểm tra + mô tả VL trong đường bất thường AOI (`aoiImageEmbeddingWorker.ts:322`) | ĐO: cơ chế tắt xác nhận bằng đọc mã 6 call site; **hậu quả nghiệp vụ chưa lượng hoá** |
+| **(ii) Giữ thị giác, chấp nhận roster co lại khi có ảnh** | Không đổi gì; hiểu rằng khi sidecar thức, roster A **co từ 4 model xuống 2** (Coder-30B + embed = 23 357 MiB vừa khít 23 546 dư địa) | Mỗi lượt ảnh ⇒ 2 model bị đuổi ⇒ nạp lại **8 828 ms (nóng) / 40 969 ms (nguội)**; người dùng thấy "AI thỉnh thoảng đứng hình" | ĐO một phần: các delta đều đo thật; **chưa chạy kịch bản ảnh-xen-kẽ-chat để đo tần suất thật** |
+| **(iii) Thu nhỏ sidecar** | Truyền `-np 1` thay vì để `n_parallel=auto`→4, và/hoặc hạ `LLAMA_VISION_CTX` | Log cho thấy 4 khe × ctx 8192 là phần đáng kể của 7 821 MiB ⇒ có thể tiết kiệm **vài GB** | **CHƯA ĐO** — và **cần sửa mã** (`llamaVisionSidecar.ts:208-217` không truyền `-np`; không có biến `.env` nào cho nó) ⇒ ngoài phạm vi Đợt 0 |
+
+⚠ **Đường (iii) là đường có triển vọng nhất mà Đợt 0 KHÔNG đo được** — nêu ra để đợt sau nhặt, không phải để dựa vào hôm nay. **Đừng chọn roster dựa trên giả định (iii) sẽ thành công.**
+
+**Điều kiện 1 áp cho mọi nhánh (không có ngoại lệ): vá race double-warm TRƯỚC khi đổi.** Không vá thì mọi roster có model 30B ở khe mặc định đều không nạp nổi qua đường boot app — đã đo **45/45 lượt lỗi** (§2), và mọi phép nghiệm thu sau khi đổi sẽ đo lỗi hạ tầng chứ không đo roster.
 
 - **NẾU §4 cho thấy tiếng Việt của Coder-30B chấp nhận được** (không tệ đi đáng kể ở văn bản dành cho người vận hành) ⇒ **chọn roster A.**
   Lý do bằng số: một model 30B duy nhất, tổng 29 717 MiB **vừa** ngân sách và **giữ được đủ 4 model** (guard không kích hoạt — xem bảng 7.1); **không tier nào chậm đi một bậc độ lớn** như ở C. *(Sửa sau vòng review: bản đầu viết "không phải trả giá tốc độ ở bất kỳ tier nào" — sai với bảng. Khe general của A đo được 227,2 tok/s so với 277,4 của hiện trạng, tức thấp hơn ~18%. Nhưng chính roster A cho thấy **hai khe trỏ CÙNG MỘT FILE, trong CÙNG một lượt chạy** ra 227,2 và 268,3 — lệch 15,3%. Chênh lệch 18% vì thế **nằm trong khoảng dao động của chính phép đo**, không đủ căn cứ để khẳng định A chậm hơn thật; nhưng cũng không được nói "không trả giá gì".)* Đổi và quay lui bằng **một dòng `.env`**; đây cũng là nhánh rẻ nhất về công sức kỹ thuật.
@@ -848,6 +983,39 @@ Ngưỡng "nửa giây / 300-500 ms" dùng ở §5 là **giả định của đi
 - **NẾU §4 không phân biệt được rõ** (hai model ngang nhau, hoặc khác biệt không đáng kể với công việc thật) ⇒ **A**, đúng theo quy tắc phá hoà đã thống nhất từ đầu đợt.
 
 - **Trong mọi trường hợp: KHÔNG giữ hiện trạng.** Kết luận này **không chờ §4** — xem cuối 7.1.
+
+#### 7.5b 🟡 FIM (ghost-text) — CHỐT MỘT CÂU (giải mâu thuẫn ba chỗ, vòng sửa 2)
+
+**Ba chỗ trong báo cáo này đang nói ba kiểu** — reviewer nêu đúng, tôi xác nhận bằng cách đọc lại chính mình:
+- §5 "Khuyến nghị": *"số liệu ỦNG HỘ đổi về mặt độ trễ thuần"*;
+- 7.3: *"không có lý do bằng số để từ chối đổi"*;
+- 7.5 (bản đầu): **im lặng hoàn toàn**;
+- 7.6 bước "Đổi": *"`GGUF_FIM_MODEL` (dòng 655) **không cần đụng**"*.
+
+Chủ dự án đọc xong không biết mình có đang được đề nghị đổi hay không. **Chốt:**
+
+> ### ✅ **CÓ — đổi `GGUF_FIM_MODEL` trỏ sang cùng file với `GGUF_CODE_MODEL` (Coder-30B), đổi CÙNG LÚC với việc đổi roster, không tách thành đợt riêng.**
+
+**Ba lý do, theo thứ tự sức nặng:**
+
+1. **Nó trả lại 1 774 MiB — khoản dư địa duy nhất còn tìm được, và Đợt 0 chưa bao giờ đưa nó vào bảng nào.** `loadGgufModel()` cache theo **basename file** (`aiGgufEngine.ts:593-599`), nên trỏ chung file = **không nạp thêm model nào**, không tốn thêm VRAM, cache-hit 0 ms. Đưa vào phép cộng (delta lấy từ `roster-A.json`: `fim=1774`, `roster-B.json`: `fim=1786`):
+
+   | Roster | 4 model (bản đầu) | Bỏ khe FIM riêng | **+ sidecar 7 821** | So 32 607 |
+   |---|---|---|---|---|
+   | A | 29 717 | **27 943** | **35 764** | ❌ vẫn vượt **3 157** |
+   | B | 29 741 | **27 955** | **35 776** | ❌ vẫn vượt **3 169** |
+
+   ⚠ **Nói thẳng: 1 774 MiB KHÔNG cứu được A hay B.** Nó thu hẹp mức vượt từ 4 931 xuống 3 157 MiB — đáng làm, **nhưng không đủ**. Ai đọc bảng này để kết luận "vậy thì đổi FIM là xong" là đọc sai. Chỉ khi **cộng cả** đường (i) tắt thị giác **hoặc** (iii) thu nhỏ sidecar thì mới có roster vừa.
+
+2. **Trục độ trễ không phản đối** — §5 đo TTFT thật: 39,5 ms (nhắc 153 tok) / 76,6 ms (533 tok), gợi ý 32 token trọn vẹn 148,6 / 187,8 ms. Ký tự đầu vẫn nằm trong vùng "tức thì" 0,1 s theo mốc Miller/Nielsen (7.3). Đắt hơn 1.5B thật (+26,3 / +49,8 ms) nhưng **không vượt mốc nào**.
+
+3. **Nó bớt được một hộ tiêu thụ khỏi bảng kế toán** — ít model riêng = ít khả năng chạm trần `GGUF_MAX_LOADED_MODELS=4`, tức ít lần đi qua nhánh `"At capacity (4/4)"` (`:404`).
+
+**Hai điều kiện kèm theo, không được bỏ:**
+- **(a) Chỉ đổi nếu roster giữ Coder-30B thường trú** (A, B, hoặc C đều thoả). Nếu Coder-30B **không** thường trú thì lượt ghost-text đầu tiên phải nạp nguội — §3 đo **40 969 ms** cho đúng file này. Đó là phá hoại trải nghiệm, không phải cải thiện.
+- **(b) Chưa đo tải đồng thời** (§5 mối lo 2): ghost-text và sinh mã dài dùng **chung một instance model, chung semaphore, chung một GPU**. Mức chậm thêm khi chúng chạy cùng lúc **chưa có số**. Đây là rủi ro đã biết, chưa lượng hoá — nghiệm thu sau khi đổi phải nhìn vào nó.
+
+**Sửa kèm:** 7.6 bước "Đổi" (câu *"`GGUF_FIM_MODEL` không cần đụng"*) đã được sửa cho khớp quyết định này.
 
 ### 7.6 Việc phải làm khi đổi roster
 
@@ -863,7 +1031,16 @@ GGUF_DEFAULT_MODEL=Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf
 # .env dòng 120 — roster B:
 GGUF_DEFAULT_MODEL=Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf
 ```
-`GGUF_CODE_MODEL` (dòng 654) và `GGUF_FIM_MODEL` (dòng 655) **không cần đụng** cho cả A lẫn B. Roster C **không làm được bằng `.env`** — xem 7.5.
+`GGUF_CODE_MODEL` (dòng 654) **không cần đụng** cho cả A lẫn B.
+
+**`GGUF_FIM_MODEL` (dòng 655) thì CÓ — sửa ở vòng sửa 2** (bản đầu ghi "không cần đụng", chỏi với §5 và 7.3; nay đã chốt ở **7.5b**):
+```bash
+# .env dòng 655 — trỏ chung file với GGUF_CODE_MODEL, trả lại 1 774 MiB:
+GGUF_FIM_MODEL=Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf
+```
+⚠ Chỉ làm bước này **nếu** roster đang chọn giữ Coder-30B thường trú (A/B/C đều thoả) — điều kiện (a) ở 7.5b. Quay lui: đặt lại `Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf`.
+
+Roster C **không làm được bằng `.env`** — xem 7.5.
 
 **Sau khi đổi — bốn chỗ ghim cứng tên model trong mã**
 
@@ -883,15 +1060,24 @@ GGUF_DEFAULT_MODEL=Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf
 
 **Nghiệm thu sau khi đổi**
 7. `npm run kb:eval` — so với mốc **151/151**. Thấp hơn = hỏng truy hồi (§6 đã chứng minh phép đo này **nhạy thật**: ép sai embedder thì tụt còn 56/151).
-8. `nvidia-smi` sau khi hệ ổn định — và **quan trọng hơn: soi log máy chủ tìm đúng một dòng cảnh báo**.
-   *(Sửa sau vòng review — bản đầu ở bước này kết luận ngược và kèm một khuyến nghị có hại, xem 7.9.)*
-   Ngưỡng `GGUF_VRAM_GUARD_PCT=90` **sẽ KHÔNG kích hoạt** ở roster A lẫn B (mức guard đọc được cao nhất là 85,7% — xem bảng 7.1), nên **không cần chỉnh gì** và **đừng hạ `GGUF_MAX_LOADED_MODELS`**: hạ xuống 3 chỉ **ép** một lượt đuổi mà bình thường **không xảy ra**, tức tự trả đúng cái giá 8 828-40 969 ms mà nó định tránh.
-   Thứ **phải** canh là dòng này trong log — nó có nghĩa một tier vừa **âm thầm** tụt xuống chạy một phần trên CPU:
+8. `nvidia-smi` sau khi hệ ổn định — và **quan trọng hơn: soi log máy chủ tìm BỐN dòng cảnh báo**.
+   *(Sửa 2 lần: vòng 1 gỡ một khuyến nghị có hại — xem 7.9; vòng 2 bổ sung 3/4 dòng còn thiếu — xem 7.10.)*
+   **Đừng hạ `GGUF_MAX_LOADED_MODELS`**: hạ xuống 3 chỉ **ép** một lượt đuổi, tức tự trả đúng cái giá 8 828-40 969 ms mà nó định tránh.
+
+   ⚠ **Bản đầu chỉ dặn canh MỘT dòng. Thực có BỐN**, tất cả cùng một họ "hệ vừa âm thầm xoay xở, không ai báo cho bạn". Đọc mã `aiGgufEngine.ts:346-436` + `:620-645`. Canh đủ cả bốn — **lệnh gợi ý**:
+   ```bash
+   grep -nE "ran out of VRAM|no idle model to evict|At capacity \(|evicted LRU model" <log-may-chu>
    ```
-   [aiGgufEngine] <model>: full GPU offload ran out of VRAM — freeing idle models and
-   retrying with gpuLayers:"auto" (partial offload, CPU fallback for the rest).
-   ```
-   Thấy dòng này = roster đang chọn **không thực sự vừa**, dù `nvidia-smi` trông vẫn bình thường và không có lỗi nào nổi lên giao diện.
+
+   | # | Dòng log (nguyên văn, rút gọn) | Vị trí | **Nghĩa là gì — và phải làm gì** |
+   |---|---|---|---|
+   | **1** | `<model>: full GPU offload ran out of VRAM — freeing idle models and retrying with gpuLayers:"auto" (partial offload, CPU fallback for the rest).` | `:636` | **Nặng nhất về hậu quả.** Một tier vừa **âm thầm tụt xuống tốc độ kiểu roster C** (§7.2: vài giây → vài phút). Không lỗi, không tín hiệu giao diện. ⇒ Roster đang chọn **không thực sự vừa**. |
+   | **2** | `VRAM guard: used X/Y MB (Z%) ≥ 90% but no idle model to evict — deferring/allowing load with OOM risk.` | `:358` | **Nguy hiểm nhất về cơ chế: hệ biết sắp OOM và VẪN CHO NẠP.** Xảy ra khi mọi model đều `refCount>0` **hoặc** khi thứ chiếm chỗ là **sidecar thị giác** — thứ `evictLRU()` không với tới được (§7.1a). Thấy dòng này = đang chạy trên may rủi. |
+   | **3** | `At capacity (4/4) but all models are in use (refCount>0); allowing temporary overflow.` | `:404` | **Đáng lo riêng cho A và B vì chúng chạy ĐÚNG ở trần 4/4** (`GGUF_MAX_LOADED_MODELS=4`) ⇒ hệ **thường trực sát trần**, mỗi lượt nạp thứ 5 (kể cả nạp lại model vừa bị đuổi) đều đi qua đây. Tần suất cao = roster quá chật, cân nhắc bỏ khe FIM riêng (7.5b). |
+   | **4** | `VRAM guard: used X/Y MB (Z%) ≥ 90% — evicted LRU model "<M>" before loading.` *(kèm `Evicted LRU model: <M>` ở `:388`)* | `:364` / `:388` | Guard **đã kích hoạt và đuổi được** — đỡ hơn #2, nhưng model bị đuổi sẽ phải **nạp lại 8 828-40 969 ms**. Vài lần/ngày = bình thường; liên tục = roster đang thrash. |
+
+   ⚠ **Bốn dòng này đều là `console.warn`/`console.log` — không phải lỗi, không vào bảng nào, không lên giao diện.** Nếu log máy chủ không được thu gom thì **cổng nghiệm thu này vô hiệu**. Đây chính là lớp "hỏng im lặng" mà cả Đợt 0 đang đuổi.
+   ⚠ **Và phải nghiệm thu VỚI ảnh đi qua**, không chỉ chat/code: mở một lượt hỏi đáp ảnh kiểm tra (hoặc chờ một lượt bất thường AOI tự kích hoạt) rồi mới đọc log — nếu chỉ thử tier chữ, sidecar không thức và **bốn dòng trên sẽ im lặng một cách giả tạo** (§7.1a).
 
 **Quay lui — đúng một dòng**
 ```bash
@@ -904,7 +1090,7 @@ GGUF_DEFAULT_MODEL=Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf
 
 1. **Lưu lượng là DỰNG, không phải sản xuất.** 20/38 dòng do agent chủ động gọi trong một phiên ~20 phút; tỉ lệ giữa các tier là tỉ lệ **tôi chọn gọi**, không phải nhu cầu thật (§1).
 2. **Tier code/fim về nguyên tắc không đo được** bằng hạ tầng hiện có (7.4b) — trục đáng lẽ liên quan nhất tới ưu tiên "nghiêng code" thì không có dữ liệu.
-3. **Trục tốc độ chỉ định hướng** (7.0). Roster C chỉ đo **một điểm** `gpuLayers=8/48`; chưa quét dải nên **chưa biết điểm cân bằng tốt nhất của C**.
+3. **Trục tốc độ chỉ định hướng** (7.0). Roster C chỉ đo **một điểm** `gpuLayers=8/48`; chưa quét dải nên **chưa biết điểm cân bằng tốt nhất của C**. ⚠ **Nâng mức ở vòng sửa 2:** sau khi cộng sidecar, C là roster **duy nhất** mà cấu hình chính (2 model lớn, 23 283 + 7 821 = 31 104 = **95,4%**) còn **vừa** — nhưng chỉ vừa **1 503 MiB**, và **vỡ ngay** nếu giữ thêm khe `fim`/`embed` (38 506). ⇒ Việc **quét dải `gpuLayers`** (12/16/24) chuyển từ "tuỳ chọn nếu chọn C" thành **việc BẮT BUỘC nếu C lên bàn** — biên 1 503 MiB quá mỏng để chốt trên một điểm đo duy nhất.
 4. **Máy đã nâng cấp phần cứng** (i7-12700KF/20 luồng/47,8 GB → i9-12900K/24 luồng/63,8 GB) giữa baseline 05/07 và nay ⇒ tok/s tuyệt đối **không so ngang hàng** với baseline cũ; VRAM thì so được (§3).
 5. **Cột "load ms" trong bảng §3 bị chi phối bởi cache của hệ điều hành**, không phải bởi roster: cùng một file, lần đọc đầu 40 969 ms, lần sau 8 828 ms (§3 M-1).
 6. **KV cache cho model 30B: KHÔNG đo được** — trọng số không nạp nổi qua đường app, phải đo thay bằng model 4B (§2). ⇒ Câu hỏi "còn dư bao nhiêu chỗ cho ngữ cảnh dài ở roster A/B/C" **chưa có số**.
@@ -914,6 +1100,21 @@ GGUF_DEFAULT_MODEL=Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf
 10. **Không đo kịch bản tải đồng thời thật** — mức chậm thêm khi ghost-text và sinh mã chạy cùng lúc trên một GPU **chưa đo** (§5).
 11. **Chỉ khảo sát các model đã có sẵn trên đĩa** (ràng buộc "không tải model mới"). Việc có model nào ra đời sau **05/2026** phù hợp hơn hay không — **agent không biết**, chủ dự án cần tự xác nhận trước khi chốt lâu dài.
 12. **Ngưỡng UX ở §5 là giả định không nguồn**; mục 7.3 đã thay bằng chuẩn có nguồn, nhưng chuẩn đó là chuẩn giao diện **tổng quát**, không phải chuẩn riêng cho gợi ý mã, và không đo trên hệ này.
+
+**Bổ sung ở vòng sửa 2:**
+
+13. **Ba mức lưu giữ bằng chứng — nay đã thống nhất, nhưng phải biết mức nào là mức nào.** Ba mục ngang hàng của báo cáo này trước đây lưu bằng chứng ba kiểu khác nhau; đã xử lý như sau:
+    | Mục | Trạng thái trước | Nay |
+    |---|---|---|
+    | §3 (bench 3 roster) | 3 file `roster-*.json` **đã commit** | không đổi ✔ |
+    | §5 (TTFT FIM) | 2 file có trên đĩa nhưng **untracked** | **đã commit** trong đợt sửa này ✔ |
+    | §2 (đường race-free) | trích 2 đường dẫn JSON **KHÔNG TỒN TẠI** | **đã gỡ đường dẫn**, ghi rõ "output nguyên văn, JSON không giữ lại" + lệnh dựng lại ✔ |
+    | §7.1a (sidecar) | — | **output nguyên văn + lệnh đầy đủ trong báo cáo**; tiến trình đo là tạm thời, không sinh JSON ⇒ dựng lại bằng đúng lệnh đã ghi |
+    ⇒ Nguyên tắc rút ra cho đợt sau: **hoặc commit file thô, hoặc ghi lệnh dựng lại — nhưng đừng bao giờ trích một đường dẫn mà không kiểm nó còn tồn tại.**
+
+14. **🟡 `aiReranker` — hộ tiêu thụ GPU thứ tư, cách một dòng `.env`, và báo cáo này chưa từng nhắc tên nó.** `.env:408 RAG_RERANKER_ENABLED=true` + `.env:412 RAG_RERANKER_MODE=gguf` ⇒ **đang bật**. `aiReranker.ts:361` tự gọi `llama.loadModel({ modelPath, gpuLayers: useGpu ? -1 : 0 })` — **bypass cả semaphore `withGgufSlot()` lẫn bảng `loadedModels`**, đúng cùng lớp mù với sidecar thị giác (§7.1a): model chạy **ngoài kế toán của `aiGgufEngine`**, nên `evictLRU()` không thấy, còn `readVramState()` thì vẫn tính vào guard. **An toàn hôm nay CHỈ NHỜ `.env:416 RAG_RERANKER_GPU=false`** (nạp trên CPU, `gpuLayers: 0`) — đổi đúng một dòng đó là có ngay hộ tiêu thụ VRAM thứ tư không ai kế toán. ⚠ **Trước khi đổi roster, kiểm `RAG_RERANKER_GPU` vẫn là `false`**; nếu ai đó bật lên thì mọi phép cộng VRAM trong báo cáo này phải làm lại. **Chưa đo** VRAM của nó (chưa từng chạy ở chế độ GPU).
+
+15. **Sidecar thị giác: đo được phần thường trú, CHƯA đo phần vận hành.** §7.1a đo chắc chắn 7 821 MiB (thường trú) / 7 920 MiB (đỉnh 1 ảnh). **Chưa đo:** (a) nhiều ảnh đồng thời — `n_parallel=4` nghĩa là 4 lượt song song **có thể** đẩy cao hơn; (b) ảnh độ phân giải lớn hơn ảnh thử 227 KB; (c) mức tiết kiệm thật của `-np 1` (đường (iii) ở 7.5) — **chưa thử, cần sửa mã**; (d) tần suất thức/ngủ thật trên dây chuyền chạy thật. ⇒ 7 821 MiB là **sàn dưới đáng tin**, không phải trần.
 
 ### 7.8 ⚠ Ngoài phạm vi — bốn thứ Đợt 0 tìm ra mà không ai cử nó đi tìm
 
@@ -954,3 +1155,22 @@ Reviewer truy **từng con số** của §7 về §1-§6/sổ tiến độ và t
 Không sửa mã sản xuất, không sửa `.env`, **không vá** race/RCA/KB Studio trong vòng này — chỉ đọc thêm 4 vùng mã để kiểm chứng và sửa văn bản báo cáo.
 
 Bản đầy đủ (bảng nguồn từng ô, output nguyên văn các lệnh quét, phép cộng chi tiết): `.superpowers/sdd/2026-08-01-do0-model-roster-survey/task-7-report.md` (không commit — `.superpowers/sdd/*` bị `.gitignore` chặn).
+
+### 7.10 Vòng sửa 2 (review toàn nhánh — cổng cuối trước bàn giao)
+
+Reviewer độc lập đọc toàn nhánh 15 commit. **Ràng buộc "chỉ đo" xác nhận giữ trọn vẹn** (0 dòng mã sản xuất, 3 phát hiện CẤM VÁ còn nguyên, `.env` sạch). **1 Critical + 3 Important + 3 Minor phải xử lý** — tất cả đã xử lý dưới đây; tôi **tự đo lại và tự đọc mã** cho từng mục, không chép số reviewer.
+
+- **🔴 CRITICAL — sidecar thị giác vắng mặt khỏi MỌI phép cộng VRAM của cả đợt.** Đã xử lý bằng **phép đo trực tiếp**, không dùng ước lượng: khởi `llama-server` với đúng args sản xuất, `nvidia-smi` trước/sau ⇒ **7 821 MiB thường trú / 7 920 MiB đỉnh khi suy luận thật** (§7.1a). ⚠ **Số thật cao hơn ước lượng của reviewer (~6 330) tới 1 490 MiB** — nguyên nhân truy được từ log: sidecar không truyền `-np` nên `llama-server` tự chọn **4 khe song song × ctx 8192**, cộng buffer mtmd 1 502 MiB. Đã: thêm 3 hàng vào bảng 7.1, **cộng lại toàn bộ ba roster** (A vượt **4 931**, B vượt **4 955**, C-4-model vượt **5 899**), sửa phân tích guard (sidecar **đếm vào** `readVramState()` vì nó đo toàn thiết bị, nhưng `evictLRU()` **không đuổi được** vì khác tiến trình), và trả lời bằng mã ba câu hỏi "tắt được không / thường trú không / có tính vào ngân sách không".
+  **Đã xem lại kết luận cuối và ĐỔI, không cứu:** câu "A và B vừa 32,6 GB" của bản trước **bị rút**. Mức vượt của A/B nay **lớn hơn chính 4 060 MiB** đã dùng để kết án hiện trạng ⇒ **không roster nào vừa một cách vô điều kiện**, và 7.5 có thêm **Điều kiện 0** (quyết ngân sách thị giác) đứng **trước** việc chọn roster. Khuyến nghị "chọn A" vì thế **yếu đi thật** — nói thẳng thay vì giữ nguyên độ mạnh cũ.
+  **Bài học:** đúng lớp lỗi §7 tự rút ở vòng 1 (*"suy cơ chế từ hằng số cấu hình mà không đọc hàm dùng nó"*) — lần này chính §7 đã **grep ra** `LLAMA_VISION_GPU_LAYERS` (hàng "đổi được bằng một dòng `.env`?") rồi **gạt đi như kết quả không liên quan**, thay vì đi thêm một bước tới `llamaVisionSidecar.ts` hỏi "cái này ăn bao nhiêu VRAM?".
+- **🟠 IMPORTANT 1 — checklist canh log thiếu 3/4 dòng.** 7.6 bước 8 dặn canh **một** dòng; thực có **bốn** (`:636`, `:358`, `:404`, `:364`+`:388`). Đã lập bảng đủ bốn, **nêu rõ dòng nào nghĩa là gì và phải làm gì**, kèm lệnh `grep` gộp. Hai dòng nguy nhất: `:358` (*"no idle model to evict — deferring/allowing load with OOM risk"* — hệ biết sắp OOM và **vẫn nạp**) và `:404` (*"At capacity (4/4)"* — **A và B chạy đúng ở trần đó**). Thêm cảnh báo: **phải nghiệm thu với ảnh đi qua**, không thì sidecar không thức và bốn dòng im lặng giả tạo.
+- **🟠 IMPORTANT 2 — phân tích guard là trạng thái TĨNH nhưng phát biểu vô điều kiện.** §3 tự ghi **+470-940 MiB/model lúc sinh** và `.env:125 GGUF_MAX_CONCURRENCY=4` cho phép 4 lượt sinh đồng thời. Đã thêm bảng: 4 model + 2 lượt sinh ⇒ **94-97%**; + 4 lượt sinh ⇒ **97-103%**. Câu 85,7% nay có điều kiện tường minh: *"ở trạng thái tĩnh VÀ khi sidecar đang ngủ"*.
+- **🟠 IMPORTANT 3 — ba mức lưu bằng chứng khác nhau.** §2 trích **2 file JSON không tồn tại** (đã gỡ, thay bằng "output nguyên văn, JSON không giữ lại" + lệnh dựng lại); §5 có file nhưng **chưa commit** (**nay đã commit**); §3 đã commit (không đổi). Bảng đối chiếu ở **7.7 #13**.
+- **🟡 M-1 — §1 vẫn ghi dòng 801.** Tự đọc `sed -n '798,810p'`: **801 = `route({task:"fim"})`** (định tuyến), **807 = `await generateFim(`**. §7 đúng, §1 sai. **Đã sửa §1** (trước đây cố ý để nguyên và chỉ đính chính ở 7.9 M-4 — reviewer đúng khi nói để số sai trong tài liệu bàn giao là không chấp nhận được).
+- **🟡 M-2 — `vision` ghi `model='default'`: NÂNG MỨC.** Không còn là phiền toái nhãn mác: đó chính là **lý do không ai nhìn thấy một model 8B đang cư trú trên GPU suốt cả đợt**. Đã nối thẳng nó với phát hiện Critical ở §1 Mối lo #3.
+- **🟡 M-3 — `aiReranker` không xuất hiện lần nào trong báo cáo giao chủ dự án.** Đã thêm **7.7 #14**: đang bật, mode `gguf`, `aiReranker.ts:361` bypass cả semaphore lẫn `loadedModels`, **an toàn hôm nay chỉ nhờ `RAG_RERANKER_GPU=false`** — cùng họ với sidecar.
+- **🟡 Mâu thuẫn FIM (chưa ai nêu) — ba chỗ nói ba kiểu.** §5/7.3 "ủng hộ đổi", 7.5 im lặng, 7.6 "không cần đụng". Đã **chốt một câu ở 7.5b: CÓ, đổi**, đưa khoản **1 774 MiB** vào phép cộng lần đầu tiên — **và nói thẳng nó KHÔNG cứu được A/B** (vượt 4 931 → 3 157, vẫn vượt). Đã sửa 7.6 cho khớp.
+
+**Không sửa mã sản xuất, không sửa `.env`, không vá race/RCA/KB Studio.** Phép đo sidecar chạy trên **tiến trình `llama-server` riêng** (được phép — không phải app), đã tắt sạch: VRAM **1 239 → 9 060 → 1 233 MiB**, không tiến trình treo, file tạm đã dọn.
+
+Bản đầy đủ đợt sửa cuối: `.superpowers/sdd/2026-08-01-do0-model-roster-survey/final-fix-report.md` (không commit).
