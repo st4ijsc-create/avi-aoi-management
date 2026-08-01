@@ -39,6 +39,11 @@
 import * as React from "react"
 
 import { BASE_URL, type AlarmPriority, type AlarmSource, type AlarmState } from "@/lib/api"
+// `SOUND_GATE_MS`/`SEEN_LIMIT` live in their own dependency-free module because
+// `tests/26-alarm-annunciator.spec.ts` has to know both values and used to carry hand-copied
+// literals of them (`1_800` and `513`) that go silently vacuous if either number moves. See that
+// module's own header for the two failure modes.
+import { SEEN_LIMIT, SOUND_GATE_MS } from "@/lib/annunciator-timing"
 
 // ─────────────────────────────────────────────────────────────────────────
 // Wire types — 1:1 with Alarms/AlarmAnnunciation.cs + Hubs/AlarmAnnunciationStream.cs
@@ -109,16 +114,7 @@ const TONE: Record<AlarmPriority, { pulses: number; hz: number }> = {
   Low: { pulses: 1, hz: 520 },
 }
 
-/** Minimum spacing between tones. `Restored` at engine start emits one edge per standing alarm, so
- * without this a restart with 40 standing alarms would fire 40 overlapping tones — noise that
- * annunciates nothing. The BANNER still lists every one of them; only the sound is coalesced. */
-const SOUND_GATE_MS = 1_500
-
 const RECONNECT_DELAY_MS = 3_000
-
-/** How many `sequence` values to remember for de-duplication. Bounded because a long-lived exhibition
- * page must not grow a set forever; far larger than any realistic burst. */
-const SEEN_LIMIT = 512
 
 type AudioContextCtor = new () => AudioContext
 
