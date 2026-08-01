@@ -80,7 +80,7 @@
 .EXAMPLE
   .\packaging\remove-data.ps1
   Interactive - prompts (Y/N) before stopping/deleting the service and before deleting each of the
-  13 data directories (all except `creds` resolved per the matching -XxxDir parameter or the matching
+  14 data directories (each resolved per the matching -XxxDir parameter or the matching
   ST4I_*_DIR environment variable or the default %ProgramData%\ST4I\sim\<name> - see the
   WARNING below about relocated directories this script cannot discover on its own).
 
@@ -111,8 +111,15 @@
   'HKLM:\SYSTEM\CurrentControlSet\Services\St4iEngineApi' -Name Environment`) - otherwise a relocated
   directory is silently missed by this script and must be removed manually.
 
-  `creds` (the DPAPI-protected machine credential) has no relocation env var - CredentialStore is not
-  relocatable - so it is always purged at %ProgramData%\ST4I\sim\creds.
+  TEST-HYGIENE BATCH - `creds` IS NOW RELOCATABLE (ST4I_CREDS_DIR) and resolves through the same
+  -CredsDir > env var > %ProgramData% default order as every other directory here. It was previously
+  the sole exception, hardcoded to %ProgramData%\ST4I\sim\creds, because CredentialStore was a static
+  class that resolved its directory straight from CommonApplicationData with no override. That made it
+  the one store a test could not point somewhere harmless - which is how ~3,000 test-generated
+  DPAPI-sealed .bin blobs came to accumulate in the real credential directory of a developer machine.
+  Adding the override to the store made the exception here unnecessary; leaving this script hardcoded
+  afterwards would have been strictly worse than before, because a relocated install's credential
+  directory would then be silently missed by the very wipe that exists to remove it.
 
   TASK C-8 - `notifications` was ADDED to the purge list, and its absence was a real defect rather than
   a documentation gap. Dot C (C-2..C-7) introduced %ProgramData%\ST4I\sim\notifications\notifications.db,
@@ -144,9 +151,17 @@
   would reasonably have believed the machine was clean. All eight are relocatable and each resolves
   through the same -XxxDir > env var > %ProgramData% default order as the original three.
 
-  `creds` remains the only directory with no relocation env var (CredentialStore is not relocatable).
+  Every one of the fourteen directories is now relocatable; there is no longer any exception.
 #>
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
+# PSScriptAnalyzer matches the substring "Cred" in a [string] parameter name and assumes it carries a
+# password. -CredsDir is a DIRECTORY PATH (the creds store's location, the -XxxDir sibling of
+# -IdentityDir/-SecurityDir/...), never a secret, so SecureString/PSCredential would be actively wrong
+# here. Suppressed by name rather than renamed: the parameter has to stay -CredsDir to match the
+# `creds` directory and ST4I_CREDS_DIR, and every other directory parameter follows the same shape.
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSAvoidUsingPlainTextForPassword', 'CredsDir',
+    Justification = 'CredsDir is a filesystem path to the credential STORE directory, not a credential.')]
 param(
     [switch]$Force,
     [string]$HistorianDir,
@@ -160,7 +175,8 @@ param(
     [string]$SiteLinkDir,
     [string]$OpcUaPkiDir,
     [string]$BridgeSpoolDir,
-    [string]$ConnectorConfigDir
+    [string]$ConnectorConfigDir,
+    [string]$CredsDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -192,8 +208,8 @@ $subdirs = @(
     @{ Name = 'historian'; Path = (Resolve-DataDir $HistorianDir 'ST4I_HISTORIAN_DIR' (Join-Path $root 'historian')); Warning = 'ALL production/OEE history and cycle data (SqliteHistorianStore)' }
     @{ Name = 'wal';       Path = (Resolve-DataDir $WalDir       'ST4I_WAL_DIR'       (Join-Path $root 'wal'));       Warning = 'any buffered store-and-forward writes not yet delivered to the server' }
     @{ Name = 'security';  Path = (Resolve-DataDir $SecurityDir  'ST4I_SECURITY_DIR'  (Join-Path $root 'security'));  Warning = 'the user database, sessions, and the hash-chained AUDIT LOG (security.db)' }
-    # `creds` has no relocation env var (CredentialStore is not relocatable) - always under $root.
-    @{ Name = 'creds';     Path = (Join-Path $root 'creds');                                                          Warning = 'the DPAPI-protected machine credential(s) (mk_...) - re-onboarding required after this' }
+    # Test-hygiene batch - `creds` is relocatable now (ST4I_CREDS_DIR); see this script's own .NOTES.
+    @{ Name = 'creds';     Path = (Resolve-DataDir $CredsDir     'ST4I_CREDS_DIR'     (Join-Path $root 'creds'));     Warning = 'the DPAPI-protected machine credential(s) (mk_...) - re-onboarding required after this' }
     # Task C-8 - see this script's .NOTES. Added because its ABSENCE left live third-party credentials
     # on a decommissioned machine, which is the one outcome this script exists to prevent.
     @{ Name = 'notifications'; Path = (Resolve-DataDir $NotificationsDir 'ST4I_NOTIFICATIONS_DIR' (Join-Path $root 'notifications')); Warning = 'alarm notification channels AND their DPAPI-protected credentials - webhook URLs, webhook signing secrets, webhook auth tokens, SMTP passwords (notifications.db)' }
@@ -231,7 +247,7 @@ Write-Host "====================================================================
 Write-Host " DESTRUCTIVE - this permanently deletes ST4I Machine Simulator runtime data" -ForegroundColor Red
 Write-Host "=================================================================================" -ForegroundColor Red
 Write-Host ""
-Write-Host "Default root: $root (every directory except creds may be relocated - resolved path shown per entry)" -ForegroundColor Yellow
+Write-Host "Default root: $root (every directory may be relocated - resolved path shown per entry)" -ForegroundColor Yellow
 foreach ($d in $subdirs) {
     Write-Host ("  {0,-10} - {1}" -f $d.Name, $d.Warning) -ForegroundColor Yellow
     Write-Host ("               -> $($d.Path)") -ForegroundColor DarkYellow
@@ -262,7 +278,7 @@ elseif ($PSCmdlet.ShouldProcess("Windows service '$serviceName'", "Stop and dele
     }
 }
 
-# ---- Step 2: delete the 13 data subdirectories (each already resolved above per -XxxDir / ST4I_*_DIR
+# ---- Step 2: delete the 14 data subdirectories (each already resolved above per -XxxDir / ST4I_*_DIR
 # / the %ProgramData% default - see $subdirs) --------------------------------------------------
 Write-Host ""
 foreach ($d in $subdirs) {

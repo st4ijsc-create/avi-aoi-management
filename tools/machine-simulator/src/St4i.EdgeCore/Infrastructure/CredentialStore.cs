@@ -20,8 +20,33 @@ namespace St4i.EdgeCore.Infrastructure;
 /// directory every time it (re-)creates/ensures it exists (FF-2 review fix), so this class enforces its
 /// own boundary rather than depending on a caller to have hardened it separately.
 ///
-/// One file per machine under <c>%ProgramData%\ST4I\sim\creds\&lt;machineCode&gt;.bin</c>, so the
-/// WPF app/edge service can hold credentials for an entire simulated fleet side by side.
+/// One file per machine under the resolved creds directory — explicit argument, else
+/// <see cref="EnvVarDir"/> (<c>ST4I_CREDS_DIR</c>), else <see cref="DefaultRoot"/>
+/// (<c>%ProgramData%\ST4I\sim\creds</c>) — so the WPF app/edge service can hold credentials for an
+/// entire simulated fleet side by side.
+///
+/// <para><b>Why the directory is redirectable (test-hygiene batch).</b> This class used to resolve its
+/// directory straight from <see cref="Environment.SpecialFolder.CommonApplicationData"/> with no
+/// override, which made it the ONLY store in this product that a test could not point somewhere
+/// harmless — every sibling (<c>AlarmStore</c>, <c>ConnectorConfigStore</c>,
+/// <c>NotificationConfigStore</c>, <c>BridgeSpool</c>, <c>FleetSettingsStore</c>,
+/// <c>DeviceIdentityStore</c>, ...) already resolved explicit&gt;env&gt;default. The consequence was
+/// not theoretical: the xunit suites and the Playwright e2e harness between them had written ~3,000
+/// DPAPI-sealed <c>.bin</c> blobs into the REAL credential directory of this machine — the exact
+/// directory <c>packaging/remove-data.ps1</c> exists to purge on decommissioning, and the exact
+/// directory an operator is told holds device credentials. Giving this class the same seam its
+/// siblings already had is what lets a test run write somewhere disposable instead.</para>
+///
+/// <para><b>Resolution is per-call, not cached</b> — same as every sibling store's
+/// <c>ResolveRoot</c>. A test that sets <see cref="EnvVarDir"/> after this class has already been
+/// touched still gets the redirect, which matters because this is a STATIC class with no
+/// construction point a fixture could hook.</para>
+///
+/// <para><b>Keep <see cref="DefaultRoot"/>'s <c>"ST4I", "sim", "creds"</c> literal intact:</b>
+/// <c>NotificationDocumentationTests.EveryDirectoryTheEngineCreatesUnderProgramData_IsPurgedByTheDecommissioningScript</c>
+/// discovers the set of directories a decommissioning wipe must purge by scanning <c>src/</c> for
+/// exactly that literal shape. Inlining or computing the segment names would make this store
+/// invisible to that scan and silently drop it from the wipe.</para>
 ///
 /// NOTE (FF-2, breaking): this switches the DPAPI scope from <c>CurrentUser</c> to <c>LocalMachine</c>,
 /// so a <c>.bin</c> file written by a pre-FF-2 build can no longer be decrypted here — <see cref="Load"/>
@@ -30,6 +55,13 @@ namespace St4i.EdgeCore.Infrastructure;
 /// </summary>
 public static class CredentialStore
 {
+    /// <summary>Relocates the whole store — the same "tests (and a decommissioning wipe) get an
+    /// explicit, redirectable directory instead of the real one" seam every sibling store already
+    /// exposes (<see cref="St4i.EdgeCore.Config.FleetSettingsStore.EnvVarDir"/>,
+    /// <see cref="St4i.EdgeCore.Identity.DeviceIdentityStore.EnvVarDir"/>, ...). Unset or blank means
+    /// "use <see cref="DefaultRoot"/>".</summary>
+    public const string EnvVarDir = "ST4I_CREDS_DIR";
+
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("st4i.edgecore.credentialstore.v1");
 
     /// <summary>DPAPI-protects <paramref name="mkKey"/> and writes it to this machine's credential file
@@ -103,10 +135,23 @@ public static class CredentialStore
     private static string PathFor(string machineCode) =>
         Path.Combine(CredsDir(), SanitizeFileName(machineCode) + ".bin");
 
-    private static string CredsDir()
+    private static string CredsDir() => ResolveRoot();
+
+    /// <summary>The default creds root: <c>%ProgramData%\ST4I\sim\creds</c> — a SIBLING of
+    /// <c>...\sim\identity</c>/<c>...\sim\settings</c>/<c>...\sim\alarms</c>, never the same directory
+    /// as any of those. See this class's own doc comment before changing the literal.</summary>
+    public static string DefaultRoot() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ST4I", "sim", "creds");
+
+    /// <summary>Resolves the effective creds directory: <paramref name="directory"/> if given, else
+    /// <see cref="EnvVarDir"/> if set, else <see cref="DefaultRoot"/>. Pure path arithmetic — does not
+    /// create anything on disk (<see cref="Save"/> does that). Identical shape to every sibling store's
+    /// <c>ResolveRoot</c>, deliberately, so there is one idiom to learn rather than two.</summary>
+    public static string ResolveRoot(string? directory = null)
     {
-        var root = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-        return Path.Combine(root, "ST4I", "sim", "creds");
+        if (!string.IsNullOrWhiteSpace(directory)) return directory;
+        var env = Environment.GetEnvironmentVariable(EnvVarDir);
+        return string.IsNullOrWhiteSpace(env) ? DefaultRoot() : env;
     }
 
     /// <summary>Strips characters that aren't valid in a Windows filename so an arbitrary

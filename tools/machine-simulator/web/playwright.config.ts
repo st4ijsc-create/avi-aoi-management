@@ -135,12 +135,17 @@ export default defineConfig({
       // by the time this was cleaned up (SM-6 report), not the 6 an earlier audit had counted.
       // (Several .NET xunit suites already isolate their OWN equivalents of these stores via
       // ST4I_*_DIR env vars set in test fixtures — a separate, already-working mechanism unrelated to
-      // this Playwright-launched engine process.) task-7 (below) isolates the 11th (historian),
-      // leaving `creds` the only deliberate exception, for the structural reason explained there.
+      // this Playwright-launched engine process.) task-7 (below) isolates historian; task C-5 added
+      // `notifications`; the test-hygiene batch added `creds`, the last one out.
       //
-      // All 11 stores below are redirected under an isolated `../.e2e-data` root that
+      // 🔴 ALL FOURTEEN stores are now redirected under an isolated `../.e2e-data` root that
       // `scripts/reset-engine-state.mjs` wipes in full before every boot — isolated AND disposable,
-      // not merely relocated to accumulate somewhere else instead.
+      // not merely relocated to accumulate somewhere else instead. Three separate audits each declared
+      // this list complete and each was missing one: SM-6 missed `historian` and `notifications`, C-5
+      // missed `creds`. If a fifteenth store appears, it belongs here — and
+      // `EveryStoreTheEngineCreates_IsIsolatedByThePlaywrightHarness` in St4i.EngineApi.Tests now fails
+      // until it is, so the next omission is caught by a test rather than by a census of a developer's
+      // %ProgramData%.
       //
       // historian — task-7 (whole-batch review, CRITICAL) fix. SM-6 left this store DELIBERATELY
       // unisolated and documented the reason at length right here: `SqliteHistorianStore.
@@ -165,11 +170,23 @@ export default defineConfig({
       // ~55k pre-migration production rows (provenance NULL, "Unknown origin") the OLD unconditional
       // gate happened to let through.
       //
-      // `creds` (`CredentialStore`, one DPAPI-protected `mk_` key file per machine code) has NO
-      // env-var override in the product at all — it's a static class with a hardcoded path. The
-      // ~2k `ACL-*`/`TEST-*`/`FOREIGN-*`/`CORRUPT-*`.bin files observed under it come from .NET xunit
-      // fixtures (`CredentialStoreTests`), not this Playwright harness, so redirecting it is outside
-      // this audit's scope (this suite never calls anything that writes there).
+      // 🔴 Test-hygiene batch — `creds` is now isolated too, and the note that used to stand here was
+      // WRONG on its load-bearing claim. It read: "this suite never calls anything that writes there."
+      // It does. `04-onboarding.spec.ts` mints a machine code per run — `SIM-E2E-${Date.now()}`,
+      // `SIM-E2E-IOT-*`, `SIM-E2E-RESET-*`, `SIM-PASTE-*`, `SIM-E2E-FLAGOFF-*` — and every one of those
+      // flows ends in `OnboardingService`, which calls `CredentialStore.Save`. A census of the real
+      // `%ProgramData%\ST4I\sim\creds` found 2,999 `.bin` files, of which 633 carry exactly those four
+      // prefixes: one NEW, never-overwritten DPAPI-sealed credential per e2e run, growing without
+      // bound, in the directory `packaging/remove-data.ps1` exists to purge on decommissioning.
+      //
+      // The xunit fixtures were the larger share (2,366 files) and the old note was right about them,
+      // but "the other harness is worse" was never a reason this one could not be isolated — and the
+      // stated reason it could not be ("no env-var override in the product at all — a static class
+      // with a hardcoded path") was a fact about the PRODUCT that this batch fixed rather than routed
+      // around: `CredentialStore` now resolves explicit > `ST4I_CREDS_DIR` > default, the same seam its
+      // twelve siblings already had. This is the same defect class as task C-5's
+      // `ST4I_NOTIFICATIONS_DIR` — a store the audit list did not cover writing to a real install —
+      // and the same fix.
       env: {
         ST4I_DEMO_ENABLED: "true",
         ST4I_MDNS_ADVERTISE: "0",
@@ -191,6 +208,9 @@ export default defineConfig({
         ST4I_WAL_DIR: join(e2eDataDir, "wal"),
         ST4I_OPCUA_PKI_DIR: join(e2eDataDir, "opcua-pki"),
         ST4I_HISTORIAN_DIR: join(e2eDataDir, "historian"),
+        // Test-hygiene batch — the 14th store, and the last un-isolated one. See the note above for
+        // why the previous audit concluded this suite never wrote here, and what the census found.
+        ST4I_CREDS_DIR: join(e2eDataDir, "creds"),
       },
     },
   ],
