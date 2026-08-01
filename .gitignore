@@ -189,3 +189,7 @@ scripts/.fe-auth/
 # doc 54 — tool output + local model binaries (not source)
 .playwright-mcp/
 uploads/models/
+
+# vstest trx logs — verify-suites.sh writes one per suite so a failure carries its REASON,
+# not just the failing test name (see scripts/verify-suites.sh, trap 7(f)).
+tools/machine-simulator/tests/**/TestResults/
