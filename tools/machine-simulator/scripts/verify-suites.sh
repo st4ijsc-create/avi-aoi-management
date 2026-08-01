@@ -201,7 +201,14 @@ echo "[2/3] Running ${#SUITES[@]} suites sequentially..."
 for entry in "${SUITES[@]}"; do
   proj="${entry%%:*}"; expected="${entry##*:}"; name=$(basename "$proj")
   log="$LOGDIR/$name.log"
-  dotnet test "$proj" --no-build --nologo -v q > "$log" 2>&1 &
+  # 🔴 TRAP 7(f): this was `-v q`, and the failure mode is the sharpest one yet — under quiet
+  # verbosity the log this script points you at contains the FAILING TEST'S NAME AND NOT THE
+  # REASON. So the one occasion the log exists to serve is the one occasion it is empty, and
+  # whoever reads it must re-run the whole suite at a higher verbosity to learn anything. The
+  # verbosity costs nothing here: output goes to a FILE, never to a terminal or a reader's
+  # context, so there was never a reason to economise on it. Found by an implementer using the
+  # tool, like the six before it.
+  dotnet test "$proj" --no-build --nologo -v n > "$log" 2>&1 &
   test_pid=$!
 
   # Trap 6, and it is the GENERATOR of traps 1 and 4: a hung suite forces a kill, a
