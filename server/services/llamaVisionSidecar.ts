@@ -82,6 +82,19 @@ const VISION_CTX = (() => {
   }
   return v;
 })();
+/** Đợt 1 Task 3 — llama-server mặc định n_parallel=4 khi thiếu -np. Giả thuyết ban đầu (Đợt 0):
+ *  LLAMA_VISION_CTX × 4 khe = 32.768 token ⇒ phần lớn 7.821 MiB đo được là do nhân bốn.
+ *  ĐO LẠI TRỰC TIẾP (Task 3, llama-server.exe build 2026-06-26): giả thuyết đó KHÔNG đúng cho
+ *  build này — log khởi động in "kv_unified = true" ngay cả ở n_parallel=4 mặc định, nghĩa là
+ *  KV-cache là MỘT khối dùng chung cỡ đúng bằng -c (8192), không nhân theo số khe. Đo trước/sau
+ *  -np xác nhận: VRAM gần như không đổi (~7.827 MiB cả hai phía, lệch trong nhiễu đo). Vẫn giữ
+ *  -np=1 vì: (a) hệ chỉ gửi 1 ảnh/lượt nên 4 khe là thừa về mặt logic dù không tốn VRAM thêm,
+ *  (b) phòng hờ build llama-server tương lai đổi mặc định kv_unified. Xem báo cáo §3 để biết
+ *  chi tiết đo đạc — ĐỪNG coi -np là đã "giành lại" VRAM, số đo thật nói khác. */
+const VISION_PARALLEL = (() => {
+  const n = parseInt(process.env.LLAMA_VISION_PARALLEL || "1", 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+})();
 
 function baseUrl(): string {
   return `http://${VISION_HOST}:${VISION_PORT}`;
@@ -212,6 +225,7 @@ export async function ensureSidecar(): Promise<void> {
       "--port", String(cfg.port),
       "-ngl", String(GPU_LAYERS),
       "-c", String(VISION_CTX),
+      "-np", String(VISION_PARALLEL),
       // Qwen3-VL (and modern VLMs) need the jinja chat template for correct multimodal formatting.
       "--jinja",
     ];

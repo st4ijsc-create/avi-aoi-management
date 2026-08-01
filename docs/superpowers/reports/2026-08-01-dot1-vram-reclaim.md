@@ -229,3 +229,93 @@ Task 2 chỉ sửa `embeddingContext` (dòng ~2271). **Context thường vẫn �
 - Biên an toàn 2048/1879 (~9%) là **sát**, không phải rộng rãi — nếu kho tri thức tương lai sinh ra chunk dài hơn (ví dụ bảng markdown lớn hơn), có thể lại vượt trần và throw/skip âm thầm như lần này. Khuyến nghị thật sự triệt để (ngoài phạm vi Đợt 1): chặn cứng `chunkText()` ở `build-knowledge-chunks.mjs` theo đúng `maxChunkChars` đã công bố, VÀ/HOẶC thêm phòng vệ ở tầng `generateEmbedding()`/`ingestKbChunks()` để throw do vượt `contextSize` không bị nuốt âm thầm thành `skipped++` mà log rõ ràng.
 - Minor 2 ở trên: context thường 4096 cho model nhúng vẫn chưa bị động tới — còn dư địa tiết kiệm VRAM cho đợt sau.
 - Công cụ đo (`bench.mjs`) và cổng an toàn (`kb:eval` → `_gguf-embed.mjs`) vẫn không đi qua `aiGgufEngine.ts` như đã nêu trước review vòng 1 — chưa có gì thay đổi ở điểm này.
+
+---
+
+## §3 Sidecar thị giác — thôi tự lấy 4 khe song song (Task 3)
+
+### ⚠ KẾT QUẢ CHÍNH: giả thuyết Đợt 0 KHÔNG đúng cho build llama-server hiện có — VRAM không giảm
+
+Brief giao việc dựa trên giả thuyết của Đợt 0: mảng `args` (`server/services/llamaVisionSidecar.ts:208-217`) thiếu `-np` ⇒ `llama-server` mặc định `n_parallel=4` ⇒ `LLAMA_VISION_CTX=8192` × 4 khe = 32.768 token KV-cache ⇒ phần lớn của 7.821 MiB đo được ở Đợt 0 là do nhân bốn. Sửa: thêm `-np 1`.
+
+Đã thêm `-np` đúng như brief, test cấu trúc xanh, **nhưng đo VRAM thật trước/sau bằng cách tự khởi `llama-server.exe` với đúng tham số mã sản xuất cho thấy giả thuyết đó SAI cho build hiện có trên máy này** (`D:/SOURCES/16.AI/llama-cuda/llama-server.exe`, build ngày 26/06/2026). Log khởi động (cả hai phía, trước và sau khi vá) đều in:
+
+```
+llama_server: n_parallel is set to auto, using n_parallel = 4 and kv_unified = true
+```
+
+`kv_unified = true` **ngay cả ở `n_parallel=4` mặc định** — nghĩa là build này đã dùng một khối KV-cache DÙNG CHUNG cỡ đúng bằng `-c` (8192 token), không nhân theo số khe song song. Dòng `n_slots = 4` / mỗi khe log `n_ctx = 8192` chỉ là cửa sổ logic mỗi chuỗi được phép dùng TRONG khối cache chung, không phải 4 khối cache riêng biệt 8192 mỗi khối. Đây là hành vi mặc định tương đối mới của llama.cpp (cùng build có tính năng "prompt cache" từ PR #16391 và `-fit` auto-fit tham số — một build khá gần đây), có vẻ được thiết kế **chính để tránh** đúng kiểu lãng phí mà Đợt 0 giả định.
+
+### Đo TRƯỚC (mã chưa vá, không có `-np`)
+
+Khởi `llama-server.exe` trực tiếp bằng đúng tham số mã sản xuất đọc từ `llamaVisionSidecar.ts:208-217` lúc đó (`-m <model> --mmproj <mmproj> --host 127.0.0.1 --port 8081 -ngl 999 -c 8192 --jinja`), đo `nvidia-smi --query-gpu=memory.used`, chạy **2 lần lặp lại** để kiểm nhiễu đo:
+
+| Lượt | Baseline (MiB) | Sau khi ready (MiB) | Delta (MiB) |
+|---|---|---|---|
+| Lượt 1 | 1.196 | 9.026 | **7.830** |
+| Lượt 2 | 1.197 | 9.023 | **7.826** |
+
+Khớp rất sát mốc Đợt 0 (**7.821 MiB**, lệch ~0,1%) — xác nhận phương pháp đo đúng và đúng cấu hình.
+
+### Sửa (TDD)
+
+Test cấu trúc mới: `server/services/llamaVisionSidecar.args.test.ts` (đúng nội dung mã mẫu trong brief — đọc trực tiếp `llamaVisionSidecar.ts` bằng `readFileSync`, khẳng định `"-np"` có mặt trong nguồn cùng các cờ bắt buộc khác). Lý do không mock `spawn`: mảng `args` nằm trong closure của `startPromise`, không xuất khẩu — đây là **test cấu trúc có chủ ý**, không phải test hành vi.
+
+**Output ĐỎ** (trước khi vá):
+```
+ ❯ server/services/llamaVisionSidecar.args.test.ts (2 tests | 1 failed) 15ms
+   × llamaVisionSidecar — tham số spawn > truyền -np để llama-server không tự lấy 4 khe song song
+     → expected '/**\n * WS-G2 — Local llama.cpp multi…' to contain '"-np"'
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  server/services/llamaVisionSidecar.args.test.ts > llamaVisionSidecar — tham số spawn > truyền -np để llama-server không tự lấy 4 khe song song
+AssertionError: expected '/**\n * WS-G2 — Local llama.cpp multi…' to contain '"-np"'
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+```
+(Test thứ hai — giữ nguyên các cờ bắt buộc — đã xanh ngay từ đầu, đúng như kỳ vọng vì các cờ đó chưa hề bị đụng tới.)
+
+Sửa: thêm hằng `VISION_PARALLEL` (đọc `LLAMA_VISION_PARALLEL`, mặc định `"1"`) cạnh `VISION_CTX`, rồi thêm `"-np", String(VISION_PARALLEL)` vào mảng `args` sau `-c`. **Lệch so với brief**: comment mẫu trong brief khẳng định chắc nịch giả thuyết "4 khe × ctx 8192 = 32.768 token" là nguyên nhân của 7.821 MiB — sau khi đo thật (xem trên), đã **viết lại comment** trong mã để không để lại một khẳng định sai trong codebase cho người đọc sau: comment hiện tại nêu rõ giả thuyết ban đầu, kết quả đo thực tế phủ định nó, giải thích `kv_unified=true`, và ghi rõ lý do vẫn giữ `-np=1` (dọn theo logic dù không tiết kiệm VRAM đo được + phòng hờ build tương lai đổi mặc định).
+
+Sau khi vá: `npx vitest run server/services/llamaVisionSidecar.args.test.ts` → **2/2 xanh**. `server/services/llamaVisionSidecar.test.ts` (bộ test hành vi có sẵn, mock `spawn`) → **11/11 xanh**, không hồi quy — log spawn trong test giờ hiện `... -c 8192 -np 1 --jinja`. `NODE_OPTIONS=--max-old-space-size=8192 npx tsc --noEmit` → chỉ còn lỗi tiền tồn tại `client/src/pages/SessionManagement.tsx(195,64)`.
+
+⚠ **Giới hạn của test cấu trúc**: test này chỉ chứng minh cờ `-np` có mặt trong mã nguồn. Nó **không** và **không thể** chứng minh VRAM giảm — bằng chứng VRAM chỉ đến từ phép đo `nvidia-smi` trực tiếp trên `llama-server.exe` thật, ở trên và dưới đây. Test xanh ⇏ tiết kiệm VRAM (và trong trường hợp cụ thể này, số đo thật cho thấy **không có** khoản tiết kiệm nào).
+
+### Đo SAU (mã đã vá, có `-np 1`)
+
+Cùng phương pháp, cùng tham số mã sản xuất (giờ có thêm `-np 1`):
+
+| | Baseline (MiB) | Sau khi ready (MiB) | Delta (MiB) |
+|---|---|---|---|
+| SAU (`-np 1`) | 1.200 | 9.027 | **7.827** |
+
+| So sánh | Delta (MiB) |
+|---|---|
+| TRƯỚC (trung bình 2 lượt) | 7.828 |
+| SAU (`-np 1`) | 7.827 |
+| **Giảm** | **~1 MiB (~0,01%)** — nằm trong nhiễu đo, **không phải khoản tiết kiệm thật** |
+
+**Kết luận trung thực: `-np 1` không giảm VRAM sidecar thị giác đo được trên máy/build này.** Mốc Đợt 0 (7.821 MiB) và các mốc đo lại ở Task 3 (7.826–7.830 MiB) phản ánh đúng chi phí cố định của model (Qwen3-VL-8B Q4_K_XL, ~5,15 GB trên đĩa) + mmproj (F16, log báo `[mtmd] estimated worst-case memory usage of mmproj is 1502.33 MiB` — khớp con số "buffer mtmd 1.502 MiB" trong brief) + MỘT khối KV-cache dùng chung cỡ `-c`=8192 + buffer tính toán — không phải chi phí nhân bốn như giả thuyết.
+
+Sau mỗi lượt đo (cả 3 lượt: 2 TRƯỚC + 1 SAU): đã `taskkill //F //IM llama-server.exe`, chờ, xác nhận `nvidia-smi` về **1.188–1.199 MiB** (khớp baseline máy ~1.150–1.200 MiB nêu trong brief) và `tasklist` xác nhận **không còn `llama-server.exe` treo**. Ghi chú kỹ thuật: PID trả về từ `$!` trong git-bash **không khớp** PID Windows thật của tiến trình con (`llama-server.exe` chạy qua MSYS wrapper) — `taskkill //F //PID <PID của $!>` báo "process not found" dù tiến trình vẫn sống; phải kill theo tên (`taskkill //F //IM llama-server.exe`) mới tắt được. Đã tự kiểm chứng bằng `tasklist` trước/sau mỗi lần.
+
+### Lượt suy luận THẬT trên ảnh THẬT
+
+Dùng `test-pcb-image.jpg` có sẵn trong repo (ảnh cận cảnh bo mạch PCB xanh với nhiều IC, tinh thể thạch anh, tụ điện — đã tự xem ảnh để xác nhận nội dung trước khi đánh giá câu trả lời). Gọi thẳng `POST /v1/chat/completions` (đúng định dạng `describeImageViaSidecar()` dùng: `image_url` data-URI base64) với prompt "Describe this image in one sentence." — chạy ở **cả hai phía** (trước và sau khi vá) để so sánh:
+
+- **TRƯỚC** (`n_parallel=4` mặc định): *"A close-up view of a green printed circuit board (PCB) densely populated with various electronic components, including integrated circuits, resistors, and capacitors, showcasing the intricate inner workings of modern electronics."*
+- **SAU** (`-np 1`): **câu trả lời giống hệt từng ký tự** với TRƯỚC.
+
+Cả hai đều mô tả đúng nội dung ảnh (PCB xanh, linh kiện điện tử, IC) — không có suy giảm chất lượng. `usage.prompt_tokens=264`, `completion_tokens=42` giống nhau ở cả hai lượt; `timings` (tốc độ sinh) dao động nhẹ (178 vs 131 token/s) — bình thường, không liên quan tới `-np` (do biến thiên tải hệ thống giữa hai lần chạy, không phải do đổi tham số).
+
+### ⚠ Phát hiện thêm về điểm mù (nối tiếp Task 2)
+
+Đây **không phải** một điểm mù của công cụ đo — phép đo Task 3 khởi thẳng `llama-server.exe` thật với đúng tham số mã sản xuất, không qua lớp trung gian nào có thể che giấu sai lệch. Thay vào đó, đây là **điểm mù trong chuỗi suy luận nhân quả của chính Đợt 0**: giả thuyết "`llama-server` mặc định `n_parallel=4` ⇒ nhân bốn KV-cache" đã được chấp nhận làm căn cứ giao việc mà **chưa được xác minh trực tiếp trên build `llama-server.exe` thật đang cài trên máy** — build đó tự động chọn `kv_unified=true` ngay cả ở `n_parallel=4`, vô hiệu hoá hoàn toàn phép nhân giả định. Nếu Đợt 0 đã đọc log khởi động của chính sidecar (dòng `kv_unified = true` xuất hiện ngay ở giây đầu tiên) thay vì suy luận từ tài liệu/hiểu biết chung về `llama.cpp`, giả thuyết sai này đã có thể được phát hiện sớm hơn. Bài học cho các đợt sau: với hành vi phụ thuộc **phiên bản binary bên thứ ba** (ở đây là `llama-server.exe`, không phải mã TypeScript của repo), luôn xác minh bằng log runtime thật của đúng binary đang cài, không suy luận từ hành vi "mặc định" chung chung của dự án thượng nguồn.
+
+### Mối lo
+
+- **Task 3 không giành lại VRAM nào đo được** (~0,01%, trong nhiễu đo) — khác với kỳ vọng ban đầu của brief. Task 4 (bảng roster VRAM toàn hệ) **không nên cộng khoản tiết kiệm nào từ Task 3** — sidecar thị giác vẫn chiếm ~7.821-7.830 MiB khi hoạt động, y hệt trước khi vá.
+- Thay đổi vẫn được giữ lại (`-np 1`) vì vô hại, dọn dẹp về mặt logic (hệ chỉ gửi 1 ảnh/lượt, không cần 4 khe), và là phòng vệ rẻ tiền cho trường hợp một build `llama-server` tương lai đổi mặc định `kv_unified` — nhưng **không phải là khoản "giành lại VRAM"** như tên Đợt 1 kỳ vọng.
+- Nếu Đợt 1/Task 4 cần thật sự giảm 7,8 GB của sidecar thị giác, hướng khả thi duy nhất còn lại (ngoài phạm vi Task 3, cần bàn riêng) là: giảm `LLAMA_VISION_CTX` (hiện 8192, có thể thử ~4096 nếu prompt thực tế không cần cửa sổ lớn), đổi sang bản quant nhỏ hơn của model/mmproj, hoặc unload sidecar tích cực hơn khi idle (`IDLE_TIMEOUT_MS`, đã có sẵn cơ chế, không thuộc Task 3).
+- Không tìm thấy vấn đề tương tự "công cụ đo tự chứa, không import mã sản xuất" như Task 2 (`bench.mjs`/`_gguf-embed.mjs`) — phép đo Task 3 không dùng công cụ trung gian nào, đo trực tiếp trên tiến trình `llama-server.exe` thật.
