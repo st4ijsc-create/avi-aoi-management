@@ -46,11 +46,15 @@ Nguồn: `docs/superpowers/reports/2026-08-01-dot1-vram-reclaim.md` §2, §3, §
 | Qwen3-Coder-30B-A3B (deep = code = fim) | 17.698 | **19.077** | **19.077** |
 | Qwen3-Embedding-0.6B | 5.664 ❌ **sai** | **7.694** | **4.321** |
 | **Lúc nghỉ** | 24.562 (75,3%) | **27.971 (85,8%)** | **24.598 (75,4%)** |
-| + vision sidecar khi thức | 7.821 | 7.827 (**Đợt 1 không giảm được**) | 7.821-7.830 |
+| + vision sidecar khi thức | 7.821 | **7.821** | **7.821 — Đợt 1 KHÔNG giảm được** |
 | **Đỉnh khi có ảnh** | 32.383 (99,3%) | **35.792 (109,8% ❌ ĐÃ VƯỢT TRẦN)** | **32.419 (99,4%)** |
 | **Đỉnh khi có ảnh + đang sinh** | *(không tính)* | vượt xa | **33.476 (102,7%) ❌ VẪN VƯỢT TRẦN** |
 
 **Vì sao bảng Đợt 0 sai:** cả hai con số đều đo bằng `scripts/ai-bench/bench.mjs`, công cụ **không import mã sản xuất**. Nó hụt **2.030 MiB** ở model nhúng (không gọi `model.createContext()`, và hard-code `contextSize:"auto"`) và hụt **1.379 MiB** ở Coder-30B (tạo context với **1** sequence thay vì `4096 × 4` như đường sản xuất). Chi tiết: spec chiến lược §2.
+
+⚠ **Về con số vision**: Task 3 đo lại được 7.826-7.830 MiB — chênh mốc Đợt 0 (7.821) ~0,1%, **trong nhiễu đo**. Bảng này dùng **7.821** cho mọi phép cộng để nhất quán và so sánh được với Đợt 0; chọn số nào cũng không đổi kết luận.
+
+⚠ **Mỗi số model đã gồm ~430 MiB CUDA context dùng chung** ⇒ cộng ba dòng là **đếm lặp** khối đó (~860 MiB thừa với 3 model GGUF; đo được 384 MiB thừa với 2 model). ⇒ **Các tổng dưới đây lệch về phía THẬN TRỌNG** — không đổi kết luận, nhưng đáng biết ở các ô sát trần.
 
 **Đọc bảng này thế nào:**
 - ✅ **Đợt 1 giành lại thật 3.373 MiB** — toàn bộ từ model nhúng (`contextSize:"auto"` → `EMBED_CTX=2048`).
@@ -100,25 +104,42 @@ GGUF_FIM_MODEL=Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf       # đổi từ 
 
 Điều kiện 1 và 2 **cần sửa mã** — không thuộc phạm vi tài liệu này, mỗi cái một đợt riêng.
 
-> **⚠ Trạng thái sau Đợt 1 — ĐIỀU KIỆN 1 VẪN CHƯA ĐẠT. CHƯA ĐƯỢC BẬT HỒ SƠ NÀY.**
+> **⚠ Trạng thái sau Đợt 1 — ĐIỀU KIỆN 1 CHƯA ĐẠT, nhưng KHÔNG còn bị chặn cứng. VẪN CHƯA ĐƯỢC BẬT HỒ SƠ NÀY.**
 >
 > | # | Điều kiện | Trạng thái |
 > |---|---|---|
-> | 1 | Vá race double-warm | ⚠ **Race ĐÃ VÁ** (Đợt 1 Task 1 — khoá in-flight; nghiệm thu trên app thật: chỉ còn **1** lượt nạp thay vì 2). **NHƯNG app VẪN không nạp được 30B** — `cudaMalloc failed` ở cả **3/3** lượt boot, vì một nguyên nhân **THỨ BA** |
+> | 1 | Vá race double-warm | ⚠ **Race ĐÃ VÁ** (Đợt 1 Task 1 — khoá in-flight; nghiệm thu app thật: chỉ còn **1** lượt nạp thay vì 2). App ở **đường boot mặc định** vẫn không nạp được 30B (`cudaMalloc failed` 3/3 lượt) vì nguyên nhân **THỨ BA** — **nhưng đã có ĐƯỜNG VÒNG đo được** |
 > | 2 | Nối `aiProgrammingCopilot` qua `aiGateway` | ❌ chưa làm |
-> | 3 | Canh 4 dòng cảnh báo | ✅ đã canh — xem §4 |
+> | 3 | Canh 4 dòng cảnh báo | ✅ đã canh — xem §4 (và một trong bốn dòng là **mã chết**) |
 > | 4 | Chấm 3 cặp A/B tiếng Việt | ❌ chưa chấm |
 >
-> **Về nguyên nhân thứ ba** — Đợt 1 đã loại trừ được ba khả năng bằng phép đo:
-> - **Không phải mã nạp sản xuất**: gọi thẳng `warmModel()` của `aiGgufEngine.ts` trong một tiến trình gọn ⇒ **nạp được**, 18,1 s, delta 19.094 MiB.
-> - **Không phải tranh chấp lúc boot**: hoãn warm tới 120 giây (`GGUF_WARM_DELAY_MS=120000`) ⇒ **vẫn lỗi y hệt**.
-> - **Không phải hết VRAM thiết bị**: lúc lỗi, app chỉ giữ 5.496 MiB, còn **~27 GB trống**, mà một lệnh `cudaMalloc` 16.698 MiB vẫn bị từ chối.
+> **Phát biểu đúng phạm vi về nguyên nhân thứ ba:**
 >
-> ⇒ Giới hạn nằm ở **trạng thái của chính tiến trình app**. **Chưa truy được gốc rễ — cần một đợt riêng, và nó đang chặn hồ sơ này.**
+> > **Không cấp phát nổi khối 16,7 GB nếu CUDA context được tạo SAU khi app boot xong.**
+> > Nếu CUDA context đã tồn tại **TRƯỚC** khi app boot, chính đường warm của app nạp 30B **thành công**.
+>
+> Sáu phép thử phân biệt:
+>
+> | # | Phép thử | Thứ tự CUDA context | Kết quả |
+> |---|---|---|---|
+> | 1 | `bench.mjs --models deep`, tiến trình gọn | trước (không có app) | **nạp được** 19,3 s |
+> | 2 | Gọi thẳng `warmModel()` sản xuất, tiến trình gọn | trước (không có app) | **nạp được** 18,1 s · 19.094 MiB |
+> | 3 | App thật, hoãn warm 120 s (`GGUF_WARM_DELAY_MS`) | **sau** boot | **lỗi** |
+> | 4 | Nạp 30B **trước** `import(server/_core/index.ts)`, boot app lên trên | **trước** boot | **nạp được** 11 s · `generateText` trả "Hello" · 23.994 MiB |
+> | 5 | Nạp model nhúng 0,6B trước (tạo CUDA context sớm), boot app, **để chính warm của app nạp 30B** | **trước** boot | **nạp được** — `Model loaded in 16291ms` + `deep model warm OK` · **0 `cudaMalloc failed`** · 24.094 MiB |
+> | 6 | **Chứng ngược**: app boot trước, gọi tay ở T+30 s lúc model nhúng **đã** thường trú | **sau** boot | **lỗi** ⇒ loại trừ "cứ có embed trước là xong" |
+>
+> Đã loại trừ thêm: **dung lượng VRAM thiết bị** (lúc lỗi thiết bị mới dùng ~1,6 GB / 32,6 GB — con số 5.496 MiB nêu ở nơi khác là **tổng thiết bị**, không phải phần app giữ) và **trần commit của Windows** (+19,2 GB trên 88,78 GB, còn dư > 27 GB).
+>
+> ⚠ **CƠ CHẾ VẪN CHƯA BIẾT.** Biết **điều kiện**, không biết **vì sao**. Không đoán cơ chế — đó đúng là cái bẫy đã làm hỏng tiền đề Task 3 của Đợt 1.
+>
+> ⇒ **Có đường vòng (tạo CUDA context sớm), nhưng đó CHƯA phải bản sửa** — chưa có mã, chưa hiểu cơ chế, chưa nghiệm thu qua nhiều lượt boot. **Điều kiện 1 vì thế vẫn CHƯA ĐẠT**, nhưng lý do nay là *"chưa làm cho tin cậy"*, **không phải** *"không có cách"*. Cần một đợt riêng.
+>
+> ⚠ Liên quan: comment `aiGgufEngine.ts:1108-1109` nói hoãn warm để *"the warm never competes with the rest of boot"* — **mô tả ngược với thực tế đo được**. Chưa sửa (ngoài phạm vi Đợt 1) ⇒ nợ.
 
 ---
 
-## 4. Bốn dòng log phải canh
+## 4. Bốn dòng log phải canh — ⚠ **Đợt 1: thực chất chỉ còn BA** (dòng thứ tư là mã chết)
 
 Hệ **không báo lỗi** khi thiếu VRAM — nó **suy giảm âm thầm**. Bốn dấu vết duy nhất:
 
@@ -140,7 +161,17 @@ Hệ **không báo lỗi** khi thiếu VRAM — nó **suy giảm âm thầm**. B
 > | `At capacity (4/4)` | **không** |
 > | cảnh báo nhánh `catch` nạp lại `gpuLayers:"auto"` | **không** |
 >
-> **Dòng thứ tư vắng mặt là phát hiện quan trọng, và nó lật ngược cảnh báo ở trên.** Nhánh phục hồi có tồn tại trong mã (`aiGgufEngine.ts:648-681`) nhưng **không chạy lần nào** dù cả 3 lượt boot đều OOM thật. Lý do khả dĩ (đọc mã): `isOom` tìm chữ `"out of memory"`/`"cudamalloc"`/`"failed to allocate"`/`"unable to allocate"` trong `err.message` của JS, nhưng những chữ đó nằm ở **stderr của lớp C++ node-llama-cpp**, không nằm trong `err.message`. ⚠ **Đây là suy luận từ mã + sự vắng mặt của dòng log, CHƯA bắt được nguyên văn `err.message` để xác nhận.**
+> **Dòng thứ tư vắng mặt là phát hiện quan trọng, và nó lật ngược cảnh báo ở trên.** Nhánh phục hồi có tồn tại trong mã (`aiGgufEngine.ts:658-682`) nhưng **không chạy lần nào** dù cả 3 lượt boot đều OOM thật.
+>
+> ✅ **ĐÃ XÁC NHẬN BẰNG BẰNG CHỨNG — đây là MÃ CHẾT.** Chạy `loadGgufModel()` trong chính tiến trình app đang lỗi, bắt được nguyên văn:
+>
+> ```
+> err.message = "Failed to load model"     ⇒  ISOOM_MATCH = false
+> ```
+>
+> `isOom` tìm `"out of memory"`/`"cudamalloc"`/`"failed to allocate"`/`"unable to allocate"` trong `err.message`; thông điệp thật không chứa chuỗi nào trong số đó (những chữ OOM chỉ nằm ở **stderr của lớp C++ node-llama-cpp**). ⇒ `if (!isOom || ...) throw err` **luôn ném** ⇒ khối 672-682 (`console.warn` + `evictLRU()` + nạp lại `gpuLayers:"auto"`) **không bao giờ chạy**.
+>
+> ⇒ **Một trong bốn lưới an toàn của hệ KHÔNG TỒN TẠI** — nó chỉ tồn tại trên giấy và trong chính tài liệu này.
 >
 > **Hệ quả đã chắc:** app **không** tụt xuống tier 2,9 tok/s — nó **không có model sinh chữ sâu nào cả**, và báo `deep model warm FAILED`. Về vận hành đây **tệ hơn** kịch bản "âm thầm chậm" mà mục này lo; bù lại nó **hỏng ồn ào**, phát hiện được — nhưng chỉ khi có người đọc log.
 >
@@ -183,7 +214,7 @@ Hệ **không báo lỗi** khi thiếu VRAM — nó **suy giảm âm thầm**. B
 
 Không đem ra khách khi chưa có đủ bốn thứ:
 
-1. **Bốn dòng cảnh báo §4 không xuất hiện** trong một chu kỳ vận hành đại diện.
+1. **Ba dòng cảnh báo còn sống của §4 không xuất hiện** trong một chu kỳ vận hành đại diện. ⚠ Dòng thứ tư là **mã chết** ⇒ **sự vắng mặt của nó KHÔNG chứng minh gì cả** — đừng tính nó vào tiêu chí.
 2. **Chất lượng tiếng Việt được chấp nhận** — chủ dự án đã chấm, không phải agent tự đánh giá.
 3. **Ghost-text không bị xếp hàng** ở tải nội bộ — và **đo lại ở tải khách hàng** vì đội vài người ≠ nhà máy nhiều ca.
 4. **Lưu lượng tier code thật** xác nhận (hoặc bác bỏ) ưu tiên nghiêng code. **Nếu bác bỏ — đổi hồ sơ, đừng giữ vì đã lỡ chọn.**
@@ -217,7 +248,8 @@ Tài liệu này **chỉ đào sâu hồ sơ nội bộ**. Ba hồ sơ khách h�
 
 **Đợt 1 để lại những câu hỏi MỚI — và một trong số đó đang CHẶN hồ sơ này:**
 
-- 🚧 **Vì sao app không nạp được model 30B** trong khi tiến trình gọn chạy đúng mã đó lại nạp được? Chưa truy được. **Đây là thứ chặn điều kiện 1 của §3.**
+- 🚧 **CƠ CHẾ vì sao khối 16,7 GB không cấp phát được khi CUDA context tạo SAU boot app.** Biết **điều kiện** (đo 6 phép thử, có chứng ngược), **không** biết **vì sao**. Đã có **đường vòng** (tạo CUDA context sớm) nhưng chưa thành mã, chưa nghiệm thu nhiều lượt boot ⇒ **điều kiện 1 của §3 vẫn chưa đạt, nhưng không còn bị chặn cứng.**
 - **Model 4B chưa đo bằng đường sản xuất** — hồ sơ `balanced` (phương án dự phòng nếu Coder-30B viết tiếng Việt kém) đang đứng trên một con số **sàn**.
-- **Nhánh `catch` `gpuLayers:"auto"` có phải mã chết không** — nếu đúng, §4 phải viết lại. Xem §4.
+- ~~**Nhánh `catch` `gpuLayers:"auto"` có phải mã chết không**~~ ✅ **ĐÃ TRẢ LỜI: ĐÚNG** (`err.message = "Failed to load model"` ⇒ `isOom = false`). §4 đã viết lại. Câu hỏi còn lại: **sửa thế nào** — đợt riêng.
+- **Comment `aiGgufEngine.ts:1108-1109` mô tả sai sự thật** (hoãn warm để "không cạnh tranh với boot"; thực tế hoãn ra sau boot mới gây lỗi). Chưa sửa — nợ.
 - **Còn giành lại được bao nhiêu từ context thường của model nhúng** — biết là còn, chưa đo.

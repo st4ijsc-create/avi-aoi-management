@@ -60,7 +60,7 @@ Hai nguyên nhân đã truy được:
 | Qwen2.5-Coder-1.5B (FIM) | 1.774 | *chưa đo lại* (≥1.774) | *chưa đo lại* | Đợt 0 §3 |
 | **Qwen3-Embedding-0.6B** | 5.664 ❌ **sai** | **7.694** | **4.321** | Đợt 1 §2 |
 | bge-reranker-v2-m3 | (chạy CPU — `RAG_RERANKER_GPU=false`) | (không đổi) | (không đổi) | Đợt 0 §7.7 |
-| **Vision sidecar** (tiến trình riêng) | 7.821 | 7.826-7.830 | **7.827 — KHÔNG giảm** | Đợt 1 §3 |
+| **Vision sidecar** (tiến trình riêng) | 7.821 | **7.821** | **7.821 — KHÔNG giảm** | Đợt 1 §3 |
 | **Trần thiết bị** | **32.607** | 32.607 | 32.607 | `nvidia-smi` |
 
 ⚠ **Cộng thêm khi ĐANG SINH**: +470-940 MiB mỗi model GGUF hoạt động (Đợt 0 §3) và **+117 MiB** cho sidecar thị giác đang suy luận (Đợt 1 §3, đo với 4 lượt ảnh đồng thời). Mọi con số dưới đây là **lúc nghỉ** — dưới tải phải cộng thêm.
@@ -71,7 +71,9 @@ Cả hai đều do công cụ đo **tự chứa, không import mã sản xuất*
 
 **(a) Model nhúng — hụt 2.030 MiB.** `bench.mjs:321` tự gọi `createEmbeddingContext({contextSize:"auto"})` hard-code, và **không** gọi `model.createContext()`. Đường sản xuất (`loadGgufModel()`) tạo **cả hai** context cho model nhúng.
 
-**(b) MỌI model text GGUF — hụt ~1.350 MiB mỗi model.** `bench.mjs:249` tạo context **không truyền `sequences`** (mặc định **1**) và `contextSize` suy từ độ dài prefill của bài đo. Đường sản xuất (`aiGgufEngine.ts:684-689`) tạo `contextSize = GGUF_DEFAULT_CTX = 4096` với `sequences = GGUF_SEQUENCES = 4`. Đo qua `warmModel()` sản xuất: 30B-Instruct **17.750 → 19.094** (+1.344) · Coder-30B **17.698 → 19.077** (+1.379).
+**(b) MỌI model text GGUF — hụt ~1.350 MiB mỗi model.** `bench.mjs:249` tạo context **không truyền `sequences`** (mặc định **1**) và `contextSize` suy từ độ dài prefill của bài đo. Đường sản xuất (`aiGgufEngine.ts:686-691`) tạo `contextSize = GGUF_DEFAULT_CTX = 4096` với `sequences = GGUF_SEQUENCES = 4`. Đo qua `warmModel()` sản xuất: 30B-Instruct **17.750 → 19.094** (+1.344) · Coder-30B **17.698 → 19.077** (+1.379).
+
+⚠ **Mỗi số model trong bảng ĐÃ GỒM ~430 MiB CUDA context dùng chung** ⇒ cộng nhiều model là **đếm lặp** khối đó. Đo được: nạp model nhúng + 30B trong **cùng tiến trình** cho **24.094 MiB**, trong khi cộng rời `1.063 + 4.321 + 19.094 = 24.478` ⇒ **thừa 384 MiB**. Với ba model GGUF, phần thừa ~**860 MiB**. ⇒ **Mọi tổng ở §3 lệch về phía THẬN TRỌNG** (cao hơn thực tế) — không ô nào đổi kết luận, nhưng phải biết khi đọc các ô sát trần.
 
 ⇒ **Mọi số Đợt 0 chưa được đo lại bằng đường sản xuất (4B, FIM) phải coi là SÀN, không phải giá trị.**
 ⇒ Đây là **lần thứ ba** harness đo có điểm mù đúng chỗ quyết định (Đợt 0: `bench.mjs` không biết "vision" ⇒ sót 7,8 GB · Đợt 1 Task 2: hard-code `"auto"` ⇒ sót 2,0 GB · Đợt 1 Task 4: context 1 sequence ⇒ sót ~1,35 GB **mỗi model text**).
@@ -141,7 +143,17 @@ Thành phần cột "SAU Đợt 1":
 | **Lúc nghỉ** | ~~1.200 + 7.821 + 17.698 + 5.664 = 32.383 MiB (99,3%)~~ *(Đợt 0 — số thật lúc đó là **35.792, 109,8% ❌ đã vượt trần**)* → **Đợt 1: 1.200 + 7.821 + 19.077 + 4.321 = 32.419 MiB (99,4%)** |
 | **Dưới tải** | **33.476 (102,7%) — VẪN VƯỢT TRẦN.** Đợt 1 đưa case này từ "không thể tồn tại" về "tồn tại được lúc nghỉ", **không** đưa nó thành dùng được dưới tải |
 | **Điểm mạnh** | ảnh xử lý **không phải chờ 40 giây khởi sidecar** mỗi lần nguội |
-| **Điểm yếu** | **không còn chỗ cho bất kỳ model nào khác** · sát trần liên tục · `evictLRU()` **không đuổi được** sidecar (khác tiến trình) ⇒ khi vượt, nhánh `catch` **lặng lẽ nạp lại `gpuLayers:"auto"`** — tier âm thầm tụt tốc độ, dấu vết duy nhất là một dòng `console.warn` |
+| **Điểm yếu** | **không còn chỗ cho bất kỳ model nào khác** · sát trần liên tục · `evictLRU()` **không đuổi được** sidecar (khác tiến trình) ⇒ khi vượt, ~~nhánh `catch` **lặng lẽ nạp lại `gpuLayers:"auto"`** — tier âm thầm tụt tốc độ, dấu vết duy nhất là một dòng `console.warn`~~ ⚠ **SAI — Đợt 1 đã xác nhận nhánh `catch` đó là MÃ CHẾT** (xem dưới). Khi vượt, model **không nạp được** và **không có phương án dự phòng nào cả** |
+
+⚠ **ĐÍNH CHÍNH ĐỢT 1 — lưới an toàn mô tả ở dòng "Điểm yếu" KHÔNG TỒN TẠI.** Nhánh phục hồi `aiGgufEngine.ts:658-682` (gặp OOM → đuổi model rảnh → nạp lại `gpuLayers:"auto"`) **không bao giờ chạy**. Bắt được nguyên văn khi chạy `loadGgufModel()` trong chính tiến trình app đang lỗi:
+
+```
+err.message = "Failed to load model"        ⇒ ISOOM_MATCH = false
+```
+
+`isOom` tìm `"out of memory"`/`"cudamalloc"`/`"failed to allocate"`/`"unable to allocate"` trong `err.message`, nhưng những chữ đó chỉ nằm ở **stderr của lớp C++ node-llama-cpp**. ⇒ `if (!isOom || ...) throw err` **luôn ném** ⇒ khối 672-682 chết.
+
+⇒ Hệ **không** "âm thầm tụt xuống 2,9 tok/s" như tài liệu này từng mô tả — nó **hỏng hẳn và hỏng ồn ào**. Về vận hành **tệ hơn**, nhưng ít nhất **phát hiện được**. Chưa sửa mã (ngoài phạm vi Đợt 1) ⇒ nợ.
 | **Hợp với** | khách nặng kiểm tra ảnh, gần như không dùng lập trình |
 
 ### Case 4 — HYBRID THEO HỒ SƠ KHÁCH HÀNG ⭐ **khuyến nghị**
@@ -216,7 +228,7 @@ Làm sai thứ tự là chọn trên nền cát.
 >
 > **Trạng thái các bước sau Đợt 1:**
 > - **A** (thành phần nắm ngân sách VRAM) — **chưa làm**, vẫn là nợ lớn nhất.
-> - **B** (vá race) — **ĐÃ LÀM** (Đợt 1 Task 1, khoá in-flight, đã nghiệm thu trên app thật: chỉ còn **1** lượt nạp thay vì 2). ⚠ **NHƯNG app VẪN không nạp được 30B** vì một nguyên nhân **thứ ba** khác hẳn race, **chưa truy được** — đã loại trừ: mã nạp sản xuất (chạy tốt ở tiến trình gọn), thời điểm boot (hoãn 120 s vẫn lỗi), dung lượng thiết bị (còn ~27 GB trống lúc lỗi). Cần **một đợt riêng**.
+> - **B** (vá race) — **ĐÃ LÀM** (Đợt 1 Task 1, khoá in-flight, đã nghiệm thu trên app thật: chỉ còn **1** lượt nạp thay vì 2). ⚠ **NHƯNG app ở đường boot mặc định VẪN không nạp được 30B** vì một nguyên nhân **thứ ba** khác hẳn race. **Phát biểu đúng phạm vi: không cấp phát nổi khối 16,7 GB nếu CUDA context được tạo SAU khi app boot xong.** Nếu CUDA context đã tồn tại **trước** khi app boot thì chính đường warm của app nạp 30B **thành công** (đo hai lần độc lập: `Model loaded in 16291ms` + `deep model warm OK`, VRAM 24.094 MiB). **Cơ chế CHƯA BIẾT** — đã loại trừ dung lượng VRAM thiết bị, trần commit Windows (+19,2/88,78 GB, dư >27 GB), mã nạp sản xuất, race. ⇒ **Có đường vòng đo được, chưa phải bản sửa.** Cần **một đợt riêng**.
 > - **C** (chỉnh buffer) — **ĐÃ LÀM một nửa**: embedding xong (3.373 MiB); sidecar `-np 1` giành lại **~0** vì tiền đề sai. Còn dư địa: context thường 4096×4 vẫn được tạo cho model nhúng.
 > - **D** (chốt roster) — **VẪN BỊ CHẶN**, giờ bởi nguyên nhân thứ ba ở bước B chứ không phải bởi race.
 
@@ -252,9 +264,10 @@ Trung thực về chỗ yếu, để chủ dự án không quyết dựa trên k
 
 **Đợt 1 để lại những câu hỏi MỚI chưa trả lời được:**
 
-- **Vì sao app không nạp được 30B trong khi tiến trình gọn nạp được?** Đã khoanh vùng là giới hạn **cấp tiến trình app**, chưa có gốc rễ. **Đây là thứ chặn bước D.**
+- **CƠ CHẾ vì sao khối 16,7 GB không cấp phát được khi CUDA context tạo SAU boot app.** Biết **điều kiện** (đo hai lần, có cả chứng ngược), **không** biết **vì sao**. Đã có **đường vòng** (tạo CUDA context sớm) nhưng chưa thành mã, chưa nghiệm thu nhiều lượt boot ⇒ **bước D chưa chốt được, nhưng không còn bị chặn cứng như trước.**
 - **Model 4B và FIM chưa được đo lại bằng đường sản xuất** — số Đợt 0 cho hai model này là **sàn**, và hồ sơ `balanced` phụ thuộc trực tiếp vào số 4B.
-- **Nhánh `catch` nạp lại `gpuLayers:"auto"` có phải mã chết không?** Không chạy lần nào trong 3 lượt boot có OOM. Nếu đúng thì cơ chế phục hồi mà §3 Case 3 mô tả **chưa từng hoạt động**.
+- ~~**Nhánh `catch` nạp lại `gpuLayers:"auto"` có phải mã chết không?**~~ ✅ **ĐÃ TRẢ LỜI: ĐÚNG LÀ MÃ CHẾT** (`err.message = "Failed to load model"` ⇒ `isOom = false`). Cơ chế phục hồi mà §3 Case 3 mô tả **chưa từng hoạt động**. Câu hỏi còn lại: **sửa thế nào** — bắt theo stderr, hay đổi cách node-llama-cpp báo lỗi? Đợt riêng.
+- **Comment `aiGgufEngine.ts:1108-1109` mô tả SAI sự thật** (nói hoãn warm để "không cạnh tranh với boot", thực tế hoãn ra sau boot mới là điều kiện gây lỗi). Chưa sửa — nợ.
 - **Còn giành lại được bao nhiêu từ context thường của model nhúng?** Biết là còn, **chưa đo**.
 
 ---

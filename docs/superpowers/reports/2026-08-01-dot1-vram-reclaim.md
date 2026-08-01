@@ -324,7 +324,7 @@ Cả hai đều mô tả đúng nội dung ảnh (PCB xanh, linh kiện điện 
 
 ## §4 Tổng hợp — nghiệm thu app thật và cộng lại bảng roster (Task 4)
 
-### ⚠ KẾT QUẢ CHÍNH 1: app VẪN không nạp được model 30B — nhưng KHÔNG còn vì race
+### ⚠ KẾT QUẢ CHÍNH 1: app ở đường boot mặc định VẪN không nạp được 30B — không còn vì race, và ĐÃ CÓ ĐƯỜNG VÒNG
 
 Nghiệm thu bằng app thật (`npm run dev`, **3 lượt boot**, đợi qua cả hai mốc warm 2000ms và 3000ms):
 
@@ -344,19 +344,50 @@ Nghiệm thu bằng app thật (`npm run dev`, **3 lượt boot**, đợi qua c�
 
 Hai đường warm (`aiLocalKnowledgeService.ts:2431` mốc 2000ms · `aiGgufEngine.initDeepModelWarmup` mốc 3000ms) **đều gọi cùng `GGUF_DEFAULT_MODEL`** — đúng cặp gây 45/45 lỗi ở Đợt 0. Log chỉ còn **một** dòng `Loading model:` cho model 30B ⇒ khoá đã gộp hai lượt thành một.
 
-⇒ **Có một nguyên nhân THỨ BA, khác hẳn race, chưa từng được biết tới.** Ba phép đo phân biệt sau đây khoanh vùng nó:
+⇒ **Có một nguyên nhân THỨ BA, khác hẳn race.**
 
-| # | Phép thử | Kết quả |
-|---|---|---|
-| 1 | `bench.mjs --models deep` (tiến trình gọn, cùng máy, cùng lúc) | **NẠP ĐƯỢC**, 19,3 s, không lỗi |
-| 2 | Script tạm gọi **thẳng `warmModel()` của mã sản xuất** (`aiGgufEngine.ts`), tiến trình gọn, không boot Express | **NẠP ĐƯỢC**, 18,1 s, delta **19.094 MiB** |
-| 3 | App thật, warm hoãn tới **120 giây** (`GGUF_WARM_DELAY_MS=120000`) để loại trừ tranh chấp lúc boot | **VẪN LỖI**, y hệt |
+### ⚠ CHẨN ĐOÁN ĐÚNG (sửa sau review vòng 1 — chẩn đoán đầu tiên của tôi SAI)
 
-**Kết luận có bằng chứng:**
-- **Đường nạp model của mã sản xuất KHÔNG hỏng** (phép thử 2 — cùng hàm, cùng `getLlama({gpu:"auto"})`, cùng `loadModel({gpuLayers:"max"})`).
-- **Không phải tranh chấp thời điểm boot** (phép thử 3 — sau 120 s, app đã lắng, vẫn lỗi).
-- **Không phải hết VRAM thiết bị.** Lấy mẫu `nvidia-smi` mỗi giây suốt lượt boot: VRAM **chưa bao giờ vượt 1.208 MiB** trước lúc lỗi, và ở lượt hoãn-120s app chỉ giữ **5.496 MiB** — nghĩa là còn **~27 GB trống** khi một lệnh `cudaMalloc` 16.698 MiB bị từ chối.
-- ⇒ Nguyên nhân nằm ở **trạng thái của chính tiến trình app** (một giới hạn cấp-tiến-trình, không phải cấp-thiết-bị). **Chưa truy được nguyên nhân cụ thể — cần một đợt riêng.** Không suy đoán thêm ở đây; đúng bài học Task 3 đã trả giá.
+**Phát biểu đúng phạm vi:**
+
+> **Không cấp phát nổi khối 16,7 GB nếu CUDA context được tạo SAU khi app boot xong.**
+> Nếu CUDA context đã tồn tại TRƯỚC khi app boot, chính đường warm của app nạp 30B **thành công**.
+
+**Chẩn đoán đầu tiên của tôi ("không phải tranh chấp thời điểm boot") SAI** — tôi chỉ thử **hoãn** warm (`GGUF_WARM_DELAY_MS=120000`, tức đẩy CUDA context ra **muộn hơn**) và kết luận "không liên quan tới thời điểm". Tôi **không thử chiều ngược lại**. Reviewer thử chiều ngược lại và nó đổi hẳn kết luận.
+
+**Bảng phép thử đầy đủ** (⚡ = phép thử của reviewer; ✔ = tôi tự dựng lại độc lập):
+
+| # | Phép thử | Thứ tự tạo CUDA context | Kết quả |
+|---|---|---|---|
+| 1 | `bench.mjs --models deep`, tiến trình gọn | trước (không có app) | **NẠP ĐƯỢC** 19,3 s |
+| 2 | Gọi thẳng `warmModel()` sản xuất, tiến trình gọn | trước (không có app) | **NẠP ĐƯỢC** 18,1 s · 19.094 MiB |
+| 3 | App thật, warm hoãn 120 s | **sau** boot (muộn hơn nữa) | **LỖI** y hệt |
+| 4 ⚡ | Nạp 30B **TRƯỚC** `import(server/_core/index.ts)`, rồi boot app lên trên | **trước** boot | **NẠP ĐƯỢC** 11 s · app boot bình thường · `generateText` trả "Hello" · 23.994 MiB |
+| 5 ⚡✔ | Nạp **model nhúng 0,6B** trước (chỉ để tạo CUDA context sớm), rồi boot app, rồi **để CHÍNH đường warm của app nạp 30B** | **trước** boot | **NẠP ĐƯỢC** — `Model loaded in 16291ms` + `deep model warm OK`, **0 `cudaMalloc failed`**, VRAM cuối **24.094 MiB** |
+| 6 ⚡ | Chứng ngược: app boot trước, rồi gọi tay ở T+30 s lúc model nhúng **đã** thường trú | **sau** boot | **LỖI** ⇒ loại trừ "cứ có embed trước là xong" |
+
+Phép thử 5 là phép thử quyết định và **tôi đã tự dựng lại độc lập** (script tạm, `npx tsx`, đã xoá sau khi đo): **cùng mã sản xuất, cùng app, cùng đường warm** — khác biệt DUY NHẤT là CUDA context được tạo trước khi app boot. Phép thử 6 (chứng ngược của reviewer) loại trừ cách giải thích tầm thường "chỉ cần có model nhỏ nạp trước".
+
+**Còn lại đúng từ chẩn đoán cũ:**
+- **Đường nạp model của mã sản xuất KHÔNG hỏng** (phép thử 2 · 4 · 5).
+- **Không phải hết VRAM thiết bị**: lấy mẫu `nvidia-smi` mỗi giây, lúc lỗi thiết bị mới dùng ~1,6 GB / 32,6 GB. Reviewer loại thêm **trần commit của Windows** (+19,2 GB trên 88,78 GB, còn dư > 27 GB) ⇒ cũng không phải commit charge.
+
+**⚠ CƠ CHẾ VẪN CHƯA BIẾT.** Chúng tôi biết **điều kiện** (thứ tự tạo CUDA context so với boot app), **không** biết **vì sao**. Cả tôi lẫn reviewer đều **không đoán cơ chế** — đó đúng là cái bẫy đã làm hỏng tiền đề Task 3.
+
+**⇒ CÓ ĐƯỜNG VÒNG ĐO ĐƯỢC**: tạo CUDA context sớm (ví dụ nạp model nhúng) **trước** khi app boot xong. Nhưng đây **chưa phải bản sửa** — chỉ là hiện tượng đã đo được hai lần, chưa hiểu, chưa có mã, chưa nghiệm thu qua nhiều lượt boot. **Cần một đợt riêng để biến nó thành thứ tin cậy được.**
+
+### ⚠ Một comment trong mã đang MÔ TẢ SAI SỰ THẬT
+
+`server/services/aiGgufEngine.ts:1108-1109`:
+
+```
+GGUF_WARM_DELAY_MS → delay before warming (default 3000ms) so the warm never
+                     competes with the rest of boot.
+```
+
+Đo thật cho thấy **ngược hoàn toàn**: hoãn warm ra **sau** boot chính là điều kiện làm nó **thất bại**; nạp **trước** boot mới thành công. Comment này đang dạy người đọc sau đúng điều sai.
+
+⚠ **KHÔNG sửa trong Task 4** (task này thuần đo + viết) — **ghi vào nợ** cho đợt xử lý nguyên nhân thứ ba.
 
 ### ✅ Đã đóng được một khoản nợ của Task 1 — bằng bằng chứng sống
 
@@ -373,11 +404,25 @@ Bốn dòng cảnh báo mà spec hồ sơ §4 yêu cầu canh, `grep -nE "evicte
 | `At capacity (4/4)` | **không** |
 | cảnh báo nhánh `catch` nạp lại `gpuLayers:"auto"` | **không** |
 
-Dòng thứ tư vắng mặt là điều đáng chú ý nhất. Mã có sẵn nhánh phục hồi (`aiGgufEngine.ts:648-681`): gặp OOM thì đuổi hết model rảnh rồi **nạp lại với `gpuLayers:"auto"`** (offload một phần, phần còn lại chạy CPU). Nhánh này **không chạy lần nào** trong 3 lượt boot.
+Dòng thứ tư vắng mặt là điều đáng chú ý nhất. Mã có sẵn nhánh phục hồi (`aiGgufEngine.ts:658-682`): gặp OOM thì đuổi hết model rảnh rồi **nạp lại với `gpuLayers:"auto"`** (offload một phần, phần còn lại chạy CPU). Nhánh này **không chạy lần nào** trong 3 lượt boot.
 
-Đọc mã cho thấy lý do khả dĩ: `isOom` kiểm tra `err.message` của JS có chứa `"out of memory"`/`"cudamalloc"`/`"failed to allocate"`/`"unable to allocate"` không — nhưng những chữ đó nằm ở **stderr của lớp C++ node-llama-cpp**, không nằm trong `err.message` mà JS nhận được. ⚠ **Đây là suy luận từ mã cộng với sự VẮNG MẶT của dòng log — chưa bắt được nguyên văn `err.message` để xác nhận.** Cần một phép đo riêng mới kết luận chắc.
+### ✅ ĐÃ XÁC NHẬN BẰNG BẰNG CHỨNG (review vòng 1): nhánh `catch` là MÃ CHẾT
 
-**Hệ quả thực tế thì đã chắc, không cần suy luận:** app **không** rơi xuống tier chậm ~2,9 tok/s như spec cảnh báo — nó **không có model sinh chữ sâu nào cả**. Về mặt vận hành, đây **tệ hơn** kịch bản "âm thầm chậm" mà spec hồ sơ §4 lo. Bù lại, nó **hỏng ồn ào** (`deep model warm FAILED`) chứ không im lặng, nên vẫn phát hiện được — nhưng chỉ khi có người đọc log.
+Tôi ban đầu chỉ **suy luận** rằng `isOom` không khớp. Reviewer **bắt được nguyên văn** bằng cách chạy `loadGgufModel()` trong chính tiến trình app đang lỗi:
+
+```
+err.message   = "Failed to load model"
+ISOOM_MATCH   = false
+```
+
+`isOom` tìm `"out of memory"`/`"cudamalloc"`/`"failed to allocate"`/`"unable to allocate"` trong `err.message`. Thông điệp thật là **"Failed to load model"** — không chứa chuỗi nào trong số đó. Những chữ OOM chỉ xuất hiện ở **stderr của lớp C++ node-llama-cpp**, không bao giờ vào `err.message`.
+
+⇒ **`if (!isOom || ...) throw err` luôn ném ⇒ toàn bộ khối từ dòng 672 tới 682 (`console.warn` + `evictLRU()` + nạp lại `gpuLayers:"auto"`) KHÔNG BAO GIỜ CHẠY.**
+⇒ **Một trong bốn lưới an toàn của hệ KHÔNG TỒN TẠI** — nó chỉ tồn tại trên giấy và trong tài liệu.
+
+**Hệ quả thực tế:** app **không** rơi xuống tier chậm ~2,9 tok/s như spec cảnh báo — nó **không có model sinh chữ sâu nào cả**. Về mặt vận hành đây **tệ hơn** kịch bản "âm thầm chậm" mà spec hồ sơ §4 lo. Bù lại, nó **hỏng ồn ào** (`deep model warm FAILED`) chứ không im lặng — nhưng chỉ phát hiện được khi có người đọc log.
+
+⇒ **Danh sách "bốn dòng log phải canh" của spec hồ sơ §4 thực chất chỉ còn BA.** Đã sửa ở cả hai spec.
 
 ### ⚠ KẾT QUẢ CHÍNH 3: bảng roster Đợt 0 sai theo HAI hướng, cộng lại thiếu ~3.400 MiB
 
@@ -385,7 +430,7 @@ Dòng thứ tư vắng mặt là điều đáng chú ý nhất. Mã có sẵn nh
 
 **(a) Model nhúng — thiếu 2.030 MiB.** Đợt 0 ghi `embed = 5.664 MiB`. Nhưng `bench.mjs:321` tự gọi `createEmbeddingContext({contextSize:"auto"})` **hard-code, không import `aiGgufEngine.ts`**, và **không** gọi `model.createContext()` — trong khi `loadGgufModel()` sản xuất tạo **cả hai** context. Chi phí THẬT trước khi sửa: **7.694 MiB** (Task 2, §2).
 
-**(b) MỌI model text GGUF — thiếu ~1.350 MiB mỗi model.** Phát hiện MỚI ở Task 4. `bench.mjs:249` tạo context bằng `model.createContext({contextSize, batchSize:512, flashAttention:true})` — **không truyền `sequences`** (mặc định **1**) và `contextSize` suy từ độ dài prefill của bài đo. Đường sản xuất (`aiGgufEngine.ts:684-689`) tạo `contextSize = GGUF_DEFAULT_CTX = 4096` với `sequences = GGUF_SEQUENCES = 4`. Đo trực tiếp qua `warmModel()` sản xuất:
+**(b) MỌI model text GGUF — thiếu ~1.350 MiB mỗi model.** Phát hiện MỚI ở Task 4. `bench.mjs:249` tạo context bằng `model.createContext({contextSize, batchSize:512, flashAttention:true})` — **không truyền `sequences`** (mặc định **1**) và `contextSize` suy từ độ dài prefill của bài đo. Đường sản xuất (`aiGgufEngine.ts:686-691`) tạo `contextSize = GGUF_DEFAULT_CTX = 4096` với `sequences = GGUF_SEQUENCES = 4`. Đo trực tiếp qua `warmModel()` sản xuất:
 
 | Model | Đợt 0 (`bench.mjs`) | Đường SẢN XUẤT (Task 4) | Thiếu |
 |---|---|---|---|
@@ -408,8 +453,13 @@ Dòng thứ tư vắng mặt là điều đáng chú ý nhất. Mã có sẵn nh
 | Qwen3-4B-Instruct | 3.464 | *chưa đo lại* (≥3.464) | *chưa đo lại* | Đợt 0 |
 | Qwen2.5-Coder-1.5B (FIM) | 1.774 | *chưa đo lại* (≥1.774) | *chưa đo lại* | Đợt 0 |
 | **Qwen3-Embedding-0.6B** | 5.664 ❌ **sai** | **7.694** | **4.321** | Task 2 |
-| **Vision sidecar** | 7.821 | 7.826-7.830 | **7.827 — KHÔNG giảm** | Task 3 |
+| **Vision sidecar** | 7.821 | 7.821 | **7.821 — KHÔNG giảm** | Task 3 |
 | **Trần thiết bị** | 32.607 | 32.607 | 32.607 | `nvidia-smi` |
+
+⚠ **Về con số vision (sửa M-1 review vòng 1)**: Task 3 đo lại được **7.826-7.830 MiB (trước)** và **7.827 MiB (sau)** — chênh với mốc Đợt 0 (7.821) khoảng 0,1%, **trong nhiễu đo**. Để mọi phép cộng dưới đây nhất quán và so sánh được với Đợt 0, **tất cả dùng 7.821 MiB**. Chọn số nào cũng không đổi kết luận (lệch tối đa 9 MiB, tức 0,03% trần).
+
+⚠ **Mỗi số model ĐÃ GỒM ~430 MiB CUDA context dùng chung (sửa M-2 review vòng 1)** — cộng ba model là **đếm ba lần** cùng một khối. Đo được trực tiếp: nạp model nhúng + 30B trong **cùng một tiến trình** cho VRAM cuối **24.094 MiB**, trong khi cộng rời `1.063 + 4.321 + 19.094 = 24.478` ⇒ **thừa 384 MiB** đúng bằng một lần đếm lặp. Với ba model GGUF, phần thừa ~**860 MiB**.
+⇒ **Mọi tổng trong bảng bốn case dưới đây LỆCH VỀ PHÍA THẬN TRỌNG** (cao hơn thực tế ~400-900 MiB). **Không ô nào đổi kết luận** vì sai số này làm bức tranh xấu đi chứ không đẹp lên — nhưng phải biết khi đọc các ô sát trần.
 
 **Tổng giành lại của cả Đợt 1: 3.373 MiB (~3,3 GiB), TOÀN BỘ đến từ model nhúng.**
 
@@ -419,7 +469,7 @@ Dòng thứ tư vắng mặt là điều đáng chú ý nhất. Mã có sẵn nh
 | Sidecar (`-np 1`) | ~1,9 GB | **~0 — tiền đề của kế hoạch SAI** (`kv_unified=true`) |
 | **Tổng** | **~6,4 GB** | **~3,37 GB — bằng khoảng MỘT NỬA kỳ vọng** |
 
-⚠ Con số 4.321 MiB **đã bao gồm** context thường (4096 × 4 sequences) mà `loadGgufModel()` vẫn tạo cho model nhúng dù nó không bao giờ sinh chữ (`aiGgufEngine.ts:684-689`, Minor 2 của Task 2). Task 2 mới xử lý **một nửa** khoản "trả tiền hai lần" ⇒ **còn dư địa cho đợt sau**, chưa phải mức sàn.
+⚠ Con số 4.321 MiB **đã bao gồm** context thường (4096 × 4 sequences) mà `loadGgufModel()` vẫn tạo cho model nhúng dù nó không bao giờ sinh chữ (`aiGgufEngine.ts:686-691`, Minor 2 của Task 2). Task 2 mới xử lý **một nửa** khoản "trả tiền hai lần" ⇒ **còn dư địa cho đợt sau**, chưa phải mức sàn.
 
 ### Bảng bốn case — cộng lại bằng số thật
 
@@ -447,6 +497,8 @@ Thành phần từng case (cột SAU Đợt 1):
 1. **Case 4 `balanced` là case được lợi rõ nhất.** Từ 96,4% (sát trần, không đủ chỗ cho buffer sinh) xuống 86,1% — nay chịu được hai model cùng sinh (91,8%). Đây là khoản giành lại **có giá trị vận hành thật**.
 2. **Case 1/3 khi vision thức thôi "không thể tồn tại"** — 109,8% ❌ xuống 99,4%. Nhưng xem mục KHÔNG ĐỔI #2.
 3. **Bảng roster Đợt 0 phải bị coi là KHÔNG ĐÁNG TIN cho tới khi đo lại bằng đường sản xuất.** Đợt 0 công bố Case 1 + vision = 32.383 MiB (99,3%, "sát trần"). Số thật lúc đó là **35.792 MiB (109,8%)** — **một cấu hình đã VƯỢT TRẦN được công bố là vừa.** Sai lệch 3.409 MiB.
+4. **Lưới an toàn thứ tư KHÔNG TỒN TẠI.** Spec mô tả nhánh `catch` "âm thầm nạp lại `gpuLayers:"auto"`" như một cơ chế đang hoạt động; đo thật cho thấy nó là **mã chết**. Hệ **không** tụt tier âm thầm — nó **hỏng hẳn**.
+5. **Chẩn đoán "app không nạp được 30B" đã đổi phạm vi.** Từ *"nguyên nhân thứ ba không truy được, chặn bước D"* thành *"không cấp phát nổi 16,7 GB nếu CUDA context tạo SAU boot app — **có đường vòng đo được**, cơ chế chưa biết"*. Bước D **chưa chốt được, nhưng không còn bị chặn cứng**.
 
 **KHÔNG ĐỔI:**
 1. **Case 2 vẫn KHÔNG KHẢ THI — và không phải chuyện gần.** Chỉ riêng nền + hai model 30B đã là `1.200 + 19.077 + 19.094 = 39.371 MiB`, **vượt trần 6.764 MiB khi embedding bằng KHÔNG**. Khoản giành lại 3.373 MiB **không tới một nửa** chỗ còn thiếu. Câu của spec §3 giữ nguyên: *trên 32,6 GB, KHÔNG cấu hình nào cho phép đủ bộ cùng lúc.*
@@ -457,9 +509,17 @@ Thành phần từng case (cột SAU Đợt 1):
 
 ### Mối lo
 
-1. **Điều kiện 1 của spec hồ sơ nội bộ CHƯA ĐẠT.** Spec ghi rõ: không bật hồ sơ khi app chưa nạp nổi 30B. Race đã vá, nhưng **app vẫn không nạp được** vì nguyên nhân thứ ba. **Chưa được bật hồ sơ `internal-code`.**
-2. **Nguyên nhân thứ ba chưa truy được** — đã khoanh vùng ("tiến trình app, không phải thiết bị, không phải thời điểm, không phải mã nạp"), chưa có gốc rễ. Cần một đợt riêng, và nó **chặn toàn bộ bước D** của lộ trình.
+1. **Điều kiện 1 của spec hồ sơ nội bộ: CHƯA ĐẠT, nhưng KHÔNG còn bị chặn cứng.** Race đã vá; app ở đường boot mặc định vẫn không nạp được 30B, **nhưng đã có một đường vòng đo được hai lần** (tạo CUDA context trước khi app boot). Đường vòng đó **chưa phải bản sửa** — chưa có mã, chưa hiểu cơ chế, chưa nghiệm thu qua nhiều lượt boot. **Vẫn chưa được bật hồ sơ `internal-code`**, nhưng lý do nay là "chưa làm cho tin cậy", không phải "không có cách".
+2. **Cơ chế của nguyên nhân thứ ba vẫn CHƯA BIẾT.** Biết **điều kiện** (thứ tự tạo CUDA context so với boot app), **không** biết **vì sao**. Đã loại trừ: dung lượng VRAM thiết bị · trần commit Windows · mã nạp sản xuất · race · thời điểm-muộn-hơn. Cần một đợt riêng.
+3. **Comment `aiGgufEngine.ts:1108-1109` mô tả SAI sự thật** — nói hoãn warm để "không cạnh tranh với phần còn lại của boot", trong khi đo thật cho thấy hoãn ra sau boot chính là điều kiện gây lỗi. **Chưa sửa** (Task 4 thuần đo + viết) ⇒ nợ cho đợt xử lý nguyên nhân thứ ba.
 3. **`bench.mjs` đã sai ba lần liên tiếp ở đúng chỗ quyết định.** Mọi số Đợt 0 chưa được đo lại bằng đường sản xuất (4B, FIM) phải coi là **sàn, không phải giá trị**. Khuyến nghị mạnh: sửa `bench.mjs` gọi qua mã sản xuất, hoặc bỏ nó và đo bằng `warmModel()` — nếu không, đợt sau lại quyết trên số sai.
-4. **Nhánh `catch` `gpuLayers:"auto"` có thể là mã chết.** Nếu đúng như suy luận (`err.message` không mang chữ OOM), thì cơ chế phục hồi mà spec hồ sơ §4 coi là "nguy hiểm nhất vì âm thầm" thực ra **chưa từng chạy** — cần một phép đo riêng để xác nhận, và nếu đúng thì bốn dòng log phải canh của spec chỉ còn ba.
-5. **Khoản "trả tiền hai lần" mới trả một nửa**: context thường 4096 × 4 sequences vẫn được tạo cho model nhúng. Còn dư địa, chưa đo được bao nhiêu.
-6. **Chưa nghiệm thu chức năng qua giao diện.** Task 4 chỉ đo VRAM và đọc log; không mở trình duyệt, không thử một lượt hỏi-đáp thật. App **không có model sinh chữ sâu** nên lượt thử đó chắc chắn hỏng — nhưng điều đó **chưa được kiểm chứng**, chỉ suy ra từ log.
+5. **Nhánh `catch` `gpuLayers:"auto"` LÀ MÃ CHẾT — đã xác nhận bằng bằng chứng** (`err.message = "Failed to load model"`, `ISOOM_MATCH = false`). Một trong bốn lưới an toàn **không tồn tại**. Chưa sửa (ngoài phạm vi Task 4) ⇒ nợ.
+6. **Khoản "trả tiền hai lần" mới trả một nửa**: context thường 4096 × 4 sequences vẫn được tạo cho model nhúng. Còn dư địa, chưa đo được bao nhiêu.
+7. **Chưa nghiệm thu chức năng qua giao diện.** Không mở trình duyệt. ⚠ Nhưng phép thử 5 (§ chẩn đoán) đã chứng minh **`generateText` chạy thật** khi 30B nạp được (reviewer: trả "Hello") ⇒ phần sinh chữ không hỏng, chỉ phụ thuộc việc nạp được model.
+
+### ⚠ Ghi nhận PHƯƠNG PHÁP cho mọi đợt sau — `tasklist` KHÔNG đáng tin trên máy này
+
+Reviewer phát hiện `tasklist | grep node.exe` trong git-bash trả về **RỖNG** trong khi thực tế có **8 tiến trình `node.exe`** đang chạy. **Tôi đã tự gặp lại đúng hiện tượng này trong phiên của mình**: cùng một lệnh `tasklist //FI "IMAGENAME eq node.exe" //FO CSV` lúc trả 6 dòng, lúc trả 0 dòng, dù trạng thái máy không đổi tương ứng.
+
+⇒ **Cách kiểm "không còn tiến trình treo" bằng `tasklist` là KHÔNG ĐÁNG TIN.** Mọi đợt trước (kể cả Task 1-3 của Đợt 1) đều dùng cách này.
+⇒ **Thay bằng bằng chứng trực tiếp hơn**: `nvidia-smi` về baseline (VRAM là thứ ta thật sự quan tâm) **và** `netstat -ano | grep ":3000"` rỗng (không còn server lắng nghe). Task 4 đã dùng cả hai.
