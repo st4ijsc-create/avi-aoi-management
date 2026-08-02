@@ -129,7 +129,73 @@ EXPECT_CONFORMANCE=22
 # (Modbus/OpcUaDriverConformanceTests' FindAndReleaseFreePort -> Drivers/ClosedLoopbackPort) and adds NO test
 # for them: a released ephemeral port can be reassigned to another test's listener, which is what made an
 # unrelated TLS test fail once. A moved total there would mean that rewrite was not behaviour-preserving.
-EXPECT_EDGECORE=787
+#
+# 🔴 Đợt D, D-3 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-3-brief.md) raises this
+# 787 -> 817 (+30). D-3 adds the NATIVE SERIAL transport — Modbus RTU over a real COM port — in its OWN
+# assembly (src/St4i.EdgeCore.Serial), which is the only place in the product allowed to depend on
+# System.IO.Ports. Every number below is COUNTED FROM THE RUNNER (`dotnet test --list-tests`), not by hand,
+# for the reason D-2 wrote down: a total that reconciles is not evidence that anybody knows where the tests
+# are.
+#
+#     + 9  SerialLineSettingsTests          (new) — the line parameters of one RS-485 segment: the defaults
+#                                            are the MODBUS spec's 19200-8-E-1 and not SerialPort's own
+#                                            9600-8-N-1 (asserted against a real SerialPort as the control,
+#                                            so the test is about the decision rather than about reading back
+#                                            the numbers written in the type); six rows of lines a port cannot
+#                                            honour (baud <= 0, 7/9 data bits, StopBits.None/OnePointFive);
+#                                            a blank port name; and the port-name normalisation, because
+#                                            "com3" and "COM3" are one physical port and the bus key is built
+#                                            from that string.
+#     +14  SerialPortBusLinkTests           (new) — the transport itself, to the exact extent a machine with
+#                                            no RS-485 hardware can drive it: SerialPort.DiscardInBuffer
+#                                            verified to reach Kernel32.PurgeComm while TWO of NModbus's three
+#                                            own adapters are 1-IL-byte empty bodies (the brief's "verify,
+#                                            don't trust the name" obligation, discharged by reading the
+#                                            shipped IL because no loopback exists to measure it
+#                                            behaviourally); the port configured from an explicit line AND
+#                                            from the default line (both arms — D-2's I-2 lesson); the
+#                                            handshake forced off and RTS left deasserted, which is the
+#                                            RS-485 direction-control decision; four theory rows proving the
+#                                            bus key distinguishes every line parameter, plus its
+#                                            case-insensitivity; an absent port failing with the port AND its
+#                                            framing in the message; the abort check firing BEFORE the port is
+#                                            touched (with the cleared-abort arm as the discriminator); the
+#                                            write timeout reaching the port object; a closed port draining to
+#                                            nothing without throwing, and disposal being idempotent; and two
+#                                            registry tests — two connectors on one line sharing ONE bus and
+#                                            ONE open, and two connectors that disagree about baud rate
+#                                            getting TWO buses rather than one silently shared port.
+#     + 7  SerialDependencyScopingTests     (new) — the STRUCTURAL proof the brief demands instead of
+#                                            inspection: the three shipping executables (EdgeService, EngineApi,
+#                                            the WPF shell) carry no System.IO.Ports.dll; St4i.EdgeCore — which
+#                                            holds ModbusBus, the RTU framing and GatewayTcpBusLink — references
+#                                            neither the package nor the serial assembly; plus THREE positive
+#                                            controls without which those five would be vacuous (this test
+#                                            assembly's own output DOES carry the DLL, the serial assembly DOES
+#                                            reference the package, and the output search refuses a project that
+#                                            was never built rather than reporting it clean).
+#
+# Six of those 30 exist only because a mutation survived an earlier version of this suite: the "never built"
+# guard (which every caller bypassed, so nothing ever ASKED it — a reachability gap a mutation cannot find on
+# its own); the abort check and the write timeout (unreachable until an internal Adopt() let a test drive the
+# pre-I/O half of those members without hardware); the write timeout's non-positive arm (the test originally
+# used -1, which IS SerialPort.InfiniteTimeout, so its expected value coincided with its input); and the read
+# slice's own bound, which is that defect's sibling found by sweeping rather than by care.
+#
+# 🔴 FIVE mutations still SURVIVE and are recorded rather than papered over — see task-3-report.md §8. Four of
+# the five need a COM port with something on the other end of it, which no CI machine and no portable virtual
+# COM pair provides; the fifth is untestable by construction. Nothing hardware-conditional was committed: a
+# dynamically skipped test would fail this very gate, which expects 0 skipped.
+#
+# EVERY OTHER SUITE IS UNCHANGED, and that is the check rather than a coincidence: D-3 adds no code outside
+# src/St4i.EdgeCore.Serial and tests/St4i.EdgeCore.Tests. In particular EXPECT_ABSTRACTIONS stays 151 even
+# though St4i.Connector.Abstractions.Tests owns the sibling "this assembly references only the BCL" guard, and
+# EXPECT_CONFORMANCE stays 22 because RTU conformance wiring is D-6. D-3 also EXTRACTS MakaretuNotShippedTests'
+# solution-root walk and output search into tests/St4i.EdgeCore.Tests/BuildOutputProbe.cs so the new scoping
+# suite shares one implementation rather than growing a second copy that can drift silently — that rewrite is
+# behaviour-preserving and adds NO test (MakaretuNotShippedTests stays at 3, counted from the runner). A moved
+# total there would mean it was not.
+EXPECT_EDGECORE=817
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:

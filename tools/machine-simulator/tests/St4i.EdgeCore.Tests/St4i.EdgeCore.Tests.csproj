@@ -26,6 +26,13 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\St4i.EdgeCore\St4i.EdgeCore.csproj" />
+    <!-- Task D-3 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-3-brief.md) — the native serial
+         transport lives in its OWN assembly so that System.IO.Ports cannot leak into a gateway deployment
+         (see St4i.EdgeCore.Serial.csproj for the argument). This is the ONLY reference to it anywhere in the
+         repository: nothing under src/ references it, which is what makes every shipping build output
+         serial-free. SerialDependencyScopingTests asserts exactly that, and needs this reference to hold the
+         positive control that proves its search can find the DLL when it IS present. -->
+    <ProjectReference Include="..\..\src\St4i.EdgeCore.Serial\St4i.EdgeCore.Serial.csproj" />
     <!-- GP-6 — the shared conformance suite, applied to SimulatedDriver/ModbusTcpDriver/OpcUaDriver below
          (see Drivers/*ConformanceTests.cs). -->
     <ProjectReference Include="..\..\src\St4i.Connector.Conformance\St4i.Connector.Conformance.csproj" />

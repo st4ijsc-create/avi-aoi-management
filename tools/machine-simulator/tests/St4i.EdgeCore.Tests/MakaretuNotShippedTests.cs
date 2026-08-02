@@ -44,50 +44,20 @@ namespace St4i.EdgeCore.Tests;
 /// </summary>
 public sealed class MakaretuNotShippedTests
 {
-    private static string MachineSimulatorRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "St4iMachineSimulator.sln")))
-            {
-                return dir.FullName;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new InvalidOperationException(
-            $"Could not locate St4iMachineSimulator.sln by walking up from \"{AppContext.BaseDirectory}\"");
-    }
-
-    private static string BinDirFor(string projectRelativeDir) =>
-        Path.Combine(MachineSimulatorRoot(), projectRelativeDir, "bin");
-
     /// <summary>Every file anywhere under the given project's own <c>bin/</c> directory whose name matches
-    /// <c>Makaretu*.dll</c> or <c>Common.Logging.dll</c> — searched recursively (<see
-    /// cref="SearchOption.AllDirectories"/>) so this doesn't care which configuration (Debug/Release) or
-    /// RID-specific subfolder (e.g. <c>win-x64</c> for the WPF app) actually got built.</summary>
-    private static IReadOnlyList<string> FindLeakedDlls(string projectRelativeDir)
-    {
-        var binDir = BinDirFor(projectRelativeDir);
-        if (!Directory.Exists(binDir))
-        {
-            throw new InvalidOperationException(
-                $"{binDir} does not exist — build St4iMachineSimulator.sln at least once before running this test.");
-        }
+    /// <c>Makaretu*.dll</c> or <c>Common.Logging.dll</c> — searched recursively so this doesn't care which
+    /// configuration (Debug/Release) or RID-specific subfolder (e.g. <c>win-x64</c> for the WPF app) actually
+    /// got built.
+    ///
+    /// <para>Task D-3 — the solution-root walk, the recursive search and the "was this project ever built"
+    /// guard moved verbatim to <see cref="BuildOutputProbe"/> when
+    /// <c>Drivers.Modbus.SerialDependencyScopingTests</c> needed the identical three for
+    /// <c>System.IO.Ports.dll</c>. Behaviour-preserving; no test added, none removed.</para></summary>
+    private static IReadOnlyList<string> FindLeakedDlls(string projectRelativeDir) =>
+        BuildOutputProbe.FindInOutput(projectRelativeDir, "Makaretu*.dll", "Common.Logging.dll");
 
-        return Directory.EnumerateFiles(binDir, "Makaretu*.dll", SearchOption.AllDirectories)
-            .Concat(Directory.EnumerateFiles(binDir, "Common.Logging.dll", SearchOption.AllDirectories))
-            .ToList();
-    }
-
-    private static bool PrimaryOutputExists(string projectRelativeDir, string primaryOutputFileName)
-    {
-        var binDir = BinDirFor(projectRelativeDir);
-        return Directory.Exists(binDir) &&
-               Directory.EnumerateFiles(binDir, primaryOutputFileName, SearchOption.AllDirectories).Any();
-    }
+    private static bool PrimaryOutputExists(string projectRelativeDir, string primaryOutputFileName) =>
+        BuildOutputProbe.PrimaryOutputExists(projectRelativeDir, primaryOutputFileName);
 
     [Fact]
     public void EdgeService_BuildOutput_NeverContainsMakaretuOrCommonLogging()
