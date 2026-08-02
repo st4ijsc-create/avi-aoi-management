@@ -74,6 +74,12 @@ internal sealed class FakeSerialPortHandle : ISerialPortHandle
         {
             lock (_gate)
             {
+                if (CloseBeforeBytesToReadNumber > 0 && BytesToReadCalls + 1 == CloseBeforeBytesToReadNumber)
+                {
+                    _disposed = true;
+                }
+
+                BytesToReadCalls++;
                 ThrowIfClosed();
                 return _inbox.Count;
             }
@@ -83,6 +89,41 @@ internal sealed class FakeSerialPortHandle : ISerialPortHandle
     public int ReadTimeout { get; set; } = -1;
 
     public int WriteTimeout { get; set; } = -1;
+
+    /// <summary>
+    /// The 1-based <see cref="Read"/> call before which this port closes itself — so that read throws
+    /// "The port is closed." exactly as a real one does after a concurrent disposal. 0 (the default) never
+    /// closes.
+    ///
+    /// <para>This reproduces one specific, otherwise unschedulable interleaving: a teardown landing
+    /// <b>between</b> <see cref="BytesToRead"/> and <see cref="Read"/> inside
+    /// <see cref="SerialPortBusLink.DrainBufferedInput"/>'s loop (review M-10). Racing a real disposal against
+    /// that two-call window is a coin flip; closing at a chosen call NUMBER is the same instrument D-2 used
+    /// for its babbling device — scripted on call count, so the outcome differs by an integer nobody's clock
+    /// can perturb.</para>
+    ///
+    /// <para><b>Why a call number rather than a bool.</b> With a bool the port closed on the FIRST read, so
+    /// the drain returned before removing anything and <c>return total</c> was indistinguishable from
+    /// <c>return 0</c> — the test could not see the difference between reporting partial progress and
+    /// discarding it, which is the half of that fix that actually matters to
+    /// <see cref="ModbusBus"/>'s quiet window. Closing on the SECOND read leaves a non-zero count to
+    /// report.</para>
+    /// </summary>
+    public int CloseBeforeReadNumber { get; set; }
+
+    /// <summary>The 1-based <see cref="BytesToRead"/> call before which this port closes itself. 0 never
+    /// closes.
+    ///
+    /// <para><b>Its own hook because the drain has TWO places the teardown race lands</b> — the
+    /// <see cref="BytesToRead"/> call and the <see cref="Read"/> call — and a mutation aimed at one is blind
+    /// to the other. Found exactly that way: a mutation meant for the <see cref="Read"/> catch matched the
+    /// <see cref="BytesToRead"/> one instead and SURVIVED, which is D-2's rule that fixing one instance of a
+    /// defect class buys no immunity to the class.</para></summary>
+    public int CloseBeforeBytesToReadNumber { get; set; }
+
+    /// <summary>Total <see cref="BytesToRead"/> reads — the counter
+    /// <see cref="CloseBeforeBytesToReadNumber"/> is scripted against.</summary>
+    public int BytesToReadCalls { get; private set; }
 
     /// <summary>Plants bytes in THIS end's receive buffer, as if the device had sent them. Used where a test
     /// needs an arrival without a peer.</summary>
@@ -110,6 +151,11 @@ internal sealed class FakeSerialPortHandle : ISerialPortHandle
 
         lock (_gate)
         {
+            if (CloseBeforeReadNumber > 0 && ReadCalls + 1 == CloseBeforeReadNumber)
+            {
+                _disposed = true;
+            }
+
             ReadCalls++;
             while (true)
             {

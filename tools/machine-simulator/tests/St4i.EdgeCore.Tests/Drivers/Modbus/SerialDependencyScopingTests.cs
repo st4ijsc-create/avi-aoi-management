@@ -9,8 +9,11 @@ namespace St4i.EdgeCore.Tests.Drivers.Modbus;
 /// that the one NuGet exception this batch grants is actually scoped.</b> The brief's global constraint is
 /// "<c>System.IO.Ports</c> is added here and ONLY here … a gateway deployment must not drag in a serial
 /// dependency. Verify that, do not assume it", and its Tests section says to prove it <b>structurally, not by
-/// inspection</b>. These six tests are that proof, and they answer two different questions with two different
-/// instruments — neither of which is sufficient alone.
+/// inspection</b>. These <b>seven</b> tests are that proof — four assertions and three positive controls — and
+/// they answer two different questions with two different instruments, neither of which is sufficient alone.
+/// (Review M-6: this said "six", counted before the never-built guard was added in the previous round. A
+/// hand-maintained count in a comment beside a class whose whole subject is "prove it structurally" is exactly
+/// the shape that drifts; it is stated here as 4 + 3 so the arithmetic is visible rather than asserted.)
 ///
 /// <para><b>Question 1 — does the RTU framing layer COMPILE without it?</b> Answered by
 /// <see cref="TheRtuFramingLayersOwnAssembly_ReferencesNeitherSystemIoPorts_NorTheSerialAssembly"/>, reading

@@ -99,13 +99,27 @@ public sealed class SerialPortBusLinkTests
     /// <c>Interop+Kernel32.PurgeComm</c> through <c>SerialStream.DiscardInBuffer</c>. So the BCL's method is
     /// real where NModbus's are not.</para>
     ///
-    /// <para><b>What it does NOT establish, and why this class does not depend on it anyway:</b> IL
-    /// reachability proves the call is emitted, never that it runs. And
-    /// <see cref="SerialPortBusLink.DrainBufferedInput"/> deliberately does not use
-    /// <see cref="SerialPort.DiscardInBuffer"/> at all — it drains by reading, because a purge cannot report
-    /// how many bytes it destroyed and an uncounted byte does not restart <see cref="ModbusBus"/>'s quiet
-    /// window. See that method's own doc comment. This test is therefore a fact about the BCL and NModbus,
-    /// kept because it is the fact the brief asked for and because it goes red if either changes.</para>
+    /// <para><b>What it does NOT establish:</b> IL reachability proves the call is emitted, never that it
+    /// runs.</para>
+    ///
+    /// <para>🔴 <b>Review M-8 — THE TWO HALVES OF THIS TEST ARE NOT WORTH THE SAME, and whoever sees it go red
+    /// needs to know which half fired before deciding anything.</b></para>
+    ///
+    /// <list type="bullet">
+    /// <item><description><b>The NModbus half is LOAD-BEARING.</b> That two of its three adapters purge
+    /// nothing is the entire reason <see cref="IModbusBusLink.DrainBufferedInput"/> exists as a member at all
+    /// — D-2 added it because NModbus's own hook could not be trusted. If those two ever stop being 1-byte
+    /// bodies, the divergence this seam was built for is over and someone should re-derive whether the seam is
+    /// still needed.</description></item>
+    /// <item><description><b>The <see cref="SerialPort"/> half is INFORMATIONAL.</b>
+    /// <see cref="SerialPortBusLink.DrainBufferedInput"/> deliberately does not call
+    /// <see cref="SerialPort.DiscardInBuffer"/> — it drains by reading, because a purge cannot report how many
+    /// bytes it destroyed. So this half pins a third-party method <b>the product never invokes</b>, and it can
+    /// go red on a rename of the internal <c>System.IO.Ports.SerialStream</c> with <b>zero product
+    /// consequence</b>. It is kept because verifying it rather than trusting its name is what the D-3 brief
+    /// asked for, and because a future BCL that gutted it would be worth knowing about. <b>If it fails, update
+    /// this test — do not "fix" the transport, which is not using the method.</b></description></item>
+    /// </list>
     /// </summary>
     [Fact]
     public void SerialPortsDiscardInBuffer_ReachesPurgeComm_WhileTwoOfNModbusThreeAdaptersAreEmptyBodies()
@@ -372,6 +386,67 @@ public sealed class SerialPortBusLinkTests
         Assert.Equal(7, link.DrainBufferedInput());
         Assert.Equal(0, handle.BytesToRead);
         Assert.Equal(0, link.DrainBufferedInput());
+    }
+
+    /// <summary>
+    /// 🔴 <b>Review M-10 — a teardown landing BETWEEN <c>BytesToRead</c> and <c>Read</c> inside the drain's
+    /// loop.</b> The <c>BytesToRead</c> call swallowed the two "the port went away underneath me" shapes and
+    /// the <c>Read</c> call did not, so a disposal in that two-call window threw out of the drain — and
+    /// <c>ModbusBus.ResynchroniseAsync</c> turns any throw from there into
+    /// <c>ModbusBusResynchronisationException</c> + <c>FaultLink()</c>. A noisier teardown rather than a wrong
+    /// number, but the half-guarded shape was the defect: the method decided the race mattered and then
+    /// handled it in one of the two places it happens.
+    ///
+    /// <para>The count so far must still come back rather than 0 — bytes genuinely were drained, and reporting
+    /// 0 would tell <see cref="ModbusBus"/>'s quiet window the line had been silent when it had not. That is
+    /// the second assertion, and it is the one that distinguishes this fix from a bare <c>catch { return 0; }</c>.</para>
+    ///
+    /// <para><b>The identical asymmetry in <c>GatewayTcpBusLink</c> is fixed in the same commit and is NOT
+    /// covered by a test</b>: that class holds a concrete <see cref="System.Net.Sockets.TcpClient"/>, so its
+    /// drain has exactly the non-injectable problem review I-3 solved here — reported in task-3-report.md
+    /// rather than solved by refactoring D-2's measured link inside a fix round.</para>
+    /// </summary>
+    [Fact]
+    public void DrainBufferedInput_WhenThePortIsTornDownMidDrain_ReturnsWhatItAlreadyRemoved_RatherThanThrowing()
+    {
+        var handle = FakeSerialPortHandle.Unpaired();
+        using var link = SerialPortBusLink.AdoptHandle(handle, new SerialLineSettings("COM7"));
+
+        // More than one scratch buffer's worth, so the drain loops: the first read removes a full buffer and
+        // the SECOND one meets a port that has closed underneath it. That ordering is what makes the two
+        // failure modes distinguishable — see CloseBeforeReadNumber.
+        handle.Deliver(new byte[600]);
+        handle.CloseBeforeReadNumber = 2;
+
+        // Without the catch around _port.Read this throws InvalidOperationException, and
+        // ModbusBus.ResynchroniseAsync escalates that into a faulted link and a refused transaction.
+        var drained = link.DrainBufferedInput();
+
+        Assert.False(handle.IsOpen);
+        Assert.Equal(2, handle.ReadCalls);
+
+        // 🔴 The assertion that carries the fix: what was ALREADY removed is reported. A `catch { return 0; }`
+        // would compile, pass a "doesn't throw" test, and tell ModbusBus's quiet window the line had been
+        // silent when 512 bytes had just come off it — the plausible-wrong-number shape again. Asserted as a
+        // range rather than the exact buffer size so the test does not pin a private constant.
+        Assert.InRange(drained, 1, 599);
+
+        // 🔴 THE SECOND SITE, and it is here because a mutation found it rather than because I remembered.
+        // The drain touches the port TWICE per iteration — BytesToRead and Read — so the teardown race has
+        // two landing places, and a mutation aimed at the Read catch matched the BytesToRead one instead and
+        // SURVIVED. Fixing one instance of a defect class buys no immunity to the class (D-2 §11b rule 1);
+        // the countermeasure is to cover the sites, not to be careful about them.
+        var second = FakeSerialPortHandle.Unpaired();
+        using var secondLink = SerialPortBusLink.AdoptHandle(second, new SerialLineSettings("COM7"));
+
+        second.Deliver(new byte[600]);
+        second.CloseBeforeBytesToReadNumber = 2;   // iteration 1 drains a full buffer; iteration 2's probe fails
+
+        var partial = secondLink.DrainBufferedInput();
+
+        Assert.False(second.IsOpen);
+        Assert.Equal(1, second.ReadCalls);
+        Assert.InRange(partial, 1, 599);
     }
 
     /// <summary>

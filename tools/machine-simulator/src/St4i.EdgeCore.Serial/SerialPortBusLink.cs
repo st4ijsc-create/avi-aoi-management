@@ -105,13 +105,27 @@ public sealed class SerialPortBusLink : IModbusBusLink
     /// the direct analogue of <see cref="GatewayTcpBusLink"/>'s <c>AbortSliceMicroseconds</c>, and it bounds
     /// in-flight cancellation latency the same way.
     ///
-    /// <para><b>20 ms, and the number was measured rather than copied.</b> Windows' serial read timeouts are
-    /// quantised to the scheduler tick, so a configured slice costs more wall clock than it asks for: measured
-    /// on a real port, <c>ReadTimeout</c> of 5 / 10 / 20 / 50 ms produced actual waits of ~15 / ~15 / ~30 /
-    /// ~60 ms. Below about 15 ms the request buys nothing — the tick is the floor — so a smaller slice would
-    /// only add syscalls. 20 ms lands at ~30 ms of real granularity, which is the same order as the 30.78 ms
-    /// D-2 measured for the gateway link's own abort and three orders of magnitude below the read timeout it
-    /// replaces.</para>
+    /// <para><b>20 ms — measured, and then CHOSEN. 🔴 Review M-9: the measurement does not force this number
+    /// and an earlier version of this comment presented it as though it did.</b> Windows quantises serial read
+    /// timeouts to the scheduler tick, so a configured slice costs more wall clock than it asks for. Measured
+    /// on a real port (and reproduced by the reviewer to within noise):</para>
+    ///
+    /// <list type="table">
+    /// <item><description>configured  5 ms → actual ~15 ms</description></item>
+    /// <item><description>configured 10 ms → actual ~15 ms</description></item>
+    /// <item><description>configured 20 ms → actual <b>~31 ms</b></description></item>
+    /// <item><description>configured 50 ms → actual ~62 ms</description></item>
+    /// </list>
+    ///
+    /// <para><b>What the measurement actually says</b> is that the tick (~15.6 ms) is the floor, so anything
+    /// below it buys nothing — which points at a slice of 10–15 ms costing ~15 ms of abort granularity.
+    /// <b>What ships costs ~31 ms — roughly double — and buys half the wakeups on an idle read.</b> That is a
+    /// trade, not a conclusion: a bus of N devices idles far more than it reads, and one syscall per 31 ms per
+    /// bus is cheaper than one per 15 ms for a cancellation latency nobody measures at that resolution
+    /// (<c>FleetHost</c>'s teardown budget is seconds). It also lands on the same order as the 30.78 ms D-2
+    /// measured for the gateway link's abort, which keeps the two links on this seam comparable — §8.6's
+    /// concern. <b>If a future task wants sharper cancellation, 10 is the measured floor and this constant is
+    /// the one place to change.</b></para>
     ///
     /// <para>This is NOT the response latency. The slice is how long an IDLE read blocks before rechecking;
     /// a byte that arrives returns from <see cref="SerialPort.Read"/> immediately, so nothing here is added to
@@ -403,7 +417,30 @@ public sealed class SerialPortBusLink : IModbusBusLink
 
             if (available <= 0) return total;
 
-            var read = _port.Read(scratch, 0, Math.Min(scratch.Length, available));
+            int read;
+            try
+            {
+                read = _port.Read(scratch, 0, Math.Min(scratch.Length, available));
+            }
+            catch (ObjectDisposedException)
+            {
+                // 🔴 Review M-10. The BytesToRead call above swallowed exactly these two and this one did not,
+                // so a disposal landing BETWEEN them threw out of the drain — and
+                // ModbusBus.ResynchroniseAsync turns any throw from here into
+                // ModbusBusResynchronisationException + FaultLink(). Noisier teardown rather than a wrong
+                // number (the link is being torn down anyway), but the half-guarded shape was the defect: the
+                // method decided the teardown race mattered and then handled it in one of the two places it
+                // can happen. GatewayTcpBusLink had the identical asymmetry and is fixed in the same commit —
+                // a shared nit, and fixing only this one would be the §8.6 divergence again.
+                return total;
+            }
+            catch (InvalidOperationException)
+            {
+                // "The port is closed." — same reasoning. An IOException from a genuinely failing adapter
+                // still propagates, exactly as above.
+                return total;
+            }
+
             if (read <= 0) return total;
             total += read;
         }

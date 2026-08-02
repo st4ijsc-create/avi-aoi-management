@@ -165,15 +165,35 @@ public sealed class GatewayTcpBusLink : IModbusBusLink
         }
 
         var scratch = new byte[DrainScratchSize];
-        while (stream.DataAvailable)
+        try
         {
-            // Deliberately NOT swallowing IOException/SocketException here: a link that fails while being
-            // drained is genuinely faulted, and ModbusBus.ResynchroniseAsync's own catch tears it down and
-            // says so. Swallowing it would leave a dead socket looking like a quiet bus — which is the exact
-            // shape of wrong answer this whole file exists to prevent.
-            var read = stream.Read(scratch, 0, scratch.Length);
-            if (read <= 0) break;
-            total += read;
+            while (stream.DataAvailable)
+            {
+                // Deliberately NOT swallowing IOException/SocketException here: a link that fails while being
+                // drained is genuinely faulted, and ModbusBus.ResynchroniseAsync's own catch tears it down and
+                // says so. Swallowing it would leave a dead socket looking like a quiet bus — which is the exact
+                // shape of wrong answer this whole file exists to prevent.
+                var read = stream.Read(scratch, 0, scratch.Length);
+                if (read <= 0) break;
+                total += read;
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            // 🔴 Task D-3 review (M-10). The GetStream() call above already swallowed exactly this, and the
+            // loop did not — so a disposal landing between `DataAvailable` and `Read`, or between two
+            // iterations, threw out of the drain, and ModbusBus.ResynchroniseAsync turns any throw from here
+            // into ModbusBusResynchronisationException + FaultLink(). That is a noisier teardown rather than a
+            // wrong number (bus disposal deliberately does not wait for an in-flight transaction, and the link
+            // is being torn down anyway), but the half-guarded shape was the defect: the method decided the
+            // race mattered, then only handled it in the first of the three places it can happen.
+            //
+            // Fixed HERE as well as in SerialPortBusLink and in the same commit, deliberately. This is a shared
+            // nit, not a serial regression — and fixing only the serial one would create exactly the
+            // two-links-on-one-seam divergence D-3's own report §8.6 exists to catch.
+            //
+            // The count so far is still returned rather than discarded: bytes genuinely were drained, and
+            // reporting 0 would tell ModbusBus's quiet window the line had been silent when it had not.
         }
 
         return total;

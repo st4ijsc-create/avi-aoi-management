@@ -170,10 +170,12 @@ EXPECT_CONFORMANCE=22
 #                                            the WPF shell) carry no System.IO.Ports.dll; St4i.EdgeCore — which
 #                                            holds ModbusBus, the RTU framing and GatewayTcpBusLink — references
 #                                            neither the package nor the serial assembly; plus THREE positive
-#                                            controls without which those five would be vacuous (this test
+#                                            controls without which those FOUR would be vacuous (this test
 #                                            assembly's own output DOES carry the DLL, the serial assembly DOES
 #                                            reference the package, and the output search refuses a project that
-#                                            was never built rather than reporting it clean).
+#                                            was never built rather than reporting it clean). 4 + 3 = the 7 above.
+#                                            (Review M-6: this said "those five" — a hand-kept count that drifted
+#                                            when the never-built guard landed.)
 #
 # Six of those 30 exist only because a mutation survived an earlier version of this suite: the "never built"
 # guard (which every caller bypassed, so nothing ever ASKED it — a reachability gap a mutation cannot find on
@@ -231,7 +233,26 @@ EXPECT_CONFORMANCE=22
 # counts a dynamically skipped test in Total, so a hardware-conditional suite would make Skipped
 # environment-dependent and any fixed expectation would fail on the BETTER-equipped machine — trap #2 in a
 # hardware costume. It is in the solution so this gate's build keeps it compiling, and it adds no test.
-EXPECT_EDGECORE=824
+#
+# 🔴 D-3's SECOND review round raises this 824 -> 825 (+1), in SerialPortBusLinkTests (21 -> 22), for M-10:
+#   + 1  DrainBufferedInput_WhenThePortIsTornDownMidDrain_ReturnsWhatItAlreadyRemoved_RatherThanThrowing.
+#        The drain swallowed the two "the port went away underneath me" shapes around BytesToRead and NOT
+#        around Read, so a disposal landing between them threw out of the drain — and
+#        ModbusBus.ResynchroniseAsync turns any throw from there into ModbusBusResynchronisationException +
+#        FaultLink(). Noisier teardown rather than a wrong number, but the half-guarded shape was the defect.
+#        The test has TWO arms because the drain touches the port twice per iteration and a mutation aimed at
+#        the Read catch matched the BytesToRead one instead and SURVIVED — fixing one instance of a defect
+#        class buys no immunity to the class. Its load-bearing assertion is that PARTIAL progress is still
+#        reported: a `catch { return 0; }` would pass a "doesn't throw" test while telling the quiet window
+#        the line had been silent when 512 bytes had just come off it.
+#
+# 🔴 GatewayTcpBusLink gets the IDENTICAL one-line fix in the same commit and adds NO test. It is a shared
+# nit, not a serial regression, and fixing only the serial one would create exactly the two-links-on-one-seam
+# divergence D-3's report §8.6 exists to catch. It is untestable for the same reason the serial drain was
+# before review I-3 — that class holds a concrete TcpClient — and the mutation disabling it SURVIVES and is
+# recorded as such rather than papered over. All 198 Drivers.Modbus tests pass unchanged, which is the check
+# that the edit is behaviour-preserving.
+EXPECT_EDGECORE=825
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
