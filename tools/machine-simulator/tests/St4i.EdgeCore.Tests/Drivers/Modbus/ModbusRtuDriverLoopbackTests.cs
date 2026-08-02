@@ -436,6 +436,34 @@ public class ModbusRtuDriverLoopbackTests
         Assert.Contains("248", ex.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 🔴 Review I-5 — <b>the rule is callable BEFORE a lease exists, and the constructor calls that same
+    /// method.</b> D-7's connector factory has to validate the map before <c>ModbusBusRegistry.Acquire</c>,
+    /// because a constructor throw after a lease is taken leaks a reference count that nothing decrements — and
+    /// D-3 measured that a <c>SerialPort</c> opens a COM port exclusively, so the port stays unusable for the
+    /// process lifetime and presents as an unrelated connector failing to start.
+    ///
+    /// <para>The discriminating assertion is that <see cref="ModbusRtuDriver.ValidateRtuUnitId"/> throws with no
+    /// bus, no lease and no registry in the picture at all — a check that still needed a lease would not solve
+    /// the problem it was extracted for. The second half pins that the two paths give the SAME message, so a
+    /// future edit cannot let one drift into accepting what the other refuses.</para>
+    /// </summary>
+    [Fact]
+    public async Task ValidateRtuUnitId_RefusesWithoutALease_AndTheConstructorUsesTheSameRule()
+    {
+        var broadcast = ModbusRtuLoopbackHarness.BuildSingleRegisterMap("PLC-STANDALONE", unitId: 0);
+
+        // No harness, no bus, no lease — this is the whole point.
+        var standalone = Assert.Throws<ArgumentOutOfRangeException>(() => ModbusRtuDriver.ValidateRtuUnitId(broadcast));
+
+        await using var bus = ModbusRtuLoopbackHarness.Start();
+        await using var lease = bus.Lease();
+        var viaCtor = Assert.Throws<ArgumentOutOfRangeException>(() => new ModbusRtuDriver(lease, broadcast));
+
+        Assert.Equal(standalone.Message, viaCtor.Message);
+        Assert.Throws<ArgumentNullException>(() => ModbusRtuDriver.ValidateRtuUnitId(null!));
+    }
+
     /// <summary>The control for the two refusals above: <b>both edges of the addressable range are accepted.</b>
     /// Without this, narrowing the range (to 1..127, say, or to "> 0" only) would kill nothing — and a
     /// refusal that is too WIDE takes a legitimately-addressed device off the bus with a message blaming the

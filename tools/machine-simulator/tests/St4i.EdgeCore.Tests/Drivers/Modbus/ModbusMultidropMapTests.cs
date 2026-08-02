@@ -121,6 +121,12 @@ public class ModbusMultidropMapTests
         Assert.Equal(ModbusMultidropMap.DeviceInstanceId(BusId, 7), devices[1].InstanceId);
         Assert.Equal(ModbusMultidropMap.DeviceInstanceId(BusId, 200), devices[2].InstanceId);
 
+        // 🔴 Review m1 — the LITERAL format, pinned exactly once. Every other assertion in this suite goes
+        // through DeviceInstanceId, which compares the generator with itself and would survive any change to
+        // the format. That format is load-bearing: it becomes the pipeline slot label and therefore the alarm
+        // TargetId, so a silent change forks an operator's acknowledged alarms once D-7 wires this up.
+        Assert.Equal("rs485-line1:unit7", devices[1].InstanceId);
+
         // The bus id is a prefix of each device id, so an operator grepping a log for their connector's name
         // finds every device on it.
         Assert.All(devices, d => Assert.StartsWith(BusId, d.InstanceId, StringComparison.Ordinal));
@@ -199,6 +205,38 @@ public class ModbusMultidropMapTests
 
         var byRegisters = Assert.Throws<InvalidOperationException>(() => ModbusMultidropMap.FanOut(withRegisters, BusId));
         Assert.Contains("registers", byRegisters.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 🔴 Review I-2 — <b>EVERY device-level key is refused at the root, not only the two that are mandatory.</b>
+    ///
+    /// <para>The first version of the check listed only <c>machineCode</c> and <c>registers</c>, on the reasoning
+    /// that a root declaring a REQUIRED field is obviously declaring a device. That is the wrong test, and the
+    /// gap it left is exactly the failure the no-inheritance decision exists to prevent:
+    /// <c>{"pollIntervalMs": 5000, "devices": […]}</c> parsed cleanly and every device silently ran its own value
+    /// or the default, so the file on disk and the configuration actually running were two different things.
+    /// The right test is "could a reader believe this applies to the bus", and that set is every key the
+    /// per-device parse consumes.</para>
+    ///
+    /// <para>Each key is asserted individually rather than as one representative, because a mutation deleting
+    /// one entry from the list would survive a test that only checked another.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("\"unitId\":9")]
+    [InlineData("\"pollIntervalMs\":5000")]
+    [InlineData("\"readTimeoutMs\":250")]
+    [InlineData("\"retries\":3")]
+    [InlineData("\"commands\":[]")]
+    public void EveryDeviceLevelKeyAtTheRoot_IsRefused_NotOnlyTheMandatoryOnes(string rootField)
+    {
+        var json = "{" + rootField + ",\"devices\":[" + DeviceJson("LINE1-A", 1) + "]}";
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusMultidropMap.FanOut(json, BusId));
+
+        // Names the field it found — an operator with a bus of eight needs to know WHICH root key is the problem.
+        var fieldName = rootField.Split(':')[0].Trim('"');
+        Assert.Contains(fieldName, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("nothing is inherited from the bus level", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -314,6 +352,127 @@ public class ModbusMultidropMapTests
         Assert.Contains(warnings, w => w.Contains("readTimeoutMs", StringComparison.Ordinal));
         // The value was ignored in favour of the derived default, exactly as for a single-device map.
         Assert.Equal(4_000, devices[1].Map.EffectiveReadTimeoutMs);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Review I-1 — the bus-wide cost that IS decidable from the document.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>A device that can monopolise the shared bus is named, with the number, at parse time.</b> Every
+    /// input to <see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/> is in this document — register count, retry
+    /// count, read timeout — so unlike bus THROUGHPUT (which needs the line rate) there is nothing undecidable
+    /// about it, and saying nothing was the gap the review found.
+    ///
+    /// <para>The map here is the review's own example and is accepted by every other check in this class:
+    /// <c>readTimeoutMs: 60000</c> (the map's own maximum) with <c>retries: 5</c> (likewise) over 20 registers
+    /// = <c>20 × 6 × 60 000 = 7 200 000 ms</c>, about two hours of shared bus per poll cycle. The assertions are
+    /// on the NUMBER and the device, not on the fact that some warning appeared.</para>
+    /// </summary>
+    [Fact]
+    public void ADeviceThatCanHoldTheBusForHours_IsNamedWithItsNumber_AtParseTime()
+    {
+        var registers = string.Join(",", Enumerable.Range(0, 20).Select(i =>
+            $"{{\"address\":{i},\"type\":\"Holding\",\"dataType\":\"UInt16\",\"scale\":1.0,\"metric\":\"m{i}\"}}"));
+        var hog =
+            "{\"machineCode\":\"BUS-HOG\",\"unitId\":1,\"pollIntervalMs\":1000,\"readTimeoutMs\":60000,\"retries\":5," +
+            "\"registers\":[" + registers + "]}";
+
+        var warnings = new List<string>();
+        var devices = ModbusMultidropMap.FanOut(
+            BusJson(hog, DeviceJson("LINE1-B", 2, pollIntervalMs: 1000, extraFields: ",\"readTimeoutMs\":250")),
+            BusId, warnings.Add);
+
+        // Parsed, not refused — see WarnAboutDevicesThatCanMonopoliseTheBus for why this warns.
+        Assert.Equal(2, devices.Count);
+        Assert.Equal(7_200_000L, devices[0].Map.WorstCaseBusHoldMs);
+
+        var warning = Assert.Single(warnings, w => w.Contains("BUS-HOG", StringComparison.Ordinal));
+        Assert.Contains("7200000", warning, StringComparison.Ordinal);
+        Assert.Contains("20 register(s) × 6 attempt(s) × 60000 ms", warning, StringComparison.Ordinal);
+
+        // The well-behaved sibling is NOT warned about — otherwise the warning would be noise rather than a
+        // signal, which is the whole reason a threshold was chosen instead of always reporting the number.
+        Assert.DoesNotContain(warnings, w => w.Contains("LINE1-B", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 🔴 The control for the warning above, and the reason the threshold is what it is: <b>a bus whose devices
+    /// declare a read timeout sized for their actual round trip is silent.</b> Eight 8-register devices at a
+    /// 1 s cadence with <c>readTimeoutMs: 300</c> hold the line for <c>8 × 2 × 300 = 4 800 ms</c> against the
+    /// 7 000 ms of cadence their seven siblings are collectively asking for.
+    ///
+    /// <para>Without this test the check could be tightened to "always warn" and nothing would fail — and a
+    /// warning that fires for every bus is exactly the noise §6 of task-4-report.md rejected.</para>
+    /// </summary>
+    [Fact]
+    public void ACorrectlySizedBus_ProducesNoHoldWarningAtAll()
+    {
+        var eightRegisters = string.Join(",", Enumerable.Range(0, 8).Select(i =>
+            $"{{\"address\":{i},\"type\":\"Holding\",\"dataType\":\"UInt16\",\"scale\":1.0,\"metric\":\"m{i}\"}}"));
+        var device = new Func<int, string>(unit =>
+            $"{{\"machineCode\":\"SIZED-{unit}\",\"unitId\":{unit},\"pollIntervalMs\":1000,\"readTimeoutMs\":300," +
+            "\"registers\":[" + eightRegisters + "]}");
+
+        var warnings = new List<string>();
+        var devices = ModbusMultidropMap.FanOut(
+            BusJson(Enumerable.Range(1, 8).Select(device).ToArray()), BusId, warnings.Add);
+
+        Assert.Equal(8, devices.Count);
+        Assert.Equal(4_800L, devices[0].Map.WorstCaseBusHoldMs);
+        Assert.Empty(warnings);
+    }
+
+    /// <summary>
+    /// A bus of ONE is never warned about, whatever its hold: with no siblings there is nobody to stall, and the
+    /// hold is exactly the private cost <see cref="ModbusTcpDriver"/> has always paid on its own socket.
+    ///
+    /// <para>🔴 <b>Both document shapes, and the second is the one that matters — a mutation said so.</b> My
+    /// first version of this test used only the LEGACY single-device document, and deleting the
+    /// <c>devices.Count &lt; 2</c> guard survived it: that path returns early and never reaches the check at
+    /// all, so the test was asserting against code it could not run. The shape the guard actually defends is a
+    /// <c>devices</c> array with exactly ONE element, where the sum of the other devices' cadence is 0 and every
+    /// such bus would otherwise be warned about. Both arms are here now — the legacy one because it is the
+    /// common case, the one-element one because it is the reachable one.</para>
+    /// </summary>
+    [Fact]
+    public void ABusOfOne_IsNeverWarnedAbout_InEitherDocumentShape()
+    {
+        var solo = DeviceJson("SOLO", 1, extraFields: ",\"readTimeoutMs\":60000");
+
+        var legacyWarnings = new List<string>();
+        var legacy = ModbusMultidropMap.FanOut(solo, BusId, legacyWarnings.Add);
+
+        Assert.Single(legacy);
+        Assert.Equal(120_000L, legacy[0].Map.WorstCaseBusHoldMs);   // 1 register × 2 attempts × 60 000 ms
+        Assert.Empty(legacyWarnings);
+
+        // 🔴 The arm that kills the mutation: a one-element `devices` array DOES reach the check.
+        var arrayWarnings = new List<string>();
+        var asArray = ModbusMultidropMap.FanOut(BusJson(solo), BusId, arrayWarnings.Add);
+
+        Assert.Single(asArray);
+        Assert.Equal(120_000L, asArray[0].Map.WorstCaseBusHoldMs);
+        Assert.Empty(arrayWarnings);
+    }
+
+    /// <summary>The warning names the DOMINANT term, because the fix differs. A derived read timeout is the
+    /// product's own default — <c>max(1000, PollIntervalMs × 4)</c>, reasoned for a dedicated TCP socket where a
+    /// stalled read costs only its own device — and the operator simply has to declare one; a declared timeout is
+    /// a number they chose. A message that said only "this is too long" would be equally true and not actionable.</summary>
+    [Fact]
+    public void WhenTheReadTimeoutIsDERIVED_TheWarningSaysSo_AndNamesTheDefaultAsTheCause()
+    {
+        var warnings = new List<string>();
+
+        ModbusMultidropMap.FanOut(
+            BusJson(DeviceJson("DERIVED-A", 1, pollIntervalMs: 1000), DeviceJson("DERIVED-B", 2, pollIntervalMs: 1000)),
+            BusId, warnings.Add);
+
+        var warning = Assert.Single(warnings, w => w.Contains("DERIVED-A", StringComparison.Ordinal));
+        Assert.Contains("DERIVED", warning, StringComparison.Ordinal);
+        Assert.Contains("max(1000, 1000 × 4) = 4000 ms", warning, StringComparison.Ordinal);
+        Assert.Contains("declare 'readTimeoutMs'", warning, StringComparison.Ordinal);
     }
 
     // ─────────────────────────────────────────────────────────────────────

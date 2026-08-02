@@ -111,6 +111,28 @@ public static class ModbusMultidropMap
     public const string DevicesProperty = "devices";
 
     /// <summary>
+    /// 🔴 Task D-4 review, I-2 — <b>the COMPLETE set of keys <see cref="ModbusRegisterMap.FromJson"/> reads,
+    /// none of which may appear beside <see cref="DevicesProperty"/> at the root.</b>
+    ///
+    /// <para>The first version of this list held only <c>machineCode</c> and <c>registers</c> — the two fields
+    /// <see cref="ModbusRegisterMap.FromJson"/> REQUIRES — on the reasoning that a root declaring either of them
+    /// is obviously declaring a device. That was the wrong test, and the gap it left is precisely the failure
+    /// this class's own no-inheritance decision exists to prevent: <c>{"pollIntervalMs": 5000, "devices": […]}</c>
+    /// parsed cleanly and every device silently ran its own value or the default, so <b>the file on disk and the
+    /// configuration actually running were two different things</b> — the exact sentence used to justify the
+    /// decision, left reachable by the check written to enforce it.
+    ///
+    /// <para>The right test is not "is this field required" but "could a reader believe this field applies to
+    /// the bus". That set is finite and knowable: it is every key the per-device parse consumes. Listed
+    /// exhaustively here, in <see cref="ModbusRegisterMap"/>'s own declaration order, so the next person to add
+    /// a map field has one obvious place to add it too.</para>
+    /// </summary>
+    private static readonly string[] DeviceLevelKeys =
+    {
+        "machineCode", "unitId", "pollIntervalMs", "registers", "commands", "readTimeoutMs", "retries",
+    };
+
+    /// <summary>
     /// Parses <paramref name="json"/> — either shape (see this class's doc comment) — and fans it out into one
     /// <see cref="ModbusBusDevice"/> per device on the bus, in document order.
     ///
@@ -187,10 +209,11 @@ public static class ModbusMultidropMap
                 $"Modbus register map: '{DevicesProperty}' must be an array of single-device maps (got {devices.ValueKind}).");
         }
 
-        // A document that declares a bus AND a device at the root is two contradictory declarations. Checked
-        // against the two fields FromJson itself requires, so the message can name what it found rather than
-        // listing every property a device element may carry.
-        foreach (var conflicting in new[] { "machineCode", "registers" })
+        // A document that declares a bus AND a device field at the root is two contradictory declarations, and
+        // the SILENT half is the dangerous one: a root `pollIntervalMs` looks like it governs the bus and does
+        // nothing at all. Checked against the COMPLETE device-level key set (see DeviceLevelKeys), naming what
+        // it found rather than listing the whole set back at the operator.
+        foreach (var conflicting in DeviceLevelKeys)
         {
             if (root.TryGetProperty(conflicting, out _))
             {
@@ -277,11 +300,97 @@ public static class ModbusMultidropMap
                 Map: map));
         }
 
+        WarnAboutDevicesThatCanMonopoliseTheBus(fanned, logWarning);
         return fanned;
+    }
+
+    /// <summary>
+    /// 🔴 Task D-4 review, I-1 — <b>the one bus-wide cost that IS decidable from this document, computed and
+    /// reported.</b>
+    ///
+    /// <para><see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/> is how long one device can hold the shared
+    /// arbitration lock for a single poll, and every input to it is in the map. A device declaring
+    /// <c>readTimeoutMs: 60000</c> with <c>retries: 5</c> over 20 registers holds the line for about TWO HOURS
+    /// per poll cycle — accepted by every check above, and stalling every other device on the bus for all of
+    /// it. Saying nothing about that while this class's own report argues "refuse what is decidable" was the
+    /// gap the review found.</para>
+    ///
+    /// <para><b>The threshold, and why it is this one.</b> A device's hold is compared against the SUM of the
+    /// OTHER devices' poll intervals — i.e. against the time the rest of the bus collectively expects to get.
+    /// The obvious alternative, "the hold exceeds this device's own poll interval", is useless: the derived
+    /// default is already <c>PollIntervalMs × 4</c>, so it is true of every device on every correctly
+    /// configured bus. This threshold uses only values already in the same document, and a bus whose devices
+    /// declare a read timeout sized for their actual round trip does not trip it (eight 8-register devices at
+    /// a 1 s cadence with <c>readTimeoutMs: 300</c>: hold 4 800 ms against 7 000 ms of siblings' cadence).</para>
+    ///
+    /// <para><b>🔴 It WARNS rather than refuses, and the distinction is the product's own default.</b> With no
+    /// <c>readTimeoutMs</c> declared, <see cref="ModbusRegisterMap.EffectiveReadTimeoutMs"/> derives
+    /// <c>max(1000, PollIntervalMs × 4)</c> — a value THIS PRODUCT chose, reasoned for a dedicated TCP socket
+    /// where a stalled read costs only its own device (see that property's own remarks) — and on a multidrop bus
+    /// that default alone trips this check. <b>Refusing would reject a bus whose operator wrote nothing wrong,
+    /// on account of a default the product supplied</b>, which is a worse failure than a loud warning: the
+    /// operator has no way to prove the product wrong, whereas a warning naming the number and the fix is
+    /// directly actionable. Refusal stays for what the operator actually declared and which cannot work at all —
+    /// a duplicate slave address, an unanswerable unit id. This is the same line §6 of task-4-report.md draws;
+    /// what the review corrected is that this quantity falls on the "decidable" side of it and was not being
+    /// computed at all.</para>
+    ///
+    /// <para>Single-device documents are skipped entirely: with no siblings there is no one to stall, and the
+    /// hold is exactly the private cost <see cref="ModbusTcpDriver"/> has always paid.</para>
+    /// </summary>
+    private static void WarnAboutDevicesThatCanMonopoliseTheBus(
+        IReadOnlyList<ModbusBusDevice> devices, Action<string>? logWarning)
+    {
+        if (logWarning is null || devices.Count < 2)
+        {
+            return;
+        }
+
+        long siblingCadenceMs = 0;
+        foreach (var device in devices)
+        {
+            siblingCadenceMs += device.Map.PollIntervalMs;
+        }
+
+        foreach (var device in devices)
+        {
+            var othersCadenceMs = siblingCadenceMs - device.Map.PollIntervalMs;
+            var hold = device.Map.WorstCaseBusHoldMs;
+            if (hold <= othersCadenceMs)
+            {
+                continue;
+            }
+
+            // Name the dominant term, because the fix differs: a DERIVED timeout is the product's own default
+            // and the operator simply has to declare one, whereas a DECLARED one is a number they chose.
+            var timeoutSource = device.Map.ReadTimeoutMs is null
+                ? $"its read timeout is DERIVED from its poll cadence (max(1000, {device.Map.PollIntervalMs} × 4) = " +
+                  $"{device.Map.EffectiveReadTimeoutMs} ms), a default sized for a dedicated connection rather than a " +
+                  "shared line — declare 'readTimeoutMs' for this device, sized for its slowest legitimate single " +
+                  "round trip"
+                : $"it declares 'readTimeoutMs' {device.Map.EffectiveReadTimeoutMs}";
+
+            logWarning(
+                $"Modbus multidrop bus: device '{device.MachineCode}' (unit {device.UnitId}) can hold the shared " +
+                $"bus for up to {hold} ms in one poll — {device.Map.Registers.Count} register(s) × " +
+                $"{device.Map.EffectiveRetries + 1} attempt(s) × {device.Map.EffectiveReadTimeoutMs} ms — which " +
+                $"exceeds the {othersCadenceMs} ms of poll cadence every OTHER device on this bus is asking for " +
+                $"combined. While this device is not answering, they all wait. Cause: {timeoutSource}.");
+        }
     }
 
     /// <summary>The instance id one device on <paramref name="busInstanceId"/> registers under. Exposed so a
     /// caller (and a test) names the same string this class does instead of restating the format — the same
-    /// reason D-2 puts bus-key construction on the link types rather than at call sites.</summary>
+    /// reason D-2 puts bus-key construction on the link types rather than at call sites.
+    ///
+    /// <para><b>Review m5 — this derivation is not collision-free across BUSES, and nothing here can make it
+    /// so.</b> A bus named <c>X</c> with a device at unit 1 and a bus named <c>X:unit1</c> with a legacy
+    /// single-device map both derive the instance id <c>X:unit1</c>, and
+    /// <c>ConnectorRegistry.Register</c> is last-write-wins on the id — so the second silently replaces the
+    /// first. Unreachable today (nothing in <c>src/</c> supplies a bus instance id at all — see
+    /// task-4-report.md §7.4), and not closable here either, because this method sees ONE bus and the collision
+    /// is between two. It belongs with whatever D-7 builds to allocate bus instance ids: either reject a bus id
+    /// containing <c>":unit"</c>, or check the derived ids against the registry before registering. Named
+    /// rather than left for someone to find as a connector that vanished.</para></summary>
     public static string DeviceInstanceId(string busInstanceId, byte unitId) => $"{busInstanceId}:unit{unitId}";
 }

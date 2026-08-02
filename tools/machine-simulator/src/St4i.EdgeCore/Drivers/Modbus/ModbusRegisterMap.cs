@@ -429,14 +429,49 @@ public sealed class ModbusRegisterMap
     [JsonIgnore]
     public int? Retries { get; init; }
 
-    /// <summary>The value <see cref="ModbusTcpDriver"/> actually applies to
+    /// <summary>The value <see cref="ModbusTcpDriver"/> <b>and <see cref="ModbusRtuDriver"/></b> apply to
     /// <c>Transport.ReadTimeout</c>/<c>WriteTimeout</c>: <see cref="ReadTimeoutMs"/> if the register map
-    /// set one, else the original derived default.</summary>
+    /// set one, else the original derived default.
+    ///
+    /// <para>🔴 <b>Task D-4 — the derived default was reasoned for a DEDICATED connection, and on a shared
+    /// RS-485 bus it is the largest term in the cost one unanswering device charges everyone else.</b>
+    /// <c>Math.Max(1000, PollIntervalMs * 4)</c> is generous precisely because on <see cref="ModbusTcpDriver"/>'s
+    /// own socket a device that answers slowly costs only ITSELF — nothing else is waiting on that connection.
+    /// On a multidrop bus the same value is multiplied by <see cref="Registers"/>.Count and by
+    /// <see cref="EffectiveRetries"/> + 1 and is charged to the SHARED arbitration lock. See
+    /// <see cref="WorstCaseBusHoldMs"/> for the number and <see cref="ModbusMultidropMap.FanOut"/> for the
+    /// parse-time warning. <b>A multidrop device should normally DECLARE this field</b>, sized for its slowest
+    /// legitimate single round trip, rather than inherit a value derived from its poll cadence.</para></summary>
     public int EffectiveReadTimeoutMs => ReadTimeoutMs ?? Math.Max(1000, PollIntervalMs * 4);
 
-    /// <summary>The value <see cref="ModbusTcpDriver"/> actually applies to <c>Transport.Retries</c>:
-    /// <see cref="Retries"/> if the register map set one, else the original default of 1.</summary>
+    /// <summary>The value <see cref="ModbusTcpDriver"/> and <see cref="ModbusRtuDriver"/> apply to
+    /// <c>Transport.Retries</c>: <see cref="Retries"/> if the register map set one, else the original default
+    /// of 1. On a shared bus this is a MULTIPLIER on <see cref="WorstCaseBusHoldMs"/>, because a retry is a
+    /// whole fresh request under the same per-attempt bound rather than an extension of the first one.</summary>
     public int EffectiveRetries => Retries ?? 1;
+
+    /// <summary>
+    /// 🔴 Task D-4 — <b>the longest this device can hold a shared RS-485 bus for ONE poll, decidable entirely
+    /// from this document.</b> <c>Registers.Count × (EffectiveRetries + 1) × EffectiveReadTimeoutMs</c>: a poll
+    /// issues one request per register (block batching is a documented follow-up — see
+    /// <see cref="ModbusTcpDriver"/>'s class remarks), each request is re-sent <see cref="EffectiveRetries"/>
+    /// times when it fails, and each attempt is bounded by <see cref="EffectiveReadTimeoutMs"/>. The whole poll
+    /// runs inside ONE <see cref="ModbusBusTransaction"/>, so the arbitration lock is held across all of it and
+    /// every other device on the line waits.
+    ///
+    /// <para><b>Why this is a computed property rather than a sentence in a report.</b> Values this class
+    /// already accepts as valid reach genuinely absurd holds: <c>readTimeoutMs: 60000</c> (its own
+    /// <see cref="MaxReadTimeoutMs"/>) with <c>retries: 5</c> (<see cref="MaxRetries"/>) on a 20-register device
+    /// is <c>20 × 6 × 60 000 ≈ 2 HOURS</c> of shared bus per poll cycle — and every input to that number is in
+    /// this document. Nothing outside it is needed, which is exactly why it IS checked, unlike bus THROUGHPUT
+    /// (which needs the line rate, and which <see cref="ModbusMultidropMap"/> deliberately does not check).</para>
+    ///
+    /// <para><see langword="long"/>, not <see langword="int"/>, deliberately: <see cref="Registers"/> has no
+    /// declared upper bound, so a large map at the two maxima above overflows a 32-bit product — and a number
+    /// that silently wrapped NEGATIVE would make the very check written to catch an absurd hold report a
+    /// comfortable one.</para>
+    /// </summary>
+    public long WorstCaseBusHoldMs => (long)Registers.Count * (EffectiveRetries + 1) * EffectiveReadTimeoutMs;
 
     /// <summary>Parses a register-map JSON document (see the class doc comment for the expected shape;
     /// property names are matched case-insensitively, enum values as their C# member names — "Holding"/

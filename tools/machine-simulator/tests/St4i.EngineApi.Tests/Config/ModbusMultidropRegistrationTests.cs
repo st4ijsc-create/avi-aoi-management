@@ -278,7 +278,15 @@ public sealed class ModbusMultidropRegistrationTests
         Assert.DoesNotContain(ModbusMultidropMap.DeviceInstanceId("bus-two", 2), registry.RegisteredIds);
 
         // 🔴 And the operator is told WHO holds it.
-        var warning = Assert.Single(log.Messages, m => m.Contains(shared, StringComparison.Ordinal));
+        //
+        // Matched on the REGISTRATION message's own phrase, not merely on the machine code. The first version
+        // of this assertion matched any message mentioning the code, and the review round's new parse-time
+        // hold warning (ModbusMultidropMap, I-1) legitimately mentions every device by name — so the assertion
+        // started matching two messages and the gate went red. That was the assertion being loose rather than
+        // the warning being wrong: "some message mentions this machine" was never the property under test.
+        var warning = Assert.Single(
+            log.Messages,
+            m => m.Contains(shared, StringComparison.Ordinal) && m.Contains("was NOT registered", StringComparison.Ordinal));
         Assert.Contains("bus-one", warning, StringComparison.Ordinal);
         Assert.Contains("bus-two", warning, StringComparison.Ordinal);
     }

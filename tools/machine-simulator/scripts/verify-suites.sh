@@ -301,7 +301,46 @@ EXPECT_CONFORMANCE=22
 # src/St4i.EngineApi/Config and their two test projects, so a moved total anywhere else would mean this task
 # reached somewhere it had no business reaching. EXPECT_CONFORMANCE in particular stays 22 — RTU conformance
 # wiring is still D-6.
-EXPECT_EDGECORE=850
+#
+# 🔴 D-4's REVIEW FIX round raises this 850 -> 860 (+10), counted from the runner. Two files:
+#   + 9  ModbusMultidropMapTests      (17 -> 26)
+#   + 1  ModbusRtuDriverLoopbackTests (11 -> 12)
+# ModbusMultidropBusTests stays 5 — the m2/m7 fixes there change only what the test PRINTS, not what it
+# asserts, and a moved total would mean they did more than that.
+#
+#   + 5  I-2  EveryDeviceLevelKeyAtTheRoot_IsRefused_NotOnlyTheMandatoryOnes — one InlineData per device-level
+#             key. {"pollIntervalMs": 5000, "devices": […]} parsed cleanly and every device silently ran its
+#             own value: verbatim the failure the class's own no-inheritance doc uses to justify itself, left
+#             reachable by the check written to prevent it. The first list held only the two MANDATORY fields
+#             — the wrong test; the right one is "could a reader believe this applies to the bus", which is
+#             every key the per-device parse consumes. Each key is a separate case because a mutation deleting
+#             one entry survives a test that checks another.
+#   + 3  I-1  The worst-case arbitration hold is decidable from the map alone and nothing computed it:
+#             20 registers x (5 retries + 1) x 60 000 ms readTimeout ~= TWO HOURS of shared bus per poll, every
+#             input declared, every value inside this map's own accepted maxima. ModbusRegisterMap gains
+#             WorstCaseBusHoldMs (long, because that product overflows int and a NEGATIVE hold would make the
+#             check report a comfortable number) and FanOut warns, comparing each device's hold against the SUM
+#             OF THE OTHER devices' poll intervals. Three tests: the hog is named with its arithmetic; a
+#             correctly-sized bus is SILENT (the control — without it the check could be tightened into noise);
+#             and the warning names the DOMINANT term, because a derived timeout is the product's own default
+#             and a declared one is the operator's number.
+#   + 1  I-1  ABusOfOne_IsNeverWarnedAbout_InEitherDocumentShape, and it is here because a mutation found the
+#             first version could not fail: it used only the LEGACY single-device document, which RETURNS
+#             EARLY and never reaches the check. The shape the devices.Count < 2 guard actually defends is a
+#             one-element `devices` ARRAY, where the siblings' cadence is 0 and every such bus would otherwise
+#             be warned about. Both arms now.
+#   + 1  I-5  ValidateRtuUnitId_RefusesWithoutALease_AndTheConstructorUsesTheSameRule. The rule moved out of
+#             the ctor into a public static so D-7 can refuse a bad map BEFORE ModbusBusRegistry.Acquire — a
+#             ctor throw after a lease is taken leaks a reference count nothing decrements, and D-3 measured
+#             that SerialPort opens a COM port EXCLUSIVELY, so the port is dead for the process lifetime and
+#             presents as an unrelated connector failing to start. The discriminating assertion is that it
+#             throws with no bus, no lease and no registry at all; the second half pins that both paths give
+#             the SAME message so they cannot drift.
+#
+# 9 further mutations this round (8 + a re-run), all KILLED, every verdict gated on all five verbs. ONE
+# survived first — the devices.Count < 2 guard — and was a real vacuous test rather than dead code; see the
+# +1 above.
+EXPECT_EDGECORE=860
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:

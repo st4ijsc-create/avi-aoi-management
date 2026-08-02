@@ -78,12 +78,22 @@ public sealed class ModbusRtuDriver : IDeviceDriver
     /// the line. A configuration that cannot work is refused where an operator gets told, not left to present
     /// itself as a dead device.
     ///
-    /// <para><b>A caller that already acquired <paramref name="lease"/> owns releasing it when this throws.</b>
-    /// A lease is taken before this constructor can be called (it is a parameter), so a throw here leaves the
-    /// caller holding a reference count that nothing else will ever decrement — and the bus would then outlive
-    /// every driver on it. D-7's connector factory must either validate the map before
-    /// <c>ModbusBusRegistry.Acquire</c> or dispose the lease in a <c>catch</c>; there is no way for this class
-    /// to do it, because it cannot tell a lease it was handed from one it created.</para></exception>
+    /// <para>🔴 <b>Review I-5 — a caller that already acquired <paramref name="lease"/> must dispose it when
+    /// this throws, and the cheapest way not to need to is <see cref="ValidateRtuUnitId"/> BEFORE
+    /// <c>ModbusBusRegistry.Acquire</c>.</b> A leaked lease is not a tidy-up nicety: the reference count never
+    /// reaches zero, so the bus — and the physical link under it — lives for the rest of the process, and D-3
+    /// measured that <c>System.IO.Ports.SerialPort</c> opens a COM port EXCLUSIVELY. The port stays unusable
+    /// until restart, and it presents as an unrelated connector failing to start.</para>
+    ///
+    /// <para><b>The first version of this remark gave the wrong reason</b> — *"there is no way for this class to
+    /// do it, because it cannot tell a lease it was handed from one it created"* — and it contradicted the
+    /// <c>lease</c> parameter's own doc one line above, which says <b>the driver OWNS it</b>. Ownership
+    /// transfers at the call, so provenance is irrelevant and disposing on constructor failure would have been
+    /// perfectly correct; <see cref="ModbusBusLease.DisposeAsync"/> is idempotent by <c>Interlocked.Exchange</c>,
+    /// so even a double release is harmless. What makes validating FIRST the better answer is not that this
+    /// class cannot dispose — it is that a constructor cannot dispose ASYNCHRONOUSLY without blocking, and the
+    /// failure is fully knowable before any lease is taken. Recorded rather than quietly reworded, because two
+    /// artefacts disagreeing about ownership is how the next author picks the wrong one.</para></exception>
     public ModbusRtuDriver(
         ModbusBusLease lease,
         ModbusRegisterMap map,
@@ -92,6 +102,36 @@ public sealed class ModbusRtuDriver : IDeviceDriver
         _lease = lease ?? throw new ArgumentNullException(nameof(lease));
         _map = map ?? throw new ArgumentNullException(nameof(map));
         _logError = logError;
+
+        ValidateRtuUnitId(map);
+
+        // Includes the unit id, unlike the TCP driver's — on a multidrop bus the endpoint alone does not
+        // identify a device, and this string keys slot labels and therefore alarm TargetIds.
+        Id = $"modbus-rtu:{lease.Bus.Key}:unit{map.UnitId}:{map.MachineCode}";
+        Health = DriverHealthState.Down;
+    }
+
+    /// <summary>
+    /// 🔴 Task D-4, review I-5 — <b>the RTU addressing rule, callable BEFORE a lease exists.</b> Extracted out of
+    /// the constructor so D-7's connector factory can refuse a bad map without first calling
+    /// <c>ModbusBusRegistry.Acquire</c> — see the constructor's <c>ArgumentOutOfRangeException</c> remarks for
+    /// what a leaked lease costs (an exclusively-opened COM port, unusable for the process lifetime, presenting
+    /// as an unrelated connector failing to start).
+    ///
+    /// <para>Extracting it rather than telling D-7 to restate the checks matters for the usual reason: two
+    /// statements of one rule drift, and the version that drifts here would either let a broadcast address
+    /// through or refuse a legitimate one. The constructor calls THIS method, so there is exactly one
+    /// implementation and one pair of messages.</para>
+    ///
+    /// <para>Unit 0 is the Modbus BROADCAST address — write-only by definition, so a read addressed to it can
+    /// never be answered — and 248–255 are RESERVED by <c>MODBUS over Serial Line V1.02</c> §2.2. Both are legal
+    /// values for <see cref="ModbusRegisterMap.UnitId"/> and one of them (0) is legal and common over Modbus
+    /// TCP, which is why this rule lives here and not in the shared parse path.</para>
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The map's unit id is 0 or 248–255.</exception>
+    public static void ValidateRtuUnitId(ModbusRegisterMap map)
+    {
+        ArgumentNullException.ThrowIfNull(map);
 
         if (map.UnitId < MinUnitId)
         {
@@ -111,11 +151,6 @@ public sealed class ModbusRtuDriver : IDeviceDriver
                 $"would time out forever and tax every other device on the bus. Individually addressable slaves " +
                 $"are [{MinUnitId},{MaxUnitId}].");
         }
-
-        // Includes the unit id, unlike the TCP driver's — on a multidrop bus the endpoint alone does not
-        // identify a device, and this string keys slot labels and therefore alarm TargetIds.
-        Id = $"modbus-rtu:{lease.Bus.Key}:unit{map.UnitId}:{map.MachineCode}";
-        Health = DriverHealthState.Down;
     }
 
     public string Id { get; }

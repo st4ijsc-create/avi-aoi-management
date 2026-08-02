@@ -457,11 +457,25 @@ public class ModbusMultidropBusTests
         // anything else would read as the tax.
         Assert.True(bus.Links.Device.FramesSilenced > 0, "the silenced slave should have replied and been dropped");
 
+        // 🔴 Review m7 — MEASURED and DERIVED are separate lines. This test measures RATES; it never measures
+        // the hold, and a derivation printed inside a line labelled MEASURED reads as though it did.
+        //
+        // And m2 — the baseline rate is set by this harness, not by a bus: pollIntervalMs 1 becomes ~15.6 ms
+        // under Windows' timer quantization, so ~135 reads/s is a floor imposed by Task.Delay and NOT the
+        // in-memory link's capacity (ASlowPollerIsNotStarved_… measures the same harness at ~40 000
+        // transactions/s with pollIntervalMs 0). The error is conservative — a faster baseline would make the
+        // ratio LARGER — but the number is quoted in the report, so the caveat travels with it.
         _output.WriteLine(
             $"MEASURED dead-device tax: two healthy devices on an idle bus {rateWithout:F1} reads/s; the same two " +
-            $"with ONE unanswered device (1 register x 2 attempts x 500 ms = 1000 ms of lock per poll) " +
-            $"{rateWith:F1} reads/s — a {(rateWith > 0 ? rateWithout / rateWith : double.PositiveInfinity):F1}x " +
-            $"collapse. {bus.Links.Device.FramesSilenced} replies silenced.");
+            $"with ONE unanswered device {rateWith:F1} reads/s — a " +
+            $"{(rateWith > 0 ? rateWithout / rateWith : double.PositiveInfinity):F1}x collapse. " +
+            $"{bus.Links.Device.FramesSilenced} replies silenced.");
+        _output.WriteLine(
+            "DERIVED (from the map, not measured here): the dead device's WorstCaseBusHoldMs is 1 register x " +
+            "2 attempts x 500 ms = 1000 ms of arbitration lock per poll.");
+        _output.WriteLine(
+            "CAVEAT: the baseline is bounded by Task.Delay(1) ~= 15.6 ms on Windows, not by the link — see this " +
+            "assertion's own comment.");
 
         Assert.True(withoutDead > 0, "the two healthy devices produced no reading at all on an idle bus");
         Assert.True(
