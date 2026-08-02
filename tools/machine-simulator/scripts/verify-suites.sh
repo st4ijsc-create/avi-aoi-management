@@ -68,7 +68,7 @@ EXPECT_CONFORMANCE=22
 # open afterwards) — no retry, no share-mode tolerance, NO NEW TUNABLE, and no test added or removed. The
 # reviewer's 1-in-4 became 0 failures in 12 consecutive runs, but the load-bearing argument is the mechanism,
 # not the sample: after DisposeAsync returns there is no writer for the read to collide with.
-# 🔴 Đợt D, D-2 raises this 741 -> 786 (+45).
+# 🔴 Đợt D, D-2 raises this 741 -> 787 (+46).
 #
 # 🔴 COUNTED FROM THE RUNNER (`dotnet test --list-tests`), not by hand. The previous revision of this block
 # said 7/4/8/12/8 where the truth was 7/4/9/11/8 — two files wrong, and the two errors CANCELLED, so the
@@ -83,12 +83,13 @@ EXPECT_CONFORMANCE=22
 #                                             (Health degrades, iterator survives); Health never reporting
 #                                             Connected even transiently against a device that never answers;
 #                                             construction opening no link; disposal releasing the lease once.
-#     + 5  ModbusBusCancellationTests        (new) — the task's non-negotiable: cancel while queued for the
+#     + 6  ModbusBusCancellationTests        (new) — the task's non-negotiable: cancel while queued for the
 #                                             bus; cancel an in-flight read WITHOUT rebuilding the link; a
 #                                             second device on the same bus still reading correctly after the
 #                                             first one's cancellation; a cancellation BETWEEN two registers
-#                                             leaving the bus clean; an already-cancelled token refused at the
-#                                             arbitration gate.
+#                                             leaving the bus clean; an aborted read never retrying even when
+#                                             the transport allows three; an already-cancelled token refused at
+#                                             the arbitration gate.
 #     + 9  ModbusBusResynchronisationTests   (new) — the post-timeout bus state: the hazard demonstrated
 #                                             against raw NModbus; the late frame discarded; the quiet window
 #                                             restarting rather than expiring on a schedule; a fresh link NOT
@@ -109,11 +110,16 @@ EXPECT_CONFORMANCE=22
 #                                             the bounded timeout, the hang-up, disposal, RTU end to end over
 #                                             a real socket, the bus-key rule, and a dead endpoint.
 #
-# Seven of those 45 exist only because a mutation survived an earlier version of this suite: a fresh link
+# Eight of those 46 exist only because a mutation survived an earlier version of this suite: a fresh link
 # clearing the quarantine; Transport.Retries left at NModbus's own default of 3; Health reporting Connected
 # transiently; DiscardInBuffer's own hook being unwired from the drain it delegates to; the quiet window's
 # TRAILING silence; the FC04 (Input register) arm, which no RTU map in the suite had ever declared; and the
-# driver's own map reaching the bus at all. See task-2-report.md §8 — none was found by reading.
+# driver's own map reaching the bus at all. The 46th (AnAbortedInFlightRead_NeverRetries_...) pins a property
+# of a THIRD-PARTY exception filter rather than of this code: NModbus happens not to retry the
+# OperationCanceledException the abort throws from inside its own retry loop, and nothing here would notice if
+# that changed — a retried abort re-transmits a request whose caller has given up, which on D-5's write path is
+# a physical double-actuation. Verified to have teeth: making the link throw TimeoutException instead makes the
+# same test see 32 bytes (four attempts) rather than 8. See task-2-report.md §8 — none was found by reading.
 #
 # EVERY OTHER SUITE IS UNCHANGED, and that is a check rather than a coincidence: D-2 adds no code outside
 # src/St4i.EdgeCore/Drivers/Modbus, so a moved total anywhere else would mean this task reached somewhere it
@@ -123,7 +129,7 @@ EXPECT_CONFORMANCE=22
 # (Modbus/OpcUaDriverConformanceTests' FindAndReleaseFreePort -> Drivers/ClosedLoopbackPort) and adds NO test
 # for them: a released ephemeral port can be reassigned to another test's listener, which is what made an
 # unrelated TLS test fail once. A moved total there would mean that rewrite was not behaviour-preserving.
-EXPECT_EDGECORE=786
+EXPECT_EDGECORE=787
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:

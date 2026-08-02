@@ -152,6 +152,14 @@ public sealed class ModbusBus : IAsyncDisposable
     private bool _desynchronised;
     private volatile bool _disposed;
 
+    // Backing fields for the observable counters. See ResynchronisationCount's own remarks for why all five
+    // go through Volatile rather than only the one that already did.
+    private int _resynchronisationCount;
+    private int _lastResynchronisationBytesDiscarded;
+    private int _lastTransactionReadTimeoutMs;
+    private int _lastTransactionRetries = -1;
+    private int _linkGeneration;
+
     public ModbusBus(string key, Func<CancellationToken, Task<IModbusBusLink>> openLink, ModbusBusSettings settings)
     {
         Key = key ?? throw new ArgumentNullException(nameof(key));
@@ -181,13 +189,26 @@ public sealed class ModbusBus : IAsyncDisposable
     /// assert the quarantine was ENTERED, not merely that a later read happened to be correct.</summary>
     public bool IsDesynchronised => Volatile.Read(ref _desynchronised);
 
-    /// <summary>How many times this bus has resynchronised. Observable for the same reason as
-    /// <see cref="IsDesynchronised"/>.</summary>
-    public int ResynchronisationCount { get; private set; }
+    /// <summary>
+    /// 🔴 <b>Every observable counter on this type is read and written through <see cref="Volatile"/>, and
+    /// that uniformity is the point.</b> All of them are written while the arbitration lock is held and read
+    /// from other threads (a test thread; in production, anything sampling the bus for diagnostics). It is
+    /// true that every reader today crosses an <see langword="await"/> first, which is a full barrier — so
+    /// plain fields would work. But <see cref="IsDesynchronised"/> was already
+    /// <see cref="Volatile"/>-guarded while the four counters beside it were not, and a type where some
+    /// cross-thread state is guarded and some is not forces the next reader to re-derive which is which,
+    /// per field, from an argument about await points that no longer holds the moment someone samples one of
+    /// these from a timer callback. Made uniform rather than individually justified.
+    ///
+    /// <para>How many times this bus has resynchronised. Observable so a test can assert the quarantine was
+    /// ENTERED, not merely that a later read happened to be correct.</para>
+    /// </summary>
+    public int ResynchronisationCount => Volatile.Read(ref _resynchronisationCount);
 
     /// <summary>Bytes discarded by the most recent resynchronisation — the evidence that a late frame really
-    /// was on the line, rather than the window merely elapsing.</summary>
-    public int LastResynchronisationBytesDiscarded { get; private set; }
+    /// was on the line, rather than the window merely elapsing. See
+    /// <see cref="ResynchronisationCount"/> for why this is <see cref="Volatile"/>.</summary>
+    public int LastResynchronisationBytesDiscarded => Volatile.Read(ref _lastResynchronisationBytesDiscarded);
 
     /// <summary>
     /// 🔴 The <c>readTimeoutMs</c> and <c>retries</c> the most recent <see cref="BeginTransactionAsync"/>
@@ -198,10 +219,10 @@ public sealed class ModbusBus : IAsyncDisposable
     /// driver's OWN map reached the wire — which is the property D-5's no-implicit-retry rule actually needs,
     /// since the retry count is a physical double-actuation hazard for a write.
     /// </summary>
-    public int LastTransactionReadTimeoutMs { get; private set; }
+    public int LastTransactionReadTimeoutMs => Volatile.Read(ref _lastTransactionReadTimeoutMs);
 
     /// <inheritdoc cref="LastTransactionReadTimeoutMs"/>
-    public int LastTransactionRetries { get; private set; } = -1;
+    public int LastTransactionRetries => Volatile.Read(ref _lastTransactionRetries);
 
     /// <summary>
     /// Incremented every time a NEW physical link is opened. <b>This is the number that proves a cancellation
@@ -210,7 +231,7 @@ public sealed class ModbusBus : IAsyncDisposable
     /// alone would not distinguish "the link survived" from "the link was rebuilt fast enough that nobody
     /// noticed" — which is precisely the behaviour this task exists to eliminate.
     /// </summary>
-    public int LinkGeneration { get; private set; }
+    public int LinkGeneration => Volatile.Read(ref _linkGeneration);
 
     /// <summary>
     /// Takes the bus and returns a scope in which <see cref="ModbusBusTransaction.ExecuteAsync{T}"/> may be
@@ -292,8 +313,8 @@ public sealed class ModbusBus : IAsyncDisposable
             transport.WriteTimeout = readTimeoutMs;
             transport.Retries = retries;
 
-            LastTransactionReadTimeoutMs = readTimeoutMs;
-            LastTransactionRetries = retries;
+            Volatile.Write(ref _lastTransactionReadTimeoutMs, readTimeoutMs);
+            Volatile.Write(ref _lastTransactionRetries, retries);
 
             var transaction = new ModbusBusTransaction(this, _master!, link, ct);
             handedOff = true;
@@ -353,7 +374,7 @@ public sealed class ModbusBus : IAsyncDisposable
         _link = link;
         _transport = transport;
         _master = master;
-        LinkGeneration++;
+        Volatile.Write(ref _linkGeneration, _linkGeneration + 1);
 
         // Deliberately NOT clearing _desynchronised here. A fresh TCP socket genuinely cannot carry the
         // previous link's stale bytes — but D-3's serial link can: re-opening a COM port purges the local
@@ -411,8 +432,11 @@ public sealed class ModbusBus : IAsyncDisposable
             else if (now - lastByteAt >= quietWindowMs)
             {
                 Volatile.Write(ref _desynchronised, false);
-                ResynchronisationCount++;
-                LastResynchronisationBytesDiscarded = discarded;
+                // Not Interlocked.Increment: every write here happens under the arbitration lock, so there is
+                // exactly one writer. Volatile is for the cross-thread READ, which is the only concurrency
+                // this counter actually has.
+                Volatile.Write(ref _resynchronisationCount, _resynchronisationCount + 1);
+                Volatile.Write(ref _lastResynchronisationBytesDiscarded, discarded);
                 return;
             }
 

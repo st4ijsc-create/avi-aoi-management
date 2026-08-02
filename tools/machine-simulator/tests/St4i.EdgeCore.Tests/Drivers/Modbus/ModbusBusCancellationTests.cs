@@ -266,6 +266,51 @@ public class ModbusBusCancellationTests(ITestOutputHelper output)
         await lease.DisposeAsync();
     }
 
+    /// <summary>
+    /// 🔴 <b>An aborted read never puts a second request on the wire, even with <c>Retries</c> set high.</b>
+    ///
+    /// <para>The abort mechanism throws <see cref="OperationCanceledException"/> out of the link's read loop —
+    /// from INSIDE NModbus's retry loop. Whether that propagates or is swallowed and retried is decided by
+    /// NModbus's own exception filters, i.e. by a third-party package: it happens to escape unretried at
+    /// <c>Retries</c> 0, 1 and 3 (probed). <b>Nothing in this design would notice if that changed</b>, and the
+    /// consequence would not be cosmetic — a retried abort re-transmits the request of a caller who has
+    /// already given up, onto a shared bus, which on D-5's write path is a physical double-actuation of a
+    /// command nobody is waiting for.</para>
+    ///
+    /// <para>So it is pinned as a fact rather than assumed: <c>retries: 3</c>, abort mid-flight, and assert
+    /// exactly ONE 8-byte FC03 request frame was ever written. This is the one assertion in the suite that
+    /// exists to catch a change in someone else's package.</para>
+    /// </summary>
+    [Fact]
+    public async Task AnAbortedInFlightRead_NeverRetries_EvenWhenTheTransportAllowsThree()
+    {
+        await using var harness = ModbusRtuLoopbackHarness.Start(((byte)1, new ushort[] { 400, 0 }));
+        await using var lease = harness.Lease();
+        var bus = lease.Bus;
+
+        // The device answers into a hold, so the master is genuinely blocked in a read it can be aborted out of.
+        harness.Links.Device.HoldWrites = true;
+
+        var before = harness.Links.Master.BytesWritten;
+
+        using var cts = new CancellationTokenSource();
+        await using (var transaction = await bus.BeginTransactionAsync(readTimeoutMs: 30_000, retries: 3, cts.Token))
+        {
+            Assert.Equal(3, bus.LastTransactionRetries);   // the transport really is allowed to retry
+
+            var read = transaction.ExecuteAsync(m => m.ReadHoldingRegistersAsync(1, 0, 1));
+            await WaitUntilAsync(() => harness.Links.Device.BytesWritten > 0, "the request to be on the wire and answered into the hold");
+
+            await cts.CancelAsync();
+            var settled = await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(10)));
+            Assert.Same(read, settled);
+            await Assert.ThrowsAnyAsync<Exception>(() => read);
+        }
+
+        // One FC03 RTU request frame is exactly 8 bytes. Two would mean the abort was retried.
+        Assert.Equal(8, harness.Links.Master.BytesWritten - before);
+    }
+
     /// <summary>A pass-through <see cref="IModbusBusLink"/> that runs <paramref name="onRead"/> after each
     /// <see cref="Read"/> returns. It observes and never alters: no buffering, no reordering, no change to
     /// what any read returns or when. That is what makes it safe to use for scheduling — the link under test
