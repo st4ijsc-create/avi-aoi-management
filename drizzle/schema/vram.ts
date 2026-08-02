@@ -10,7 +10,10 @@ export const vramEvents = pgTable("vram_events", {
   id: serial("id").primaryKey(),
   // Luôn "vram" ở pha này. Một CỘT để sau thêm ram/cpu/disk, KHÔNG phải một framework.
   resourceKind: varchar("resourceKind", { length: 16 }).default("vram").notNull(),
-  // reserve | commit | release | refuse | preempt | drift | adopt | defer | defer_exceeded
+  // baseline | reserve | commit | release | refuse | preempt | drift | adopt | defer | defer_exceeded
+  // ⚠ `baseline` (Task 5 review vòng 2, NEW-4) = ảnh chụp NỀN THIẾT BỊ lúc khởi động
+  // (nền = thiết bị − sổ). Task 7 và Agent đọc nhật ký PHẢI biết loại này, nếu không sẽ đọc
+  // `drift` mà không biết nó đã được trừ đi bao nhiêu.
   event: varchar("event", { length: 24 }).notNull(),
   owner: varchar("owner", { length: 160 }).notNull(),
   leaseKind: varchar("leaseKind", { length: 32 }).notNull(),

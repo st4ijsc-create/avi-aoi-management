@@ -269,4 +269,178 @@ describe("I-1 — nền thiết bị phải được TRỪ, nếu không chuông
     expect(r.alarm).toBe(false);
     expect(r.driftBytes).toBeNull();
   });
+
+  it("__resetVramBaselineForTests() thật sự dọn nền (NEW-3 — hàm này phải CÓ NGƯỜI DÙNG)", async () => {
+    vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 0, leases: [] }) }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: BACKGROUND, totalBytes: 32_607 * MIB }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const rec = await import("./vramReconciler");
+    expect(await rec.captureVramBaseline()).toBe(BACKGROUND);
+    rec.__resetVramBaselineForTests();
+    expect((await rec.reconcileOnce()).baselineUsedBytes).toBeNull();
+    // dọn xong thì chụp lại được — không bị ghim vĩnh viễn
+    expect(await rec.captureVramBaseline()).toBe(BACKGROUND);
+  });
+});
+
+/**
+ * Task 5 review vòng 2, NEW-1 — NỀN KHÔNG ĐƯỢC NUỐT CẤP PHÁT CỦA CHÍNH TA.
+ *
+ * Có ĐƯỜNG WARM THỨ HAI mà vòng trước không thấy:
+ *   index.ts:4931 → registerAiLocalKnowledgeRoutes → warmUpOllamaModels
+ *   (aiLocalKnowledgeService.ts:2391) → setTimeout(**2000 ms**) → warmModel(GGUF_DEFAULT_MODEL)
+ *   = nạp 30B ~17 GB THẬT.
+ * Đồng hồ 2 giây đó được lên ~273 dòng boot TRƯỚC `startBackgroundSchedulers()` (:5204) và
+ * NGẮN HƠN đồng hồ 3 giây của `initDeepModelWarmup`. Giữa hai điểm còn có
+ * `initializeLicenseSystem()`, `initializeRuntimeSecurity()` (băm file), `initializeSocket()`,
+ * `startStreamProcessor()`, `await import("../api/v1/router")`. Boot chậm > 2 s là 17 GB trọng
+ * số bị nuốt vào nền — và tệ hơn, nuốt MỘT PHẦN ⇒ nền BẤT ĐỊNH giữa các lần boot.
+ * `warmUpOllamaModels` cũng KHÔNG có cổng `GGUF_WARM_DEEP_MODEL_ON_BOOT` (chỉ gác
+ * `USE_LEGACY_OLLAMA`, mặc định false ⇒ warm CHẠY), nên tắt cờ kia không cứu được.
+ *
+ * SỬA BẰNG CẤU TRÚC, KHÔNG ĐUA VỚI ĐỒNG HỒ: Task 5 đã nối `loadGgufModel` vào `reserve()`, nên
+ * mọi thứ do CHÍNH TA cấp phát ĐÃ nằm trong sổ tại thời điểm chụp nền. Vậy
+ *     baseline = deviceUsed_lúc_chụp − ledgerTotal_lúc_chụp
+ * ⇒ cấp phát của ta TỰ TRỪ khỏi nền, BẤT KỂ thứ tự boot, và đường warm thứ ba sau này cũng vô hại.
+ */
+describe("NEW-1 — nền = thiết bị − SỔ, nên boot chậm bao nhiêu cũng không nuốt cấp phát của ta", () => {
+  beforeEach(() => vi.resetModules());
+
+  const BACKGROUND = 941 * MIB; // nền thật đo trên máy này
+  const DEEP_30B = 17_000 * MIB;
+
+  it("★ đường warm thứ hai đã nạp 30B TRƯỚC lúc chụp nền ⇒ nền vẫn chỉ là 941 MiB", async () => {
+    // Sổ ĐÃ CÓ giấy phép của chính ta (loadGgufModel đã reserve+commit) khi chụp nền.
+    vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: DEEP_30B, leases: [] }) }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: BACKGROUND + DEEP_30B, totalBytes: 32_607 * MIB }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+    const base = await captureVramBaseline();
+
+    // KHÔNG được là 17.941 MiB — 30B là của TA, đã nằm trong sổ.
+    expect(base).toBe(BACKGROUND);
+
+    // Và ngay sau đó sổ khớp thiết bị ⇒ im lặng.
+    const r = await reconcileOnce();
+    expect(r.driftBytes).toBe(0);
+    expect(r.alarm).toBe(false);
+  });
+
+  it("sự kiện `baseline` phải ghi CẢ deviceUsedRaw LẪN ledgerTotal để dựng lại phép tính", async () => {
+    vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: DEEP_30B, leases: [] }) }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: BACKGROUND + DEEP_30B, totalBytes: 32_607 * MIB }),
+    }));
+    const logged: Array<{ event: string; detail?: Record<string, unknown>; ledgerTotalBytes?: number }> = [];
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: (e: never) => logged.push(e) }));
+
+    const { captureVramBaseline } = await import("./vramReconciler");
+    await captureVramBaseline();
+
+    const ev = logged.find((l) => l.event === "baseline")!;
+    expect(ev).toBeDefined();
+    expect(ev.detail!.deviceUsedRawBytes).toBe(BACKGROUND + DEEP_30B);
+    expect(ev.detail!.ledgerTotalBytes).toBe(DEEP_30B);
+    expect(ev.detail!.baselineUsedBytes).toBe(BACKGROUND);
+  });
+
+  it("nền KHÔNG BAO GIỜ âm — sổ tạm lớn hơn thiết bị (lấy mẫu không nguyên tử) vẫn cho nền ≥ 0", async () => {
+    vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 20_000 * MIB, leases: [] }) }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: 1_000 * MIB, totalBytes: 32_607 * MIB }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { captureVramBaseline } = await import("./vramReconciler");
+    expect(await captureVramBaseline()).toBe(0);
+  });
+});
+
+/**
+ * Task 5 review vòng 2, NEW-2 — ĐẦU DÒ HỎNG THOÁNG QUA KHÔNG ĐƯỢC THÀNH BÁO ĐỘNG GIẢ VĨNH VIỄN.
+ *
+ * Bản trước đặt `baselineCaptured = true` TRƯỚC `await`, nên MỌI kết quả — kể cả `null` do
+ * `nvidia-smi` chạm trần `timeout: 3000` lúc boot, NVML đang khởi tạo, hay `execFile` lỗi
+ * thoáng qua — là VĨNH VIỄN. Rồi `baseline = baselineUsedBytes ?? 0` coi "chưa biết" = 0 ⇒
+ * toàn bộ nền bị báo là "cấp phát KHÔNG XIN PHÉP", mỗi 60 giây, mãi mãi, KHÔNG TỰ LÀNH.
+ */
+describe("NEW-2 — đầu dò hồi phục thì nền TỰ LÀNH; chưa biết nền thì IM LẶNG (không coi là 0)", () => {
+  beforeEach(() => vi.resetModules());
+
+  const BACKGROUND = 1_090 * MIB;
+
+  it("★ đầu dò hỏng lúc boot rồi HỒI PHỤC ⇒ lượt chụp sau thành công (KHÔNG bị ghim null)", async () => {
+    let probeOk = false;
+    vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 0, leases: [] }) }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => (probeOk ? { usedBytes: BACKGROUND, totalBytes: 32_607 * MIB } : null),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+
+    // Lượt 1: đầu dò hỏng ⇒ null, và TUYỆT ĐỐI không được ghim.
+    expect(await captureVramBaseline()).toBeNull();
+
+    // Đầu dò hồi phục.
+    probeOk = true;
+    expect(await captureVramBaseline()).toBe(BACKGROUND);
+
+    const r = await reconcileOnce();
+    expect(r.baselineUsedBytes).toBe(BACKGROUND);
+    expect(r.driftBytes).toBe(0);
+    expect(r.alarm).toBe(false);
+  });
+
+  it("★ reconciler ĐANG CHẠY mà CHƯA BIẾT nền ⇒ IM LẶNG, KHÔNG coi nền = 0 rồi hét", async () => {
+    let probeOk = false;
+    vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 0, leases: [] }) }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => (probeOk ? { usedBytes: BACKGROUND, totalBytes: 32_607 * MIB } : null),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { startVramReconciler, stopVramReconciler, reconcileOnce } = await import("./vramReconciler");
+    startVramReconciler(); // chụp nền lần đầu — sẽ THẤT BẠI (đầu dò hỏng)
+    await new Promise((r) => setImmediate(r)); // để lượt chụp bất đồng bộ chạy xong
+
+    // Đầu dò hồi phục NHƯNG nền vẫn chưa chụp lại được ⇒ tuyệt đối không được hét
+    // "cấp phát KHÔNG XIN PHÉP" cho 1.090 MiB nền.
+    probeOk = true;
+    const r = await reconcileOnce();
+    expect(r.baselineUsedBytes).toBeNull();
+    expect(r.alarm).toBe(false);
+    expect(r.driftBytes).toBeNull();
+
+    stopVramReconciler();
+  });
+
+  it("bộ đếm giờ THỬ LẠI lượt chụp nền ở mỗi nhịp — hỏng lúc boot không phải bản án chung thân", async () => {
+    let probeOk = false;
+    vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 0, leases: [] }) }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => (probeOk ? { usedBytes: BACKGROUND, totalBytes: 32_607 * MIB } : null),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { startVramReconciler, stopVramReconciler, __runReconcileTick, reconcileOnce } =
+      await import("./vramReconciler");
+    startVramReconciler();
+    await new Promise((r) => setImmediate(r));
+
+    probeOk = true;
+    await __runReconcileTick(); // đúng thứ bộ đếm giờ gọi mỗi nhịp
+
+    const r = await reconcileOnce();
+    expect(r.baselineUsedBytes).toBe(BACKGROUND);
+    expect(r.alarm).toBe(false);
+
+    stopVramReconciler();
+  });
 });

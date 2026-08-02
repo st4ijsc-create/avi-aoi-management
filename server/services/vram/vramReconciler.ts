@@ -25,60 +25,120 @@ let timer: NodeJS.Timeout | null = null;
  * giây, mãi mãi, trên MỌI máy, ngay từ giây thứ nhất**. Giá trị DUY NHẤT của Pha 1 là báo động
  * này CÓ NGHĨA; một cái chuông kêu liên tục là cái chuông không ai nghe.
  *
+ * ⚠ CÔNG THỨC (review vòng 2, NEW-1) — nền KHÔNG phải là "VRAM lúc chụp":
+ *
+ *     baseline = deviceUsed_lúc_chụp − ledgerTotal_lúc_chụp
+ *
+ * VÌ SAO KHÔNG DÙNG THẲNG `deviceUsed`: có ÍT NHẤT HAI đường warm model, và đường sớm hơn
+ * KHÔNG nằm dưới quyền `startBackgroundSchedulers()`:
+ *   `index.ts:4931` → `registerAiLocalKnowledgeRoutes` → `warmUpOllamaModels`
+ *   (`aiLocalKnowledgeService.ts:2391`) → `setTimeout(**2000 ms**)` → `warmModel(GGUF_DEFAULT_MODEL)`
+ *   = nạp 30B **~17 GB THẬT**, rồi nạp tiếp embedder.
+ * Đồng hồ 2 giây đó lên ~273 dòng boot TRƯỚC `startBackgroundSchedulers()` (`:5204`) và NGẮN
+ * HƠN đồng hồ 3 giây của `initDeepModelWarmup()`. Ở giữa còn `initializeLicenseSystem()`,
+ * `initializeRuntimeSecurity()` (băm file), `initializeSocket()`, `startStreamProcessor()`,
+ * `await import("../api/v1/router")`. Boot chậm hơn 2 giây ⇒ 17 GB bị nuốt vào nền; nuốt MỘT
+ * PHẦN thì tệ hơn nữa — nền BẤT ĐỊNH giữa các lần boot. `warmUpOllamaModels` cũng KHÔNG có
+ * cổng `GGUF_WARM_DEEP_MODEL_ON_BOOT` (chỉ gác `USE_LEGACY_OLLAMA`, mặc định false ⇒ warm CHẠY).
+ *
+ * ⚠ ĐỪNG SỬA BẰNG CÁCH ĐUA VỚI ĐỒNG HỒ. Chuyển lời gọi lên sớm hơn chỉ đổi cuộc đua này lấy
+ * cuộc đua khác, và đường warm THỨ BA sau này lại làm hỏng. Task 5 đã nối `loadGgufModel` vào
+ * `reserve()`, nên MỌI thứ do CHÍNH TA cấp phát đều đã nằm trong SỔ tại thời điểm chụp — trừ
+ * sổ ra là xong, ĐÚNG với mọi thứ tự boot.
+ *
  * ⚠ GIỚI HẠN ĐÃ BIẾT, CHẤP NHẬN Ở PHA 1 — PHẢI ĐỌC TRƯỚC KHI TIN CON SỐ NÀY:
  * nếu server khởi động lại **trong khi một tiến trình con vẫn đang sống** (điển hình: sidecar
  * thị giác 7,8 GB của Đợt 0), thì 7,8 GB đó bị **NUỐT VÀO NỀN** và ta sẽ **KHÔNG BAO GIỜ THẤY
- * NÓ** — đúng cái mà module này sinh ra để bắt. Đây là ca "giấy phép mồ côi" mà spec §6 giao
+ * NÓ** — đúng cái mà module này sinh ra để bắt. Sidecar chạy tiến trình RIÊNG nên nó KHÔNG có
+ * trong sổ, phép trừ trên không cứu được ca này. Đây là ca "giấy phép mồ côi" mà spec §6 giao
  * cho **Pha 3 (nhận nuôi)**: Pha 3 phải liệt kê tiến trình đang giữ VRAM rồi NHẬN NUÔI chúng
  * vào sổ thay vì gộp mù vào nền. Pha 1 chấp nhận đánh đổi này một cách TƯỜNG MINH — thà bỏ sót
  * một ca hiếm còn hơn hỏng cái chuông trong mọi ca thường.
  *
- * Sự kiện `baseline` được GHI VÀO NHẬT KÝ kèm giá trị: đã trừ bao nhiêu thì Task 7 và người
- * trực phải đọc được. KHÔNG trừ âm thầm — một phép trừ vô hình chỉ là một giả định vô hình khác.
+ * Sự kiện `baseline` ghi CẢ `deviceUsedRawBytes` LẪN `ledgerTotalBytes`: đọc nhật ký là dựng
+ * lại được phép tính. KHÔNG trừ âm thầm — một phép trừ vô hình chỉ là một giả định vô hình khác.
  */
 let baselineUsedBytes: number | null = null;
 let baselineCaptured = false;
+/**
+ * Bật khi `startVramReconciler()` đã chạy. Lúc đó "chưa biết nền" phải nghĩa là IM LẶNG, KHÔNG
+ * phải nền = 0 (NEW-2). Khi cờ này TẮT — tức có người gọi `reconcileOnce()` trực tiếp (Task 7,
+ * test, công cụ chẩn đoán) — ta giữ nguyên ngữ nghĩa "không trừ gì", vì người gọi đó tự biết họ
+ * đang so số thô.
+ */
+let baselineRequired = false;
 
 /**
- * Chụp nền MỘT LẦN. Gọi lần thứ hai là no-op — nếu không, một lượt `stop()` rồi `start()` lại
- * sẽ NUỐT mọi thứ đã nạp từ đầu tới giờ vào nền và làm mù luôn sổ.
- * KHÔNG BAO GIỜ ném: máy không GPU ⇒ trả `null`, hệ chạy tiếp im lặng.
+ * Chụp nền. Thành công MỘT LẦN rồi thôi — nếu không, một lượt `stop()`/`start()` lại sẽ nuốt
+ * mọi thứ đã nạp vào nền và làm mù luôn sổ.
+ *
+ * ⚠ NEW-2 — CHỈ ghim khi ĐỌC ĐƯỢC SỐ THẬT. Bản trước đặt `baselineCaptured = true` TRƯỚC
+ * `await`, nên một lượt `nvidia-smi` chạm trần `timeout: 3000` lúc boot, hay NVML đang khởi
+ * tạo, hay `execFile` lỗi thoáng qua, đều bị ghim VĨNH VIỄN thành `null` — rồi `null` bị coi là
+ * 0 và toàn bộ nền bị báo là "cấp phát KHÔNG XIN PHÉP", mỗi 60 giây, mãi mãi, KHÔNG TỰ LÀNH.
+ * Nay hỏng thì để nguyên trạng "chưa biết" và THỬ LẠI ở nhịp đối chiếu sau.
+ *
+ * KHÔNG BAO GIỜ ném: máy không GPU ⇒ trả `null` mãi, hệ chạy tiếp im lặng.
  */
 export async function captureVramBaseline(): Promise<number | null> {
   if (baselineCaptured) return baselineUsedBytes;
-  baselineCaptured = true;
+
+  let device: { usedBytes: number } | null = null;
   try {
-    const device = await readDeviceVram();
-    baselineUsedBytes = device ? device.usedBytes : null;
+    device = await readDeviceVram();
   } catch {
-    baselineUsedBytes = null;
+    device = null;
   }
-  if (baselineUsedBytes !== null) {
-    console.log(
-      `[vram] nền thiết bị lúc khởi động: ${Math.round(baselineUsedBytes / 1024 / 1024)} MiB ` +
-        `(không phải của tiến trình này) — sẽ TRỪ khỏi mọi phép so sổ.`,
-    );
-    logVramEvent({
-      event: "baseline",
-      owner: "reconciler",
-      leaseKind: "external-process",
-      priority: "background",
-      deviceUsedBytes: baselineUsedBytes,
-      detail: {
-        baselineUsedBytes,
-        note:
-          "VRAM đã bị chiếm TRƯỚC khi tiến trình này cấp phát gì. Mọi drift sau đây đã trừ số này. " +
-          "⚠ Nếu server restart khi sidecar còn sống, VRAM của sidecar bị nuốt vào đây (spec §6 — Pha 3 nhận nuôi).",
-      },
-    });
-  }
+  // Chưa đọc được ⇒ KHÔNG ghim, KHÔNG kết luận. Nhịp sau thử lại.
+  if (!device) return null;
+
+  // NEW-1 — trừ phần của CHÍNH TA đã nằm trong sổ. `Math.max(0, …)` vì phép lấy mẫu không
+  // nguyên tử: `reserve()` cộng ước lượng vào sổ TRƯỚC khi VRAM vật lý kịp tăng, nên sổ có thể
+  // tạm lớn hơn thiết bị. Nền âm sẽ thổi phồng `attributable` vĩnh viễn — thà kẹp về 0.
+  const ledgerTotal = snapshot().totalReservedBytes;
+  const raw = device.usedBytes;
+  baselineUsedBytes = Math.max(0, raw - ledgerTotal);
+  baselineCaptured = true;
+
+  const mib = (b: number) => Math.round(b / 1024 / 1024);
+  console.log(
+    `[vram] nền thiết bị: ${mib(baselineUsedBytes)} MiB ` +
+      `(thiết bị ${mib(raw)} − sổ ${mib(ledgerTotal)}) — không phải của tiến trình này, sẽ TRỪ khỏi mọi phép so sổ.`,
+  );
+  logVramEvent({
+    event: "baseline",
+    owner: "reconciler",
+    leaseKind: "external-process",
+    priority: "background",
+    deviceUsedBytes: raw,
+    ledgerTotalBytes: ledgerTotal,
+    detail: {
+      deviceUsedRawBytes: raw,
+      ledgerTotalBytes: ledgerTotal,
+      baselineUsedBytes,
+      note:
+        "nền = thiết bị − sổ. Trừ sổ ra để cấp phát của CHÍNH TA (đường warm chạy trước lúc chụp) " +
+        "không bị nuốt vào nền, bất kể thứ tự boot. ⚠ Sidecar chạy tiến trình RIÊNG thì KHÔNG có " +
+        "trong sổ ⇒ vẫn bị nuốt vào đây (spec §6 — Pha 3 nhận nuôi).",
+    },
+  });
   return baselineUsedBytes;
+}
+
+/**
+ * Đúng một nhịp của bộ đếm giờ: THỬ LẠI lượt chụp nền (no-op khi đã có) rồi đối chiếu.
+ * Tách ra để test canh được hành vi thử-lại mà không phải giả lập đồng hồ.
+ */
+export async function __runReconcileTick(): Promise<VramReconcileResult> {
+  await captureVramBaseline();
+  return reconcileOnce();
 }
 
 /** Chỉ dùng trong test. */
 export function __resetVramBaselineForTests(): void {
   baselineUsedBytes = null;
   baselineCaptured = false;
+  baselineRequired = false;
 }
 
 /**
@@ -115,9 +175,23 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
     };
   }
 
+  // NEW-2 — reconciler ĐANG CHẠY mà CHƯA BIẾT nền ⇒ IM LẶNG. "Chưa biết" TUYỆT ĐỐI không được
+  // hiểu thành "nền = 0": hiểu vậy thì toàn bộ ~1 GB nền của máy bị báo là cấp phát chui, mỗi
+  // 60 giây. Thà không báo còn hơn báo sai. Trạng thái này là TẠM — `__runReconcileTick()` thử
+  // chụp lại ở mỗi nhịp, nên đầu dò hồi phục là nền tự lành.
+  if (baselineRequired && baselineUsedBytes === null) {
+    return {
+      driftBytes: null,
+      alarm: false,
+      ledgerTotalBytes: snap.totalReservedBytes,
+      deviceUsedBytes: device.usedBytes,
+      baselineUsedBytes: null,
+    };
+  }
+
   // I-1 — TRỪ NỀN. `attributable` = phần VRAM QUY ĐƯỢC cho tiến trình này; chỉ phần đó mới có
-  // quyền được đem so với sổ. Chưa chụp nền (gọi reconcileOnce() trực tiếp, vd. Task 7 hoặc
-  // test) ⇒ nền = 0 ⇒ hành vi y như trước, không có phép trừ ẩn nào.
+  // quyền được đem so với sổ. Người gọi `reconcileOnce()` TRỰC TIẾP mà chưa chụp nền (Task 7,
+  // test, công cụ chẩn đoán) ⇒ nền = 0 ⇒ so số THÔ, đúng như họ yêu cầu.
   const baseline = baselineUsedBytes ?? 0;
   const attributable = device.usedBytes - baseline;
   const drift = attributable - snap.totalReservedBytes;
@@ -180,11 +254,13 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
 
 export function startVramReconciler(): void {
   if (timer) return;
-  // I-1 — chụp nền NGAY, trước lượt đối chiếu đầu tiên. Không `await` (hàm này đồng bộ và
-  // được gọi trên đường boot); lượt reconcile đầu chỉ chạy sau INTERVAL_MS nên nền chắc chắn
-  // đã có. Nếu nó lỡ chưa kịp, nền = 0 ⇒ chỉ mất một lượt, tự đúng ở lượt sau.
+  // Từ đây trở đi, "chưa biết nền" nghĩa là IM LẶNG chứ không phải nền = 0 (NEW-2).
+  baselineRequired = true;
+  // Chụp nền NGAY. Không `await` (hàm này đồng bộ, nằm trên đường boot). Không kịp / đầu dò
+  // hỏng cũng không sao: mỗi nhịp `__runReconcileTick()` đều THỬ LẠI, và công thức
+  // `nền = thiết bị − sổ` khiến lượt chụp muộn vẫn cho ra ĐÚNG con số (NEW-1).
   void captureVramBaseline();
-  timer = setInterval(() => { void reconcileOnce(); }, INTERVAL_MS);
+  timer = setInterval(() => { void __runReconcileTick(); }, INTERVAL_MS);
   timer.unref?.();
 }
 

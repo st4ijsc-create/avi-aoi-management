@@ -7,7 +7,13 @@ import type { VramEstimateSource, VramLeaseKind, VramPriority } from "./types";
  * `logVramEvent()` không bao giờ được chờ DB (xem test "KHÔNG chờ DB").
  */
 export interface VramEventInput {
-  /** reserve | commit | release | refuse | preempt | drift | adopt | defer | defer_exceeded */
+  /**
+   * baseline | reserve | commit | release | refuse | preempt | drift | adopt | defer | defer_exceeded
+   *
+   * ⚠ `baseline` (Task 5 review vòng 2, NEW-4) = ảnh chụp NỀN THIẾT BỊ lúc khởi động
+   * (`nền = thiết bị − sổ`, xem `vramReconciler.captureVramBaseline`). Ai đọc nhật ký theo danh
+   * sách này mà thiếu `baseline` sẽ đọc `drift` mà không biết nó đã được trừ đi bao nhiêu.
+   */
   event: string;
   owner: string;
   leaseKind: VramLeaseKind;

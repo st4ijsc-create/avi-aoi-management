@@ -408,15 +408,19 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     return _rankCtx;
   } catch (err) {
     // Pha 1 Task 5 — nạp/tạo ranking context hỏng ⇒ TRẢ chỗ ngay, không để giấy phép treo.
-    // Trả CẢ hai tham chiếu: `localTicket` là giấy phép của lượt này, `_rankVramTicket` có thể
-    // đã bị một lượt song song ghi đè (M-2). `release()` bất biến khi gọi nhiều lần.
+    //
+    // ⚠ NEW-6 (review vòng 2): CHỈ trả giấy phép của CHÍNH lượt này. Bản trước còn thu hồi cả
+    // `_rankVramTicket` khi nó khác `localTicket` — nghĩa là một lượt nạp HỎNG đi cướp giấy
+    // phép của một lượt nạp THÀNH CÔNG chạy song song (getRankingContext() không có khoá
+    // in-flight — hành vi CÓ SẴN), làm model đang sống biến mất khỏi sổ.
     try {
       localTicket?.release();
-      if (_rankVramTicket && _rankVramTicket !== localTicket) _rankVramTicket.release();
     } catch {
       /* telemetry KHÔNG được làm hỏng đường degrade sang backend llm */
     }
-    _rankVramTicket = null;
+    // Chỉ xoá con trỏ chung nếu nó ĐANG trỏ vào giấy phép vừa trả. Lượt song song thành công
+    // giữ nguyên giấy phép của nó.
+    if (_rankVramTicket === localTicket) _rankVramTicket = null;
     // Most common cause: the model isn't a reranker (no rank head) → llama.cpp
     // throws on createRankingContext. Mark failed so we don't retry per-query.
     console.warn(

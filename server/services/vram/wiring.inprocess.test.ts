@@ -602,6 +602,33 @@ describe("I-4 — tám nhánh LỖI: trả chỗ đúng, và telemetry hỏng kh
     await expect(loadGgufModel({ modelPath: "Qwen3-Test.gguf" })).resolves.toBe("Qwen3-Test");
   });
 
+  it("I. aiReranker nạp HỎNG ⇒ TRẢ chỗ, degrade sang llm mà không để lại giấy phép treo", async () => {
+    // NEW-6 (review vòng 2): nhánh `catch` của getRankingContext phải trả ĐÚNG giấy phép của
+    // chính lượt này. `createRankingContext` ném = ca thật hay gặp nhất (model không phải reranker).
+    vi.doMock("node-llama-cpp", () => ({
+      getLlama: async () => ({
+        loadModel: async () => ({
+          createRankingContext: async () => {
+            throw new Error("model không có đầu rank (ca thử nghiệm)");
+          },
+          dispose: async () => {},
+        }),
+        getVramState: async () => ({ total: 32 * GiB, used: gpu.used, free: 1 }),
+      }),
+      LlamaLogLevel: { fatal: "fatal", error: "error", warn: "warn", info: "info" },
+    }));
+
+    process.env.RAG_RERANKER_ENABLED = "true";
+    process.env.RAG_RERANKER_MODE = "gguf";
+    process.env.GGUF_RERANKER_MODEL = "bge-reranker-v2-m3-Q8_0.gguf";
+
+    const { rerank } = await import("../aiReranker");
+    // rerank KHÔNG BAO GIỜ ném — nó degrade. Điều cần canh là sổ sạch.
+    await rerank("câu hỏi", [{ id: "a", text: "tài liệu A" }]);
+
+    expect((await leases()).filter((l) => l.request.owner.startsWith("reranker:"))).toHaveLength(0);
+  });
+
   it("H. InferenceSession.create NÉM ⇒ TRẢ chỗ (không tích luỹ giấy phép mỗi lượt thử lại)", async () => {
     const { setLlamaInstanceHandle } = await import("./llamaHandle");
     setLlamaInstanceHandle({ getVramState: async () => ({ used: gpu.used, total: 32 * GiB }) });
