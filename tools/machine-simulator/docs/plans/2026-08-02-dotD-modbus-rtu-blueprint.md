@@ -112,6 +112,26 @@ Về §9 "nói con số": D-1 **không áp giới hạn nào** về số thiết
 - **Không nới ngưỡng để lỗi hiếm đi.** Sửa cơ chế, hoặc nói thẳng là không sửa được.
 - `scripts/verify-suites.sh` là cổng. Nó đã **sai bảy lần**, cả bảy do người *dùng* nó tìm ra. Nếu nó báo điều khó tin, **nghi ngờ công cụ ngang với nghi ngờ cây mã**.
 
+## 8.1 Nguyên tắc rút ra trong D-1 và D-2 — mang theo cho D-3…D-7
+
+Bốn câu dưới đây đều do implementer hoặc reviewer phát biểu sau khi trả giá, và cả bốn **tổng quát hơn** sự cố sinh ra chúng.
+
+**"Không thể xảy ra" và "không test được" đều là phát biểu về giới hạn của mình, mặc áo phát biểu về mã nguồn.**
+D-1: *phân tích khả-năng-với-tới là một câu hỏi về tính hợp lý của cái chốt, và không bao giờ hỏi câu hỏi hệ quả về trạng thái được chốt.* D-2 mở rộng: *"không test nào với tới được" là một khẳng định về bộ dụng cụ bạn đã cầm sẵn.* → **Hễ một chú thích viết "không thể xảy ra", câu kế tiếp phải nói code làm gì khi nó vẫn xảy ra.**
+
+**Đột biến và truy-hệ-quả là hai dụng cụ khác nhau.**
+Đột biến tìm ra **những bài test không thể đỏ**. Truy-hệ-quả tìm ra **đoạn mã không bao giờ bị hỏi tới**. Không đột biến nào với tới được một nhánh mà không gì chạy qua — reviewer D-1 tìm ra I-A **bằng cách đọc**, và nói thẳng như vậy.
+
+**Sửa một trường hợp của một lớp lỗi không cho miễn nhiễm với lớp lỗi đó, và có thể còn làm yếu đi.**
+D-2 tái tạo đúng lỗi I-5 **trong chính commit sửa I-5**, cách mười hai file. D-2 cũng tìm đúng cơ chế rò cổng rồi **khẳng định phạm vi thay vì đi grep**, và hai chỗ bỏ sót **tệ hơn** chỗ đã sửa. → **Biện pháp đối kháng là một đợt quét, không phải sự cẩn thận. Mọi bản sửa kèm một lệnh grep tìm anh em của nó.**
+
+**Một bài test cấp giá trị mà nó đang kiểm thì mù với việc ai chọn giá trị đó.**
+D-2 **đã có** một bài test retry, viết từ trước vì một đột biến sống sót — và nó không thấy I-2, vì nó tự truyền vào cái con số nó đang kiểm. Thêm test cùng hình dạng sẽ không bao giờ tìm ra. → **Khẳng định trên giá trị đã tới ranh giới, không phải giá trị bạn đưa vào.**
+
+**Và một phân biệt về bằng chứng:** một diff chỉ sửa chú thích là **bằng chứng kết luận về cây mã, và không nói gì về môi trường**. Cổng đỏ trên một commit như vậy nghĩa là máy bẩn, không phải mã hỏng — nhưng cách chữa là **dọn máy**, không phải nới trần.
+
+Công cụ bắt buộc từ D-3: `scripts/mutate-guard.sh` (so dấu thời gian + đối chứng dương mỗi phiên). Lý do đầy đủ nằm trong header của nó.
+
 ## 9. Giới hạn phải nói thẳng khi xong
 
 - ASCII framing không làm (NModbus có, ta không dùng).
