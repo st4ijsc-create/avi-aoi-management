@@ -125,6 +125,33 @@ public sealed class WalFlushPumpTests
             "the pump to drain the idle backlog on its own timer, with no explicit send");
 
         Assert.Equal(keys.Length, drainedCounts.Sum());
+
+        // 🔴🔴 Đợt D, D-1 re-review — STOP THE WRITER BEFORE READING THE FILE. This is the THIRD independent
+        // instance of the defect Đợt C closed in `StoreAndForwardRestartSurvivalTests`, and it was caught by
+        // a reviewer's own gate run failing here: EdgeCore 740/741, `IOException: the process cannot access
+        // the file 'M1.jsonl' because it is being used by another process`, thrown out of
+        // `File.ReadAllLines` — NOT out of any assertion. Reproduced 1 run in 4.
+        //
+        // `File.ReadAllLines` opens with FileShare.Read, which refuses to open at all while any WRITE handle
+        // is live. The pump above is `await using`, so it is disposed only at SCOPE EXIT — it is still
+        // ticking on this line, and every tick that finds a live transport calls FlushBacklogAsync, whose
+        // vendored-SDK drain ends in an UNCONDITIONAL `File.WriteAllText(_queuePath, "")` (FileMode.Create /
+        // FileAccess.Write / FileShare.Read). A read landing in one of those windows throws, and nothing
+        // about the property under test is involved.
+        //
+        // 🔴 Fixed by REMOVING THE WRITER, not by tolerating it and not by adding a retry or a bound.
+        // `DisposeAsync` cancels the loop AND awaits it (WalFlushPump.cs:135-152), so once it returns no
+        // tick can be in flight and no handle can be open — the read below is then unconditionally safe
+        // rather than probably safe. Everything this test asserts has already happened by here: the drain
+        // was observed through `BacklogDrained` above, so stopping the pump cannot mask it. The explicit
+        // dispose is safe alongside `await using` because `DisposeAsync` is idempotent by design
+        // (`if (_disposed) return`, same line range).
+        //
+        // The alternative Đợt C used there — a FileShare.ReadWrite|Delete reader — is the right tool when
+        // the concurrent writer IS the point of the test. Here it is not: this test's subject is the pump's
+        // own timer, and by this line that subject is fully proven.
+        await pump.DisposeAsync();
+
         Assert.DoesNotContain(File.ReadAllLines(queuePath), l => l.Trim().Length > 0);
         Assert.Equal(keys.Length, recordingHandler.Requests.Count);
     }
@@ -144,6 +171,13 @@ public sealed class WalFlushPumpTests
         pump.BacklogDrained += _ => drained = true;
 
         await WaitUntilAsync(() => Volatile.Read(ref getLiveCalls) >= 3, "getLive to be polled multiple times");
+
+        // Same stop-the-writer-first discipline as the test above. This pump's `getLive` always returns
+        // null, so it never reaches FlushBacklogAsync and — today — never opens a write handle at all; the
+        // dispose is applied anyway so the rule holds uniformly for every read in this file rather than
+        // depending on a per-test analysis of which pump can currently write. It also makes `drained`
+        // final: no further tick can flip it after this line.
+        await pump.DisposeAsync();
 
         Assert.False(drained);
         Assert.Equal(keys.Length, File.ReadAllLines(queuePath).Count(l => l.Trim().Length > 0));
@@ -186,6 +220,12 @@ public sealed class WalFlushPumpTests
 
         Assert.True(loggedErrors.Count >= 2, $"expected at least 2 logged tick failures, got {loggedErrors.Count}");
         Assert.Equal(keys.Length, drainedCounts.Sum());
+
+        // Same stop-the-writer-first discipline as the two tests above — and this pump DOES drain (it is
+        // handed a live transport from its third tick onward), so this read had exactly the same live-writer
+        // hazard as the one that actually went red.
+        await pump.DisposeAsync();
+
         Assert.DoesNotContain(File.ReadAllLines(queuePath), l => l.Trim().Length > 0);
     }
 
