@@ -14,7 +14,17 @@ Phần giao thức gần như **không phải viết**:
 - NModbus 3.0.83 lo trọn CRC và đóng khung t3.5 (`NModbus.IO.ModbusSerialTransport`, `NModbus.Extensions.CrcExtensions`).
 - `IStreamResource` chỉ có **6 thành viên**: `ReadTimeout`, `WriteTimeout`, `InfiniteTimeout`, `DiscardInBuffer()`, `Read()`, `Write()`.
 - **Mọi lệnh đọc/ghi nằm trên `IModbusMaster`** — `IModbusSerialMaster` chỉ thêm `Transport` và một hàm chẩn đoán. Nên `ReadHoldingRegistersAsync`, `WriteSingleRegisterAsync`, `WriteSingleCoilAsync` giống hệt TCP.
-- `Transport.Retries = 0` và `ct.Register(DisposeConnection)` của Đợt B **dùng lại nguyên vẹn** — chúng nằm trên `IModbusTransport`/`IStreamResource`, không phải trên socket.
+- `Transport.Retries = 0` của Đợt B **dùng lại nguyên vẹn** — nó nằm trên `IModbusTransport`, không phải trên socket.
+
+### 🔴 2.1 Đính chính (2026-08-02, sau D-1) — cơ chế huỷ của Đợt B KHÔNG dùng lại nguyên vẹn được
+
+Câu trên ban đầu tôi viết là *"`Transport.Retries = 0` **và** `ct.Register(DisposeConnection)` dùng lại nguyên vẹn"*. **Vế thứ hai sai**, và review D-1 chỉ ra tại sao.
+
+`ct.Register(DisposeConnection)` là cách duy nhất honour một `CancellationToken` xuyên qua NModbus — nhưng nó hoạt động bằng cách **phá huỷ transport**. Điều đó đúng cho quan hệ 1:1. **Trên một bus dùng chung thì huỷ một phép đọc của một thiết bị sẽ giật sập đường dây của mọi thiết bị còn lại trên đó.**
+
+Nghịch lý là chính cái `IStreamResource` dùng-chung-đếm-tham-chiếu mà D-1 chứng minh là bắt buộc (vì `SerialPort` mở cổng COM độc quyền) lại **là thứ làm cho khẳng định "dùng lại nguyên vẹn" trở nên sai**.
+
+**Vậy D-2 phải có một câu chuyện huỷ khác**, và đây là quyết định thiết kế chứ không phải chi tiết triển khai: huỷ trong lúc chờ khoá trọng tài bus, cộng một timeout đọc có biên — và **dispose chỉ dành cho tham chiếu cuối cùng**. Không được để một lệnh huỷ của một thiết bị làm hỏng giao dịch của thiết bị khác.
 
 Cái đắt nằm ở chỗ khác — §3.
 
@@ -72,10 +82,25 @@ Lý do chấp nhận: gói do **chính Microsoft phát hành**, không phải th
 | **D-1** | 🔴 **Định danh connector: kind-keyed → instance-keyed.** Registry, schema store (có migration), phân giải slot của `FleetHost`, `ResolveWritableDriver`, seeder, endpoint, RBAC. **Land riêng, xanh trước khi có bất kỳ code RTU nào.** | 🔴🔴 Cao nhất đợt — đụng cổng an toàn Đợt B |
 | **D-2** | Tầng RTU + seam `IStreamResource` + transport **RTU-over-TCP** (không thêm dep) | |
 | **D-3** | Transport **serial nguyên bản** — `System.IO.Ports`, adapter tự viết | |
-| **D-4** | Hình dạng map multidrop: một bus, N địa chỉ slave, N mã máy | 🔴 |
+| **D-4** | Hình dạng map multidrop — **đọc §7.1 trước, câu mô tả cũ mơ hồ về đúng trục an toàn** | 🔴 |
 | **D-5** | Đường ghi RTU qua hợp đồng Đợt B + cổng an toàn | 🔴 |
 | **D-6** | Conformance + loopback harness (cần `IStreamResource` cặp đôi trong bộ nhớ — **không có cổng COM ảo khả chuyển**) | |
 | **D-7** | Endpoint/RBAC/cấu hình + UI + census tài liệu | |
+
+### 🔴 7.1 Đính chính (2026-08-02, sau D-1) — D-4 phải nói rõ hình dạng nào, câu cũ của tôi không nói
+
+Bản đầu tôi mô tả D-4 là *"một bus, N địa chỉ slave, N mã máy"*. Câu đó **đọc tự nhiên thành "một file map khai N máy"** — và review D-1 chỉ ra rằng cùng một định dạng file ấy có **hai cách hiện thực hoá, không phân biệt được trong một câu đặc tả, và ngược nhau về an toàn**:
+
+| Cách | Hệ quả |
+|---|---|
+| Đường đăng ký **bung file ra thành N thực thể**, mỗi thực thể một máy | ✅ Hình dạng duy nhất tương thích với bất biến D-1 |
+| Một blob giao cho một factory, sinh **một driver phát ra N mã máy** | ❌ Làm `AmbiguousDriver` **với tới được trở lại ngay lập tức** |
+
+Lý do vế thứ hai hỏng: `SetpointWriteRequest` và `CommandRequest` **không mang mã máy**. Một driver phục vụ N máy thì không có cách nào phân giải một lệnh ghi tới đúng máy — đúng lỗ hổng đã sinh ra chốt `AmbiguousDriver` ở Đợt B.
+
+**Nên D-4 chỉ được làm cách thứ nhất.** Nếu ai đó muốn cách thứ hai, **phải mở rộng bản thân yêu cầu ghi để mang mã máy trước** — và đó là một quyết định riêng, không phải một chi tiết của D-4.
+
+Về §9 "nói con số": D-1 **không áp giới hạn nào** về số thiết bị trên một bus. Giới hạn sẽ đến từ tải điện RS-485 (thông lệ 32 unit load) và từ thông lượng trọng tài so với chu kỳ poll của từng thiết bị — câu trả lời thuộc D-4.
 
 **D-1 phải land riêng và xanh trước khi bất kỳ code RTU nào tồn tại** — cùng lý do C-6 phải land hàng đợi riêng từng kênh trước khi viết logic relay: trộn một cuộc tái cấu trúc xương sống với một tính năng mới thì một lỗi sẽ không quy trách nhiệm được.
 
