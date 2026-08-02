@@ -147,7 +147,10 @@ case "${1:-}" in
     ;;
 
   *)
-    sed -n '2,40p' "$0"
+    # Print the whole header, derived — not a hardcoded range. A fixed `2,40p` is what
+    # truncated this help the moment the USAGE block grew, which is the defect D-3 reported
+    # and which I then half-fixed by extending the block without extending the range.
+    sed -n "2,$(( $(awk '/^set -uo pipefail/{print NR; exit}' "$0") - 1 ))p" "$0"
     exit 2
     ;;
 esac
