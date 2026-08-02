@@ -44,7 +44,21 @@ let timer: NodeJS.Timeout | null = null;
  * ⚠ ĐỪNG SỬA BẰNG CÁCH ĐUA VỚI ĐỒNG HỒ. Chuyển lời gọi lên sớm hơn chỉ đổi cuộc đua này lấy
  * cuộc đua khác, và đường warm THỨ BA sau này lại làm hỏng. Task 5 đã nối `loadGgufModel` vào
  * `reserve()`, nên MỌI thứ do CHÍNH TA cấp phát đều đã nằm trong SỔ tại thời điểm chụp — trừ
- * sổ ra là xong, ĐÚNG với mọi thứ tự boot.
+ * phần đó ra là xong, ĐÚNG với mọi thứ tự boot.
+ *
+ * ⚠⚠ CHỈ TRỪ PHẦN **ĐÃ COMMIT** (review vòng 3) — trừ CẢ SỔ là SAI và từng làm nền bị ĐẦU ĐỘC
+ * VĨNH VIỄN. Cửa sổ "đã xin, chưa cấp phát xong" CÓ THẬT: `beginVram()` gọi `reserve()` ở
+ * `aiGgufEngine.ts:737` (cộng ƯỚC LƯỢNG vào sổ) TRƯỚC `llama.loadModel()` ở `:747`, còn
+ * `commitMeasured()` mãi `:802` — với model 30B ~17 GB khoảng đó dài NHIỀU GIÂY (cùng khuôn ở
+ * `:927`/`:938` cho context lười). Lượt chụp rơi vào đó thì:
+ *     nền = max(0, 941 − 17.000) = 0   ← kẹp, rồi GHIM VĨNH VIỄN
+ *     vài giây sau: 17.941 − 0 = 17.941 ⇒ drift = 941 ⇒ BÁO ĐỘNG mỗi 60 giây, MÃI MÃI.
+ * Tức là lỗi I-1 sống lại qua cửa sau, chỉ khác là hỏng theo XÁC SUẤT thời điểm boot.
+ *
+ * Giấy phép ĐÃ commit thì CHẮC CHẮN đã nằm trong `deviceUsed` — chính `commit()` đo từ thiết
+ * bị mà ra. Giấy phép CHƯA commit nghĩa là "đã xin nhưng chưa cấp phát xong" ⇒ nó CHƯA nằm
+ * trong `deviceUsed` ⇒ trừ nó đi là trừ một thứ CHƯA TỒN TẠI. Chỉ trừ phần đã commit thì cửa
+ * sổ đua biến mất về mặt CẤU TRÚC, không phải nhờ may.
  *
  * ⚠ GIỚI HẠN ĐÃ BIẾT, CHẤP NHẬN Ở PHA 1 — PHẢI ĐỌC TRƯỚC KHI TIN CON SỐ NÀY:
  * nếu server khởi động lại **trong khi một tiến trình con vẫn đang sống** (điển hình: sidecar
@@ -92,18 +106,38 @@ export async function captureVramBaseline(): Promise<number | null> {
   // Chưa đọc được ⇒ KHÔNG ghim, KHÔNG kết luận. Nhịp sau thử lại.
   if (!device) return null;
 
-  // NEW-1 — trừ phần của CHÍNH TA đã nằm trong sổ. `Math.max(0, …)` vì phép lấy mẫu không
-  // nguyên tử: `reserve()` cộng ước lượng vào sổ TRƯỚC khi VRAM vật lý kịp tăng, nên sổ có thể
-  // tạm lớn hơn thiết bị. Nền âm sẽ thổi phồng `attributable` vĩnh viễn — thà kẹp về 0.
-  const ledgerTotal = snapshot().totalReservedBytes;
+  const snap = snapshot();
+  const ledgerTotal = snap.totalReservedBytes;
   const raw = device.usedBytes;
-  baselineUsedBytes = Math.max(0, raw - ledgerTotal);
+
+  // ⚠ CỐ Ý KHÔNG dùng `leaseBytes()` (Task 4 xuất) ở đây, dù nó trông "gọn hơn".
+  // `leaseBytes()` trả `actualBytes ?? estimatedBytes` — nó CỐ TÌNH XOÁ NHOÀ ranh giới giữa
+  // "đã đo thật" và "mới ước lượng", đúng thứ mà mọi chỗ KHÁC cần. Ở ĐÂY thì ngược lại: ta
+  // phải PHÂN BIỆT hai thứ đó, vì chỉ phần ĐÃ COMMIT mới chắc chắn nằm trong `deviceUsed`.
+  // ⚠ Người sau: đừng "dọn dẹp" dòng này thành `leaseBytes()` — làm vậy là tái tạo đúng lỗi
+  // đã mô tả ở docstring trên (nền bị đầu độc vĩnh viễn khi chụp trúng cửa sổ chưa-commit).
+  const committedBytes = snap.leases.reduce((sum, l) => sum + (l.actualBytes ?? 0), 0);
+
+  // Trạng thái MÂU THUẪN: thiết bị đang giữ ÍT HƠN tổng ta đã ĐO ĐƯỢC trên chính nó. Không thể
+  // xảy ra nếu số liệu đúng ⇒ lượt chụp này VÔ LÝ. Không ghim, không kết luận, thử lại nhịp sau
+  // (cùng nguyên tắc với ca đầu dò `null` ở NEW-2): một phép chụp cho ra kết quả vô lý TUYỆT ĐỐI
+  // không được phép trở thành hằng số cho suốt vòng đời tiến trình.
+  if (raw < committedBytes) {
+    console.warn(
+      `[vram] BỎ QUA lượt chụp nền: thiết bị ${Math.round(raw / 1024 / 1024)} MiB < tổng đã commit ` +
+        `${Math.round(committedBytes / 1024 / 1024)} MiB — số liệu mâu thuẫn, sẽ thử lại ở nhịp sau.`,
+    );
+    return null;
+  }
+
+  baselineUsedBytes = raw - committedBytes;
   baselineCaptured = true;
 
   const mib = (b: number) => Math.round(b / 1024 / 1024);
   console.log(
     `[vram] nền thiết bị: ${mib(baselineUsedBytes)} MiB ` +
-      `(thiết bị ${mib(raw)} − sổ ${mib(ledgerTotal)}) — không phải của tiến trình này, sẽ TRỪ khỏi mọi phép so sổ.`,
+      `(thiết bị ${mib(raw)} − đã commit ${mib(committedBytes)}) — không phải của tiến trình này, ` +
+      `sẽ TRỪ khỏi mọi phép so sổ.`,
   );
   logVramEvent({
     event: "baseline",
@@ -114,12 +148,16 @@ export async function captureVramBaseline(): Promise<number | null> {
     ledgerTotalBytes: ledgerTotal,
     detail: {
       deviceUsedRawBytes: raw,
+      // Phần THỰC SỰ bị trừ. Khác `ledgerTotalBytes` đúng bằng phần giấy phép chưa commit —
+      // chênh lệch giữa hai số này cho biết lúc chụp có bao nhiêu lượt cấp phát đang dở dang.
+      committedBytes,
       ledgerTotalBytes: ledgerTotal,
       baselineUsedBytes,
       note:
-        "nền = thiết bị − sổ. Trừ sổ ra để cấp phát của CHÍNH TA (đường warm chạy trước lúc chụp) " +
-        "không bị nuốt vào nền, bất kể thứ tự boot. ⚠ Sidecar chạy tiến trình RIÊNG thì KHÔNG có " +
-        "trong sổ ⇒ vẫn bị nuốt vào đây (spec §6 — Pha 3 nhận nuôi).",
+        "nền = thiết bị − tổng giấy phép ĐÃ COMMIT. Chỉ trừ phần đã commit vì chỉ phần đó chắc " +
+        "chắn đã nằm trong deviceUsed; giấy phép chưa commit là 'đã xin, chưa cấp phát xong' nên " +
+        "trừ nó là trừ thứ chưa tồn tại. ⚠ Sidecar chạy tiến trình RIÊNG thì KHÔNG có trong sổ ⇒ " +
+        "vẫn bị nuốt vào đây (spec §6 — Pha 3 nhận nuôi).",
     },
   });
   return baselineUsedBytes;

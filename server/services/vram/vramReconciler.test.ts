@@ -306,15 +306,35 @@ describe("I-1 — nền thiết bị phải được TRỪ, nếu không chuông
  *     baseline = deviceUsed_lúc_chụp − ledgerTotal_lúc_chụp
  * ⇒ cấp phát của ta TỰ TRỪ khỏi nền, BẤT KỂ thứ tự boot, và đường warm thứ ba sau này cũng vô hại.
  */
-describe("NEW-1 — nền = thiết bị − SỔ, nên boot chậm bao nhiêu cũng không nuốt cấp phát của ta", () => {
+describe("NEW-1 — nền = thiết bị − phần ĐÃ COMMIT, nên boot chậm bao nhiêu cũng không nuốt cấp phát của ta", () => {
   beforeEach(() => vi.resetModules());
 
   const BACKGROUND = 941 * MIB; // nền thật đo trên máy này
   const DEEP_30B = 17_000 * MIB;
 
-  it("★ đường warm thứ hai đã nạp 30B TRƯỚC lúc chụp nền ⇒ nền vẫn chỉ là 941 MiB", async () => {
-    // Sổ ĐÃ CÓ giấy phép của chính ta (loadGgufModel đã reserve+commit) khi chụp nền.
-    vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: DEEP_30B, leases: [] }) }));
+  /** Giấy phép ĐÃ commit — chắc chắn đã nằm trong `deviceUsed`. */
+  const committed = (bytes: number) => ({
+    id: "lease-c",
+    request: { owner: "gguf:30B", kind: "gguf-model", estimatedBytes: bytes, priority: "interactive" },
+    acquiredAt: new Date(),
+    actualBytes: bytes,
+    lastHeartbeatAt: new Date(),
+    released: false,
+  });
+  /** Giấy phép ĐÃ XIN nhưng CHƯA cấp phát xong (`actualBytes === null`). */
+  const pending = (estimate: number) => ({
+    id: "lease-p",
+    request: { owner: "gguf:30B", kind: "gguf-model", estimatedBytes: estimate, priority: "interactive" },
+    acquiredAt: new Date(),
+    actualBytes: null,
+    lastHeartbeatAt: new Date(),
+    released: false,
+  });
+
+  it("★ đường warm thứ hai đã nạp XONG 30B TRƯỚC lúc chụp nền ⇒ nền vẫn chỉ là 941 MiB", async () => {
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: DEEP_30B, leases: [committed(DEEP_30B)] }),
+    }));
     vi.doMock("./vramProbe", () => ({
       readDeviceVram: async () => ({ usedBytes: BACKGROUND + DEEP_30B, totalBytes: 32_607 * MIB }),
     }));
@@ -323,21 +343,22 @@ describe("NEW-1 — nền = thiết bị − SỔ, nên boot chậm bao nhiêu c
     const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
     const base = await captureVramBaseline();
 
-    // KHÔNG được là 17.941 MiB — 30B là của TA, đã nằm trong sổ.
+    // KHÔNG được là 17.941 MiB — 30B là của TA, đã commit nên đã nằm trong deviceUsed.
     expect(base).toBe(BACKGROUND);
 
-    // Và ngay sau đó sổ khớp thiết bị ⇒ im lặng.
     const r = await reconcileOnce();
     expect(r.driftBytes).toBe(0);
     expect(r.alarm).toBe(false);
   });
 
-  it("sự kiện `baseline` phải ghi CẢ deviceUsedRaw LẪN ledgerTotal để dựng lại phép tính", async () => {
-    vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: DEEP_30B, leases: [] }) }));
+  it("sự kiện `baseline` phải ghi CẢ deviceUsedRaw LẪN phần đã trừ để dựng lại phép tính", async () => {
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: DEEP_30B, leases: [committed(DEEP_30B)] }),
+    }));
     vi.doMock("./vramProbe", () => ({
       readDeviceVram: async () => ({ usedBytes: BACKGROUND + DEEP_30B, totalBytes: 32_607 * MIB }),
     }));
-    const logged: Array<{ event: string; detail?: Record<string, unknown>; ledgerTotalBytes?: number }> = [];
+    const logged: Array<{ event: string; detail?: Record<string, unknown> }> = [];
     vi.doMock("./vramEventLog", () => ({ logVramEvent: (e: never) => logged.push(e) }));
 
     const { captureVramBaseline } = await import("./vramReconciler");
@@ -346,19 +367,90 @@ describe("NEW-1 — nền = thiết bị − SỔ, nên boot chậm bao nhiêu c
     const ev = logged.find((l) => l.event === "baseline")!;
     expect(ev).toBeDefined();
     expect(ev.detail!.deviceUsedRawBytes).toBe(BACKGROUND + DEEP_30B);
+    expect(ev.detail!.committedBytes).toBe(DEEP_30B);
     expect(ev.detail!.ledgerTotalBytes).toBe(DEEP_30B);
     expect(ev.detail!.baselineUsedBytes).toBe(BACKGROUND);
   });
 
-  it("nền KHÔNG BAO GIỜ âm — sổ tạm lớn hơn thiết bị (lấy mẫu không nguyên tử) vẫn cho nền ≥ 0", async () => {
-    vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 20_000 * MIB, leases: [] }) }));
+  /**
+   * ★★ VÒNG 3 — CỬA SỔ "ĐÃ XIN, CHƯA CẤP PHÁT XONG".
+   *
+   * Cửa sổ CÓ THẬT: `beginVram()` ở `aiGgufEngine.ts:737` gọi `reserve()` (cộng ƯỚC LƯỢNG vào
+   * sổ) TRƯỚC `llama.loadModel()` ở `:747`; `commitMeasured()` mãi `:802`. Với model 30B
+   * ~17 GB khoảng đó dài NHIỀU GIÂY. Cùng khuôn ở `:927`/`:938` cho context lười.
+   *
+   * Công thức "trừ CẢ SỔ" của vòng 2 làm nền bị ĐẦU ĐỘC VĨNH VIỄN nếu lượt chụp rơi vào đây:
+   *   nền = max(0, 941 − 17.000) = 0  ← kẹp, rồi GHIM
+   *   vài giây sau: 17.941 − 0 = 17.941 ⇒ drift = 941 ⇒ ALARM mỗi 60 s, MÃI MÃI.
+   * Tức là lỗi I-1 sống lại qua cửa sau — chỉ khác: hỏng theo XÁC SUẤT thời điểm boot.
+   *
+   * SỬA: chỉ trừ phần ĐÃ COMMIT. Giấy phép chưa commit nghĩa là "đã xin nhưng CHƯA cấp phát
+   * xong" ⇒ nó CHƯA nằm trong `deviceUsed` ⇒ trừ nó là trừ một thứ chưa tồn tại.
+   */
+  it("★★ chụp nền TRÚNG cửa sổ chưa-commit ⇒ nền vẫn là 941, KHÔNG bị kẹp về 0", async () => {
+    // Sổ đã cộng 17 GB ƯỚC LƯỢNG; thiết bị vật lý chưa kịp tăng.
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: DEEP_30B, leases: [pending(DEEP_30B)] }),
+    }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: 1_000 * MIB, totalBytes: 32_607 * MIB }),
+      readDeviceVram: async () => ({ usedBytes: BACKGROUND, totalBytes: 32_607 * MIB }),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
 
     const { captureVramBaseline } = await import("./vramReconciler");
-    expect(await captureVramBaseline()).toBe(0);
+    expect(await captureVramBaseline()).toBe(BACKGROUND);
+  });
+
+  it("★★ …và vài giây sau khi model tải xong thì KHÔNG báo động", async () => {
+    // Ảnh chụp thay đổi theo thời gian: lúc chụp nền còn pending, lúc đối chiếu đã commit.
+    let done = false;
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () =>
+        done
+          ? { totalReservedBytes: DEEP_30B, leases: [committed(DEEP_30B)] }
+          : { totalReservedBytes: DEEP_30B, leases: [pending(DEEP_30B)] },
+      // Chỉ được dùng ở đường CẢNH BÁO. Có mặt để nếu test này đỏ thì đỏ vì SỐ SAI,
+      // không phải vì mock thiếu hàm.
+      leaseBytes: (l: { actualBytes: number | null; request: { estimatedBytes: number } }) =>
+        l.actualBytes ?? l.request.estimatedBytes,
+    }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({
+        usedBytes: done ? BACKGROUND + DEEP_30B : BACKGROUND,
+        totalBytes: 32_607 * MIB,
+      }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+    await captureVramBaseline(); // TRÚNG cửa sổ chưa-commit
+    done = true; // model tải xong, commit số thật
+
+    const r = await reconcileOnce();
+    expect(r.baselineUsedBytes).toBe(BACKGROUND);
+    expect(r.driftBytes).toBe(0);
+    expect(r.alarm).toBe(false);
+  });
+
+  it("★★ trạng thái MÂU THUẪN (thiết bị < tổng ĐÃ COMMIT) ⇒ KHÔNG ghim, nhịp sau chụp lại được", async () => {
+    // Một phép chụp cho ra kết quả VÔ LÝ thì không được phép thành hằng số vĩnh viễn.
+    let broken = true;
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: DEEP_30B, leases: [committed(DEEP_30B)] }),
+    }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({
+        usedBytes: broken ? 1_000 * MIB : BACKGROUND + DEEP_30B,
+        totalBytes: 32_607 * MIB,
+      }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { captureVramBaseline } = await import("./vramReconciler");
+    expect(await captureVramBaseline()).toBeNull(); // vô lý ⇒ từ chối kết luận
+
+    broken = false;
+    expect(await captureVramBaseline()).toBe(BACKGROUND); // nhịp sau: chụp được
   });
 });
 
