@@ -249,6 +249,16 @@ export function parseScoreArray(text: string | undefined | null, n: number): num
 
 let _rankLlama: unknown = null;
 let _rankModel: unknown = null;
+/**
+ * Pha 1 Task 5 — giấy phép VRAM của HỘ TIÊU THỤ THỨ SÁU.
+ *
+ * ⚠ Đây là hộ tiêu thụ mà không công cụ nào của ba đợt trước nhìn thấy: `getRankingContext()`
+ * bên dưới gọi THẲNG `llama.loadModel` (dòng ~361) — KHÔNG qua `loadGgufModel()` của
+ * aiGgufEngine — nên nó vắng mặt khỏi `loadedModels`, khỏi `evictLRU()` và khỏi MỌI phép cộng
+ * VRAM đã làm. Hôm nay nó chiếm 0 MiB CHỈ VÌ `RAG_RERANKER_GPU=false` (mặc định); đổi đúng một
+ * cờ môi trường là có ngay một model nữa trên card mà không bảng nào cộng vào.
+ */
+let _rankVramTicket: import("./vram/vramWiring").VramTicket | null = null;
 let _rankCtx: { rankAll: (q: string, docs: string[]) => Promise<number[]> } | null = null;
 let _rankCtxFailed = false;
 // One-time "which backend is active" log guard, so we emit exactly one clear line
@@ -358,6 +368,24 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
       },
     })) as { loadModel: (o: { modelPath: string; gpuLayers?: number }) => Promise<unknown> };
     _rankLlama = llama;
+    // Pha 1 Task 5 — KHAI BÁO hộ tiêu thụ thứ sáu vào sổ cái. `background`: rerank là tiện ích
+    // của RAG, phải nhường chỗ cho AOI (`production`) và cho chat/RCA (`interactive`).
+    // Telemetry hỏng ⇒ giấy phép rỗng; lượt nạp reranker chạy y nguyên như trước.
+    try {
+      const { beginVramAllocation } = await import("./vram/vramWiring");
+      const t = await beginVramAllocation({
+        owner: `reranker:${modelPath}`,
+        kind: "gguf-model",
+        priority: "background",
+        filePath: modelPath,
+      });
+      // `getRankingContext()` không có khoá in-flight (hành vi CÓ SẴN): hai lượt rerank đầu
+      // tiên chạy song song đều thấy `_rankCtx` rỗng. Trả giấy phép cũ trước khi ghi đè.
+      _rankVramTicket?.release();
+      _rankVramTicket = t;
+    } catch {
+      /* telemetry KHÔNG được làm hỏng đường nạp reranker */
+    }
     const model = (await llama.loadModel({ modelPath, gpuLayers: useGpu ? -1 : 0 })) as {
       createRankingContext: (o?: { contextSize?: "auto" | number }) => Promise<{
         rankAll: (q: string, docs: string[]) => Promise<number[]>;
@@ -365,11 +393,22 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     };
     _rankModel = model;
     _rankCtx = await model.createRankingContext({ contextSize: "auto" });
+    // Số THẬT sau khi CẢ trọng số LẪN ranking context đã cấp phát. Chạy CPU (mặc định) thì
+    // delta đúng bằng 0 — và 0 được ghi làm số liệu thật, nên sổ KHÔNG cộng nhầm cả trăm MiB
+    // theo kích thước file cho một model không hề ở trên card.
+    await _rankVramTicket?.commitMeasured();
     console.log(
       `[aiReranker] mode=gguf model=${path.basename(modelPath, ".gguf")} device=${useGpu ? "gpu" : "cpu"} (ranking context ready)`,
     );
     return _rankCtx;
   } catch (err) {
+    // Pha 1 Task 5 — nạp/tạo ranking context hỏng ⇒ TRẢ chỗ ngay, không để giấy phép treo.
+    try {
+      _rankVramTicket?.release();
+    } catch {
+      /* telemetry KHÔNG được làm hỏng đường degrade sang backend llm */
+    }
+    _rankVramTicket = null;
     // Most common cause: the model isn't a reranker (no rank head) → llama.cpp
     // throws on createRankingContext. Mark failed so we don't retry per-query.
     console.warn(
@@ -472,6 +511,13 @@ export async function disposeReranker(): Promise<void> {
   } catch {
     /* best-effort */
   }
+  // Pha 1 Task 5 — trả giấy phép của hộ tiêu thụ thứ sáu SAU khi đã dispose thật.
+  try {
+    _rankVramTicket?.release();
+  } catch {
+    /* best-effort — telemetry không được làm hỏng lượt dispose */
+  }
+  _rankVramTicket = null;
   _rankCtx = null;
   _rankModel = null;
   _rankLlama = null;

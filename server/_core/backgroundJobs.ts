@@ -129,6 +129,22 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[aiGgufEngine] deep-model warm init failed:", (err as any)?.message || err);
   }
 
+  // Pha 1 điều phối VRAM (Task 5) — bật SỔ CÁI + ĐỐI CHIẾU. ⚠ CHỈ QUAN SÁT: `reserve()` không
+  // bao giờ từ chối và không thu hồi của ai ở pha này; giá trị nằm ở chỗ `reconcileOnce()` so sổ
+  // với thiết bị mỗi 60 s và hét lên khi lệch — sidecar 7,8 GB (Đợt 0), ONNX +339 và cron +1.251
+  // (Đợt 2) đều từng phải chờ một lượt review TOÀN NHÁNH mới lộ ra.
+  // ⚠ ĐÂY LÀ NƠI DUY NHẤT được bật bộ đếm giờ nhật ký. `logVramEvent()` TUYỆT ĐỐI không tự bật —
+  // bài học Đợt trước: `setInterval` unref'd của `aiGateway` tự bắn, tự kết nối, TỰ GHI DB TEST.
+  try {
+    const { startVramReconciler } = await import("../services/vram/vramReconciler");
+    const { __setVramLogTimerEnabled } = await import("../services/vram/vramEventLog");
+    startVramReconciler();
+    __setVramLogTimerEnabled(true);
+    console.log("[vram] sổ cái + đối chiếu đã bật (Pha 1 — CHỈ QUAN SÁT, không cưỡng chế).");
+  } catch (err) {
+    console.error("[vram] không bật được sổ cái/đối chiếu:", (err as any)?.message || err);
+  }
+
   // Wave 3 §4.2 — đóng cảnh báo đã thôi tái diễn, kèm lý do. Best-effort.
   try {
     const { initAlertExpirySweeper } = await import("../services/alertExpirySweeper");
@@ -631,6 +647,14 @@ export function stopBackgroundSchedulers(): void {
     clearInterval(machineKeyExpiryTimer);
     machineKeyExpiryTimer = null;
   }
+  // Pha 1 điều phối VRAM (Task 5) — tắt đối xứng với chỗ bật ở startBackgroundSchedulers().
+  // Cả hai đều idempotent (no-op khi chưa từng bật).
+  import("../services/vram/vramReconciler")
+    .then((m) => m.stopVramReconciler())
+    .catch(() => {});
+  import("../services/vram/vramEventLog")
+    .then((m) => m.__setVramLogTimerEnabled(false))
+    .catch(() => {});
   import("../services/reportScheduler")
     .then((m) => {
       m.shutdownScheduledReports();

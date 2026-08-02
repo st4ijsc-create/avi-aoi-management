@@ -37,6 +37,9 @@ import {
   defaultModelBasename as resolveDefaultModelBasename,
   toBasename,
 } from "./ai/modelResolver";
+// Pha 1 Task 5 — dây nối sổ cái VRAM. `import type` (bị xoá hoàn toàn lúc biên dịch) + `import()`
+// động ở từng điểm cấp phát, để module telemetry KHÔNG nằm trên đường nạp của file này.
+import type { VramTicket } from "./vram/vramWiring";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -170,6 +173,12 @@ interface LoadedModel {
   sizeBytes: number;
   /** In-flight reference count — a model with refCount > 0 must NOT be evicted. */
   refCount: number;
+  /** Pha 1 Task 5 — giấy phép VRAM của TRỌNG SỐ (+ context tạo lúc nạp). Trả ở unloadGgufModel(). */
+  vramTicket?: VramTicket;
+  /** Pha 1 Task 5 — giấy phép VRAM của embedding context tạo LƯỜI (getEmbeddingContext). */
+  embedCtxVramTicket?: VramTicket;
+  /** Pha 1 Task 5 — giấy phép VRAM của context thường tạo LƯỜI (ensureTextContext). */
+  textCtxVramTicket?: VramTicket;
 }
 
 const loadedModels = new Map<string, LoadedModel>();
@@ -341,6 +350,17 @@ async function getLlama(): Promise<any> {
       gpu: process.env.GGUF_GPU === "false" ? false : "auto",
     });
     console.log("[aiGgufEngine] llama.cpp engine initialized (GPU:", process.env.GGUF_GPU !== "false" ? "auto" : "disabled", ")");
+    // Pha 1 Task 5 — NỐI ĐẦU DÒ VRAM vào thể hiện llama vừa tạo. Không nối thì
+    // `vram/vramProbe.readDeviceVram()` LUÔN lùi về `nvidia-smi` (~80 ms/lượt đo trên máy này,
+    // tới ~3 s ở trường hợp xấu — xem vramProbe.ts:7-10) dù `llamaInstance.getVramState()`
+    // native đã sẵn ở đây. CHỈ nối dây, không đổi hành vi; lỗi bị nuốt vì telemetry không bao
+    // giờ được làm hỏng lượt khởi tạo engine.
+    try {
+      const { setLlamaInstanceHandle } = await import("./vram/llamaHandle");
+      setLlamaInstanceHandle(llamaInstance);
+    } catch {
+      /* telemetry KHÔNG được làm hỏng đường khởi tạo engine */
+    }
     return llamaInstance;
   } catch (err) {
     console.error("[aiGgufEngine] Failed to initialize llama.cpp:", err);
@@ -644,6 +664,42 @@ export async function isGgufModelLoadable(): Promise<boolean> {
 }
 
 /**
+ * Pha 1 Task 5 — mở MỘT giấy phép VRAM quanh một lượt cấp phát. KHÔNG BAO GIỜ ném:
+ * `beginVramAllocation()` đã tự nuốt mọi lỗi bên trong, lớp bọc này chỉ chặn nốt trường hợp
+ * chính lượt `import()` module telemetry hỏng. Telemetry chết thì hệ vẫn phải nạp được model.
+ */
+async function beginVram(
+  opts: import("./vram/vramWiring").VramAllocationOptions,
+): Promise<VramTicket> {
+  try {
+    const { beginVramAllocation } = await import("./vram/vramWiring");
+    return await beginVramAllocation(opts);
+  } catch {
+    return { commitMeasured: async () => {}, release: () => {} };
+  }
+}
+
+/** Pha 1 Task 5 — trả MỘT giấy phép (có thể chưa mở được). KHÔNG BAO GIỜ ném. */
+function releaseVramTicketQuietly(ticket: VramTicket | null | undefined): void {
+  try {
+    ticket?.release();
+  } catch {
+    /* telemetry KHÔNG được làm hỏng đường lỗi của người gọi */
+  }
+}
+
+/** Pha 1 Task 5 — trả MỌI giấy phép VRAM gắn với một model đã nạp. KHÔNG BAO GIỜ ném. */
+function releaseModelVramTickets(loaded: LoadedModel): void {
+  try {
+    loaded.vramTicket?.release();
+    loaded.embedCtxVramTicket?.release();
+    loaded.textCtxVramTicket?.release();
+  } catch {
+    /* telemetry KHÔNG được làm hỏng lượt unload */
+  }
+}
+
+/**
  * Load a GGUF model into memory and create a context/session
  */
 export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
@@ -662,6 +718,11 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
   const pending = inFlightLoads.get(modelId);
   if (pending) return pending;
 
+  // Pha 1 Task 5 — giữ giấy phép NGOÀI IIFE để nhánh `catch` bên dưới trả được chỗ khi lượt
+  // nạp hỏng giữa chừng (không thì sổ giữ một giấy phép MA cho model chưa bao giờ tồn tại).
+  // Dùng object holder chứ không `let` để TypeScript không thu hẹp kiểu về `null` ở nơi dùng.
+  const vramHolder: { ticket: VramTicket | null } = { ticket: null };
+
   const loadPromise = (async () => {
     const llama = await getLlama();
 
@@ -670,6 +731,15 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
 
     console.log(`[aiGgufEngine] Loading model: ${resolvedPath}`);
     const startTime = Date.now();
+
+    // Pha 1 Task 5 — CHỈ KHAI BÁO. `ensureCapacity()`/`enforceVramGuard()`/`evictLRU()` ngay
+    // bên trên vẫn chạy y nguyên; ba lời gọi telemetry ở đây không quyết định gì.
+    vramHolder.ticket = await beginVram({
+      owner: `gguf:${modelId}`,
+      kind: "gguf-model",
+      priority: "interactive",
+      filePath: resolvedPath,
+    });
 
     const requestedGpuLayers = config.gpuLayers ?? "max";
     let model;
@@ -725,6 +795,12 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
       });
     }
 
+    // Pha 1 Task 5 — GHI SỐ THẬT. ⚠ Số này là TRỌNG SỐ + CONTEXT, **CHƯA GỒM** buffer suy luận:
+    // llama.cpp cấp phát compute buffer LƯỜI, ở lượt suy luận ĐẦU TIÊN — tức là SAU điểm này.
+    // Người sau đọc `actualBytes` của giấy phép `gguf:*` đừng tưởng đó là tổng VRAM của model.
+    // Phần chênh còn lại lộ ra ở `vramReconciler` dưới dạng lệch DƯƠNG sau lượt suy luận đầu.
+    await vramHolder.ticket.commitMeasured();
+
     const loadTimeMs = Date.now() - startTime;
     console.log(`[aiGgufEngine] Model loaded in ${loadTimeMs}ms: ${modelId}`);
 
@@ -738,6 +814,7 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
       useCount: 0,
       sizeBytes: typeof model.size === "number" ? model.size : 0,
       refCount: 0,
+      vramTicket: vramHolder.ticket ?? undefined,
     });
 
     return modelId;
@@ -746,6 +823,12 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
   inFlightLoads.set(modelId, loadPromise);
   try {
     return await loadPromise;
+  } catch (err) {
+    // Pha 1 Task 5 — lượt nạp hỏng ⇒ TRẢ chỗ. Không trả thì sổ giữ một giấy phép treo mãi mãi
+    // và `vramReconciler` sẽ báo lệch ÂM (sổ > thiết bị) — đúng lớp báo động giả phải tránh.
+    // Ném lại NGUYÊN lỗi cũ: nhánh này không đổi hành vi của lượt nạp.
+    releaseVramTicketQuietly(vramHolder.ticket);
+    throw err;
   } finally {
     // Bắt buộc: nạp thất bại mà không xoá khỏi map thì mọi lượt sau sẽ nhận lại đúng
     // promise lỗi đó vĩnh viễn (không bao giờ thử nạp lại).
@@ -824,6 +907,10 @@ async function ensureTextContext(
       `(xem review round 1 Critical-1, docs/superpowers/reports/2026-08-02-dot2-report.md §3).`,
   );
 
+  // Pha 1 Task 5 — giữ giấy phép NGOÀI IIFE để nhánh `catch` bên dưới trả được chỗ khi
+  // createContext() ném (VRAM gần đầy) — cùng lý do đã ghi ở loadGgufModel().
+  const vramHolder: { ticket: VramTicket | null } = { ticket: null };
+
   const createPromise = (async () => {
     // review round 2 M-a — cùng hàng rào loadGgufModel() dùng TRƯỚC khi cấp phát VRAM: giải
     // phóng model rảnh (LRU + GGUF_MAX_VRAM_MB) trước khi tạo context ~2GB. Thiếu bước này,
@@ -832,12 +919,24 @@ async function ensureTextContext(
     // xảy ra nhất trên thực tế.
     await ensureCapacity();
     const resolvedCtx = resolveContextSize(requestedContextSize ?? loaded.config.contextSize);
+    // Pha 1 Task 5 — CHỈ KHAI BÁO. `ensureCapacity()` ngay trên vẫn chạy y nguyên.
+    // KHÔNG có file trên đĩa để suy ra kích thước context ⇒ ước lượng nấc "unknown" ở lượt
+    // ĐẦU; `commitMeasured()` bên dưới ghi số THẬT và từ lượt sau nấc "learned" tiếp quản.
+    // ⚠ CỐ Ý không truyền `configDefaultBytes`: một hằng số bịa ra ở đây chính là thứ đã trôi
+    // bốn lần (spec §7) — thà nhận "không biết" rồi ĐO, còn hơn nhận nhầm một con số.
+    vramHolder.ticket = await beginVram({
+      owner: `gguf-ctx:${modelId}`,
+      kind: "gguf-context",
+      priority: "interactive",
+    });
     const ctx = await loaded.model.createContext({
       contextSize: resolvedCtx,
       batchSize: loaded.config.batchSize ?? 512,
       flashAttention: loaded.config.flashAttention !== false,
       sequences: GGUF_SEQUENCES,
     });
+    await vramHolder.ticket.commitMeasured();
+    loaded.textCtxVramTicket = vramHolder.ticket;
     loaded.context = ctx;
     // Hết đúng nghĩa "chỉ-nhúng" — giữ metadata (getLoadedGgufModels()) khớp thực tế, tránh
     // hiển thị nhầm cho admin xem trạng thái model.
@@ -848,6 +947,10 @@ async function ensureTextContext(
   textContextInFlight.set(modelId, createPromise);
   try {
     return await createPromise;
+  } catch (err) {
+    // Pha 1 Task 5 — tạo context hỏng ⇒ TRẢ chỗ, rồi ném lại NGUYÊN lỗi cũ (không đổi hành vi).
+    releaseVramTicketQuietly(vramHolder.ticket);
+    throw err;
   } finally {
     // Bắt buộc: tạo thất bại mà không xoá khỏi map thì mọi lượt sau nhận lại đúng promise lỗi
     // đó vĩnh viễn — cùng lý do inFlightLoads/embeddingContextInFlight đã ghi.
@@ -880,11 +983,16 @@ export async function unloadGgufModel(modelId: string): Promise<boolean> {
     }
     await loaded.model.dispose();
     loadedModels.delete(modelId);
+    // Pha 1 Task 5 — trả chỗ SAU khi đã dispose thật, để sổ không rỗng trước thiết bị.
+    releaseModelVramTickets(loaded);
     console.log(`[aiGgufEngine] Model unloaded: ${modelId}`);
     return true;
   } catch (err) {
     console.error(`[aiGgufEngine] Error unloading model ${modelId}:`, err);
     loadedModels.delete(modelId);
+    // Pha 1 Task 5 — model đã bị gỡ khỏi registry kể cả khi dispose lỗi ⇒ sổ cũng phải nhả,
+    // nếu không giấy phép treo vĩnh viễn.
+    releaseModelVramTickets(loaded);
     return false;
   }
 }
@@ -2596,14 +2704,25 @@ async function getEmbeddingContext(modelId: string, loaded: LoadedModel): Promis
   if (pending) return pending;
 
   const createPromise = (async () => {
+    // Pha 1 Task 5 — CHỈ KHAI BÁO. Cùng lý do đã ghi ở ensureTextContext(): không có file
+    // trên đĩa để suy ra kích thước, và CỐ Ý không bịa `configDefaultBytes` — đo rồi học.
+    // Mức `background`: đường nhúng phục vụ RAG, nhường chỗ cho suy luận và cho AOI.
+    const vramTicket = await beginVram({
+      owner: `gguf-embed-ctx:${modelId}`,
+      kind: "gguf-embed-context",
+      priority: "background",
+    });
     try {
       const ctx = await loaded.model.createEmbeddingContext({
         contextSize: EMBED_CTX,
         batchSize: loaded.config.batchSize ?? 512,
       });
+      await vramTicket.commitMeasured();
+      loaded.embedCtxVramTicket = vramTicket;
       loaded.embeddingContext = ctx;
       return ctx;
     } catch (err: any) {
+      releaseVramTicketQuietly(vramTicket);
       throw new Error(
         `Model does not support embeddings (createEmbeddingContext failed: ${err?.message ?? err}). ` +
           `Set GGUF_EMBED_MODEL to point to an embedding model such as mxbai-embed-large. ` +

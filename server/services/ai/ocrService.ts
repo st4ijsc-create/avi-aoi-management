@@ -295,6 +295,13 @@ function getCharset(dictPath: string, blankIndex: number): string[] {
 
 const recSessionCache = new Map<string, unknown>();
 
+/**
+ * Pha 1 Task 5 (điều phối VRAM) — giấy phép theo modelPath. ⚠ `recSessionCache` KHÔNG có đường
+ * đuổi nào trong sản xuất: session sống tới hết vòng đời tiến trình, nên giấy phép cũng vậy —
+ * đó là ĐÚNG, không phải rò. Chỉ `_resetOcrCachesForTests()` mới trả chỗ.
+ */
+const recSessionVramTickets = new Map<string, import("../vram/vramWiring").VramTicket>();
+
 async function getOnnxSession(modelPath: string): Promise<unknown> {
   const cached = recSessionCache.get(modelPath);
   if (cached) return cached;
@@ -310,10 +317,37 @@ async function getOnnxSession(modelPath: string): Promise<unknown> {
     providers.push("dml");
   }
   if (!providers.includes("cpu")) providers.push("cpu");
+  // Pha 1 Task 5 — CHỈ KHAI BÁO. Mức `production`: OCR đọc tem/nhãn/serial trên đường kiểm
+  // tra AOI (spec §5.2). Telemetry hỏng ⇒ giấy phép rỗng, lượt tạo session vẫn chạy y nguyên.
+  let vramTicket: import("../vram/vramWiring").VramTicket = {
+    commitMeasured: async () => {},
+    release: () => {},
+  };
+  try {
+    const { beginVramAllocation } = await import("../vram/vramWiring");
+    vramTicket = await beginVramAllocation({
+      owner: `onnx-ocr:${modelPath}`,
+      kind: "onnx-session",
+      priority: "production",
+      filePath: modelPath,
+    });
+  } catch {
+    /* telemetry KHÔNG được làm hỏng đường tạo session */
+  }
   const session = await ort.InferenceSession.create(modelPath, {
     executionProviders: providers,
     graphOptimizationLevel: "all",
+    // ⚠ `.catch()` để dòng `create(...)` đứng nguyên văn — xem ghi chú cùng loại ở
+    // aiInferenceEngine.getSession(). Chỉ trả chỗ rồi ném lại NGUYÊN lỗi cũ.
+  }).catch((err: unknown) => {
+    vramTicket.release();
+    throw err;
   });
+  await vramTicket.commitMeasured();
+  // Cùng lý do đã ghi ở aiInferenceEngine.getSession(): không có khoá in-flight ⇒ trả giấy
+  // phép cũ trước khi ghi đè, không để nó treo trong sổ.
+  recSessionVramTickets.get(modelPath)?.release();
+  recSessionVramTickets.set(modelPath, vramTicket);
   recSessionCache.set(modelPath, session);
   return session;
 }
@@ -511,5 +545,14 @@ export async function checkLabel(
 /** Test seam — clear the cached ONNX sessions / charset. */
 export function _resetOcrCachesForTests(): void {
   recSessionCache.clear();
+  // Pha 1 Task 5 — dọn cả sổ, nếu không test sau thấy giấy phép của test trước.
+  for (const t of recSessionVramTickets.values()) {
+    try {
+      t.release();
+    } catch {
+      /* best-effort */
+    }
+  }
+  recSessionVramTickets.clear();
   _cachedCharset = null;
 }

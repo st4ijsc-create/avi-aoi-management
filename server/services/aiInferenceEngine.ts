@@ -10,6 +10,43 @@ import { MicroBatcher, Semaphore, type BatchOutcome } from "./ai/microBatcher";
 // (no ONNX/DB imports); recordVisionInferenceLatency is a NO-OP unless
 // VISION_SLO_OBSERVE_ENABLED, so this import is bit-compatible when the flag is off.
 import { recordVisionInferenceLatency } from "./ai/visionInferenceSlo";
+// Pha 1 Task 5 (điều phối VRAM) — `import type` bị xoá hoàn toàn lúc biên dịch; module telemetry
+// chỉ được nạp bằng `import()` động tại đúng điểm cấp phát, không nằm trên đường nạp file này.
+import type { VramTicket } from "./vram/vramWiring";
+
+/**
+ * Pha 1 Task 5 — mở MỘT giấy phép VRAM quanh một lượt cấp phát. KHÔNG BAO GIỜ ném.
+ * ⚠ Session ONNX phục vụ ĐƯỜNG KIỂM TRA AOI — tiền của nhà máy (spec §5.2) — nên giấy phép
+ * ở đây mang mức `production`, cao hơn cả chat/RCA (`interactive`) lẫn RAG (`background`).
+ */
+async function beginVram(
+  opts: import("./vram/vramWiring").VramAllocationOptions,
+): Promise<VramTicket> {
+  try {
+    const { beginVramAllocation } = await import("./vram/vramWiring");
+    return await beginVramAllocation(opts);
+  } catch {
+    return { commitMeasured: async () => {}, release: () => {} };
+  }
+}
+
+/**
+ * Pha 1 Task 5 — giấy phép VRAM theo cacheKey của session. Phải TRẢ khi session rời cache
+ * (LRU đẩy ra hoặc `evictSessionCache()`), nếu không sổ giữ chỗ cho một session không còn tồn
+ * tại và `vramReconciler` báo lệch ÂM giả.
+ */
+const sessionVramTickets = new Map<string, VramTicket>();
+
+function releaseSessionVramTicket(key: string): void {
+  try {
+    const t = sessionVramTickets.get(key);
+    if (!t) return;
+    sessionVramTickets.delete(key);
+    t.release();
+  } catch {
+    /* telemetry KHÔNG được làm hỏng vòng đời cache */
+  }
+}
 
 // ─── W7-D (doc 27 gap V6) — GPU micro-batching + concurrency knobs ───────────
 //   AI_SESSION_CACHE_MAX  LRU ONNX session cache size (default 5; 8 documented-OK
@@ -50,11 +87,15 @@ class LruSessionCache {
     this.map.set(key, session);
     if (this.map.size > SESSION_CACHE_MAX) {
       // Evict the oldest (first) entry
-      this.map.delete(this.map.keys().next().value!);
+      // Pha 1 Task 5 — giữ lại key trước khi xoá để TRẢ giấy phép VRAM tương ứng.
+      // Ngữ nghĩa y hệt dòng cũ `this.map.delete(this.map.keys().next().value!)`.
+      const evictedKey = this.map.keys().next().value!;
+      this.map.delete(evictedKey);
+      releaseSessionVramTicket(evictedKey);
     }
   }
 
-  delete(key: string): void { this.map.delete(key); }
+  delete(key: string): void { this.map.delete(key); releaseSessionVramTicket(key); }
   keys(): IterableIterator<string> { return this.map.keys(); }
   [Symbol.iterator](): IterableIterator<[string, ort.InferenceSession]> { return this.map[Symbol.iterator](); }
   get size(): number { return this.map.size; }
@@ -126,10 +167,33 @@ async function getSession(model: AiModel): Promise<ort.InferenceSession> {
   const executionProviders = getExecutionProviders();
   logProviders(executionProviders);
 
+  // Pha 1 Task 5 — CHỈ KHAI BÁO, không quyết định gì: không có hàng rào nào ở đây bị đổi.
+  const vramTicket = await beginVram({
+    owner: `onnx:${model.code}`,
+    kind: "onnx-session",
+    priority: "production",
+    filePath: modelPath,
+  });
+
   const session = await ort.InferenceSession.create(modelPath, {
     executionProviders,
     graphOptimizationLevel: "all",
+    // ⚠ `.catch()` chứ không bọc try/catch, để dòng `create(...)` ở trên đứng NGUYÊN VĂN như
+    // trước — Task 5 phải chứng minh bằng diff rằng đường cấp phát không bị sửa. Nhánh này chỉ
+    // trả chỗ rồi ném lại NGUYÊN lỗi cũ.
+  }).catch((err: unknown) => {
+    vramTicket.release();
+    throw err;
   });
+
+  // Số THẬT = VRAM tăng thêm do session này. Với EP là CPU thì đúng bằng 0 — và 0 LÀ số liệu
+  // thật, được ghi để sổ không phình lên theo kích thước file .onnx (xem vramWiring.ts).
+  await vramTicket.commitMeasured();
+  // ⚠ `getSession()` KHÔNG có khoá in-flight: hai lượt cùng cacheKey chạy song song đều trượt
+  // cache và cùng tạo session (hành vi CÓ SẴN, không thuộc phạm vi Task 5). Trả giấy phép cũ
+  // trước khi ghi đè, nếu không cái cũ treo vĩnh viễn trong sổ và sinh báo động lệch ÂM giả.
+  releaseSessionVramTicket(cacheKey);
+  sessionVramTickets.set(cacheKey, vramTicket);
 
   sessionCache.set(cacheKey, session);
   return session;
