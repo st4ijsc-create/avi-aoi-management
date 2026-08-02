@@ -35,6 +35,23 @@ namespace St4i.EngineApi.Config;
 /// extraction exists because a mutation making every <c>connectors.json</c> connector register UNBOUND left the
 /// whole suite green; a fan-out that registered N instances unbound, or registered one instance for N machines,
 /// would be the same defect with a bigger blast radius.</para>
+///
+/// <para><b>🔴 Review m6 — this method is SAFE TO RE-RUN ONLY FOR A MAP THAT GAINED OR CHANGED DEVICES, NEVER
+/// FOR ONE THAT LOST ONE, and D-7 owns closing that.</b> <see cref="ConnectorRegistry"/> has no removal path at
+/// all — <c>Register</c> replaces an entry under the same id and nothing ever deletes one. So calling this again
+/// after an operator removes a device from a bus map leaves a GHOST instance registered under that device's id,
+/// still holding that machine's claim, until the process restarts. The consequences are both silent: the
+/// machine cannot be re-served by any other connector (the claim gate refuses every later registration for it,
+/// which this method reports as "already served by connector instance …" naming an instance the operator has
+/// already deleted from their file), and <c>FleetHost.StartLocked</c> keeps building a pipeline slot for it on
+/// every restart, so an alarm <c>TargetId</c> outlives the device it named.</para>
+///
+/// <para>This is a pre-existing property of D-1's identity model rather than something D-4 introduced — the
+/// same is true of every registration path — but multidrop makes it REACHABLE in a way one-connector-per-kind
+/// did not: editing a bus map is exactly the operation that removes a device, and a bus of eight is exactly the
+/// configuration an operator edits. Closing it means an unregister on the registry (and a decision about what
+/// happens to the slot and its alarms), which is a change to D-1's spine and belongs with whatever D-7 builds to
+/// reconfigure a connector at run time — not smuggled into a task about map shape.</para>
 /// </summary>
 public static class ModbusMultidropRegistration
 {

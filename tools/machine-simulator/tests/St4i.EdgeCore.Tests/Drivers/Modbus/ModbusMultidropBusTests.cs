@@ -373,11 +373,27 @@ public class ModbusMultidropBusTests
             $"byte(s) discarded, both healthy devices reading again after {sw.ElapsedMilliseconds} ms " +
             "(quiet window = 50 ms).");
 
-        // Mechanism, not a clock: the whole recovery cost the bus a small multiple of one quiet window (50 ms
-        // by default). Asserted at 40x that so a loaded machine cannot make it red, and measured because the
-        // number is what an operator experiences.
+        // 🔴 Review m4 — THE ONE ABSOLUTE WALL-CLOCK BOUND IN THIS SUITE, and the note is here rather than only
+        // in the report because that is where whoever sees it go red will be standing.
+        //
+        // Every other timing assertion in this file compares a rate against a rate measured on the same machine
+        // in the same test. This one cannot: "the recovery was CHEAP" is a different claim from "the recovery
+        // HAPPENED", the assertions above already cover the second, and the first has no in-test baseline to
+        // compare against. 2 000 ms against a 50 ms quiet window is 40x headroom, and the measured value on an
+        // idle machine is ~92 ms — a factor of ~21 below the bound.
+        //
+        // IF THIS EVER GOES RED, DIAGNOSE IT; DO NOT WIDEN IT. At 40x headroom a failure is not a slow machine,
+        // it is one of: the quiet window no longer being observed (a resynchronisation looping on a link that
+        // will not go quiet), the budget being computed from a derived read timeout that is now enormous (see
+        // ModbusRegisterMap.EffectiveReadTimeoutMs — max(1000, PollIntervalMs x 4) makes this 240 s for a 60 s
+        // poll interval, which is why this test sets readTimeoutMs EXPLICITLY), or a machine carrying stray
+        // testhost/build-server processes from an interrupted run. Widening the threshold makes each of those
+        // rarer and none of them less real — the batch rule that applies here is D-2 §9.10's, and it applied to
+        // the gate rather than to the tree that time too.
         Assert.True(sw.ElapsedMilliseconds < 2_000,
-            $"recovery of two devices after one timeout took {sw.ElapsedMilliseconds} ms; one quiet window is 50 ms");
+            $"recovery of two devices after one timeout took {sw.ElapsedMilliseconds} ms against a 50 ms quiet " +
+            "window (40x headroom, ~92 ms observed on an idle machine) — diagnose this, do not widen it; see the " +
+            "comment at this assertion for the three causes worth checking first");
     }
 
     /// <summary>
