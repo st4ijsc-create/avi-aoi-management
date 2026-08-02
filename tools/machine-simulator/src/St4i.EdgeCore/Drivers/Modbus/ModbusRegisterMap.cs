@@ -254,7 +254,24 @@ public sealed record ModbusCommand(string Name, ushort? CoilAddress, IReadOnlyLi
 /// address on the wire, NOT related to <see cref="MachineCode"/>), poll cadence, and the ordered registers
 /// <see cref="ModbusTcpDriver"/> reads each poll (one register per poll, per register — block/batch reads
 /// are a documented follow-up, see the driver's own remarks). Loaded from JSON via <see cref="FromJson"/>,
-/// the same idiom as <see cref="St4i.EdgeCore.Mapping.MappingProfile.FromJson"/>.</summary>
+/// the same idiom as <see cref="St4i.EdgeCore.Mapping.MappingProfile.FromJson"/>.
+///
+/// <para><b>🔴 Task D-4 — this type stays 1:1 with ONE machine and ONE unit id, and that is the safety
+/// property, not a limitation to be grown out of.</b> A bus of N devices is declared by wrapping N of these
+/// documents in a <c>devices</c> array and fanning it out into N connector instances — see
+/// <see cref="ModbusMultidropMap"/>, which parses every element through THIS method rather than forking a
+/// second map type or a second validation path. The inverse shape (one map declaring N machines, handed to one
+/// factory, producing one driver that emits N machine codes) is refused by blueprint §7.1 because
+/// <see cref="Models.SetpointWriteRequest"/> carries no machine code, so such a driver could not route a write
+/// to the right machine — verbatim the hole that produced Đợt B's
+/// <see cref="Models.MachineDriverAvailability.AmbiguousDriver"/> guard.</para>
+///
+/// <para><b>This method is SHARED with the Modbus TCP driver, and transport-specific rules must not be added
+/// to it.</b> <see cref="UnitId"/> 0 is broadcast — meaningless to read over RTU, but entirely legal and
+/// common over TCP (a device that ignores the unit id, or a TCP→RTU gateway that uses it to select the serial
+/// slave). The RTU refusal therefore lives on <see cref="ModbusRtuDriver"/>'s constructor, the RTU
+/// construction boundary. See D-2's task-2-report.md §10b (m-9) for the regression that reasoning
+/// prevents.</para></summary>
 public sealed class ModbusRegisterMap
 {
     /// <summary>Upper guard for <see cref="ReadTimeoutMs"/>: 60 seconds. Generous relative to the

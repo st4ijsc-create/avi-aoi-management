@@ -36,13 +36,16 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// outstanding on the wire, so the next device pays nothing), whereas a cancellation during a register's read
 /// unwinds within about one abort slice and leaves the bus quarantined for one quiet window.</para>
 ///
-/// <para><b>Broadcast (slave address 0) is not supported, and is not rejected here either.</b> Modbus
-/// broadcast is write-only by definition — a slave never answers a broadcast — so a READ addressed to unit 0
-/// has no meaning and would simply time out. This driver deliberately does not add a validation path for it:
-/// <see cref="ModbusRegisterMap"/> is the single place map validation lives and the D-2 brief is explicit that
-/// a genuine insufficiency there is to be REPORTED rather than closed with a second validator. Recorded in
-/// task-2-report.md as a finding for D-4/D-7; the observable behaviour today is a device that never answers,
-/// which degrades honestly.</para>
+/// <para><b>🔴 Task D-4 — broadcast (slave address 0) and the reserved addresses are now REFUSED, and this
+/// constructor is where that lives.</b> D-2 reported this as a finding rather than closing it, and its own
+/// correction (task-2-report.md §10b, m-9) is the reason the check is here and not in
+/// <see cref="ModbusRegisterMap.FromJson"/>: that method is shared with <see cref="ModbusTcpDriver"/>, where
+/// unit 0 is entirely legal and common (a TCP device that ignores the unit id, or a TCP→RTU gateway that uses
+/// it to select the serial slave), so a parse-time rejection would break deployments to fix a problem they do
+/// not have. The constraint is RTU's, so it belongs at the RTU CONSTRUCTION boundary — which is this
+/// constructor, and which covers every RTU path including a single-device map that never went through
+/// <see cref="ModbusMultidropMap.FanOut"/>. See <see cref="ModbusMultidropMap"/> for why the multidrop
+/// fan-out deliberately does not duplicate it.</para>
 /// </summary>
 public sealed class ModbusRtuDriver : IDeviceDriver
 {
@@ -51,10 +54,36 @@ public sealed class ModbusRtuDriver : IDeviceDriver
     private readonly Action<Exception, string>? _logError;
     private volatile bool _disposed;
 
+    /// <summary>The lowest and highest slave address a Modbus RTU master can address individually.
+    /// <c>MODBUS over Serial Line V1.02</c> §2.2: address 0 is the broadcast address, 1–247 address one slave
+    /// each, and 248–255 are reserved. Constants rather than literals in the two checks below so the range and
+    /// the message can never drift apart, and so a test names the same boundary this class does instead of
+    /// restating it.</summary>
+    public const byte MinUnitId = 1;
+
+    /// <inheritdoc cref="MinUnitId"/>
+    public const byte MaxUnitId = 247;
+
     /// <param name="lease">This driver's own claim on the shared bus. The driver OWNS it and releases it in
     /// <see cref="DisposeAsync"/> — that is what makes the reference count track driver lifetime, which is
     /// what D-4 needs when N drivers share one link. A caller that wants the bus to outlive this driver takes
     /// its own second lease; it must not hand this one out twice.</param>
+    /// <exception cref="ArgumentOutOfRangeException">🔴 Task D-4 — <paramref name="map"/>'s
+    /// <see cref="ModbusRegisterMap.UnitId"/> is 0 (broadcast) or 248–255 (reserved). <b>The RTU construction
+    /// boundary is where this rule lives</b> — see the class doc comment for why not in the shared parse path.
+    /// Refused rather than allowed to degrade honestly: a read addressed to unit 0 can never be answered (a
+    /// slave never replies to a broadcast, by definition), so the device would time out forever while looking
+    /// exactly like a wiring fault — and on a MULTIDROP bus that is not a private failure, because every one of
+    /// those timeouts holds the shared arbitration lock for a full read timeout and taxes every other device on
+    /// the line. A configuration that cannot work is refused where an operator gets told, not left to present
+    /// itself as a dead device.
+    ///
+    /// <para><b>A caller that already acquired <paramref name="lease"/> owns releasing it when this throws.</b>
+    /// A lease is taken before this constructor can be called (it is a parameter), so a throw here leaves the
+    /// caller holding a reference count that nothing else will ever decrement — and the bus would then outlive
+    /// every driver on it. D-7's connector factory must either validate the map before
+    /// <c>ModbusBusRegistry.Acquire</c> or dispose the lease in a <c>catch</c>; there is no way for this class
+    /// to do it, because it cannot tell a lease it was handed from one it created.</para></exception>
     public ModbusRtuDriver(
         ModbusBusLease lease,
         ModbusRegisterMap map,
@@ -63,6 +92,25 @@ public sealed class ModbusRtuDriver : IDeviceDriver
         _lease = lease ?? throw new ArgumentNullException(nameof(lease));
         _map = map ?? throw new ArgumentNullException(nameof(map));
         _logError = logError;
+
+        if (map.UnitId < MinUnitId)
+        {
+            throw new ArgumentOutOfRangeException(nameof(map), map.UnitId,
+                $"Modbus RTU: machine '{map.MachineCode}' declares unit id 0, the Modbus BROADCAST address. " +
+                "Broadcast is write-only by definition — a slave never answers one — so a read addressed to it " +
+                "can never be answered and this device would time out forever, holding the shared bus for a full " +
+                "read timeout on every poll. Unit 0 is legal for Modbus TCP and is rejected only here, at the RTU " +
+                $"boundary; give this device its own address in [{MinUnitId},{MaxUnitId}].");
+        }
+
+        if (map.UnitId > MaxUnitId)
+        {
+            throw new ArgumentOutOfRangeException(nameof(map), map.UnitId,
+                $"Modbus RTU: machine '{map.MachineCode}' declares unit id {map.UnitId}, which MODBUS over Serial " +
+                $"Line V1.02 §2.2 RESERVES (248–255). No slave may be configured to answer it, so this device " +
+                $"would time out forever and tax every other device on the bus. Individually addressable slaves " +
+                $"are [{MinUnitId},{MaxUnitId}].");
+        }
 
         // Includes the unit id, unlike the TCP driver's — on a multidrop bus the endpoint alone does not
         // identify a device, and this string keys slot labels and therefore alarm TargetIds.

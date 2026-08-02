@@ -87,9 +87,37 @@ internal sealed class InMemoryBusLink : IModbusBusLink
     /// cannot correlate its way out of.</summary>
     public bool HoldWrites { get; set; }
 
+    /// <summary>
+    /// 🔴 Task D-4 — <b>one device on a multidrop bus that never answers, without breaking the others.</b> Set
+    /// on the DEVICE end: any frame this end writes whose first byte is this slave address is swallowed — the
+    /// slave still received the request and still built its reply, but the reply never reaches the master, so
+    /// the master times out exactly as it does against a physically absent or mis-wired device. The first byte
+    /// of an RTU response IS the slave address, and NModbus writes a response as one whole frame, so matching
+    /// on it is exact rather than heuristic.
+    ///
+    /// <para><b>Why not simply address a unit id no slave owns.</b> Measured, because the first version of
+    /// D-4's tests did exactly that: after one request for an unowned address, this harness's slave network
+    /// stops answering ANY unit until several further request frames have gone by — one healthy driver at a
+    /// 1 s timeout with one retry still read nothing in six seconds, while the same driver on an untouched bus
+    /// read in 30 ms. That is an artifact of an in-memory pipe with no t3.5 gap (this type's own doc comment
+    /// says it models no framing gap), not a property of <see cref="ModbusBus"/> — and a test that measured it
+    /// would be measuring the harness. Silencing a REAL slave's reply keeps both ends perfectly framed and
+    /// isolates the one variable the test is about: a device that does not answer.</para>
+    ///
+    /// <para><see cref="HoldWrites"/> is the sibling for the other question — a device that answers LATE — and
+    /// is deliberately bus-wide, because a late frame is a hazard for whoever reads next rather than for its
+    /// own device.</para>
+    /// </summary>
+    public byte? SilentUnitId { get; set; }
+
     /// <summary>Total bytes this end has written, delivered or held. Lets a test assert the device really did
     /// answer rather than infer it from the master's silence.</summary>
     public int BytesWritten { get; private set; }
+
+    /// <summary>How many frames <see cref="SilentUnitId"/> has swallowed. Observable so a test asserts the
+    /// slave really did reply and the reply really was dropped, rather than inferring it from the master's
+    /// timeout — which is also what a slave that never saw the request would look like.</summary>
+    public int FramesSilenced { get; private set; }
 
     /// <summary>How many bytes this end's own abort flag is currently raised for — exposed as a bool.</summary>
     public bool AbortRequested { get { lock (_gate) { return _abort; } } }
@@ -189,6 +217,14 @@ internal sealed class InMemoryBusLink : IModbusBusLink
         {
             if (_disposed) throw new ObjectDisposedException(nameof(InMemoryBusLink), $"the {_name} end was disposed");
             BytesWritten += count;
+
+            // See SilentUnitId. Checked before HoldWrites because a silenced frame is never delivered at all,
+            // whereas a held one is delivered later — the two model different failures and must not compose.
+            if (SilentUnitId is { } silent && count > 0 && buffer[offset] == silent)
+            {
+                FramesSilenced++;
+                return;
+            }
 
             if (HoldWrites)
             {

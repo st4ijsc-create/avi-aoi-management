@@ -389,4 +389,70 @@ public class ModbusRtuDriverLoopbackTests
 
         await keepAlive.DisposeAsync();
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task D-4 — the RTU addressing rule, and the boundary it lives at.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>Unit 0 is the Modbus broadcast address and a read to it can never be answered</b> — a slave never
+    /// replies to a broadcast, by definition — so this device would time out forever while looking exactly like
+    /// a wiring fault. On a multidrop bus that is not a private failure: every one of those timeouts holds the
+    /// shared arbitration lock for a full read timeout, taxing every other device on the line (measured in
+    /// <see cref="ModbusMultidropBusTests.ADeadDeviceOnTheBus_HoldsTheSharedLock_TaxingEveryOtherDevice"/>).
+    ///
+    /// <para>This is the RTU CONSTRUCTION boundary, and it is deliberately the only place the rule lives.
+    /// <see cref="ModbusMultidropMapTests.UnitZero_IsNotRefusedHere_BecauseTheSameDocumentShapeDrivesModbusTcpWhereItIsLegal"/>
+    /// is this test's twin: it fails if the check migrates into the shared parse path (where it would break
+    /// legal Modbus TCP deployments), this one fails if it is deleted. Neither alone pins the decision.</para>
+    /// </summary>
+    [Fact]
+    public async Task Construction_WithUnitZero_IsRefused_BecauseABroadcastReadCanNeverBeAnswered()
+    {
+        await using var bus = ModbusRtuLoopbackHarness.Start();
+        await using var lease = bus.Lease();
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new ModbusRtuDriver(lease, ModbusRtuLoopbackHarness.BuildSingleRegisterMap("PLC-BROADCAST", unitId: 0)));
+
+        Assert.Contains("PLC-BROADCAST", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("broadcast", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>248–255 are RESERVED by MODBUS over Serial Line V1.02 §2.2 — no slave may be configured to
+    /// answer them, so the failure is identical to unit 0's and so is the multidrop cost. A separate arm from
+    /// unit 0 because the two are separate checks with separate messages, and a mutation that deletes one
+    /// leaves the other standing.</summary>
+    [Fact]
+    public async Task Construction_WithAReservedUnitId_IsRefused()
+    {
+        await using var bus = ModbusRtuLoopbackHarness.Start();
+        await using var lease = bus.Lease();
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new ModbusRtuDriver(lease, ModbusRtuLoopbackHarness.BuildSingleRegisterMap("PLC-RESERVED", unitId: 250)));
+
+        Assert.Contains("PLC-RESERVED", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("248", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>The control for the two refusals above: <b>both edges of the addressable range are accepted.</b>
+    /// Without this, narrowing the range (to 1..127, say, or to "> 0" only) would kill nothing — and a
+    /// refusal that is too WIDE takes a legitimately-addressed device off the bus with a message blaming the
+    /// operator.</summary>
+    [Fact]
+    public async Task Construction_AtBothEdgesOfTheAddressableRange_IsAccepted()
+    {
+        await using var bus = ModbusRtuLoopbackHarness.Start();
+
+        await using var lowest = new ModbusRtuDriver(
+            bus.Lease(), ModbusRtuLoopbackHarness.BuildSingleRegisterMap("PLC-LOW", unitId: ModbusRtuDriver.MinUnitId));
+        await using var highest = new ModbusRtuDriver(
+            bus.Lease(), ModbusRtuLoopbackHarness.BuildSingleRegisterMap("PLC-HIGH", unitId: ModbusRtuDriver.MaxUnitId));
+
+        Assert.Equal((byte)1, ModbusRtuDriver.MinUnitId);
+        Assert.Equal((byte)247, ModbusRtuDriver.MaxUnitId);
+        Assert.Contains($"unit{ModbusRtuDriver.MinUnitId}", lowest.Id, StringComparison.Ordinal);
+        Assert.Contains($"unit{ModbusRtuDriver.MaxUnitId}", highest.Id, StringComparison.Ordinal);
+    }
 }

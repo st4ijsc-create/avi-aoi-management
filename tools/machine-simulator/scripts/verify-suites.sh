@@ -252,7 +252,56 @@ EXPECT_CONFORMANCE=22
 # before review I-3 — that class holds a concrete TcpClient — and the mutation disabling it SURVIVES and is
 # recorded as such rather than papered over. All 198 Drivers.Modbus tests pass unchanged, which is the check
 # that the edit is behaviour-preserving.
-EXPECT_EDGECORE=825
+#
+# 🔴 TASK D-4 (multidrop) raises this 825 -> 850 (+25), counted from the runner (`dotnet test --list-tests`),
+# not by hand. Three files; none is a rewrite, a split or a deletion:
+#   +17  ModbusMultidropMapTests      (new file — how a bus of N devices is DECLARED and how it fans out)
+#   + 5  ModbusMultidropBusTests      (new file — N devices actually RUNNING on one bus)
+#   + 3  ModbusRtuDriverLoopbackTests (8 -> 11 — the RTU addressing boundary; see below)
+#
+# The 17 map tests are each a configuration that would otherwise fail SILENTLY or WRONGLY rather than throw:
+# two devices at one slave address (both answer, the frames collide, and the master decodes whichever survived
+# — a plausible wrong number); two devices claiming one machine (the second silently never registers, and the
+# reason is a log line); a bus declaring no devices (indistinguishable from a connector that failed); a device
+# element that will not parse (an error naming no device out of eight). Plus the ONE refusal that is
+# deliberately ABSENT: unit 0 parses fine here, because this document shape is shared with the Modbus TCP
+# driver where unit 0 is legal and common — D-2's own m-9 correction, which is why the RTU rule lives at the
+# RTU CONSTRUCTION boundary instead, i.e. the 3 tests below.
+#
+# The +3 in ModbusRtuDriverLoopbackTests are that boundary and its control: unit 0 (broadcast — a read to it
+# can NEVER be answered, and on a multidrop bus each of those timeouts holds the shared arbitration lock for a
+# full read timeout), units 248-255 (reserved by MODBUS over Serial Line V1.02 §2.2 — a separate check with a
+# separate message, so a mutation deleting one leaves the other standing), and BOTH EDGES of the addressable
+# range accepted, because a refusal that is too WIDE takes a legitimately-addressed device off the bus while
+# blaming the operator. That last one is the control: without it, narrowing the range to 1..127 kills nothing.
+#
+# 🔴 The 5 bus tests MEASURE the costs of sharing one wire rather than asserting them, and each prints its own
+# figures (`--logger "console;verbosity=detailed"`) so nobody has to take task-4-report.md's word for them —
+# D-3's reviewer had to rewrite its whole hardware probe to check its numbers. On this machine:
+#   * one timeout quarantines the bus ONCE for the WHOLE bus (14 stale bytes discarded, both healthy devices
+#     reading again 92 ms later against a 50 ms quiet window) — NARROWER than D-2 §5.5's own wording, which
+#     reads as though every device pays a window;
+#   * one unanswered device collapses two healthy devices from 135.0 to 2.0 reads/s — a 67.5x tax, three
+#     orders of magnitude worse than the quarantine, and the finding of the task;
+#   * a device polling at 200 ms hit 15 of a nominal 15 polls while three others completed 119,069 flat out —
+#     not starved, because the driver delays AFTER each poll rather than on a schedule.
+# The two ratio tests compare a rate against a rate measured on the SAME machine in the SAME test and assert a
+# 4x margin against a ~50x effect, so they state a mechanism rather than a machine's speed.
+#
+# 28 mutations, all KILLED, every round opened with a positive control and every verdict gated on all five
+# verbs of scripts/mutate-guard.sh. One SURVIVED on the first pass and was a real vacuous test: the
+# nested-`devices` refusal could be deleted with every test green, because the generic "this element is not a
+# valid single-device map" wrapper names the same element index. What the dedicated check buys is the WORDING,
+# so the assertions are now on the phrase and on the ABSENCE of an inner exception. One reported NOT-APPLIED
+# (a needle that no longer matched the source) and was re-run rather than read as a gap.
+#
+# EXPECT_ENGINEAPI moves too (+6) because the fan-out's REGISTRATION half necessarily lives beside
+# ConnectorRegistry — see its own note below. EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_EDGESERVICE
+# are deliberately unchanged: D-4 adds no code outside src/St4i.EdgeCore/Drivers/Modbus,
+# src/St4i.EngineApi/Config and their two test projects, so a moved total anywhere else would mean this task
+# reached somewhere it had no business reaching. EXPECT_CONFORMANCE in particular stays 22 — RTU conformance
+# wiring is still D-6.
+EXPECT_EDGECORE=850
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
@@ -432,7 +481,34 @@ EXPECT_EDGESERVICE=28
 # cannot reach that branch through the handler, because the handler's FIRST store read takes the request
 # token and throws long before it. Measured against the mutation that restores `ct`: KILLED 8/8 runs. That
 # test's own count is unchanged.
-EXPECT_ENGINEAPI=1184
+#
+# 🔴 TASK D-4 (multidrop) raises this 1184 -> 1190 (+6), counted from the runner. One new file,
+# ModbusMultidropRegistrationTests — the REGISTRATION half of blueprint §7.1, which is the half that decides
+# whether multidrop is safe. The map format alone does not: the same document can be registered two ways and
+# only one preserves D-1's routing invariant, so this has to live where ConnectorRegistry and FleetHost do.
+#   + 1  a three-device bus map fans out into three instances and a write for the middle one reaches ONLY its
+#          device — the load-bearing assertion is the pair of ZEROES on its bus-mates, not the status code,
+#          and the COMMAND path is driven in the same test because CommandRequest carries no machine code
+#          either and "one fix, one sibling untouched" is this batch's most repeated defect.
+#   + 1  each instance stores its OWN device's standalone document, asserted on what the registry handed the
+#          FACTORY. A fan-out that stored the whole bus under three ids passes every count in the test above
+#          and would then hand D-7's real factory a document declaring three machines — verbatim the
+#          "one driver emitting N machine codes" shape §7.1 forbids.
+#   + 1  every registered instance holds exactly ONE machine code and no code is held twice, enumerated over
+#          the registry's own snapshot and resolved BACK per code.
+#   + 1  a device whose machine another BUS already claims is skipped, NAMED (with the incumbent), and its
+#          bus-mates still come up.
+#   + 1  a malformed bus map registers nothing, logs, and does not throw — it runs inside startup wiring.
+#   + 1  a LEGACY single-device map registers under the bus id ITSELF, so an existing connector keeps its
+#          instance id, its slot label and therefore its alarm TargetId when a registration path starts
+#          calling the fan-out. The discriminating assertion is the id, not the count.
+# The fake factory in that suite builds its driver from the CONFIG IT IS HANDED (parsing the machine code out
+# of the map) rather than from a lookup the test keeps — otherwise it would report the machine the test
+# expects no matter what the registry stored, which is D-2's I-2 shape exactly.
+#
+# Nothing in Program.cs calls RegisterAll: the RTU connector factory is still D-7's, so no operator can turn
+# multidrop on yet — the same posture D-2 and D-3 both shipped with and said so.
+EXPECT_ENGINEAPI=1190
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
