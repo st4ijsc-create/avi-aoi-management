@@ -360,6 +360,47 @@ async function warmCodeModel(): Promise<void> {
   }
 }
 
+// ── Đợt 2 · Task 2 (doc71) — nối vào aiGateway CHỈ ĐỂ ĐO ────────────────────────────────────
+//
+// Đợt 0 đo được: module này gọi THẲNG aiGgufEngine (chatCompletion/generateJSON/generateFim),
+// không qua aiGateway.ts (nơi ghi bảng `ai_gateway_metrics`) ⇒ 6 lượt gọi thật ⇒ 0 dòng metric.
+// `ai_model_metrics` cũng 0 dòng — không có nguồn thay thế nào đo được tier "code"/"fim".
+//
+// Thiết kế ở đây CỐ TÌNH tách rời khỏi việc CHỌN model: mỗi call site dưới vẫn tự `route()`
+// (KHÔNG đổi) để quyết định modelId/maxTokens/temperature/contextSize truyền cho engine — y
+// hệt trước Task 2. `planMetric()`/`safeRecordMetric()` chỉ mở một đường SONG SONG, độc lập,
+// để ghi lượt gọi vào `ai_gateway_metrics` qua `aiGateway.planInference()` (kiểu "cheapest
+// adoption" — xem header aiGateway.ts). KHÔNG dùng `routeInference()` (wrapper "full adoption")
+// vì nó sẽ khiến quyết định model đến từ gateway thay vì route() cục bộ — đúng thứ task này
+// CẤM đổi.
+//
+// Fail-open TUYỆT ĐỐI ở CẢ HAI nửa (lập kế hoạch đo lẫn ghi kết quả đo): planInference có thể
+// ném lỗi thật (rate-limit/safety-block/license/quota — xem aiGateway.ts) và record() có thể
+// ném lỗi nội bộ (vd DB, hoặc router phụ thuộc bị mock thiếu trong test) — cả hai đường đều
+// bọc try/catch RIÊNG, không bao giờ để lỗi đo lường làm mất kết quả sinh mã đã có.
+async function planMetric(task: "code" | "fim", text: string) {
+  try {
+    const { planInference } = await import("../aiGateway");
+    return await planInference({ task, text });
+  } catch (e) {
+    console.warn(
+      `[aiProgrammingCopilot] gateway metric plan failed for task="${task}" (bỏ qua ghi metric, không ảnh hưởng sinh mã):`,
+      (e as Error)?.message ?? e,
+    );
+    return null;
+  }
+}
+
+/** Ghi kết quả đo — KHÔNG BAO GIỜ ném ra ngoài (fail-open); `plan` null → no-op im lặng. */
+function safeRecordMetric(plan: Awaited<ReturnType<typeof planMetric>>, outcome: Parameters<NonNullable<Awaited<ReturnType<typeof planMetric>>>["record"]>[0]): void {
+  if (!plan) return;
+  try {
+    plan.record(outcome);
+  } catch (e) {
+    console.warn("[aiProgrammingCopilot] gateway metric record failed (bỏ qua, không ảnh hưởng sinh mã):", (e as Error)?.message ?? e);
+  }
+}
+
 /**
  * Call the code-tier LLM. Fail-safe: returns null when GGUF is offline or on ANY error (the
  * caller degrades gracefully). Routes via aiModelRouter task:"code" to pick the code tier +
@@ -368,6 +409,8 @@ async function warmCodeModel(): Promise<void> {
  * light and never pulls node-llama-cpp at import time.
  */
 async function runCodeModel(system: string, user: string): Promise<string | null> {
+  const metricStart = Date.now();
+  let metricPlan: Awaited<ReturnType<typeof planMetric>> = null;
   try {
     const { isGgufAvailable, chatCompletion, stripThinking } = await import("../aiGgufEngine");
     if (!(await isGgufAvailable())) return null;
@@ -387,6 +430,10 @@ async function runCodeModel(system: string, user: string): Promise<string | null
       /* keep defaults — router is best-effort */
     }
 
+    // Đợt 2 · Task 2 — lập kế hoạch đo (SONG SONG, không ảnh hưởng modelId/maxTokens/temperature/
+    // contextSize ở TRÊN — những giá trị đó vẫn đến từ route() cục bộ y hệt trước Task 2).
+    metricPlan = await planMetric("code", user);
+
     const res = await chatCompletion(
       {
         messages: [
@@ -399,6 +446,12 @@ async function runCodeModel(system: string, user: string): Promise<string | null
       },
       modelId,
     );
+    safeRecordMetric(metricPlan, {
+      tokensIn: res?.tokensPrompt,
+      tokensOut: res?.tokensGenerated,
+      latencyMs: Date.now() - metricStart,
+      outcome: "ok",
+    });
     const raw = res?.text ?? "";
     const answer = stripThinking(raw).answer ?? raw;
     // FE-W0.3 (doc 46 §2.3) — reject a degenerate loop ("cell cell cell…") so the
@@ -413,6 +466,7 @@ async function runCodeModel(system: string, user: string): Promise<string | null
     }
     return g.text;
   } catch (e) {
+    safeRecordMetric(metricPlan, { latencyMs: Date.now() - metricStart, outcome: "error" });
     console.warn("[aiProgrammingCopilot] code model call failed (degrading):", (e as Error)?.message ?? e);
     return null;
   }
@@ -436,6 +490,8 @@ async function runStructuredCodeModel(
   user: string,
   schema: object,
 ): Promise<string | null> {
+  const metricStart = Date.now();
+  let metricPlan: Awaited<ReturnType<typeof planMetric>> = null;
   try {
     const { isGgufAvailable, generateJSON } = await import("../aiGgufEngine");
     if (!(await isGgufAvailable())) return null;
@@ -455,16 +511,28 @@ async function runStructuredCodeModel(
       /* keep defaults — router is best-effort */
     }
 
+    // Đợt 2 · Task 2 — cùng đường đo như runCodeModel (planMetric SONG SONG với route() cục bộ
+    // ở trên; task="code" vì đây vẫn là tier code, chỉ khác hình dạng đầu ra — JSON grammar-
+    // constrained thay vì free-text).
+    metricPlan = await planMetric("code", user);
+
     const result = await generateJSON<unknown>(
       schema,
       { systemPrompt: system, prompt: user, maxTokens, temperature, contextSize },
       modelId,
     );
+    safeRecordMetric(metricPlan, {
+      tokensIn: result?.tokensPrompt,
+      tokensOut: result?.tokensGenerated,
+      latencyMs: Date.now() - metricStart,
+      outcome: result?.data == null ? "error" : "ok",
+    });
     if (result?.data == null) return null;
     // The grammar guarantees a valid object; JSON.stringify gives the artifact `content` the
     // programmingAdapter validates. Pretty-printed to mirror the free-text codegen style.
     return JSON.stringify(result.data, null, 2);
   } catch (e) {
+    safeRecordMetric(metricPlan, { latencyMs: Date.now() - metricStart, outcome: "error" });
     console.warn(
       "[aiProgrammingCopilot] structured JSON codegen failed (falling back to free-text):",
       (e as Error)?.message ?? e,
@@ -767,6 +835,8 @@ export async function completeInline(input: CompleteInlineInput): Promise<Comple
   const suffix = typeof input?.suffix === "string" ? input.suffix : "";
   if (!prefix.trim() && !suffix.trim()) return { completion: "" };
 
+  const metricStart = Date.now();
+  let metricPlan: Awaited<ReturnType<typeof planMetric>> = null;
   try {
     const { generateFim, stripThinking } = await import("../aiGgufEngine");
 
@@ -804,6 +874,12 @@ export async function completeInline(input: CompleteInlineInput): Promise<Comple
       /* best-effort routing — modelId already carries the correct fimModelBasename() fallback */
     }
 
+    // Đợt 2 · Task 2 — cùng cơ chế đo như runCodeModel/runStructuredCodeModel, task="fim" (tầng
+    // riêng cho inline completion — xem aiGateway.ts's TaskKind). SONG SONG với việc ghim modelId
+    // ở trên: KHÔNG dùng plan.decision để chọn model — bất biến "cờ router BẬT/TẮT ⇒ modelId
+    // không đổi" (xem chú thích C-1 phía trên) giữ nguyên.
+    metricPlan = await planMetric("fim", prefix.slice(-200));
+
     const res = await generateFim(
       {
         prefix,
@@ -815,6 +891,12 @@ export async function completeInline(input: CompleteInlineInput): Promise<Comple
       },
       modelId,
     );
+    safeRecordMetric(metricPlan, {
+      tokensIn: res?.tokensPrompt,
+      tokensOut: res?.tokensGenerated,
+      latencyMs: Date.now() - metricStart,
+      outcome: "ok",
+    });
     const raw = (res?.text ?? "").toString();
     if (!raw) return { completion: "" };
     const { answer } = stripThinking(raw);
@@ -822,6 +904,7 @@ export async function completeInline(input: CompleteInlineInput): Promise<Comple
     if (!text) return { completion: "" };
     return { completion: text.length > INLINE_MAX_CHARS ? text.slice(0, INLINE_MAX_CHARS) : text };
   } catch (e) {
+    safeRecordMetric(metricPlan, { latencyMs: Date.now() - metricStart, outcome: "error" });
     console.warn("[aiProgrammingCopilot] inline FIM completion failed (fail-safe empty):", (e as Error)?.message ?? e);
     return { completion: "" };
   }
