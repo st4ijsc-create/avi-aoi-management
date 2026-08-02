@@ -275,6 +275,82 @@ public class ModbusRtuDriverLoopbackTests
         }
     }
 
+    /// <summary>
+    /// 🔴 <b>The driver hands the bus ITS OWN map's read timeout and retry count</b> — asserted on the values
+    /// the bus actually applied to the shared transport, not on values this test supplied.
+    ///
+    /// <para>Found by a surviving mutation, and it is the one with a safety consequence.
+    /// <c>ATimedOutTransaction_PutsExactlyOneRequestOnTheWire_NeverARetry</c> passes <c>retries: 0</c>
+    /// itself, so it proves the plumbing HONOURS 0 and says nothing about what the driver passes —
+    /// hardcoding <c>Retries = 3</c> inside <see cref="ModbusRtuDriver"/> left all 153 Modbus tests green.
+    /// The retry count is a physical double-actuation hazard on the write path D-5 builds here, so "the
+    /// driver's own configuration reached the wire" has to be a tested property rather than an inspected
+    /// one.</para>
+    ///
+    /// <para>Both cases matter and are asserted separately. <b>Explicit</b>: a map that sets both fields must
+    /// see exactly those values. <b>Default</b>: a map that sets neither must see
+    /// <see cref="ModbusRegisterMap.EffectiveRetries"/> == <b>1</b>, not 0 — which pins the behaviour this
+    /// task's own report originally described incorrectly, and which is deliberate (an extra READ is
+    /// harmless and absorbs a CRC glitch; a write must force 0 per call, exactly as
+    /// <see cref="ModbusTcpDriver"/> does).</para>
+    /// </summary>
+    [Fact]
+    public async Task ReadAsync_HandsTheBusItsOwnMapsReadTimeoutAndRetryCount()
+    {
+        await using var bus = ModbusRtuLoopbackHarness.Start(((byte)1, new ushort[] { 12, 0 }));
+        var lease = bus.Lease();
+
+        var explicitMap = new ModbusRegisterMap
+        {
+            MachineCode = "PLC-ARGS",
+            UnitId = 1,
+            PollIntervalMs = 20,
+            ReadTimeoutMs = 4_321,
+            Retries = 3,
+            Registers = new List<ModbusRegister>
+            {
+                new(Address: 0, Type: ModbusRegisterType.Holding, DataType: ModbusDataType.UInt16, Scale: 1.0, Metric: "value"),
+            },
+        };
+        Assert.Equal(4_321, explicitMap.EffectiveReadTimeoutMs);
+        Assert.Equal(3, explicitMap.EffectiveRetries);
+
+        await using (var driver = new ModbusRtuDriver(lease, explicitMap))
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var readTask = Task.Run(async () =>
+            {
+                await foreach (var _ in driver.ReadAsync(cts.Token)) { return; }
+            });
+            await WaitUntilAsync(() => lease.Bus.LastTransactionRetries >= 0, "the driver to open a transaction");
+            await cts.CancelAsync();
+            try { await readTask; } catch (OperationCanceledException) { }
+
+            Assert.Equal(4_321, lease.Bus.LastTransactionReadTimeoutMs);
+            Assert.Equal(3, lease.Bus.LastTransactionRetries);
+        }
+
+        // The DEFAULT arm, on a second bus so the assertions cannot read the first driver's leftovers.
+        await using var defaultBus = ModbusRtuLoopbackHarness.Start(((byte)1, new ushort[] { 12, 0 }));
+        var defaultLease = defaultBus.Lease();
+        var defaultMap = ModbusRtuLoopbackHarness.BuildSingleRegisterMap("PLC-ARGS-DEFAULT", pollIntervalMs: 20);
+        Assert.Equal(1, defaultMap.EffectiveRetries);                       // NOT 0 — see this test's remarks
+        Assert.Equal(1_000, defaultMap.EffectiveReadTimeoutMs);             // Math.Max(1000, 20 * 4)
+
+        await using var defaultDriver = new ModbusRtuDriver(defaultLease, defaultMap);
+        using var defaultCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var defaultRead = Task.Run(async () =>
+        {
+            await foreach (var _ in defaultDriver.ReadAsync(defaultCts.Token)) { return; }
+        });
+        await WaitUntilAsync(() => defaultLease.Bus.LastTransactionRetries >= 0, "the default-map driver to open a transaction");
+        await defaultCts.CancelAsync();
+        try { await defaultRead; } catch (OperationCanceledException) { }
+
+        Assert.Equal(1_000, defaultLease.Bus.LastTransactionReadTimeoutMs);
+        Assert.Equal(1, defaultLease.Bus.LastTransactionRetries);
+    }
+
     /// <summary>The constructor performs no I/O — <see cref="St4i.Connector.Abstractions.IDeviceDriver"/>'s
     /// own conformance rule, and the reason <see cref="ModbusBusRegistry.Acquire"/> opens nothing. Asserted
     /// against the bus's own link counter rather than by timing the constructor, because a fast constructor

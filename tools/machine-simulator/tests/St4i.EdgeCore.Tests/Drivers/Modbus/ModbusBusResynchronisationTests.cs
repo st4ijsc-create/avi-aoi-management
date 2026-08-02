@@ -424,11 +424,28 @@ public class ModbusBusResynchronisationTests
         Assert.True(bus.IsDesynchronised);
         Assert.Equal(1, openCount);
 
+        var generationBefore = bus.LinkGeneration;
+
         await Assert.ThrowsAsync<ModbusBusResynchronisationException>(
             () => bus.BeginTransactionAsync(readTimeoutMs: 200, retries: 0, CancellationToken.None));
 
-        // The link was faulted, so the NEXT attempt rebuilds it rather than reusing one nobody can vouch for.
         Assert.True(bus.IsDesynchronised);
+
+        // 🔴 "AndFaultsTheLink" is in this test's title, and until now the only thing after the refusal was a
+        // re-assertion of IsDesynchronised — which was ALREADY true before the refusal, so it could not
+        // distinguish a faulted link from an untouched one. Found by mutation: deleting TearDownLink() from
+        // FaultLink() left all 153 Modbus tests green, and would have made BOTH
+        // ModbusBusResynchronisationException messages false where they say "the link has been torn down and
+        // will be rebuilt before the next transaction" — a message an operator would act on.
+        //
+        // The link is torn down, so the NEXT attempt must OPEN A NEW ONE. The line goes quiet first, so this
+        // asserts the rebuild rather than another refusal.
+        babbling.GoQuiet();
+        await using (await bus.BeginTransactionAsync(readTimeoutMs: 200, retries: 0, CancellationToken.None))
+        {
+            Assert.Equal(2, openCount);
+            Assert.Equal(generationBefore + 1, bus.LinkGeneration);
+        }
 
         await lease.DisposeAsync();
     }

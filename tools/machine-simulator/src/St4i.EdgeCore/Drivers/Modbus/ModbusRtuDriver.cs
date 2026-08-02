@@ -138,7 +138,21 @@ public sealed class ModbusRtuDriver : IDeviceDriver
     }
 
     /// <summary>One poll: take the bus, read every configured register one at a time, decode each, and hand
-    /// the bus back. Block-batching is the same documented follow-up it is for the TCP driver.</summary>
+    /// the bus back. Block-batching is the same documented follow-up it is for the TCP driver.
+    ///
+    /// <para>🔴 <b>The retry count handed to the bus is the READ path's, which defaults to 1 — NOT 0.</b>
+    /// <see cref="ModbusRegisterMap.EffectiveRetries"/> is <c>Retries ?? 1</c>, and probing confirmed
+    /// <c>Retries = 1</c> makes NModbus write the whole request TWICE. That is deliberate and matches
+    /// <see cref="ModbusTcpDriver"/> exactly: an extra READ is harmless and absorbs a CRC glitch on a noisy
+    /// RS-485 line, which is the case this default exists for.
+    ///
+    /// <b>D-5 must not inherit it.</b> Đợt B's "no implicit retry" rule is a WRITE-path rule, and the TCP
+    /// driver implements it by forcing <c>Transport.Retries = 0</c> around each individual write and
+    /// restoring the map's value afterwards — the connection does not do it on the caller's behalf, and
+    /// neither does <see cref="ModbusBus"/>. A write path that simply opens a transaction and writes will
+    /// send the request twice against a silent device, which is a physical DOUBLE-ACTUATION. Pass
+    /// <c>retries: 0</c> explicitly for every write, per
+    /// <see cref="ModbusBus.BeginTransactionAsync"/>'s own <c>retries</c> parameter documentation.</para></summary>
     private async Task<DeviceReading> PollOnceAsync(CancellationToken ct)
     {
         await using var transaction = await _lease.Bus

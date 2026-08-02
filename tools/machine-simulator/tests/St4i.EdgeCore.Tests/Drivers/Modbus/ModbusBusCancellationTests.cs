@@ -210,6 +210,88 @@ public class ModbusBusCancellationTests(ITestOutputHelper output)
         Assert.False(bus.IsDesynchronised);
     }
 
+    /// <summary>
+    /// 🔴 A cancellation landing BETWEEN two registers of a poll leaves the bus CLEAN — nothing is
+    /// outstanding on the wire, so no other device on the bus pays a quiet window for it.
+    ///
+    /// <para>This closes the one mutation D-2 shipped surviving. I reported that
+    /// <c>ct.ThrowIfCancellationRequested()</c> between registers could not be scheduled deterministically
+    /// without making the test link's <c>Read</c> diverge from the production one. <b>The reviewer was right
+    /// and I was wrong:</b> a pass-through decorator that cancels the token AFTER the last byte of a response
+    /// has been handed over only OBSERVES the read, changing no semantics on either link — the token is then
+    /// certainly cancelled by the time the driver returns from register 1 and reaches the check before
+    /// register 2. Recorded rather than quietly fixed, because my stated reason for leaving it was the wrong
+    /// kind of argument: I concluded "no test can reach this" without asking whether a different instrument
+    /// could.</para>
+    ///
+    /// <para>The discriminating assertion is <see cref="ModbusBus.IsDesynchronised"/> being FALSE. Without
+    /// the check, the driver issues register 2's request, the abort unblocks it, and the bus is quarantined —
+    /// correct, but it costs every other device on the bus a quiet window on every driver teardown.</para>
+    /// </summary>
+    [Fact]
+    public async Task CancellingBetweenTwoRegistersOfAPoll_LeavesTheBusClean()
+    {
+        await using var harness = ModbusRtuLoopbackHarness.Start(((byte)1, new ushort[] { 235, 0xFFFF }));
+        using var cts = new CancellationTokenSource();
+
+        // Cancel once the device has delivered a COMPLETE first response — i.e. while the driver is between
+        // register 1 and register 2. Purely an observer: it forwards every call through unchanged.
+        var observed = 0;
+        var link = new CancelAfterNthReadLink(
+            harness.Links.Master,
+            onRead: () =>
+            {
+                // NModbus reads an RTU response in two calls (4-byte header, then the remainder), so the
+                // second completes register 1's frame.
+                if (Interlocked.Increment(ref observed) == 2) cts.Cancel();
+            });
+
+        var lease = harness.Registry.Acquire("between-registers-bus", _ => Task.FromResult<IModbusBusLink>(link));
+        await using var driver = new ModbusRtuDriver(lease, ModbusRtuLoopbackHarness.BuildMap("PLC-BETWEEN"));
+
+        var readTask = Task.Run(async () =>
+        {
+            await foreach (var _ in driver.ReadAsync(cts.Token)) { }
+        });
+
+        var settled = await Task.WhenAny(readTask, Task.Delay(TimeSpan.FromSeconds(15)));
+        Assert.Same(readTask, settled);
+        try { await readTask; } catch (OperationCanceledException) { }
+
+        Assert.True(cts.IsCancellationRequested, "the decorator must actually have cancelled, or this proves nothing");
+        Assert.False(lease.Bus.IsDesynchronised,
+            "a cancellation between two registers leaves nothing outstanding on the wire, so the bus must not be quarantined");
+        Assert.Equal(0, lease.Bus.ResynchronisationCount);
+
+        await lease.DisposeAsync();
+    }
+
+    /// <summary>A pass-through <see cref="IModbusBusLink"/> that runs <paramref name="onRead"/> after each
+    /// <see cref="Read"/> returns. It observes and never alters: no buffering, no reordering, no change to
+    /// what any read returns or when. That is what makes it safe to use for scheduling — the link under test
+    /// behaves exactly as it does in production.</summary>
+    private sealed class CancelAfterNthReadLink(IModbusBusLink inner, Action onRead) : IModbusBusLink
+    {
+        public int InfiniteTimeout => inner.InfiniteTimeout;
+        public int ReadTimeout { get => inner.ReadTimeout; set => inner.ReadTimeout = value; }
+        public int WriteTimeout { get => inner.WriteTimeout; set => inner.WriteTimeout = value; }
+        public bool IsOpen => inner.IsOpen;
+
+        public int Read(byte[] buffer, int offset, int count)
+        {
+            var read = inner.Read(buffer, offset, count);
+            onRead();
+            return read;
+        }
+
+        public void Write(byte[] buffer, int offset, int count) => inner.Write(buffer, offset, count);
+        public int DrainBufferedInput() => inner.DrainBufferedInput();
+        public void DiscardInBuffer() => inner.DiscardInBuffer();
+        public void AbortPendingRead() => inner.AbortPendingRead();
+        public void ResetAbort() => inner.ResetAbort();
+        public void Dispose() { /* the harness owns the inner link's lifetime */ }
+    }
+
     private static async Task WaitUntilAsync(Func<bool> predicate, string because)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);

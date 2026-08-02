@@ -113,9 +113,17 @@ public sealed class GatewayTcpBusLink : IModbusBusLink
 
     public int InfiniteTimeout => -1;
 
-    /// <summary>Set by NModbus's transport before each transaction — <see cref="ModbusBus"/> always gives the
-    /// transport a bounded value, and probing confirmed the transport propagates it here rather than keeping
-    /// it to itself.</summary>
+    /// <summary>Set by NModbus's transport before each transaction; probing confirmed the transport propagates
+    /// it here rather than keeping it to itself.
+    ///
+    /// <para><b>A non-positive value means NO deadline</b> — see <see cref="Read"/>. This used to say
+    /// "<see cref="ModbusBus"/> always gives the transport a bounded value" as though that settled it, which
+    /// was an assertion about a caller rather than anything this type enforces. It is now actually true:
+    /// <see cref="ModbusBus.BeginTransactionAsync"/> rejects a non-positive <c>readTimeoutMs</c> with
+    /// <see cref="ArgumentOutOfRangeException"/> before it takes the arbitration lock. <b>And when it is
+    /// unbounded anyway</b> — a caller wiring this link up outside <see cref="ModbusBus"/>, which nothing
+    /// prevents — the read blocks until the peer answers or the link is disposed, remaining abortable via
+    /// <see cref="AbortPendingRead"/>; it does not spin.</para></summary>
     public int ReadTimeout { get; set; } = -1;
 
     public int WriteTimeout { get; set; } = -1;

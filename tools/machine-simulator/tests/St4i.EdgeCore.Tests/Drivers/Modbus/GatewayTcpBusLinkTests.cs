@@ -294,25 +294,19 @@ public class GatewayTcpBusLinkTests(ITestOutputHelper output) : IAsyncLifetime
     /// <summary>
     /// A connect to a port nobody is listening on fails rather than handing back a half-built link.
     ///
-    /// <para>🔴 <b>The port is held BOUND but never listening, rather than obtained by starting a listener and
-    /// stopping it.</b> The obvious version — grab an ephemeral port, release it, dial it — hands that port
-    /// back to the OS, which is free to reassign it to another test's <c>TcpListener</c> before this connect
-    /// lands. This connect would then succeed against a stranger's listener and immediately drop, and the
-    /// stranger would see a connection reset out of nowhere. That is not hypothetical: a gate run failed
-    /// <c>DeviceIdentityStoreTests.Certificate_LoadedFromStore_CanCompleteARealMutualTlsHandshake</c> with
-    /// "An existing connection was forcibly closed by the remote host" on its server-side handshake, in a
-    /// suite where this test is the only one that ever releases a port it has named. Binding without
-    /// listening gives a port that is genuinely unconnectable (the stack answers RST) AND that no other test
-    /// can be assigned, which removes the interference instead of making it rarer.</para>
+    /// <para>🔴 The port comes from <see cref="St4i.EdgeCore.Tests.Drivers.ClosedLoopbackPort"/>, which holds
+    /// it BOUND but never listening, rather than obtaining one by starting a listener and stopping it. See
+    /// that type for the cross-test failure this caused and for why binding without listening removes the
+    /// hazard rather than making it rarer. <b>My first fix inlined the bind here and my report claimed this
+    /// was "the only test in the assembly that ever releases a port it has named" — that was false</b>: the
+    /// Modbus and OPC-UA conformance suites do the same thing in a <see langword="static"/> field, which is
+    /// strictly worse, and two more sites exist in <c>St4i.EngineApi.Tests</c>. Hence one shared helper
+    /// rather than a local fix.</para>
     /// </summary>
     [Fact]
     public async Task ConnectAsync_ToADeadEndpoint_Throws()
     {
-        using var held = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-        held.Bind(new IPEndPoint(IPAddress.Loopback, 0));
-        var deadPort = ((IPEndPoint)held.LocalEndPoint!).Port;
-        // Deliberately no Listen() — bound, so nobody else can take this port, and refusing, so a connect
-        // gets a reset rather than a hang.
+        var deadPort = St4i.EdgeCore.Tests.Drivers.ClosedLoopbackPort.Port;
 
         await Assert.ThrowsAnyAsync<Exception>(() => GatewayTcpBusLink.ConnectAsync("127.0.0.1", deadPort, CancellationToken.None));
     }

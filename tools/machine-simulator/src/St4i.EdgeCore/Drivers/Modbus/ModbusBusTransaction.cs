@@ -28,6 +28,10 @@ public sealed class ModbusBusTransaction : IAsyncDisposable
     private bool _outstanding;
     private bool _disposed;
 
+    /// <summary>0/1 — guards <see cref="ExecuteAsync{T}"/> against a second concurrent operation. See that
+    /// method for why this is enforced rather than documented.</summary>
+    private int _inFlight;
+
     internal ModbusBusTransaction(ModbusBus bus, IModbusMaster master, IModbusBusLink link, CancellationToken ct)
     {
         _bus = bus;
@@ -57,12 +61,49 @@ public sealed class ModbusBusTransaction : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(operation);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        _outstanding = true;
-        var result = await operation(Master).ConfigureAwait(false);
-        _outstanding = false;
-        return result;
+        // D-2 review (m-5) — one operation at a time, enforced rather than assumed. Unreachable through
+        // ModbusRtuDriver, whose poll awaits each read before starting the next; reachable the moment
+        // anything holds a transaction and issues two operations without awaiting the first, which is an
+        // ordinary mistake for D-4's multidrop loop or D-5's write path to make. WHEN IT HAPPENS ANYWAY the
+        // consequence is not a race on this flag, it is two requests interleaving their bytes on one shared
+        // RS-485 line — the exact corruption the arbitration lock exists to prevent, arriving from inside
+        // the lock rather than around it. Refused loudly here instead.
+        if (Interlocked.Exchange(ref _inFlight, 1) != 0)
+        {
+            throw new InvalidOperationException(
+                "ModbusBusTransaction: an operation is already in flight on this transaction. A Modbus RTU bus " +
+                "carries one transaction at a time; issuing a second without awaiting the first would interleave " +
+                "two requests' bytes on the shared line.");
+        }
+
+        try
+        {
+            _outstanding = true;
+            var result = await operation(Master).ConfigureAwait(false);
+            _outstanding = false;
+            return result;
+        }
+        finally
+        {
+            Volatile.Write(ref _inFlight, 0);
+        }
     }
 
+    /// <summary>
+    /// Releases the bus. <b>Deliberately does not wait for an in-flight operation</b> — the same rule
+    /// <see cref="ModbusBus.DisposeAsync"/> and <see cref="ModbusTcpDriver.DisposeAsync"/> both follow, for
+    /// the same reason (a driver's disposal can run while <c>FleetHost</c> holds its own gate, so waiting here
+    /// even boundedly recreates the hazard that design closes).
+    ///
+    /// <para>D-2 review (m-5) — <b>what happens when it is disposed with an operation still in flight,</b>
+    /// which <c>await using</c> makes hard to reach but which nothing prevents: the arbitration lock is
+    /// released while that operation is still on the wire, so the NEXT device can begin a transaction and
+    /// interleave with it. There is no way to make that safe from here without the bounded wait this rule
+    /// forbids, so it is made LOUD rather than silent — the bus is quarantined unconditionally
+    /// (<see cref="_outstanding"/> is still true, so <c>consumedAValidatedResponse</c> is false), which forces
+    /// the next transaction to resynchronise before it writes. That converts a silent byte-interleaving into
+    /// one quiet window, which is the best answer available at this seam.</para>
+    /// </summary>
     public ValueTask DisposeAsync()
     {
         if (_disposed) return ValueTask.CompletedTask;

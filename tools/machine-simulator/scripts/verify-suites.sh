@@ -68,45 +68,62 @@ EXPECT_CONFORMANCE=22
 # open afterwards) — no retry, no share-mode tolerance, NO NEW TUNABLE, and no test added or removed. The
 # reviewer's 1-in-4 became 0 failures in 12 consecutive runs, but the load-bearing argument is the mechanism,
 # not the sample: after DisposeAsync returns there is no writer for the read to collide with.
-# 🔴 Đợt D, D-2 raises this 741 -> 780 (+39). Counted by hand, per file:
-#     + 7  ModbusRtuDriverLoopbackTests      (new) — a real read against an in-process RTU slave; two
-#                                             drivers on ONE bus each reading their own slave address; the
-#                                             device going quiet (Health degrades, iterator survives); Health
-#                                             never reporting Connected even transiently against a device
-#                                             that never answers; construction opening no link; disposal
-#                                             releasing the lease once.
-#     + 4  ModbusBusCancellationTests        (new) — the task's non-negotiable: cancel while queued for the
+# 🔴 Đợt D, D-2 raises this 741 -> 786 (+45).
+#
+# 🔴 COUNTED FROM THE RUNNER (`dotnet test --list-tests`), not by hand. The previous revision of this block
+# said 7/4/8/12/8 where the truth was 7/4/9/11/8 — two files wrong, and the two errors CANCELLED, so the
+# grand total was right and the justification was not. That is the failure mode this per-file breakdown
+# exists to prevent: a total that reconciles is not evidence that anybody knows where the tests are. Both
+# numbers now come from the runner enumerating them.
+#
+#     + 8  ModbusRtuDriverLoopbackTests      (new) — a real read against an in-process RTU slave; Input
+#                                             registers read through FC04 not FC03; two drivers on ONE bus
+#                                             each reading their own slave address; the driver handing the bus
+#                                             ITS OWN map's timeout and retry count; the device going quiet
+#                                             (Health degrades, iterator survives); Health never reporting
+#                                             Connected even transiently against a device that never answers;
+#                                             construction opening no link; disposal releasing the lease once.
+#     + 5  ModbusBusCancellationTests        (new) — the task's non-negotiable: cancel while queued for the
 #                                             bus; cancel an in-flight read WITHOUT rebuilding the link; a
-#                                             second device on the same bus still reading correctly after
-#                                             the first one's cancellation; an already-cancelled token
-#                                             refused at the arbitration gate.
-#     + 8  ModbusBusResynchronisationTests   (new) — the post-timeout bus state: the hazard demonstrated
-#                                             against raw NModbus; the late frame discarded; the quiet
-#                                             window restarting rather than expiring on a schedule; a fresh
-#                                             link NOT clearing the quarantine; exactly one request on the
-#                                             wire (Retries honoured); a clean transaction costing the next
-#                                             one nothing; a bus that never goes quiet being refused; the
+#                                             second device on the same bus still reading correctly after the
+#                                             first one's cancellation; a cancellation BETWEEN two registers
+#                                             leaving the bus clean; an already-cancelled token refused at the
+#                                             arbitration gate.
+#     + 9  ModbusBusResynchronisationTests   (new) — the post-timeout bus state: the hazard demonstrated
+#                                             against raw NModbus; the late frame discarded; the quiet window
+#                                             restarting rather than expiring on a schedule; a fresh link NOT
+#                                             clearing the quarantine; exactly one request on the wire
+#                                             (Retries honoured); a transaction that executed nothing staying
+#                                             clean; a clean transaction costing the next one nothing; a bus
+#                                             that never goes quiet being refused AND its link rebuilt; the
 #                                             arbitration lock surviving that refusal.
-#     +12  ModbusBusRegistryTests            (new) — the sharing/refcount contract D-4 consumes: sharing per
+#     +15  ModbusBusRegistryTests            (new) — the sharing/refcount contract D-4 consumes: sharing per
 #                                             key, distinct keys, one release vs the last release, a double
 #                                             release decrementing once, re-acquire after disposal, registry
-#                                             disposal, acquire-after-disposal, the settings defaults and
-#                                             their validation, and 32 concurrent acquires.
+#                                             disposal, acquire-after-disposal, the settings defaults and their
+#                                             validation, 32 concurrent acquires, BeginTransactionAsync's own
+#                                             argument validation (3 cases) and its one-operation-at-a-time
+#                                             guard.
 #     + 8  GatewayTcpBusLinkTests            (new) — the RTU-over-TCP transport: DiscardInBuffer head to head
 #                                             against NModbus's own TcpClientAdapter, abort-without-close,
 #                                             the bounded timeout, the hang-up, disposal, RTU end to end over
 #                                             a real socket, the bus-key rule, and a dead endpoint.
-# Six of those 39 exist only because a mutation survived the first version of this suite: a fresh link
+#
+# Seven of those 45 exist only because a mutation survived an earlier version of this suite: a fresh link
 # clearing the quarantine; Transport.Retries left at NModbus's own default of 3; Health reporting Connected
 # transiently; DiscardInBuffer's own hook being unwired from the drain it delegates to; the quiet window's
-# TRAILING silence; and the FC04 (Input register) arm, which no RTU map in the suite had ever declared. See
-# task-2-report.md §8 — none of the six was found by reading.
+# TRAILING silence; the FC04 (Input register) arm, which no RTU map in the suite had ever declared; and the
+# driver's own map reaching the bus at all. See task-2-report.md §8 — none was found by reading.
+#
 # EVERY OTHER SUITE IS UNCHANGED, and that is a check rather than a coincidence: D-2 adds no code outside
 # src/St4i.EdgeCore/Drivers/Modbus, so a moved total anywhere else would mean this task reached somewhere it
 # had no business reaching. In particular EXPECT_CONFORMANCE stays 22 — RTU conformance wiring is D-6 — and
-# the 114 pre-existing Modbus tests all pass UNCHANGED (verified: 114/114 on four consecutive baseline runs
-# at 36d9454c, then 149/149 on three consecutive runs with D-2 applied).
-EXPECT_EDGECORE=780
+# every pre-existing Modbus test passes UNCHANGED (verified: 114/114 on four consecutive baseline runs at
+# 36d9454c). The D-2 review fix round also rewrites two PRE-EXISTING conformance helpers
+# (Modbus/OpcUaDriverConformanceTests' FindAndReleaseFreePort -> Drivers/ClosedLoopbackPort) and adds NO test
+# for them: a released ephemeral port can be reassigned to another test's listener, which is what made an
+# unrelated TLS test fail once. A moved total there would mean that rewrite was not behaviour-preserving.
+EXPECT_EDGECORE=786
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:

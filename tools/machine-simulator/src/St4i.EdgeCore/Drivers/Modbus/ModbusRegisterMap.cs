@@ -62,6 +62,36 @@ public sealed record ModbusRegister(
     ModbusWritableRange? Writable = null)
 {
     /// <summary>
+    /// Task D-2 — the READ-side decode, extracted verbatim out of <see cref="ModbusTcpDriver.PollOnceAsync"/>
+    /// so <see cref="ModbusRtuDriver"/> reuses the identical math instead of re-deriving it. The brief for
+    /// D-2 requires the TCP driver's decode be reused ("both are protocol-generic"), and a copy is not a
+    /// reuse: two copies can drift, and the drift would be silent (a wrong number is still a number).
+    /// <see cref="ModbusTcpDriver"/> now calls this too, so there is exactly one implementation and the
+    /// existing TCP decode tests cover both transports.
+    ///
+    /// <para><see cref="ModbusDataType.UInt16"/> keeps the raw 16-bit word as-is;
+    /// <see cref="ModbusDataType.Int16"/> reinterprets the SAME bits as two's-complement signed
+    /// (raw 0xFFFF → -1) BEFORE <see cref="Scale"/> is applied. This is the exact inverse of
+    /// <see cref="TryComputeRawWordForWrite"/>'s own <c>unchecked((ushort)(short)…)</c> bit-cast.</para>
+    ///
+    /// <para>🔴 <b>This method is FIRST in the type deliberately, and moving it is not a cosmetic edit.</b>
+    /// D-2 originally inserted it between <see cref="TryComputeRawWordForWrite"/>'s doc block and the method
+    /// itself, which silently re-parented that block — a <c>&lt;summary&gt;</c>, three <c>&lt;param&gt;</c>
+    /// tags and a <c>&lt;remarks&gt;</c> recording B-3's Critical #1 (this is the ONE place the declared-range
+    /// check lives) and Critical #2 (the NaN gap) — onto THIS method, leaving the write-side math D-5 builds
+    /// on with no documentation at all. Nothing catches that: <c>GenerateDocumentationFile</c> is not set
+    /// anywhere in this repository, so no compiler warning fires for a doc comment attached to the wrong
+    /// member. The argument is this file's own history — that <c>&lt;remarks&gt;</c> exists precisely because
+    /// a doc comment that said the wrong thing shipped a Critical once already. Keep the two methods'
+    /// doc blocks adjacent to their own bodies.</para>
+    /// </summary>
+    public double DecodeRawWord(ushort rawWord)
+    {
+        double decoded = DataType == ModbusDataType.UInt16 ? rawWord : unchecked((short)rawWord);
+        return decoded * Scale;
+    }
+
+    /// <summary>
     /// Task B-3 — the write-side mirror of <see cref="ModbusTcpDriver"/>'s own read-side decode
     /// (<c>raw*Scale</c>, with an Int16 register's raw word reinterpreted two's-complement BEFORE scaling):
     /// given an engineering-unit <paramref name="engineeringValue"/> ALREADY known to be within
@@ -127,25 +157,6 @@ public sealed record ModbusRegister(
     /// <c>Detail</c>" — see <see cref="CommandArgumentDeclaration"/>'s own doc comment for the identical
     /// reasoning on the command-argument side.</para>
     /// </remarks>
-    /// <summary>
-    /// Task D-2 — the READ-side decode, extracted verbatim out of <see cref="ModbusTcpDriver.PollOnceAsync"/>
-    /// so <see cref="ModbusRtuDriver"/> reuses the identical math instead of re-deriving it. The brief for
-    /// D-2 requires the TCP driver's decode be reused ("both are protocol-generic"), and a copy is not a
-    /// reuse: two copies can drift, and the drift would be silent (a wrong number is still a number).
-    /// <see cref="ModbusTcpDriver"/> now calls this too, so there is exactly one implementation and the
-    /// existing TCP decode tests cover both transports.
-    ///
-    /// <para><see cref="ModbusDataType.UInt16"/> keeps the raw 16-bit word as-is;
-    /// <see cref="ModbusDataType.Int16"/> reinterprets the SAME bits as two's-complement signed
-    /// (raw 0xFFFF → -1) BEFORE <see cref="Scale"/> is applied. This is the exact inverse of
-    /// <see cref="TryComputeRawWordForWrite"/>'s own <c>unchecked((ushort)(short)…)</c> bit-cast.</para>
-    /// </summary>
-    public double DecodeRawWord(ushort rawWord)
-    {
-        double decoded = DataType == ModbusDataType.UInt16 ? rawWord : unchecked((short)rawWord);
-        return decoded * Scale;
-    }
-
     public bool TryComputeRawWordForWrite(double engineeringValue, out ushort rawWord, out string? error)
     {
         if (!double.IsFinite(engineeringValue))

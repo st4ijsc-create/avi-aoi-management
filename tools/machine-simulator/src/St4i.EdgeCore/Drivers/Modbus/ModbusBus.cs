@@ -190,6 +190,20 @@ public sealed class ModbusBus : IAsyncDisposable
     public int LastResynchronisationBytesDiscarded { get; private set; }
 
     /// <summary>
+    /// 🔴 The <c>readTimeoutMs</c> and <c>retries</c> the most recent <see cref="BeginTransactionAsync"/>
+    /// applied to the shared transport. Observable for one reason: <b>a test that passes these values in
+    /// itself proves only that the plumbing honours them, and says nothing about what a DRIVER passes.</b>
+    /// A mutation hardcoding <c>Retries = 3</c> inside <see cref="ModbusRtuDriver"/> left all 153 Modbus
+    /// tests green, because every test that cared supplied its own arguments. These let a test assert the
+    /// driver's OWN map reached the wire — which is the property D-5's no-implicit-retry rule actually needs,
+    /// since the retry count is a physical double-actuation hazard for a write.
+    /// </summary>
+    public int LastTransactionReadTimeoutMs { get; private set; }
+
+    /// <inheritdoc cref="LastTransactionReadTimeoutMs"/>
+    public int LastTransactionRetries { get; private set; } = -1;
+
+    /// <summary>
     /// Incremented every time a NEW physical link is opened. <b>This is the number that proves a cancellation
     /// did not destroy the transport:</b> a test cancels a device's in-flight read, then drives a second
     /// device on the same bus, and asserts this value never moved. Asserting "the second read succeeded"
@@ -216,9 +230,38 @@ public sealed class ModbusBus : IAsyncDisposable
     /// to whatever the previous transaction happened to want. Đợt B's finding carries over unchanged: a retry
     /// re-sends the WHOLE request (probed: 2 writes for <c>Retries = 1</c>), which is a harmless extra read
     /// and a physical double-actuation hazard for the write path D-5 will build.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// 🔴 <paramref name="readTimeoutMs"/> is not positive, or <paramref name="retries"/> is negative.
+    /// <b>Validated BEFORE the arbitration lock is taken, and the reason is that the failure mode is not
+    /// "one slow device".</b> A non-positive timeout reaches
+    /// <see cref="GatewayTcpBusLink.Read"/>'s <c>ReadTimeout &gt; 0 ? … : (long?)null</c> and produces no
+    /// deadline at all — and that read happens while this bus's arbitration lock is HELD, so every other
+    /// device on the bus blocks behind it indefinitely, with no exception and nothing logged, until
+    /// <c>FleetHost</c> tears the driver down. That is exactly the "a test which hangs under a defect is
+    /// strictly worse than one that fails under it" rule this task's own report argues, applied to
+    /// production. It is also the standard this very file already sets: <see cref="ModbusBusSettings"/> is
+    /// validated in the constructor rather than trusted, and that check is what caught the
+    /// <c>readonly record struct</c> zero-initialisation trap before it ever shipped. Checked here rather
+    /// than assumed from <see cref="ModbusRegisterMap.EffectiveReadTimeoutMs"/>'s own floor, because the bus
+    /// is a public seam D-4 and D-5 will call from code that does not exist yet.
+    /// </exception>
     public async Task<ModbusBusTransaction> BeginTransactionAsync(int readTimeoutMs, int retries, CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (readTimeoutMs <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(readTimeoutMs), readTimeoutMs,
+                "ModbusBus: readTimeoutMs must be > 0. A non-positive bound leaves the read unbounded, and it is " +
+                "taken while this bus's arbitration lock is held — so it stalls every device on the bus, silently.");
+        }
+
+        if (retries < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(retries), retries,
+                "ModbusBus: retries must be >= 0 (0 means the one attempt this product's no-implicit-retry rule " +
+                "requires for a write).");
+        }
 
         // Cancellation mechanism #1 — exact, and the transaction has not started.
         await _arbitration.WaitAsync(ct).ConfigureAwait(false);
@@ -248,6 +291,9 @@ public sealed class ModbusBus : IAsyncDisposable
             transport.ReadTimeout = readTimeoutMs;
             transport.WriteTimeout = readTimeoutMs;
             transport.Retries = retries;
+
+            LastTransactionReadTimeoutMs = readTimeoutMs;
+            LastTransactionRetries = retries;
 
             var transaction = new ModbusBusTransaction(this, _master!, link, ct);
             handedOff = true;

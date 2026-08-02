@@ -198,6 +198,82 @@ public class ModbusBusRegistryTests
         Assert.Equal(5, freshlyConstructed.PollSliceMs);
     }
 
+    /// <summary>
+    /// 🔴 A non-positive read timeout, or a negative retry count, is refused BEFORE the arbitration lock is
+    /// taken — and the bus is still usable afterwards, which is the half that matters.
+    ///
+    /// <para>D-2 review (I-1). A non-positive timeout reaches <c>GatewayTcpBusLink.Read</c>'s
+    /// <c>ReadTimeout &gt; 0 ? … : (long?)null</c> and yields NO deadline, on a read taken while the
+    /// arbitration lock is held — so it is not one slow device, it is every device on the bus blocked
+    /// indefinitely with nothing thrown and nothing logged. The second half below (a normal transaction still
+    /// works) is the load-bearing assertion: a validation that threw AFTER taking the lock would leave the
+    /// bus permanently wedged, turning a caller's bad argument into a dead bus.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(-1, 0)]
+    [InlineData(1_000, -1)]
+    public async Task BeginTransactionAsync_RejectsANonPositiveTimeoutOrANegativeRetryCount_WithoutWedgingTheBus(
+        int readTimeoutMs, int retries)
+    {
+        await using var harness = ModbusRtuLoopbackHarness.Start(((byte)1, new ushort[] { 55, 0 }));
+        await using var lease = harness.Lease();
+        var bus = lease.Bus;
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => bus.BeginTransactionAsync(readTimeoutMs, retries, CancellationToken.None));
+
+        // Nothing was opened and, above all, the lock came back.
+        Assert.Equal(0, bus.LinkGeneration);
+
+        var next = bus.BeginTransactionAsync(2_000, 0, CancellationToken.None);
+        var settled = await Task.WhenAny(next, Task.Delay(TimeSpan.FromSeconds(10)));
+        Assert.Same(next, settled);
+        await using var transaction = await next;
+        var value = await transaction.ExecuteAsync(m => m.ReadHoldingRegistersAsync(1, 0, 1));
+        Assert.Equal(55, value[0]);
+    }
+
+    /// <summary>
+    /// D-2 review (m-5) — a second operation issued on a transaction whose first is still in flight is
+    /// REFUSED rather than allowed to interleave two requests' bytes on the shared line. Unreachable through
+    /// <see cref="ModbusRtuDriver"/>, whose poll awaits each read; reachable by D-4's multidrop loop or D-5's
+    /// write path making an ordinary mistake, which is why the seam enforces it rather than documenting it.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteAsync_RefusesASecondConcurrentOperationOnOneTransaction()
+    {
+        await using var harness = ModbusRtuLoopbackHarness.Start(((byte)1, new ushort[] { 77, 0 }));
+        await using var lease = harness.Lease();
+
+        // The device answers into a hold, so the first operation stays in flight for the whole test.
+        harness.Links.Device.HoldWrites = true;
+
+        await using var transaction = await lease.Bus.BeginTransactionAsync(10_000, 0, CancellationToken.None);
+        var first = transaction.ExecuteAsync(m => m.ReadHoldingRegistersAsync(1, 0, 1));
+
+        await WaitUntilAsync(() => harness.Links.Device.BytesWritten > 0, "the first operation to be genuinely in flight");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => transaction.ExecuteAsync(m => m.ReadHoldingRegistersAsync(1, 0, 1)));
+
+        // Let the first one finish so teardown is clean.
+        harness.Links.Device.ReleaseHeldWrites();
+        try { await first; } catch { /* the value is not what this test is about */ }
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> predicate, string because)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (predicate()) return;
+            await Task.Delay(10);
+        }
+
+        Assert.True(predicate(), $"timed out waiting for: {because}");
+    }
+
     /// <summary>A quiet window of zero is refused at construction. It reads as a harmless "turn the delay
     /// off", and would silently mean "observe silence without looking" — the hopeful answer this whole
     /// mechanism exists to replace.</summary>
