@@ -78,3 +78,4 @@ export * from "./enterpriseIntegration"; // doc 44 W6-5 — WMS/PLM/CMMS connect
 export * from "./machineConfigState"; // doc 56 Đ4 — generic machine config-sync shadow (desired/reported + drift), migration 0293
 export * from "./processMart"; // doc 56 Đ5 — process analytics daily rollup mart, migration 0294
 export * from "./kbStudio"; // doc69 Giai đoạn 5/Wave E3 (E3-1) — multi-corpus pgvector chunk store for Training Studio doc ingest, migration 0304
+export * from "./vram"; // 2026-08-02 VRAM Pha 1 Task 2 — nhật ký chỉ-ghi-thêm điều phối VRAM, migration 0310
