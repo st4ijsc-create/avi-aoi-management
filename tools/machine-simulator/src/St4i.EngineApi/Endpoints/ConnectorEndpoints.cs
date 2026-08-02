@@ -315,16 +315,24 @@ public static class ConnectorEndpoints
         // POST for that machine until the process restarts, with no way for an operator to clear it.
         if (!connectorRegistry.Register(validated.Factory, body.MapJson, instanceId, validated.MachineCode))
         {
-            await CompensateFailedLiveRegistrationAsync(store, instanceId, existing, ct).ConfigureAwait(false);
+            // 🔴 D-1 re-review, I-A — CancellationToken.None, deliberately, NOT the request's `ct`. A
+            // compensating action must not be cancelled by the very token whose cancellation caused it. The
+            // previous version passed `ct` straight through to OpenConnectionAsync, so for an ENTIRE CLASS of
+            // request — any client that hung up — the rollback threw immediately at the first store call
+            // while the response below claimed it had succeeded. That is not an exotic interleaving; it is
+            // guaranteed for every cancelled request that reaches this branch.
+            var rolledBack = await CompensateFailedLiveRegistrationAsync(
+                store, instanceId, existing, CancellationToken.None).ConfigureAwait(false);
 
             var raceWinner = connectorRegistry.TryGetInstanceIdForMachine(validated.MachineCode, out var winner)
                 ? winner
                 : "(unknown)";
+
             return Results.Conflict(new ApiErrorDto(
                 $"Connector '{instanceId}' could not be registered live — machine '{validated.MachineCode}' " +
-                $"was claimed by connector '{raceWinner}' while this request was in flight. Nothing was " +
-                "persisted for this connector: its configuration was rolled back, so there is no leftover " +
-                "row to clean up. Re-check GET /v1/connectors/configured and retry."));
+                $"was claimed by connector '{raceWinner}' while this request was in flight. " +
+                DescribeRollbackOutcome(instanceId, rolledBack, createdByThisRequest: existing is null) +
+                " Re-check GET /v1/connectors/configured and retry."));
         }
 
         // RegisterMachine only ADDS (see this class' own doc comment) — true means a brand-new machine code
@@ -472,6 +480,49 @@ public static class ConnectorEndpoints
     }
 
     /// <summary>
+    /// 🔴 D-1 re-review, I-A — the operator-facing sentence describing what the rollback actually did.
+    ///
+    /// <para><b>A pure function, extracted rather than left inline, for exactly the reason I-3's dispatch
+    /// loop was.</b> The branch that produces it is only reachable under a concurrent registration, so a
+    /// test cannot drive the handler into it — and code a test cannot reach is code nothing ever asks a
+    /// consequence question about. That is precisely how the previous version shipped a sentence that
+    /// contradicted this file's own test: it said "its configuration was rolled back, so there is no
+    /// leftover row to clean up" UNCONDITIONALLY, while
+    /// <c>CompensatingAFailedRegistration_NeverThrows_WhenTheStoreCallItselfFails</c> pins that a failed
+    /// compensation leaves the row. Pulled out here, all three outcomes are ordinary unit-testable
+    /// arguments.</para>
+    ///
+    /// <para>Three outcomes, because two facts vary independently and both change what an operator should
+    /// do: whether the rollback succeeded, and whether this request CREATED the row or overwrote one. The
+    /// second matters even on success — a restored row still exists at this instance id, so "there is no
+    /// leftover row" would be imprecise there.</para>
+    /// </summary>
+    /// <param name="rolledBack"><see cref="CompensateFailedLiveRegistrationAsync"/>'s own return value —
+    /// never an assumption about it.</param>
+    /// <param name="createdByThisRequest"><see langword="true"/> when no row existed before this request, so
+    /// rolling back meant deleting.</param>
+    internal static string DescribeRollbackOutcome(string instanceId, bool rolledBack, bool createdByThisRequest)
+    {
+        if (!rolledBack)
+        {
+            // Stated as a possibility ("may have been left behind") rather than a certainty: the
+            // compensation can fail either before or after doing its work, and this method is not in a
+            // position to know which. Pointing at the endpoint that would SHOW it is the actionable part.
+            return $"⚠ The rollback did NOT complete, so a configuration row for '{instanceId}' may have been " +
+                   "left behind that will never run: it would be listed by GET /v1/connectors/configured and " +
+                   $"refused again at every restart. Check that endpoint and remove it with " +
+                   $"DELETE /v1/connectors/{instanceId} if it is there.";
+        }
+
+        return createdByThisRequest
+            ? "Nothing was persisted for this connector: its configuration was rolled back, so there is no " +
+              "leftover row to clean up."
+            : $"The configuration connector '{instanceId}' had BEFORE this request was restored unchanged " +
+              "(only its last-updated timestamp moved), so this request left nothing new behind — note that " +
+              "a row for this connector does still exist, exactly as it did before.";
+    }
+
+    /// <summary>
     /// 🔴 D-1 review, I-1 — undoes <see cref="CreateConnectorAsync"/>'s own <c>SaveAsync</c> when the live
     /// registration that follows it is refused, so a refused save never leaves a persisted connector that
     /// can never go live (see that method's own remarks for the concurrent interleaving that reaches this).
@@ -486,20 +537,31 @@ public static class ConnectorEndpoints
     /// a strictly worse outcome than the orphan this method exists to prevent.</description></item>
     /// </list></para>
     ///
-    /// <para><b>Own failure is swallowed, deliberately.</b> This runs on an error path that is already
-    /// returning a 409; letting a second store failure throw would convert an honest "your connector was not
-    /// registered" into an opaque 500 AND still leave the row. The residue in that case is the orphan this
-    /// method was written to prevent — strictly no worse than not having tried, and it is logged nowhere
-    /// because this static handler has no logger; the operator-visible 409 is the signal, and
-    /// <c>GET /v1/connectors/configured</c> is where the residue would show. Named here rather than left as
-    /// an unstated assumption.</para>
+    /// <para><b>Own failure is swallowed, deliberately — and REPORTED.</b> This runs on an error path that is
+    /// already returning a 409; letting a second store failure throw would convert an honest "your connector
+    /// was not registered" into an opaque 500 AND still leave the row. So the exception is caught — but
+    /// 🔴 D-1 re-review (I-A) the method now RETURNS whether the rollback actually happened, because the
+    /// caller's 409 previously told the operator "its configuration was rolled back" unconditionally, which
+    /// directly contradicted this method's own test pinning that a failed compensation leaves the row. A
+    /// message that is false in the direction of "nothing to check here" is worse than no message: it stops
+    /// the one person who could clean up from looking.</para>
+    ///
+    /// <para><b>Pass <see cref="CancellationToken.None"/>, not the request's token</b> (I-A). A compensating
+    /// action must not be cancelled by the very token whose cancellation caused it. Threading the request's
+    /// <c>ct</c> in here made the rollback fail at its first store call for an entire CLASS of request — any
+    /// client that hung up — rather than for some rare interleaving. The parameter is kept so a caller can
+    /// still bound this if it ever needs to, but the one production call site passes
+    /// <see cref="CancellationToken.None"/> and the reason is written at that call site too.</para>
     ///
     /// <para><b>Residue even on the happy path:</b> <c>updated_at</c> moves (SaveAsync bumped it, the
     /// restore bumps it again). <c>created_at</c> does NOT — <c>SaveAsync</c>'s upsert never updates it — so
     /// a restored row keeps its identity and its full content, and only its "last touched" timestamp lies by
     /// the duration of the failed request.</para>
     /// </summary>
-    internal static async Task CompensateFailedLiveRegistrationAsync(
+    /// <returns><see langword="true"/> if the store was actually put back the way it was;
+    /// <see langword="false"/> if the compensating call itself failed, in which case the row this request
+    /// wrote is still there and the caller MUST say so.</returns>
+    internal static async Task<bool> CompensateFailedLiveRegistrationAsync(
         ConnectorConfigStore store, string instanceId, ConnectorConfigRecord? previous, CancellationToken ct)
     {
         try
@@ -507,18 +569,21 @@ public static class ConnectorEndpoints
             if (previous is null)
             {
                 await store.DeleteAsync(instanceId, ct).ConfigureAwait(false);
-                return;
+                return true;
             }
 
             await store.SaveAsync(
                     previous.Kind, previous.MachineCode, previous.Host, previous.Port, previous.MapJson,
                     previous.WriteCapability, previous.Source, ct, previous.EffectiveInstanceId)
                 .ConfigureAwait(false);
+            return true;
         }
         catch
         {
             // See this method's own remarks: an error-path failure must not replace a truthful 409 with a
-            // 500. Deliberately not rethrown.
+            // 500. Deliberately not rethrown — but deliberately not hidden either; `false` is what makes the
+            // caller's message tell the truth instead of guessing.
+            return false;
         }
     }
 

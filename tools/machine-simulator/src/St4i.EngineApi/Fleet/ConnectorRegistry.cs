@@ -270,7 +270,17 @@ public sealed class ConnectorRegistry
     /// guard included — still governs it."
     ///
     /// <para>Prefer <see cref="SnapshotBindings"/> when asking more than one question in a row — see its own
-    /// remarks. This overload stays for single, standalone queries.</para></summary>
+    /// remarks. This overload is for single, standalone queries.</para>
+    ///
+    /// <para><b>Census (D-1 re-review, m-B): this member has NO production caller.</b>
+    /// <see cref="FleetHost"/> used it until m3 replaced its three independent registry reads with one
+    /// <see cref="SnapshotBindings"/> call, and nothing else in <c>src/</c> asks the question. It is kept
+    /// rather than deleted for one reason, stated so the next census does not have to re-derive it: it is
+    /// the readable way for a TEST to assert that a registration is bound (the alternative,
+    /// <c>SnapshotBindings().Any(b =&gt; b.InstanceId == id &amp;&amp; b.MachineCode is not null)</c>, restates
+    /// the predicate at every call site), and "is this connector bound to a machine?" is a first-class fact
+    /// about this type rather than an accident of one caller. If a future census wants it gone, the four
+    /// tests using it are the whole blast radius.</para></summary>
     public bool IsBoundToAMachine(string instanceId) =>
         _entries.TryGetValue(DriverKinds.Normalize(instanceId), out var entry) && entry.MachineCode is not null;
 

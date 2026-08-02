@@ -1156,16 +1156,14 @@ public sealed class FleetHost
     /// exclusion filter and the write-resolution path must agree on which slot drives a machine, or a machine
     /// gets simulated AND written to, or neither.</para>
     /// </summary>
-    private string ResolveSlotLabelForMachine(MachineDescriptor descriptor) =>
-        ResolveSlotLabelForMachine(descriptor, _connectorRegistry?.SnapshotBindings());
-
-    /// <summary>🔴 D-1 review, m3 — the snapshot-taking overload. Every caller that asks this question more
-    /// than once in a row (<see cref="ResolveWritableDriver"/>, which asks it for the target machine and then
-    /// again for every roster member while counting slot-sharers) MUST take ONE
-    /// <see cref="ConnectorRegistry.SnapshotBindings"/> and pass it here, so all of those answers come from
-    /// one consistent view of the registry — see that method's own remarks for why three independent reads
-    /// are three independent points in time even under <see cref="_gate"/>. A <see langword="null"/> snapshot
-    /// means "no registry wired", identical to an empty one.</summary>
+    /// <summary>🔴 D-1 review, m3 — <b>the binding snapshot is a REQUIRED parameter, and there is deliberately
+    /// no convenience overload that takes its own.</b> A one-argument version existed briefly and the
+    /// re-review flagged it correctly: it was the shorter, more inviting signature AND the unsafe one,
+    /// because taking a fresh snapshot per call is exactly the per-iteration inconsistency m3 removed — the
+    /// next person to call it in a loop would have silently reintroduced the defect. Every caller must take
+    /// ONE <see cref="ConnectorRegistry.SnapshotBindings"/> and thread it through (see that method's own
+    /// remarks for why independent reads are independent points in time even under <see cref="_gate"/>).
+    /// A <see langword="null"/> snapshot means "no registry wired", identical to an empty one.</summary>
     private string ResolveSlotLabelForMachine(
         MachineDescriptor descriptor, IReadOnlyList<ConnectorRegistry.ConnectorBinding>? bindings)
     {

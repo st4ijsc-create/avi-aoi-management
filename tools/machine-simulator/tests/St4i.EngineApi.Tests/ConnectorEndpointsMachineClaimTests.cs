@@ -177,9 +177,10 @@ public sealed class ConnectorEndpointsMachineClaimTests
         Assert.Single(await store.ListAsync());
 
         // `previous: null` means "this request created the row" — rolling back is a plain delete.
-        await ConnectorEndpoints.CompensateFailedLiveRegistrationAsync(
+        var rolledBack = await ConnectorEndpoints.CompensateFailedLiveRegistrationAsync(
             store, "modbus-line-new", previous: null, CancellationToken.None);
 
+        Assert.True(rolledBack);
         Assert.Empty(await store.ListAsync());
     }
 
@@ -205,9 +206,10 @@ public sealed class ConnectorEndpointsMachineClaimTests
             "Modbus", "D1-COMP-USURPER", "10.9.9.9", 5020, """{"usurper":true}""",
             instanceId: "modbus-line-x");
 
-        await ConnectorEndpoints.CompensateFailedLiveRegistrationAsync(
+        var rolledBack = await ConnectorEndpoints.CompensateFailedLiveRegistrationAsync(
             store, "modbus-line-x", previous, CancellationToken.None);
 
+        Assert.True(rolledBack);
         var restored = await store.GetAsync("modbus-line-x");
         Assert.NotNull(restored);
         Assert.Equal("D1-COMP-ORIGINAL", restored!.MachineCode);
@@ -243,16 +245,88 @@ public sealed class ConnectorEndpointsMachineClaimTests
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
 
-        var exception = await Record.ExceptionAsync(() =>
-            ConnectorEndpoints.CompensateFailedLiveRegistrationAsync(
+        var rolledBack = true;
+        var exception = await Record.ExceptionAsync(async () =>
+            rolledBack = await ConnectorEndpoints.CompensateFailedLiveRegistrationAsync(
                 store, "modbus-line-boom", previous: null, cancelled.Token));
 
         Assert.Null(exception);
+
+        // 🔴 D-1 re-review, I-A — the failure is REPORTED, not merely survived. Before this, the method
+        // returned void and the caller's 409 told the operator "its configuration was rolled back"
+        // unconditionally — flatly contradicting the very next assertion in this test. A message that is
+        // false in the direction of "nothing to check here" is worse than no message: it stops the one
+        // person who could clean up from looking.
+        Assert.False(rolledBack);
 
         // And the residue is named honestly rather than pretended away: a compensation that could not run
         // leaves the row it was meant to remove. That is strictly no worse than never having tried, and it
         // is what GET /v1/connectors/configured would show.
         Assert.Single(await store.ListAsync());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 D-1 re-review, I-A — the 409's own sentence must be DERIVED from what the rollback did.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void TheRollbackSentence_TellsTheOperatorToLook_WhenTheRollbackDidNotComplete()
+    {
+        // 🔴 The exact defect I-A names: the previous wording said "its configuration was rolled back, so
+        // there is no leftover row to clean up" UNCONDITIONALLY, contradicting this file's own
+        // never-throws test, and false in the direction that stops an operator looking. A message that
+        // wrongly says "nothing to check here" is worse than no message.
+        var failed = ConnectorEndpoints.DescribeRollbackOutcome("modbus-line-x", rolledBack: false, createdByThisRequest: true);
+
+        Assert.Contains("did NOT complete", failed, StringComparison.Ordinal);
+        Assert.Contains("GET /v1/connectors/configured", failed, StringComparison.Ordinal);
+        Assert.Contains("DELETE /v1/connectors/modbus-line-x", failed, StringComparison.Ordinal);
+        Assert.DoesNotContain("no leftover row", failed, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheRollbackSentence_ClaimsNothingWasLeftBehind_OnlyWhenThisRequestCreatedTheRowAndTheRollbackWorked()
+    {
+        // The two success arms are NOT interchangeable. Deleting a row this request created genuinely
+        // leaves nothing; restoring a row it overwrote leaves a row at that instance id — saying "there is
+        // no leftover row" there would send an operator looking for something that is supposed to be there.
+        var created = ConnectorEndpoints.DescribeRollbackOutcome("modbus-line-x", rolledBack: true, createdByThisRequest: true);
+        Assert.Contains("no leftover row", created, StringComparison.Ordinal);
+        Assert.DoesNotContain("⚠", created, StringComparison.Ordinal);
+
+        var overwrote = ConnectorEndpoints.DescribeRollbackOutcome("modbus-line-x", rolledBack: true, createdByThisRequest: false);
+        Assert.Contains("restored unchanged", overwrote, StringComparison.Ordinal);
+        Assert.Contains("does still exist", overwrote, StringComparison.Ordinal);
+        Assert.DoesNotContain("no leftover row", overwrote, StringComparison.Ordinal);
+        Assert.DoesNotContain("⚠", overwrote, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheRollbackSentence_IsDerivedFromWhatTheRollbackDid_NeverAsserted()
+    {
+        // The three outcomes the 409 must distinguish, checked against the real handler where reachable and
+        // against the helper where the branch is only reachable under a race. This test covers the two the
+        // helper decides; the handler-level wording for each is a plain switch over (rolledBack, existing is
+        // null), so a wrong sentence and a wrong rollback cannot drift apart.
+        var store = new ConnectorConfigStore(TempDir());
+
+        // (a) created-then-rolled-back → the row is gone, and `true` is what lets the caller say so.
+        await store.SaveAsync("Modbus", "D1-IA-A", "10.0.0.1", 502, "{}", instanceId: "modbus-a");
+        Assert.True(await ConnectorEndpoints.CompensateFailedLiveRegistrationAsync(
+            store, "modbus-a", previous: null, CancellationToken.None));
+        Assert.Empty(await store.ListAsync());
+
+        // (b) overwrote-then-restored → a row DOES still exist at that id. "There is no leftover row" would
+        // be imprecise here even though the rollback succeeded, which is why the caller's sentence forks on
+        // `existing is null` as well as on success.
+        await store.SaveAsync("Modbus", "D1-IA-B-ORIGINAL", "10.0.0.1", 502, "{}", instanceId: "modbus-b");
+        var previous = await store.GetAsync("modbus-b");
+        await store.SaveAsync("Modbus", "D1-IA-B-USURPER", "10.9.9.9", 502, "{}", instanceId: "modbus-b");
+        Assert.True(await ConnectorEndpoints.CompensateFailedLiveRegistrationAsync(
+            store, "modbus-b", previous, CancellationToken.None));
+        var survivor = Assert.Single(await store.ListAsync());
+        Assert.Equal("modbus-b", survivor.EffectiveInstanceId);
+        Assert.Equal("D1-IA-B-ORIGINAL", survivor.MachineCode);
     }
 
     [Fact]
@@ -293,26 +367,45 @@ public sealed class ConnectorEndpointsMachineClaimTests
             var host = CreateHost(registry);
             var map = ValidModbusMap(contested);
 
+            // 🔴 D-1 re-review, I-A — HALF the racers carry a token that is cancelled a moment after they
+            // start. That is what makes this test also cover "the compensation must not use the request's
+            // token": a racer cancelled mid-flight that loses at Register still has to roll its row back,
+            // and if the rollback inherited that cancelled token it would fail and leave an orphan — which
+            // is precisely what the invariant below forbids. It cannot be tested with an ALREADY-cancelled
+            // token through the handler, because the handler's FIRST store read takes the request token and
+            // throws long before this branch; the cancellation has to land inside the window, which only a
+            // real race can arrange.
+            //
+            // The invariant stays sound for cancelled racers on every path: cancelled before the save →
+            // it throws at the store read and writes nothing; cancelled after the save as the WINNER → its
+            // row is the winner's, which the invariant allows; cancelled after the save as a LOSER → the
+            // compensation runs on CancellationToken.None and removes it.
+            var cancellers = new List<CancellationTokenSource>();
             using var barrier = new Barrier(racers);
             var threads = Enumerable.Range(0, racers).Select(i => new Thread(() =>
             {
                 var (recorder, ctx) = AuditPlumbing();
+                var cts = new CancellationTokenSource();
+                lock (cancellers) cancellers.Add(cts);
                 barrier.SignalAndWait();
+                if (i % 2 == 0) cts.CancelAfter(TimeSpan.FromMilliseconds(i / 2));
                 try
                 {
                     ConnectorEndpoints.CreateConnectorAsync(
                             new ConnectorCreateRequest("Modbus", "10.9.9.9", 502, map, InstanceId: $"modbus-r{round}-{i}"),
-                            store, registry, host, new OpcUaOptions(), ctx, recorder, CancellationToken.None)
+                            store, registry, host, new OpcUaOptions(), ctx, recorder, cts.Token)
                         .GetAwaiter().GetResult();
                 }
                 catch
                 {
-                    // A racer's own failure is not what this test measures — the invariant below is.
+                    // A racer's own failure is not what this test measures — the invariant below is. A
+                    // cancelled racer throwing is an ordinary, expected outcome here.
                 }
             })).ToList();
 
             foreach (var t in threads) t.Start();
             foreach (var t in threads) Assert.True(t.Join(TimeSpan.FromSeconds(60)), "a racer thread did not finish");
+            foreach (var cts in cancellers) cts.Dispose();
 
             // Exactly one connector may serve the machine — the registry's own gate.
             Assert.True(registry.TryGetInstanceIdForMachine(contested, out var winner));

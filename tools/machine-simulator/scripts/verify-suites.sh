@@ -58,6 +58,16 @@ EXPECT_CONFORMANCE=22
 # chore/test-hygiene raised this 735 -> 741 (+6): guards proving the test-isolation seam added to
 # CredentialStore, which was the only one of FOURTEEN stores without one — which is exactly why
 # 2,999 DPAPI blobs accumulated in the product's REAL credential directory, dating to 2026-07-18.
+# 🔴 Đợt D, D-1 re-review — this total is UNCHANGED at 741, and that is the point. A reviewer's gate run
+# came back EdgeCore 740/741 on WalFlushPumpTests.Pump_DrainsAnIdleBacklogOnItsOwnTimer_..., an IOException
+# out of File.ReadAllLines (not out of any assertion), reproducing 1 run in 4. Byte-for-byte the defect Đợt C
+# closed in StoreAndForwardRestartSurvivalTests: a FileShare.Read reader opened against a LIVE writer — the
+# pump is `await using`, so it is still ticking on the assertion line, and every tick's drain ends in the
+# vendored SDK's unconditional File.WriteAllText(queuePath, ""). Fixed at the mechanism in all three of this
+# file's reads by disposing the pump first (DisposeAsync cancels the loop AND awaits it, so no handle can be
+# open afterwards) — no retry, no share-mode tolerance, NO NEW TUNABLE, and no test added or removed. The
+# reviewer's 1-in-4 became 0 failures in 12 consecutive runs, but the load-bearing argument is the mechanism,
+# not the sample: after DisposeAsync returns there is no writer for the read to collide with.
 EXPECT_EDGECORE=741
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
@@ -217,7 +227,28 @@ EXPECT_EDGESERVICE=28
 #          instance_id = "modbus" was UNDELETABLE (the route normalizes to "Modbus", GetAsync misses, 404 for
 #          a row the operator can see). Also pins that a third-party id stays case-SENSITIVE.
 # No suite other than EngineApi is touched by this round either.
-EXPECT_ENGINEAPI=1181
+#
+# D-1's RE-REVIEW round raised this 1181 -> 1184 (+3), all ConnectorEndpointsMachineClaimTests, all for I-A:
+# the 409 returned on a failed live registration ASSERTED that a rollback had happened instead of checking.
+# It said "its configuration was rolled back, so there is no leftover row to clean up" unconditionally —
+# directly contradicting this suite's own CompensatingAFailedRegistration_NeverThrows_... test, which pins
+# that a FAILED compensation leaves the row, and false in the direction that stops an operator looking.
+# Guaranteed, not exotic: the compensation was handed the REQUEST's CancellationToken, so for any client
+# that hung up the rollback threw at its first store call while the message claimed success.
+#   + 2  the sentence's own three outcomes, now a pure extracted function (DescribeRollbackOutcome) because
+#          the branch that produces it is only reachable under a concurrent registration — code a test
+#          cannot reach is code nothing ever asks a consequence question about, which is exactly how the
+#          contradictory wording shipped. One test for the failed-rollback arm (must point at
+#          GET /v1/connectors/configured and must NOT claim "no leftover row"), one for the two success arms
+#          NOT being interchangeable (a restored row still exists at that instance id).
+#   + 1  both compensation arms driven through the store together, so a wrong sentence and a wrong rollback
+#          cannot drift apart.
+# The existing race test (ConcurrentSavesForOneMachine_...) additionally gained cancellation on half its
+# racers, which is what makes the CancellationToken.None fix observable at all: an already-cancelled token
+# cannot reach that branch through the handler, because the handler's FIRST store read takes the request
+# token and throws long before it. Measured against the mutation that restores `ct`: KILLED 8/8 runs. That
+# test's own count is unchanged.
+EXPECT_ENGINEAPI=1184
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
