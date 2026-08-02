@@ -11,8 +11,14 @@ const PRIORITY_RANK: Record<VramPriority, number> = { production: 3, interactive
 const ledger = new Map<string, VramLease>();
 let seq = 0;
 
-/** Byte mà một giấy phép đang chiếm: số THẬT nếu đã commit, không thì ước lượng. */
-function leaseBytes(l: VramLease): number {
+/**
+ * Byte mà một giấy phép đang chiếm: số THẬT nếu đã commit, không thì ước lượng.
+ * ⚠ EXPORT có chủ đích (review round 1, Task 4 — M-1): reconciler cần đúng công thức
+ * này để dựng ảnh chụp sổ. Trước đây reconciler tự tính lại tại chỗ — hai bản cài đặt
+ * song song của CÙNG một công thức là đúng lớp lỗi khiến `bench.mjs` từng sai bốn lần.
+ * Một nguồn duy nhất, không cần test khoá hai công thức khớp nhau.
+ */
+export function leaseBytes(l: VramLease): number {
   return l.actualBytes ?? l.request.estimatedBytes;
 }
 

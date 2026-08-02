@@ -1,4 +1,4 @@
-import { snapshot } from "./vramBroker";
+import { snapshot, leaseBytes } from "./vramBroker";
 import { readDeviceVram } from "./vramProbe";
 import { logVramEvent } from "./vramEventLog";
 
@@ -15,7 +15,11 @@ export interface VramReconcileResult {
 let timer: NodeJS.Timeout | null = null;
 
 /**
- * So sổ với thiết bị. Lệch quá ngưỡng ⇒ có kẻ cấp phát KHÔNG XIN PHÉP.
+ * So sổ với thiết bị. Lệch quá ngưỡng ⇒ có sự cố cần điều tra:
+ * - Lệch DƯƠNG (thiết bị > sổ): có hộ tiêu thụ cấp phát KHÔNG XIN PHÉP.
+ * - Lệch ÂM (sổ > thiết bị): giấy phép TREO (tiến trình chết) hoặc commit() ghi số SAI —
+ *   KHÔNG phải cấp phát chui. Xem I-2 (review round 1) — câu cảnh báo phải chẩn đoán đúng
+ *   hướng, không được gắn cố định một nguyên nhân cho cả hai dấu.
  *
  * Đây là phần giá trị nhất của Pha 1: sidecar 7,8 GB (Đợt 0), ONNX +339 và
  * cron +1.251 (Đợt 2) — cả ba từng cần một lượt review TOÀN NHÁNH mới lộ ra.
@@ -23,6 +27,13 @@ let timer: NodeJS.Timeout | null = null;
  */
 export async function reconcileOnce(): Promise<VramReconcileResult> {
   const snap = snapshot();
+  // ⚠ M-2 (review round 1): lấy mẫu KHÔNG NGUYÊN TỬ. `snapshot()` tức thời, còn
+  // `readDeviceVram()` mất tới ~3 s (vramProbe.ts). `reserve()` đồng bộ cộng
+  // `estimatedBytes` vào sổ TRƯỚC KHI VRAM vật lý kịp tăng ⇒ một lượt reconcile rơi
+  // đúng giữa cửa sổ nạp model lớn có thể thấy lệch ÂM THOÁNG QUA (tự lành ở lượt kế
+  // 60 s sau). Đây là TÍNH CHẤT THIẾT KẾ CỐ HỮU, không phải bug — Task 7 và người trực
+  // đọc một `drift` âm gần thời điểm nạp model lớn nên nghi bóng ma trước, không phải
+  // sự cố thật.
   const device = await readDeviceVram();
 
   // Đầu dò hỏng hoặc máy không GPU ⇒ IM LẶNG bỏ qua.
@@ -36,11 +47,22 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
 
   if (alarm) {
     const mib = (b: number) => Math.round(b / 1024 / 1024);
-    console.warn(
-      `[vram] LỆCH ${mib(drift)} MiB — sổ ${mib(snap.totalReservedBytes)}, thiết bị ${mib(device.usedBytes)}. ` +
-        `Có hộ tiêu thụ cấp phát KHÔNG XIN PHÉP. Đang giữ: ` +
-        (snap.leases.map((l) => `${l.request.owner}=${mib(l.actualBytes ?? l.request.estimatedBytes)}`).join(", ") || "(sổ rỗng)"),
-    );
+    const holders = () => snap.leases.map((l) => `${l.request.owner}=${mib(leaseBytes(l))}`).join(", ") || "(sổ rỗng)";
+
+    if (drift > 0) {
+      console.warn(
+        `[vram] LỆCH ${mib(drift)} MiB — sổ ${mib(snap.totalReservedBytes)}, thiết bị ${mib(device.usedBytes)}. ` +
+          `Có hộ tiêu thụ cấp phát KHÔNG XIN PHÉP (sidecar? tiến trình con? thư viện khác?). ` +
+          `Đang giữ: ${holders()}`,
+      );
+    } else {
+      const pending = snap.leases.filter((l) => l.actualBytes === null).map((l) => l.request.owner);
+      console.warn(
+        `[vram] LỆCH ${mib(drift)} MiB — sổ ${mib(snap.totalReservedBytes)}, thiết bị ${mib(device.usedBytes)}. ` +
+          `Sổ đang giữ NHIỀU HƠN thực tế — giấy phép treo hoặc số commit sai, KHÔNG PHẢI cấp phát chui. ` +
+          `Ứng viên số một (chưa commit): ${pending.join(", ") || "(không có)"}. Đang giữ: ${holders()}`,
+      );
+    }
     logVramEvent({
       event: "drift",
       owner: "reconciler",
@@ -55,7 +77,7 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
           owner: l.request.owner,
           kind: l.request.kind,
           priority: l.request.priority,
-          bytes: l.actualBytes ?? l.request.estimatedBytes,
+          bytes: leaseBytes(l),
           committed: l.actualBytes !== null,
         })),
       },
