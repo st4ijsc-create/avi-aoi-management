@@ -26,14 +26,15 @@ public sealed class ModbusTcpDriverConformanceTests : DeviceDriverConformanceSui
     /// <summary>A definitely-closed loopback port, computed ONCE (not inside <see cref="CreateDriver"/> —
     /// see that hook's own doc comment on why setup work must stay outside the timed construction call).
     /// Connecting here fails FAST (instant RST), unlike <see cref="CreateUnresponsiveDeviceAsync"/>'s
-    /// target below.</summary>
-    /// <summary>🔴 D-2 review (I-3) — was <c>FindAndReleaseFreePort()</c>: start a listener, read its port,
+    /// target below.
+    ///
+    /// <para>🔴 D-2 review (I-3) — was <c>FindAndReleaseFreePort()</c>: start a listener, read its port,
     /// STOP it, keep the number. That releases the port back to the OS, which can reassign it to another
-    /// test's listener — and this field is <see langword="static"/>, so the number is then handed to a driver
+    /// test's listener — and this member is <see langword="static"/>, so the number is then handed to a driver
     /// that reconnects on a poll cadence for the whole class's lifetime. A connect that lands on a stranger's
     /// listener and drops it shows up as an unexplained connection reset in an unrelated test. See
     /// <see cref="Drivers.ClosedLoopbackPort"/> for the failure that established this and for why binding
-    /// without listening removes it rather than making it rarer.</summary>
+    /// without listening removes it rather than making it rarer.</para></summary>
     private static int ClosedPort => Drivers.ClosedLoopbackPort.Port;
 
     /// <summary>Task B-7 — switched from <see cref="ModbusLoopbackHarness.BuildMap"/> to
