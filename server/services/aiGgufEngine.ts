@@ -783,20 +783,24 @@ async function ensureTextContext(
   loaded: LoadedModel,
   requestedContextSize?: number,
 ): Promise<any> {
-  if (loaded.context) return loaded.context;
-
-  const pending = textContextInFlight.get(modelId);
-  if (pending) return pending;
-
   // review round 2 M-b — modelId này được KHAI BÁO (qua env: GGUF_EMBED_MODEL/
   // GGUF_EMBEDDING_MODEL/GGUF_RERANKER_MODEL/GGUF_VISION_MMPROJ — identity, KHÔNG đoán theo
   // tên file) là embedder/reranker/projector THẬT, không có đầu sinh văn bản. Tạo context
   // thường rồi để LlamaChatSession sinh chữ trên nó sẽ cho ra chuỗi lặp vô nghĩa — đúng
   // "dishonest degradation" mà getGenerationModel() bước 0 được viết ra để chặn, nhưng hàng
-  // rào đó chỉ áp cho đường KHÔNG ghim modelId. Ở đây modelId ĐÃ GHIM (do bị cache lại từ một
-  // lượt generateEmbedding() trước đó — Critical-1), nên chặn NGAY TẠI ĐÂY: từ chối trung thực
-  // thay vì âm thầm sinh rác. Khác với model TEXT bị alias nhầm (Critical-1's ca chính) — model
-  // đó KHÔNG khai báo non-generative nên vẫn đi tiếp xuống nhánh tạo context lười bên dưới.
+  // rào đó chỉ áp cho đường KHÔNG ghim modelId. Ở đây modelId ĐÃ GHIM, nên chặn NGAY TẠI ĐÂY:
+  // từ chối trung thực thay vì âm thầm sinh rác. Khác với model TEXT bị alias nhầm (ca chính của
+  // Critical-1) — model đó KHÔNG khai báo non-generative nên vẫn đi tiếp xuống nhánh tạo context
+  // lười bên dưới và TỰ LÀNH như trước.
+  //
+  // ⚠ review TOÀN NHÁNH I-2 — CỔNG NÀY PHẢI ĐỨNG TRƯỚC `if (loaded.context) return ...`.
+  // Bản trước đặt nó SAU lối thoát sớm ⇒ chỉ đóng được NỬA VẾ: model đã khai báo là embedder mà
+  // lỡ nạp KÈM context thường (lượt gọi ĐẦU TIÊN chạm nó có purpose="generate" — mặc định của
+  // getOrLoadModel, ví dụ ngay sau boot khi chưa lượt nhúng nào nạp nó trước) thoát ở dòng đầu và
+  // KHÔNG BAO GIỜ tới cổng ⇒ sinh chuỗi lặp vô nghĩa rồi trình bày như câu trả lời thật. Đường
+  // HTTP có thật: routes/openaiGateway.ts:365 → resolveModelId → resolveLogicalModel("embed")
+  // (services/ai/modelResolver.ts:238) → chatCompletion(). Rác trình bày như câu trả lời tệ hơn
+  // một lỗi ném ra — xem aiGgufEngine.nonGenerativeGuardOrder.test.ts.
   if (isConfiguredNonGenerativeModelId(modelId)) {
     throw new Error(
       `Refusing to create a text-generation context for "${modelId}": it is DECLARED as the ` +
@@ -807,6 +811,11 @@ async function ensureTextContext(
         `sinh văn bản.`,
     );
   }
+
+  if (loaded.context) return loaded.context;
+
+  const pending = textContextInFlight.get(modelId);
+  if (pending) return pending;
 
   console.warn(
     `[aiGgufEngine] ${modelId}: sinh chữ trên model KHÔNG có context thường (trước đó nạp qua ` +
@@ -886,6 +895,30 @@ export async function unloadGgufModel(modelId: string): Promise<boolean> {
  */
 function releaseModel(loaded: LoadedModel | undefined): void {
   if (loaded && loaded.refCount > 0) loaded.refCount--;
+}
+
+/**
+ * review TOÀN NHÁNH I-1 — nhả tham chiếu ĐÚNG MỘT LẦN cho MỘT lượt gọi.
+ *
+ * LỖI ĐANG VÁ: khuôn `getOrLoadModel()` (refCount++) → `withGgufSlot(fn)` với `releaseModel()`
+ * nằm TRONG `fn` bị rò vĩnh viễn khi slot bị TỪ CHỐI, vì `withGgufSlot` reject **trước khi `fn`
+ * chạy** ở hai đường: hàng đợi đầy (`ggufConcurrency.ts:80-81`, `GgufOverloadError`) và hết hạn
+ * chờ (`:87-92`, `GgufSlotTimeoutError`, mặc định 120 s). `evictLRU()` (`:435`) bỏ qua mọi model
+ * `refCount>0` ⇒ ~19 GB trọng số bị ghim tới khi restart, mỗi lượt bị từ chối cộng thêm 1.
+ *
+ * CÁCH VÁ: mỗi lượt gọi tạo MỘT releaser; gọi nó ở `finally` TRONG `fn` (đường chạy thật, nhả
+ * đúng lúc suy luận xong) VÀ ở `finally` NGOÀI `withGgufSlot` (bắt đường bị từ chối). Cờ `done`
+ * làm lần gọi thứ hai thành vô hại — không có bản vá nào trừ hai lần vào tham chiếu của lượt
+ * khác, thứ sẽ khiến `evictLRU()` đuổi nhầm một model ĐANG DÙNG (hỏng theo hướng ngược lại, khó
+ * thấy hơn). Xem aiGgufEngine.refcountSlotReject.test.ts.
+ */
+function makeOnceReleaser(loaded: LoadedModel | undefined): () => void {
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    releaseModel(loaded);
+  };
 }
 
 /**
@@ -1335,14 +1368,18 @@ export async function generateText(options: GgufGenerateOptions, modelId?: strin
   }
 
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
+  // review toàn nhánh I-1 — nhả tham chiếu đúng MỘT lần cho lượt gọi này, kể cả khi withGgufSlot()
+  // TỪ CHỐI slot (khi đó `fn` không chạy ⇒ `finally` bên trong nó cũng không chạy). Xem
+  // makeOnceReleaser() và aiGgufEngine.refcountSlotReject.test.ts.
+  const release = makeOnceReleaser(loaded);
   // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext(). review
   // round 2 Important-mới — getOrLoadModel() đã refCount++; nếu ensureTextContext() ném (OOM
-  // là lúc dễ ném nhất), releaseModel() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
+  // là lúc dễ ném nhất), release() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
   // vĩnh viễn, evictLRU() bỏ qua model này mãi mãi.
   try {
     await ensureTextContext(resolvedId, loaded, options.contextSize);
   } catch (e) {
-    releaseModel(loaded);
+    release();
     throw e;
   }
   const startTime = Date.now();
@@ -1397,9 +1434,9 @@ export async function generateText(options: GgufGenerateOptions, modelId?: strin
       };
     } finally {
       sequence.dispose();
-      releaseModel(loaded);
+      release();
     }
-  });
+  }).finally(release); // I-1: bắt đường withGgufSlot TỪ CHỐI slot (fn không chạy) — idempotent
 }
 
 /**
@@ -1407,14 +1444,18 @@ export async function generateText(options: GgufGenerateOptions, modelId?: strin
  */
 export async function chatCompletion(options: GgufChatOptions, modelId?: string): Promise<GgufGenerateResult> {
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
+  // review toàn nhánh I-1 — nhả tham chiếu đúng MỘT lần cho lượt gọi này, kể cả khi withGgufSlot()
+  // TỪ CHỐI slot (khi đó `fn` không chạy ⇒ `finally` bên trong nó cũng không chạy). Xem
+  // makeOnceReleaser() và aiGgufEngine.refcountSlotReject.test.ts.
+  const release = makeOnceReleaser(loaded);
   // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext(). review
   // round 2 Important-mới — getOrLoadModel() đã refCount++; nếu ensureTextContext() ném (OOM
-  // là lúc dễ ném nhất), releaseModel() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
+  // là lúc dễ ném nhất), release() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
   // vĩnh viễn, evictLRU() bỏ qua model này mãi mãi.
   try {
     await ensureTextContext(resolvedId, loaded, options.contextSize);
   } catch (e) {
-    releaseModel(loaded);
+    release();
     throw e;
   }
   const startTime = Date.now();
@@ -1467,9 +1508,9 @@ export async function chatCompletion(options: GgufChatOptions, modelId?: string)
       };
     } finally {
       sequence.dispose();
-      releaseModel(loaded);
+      release();
     }
-  });
+  }).finally(release); // I-1: bắt đường withGgufSlot TỪ CHỐI slot (fn không chạy) — idempotent
 }
 
 // ─── JSON-constrained generation (GBNF / JSON Schema) ─────────
@@ -1515,14 +1556,18 @@ export async function generateJSON<T = unknown>(
   }
 
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
+  // review toàn nhánh I-1 — nhả tham chiếu đúng MỘT lần cho lượt gọi này, kể cả khi withGgufSlot()
+  // TỪ CHỐI slot (khi đó `fn` không chạy ⇒ `finally` bên trong nó cũng không chạy). Xem
+  // makeOnceReleaser() và aiGgufEngine.refcountSlotReject.test.ts.
+  const release = makeOnceReleaser(loaded);
   // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext(). review
   // round 2 Important-mới — getOrLoadModel() đã refCount++; nếu ensureTextContext() ném (OOM
-  // là lúc dễ ném nhất), releaseModel() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
+  // là lúc dễ ném nhất), release() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
   // vĩnh viễn, evictLRU() bỏ qua model này mãi mãi.
   try {
     await ensureTextContext(resolvedId, loaded, options.contextSize);
   } catch (e) {
-    releaseModel(loaded);
+    release();
     throw e;
   }
   const startTime = Date.now();
@@ -1591,9 +1636,9 @@ export async function generateJSON<T = unknown>(
       };
     } finally {
       sequence.dispose();
-      releaseModel(loaded);
+      release();
     }
-  });
+  }).finally(release); // I-1: bắt đường withGgufSlot TỪ CHỐI slot (fn không chạy) — idempotent
 }
 
 // ─── Doc 34 (P0) — Code / FIM model resolution + fill-in-middle ─
@@ -1750,14 +1795,18 @@ async function generateFimNative(
   effectiveId: string | undefined,
 ): Promise<GgufGenerateResult> {
   const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId, options.contextSize);
+  // review toàn nhánh I-1 — nhả tham chiếu đúng MỘT lần cho lượt gọi này, kể cả khi withGgufSlot()
+  // TỪ CHỐI slot (khi đó `fn` không chạy ⇒ `finally` bên trong nó cũng không chạy). Xem
+  // makeOnceReleaser() và aiGgufEngine.refcountSlotReject.test.ts.
+  const release = makeOnceReleaser(loaded);
   // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext(). review
   // round 2 Important-mới — getOrLoadModel() đã refCount++; nếu ensureTextContext() ném (OOM
-  // là lúc dễ ném nhất), releaseModel() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
+  // là lúc dễ ném nhất), release() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
   // vĩnh viễn, evictLRU() bỏ qua model này mãi mãi.
   try {
     await ensureTextContext(resolvedId, loaded, options.contextSize);
   } catch (e) {
-    releaseModel(loaded);
+    release();
     throw e;
   }
   const startTime = Date.now();
@@ -1796,9 +1845,9 @@ async function generateFimNative(
     } finally {
       try { completion.dispose?.(); } catch { /* best-effort */ }
       sequence.dispose();
-      releaseModel(loaded);
+      release();
     }
-  });
+  }).finally(release); // I-1: bắt đường withGgufSlot TỪ CHỐI slot (fn không chạy) — idempotent
 }
 
 /** Fallback: FIM-sentinel prompt (or prefix + suffix-as-context) routed through the chat path. */
@@ -1933,14 +1982,18 @@ export async function* generateTextStream(
   signal?: AbortSignal,
 ): AsyncGenerator<GgufStreamChunk> {
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
+  // review toàn nhánh I-1 — nhả tham chiếu đúng MỘT lần cho lượt gọi này, kể cả khi withGgufSlot()
+  // TỪ CHỐI slot (khi đó `fn` không chạy ⇒ `finally` bên trong nó cũng không chạy). Xem
+  // makeOnceReleaser() và aiGgufEngine.refcountSlotReject.test.ts.
+  const release = makeOnceReleaser(loaded);
   // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext(). review
   // round 2 Important-mới — getOrLoadModel() đã refCount++; nếu ensureTextContext() ném (OOM
-  // là lúc dễ ném nhất), releaseModel() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
+  // là lúc dễ ném nhất), release() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
   // vĩnh viễn, evictLRU() bỏ qua model này mãi mãi.
   try {
     await ensureTextContext(resolvedId, loaded, options.contextSize);
   } catch (e) {
-    releaseModel(loaded);
+    release();
     throw e;
   }
   const startTime = Date.now();
@@ -1959,7 +2012,12 @@ export async function* generateTextStream(
   // generator. withGgufSlotGenerator acquires before the first yield and
   // releases in finally — covering normal completion, early consumer return()
   // (client abort) and throws, so the slot is never leaked.
-  yield* withGgufSlotGenerator<GgufStreamChunk>(async function* () {
+  //
+  // I-1: withGgufSlotGenerator acquire ở lần .next() đầu; nếu acquire BỊ TỪ CHỐI thì `makeGen`
+  // KHÔNG bao giờ chạy ⇒ `finally` bên trong nó không chạy ⇒ refCount rò. Gán ra biến (gọi một
+  // async generator function KHÔNG chạy thân hàm — thân chỉ chạy khi bắt đầu lặp) rồi bọc
+  // `yield*` trong try/finally để nhả tham chiếu ở MỌI đường ra.
+  const slotted = withGgufSlotGenerator<GgufStreamChunk>(async function* () {
     const sequence = loaded.context.getSequence();
     const session = new LlamaChatSession({ contextSequence: sequence });
 
@@ -2027,9 +2085,14 @@ export async function* generateTextStream(
       yield { type: "error", error: err.message || "Streaming generation failed" };
     } finally {
       sequence.dispose();
-      releaseModel(loaded);
+      release();
     }
   });
+  try {
+    yield* slotted;
+  } finally {
+    release(); // I-1: idempotent — no-op nếu thân generator đã chạy và nhả rồi
+  }
 }
 
 /**
@@ -2041,14 +2104,18 @@ export async function* chatCompletionStream(
   signal?: AbortSignal,
 ): AsyncGenerator<GgufStreamChunk> {
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
+  // review toàn nhánh I-1 — nhả tham chiếu đúng MỘT lần cho lượt gọi này, kể cả khi withGgufSlot()
+  // TỪ CHỐI slot (khi đó `fn` không chạy ⇒ `finally` bên trong nó cũng không chạy). Xem
+  // makeOnceReleaser() và aiGgufEngine.refcountSlotReject.test.ts.
+  const release = makeOnceReleaser(loaded);
   // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext(). review
   // round 2 Important-mới — getOrLoadModel() đã refCount++; nếu ensureTextContext() ném (OOM
-  // là lúc dễ ném nhất), releaseModel() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
+  // là lúc dễ ném nhất), release() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
   // vĩnh viễn, evictLRU() bỏ qua model này mãi mãi.
   try {
     await ensureTextContext(resolvedId, loaded, options.contextSize);
   } catch (e) {
-    releaseModel(loaded);
+    release();
     throw e;
   }
   const startTime = Date.now();
@@ -2073,7 +2140,8 @@ export async function* chatCompletionStream(
 
   // Mục 4: hold ONE GGUF concurrency slot for the whole generator lifetime;
   // released in finally even on early consumer return() / abort / throw.
-  yield* withGgufSlotGenerator<GgufStreamChunk>(async function* () {
+  // I-1: xem generateTextStream() ở trên — acquire bị từ chối thì thân generator không chạy.
+  const slotted = withGgufSlotGenerator<GgufStreamChunk>(async function* () {
     const sequence = loaded.context.getSequence();
     const session = new LlamaChatSession({ contextSequence: sequence });
 
@@ -2135,9 +2203,14 @@ export async function* chatCompletionStream(
       yield { type: "error", error: err.message || "Streaming chat completion failed" };
     } finally {
       sequence.dispose();
-      releaseModel(loaded);
+      release();
     }
   });
+  try {
+    yield* slotted;
+  } finally {
+    release(); // I-1: idempotent — no-op nếu thân generator đã chạy và nhả rồi
+  }
 }
 
 /**
@@ -2433,24 +2506,31 @@ export async function generateEmbedding(
   // purpose "embed" — the embedding model is the CORRECT answer here; the text-generation guard
   // must not apply (doc69 W1 modelfix, see ModelPurpose).
   const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId, undefined, "embed");
+  // review toàn nhánh I-1 — nhả tham chiếu đúng MỘT lần, kể cả khi withGgufSlot() TỪ CHỐI slot
+  // (fn không chạy ⇒ finally bên trong không chạy). Xem makeOnceReleaser().
+  const release = makeOnceReleaser(loaded);
 
   // Mục 4: embeddings are light but still share the single GGUF slot to keep the
   // 6GB VRAM budget simple and safe.
-  return withGgufSlot(async () => {
-    try {
-      const embeddingContext = await getEmbeddingContext(resolvedId, loaded);
-      const embedding = await embeddingContext.getEmbeddingFor(text);
-      const vector = Array.from(embedding.vector as readonly number[]);
-      assertEmbeddingDim(vector.length, resolvedId);
-      return {
-        embedding: vector,
-        dimensions: vector.length,
-        modelId: resolvedId,
-      };
-    } finally {
-      releaseModel(loaded);
-    }
-  });
+  try {
+    return await withGgufSlot(async () => {
+      try {
+        const embeddingContext = await getEmbeddingContext(resolvedId, loaded);
+        const embedding = await embeddingContext.getEmbeddingFor(text);
+        const vector = Array.from(embedding.vector as readonly number[]);
+        assertEmbeddingDim(vector.length, resolvedId);
+        return {
+          embedding: vector,
+          dimensions: vector.length,
+          modelId: resolvedId,
+        };
+      } finally {
+        release();
+      }
+    });
+  } finally {
+    release();
+  }
 }
 
 /**
@@ -2465,25 +2545,31 @@ export async function generateEmbeddings(
   const effectiveId = modelId ?? resolveEmbedModelBasename();
   // purpose "embed" — see generateEmbedding() above.
   const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId, undefined, "embed");
+  // review toàn nhánh I-1 — xem generateEmbedding() ở trên.
+  const release = makeOnceReleaser(loaded);
 
   // Mục 4: batch embeddings hold the single GGUF slot for the whole loop.
-  return withGgufSlot(async () => {
-    try {
-      const embeddingContext = await getEmbeddingContext(resolvedId, loaded);
-      const embeddings: number[][] = [];
-      let dims = 0;
-      for (const text of texts) {
-        const result = await embeddingContext.getEmbeddingFor(text);
-        const vec = Array.from(result.vector as readonly number[]);
-        assertEmbeddingDim(vec.length, resolvedId);
-        embeddings.push(vec);
-        if (!dims) dims = vec.length;
+  try {
+    return await withGgufSlot(async () => {
+      try {
+        const embeddingContext = await getEmbeddingContext(resolvedId, loaded);
+        const embeddings: number[][] = [];
+        let dims = 0;
+        for (const text of texts) {
+          const result = await embeddingContext.getEmbeddingFor(text);
+          const vec = Array.from(result.vector as readonly number[]);
+          assertEmbeddingDim(vec.length, resolvedId);
+          embeddings.push(vec);
+          if (!dims) dims = vec.length;
+        }
+        return { embeddings, dimensions: dims, modelId: resolvedId };
+      } finally {
+        release();
       }
-      return { embeddings, dimensions: dims, modelId: resolvedId };
-    } finally {
-      releaseModel(loaded);
-    }
-  });
+    });
+  } finally {
+    release();
+  }
 }
 
 /** Đợt 2 Task 3 — khoá in-flight cho getEmbeddingContext(), CÙNG KHUÔN với inFlightLoads của
