@@ -1,0 +1,319 @@
+# Thiết kế: Module điều phối VRAM chung cho AI Local
+
+> **Trạng thái:** đã duyệt phần kiến trúc (2026-08-02). Chờ chủ dự án duyệt spec đầy đủ trước khi lên kế hoạch thực thi.
+> **Tiếp nối:** Đợt 2 (`9e235464..b17b0436`) · spec `2026-08-01-ai-local-model-strategy-design.md` §5 **bước A** — chỗ này chính là bước A đó, nay được tách thành spec riêng.
+
+## 1. Mục tiêu
+
+Dựng **một người nắm ngân sách VRAM duy nhất** cho toàn bộ AI Local, để:
+
+- không hộ tiêu thụ nào còn cấp phát GPU mà không ai biết;
+- khi hết chỗ, hệ **từ chối trung thực** thay vì tràn âm thầm;
+- hệ **tự đo chính mình trong sản xuất**, thôi phụ thuộc vào một script bench song song;
+- về sau, Agent **đọc được trạng thái và ra lệnh được** qua cùng một mặt tiếp xúc.
+
+**Không** phải mục tiêu: sửa bí ẩn CUDA · xây engine tài nguyên tổng quát · làm giao diện.
+
+## 2. Vì sao cần — bằng chứng đo được
+
+### 2.1 Năm hộ tiêu thụ, ba ranh giới tiến trình
+
+| Hộ tiêu thụ | Nơi chạy | Đo được | Ai điều khiển hôm nay |
+|---|---|---|---|
+| Model GGUF (deep · code · fim · embed) | tiến trình server | 19.077 (Coder-30B) · 5.534 (4B) · 2.232 (embed) · 2.188 (FIM) MiB | `aiGgufEngine` |
+| Sidecar thị giác `llama-server` | **tiến trình riêng** | **7.825 MiB** | không ai — chỉ tự tắt sau 10 phút nhàn rỗi |
+| Session ONNX/DirectML | tiến trình server | **+339 MiB** (1 session) · **+991** (5 session) | `aiInferenceEngine` + `ocrService`, **hai** bộ đệm tách rời |
+| Tiến trình cron 03:00 `kb:sync` | **tiến trình riêng** | **1.251 MiB** | không ai |
+| Nhiễu: Chromium (puppeteer), PyTorch trainer | tiến trình riêng | vài chục MB, rời rạc | không ai |
+
+Trần thiết bị: **32.607 MiB** (RTX 5090).
+
+### 2.2 Hệ NHÌN THẤY gần hết nhưng HÀNH ĐỘNG được rất ít
+
+- [`readVramState()`](../../../server/services/aiGgufEngine.ts) (`:359`) đọc **toàn thiết bị** ⇒ *có* thấy sidecar, ONNX, cron.
+- [`evictLRU()`](../../../server/services/aiGgufEngine.ts) (`:431`) chỉ duyệt `loadedModels` ⇒ **chỉ đuổi được model GGUF trong tiến trình này**.
+- [`enforceVramGuard()`](../../../server/services/aiGgufEngine.ts) (`:402`) phản ứng theo mức **hiện tại**, **không biết kích thước sắp nạp** ⇒ qua cổng ở 85% rồi mới xin 19 GB.
+- [`ensureCapacity()`](../../../server/services/aiGgufEngine.ts) (`:454`) đếm **số model**, không đếm **byte**.
+- Cả hai, khi bí, kết thúc bằng *"allowing temporary overflow"* — **cảnh báo rồi vẫn làm**.
+
+### 2.3 Lớp lỗi này đã trả giá ba lần
+
+| Đợt | Hộ bị bỏ sót | Cách phát hiện | Hậu quả |
+|---|---|---|---|
+| 0 | Sidecar thị giác 7,8 GB | review **toàn nhánh**, sau 7 task + 7 review | bảng quyết định sai ~3.400 MiB **theo hướng lạc quan** |
+| 2 | ONNX/DirectML +339 | review **toàn nhánh**, sau 6 task + 6 review | ăn **27%** biên an toàn đã công bố |
+| 2 | Cron 03:00 +1.251 | review **toàn nhánh** | chưa vào bảng nào |
+
+⚠ ONNX **đã được gọi tên** ở spec chiến lược §4.1 với cột *"Biết tổng VRAM?" = ❌* — **được nêu trong văn xuôi, không bao giờ vào số học**. Đây là lỗi **cấu trúc**, không phải bất cẩn: **không ai sở hữu tổng ngân sách**.
+
+### 2.4 Hệ quả đang sống
+
+Cấu hình `.env` hôm nay (`GGUF_FIM_MODEL` riêng) + thị giác thức, **lúc nghỉ**: **32.847 MiB = 100,7% ❌**.
+
+## 3. Kiến trúc
+
+### 3.1 Quyết định nền tảng
+
+> **Broker đứng trên đường CẤP PHÁT, không đứng trên đường SUY LUẬN.**
+
+Cấp phát là chuyện hiếm (nạp model, tạo context, tạo session, spawn tiến trình). Suy luận là chuyện liên tục. **Giữ giấy phép rồi thì suy luận chạy toàn tốc, không một lời gọi broker nào.**
+
+⇒ Broker chậm cũng không thể làm chậm việc sinh chữ.
+
+### 3.2 Hai nguồn số, tách bạch
+
+| | Dùng để | Chi phí | Vị trí |
+|---|---|---|---|
+| **Sổ cái** (trong bộ nhớ) | quyết định cho/không | vài µs | trên đường cấp phát |
+| **Đầu dò thiết bị** | phát hiện lệch | tới ~3 s | nền, theo nhịp, **không bao giờ chặn quyết định** |
+
+⚠ Mã hiện tại làm **ngược**: gọi `readVramState()` ngay trong `enforceVramGuard()` trước mỗi lượt nạp. Chính file đó ghi (`:372`) rằng bản `nvidia-smi` **đồng bộ** từng **đóng băng toàn bộ xử lý request**.
+
+### 3.3 Năm thành phần
+
+**`server/services/vram/vramBroker.ts`** — sổ cái + quyết định kết nạp + thu hồi. Thuần tuý, trong bộ nhớ, **không I/O trên đường quyết định**. Mặt tiếp xúc duy nhất mà consumer gọi.
+
+**`server/services/vram/vramProbe.ts`** — nguồn sự thật: `llamaInstance.getVramState()` (native, nhanh), lùi về `nvidia-smi` (async, `execFile`, timeout 3 s). Có bộ nhớ đệm kèm tuổi.
+
+**`server/services/vram/vramReconciler.ts`** — so sổ với đầu dò theo nhịp; phát cảnh báo khi lệch; **nhận nuôi** giấy phép mồ côi; **thu hồi** giấy phép của tiến trình đã chết.
+
+**`server/services/vram/adapters/*`** — bốn bộ nối mỏng tại đúng điểm cấp phát: `gguf` · `onnx` · `sidecar` · `cron`.
+
+**`server/services/vram/vramEventLog.ts`** — nhật ký chỉ-ghi-thêm, **bất đồng bộ, gom lô**.
+
+### 3.4 Sơ đồ
+
+```
+  Tiến trình server                      Tiến trình NGOÀI
+  ┌────────────────────────┐      ┌──────────────────────────┐
+  │ GGUF models            │      │ llama-server (thị giác)  │
+  │ ONNX sessions          │      │ node kb:sync (cron 03:00)│
+  └───────────┬────────────┘      └────────────┬─────────────┘
+              │ reserve/commit/release          │ người GIÁM SÁT
+              │                                 │ xin thay (pha 3)
+              ▼                                 ▼
+        ┌────────────────────────────────────────────────┐
+        │  vramBroker — SỔ CÁI DUY NHẤT                  │
+        │  biết KÍCH THƯỚC trước khi cấp phát            │
+        │  cấp · từ chối · thu hồi · ưu tiên             │
+        └──────────────┬──────────────────┬──────────────┘
+                       │ đọc sổ           │ ghi sự kiện
+                       ▼                  ▼
+              ┌────────────────┐   ┌──────────────────┐
+              │ vramReconciler │◀──│ vramEventLog     │
+              │ so sổ vs thật  │   │ (ước lượng↔thật) │
+              └───────┬────────┘   └──────────────────┘
+                      │ nvidia-smi (nền, ~3s)
+                      ▼
+              ┌────────────────┐
+              │   vramProbe    │
+              └────────────────┘
+```
+
+## 4. Vòng đời giấy phép
+
+```ts
+type VramPriority = "production" | "interactive" | "background";
+
+type VramLeaseKind =
+  | "gguf-model" | "gguf-context" | "gguf-embed-context"
+  | "onnx-session"
+  | "external-process";   // sidecar thị giác, cron kb:sync
+
+interface VramReserveRequest {
+  owner: string;            // định danh ổn định, ví dụ "gguf:Qwen3-Coder-30B"
+  kind: VramLeaseKind;
+  estimatedBytes: number;   // BẮT BUỘC — đây là thứ enforceVramGuard() không có
+  priority: VramPriority;
+  ttlMs?: number;           // bắt buộc cho external-process
+}
+
+interface VramLease {
+  id: string;
+  request: VramReserveRequest;
+  acquiredAt: Date;
+  actualBytes: number | null;   // null cho tới khi commit()
+  lastHeartbeatAt: Date;
+}
+```
+
+**Bốn thao tác:**
+
+| | Ngữ nghĩa |
+|---|---|
+| `reserve(req)` | → `VramLease` **hoặc ném `VramRefusedError`**. Chỉ đọc sổ. Không I/O. |
+| `commit(lease, actualBytes)` | sau khi cấp phát xong, ghi **số thật**. Đây là nguồn của "harness tự sinh". |
+| `release(lease)` | **bất biến khi gọi nhiều lần** (idempotent). |
+| `heartbeat(lease)` | cho hộ ngoài tiến trình; thiếu nhịp quá `ttlMs` ⇒ reconciler xác minh rồi thu hồi. |
+
+⚠ `release()` **phải** idempotent. Đợt 2 vừa trả giá: `releaseModel()` kẹp `refCount > 0` nên hai lần trừ bị **nuốt mất**, và một test "chống double-release" **xanh cả khi gỡ cờ idempotent**.
+
+## 5. Chính sách kết nạp
+
+### 5.1 Quyết định
+
+```
+duMuc  = tranThietBi − tongDaCap − duTruAnToan
+neu  estimatedBytes ≤ duMuc            → CẤP
+neu  không → thử THU HỒI theo ưu tiên  → CẤP nếu đủ
+neu  vẫn không                          → TỪ CHỐI TRUNG THỰC
+```
+
+`duTruAnToan` mặc định **1.024 MiB** — che nhiễu nền, phần cấp phát lười của llama.cpp (compute buffer chỉ hiện ở lượt suy luận đầu), và **độ trôi nền `nvidia-smi` đo được ~103 MiB/ngày**.
+
+### 5.2 Ưu tiên — xếp theo giá trị thật của nhà máy
+
+1. **`production`** — đường kiểm tra AOI. Không bao giờ bị thu hồi.
+2. **`interactive`** — người vận hành: RCA, trợ lý, ghost-text.
+3. **`background`** — nạp tri thức, huấn luyện, cron 03:00. **Nhường trước tiên.**
+
+Chỉ thu hồi được giấy phép **đang nhàn rỗi** (`refCount === 0`) hoặc mức **thấp hơn** mức đang xin.
+
+### 5.3 Từ chối trung thực
+
+`VramRefusedError` phải mang: **xin bao nhiêu · còn bao nhiêu · ai đang giữ gì · ai có thể nhường**. Không phải một câu "hết bộ nhớ".
+
+Nối vào hệ mã lỗi Sprint 5 (`client/src/lib/errorCodes.ts`) để hiện thành câu tiếng Việt cho người vận hành.
+
+⚠ **Không lặp lại `"allowing temporary overflow"`.** Tràn im lặng chính là thứ spec này tồn tại để diệt.
+
+## 6. Đối chiếu và báo động — phần giá trị nhất
+
+Reconciler chạy theo nhịp (mặc định **60 s**, chỉnh được):
+
+```
+lech = thucTe(đầu dò) − tongDaCap(sổ)
+neu |lech| > nguong (mặc định 512 MiB, > biên nhiễu ±25 MiB rất nhiều):
+    → CẢNH BÁO "có kẻ cấp phát không xin phép"
+    → ghi sự kiện kèm ảnh chụp toàn bộ sổ
+```
+
+**Sidecar 7,8 GB của Đợt 0, ONNX và cron của Đợt 2 — cả ba sẽ tự lộ trong vài phút** thay vì cần một lượt review toàn nhánh.
+
+> Biến "một hộ tiêu thụ không ai đếm" từ **lỗi tài liệu vô hình** thành **cảnh báo lúc chạy**.
+
+**Nhận nuôi giấy phép mồ côi:** server khởi động lại trong khi sidecar vẫn giữ 7,8 GB ⇒ sổ mất, thực tế còn. Reconciler dò tiến trình sidecar đang sống (cổng + PID đã biết) rồi **dựng lại giấy phép**. Cùng cơ chế bắt luôn ca ngược: tiến trình chết mà giấy phép còn treo.
+
+## 7. Harness thôi là script riêng — nó thành sản phẩm phụ của sản xuất
+
+`bench.mjs` đã sai **bốn lần**, vì nó là **bản cài đặt song song** với sản xuất. Hai bản cài đặt luôn trôi khỏi nhau.
+
+Mỗi giấy phép ghi **ước lượng lúc xin** và **số thật lúc `commit()`**. Sau vài ngày, hệ có **số đo thật của chính nó, do sản xuất sinh ra**.
+
+Diệt trực tiếp lớp lỗi *"+940 ước lượng vs +146 đo thật"* — hệ tự sửa con số mà không cần ai chạy lại bench.
+
+⚠ `bench.mjs` **vẫn giữ** làm phép kiểm chéo độc lập, nhưng **thôi là nguồn sự thật**. Cổng `bench.production-parity.test.ts` giữ nguyên.
+
+## 8. "Thống nhất về một mối" — cái gì bị xoá, cái gì bị hấp thụ
+
+| Đang chạy | Số phận | Pha |
+|---|---|---|
+| `enforceVramGuard()` (`aiGgufEngine.ts:402`) | **XOÁ** — thay bằng `reserve()`, vốn biết kích thước trước | 2 |
+| `ensureCapacity()` (`:454`) | **HẤP THỤ** thành chính sách đếm của broker | 2 |
+| `evictLRU()` (`:431`) | **HẤP THỤ** thành `preempt()` — nay với tới hộ ngoài tiến trình | 2–3 |
+| `GGUF_VRAM_GUARD_PCT` · `GGUF_MAX_VRAM_MB` · `GGUF_MAX_LOADED_MODELS` · `AI_SESSION_CACHE_MAX` | giữ tên, **một người đọc duy nhất** | 2 |
+| `recSessionCache` (`ai/ocrService.ts:296`) — `Map` **không giới hạn** | vào dưới broker | 2 |
+| `aiReranker.ts:361` gọi **thẳng** `llama.loadModel({ gpuLayers: useGpu ? -1 : 0 })` | phải xin giấy phép | 2 |
+| Ba khoá in-flight (`inFlightLoads` · `embeddingContextInFlight` · `textContextInFlight`) | **KHÔNG hấp thụ** (bài toán khác: chống làm trùng việc) — nhưng gộp **ba bản sao cùng hình dạng** thành **một helper** | 2 |
+| `ensureTextContext()` cấp phát ~2 GB **ngoài `withGgufSlot`** (nợ Đợt 2) | đưa vào trong giấy phép | 2 |
+
+⚠ **Không viết lại `aiGgufEngine.ts` (2.712 dòng).** Chỉ **rút phần sở hữu bộ nhớ** ra — riêng việc đó đã bỏ được khối guard/evict/capacity.
+
+## 9. Mô hình dữ liệu
+
+Migration **`drizzle/0310_vram_broker.sql`**, schema `drizzle/schema/vram.ts`, theo đúng khuôn `aiGatewayMetrics` (`drizzle/schema/ai.ts:1828`).
+
+```ts
+export const vramEvents = pgTable("vram_events", {
+  id: serial("id").primaryKey(),
+  resourceKind: varchar("resourceKind", { length: 16 }).default("vram").notNull(),
+  event: varchar("event", { length: 24 }).notNull(),   // reserve|commit|release|refuse|preempt|drift|adopt
+  owner: varchar("owner", { length: 160 }).notNull(),
+  leaseKind: varchar("leaseKind", { length: 32 }).notNull(),
+  priority: varchar("priority", { length: 16 }).notNull(),
+  estimatedBytes: bigint("estimatedBytes", { mode: "number" }),
+  actualBytes: bigint("actualBytes", { mode: "number" }),
+  deviceUsedBytes: bigint("deviceUsedBytes", { mode: "number" }),
+  ledgerTotalBytes: bigint("ledgerTotalBytes", { mode: "number" }),
+  driftBytes: bigint("driftBytes", { mode: "number" }),
+  detail: jsonb("detail"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+```
+
+**Sổ cái sống nằm trong bộ nhớ** (đó là trạng thái tiến trình). Bảng này là **lịch sử**: cho Agent đọc sau, và là dữ liệu trả lời Ư7.
+
+⚠ Ghi **bất đồng bộ, gom lô** theo khuôn `aiGateway` — **kèm bài học Task 2**: bộ đếm giờ xả (`setInterval` unref'd) **rò vào bộ test và tự ghi DB test**. Phải cách ly được ngay từ đầu.
+
+## 10. Bốn pha và cổng chặn
+
+| Pha | Nội dung | Đổi hành vi? | Cổng ra |
+|---|---|---|---|
+| **1 — Sổ cái & báo động** | broker + sổ + đầu dò + reconciler + 4 bộ nối **chỉ khai báo**; nhật ký sự kiện; **chạy Ư7 bằng chính nhật ký này** | **KHÔNG** | Sổ khớp thiết bị trong ±512 MiB suốt 24 h; **Ư7 có câu trả lời** |
+| **2 — Cưỡng chế trong tiến trình** | GGUF + ONNX phải xin phép; từ chối trung thực; ưu tiên; **xoá/hấp thụ mục §8** | **CÓ** | Không còn `"temporary overflow"`; `kb:eval` 151/151 |
+| **3 — Cưỡng chế xuyên tiến trình** | sidecar + cron xin qua người giám sát; thu hồi được; nhận nuôi mồ côi | **CÓ** | Ô 100,7% ❌ được giải **bằng cơ chế**; gỡ được biện pháp tạm gộp FIM |
+| **4 — Mặt tiếp xúc backend cho Agent** | bảng + router tRPC đọc/ra lệnh, có phân quyền | không | Agent truy vấn và ra lệnh được |
+
+**Pha 5 (giao diện) nằm NGOÀI spec này** — theo yêu cầu chủ dự án: backend hoàn chỉnh trước.
+
+### ⚠ Cổng chặn Ư7
+
+**Pha 2 KHÔNG được bắt đầu khi Ư7 chưa có câu trả lời.** Cưỡng chế là đổi hành vi cấp phát, đúng chỗ ta chưa hiểu. Báo cáo Đợt 2 §5 ghi rõ *"không viết mã trước Ư7"*.
+
+Pha 1 xây đúng thiết bị đo Ư7 cần, nên Ư7 nằm **trong** pha 1 chứ không chắn ngoài.
+
+## 11. Xử lý lỗi
+
+| Tình huống | Xử lý |
+|---|---|
+| Đầu dò hỏng (`nvidia-smi` vắng) | reconciler **im lặng bỏ qua**, broker **vẫn cấp theo sổ**. Không được biến máy không-GPU thành máy chết. |
+| `commit()` không bao giờ tới (cấp phát ném) | giấy phép hết hạn theo `ttlMs`; reconciler thu hồi |
+| Tiến trình ngoài chết không trả giấy phép | thiếu nhịp ⇒ reconciler **xác minh bằng đầu dò** rồi thu hồi. **Không thu hồi chỉ vì thiếu nhịp** — phải xác minh. |
+| Server khởi động lại, sidecar còn sống | **nhận nuôi** (§6) |
+| Sổ và thiết bị lệch dai dẳng | cảnh báo **leo thang**; **không tự cưỡng chế theo số sai** |
+| Ước lượng thấp hơn thực tế | `commit()` ghi số thật; lần sau dùng số thật |
+
+## 12. Kiểm thử
+
+**Nguyên tắc bắt buộc — mọi lưới an toàn phải được chứng minh bằng mutation test.** Đợt 2 vừa bắt một test "chống double-release" **xanh cả khi gỡ cờ idempotent**. Lưới không được kiểm là **lưới giả**.
+
+- `reserve/commit/release` — đơn vị, gồm **release hai lần phải bằng release một lần** (mutation: gỡ cờ idempotent ⇒ **phải đỏ**).
+- Kết nạp — bảng ca: vừa đủ · thiếu · thu hồi được · không thu hồi được · ưu tiên bằng nhau.
+- Reconciler — **giả một lượt cấp phát không xin phép ⇒ phải báo động**. Đây là test quan trọng nhất của pha 1.
+- Nhận nuôi — giả server khởi động lại khi sidecar còn sống.
+- **Hiệu năng** — khẳng định `reserve()` **không I/O**: mock đầu dò rồi assert nó **không được gọi** trên đường quyết định.
+- Cách ly bộ đếm giờ xả (bài học Task 2).
+- ⚠ Assert **giá trị chính xác** (`toBe`), **không** `<=` — bài học Sprint 5.
+
+## 13. Ngoài phạm vi
+
+- **Sửa bí ẩn CUDA.** Broker quyết định *có cho phép*, không đổi *cách cấp phát*.
+- **Engine tài nguyên tổng quát.** Chỉ VRAM. `resource_kind` là **một cột**, không phải framework.
+- **Giao diện.** Pha 5.
+- **Gom mọi suy luận về một tiến trình.** Sidecar cần binary `llama-server`; và bí ẩn CUDA cho thấy thứ tự cấp phát trong một tiến trình đang mong manh.
+- **Nhiễu Chromium/PyTorch.** Ghi vào sổ như hằng số quan sát, không quản.
+
+## 14. Quyết định gộp FIM
+
+Chủ dự án đã quyết **gộp FIM vào Coder-30B** (2026-08-02) để gỡ ô `100,7% ❌`.
+
+**Ghi nhận là biện pháp TẠM**, kèm điều kiện gỡ: khi **pha 3** chạy được, broker đuổi được FIM lúc thị giác thức ⇒ lấy lại ghost-text nhanh gấp đôi.
+
+Giá phải trả nếu gộp vĩnh viễn: tổng tới gợi ý 32 token **84-89 ms → 149-188 ms**, vượt ngưỡng ~100 ms (Miller/Nielsen) ⇒ ghost-text **hết cảm giác tức thì**, mỗi lần gõ phím, mãi mãi.
+
+## 15. Câu hỏi còn mở
+
+1. **Ngưỡng lệch 512 MiB** là ước lượng ban đầu. Pha 1 sẽ cho phân bố thật để chốt.
+2. **Nhịp đối chiếu 60 s** — đánh đổi giữa phát hiện sớm và chi phí `nvidia-smi` ~3 s. Pha 1 đo rồi chốt.
+3. **Cron 03:00 có nên bị chặn hẳn khi 30B đang thường trú, hay chỉ hoãn?** Cần ý kiến vận hành: trễ một ngày đồng bộ tri thức so với trễ một lượt suy luận.
+4. **`aiReranker` với `RAG_RERANKER_GPU=true`** chưa từng được đo. Phải đo trong pha 1 trước khi đặt chính sách.
+
+## 16. Phát hiện phụ khi soạn spec — hộ tiêu thụ thứ SÁU
+
+Đọc mã để viết §8, tôi thấy `aiReranker.ts:361` **không chỉ** bỏ qua semaphore `withGgufSlot` (file này **không có** một lời gọi nào tới nó). Nó gọi **thẳng** `llama.loadModel(...)`, **không** qua `loadGgufModel()`.
+
+⇒ Model rerank **không vào `loadedModels`** ⇒ **vô hình với `evictLRU()`, với `enforceVramGuard()`, và với mọi phép cộng của cả ba đợt.**
+
+Hôm nay vô hại vì `RAG_RERANKER_GPU=false` ⇒ `gpuLayers: 0` ⇒ 0 MiB GPU, và ba đợt đều ghi đúng "reranker = 0 MiB". Nhưng **đổi một cờ trong `.env` là có ngay một hộ tiêu thụ GPU thứ sáu mà không công cụ nào của hệ nhìn thấy** — cùng hình dạng đã trả giá ba lần.
+
+**Không sửa trong spec này** (nó thuộc §8, pha 2). Ghi lại vì nó là bằng chứng mới nhất cho lý do spec này tồn tại: **chừng nào chưa có một người nắm sổ, mỗi cờ cấu hình đều là một hộ tiêu thụ tiềm tàng chưa ai đếm.**
