@@ -50,6 +50,15 @@ export interface VramAllocationOptions {
   fileBytes?: number;
   /** ⚠ Nấc "config-default" — hằng số. Chỉ truyền khi THẬT SỰ có hằng số cấu hình. */
   configDefaultBytes?: number;
+  /**
+   * Pha 1 Task 6 — bắt buộc CHỈ cho hộ NGOÀI tiến trình (`kind: "external-process"`): không có
+   * nhịp commit/heartbeat tự nhiên như một lượt cấp phát trong tiến trình, nên reconciler cần
+   * biết TRẦN thời lượng hợp lệ của giấy phép để phát hiện tiến trình con đã chết mà không ai
+   * trả chỗ (types.ts `VramReserveRequest.ttlMs` — "thiếu nhịp quá hạn thì reconciler xác minh
+   * rồi thu hồi", cơ chế đó là việc của Pha 2/3, CHƯA cài ở Pha 1). Bảy hộ TRONG tiến trình của
+   * Task 5 không truyền trường này — mặc định `undefined`, hành vi bảy hộ đó không đổi.
+   */
+  ttlMs?: number;
 }
 
 export async function beginVramAllocation(opts: VramAllocationOptions): Promise<VramTicket> {
@@ -83,6 +92,7 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
       estimatedBytes: est.bytes,
       priority: opts.priority,
       estimateSource: est.source,
+      ttlMs: opts.ttlMs,
     });
 
     logVramEvent({

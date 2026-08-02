@@ -64,6 +64,9 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+// Pha 1 Task 6 (điều phối VRAM) — `import type` bị xoá hoàn toàn lúc biên dịch; module telemetry
+// chỉ được nạp bằng `import()` động tại đúng điểm xin phép, không nằm trên đường nạp file này.
+import type { VramTicket } from "./vram/vramWiring";
 
 // ─── Config (env, safe defaults) ──────────────────────────────────────────────
 
@@ -346,6 +349,89 @@ function readEvalVerdict(evalStartedAt: number, run: EvalRunResult): EvalVerdict
   return { outcome: "skipped", recall: null, reason: "eval_no_fresh_result" };
 }
 
+// ─── Pha 1 Task 6 — điều phối VRAM cho tiến trình con `npm run kb:sync` ───────────────────────
+//
+// ⚠ CỐT LÕI (spec §3.1): ta KHÔNG sửa `npm`/`node` — ta sửa THỨ KHỞI ĐỘNG chúng. Người GIÁM SÁT
+// (module này) xin giấy phép VRAM THAY CHO tiến trình con, NGAY TRƯỚC khi spawn, và trả khi tiến
+// trình con thoát (dù xong việc, bị kill, hay spawn lỗi) — CHỈ KHAI BÁO, không đổi hành vi sync.
+
+/**
+ * Mở MỘT giấy phép VRAM cho lượt `npm run kb:sync` sắp spawn. KHÔNG BAO GIỜ ném (cùng kỷ luật
+ * `vramWiring.ts` — module đó đã gom "telemetry không bao giờ ném" về MỘT chỗ; hàm này chỉ GỌI
+ * nó, không phát minh một khuôn thứ hai).
+ *
+ * ⚠ `1251` (MiB) là hằng số ĐO ĐƯỢC ở Đợt 2 cho riêng lượt `kb:embed:inc` (bước duy nhất trong
+ * pipeline có thể chạm GPU) — dùng cho LƯỢT ĐẦU TIÊN thôi, truyền qua `configDefaultBytes` (không
+ * hard-code vào estimatedBytes) để sự kiện ghi `estimateSource: "config-default"` — dấu vết để
+ * Task 7 truy "chỗ nào còn dựa hằng số". ⚠ KHÔNG commit số thật cho cron (khác sidecar): khi tiến
+ * trình con thoát, lượt embed GPU bên trong nó đã tự giải phóng VRAM từ lâu — đo delta lúc đó chỉ
+ * cho ra 0 giả, còn tệ hơn không đo. `estimateSource` vì vậy CỐ Ý giữ nguyên "config-default" mãi
+ * mãi cho hộ này ở Pha 1 — một giới hạn đã biết, không phải một khiếm khuyết bị bỏ sót.
+ *
+ * ⚠ `ttlMs` = TIMEOUT_MS — trần thời lượng job thật (kb:sync bị `SIGKILL` cưỡng bức sau mốc này,
+ * xem `timer` bên dưới), nên giấy phép không bao giờ sống lâu hơn tiến trình được PHÉP sống.
+ *
+ * ⚠ Pha 1 CHƯA có cơ chế hoãn (spec §5.4: cron bị từ chối thì lùi dần 15→60 phút, đáy 6 giờ, quá
+ * đáy thì kêu). `reserve()` ở Pha 1 KHÔNG BAO GIỜ từ chối (vramBroker.ts) nên CHƯA có gì để hoãn —
+ * đây là đúng chỗ Pha 2 sẽ đọc `wouldRefuse` và cài lịch lùi thật khi nó tới.
+ */
+async function beginKbSyncVram(): Promise<VramTicket> {
+  try {
+    const { beginVramAllocation } = await import("./vram/vramWiring");
+    return await beginVramAllocation({
+      owner: "cron:kb-sync",
+      kind: "external-process",
+      priority: "background",
+      configDefaultBytes: Number(process.env.VRAM_KB_SYNC_ESTIMATE_MB ?? 1251) * 1024 * 1024,
+      ttlMs: TIMEOUT_MS,
+    });
+  } catch {
+    return { commitMeasured: async () => {}, release: () => {} };
+  }
+}
+
+/**
+ * Spawn `npm run kb:sync` với giấy phép VRAM đã xin TRƯỚC (tham số `ticket`). Trả tiến trình con
+ * NGAY — người gọi (`runKbSyncNow`) tự đăng ký thêm listener stdout/stderr/close để tính
+ * `KbSyncRunStats`; hàm này chỉ lo vòng đời giấy phép.
+ *
+ * ⚠ `release()` PHẢI chạy ở CẢ HAI nhánh thoát — "exit" (tiến trình đã chết, dù xong việc hay bị
+ * kill) VÀ "error" (spawn thất bại, ENOENT/EACCES — "exit" có thể KHÔNG BAO GIỜ tới trong ca này).
+ * Thiếu MỘT nhánh là giấy phép TREO vĩnh viễn — Task 5 vừa mất ba vòng sửa vì đúng họ lỗi này.
+ * `ticket.release()` idempotent (vramWiring.ts) nên gọi từ nhiều nhánh là vô hại.
+ */
+function spawnKbSyncWithVram(ticket: VramTicket): ReturnType<typeof spawn> {
+  const child = spawn("npm", ["run", "kb:sync"], {
+    cwd: process.cwd(),
+    shell: true,
+    env: process.env, // inherits .env-resolved GGUF_* the server already loaded
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const releaseVram = () => {
+    try {
+      ticket.release();
+    } catch {
+      /* telemetry KHÔNG được làm hỏng vòng đời tiến trình con */
+    }
+  };
+  child.on("exit", releaseVram);
+  child.on("error", releaseVram);
+  return child;
+}
+
+/**
+ * Chỉ dùng trong test (Task 6, `vram/wiring.outofprocess.test.ts`). Gọi ĐÚNG hai bước THẬT (xin
+ * phép rồi spawn — cùng hai hàm mà `runKbSyncNow()` dùng, không nhảy qua cổng nào) mà KHÔNG chờ
+ * tiến trình con thoát / không tính `KbSyncRunStats` — phần đơn-luồng + hạn giờ + eval-gate +
+ * snapshot đã có bộ test riêng (`kbSyncScheduler.evalGate.test.ts`) và không phải phạm vi của
+ * việc canh dây nối VRAM. Bỏ qua cờ `KB_AUTOSYNC_ENABLED`/khoá đơn-luồng có chủ đích — test này
+ * canh giấy phép XIN ĐÚNG LÚC NÀO, không canh vòng đời sync đầy đủ.
+ */
+export async function __runKbSyncForTests(): Promise<void> {
+  const ticket = await beginKbSyncVram();
+  spawnKbSyncWithVram(ticket);
+}
+
 let job: cron.ScheduledTask | null = null;
 let running = false;
 let lastRunAt: Date | null = null;
@@ -386,6 +472,10 @@ export async function runKbSyncNow(): Promise<KbSyncRunStats> {
   // a rollback we can't actually perform).
   const snapshot = isEvalGateEnabled() ? snapshotKbArtifacts() : null;
 
+  // Pha 1 Task 6 — xin giấy phép VRAM NGAY TRƯỚC khi spawn (spec §3.1). TRƯỚC khi vào Promise
+  // theo dõi vì `beginKbSyncVram()` là async còn executor bên dưới cố tình giữ ĐỒNG BỘ.
+  const kbSyncVramTicket = await beginKbSyncVram();
+
   const stats: KbSyncRunStats = await new Promise<KbSyncRunStats>((resolve) => {
     let settled = false;
     const done = (s: KbSyncRunStats) => {
@@ -403,13 +493,10 @@ export async function runKbSyncNow(): Promise<KbSyncRunStats> {
     }, TIMEOUT_MS);
 
     try {
-      // shell:true so `npm`/`npm.cmd` resolves on both Windows and POSIX.
-      child = spawn("npm", ["run", "kb:sync"], {
-        cwd: process.cwd(),
-        shell: true,
-        env: process.env, // inherits .env-resolved GGUF_* the server already loaded
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      // shell:true so `npm`/`npm.cmd` resolves on both Windows and POSIX. `spawnKbSyncWithVram`
+      // already wires "exit"/"error" → `kbSyncVramTicket.release()` (Task 6) — the listeners
+      // below are ADDITIONAL (Node supports many listeners per event) and only compute stats.
+      child = spawnKbSyncWithVram(kbSyncVramTicket);
       child.stdout?.on("data", (d) => {
         const line = String(d).trim();
         if (line) console.log(`[kbSyncScheduler] ${line}`);
@@ -431,6 +518,10 @@ export async function runKbSyncNow(): Promise<KbSyncRunStats> {
       });
     } catch (err) {
       clearTimeout(timer);
+      // `spawnKbSyncWithVram` threw BEFORE it could attach its own "exit"/"error" listeners
+      // (e.g. `spawn()` itself threw synchronously) — no event will ever fire to release the
+      // ticket, so release it here directly. Idempotent; harmless if it also already fired.
+      try { kbSyncVramTicket.release(); } catch { /* telemetry KHÔNG được làm hỏng lượt sync */ }
       console.error("[kbSyncScheduler] run error:", (err as Error)?.message ?? err);
       done({ ok: false, exitCode: null, chunksBefore, chunksAfter: chunksBefore, added: 0, durationMs: Date.now() - start, reason: "exception" });
     }

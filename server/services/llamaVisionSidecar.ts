@@ -33,6 +33,9 @@ import path from "path";
 
 import type { GgufGenerateResult } from "./aiGgufEngine";
 import { validateGgufFile } from "./aiGgufEngine";
+// Pha 1 Task 6 (điều phối VRAM) — `import type` bị xoá hoàn toàn lúc biên dịch; module telemetry
+// chỉ được nạp bằng `import()` động tại đúng điểm xin phép, không nằm trên đường nạp file này.
+import type { VramTicket } from "./vram/vramWiring";
 
 // ─── Config ────────────────────────────────────────────────────
 
@@ -152,6 +155,10 @@ interface SidecarState {
   proc: ChildProcess;
   config: VisionSidecarConfig;
   startedAt: number;
+  /** Pha 1 Task 6 — giấy phép VRAM của LƯỢT khởi động này. `release()` (idempotent, không bao
+   *  giờ ném) phải chạy ở MỌI nhánh thoát: `stopSidecar()` tường minh, `proc.on("exit")` (chết
+   *  đột ngột), `proc.on("error")` (spawn lỗi) — thiếu một nhánh là giấy phép TREO vĩnh viễn. */
+  vramTicket: VramTicket;
 }
 
 let sidecar: SidecarState | null = null;
@@ -231,6 +238,30 @@ export async function ensureSidecar(): Promise<void> {
     ];
     console.log(`[llamaVisionSidecar] spawning: ${cfg.binPath} ${args.join(" ")}`);
 
+    // Pha 1 Task 6 — CHỈ KHAI BÁO. Ta KHÔNG sửa binary llama-server (không điều khiển được nó);
+    // ta sửa THỨ KHỞI ĐỘNG nó. Người GIÁM SÁT (module này) xin giấy phép THAY CHO tiến trình con,
+    // NGAY TRƯỚC khi spawn (spec §3.1) — đây là hộ tiêu thụ LỚN NHẤT hệ, vắng mặt khỏi MỌI phép
+    // cộng VRAM suốt Đợt 0, chỉ bị bắt bởi một lượt review toàn nhánh (Đợt 2).
+    let vramTicket: VramTicket = { commitMeasured: async () => {}, release: () => {} };
+    try {
+      const { beginVramAllocation } = await import("./vram/vramWiring");
+      vramTicket = await beginVramAllocation({
+        owner: "sidecar:vision",
+        kind: "external-process",
+        priority: "interactive",
+        // ⚠ 7825 là hằng số ĐO ĐƯỢC ở Đợt 2, dùng cho LƯỢT ĐẦU TIÊN thôi — sau lượt commit đầu
+        // (xem `vramTicket.commitMeasured()` dưới), bộ ước lượng dùng số THẬT (nấc "learned").
+        // Truyền qua `configDefaultBytes` (không hard-code thẳng vào estimatedBytes) để sự kiện
+        // ghi `estimateSource: "config-default"` — dấu vết để Task 7 truy "chỗ nào còn dựa hằng số".
+        configDefaultBytes: Number(process.env.VRAM_SIDECAR_ESTIMATE_MB ?? 7825) * 1024 * 1024,
+        // Sidecar tự tắt sau IDLE_TIMEOUT_MS (mặc định 10 phút) nhàn rỗi — ttlMs PHẢI dài hơn,
+        // nếu không reconciler tưởng nó chết trong khi nó đang sống khoẻ.
+        ttlMs: Number(process.env.VRAM_SIDECAR_TTL_MS ?? 900_000),
+      });
+    } catch {
+      /* telemetry KHÔNG được làm hỏng đường khởi động sidecar */
+    }
+
     const proc = spawn(cfg.binPath, args, {
       detached: false,
       stdio: ["ignore", "pipe", "pipe"],
@@ -247,10 +278,37 @@ export async function ensureSidecar(): Promise<void> {
 
     let exited = false;
     let exitInfo = "";
+    // ⚠ release() PHẢI chạy ở MỌI nhánh thoát: "exit" (chết đột ngột — crash/kill/OOM, KHÔNG
+    // qua stopSidecar()) VÀ "error" (spawn thất bại — ENOENT/EACCES; "exit" có thể KHÔNG BAO GIỜ
+    // tới trong ca này). Thiếu một nhánh là giấy phép TREO vĩnh viễn — reconciler báo lệch ÂM
+    // mãi mãi (Task 5 mất ba vòng sửa vì đúng họ lỗi này). `ticket.release()` idempotent nên gọi
+    // từ nhiều nhánh (kể cả cùng với `stopSidecar()` tường minh) là vô hại.
     proc.on("exit", (code, signal) => {
       exited = true;
       exitInfo = `code=${code} signal=${signal}`;
       console.log(`[llamaVisionSidecar] llama-server exited (${exitInfo})`);
+      try {
+        vramTicket.release();
+      } catch {
+        /* telemetry KHÔNG được làm hỏng vòng đời sidecar */
+      }
+      if (sidecar?.proc === proc) {
+        sidecar = null;
+        if (idleTimer) {
+          clearTimeout(idleTimer);
+          idleTimer = null;
+        }
+      }
+    });
+    proc.on("error", (err) => {
+      exited = true;
+      exitInfo = `spawn error: ${(err as Error)?.message ?? err}`;
+      console.error(`[llamaVisionSidecar] llama-server process error: ${exitInfo}`);
+      try {
+        vramTicket.release();
+      } catch {
+        /* telemetry KHÔNG được làm hỏng vòng đời sidecar */
+      }
       if (sidecar?.proc === proc) {
         sidecar = null;
         if (idleTimer) {
@@ -260,7 +318,7 @@ export async function ensureSidecar(): Promise<void> {
       }
     });
 
-    sidecar = { proc, config: cfg, startedAt: Date.now() };
+    sidecar = { proc, config: cfg, startedAt: Date.now(), vramTicket };
 
     // Poll healthcheck until ready or timeout.
     const deadline = Date.now() + READY_TIMEOUT_MS;
@@ -274,6 +332,10 @@ export async function ensureSidecar(): Promise<void> {
       if (await probeHealth()) {
         touchIdle();
         console.log("[llamaVisionSidecar] sidecar ready");
+        // Số THẬT sau khi mô hình đã nạp xong (trọng số + mmproj + KV-cache) — nuôi nấc
+        // "learned" của bộ ước lượng cho lượt spawn KẾ TIẾP. `commitMeasured()` không bao giờ
+        // ném (vramWiring.ts).
+        await vramTicket.commitMeasured();
         return;
       }
       await new Promise((r) => setTimeout(r, pollMs));
@@ -301,6 +363,14 @@ export async function stopSidecar(): Promise<void> {
   const current = sidecar;
   sidecar = null;
   if (!current) return;
+  // Pha 1 Task 6 — đường tắt tường minh (kill thủ công / idle-timeout tự tắt). TRẢ giấy phép
+  // TRƯỚC khi kill để không có cửa sổ nào giấy phép sống lâu hơn quyết định tắt sidecar.
+  // `release()` idempotent — vô hại nếu "exit" cũng bắn sau đó và tự trả lần nữa.
+  try {
+    current.vramTicket.release();
+  } catch {
+    /* telemetry KHÔNG được làm hỏng đường tắt sidecar */
+  }
   try {
     if (!current.proc.killed) {
       current.proc.kill("SIGTERM");
@@ -321,6 +391,16 @@ export async function stopSidecar(): Promise<void> {
     console.warn("[llamaVisionSidecar] stopSidecar error:", (err as any)?.message ?? err);
   }
 }
+
+/**
+ * Chỉ dùng trong test (Task 6, `vram/wiring.outofprocess.test.ts`). KHÔNG có logic riêng — bí
+ * danh của hàm CÔNG KHAI thật, không nhảy qua cổng nào (cùng lý do Task 5 chọn đường công khai
+ * cho `aiReranker` thay vì phát minh một seam riêng: seam nhảy-qua-cổng-thật là thứ reviewer từ
+ * chối). `ensureSidecar()` đòi hỏi cấu hình + file GGUF thật + healthcheck HTTP thật để tới được
+ * điểm xin phép VRAM — test mock ba biên đó (fs, child_process, fetch), không mock chính hàm này.
+ */
+export const __startSidecarForTests = ensureSidecar;
+export const __stopSidecarForTests = stopSidecar;
 
 // ─── Inference ─────────────────────────────────────────────────
 
