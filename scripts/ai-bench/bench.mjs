@@ -408,7 +408,8 @@ async function benchEmbedModel(model, cfg, sampleVram) {
   // aiGgufEngine.ts ~2281-2296). Hụt 2.030 MiB đo được ở Đợt 1 Task 2.
   //
   // dot2 Task 3 — ĐÃ XOÁ khối mô phỏng "context thường cho model chỉ-nhúng" từng
-  // nằm ở đây (tạo model.createContext() trước ctx nhúng, mô phỏng bug thật của
+  // nằm ở đây (tạo context THƯỜNG — hàm model.createContext, KHÔNG phải
+  // model.createEmbeddingContext — trước ctx nhúng, mô phỏng bug thật của
   // loadGgufModel() lúc đó). Task 3 đã sửa PRODUCTION (server/services/
   // aiGgufEngine.ts ~684-691): loadGgufModel() giờ BỎ QUA context thường khi
   // config.embeddingOnly===true — model chỉ-nhúng không còn tạo context thường

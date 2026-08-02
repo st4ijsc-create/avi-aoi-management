@@ -54,14 +54,16 @@ export interface GgufModelConfig {
   batchSize?: number;
   /** Enable Flash Attention. Default true */
   flashAttention?: boolean;
-  /** Đợt 2 Task 3 — model được nạp CHỈ để nhúng (embed), không bao giờ dùng để sinh chữ. Do
-   *  ĐƯỜNG NHÚNG truyền vào tường minh (getOrLoadModel() khi purpose==="embed") — KHÔNG bao
-   *  giờ đoán theo tên file. Khi true, loadGgufModel() BỎ QUA việc tạo context thường
-   *  (model.createContext(), GGUF_DEFAULT_CTX×GGUF_SEQUENCES) — model nhúng chỉ dùng
-   *  model.createEmbeddingContext() (xem getEmbeddingContext()), context thường chưa từng
-   *  được đụng tới. Đo Đợt 1: model + ctx thường thừa = 3.649 MiB · embedding ctx thật cần =
-   *  654 MiB ⇒ trả tiền hai lần cho ~2,0 GB không dùng. Model text KHÔNG bị ảnh hưởng — cờ
-   *  này mặc định falsy, hành vi giữ nguyên. */
+  /** Đợt 2 Task 3 — TÍN HIỆU Ý ĐỊNH của lượt gọi (do getOrLoadModel() truyền khi
+   *  purpose==="embed"), KHÔNG phải một đảm bảo model này không bao giờ sinh chữ. ⚠ review
+   *  round 1 Critical-1: modelId có thể đến từ HTTP (aiGgufRouter.ts, protectedProcedure) và
+   *  TRÙNG một model TEXT — cờ này KHÔNG đoán theo tên file nên không thể tự phát hiện trùng
+   *  đó. Khi true, loadGgufModel() BỎ QUA context thường lúc nạp (model.createContext(),
+   *  GGUF_DEFAULT_CTX×GGUF_SEQUENCES) để giành lại VRAM (đo Đợt 1: model+ctx thường thừa
+   *  3.649 MiB so với embedding ctx thật 654 MiB, ~2,0 GB). Nếu model đó SAU ĐÓ bị dùng để
+   *  sinh chữ (đúng modelId trùng lặp), ensureTextContext() (xem định nghĩa, gần
+   *  unloadGgufModel()) tạo LƯỜI context còn thiếu — không throw, không cần restart. Model
+   *  text nạp qua đường bình thường (purpose!=="embed") KHÔNG bị ảnh hưởng. */
   embeddingOnly?: boolean;
 }
 
@@ -148,10 +150,15 @@ export interface GgufStreamChunk {
 interface LoadedModel {
   llama: any;
   model: any;
-  /** Đợt 2 Task 3 — undefined khi config.embeddingOnly===true (model chỉ-nhúng KHÔNG có
-   *  context thường — xem loadGgufModel()). Mọi nơi đọc .context (sinh chữ, ~1202+) chỉ
-   *  chạm tới model text, không bao giờ chạm model embeddingOnly; unloadGgufModel() guard
-   *  bằng "if (loaded.context)" trước khi dispose. */
+  /** Đợt 2 Task 3 — có thể là `undefined` NGAY SAU KHI NẠP khi `config.embeddingOnly===true`
+   *  (model chỉ-nhúng — xem `loadGgufModel()`). ⚠ review round 1 Critical-1 SỬA LẠI bất biến sai
+   *  ở bản đầu ("không bao giờ chạm model embeddingOnly"): `embeddingOnly` là cờ theo LƯỢT GỌI
+   *  (`purpose==="embed"`), không phải theo MODEL — `loadedModels` cache theo `modelId` dùng
+   *  CHUNG cho mọi purpose, và `modelId` của `generateEmbedding()` có thể đến từ HTTP
+   *  (`aiGgufRouter.ts`, `protectedProcedure`) TRÙNG một model TEXT. Vì vậy KHÔNG có bất biến
+   *  "model text luôn có `.context`" — 6 hàm sinh chữ đều gọi `ensureTextContext()` TRƯỚC khi
+   *  đọc `.context` (tạo lười nếu thiếu, tự lành); `unloadGgufModel()` guard bằng
+   *  `if (loaded.context)` trước khi dispose. */
   context: any;
   /** Cached embedding context — created lazily on first generateEmbedding(s) call, reused afterwards. */
   embeddingContext?: any;
@@ -740,6 +747,73 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
   }
 }
 
+/** Đợt 2 Task 3 — review round 1 Critical-1: khoá in-flight cho ensureTextContext() (tạo LƯỜI
+ *  context thường khi thiếu), cùng khuôn inFlightLoads/embeddingContextInFlight. */
+const textContextInFlight = new Map<string, Promise<any>>();
+
+/**
+ * Đợt 2 Task 3 — review round 1 Critical-1: LƯỚI AN TOÀN cho model TEXT thiếu context thường.
+ *
+ * BỐI CẢNH LỖI: `embeddingOnly` (cờ `purpose === "embed"` truyền từ `getOrLoadModel()`) là
+ * thuộc tính của LƯỢT GỌI, không phải của MODEL — nhưng `loadedModels` cache theo `modelId`
+ * DÙNG CHUNG cho mọi purpose. `modelId` trong `generateEmbedding(text, modelId)` đến từ HTTP
+ * (`server/routers/aiGgufRouter.ts`, `protectedProcedure`, `modelId: z.string().optional()` —
+ * bất kỳ user đã đăng nhập nào truyền được): nếu trùng basename với một model TEXT (kể cả
+ * `GGUF_DEFAULT_MODEL`), model đó bị nạp với `context===undefined` rồi CACHE VĨNH VIỄN;
+ * `getGenerationModel()` bước 1 (`takeLoadedModel`) trả lại y nguyên cho lượt sinh chữ sau đó
+ * mà không kiểm `.context` ⇒ `loaded.context.getSequence()` throw, KHÔNG tự lành.
+ *
+ * SỬA: mọi nơi ĐỌC `.context` để sinh chữ (6 hàm: generateText/chatCompletion/generateJSON/
+ * generateFimNative/generateTextStream/chatCompletionStream) gọi hàm này TRƯỚC. Đường ĐA SỐ
+ * (model text nạp bình thường, `.context` đã có sẵn từ `loadGgufModel()`) trả về ngay — không
+ * tốn gì thêm, không đổi hành vi. Đường HIẾM (model bị nạp `embeddingOnly` nhưng nay có lượt
+ * sinh chữ xin đúng modelId đó) tạo context LƯỜI, ĐÚNG công thức production `loadGgufModel()`
+ * dùng (`resolveContextSize`/`GGUF_SEQUENCES` — không rẽ nhánh riêng), cache lại — model TỰ
+ * LÀNH ngay lượt gọi kế tiếp thay vì kẹt tới khi restart/admin unload. Khoá in-flight tránh 2
+ * lượt sinh chữ đồng thời cùng tạo 2 context lười cho cùng modelId.
+ */
+async function ensureTextContext(
+  modelId: string,
+  loaded: LoadedModel,
+  requestedContextSize?: number,
+): Promise<any> {
+  if (loaded.context) return loaded.context;
+
+  const pending = textContextInFlight.get(modelId);
+  if (pending) return pending;
+
+  console.warn(
+    `[aiGgufEngine] ${modelId}: sinh chữ trên model KHÔNG có context thường (trước đó nạp qua ` +
+      `đường nhúng — embeddingOnly) — tạo LƯỜI ngay bây giờ. Nếu log này lặp lại, kiểm tra modelId ` +
+      `truyền vào generateEmbedding()/generateEmbeddings() có đang trùng một model TEXT không ` +
+      `(xem review round 1 Critical-1, docs/superpowers/reports/2026-08-02-dot2-report.md §3).`,
+  );
+
+  const createPromise = (async () => {
+    const resolvedCtx = resolveContextSize(requestedContextSize ?? loaded.config.contextSize);
+    const ctx = await loaded.model.createContext({
+      contextSize: resolvedCtx,
+      batchSize: loaded.config.batchSize ?? 512,
+      flashAttention: loaded.config.flashAttention !== false,
+      sequences: GGUF_SEQUENCES,
+    });
+    loaded.context = ctx;
+    // Hết đúng nghĩa "chỉ-nhúng" — giữ metadata (getLoadedGgufModels()) khớp thực tế, tránh
+    // hiển thị nhầm cho admin xem trạng thái model.
+    loaded.config.embeddingOnly = false;
+    return ctx;
+  })();
+
+  textContextInFlight.set(modelId, createPromise);
+  try {
+    return await createPromise;
+  } finally {
+    // Bắt buộc: tạo thất bại mà không xoá khỏi map thì mọi lượt sau nhận lại đúng promise lỗi
+    // đó vĩnh viễn — cùng lý do inFlightLoads/embeddingContextInFlight đã ghi.
+    textContextInFlight.delete(modelId);
+  }
+}
+
 /**
  * Unload a model from memory
  */
@@ -1214,6 +1288,8 @@ export async function generateText(options: GgufGenerateOptions, modelId?: strin
   }
 
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
+  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext().
+  await ensureTextContext(resolvedId, loaded, options.contextSize);
   const startTime = Date.now();
 
   // Build prompt with system message
@@ -1276,6 +1352,8 @@ export async function generateText(options: GgufGenerateOptions, modelId?: strin
  */
 export async function chatCompletion(options: GgufChatOptions, modelId?: string): Promise<GgufGenerateResult> {
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
+  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext().
+  await ensureTextContext(resolvedId, loaded, options.contextSize);
   const startTime = Date.now();
 
   // Build conversation from message history
@@ -1374,6 +1452,8 @@ export async function generateJSON<T = unknown>(
   }
 
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
+  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext().
+  await ensureTextContext(resolvedId, loaded, options.contextSize);
   const startTime = Date.now();
 
   const llamaMod: any = await import("node-llama-cpp");
@@ -1599,6 +1679,8 @@ async function generateFimNative(
   effectiveId: string | undefined,
 ): Promise<GgufGenerateResult> {
   const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId, options.contextSize);
+  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext().
+  await ensureTextContext(resolvedId, loaded, options.contextSize);
   const startTime = Date.now();
   const { LlamaCompletion } = await import("node-llama-cpp");
   const stops = [...(options.stopSequences ?? []), ...FIM_STOP].filter((s) => !!s);
@@ -1772,6 +1854,8 @@ export async function* generateTextStream(
   signal?: AbortSignal,
 ): AsyncGenerator<GgufStreamChunk> {
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
+  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext().
+  await ensureTextContext(resolvedId, loaded, options.contextSize);
   const startTime = Date.now();
 
   let fullPrompt = options.prompt;
@@ -1870,6 +1954,8 @@ export async function* chatCompletionStream(
   signal?: AbortSignal,
 ): AsyncGenerator<GgufStreamChunk> {
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
+  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext().
+  await ensureTextContext(resolvedId, loaded, options.contextSize);
   const startTime = Date.now();
 
   const systemMsg = options.messages.find(m => m.role === "system");
