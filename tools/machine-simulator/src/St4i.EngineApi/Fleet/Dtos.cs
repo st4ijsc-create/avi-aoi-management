@@ -190,7 +190,7 @@ public sealed record ApiErrorDto(string Error);
 public sealed record ConnectorStatusDto(string Id, string Error);
 
 // ─────────────────────────────────────────────────────────────────────────
-// POST /v1/connectors, GET /v1/connectors/configured, DELETE /v1/connectors/{kind},
+// POST /v1/connectors, GET /v1/connectors/configured, DELETE /v1/connectors/{instanceId},
 // POST /v1/connectors/test — SM-5 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/
 // task-5-brief.md): the write path connectors.json never had. See ConnectorEndpoints' own doc comment for
 // the full RBAC/audit/apply-live-or-restart write-up.
@@ -210,7 +210,15 @@ public sealed record ConnectorStatusDto(string Id, string Error);
 /// EXACT map — <see cref="Endpoints.ConnectorEndpoints.CreateConnectorAsync"/> returns 400 (missing/blank) or
 /// 409 (present but not matching what this specific map currently declares) rather than silently arming the
 /// capability on a bare, unconfirmed POST.</param>
-public sealed record ConnectorCreateRequest(string Kind, string? Host, int? Port, string MapJson, string? ConfirmedWriteCapabilityFingerprint = null);
+/// <param name="InstanceId">Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md)
+/// — this connector INSTANCE's own id, and the segment <c>DELETE /v1/connectors/&#123;instanceId&#125;</c>
+/// takes. Optional: omitted/blank means "use <paramref name="Kind"/>", which is the id every pre-D-1 row
+/// already has and the id <see cref="St4i.EngineApi.Fleet.ConnectorRegistry.Register"/> defaults to — so a
+/// client that has never heard of instance ids keeps configuring exactly the one Modbus / one OPC-UA
+/// connector it always did, at the same URLs. Supply a distinct id to run a SECOND connector of the same
+/// kind (two RS-485 devices on one bus, two Modbus TCP PLCs): that is what this field exists for, and it is
+/// the only field that makes the second one addressable.</param>
+public sealed record ConnectorCreateRequest(string Kind, string? Host, int? Port, string MapJson, string? ConfirmedWriteCapabilityFingerprint = null, string? InstanceId = null);
 
 /// <summary>Task B-3 — the write/command capability a saved (or about-to-be-saved) map declares, shaped for
 /// direct display: never omit <see cref="Fingerprint"/> only because it's inconvenient to compute twice —
@@ -253,10 +261,13 @@ public sealed record ConnectorWriteCapabilityDto(
 /// looking for.</para></summary>
 public sealed record ConnectorCreateResultDto(ConnectorWriteCapabilityDto WriteCapability, ConnectorConfigSummary Config, bool AppliedLive, string Message);
 
-/// <summary>The <c>DELETE /v1/connectors/{kind}</c> response. <c>Message</c> states plainly that this only
+/// <summary>The <c>DELETE /v1/connectors/{instanceId}</c> response (the segment was <c>{kind}</c> before Task D-1). <c>Message</c> states plainly that this only
 /// removes the PERSISTED configuration — <see cref="FleetHost.RegisterMachine"/> has no unregister, so a
 /// machine already in the roster (and any currently-running connector for this kind) is unaffected until a
 /// full process restart, which is when Program.cs would next decide what to seed from a (now-empty) store.</summary>
+/// <param name="Kind">Task D-1 — kept as the property NAME (a wire-shape change no client asked for is a
+/// gratuitous break) but it now carries the deleted connector's INSTANCE id, which for every pre-D-1 row and
+/// every connector saved without its own id is the same string it always was.</param>
 public sealed record ConnectorDeleteResultDto(string Kind, string Message);
 
 /// <summary>Same shape as <see cref="ConnectorCreateRequest"/> — a connection test never persists anything,

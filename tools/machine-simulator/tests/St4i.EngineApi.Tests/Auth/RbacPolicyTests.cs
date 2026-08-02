@@ -264,7 +264,12 @@ public sealed class RbacPolicyTests
         // SM-5 — writes device connection settings (host/port, and for OPC-UA potentially a
         // username/password embedded in its map JSON) — same tier as PUT /v1/site above.
         new("/v1/connectors", new[] { "POST" }, Policies.Engineer),
-        new("/v1/connectors/{kind}", new[] { "DELETE" }, Policies.Engineer),
+        // Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) — the path segment
+        // was `{kind}` and is now `{instanceId}`: connector identity moved from "the protocol" to "this
+        // connector instance", so a kind no longer identifies a deletable thing once two Modbus connectors
+        // can coexist. Same route COUNT (this is a rename, not an addition) and the same Engineer policy;
+        // pre-D-1 URLs are unaffected because a migrated row's instance id is its kind.
+        new("/v1/connectors/{instanceId}", new[] { "DELETE" }, Policies.Engineer),
         new("/v1/connectors/test", new[] { "POST" }, Policies.Engineer),
         new("/v1/inspector/stream", Array.Empty<string>(), Policies.Engineer),
 

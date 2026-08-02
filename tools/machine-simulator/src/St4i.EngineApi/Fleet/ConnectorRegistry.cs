@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using St4i.Connector.Abstractions;
 using St4i.Connector.Abstractions.Models;
@@ -31,6 +31,48 @@ namespace St4i.EngineApi.Fleet;
 /// EngineApi-specific (no ASP.NET Core, no <see cref="FleetHost"/> type reference) precisely so that move
 /// stays cheap if it's ever warranted.</para>
 ///
+/// <para><b>Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) — this registry
+/// is keyed by CONNECTOR INSTANCE, not by protocol kind.</b> Until D-1 the key WAS
+/// <see cref="IConnectorFactory.Kind"/>, which meant this build could run exactly ONE Modbus connector and
+/// ONE OPC-UA connector system-wide: a second <see cref="Register"/> for the same kind silently replaced the
+/// first. That is the structural reason RS-485 multidrop (N logical devices, N slave addresses, N machines,
+/// one bus) could not be expressed at all, and it is the reason Đợt B had to add
+/// <see cref="MachineDriverAvailability.AmbiguousDriver"/>: several roster machines resolved to one slot and
+/// nothing could tell which physical device the single live driver was talking to.</para>
+///
+/// <para>An INSTANCE ID is now the key. It is a free-form, operator-meaningful string, independent of the
+/// protocol <see cref="Entry.Kind"/> the instance speaks. <see cref="Register"/>'s <c>instanceId</c>
+/// parameter is OPTIONAL and defaults to the factory's own normalized <see cref="IConnectorFactory.Kind"/> —
+/// which is EXACTLY the key this class used before D-1, so every pre-existing call site, every
+/// pre-existing slot label, and every migrated <see cref="ConnectorConfigStore"/> row behaves byte-for-byte
+/// as it did (see that store's migration v4 for the on-disk half of the same decision). "One Modbus
+/// connector" is now a special case of "N Modbus connectors", not a law of the type system.</para>
+///
+/// <para><b>The machine binding is what makes routing possible — and what makes
+/// <see cref="MachineDriverAvailability.AmbiguousDriver"/> unreachable.</b> An instance MAY declare the
+/// machine code it serves (<see cref="Register"/>'s <c>machineCode</c>). Every production registration path
+/// does (they all start from a parsed register/node map, which carries <c>machineCode</c> as a required
+/// field — see <see cref="ConnectorConfigValidation"/>). A registration whose machine code is ALREADY
+/// claimed by a DIFFERENT instance is REFUSED (<see cref="Register"/> returns <see langword="false"/> and
+/// mutates nothing) — that refusal is the structural uniqueness gate <see cref="FleetHost.ResolveWritableDriver"/>
+/// relies on: because at most one instance can ever claim a given machine code, a machine that IS claimed
+/// resolves to exactly one identifiable driver, and a write can never be handed to a sibling's device.
+/// An UNBOUND instance (<c>machineCode</c> null — only reachable from test code and from a third-party
+/// registration path that has no parsed map to read a code from) claims nothing and leaves
+/// <see cref="FleetHost"/>'s pre-D-1, kind-based resolution rule in force for every machine, including its
+/// <see cref="MachineDriverAvailability.AmbiguousDriver"/> guard.</para>
+///
+/// <para><b>Why one machine code per instance, and why that does not preclude multidrop.</b> D-4's multidrop
+/// is N driver instances sharing one physical bus, each at its own slave address, each its own machine — so
+/// N instances × 1 machine each, which this shape expresses directly: the instance id is independent of the
+/// protocol AND of the transport, so two RTU instances naming the same COM port are just two ordinary
+/// entries here. What this shape does NOT express is the inverse (ONE instance serving N machine codes), and
+/// that is deliberate: <see cref="St4i.Connector.Abstractions.Models.SetpointWriteRequest"/> still carries no
+/// machine code, so a driver serving several machines could not tell which one a write was for — precisely
+/// the condition <see cref="MachineDriverAvailability.AmbiguousDriver"/> exists to refuse. If D-4 chooses that
+/// inverse shape it must extend the WRITE REQUEST first; this registry would then need a plural claim, which
+/// is a change to this class and to one store column, not to the identity model.</para>
+///
 /// <para><b>Id comparison semantics:</b> every id this class is given (via <see cref="Register"/> or
 /// looked up via <see cref="TryCreateDriver"/>) is folded through <see cref="DriverKinds.Normalize"/> —
 /// the SAME rule GP-3 established (a case-insensitive fold for the five built-in ids only; a third-party
@@ -53,18 +95,30 @@ namespace St4i.EngineApi.Fleet;
 /// </summary>
 public sealed class ConnectorRegistry
 {
-    private sealed record Entry(IConnectorFactory Factory, string Config);
+    private sealed record Entry(IConnectorFactory Factory, string Config, string Kind, string? MachineCode);
 
-    /// <summary>Keyed by the NORMALIZED id (see the class doc comment) — <see cref="StringComparer.Ordinal"/>
+    /// <summary>Keyed by the NORMALIZED INSTANCE id (see the class doc comment) — <see cref="StringComparer.Ordinal"/>
     /// deliberately, not <see cref="StringComparer.OrdinalIgnoreCase"/>: casing tolerance is
     /// <see cref="DriverKinds.Normalize"/>'s job alone, applied once on the way in and once on the way out,
     /// never re-applied a second time by this dictionary's own comparer.</summary>
     private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
 
-    /// <summary>Registers (or replaces) the factory + configuration for <see cref="IConnectorFactory.Kind"/>.
+    /// <summary>Task D-1 — serializes <see cref="Register"/>'s check-then-write. The machine-code claim is a
+    /// CROSS-ENTRY invariant ("no two instances claim the same code"), which a per-key
+    /// <see cref="ConcurrentDictionary{TKey,TValue}"/> operation cannot enforce on its own: two concurrent
+    /// registrations for two DIFFERENT instance ids naming the SAME machine code would each scan, each find
+    /// nothing, and each write. Registration is a startup/HTTP-mutation path (never a hot path), so a plain
+    /// lock is the right cost. <see cref="TryCreateDriver"/>/<see cref="RegisteredIds"/>/
+    /// <see cref="TryGetInstanceIdForMachine"/> deliberately do NOT take it — they read the concurrent
+    /// dictionary directly, exactly as they did before this task.</summary>
+    private readonly object _registerGate = new();
+
+    /// <summary>Registers (or replaces) the factory + configuration for one connector INSTANCE — keyed by
+    /// <paramref name="instanceId"/>, which defaults to <see cref="IConnectorFactory.Kind"/> (the pre-D-1
+    /// key, so an omitted id reproduces this method's previous behaviour exactly).
     /// <paramref name="config"/> is stored verbatim and opaque — this method never parses it, only hands it
     /// back to <paramref name="factory"/> unchanged on every future <see cref="TryCreateDriver"/> call for
-    /// this id. Re-registering the same id replaces the previous entry (last write wins) rather than
+    /// this id. Re-registering the same instance id replaces the previous entry (last write wins) rather than
     /// throwing — a host is free to reconfigure a connector and register again.
     ///
     /// <para><b>Review finding (fix round 1) — this is the one unguarded third-party entry point.</b>
@@ -83,16 +137,36 @@ public sealed class ConnectorRegistry
     /// something a vendor's <see cref="IConnectorFactory"/> implementation can trigger) and still
     /// throws <see cref="ArgumentNullException"/>, same as any other .NET API.</para>
     /// </summary>
+    /// <param name="factory">The connector's factory. Its <see cref="IConnectorFactory.Kind"/> is still read
+    /// here (it is what <paramref name="instanceId"/> defaults to, and it is recorded as the instance's
+    /// protocol) and is still guarded — see the remarks above.</param>
+    /// <param name="config">Stored verbatim and opaque; see the remarks above.</param>
+    /// <param name="instanceId">Task D-1 — this connector INSTANCE's own id, the key this registry uses.
+    /// <see langword="null"/>/blank (the default) means "use the factory's own normalized
+    /// <see cref="IConnectorFactory.Kind"/>", which is byte-for-byte the key this method used before D-1 —
+    /// so every pre-existing call site keeps its exact previous behaviour, including last-write-wins for a
+    /// second registration of the same kind. Pass a distinct id to run two connectors of the SAME kind side
+    /// by side (the whole point of D-1). Normalized through <see cref="DriverKinds.Normalize"/> like every
+    /// other id in this codebase, which is also what keeps an operator-chosen id of <c>"modbus"</c> from
+    /// becoming a SECOND entry alongside the built-in <c>"Modbus"</c>.</param>
+    /// <param name="machineCode">Task D-1 — the machine code this instance serves, if it knows it. This is
+    /// the binding <see cref="FleetHost"/> routes a write on; see the class doc comment for why a claim that
+    /// another instance already holds is REFUSED rather than allowed to overwrite. <see langword="null"/>
+    /// (the default) means "this instance declares no machine binding" — every pre-existing call site, so
+    /// their behaviour is unchanged.</param>
     /// <returns><see langword="true"/> if <paramref name="factory"/> was registered; <see langword="false"/>
-    /// if its <see cref="IConnectorFactory.Kind"/> getter threw or returned null/blank/whitespace.</returns>
-    public bool Register(IConnectorFactory factory, string config)
+    /// if its <see cref="IConnectorFactory.Kind"/> getter threw or returned null/blank/whitespace, or if
+    /// <paramref name="machineCode"/> is already claimed by a DIFFERENT instance id (in which case nothing
+    /// is mutated — the existing claim wins, and the caller can name the incumbent via
+    /// <see cref="TryGetInstanceIdForMachine"/> to log a message an operator can act on).</returns>
+    public bool Register(IConnectorFactory factory, string config, string? instanceId = null, string? machineCode = null)
     {
         ArgumentNullException.ThrowIfNull(factory);
 
-        string id;
+        string kind;
         try
         {
-            id = DriverKinds.Normalize(factory.Kind);
+            kind = DriverKinds.Normalize(factory.Kind);
         }
         catch
         {
@@ -101,19 +175,101 @@ public sealed class ConnectorRegistry
             return false;
         }
 
+        if (string.IsNullOrWhiteSpace(kind))
+        {
+            return false;
+        }
+
+        // The instance id defaults to the kind — the pre-D-1 key, verbatim. A blank/whitespace explicit id is
+        // treated the same as omitting it rather than rejected: an empty key is never a useful identity, and
+        // silently keying on "" would be strictly worse than falling back to the one sensible default.
+        var id = string.IsNullOrWhiteSpace(instanceId) ? kind : DriverKinds.Normalize(instanceId.Trim());
         if (string.IsNullOrWhiteSpace(id))
         {
             return false;
         }
 
-        _entries[id] = new Entry(factory, config ?? string.Empty);
-        return true;
+        var claim = string.IsNullOrWhiteSpace(machineCode) ? null : machineCode.Trim();
+
+        lock (_registerGate)
+        {
+            if (claim is not null)
+            {
+                foreach (var (existingId, existingEntry) in _entries)
+                {
+                    if (string.Equals(existingId, id, StringComparison.Ordinal)) continue;
+                    if (existingEntry.MachineCode is null) continue;
+                    if (!string.Equals(existingEntry.MachineCode, claim, StringComparison.OrdinalIgnoreCase)) continue;
+
+                    // Task D-1 — the structural gate. Two live connector instances claiming ONE machine code
+                    // is exactly the state MachineDriverAvailability.AmbiguousDriver was built to refuse a
+                    // write in; refusing the second REGISTRATION means that state can never be constructed
+                    // through this registry in the first place. Ordinal-ignore-case because every machine-code
+                    // comparison in this codebase is (FleetHost.RegisterMachine's own duplicate guard,
+                    // ResolveWritableDriver's roster lookup, ConnectorEndpoints' collision checks) — a claim
+                    // that differed only by casing would slip past this and reintroduce the ambiguity.
+                    return false;
+                }
+            }
+
+            _entries[id] = new Entry(factory, config ?? string.Empty, kind, claim);
+            return true;
+        }
     }
 
-    /// <summary>Every currently-registered connector id, normalized. A point-in-time snapshot — safe to
-    /// enumerate even if another thread is concurrently <see cref="Register"/>ing (this task never removes
+    /// <summary>Every currently-registered connector INSTANCE id, normalized. A point-in-time snapshot — safe
+    /// to enumerate even if another thread is concurrently <see cref="Register"/>ing (this task never removes
     /// entries once added, so there is no torn-read hazard to guard against).</summary>
     public IReadOnlyList<string> RegisteredIds => _entries.Keys.ToList();
+
+    /// <summary>Task D-1 — the protocol kind an instance speaks (<see cref="IConnectorFactory.Kind"/>,
+    /// normalized), or <see langword="null"/> for an id nothing is registered under. Distinct from the
+    /// instance id itself the moment two connectors of one kind coexist.</summary>
+    public string? KindOf(string instanceId) =>
+        _entries.TryGetValue(DriverKinds.Normalize(instanceId), out var entry) ? entry.Kind : null;
+
+    /// <summary>
+    /// Task D-1 — the ONE lookup that makes per-machine write routing possible: which registered connector
+    /// instance declared that it serves <paramref name="machineCode"/>? Returns <see langword="false"/> when
+    /// no instance claims this code (the machine is simulated, or driven by an instance that never declared
+    /// a binding, or not connector-backed at all).
+    ///
+    /// <para>At most ONE instance can ever claim a given code — <see cref="Register"/> refuses a second
+    /// claim outright (see its own remarks) — so this is genuinely a lookup, not a "pick the first of
+    /// several". That is the property <see cref="FleetHost.ResolveWritableDriver"/> depends on to report
+    /// <see cref="MachineDriverAvailability.Writable"/> without needing Đợt B's roster-sharing count: a
+    /// claimed machine resolves to exactly one identifiable driver by construction.</para>
+    ///
+    /// <para>Case-insensitive on <paramref name="machineCode"/>, matching every other machine-code
+    /// comparison in this codebase (<see cref="FleetHost.RegisterMachine"/>'s duplicate guard,
+    /// <c>ConnectorEndpoints</c>' collision checks). Never throws; a null/blank code simply matches
+    /// nothing.</para>
+    /// </summary>
+    public bool TryGetInstanceIdForMachine(string? machineCode, [NotNullWhen(true)] out string? instanceId)
+    {
+        instanceId = null;
+        if (string.IsNullOrWhiteSpace(machineCode)) return false;
+
+        var wanted = machineCode.Trim();
+        foreach (var (id, entry) in _entries)
+        {
+            if (entry.MachineCode is not null
+                && string.Equals(entry.MachineCode, wanted, StringComparison.OrdinalIgnoreCase))
+            {
+                instanceId = id;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Task D-1 — <see langword="true"/> if <paramref name="instanceId"/> is registered AND declared
+    /// a machine binding. <see cref="FleetHost"/> uses this to tell "this connector slot belongs to a
+    /// specific, identified machine (and therefore serves no other roster member)" from "this slot is
+    /// unbound, so the pre-D-1 kind-based rule — ambiguity guard included — still governs it."</summary>
+    public bool IsBoundToAMachine(string instanceId) =>
+        _entries.TryGetValue(DriverKinds.Normalize(instanceId), out var entry) && entry.MachineCode is not null;
 
     /// <summary>
     /// Attempts to build a fresh <see cref="IDeviceDriver"/> for <paramref name="id"/> — called anew every

@@ -1,4 +1,4 @@
-using St4i.Connector.Abstractions.Models;
+﻿using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Drivers.OpcUa;
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
@@ -36,12 +36,12 @@ namespace St4i.EngineApi.Endpoints;
 /// configuration, WITHOUT its register-map/node-map JSON (which may embed an OPC-UA username/password) —
 /// see <see cref="ConnectorConfigStore"/>'s own doc comment for why that column is never even selected by
 /// this projection's SQL, not merely stripped after the fact.</description></item>
-/// <item><description><c>DELETE /v1/connectors/{kind}</c> (Engineer, audited <c>connector.delete</c>) —
-/// removes ONLY the persisted row. <see cref="FleetHost.RegisterMachine"/> has no unregister (the brief's own
-/// explicit constraint) — a machine already in the roster, and any connector currently running for this
-/// kind, is UNAFFECTED until the process is fully restarted, at which point Program.cs's startup wiring
-/// simply has nothing left to seed for this kind. <see cref="ConnectorDeleteResultDto.Message"/> says this
-/// plainly.</description></item>
+/// <item><description><c>DELETE /v1/connectors/{instanceId}</c> (Engineer, audited <c>connector.delete</c>;
+/// the segment was <c>{kind}</c> before Task D-1) — removes ONLY the persisted row.
+/// <see cref="FleetHost.RegisterMachine"/> has no unregister (the brief's own explicit constraint) — a
+/// machine already in the roster, and any connector currently running under this id, is UNAFFECTED until the
+/// process is fully restarted, at which point Program.cs's startup wiring simply has nothing left to seed for
+/// it. <see cref="ConnectorDeleteResultDto.Message"/> says this plainly.</description></item>
 /// <item><description><c>POST /v1/connectors/test</c> (Engineer, not audited — a read-only probe that
 /// mutates nothing, same posture as <c>GET /v1/site/discover</c>) — builds a THROWAWAY driver (never
 /// registered into <see cref="ConnectorRegistry"/>, never touches <see cref="FleetHost"/>/its <c>_gate</c> at
@@ -56,9 +56,19 @@ namespace St4i.EngineApi.Endpoints;
 ///
 /// <para><b>Scope, deliberately:</b> only <see cref="DriverKinds.Modbus"/>/<see cref="DriverKinds.OpcUa"/> —
 /// the two protocols this build actually has a working driver for (see
-/// <see cref="ConnectorConfigValidation"/>'s own doc comment). At most ONE persisted/live connector per kind
-/// — <see cref="ConnectorRegistry"/> itself only ever holds one factory per normalized kind (its own doc
-/// comment: "last write wins"), so this matches the brief's own single-real-machine framing exactly.</para>
+/// <see cref="ConnectorConfigValidation"/>'s own doc comment).</para>
+///
+/// <para><b>Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) — this used to
+/// say "at most ONE persisted/live connector per kind", and that is no longer true.</b> The old sentence read
+/// <i>"<see cref="ConnectorRegistry"/> itself only ever holds one factory per normalized kind (its own doc
+/// comment: 'last write wins'), so this matches the brief's own single-real-machine framing exactly"</i> — an
+/// accurate description of a limit D-1 removed so that RS-485 multidrop (N devices on one bus, N machines)
+/// can be expressed at all. Connectors are now identified per INSTANCE:
+/// <see cref="ConnectorCreateRequest.InstanceId"/> names one, and omitting it derives the id from the kind,
+/// which is exactly the single-connector-per-kind behaviour every existing client already has. What has NOT
+/// changed is that one machine has one connector: a save whose map names a machine another instance already
+/// serves is refused with a 409 (see <see cref="CreateConnectorAsync"/>), because a machine served by two
+/// connectors is a machine whose writes cannot be resolved to a single device.</para>
 /// </summary>
 public static class ConnectorEndpoints
 {
@@ -87,7 +97,12 @@ public static class ConnectorEndpoints
         app.MapPost("/v1/connectors", CreateConnectorAsync)
             .RequireAuthorization(Policies.Engineer);
 
-        app.MapDelete("/v1/connectors/{kind}", DeleteConnectorAsync)
+        // Task D-1 — the path segment is the connector INSTANCE id, not the protocol kind. Renamed rather
+        // than left misleading: with two Modbus connectors configurable, "the kind" no longer identifies
+        // anything deletable. Every pre-D-1 URL keeps working unchanged, because a migrated row's instance id
+        // IS its kind (see ConnectorConfigStore's migration v4) — DELETE /v1/connectors/Modbus still deletes
+        // the Modbus connector an operator configured before this task.
+        app.MapDelete("/v1/connectors/{instanceId}", DeleteConnectorAsync)
             .RequireAuthorization(Policies.Engineer);
 
         app.MapPost("/v1/connectors/test", TestConnectorAsync)
@@ -178,15 +193,44 @@ public static class ConnectorEndpoints
         // never persisted that row themselves, so there is nothing of theirs to protect from being
         // overwritten. The save below proceeds normally, upserting the seeded row into an operator-owned one
         // (SaveAsync's default `source` is Operator) for the machine code THIS request actually names.
-        var existing = await store.GetAsync(validated.Kind, ct).ConfigureAwait(false);
+        //
+        // Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) — the guard is now
+        // per connector INSTANCE, not per protocol kind, and the reason it survives is unchanged: re-pointing
+        // an ALREADY-CONFIGURED instance at a DIFFERENT machine code would still strand the old roster entry
+        // (RegisterMachine has no unregister). What D-1 removes is the OTHER half of the old message — "this
+        // build supports one live connector per protocol" is no longer true, and saying it would now be a
+        // lie: configuring a SECOND Modbus machine is exactly what this endpoint is supposed to allow, by
+        // giving it its own instanceId rather than by deleting the first one.
+        var instanceId = string.IsNullOrWhiteSpace(body.InstanceId)
+            ? validated.Kind
+            : DriverKinds.Normalize(body.InstanceId.Trim());
+
+        var existing = await store.GetAsync(instanceId, ct).ConfigureAwait(false);
         if (existing is not null
             && existing.Source == ConnectorConfigSource.Operator
             && !string.Equals(existing.MachineCode, validated.MachineCode, StringComparison.OrdinalIgnoreCase))
         {
             return Results.Conflict(new ApiErrorDto(
-                $"A {validated.Kind} connector is already configured for machine '{existing.MachineCode}'. " +
-                $"This build supports one live connector per protocol — remove the existing one first " +
-                $"(DELETE /v1/connectors/{validated.Kind}) before configuring a different machine of the same kind."));
+                $"Connector '{instanceId}' is already configured for machine '{existing.MachineCode}'. " +
+                "A connector instance stays bound to the machine it was configured for — remove this one " +
+                $"first (DELETE /v1/connectors/{instanceId}) to re-point it, or give the new machine its own " +
+                "connector by supplying a different instanceId."));
+        }
+
+        // Task D-1 — 🔴 the machine-code CLAIM check, and the reason a write can no longer reach the wrong
+        // machine. ConnectorRegistry.Register refuses a claim another instance already holds, but refusing
+        // silently AFTER the store row was written would leave a persisted connector that never registers —
+        // so the same question is asked HERE, before any mutation, and answered with a 409 an operator can
+        // act on. Skipped for a re-save of the SAME instance (it is allowed to keep its own claim), which is
+        // the ordinary idempotent-update path.
+        if (connectorRegistry.TryGetInstanceIdForMachine(validated.MachineCode, out var claimingInstanceId)
+            && !string.Equals(claimingInstanceId, instanceId, StringComparison.Ordinal))
+        {
+            return Results.Conflict(new ApiErrorDto(
+                $"Machine '{validated.MachineCode}' is already served by connector '{claimingInstanceId}'. " +
+                "Two connectors may not drive one machine — a write could not then be resolved to a single " +
+                "device. Remove that connector first, or point this one at a different machine code in its " +
+                "register/node map."));
         }
 
         // Fix round 1 (review) — CROSS-KIND (or cross-SOURCE) machine-code collision. The check above only
@@ -224,12 +268,26 @@ public static class ConnectorEndpoints
 
         var saved = await store.SaveAsync(
                 validated.Kind, validated.MachineCode, validated.Host, validated.Port, body.MapJson,
-                validated.WriteCapability, ct: ct)
+                validated.WriteCapability, ct: ct, instanceId: instanceId)
             .ConfigureAwait(false);
 
         // Live-register BEFORE RegisterMachine — a restart-if-running triggered below must always see the
         // freshly-registered factory, never the stale one it's replacing.
-        connectorRegistry.Register(validated.Factory, body.MapJson);
+        //
+        // Task D-1 — registered under this INSTANCE's id and BOUND to the machine code its map declares. The
+        // binding is what FleetHost routes a write on; without it this connector would fall back to the
+        // pre-D-1 kind-based rule and a second same-kind machine would make both of them ambiguous. The
+        // return value is now checked (it was discarded before): Register can refuse a machine-code claim
+        // another instance holds. The 409 above makes that unreachable from here, so reaching it means the
+        // registry changed underneath this request — report it rather than answering 200 for a connector
+        // that is not actually live.
+        if (!connectorRegistry.Register(validated.Factory, body.MapJson, instanceId, validated.MachineCode))
+        {
+            return Results.Conflict(new ApiErrorDto(
+                $"Connector '{instanceId}' was saved but could not be registered live — machine " +
+                $"'{validated.MachineCode}' was claimed by another connector while this request was in " +
+                "flight. Re-check GET /v1/connectors/configured and retry."));
+        }
 
         // RegisterMachine only ADDS (see this class' own doc comment) — true means a brand-new machine code
         // just joined the roster (and, if the fleet was running, RegisterMachine already restarted the
@@ -241,12 +299,15 @@ public static class ConnectorEndpoints
         // mirroring RotateIdentityAsync's own audit row recording both the old and new fingerprint: a
         // point/command NAME is never a credential (see ConnectorWriteCapability's own doc comment), so this
         // is safe to record verbatim, same as MachineCode/Host/Port already are.
+        // Task D-1 — the audit row's target id is the connector INSTANCE, not the kind: with two connectors
+        // of one kind configurable, "connector/Modbus" would no longer identify which one an auditor is
+        // reading about. `Kind` moves into the after-state so nothing is lost.
         await recorder.RecordAsync(
-            ctx, "connector.save", "connector", validated.Kind,
+            ctx, "connector.save", "connector", instanceId,
             before,
             new
             {
-                validated.MachineCode, validated.Host, validated.Port,
+                validated.Kind, validated.MachineCode, validated.Host, validated.Port,
                 validated.WriteCapability.WritablePoints, validated.WriteCapability.Commands,
             },
             ct).ConfigureAwait(false);
@@ -265,16 +326,19 @@ public static class ConnectorEndpoints
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // DELETE /v1/connectors/{kind}
+    // DELETE /v1/connectors/{instanceId}
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> DeleteConnectorAsync(
-        string kind, ConnectorConfigStore store, HttpContext ctx, AuditRecorder recorder, CancellationToken ct)
+        string instanceId, ConnectorConfigStore store, HttpContext ctx, AuditRecorder recorder, CancellationToken ct)
     {
-        var normalized = DriverKinds.Normalize(kind);
+        // Task D-1 — normalized through the SAME DriverKinds.Normalize every other id in this codebase goes
+        // through (ConnectorRegistry.Register, ConnectorConfigStore.SaveAsync), so "modbus" still addresses
+        // the "Modbus" instance and a third-party id stays case-sensitive exactly as DriverKinds documents.
+        var normalized = DriverKinds.Normalize(instanceId);
         var existing = await store.GetAsync(normalized, ct).ConfigureAwait(false);
         if (existing is null)
         {
-            return Results.NotFound(new ApiErrorDto($"No persisted connector configuration exists for kind '{kind}'."));
+            return Results.NotFound(new ApiErrorDto($"No persisted connector configuration exists for connector '{instanceId}'."));
         }
 
         await store.DeleteAsync(normalized, ct).ConfigureAwait(false);

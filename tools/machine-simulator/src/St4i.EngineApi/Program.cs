@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -1220,28 +1220,44 @@ builder.Services.AddSingleton(sp =>
         // GetRequiredService<FleetHost>() if a vendor-implemented Kind getter misbehaves; not reachable
         // for this built-in factory (Kind is a trivial constant return), but checked here anyway so a
         // future regression is visible rather than silently swallowed.
+        //
+        // Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) — bound to the
+        // machine code the loaded register map declares (modbusSeedDescriptor is built from that same map,
+        // so this is the SAME code the roster seed uses; deriving it twice from two places is exactly the
+        // drift Đợt B's review caught elsewhere). The instance id is left to default to the kind, which is
+        // the id this env-var connector has always effectively had — an env-var deployment configures one
+        // Modbus connector and gets the same slot label, alarm TargetId and DELETE URL it had before.
         if (!registry.Register(
             new St4i.EdgeCore.Drivers.Modbus.ModbusConnectorFactory(
                 modbusOptions,
                 logWarning: msg => logger.LogWarning("{ModbusMsg}", msg),
                 logError: (ex, msg) => logger.LogError(ex, "{ModbusMsg}", msg)),
-            modbusMapJson))
+            modbusMapJson,
+            machineCode: modbusSeedDescriptor?.Code))
         {
-            logger.LogWarning("Modbus connector factory failed to register (unexpected — its Kind getter threw or was blank)");
+            logger.LogWarning(
+                "Modbus connector factory failed to register (unexpected — its Kind getter threw or was blank, " +
+                "or machine '{MachineCode}' is already claimed by another connector instance)",
+                modbusSeedDescriptor?.Code);
         }
     }
 
     if (opcUaMapJson is not null)
     {
         var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("OpcUa");
+        // Task D-1 — see the Modbus registration above for the machine-binding rationale; identical here.
         if (!registry.Register(
             new St4i.EdgeCore.Drivers.OpcUa.OpcUaConnectorFactory(
                 pkiDir: opcUaOptions.PkiDir,
                 logWarning: msg => logger.LogWarning("{OpcUaMsg}", msg),
                 logError: (ex, msg) => logger.LogError(ex, "{OpcUaMsg}", msg)),
-            opcUaMapJson))
+            opcUaMapJson,
+            machineCode: opcUaSeedDescriptor?.Code))
         {
-            logger.LogWarning("OPC-UA connector factory failed to register (unexpected — its Kind getter threw or was blank)");
+            logger.LogWarning(
+                "OPC-UA connector factory failed to register (unexpected — its Kind getter threw or was blank, " +
+                "or machine '{MachineCode}' is already claimed by another connector instance)",
+                opcUaSeedDescriptor?.Code);
         }
     }
 
@@ -1288,11 +1304,30 @@ builder.Services.AddSingleton(sp =>
             continue;
         }
 
-        if (!registry.Register(factory, entry.SettingsJson))
+        // Task D-1 — bind this entry to the machine code its own settings blob declares, so a write for that
+        // machine resolves to THIS connector rather than falling back to the pre-D-1 kind-based rule.
+        // Re-validating here is the only way to learn that code (the settings blob is opaque to Program.cs
+        // and forwarded verbatim); a blob that will not validate simply registers UNBOUND, which is exactly
+        // the behaviour this line had before D-1 — the entry still registers, its factory still gets the
+        // chance to accept or reject the same blob at StartLocked, and nothing about that path changes.
+        //
+        // The INSTANCE id is deliberately left to default to the kind, NOT set to entry.Id: entry.Id is
+        // documented (ConnectorConfigEntry) as naming-for-warnings only, ConnectorsConfig.ResolveEntries
+        // still de-duplicates connectors.json to one entry per kind, and adopting it here would silently
+        // change every connectors.json connector's pipeline slot label — and therefore its alarm TargetId —
+        // for no gain this task needs. Promoting entry.Id to a real instance id (which is what would let
+        // connectors.json express two RTU connectors on one bus) is a file-format change with no migration
+        // behind it, and belongs with D-7's configuration work.
+        St4i.EngineApi.Fleet.ConnectorConfigValidation.TryValidate(
+            entry.Kind, modbusOptions.Host, modbusOptions.Port, entry.SettingsJson, opcUaOptions.PkiDir,
+            out var entryValidated, out _);
+
+        if (!registry.Register(factory, entry.SettingsJson, machineCode: entryValidated?.MachineCode))
         {
             connectorsLogger.LogWarning(
-                "connectors.json entry '{ConnectorId}' (kind '{ConnectorKind}') failed to register (its Kind getter threw or was blank).",
-                entry.Id, entry.Kind);
+                "connectors.json entry '{ConnectorId}' (kind '{ConnectorKind}') failed to register (its Kind getter " +
+                "threw or was blank, or machine '{MachineCode}' is already claimed by another connector instance).",
+                entry.Id, entry.Kind, entryValidated?.MachineCode);
         }
     }
 
@@ -1309,7 +1344,16 @@ builder.Services.AddSingleton(sp =>
 
     foreach (var row in persistedConnectorRows)
     {
-        if (alreadyConfiguredKinds.Contains(row.Kind))
+        // Task D-1 — matched on the row's INSTANCE id, not its kind. `alreadyConfiguredKinds` is also
+        // precisely the set of instance ids the two sources above registered under, because both of them
+        // deliberately leave the instance id to default to the kind (see their own notes) — so for every row
+        // that exists today, and every row a pre-D-1 build could have written, this comparison is
+        // byte-identical to the kind comparison it replaces. What it stops doing is shadowing a genuinely
+        // DIFFERENT connector instance that merely shares a protocol with an env-var-configured one: a
+        // second Modbus connector, persisted under its own id, is no longer suppressed by ST4I_MODBUS_MAP
+        // being set — which is the whole point of instance identity, and would otherwise have left the store
+        // unable to express the multidrop shape it was just migrated to hold.
+        if (alreadyConfiguredKinds.Contains(row.EffectiveInstanceId))
         {
             // Task B-6 fix round 1 (review, Important I3) — a row THIS RUN's own ConnectorConfigVisibilitySeeder
             // inserted (Source == Seeded) is, by construction, ALWAYS going to land in this branch: it exists
@@ -1320,10 +1364,10 @@ builder.Services.AddSingleton(sp =>
             if (row.Source == St4i.EngineApi.Fleet.ConnectorConfigSource.Operator)
             {
                 connectorsLogger.LogWarning(
-                    "Persisted connector configuration for kind '{ConnectorKind}' (machine '{MachineCode}') ignored " +
-                    "— an environment variable or a connectors.json entry already configures this connector kind " +
-                    "for this run; that source takes precedence.",
-                    row.Kind, row.MachineCode);
+                    "Persisted connector configuration '{ConnectorInstanceId}' (kind '{ConnectorKind}', machine " +
+                    "'{MachineCode}') ignored — an environment variable or a connectors.json entry already " +
+                    "configures a connector under this same id for this run; that source takes precedence.",
+                    row.EffectiveInstanceId, row.Kind, row.MachineCode);
             }
             continue;
         }
@@ -1342,11 +1386,21 @@ builder.Services.AddSingleton(sp =>
             continue;
         }
 
-        if (!registry.Register(validated.Factory, row.MapJson))
+        // Task D-1 — registered under the row's OWN instance id (its primary key) and bound to the machine
+        // its map declares. A refusal here is now a MEANINGFUL outcome, not just "unexpected": it is how a
+        // second connector claiming a machine another one already serves is stopped from ever going live,
+        // and the descriptor is deliberately NOT added to persistedConnectorSeeds in that case — seeding a
+        // roster tile for a connector that is not running is exactly the false "this machine is configured"
+        // signal Đợt A/B spent two batches removing.
+        if (!registry.Register(validated.Factory, row.MapJson, row.EffectiveInstanceId, validated.MachineCode))
         {
             connectorsLogger.LogWarning(
-                "Persisted connector configuration for kind '{ConnectorKind}' failed to register (unexpected).",
-                row.Kind);
+                "Persisted connector configuration '{ConnectorInstanceId}' (kind '{ConnectorKind}') failed to " +
+                "register — machine '{MachineCode}' is already served by connector '{ClaimingInstanceId}'. This " +
+                "connector will not run this session; remove one of the two configurations so a write for that " +
+                "machine can resolve to a single device.",
+                row.EffectiveInstanceId, row.Kind, validated.MachineCode,
+                registry.TryGetInstanceIdForMachine(validated.MachineCode, out var claimant) ? claimant : "(unknown)");
             continue;
         }
 

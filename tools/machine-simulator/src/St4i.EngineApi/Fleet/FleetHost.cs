@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Drivers;
 using St4i.Connector.Abstractions;
@@ -79,7 +79,30 @@ public enum MachineDriverAvailability
     /// work, is the first place such a binding could plausibly live). Never returned for
     /// <see cref="ReadOnly"/>/<see cref="NoLiveDriver"/> resolutions — sharing a slot is completely safe when
     /// nothing can be written through it at all (e.g. ten demo machines legitimately sharing the one
-    /// "simulated" slot).</summary>
+    /// "simulated" slot).
+    ///
+    /// <para><b>🔴 Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) — this
+    /// member is NOT reachable through any production wiring any more, and it is deliberately still here.</b>
+    /// The paragraph above names the precondition exactly: <see cref="ConnectorRegistry"/> kept at most one
+    /// live driver per protocol Kind, so several roster machines resolved to one slot. D-1 removed that
+    /// precondition rather than removing this guard — the registry is keyed per connector INSTANCE, an
+    /// instance may claim the machine code it serves, and a claim another instance already holds is refused
+    /// at registration. A claimed machine therefore resolves to exactly one identifiable driver
+    /// (<see cref="Writable"/>) and an unclaimed one resolves to <see cref="NoLiveDriver"/>; neither can
+    /// reach this member. Every production registration path binds a machine code (they all begin from a
+    /// parsed register/node map, where <c>machineCode</c> is required), so the only remaining way to
+    /// construct the precondition is <see cref="FleetHost.AdditionalPipelinesForTests"/> — the test-only seam
+    /// that injects a raw pipeline slot with no connector instance behind it, which is exactly how Đợt B's
+    /// own regression test still reaches this state.</para>
+    ///
+    /// <para><b>Why it stays rather than being deleted.</b> "We removed the guard because we believe it can
+    /// no longer happen" and "we proved it can no longer happen and left the guard standing" look identical
+    /// in a passing test run and are not the same engineering. This member costs one enum value and one
+    /// switch arm; what it buys is that the day something DOES reintroduce a many-machines-to-one-writable-
+    /// slot shape — a future transport that shares one driver across slave addresses, a third-party
+    /// registration path that never learns a machine code — the write is refused instead of delivered to
+    /// whichever device the driver happens to be pointed at. Deleting it would convert that day's outcome
+    /// from a 409 into a wrong machine moving.</para></summary>
     AmbiguousDriver,
 }
 
@@ -616,7 +639,30 @@ public sealed class FleetHost
                 return (MachineDriverAvailability.MachineNotFound, null);
             }
 
-            var expectedLabel = ResolveSlotLabelFor(descriptor.DriverKind);
+            // Task D-1 — is this machine claimed by a specific connector INSTANCE? That is the whole
+            // difference between "a driver of the right protocol exists somewhere" (what this method could
+            // ask before D-1) and "THIS machine's driver is that one" (what it can ask now).
+            string? boundInstanceId = null;
+            var boundToAnInstance =
+                _connectorRegistry is not null
+                && _connectorRegistry.TryGetInstanceIdForMachine(descriptor.Code, out boundInstanceId);
+
+            var expectedLabel = boundToAnInstance
+                ? ResolveConnectorSlotLabel(boundInstanceId!)
+                : ResolveSlotLabelFor(descriptor.DriverKind);
+
+            // Task D-1 — the honest answer for a machine that is NOT claimed but whose kind-derived label
+            // belongs to a connector instance that IS bound to some OTHER machine: nothing is driving this
+            // machine at all. A bound instance only ever emits readings for its own machine code, so a
+            // second Modbus roster entry sitting next to a Modbus connector configured for a different code
+            // is genuinely idle — reporting it against that connector's slot (as the pre-D-1 rule did, which
+            // then had to refuse the write as AmbiguousDriver) named the wrong problem. This clause is
+            // deliberately scoped to a BOUND owner: an UNBOUND instance claims no machine, so the pre-D-1
+            // behaviour — including its ambiguity guard — is left completely intact for it.
+            if (!boundToAnInstance && AnyBoundInstanceOwnsSlotLabel(expectedLabel))
+            {
+                return (MachineDriverAvailability.NoLiveDriver, null);
+            }
 
             var slot = _slots.FirstOrDefault(s => string.Equals(s.Label, expectedLabel, StringComparison.Ordinal));
             if (slot is null)
@@ -629,11 +675,24 @@ public sealed class FleetHost
                 return (MachineDriverAvailability.ReadOnly, null);
             }
 
-            // C1 fix (review round 1) — see this method's own doc comment. Only evaluated in the Writable
-            // branch: sharing a slot is completely safe when nothing can be written through it at all (e.g.
-            // ten demo machines legitimately sharing the one "simulated" slot), so this must never downgrade
-            // ReadOnly/NoLiveDriver.
-            var sharingMachineCount = _fleet.Count(d => string.Equals(ResolveSlotLabelFor(d.DriverKind), expectedLabel, StringComparison.Ordinal));
+            // Task D-1 — a machine claimed by a connector instance needs NO sharing count: at most one
+            // instance can claim a machine code (ConnectorRegistry.Register refuses a second claim) and an
+            // instance holds exactly one code, so exactly one roster member can ever land on this slot by
+            // this branch. That is what "instance-keying is what makes routing possible" means concretely —
+            // the count below was a REFUSAL standing in for a binding this codebase did not have; now it has
+            // the binding.
+            if (boundToAnInstance)
+            {
+                return (MachineDriverAvailability.Writable, writable);
+            }
+
+            // C1 fix (Đợt B review round 1), UNCHANGED and still standing — see this method's own doc
+            // comment. Reached only when no connector instance claims this machine, i.e. the pre-D-1 world:
+            // a slot injected by AdditionalPipelinesForTests, or an unbound registration. Only evaluated in
+            // the Writable branch: sharing a slot is completely safe when nothing can be written through it
+            // at all (e.g. ten demo machines legitimately sharing the one "simulated" slot), so this must
+            // never downgrade ReadOnly/NoLiveDriver.
+            var sharingMachineCount = _fleet.Count(d => string.Equals(ResolveSlotLabelForMachine(d), expectedLabel, StringComparison.Ordinal));
             if (sharingMachineCount > 1)
             {
                 return (MachineDriverAvailability.AmbiguousDriver, null);
@@ -1066,6 +1125,62 @@ public sealed class FleetHost
         return isSimulated ? SimulatedSlotLabel : ResolveConnectorSlotLabel(normalizedKind);
     }
 
+    /// <summary>
+    /// Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) — the slot label for
+    /// ONE ROSTER MACHINE, which is a strictly finer question than <see cref="ResolveSlotLabelFor"/>'s "which
+    /// slot does this KIND go to". Before D-1 the two were the same question, and that is exactly what made
+    /// multidrop inexpressible and <see cref="MachineDriverAvailability.AmbiguousDriver"/> necessary: every
+    /// Modbus machine in the roster resolved to the one <c>"modbus"</c> slot, so nothing could say which
+    /// physical device the single live driver was talking to.
+    ///
+    /// <para><b>The new rule, in one sentence:</b> if a registered connector INSTANCE declared that it serves
+    /// this machine's code (<see cref="ConnectorRegistry.TryGetInstanceIdForMachine"/>), the machine belongs to
+    /// THAT instance's slot; otherwise the pre-D-1 kind-based rule governs it, byte for byte. Because
+    /// <see cref="ConnectorRegistry.Register"/> refuses a machine-code claim another instance already holds,
+    /// the first branch is 1:1 by construction — one machine, one instance, one slot, one driver.</para>
+    ///
+    /// <para><b>Why this is ONE method both <see cref="StartLocked"/> and <see cref="ResolveWritableDriver"/>
+    /// call</b>, rather than each deriving its own: that is the identical mistake Đợt B's review round 1
+    /// caught with a running probe (<see cref="ResolveSlotLabelFor"/>'s own doc comment records it) — two
+    /// independent statements of one rule drifted apart and a live machine was reported
+    /// <see cref="MachineDriverAvailability.NoLiveDriver"/>. Adding a second, finer rule in D-1 without
+    /// funnelling both callers through it would have re-created that hazard immediately: the simulation-
+    /// exclusion filter and the write-resolution path must agree on which slot drives a machine, or a machine
+    /// gets simulated AND written to, or neither.</para>
+    /// </summary>
+    private string ResolveSlotLabelForMachine(MachineDescriptor descriptor)
+    {
+        if (_connectorRegistry is not null
+            && _connectorRegistry.TryGetInstanceIdForMachine(descriptor.Code, out var boundInstanceId))
+        {
+            return ResolveConnectorSlotLabel(boundInstanceId);
+        }
+
+        return ResolveSlotLabelFor(descriptor.DriverKind);
+    }
+
+    /// <summary>Task D-1 — does a registered connector instance that is BOUND to a specific machine own the
+    /// pipeline slot called <paramref name="label"/>? Derived by running the one label rule
+    /// (<see cref="ResolveConnectorSlotLabel"/>) forward over every registered instance rather than trying to
+    /// invert it — the legacy carve-out means the label and the id differ for exactly two built-ins, and an
+    /// inverse mapping would be a second, silently-drifting statement of that same table.</summary>
+    private bool AnyBoundInstanceOwnsSlotLabel(string label)
+    {
+        var registry = _connectorRegistry;
+        if (registry is null) return false;
+
+        foreach (var instanceId in registry.RegisteredIds)
+        {
+            if (registry.IsBoundToAMachine(instanceId)
+                && string.Equals(ResolveConnectorSlotLabel(instanceId), label, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Review fix round 2 — <see cref="StartLocked"/> USED to dispose an orphaned connector
     /// driver (see the connector loop below) inline, synchronously, while <see cref="_gate"/> was held by
     /// every one of its callers. That is a hazard this class's own review has already named twice: a
@@ -1167,7 +1282,14 @@ public sealed class FleetHost
         // ResolveSlotLabelFor's own doc comment) as NoLiveDriver. Extracting this rule into one method is
         // what makes that class of drift impossible going forward — every comment above still describes
         // this SAME rule correctly, just now implemented once, not twice.
-        var simFleet = effectiveFleet.Where(d => ResolveSlotLabelFor(d.DriverKind) == SimulatedSlotLabel).ToList();
+        //
+        // Task D-1 — now ResolveSlotLabelForMachine (per MACHINE), not ResolveSlotLabelFor (per KIND). Same
+        // rule for every machine no connector instance claims; for a CLAIMED machine it resolves to that
+        // instance's own slot, which is what keeps a multidrop roster (N machines, N instances, one bus) out
+        // of the simulated group without any of the double-driving this filter exists to prevent. The two
+        // call sites of this rule — here and ResolveWritableDriver — go through the SAME method for the
+        // reason recorded on ResolveSlotLabelForMachine itself.
+        var simFleet = effectiveFleet.Where(d => ResolveSlotLabelForMachine(d) == SimulatedSlotLabel).ToList();
         var sims = simFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore)).ToList();
 
         // SM-1 (task-1-brief.md) — a roster with no simulated machines (an empty product roster, or one
@@ -1277,6 +1399,12 @@ public sealed class FleetHost
         // rejected/faulted connector still handed back; disposal happens in the caller, off `_gate`, via
         // `DisposeOrphanedConnectorDrivers` (see that method's own doc comment for why round 1's inline,
         // in-lock dispose was itself the hazard this round closes).
+        //
+        // Task D-1 — `RegisteredIds` now enumerates connector INSTANCES, not protocol kinds, so this loop
+        // builds one pipeline slot per instance: two Modbus connectors produce two slots, two drivers and two
+        // labels, where before they could not coexist in the registry at all. Not one line of this loop had
+        // to change for that — it was already written against "whatever ids are registered", which is why the
+        // identity change lands here as a no-op.
         var orphanedConnectorDrivers = new List<IDeviceDriver>();
         if (_connectorRegistry is not null)
         {

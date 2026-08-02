@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -195,17 +195,30 @@ public sealed record ConnectorWriteCapability(
 /// own "one row per kind" note below) or richer querying never has to migrate storage formats — the
 /// migration ladder already exists from day one.</para>
 ///
-/// <para><b>Primary key is the connector KIND, not a free-form per-machine id.</b> This is not a
-/// simplification this class invented — it is how <see cref="ConnectorRegistry"/> ALREADY works:
-/// <see cref="ConnectorRegistry.Register"/> keys purely on <c>IConnectorFactory.Kind</c> (normalized via
-/// <see cref="St4i.Connector.Abstractions.Models.DriverKinds.Normalize"/>), so this build can only ever run
-/// ONE live Modbus connector and ONE live OPC-UA connector at a time no matter how many rows a store held —
-/// a second registration for the same kind silently replaces the first (see <c>ConnectorRegistry.Register</c>'s
-/// own doc comment, "last write wins"). Persisting more than one row per kind would let an operator believe
-/// two Modbus machines are configured when only the most-recently-applied one could ever actually run — a
-/// dishonesty this whole batch exists to remove. <c>kind</c> is therefore this table's PRIMARY KEY: at most
-/// one persisted row per protocol, exactly mirroring the single real machine this task's own brief opens
-/// with ("an operator with ONE Modbus or OPC-UA machine").</para>
+/// <para><b>The primary key WAS the connector KIND — Task D-1 replaced it with a per-INSTANCE id.</b> The
+/// original rule is recorded here verbatim, because its reasoning was correct for the system it described:
+/// <i>"<see cref="ConnectorRegistry.Register"/> keys purely on <c>IConnectorFactory.Kind</c>, so this build
+/// can only ever run ONE live Modbus connector and ONE live OPC-UA connector at a time no matter how many
+/// rows a store held — a second registration for the same kind silently replaces the first. Persisting more
+/// than one row per kind would let an operator believe two Modbus machines are configured when only the
+/// most-recently-applied one could ever actually run — a dishonesty this whole batch exists to remove."</i>
+/// Đợt D (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) removed that PREMISE: the
+/// registry is now keyed by connector instance, so two Modbus connectors genuinely do run side by side and a
+/// second row for one kind is now HONEST rather than a lie the schema had to prevent. <c>instance_id</c> is
+/// therefore the PRIMARY KEY (migration v4) and <c>kind</c> is an ordinary, non-unique column.</para>
+///
+/// <para><b>What an existing row's instance id becomes, and why it is DERIVED rather than generated</b> (the
+/// <c>PRAGMA user_version</c> ladder's own required question): <c>instance_id = kind</c>. Migration v4
+/// rebuilds the table — SQLite cannot ALTER a PRIMARY KEY — and copies each surviving row's own <c>kind</c>
+/// into its new <c>instance_id</c>. Derived, deterministic, stable: an operator who upgrades still sees the
+/// connector they already had, still named <c>Modbus</c>/<c>OpcUa</c> in <c>GET /v1/connectors/configured</c>,
+/// still removable at the same <c>DELETE /v1/connectors/&#123;instanceId&#125;</c> URL they were already using,
+/// still driving the same pipeline slot label (<c>"modbus"</c>/<c>"opcua"</c> — <see cref="FleetHost"/>'s
+/// legacy-label carve-out keys on exactly this id) and therefore still raising alarms under the same
+/// <c>TargetId</c>. A GENERATED id (a GUID, a rowid) would have broken every one of those and renamed the
+/// operator's connector for nothing. It is also EXACTLY the default <see cref="ConnectorRegistry.Register"/>
+/// applies when no instance id is supplied, so the on-disk and in-memory halves of this one decision cannot
+/// drift apart.</para>
 ///
 /// <para><b>Never-throws is NOT this class's contract</b> (unlike <see cref="AssetRegistryStore.UpsertAsync"/>,
 /// which sits on FleetHost's hot registration path and must never fail a live registration over a database
@@ -251,7 +264,7 @@ public sealed record ConnectorWriteCapability(
 /// here claimed the seeder "will warn once" for such a row — WRONG: nothing ever re-tags an existing row's
 /// <see cref="Source"/>, so a row misclassified <see cref="Operator"/> at the migration boundary stays that
 /// way, and <see cref="ConnectorConfigVisibilitySeeder.SeedAsync"/> sees <c>Source == Operator</c> and warns
-/// EVERY subsequent boot, indefinitely — not once. Only a manual <c>DELETE /v1/connectors/{kind}</c> + restart
+/// EVERY subsequent boot, indefinitely — not once. Only a manual <c>DELETE /v1/connectors/{instanceId}</c> + restart
 /// corrects it (the next seeding pass inserts it fresh, correctly tagged <see cref="Seeded"/>, and the warnings
 /// stop from then on). This remains the right default — a false-positive warning that never stops until an
 /// operator acts is a far safer failure mode than silently overwriting data this store cannot prove it didn't
@@ -272,6 +285,13 @@ public enum ConnectorConfigSource
     Seeded,
 }
 
+/// <param name="InstanceId">Task D-1 — this connector INSTANCE's id: the table's primary key, and the id
+/// <see cref="ConnectorRegistry.Register"/> is keyed on. Declared LAST, with a <see langword="null"/>
+/// default meaning "derive it from <paramref name="Kind"/>", purely so the ~40 pre-existing positional
+/// construction/assertion sites (production and test alike) keep compiling and behaving identically — the
+/// alternative, putting the primary key first where it conceptually belongs, would have rewritten every one
+/// of them for a cosmetic gain. <see cref="ConnectorConfigStore"/> itself always populates it explicitly
+/// from the column, so a record that came out of the store never carries the derived default.</param>
 public sealed record ConnectorConfigRecord(
     string Kind,
     string MachineCode,
@@ -281,7 +301,15 @@ public sealed record ConnectorConfigRecord(
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc,
     ConnectorWriteCapability? WriteCapability = null,
-    ConnectorConfigSource Source = ConnectorConfigSource.Operator);
+    ConnectorConfigSource Source = ConnectorConfigSource.Operator,
+    string? InstanceId = null)
+{
+    /// <summary>Task D-1 — the instance id this row is keyed by, never <see langword="null"/>: falls back to
+    /// <see cref="Kind"/>, the exact same default <see cref="ConnectorRegistry.Register"/> and migration v4
+    /// both apply. Callers should use this, not <see cref="InstanceId"/>, unless they specifically need to
+    /// know whether one was supplied.</summary>
+    public string EffectiveInstanceId => string.IsNullOrWhiteSpace(InstanceId) ? Kind : InstanceId;
+}
 
 /// <summary>The credential-free projection every caller OUTSIDE startup wiring gets — see
 /// <see cref="ConnectorConfigStore"/>'s own doc comment for why <c>MapJson</c> (which may embed OPC-UA
@@ -299,6 +327,12 @@ public sealed record ConnectorConfigRecord(
 /// (not a credential — an origin tag) so an operator/auditor reading <c>GET /v1/connectors/configured</c> can
 /// tell an env-var/<c>connectors.json</c>-driven visibility row apart from one they explicitly persisted
 /// themselves, rather than the two being visually identical.</param>
+/// <param name="InstanceId">Task D-1 — the connector instance this row describes. Additive and declared LAST
+/// for the same "do not rewrite every pre-existing call site" reason as
+/// <see cref="ConnectorConfigRecord.InstanceId"/>; never a credential (it is an operator-chosen label), and
+/// the field a client needs to address one of two same-kind connectors at
+/// <c>DELETE /v1/connectors/&#123;instanceId&#125;</c>. Equals <see cref="Kind"/> for every row that predates
+/// D-1 and for every connector saved without naming an id of its own.</param>
 public sealed record ConnectorConfigSummary(
     string Kind,
     string MachineCode,
@@ -306,7 +340,12 @@ public sealed record ConnectorConfigSummary(
     int? Port,
     DateTimeOffset UpdatedAtUtc,
     ConnectorWriteCapabilityDto? WriteCapability = null,
-    ConnectorConfigSource Source = ConnectorConfigSource.Operator);
+    ConnectorConfigSource Source = ConnectorConfigSource.Operator,
+    string? InstanceId = null)
+{
+    /// <summary>Task D-1 — see <see cref="ConnectorConfigRecord.EffectiveInstanceId"/>.</summary>
+    public string EffectiveInstanceId => string.IsNullOrWhiteSpace(InstanceId) ? Kind : InstanceId;
+}
 
 public sealed class ConnectorConfigStore
 {
@@ -353,6 +392,59 @@ public sealed class ConnectorConfigStore
         (3, new[]
         {
             "ALTER TABLE connector_configs ADD COLUMN source TEXT NOT NULL DEFAULT 'Operator';",
+        }),
+        // Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) — connector
+        // identity moves from "the protocol kind" to "this instance". See this class's own doc comment for
+        // WHY instance_id = kind is the right value for every pre-existing row (derived, stable, keeps the
+        // operator's connector name, its DELETE URL, its pipeline slot label and its alarm TargetId).
+        //
+        // This is a TABLE REBUILD, not an ALTER: SQLite's ALTER TABLE cannot change a PRIMARY KEY, and the
+        // whole point of this task is that `kind` stops being one. The twelve-step rebuild recipe from
+        // sqlite.org is followed in the shortened form that is valid here — create, copy, drop, rename —
+        // because this database contains exactly ONE table, no foreign keys pointing at it, no triggers, no
+        // views and no indexes, so the steps that exist to preserve those have nothing to preserve. It runs
+        // inside the same transaction as every other rung of this ladder (see EnsureSchema), so a failure
+        // anywhere leaves the ORIGINAL table intact and user_version at 3 — this migration either completes
+        // or never happened; there is no state where the old table is gone and the new one is not there.
+        //
+        // 🔴 The SELECT list is spelled out COLUMN BY COLUMN rather than `SELECT *`: an installed system's
+        // real connector rows are the thing this rung must not lose, and `INSERT INTO ... SELECT *` binds by
+        // POSITION, so it would silently write the wrong column into the wrong field the moment the two
+        // tables' declaration orders differ (they do — write_capability_json/source were appended by v2/v3,
+        // while the new table groups them logically). Naming both sides is what makes the copy checkable by
+        // reading it.
+        //
+        // NOT declared UNIQUE on machine_code, deliberately, even though "one instance per machine code" is
+        // exactly the invariant D-1 enforces in ConnectorRegistry.Register: a system that upgrades from
+        // BEFORE Đợt B's cross-kind collision guard existed can legitimately hold a Modbus row and an OPC-UA
+        // row carrying the SAME machine_code (ConnectorEndpointsTests' own SeedLoopCollision test constructs
+        // exactly that shape on purpose). A UNIQUE constraint would abort this rung on such a database — i.e.
+        // fail the upgrade, on the one install where the data is most unusual. The invariant is enforced
+        // where it actually matters (at registration, on the live path) and the schema stays permissive
+        // enough to carry every row forward.
+        (4, new[]
+        {
+            """
+            CREATE TABLE connector_configs_v4 (
+              instance_id TEXT PRIMARY KEY,
+              kind TEXT NOT NULL,
+              machine_code TEXT NOT NULL,
+              host TEXT NULL,
+              port INTEGER NULL,
+              map_json TEXT NOT NULL,
+              write_capability_json TEXT NULL,
+              source TEXT NOT NULL DEFAULT 'Operator',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL);
+            """,
+            """
+            INSERT INTO connector_configs_v4
+              (instance_id, kind, machine_code, host, port, map_json, write_capability_json, source, created_at, updated_at)
+            SELECT kind, kind, machine_code, host, port, map_json, write_capability_json, source, created_at, updated_at
+            FROM connector_configs;
+            """,
+            "DROP TABLE connector_configs;",
+            "ALTER TABLE connector_configs_v4 RENAME TO connector_configs;",
         }),
     };
 
@@ -461,12 +553,14 @@ public sealed class ConnectorConfigStore
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Write — upsert by kind (last write wins, mirroring ConnectorRegistry.Register's own semantics).
+    // Write — upsert by connector INSTANCE (last write wins, mirroring ConnectorRegistry.Register's own
+    // semantics, which Task D-1 moved from per-kind to per-instance on both sides at once).
     // ─────────────────────────────────────────────────────────────────────
 
-    /// <summary>Inserts or replaces the ONE persisted row for <paramref name="kind"/> (already normalized by
-    /// the caller — see <see cref="St4i.Connector.Abstractions.Models.DriverKinds.Normalize"/>). Returns the
-    /// credential-free summary of what was just saved.</summary>
+    /// <summary>Inserts or replaces the ONE persisted row for this connector INSTANCE (see
+    /// <paramref name="instanceId"/>; <paramref name="kind"/> is already normalized by the caller — see
+    /// <see cref="St4i.Connector.Abstractions.Models.DriverKinds.Normalize"/>). Returns the credential-free
+    /// summary of what was just saved.</summary>
     /// <param name="writeCapability">Task B-3 — what the map being saved declares (already computed by the
     /// caller, which already parsed the map — see <see cref="ConnectorWriteCapability"/>'s own doc comment for
     /// why this store never derives it itself). <see langword="null"/> (the default) is stored and reported
@@ -499,15 +593,27 @@ public sealed class ConnectorConfigStore
     /// sites (<see cref="Endpoints.ConnectorEndpoints.CreateConnectorAsync"/>,
     /// <see cref="ConnectorConfigVisibilitySeeder.SeedAsync"/>) are updated alongside this signature to
     /// pass it by name.</param>
+    /// <param name="instanceId">Task D-1 — the connector INSTANCE this row is keyed by.
+    /// <see langword="null"/>/blank (the default) means "use <paramref name="kind"/>", the same derivation
+    /// migration v4 applies to every pre-D-1 row and the same default
+    /// <see cref="ConnectorRegistry.Register"/> applies to an unnamed instance — so every pre-existing call
+    /// site (production and test) keeps writing exactly the row it always did, one per kind. Declared LAST,
+    /// after <paramref name="ct"/>, which breaks this codebase's "the token goes last" convention
+    /// deliberately: every existing caller passes <paramref name="source"/>/<paramref name="ct"/> BY NAME
+    /// and <paramref name="writeCapability"/> positionally, so any earlier slot would have silently changed
+    /// what an existing positional argument binds to. A convention broken visibly in one signature is
+    /// cheaper than a mis-bound argument nobody notices.</param>
     public async Task<ConnectorConfigSummary> SaveAsync(
         string kind, string machineCode, string? host, int? port, string mapJson,
         ConnectorWriteCapability? writeCapability = null,
-        ConnectorConfigSource source = ConnectorConfigSource.Operator, CancellationToken ct = default)
+        ConnectorConfigSource source = ConnectorConfigSource.Operator, CancellationToken ct = default,
+        string? instanceId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(kind);
         ArgumentException.ThrowIfNullOrWhiteSpace(machineCode);
         ArgumentNullException.ThrowIfNull(mapJson);
 
+        var effectiveInstanceId = string.IsNullOrWhiteSpace(instanceId) ? kind : instanceId.Trim();
         var nowIso = ToIso(DateTimeOffset.UtcNow);
         var normalizedCapability = (writeCapability is not null && writeCapability.GrantsCapability) ? writeCapability : null;
         var writeCapabilityJson = normalizedCapability?.ToJson();
@@ -515,10 +621,16 @@ public sealed class ConnectorConfigStore
 
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
+        // Task D-1 — the conflict target is instance_id (the primary key), NOT kind: two rows of one kind
+        // under two different instance ids must both survive, which is the entire point of this task.
+        // `kind` moved into the DO UPDATE SET list for the same reason it is now an ordinary column — an
+        // instance keeps its id across a re-save while everything else about it, protocol included, is
+        // whatever the caller just supplied.
         cmd.CommandText = """
-            INSERT INTO connector_configs (kind, machine_code, host, port, map_json, write_capability_json, source, created_at, updated_at)
-            VALUES (@kind, @machine_code, @host, @port, @map_json, @write_capability_json, @source, @now, @now)
-            ON CONFLICT(kind) DO UPDATE SET
+            INSERT INTO connector_configs (instance_id, kind, machine_code, host, port, map_json, write_capability_json, source, created_at, updated_at)
+            VALUES (@instance_id, @kind, @machine_code, @host, @port, @map_json, @write_capability_json, @source, @now, @now)
+            ON CONFLICT(instance_id) DO UPDATE SET
+                kind = excluded.kind,
                 machine_code = excluded.machine_code,
                 host = excluded.host,
                 port = excluded.port,
@@ -527,6 +639,7 @@ public sealed class ConnectorConfigStore
                 source = excluded.source,
                 updated_at = excluded.updated_at;
             """;
+        cmd.Parameters.AddWithValue("@instance_id", effectiveInstanceId);
         cmd.Parameters.AddWithValue("@kind", kind);
         cmd.Parameters.AddWithValue("@machine_code", machineCode);
         cmd.Parameters.AddWithValue("@host", (object?)host ?? DBNull.Value);
@@ -541,25 +654,30 @@ public sealed class ConnectorConfigStore
         return new ConnectorConfigSummary(
             kind, machineCode, host, port, ParseIso(nowIso),
             normalizedCapability is null ? null : ConnectorWriteCapabilityDto.From(normalizedCapability),
-            source);
+            source, effectiveInstanceId);
     }
 
     // ─────────────────────────────────────────────────────────────────────
     // Read
     // ─────────────────────────────────────────────────────────────────────
 
-    private const string FullColumns = "kind, machine_code, host, port, map_json, created_at, updated_at, write_capability_json, source";
-    private const string SummaryColumns = "kind, machine_code, host, port, updated_at, write_capability_json, source";
+    private const string FullColumns = "instance_id, kind, machine_code, host, port, map_json, created_at, updated_at, write_capability_json, source";
+    private const string SummaryColumns = "instance_id, kind, machine_code, host, port, updated_at, write_capability_json, source";
 
     /// <summary>The FULL row (including <see cref="ConnectorConfigRecord.MapJson"/>, which may embed OPC-UA
-    /// credentials) for one kind — engine-internal use only (validating an update targets the same machine,
-    /// or re-registering a live factory). Never routed to an HTTP response.</summary>
-    public async Task<ConnectorConfigRecord?> GetAsync(string kind, CancellationToken ct = default)
+    /// credentials) for one connector INSTANCE — engine-internal use only (validating an update targets the
+    /// same machine, or re-registering a live factory). Never routed to an HTTP response.
+    ///
+    /// <para>Task D-1 — the parameter is the INSTANCE id, not the kind. For every row that predates D-1 and
+    /// every connector saved without naming an id, the two are the same string (see this class's own doc
+    /// comment on the derived default), so every pre-existing caller — <c>GetAsync("Modbus")</c> — keeps
+    /// finding exactly the row it always found.</para></summary>
+    public async Task<ConnectorConfigRecord?> GetAsync(string instanceId, CancellationToken ct = default)
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"SELECT {FullColumns} FROM connector_configs WHERE kind = @kind;";
-        cmd.Parameters.AddWithValue("@kind", kind);
+        cmd.CommandText = $"SELECT {FullColumns} FROM connector_configs WHERE instance_id = @instance_id;";
+        cmd.Parameters.AddWithValue("@instance_id", instanceId);
 
         using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false)) return null;
@@ -572,7 +690,7 @@ public sealed class ConnectorConfigStore
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"SELECT {FullColumns} FROM connector_configs ORDER BY kind;";
+        cmd.CommandText = $"SELECT {FullColumns} FROM connector_configs ORDER BY instance_id;";
 
         var results = new List<ConnectorConfigRecord>();
         using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -590,7 +708,7 @@ public sealed class ConnectorConfigStore
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"SELECT {SummaryColumns} FROM connector_configs ORDER BY kind;";
+        cmd.CommandText = $"SELECT {SummaryColumns} FROM connector_configs ORDER BY instance_id;";
 
         var results = new List<ConnectorConfigSummary>();
         using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -608,12 +726,16 @@ public sealed class ConnectorConfigStore
     // one).
     // ─────────────────────────────────────────────────────────────────────
 
-    public async Task<bool> DeleteAsync(string kind, CancellationToken ct = default)
+    /// <summary>Task D-1 — deletes ONE connector instance's row (the parameter is the instance id, which for
+    /// every pre-D-1 row equals its kind — see <see cref="GetAsync"/>'s own remark). Removing one of two
+    /// same-kind connectors must never take its sibling with it, which is exactly what keying this on the
+    /// primary key rather than on <c>kind</c> guarantees.</summary>
+    public async Task<bool> DeleteAsync(string instanceId, CancellationToken ct = default)
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "DELETE FROM connector_configs WHERE kind = @kind;";
-        cmd.Parameters.AddWithValue("@kind", kind);
+        cmd.CommandText = "DELETE FROM connector_configs WHERE instance_id = @instance_id;";
+        cmd.Parameters.AddWithValue("@instance_id", instanceId);
 
         var rows = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         return rows > 0;
@@ -632,7 +754,8 @@ public sealed class ConnectorConfigStore
         CreatedAtUtc: ParseIso(reader.GetString(reader.GetOrdinal("created_at"))),
         UpdatedAtUtc: ParseIso(reader.GetString(reader.GetOrdinal("updated_at"))),
         WriteCapability: GetWriteCapability(reader),
-        Source: GetSource(reader));
+        Source: GetSource(reader),
+        InstanceId: reader.GetString(reader.GetOrdinal("instance_id")));
 
     private static ConnectorConfigSummary ReadSummary(SqliteDataReader reader)
     {
@@ -644,7 +767,8 @@ public sealed class ConnectorConfigStore
             Port: GetNullableInt(reader, "port"),
             UpdatedAtUtc: ParseIso(reader.GetString(reader.GetOrdinal("updated_at"))),
             WriteCapability: rawCapability is null ? null : ConnectorWriteCapabilityDto.From(rawCapability),
-            Source: GetSource(reader));
+            Source: GetSource(reader),
+            InstanceId: reader.GetString(reader.GetOrdinal("instance_id")));
     }
 
     /// <summary>Task B-6 — <see cref="Enum.Parse{TEnum}(string)"/>, not a raw string comparison: this column

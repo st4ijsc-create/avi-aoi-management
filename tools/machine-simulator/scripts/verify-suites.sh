@@ -128,7 +128,58 @@ EXPECT_EDGESERVICE=28
 # "this suite never calls anything that writes there" — FALSE: 613 of the 2,999 leaked blobs carry
 # exactly the prefixes 04-onboarding.spec.ts mints, one per e2e run. A claim in a comment, believed
 # because nobody measured it, is what kept this leak open.
-EXPECT_ENGINEAPI=1136
+#
+# Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) raised this 1136 -> 1165
+# (+29), all in St4i.EngineApi.Tests. D-1 moves connector identity from "the protocol kind" to "this
+# connector instance"; every number below is a NEW test, none is a rewritten or split one, and no test was
+# deleted:
+#   + 9  ConnectorRegistryTests — instance identity at the unit level: two instances of ONE kind coexisting;
+#          the derived default (omitting the id == naming the kind, the fact the whole migration rests on);
+#          id normalization and blank-id fallback; and the four covering the MACHINE-CODE CLAIM, which is the
+#          structural gate that makes MachineDriverAvailability.AmbiguousDriver unconstructible — a second
+#          instance claiming a served machine is refused with nothing mutated, a claim differing only by
+#          casing is still the same claim, an instance may keep its OWN claim across a reconfigure, and an
+#          unbound instance blocks nobody. The ninth drives 20 threads through a Barrier at one machine code
+#          and asserts exactly one winner (the claim is a CROSS-entry invariant that a ConcurrentDictionary's
+#          per-key atomicity cannot supply).
+#   + 5  ConnectorConfigStoreTests — migration v4 (kind PRIMARY KEY -> instance_id PRIMARY KEY, a table
+#          rebuild). Three build a GENUINE version-3 database with raw SQL, in the old column ORDER, and
+#          assert every row and every field survives with instance_id = kind. This is deliberately NOT how
+#          the two pre-existing "MigratesExistingRowsToVersionN" tests work: those construct their "old"
+#          database by calling THIS build's own constructor, which runs the ladder to the current version
+#          first, so they can never exercise a migration FROM an older schema — a rung that dropped every row
+#          would have passed both. Plus two rows of one kind being independently readable/deletable, and a
+#          re-pin that ListAsync still never selects map_json (its SELECT list was edited by this task).
+#   + 7  FleetHostConnectorInstanceRoutingTests (new file) — the routing proof. The non-negotiable: two
+#          machines on two connector instances, a write for B reaching B's driver and ONLY B's (asserted as
+#          driverA.WriteCallCount == 0, never as a status code); the same for the command path, which Đợt B
+#          treats as the higher-risk member; each machine cycling off its own connector and not double-driven;
+#          a machine claimed by an instance whose id is NOT its DriverKind still excluded from simulation;
+#          Đợt B's exact ambiguity recipe now resolving instead of refusing, with zero I/O reaching the
+#          unclaimed machine; every roster member enumerated and none landing on AmbiguousDriver; and
+#          AmbiguousDriver still being returned AND still refusing a write through the one seam that can
+#          still construct it.
+#   + 5  ConnectorEndpointsTests — two same-kind connectors over the real HTTP surface (both save, both
+#          visible, both in the roster, deleting one leaves the other); a second connector naming an
+#          already-served machine refused; the no-instanceId request still configuring and deleting exactly as
+#          before; both surviving a simulated restart with the live registry's bindings re-established; and
+#          the env-var-configured Modbus AND OPC-UA connectors being bound to their maps' machines. That last
+#          one required adding an opcUaEnvMapPath parameter to this file's own factory helper (additive,
+#          default null): NO test in this repository had ever booted with ST4I_OPCUA_MAP set.
+#   + 3  ConnectorEndpointsMachineClaimTests (new file) — the claim check at the handler level, because the
+#          HTTP-level version of it could not fail: a machine a live connector serves is also a machine in the
+#          roster, so the PRE-EXISTING cross-kind roster-collision guard answers one branch earlier. Proven by
+#          mutation (the first draft passed with the claim check deleted). Calling the handler directly with a
+#          registry claim that has no roster entry separates the two invariants; the discriminating assertion
+#          is that the store is still EMPTY, since without the pre-check the row is written and only then
+#          refused.
+# RbacPolicyTests' ExpectedRoutes changes one STRING (/v1/connectors/{kind} -> /v1/connectors/{instanceId})
+# and adds no test — the route count is unchanged, and the exact-count sweep passes in both directions.
+#
+# 🔴 EVERY OTHER SUITE IS UNCHANGED. D-1 adds no code outside St4i.EngineApi, and the four other totals below
+# are deliberately untouched: a moved total on Abstractions, Conformance, EdgeCore or EdgeService would mean
+# this task reached somewhere it had no business reaching.
+EXPECT_ENGINEAPI=1165
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
