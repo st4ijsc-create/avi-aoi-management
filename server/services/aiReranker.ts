@@ -343,6 +343,12 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     return null;
   }
 
+  // ⚠ M-2 (review vòng 1): giấy phép của CHÍNH lượt gọi này, khai báo NGOÀI `try` để nhánh
+  // `catch` ở cuối hàm trả được chỗ. Bản trước commit qua biến module `_rankVramTicket`, nên khi
+  // hai lượt nạp chạy song song (không có khoá in-flight — hành vi CÓ SẴN), lượt ĐẦU commit
+  // nhầm lease của lượt SAU.
+  let localTicket: import("./vram/vramWiring").VramTicket | null = null;
+
   try {
     // doc 11 fix — the reranker is a tiny cross-encoder (~0.6B). By DEFAULT we load
     // it on CPU so it does NOT compete for VRAM with the big chat/RCA models
@@ -373,16 +379,15 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     // Telemetry hỏng ⇒ giấy phép rỗng; lượt nạp reranker chạy y nguyên như trước.
     try {
       const { beginVramAllocation } = await import("./vram/vramWiring");
-      const t = await beginVramAllocation({
+      localTicket = await beginVramAllocation({
         owner: `reranker:${modelPath}`,
         kind: "gguf-model",
         priority: "background",
         filePath: modelPath,
       });
-      // `getRankingContext()` không có khoá in-flight (hành vi CÓ SẴN): hai lượt rerank đầu
-      // tiên chạy song song đều thấy `_rankCtx` rỗng. Trả giấy phép cũ trước khi ghi đè.
+      // Trả giấy phép cũ trước khi ghi đè, không để nó treo trong sổ.
       _rankVramTicket?.release();
-      _rankVramTicket = t;
+      _rankVramTicket = localTicket;
     } catch {
       /* telemetry KHÔNG được làm hỏng đường nạp reranker */
     }
@@ -396,15 +401,18 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     // Số THẬT sau khi CẢ trọng số LẪN ranking context đã cấp phát. Chạy CPU (mặc định) thì
     // delta đúng bằng 0 — và 0 được ghi làm số liệu thật, nên sổ KHÔNG cộng nhầm cả trăm MiB
     // theo kích thước file cho một model không hề ở trên card.
-    await _rankVramTicket?.commitMeasured();
+    await localTicket?.commitMeasured();
     console.log(
       `[aiReranker] mode=gguf model=${path.basename(modelPath, ".gguf")} device=${useGpu ? "gpu" : "cpu"} (ranking context ready)`,
     );
     return _rankCtx;
   } catch (err) {
     // Pha 1 Task 5 — nạp/tạo ranking context hỏng ⇒ TRẢ chỗ ngay, không để giấy phép treo.
+    // Trả CẢ hai tham chiếu: `localTicket` là giấy phép của lượt này, `_rankVramTicket` có thể
+    // đã bị một lượt song song ghi đè (M-2). `release()` bất biến khi gọi nhiều lần.
     try {
-      _rankVramTicket?.release();
+      localTicket?.release();
+      if (_rankVramTicket && _rankVramTicket !== localTicket) _rankVramTicket.release();
     } catch {
       /* telemetry KHÔNG được làm hỏng đường degrade sang backend llm */
     }

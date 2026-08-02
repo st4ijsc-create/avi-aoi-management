@@ -426,6 +426,35 @@ async function searchByMetadataFallback(
 
 const embeddingSessionCache = new Map<string, ort.InferenceSession>();
 
+/**
+ * Pha 1 điều phối VRAM (Task 5 review vòng 1, I-2) — HỘ TIÊU THỤ THỨ BẢY.
+ *
+ * `getEmbeddingSession()` bên dưới tạo `ort.InferenceSession` với EP **`cuda`** khi
+ * `ENABLE_CUDA=true`, và cache trong `embeddingSessionCache` RIÊNG (không dùng chung
+ * `LruSessionCache` của aiInferenceEngine) ⇒ vô hình với mọi phép cộng VRAM đã làm. Nó được
+ * gọi từ ≥9 module đang SỐNG: phát hiện bất thường · tìm ảnh tương tự · học chủ động ·
+ * featureStore · embeddingHead.
+ *
+ * Hôm nay 0 MiB CHỈ VÌ `ENABLE_CUDA` không có trong `.env` — đúng lớp mù đã sinh ra hộ thứ sáu
+ * (reranker, 0 MiB chỉ vì `RAG_RERANKER_GPU=false`). Đổi một cờ là có ngay một hộ tiêu thụ mà
+ * không công cụ nào thấy.
+ *
+ * ⚠ `embeddingSessionCache` KHÔNG có giới hạn kích thước và KHÔNG có LRU — chỉ
+ * `evictEmbeddingSessionCache()` mới gỡ. Giấy phép theo đúng vòng đời đó.
+ */
+const embeddingSessionVramTickets = new Map<string, import("./vram/vramWiring").VramTicket>();
+
+function releaseEmbeddingSessionVramTicket(key: string): void {
+  try {
+    const t = embeddingSessionVramTickets.get(key);
+    if (!t) return;
+    embeddingSessionVramTickets.delete(key);
+    t.release();
+  } catch {
+    /* telemetry KHÔNG được làm hỏng vòng đời cache */
+  }
+}
+
 async function getEmbeddingSession(model: AiModel): Promise<ort.InferenceSession> {
   const cacheKey = `emb:${model.id}:${model.currentVersion}`;
   const cached = embeddingSessionCache.get(cacheKey);
@@ -465,10 +494,39 @@ async function getEmbeddingSession(model: AiModel): Promise<ort.InferenceSession
   if (process.env.ENABLE_CUDA === "true") providers.push("cuda");
   providers.push("cpu");
 
+  // Pha 1 Task 5 (I-2) — CHỈ KHAI BÁO. Mức `production`: embedding ảnh phục vụ phát hiện bất
+  // thường trên đường kiểm tra AOI (spec §5.2). Telemetry hỏng ⇒ giấy phép rỗng, lượt tạo
+  // session chạy y nguyên như trước.
+  let vramTicket: import("./vram/vramWiring").VramTicket = {
+    commitMeasured: async () => {},
+    release: () => {},
+  };
+  try {
+    const { beginVramAllocation } = await import("./vram/vramWiring");
+    vramTicket = await beginVramAllocation({
+      owner: `onnx-img:${model.code}`,
+      kind: "onnx-session",
+      priority: "production",
+      filePath: modelPath,
+    });
+  } catch {
+    /* telemetry KHÔNG được làm hỏng đường tạo session */
+  }
+
   const session = await ort.InferenceSession.create(modelPath, {
     executionProviders: providers,
     graphOptimizationLevel: "all",
+    // ⚠ `.catch()` để dòng `create(...)` đứng nguyên văn — xem ghi chú cùng loại ở
+    // aiInferenceEngine.getSession(). Chỉ trả chỗ rồi ném lại NGUYÊN lỗi cũ.
+  }).catch((err: unknown) => {
+    vramTicket.release();
+    throw err;
   });
+
+  await vramTicket.commitMeasured();
+  // Không có khoá in-flight ⇒ trả giấy phép cũ trước khi ghi đè (cùng khuôn ba hộ ONNX kia).
+  releaseEmbeddingSessionVramTicket(cacheKey);
+  embeddingSessionVramTickets.set(cacheKey, vramTicket);
 
   embeddingSessionCache.set(cacheKey, session);
   return session;
@@ -478,6 +536,9 @@ export function evictEmbeddingSessionCache(modelId: number) {
   for (const [key] of embeddingSessionCache) {
     if (key.startsWith(`emb:${modelId}:`)) {
       embeddingSessionCache.delete(key);
+      // Pha 1 Task 5 (I-2) — session rời cache thì sổ cũng phải nhả, nếu không giấy phép treo
+      // vĩnh viễn và reconciler báo lệch ÂM giả.
+      releaseEmbeddingSessionVramTicket(key);
     }
   }
 }

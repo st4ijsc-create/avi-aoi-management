@@ -1,11 +1,12 @@
 import type { VramLease, VramLeaseKind, VramPriority } from "./types";
 
 /**
- * Pha 1 Task 5 — DÂY NỐI dùng chung cho SÁU hộ tiêu thụ VRAM trong tiến trình.
+ * Pha 1 Task 5 — DÂY NỐI dùng chung cho BẢY hộ tiêu thụ VRAM trong tiến trình.
+ * (Sáu theo brief + hộ thứ BẢY `aiImageEmbedding` do review vòng 1 I-2 phát hiện.)
  *
- * VÌ SAO MỘT MODULE RIÊNG (brief chỉ liệt kê 4 file sản xuất): sáu điểm cấp phát nằm ở bốn
+ * VÌ SAO MỘT MODULE RIÊNG (brief chỉ liệt kê 4 file sản xuất): bảy điểm cấp phát nằm ở năm
  * file, trong đó `aiGgufEngine.ts` dài 2.712 dòng và phục vụ MỌI lượt suy luận. Dán inline
- * ~35 dòng telemetry vào mỗi điểm là ~210 dòng lặp lại trong đường cấp phát nóng nhất của hệ —
+ * ~35 dòng telemetry vào mỗi điểm là ~245 dòng lặp lại trong đường cấp phát nóng nhất của hệ —
  * và Task 5 phải CHỨNG MINH bằng diff rằng nó không đổi hành vi. Gom vào đây giữ diff ở mỗi
  * điểm còn 3-4 dòng (đọc được trong một màn hình), và quan trọng hơn: kỷ luật "telemetry KHÔNG
  * BAO GIỜ được ném" chỉ phải đúng ở MỘT chỗ thay vì sáu.
@@ -100,14 +101,19 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
     if (!lease) return NOOP_TICKET;
 
     // Đo NGAY TRƯỚC lượt cấp phát. Đặt sau `reserve()` để phép đo sát lượt cấp phát nhất.
-    // Chi phí: đầu dò dùng `llamaInstance.getVramState()` (native, ~0 ms) khi đã nối
-    // `setLlamaInstanceHandle()`; chỉ khi CHƯA nối mới lùi về `nvidia-smi` (đo trên máy này:
-    // ~80 ms/lượt, KHÔNG phải 3 s như trường hợp xấu ghi ở vramProbe.ts). Mỗi hộ tiêu thụ chỉ
-    // trả chi phí này ở lượt cấp phát THẬT (session/model đều được cache), không phải mỗi request.
+    //
+    // ⚠ `readDeviceVramUncached()` chứ KHÔNG phải `__clearProbeCache()` + `readDeviceVram()`
+    // (I-3, review vòng 1): bản trước xoá đệm DÙNG CHUNG với reconciler nền — đường cấp phát
+    // tự tiện vô hiệu hoá lớp bảo vệ của người dùng khác. Bản uncached cho số tươi mà không
+    // đụng vào trạng thái dùng chung.
+    //
+    // Chi phí: `llamaInstance.getVramState()` (native, ~0 ms) khi đã nối `setLlamaInstanceHandle()`;
+    // chỉ khi CHƯA nối mới lùi về `nvidia-smi` — đo 5 lượt trên máy này: 72/80/74/75/78 ms.
+    // Mỗi hộ tiêu thụ chỉ trả chi phí này ở lượt cấp phát THẬT (session/model đều được cache),
+    // không phải mỗi request.
     let beforeUsed: number | null = null;
     try {
-      probe.__clearProbeCache();
-      beforeUsed = (await probe.readDeviceVram())?.usedBytes ?? null;
+      beforeUsed = (await probe.readDeviceVramUncached())?.usedBytes ?? null;
     } catch {
       /* không đo được thiết bị ⇒ bỏ qua phần commit, giấy phép vẫn giữ ước lượng */
     }
@@ -117,8 +123,7 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
       async commitMeasured() {
         try {
           if (released || beforeUsed === null) return;
-          probe.__clearProbeCache();
-          const after = await probe.readDeviceVram();
+          const after = await probe.readDeviceVramUncached();
           if (!after) return;
 
           const actual = after.usedBytes - beforeUsed;
