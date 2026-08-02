@@ -340,7 +340,38 @@ EXPECT_CONFORMANCE=22
 # 9 further mutations this round (8 + a re-run), all KILLED, every verdict gated on all five verbs. ONE
 # survived first — the devices.Count < 2 guard — and was a real vacuous test rather than dead code; see the
 # +1 above.
-EXPECT_EDGECORE=860
+#
+# 🔴 backlog-test-deadlines (edgecore-host-crash-report.md) raises this 860 -> 861 (+1), counted from the
+# runner (`dotnet test --list-tests`: 853 -> 854). ONE file, ONE new test, none rewritten and none deleted:
+#
+#     + 1  HotFolderDriverTests (4 -> 5)
+#          DisposeAsync_WhileTheReadLoopIsIdle_EndsTheEnumeration_RatherThanStrandingItForever
+#
+# 🔴 IT IS THE REGRESSION TEST FOR THIS SCRIPT'S OWN RECURRING "ABORTED SUITE", and the diagnosis every
+# previous reading got wrong. The log said `Test host process crashed : [deviceidentity] ... corrupt or
+# unreadable` and printed `Passed! ... 731` — trap #2's exact costume — so four tasks recorded it as "a
+# pre-existing DeviceIdentityStore flake, no root cause". None of that was the defect:
+#   * the "crash reason" is just whatever the host last wrote to STDERR. That line comes from the
+#     corrupt-blob test's own HANDLED path, which had already PASSED. A red herring, printed by a green test.
+#   * the host did not crash. The trx's own <Times> shows start 20:47:53, last result 20:48:36, and the
+#     abort recorded at 21:03:58 — 966 s later, i.e. the exact moment THIS SCRIPT's ceiling fired
+#     `taskkill //F //IM testhost.exe`. The gate manufactured the crash it then reported. Trap 7 again, in a
+#     third costume: a healthy-looking negative produced by the checker itself.
+#   * the CPU heuristic could not have caught it either (trap 7(d), already documented above).
+# The real defect: HotFolderAoiDriver.DisposeAsync disposed the SemaphoreSlim its own ReadAsync was parked
+# on. SemaphoreSlim.Dispose() drops queued ASYNC waiters WITHOUT completing them, so the await is stranded
+# permanently and its CancellationToken can no longer reach it — measured 200/200 on this runtime. Because
+# xunit starts a DisableParallelization collection only after the whole parallel phase drains, that one
+# stranded test kept the Site (70) and OpcUa (52) collections from ever starting: 731 of the 860 this line
+# then expected, forever.
+# Reproduced 2 times in 8 runs under two-worker load, 0 in 24 runs after the fix.
+#
+# EXPECT_EDGECORE is the ONLY total that moves. The fix also touches src/St4i.Connector.Conformance
+# (bounding the unbounded `await runTask` that let one stranded driver hang a whole assembly) and
+# src/St4i.EdgeCore/Drivers/OpcUa/OpcUaDriver.cs (the identical `_sessionLock.Dispose()`, a second instance
+# of the same defect class) — both ADD assertions/delete a line and add NO test, so a moved total on
+# Abstractions, Conformance, EdgeService or EngineApi would mean this task reached further than it meant to.
+EXPECT_EDGECORE=861
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:

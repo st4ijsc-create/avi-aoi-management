@@ -203,22 +203,78 @@ public sealed class HotFolderAoiDriver : IDeviceDriver
         }
     }
 
+    /// <summary>Nudges a reader parked in <see cref="WaitForWakeOrPollTickAsync"/>. Called from the
+    /// watcher's event handlers (to shorten pickup latency) and from <see cref="DisposeAsync"/> (to end the
+    /// loop at once). The <c>CurrentCount == 0</c> test only keeps the count from growing without bound
+    /// under a burst of file-system events; a lost race there costs a single extra permit, which the very
+    /// next loop pass consumes harmlessly.
+    ///
+    /// <para>The <see cref="ObjectDisposedException"/> catch is a belt-and-braces guard, NOT a live path:
+    /// <see cref="DisposeAsync"/> deliberately never disposes <c>_wake</c> (see its own doc comment for the
+    /// measured reason), so nothing in this class can put the semaphore into a disposed state. It stays so
+    /// that re-introducing a <c>Dispose</c> call cannot turn a file-system event into a thrown exception on
+    /// a watcher callback thread.</para></summary>
     private void SignalWake()
     {
         if (_wake.CurrentCount == 0)
         {
             try { _wake.Release(); }
-            catch (ObjectDisposedException) { /* disposed concurrently with an in-flight FS event */ }
+            catch (ObjectDisposedException) { /* see this method's own doc comment — not a live path */ }
         }
     }
 
+    /// <summary>
+    /// 🔴 <b><see cref="_wake"/> is deliberately NOT disposed, and that single omission is the whole fix for
+    /// a defect that wedged an entire test assembly for 900 s at a time.</b>
+    ///
+    /// <para><b>The mechanism, measured rather than reasoned about.</b>
+    /// <see cref="SemaphoreSlim.Dispose()"/> clears the semaphore's queue of pending ASYNC waiters
+    /// (<c>m_asyncHead</c>/<c>m_asyncTail</c>) <b>without completing them</b>. When the waiting side's own
+    /// token then fires, <c>WaitUntilCountOrTimeoutAsync</c> asks <c>RemoveAsyncWaiter</c> whether its node
+    /// is still in the list; it is not (dispose emptied the list), so instead of throwing
+    /// <see cref="OperationCanceledException"/> it falls through to <c>return await asyncWaiter</c> — an
+    /// awaited task that nothing will ever complete. A standalone probe on this exact runtime measured
+    /// <b>200/200</b> permanently-stranded awaits for "park a waiter, dispose the semaphore, then let the
+    /// waiter's own token fire" — this is deterministic, not a rare race.</para>
+    ///
+    /// <para><b>What that cost here.</b> <see cref="ReadAsync"/> parks in
+    /// <see cref="WaitForWakeOrPollTickAsync"/> for all but a few microseconds of every
+    /// <see cref="PollInterval"/>, so a <see cref="DisposeAsync"/> landing on an idle driver stranded the
+    /// enumeration <b>permanently</b>: no exception, no cancellation, no completion — an
+    /// <c>await foreach</c> that can never end and that no <see cref="CancellationToken"/> can reach,
+    /// because the cancellation path is precisely the path that gets swallowed. In the suite that showed up
+    /// as <c>HotFolderAoiDriverConformanceTests.DisposeAsync_IsIdempotent_AfterCancellation</c> never
+    /// returning, which held the assembly's parallel phase open forever and so kept the two
+    /// <c>DisableParallelization</c> collections (Site, OpcUa — 122 tests) from ever starting. See
+    /// <c>.superpowers/sdd/backlog-test-deadlines/edgecore-host-crash-report.md</c>.
+    /// <b>In production the same disposal happens on every connector stop/reconfigure</b>
+    /// (<c>FleetHost</c> cancels, then disposes on a bounded budget), so each one leaked a permanently
+    /// parked read loop.</para>
+    ///
+    /// <para><b>Why not disposing is correct, not a shortcut.</b> Two siblings in this same assembly already
+    /// reached the same conclusion for the same reason and say so in their own code:
+    /// <see cref="St4i.EdgeCore.Site.SiteBridgeManager"/> ("deliberately NOT calling <c>_gate.Dispose()</c>")
+    /// and <see cref="St4i.EdgeCore.Drivers.Modbus.ModbusBus"/> ("the arbitration semaphore itself is NOT
+    /// disposed"). A <see cref="SemaphoreSlim"/> owns exactly one disposable thing — the
+    /// <see cref="SemaphoreSlim.AvailableWaitHandle"/> it allocates LAZILY on first access. This class never
+    /// touches that property (only <see cref="SemaphoreSlim.WaitAsync(CancellationToken)"/> and
+    /// <see cref="SemaphoreSlim.Release()"/>), so there is nothing for <c>Dispose</c> to free and it has no
+    /// finalizer to suppress. Skipping it releases no resource later and strands no caller now.</para>
+    ///
+    /// <para><b>The <see cref="SignalWake"/> below is the fast path, not the guarantee.</b> It releases the
+    /// semaphore so a parked reader wakes immediately, re-tests <c>while (!_disposed)</c> and leaves at once
+    /// rather than waiting out up to one <see cref="PollInterval"/>. Even if that release were removed, the
+    /// reader's own <c>linked.CancelAfter(PollInterval)</c> now genuinely ends the wait within 120 ms —
+    /// which it could NOT do while the semaphore was being disposed underneath it. That is the difference
+    /// between a bounded teardown and an unbounded one.</para>
+    /// </summary>
     public ValueTask DisposeAsync()
     {
         if (_disposed) return ValueTask.CompletedTask;
         _disposed = true;
         Health = DriverHealthState.Down;
         _watcher?.Dispose();
-        _wake.Dispose();
+        SignalWake();
         return ValueTask.CompletedTask;
     }
 }

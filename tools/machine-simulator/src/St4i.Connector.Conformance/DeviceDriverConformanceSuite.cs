@@ -673,7 +673,41 @@ public abstract class DeviceDriverConformanceSuite
         await AssertDisposeIsFastAndDoesNotThrowAsync(driver).ConfigureAwait(false);
         await AssertDisposeIsFastAndDoesNotThrowAsync(driver).ConfigureAwait(false);
 
-        await SwallowAsync(runTask).ConfigureAwait(false);
+        // 🔴 backlog-test-deadlines — this used to be a BARE `await SwallowAsync(runTask)` with no bound at
+        // all, and that one line is what turned a single stranded driver into a 900-second, five-suite,
+        // whole-gate outage that four consecutive tasks misdiagnosed.
+        //
+        // What actually happened: HotFolderAoiDriver.DisposeAsync disposed the SemaphoreSlim its own
+        // ReadAsync was parked on, which strands that await permanently (see that method's doc comment for
+        // the measurement). `runTask` therefore never completed, and an unbounded `await` on a task that can
+        // never complete is not a slow test — it is a test that CANNOT FAIL, only hang. Because xunit runs
+        // every DisableParallelization collection only after the whole parallel phase drains, one hung
+        // parallel test kept 122 other tests from ever starting; the run then sat until an external kill,
+        // and the kill is what made the log say "Test host process crashed". Every reader since has been
+        // chasing a crash that never happened.
+        //
+        // The bound below does NOT make the check tolerant — CancellationBudget is the same budget the two
+        // sibling checks already assert against, and a driver that misses it now FAILS BY NAME instead of
+        // wedging the assembly. `runTask` is only awaited once it is known to have finished, because
+        // awaiting the stranded case is precisely the defect. When it has not finished it is left alone
+        // (parked, not spinning) and reported, which is the honest outcome: nothing in-process can end an
+        // enumeration whose own token has already been swallowed.
+        var enumerationEnded =
+            await Task.WhenAny(runTask, Task.Delay(CancellationBudget)).ConfigureAwait(false) == runTask;
+
+        if (enumerationEnded)
+        {
+            await SwallowAsync(runTask).ConfigureAwait(false);
+        }
+
+        Assert.True(
+            enumerationEnded,
+            $"the enumeration was still running {CancellationBudget} after its token was cancelled AND the " +
+            "driver was disposed twice. DisposeAsync must end an in-flight ReadAsync, not strand it: a read " +
+            "loop that outlives both its token and its driver can never be reclaimed, and FleetHost's own " +
+            "teardown moves on after a bounded budget, so every connector stop/reconfigure would leak one. " +
+            "The usual cause is disposing a synchronisation primitive the read loop is parked on — " +
+            "SemaphoreSlim.Dispose() drops queued async waiters WITHOUT completing them.");
     }
 
     /// <summary>Enforces: "<c>DisposeAsync</c> is idempotent and safe to call ... after a completed
