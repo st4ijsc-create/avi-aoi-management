@@ -64,21 +64,45 @@ vi.mock("./aiModelRouter", () => ({
 const EMBED_DIM = 1024;
 
 /**
- * CỔNG CHẶN: khi mở khoá (`gate !== null`) mọi lượt `session.prompt()` treo tới khi test gọi
- * `openGate()`. Đây là thứ giữ slot semaphore bị chiếm để lượt thứ ba bị TỪ CHỐI — đúng kịch bản
- * sản xuất (lượt sinh 30B mất hàng chục giây).
+ * CỔNG CHẶN THEO TỪNG LƯỢT GỌI. Khi `gateOn`, mỗi lượt `session.prompt(p)` / `getEmbeddingFor(t)`
+ * treo tại cổng RIÊNG của nó (khoá theo chính chuỗi prompt/text) tới khi test mở cổng đó. Đây là
+ * thứ giữ slot semaphore bị chiếm để lượt thứ ba bị TỪ CHỐI — đúng kịch bản sản xuất (lượt sinh
+ * 30B mất hàng chục giây).
+ *
+ * ⚠ Cổng phải RIÊNG cho từng lượt, không phải một cổng chung: test chống double-release cần cho
+ * MỘT lượt kết thúc trong khi lượt kia CÒN ĐANG BAY. Với một cổng chung, cả hai kết thúc cùng
+ * lúc và hai lần trừ thừa bị `releaseModel()` (kẹp `refCount > 0`) NUỐT MẤT ⇒ lưới an toàn xanh
+ * cả khi mã hỏng. Xem test cuối file.
  */
-let gate: Promise<void> | null = null;
-let openGate: (() => void) | null = null;
-function closeGate() {
-  gate = new Promise<void>(res => {
-    openGate = res;
-  });
+let gateOn = false;
+const gates = new Map<string, { p: Promise<void>; open: () => void }>();
+function gateFor(key: string) {
+  let g = gates.get(key);
+  if (!g) {
+    let open!: () => void;
+    const p = new Promise<void>(res => {
+      open = res;
+    });
+    g = { p, open };
+    gates.set(key, g);
+  }
+  return g;
 }
+function closeGate() {
+  gateOn = true;
+  gates.clear();
+}
+/** Mở cổng của MỘT lượt gọi (khoá = chuỗi prompt/text của lượt đó). */
+function openGateFor(key: string) {
+  gateFor(key).open();
+}
+/** Mở MỌI cổng đang có và tắt chế độ chặn. */
 function releaseGate() {
-  openGate?.();
-  gate = null;
-  openGate = null;
+  for (const g of gates.values()) g.open();
+  gateOn = false;
+}
+async function passGate(key: string) {
+  if (gateOn) await gateFor(key).p;
 }
 
 function makeFakeModel() {
@@ -90,8 +114,8 @@ function makeFakeModel() {
       dispose: vi.fn(),
     })),
     createEmbeddingContext: vi.fn(async () => ({
-      getEmbeddingFor: async () => {
-        if (gate) await gate;
+      getEmbeddingFor: async (t: string) => {
+        await passGate(t);
         return { vector: new Array(EMBED_DIM).fill(0.01) };
       },
       dispose: vi.fn(),
@@ -107,8 +131,8 @@ const fakeLlama = {
 };
 class FakeChatSession {
   constructor(_opts: any) {}
-  async prompt(_p: string, _opts: any) {
-    if (gate) await gate;
+  async prompt(p: string, _opts: any) {
+    await passGate(p);
     return "in-process answer";
   }
 }
@@ -135,8 +159,8 @@ const ORIGINAL_ENV = { ...process.env };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  gate = null;
-  openGate = null;
+  gateOn = false;
+  gates.clear();
   process.env = { ...ORIGINAL_ENV };
   process.env.GGUF_DEFAULT_MODEL = DEFAULT_FILE;
   process.env.GGUF_EMBED_DIM = String(EMBED_DIM);
@@ -291,7 +315,16 @@ describe("review toàn nhánh I-1 — withGgufSlot TỪ CHỐI slot không đư�
 
   it("ĐƯỜNG THÀNH CÔNG không được nhả HAI LẦN (chống double-release)", async () => {
     // Bản vá phải nhả ĐÚNG MỘT LẦN. Nếu nhả hai lần, lượt đang bay khác bị trừ mất tham chiếu ⇒
-    // evictLRU() có thể đuổi một model ĐANG DÙNG — hỏng theo hướng ngược lại, khó thấy hơn.
+    // evictLRU() được phép đuổi một model ĐANG DÙNG — hỏng theo hướng ngược lại, khó thấy hơn.
+    //
+    // ⚠⚠ BÀI HỌC RE-REVIEW — VÌ SAO KHẲNG ĐỊNH PHẢI Ở GIỮA CHỪNG:
+    // Bản đầu của test này mở cổng cho CẢ HAI lượt cùng lúc rồi mới đo `refCount === 0` ở cuối.
+    // Reviewer gỡ cờ `done` của makeOnceReleaser (⇒ releaser KHÔNG còn idempotent) và test vẫn
+    // XANH 5/5 — vì `releaseModel()` KẸP `refCount > 0`, nên khi A và B kết thúc cùng lúc, hai
+    // lần trừ thừa bị NUỐT MẤT (2→1→0, rồi 0→no-op→no-op). Lưới an toàn xanh ở CẢ HAI chiều =
+    // lưới an toàn GIẢ.
+    // ⇒ Phải bắt đúng khoảnh khắc MỘT lượt đã xong mà lượt kia CÒN ĐANG BAY: khi đó tham chiếu
+    // của B chưa về 0 nên cái kẹp không cứu được, và lần trừ thừa của A LỘ RA.
     process.env.GGUF_MAX_CONCURRENCY = "4";
     process.env.GGUF_QUEUE_MAX = "8";
     const eng = await freshEngine();
@@ -308,14 +341,52 @@ describe("review toàn nhánh I-1 — withGgufSlot TỪ CHỐI slot không đư�
     // Hai lượt đang bay, cả hai đều CHẠY (không lượt nào bị từ chối) ⇒ đúng 2 tham chiếu.
     expect(refCountOf(eng)).toBe(2);
 
-    releaseGate();
+    // ★ CHỈ mở cổng cho A. B VẪN ĐANG BAY và VẪN phải giữ tham chiếu của nó.
+    openGateFor("A");
     await A;
+
+    const midFlight = refCountOf(eng);
+    console.log(`[probe] refCount sau khi A XONG, B CÒN ĐANG BAY  = ${midFlight}`);
+    // Đây là khẳng định LÀM NÊN lưới an toàn này. Nhả hai lần ⇒ 0 (B mất tham chiếu ⇒ evictLRU()
+    // được phép đuổi model B đang dùng). Nhả đúng một lần ⇒ 1.
+    expect(midFlight).toBe(1);
+
+    openGateFor("B");
     await B;
     expect(refCountOf(eng)).toBe(0);
 
-    // Lượt kế tiếp vẫn chạy bình thường — model không bị nhả quá tay thành âm/không đuổi nhầm.
+    // Lượt kế tiếp vẫn chạy bình thường — model không bị nhả quá tay/không đuổi nhầm.
+    releaseGate(); // tắt chế độ chặn để lượt dưới không treo ở cổng riêng của nó
     const after = await eng.generateText({ prompt: "sau" });
     expect(typeof after.text).toBe("string");
+    expect(refCountOf(eng)).toBe(0);
+  });
+
+  it("generateEmbedding: nhả đúng MỘT lần khi một lượt xong mà lượt kia còn bay", async () => {
+    // Cùng khuôn với test trên, nhưng cho đường `try/finally` bọc ngoài (2 hàm embedding) thay
+    // vì đường `.finally(release)` (4 hàm không-generator) — hai cách vá khác nhau, phải canh cả hai.
+    process.env.GGUF_MAX_CONCURRENCY = "4";
+    process.env.GGUF_QUEUE_MAX = "8";
+    const eng = await freshEngine();
+
+    await eng.generateEmbedding("khởi động", DEFAULT_BASE);
+    expect(refCountOf(eng)).toBe(0);
+
+    closeGate();
+    const A = eng.generateEmbedding("A", DEFAULT_BASE);
+    await tick();
+    const B = eng.generateEmbedding("B", DEFAULT_BASE);
+    await tick();
+    expect(refCountOf(eng)).toBe(2);
+
+    openGateFor("A");
+    await A;
+    const midFlight = refCountOf(eng);
+    console.log(`[probe] embed: refCount sau khi A XONG, B còn bay = ${midFlight}`);
+    expect(midFlight).toBe(1);
+
+    openGateFor("B");
+    await B;
     expect(refCountOf(eng)).toBe(0);
   });
 });

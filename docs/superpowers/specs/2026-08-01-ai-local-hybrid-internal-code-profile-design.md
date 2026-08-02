@@ -80,7 +80,11 @@ Nguồn: `docs/superpowers/reports/2026-08-01-dot1-vram-reclaim.md` §2, §3, §
 
 > ### ★★ HỘ TIÊU THỤ GPU THỨ NĂM, ĐANG CHẠY, TRƯỚC §7 KHÔNG CÓ MỘT DÒNG NÀO Ở ĐÂY
 >
-> **Đường sống thật, đang bật:** `.env` `ENABLE_GPU=true` ⇒ `server/services/aiInferenceEngine.ts:87` đẩy `"dml"` ⇒ `:129` `ort.InferenceSession.create({ executionProviders })`. Nhân bản ở `server/services/ai/ocrService.ts:309-314`. Cờ bật: `IMAGE_EMBEDDING_DEFAULT=onnx` · `AOI_EMBEDDING_ENABLED=true` · `ANOMALY_DETECTION_ENABLED=true`; `models/dinov2.onnx` **có trên đĩa** (88 MB).
+> **Đường sống thật, đang bật:** `.env` `ENABLE_GPU=true` ⇒ `server/services/aiInferenceEngine.ts:87` đẩy `"dml"` ⇒ `:129` `ort.InferenceSession.create({ executionProviders })`. Gọi từ `aiQualityGate` · `aiBatchEngine` · `aiActiveLearning` · `aiABTesting` (qua `runInference` → `getSession`) và `ocrService.getOnnxSession()` (`ai/ocrService.ts:296-314`).
+>
+> **Bằng chứng trạng thái sống (không phải cờ):** `models/dinov2.onnx` trên đĩa (88 MB, file `.onnx` duy nhất) + `ai_models` có `id=3 dinov2-small`, `status=ACTIVE`, trỏ đúng file đó.
+>
+> > ⚠⚠ **ĐÍNH CHÍNH (re-review):** bản trước trích `IMAGE_EMBEDDING_DEFAULT=onnx` + `AOI_EMBEDDING_ENABLED=true` làm bằng chứng. **Hai cờ đó trỏ vào đường CPU** — `aiImageEmbedding.ts:463-465` dựng provider từ **`ENABLE_CUDA`**, biến **không có trong `.env`** ⇒ `["cpu"]`, **0 VRAM**. Kết luận C-1 **không đổi** (hộ tiêu thụ có thật, đo được qua `getSession()`), **chuỗi bằng chứng thì đổi**.
 >
 > | Bước | Reviewer đo | Đo lại độc lập |
 > |---|---|---|
@@ -89,7 +93,11 @@ Nguồn: `docs/superpowers/reports/2026-08-01-dot1-vram-reclaim.md` §2, §3, §
 >
 > Hai lượt lệch **8 MiB** (trong biên ±~25). Bảng dùng **329**.
 >
-> ⚠⚠ **`AI_SESSION_CACHE_MAX` mặc định = 5** (`aiInferenceEngine.ts:25`) ⇒ **329 là MỘT session**, trần lý thuyết **~1.645 MiB**. `models/README.md:52` tự cảnh báo *"cache_size × per-model footprint"*; `:62` khuyên *"bật ONNX GPU EP cạnh bốn model GGUF nóng thì hạ `GGUF_MAX_LOADED_MODELS` xuống 3"* — **chưa bảng roster nào của ba đợt nhắc lời khuyên này**. ⇒ Dòng **329** là **SÀN**, không phải trần.
+> ⚠ **Trần cache — ĐÃ ĐO, và KHÔNG phải "×5".** `AI_SESSION_CACHE_MAX` mặc định 5 (`aiInferenceEngine.ts:25`), nhưng cấp phát **không tuyến tính**: 5 session trong một tiến trình tốn **+984 MiB** (reviewer: **+991**), không phải `329 × 5 ≈ 1.645` — session #2–#5 chỉ ~91 MiB tạo / ~69 MiB chạy vì phần cố định EP/DML **dùng chung**. ⇒ Cache đầy **KHÔNG lật ô tiêu đề**: `31.716 − 329 + 991` = **32.378 = 99,3% ✅**, biên **229 MiB**.
+>
+> ★ **Và trần đó KHÔNG VỚI TỚI ĐƯỢC hôm nay**: cache khoá theo `${model.id}:${model.currentVersion}` trên `ai_models`; DB thật có **2 dòng, chỉ MỘT có file ONNX** (`id=3 dinov2-small` ACTIVE) và đó là `.onnx` **duy nhất trên đĩa** ⇒ **cache tối đa 1 mục**. ⇒ Dòng **329** là **toàn bộ** hộ tiêu thụ này ở trạng thái hiện tại, không phải sàn.
+>
+> ⚠ Vẫn còn `ocrService.ts:295 recSessionCache` — `Map` **không giới hạn**, **không chịu** `AI_SESSION_CACHE_MAX` (hiện trơ: không có `.onnx` OCR trên đĩa).
 >
 > **Ô "đỉnh khi có ảnh + đang sinh" mất bao nhiêu:** `96,3% → 97,3%`, biên **1.220 → 891 MiB** ⇒ **ăn 27% biên an toàn đã công bố**. Không lật ✅→❌, nhưng phải thấy.
 >
@@ -119,7 +127,7 @@ Nguồn: `docs/superpowers/reports/2026-08-01-dot1-vram-reclaim.md` §2, §3, §
 >
 > Bảng trên **giữ cách A làm số chính** (thận trọng, so sánh được với Đợt 0/1).
 > ⚠ **Trước khi thêm ONNX, hai ô này là 31.387 (96,3%, biên 1.220) và 30.593 (93,8%, biên 2.014)** — một dòng ONNX **ăn 27% biên an toàn** ở cách A.
-> ⚠ Và **891 MiB là biên TRƯỚC KHI tính**: cache ONNX có thể tới 5 session (~1.645 MiB ⇒ vượt trần) · cron 03:00 **+1.251 MiB đo được** ⇒ **101,1% ❌**.
+> ⚠ Và **891 MiB là biên TRƯỚC KHI tính hai khoản khác**: cache ONNX đầy 5 session **đo được +991** ⇒ **32.378 = 99,3% ✅** (biên 229) — **vẫn vừa**, và hôm nay cache **tối đa 1 mục** nên chưa tới · cron 03:00 **+1.251 MiB đo được** ⇒ **101,1% ❌** — **khoản lật dấu duy nhất**.
 >
 > ⚠ **Đợt 1 so sánh phải quy về CÙNG ĐỊNH NGHĨA.** Hai số Đợt 1 hay bị trích cạnh nhau không cùng công thức: **102,7%** = `+940+117` (thiếu +1.776) · **~104,9%** = `+1.776` (thiếu +940+117). Đủ ba số hạng ⇒ **35.252 = 108,1% ❌**. Cải thiện thật: **108,1% → 97,3%** (hoặc **→ 94,8%**), đã gồm ONNX.
 
@@ -344,7 +352,7 @@ Tài liệu này **chỉ đào sâu hồ sơ nội bộ**. Ba hồ sơ khách h�
 |---|---|---|---|---|---|
 | `code-heavy` | = `internal-code` | 24.562 (75,3%) | 24.598 (75,4%) | **22.838 (70,0%)** · vision thức **94,0%** · **dưới tải 97,3% / 94,8% ✅** | nhà máy nặng tự động hoá, ít ảnh · nạp 30B **~19,1-19,3 s** (sidecar ngủ) |
 | `vision-heavy` | vision thường trú + Coder-30B + embedding | 32.383 (99,3%) | 32.419 (99,4%) ⚠ dưới tải **108,1% ❌** (đủ ba số hạng) | **30.659 (94,0%)** · **dưới tải 31.716 (97,3%) / 30.922 (94,8%) ✅** | nhà máy nặng AOI — ★★ **Đợt 2 đổi kết luận: từ "vượt trần dưới tải" thành "vừa trần"** · ⚠ **nhưng nạp 30B mất 43,3 s (chậm 2,3×)** — xem đính chính 2b |
-| `balanced` | Coder-30B + Qwen3-4B general + embedding, vision theo yêu cầu | 28.026 (86%) | 28.062 (86,1%) ⚠ SÀN | **28.043 (86,0%)** — hết SÀN, đã đo · **vision thức 35.864 = 110,0% ❌** | ⚠ **mất lý do tồn tại chính** — xem dưới |
+| `balanced` | Coder-30B + Qwen3-4B general + embedding, vision theo yêu cầu | 28.026 (86%) | 28.062 (86,1%) ⚠ SÀN | **28.372 (87,0%)** — hết SÀN, đã đo (gồm ONNX +329) · **vision thức 36.193 = 111,0% ❌** | ⚠ **mất lý do tồn tại chính** — xem dưới |
 
 ⚠ **Cả ba hồ sơ đều dựa vào Coder-30B ⇒ cả ba đều có ĐIỀU KIỆN TIÊN QUYẾT CHƯA GỠ** (app không nạp được 30B trên đường boot bình thường — xem §3). Bảng này nói *"nếu nạp được thì vừa"*, **không** nói *"nạp được"*.
 
@@ -358,7 +366,7 @@ Tài liệu này **chỉ đào sâu hồ sơ nội bộ**. Ba hồ sơ khách h�
 > **⚠ Đợt 1 — ba đính chính cho bảng này:**
 > 1. **Cột "Đợt 0" đánh giá thấp cả ba hồ sơ ~3.400 MiB** (`bench.mjs` không qua mã sản xuất). Trước Đợt 1, số thật là: `code-heavy` **27.971 (85,8%)** · `vision-heavy` **35.792 (109,8% ❌ đã vượt trần)** · `balanced` **31.435 (96,4%)**.
 > 2. **`vision-heavy` chưa bao giờ thật sự vừa.** Đợt 0 công bố 99,3%; số thật lúc đó là **109,8%**. Sau Đợt 1 nó về 99,4% **lúc nghỉ**, nhưng **dưới tải là 102,7% — vẫn vượt trần** (cộng đỉnh nhất thời khi nhúng đồng thời, review cổng cuối, thì ~104,9% — xem cuối §5). Đây là hồ sơ được lợi nhiều nhất từ Đợt 1 mà **vẫn chưa dùng được**.
-> 3. **`balanced` là hồ sơ được lợi thật sự**: từ 96,4% (không còn chỗ cho buffer sinh) xuống **86,1%** — chịu được hai model cùng sinh (**91,8%**). ⚠ Nhưng số 4B vẫn là số `bench.mjs`; nếu 4B cũng đắt thêm ~1.350 MiB thì `balanced` ≈ **90,2%** (ước lượng, **chưa đo**). Và **`balanced` KHÔNG được để vision thức**: 35.883 = **110,0% ❌**.
+> 3. **`balanced` là hồ sơ được lợi thật sự**: từ 96,4% (không còn chỗ cho buffer sinh) xuống **86,1%** — chịu được hai model cùng sinh (**91,8%**). ⚠ Nhưng số 4B vẫn là số `bench.mjs`; nếu 4B cũng đắt thêm ~1.350 MiB thì `balanced` ≈ **90,2%** (ước lượng, **chưa đo**). Và **`balanced` KHÔNG được để vision thức**: Đợt 1 ghi 35.883 = 110,0% ❌; **Đợt 2 + ONNX = 36.193 = 111,0% ❌**.
 
 ---
 

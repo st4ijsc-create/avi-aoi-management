@@ -17,13 +17,24 @@
 
 > ## ⚠⚠ CẬP NHẬT SAU ĐỢT 2 (2026-08-02) — SỐ **PHẢI DÙNG** LÀ CỘT "ĐỢT 2"
 >
-> Nguồn: `docs/superpowers/reports/2026-08-02-dot2-report.md` §1-§6. **Bốn điều đổi nội dung tài liệu này:**
+> Nguồn: `docs/superpowers/reports/2026-08-02-dot2-report.md` §1-§7. **Năm điều đổi nội dung tài liệu này:**
 >
 > 1. **Model nhúng còn 2.232 MiB** (4.321 → 2.232, **−2.089**) — bỏ context thường mà model chỉ-nhúng không bao giờ dùng, cộng khoá in-flight (§3).
 > 2. **4B và FIM lần đầu được đo bằng đường khớp sản xuất — và CẢ HAI đắt hơn Đợt 0 công bố**: 4B **3.464 → 5.534** (+2.070) · FIM **1.774 → 2.188** (+414). Hai số "SÀN" của Đợt 0/1 nay **hết là sàn**.
 > 3. **Case 1/3 lần đầu tiên VỪA TRẦN kể cả dưới tải khi vision thức** — **97,3%** (thận trọng) hoặc **94,8%** (theo số đo mới), so với **108,1% ❌** của Đợt 1 quy về cùng định nghĩa. ✅ **Ô này nay là PHÉP ĐO, không còn là phép cộng**: reviewer đo trực tiếp 30B + sidecar **cùng thức** (2026-08-02, N=1) ⇒ **không có chi phí tương tác ẩn**. ⚠ Hai khoản nhỏ (`+117` sidecar đang suy luận, `2.232` model nhúng) **vẫn là phép cộng** — xem §2 và §7.
-> 4. ★★ **HỘ TIÊU THỤ GPU THỨ NĂM ĐÃ VÀO BẢNG (review toàn nhánh): ONNX/DirectML `+329 MiB`.** Nó **đang chạy** (`ENABLE_GPU=true`) và trước đó **được gọi tên ở §4.1 nhưng chưa bao giờ vào một phép cộng nào** — đúng khuôn đã làm mất sidecar 7,8 GB ở Đợt 0. Ô tiêu đề đi từ `31.387 (96,3%, biên 1.220)` sang **`31.716 (97,3%, biên 891)`** ⇒ **ăn 27% biên an toàn đã công bố**. Kèm theo: **cron 03:00 đo được +1.251 MiB** (tiến trình riêng) ⇒ nếu trùng lúc vision thức + đang sinh thì **101,1% ❌**. Chi tiết: §2, §4.1.
-> 4. **Case 2 VẪN KHÔNG KHẢ THI, và Đợt 2 đẩy nó XA HƠN** (đủ bộ thật 56.751 → **57.146**), vì 4B+FIM đắt thêm nhiều hơn phần embedding tiết kiệm được.
+> 4. ★★ **HỘ TIÊU THỤ GPU THỨ NĂM ĐÃ VÀO BẢNG (review toàn nhánh): ONNX/DirectML `+329 MiB`.** Nó **đang chạy** (`ENABLE_GPU=true`, `getSession()` → EP `dml`) và trước đó **được gọi tên ở §4.1 nhưng chưa bao giờ vào một phép cộng nào** — đúng khuôn đã làm mất sidecar 7,8 GB ở Đợt 0. Ô tiêu đề đi từ `31.387 (96,3%, biên 1.220)` sang **`31.716 (97,3%, biên 891)`** ⇒ **ăn 27% biên an toàn đã công bố**. Kèm theo: **cron 03:00 đo được +1.251 MiB** (tiến trình riêng) ⇒ nếu trùng lúc vision thức + đang sinh thì **101,1% ❌**. Chi tiết: §2, §4.1.
+> 5. **Case 2 VẪN KHÔNG KHẢ THI, và Đợt 2 đẩy nó XA HƠN** (đủ bộ thật 56.751 → **57.475**), vì 4B+FIM đắt thêm nhiều hơn phần embedding tiết kiệm được.
+>
+> ### 🔴 CẤU HÌNH `.env` ĐANG CHẠY HÔM NAY ĐÃ VƯỢT TRẦN — ngay cả LÚC NGHỈ
+>
+> `.env` hiện có `GGUF_FIM_MODEL=Qwen2.5-Coder-1.5B` (**FIM 1,5B riêng**, không gộp vào Coder-30B). Với dòng ONNX cộng vào, biến thể đó **vượt trần ngay khi sidecar thị giác thức, KHÔNG cần sinh gì cả**:
+>
+> | Biến thể "giữ FIM 1,5B riêng" | Trước §7 | **Nay** |
+> |---|---|---|
+> | lúc nghỉ, vision **thức** | 32.518 = 99,7% ✅ | **32.847 = 100,7% ❌** |
+> | + một model đang sinh | 33.575 = 103,0% ❌ | **33.904 = 104,0% ❌** |
+>
+> ⇒ **Đây là ô DUY NHẤT bị dòng ONNX lật dấu**, và nó lật ở **đúng cấu hình đang chạy**. Điều kiện để Case 1/3 vừa trần là **gộp FIM vào Coder-30B** (§2.2/§2.3 spec hồ sơ) — nay không còn là tối ưu nhỏ mà là **điều kiện bắt buộc**.
 >
 > 🚧 **ĐIỀU KIỆN TIÊN QUYẾT CHƯA GỠ — đọc trước khi chốt bất kỳ roster nào:** **trên đường boot app bình thường, hệ HIỆN KHÔNG NẠP ĐƯỢC MODEL 30B** (`cudaMalloc failed` cho khối **16.698,37 MiB**, tái hiện **3/3 lượt tại HEAD** + reviewer tái hiện độc lập 3 lượt, hỏng cả `npm run dev` lẫn `npm run dev:worker`). Đợt 2 hạ dấu chân boot xuống 3,27 GB mà lỗi **y hệt** ⇒ **không phải bài toán chật chỗ**. **Cơ chế CHƯA BIẾT, chưa vá.** ⇒ Mọi bảng VRAM dưới đây nói *"nếu nạp được thì vừa"*, **không** nói *"nạp được"*.
 >
@@ -100,7 +111,15 @@ Hai nguyên nhân đã truy được:
 >
 > **Đây là ĐÚNG KHUÔN đã làm hỏng bảng Đợt 0** (sidecar 7,8 GB nằm trong văn xuôi, vắng mặt khỏi mọi phép cộng). §4.1 của chính tài liệu này liệt kê ONNX là **hộ tiêu thụ GPU #2**, cột *"Biết tổng VRAM?"* ghi ❌ — rồi **không dòng nào trong §2/§3 cộng nó vào**.
 >
-> **Đường sống thật, đang bật:** `.env` `ENABLE_GPU=true` ⇒ `server/services/aiInferenceEngine.ts:87` đẩy `"dml"` vào `executionProviders` ⇒ `:129` `ort.InferenceSession.create({ executionProviders })`. Logic nhân bản ở `server/services/ai/ocrService.ts:309-314`. Cờ đang bật: `IMAGE_EMBEDDING_DEFAULT=onnx` · `AOI_EMBEDDING_ENABLED=true` · `ANOMALY_DETECTION_ENABLED=true`; `models/dinov2.onnx` **có trên đĩa** (88 MB).
+> **Đường sống thật, đang bật:** `.env` `ENABLE_GPU=true` ⇒ `server/services/aiInferenceEngine.ts:87` đẩy `"dml"` vào `executionProviders` ⇒ `:129` `ort.InferenceSession.create({ executionProviders })`.
+>
+> **Ai gọi vào đường đó:** `aiQualityGate` · `aiBatchEngine` · `aiActiveLearning` · `aiABTesting` (đều qua `runInference` → `getSession`) và `ocrService.getOnnxSession()` (`ai/ocrService.ts:296-314`, logic provider nhân bản).
+>
+> **Bằng chứng hộ tiêu thụ này CÓ THẬT (trạng thái sống, không phải cờ):** `models/dinov2.onnx` **có trên đĩa** (88 MB, file `.onnx` **duy nhất**), và `ai_models` có **`id=3 dinov2-small`, `status=ACTIVE`, trỏ đúng file đó** ⇒ `getSession()` nạp được. Đo được **+339 MiB**.
+>
+> > ⚠⚠ **ĐÍNH CHÍNH (re-review) — HAI CỜ TỪNG ĐƯỢC TRÍCH LÀM BẰNG CHỨNG LẠI TRỎ VÀO ĐƯỜNG CPU.**
+> > Bản trước viện `IMAGE_EMBEDDING_DEFAULT=onnx` + `AOI_EMBEDDING_ENABLED=true` để chứng minh *"ONNX đang chạy trên GPU"*. **Sai mắt xích**: hai cờ đó dẫn tới `server/services/aiImageEmbedding.ts:463-465`, và hàm đó dựng provider từ **`ENABLE_CUDA`** — biến **KHÔNG có trong `.env`** ⇒ `providers = ["cpu"]` ⇒ **0 VRAM**. Nó cũng dùng cache riêng (`:427 embeddingSessionCache`), không phải `sessionCache` của `aiInferenceEngine`.
+> > ⇒ **Kết luận C-1 KHÔNG đổi** — hộ tiêu thụ có thật, đo được, qua đường `getSession()` ở trên. **Nhưng chuỗi bằng chứng thì đổi**: chứng cứ đúng là *đường gọi + trạng thái `ai_models`/đĩa*, **không phải** hai cờ đó. Trong một đợt dành để diệt *"văn bản khẳng định thứ chưa kiểm"*, một mắt xích sai là không chấp nhận được — kể cả khi kết luận vẫn đúng.
 >
 > | Bước | Reviewer đo | Đo lại độc lập (Đợt 2 §7) |
 > |---|---|---|
@@ -111,7 +130,28 @@ Hai nguyên nhân đã truy được:
 >
 > ⇒ Hai lượt đo độc lập lệch **8 MiB**, nằm trong biên nhiễu **±~25 MiB**. **Bảng dùng 329** (số reviewer, để mọi ô so sánh được); đo lại của tôi (**337**) cao hơn 8 MiB — chọn số nào cũng không đổi ô nào.
 >
-> ⚠⚠ **TRẦN CAO HƠN NHIỀU — `AI_SESSION_CACHE_MAX` mặc định là 5, không phải 1.** (`aiInferenceEngine.ts:25`). Con số **329** ở trên là **MỘT session**. `models/README.md:52` tự cảnh báo *"cache_size × per-model footprint"*, và `:62` *"bật ONNX GPU EP cạnh bốn model GGUF nóng thì hạ `GGUF_MAX_LOADED_MODELS` xuống 3"* — **lời khuyên này chưa bảng roster nào của ba đợt nhắc tới**. Trần lý thuyết nếu cache đầy 5 session: **~1.645-1.685 MiB**, tức **gấp 5 lần** dòng đang cộng. ⇒ Mọi ô dưới đây cộng **329** là **SÀN cho hộ tiêu thụ này**, không phải trần.
+> ### ⚠ TRẦN CACHE — **ĐÃ ĐO**, và nó KHÔNG phải "×5" như bản trước suy ra
+>
+> `AI_SESSION_CACHE_MAX` mặc định **5** (`aiInferenceEngine.ts:25`) ⇒ bản trước **ngoại suy tuyến tính** `329 × 5 ≈ 1.645 MiB` và kết luận cache đầy sẽ **vượt trần**. **Đo thật thì sai, và sai về phía BI QUAN:**
+>
+> | | tạo session (cộng dồn) | sau `run` N=8 (cộng dồn) |
+> |---|---|---|
+> | 1 session | +111 | **+339** |
+> | **5 session (cache ĐẦY)** | **+478** *(không phải 5×111)* | **+984 MiB** |
+>
+> *(đo lại độc lập; reviewer đo +483 / **+991** — lệch 7 MiB, trong biên ±~25. Bảng dùng **991**, số cao hơn.)*
+>
+> ⇒ Session #2–#5 chỉ tốn **~91 MiB tạo / ~69 MiB chạy** mỗi cái, vì phần cố định của EP/DML **dùng chung trong cùng tiến trình**. **Ngoại suy tuyến tính sai ~65-72%.**
+>
+> **Hệ quả 1 — cache đầy KHÔNG lật ô tiêu đề:** `31.716 − 329 + 991` = **32.378 = 99,3% ✅**, biên còn **229 MiB**. (Bản trước ghi `101,3% ❌` ⇒ **bi quan 654 MiB**.)
+>
+> **Hệ quả 2 — ★ trần đó KHÔNG VỚI TỚI ĐƯỢC hôm nay.** `getSession()` khoá cache theo `${model.id}:${model.currentVersion}` trên bảng `ai_models`. Truy vấn DB thật: **đúng 2 dòng, chỉ MỘT dòng có file ONNX** (`id=3 dinov2-small`, `status=ACTIVE`, `filePath=models/dinov2.onnx`; `id=4` có `filePath=null`) — và `dinov2.onnx` là file `.onnx` **duy nhất trên đĩa**. ⇒ **Cache tối đa 1 mục.** Dòng **329** không chỉ đủ, nó là **toàn bộ** hộ tiêu thụ này ở trạng thái hiện tại.
+>
+> ⚠ **Bản trước mắc ĐÚNG lớp lỗi mà §7 đang phê phán**: trích một **tham số mặc định** rồi suy ra hậu quả, **không kiểm trạng thái sống**. Chỉ khác chiều: lần này lệch **bi quan**.
+>
+> ⚠ **Vẫn còn một cache KHÔNG chịu `AI_SESSION_CACHE_MAX`**: `server/services/ai/ocrService.ts:295` giữ `recSessionCache` là `Map` **không giới hạn**. Hiện **trơ** (không có `.onnx` OCR trên đĩa), nhưng mọi phát biểu về "trần" chỉ gọi tên `AI_SESSION_CACHE_MAX` là **chưa đủ**. Tương tự, `aiImageEmbedding.ts:427` có `embeddingSessionCache` riêng — nhưng nó dựng session **CPU-only** (xem chuỗi bằng chứng ở trên).
+>
+> `models/README.md:62` khuyên *"bật ONNX GPU EP cạnh bốn model GGUF nóng thì hạ `GGUF_MAX_LOADED_MODELS` xuống 3"* — **chưa bảng roster nào của ba đợt nhắc**, và với cache 1 mục thì **chưa cần tới**.
 
 > ### ★ KHOẢN ĐỊNH KỲ 03:00 — tiến trình RIÊNG nạp model nhúng LẦN THỨ HAI
 >
@@ -214,7 +254,7 @@ Thành phần cột "SAU ĐỢT 2 + ONNX" (mọi ô cộng thêm **329** cho ONN
 >
 > Ô "Case 1/3 dưới tải, thận trọng" là con số chủ dự án sẽ dựa vào để chốt roster. Thêm một dòng ONNX **không lật ✅ thành ❌** — nhưng nó **ăn mất 27% biên an toàn đã công bố** (`(1.220 − 891) / 1.220 = 27%`). Theo cách tính B (số đo `+146`): `93,8% → 94,8%`, biên `2.014 → 1.685 MiB`.
 >
-> ⚠ Và **891 MiB là biên trước khi tính**: `AI_SESSION_CACHE_MAX=5` (dòng ONNX có thể ×5 = ~1.645 MiB ⇒ **vượt trần**) · tiến trình cron 03:00 (**+1.251 MiB đo được** ⇒ **101,1% ❌**). ⇒ Kết luận đúng phạm vi: **"vừa trần với MỘT session ONNX và KHÔNG có cron chạy cùng lúc"** — không phải "vừa trần".
+> ⚠ Và **891 MiB là biên trước khi tính hai khoản khác**: cache ONNX đầy 5 session (**đo được +991**, không phải ~1.645 như bản trước ngoại suy) ⇒ **32.378 = 99,3% ✅**, biên còn **229 MiB** — **vẫn vừa**, và hôm nay **cache tối đa 1 mục** nên chưa tới. · tiến trình cron 03:00 (**+1.251 MiB đo được**) ⇒ **101,1% ❌** — **đây mới là khoản lật dấu**. ⇒ Kết luận đúng phạm vi: **"vừa trần khi KHÔNG có cron 03:00 chạy cùng lúc"**.
 
 **Vì sao số hạng "+1.776 đỉnh nhất thời khi nhúng đồng thời" BIẾN MẤT khỏi cột Đợt 2:** đó là race `getEmbeddingContext()` mà review cổng cuối Đợt 1 tìm ra (N lượt nhúng đồng thời tạo N context, N−1 bản mồ côi). **Đợt 2 Task 3 đã vá** bằng khoá in-flight, **đo được**: 4 lượt đồng thời **2.430 → 652 MiB**. Số hạng này không còn tồn tại — và đó là phần lớn lý do ô Case 1/3 dưới tải đổi kết luận.
 
@@ -236,10 +276,10 @@ Hai con số Đợt 1 hay bị trích cạnh nhau **không cùng công thức**:
 
 #### ★ Case 4 `balanced` — con số gần như không đổi, nhưng LÝ DO đổi hẳn
 
-Đợt 1 ghi 28.062 (86,1%) **SÀN** và ước *"nếu 4B đắt thêm ~1.350 MiB thì ≈ 29.412 (90,2%) — CHƯA ĐO"*. Đợt 2 đo thật: **28.043 (86,0%)**. **Không phải "dự đoán thận trọng, thực tế tốt hơn"** — hai sai số lớn triệt tiêu nhau: embedding **−2.089**, 4B **+2.070**, ròng **−19 MiB**. ⇒ Con số 86,1% của Đợt 1 **đúng vì may**; và dự đoán "+1.350 cho 4B" **hụt 720 MiB** so với thực tế (+2.070). Khác biệt thật: Đợt 1 là **sàn không có trần trên**, Đợt 2 là **số đo có lặp lại**.
+Đợt 1 ghi 28.062 (86,1%) **SÀN** và ước *"nếu 4B đắt thêm ~1.350 MiB thì ≈ 29.412 (90,2%) — CHƯA ĐO"*. Đợt 2 đo thật: **28.043 (86,0%)** → **cộng ONNX: 28.372 (87,0%)**. **Không phải "dự đoán thận trọng, thực tế tốt hơn"** — hai sai số lớn triệt tiêu nhau: embedding **−2.089**, 4B **+2.070**, ròng **−19 MiB**. ⇒ Con số 86,1% của Đợt 1 **đúng vì may**; và dự đoán "+1.350 cho 4B" **hụt 720 MiB** so với thực tế (+2.070). Khác biệt thật: Đợt 1 là **sàn không có trần trên**, Đợt 2 là **số đo có lặp lại**.
 
 **Bốn điều phải nói thẳng (cập nhật Đợt 2):**
-1. **Case 2 không phải "gần khả thi", và Đợt 2 đẩy nó XA HƠN.** Riêng nền + hai model 30B = `1.200 + 19.077 + 19.094 = 39.371 MiB`, **vượt trần 6.764 MiB ngay cả khi embedding bằng KHÔNG**. Cộng cả hai đợt giành lại (3.373 + 2.089 = 5.462 MiB) **vẫn không đủ**, và không còn gì để giành ở hai model 30B. Ô "đủ bộ thật" **tệ đi**: 56.751 → 57.146.
+1. **Case 2 không phải "gần khả thi", và Đợt 2 đẩy nó XA HƠN.** Riêng nền + hai model 30B = `1.200 + 19.077 + 19.094 = 39.371 MiB`, **vượt trần 6.764 MiB ngay cả khi embedding bằng KHÔNG**. Cộng cả hai đợt giành lại (3.373 + 2.089 = 5.462 MiB) **vẫn không đủ**, và không còn gì để giành ở hai model 30B. Ô "đủ bộ thật" **tệ đi**: 56.751 → **57.475** (gồm ONNX).
 2. ~~**97,3% của Case 1/3 dưới tải là một PHÉP CỘNG, không phải phép đo.**~~ ✅ **ĐÃ ĐÓNG (2026-08-02, reviewer, N=1)**: 30B + sidecar **cùng thức** đã được đo trực tiếp — 30B cạnh sidecar tốn **19.071** vs **19.077** khi đứng một mình ⇒ **phép cộng đứng vững**. ⚠ **Phát biểu đúng phạm vi từ nay:** *"hai khoản lớn nhất (sidecar 7.825 + 30B 19.071 = **88%** tổng) là PHÉP ĐO, N=1; `+117` (sidecar đang suy luận) và `2.232` (model nhúng) VẪN là phép cộng."* **Không viết "đã đo hết".**
 3. **Đợt 0 đã công bố một cấu hình VƯỢT TRẦN là "sát trần"**: Case 1 + vision công bố 32.383 (99,3%), số thật lúc đó là **35.792 (109,8%)**. Giữ vết này.
 4. 🚧 **Không ô nào trong bảng này có nghĩa "chạy được".** App hiện **không nạp được model 30B** trên đường boot bình thường (xem callout đầu tài liệu). Bảng nói *"nếu nạp được thì vừa"*.
@@ -276,9 +316,9 @@ Ngay cả biến thể lành nhất (deep = code = Coder-30B, **giữ FIM 1,5B r
 | | |
 |---|---|
 | **Cấu hình** | Coder-30B + General-30B + 4B + FIM + embedding + vision |
-| **Lúc nghỉ** | ~~≥ 1.200 + 17.698 + 17.750 + 5.664 = 42.312 MiB (130%)~~ *(Đợt 0)* → ~~Đợt 1: 43.692 MiB (134,0%); đủ bộ thật 56.751 (174,0%)~~ → **Đợt 2: 1.200 + 19.077 + 19.094 + 2.232 = 41.603 MiB (127,6%)**; đủ bộ thật (thêm 4B **5.534** + FIM **2.188** + vision 7.821) = **57.146 (175,3%)** |
+| **Lúc nghỉ** | ~~≥ 1.200 + 17.698 + 17.750 + 5.664 = 42.312 MiB (130%)~~ *(Đợt 0)* → ~~Đợt 1: 43.692 MiB (134,0%); đủ bộ thật 56.751 (174,0%)~~ → **Đợt 2 + ONNX: 1.200 + 19.077 + 19.094 + 2.232 + 329 = 41.932 MiB (128,6%)**; đủ bộ thật (thêm 4B **5.534** + FIM **2.188** + vision 7.821) = **57.475 (176,3%)** |
 | **Kết luận** | ❌ **KHÔNG KHẢ THI — Đợt 1 và Đợt 2 đều KHÔNG ĐỔI kết luận này.** Đã xác nhận **đo trực tiếp**: nạp model 30B thứ hai bị từ chối nguyên văn `Not enough VRAM to fit the model with the specified settings` |
-| **⚠ Đợt 2 làm ô "đủ bộ" TỆ ĐI** | 56.751 → **57.146 (+395 MiB)**. Đợt 2 giành lại 2.089 MiB ở model nhúng nhưng **phát hiện thêm 2.484 MiB** ở 4B (+2.070) và FIM (+414) — hai số Đợt 0 công bố là **SÀN**. **Càng đo càng xa, không phải càng gần** |
+| **⚠ Đợt 2 làm ô "đủ bộ" TỆ ĐI** | 56.751 → **57.475 (+724 MiB)**. Đợt 2 giành lại 2.089 MiB ở model nhúng nhưng **phát hiện thêm 2.484 MiB** ở 4B (+2.070) và FIM (+414) — hai số Đợt 0 công bố là **SÀN**. **Càng đo càng xa, không phải càng gần** |
 | **Hợp với** | — |
 
 ⚠ **Đây là điều quan trọng nhất phải nói thẳng: trên 32,6 GB, KHÔNG cấu hình nào cho phép đủ bộ cùng lúc.** Mọi lựa chọn đều là đánh đổi.
@@ -312,9 +352,9 @@ err.message = "Failed to load model"        ⇒ ISOOM_MATCH = false
 | | |
 |---|---|
 | **Cấu hình** | Bó cấu hình **đặt tên**, chọn lúc triển khai. Không ép một roster cho mọi khách |
-| **Hồ sơ** | `code-heavy` (Case 1) · `vision-heavy` (Case 3) · `balanced` (Coder-30B + 4B general + embedding, vision theo yêu cầu): ~~1.200+17.698+3.464+5.664 = 28.026 MiB, 86%~~ *(Đợt 0)* → ~~Đợt 1: 28.062 MiB, 86,1%~~ → **Đợt 2: 1.200+19.077+5.534+2.232 = 28.043 MiB, 86,0%** |
-| **⚠ `balanced` — điều Đợt 0 không tính** | **Khi vision thức: Đợt 2 = 35.864 MiB = 110,0% ❌ VƯỢT TRẦN.** Hồ sơ `balanced` **không được** để sidecar thị giác thường trú. Cả Đợt 1 lẫn Đợt 2 **không** đổi điều này (trước Đợt 1: 120,4%) |
-| **✅ `balanced` HẾT là số SÀN — nhưng vì hai sai số triệt tiêu nhau** | Đợt 2 đo 4B bằng đường khớp sản xuất: **5.534** (không phải 3.464). Cộng lại: embedding **−2.089**, 4B **+2.070** ⇒ **ròng −19 MiB**, nên tổng gần như đứng yên (86,1% → 86,0%). ⚠ **Đừng đọc thành "dự đoán thận trọng"** — dự đoán "+1.350 cho 4B" của Đợt 1 **hụt 720 MiB**; con số 86,1% đúng **vì may** |
+| **Hồ sơ** | `code-heavy` (Case 1) · `vision-heavy` (Case 3) · `balanced` (Coder-30B + 4B general + embedding, vision theo yêu cầu): ~~1.200+17.698+3.464+5.664 = 28.026 MiB, 86%~~ *(Đợt 0)* → ~~Đợt 1: 28.062 MiB, 86,1%~~ → **Đợt 2 + ONNX: 1.200+19.077+5.534+2.232+329 = 28.372 MiB, 87,0%** |
+| **⚠ `balanced` — điều Đợt 0 không tính** | **Khi vision thức: Đợt 2 + ONNX = 36.193 MiB = 111,0% ❌ VƯỢT TRẦN.** Hồ sơ `balanced` **không được** để sidecar thị giác thường trú. Cả Đợt 1 lẫn Đợt 2 **không** đổi điều này (trước Đợt 1: 120,4%) |
+| **✅ `balanced` HẾT là số SÀN — nhưng vì hai sai số triệt tiêu nhau** | Đợt 2 đo 4B bằng đường khớp sản xuất: **5.534** (không phải 3.464). Cộng lại: embedding **−2.089**, 4B **+2.070** ⇒ **ròng −19 MiB**, nên tổng gần như đứng yên (86,1% → 86,0%; **87,0%** sau khi cộng ONNX). ⚠ **Đừng đọc thành "dự đoán thận trọng"** — dự đoán "+1.350 cho 4B" của Đợt 1 **hụt 720 MiB**; con số 86,1% đúng **vì may** |
 | **⚠ `balanced` mất lý do tồn tại chính** | Nó sinh ra để **dự phòng phòng khi Coder-30B viết tiếng Việt tệ**. Chủ dự án đã chấm A/B (2026-08-02): **Coder viết nhỉnh hơn general**. ⇒ Rủi ro đó **không xảy ra**. Và về VRAM nó **thua** `code-heavy` ở cột nguy hiểm nhất (vision thức: 111,0% ❌ so với 94,0% ✅). **Đề nghị hạ xuống "chỉ dùng khi có lý do KHÁC lý do tiếng Việt"** (ví dụ cần model general cho tác vụ ngoài code) |
 | **Điểm mạnh** | mỗi nhà máy có nhu cầu khác nhau — đây là **điểm bán hàng**, không phải chi phí · mỗi hồ sơ quay lui được độc lập |
 | **Điểm yếu** | phải **dựng cơ chế hồ sơ** (chưa có) · phải tài liệu hoá đánh đổi từng hồ sơ cho đội triển khai |
@@ -354,12 +394,12 @@ err.message = "Failed to load model"        ⇒ ISOOM_MATCH = false
 
 ## 4. Kiến trúc AI Local — vì sao mọi roster đều bấp bênh cho tới khi sửa
 
-### 4.1 SÁU hộ tiêu thụ GPU, không ai nắm tổng
+### 4.1 BẢY hộ tiêu thụ GPU, không ai nắm tổng
 
 | Hộ tiêu thụ | Cơ chế điều tiết | Biết tổng VRAM? | **Đã vào bảng ngân sách?** |
 |---|---|---|---|
 | GGUF trong tiến trình (`aiGgufEngine`) | `GGUF_MAX_CONCURRENCY=4` | ✅ **chỉ cho mình** (`readVramState()` dòng 303, dùng ở 350) | ✅ từ Đợt 0 |
-| ONNX (`aiInferenceEngine`) | `AI_GPU_CONCURRENCY=2`, **semaphore riêng** | ✅ **nay ĐÃ BIẾT** — đo được **329 MiB/session** (§2), ⚠ nhưng **chỉ cho một session**: `AI_SESSION_CACHE_MAX=5` ⇒ trần ~1.645 MiB vẫn **chưa đo** | ✅ **từ Đợt 2 §7** *(trước đó: gọi tên ở đây, vắng mặt khỏi mọi phép cộng)* |
+| ONNX (`aiInferenceEngine`) | `AI_GPU_CONCURRENCY=2`, **semaphore riêng**; cache `AI_SESSION_CACHE_MAX=5` | ✅ **nay ĐÃ BIẾT** — **329-339 MiB/session** và **991 MiB khi cache đầy 5** (§2, đo cả hai). Trạng thái sống: **cache tối đa 1 mục** (chỉ 1 model ONNX có file) | ✅ **từ Đợt 2 §7** *(trước đó: gọi tên ở đây, vắng mặt khỏi mọi phép cộng)* |
 | Vision sidecar (`llama-server`) | **không có** — tiến trình riêng | ❌ | ✅ từ Đợt 0 (sau khi bị bỏ sót) |
 | Reranker (`aiReranker`) | **bypass semaphore GGUF** | ❌ (an toàn **chỉ nhờ** `RAG_RERANKER_GPU=false`) | n/a — chạy CPU |
 | **★ Cron 03:00 `kb:sync`** (tiến trình Node riêng) | **không có** — `evictLRU()` không thấy nó, nó không thấy server | ❌ | ✅ **từ Đợt 2 §7** — đo được **1.251 MiB** |
@@ -464,7 +504,7 @@ Kiến thức của tôi về model dừng khoảng **5/2026**, nên tài liệu
 Trung thực về chỗ yếu, để chủ dự án không quyết dựa trên khoảng trống:
 
 - ~~**Chất lượng tiếng Việt của Coder-30B** — 3 cặp A/B đang chờ chấm.~~ ✅ **ĐÃ CHẤM 2026-08-02**: Coder **nhỉnh hơn** general, mức **nhẹ**; cả hai đều ổn. ⇒ Biến quyết định giữa Case 1 và `balanced` **đã đóng, nghiêng về Case 1**.
-- ~~**§4 không đo model 4B** ⇒ hồ sơ `balanced` thiếu bằng chứng cho chính model general nó sẽ dùng.~~ ✅ **Đợt 2 ĐÃ ĐO**: 4B = **5.534 MiB** (không phải 3.464 — Đợt 0 hụt **2.070**). FIM = **2.188** (hụt 414). Hồ sơ `balanced` nay có bằng chứng — và bằng chứng đó **không cứu nó** (vision thức vẫn 110,0% ❌).
+- ~~**§4 không đo model 4B** ⇒ hồ sơ `balanced` thiếu bằng chứng cho chính model general nó sẽ dùng.~~ ✅ **Đợt 2 ĐÃ ĐO**: 4B = **5.534 MiB** (không phải 3.464 — Đợt 0 hụt **2.070**). FIM = **2.188** (hụt 414). Hồ sơ `balanced` nay có bằng chứng — và bằng chứng đó **không cứu nó** (vision thức vẫn **111,0% ❌**).
 - **Lưu lượng thật của tier code/fim** — ⚠ **Đợt 2 đã vá 4.2** (`ai_gateway_metrics` 0 → 4 dòng, tên model thật), **nhưng 4 dòng đó là lưu lượng DỰNG do chính phiên nghiệm thu sinh ra**. **Vẫn chưa có lưu lượng thật.** Và `count(*)` là số lượt **suy luận GPU**, không phải số lượt người dùng (tỉ lệ đo được **3:1**).
 - ~~**Buffer embedding 4,5 GB** — biết có, **chưa truy nguyên nhân**.~~ ✅ **Đợt 1 ĐÃ TRẢ LỜI**: nguyên nhân là `contextSize:"auto"` trong `getEmbeddingContext()`; chi phí thật 7.694 MiB (không phải 5.664); sau khi đổi sang `EMBED_CTX=2048` còn **4.321 MiB**.
 - ~~**Hiệu quả của `-np 1`** — chưa đo, **cần sửa mã**.~~ ✅ **Đợt 1 ĐÃ TRẢ LỜI**: **~0 MiB** (trong nhiễu đo). Tiền đề "n_parallel=4 nhân bốn KV-cache" **sai** — build `llama-server` đang cài dùng `kv_unified=true`.
