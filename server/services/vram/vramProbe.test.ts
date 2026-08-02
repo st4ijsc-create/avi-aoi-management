@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+// Review round 1: mock `execFile` dưới đây gọi `cb(null, { stdout })` — CHỈ một tham số
+// thành công. `promisify(execFile)` (không có `[util.promisify.custom]` trên mock) resolve
+// GENERIC thẳng ra giá trị đó, nên `const { stdout } = await promisify(execFile)(...)` khớp.
+// Node THẬT không hoạt động vì lý do này — `execFile` thật có `promisify.custom` riêng, gọi
+// callback BA tham số `(err, stdout, stderr)` rồi tự đóng gói `{ stdout, stderr }`. Mock ở
+// đây khớp HÌNH DẠNG kết quả một cách tình cờ, không mô phỏng đúng cơ chế `promisify.custom`.
 describe("vramProbe", () => {
   beforeEach(() => vi.resetModules());
 

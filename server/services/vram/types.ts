@@ -8,8 +8,13 @@ export type VramLeaseKind =
   | "onnx-session"
   | "external-process";
 
-/** Ước lượng đến từ đâu — để truy được chỗ nào còn dùng hằng số cấu hình. */
-export type VramEstimateSource = "learned" | "file-size" | "config-default";
+/**
+ * Ước lượng đến từ đâu — để truy được chỗ nào còn dùng hằng số cấu hình.
+ * `"unknown"` (review round 1, Task 3): KHÔNG có learned, KHÔNG có file, KHÔNG có hằng số
+ * cấu hình nào — khác "config-default" (có hằng số, chỉ là chưa đo thật). Tách riêng để
+ * Task 7 đọc `estimateSource` không bị chỉ sai địa chỉ "chỗ nào còn dùng hằng số".
+ */
+export type VramEstimateSource = "learned" | "file-size" | "config-default" | "unknown";
 
 export interface VramReserveRequest {
   owner: string;
