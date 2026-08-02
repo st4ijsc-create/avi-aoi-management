@@ -51,18 +51,35 @@ export async function ingestKbChunks(opts?: { limit?: number }): Promise<{ inges
   const lines = fs.readFileSync(CHUNKS_FILE, "utf-8").split("\n").filter((l) => l.trim());
   const limit = opts?.limit ?? lines.length;
 
+  // dot2 Task 4 (bổ sung) — ba đường skipped++ khác nhau đổ chung vào một biến; đếm riêng để
+  // dòng tổng kết :~100 phân biệt được "N dòng JSON hỏng" / "N chunk rỗng" / "N lần nhúng lỗi"
+  // (ba nguyên nhân, ba cách xử lý khác nhau — trước đây một con số "skipped" gộp không đọc
+  // được). KHÔNG đổi kiểu trả về { ingested, skipped } — kbVectorRouter.ts gọi nguyên hình dạng
+  // này, tách số chỉ nằm trong log.
   let ingested = 0, skipped = 0;
+  let skippedParseError = 0, skippedEmptyContent = 0, skippedEmbedError = 0;
   for (let i = 0; i < Math.min(lines.length, limit); i++) {
     let chunk: RawChunk;
     try {
       chunk = JSON.parse(lines[i]);
-    } catch {
+    } catch (err) {
+      // Trước đây: catch trần, không một chữ nào — dòng hỏng biến mất hoàn toàn không dấu vết.
+      // Chưa parse được nên chưa có docId; chỉ số dòng i là định danh duy nhất còn lại.
+      console.error(`[KB] parse failed at line ${i}:`, (err as Error)?.message ?? err);
       skipped++;
+      skippedParseError++;
       continue;
     }
     const content = (chunk.text ?? "").trim();
     const docId = String(chunk.id ?? chunk.sourcePath ?? `chunk-${i}`);
-    if (!content) { skipped++; continue; }
+    if (!content) {
+      // Trước đây: skip câm lặng — nếu một bước sinh chunk thượng nguồn hỏng và đẻ ra hàng loạt
+      // chunk rỗng, người vận hành chỉ thấy con số skipped tăng mà không biết vì sao.
+      console.error(`[KB] empty content for ${docId} (line ${i}) — skipped`);
+      skipped++;
+      skippedEmptyContent++;
+      continue;
+    }
 
     try {
       const { embedding } = await generateEmbedding(content);
@@ -92,9 +109,13 @@ export async function ingestKbChunks(opts?: { limit?: number }): Promise<{ inges
     } catch (err) {
       console.error(`[KB] embed/store failed for ${docId}:`, (err as Error)?.message ?? err);
       skipped++;
+      skippedEmbedError++;
     }
   }
-  console.log(`[KB] ingest done — ${ingested} ingested, ${skipped} skipped`);
+  console.log(
+    `[KB] ingest done — ${ingested} ingested, ${skipped} skipped ` +
+      `(parseError:${skippedParseError} emptyContent:${skippedEmptyContent} embedError:${skippedEmbedError})`,
+  );
   return { ingested, skipped };
 }
 
