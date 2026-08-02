@@ -40,10 +40,22 @@
 # "the pattern didn't match". It caught that only because five-for-five is implausible —
 # "which is a judgement call, not a check."
 #
-# USAGE
-#   scripts/mutate-guard.sh fresh  <assembly.dll> <mutated-source.cs>   # before trusting a verdict
-#   scripts/mutate-guard.sh control <"KILLED"|"SURVIVED">               # record the session's control
-#   scripts/mutate-guard.sh check                                       # may I believe a SURVIVED?
+# USAGE — all five verbs. Run them in this order around a mutation round.
+#   scripts/mutate-guard.sh clean   <path...>                          # BEFORE anything, esp. after an
+#                                                                      #   interrupted run: refuses if a
+#                                                                      #   mutant or .bak is still live
+#   scripts/mutate-guard.sh control <"KILLED"|"SURVIVED">              # record the session's control
+#   scripts/mutate-guard.sh applied <source.cs> <marker>               # PER MUTATION: is it really there?
+#   scripts/mutate-guard.sh fresh   <assembly.dll> <mutated-source.cs> # did the build see it?
+#   scripts/mutate-guard.sh check                                      # may I believe a SURVIVED?
+#
+# `applied` turned out to catch a DIFFERENT and more common failure than the one it was
+# written for. In its first real round it caught NO false SURVIVED — it caught FOUR
+# mutations that never reached the code at all: regexes that silently missed or mangled
+# their target, three of which also failed to compile the way the author intended. Under
+# the old harness each would have printed SURVIVED and been believed, because — as D-3 put
+# it — "five clean green mutations look exactly like 'this code is untested'." That is the
+# failure a human is least likely to question.
 
 set -uo pipefail
 STATE="${TMPDIR:-/tmp}/st4i-mutate-control-$PPID"
