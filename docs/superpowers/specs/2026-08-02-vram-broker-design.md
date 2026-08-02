@@ -177,6 +177,22 @@ Nối vào hệ mã lỗi Sprint 5 (`client/src/lib/errorCodes.ts`) để hiện
 
 ⚠ **Không lặp lại `"allowing temporary overflow"`.** Tràn im lặng chính là thứ spec này tồn tại để diệt.
 
+### 5.4 Hoãn — không chặn (quyết định chủ dự án, 2026-08-02)
+
+Việc **`background`** bị từ chối thì **hoãn rồi thử lại**, **không** hỏng và **không** bỏ qua. Áp cho cron 03:00 `kb:sync` và mọi việc nền sau này.
+
+**Nhưng hoãn mãi chính là bỏ qua, một cách im lặng** — đúng lớp lỗi cả ba đợt vừa diệt. Nên hoãn phải **có đáy và có tiếng**:
+
+| | |
+|---|---|
+| Người bắt lỗi | **người giám sát** (`kbSyncScheduler`), không phải tiến trình con — con chưa kịp sinh ra |
+| Lùi dần | thử lại sau **15 phút**, nhân đôi, trần **60 phút** |
+| Đáy | `KB_SYNC_MAX_DEFER_HOURS`, mặc định **6 giờ** (03:00 → 09:00 — vẫn trong đêm) |
+| Quá đáy | **KHÔNG âm thầm bỏ.** Ghi sự kiện `defer_exceeded` + cảnh báo nêu **ai đang giữ chỗ** |
+| Tín hiệu sẵn có | biển báo *"KB có thể đã cũ"* (so `KB built` với `source last changed`) **tự nổi lên** khi sync trượt — **dùng lại nó, đừng phát minh tín hiệu mới** |
+
+⚠ **Không được có đường nào mà một lượt `kb:sync` biến mất mà không để lại vết.** Nếu tri thức cũ đi vì broker liên tục từ chối, người vận hành phải biết **vì sao**, không phải chỉ biết **rằng** nó cũ.
+
 ## 6. Đối chiếu và báo động — phần giá trị nhất
 
 Reconciler chạy theo nhịp (mặc định **60 s**, chỉnh được):
@@ -249,7 +265,7 @@ export const vramEvents = pgTable("vram_events", {
 
 | Pha | Nội dung | Đổi hành vi? | Cổng ra |
 |---|---|---|---|
-| **1 — Sổ cái & báo động** | broker + sổ + đầu dò + reconciler + 4 bộ nối **chỉ khai báo**; nhật ký sự kiện; **chạy Ư7 bằng chính nhật ký này** | **KHÔNG** | Sổ khớp thiết bị trong ±512 MiB suốt 24 h; **Ư7 có câu trả lời** |
+| **1 — Sổ cái & báo động** | broker + sổ + đầu dò + reconciler + 4 bộ nối **chỉ khai báo**; nhật ký sự kiện; **đo `aiReranker` bật GPU** (§16); **chạy Ư7 bằng chính nhật ký này** | **KHÔNG** | Sổ khớp thiết bị trong ±512 MiB suốt 24 h; báo cáo **phân bố lệch** + **p50/p95 chi phí đầu dò** để chốt §15.1/§15.2; **Ư7 có câu trả lời** |
 | **2 — Cưỡng chế trong tiến trình** | GGUF + ONNX phải xin phép; từ chối trung thực; ưu tiên; **xoá/hấp thụ mục §8** | **CÓ** | Không còn `"temporary overflow"`; `kb:eval` 151/151 |
 | **3 — Cưỡng chế xuyên tiến trình** | sidecar + cron xin qua người giám sát; thu hồi được; nhận nuôi mồ côi | **CÓ** | Ô 100,7% ❌ được giải **bằng cơ chế**; gỡ được biện pháp tạm gộp FIM |
 | **4 — Mặt tiếp xúc backend cho Agent** | bảng + router tRPC đọc/ra lệnh, có phân quyền | không | Agent truy vấn và ra lệnh được |
@@ -301,12 +317,12 @@ Chủ dự án đã quyết **gộp FIM vào Coder-30B** (2026-08-02) để gỡ
 
 Giá phải trả nếu gộp vĩnh viễn: tổng tới gợi ý 32 token **84-89 ms → 149-188 ms**, vượt ngưỡng ~100 ms (Miller/Nielsen) ⇒ ghost-text **hết cảm giác tức thì**, mỗi lần gõ phím, mãi mãi.
 
-## 15. Câu hỏi còn mở
+## 15. Bốn quyết định của chủ dự án (2026-08-02)
 
-1. **Ngưỡng lệch 512 MiB** là ước lượng ban đầu. Pha 1 sẽ cho phân bố thật để chốt.
-2. **Nhịp đối chiếu 60 s** — đánh đổi giữa phát hiện sớm và chi phí `nvidia-smi` ~3 s. Pha 1 đo rồi chốt.
-3. **Cron 03:00 có nên bị chặn hẳn khi 30B đang thường trú, hay chỉ hoãn?** Cần ý kiến vận hành: trễ một ngày đồng bộ tri thức so với trễ một lượt suy luận.
-4. **`aiReranker` với `RAG_RERANKER_GPU=true`** chưa từng được đo. Phải đo trong pha 1 trước khi đặt chính sách.
+1. **Ngưỡng lệch khởi điểm 512 MiB — DUYỆT.** Pha 1 thu phân bố thật rồi chốt số cuối. Nghĩa vụ pha 1: báo cáo phân bố `|lệch|` trong 24 h.
+2. **Nhịp đối chiếu khởi điểm 60 s — DUYỆT.** Pha 1 đo chi phí thật của đầu dò rồi chốt. Nghĩa vụ pha 1: báo cáo `p50/p95` thời gian một lượt dò.
+3. **Cron 03:00: CHỈ HOÃN, không chặn hẳn.** Xem §5.4.
+4. **Đo `aiReranker` với `RAG_RERANKER_GPU=true` trong pha 1 — DUYỆT.** Đây là hộ tiêu thụ thứ sáu (§16); chưa đo thì chưa đặt chính sách được.
 
 ## 16. Phát hiện phụ khi soạn spec — hộ tiêu thụ thứ SÁU
 
