@@ -782,6 +782,26 @@ async function ensureTextContext(
   const pending = textContextInFlight.get(modelId);
   if (pending) return pending;
 
+  // review round 2 M-b — modelId này được KHAI BÁO (qua env: GGUF_EMBED_MODEL/
+  // GGUF_EMBEDDING_MODEL/GGUF_RERANKER_MODEL/GGUF_VISION_MMPROJ — identity, KHÔNG đoán theo
+  // tên file) là embedder/reranker/projector THẬT, không có đầu sinh văn bản. Tạo context
+  // thường rồi để LlamaChatSession sinh chữ trên nó sẽ cho ra chuỗi lặp vô nghĩa — đúng
+  // "dishonest degradation" mà getGenerationModel() bước 0 được viết ra để chặn, nhưng hàng
+  // rào đó chỉ áp cho đường KHÔNG ghim modelId. Ở đây modelId ĐÃ GHIM (do bị cache lại từ một
+  // lượt generateEmbedding() trước đó — Critical-1), nên chặn NGAY TẠI ĐÂY: từ chối trung thực
+  // thay vì âm thầm sinh rác. Khác với model TEXT bị alias nhầm (Critical-1's ca chính) — model
+  // đó KHÔNG khai báo non-generative nên vẫn đi tiếp xuống nhánh tạo context lười bên dưới.
+  if (isConfiguredNonGenerativeModelId(modelId)) {
+    throw new Error(
+      `Refusing to create a text-generation context for "${modelId}": it is DECLARED as the ` +
+        `embedding/reranker/vision-projector model (GGUF_EMBED_MODEL/GGUF_EMBEDDING_MODEL/` +
+        `GGUF_RERANKER_MODEL/GGUF_VISION_MMPROJ). It has no text-generation head — forced to ` +
+        `generate it would emit token-repetition garbage. [VI] Từ chối tạo context sinh chữ cho ` +
+        `"${modelId}" — model này đã khai báo (qua .env) là nhúng/rerank/projector, không có đầu ` +
+        `sinh văn bản.`,
+    );
+  }
+
   console.warn(
     `[aiGgufEngine] ${modelId}: sinh chữ trên model KHÔNG có context thường (trước đó nạp qua ` +
       `đường nhúng — embeddingOnly) — tạo LƯỜI ngay bây giờ. Nếu log này lặp lại, kiểm tra modelId ` +
@@ -790,6 +810,12 @@ async function ensureTextContext(
   );
 
   const createPromise = (async () => {
+    // review round 2 M-a — cùng hàng rào loadGgufModel() dùng TRƯỚC khi cấp phát VRAM: giải
+    // phóng model rảnh (LRU + GGUF_MAX_VRAM_MB) trước khi tạo context ~2GB. Thiếu bước này,
+    // kịch bản alias khi VRAM gần đầy sẽ OOM (ném ở createContext bên dưới) thay vì evict được
+    // model rảnh trước — đây chính xác là điều kiện kích hoạt Important-mới (rò refCount) dễ
+    // xảy ra nhất trên thực tế.
+    await ensureCapacity();
     const resolvedCtx = resolveContextSize(requestedContextSize ?? loaded.config.contextSize);
     const ctx = await loaded.model.createContext({
       contextSize: resolvedCtx,
@@ -1288,8 +1314,16 @@ export async function generateText(options: GgufGenerateOptions, modelId?: strin
   }
 
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
-  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext().
-  await ensureTextContext(resolvedId, loaded, options.contextSize);
+  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext(). review
+  // round 2 Important-mới — getOrLoadModel() đã refCount++; nếu ensureTextContext() ném (OOM
+  // là lúc dễ ném nhất), releaseModel() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
+  // vĩnh viễn, evictLRU() bỏ qua model này mãi mãi.
+  try {
+    await ensureTextContext(resolvedId, loaded, options.contextSize);
+  } catch (e) {
+    releaseModel(loaded);
+    throw e;
+  }
   const startTime = Date.now();
 
   // Build prompt with system message
@@ -1352,8 +1386,16 @@ export async function generateText(options: GgufGenerateOptions, modelId?: strin
  */
 export async function chatCompletion(options: GgufChatOptions, modelId?: string): Promise<GgufGenerateResult> {
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
-  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext().
-  await ensureTextContext(resolvedId, loaded, options.contextSize);
+  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext(). review
+  // round 2 Important-mới — getOrLoadModel() đã refCount++; nếu ensureTextContext() ném (OOM
+  // là lúc dễ ném nhất), releaseModel() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
+  // vĩnh viễn, evictLRU() bỏ qua model này mãi mãi.
+  try {
+    await ensureTextContext(resolvedId, loaded, options.contextSize);
+  } catch (e) {
+    releaseModel(loaded);
+    throw e;
+  }
   const startTime = Date.now();
 
   // Build conversation from message history
@@ -1452,8 +1494,16 @@ export async function generateJSON<T = unknown>(
   }
 
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
-  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext().
-  await ensureTextContext(resolvedId, loaded, options.contextSize);
+  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext(). review
+  // round 2 Important-mới — getOrLoadModel() đã refCount++; nếu ensureTextContext() ném (OOM
+  // là lúc dễ ném nhất), releaseModel() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
+  // vĩnh viễn, evictLRU() bỏ qua model này mãi mãi.
+  try {
+    await ensureTextContext(resolvedId, loaded, options.contextSize);
+  } catch (e) {
+    releaseModel(loaded);
+    throw e;
+  }
   const startTime = Date.now();
 
   const llamaMod: any = await import("node-llama-cpp");
@@ -1679,8 +1729,16 @@ async function generateFimNative(
   effectiveId: string | undefined,
 ): Promise<GgufGenerateResult> {
   const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId, options.contextSize);
-  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext().
-  await ensureTextContext(resolvedId, loaded, options.contextSize);
+  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext(). review
+  // round 2 Important-mới — getOrLoadModel() đã refCount++; nếu ensureTextContext() ném (OOM
+  // là lúc dễ ném nhất), releaseModel() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
+  // vĩnh viễn, evictLRU() bỏ qua model này mãi mãi.
+  try {
+    await ensureTextContext(resolvedId, loaded, options.contextSize);
+  } catch (e) {
+    releaseModel(loaded);
+    throw e;
+  }
   const startTime = Date.now();
   const { LlamaCompletion } = await import("node-llama-cpp");
   const stops = [...(options.stopSequences ?? []), ...FIM_STOP].filter((s) => !!s);
@@ -1854,8 +1912,16 @@ export async function* generateTextStream(
   signal?: AbortSignal,
 ): AsyncGenerator<GgufStreamChunk> {
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
-  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext().
-  await ensureTextContext(resolvedId, loaded, options.contextSize);
+  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext(). review
+  // round 2 Important-mới — getOrLoadModel() đã refCount++; nếu ensureTextContext() ném (OOM
+  // là lúc dễ ném nhất), releaseModel() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
+  // vĩnh viễn, evictLRU() bỏ qua model này mãi mãi.
+  try {
+    await ensureTextContext(resolvedId, loaded, options.contextSize);
+  } catch (e) {
+    releaseModel(loaded);
+    throw e;
+  }
   const startTime = Date.now();
 
   let fullPrompt = options.prompt;
@@ -1954,8 +2020,16 @@ export async function* chatCompletionStream(
   signal?: AbortSignal,
 ): AsyncGenerator<GgufStreamChunk> {
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
-  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext().
-  await ensureTextContext(resolvedId, loaded, options.contextSize);
+  // Đợt 2 Task 3 — review round 1 Critical-1: lưới an toàn, xem ensureTextContext(). review
+  // round 2 Important-mới — getOrLoadModel() đã refCount++; nếu ensureTextContext() ném (OOM
+  // là lúc dễ ném nhất), releaseModel() TRƯỚC khi rethrow — thiếu bước này refCount kẹt >0
+  // vĩnh viễn, evictLRU() bỏ qua model này mãi mãi.
+  try {
+    await ensureTextContext(resolvedId, loaded, options.contextSize);
+  } catch (e) {
+    releaseModel(loaded);
+    throw e;
+  }
   const startTime = Date.now();
 
   const systemMsg = options.messages.find(m => m.role === "system");
