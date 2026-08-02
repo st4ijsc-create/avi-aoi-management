@@ -605,6 +605,29 @@ note() { printf '  %s\n' "$*"; }
 # return empty forever, the CPU check would go permanently inert (correctly reading "cannot
 # tell", never "flat"), and only the wall-clock ceiling would remain. That degrades safely --
 # but SILENTLY. If an SDK bump ever removes half this detector, this comment is why.
+# 🔴 TRAP 7(i) and 7(j), BOTH FOUND BY AN AGENT DEBUGGING A FAILURE THIS SCRIPT CAUSED.
+#
+# (i) THE REMEDY MANUFACTURED THE EVIDENCE. When the ceiling fired, this script ran
+#     `taskkill //F //IM testhost.exe`, and vstest then wrote "Test host process crashed"
+#     into the log. Four tasks read that line as a product crash and carried it forward as
+#     "a pre-existing DeviceIdentityStore flake, no root cause". The trx timestamps settle
+#     it: last result 20:48:36, abort recorded 21:03:58 -- 966s later, the exact second the
+#     ceiling fired. THE SUITE HUNG; IT NEVER CRASHED. A tool whose remedy fabricates a
+#     different diagnosis than the fault is worse than one that only reports.
+#
+# (j) THE CLEANUP WAS NAME-WIDE, NOT RUN-SCOPED. `//IM testhost.exe` kills EVERY test host
+#     on the machine, so two overlapping gate runs execute each other. That accounts for
+#     three further aborts in the preserved history -- including a set I produced myself and
+#     briefly read as a code regression.
+#
+# So: kill only the descendants of THIS run's `dotnet test`, and say plainly in the failure
+# text that the kill is ours, so nobody reads vstest's crash line as a product fault again.
+kill_this_runs_hosts() {
+  local root_pid="${1:?pid}"
+  # //T on a PID kills that process tree only. The name-wide form is what caused (j).
+  taskkill //F //T //PID "$root_pid" >/dev/null 2>&1 || true
+}
+
 testhost_cpu_seconds() {
   powershell -NoProfile -NonInteractive -Command \
     "(Get-Process testhost -ErrorAction SilentlyContinue | Measure-Object -Property CPU -Sum).Sum" \
@@ -756,8 +779,8 @@ for entry in "${SUITES[@]}"; do
     if [[ $((SECONDS - started)) -ge $SUITE_CEILING_SECONDS ]]; then
       hung=1
       note "$name: EXCEEDED the ${SUITE_CEILING_SECONDS}s ceiling ($((SECONDS - started))s) -- killing. A suite creeping slowly is invisible to the CPU check."
+      kill_this_runs_hosts "$test_pid"
       kill -9 "$test_pid" 2>/dev/null || true
-      taskkill //F //IM testhost.exe //T >/dev/null 2>&1 || true
       break
     fi
     cpu1=$(testhost_cpu_seconds)
@@ -783,14 +806,16 @@ for entry in "${SUITES[@]}"; do
 
     hung=1
     note "$name: HUNG (test host CPU flat at ${cpu1}s of processor time across ${HUNG_SAMPLES} consecutive 90s periods while alive) -- killing"
+    kill_this_runs_hosts "$test_pid"
     kill -9 "$test_pid" 2>/dev/null || true
-    taskkill //F //IM testhost.exe //T >/dev/null 2>&1 || true
     break
   done
   wait "$test_pid" 2>/dev/null || true
 
   if [[ $hung -eq 1 ]]; then
-    FAILURES+=("$name: HUNG and was killed -- rebuild before trusting anything that follows")
+    # Say whose kill it was. vstest will write "Test host process crashed" into the log
+    # BECAUSE WE KILLED IT -- that line is our own remedy talking, not a product fault.
+    FAILURES+=("$name: HUNG, and WE killed it -- any 'Test host process crashed' in its log is OUR taskkill, not a crash. Rebuild before trusting anything that follows.")
     continue
   fi
 
