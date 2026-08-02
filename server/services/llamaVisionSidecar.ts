@@ -64,6 +64,13 @@ const IDLE_TIMEOUT_MS = (() => {
   const n = parseInt(process.env.LLAMA_VISION_IDLE_TIMEOUT_MS || "600000", 10);
   return Number.isFinite(n) && n > 0 ? n : 600000;
 })();
+// ⚠ Pha 1 Task 6 (review vòng 1, Minor) — `VRAM_SIDECAR_TTL_MS` (mặc định 900_000, xem
+// beginVramAllocation() ở ensureSidecar()) là ĐỘC LẬP với IDLE_TIMEOUT_MS ở trên. Ý định là
+// ttlMs > IDLE_TIMEOUT_MS (giấy phép phải sống lâu hơn sidecar tự tắt), nhưng KHÔNG có ràng buộc
+// nào ép hai hằng số này đi cùng nhau — nâng LLAMA_VISION_IDLE_TIMEOUT_MS qua env mà quên nâng
+// VRAM_SIDECAR_TTL_MS sẽ vi phạm NGẦM quan hệ đó. Vô hại ở Pha 1 (ttlMs chưa bị vramReconciler.ts
+// tiêu thụ ở đâu cả — Pha 3 mới đọc), nhưng nếu Pha 3 bắt đầu dùng ttlMs để thu hồi giấy phép quá
+// hạn, hai hằng số này cần được nâng CÙNG NHAU hoặc gộp về một nguồn.
 const GPU_LAYERS = (() => {
   const n = parseInt(process.env.LLAMA_VISION_GPU_LAYERS || "999", 10);
   return Number.isFinite(n) ? n : 999;
@@ -262,10 +269,26 @@ export async function ensureSidecar(): Promise<void> {
       /* telemetry KHÔNG được làm hỏng đường khởi động sidecar */
     }
 
-    const proc = spawn(cfg.binPath, args, {
-      detached: false,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    // ⚠ Nhánh thoát THỨ TƯ (review vòng 1, Task 6) — `spawn()` có thể ném ĐỒNG BỘ (vd. EACCES,
+    // thiếu quyền thực thi binary). Tại điểm này `vramTicket` đã `reserve()` xong (:246-260) NHƯNG
+    // biến `sidecar` cấp module CHƯA được set (nó set SAU spawn(), :321) — nếu không bọc try/catch
+    // ở đây, ngoại lệ văng thẳng ra khỏi `startPromise`, không nhánh `exit`/`error` nào kịp gắn để
+    // trả chỗ, và KHÔNG CÒN CHỖ NÀO KHÁC có thể trả lease này nữa: treo tới khi restart tiến trình.
+    // Cùng khuôn với `spawnKbSyncWithVram`/`catch` của `runKbSyncNow()` (kbSyncScheduler.ts).
+    let proc: ChildProcess;
+    try {
+      proc = spawn(cfg.binPath, args, {
+        detached: false,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (err) {
+      try {
+        vramTicket.release();
+      } catch {
+        /* telemetry KHÔNG được làm hỏng đường khởi động sidecar */
+      }
+      throw err;
+    }
 
     proc.stdout?.on("data", (d) => {
       const s = String(d).trim();

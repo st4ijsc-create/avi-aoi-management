@@ -169,6 +169,24 @@ describe("Pha 1 Task 6 — dây nối ngoài tiến trình: người giám sát 
 
       expect((await currentLeases()).some((x) => x.request.owner.startsWith("sidecar:"))).toBe(false);
     });
+
+    it('5. NHÁNH THOÁT THỨ TƯ (review vòng 1) — spawn() NÉM ĐỒNG BỘ ⇒ vẫn TRẢ giấy phép, không treo vĩnh viễn', async () => {
+      stubHealthyFetch();
+      // Tái hiện ĐÚNG probe của reviewer: reserve() đã thành công (beginVramAllocation await
+      // xong ở dòng 246-260), rồi NGAY lượt spawn() kế tiếp ném đồng bộ — mô phỏng EACCES/thiếu
+      // quyền thực thi, hoặc bất kỳ lỗi nào Node ném THẲNG thay vì phát ra qua "error"/"exit".
+      sharedSpawnMock.mockImplementationOnce(() => {
+        throw new Error("EACCES — không đủ quyền thực thi llama-server (ca thử nghiệm)");
+      });
+
+      const { __startSidecarForTests } = await import("../llamaVisionSidecar");
+      await expect(__startSidecarForTests()).rejects.toThrow(/EACCES/);
+
+      // Giấy phép ĐÃ được reserve() (nhánh thoát thứ tư nằm SAU điểm xin phép) — nếu không có
+      // try/catch quanh spawn(), biến `sidecar` cấp module cũng chưa từng được set (nó set SAU
+      // spawn()) nên KHÔNG CÒN chỗ nào khác có thể trả lease này — treo tới khi restart tiến trình.
+      expect((await currentLeases()).some((x) => x.request.owner.startsWith("sidecar:"))).toBe(false);
+    });
   });
 
   describe("cron kb:sync (kbSyncScheduler) — hộ 1.251 MiB", () => {
