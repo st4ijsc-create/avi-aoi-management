@@ -11,6 +11,30 @@ vi.mock("../aiGgufEngine", () => ({
   stripThinking: (t: string) => ({ answer: t, thinking: "" }),
 }));
 
+// Đợt 2 · Task 2, review round 1 (Important-2) — completeInline() giờ gọi
+// aiGateway.planInference()/record() để ghi metric (xem aiProgrammingCopilot.ts). File này
+// KHÔNG mock "../aiGateway" trước đây vì chưa cần — nhưng đo được (script tsx tạm, xem
+// task-2-report.md) rằng REAL planInference()/record() cắm một `setInterval` THẬT (5s mặc
+// định) mà khi tự bắn (không cần gọi flush() tay) sẽ tự kết nối DB thật và GHI một dòng
+// (`task='fim', model='default'` khi env thiếu) — dù test này chỉ mock generateFim và không
+// hề gọi flush(). Vì file này không mock aiGateway/db-connection, DATABASE_URL bị vitest.setup.ts
+// ép trỏ vào `..._test` (DB test thật) → rủi ro ghi rác thật vào DB test nếu tiến trình worker
+// sống đủ lâu (>FLUSH_INTERVAL_MS) sau khi bài test này chạy trong một lượt `vitest run` dài hơn
+// (nhiều file). Mock `planInference` ở đây cắt đứt đường đó tận gốc — không có `record()` thật ⇒
+// không `enqueue()` ⇒ không timer nào được cắm ⇒ không có gì để ghi, dù xa hay gần. Đây là cách
+// ít xâm lấn nhất tìm được: không đổi `aiGateway.ts` (mã sản xuất, ngoài phạm vi Task 2 + ảnh
+// hưởng runtime thật cho MỌI caller khác), chỉ thêm 1 mock test-only vào đúng file bị lộ.
+vi.mock("../aiGateway", () => ({
+  planInference: vi.fn(async () => ({
+    decision: { tier: 1, modelId: "test-fim-model", requiresHitl: false, maxTokens: 128, temperature: 0.1, jsonMode: false },
+    abVariant: null,
+    record: vi.fn(),
+    safeText: "",
+    safetyFlags: { scope: "input", risk: "none", matched: [], redactedCount: 0, redactionTypes: [] },
+    sanitizeOutput: (t: string) => t,
+  })),
+}));
+
 import { completeInline } from "./aiProgrammingCopilot";
 import { fimModelBasename } from "../ai/modelResolver";
 
