@@ -38,6 +38,13 @@
  * scripts/ai-bench/bench.production-parity.test.ts (đọc mã nguồn, khẳng định
  * không còn hard-code). Số liệu trước/sau: docs/superpowers/reports/2026-08-02-dot2-report.md §1.
  *
+ * ⚠ dot2 Task 3 (2026-08-02) — Task 1 (trên) từng thêm một khối MÔ PHỎNG bug production vào
+ * benchEmbedModel() (tạo THÊM một context thường trước context nhúng) để bench khớp hành vi
+ * SAI của production lúc đó (loadGgufModel() tạo context thường cho CẢ model chỉ-nhúng). Task 3
+ * đã sửa bug đó tại production (aiGgufEngine.ts ~684-708, cờ config.embeddingOnly) nên khối mô
+ * phỏng đã XOÁ khỏi benchEmbedModel() — nếu còn, bench sẽ đếm thừa ~3,6 GB cho `embed` (drift
+ * lần thứ TƯ). Số liệu trước/sau: docs/superpowers/reports/2026-08-02-dot2-report.md §3.
+ *
  * DESIGN NOTES / APPROXIMATIONS
  *   - Prefill tok/s uses LlamaChatSession + onTextChunk to get TTFT. The chat
  *     template adds a handful of tokens, so promptTokens is a close approximation
@@ -396,30 +403,19 @@ async function benchTextModel(llama, LlamaChatSession, model, cfg, sampleVram) {
 
 // ─── Embedding model benchmark ─────────────────────────────────────────────────
 async function benchEmbedModel(model, cfg, sampleVram) {
-  // dot2 Task 1 — hai lỗi chồng nhau ở đây, cả hai đã sửa:
-  //  (1) "auto" cấp TOÀN BỘ cửa sổ ngữ cảnh gốc của model (hàng chục nghìn
-  //      token) thay vì EMBED_CTX production thật sự dùng (getEmbeddingContext,
-  //      aiGgufEngine.ts ~2281-2296). Hụt 2.030 MiB đo được ở Đợt 1 Task 2.
-  //  (2) loadGgufModel() (~684-691) tạo context THƯỜNG (contextSize=
-  //      GGUF_DEFAULT_CTX, sequences=GGUF_SEQUENCES) cho MỌI model nó nạp —
-  //      KHÔNG phân biệt model đó chỉ dùng để nhúng — TRƯỚC KHI
-  //      getEmbeddingContext() tạo thêm context nhúng riêng. Đây là bug thật
-  //      của production hôm nay (Task 3 của Đợt 2 mới sửa, "không tạo context
-  //      thường cho model chỉ-nhúng" — server/services/aiGgufEngine.ts). Bench
-  //      PHẢI mô phỏng đúng hành vi HIỆN TẠI (kể cả bug) để số khớp sản xuất
-  //      bây giờ — đo được: model+ctx thường 3.649 MiB + embedding ctx 654 MiB
-  //      = 4.321 MiB (docs/superpowers/reports/2026-08-01-dot1-vram-reclaim.md).
-  //      ⚠ Khi Task 3 loại bỏ context thường cho model chỉ-nhúng, khối tạo
-  //      context thường bên dưới PHẢI xoá theo, nếu không bench lại nói dối
-  //      theo hướng BI QUAN (báo VRAM cao hơn production thật).
-  const regularCtx = await model.createContext({
-    contextSize: prodResolveContextSize(undefined), // == GGUF_DEFAULT_CTX, không có per-task hint
-    batchSize: 512,
-    flashAttention: true,
-    sequences: PROD_GGUF_SEQUENCES,
-  });
-  sampleVram("after-regular-ctx");
-
+  // dot2 Task 1 — "auto" cấp TOÀN BỘ cửa sổ ngữ cảnh gốc của model (hàng chục nghìn
+  // token) thay vì EMBED_CTX production thật sự dùng (getEmbeddingContext,
+  // aiGgufEngine.ts ~2281-2296). Hụt 2.030 MiB đo được ở Đợt 1 Task 2.
+  //
+  // dot2 Task 3 — ĐÃ XOÁ khối mô phỏng "context thường cho model chỉ-nhúng" từng
+  // nằm ở đây (tạo model.createContext() trước ctx nhúng, mô phỏng bug thật của
+  // loadGgufModel() lúc đó). Task 3 đã sửa PRODUCTION (server/services/
+  // aiGgufEngine.ts ~684-691): loadGgufModel() giờ BỎ QUA context thường khi
+  // config.embeddingOnly===true — model chỉ-nhúng không còn tạo context thường
+  // nữa. Nếu khối mô phỏng còn ở đây, bench sẽ ĐẾM THỪA ~3,6 GB cho embed — nói
+  // dối theo hướng LẠC QUAN NGƯỢC (báo VRAM CAO hơn production thật) — đây sẽ là
+  // lần drift thứ TƯ của công cụ đo này. Số đo TRƯỚC/SAU thật (production path,
+  // không phải bench): docs/superpowers/reports/2026-08-02-dot2-report.md §3.
   const ctx = await model.createEmbeddingContext({
     contextSize: PROD_EMBED_CTX,
     batchSize: 512,
@@ -456,7 +452,6 @@ async function benchEmbedModel(model, cfg, sampleVram) {
     };
   } finally {
     try { await ctx.dispose(); } catch { /* best-effort */ }
-    try { await regularCtx.dispose(); } catch { /* best-effort */ }
   }
 }
 

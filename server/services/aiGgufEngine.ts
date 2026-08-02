@@ -54,6 +54,15 @@ export interface GgufModelConfig {
   batchSize?: number;
   /** Enable Flash Attention. Default true */
   flashAttention?: boolean;
+  /** Đợt 2 Task 3 — model được nạp CHỈ để nhúng (embed), không bao giờ dùng để sinh chữ. Do
+   *  ĐƯỜNG NHÚNG truyền vào tường minh (getOrLoadModel() khi purpose==="embed") — KHÔNG bao
+   *  giờ đoán theo tên file. Khi true, loadGgufModel() BỎ QUA việc tạo context thường
+   *  (model.createContext(), GGUF_DEFAULT_CTX×GGUF_SEQUENCES) — model nhúng chỉ dùng
+   *  model.createEmbeddingContext() (xem getEmbeddingContext()), context thường chưa từng
+   *  được đụng tới. Đo Đợt 1: model + ctx thường thừa = 3.649 MiB · embedding ctx thật cần =
+   *  654 MiB ⇒ trả tiền hai lần cho ~2,0 GB không dùng. Model text KHÔNG bị ảnh hưởng — cờ
+   *  này mặc định falsy, hành vi giữ nguyên. */
+  embeddingOnly?: boolean;
 }
 
 export interface GgufGenerateOptions {
@@ -139,6 +148,10 @@ export interface GgufStreamChunk {
 interface LoadedModel {
   llama: any;
   model: any;
+  /** Đợt 2 Task 3 — undefined khi config.embeddingOnly===true (model chỉ-nhúng KHÔNG có
+   *  context thường — xem loadGgufModel()). Mọi nơi đọc .context (sinh chữ, ~1202+) chỉ
+   *  chạm tới model text, không bao giờ chạm model embeddingOnly; unloadGgufModel() guard
+   *  bằng "if (loaded.context)" trước khi dispose. */
   context: any;
   /** Cached embedding context — created lazily on first generateEmbedding(s) call, reused afterwards. */
   embeddingContext?: any;
@@ -681,14 +694,23 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
       } as any);
     }
 
-    // B0.2 — respect a requested per-task contextSize (clamped); else GGUF_DEFAULT_CTX.
-    const resolvedCtx = resolveContextSize(config.contextSize);
-    const context = await model.createContext({
-      contextSize: resolvedCtx,
-      batchSize: config.batchSize ?? 512,
-      flashAttention: config.flashAttention !== false,
-      sequences: GGUF_SEQUENCES,
-    });
+    // Đợt 2 Task 3 — model chỉ-nhúng (config.embeddingOnly, truyền tường minh từ đường nhúng —
+    // xem GgufModelConfig.embeddingOnly) KHÔNG BAO GIỜ sinh chữ nên KHÔNG cần context thường
+    // (model.createContext, GGUF_DEFAULT_CTX×GGUF_SEQUENCES) — nó chỉ dùng
+    // model.createEmbeddingContext() qua getEmbeddingContext(). Bỏ qua bước này giành lại
+    // ~2,0 GB (đo Đợt 1: model+ctx thường 3.649 MiB so với embedding ctx thật 654 MiB).
+    // Model text (embeddingOnly falsy/undefined) KHÔNG đổi hành vi — vẫn luôn tạo context.
+    let context: any = undefined;
+    if (!config.embeddingOnly) {
+      // B0.2 — respect a requested per-task contextSize (clamped); else GGUF_DEFAULT_CTX.
+      const resolvedCtx = resolveContextSize(config.contextSize);
+      context = await model.createContext({
+        contextSize: resolvedCtx,
+        batchSize: config.batchSize ?? 512,
+        flashAttention: config.flashAttention !== false,
+        sequences: GGUF_SEQUENCES,
+      });
+    }
 
     const loadTimeMs = Date.now() - startTime;
     console.log(`[aiGgufEngine] Model loaded in ${loadTimeMs}ms: ${modelId}`);
@@ -735,7 +757,12 @@ export async function unloadGgufModel(modelId: string): Promise<boolean> {
       }
       loaded.embeddingContext = undefined;
     }
-    await loaded.context.dispose();
+    // Đợt 2 Task 3 — model chỉ-nhúng không có context thường (loaded.context===undefined,
+    // xem loadGgufModel()); guard trước khi dispose, nếu không .dispose() trên undefined
+    // throw và toàn bộ nhánh try rơi xuống catch (model KHÔNG được unload sạch).
+    if (loaded.context) {
+      await loaded.context.dispose();
+    }
     await loaded.model.dispose();
     loadedModels.delete(modelId);
     console.log(`[aiGgufEngine] Model unloaded: ${modelId}`);
@@ -1051,7 +1078,10 @@ async function getOrLoadModel(
     const defaultModel = process.env.GGUF_DEFAULT_MODEL;
     if (defaultModel) {
       // B0.2 — forward the per-task contextSize hint on first load (KV-cache sizing).
-      const id = await loadGgufModel({ modelPath: defaultModel, contextSize });
+      // Đợt 2 Task 3 — embeddingOnly truyền từ INTENT của caller (purpose), không đoán theo
+      // tên file: mọi model nạp qua nhánh "embed" ở đây (đường nhúng dự phòng khi
+      // GGUF_EMBED_MODEL chưa cấu hình) không bao giờ sinh chữ, nên không cần context thường.
+      const id = await loadGgufModel({ modelPath: defaultModel, contextSize, embeddingOnly: purpose === "embed" });
       return getOrLoadModel(id, contextSize, purpose);
     }
 
@@ -1059,15 +1089,18 @@ async function getOrLoadModel(
     ensureModelsDir();
     const files = fs.readdirSync(GGUF_MODELS_DIR).filter(f => f.endsWith(".gguf"));
     if (files.length > 0) {
-      const id = await loadGgufModel({ modelPath: files[0], contextSize });
+      const id = await loadGgufModel({ modelPath: files[0], contextSize, embeddingOnly: purpose === "embed" });
       return getOrLoadModel(id, contextSize, purpose);
     }
 
     throw new Error("No GGUF model available. Upload a .gguf file or set GGUF_DEFAULT_MODEL env var.");
   }
 
-  // Try to load the specified model
-  const id = await loadGgufModel({ modelPath: `${modelId}.gguf`, contextSize });
+  // Try to load the specified model. Đợt 2 Task 3 — embeddingOnly: purpose==="embed" là ĐƯỜNG
+  // CHÍNH mà generateEmbedding()/generateEmbeddings() đi qua (modelId tường minh — GGUF_EMBED_MODEL
+  // hoặc modelId caller truyền). purpose "generate"/"tokenize" giữ nguyên hành vi (embeddingOnly
+  // falsy → context thường vẫn được tạo như trước).
+  const id = await loadGgufModel({ modelPath: `${modelId}.gguf`, contextSize, embeddingOnly: purpose === "embed" });
   return getOrLoadModel(id, contextSize, purpose);
 }
 
@@ -2224,7 +2257,7 @@ export async function generateEmbedding(
   // 6GB VRAM budget simple and safe.
   return withGgufSlot(async () => {
     try {
-      const embeddingContext = await getEmbeddingContext(loaded);
+      const embeddingContext = await getEmbeddingContext(resolvedId, loaded);
       const embedding = await embeddingContext.getEmbeddingFor(text);
       const vector = Array.from(embedding.vector as readonly number[]);
       assertEmbeddingDim(vector.length, resolvedId);
@@ -2255,7 +2288,7 @@ export async function generateEmbeddings(
   // Mục 4: batch embeddings hold the single GGUF slot for the whole loop.
   return withGgufSlot(async () => {
     try {
-      const embeddingContext = await getEmbeddingContext(loaded);
+      const embeddingContext = await getEmbeddingContext(resolvedId, loaded);
       const embeddings: number[][] = [];
       let dims = 0;
       for (const text of texts) {
@@ -2272,27 +2305,55 @@ export async function generateEmbeddings(
   });
 }
 
+/** Đợt 2 Task 3 — khoá in-flight cho getEmbeddingContext(), CÙNG KHUÔN với inFlightLoads của
+ *  loadGgufModel() (Đợt 1 Task 1, ~163): nhiều lượt generateEmbedding()/generateEmbeddings()
+ *  đồng thời trên CÙNG modelId đều thấy loaded.embeddingContext còn rỗng (chưa kịp ghi — dòng
+ *  cache chỉ chạy SAU khi await createEmbeddingContext() xong) và cùng gọi
+ *  model.createEmbeddingContext() song song. Đo: 4 lượt tuần tự = 654 MiB; đồng thời = 2.430
+ *  MiB (+1.776 MiB, đỉnh nhất thời vài giây, không rò vĩnh viễn). Tới được thật vì
+ *  GGUF_MAX_CONCURRENCY=4 (.env) và 6 nơi gọi generateEmbedding(s) do HTTP điều khiển. */
+const embeddingContextInFlight = new Map<string, Promise<any>>();
+
 /**
  * Lazily create (and cache on the LoadedModel) an embedding context for the given model.
  * Uses model.createEmbeddingContext (the public API in node-llama-cpp 3.18.1 — the
  * LlamaEmbeddingContext constructor is private). The context is created once and reused;
  * it is disposed when the model is unloaded.
  */
-async function getEmbeddingContext(loaded: LoadedModel): Promise<any> {
+async function getEmbeddingContext(modelId: string, loaded: LoadedModel): Promise<any> {
   if (loaded.embeddingContext) return loaded.embeddingContext;
+
+  // Đợt 2 Task 3 — nếu modelId này đang được tạo embedding context bởi một lượt gọi khác
+  // (xem giải thích ở khai báo embeddingContextInFlight), CHỜ lượt đó thay vì tạo song song.
+  const pending = embeddingContextInFlight.get(modelId);
+  if (pending) return pending;
+
+  const createPromise = (async () => {
+    try {
+      const ctx = await loaded.model.createEmbeddingContext({
+        contextSize: EMBED_CTX,
+        batchSize: loaded.config.batchSize ?? 512,
+      });
+      loaded.embeddingContext = ctx;
+      return ctx;
+    } catch (err: any) {
+      throw new Error(
+        `Model does not support embeddings (createEmbeddingContext failed: ${err?.message ?? err}). ` +
+          `Set GGUF_EMBED_MODEL to point to an embedding model such as mxbai-embed-large. ` +
+          `[VI] Mô hình không hỗ trợ embedding — cấu hình GGUF_EMBED_MODEL trỏ tới mxbai.`,
+      );
+    }
+  })();
+
+  embeddingContextInFlight.set(modelId, createPromise);
   try {
-    loaded.embeddingContext = await loaded.model.createEmbeddingContext({
-      contextSize: EMBED_CTX,
-      batchSize: loaded.config.batchSize ?? 512,
-    });
-  } catch (err: any) {
-    throw new Error(
-      `Model does not support embeddings (createEmbeddingContext failed: ${err?.message ?? err}). ` +
-        `Set GGUF_EMBED_MODEL to point to an embedding model such as mxbai-embed-large. ` +
-        `[VI] Mô hình không hỗ trợ embedding — cấu hình GGUF_EMBED_MODEL trỏ tới mxbai.`,
-    );
+    return await createPromise;
+  } finally {
+    // Bắt buộc: lượt tạo thất bại mà không xoá khỏi map thì mọi lượt sau sẽ nhận lại đúng
+    // promise lỗi đó vĩnh viễn (không bao giờ thử tạo lại) — cùng lý do Đợt 1 Task 1 đã ghi
+    // ở inFlightLoads.
+    embeddingContextInFlight.delete(modelId);
   }
-  return loaded.embeddingContext;
 }
 
 /**
