@@ -24,7 +24,17 @@ export default defineConfig({
     environment: "node",
     // server tests + node-env client logic tests (named *.unit.test.ts so jsdom-only client
     // tests like exportUtils.test.ts are NOT pulled into the node environment).
-    include: ["server/**/*.test.ts", "server/**/*.spec.ts", "shared/**/*.test.ts", "client/src/**/*.unit.test.ts"],
+    // dot2 Task 1 — "scripts/**/*.test.ts" thêm vào vì scripts/ai-bench/bench.production-parity.test.ts
+    // là test server-side (đọc mã nguồn bench.mjs) nhưng KHÔNG nằm dưới server/; trước khi thêm,
+    // scripts/ chỉ có test *.test.mjs chạy trực tiếp bằng `node` (không qua vitest) nên dòng này
+    // không đổi hành vi của các test .mjs đó.
+    include: [
+      "server/**/*.test.ts",
+      "server/**/*.spec.ts",
+      "shared/**/*.test.ts",
+      "client/src/**/*.unit.test.ts",
+      "scripts/**/*.test.ts",
+    ],
     // Loads .env + forces DATABASE_URL to an ISOLATED test DB (see vitest.setup.ts).
     // Provision once: `node scripts/setup-test-db.mjs`.
     setupFiles: ["./vitest.setup.ts"],

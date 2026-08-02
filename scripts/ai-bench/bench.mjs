@@ -20,6 +20,24 @@
  * aiGgufEngine.ts uses) — it does NOT import any server/ source, so it can run
  * without booting the app. This matches scripts/ai-kb/_gguf-embed.mjs conventions.
  *
+ * ⚠ dot2 Task 1 (2026-08-02) — SAI BA LẦN LIÊN TIẾP vì tự dựng tham số context
+ * độc lập với đường sản xuất (server/services/aiGgufEngine.ts): thiếu "vision"
+ * khỏi mọi phép cộng (Đợt 0), embedding context hard-code "auto" cho contextSize
+ * (thay vì EMBED_CTX) hụt 2.030 MiB (Đợt 1 Task 2), model.createContext() thiếu
+ * `sequences` hụt ~1.360 MiB/model text (Đợt 1 Task 4). Lần thứ ba làm tài liệu quyết định của Đợt 0
+ * sai ~3.400 MiB theo hướng lạc quan. SỬA: vẫn KHÔNG import server/ code (import
+ * `loadGgufModel` là lựa chọn ưu tiên theo brief, nhưng `npm run ai:bench` chạy
+ * bằng `node` thuần — aiGgufEngine.ts import các module TS nội bộ bằng đường dẫn
+ * KHÔNG đuôi mở rộng ("./ggufConcurrency") mà `node` thuần không resolve được
+ * (ERR_MODULE_NOT_FOUND — xác nhận thủ công); ép chạy qua tsx sẽ đổi runtime của
+ * `npm run ai:bench` cho MỌI người dùng bench, ngoài phạm vi Task 1. Thay vào đó:
+ * đọc CÙNG biến môi trường (GGUF_SEQUENCES/GGUF_DEFAULT_CTX/GGUF_MAX_CTX/
+ * GGUF_EMBED_CTX) và tái tạo CHÍNH XÁC cùng công thức mặc định/clamp production
+ * dùng — xem khối "PRODUCTION CONTEXT-SIZING PARITY" bên dưới, mỗi hằng số trỏ
+ * thẳng dòng sản xuất tương ứng. Cổng chống drift:
+ * scripts/ai-bench/bench.production-parity.test.ts (đọc mã nguồn, khẳng định
+ * không còn hard-code). Số liệu trước/sau: docs/superpowers/reports/2026-08-02-dot2-report.md §1.
+ *
  * DESIGN NOTES / APPROXIMATIONS
  *   - Prefill tok/s uses LlamaChatSession + onTextChunk to get TTFT. The chat
  *     template adds a handful of tokens, so promptTokens is a close approximation
@@ -45,6 +63,10 @@
  *   GGUF_FIM_MODEL      → logical "fim"   (optional; unset → skipped)
  *   GGUF_GPU=false      → force CPU (also --cpu)
  *   GGUF_CUDA_BIN / CUDA_PATH → CUDA runtime bin prepended to PATH (Windows)
+ *   GGUF_SEQUENCES      → parallel sequences per text context (default 4, aiGgufEngine.ts ~206-209)
+ *   GGUF_DEFAULT_CTX    → default text contextSize (default 4096, aiGgufEngine.ts ~215-218)
+ *   GGUF_MAX_CTX        → hard clamp ceiling (default 32768, aiGgufEngine.ts ~220-223)
+ *   GGUF_EMBED_CTX      → embedding contextSize (default 2048, aiGgufEngine.ts ~246-254)
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -58,6 +80,46 @@ const SCHEMA_VERSION = 1;
 
 // Monotonic clock for measurements (falls back if performance is unavailable).
 const now = () => (typeof performance?.now === "function" ? performance.now() : Date.now());
+
+// ─── PRODUCTION CONTEXT-SIZING PARITY (dot2 Task 1) ─────────────────────────────
+// Mỗi hằng số/hàm dưới đây là bản SAO CHÍNH XÁC công thức đọc-env + mặc định +
+// clamp mà server/services/aiGgufEngine.ts dùng khi nạp model thật (loadGgufModel
+// ~623-719) và tạo context nhúng (getEmbeddingContext ~2281-2296). Không import
+// trực tiếp được vì `npm run ai:bench` chạy bằng `node` thuần, còn aiGgufEngine.ts
+// import nội bộ bằng đường dẫn không đuôi mở rộng (chỉ tsx/vite-node resolve
+// được) — xem giải thích đầy đủ ở header file. NẾU production đổi công thức ở
+// các dòng trỏ tới bên dưới, PHẢI đồng bộ lại khối này (cổng chống drift:
+// bench.production-parity.test.ts đọc mã nguồn, không đo được sai lệch công thức
+// — chỉ phép đo VRAM trước/sau mới chứng minh được, xem báo cáo §1).
+/** aiGgufEngine.ts ~205-209 (GGUF_SEQUENCES). */
+const PROD_GGUF_SEQUENCES = (() => {
+  const n = parseInt(process.env.GGUF_SEQUENCES || "4", 10);
+  return Number.isFinite(n) && n > 0 ? n : 4;
+})();
+/** aiGgufEngine.ts ~210-218 (GGUF_DEFAULT_CTX). */
+const PROD_GGUF_DEFAULT_CTX = (() => {
+  const n = parseInt(process.env.GGUF_DEFAULT_CTX || "4096", 10);
+  return Number.isFinite(n) && n > 0 ? n : 4096;
+})();
+/** aiGgufEngine.ts ~219-223 (GGUF_MAX_CTX). */
+const PROD_GGUF_MAX_CTX = (() => {
+  const n = parseInt(process.env.GGUF_MAX_CTX || "32768", 10);
+  return Number.isFinite(n) && n > 0 ? n : 32768;
+})();
+/** aiGgufEngine.ts ~225-231 (resolveContextSize) — dùng bởi loadGgufModel ~684-691. */
+function prodResolveContextSize(requested) {
+  if (typeof requested !== "number" || !Number.isFinite(requested) || requested <= 0) {
+    return PROD_GGUF_DEFAULT_CTX;
+  }
+  return Math.min(Math.max(Math.floor(requested), 256), PROD_GGUF_MAX_CTX);
+}
+/** aiGgufEngine.ts ~246-254 (EMBED_CTX) — dùng bởi getEmbeddingContext ~2284-2287. */
+const PROD_EMBED_CTX = (() => {
+  const raw = Number(process.env.GGUF_EMBED_CTX);
+  const DEFAULT_EMBED_CTX = 2048;
+  const value = Number.isFinite(raw) && raw >= 256 ? Math.floor(raw) : DEFAULT_EMBED_CTX;
+  return Math.min(value, PROD_GGUF_MAX_CTX);
+})();
 
 // ─── Logical model registry (env → benchmark type) ─────────────────────────────
 const LOGICAL_MODELS = [
@@ -244,9 +306,25 @@ function buildPrefillPrompt(model, targetTokens) {
 
 // ─── Text model benchmark (deep / fast / code / fim) ───────────────────────────
 async function benchTextModel(llama, LlamaChatSession, model, cfg, sampleVram) {
-  const contextSize =
-    cfg.ctx || Math.min(Math.max(...cfg.prefill) + cfg.maxTokens + 512, 32768);
-  const context = await model.createContext({ contextSize, batchSize: 512, flashAttention: true });
+  // dot2 Task 1 — contextSize/sequences PHẢI khớp production (loadGgufModel,
+  // aiGgufEngine.ts ~684-691). "--ctx" đóng vai trò "requested" giống hệt
+  // config.contextSize (per-task hint) rồi đi qua ĐÚNG hàm clamp production
+  // dùng; khi KHÔNG truyền --ctx, "requested" là max(GGUF_DEFAULT_CTX, nhu cầu
+  // prefill lớn nhất + maxTokens + đệm) — dưới CLI mặc định (prefill 128,1024 ·
+  // maxTokens 256) giá trị này BẰNG hệt GGUF_DEFAULT_CTX (4096) nên phép đo mặc
+  // định khớp production nguyên vẹn; nếu người dùng yêu cầu prefill lớn hơn cửa
+  // sổ mặc định, context vẫn tự lớn đủ để không throw (không đổi số đo mặc định).
+  // `sequences` là tham số THIẾU trong 3 lần đo sai trước (mặc định 1 khi vắng
+  // mặt, production luôn 4) ⇒ hụt ~1.360 MiB/model text đo được ở Đợt 1 Task 4.
+  const requestedCtx =
+    cfg.ctx ?? Math.max(PROD_GGUF_DEFAULT_CTX, Math.max(...cfg.prefill) + cfg.maxTokens + 512);
+  const contextSize = prodResolveContextSize(requestedCtx);
+  const context = await model.createContext({
+    contextSize,
+    batchSize: 512,
+    flashAttention: true,
+    sequences: PROD_GGUF_SEQUENCES,
+  });
   sampleVram("after-ctx");
 
   const perTarget = [];
@@ -318,7 +396,34 @@ async function benchTextModel(llama, LlamaChatSession, model, cfg, sampleVram) {
 
 // ─── Embedding model benchmark ─────────────────────────────────────────────────
 async function benchEmbedModel(model, cfg, sampleVram) {
-  const ctx = await model.createEmbeddingContext({ contextSize: "auto" });
+  // dot2 Task 1 — hai lỗi chồng nhau ở đây, cả hai đã sửa:
+  //  (1) "auto" cấp TOÀN BỘ cửa sổ ngữ cảnh gốc của model (hàng chục nghìn
+  //      token) thay vì EMBED_CTX production thật sự dùng (getEmbeddingContext,
+  //      aiGgufEngine.ts ~2281-2296). Hụt 2.030 MiB đo được ở Đợt 1 Task 2.
+  //  (2) loadGgufModel() (~684-691) tạo context THƯỜNG (contextSize=
+  //      GGUF_DEFAULT_CTX, sequences=GGUF_SEQUENCES) cho MỌI model nó nạp —
+  //      KHÔNG phân biệt model đó chỉ dùng để nhúng — TRƯỚC KHI
+  //      getEmbeddingContext() tạo thêm context nhúng riêng. Đây là bug thật
+  //      của production hôm nay (Task 3 của Đợt 2 mới sửa, "không tạo context
+  //      thường cho model chỉ-nhúng" — server/services/aiGgufEngine.ts). Bench
+  //      PHẢI mô phỏng đúng hành vi HIỆN TẠI (kể cả bug) để số khớp sản xuất
+  //      bây giờ — đo được: model+ctx thường 3.649 MiB + embedding ctx 654 MiB
+  //      = 4.321 MiB (docs/superpowers/reports/2026-08-01-dot1-vram-reclaim.md).
+  //      ⚠ Khi Task 3 loại bỏ context thường cho model chỉ-nhúng, khối tạo
+  //      context thường bên dưới PHẢI xoá theo, nếu không bench lại nói dối
+  //      theo hướng BI QUAN (báo VRAM cao hơn production thật).
+  const regularCtx = await model.createContext({
+    contextSize: prodResolveContextSize(undefined), // == GGUF_DEFAULT_CTX, không có per-task hint
+    batchSize: 512,
+    flashAttention: true,
+    sequences: PROD_GGUF_SEQUENCES,
+  });
+  sampleVram("after-regular-ctx");
+
+  const ctx = await model.createEmbeddingContext({
+    contextSize: PROD_EMBED_CTX,
+    batchSize: 512,
+  });
   sampleVram("after-embed-ctx");
   const text =
     "Compute the moving average of a PLC sensor buffer and detect out-of-tolerance drift " +
@@ -351,6 +456,7 @@ async function benchEmbedModel(model, cfg, sampleVram) {
     };
   } finally {
     try { await ctx.dispose(); } catch { /* best-effort */ }
+    try { await regularCtx.dispose(); } catch { /* best-effort */ }
   }
 }
 
