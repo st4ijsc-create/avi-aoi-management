@@ -24,6 +24,40 @@ import type { VramLease, VramLeaseKind, VramPriority } from "./types";
  * telemetry chết thì hệ vẫn phải nạp được model. Đó là lý do `beginVramAllocation()` trả về
  * `NOOP_TICKET` thay vì ném khi bất cứ khâu nào hỏng.
  */
+/**
+ * ★ KỶ LUẬT DUY NHẤT VỀ THỨ TỰ NHẢ (review TOÀN NHÁNH, I-1) — đọc trước khi thêm bất kỳ điểm
+ * `release()` mới nào.
+ *
+ *   > **Sổ chỉ được nhả SAU khi thiết bị đã nhả. Nơi nào KHÔNG CHỨNG MINH ĐƯỢC thiết bị đã nhả,
+ *   > phải NÓI RA bằng `releaseProof`, không được im lặng nhả sổ như thể đã có bằng chứng.**
+ *
+ * Vì sao phải viết thành kỷ luật thay vì để mỗi chỗ tự quyết: reviewer tìm thấy hai task đi HAI
+ * HƯỚNG NGƯỢC NHAU với hai comment CÙNG TỰ TIN (`aiGgufEngine.ts:987` nhả SAU dispose và ghi rõ
+ * lý do; `llamaVisionSidecar.ts:393` nhả TRƯỚC kill và cũng ghi rõ lý do). Một kỷ luật chỉ tồn
+ * tại trong comment thì lần sau lại có comment thứ ba.
+ *
+ * BỐN ĐIỂM NHẢ TRONG TOÀN REPO, sau lượt vá này:
+ *
+ * | # | Điểm | Bằng chứng thiết bị đã nhả | `releaseProof` |
+ * |---|---|---|---|
+ * | 1 | `aiGgufEngine.unloadGgufModel` (`:987`) | `await context.dispose()` + `await model.dispose()` XONG rồi mới nhả sổ | `device-disposed` |
+ * | 2 | `llamaVisionSidecar` `proc.on("exit"/"error")` | tiến trình con đã CHẾT — VRAM của nó do OS thu hồi | `process-exit` |
+ * | 3 | `aiInferenceEngine.LruSessionCache.set/delete` (đuổi LRU) | **KHÔNG CÓ** | `unverified` |
+ * | 4 | `aiImageEmbedding.evictEmbeddingSessionCache` | **KHÔNG CÓ** | `unverified` |
+ *
+ * ⚠ VÌ SAO #3/#4 KHÔNG SỬA ĐƯỢC Ở PHA 1 (và vì sao đánh dấu là câu trả lời ĐÚNG, không phải né):
+ * reviewer grep toàn repo — **không MỘT lời gọi `.release()` nào lên `ort.InferenceSession`**.
+ * Đuổi khỏi cache chỉ gỡ tham chiếu JS; bộ nhớ native của onnxruntime chỉ chắc chắn được trả khi
+ * `session.release()` chạy. Thêm lời gọi đó Ở ĐÂY sẽ giải phóng bộ nhớ native NGAY DƯỚI CHÂN một
+ * `session.run` đang bay: `getSession()` KHÔNG có khoá in-flight (aiInferenceEngine.ts:192) và
+ * `gpuSessionSemaphore` cho phép 2 lượt `run` song song ⇒ một lượt đuổi đúng lúc là **abort ở
+ * tầng native, không phải một exception bắt được**. Sửa đúng cần đếm tham chiếu — ĐỔI HÀNH VI
+ * trong đường suy luận nóng nhất, thứ Pha 1 tự cấm mình làm. Nên Pha 1 làm việc Pha 1 làm được:
+ * ghi `releaseProof: "unverified"` vào nhật ký để lượt nhả này **truy vấn được** thay vì phải đọc
+ * comment mà tin. Việc sửa gốc nằm ở báo cáo §10 (Pha 2).
+ */
+export type VramReleaseProof = "device-disposed" | "process-exit" | "unverified";
+
 export interface VramTicket {
   /**
    * Ghi số THẬT = VRAM thiết bị SAU trừ TRƯỚC. KHÔNG BAO GIỜ ném.
@@ -59,6 +93,14 @@ export interface VramAllocationOptions {
    * Task 5 không truyền trường này — mặc định `undefined`, hành vi bảy hộ đó không đổi.
    */
   ttlMs?: number;
+  /**
+   * I-1 — bằng chứng nào chứng minh THIẾT BỊ đã nhả tại thời điểm `release()` được gọi.
+   * Xem bảng bốn điểm nhả ở đầu file. Ghi vào sự kiện `release` để truy vấn được
+   * (`detail.releaseProof`), thay vì phải đọc comment mà tin.
+   * Không truyền ⇒ `"device-disposed"`: mọi hộ TRONG tiến trình của Task 5 đều nhả sau một
+   * `dispose()` đã `await` xong, trừ hai ca ONNX đã đánh dấu tường minh là `"unverified"`.
+   */
+  releaseProof?: VramReleaseProof;
 }
 
 export async function beginVramAllocation(opts: VramAllocationOptions): Promise<VramTicket> {
@@ -145,7 +187,47 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
           // lên hàng trăm MiB ảo ⇒ reconciler báo lệch ÂM giả. `recordActual()` (vramEstimator
           // .ts:7-11) và `leaseBytes()` (vramBroker.ts:21, dùng `??` chứ không `||`) đều đã
           // cố ý coi 0 là số liệu hợp lệ — đây là nơi khai thác điều đó.
-          if (actual < 0) return;
+          //
+          // ⚠⚠ I-2 (review TOÀN NHÁNH) — "CỬA THỨ BA". Bản trước `return` ở đây IM LẶNG TUYỆT
+          // ĐỐI: không sự kiện, không dấu vết, không gì. Hậu quả nặng nhất KHÔNG phải đầu độc
+          // nền (nền chụp một lần lúc boot, sổ còn rỗng — xác suất thấp) mà là: **giấy phép giữ
+          // ước lượng theo kích thước FILE VĨNH VIỄN**. Với `reranker:` file 606 MiB / thật
+          // 14-18 MiB ⇒ sổ thừa ~590 MiB ⇒ lệch ÂM vượt ngưỡng 512 **mỗi 60 giây, mãi mãi** —
+          // đúng nhánh mà Task 5 đã phải đổi `> 0` thành `>= 0` để tránh, sống lại qua cửa `< 0`.
+          // Đường sinh delta âm có THẬT và dài NHIỀU GIÂY: `aiGgufEngine.ts:771`
+          // `while (await evictLRU())` chạy GIỮA `beforeUsed` (`:737`) và `commitMeasured()`
+          // (`:802`) — đuổi 17 GB rồi nạp 4 GB.
+          //
+          // ⚠ VÌ SAO KHÔNG CHỌN "THỬ LẠI Ở NHỊP ĐỐI CHIẾU" (phương án A): `beforeUsed` được chụp
+          // TRƯỚC lượt cấp phát. Một lượt thử lại ở thời điểm t₂ chỉ tính được
+          // `after(t₂) − beforeUsed(t₀)`, mà giữa t₀ và t₂ đã có mọi lượt cấp phát/nhả của mọi
+          // hộ khác ⇒ số thu được KHÔNG phải VRAM của giấy phép này, và nó sẽ được `commit()`
+          // NHƯ THỂ là số thật. Thử lại làm phép đo SAI HƠN, không đúng hơn. Chọn phương án B:
+          // ĐÁNH DẤU "đo hỏng" + ghi một sự kiện `measure_failed` — sổ nói thẳng rằng con số nó
+          // đang giữ là ước lượng KHÔNG xác minh được, thay vì giả vờ "đang chờ commit".
+          if (actual < 0) {
+            broker.markMeasureFailed(lease);
+            logVramEvent({
+              event: "measure_failed",
+              owner: opts.owner,
+              leaseKind: opts.kind,
+              priority: opts.priority,
+              estimatedBytes: est.bytes,
+              estimateSource: est.source,
+              deviceUsedBytes: after.usedBytes,
+              detail: {
+                measuredDeltaBytes: actual,
+                beforeUsedBytes: beforeUsed,
+                afterUsedBytes: after.usedBytes,
+                note:
+                  "delta ÂM ⇒ phép đo vô nghĩa (có lượt nhả/evict xen giữa hai đầu đo). Giấy phép " +
+                  "GIỮ NGUYÊN ước lượng và sẽ KHÔNG BAO GIỜ được xác minh — đây là nguồn lệch ÂM " +
+                  "dai dẳng, KHÔNG phải 'đang cấp phát dở'. KHÔNG thử lại: beforeUsed đã cũ, " +
+                  "thử lại chỉ tạo ra một số sai trông như số thật.",
+              },
+            });
+            return;
+          }
 
           broker.commit(lease, actual);
           estimator.recordActual(opts.owner, actual);
@@ -176,6 +258,10 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
             estimatedBytes: est.bytes,
             actualBytes: lease.actualBytes ?? undefined,
             estimateSource: est.source,
+            // I-1 — bằng chứng thiết bị đã nhả (bảng bốn điểm nhả ở đầu file). Truy vấn được:
+            //   SELECT owner, count(*) FROM vram_events
+            //   WHERE event='release' AND detail->>'releaseProof'='unverified' GROUP BY 1;
+            detail: { releaseProof: opts.releaseProof ?? "device-disposed" },
           });
         } catch {
           /* telemetry hỏng KHÔNG được làm hỏng lượt nhả tài nguyên */

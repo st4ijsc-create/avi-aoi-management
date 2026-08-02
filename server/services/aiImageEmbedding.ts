@@ -508,6 +508,11 @@ async function getEmbeddingSession(model: AiModel): Promise<ort.InferenceSession
       kind: "onnx-session",
       priority: "production",
       filePath: modelPath,
+      // I-1 — cùng ca với `aiInferenceEngine`: `evictEmbeddingSessionCache()` chỉ gỡ tham chiếu
+      // JS, `ort.InferenceSession.release()` không được gọi ở đâu trong repo ⇒ KHÔNG chứng minh
+      // được thiết bị đã nhả. Đánh dấu tường minh thay vì im lặng. Xem bảng bốn điểm nhả ở
+      // `vram/vramWiring.ts`.
+      releaseProof: "unverified",
     });
   } catch {
     /* telemetry KHÔNG được làm hỏng đường tạo session */
@@ -532,6 +537,22 @@ async function getEmbeddingSession(model: AiModel): Promise<ort.InferenceSession
   return session;
 }
 
+/**
+ * ⚠ I-1 (review TOÀN NHÁNH) — hai điều người sau phải biết trước khi tin hàm này:
+ *
+ *   1. **Hàm này KHÔNG CÓ NGƯỜI GỌI trong mã sản xuất** (grep toàn repo: chỉ định nghĩa ở đây và
+ *      một lời gọi trong test). `embeddingSessionCache` không có LRU, không có trần kích thước.
+ *      ⇒ trên thực tế giấy phép của hộ thứ bảy KHÔNG BAO GIỜ được trả trong một tiến trình sống.
+ *      Điều đó nghe như rò rỉ, nhưng nó TRUNG THỰC: session cũng không bao giờ được nhả khỏi
+ *      thiết bị, nên sổ và thiết bị vẫn khớp nhau. Cái sai nằm ở tầng dưới (session rò), không
+ *      phải ở sổ.
+ *   2. Khi có người gọi, lượt nhả này là lượt nhả **KHÔNG CÓ BẰNG CHỨNG** — xoá khỏi Map chỉ gỡ
+ *      tham chiếu JS, `ort.InferenceSession.release()` không tồn tại trong repo. Vì vậy giấy
+ *      phép được xin kèm `releaseProof: "unverified"` (xem `getEmbeddingSession()`), và sự kiện
+ *      `release` ghi lại đúng như thế.
+ *
+ * Kỷ luật đầy đủ + bảng bốn điểm nhả: đầu `server/services/vram/vramWiring.ts`.
+ */
 export function evictEmbeddingSessionCache(modelId: number) {
   for (const [key] of embeddingSessionCache) {
     if (key.startsWith(`emb:${modelId}:`)) {

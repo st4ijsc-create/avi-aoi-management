@@ -46,6 +46,25 @@ export async function readDeviceVramUncached(): Promise<{ usedBytes: number; tot
   return probeOnce();
 }
 
+/**
+ * I-3 (review TOÀN NHÁNH) — báo trần THẬT vừa đọc được cho sổ cái.
+ *
+ * ⚠ Bản trước `probeOnce()` đọc `totalBytes` ở đúng dòng dưới rồi **VỨT ĐI**, trong khi
+ * `vramBroker` tính `headroom` bằng một HẰNG SỐ = dung lượng RTX 5090 của MỘT máy. Số đo thật
+ * nằm ngay trong tay mà không ai dùng. Ghi ngược lên broker ở đây (chứ không để broker tự đọc)
+ * giữ nguyên lá chắn cấu trúc: `reserve()` vẫn ĐỒNG BỘ và không chạm I/O.
+ *
+ * KHÔNG BAO GIỜ ném — đầu dò là telemetry, không được làm hỏng đường gọi.
+ */
+async function noteTotal(totalBytes: number): Promise<void> {
+  try {
+    const { noteDeviceTotalBytes } = await import("./vramBroker");
+    noteDeviceTotalBytes(totalBytes);
+  } catch {
+    /* sổ cái hỏng ⇒ giữ trần dự phòng, không làm hỏng lượt đo */
+  }
+}
+
 /** Một lượt đọc thiết bị, không dính gì tới đệm. NEVER throws. */
 async function probeOnce(): Promise<{ usedBytes: number; totalBytes: number } | null> {
   const llama = getLlamaInstanceIfReady();
@@ -53,6 +72,7 @@ async function probeOnce(): Promise<{ usedBytes: number; totalBytes: number } | 
     try {
       const v = await llama.getVramState();
       if (v && v.total > 0) {
+        await noteTotal(v.total);
         return { usedBytes: v.used, totalBytes: v.total };
       }
     } catch { /* lùi về nvidia-smi */ }
@@ -69,6 +89,7 @@ async function probeOnce(): Promise<{ usedBytes: number; totalBytes: number } | 
     const line = String(stdout).split(/\r?\n/).find((l) => l.trim().length > 0) ?? "";
     const [used, total] = line.split(",").map((s) => parseInt(s.trim(), 10));
     if (Number.isFinite(used) && Number.isFinite(total) && total > 0) {
+      await noteTotal(total * 1024 * 1024);
       return { usedBytes: used * 1024 * 1024, totalBytes: total * 1024 * 1024 };
     }
   } catch { /* máy không có GPU — telemetry vắng, KHÔNG phải lỗi */ }

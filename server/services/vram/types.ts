@@ -32,6 +32,18 @@ export interface VramLease {
   acquiredAt: Date;
   /** null cho tới khi commit(). */
   actualBytes: number | null;
+  /**
+   * I-2 (review TOÀN NHÁNH) — phép ĐO đã chạy nhưng cho kết quả VÔ NGHĨA (delta âm), nên
+   * `actualBytes` sẽ KHÔNG BAO GIỜ được điền và giấy phép này giữ ƯỚC LƯỢNG vĩnh viễn.
+   *
+   * ⚠ Bắt buộc phải TÁCH khỏi `actualBytes === null`: hai trạng thái đó trông giống hệt nhau
+   * nhưng nghĩa NGƯỢC nhau. `actualBytes === null` + cờ này TẮT = "đang cấp phát dở, số thật
+   * sắp tới" (tự lành trong vài giây). `actualBytes === null` + cờ này BẬT = "đã đo, đo hỏng,
+   * số này đứng mãi" (KHÔNG tự lành). Gộp hai thứ lại là lý do câu cảnh báo lệch ÂM của
+   * `vramReconciler` từng chỉ người trực đi SAI hướng: nó gọi một giấy phép đo-hỏng là
+   * "ứng viên số một (chưa commit)" và người trực ngồi đợi một thứ không bao giờ tới.
+   */
+  measureFailed?: boolean;
   lastHeartbeatAt: Date;
   released: boolean;
 }

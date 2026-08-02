@@ -264,12 +264,17 @@ function fail(jobId: number, startTime: number, error: string): LocalTrainingRes
  * the timeout elapses. Resolves with the exit code (or a non-zero sentinel on
  * timeout/spawn error). Never rejects.
  */
-function spawnAndPoll(
+async function spawnAndPoll(
   jobId: number,
   jobDir: string,
   progressPath: string,
   config?: Record<string, unknown>,
 ): Promise<number> {
+  // ★ C-2 (review TOÀN NHÁNH) — HỘ TIÊU THỤ VRAM THỨ MƯỜI, xin phép NGAY TRƯỚC khi spawn.
+  // TRƯỚC khi vào Promise theo dõi vì `beginTrainerVram()` là async còn executor bên dưới cố
+  // tình giữ ĐỒNG BỘ (cùng khuôn `kbSyncScheduler.runKbSyncNow`).
+  const vramTicket = await beginTrainerVram();
+
   return new Promise<number>((resolve) => {
     let settled = false;
     const finish = (code: number) => {
@@ -279,12 +284,23 @@ function spawnAndPoll(
       if (timer) clearTimeout(timer);
       resolve(code);
     };
+    const releaseVram = () => {
+      try {
+        vramTicket.release();
+      } catch {
+        /* telemetry KHÔNG được làm hỏng vòng đời tiến trình con */
+      }
+    };
 
     let child;
     try {
       const { cmd, args } = resolveSidecarCommand(jobDir);
       child = spawn(cmd, args, { cwd: process.cwd(), shell: false, windowsHide: true });
     } catch (err) {
+      // Nhánh thoát ĐỒNG BỘ: `resolveSidecarCommand()` ném (LOCAL_TRAINER_CMD rỗng) hoặc
+      // `spawn()` ném (EACCES). Không listener nào kịp gắn ⇒ KHÔNG CÒN chỗ nào khác trả được
+      // giấy phép này. Bài học Task 6 vòng 1.
+      releaseVram();
       finish(-1);
       return;
     }
@@ -297,13 +313,56 @@ function spawnAndPoll(
     // ── Timeout guard ─────────────────────────────────────────
     const timeoutMs = sidecarTimeoutMs();
     const timer = setTimeout(() => {
+      // ⚠ KHÔNG trả giấy phép ở đây: SIGKILL là YÊU CẦU chết, chưa phải cái chết. Nhánh "exit"
+      // bên dưới trả chỗ khi tiến trình THẬT SỰ chết — kỷ luật thứ tự nhả I-1, xem đầu
+      // `vram/vramWiring.ts`.
       try { child.kill("SIGKILL"); } catch { /* already dead */ }
       finish(-2);
     }, timeoutMs);
 
-    child.on("error", () => finish(-1));
-    child.on("exit", (code) => finish(code == null ? -1 : code));
+    // ⚠ release() ở CẢ HAI nhánh sự kiện: "exit" (đã chết) VÀ "error" (spawn hỏng — "exit" có
+    // thể KHÔNG BAO GIỜ tới). Thiếu một nhánh là giấy phép treo vĩnh viễn ⇒ reconciler báo lệch
+    // ÂM mãi mãi.
+    child.on("error", () => { releaseVram(); finish(-1); });
+    child.on("exit", (code) => { releaseVram(); finish(code == null ? -1 : code); });
   });
+}
+
+/**
+ * ★ C-2 — giấy phép VRAM cho tiến trình con Python.
+ *
+ * `LOCAL_TRAINER_CMD` trỏ tới `tools/trainer/train.py`, và file đó cấp phát VRAM THẬT:
+ * `:260-261` `torch.device("cuda")`, `:629-630`/`:693` huấn luyện YOLOv8-seg với `device=0`.
+ * Docstring `train_seg()` (`:616`) nói rõ mô hình được chọn cỡ **~6 GB VRAM**.
+ *
+ * ⚠ Hôm nay hộ này đo 0 MiB **CHỈ VÌ `LOCAL_TRAINER_CMD` chưa được đặt**. Đó CHÍNH XÁC là lập
+ * luận dự án đã dùng để tuyên bố hộ thứ SÁU (`aiReranker`, 0 MiB chỉ vì `RAG_RERANKER_GPU=false`)
+ * và hộ thứ BẢY (`aiImageEmbedding`, 0 MiB chỉ vì `ENABLE_CUDA` vắng) là thiếu sót THẬT. Cùng
+ * tiêu chuẩn ⇒ hộ này cũng vậy: một biến env là có ngay ~6 GB mà không công cụ nào thấy.
+ *
+ * ⚠ 6.144 MiB đi qua `configDefaultBytes` (không hard-code vào `estimatedBytes`) để sự kiện ghi
+ * `estimateSource: "config-default"` — dấu vết để Task 7 truy "chỗ nào còn dựa hằng số". Số này
+ * là MỤC TIÊU THIẾT KẾ chép từ docstring của chính script, chưa phải số ĐO — Pha 2 phải đo thật.
+ *
+ * ⚠ KHÔNG `commitMeasured()` (khác sidecar thị giác, giống `cron:kb-sync`): khi tiến trình con
+ * thoát, VRAM của nó đã được OS thu hồi từ lâu — đo delta lúc đó chỉ cho ra 0 giả, tệ hơn không đo.
+ */
+async function beginTrainerVram(): Promise<import("./vram/vramWiring").VramTicket> {
+  try {
+    const { beginVramAllocation } = await import("./vram/vramWiring");
+    return await beginVramAllocation({
+      owner: "sidecar:local-trainer",
+      kind: "external-process",
+      priority: "background",
+      configDefaultBytes: Number(process.env.VRAM_TRAINER_ESTIMATE_MB ?? 6144) * 1024 * 1024,
+      // Trần thời lượng job thật — quá mốc này tiến trình bị SIGKILL, nên giấy phép không bao
+      // giờ sống lâu hơn khoảng tiến trình con được PHÉP sống.
+      ttlMs: sidecarTimeoutMs(),
+      releaseProof: "process-exit",
+    });
+  } catch {
+    return { commitMeasured: async () => {}, release: () => {} };
+  }
 }
 
 /**

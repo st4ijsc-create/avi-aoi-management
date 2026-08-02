@@ -62,6 +62,10 @@ class FakeChildProc extends EventEmitter {
   }
 }
 const sharedSpawnMock = vi.hoisted(() => vi.fn());
+/** Tiến trình con THỨ BA của cùng file `kbSyncScheduler.ts` — cổng eval (review toàn nhánh, C-1). */
+function isEvalGateSpawn(cmd: unknown, args: unknown): boolean {
+  return Array.isArray(args) && args.some((a) => String(a).endsWith("eval-rag.mjs"));
+}
 vi.mock("child_process", () => ({
   spawn: (...a: unknown[]) => (sharedSpawnMock as unknown as (...a: unknown[]) => unknown)(...a),
 }));
@@ -91,18 +95,22 @@ function stubHealthyFetch() {
 
 let lastSidecarProc: FakeChildProc | undefined;
 let lastCronChild: FakeChildProc | undefined;
+let lastEvalChild: FakeChildProc | undefined;
 
 beforeEach(() => {
   vi.resetModules();
   vi.unstubAllGlobals();
   lastSidecarProc = undefined;
   lastCronChild = undefined;
+  lastEvalChild = undefined;
   sharedSpawnMock.mockReset();
-  sharedSpawnMock.mockImplementation((cmd: unknown) => {
+  sharedSpawnMock.mockImplementation((cmd: unknown, args: unknown) => {
     const proc = new FakeChildProc();
     // llamaVisionSidecar spawns the llama-server BINARY PATH directly; kbSyncScheduler spawns
-    // "npm" (["run", "kb:sync"]). This is the only signal available to route the shared mock.
-    if (cmd === "npm") lastCronChild = proc;
+    // "npm" (["run", "kb:sync"]) cho pipeline VÀ `process.execPath` (["…/eval-rag.mjs","--ci"])
+    // cho cổng eval — BA đường spawn khác nhau, phân biệt bằng chính lệnh spawn.
+    if (isEvalGateSpawn(cmd, args)) lastEvalChild = proc;
+    else if (cmd === "npm") lastCronChild = proc;
     else lastSidecarProc = proc;
     return proc;
   });
@@ -135,13 +143,29 @@ describe("Pha 1 Task 6 — dây nối ngoài tiến trình: người giám sát 
       expect(lastCronChild).toBeUndefined();
     });
 
-    it("2. kill sidecar (đường tắt tường minh, stopSidecar) ⇒ TRẢ giấy phép", async () => {
+    /**
+     * I-1 (review TOÀN NHÁNH) — KỶ LUẬT THỨ TỰ: sổ chỉ được nhả SAU khi thiết bị đã nhả.
+     *
+     * Bản trước gọi `release()` NGAY TRƯỚC `kill("SIGTERM")` (llamaVisionSidecar.ts:393) rồi mới
+     * SIGKILL sau 5.000 ms. Trong cửa sổ đó sổ = 0 nhưng thiết bị vẫn giữ 7.825 MiB ⇒ một nhịp
+     * đối chiếu rơi vào đó in "LỆCH +7825 MiB … cấp phát KHÔNG XIN PHÉP" — module TỰ SINH ra
+     * đúng cái báo động giả nó được viết ra để bắt. Sidecar tự tắt sau MỖI 10 phút nhàn rỗi ⇒
+     * hàng chục lượt/24 h. `aiGgufEngine.ts:987` đã làm ĐÚNG chiều và ghi rõ lý do; hai task đi
+     * hai hướng với hai comment cùng tự tin — test này khoá chiều đúng lại.
+     */
+    it("2. stopSidecar ⇒ GIỮ giấy phép cho tới khi tiến trình THẬT SỰ chết (không nhả sổ trước thiết bị)", async () => {
       stubHealthyFetch();
       const { __startSidecarForTests, __stopSidecarForTests } = await import("../llamaVisionSidecar");
       await __startSidecarForTests();
       expect((await currentLeases()).some((x) => x.request.owner.startsWith("sidecar:"))).toBe(true);
 
       await __stopSidecarForTests();
+      // SIGTERM đã gửi nhưng tiến trình CHƯA thoát — thiết bị VẪN giữ 7.825 MiB ⇒ sổ phải giữ.
+      expect(lastSidecarProc!.killed).toBe(true);
+      expect((await currentLeases()).some((x) => x.request.owner.startsWith("sidecar:"))).toBe(true);
+
+      // Tiến trình chết thật ⇒ ĐÂY mới là lúc sổ được nhả.
+      lastSidecarProc!.emit("exit", 0, "SIGTERM");
       expect((await currentLeases()).some((x) => x.request.owner.startsWith("sidecar:"))).toBe(false);
     });
 
@@ -231,6 +255,69 @@ describe("Pha 1 Task 6 — dây nối ngoài tiến trình: người giám sát 
       lastCronChild!.emit("error", new Error("ENOENT — npm không tìm thấy (ca thử nghiệm)"));
 
       expect((await currentLeases()).some((x) => x.request.owner.startsWith("cron:kb-sync"))).toBe(false);
+    });
+  });
+
+  /**
+   * C-1 (review TOÀN NHÁNH) — hộ tiêu thụ THỨ BA của CÙNG file `kbSyncScheduler.ts`, cách
+   * `spawnKbSyncWithVram()` đúng 143 dòng BÊN TRÊN, và Task 6 đã bỏ sót.
+   *
+   * `runEvalHarness()` spawn `node scripts/ai-kb/eval-rag.mjs --ci`. Script đó gọi
+   * `getLlama({ gpu: "auto" })` (eval-rag.mjs:211 cho đường rerank, và `_gguf-embed.mjs:73` cho
+   * đường nhúng câu hỏi mà `--ci` LUÔN đi qua) rồi `loadModel(...)` ⇒ backend CUDA + embedding
+   * context trong một tiến trình Node THỨ HAI.
+   *
+   * ⚠ KHÔNG phải giả thuyết: `.env:748` `KB_AUTOSYNC_ENABLED=true`, `.env:749`
+   * `KB_AUTOSYNC_EVAL_GATE=true` (mặc định mã cũng "true", kbSyncScheduler.ts:85) ⇒ 03:00 mỗi
+   * đêm, `reconcileOnce()` báo "cấp phát KHÔNG XIN PHÉP" cho chính tiến trình con app tự spawn.
+   */
+  describe("cổng eval kb (kbSyncScheduler.runEvalHarness) — tiến trình con THỨ HAI của cùng file", () => {
+    it("8. cổng eval xin giấy phép BACKGROUND NGAY TRƯỚC khi spawn eval-rag.mjs", async () => {
+      const { __runEvalGateForTests } = await import("../kbSyncScheduler");
+      await __runEvalGateForTests();
+
+      const l = (await currentLeases()).find((x) => x.request.owner === "cron:kb-eval-gate");
+      expect(l).toBeDefined();
+      expect(l!.request.kind).toBe("external-process");
+      expect(l!.request.priority).toBe("background");
+      // ttlMs = trần thời lượng gate (KB_AUTOSYNC_EVAL_TIMEOUT_MS, sàn 30 s) — giấy phép không
+      // được sống lâu hơn khoảng thời gian tiến trình con được PHÉP sống.
+      expect(typeof l!.request.ttlMs).toBe("number");
+      expect(l!.request.ttlMs!).toBeGreaterThanOrEqual(30_000);
+      expect(l!.request.estimateSource).toBe("config-default");
+      expect(lastEvalChild).toBeDefined();
+      // Tiến trình eval KHÔNG phải tiến trình kb:sync — hai hộ tiêu thụ RIÊNG.
+      expect(lastCronChild).toBeUndefined();
+    });
+
+    it('9. ĐỘT BIẾN — eval thoát ("exit") ⇒ TRẢ giấy phép', async () => {
+      const { __runEvalGateForTests } = await import("../kbSyncScheduler");
+      await __runEvalGateForTests();
+      expect((await currentLeases()).some((x) => x.request.owner === "cron:kb-eval-gate")).toBe(true);
+
+      lastEvalChild!.emit("exit", 0, null);
+
+      expect((await currentLeases()).some((x) => x.request.owner === "cron:kb-eval-gate")).toBe(false);
+    });
+
+    it('10. ĐỘT BIẾN — eval spawn LỖI ("error") ⇒ TRẢ giấy phép, không treo', async () => {
+      const { __runEvalGateForTests } = await import("../kbSyncScheduler");
+      await __runEvalGateForTests();
+      expect((await currentLeases()).some((x) => x.request.owner === "cron:kb-eval-gate")).toBe(true);
+
+      lastEvalChild!.emit("error", new Error("ENOENT — node không tìm thấy (ca thử nghiệm)"));
+
+      expect((await currentLeases()).some((x) => x.request.owner === "cron:kb-eval-gate")).toBe(false);
+    });
+
+    it("11. ĐỘT BIẾN — spawn() NÉM ĐỒNG BỘ ⇒ vẫn TRẢ giấy phép (bài học Task 6 vòng 1)", async () => {
+      sharedSpawnMock.mockImplementationOnce(() => {
+        throw new Error("EACCES — không thực thi được node (ca thử nghiệm)");
+      });
+      const { __runEvalGateForTests } = await import("../kbSyncScheduler");
+      await __runEvalGateForTests();
+
+      expect((await currentLeases()).some((x) => x.request.owner === "cron:kb-eval-gate")).toBe(false);
     });
   });
 });

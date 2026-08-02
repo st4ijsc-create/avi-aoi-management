@@ -192,13 +192,26 @@ export function __resetVramBaselineForTests(): void {
  */
 export async function reconcileOnce(): Promise<VramReconcileResult> {
   const snap = snapshot();
-  // ⚠ M-2 (review round 1): lấy mẫu KHÔNG NGUYÊN TỬ. `snapshot()` tức thời, còn
-  // `readDeviceVram()` mất tới ~3 s (vramProbe.ts). `reserve()` đồng bộ cộng
-  // `estimatedBytes` vào sổ TRƯỚC KHI VRAM vật lý kịp tăng ⇒ một lượt reconcile rơi
-  // đúng giữa cửa sổ nạp model lớn có thể thấy lệch ÂM THOÁNG QUA (tự lành ở lượt kế
-  // 60 s sau). Đây là TÍNH CHẤT THIẾT KẾ CỐ HỮU, không phải bug — Task 7 và người trực
-  // đọc một `drift` âm gần thời điểm nạp model lớn nên nghi bóng ma trước, không phải
-  // sự cố thật.
+  // ⚠ M-2 (review round 1, SỬA LẠI ở review TOÀN NHÁNH): lấy mẫu KHÔNG NGUYÊN TỬ.
+  // `snapshot()` tức thời, còn `readDeviceVram()` thì KHÔNG — nhưng nguyên nhân đã bị ghi
+  // SAI ở bản trước, sai cả hướng lẫn HAI BẬC ĐỘ LỚN:
+  //
+  //   • Bản trước viết "`readDeviceVram()` mất tới ~3 s". SAI: `~3 s` là **trần
+  //     `timeout: 3000`** của `execFile`, không phải chi phí thường. Chính `vramProbe.ts:9-17`
+  //     — file được trích dẫn — đã RÚT LẠI đúng câu đó: đo được **72-80 ms** (báo cáo §4:
+  //     p50 **62,9 ms**), và khi `setLlamaInstanceHandle()` đã nối thì là `getVramState()`
+  //     native ~0 ms. Trích dẫn một file để chống lưng cho điều mà chính file đó đã bác bỏ là
+  //     cách nhanh nhất biến comment thành mìn.
+  //   • CỬA SỔ LỆCH ÂM THẬT không phải ~3 s mà là **THỜI LƯỢNG NẠP MODEL: 11-43 s** (báo cáo
+  //     §3.5). `reserve()` cộng `estimatedBytes` vào sổ ở `aiGgufEngine.ts:737`, còn
+  //     `commitMeasured()` mãi `:802` — cả `llama.loadModel()` nằm giữa. Bất kỳ nhịp đối chiếu
+  //     nào rơi vào khoảng đó đều thấy lệch ÂM tới hàng chục GiB (đo được **−16.335 MiB**).
+  //     Nó tự lành ở nhịp kế, nhưng xác suất trúng không nhỏ như con số "3 s" gợi ý.
+  //
+  // Đây là TÍNH CHẤT THIẾT KẾ CỐ HỮU của phép so sổ-vs-thiết bị, không phải bug của đầu dò —
+  // người trực đọc một `drift` âm lớn ngay sau một lượt nạp model nên nghi bóng ma TRƯỚC.
+  // ⚠ Lệch âm DAI DẲNG (không tự lành sau một nhịp) thì NGƯỢC LẠI: đó là giấy phép "đo hỏng"
+  // (I-2, xem nhánh cảnh báo bên dưới) hoặc giấy phép treo — hai thứ đó phải điều tra thật.
   const device = await readDeviceVram();
 
   // Đầu dò hỏng hoặc máy không GPU ⇒ IM LẶNG bỏ qua.
@@ -248,11 +261,22 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
           `Đang giữ: ${holders()}`,
       );
     } else {
-      const pending = snap.leases.filter((l) => l.actualBytes === null).map((l) => l.request.owner);
+      // ⚠ I-2 — TÁCH HAI NHÓM. Trước đây cả hai bị gộp vào "chưa commit", và người trực ngồi
+      // đợi một lượt commit KHÔNG BAO GIỜ TỚI cho nhóm thứ hai.
+      //   • "chưa commit"  = đang cấp phát dở. TỰ LÀNH sau vài giây → chờ một nhịp là đúng.
+      //   • "ĐO HỎNG"      = đã đo, delta âm, ước lượng đứng MÃI MÃI. KHÔNG tự lành → phải sửa
+      //                      (bỏ nạp lại hộ đó, hoặc đợi Pha 2 dùng Σ actualBytes).
+      const pending = snap.leases
+        .filter((l) => l.actualBytes === null && !l.measureFailed)
+        .map((l) => l.request.owner);
+      const failed = snap.leases.filter((l) => l.measureFailed).map((l) => l.request.owner);
+      const failedNote = failed.length
+        ? `⚠ ĐO HỎNG (ước lượng KHÔNG xác minh được, KHÔNG tự lành): ${failed.join(", ")}. `
+        : "";
       console.warn(
         `[vram] LỆCH ${mib(drift)} MiB — sổ ${mib(snap.totalReservedBytes)}, thiết bị ${mib(attributable)}${baseNote}. ` +
-          `Sổ đang giữ NHIỀU HƠN thực tế — giấy phép treo hoặc số commit sai, KHÔNG PHẢI cấp phát chui. ` +
-          `Ứng viên số một (chưa commit): ${pending.join(", ") || "(không có)"}. Đang giữ: ${holders()}`,
+          `Sổ đang giữ NHIỀU HƠN thực tế — giấy phép treo, đo hỏng, hoặc số commit sai, KHÔNG PHẢI cấp phát chui. ` +
+          `${failedNote}Ứng viên số một (chưa commit): ${pending.join(", ") || "(không có)"}. Đang giữ: ${holders()}`,
       );
     }
     logVramEvent({
@@ -276,6 +300,9 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
           priority: l.request.priority,
           bytes: leaseBytes(l),
           committed: l.actualBytes !== null,
+          // I-2 — "chưa commit" và "đo hỏng" trông giống nhau trong ảnh chụp nếu chỉ có cờ
+          // `committed`. Ghi riêng để đọc lại nhật ký là phân biệt được tạm thời vs vĩnh viễn.
+          measureFailed: l.measureFailed === true,
         })),
       },
     });

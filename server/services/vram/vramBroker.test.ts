@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { reserve, commit, release, snapshot, __resetBrokerForTests } from "./vramBroker";
+import {
+  reserve, commit, release, snapshot, deviceTotalBytes, noteDeviceTotalBytes, __resetBrokerForTests,
+} from "./vramBroker";
 
 const MIB = 1024 * 1024;
 
@@ -68,5 +70,34 @@ describe("vramBroker — sổ cái", () => {
     const spy = vi.spyOn(probe, "readDeviceVram");
     reserve(req("gguf:A", 100 * MIB));
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * I-3 (review TOÀN NHÁNH) — trần thiết bị phải là SỐ ĐO, hằng số chỉ là dự phòng.
+   * Bản trước ghim `32607` MiB (dung lượng RTX 5090 của MỘT máy) làm mặc định TOÀN ĐỘI, trong
+   * khi `vramProbe.probeOnce()` đã đọc `totalBytes` từ thiết bị ở đúng dòng `:72` rồi vứt đi.
+   */
+  describe("I-3 — trần thiết bị: số ĐO thắng hằng số dự phòng", () => {
+    it("chưa đo được ⇒ dùng trần dự phòng 32.607 MiB", () => {
+      expect(deviceTotalBytes()).toBe(32_607 * MIB);
+    });
+
+    it("đầu dò báo trần THẬT ⇒ trần đổi theo, và headroom tính trên trần mới", () => {
+      // Một máy 8 GiB (laptop) — trần dự phòng của RTX 5090 sai gấp bốn lần trên máy này.
+      noteDeviceTotalBytes(8 * 1024 * MIB);
+      expect(deviceTotalBytes()).toBe(8 * 1024 * MIB);
+
+      // headroom = 8192 − SAFETY_RESERVE(1024) − sổ(0) = 7168 ⇒ xin 7500 MiB PHẢI bị đánh dấu
+      // "sẽ từ chối ở Pha 2". Với trần dự phòng 32.607 thì nó lọt — đó chính là dữ liệu bóng
+      // sai mà Pha 2 sẽ cưỡng chế trên đó.
+      expect(reserve(req("gguf:big", 7_500 * MIB)).wouldRefuse).toBe(true);
+    });
+
+    it("số vô lý (0/NaN) KHÔNG được ghi đè trần đang dùng", () => {
+      noteDeviceTotalBytes(8 * 1024 * MIB);
+      noteDeviceTotalBytes(0);
+      noteDeviceTotalBytes(Number.NaN);
+      expect(deviceTotalBytes()).toBe(8 * 1024 * MIB);
+    });
   });
 });

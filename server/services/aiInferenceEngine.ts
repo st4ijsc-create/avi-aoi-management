@@ -89,6 +89,16 @@ class LruSessionCache {
       // Evict the oldest (first) entry
       // Pha 1 Task 5 — giữ lại key trước khi xoá để TRẢ giấy phép VRAM tương ứng.
       // Ngữ nghĩa y hệt dòng cũ `this.map.delete(this.map.keys().next().value!)`.
+      //
+      // ⚠ I-1 (review TOÀN NHÁNH) — ĐÂY LÀ MỘT LƯỢT NHẢ **KHÔNG CÓ BẰNG CHỨNG**, và nó được
+      // đánh dấu tường minh như vậy (`releaseProof: "unverified"` ở `getSession()`), KHÔNG được
+      // im lặng coi như đã nhả thật. Đuổi khỏi cache chỉ gỡ THAM CHIẾU JS; bộ nhớ native của
+      // onnxruntime chỉ chắc chắn trả khi `session.release()` chạy — mà toàn repo KHÔNG có một
+      // lời gọi nào như vậy. Không thêm ở đây được: `getSession()` không có khoá in-flight
+      // (:192) và `gpuSessionSemaphore` cho phép 2 lượt `session.run` song song ⇒ nhả native
+      // dưới chân một lượt run đang bay là ABORT ở tầng native, không phải exception bắt được.
+      // Sửa đúng cần đếm tham chiếu = ĐỔI HÀNH VI đường suy luận nóng nhất ⇒ báo cáo §10, Pha 2.
+      // Kỷ luật đầy đủ + bảng bốn điểm nhả: đầu `vram/vramWiring.ts`.
       const evictedKey = this.map.keys().next().value!;
       this.map.delete(evictedKey);
       releaseSessionVramTicket(evictedKey);
@@ -173,6 +183,10 @@ async function getSession(model: AiModel): Promise<ort.InferenceSession> {
     kind: "onnx-session",
     priority: "production",
     filePath: modelPath,
+    // I-1 — lượt nhả của hộ này KHÔNG chứng minh được thiết bị đã nhả (đuổi LRU chỉ gỡ tham
+    // chiếu JS; `ort.InferenceSession.release()` không được gọi ở đâu trong repo). Đánh dấu để
+    // truy vấn được thay vì phải đọc comment mà tin — xem bảng bốn điểm nhả ở `vramWiring.ts`.
+    releaseProof: "unverified",
   });
 
   const session = await ort.InferenceSession.create(modelPath, {

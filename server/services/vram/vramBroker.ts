@@ -2,9 +2,63 @@ import type {
   VramLease, VramReserveRequest, VramReserveResult, VramSnapshot, VramPriority,
 } from "./types";
 
-/** Trần thiết bị và dự trữ an toàn (spec §5.1). Đọc một lần, không I/O trên đường quyết định. */
-const DEVICE_TOTAL_BYTES = Number(process.env.VRAM_DEVICE_TOTAL_MB ?? 32607) * 1024 * 1024;
+/**
+ * Trần thiết bị và dự trữ an toàn (spec §5.1). Đọc một lần, không I/O trên đường quyết định.
+ *
+ * ⚠ I-3 (review TOÀN NHÁNH) — BA NGUỒN, theo thứ tự ưu tiên, KHÔNG phải một hằng số:
+ *   1. `VRAM_DEVICE_TOTAL_MB` — người vận hành ép tay. Luôn thắng (kể cả khi số đo có sẵn):
+ *      một lệnh ép tay mà bị số đo ghi đè âm thầm là thứ không ai gỡ được lúc 3 giờ sáng.
+ *   2. **SỐ ĐO THẬT của thiết bị** — `vramProbe.probeOnce()` đọc `totalBytes` ngay ở lượt đo
+ *      đầu tiên và gọi `noteDeviceTotalBytes()` bên dưới.
+ *   3. `32607` MiB — DỰ PHÒNG cuối cùng, và đó là dung lượng RTX 5090 của MỘT máy (máy phát
+ *      triển). Bản trước để đúng con số này làm **mặc định toàn đội**: mọi máy khác — 4090
+ *      24 GB, A2000 12 GB, laptop 8 GB — đều tính `headroom` theo trần của một card không
+ *      phải của nó. Pha 1 chỉ méo dữ liệu bóng; **Pha 2 sẽ TỪ CHỐI/THU HỒI trên con số này**.
+ */
+const DEVICE_TOTAL_ENV_MB = Number(process.env.VRAM_DEVICE_TOTAL_MB);
+const DEVICE_TOTAL_ENV_BYTES =
+  Number.isFinite(DEVICE_TOTAL_ENV_MB) && DEVICE_TOTAL_ENV_MB > 0 ? DEVICE_TOTAL_ENV_MB * 1024 * 1024 : null;
+const DEVICE_TOTAL_FALLBACK_BYTES = 32607 * 1024 * 1024;
+let measuredDeviceTotalBytes: number | null = null;
+
+/**
+ * ⚠ `SAFETY_RESERVE` KHÔNG PHẢI là "nền desktop" — quan hệ giữa hai thứ này phải nói rõ, vì
+ * đọc nhầm là tính thừa hoặc tính thiếu cả GiB (I-3):
+ *
+ *     headroom = trần_thiết_bị − SAFETY_RESERVE − Σ giấy_phép_trong_sổ
+ *
+ * `Σ giấy phép` chỉ gồm thứ CHÍNH TA xin. NỀN THIẾT BỊ (desktop compositor, trình duyệt, tiến
+ * trình khác của máy — đo được **996–2.112 MiB** trên chính máy này, reviewer đo lúc review:
+ * **2.112**) **KHÔNG NẰM TRONG SỔ**, và cũng KHÔNG bị trừ ở đây ⇒ `headroom` **lạc quan có hệ
+ * thống** đúng bằng lượng nền đó. `SAFETY_RESERVE` mặc định 1.024 MiB là thứ DUY NHẤT đang
+ * đứng thay chỗ nền, và nó NHỎ HƠN nền đo được.
+ *
+ * ⚠ CỐ Ý KHÔNG nâng mặc định lên 2.048: làm vậy chỉ là thay một hằng số của MỘT máy bằng một
+ * hằng số khác của CÙNG máy đó — đúng cái sai mà I-3 đang bắt. `vramReconciler` đã ĐO được nền
+ * thật (`captureVramBaseline()`); Pha 2 phải trừ SỐ ĐO ĐÓ khỏi `headroom` (báo cáo §10 mục 10),
+ * lúc đó `SAFETY_RESERVE` mới quay về đúng vai trò của nó: biên an toàn cho phần phình LƯỜI mà
+ * llama.cpp cấp phát ở lượt suy luận đầu, không phải chỗ đắp cho một phép đo còn thiếu.
+ */
 const SAFETY_RESERVE_BYTES = Number(process.env.VRAM_SAFETY_RESERVE_MB ?? 1024) * 1024 * 1024;
+
+/**
+ * Trần thiết bị đang dùng. ĐỒNG BỘ, không I/O — `reserve()` gọi được mà không phá lá chắn
+ * cấu trúc "đường quyết định không chạm I/O" (xem docstring `reserve()`).
+ */
+export function deviceTotalBytes(): number {
+  return DEVICE_TOTAL_ENV_BYTES ?? measuredDeviceTotalBytes ?? DEVICE_TOTAL_FALLBACK_BYTES;
+}
+
+/**
+ * I-3 — ghi lại trần THẬT mà đầu dò vừa đọc được từ thiết bị. Gọi từ `vramProbe.probeOnce()`
+ * (cả đường `llamaInstance.getVramState()` lẫn đường `nvidia-smi`), nên trần tự đúng trên MỌI
+ * máy sau lượt đo đầu tiên mà không ai phải khai báo gì.
+ *
+ * KHÔNG BAO GIỜ ném; số vô lý bị bỏ qua (giữ nguyên giá trị cũ) thay vì ghi đè một trần sai.
+ */
+export function noteDeviceTotalBytes(total: number): void {
+  if (Number.isFinite(total) && total > 0) measuredDeviceTotalBytes = total;
+}
 
 const PRIORITY_RANK: Record<VramPriority, number> = { production: 3, interactive: 2, background: 1 };
 
@@ -41,7 +95,7 @@ function totalReserved(): number {
  * đang gỡ mất lá chắn cấu trúc đó.
  */
 export function reserve(request: VramReserveRequest): VramReserveResult {
-  const headroom = DEVICE_TOTAL_BYTES - SAFETY_RESERVE_BYTES - totalReserved();
+  const headroom = deviceTotalBytes() - SAFETY_RESERVE_BYTES - totalReserved();
   const wouldRefuse = request.estimatedBytes > headroom;
 
   const wouldPreempt: string[] = [];
@@ -69,6 +123,7 @@ export function reserve(request: VramReserveRequest): VramReserveResult {
     request,
     acquiredAt: new Date(),
     actualBytes: null,
+    measureFailed: false,
     lastHeartbeatAt: new Date(),
     released: false,
   };
@@ -81,6 +136,21 @@ export function commit(lease: VramLease, actualBytes: number): void {
   const live = ledger.get(lease.id);
   if (!live || live.released) return;
   live.actualBytes = actualBytes;
+  // Đo lại được sau một lượt hỏng thì cờ phải TẮT — nếu không "đo hỏng" thành vĩnh viễn ngay
+  // cả khi số thật đã về, và câu chẩn đoán của reconciler lại chỉ sai hướng, chỉ theo chiều kia.
+  live.measureFailed = false;
+  live.lastHeartbeatAt = new Date();
+}
+
+/**
+ * I-2 — phép đo đã CHẠY và cho kết quả VÔ NGHĨA (delta âm). Không ghi số hỏng vào sổ, nhưng
+ * PHẢI ghi lại SỰ KIỆN rằng ước lượng của giấy phép này sẽ không bao giờ được xác minh.
+ * Xem `VramLease.measureFailed` (types.ts) để biết vì sao không được gộp với `actualBytes===null`.
+ */
+export function markMeasureFailed(lease: VramLease): void {
+  const live = ledger.get(lease.id);
+  if (!live || live.released) return;
+  live.measureFailed = true;
   live.lastHeartbeatAt = new Date();
 }
 
@@ -108,4 +178,5 @@ export function snapshot(): VramSnapshot {
 export function __resetBrokerForTests(): void {
   ledger.clear();
   seq = 0;
+  measuredDeviceTotalBytes = null;
 }

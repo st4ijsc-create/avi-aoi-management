@@ -398,7 +398,10 @@ function describeExitCode(code: number): string {
  * progress-polling-to-DB piece (there is no `training_jobs` row for a LoRA run in this task —
  * see module doc comment's dataset-source section for the equivalent DB-integration boundary).
  */
-function spawnAndWait(jobDir: string): Promise<number> {
+async function spawnAndWait(jobDir: string, baseModelPath: string): Promise<number> {
+  // ★ C-2 (review TOÀN NHÁNH) — HỘ TIÊU THỤ VRAM THỨ MƯỜI MỘT, xin phép NGAY TRƯỚC khi spawn.
+  const vramTicket = await beginFinetuneVram(baseModelPath);
+
   return new Promise<number>((resolve) => {
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -408,24 +411,70 @@ function spawnAndWait(jobDir: string): Promise<number> {
       if (timer) clearTimeout(timer);
       resolve(code);
     };
+    const releaseVram = () => {
+      try {
+        vramTicket.release();
+      } catch {
+        /* telemetry KHÔNG được làm hỏng vòng đời tiến trình con */
+      }
+    };
 
     let child;
     try {
       const { cmd, args } = resolveFinetuneCommand(jobDir);
       child = spawn(cmd, args, { cwd: process.cwd(), shell: false, windowsHide: true });
     } catch {
+      // Nhánh thoát ĐỒNG BỘ (resolveFinetuneCommand ném / spawn ném): không listener nào kịp
+      // gắn ⇒ KHÔNG CÒN chỗ nào khác trả được giấy phép này. Bài học Task 6 vòng 1.
+      releaseVram();
       finish(-1);
       return;
     }
 
     timer = setTimeout(() => {
+      // ⚠ KHÔNG trả giấy phép ở đây: SIGKILL là yêu cầu chết, chưa phải cái chết (kỷ luật I-1).
       try { child.kill("SIGKILL"); } catch { /* already dead */ }
       finish(-2);
     }, finetuneTimeoutMs());
 
-    child.on("error", () => finish(-1));
-    child.on("exit", (code) => finish(code == null ? -1 : code));
+    child.on("error", () => { releaseVram(); finish(-1); });
+    child.on("exit", (code) => { releaseVram(); finish(code == null ? -1 : code); });
   });
+}
+
+/**
+ * ★ C-2 — giấy phép VRAM cho tiến trình con QLoRA.
+ *
+ * `LLM_FINETUNE_CMD` trỏ tới `tools/trainer/finetune_lora.py`, và file đó cấp phát VRAM THẬT:
+ * `:174-196` chọn `torch.bfloat16` + `device_map="auto"` ngay khi `torch.cuda.is_available()` —
+ * tức trọng số mô hình nền đi thẳng lên GPU (QLoRA 4-bit/8-bit là NHIỀU GB).
+ *
+ * ⚠ Hôm nay 0 MiB CHỈ VÌ `LLM_FINETUNE_CMD` chưa đặt — cùng lớp mù đã sinh ra hộ thứ sáu và
+ * thứ bảy (xem `localSidecarTrainer.beginTrainerVram`).
+ *
+ * ⚠ KHÔNG bịa một hằng số: neo vào **KÍCH THƯỚC FILE trọng số nền THẬT** (`filePath` ⇒ nấc
+ * `"file-size"` của `vramEstimator`), đúng kỷ luật `loadGgufModel`. QLoRA lượng tử hoá xuống
+ * 4-bit nên nạp ÍT hơn file fp16 ⇒ đây là **trần trên có nguồn**, không phải một con số phát
+ * minh — thứ đã làm hỏng bốn tài liệu quyết định trước. `VRAM_FINETUNE_ESTIMATE_MB` chỉ là lối
+ * lùi khi không `stat` được file (lúc đó nấc tụt xuống `"config-default"`, hoặc `"unknown"` nếu
+ * biến cũng không đặt — và `"unknown"` LÀ câu trả lời trung thực, xem báo cáo §5.4).
+ */
+async function beginFinetuneVram(baseModelPath: string): Promise<import("./vram/vramWiring").VramTicket> {
+  try {
+    const { beginVramAllocation } = await import("./vram/vramWiring");
+    const envMb = Number(process.env.VRAM_FINETUNE_ESTIMATE_MB);
+    return await beginVramAllocation({
+      owner: "sidecar:llm-finetune",
+      kind: "external-process",
+      priority: "background",
+      filePath: baseModelPath,
+      configDefaultBytes: Number.isFinite(envMb) && envMb > 0 ? envMb * 1024 * 1024 : undefined,
+      ttlMs: finetuneTimeoutMs(),
+      releaseProof: "process-exit",
+    });
+  } catch {
+    return { commitMeasured: async () => {}, release: () => {} };
+  }
 }
 
 function sanitizeAdvisoryMetrics(raw: unknown): Record<string, unknown> {
@@ -641,7 +690,9 @@ export async function startLoraFinetune(req: StartLoraFinetuneRequest): Promise<
     };
     fs.writeFileSync(path.join(jobDir, "job.json"), JSON.stringify(contract, null, 2), "utf-8");
 
-    const exitCode = await spawnAndWait(jobDir);
+    // C-2 — `baseModelPath` đi kèm để ước lượng VRAM neo vào KÍCH THƯỚC FILE trọng số nền thật
+    // (nấc "file-size"), thay vì một hằng số bịa. Xem `beginFinetuneVram()`.
+    const exitCode = await spawnAndWait(jobDir, baseModelPath);
     if (exitCode !== 0) {
       throw new LoraFinetuneError(describeExitCode(exitCode));
     }

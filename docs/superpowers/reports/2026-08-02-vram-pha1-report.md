@@ -489,13 +489,31 @@ Spec §10, cổng ra Pha 1 gồm **ba** điều kiện:
 > Sổ cái hoạt động: nó **đo được** ba thứ mà trước đây không ai đo được (backend CUDA 430 MiB vô hình · hai cái thước lệch nhau 170 MiB · `gguf-embed-ctx` ước lượng 0 trong khi thật 526 MiB), và nó **trả lời được Ư7** bằng dữ liệu thay vì suy đoán.
 > Nhưng ngưỡng 512 MiB nằm **dưới sàn cấu trúc** của chính hệ đang đo, nên cái chuông kêu liên tục — đúng thất bại mà `vramReconciler.ts:20-26` viết ra để tránh, chỉ khác là nguồn không phải nền desktop mà là **backend CUDA + lệch thước**.
 
+#### ⚠ SỬA SAU REVIEW TOÀN NHÁNH — "một tiến trình vs hai" là **CHƯA ĐỦ**
+
+Bản đầu của mục này viết: *"Pha 1 là sổ cái MỘT tiến trình trong khi hệ chạy HAI"*. Con số thật **lớn hơn**. Hệ này có thể chạy tới **NĂM tiến trình giữ VRAM cùng lúc**, cộng **HAI tiến trình Python** khi bật huấn luyện:
+
+| # | Tiến trình | Ai spawn | Trạng thái sau lượt vá Task 8 |
+|---|---|---|---|
+| 1 | `ROLE=api` (server chính) | — | Có sổ. ⚠ Nhưng **không chạy reconciler** — §8 |
+| 2 | `ROLE=worker` | — | Có sổ, có reconciler |
+| 3 | sidecar thị giác (`llama-server`) | `llamaVisionSidecar` | Có giấy phép (Task 6) |
+| 4 | `npm run kb:sync` | `kbSyncScheduler` | Có giấy phép (Task 6) |
+| 5 | **`node eval-rag.mjs --ci`** | `kbSyncScheduler` | **MỚI có giấy phép (Task 8, C-1)** — trước đó **hoàn toàn ngoài sổ**, chạy **03:00 mỗi đêm** với `.env` hiện tại |
+| 6 | `tools/trainer/train.py` (torch CUDA) | `localSidecarTrainer` | **MỚI có giấy phép (Task 8, C-2)** |
+| 7 | `tools/trainer/finetune_lora.py` (QLoRA) | `aiLlmFinetuneSidecar` | **MỚI có giấy phép (Task 8, C-2)** |
+
+Sổ cái **quản được ba** trong số đó theo nghĩa đầy đủ (tiến trình 2 + giấy phép cho 3-7 do người giám sát xin thay). Tiến trình 1 giữ sổ nhưng **không đối chiếu**; và mỗi sổ là **của riêng một tiến trình** — không có sổ chung giữa `api` và `worker`. Đó mới là phát biểu đúng về phạm vi Pha 1.
+
 **Cổng ra Pha 1: CHƯA ĐẠT. Không được bắt đầu Pha 2 (cưỡng chế) trước khi:**
 
 1. **Một thước duy nhất** (bỏ ~170 MiB lệch giả) — §3.6 mục 2;
 2. **Backend CUDA vào sổ** (bỏ ~430 MiB) — §3.6 mục 3;
 3. **Cửa sổ chưa-commit không sinh báo động** (bỏ lệch −16 GiB) — §3.6 mục 4;
 4. **Chốt lại ngưỡng trên số liệu đã sạch**, rồi **mới** chạy 24 h;
-5. **Quyết tường minh về `ROLE=api`** — §8.3.
+5. **Quyết tường minh về `ROLE=api`** — §8.3;
+6. **(THÊM SAU REVIEW TOÀN NHÁNH — C-1)** Chạy **≥ một đêm THẬT có `kb:sync` + cổng eval** rồi kiểm nhật ký: cổng eval `cron:kb-eval-gate` phải xuất hiện và biến mất đúng vòng đời tiến trình con. Trước Task 8, mỗi 03:00 là một lượt báo động giả cho chính tiến trình con app tự spawn — số liệu 24 h thu được trong tình trạng đó **không dùng để chốt ngưỡng được**;
+7. **(THÊM SAU REVIEW TOÀN NHÁNH — C-2)** **ĐO THẬT** hai tiến trình Python với `LOCAL_TRAINER_CMD`/`LLM_FINETUNE_CMD` được đặt. Hôm nay chúng đo 0 MiB **chỉ vì hai biến env chưa đặt** — đúng lập luận đã dùng để tuyên bố hộ thứ sáu và thứ bảy là thiếu sót THẬT. Ước lượng hiện tại (6.144 MiB từ docstring, và kích-thước-file cho QLoRA) **chưa phải số đo**.
 
 ⚠ **Cổng chặn Ư7 của spec §10 thì ĐÃ MỞ**, nhưng mở theo hướng ngược với kỳ vọng: Ư7 trả lời *"trần không tất định"*, nên **mọi thiết kế Pha 2/3 dựa vào một con số trần đều bị loại từ đầu**. Broker phải xử lý **thất bại cấp phát như một sự kiện bình thường** (thử lại / hạ `gpuLayers` / từ chối trung thực), **không** như một điều kiện tránh được bằng cách tính đủ chỗ.
 
@@ -514,6 +532,24 @@ Spec §10, cổng ra Pha 1 gồm **ba** điều kiện:
 | 7 | Ghi `drift` **mọi nhịp** (hoặc lấy mẫu thưa), không chỉ khi vượt ngưỡng | `server/services/vram/vramReconciler.ts:238` | §3.1 — nếu không, lần chốt ngưỡng sau lại phải đo ngoài |
 | 8 | Quyết định về `ROLE=api` | `server/_core/index.ts:5198` · `backgroundJobs.ts:132` | §8.3 |
 | 9 | Hai lớp im lặng của đường OOM | `aiGgufEngine.ts:760-766` (`isOom` không khớp `"Failed to load model"`) · `:1369` (`warmModel` `catch {}` trống) | Ư4 — có thể là bản sửa **rẻ và trung thực hơn** cả việc đụng thứ tự CUDA |
+
+#### Thêm sau review TOÀN NHÁNH (Task 8)
+
+| # | Việc | Vị trí | Vì sao không sửa ở đây |
+|---|---|---|---|
+| 10 | **Trừ NỀN ĐO ĐƯỢC khỏi `headroom`**, thay vì để `SAFETY_RESERVE` đứng thay | `server/services/vram/vramBroker.ts` (`SAFETY_RESERVE_BYTES`) ← `vramReconciler.captureVramBaseline()` | I-3. Nền desktop **996–2.112 MiB** KHÔNG nằm trong sổ ⇒ `headroom` lạc quan có hệ thống. Task 8 **cố ý KHÔNG** nâng mặc định 1.024 → 2.048: đó chỉ là thay hằng số của một máy bằng hằng số khác của **cùng máy đó**, đúng cái sai I-1/I-3 đang bắt. Reconciler đã có SỐ ĐO — Pha 2 nối nó vào. |
+| 11 | **Đếm tham chiếu cho `ort.InferenceSession` rồi gọi `session.release()` khi đuổi LRU** | `aiInferenceEngine.ts:89-96` (`LruSessionCache.set`) · `aiImageEmbedding.ts:535` (`evictEmbeddingSessionCache`) | I-1. Toàn repo **không có một lời gọi `.release()` nào** lên `ort.InferenceSession` ⇒ đuổi khỏi cache chỉ gỡ tham chiếu JS, bộ nhớ native **không chắc được trả**. Thêm lời gọi đó bây giờ = giải phóng native **dưới chân** một `session.run` đang bay (`getSession()` không có khoá in-flight; `gpuSessionSemaphore` cho 2 lượt song song) ⇒ **abort tầng native**, không phải exception bắt được. Task 8 đánh dấu `releaseProof: "unverified"` để truy vấn được; sửa gốc là ĐỔI HÀNH VI đường suy luận nóng nhất ⇒ Pha 2. |
+| 12 | **`evictEmbeddingSessionCache()` KHÔNG CÓ NGƯỜI GỌI** trong mã sản xuất | `aiImageEmbedding.ts:535` | I-1 (mặt ngược của mục 11). `embeddingSessionCache` không có LRU, không có trần ⇒ session (và giấy phép) sống tới hết đời tiến trình. Trung thực về mặt sổ (sổ khớp thiết bị vì **cả hai** đều không nhả), nhưng là **rò rỉ thật** ở tầng dưới. |
+| 13 | **Giấy phép `measure_failed` vẫn giữ ước lượng sai trong tổng sổ** | `vramWiring.ts` (nhánh `actual < 0`) · `vramBroker.leaseBytes()` | I-2. Task 8 làm cho tình trạng này **nhìn thấy được** (cờ `measureFailed`, sự kiện `measure_failed`, câu chẩn đoán riêng) nhưng **không** sửa được con số: `beforeUsed` đã cũ nên không đo lại đúng được. Bản sửa thật là §10 mục 5 (so sổ bằng `Σ actualBytes`). |
+| 14 | **ĐO THẬT hai tiến trình Python** (`LOCAL_TRAINER_CMD` / `LLM_FINETUNE_CMD`) | `localSidecarTrainer.ts` · `aiLlmFinetuneSidecar.ts` | C-2. Ước lượng hiện tại là docstring (6 GB) và kích-thước-file — **có nguồn, nhưng chưa phải số đo**. Bật env rồi chạy một job thật là đủ để nấc `learned` tự học. |
+
+#### ⚠ ĐỔI HÀNH VI đã lọt vào nhánh này mà bản đầu KHÔNG ghi (M-7)
+
+`llamaVisionSidecar.ts` — listener `proc.on("error", …)` là **MỚI** (thêm ở Task 6). **Trước đó `'error'` không có ai bắt**: theo ngữ nghĩa `EventEmitter` của Node, một sự kiện `'error'` không người nghe được **ném ra như ngoại lệ chưa bắt** ⇒ **sập tiến trình server**. Task 6 vì vậy đã **âm thầm sửa một đường sập tiến trình** trong khi mục tiêu công bố của nó chỉ là "nối telemetry, không đổi hành vi".
+
+Đây là **cải thiện thật** và nên giữ. Nhưng nó **ĐỔI HÀNH VI**, và trước lượt vá này nó chỉ được ghi trong `progress.md` — một file **bị gitignore**, tức người quyết định không bao giờ đọc. Ghi vào đây để lần đánh giá rủi ro sau có nó trong tay.
+
+Cùng lớp, cùng nhánh: `stopSidecar()` nay **không** trả giấy phép trước khi kill (I-1) — thay đổi thứ tự telemetry, không đổi vòng đời tiến trình; và `spawnAndPoll`/`spawnAndWait` của hai trainer đổi từ hàm trả `Promise` sang `async` (chữ ký ngoài không đổi, hai điểm gọi đều đã `await`).
 
 ---
 
@@ -559,3 +595,91 @@ Sidecar thị giác **không thức lần nào** (nền không bao giờ vượt
 git status --porcelain | wc -l   →  245   (trước và sau, không kể file báo cáo này)
 ```
 Ba script đo tạm (`_t7probe.mts`, `_t7probe2.mts`, `_t7probe3.mts`) đã **xoá**. Các script còn lại chạy hoàn toàn ngoài repo. `.env` **không bị chạm** (`RAG_RERANKER_GPU=false` vẫn ở `.env:416`); mọi biến ép qua CLI.
+
+---
+
+## 11. Vá sau review TOÀN NHÁNH (Task 8) — lượt vá cuối trước push
+
+**Ngày:** 2026-08-03 · **BASE:** `356da9ca` · **Ràng buộc:** đây là lượt vá DUY NHẤT trước push.
+
+Bảy task trước đã qua **7 lượt review theo-task + 8 vòng sửa**. Một lượt review **TOÀN NHÁNH** tìm ra thứ mà **không lượt review theo-task nào có thể thấy** — và nó lặp lại **lần thứ tư** đúng khuôn đã làm hỏng ba tài liệu quyết định trước: **một hộ tiêu thụ GPU không ai đếm**.
+
+### 11.1 Vì sao review theo-task không thể bắt được
+
+| Phát hiện | Nằm ở đâu | Vì sao lọt |
+|---|---|---|
+| **C-1** cổng eval | **CÙNG FILE** Task 6 đã sửa, cách 143 dòng bên trên | Review Task 6 đọc *diff*, mà diff chỉ chạm `runKbSyncNow`. Tiến trình con thứ hai của cùng file không nằm trong diff nào. |
+| **C-2** hai trainer Python | Hai file **không** thuộc phạm vi task nào | Không task nào nhận `localSidecarTrainer`/`aiLlmFinetuneSidecar`; cả hai `spawn` một tiến trình torch CUDA. |
+| **I-1** thứ tự nhả | Task 5 và Task 6, **hai hướng ngược nhau** | Mỗi task tự nhất quán và tự tin. Chỉ khi đọc **cả hai cạnh nhau** mới thấy mâu thuẫn. |
+
+⇒ Bài học ghi lại để đợt sau dùng: **một lượt review "theo FILE bị đụng, không theo DIFF" là bắt buộc trước khi đóng một nhánh nhiều task.** Ba trong sáu phát hiện chính của lượt này chỉ hiện ra theo cách đó.
+
+### 11.2 Đã sửa gì
+
+| Mã | Việc | File |
+|---|---|---|
+| **C-1** | Cổng eval `node eval-rag.mjs --ci` nay xin giấy phép `cron:kb-eval-gate` (`external-process` · `background` · `ttlMs = evalTimeoutMs()`), trả chỗ ở **`exit` + `error` + nhánh `spawn()` ném đồng bộ** | `kbSyncScheduler.ts` |
+| **C-2** | Hộ **thứ mười** `sidecar:local-trainer` (torch CUDA, YOLOv8-seg) và hộ **thứ mười một** `sidecar:llm-finetune` (QLoRA) — cùng khuôn ba nhánh thoát | `localSidecarTrainer.ts` · `aiLlmFinetuneSidecar.ts` |
+| **I-1** | `stopSidecar()` **thôi** trả giấy phép trước `kill` — nhả ở `proc.on("exit")`, đúng kỷ luật `aiGgufEngine.ts:987`. Kỷ luật viết thành **một khối duy nhất** ở đầu `vramWiring.ts` kèm **bảng bốn điểm nhả**; hai điểm ONNX không chứng minh được thì đánh dấu `releaseProof: "unverified"` | `llamaVisionSidecar.ts` · `vramWiring.ts` · `aiInferenceEngine.ts` · `aiImageEmbedding.ts` |
+| **I-2** | Delta âm **thôi im lặng**: đánh dấu lease `measureFailed`, ghi sự kiện `measure_failed`, và reconciler tách "đo hỏng" khỏi "chưa commit" trong câu chẩn đoán | `vramWiring.ts` · `vramBroker.ts` · `types.ts` · `vramReconciler.ts` |
+| **I-3** | Trần thiết bị lấy từ **số đo** (`probeOnce()` → `noteDeviceTotalBytes()`), hằng số 32.607 lùi về vai trò dự phòng cuối; env ép tay vẫn thắng. Quan hệ `SAFETY_RESERVE` ↔ nền-không-vào-sổ ghi rõ tại chỗ | `vramProbe.ts` · `vramBroker.ts` |
+| **M-1** | `estimateSource` thiếu `unknown`, `event` thiếu `measure_failed` — bổ sung ở **cả** schema lẫn `VramEventInput` | `drizzle/schema/vram.ts` · `vramEventLog.ts` |
+| **M-2** | Comment *"`readDeviceVram()` mất tới ~3 s"* — **sai nguyên nhân và sai hai bậc độ lớn**. Thay bằng: chi phí thật 72-80 ms (p50 62,9), cửa sổ lệch âm thật là **thời lượng nạp model 11-43 s** | `vramReconciler.ts` |
+| **M-3** | **13** biến `VRAM_*` (10 cũ + 3 mới) vào `.env.example`, mỗi biến một dòng giải thích | `.env.example` |
+| **M-7** | Listener `proc.on("error")` MỚI = đổi hành vi (trước đó `'error'` không ai bắt ⇒ **sập tiến trình**) — đưa từ `progress.md` (gitignore) vào **§10** | §10 |
+| **§9** | *"MỘT tiến trình trong khi hệ chạy HAI"* → **NĂM** tiến trình giữ VRAM + **HAI** tiến trình Python; thêm C-1/C-2 vào danh sách điều kiện chặn Pha 2 (mục 6, 7) | §9 |
+
+### 11.3 Quyết định I-2: chọn "đánh dấu đo hỏng", **không** chọn "thử lại"
+
+Brief đưa hai phương án. Chọn phương án B, và lý do là một lý do **kỹ thuật, không phải sở thích**:
+
+> `beforeUsed` được chụp **TRƯỚC** lượt cấp phát. Một lượt thử lại ở thời điểm t₂ chỉ tính được `after(t₂) − beforeUsed(t₀)`. Giữa t₀ và t₂ đã có mọi lượt cấp phát/nhả của **mọi hộ khác** ⇒ số thu được **không phải** VRAM của giấy phép này — nhưng nó sẽ được `commit()` **như thể là số THẬT** và nuôi luôn nấc `learned`.
+> **Thử lại làm phép đo SAI HƠN, không đúng hơn.**
+
+Phương án B không sửa được con số (điều đó cần §10 mục 5 — so sổ bằng `Σ actualBytes`), nhưng nó sửa được thứ **tệ hơn con số sai**: sự **im lặng**. Trước lượt vá, nhánh `actual < 0` `return` mà không để lại một dấu vết nào, nên một nguồn lệch ÂM **dai dẳng** là **vô hình** với Task 7 — Task 7 đo được lệch −16.335 MiB và **không có cách nào** truy ra nó. Nay có `measure_failed` trong `vram_events` và một câu cảnh báo chỉ đúng hướng.
+
+### 11.4 Kỷ luật thứ tự nhả — bốn điểm, một câu
+
+> **Sổ chỉ được nhả SAU khi thiết bị đã nhả. Nơi nào KHÔNG CHỨNG MINH ĐƯỢC thiết bị đã nhả, phải NÓI RA bằng `releaseProof` — không được im lặng nhả sổ như thể đã có bằng chứng.**
+
+| # | Điểm | Bằng chứng | `releaseProof` | Trạng thái |
+|---|---|---|---|---|
+| 1 | `aiGgufEngine.unloadGgufModel:987` | `await dispose()` xong | `device-disposed` | Đúng từ trước — **mẫu tham chiếu** |
+| 2 | `llamaVisionSidecar` `proc.on("exit"/"error")` | tiến trình đã chết | `process-exit` | **SỬA ở lượt này** |
+| 3 | `aiInferenceEngine.LruSessionCache.set/delete` | **không có** | `unverified` | Đánh dấu; sửa gốc ⇒ §10 mục 11 |
+| 4 | `aiImageEmbedding.evictEmbeddingSessionCache` | **không có** | `unverified` | Đánh dấu; và **hàm không có người gọi** ⇒ §10 mục 12 |
+
+Bốn điểm nhả mới của Task 8 (cổng eval + hai trainer) đều thuộc nhóm `process-exit`, và **không** nhả lúc gửi `SIGKILL` — vì SIGKILL là *yêu cầu* chết, chưa phải *cái chết*.
+
+Điểm nhả duy nhất **không** thuộc bốn nhóm trên: `ai/ocrService.ts` — cache `recSessionCache` **không có đường đuổi** nào, giấy phép sống tới hết đời tiến trình. Đó **đúng**, không phải rò (đã ghi tại chỗ từ Task 5).
+
+### 11.5 Kiểm chứng
+
+| Cổng | Kết quả |
+|---|---|
+| `npm run kb:eval` | **151/151 = 1.000** (không đổi) |
+| `npx vitest run server/services/vram/` | **93/93 xanh** (74 cũ + 19 mới) |
+| `--sequence.shuffle.tests` | **93/93 xanh** |
+| `npx tsc --noEmit` | chỉ lỗi **tiền tồn tại** `client/src/pages/SessionManagement.tsx:195` |
+| Bộ test lân cận (`kbSyncScheduler.evalGate` · `localSidecarTrainer` · `aiLlmFinetuneSidecar`) | **49/49 xanh** |
+| `llamaVisionSidecar` · `aiImageEmbedding` · `aiInferenceEngine.batch` · `aiTrainingPipeline.tier2` · `aoiImageEmbeddingWorker` | **xanh**. `ai/featureStore.test.ts` đỏ **2 ca — TIỀN TỒN TẠI**, xác minh bằng `git stash` (đỏ y hệt khi không có thay đổi nào của Task 8) |
+| `enforceVramGuard` / `evictLRU` / `ensureCapacity` | **byte-identical với `b17b0436`** — `sha256` (16 ký tự đầu) `9c84ad84d59e4f17` / `75365214be5a9986` / `884c23b7cfe25b70`, khớp ở cả `b17b0436`, `HEAD` và cây làm việc |
+| Cây làm việc | **245 → 264** = 245 mục việc dở của người khác **không bị chạm** + đúng 19 file của Task 8 |
+
+**Đột biến — mỗi lưới mới đều đã chứng minh không giả:**
+
+| Đột biến | Test phải ĐỎ | Kết quả |
+|---|---|---|
+| Gỡ `child.on("exit"/"error")` khỏi `spawnEvalGateWithVram` | eval 9, 10 | ✅ 2 đỏ |
+| Khôi phục `release()` TRƯỚC `kill` trong `stopSidecar` | sidecar 2 | ✅ 1 đỏ |
+| Gỡ `releaseVram()` khỏi `exit`/`error` của trainer | trainer 2, 3 | ✅ 2 đỏ |
+| Gỡ `markMeasureFailed(lease)` | delta âm 1, 4 | ✅ 2 đỏ |
+
+### 11.6 Điều lượt vá này **CỐ Ý KHÔNG** làm
+
+- **Không vá bí ẩn CUDA (Ư0).** §7.6 nói rõ: chạy Ư0 **trước** khi viết mã.
+- **Không vá `gpuLayers: -1` của reranker** (`aiReranker.ts:394`) — §10 mục 1.
+- **Không đụng** `enforceVramGuard`/`ensureCapacity`/`evictLRU` — đã kiểm bằng băm, xem bảng trên.
+- **Không** vá `aiLlamaServerClient.ts` — llama-server do **người** khởi động, ca mồ côi spec §6, **Pha 3**.
+- **Không** nâng `VRAM_SAFETY_RESERVE_MB` 1.024 → 2.048. Nền đo được 996–2.112 MiB **trên máy này**; thay hằng số của một máy bằng hằng số khác của cùng máy đó là đúng cái sai I-3 đang bắt. Bản sửa đúng dùng **số đo** của reconciler ⇒ §10 mục 10.
+- **Không** thêm `session.release()` cho ONNX — sẽ giải phóng bộ nhớ native dưới chân một `session.run` đang bay ⇒ §10 mục 11.

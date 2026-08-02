@@ -96,9 +96,12 @@ describe("vramReconciler — bắt kẻ cấp phát không xin phép", () => {
     // Task 5 I-1 thêm ba trường truy vết vào `detail` (deviceUsedRawBytes/baselineUsedBytes/
     // attributableBytes) để đọc nhật ký là dựng lại được phép tính. Ý ĐỊNH của test này không
     // đổi — nó canh ẢNH CHỤP SỔ — nên khẳng định thẳng vào `detail.leases`.
+    // ⚠ Review TOÀN NHÁNH (I-2) thêm `measureFailed` vào từng dòng ảnh chụp: chỉ cờ `committed`
+    // thì "chưa cấp phát xong" (tạm thời) và "đã đo hỏng" (vĩnh viễn) trông giống hệt nhau khi
+    // đọc lại nhật ký — mà hai thứ đó đòi hai hành động khác nhau của người trực.
     expect(logged[0].detail!.leases).toEqual([
-      { owner: "sidecar:vision", kind: "external-process", priority: "background", bytes: 150 * MIB, committed: true },
-      { owner: "gguf:qwen30b", kind: "gguf-model", priority: "production", bytes: 500 * MIB, committed: false },
+      { owner: "sidecar:vision", kind: "external-process", priority: "background", bytes: 150 * MIB, committed: true, measureFailed: false },
+      { owner: "gguf:qwen30b", kind: "gguf-model", priority: "production", bytes: 500 * MIB, committed: false, measureFailed: false },
     ]);
     // Và phép trừ nền phải TRUY ĐƯỢC, không được vô hình.
     expect(logged[0].detail!.deviceUsedRawBytes).toBe(28_000 * MIB);

@@ -232,11 +232,89 @@ interface EvalRunResult {
   spawnError: boolean;
 }
 
+/**
+ * ★ C-1 (review TOÀN NHÁNH) — GIẤY PHÉP VRAM CHO CỔNG EVAL.
+ *
+ * Task 6 nối `runKbSyncNow()` → `spawnKbSyncWithVram()` nhưng bỏ sót tiến trình con **THỨ HAI
+ * của chính file này**, nằm cách đó 143 dòng bên trên: `runEvalHarness()` spawn
+ * `node scripts/ai-kb/eval-rag.mjs --ci`. Script đó gọi `getLlama({ gpu: "auto" })` rồi
+ * `loadModel(...)` — trực tiếp ở `eval-rag.mjs:211/221` cho đường rerank, và qua
+ * `scripts/ai-kb/_gguf-embed.mjs:73-75` cho đường nhúng câu hỏi mà `--ci` LUÔN đi qua ⇒ backend
+ * CUDA (~430 MiB, báo cáo §5) + embedding context trong một tiến trình Node THỨ HAI.
+ *
+ * ⚠ KHÔNG PHẢI GIẢ THUYẾT: `.env:748` `KB_AUTOSYNC_ENABLED=true`, `.env:749`
+ * `KB_AUTOSYNC_EVAL_GATE=true` (mặc định trong mã cũng `"true"`, `isEvalGateEnabled()` bên trên).
+ * Không nối thì **03:00 mỗi đêm** `reconcileOnce()` báo *"cấp phát KHÔNG XIN PHÉP"* cho chính
+ * tiến trình con mà app tự spawn — báo động giả, đêm nào cũng có, và người trực không có cách
+ * nào biết nó là của ai.
+ *
+ * ⚠ `1251` (MiB): CÙNG hằng số với `cron:kb-sync`, và đó là lựa chọn CÓ NGUỒN chứ không phải
+ * tiện tay. `eval-rag.mjs --ci` nhúng câu hỏi qua ĐÚNG module `scripts/ai-kb/_gguf-embed.mjs` mà
+ * `kb:embed:inc` dùng — cùng `getLlama`, cùng `loadModel`, cùng `createEmbeddingContext`, cùng
+ * biến môi trường — nên số đo được ở Đợt 2 cho tiến trình con kb:sync là số gần nhất ta CÓ. Đi
+ * qua `configDefaultBytes` để sự kiện ghi `estimateSource: "config-default"` (dấu vết cho Task 7).
+ *
+ * ⚠ `ttlMs` = `evalTimeoutMs()` — trần thời lượng gate: quá mốc này tiến trình bị `SIGKILL`
+ * (xem `timer` bên dưới), nên giấy phép không bao giờ sống lâu hơn khoảng tiến trình con được
+ * PHÉP sống.
+ */
+async function beginEvalGateVram(): Promise<VramTicket> {
+  try {
+    const { beginVramAllocation } = await import("./vram/vramWiring");
+    return await beginVramAllocation({
+      owner: "cron:kb-eval-gate",
+      kind: "external-process",
+      priority: "background",
+      configDefaultBytes: Number(process.env.VRAM_KB_EVAL_ESTIMATE_MB ?? 1251) * 1024 * 1024,
+      ttlMs: evalTimeoutMs(),
+      releaseProof: "process-exit",
+    });
+  } catch {
+    return { commitMeasured: async () => {}, release: () => {} };
+  }
+}
+
+/**
+ * Spawn tiến trình eval với giấy phép đã xin TRƯỚC (tham số `ticket`) và gắn sẵn dây trả chỗ.
+ *
+ * ⚠ BA nhánh thoát, thiếu MỘT là giấy phép treo vĩnh viễn (Task 5 mất ba vòng sửa vì đúng họ
+ * lỗi này, Task 6 vòng 1 tìm ra nhánh thứ ba):
+ *   1. `"exit"`  — tiến trình đã chết, dù xong việc hay bị SIGKILL vì quá hạn.
+ *   2. `"error"` — spawn thất bại (ENOENT/EACCES); `"exit"` có thể KHÔNG BAO GIỜ tới.
+ *   3. `spawn()` NÉM ĐỒNG BỘ — người gọi bắt và tự trả (xem `catch` trong `runEvalHarness`).
+ * `ticket.release()` idempotent nên gọi từ nhiều nhánh là vô hại.
+ *
+ * ⚠ Nhả ở `"exit"` chứ KHÔNG phải lúc quyết định kill: kỷ luật thứ tự nhả DUY NHẤT nằm ở đầu
+ * `vram/vramWiring.ts` — sổ chỉ nhả SAU khi thiết bị đã nhả (I-1).
+ */
+function spawnEvalGateWithVram(ticket: VramTicket): ReturnType<typeof spawn> {
+  const child = spawn(process.execPath, [EVAL_SCRIPT, "--ci"], {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const releaseVram = () => {
+    try {
+      ticket.release();
+    } catch {
+      /* telemetry KHÔNG được làm hỏng vòng đời tiến trình con */
+    }
+  };
+  child.on("exit", releaseVram);
+  child.on("error", releaseVram);
+  return child;
+}
+
 /** Spawn `node scripts/ai-kb/eval-rag.mjs --ci` as an argv array (NO shell
  * string) and wait for it to exit. Bounded by evalTimeoutMs(). Never throws —
  * every failure mode (spawn error, timeout) resolves to a result the caller
  * can read the meaning of. */
-function runEvalHarness(): Promise<EvalRunResult> {
+async function runEvalHarness(): Promise<EvalRunResult> {
+  // C-1 — xin giấy phép NGAY TRƯỚC khi spawn (spec §3.1). TRƯỚC khi vào Promise theo dõi vì
+  // `beginEvalGateVram()` là async còn executor bên dưới cố tình giữ ĐỒNG BỘ (cùng khuôn
+  // `runKbSyncNow`).
+  const vramTicket = await beginEvalGateVram();
+
   return new Promise((resolve) => {
     let settled = false;
     const done = (r: EvalRunResult) => {
@@ -254,15 +332,16 @@ function runEvalHarness(): Promise<EvalRunResult> {
       } catch {
         /* ignore */
       }
+      // ⚠ KHÔNG trả giấy phép ở đây: SIGKILL mới là YÊU CẦU chết, chưa phải cái chết. Nhánh
+      // `"exit"` (gắn trong `spawnEvalGateWithVram`) trả chỗ khi tiến trình THẬT SỰ chết — kỷ
+      // luật I-1, giống hệt `llamaVisionSidecar.stopSidecar()`.
       done({ exitCode: null, timedOut: true, spawnError: false });
     }, timeoutMs);
 
     try {
-      child = spawn(process.execPath, [EVAL_SCRIPT, "--ci"], {
-        cwd: process.cwd(),
-        env: process.env,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      // `spawnEvalGateWithVram` đã nối "exit"/"error" → `vramTicket.release()`; các listener
+      // dưới đây là THÊM (Node cho nhiều listener mỗi sự kiện) và chỉ lo kết quả eval.
+      child = spawnEvalGateWithVram(vramTicket);
       child.stdout?.on("data", (d) => {
         const line = String(d).trim();
         if (line) console.log(`[kbSyncScheduler:eval] ${line}`);
@@ -282,10 +361,32 @@ function runEvalHarness(): Promise<EvalRunResult> {
       });
     } catch (err) {
       clearTimeout(timer);
+      // Nhánh thoát thứ BA — `spawn()` ném ĐỒNG BỘ: không listener nào kịp gắn, KHÔNG CÒN chỗ
+      // nào khác trả được giấy phép này. Bài học Task 6 vòng 1.
+      try {
+        vramTicket.release();
+      } catch {
+        /* telemetry KHÔNG được làm hỏng đường lỗi */
+      }
       console.error("[kbSyncScheduler] eval run error:", (err as Error)?.message ?? err);
       done({ exitCode: null, timedOut: false, spawnError: true });
     }
   });
+}
+
+/**
+ * Chỉ dùng trong test (`vram/wiring.outofprocess.test.ts`). Gọi ĐÚNG hai bước THẬT (xin phép rồi
+ * spawn — cùng hai hàm mà `runEvalHarness()` dùng, không nhảy qua cổng nào) mà KHÔNG chờ tiến
+ * trình con thoát / không đọc phán quyết eval. Cùng khuôn `__runKbSyncForTests`.
+ */
+export async function __runEvalGateForTests(): Promise<void> {
+  const ticket = await beginEvalGateVram();
+  try {
+    spawnEvalGateWithVram(ticket);
+  } catch {
+    // Nhánh thoát thứ BA, y như `runEvalHarness` — test 11 canh đúng nhánh này.
+    ticket.release();
+  }
 }
 
 interface EvalVerdict {

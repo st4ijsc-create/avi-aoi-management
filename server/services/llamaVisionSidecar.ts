@@ -264,6 +264,9 @@ export async function ensureSidecar(): Promise<void> {
         // Sidecar tự tắt sau IDLE_TIMEOUT_MS (mặc định 10 phút) nhàn rỗi — ttlMs PHẢI dài hơn,
         // nếu không reconciler tưởng nó chết trong khi nó đang sống khoẻ.
         ttlMs: Number(process.env.VRAM_SIDECAR_TTL_MS ?? 900_000),
+        // I-1 — bằng chứng nhả: tiến trình con đã CHẾT (OS thu hồi VRAM). Xem bảng bốn điểm
+        // nhả ở đầu `vram/vramWiring.ts` và ghi chú dài trong `stopSidecar()`.
+        releaseProof: "process-exit",
       });
     } catch {
       /* telemetry KHÔNG được làm hỏng đường khởi động sidecar */
@@ -386,14 +389,25 @@ export async function stopSidecar(): Promise<void> {
   const current = sidecar;
   sidecar = null;
   if (!current) return;
-  // Pha 1 Task 6 — đường tắt tường minh (kill thủ công / idle-timeout tự tắt). TRẢ giấy phép
-  // TRƯỚC khi kill để không có cửa sổ nào giấy phép sống lâu hơn quyết định tắt sidecar.
-  // `release()` idempotent — vô hại nếu "exit" cũng bắn sau đó và tự trả lần nữa.
-  try {
-    current.vramTicket.release();
-  } catch {
-    /* telemetry KHÔNG được làm hỏng đường tắt sidecar */
-  }
+  // ★ I-1 (review TOÀN NHÁNH) — KHÔNG trả giấy phép ở đây. Kỷ luật DUY NHẤT về thứ tự nhả nằm
+  // ở đầu `vram/vramWiring.ts`: **sổ chỉ nhả SAU khi thiết bị đã nhả**.
+  //
+  // Bản trước gọi `release()` NGAY TẠI ĐÂY, TRƯỚC `kill("SIGTERM")` bên dưới, với lý do "không
+  // để giấy phép sống lâu hơn QUYẾT ĐỊNH tắt sidecar". Lý do đó nhầm chủ thể: sổ cái theo dõi
+  // BỘ NHỚ THIẾT BỊ, không theo dõi ý định của ta. Giữa SIGTERM và lúc tiến trình thật sự chết
+  // (SIGKILL cưỡng bức sau 5.000 ms bên dưới) thiết bị VẪN giữ **7.825 MiB** trong khi sổ đã về
+  // 0 ⇒ một nhịp đối chiếu rơi vào cửa sổ đó in "LỆCH +7825 MiB … cấp phát KHÔNG XIN PHÉP".
+  // Sidecar tự tắt sau MỖI 10 phút nhàn rỗi (`IDLE_TIMEOUT_MS`) ⇒ hàng chục cửa sổ như vậy mỗi
+  // 24 h — module TỰ SINH ra đúng cái báo động giả nó được viết ra để bắt.
+  //
+  // Ai trả chỗ, nếu không phải ở đây: `proc.on("exit")` VÀ `proc.on("error")` gắn ngay sau
+  // `spawn()` (xem `ensureSidecar`). Hai nhánh đó phủ MỌI đường chết — SIGTERM thành công,
+  // SIGKILL cưỡng bức, crash, OOM — và chúng chạy khi tiến trình ĐÃ chết, tức khi OS đã thu hồi
+  // VRAM của nó. `release()` idempotent nên gọi từ cả hai là vô hại.
+  //
+  // ⚠ Ca duy nhất còn giữ giấy phép: tiến trình không chết được cả sau SIGKILL. Khi đó thiết bị
+  // THẬT SỰ vẫn giữ 7.825 MiB ⇒ giữ giấy phép là ĐÚNG, không phải rò rỉ. `ttlMs` là thứ Pha 2/3
+  // dùng để xác minh rồi thu hồi ca đó (spec §6).
   try {
     if (!current.proc.killed) {
       current.proc.kill("SIGTERM");

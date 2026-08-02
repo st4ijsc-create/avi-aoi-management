@@ -8,11 +8,16 @@ import type { VramEstimateSource, VramLeaseKind, VramPriority } from "./types";
  */
 export interface VramEventInput {
   /**
-   * baseline | reserve | commit | release | refuse | preempt | drift | adopt | defer | defer_exceeded
+   * baseline | reserve | commit | measure_failed | release | refuse | preempt | drift | adopt |
+   * defer | defer_exceeded
    *
    * ⚠ `baseline` (Task 5 review vòng 2, NEW-4) = ảnh chụp NỀN THIẾT BỊ lúc khởi động
    * (`nền = thiết bị − sổ`, xem `vramReconciler.captureVramBaseline`). Ai đọc nhật ký theo danh
    * sách này mà thiếu `baseline` sẽ đọc `drift` mà không biết nó đã được trừ đi bao nhiêu.
+   *
+   * ⚠ `measure_failed` (review TOÀN NHÁNH, I-2) = delta đo được ÂM ⇒ phép đo vô nghĩa ⇒ giấy
+   * phép giữ ƯỚC LƯỢNG **vĩnh viễn**. Trước lượt vá này nhánh đó `return` IM LẶNG tuyệt đối —
+   * không sự kiện, không dấu vết — nên một nguồn lệch ÂM dai dẳng là VÔ HÌNH với Task 7.
    */
   event: string;
   owner: string;
