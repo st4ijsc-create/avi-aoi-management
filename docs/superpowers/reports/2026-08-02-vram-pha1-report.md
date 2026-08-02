@@ -6,6 +6,12 @@
 
 > Bản này là **bản chính thức, tự đủ**. Không cần đọc `.superpowers/` (thư mục đó bị gitignore) để hiểu hoặc kiểm chứng bất kỳ con số nào ở đây.
 
+> **⚠ ĐÃ QUA REVIEW VÒNG 1 — HAI KHẲNG ĐỊNH BỊ RÚT LẠI.** Chỗ nào bị rút đều ghi rõ **tại chỗ**, không xoá dấu vết:
+> - **I-1** (§7.4) — *"12 lượt đã loại ratchet (Ư0)"*: **SAI phạm vi**. `prior = []` chỉ nói "không có cấp phát **đã vào sổ**"; backend CUDA ~430 MiB đi trước ở **cả 12 lượt** và sổ **mù** với nó ⇒ thí nghiệm **không phân biệt được gì** về Ư0. **Ư0 trở lại §7.5 như ứng viên còn sống, hạng ★★.**
+> - **I-2** (§7.5) — *"instance `Llama` thứ hai chỉ tốn ~48 MiB ⇒ backend dùng chung"*: **con số không có nguồn**, mâu thuẫn với §2.1 (mọi tiến trình reranker mới = +430/+431 MiB). **Rút; Ư2 trả về hạng ★.**
+>
+> Ba phán quyết chính **không đổi và đã được xác minh độc lập**: trần **không tất định** · **512 MiB dưới sàn** · **cổng ra CHƯA ĐẠT**.
+
 ---
 
 ## 0. Tóm tắt điều hành
@@ -17,7 +23,7 @@
 | §15.2 — nhịp đối chiếu thật là bao nhiêu? | Chi phí **không phải** ràng buộc: đường native **p50 = 0,0 ms**, đường `nvidia-smi` **p50 = 62,9 / p95 = 69,2 ms**. Ràng buộc thật là **cửa sổ nạp model** (11-43 s) sinh lệch ÂM −16.335 MiB. **Giữ 60 s** cho tới khi cửa sổ đó được xử lý. |
 | §15.x — `estimateSource` còn dựa hằng số ở đâu? | `config-default`: **2 chỗ** (`sidecar:vision` 7825 MiB, `cron:kb-sync` 1251 MiB). `unknown`: **2 chỗ** (`gguf-ctx:*`, `gguf-embed-ctx:*`) — đã bắt được LIVE: ước lượng **0 MiB** trong khi thật **526 MiB**. |
 | Bán kính khi bật cưỡng chế Pha 2 | **0/15** lượt `reserve` có `wouldRefuse = true`. Nhưng con số vào quyết định sai tới **±588 MiB mỗi hộ** — bán kính thật nằm ở **chất lượng số liệu**, không ở số lượt bị từ chối. |
-| **Ư7** — trần `cudaMalloc` có tất định không? | **KHÔNG. Trả lời dứt điểm.** Cùng máy, cùng HEAD, cùng nền, cùng khối 16.698,37 MiB, cùng `prior=[]` (chứng minh bằng sổ cái): **3 THÀNH CÔNG / 9 THẤT BẠI trên 12 lượt**. |
+| **Ư7** — trần `cudaMalloc` có tất định không? | **KHÔNG. Trả lời dứt điểm.** Cùng máy, cùng HEAD, cùng nền, cùng khối 16.698,37 MiB, cùng `prior=[]` **theo nghĩa của SỔ** (§7.3): **3 THÀNH CÔNG / 9 THẤT BẠI trên 12 lượt**. ⚠ Thí nghiệm này **không** nói gì về Ư0 (ratchet) — xem I-1. |
 | **Cổng ra Pha 1** | ❌ **CHƯA ĐẠT** như phát biểu trong spec §10. Xem §9. |
 
 ---
@@ -88,13 +94,19 @@ const resolvedGpuLayers = typeof gpuLayers === "number"
 
 ### 2.3 Hệ quả cho chính sách (dữ liệu để Pha 2 quyết, không phải quyết định của Pha 1)
 
+⚠ **Hai cột dưới đây dùng HAI cách tính khác nhau — phải nói rõ, nếu không là so táo với cam (review vòng 1, M-4):**
+- **(Đ) = ĐO ĐƯỢC** — lấy từ mốc `nvidia-smi` thật ở §2.1, nên **đã gồm** mọi thứ llama.cpp cấp phát mà bảng thành phần không liệt kê.
+- **(T) = TỔNG THÀNH PHẦN** — cộng các delta đã đo của từng bước, nên **loại trừ** phần llama.cpp giữ lại mà không thuộc bước nào (đo được: sau `dispose()` vẫn còn 523-525 MiB trên nền, tức **~80-95 MiB** không quy được về bước nào).
+
 | Kịch bản | Thường trú | Đỉnh (gồm buffer `rankAll`) |
 |---|---|---|
 | Hôm nay, `RAG_RERANKER_GPU=false` | 0 MiB GPU | 0 MiB GPU |
-| Hôm nay, `RAG_RERANKER_GPU=true` (còn lỗi `-1`) | **~550 MiB** | ~550 MiB |
-| Nếu sửa `-1` → `"max"` | **~761 MiB** | **~866 MiB** |
+| Hôm nay, `RAG_RERANKER_GPU=true` (còn lỗi `-1`) | **~550 MiB (Đ)** — đỉnh đo được 1.566/1.569 trừ nền 1.017/1.018 | **~550 MiB (Đ)** |
+| Nếu sửa `-1` → `"max"` | **~761 MiB (T)** = 432 backend + 315 trọng số + 14 ranking ctx | **~866 MiB (T)** = 761 + ~105 buffer `rankAll` |
 
-Trong cả ba kịch bản, **~430 MiB là backend CUDA dùng chung**, không phải của riêng reranker (xem §3.2).
+⚠ Hàng thứ ba **chưa từng được chạy trọn vẹn** (chỉ đo tới `createRankingContext`, không đo `rankAll` ở `"max"`) ⇒ nó là **phép cộng, không phải phép đo**. Theo chênh lệch (Đ)−(T) quan sát ở hàng thứ hai, số thật nhiều khả năng **cao hơn** ~80-95 MiB. Pha 2 muốn dùng con số này để đặt chính sách thì **phải đo lại trọn vòng**.
+
+Trong cả ba kịch bản, **~430 MiB là backend CUDA**, không phải của riêng reranker (xem §3.4). ⚠ Cho tới khi có phép đo ở Ư2 (§7.5), **không** giả định backend đó được dùng chung với `aiGgufEngine` — mọi tiến trình reranker mới đo được đều là **+430/+431 MiB**.
 
 ---
 
@@ -149,7 +161,9 @@ embedder vừa commit     :  531                               (n=1)
 | **Buffer tính LƯỜI của llama.cpp** | ~100-200 | Cấp phát ở lượt suy luận ĐẦU, tức **sau** `commitMeasured()` (đúng như `aiGgufEngine.ts:798-801` đã cảnh báo). Lệch worker 738,6 vs lệch ngay-sau-commit 536 = **+202,6**. |
 | **Thiết bị ONNX DirectML** | ~183 | Delta thiết bị 282 MiB khi tạo session ONNX trong khi giấy phép chỉ ghi 99,2 MiB. |
 
-⇒ **Ít nhất 430 + ~170 ≈ 600 MiB lệch dương là CẤU TRÚC, không phải sự cố.** Ngưỡng 512 MiB nằm **dưới sàn**.
+⚠ **Bảng trên xác định NGUYÊN NHÂN, KHÔNG phải một bảng cân đối theo từng hàng (review vòng 1, M-1).** Bốn thành phần được đo **độc lập, ở những lượt khác nhau**; tổng hai khoản lớn nhất (430 + ~170 ≈ 600) đã **vượt** lệch ổn định nhỏ nhất trong §3.3 (**536 MiB**) ⇒ chúng **không cộng thẳng được** trong mọi cấu hình, và bảng này **không nói hàng §3.3 nào mang bao nhiêu lệch-thước**. Bản đầu viết *"ít nhất ~600 MiB là cấu trúc"* — **con số đó rút lại**; cái đứng vững là **danh sách nguyên nhân**, không phải một cận dưới.
+
+⇒ Phát biểu đúng phạm vi: **lệch dương có ít nhất hai nguồn CẤU TRÚC đã định danh** (backend CUDA `getLlama()` ~430 MiB, đo cô lập với sổ rỗng; và lệch thước 165-178 MiB, đo song song hai lần độc lập), **cộng buffer tính lười và thiết bị ONNX DML**. Phán quyết **"512 MiB nằm dưới sàn" KHÔNG dựa vào phép bóc tách này** — nó dựa thẳng vào **bốn lệch ổn định đo được ở §3.3: 536 / 664 / 738,6 / 882,4 MiB**, tất cả đều > 512.
 
 ### 3.5 Lệch ÂM −16.335 MiB — báo động giả có xác suất cao, KHÔNG chữa được bằng ngưỡng
 
@@ -161,7 +175,9 @@ Với nhịp 60 s và cửa sổ nạp 11-43 s, xác suất một nhịp rơi tr
 
 ### 3.6 Khuyến nghị cho §15.1 (Pha 2 quyết, Pha 1 chỉ đưa số)
 
-1. **Không chốt ngưỡng trước khi bóc hai khoản cấu trúc** (backend CUDA ~430 MiB + lệch thước ~170 MiB). Chốt một con số ≥1.024 MiB lên trên số liệu còn hai lỗi hệ thống là **hợp thức hoá hai lỗi đó**.
+⚠ **"Chốt ngưỡng" và "chốt nhịp" ở đây là ĐỔI BIẾN MÔI TRƯỜNG, không phải sửa mã** (review vòng 1, M-5): `vramReconciler.ts:5` đọc `VRAM_DRIFT_THRESHOLD_MB ?? 512`, `:6` đọc `VRAM_RECONCILE_INTERVAL_MS ?? 60_000`. Cả hai chỉnh được từ `.env` mà không đụng một dòng mã nào. Chỉ các mục 2-4 dưới đây mới là sửa mã (⇒ đã ghi vào §10 cho Pha 2).
+
+1. **Không chốt ngưỡng trước khi bóc hai khoản cấu trúc** (backend CUDA ~430 MiB + lệch thước 165-178 MiB). Nâng `VRAM_DRIFT_THRESHOLD_MB` lên ≥1.024 khi số liệu còn hai lỗi hệ thống là **hợp thức hoá hai lỗi đó** — chuông sẽ im, nhưng im vì ta đã dạy nó bỏ qua đúng thứ nó phải bắt.
 2. **Ưu tiên 1 — một thước duy nhất:** hoặc luôn `nvidia-smi`, hoặc chụp lại nền ngay khi handle native được nối. Đây là sửa rẻ nhất và bỏ được ~170 MiB lệch giả.
 3. **Ưu tiên 2 — đưa backend CUDA vào sổ:** một giấy phép `llama-backend` xin ngay trong `getLlama()`. Bỏ nốt ~430 MiB.
 4. **Ưu tiên 3 — cửa sổ chưa-commit:** so sổ dùng `Σ actualBytes` (như `captureVramBaseline` đã làm đúng) thay vì `leaseBytes()`, **hoặc** im lặng khi còn giấy phép `pending`. Bỏ được lệch −16 GiB.
@@ -270,7 +286,15 @@ Cả hai **cố ý** không truyền `configDefaultBytes` (comment tại chỗ: 
 - **+430 MiB** (backend CUDA) — **không bao giờ nằm trong sổ**;
 - **+165…+178 MiB** (lệch thước) — sai số hệ thống một chiều.
 
-**Cộng dồn xấu nhất đã đo: sổ có thể lệch thực tế tới ~2,5 GiB trên một cấu hình 4 hộ tiêu thụ.** Với `VRAM_SAFETY_RESERVE_MB = 1024`, **dự trữ an toàn nhỏ hơn sai số của chính sổ**.
+**Cộng dồn — nêu KHOẢNG, không nêu một số giả chính xác (review vòng 1, M-2).** Bản đầu viết *"~2,5 GiB đã đo"*; con số đó **không suy ra được từ năm khoản trên** theo bất kỳ quy ước nào. Ba cách cộng hợp lệ, tuỳ nghĩa của "sai số tổng":
+
+| Quy ước | Phép tính (MiB) | Kết quả |
+|---|---|---|
+| **Tổng có dấu** (sai số bù nhau) | −588 + 526 + 1.667 + 430 + 170 | **2.205 MiB ≈ 2,15 GiB** |
+| **Chỉ khoản CÙNG CHIỀU thiếu chỗ** (bỏ khoản âm) | 526 + 1.667 + 430 + 170 | **2.793 MiB ≈ 2,73 GiB** |
+| **Tổng trị tuyệt đối** (xấu nhất, không bù) | 588 + 526 + 1.667 + 430 + 170 | **3.381 MiB ≈ 3,30 GiB** |
+
+⇒ **Sai số của sổ nằm trong khoảng 2,15 – 3,30 GiB** trên cấu hình 4 hộ tiêu thụ đã đo, tuỳ quy ước. **Kết luận không phụ thuộc vào việc chọn quy ước nào**: cả ba đều lớn hơn `VRAM_SAFETY_RESERVE_MB = 1024` **gấp hơn hai lần** ⇒ **dự trữ an toàn nhỏ hơn sai số của chính sổ**.
 
 ⇒ **Khuyến nghị: KHÔNG bật cưỡng chế Pha 2 trước khi khép ba khoản ở §3.6 (thước, backend CUDA, cửa sổ chưa-commit) và §5.5 (đọc lại `learned` từ DB).** Ngược lại là cưỡng chế bằng một con số mà ta đã biết là sai.
 
@@ -311,7 +335,9 @@ Trần **không** là một hàm của tiến trình. Cùng máy, cùng HEAD, c�
 
 **Hệ quả bắt buộc, kể cả với con số vẫn còn được trích:**
 Phát biểu *"16.698,37 MiB hỏng ổn định trên cả app lẫn worker"* của Đợt 2 (6/6 lượt) **cũng là quan sát THEO PHIÊN, không phải bất biến** — phiên này nó hỏng **9/12** chứ không phải 12/12.
-⚠ Hai phiên (0/6 và 3/12) **không phân biệt được về mặt thống kê** ở cỡ mẫu này. **Không được** kết luận "Pha 1 làm nó tốt lên" hay "máy đã đổi". Cách phát biểu đúng: **cùng một lượt thử thành công khoảng 1/4 số lần**.
+⚠ Hai phiên (0/6 và 3/12) **không phân biệt được về mặt thống kê**: **Fisher exact p = 0,51**. **Không được** kết luận "Pha 1 làm nó tốt lên" hay "máy đã đổi". Cách phát biểu đúng: **cùng một lượt thử thành công khoảng 1/4 số lần**.
+
+⚠ Để đối chiếu, phép so **có** ý nghĩa duy nhất của phiên này là **tiến trình sạch 5/5 OK vs worker 3/11 OK** (**Fisher exact p = 0,026**) — xem hàng cuối §7.4. Mọi so sánh khác trong mục này đều dưới ngưỡng phân biệt được.
 
 **Hệ quả thiết kế:** *"mọi bản vá dựa trên một con số ngưỡng đều vô nghĩa"* — Ư7 đã dự đoán đúng điều này và nay nó **được chứng minh**.
 
@@ -334,26 +360,59 @@ Phát biểu *"16.698,37 MiB hỏng ổn định trên cả app lẫn worker"* c
 ```
 
 - Sự kiện `baseline` ghi `ledgerTotalBytes = 0` ở **mọi** lượt ⇒ **sổ RỖNG lúc chụp nền**.
-- Giữa `baseline` và `reserve` **không có sự kiện nào khác** ⇒ **`prior = []`**: không model nào thường trú khi khối 16,7 GB được yêu cầu, ở **cả 9 lượt hỏng lẫn 3 lượt được**.
+- Giữa `baseline` và `reserve` **không có sự kiện nào khác** ⇒ **`prior = []`**.
+
+⚠⚠ **`prior = []` NGHĨA LÀ GÌ — đọc kỹ, vì bản đầu của báo cáo này đã đọc nó RỘNG HƠN thứ nó nói (review vòng 1, I-1):**
+
+> **`prior = []` chứng minh "không có cấp phát nào ĐÃ VÀO SỔ", KHÔNG chứng minh "không có cấp phát CUDA nào đi trước".**
+
+Hai câu đó khác nhau, và chính §3.4 của báo cáo này đã nói vì sao: backend CUDA của `getLlama()` **"không đường nào đưa nó vào sổ được"**. `aiGgufEngine.ts:727` gọi `getLlama()` **TRƯỚC** `beginVram()` (`:737`) và trước `loadModel()` (`:747`) ⇒ **một cấp phát ~430 MiB đi trước khối 16,7 GB ở CẢ 12 LƯỢT**, và **sổ mù với nó theo đúng thiết kế hiện tại**.
+
+**Chính §7.1 đo được nó:** đỉnh VRAM ở mọi lượt HỎNG là **1.438-1.443 MiB** trên nền **998-1.012 MiB** ⇒ **+430 MiB đã được cấp phát và vẫn đứng đó vào đúng lúc khối 16,7 GB bị từ chối**.
+
+⇒ Sổ cái **mở ra** khuôn quan sát "ai đang giữ gì" cho mọi hộ tiêu thụ **đã đăng ký**, nhưng ở câu hỏi Ư0 nó **mù đúng lớp cấp phát mà giả thuyết nói tới**. Đó là giới hạn của thiết bị đo, phải nêu tên chứ không được bước qua.
 - Đây chính xác là điều kiện mà Đợt 2 yêu cầu phải dựng được (*"phải in danh sách model đang thường trú ngay trước khi thử — không có dòng đó thì kết quả không dùng được"*). Nay nó là **sản phẩm phụ của sản xuất**, không phải một thăm dò gắn tạm.
 
 ### 7.4 Điều Ư7 loại được — mỗi mục kèm phép thử ĐÃ CHẠY, CẢ HAI CHIỀU
 
 | # | Ứng viên | Phép thử đã chạy | Kết quả |
 |---|---|---|---|
-| **Ư0 (ratchet) như ĐIỀU KIỆN CẦN** | *"phải có một cấp phát CUDA nhỏ đi trước thì khối lớn mới qua"* | Sổ cái chứng minh `prior = []` ở **cả** 3 lượt THÀNH CÔNG (§7.3). Ratchet-cần dự đoán 0/12 thành công; thực tế 3/12. | ❌ **Loại — ratchet KHÔNG phải điều kiện CẦN.** ⚠ Ratchet như điều kiện **ĐỦ** thì **chưa** thử ở phiên này (chiều "có cấp phát nhỏ trước ⇒ luôn qua"). |
-| **Ư3 (một bước trong lõi worker: DB pool)** | Tiến trình **trống + CHỈ postgres pool 25 kết nối** (`SELECT 1` × 25 song song) + chờ T+20 s rồi nạp 30B `"max"`. **3/3 OK** (loadMs 10.964 / 11.186 / 11.496). Chiều ngược: **không DB**, cùng T+20 s: **2/2 OK**. | ❌ **Loại cho riêng DB pool.** Lõi worker vẫn còn nhiều bước khác chưa cắt. |
-| **"Thời gian trôi một mình"** | Tiến trình trống, chạm CUDA ở T+1,3 s: **5/5 OK**. Cùng tiến trình, chạm CUDA ở T+20 s: **2/2 OK**. | ❌ **Loại — muộn một mình không đủ**, khớp L11 của Đợt 2. |
+| ~~**Ư0 (ratchet) như ĐIỀU KIỆN CẦN**~~ | — | — | 🔴 **RÚT LẠI (review vòng 1, I-1). Thí nghiệm 12 lượt KHÔNG phân biệt được gì về Ư0** — nó **không xác nhận cũng không bác bỏ**. Xem khối 🔴 ngay dưới bảng. **Ư0 trở lại §7.5 như ứng viên CÒN SỐNG.** |
+| **Ư3 (một bước trong lõi worker: DB pool)** | Tiến trình **trống + CHỈ postgres pool 25 kết nối** (`SELECT 1` × 25 song song) + chờ T+20 s rồi nạp 30B `"max"`. **3/3 OK** (loadMs 10.964 / 11.186 / 11.496). Chiều ngược: **không DB**, cùng T+20 s: **2/2 OK**. | ⚠ **THIẾU LỰC — không được tính là "loại" (review vòng 1, M-3).** Cả hai nhánh chạy trên nền tiến trình sạch **vốn đã 5/5 OK** ⇒ **không nhánh nào CÓ THỂ phát hiện hiệu ứng**, dù hiệu ứng có thật. Kết luận đúng phạm vi: *"DB pool một mình không đủ để dựng lại hiện tượng trong tiến trình sạch"* — **không** phải *"DB không liên quan"*. Phép thử đúng phải chạy trên nền **worker** (nơi tỉ lệ là 3/11), tắt DB bằng cờ, N≥12/nhánh. |
+| **"Thời gian trôi một mình"** | Tiến trình trống, chạm CUDA ở T+1,3 s: **5/5 OK**. Cùng tiến trình, chạm CUDA ở T+20 s: **2/2 OK**. | ⚠ **THIẾU LỰC — cùng lý do (M-3).** Nền 5/5 OK không có chỗ để tụt xuống theo hướng phát hiện được. Phát biểu đúng phạm vi: *"muộn một mình không dựng lại được hiện tượng trong tiến trình sạch"*, khớp **hướng** của L11 (Đợt 2) nhưng **không** mạnh hơn nó. |
 | **"Nền GPU cao lúc thử"** | `nvidia-smi` trước mỗi lượt: OK ở 1.003/1.008/1.009/1.011; FAIL ở 998/999/1.007/1.007/1.007/1.008/1.008/1.012. **Hai nhóm chồng lên nhau hoàn toàn.** | ❌ **Loại.** |
-| **"Chỉ hỏng ở app/worker, tiến trình sạch luôn được"** | Tiến trình sạch `prior=[]`: **5/5 OK** (loadMs 10.910-11.275, `gpuLayers=49`, vram 18.138-18.200 MiB). Worker: **3/11 OK**. | ⚠ **KHÔNG loại — đây là chiều CÒN SỐNG.** Nền worker **dịch xác suất** mạnh (5/5 so với 3/11), nhưng **không quyết định** kết quả. Mô hình đúng: worker đẩy lượt cấp phát tới sát một biên, còn **thứ gì đó ngoài tiến trình** quyết định rơi bên nào. |
+| **"Chỉ hỏng ở app/worker, tiến trình sạch luôn được"** | Tiến trình sạch `prior=[]`: **5/5 OK** (loadMs 10.910-11.275, `gpuLayers=49`, vram 18.138-18.200 MiB). Worker: **3/11 OK**. | ⚠ **KHÔNG loại — đây là chiều CÒN SỐNG.** Nền worker **dịch xác suất** mạnh (5/5 so với 3/11; **Fisher exact p = 0,026**), nhưng **không quyết định** kết quả. Mô hình đúng: worker đẩy lượt cấp phát tới sát một biên, còn **thứ gì đó ngoài tiến trình** quyết định rơi bên nào. |
+
+---
+
+#### 🔴 RÚT LẠI (review vòng 1, I-1) — "12 lượt đã loại ratchet" là SAI. Ư0 CÒN SỐNG.
+
+Bản đầu của báo cáo này viết: *"Sổ cái chứng minh `prior = []` ở cả 3 lượt THÀNH CÔNG ⇒ ratchet-cần dự đoán 0/12 thành công; thực tế 3/12 ⇒ Loại."*
+
+**Câu đó không hợp lệ, và lý do nằm ngay trong §3.4 của chính báo cáo này.**
+
+1. `prior = []` là một sự kiện **của SỔ**, không phải một sự kiện **của GPU** (xem khối ⚠⚠ ở §7.3).
+2. Backend CUDA của `getLlama()` **~430 MiB** được cấp phát ở `aiGgufEngine.ts:727`, tức **TRƯỚC** `beginVram()` (`:737`) và trước `loadModel()` (`:747`). §3.4 đã ghi rõ nó *"không đường nào đưa nó vào sổ được"*.
+3. §7.1 **đo thấy nó ở mọi lượt hỏng**: đỉnh 1.438-1.443 MiB trên nền 998-1.012 MiB.
+
+⇒ **Điều kiện của ratchet ("có một cấp phát CUDA nhỏ đi trước") được THOẢ MÃN ở CẢ 12 LƯỢT.** Một thí nghiệm trong đó biến độc lập **không đổi** thì **không phân biệt được gì**: nó không xác nhận và không bác bỏ Ư0. Tỉ lệ 3/12 nói về **cái khác**, không nói về ratchet.
+
+⚠ Tệ hơn: `aiGgufEngine.ts:1398-1400` đã ghi một phép đo **3/3 đúng chiều ratchet-như-điều-kiện-ĐỦ** (*"nếu CUDA context đã tồn tại TRƯỚC khi app boot — chỉ cần chạm `getLlama()` … thì chính đường warm này nạp 30B THÀNH CÔNG (đo 3/3 nhánh)"*). Tức bằng chứng hiện có nghiêng **ủng hộ** Ư0, không phải chống lại.
+
+⚠⚠ **Đây là lần thứ NĂM lớp lỗi "phát biểu rộng hơn thứ phép thử nói" xuất hiện ở đúng câu hỏi Ư7 — và là lần tinh vi nhất: thiết bị đo MÙ đúng thứ nó được dựng ra để đo.** Bốn lần trước là thử một chiều rồi phát biểu hai chiều, hoặc suy cơ chế từ hằng số. Lần này phép đo đúng, dữ liệu đúng, chỉ có **phạm vi của dấu hiệu** bị đọc rộng ra. Bài học mang sang Pha 2: **trước khi dùng sổ cái để bác bỏ một giả thuyết về cấp phát, hỏi trước "sổ có NHÌN THẤY lớp cấp phát mà giả thuyết đó nói tới không?"**
+
+**Không cần đo thêm để sửa mục này** — đây là sửa **phạm vi phát biểu**. Ư0 trả về §7.5 kèm phép thử đúng.
+
+---
 
 ### 7.5 Ứng viên còn lại — mỗi cái kèm phép thử RẺ (Pha 2 chạy, **không** vá trước)
 
 | # | Ứng viên | Phép thử rẻ |
 |---|---|---|
+| **Ư0 ★★ (TRỞ LẠI)** | **Ratchet — "một cấp phát CUDA nhỏ đi trước mới mở được cấp phát lớn".** Vẫn là ứng viên hạng nhất; thí nghiệm 12 lượt của phiên này **không chạm tới nó** (xem khối 🔴 §7.4), và `aiGgufEngine.ts:1398-1400` ghi một phép đo **3/3 nghiêng ỦNG HỘ** nó | Phép thử phải **quan sát được lớp cấp phát mà sổ hiện KHÔNG thấy** — đó là điều kiện mới so với mọi đợt trước. Cụ thể: script tạm in `nvidia-smi` **ngay trước và ngay sau `getLlama()`** (dấu vết của backend ~430 MiB) **và** ảnh chụp sổ, rồi so hai nhánh trên **cùng nền worker**: (a) đường hiện tại — `getLlama()` rồi ngay lập tức khối 16,7 GB; (b) `getLlama()` → một cấp phát nhỏ **thật sự có trọng số** (0,6B) → **rồi** khối 16,7 GB. **N ≥ 12 mỗi nhánh** (tỉ lệ nền là 3/11 ⇒ N nhỏ không phân biệt được gì — xem M-3). Chỉ khi hai tỉ lệ khác nhau có ý nghĩa mới được phát biểu. ⚠ Bản sửa "chạm backend sớm" ở §7.6 chỉ là **một trường hợp riêng** của Ư0 — nếu Ư0 đúng thì bản sửa phải viết khác hẳn. |
 | **Ư7a ★★** | **Ngân sách VRAM của WDDM/driver** — trạng thái ngoài tiến trình duy nhất còn giải thích được việc kết quả lật với cùng đầu vào | Ngay TRƯỚC lượt thử, ghi `llama.getVramState().free` **và** `nvidia-smi --query-gpu=memory.reserved,memory.used` **và** số tiến trình đồ hoạ đang giữ VRAM. Chạy 20 lượt worker, đối chiếu OK/FAIL với ba cột đó. Nếu `free` (native) khác nhau giữa hai nhóm ⇒ trúng. Rẻ vì chỉ thêm 3 dòng vào **script tạm**, không đụng sản xuất. |
 | **Ư7b ★** | **Bộ nhớ host đã commit / không gian địa chỉ ảo của worker** đẩy allocation tới sát biên | Trong tiến trình sạch, **cộng dồn** các đặc trưng của worker (commit 4 GiB host + mở 25 kết nối DB + nạp `onnxruntime-node` và `sharp`), rồi nạp 30B **10 lượt**. Nếu tỉ lệ thành công tụt từ 5/5 xuống ~1/4 ⇒ dựng lại được hiện tượng **ngoài** worker ⇒ bisect được. |
-| **Ư2 ★** | **Trạng thái per-`Llama`-instance của node-llama-cpp** | Trong worker đã hỏng, tạo **thêm** một `Llama` bằng `getLlama()` rồi nạp 30B qua instance mới. ⚠ Số mới của phiên này: **instance thứ hai KHÔNG tốn thêm 430 MiB** (đo ở §3.4: reranker tạo backend riêng chỉ thêm ~48 MiB) ⇒ backend native dùng chung, nên phép thử này nay có tiên nghiệm **thấp hơn** trước. |
+| **Ư2 ★** | **Trạng thái per-`Llama`-instance của node-llama-cpp** | Trong worker đã hỏng, tạo **thêm** một `Llama` bằng `getLlama()` rồi nạp 30B qua instance mới. Được ⇒ thủ phạm là trạng thái **per-instance**; hỏng ⇒ là trạng thái **native/driver toàn tiến trình**. Kèm in `llama.getVramState()` ở cả hai thứ tự.<br>🔴 **RÚT LẠI (review vòng 1, I-2):** bản đầu hạ hạng ứng viên này bằng câu *"instance thứ hai KHÔNG tốn thêm 430 MiB (đo ở §3.4: … ~48 MiB)"*. **§3.4 không có phép đo nào như vậy** — con số 48 đó là một phép trừ tôi làm trong đầu từ hai mốc VRAM của một lượt chẩn đoán, **không** phải một phép đo có thiết kế, và nó **mâu thuẫn** với §2.1 nơi **mọi** tiến trình reranker mới đều đo được **+430/+431 MiB**. **Rút toàn bộ khẳng định "backend native dùng chung"** và **trả Ư2 về hạng cũ (★)**. Muốn hạ hạng thì phải đo thật: trong **một** tiến trình, gọi `getLlama()` lần hai với **bộ tuỳ chọn khác**, đo `nvidia-smi` trước/sau **lần hai** riêng biệt, ≥3 lượt. |
 | **Ư4** | `gpuLayers:"auto"` có "nhìn thấy" trần hạ không | Trong worker đã hỏng, nạp 30B với `gpuLayers:"auto"`. Nếu nó tự chọn ít lớp và **nạp được** ⇒ bản sửa thật có thể chỉ là **làm hai lớp im lặng sống lại** (`isOom` không khớp `"Failed to load model"` · `warmModel` `catch {}` trống). |
 | **Ư5** | Thiết bị DirectML/D3D12 do ORT tạo | Tiến trình sạch → tạo `InferenceSession` ONNX với `executionProviders:["dml"]` → **rồi** nạp 30B, 5 lượt. (Phiên này đã tạo session DML nhưng **SAU** GGUF, nên chưa trả lời được thứ tự ngược.) |
 | **Ư8 (mới)** | **Pha 1 telemetry có làm đổi tỉ lệ không?** | Clone tạm repo ở HEAD Đợt 2 (`5a412678`), junction `node_modules`, chép `.env`, chạy **12 lượt** cùng giao thức §7.1. Chỉ khi hai tỉ lệ khác nhau **có ý nghĩa** ở N≥12/bên mới được phát biểu. ⚠ Đừng chạy N nhỏ rồi kết luận — đó chính là lỗi đã mắc bốn lần. |
@@ -365,7 +424,8 @@ Phát biểu *"16.698,37 MiB hỏng ổn định trên cả app lẫn worker"* c
 
 1. **Trần không tất định (§7.2).** Vá theo một ngưỡng là vá theo một con số **không tồn tại**.
 2. **Nó xoá đúng tín hiệu ồn ào duy nhất đang có.** Hôm nay mỗi lượt boot in `cudaMalloc failed`. Đã có **hai lớp im lặng** sẵn (`isOom` không khớp · `warmModel` `catch {}` trống); thêm lớp thứ ba là **đổi một lỗi ồn ào lấy một lỗi im lặng**.
-3. **Nó không giải thích 3/12 lượt thành công.** Một bản vá không giải thích được dữ liệu của chính nó thì không phải bản vá.
+3. **Nó không giải thích 3/12 lượt thành công.** Cả 12 lượt **đều** đã chạm backend (`getLlama()` ở `aiGgufEngine.ts:727`, dấu vết +430 MiB đo được ở §7.1) — kể cả 9 lượt hỏng. Nên "chạm backend sớm" **không phải** là biến phân biệt hai nhóm ở phiên này. Một bản vá không giải thích được dữ liệu của chính nó thì không phải bản vá.
+4. **Ư0 còn sống (I-1) ⇒ bản vá này có thể chỉ là một TRƯỜNG HỢP RIÊNG viết sai.** Nếu ratchet đúng, thứ có tác dụng là *"cấp phát nhỏ trước cấp phát lớn"*, và *"chạm `getLlama()` sớm"* chỉ là một cách tình cờ thoả mãn nó — kém hiệu quả và kém rõ ràng hơn hẳn so với việc nói thẳng điều kiện thật. **Chạy Ư0 (§7.5) trước, rồi mới viết bản vá.**
 
 ---
 
@@ -419,7 +479,7 @@ Spec §10, cổng ra Pha 1 gồm **ba** điều kiện:
 | Điều kiện | Phán quyết | Bằng chứng |
 |---|---|---|
 | **1. Sổ khớp thiết bị trong ±512 MiB suốt 24 h** | ❌ **KHÔNG ĐẠT** | Lệch ổn định **536 / 664 / 738,6 / 882,4 MiB** ở 4 cấu hình độc lập; **100% mẫu** báo động kể từ lượt `commit` đầu tiên. Thêm lệch ÂM **−16.335 MiB** trong cửa sổ nạp. Không cấu hình nào < 512 MiB khi có model GGUF thường trú. **24 h chưa chạy được** — và ở `ROLE=api` thì **không bao giờ** chạy. |
-| **2. Báo cáo phân bố `|lệch|` + `p50/p95` chi phí đầu dò để chốt §15.1/§15.2** | ✅ **ĐẠT** (mục §3, §4) | ⚠ kèm khiếm khuyết: bảng `vram_events` **tự nó không cho được phân bố** (chỉ ghi khi đã vượt ngưỡng) — phải lấy mẫu ngoài. |
+| **2. Báo cáo phân bố `|lệch|` + `p50/p95` chi phí đầu dò để chốt §15.1/§15.2** | ⚠ **ĐẠT VỀ SỐ LIỆU, KHÔNG ĐẠT VỀ CÔNG CỤ** (mục §3, §4) | Bản đầu chấm ✅; **review vòng 1 gọi đúng đó là RỘNG LƯỢNG**. Số liệu thì có (§3.2, §4), nhưng **sổ tự nó không sinh nổi phân bố mà chính nó cần**: `drift` chỉ được ghi khi `|lệch|` **đã vượt** ngưỡng đang cần chốt (`vramReconciler.ts:238`) ⇒ mẫu bị kiểm duyệt tại đúng con số phải quyết. Phân bố ở §3.2 lấy được **nhờ một tiến trình chẩn đoán ngoài**, không nhờ Pha 1. Lần chốt ngưỡng sau vẫn phải đo ngoài, trừ khi §10 mục 7 được làm. |
 | **3. Ư7 có câu trả lời** | ✅ **ĐẠT — dứt điểm** (mục §7) | 12 lượt, 3 OK / 9 FAIL, `prior=[]` chứng minh bằng sổ cái. **Trần KHÔNG tất định.** |
 
 ### Kết luận
