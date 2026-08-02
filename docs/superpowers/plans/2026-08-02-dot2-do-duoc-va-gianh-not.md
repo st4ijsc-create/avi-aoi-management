@@ -235,6 +235,7 @@ git commit -m "fix(ai/dot2-2): copilot lập trình đi qua aiGateway — tier c
 **Files:**
 - Modify: `server/services/aiGgufEngine.ts` — `loadGgufModel` (~684-691) và `getEmbeddingContext` (~2282)
 - Test: `server/services/aiGgufEngine.embedNoTextCtx.test.ts` (**mới**)
+- **Modify: `scripts/ai-bench/bench.mjs`** — ⚠ **BẮT BUỘC**: Task 1 đã thêm một khối MÔ PHỎNG bug này vào `benchEmbedModel()` để bench khớp sản xuất. Khi bạn bỏ bug ở sản xuất, **phải bỏ khối mô phỏng đó theo**, nếu không bench sẽ **đếm THỪA ~3,6 GB** — drift lần thứ TƯ.
 - Modify: `docs/superpowers/reports/2026-08-02-dot2-report.md`
 
 **Interfaces:**
