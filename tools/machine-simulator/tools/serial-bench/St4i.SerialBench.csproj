@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Task D-3 review — the HARDWARE half of this task's evidence, made reproducible.
+         Every "measured" number in task-3-report.md §2 came from a standalone console app that was never
+         committed, so none of it could be re-run and the reviewer had to write the probe again to check it.
+         This is that probe, committed, parameterised by port name, and shaped as a checklist rather than a
+         pile of Console.WriteLine.
+
+         🔴 DELIBERATELY NOT A TEST PROJECT, and that is the whole design constraint. scripts/verify-suites.sh
+         asserts EXACT per-suite totals and `skipped == 0`, and it is right to: xUnit counts a dynamically
+         skipped test in Total, so a hardware-conditional suite would make Skipped environment-dependent and
+         any fixed expectation would fail on the BETTER-equipped machine — trap #2 in a hardware costume.
+         Putting the hardware checks in an executable a human runs against a real port keeps `817` meaning the
+         same thing on every machine while still giving the bench step something that RUNS and prints numbers
+         to paste into a report. -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>St4i.SerialBench</AssemblyName>
+    <RootNamespace>St4i.SerialBench</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Uses the PUBLIC surface only — no InternalsVisibleTo. What this tool exists to check is BEHAVIOUR
+         against real copper; the configuration assertions that need internals are already covered in CI by
+         St4i.EdgeCore.Tests. -->
+    <ProjectReference Include="..\..\src\St4i.EdgeCore.Serial\St4i.EdgeCore.Serial.csproj" />
+  </ItemGroup>
+</Project>

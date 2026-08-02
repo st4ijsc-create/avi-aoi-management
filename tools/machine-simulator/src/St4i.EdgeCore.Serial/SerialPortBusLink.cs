@@ -42,16 +42,29 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// truncates the last character and too late collides with the slave's reply, so it must happen at the moment
 /// the final stop bit leaves the UART's shift register — and the BCL exposes no such signal. Enumerated on
 /// this runtime: <see cref="SerialPort"/> has events <c>ErrorReceived</c>, <c>DataReceived</c>,
-/// <c>PinChanged</c> and <c>Disposed</c> — no transmit-complete; it has no <c>Flush</c>/<c>Drain</c>/<c>Wait</c>
-/// -shaped method at all; <see cref="SerialPort.BytesToWrite"/> reaching 0 means the DRIVER's queue is empty,
-/// not that the wire is; and <see cref="Handshake"/> offers only
+/// <c>PinChanged</c> and <c>Disposed</c> — <b>no transmit-complete</b>; <see cref="SerialPort.BytesToWrite"/>
+/// reaching 0 means the DRIVER's queue is empty, not that the wire is (measured: an 8-byte write returned in
+/// 2.45 ms with <c>BytesToWrite</c> already 0, well before ~4.6 ms of wire time at 19200 baud had elapsed);
+/// and <see cref="Handshake"/> offers only
 /// <see cref="Handshake.None"/>/<see cref="Handshake.XOnXOff"/>/<see cref="Handshake.RequestToSend"/>/
 /// <see cref="Handshake.RequestToSendXOnXOff"/> — i.e. RTS as FLOW CONTROL, never Win32's
 /// <c>RTS_CONTROL_TOGGLE</c>, which is the DCB setting that would make the driver do this correctly.
 /// Reaching <c>RTS_CONTROL_TOGGLE</c> would require P/Invoking <c>GetCommState</c>/<c>SetCommState</c> on a
-/// handle <see cref="SerialPort"/> does not expose. So: <b>this transport requires an adapter with automatic
-/// direction control.</b> What it does instead of pretending is leave the line in the safe state — see
-/// <see cref="CreatePort"/>.</description></item>
+/// handle <see cref="SerialPort"/> does not expose.
+///
+/// <para>🔴 <b>Review correction (I-4) — an earlier version of this paragraph said <see cref="SerialPort"/>
+/// "has no <c>Flush</c>/<c>Drain</c>/<c>Wait</c>-shaped method at all". That was FALSE and it was the load-bearing
+/// premise of a limitation shipped to operators.</b> <see cref="SerialPort.BaseStream"/> is public, and the
+/// <c>SerialStream</c> behind it has a <c>Flush()</c> (32 IL bytes) that P/Invokes
+/// <c>Kernel32.FlushFileBuffers</c>. The conclusion is unchanged — <c>FlushFileBuffers</c> pushes the
+/// DRIVER's buffered bytes at the device and returns; it says nothing about the UART's shift register, so it
+/// is still not a transmit-complete signal and DE would still be released mid-character — but the reason
+/// must be "the flush that exists is the wrong one", not "no flush exists", because the first person to check
+/// falsifies the second. Recorded rather than quietly reworded: a limitation is only as good as its
+/// premise.</para>
+///
+/// <para>So: <b>this transport requires an adapter with automatic direction control.</b> What it does instead
+/// of pretending is leave the line in the safe state — see <see cref="CreatePort"/>.</para></description></item>
 ///
 /// <item><description><b>🔴 A blocking read cannot be interrupted without destroying the port — so this class
 /// never issues one.</b> This is the task's central empirical question and the measurement is the whole
@@ -108,15 +121,30 @@ public sealed class SerialPortBusLink : IModbusBusLink
 
     private const int DrainScratchSize = 512;
 
-    private readonly SerialPort _port;
+    private readonly ISerialPortHandle _port;
     private readonly SerialLineSettings _settings;
     private volatile bool _abortRequested;
     private int _disposed;
 
-    private SerialPortBusLink(SerialPort port, SerialLineSettings settings)
+    /// <summary>
+    /// 🔴 <b>Review fix (I-2) — the slice pin lives HERE, in the constructor, and not in
+    /// <see cref="CreatePort"/>, because it is an invariant of the type rather than of one factory.</b>
+    ///
+    /// <para>It was in <see cref="CreatePort"/>, which <see cref="OpenAsync"/> uses — so
+    /// <see cref="Adopt"/> produced a link whose port kept <see cref="SerialPort"/>'s own default
+    /// <c>ReadTimeout</c> of <b>-1, i.e. <see cref="SerialPort.InfiniteTimeout"/></b> (measured). That is
+    /// precisely the unbounded blocking read this whole class exists to avoid: the one measured as releasable
+    /// by nothing but <c>Dispose()</c>, i.e. Đợt B's mechanism on a shared bus. There was no production
+    /// consequence — <see cref="Adopt"/> is internal and nothing in <c>src/</c> calls it — but the mutation
+    /// evidence had a hole the same shape as the code: <b>all three mutations defending the pin targeted
+    /// <see cref="CreatePort"/></b>, so none of them could see the path that skipped it. Pinning it on every
+    /// construction closes the code and the evidence together.</para>
+    /// </summary>
+    private SerialPortBusLink(ISerialPortHandle port, SerialLineSettings settings)
     {
         _port = port;
         _settings = settings;
+        _port.ReadTimeout = ReadSliceMs;
     }
 
     /// <summary>
@@ -164,25 +192,22 @@ public sealed class SerialPortBusLink : IModbusBusLink
     /// safe failure: such an installation will not transmit at all and will degrade honestly, rather than
     /// latching a driver onto a shared bus and jamming every other device on the segment.</para>
     ///
-    /// <para><see cref="SerialPort.ReadTimeout"/> is pinned to <see cref="ReadSliceMs"/> for the life of the
-    /// port. The transport's real deadline is <see cref="ReadTimeout"/> on this class, enforced by
-    /// <see cref="Read"/>'s own loop; the port's timeout is only how long one slice waits.</para>
+    /// <para>🔴 <b>It does NOT pin <see cref="SerialPort.ReadTimeout"/> — that moved to the constructor in the
+    /// review fix round (I-2).</b> The slice pin is what makes every read interruptible, so it must hold for
+    /// every link however it was built, not only for the ones this factory produced. See the constructor.</para>
     /// </summary>
     internal static SerialPort CreatePort(SerialLineSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
 
-        var port = new SerialPort(settings.PortName)
+        return new SerialPort(settings.PortName)
         {
             BaudRate = settings.BaudRate,
             Parity = settings.Parity,
             DataBits = settings.DataBits,
             StopBits = settings.StopBits,
             Handshake = Handshake.None,
-            ReadTimeout = ReadSliceMs,
         };
-
-        return port;
     }
 
     /// <summary>
@@ -221,7 +246,7 @@ public sealed class SerialPortBusLink : IModbusBusLink
             throw;
         }
 
-        return Task.FromResult<IModbusBusLink>(new SerialPortBusLink(port, settings));
+        return Task.FromResult<IModbusBusLink>(new SerialPortBusLink(new SystemSerialPortHandle(port), settings));
     }
 
     /// <summary>
@@ -231,14 +256,12 @@ public sealed class SerialPortBusLink : IModbusBusLink
     /// a connected socket they did not dial.</b> There is no equivalent production caller for a COM port:
     /// <see cref="OpenAsync"/> is the only way this transport is built in the product.
     ///
-    /// <para>It exists because of a measurement. Four mutations to this class's port-touching members
-    /// (<see cref="Read"/> ignoring the abort flag, <see cref="Read"/> ignoring its deadline,
-    /// <see cref="Write"/> ignoring its timeout, <see cref="DrainBufferedInput"/> reporting zero) survived
+    /// <para>It exists because of a measurement. Four mutations to this class's port-touching members survived
     /// every test, because a <see cref="SerialPort"/> cannot be constructed without a real port and this
     /// machine has no loopback. Adopting an <b>unopened</b> port makes the pre-I/O half of those members
-    /// reachable: the abort check runs before any port call, and the write timeout reaches the port object
-    /// before the write fails. Two of the four now die. The other two — the deadline and the drain's count —
-    /// still need a port with something on the other end of it, and task-3-report.md says so.</para>
+    /// reachable — the abort check runs before any port call, and the write timeout reaches the port object
+    /// before the write fails — which killed two of the four. <see cref="AdoptHandle"/> is what killed the
+    /// rest; see <see cref="ISerialPortHandle"/> for why a partial instrument was not enough.</para>
     ///
     /// <para>This is deliberately not a configuration surface: it is one internal factory behind
     /// <c>InternalsVisibleTo("St4i.EdgeCore.Tests")</c>, and nothing in <c>src/</c> calls it.</para>
@@ -247,7 +270,19 @@ public sealed class SerialPortBusLink : IModbusBusLink
     {
         ArgumentNullException.ThrowIfNull(port);
         ArgumentNullException.ThrowIfNull(settings);
-        return new SerialPortBusLink(port, settings);
+        return new SerialPortBusLink(new SystemSerialPortHandle(port), settings);
+    }
+
+    /// <summary>
+    /// Task D-3 review (I-3) — builds a link over any <see cref="ISerialPortHandle"/>, so the read loop, the
+    /// deadline and the drain's counting can be driven in CI. See <see cref="ISerialPortHandle"/> for the full
+    /// argument, including what a test using it does and does not prove.
+    /// </summary>
+    internal static SerialPortBusLink AdoptHandle(ISerialPortHandle handle, SerialLineSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(handle);
+        ArgumentNullException.ThrowIfNull(settings);
+        return new SerialPortBusLink(handle, settings);
     }
 
     /// <summary>Builds the <c>openLink</c> delegate <see cref="ModbusBusRegistry.Acquire"/> takes. A fresh
@@ -271,8 +306,19 @@ public sealed class SerialPortBusLink : IModbusBusLink
     /// no deadline — <see cref="ModbusBus.BeginTransactionAsync"/> rejects that before it takes the
     /// arbitration lock, and when it happens anyway (a caller wiring this link up outside
     /// <see cref="ModbusBus"/>, which nothing prevents) the read waits for the device indefinitely while
-    /// staying abortable via <see cref="AbortPendingRead"/>. It never spins: every iteration blocks a full
-    /// slice inside the serial driver.</summary>
+    /// staying abortable via <see cref="AbortPendingRead"/>.
+    ///
+    /// <para>🔴 <b>Review correction (I-1): this used to end "It never spins: every iteration blocks a full
+    /// slice inside the serial driver" — and that was FALSE for a zero-length read.</b>
+    /// <c>SerialPort.Read(buffer, offset, 0)</c> returns 0 without waiting (measured: 0.46 ms on the first
+    /// call, and a bare loop over it ran at <b>33 million iterations per second</b>), so a zero count fell
+    /// straight through the <c>read &gt; 0</c> check and span the loop — holding this bus's arbitration lock
+    /// and a core, and with no deadline, forever. <see cref="GatewayTcpBusLink"/> never had this because
+    /// <c>Socket.Poll</c> consumes its slice whatever the count is: a divergence between two links on one
+    /// seam, which is exactly what §8.6 of the task report was written to catch and did not.
+    /// <see cref="Read"/> now refuses a non-positive count up front, and a zero-byte return for a positive
+    /// count — which <see cref="SerialPort"/>'s contract says cannot happen — throws instead of looping.</para>
+    /// </summary>
     public int ReadTimeout { get; set; } = -1;
 
     public int WriteTimeout { get; set; } = -1;
@@ -296,19 +342,30 @@ public sealed class SerialPortBusLink : IModbusBusLink
     /// <para><b>🔴 It drains by READING, not by calling <see cref="SerialPort.DiscardInBuffer"/>, and the
     /// reason is the count.</b> The brief asked me to verify that <see cref="SerialPort.DiscardInBuffer"/> is
     /// real rather than trust its name — the way NModbus's own adapters could not be trusted — and it is:
-    /// walking the shipped IL, <c>SerialPort.DiscardInBuffer</c> (27 bytes) calls
+    /// walking the shipped IL, <c>SerialPort.DiscardInBuffer</c> (<b>47</b> bytes) calls
     /// <c>SerialStream.DiscardInBuffer</c> (27 bytes) which calls <c>Interop.Kernel32.PurgeComm</c>, whereas
     /// <c>NModbus.IO.SocketAdapter.DiscardInBuffer</c> and <c>UdpClientAdapter.DiscardInBuffer</c> are 1 IL
-    /// byte each — a bare <c>ret</c>. That head-to-head is pinned as a test.
+    /// byte each — a bare <c>ret</c>. That head-to-head is pinned as a test. (Review M-1: this said 47 was 27,
+    /// which is the INNER method's length. A wrong number in the one paragraph whose whole subject is "verify
+    /// rather than trust the name" is the worst place to put one.)
     ///
     /// <b>It is nonetheless the wrong primitive for this seam</b>, because it purges without counting. Reading
     /// <see cref="SerialPort.BytesToRead"/> and then purging would leave a window — at 19200 baud a character
     /// is ~570 µs wide, comfortably wider than the two calls — in which a byte arrives, is destroyed, and is
-    /// never counted. An uncounted byte does not restart <see cref="ModbusBus"/>'s quiet window, so the bus
-    /// would declare the line silent while a slave was still transmitting: the exact "plausible wrong number"
-    /// this whole quarantine exists to prevent. Reading instead makes the count exact by construction — bytes
-    /// that arrive after the last <see cref="SerialPort.BytesToRead"/> check are simply still there, and the
-    /// next call counts them and restarts the window.</para>
+    /// never counted. Reading instead makes the count exact by construction: bytes that arrive after the last
+    /// <see cref="SerialPort.BytesToRead"/> check are simply still there, and the next call counts them and
+    /// restarts the window.
+    ///
+    /// <para><b>🔴 Review M-2 — the decision is right and free, but the harm it avoids is smaller than I first
+    /// wrote, and overstating it is its own defect.</b> I claimed the purge-without-counting race would make
+    /// the bus "declare the line silent while a slave was still transmitting". It would not, in general:
+    /// <c>ModbusBus.ResynchroniseAsync</c> re-drains every <c>PollSliceMs</c> (5 ms by default), so a byte
+    /// destroyed uncounted is almost always followed by more bytes that ARE counted, and the window restarts
+    /// anyway. The real error is narrower — <c>lastByteAt</c> stale by up to one poll slice, and materially
+    /// only when the destroyed byte was <b>the last of a transmission</b>, in which case the quiet window ends
+    /// up to one slice early. Still worth avoiding, and it costs nothing to avoid, which is why the decision
+    /// stands. But an argument sized larger than its evidence invites a reader to discount the parts that
+    /// carry weight.</para>
     ///
     /// <para><b>What is deliberately NOT swallowed.</b> Only the two shapes that mean "the port went away
     /// underneath me" — <see cref="ObjectDisposedException"/> and the
@@ -358,6 +415,14 @@ public sealed class SerialPortBusLink : IModbusBusLink
         ArgumentNullException.ThrowIfNull(buffer);
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
+        // 🔴 Review I-1. A zero-length read is answered without touching the port, exactly as Stream.Read's own
+        // contract does. It is not defensive tidiness: SerialPort.Read(buffer, offset, 0) returns 0 WITHOUT
+        // WAITING (measured: 0.46 ms, and a bare loop over it ran at 33 million iterations/second), so without
+        // this the loop below spins at full tilt — holding this bus's arbitration lock and a core — until the
+        // outer deadline, and with a non-positive ReadTimeout there is no outer deadline at all. GatewayTcpBusLink
+        // is immune only because Socket.Poll consumes its slice whatever the count is.
+        if (count <= 0) return 0;
+
         var deadline = ReadTimeout > 0 ? Environment.TickCount64 + ReadTimeout : (long?)null;
 
         while (true)
@@ -372,12 +437,22 @@ public sealed class SerialPortBusLink : IModbusBusLink
 
             try
             {
-                // Blocks inside the serial driver for at most one slice (the port's own ReadTimeout, pinned in
-                // CreatePort) and returns the instant a byte arrives. This is the ONLY read this class ever
-                // issues: an unbounded SerialPort.Read cannot be interrupted by anything but disposing the
-                // port, which is the mechanism blueprint §2.1 forbids on a shared bus.
+                // Blocks inside the serial driver for at most one slice (the port's own ReadTimeout, pinned by
+                // this type's constructor) and returns the instant a byte arrives. This is the ONLY read this
+                // class ever issues: an unbounded SerialPort.Read cannot be interrupted by anything but
+                // disposing the port, which is the mechanism blueprint §2.1 forbids on a shared bus.
                 var read = _port.Read(buffer, offset, count);
                 if (read > 0) return read;
+
+                // SerialPort.Read's contract says this cannot happen for a positive count — it blocks until at
+                // least one byte is available or throws. Blueprint §8.1: the sentence after "cannot happen" has
+                // to say what the code does when it happens anyway. It throws, because the alternative is the
+                // I-1 spin by another route: a zero-byte return costs no time, so looping on it burns a core
+                // while holding the arbitration lock. Naming it is also strictly more useful than hanging.
+                throw new IOException(
+                    $"The serial port {_settings.Describe()} returned 0 bytes for a {count}-byte read without " +
+                    "timing out, which SerialPort.Read is not documented to do. Treating it as a link fault " +
+                    "rather than retrying, because a zero-cost retry loop would spin holding the bus.");
             }
             catch (TimeoutException)
             {

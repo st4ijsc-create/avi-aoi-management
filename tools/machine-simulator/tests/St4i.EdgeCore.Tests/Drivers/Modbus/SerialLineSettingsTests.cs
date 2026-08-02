@@ -72,7 +72,7 @@ public sealed class SerialLineSettingsTests
 
     /// <summary>"com3" and "COM3" are one physical port. The normalisation matters beyond tidiness because
     /// the bus key is built from this string — see
-    /// <c>SerialPortBusLinkTests.TwoConnectorsOnOneSerialLine_ShareOneBus_AndOpenThePortOnce</c>, which drives
+    /// <c>SerialPortBusLinkTests.TwoConnectorsOnOneSerialLine_ShareOneBus_AndInvokeTheOpenerOnce</c>, which drives
     /// the consequence through the real registry rather than comparing two strings.</summary>
     [Fact]
     public void ThePortName_IsTrimmedAndUpperCased_BecauseCom3AndCOM3AreOnePort()

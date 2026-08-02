@@ -1,5 +1,6 @@
 using System.IO.Ports;
 using System.Reflection;
+using NModbus;
 using St4i.EdgeCore.Drivers.Modbus;
 using Xunit;
 
@@ -9,17 +10,24 @@ namespace St4i.EdgeCore.Tests.Drivers.Modbus;
 /// Task D-3 — <see cref="SerialPortBusLink"/>, to the exact extent a machine with no RS-485 hardware can drive
 /// it, and no further.
 ///
-/// <para>🔴 <b>What is NOT here, stated up front so a green run is not over-read.</b> There is no portable
-/// virtual COM port and this machine has none installed (checked: no <c>com0com</c>-family service is
-/// registered). The one real port present, <c>COM1</c>, opens but has nothing on the other end — eight bytes
-/// written to it produce zero bytes back — so <b>no Modbus RTU frame has ever traversed this transport</b>,
-/// and <see cref="SerialPortBusLink.Read"/>, <see cref="SerialPortBusLink.Write"/> and
-/// <see cref="SerialPortBusLink.DrainBufferedInput"/> carrying real data are UNTESTED. The behaviours that
-/// could be measured against a real port — the exclusive open, the abort latency with the port left open, the
-/// read timeout, the cost of opening — were measured by a standalone probe and are recorded in
-/// task-3-report.md with their numbers. A soft <c>return;</c> skip that reported Passed for any of that would
-/// be worse than the documented gap, and <c>scripts/verify-suites.sh</c> treats a dynamic xUnit skip as a
-/// failure anyway (it expects 0 skipped), so nothing in this class is hardware-conditional.</para>
+/// <para>🔴 <b>What is and is not proven here, stated up front so a green run is not over-read.</b> There is
+/// no portable virtual COM port and this machine has none installed (checked: no <c>com0com</c>-family service
+/// is registered). The one real port present, <c>COM1</c>, opens but has nothing on the other end — eight
+/// bytes written to it produce zero bytes back.</para>
+///
+/// <para>Since the review's I-3, the link's read loop, its deadline, its abort recheck and its drain ARE
+/// driven — over an <see cref="ISerialPortHandle"/> whose every behaviour was measured against a real COM
+/// port (see <see cref="FakeSerialPortHandle"/> for the list and for what it deliberately does not model), and
+/// a real RTU frame round-trips through this transport's own <c>Read</c>/<c>Write</c>. What remains untested
+/// against hardware is narrower than it was: <c>SystemSerialPortHandle</c>'s seven one-line delegations, and
+/// everything about copper — baud, parity, half duplex, direction control. <c>tools/serial-bench</c> exercises
+/// the first of those against a real port; the rest is a bench acceptance step.</para>
+///
+/// <para>Nothing in this class is hardware-conditional. A soft <c>return;</c> skip reporting Passed would be
+/// worse than a documented gap, and <c>scripts/verify-suites.sh</c> treats a dynamic xUnit skip as a failure
+/// anyway — correctly: xUnit counts a skipped test in <c>Total</c>, so a hardware-conditional suite would make
+/// <c>Skipped</c> environment-dependent and any fixed expectation would fail on the BETTER-equipped machine.
+/// <c>skipped == 0</c> is what makes a total mean the same thing everywhere.</para>
 /// </summary>
 public sealed class SerialPortBusLinkTests
 {
@@ -157,18 +165,20 @@ public sealed class SerialPortBusLinkTests
         Assert.False(port.RtsEnable);
         Assert.False(port.DtrEnable);
 
-        // The port's own timeout is ONE SLICE, never the transaction's deadline: that is what makes an
-        // in-flight read abortable without closing the port.
+        // 🔴 The slice pin is NOT asserted here any more — review I-2 moved it out of this factory and into
+        // the constructor, so it holds for every link however it was built. See
+        // EveryLink_PinsThePortsReadTimeoutToOneSlice_HoweverItWasConstructed, which asserts the BCL default
+        // survives THIS call as its discriminator.
         //
-        // 🔴 The InRange is not decoration — it is M25's sibling, found by sweeping for the same shape rather
-        // than by care. Asserting only `port.ReadTimeout == ReadSliceMs` compares the constant with itself, so
-        // changing ReadSliceMs to SerialPort.InfiniteTimeout would keep this green while making every read an
-        // unbounded blocking call — the exact thing that cannot be interrupted without destroying the port,
-        // i.e. Đợt B's mechanism reintroduced on a shared bus. The bound rather than the literal 20 so tuning
-        // the slice stays a one-line change; the range's ends are what carry meaning (positive, or the read
-        // never comes up for air; small, or cancellation latency is no longer measured in tens of ms).
+        // 🔴 The InRange stays here and is not decoration — it is M25's sibling, found by sweeping for the same
+        // shape rather than by care. Asserting only `readTimeout == ReadSliceMs` anywhere compares the constant
+        // with itself, so changing ReadSliceMs to SerialPort.InfiniteTimeout would keep every such assertion
+        // green while making each read an unbounded blocking call — the exact thing that cannot be interrupted
+        // without destroying the port, i.e. Đợt B's mechanism reintroduced on a shared bus. The bound rather
+        // than the literal 20 so tuning the slice stays a one-line change; the range's ends are what carry
+        // meaning (positive, or the read never comes up for air; small, or cancellation latency is no longer
+        // measured in tens of ms).
         Assert.InRange(SerialPortBusLink.ReadSliceMs, 1, 50);
-        Assert.Equal(SerialPortBusLink.ReadSliceMs, port.ReadTimeout);
         Assert.False(port.IsOpen);
     }
 
@@ -333,6 +343,260 @@ public sealed class SerialPortBusLinkTests
         Assert.Throws<ObjectDisposedException>(() => link.Write(new byte[8], 0, 8));
     }
 
+    // ── Review I-3: the four members that used to be unreachable ──────────────────────────────────────────
+    //
+    // Every test below drives the REAL SerialPortBusLink.Read / Write / DrainBufferedInput over an
+    // ISerialPortHandle whose seven behaviours were measured against a real COM port (see
+    // FakeSerialPortHandle for the list, and for what it deliberately does not model). Before this seam
+    // existed, four mutations to these members survived the entire suite — not because the code was untested
+    // by oversight, but because the instrument I had picked up could not reach them.
+
+    /// <summary>
+    /// 🔴 <b>Kills M19b, which my own report called the most consequential of the five survivors.</b> The
+    /// count is what restarts <see cref="ModbusBus"/>'s quiet window: a drain that removes bytes and reports 0
+    /// lets the window expire while a device is still emitting. Asserts BOTH halves — the number returned and
+    /// that the port really is empty afterwards — because a drain that reports the right number and removes
+    /// nothing would be just as wrong.
+    /// </summary>
+    [Fact]
+    public void DrainBufferedInput_ReportsExactlyWhatItRemoved_AndLeavesThePortEmpty()
+    {
+        var handle = FakeSerialPortHandle.Unpaired();
+        using var link = SerialPortBusLink.AdoptHandle(handle, new SerialLineSettings("COM7"));
+
+        Assert.Equal(0, link.DrainBufferedInput());
+
+        handle.Deliver(1, 3, 2, 0, 235, 0xB9, 0xE5);
+        Assert.Equal(7, handle.BytesToRead);
+
+        Assert.Equal(7, link.DrainBufferedInput());
+        Assert.Equal(0, handle.BytesToRead);
+        Assert.Equal(0, link.DrainBufferedInput());
+    }
+
+    /// <summary>
+    /// 🔴 <b>Kills M21b — the outer deadline.</b> The port's own timeout is one 20 ms slice; the transaction's
+    /// deadline is <see cref="IModbusBusLink.ReadTimeout"/> and is enforced by the link's loop, so a read
+    /// against a silent line must give up at ITS bound and not at the slice's. Asserts the elapsed time is at
+    /// least the bound (it did not give up at the first slice) and that the message names the line, which is
+    /// the whole point of carrying the framing through every exception.
+    /// </summary>
+    [Fact]
+    public async Task Read_AgainstASilentLine_GivesUpAtItsOwnDeadline_NotAtTheSliceBoundary()
+    {
+        var handle = FakeSerialPortHandle.Unpaired();
+        var line = new SerialLineSettings("COM7", 9_600, Parity.Odd, 8, StopBits.Two);
+        using var link = SerialPortBusLink.AdoptHandle(handle, line);
+
+        link.ReadTimeout = 200;
+
+        // 🔴 Bounded on its own thread rather than called inline, and that is D-2's §8.4(2) rule applied
+        // before the fact instead of after it: the mutation this test exists to kill DELETES the deadline
+        // check, and an inline call would then loop forever — a test that hangs under a defect is strictly
+        // worse than one that fails under it, because a failure names the defect and a hang names nothing.
+        var started = Environment.TickCount64;
+        var reading = BlockingWork.Run(() =>
+        {
+            try { link.Read(new byte[8], 0, 8); return (Exception?)null; }
+            catch (Exception ex) { return ex; }
+        }, "serial-deadline-read");
+
+        var thrown = await reading.WaitAsync(TimeSpan.FromSeconds(10));
+        var elapsed = Environment.TickCount64 - started;
+
+        var ex = Assert.IsType<TimeoutException>(thrown);
+
+        // One tick of slack: both this link and GatewayTcpBusLink build their deadline from
+        // Environment.TickCount64, which advances in ~15.6 ms steps (measured), so a nominal bound expires
+        // within ±1 tick. Asserting an exact >= 200 would be asserting a precision the clock does not have —
+        // tools/serial-bench documents the same correction, which it found by failing at 244.86 ms of 250.
+        Assert.True(elapsed >= 200 - 16,
+            $"gave up after {elapsed} ms against a 200 ms bound — it used the slice, not the deadline");
+        Assert.Contains(line.Describe(), ex.Message, StringComparison.Ordinal);
+        Assert.Contains("200", ex.Message, StringComparison.Ordinal);
+
+        // ...and it really did come up for air repeatedly rather than issuing one long blocking read, which is
+        // the property the whole cancellation design rests on. 200 ms / 20 ms slices = ~10.
+        Assert.True(handle.ReadCalls > 1, $"only {handle.ReadCalls} read call(s) — the loop issued one long blocking read");
+        Assert.Equal(SerialPortBusLink.ReadSliceMs, handle.ReadTimeout);
+    }
+
+    /// <summary>
+    /// 🔴 <b>The between-slice abort recheck — the last untested half of this batch's central safety
+    /// property.</b> <c>Read_WithAnAbortPending_…</c> covers only the check before the FIRST slice; this one
+    /// starts a read that is already blocking, raises the abort from another thread, and asserts the read
+    /// throws promptly <b>with the port still open</b>. That is D-2's design in full: cancel one device's read
+    /// without tearing the line down for the rest of the bus.
+    /// </summary>
+    [Fact]
+    public async Task Read_AbortedWhileAlreadyBlocking_ThrowsPromptly_WithoutClosingThePort()
+    {
+        var handle = FakeSerialPortHandle.Unpaired();
+        using var link = SerialPortBusLink.AdoptHandle(handle, new SerialLineSettings("COM7"));
+
+        link.ReadTimeout = 30_000;
+        var reading = BlockingWork.Run(() =>
+        {
+            try { link.Read(new byte[8], 0, 8); return (Exception?)null; }
+            catch (Exception ex) { return ex; }
+        }, "serial-abort-read");
+
+        // Let it get past the first slice, so the abort lands on a read that is genuinely already blocking.
+        await Task.Delay(80);
+        Assert.False(reading.IsCompleted);
+
+        var started = Environment.TickCount64;
+        link.AbortPendingRead();
+        var thrown = await reading.WaitAsync(TimeSpan.FromSeconds(5));
+        var elapsed = Environment.TickCount64 - started;
+
+        Assert.IsType<OperationCanceledException>(thrown);
+        Assert.True(elapsed < 5_000, $"abort took {elapsed} ms against a 30000 ms read bound");
+
+        // The mechanism, not the clock — the same distinction D-2 drew: a fast failure that closed the port
+        // would be indistinguishable from this one by latency alone, and it is the thing this design forbids.
+        Assert.True(handle.IsOpen);
+        Assert.True(link.IsOpen);
+
+        // And the link is reusable afterwards, which is what "the bus survived" actually means.
+        link.ResetAbort();
+        link.ReadTimeout = 60;
+        Assert.Throws<TimeoutException>(() => link.Read(new byte[8], 0, 8));
+    }
+
+    /// <summary>
+    /// 🔴 <b>Review I-1.</b> A zero-length read must be answered without touching the port. Measured,
+    /// <c>SerialPort.Read(buffer, offset, 0)</c> returns 0 <i>without waiting</i> (0.46 ms; a bare loop over it
+    /// ran at 33 million iterations/second), so before the guard the link's loop span at full tilt holding the
+    /// bus's arbitration lock — and with a non-positive <see cref="IModbusBusLink.ReadTimeout"/>, forever.
+    ///
+    /// <para>The discriminator is the second assertion: the port is CLOSED, so any implementation that reached
+    /// the handle at all would throw <see cref="InvalidOperationException"/>. Returning 0 therefore proves the
+    /// guard answered before the port was consulted, rather than merely that the call was fast.</para>
+    /// </summary>
+    [Fact]
+    public void Read_WithAZeroLengthCount_ReturnsImmediately_WithoutTouchingThePort()
+    {
+        var handle = FakeSerialPortHandle.Unpaired();
+        handle.Dispose();   // a port that would throw on any access
+        using var link = SerialPortBusLink.AdoptHandle(handle, new SerialLineSettings("COM7"));
+
+        link.ReadTimeout = -1;   // no outer deadline: an unguarded loop here never terminates
+        Assert.Equal(0, link.Read(new byte[8], 0, 0));
+        Assert.Equal(0, handle.ReadCalls);
+
+        // The control: a positive count on the same closed port does reach it and does fail.
+        Assert.Throws<InvalidOperationException>(() => link.Read(new byte[8], 0, 8));
+    }
+
+    /// <summary>A byte that arrives returns from the read immediately — the slice is what an IDLE read waits,
+    /// never a tax on a healthy transaction. Stated in the class's doc comment; asserted here.</summary>
+    [Fact]
+    public async Task Read_ReturnsAsSoonAsAByteArrives_RatherThanWaitingOutTheSlice()
+    {
+        var handle = FakeSerialPortHandle.Unpaired();
+        using var link = SerialPortBusLink.AdoptHandle(handle, new SerialLineSettings("COM7"));
+        link.ReadTimeout = 5_000;
+
+        var buffer = new byte[8];
+        var reading = BlockingWork.Run(() => link.Read(buffer, 0, 8), "serial-arrival-read");
+        await Task.Delay(50);
+
+        handle.Deliver(0x01, 0x03);
+        var n = await reading.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(2, n);
+        Assert.Equal(0x01, buffer[0]);
+        Assert.Equal(0x03, buffer[1]);
+    }
+
+    /// <summary>
+    /// 🔴 <b>A real Modbus RTU frame — real CRC, real t3.5 framing, real slave dispatch by unit id — driven
+    /// through THIS transport's own <see cref="SerialPortBusLink.Read"/> and
+    /// <see cref="SerialPortBusLink.Write"/>, on both ends.</b>
+    ///
+    /// <para>D-2's equivalent test drives D-2's in-memory link, so it proves the bus and NModbus, not this
+    /// file. This one puts a <see cref="SerialPortBusLink"/> on each end of a paired handle, so every byte of
+    /// the request and the response passes through the slice loop, the deadline arithmetic and the drain that
+    /// <c>ModbusSerialTransport</c> calls before each request.</para>
+    ///
+    /// <para><b>What it still does not prove</b> is that a real UART carries those bytes — no baud rate, no
+    /// parity, no half duplex. It narrows "no Modbus frame has ever traversed this transport" to "no Modbus
+    /// frame has ever traversed a real SerialPort", which is a materially smaller claim and the honest one.</para>
+    /// </summary>
+    [Fact]
+    public async Task AnRtuFrameRoundTripsThroughThisLinksOwnReadAndWrite()
+    {
+        var handles = FakeSerialPortHandlePair.Create();
+        var line = new SerialLineSettings("COM7");
+        using var masterLink = SerialPortBusLink.AdoptHandle(handles.Master, line);
+        using var deviceLink = SerialPortBusLink.AdoptHandle(handles.Device, line);
+
+        var factory = new NModbus.ModbusFactory();
+        var network = factory.CreateRtuSlaveNetwork(deviceLink);
+        var slave = factory.CreateSlave(unitId: 7);
+        slave.DataStore.HoldingRegisters.WritePoints(0, new ushort[] { 235, 0xFFFF });
+        network.AddSlave(slave);
+
+        using var listenCts = new CancellationTokenSource();
+        // ListenAsync blocks its caller synchronously and must not come off the pool — see BlockingWork.
+        var listening = BlockingWork.RunAsync(() => network.ListenAsync(listenCts.Token), "serial-rtu-slave");
+
+        try
+        {
+            var transport = factory.CreateRtuTransport(masterLink);
+            transport.ReadTimeout = 5_000;
+            transport.WriteTimeout = 5_000;
+            transport.Retries = 0;
+            using var master = factory.CreateMaster(transport);
+
+            var registers = await master.ReadHoldingRegistersAsync(slaveAddress: 7, startAddress: 0, numberOfPoints: 2);
+
+            Assert.Equal(2, registers.Length);
+            Assert.Equal(235, registers[0]);
+            Assert.Equal(0xFFFF, registers[1]);
+        }
+        finally
+        {
+            await listenCts.CancelAsync();
+            handles.Device.Dispose();
+            try { await listening.WaitAsync(TimeSpan.FromSeconds(5)); } catch { /* best-effort teardown */ }
+            network.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// 🔴 <b>Review I-2 — the slice pin is a property of the TYPE, not of one factory.</b> It used to live in
+    /// <see cref="SerialPortBusLink.CreatePort"/>, so a link built any other way kept
+    /// <see cref="SerialPort"/>'s own default of -1 (<see cref="SerialPort.InfiniteTimeout"/>) — the unbounded
+    /// blocking read measured as releasable by nothing but <c>Dispose()</c>, i.e. Đợt B's forbidden mechanism
+    /// on a shared bus. All three mutations defending the pin targeted the factory, so the evidence had a hole
+    /// the same shape as the code.
+    ///
+    /// <para>The first assertion is the discriminating one: the factory deliberately leaves the BCL default in
+    /// place, so the pin observed afterwards can only have come from the constructor.</para>
+    /// </summary>
+    [Fact]
+    public void EveryLink_PinsThePortsReadTimeoutToOneSlice_HoweverItWasConstructed()
+    {
+        var line = new SerialLineSettings("COM7");
+
+        using var port = SerialPortBusLink.CreatePort(line);
+        Assert.Equal(SerialPort.InfiniteTimeout, port.ReadTimeout);
+
+        using (SerialPortBusLink.Adopt(port, line))
+        {
+            Assert.Equal(SerialPortBusLink.ReadSliceMs, port.ReadTimeout);
+        }
+
+        var handle = FakeSerialPortHandle.Unpaired();
+        Assert.Equal(SerialPort.InfiniteTimeout, handle.ReadTimeout);
+        using (SerialPortBusLink.AdoptHandle(handle, line))
+        {
+            Assert.Equal(SerialPortBusLink.ReadSliceMs, handle.ReadTimeout);
+        }
+    }
+
     /// <summary>
     /// 🔴 <b>The exclusive-open consequence, driven through the real registry rather than asserted about a
     /// string.</b> Measured on this machine: <c>COM1</c> opens once and a second
@@ -347,7 +611,7 @@ public sealed class SerialPortBusLinkTests
     /// is that the serial KEY makes the two callers share, not that a COM port can be opened.</para>
     /// </summary>
     [Fact]
-    public async Task TwoConnectorsOnOneSerialLine_ShareOneBus_AndOpenThePortOnce()
+    public async Task TwoConnectorsOnOneSerialLine_ShareOneBus_AndInvokeTheOpenerOnce()
     {
         await using var registry = new ModbusBusRegistry();
 
@@ -383,7 +647,7 @@ public sealed class SerialPortBusLinkTests
     /// opener invocations, each bus's own link generation) rather than on the two key strings being unequal.
     /// </summary>
     [Fact]
-    public async Task TwoConnectorsThatDisagreeAboutTheLine_GetTwoBuses_NeverOneSilentlySharedPort()
+    public async Task TwoConnectorsThatDisagreeAboutTheLine_GetTwoBuses_AndInvokeTheOpenerTwice()
     {
         await using var registry = new ModbusBusRegistry();
 

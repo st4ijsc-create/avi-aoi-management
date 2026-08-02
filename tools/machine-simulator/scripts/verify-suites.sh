@@ -195,7 +195,43 @@ EXPECT_CONFORMANCE=22
 # suite shares one implementation rather than growing a second copy that can drift silently — that rewrite is
 # behaviour-preserving and adds NO test (MakaretuNotShippedTests stays at 3, counted from the runner). A moved
 # total there would mean it was not.
-EXPECT_EDGECORE=817
+#
+# 🔴 D-3's REVIEW FIX round raises this 817 -> 824 (+7), all in SerialPortBusLinkTests (14 -> 21), counted
+# from the runner. Every one closes something the review found; none is a rewrite or a split:
+#   + 1  I-1  Read_WithAZeroLengthCount_ReturnsImmediately_WithoutTouchingThePort. SerialPort.Read(buf,0,0)
+#             returns 0 WITHOUT WAITING (measured: 0.46 ms; a bare loop over it ran at 33 MILLION
+#             iterations/second), so a zero count fell through the `read > 0` check and span the loop holding
+#             the bus's arbitration lock and a core — with no deadline at all when ReadTimeout <= 0.
+#             GatewayTcpBusLink never had this because Socket.Poll consumes its slice whatever the count is:
+#             a divergence between two links on one seam that the report's own §8.6 was written to catch and
+#             did not. The discriminating assertion is that the port is CLOSED, so anything that reached it
+#             would throw.
+#   + 1  I-2  EveryLink_PinsThePortsReadTimeoutToOneSlice_HoweverItWasConstructed. The slice pin lived in
+#             CreatePort, so Adopt produced a link whose port kept SerialPort's own default of -1
+#             (InfiniteTimeout) — the unbounded blocking read measured as releasable by nothing but Dispose(),
+#             i.e. Đợt B's forbidden mechanism on a shared bus. All three mutations defending the pin targeted
+#             CreatePort, so the evidence had a hole the same shape as the code. The pin moved to the
+#             constructor; the test's first assertion (the factory leaves the BCL default alone) is what makes
+#             the second one discriminating.
+#   + 4  I-3  The four members that were unreachable while the class held a concrete SerialPort — every member
+#             of which is non-virtual and which cannot be constructed without hardware. A ~40-line internal
+#             ISerialPortHandle (7 members) with a real-backed impl and a fake whose every behaviour was
+#             MEASURED against a real port makes them CI-testable: the drain's true count (M19b, the most
+#             consequential survivor), the outer deadline (M21b), the between-slice abort recheck with the
+#             port left OPEN, and a read returning as soon as a byte arrives. Same move D-2 made when
+#             NModbus's IStreamResource could not be driven.
+#   + 1        AnRtuFrameRoundTripsThroughThisLinksOwnReadAndWrite — a real NModbus RTU master and slave on
+#             opposite ends of a paired handle, so real CRC, real t3.5 framing and real slave dispatch pass
+#             through THIS transport's own Read/Write rather than through D-2's in-memory link. It narrows
+#             "no Modbus frame has ever traversed this transport" to "…has ever traversed a real SerialPort".
+#             Verified to have teeth: truncating the write by one byte kills it.
+#
+# The hardware half is now a COMMITTED, runnable artefact — tools/serial-bench, an executable OUTSIDE the five
+# suites, so `skipped == 0` is untouched. That constraint is right and the brief was wrong about it: xUnit
+# counts a dynamically skipped test in Total, so a hardware-conditional suite would make Skipped
+# environment-dependent and any fixed expectation would fail on the BETTER-equipped machine — trap #2 in a
+# hardware costume. It is in the solution so this gate's build keeps it compiling, and it adds no test.
+EXPECT_EDGECORE=824
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
