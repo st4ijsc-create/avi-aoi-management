@@ -58,7 +58,12 @@ describe("vramBroker — sổ cái", () => {
     expect(r.wouldPreempt).toEqual(["bg:kb-sync"]);   // KHÔNG được nêu prod:aoi
   });
 
-  it("reserve KHÔNG làm I/O — đầu dò không được gọi", async () => {
+  // ⚠ Tên test canh ĐÚNG PHẠM VI thật của nó: chỉ "đầu dò không bị gọi", KHÔNG PHẢI
+  // "reserve() không I/O nói chung". Đã thử: chèn fs.readFileSync(__filename) thẳng vào
+  // reserve() (I/O THẬT, không qua vramProbe) — test này vẫn XANH, không bắt được.
+  // Bảo đảm "không I/O" rộng hơn nằm ở CẤU TRÚC mã (xem JSDoc reserve() trong vramBroker.ts:
+  // hàm đồng bộ, không async, không import fs/net/child_process), không phải ở test này.
+  it("reserve KHÔNG gọi đầu dò thiết bị (vramProbe.readDeviceVram)", async () => {
     const probe = await import("./vramProbe");
     const spy = vi.spyOn(probe, "readDeviceVram");
     reserve(req("gguf:A", 100 * MIB));

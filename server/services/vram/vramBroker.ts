@@ -26,6 +26,13 @@ function totalReserved(): number {
  * Xin chỗ. **Pha 1: KHÔNG BAO GIỜ từ chối** — luôn trả giấy phép.
  * `wouldRefuse`/`wouldPreempt` là phán quyết BÓNG của Pha 2, chỉ để ghi sổ.
  * ⚠ Hàm này KHÔNG được làm I/O: quyết định đọc sổ trong bộ nhớ.
+ *
+ * Bảo đảm CẤU TRÚC (mạnh hơn mọi test): hàm này ĐỒNG BỘ — trả thẳng `VramReserveResult`,
+ * không phải `Promise`, và không `import` bất kỳ module I/O nào (fs/net/http/child_process).
+ * Không `await` được gì bên trong một hàm không `async`. Test "reserve KHÔNG gọi đầu dò
+ * thiết bị" chỉ canh MỘT trường hợp cụ thể (vramProbe); chính chữ ký đồng bộ này mới là
+ * thứ chặn I/O nói chung. ⚠ Người sau: đừng đổi hàm này thành `async` mà không nhận ra
+ * đang gỡ mất lá chắn cấu trúc đó.
  */
 export function reserve(request: VramReserveRequest): VramReserveResult {
   const headroom = DEVICE_TOTAL_BYTES - SAFETY_RESERVE_BYTES - totalReserved();
@@ -33,7 +40,12 @@ export function reserve(request: VramReserveRequest): VramReserveResult {
 
   const wouldPreempt: string[] = [];
   if (wouldRefuse) {
-    // Chỉ nhường được: mức THẤP HƠN mức đang xin, và đang không dùng (chưa commit thì coi là đang bận).
+    // Chỉ nhường được: mức THẤP HƠN mức đang xin (so theo PRIORITY_RANK).
+    // ⚠ KHÔNG lọc theo trạng thái commit — một giấy phép "chưa commit" (đang cấp phát dở,
+    // actualBytes vẫn null) VẪN được liệt vào wouldPreempt nếu rank thấp hơn. Ở Pha 1 cửa sổ
+    // đó chỉ vài mili-giây nên sai số dữ liệu bóng không đáng kể; KHÔNG tự thêm bộ lọc để
+    // "sửa" — Pha 2 mới là nơi phải QUYẾT ĐỊNH TƯỜNG MINH có được thu hồi một giấy phép đang
+    // cấp phát giữa chừng hay không (thu hồi lúc đó là chuyện nguy hiểm, không phải mặc định).
     const rank = PRIORITY_RANK[request.priority];
     const candidates = [...ledger.values()]
       .filter((l) => PRIORITY_RANK[l.request.priority] < rank)
