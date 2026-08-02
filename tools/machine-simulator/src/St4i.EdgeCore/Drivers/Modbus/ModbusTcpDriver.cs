@@ -366,10 +366,10 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                 throw new OperationCanceledException("Modbus read interrupted by cancellation.", ct);
             }
 
-            // UInt16 keeps the raw 16-bit word as-is; Int16 reinterprets the SAME bits as two's-complement
-            // signed (e.g. raw 0xFFFF -> -1) BEFORE Scale is applied — see ModbusDataType's doc comment.
-            double decoded = reg.DataType == ModbusDataType.UInt16 ? raw[0] : unchecked((short)raw[0]);
-            var value = decoded * reg.Scale;
+            // Task D-2 — this decode (UInt16 as-is; Int16 reinterpreted two's-complement BEFORE Scale) moved
+            // VERBATIM to ModbusRegister.DecodeRawWord so ModbusRtuDriver reuses the identical math rather
+            // than owning a second copy that could drift silently. Behaviour here is unchanged.
+            var value = reg.DecodeRawWord(raw[0]);
 
             samples.Add(new TelemetrySample(reg.Metric, value, reg.Unit, "good"));
         }

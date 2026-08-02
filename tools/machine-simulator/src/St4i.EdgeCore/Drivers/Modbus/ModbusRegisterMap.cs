@@ -127,6 +127,25 @@ public sealed record ModbusRegister(
     /// <c>Detail</c>" — see <see cref="CommandArgumentDeclaration"/>'s own doc comment for the identical
     /// reasoning on the command-argument side.</para>
     /// </remarks>
+    /// <summary>
+    /// Task D-2 — the READ-side decode, extracted verbatim out of <see cref="ModbusTcpDriver.PollOnceAsync"/>
+    /// so <see cref="ModbusRtuDriver"/> reuses the identical math instead of re-deriving it. The brief for
+    /// D-2 requires the TCP driver's decode be reused ("both are protocol-generic"), and a copy is not a
+    /// reuse: two copies can drift, and the drift would be silent (a wrong number is still a number).
+    /// <see cref="ModbusTcpDriver"/> now calls this too, so there is exactly one implementation and the
+    /// existing TCP decode tests cover both transports.
+    ///
+    /// <para><see cref="ModbusDataType.UInt16"/> keeps the raw 16-bit word as-is;
+    /// <see cref="ModbusDataType.Int16"/> reinterprets the SAME bits as two's-complement signed
+    /// (raw 0xFFFF → -1) BEFORE <see cref="Scale"/> is applied. This is the exact inverse of
+    /// <see cref="TryComputeRawWordForWrite"/>'s own <c>unchecked((ushort)(short)…)</c> bit-cast.</para>
+    /// </summary>
+    public double DecodeRawWord(ushort rawWord)
+    {
+        double decoded = DataType == ModbusDataType.UInt16 ? rawWord : unchecked((short)rawWord);
+        return decoded * Scale;
+    }
+
     public bool TryComputeRawWordForWrite(double engineeringValue, out ushort rawWord, out string? error)
     {
         if (!double.IsFinite(engineeringValue))
