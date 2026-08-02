@@ -76,6 +76,54 @@ case "${1:-}" in
     fi
     ;;
 
+  applied)
+    # 🔴 THE HOLE `control` DOES NOT COVER, found by D-3 reporting a false SURVIVED it was
+    # not obliged to report. Its session control was KILLED and on record, so by this
+    # script's own rule the verdict was "believable" — and it was false: the mutation had
+    # not reached the built source. Re-applied by hand it killed the test immediately.
+    #
+    # THE SHAPE: `control KILLED` is PER-SESSION; a mis-applied mutation is PER-MUTATION.
+    # A believable session can still contain an unbelievable verdict. What caught it was
+    # the result being implausible plus a stray `mv: cannot stat` — a judgement call, which
+    # is precisely what this script exists to replace.
+    #
+    # So: grep the source for the mutation's own marker AFTER the build, not merely trust
+    # that the edit applied before it.
+    src="${2:?source path}"; marker="${3:?a distinctive string from the mutation}"
+    [[ -f "$src" ]] || { echo "NO-VERDICT: source does not exist: $src"; exit 3; }
+    if ! grep -qF -- "$marker" "$src"; then
+      echo "NO-VERDICT: the mutation is NOT in $(basename "$src")."
+      echo "  Marker not found: $marker"
+      echo "  A SURVIVED here means the edit did not apply — not that the code is untested."
+      exit 3
+    fi
+    echo "applied: marker present in $(basename "$src")"
+    ;;
+
+  clean)
+    # 🔴 D-3's concern 3: a mutation round killed by a tool ceiling left `if (false)` live
+    # in a production file with a .bak beside it. An interrupted run does not get to skip
+    # this — the next build, verdict or commit after one is worthless until the tree is
+    # known clean. Run this before believing anything that follows an interruption.
+    shift
+    dirty=0
+    for p in "$@"; do
+      while IFS= read -r f; do
+        echo "DIRTY: leftover backup — $f"; dirty=1
+      done < <(find "$p" -name '*.bak' -o -name '*.orig' -o -name '*.mutant' 2>/dev/null)
+      while IFS= read -r hit; do
+        echo "DIRTY: mutant marker still in tree — $hit"; dirty=1
+      done < <(grep -rn --include='*.cs' -E 'MUTANT|/\* *mutate *\*/' "$p" 2>/dev/null)
+    done
+    if [[ $dirty -eq 1 ]]; then
+      echo "NO-VERDICT: the tree still contains mutation residue. Restore it (and touch the"
+      echo "  restored files, or MSBuild's up-to-date check will skip the rebuild) before"
+      echo "  believing any build, test count or commit."
+      exit 3
+    fi
+    echo "clean: no mutant markers, no .bak/.orig/.mutant files"
+    ;;
+
   check)
     if [[ -f "$STATE" ]]; then
       echo "positive control on record — SURVIVED is meaningful"
