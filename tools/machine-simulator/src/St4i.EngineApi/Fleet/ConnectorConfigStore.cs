@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -191,9 +191,12 @@ public sealed record ConnectorWriteCapability(
 /// <see cref="St4i.EdgeCore.Site.BridgeSpool"/> are the other three precedents named in the brief; a plain
 /// JSON file (like <see cref="St4i.EdgeCore.Infrastructure.FleetSettingsStore"/> for a handful of scalar
 /// settings) would have been a defensible alternative for something this small, but SQLite was chosen
-/// specifically so a FUTURE task that needs to support more than one connector per kind (see this class's
-/// own "one row per kind" note below) or richer querying never has to migrate storage formats — the
-/// migration ladder already exists from day one.</para>
+/// specifically so a FUTURE task that needs to support more than one connector per kind or richer querying
+/// never has to migrate storage formats — the migration ladder already exists from day one. <b>Task D-1 is
+/// that future task, and this bet paid off exactly as described:</b> supporting N connectors per kind cost
+/// one migration rung (v4) on a ladder that already existed, and this cross-reference — which used to point
+/// at "this class's own 'one row per kind' note below" — now points at the paragraph that RETIRED that
+/// note.</para>
 ///
 /// <para><b>The primary key WAS the connector KIND — Task D-1 replaced it with a per-INSTANCE id.</b> The
 /// original rule is recorded here verbatim, because its reasoning was correct for the system it described:
@@ -613,7 +616,19 @@ public sealed class ConnectorConfigStore
         ArgumentException.ThrowIfNullOrWhiteSpace(machineCode);
         ArgumentNullException.ThrowIfNull(mapJson);
 
-        var effectiveInstanceId = string.IsNullOrWhiteSpace(instanceId) ? kind : instanceId.Trim();
+        // 🔴 D-1 review, m1 — DriverKinds.Normalize, not a bare Trim(). ConnectorRegistry.Register and
+        // DELETE /v1/connectors/{instanceId} both fold an id through Normalize; a store that only trimmed
+        // would happily persist instance_id = "modbus" while the registry keyed the same connector as
+        // "Modbus" — and the row would then be UNDELETABLE, because the DELETE route normalizes its segment
+        // to "Modbus" and GetAsync would miss, answering 404 for a row an operator can see in
+        // GET /v1/connectors/configured. No production path reaches that divergence today (the one endpoint
+        // that accepts an operator-supplied id normalizes it first), which is exactly why it would have sat
+        // here unnoticed until some future caller did not. The claim in this class's own migration note —
+        // that the on-disk and in-memory halves of the identity decision "cannot drift" — was true of the
+        // DEFAULT and not of the NORMALIZATION until this line.
+        var effectiveInstanceId = string.IsNullOrWhiteSpace(instanceId)
+            ? kind
+            : St4i.Connector.Abstractions.Models.DriverKinds.Normalize(instanceId.Trim());
         var nowIso = ToIso(DateTimeOffset.UtcNow);
         var normalizedCapability = (writeCapability is not null && writeCapability.GrantsCapability) ? writeCapability : null;
         var writeCapabilityJson = normalizedCapability?.ToJson();

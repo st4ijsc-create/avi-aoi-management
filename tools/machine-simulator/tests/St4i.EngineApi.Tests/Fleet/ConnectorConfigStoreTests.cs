@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using St4i.Connector.Abstractions.Models;
 using St4i.EngineApi.Fleet;
 using Xunit;
 
@@ -621,6 +622,36 @@ public sealed class ConnectorConfigStoreTests
         var remaining = Assert.Single(await store.ListAsync());
         Assert.Equal("modbus-line-b", remaining.EffectiveInstanceId);
         Assert.Equal("MB-B", remaining.MachineCode);
+    }
+
+    [Fact]
+    public async Task SaveAsync_NormalizesTheInstanceIdTheSameWayTheRegistryAndTheDeleteRouteDo()
+    {
+        // 🔴 D-1 review, m1. ConnectorRegistry.Register and DELETE /v1/connectors/{instanceId} both fold an
+        // id through DriverKinds.Normalize; SaveAsync only Trim()med it. A row written with
+        // instance_id = "modbus" would therefore be UNDELETABLE — the DELETE route normalizes its segment to
+        // "Modbus", GetAsync misses, and the operator gets a 404 for a row they can see in
+        // GET /v1/connectors/configured. The store, the registry and the route must all fold identically or
+        // the identity has two spellings.
+        var store = new ConnectorConfigStore(TempDir());
+
+        var saved = await store.SaveAsync("Modbus", "MB-NORM-01", "10.0.0.5", 502, "{}", instanceId: "modbus");
+        Assert.Equal(DriverKinds.Modbus, saved.EffectiveInstanceId);
+
+        // Addressable by the canonical spelling — which is the one the DELETE route will hand GetAsync.
+        Assert.NotNull(await store.GetAsync(DriverKinds.Modbus));
+
+        // And a second save under yet another casing is the SAME row, never a second one.
+        await store.SaveAsync("Modbus", "MB-NORM-01", "10.0.0.6", 502, "{}", instanceId: "MODBUS");
+        var only = Assert.Single(await store.ListAsync());
+        Assert.Equal(DriverKinds.Modbus, only.EffectiveInstanceId);
+        Assert.Equal("10.0.0.6", only.Host);
+
+        // A third-party id stays case-SENSITIVE, exactly as DriverKinds documents — normalization must not
+        // become a blanket lowercase that folds two genuinely different vendor connectors together.
+        await store.SaveAsync("Modbus", "MB-NORM-02", "10.0.0.7", 502, "{}", instanceId: "vendor.acme.weld");
+        await store.SaveAsync("Modbus", "MB-NORM-03", "10.0.0.8", 502, "{}", instanceId: "Vendor.Acme.Weld");
+        Assert.Equal(3, (await store.ListAsync()).Count);
     }
 
     [Fact]

@@ -180,12 +180,24 @@ public sealed record ApiErrorDto(string Error);
 // FleetHost.GetConfiguredConnectorIssues's own doc comment for why this is deliberately informational,
 // never a /v1/health fault.
 //
-// Small doc correction (batch review) — `Id` here is actually the REGISTRY KEY, i.e. the normalized
-// `kind` (see ConnectorRegistry's own doc comment on id-comparison semantics), NOT a connectors.json
-// entry's own `id` field: ConnectorsConfig.Load reads that field only to NAME per-entry warnings, then
-// discards it — ConnectorRegistry.Register keys purely on IConnectorFactory.Kind. A connectors.json entry
-// `{"id":"line3-weld","kind":"Modbus"}` therefore surfaces here as `{"id":"Modbus","error":...}`. See
-// README §19.4 for the fuller writeup and why this is documented rather than renamed.
+// `Id` here is the REGISTRY KEY — FleetHost.GetConfiguredConnectorIssues projects the keys of
+// _connectorStartIssues, which StartLocked populates from ConnectorRegistry.RegisteredIds.
+//
+// 🔴 Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) — WHAT that registry
+// key IS changed under this comment, so the previous wording is corrected rather than left standing. It
+// used to read: "`Id` here is actually the REGISTRY KEY, i.e. the normalized `kind` … ConnectorRegistry.
+// Register keys purely on IConnectorFactory.Kind. A connectors.json entry `{"id":"line3-weld",
+// "kind":"Modbus"}` therefore surfaces here as `{"id":"Modbus","error":...}`." Both halves of that are now
+// false: Register keys on a per-connector INSTANCE id, so this field carries an instance id, and two
+// connectors of one kind produce two distinct entries here rather than one silently replacing the other.
+//
+// What did NOT change, and is the part worth keeping: a connectors.json entry's own `id` field is still
+// read only to NAME per-entry warnings and is still discarded — Program.cs's connectors.json dispatch
+// deliberately lets the instance id default to the kind (see ConnectorsJsonRegistration's own remarks for
+// why adopting entry.Id would silently move every such connector's pipeline slot label, and therefore its
+// alarm TargetId). So that example entry STILL surfaces as `{"id":"Modbus","error":...}` today — for a
+// different reason than the one the old comment gave. README §19.4's fuller writeup is stale on the same
+// point and is D-7's to correct.
 // ─────────────────────────────────────────────────────────────────────────
 public sealed record ConnectorStatusDto(string Id, string Error);
 

@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Drivers;
 using St4i.Connector.Abstractions;
@@ -642,10 +643,16 @@ public sealed class FleetHost
             // Task D-1 — is this machine claimed by a specific connector INSTANCE? That is the whole
             // difference between "a driver of the right protocol exists somewhere" (what this method could
             // ask before D-1) and "THIS machine's driver is that one" (what it can ask now).
+            // 🔴 D-1 review, m3 — ONE snapshot of the registry, used for every question below. Three
+            // independent reads would be three independent points in time (this method holds _gate;
+            // ConnectorRegistry.Register takes its own lock and nothing else), and resting a routing
+            // invariant on "no interleaving is harmful today" is a property of the current call sites, not
+            // of this method. See ConnectorRegistry.SnapshotBindings' own remarks.
+            var bindings = _connectorRegistry?.SnapshotBindings();
+
             string? boundInstanceId = null;
             var boundToAnInstance =
-                _connectorRegistry is not null
-                && _connectorRegistry.TryGetInstanceIdForMachine(descriptor.Code, out boundInstanceId);
+                bindings is not null && TryFindBoundInstance(bindings, descriptor.Code, out boundInstanceId);
 
             var expectedLabel = boundToAnInstance
                 ? ResolveConnectorSlotLabel(boundInstanceId!)
@@ -659,7 +666,7 @@ public sealed class FleetHost
             // then had to refuse the write as AmbiguousDriver) named the wrong problem. This clause is
             // deliberately scoped to a BOUND owner: an UNBOUND instance claims no machine, so the pre-D-1
             // behaviour — including its ambiguity guard — is left completely intact for it.
-            if (!boundToAnInstance && AnyBoundInstanceOwnsSlotLabel(expectedLabel))
+            if (!boundToAnInstance && AnyBoundInstanceOwnsSlotLabel(bindings, expectedLabel))
             {
                 return (MachineDriverAvailability.NoLiveDriver, null);
             }
@@ -692,7 +699,8 @@ public sealed class FleetHost
             // the Writable branch: sharing a slot is completely safe when nothing can be written through it
             // at all (e.g. ten demo machines legitimately sharing the one "simulated" slot), so this must
             // never downgrade ReadOnly/NoLiveDriver.
-            var sharingMachineCount = _fleet.Count(d => string.Equals(ResolveSlotLabelForMachine(d), expectedLabel, StringComparison.Ordinal));
+            var sharingMachineCount = _fleet.Count(
+                d => string.Equals(ResolveSlotLabelForMachine(d, bindings), expectedLabel, StringComparison.Ordinal));
             if (sharingMachineCount > 1)
             {
                 return (MachineDriverAvailability.AmbiguousDriver, null);
@@ -1148,10 +1156,20 @@ public sealed class FleetHost
     /// exclusion filter and the write-resolution path must agree on which slot drives a machine, or a machine
     /// gets simulated AND written to, or neither.</para>
     /// </summary>
-    private string ResolveSlotLabelForMachine(MachineDescriptor descriptor)
+    private string ResolveSlotLabelForMachine(MachineDescriptor descriptor) =>
+        ResolveSlotLabelForMachine(descriptor, _connectorRegistry?.SnapshotBindings());
+
+    /// <summary>🔴 D-1 review, m3 — the snapshot-taking overload. Every caller that asks this question more
+    /// than once in a row (<see cref="ResolveWritableDriver"/>, which asks it for the target machine and then
+    /// again for every roster member while counting slot-sharers) MUST take ONE
+    /// <see cref="ConnectorRegistry.SnapshotBindings"/> and pass it here, so all of those answers come from
+    /// one consistent view of the registry — see that method's own remarks for why three independent reads
+    /// are three independent points in time even under <see cref="_gate"/>. A <see langword="null"/> snapshot
+    /// means "no registry wired", identical to an empty one.</summary>
+    private string ResolveSlotLabelForMachine(
+        MachineDescriptor descriptor, IReadOnlyList<ConnectorRegistry.ConnectorBinding>? bindings)
     {
-        if (_connectorRegistry is not null
-            && _connectorRegistry.TryGetInstanceIdForMachine(descriptor.Code, out var boundInstanceId))
+        if (bindings is not null && TryFindBoundInstance(bindings, descriptor.Code, out var boundInstanceId))
         {
             return ResolveConnectorSlotLabel(boundInstanceId);
         }
@@ -1159,20 +1177,45 @@ public sealed class FleetHost
         return ResolveSlotLabelFor(descriptor.DriverKind);
     }
 
+    /// <summary>Task D-1 — which registered instance in <paramref name="bindings"/> declared that it serves
+    /// <paramref name="machineCode"/>? The snapshot-based twin of
+    /// <see cref="ConnectorRegistry.TryGetInstanceIdForMachine"/>, matching case-insensitively exactly as
+    /// that method does (and as every other machine-code comparison in this class does). At most one entry
+    /// can match — <see cref="ConnectorRegistry.Register"/> refuses a second claim on one code — so the first
+    /// hit is the only hit.</summary>
+    private static bool TryFindBoundInstance(
+        IReadOnlyList<ConnectorRegistry.ConnectorBinding> bindings, string machineCode,
+        [NotNullWhen(true)] out string? instanceId)
+    {
+        foreach (var binding in bindings)
+        {
+            if (binding.MachineCode is not null
+                && string.Equals(binding.MachineCode, machineCode, StringComparison.OrdinalIgnoreCase))
+            {
+                instanceId = binding.InstanceId;
+                return true;
+            }
+        }
+
+        instanceId = null;
+        return false;
+    }
+
     /// <summary>Task D-1 — does a registered connector instance that is BOUND to a specific machine own the
     /// pipeline slot called <paramref name="label"/>? Derived by running the one label rule
     /// (<see cref="ResolveConnectorSlotLabel"/>) forward over every registered instance rather than trying to
     /// invert it — the legacy carve-out means the label and the id differ for exactly two built-ins, and an
-    /// inverse mapping would be a second, silently-drifting statement of that same table.</summary>
-    private bool AnyBoundInstanceOwnsSlotLabel(string label)
+    /// inverse mapping would be a second, silently-drifting statement of that same table. Reads the same
+    /// snapshot its caller already took (D-1 review, m3).</summary>
+    private bool AnyBoundInstanceOwnsSlotLabel(
+        IReadOnlyList<ConnectorRegistry.ConnectorBinding>? bindings, string label)
     {
-        var registry = _connectorRegistry;
-        if (registry is null) return false;
+        if (bindings is null) return false;
 
-        foreach (var instanceId in registry.RegisteredIds)
+        foreach (var binding in bindings)
         {
-            if (registry.IsBoundToAMachine(instanceId)
-                && string.Equals(ResolveConnectorSlotLabel(instanceId), label, StringComparison.Ordinal))
+            if (binding.MachineCode is not null
+                && string.Equals(ResolveConnectorSlotLabel(binding.InstanceId), label, StringComparison.Ordinal))
             {
                 return true;
             }
@@ -1289,7 +1332,13 @@ public sealed class FleetHost
         // of the simulated group without any of the double-driving this filter exists to prevent. The two
         // call sites of this rule — here and ResolveWritableDriver — go through the SAME method for the
         // reason recorded on ResolveSlotLabelForMachine itself.
-        var simFleet = effectiveFleet.Where(d => ResolveSlotLabelForMachine(d) == SimulatedSlotLabel).ToList();
+        // D-1 review, m3 — one snapshot for the whole filter, not one per roster member: the sim-exclusion
+        // decision must be internally consistent across the fleet (a registration landing mid-filter could
+        // otherwise exclude one machine and simulate its sibling), and it is the same discipline
+        // ResolveWritableDriver now follows.
+        var startBindings = _connectorRegistry?.SnapshotBindings();
+        var simFleet = effectiveFleet
+            .Where(d => ResolveSlotLabelForMachine(d, startBindings) == SimulatedSlotLabel).ToList();
         var sims = simFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore)).ToList();
 
         // SM-1 (task-1-brief.md) — a roster with no simulated machines (an empty product roster, or one

@@ -276,6 +276,107 @@ public sealed class FleetHostConnectorInstanceRoutingTests
         }
     }
 
+    [Fact]
+    public async Task AMachineWhoseRosterCodeDiffersOnlyInCaseFromItsConnectorsClaim_StillResolvesToThatConnector()
+    {
+        // 🔴 D-1 review follow-up, found by mutation: making the snapshot binding lookup case-SENSITIVE left
+        // every routing test green, because they all happened to spell the code identically on both sides.
+        // The two sides are authored independently in production — the roster code comes from fleet.json or
+        // a RegisterMachine caller, the claim comes from the register/node map — and EVERY other machine-code
+        // comparison in this codebase is ordinal-ignore-case (FleetHost.RegisterMachine's duplicate guard,
+        // ResolveWritableDriver's own roster lookup, ConnectorEndpoints' collision checks). A case-sensitive
+        // lookup here would silently un-bind the machine: it would fall back to the kind rule, be reported
+        // NoLiveDriver or ambiguous, and the operator's connector would look dead for a reason nothing named.
+        const string rosterCode = "D1-CASE-Machine-01";
+        const string claimedCode = "d1-case-machine-01";
+        var driver = new InstanceFakeWritableDriver(DriverKinds.Modbus, rosterCode);
+
+        var registry = new ConnectorRegistry();
+        Assert.True(registry.Register(
+            new InstanceFakeConnectorFactory(DriverKinds.Modbus, () => driver), "cfg",
+            instanceId: "modbus-line-cased", machineCode: claimedCode));
+
+        var host = CreateHost(registry);
+        Assert.True(host.RegisterMachine(ModbusMachine(rosterCode)));
+
+        host.Start();
+        try
+        {
+            await WaitUntilAsync(
+                () => host.GetDriverHealth().Any(s => s.SlotLabel == "modbus-line-cased"),
+                "the connector's slot to come up");
+
+            Assert.Equal(MachineDriverAvailability.Writable, host.GetMachineDriverAvailability(rosterCode));
+
+            var (availability, result) = await host.TryWriteSetpointAsync(
+                rosterCode, new SetpointWriteRequest("speed", 3.0), CancellationToken.None);
+
+            Assert.Equal(MachineDriverAvailability.Writable, availability);
+            Assert.Equal(WriteOutcome.Applied, result!.Outcome);
+            Assert.Equal(1, driver.WriteCallCount);
+        }
+        finally
+        {
+            host.Stop();
+        }
+    }
+
+    [Fact]
+    public async Task AMachineWhoseDriverKindIsSimulated_ButWhichAConnectorInstanceClaims_LeavesTheSimulatedGroup()
+    {
+        // 🔴 D-1 review — a hazard this task SILENTLY FIXES, recorded as a test so it is not rediscovered as
+        // a bug later. Before D-1 the sim-exclusion filter asked only about a machine's DriverKind, and
+        // DriverKinds.Simulated was carved out of the registry clause FIRST (so that a third party
+        // registering under the id "Simulated" could not reclassify every demo machine). Consequence: a
+        // connector whose map named a machine that was already in the roster as Simulated got BOTH a
+        // simulator and its own real connector slot — two EdgePipelines writing one MachineState, the
+        // double-drive corruption GP-5 closed for third-party kinds, silently corrupting per-machine cycles
+        // and therefore fleet OEE/FPY. Reachable in practice: fleet.json ships a demo roster, and an
+        // operator saving a connector for a code that happens to already be there hits it.
+        //
+        // The per-MACHINE rule closes it by construction — a claimed machine belongs to its claimant's slot
+        // regardless of what its DriverKind says. Same always-Skip detector as the sibling tests: a
+        // ScrewdriveSim also driving this machine reports Pass/Warn/Fail and would flip StatusText off
+        // "TELEMETRY" within a cycle or two.
+        const string code = "D1-SIMKIND-CLAIMED";
+        var driver = new InstanceFakeWritableDriver(DriverKinds.Modbus, code) { EmitReadings = true };
+
+        var registry = new ConnectorRegistry();
+        Assert.True(registry.Register(
+            new InstanceFakeConnectorFactory(DriverKinds.Modbus, () => driver), "cfg",
+            instanceId: "modbus-claims-a-sim-machine", machineCode: code));
+
+        var host = CreateHost(registry);
+        // DriverKind Simulated, MachineType/DeviceClass that SimulatorFactory happily builds a ScrewdriveSim
+        // for — i.e. a machine the pre-D-1 filter would certainly have simulated.
+        Assert.True(host.RegisterMachine(new MachineDescriptor(
+            code, $"SN-{code}", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening",
+            DriverKinds.Simulated, "RC-TEST-A", null, CycleSeconds: 0.1)));
+
+        host.Start();
+        try
+        {
+            await WaitUntilAsync(() => (host.MachineDetail(code)?.Cycles ?? 0) > 0, "the machine to cycle off its connector");
+            Assert.Contains(host.GetDriverHealth(), s => s.SlotLabel == "modbus-claims-a-sim-machine");
+
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+            while (DateTime.UtcNow < deadline)
+            {
+                Assert.Equal("TELEMETRY", host.MachineDetail(code)?.StatusText);
+                await Task.Delay(TimeSpan.FromMilliseconds(50));
+            }
+
+            // The rest of the demo roster is untouched — the fix is per-machine, not a blanket change to how
+            // Simulated machines are treated.
+            await WaitUntilAsync(() => (host.MachineDetail("SCRW-01")?.Cycles ?? 0) > 0, "SCRW-01 to keep cycling normally");
+            Assert.Equal(MachineDriverAvailability.ReadOnly, host.GetMachineDriverAvailability("SCRW-01"));
+        }
+        finally
+        {
+            host.Stop();
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // 🔴 AmbiguousDriver: the precondition removed, the guard left standing.
     // ─────────────────────────────────────────────────────────────────────

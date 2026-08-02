@@ -1,4 +1,4 @@
-﻿using St4i.Connector.Abstractions.Models;
+using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Drivers.OpcUa;
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
@@ -226,11 +226,27 @@ public static class ConnectorEndpoints
         if (connectorRegistry.TryGetInstanceIdForMachine(validated.MachineCode, out var claimingInstanceId)
             && !string.Equals(claimingInstanceId, instanceId, StringComparison.Ordinal))
         {
+            // 🔴 D-1 review, m2 — a live registry claim OUTLIVES its persisted row: DELETE removes only the
+            // configuration (this class' own doc comment: there is no live "unregister" path), so a claim
+            // placed earlier this session survives until the process restarts. Telling an operator to
+            // "remove that connector first" when they ALREADY removed it — and can see it is gone from
+            // GET /v1/connectors/configured — is the product blaming them for having done the right thing.
+            // Not a regression (the same POST was equally blocked before D-1, by the roster guard) but the
+            // message is now specific enough to be actively wrong, so it forks on whether the claimant still
+            // has a row. Only a message change; the refusal itself is identical in both branches.
+            var claimantStillConfigured = await store.GetAsync(claimingInstanceId, ct).ConfigureAwait(false) is not null;
             return Results.Conflict(new ApiErrorDto(
-                $"Machine '{validated.MachineCode}' is already served by connector '{claimingInstanceId}'. " +
-                "Two connectors may not drive one machine — a write could not then be resolved to a single " +
-                "device. Remove that connector first, or point this one at a different machine code in its " +
-                "register/node map."));
+                claimantStillConfigured
+                    ? $"Machine '{validated.MachineCode}' is already served by connector '{claimingInstanceId}'. " +
+                      "Two connectors may not drive one machine — a write could not then be resolved to a " +
+                      "single device. Remove that connector first (DELETE /v1/connectors/" +
+                      $"{claimingInstanceId}), or point this one at a different machine code in its " +
+                      "register/node map."
+                    : $"Machine '{validated.MachineCode}' is still held by connector '{claimingInstanceId}', " +
+                      "which was already removed from the persisted configuration but is STILL RUNNING: this " +
+                      "build has no live \"unregister\" path, so a connector keeps driving its machine until " +
+                      "the application is fully restarted. Restart the application and save again, or point " +
+                      "this connector at a different machine code in its register/node map."));
         }
 
         // Fix round 1 (review) — CROSS-KIND (or cross-SOURCE) machine-code collision. The check above only
@@ -276,17 +292,39 @@ public static class ConnectorEndpoints
         //
         // Task D-1 — registered under this INSTANCE's id and BOUND to the machine code its map declares. The
         // binding is what FleetHost routes a write on; without it this connector would fall back to the
-        // pre-D-1 kind-based rule and a second same-kind machine would make both of them ambiguous. The
-        // return value is now checked (it was discarded before): Register can refuse a machine-code claim
-        // another instance holds. The 409 above makes that unreachable from here, so reaching it means the
-        // registry changed underneath this request — report it rather than answering 200 for a connector
-        // that is not actually live.
+        // pre-D-1 kind-based rule and a second same-kind machine would make both of them ambiguous.
+        //
+        // 🔴 D-1 review, I-1 — the return value is checked (it was discarded before this task), and the
+        // failure path COMPENSATES. My first submission's comment here claimed this branch was "unreachable
+        // by construction" because of the claim pre-check above. That was WRONG, and the reviewer proved it
+        // by tracing the three statements: the pre-check, SaveAsync and Register are NOT one atomic unit,
+        // and the store write sits between the first and the third. Two concurrent POSTs naming the same
+        // machine under two different instance ids both pass the pre-check; the loser then writes its row,
+        // is refused here, and — before this fix — returned 409 leaving that row behind FOREVER. This
+        // method's own SM-5 comment thirty lines above says exactly that state must never be creatable: a
+        // config "durably persisted, shown in configured connectors, and PERMANENTLY never appears in the
+        // roster." Program.cs's startup loop refuses it again on every subsequent boot and logs; nothing
+        // ever removes it. The endpoint's own message admitted the situation while leaving the wreckage.
+        //
+        // So the row is rolled back to whatever was there before this request: DELETED when this request
+        // created it, and RESTORED from `existing` when this request overwrote a prior row. The one residue
+        // is `updated_at`, which SaveAsync bumps and the restore bumps again — `created_at` survives (the
+        // upsert never touches it), so the row keeps its identity and its content. Compensating rather than
+        // claiming-before-saving is deliberate: reversing the two would trade a permanent orphan ROW for an
+        // orphan registry CLAIM, and the registry has no unregister, so that claim would block every later
+        // POST for that machine until the process restarts, with no way for an operator to clear it.
         if (!connectorRegistry.Register(validated.Factory, body.MapJson, instanceId, validated.MachineCode))
         {
+            await CompensateFailedLiveRegistrationAsync(store, instanceId, existing, ct).ConfigureAwait(false);
+
+            var raceWinner = connectorRegistry.TryGetInstanceIdForMachine(validated.MachineCode, out var winner)
+                ? winner
+                : "(unknown)";
             return Results.Conflict(new ApiErrorDto(
-                $"Connector '{instanceId}' was saved but could not be registered live — machine " +
-                $"'{validated.MachineCode}' was claimed by another connector while this request was in " +
-                "flight. Re-check GET /v1/connectors/configured and retry."));
+                $"Connector '{instanceId}' could not be registered live — machine '{validated.MachineCode}' " +
+                $"was claimed by connector '{raceWinner}' while this request was in flight. Nothing was " +
+                "persisted for this connector: its configuration was rolled back, so there is no leftover " +
+                "row to clean up. Re-check GET /v1/connectors/configured and retry."));
         }
 
         // RegisterMachine only ADDS (see this class' own doc comment) — true means a brand-new machine code
@@ -430,6 +468,57 @@ public static class ConnectorEndpoints
         finally
         {
             await driver.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 🔴 D-1 review, I-1 — undoes <see cref="CreateConnectorAsync"/>'s own <c>SaveAsync</c> when the live
+    /// registration that follows it is refused, so a refused save never leaves a persisted connector that
+    /// can never go live (see that method's own remarks for the concurrent interleaving that reaches this).
+    ///
+    /// <para>Two arms, because "roll back" means two different things:
+    /// <list type="bullet">
+    /// <item><description><paramref name="previous"/> is <see langword="null"/> — this request CREATED the
+    /// row, so removing it restores the store exactly.</description></item>
+    /// <item><description><paramref name="previous"/> is non-null — this request OVERWROTE a row, so the
+    /// previous one is written back field for field, provenance (<see cref="ConnectorConfigSource"/>)
+    /// included. Deleting instead would destroy a configuration the operator did not ask to remove, which is
+    /// a strictly worse outcome than the orphan this method exists to prevent.</description></item>
+    /// </list></para>
+    ///
+    /// <para><b>Own failure is swallowed, deliberately.</b> This runs on an error path that is already
+    /// returning a 409; letting a second store failure throw would convert an honest "your connector was not
+    /// registered" into an opaque 500 AND still leave the row. The residue in that case is the orphan this
+    /// method was written to prevent — strictly no worse than not having tried, and it is logged nowhere
+    /// because this static handler has no logger; the operator-visible 409 is the signal, and
+    /// <c>GET /v1/connectors/configured</c> is where the residue would show. Named here rather than left as
+    /// an unstated assumption.</para>
+    ///
+    /// <para><b>Residue even on the happy path:</b> <c>updated_at</c> moves (SaveAsync bumped it, the
+    /// restore bumps it again). <c>created_at</c> does NOT — <c>SaveAsync</c>'s upsert never updates it — so
+    /// a restored row keeps its identity and its full content, and only its "last touched" timestamp lies by
+    /// the duration of the failed request.</para>
+    /// </summary>
+    internal static async Task CompensateFailedLiveRegistrationAsync(
+        ConnectorConfigStore store, string instanceId, ConnectorConfigRecord? previous, CancellationToken ct)
+    {
+        try
+        {
+            if (previous is null)
+            {
+                await store.DeleteAsync(instanceId, ct).ConfigureAwait(false);
+                return;
+            }
+
+            await store.SaveAsync(
+                    previous.Kind, previous.MachineCode, previous.Host, previous.Port, previous.MapJson,
+                    previous.WriteCapability, previous.Source, ct, previous.EffectiveInstanceId)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // See this method's own remarks: an error-path failure must not replace a truthful 409 with a
+            // 500. Deliberately not rethrown.
         }
     }
 

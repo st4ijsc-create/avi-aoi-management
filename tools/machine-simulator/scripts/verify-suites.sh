@@ -179,7 +179,45 @@ EXPECT_EDGESERVICE=28
 # 🔴 EVERY OTHER SUITE IS UNCHANGED. D-1 adds no code outside St4i.EngineApi, and the four other totals below
 # are deliberately untouched: a moved total on Abstractions, Conformance, EdgeCore or EdgeService would mean
 # this task reached somewhere it had no business reaching.
-EXPECT_ENGINEAPI=1165
+#
+# D-1's REVIEW-FIX round raised this again, 1165 -> 1181 (+16), all in St4i.EngineApi.Tests. Every one closes
+# something the review found; none is a rewrite or a split:
+#   + 6  ConnectorEndpointsMachineClaimTests — I-1 and m2. THREE for the rollback the review proved was
+#          missing: the claim pre-check, SaveAsync and Register are not atomic, so two concurrent POSTs for
+#          one machine both pass the pre-check and the loser wrote its row, was refused, and left that row
+#          behind PERMANENTLY (persisted, listed in GET /v1/connectors/configured, refused again by
+#          Program.cs on every boot, never in the roster) — exactly the state this endpoint's own SM-5
+#          comment says must never be creatable. Two cover the compensation's arms deterministically
+#          (delete when this request created the row; restore field-for-field, provenance included, when it
+#          overwrote one) and one covers its never-throws contract with a cancelled token. A FOURTH proves
+#          the compensation is actually WIRED, by producing the interleaving for real: 8 rounds x 16 racers.
+#          It is probabilistic in what it KILLS and never in whether it passes (its invariant holds under
+#          every interleaving), and the rate was MEASURED, not assumed — 1 round x 12 killed 3/10, the
+#          shipped 8 x 16 killed 10/10. TWO more for m2: a 409 naming a claimant whose row is already gone
+#          must say "restart", not "delete the connector you already deleted", with the still-configured
+#          case as its control.
+#   + 7  ConnectorsJsonRegistrationTests (new file) — I-3. The connectors.json -> registry dispatch had NEVER
+#          been covered, before or after D-1, and D-1 added code to it: a mutation making every such
+#          connector register UNBOUND left the whole suite green. It was untestable where it lived
+#          (Program.cs reads connectors.json from AppContext.BaseDirectory, one shared artifact in this
+#          assembly's output), so the loop moved verbatim to ConnectorsJsonRegistration — an extraction, NOT
+#          a new ST4I_CONNECTORS_CONFIG knob, because a configuration surface added to serve a test is a
+#          permanent commitment. Covers both dispatch arms separately (never one plus an inference that the
+#          other "is the same code"), the machine binding, the deliberate non-adoption of the entry's own id,
+#          an unparseable blob still registering but unbound, an undispatchable kind being skipped and never
+#          registered, the claim gate from this path, and one bad entry not aborting the loop.
+#   + 2  FleetHostConnectorInstanceRoutingTests — one for m3's snapshot lookup being case-INSENSITIVE like
+#          every other machine-code comparison in the codebase (mutation-found: all existing routing tests
+#          spelled the code identically on both sides, so a case-sensitive lookup survived); one recording a
+#          hazard D-1 silently FIXES rather than leaving it to be rediscovered as a bug — a connector whose
+#          map names a machine already in the roster as Simulated now leaves the simulated group, closing the
+#          two-EdgePipelines-one-MachineState double-drive corruption GP-5 closed for third-party kinds.
+#   + 1  ConnectorConfigStoreTests — m1: SaveAsync now folds the instance id through DriverKinds.Normalize
+#          rather than a bare Trim(), matching the registry and the DELETE route. A row written as
+#          instance_id = "modbus" was UNDELETABLE (the route normalizes to "Modbus", GetAsync misses, 404 for
+#          a row the operator can see). Also pins that a third-party id stays case-SENSITIVE.
+# No suite other than EngineApi is touched by this round either.
+EXPECT_ENGINEAPI=1181
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

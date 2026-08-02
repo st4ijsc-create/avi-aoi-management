@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using St4i.Connector.Abstractions;
 using St4i.Connector.Abstractions.Models;
@@ -265,11 +265,49 @@ public sealed class ConnectorRegistry
     }
 
     /// <summary>Task D-1 — <see langword="true"/> if <paramref name="instanceId"/> is registered AND declared
-    /// a machine binding. <see cref="FleetHost"/> uses this to tell "this connector slot belongs to a
-    /// specific, identified machine (and therefore serves no other roster member)" from "this slot is
-    /// unbound, so the pre-D-1 kind-based rule — ambiguity guard included — still governs it."</summary>
+    /// a machine binding. Tells "this connector slot belongs to a specific, identified machine (and therefore
+    /// serves no other roster member)" from "this slot is unbound, so the pre-D-1 kind-based rule — ambiguity
+    /// guard included — still governs it."
+    ///
+    /// <para>Prefer <see cref="SnapshotBindings"/> when asking more than one question in a row — see its own
+    /// remarks. This overload stays for single, standalone queries.</para></summary>
     public bool IsBoundToAMachine(string instanceId) =>
         _entries.TryGetValue(DriverKinds.Normalize(instanceId), out var entry) && entry.MachineCode is not null;
+
+    /// <summary>Task D-1 — one registered connector instance's identity and machine binding, as carried by
+    /// <see cref="SnapshotBindings"/>. Deliberately carries no factory/config: a caller asking "who serves
+    /// this machine, and which slots belong to a bound instance" has no business reaching the factory.</summary>
+    public readonly record struct ConnectorBinding(string InstanceId, string? MachineCode);
+
+    /// <summary>
+    /// 🔴 D-1 review, m3 — ONE consistent point-in-time view of every registered instance's binding.
+    ///
+    /// <para><see cref="FleetHost.ResolveWritableDriver"/> asks three separate questions per resolution
+    /// ("who claims this machine", "does a bound instance own this slot label", and the same first question
+    /// again for every roster member while counting slot-sharers). Asked as three independent reads they are
+    /// three independent points in time: <see cref="FleetHost"/> holds its own <c>_gate</c> during
+    /// resolution, but <see cref="Register"/> takes <see cref="_registerGate"/> and nothing else, so a
+    /// concurrent registration CAN land between them. No interleaving produces a wrong-machine write today —
+    /// but only because every path that can register without a machine binding also fails to build a driver,
+    /// so no writable slot exists for it, which is a property of today's five call sites rather than of the
+    /// resolution method. Resting a safety invariant on that is exactly the kind of reasoning this project
+    /// has been burned by; taking one snapshot removes the question instead of answering it.</para>
+    ///
+    /// <para>A snapshot, not a lock: this is a copy of the dictionary's entries at one moment, so it can be
+    /// stale the instant it returns. That is fine and is the point — resolution needs an internally
+    /// CONSISTENT view, not a fresh one, because a registration that lands mid-resolution is
+    /// indistinguishable from one that lands immediately after it.</para>
+    /// </summary>
+    public IReadOnlyList<ConnectorBinding> SnapshotBindings()
+    {
+        var snapshot = new List<ConnectorBinding>(_entries.Count);
+        foreach (var (id, entry) in _entries)
+        {
+            snapshot.Add(new ConnectorBinding(id, entry.MachineCode));
+        }
+
+        return snapshot;
+    }
 
     /// <summary>
     /// Attempts to build a fresh <see cref="IDeviceDriver"/> for <paramref name="id"/> — called anew every
