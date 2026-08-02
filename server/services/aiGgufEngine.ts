@@ -260,9 +260,15 @@ function resolveContextSize(requested?: number): number {
  *  chunk dài nhất thực tế trong knowledge/chunks.jsonl (6.135 ký tự,
  *  "doc:docs/ECOSYSTEM/27_AOI_AVI_END_TO_END_AUDIT_UPGRADE_PLAN_2026-07.md#23"): 1.879
  *  token — vượt 1024 tới 83%. node-llama-cpp KHÔNG cắt âm thầm khi input vượt contextSize,
- *  nó THROW; throw đó bị kbVectorStore.ts (ingestKbChunks) nuốt thành skipped++ nên nội
- *  dung âm thầm vắng mặt khỏi kb_chunks. Nâng lên 2048 (biên ~9% so với 1.879) — vẫn giữ
- *  phần lớn khoản tiết kiệm so với "auto" trong khi phủ được chunk dài nhất THẬT. */
+ *  nó THROW.
+ *  ⚠ ĐÍNH CHÍNH 2026-08-02 (Đợt 2 Task 4 + Task 6): bản cũ viết tiếp *"throw đó bị
+ *  kbVectorStore.ts (ingestKbChunks) nuốt thành skipped++"* — SAI. Hàm nằm ở
+ *  `server/services/kb/kbVectorStore.ts`, và `catch` quanh generateEmbedding() ĐÃ log
+ *  `[KB] embed/store failed for <docId>: <err.message>` từ commit gốc `e4e24aa6` (2026-06-24),
+ *  trước cả Đợt 0 — chưa từng im lặng. Hệ quả thật của throw là chunk bị BỎ QUA và thiếu khỏi
+ *  `kb_chunks` (ồn ào trong log, nhưng vẫn mất dữ liệu nếu không ai đọc log).
+ *  Nâng lên 2048 (biên ~9% so với 1.879) — vẫn giữ phần lớn khoản tiết kiệm so với "auto"
+ *  trong khi phủ được chunk dài nhất THẬT. */
 const EMBED_CTX = (() => {
   const raw = Number(process.env.GGUF_EMBED_CTX);
   const DEFAULT_EMBED_CTX = 2048;
@@ -1238,8 +1244,23 @@ export async function warmModel(modelId?: string, contextSize?: number): Promise
  * Env:
  *   GGUF_WARM_DEEP_MODEL_ON_BOOT=false → skip entirely (e.g. a low-VRAM box, or ROLE=worker hosts
  *                                        that never serve chat).
- *   GGUF_WARM_DELAY_MS                 → delay before warming (default 3000ms) so the warm never
- *                                        competes with the rest of boot.
+ *   GGUF_WARM_DELAY_MS                 → delay before warming (default 3000ms).
+ *
+ * ⚠ ĐÍNH CHÍNH 2026-08-02 (Đợt 1 + Đợt 2 Task 5/Task 6) — LÝ DO ghi kèm GGUF_WARM_DELAY_MS ở bản
+ * cũ SAI, đã gỡ: bản cũ viết *"so the warm never competes with the rest of boot"*. Đo thật nói
+ * NGƯỢC LẠI: hoãn KHÔNG giúp gì — chính việc CUDA context được tạo **SAU** khi app boot mới là
+ * ĐIỀU KIỆN gây lỗi. Bằng chứng: `GGUF_WARM_DELAY_MS=120000` vẫn hỏng (Đợt 1); tại HEAD Đợt 2 lỗi
+ * tái hiện **3/3 lượt** (reviewer tái hiện độc lập thêm 3 lượt), nguyên văn
+ * `ggml_backend_cuda_buffer_type_alloc_buffer: allocating 16698.37 MiB ... cudaMalloc failed: out of
+ * memory`, trong khi thiết bị mới dùng ~1,6 GB / 32.607 MiB. Hỏng cả trên `npm run dev` lẫn
+ * `npm run dev:worker` (không có HTTP/Vite). ⇒ **Tăng delay chỉ làm hỏng chắc hơn, không phải nhẹ đi.**
+ * Ngược lại: nếu CUDA context đã tồn tại **TRƯỚC** khi app boot — chỉ cần *chạm* `getLlama()`, giá
+ * ~420-430 MiB VRAM / ~1,2-2,3 s, không cần nạp model nào — thì chính đường warm này nạp 30B THÀNH
+ * CÔNG (đo 3/3 nhánh).
+ * ⚠ **CƠ CHẾ VẪN CHƯA BIẾT ⇒ KHÔNG vá theo mô tả này.** Trần quan sát được KHÔNG tái hiện giữa hai
+ * phiên đo cùng ngày (mọi ngưỡng trung gian đã bị RÚT; số duy nhất còn trích được là 16.698,37 MiB).
+ * Phép thử phải chạy trước mọi bản vá: lặp cùng một lượt thử 5 lần để biết trần có tất định không.
+ * Chi tiết: docs/superpowers/reports/2026-08-02-dot2-report.md §5.
  */
 let deepWarmStarted = false;
 export function initDeepModelWarmup(): void {

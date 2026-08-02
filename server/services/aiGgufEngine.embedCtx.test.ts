@@ -16,10 +16,21 @@
  * nhúng (Qwen3-Embedding-0.6B) trên chunk dài nhất thực tế trong knowledge/chunks.jsonl
  * (id "doc:docs/ECOSYSTEM/27_AOI_AVI_END_TO_END_AUDIT_UPGRADE_PLAN_2026-07.md#23", 6.135 ký
  * tự): **1.879 token thật** — vượt EMBED_CTX=1024 tới 83%. node-llama-cpp KHÔNG cắt âm thầm
- * khi input vượt contextSize — nó THROW ("Input is longer than the context size..."), và
- * throw đó bị kbVectorStore.ts:68 (ingestKbChunks) nuốt thành skipped++ nên nội dung âm thầm
- * vắng mặt khỏi kb_chunks. EMBED_CTX nâng lên 2048 (biên ~9% so với 1.879) để chunk dài nhất
- * THẬT đi qua được mà không throw.
+ * khi input vượt contextSize — nó THROW ("Input is longer than the context size...").
+ *
+ * ⚠ ĐÍNH CHÍNH 2026-08-02 (Đợt 2 Task 4 + Task 6) — câu tiếp theo của comment này SAI, đã sửa:
+ * bản cũ viết *"throw đó bị kbVectorStore.ts:68 (ingestKbChunks) nuốt thành skipped++ nên nội
+ * dung âm thầm vắng mặt khỏi kb_chunks"*. Task 4 đọc mã thật và `git blame`: hàm đó nằm ở
+ * `server/services/kb/kbVectorStore.ts` (KHÔNG phải `server/services/kbVectorStore.ts` — hai
+ * file khác nhau, cả hai đều sống), và `catch` quanh `generateEmbedding()` **ĐÃ log**
+ * `[KB] embed/store failed for <docId>: <err.message>` từ **commit gốc `e4e24aa6` (2026-06-24)`**,
+ * tức TRƯỚC cả Đợt 0 — chưa từng im lặng. ⇒ Lý do nâng EMBED_CTX **không phải** "lỗi bị nuốt"
+ * mà là: chunk dài nhất THẬT sẽ throw ⇒ nó bị **bỏ qua (skipped) và thiếu khỏi `kb_chunks`** —
+ * ồn ào trong log, nhưng vẫn là mất dữ liệu nếu không ai đọc log. (Ba đường `skipped++` khác
+ * nhau nay được đếm riêng — Đợt 2 Task 4.)
+ *
+ * EMBED_CTX nâng lên 2048 (biên ~9% so với 1.879) để chunk dài nhất THẬT đi qua được mà không
+ * throw. Chi tiết: docs/superpowers/reports/2026-08-02-dot2-report.md §4.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
