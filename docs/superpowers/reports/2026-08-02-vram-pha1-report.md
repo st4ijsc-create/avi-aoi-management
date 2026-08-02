@@ -241,6 +241,20 @@ Nấc `file-size` **tốt cho trọng số thuần** (−0,4%) nhưng **sai nặ
 
 Cả hai đều truyền qua `configDefaultBytes` **có chủ đích**, để sự kiện ghi `estimateSource: "config-default"` — dấu vết truy được. Thiết kế này **hoạt động đúng**: nấc `config-default` là **duy nhất** ở hai chỗ này, không lan ra chỗ khác (grep toàn `server/`).
 
+> **⚠ CẬP NHẬT SAU TASK 8 — con số "hai chỗ" ở trên là ẢNH CHỤP CỦA PHIÊN ĐO NÀY, đã lỗi thời.**
+> Task 8 nối thêm ba hộ ngoài tiến trình, nên `grep -rn "configDefaultBytes:" server/` nay ra **BỐN** chỗ:
+>
+> | Owner | Hằng số | Vị trí |
+> |---|---|---|
+> | `sidecar:vision` | `VRAM_SIDECAR_ESTIMATE_MB` = **7825** | `llamaVisionSidecar.ts:263` |
+> | `cron:kb-sync` | `VRAM_KB_SYNC_ESTIMATE_MB` = **1251** | `kbSyncScheduler.ts:486` |
+> | `cron:kb-eval-gate` | `VRAM_KB_EVAL_ESTIMATE_MB` = **1251** | `kbSyncScheduler.ts:268` |
+> | `sidecar:local-trainer` | `VRAM_TRAINER_ESTIMATE_MB` = **6144** | `localSidecarTrainer.ts:357` |
+>
+> Hộ thứ mười một `sidecar:llm-finetune` **không** nằm trong bảng: nó neo vào **kích thước file** trọng số nền (nấc `file-size`), và chỉ tụt xuống `config-default` nếu người vận hành đặt tay `VRAM_FINETUNE_ESTIMATE_MB` (mặc định KHÔNG đặt).
+>
+> ⚠⚠ Và với **cả bốn dòng trên trừ `sidecar:vision`**, hằng số đó **KHÔNG tự sửa được** — xem §5.5 và §10 mục 14.
+
 ### 5.4 ⚠ Hai chỗ KHÔNG CÓ CĂN CỨ NÀO (`unknown`) — và một chỗ ước lượng bằng **0**
 
 | Owner | Vị trí | Ước lượng lượt đầu |
@@ -256,6 +270,14 @@ Cả hai **cố ý** không truyền `configDefaultBytes` (comment tại chỗ: 
 - `vram_events` là **chỉ-ghi**: grep toàn repo, **không có một lời gọi `select` nào** trên bảng này (`vramEventLog.ts:59` chỉ `insert`; không router/service/script nào đọc lại).
 
 ⇒ **Mỗi lượt boot, mọi owner đều bắt đầu lại từ `file-size` / `config-default` / `unknown`.** Nấc `learned` chỉ áp dụng cho lượt cấp phát **thứ hai trở đi trong CÙNG một tiến trình** — mà phần lớn hộ tiêu thụ chỉ cấp phát **một lần** rồi cache (model, session). Điều này đúng với dữ liệu: **0/15** lượt `reserve` dùng nấc `learned`.
+
+> **⚠ BỔ SUNG SAU TASK 8 — với BỐN owner ngoài tiến trình thì còn tệ hơn thế: `learned` KHÔNG BAO GIỜ được điền, kể cả trong CÙNG một tiến trình.**
+>
+> `recordActual()` chỉ có **một** người gọi: `commitMeasured()` (`vramWiring.ts:233`). Và `cron:kb-sync`, `cron:kb-eval-gate`, `sidecar:local-trainer`, `sidecar:llm-finetune` **đều KHÔNG gọi `commitMeasured()`** — cố ý, và lý do đã ghi tại chỗ trong mã: khi tiến trình con thoát, VRAM của nó đã được OS thu hồi từ lâu, đo delta lúc đó chỉ cho ra **0 giả**, còn tệ hơn không đo.
+>
+> ⇒ Với bốn owner đó, **hằng số cấu hình là con số DUY NHẤT mà sổ sẽ từng biết**, cho tới khi có người đo ngoài rồi đặt lại biến môi trường. Câu *"chưa đo thật"* ở §5.3 với chúng **không** có nghĩa *"chưa đo THÌ SẼ ĐO"* — nó có nghĩa *"sẽ không bao giờ tự đo"*.
+>
+> Ngoại lệ duy nhất trong nhóm ngoài-tiến-trình: **`sidecar:vision`** — nó gọi `commitMeasured()` sau khi healthcheck xanh (`llamaVisionSidecar.ts:364`), lúc tiến trình con VẪN CÒN SỐNG và VRAM vẫn nằm trên thiết bị, nên delta đo được là thật và nấc `learned` của nó **có** được điền cho lượt spawn kế tiếp trong cùng tiến trình server.
 
 ⇒ Lời hứa spec §7 (*"sau vài ngày, hệ có số đo thật của chính nó, do sản xuất sinh ra"*) **chưa được thực hiện**: số thật được ghi vào DB nhưng **không ai đọc lại**. Đây là việc của Pha 2, không phải lỗi của Pha 1 — nhưng phải ghi rõ, vì lập luận "không bịa hằng số vì sẽ học được" đang **dựa vào một vòng phản hồi chưa khép kín**.
 
@@ -541,7 +563,16 @@ Sổ cái **quản được ba** trong số đó theo nghĩa đầy đủ (tiế
 | 11 | **Đếm tham chiếu cho `ort.InferenceSession` rồi gọi `session.release()` khi đuổi LRU** | `aiInferenceEngine.ts:89-96` (`LruSessionCache.set`) · `aiImageEmbedding.ts:535` (`evictEmbeddingSessionCache`) | I-1. Toàn repo **không có một lời gọi `.release()` nào** lên `ort.InferenceSession` ⇒ đuổi khỏi cache chỉ gỡ tham chiếu JS, bộ nhớ native **không chắc được trả**. Thêm lời gọi đó bây giờ = giải phóng native **dưới chân** một `session.run` đang bay (`getSession()` không có khoá in-flight; `gpuSessionSemaphore` cho 2 lượt song song) ⇒ **abort tầng native**, không phải exception bắt được. Task 8 đánh dấu `releaseProof: "unverified"` để truy vấn được; sửa gốc là ĐỔI HÀNH VI đường suy luận nóng nhất ⇒ Pha 2. |
 | 12 | **`evictEmbeddingSessionCache()` KHÔNG CÓ NGƯỜI GỌI** trong mã sản xuất | `aiImageEmbedding.ts:535` | I-1 (mặt ngược của mục 11). `embeddingSessionCache` không có LRU, không có trần ⇒ session (và giấy phép) sống tới hết đời tiến trình. Trung thực về mặt sổ (sổ khớp thiết bị vì **cả hai** đều không nhả), nhưng là **rò rỉ thật** ở tầng dưới. |
 | 13 | **Giấy phép `measure_failed` vẫn giữ ước lượng sai trong tổng sổ** | `vramWiring.ts` (nhánh `actual < 0`) · `vramBroker.leaseBytes()` | I-2. Task 8 làm cho tình trạng này **nhìn thấy được** (cờ `measureFailed`, sự kiện `measure_failed`, câu chẩn đoán riêng) nhưng **không** sửa được con số: `beforeUsed` đã cũ nên không đo lại đúng được. Bản sửa thật là §10 mục 5 (so sổ bằng `Σ actualBytes`). |
-| 14 | **ĐO THẬT hai tiến trình Python** (`LOCAL_TRAINER_CMD` / `LLM_FINETUNE_CMD`) | `localSidecarTrainer.ts` · `aiLlmFinetuneSidecar.ts` | C-2. Ước lượng hiện tại là docstring (6 GB) và kích-thước-file — **có nguồn, nhưng chưa phải số đo**. Bật env rồi chạy một job thật là đủ để nấc `learned` tự học. |
+| 14 | **ĐO NGOÀI hai tiến trình Python rồi ĐẶT TAY** `VRAM_TRAINER_ESTIMATE_MB` / `VRAM_FINETUNE_ESTIMATE_MB` | `localSidecarTrainer.ts` · `aiLlmFinetuneSidecar.ts` | C-2. Ước lượng hiện tại là docstring (6 GB) và kích-thước-file — **có nguồn, nhưng chưa phải số đo**. ⚠ **KHÔNG có cơ chế tự sửa:** đường ngoài tiến trình **KHÔNG gọi `commitMeasured()`**, mà `recordActual()` chỉ được gọi từ đó (`vramWiring.ts:233`) ⇒ nấc `learned` **KHÔNG BAO GIỜ tự học** cho **bốn** owner ngoài tiến trình — `cron:kb-sync`, `cron:kb-eval-gate`, `sidecar:local-trainer`, `sidecar:llm-finetune`. **Hằng số cấu hình sẽ đứng VĨNH VIỄN cho tới khi có người đo và đặt lại.** (Ngoại lệ duy nhất trong nhóm ngoài-tiến-trình: `sidecar:vision` — nó CÓ gọi `commitMeasured()` sau healthcheck, `llamaVisionSidecar.ts:364`.) |
+
+#### Thêm sau RE-REVIEW cổng cuối (Task 8, vòng 2) — reviewer xếp backlog Pha 2, KHÔNG chặn push
+
+| # | Việc | Vị trí | Ghi chú |
+|---|---|---|---|
+| 15 | **Hai "cửa im lặng" anh em của I-2 vẫn còn** | `vramWiring.ts` — `if (released \|\| beforeUsed === null) return;` và `if (!after) return;` | I-2 mới đóng **cửa thứ ba** (`actual < 0`). Hai cửa ngay trên dẫn tới **CÙNG trạng thái cuối** — giấy phép giữ ước lượng vĩnh viễn — chỉ hiếm hơn. ⚠ Nhưng chúng mở **đúng lúc GPU đang tải nặng** (đầu dò lỗi/chậm), tức đúng lúc lease **lớn nhất**. Bản sửa đúng: cả ba cửa cùng đi qua `markMeasureFailed()` + `measure_failed`. |
+| 16 | **`releaseProof` KHÔNG có test nào canh** | `vramWiring.ts` (sự kiện `release`, `detail.releaseProof`) | Toàn bộ giá trị của trường này là *"truy vấn được"*. Tên trường trôi, hoặc một hộ mới quên truyền, thì **không ai biết** — không lưới nào đỏ. Cần một test khoá tên trường + một test khẳng định hai hộ ONNX ghi đúng `"unverified"`. |
+| 17 | **TDZ `ReferenceError` ở nhánh `spawn` ném đồng bộ** (TIỀN TỒN TẠI) | `localSidecarTrainer.spawnAndPoll` — `catch { … finish(-1) }` chạy **trước** `const poller = setInterval(…)` | `finish()` gọi `clearInterval(poller)` khi `poller` còn trong **vùng chết tạm thời** ⇒ ném `ReferenceError` thay vì resolve `-1`. Hệ quả thật chỉ là **thông điệp lỗi sai** (`runSidecarTraining` bắt lại ở `catch` ngoài và vẫn trả `success:false`), nên không chặn push. ⚠ **Giấy phép VRAM AN TOÀN** — Task 8 đặt `releaseVram()` **TRƯỚC** `finish()` đúng ở nhánh này. Bản `aiLlmFinetuneSidecar.spawnAndWait` **không dính** (nó không có `poller`). |
+| 18 | **Lượt `reserve()` ĐẦU TIÊN của một tiến trình vẫn tính trên trần DỰ PHÒNG** (dư của I-3) | `vramBroker.deviceTotalBytes()` ← `vramProbe.probeOnce()` | Trần chỉ đúng **sau** lượt đầu dò đầu tiên. Ở `ROLE=worker`, `captureVramBaseline()` chạy lúc boot nên che được. Ở **`ROLE=api` thì KHÔNG** — nó không chạy reconciler (§8) ⇒ `wouldRefuse` của lượt cấp phát đầu tiên vẫn tính trên 32.607 MiB. Bản sửa đúng: một lượt đầu dò lúc boot, độc lập với reconciler. |
 
 #### ⚠ ĐỔI HÀNH VI đã lọt vào nhánh này mà bản đầu KHÔNG ghi (M-7)
 
