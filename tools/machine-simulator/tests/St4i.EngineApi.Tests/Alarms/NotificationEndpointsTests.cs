@@ -87,13 +87,30 @@ public sealed class NotificationEndpointsTests : IDisposable
     /// <para>🔴 <b>What this slack does NOT rest on, said plainly because the obvious claim did not survive
     /// checking.</b> The natural justification — "still decisive, because an attempt that failed instantly
     /// for some reason other than the peer's silence returns in single-digit milliseconds, not 950" — is
-    /// UNVERIFIED, and the one substitute that should have demonstrated it does the opposite. Repointing
-    /// this test at a definitely-closed loopback port (a target that fails for a reason other than silence)
-    /// produces <b>1085 ms</b> elapsed and the byte-identical <c>Detail</c> <i>"did not answer within 1s"</i>
-    /// — so the lower bound does not discriminate that case, and neither does the assertion above it. The
-    /// slack is therefore justified ONLY by the clock argument, which is sound on its own. Whether either
-    /// lower bound can be violated at all by a loopback target is an open question about a Đợt C test, not
-    /// something this change created or resolved; it is recorded rather than asserted away.</para>
+    /// FALSE as written. Repointing this test at a definitely-closed loopback port produces <b>~1013 ms</b>
+    /// elapsed and the byte-identical <c>Detail</c> <i>"did not answer within 1s"</i>. The slack is
+    /// therefore justified ONLY by the clock argument above, which is sound on its own.</para>
+    ///
+    /// <para><b>Why that happens — and why it is NOT a weakness in these assertions.</b> The first version
+    /// of this note said "neither does the assertion above it", which over-generalised a single measurement
+    /// into a property of the mechanism. It is not.
+    /// <see cref="Alarms.WebhookNotificationChannel"/> maps a refusal to a genuinely different
+    /// <c>Detail</c> (<i>"could not be reached: …actively refused it"</i>), and
+    /// <c>Assert.Contains("did not answer within")</c> does catch the substitution — at an
+    /// <c>attemptTimeout</c> of 5 s the same closed port yields 2027 ms and the refusal message. What
+    /// defeats it at <b>1 s</b> is the platform, not the test: on Windows the connect path takes roughly two
+    /// seconds to surface <c>HttpRequestException</c> for a plainly refused TCP connection — a number this
+    /// codebase already measured, see <c>WebhookNotificationChannel</c>'s own remarks on its connect
+    /// behaviour. The attempt token simply fires first. So these lower bounds are <b>narrowed, not
+    /// vacuous</b>: they still fail an attempt issued with no bound applied at all, and they still fail a
+    /// DNS failure, which surfaces in milliseconds.</para>
+    ///
+    /// <para>🟠 The real finding underneath this is about the CHANNEL, not this test, and is recorded for
+    /// the whole-branch review: below ~2 s of attempt timeout a refused endpoint is reported to an operator
+    /// as <i>"nothing is holding the connection open without responding"</i> — sending them to hunt a
+    /// black-holing peer when the endpoint is actively refusing — because the branch that would say so is
+    /// unreachable at that bound. That is D-5's I-1 defect class (one operator-facing string covering two
+    /// producing paths, true of only one), and it predates this change.</para>
     /// </summary>
     private static readonly TimeSpan TimerQuantumSlack = TimeSpan.FromMilliseconds(50);
 
