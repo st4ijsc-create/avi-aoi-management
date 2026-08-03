@@ -23,7 +23,14 @@ Sao nguyên văn từ spec `docs/superpowers/specs/2026-08-02-vram-broker-design
 7. **Fixture đủ lớn để phân biệt** — ca về nhầm kích thước dùng số cỡ **17.000 MiB**, không dùng cỡ 600 MiB.
 8. **Ngưỡng lệch `512 MiB` và nhịp `60_000 ms` KHÔNG thừa kế sang đường cưỡng chế.** Chúng là tham số của **cái chuông**. Cưỡng chế dùng **`attributable` (số)**, không dùng `alarm` (boolean).
 9. **Không được có đường nào tràn im lặng.** Cụm `"allowing temporary overflow"` phải biến mất khỏi repo.
-10. **Đầu dò hỏng / đối chiếu mù ⇒ suy biến AN TOÀN**: rơi về chỉ-sổ và **ghi rõ đang chạy mù**. Không im lặng coi thiết bị là trống.
+10. 🔴 **ĐÍNH CHÍNH (2026-08-04, sau review Task 1) — "mù ⇒ chỉ-sổ" KHÔNG PHẢI suy biến an toàn. Nó là NHÁNH RỘNG RÃI NHẤT.**
+    Bản đầu của mục này viết *"suy biến AN TOÀN: rơi về chỉ-sổ"* — **sai bản chất**, và sai theo hướng ru ngủ.
+    Chứng minh: vì `headroom = trần − max(ledgerTotal, attributable)` và `max(L, A) ≥ L`, nên **`attributable = null` là CHẶN TRÊN của mọi headroom**. Rơi về chỉ-sổ ⇒ dư địa **lớn nhất có thể**, trong khi sổ chỉ nối **14/159** dòng ⇒ hệ mất tầm nhìn với **gần như cả tấm card**.
+    ⇒ **Mọi đường sinh `blind` là một đường VÔ HIỆU HOÁ lớp bảo vệ.** Đã liệt kê **11 đường** như vậy; đường tệ nhất **không phải** đầu dò hỏng mà là lease `local-trainer` **ttl 2 giờ, đang bật, cố ý không commit** ⇒ mù **hàng giờ**.
+    **Quy tắc thay thế, ràng buộc Task 2 và Task 5:**
+    - `blind` / `unverified` phải làm hệ **CHẶT HƠN**, không lỏng hơn — Task 5 **không được** coi `blind` là an toàn.
+    - Cổng ở Task 1 **VẪN CHỤP** nền và đánh dấu `unverified` thay vì từ chối, vì một nền **nhiễm** vẫn chặt hơn **chỉ-sổ**. Giá trị của cổng là **tầm nhìn** (nêu đích danh tiến trình), không phải việc từ chối.
+    - Vẫn **TUYỆT ĐỐI KHÔNG ĐOÁN** byte của hộ lạ. Thôi biến "không biết bao nhiêu" thành "coi như không có gì" — hai việc khác nhau.
 
 ---
 
