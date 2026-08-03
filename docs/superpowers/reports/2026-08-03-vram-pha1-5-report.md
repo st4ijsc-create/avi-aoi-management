@@ -748,6 +748,7 @@ kết quả thiếu. Muốn có phân bố thì vẫn phải đo NGOÀI sổ nh�
 | **T5-8** | `VRAM_KB_EVAL_ESTIMATE_MB` 1251 → ~1100 theo 3 lượt đo (1.022/1.036/1.033). Chưa áp dụng. | Thấp |
 | **T5-9** | `gguf-embed-ctx` vẫn `estimateSource: "unknown"`, ước lượng **0 byte** (Pha 1 §5.4, chưa gỡ). | Thấp |
 | **T5-10** | `.venv` của repo **hỏng** (trỏ Python 3.13 Store đã gỡ, tạo ở máy khác). | Thấp |
+| **T5-11** | **Phép đo `after − before` trên `used` TOÀN THIẾT BỊ là CỔNG VÀO Pha 2, không phải backlog.** Mỗi đêm `cron:kb-sync` chạy ⇒ mọi lượt nạp trong 30 phút đó thành `measureFailed`, và sổ Pha 2 sẽ **cưỡng chế trên toàn ước lượng**. Chi tiết + số liệu: **§11.7**. | 🔴 **CHẶN Pha 2** |
 
 ### 8.1 T5-1 — ghi chú cho người vá (KHÔNG phải chỉ đạo; Task 5 chỉ đo)
 
@@ -1242,7 +1243,12 @@ thật của nó ĐANG NẰM TRÊN THIẾT BỊ**. Nó rơi khỏi lá chắn HO
 **không bao giờ tự lành**. **Đúng chữ ký T5-1**: drift **−17 GB**, alarm **100 % mọi nhịp**, chỉ
 **restart** mới gỡ.
 
-**Reviewer tái hiện 3/3** bằng broker + wiring + reconciler THẬT:
+**Reviewer tái hiện 3/3** bằng broker + wiring + reconciler THẬT.
+⚠ **N-4 — đọc kỹ nguồn của ba con số dưới đây:** đây là **harness trong bộ nhớ** (broker/wiring/
+reconciler là mã THẬT, nhưng **đầu dò VRAM là mock** và các mốc 18.300/18.000/−17.300 MiB là **số
+dựng trong harness**, không phải `nvidia-smi` trên máy thật). Chúng chứng minh **cơ chế**, không
+phải một sự cố đã quan sát LIVE. Số LIVE duy nhất của cùng lớp lỗi là của **Task 5 §5.3**
+(`vram_events.id=83`, nền 978 → 17.891 MiB).
 
 | Ca | Kết quả |
 |---|---|
@@ -1286,7 +1292,7 @@ function holdsUncommittedBytes(l) { return l.actualBytes === null; }            
 
 ### 11.3 Lưới test — và ĐỘT BIẾN chứng minh nó không giả
 
-Bốn ca mới trong `vramReconciler.test.ts` (ĐỎ trước, XANH sau):
+Bốn ca Critical mới trong `vramReconciler.test.ts` (ĐỎ trước, XANH sau) — ca thứ **năm** (`cron 03:00`) mô tả ở §11.4 vì nó trả lời câu hỏi đánh đổi:
 
 | Ca | Canh gì |
 |---|---|
@@ -1302,6 +1308,9 @@ Bốn ca mới trong `vramReconciler.test.ts` (ĐỎ trước, XANH sau):
 | `holdsUncommittedBytes` → `actualBytes === null && !measureFailed` (đảo bản vá) | **3 ca ĐỎ** — đúng ba ca Critical |
 | `holdsUncommittedBytes` → `return true` (hoãn tất) | **12 ca ĐỎ**, gồm cả ĐỐI CHỨNG và toàn bộ lưới NEW-1/Task 7 cũ |
 | Bỏ `commitMeasured()` của backend reranker (để cửa sổ mở qua `loadModel`) | **2 ca ĐỎ** — cả hai lease thành `measureFailed`, đúng cơ chế Task 8 |
+| **N-1:** bỏ dòng `_rankBackendTicket.release()` trước khi ghi đè con trỏ | **1 ca ĐỎ** — `expected [...] to have a length of 1 but got 2` |
+| **N-3 (reviewer chạy):** hoán `ledgerTotal ↔ committedBytes` ở sự kiện **`baseline`** | **0 ĐỎ** — đột biến **thật sự vô nghĩa**, hai số đồng nhất theo cấu trúc ⇒ lời khai ở §11.3 đúng |
+| **N-3 (reviewer chạy):** hoán hai biến đó ở sự kiện **`baseline_deferred`** | **1 ĐỎ** — lưới EXP-2 **không mất**, chỉ **chuyển chỗ** |
 
 **Một test cũ đã phải sửa vì bản vá làm tiền đề của nó bất khả đạt** (ghi lại để không ai tưởng là
 "sửa test cho xanh"): ca EXP-2 *"KẺ CHUI grab đúng lúc đổi thước"* trước đây lách lá chắn Task 7
@@ -1349,6 +1358,19 @@ ghi **1 dòng `baseline_blocked` mỗi nhịp** (nhịp mặc định 60 s), t�
 | `sidecar:llm-finetune` | **4 giờ** | **235** | ≤ 1 nhịp |
 | Lease `measureFailed` (gguf) | **tới lúc unload/evict** | **1.440/ngày** | ≤ 1 nhịp sau unload/evict; **xấu nhất = restart** |
 
+⚠⚠ **NGOẠI LỆ CỦA LỜI HỨA "TỰ LÀNH" — bản trước hứa RỘNG HƠN thứ mã bảo đảm (N-1).** Bốn hàng
+`external-process` và hàng gguf ở trên đều có **đường `release()`**, nên "≤ 1 nhịp" đúng cho chúng.
+Nhưng **giấy phép `gguf-backend` thì KHÔNG có đường release nào ở nhánh thành công** — cả
+`cuda-backend` (`aiGgufEngine`) lẫn `cuda-backend:reranker` (I-1) đều **cố ý** sống hết đời tiến
+trình (`disposeReranker()` không đụng tới, vì thể hiện `Llama` vẫn sống). ⇒ Nếu một giấy phép
+`gguf-backend` bị gắn `measureFailed` (cửa sổ đo của nó chồng với ai đó), nó giữ `actualBytes = null`
+**vĩnh viễn KHÔNG có lối ra** ⇒ lá chắn HOÃN chặn nền **vĩnh viễn, không tự lành kể cả sau
+unload/evict** — **xấu nhất không phải restart, mà là bắt buộc restart**.
+Lượt review cổng cuối bắt được **một đường vào có thật** của ca đó: bản vá I-1 mở giấy phép backend
+**không có khoá in-flight**, hai lượt `rerank()` song song đẻ hai giấy phép và hai cửa sổ chồng nhau.
+**Đã vá (N-1, §11.5)**: trả giấy phép cũ trước khi ghi đè con trỏ, có test song song + đột biến.
+**Đường vào còn lại chưa đóng** (backend `aiGgufEngine` bị chồng cửa sổ) ghi thành **T5-15**.
+
 **(5) So thẳng với thứ nó thay thế — cùng NHỊP ghi, khác hẳn SỰ THẬT và khác hẳn LỐI THOÁT:**
 
 | | Trước bản vá (nền nhiễm) | Sau bản vá (hoãn + kêu) |
@@ -1388,14 +1410,51 @@ Hôm nay vô hại (`.env` `RAG_RERANKER_GPU=false` ⇒ `gpu:false`), nhưng **m
 này phải nhường AOI và chat/RCA), mở **ngay trước** lượt gọi thật và **commit ngay sau**, trước khi
 mở cửa sổ của model; giữ qua `disposeReranker()` (hàm đó **không** dispose thể hiện `Llama`, trả
 giấy phép ở đó là nói dối sổ) và dùng chính biến ticket làm khoá chống cộng trùng. Câu *"singleton
-cả tiến trình"* trong `types.ts` đã sửa lại cho đúng. Lưới: `wiring.rerankerBackend.test.ts`
-(3 ca, ĐỎ trước / XANH sau, kèm đột biến ở §11.3).
+cả tiến trình"* trong `types.ts` đã sửa lại cho đúng.
 
-### 11.6 Năm khoản Minor cùng lượt
+⚠ **N-5 — nói rõ nguồn con số 430 MiB trong lưới test:** `wiring.rerankerBackend.test.ts` chạy
+`RAG_RERANKER_GPU=true`, tức **cấu hình CHƯA TỪNG chạy thật** trên máy này (`.env` đang `false`), và
+**430 MiB là HẰNG SỐ MOCK** mượn từ số Pha 1 đo quanh backend **KHÁC** (`aiGgufEngine`, +431/+430/
++431). File test có khai điều này; báo cáo bản trước thì không. ⇒ Lưới chứng minh **giấy phép có
+được ghi đúng chỗ và đúng delta hay không**, **không** chứng minh backend của reranker thật sự tốn
+430 MiB. Con số thật chỉ có sau một lượt đo LIVE với cờ bật — ghi thành **T5-16**.
+
+#### ★★ N-1 (review cổng cuối) — bản vá I-1 ĐÃ TỰ ĐẺ LẠI đúng lớp lỗi cộng-trùng
+
+Bản I-1 vòng đầu gán `_rankBackendTicket = backendTicket` **mà không trả giấy phép cũ**, trong khi
+đường model **ngay ~20 dòng dưới** đã làm đúng từ lâu (`_rankVramTicket?.release()` trước khi ghi
+đè). Mà `getRankingContext()` **không có khoá in-flight** — chính mã tự khai ở hai chỗ.
+⇒ Hai lượt `rerank()` song song **đều thấy** `_rankBackendTicket === null`, **đều mở** giấy phép,
+lượt sau **đè con trỏ** ⇒ lượt đầu **treo VĨNH VIỄN**. Reviewer dựng harness, chạy thật:
+
+```
+[{owner:"cuda-backend:reranker", actual:450887680, mf:false},   ← 430 MiB
+ {owner:"cuda-backend:reranker", actual:0,         mf:false},   ← lease MA
+ {owner:"reranker:…bge…",        actual:18874368}]
+sau disposeReranker(): CẢ HAI vẫn còn.
+```
+
+| Hệ quả | Độ nặng |
+|---|---|
+| `RAG_RERANKER_GPU=true` — **đúng cấu hình I-1 sinh ra để phục vụ** | **+430 MiB cộng trùng vĩnh viễn** = **84 %** ngân sách ngưỡng 512 MiB tiêu bằng một lease MA; Pha 2 tính `headroom` **thiếu đúng khoản I-1 vừa đi tìm** |
+| Hai cửa sổ đo chồng nhau (Task 8 gắn `measureFailed` cho cả hai) — **KHÔNG phụ thuộc cờ GPU** | cả hai `actualBytes === null` **vĩnh viễn, KHÔNG có đường release** ⇒ lá chắn HOÃN chặn nền **VĨNH VIỄN, không tự lành kể cả sau unload/evict** — **phủ định trực tiếp** lời hứa *"≤ 1 nhịp; xấu nhất restart"* ở §11.4 |
+
+Hôm nay `.env` `RAG_RERANKER_MODE=gguf` (đường **sống**) nhưng `RAG_RERANKER_GPU=false` ⇒ byte vô
+hại; **nhánh chặn-nền thì không phụ thuộc GPU**, nên đây là lỗi **đang sống**.
+
+**Vá:** trả giấy phép cũ **trước** khi ghi đè con trỏ — sao đúng khuôn đường model đã có sẵn.
+**Lưới:** `wiring.rerankerBackend.test.ts` nay **4 ca**, thêm ca *"HAI rerank() SONG SONG ⇒ ĐÚNG MỘT
+giấy phép"* (kiểm cả sau `disposeReranker()`), ĐỎ trước / XANH sau, kèm đột biến ở §11.3. Bản giả
+`getLlama()` cũng được sửa cho **cache theo tham số** đúng như node-llama-cpp thật — nếu không, ca
+song song đo một thế giới không tồn tại và **giấu mất** chính lease MA 0 byte cần bắt.
+
+### 11.6 Minor — vòng đầu (M) và vòng cổng cuối (N)
 
 | # | Khoản | Đã sửa ở |
 |---|---|---|
-| M-1 | Bảng điểm cấp phát ghi **"12 điểm"**, thật là **13** — thiếu `aiLlmFinetuneSidecar` (`sidecar:llm-finetune`, trần **4 giờ**, tức **dài hơn** "2 GIỜ" mà bảng gọi là trần lớn nhất). Bảng này **chống lưng cho ngưỡng 5 phút của Task 7** ⇒ sai ở chỗ chịu lực. | `vramReconciler.ts` (bảng đủ **13** dòng) + `vramWiring.ts` |
+| M-1 / **N-2** | Bảng điểm cấp phát: **"12"** (thiếu `aiLlmFinetuneSidecar`, trần **4 giờ** — dài hơn "2 GIỜ" mà bảng gọi là trần lớn nhất) → sửa thành **"13"** → **VẪN SAI**: quên đếm **điểm mà CHÍNH lượt vá này thêm** (`cuda-backend:reranker`, I-1), trong khi các dòng bảng đã cộng ra **14**. Con số đúng: **14** (`aiGgufEngine` ×4 · `aiReranker` ×2 · `kbSyncScheduler` ×2 · sáu file ×1). Bảng này **chống lưng cho ngưỡng 5 phút của Task 7** ⇒ sai ở chỗ chịu lực, **hai lần liên tiếp**. Đã thêm chỉ dẫn: **đếm lại bằng `git grep`, đừng cộng dồn con số cũ**. | `vramReconciler.ts` + `vramWiring.ts` |
+| **N-3** | Comment cạnh `committedBytes` của sự kiện `baseline`: *"chênh lệch giữa hai số này cho biết lúc chụp có bao nhiêu lượt cấp phát đang dở dang"* — **nay LUÔN SAI**: sau lá chắn HOÃN thì `ledgerTotal ≡ committedBytes` tại sự kiện đó (đột biến hoán biến cho **0 đỏ**). Đúng loại *"mìn cho người sau"* mà M-2 vừa gỡ, **còn nguyên cách đó ba dòng**. Đã đổi thành chỉ dẫn đọc `baseline_deferred`. | `vramReconciler.ts` |
+| **N-6** | Test mới nhét lại **ba con trỏ dòng cứng** (`aiReranker.ts:362/:382/:366`) và **cả ba đã lệch ngay sau chính bản vá này**; thêm một con trỏ `vramBroker.ts:75-83`. Đổi hết sang **mô tả tương đối**. | `wiring.rerankerBackend.test.ts`, `vramReconciler.test.ts` |
 | M-2 | Trường `note` của sự kiện `baseline` **vẫn ghi nguyên văn tiền đề ĐÃ RÚT LẠI** (*"giấy phép chưa commit … trừ nó là trừ thứ chưa tồn tại"*) và nó đi thẳng vào `vram_events` **mọi lượt**. | `vramReconciler.ts` |
 | M-3 | §0 hàng (4) dẫn *"xem §5"* cho quyết định ngưỡng/nhịp — đúng phải là **§6.1/§6.2**. | báo cáo này |
 | M-4 | `backgroundJobs.ts` trỏ `index.ts:5198`, thật là `:5216`. Đổi sang **mô tả tương đối** (grep được). | `server/_core/backgroundJobs.ts` |
@@ -1405,7 +1464,9 @@ cả tiến trình"* trong `types.ts` đã sửa lại cho đúng. Lưới: `wir
 
 | # | Mục | Mức |
 |---|---|---|
-| **T5-11** | Ca *"lease `measureFailed` phát sinh trước lượt chụp nền đầu ⇒ reconciler mù + kêu tới lúc unload/evict"* (§11.4, rủi ro còn lại). Chỉ Pha 2 (đo theo từng giấy phép) gỡ được. | **Cao** |
+| **T5-11** | **CỔNG VÀO PHA 2 — không phải backlog.** Chừng nào phép đo còn là `after − before` trên `used` **toàn thiết bị**, thì **mỗi đêm `cron:kb-sync` chạy là MỌI lượt nạp trong 30 phút đó thành `measureFailed`** (nó cố ý không commit ⇒ cửa sổ mở tới `release()`), và Pha 2 sẽ **ra quyết định CƯỠNG CHẾ trên toàn ước lượng** — từ chối nạp / đuổi model đang chạy dựa trên những con số chưa bao giờ được xác minh. Cộng thêm ca §11.4: lease `measureFailed` phát sinh trước lượt chụp nền đầu ⇒ reconciler **mù + kêu tới lúc unload/evict**. ⇒ **Đo theo TỪNG giấy phép (không phải một lượt đọc `used` toàn thiết bị) là điều kiện CẦN để mở Pha 2**, không phải một cải tiến tuỳ chọn. | 🔴 **CHẶN Pha 2** |
+| **T5-15** | Đường vào **còn lại** của ca "nền bị chặn vĩnh viễn" (§11.4): giấy phép `gguf-backend` của **`aiGgufEngine`** cũng **không có đường release** ở nhánh thành công — nếu cửa sổ đo của nó chồng với ai đó thì `actualBytes = null` vĩnh viễn, không lối ra. N-1 mới đóng đường vào của **reranker**. | **Cao** |
+| **T5-16** | Backend reranker **chưa từng đo LIVE**: `RAG_RERANKER_GPU=true` chưa chạy thật trên máy này, và **430 MiB trong test là hằng số mock** mượn từ backend KHÁC (§11.5, N-5). | Trung bình |
 | **T5-12** | `llama-server` bền ~17 GB **không có chỗ xin phép** (đang TẮT). Bật lên là một hộ 17 GB vô hình. | Cao |
 | **T5-13** | `vramEventLog.ts` `QUEUE_MAX` **rơi im lặng** — hàng đợi đầy thì sự kiện biến mất không dấu vết. | Trung bình |
 | **T5-14** | `releaseProof` **backend chưa hình thành**: `gguf-backend` không có đường `release` ở nhánh thành công, nên không lớp nào chứng minh được thiết bị đã nhả. | Trung bình |
@@ -1421,8 +1482,8 @@ vá một nhánh không tồn tại.
 
 | Cổng | Kết quả |
 |---|---|
-| `npx vitest run server/services/vram/` | **144/144 XANH** (137 cũ **còn nguyên** + 7 mới) |
-| Cùng lệnh với `--sequence.shuffle.tests` | **144/144 XANH** |
+| `npx vitest run server/services/vram/` | **145/145 XANH** — đếm `it()`: base **137**, HEAD **145** = **136 ca cũ NGUYÊN VẸN** + **1 ca cũ bị THAY** (chính đáng, khai ở §11.3 — vai trò của nó do 4 ca mới đảm nhiệm) + **9 ca MỚI** (5 ở `vramReconciler.test.ts`, 4 ở `wiring.rerankerBackend.test.ts`). Không test nào bị làm yếu để lấy màu xanh. |
+| Cùng lệnh với `--sequence.shuffle.tests` | **145/145 XANH** |
 | `tsc` | không lỗi mới (lỗi tiền tồn tại `client/src/pages/SessionManagement.tsx:195`) |
 | `npm run kb:eval` | **151/151** |
 

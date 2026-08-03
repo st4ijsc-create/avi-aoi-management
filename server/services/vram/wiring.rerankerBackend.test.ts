@@ -2,10 +2,12 @@
  * ★ I-1 (vá sau review TOÀN NHÁNH) — `getLlama()` THỨ HAI của tiến trình, NGOÀI SỔ.
  *
  * Task 2 đưa backend CUDA (~430 MiB — khoản LỚN NHẤT của "sàn cấu trúc" Pha 1) vào sổ, nhưng chỉ
- * khép **MỘT** thể hiện: `aiGgufEngine.getLlama()`. `aiReranker.ts:362` gọi `getLlama({gpu:"auto"})`
- * của node-llama-cpp **THẲNG**, và `beginVramAllocation()` của nó mãi `:382` — tức backend nằm gọn
- * trong `beforeUsed` của giấy phép model và **KHÔNG BAO GIỜ vào sổ**. Chính comment `:366` tự khai:
- * *"Runs on the reranker's own backend instance"*.
+ * khép **MỘT** thể hiện: `aiGgufEngine.getLlama()`. `getRankingContext()` trong `aiReranker.ts` gọi
+ * `getLlama({gpu:"auto"})` của node-llama-cpp **THẲNG**, còn `beginVramAllocation()` của nó thì mãi
+ * ~20 dòng sau — tức backend nằm gọn trong `beforeUsed` của giấy phép model và **KHÔNG BAO GIỜ vào
+ * sổ**. Chính comment cạnh lượt gọi đó tự khai: *"Runs on the reranker's own backend instance"*.
+ * ⚠ N-6: **KHÔNG ghim số dòng** ở đây. Ba con trỏ dòng cứng của bản trước đã lệch ngay trong chính
+ * commit thêm chúng — mô tả tương đối (grep được) là thứ sống sót qua lần sửa kế tiếp.
  *
  * ⚠ VÌ SAO PHẢI VÁ DÙ HÔM NAY 0 MiB: `.env` đang `RAG_RERANKER_GPU=false` ⇒ `gpu:false` ⇒ backend
  * không chiếm VRAM. **Một lần lật cờ** là Pha 2 tính `headroom` thiếu ~430 MiB — đúng quy luật Ư0
@@ -35,12 +37,20 @@ const RERANKER_DELTA = 18 * MiB;
  */
 const gpu = vi.hoisted(() => ({ used: 2 * 1024 * 1024 * 1024 }));
 const initCalls = vi.hoisted(() => ({ count: 0 }));
+/**
+ * ★ N-1 — `getLlama()` của node-llama-cpp **CACHE THEO THAM SỐ**: lượt gọi thứ hai với cùng options
+ * trả về ĐÚNG thể hiện cũ và **KHÔNG cấp phát lại**. Bản giả phải mô phỏng đúng điều đó, nếu không
+ * ca "hai lượt song song" sẽ đo một thế giới không tồn tại (mỗi lượt +430 MiB thật) và **giấu mất**
+ * chính lỗi cần bắt: giấy phép thứ hai là một lease **MA 0 byte** cộng trùng vào sổ.
+ */
+const backendCache = vi.hoisted(() => ({ instance: null as unknown }));
 
 const nlcFactory = vi.hoisted(() => () => ({
   getLlama: async (_o: unknown) => {
     initCalls.count++;
+    if (backendCache.instance) return backendCache.instance;
     gpu.used += 430 * 1024 * 1024;
-    return {
+    backendCache.instance = {
       loadModel: async (_m: unknown) => {
         gpu.used += 18 * 1024 * 1024;
         return {
@@ -52,6 +62,7 @@ const nlcFactory = vi.hoisted(() => () => ({
       },
       getVramState: async () => ({ total: 32 * 1024 * 1024 * 1024, used: gpu.used, free: 0, unifiedSize: 0 }),
     };
+    return backendCache.instance;
   },
   LlamaLogLevel: { fatal: "fatal", error: "error", warn: "warn", info: "info" },
 }));
@@ -99,6 +110,7 @@ beforeEach(() => {
   process.env.GGUF_MODELS_DIR = "D:\\uploads\\gguf-models";
   gpu.used = 2 * GiB;
   initCalls.count = 0;
+  backendCache.instance = null;
 });
 
 describe("I-1 — backend CUDA của aiReranker (getLlama THỨ HAI) phải vào sổ", () => {
@@ -137,6 +149,45 @@ describe("I-1 — backend CUDA của aiReranker (getLlama THỨ HAI) phải vào
     // `measureFailed` cho CẢ HAI và bản vá này tự tay làm mù đúng phép đo nó vừa thêm.
     expect(backend!.measureFailed).toBeFalsy();
     expect(model!.measureFailed).toBeFalsy();
+  });
+
+  /**
+   * ★★ N-1 (review cổng cuối) — BẢN VÁ I-1 TỰ ĐẺ LẠI ĐÚNG LỚP LỖI CỘNG-TRÙNG.
+   *
+   * `getRankingContext()` **KHÔNG có khoá in-flight** (chính mã tự khai ở hai chỗ: docstring
+   * `localTicket` và nhánh `catch` cuối hàm). Hai lượt `rerank()` song song vì thế **đều thấy**
+   * `_rankBackendTicket === null`, **đều mở** giấy phép, và lượt sau **đè con trỏ** ⇒ lượt đầu
+   * **treo VĨNH VIỄN** (`disposeReranker()` CỐ Ý không đụng tới giấy phép backend).
+   *
+   * ⚠ HAI HỆ QUẢ, và hệ quả thứ hai KHÔNG phụ thuộc cờ GPU:
+   *   1. `RAG_RERANKER_GPU=true` (đúng cấu hình I-1 sinh ra để phục vụ) ⇒ **+430 MiB cộng trùng
+   *      vĩnh viễn** = **84 %** ngân sách ngưỡng 512 MiB tiêu bằng một lease MA; Pha 2 tính
+   *      `headroom` **thiếu đúng khoản mà I-1 vừa đi tìm**.
+   *   2. Hai cửa sổ đo của hai lượt song song **CHỒNG nhau** ⇒ Task 8 gắn `measureFailed` cho CẢ
+   *      HAI ⇒ `actualBytes === null` **vĩnh viễn** trên một giấy phép **KHÔNG có đường release**
+   *      ⇒ lá chắn HOÃN (T5-1) chặn nền **VĨNH VIỄN, không tự lành kể cả sau unload/evict** —
+   *      **phủ định trực tiếp** lời hứa *"≤ 1 nhịp; xấu nhất restart"* ở báo cáo §11.4.
+   *
+   * ⇒ Bản vá: sao ĐÚNG khuôn mà đường model ngay dưới đã dùng từ trước — **trả giấy phép cũ TRƯỚC
+   * khi ghi đè con trỏ**.
+   */
+  it("★★ N-1: HAI rerank() SONG SONG ⇒ ĐÚNG MỘT giấy phép cuda-backend:reranker, không lease MA", async () => {
+    const { __resetBrokerForTests, snapshot } = await import("./vramBroker");
+    __resetBrokerForTests();
+    const { rerank, disposeReranker } = await import("../aiReranker");
+
+    await Promise.all([
+      rerank("câu hỏi A", [{ id: "a", text: "tài liệu A" }]),
+      rerank("câu hỏi B", [{ id: "b", text: "tài liệu B" }]),
+    ]);
+
+    const backends = snapshot().leases.filter((l) => l.request.owner === "cuda-backend:reranker");
+    expect(backends, "hai lượt song song KHÔNG được để lại hai giấy phép backend").toHaveLength(1);
+
+    // …và `disposeReranker()` CỐ Ý không trả giấy phép backend (thể hiện `Llama` vẫn sống), nên
+    // một lease thừa lọt qua đây là lease treo VĨNH VIỄN — kiểm luôn để nói rõ không có đường lùi.
+    await disposeReranker();
+    expect(snapshot().leases.filter((l) => l.request.owner === "cuda-backend:reranker")).toHaveLength(1);
   });
 
   it("ĐỘT BIẾN: lượt rerank THỨ HAI không đẻ thêm giấy phép backend (ngữ cảnh đã có, không cấp phát lại)", async () => {

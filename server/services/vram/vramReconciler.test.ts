@@ -417,7 +417,8 @@ describe("Pha 1.5 Task 1 review vòng 1 — EXP-2: sự kiện baseline phải g
     // và đó là HỆ QUẢ CẤU TRÚC chứ không phải một lỗ hổng bỏ ngỏ. Bản trước lách lá chắn HOÃN của
     // Task 7 bằng `measureFailed: true` để giữ `ledgerTotal ≠ committedBytes`; lối lách đó nay
     // ĐÓNG (lá chắn dùng `actualBytes === null`, BẤT KỂ `measureFailed`). Mà `totalReservedBytes`
-    // của broker = `Σ (actualBytes ?? estimatedBytes)` (vramBroker.ts:75-83), nên **hễ lượt chụp
+    // của broker = `Σ (actualBytes ?? estimatedBytes)` (`totalReserved()` + `leaseBytes()` trong
+    // `vramBroker.ts` — ⚠ N-6: mô tả tương đối, KHÔNG ghim số dòng), nên **hễ lượt chụp
     // THÀNH CÔNG thì MỌI lease đã có `actualBytes` ⇒ `ledgerTotal ≡ committedBytes`**: hoán hai
     // biến cho nhau ở sự kiện `baseline` là một ĐỘT BIẾN VÔ NGHĨA, không test nào bắt được vì
     // không có gì để bắt.

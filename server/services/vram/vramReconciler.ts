@@ -189,9 +189,15 @@ let timer: NodeJS.Timeout | null = null;
  * (đường b). Vá riêng một đường là để nguyên đường kia với **cùng hậu quả, cùng độ lớn**.
  *
  * ⚠⚠ "NẾU LUÔN CÓ LEASE PENDING THÌ NỀN KHÔNG BAO GIỜ CHỤP ĐƯỢC?" — câu hỏi đúng, và câu trả
- * lời phải ĐO, không suy đoán. Đọc toàn bộ **13** điểm `beginVramAllocation()` trong repo
- * (review TOÀN NHÁNH: bản trước ghi "12", đếm THIẾU `aiLlmFinetuneSidecar.ts:466` — và đó đúng
- * là hộ có TRẦN LỚN NHẤT, tức bảng này sai ngay ở chỗ nó chịu lực cho ngưỡng 5 phút của Task 7):
+ * lời phải ĐO, không suy đoán. Đọc toàn bộ **14** điểm `beginVramAllocation()` trong repo.
+ *
+ * ⚠ CON SỐ NÀY ĐÃ SAI HAI LẦN LIÊN TIẾP, và bảng này **chống lưng cho ngưỡng 5 phút của Task 7**
+ * nên nó sai ngay ở chỗ chịu lực. Lần một: ghi "12", thiếu `aiLlmFinetuneSidecar` — đúng hộ có
+ * TRẦN LỚN NHẤT (4 giờ). Lần hai: sửa thành "13" nhưng **quên đếm điểm mà CHÍNH lượt vá đó thêm**
+ * (`cuda-backend:reranker`, I-1) — trong khi các dòng bảng bên dưới đã cộng ra 14.
+ * ⇒ **Người sau sửa bảng: ĐẾM LẠI BẰNG `git grep beginVramAllocation`, đừng cộng dồn con số cũ.**
+ * `aiGgufEngine` ×4 · `aiReranker` ×2 · `kbSyncScheduler` ×2 · `ocrService`/`aiImageEmbedding`/
+ * `aiInferenceEngine`/`llamaVisionSidecar`/`localSidecarTrainer`/`aiLlmFinetuneSidecar` ×1 = **14**.
  *
  * | Lớp giấy phép | `commitMeasured()`? | Trần cửa sổ pending |
  * |---|---|---|
@@ -446,8 +452,17 @@ export async function captureVramBaseline(
     ledgerTotalBytes: ledgerTotal,
     detail: {
       deviceUsedRawBytes: raw,
-      // Phần THỰC SỰ bị trừ. Khác `ledgerTotalBytes` đúng bằng phần giấy phép chưa commit —
-      // chênh lệch giữa hai số này cho biết lúc chụp có bao nhiêu lượt cấp phát đang dở dang.
+      // Phần THỰC SỰ bị trừ.
+      // ⚠ N-3 (review cổng cuối) — bản trước viết tiếp: *"chênh lệch giữa hai số này cho biết lúc
+      // chụp có bao nhiêu lượt cấp phát đang dở dang"*. Câu đó **nay LUÔN SAI**: sau lá chắn HOÃN
+      // (C-1 × T5-1), lượt chụp chỉ THÀNH CÔNG khi mọi lease đã có `actualBytes`, mà
+      // `totalReservedBytes = Σ (actualBytes ?? estimatedBytes)` (vramBroker) ⇒ tại sự kiện
+      // `baseline` hai số này **ĐỒNG NHẤT theo cấu trúc, chênh lệch luôn 0**. Đã chứng minh bằng
+      // đột biến: hoán hai biến ở ĐÂY cho **0 test đỏ** (đột biến vô nghĩa), hoán ở
+      // `baseline_deferred` cho **1 đỏ**. ⇒ Muốn biết "bao nhiêu lượt cấp phát đang dở dang" thì
+      // đọc sự kiện **`baseline_deferred`** (`blockingOwners`), KHÔNG phải sự kiện này.
+      // Giữ cả hai trường vì chúng vẫn là bằng chứng dựng lại được phép tính — chỉ bỏ câu diễn
+      // giải đã hết đúng, đúng khuôn M-2 vừa gỡ cách đây vài dòng.
       committedBytes,
       ledgerTotalBytes: ledgerTotal,
       baselineUsedBytes,

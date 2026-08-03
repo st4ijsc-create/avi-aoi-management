@@ -421,6 +421,25 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     // HAI — bản vá này tự tay làm mù đúng phép đo nó vừa thêm. `wiring.rerankerBackend.test.ts`
     // ca 2 canh chính xác điều đó.
     if (backendTicket) {
+      // ★★ N-1 (review cổng cuối) — TRẢ GIẤY PHÉP CŨ TRƯỚC KHI GHI ĐÈ CON TRỎ. Đúng khuôn mà
+      // đường model ngay dưới đã dùng từ M-2 vòng 1 (`_rankVramTicket?.release()`).
+      // ⚠ BẮT BUỘC vì `getRankingContext()` KHÔNG có khoá in-flight: hai lượt `rerank()` song song
+      // đều thấy `_rankBackendTicket === null` ở lượt kiểm phía trên, ĐỀU mở giấy phép, và lượt sau
+      // đè con trỏ ⇒ lượt đầu treo VĨNH VIỄN (`disposeReranker()` CỐ Ý không đụng giấy phép này).
+      // Hậu quả 1: `getLlama()` cache theo tham số nên lượt hai KHÔNG cấp phát lại ⇒ lease thừa là
+      //   một lease MA, cộng trùng +430 MiB = 84 % ngân sách ngưỡng 512 MiB.
+      // Hậu quả 2 (KHÔNG phụ thuộc cờ GPU, nặng hơn): hai cửa sổ đo chồng nhau ⇒ Task 8 gắn
+      //   `measureFailed` cho CẢ HAI ⇒ `actualBytes === null` vĩnh viễn trên giấy phép KHÔNG có
+      //   đường release ⇒ lá chắn HOÃN (T5-1) chặn nền VĨNH VIỄN, không tự lành kể cả sau
+      //   unload/evict. Đó là ngoại lệ DUY NHẤT của lời hứa "≤ 1 nhịp" ở báo cáo §11.4 — và dòng
+      //   release dưới đây là thứ đóng nó lại.
+      if (_rankBackendTicket && _rankBackendTicket !== backendTicket) {
+        try {
+          _rankBackendTicket.release();
+        } catch {
+          /* telemetry KHÔNG được làm hỏng đường nạp reranker */
+        }
+      }
       _rankBackendTicket = backendTicket;
       try {
         await backendTicket.commitMeasured();
