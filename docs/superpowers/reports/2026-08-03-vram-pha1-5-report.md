@@ -886,7 +886,8 @@ Biến độc lập của Ư0 vì thế **không đổi** trên toàn thí nghi�
 phát THỨ HAI** (Pha 1 §7.6 mục 4 / I-1). Hai lý do, kiểm được bằng chính dữ liệu của task này:
 
 1. **Bằng chứng "+430 MiB đi trước khối lớn ở cả 12 lượt" đã có TRƯỚC Task 2**, đo bằng chính
-   `nvidia-smi` (Pha 1 §7.6 mục 3: đỉnh 1.438-1.443 MiB trên nền 998-1.012 MiB). Chỗ mù của Pha 1 là
+   `nvidia-smi` (**Pha 1 §7.1**: đỉnh 1.438-1.443 MiB trên nền 998-1.012 MiB — §7.6 mục 3 chỉ dẫn
+   lại chính phép đo đó). Chỗ mù của Pha 1 là
    **cách đọc dấu hiệu**, không phải thiếu thiết bị đo.
 2. **Thí nghiệm này KHÔNG dùng sổ để dựng biến độc lập.** Cấp phát 0,6B của nhánh B đi thẳng qua
    `llama.loadModel()`, **không** qua `beginVram()` ⇒ sổ ở hai nhánh **giống hệt nhau** (§10.3), và
@@ -1012,7 +1013,8 @@ Ba câu **khác nhau**, trả lời riêng từng câu:
 
 Đây là kết luận **suy diễn, không cần thống kê**: nhánh B có **9 phản ví dụ** (lượt 2, 6, 8, 10, 14,
 16, 18, 20, 24). Ở mỗi lượt đó, một model 0,6B **thật sự có trọng số** đã thường trú trên GPU
-(`nvidia-smi` xác nhận **+1.135 … +1.149 MiB**, không phải một lời gọi rỗng), đi trước khối lớn
+(`nvidia-smi` xác nhận **+1.135 … +1.141 MiB** trên đúng 9 lượt đó, không phải một lời gọi rỗng),
+đi trước khối lớn
 **1,63 – 2,27 s**, và khối `16.698,37 MiB` **vẫn hỏng**. Một điều kiện đủ không thể có phản ví dụ.
 
 **⇒ Phép đo "3/3 nhánh" ghi ở `aiGgufEngine.ts:1398-1400` (đánh số Pha 1; `:1471-1473` ở HEAD hiện tại) KHÔNG được đọc như "ratchet là điều kiện đủ".**
@@ -1046,9 +1048,14 @@ và **không thử được** ở khuôn này.
 ### 10.6 Bốn thứ phép thử này đo được thêm (đã đo, ghi để Pha 2 khỏi đo lại)
 
 1. **Trần KHÔNG tất định — tái lập lần thứ hai, độc lập.** 3/12 ở A, 3/12 ở B, khớp **đúng** 3/12
-   của Pha 1 (`p = 1,0000` cả hai phía). Gộp ba loạt: **9 OK / 36 lượt = 25 %** (KTC Wilson của
-   6/24 phiên này: 12,0 – 44,9 %). Ư7 (*"cùng một lượt thử thành công khoảng 1/4 số lần"*) nay có
-   **36 lượt** chống lưng thay vì 12.
+   của Pha 1 (`p = 1,0000` cả hai phía). Gộp ba loạt **thuần worker**: **9 OK / 35 lượt ≈ 25,7 %**
+   (KTC Wilson của 6/24 phiên này: 12,0 – 44,9 %). Ư7 (*"cùng một lượt thử thành công khoảng 1/4 số
+   lần"*) nay có **35 lượt** chống lưng thay vì 11.
+   ⚠ **35, không phải 36:** loạt Pha 1 §7.1 có 12 lượt nhưng **một lượt là `ROLE=api`** (lượt C,
+   FAIL). Pha 1 tự tính *"worker 3/11"* — tức **chủ động loại** lượt đó khỏi mọi tuyên bố về worker.
+   Giữ đúng tiền lệ ấy: pool thuần worker = 11 (Pha 1) + 12 (A) + 12 (B) = **35**; số OK **không
+   đổi** (9) vì lượt `ROLE=api` là FAIL. Lượt "dài, chạy trước loạt" của Pha 1 **vẫn ở trong pool**
+   — nó là worker.
 2. **Lỗi này KHÔNG phải lỗi thiếu VRAM.** Ngay tại thời điểm `cudaMalloc` hỏng, thiết bị còn trống
    **31.133 – 31.157 MiB** (nhánh A) và **29.995 – 30.028 MiB** (nhánh B) cho một yêu cầu
    **16.698,37 MiB** — tức **còn dư gần GẤP ĐÔI**. Xem §10.8 (1) để biết vì sao đây là hệ quả nặng
@@ -1121,13 +1128,14 @@ trên chính 24 lượt này (đó là dò dữ liệu).
 3. **Ư0 hạ hạng: ★★ → ★ và ĐỔI CÁCH PHÁT BIỂU.** Dạng "cấp phát nhỏ có trọng số đi ngay trước" đã
    **chết như điều kiện đủ** và **không đo được hiệu ứng** như biến dịch tỉ lệ. Ứng viên số một nay
    là **Ư7a (ngân sách VRAM của WDDM/driver — trạng thái NGOÀI tiến trình)**: nó là thứ duy nhất còn
-   giải thích được việc kết quả lật với đầu vào giống hệt, **36 lượt trên ba loạt độc lập, tỉ lệ ổn
-   định 25 %**, trong khi mọi biến trong-tiến-trình đã thử đều không dịch được nó.
+   giải thích được việc kết quả lật với đầu vào giống hệt, **35 lượt thuần worker trên ba loạt độc
+   lập, tỉ lệ ổn định ≈ 1/4** (§10.6-1), trong khi mọi biến trong-tiến-trình đã thử đều không dịch
+   được nó.
 4. **Phép thử tiếp theo phải đo lớp NGOÀI tiến trình.** Ngay trước lượt thử, ghi đồng thời
    `llama.getVramState().free` (native) · `nvidia-smi --query-gpu=memory.reserved,memory.used` · số
    tiến trình đồ hoạ đang giữ VRAM. **N ≥ 40 một nhánh** (không cần nhánh đối chứng: đây là phép so
    **trong** nhóm OK/FAIL, nên lực cao hơn hẳn thiết kế hai nhánh). Nếu ba cột đó tách được hai nhóm
-   ⇒ trúng; nếu chồng nhau hoàn toàn như `memory.used` đã chồng ở **36/36 lượt** ⇒ Ư7a cũng phải
+   ⇒ trúng; nếu chồng nhau hoàn toàn như `memory.used` đã chồng ở **35/35 lượt** ⇒ Ư7a cũng phải
    xuống hạng và bí ẩn chuyển sang lớp driver không quan sát được từ user-space.
 5. **Đừng chi thêm N cho Ư0.** Với hiệu ứng vừa (25 %→50 %) cần **~80 lượt/nhánh** để đạt công suất
    0,88 — khoảng 1 giờ máy — mà kết cục tốt nhất chỉ là "có dịch một ít". Số tiền đó nên tiêu cho
