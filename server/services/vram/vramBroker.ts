@@ -1,5 +1,5 @@
 import type {
-  VramLease, VramReserveRequest, VramReserveResult, VramSnapshot, VramPriority,
+  VramLease, VramMeasureSource, VramReserveRequest, VramReserveResult, VramSnapshot, VramPriority,
 } from "./types";
 
 /**
@@ -131,11 +131,20 @@ export function reserve(request: VramReserveRequest): VramReserveResult {
   return { lease, wouldRefuse, wouldPreempt };
 }
 
-/** Ghi số THẬT sau khi cấp phát xong. Đây là nguồn của "harness tự sinh" (spec §7). */
-export function commit(lease: VramLease, actualBytes: number): void {
+/**
+ * Ghi số THẬT sau khi cấp phát xong. Đây là nguồn của "harness tự sinh" (spec §7).
+ *
+ * Pha 2A Task 3 — `measureSource` khai THƯỚC nào đẻ ra con số này (types.ts `VramMeasureSource`).
+ * ⚠ MẶC ĐỊNH `"device-delta"` CÓ CHỦ Ý, không phải cho tiện: mọi lời gọi CŨ (và mọi lời gọi
+ * ngoài `vramWiring`) đo bằng `after − before` trên `used` TOÀN THIẾT BỊ. Mặc định `"unknown"`
+ * hay `undefined` sẽ làm một con số device-delta trông như "không rõ nguồn" và mở đường cho
+ * người sau đem nó so với một số của bộ đếm — đúng thứ Đ4 cấm. Ai đổi nguồn phải KHAI ra.
+ */
+export function commit(lease: VramLease, actualBytes: number, measureSource: VramMeasureSource = "device-delta"): void {
   const live = ledger.get(lease.id);
   if (!live || live.released) return;
   live.actualBytes = actualBytes;
+  live.measureSource = measureSource;
   // Đo lại được sau một lượt hỏng thì cờ phải TẮT — nếu không "đo hỏng" thành vĩnh viễn ngay
   // cả khi số thật đã về, và câu chẩn đoán của reconciler lại chỉ sai hướng, chỉ theo chiều kia.
   live.measureFailed = false;
@@ -151,6 +160,10 @@ export function markMeasureFailed(lease: VramLease): void {
   const live = ledger.get(lease.id);
   if (!live || live.released) return;
   live.measureFailed = true;
+  // Pha 2A Task 3 — đo hỏng thì THƯỚC cũng phải nói "không có": để `measureSource` giữ giá trị
+  // của một lượt commit trước sẽ khiến người đọc tưởng con số `null` này vừa được một thước nào
+  // đó xác nhận.
+  live.measureSource = "none";
   live.lastHeartbeatAt = new Date();
 }
 

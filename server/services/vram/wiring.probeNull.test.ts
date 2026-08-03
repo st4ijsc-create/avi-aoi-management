@@ -63,6 +63,26 @@ vi.mock("./vramProbe", () => ({
   __clearProbeCache: () => {},
 }));
 
+/**
+ * ⚠ Pha 2A Task 3 — HAI NHÁNH MÀ FILE NÀY CANH (`before-probe-null` / `after-probe-null`) NAY
+ * THUỘC VỀ ĐẦU DÒ THEO TIẾN TRÌNH: `commitMeasured()` không còn gọi `readDeviceVramUncached()`.
+ * Bản giả dưới đây tiêu thụ ĐÚNG hàng đợi `queue` cũ với ĐÚNG ngữ nghĩa cũ (hết phần tử ⇒ `null`),
+ * nên cả bốn ca giữ nguyên ý nghĩa — chỉ đổi cái thước. Không chuyển bản giả sang đây thì file này
+ * xanh RỖNG: `queue` không còn ai đọc, và `null` mà nó dựng ra không tới được nhánh cần kiểm.
+ */
+vi.mock("./vramProcessProbe", () => ({
+  readProcessVram: async () => {
+    const r = queue.length ? queue.shift()! : null;
+    if (!r) return null;
+    return {
+      totalBytes: r.usedBytes,
+      byPid: new Map<number, number>([[process.pid, r.usedBytes]]),
+      byLuid: new Map<string, number>(),
+      sampledAtMs: Date.now(),
+    };
+  },
+}));
+
 const events = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 vi.mock("./vramEventLog", () => ({
   logVramEvent: (e: Record<string, unknown>) => { events.push(e); },

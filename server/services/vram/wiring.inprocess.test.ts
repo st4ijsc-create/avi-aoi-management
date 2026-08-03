@@ -130,6 +130,23 @@ const fsApi = vi.hoisted(() => ({
 vi.mock("fs", () => ({ default: fsApi, ...fsApi }));
 vi.mock("node:fs", () => ({ default: fsApi, ...fsApi }));
 
+/**
+ * Pha 2A Task 3 — `actualBytes` nay đo bằng BỘ ĐẾM THEO TIẾN TRÌNH (`vramProcessProbe`), không
+ * còn bằng `used` toàn thiết bị. Bản giả phản chiếu ĐÚNG `gpu.used` mà node-llama-cpp/onnxruntime
+ * giả đang cộng vào, nên mọi con số ALLOC.* của file này giữ nguyên ý nghĩa: byte của CHÍNH tiến
+ * trình này. Không mock thì test gọi `powershell.exe` THẬT (~2-4 s/lượt, hai lượt mỗi cửa sổ) —
+ * hết giờ, và số đo là của máy chứ không phải của kịch bản.
+ */
+const processProbeFactory = vi.hoisted(() => () => ({
+  readProcessVram: async () => ({
+    totalBytes: gpu.used,
+    byPid: new Map<number, number>([[process.pid, gpu.used]]),
+    byLuid: new Map<string, number>(),
+    sampledAtMs: Date.now(),
+  }),
+}));
+vi.mock("./vramProcessProbe", processProbeFactory);
+
 vi.mock("sharp", () => {
   const pipeline: Record<string, unknown> = {};
   Object.assign(pipeline, {
@@ -231,6 +248,10 @@ beforeEach(() => {
   vi.doUnmock("./vramEventLog");
   vi.doUnmock("./vramEstimator");
   vi.doMock("node-llama-cpp", nlcFactory); // đặt lại bản giả MẶC ĐỊNH (A/B/C ghi đè riêng)
+  // ⚠ ĐẶT LẠI, KHÔNG `doUnmock`: gỡ bản giả đầu dò theo tiến trình sẽ cho test gọi
+  // `powershell.exe` THẬT (~3 s/lượt) và số đo thành của MÁY chứ không của kịch bản — hết giờ,
+  // và đỏ vì lý do sai. Ca E ghi đè riêng bằng `doMock`, dòng này trả lại bản mặc định.
+  vi.doMock("./vramProcessProbe", processProbeFactory);
   vi.resetModules();
   process.env = { ...ORIGINAL_ENV };
   process.env.GGUF_DEFAULT_MODEL = DEFAULT_FILE;
@@ -556,13 +577,12 @@ describe("I-4 — tám nhánh LỖI: trả chỗ đúng, và telemetry hỏng kh
     expect(onnxLeases).toHaveLength(2);
   });
 
-  it("E. readDeviceVram NÉM ⇒ lượt nạp VẪN xong (chỉ mất số đo)", async () => {
-    vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => {
-        throw new Error("đầu dò hỏng (ca thử nghiệm)");
-      },
-      __clearProbeCache: () => {},
-      readDeviceVramUncached: async () => {
+  // Pha 2A Task 3 — ĐẦU DÒ của đường đo nay là `vramProcessProbe` (bộ đếm theo tiến trình), nên
+  // ca "đầu dò ném" phải nhắm vào ĐÓ mới còn kiểm được thứ nó sinh ra để kiểm. Nhắm vào
+  // `./vramProbe` như bản cũ sẽ xanh RỖNG: đường đo không còn gọi module đó nữa.
+  it("E. đầu dò (theo tiến trình) NÉM ⇒ lượt nạp VẪN xong (chỉ mất số đo)", async () => {
+    vi.doMock("./vramProcessProbe", () => ({
+      readProcessVram: async () => {
         throw new Error("đầu dò hỏng (ca thử nghiệm)");
       },
     }));

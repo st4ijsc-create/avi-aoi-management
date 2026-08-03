@@ -60,3 +60,21 @@ if (devUrl) {
 // Minimal non-fatal defaults (only set when unset — never override a flag the test sets).
 process.env.EXTERNAL_MQTT_ENABLED ??= "false";
 process.env.NODE_ENV ??= "test";
+
+/**
+ * VRAM Pha 2A Task 3 — KHÔNG test đơn vị nào được sinh `powershell.exe`.
+ *
+ * `vramWiring.commitMeasured()` đo `actualBytes` bằng bộ đếm `\GPU Process Memory`, và mỗi đầu đo
+ * là một `powershell.exe` + `Get-CimInstance Win32_Process` — **~1,5 s/lượt, hai lượt mỗi cửa sổ**
+ * (đo được ở nghiệm thu sống). Nhiều test mock `node-llama-cpp` để "nạp" model tức thì rồi đi qua
+ * đúng đường đó: `aiGgufEngine.test.ts` mở tới ba cửa sổ trong một ca ⇒ **~9 s telemetry** trên
+ * một ca có trần 5 s. Trước dòng này, 12 ca ở đó đỏ vì HẾT GIỜ — không phải vì sai.
+ *
+ * `off` ⇒ đầu dò trả `null` ngay, lượt commit thành `measureFailed`, KHÔNG có tiến trình con nào.
+ * Test nào cần đường đo THẬT thì `vi.mock("./vramProcessProbe")` — bản giả thay CẢ module nên cờ
+ * này không đụng tới nó (xem `server/services/vram/wiring.*.test.ts`).
+ *
+ * ⚠ Ai muốn viết test khẳng định `actualBytes` có số: ĐỪNG gỡ dòng này (gỡ ra là cả bộ test chậm
+ * thêm hàng phút và bất định theo tải máy) — hãy mock `./vramProcessProbe` trong chính file đó.
+ */
+process.env.VRAM_PROCESS_PROBE ??= "off";

@@ -93,6 +93,20 @@ vi.mock("./vramProbe", () => ({
   __clearProbeCache: () => {},
 }));
 
+/**
+ * Pha 2A Task 3 — đường đo `actualBytes` nay đọc BỘ ĐẾM THEO TIẾN TRÌNH. Bản giả phản chiếu đúng
+ * `gpu.used` mà node-llama-cpp giả cộng vào, nên BACKEND_DELTA/RERANKER_DELTA giữ nguyên ý nghĩa.
+ */
+const processProbeFactory = vi.hoisted(() => () => ({
+  readProcessVram: async () => ({
+    totalBytes: gpu.used,
+    byPid: new Map<number, number>([[process.pid, gpu.used]]),
+    byLuid: new Map<string, number>(),
+    sampledAtMs: Date.now(),
+  }),
+}));
+vi.mock("./vramProcessProbe", processProbeFactory);
+
 const ORIGINAL_ENV = { ...process.env };
 
 beforeEach(() => {
@@ -101,6 +115,7 @@ beforeEach(() => {
   vi.doUnmock("./vramEventLog");
   vi.doUnmock("./vramEstimator");
   vi.doMock("node-llama-cpp", nlcFactory);
+  vi.doMock("./vramProcessProbe", processProbeFactory);
   vi.resetModules();
   process.env = { ...ORIGINAL_ENV };
   process.env.RAG_RERANKER_ENABLED = "true";

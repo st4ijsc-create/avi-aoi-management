@@ -103,14 +103,30 @@ vi.mock("node:fs", () => ({ default: fsApi, ...fsApi }));
  */
 const probeState = vi.hoisted(() => ({ used: 2 * 1024 * 1024 * 1024, calls: 0 }));
 vi.mock("./vramProbe", () => ({
-  readDeviceVramUncached: async () => {
-    probeState.calls++;
-    if (probeState.calls === 2) probeState.used += BACKEND_DELTA;
-    return { usedBytes: probeState.used, totalBytes: 32 * GiB, source: "native" as const };
-  },
+  readDeviceVramUncached: async () => ({ usedBytes: probeState.used, totalBytes: 32 * GiB, source: "native" as const }),
   readDeviceVram: async () => ({ usedBytes: probeState.used, totalBytes: 32 * GiB, source: "native" as const }),
   __clearProbeCache: () => {},
 }));
+
+/**
+ * ★ Pha 2A Task 3 — ĐẦU DÒ CỦA ĐƯỜNG ĐO NAY LÀ BỘ ĐẾM THEO TIẾN TRÌNH. Logic "lượt đọc thứ HAI
+ * cộng BACKEND_DELTA" chuyển nguyên vẹn sang đây: hai đầu đo của cửa sổ backend là lượt 1 và 2,
+ * nên delta đo được vẫn đúng bằng BACKEND_DELTA và chỉ MỘT delta khác 0 trong cả test.
+ * `./vramProbe` ở trên giữ lại cho reconciler/nền — Đ4: hai thước, không trộn.
+ */
+const processProbeFactory = vi.hoisted(() => () => ({
+  readProcessVram: async () => {
+    probeState.calls++;
+    if (probeState.calls === 2) probeState.used += BACKEND_DELTA;
+    return {
+      totalBytes: probeState.used,
+      byPid: new Map<number, number>([[process.pid, probeState.used]]),
+      byLuid: new Map<string, number>(),
+      sampledAtMs: Date.now(),
+    };
+  },
+}));
+vi.mock("./vramProcessProbe", processProbeFactory);
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -122,6 +138,7 @@ beforeEach(() => {
   vi.doUnmock("./vramEventLog");
   vi.doUnmock("./vramEstimator");
   vi.doMock("node-llama-cpp", nlcFactory); // đặt lại bản giả MẶC ĐỊNH (không test nào ở file này ghi đè riêng)
+  vi.doMock("./vramProcessProbe", processProbeFactory);
   vi.resetModules();
   process.env = { ...ORIGINAL_ENV };
   process.env.GGUF_DEFAULT_MODEL = "Qwen3-Test.gguf";

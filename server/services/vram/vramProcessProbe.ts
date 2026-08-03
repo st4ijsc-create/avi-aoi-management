@@ -74,8 +74,34 @@ const PS_SCRIPT = [
 const PROBE_TIMEOUT_MS = 10_000;
 let warnedUnavailable = false;
 
+/**
+ * Pha 2A Task 3 — CÔNG TẮC TẮT. `VRAM_PROCESS_PROBE=off|false|0` ⇒ đầu dò trả `null` NGAY, không
+ * sinh tiến trình con nào.
+ *
+ * VÌ SAO CẦN, và vì sao đây KHÔNG phải "mã biết mình đang bị test":
+ *   • Mỗi lượt đọc là một `powershell.exe` + `Get-CimInstance Win32_Process` — ĐO ĐƯỢC **~1,5 s**
+ *     trên máy này (nghiệm thu sống Task 3: cửa sổ mở sau 1.619 ms, đóng sau thêm 1.532 ms). Đó
+ *     là cái giá HỢP LÝ cho một lượt nạp model thật (10-60 s) và VÔ LÝ cho bất cứ thứ gì khác.
+ *   • Ràng buộc toàn cục 8 vốn đã đòi "máy không GPU / không PowerShell / bộ đếm vắng ⇒ trả null,
+ *     hệ vẫn chạy". Công tắc này là cùng một đường thoát, chỉ do người vận hành bật thay vì do
+ *     môi trường quyết định — dùng được khi bộ đếm PDH treo trên một máy cụ thể.
+ *   • `vitest.setup.ts` đặt mặc định `off` cho TOÀN BỘ bộ test: không test đơn vị nào được phép
+ *     sinh `powershell.exe`. Bộ test nào CẦN đường đo (`server/services/vram/wiring.*.test.ts`)
+ *     đều `vi.mock("./vramProcessProbe")` — bản giả THAY CẢ MODULE nên công tắc này không đụng
+ *     tới chúng. Nghĩa là: công tắc không hề biết gì về test; test chỉ dùng lại nó.
+ *
+ * ⚠ HỆ QUẢ khi tắt: `actualBytes` KHÔNG BAO GIỜ được ghi — mọi lượt commit thành `measureFailed`
+ * và sổ giữ ƯỚC LƯỢNG. Đó là mất phép đo, không phải mất an toàn (đúng khuôn "một ước lượng sai
+ * ĐƯỢC GẮN CỜ rẻ hơn một ước lượng sai ĐƯỢC TIN").
+ */
+function probeDisabled(): boolean {
+  const v = String(process.env.VRAM_PROCESS_PROBE ?? "").toLowerCase();
+  return v === "off" || v === "false" || v === "0";
+}
+
 export function readProcessVram(roots: readonly number[]): Promise<VramProcessSample | null> {
   if (roots.length === 0) return Promise.resolve(null);
+  if (probeDisabled()) return Promise.resolve(null);
   return new Promise((resolve) => {
     execFile(
       "powershell.exe",

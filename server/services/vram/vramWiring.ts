@@ -1,4 +1,4 @@
-import type { VramLease, VramLeaseKind, VramPriority } from "./types";
+import type { VramLease, VramLeaseKind, VramMeasureSource, VramPriority } from "./types";
 
 /**
  * Pha 1 Task 5 — DÂY NỐI dùng chung cho BẢY hộ tiêu thụ VRAM trong tiến trình.
@@ -143,8 +143,54 @@ const NOOP_TICKET: VramTicket = {
  * KHÔNG tự lành" (con thoát, thiết bị tụt, sổ không tụt). Giữa "gắn cờ thừa, hết job là hết" và
  * "tin một con số sai tới hết đời tiến trình", chọn vế đầu — nhất quán với tiền lệ I-2/Task 3.
  */
+/**
+ * ★★★ PHA 2A TASK 3 — HAI THAY ĐỔI ĐỐI VỚI KHỐI TRÊN. Đọc trước khi sửa bất cứ dòng nào dưới đây.
+ *
+ * ĐIỀU GÌ ĐÃ ĐỔI: `actualBytes` KHÔNG còn đo bằng `used` TOÀN THIẾT BỊ nữa. Hai đầu đo nay đọc bộ
+ * đếm `\GPU Process Memory` THEO TIẾN TRÌNH (`vramProcessProbe.readProcessVram`). Vì bộ đếm trả số
+ * RIÊNG cho từng PID, hai lượt cấp phát ở HAI TIẾN TRÌNH khác nhau KHÔNG còn làm bẩn phép đo của
+ * nhau — đó chính là cổng T5-11 mà Pha 1.5 không gỡ được. Lý do (c) ở khối docstring bên trên
+ * ("không tách được phần nào của ai") ĐÚNG với thước cũ và HẾT ĐÚNG với thước mới, nhưng CHỈ khi
+ * hai cửa sổ nằm ở hai PHẠM VI ĐO khác nhau.
+ *
+ * PHẠM VI ĐO (`VramMeasureScope`) — hai giá trị, KHÔNG phải ba, và ranh giới là ranh giới VẬT LÝ
+ * của bộ đếm:
+ *   • `"self"`        — `byPid[process.pid]`: byte của CHÍNH tiến trình này, KHÔNG gồm tiến trình
+ *                       con. Dùng cho mọi hộ TRONG tiến trình (gguf-*, onnx-session).
+ *   • `"descendants"` — `totalBytes − byPid[process.pid]` trên cây gốc `process.pid`: byte của
+ *                       TOÀN BỘ tiến trình con/cháu, KHÔNG gồm tiến trình này. Dùng cho hộ NGOÀI
+ *                       tiến trình (`external-process`). Cộng theo CÂY là bắt buộc (Đ2): với
+ *                       `spawn(..., { shell: true })` kẻ cấp phát thật là tiến trình CHÁU.
+ *
+ * Hai phạm vi này RỜI NHAU theo cấu trúc (một PID chỉ thuộc đúng một bên), nên:
+ *   1. một cửa sổ `self` và một cửa sổ `descendants` chồng nhau về THỜI GIAN vẫn cho HAI con số
+ *      đúng — vì thế `overlappedBy` chỉ ghi nhận các cửa sổ CÙNG PHẠM VI;
+ *   2. chỉ phạm vi `self` mới cần NỐI TIẾP HOÁ (`withMeasureWindow`, điều kiện Đ1): bộ đếm trả
+ *      MỘT số cho `process.pid` nên hai lượt nạp trong tiến trình này không tách được.
+ *
+ * ⚠⚠ VÌ SAO `descendants` **KHÔNG** LẤY KHOÁ NỐI TIẾP — lý do (2) của khối docstring bên trên vẫn
+ * còn nguyên giá trị và nay được TÔN TRỌNG thay vì bị bỏ qua: BA điểm gọi (`kbSyncScheduler` ×2,
+ * `localSidecarTrainer`, `aiLlmFinetuneSidecar`) CỐ Ý không bao giờ gọi `commitMeasured()`, nên
+ * cửa sổ của chúng mở tới tận `release()` — tức tới lúc JOB HUẤN LUYỆN kết thúc, hàng chục phút.
+ * Cho chúng giữ khoá nối tiếp là để MỌI lượt nạp model của cả tiến trình phải chờ hết ngân sách
+ * (180 s) rồi mới chạy, SUỐT cả job. Đó là đổi hành vi cấp phát — thứ Pha 2A tự cấm mình làm.
+ * Đổi lại, hai cửa sổ `descendants` chồng nhau (vd. sidecar thị giác spawn giữa lúc cron kb-sync
+ * đang chạy) vẫn bị BẮT bằng `overlappedBy` và khai `measureFailed` — tức phạm vi này có LƯỚI
+ * PHÁT HIỆN nhưng không có LƯỚI NỐI TIẾP. Nói đúng như vậy, đừng nói rộng hơn.
+ *
+ * ⚠ HỆ QUẢ CHO SỔ NÀY (câu hỏi mà Task 2 giao lại cho Task 3): với phạm vi `self`, nối tiếp hoá
+ * khiến hai cửa sổ KHÔNG BAO GIỜ chồng nhau ⇒ `overlappedBy` LUÔN RỖNG. Sổ này vì thế trở thành
+ * ĐỐI CHỨNG ĐỘC LẬP với khoá — nó nổ đúng khi nối tiếp hoá bị bỏ qua (hết ngân sách chờ ⇒
+ * `measurable === false`, hoặc ai đó gọi thẳng đường đo không qua khoá). **KHÔNG XOÁ nó**: một
+ * lưới không bao giờ nổ và một lưới đã hỏng trông giống hệt nhau, nên `wiring.processProbe.test.ts`
+ * có ca cố ý bỏ qua nối tiếp hoá và đòi sổ này VẪN NỔ.
+ */
+type VramMeasureScope = "self" | "descendants";
+
 interface OpenMeasureWindow {
   owner: string;
+  /** Phạm vi đo của cửa sổ — chỉ cửa sổ CÙNG phạm vi mới làm bẩn được nhau (xem khối trên). */
+  scope: VramMeasureScope;
   /** Owner của những cửa sổ đã CHỒNG lên cửa sổ này. Rỗng = phép đo cô lập được. */
   overlappedBy: string[];
 }
@@ -153,15 +199,22 @@ const openMeasureWindows = new Map<number, OpenMeasureWindow>();
 let measureWindowSeq = 0;
 
 /**
- * Mở một cửa sổ đo và ĐÁNH DẤU HAI CHIỀU với mọi cửa sổ đang mở: cửa sổ mới bị các cửa sổ cũ làm
- * bẩn (byte của chúng còn đang lên trong khoảng đo của nó), và các cửa sổ cũ cũng bị cửa sổ mới
- * làm bẩn (byte của nó sẽ lên trước khi chúng đọc đầu đo "sau"). Đánh dấu một chiều thôi là bỏ
- * sót đúng một nửa số ca. KHÔNG BAO GIỜ ném (chỉ thao tác Map trong bộ nhớ).
+ * Mở một cửa sổ đo và ĐÁNH DẤU HAI CHIỀU với mọi cửa sổ CÙNG PHẠM VI đang mở: cửa sổ mới bị các
+ * cửa sổ cũ làm bẩn (byte của chúng còn đang lên trong khoảng đo của nó), và các cửa sổ cũ cũng bị
+ * cửa sổ mới làm bẩn (byte của nó sẽ lên trước khi chúng đọc đầu đo "sau"). Đánh dấu một chiều
+ * thôi là bỏ sót đúng một nửa số ca. KHÔNG BAO GIỜ ném (chỉ thao tác Map trong bộ nhớ).
+ *
+ * ⚠ `other.scope !== scope ⇒ BỎ QUA` là thay đổi Pha 2A, không phải nới lỏng tuỳ tiện: hai phạm
+ * vi đọc hai tập PID RỜI NHAU trên cùng một bộ đếm, nên byte của bên này KHÔNG THỂ xuất hiện
+ * trong hiệu số của bên kia. Giữ đánh dấu chéo phạm vi là tự tay làm mù đúng phép đo mà Pha 2A
+ * vừa dựng ra (ca: sidecar thị giác 7,8 GB spawn giữa lúc nạp model 17 GB — trước Pha 2A cả hai
+ * mất số, sau Pha 2A cả hai có số riêng).
  */
-function openMeasureWindow(owner: string): number {
+function openMeasureWindow(owner: string, scope: VramMeasureScope): number {
   const id = ++measureWindowSeq;
-  const self: OpenMeasureWindow = { owner, overlappedBy: [] };
+  const self: OpenMeasureWindow = { owner, scope, overlappedBy: [] };
   for (const other of openMeasureWindows.values()) {
+    if (other.scope !== scope) continue;
     if (!other.overlappedBy.includes(owner)) other.overlappedBy.push(owner);
     if (!self.overlappedBy.includes(other.owner)) self.overlappedBy.push(other.owner);
   }
@@ -180,6 +233,55 @@ function closeMeasureWindow(id: number): OpenMeasureWindow | null {
 /** Chỉ dùng trong test/chẩn đoán — số cửa sổ đo đang mở của tiến trình này. */
 export function __openMeasureWindowCount(): number {
   return openMeasureWindows.size;
+}
+
+/**
+ * Pha 2A Task 3 — MỘT ĐẦU ĐO của phạm vi `scope`, tính bằng bộ đếm THEO TIẾN TRÌNH.
+ *
+ * ⚠⚠ Đ4 — ĐÂY LÀ TOÀN BỘ ĐƯỜNG SỐ CỦA `actualBytes`, VÀ NÓ KHÔNG CHẠM `vramProbe`. Không dòng
+ * nào trong hàm này (hay trong `commitMeasured()` bên dưới) so sánh/cộng/trừ số của bộ đếm với
+ * số của `nvidia-smi`/`getVramState`. Reconciler và nền (`captureVramBaseline`) vẫn dùng NGUYÊN
+ * đầu dò toàn thiết bị — hai thước chạy song song, không có điểm giao.
+ *
+ * ⚠ PID WINDOWS TÁI DỤNG (nợ Task 1 giao lại cho người gọi) — đã phân tích, KHÔNG cần cơ chế
+ * riêng, và đây là lý do:
+ *   • phạm vi `self`: gốc là `process.pid` — PID của CHÍNH tiến trình đang chạy. Hệ điều hành
+ *     không thể cấp lại PID đó cho ai khác khi tiến trình còn sống, mà nếu nó chết thì không còn
+ *     ai đọc phép đo này nữa. Bất khả đạt theo cấu trúc, không phải "xác suất thấp".
+ *   • phạm vi `descendants`: `readProcessVram()` đọc LẠI `Win32_Process` ở MỖI lượt gọi và dựng
+ *     lại cây từ đầu, nên một PID đã chết rơi ra khỏi tập ngay ở đầu đo kế tiếp; một PID được
+ *     cấp lại cho tiến trình LẠ nằm ngoài cây ⇒ bị loại. Ca duy nhất còn lại là PID được cấp lại
+ *     cho một tiến trình con KHÁC CỦA CHÍNH TA — và byte của nó vốn dĩ THUỘC phạm vi này, nên
+ *     hiệu số vẫn đúng nghĩa "cây con của ta phình thêm bao nhiêu". Việc quy sai cho giấy phép
+ *     NÀO trong cùng phạm vi lại đúng là ca chồng lấn, đã có `overlappedBy` bắt.
+ *
+ * ⚠ HÀM NÀY CÓ THỂ NÉM (đúng như `readDeviceVramUncached()` mà nó thay thế): `readProcessVram()`
+ * tự nuốt lỗi thành `null`, nhưng lời gọi `execFile` vẫn có thể ném đồng bộ. Hai điểm gọi xử lý
+ * khác nhau CÓ CHỦ Ý — `begin` bọc try/catch (ném ⇒ `beforeUsed = null` ⇒ nhánh
+ * `before-probe-null`), còn `commitMeasured()` để nó rơi vào `catch` ngoài cùng, nơi cửa sổ và
+ * khoá được đóng. Bọc thêm một `catch` ở ĐÂY sẽ làm nhánh "đầu dò SAU NÉM" (nhánh thoát thứ NĂM)
+ * trở thành mã chết mà không ai thấy.
+ */
+async function readScopeBytes(scope: VramMeasureScope): Promise<number | null> {
+  const { readProcessVram } = await import("./vramProcessProbe");
+  const sample = await readProcessVram([process.pid]);
+  if (!sample) return null;
+  const own = sample.byPid.get(process.pid) ?? 0;
+  if (scope === "self") return own;
+  // Cây trừ CHÍNH ta = tổng của con/cháu. `Math.max(0, …)` vì hai số này đến từ CÙNG một lượt
+  // đọc nên về lý thuyết không âm được; nếu âm thì đó là dữ liệu hỏng, không phải số đo.
+  return Math.max(0, sample.totalBytes - own);
+}
+
+/**
+ * Ngân sách chờ khoá nối tiếp. Mặc định = mặc định của `withMeasureWindow` (180 s = 1,5× lượt nạp
+ * dài nhất quan sát được). Cho phép ép bằng biến môi trường vì đây là số DUY NHẤT trong đường này
+ * quyết định "chờ bao lâu trước khi chạy tiếp mà mất phép đo" — người vận hành phải hạ được nó
+ * mà không cần build lại. `0` = không chờ (chạy ngay, mất phép đo nếu có người đang giữ).
+ */
+function measureWaitBudgetMs(): number | undefined {
+  const raw = Number(process.env.VRAM_MEASURE_WAIT_MS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : undefined;
 }
 
 export interface VramAllocationOptions {
@@ -212,11 +314,20 @@ export interface VramAllocationOptions {
 }
 
 export async function beginVramAllocation(opts: VramAllocationOptions): Promise<VramTicket> {
+  /**
+   * ★★ Pha 2A Task 3 — LỐI THOÁT KHẨN CỦA KHOÁ NỐI TIẾP. Khai NGOÀI `try` có chủ ý.
+   *
+   * Từ lúc khoá được giữ tới lúc `return { … }` bên dưới, BẤT KỲ ngoại lệ nào cũng rơi vào
+   * `catch` cuối hàm và trả `NOOP_TICKET` — người gọi khi đó KHÔNG BAO GIỜ gọi `commitMeasured()`
+   * hay `release()` của ticket này nữa, nên không còn ai nhả khoá. Một khoá nối tiếp rò là
+   * TOÀN BỘ tiến trình đứng chờ 180 s ở MỖI lượt nạp, tới khi khởi động lại. `catch` cuối hàm
+   * gọi biến này.
+   */
+  let nhaKhoaKhanCap: (() => void) | null = null;
   try {
     const broker = await import("./vramBroker");
     const estimator = await import("./vramEstimator");
     const { logVramEvent } = await import("./vramEventLog");
-    const probe = await import("./vramProbe");
 
     let fileBytes = opts.fileBytes;
     if (fileBytes === undefined && opts.filePath) {
@@ -260,22 +371,54 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
     // Pha 1 KHÔNG BAO GIỜ từ chối (vramBroker.ts:32) — nhánh này dành cho Pha 2.
     if (!lease) return NOOP_TICKET;
 
-    // Đo NGAY TRƯỚC lượt cấp phát. Đặt sau `reserve()` để phép đo sát lượt cấp phát nhất.
+    /**
+     * ★★★ Pha 2A Task 3 — PHẠM VI ĐO + KHOÁ NỐI TIẾP (điều kiện Đ1). Xem khối `VramMeasureScope`
+     * ở đầu file để biết vì sao chỉ phạm vi `self` lấy khoá.
+     *
+     * ⚠ THỨ TỰ BẮT BUỘC: lấy khoá TRƯỚC, đọc đầu đo "trước" SAU. Đảo lại là đọc `before` trong
+     * lúc người khác còn đang cấp phát ⇒ hiệu số nuốt phần đuôi của họ, đúng lớp lỗi cộng-trùng
+     * mà khoá sinh ra để diệt.
+     *
+     * ⚠ HÌNH DẠNG "MỞ/ĐÓNG" TRÊN MỘT API "BỌC HÀM": `withMeasureWindow(fn)` giữ khoá trong SUỐT
+     * `fn()`. Cửa sổ đo ở đây trải từ `beginVramAllocation()` tới `commitMeasured()`/`release()` —
+     * hai lời gọi RIÊNG của người dùng — nên `fn` chỉ làm một việc: chờ một lời hứa mà
+     * `commitMeasured()`/`release()` sẽ giải. `moCua` báo cho `begin` biết đã vào được bên trong
+     * (hoặc đã bỏ cuộc vì hết ngân sách — `withMeasureWindow` vẫn CHẠY `fn` ở nhánh đó, nên
+     * `begin` KHÔNG BAO GIỜ treo quá `waitBudgetMs`).
+     */
+    const scope: VramMeasureScope = opts.kind === "external-process" ? "descendants" : "self";
+    let nhaCua: (() => void) | null = null;
+    let ketQuaCuaSo: Promise<{ measurable: boolean }> | null = null;
+    if (scope === "self") {
+      const { withMeasureWindow } = await import("./vramMeasureLock");
+      let baoDaVao!: () => void;
+      const daVao = new Promise<void>((r) => { baoDaVao = r; });
+      const giuToiKhiDong = new Promise<void>((r) => { nhaCua = r; });
+      nhaKhoaKhanCap = () => nhaCua?.();
+      ketQuaCuaSo = withMeasureWindow(
+        async () => { baoDaVao(); await giuToiKhiDong; },
+        measureWaitBudgetMs(),
+        opts.owner,
+      ).catch(() => ({ measurable: false }));
+      await daVao;
+    }
+
+    // Đo NGAY TRƯỚC lượt cấp phát, BÊN TRONG cửa sổ nối tiếp. Đặt sau `reserve()` để phép đo sát
+    // lượt cấp phát nhất.
     //
-    // ⚠ `readDeviceVramUncached()` chứ KHÔNG phải `__clearProbeCache()` + `readDeviceVram()`
-    // (I-3, review vòng 1): bản trước xoá đệm DÙNG CHUNG với reconciler nền — đường cấp phát
-    // tự tiện vô hiệu hoá lớp bảo vệ của người dùng khác. Bản uncached cho số tươi mà không
-    // đụng vào trạng thái dùng chung.
+    // ⚠ Pha 2A: `readScopeBytes()` (bộ đếm THEO TIẾN TRÌNH) chứ KHÔNG còn `readDeviceVramUncached()`.
+    // Đây là toàn bộ nội dung của "chỉ `actualBytes` đổi nguồn": `vramReconciler`/`captureVramBaseline`
+    // vẫn đọc `vramProbe` y nguyên, và KHÔNG có điểm nào hai số gặp nhau (Đ4).
     //
-    // Chi phí: `llamaInstance.getVramState()` (native, ~0 ms) khi đã nối `setLlamaInstanceHandle()`;
-    // chỉ khi CHƯA nối mới lùi về `nvidia-smi` — đo 5 lượt trên máy này: 72/80/74/75/78 ms.
-    // Mỗi hộ tiêu thụ chỉ trả chi phí này ở lượt cấp phát THẬT (session/model đều được cache),
-    // không phải mỗi request.
+    // Chi phí: một lượt `powershell.exe` (~760 ms trên máy này) cho MỖI đầu đo — đắt hơn hẳn
+    // `getVramState()` native (~0 ms) mà nó thay thế. Chấp nhận được vì mỗi hộ tiêu thụ chỉ trả
+    // chi phí này ở lượt cấp phát THẬT (model/session đều được cache), không phải mỗi request, và
+    // lượt cấp phát thật tính bằng giây tới phút.
     let beforeUsed: number | null = null;
     try {
-      beforeUsed = (await probe.readDeviceVramUncached())?.usedBytes ?? null;
+      beforeUsed = await readScopeBytes(scope);
     } catch {
-      /* không đo được thiết bị ⇒ bỏ qua phần commit, giấy phép vẫn giữ ước lượng */
+      /* không đo được ⇒ bỏ qua phần commit, giấy phép vẫn giữ ước lượng */
     }
 
     /**
@@ -291,15 +434,37 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
      * ⚠ Giữa dòng này và `return { … }` bên dưới KHÔNG ĐƯỢC có mã nào ném được (hiện chỉ còn một
      * khai báo hàm). `catch` ngoài cùng của `beginVramAllocation()` trả `NOOP_TICKET` — nếu có gì
      * ném ở giữa, cửa sổ này sẽ KHÔNG BAO GIỜ được đóng và mọi phép đo sau đó của tiến trình đều
-     * bị gắn cờ sai, vĩnh viễn. Người sau thêm mã vào đoạn này: đóng cửa sổ trong `catch` đó.
+     * bị gắn cờ sai, vĩnh viễn. Người sau thêm mã vào đoạn này: đóng cửa sổ trong `catch` đó
+     * (Pha 2A: `catch` đó nay còn phải nhả CẢ khoá nối tiếp — `nhaKhoaKhanCap`).
      */
-    const windowId = openMeasureWindow(opts.owner);
+    const windowId = openMeasureWindow(opts.owner, scope);
     let windowOpen = true;
-    /** Đóng cửa sổ đúng MỘT lần, ở BẤT KỲ nhánh thoát nào. KHÔNG BAO GIỜ ném. */
+    /**
+     * Đóng cửa sổ đúng MỘT lần, ở BẤT KỲ nhánh thoát nào, và NHẢ KHOÁ nối tiếp ngay trong cùng
+     * lời gọi ĐỒNG BỘ. KHÔNG BAO GIỜ ném.
+     *
+     * ⚠ Nhả khoá phải nằm ở ĐÂY chứ không phải ở từng nhánh: SÁU nhánh thoát (commit thành công ·
+     * `release()` · đầu dò trước null · đầu dò sau null · đầu dò NÉM · và mọi nhánh
+     * `measure_failed`) đều đi qua hàm này. Bỏ sót một nhánh = khoá rò = cả tiến trình chờ 180 s
+     * mỗi lượt nạp cho tới lúc khởi động lại.
+     */
     const closeWindow = (): OpenMeasureWindow | null => {
       if (!windowOpen) return null;
       windowOpen = false;
-      return closeMeasureWindow(windowId);
+      const w = closeMeasureWindow(windowId);
+      try { nhaCua?.(); } catch { /* nhả khoá KHÔNG được làm hỏng đường thoát */ }
+      return w;
+    };
+
+    /**
+     * Phép đo này có CÔ LẬP được không (Task 2). `true` khi không có lượt "chạy-không-đo" nào
+     * chồng lên cửa sổ; `false` khi hết ngân sách chờ hoặc có kẻ bỏ cuộc chạy xen.
+     * ⚠ Phạm vi `descendants` KHÔNG lấy khoá ⇒ không có phán quyết nào để đọc; ở đó việc phát
+     * hiện chồng lấn do `overlappedBy` đảm nhiệm (xem khối `VramMeasureScope`).
+     */
+    const doDuocKhong = async (): Promise<boolean> => {
+      if (!ketQuaCuaSo) return true;
+      try { return (await ketQuaCuaSo).measurable; } catch { return false; }
     };
 
     /**
@@ -346,6 +511,8 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
         estimateSource: est.source,
         detail: {
           reason,
+          measureSource: "none" satisfies VramMeasureSource,
+          measureScope: scope,
           ...extraDetail,
           note:
             "đầu dò trả null/lỗi ⇒ không đủ hai đầu đo để tính delta. Giấy phép GIỮ NGUYÊN " +
@@ -365,8 +532,8 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
             markProbeFailed("before-probe-null", {});
             return;
           }
-          const after = await probe.readDeviceVramUncached();
-          if (!after) {
+          const after = await readScopeBytes(scope);
+          if (after === null) {
             closeWindow();
             markProbeFailed("after-probe-null", { beforeUsedBytes: beforeUsed });
             return;
@@ -375,8 +542,11 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
           // ★★ Task 8 (C-1) — cửa sổ đo ĐÓNG NGAY SAU đầu đo "sau", không muộn hơn. Từ điểm này
           // giấy phép đã ổn định trên thiết bị: nó không còn làm bẩn phép đo của ai nữa, và giữ
           // cửa sổ mở thêm chỉ đẻ ra báo động giả cho lượt cấp phát kế tiếp.
+          // Pha 2A: lời gọi này cũng NHẢ KHOÁ nối tiếp (xem `closeWindow`), nên người đang xếp
+          // hàng vào được ngay — không phải đợi tới hết `commitMeasured()`.
           const win = closeWindow();
-          const actual = after.usedBytes - beforeUsed;
+          const measurable = await doDuocKhong();
+          const actual = after - beforeUsed;
 
           /**
            * ★★ Task 8 (C-1) — "CỬA THỨ SÁU": phép đo KHÔNG CÔ LẬP ĐƯỢC.
@@ -389,8 +559,12 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
            *
            * ⚠ KHÔNG CHIA TỈ LỆ, KHÔNG ƯỚC LƯỢNG BÙ. Ở đây ta biết ĐÚNG một điều: `actual` chứa
            * byte của ít nhất một giấy phép khác, và KHÔNG có thông tin nào trong tiến trình tách
-           * được phần nào của ai (hai đầu đo đều là `used` toàn thiết bị). Mọi phép chia đều là
-           * bịa. Giấy phép giữ nguyên ƯỚC LƯỢNG và nói ra rằng nó chưa được xác minh.
+           * được phần nào của ai (hai đầu đo cùng đọc MỘT tập PID). Mọi phép chia đều là bịa.
+           * Giấy phép giữ nguyên ƯỚC LƯỢNG và nói ra rằng nó chưa được xác minh.
+           *
+           * ⚠ Pha 2A — nhánh này nay CHỈ nổ khi hai cửa sổ CÙNG PHẠM VI chồng nhau
+           * (`openMeasureWindow`). Với phạm vi `self` điều đó đòi nối tiếp hoá phải bị bỏ qua
+           * (hết ngân sách chờ); với phạm vi `descendants` nó là lưới DUY NHẤT (không có khoá).
            */
           if (win && win.overlappedBy.length > 0) {
             broker.markMeasureFailed(lease);
@@ -401,19 +575,67 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
               priority: opts.priority,
               estimatedBytes: est.bytes,
               estimateSource: est.source,
-              deviceUsedBytes: after.usedBytes,
               detail: {
                 reason: "overlapping-measure-window",
+                measureSource: "none" satisfies VramMeasureSource,
+                measureScope: scope,
+                measurable,
                 overlappedBy: win.overlappedBy,
                 discardedDeltaBytes: actual,
                 beforeUsedBytes: beforeUsed,
-                afterUsedBytes: after.usedBytes,
+                afterUsedBytes: after,
                 note:
-                  "cửa sổ đo của giấy phép này CHỒNG với cửa sổ của giấy phép khác ⇒ delta " +
-                  "`after − before` (cả hai đầu đo là `used` TOÀN THIẾT BỊ) gồm cả byte của họ. " +
+                  "cửa sổ đo của giấy phép này CHỒNG với cửa sổ CÙNG PHẠM VI của giấy phép khác " +
+                  "⇒ delta `after − before` (hai đầu đo cùng đọc một tập PID) gồm cả byte của họ. " +
                   "Commit số này là ghi CÙNG MỘT KHỐI BYTE hai lần vào sổ, và Pha 2 sẽ từ chối " +
                   "nạp/đuổi model trên phần byte ma đó. KHÔNG chia tỉ lệ để bù: không có thông " +
                   "tin nào trong tiến trình tách được phần của ai. Giấy phép giữ ƯỚC LƯỢNG.",
+              },
+            });
+            return;
+          }
+
+          /**
+           * ★★★ Pha 2A Task 3 — "CỬA THỨ BẢY": KHOÁ NỐI TIẾP KHÔNG GIỮ ĐƯỢC CỬA SỔ NÀY.
+           *
+           * `measurable === false` nghĩa là một trong hai điều, và cả hai đều làm hiệu số vô
+           * nghĩa theo đúng một kiểu (Task 2, C-1): (a) chính cửa sổ này hết ngân sách chờ nên
+           * chạy NGOÀI khoá — nó cấp phát trong lúc người khác đang đo; (b) cửa sổ này giữ khoá
+           * thật, nhưng có một lượt BỎ CUỘC chạy xen vào giữa hai đầu đo của nó.
+           *
+           * ⚠ ĐẶT SAU nhánh `overlappedBy` CÓ CHỦ Ý: khi cả hai cùng nổ, `overlappedBy` nói được
+           * ĐÍCH DANH ai đã chồng lên, còn nhánh này chỉ nói "có ai đó" — câu chẩn đoán cụ thể
+           * hơn phải thắng, đúng tiền lệ I-2 (đừng chỉ người trực đi sai hướng).
+           *
+           * ⚠ ĐẶT TRƯỚC nhánh `actual < 0`: một cửa sổ không cô lập được cũng đẻ ra delta âm khi
+           * người kia nhả chỗ xen giữa, và khi cả hai cùng đúng thì mất-cô-lập mới là nguyên nhân
+           * GỐC — cùng lý do đã ghi cho nhánh `overlappedBy` ở trên.
+           *
+           * ⚠ KHÔNG commit, KHÔNG `recordActual()`. Đây là điểm dễ sai nhất: một con số nuốt
+           * thêm byte của người khác mà được `recordActual()` sẽ đóng đinh vào nấc "learned" và
+           * sống tới hết đời tiến trình — biến thể "tệ hơn và KHÔNG tự lành" (xem `OpenMeasureWindow`).
+           */
+          if (!measurable) {
+            broker.markMeasureFailed(lease);
+            logVramEvent({
+              event: "measure_failed",
+              owner: opts.owner,
+              leaseKind: opts.kind,
+              priority: opts.priority,
+              estimatedBytes: est.bytes,
+              estimateSource: est.source,
+              detail: {
+                reason: "measure-window-not-exclusive",
+                measureSource: "none" satisfies VramMeasureSource,
+                measureScope: scope,
+                discardedDeltaBytes: actual,
+                beforeUsedBytes: beforeUsed,
+                afterUsedBytes: after,
+                note:
+                  "khoá nối tiếp KHÔNG bảo đảm được tính độc chiếm cho cửa sổ này (hết ngân sách " +
+                  "chờ, hoặc có lượt chạy-không-đo xen vào giữa hai đầu đo). Bộ đếm trả MỘT số " +
+                  "cho mỗi PID nên hiệu số ở đây gồm cả byte của lượt kia. Giấy phép GIỮ ƯỚC " +
+                  "LƯỢNG; hạ VRAM_MEASURE_WAIT_MS hay nạp bớt song song sẽ làm nhánh này thưa đi.",
               },
             });
             return;
@@ -454,11 +676,12 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
               priority: opts.priority,
               estimatedBytes: est.bytes,
               estimateSource: est.source,
-              deviceUsedBytes: after.usedBytes,
               detail: {
                 measuredDeltaBytes: actual,
+                measureSource: "none" satisfies VramMeasureSource,
+                measureScope: scope,
                 beforeUsedBytes: beforeUsed,
-                afterUsedBytes: after.usedBytes,
+                afterUsedBytes: after,
                 note:
                   "delta ÂM ⇒ phép đo vô nghĩa (có lượt nhả/evict xen giữa hai đầu đo). Giấy phép " +
                   "GIỮ NGUYÊN ước lượng và sẽ KHÔNG BAO GIỜ được xác minh — đây là nguồn lệch ÂM " +
@@ -469,7 +692,10 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
             return;
           }
 
-          broker.commit(lease, actual);
+          // Pha 2A — SỐ NÀY ĐẾN TỪ BỘ ĐẾM THEO TIẾN TRÌNH. `measureSource` phải đi CÙNG con số,
+          // không phải suy ra theo ngày commit: đó là thứ duy nhất giữ cho Đ4 kiểm được bằng dữ
+          // liệu (types.ts `VramMeasureSource`).
+          broker.commit(lease, actual, "process-delta");
           estimator.recordActual(opts.owner, actual);
           logVramEvent({
             event: "commit",
@@ -479,13 +705,22 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
             estimatedBytes: est.bytes,
             actualBytes: actual,
             estimateSource: est.source,
-            deviceUsedBytes: after.usedBytes,
+            // ⚠ Đ4 — KHÔNG ghi `deviceUsedBytes` ở đây nữa. Trường đó mang số của thước KIA
+            // (`nvidia-smi`/`getVramState`); để nó nằm cạnh một `actualBytes` của bộ đếm là mời
+            // người đọc sau trừ hai số lệch nhau +505…+511 MiB. Ai cần số thiết bị đọc sự kiện
+            // `drift` của `vramReconciler` — nơi cả hai đầu đều là thước thiết bị.
+            detail: {
+              measureSource: "process-delta" satisfies VramMeasureSource,
+              measureScope: scope,
+              beforeUsedBytes: beforeUsed,
+              afterUsedBytes: after,
+            },
           });
         } catch {
           // ★★ Task 8 (C-1) — đầu dò "sau" NÉM ⇒ cửa sổ vẫn phải đóng. Bỏ sót nhánh này là rò
           // một cửa sổ mở vĩnh viễn: mọi phép đo sau đó của tiến trình bị gắn cờ sai và KHÔNG
           // tự lành cho tới khi khởi động lại. Idempotent — gọi lại sau closeWindow() ở trên là
-          // no-op.
+          // no-op. Pha 2A: nó cũng là nơi DUY NHẤT nhả khoá nối tiếp ở nhánh này.
           closeWindow();
           /* telemetry hỏng KHÔNG được làm hỏng lượt cấp phát */
         }
@@ -523,6 +758,8 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
     };
   } catch {
     // Sổ cái/nhật ký/đầu dò hỏng ở BẤT KỲ khâu nào ⇒ hệ chạy như chưa từng có module này.
+    // ⚠ Pha 2A — NHẢ KHOÁ trước khi bỏ đi: từ đây không còn ticket nào để gọi `closeWindow()`.
+    try { nhaKhoaKhanCap?.(); } catch { /* không có gì cứu được nữa, nhưng KHÔNG được ném */ }
     return NOOP_TICKET;
   }
 }

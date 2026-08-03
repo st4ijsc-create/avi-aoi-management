@@ -21,12 +21,33 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-/** Hàng đợi số đo thiết bị giả — mỗi phần tử là một lượt `readDeviceVramUncached()`. */
+/**
+ * Hàng đợi số đo giả. `readDeviceVram()` (ĐƯỜNG CÓ ĐỆM, của `vramReconciler`) đọc phần tử ĐẦU;
+ * đường đo của `vramWiring` SHIFT dần qua hàng đợi.
+ *
+ * ⚠ Pha 2A Task 3 — đường đo `actualBytes` đã chuyển sang BỘ ĐẾM THEO TIẾN TRÌNH, nên hàng đợi
+ * này nay nuôi `readProcessVram()` chứ không còn `readDeviceVramUncached()`. Ngữ nghĩa từng phần
+ * tử KHÔNG đổi (một lượt đọc = một đầu đo), nên mọi con số của file này giữ nguyên ý nghĩa: bản
+ * giả quy TOÀN BỘ `usedBytes` cho `process.pid`, tức "cả thiết bị là của tiến trình này" — đúng
+ * thế giới mà các ca ở đây mô tả (một tiến trình, không có con).
+ */
 const readings = vi.hoisted(() => [] as Array<{ usedBytes: number; totalBytes: number } | null>);
 vi.mock("./vramProbe", () => ({
   readDeviceVram: async () => readings[0] ?? null,
   readDeviceVramUncached: async () => (readings.length > 1 ? readings.shift()! : (readings[0] ?? null)),
   __clearProbeCache: () => {},
+}));
+vi.mock("./vramProcessProbe", () => ({
+  readProcessVram: async () => {
+    const r = readings.length > 1 ? readings.shift()! : (readings[0] ?? null);
+    if (!r) return null;
+    return {
+      totalBytes: r.usedBytes,
+      byPid: new Map<number, number>([[process.pid, r.usedBytes]]),
+      byLuid: new Map<string, number>(),
+      sampledAtMs: Date.now(),
+    };
+  },
 }));
 
 /** Nhật ký giả — I-2 đòi nhánh delta âm phải để lại DẤU VẾT, không được im lặng. */

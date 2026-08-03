@@ -85,10 +85,27 @@ describe("parseProcessCounters", () => {
 describe("readProcessVram", () => {
   beforeEach(() => {
     vi.resetModules();
+    // Pha 2A Task 3 — `vitest.setup.ts` đặt mặc định `VRAM_PROCESS_PROBE=off` cho CẢ bộ test (để
+    // không test nào sinh `powershell.exe`). Nhóm ca này kiểm ĐÚNG lớp I/O đó, nên phải BẬT lại
+    // tường minh — nếu không, cả bốn ca xanh RỖNG: đầu dò trả `null` trước khi chạm `execFile`.
+    process.env.VRAM_PROCESS_PROBE = "on";
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    process.env.VRAM_PROCESS_PROBE = "off";
+  });
+
+  it("cong tac VRAM_PROCESS_PROBE=off -> tra null NGAY, KHONG sinh tien trinh con", async () => {
+    let goi = 0;
+    vi.doMock("node:child_process", () => ({
+      execFile: () => { goi++; },
+    }));
+    process.env.VRAM_PROCESS_PROBE = "off";
+    const { readProcessVram } = await import("./vramProcessProbe");
+    await expect(readProcessVram([123])).resolves.toBeNull();
+    // ★ TRỌNG TÂM: KHÔNG được chạm `execFile` — mỗi lượt là ~1,5 s `powershell.exe`.
+    expect(goi).toBe(0);
   });
 
   it("execFile loi ENOENT (khong co powershell.exe) -> tra null, KHONG nem", async () => {

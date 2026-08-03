@@ -36,22 +36,50 @@
  * Thêm một nhánh vào `vramWiring` mà đổi dân số một cờ dùng chung: phải đi soi **MỌI** hộ tiêu thụ
  * của cờ đó, không phải chỉ hộ gần nhất.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 /**
- * Hàng đợi số đo thiết bị giả — mỗi phần tử là một lượt `readDeviceVramUncached()`.
- * Phần tử `"THROW"` làm đầu dò NÉM (ca 9 cần nhánh `catch` ngoài cùng của `commitMeasured()`).
+ * Hàng đợi số đo giả — mỗi phần tử là MỘT đầu đo. Phần tử `"THROW"` làm đầu dò NÉM (ca 9 cần
+ * nhánh `catch` ngoài cùng của `commitMeasured()`).
+ *
+ * ⚠⚠ Pha 2A Task 3 — HAI ĐIỀU ĐÃ ĐỔI Ở FILE NÀY, đọc trước khi sửa một dòng nào:
+ *
+ *   1. **Cái thước.** Đường đo `actualBytes` nay đọc BỘ ĐẾM THEO TIẾN TRÌNH
+ *      (`vramProcessProbe`), không còn `used` toàn thiết bị. Hàng đợi này vì thế nuôi
+ *      `readProcessVram()`; `usedBytes` được quy cho `process.pid` (và `childBytes` cho một tiến
+ *      trình CON, dùng ở ca 6). `readDeviceVram()` — đường CÓ ĐỆM của `vramReconciler` — giữ
+ *      nguyên thước cũ, vì Đ4 cấm trộn hai thước chứ không cấm dùng cả hai.
+ *   2. **`VRAM_MEASURE_WAIT_MS = 0` (xem `beforeEach`).** File này kiểm LƯỚI PHÁT HIỆN chồng lấn,
+ *      tức đúng thế giới khi NỐI TIẾP HOÁ BỊ BỎ QUA. Với ngân sách chờ mặc định (180 s) hai cửa
+ *      sổ CÙNG PHẠM VI không bao giờ chồng nhau được nữa — mọi ca ở đây sẽ hết giờ chứ không phải
+ *      xanh. Ngân sách 0 tái lập chính xác thế giới cũ (người thứ hai không chờ, chạy NGOÀI khoá),
+ *      và vì vậy file này chính là **ĐỐI CHỨNG chứng minh lưới cũ VẪN NỔ** — thứ mà "sổ cửa sổ
+ *      luôn rỗng" một mình không phân biệt được với "sổ cửa sổ đã hỏng". Nối tiếp hoá với ngân
+ *      sách mặc định được kiểm ở `wiring.processProbe.test.ts` ca 6.
  */
-type Reading = { usedBytes: number; totalBytes: number } | null | "THROW";
-const readings = vi.hoisted(() => [] as Array<{ usedBytes: number; totalBytes: number } | null | "THROW">);
+type Reading = { usedBytes: number; totalBytes: number; childBytes?: number } | null | "THROW";
+const readings = vi.hoisted(() => [] as Array<{ usedBytes: number; totalBytes: number; childBytes?: number } | null | "THROW">);
+/** PID giả của tiến trình CON — mọi thứ không phải `process.pid` (phạm vi `descendants`). */
+const CHILD_PID = 999_001;
 vi.mock("./vramProbe", () => ({
   readDeviceVram: async () => readings[0] ?? null,
-  readDeviceVramUncached: async () => {
+  readDeviceVramUncached: async () => readings[0] ?? null,
+  __clearProbeCache: () => {},
+}));
+vi.mock("./vramProcessProbe", () => ({
+  readProcessVram: async () => {
     const r: Reading = readings.length > 1 ? readings.shift()! : (readings[0] ?? null);
     if (r === "THROW") throw new Error("đầu dò NÉM");
-    return r;
+    if (!r) return null;
+    const byPid = new Map<number, number>([[process.pid, r.usedBytes]]);
+    if (r.childBytes !== undefined) byPid.set(CHILD_PID, r.childBytes);
+    return {
+      totalBytes: r.usedBytes + (r.childBytes ?? 0),
+      byPid,
+      byLuid: new Map<string, number>(),
+      sampledAtMs: Date.now(),
+    };
   },
-  __clearProbeCache: () => {},
 }));
 
 /** Nhật ký giả — một cửa sổ chồng lấn phải để lại DẤU VẾT, không được im lặng. */
@@ -67,10 +95,20 @@ const MiB = 1024 * 1024;
 const TOTAL = 32607 * MiB;
 const dev = (usedMiB: number) => ({ usedBytes: usedMiB * MiB, totalBytes: TOTAL });
 
+const ORIGINAL_ENV = { ...process.env };
+
 beforeEach(() => {
   vi.resetModules();
   readings.length = 0;
   events.length = 0;
+  process.env = { ...ORIGINAL_ENV };
+  // ⚠ Xem điểm 2 của khối chú thích đầu file: 0 = KHÔNG chờ khoá ⇒ tái lập đúng thế giới "nối
+  // tiếp hoá bị bỏ qua" mà chín ca dưới đây sinh ra để canh. Bỏ dòng này là mọi ca hết giờ.
+  process.env.VRAM_MEASURE_WAIT_MS = "0";
+});
+
+afterEach(() => {
+  process.env = { ...ORIGINAL_ENV };
 });
 
 describe("C-1 — hai cửa sổ đo CHỒNG NHAU: sổ thôi cộng trùng", () => {
@@ -183,10 +221,26 @@ describe("C-1 — hai cửa sổ đo CHỒNG NHAU: sổ thôi cộng trùng", ()
     expect(lease!.measureFailed).toBeFalsy();
   });
 
-  it("6. ĐƯỜNG KIA đi qua ĐÚNG cửa này: lease NGOÀI TIẾN TRÌNH chưa trả chỗ vẫn làm hỏng phép đo trong tiến trình", async () => {
-    readings.push(dev(1000)); // X.before  (sidecar vừa spawn, CHƯA commit, CHƯA release)
-    readings.push(dev(1000)); // A.before
-    readings.push(dev(9000)); // A.after   — 8.000 MiB này gồm cả trọng số của tiến trình CON
+  /**
+   * ★★★ CA NÀY ĐÃ ĐỔI CÂU TRẢ LỜI Ở PHA 2A — và đây chính là điều Pha 2A tồn tại để làm.
+   *
+   * BẢN CŨ khẳng định: "lease NGOÀI TIẾN TRÌNH chưa trả chỗ VẪN làm hỏng phép đo trong tiến
+   * trình" — đúng với thước cũ (`used` toàn thiết bị chỉ có MỘT tổng, không tách được 8.000 MiB
+   * của tiến trình con ra khỏi delta của mình), nên `vramWiring` phải khai `measureFailed`.
+   *
+   * BẢN NÀY khẳng định điều NGƯỢC LẠI, vì cái thước đã đổi: bộ đếm `\GPU Process Memory` trả số
+   * RIÊNG cho từng PID, và `vramWiring` đo hộ trong tiến trình bằng `byPid[process.pid]` (KHÔNG
+   * gồm con) còn hộ ngoài tiến trình bằng `tổng cây − byPid[process.pid]` (CHỈ con). Hai tập PID
+   * rời nhau ⇒ byte của sidecar KHÔNG THỂ xuất hiện trong hiệu số của model, nên gắn cờ cho nhau
+   * nay là tự tay làm mù đúng phép đo vừa dựng ra.
+   *
+   * ⚠ ĐIỀU **KHÔNG** ĐỔI, và ca 6b ngay dưới canh nó: hai hộ NGOÀI tiến trình chồng nhau thì VẪN
+   * hỏng cả hai — chúng dùng CHUNG một phạm vi và phạm vi đó KHÔNG có khoá nối tiếp.
+   */
+  it("6. ★ ĐỔI Ở PHA 2A: lease NGOÀI TIẾN TRÌNH chưa trả chỗ KHÔNG còn làm hỏng phép đo trong tiến trình", async () => {
+    readings.push({ ...dev(1000), childBytes: 0 });        // X.before (sidecar vừa spawn)
+    readings.push({ ...dev(1000), childBytes: 0 });        // A.before
+    readings.push({ ...dev(3000), childBytes: 8000 * MiB }); // A.after — con nạp 8.000, ta nạp 2.000
     const { beginVramAllocation } = await import("./vramWiring");
     const { snapshot } = await import("./vramBroker");
 
@@ -195,12 +249,34 @@ describe("C-1 — hai cửa sổ đo CHỒNG NHAU: sổ thôi cộng trùng", ()
     await tA.commitMeasured();
 
     const lease = snapshot().leases.find((l) => l.request.owner === "gguf:A");
-    // KHÔNG được nuốt 8.000 MiB của sidecar vào giấy phép của mình — đó là biến thể "tệ hơn"
-    // (con thoát, thiết bị tụt, sổ KHÔNG tụt) mà `recordActual()` còn đóng đinh vào nấc "learned".
-    expect(lease!.actualBytes).toBeNull();
-    expect(lease!.measureFailed).toBe(true);
-    const ev = events.find((e) => e.event === "measure_failed" && e.owner === "gguf:A");
-    expect((ev!.detail as Record<string, unknown>).overlappedBy).toEqual(["sidecar:vision"]);
+    // KHÔNG nuốt 8.000 MiB của sidecar (biến thể "tệ hơn": con thoát, thiết bị tụt, sổ KHÔNG tụt,
+    // và `recordActual()` đóng đinh con số đó vào nấc "learned")… nhưng nay cũng KHÔNG mất số:
+    // đúng 2.000 MiB của CHÍNH tiến trình này.
+    expect(lease!.actualBytes).toBe(2000 * MiB);
+    expect(lease!.measureFailed).toBeFalsy();
+    expect(events.some((e) => e.event === "measure_failed" && e.owner === "gguf:A")).toBe(false);
+  });
+
+  it("6b. …nhưng HAI hộ NGOÀI tiến trình chồng nhau thì VẪN hỏng cả hai (cùng phạm vi, không có khoá)", async () => {
+    readings.push({ ...dev(1000), childBytes: 0 });         // X.before
+    readings.push({ ...dev(1000), childBytes: 0 });         // Y.before
+    readings.push({ ...dev(1000), childBytes: 9000 * MiB }); // X.after
+    readings.push({ ...dev(1000), childBytes: 9000 * MiB }); // Y.after
+    const { beginVramAllocation } = await import("./vramWiring");
+    const { snapshot } = await import("./vramBroker");
+
+    const tX = await beginVramAllocation({ owner: "sidecar:vision", kind: "external-process", priority: "interactive", fileBytes: 7825 * MiB });
+    const tY = await beginVramAllocation({ owner: "cron:kb-sync", kind: "external-process", priority: "background", fileBytes: 1200 * MiB });
+    await tX.commitMeasured();
+    await tY.commitMeasured();
+
+    for (const owner of ["sidecar:vision", "cron:kb-sync"]) {
+      const l = snapshot().leases.find((x) => x.request.owner === owner);
+      expect(l!.actualBytes, owner).toBeNull();
+      expect(l!.measureFailed, owner).toBe(true);
+    }
+    const ev = events.find((e) => e.event === "measure_failed" && e.owner === "sidecar:vision");
+    expect((ev!.detail as Record<string, unknown>).overlappedBy).toEqual(["cron:kb-sync"]);
   });
 
   it("7. bộ ước lượng KHÔNG được học con số chồng lấn (nấc 'learned' đóng đinh vĩnh viễn)", async () => {

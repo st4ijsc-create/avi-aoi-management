@@ -27,6 +27,26 @@ export type VramLeaseKind =
  */
 export type VramEstimateSource = "learned" | "file-size" | "config-default" | "unknown";
 
+/**
+ * Pha 2A Task 3 — CÁI THƯỚC nào đã đẻ ra con số `actualBytes`. Ghi vào giấy phép VÀ vào sự kiện
+ * để về sau truy được "số này đến từ thước nào", chứ không phải đoán theo ngày commit.
+ *
+ * ⚠⚠ Đ4 (ràng buộc toàn cục 2) — HAI GIÁ TRỊ ĐẦU LÀ HAI THƯỚC KHÁC NHAU, TUYỆT ĐỐI KHÔNG TRỘN:
+ * số TUYỆT ĐỐI của bộ đếm `\GPU Process Memory` luôn cao hơn `nvidia-smi`/`getVramState`
+ * **+505…+511 MiB**. Bộ đếm chỉ dùng cho CHÊNH LỆCH trong một cửa sổ. Trường này tồn tại đúng để
+ * một phép so sánh trộn thước trở nên NHÌN THẤY ĐƯỢC trong dữ liệu (`measureSource` khác nhau ⇒
+ * hai số không so được với nhau), không phải để tiện gộp.
+ *
+ * - `"process-delta"` — `after − before` trên bộ đếm THEO TIẾN TRÌNH (`vramProcessProbe`). Đây là
+ *   nguồn DUY NHẤT của `actualBytes` do `vramWiring` sinh ra kể từ Pha 2A.
+ * - `"device-delta"` — `after − before` trên `used` TOÀN THIẾT BỊ (`vramProbe`). Nguồn của mọi
+ *   bản ghi TRƯỚC Pha 2A, và là mặc định của `commit()` khi người gọi không khai nguồn. Đường đo
+ *   của `vramWiring` KHÔNG còn sinh ra giá trị này nữa.
+ * - `"none"` — không có phép đo nào thành công (đầu dò null, cửa sổ không cô lập được, delta âm).
+ *   Đi kèm `measureFailed = true`; `actualBytes` đứng nguyên `null`.
+ */
+export type VramMeasureSource = "device-delta" | "process-delta" | "none";
+
 export interface VramReserveRequest {
   owner: string;
   kind: VramLeaseKind;
@@ -55,6 +75,11 @@ export interface VramLease {
    * "ứng viên số một (chưa commit)" và người trực ngồi đợi một thứ không bao giờ tới.
    */
   measureFailed?: boolean;
+  /**
+   * Pha 2A Task 3 — thước đã sinh ra `actualBytes` hiện tại. `undefined` = chưa commit lần nào.
+   * ⚠ Đ4: KHÔNG được so `actualBytes` của hai giấy phép có `measureSource` khác nhau.
+   */
+  measureSource?: VramMeasureSource;
   lastHeartbeatAt: Date;
   released: boolean;
 }
