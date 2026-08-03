@@ -62,6 +62,7 @@ import * as path from "node:path";
 
 import {
   KNOWN_ALLOCATION_SITES,
+  KNOWN_ALLOCATION_SITE_ROW_COUNT,
   WIRED_ALLOCATION_SITE_COUNT,
   PERMIT_SYMBOL_OCCURRENCES_THAT_ARE_NOT_CALL_SITES,
 } from "./vramAllocationSites";
@@ -150,9 +151,13 @@ const CALL_PATTERNS: Readonly<Record<string, RegExp>> = {
  *     khớp **0** lần trong file đó, `\bchild_process` khớp **8**.
  *   • Hai thư viện GPU dùng mẫu DẠNG-NHẬP (`from`/`import(`/`require(` + chuỗi specifier). Mẫu
  *     định danh trần cho chúng là KHÔNG DÙNG ĐƯỢC: `onnxruntime-node`/`node-llama-cpp` xuất hiện
- *     dày đặc trong câu lỗi, mảng `techStack`, đường dẫn đóng gói — đo được **212 lần** so với
- *     **23 lần** khi siết theo dạng nhập. Một bảng 212 dòng nhiễu sẽ bị người sau tắt đi, tức là
- *     lại rơi vào đúng lý do tôi đã từ chối mẫu `exec(` trần.
+ *     dày đặc trong câu lỗi, mảng `techStack`, đường dẫn đóng gói. Đo TRONG ĐÚNG PHẠM VI QUÉT
+ *     (đã loại file test và artifact — hai thứ máy quét loại theo cấu trúc): định danh trần
+ *     **61** lần, dạng nhập **23** lần ⇒ **38 dòng nhiễu thuần**. Nhiễu gấp 1,65 lần tín hiệu thì
+ *     bảng sẽ bị người sau tắt đi — đúng lý do tôi đã từ chối mẫu `exec(` trần.
+ *     ⚠ P-2 (re-review vòng 2): bản trước ghi "212 lần", đo trong phạm vi CÓ CẢ file test và
+ *     artifact. Quyết định không đổi, chỉ con số là sai phạm vi — và một con số sai phạm vi dùng
+ *     để biện minh cho một quyết định đúng vẫn là một lập luận hỏng.
  */
 const MODULE_PATTERNS: Readonly<Record<string, RegExp>> = {
   child_process: /\bchild_process/g,
@@ -330,6 +335,24 @@ describe("Pha 2A Task 5 — bản liệt kê đường cấp phát VRAM", () => 
     ).toEqual([]);
   });
 
+  it("★★ 3c. P-1 — ĐỘ DÀI bảng bị khoá, và khớp đúng tổng lần xuất hiện quét được", () => {
+    // Vì sao cần: docstring của artifact từng ghi "120 dòng" khi bảng đã lên 151, và KHÔNG ca nào
+    // ràng buộc độ dài nên không có gì đỏ. Một con số cũ sót lại trong chính file cảnh báo về
+    // việc cộng dồn số cũ — khoá nó lại bằng khẳng định thay vì bằng lời hứa.
+    expect(
+      KNOWN_ALLOCATION_SITES.length,
+      "Đổi bảng thì phải đổi KNOWN_ALLOCATION_SITE_ROW_COUNT (và mọi con số nhắc lại trong docstring).",
+    ).toBe(KNOWN_ALLOCATION_SITE_ROW_COUNT);
+
+    let scanned = 0;
+    for (const n of scanRepo().values()) scanned += n;
+    expect(
+      KNOWN_ALLOCATION_SITES.length,
+      "Độ dài bảng phải bằng TỔNG lần xuất hiện quét được — ca 1 và ca 2 đã canh từng khoá, " +
+        "ca này canh con số mà con người sẽ đi trích dẫn.",
+    ).toBe(scanned);
+  });
+
   it("4. mọi `symbol` khai báo đều là một khoá mà máy quét thật sự tìm", () => {
     const unknown = [...new Set(KNOWN_ALLOCATION_SITES.map((s) => s.symbol))].filter((s) => !ALL_SYMBOLS.has(s));
     expect(
@@ -427,6 +450,28 @@ describe("Pha 2A Task 5 — bản liệt kê đường cấp phát VRAM", () => 
       (stripComments('techStack: ["node-llama-cpp", "React 19"], msg = "node-llama-cpp not available"').match(lre) ?? []).length,
       "mảng techStack / câu lỗi KHÔNG được đếm là một lượt nạp thư viện",
     ).toBe(0);
+  });
+
+  it("★★ 7c. DÂY BẪY cho vùng mù Python — hai file trainer còn tồn tại và còn chạm CUDA", () => {
+    /**
+     * P-5: đã QUYẾT ĐỊNH **không** thêm một vòng quét `.py`. Sản lượng đo được là 0 — cả 13 file
+     * `scripts/*.py` đều có **0** điểm cấp phát GPU (1 solver CP-SAT đã phân loại là CPU, 1 mô
+     * phỏng MQTT, 1 migration, 1 test websocket, 9 codemod dùng một lần) — còn chi phí là một bộ
+     * mẫu Python phải nuôi mãi mãi. Đó đúng là lớp lỗi đã hai lần bị từ chối (`exec(` trần, định
+     * danh thư viện trần).
+     *
+     * TOÀN BỘ GPU-Python của repo = **2 file, cả hai NGOÀI `SCAN_ROOTS`**, và cả hai đã được gọi
+     * đích danh ở mục N-6b. Thay cho một vòng quét, đây là dây bẫy 3 dòng: nếu chúng biến mất,
+     * đổi tên, hay thôi chạm CUDA thì mục N-6b trong bản liệt kê đã cũ và phải được đọc lại.
+     */
+    for (const rel of ["tools/trainer/train.py", "tools/trainer/finetune_lora.py"]) {
+      const abs = path.join(REPO_ROOT, rel);
+      expect(fs.existsSync(abs), `${rel} biến mất ⇒ mục N-6b của bản liệt kê đã cũ`).toBe(true);
+      expect(
+        /cuda/i.test(fs.readFileSync(abs, "utf8")),
+        `${rel} thôi chạm CUDA ⇒ đọc lại mục N-6b (hộ external-process không có số)`,
+      ).toBe(true);
+    }
   });
 
   it("★★ 8. artifact vẫn là module CHỈ DỮ LIỆU — điều kiện làm cho việc tự loại trừ an toàn", () => {

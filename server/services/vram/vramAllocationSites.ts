@@ -37,6 +37,33 @@
  * ⚠ KHÔNG TUYÊN BỐ lưới này đóng được lớp lỗi sidecar 7,8 GB của Đợt 0. Bản trước có tuyên bố đó
  * và nó SAI. Xem `CONSUMERS_WITHOUT_A_CODE_SITE` và khối "không bắt được gì" ở đầu file test.
  * ═══════════════════════════════════════════════════════════════════════════════════════════
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★★ ĐỌC TRƯỚC KHI DÙNG BẢNG NÀY LÀM ĐẦU VÀO CHO PHA 2B — KẾT LUẬN CUỐI CỦA TASK 5:
+ *
+ *   > **151 là số dòng mà MẪU QUÉT NGÀY 2026-08-04 nhìn thấy. Nó là cận DƯỚI.
+ *   > KHÔNG phương pháp nào trong Pha 2A biến nó thành cận TRÊN.**
+ *
+ * Đây không phải sự khiêm tốn theo phép lịch sự; nó là một kết luận CẤU TRÚC. Tập hình dạng cấp
+ * phát **đóng dưới phép ghép**: alias khi nhập · destructure đổi tên · `await import()` ·
+ * `require()` ghép chuỗi · gọi hàm qua khoá tính toán · `Reflect.get` · `globalThis[name]` ·
+ * bảng tra cứu · proxy… Quyết định thành viên của một tập như thế bằng biểu thức chính quy là
+ * bài toán **KHÔNG QUYẾT ĐỊNH ĐƯỢC** — không phải một danh sách chưa liệt kê xong. "Vòng nào cũng
+ * có hình dạng mới đi lọt" vì thế là **hệ quả tất yếu**, không phải rủi ro thống kê.
+ *
+ * ★ VÀ ĐÓ LÀ SỐ ĐO, KHÔNG CÒN LÀ LẬP LUẬN — **N-2b**: reviewer lấy đúng hình dạng né tránh của
+ * `index.cjs` và **chỉ đổi tên một biến** (`child_process_1` → `_0xcp`) ⇒ **10/10 XANH, ĐI LỌT**,
+ * sau khi bản vá N-2 đã vào. Nghĩa là mẫu `\bchild_process` **không bắt hình dạng né tránh; nó
+ * bắt một QUY ƯỚC ĐẶT TÊN của bundler.** `index.cjs` bị bắt chỉ vì trình làm rối tình cờ giữ
+ * nguyên tên biến do TypeScript sinh — trong khi chính file đó đã đổi tên HÀM thành `_0x3a14ef`.
+ * ⚠ ĐỪNG VÁ N-2b BẰNG CÁCH THÊM MẪU. Mỗi mẫu mới chỉ đóng một thể hiện, và làm lưới trông mạnh
+ * hơn thực chất — đúng cơ chế đã khiến vòng 1 tuyên bố sai.
+ *
+ * ⇒ HỆ QUẢ CHO PHA 2B: bản liệt kê này **KHÔNG phải bảo đảm**. Nó là một **tiên nghiệm
+ * best-effort** — tốt cho việc biết PHẢI ĐI HỎI Ở ĐÂU, vô dụng nếu bị dùng như một bằng chứng đã
+ * đủ. Lớp an toàn thật phải là **đối chiếu với SỰ THẬT THIẾT BỊ lúc chạy**, không phải một danh
+ * sách tĩnh (dù dài bao nhiêu).
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
  */
 
 /**
@@ -46,6 +73,15 @@
  * Đếm lại ngày 2026-08-04 bằng HAI cách độc lập sau khi nới mẫu quét (I-7), cùng ra 14.
  */
 export const WIRED_ALLOCATION_SITE_COUNT = 14;
+
+/**
+ * Số DÒNG của `KNOWN_ALLOCATION_SITES` = số lần xuất hiện mà mẫu quét ngày 2026-08-04 nhìn thấy.
+ *
+ * ⚠⚠ **151 LÀ CẬN DƯỚI, KHÔNG PHẢI CẬN TRÊN.** Xem khối "ĐỌC TRƯỚC KHI DÙNG BẢNG NÀY" ở đầu file.
+ * Ba vòng review, ba lần nới mẫu: 65 → 120 → 151, trong khi số điểm gọi vẫn 14. Con số này nói về
+ * *mẫu quét*, không nói về *hệ thống*.
+ */
+export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 151;
 
 /**
  * ★★ HAI CÁI BẪY ĐẾM-HAI-LẦN, khai TƯỜNG MINH thay vì lọc ngầm bằng regex.
@@ -68,7 +104,12 @@ export const PERMIT_SYMBOL_OCCURRENCES_THAT_ARE_NOT_CALL_SITES: readonly {
 ];
 
 /**
- * MỘT DÒNG = MỘT LẦN XUẤT HIỆN của `symbol` trong `file` (120 dòng / 2026-08-04).
+ * MỘT DÒNG = MỘT LẦN XUẤT HIỆN của `symbol` trong `file` — **151 dòng / 2026-08-04**, khoá bằng
+ * `KNOWN_ALLOCATION_SITE_ROW_COUNT` và một ca test riêng.
+ *
+ * ⚠ P-1 (re-review vòng 2): dòng này từng ghi "120" **sau khi** bảng đã lên 151 — một con số cũ
+ * sót lại nằm ĐÚNG trong file có docstring cảnh báo về việc cộng dồn số cũ, và **không ca test
+ * nào ràng buộc độ dài bảng** nên không có gì đỏ. Nay độ dài bảng được khoá bằng khẳng định.
  *
  * `symbol` là ĐÚNG khoá mà máy quét dùng, không phải tên hàm bao quanh — có vậy bảng mới đối
  * chiếu được. Tên hàm / chủ sở hữu / số dòng nằm trong `note`.
@@ -384,14 +425,28 @@ export const KNOWN_ALLOCATION_SITES: readonly {
  * ★★★ (E) VÙNG MÙ — bốn thứ mà câu "client/** và tools/** nằm ngoài SCAN_ROOTS" NGỤ Ý SAI rằng
  * bên trong đã phủ. Chúng nằm ở đây vì không có chúng thì bảng tự nhận rộng hơn sự thật.
  *
- *   (E1) **`.py` HOÀN TOÀN VÔ HÌNH — ngay TRONG `SCAN_ROOTS`.** `scripts/` có **13 file Python**
- *        (`aps_solver.py`, `mqtt_simulator.py`, …) và `tools/trainer/` có `train.py` +
- *        `finetune_lora.py`. Máy quét mù **theo NGÔN NGỮ**, không chỉ theo thư mục: mọi mẫu đều
- *        là cú pháp JS/TS. Đúng những file có nhiều khả năng chạm CUDA nhất lại là những file
- *        không mẫu nào đọc được. (`.ps1` ×3 cùng lớp.)
- *   (E2) **`apps/` là GỐC THỨ BA, chưa từng được kể tên.** `apps/machine-shell` (vỏ desktop
- *        WebView2, `frontendDist` trỏ vào `client/dist`). Không nằm trong `SCAN_ROOTS`, và cũng
- *        không nằm trong câu tự khai "client/** và tools/**".
+ *   (E1) **`.py` vô hình với máy quét — nhưng ĐO RỒI, sản lượng bằng KHÔNG.** Máy quét mù **theo
+ *        NGÔN NGỮ** chứ không chỉ theo thư mục (mọi mẫu là cú pháp JS/TS), và `scripts/` có 13
+ *        file Python. **Nhưng: 0/13 file có điểm cấp phát GPU** — đo bằng `torch|cuda|onnxruntime|
+ *        ultralytics|tensorflow|cupy`, cả 13 đều trả **0**. Nội dung thật: 1 solver CP-SAT
+ *        (`aps_solver.py`, đã phân loại đúng là CPU trong bảng), 1 mô phỏng MQTT, 1 migration,
+ *        1 test websocket, **9 codemod dùng một lần**.
+ *        ⚠ Bản trước đặt "13 file Python" cạnh câu "đúng những file dễ chạm CUDA nhất" — câu đó
+ *        **phân bổ sai chú ý**: nó làm 13 file vô hại trông như 13 rủi ro.
+ *        **Toàn bộ GPU-Python của repo = ĐÚNG HAI file, cả hai NGOÀI `SCAN_ROOTS`**:
+ *        `tools/trainer/train.py` (5 lần chạm `cuda`; `:260`
+ *        `use_cuda = torch.cuda.is_available() and device_req != "cpu"` ⇒ **mặc định là CUDA**)
+ *        và `tools/trainer/finetune_lora.py` (3 lần). **Cả hai đã được gọi đích danh ở mục 6.**
+ *        ⇒ QUYẾT ĐỊNH: **KHÔNG thêm vòng quét `.py`** — sản lượng đo được 0 dòng, chi phí là một
+ *        bộ mẫu Python phải nuôi mãi mãi (đúng lớp lỗi đã hai lần bị từ chối). Thay bằng **dây
+ *        bẫy 3 dòng** trong `vramAllocationSites.test.ts` ca 7c: hai file đó phải còn tồn tại và
+ *        còn chứa `cuda`; mất một trong hai thì mục 6 đã cũ. (`.ps1` ×3 cùng lớp, cùng kết luận.)
+ *   (E2) **`apps/` KHÔNG phải "gốc thứ ba" đáng quét — nói đúng độ lớn.** `apps/` có **4 file và
+ *        0 file mã nguồn**: 2 `README.md`, 1 `Cargo.toml`, 1 `tauri.conf.json`
+ *        (`apps/machine-shell`, vỏ desktop, `frontendDist` → `client/dist`). Nó nằm ngoài
+ *        `SCAN_ROOTS` và ngoài câu tự khai cũ — nhưng gọi nó là "gốc thứ ba" như bản trước là
+ *        **thổi phồng**: quét nó hôm nay trả về 0 dòng. VRAM thật của vỏ đó là VRAM của
+ *        `client/dist` mà nó nạp, tức đã nằm ở (E3).
  *   (E3) **`client/**` bị lượng hoá quá nhẹ.** Kiểm 2026-08-04: **13 file** trong `client/src`
  *        chạm lớp WebGL/three (qua `<Canvas>` của `@react-three/fiber`; **0** lời gọi
  *        `new WebGLRenderer` trực tiếp — nên một máy quét tìm tên lớp đó sẽ báo "sạch" và sai).
