@@ -805,7 +805,25 @@ taskkill //F //IM vstest.console.exe //T >/dev/null 2>&1 || true
 dotnet build-server shutdown >/dev/null 2>&1 || true
 
 BUILD_LOG="$LOGDIR/build.log"
-dotnet build -t:Rebuild --nologo > "$BUILD_LOG" 2>&1 || true
+# 🔴 TRAP 8, and it is this script's own cleanup being right once and then never again.
+# D-6 hit a RED first gate run: UnsBridgeSpoolTests died on WSAENOBUFS ("lacked sufficient
+# buffer space") on a LOOPBACK MQTT connect -- a machine-wide resource failure in a subsystem
+# nothing in that task touched. The implementer diagnosed it as orphaned build-server nodes and
+# concluded this script does not clean them. It does, on the line above -- so that story is
+# self-refuting: any TRUE pre-existing orphan is already dead by the time the build starts.
+#
+# The review then measured what actually happens, which is worse and is ours:
+#   * ONE `dotnet build` leaves 13 MSBuild nodes (~110-150 MB each) plus a ~705 MB VBCSCompiler.
+#     "13 orphaned dotnet.exe" is not the signature of accumulated rounds; it is one build.
+#   * The shutdown above runs ONCE, BEFORE the build. During [2/3], with the gate unattended:
+#     14 build-server processes, 1955 MB resident, alive through ALL FIVE suites.
+# So the gate created a ~2 GB population and then ran the memory-sensitive part of its own job
+# underneath it. That is the same shape as trap 7(i) -- the remedy manufacturing the evidence --
+# one step earlier: here the tool manufactures the CONDITIONS it then measures under.
+#
+# Node reuse buys nothing for a one-shot -t:Rebuild, so refuse it, and shut the servers down
+# again after the build so the suites do not run under the build's leftovers.
+MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo > "$BUILD_LOG" 2>&1 || true
 
 if ! grep -qE '^ *0 Error\(s\)' "$BUILD_LOG"; then
   echo "FAIL: build did not report 0 errors. Refusing to read any test count."
@@ -832,6 +850,15 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 
 # ── Gate 2: each suite, sequentially, asserting an EXACT total. ──────────────────
 # Trap 2. `Failed: 0` is not evidence: an aborted run prints it with a short total.
+# Trap 8 (see the build above): the build's own server population must not still be resident
+# while the suites run. Measured before this line existed: 14 processes, 1955 MB, alive through
+# all five suites. Report what the suites are actually running underneath, so the next person
+# reading a machine-wide failure has the number instead of a hypothesis.
+dotnet build-server shutdown >/dev/null 2>&1 || true
+BUILD_NODES=$(powershell -NoProfile -NonInteractive -Command \
+  "(Get-Process dotnet,VBCSCompiler -ErrorAction SilentlyContinue | Measure-Object).Count" \
+  2>/dev/null | tr -d '\r' | head -1)
+note "build servers still resident entering the test phase: ${BUILD_NODES:-unknown}"
 echo "[2/3] Running ${#SUITES[@]} suites sequentially..."
 for entry in "${SUITES[@]}"; do
   proj="${entry%%:*}"; expected="${entry##*:}"; name=$(basename "$proj")
