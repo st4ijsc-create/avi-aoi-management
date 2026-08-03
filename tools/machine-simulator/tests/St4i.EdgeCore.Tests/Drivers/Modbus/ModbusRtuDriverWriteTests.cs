@@ -1557,4 +1557,170 @@ public class ModbusRtuDriverWriteTests
         await readerLease.DisposeAsync();
         links.Master.Dispose();
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task D-7a — blueprint §10 items 1, 2 and 3.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>§10 item 1, and the reason it could not be discharged where §10 put it.</b>
+    ///
+    /// <para>§10 item 1 says a caller must never invoke a write with an unbounded token. D-7a is the first task
+    /// with a production caller, and that caller — <c>MachineWriteEndpoints</c> — passes
+    /// <see cref="CancellationToken.None"/> <i>deliberately</i>, because a client hanging up must not abort a
+    /// write that is already moving a machine. Both requirements are only satisfiable at once if the bound
+    /// applies to the WAIT and not to the TRANSACTION, and only the driver can tell those apart. So the driver
+    /// bounds its own wait, from a budget its factory supplies.</para>
+    ///
+    /// <para><b>The test is built so that the two failure shapes cannot be confused.</b> The caller's token here
+    /// is <see cref="CancellationToken.None"/> — literally the unbounded token §10 forbids — so nothing but the
+    /// driver's own budget can end this call. And the <c>Detail</c> is asserted to say the budget elapsed and
+    /// <b>not</b> to say "cancelled": an operator told "cancelled" for a wait nobody cancelled would go looking
+    /// for the client that did it.</para>
+    /// </summary>
+    [Fact]
+    public async Task AWriteThatWaitsPastItsBusWideBudget_GivesUpItself_EvenOnAnUnboundedCallerToken()
+    {
+        const int deadHoldMs = 5_000;
+        const int budgetMs = 400;
+
+        await using var harness = ModbusRtuLoopbackHarness.Start(
+            ((byte)1, new ushort[] { 111, 0, 0, 0, 0, 11 }),
+            ((byte)9, new ushort[] { 999 }));
+        harness.Links.Device.SilentUnitId = 9;
+
+        await using var keepAlive = harness.Lease();
+
+        using var deadCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await using var dead = new ModbusRtuDriver(
+            harness.Lease(), ReadOnlySingleRegisterMap("BUDGET-DEAD", unitId: 9, pollIntervalMs: 1, readTimeoutMs: deadHoldMs));
+        var deadPump = DriveAsync(dead, _ => { }, deadCts.Token);
+
+        try
+        {
+            await WaitUntilAsync(() => harness.Links.Device.FramesSilenced > 0, "the dead device to take the bus");
+
+            var writesBefore = FramesWithFunction(harness.Links.Master, RtuFrames.FunctionWriteSingleRegister).Count;
+
+            await using var writer = new ModbusRtuDriver(
+                harness.Lease(), WritableMap("BUDGET-W1", unitId: 1, readTimeoutMs: 2_000),
+                writeQueueBudgetMs: budgetMs);
+
+            var stopwatch = Stopwatch.StartNew();
+            var result = await writer.WriteSetpointAsync(
+                new SetpointWriteRequest(SpeedPoint, 250.0), CancellationToken.None);
+            stopwatch.Stop();
+
+            _output.WriteLine(
+                $"MEASURED §10 item 1: a setpoint write with an UNBOUNDED caller token, queued behind a device " +
+                $"holding the line for {deadHoldMs} ms, returned after {stopwatch.ElapsedMilliseconds} ms against its " +
+                $"own {budgetMs} ms bus-wide budget, reporting {result.Outcome}.");
+
+            Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+
+            // 🔴 The claim that makes Indeterminate actionable rather than merely honest.
+            Assert.Contains("gave up waiting", result.Detail);
+            Assert.Contains($"{budgetMs} ms", result.Detail);
+            Assert.Contains("untouched", result.Detail);
+            Assert.Contains("Retrying is safe", result.Detail);
+
+            // 🔴 The discriminating half: this must NOT be reported as a cancellation, because nobody
+            // cancelled anything. The two shapes share an outcome and must not share a message.
+            Assert.DoesNotContain("cancelled", result.Detail, StringComparison.OrdinalIgnoreCase);
+
+            // And the fact behind the words: not one FC06 frame reached the bus boundary while the line was
+            // busy throughout with the dead device's own reads.
+            Assert.Equal(
+                writesBefore,
+                FramesWithFunction(harness.Links.Master, RtuFrames.FunctionWriteSingleRegister).Count);
+
+            // It really did give up on ITS budget, not on the dead device's hold finally ending.
+            Assert.True(stopwatch.ElapsedMilliseconds < deadHoldMs / 2,
+                $"the write returned after {stopwatch.ElapsedMilliseconds} ms against a {deadHoldMs} ms hold and a " +
+                $"{budgetMs} ms budget — it does not appear to have been the budget that ended it");
+        }
+        finally
+        {
+            await deadCts.CancelAsync();
+            try { await deadPump; } catch (OperationCanceledException) { }
+        }
+    }
+
+    /// <summary>🔴 <b>§10 items 1+2 — a driver with NO budget is unchanged.</b> The control for the test above,
+    /// and the property that keeps every D-2…D-6 measurement comparable: a directly-constructed driver waits as
+    /// long as its caller is willing to, exactly as it did before D-7a. Without this the previous test would
+    /// pass equally well against an implementation that bounded every write at some constant.</summary>
+    [Fact]
+    public async Task ADriverWithNoBudget_StillWaitsOutTheHold_AndAppliesTheWrite()
+    {
+        const int deadHoldMs = 700;
+
+        await using var harness = ModbusRtuLoopbackHarness.Start(
+            ((byte)1, new ushort[] { 111, 0, 0, 0, 0, 11 }),
+            ((byte)9, new ushort[] { 999 }));
+        harness.Links.Device.SilentUnitId = 9;
+
+        await using var keepAlive = harness.Lease();
+
+        using var deadCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await using var dead = new ModbusRtuDriver(
+            harness.Lease(), ReadOnlySingleRegisterMap("NOBUDGET-DEAD", unitId: 9, pollIntervalMs: 1, readTimeoutMs: deadHoldMs));
+        var deadPump = DriveAsync(dead, _ => { }, deadCts.Token);
+
+        try
+        {
+            await WaitUntilAsync(() => harness.Links.Device.FramesSilenced > 0, "the dead device to take the bus");
+
+            await using var writer = new ModbusRtuDriver(
+                harness.Lease(), WritableMap("NOBUDGET-W1", unitId: 1, readTimeoutMs: 2_000));
+
+            var result = await writer.WriteSetpointAsync(
+                new SetpointWriteRequest(SpeedPoint, 251.0), CancellationToken.None);
+
+            Assert.Equal(WriteOutcome.Applied, result.Outcome);
+            Assert.Equal((ushort)251, harness.Slaves[1].DataStore.HoldingRegisters.ReadPoints(SpeedRegister, 1)[0]);
+        }
+        finally
+        {
+            await deadCts.CancelAsync();
+            try { await deadPump; } catch (OperationCanceledException) { }
+        }
+    }
+
+    /// <summary>
+    /// 🔴 <b>§10 item 3 — an <see cref="WriteOutcome.Applied"/> on a COMMAND says so, in the one place that
+    /// reaches an audit row.</b>
+    ///
+    /// <para>§10 item 3 forbids presenting <see cref="WriteOutcome.Applied"/> to an operator as physical proof
+    /// and forbids an audit row implying one. The obvious reading is that this is the UI's problem; it is not
+    /// only the UI's, because <c>MachineWriteEndpoints</c> writes the result's own <c>outcome</c> and
+    /// <c>detail</c> straight into the audit row, and before D-7a a successful pulse carried
+    /// <c>Detail: null</c> — so the audit row for the one operation that starts a machine said <c>Applied</c>
+    /// and nothing else, forever.</para>
+    ///
+    /// <para>The pair below is what makes it a test rather than a wording: the pulse REALLY WORKED (the coil
+    /// was asserted and reset against a real slave), and the result still refuses to claim the machine
+    /// moved.</para>
+    /// </summary>
+    [Fact]
+    public async Task AnAppliedCommand_SaysItIsAnAcknowledgementAndNotAnObservation()
+    {
+        await using var harness = ModbusRtuLoopbackHarness.Start(((byte)3, new ushort[] { 111, 0, 0, 0, 0, 11 }));
+        await using var driver = new ModbusRtuDriver(harness.Lease(), WritableMap("ACK-C3", unitId: 3));
+
+        var result = await driver.InvokeCommandAsync(new CommandRequest(StartCycleCommand, null), CancellationToken.None);
+
+        // It genuinely worked: a real slave echoed both halves and the coil is back at rest.
+        Assert.Equal(WriteOutcome.Applied, result.Outcome);
+        Assert.False(harness.Slaves[3].DataStore.CoilDiscretes.ReadPoints(StartCycleCoil, 1)[0]);
+
+        // 🔴 …and it still does not claim the machine moved.
+        Assert.NotNull(result.Detail);
+        Assert.Contains("ACKNOWLEDGEMENT", result.Detail);
+        Assert.Contains("not an observation", result.Detail);
+        Assert.Contains("does not prove the machine moved", result.Detail);
+        // Names the device, because on a multidrop bus "the device" identifies nothing.
+        Assert.Contains("unit 3", result.Detail);
+        Assert.Contains("ACK-C3", result.Detail);
+    }
 }

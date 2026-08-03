@@ -487,6 +487,208 @@ public sealed class ConnectorEndpointsMachineClaimTests
         Assert.Contains("DELETE /v1/connectors/modbus-line-live", message, StringComparison.Ordinal);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task D-7a — DELETE now releases the live claim, and the derived-id namespace is reserved.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>Task D-7a — <c>DELETE /v1/connectors/{instanceId}</c> releases the machine claim, so the operator
+    /// can save the replacement immediately instead of restarting the application.</b>
+    ///
+    /// <para>This is the defect the two tests above document from the other side: before D-7a the registry had
+    /// no removal path, so a deleted connector's claim survived until the process restarted, and
+    /// <see cref="ConnectorEndpoints.CreateConnectorAsync"/> had to grow a whole second 409 message for it —
+    /// which D-1's own review (m2) called "the product blaming the operator for having done the right
+    /// thing".</para>
+    ///
+    /// <para><b>The proof is the SAVE succeeding</b>, not the delete returning 200. A delete that returned 200
+    /// and left the claim behind is exactly the state this closes. The roster-collision guard is taken out of
+    /// the picture the same way the tests above take it out — no roster entry for this machine — so the claim
+    /// is the only thing that can decide the second save. See
+    /// <see cref="DeletingAConnector_DoesNotFreeTheMachineFromTheROSTER_WhichStillNeedsARestart"/> for the
+    /// residual that does not close, and which the first draft of this test wrongly claimed did.</para>
+    /// </summary>
+    [Fact]
+    public async Task DeletingAConnector_ReleasesItsMachineClaim_SoAnotherConnectorCanThenTakeThatMachine()
+    {
+        const string machine = "D7-DELETE-CLAIM";
+        var store = new ConnectorConfigStore(TempDir());
+        var registry = new ConnectorRegistry();
+
+        await store.SaveAsync("Modbus", machine, "10.9.9.20", 502, ValidModbusMap(machine), instanceId: "modbus-old");
+        Assert.True(registry.Register(
+            new AlwaysFailsToBuildFactory(DriverKinds.Modbus), ValidModbusMap(machine),
+            instanceId: "modbus-old", machineCode: machine));
+
+        var host = CreateHost(registry);
+        Assert.DoesNotContain(host.Fleet, d => string.Equals(d.Code, machine, StringComparison.OrdinalIgnoreCase));
+        var (recorder, ctx) = AuditPlumbing();
+
+        // The gate is real before the delete — otherwise the save below proves nothing.
+        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(await ConnectorEndpoints.CreateConnectorAsync(
+            new ConnectorCreateRequest("Modbus", "10.9.9.21", 502, ValidModbusMap(machine), InstanceId: "modbus-new"),
+            store, registry, host, new OpcUaOptions(), ctx, recorder, CancellationToken.None)));
+
+        var deleted = await ConnectorEndpoints.DeleteConnectorAsync(
+            "modbus-old", store, registry, ctx, recorder, CancellationToken.None);
+        Assert.Equal(StatusCodes.Status200OK, StatusOf(deleted));
+
+        // The claim really is gone from the registry…
+        Assert.False(registry.TryGetInstanceIdForMachine(machine, out _));
+        Assert.DoesNotContain("modbus-old", registry.RegisteredIds);
+
+        // 🔴 …and the thing that actually matters: the same save now succeeds. Before D-7a it was a 409
+        // telling the operator to restart the application because a connector they had already deleted was
+        // "STILL RUNNING".
+        var replacement = await ConnectorEndpoints.CreateConnectorAsync(
+            new ConnectorCreateRequest("Modbus", "10.9.9.21", 502, ValidModbusMap(machine), InstanceId: "modbus-new"),
+            store, registry, host, new OpcUaOptions(), ctx, recorder, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, StatusOf(replacement));
+        Assert.True(registry.TryGetInstanceIdForMachine(machine, out var after));
+        Assert.Equal("modbus-new", after);
+
+        var message = Assert.IsAssignableFrom<IValueHttpResult<ConnectorDeleteResultDto>>(deleted).Value!.Message;
+        Assert.Contains(machine, message, StringComparison.Ordinal);
+        Assert.Contains("released", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("keeps polling", message, StringComparison.OrdinalIgnoreCase);
+        // 🔴 The sentence that became false and had to go: there IS a live unregister path now.
+        Assert.DoesNotContain("no live \"unregister\" path", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 🔴 <b>The residual, pinned so nobody re-derives the optimistic version of it.</b> The first draft of the
+    /// test above asserted that after a DELETE the operator could immediately save a replacement for the same
+    /// machine. It could not, and the run said so: <see cref="FleetHost.RegisterMachine"/> has no un-register
+    /// either, so the deleted connector's MACHINE is still in the roster and
+    /// <see cref="ConnectorEndpoints.CreateConnectorAsync"/>'s cross-kind roster-collision guard refuses the
+    /// save whatever the registry now says.
+    ///
+    /// <para>What the released claim actually buys is the identity of the refusal: it is now the ROSTER's,
+    /// naming a machine that genuinely is in the fleet, instead of a ghost connector's, naming an instance the
+    /// operator had already deleted from their configuration. That is a smaller win than "no restart needed"
+    /// and it is the true one. Removing a machine from the roster reaches pipeline slots, alarm
+    /// <c>TargetId</c>s, the historian and the asset registry — a different task.</para>
+    /// </summary>
+    [Fact]
+    public async Task DeletingAConnector_DoesNotFreeTheMachineFromTheROSTER_WhichStillNeedsARestart()
+    {
+        const string machine = "D7-DELETE-ROSTER";
+        var store = new ConnectorConfigStore(TempDir());
+        var registry = new ConnectorRegistry();
+        var host = CreateHost(registry);
+        var (recorder, ctx) = AuditPlumbing();
+
+        // Saved through the endpoint, so the machine really does join the roster the way production puts it
+        // there — which is the whole point of this test.
+        Assert.Equal(StatusCodes.Status200OK, StatusOf(await ConnectorEndpoints.CreateConnectorAsync(
+            new ConnectorCreateRequest("Modbus", "10.9.9.30", 502, ValidModbusMap(machine), InstanceId: "roster-old"),
+            store, registry, host, new OpcUaOptions(), ctx, recorder, CancellationToken.None)));
+        Assert.Contains(host.Fleet, d => string.Equals(d.Code, machine, StringComparison.OrdinalIgnoreCase));
+
+        var deleted = await ConnectorEndpoints.DeleteConnectorAsync(
+            "roster-old", store, registry, ctx, recorder, CancellationToken.None);
+        Assert.Equal(StatusCodes.Status200OK, StatusOf(deleted));
+        Assert.False(registry.TryGetInstanceIdForMachine(machine, out _));
+
+        var replacement = await ConnectorEndpoints.CreateConnectorAsync(
+            new ConnectorCreateRequest("Modbus", "10.9.9.31", 502, ValidModbusMap(machine), InstanceId: "roster-new"),
+            store, registry, host, new OpcUaOptions(), ctx, recorder, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(replacement));
+
+        // 🔴 The discriminating half: it is the ROSTER refusing, not a ghost connector. The two messages are
+        // different sentences and only one of them tells the operator something they can act on.
+        var message = Assert.IsAssignableFrom<IValueHttpResult<ApiErrorDto>>(replacement).Value!.Error;
+        Assert.Contains("fleet roster", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("STILL RUNNING", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("roster-old", message, StringComparison.Ordinal);
+
+        // And the DELETE response said so in advance rather than leaving it to be discovered here.
+        var deleteMessage = Assert.IsAssignableFrom<IValueHttpResult<ConnectorDeleteResultDto>>(deleted).Value!.Message;
+        Assert.Contains("REMAINS IN THE FLEET ROSTER", deleteMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("restarted", deleteMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Deleting a row that no live registration backs — a row persisted by an earlier process run —
+    /// is an ordinary success that says so, rather than claiming to have freed a machine it never held. The
+    /// discriminating pair with the test above: both are 200, and only one of them says the machine is
+    /// free.</summary>
+    [Fact]
+    public async Task DeletingARowWithNoLiveRegistration_SucceedsAndSaysNoClaimWasReleased()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+        await store.SaveAsync("Modbus", "D7-DELETE-STALE", "10.0.0.1", 502, "{}", instanceId: "modbus-stale");
+
+        var registry = new ConnectorRegistry();
+        var (recorder, ctx) = AuditPlumbing();
+
+        var deleted = await ConnectorEndpoints.DeleteConnectorAsync(
+            "modbus-stale", store, registry, ctx, recorder, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, StatusOf(deleted));
+        var message = Assert.IsAssignableFrom<IValueHttpResult<ConnectorDeleteResultDto>>(deleted).Value!.Message;
+        Assert.Contains("no machine claim to release", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(await store.GetAsync("modbus-stale"));
+    }
+
+    /// <summary>
+    /// 🔴 <b>Task D-7a (D-4 review m5) — the derived-device-id namespace is reserved at BOTH doors into it.</b>
+    ///
+    /// <para><c>ModbusMultidropMap.ValidateBusInstanceId</c> stops a BUS being named like a device position;
+    /// this endpoint is the other way an instance id gets allocated. It has to refuse the same shape for the
+    /// same reason plus one more: <c>ModbusMultidropRegistration</c>'s ghost sweep identifies "the entries
+    /// belonging to this bus" by exactly that prefix, so a connector saved here under <c>line1:unit3</c> would
+    /// be unregistered by bus <c>line1</c>'s next registration pass — a connector that vanished, with nothing
+    /// pointing at why.</para>
+    /// </summary>
+    [Fact]
+    public async Task ASaveNamingAReservedDevicePositionAsItsInstanceId_Is400_AndPersistsNothing()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+        var registry = new ConnectorRegistry();
+        var host = CreateHost(registry);
+        var (recorder, ctx) = AuditPlumbing();
+
+        var result = await ConnectorEndpoints.CreateConnectorAsync(
+            new ConnectorCreateRequest(
+                "Modbus", "10.9.9.9", 502, ValidModbusMap("D7-RESERVED"), InstanceId: "rs485-line1:unit3"),
+            store, registry, host, new OpcUaOptions(), ctx, recorder, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, StatusOf(result));
+        var message = Assert.IsAssignableFrom<IValueHttpResult<ApiErrorDto>>(result).Value!.Error;
+        Assert.Contains("rs485-line1:unit3", message, StringComparison.Ordinal);
+        Assert.Contains("reserved", message, StringComparison.OrdinalIgnoreCase);
+
+        // Nothing persisted, nothing registered, no roster entry — refused before any mutation at all.
+        Assert.Empty(await store.ListAsync());
+        Assert.Empty(registry.RegisteredIds);
+        Assert.DoesNotContain(host.Fleet, d => string.Equals(d.Code, "D7-RESERVED", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The control for the refusal above: an instance id that merely CONTAINS the separator, or ends
+    /// in it without digits, is an ordinary name and must still be accepted. A reservation that was even
+    /// slightly too greedy would refuse names nothing derives.</summary>
+    [Theory]
+    [InlineData("rs485-line1:unit3-spare")]
+    [InlineData("rs485-line1:unit")]
+    [InlineData("rs485-line1:units3")]
+    public async Task ASaveNamingSomethingMerelySimilarToADevicePosition_IsAccepted(string instanceId)
+    {
+        var store = new ConnectorConfigStore(TempDir());
+        var registry = new ConnectorRegistry();
+        var host = CreateHost(registry);
+        var (recorder, ctx) = AuditPlumbing();
+
+        var result = await ConnectorEndpoints.CreateConnectorAsync(
+            new ConnectorCreateRequest(
+                "Modbus", "10.9.9.9", 502, ValidModbusMap("D7-NOTRESERVED"), InstanceId: instanceId),
+            store, registry, host, new OpcUaOptions(), ctx, recorder, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, StatusOf(result));
+        Assert.Equal(new[] { instanceId }, registry.RegisteredIds);
+    }
+
     /// <summary>A factory whose <c>TryCreate</c> always fails: these tests never start a fleet, so no driver
     /// is ever needed — what matters is only that the registry entry (and therefore the machine CLAIM)
     /// exists. Failing loudly rather than returning a stub keeps this double from accidentally becoming a

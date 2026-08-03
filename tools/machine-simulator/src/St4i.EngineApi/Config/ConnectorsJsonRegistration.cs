@@ -56,12 +56,19 @@ public static class ConnectorsJsonRegistration
     /// <returns>The number of entries actually registered. Not used by <c>Program.cs</c> (which cares only
     /// about the side effect); returned so a caller — and a test — can tell "dispatched and registered" from
     /// "silently skipped" without having to reconstruct it from the registry's contents.</returns>
+    /// <param name="modbusBusRegistry">🔴 Task D-7a — the reference-counted bus registry every RTU connector's
+    /// drivers share, so N devices on one line hold N leases on ONE open link. <see langword="null"/> means
+    /// this host does not offer the RTU transport at all: an entry declaring one is then skipped with a named
+    /// warning rather than dispatched into a path that cannot work. Owned by the host (one registry for every
+    /// bus), never constructed here — its lifetime is the process's, and this method is called once per
+    /// process.</param>
     public static int RegisterAll(
         IReadOnlyList<ConnectorConfigEntry> entries,
         ModbusOptions modbusOptions,
         OpcUaOptions opcUaOptions,
         ConnectorRegistry registry,
-        ILogger logger)
+        ILogger logger,
+        ModbusBusRegistry? modbusBusRegistry = null)
     {
         ArgumentNullException.ThrowIfNull(entries);
         ArgumentNullException.ThrowIfNull(registry);
@@ -70,6 +77,17 @@ public static class ConnectorsJsonRegistration
 
         foreach (var entry in entries)
         {
+            // 🔴 Task D-7a — the RTU arm, taken BEFORE the kind dispatch below because an RTU entry is not one
+            // connector at all: it is a BUS, and it fans out into N connector instances. Everything about the
+            // TCP/OPC-UA path below is byte-for-byte what it was, and the ONE thing that routes an entry here
+            // is its settings declaring a transport (see ModbusRtuBusSettings for why an optional field rather
+            // than a sixth DriverKinds value).
+            if (entry.Kind == DriverKinds.Modbus && ModbusRtuBusSettings.DeclaresATransport(entry.SettingsJson))
+            {
+                registered += RegisterRtuBus(entry, registry, logger, modbusBusRegistry);
+                continue;
+            }
+
             // Dispatch by (normalized) kind to whichever built-in factory type this build knows how to
             // construct. Third-party kinds aren't dispatchable here YET — there is no in-process
             // plugin-loading mechanism in this build (that is future work, the eventual out-of-process
@@ -128,5 +146,99 @@ public static class ConnectorsJsonRegistration
         }
 
         return registered;
+    }
+
+    /// <summary>
+    /// 🔴 Task D-7a — <b>the registration key an entry will actually occupy, which is the ONLY key any
+    /// precedence or de-duplication rule may compare on.</b>
+    ///
+    /// <para>Two rules elsewhere ask "has this already been configured?" —
+    /// <see cref="ConnectorsConfig.ResolveEntries"/>'s env-var precedence and its own first-entry-wins
+    /// de-duplication. Both were written when the answer was always the KIND, because both built-in arms below
+    /// deliberately leave the instance id to default to the kind. An RTU bus does not: it is registered under
+    /// the operator's own <see cref="ConnectorConfigEntry.Id"/>, because a site with two RS-485 lines has two
+    /// buses of one kind and that is the whole point of D-1's instance identity.</para>
+    ///
+    /// <para>Putting the answer HERE — where the dispatch that decides it also lives — is what stops the two
+    /// rules from drifting from the registration they are supposed to be about. A copy of this predicate inside
+    /// <see cref="ConnectorsConfig"/> would be a second statement of one fact, and the version that drifted
+    /// would either suppress an RTU bus because an unrelated TCP connector is env-configured, or let two
+    /// entries silently register under one id.</para>
+    ///
+    /// <para><b>What this deliberately does NOT change:</b> a TCP or OPC-UA entry still answers with its KIND,
+    /// even when it carries an explicit <c>id</c>. Adopting <see cref="ConnectorConfigEntry.Id"/> for those
+    /// would move an existing install's pipeline slot label and therefore its alarm <c>TargetId</c> — the exact
+    /// fork <c>TheEntrysOwnIdIsNotAdoptedAsTheInstanceId_…</c> pins, and a change worth making only alongside a
+    /// migration nobody has asked for. RTU has no legacy at all (nothing in <c>src/</c> could construct an RTU
+    /// driver before this task), so it has nothing to fork.</para>
+    /// </summary>
+    public static string RegistrationKeyOf(ConnectorConfigEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        return entry.Kind == DriverKinds.Modbus && ModbusRtuBusSettings.DeclaresATransport(entry.SettingsJson)
+            ? DriverKinds.Normalize(entry.Id.Trim())
+            : entry.Kind;
+    }
+
+    /// <summary>
+    /// 🔴 Task D-7a — <b>one <c>connectors.json</c> entry that is a multidrop BUS, fanned out into N connector
+    /// instances.</b>
+    ///
+    /// <para>The bus-level settings (<see cref="ModbusRtuBusSettings"/>) and the device list
+    /// (<see cref="ModbusMultidropMap.FanOut"/>) are read from the SAME document by two parsers that read
+    /// disjoint keys — the transport half here, the device half there. Neither synthesises anything: each
+    /// device's stored configuration is its own element's verbatim text, which is what makes "the file on disk
+    /// and the configuration actually running" one thing rather than two.</para>
+    ///
+    /// <para><b>A bus that will not parse disables THAT BUS and nothing else</b>, logged with the reason —
+    /// the same posture <see cref="ModbusMultidropRegistration.RegisterAll(string,string,IConnectorFactory,ConnectorRegistry,ILogger)"/>
+    /// takes for a map that will not fan out, and the same posture every other startup config path in this
+    /// product takes. A second RTU bus in the same file, and every TCP/OPC-UA connector, is unaffected.</para>
+    /// </summary>
+    /// <returns>How many DEVICES were registered — not how many entries. 0 for a bus that could not be built at
+    /// all, which is the same value the fan-out returns for a map that would not parse.</returns>
+    private static int RegisterRtuBus(
+        ConnectorConfigEntry entry, ConnectorRegistry registry, ILogger logger, ModbusBusRegistry? modbusBusRegistry)
+    {
+        if (modbusBusRegistry is null)
+        {
+            logger.LogWarning(
+                "connectors.json entry '{ConnectorId}' declares a Modbus RTU transport, but this host was " +
+                "composed without a Modbus bus registry — no RTU connector can be built in this process. Skipped.",
+                entry.Id);
+            return 0;
+        }
+
+        ModbusRtuBusSettings busSettings;
+        try
+        {
+            busSettings = ModbusRtuBusSettings.Parse(entry.SettingsJson);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "connectors.json entry '{ConnectorId}': its Modbus RTU bus settings could not be read — no device " +
+                "on that bus is registered for this run. Every other connector is unaffected.", entry.Id);
+            return 0;
+        }
+
+        var busInstanceId = entry.Id.Trim();
+
+        // 🔴 The factory is built INSIDE the fan-out, from a number only the fan-out knows: the largest
+        // WorstCaseBusHoldMs on this bus, which is blueprint §10 item 2's write-queue bound. See that overload's
+        // own remarks for why it is threaded rather than computed by parsing the document a second time.
+        return ModbusMultidropRegistration.RegisterAll(
+            entry.SettingsJson,
+            busInstanceId,
+            busWideWorstCaseHoldMs => new ModbusRtuConnectorFactory(
+                busKey: busSettings.BusKey,
+                openLink: busSettings.Opener(),
+                busRegistry: modbusBusRegistry,
+                writeQueueBudgetMs: busWideWorstCaseHoldMs,
+                logWarning: msg => logger.LogWarning("{ModbusRtuMsg}", msg),
+                logError: (ex, msg) => logger.LogError(ex, "{ModbusRtuMsg}", msg)),
+            registry,
+            logger);
     }
 }

@@ -85,6 +85,34 @@ public interface IModbusBusLink : IStreamResource
     /// <see cref="ModbusRtuDriver.InvokeCommandAsync"/> is the member whose outcome it would change. Recorded on
     /// the seam rather than only in a report, because §10 exists precisely because an obligation living only in
     /// a report is an obligation the next author never reads.</para>
+    ///
+    /// <para>
+    /// 🔴 <b>Task D-7a — §10 item 4 was handed forward again, and D-7a is NOT building it either. The reason is
+    /// different from D-6's, and both are recorded because item 4's whole history is of being dropped between
+    /// artefacts.</b>
+    /// </para>
+    ///
+    /// <para>D-6 declined it because its <b>precondition</b> was unmet. D-7a re-checked that and it is still
+    /// unmet, unchanged in every particular: this member still returns a bare <see cref="int"/>, and both
+    /// shipping links still count bytes without framing. But D-7a also has a reason of its own, which is about
+    /// the WORK rather than the seam. Building the attribution means teaching a link to parse Modbus RTU frames
+    /// <i>inside the drain</i> — i.e. to frame a byte stream at the one moment the bus has already declared
+    /// itself desynchronised, which is precisely when the stream is NOT a sequence of well-formed frames. A
+    /// framer fed garbage does not report "garbage"; it reports whatever slave address the first plausible byte
+    /// happens to be. That is a second Modbus framer, in the product, whose job is to attribute rubbish — and
+    /// its failure mode is to attribute rubbish CONFIDENTLY, to a unit id, which is strictly worse than the
+    /// unattributed count it replaces because a downgrade decision would then be taken on it.</para>
+    ///
+    /// <para><b>What would make it worth building, stated so the next task can test the claim rather than
+    /// inherit the conclusion:</b> a link whose receive path frames CONTINUOUSLY (so the drain reports frames it
+    /// had already parsed, rather than parsing at drain time), or a transport that carries a transaction
+    /// identifier — which Modbus TCP has and RTU does not. Neither exists here, and neither is a change to a
+    /// driver: both are changes to this contract and to every implementation of it. <b>D-7a's disposition:
+    /// explicitly NOT BUILT, precondition still unmet, and the mitigation remains the one D-5 shipped — the
+    /// residual is documented on <see cref="ModbusRtuDriver.InvokeCommandAsync"/>, and from D-7a a successful
+    /// pulse's own <c>Detail</c> says in the API response and the audit row that an
+    /// <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Applied"/> is an acknowledgement and not an
+    /// observation.</b></para>
     /// </summary>
     /// <returns>The number of bytes discarded — 0 when nothing was buffered. <b>Not attributable to any unit
     /// id</b> — see the remarks above, which is a load-bearing limitation and not an omission.</returns>

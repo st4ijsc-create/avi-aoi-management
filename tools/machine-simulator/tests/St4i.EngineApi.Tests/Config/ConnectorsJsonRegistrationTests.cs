@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using St4i.Connector.Abstractions;
 using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Drivers.Modbus;
 using St4i.EdgeCore.Drivers.OpcUa;
@@ -183,5 +184,232 @@ public sealed class ConnectorsJsonRegistrationTests
 
         Assert.Equal(1, registered);
         Assert.True(registry.TryGetInstanceIdForMachine("CJ-SURVIVOR-01", out _));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task D-7a — the RTU arm. THE deliverable: a multidrop bus declared in a configuration file.
+    // ─────────────────────────────────────────────────────────────────────
+
+    private static string RtuBusSettings(string host, int port, params (string MachineCode, int UnitId)[] devices) =>
+        $$"""
+        {
+          "transport": "rtu-gateway",
+          "host": "{{host}}",
+          "port": {{port}},
+          "devices": [ {{string.Join(",", devices.Select(d => $$"""
+            {"machineCode":"{{d.MachineCode}}","unitId":{{d.UnitId}},"pollIntervalMs":1000,"readTimeoutMs":300,
+             "registers":[{"address":0,"type":"Holding","dataType":"UInt16","scale":1.0,"metric":"speed","unit":"rpm"}]}
+            """))}} ]
+        }
+        """;
+
+    /// <summary>
+    /// 🔴 <b>THE deliverable of D-7a, in one test: a multidrop <c>connectors.json</c> entry produces N
+    /// registered instances, each bound to its own machine code.</b>
+    ///
+    /// <para>Everything RTU built in D-2…D-6 was unreachable from any configuration an operator can write.
+    /// This is the entry that reaches it. The bus's own <c>id</c> becomes the instance id — the promotion
+    /// <see cref="ConnectorsJsonRegistration"/>'s own D-1 comment deferred to "D-7's configuration work" — and
+    /// each device derives <c>{bus}:unit{n}</c> from it.</para>
+    /// </summary>
+    [Fact]
+    public async Task AMultidropRtuBusEntry_ProducesOneRegisteredInstancePerDevice_EachBoundToItsOwnMachine()
+    {
+        var registry = new ConnectorRegistry();
+        await using var buses = new ModbusBusRegistry();
+
+        var registered = ConnectorsJsonRegistration.RegisterAll(
+            new[]
+            {
+                new ConnectorConfigEntry(
+                    "rs485-line1", DriverKinds.Modbus,
+                    RtuBusSettings("gw.example", 4001, ("CJ-RTU-A", 1), ("CJ-RTU-B", 2), ("CJ-RTU-C", 3))),
+            },
+            Modbus, OpcUa, registry, Logger, buses);
+
+        Assert.Equal(3, registered);
+        Assert.Equal(3, registry.RegisteredIds.Count);
+
+        foreach (var (code, unit) in new[] { ("CJ-RTU-A", 1), ("CJ-RTU-B", 2), ("CJ-RTU-C", 3) })
+        {
+            Assert.True(registry.TryGetInstanceIdForMachine(code, out var instanceId), $"{code} should be claimed");
+            Assert.Equal(ModbusMultidropMap.DeviceInstanceId("rs485-line1", (byte)unit), instanceId);
+            Assert.Equal(DriverKinds.Modbus, registry.KindOf(instanceId));
+        }
+
+        // 🔴 Every instance builds a REAL ModbusRtuDriver, and they all lease the SAME bus — the "one open for
+        // N leases" property, asserted through the registry that enforces it rather than through three
+        // drivers that merely happen to work.
+        var drivers = new List<IDeviceDriver>();
+        foreach (var id in registry.RegisteredIds)
+        {
+            Assert.True(registry.TryCreateDriver(id, out var driver, out var error), error);
+            drivers.Add(driver!);
+        }
+
+        Assert.Equal(3, buses.LeaseCount(GatewayTcpBusLink.CreateBusKey("gw.example", 4001)));
+
+        // 🔴 And each driver serves exactly ONE machine — the property blueprint §7.1 forbids the other
+        // registration shape for, checked by enumeration over the drivers' own ids rather than by trusting the
+        // registry's bookkeeping.
+        Assert.Equal(3, drivers.Select(d => d.Id).Distinct().Count());
+        foreach (var code in new[] { "CJ-RTU-A", "CJ-RTU-B", "CJ-RTU-C" })
+        {
+            Assert.Single(drivers, d => d.Id.EndsWith(":" + code, StringComparison.Ordinal));
+        }
+
+        foreach (var driver in drivers) await driver.DisposeAsync();
+    }
+
+    /// <summary>
+    /// 🔴 <b>Two RS-485 lines in one file — the shape that could not be expressed before D-7a for a reason
+    /// nothing to do with RTU.</b> <see cref="ConnectorsConfig.ResolveEntries"/> de-duplicates to one entry per
+    /// REGISTRATION KEY, and both buses are <c>kind: "Modbus"</c>; keyed on the kind, the second bus was called
+    /// a duplicate of the first. See <see cref="ConnectorsJsonRegistration.RegistrationKeyOf"/>.
+    /// </summary>
+    [Fact]
+    public async Task TwoRtuBusesInOneFile_AreTwoBuses_NotADuplicate()
+    {
+        var registry = new ConnectorRegistry();
+        await using var buses = new ModbusBusRegistry();
+
+        var entries = new[]
+        {
+            new ConnectorConfigEntry("line1", DriverKinds.Modbus, RtuBusSettings("gw.example", 4001, ("CJ-L1-A", 1))),
+            new ConnectorConfigEntry("line2", DriverKinds.Modbus, RtuBusSettings("gw.example", 4002, ("CJ-L2-A", 1))),
+        };
+
+        // The resolver has to survive resolution first — that is where the de-duplication lives.
+        var resolved = ConnectorsConfig.ResolveEntries(
+            entries, new HashSet<string>(StringComparer.Ordinal),
+            registrationKeyOf: ConnectorsJsonRegistration.RegistrationKeyOf);
+        Assert.Equal(2, resolved.Count);
+
+        Assert.Equal(2, ConnectorsJsonRegistration.RegisterAll(resolved, Modbus, OpcUa, registry, Logger, buses));
+
+        Assert.True(registry.TryGetInstanceIdForMachine("CJ-L1-A", out var l1));
+        Assert.True(registry.TryGetInstanceIdForMachine("CJ-L2-A", out var l2));
+        Assert.NotEqual(l1, l2);
+
+        // 🔴 Two GATEWAYS, two bus keys, two leases — one per line. A single shared bus here would mean two
+        // physically separate RS-485 segments arbitrating against one lock, which is the "a caller invents its
+        // own key" hazard ModbusBusRegistry's doc comment names.
+        Assert.True(registry.TryCreateDriver(l1, out var d1, out _));
+        Assert.True(registry.TryCreateDriver(l2, out var d2, out _));
+        Assert.Equal(1, buses.LeaseCount(GatewayTcpBusLink.CreateBusKey("gw.example", 4001)));
+        Assert.Equal(1, buses.LeaseCount(GatewayTcpBusLink.CreateBusKey("gw.example", 4002)));
+
+        await d1!.DisposeAsync();
+        await d2!.DisposeAsync();
+    }
+
+    /// <summary>
+    /// 🔴 <b>The compatibility rule, as a discriminating pair rather than an argument.</b> The registration key
+    /// is what both of <see cref="ConnectorsConfig.ResolveEntries"/>'s rules compare on, and every entry that
+    /// could have existed before D-7a must still answer with its KIND — otherwise an install with
+    /// <c>ST4I_MODBUS_MAP</c> set would stop suppressing its <c>connectors.json</c> Modbus entry, which is the
+    /// one behaviour the whole precedence rule exists to guarantee.
+    /// </summary>
+    [Fact]
+    public void TheRegistrationKey_IsTheKindForEveryPreD7aEntry_AndTheBusIdOnlyForAnRtuBus()
+    {
+        // Pre-D-7a shapes — including one carrying an explicit id, which is precisely the case that must NOT
+        // move (its pipeline slot label, and therefore its alarm TargetId, would fork).
+        Assert.Equal(DriverKinds.Modbus, ConnectorsJsonRegistration.RegistrationKeyOf(
+            new ConnectorConfigEntry(DriverKinds.Modbus, DriverKinds.Modbus, ModbusSettings("CJ-KEY-1"))));
+        Assert.Equal(DriverKinds.Modbus, ConnectorsJsonRegistration.RegistrationKeyOf(
+            new ConnectorConfigEntry("line3-weld", DriverKinds.Modbus, ModbusSettings("CJ-KEY-2"))));
+        Assert.Equal(DriverKinds.OpcUa, ConnectorsJsonRegistration.RegistrationKeyOf(
+            new ConnectorConfigEntry("cell-7", DriverKinds.OpcUa, OpcUaSettings("CJ-KEY-3"))));
+        Assert.Equal("vendor.acme.weld", ConnectorsJsonRegistration.RegistrationKeyOf(
+            new ConnectorConfigEntry("weld", "vendor.acme.weld", """{"x":1}""")));
+
+        // 🔴 …and only a Modbus entry that DECLARES A TRANSPORT answers with its own id.
+        Assert.Equal("rs485-line1", ConnectorsJsonRegistration.RegistrationKeyOf(
+            new ConnectorConfigEntry("rs485-line1", DriverKinds.Modbus, RtuBusSettings("gw", 4001, ("CJ-KEY-4", 1)))));
+    }
+
+    /// <summary>An RTU bus in a host that was composed without a Modbus bus registry is skipped with a named
+    /// warning, never dispatched into a path that cannot work. The parameter is optional so every pre-D-7a
+    /// caller compiles unchanged, which makes "the host forgot" a reachable state rather than a
+    /// hypothetical.</summary>
+    [Fact]
+    public void AnRtuBus_InAHostWithNoBusRegistry_IsSkippedRatherThanHalfWired()
+    {
+        var registry = new ConnectorRegistry();
+
+        var registered = ConnectorsJsonRegistration.RegisterAll(
+            new[]
+            {
+                new ConnectorConfigEntry("rs485-line1", DriverKinds.Modbus, RtuBusSettings("gw", 4001, ("CJ-NOBUS", 1))),
+                new ConnectorConfigEntry("plc", DriverKinds.Modbus, ModbusSettings("CJ-NOBUS-TCP")),
+            },
+            Modbus, OpcUa, registry, Logger, modbusBusRegistry: null);
+
+        // The RTU bus registered nothing; the ordinary TCP entry beside it is unaffected.
+        Assert.Equal(1, registered);
+        Assert.False(registry.TryGetInstanceIdForMachine("CJ-NOBUS", out _));
+        Assert.True(registry.TryGetInstanceIdForMachine("CJ-NOBUS-TCP", out _));
+    }
+
+    /// <summary>
+    /// 🔴 <b>What a partial failure does, at the BUS level.</b> A bus whose settings will not parse — here a
+    /// transport this build cannot open — disables that whole bus and nothing else. Every other connector in
+    /// the file, including a second RTU bus, still registers. Stated in
+    /// <see cref="ModbusRtuBusSettings"/>'s own doc comment as one of three levels; this is the middle one.
+    /// </summary>
+    [Fact]
+    public async Task ABusThatWillNotParse_DisablesThatBusAlone()
+    {
+        var registry = new ConnectorRegistry();
+        await using var buses = new ModbusBusRegistry();
+
+        var registered = ConnectorsJsonRegistration.RegisterAll(
+            new[]
+            {
+                new ConnectorConfigEntry(
+                    "com3-line", DriverKinds.Modbus,
+                    """{"transport":"rtu-serial","portName":"COM3","devices":[]}"""),
+                new ConnectorConfigEntry(
+                    "gw-line", DriverKinds.Modbus, RtuBusSettings("gw", 4001, ("CJ-PARTIAL-A", 1), ("CJ-PARTIAL-B", 2))),
+            },
+            Modbus, OpcUa, registry, Logger, buses);
+
+        Assert.Equal(2, registered);
+        Assert.False(registry.TryGetInstanceIdForMachine("CJ-SERIAL", out _));
+        Assert.True(registry.TryGetInstanceIdForMachine("CJ-PARTIAL-A", out _));
+        Assert.True(registry.TryGetInstanceIdForMachine("CJ-PARTIAL-B", out _));
+    }
+
+    /// <summary>
+    /// 🔴 <b>An RTU bus whose device count SHRANK re-registers cleanly.</b> The end-to-end form of D-4 review
+    /// m6, through the dispatch an operator's edit actually goes through: re-running startup after deleting a
+    /// device from the file leaves no ghost holding that machine.
+    /// </summary>
+    [Fact]
+    public async Task ReRunningRegistrationAfterADeviceIsDeletedFromTheFile_LeavesNoGhost()
+    {
+        var registry = new ConnectorRegistry();
+        await using var buses = new ModbusBusRegistry();
+
+        Assert.Equal(2, ConnectorsJsonRegistration.RegisterAll(
+            new[]
+            {
+                new ConnectorConfigEntry(
+                    "rs485-line1", DriverKinds.Modbus,
+                    RtuBusSettings("gw", 4001, ("CJ-SHRINK-A", 1), ("CJ-SHRINK-B", 2))),
+            },
+            Modbus, OpcUa, registry, Logger, buses));
+
+        Assert.Equal(1, ConnectorsJsonRegistration.RegisterAll(
+            new[]
+            {
+                new ConnectorConfigEntry(
+                    "rs485-line1", DriverKinds.Modbus, RtuBusSettings("gw", 4001, ("CJ-SHRINK-A", 1))),
+            },
+            Modbus, OpcUa, registry, Logger, buses));
+
+        Assert.Single(registry.RegisteredIds);
+        Assert.False(registry.TryGetInstanceIdForMachine("CJ-SHRINK-B", out _));
     }
 }

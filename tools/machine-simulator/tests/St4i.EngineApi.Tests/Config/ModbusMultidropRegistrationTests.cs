@@ -330,6 +330,229 @@ public sealed class ModbusMultidropRegistrationTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task D-7a — the two lifecycle defects D-4's review handed forward (m5, m6).
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>D-4 review m6 — a device removed from a bus map releases its machine claim, and another connector
+    /// can then serve that machine.</b>
+    ///
+    /// <para>Before D-7a, <see cref="ConnectorRegistry"/> had no removal path at all, so re-running the fan-out
+    /// for a map that had LOST a device left a ghost instance holding that machine's claim until the process
+    /// restarted — the machine could then be served by nothing, and this method's own refusal message named an
+    /// instance the operator had already deleted from their file.</para>
+    ///
+    /// <para><b>The assertion is not that a method returned true.</b> The brief's own instruction is to prove
+    /// the ghost is gone; the way to prove that a CLAIM was released is to have something else successfully
+    /// take it, which is what the last three lines do — a completely unrelated connector registers for the
+    /// removed machine and wins.</para>
+    /// </summary>
+    [Fact]
+    public void ADeviceRemovedFromTheBusMap_IsUnregistered_AndItsMachineCanThenBeClaimedByAnotherConnector()
+    {
+        var registry = new ConnectorRegistry();
+        var log = new CapturingLogger();
+
+        Assert.Equal(3, ModbusMultidropRegistration.RegisterAll(
+            BusJson(DeviceJson("D7-GHOST-A", 1), DeviceJson("D7-GHOST-B", 2), DeviceJson("D7-GHOST-C", 3)),
+            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+
+        Assert.Equal(3, registry.RegisteredIds.Count);
+        Assert.True(registry.TryGetInstanceIdForMachine("D7-GHOST-B", out _));
+
+        // The operator edits their file: unit 2 is gone. Same bus, same id, one fewer device.
+        Assert.Equal(2, ModbusMultidropRegistration.RegisterAll(
+            BusJson(DeviceJson("D7-GHOST-A", 1), DeviceJson("D7-GHOST-C", 3)),
+            BusId, new MapReadingFakeFactory(), registry, log));
+
+        // The entry is gone, not merely stale.
+        Assert.Equal(2, registry.RegisteredIds.Count);
+        Assert.DoesNotContain(ModbusMultidropMap.DeviceInstanceId(BusId, 2), registry.RegisteredIds);
+        Assert.Contains(ModbusMultidropMap.DeviceInstanceId(BusId, 1), registry.RegisteredIds);
+        Assert.Contains(ModbusMultidropMap.DeviceInstanceId(BusId, 3), registry.RegisteredIds);
+
+        // 🔴 THE PROOF THE CLAIM WENT WITH IT: a different connector entirely can now serve that machine.
+        // Before D-7a this returned false and the machine was unserveable until a restart.
+        Assert.True(registry.Register(
+            new MapReadingFakeFactory(), DeviceJson("D7-GHOST-B", 9),
+            instanceId: "a-completely-different-connector", machineCode: "D7-GHOST-B"));
+        Assert.True(registry.TryGetInstanceIdForMachine("D7-GHOST-B", out var newOwner));
+        Assert.Equal("a-completely-different-connector", newOwner);
+
+        // Visible, never silent — an operator who removed a device sees that it was removed.
+        Assert.Contains(log.Messages, m =>
+            m.Contains(ModbusMultidropMap.DeviceInstanceId(BusId, 2), StringComparison.Ordinal)
+            && m.Contains("unregistered", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 🔴 <b>The ordinary reason a bus map changes: a device is RE-ADDRESSED.</b> Unit 2 becomes unit 4 — a
+    /// physical change on the wire — so the same machine arrives under a new instance id while the old one
+    /// still holds its claim. This is why the sweep runs BEFORE the registrations rather than after: the other
+    /// order refuses the new position against a ghost the same call is about to delete, and the operator sees
+    /// one device missing with a message naming an instance that no longer exists in their file.
+    /// </summary>
+    [Fact]
+    public void AReAddressedDevice_MovesToItsNewInstanceId_WithoutBeingRefusedAgainstItsOwnGhost()
+    {
+        var registry = new ConnectorRegistry();
+
+        Assert.Equal(2, ModbusMultidropRegistration.RegisterAll(
+            BusJson(DeviceJson("D7-MOVE-A", 1), DeviceJson("D7-MOVE-B", 2)),
+            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+
+        Assert.Equal(2, ModbusMultidropRegistration.RegisterAll(
+            BusJson(DeviceJson("D7-MOVE-A", 1), DeviceJson("D7-MOVE-B", 4)),
+            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+
+        Assert.Equal(2, registry.RegisteredIds.Count);
+        Assert.True(registry.TryGetInstanceIdForMachine("D7-MOVE-B", out var whereIsB));
+        Assert.Equal(ModbusMultidropMap.DeviceInstanceId(BusId, 4), whereIsB);
+        Assert.DoesNotContain(ModbusMultidropMap.DeviceInstanceId(BusId, 2), registry.RegisteredIds);
+    }
+
+    /// <summary>
+    /// 🔴 <b>D-4 review m5's second half — the fan-out refuses to overwrite an entry that is not this bus's to
+    /// overwrite.</b> <see cref="ModbusMultidropMap.ValidateBusInstanceId"/> makes it impossible for another
+    /// BUS to own a derived id, but a connector registered from a different path entirely — an operator naming
+    /// an instance <c>rs485-line1:unit3</c> — can. <c>Register</c> is last-write-wins on the id, so without
+    /// this check the fan-out would silently drop that connector's machine claim while still counting the
+    /// device registered, which is verbatim the shape D-4's review named.
+    /// </summary>
+    [Fact]
+    public void ADerivedIdAlreadyHeldByAnotherConnectorServingADifferentMachine_IsNotOverwritten()
+    {
+        var registry = new ConnectorRegistry();
+        var log = new CapturingLogger();
+
+        // Something else got there first, under exactly the id this bus's unit 3 will derive.
+        var squatterId = ModbusMultidropMap.DeviceInstanceId(BusId, 3);
+        Assert.True(registry.Register(
+            new MapReadingFakeFactory(), DeviceJson("D7-SQUATTER", 3),
+            instanceId: squatterId, machineCode: "D7-SQUATTER"));
+
+        var registered = ModbusMultidropRegistration.RegisterAll(
+            BusJson(DeviceJson("D7-M5-A", 1), DeviceJson("D7-M5-C", 3)),
+            BusId, new MapReadingFakeFactory(), registry, log);
+
+        // One device registered, one refused — and the refusal is COUNTED as a refusal, which is the half D-4's
+        // review found broken ("RegisterAll still counts it as registered").
+        Assert.Equal(1, registered);
+
+        // 🔴 The squatter is untouched: same id, same machine claim.
+        Assert.True(registry.TryGetInstanceIdForMachine("D7-SQUATTER", out var stillThere));
+        Assert.Equal(squatterId, stillThere);
+        Assert.False(registry.TryGetInstanceIdForMachine("D7-M5-C", out _));
+
+        Assert.Contains(log.Messages, m =>
+            m.Contains(squatterId, StringComparison.Ordinal) && m.Contains("D7-SQUATTER", StringComparison.Ordinal));
+    }
+
+    /// <summary>Re-registering the SAME device is an ordinary update, not a collision — the map's registers
+    /// changed, say. The discriminating pair with the test above: same id, same machine passes; same id,
+    /// different machine is refused.</summary>
+    [Fact]
+    public void ReRegisteringTheSameDeviceUnderTheSameId_IsAnUpdate_NotACollision()
+    {
+        var registry = new ConnectorRegistry();
+
+        Assert.Equal(2, ModbusMultidropRegistration.RegisterAll(
+            BusJson(DeviceJson("D7-SAME-A", 1), DeviceJson("D7-SAME-B", 2)),
+            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+
+        Assert.Equal(2, ModbusMultidropRegistration.RegisterAll(
+            BusJson(DeviceJson("D7-SAME-A", 1), DeviceJson("D7-SAME-B", 2)),
+            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+
+        Assert.Equal(2, registry.RegisteredIds.Count);
+    }
+
+    /// <summary>
+    /// 🔴 <b>Blueprint §10 item 2 — the write-queue bound handed to the factory is the bus's WORST device's
+    /// hold, not the first one's and not each device's own.</b> The bus below is built so those answers differ
+    /// by a factor of 20, and the factory delegate is invoked ONCE for the whole bus, which is the shape that
+    /// makes "per bus" true rather than asserted.
+    /// </summary>
+    [Fact]
+    public void TheFactoryIsBuiltOncePerBus_WithTheLargestDevicesWorstCaseHold()
+    {
+        var registry = new ConnectorRegistry();
+        var budgets = new List<long>();
+
+        var registered = ModbusMultidropRegistration.RegisterAll(
+            BusJson(
+                DeviceJsonWithTimeout("D7-BUDGET-A", 1, readTimeoutMs: 300),   // 1 x 2 x 300  =    600 ms
+                DeviceJsonWithTimeout("D7-BUDGET-B", 2, readTimeoutMs: 6000),  // 1 x 2 x 6000 = 12 000 ms
+                DeviceJsonWithTimeout("D7-BUDGET-C", 3, readTimeoutMs: 900)),
+            BusId,
+            budget => { budgets.Add(budget); return new MapReadingFakeFactory(); },
+            registry,
+            NullTestLogger.Instance);
+
+        Assert.Equal(3, registered);
+        Assert.Equal(new long[] { 12_000 }, budgets);
+    }
+
+    /// <summary>A bus whose map will not parse never builds a factory at all — so a transport that would have
+    /// been dialled for it is not, and the whole bus is disabled with one error rather than three.</summary>
+    [Fact]
+    public void ABusThatWillNotParse_NeverBuildsItsFactory()
+    {
+        var registry = new ConnectorRegistry();
+        var built = 0;
+
+        var registered = ModbusMultidropRegistration.RegisterAll(
+            BusJson(DeviceJson("D7-NOFACTORY-A", 1), DeviceJson("D7-NOFACTORY-B", 1)),  // duplicate slave address
+            BusId,
+            _ => { built++; return new MapReadingFakeFactory(); },
+            registry,
+            NullTestLogger.Instance);
+
+        Assert.Equal(0, registered);
+        Assert.Equal(0, built);
+        Assert.Empty(registry.RegisteredIds);
+    }
+
+    /// <summary>🔴 The ghost sweep touches ONLY this bus's own namespace. Proved by having a SECOND bus, and an
+    /// ordinary connector, registered alongside — a prefix test that was even slightly too greedy would
+    /// unregister them. This is the assertion that would have gone red had
+    /// <see cref="ModbusMultidropMap.ValidateBusInstanceId"/> not made the namespaces disjoint.</summary>
+    [Fact]
+    public void TheGhostSweep_NeverTouchesAnotherBusOrAnOrdinaryConnector()
+    {
+        var registry = new ConnectorRegistry();
+
+        Assert.Equal(2, ModbusMultidropRegistration.RegisterAll(
+            BusJson(DeviceJson("D7-SWEEP-A", 1), DeviceJson("D7-SWEEP-B", 2)),
+            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+
+        // A second bus whose id SHARES A PREFIX with the first — the greedy-prefix trap, spelled out.
+        Assert.Equal(1, ModbusMultidropRegistration.RegisterAll(
+            BusJson(DeviceJson("D7-SWEEP-OTHER", 1)),
+            BusId + "-annexe", new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+
+        Assert.True(registry.Register(
+            new MapReadingFakeFactory(), DeviceJson("D7-SWEEP-PLAIN", 1),
+            instanceId: "some-opcua-thing", machineCode: "D7-SWEEP-PLAIN"));
+
+        // Now shrink the FIRST bus to nothing but its unit 1.
+        Assert.Equal(1, ModbusMultidropRegistration.RegisterAll(
+            BusJson(DeviceJson("D7-SWEEP-A", 1)),
+            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+
+        Assert.Equal(3, registry.RegisteredIds.Count);
+        Assert.Contains(ModbusMultidropMap.DeviceInstanceId(BusId, 1), registry.RegisteredIds);
+        Assert.Contains(ModbusMultidropMap.DeviceInstanceId(BusId + "-annexe", 1), registry.RegisteredIds);
+        Assert.Contains("some-opcua-thing", registry.RegisteredIds);
+        Assert.DoesNotContain(ModbusMultidropMap.DeviceInstanceId(BusId, 2), registry.RegisteredIds);
+    }
+
+    private static string DeviceJsonWithTimeout(string machineCode, int unitId, int readTimeoutMs) =>
+        $$"""
+        {"machineCode":"{{machineCode}}","unitId":{{unitId}},"pollIntervalMs":1000,"readTimeoutMs":{{readTimeoutMs}},"registers":[{"address":0,"type":"Holding","dataType":"UInt16","scale":1.0,"metric":"speed","unit":"rpm"}]}
+        """;
+
+    // ─────────────────────────────────────────────────────────────────────
     // Test doubles
     // ─────────────────────────────────────────────────────────────────────
 

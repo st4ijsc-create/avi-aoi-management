@@ -213,20 +213,43 @@ public static class ConnectorsConfig
     /// succeeded) — empty when neither env-var route is active.</param>
     /// <param name="logWarning">Invoked once per entry skipped for precedence/duplicate reasons, naming the
     /// entry and why. Optional.</param>
+    /// <param name="registrationKeyOf">🔴 Task D-7a — <b>what key an entry will actually be REGISTERED under</b>,
+    /// which is the only thing either rule above can honestly compare on. <see langword="null"/> (the default)
+    /// means <c>entry =&gt; entry.Kind</c>, i.e. byte-for-byte the behaviour this method had before D-7a and
+    /// the correct answer for every entry that existed before it.
+    ///
+    /// <para>It became a parameter because it stopped being always-the-kind. A Modbus RTU entry is not one
+    /// connector but a BUS, registered under the operator's own <see cref="ConnectorConfigEntry.Id"/> and
+    /// fanned out into N instances — so a site with two RS-485 lines has two Modbus-kind entries that do not
+    /// conflict with each other, and neither of them conflicts with an <c>ST4I_MODBUS_MAP</c>-configured TCP
+    /// connector. Keyed on the kind, both rules would have suppressed the second bus and both would have called
+    /// it a duplicate.</para>
+    ///
+    /// <para><b>The compatibility rule survives literally, not by argument:</b> the env-precedence set holds
+    /// KINDS, and both pre-D-7a arms register under the kind, so for every entry a pre-D-7a build could have
+    /// carried this resolver returns exactly the value the old code compared. The one production caller passes
+    /// <c>ConnectorsJsonRegistration.RegistrationKeyOf</c>, which is the same method the dispatch itself uses —
+    /// deliberately, so "what will this register as" has one implementation rather than two that can
+    /// drift.</para></param>
     public static IReadOnlyList<ConnectorConfigEntry> ResolveEntries(
         IReadOnlyList<ConnectorConfigEntry> entries,
         IReadOnlySet<string> alreadyConfiguredKinds,
-        Action<string>? logWarning = null)
+        Action<string>? logWarning = null,
+        Func<ConnectorConfigEntry, string>? registrationKeyOf = null)
     {
         ArgumentNullException.ThrowIfNull(entries);
         ArgumentNullException.ThrowIfNull(alreadyConfiguredKinds);
 
+        var keyOf = registrationKeyOf ?? (entry => entry.Kind);
+
         var resolved = new List<ConnectorConfigEntry>();
-        var acceptedKinds = new Dictionary<string, string>(StringComparer.Ordinal); // kind -> accepted entry's id, for the duplicate-naming warning.
+        var acceptedKeys = new Dictionary<string, string>(StringComparer.Ordinal); // registration key -> accepted entry's id, for the duplicate-naming warning.
 
         foreach (var entry in entries)
         {
-            if (alreadyConfiguredKinds.Contains(entry.Kind))
+            var key = keyOf(entry);
+
+            if (alreadyConfiguredKinds.Contains(key))
             {
                 logWarning?.Invoke(
                     $"connectors.json entry '{entry.Id}' (kind '{entry.Kind}') ignored — an environment " +
@@ -234,7 +257,7 @@ public static class ConnectorsConfig
                 continue;
             }
 
-            if (acceptedKinds.TryGetValue(entry.Kind, out var firstId))
+            if (acceptedKeys.TryGetValue(key, out var firstId))
             {
                 logWarning?.Invoke(
                     $"connectors.json entry '{entry.Id}' (kind '{entry.Kind}') ignored — entry '{firstId}' " +
@@ -242,7 +265,7 @@ public static class ConnectorsConfig
                 continue;
             }
 
-            acceptedKinds[entry.Kind] = entry.Id;
+            acceptedKeys[key] = entry.Id;
             resolved.Add(entry);
         }
 

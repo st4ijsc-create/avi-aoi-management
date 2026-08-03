@@ -560,7 +560,58 @@ EXPECT_CONFORMANCE=22
 # impossibility proof, an untested keep-alive claim, an arithmetically wrong retries rationale, an imprecise
 # "every write check" and an over-general "no fast per-device failure"), plus blueprint §10 item 4 answered on
 # IModbusBusLink.DrainBufferedInput where D-7 will stand. Comment-only in src/; none moves a count.
-EXPECT_EDGECORE=952
+#
+# 🔴 TASK D-7a (backend: configuration, lifecycle, and a path an operator can reach) raises this 952 -> 1009
+# (+57). Three new files; nothing is rewritten, split or deleted. Both moved EXPECT_* constants are again the
+# ONLY executable lines this task changes in this script, per the standing rule.
+#
+#   +22  ModbusRtuBusSettingsTests (new) — the schema half of "connectors.json can declare a multidrop RTU
+#          bus". 6 facts + two [Theory] blocks (10 rows + 6). The two that carry it: the COMPATIBILITY rule
+#          (10 rows of documents that must NOT be read as RTU, including three that do not parse at all —
+#          DeclaresATransport must answer false rather than throw, or a malformed map would be reported twice
+#          by two different paths), and the SERIAL refusal, which asserts the reason and the alternative AND
+#          asserts the message does NOT read as "unknown transport" — the wording an operator would act on by
+#          assuming they had a typo.
+#   +15  ModbusMultidropMapTests (25 -> 40) — D-4 review m5 and blueprint §10 item 2. A [Theory] of 12 rows
+#          pins the derived-id namespace at its boundaries (":unit" with no digits, "unit1a", ":unit1" with no
+#          bus half); one fact proves a bus named like a device position is REFUSED, which is what makes the
+#          namespace disjoint and is what the ghost sweep depends on; one computes the bus-wide write bound on
+#          a bus whose devices differ by 20x so "the first" or "its own" is red rather than merely different;
+#          and one finally pins the LITERAL "{bus}:unit{n}" (D-4 review m1 — every existing assertion goes
+#          through the generator, which cannot see a change to the format).
+#   +10  ModbusRtuReadBackoffTests (new) — the backoff arithmetic. The load-bearing ones are about
+#          RELATIONSHIPS, not an input/output table: that the base is the HOLD and not the poll interval
+#          (asserted against a second device whose hold is small, so a constant floor would fail), that the
+#          multiplier really drives the growth (a 1.5x instance, whose answers this test does not also supply
+#          as inputs), and that 60 consecutive failures cannot overflow into a NEGATIVE delay — which would
+#          make a dead device poll in a tight loop, i.e. the opposite of the mechanism, produced by it.
+#   + 6  ModbusRtuConnectorFactoryTests (new) — the first thing in src/ that builds an RTU driver from
+#          configuration. THE LEASE LEAK is here twice: once as "an unbuildable device takes no lease at all"
+#          (validate before Acquire), and once as the discriminating version — a driver-constructor throw AFTER
+#          the lease is owned, observed through the OPENER being invoked a SECOND time. A lease count cannot
+#          discriminate: had it leaked, a later Acquire would silently ride the leaked bus and every read would
+#          still work, which is the leak's whole signature. Also pins that the factory turns the read backoff
+#          ON where a directly-constructed driver leaves it off, asserted through the two drivers' own
+#          failed-poll messages on one bus in one test.
+#   + 3  ModbusRtuDriverWriteTests (40 -> 43) — blueprint §10 items 1, 2 and 3. The budget test passes
+#          CancellationToken.None deliberately — literally the unbounded token §10 item 1 forbids — so only the
+#          driver's own bound can end the call, and asserts the Detail does NOT say "cancelled" (nobody
+#          cancelled anything). Its control is a driver with NO budget, which still waits the hold out and
+#          applies; without that pair the first would pass against an implementation that bounded every write
+#          at a constant. The third pins that an Applied COMMAND now carries the acknowledgement-not-observation
+#          sentence, with the pulse having genuinely worked.
+#   + 1  ModbusMultidropBusTests (11 -> 12) — the read backoff measured on D-4's OWN harness, before and after,
+#          in one process. Measured: 2.0 reads/s with the backoff off, 60.0 with it on — a 30x recovery, against
+#          an asserted 3x. D-4's own dead-device tax test is unchanged (82x collapse on this machine) and now
+#          passes ModbusRtuReadBackoff.Disabled EXPLICITLY, so a future flip of the driver's default cannot
+#          silently turn that baseline into a measurement of something else.
+#
+# 🔴 AND ONE DEFECT THIS MOVE PAID FOR, recorded because it is the reason the measurement exists: the failure
+# counter was incremented inside the ARGUMENT of `_logError?.Invoke(ex, DescribeFailedPoll())`, and `?.`
+# short-circuits its arguments — so for every driver constructed without a log callback the counter never moved
+# and the backoff never engaged. Every unit test of the arithmetic passed. Only the end-to-end number could see
+# it, and it reported a 1.0x "improvement".
+EXPECT_EDGECORE=1009
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
@@ -767,7 +818,53 @@ EXPECT_EDGESERVICE=28
 #
 # Nothing in Program.cs calls RegisterAll: the RTU connector factory is still D-7's, so no operator can turn
 # multidrop on yet — the same posture D-2 and D-3 both shipped with and said so.
-EXPECT_ENGINEAPI=1190
+#
+# 🔴 TASK D-7a raises this 1190 -> 1219 (+29), and the sentence directly above stops being true: Program.cs
+# now calls ModbusMultidropRegistration.RegisterAll through ConnectorsJsonRegistration's RTU arm, so a
+# connectors.json entry can declare a multidrop bus and an operator can turn it on. No file is rewritten,
+# split or deleted, and NO NEW ROUTE IS ADDED — RbacPolicyTests.ExpectedRoutes is unchanged and its
+# exact-count sweep still runs in both directions, which is why that suite's own total does not move.
+#
+#   + 7  ConnectorsJsonRegistrationTests (11 -> 18) — the deliverable. A three-device bus entry produces THREE
+#          registered instances, each bound to its own machine, each building a real ModbusRtuDriver, all three
+#          leasing ONE bus (asserted on the ModbusBusRegistry that enforces it, not on three drivers that
+#          merely work); two RS-485 lines in one file are two buses, not a duplicate, with two bus keys and one
+#          lease each; the registration-key rule is pinned as a discriminating pair (every pre-D-7a entry shape
+#          still answers with its KIND, including one carrying an explicit id — the case that must NOT move,
+#          because its slot label and therefore its alarm TargetId would fork); a bus in a host composed with
+#          no ModbusBusRegistry is skipped rather than half-wired; a bus whose settings will not parse disables
+#          THAT BUS and nothing else; and re-running registration after a device is deleted from the file
+#          leaves no ghost.
+#   + 7  ModbusMultidropRegistrationTests (12 -> 19) — D-4 review m5 and m6. m6: a removed device is
+#          unregistered AND another connector can then claim its machine, which is the only way to prove a
+#          CLAIM was released (the brief's own instruction: prove the ghost is gone, not that a method returned
+#          true). A RE-ADDRESSED device (unit 2 -> unit 4) is the ordinary edit and is why removal runs BEFORE
+#          registration. m5: a derived id already held by something serving a DIFFERENT machine is refused and
+#          COUNTED as refused — the half D-4's review found broken. The sweep is proved not to touch a second
+#          bus whose id SHARES A PREFIX, nor an ordinary connector. Plus: the factory is built once per bus
+#          with the LARGEST device's hold (a bus built so those answers differ by 20x), and a bus that will not
+#          parse never builds its factory at all, so a transport that would have been dialled for it is not.
+#   + 7  ConnectorRegistryTests (24 -> 31) — the removal path itself: the claim is released (proved by another
+#          instance taking it, after asserting the gate was real first), unknown/blank/null ids are ordinary
+#          false answers ([Theory], 4 rows), removal uses the SAME DriverKinds.Normalize as everything else
+#          (with the third-party half — "vendor.acme.weld" must NOT remove "Vendor.Acme.Weld"), and a
+#          TryCreateDriver for an id removed after a snapshot is a visible failure rather than a throw. That
+#          last one is the consequence question the old "this task never removes entries" comment let nobody
+#          ask, asked.
+#   + 6  ConnectorEndpointsMachineClaimTests (13 -> 19) — DELETE releases the live claim, so the 409 that used
+#          to tell an operator to restart because a connector they had already deleted was "STILL RUNNING" is
+#          gone. 🔴 AND ITS LIMIT, which a failing run corrected: FleetHost.RegisterMachine has no un-register
+#          either, so with the machine in the ROSTER the replacement save is still refused — by the roster
+#          guard. The first draft of that test asserted the optimistic version and went red. Both are now
+#          pinned, and the DELETE response says the roster half in advance. Plus the reserved-instance-id 400
+#          (the second door into the derived namespace) and its control [Theory] (3 rows) proving names that
+#          are merely SIMILAR are still accepted.
+#   + 2  ConnectorsConfigTests (30 -> 32) — ResolveEntries de-duplicates and applies env precedence on the
+#          REGISTRATION KEY. Driven with a stand-in resolver so this suite states the RULE rather than
+#          restating the production predicate; the real one is driven in ConnectorsJsonRegistrationTests. The
+#          three pre-existing ResolveEntries tests are untouched and still pass with no resolver supplied,
+#          which is the compatibility half.
+EXPECT_ENGINEAPI=1219
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

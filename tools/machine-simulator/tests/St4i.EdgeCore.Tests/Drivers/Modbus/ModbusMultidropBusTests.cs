@@ -445,7 +445,15 @@ public class ModbusMultidropBusTests
             ModbusRtuDriver? dead = null;
             if (withDeadDevice)
             {
-                dead = new ModbusRtuDriver(bus.Lease(), Map("TAX-DEAD", unitId: 3, pollIntervalMs: 1, readTimeoutMs: 500));
+                // 🔴 Task D-7a — the read backoff is passed EXPLICITLY as Disabled, which is also
+                // ModbusRtuDriver's own default, so this measurement is unchanged. Stated rather than left
+                // implicit because this test measures the UN-MITIGATED mechanism on purpose: it is the
+                // baseline TheReadBackoff_CutsADeadDevicesTaxOnItsHealthyNeighbours_MeasuredBeforeAndAfter
+                // compares against, and a future flip of that default would silently turn it into a
+                // measurement of something else while still passing.
+                dead = new ModbusRtuDriver(
+                    bus.Lease(), Map("TAX-DEAD", unitId: 3, pollIntervalMs: 1, readTimeoutMs: 500),
+                    readBackoff: ModbusRtuReadBackoff.Disabled);
                 tasks.Add(DriveAsync(dead, _ => { }, cts.Token));
             }
 
@@ -499,6 +507,114 @@ public class ModbusMultidropBusTests
             $"one unanswered device on the bus must visibly tax the healthy ones: {rateWithout:F1} reads/s alone " +
             $"vs {rateWith:F1} reads/s with it — expected at least a 4x drop (the mechanism predicts far more: " +
             "the dead device holds the arbitration lock for 2 x 500 ms per poll).");
+    }
+
+    /// <summary>
+    /// 🔴 <b>Task D-7a — the remedy for the test above, measured on the same harness, in the same process,
+    /// against a baseline taken minutes earlier rather than quoted from another task's report.</b>
+    ///
+    /// <para>D-4 measured the disease and named the cure: <i>"this is the finding D-7 has to act on, and it is
+    /// why a per-device backoff — not a per-device quarantine, which is impossible — is the remedy worth
+    /// building."</i> The claim under test is narrow and is the only one this mechanism can make: a dead device
+    /// stops taking its full turn on EVERY cycle, so its healthy neighbours get the line back. It does not make
+    /// the dead device's individual hold any shorter (nothing can — the hold is inside the arbitration lock),
+    /// and D-5's review already verified structurally that it therefore does nothing for a WRITE's worst case.</para>
+    ///
+    /// <para><b>Why the comparison is inside one test rather than across two.</b> Blueprint §8.1's rule about
+    /// numbers: the baseline of the test above is bounded by <c>Task.Delay(1)</c>'s ~15.6 ms Windows
+    /// quantization, not by the bus, so an absolute reads/s figure means different things on different
+    /// machines. Both phases here run on the same harness, the same slave network and the same machine seconds
+    /// apart, and the assertion is a RATIO between them — which is the only form in which this number is worth
+    /// anything.</para>
+    ///
+    /// <para><b>The arithmetic the ratio should follow, so a failure can be diagnosed rather than widened.</b>
+    /// The dead device declares 1 register, the default retry count of 1 and <c>readTimeoutMs: 500</c>, so its
+    /// <c>WorstCaseBusHoldMs</c> is 1 × 2 × 500 = 1 000 ms. With the backoff OFF it re-takes the line
+    /// immediately after every failure, so it holds ~100% of the window. With it ON it waits one whole hold
+    /// after failure 1, two after failure 2, four after failure 3 — so across a 3 s window it holds roughly
+    /// 1 000 + 1 000 ms and leaves the rest to its neighbours. The predicted improvement is therefore about an
+    /// order of magnitude; the assertion asks for 3×.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheReadBackoff_CutsADeadDevicesTaxOnItsHealthyNeighbours_MeasuredBeforeAndAfter()
+    {
+        await using var bus = ModbusRtuLoopbackHarness.Start(
+            ((byte)1, new ushort[] { 111 }),
+            ((byte)2, new ushort[] { 222 }),
+            ((byte)3, new ushort[] { 333 }));
+
+        // Unit 3 is a real slave that receives every request and answers it — the answer is dropped on the
+        // wire, so it is a device that is genuinely ASKED and genuinely does not reply.
+        bus.Links.Device.SilentUnitId = 3;
+
+        // Holds the bus alive across BOTH phases — see the test above for the trap this closes.
+        await using var keepAlive = bus.Lease();
+
+        var window = TimeSpan.FromSeconds(3);
+        var healthy = 0;
+
+        async Task<int> CountHealthyReadsAsync(ModbusRtuReadBackoff backoff)
+        {
+            Volatile.Write(ref healthy, 0);
+
+            using var cts = new CancellationTokenSource();
+            await using var one = new ModbusRtuDriver(bus.Lease(), Map("BACKOFF-M1", 1, pollIntervalMs: 1));
+            await using var two = new ModbusRtuDriver(bus.Lease(), Map("BACKOFF-M2", 2, pollIntervalMs: 1));
+            var dead = new ModbusRtuDriver(
+                bus.Lease(), Map("BACKOFF-DEAD", unitId: 3, pollIntervalMs: 1, readTimeoutMs: 500),
+                readBackoff: backoff);
+
+            var tasks = new List<Task>
+            {
+                DriveAsync(one, _ => Interlocked.Increment(ref healthy), cts.Token),
+                DriveAsync(two, _ => Interlocked.Increment(ref healthy), cts.Token),
+                DriveAsync(dead, _ => { }, cts.Token),
+            };
+
+            await Task.Delay(window);
+            var counted = Volatile.Read(ref healthy);
+
+            await cts.CancelAsync();
+            foreach (var task in tasks)
+            {
+                try { await task; } catch (OperationCanceledException) { }
+            }
+
+            await dead.DisposeAsync();
+            return counted;
+        }
+
+        // BEFORE and AFTER, in that order, on one bus. The ONLY thing that differs between the two calls is
+        // the dead device's backoff object.
+        var withoutBackoff = await CountHealthyReadsAsync(ModbusRtuReadBackoff.Disabled);
+        var withBackoff = await CountHealthyReadsAsync(ModbusRtuReadBackoff.Default);
+
+        var silenced = bus.Links.Device.FramesSilenced;
+        Assert.True(silenced > 0, "the silenced slave should have replied and been dropped in both phases");
+
+        _output.WriteLine(
+            $"MEASURED read backoff, two healthy devices sharing a line with one unanswered device, {window.TotalSeconds:F0} s " +
+            $"per phase: backoff OFF {withoutBackoff / window.TotalSeconds:F1} reads/s; backoff ON " +
+            $"{withBackoff / window.TotalSeconds:F1} reads/s — a " +
+            $"{(withoutBackoff > 0 ? (double)withBackoff / withoutBackoff : double.PositiveInfinity):F1}x recovery. " +
+            $"{silenced} replies silenced across both phases.");
+        _output.WriteLine(
+            "DERIVED (from the map, not measured here): the dead device's WorstCaseBusHoldMs is 1 register x " +
+            "2 attempts x 500 ms = 1000 ms, which is also the backoff's first wait — see ModbusRtuReadBackoff " +
+            "for why the base is the hold rather than the poll interval.");
+
+        // 🔴 The load-bearing pair. Neither number alone says anything: the first proves the dead device really
+        // was starving its neighbours in this run (otherwise the second could pass on a bus that had no
+        // problem), the second is the improvement.
+        Assert.True(
+            withBackoff > 0,
+            "with the backoff on, the two healthy devices must get the line at all");
+        Assert.True(
+            withBackoff > withoutBackoff * 3,
+            $"the read backoff must visibly return the line to the healthy devices: {withoutBackoff} reads in " +
+            $"{window.TotalSeconds:F0}s with it off vs {withBackoff} with it on — expected at least 3x (the " +
+            "mechanism predicts roughly an order of magnitude; see this test's own remarks for the arithmetic, " +
+            "and diagnose a failure here rather than widening it)");
     }
 
     // ─────────────────────────────────────────────────────────────────────

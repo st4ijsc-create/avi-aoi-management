@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using St4i.Connector.Abstractions;
+using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Drivers.Modbus;
 using St4i.EngineApi.Fleet;
 
@@ -36,22 +37,26 @@ namespace St4i.EngineApi.Config;
 /// whole suite green; a fan-out that registered N instances unbound, or registered one instance for N machines,
 /// would be the same defect with a bigger blast radius.</para>
 ///
-/// <para><b>🔴 Review m6 — this method is SAFE TO RE-RUN ONLY FOR A MAP THAT GAINED OR CHANGED DEVICES, NEVER
-/// FOR ONE THAT LOST ONE, and D-7 owns closing that.</b> <see cref="ConnectorRegistry"/> has no removal path at
-/// all — <c>Register</c> replaces an entry under the same id and nothing ever deletes one. So calling this again
-/// after an operator removes a device from a bus map leaves a GHOST instance registered under that device's id,
-/// still holding that machine's claim, until the process restarts. The consequences are both silent: the
-/// machine cannot be re-served by any other connector (the claim gate refuses every later registration for it,
-/// which this method reports as "already served by connector instance …" naming an instance the operator has
-/// already deleted from their file), and <c>FleetHost.StartLocked</c> keeps building a pipeline slot for it on
-/// every restart, so an alarm <c>TargetId</c> outlives the device it named.</para>
+/// <para><b>🔴 Review m6 — CLOSED by Task D-7a.</b> D-4 recorded that this method was "safe to re-run only for
+/// a map that GAINED or CHANGED devices, never for one that LOST one": <see cref="ConnectorRegistry"/> had no
+/// removal path, so re-running it after an operator deleted a device from a bus map left a GHOST instance still
+/// holding that machine's claim until the process restarted — the machine could then be served by nothing, and
+/// this method's own refusal message named an instance the operator had already deleted from their file.
+/// <see cref="ConnectorRegistry.Unregister"/> now exists and this method SWEEPS: every entry in this bus's own
+/// derived namespace that the current map no longer declares is unregistered before the new set is registered.
+/// See <see cref="RegisterAll(string,string,Func{long,IConnectorFactory},ConnectorRegistry,ILogger})"/>'s own
+/// remarks for what the sweep can and cannot touch, and for why the two halves are ordered removal-first.</para>
 ///
-/// <para>This is a pre-existing property of D-1's identity model rather than something D-4 introduced — the
-/// same is true of every registration path — but multidrop makes it REACHABLE in a way one-connector-per-kind
-/// did not: editing a bus map is exactly the operation that removes a device, and a bus of eight is exactly the
-/// configuration an operator edits. Closing it means an unregister on the registry (and a decision about what
-/// happens to the slot and its alarms), which is a change to D-1's spine and belongs with whatever D-7 builds to
-/// reconfigure a connector at run time — not smuggled into a task about map shape.</para>
+/// <para><b>🔴 Review m5 — CLOSED, and not where D-4 expected.</b> The derived id <c>{bus}:unit{n}</c> was not
+/// collision-free across buses (a bus named <c>X</c> and a bus named <c>X:unit1</c> derived the same id, and
+/// <c>Register</c> is last-write-wins, so the second silently dropped the first device's machine claim while
+/// this method still counted it registered). D-4 proposed either rejecting a bus id containing <c>":unit"</c>
+/// or checking derived ids against the registry. <b>Both</b> ship, and they are not redundant:
+/// <see cref="ModbusMultidropMap.ValidateBusInstanceId"/> makes the two namespaces disjoint by construction —
+/// which is also what makes the ghost sweep above safe, because it is the only thing that guarantees
+/// <c>X:unit1</c> can only ever have been derived by bus <c>X</c> — while the registry check below catches an
+/// id that arrived from a DIFFERENT registration path (an operator naming a connector <c>X:unit1</c> through
+/// <c>POST /v1/connectors</c>) and refuses to overwrite it rather than silently winning.</para>
 /// </summary>
 public static class ModbusMultidropRegistration
 {
@@ -80,6 +85,30 @@ public static class ModbusMultidropRegistration
         ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(factory);
+        return RegisterAll(multidropMapJson, busInstanceId, _ => factory, registry, logger);
+    }
+
+    /// <summary>
+    /// 🔴 Task D-7a — the same fan-out, but the factory is built <b>from</b> a bus-wide fact the caller cannot
+    /// know until the document has been parsed.
+    /// </summary>
+    /// <param name="factoryForBus">Invoked exactly once, after a successful fan-out, with the LARGEST
+    /// <see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/> among the devices on this bus
+    /// (<see cref="ModbusMultidropMap.MaxWorstCaseBusHoldMs"/>). That number is blueprint §10 item 2's
+    /// write-queue bound, and it is a property of the BUS — a write queues behind whichever sibling holds the
+    /// line, so no single device's document contains it. Threading it through here rather than making the
+    /// caller fan out a second time to compute it is what keeps the number a write is bounded by and the number
+    /// <see cref="ModbusMultidropMap.FanOut"/> already warns with the same arithmetic on the same parse, rather
+    /// than two derivations that can disagree.</param>
+    /// <inheritdoc cref="RegisterAll(string,string,IConnectorFactory,ConnectorRegistry,ILogger)"/>
+    public static int RegisterAll(
+        string multidropMapJson,
+        string busInstanceId,
+        Func<long, IConnectorFactory> factoryForBus,
+        ConnectorRegistry registry,
+        ILogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(factoryForBus);
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(logger);
 
@@ -98,10 +127,50 @@ public static class ModbusMultidropRegistration
             return 0;
         }
 
+        var factory = factoryForBus(ModbusMultidropMap.MaxWorstCaseBusHoldMs(devices));
+        if (factory is null)
+        {
+            logger.LogError(
+                "Modbus multidrop bus '{BusInstanceId}': no connector factory could be built for it — no device " +
+                "on that bus is registered for this run.", busInstanceId);
+            return 0;
+        }
+
+        // 🔴 ONE snapshot for the whole pass, taken BEFORE anything mutates — D-1 review m3's rule, applied for
+        // the same reason FleetHost.ResolveWritableDriver takes one: the sweep and the collision check are two
+        // questions about the same moment, and asking them separately would let a registration land between
+        // them. Stale is fine and is the point; internally inconsistent is not.
+        var before = registry.SnapshotBindings();
+
+        // Removal FIRST, and the order is load-bearing. A device that MOVED from unit 3 to unit 4 (a
+        // re-addressing — the ordinary reason a bus map changes) is a new instance id claiming a machine code
+        // the OLD instance id still holds. Registering before sweeping would refuse it against a ghost this
+        // same call is about to delete, and the operator would see one device missing with a message naming an
+        // instance that no longer exists in their file.
+        SweepGhosts(devices, busInstanceId, registry, before, logger);
+
         var registered = 0;
 
         foreach (var device in devices)
         {
+            // 🔴 Review m5's second half — refuse to overwrite an entry that is NOT this bus's to overwrite.
+            // ModbusMultidropMap.ValidateBusInstanceId already makes it impossible for another BUS to own this
+            // derived id, but a connector registered from another path entirely (POST /v1/connectors naming an
+            // instance "line1:unit3") can. Register is last-write-wins on the id, so without this the fan-out
+            // would silently drop that connector's machine claim while still counting this device registered —
+            // which is exactly the shape D-4's review named.
+            if (OwnedBySomethingElse(before, device, out var incumbentMachine))
+            {
+                logger.LogWarning(
+                    "Modbus multidrop bus '{BusInstanceId}': device at unit {UnitId} (machine '{MachineCode}') " +
+                    "was NOT registered — connector instance '{InstanceId}' already exists and serves a DIFFERENT " +
+                    "machine ('{IncumbentMachine}'). Registering would have silently replaced it and dropped that " +
+                    "machine's claim. Rename that connector or re-address this device; every other device on this " +
+                    "bus is unaffected.",
+                    busInstanceId, device.UnitId, device.MachineCode, device.InstanceId, incumbentMachine);
+                continue;
+            }
+
             // 🔴 The whole invariant, in one call. instanceId is per DEVICE, so N devices are N registry
             // entries and N pipeline slots; machineCode is the single machine THIS device serves, so
             // ConnectorRegistry's claim gate makes it impossible for a second instance to claim it; and the
@@ -130,5 +199,100 @@ public static class ModbusMultidropRegistration
         }
 
         return registered;
+    }
+
+    /// <summary>
+    /// 🔴 Task D-7a (D-4 review m6) — <b>unregisters the entries this bus left behind.</b>
+    ///
+    /// <para><b>What it touches, and why that set is exactly right.</b> Only ids in THIS bus's own namespace:
+    /// the bus id itself (the degenerate single-device form) and <c>{bus}:unit{n}</c>. Nothing else can be in
+    /// that namespace, and that is a guarantee rather than a hope —
+    /// <see cref="ModbusMultidropMap.ValidateBusInstanceId"/> refuses to let any bus be NAMED like a device
+    /// position, so <c>line1:unit3</c> can only ever have been derived by <c>line1</c>. Without that rule this
+    /// sweep would be the most dangerous method in the file: a bus legitimately named <c>line1:unit3</c> would
+    /// see its own registration deleted by bus <c>line1</c>'s sweep.</para>
+    ///
+    /// <para><b>The one id in the namespace it will NOT remove</b> is one whose machine code the CURRENT map
+    /// still declares under a different unit — i.e. a device that was re-addressed. It is unregistered (the old
+    /// position is genuinely gone) and its machine claim is what the new position needs, which is why removal
+    /// runs before registration. Stated because the alternative reading — "leave anything whose machine still
+    /// exists" — is the one that reproduces the ghost.</para>
+    ///
+    /// <para><b>What it deliberately does NOT do: stop anything.</b> Removal is a registry mutation and nothing
+    /// more. A driver already running under a removed id keeps its lease on the shared RTU bus and finishes its
+    /// in-flight read normally; <c>FleetHost</c> reclaims it on the next pipeline restart, disposing it OUTSIDE
+    /// its own <c>_gate</c> under a bounded budget, which is the constraint that predates this batch and is
+    /// absolute. See <see cref="ConnectorRegistry.Unregister"/> for the full statement of what an operator sees
+    /// in that window.</para>
+    /// </summary>
+    private static void SweepGhosts(
+        IReadOnlyList<ModbusBusDevice> devices,
+        string busInstanceId,
+        ConnectorRegistry registry,
+        IReadOnlyList<ConnectorRegistry.ConnectorBinding> before,
+        ILogger logger)
+    {
+        // 🔴 NORMALIZED on both sides. ConnectorRegistry keys on DriverKinds.Normalize(id) and
+        // SnapshotBindings hands back those normalized keys, while ModbusMultidropMap.DeviceInstanceId mints
+        // the RAW derived string — so comparing the two directly would, for any bus whose name normalizes to
+        // something else, fail to recognise this bus's own devices and sweep every one of them on every
+        // re-registration. Folding both through the SAME method the registry uses is the only comparison that
+        // can be right, and it is the same rule ConnectorRegistry's own doc comment states: casing tolerance is
+        // DriverKinds.Normalize's job alone, applied once on the way in and once on the way out.
+        var stillDeclared = new HashSet<string>(devices.Count, StringComparer.Ordinal);
+        foreach (var device in devices)
+        {
+            stillDeclared.Add(DriverKinds.Normalize(device.InstanceId));
+        }
+
+        var busNamespacePrefix = DriverKinds.Normalize(busInstanceId) + ModbusMultidropMap.DeviceIdSuffixPrefix;
+        var normalizedBusId = DriverKinds.Normalize(busInstanceId);
+
+        foreach (var binding in before)
+        {
+            if (stillDeclared.Contains(binding.InstanceId)) continue;
+
+            var isThisBus =
+                string.Equals(binding.InstanceId, normalizedBusId, StringComparison.Ordinal)
+                || (binding.InstanceId.StartsWith(busNamespacePrefix, StringComparison.Ordinal)
+                    && ModbusMultidropMap.LooksLikeADeviceInstanceId(binding.InstanceId));
+
+            if (!isThisBus) continue;
+
+            if (!registry.Unregister(binding.InstanceId)) continue;
+
+            logger.LogWarning(
+                "Modbus multidrop bus '{BusInstanceId}': connector instance '{InstanceId}' (machine " +
+                "'{MachineCode}') is no longer declared by this bus's map and has been unregistered — machine " +
+                "'{MachineCode}' is free for another connector to serve. Any driver still running under that id " +
+                "keeps polling until the fleet is next started; it is not stopped by this.",
+                busInstanceId, binding.InstanceId, binding.MachineCode ?? "(unbound)", binding.MachineCode ?? "(unbound)");
+        }
+    }
+
+    /// <summary>Whether <paramref name="device"/>'s derived instance id is already held by a registration that
+    /// serves a DIFFERENT machine — the m5 collision, asked against the one pre-pass snapshot so it cannot see
+    /// a half-mutated registry. A same-machine incumbent is an ORDINARY UPDATE of this device's own
+    /// registration (the map's registers changed, say) and must be allowed through; an unbound incumbent
+    /// (<c>MachineCode is null</c>) is one nothing can route a write to, so replacing it strands nothing.</summary>
+    private static bool OwnedBySomethingElse(
+        IReadOnlyList<ConnectorRegistry.ConnectorBinding> before, ModbusBusDevice device, out string incumbentMachine)
+    {
+        incumbentMachine = string.Empty;
+
+        // Normalized for the same reason SweepGhosts normalizes — see its own remarks.
+        var wanted = DriverKinds.Normalize(device.InstanceId);
+
+        foreach (var binding in before)
+        {
+            if (!string.Equals(binding.InstanceId, wanted, StringComparison.Ordinal)) continue;
+            if (binding.MachineCode is null) return false;
+            if (string.Equals(binding.MachineCode, device.MachineCode, StringComparison.OrdinalIgnoreCase)) return false;
+
+            incumbentMachine = binding.MachineCode;
+            return true;
+        }
+
+        return false;
     }
 }

@@ -507,4 +507,114 @@ public sealed class ConnectorRegistryTests
         Assert.True(registry.TryGetInstanceIdForMachine("MB-CONTESTED", out var claimant));
         Assert.Equal(registry.RegisteredIds[0], claimant);
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task D-7a — the removal path. See ConnectorRegistry.Unregister for the design, and for why it
+    // performs no I/O and disposes nothing.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>The whole point of the removal path: a machine code is FREE afterwards.</b>
+    ///
+    /// <para><see cref="ConnectorRegistry.Register"/> refuses a second claim on a machine code, and that
+    /// refusal is the structural gate <c>FleetHost.ResolveWritableDriver</c> rests on. With no removal, a
+    /// deleted connector's claim survived until the process restarted — the machine could then be served by
+    /// nothing at all. The assertion below is deliberately NOT "Unregister returned true": that is a claim
+    /// about a method. The claim that matters is about the CLAIM, and the only way to prove a claim was
+    /// released is to have something else take it.</para>
+    /// </summary>
+    [Fact]
+    public void Unregister_ReleasesTheMachineClaim_SoAnotherInstanceCanThenTakeIt()
+    {
+        var registry = new ConnectorRegistry();
+
+        Assert.True(registry.Register(
+            new FakeFactory(DriverKinds.Modbus, _ => (true, new FakeDriver(), null)), "{}",
+            instanceId: "line1:unit4", machineCode: "MB-HANDOVER"));
+
+        // The gate is real before the removal — otherwise the pass below proves nothing.
+        Assert.False(registry.Register(
+            new FakeFactory(DriverKinds.Modbus, _ => (true, new FakeDriver(), null)), "{}",
+            instanceId: "replacement", machineCode: "MB-HANDOVER"));
+
+        Assert.True(registry.Unregister("line1:unit4"));
+
+        Assert.Empty(registry.RegisteredIds);
+        Assert.False(registry.TryGetInstanceIdForMachine("MB-HANDOVER", out _));
+        Assert.Null(registry.KindOf("line1:unit4"));
+        Assert.False(registry.IsBoundToAMachine("line1:unit4"));
+        Assert.DoesNotContain(registry.SnapshotBindings(), b => b.InstanceId == "line1:unit4");
+
+        // 🔴 THE PROOF.
+        Assert.True(registry.Register(
+            new FakeFactory(DriverKinds.Modbus, _ => (true, new FakeDriver(), null)), "{}",
+            instanceId: "replacement", machineCode: "MB-HANDOVER"));
+        Assert.True(registry.TryGetInstanceIdForMachine("MB-HANDOVER", out var owner));
+        Assert.Equal("replacement", owner);
+    }
+
+    /// <summary>An id nothing is registered under, and the two blank shapes, are ordinary
+    /// <see langword="false"/> answers that mutate nothing — never a throw, because this runs on an HTTP
+    /// deletion path and on a startup registration pass, and neither may be turned into a 500 by a stale
+    /// id.</summary>
+    [Theory]
+    [InlineData("nothing-registered-here")]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public void Unregister_AnIdNothingIsRegisteredUnder_IsFalseAndMutatesNothing(string? instanceId)
+    {
+        var registry = new ConnectorRegistry();
+        Assert.True(registry.Register(
+            new FakeFactory(DriverKinds.Modbus, _ => (true, new FakeDriver(), null)), "{}",
+            instanceId: "survivor", machineCode: "MB-SURVIVOR"));
+
+        Assert.False(registry.Unregister(instanceId));
+
+        Assert.Equal(new[] { "survivor" }, registry.RegisteredIds);
+        Assert.True(registry.TryGetInstanceIdForMachine("MB-SURVIVOR", out _));
+    }
+
+    /// <summary>Removal folds its id through the SAME <see cref="DriverKinds.Normalize"/> every other id in
+    /// this class goes through — so <c>DELETE /v1/connectors/modbus</c> removes the <c>Modbus</c> entry, and a
+    /// third-party id stays byte-for-byte case-sensitive. A second casing rule here would make an id
+    /// registrable but not removable, which is the worst of both.</summary>
+    [Fact]
+    public void Unregister_UsesTheSameIdNormalizationAsEverythingElse()
+    {
+        var registry = new ConnectorRegistry();
+
+        registry.Register(new FakeFactory(DriverKinds.Modbus, _ => (true, new FakeDriver(), null)), "{}");
+        Assert.True(registry.Unregister("modbus"));
+        Assert.Empty(registry.RegisteredIds);
+
+        // …and a third-party id is NOT folded: "vendor.acme.weld" must not remove "Vendor.Acme.Weld".
+        registry.Register(
+            new FakeFactory("Vendor.Acme.Weld", _ => (true, new FakeDriver(), null)), "{}",
+            instanceId: "Vendor.Acme.Weld");
+        Assert.False(registry.Unregister("vendor.acme.weld"));
+        Assert.Single(registry.RegisteredIds);
+        Assert.True(registry.Unregister("Vendor.Acme.Weld"));
+        Assert.Empty(registry.RegisteredIds);
+    }
+
+    /// <summary>An id removed between <see cref="ConnectorRegistry.RegisteredIds"/> and
+    /// <see cref="ConnectorRegistry.TryCreateDriver"/> is exactly the shape that method was already built for —
+    /// <see langword="false"/> plus a descriptive error, never a throw and never a silent no-op. This is the
+    /// consequence question the old "this task never removes entries" comment let nobody ask, asked.</summary>
+    [Fact]
+    public void ACreateForAnIdThatWasJustUnregistered_IsAVisibleFailure_NotAThrow()
+    {
+        var registry = new ConnectorRegistry();
+        registry.Register(
+            new FakeFactory(DriverKinds.Modbus, _ => (true, new FakeDriver(), null)), "{}",
+            instanceId: "gone-by-then", machineCode: "MB-GONE");
+
+        var idsAsAHostWouldHaveSnapshotted = registry.RegisteredIds;
+        Assert.True(registry.Unregister("gone-by-then"));
+
+        Assert.False(registry.TryCreateDriver(idsAsAHostWouldHaveSnapshotted[0], out var driver, out var error));
+        Assert.Null(driver);
+        Assert.Contains("gone-by-then", error);
+    }
 }

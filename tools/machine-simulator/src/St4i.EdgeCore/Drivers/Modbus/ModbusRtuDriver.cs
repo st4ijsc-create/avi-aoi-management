@@ -93,6 +93,27 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     private readonly Action<Exception, string>? _logError;
     private volatile bool _disposed;
 
+    /// <summary>🔴 Task D-7a — see <see cref="ModbusRtuReadBackoff"/>. Never <see langword="null"/>;
+    /// <see cref="ModbusRtuReadBackoff.Disabled"/> when a caller passes nothing.</summary>
+    private readonly ModbusRtuReadBackoff _readBackoff;
+
+    /// <summary>🔴 Task D-7a, blueprint §10 items 1+2 — the bound a write's WAIT FOR THE BUS is given when
+    /// nobody else supplies one, sized against the largest <see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/>
+    /// among the devices sharing this bus. <see langword="null"/> for a directly-constructed driver, which
+    /// reproduces this class's pre-D-7a behaviour exactly. See <see cref="CreateQueueBudget"/>.</summary>
+    private readonly long? _writeQueueBudgetMs;
+
+    /// <summary>🔴 Task D-7a — where the "this device is no longer backed off" notice goes. A SEPARATE channel
+    /// from <see cref="_logError"/> on purpose: a recovery is not an error, and routing it through an error
+    /// callback would have meant handing a logger a fabricated exception to satisfy its signature.</summary>
+    private readonly Action<string>? _logRecovery;
+
+    /// <summary>🔴 Task D-7a — how many consecutive polls have failed. Read and written only from
+    /// <see cref="ReadAsync"/>'s single loop, which is why it is a plain <see cref="int"/> and not
+    /// interlocked: <see cref="St4i.Connector.Abstractions.IDeviceDriver.ReadAsync"/>'s own contract is one
+    /// enumeration per driver instance.</summary>
+    private int _consecutiveReadFailures;
+
     /// <summary>Task D-5 — a snapshot taken ONCE at construction, satisfying
     /// <see cref="IWritableDeviceDriver.WritablePoints"/>'s "fixed for the lifetime of this instance, never a
     /// live view" contract. <c>.AsReadOnly()</c> (a genuine <see cref="System.Collections.ObjectModel.ReadOnlyCollection{T}"/>,
@@ -142,24 +163,113 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// so even a double release is harmless. What makes validating FIRST the better answer is not that this
     /// class cannot dispose — it is that a constructor cannot dispose ASYNCHRONOUSLY without blocking, and the
     /// failure is fully knowable before any lease is taken. Recorded rather than quietly reworded, because two
-    /// artefacts disagreeing about ownership is how the next author picks the wrong one.</para></exception>
+    /// artefacts disagreeing about ownership is how the next author picks the wrong one.</para>
+    ///
+    /// <para>🔴 <b>Task D-7a — and the second half of THAT is wrong too, which is why this constructor now
+    /// releases the lease itself.</b> "A constructor cannot dispose asynchronously without blocking" is a
+    /// general truth applied to a call it does not describe — the same shape D-6's implementer named as its own
+    /// worst defect (<i>"it was never asking whether the constraint I was reasoning about applied to the call I
+    /// was reasoning about"</i>). Traced rather than assumed: <see cref="ModbusBusLease.DisposeAsync"/> calls
+    /// <see cref="ModbusBusRegistry.ReleaseAsync"/>, which takes a lock and decrements, and awaits
+    /// <c>ModbusBus.DisposeAsync</c> only when the count reaches zero — and that method sets a flag, tears down
+    /// a link and returns <see cref="ValueTask.CompletedTask"/>. There is no asynchrony anywhere on the path.
+    /// It cannot reach a device either: the count can only reach zero here if the caller's
+    /// <see cref="ModbusBusRegistry.Acquire"/> CREATED the bus, that method performs no I/O, and a
+    /// <see cref="ModbusBus"/> opens its link lazily inside its first transaction — which a driver that never
+    /// finished constructing has not begun.</para>
+    ///
+    /// <para><b>And validating first was never sufficient on its own, because it is a LIST.</b> The failure it
+    /// enumerates is the unit id. The rule behind it is "anything between taking the lease and returning can
+    /// throw", and this constructor has always had a reachable member of that class one line below the lease
+    /// assignment: <c>new ModbusRtuDriver(lease, null!)</c> throws <see cref="ArgumentNullException"/> for the
+    /// MAP with the lease already owned. That is not hypothetical and it is not only reachable from a test —
+    /// it is the shape any future field added here would take. So the release lives where ownership does,
+    /// covering every construction site rather than every construction site this product happens to have
+    /// today, and <see cref="ModbusRtuConnectorFactory"/> keeps validating first because not taking a lease is
+    /// still cheaper than handing one back.</para></exception>
+    /// <param name="readBackoff">🔴 Task D-7a — the per-device READ backoff (see
+    /// <see cref="ModbusRtuReadBackoff"/>). <see langword="null"/> means
+    /// <see cref="ModbusRtuReadBackoff.Disabled"/>, i.e. byte-for-byte this class's pre-D-7a poll cadence.
+    /// <b>The production path never relies on that default</b> — <see cref="ModbusRtuConnectorFactory"/>, the
+    /// only thing in <c>src/</c> that constructs this type, passes
+    /// <see cref="ModbusRtuReadBackoff.Default"/> explicitly and has a test pinning that it does. The default
+    /// is "off" rather than "on" so that every measurement D-2…D-6 took against a directly-constructed driver
+    /// keeps measuring the same mechanism it measured then; a default that silently changed thirty existing
+    /// timing tests would make this task's own before/after numbers unreadable.</param>
+    /// <param name="writeQueueBudgetMs">🔴 Task D-7a, blueprint §10 items 1+2 — how long a write may WAIT FOR
+    /// THE SHARED BUS before this driver gives up on the caller's behalf, in milliseconds. Size it against the
+    /// LARGEST <see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/> among the devices on this bus
+    /// (<see cref="ModbusMultidropMap.MaxWorstCaseBusHoldMs"/> computes exactly that), never against this
+    /// device's own. <see langword="null"/> means "no bound", which is this class's pre-D-7a behaviour and is
+    /// what every direct construction gets. See <see cref="CreateQueueBudget"/> for why the driver supplies
+    /// this itself rather than leaving it to the caller §10 item 1 addresses.</param>
+    /// <param name="logRecovery">🔴 Task D-7a — invoked ONCE when a device that had been failing answers
+    /// again, naming the streak that just ended. See <see cref="NoteReadSucceeded"/>.</param>
     public ModbusRtuDriver(
         ModbusBusLease lease,
         ModbusRegisterMap map,
-        Action<Exception, string>? logError = null)
+        Action<Exception, string>? logError = null,
+        ModbusRtuReadBackoff? readBackoff = null,
+        long? writeQueueBudgetMs = null,
+        Action<string>? logRecovery = null)
     {
+        // 🔴 Task D-7a — the lease is owned from HERE, so everything after it runs inside the guard below.
+        // See the ArgumentOutOfRangeException remarks above for the trace proving that release path is
+        // synchronous and cannot reach a device, and for why "validate before Acquire" alone was a list rather
+        // than the rule.
         _lease = lease ?? throw new ArgumentNullException(nameof(lease));
-        _map = map ?? throw new ArgumentNullException(nameof(map));
-        _logError = logError;
 
-        ValidateRtuUnitId(map);
+        try
+        {
+            _map = map ?? throw new ArgumentNullException(nameof(map));
+            _logError = logError;
+            _logRecovery = logRecovery;
+            _readBackoff = readBackoff ?? ModbusRtuReadBackoff.Disabled;
+            _writeQueueBudgetMs = writeQueueBudgetMs is > 0 ? writeQueueBudgetMs : null;
 
-        // Includes the unit id, unlike the TCP driver's — on a multidrop bus the endpoint alone does not
-        // identify a device, and this string keys slot labels and therefore alarm TargetIds.
-        Id = $"modbus-rtu:{lease.Bus.Key}:unit{map.UnitId}:{map.MachineCode}";
-        Health = DriverHealthState.Down;
-        _writablePoints = new List<string>(_map.WritablePointNames).AsReadOnly();
-        _commands = new List<string>(_map.CommandNames).AsReadOnly();
+            ValidateRtuUnitId(map);
+
+            // Includes the unit id, unlike the TCP driver's — on a multidrop bus the endpoint alone does not
+            // identify a device, and this string keys slot labels and therefore alarm TargetIds.
+            Id = $"modbus-rtu:{lease.Bus.Key}:unit{map.UnitId}:{map.MachineCode}";
+            Health = DriverHealthState.Down;
+            _writablePoints = new List<string>(_map.WritablePointNames).AsReadOnly();
+            _commands = new List<string>(_map.CommandNames).AsReadOnly();
+        }
+        catch
+        {
+            ReleaseLeaseOnConstructionFailure(lease);
+            throw;
+        }
+    }
+
+    /// <summary>🔴 Task D-7a — hands the lease back when this constructor fails after taking ownership of it.
+    ///
+    /// <para><b>The <see cref="ValueTask.IsCompleted"/> check is the guard, not an optimisation.</b> The
+    /// constructor's own remarks trace why this release completes synchronously today; if a future change makes
+    /// it genuinely asynchronous, blocking here is still the right trade (the alternative is a reference count
+    /// that never reaches zero, i.e. a COM port unusable for the process lifetime, presenting as an unrelated
+    /// connector failing to start) — but it stops being free, and that should be visible in the code rather
+    /// than discovered in a profiler.</para>
+    ///
+    /// <para>Its own failure is swallowed deliberately: this runs while already unwinding the real construction
+    /// failure, and letting a teardown exception replace it would hide the reason the connector did not start —
+    /// the one thing the operator needs. <see cref="ModbusBusRegistry.ReleaseAsync"/> is itself best-effort for
+    /// a lease whose registry has already gone.</para></summary>
+    private static void ReleaseLeaseOnConstructionFailure(ModbusBusLease lease)
+    {
+        try
+        {
+            var release = lease.DisposeAsync();
+            if (!release.IsCompleted)
+            {
+                release.AsTask().GetAwaiter().GetResult();
+            }
+        }
+        catch
+        {
+            // See this method's own remarks.
+        }
     }
 
     /// <summary>
@@ -238,7 +348,15 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     ///
     /// <para>The arbitration wait is INSIDE the try, not around it: on a busy bus a poll can spend most of its
     /// time queued, and a cancellation landing there must end the enumeration rather than degrade the
-    /// driver — a device waiting its turn is not a device that is failing.</para></summary>
+    /// driver — a device waiting its turn is not a device that is failing.</para>
+    ///
+    /// <para>🔴 <b>Task D-7a — the inter-poll delay is no longer unconditionally
+    /// <see cref="ModbusRegisterMap.PollIntervalMs"/>.</b> After a failed poll it grows, from this device's own
+    /// <see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/>, so a device that is not answering stops taking its
+    /// full turn on every cycle and stops taxing every healthy device on the same line. See
+    /// <see cref="ModbusRtuReadBackoff"/> for the design, the numbers and what an operator sees. The delay is
+    /// the ONLY thing that changes — the poll itself, its cancellation shapes and its health transitions are
+    /// untouched, which is what keeps a backed-off device a DEGRADED device rather than a stopped one.</para></summary>
     public async IAsyncEnumerable<DeviceReading> ReadAsync([EnumeratorCancellation] CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -255,6 +373,7 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
             {
                 reading = await PollOnceAsync(ct).ConfigureAwait(false);
                 Health = DriverHealthState.Connected;
+                NoteReadSucceeded();
             }
             catch (OperationCanceledException)
             {
@@ -268,7 +387,17 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
                 // desynchronised (resynchronise next time), and this driver must not second-guess that on a
                 // link it shares.
                 Health = DriverHealthState.Degraded;
-                _logError?.Invoke(ex, $"Modbus RTU poll failed for {_map.MachineCode} (unit {_map.UnitId}) on bus {_lease.Bus.Key}");
+
+                // 🔴 The increment is a STATEMENT, not an argument. It lived inside DescribeFailedPoll() for
+                // one revision, called as `_logError?.Invoke(ex, DescribeFailedPoll())` — and `?.`
+                // short-circuits its ARGUMENTS, so for every driver constructed without a log callback the
+                // counter never moved and the backoff never engaged. Caught by the measurement on D-4's
+                // harness reporting a 1.0x improvement, not by reading: the code looked right, the unit tests
+                // for the arithmetic all passed, and the only thing that could see it was the end-to-end
+                // number. Recorded here because "logging and state are separate concerns" is a rule this file
+                // otherwise follows everywhere.
+                _consecutiveReadFailures++;
+                _logError?.Invoke(ex, DescribeFailedPoll());
             }
 
             if (reading is not null)
@@ -278,13 +407,60 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
 
             try
             {
-                await Task.Delay(_map.PollIntervalMs, ct).ConfigureAwait(false);
+                await Task.Delay(NextPollDelayMs(), ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 yield break;
             }
         }
+    }
+
+    /// <summary>🔴 Task D-7a — the wait before the next attempt: the declared cadence for a healthy device, a
+    /// growing multiple of this device's own bus hold once it has started failing. Kept as a named member
+    /// rather than inlined into the <see cref="Task.Delay(int, CancellationToken)"/> call so a test can pin the
+    /// arithmetic without driving a whole poll loop through a real link, and so a mutation to it has a name in
+    /// a diff.</summary>
+    internal int NextPollDelayMs() =>
+        _readBackoff.DelayMsFor(_map.PollIntervalMs, _map.WorstCaseBusHoldMs, _consecutiveReadFailures);
+
+    /// <summary>🔴 Task D-7a — resets the failure streak and, if there WAS one, says so exactly once.
+    ///
+    /// <para>Recovery is logged (through the same error callback, because that is the only channel this driver
+    /// has) for a reason that is the whole point of the backoff's operator story: a device that has been quiet
+    /// for a minute and then simply resumes gives an operator no way to tell "it was backed off and came back"
+    /// from "the logging stopped". Logged once per streak, never per poll, so a healthy device is silent.</para></summary>
+    private void NoteReadSucceeded()
+    {
+        if (_consecutiveReadFailures == 0) return;
+
+        var streak = _consecutiveReadFailures;
+        _consecutiveReadFailures = 0;
+
+        _logRecovery?.Invoke(
+            $"Modbus RTU device {_map.MachineCode} (unit {_map.UnitId}) on bus {_lease.Bus.Key} answered again " +
+            $"after {streak} consecutive failed poll(s); its read backoff is cleared and it is back to its " +
+            $"declared cadence of {_map.PollIntervalMs} ms.");
+    }
+
+    /// <summary>🔴 Task D-7a — the failed-poll log line, which now carries the two facts that distinguish a
+    /// BACKED-OFF device from a merely quiet one: how many polls in a row have failed, and how long this device
+    /// will now wait before it takes the shared line again. Without them an operator watching a log sees the
+    /// same message arriving less and less often and has no way to know whether the device is being retried
+    /// more slowly on purpose or whether the poll loop has stopped.</summary>
+    private string DescribeFailedPoll()
+    {
+        var next = NextPollDelayMs();
+
+        var backoffClause = next > _map.PollIntervalMs
+            ? $"; backing off — the next attempt is in {next} ms instead of its declared {_map.PollIntervalMs} ms, " +
+              $"because each failed poll holds the shared bus for up to {_map.WorstCaseBusHoldMs} ms and every " +
+              "other device on this line waits behind it"
+            : $"; retrying at its declared cadence of {_map.PollIntervalMs} ms (no read backoff is configured " +
+              "for this driver)";
+
+        return $"Modbus RTU poll failed for {_map.MachineCode} (unit {_map.UnitId}) on bus {_lease.Bus.Key} — " +
+               $"{_consecutiveReadFailures} consecutive failure(s){backoffClause}";
     }
 
     /// <summary>One poll: take the bus, read every configured register one at a time, decode each, and hand
@@ -423,7 +599,9 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
 
         try
         {
-            return await ExecuteRegisterWriteAsync(request.Point, register.Address, rawWord, ct).ConfigureAwait(false);
+            using var budget = CreateQueueBudget(ct);
+            return await ExecuteRegisterWriteAsync(
+                request.Point, register.Address, rawWord, ct, budget?.Token ?? ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -532,7 +710,8 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
 
         try
         {
-            return await ExecuteCoilPulseAsync(request.Command, coilAddress, ct).ConfigureAwait(false);
+            using var budget = CreateQueueBudget(ct);
+            return await ExecuteCoilPulseAsync(request.Command, coilAddress, ct, budget?.Token ?? ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -580,18 +759,27 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// classify a third-party exception type is the "trust the name" move this batch has already paid for
     /// twice.</para>
     /// </summary>
-    private async Task<SetpointWriteResult> ExecuteRegisterWriteAsync(string point, ushort address, ushort rawWord, CancellationToken ct)
+    /// <param name="ct">The CALLER's token. Everything after the bus has been taken is bounded by this alone —
+    /// a self-imposed queue budget must never abort a request that is already on the wire, because that would
+    /// turn a write that was one round trip from a definitive answer into an
+    /// <see cref="WriteOutcome.Indeterminate"/> nobody had to accept.</param>
+    /// <param name="acquireCt">🔴 Task D-7a — the caller's token LINKED with this driver's queue budget (see
+    /// <see cref="CreateQueueBudget"/>), used for the wait-for-the-bus step and nothing else. Equal to
+    /// <paramref name="ct"/> when no budget is configured.</param>
+    private async Task<SetpointWriteResult> ExecuteRegisterWriteAsync(
+        string point, ushort address, ushort rawWord, CancellationToken ct, CancellationToken acquireCt)
     {
         ModbusBusTransaction transaction;
         try
         {
             transaction = await _lease.Bus
-                .BeginTransactionAsync(_map.EffectiveReadTimeoutMs, retries: 0, ct)
+                .BeginTransactionAsync(_map.EffectiveReadTimeoutMs, retries: 0, acquireCt)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            return new SetpointWriteResult(point, WriteOutcome.Indeterminate, Detail: NotOnTheWireDetail("queued"));
+            return new SetpointWriteResult(point, WriteOutcome.Indeterminate,
+                Detail: ct.IsCancellationRequested ? NotOnTheWireDetail("queued") : QueueBudgetElapsedDetail());
         }
         catch (ModbusBusResynchronisationException ex)
         {
@@ -675,18 +863,22 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// possibly-latched coil on the caller's behalf: deciding what to do about an unconfirmed device state is a
     /// human's call, and on a shared bus a second uninstructed write is also everyone else's problem.</para>
     /// </summary>
-    private async Task<CommandResult> ExecuteCoilPulseAsync(string commandName, ushort coilAddress, CancellationToken ct)
+    /// <param name="ct"><inheritdoc cref="ExecuteRegisterWriteAsync" path="/param[@name='ct']"/></param>
+    /// <param name="acquireCt"><inheritdoc cref="ExecuteRegisterWriteAsync" path="/param[@name='acquireCt']"/></param>
+    private async Task<CommandResult> ExecuteCoilPulseAsync(
+        string commandName, ushort coilAddress, CancellationToken ct, CancellationToken acquireCt)
     {
         ModbusBusTransaction transaction;
         try
         {
             transaction = await _lease.Bus
-                .BeginTransactionAsync(_map.EffectiveReadTimeoutMs, retries: 0, ct)
+                .BeginTransactionAsync(_map.EffectiveReadTimeoutMs, retries: 0, acquireCt)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            return new CommandResult(commandName, WriteOutcome.Indeterminate, Detail: NotOnTheWireDetail("queued"));
+            return new CommandResult(commandName, WriteOutcome.Indeterminate,
+                Detail: ct.IsCancellationRequested ? NotOnTheWireDetail("queued") : QueueBudgetElapsedDetail());
         }
         catch (ModbusBusResynchronisationException ex)
         {
@@ -749,7 +941,7 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
             try
             {
                 await transaction.ExecuteAsync(master => master.WriteSingleCoilAsync(_map.UnitId, coilAddress, false)).ConfigureAwait(false);
-                return new CommandResult(commandName, WriteOutcome.Applied);
+                return new CommandResult(commandName, WriteOutcome.Applied, Detail: AppliedIsAnAcknowledgementDetail(coilAddress));
             }
             catch (SlaveException ex)
             {
@@ -767,6 +959,91 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
             }
         }
     }
+
+    /// <summary>
+    /// 🔴 <b>Task D-7a — blueprint §10 items 1 and 2, answered where it can actually be enforced.</b>
+    ///
+    /// <para>§10 item 1 states the obligation as a CALLER's: <i>never call
+    /// <see cref="WriteSetpointAsync"/>/<see cref="InvokeCommandAsync"/> with an unbounded
+    /// <see cref="CancellationToken"/></i>. D-7a is the first task with a production caller, and the caller
+    /// turns out to be one that <b>cannot</b> discharge it: <c>MachineWriteEndpoints</c> passes
+    /// <see cref="CancellationToken.None"/> <i>deliberately</i>, and for a reason that is correct and predates
+    /// this batch — a client hanging up must not abort a write that is already moving a machine. Replacing that
+    /// <see cref="CancellationToken.None"/> with a request-scoped token would fix the queue and break the wire.
+    /// The two requirements are only simultaneously satisfiable if the bound applies to the WAIT and not to the
+    /// TRANSACTION, and the only place that distinction exists is inside this driver.</para>
+    ///
+    /// <para>So the driver bounds its own wait. <paramref name="callerCt"/> is linked with a timer set to
+    /// <see cref="_writeQueueBudgetMs"/>, and the linked token is used for
+    /// <see cref="ModbusBus.BeginTransactionAsync"/> ONLY — see
+    /// <see cref="ExecuteRegisterWriteAsync"/>'s two token parameters. A budget that elapsed while queued
+    /// returns <see cref="WriteOutcome.Indeterminate"/> with the provable claim intact (no byte reached the
+    /// line, the device is untouched, retrying is safe); a budget cannot interrupt a request already on the
+    /// wire, which is the one thing that would make the cure worse than the disease.</para>
+    ///
+    /// <para><b>§10 item 2 — the SIZE.</b> <see cref="_writeQueueBudgetMs"/> is supplied by
+    /// <see cref="ModbusRtuConnectorFactory"/> from
+    /// <see cref="ModbusMultidropMap.MaxWorstCaseBusHoldMs"/> over every device on THIS bus, never from this
+    /// device's own <see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/> — because what a write queues behind is
+    /// whichever sibling currently holds the line, and the worst case is the worst sibling's. A driver
+    /// constructed directly gets <see langword="null"/> and behaves exactly as it did before D-7a.</para>
+    ///
+    /// <para>Returns <see langword="null"/> when there is no budget, so the caller can pass
+    /// <paramref name="callerCt"/> straight through rather than allocate a linked source that would never
+    /// fire.</para>
+    /// </summary>
+    private CancellationTokenSource? CreateQueueBudget(CancellationToken callerCt)
+    {
+        if (_writeQueueBudgetMs is not { } budgetMs) return null;
+
+        var linked = CancellationTokenSource.CreateLinkedTokenSource(callerCt);
+        // Clamped to int.MaxValue rather than assumed to fit: the budget comes from
+        // ModbusRegisterMap.WorstCaseBusHoldMs, which is a long precisely because 20 registers x 6 attempts x
+        // 60 000 ms already exceeds what a 32-bit millisecond count can carry on a bus of any size, and
+        // CancelAfter throws ArgumentOutOfRangeException rather than saturating.
+        linked.CancelAfter(TimeSpan.FromMilliseconds(Math.Min(budgetMs, int.MaxValue)));
+        return linked;
+    }
+
+    /// <summary>
+    /// 🔴 <b>Task D-7a — blueprint §10 item 3, made structural instead of documentary.</b>
+    ///
+    /// <para>§10 item 3 says an <see cref="WriteOutcome.Applied"/> on a COMMAND is an acknowledgement, not an
+    /// observation, and instructs D-7 not to present it to an operator as physical proof and not to let an
+    /// audit row imply one. The obvious reading is "that is the UI's problem" (D-7b). It is not — or not only:
+    /// <c>MachineWriteEndpoints</c> writes the <see cref="CommandResult"/>'s own <c>outcome</c> and
+    /// <c>detail</c> straight into the audit row, and before this task a successful pulse carried
+    /// <c>Detail: null</c>. The audit row for the one operation that starts a machine therefore said
+    /// <c>Applied</c> and nothing else, forever, and a reader would have had to already know this class's doc
+    /// comment to read it correctly.</para>
+    ///
+    /// <para>Attaching the qualification to the RESULT puts it in the API response, the audit row and any UI
+    /// that renders <c>detail</c>, from one place — which is the same argument that put
+    /// <see cref="ModbusWritePreflight.DescribeSlaveException"/> in one place. It is deliberately short: every
+    /// successful command carries it, and a paragraph would train people to skip it.</para>
+    ///
+    /// <para>Scoped to RTU, because that is where the residual was measured (this class's own doc comment: a
+    /// completed pulse's TWO stale echoes can acknowledge both halves of a pulse that never reached the
+    /// device). The equivalent statement for <see cref="ModbusTcpDriver"/> is a separate judgement about a
+    /// dedicated connection and is not made here.</para>
+    /// </summary>
+    private string AppliedIsAnAcknowledgementDetail(ushort coilAddress) =>
+        $"unit {_map.UnitId} ({_map.MachineCode}) echoed both halves of the pulse on coil {coilAddress}. That is an " +
+        "ACKNOWLEDGEMENT of the frames, not an observation of the machine — Modbus RTU carries nothing that ties a " +
+        "response to a request, so this does not prove the machine moved. Confirm physical effect from the machine " +
+        "itself.";
+
+    /// <summary>🔴 Task D-7a — the <c>Detail</c> for a write this DRIVER gave up on, as distinct from one the
+    /// CALLER cancelled. Both are <see cref="WriteOutcome.Indeterminate"/> and both make the same provable
+    /// claim about the wire; what differs is who to talk to about it, and an operator told "cancelled" for a
+    /// wait nobody cancelled would go looking for the client that did it. Names the number so the person
+    /// reading it can see it is derived from their own map rather than from a constant this product
+    /// chose.</summary>
+    private string QueueBudgetElapsedDetail() =>
+        $"gave up waiting for the shared RTU bus '{_lease.Bus.Key}' after {_writeQueueBudgetMs} ms — that bound is " +
+        "the longest a single poll of the SLOWEST device on this bus can hold the line, so waiting past it means " +
+        "something on the line is not behaving as its own map declares. No byte of this write reached the line and " +
+        $"unit {_map.UnitId} ({_map.MachineCode}) is untouched. Retrying is safe.";
 
     /// <summary>The <c>Detail</c> for the two cancellation shapes in which the request PROVABLY never reached
     /// the line: cancelled before <see cref="ModbusBus.BeginTransactionAsync"/> returned, and cancelled while

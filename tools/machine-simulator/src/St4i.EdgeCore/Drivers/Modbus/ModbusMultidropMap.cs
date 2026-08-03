@@ -185,6 +185,7 @@ public static class ModbusMultidropMap
         string json, string busInstanceId, Action<string>? logWarning = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(busInstanceId);
+        ValidateBusInstanceId(busInstanceId);
 
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
@@ -383,14 +384,106 @@ public static class ModbusMultidropMap
     /// caller (and a test) names the same string this class does instead of restating the format — the same
     /// reason D-2 puts bus-key construction on the link types rather than at call sites.
     ///
-    /// <para><b>Review m5 — this derivation is not collision-free across BUSES, and nothing here can make it
-    /// so.</b> A bus named <c>X</c> with a device at unit 1 and a bus named <c>X:unit1</c> with a legacy
-    /// single-device map both derive the instance id <c>X:unit1</c>, and
-    /// <c>ConnectorRegistry.Register</c> is last-write-wins on the id — so the second silently replaces the
-    /// first. Unreachable today (nothing in <c>src/</c> supplies a bus instance id at all — see
-    /// task-4-report.md §7.4), and not closable here either, because this method sees ONE bus and the collision
-    /// is between two. It belongs with whatever D-7 builds to allocate bus instance ids: either reject a bus id
-    /// containing <c>":unit"</c>, or check the derived ids against the registry before registering. Named
-    /// rather than left for someone to find as a connector that vanished.</para></summary>
-    public static string DeviceInstanceId(string busInstanceId, byte unitId) => $"{busInstanceId}:unit{unitId}";
+    /// <para><b>Review m5 — this derivation was not collision-free across BUSES, and 🔴 Task D-7a closes it at
+    /// the only place it can be closed: by refusing the bus name, not by detecting the collision.</b> A bus
+    /// named <c>X</c> with a device at unit 1 and a bus named <c>X:unit1</c> with a legacy single-device map
+    /// both derive the instance id <c>X:unit1</c>, and <c>ConnectorRegistry.Register</c> is last-write-wins on
+    /// the id — so the second silently replaced the first while <c>RegisterAll</c> still counted it registered.
+    /// D-4 could not close it because it saw ONE bus and the collision is between two; the fix is therefore not
+    /// a check between two buses but a rule that makes the two namespaces disjoint —
+    /// <see cref="ValidateBusInstanceId"/> refuses any bus id that already looks like a device position. After
+    /// that, <c>{bus}:unit{n}</c> can only ever have been derived, by exactly one bus, and the collision is
+    /// unconstructible rather than merely reported.</para></summary>
+    public static string DeviceInstanceId(string busInstanceId, byte unitId) => $"{busInstanceId}{DeviceIdSuffixPrefix}{unitId}";
+
+    /// <summary>The literal that separates a bus id from a device's unit id in
+    /// <see cref="DeviceInstanceId"/>. A constant rather than three copies of <c>":unit"</c> across the
+    /// derivation, the reservation check and the namespace test, for the reason every other shared literal in
+    /// this file is one: two statements of one format drift, and the version that drifts here either reserves
+    /// a name nothing derives or fails to reserve one that something does.</summary>
+    public const string DeviceIdSuffixPrefix = ":unit";
+
+    /// <summary>
+    /// 🔴 Task D-7a (D-4 review m5) — <b>refuses a bus instance id that a device instance id could also be.</b>
+    /// Called by <see cref="FanOut"/>, so every path that derives device ids goes through it.
+    ///
+    /// <para>The rule is one sentence: <b>no bus may be named <c>…:unit&lt;digits&gt;</c></b>, because that is
+    /// precisely the shape <see cref="DeviceInstanceId"/> mints. Refusing the NAME rather than detecting the
+    /// COLLISION is what makes the two namespaces disjoint by construction — and disjointness is what a second
+    /// thing depends on: <c>ModbusMultidropRegistration</c>'s ghost sweep identifies "the entries belonging to
+    /// this bus" by exactly this prefix, and a bus legitimately named <c>X:unit1</c> would make that sweep
+    /// delete another connector's registration.</para>
+    ///
+    /// <para>The cost, stated: an operator who genuinely wants a connector called <c>press:unit3</c> must pick
+    /// another name, and is told so with the reason. That is a strictly better outcome than the alternative it
+    /// replaces, which was a connector that silently vanished.</para>
+    /// </summary>
+    /// <exception cref="InvalidOperationException"><paramref name="busInstanceId"/> ends in
+    /// <c>:unit</c> followed by one or more digits.</exception>
+    public static void ValidateBusInstanceId(string busInstanceId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(busInstanceId);
+
+        if (!LooksLikeADeviceInstanceId(busInstanceId)) return;
+
+        throw new InvalidOperationException(
+            $"Modbus multidrop bus: '{busInstanceId}' cannot be used as a connector instance id — ids ending " +
+            $"in '{DeviceIdSuffixPrefix}<number>' are reserved for one DEVICE's position on a bus of that name " +
+            $"(a bus called '{busInstanceId[..busInstanceId.LastIndexOf(DeviceIdSuffixPrefix, StringComparison.Ordinal)]}' " +
+            "derives exactly this id for one of its devices). Two things would then share one identity: the " +
+            "later registration would silently replace the earlier one's machine claim, and removing devices " +
+            "from either bus could unregister the other. Rename this connector.");
+    }
+
+    /// <summary>Whether <paramref name="instanceId"/> has the shape <see cref="DeviceInstanceId"/> mints —
+    /// i.e. whether it belongs to the DERIVED namespace rather than the operator-chosen one. Hand-scanned
+    /// rather than a regular expression, deliberately: this runs on a startup path with no regex cache warmed,
+    /// and the predicate is four lines.</summary>
+    public static bool LooksLikeADeviceInstanceId(string? instanceId)
+    {
+        if (string.IsNullOrWhiteSpace(instanceId)) return false;
+
+        var at = instanceId.LastIndexOf(DeviceIdSuffixPrefix, StringComparison.Ordinal);
+        // `at <= 0` rejects both "no separator" and a separator at position 0 — ":unit1" has no bus half at
+        // all, so nothing could ever have derived it and reserving it would refuse a name for no reason.
+        if (at <= 0) return false;
+
+        var digits = instanceId.AsSpan(at + DeviceIdSuffixPrefix.Length);
+        if (digits.IsEmpty) return false;
+
+        foreach (var c in digits)
+        {
+            if (c is < '0' or > '9') return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// 🔴 Task D-7a — <b>the bound blueprint §10 item 2 requires a write to be sized against: the LARGEST
+    /// <see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/> among the devices sharing one bus, not the writing
+    /// device's own.</b>
+    ///
+    /// <para>A write queues behind whichever device currently holds the arbitration lock, and the worst case is
+    /// therefore the worst case of the WORST sibling — 16 000 ms at the map's defaults, about two hours at the
+    /// maxima the map itself accepts. Computed here, over the same fanned-out device list
+    /// <see cref="WarnAboutDevicesThatCanMonopoliseTheBus"/> already warns from, so the number an operator is
+    /// warned with and the number a write is bounded by are the same arithmetic on the same inputs rather than
+    /// two derivations that can disagree.</para>
+    ///
+    /// <para>0 for an empty list, which <see cref="FanOut"/> can never return (an empty <c>devices</c> array is
+    /// refused) — stated so a caller does not have to guess what a degenerate input means.</para>
+    /// </summary>
+    public static long MaxWorstCaseBusHoldMs(IReadOnlyList<ModbusBusDevice> devices)
+    {
+        ArgumentNullException.ThrowIfNull(devices);
+
+        long worst = 0;
+        foreach (var device in devices)
+        {
+            if (device.Map.WorstCaseBusHoldMs > worst) worst = device.Map.WorstCaseBusHoldMs;
+        }
+
+        return worst;
+    }
 }

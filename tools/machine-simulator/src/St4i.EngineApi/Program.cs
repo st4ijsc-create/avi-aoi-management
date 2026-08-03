@@ -1169,7 +1169,12 @@ var persistedConnectorSeeds = new List<St4i.EdgeCore.Models.MachineDescriptor>()
     if (opcUaMapJson is not null) alreadyConfiguredKindsForSeeding.Add(St4i.Connector.Abstractions.Models.DriverKinds.OpcUa);
 
     var resolvedConnectorEntriesForSeeding = St4i.EngineApi.Config.ConnectorsConfig.ResolveEntries(
-        connectorConfigEntries, alreadyConfiguredKindsForSeeding, logWarning: null);
+        connectorConfigEntries, alreadyConfiguredKindsForSeeding, logWarning: null,
+        // 🔴 Task D-7a — the SAME registration-key rule the real resolution below uses. A recomputation that
+        // resolved differently from the thing it is recomputing would seed visibility rows for a set of
+        // connectors that never registers, which is precisely the "persisted, listed, and permanently never
+        // running" state ConnectorEndpoints' own SM-5 comment says must never be creatable.
+        registrationKeyOf: St4i.EngineApi.Config.ConnectorsJsonRegistration.RegistrationKeyOf);
 
     void SeedVisibility(string kind, string? seedHost, int? seedPort, string seedMapJson) =>
         St4i.EngineApi.Fleet.ConnectorConfigVisibilitySeeder.SeedAsync(
@@ -1189,6 +1194,19 @@ var persistedConnectorSeeds = new List<St4i.EdgeCore.Models.MachineDescriptor>()
 
     foreach (var entry in resolvedConnectorEntriesForSeeding)
     {
+        // 🔴 Task D-7a — a Modbus RTU entry is a BUS, not a connector: it fans out into N registered
+        // instances, and ConnectorConfigVisibilitySeeder seeds exactly ONE row from ONE single-device map.
+        // Handing it a bus document would make ModbusRegisterMap.FromJson throw on every startup and log a
+        // warning about a 'machineCode' the operator never omitted. Skipped explicitly rather than left to
+        // fail: seeding N visibility rows for a bus is the UI half of this feature (D-7b), and until it
+        // exists an RTU bus is visible through GET /v1/connectors and the startup log, not through
+        // GET /v1/connectors/configured. Stated here because a silently missing row is exactly the shape an
+        // operator cannot diagnose.
+        if (St4i.EdgeCore.Drivers.Modbus.ModbusRtuBusSettings.DeclaresATransport(entry.SettingsJson))
+        {
+            continue;
+        }
+
         if (entry.Kind == St4i.Connector.Abstractions.Models.DriverKinds.Modbus)
         {
             SeedVisibility(entry.Kind, modbusOptions.Host, modbusOptions.Port, entry.SettingsJson);
@@ -1209,6 +1227,22 @@ var persistedConnectorSeeds = new List<St4i.EdgeCore.Models.MachineDescriptor>()
 // loading their config above; either, both, or neither may be present, and `FleetHost.StartLocked` asks
 // this registry fresh, on every call, for the current full set. `ConnectorRegistry` requires no ASP.NET
 // Core service itself, so this factory only reaches into `sp` for the per-connector `ILogger`.
+// 🔴 Task D-7a (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-7a-brief.md) — the ONE
+// reference-counted Modbus bus registry for this process, and the first time anything in src/ has held one.
+// It is what makes "N devices on one RS-485 line" physically work: the first driver on a bus key opens the
+// link, every later one rides the SAME open and the SAME arbitration lock, and the last release closes it.
+//
+// Registered as a plain DI singleton rather than constructed inside the ConnectorRegistry lambda below for
+// one reason that matters: it is IAsyncDisposable, and the host disposes its singletons on shutdown — so a
+// gateway socket (and, if a future build ever references St4i.EdgeCore.Serial, a COM port) is closed on the
+// way out instead of being left to the finalizer. Constructing it inside another factory's closure would
+// have made it invisible to that disposal.
+//
+// Costs nothing when unused: the constructor allocates a dictionary and a lock, and NOTHING opens a link
+// until a driver begins its first transaction. An install with no RTU connector configured pays for one
+// empty object, which is why this is unconditional rather than gated on configuration that is read later.
+builder.Services.AddSingleton<St4i.EdgeCore.Drivers.Modbus.ModbusBusRegistry>();
+
 builder.Services.AddSingleton(sp =>
 {
     var registry = new St4i.EngineApi.Fleet.ConnectorRegistry();
@@ -1274,7 +1308,12 @@ builder.Services.AddSingleton(sp =>
     var resolvedConnectorEntries = St4i.EngineApi.Config.ConnectorsConfig.ResolveEntries(
         connectorConfigEntries,
         alreadyConfiguredKinds,
-        logWarning: msg => connectorsLogger.LogWarning("{ConnectorsConfigMsg}", msg));
+        logWarning: msg => connectorsLogger.LogWarning("{ConnectorsConfigMsg}", msg),
+        // 🔴 Task D-7a — see ConnectorsJsonRegistration.RegistrationKeyOf. Without this, an RTU BUS (which
+        // registers under its own instance id, not under "Modbus") would be suppressed by an unrelated
+        // env-var-configured Modbus TCP connector, and a second RS-485 line in the same file would be called a
+        // duplicate of the first.
+        registrationKeyOf: St4i.EngineApi.Config.ConnectorsJsonRegistration.RegistrationKeyOf);
 
     // 🔴 D-1 review, I-3 — this ~40-line dispatch used to live inline here, inside this DI lambda, where no
     // test could reach it: connectors.json is read from AppContext.BaseDirectory, one shared artifact in the
@@ -1285,7 +1324,12 @@ builder.Services.AddSingleton(sp =>
     // ST4I_CONNECTORS_CONFIG path override, is the right shape). All that remains uncovered here is the
     // Path.Combine + ConnectorsConfig.Load call above, which has no branching in it.
     St4i.EngineApi.Config.ConnectorsJsonRegistration.RegisterAll(
-        resolvedConnectorEntries, modbusOptions, opcUaOptions, registry, connectorsLogger);
+        resolvedConnectorEntries, modbusOptions, opcUaOptions, registry, connectorsLogger,
+        // 🔴 Task D-7a — the ONE bus registry every RTU connector in this process shares. Resolved from `sp`
+        // rather than captured, so the singleton the DI container owns (and disposes on shutdown) is the same
+        // object every bus leases from: two registries would mean two opens of one gateway socket, which is
+        // the exact failure ModbusBusRegistry exists to prevent.
+        sp.GetRequiredService<St4i.EdgeCore.Drivers.Modbus.ModbusBusRegistry>());
 
     // SM-5 (task-5-brief.md) — the persisted-store layer (POST /v1/connectors), a THIRD config source
     // layered on top of the two above with the SAME "an established source always wins" precedence rule
@@ -1296,7 +1340,13 @@ builder.Services.AddSingleton(sp =>
     // so a persisted row can ONLY ever fill a genuine gap — it can never shadow or silently reconfigure an
     // env-var- or connectors.json-configured kind. This is what keeps "existing env-var and hand-edited-
     // connectors.json deployments must keep working byte-identically" true even after this task.
-    alreadyConfiguredKinds.UnionWith(resolvedConnectorEntries.Select(e => e.Kind));
+    // 🔴 Task D-7a — the REGISTRATION KEY, not the kind. For every entry that existed before this task these
+    // are the same string (both built-in arms register under the kind), so this is byte-identical for them.
+    // For an RTU bus it is the bus's own instance id — which is what keeps a persisted Modbus TCP row from
+    // being suppressed by an unrelated RS-485 line, and keeps a persisted row named after a bus device from
+    // shadowing that device.
+    alreadyConfiguredKinds.UnionWith(
+        resolvedConnectorEntries.Select(St4i.EngineApi.Config.ConnectorsJsonRegistration.RegistrationKeyOf));
 
     foreach (var row in persistedConnectorRows)
     {

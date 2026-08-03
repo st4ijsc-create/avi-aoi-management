@@ -507,4 +507,108 @@ public class ModbusMultidropMapTests
         // still parses with unit 0, which is the deployment m-9 protects.
         Assert.Equal((byte)0, ModbusRegisterMap.FromJson(DeviceJson("TCP-ONLY", unitId: 0)).UnitId);
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task D-7a — the derived-id namespace (D-4 review m5), and the bus-wide write bound (§10 item 2).
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>D-4 review m5, closed by refusing the NAME rather than detecting the COLLISION.</b> A bus called
+    /// <c>rs485-line1</c> with a device at unit 1 and a bus called <c>rs485-line1:unit1</c> with a legacy
+    /// single-device map both derived the instance id <c>rs485-line1:unit1</c>, and
+    /// <c>ConnectorRegistry.Register</c> is last-write-wins on the id — so the second silently replaced the
+    /// first's machine claim while <c>RegisterAll</c> still counted it registered.
+    ///
+    /// <para>The fix makes the two namespaces disjoint, which is what a second thing then depends on:
+    /// <c>ModbusMultidropRegistration</c>'s ghost sweep identifies "the entries belonging to this bus" by
+    /// exactly this prefix, and a bus legitimately named <c>X:unit1</c> would make that sweep delete another
+    /// connector's registration.</para>
+    /// </summary>
+    [Fact]
+    public void ABusNamedLikeADevicePosition_IsRefused_SoTheDerivedIdNamespaceCannotCollide()
+    {
+        // The exact collision D-4 recorded: this bus id is what bus "rs485-line1" derives for its unit 1.
+        var collidingBusId = ModbusMultidropMap.DeviceInstanceId(BusId, 1);
+
+        var error = Assert.Throws<InvalidOperationException>(
+            () => ModbusMultidropMap.FanOut(DeviceJson("COLLIDE", unitId: 9), collidingBusId));
+
+        Assert.Contains(collidingBusId, error.Message);
+        Assert.Contains("reserved", error.Message, StringComparison.OrdinalIgnoreCase);
+        // Names the bus whose device it would have collided with, which is the actionable half.
+        Assert.Contains(BusId, error.Message);
+
+        // The multidrop shape goes down the same refusal — it is the bus NAME that is refused, not a shape.
+        Assert.Throws<InvalidOperationException>(
+            () => ModbusMultidropMap.FanOut(BusJson(DeviceJson("COLLIDE", unitId: 9)), collidingBusId));
+
+        // 🔴 And the ordinary name is unaffected: refusing too much would be its own defect.
+        Assert.Equal(BusId, ModbusMultidropMap.FanOut(DeviceJson("FINE", unitId: 9), BusId)[0].InstanceId);
+    }
+
+    /// <summary>The reservation predicate itself, at the boundaries — because "ends in :unit followed by
+    /// digits" has three ways to be got wrong and each one either reserves a name nothing derives or fails to
+    /// reserve one that something does.</summary>
+    [Theory]
+    [InlineData("line1:unit1", true)]
+    [InlineData("line1:unit247", true)]
+    [InlineData("a:unit0", true)]
+    [InlineData("line1:unit1:unit2", true)]   // the LAST separator is the one that decides
+    [InlineData("line1", false)]
+    [InlineData("line1:unit", false)]         // no digits at all
+    [InlineData("line1:unitA", false)]
+    [InlineData("line1:unit1a", false)]
+    [InlineData("line1:units1", false)]
+    [InlineData(":unit1", false)]             // no bus half — nothing could have derived it
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void TheDerivedIdNamespace_IsExactlyIdsEndingInUnitFollowedByDigits(string? instanceId, bool reserved)
+    {
+        Assert.Equal(reserved, ModbusMultidropMap.LooksLikeADeviceInstanceId(instanceId));
+    }
+
+    /// <summary>
+    /// 🔴 <b>Blueprint §10 item 2 — the number a write's wait must be bounded by is the WORST SIBLING's, never
+    /// the writing device's own.</b> The bus below is built so those two answers differ by a factor of 20, so
+    /// an implementation that returned "this device's" or "the first device's" or an average is red rather than
+    /// merely different.
+    /// </summary>
+    [Fact]
+    public void TheBusWideWriteBound_IsTheLargestDevicesHold_NotTheFirstAndNotItsOwn()
+    {
+        var json = BusJson(
+            // 1 register x (1+1) attempts x 300 ms = 600 ms.
+            DeviceJson("HOLD-FAST", unitId: 1, extraFields: ",\"readTimeoutMs\":300"),
+            // 1 register x (1+1) attempts x 6000 ms = 12 000 ms — the one a write actually queues behind.
+            DeviceJson("HOLD-SLOW", unitId: 2, extraFields: ",\"readTimeoutMs\":6000"),
+            DeviceJson("HOLD-MID", unitId: 3, extraFields: ",\"readTimeoutMs\":900"));
+
+        var devices = ModbusMultidropMap.FanOut(json, BusId);
+
+        Assert.Equal(600, devices[0].Map.WorstCaseBusHoldMs);
+        Assert.Equal(12_000, devices[1].Map.WorstCaseBusHoldMs);
+
+        Assert.Equal(12_000, ModbusMultidropMap.MaxWorstCaseBusHoldMs(devices));
+
+        // The degenerate cases, stated rather than left for a caller to guess: a single-device bus is its own
+        // worst case, and an empty list — which FanOut can never produce — is 0.
+        Assert.Equal(600, ModbusMultidropMap.MaxWorstCaseBusHoldMs(ModbusMultidropMap.FanOut(
+            DeviceJson("HOLD-ALONE", unitId: 1, extraFields: ",\"readTimeoutMs\":300"), BusId)));
+        Assert.Equal(0, ModbusMultidropMap.MaxWorstCaseBusHoldMs(Array.Empty<ModbusBusDevice>()));
+    }
+
+    /// <summary>🔴 D-4 review m1 — the derived id's LITERAL format, pinned once against a string rather than
+    /// against its own generator. §1.4 makes this id load-bearing for alarm <c>TargetId</c> continuity, and
+    /// every other assertion in this file (correctly) goes through
+    /// <see cref="ModbusMultidropMap.DeviceInstanceId"/>, which cannot see a change to the format itself.
+    /// D-7a adds it because D-7a is the task that makes the format reach an operator's alarm history.</summary>
+    [Fact]
+    public void TheDerivedInstanceIdFormat_IsLiterallyBusColonUnitN()
+    {
+        var devices = ModbusMultidropMap.FanOut(
+            BusJson(DeviceJson("LIT-A", unitId: 1), DeviceJson("LIT-B", unitId: 42)), "rs485-line1");
+
+        Assert.Equal("rs485-line1:unit1", devices[0].InstanceId);
+        Assert.Equal("rs485-line1:unit42", devices[1].InstanceId);
+    }
 }

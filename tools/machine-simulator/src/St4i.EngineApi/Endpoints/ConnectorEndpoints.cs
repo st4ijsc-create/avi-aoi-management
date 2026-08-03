@@ -1,4 +1,5 @@
 using St4i.Connector.Abstractions.Models;
+using St4i.EdgeCore.Drivers.Modbus;
 using St4i.EdgeCore.Drivers.OpcUa;
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
@@ -205,6 +206,23 @@ public static class ConnectorEndpoints
             ? validated.Kind
             : DriverKinds.Normalize(body.InstanceId.Trim());
 
+        // 🔴 Task D-7a (D-4 review m5) — the DERIVED namespace is reserved, and this is the second of the two
+        // doors into it. ModbusMultidropMap.DeviceInstanceId mints "{bus}:unit{n}" for every device on a
+        // multidrop bus, and ModbusMultidropMap.ValidateBusInstanceId already refuses to let a BUS be named
+        // that way. This endpoint is the other way an id gets allocated, and it has to refuse the same shape
+        // for the same reason plus one more: ModbusMultidropRegistration's ghost sweep identifies "the entries
+        // belonging to this bus" by exactly that prefix, so a connector saved here under "line1:unit3" would be
+        // unregistered by bus line1's next registration pass — a connector that vanished, with nothing
+        // pointing at why. Refused in ONE place's rule (LooksLikeADeviceInstanceId), not restated here.
+        if (ModbusMultidropMap.LooksLikeADeviceInstanceId(instanceId))
+        {
+            return Results.BadRequest(new ApiErrorDto(
+                $"Connector instance id '{instanceId}' is reserved. Ids ending in ':unit<number>' name one " +
+                "DEVICE's position on a Modbus multidrop bus and are allocated automatically from the bus's own " +
+                "id — a connector saved under one would be silently replaced, or removed, the next time that bus " +
+                "registered. Choose a different instanceId."));
+        }
+
         var existing = await store.GetAsync(instanceId, ct).ConfigureAwait(false);
         if (existing is not null
             && existing.Source == ConnectorConfigSource.Operator
@@ -374,8 +392,54 @@ public static class ConnectorEndpoints
     // ─────────────────────────────────────────────────────────────────────
     // DELETE /v1/connectors/{instanceId}
     // ─────────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// 🔴 <b>Task D-7a — this now also RELEASES THE LIVE CLAIM, and that closes a defect this file used to
+    /// apologise for in prose.</b>
+    ///
+    /// <para>Before D-7a, DELETE removed only the persisted row. <see cref="ConnectorRegistry"/> had no
+    /// removal path at all, so the deleted connector's machine-code CLAIM survived until the process
+    /// restarted — and <see cref="CreateConnectorAsync"/> had to grow a whole second 409 message for the
+    /// state that produced: <i>"still held by connector X, which was already removed from the persisted
+    /// configuration but is STILL RUNNING … restart the application and save again."</i> D-1's own review
+    /// (m2) called that out as "the product blaming the operator for having done the right thing".
+    /// <see cref="ConnectorRegistry.Unregister"/> exists now, so the claim goes with the row and the operator
+    /// can immediately configure a replacement.</para>
+    ///
+    /// <para><b>What is still true, and is still said in the response:</b> a driver already RUNNING under this
+    /// id keeps running until the fleet is next started. Unregistering is a registry mutation — it disposes
+    /// nothing and performs no I/O, deliberately (see <see cref="ConnectorRegistry.Unregister"/>), because
+    /// disposal belongs to <see cref="FleetHost"/>, which does it outside its own <c>_gate</c> under a bounded
+    /// budget. So a write for that machine in the window between this call and the next start resolves to
+    /// whatever NEW connector claimed it, finds no live slot for it, and is refused with
+    /// <see cref="MachineDriverAvailability.NoLiveDriver"/>. It is never handed to the orphaned driver, which
+    /// is the property that had to survive this change.</para>
+    ///
+    /// <para>🔴 <b>And the limit, measured rather than assumed — the first draft of this method's response
+    /// claimed the operator could "save the replacement immediately", and a test proved that false.</b>
+    /// <see cref="FleetHost.RegisterMachine"/> has no un-register either, so the deleted connector's MACHINE is
+    /// still in the roster — and <see cref="CreateConnectorAsync"/>'s cross-kind roster-collision guard refuses
+    /// any later save naming that code, whatever this registry now says. Releasing the claim therefore does
+    /// NOT make a same-machine replacement savable without a restart; what it does is make the refusal the
+    /// ROSTER's, naming a machine that genuinely is in the fleet, instead of a ghost connector's, naming an
+    /// instance the operator had already deleted. Removing a machine from the roster reaches pipeline slots,
+    /// alarm <c>TargetId</c>s, the historian and the asset registry, and is not this task's. The response says
+    /// all of this rather than letting an operator find it by trying.</para>
+    ///
+    /// <para><b>Order: store first, registry second.</b> If the store delete fails the request already 500s
+    /// and nothing has been released; releasing first would leave a machine claimable while the row that
+    /// describes it still exists, which is the same "persisted but never running" asymmetry
+    /// <see cref="CompensateFailedLiveRegistrationAsync"/> exists to prevent from the other direction.</para>
+    ///
+    /// <para><b>The registry is unregistered even when no row existed?</b> No — the 404 above returns first,
+    /// unchanged. A live claim with no persisted row is reachable (an env-var or <c>connectors.json</c>
+    /// connector), and clearing it through an endpoint whose whole subject is "the persisted configuration"
+    /// would be a second, undocumented way to disable a connector the operator configured in a file. That
+    /// remains a restart, and <see cref="CreateConnectorAsync"/>'s second 409 branch — which is why it is
+    /// kept — is still the message for it.</para>
+    /// </summary>
     internal static async Task<IResult> DeleteConnectorAsync(
-        string instanceId, ConnectorConfigStore store, HttpContext ctx, AuditRecorder recorder, CancellationToken ct)
+        string instanceId, ConnectorConfigStore store, ConnectorRegistry connectorRegistry,
+        HttpContext ctx, AuditRecorder recorder, CancellationToken ct)
     {
         // Task D-1 — normalized through the SAME DriverKinds.Normalize every other id in this codebase goes
         // through (ConnectorRegistry.Register, ConnectorConfigStore.SaveAsync), so "modbus" still addresses
@@ -389,10 +453,15 @@ public static class ConnectorEndpoints
 
         await store.DeleteAsync(normalized, ct).ConfigureAwait(false);
 
+        // 🔴 Task D-7a — see this method's own remarks. Returns false when nothing was registered live under
+        // this id (a row persisted by an earlier process run, this one having never registered it), which is
+        // an ordinary outcome and not a failure; it changes only what the response says.
+        var claimReleased = connectorRegistry.Unregister(normalized);
+
         await recorder.RecordAsync(
             ctx, "connector.delete", "connector", normalized,
             new { existing.MachineCode, existing.Host, existing.Port, existing.Source },
-            null,
+            new { liveClaimReleased = claimReleased },
             ct).ConfigureAwait(false);
 
         // English, deliberately — see CreateConnectorAsync's own remark on this.
@@ -408,9 +477,22 @@ public static class ConnectorEndpoints
               "configuration. That underlying configuration is unaffected: if it is still active, this row " +
               "(and the live connector it describes) will simply reappear the next time this process starts. " +
               "Remove/change the environment variable or connectors.json entry itself to stop that."
-            : "Removed from the persisted configuration. This machine remains in the fleet roster and, if a " +
-              "connector of this kind is currently running, keeps running until the application is fully " +
-              "restarted — there is no live \"unregister\" path.";
+            // 🔴 Task D-7a — the second half of this sentence used to read "there is no live \"unregister\"
+            // path", which is no longer true and was the thing that made the operator's next POST fail with a
+            // 409 naming a connector they had just deleted. What survives is the part that is still true and
+            // that they still have to know: the DRIVER keeps polling until the fleet restarts.
+            : claimReleased
+                ? $"Removed from the persisted configuration, and this connector's live claim on machine " +
+                  $"'{existing.MachineCode}' was released — no connector holds that machine now. Two things " +
+                  "are unchanged and are worth knowing: the driver that was already running keeps polling " +
+                  "until the fleet is stopped and started (there is no way to stop one mid-run), and the " +
+                  "machine itself REMAINS IN THE FLEET ROSTER — the roster has no removal path either, so a " +
+                  "replacement connector for this same machine code is still refused until the application is " +
+                  "restarted. What the released claim buys today is that the refusal you get is the roster's " +
+                  "and not this connector's ghost."
+                : "Removed from the persisted configuration. Nothing was registered live under this connector " +
+                  "id in this process, so there was no machine claim to release. This machine remains in the " +
+                  "fleet roster.";
 
         return Results.Ok(new ConnectorDeleteResultDto(normalized, message));
     }

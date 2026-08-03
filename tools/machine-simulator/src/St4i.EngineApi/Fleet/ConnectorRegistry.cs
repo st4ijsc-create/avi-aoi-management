@@ -217,9 +217,77 @@ public sealed class ConnectorRegistry
         }
     }
 
-    /// <summary>Every currently-registered connector INSTANCE id, normalized. A point-in-time snapshot — safe
-    /// to enumerate even if another thread is concurrently <see cref="Register"/>ing (this task never removes
-    /// entries once added, so there is no torn-read hazard to guard against).</summary>
+    /// <summary>
+    /// 🔴 Task D-7a — <b>the removal path this class spent three tasks not having.</b> Removes the entry
+    /// registered under <paramref name="instanceId"/> and, with it, <b>that instance's machine-code claim</b>,
+    /// so another instance can claim the same machine afterwards. Returns <see langword="false"/> (mutating
+    /// nothing) for an id nothing is registered under.
+    ///
+    /// <para><b>Why this had to exist before multidrop could ship.</b> <see cref="Register"/> refuses a second
+    /// claim on a machine code — that refusal is the structural gate
+    /// <see cref="FleetHost.ResolveWritableDriver"/> rests on. With no removal, a device deleted from a bus map
+    /// (or a connector deleted through <c>DELETE /v1/connectors/{instanceId}</c>) left a GHOST entry still
+    /// holding that machine's claim until the process restarted: the machine could not be re-served by
+    /// anything, and the refusal named an instance the operator had already deleted from their file.
+    /// <c>ModbusMultidropRegistration</c>'s own doc comment recorded the whole failure as D-7's to close, and
+    /// D-4's review carried it as <c>m6</c>.</para>
+    ///
+    /// <para><b>🔴 This method performs NO I/O and disposes NOTHING, and that is the design, not an
+    /// omission.</b> This registry holds <see cref="IConnectorFactory"/> objects and opaque configuration
+    /// strings — it has never held a driver. The live <see cref="IDeviceDriver"/> built from an entry belongs
+    /// to a <see cref="FleetHost"/> pipeline slot, and <see cref="FleetHost"/> already disposes slots
+    /// <b>outside</b> its <c>_gate</c>, under a bounded per-driver budget
+    /// (<c>WaitAndDisposeOldPipeline</c>/<c>DisposeOrphanedConnectorDrivers</c>, both invoked only after the
+    /// lock block closes — that constraint predates this batch and is absolute). So removal here is a pure
+    /// dictionary mutation that cannot block a caller holding any lock, and the driver it orphans is reclaimed
+    /// by the pipeline restart that <see cref="FleetHost"/> already owns. <b>An in-flight read is therefore
+    /// completely unaffected by this call</b> — it keeps its lease, keeps the shared RTU bus, and finishes
+    /// normally; what it loses is only its right to be rebuilt on the next start.</para>
+    ///
+    /// <para><b>What an operator sees between this call and the next start:</b> the removed instance's driver
+    /// keeps polling and keeps emitting readings for its machine. That is unchanged from before this method
+    /// existed (nothing ever stopped it) — what changes is that the machine's CLAIM is now free, so a
+    /// replacement connector can be configured immediately instead of after a restart. A write for that
+    /// machine in the window resolves to the NEW instance, which has no running slot yet, and is refused with
+    /// <see cref="MachineDriverAvailability.NoLiveDriver"/> — it is never handed to the orphaned driver, which
+    /// is the property that matters.</para>
+    /// </summary>
+    /// <param name="instanceId">The instance id to remove. Normalized through <see cref="DriverKinds.Normalize"/>
+    /// exactly like every id this class is given, so <c>"modbus"</c> removes the <c>"Modbus"</c> entry.</param>
+    /// <returns><see langword="true"/> if an entry was removed; <see langword="false"/> for a null/blank id or
+    /// an id nothing is registered under. Never throws.</returns>
+    public bool Unregister(string? instanceId)
+    {
+        if (string.IsNullOrWhiteSpace(instanceId)) return false;
+
+        var id = DriverKinds.Normalize(instanceId.Trim());
+        if (string.IsNullOrWhiteSpace(id)) return false;
+
+        // Under the SAME gate Register takes. Not for the dictionary's sake (ConcurrentDictionary.TryRemove is
+        // atomic on its own) but for the CROSS-ENTRY invariant Register enforces: a removal that landed in the
+        // middle of Register's claim scan could let a claim be refused against an entry that no longer exists
+        // by the time the scan finished. Serialising the two removes the interleaving instead of reasoning
+        // about it — the same argument SnapshotBindings' own doc comment makes for resolution.
+        lock (_registerGate)
+        {
+            return _entries.TryRemove(id, out _);
+        }
+    }
+
+    /// <summary>Every currently-registered connector INSTANCE id, normalized. A point-in-time snapshot.
+    ///
+    /// <para>🔴 Task D-7a — <b>this used to say "this task never removes entries once added, so there is no
+    /// torn-read hazard to guard against", and <see cref="Unregister"/> made that sentence false.</b> The
+    /// conclusion survives the premise, and the reason is worth stating rather than deleting: the hazard a
+    /// removal introduces is a torn ENUMERATION, and <see cref="ConcurrentDictionary{TKey,TValue}.Keys"/>
+    /// materialises a snapshot list under the dictionary's own locks, so an id removed mid-enumeration either
+    /// appears in the returned list or does not — never a corrupt read. What a caller CAN now see is a
+    /// returned id that is already gone by the time it is used, and that is exactly the shape
+    /// <see cref="TryCreateDriver"/> was already built for: it answers an unknown id with
+    /// <see langword="false"/> plus a descriptive error, the same way it answers a factory that rejected its
+    /// own configuration. <c>FleetHost.StartLocked</c> reports that as a per-connector start issue and starts
+    /// every sibling — which is the correct behaviour for "this connector was removed while the fleet was
+    /// starting", not a defect to guard against.</para></summary>
     public IReadOnlyList<string> RegisteredIds => _entries.Keys.ToList();
 
     /// <summary>Task D-1 — the protocol kind an instance speaks (<see cref="IConnectorFactory.Kind"/>,
