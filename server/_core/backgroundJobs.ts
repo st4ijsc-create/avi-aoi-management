@@ -127,13 +127,15 @@ export async function startBackgroundSchedulers(): Promise<void> {
   // khi tiến trình này CHƯA cấp phát gì. Đẩy khối này xuống sau lượt warm model là tự tay nuốt
   // ~17 GB trọng số vào "nền" và làm mù luôn cái sổ.
   //
-  // ⚠ ĐÂY LÀ NƠI DUY NHẤT được bật bộ đếm giờ nhật ký. `logVramEvent()` TUYỆT ĐỐI không tự bật —
-  // bài học Đợt trước: `setInterval` unref'd của `aiGateway` tự bắn, tự kết nối, TỰ GHI DB TEST.
+  // Pha 1.5 Task 4 — bộ đếm giờ nhật ký (`__setVramLogTimerEnabled(true)`) KHÔNG còn bật ở đây.
+  // `startBackgroundSchedulers()` chỉ chạy ở vai trò chạy scheduler (ROLE≠api), nhưng sự kiện
+  // phải tới DB từ MỌI vai trò kể cả `api` — nên lượt bật nay chuyển lên `index.ts` (:5198 lân
+  // cận), CHẠY TRƯỚC dòng này và trước cả nhánh role, cho MỌI vai trò. `__setVramLogTimerEnabled`
+  // idempotent (`if (on && !timer)`) nên gọi lại ở đây vẫn vô hại — CỐ Ý không gọi lại để chỉ có
+  // MỘT nơi bật, tránh việc sau này ai đó gỡ một chỗ mà tưởng lượt bật kia còn giữ nó sống.
   try {
     const { startVramReconciler } = await import("../services/vram/vramReconciler");
-    const { __setVramLogTimerEnabled } = await import("../services/vram/vramEventLog");
     startVramReconciler();
-    __setVramLogTimerEnabled(true);
     console.log("[vram] sổ cái + đối chiếu đã bật (Pha 1 — CHỈ QUAN SÁT, không cưỡng chế).");
   } catch (err) {
     console.error("[vram] không bật được sổ cái/đối chiếu:", (err as any)?.message || err);

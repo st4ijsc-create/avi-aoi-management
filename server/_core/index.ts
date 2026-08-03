@@ -5195,6 +5195,26 @@ async function startServer() {
   // in the dedicated worker (`npm run start:worker`). Request-coupled services
   // (socket gateways, MQTT broker, event-bus subscribers, ingest paths, device
   // gateways) are NOT part of this set and keep starting below.
+  // Pha 1.5 Task 4 — sổ là của RIÊNG từng tiến trình; đối chiếu (startVramReconciler)
+  // chỉ hợp lệ ở tiến trình chạy scheduler (nhánh else bên dưới), vì hai tiến trình
+  // cùng đối chiếu trên MỘT thiết bị sẽ thấy nhau là "cấp phát chui" — biến chuông
+  // thành nhiễu (sổ chung là Pha 3). Nhưng SỰ KIỆN thì phải tới DB từ MỌI vai trò —
+  // nếu ROLE=api không ghi, Pha 2 sẽ chốt ngưỡng drift trên NỬA dữ liệu. Hàng đợi
+  // VRAM_LOG_QUEUE_MAX (5000) rơi im lặng khi không có ai xả, nên bật ở ĐÂY, ngoài
+  // khối role bên dưới, chạy cho CẢ api LẪN worker/all-in-one.
+  //
+  // ⚠ ĐÂY LÀ NƠI DUY NHẤT bật bộ đếm giờ nhật ký cho vai trò `api` — backgroundJobs.ts
+  // (startBackgroundSchedulers, chạy ở nhánh else) KHÔNG bật lại nó; `__setVramLogTimerEnabled`
+  // idempotent nên bật hai chỗ vẫn vô hại, nhưng CHỌN MỘT tránh việc sau này ai đó gỡ một
+  // chỗ và tưởng lượt bật kia còn — chọn chỗ NÀY vì nó chạy cho MỌI vai trò, kể cả api.
+  try {
+    const { __setVramLogTimerEnabled } = await import("../services/vram/vramEventLog");
+    __setVramLogTimerEnabled(true);
+  } catch (err) {
+    // Telemetry không bao giờ được làm hỏng boot.
+    console.error("[vram] không bật được bộ đếm giờ nhật ký:", (err as any)?.message || err);
+  }
+
   if (SERVER_ROLE === "api") {
     console.log(
       "[Role] ROLE=api — cron schedulers skipped; run the worker process (`npm run start:worker`)",

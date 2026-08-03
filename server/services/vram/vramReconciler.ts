@@ -585,7 +585,7 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       console.warn(
         `[vram] LỆCH ${mib(drift)} MiB — sổ ${mib(snap.totalReservedBytes)}, thiết bị ${mib(attributable)}${baseNote}. ` +
           `Có hộ tiêu thụ cấp phát KHÔNG XIN PHÉP (sidecar? tiến trình con? thư viện khác?). ` +
-          `Đang giữ: ${holders()}`,
+          `Đang giữ: ${holders()}${describeTopologyHint()}`,
       );
     } else {
       // ⚠ I-2 — TÁCH HAI NHÓM. Trước đây cả hai bị gộp vào "chưa commit", và người trực ngồi
@@ -669,3 +669,30 @@ export function stopVramReconciler(): void {
 }
 
 export function __hasReconcilerTimer(): boolean { return timer !== null; }
+
+/**
+ * Pha 1.5 Task 4 — nhãn cho biết hệ có đang chạy nhiều tiến trình giữ VRAM
+ * không (báo cáo Pha 1 §9). Đọc `process.env.ROLE` TRỰC TIẾP (không cache ở
+ * module-load) vì test đổi `ROLE` giữa các case bằng `vi.resetModules()` +
+ * import lại — cache tĩnh sẽ đọc trúng giá trị của lượt import TRƯỚC.
+ *
+ * ⚠ CHỈ nối vào nhánh LỆCH DƯƠNG (`drift > 0`, "cấp phát không xin phép") của
+ * cảnh báo ở `reconcileOnce()`. KHÔNG nối vào nhánh âm — lệch âm là giấy phép
+ * treo/đo hỏng CỦA CHÍNH tiến trình này (xem chú thích I-2 phía trên), gợi ý
+ * "tiến trình anh em" ở đó là sai hướng và làm người trực đi tìm nhầm chỗ.
+ *
+ * ⚠ Vì sao đây là dây an toàn còn thiếu: tiến trình `api` nay GHI sự kiện
+ * (Task 4) nhưng KHÔNG BAO GIỜ tự đối chiếu (`startVramReconciler()` chỉ chạy
+ * ở vai trò chạy scheduler) — nếu `api` tự cấp phát rồi không nhả, KHÔNG có
+ * gì bên trong chính tiến trình `api` phát hiện ra. Chuông chỉ reo được ở
+ * tiến trình đối chiếu (worker/all-in-one), và hint này là thứ giúp người
+ * trực không đổ oan cho "kẻ lạ" khi thủ phạm là chính `api`.
+ */
+export function describeTopologyHint(): string {
+  const role = process.env.ROLE ?? "";
+  if (role !== "api" && role !== "worker") return "";
+  return (
+    " ⚠ Hệ đang tách vai trò api/worker — mỗi tiến trình có sổ RIÊNG, nên khoản lệch này " +
+    "có thể là của tiến trình anh em chứ không phải kẻ lạ. Sổ chung là Pha 3."
+  );
+}
