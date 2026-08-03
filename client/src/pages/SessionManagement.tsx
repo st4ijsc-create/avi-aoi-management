@@ -192,7 +192,8 @@ export default function SessionManagement() {
                           {(() => {
                             // server có thể trả sẵn CHUỖI "không rõ/Unknown" (truthy) → coi như thiếu.
                             const known = (v: string | null | undefined) => (v && !/không rõ|unknown/i.test(v) ? v : null);
-                            const ua = parseUaFallback(session.userAgent);
+                            // chuỗi UA thô nằm ở deviceName (authService.ts: deviceName = audit.userAgent)
+                            const ua = parseUaFallback(session.deviceName);
                             const browser = known(session.browser) || ua.browser || t('session.unknownBrowser', 'Trình duyệt không rõ');
                             const os = known(session.os) || ua.os || t('session.unknownOs', 'HĐH không rõ');
                             return `${browser} ${t('session.deviceOn', 'trên')} ${os}`;
