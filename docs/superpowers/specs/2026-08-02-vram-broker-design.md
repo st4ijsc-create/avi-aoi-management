@@ -161,6 +161,19 @@ neu  vẫn không                          → TỪ CHỐI TRUNG THỰC
 
 `duTruAnToan` mặc định **1.024 MiB** — che nhiễu nền, phần cấp phát lười của llama.cpp (compute buffer chỉ hiện ở lượt suy luận đầu), và **độ trôi nền `nvidia-smi` đo được ~103 MiB/ngày**.
 
+### 🔴 5.1b `CẤP` nghĩa là "SỔ CHO PHÉP", KHÔNG nghĩa là "DRIVER SẼ CẤP" (sửa 2026-08-03, do Ư0/Ư7)
+
+**Phiên bản đầu của §5 giả định sai rằng đếm đủ byte thì tránh được thất bại cấp phát.** Phép đo Ư0 (24 lượt, một bản mã, `docs/superpowers/reports/2026-08-03-vram-pha1-5-report.md` §10) bác bỏ giả định đó:
+
+| Bằng chứng | Hệ quả |
+|---|---|
+| **18/18 lượt hỏng đều có ~30 GB TRỐNG** cho một yêu cầu 16.698,37 MiB — dư **1,84×** | Phép trừ số học **không chạm được** lớp lỗi này. Kết nạp theo byte-còn-trống sẽ nói "CẤP", rồi driver vẫn từ chối. |
+| Ư7: cùng một khối 16.698,37 MiB, **3 lần OK / 9 lần HỎNG** trên máy rảnh | **Trần một-lần-`cudaMalloc` KHÔNG TẤT ĐỊNH.** Mọi thiết kế dựa vào *một con số trần* bị loại từ đầu. |
+
+⇒ **`duMuc` là điều kiện CẦN, không phải điều kiện ĐỦ.** Broker phải coi thất bại cấp phát là **sự kiện BÌNH THƯỜNG có đường xử lý** (§5.5), không phải điều kiện tránh được bằng cách tính cho khéo.
+
+⚠ **Không viết đường vòng "chạm CUDA sớm" thành mã.** Nhánh B của Ư0 là **phiên bản mạnh hơn** của mẹo đó — model 0,6B thật sự thường trú, đi trước 1,63–2,27 s — và **vẫn hỏng 9/12**; hai nhánh **không phân biệt được** (Fisher `p = 1,0000`). Biến thể *chưa* bị bác là *"CUDA context tạo TRƯỚC khi tiến trình app boot"*, thuộc Ư7a, **chưa** đủ bằng chứng để thành mã.
+
 ### 5.2 Ưu tiên — xếp theo giá trị thật của nhà máy
 
 1. **`production`** — đường kiểm tra AOI. Không bao giờ bị thu hồi.
@@ -192,6 +205,48 @@ Việc **`background`** bị từ chối thì **hoãn rồi thử lại**, **kh�
 | Tín hiệu sẵn có | biển báo *"KB có thể đã cũ"* (so `KB built` với `source last changed`) **tự nổi lên** khi sync trượt — **dùng lại nó, đừng phát minh tín hiệu mới** |
 
 ⚠ **Không được có đường nào mà một lượt `kb:sync` biến mất mà không để lại vết.** Nếu tri thức cũ đi vì broker liên tục từ chối, người vận hành phải biết **vì sao**, không phải chỉ biết **rằng** nó cũ.
+
+### 🔴 5.5 BA kết cục, không phải hai (thêm 2026-08-03, do Ư0)
+
+Một lượt xin VRAM có **ba** kết cục. Thiết kế cũ chỉ tính hai.
+
+| # | Kết cục | Ai từ chối | Khi nào | Trạng thái hôm nay |
+|---|---|---|---|---|
+| 1 | `VramRefusedError` | **sổ** | trước khi nạp/spawn | thiết kế ở §5.3 — ổn |
+| 2 | `cudaMalloc failed` | **driver**, sau khi đã **qua** cổng sổ | giữa lượt nạp | **chưa có đường xử lý** |
+| 3 | **suy biến im lặng** | không ai — chỉ *ít* GPU hơn | giữa lượt nạp | **đang xảy ra** |
+
+**Kết cục 3 là lỗi nặng nhất vì nó không kêu.** Đo được: `0/24` log Ư0 chứa dòng lùi `gpuLayers:"auto"` — tức **lớp phòng thủ cuối cùng KHÔNG BAO GIỜ chạy**. Hai nguyên nhân độc lập, cả hai phải vá **trong Pha 2**:
+
+- `isOom` **không khớp** chuỗi `"Failed to load model"` mà llama.cpp thật sự ném ⇒ nhánh hạ `gpuLayers` không với tới.
+- `warmModel` có `catch {}` **rỗng** ⇒ nuốt trọn thất bại nạp lúc khởi động.
+
+⚠ Nhắc lại cạm bẫy đã ghi ở Đợt 1: `Math.max(0, Math.min(totalLayers, -1)) === 0` — nên `gpuLayers: -1` **không** nghĩa "tất cả các lớp", mà nạp **0 lớp**, chạy CPU, chậm gấp bội, **và không báo gì**. Đường lùi phải đặt số lớp **tường minh**.
+
+**Xử lý kết cục 2 — bắt buộc:**
+
+1. **Trả giấy phép NGAY.** Driver từ chối mà lease còn treo thì sổ **cộng dư vĩnh viễn**, và lượt xin kế tiếp bị từ chối trên **byte ma**. Đây là lớp lỗi Pha 1.5 vừa diệt (T5-1/C-1) — không được để cưỡng chế đẻ lại nó.
+2. **Thử lại có trần**, vì trần không tất định (3/12 lượt thành công trên **cùng** khối): thử lại **2 lần**, cách nhau **5 s**. Cùng khuôn "hoãn có đáy và có tiếng" của §5.4.
+3. **Rồi mới hạ `gpuLayers` tường minh**, ghi sự kiện `degraded` kèm **số lớp thật đã nạp**.
+4. **Rồi mới từ chối trung thực** theo §5.3.
+
+Mỗi bước phải ghi sự kiện riêng. **Không có bước nào được im lặng** — đó là toàn bộ lý do §5.5 tồn tại.
+
+### 🔴 5.6 Quy luật liệt kê — điều kiện bật cưỡng chế (thêm 2026-08-03)
+
+> **Mọi cấp phát không đi qua cổng đều VÔ HÌNH với cưỡng chế.**
+
+Đây là **quy luật**, không phải sự cố lẻ. Bằng chứng: hộ tiêu thụ bị bỏ sót ở **cả bốn** đợt — sidecar thị giác 7,8 GB (Đợt 0, lọt 7 task + 7 review), ONNX và cron (Đợt 2), hộ thứ bảy rồi 8/10/11 (Pha 1) — trong đó **một hộ được sinh ra cách 143 dòng phía trên đúng đoạn mã vừa nối, cờ đang bật trong `.env`, chạy 03:00 mỗi đêm**.
+
+Ở Pha 1 sót một hộ chỉ làm **số đo lệch**. Ở Pha 2 sót một hộ làm **cưỡng chế sai**: sổ tưởng còn trống nên vẫn nói CẤP, trong khi thiết bị đã đầy.
+
+⇒ **Điều kiện bật cưỡng chế: liệt kê ĐẦY ĐỦ đường cấp phát TRƯỚC, không vá lẻ khi lộ.** Cụ thể, Pha 2 phải mở đầu bằng một task **chỉ-đếm**, và bản liệt kê phải:
+
+- quét theo **hai** trục độc lập — theo **lời gọi** (`getLlama` · `loadModel` · `createContext` · `InferenceSession` · `spawn`) **và** theo **tiến trình** (`nvidia-smi --query-compute-apps` trên máy đang chạy thật, gồm cả cửa sổ 03:00);
+- đối chiếu hai bản; **mọi chênh lệch là một hộ chưa biết**, phải truy đến tên file và dòng;
+- kết thúc bằng **một hằng số đếm được kiểm bằng test** — số điểm cấp phát đã nối. Test đỏ khi ai đó thêm điểm mới mà không khai báo.
+
+⚠ Con số này **đã sai hai lần liên tiếp** khi đếm bằng cách cộng dồn trong đầu. **Đếm bằng `git grep`, mỗi lần đếm lại từ đầu.**
 
 ## 6. Đối chiếu và báo động — phần giá trị nhất
 
@@ -266,24 +321,37 @@ export const vramEvents = pgTable("vram_events", {
 | Pha | Nội dung | Đổi hành vi? | Cổng ra |
 |---|---|---|---|
 | **1 — Sổ cái & báo động** | broker + sổ + đầu dò + reconciler + 4 bộ nối **chỉ khai báo**; nhật ký sự kiện; **đo `aiReranker` bật GPU** (§16); **chạy Ư7 bằng chính nhật ký này** | **KHÔNG** | Sổ khớp thiết bị trong ±512 MiB suốt 24 h; báo cáo **phân bố lệch** + **p50/p95 chi phí đầu dò** để chốt §15.1/§15.2; **Ư7 có câu trả lời** |
-| **2 — Cưỡng chế trong tiến trình** | GGUF + ONNX phải xin phép; từ chối trung thực; ưu tiên; **xoá/hấp thụ mục §8** | **CÓ** | Không còn `"temporary overflow"`; `kb:eval` 151/151 |
+| **2 — Cưỡng chế trong tiến trình** | **liệt kê đầy đủ đường cấp phát (§5.6)**; GGUF + ONNX phải xin phép; **ba kết cục §5.5**; từ chối trung thực; ưu tiên; **xoá/hấp thụ mục §8** | **CÓ** | Không còn `"temporary overflow"`; **không còn suy biến im lặng** — có test bắt được lượt nạp hạ lớp; `kb:eval` 151/151 |
 | **3 — Cưỡng chế xuyên tiến trình** | sidecar + cron xin qua người giám sát; thu hồi được; nhận nuôi mồ côi | **CÓ** | Ô 100,7% ❌ được giải **bằng cơ chế**; gỡ được biện pháp tạm gộp FIM |
 | **4 — Mặt tiếp xúc backend cho Agent** | bảng + router tRPC đọc/ra lệnh, có phân quyền | không | Agent truy vấn và ra lệnh được |
 
 **Pha 5 (giao diện) nằm NGOÀI spec này** — theo yêu cầu chủ dự án: backend hoàn chỉnh trước.
 
-### ⚠ Cổng chặn Ư7
+### ✅ Cổng Ư7 — ĐÃ GỠ (2026-08-03)
 
-**Pha 2 KHÔNG được bắt đầu khi Ư7 chưa có câu trả lời.** Cưỡng chế là đổi hành vi cấp phát, đúng chỗ ta chưa hiểu. Báo cáo Đợt 2 §5 ghi rõ *"không viết mã trước Ư7"*.
+Ư7 và Ư0 đều đã có câu trả lời (Pha 1 §7, Pha 1.5 §10). Kết quả **không** hợp thức hoá thiết kế cũ mà **đổi nó**: xem §5.1b và §5.5. Cổng này đóng lại ở đây.
 
-Pha 1 xây đúng thiết bị đo Ư7 cần, nên Ư7 nằm **trong** pha 1 chứ không chắn ngoài.
+### 🔴 Cổng chặn T5-11 — PHÉP ĐO PER-PROCESS (mới, thay chỗ cổng Ư7)
+
+**Pha 2 KHÔNG được bắt đầu khi phép đo còn là `after − before` trên mức dùng TOÀN THIẾT BỊ.**
+
+Lý do là số học, không phải phòng xa: mỗi đêm `cron:kb-sync` chạy ~30 phút; **mọi** lượt nạp rơi vào cửa sổ đó có hai đầu đo chồng nhau ⇒ bị gắn `measureFailed` ⇒ `actualBytes` **không bao giờ** được ghi. Pha 2 khi ấy **cưỡng chế trên toàn ước lượng**, đúng thứ Pha 1.5 vừa chứng minh là sai tới **16.335 MiB** một lượt.
+
+**Điều kiện gỡ cổng:** một nguồn đo **theo tiến trình** (NVML `nvmlDeviceGetComputeRunningProcesses`, hoặc `nvidia-smi --query-compute-apps=pid,used_memory`), kèm bằng chứng: hai lượt nạp **cố ý chồng nhau** vẫn cho ra **hai** con số `actualBytes` đúng.
+
+Kèm theo, phải trả **T5-15** trong cùng pha: giấy phép `gguf-backend` **không có đường trả ở nhánh thành công** — nếu bị gắn `measureFailed` thì xấu nhất không phải "nên khởi động lại" mà là **"bắt buộc khởi động lại"**.
+
+### ⚠ Hai điều kiện Pha 1 CHƯA đạt — khai thẳng
+
+Điều kiện ra của Pha 1 gồm *"sổ khớp thiết bị trong ±512 MiB suốt 24 h"*. **Lượt chạy 24 h CHƯA thực hiện.** Bằng chứng hiện có là 101 mẫu liên tục (lệch p50 15 / p90 210 MiB, **0 báo động**) — đủ để chốt ngưỡng và nhịp (§15), **không** đủ để tuyên bố điều kiện 24 h là ĐẠT. Ghi ở đây để không ai đọc bảng trên mà tưởng cả bốn điều kiện đều xanh.
 
 ## 11. Xử lý lỗi
 
 | Tình huống | Xử lý |
 |---|---|
 | Đầu dò hỏng (`nvidia-smi` vắng) | reconciler **im lặng bỏ qua**, broker **vẫn cấp theo sổ**. Không được biến máy không-GPU thành máy chết. |
-| `commit()` không bao giờ tới (cấp phát ném) | giấy phép hết hạn theo `ttlMs`; reconciler thu hồi |
+| `commit()` không bao giờ tới (cấp phát ném) | **trả giấy phép NGAY tại chỗ bắt lỗi** (§5.5 bước 1). `ttlMs` + reconciler chỉ là **lưới đỡ**, không phải đường chính — chờ TTL nghĩa là sổ cộng dư suốt quãng đó và lượt xin kế tiếp bị từ chối trên **byte ma**. |
+| `cudaMalloc failed` **sau khi** đã qua cổng sổ | **không phải lỗi bất thường** — chạy đủ 4 bước §5.5 (trả phép → thử lại 2×5 s → hạ `gpuLayers` tường minh → từ chối trung thực), mỗi bước một sự kiện |
 | Tiến trình ngoài chết không trả giấy phép | thiếu nhịp ⇒ reconciler **xác minh bằng đầu dò** rồi thu hồi. **Không thu hồi chỉ vì thiếu nhịp** — phải xác minh. |
 | Server khởi động lại, sidecar còn sống | **nhận nuôi** (§6) |
 | Sổ và thiết bị lệch dai dẳng | cảnh báo **leo thang**; **không tự cưỡng chế theo số sai** |
