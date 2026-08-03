@@ -129,16 +129,64 @@ const CALL_PATTERNS: Readonly<Record<string, RegExp>> = {
   "fork(": /\bfork\s*\(/g,
 };
 
-/** Mẫu MODULE — quét trên nguồn đã bỏ chú thích nhưng GIỮ chuỗi. */
+/**
+ * Mẫu MODULE — quét trên nguồn đã bỏ chú thích nhưng GIỮ chuỗi.
+ *
+ * ★★★ N-1 (re-review vòng 1) — BẤT ĐỐI XỨNG TRONG CHÍNH BẢN VÁ TRƯỚC. Vòng trước tôi dựng lớp
+ * MODULE **vì đã nhận ra alias đánh bại mẫu tên-hàm**, rồi chỉ áp nó cho `child_process` và
+ * KHÔNG áp cho hai thư viện GPU. Reviewer khai thác đúng nửa còn thiếu:
+ *
+ *     import { InferenceSession as ORT } from "onnxruntime-node";
+ *     const mk = ORT.create;
+ *     mk("m.onnx", { executionProviders: ["dml"] });   // phiên DirectML THẬT ⇒ 9/9 XANH
+ *
+ * Tôi đã tự chạy lại và xác nhận 9/9 xanh trước khi sửa. Có sẵn insight đúng mà chỉ dùng một
+ * nửa thì lỗ còn nguyên ở nửa kia.
+ *
+ * ⚠ HAI HÌNH DẠNG MẪU KHÁC NHAU, CÓ CHỦ Ý — không phải thiếu nhất quán:
+ *   • `child_process` dùng mẫu ĐỊNH DANH `/\bchild_process/` (KHÔNG có `\b` đuôi) để bắt CẢ
+ *     `child_process_1` — dạng biến do TypeScript/bundler sinh ra, và là dạng mà
+ *     `server/license/sdk/index.cjs` dùng (xem N-2 ở `SCAN_EXTS`). Đo được: `\bchild_process\b`
+ *     khớp **0** lần trong file đó, `\bchild_process` khớp **8**.
+ *   • Hai thư viện GPU dùng mẫu DẠNG-NHẬP (`from`/`import(`/`require(` + chuỗi specifier). Mẫu
+ *     định danh trần cho chúng là KHÔNG DÙNG ĐƯỢC: `onnxruntime-node`/`node-llama-cpp` xuất hiện
+ *     dày đặc trong câu lỗi, mảng `techStack`, đường dẫn đóng gói — đo được **212 lần** so với
+ *     **23 lần** khi siết theo dạng nhập. Một bảng 212 dòng nhiễu sẽ bị người sau tắt đi, tức là
+ *     lại rơi vào đúng lý do tôi đã từ chối mẫu `exec(` trần.
+ */
 const MODULE_PATTERNS: Readonly<Record<string, RegExp>> = {
-  child_process: /\bchild_process\b/g,
+  child_process: /\bchild_process/g,
+  "import onnxruntime-node": /(?:from|import|require)\s*\(?\s*["'](?:node:)?onnxruntime-node(?:\/[^"']*)?["']/g,
+  "import node-llama-cpp": /(?:from|import|require)\s*\(?\s*["'](?:node:)?node-llama-cpp(?:\/[^"']*)?["']/g,
 };
 
 const ALL_SYMBOLS = new Set([...Object.keys(CALL_PATTERNS), ...Object.keys(MODULE_PATTERNS)]);
 
 const REPO_ROOT = process.cwd();
 const SCAN_ROOTS = ["server", "scripts"] as const;
-const SCAN_EXTS = [".ts", ".tsx", ".mjs", ".mts", ".js"] as const;
+/**
+ * ★★★ N-2 (re-review vòng 1) — `.cjs` VẮNG MẶT, VÀ ĐÓ KHÔNG PHẢI GIẢ THUYẾT.
+ *
+ * `server/license/sdk/index.cjs` — **1.543 dòng, nằm ngay trong `server/`, chưa từng được quét
+ * một lần nào** — sinh tiến trình thật, và sinh theo đúng hình dạng né tránh mà lưới tự nhận đã
+ * phủ: `require('child_pr' + <hàm>)` (specifier bị CẮT ĐÔI ⇒ mẫu dạng-nhập vô dụng) rồi
+ * `child_process_1['execSync'](…)` (tên hàm nằm trong CHUỖI ⇒ mẫu lời gọi vô dụng, vì lượt quét
+ * lời gọi đã xoá nội dung chuỗi).
+ *
+ * ⚠ ĐO ĐƯỢC, VÀ NÓ ĐỔI CẢ CÁCH VÁ: chỉ mở rộng `SCAN_EXTS` là **KHÔNG ĐỦ** — với mẫu cũ
+ * `\bchild_process\b`, file này khớp **0 lần** dù đã được đọc. Phải mở rộng `SCAN_EXTS` **VÀ**
+ * bỏ `\b` đuôi của mẫu định danh (xem `MODULE_PATTERNS`) thì nó mới hiện ra: **8 lần**.
+ *
+ * Hôm nay nó chạy `wmic`/`dmidecode` để lấy vân tay phần cứng (CPU, KHÔNG phải hộ VRAM) — nhưng
+ * nó là **bằng chứng sống** rằng cả hai lớp mẫu đều né được, nên nó được ghi vào bảng chính chứ
+ * không chỉ vá âm thầm.
+ *
+ * Rà toàn bộ đuôi file thật có trong `SCAN_ROOTS`: `.ts` 1.753 · `.mjs` 137 · `.py` **13** ·
+ * `.ps1` 3 · `.mts` 3 · `.js` 2 · `.cjs` **1**. Thêm `.cjs`; thêm `.cts`/`.jsx` phòng trước (hôm
+ * nay 0 file). ⚠ `.py` và `.ps1` thì mẫu quét hiện tại **không đọc hiểu được** — xem vùng mù (E)
+ * trong `vramAllocationSites.ts`.
+ */
+const SCAN_EXTS = [".ts", ".tsx", ".mjs", ".mts", ".js", ".cjs", ".cts", ".jsx"] as const;
 
 /** File test KHÔNG được quét: chúng dựng mock `loadModel`/`getLlama` hàng trăm lần. */
 const isTestFile = (rel: string) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(rel);
@@ -336,8 +384,49 @@ describe("Pha 2A Task 5 — bản liệt kê đường cấp phát VRAM", () => 
     mre.lastIndex = 0;
     expect((keepStrings.match(mre) ?? []).length, "mẫu module phải thấy specifier trong chuỗi").toBe(1);
 
+    // N-2: dạng biến do bundler sinh (`child_process_1`) — mẫu phải KHÔNG có `\b` đuôi.
+    const cjsShape = stripComments("const child_process_1 = require('child_pr' + x); child_process_1['execSync'](c);");
+    mre.lastIndex = 0;
+    expect((cjsShape.match(mre) ?? []).length, "phải bắt được `child_process_1` (hình dạng của index.cjs)").toBe(2);
+
     // Số dòng phải được giữ nguyên, nếu không thông báo lỗi sẽ chỉ sai chỗ.
     expect(noStrings.split("\n").length).toBe(src.split("\n").length);
+  });
+
+  it("★★★ 7b. N-1 — ALIAS thư viện GPU phải bị bắt (ca đã im lặng ở re-review vòng 1)", () => {
+    // Phiên ONNX DirectML THẬT, không tiến trình con nào, và KHÔNG một mẫu lời gọi nào khớp:
+    // `InferenceSession` bị đổi tên thành `ORT`, rồi `.create` bị tách thành một biến `mk`.
+    const src = [
+      'import { InferenceSession as ORT } from "onnxruntime-node";',
+      "const mk = ORT.create;",
+      'mk("m.onnx", { executionProviders: ["dml"] });',
+    ].join("\n");
+
+    const noStrings = stripCommentsAndStrings(src);
+    const cre = CALL_PATTERNS["InferenceSession.create("];
+    cre.lastIndex = 0;
+    expect(
+      (noStrings.match(cre) ?? []).length,
+      "mẫu LỜI GỌI cố ý KHÔNG bắt được ca này — đó là lý do phải có lớp MODULE",
+    ).toBe(0);
+
+    const keepStrings = stripComments(src);
+    const mre = MODULE_PATTERNS["import onnxruntime-node"];
+    mre.lastIndex = 0;
+    expect((keepStrings.match(mre) ?? []).length, "lớp MODULE phải bắt được alias qua specifier").toBe(1);
+
+    // Cùng lý lẽ cho node-llama-cpp — nửa còn thiếu của bản vá trước.
+    const llama = stripComments('const { getLlama: g } = await import("node-llama-cpp");');
+    const lre = MODULE_PATTERNS["import node-llama-cpp"];
+    lre.lastIndex = 0;
+    expect((llama.match(lre) ?? []).length).toBe(1);
+
+    // …và mẫu dạng-nhập KHÔNG được khớp câu văn xuôi (lý do không dùng định danh trần).
+    lre.lastIndex = 0;
+    expect(
+      (stripComments('techStack: ["node-llama-cpp", "React 19"], msg = "node-llama-cpp not available"').match(lre) ?? []).length,
+      "mảng techStack / câu lỗi KHÔNG được đếm là một lượt nạp thư viện",
+    ).toBe(0);
   });
 
   it("★★ 8. artifact vẫn là module CHỈ DỮ LIỆU — điều kiện làm cho việc tự loại trừ an toàn", () => {

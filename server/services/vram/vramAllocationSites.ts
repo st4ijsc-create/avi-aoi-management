@@ -10,10 +10,15 @@
  * trước vì được cộng dồn trong đầu: "12" (thiếu `aiLlmFinetuneSidecar`) rồi "13" (quên đúng điểm
  * mà chính lượt vá đó vừa thêm — `cuda-backend:reranker`).
  *
- *     git grep -nE "beginVram(Allocation)?[[:space:]]*\(" -- server/ | grep -v "\.test\."
+ *     git grep -nE "await beginVram(Allocation)?[[:space:]]*\(" -- server/ | grep -v "\.test\."
  *
- * cho **19** lần xuất hiện; trừ **5** lần KHÔNG PHẢI điểm gọi (xem
- * `PERMIT_SYMBOL_OCCURRENCES_THAT_ARE_NOT_CALL_SITES`) ⇒ **14** điểm gọi.
+ * cho **16** dòng = **14** điểm gọi + **2** pass-through của lớp bọc. Máy quét (khớp MỌI dạng,
+ * kể cả khai báo hàm) thấy **19**, trừ **5** lần KHÔNG PHẢI điểm gọi
+ * (`PERMIT_SYMBOL_OCCURRENCES_THAT_ARE_NOT_CALL_SITES`) ⇒ cũng **14**. Hai đường đếm khác nhau,
+ * cùng một số.
+ *
+ * ⚠ ĐỪNG đếm bằng `git grep` KHÔNG có `await` và KHÔNG lọc test: ra 126 + 31, vì nó gộp cả file
+ * test lẫn hàng chục lần nhắc trong chú thích.
  *
  * ═══════════════════════════════════════════════════════════════════════════════════════════
  * ★★★ BẢNG NÀY LÀ MỘT LƯỚI, KHÔNG PHẢI TÀI LIỆU — VÀ LƯỚI ĐÓ ĐÃ TỪNG THỦNG.
@@ -75,7 +80,24 @@ export const PERMIT_SYMBOL_OCCURRENCES_THAT_ARE_NOT_CALL_SITES: readonly {
  *               `note`) — chúng ở đây để BẮT BUỘC phân loại, không phải vì chúng là hộ.
  *
  * ⚠ `wired: true` chỉ nói "có giấy phép", KHÔNG nói "số đúng". Ví dụ sống: `gguf-embed-ctx` có
- * giấy phép, commit 526,0 MiB, và vẫn thiếu ~128 MiB bộ đệm lười (xem khối cuối file).
+ * giấy phép, commit 526,0 MiB, và thiết bị vẫn cho thấy thiếu ~128 MiB (xem khối cuối file).
+ *
+ * ⚠⚠ BA CHỖ Ô `wired` NÓI KHÔNG ĐỦ — đọc trước khi lấy nó làm đầu vào cho Pha 2B:
+ *
+ *   1. **5 dòng "KHÔNG phải điểm gọi"** (3 khai báo hàm + 2 pass-through) mang `wired: true`
+ *      chỉ vì chúng thuộc bộ máy giấy phép. Chúng KHÔNG phải lượt cấp phát và cũng KHÔNG phải
+ *      điểm nối — ở những dòng đó ô `wired` **vô nghĩa**, đừng cộng chúng vào bất cứ tổng nào.
+ *
+ *   2. **`wired: true` ở `scripts/` là CÓ ĐIỀU KIỆN, không phải tính chất.** SÁU dòng
+ *      (`_gguf-embed.mjs` ×4 kể cả lượt nạp thư viện, `eval-rag.mjs` ×4) chỉ được phủ khi tiến
+ *      trình API SPAWN chúng. `_gguf-embed.mjs` có **5 đường vào, chỉ 2 đi qua giấy phép**;
+ *      `eval-rag.mjs` chỉ được phủ với cờ `--ci` do scheduler truyền — mà `npm run kb:eval` là
+ *      lệnh CÓ THẬT trong `package.json`. Cùng dòng mã đó, chạy tay, là **không giấy phép nào**.
+ *      Một ô boolean không diễn tả được "phụ thuộc vào ai khởi động".
+ *
+ *   3. **`wired: true` KHÔNG có nghĩa "chặn được".** Với `contextSize:"auto"`
+ *      (`aiReranker.ts:486`) giấy phép chỉ ĐO SAU khi cấp phát xong; ở thời điểm cưỡng chế phải
+ *      quyết định thì chưa tồn tại con số nào.
  *
  * ⚠ Số dòng đúng ở **2026-08-04** và sẽ trôi. Khoá đối chiếu là `file` + `symbol`.
  */
@@ -131,9 +153,24 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "server/services/kbSyncScheduler.ts", symbol: "spawn(", wired: true, note: ":291 spawn(node, [eval-rag.mjs, '--ci']) — trong cửa sổ giấy phép :264." },
   { file: "server/services/kbSyncScheduler.ts", symbol: "spawn(", wired: true, note: ":505 spawn('npm', ['run','kb:sync']) — trong cửa sổ :482. Kẻ cấp phát THẬT là tiến trình CHÁU (npm → node embed-incremental.mjs → _gguf-embed.mjs), nên phạm vi đo BẮT BUỘC cộng theo CÂY." },
   { file: "server/services/localSidecarTrainer.ts", symbol: "child_process", wired: true, note: ":29 import spawn — tiến trình huấn luyện nằm trong giấy phép :353." },
-  { file: "server/services/localSidecarTrainer.ts", symbol: "spawn(", wired: true, note: ":298 spawn(LOCAL_TRAINER_CMD) — .env: `python tools/trainer/train.py`. Trong cửa sổ :353." },
+  { file: "server/services/localSidecarTrainer.ts", symbol: "spawn(", wired: true, note: "★★ :298 spawn(LOCAL_TRAINER_CMD) — `.env:259` ĐANG BẬT (KHÔNG bị chú thích): `python tools/trainer/train.py` = PyTorch + ultralytics YOLO trên CUDA. Giấy phép :353 KHÔNG truyền filePath/fileBytes/configDefaultBytes ⇒ ước lượng 0, và CỐ Ý không commitMeasured() ⇒ sổ KHÔNG BAO GIỜ có số cho hộ này, ttl 2 GIỜ. Activation + optimizer state không suy được từ kích thước file. Có thể LỚN HƠN sidecar thị giác 7,8 GB, và Pha 2A không có một điểm đo nào cho nó — xem mục 6 ở khối cuối file." },
   { file: "server/services/aiLlmFinetuneSidecar.ts", symbol: "child_process", wired: true, note: ":92 import spawn — tiến trình fine-tune nằm trong giấy phép :466." },
   { file: "server/services/aiLlmFinetuneSidecar.ts", symbol: "spawn(", wired: true, note: ":425 spawn(LLM_FINETUNE_CMD) — CHƯA đặt trong .env ⇒ đường này bất động hôm nay. Trong cửa sổ :466." },
+
+  // ───── N-1: lượt NẠP THƯ VIỆN GPU (lớp bắt alias). Xem MODULE_PATTERNS trong file test. ─────
+  { file: "server/services/aiGgufEngine.ts", symbol: "import node-llama-cpp", wired: true, note: ":376 lượt nạp thư viện DUY NHẤT thật sự khởi tạo backend CUDA — nằm trong cửa sổ giấy phép :399." },
+  { file: "server/services/aiGgufEngine.ts", symbol: "import node-llama-cpp", wired: true, note: ":1619 nạp LlamaChatSession cho generateText(). KHÔNG cấp phát trọng số — nhưng ĐÂY là loại điểm KÍCH HOẠT bộ đệm tính toán lười (xem khối cuối file): byte lên SAU commitMeasured()." },
+  { file: "server/services/aiGgufEngine.ts", symbol: "import node-llama-cpp", wired: true, note: ":1702 nạp LlamaChatSession cho chatCompletion() — cùng lớp kích hoạt bộ đệm lười như :1619." },
+  { file: "server/services/aiGgufEngine.ts", symbol: "import node-llama-cpp", wired: true, note: ":1797 nạp LlamaJsonSchemaGrammar + LlamaChatSession cho generateJSON(). Grammar dựng trên CPU." },
+  { file: "server/services/aiGgufEngine.ts", symbol: "import node-llama-cpp", wired: true, note: ":2035 nạp LlamaCompletion cho generateFimNative() — đường FIM, cùng lớp kích hoạt bộ đệm lười." },
+  { file: "server/services/aiGgufEngine.ts", symbol: "import node-llama-cpp", wired: true, note: ":2231 nạp LlamaChatSession cho generateTextStream() — cùng lớp kích hoạt bộ đệm lười." },
+  { file: "server/services/aiGgufEngine.ts", symbol: "import node-llama-cpp", wired: true, note: ":2361 nạp LlamaChatSession cho chatCompletionStream() — cùng lớp kích hoạt bộ đệm lười." },
+  { file: "server/services/aiGgufEngine.ts", symbol: "import node-llama-cpp", wired: true, note: ":2628 isGgufAvailable() — chỉ THỬ nạp module để trả true/false, không chạm GPU." },
+  { file: "server/services/aiReranker.ts", symbol: "import node-llama-cpp", wired: true, note: ":382 nạp getLlama/LlamaLogLevel cho backend RIÊNG của reranker — trong cửa sổ giấy phép :393." },
+  { file: "server/services/ai/ocrService.ts", symbol: "import onnxruntime-node", wired: true, note: ":308 nạp ort trong getOnnxSession() — lượt tạo session ở :337 nằm trong cửa sổ giấy phép :328." },
+  { file: "server/services/ai/ocrService.ts", symbol: "import onnxruntime-node", wired: true, note: ":387 nạp ort trong recognizeSingleLine() CHỈ để dựng ort.Tensor — không tạo session, không cấp phát." },
+  { file: "server/services/aiImageEmbedding.ts", symbol: "import onnxruntime-node", wired: true, note: ":1 import tĩnh — session ở :521 nằm trong cửa sổ giấy phép :506 (EP là CPU hôm nay, xem dòng :521)." },
+  { file: "server/services/aiInferenceEngine.ts", symbol: "import onnxruntime-node", wired: true, note: ":1 import tĩnh — session ở :192 nằm trong cửa sổ giấy phép :181 (EP DirectML)." },
 
   // ═════════════════════════════════════════════════════════════════════════════════════════
   // C. server/ — CHƯA NỐI. Phần Pha 2B phải quyết định.
@@ -144,6 +181,24 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "server/services/aiLocalTraining.ts", symbol: "InferenceSession.create(", wired: false, note: ":387 trainFewShot() — executionProviders ['cpu']. Cùng lý do như :130." },
   { file: "server/services/aiLocalTraining.ts", symbol: "InferenceSession.create(", wired: false, note: ":564 trainIncremental() — executionProviders ['cpu']. Cùng lý do như :130." },
   { file: "server/services/aiLocalTraining.ts", symbol: "InferenceSession.create(", wired: false, note: ":882 classifyWithHead() — executionProviders ['cpu']. ⚠ File này có NĂM lời gọi session.release() (:332, :504, :765, :889, :954) ⇒ câu ở vramWiring.ts:49 ('grep toàn repo: KHÔNG một .release() nào lên ort.InferenceSession') SAI NHƯ ĐANG VIẾT; nó chỉ đúng nếu thu hẹp thành 'không session CÓ KHẢ NĂNG GPU nào được release'. Kết luận releaseProof='unverified' KHÔNG đổi." },
+  { file: "server/services/aiLocalTraining.ts", symbol: "import onnxruntime-node", wired: false, note: ":11 import tĩnh — BỐN session của file này đều ghim EP ['cpu'] ⇒ 0 byte VRAM. Dòng này là chỗ lượt đổi 'cpu'→'dml' sẽ đi qua." },
+
+  // ───── N-2: `server/license/sdk/index.cjs` — BẰNG CHỨNG SỐNG của hình dạng né tránh ─────
+  // 1.543 dòng, nằm ngay trong `server/`, và CHƯA TỪNG được quét cho tới lượt vá này (`.cjs`
+  // không có trong SCAN_EXTS). Nó né được CẢ HAI lớp mẫu: specifier bị cắt đôi
+  // (`require('child_pr' + f(…))`) nên mẫu dạng-nhập vô dụng, và tên hàm nằm trong CHUỖI
+  // (`child_process_1['execSync'](…)`) nên mẫu lời gọi vô dụng. Chỉ hiện ra nhờ mẫu ĐỊNH DANH
+  // bỏ `\b` đuôi. HÔM NAY: `wmic` / `dmidecode` / `sysctl` lấy vân tay phần cứng cho license —
+  // CPU, KHÔNG phải hộ VRAM. Giữ TÁM dòng (không gộp) đúng theo kỷ luật một-dòng-một-lần-xuất-hiện.
+  { file: "server/license/sdk/index.cjs", symbol: "child_process", wired: false, note: ":63 `child_process_1 = require('child_pr' + …)` — lượt NẠP bị làm rối, specifier cắt đôi. Đây là dòng làm mọi mẫu dạng-nhập vô dụng." },
+  { file: "server/license/sdk/index.cjs", symbol: "child_process", wired: false, note: ":113 `child_process_1[…]('wmic cpu …')` — đọc định danh CPU cho vân tay license. KHÔNG chạm GPU." },
+  { file: "server/license/sdk/index.cjs", symbol: "child_process", wired: false, note: ":117 `child_process_1[…]('… model …')` — nhánh đọc định danh CPU trên Linux. KHÔNG chạm GPU." },
+  { file: "server/license/sdk/index.cjs", symbol: "child_process", wired: false, note: ":128 `child_process_1['execSync']('sysctl -…')` — nhánh macOS. Tên hàm nằm TRONG CHUỖI ⇒ mẫu lời gọi không thấy." },
+  { file: "server/license/sdk/index.cjs", symbol: "child_process", wired: false, note: ":177 `child_process_1['execSync']('wmic diskdrive … serialnumber')` — số sê-ri ổ đĩa. KHÔNG chạm GPU." },
+  { file: "server/license/sdk/index.cjs", symbol: "child_process", wired: false, note: ":181 `child_process_1['execSync'](… SERIAL …)` — nhánh Linux đọc sê-ri ổ đĩa. KHÔNG chạm GPU." },
+  { file: "server/license/sdk/index.cjs", symbol: "child_process", wired: false, note: ":213 `child_process_1['execSync']('wmic baseboard … serialnumber')` — sê-ri bo mạch. KHÔNG chạm GPU." },
+  { file: "server/license/sdk/index.cjs", symbol: "child_process", wired: false, note: ":217 `child_process_1[…]('dmidecode -s baseboard-serial…')` — nhánh Linux. KHÔNG chạm GPU." },
+
   { file: "server/services/plugins/sidecar/nodeSpawner.ts", symbol: "child_process", wired: false, note: ":9 import spawn — cổng vào của mọi plugin sidecar. Lệnh do plugin khai, KHÔNG giấy phép nào." },
   { file: "server/services/plugins/sidecar/nodeSpawner.ts", symbol: "spawn(", wired: false, note: ":42 createSupervisedTransportSpawner() — spawn LỆNH TUỲ Ý (PLUGIN_SIDECAR_CMD / manifest). Cổng PLUGIN_SIDECAR mặc định OFF và KHÔNG đặt trong .env ⇒ bất động. ⚠ Pha 2B: một plugin GPU nạp qua đường này là hộ mà sổ KHÔNG THỂ biết trước kích thước." },
   { file: "server/services/plugins/sidecar/nodeSpawner.ts", symbol: "spawn(", wired: false, note: ":47 spawnSidecarWithTransport() — cùng lớp với :42, dùng bởi pluginConformance." },
@@ -174,6 +229,15 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "scripts/ai-kb/eval-rag.mjs", symbol: "getLlama(", wired: true, note: ":211 gpu 'auto'. Chạy dưới `cron:kb-eval-gate` (kbSyncScheduler:291, cờ --ci) ⇒ wired gián tiếp. `npm run kb:eval` chạy tay thì KHÔNG." },
   { file: "scripts/ai-kb/eval-rag.mjs", symbol: ".loadModel(", wired: true, note: ":221 gpuLayers -1 — model rerank/sinh chữ, cộng thêm vào cùng tiến trình con với embedder." },
   { file: "scripts/ai-kb/eval-rag.mjs", symbol: ".createContext(", wired: true, note: ":222 contextSize { min: 2048, max: 8192 } — CÓ CHẶN TRÊN." },
+  { file: "scripts/ai-kb/_gguf-embed.mjs", symbol: "import node-llama-cpp", wired: true, note: ":66 lượt nạp thư viện của module nhúng dùng chung — phủ CÓ ĐIỀU KIỆN (chỉ 2/5 đường vào đi qua giấy phép)." },
+  { file: "scripts/ai-kb/eval-rag.mjs", symbol: "import node-llama-cpp", wired: true, note: ":210 lượt nạp thư viện — phủ CÓ ĐIỀU KIỆN, chỉ khi scheduler spawn với cờ --ci." },
+  { file: "scripts/ai-kb/embed-programming.mjs", symbol: "import node-llama-cpp", wired: false, note: ":100 lượt nạp thư viện — script chỉ chạy TAY, không giấy phép nào phủ." },
+  { file: "scripts/ai-bench/bench.mjs", symbol: "import node-llama-cpp", wired: false, note: ":279 importLlama() nạp thư viện cho lượt bench THẬT (có nạp model ở :618)." },
+  { file: "scripts/ai-bench/bench.mjs", symbol: "import node-llama-cpp", wired: false, note: ":517 lượt nạp CHỈ để kiểm module có import được không — engine KHÔNG được khởi tạo ở đây." },
+  { file: "scripts/ai-kb/reembed-images-onnx.mjs", symbol: "import onnxruntime-node", wired: false, note: ":40 import tĩnh — session ONNX ở :184 với EP động, chạy tay, không giấy phép." },
+  { file: "scripts/check-tier3-env.mjs", symbol: "import onnxruntime-node", wired: false, note: ":149 require('onnxruntime-node') — script chẩn đoán, tạo cả session dml lẫn cuda ở dưới." },
+  { file: "scripts/check-tier3-env.mjs", symbol: "import onnxruntime-node", wired: false, note: ":150 require('onnxruntime-node/package.json') — chỉ đọc số phiên bản, không nạp runtime." },
+  { file: "scripts/validate-models.mjs", symbol: "import onnxruntime-node", wired: false, note: ":23 nạp ort để kiểm tính hợp lệ file model bằng EP ['cpu'] — không VRAM." },
   { file: "scripts/ai-kb/embed-programming.mjs", symbol: "getLlama(", wired: false, note: ":101 gpu 'auto'. KHÔNG có mục nào trong package.json và KHÔNG được server spawn ⇒ chỉ chạy TAY. Không giấy phép nào phủ." },
   { file: "scripts/ai-kb/embed-programming.mjs", symbol: ".loadModel(", wired: false, note: ":102 gpuLayers 'max' — nạp toàn bộ lên GPU." },
   { file: "scripts/ai-kb/embed-programming.mjs", symbol: ".createEmbeddingContext(", wired: false, note: ':103 ⚠⚠ contextSize:"auto" — KHÔNG CÓ CHẶN TRÊN. node-llama-cpp co giãn context theo VRAM CÒN TRỐNG lúc gọi. ĐO ĐƯỢC 2026-08-04 trên máy rảnh: cùng model 0,6B, "auto" chiếm 3.916,1 MiB so với 526,0 MiB khi chốt bằng EMBED_CTX (gấp 7,4 lần). Với Pha 2B đây là lớp NGUY HIỂM NHẤT: không có kích thước để ước lượng, và nó ăn ĐÚNG BẰNG dư địa broker vừa chừa ra.' },
@@ -235,18 +299,43 @@ export const KNOWN_ALLOCATION_SITES: readonly {
  * cấu hình. whisper.cpp KHÔNG còn ở đây vì nó CÓ điểm cấp phát (`kbVideoTranscriber.ts:361` →
  * `:212`) — nó chỉ từng vô hình vì máy quét thiếu `execFile`, và nay đã nằm trong bảng chính.
  *
- * 1. **Bộ đệm tính toán LƯỜI của llama.cpp** — ĐO ĐƯỢC, và không nằm trong sổ.
- *    llama.cpp cấp phát compute buffer ở lượt SUY LUẬN ĐẦU TIÊN, tức SAU `commitMeasured()`.
- *    `aiGgufEngine.ts:915-919` đã ghi điều này cho `gguf-model` nhưng KHÔNG ai cộng nó.
- *    ĐO 2026-08-04 (tiến trình sạch, bộ đếm PDH): lượt nhúng đầu tiên **+132,0 MiB**.
- *    ⚠ Phép đo đó dùng `contextSize:"auto"` (context 3.916 MiB) còn đường sản xuất dùng
- *    `EMBED_CTX` (526 MiB) — **khác 7,4 lần**, nên +132,0 KHÔNG chuyển thẳng sang đường sản xuất.
- *    Ứng viên khớp CHÍNH XÁC hơn cho khoảng lệch 128,0 MiB quan sát được ở tiến trình API:
- *    `aiGgufEngine.ts:2801` ghi context nhúng thật là **654 MiB**, và **654 − 526 = 128**.
- *    ⇒ HỆ QUẢ CHO PHA 2B, phải nói thẳng: **mọi lease GGUF đều BÁO THIẾU**, và khoản thiếu
- *    **không phải hằng số** — nó co giãn theo model/context. Hộ 30B **chưa từng quan sát được**.
- *    `vramReconciler` chỉ PHÁT HIỆN lệch dương, **không bù sổ**, nên `headroom` bị phóng đại theo
- *    đúng chiều **cho phép cấp phát khi thiết bị đã đầy**.
+ * 1. **Byte đến SAU khi cửa sổ đo đã đóng** — ĐO ĐƯỢC, và không nằm trong sổ.
+ *
+ *    QUAN SÁT (2026-08-04, tiến trình API): PDH self **2.223,7 MiB** so với Σ sổ **2.095,7 MiB**
+ *    (431,6 `cuda-backend` + 1.138,0 `gguf:embed` + 526,0 `gguf-embed-ctx`) ⇒ **lệch 128,0 MiB**.
+ *
+ *    HAI CƠ CHẾ ỨNG VIÊN, chưa tách được:
+ *      (a) **bộ đệm tính toán LƯỜI** — llama.cpp cấp phát compute buffer ở lượt SUY LUẬN ĐẦU
+ *          TIÊN, tức SAU `commitMeasured()`. `aiGgufEngine.ts:915-919` đã ghi điều này cho
+ *          `gguf-model` nhưng KHÔNG ai cộng nó. Đo trực tiếp: lượt nhúng đầu tiên **+132,0 MiB**.
+ *      (b) **cửa sổ đo bị CẮT NGỌN** — đầu dò "sau" đọc trước khi lượt cấp phát lắng xong.
+ *
+ *    ⚠⚠ BA CHỖ BẢN TRƯỚC CỦA KHỐI NÀY TỰ CHỌI, đã sửa — đọc kỹ, vì Pha 2B thiết kế dựa vào đây:
+ *
+ *      • **"hai nguồn ĐỘC LẬP" là SAI.** Cả hai đều dùng chung số hạng 526 và đều phải GIẢ ĐỊNH
+ *        hai lease kia (431,6 + 1.138,0) chính xác — mà điều đó **mâu thuẫn trực tiếp** với chính
+ *        câu "mọi lease GGUF đều báo thiếu". Nếu lease model cũng thiếu X thì X + Y = 128 chứ
+ *        không phải Y = 128. Nói đúng: **hai lượt đọc CÙNG PHỤ THUỘC một tập giả định**, chúng
+ *        củng cố nhau chứ không xác nhận chéo nhau.
+ *      • **"khoản thiếu KHÔNG phải hằng số" bị chính dữ liệu bác.** 128 MiB ở context 526 MiB so
+ *        với 132 MiB ở context 3.916 MiB = lệch **3 %** qua một thay đổi **7,4 lần**, CÙNG một
+ *        model. Đó là bằng chứng khoản thiếu **gần như ĐỘC LẬP với context** — khớp với vật lý
+ *        compute buffer của llama.cpp. Vế "co giãn theo MODEL" thì **chưa có một điểm đo nào**.
+ *        ⚠ Hệ quả: câu cũ đang đẩy Pha 2B **RỜI XA** phương án biên-cố-định-theo-`kind`, trong
+ *        khi dữ liệu hiện có thật ra hơi **ỦNG HỘ** phương án đó.
+ *      • **PHẠM VI: không được chốt.** Nếu cơ chế là (b) thì **mọi** lease dùng `commitMeasured()`
+ *        đều báo thiếu — gồm `onnx:*` và bốn sidecar — chứ KHÔNG riêng GGUF. Bản trước để mở
+ *        *cơ chế* nhưng lại chốt *phạm vi* ở "GGUF"; không được làm vậy khi cơ chế còn hai ứng viên.
+ *
+ *    ⚠ TRÍCH DẪN PHẢI GIỮ ĐỊNH NGỮ: `aiGgufEngine.ts:2801` viết **"4 lượt tuần tự = 654 MiB"**,
+ *    KHÔNG phải "context nhúng thật là 654 MiB". Và cách đọc khiến phép trừ `654 − 526 = 128` có
+ *    nghĩa **chính là ứng viên (a)** — nên nguồn đó **không trung lập** giữa (a) và (b), không
+ *    được dùng nó làm trọng tài.
+ *
+ *    ⇒ HAI ĐIỀU **ĐÃ KIỂM BẰNG MÃ** và giữ nguyên: `vramReconciler` **chỉ PHÁT HIỆN lệch dương,
+ *    KHÔNG bù sổ** (không một phép gán `actualBytes` nào trong `vramReconciler.ts`), và **chiều
+ *    sai số đúng dấu** — `headroom = trần − Σ leaseBytes` bị **phóng đại**, tức nghiêng về
+ *    **cho phép cấp phát khi thiết bị đã đầy**. Hộ 30B (~17-19 GB) **chưa từng quan sát được**.
  *
  * 2. **Tiến trình `worker`** (`server/worker.ts` → `runWorkerProcess`). Sổ cái là biến trong bộ
  *    nhớ của MỘT tiến trình. `ROLE=worker` ⇒ hai sổ độc lập trên MỘT thiết bị, mỗi sổ thấy nửa
@@ -269,6 +358,51 @@ export const KNOWN_ALLOCATION_SITES: readonly {
  *    2026-08-04. ⚠ Đây KHÔNG phải hằng số, và cũng không hoàn toàn "của người khác": nó chứa
  *    **client của chính sản phẩm này** (`client/**` nằm NGOÀI `SCAN_ROOTS` — một tab trình duyệt
  *    mở dashboard/`@react-three` twin 3D là VRAM của ta, do mã của ta, mà bảng này không quét).
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * ★★ PHẠM TRÙ KHÁC — KHÔNG thuộc danh sách năm hộ ở trên, và KHÔNG được cộng vào
+ * `CONSUMERS_WITHOUT_A_CODE_SITE`: hộ này **CÓ** điểm cấp phát và **ĐÃ NỐI** (nên nó nằm trong
+ * bảng chính, dòng `localSidecarTrainer.ts` → `spawn(`). Vấn đề của nó là **sổ không có SỐ**,
+ * chứ không phải sổ không biết nó tồn tại. Tách ra để tiêu chí của danh sách trên không bị nới.
+ *
+ * **`sidecar:local-trainer` ĐANG BẬT HÔM NAY, và giấy phép của nó KHÔNG CÓ CƠ SỞ ƯỚC LƯỢNG.**
+ *    `.env:259 LOCAL_TRAINER_CMD=python tools/trainer/train.py` — không bị chú thích, khác hẳn
+ *    `LLM_FINETUNE_CMD`/`WHISPER_BIN`. `tools/trainer/train.py` là PyTorch + (tuỳ chọn)
+ *    ultralytics YOLO. Giấy phép ở `localSidecarTrainer.ts:353` KHÔNG truyền `filePath`,
+ *    `fileBytes` hay `configDefaultBytes` ⇒ ước lượng **0**, và nó CỐ Ý không bao giờ
+ *    `commitMeasured()` (`external-process`) ⇒ **sổ không bao giờ có một con số nào cho hộ này**,
+ *    trong khi `ttlMs` = 2 GIỜ.
+ *    ⚠ Trọng số chỉ là phần NHỎ: activation + optimizer state (Adam giữ 2 bản sao moment) mới là
+ *    phần lớn, và chúng co giãn theo batch size / độ phân giải ảnh — **không suy được từ kích
+ *    thước file model**. Đây là hộ có thể **lớn hơn** sidecar thị giác 7,8 GB của Đợt 0, và nó
+ *    KHÔNG có một điểm đo nào trong toàn bộ Pha 2A. Cùng lớp đang ngủ: `tools/trainer/
+ *    finetune_lora.py` (QLoRA 4-bit) qua `LLM_FINETUNE_CMD`.
+ *    ⇒ Pha 2B **không được** coi `external-process` là "đã nối nên đã biết".
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ (E) VÙNG MÙ — bốn thứ mà câu "client/** và tools/** nằm ngoài SCAN_ROOTS" NGỤ Ý SAI rằng
+ * bên trong đã phủ. Chúng nằm ở đây vì không có chúng thì bảng tự nhận rộng hơn sự thật.
+ *
+ *   (E1) **`.py` HOÀN TOÀN VÔ HÌNH — ngay TRONG `SCAN_ROOTS`.** `scripts/` có **13 file Python**
+ *        (`aps_solver.py`, `mqtt_simulator.py`, …) và `tools/trainer/` có `train.py` +
+ *        `finetune_lora.py`. Máy quét mù **theo NGÔN NGỮ**, không chỉ theo thư mục: mọi mẫu đều
+ *        là cú pháp JS/TS. Đúng những file có nhiều khả năng chạm CUDA nhất lại là những file
+ *        không mẫu nào đọc được. (`.ps1` ×3 cùng lớp.)
+ *   (E2) **`apps/` là GỐC THỨ BA, chưa từng được kể tên.** `apps/machine-shell` (vỏ desktop
+ *        WebView2, `frontendDist` trỏ vào `client/dist`). Không nằm trong `SCAN_ROOTS`, và cũng
+ *        không nằm trong câu tự khai "client/** và tools/**".
+ *   (E3) **`client/**` bị lượng hoá quá nhẹ.** Kiểm 2026-08-04: **13 file** trong `client/src`
+ *        chạm lớp WebGL/three (qua `<Canvas>` của `@react-three/fiber`; **0** lời gọi
+ *        `new WebGLRenderer` trực tiếp — nên một máy quét tìm tên lớp đó sẽ báo "sạch" và sai).
+ *        Thêm: Playwright chạy Chromium **không** `--disable-gpu`. VRAM này do **mã của chính
+ *        sản phẩm** sinh ra nhưng đang bị đếm vào "nền".
+ *   (E4) **`tools/machine-simulator/**` (.NET/C#) — ĐÃ QUÉT, gần như KHÔNG có đường cấp phát GPU:**
+ *        zero hit cho `Process.Start`/SharpDX/Vortice/Silk.NET/D3D/WebView2/OnnxRuntime/CUDA, và
+ *        không có web UI. Thứ duy nhất chạm GPU là **WPF** (MilCore hợp thành qua D3D9, cỡ vài
+ *        chục MiB nền). Ghi ra đây vì nó là **phần mềm của chính sản phẩm đang bị đếm vào "nền
+ *        desktop"** — cùng lớp lỗi với (E3), chỉ nhỏ hơn nhiều.
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
  *
  * ⚠ ĐÍNH CHÍNH một suy đoán dễ mắc: ba cron cùng nổ lúc 03:00 (`KB_AUTOSYNC_CRON`,
  * `ANOMALY_BANK_REBUILD_CRON`, `AI_SELF_LEARNING_CRON` — cả ba đều BẬT trong `.env`). ĐÃ KIỂM:
