@@ -28,6 +28,24 @@ const BACKEND_DELTA = 430 * 1024 * 1024;
 /** "VRAM thiết bị" giả dùng CHUNG cho mock node-llama-cpp (loadModel/createContext...). */
 const gpu = vi.hoisted(() => ({ used: 2 * 1024 * 1024 * 1024 }));
 
+/**
+ * Review vòng 1 — Important: đếm số lượt `initLlama()` (tức `getLlama` xuất khẩu bởi
+ * node-llama-cpp, KHÔNG nhầm với hàm nội bộ `aiGgufEngine.getLlama()`) THẬT SỰ chạy. Ca đua
+ * (Promise.all) canh trực tiếp con số này — sổ đúng MỘT giấy phép nhưng `initLlama()` chạy HAI
+ * lần vẫn là race chưa vá (giấy phép thứ hai ghi ĐÈ, không phải bị chặn thật).
+ */
+const initCalls = vi.hoisted(() => ({ count: 0 }));
+
+/**
+ * Cờ điều khiển được TỪ TRONG một test, KHÔNG cần `vi.doMock` + `vi.resetModules()` giữa
+ * chừng — đổi mock qua `doMock`/`resetModules()` giữa một test sẽ tạo THẾ HỆ MODULE MỚI (state
+ * `llamaInitInFlight`/`llamaInstance` trong sản xuất bị xoá theo), nên một lượt "thử lại sau khi
+ * hỏng" kiểm qua đường đó KHÔNG chứng minh được gì về khoá của THẾ HỆ CŨ. Cờ này giữ nguyên MỘT
+ * thế hệ module xuyên suốt cả test: lượt đầu ném thật, lượt sau (cùng generation) thành công
+ * thật — đúng test "retry tự lành" cần.
+ */
+const initFail = vi.hoisted(() => ({ on: false }));
+
 const nlcFactory = vi.hoisted(() => () => {
   const makeModel = () => ({
     size: 1234,
@@ -43,16 +61,20 @@ const nlcFactory = vi.hoisted(() => () => {
     dispose: async () => {},
   });
   return {
-    getLlama: async () => ({
-      loadModel: async (_o: unknown) => makeModel(),
-      getVramState: async () => ({
-        total: 32 * GiB,
-        used: gpu.used,
-        free: 32 * GiB - gpu.used,
-        unifiedSize: 0,
-      }),
-      createGrammarForJsonSchema: async () => ({ parse: (s: string) => JSON.parse(s) }),
-    }),
+    getLlama: async () => {
+      initCalls.count++;
+      if (initFail.on) throw new Error("CUDA driver mismatch (ca thử nghiệm, đang có người chờ)");
+      return {
+        loadModel: async (_o: unknown) => makeModel(),
+        getVramState: async () => ({
+          total: 32 * GiB,
+          used: gpu.used,
+          free: 32 * GiB - gpu.used,
+          unifiedSize: 0,
+        }),
+        createGrammarForJsonSchema: async () => ({ parse: (s: string) => JSON.parse(s) }),
+      };
+    },
     LlamaChatSession: class {
       constructor(_o: unknown) {}
       async prompt(_p: string, _o?: unknown) {
@@ -109,6 +131,8 @@ beforeEach(() => {
   gpu.used = 2 * GiB;
   probeState.used = 2 * GiB;
   probeState.calls = 0;
+  initCalls.count = 0;
+  initFail.on = false;
 });
 
 describe("backend CUDA — khoản ~430 MiB lớn nhất của sàn cấu trúc", () => {
@@ -160,5 +184,74 @@ describe("backend CUDA — khoản ~430 MiB lớn nhất của sàn cấu trúc"
     await expect(loadGgufModel({ modelPath: "Model-B.gguf" })).rejects.toThrow(/node-llama-cpp is not available/);
 
     expect(snapshot().leases.filter((x) => x.request.owner === "cuda-backend")).toHaveLength(0);
+  });
+
+  /**
+   * Review vòng 1, Important — `if (llamaInstance) return llamaInstance` (đầu `getLlama()`)
+   * KHÔNG nguyên tử. `inFlightLoads` khoá theo MODEL ID nên KHÔNG chặn được hai model KHÁC
+   * NHAU cùng gọi `getLlama()` trong lúc lượt đầu còn đang `await import("node-llama-cpp")` —
+   * cả hai đều thấy `llamaInstance === null` và đều chạy tiếp xuống dưới. Race có sẵn từ BASE;
+   * Task 2 nới cửa sổ đua (thêm hai `await` — `beginVram()`/`commitMeasured()`) và gắn một hệ
+   * quả MỚI: sổ ghi HAI giấy phép "cuda-backend" cho một backend thật. Đây đúng dữ liệu Task 6
+   * (Ư0) sẽ đọc để biết "lúc đó ai đang giữ gì" khi CUDA context được tạo.
+   */
+  it("ĐUA: hai loadGgufModel() cho HAI model khác nhau chạy ĐỒNG THỜI (Promise.all) ⇒ initLlama() chạy ĐÚNG MỘT lần, sổ chỉ MỘT giấy phép cuda-backend", async () => {
+    const { __resetBrokerForTests, snapshot } = await import("./vramBroker");
+    __resetBrokerForTests();
+    const { loadGgufModel } = await import("../aiGgufEngine");
+
+    await Promise.all([
+      loadGgufModel({ modelPath: "Model-A.gguf" }),
+      loadGgufModel({ modelPath: "Model-B.gguf" }),
+    ]);
+
+    expect(initCalls.count).toBe(1);
+    expect(snapshot().leases.filter((x) => x.request.owner === "cuda-backend")).toHaveLength(1);
+  });
+
+  /**
+   * Bài học Task 1 áp lại cho CHÍNH khoá in-flight mới thêm — "nếu khoá kích hoạt SAI thì bao
+   * lâu tự lành?". Ca: `initLlama()` NÉM trong khi một lượt gọi thứ hai đang CHỜ (đã tham gia
+   * cùng một `initPromise`/khoá). Cả hai lượt gọi phải cùng nhận lỗi (không lượt nào treo vô
+   * hạn), khoá phải được xoá (không phải một `finally` bị bỏ sót), và lượt gọi TIẾP THEO (retry,
+   * `initLlama()` nay thành công) phải nạp được — không kẹt lại vĩnh viễn vì khoá không được dọn.
+   */
+  it("initLlama() ném trong khi lượt thứ hai đang CHỜ ⇒ CẢ HAI nhận lỗi, khoá được dọn, lượt retry sau (CÙNG thế hệ module) nạp được", async () => {
+    // ⚠ initFail (không phải vi.doMock + resetModules() giữa chừng): đổi module mock giữa test
+    // sẽ tạo THẾ HỆ MODULE MỚI — `llamaInstance`/khoá in-flight của sản xuất bị xoá theo, nên một
+    // lượt "thử lại" qua đường đó luôn thành công dù có bug hay không, không chứng minh được gì.
+    // Cờ này giữ NGUYÊN một thế hệ xuyên suốt: lượt đầu ném thật, lượt sau (cùng generation,
+    // cùng biến khoá) thành công thật — mới canh đúng "khoá có được DỌN hay không".
+    initFail.on = true;
+
+    const { __resetBrokerForTests, snapshot } = await import("./vramBroker");
+    __resetBrokerForTests();
+    const { loadGgufModel } = await import("../aiGgufEngine");
+
+    const results = await Promise.allSettled([
+      loadGgufModel({ modelPath: "Model-A.gguf" }),
+      loadGgufModel({ modelPath: "Model-B.gguf" }),
+    ]);
+
+    // Cả hai lượt gọi (khởi xướng lẫn chờ) đều phải NHẬN LỖI — không lượt nào treo vô hạn hay
+    // âm thầm "thành công" nhờ khoá.
+    expect(results[0].status).toBe("rejected");
+    expect(results[1].status).toBe("rejected");
+    expect(String((results[0] as PromiseRejectedResult).reason)).toMatch(/node-llama-cpp is not available/);
+    expect(String((results[1] as PromiseRejectedResult).reason)).toMatch(/node-llama-cpp is not available/);
+
+    // Đúng MỘT lượt initLlama() thật đã chạy cho cả cặp đang chờ (khoá gộp chúng lại) — không
+    // phải hai lượt độc lập đều tự ném.
+    expect(initCalls.count).toBe(1);
+
+    // Không giấy phép treo sau lượt hỏng.
+    expect(snapshot().leases.filter((x) => x.request.owner === "cuda-backend")).toHaveLength(0);
+
+    // Khoá PHẢI được dọn: initLlama() nay thành công (CÙNG thế hệ module, CÙNG biến khoá) —
+    // nếu khoá còn kẹt (finally bị bỏ sót), lượt này treo vô hạn thay vì resolve.
+    initFail.on = false;
+    await expect(loadGgufModel({ modelPath: "Model-C.gguf" })).resolves.toBe("Model-C");
+    expect(initCalls.count).toBe(2);
+    expect(snapshot().leases.filter((x) => x.request.owner === "cuda-backend")).toHaveLength(1);
   });
 });

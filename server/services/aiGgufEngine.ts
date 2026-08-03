@@ -183,6 +183,13 @@ interface LoadedModel {
 
 const loadedModels = new Map<string, LoadedModel>();
 let llamaInstance: any = null;
+/**
+ * Pha 1.5 Task 2 review vòng 1 (Important) — khoá in-flight cho `getLlama()`, đúng khuôn
+ * `inFlightLoads`/`embeddingContextInFlight`/`textContextInFlight` của chính module này.
+ * `getLlama()` không có "key" (một backend CHO CẢ TIẾN TRÌNH, không phải theo modelId) nên
+ * đây là MỘT biến, không phải Map. Xem `getLlama()` để biết vì sao cần khoá này.
+ */
+let llamaInitInFlight: Promise<any> | null = null;
 
 /** Đợt 1 Task 1 — chống race double-warm: hai nơi độc lập cùng gọi warmModel()
  *  (backgroundJobs.ts:126-127 delay 3000ms và aiLocalKnowledgeApi.ts:268 delay
@@ -331,71 +338,106 @@ function ensureModelsDir() {
 async function getLlama(): Promise<any> {
   if (llamaInstance) return llamaInstance;
 
-  try {
-    // Ensure CUDA runtime DLLs (cudart/cublas) are discoverable when offloading to GPU.
-    // The CUDA Toolkit installer adds its bin to system PATH, but prepend it explicitly
-    // for robustness (covers the app launched before a PATH refresh). GGUF_CUDA_BIN
-    // overrides; otherwise fall back to %CUDA_PATH%\bin.
-    if (process.env.GGUF_GPU !== "false") {
-      const cudaBin = process.env.GGUF_CUDA_BIN
-        || (process.env.CUDA_PATH ? `${process.env.CUDA_PATH}\\bin` : "");
-      if (cudaBin && !(process.env.PATH || "").includes(cudaBin)) {
-        process.env.PATH = `${cudaBin};${process.env.PATH || ""}`;
-        console.log("[aiGgufEngine] prepended CUDA bin to PATH:", cudaBin);
+  // Pha 1.5 Task 2 review vòng 1 (Important) — KHOÁ IN-FLIGHT. `if (llamaInstance) return
+  // llamaInstance` ở trên KHÔNG nguyên tử: hai lượt `loadGgufModel()` cho HAI MODEL KHÁC NHAU
+  // (`inFlightLoads` khoá theo modelId — KHÔNG chặn được ca này) có thể cùng gọi `getLlama()`
+  // trong lúc lượt đầu còn đang `await import("node-llama-cpp")`; cả hai đều thấy
+  // `llamaInstance === null` và chạy tiếp xuống dưới. Race có sẵn từ BASE (trước Task 2); Task 2
+  // NỚI cửa sổ đua đó (thêm hai `await` — `beginVram()`/`commitMeasured()`) và gắn một hệ quả
+  // MỚI: sổ ghi HAI giấy phép "cuda-backend" cho MỘT backend thật — đúng dữ liệu Task 6 (Ư0) sẽ
+  // đọc để biết "lúc đó ai đang giữ gì" khi CUDA context được tạo. Khoá ở đây để lượt gọi THỨ
+  // HAI CHỜ lượt thứ NHẤT thay vì đua.
+  //
+  // ⚠ KHÔNG VI PHẠM "CHỈ QUAN SÁT": khoá không đổi THỜI ĐIỂM lượt `initLlama()` THỨ NHẤT được
+  // gọi — nó chỉ ngăn một lượt `initLlama()` THỨ HAI chạy đồng thời. Biến Ư0 quan tâm (thời
+  // điểm CUDA context ĐẦU TIÊN của tiến trình được tạo) không đổi.
+  //
+  // ⚠ Bài học Đợt 1: KHÔNG được có `await` nào giữa đọc `llamaInitInFlight` và gán nó — đó
+  // chính là lớp lỗi khoá-vô-dụng. Hai dòng dưới đây liền kề, không có await xen giữa (đọc rồi
+  // gán ngay trong CÙNG một tick đồng bộ).
+  const pending = llamaInitInFlight;
+  if (pending) return pending;
+
+  const initPromise = (async (): Promise<any> => {
+    try {
+      // Ensure CUDA runtime DLLs (cudart/cublas) are discoverable when offloading to GPU.
+      // The CUDA Toolkit installer adds its bin to system PATH, but prepend it explicitly
+      // for robustness (covers the app launched before a PATH refresh). GGUF_CUDA_BIN
+      // overrides; otherwise fall back to %CUDA_PATH%\bin.
+      if (process.env.GGUF_GPU !== "false") {
+        const cudaBin = process.env.GGUF_CUDA_BIN
+          || (process.env.CUDA_PATH ? `${process.env.CUDA_PATH}\\bin` : "");
+        if (cudaBin && !(process.env.PATH || "").includes(cudaBin)) {
+          process.env.PATH = `${cudaBin};${process.env.PATH || ""}`;
+          console.log("[aiGgufEngine] prepended CUDA bin to PATH:", cudaBin);
+        }
       }
-    }
 
-    const { getLlama: initLlama } = await import("node-llama-cpp");
+      const { getLlama: initLlama } = await import("node-llama-cpp");
 
-    // Pha 1.5 Task 2 — backend CUDA của initLlama() là khoản ~430 MiB LỚN NHẤT của "sàn cấu
-    // trúc" mà Pha 1 đo được (+431/+430/+431 MiB, 3 lượt) nhưng KHÔNG đưa vào sổ được — đây là
-    // lý do ngưỡng báo động 512 MiB từng vô dụng. CHỈ QUAN SÁT: thời điểm/tham số gọi
-    // `initLlama()` ngay dưới KHÔNG ĐỔI so với trước; chỉ bọc thêm ba lời gọi telemetry quanh
-    // lượt khởi tạo ĐÃ CÓ. `beginVram()` ngay TRƯỚC lượt gọi thật, `commitMeasured()` ngay SAU
-    // — đó là cách duy nhất delta đo được là của backend, không phải của thứ khác.
-    //
-    // ⚠ Backend là SINGLETON cả tiến trình — dòng `if (llamaInstance) return llamaInstance` ở
-    // đầu hàm này đảm bảo khối dưới đây chỉ chạy MỘT LẦN khi thành công. Vì vậy: KHÔNG có đường
-    // release — không ai gọi `ticket.release()` khi backend đã sống. Khai `releaseProof:
-    // "unverified"` ở đây sẽ SAI ngữ nghĩa (nó ngụ ý "có thể nhả, chỉ chưa xác minh được");
-    // sự thật là backend này KHÔNG BAO GIỜ được nhả trong suốt vòng đời tiến trình, và đó là
-    // ĐÚNG — không phải một lỗ hổng cần vá.
-    const backendTicket = await beginVram({
-      owner: "cuda-backend",
-      kind: "gguf-backend",
-      priority: "production",
-    });
-    let backendCommitted = false;
-    try {
-      llamaInstance = await initLlama({
-        gpu: process.env.GGUF_GPU === "false" ? false : "auto",
+      // Pha 1.5 Task 2 — backend CUDA của initLlama() là khoản ~430 MiB LỚN NHẤT của "sàn cấu
+      // trúc" mà Pha 1 đo được (+431/+430/+431 MiB, 3 lượt) nhưng KHÔNG đưa vào sổ được — đây là
+      // lý do ngưỡng báo động 512 MiB từng vô dụng. CHỈ QUAN SÁT: thời điểm/tham số gọi
+      // `initLlama()` ngay dưới KHÔNG ĐỔI so với trước; chỉ bọc thêm ba lời gọi telemetry quanh
+      // lượt khởi tạo ĐÃ CÓ. `beginVram()` ngay TRƯỚC lượt gọi thật, `commitMeasured()` ngay SAU
+      // — đó là cách duy nhất delta đo được là của backend, không phải của thứ khác.
+      //
+      // ⚠ Backend là SINGLETON cả tiến trình — dòng `if (llamaInstance) return llamaInstance` ở
+      // đầu `getLlama()` đảm bảo khối này chỉ chạy MỘT LẦN khi thành công (khoá in-flight ở trên
+      // đảm bảo thêm: kể cả khi ĐANG chạy, không có lượt thứ hai nào chạy CHỒNG lên nó). Vì vậy:
+      // KHÔNG có đường release — không ai gọi `ticket.release()` khi backend đã sống. Khai
+      // `releaseProof: "unverified"` ở đây sẽ SAI ngữ nghĩa (nó ngụ ý "có thể nhả, chỉ chưa xác
+      // minh được"); sự thật là backend này KHÔNG BAO GIỜ được nhả trong suốt vòng đời tiến
+      // trình, và đó là ĐÚNG — không phải một lỗ hổng cần vá.
+      const backendTicket = await beginVram({
+        owner: "cuda-backend",
+        kind: "gguf-backend",
+        priority: "production",
       });
-      await backendTicket.commitMeasured();
-      backendCommitted = true;
-    } finally {
-      // `initLlama()` ném GIỮA reserve() và commit() ⇒ backend KHÔNG hình thành thật. TRẢ giấy
-      // phép để lượt retry sau (llamaInstance vẫn null ⇒ getLlama() sẽ chạy lại khối này) không
-      // đẻ thêm một giấy phép treo vĩnh viễn mỗi lần thử — chỉ nhánh THẤT BẠI mới release; nhánh
-      // thành công không bao giờ chạm release (xem cảnh báo SINGLETON ở trên).
-      if (!backendCommitted) releaseVramTicketQuietly(backendTicket);
-    }
+      let backendCommitted = false;
+      try {
+        llamaInstance = await initLlama({
+          gpu: process.env.GGUF_GPU === "false" ? false : "auto",
+        });
+        await backendTicket.commitMeasured();
+        backendCommitted = true;
+      } finally {
+        // `initLlama()` ném GIỮA reserve() và commit() ⇒ backend KHÔNG hình thành thật. TRẢ giấy
+        // phép để lượt retry sau (llamaInstance vẫn null ⇒ getLlama() sẽ chạy lại khối này) không
+        // đẻ thêm một giấy phép treo vĩnh viễn mỗi lần thử — chỉ nhánh THẤT BẠI mới release; nhánh
+        // thành công không bao giờ chạm release (xem cảnh báo SINGLETON ở trên).
+        if (!backendCommitted) releaseVramTicketQuietly(backendTicket);
+      }
 
-    console.log("[aiGgufEngine] llama.cpp engine initialized (GPU:", process.env.GGUF_GPU !== "false" ? "auto" : "disabled", ")");
-    // Pha 1 Task 5 — NỐI ĐẦU DÒ VRAM vào thể hiện llama vừa tạo. Không nối thì
-    // `vram/vramProbe.readDeviceVram()` LUÔN lùi về `nvidia-smi` (~80 ms/lượt đo trên máy này,
-    // tới ~3 s ở trường hợp xấu — xem vramProbe.ts:7-10) dù `llamaInstance.getVramState()`
-    // native đã sẵn ở đây. CHỈ nối dây, không đổi hành vi; lỗi bị nuốt vì telemetry không bao
-    // giờ được làm hỏng lượt khởi tạo engine.
-    try {
-      const { setLlamaInstanceHandle } = await import("./vram/llamaHandle");
-      setLlamaInstanceHandle(llamaInstance);
-    } catch {
-      /* telemetry KHÔNG được làm hỏng đường khởi tạo engine */
+      console.log("[aiGgufEngine] llama.cpp engine initialized (GPU:", process.env.GGUF_GPU !== "false" ? "auto" : "disabled", ")");
+      // Pha 1 Task 5 — NỐI ĐẦU DÒ VRAM vào thể hiện llama vừa tạo. Không nối thì
+      // `vram/vramProbe.readDeviceVram()` LUÔN lùi về `nvidia-smi` (~80 ms/lượt đo trên máy này,
+      // tới ~3 s ở trường hợp xấu — xem vramProbe.ts:7-10) dù `llamaInstance.getVramState()`
+      // native đã sẵn ở đây. CHỈ nối dây, không đổi hành vi; lỗi bị nuốt vì telemetry không bao
+      // giờ được làm hỏng lượt khởi tạo engine.
+      try {
+        const { setLlamaInstanceHandle } = await import("./vram/llamaHandle");
+        setLlamaInstanceHandle(llamaInstance);
+      } catch {
+        /* telemetry KHÔNG được làm hỏng đường khởi tạo engine */
+      }
+      return llamaInstance;
+    } catch (err) {
+      console.error("[aiGgufEngine] Failed to initialize llama.cpp:", err);
+      throw new Error("node-llama-cpp is not available. Install with: pnpm add node-llama-cpp");
     }
-    return llamaInstance;
-  } catch (err) {
-    console.error("[aiGgufEngine] Failed to initialize llama.cpp:", err);
-    throw new Error("node-llama-cpp is not available. Install with: pnpm add node-llama-cpp");
+  })();
+
+  llamaInitInFlight = initPromise;
+  try {
+    return await initPromise;
+  } finally {
+    // Bắt buộc (bài học Đợt 1): thiếu dòng này thì MỌI lượt gọi getLlama() sau — kể cả sau khi
+    // backend đã khởi tạo XONG hay đã THẤT BẠI — đều bị khoá vĩnh viễn vào đúng promise (đã
+    // resolve hay đã reject) này, không bao giờ thử lại được. Chạy trong CẢ HAI nhánh thành
+    // công/thất bại: nhánh thành công không cần (llamaInstance đã set, lượt sau thoát ở dòng đầu
+    // hàm) nhưng dọn cho sạch; nhánh thất bại thì bắt buộc để lượt retry sau không kẹt vĩnh viễn.
+    llamaInitInFlight = null;
   }
 }
 
