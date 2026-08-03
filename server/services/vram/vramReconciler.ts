@@ -312,18 +312,34 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
    * ca 4 canh chính xác việc này: reranker ước lượng 606 MiB / thật 18 MiB, measureFailed=true
    * ⇒ PHẢI báo động "đo hỏng" — pendingBytes gộp lease đó sẽ tắt tiếng SAI ca đó.
    *
-   * ⚠ "Lease không bao giờ commit thì băng dung sai treo bao lâu?" — `commitMeasured()`
-   * (vramWiring.ts) đặt `measureFailed=true` NGAY LẬP TỨC, TRONG CÙNG lượt gọi phát hiện delta
-   * âm — không có bước "chờ" nào ở giữa. Vậy lease đó rơi khỏi `pendingBytes` chậm nhất là ở
-   * nhịp `reconcileOnce()` KẾ TIẾP sau khi `commitMeasured()` chạy (≤ `INTERVAL_MS`, mặc định
-   * 60 giây), không phải "mãi mãi". Phần CÒN LẠI CHƯA GIẢI ĐƯỢC ở Pha 1.5 (chấp nhận tường
-   * minh, cùng lớp với "giấy phép treo" đã ghi ở docstring hàm này): một tiến trình CHẾT HẲN
-   * trước khi `commitMeasured()` kịp chạy (kill -9, mất điện) không bao giờ tự đặt cờ nào —
-   * lease đó vẫn `actualBytes: null, measureFailed: false` VĨNH VIỄN cho tới khi có người khởi
-   * động lại tiến trình (xoá sạch ledger trong bộ nhớ). `gguf-model` KHÔNG có `ttlMs`/reap như
-   * `external-process` (types.ts) nên Task 3 KHÔNG tự chữa được ca này — nó thừa hưởng đúng
-   * rủi ro "giấy phép treo" đã biết, chỉ khác hệ quả cụ thể: băng dung sai phía ÂM nới rộng
-   * thêm đúng ước lượng của lease treo đó cho tới khi người vận hành can thiệp thủ công.
+   * ⚠ "Lease không bao giờ commit thì băng dung sai treo bao lâu?" — review vòng 1 (Important-1)
+   * chỉ ra CÂU TRẢ LỜI VÒNG ĐẦU thiếu một đường: `commitMeasured()` (vramWiring.ts) có BA
+   * nhánh KHÔNG BAO GIỜ ghi `actualBytes`, không phải hai:
+   *
+   *   1. **Đo hỏng** (`actual < 0`) — `markMeasureFailed()` chạy NGAY LẬP TỨC, TRONG CÙNG lượt
+   *      gọi phát hiện delta âm. Lease rơi khỏi `pendingBytes` chậm nhất ở nhịp
+   *      `reconcileOnce()` KẾ TIẾP (≤ `INTERVAL_MS`, mặc định 60 giây).
+   *   2. **Đầu dò trả `null`** (`beforeUsed === null` lúc tạo ticket, hoặc `after === null` lúc
+   *      commit — dễ xảy ra nhất ĐÚNG LÚC GPU đang bận nạp model: `nvidia-smi` timeout 3s hoặc
+   *      handle native chập chờn). Review vòng 1 phát hiện bản vá GỐC của Task 3 bỏ sót đường
+   *      này — `vramWiring.ts` từng `return` CÂM ở cả hai nhánh, không gọi `markMeasureFailed()`.
+   *      Đã vá: giờ cả hai nhánh cũng đánh dấu `measureFailed=true` NGAY LẬP TỨC, cùng tốc độ
+   *      tự lành như đường 1 (≤ một nhịp `reconcileOnce()`), KHÔNG còn phải chờ tới `release()`.
+   *      Xem `wiring.probeNull.test.ts` (4 test + đột biến) và docstring tại nhánh đó trong
+   *      `vramWiring.ts` để biết ĐÁNH ĐỔI đã cân nhắc (báo động có thể giải thích được, đổi lấy
+   *      không còn lỗ câm tới lúc unload/evict).
+   *   3. **Tiến trình CHẾT HẲN trước khi `commitMeasured()` kịp chạy** (kill -9, mất điện) —
+   *      KHÔNG đường nào trong hai đường trên chạm tới, vì không có code nào của TA được thực
+   *      thi để đặt bất kỳ cờ nào. Lease đó vẫn `actualBytes: null, measureFailed: false`
+   *      VĨNH VIỄN cho tới khi có người khởi động lại tiến trình (xoá sạch ledger trong bộ
+   *      nhớ). `gguf-model` KHÔNG có `ttlMs`/reap như `external-process` (types.ts) nên Task 3
+   *      KHÔNG tự chữa được ca này — nó thừa hưởng đúng rủi ro "giấy phép treo" đã biết, chỉ
+   *      khác hệ quả cụ thể: băng dung sai phía ÂM nới rộng thêm đúng ước lượng của lease treo
+   *      đó cho tới khi người vận hành can thiệp thủ công (hoặc một task tương lai thêm TTL
+   *      cho kind `gguf-model`).
+   *
+   * Sau bản vá vòng 1, CHỈ CÒN đường 3 là "treo tới restart" — đường 1 và 2 đều tự lành trong
+   * ≤ một nhịp `reconcileOnce()`.
    */
   const pendingBytes = snap.leases
     .filter((l) => l.actualBytes === null && !l.measureFailed)

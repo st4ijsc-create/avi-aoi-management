@@ -170,13 +170,73 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
       /* không đo được thiết bị ⇒ bỏ qua phần commit, giấy phép vẫn giữ ước lượng */
     }
 
+    /**
+     * Pha 1.5 Task 3, review vòng 1 (Important-1) — "CỬA THỨ TƯ/NĂM" của `commitMeasured()`.
+     *
+     * Reviewer đọc lại toàn bộ hàm và tìm ra HAI nhánh return CÂM khác bên dưới (`beforeUsed
+     * === null` và `!after`), CẢ HAI đều là "đầu dò không trả được số dùng được" — cùng lớp
+     * lỗi với "cửa thứ ba" (I-2, nhánh `actual < 0` bên dưới) mà bản vá TRƯỚC đã đóng. Khác
+     * với delta<0 (đo được số, chỉ là số đó VÔ NGHĨA), ở đây ta CHƯA TỪNG có đủ hai đầu đo để
+     * tính delta — nhưng ngữ nghĩa `measureFailed` vẫn khớp: "đã THỬ đo, không ra số dùng
+     * được", KHÔNG PHẢI "đang chờ". `commitMeasured()` không được gọi lại cho CÙNG một ticket
+     * (mỗi điểm cấp phát chỉ `await` nó đúng MỘT lần), nên trước bản vá này, lease rơi vào hai
+     * nhánh trên đứng CÂM `actualBytes:null, measureFailed:false` tới khi có `release()` THẬT
+     * (model unload/evict) — lâu hơn RẤT NHIỀU so với cửa delta<0 (tự lành ngay trong CHÍNH
+     * lượt gọi `commitMeasured()` đang chạy).
+     *
+     * ⚠ ĐÁNH ĐỔI ĐÃ CÂN NHẮC, KHÔNG NÉ: gắn `measureFailed=true` ở đây có thể khiến một lease
+     * THẬT SỰ đang tải dở (VRAM vật lý còn tăng) bị loại khỏi `pendingBytes` (vramReconciler.ts)
+     * chỉ vì MỘT lượt đọc thiết bị hỏng THOÁNG QUA — băng dung sai phía ÂM co lại đúng lúc đó,
+     * có thể sinh một lượt báo động ở nhịp `reconcileOnce()` kế tiếp nếu vật lý chưa kịp lên
+     * đủ. Đây là đánh đổi CÓ CHỦ Ý: (a) báo động đó KHÔNG sai lệch — nó đúng sự thật "ước
+     * lượng của lease này không xác minh được", và câu cảnh báo I-2 sẵn có đã phân biệt rõ
+     * "đo hỏng" với "cấp phát chui"; (b) đối lập với nó là một LỖ CÂM có thể kéo dài tới lúc
+     * unload/evict — hàng phút/giờ trên một model ít khi bị đuổi khỏi cache — đúng lớp lỗi mà
+     * I-2 sinh ra để diệt. Giữa "một lượt báo động giải thích được" và "một lỗ câm không biết
+     * đang câm", Pha 1.5 chọn vế đầu, nhất quán với tiền lệ I-2.
+     *
+     * ⚠ CATCH-ALL BÊN NGOÀI (`catch {}` cuối hàm) CỐ Ý KHÔNG sửa theo cùng cách: nó bọc CẢ
+     * `broker.commit()`/`estimator.recordActual()`/`logVramEvent()` PHÍA SAU lượt commit thật.
+     * Nếu `commit()` đã chạy xong rồi một trong hai lời gọi sau mới ném, gọi `markMeasureFailed`
+     * ở catch-all sẽ gắn cờ SAI cho một lease ĐÃ commit đúng (`actualBytes` là số thật nhưng
+     * `measureFailed=true` khiến câu cảnh báo I-2 gọi nhầm lease THÀNH CÔNG là "đo hỏng"). Rủi
+     * ro gắn cờ sai lớn hơn lợi ích (ba hàm đó đều đồng bộ/không I/O, catch-all gần như không
+     * bao giờ chạm) nên KHÔNG mở rộng sang nhánh này.
+     */
+    const markProbeFailed = (reason: "before-probe-null" | "after-probe-null", extraDetail: Record<string, unknown>) => {
+      broker.markMeasureFailed(lease);
+      logVramEvent({
+        event: "measure_failed",
+        owner: opts.owner,
+        leaseKind: opts.kind,
+        priority: opts.priority,
+        estimatedBytes: est.bytes,
+        estimateSource: est.source,
+        detail: {
+          reason,
+          ...extraDetail,
+          note:
+            "đầu dò trả null/lỗi ⇒ không đủ hai đầu đo để tính delta. Giấy phép GIỮ NGUYÊN " +
+            "ước lượng và sẽ KHÔNG BAO GIỜ được xác minh (commitMeasured() không gọi lại cho " +
+            "cùng ticket) — đánh dấu ngay để không câm tới lúc release().",
+        },
+      });
+    };
+
     let released = false;
     return {
       async commitMeasured() {
         try {
-          if (released || beforeUsed === null) return;
+          if (released) return;
+          if (beforeUsed === null) {
+            markProbeFailed("before-probe-null", {});
+            return;
+          }
           const after = await probe.readDeviceVramUncached();
-          if (!after) return;
+          if (!after) {
+            markProbeFailed("after-probe-null", { beforeUsedBytes: beforeUsed });
+            return;
+          }
 
           const actual = after.usedBytes - beforeUsed;
           // ⚠ Delta ÂM = phép đo bị nhiễu (một hộ khác vừa nhả chỗ giữa hai lượt đo, hoặc
