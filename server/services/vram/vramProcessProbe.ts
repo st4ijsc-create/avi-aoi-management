@@ -63,6 +63,37 @@ export function parseProcessCounters(rawJson: string, roots: readonly number[], 
   return { totalBytes, byPid, byLuid, sampledAtMs: nowMs };
 }
 
+/**
+ * ★★★ I-5 (re-review vòng 1) — **BIÊN LẮNG ~1,2 s CỦA `Get-Counter` LÀ ĐIỀU KIỆN ĐÚNG ĐẮN CỦA
+ * PHÉP ĐO, KHÔNG PHẢI CHI PHÍ THỪA.** Đọc hết khối này trước khi tối ưu bất cứ thứ gì ở đây.
+ *
+ * PHÂN RÃ CHI PHÍ MỘT LƯỢT ĐỌC (đo được, không ước):
+ *   • khởi động `powershell.exe`      ~110 ms
+ *   • **`Get-Counter`               ~1.200 ms**  ← biên lắng, xem dưới
+ *   • `Get-CimInstance Win32_Process`  ~200 ms
+ *   ⇒ ~1,5 s mỗi đầu đo, ~3,1 s mỗi cửa sổ đo.
+ *
+ * BIÊN 1.200 ms ĐẾN TỪ ĐÂU: `-SampleInterval` mặc định của `Get-Counter` là 1 giây — nó thu một
+ * mẫu, CHỜ một giây, rồi thu lại. Đo trực tiếp: PDH trả mẫu ở **t₀ + 1.299 / 1.304 / 1.352 ms**
+ * (3 lượt) ⇒ biên lắng thực tế **1,30–1,35 s**, lớn hơn cả mốc ≥800 ms mà chính tác giả T5-11 tự
+ * áp cho phép đo này. **KHÔNG AI THIẾT KẾ ĐIỀU ĐÓ** — nó là tác dụng phụ, không ghi ở đâu, và
+ * trước dòng chú thích này không có test nào canh.
+ *
+ * ⚠⚠ VÌ SAO HẠ NÓ XUỐNG LÀ NGUY HIỂM — và nguy hiểm IM LẶNG: `vramWiring.readScopeBytes()` chỉ
+ * phân biệt được "bộ đếm KHÔNG CÓ khoá của ta" (⇒ `seen === false` ⇒ chặn), **không** phân biệt
+ * được "bộ đếm CÓ khoá nhưng số đã CŨ". Bộ đếm trễ làm cửa sổ đo **BỊ DỊCH**: phần cấp phát rơi
+ * vào khoảng trễ cuối bị mất khỏi hiệu số. Trễ hoàn toàn ⇒ hai đầu đo giống hệt nhau ⇒
+ * `actual === 0` với `seen === true` ⇒ **commit 0 + `recordActual(0)`** ⇒ nấc `learned = 0` sống
+ * tới hết đời tiến trình ⇒ ở Pha 2B là dư địa VÔ HẠN, tức OOM. **Không ca test nào đỏ.**
+ *
+ * ⚠ CẠM BẪY CỤ THỂ ĐANG CHỜ NGƯỜI SẬP (nói thẳng để khỏi ai sập): mục tồn đọng "bỏ
+ * `Get-CimInstance` để 3,1 s → ~1 s" **được ước trên số SAI** — thực tế chỉ rút ~200 ms/lượt
+ * (~13 %). Người cầm mục đó sẽ nhìn ngay sang 1,2 giây còn lại và cắt `-SampleInterval` xuống
+ * ~0,1 s **trong một dòng**. ĐỪNG. Bỏ `Get-CimInstance` thì được (chỉ cần khi phạm vi
+ * `descendants` cần cây tiến trình); **KHÔNG đụng `Get-Counter`** cho tới khi độ trễ thật của bộ
+ * đếm được ĐO TRỰC TIẾP và ghim thành hằng số của CHÍNH TA (`VRAM_MEASURE_SETTLE_MS`) thay vì
+ * mượn biên nội tại của PDH — việc đó là **Task 6** của pha này, không phải một lượt tối ưu.
+ */
 const PS_SCRIPT = [
   "$ErrorActionPreference='Stop';",
   "$c=(Get-Counter '\\GPU Process Memory(*)\\Dedicated Usage').CounterSamples|",
@@ -75,13 +106,26 @@ const PROBE_TIMEOUT_MS = 10_000;
 let warnedUnavailable = false;
 
 /**
- * Pha 2A Task 3 — CÔNG TẮC TẮT. `VRAM_PROCESS_PROBE=off|false|0` ⇒ đầu dò trả `null` NGAY, không
+ * ⚠ M-3 (review vòng 1) — DANH SÁCH **BẬT**, KHÔNG PHẢI DANH SÁCH TẮT. Đây là danh sách các giá
+ * trị làm đầu dò CHẠY; mọi giá trị khác (kể cả gõ sai) đều TẮT.
+ *
+ * Bản trước làm ngược — chỉ nhận `off|false|0` là tắt — nên `VRAM_PROCESS_PROBE=disabled` (hay
+ * `no`, `OFF ` có khoảng trắng, chuỗi rỗng) làm đầu dò **âm thầm VẪN BẬT**. Một công tắc vận hành
+ * hỏng theo chiều "vẫn chạy" là bẫy: người vận hành tin là đã tắt, hệ vẫn sinh `powershell.exe`
+ * mỗi lượt cấp phát, và không có dấu hiệu nào cho biết mình gõ sai. Đảo logic là cách DUY NHẤT
+ * đóng hẳn lớp lỗi đó thay vì đuổi theo từng biến thể chính tả.
+ */
+const PROBE_ON_VALUES = new Set(["on", "true", "1", "yes", "enabled", "enable"]);
+
+/**
+ * Pha 2A Task 3 — CÔNG TẮC của đầu dò. Biến **KHÔNG ĐẶT ⇒ BẬT** (mặc định sản xuất, không đổi
+ * hành vi); đặt bất cứ giá trị nào KHÔNG thuộc `PROBE_ON_VALUES` ⇒ đầu dò trả `null` NGAY, không
  * sinh tiến trình con nào.
  *
  * VÌ SAO CẦN, và vì sao đây KHÔNG phải "mã biết mình đang bị test":
- *   • Mỗi lượt đọc là một `powershell.exe` + `Get-CimInstance Win32_Process` — ĐO ĐƯỢC **~1,5 s**
- *     trên máy này (nghiệm thu sống Task 3: cửa sổ mở sau 1.619 ms, đóng sau thêm 1.532 ms). Đó
- *     là cái giá HỢP LÝ cho một lượt nạp model thật (10-60 s) và VÔ LÝ cho bất cứ thứ gì khác.
+ *   • Mỗi lượt đọc tốn **~1,5 s** (110 ms boot + 1.200 ms `Get-Counter` + 200 ms `Get-CimInstance`
+ *     — xem khối chú thích ở `PS_SCRIPT`). Đó là cái giá HỢP LÝ cho một lượt nạp model thật
+ *     (10-60 s) và VÔ LÝ cho bất cứ thứ gì khác.
  *   • Ràng buộc toàn cục 8 vốn đã đòi "máy không GPU / không PowerShell / bộ đếm vắng ⇒ trả null,
  *     hệ vẫn chạy". Công tắc này là cùng một đường thoát, chỉ do người vận hành bật thay vì do
  *     môi trường quyết định — dùng được khi bộ đếm PDH treo trên một máy cụ thể.
@@ -94,18 +138,6 @@ let warnedUnavailable = false;
  * và sổ giữ ƯỚC LƯỢNG. Đó là mất phép đo, không phải mất an toàn (đúng khuôn "một ước lượng sai
  * ĐƯỢC GẮN CỜ rẻ hơn một ước lượng sai ĐƯỢC TIN").
  */
-/**
- * ⚠ M-3 (review vòng 1) — DANH SÁCH **BẬT**, KHÔNG PHẢI DANH SÁCH TẮT.
- *
- * Bản trước chỉ nhận `off|false|0`, nên `VRAM_PROCESS_PROBE=disabled` (hay `no`, `OFF `, `""`)
- * làm đầu dò **âm thầm VẪN BẬT**. Một công tắc vận hành hỏng theo chiều "vẫn chạy" là bẫy: người
- * vận hành tin là đã tắt, hệ vẫn sinh `powershell.exe` mỗi lượt cấp phát, và không có dấu hiệu
- * nào cho biết mình gõ sai. Đảo logic là cách DUY NHẤT đóng hẳn lớp lỗi đó thay vì đuổi theo từng
- * biến thể chính tả: **chỉ chạy khi khớp danh sách BẬT tường minh** (mặc định, tức biến không
- * đặt, vẫn là BẬT — hành vi sản xuất không đổi).
- */
-const PROBE_ON_VALUES = new Set(["on", "true", "1", "yes", "enabled", "enable"]);
-
 function probeDisabled(): boolean {
   const raw = process.env.VRAM_PROCESS_PROBE;
   if (raw === undefined) return false; // không đặt ⇒ BẬT (mặc định sản xuất)

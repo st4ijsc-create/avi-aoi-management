@@ -236,6 +236,43 @@ export function __openMeasureWindowCount(): number {
 }
 
 /**
+ * ★★★ I-1 (review vòng 1) — MỘT ĐẦU ĐO GỒM HAI THÔNG TIN, KHÔNG PHẢI MỘT.
+ *
+ * `bytes` là con số; `seen` trả lời câu hỏi KHÁC HẲN: **bộ đếm có nhìn thấy cây tiến trình của ta
+ * hay không.** Gộp hai thứ đó vào một số (`byPid.get(self) ?? 0`) là để "bộ đếm vắng mặt / regex
+ * không khớp / mẫu không có khoá của ta" và "thật sự 0 byte" cho **cùng một kết quả** — rồi commit
+ * `0` kèm `measureSource: "process-delta"`, tức KHAI LÀ ĐO ĐƯỢC, rồi `recordActual(owner, 0)`
+ * **đóng đinh nấc `learned` = 0 tới hết đời tiến trình**. Ở Pha 2B, ước lượng 0 nghĩa là dư địa
+ * VÔ HẠN ⇒ broker không bao giờ từ chối ⇒ OOM. Chiều lỗi này là chiều nguy hiểm.
+ *
+ * ⚠ `parseProcessCounters` CỐ Ý trả mẫu HỢP LỆ khi không PID nào khớp (`vramProcessProbe.ts`) —
+ * đó là hợp đồng đúng cho hàm đó (nó không biết người gọi mong đợi gì), nên chỗ phải phân biệt
+ * chính là ĐÂY, phía gọi.
+ *
+ * ⚠⚠ I-5 (re-review vòng 1) — `seen` ĐO SỰ TỒN TẠI CỦA KHOÁ, KHÔNG ĐO ĐỘ TƯƠI. Đọc kỹ trước khi
+ * tin nó là lưới chống mọi kiểu "bộ đếm không nói thật":
+ *   • Sau khi `cuda-backend` hình thành, khoá của tiến trình này **luôn** tồn tại ⇒ `!seen` gần
+ *     như BẤT KHẢ ĐẠT ⇒ lưới I-1 trên thực tế chỉ còn phủ ca "bộ đếm mù TOÀN MÁY".
+ *   • Bộ đếm TRỄ thì cửa sổ **BỊ DỊCH** chứ không co: mất phần cấp phát rơi vào khoảng trễ cuối.
+ *     Trễ hoàn toàn ⇒ hai lượt đọc GIỐNG HỆT nhau ⇒ `actual === 0` với `seen === true` ⇒ commit 0
+ *     + `recordActual(0)` — tái tạo nguyên vẹn nấc `learned = 0` mà I-1 sinh ra để chặn.
+ *   • **Hôm nay lỗ đó CHƯA MỞ, và đó là nhờ một thứ KHÔNG AI THIẾT KẾ:** `-SampleInterval` mặc
+ *     định của `Get-Counter` tạo ra biên lắng **~1,2 s** trong `PS_SCRIPT` (`vramProcessProbe.ts`),
+ *     đo được PDH lấy mẫu ở t₀ + 1.299/1.304/1.352 ms. Biên đó **ĐANG LÀ ĐIỀU KIỆN ĐÚNG ĐẮN CỦA
+ *     PHÉP ĐO**, không phải chi phí thừa — hạ nó xuống là mở lỗ này, IM LẶNG, không ca test nào đỏ.
+ *     Đọc khối chú thích ở `PS_SCRIPT` trước khi tối ưu bất cứ thứ gì trong đường đo.
+ *   • **RÀNG BUỘC ĐẦY ĐỦ:** tính an toàn của ca "bộ đếm có-mà-mù" phụ thuộc vào **nhánh delta-âm
+ *     CŨNG gắn cờ** (`actual < 0` ⇒ `markMeasureFailed`). Nếu một bản sửa tương lai bỏ nhánh đó
+ *     (hoặc đổi nó thành `commit(0)`), ca "trước thấy X, sau mù ⇒ 0 − X < 0" sẽ rơi thẳng vào
+ *     `commit` thay vì bị chặn. Hai nhánh đó là MỘT lưới, đừng gỡ riêng một cái.
+ */
+interface ScopeReading {
+  readonly bytes: number;
+  /** Bộ đếm CÓ thấy cây của ta ở lượt đọc này không. `false` ⇒ `bytes` là 0 SUY RA, không phải 0 ĐO ĐƯỢC. */
+  readonly seen: boolean;
+}
+
+/**
  * Pha 2A Task 3 — MỘT ĐẦU ĐO của phạm vi `scope`, tính bằng bộ đếm THEO TIẾN TRÌNH.
  *
  * ⚠⚠ Đ4 — ĐÂY LÀ TOÀN BỘ ĐƯỜNG SỐ CỦA `actualBytes`, VÀ NÓ KHÔNG CHẠM `vramProbe`. Không dòng
@@ -261,27 +298,12 @@ export function __openMeasureWindowCount(): number {
  * `before-probe-null`), còn `commitMeasured()` để nó rơi vào `catch` ngoài cùng, nơi cửa sổ và
  * khoá được đóng. Bọc thêm một `catch` ở ĐÂY sẽ làm nhánh "đầu dò SAU NÉM" (nhánh thoát thứ NĂM)
  * trở thành mã chết mà không ai thấy.
- */
-/**
- * ★★★ I-1 (review vòng 1) — MỘT ĐẦU ĐO GỒM HAI THÔNG TIN, KHÔNG PHẢI MỘT.
  *
- * `bytes` là con số; `seen` trả lời câu hỏi KHÁC HẲN: **bộ đếm có nhìn thấy cây tiến trình của ta
- * hay không.** Gộp hai thứ đó vào một số (`byPid.get(self) ?? 0`) là để "bộ đếm vắng mặt / regex
- * không khớp / mẫu không có khoá của ta" và "thật sự 0 byte" cho **cùng một kết quả** — rồi commit
- * `0` kèm `measureSource: "process-delta"`, tức KHAI LÀ ĐO ĐƯỢC, rồi `recordActual(owner, 0)`
- * **đóng đinh nấc `learned` = 0 tới hết đời tiến trình**. Ở Pha 2B, ước lượng 0 nghĩa là dư địa
- * VÔ HẠN ⇒ broker không bao giờ từ chối ⇒ OOM. Chiều lỗi này là chiều nguy hiểm.
- *
- * ⚠ `parseProcessCounters` CỐ Ý trả mẫu HỢP LỆ khi không PID nào khớp (`vramProcessProbe.ts`) —
- * đó là hợp đồng đúng cho hàm đó (nó không biết người gọi mong đợi gì), nên chỗ phải phân biệt
- * chính là ĐÂY, phía gọi.
+ * ⚠ `seen === false ⇒ bytes === 0` ở CẢ HAI phạm vi (không có khoá ⇒ `?? 0`; không có PID con ⇒
+ * `totalBytes − own` = 0). Tính chất đó là thứ làm ca "mù" an toàn theo CẤU TRÚC: một đầu đo mù
+ * chỉ có thể kéo delta xuống 0 hoặc xuống ÂM, không bao giờ đẩy nó lên. Hai nhánh chặn tương ứng
+ * (`actual === 0 && !seen` và `actual < 0`) vì thế phủ kín; xem I-5 ở docstring `ScopeReading`.
  */
-interface ScopeReading {
-  readonly bytes: number;
-  /** Bộ đếm CÓ thấy cây của ta ở lượt đọc này không. `false` ⇒ `bytes` là 0 SUY RA, không phải 0 ĐO ĐƯỢC. */
-  readonly seen: boolean;
-}
-
 async function readScopeBytes(scope: VramMeasureScope): Promise<ScopeReading | null> {
   const { readProcessVram } = await import("./vramProcessProbe");
   const sample = await readProcessVram([process.pid]);
