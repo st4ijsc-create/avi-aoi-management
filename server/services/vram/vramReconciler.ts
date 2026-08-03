@@ -12,6 +12,12 @@ export interface VramReconcileResult {
   deviceUsedBytes: number | null;
   /** Nền thiết bị đã TRỪ khỏi phép so (null = chưa chụp / máy không GPU). */
   baselineUsedBytes: number | null;
+  /**
+   * Pha 1.5 Task 1 — true KHI VÀ CHỈ KHI lượt gọi này phát hiện đổi thước đo (native ⇄ smi) và
+   * đã HUỶ nền cũ để chụp lại. Lượt đó KHÔNG báo động, dù drift trông thế nào — số vừa bị huỷ
+   * không đáng tin để so.
+   */
+  baselineResampled: boolean;
 }
 
 let timer: NodeJS.Timeout | null = null;
@@ -75,6 +81,20 @@ let timer: NodeJS.Timeout | null = null;
 let baselineUsedBytes: number | null = null;
 let baselineCaptured = false;
 /**
+ * Pha 1.5 Task 1 — MỘT THƯỚC DUY NHẤT. Thước (native ⇄ smi) đã dùng để chụp nền hiện tại.
+ *
+ * ⚠ VÌ SAO BẮT BUỘC: `startVramReconciler()` chụp nền TRƯỚC khi `getLlama()` gắn handle
+ * (`aiGgufEngine.ts:359-360`) ⇒ lượt chụp đầu tiên gần như chắc chắn đo bằng `nvidia-smi`, còn
+ * mọi phép so SAU ĐÓ (một khi handle đã gắn) dùng `getVramState` NATIVE. Hai thước lệch
+ * 165-178 MiB — đủ MỘT MÌNH đẩy lệch qua ngưỡng 512 MiB và làm chuông kêu MÃI MÃI, dù không ai
+ * cấp phát chui cả. Đây là LỖI ĐO (so hai thước với nhau), không phải lỗi hệ.
+ *
+ * SỬA BẰNG CẤU TRÚC, KHÔNG ĐUA THỨ TỰ BOOT: ghi nhớ thước đã dùng để chụp nền; `reconcileOnce()`
+ * thấy số đến từ THƯỚC KHÁC thì HUỶ nền cũ và chụp lại — KHÔNG báo động lượt đó. Đường warm thứ
+ * ba xuất hiện sau này (đổi thước một lần nữa) vẫn vô hại vì cùng cơ chế này áp dụng lại.
+ */
+let baselineSource: "native" | "smi" | null = null;
+/**
  * Bật khi `startVramReconciler()` đã chạy. Lúc đó "chưa biết nền" phải nghĩa là IM LẶNG, KHÔNG
  * phải nền = 0 (NEW-2). Khi cờ này TẮT — tức có người gọi `reconcileOnce()` trực tiếp (Task 7,
  * test, công cụ chẩn đoán) — ta giữ nguyên ngữ nghĩa "không trừ gì", vì người gọi đó tự biết họ
@@ -97,7 +117,7 @@ let baselineRequired = false;
 export async function captureVramBaseline(): Promise<number | null> {
   if (baselineCaptured) return baselineUsedBytes;
 
-  let device: { usedBytes: number } | null = null;
+  let device: { usedBytes: number; source: "native" | "smi" } | null = null;
   try {
     device = await readDeviceVram();
   } catch {
@@ -132,12 +152,13 @@ export async function captureVramBaseline(): Promise<number | null> {
 
   baselineUsedBytes = raw - committedBytes;
   baselineCaptured = true;
+  baselineSource = device.source;
 
   const mib = (b: number) => Math.round(b / 1024 / 1024);
   console.log(
     `[vram] nền thiết bị: ${mib(baselineUsedBytes)} MiB ` +
-      `(thiết bị ${mib(raw)} − đã commit ${mib(committedBytes)}) — không phải của tiến trình này, ` +
-      `sẽ TRỪ khỏi mọi phép so sổ.`,
+      `(thiết bị ${mib(raw)} − đã commit ${mib(committedBytes)}, thước "${device.source}") — không phải của ` +
+      `tiến trình này, sẽ TRỪ khỏi mọi phép so sổ.`,
   );
   logVramEvent({
     event: "baseline",
@@ -153,6 +174,9 @@ export async function captureVramBaseline(): Promise<number | null> {
       committedBytes,
       ledgerTotalBytes: ledgerTotal,
       baselineUsedBytes,
+      // Pha 1.5 Task 1 — thước đã dùng để chụp nền này. `reconcileOnce()` so nó với thước của
+      // lượt đối chiếu; khác nhau thì huỷ nền và chụp lại thay vì so hai thước với nhau.
+      source: device.source,
       note:
         "nền = thiết bị − tổng giấy phép ĐÃ COMMIT. Chỉ trừ phần đã commit vì chỉ phần đó chắc " +
         "chắn đã nằm trong deviceUsed; giấy phép chưa commit là 'đã xin, chưa cấp phát xong' nên " +
@@ -177,6 +201,9 @@ export function __resetVramBaselineForTests(): void {
   baselineUsedBytes = null;
   baselineCaptured = false;
   baselineRequired = false;
+  // Pha 1.5 Task 1 — KHÔNG reset thì test sau KẾ THỪA thước của test trước, và một lượt chụp
+  // nền mới (thước A) có thể bị hiểu nhầm là "đổi thước" ngay từ lượt đối chiếu đầu tiên.
+  baselineSource = null;
 }
 
 /**
@@ -223,6 +250,33 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       ledgerTotalBytes: snap.totalReservedBytes,
       deviceUsedBytes: null,
       baselineUsedBytes,
+      baselineResampled: false,
+    };
+  }
+
+  // Pha 1.5 Task 1 — MỘT THƯỚC DUY NHẤT. Nền được chụp bằng một thước (native ⇄ smi); nếu lượt
+  // đối chiếu NÀY đến từ thước KHÁC, so trực tiếp là so hai thước với nhau — hai thước lệch
+  // 165-178 MiB (báo cáo Pha 1 §3.4), ĐỦ MỘT MÌNH đẩy lệch qua ngưỡng 512 MiB và làm chuông kêu
+  // MÃI MÃI dù không ai cấp phát chui. ĐỪNG cố "chụp nền muộn hơn cho tới khi handle gắn xong"
+  // — đó là đua với thứ tự boot (đã tốn ba vòng sửa vì đúng lỗi này ở NEW-1/NEW-2 trên). Sửa
+  // bằng cấu trúc: huỷ nền cũ, chụp lại bằng thước MỚI, và KHÔNG báo động ở lượt phát hiện — số
+  // vừa bị huỷ không đáng tin để so.
+  if (baselineCaptured && baselineSource !== null && device.source !== baselineSource) {
+    console.warn(
+      `[vram] ĐỔI THƯỚC ${baselineSource} → ${device.source} — huỷ nền cũ và chụp lại, ` +
+        `không so hai thước với nhau.`,
+    );
+    baselineCaptured = false;
+    baselineUsedBytes = null;
+    baselineSource = null;
+    await captureVramBaseline();
+    return {
+      driftBytes: null,
+      alarm: false,
+      ledgerTotalBytes: snap.totalReservedBytes,
+      deviceUsedBytes: device.usedBytes,
+      baselineUsedBytes,
+      baselineResampled: true,
     };
   }
 
@@ -237,6 +291,7 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       ledgerTotalBytes: snap.totalReservedBytes,
       deviceUsedBytes: device.usedBytes,
       baselineUsedBytes: null,
+      baselineResampled: false,
     };
   }
 
@@ -314,6 +369,7 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
     ledgerTotalBytes: snap.totalReservedBytes,
     deviceUsedBytes: device.usedBytes,
     baselineUsedBytes,
+    baselineResampled: false,
   };
 }
 

@@ -1,7 +1,17 @@
 import { getLlamaInstanceIfReady } from "./llamaHandle";
 
+/**
+ * Pha 1.5 Task 1 — MỘT THƯỚC DUY NHẤT. `startVramReconciler()` chụp nền ở `backgroundJobs.ts`
+ * TRƯỚC khi `getLlama()` gắn handle (`aiGgufEngine.ts:359-360`) ⇒ nền đo bằng `nvidia-smi`,
+ * còn mọi phép so SAU ĐÓ (một khi handle đã gắn) dùng `getVramState` NATIVE. Hai thước lệch
+ * 165-178 MiB — đủ MỘT MÌNH đẩy lệch qua ngưỡng 512 MiB và làm chuông kêu MÃI MÃI dù không ai
+ * cấp phát chui. Đầu dò phải khai rõ nó vừa đo bằng thước nào để `vramReconciler` phát hiện
+ * đổi thước và chụp lại nền thay vì so hai thước với nhau.
+ */
+export type VramSource = "native" | "smi";
+
 const CACHE_MS = Number(process.env.VRAM_PROBE_CACHE_MS ?? 5000);
-let cached: { at: number; value: { usedBytes: number; totalBytes: number } | null } | null = null;
+let cached: { at: number; value: { usedBytes: number; totalBytes: number; source: VramSource } | null } | null = null;
 
 /**
  * Sự thật thiết bị, CÓ ĐỆM — dùng cho đối chiếu NỀN (`vramReconciler`, mỗi 60 s).
@@ -25,7 +35,7 @@ let cached: { at: number; value: { usedBytes: number; totalBytes: number } | nul
  * ⚠ Để nguyên một điều cấm mà chính mã vi phạm là mìn cho người sau. Nếu ai đó lại thấy hàm
  * này quá đắt cho một đường gọi mới, hãy ĐO rồi sửa docstring — đừng viết một điều cấm mới.
  */
-export async function readDeviceVram(): Promise<{ usedBytes: number; totalBytes: number } | null> {
+export async function readDeviceVram(): Promise<{ usedBytes: number; totalBytes: number; source: VramSource } | null> {
   if (cached && Date.now() - cached.at < CACHE_MS) return cached.value;
   const fresh = await probeOnce();
   cached = { at: Date.now(), value: fresh };
@@ -42,7 +52,7 @@ export async function readDeviceVram(): Promise<{ usedBytes: number; totalBytes:
  * KHÔNG đụng vào trạng thái dùng chung, và `__clearProbeCache()` quay về đúng vai trò của nó —
  * một tiện ích CHỈ DÀNH CHO TEST.
  */
-export async function readDeviceVramUncached(): Promise<{ usedBytes: number; totalBytes: number } | null> {
+export async function readDeviceVramUncached(): Promise<{ usedBytes: number; totalBytes: number; source: VramSource } | null> {
   return probeOnce();
 }
 
@@ -66,14 +76,14 @@ async function noteTotal(totalBytes: number): Promise<void> {
 }
 
 /** Một lượt đọc thiết bị, không dính gì tới đệm. NEVER throws. */
-async function probeOnce(): Promise<{ usedBytes: number; totalBytes: number } | null> {
+async function probeOnce(): Promise<{ usedBytes: number; totalBytes: number; source: VramSource } | null> {
   const llama = getLlamaInstanceIfReady();
   if (llama && typeof llama.getVramState === "function") {
     try {
       const v = await llama.getVramState();
       if (v && v.total > 0) {
         await noteTotal(v.total);
-        return { usedBytes: v.used, totalBytes: v.total };
+        return { usedBytes: v.used, totalBytes: v.total, source: "native" };
       }
     } catch { /* lùi về nvidia-smi */ }
   }
@@ -90,7 +100,7 @@ async function probeOnce(): Promise<{ usedBytes: number; totalBytes: number } | 
     const [used, total] = line.split(",").map((s) => parseInt(s.trim(), 10));
     if (Number.isFinite(used) && Number.isFinite(total) && total > 0) {
       await noteTotal(total * 1024 * 1024);
-      return { usedBytes: used * 1024 * 1024, totalBytes: total * 1024 * 1024 };
+      return { usedBytes: used * 1024 * 1024, totalBytes: total * 1024 * 1024, source: "smi" };
     }
   } catch { /* máy không có GPU — telemetry vắng, KHÔNG phải lỗi */ }
 

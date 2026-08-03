@@ -15,7 +15,7 @@ describe("vramProbe", () => {
     }));
     const { readDeviceVram, __clearProbeCache } = await import("./vramProbe");
     __clearProbeCache();
-    expect(await readDeviceVram()).toEqual({ usedBytes: 5, totalBytes: 10 });
+    expect(await readDeviceVram()).toEqual({ usedBytes: 5, totalBytes: 10, source: "native" });
   });
 
   it("lùi về nvidia-smi khi không có native", async () => {
@@ -29,6 +29,7 @@ describe("vramProbe", () => {
     const v = await readDeviceVram();
     expect(v!.usedBytes).toBe(1200 * 1024 * 1024);
     expect(v!.totalBytes).toBe(32607 * 1024 * 1024);
+    expect(v!.source).toBe("smi");
   });
 
   it("KHÔNG có GPU thì trả null — KHÔNG được ném", async () => {
@@ -51,5 +52,26 @@ describe("vramProbe", () => {
     await readDeviceVram();
     await readDeviceVram();
     expect(exec).toHaveBeenCalledTimes(1);
+  });
+
+  // Pha 1.5 Task 1 — MỘT THƯỚC DUY NHẤT. `startVramReconciler()` chụp nền TRƯỚC khi
+  // `getLlama()` gắn handle ⇒ nền đo bằng nvidia-smi, mọi phép so sau đó dùng getVramState
+  // native. Hai thước lệch 165-178 MiB. Đầu dò phải khai rõ nó vừa đo bằng thước nào.
+  it("báo rõ ĐÃ ĐO BẰNG THƯỚC NÀO — native", async () => {
+    vi.doMock("./llamaHandle", () => ({
+      getLlamaInstanceIfReady: () => ({ getVramState: async () => ({ used: 5, total: 10 }) }),
+    }));
+    const { readDeviceVramUncached } = await import("./vramProbe");
+    expect((await readDeviceVramUncached())!.source).toBe("native");
+  });
+
+  it("báo rõ ĐÃ ĐO BẰNG THƯỚC NÀO — smi", async () => {
+    vi.doMock("./llamaHandle", () => ({ getLlamaInstanceIfReady: () => null }));
+    vi.doMock("child_process", () => ({
+      execFile: (_c: unknown, _a: unknown, _o: unknown, cb: (e: null, r: { stdout: string }) => void) =>
+        cb(null, { stdout: "1200, 32607\n" }),
+    }));
+    const { readDeviceVramUncached } = await import("./vramProbe");
+    expect((await readDeviceVramUncached())!.source).toBe("smi");
   });
 });

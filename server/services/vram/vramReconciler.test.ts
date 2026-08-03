@@ -11,7 +11,7 @@ describe("vramReconciler — bắt kẻ cấp phát không xin phép", () => {
       snapshot: () => ({ totalReservedBytes: 20_000 * MIB, leases: [] }),
     }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: 28_000 * MIB, totalBytes: 32_607 * MIB }),
+      readDeviceVram: async () => ({ usedBytes: 28_000 * MIB, totalBytes: 32_607 * MIB, source: "native" }),
     }));
     const logged: Array<{ event: string; driftBytes?: number }> = [];
     vi.doMock("./vramEventLog", () => ({ logVramEvent: (e: { event: string; driftBytes?: number }) => logged.push(e) }));
@@ -27,7 +27,7 @@ describe("vramReconciler — bắt kẻ cấp phát không xin phép", () => {
   it("lệch NHỎ hơn ngưỡng thì KHÔNG báo động (biên nhiễu ±25 MiB, nền trôi ~103 MiB/ngày)", async () => {
     vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 20_000 * MIB, leases: [] }) }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: 20_100 * MIB, totalBytes: 32_607 * MIB }),
+      readDeviceVram: async () => ({ usedBytes: 20_100 * MIB, totalBytes: 32_607 * MIB, source: "native" }),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
     const { reconcileOnce } = await import("./vramReconciler");
@@ -85,7 +85,7 @@ describe("vramReconciler — bắt kẻ cấp phát không xin phép", () => {
       leaseBytes: (l: (typeof leases)[number]) => l.actualBytes ?? l.request.estimatedBytes,
     }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: 28_000 * MIB, totalBytes: 32_607 * MIB }),
+      readDeviceVram: async () => ({ usedBytes: 28_000 * MIB, totalBytes: 32_607 * MIB, source: "native" }),
     }));
     const logged: Array<{ event: string; detail?: Record<string, unknown> }> = [];
     vi.doMock("./vramEventLog", () => ({ logVramEvent: (e: { event: string; detail?: Record<string, unknown> }) => logged.push(e) }));
@@ -114,7 +114,7 @@ describe("vramReconciler — bắt kẻ cấp phát không xin phép", () => {
   it("lệch ÂM (sổ giữ NHIỀU HƠN thiết bị) cũng PHẢI báo động", async () => {
     vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 20_000 * MIB, leases: [] }) }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: 11_000 * MIB, totalBytes: 32_607 * MIB }),
+      readDeviceVram: async () => ({ usedBytes: 11_000 * MIB, totalBytes: 32_607 * MIB, source: "native" }),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
     const { reconcileOnce } = await import("./vramReconciler");
@@ -129,7 +129,7 @@ describe("vramReconciler — bắt kẻ cấp phát không xin phép", () => {
   it("cảnh báo lệch DƯƠNG phải nói 'cấp phát KHÔNG XIN PHÉP', KHÔNG nói 'treo'", async () => {
     vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 20_000 * MIB, leases: [] }) }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: 28_000 * MIB, totalBytes: 32_607 * MIB }),
+      readDeviceVram: async () => ({ usedBytes: 28_000 * MIB, totalBytes: 32_607 * MIB, source: "native" }),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -144,7 +144,7 @@ describe("vramReconciler — bắt kẻ cấp phát không xin phép", () => {
   it("cảnh báo lệch ÂM phải nói 'giấy phép treo/số commit sai', KHÔNG đổ oan 'cấp phát chui'", async () => {
     vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 20_000 * MIB, leases: [] }) }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: 11_000 * MIB, totalBytes: 32_607 * MIB }),
+      readDeviceVram: async () => ({ usedBytes: 11_000 * MIB, totalBytes: 32_607 * MIB, source: "native" }),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -174,6 +174,43 @@ describe("vramReconciler — bắt kẻ cấp phát không xin phép", () => {
 });
 
 /**
+ * Pha 1.5 Task 1 — MỘT THƯỚC DUY NHẤT.
+ *
+ * `startVramReconciler()` chụp nền ở `backgroundJobs.ts` TRƯỚC khi `getLlama()` gắn handle
+ * (`aiGgufEngine.ts:359-360`) ⇒ nền đo bằng `nvidia-smi`, còn mọi phép so SAU ĐÓ (một khi
+ * handle đã gắn) dùng `getVramState` NATIVE. Hai thước lệch 165-178 MiB (báo cáo Pha 1 §3.4)
+ * — ĐỦ MỘT MÌNH đẩy lệch qua ngưỡng 512 MiB và làm chuông kêu MÃI MÃI, dù không ai cấp phát
+ * chui cả. Đây là LỖI ĐO, không phải lỗi hệ.
+ *
+ * SỬA BẰNG CẤU TRÚC: đầu dò khai rõ nó đo bằng thước nào (`source`), reconciler GHI NHỚ thước
+ * đã dùng để chụp nền; thấy số đến từ THƯỚC KHÁC thì HUỶ nền cũ, chụp lại, KHÔNG báo động lượt
+ * đó (so hai thước với nhau là tạo ra lệch GIẢ không bao giờ tự hết).
+ */
+describe("Pha 1.5 Task 1 — đổi thước thì huỷ nền và chụp lại, không so hai thước với nhau", () => {
+  beforeEach(() => vi.resetModules());
+
+  it("★ ĐỔI THƯỚC ⇒ nền bị HUỶ và chụp lại, KHÔNG so hai thước với nhau", async () => {
+    let src: "native" | "smi" = "smi";
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: 0, leases: [] }),
+      leaseBytes: (l: { actualBytes: number | null }) => l.actualBytes ?? 0,
+    }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: 1000 * MIB, totalBytes: 32607 * MIB, source: src }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+    expect(await captureVramBaseline()).toBe(1000 * MIB); // nền theo thước "smi"
+
+    src = "native"; // handle vừa được gắn
+    const r = await reconcileOnce();
+    expect(r.baselineResampled).toBe(true); // nền phải được chụp LẠI
+    expect(r.alarm).toBe(false); // và KHÔNG được báo động
+  });
+});
+
+/**
  * Task 5 review vòng 1, I-1 — NỀN THIẾT BỊ.
  *
  * Reviewer đo lúc app KHÔNG chạy (netstat sạch): GPU đã dùng **1.090 MiB** — desktop
@@ -192,7 +229,7 @@ describe("I-1 — nền thiết bị phải được TRỪ, nếu không chuông
   it("★ sổ RỖNG + máy CHỈ CÓ NỀN ⇒ TUYỆT ĐỐI KHÔNG báo động", async () => {
     vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 0, leases: [] }) }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: BACKGROUND, totalBytes: 32_607 * MIB }),
+      readDeviceVram: async () => ({ usedBytes: BACKGROUND, totalBytes: 32_607 * MIB, source: "native" }),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
 
@@ -212,7 +249,7 @@ describe("I-1 — nền thiết bị phải được TRỪ, nếu không chuông
     let used = BACKGROUND;
     vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 0, leases: [] }) }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: used, totalBytes: 32_607 * MIB }),
+      readDeviceVram: async () => ({ usedBytes: used, totalBytes: 32_607 * MIB, source: "native" }),
     }));
     const logged: Array<{ event: string }> = [];
     vi.doMock("./vramEventLog", () => ({ logVramEvent: (e: { event: string }) => logged.push(e) }));
@@ -230,7 +267,7 @@ describe("I-1 — nền thiết bị phải được TRỪ, nếu không chuông
   it("chụp nền PHẢI ghi một sự kiện `baseline` kèm giá trị — KHÔNG được trừ âm thầm", async () => {
     vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 0, leases: [] }) }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: BACKGROUND, totalBytes: 32_607 * MIB }),
+      readDeviceVram: async () => ({ usedBytes: BACKGROUND, totalBytes: 32_607 * MIB, source: "native" }),
     }));
     const logged: Array<{ event: string; deviceUsedBytes?: number }> = [];
     vi.doMock("./vramEventLog", () => ({
@@ -248,7 +285,9 @@ describe("I-1 — nền thiết bị phải được TRỪ, nếu không chuông
   it("chụp nền HAI LẦN chỉ lấy lần ĐẦU — restart reconciler không được nuốt thêm cấp phát vào nền", async () => {
     let used = BACKGROUND;
     vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 0, leases: [] }) }));
-    vi.doMock("./vramProbe", () => ({ readDeviceVram: async () => ({ usedBytes: used, totalBytes: 32_607 * MIB }) }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: used, totalBytes: 32_607 * MIB, source: "native" }),
+    }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
 
     const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
@@ -276,7 +315,7 @@ describe("I-1 — nền thiết bị phải được TRỪ, nếu không chuông
   it("__resetVramBaselineForTests() thật sự dọn nền (NEW-3 — hàm này phải CÓ NGƯỜI DÙNG)", async () => {
     vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 0, leases: [] }) }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: BACKGROUND, totalBytes: 32_607 * MIB }),
+      readDeviceVram: async () => ({ usedBytes: BACKGROUND, totalBytes: 32_607 * MIB, source: "native" }),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
 
@@ -339,7 +378,7 @@ describe("NEW-1 — nền = thiết bị − phần ĐÃ COMMIT, nên boot chậ
       snapshot: () => ({ totalReservedBytes: DEEP_30B, leases: [committed(DEEP_30B)] }),
     }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: BACKGROUND + DEEP_30B, totalBytes: 32_607 * MIB }),
+      readDeviceVram: async () => ({ usedBytes: BACKGROUND + DEEP_30B, totalBytes: 32_607 * MIB, source: "native" }),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
 
@@ -359,7 +398,7 @@ describe("NEW-1 — nền = thiết bị − phần ĐÃ COMMIT, nên boot chậ
       snapshot: () => ({ totalReservedBytes: DEEP_30B, leases: [committed(DEEP_30B)] }),
     }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: BACKGROUND + DEEP_30B, totalBytes: 32_607 * MIB }),
+      readDeviceVram: async () => ({ usedBytes: BACKGROUND + DEEP_30B, totalBytes: 32_607 * MIB, source: "native" }),
     }));
     const logged: Array<{ event: string; detail?: Record<string, unknown> }> = [];
     vi.doMock("./vramEventLog", () => ({ logVramEvent: (e: never) => logged.push(e) }));
@@ -396,7 +435,7 @@ describe("NEW-1 — nền = thiết bị − phần ĐÃ COMMIT, nên boot chậ
       snapshot: () => ({ totalReservedBytes: DEEP_30B, leases: [pending(DEEP_30B)] }),
     }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: BACKGROUND, totalBytes: 32_607 * MIB }),
+      readDeviceVram: async () => ({ usedBytes: BACKGROUND, totalBytes: 32_607 * MIB, source: "native" }),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
 
@@ -421,6 +460,7 @@ describe("NEW-1 — nền = thiết bị − phần ĐÃ COMMIT, nên boot chậ
       readDeviceVram: async () => ({
         usedBytes: done ? BACKGROUND + DEEP_30B : BACKGROUND,
         totalBytes: 32_607 * MIB,
+        source: "native",
       }),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
@@ -445,6 +485,7 @@ describe("NEW-1 — nền = thiết bị − phần ĐÃ COMMIT, nên boot chậ
       readDeviceVram: async () => ({
         usedBytes: broken ? 1_000 * MIB : BACKGROUND + DEEP_30B,
         totalBytes: 32_607 * MIB,
+        source: "native",
       }),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
@@ -474,7 +515,7 @@ describe("NEW-2 — đầu dò hồi phục thì nền TỰ LÀNH; chưa biết 
     let probeOk = false;
     vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 0, leases: [] }) }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => (probeOk ? { usedBytes: BACKGROUND, totalBytes: 32_607 * MIB } : null),
+      readDeviceVram: async () => (probeOk ? { usedBytes: BACKGROUND, totalBytes: 32_607 * MIB, source: "native" } : null),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
 
@@ -497,7 +538,7 @@ describe("NEW-2 — đầu dò hồi phục thì nền TỰ LÀNH; chưa biết 
     let probeOk = false;
     vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 0, leases: [] }) }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => (probeOk ? { usedBytes: BACKGROUND, totalBytes: 32_607 * MIB } : null),
+      readDeviceVram: async () => (probeOk ? { usedBytes: BACKGROUND, totalBytes: 32_607 * MIB, source: "native" } : null),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
 
@@ -520,7 +561,7 @@ describe("NEW-2 — đầu dò hồi phục thì nền TỰ LÀNH; chưa biết 
     let probeOk = false;
     vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 0, leases: [] }) }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => (probeOk ? { usedBytes: BACKGROUND, totalBytes: 32_607 * MIB } : null),
+      readDeviceVram: async () => (probeOk ? { usedBytes: BACKGROUND, totalBytes: 32_607 * MIB, source: "native" } : null),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
 
