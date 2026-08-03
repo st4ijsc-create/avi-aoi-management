@@ -74,6 +74,110 @@ const NOOP_TICKET: VramTicket = {
   release: () => {},
 };
 
+/**
+ * ★★ Pha 1.5 Task 8 (C-1) — SỔ CỬA SỔ ĐO ĐANG MỞ. Đọc trước khi sửa `commitMeasured()`.
+ *
+ * LỖI ĐANG VÁ: `beforeUsed` (`:168`) và `after.usedBytes` (`:241`) đều đọc `used` **TOÀN THIẾT
+ * BỊ**, không phải phần của riêng giấy phép này. Nên MỌI lượt cấp phát rơi vào khoảng
+ * `before→after` của một giấy phép đều bị quy TRỌN VẸN cho giấy phép đó. Hai cửa sổ chồng nhau
+ * ⇒ **cùng một khối byte vào sổ HAI LẦN**. Tái hiện được với broker + wiring THẬT:
+ * `thiết bị = 5.000 MiB · Σ actualBytes = 8.000 MiB [A=4000, B=4000]`; khớp ca LIVE
+ * `thiết bị 8.445 < đã commit 9.797`.
+ *
+ * ĐẾN ĐƯỢC THẬT, KHÔNG PHẢI GIẢ ĐỊNH: `GGUF_MAX_CONCURRENCY=4` (.env) + 6 nơi gọi
+ * `generateEmbedding(s)` do HTTP điều khiển; `aiGgufEngine.ts:2756-2762` đã ĐO đúng ca này
+ * ("4 lượt tuần tự 654 MiB; đồng thời 2.430 MiB"); `wiring.backend.test.ts:198` chạy đúng
+ * `Promise.all([loadGgufModel(A), loadGgufModel(B)])`.
+ *
+ * VÌ SAO CHẶN PHA 2: Pha 2 từ chối/thu hồi trên `headroom = trần − reserve − Σ leaseBytes`, mà
+ * `leaseBytes()` trả `actualBytes` sau commit ⇒ **từ chối nạp và ĐUỔI MODEL ĐANG CHẠY trên byte
+ * ma**. Tệ hơn: bản lỗi còn gọi `estimator.recordActual()` với con số nhân đôi ⇒ nấc "learned"
+ * đóng đinh nó cho MỌI lượt sau, tới hết đời tiến trình.
+ *
+ * ⚠⚠ VÌ SAO CHỌN (c) "PHÁT HIỆN CHỒNG LẤN ⇒ markMeasureFailed()", KHÔNG CHỌN (a) "TUẦN TỰ HOÁ
+ * PHÉP ĐO" — ba lý do ĐO ĐƯỢC trong chính repo này, không phải sở thích:
+ *
+ *   1. **Cửa sổ đo CHÍNH LÀ lượt cấp phát.** `beginVramAllocation()` đứng NGAY TRƯỚC
+ *      `llama.loadModel()`/`createContext()`/`spawn()` và `commitMeasured()` NGAY SAU. Tuần tự
+ *      hoá phép đo = tuần tự hoá đường cấp phát. Telemetry lúc đó không còn QUAN SÁT nữa mà bắt
+ *      đầu QUYẾT ĐỊNH thứ tự — đúng ranh giới Pha 1/1.5 tự cấm mình vượt (xem đầu file).
+ *   2. **BA nơi CỐ Ý không bao giờ gọi `commitMeasured()`** — `kbSyncScheduler` (2 điểm),
+ *      `localSidecarTrainer`, `aiLlmFinetuneSidecar` (đều `external-process`, lý do ghi ngay ở
+ *      docstring `beginTrainerVram()`: "khi tiến trình con thoát, VRAM của nó đã được OS thu hồi
+ *      từ lâu"). Một khoá mở ở `begin` và trả ở `commit` sẽ **không bao giờ được trả** ở ba chỗ
+ *      đó; trả ở `release()` thay thì khoá bị giữ suốt CẢ JOB HUẤN LUYỆN (`ttlMs =
+ *      sidecarTimeoutMs()`), chặn mọi lượt nạp model của cả tiến trình. Không tự lành.
+ *   3. **KHOÁ CHÉO với `withGgufSlot` là có thật.** `getOrLoadModel()`/`ensureTextContext()` cấp
+ *      phát NGOÀI slot (aiGgufEngine.ts:1550, :1561) còn `getEmbeddingContext()` cấp phát TRONG
+ *      slot (:2699, :2734 → :2783). Thêm một khoá thứ hai được giữ ở CẢ HAI phía một semaphore
+ *      4 chỗ là đưa vào một thứ tự khoá không nhất quán — thứ Pha 1.5 không có cách nào chứng
+ *      minh là an toàn bằng test.
+ *
+ * ⇒ Không nối tiếp gì cả. Chỉ GHI LẠI cửa sổ nào đang mở, và khi hai cửa sổ chạm nhau thì
+ * **khai `measureFailed`** — cùng ngữ nghĩa, cùng đường tự lành mà I-2/Task 3 đã dựng cho
+ * `delta âm` và `đầu dò null`. KHÔNG chia tỉ lệ, KHÔNG ước lượng bù:
+ * *một ước lượng sai ĐƯỢC GẮN CỜ rẻ hơn một ước lượng sai ĐƯỢC TIN.*
+ *
+ * ⚠ PHẠM VI — nói đúng, đừng nói rộng hơn:
+ *   PHỦ: mọi hộ tiêu thụ đi qua `beginVramAllocation()` (12 điểm gọi trong repo), kể cả các hộ
+ *        NGOÀI tiến trình đã KHAI BÁO bằng giấy phép (`sidecar:vision`, `cron:kb-sync`,
+ *        `sidecar:local-trainer`, `sidecar:llm-finetune`) — cửa sổ của chúng mở từ `begin` tới
+ *        `commitMeasured()`/`release()`, nên một lượt nạp model chồng lên lượt spawn của chúng
+ *        BỊ BẮT.
+ *   KHÔNG PHỦ: bất kỳ hộ tiêu thụ nào KHÔNG khai báo giấy phép — tiến trình khác của máy, phần
+ *        nền desktop, hoặc một tiến trình con cấp phát mà không đi qua `beginVramAllocation()`.
+ *        Sổ này chỉ thấy thứ nằm TRONG sổ; phần còn lại là việc của `vramReconciler` (lệch DƯƠNG
+ *        = "kẻ cấp phát chui") và của nền đo được (`captureVramBaseline`).
+ *
+ * ⚠ CÁI GIÁ PHẢI TRẢ, ĐÃ CÂN NHẮC — KHÔNG NÉ: ba hộ NGOÀI tiến trình không bao giờ commit nên
+ * cửa sổ của chúng mở tới tận `release()`, tức tới lúc tiến trình con THOÁT. Suốt một job huấn
+ * luyện (`sidecar:local-trainer`, hàng chục phút), MỌI lượt nạp model trong tiến trình sẽ bị gắn
+ * `measureFailed` — kể cả những lượt mà tiến trình con đã cấp phát xong từ lâu và VRAM của nó
+ * đang đứng yên (báo sai HƯỚNG AN TOÀN). Chấp nhận, vì vế đối lập là: một lượt nạp chồng lên
+ * lượt SPAWN của tiến trình con sẽ nuốt trọn 6-7,8 GB của nó vào `actualBytes` **và**
+ * `recordActual()` đóng đinh con số đó vào nấc "learned" — biến thể mà brief gọi là "tệ hơn và
+ * KHÔNG tự lành" (con thoát, thiết bị tụt, sổ không tụt). Giữa "gắn cờ thừa, hết job là hết" và
+ * "tin một con số sai tới hết đời tiến trình", chọn vế đầu — nhất quán với tiền lệ I-2/Task 3.
+ */
+interface OpenMeasureWindow {
+  owner: string;
+  /** Owner của những cửa sổ đã CHỒNG lên cửa sổ này. Rỗng = phép đo cô lập được. */
+  overlappedBy: string[];
+}
+
+const openMeasureWindows = new Map<number, OpenMeasureWindow>();
+let measureWindowSeq = 0;
+
+/**
+ * Mở một cửa sổ đo và ĐÁNH DẤU HAI CHIỀU với mọi cửa sổ đang mở: cửa sổ mới bị các cửa sổ cũ làm
+ * bẩn (byte của chúng còn đang lên trong khoảng đo của nó), và các cửa sổ cũ cũng bị cửa sổ mới
+ * làm bẩn (byte của nó sẽ lên trước khi chúng đọc đầu đo "sau"). Đánh dấu một chiều thôi là bỏ
+ * sót đúng một nửa số ca. KHÔNG BAO GIỜ ném (chỉ thao tác Map trong bộ nhớ).
+ */
+function openMeasureWindow(owner: string): number {
+  const id = ++measureWindowSeq;
+  const self: OpenMeasureWindow = { owner, overlappedBy: [] };
+  for (const other of openMeasureWindows.values()) {
+    if (!other.overlappedBy.includes(owner)) other.overlappedBy.push(owner);
+    if (!self.overlappedBy.includes(other.owner)) self.overlappedBy.push(other.owner);
+  }
+  openMeasureWindows.set(id, self);
+  return id;
+}
+
+/** Đóng cửa sổ. Trả bản ghi để người gọi đọc `overlappedBy`; `null` nếu đã đóng rồi. */
+function closeMeasureWindow(id: number): OpenMeasureWindow | null {
+  const w = openMeasureWindows.get(id);
+  if (!w) return null;
+  openMeasureWindows.delete(id);
+  return w;
+}
+
+/** Chỉ dùng trong test/chẩn đoán — số cửa sổ đo đang mở của tiến trình này. */
+export function __openMeasureWindowCount(): number {
+  return openMeasureWindows.size;
+}
+
 export interface VramAllocationOptions {
   owner: string;
   kind: VramLeaseKind;
@@ -171,6 +275,30 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
     }
 
     /**
+     * ★★ Task 8 (C-1) — MỞ CỬA SỔ ĐO. Xem khối docstring `OpenMeasureWindow` ở đầu file.
+     *
+     * ⚠ MỞ CẢ KHI `beforeUsed === null`. Giấy phép này KHÔNG đo được gì cho CHÍNH nó, nhưng nó
+     * VẪN SẮP CẤP PHÁT — và lượt cấp phát đó rơi vào cửa sổ của người khác. Không mở ở đây là bỏ
+     * lọt đúng ca "đầu dò chập chờn lúc GPU đang bận", tức đúng lúc dễ chồng lấn nhất.
+     *
+     * ⚠ ĐẶT SAU `if (!lease) return NOOP_TICKET` (bên trên): đường NOOP không cấp phát gì qua sổ
+     * này nên không có cửa sổ nào để mở — mở rồi không ai đóng là rò vĩnh viễn.
+     *
+     * ⚠ Giữa dòng này và `return { … }` bên dưới KHÔNG ĐƯỢC có mã nào ném được (hiện chỉ còn một
+     * khai báo hàm). `catch` ngoài cùng của `beginVramAllocation()` trả `NOOP_TICKET` — nếu có gì
+     * ném ở giữa, cửa sổ này sẽ KHÔNG BAO GIỜ được đóng và mọi phép đo sau đó của tiến trình đều
+     * bị gắn cờ sai, vĩnh viễn. Người sau thêm mã vào đoạn này: đóng cửa sổ trong `catch` đó.
+     */
+    const windowId = openMeasureWindow(opts.owner);
+    let windowOpen = true;
+    /** Đóng cửa sổ đúng MỘT lần, ở BẤT KỲ nhánh thoát nào. KHÔNG BAO GIỜ ném. */
+    const closeWindow = (): OpenMeasureWindow | null => {
+      if (!windowOpen) return null;
+      windowOpen = false;
+      return closeMeasureWindow(windowId);
+    };
+
+    /**
      * Pha 1.5 Task 3, review vòng 1 (Important-1) — "CỬA THỨ TƯ/NĂM" của `commitMeasured()`.
      *
      * Reviewer đọc lại toàn bộ hàm và tìm ra HAI nhánh return CÂM khác bên dưới (`beforeUsed
@@ -229,16 +357,64 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
         try {
           if (released) return;
           if (beforeUsed === null) {
+            closeWindow();
             markProbeFailed("before-probe-null", {});
             return;
           }
           const after = await probe.readDeviceVramUncached();
           if (!after) {
+            closeWindow();
             markProbeFailed("after-probe-null", { beforeUsedBytes: beforeUsed });
             return;
           }
 
+          // ★★ Task 8 (C-1) — cửa sổ đo ĐÓNG NGAY SAU đầu đo "sau", không muộn hơn. Từ điểm này
+          // giấy phép đã ổn định trên thiết bị: nó không còn làm bẩn phép đo của ai nữa, và giữ
+          // cửa sổ mở thêm chỉ đẻ ra báo động giả cho lượt cấp phát kế tiếp.
+          const win = closeWindow();
           const actual = after.usedBytes - beforeUsed;
+
+          /**
+           * ★★ Task 8 (C-1) — "CỬA THỨ SÁU": phép đo KHÔNG CÔ LẬP ĐƯỢC.
+           *
+           * ⚠ ĐẶT TRƯỚC nhánh `actual < 0` CÓ CHỦ Ý: một cửa sổ chồng lấn cũng sinh ra delta âm
+           * (người kia nhả chỗ giữa hai đầu đo của mình), và khi cả hai cùng đúng thì chồng lấn
+           * mới là NGUYÊN NHÂN GỐC. Để nhánh delta-âm bắt trước sẽ ghi vào nhật ký câu chẩn đoán
+           * "có lượt nhả/evict xen giữa" — đúng lớp "chỉ người trực đi sai hướng" mà I-2 sinh ra
+           * để diệt.
+           *
+           * ⚠ KHÔNG CHIA TỈ LỆ, KHÔNG ƯỚC LƯỢNG BÙ. Ở đây ta biết ĐÚNG một điều: `actual` chứa
+           * byte của ít nhất một giấy phép khác, và KHÔNG có thông tin nào trong tiến trình tách
+           * được phần nào của ai (hai đầu đo đều là `used` toàn thiết bị). Mọi phép chia đều là
+           * bịa. Giấy phép giữ nguyên ƯỚC LƯỢNG và nói ra rằng nó chưa được xác minh.
+           */
+          if (win && win.overlappedBy.length > 0) {
+            broker.markMeasureFailed(lease);
+            logVramEvent({
+              event: "measure_failed",
+              owner: opts.owner,
+              leaseKind: opts.kind,
+              priority: opts.priority,
+              estimatedBytes: est.bytes,
+              estimateSource: est.source,
+              deviceUsedBytes: after.usedBytes,
+              detail: {
+                reason: "overlapping-measure-window",
+                overlappedBy: win.overlappedBy,
+                discardedDeltaBytes: actual,
+                beforeUsedBytes: beforeUsed,
+                afterUsedBytes: after.usedBytes,
+                note:
+                  "cửa sổ đo của giấy phép này CHỒNG với cửa sổ của giấy phép khác ⇒ delta " +
+                  "`after − before` (cả hai đầu đo là `used` TOÀN THIẾT BỊ) gồm cả byte của họ. " +
+                  "Commit số này là ghi CÙNG MỘT KHỐI BYTE hai lần vào sổ, và Pha 2 sẽ từ chối " +
+                  "nạp/đuổi model trên phần byte ma đó. KHÔNG chia tỉ lệ để bù: không có thông " +
+                  "tin nào trong tiến trình tách được phần của ai. Giấy phép giữ ƯỚC LƯỢNG.",
+              },
+            });
+            return;
+          }
+
           // ⚠ Delta ÂM = phép đo bị nhiễu (một hộ khác vừa nhả chỗ giữa hai lượt đo, hoặc
           // đường OOM-retry vừa `evictLRU()` xong). Ghi số âm vào sổ còn tệ hơn không ghi.
           // Delta BẰNG 0 thì NGƯỢC LẠI: đó là số liệu THẬT và phải được ghi — hộ tiêu thụ
@@ -302,6 +478,11 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
             deviceUsedBytes: after.usedBytes,
           });
         } catch {
+          // ★★ Task 8 (C-1) — đầu dò "sau" NÉM ⇒ cửa sổ vẫn phải đóng. Bỏ sót nhánh này là rò
+          // một cửa sổ mở vĩnh viễn: mọi phép đo sau đó của tiến trình bị gắn cờ sai và KHÔNG
+          // tự lành cho tới khi khởi động lại. Idempotent — gọi lại sau closeWindow() ở trên là
+          // no-op.
+          closeWindow();
           /* telemetry hỏng KHÔNG được làm hỏng lượt cấp phát */
         }
       },
@@ -309,6 +490,14 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
         try {
           if (released) return;
           released = true;
+          // ★★ Task 8 (C-1) — LỐI ĐÓNG THỨ HAI, bắt buộc. BA điểm gọi trong repo CỐ Ý không bao
+          // giờ gọi `commitMeasured()` (`kbSyncScheduler` ×2, `localSidecarTrainer`,
+          // `aiLlmFinetuneSidecar` — xem docstring `beginTrainerVram()`), và MỌI đường lỗi của
+          // bảy hộ trong tiến trình cũng `release()` thay vì commit. Không đóng ở đây thì cửa sổ
+          // của chúng mở tới hết đời tiến trình ⇒ gắn cờ SAI cho tất cả, không tự lành. Đây đúng
+          // là câu hỏi "nhánh mới kích hoạt SAI thì bao lâu tự lành?" — câu trả lời phải là
+          // "ngay khi giấy phép kia rời sổ", không phải "khi restart".
+          closeWindow();
           broker.release(lease);
           logVramEvent({
             event: "release",
