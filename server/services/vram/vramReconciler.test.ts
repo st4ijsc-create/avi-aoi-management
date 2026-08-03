@@ -174,6 +174,87 @@ describe("vramReconciler — bắt kẻ cấp phát không xin phép", () => {
 });
 
 /**
+ * Pha 1.5 Task 3 — CỬA SỔ CHƯA-COMMIT THÔI SINH BÁO ĐỘNG.
+ *
+ * `reserve()` cộng ƯỚC LƯỢNG vào sổ TRƯỚC KHI VRAM vật lý tăng; `commitMeasured()` mãi sau khi
+ * nạp xong. Với model 30B khoảng đó 11-43 giây ⇒ `drift = attributable − totalReservedBytes`
+ * âm sâu suốt cửa sổ đó (sổ đã "đặt cọc" cả ước lượng, thiết bị chưa kịp theo). Đây là nguồn
+ * lệch −16.335 MiB đo được ở Pha 1 (p95 của phân bố).
+ *
+ * ⚠ BĂNG DUNG SAI CHỈ MỘT PHÍA: giấy phép chưa commit = "đã xin, CHƯA cấp phát xong" ⇒ VRAM vật
+ * lý CHƯA có ⇒ chỉ nới dung sai phía ÂM (`drift < -(NGƯỠNG + pendingBytes)`). Phía DƯƠNG giữ
+ * NGUYÊN ngưỡng chặt — đây là lý do kẻ cấp phát chui vẫn bị bắt: bất kể lease đang pending còn
+ * lại BAO NHIÊU thực sự đã lên VRAM, phần đóng góp của một kẻ chui LUÔN LUÔN cộng dồn vào phía
+ * dương; một khi `attributable` vượt `totalReservedBytes + NGƯỠNG`, không có cách hợp pháp nào
+ * giải thích được — vì sổ đã "đặt cọc" TOÀN BỘ ước lượng của lease rồi (không có phần trăm nào
+ * của legitimate load có thể vượt quá 100% ước lượng của chính nó).
+ *
+ * ⚠⚠ pendingBytes CỐ Ý LOẠI leases `measureFailed === true`. Đường "đo hỏng" (`vramWiring.ts`
+ * — delta ÂM giữa `beforeUsed`/`after`) đánh dấu `measureFailed=true` NGAY LẬP TỨC, KHÔNG BAO
+ * GIỜ commit `actualBytes`. Nếu pendingBytes GỘP cả lease đó, băng dung sai bị nới VĨNH VIỄN
+ * theo đúng phần ước lượng bị đóng băng — che mất chính lệch ÂM DAI DẲNG mà `measureFailed` sinh
+ * ra để BÁO (xem `wiring.negativeDelta.test.ts` ca 4: reranker 606 MiB ước lượng, 18 MiB thật,
+ * PHẢI báo động "đo hỏng" — nếu pendingBytes gộp cả lease đó, ca 4 tắt tiếng SAI).
+ */
+describe("Pha 1.5 Task 3 — lease chưa commit nới dung sai CHỈ phía ÂM", () => {
+  beforeEach(() => vi.resetModules());
+
+  const MIB6 = 1024 * 1024;
+  const lease = (owner: string, est: number, actual: number | null) => ({
+    id: owner,
+    request: { owner, kind: "gguf-model", estimatedBytes: est, priority: "interactive" },
+    actualBytes: actual,
+    acquiredAt: new Date(),
+    lastHeartbeatAt: new Date(),
+    released: false,
+  });
+
+  it("★ đang nạp 30B (chưa commit) ⇒ lệch ÂM KHÔNG báo động", async () => {
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: 17_000 * MIB6, leases: [lease("gguf:30B", 17_000 * MIB6, null)] }),
+      leaseBytes: (l: { actualBytes: number | null; request: { estimatedBytes: number } }) =>
+        l.actualBytes ?? l.request.estimatedBytes,
+    }));
+    // Thiết bị đứng yên ở nền (1.000 MiB) suốt cả lượt chụp nền lẫn lượt đối chiếu — mô phỏng
+    // "chưa có gì lên VRAM cả", tức đúng ĐẦU cửa sổ đua reserve()→commit().
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: 1_000 * MIB6, totalBytes: 32_607 * MIB6, source: "smi" }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+    const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+    await captureVramBaseline();
+    const r = await reconcileOnce();
+    expect(r.alarm).toBe(false);
+    expect(r.pendingBytes).toBe(17_000 * MIB6);
+  });
+
+  it("★ băng dung sai CHỈ nới phía ÂM — kẻ cấp phát chui vẫn bị bắt khi đang nạp", async () => {
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: 17_000 * MIB6, leases: [lease("gguf:30B", 17_000 * MIB6, null)] }),
+      leaseBytes: (l: { actualBytes: number | null; request: { estimatedBytes: number } }) =>
+        l.actualBytes ?? l.request.estimatedBytes,
+    }));
+    // ⚠ MỘT mock, biến `used` đóng trong closure — `vi.doMock` gọi LẠI sau khi module đã
+    // `import()` KHÔNG đổi được binding mà `vramReconciler.ts` đã chụp lúc load (ESM: import
+    // named được resolve MỘT LẦN khi module tiêu thụ được nạp). Đây là "sửa mock" mà brief yêu
+    // cầu, không phải sửa mã sản xuất.
+    let used = 1_000 * MIB6;
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: used, totalBytes: 32_607 * MIB6, source: "smi" }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+    const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+    await captureVramBaseline(); // nền = 1.000 (lease vẫn pending lúc chụp ⇒ không trừ gì thêm)
+    // 30B đã nạp XONG về mặt vật lý (17.000, đúng ước lượng) NHƯNG chưa kịp commit(), CỘNG THÊM
+    // một kẻ cấp phát chui 8.000 MiB — đúng lúc `pendingBytes` đang lớn nhất.
+    used = 1_000 * MIB6 + 17_000 * MIB6 + 8_000 * MIB6;
+    const r = await reconcileOnce();
+    expect(r.alarm).toBe(true);
+    expect(r.pendingBytes).toBe(17_000 * MIB6);
+  });
+});
+
+/**
  * Pha 1.5 Task 1 — MỘT THƯỚC DUY NHẤT.
  *
  * `startVramReconciler()` chụp nền ở `backgroundJobs.ts` TRƯỚC khi `getLlama()` gắn handle

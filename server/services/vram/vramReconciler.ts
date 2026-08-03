@@ -37,6 +37,13 @@ export interface VramReconcileResult {
    * lặng) nhưng nguyên nhân KHÁC "cấp phát chui" — đọc `sourceUnstable` để phân biệt.
    */
   sourceUnstable: boolean;
+  /**
+   * Pha 1.5 Task 3 — tổng ƯỚC LƯỢNG của các giấy phép ĐÃ XIN nhưng CHƯA cấp phát xong
+   * (`actualBytes === null`), TRỪ những giấy phép ĐÃ ĐO HỎNG (`measureFailed === true` — xem
+   * ghi chú dài ở chỗ tính `pendingBytes` trong `reconcileOnce()` để biết vì sao loại chúng ra
+   * là BẮT BUỘC, không phải tuỳ chọn). Đây là phần băng dung sai được nới ở PHÍA ÂM của `alarm`.
+   */
+  pendingBytes: number;
 }
 
 let timer: NodeJS.Timeout | null = null;
@@ -290,6 +297,37 @@ export function __resetVramBaselineForTests(): void {
  */
 export async function reconcileOnce(): Promise<VramReconcileResult> {
   const snap = snapshot();
+  /**
+   * Pha 1.5 Task 3 — CỬA SỔ CHƯA-COMMIT. Tính NGAY ở đầu hàm (không phụ thuộc device) vì
+   * MỌI nhánh return bên dưới đều cần trả `pendingBytes` cho người gọi.
+   *
+   * ⚠⚠ LOẠI `measureFailed === true` — KHÔNG PHẢI tuỳ chọn:
+   * `actualBytes === null` gộp CHUNG hai trạng thái trái ngược nhau (xem docstring
+   * `VramLease.measureFailed`, types.ts): "đang cấp phát dở, số thật sắp tới" (tự lành trong
+   * vài giây — ĐÂY mới là thứ Task 3 nới dung sai cho) và "đã ĐO, delta ÂM, ước lượng đứng
+   * MÃI MÃI" (measureFailed=true — KHÔNG tự lành, đây chính là lệch ÂM DAI DẲNG mà nhánh cảnh
+   * báo bên dưới sinh ra để BẮT). Gộp cả hai vào `pendingBytes` sẽ nới băng dung sai VĨNH VIỄN
+   * theo đúng phần ước lượng đã bị đóng băng của lease đo-hỏng đó — tự tay bịt miệng chuông mà
+   * `measure_failed` (vramWiring.ts) đã cố tình để lại dấu vết. `wiring.negativeDelta.test.ts`
+   * ca 4 canh chính xác việc này: reranker ước lượng 606 MiB / thật 18 MiB, measureFailed=true
+   * ⇒ PHẢI báo động "đo hỏng" — pendingBytes gộp lease đó sẽ tắt tiếng SAI ca đó.
+   *
+   * ⚠ "Lease không bao giờ commit thì băng dung sai treo bao lâu?" — `commitMeasured()`
+   * (vramWiring.ts) đặt `measureFailed=true` NGAY LẬP TỨC, TRONG CÙNG lượt gọi phát hiện delta
+   * âm — không có bước "chờ" nào ở giữa. Vậy lease đó rơi khỏi `pendingBytes` chậm nhất là ở
+   * nhịp `reconcileOnce()` KẾ TIẾP sau khi `commitMeasured()` chạy (≤ `INTERVAL_MS`, mặc định
+   * 60 giây), không phải "mãi mãi". Phần CÒN LẠI CHƯA GIẢI ĐƯỢC ở Pha 1.5 (chấp nhận tường
+   * minh, cùng lớp với "giấy phép treo" đã ghi ở docstring hàm này): một tiến trình CHẾT HẲN
+   * trước khi `commitMeasured()` kịp chạy (kill -9, mất điện) không bao giờ tự đặt cờ nào —
+   * lease đó vẫn `actualBytes: null, measureFailed: false` VĨNH VIỄN cho tới khi có người khởi
+   * động lại tiến trình (xoá sạch ledger trong bộ nhớ). `gguf-model` KHÔNG có `ttlMs`/reap như
+   * `external-process` (types.ts) nên Task 3 KHÔNG tự chữa được ca này — nó thừa hưởng đúng
+   * rủi ro "giấy phép treo" đã biết, chỉ khác hệ quả cụ thể: băng dung sai phía ÂM nới rộng
+   * thêm đúng ước lượng của lease treo đó cho tới khi người vận hành can thiệp thủ công.
+   */
+  const pendingBytes = snap.leases
+    .filter((l) => l.actualBytes === null && !l.measureFailed)
+    .reduce((s, l) => s + l.request.estimatedBytes, 0);
   // ⚠ M-2 (review round 1, SỬA LẠI ở review TOÀN NHÁNH): lấy mẫu KHÔNG NGUYÊN TỬ.
   // `snapshot()` tức thời, còn `readDeviceVram()` thì KHÔNG — nhưng nguyên nhân đã bị ghi
   // SAI ở bản trước, sai cả hướng lẫn HAI BẬC ĐỘ LỚN:
@@ -323,6 +361,7 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       baselineUsedBytes,
       baselineResampled: false,
       sourceUnstable: false,
+      pendingBytes,
     };
   }
 
@@ -395,6 +434,7 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
           baselineUsedBytes,
           baselineResampled: true,
           sourceUnstable: false,
+          pendingBytes,
         };
       }
 
@@ -430,6 +470,7 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
         baselineUsedBytes,
         baselineResampled: false,
         sourceUnstable: true,
+        pendingBytes,
       };
     }
 
@@ -467,6 +508,7 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       baselineUsedBytes,
       baselineResampled: true,
       sourceUnstable: false,
+      pendingBytes,
     };
   }
 
@@ -489,6 +531,7 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       baselineUsedBytes: null,
       baselineResampled: false,
       sourceUnstable: false,
+      pendingBytes,
     };
   }
 
@@ -498,7 +541,23 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
   const baseline = baselineUsedBytes ?? 0;
   const attributable = device.usedBytes - baseline;
   const drift = attributable - snap.totalReservedBytes;
-  const alarm = Math.abs(drift) > DRIFT_THRESHOLD_BYTES;
+  /**
+   * Pha 1.5 Task 3 — BĂNG DUNG SAI CHỈ MỘT PHÍA (ÂM). `snap.totalReservedBytes` đã cộng ƯỚC
+   * LƯỢNG của MỌI giấy phép pending ngay từ `reserve()` (`vramBroker.leaseBytes`), nên trong
+   * suốt cửa sổ nạp model, `drift` càng ÂM SÂU khi vật lý càng chưa theo kịp sổ — đúng nguồn
+   * −16.335 MiB đo được ở Pha 1. `pendingBytes` (tính ở đầu hàm) là phần được PHÉP thiếu hụt
+   * chính đáng đó, nên chỉ nới NGƯỠNG PHÍA ÂM (`drift < -(NGƯỠNG + pendingBytes)`).
+   *
+   * PHÍA DƯƠNG GIỮ NGUYÊN NGƯỠNG CHẶT — đây KHÔNG phải bỏ sót mà là CHỦ Ý: sổ đã "đặt cọc"
+   * TOÀN BỘ ước lượng của lease pending rồi, nên vật lý của CHÍNH lease đó không bao giờ vượt
+   * quá phần đã đặt cọc (trừ khi ước lượng sai — chuyện khác, Pha 2 xử). Bất kỳ phần dương nào
+   * vượt `snap.totalReservedBytes + NGƯỠNG` — bất kể lease pending đã lên VRAM được bao nhiêu
+   * phần trăm — CHỈ có thể đến từ một nguồn KHÔNG nằm trong sổ, tức kẻ cấp phát chui. Nới nốt
+   * phía dương (đổi thành `drift > NGƯỠNG + pendingBytes`) sẽ cho một kẻ chui xuất hiện ĐÚNG
+   * LÚC hệ đang nạp model — tức đúng lúc `pendingBytes` lớn nhất — chỗ ẩn nấp rộng nhất trong
+   * toàn hệ, đúng cái mà module này sinh ra để bắt.
+   */
+  const alarm = drift > DRIFT_THRESHOLD_BYTES || drift < -(DRIFT_THRESHOLD_BYTES + pendingBytes);
 
   if (alarm) {
     const mib = (b: number) => Math.round(b / 1024 / 1024);
@@ -546,6 +605,9 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
         deviceUsedRawBytes: device.usedBytes,
         baselineUsedBytes: baseline,
         attributableBytes: attributable,
+        // Pha 1.5 Task 3 — phần băng dung sai ÂM đã được nới cho lượt này; đọc nhật ký là biết
+        // NGAY ngưỡng thực tế đã áp dụng là bao nhiêu, không phải đoán từ danh sách leases.
+        pendingBytes,
         leases: snap.leases.map((l) => ({
           owner: l.request.owner,
           kind: l.request.kind,
@@ -568,6 +630,7 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
     baselineUsedBytes,
     baselineResampled: false,
     sourceUnstable: false,
+    pendingBytes,
   };
 }
 
