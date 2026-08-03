@@ -51,37 +51,28 @@ public class ModbusRtuDriverWriteTests
 
     public ModbusRtuDriverWriteTests(ITestOutputHelper output) => _output = output;
 
-    private const ushort SpeedRegister = 5;
-    private const ushort StartCycleCoil = 3;
-    private const string SpeedPoint = "speed";
-    private const string ReadOnlyPoint = "temperature";
-    private const string StartCycleCommand = "start-cycle";
+    private const ushort SpeedRegister = ModbusRtuLoopbackHarness.WritableSpeedRegister;
+    private const ushort StartCycleCoil = ModbusRtuLoopbackHarness.StartCycleCoil;
+    private const string SpeedPoint = ModbusRtuLoopbackHarness.WritableSpeedPoint;
+    private const string ReadOnlyPoint = ModbusRtuLoopbackHarness.ReadOnlyTemperaturePoint;
+    private const string StartCycleCommand = ModbusRtuLoopbackHarness.StartCycleCommand;
 
     /// <summary>One read-only register ("temperature", address 0) and one writable one ("speed", address 5,
     /// declared <c>[0,500]</c>), plus one coil-pulse command ("start-cycle", coil 3) — the same shape
     /// <c>ModbusTcpDriverWriteTests.BuildWritableMap</c> uses, deliberately, so any difference between the two
-    /// transports' write behaviour is about the transport rather than about the map.</summary>
+    /// transports' write behaviour is about the transport rather than about the map.
+    ///
+    /// <para>🔴 Task D-6 — the body MOVED to <see cref="ModbusRtuLoopbackHarness.BuildWritableMap"/> and this
+    /// is now a delegation. D-6's conformance rig needs the identical declared point and command, and two
+    /// copies of one map shape are free to drift; the tests below are unchanged and are what prove the move
+    /// behaviour-preserving.</para></summary>
     private static ModbusRegisterMap WritableMap(
         string machineCode,
         byte unitId,
         int? readTimeoutMs = null,
         int pollIntervalMs = 60_000,
-        int? retries = null) => new()
-        {
-            MachineCode = machineCode,
-            UnitId = unitId,
-            PollIntervalMs = pollIntervalMs,
-            ReadTimeoutMs = readTimeoutMs,
-            Retries = retries,
-            Registers = new List<ModbusRegister>
-            {
-                new(Address: 0, Type: ModbusRegisterType.Holding, DataType: ModbusDataType.UInt16, Scale: 1.0,
-                    Metric: ReadOnlyPoint, Unit: "C"),
-                new(Address: SpeedRegister, Type: ModbusRegisterType.Holding, DataType: ModbusDataType.UInt16, Scale: 1.0,
-                    Metric: SpeedPoint, Unit: "rpm", Writable: new ModbusWritableRange(0, 500)),
-            },
-            Commands = new List<ModbusCommand> { new(StartCycleCommand, CoilAddress: StartCycleCoil) },
-        };
+        int? retries = null) =>
+        ModbusRtuLoopbackHarness.BuildWritableMap(machineCode, unitId, readTimeoutMs, pollIntervalMs, retries);
 
     private static ModbusRegisterMap ReadOnlySingleRegisterMap(string machineCode, byte unitId, int pollIntervalMs, int? readTimeoutMs = null)
         => ModbusRtuLoopbackHarness.BuildSingleRegisterMap(machineCode, unitId: unitId, pollIntervalMs: pollIntervalMs, readTimeoutMs: readTimeoutMs);

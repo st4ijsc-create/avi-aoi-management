@@ -59,6 +59,60 @@ internal static class ModbusRtuLoopbackHarness
             },
         };
 
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task D-6 — the WRITABLE map shape, moved here out of ModbusRtuDriverWriteTests' own private
+    // `WritableMap` so RTU has ONE of them rather than two. Behaviour-preserving: same names, same addresses,
+    // same bounds, same defaults; that suite's own 40 tests are what prove it. The move is the same call D-5
+    // made twice (ModbusWritePreflight off ModbusTcpDriver, RtuFrames off ModbusBusResynchronisationTests) and
+    // for the same reason — D-6's conformance rig needs a real declared point AND a real declared command
+    // (Check_Write_SetpointAndCommandNamespaces_AreDistinct cross-checks the two vocabularies), which is
+    // exactly why B-7 introduced ModbusLoopbackHarness.BuildWritableMap on the TCP side, and a second copy
+    // here would be free to drift from the one D-5's tests actually exercise.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>The writable register (declared <c>[0,500]</c>).</summary>
+    public const ushort WritableSpeedRegister = 5;
+
+    /// <summary>The coil <see cref="StartCycleCommand"/> pulses.</summary>
+    public const ushort StartCycleCoil = 3;
+
+    /// <summary>The writable point's name.</summary>
+    public const string WritableSpeedPoint = "speed";
+
+    /// <summary>A declared READ-ONLY point — the one a "this point is not writable" rejection needs.</summary>
+    public const string ReadOnlyTemperaturePoint = "temperature";
+
+    /// <summary>The zero-argument coil-pulse command's name.</summary>
+    public const string StartCycleCommand = "start-cycle";
+
+    /// <summary>One read-only register (<see cref="ReadOnlyTemperaturePoint"/>, address 0) and one writable
+    /// one (<see cref="WritableSpeedPoint"/>, address <see cref="WritableSpeedRegister"/>, declared
+    /// <c>[0,500]</c>), plus one coil-pulse command (<see cref="StartCycleCommand"/>, coil
+    /// <see cref="StartCycleCoil"/>) — the same shape <c>ModbusTcpDriverWriteTests</c>' own
+    /// <c>BuildWritableMap</c> uses, deliberately, so any difference between the two transports' write
+    /// behaviour is about the transport rather than about the map.</summary>
+    public static ModbusRegisterMap BuildWritableMap(
+        string machineCode,
+        byte unitId = 1,
+        int? readTimeoutMs = null,
+        int pollIntervalMs = 60_000,
+        int? retries = null) => new()
+        {
+            MachineCode = machineCode,
+            UnitId = unitId,
+            PollIntervalMs = pollIntervalMs,
+            ReadTimeoutMs = readTimeoutMs,
+            Retries = retries,
+            Registers = new List<ModbusRegister>
+            {
+                new(Address: 0, Type: ModbusRegisterType.Holding, DataType: ModbusDataType.UInt16, Scale: 1.0,
+                    Metric: ReadOnlyTemperaturePoint, Unit: "C"),
+                new(Address: WritableSpeedRegister, Type: ModbusRegisterType.Holding, DataType: ModbusDataType.UInt16,
+                    Scale: 1.0, Metric: WritableSpeedPoint, Unit: "rpm", Writable: new ModbusWritableRange(0, 500)),
+            },
+            Commands = new List<ModbusCommand> { new(StartCycleCommand, CoilAddress: StartCycleCoil) },
+        };
+
     /// <summary>A map declaring ONE Holding (FC03) register and ONE Input (FC04) register at the SAME
     /// address. The shared address is the point: it makes the two function codes distinguishable only by
     /// which data store the slave answers from, so a driver that sent the wrong function code returns the

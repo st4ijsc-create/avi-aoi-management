@@ -488,7 +488,52 @@ EXPECT_CONFORMANCE=22
 # Assert.All over a collection that can hold only the single frame the line above already checked) and adds
 # none in their place: each test's remaining assertions are the ones that carry it, so those two edits move no
 # count.
-EXPECT_EDGECORE=905
+#
+# 🔴 TASK D-6 (conformance) raises this 905 -> 951 (+46), counted from the runner (`dotnet test --list-tests`:
+# 898 -> 944 — the two agree here because none of the new tests is a [Theory]). Three new files; nothing is
+# rewritten, split or deleted. The expected total is again the ONLY executable line this task changes in this
+# script, per the standing rule.
+#
+#   +19  ModbusRtuDriverConformanceTests (new) — the shared DeviceDriverConformanceSuite against the real
+#          ModbusRtuDriver on a bus it owns alone: the 17 Check_* wirings, the suite's own
+#          EveryCheckIsWiredOrAcknowledged census (ZERO AcknowledgedGaps — every check runs), and one test
+#          this transport needs that the other four drivers do not (below). Three device shapes, all in
+#          St4i.EdgeCore.Tests because there is no portable virtual COM port: CreateDriver() rides a bus whose
+#          LINK CANNOT BE OPENED (RTU's real fast failure — SerialPortBusLink.OpenAsync throws on an absent
+#          port with no handshake to wait out; a silent line could only produce a timeout, which is not fast),
+#          CreateUnresponsiveDeviceAsync/CreateUnresponsiveWritableDeviceAsync ride D-2's paired in-memory link
+#          with D-5's RawRtuResponder answering nothing, and CollectReadingsAsync drives a REAL in-process
+#          NModbus RTU slave network.
+#   +21  ModbusRtuMultidropConformanceTests (new) — the SAME 19 (inherited from a shared abstract base, so the
+#          wirings exist once and run twice) with the device under test sharing a live, continuously polled
+#          line with another machine, plus 2 claims only this shape can make. D-4 shipped N devices on one bus
+#          and no conformance check had ever run against it. Worth its runtime, measured: the mutation that
+#          reduces ModbusRtuDriver.Id to the BUS alone (the TCP driver's endpoint-only shape) is KILLED here
+#          and INVISIBLE to every one of the 19 single-device checks.
+#   + 6  ModbusRtuConformanceRigTests (new) — the harness's own teeth, per the brief's rule that a loopback
+#          peer which always behaves makes several checks vacuous. The no-device target is proved genuinely
+#          ASKED and to fail an order of magnitude inside its own read timeout; the silent peer is proved to
+#          RECEIVE every request and answer none (otherwise Indeterminate could be passing because nothing was
+#          transmitted); the attempt counter the no-retry check reads is proved able to report TWO; the rig's
+#          map is proved to declare a retry count the bus then records as 0; the readings rig is a control PAIR
+#          (readings when the slave answers, none when it is silenced); and the last one pins the RTU form of
+#          the ClosedLoopbackPort defect — releasing the last lease disposes the bus AND its link, which is why
+#          every rig holds a keep-alive lease.
+#
+# ModbusRtuDriverWriteTests's own count is UNCHANGED (the +46 above is exactly the three new files, counted
+# from the runner and reconciling to the suite total with nothing left over), and that is the check rather
+# than a coincidence: D-6 MOVES its
+# private `WritableMap` into ModbusRtuLoopbackHarness.BuildWritableMap (with the point/coil/command names as
+# named constants) so RTU has ONE writable map shape rather than two, and that suite's own tests are what prove
+# the move behaviour-preserving. Same call D-5 made twice (ModbusWritePreflight, RtuFrames).
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGESERVICE and EXPECT_ENGINEAPI are deliberately unchanged.
+# EXPECT_CONFORMANCE in particular stays 22: D-6 WIRES the shared suite, it does not change it — no Check_*
+# method was added, removed or edited, so the suite's own negative controls still describe it exactly.
+# EXPECT_ENGINEAPI staying 1190 is the evidence for the AmbiguousDriver claim: that guard lives in
+# ConnectorRegistry/FleetHost, the conformance rig never constructs either, and D-4's
+# ModbusMultidropRegistrationTests still prove the routing unchanged.
+EXPECT_EDGECORE=951
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
