@@ -248,6 +248,35 @@ Mỗi bước phải ghi sự kiện riêng. **Không có bước nào được 
 
 ⚠ Con số này **đã sai hai lần liên tiếp** khi đếm bằng cách cộng dồn trong đầu. **Đếm bằng `git grep`, mỗi lần đếm lại từ đầu.**
 
+### 🔴 5.6b ĐÍNH CHÍNH — "liệt kê ĐẦY ĐỦ" là điều kiện KHÔNG BAO GIỜ ĐẠT ĐƯỢC (2026-08-04, sau Task 5 Pha 2A)
+
+**Điều kiện cổng ở §5.6 do tôi viết là SAI, và Task 5 chứng minh bằng đo.** Giữ nguyên §5.6 phía trên vì việc liệt kê vẫn đáng làm; nhưng **vai trò** của nó đổi hoàn toàn.
+
+**Bằng chứng.** Bản liệt kê rộng ra **ba vòng liên tiếp — 65 → 120 → 151 dòng — trong khi số điểm mở giấy phép vẫn là 14 suốt cả ba.** Không vòng nào người thực hiện tự tìm ra lỗ; vòng nào cũng cần một người ngoài đột biến. Và sau bản vá cuối, một đột biến **chỉ đổi tên biến** (`child_process_1` → `_0xcp`) vẫn **đi lọt, 10/10 xanh**: mẫu quét không bắt *hình dạng né tránh*, nó bắt *một quy ước đặt tên của bundler*.
+
+**Lý lẽ cấu trúc.** Một lời gọi cấp phát chỉ cần là *một giá trị hàm được gọi*. JS lấy được giá trị đó qua alias-khi-nhập · destructure đổi tên · `await import()` · `require()` ghép chuỗi · truy cập thành viên bằng khoá tính toán · `Reflect.get` · `globalThis[name]` · `eval` · bảng tra cứu · tiêm phụ thuộc · proxy. Tập này **đóng dưới phép ghép**, nên quyết định thành viên bằng biểu thức chính quy là bài toán **không quyết định được** — không phải một danh sách chưa liệt kê xong.
+
+⇒ **Câu đúng phải nói với Pha 2B:** *"151 là số dòng mà mẫu quét ngày 2026-08-04 nhìn thấy. Nó là cận **DƯỚI**. Không phương pháp nào trong Pha 2A biến nó thành cận trên."*
+
+⚠ **Nguy hiểm nếu giữ §5.6 nguyên trạng:** một cổng không bao giờ mở được thì hoặc chặn vĩnh viễn, hoặc **có người tuyên bố đã đầy đủ để mở nó**. Lớp lỗi đó **đã xảy ra rồi** trong chính task này — vòng 1 có docstring tuyên bố lưới đóng được lớp lỗi sidecar 7,8 GB, trong khi nó đang cho một sidecar lọt qua.
+
+### 🔴 5.6c MÔ HÌNH AN TOÀN THAY THẾ — cưỡng chế theo SỐ, không theo BẢNG
+
+> **`headroom = trần − max(ledgerTotalBytes, attributableBytes)`**, với `attributable = deviceUsedBytes − baselineUsedBytes`.
+
+Cả ba trường **đã có sẵn** trong `VramReconcileResult` (`vramReconciler.ts`), lấy từ tick gần nhất — **không cần đầu dò mới trên đường nóng**.
+
+| Tính chất | Vì sao quyết định |
+|---|---|
+| Tiêu thụ `drift` như một **SỐ**, không như một **BOOLEAN** | Mọi khoản chưa liệt kê — bất kể lớn nhỏ — **tự động làm hẹp dư địa**, vì nó đã nằm trong `deviceUsed`. **Không cần phát hiện nó, không cần đặt tên, không cần nó có trong bảng.** Đây là chỗ mô hình này thắng bản liệt kê, đúng ở chiều mà §5.6b chứng minh không đóng được bằng cú pháp. |
+| `max()` chứ **không** `+` | Không đếm hai lần khi sổ đã đặt cọc ước lượng của lease đang nạp. Hệ quả có giá trị nhất: **nó tự nuốt luôn khoản báo thiếu 128 MiB** ⇒ **Pha 2B KHÔNG cần giải xong câu "bộ đệm lười hay cửa sổ cắt ngọn" trước khi bật cưỡng chế.** |
+| Suy biến an toàn | Ba trạng thái mù (`driftBytes: null`) ⇒ rơi về chỉ-sổ, và **phải ghi rõ đang chạy mù**, không im lặng coi thiết bị là trống. |
+
+**Ngưỡng 512 MiB KHÔNG được thừa kế sang mô hình này.** 512 và 60 s là tham số của **cái chuông**; công thức trên **không dùng ngưỡng nào cả**. Một hộ ẩn 100 MiB không bao giờ *báo động*, nhưng nó *đã nằm trong* `deviceUsed` nên làm hẹp dư địa **đúng 100 MiB** ngay tick kế tiếp.
+⇒ **512 không phải lỗ. Dùng `alarm` (boolean) làm lớp đỡ mới là lỗ. Phải dùng `attributable` (số).**
+
+**Đúng MỘT con số phải giữ và phải khai: `60 s` là ĐỘ TRỄ CƯỠNG CHẾ THẬT.** Một hộ lạ xuất hiện ngay sau tick sẽ vô hình với cổng tới 60 giây — với hộ cỡ 7,8 GB thì thừa để gây OOM cho lượt kế tiếp. Pha 2B phải chọn một và khai ra: hạ nhịp xuống 10–15 s (**phải đo lại** chi phí đầu dò, không suy đoán), **hoặc** giữ 60 s và trừ một biên bằng tốc độ cấp phát lớn nhất quan sát được trong một tick.
+
 ## 6. Đối chiếu và báo động — phần giá trị nhất
 
 Reconciler chạy theo nhịp (mặc định **60 s**, chỉnh được):
@@ -371,6 +400,19 @@ Báo cáo: `docs/superpowers/reports/2026-08-03-t511-per-process-feasibility.md`
 **Quyết định về Đ5 — chấp nhận 760 ms, KHÔNG dựng helper sống lâu.** Broker chỉ đọc **2 lần mỗi lượt NẠP**, không phải mỗi nhịp; +1,52 s trên một lượt nạp mất 5–120 s là ≤2%. Helper sống lâu là một thành phần chạy ngầm mới, đổi lấy khoản tiết kiệm không ai cảm nhận được. **YAGNI** — ghi vào tồn đọng, dựng khi có số chứng minh cần.
 
 Kèm theo, phải trả **T5-15** trong cùng pha: giấy phép `gguf-backend` **không có đường trả ở nhánh thành công** — nếu bị gắn `measureFailed` thì xấu nhất không phải "nên khởi động lại" mà là **"bắt buộc khởi động lại"**.
+
+### 🔴 Cổng chặn MỚI — MỘT PHẦN của Pha 3 là ĐIỀU KIỆN AN TOÀN của Pha 2B (2026-08-04)
+
+Mô hình §5.6c đứng trên `attributable = deviceUsed − baseline`, nên nó **chỉ đúng nếu nền không nuốt mất hộ tiêu thụ**. Và hôm nay nền **có** nuốt — chính mã tự khai ở `vramReconciler.ts:250-257`: nếu server khởi động lại **trong khi tiến trình con còn sống** (điển hình là sidecar 7,8 GB), thì khối đó **bị nuốt vào nền và ta sẽ KHÔNG BAO GIỜ THẤY NÓ**.
+
+⇒ **Sự thật thiết bị lúc chạy KHÔNG hoàn chỉnh** — nó chỉ đúng cho byte xuất hiện **sau** lượt chụp nền. Nếu bỏ qua điều này, ta chỉ đổi một lời hứa "đầy đủ tĩnh" lấy một lời hứa "đầy đủ động", và cái thứ hai cũng không đúng.
+
+**Tối thiểu phải làm TRƯỚC khi bật cưỡng chế** (không cần trọn Pha 3): lúc chụp nền, **liệt kê PID đang giữ VRAM** — `nvidia-smi --query-compute-apps` **liệt kê được PID** dù byte trả `[N/A]` trên máy WDDM này — và **từ chối tuyên bố nền sạch** nếu có PID lạ, thay vì nuốt.
+
+Ba giới hạn còn lại của đối chiếu, phải khai chứ không được vá vội:
+- **chỉ báo, không sửa, không chặn** — trễ tối đa 60 s + tới 3 s đầu dò, không nằm trên đường ra quyết định;
+- **sổ theo tiến trình, thiết bị dùng chung** — reconciler chỉ chạy ở vai trò scheduler, nên `api` cấp phát mà không nhả thì không gì trong `api` phát hiện được;
+- **nền bị hoãn chừng nào còn lease `actualBytes === null`**, mà bốn hộ `external-process` **cố ý không bao giờ commit** với ttl **2 giờ** (`local-trainer`, đang bật) và **4 giờ** (`llm-finetune`) ⇒ khởi động lại server giữa một lượt huấn luyện ⇒ **đối chiếu mù tới 2 giờ**.
 
 ### ⚠ Hai điều kiện Pha 1 CHƯA đạt — khai thẳng
 
