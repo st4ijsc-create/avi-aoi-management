@@ -362,6 +362,11 @@ Kỳ vọng: FAIL — không tìm thấy module.
 
 - [ ] **Bước 3: Cài đặt**
 
+> 🔴 **ĐÍNH CHÍNH sau review Task 2 — mã dưới đây CÓ LỖI Critical, đã vá trong nhánh.**
+> Người bỏ cuộc vì hết ngân sách chờ chạy `fn()` **ngay bên trong** cửa sổ của người đang giữ, mà người giữ **vẫn khai `measurable: true`** ⇒ phép đo của người giữ **nuốt trọn số byte của người bỏ cuộc**. Đây đúng lớp lỗi cộng-trùng mà cơ chế này sinh ra để diệt, **tái sinh bên trong chính nó** — chạm được chỉ với **ba** lượt xếp hàng (nạp 120 s, ngân sách 180 s).
+> Tính chất phải đạt: **một cửa sổ chỉ được khai `measurable: true` khi không có lượt chạy-không-đo nào chồng lên nó, dù chỉ một phần** — kiểm **cả hai** vế: lượt bỏ cuộc đã chạy **từ trước** khi cửa sổ mở, và lượt bỏ cuộc bắt đầu **giữa chừng**.
+> Đọc `.superpowers/sdd/2026-08-03-vram-pha2a-do-dung-va-liet-ke/task-2-review.md` trước khi dùng lại mã này ở bất cứ đâu.
+
 ```ts
 const DEFAULT_WAIT_BUDGET_MS = 180_000;
 
