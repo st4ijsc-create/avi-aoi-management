@@ -554,3 +554,74 @@ git commit -m "docs(vram/pha1.5-6): Ư0 ratchet — đo trên sổ đã thấy b
 **2. Placeholder scan:** không có "TBD". Ba chỗ cố ý để người thi công quyết, đều kèm chỉ dẫn khi gặp: Task 2 Step 1 (tên hàm/mock có thể sai — sửa test, không sửa mã) · Task 4 Step 3 (bật nhật ký ở một tầng hay hai — chọn một, ghi lý do) · Task 5 Step 2/5 (không đo được / chưa đủ 24 h thì **nói thẳng**, cấm suy ra số rồi gắn nhãn "đã đo").
 
 **3. Type consistency:** `source: "native" | "smi"` khai ở Task 1, dùng ở Task 3 (mock đầu dò). `baselineResampled` (Task 1) và `pendingBytes` (Task 3) đều là trường mới của `VramReconcileResult` — hai task, một kiểu, không đụng nhau. `"gguf-backend"` chỉ Task 2 thêm. `describeTopologyHint()` chỉ Task 4. `beginVramAllocation()` / `commitMeasured()` / `releaseProof` giữ nguyên chữ ký từ Pha 1.
+
+---
+
+### Task 7: T5-1 — nền thôi nuốt model đang nạp
+
+> **Thêm sau khi Task 5 (chỉ-đo) tìm ra lỗi này. Không có trong kế hoạch gốc.**
+
+**Files:**
+- Modify: `server/services/vram/vramReconciler.ts` (`captureVramBaseline()`)
+- Test: `server/services/vram/vramReconciler.test.ts`
+
+**Bối cảnh:** `captureVramBaseline()` tính `nền = raw − Σ(actualBytes của lease ĐÃ COMMIT)`. Lease **đang nạp** (`pending`) đóng góp **0**, **trong khi byte của nó ĐÃ nằm trong `raw`** ⇒ nền nuốt trọn model đang nạp. Đo được: `priorBaseline 978 → baseline 17.891 MiB`, `drift = −16.700 MiB`, **alarm 100% mọi nhịp, không bao giờ tự lành**.
+
+⚠⚠ **HAI đường gọi, CẢ HAI đều dính** — bản vá chỉ chạm một là **KHÔNG ĐẠT**:
+- **(a)** `startVramReconciler():660` — lượt chụp **ĐẦU** lúc boot, đua với `warmUpOllamaModels()` (`setTimeout(2000)`, `index.ts:4931` → `:5229` cách **298 dòng**, **không** cổng `GGUF_WARM_DEEP_MODEL_ON_BOOT`). **Chưa dựng lại LIVE — suy từ mã.**
+- **(b)** `reconcileOnce():439` và `:513` — nhánh **resample**. **ĐÃ ĐO, tái hiện 2/2.**
+
+⚠ **Tiền đề docstring `:90-93` SAI**: đo `nvidia-smi = 18.115 MiB` khi lease vẫn `pending` ⇒ *"chưa commit"* chỉ nghĩa **sổ chưa theo kịp**, **không** nghĩa thiết bị còn trống.
+
+- [ ] **Step 1: Viết test đỏ cho CẢ HAI đường**
+
+```ts
+const MIB = 1024 * 1024;
+const pendingLease = (owner: string, est: number) => ({
+  id: owner, request: { owner, kind: "gguf-model", estimatedBytes: est, priority: "interactive" },
+  actualBytes: null, measureFailed: false, acquiredAt: new Date(), lastHeartbeatAt: new Date(), released: false,
+});
+
+it("★★ (a) chụp nền LẦN ĐẦU khi model đang nạp ⇒ KHÔNG nuốt 17 GB vào nền", async () => {
+  vi.doMock("./vramBroker", () => ({
+    snapshot: () => ({ totalReservedBytes: 17_000 * MIB, leases: [pendingLease("gguf:30B", 17_000 * MIB)] }),
+    leaseBytes: (l: any) => l.actualBytes ?? l.request.estimatedBytes,
+  }));
+  vi.doMock("./vramProbe", () => ({
+    readDeviceVram: async () => ({ usedBytes: 17_900 * MIB, totalBytes: 32_607 * MIB, source: "smi" }),
+  }));
+  vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+  const { captureVramBaseline } = await import("./vramReconciler");
+  const base = await captureVramBaseline();
+  expect(base).not.toBe(17_900 * MIB);          // KHÔNG được nuốt cả 17,9 GB
+  expect(base === null || base <= 1_000 * MIB).toBe(true);
+});
+
+it("★★ (b) nhánh RESAMPLE khi model đang nạp ⇒ cũng KHÔNG nuốt", async () => {
+  // cùng mock, nhưng đi qua reconcileOnce() với thước đổi từ "smi" sang "native"
+});
+```
+
+⚠ Chữ ký/hình dạng mock **có thể sai** — đọc mã thật, **sửa test cho khớp**.
+
+- [ ] **Step 2: Chạy, xác nhận ĐỎ.** Dán output.
+
+- [ ] **Step 3: Sửa**
+
+Hướng gợi ý (**bạn quyết, ghi rõ lý do**): **từ chối chụp nền khi còn lease `pending` thuộc lớp sẽ commit** — nằm **bên trong hàm** nên phủ **cả hai** đường theo cấu trúc, cùng khuôn lá chắn `if (raw < committedBytes)` đã có.
+
+⚠⚠ **Câu hỏi bắt buộc trả lời trước khi viết**: *"nếu LUÔN có lease pending thì nền không bao giờ chụp được?"* Điều kiện "còn pending" **quá rộng** — hộ `external-process` **cố ý không bao giờ commit** (cron 30 phút, trainer tới `sidecarTimeoutMs()`). Chụp nền không được ⇒ `baselineRequired && baselineUsedBytes === null` ⇒ **trả `alarm:false` IM LẶNG vĩnh viễn** — đúng lớp lỗi EXP-1 phải dựng ngắt mạch để diệt.
+⇒ **Phần thu hẹp phải ĐO, không suy đoán.**
+
+- [ ] **Step 4: Chạy XANH + đột biến**
+
+Đột biến: quay lại `raw − Σ actualBytes` ⇒ **cả hai** ca ★★ phải đỏ. Hoàn nguyên.
+
+- [ ] **Step 5: Nghiệm thu LIVE đường (a)** — chưa ai dựng lại được. Làm chậm boot có kiểm soát (hoặc hạ `GGUF_WARM_DELAY_MS`) để warm thắng đua, **đòi ca ĐỎ trước khi vá**, rồi xác nhận sau khi vá. Nếu **không dựng được**, nói thẳng và ghi lý do.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add server/services/vram/vramReconciler.ts server/services/vram/vramReconciler.test.ts
+git commit -m "fix(vram/pha1.5-7): nền thôi nuốt model đang nạp — đóng CẢ HAI đường"
+```
