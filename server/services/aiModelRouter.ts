@@ -347,7 +347,12 @@ export function classifyDifficulty(input: RouteInput): Difficulty {
  */
 export function route(input: RouteInput): RouteDecision {
   // Embedding luôn là Tier 0/1 với model embed riêng (engine tự chọn GGUF_EMBED_MODEL).
-  // Không truyền contextSize: embedding context tự dùng "auto" trong engine.
+  // Không truyền contextSize: engine tự chốt bằng EMBED_CTX (aiGgufEngine.ts:288 → :2831,
+  // = clamp(GGUF_EMBED_CTX, GGUF_MAX_CTX), mặc định 2048).
+  // ⚠ Câu cũ ở đây ghi 'embedding context tự dùng "auto"' — SAI, và sai theo hướng nguy hiểm:
+  // `contextSize:"auto"` của node-llama-cpp co giãn theo VRAM CÒN TRỐNG (đo Pha 2A Task 5: cùng
+  // model 0,6B, "auto" chiếm 3.916 MiB so với 526 MiB khi chốt bằng EMBED_CTX — gấp 7,4 lần).
+  // Ai đọc chú thích cũ rồi đi thiết kế hạn mức VRAM sẽ tính nhầm đúng bảy lần.
   if (input.task === "embed") {
     return decide(1, undefined, false, 0, 0, false, "embed → embedding model (engine default)");
   }
