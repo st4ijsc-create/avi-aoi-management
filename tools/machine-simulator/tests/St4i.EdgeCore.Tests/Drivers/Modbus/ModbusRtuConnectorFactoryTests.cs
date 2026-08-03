@@ -164,6 +164,56 @@ public sealed class ModbusRtuConnectorFactoryTests
     }
 
     /// <summary>
+    /// 🔴 <b>Review I-2 — the counterexample that overturns D-7a's own "no test can tell the two lease-leak
+    /// mechanisms apart" claim, and review I-1's "never throws" in the same assertion.</b>
+    ///
+    /// <para>The report argued that validating before <c>Acquire</c> is unobservable once the constructor
+    /// releases the lease, because both orderings take and return a lease with no I/O either way. That reasoned
+    /// about the LEASE. The observable property is at the public seam and is about the OPERATOR: <b>a device
+    /// that cannot produce a driver must be refused by its own map's error, and must never touch the bus
+    /// registry at all.</b> Give the factory a disposed registry — a host shutdown racing a fleet start, which
+    /// <c>FleetHost.StartLocked</c> can genuinely produce — and the two orderings diverge on what the operator
+    /// is told about their own configuration.</para>
+    ///
+    /// <para><b>Why this survives the I-1 fix, which is the reason it is worth keeping rather than a one-round
+    /// artefact.</b> With <c>Acquire</c> unguarded, removing the validation makes <c>TryCreate</c> THROW. With
+    /// <c>Acquire</c> inside the guard (as it now is), removing the validation makes <c>TryCreate</c> return
+    /// <see langword="false"/> with <i>"Cannot access a disposed object"</i> — still a failure, still contained,
+    /// and still the wrong sentence: the operator is told about the host's shutdown instead of about the
+    /// broadcast address they typed. The assertion below is on the message's IDENTITY, so it discriminates in
+    /// both trees.</para>
+    /// </summary>
+    [Fact]
+    public async Task AnUnbuildableDevice_IsRefusedByItsOwnMapsError_WithoutEverTouchingTheBusRegistry()
+    {
+        var registry = new ModbusBusRegistry();
+        var opens = 0;
+        var factory = new ModbusRtuConnectorFactory(
+            "modbus-rtu-tcp:m5-counterexample:4001",
+            _ => { opens++; return Task.FromResult<IModbusBusLink>(InMemoryBusLinkPair.Create().Master); },
+            registry);
+
+        // The registry is gone — the state that makes "did this reach the registry at all?" observable.
+        await registry.DisposeAsync();
+
+        Assert.False(factory.TryCreate(DeviceJson("RTU-M5-CE", 0), out var driver, out var error));
+        Assert.Null(driver);
+
+        // 🔴 The device's OWN configuration error, not the host's teardown. This is the whole discriminator.
+        Assert.Contains("BROADCAST", error);
+        Assert.DoesNotContain("disposed", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, opens);
+
+        // 🔴 Review I-1 — and it did not THROW getting there, which the doc comment claims unconditionally and
+        // which was false on HEAD: Acquire sat outside the guard and ObjectDisposedException escaped. Asserted
+        // for a VALID map too, because that is the path the guard has to cover once validation stops
+        // short-circuiting it.
+        Assert.False(factory.TryCreate(DeviceJson("RTU-M5-CE-OK", 1), out var valid, out var validError));
+        Assert.Null(valid);
+        Assert.NotNull(validError);
+    }
+
+    /// <summary>
     /// 🔴 <b>The rule behind the list, with the counterexample that proves the rule was needed.</b>
     ///
     /// <para>"Validate the unit id before <c>Acquire</c>" closes the failure known today. It is a list. The rule
@@ -305,5 +355,143 @@ public sealed class ModbusRtuConnectorFactoryTests
 
         // And the fact that distinguishes "backed off" from "merely quiet" for whoever is reading the log.
         Assert.Contains("1 consecutive failure(s)", fromFactoryMessage);
+    }
+
+    /// <summary>
+    /// 🔴 <b>Review M-1 — a backed-off device whose bus hold is SMALLER than its poll interval must still say
+    /// it is backed off.</b>
+    ///
+    /// <para>The message used to branch on the computed delay (<c>next &gt; PollIntervalMs</c>), and
+    /// <c>DelayMsFor</c> returns <c>max(poll, hold) × mult^(n-1)</c> — so on the FIRST failure of any device
+    /// whose <c>WorstCaseBusHoldMs</c> is at or below its poll interval the two are equal and the driver told
+    /// the operator <i>"no read backoff is configured for this driver"</i> while running one. The
+    /// configuration below is deliberately ordinary rather than contrived: 1 register, default retries,
+    /// <c>readTimeoutMs: 100</c>, <c>pollIntervalMs: 1000</c> → a 200 ms hold against a 1 000 ms cadence.</para>
+    ///
+    /// <para>This is the pair that makes the fix a RULE rather than a patch: the same driver, the same first
+    /// failure, and the discriminating assertion is that it does not claim to be unconfigured.</para>
+    /// </summary>
+    [Fact]
+    public async Task ADeviceWhoseHoldIsSmallerThanItsCadence_StillSaysItIsBackedOff_OnTheFirstFailure()
+    {
+        await using var bus = ModbusRtuLoopbackHarness.Start(((byte)1, new ushort[] { 1, 2 }));
+
+        var messages = new List<string>();
+        var factory = new ModbusRtuConnectorFactory(
+            bus.BusKey, _ => Task.FromResult<IModbusBusLink>(bus.Links.Master), bus.Registry,
+            logError: (_, msg) => { lock (messages) messages.Add(msg); });
+
+        // Unit 7 is absent, so the poll fails. hold = 1 x 2 x 100 = 200 ms; cadence = 1000 ms.
+        Assert.True(factory.TryCreate(
+            DeviceJson("RTU-M1-SMALLHOLD", 7, pollIntervalMs: 1000, readTimeoutMs: 100), out var built, out _));
+        await using var driver = built!;
+
+        await DriveUntilAsync(driver, () => { lock (messages) return messages.Count > 0; }, TimeSpan.FromSeconds(20));
+
+        Assert.NotEmpty(messages);
+        var first = messages[0];
+
+        // 🔴 The regression, stated as the operator reads it.
+        Assert.DoesNotContain("no read backoff is configured", first);
+        Assert.Contains("backing off", first);
+        Assert.Contains("1 consecutive failure(s)", first);
+        // The declared cadence is still named — that number is what an operator acts on; it just no longer
+        // decides the branch.
+        Assert.Contains("1000 ms", first);
+    }
+
+    /// <summary>
+    /// 🔴 <b>Review M-1, the SWEEP rather than the instance: the RECOVERY notice had the same defect one
+    /// method away.</b> It asserted "its read backoff is cleared" unconditionally, so a driver constructed
+    /// with <see cref="ModbusRtuReadBackoff.Disabled"/> told an operator about a mechanism that had never been
+    /// running. Driven as a pair — the same failure-then-recovery sequence on the same bus, differing only in
+    /// the backoff object — because "true of only one of the two producing paths" is exactly the shape a
+    /// single-path test cannot see.
+    /// </summary>
+    [Fact]
+    public async Task TheRecoveryNotice_OnlyClaimsABackoffWasCleared_WhenOneWasConfigured()
+    {
+        await using var bus = ModbusRtuLoopbackHarness.Start(((byte)5, new ushort[] { 42, 0 }));
+
+        // 🔴 Holds the bus alive across BOTH phases. Without it, phase one's driver is the LAST lease, so its
+        // disposal disposes the bus AND the shared in-memory link, and phase two rides a dead pipe — it never
+        // transmits, never recovers, and reports "no recovery notice", which reads as the notice being broken.
+        // The same trap D-4 §7.8 recorded and the same one ModbusMultidropBusTests guards against; this test
+        // walked into it on its second run, and the self-diagnosing assertion below is what named it
+        // (`readings 0, frames silenced 2` — the 2 being phase one's, cumulative).
+        await using var keepAlive = bus.Lease();
+
+        // One driver against a REAL slave that is silenced for a while and then allowed to answer: the failure
+        // streak and the recovery both happen for the reason the production path produces them, rather than by
+        // poking the driver's state.
+        async Task<string> RecoveryNoticeAsync(ModbusRtuReadBackoff backoff, string machineCode)
+        {
+            var notices = new List<string>();
+            await using var driver = new ModbusRtuDriver(
+                bus.Lease(),
+                ModbusRtuLoopbackHarness.BuildSingleRegisterMap(machineCode, unitId: 5, pollIntervalMs: 5, readTimeoutMs: 300),
+                logError: null,
+                readBackoff: backoff,
+                writeQueueBudgetMs: null,
+                logRecovery: msg => { lock (notices) notices.Add(msg); });
+
+            bus.Links.Device.SilentUnitId = 5;
+
+            var readings = 0;
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            var pump = Task.Run(
+                async () =>
+                {
+                    try { await foreach (var _ in driver.ReadAsync(cts.Token)) Interlocked.Increment(ref readings); }
+                    catch (OperationCanceledException) { }
+                },
+                CancellationToken.None);
+
+            // 🔴 Wait for a whole POLL to fail (Health flips to Degraded), not for the first silenced FRAME.
+            // The map declares the default retry count of 1, so a poll is TWO frames — un-silencing after the
+            // first one lets the retry succeed, the poll completes, no failure streak ever forms and no
+            // recovery notice is ever due. That is what this test did on its first run, and the symptom (an
+            // empty notice) looks exactly like the notice being broken.
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            while (DateTime.UtcNow < deadline && driver.Health != DriverHealthState.Degraded)
+            {
+                await Task.Delay(10);
+            }
+
+            Assert.Equal(DriverHealthState.Degraded, driver.Health);
+            bus.Links.Device.SilentUnitId = null;
+
+            deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+            while (DateTime.UtcNow < deadline)
+            {
+                lock (notices) { if (notices.Count > 0) break; }
+                await Task.Delay(10);
+            }
+
+            await cts.CancelAsync();
+            try { await pump; } catch (OperationCanceledException) { }
+
+            lock (notices)
+            {
+                // A self-diagnosing failure: an empty notice can mean "the notice is broken" OR "no streak ever
+                // formed" OR "it never recovered", and those need different fixes.
+                Assert.True(
+                    notices.Count > 0,
+                    $"{machineCode}: no recovery notice within the window — final health {driver.Health}, " +
+                    $"readings {readings}, frames silenced {bus.Links.Device.FramesSilenced}");
+                return notices[0];
+            }
+        }
+
+        var withBackoff = await RecoveryNoticeAsync(ModbusRtuReadBackoff.Default, "REC-ON");
+        var withoutBackoff = await RecoveryNoticeAsync(ModbusRtuReadBackoff.Disabled, "REC-OFF");
+
+        // 🔴 The discriminating pair. Both recovered; only one of them had a backoff to clear.
+        Assert.Contains("read backoff is cleared", withBackoff);
+        Assert.DoesNotContain("read backoff is cleared", withoutBackoff);
+
+        // Both still say the thing the notice exists for: this device answered again, after a streak.
+        Assert.Contains("answered again", withBackoff);
+        Assert.Contains("answered again", withoutBackoff);
     }
 }

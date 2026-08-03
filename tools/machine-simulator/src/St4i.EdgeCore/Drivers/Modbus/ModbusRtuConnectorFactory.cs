@@ -126,30 +126,42 @@ public sealed class ModbusRtuConnectorFactory : IConnectorFactory
     /// <para>Never throws (<see cref="IConnectorFactory.TryCreate"/>'s contract) and performs no I/O — the
     /// link is opened lazily inside the first transaction, so a bus whose gateway is unplugged still
     /// constructs here and degrades honestly at poll time, exactly as
-    /// <see cref="ModbusConnectorFactory.TryCreate"/> does for TCP.</para></summary>
+    /// <see cref="ModbusConnectorFactory.TryCreate"/> does for TCP.</para>
+    ///
+    /// <para>🔴 <b>Review I-1 — that sentence used to be FALSE, and it was false on HEAD with no mutant
+    /// applied.</b> <see cref="ModbusBusRegistry.Acquire"/> throws <see cref="ObjectDisposedException"/> for a
+    /// registry that has already been torn down (a host shutdown racing a fleet start, which
+    /// <c>FleetHost.StartLocked</c> can genuinely produce), and the call sat <b>outside</b> the guard. The
+    /// runtime blast radius was contained — <c>ConnectorRegistry.TryCreateDriver</c> has its own catch and
+    /// forwards <c>ex.Message</c> — but the operator's start issue then read <i>"Cannot access a disposed
+    /// object"</i> instead of anything they could act on, and a doc comment claiming a contract the method
+    /// does not keep is a false record on a source file, which this batch treats as a defect in itself.</para>
+    ///
+    /// <para>The whole body is now inside ONE guard, so the claim is made true rather than qualified. That is
+    /// the shape to keep: a "never throws" that has to enumerate its exceptions has stopped being a
+    /// contract.</para></summary>
     public bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)
     {
         driver = null;
 
-        ModbusRegisterMap map;
         try
         {
-            map = ModbusRegisterMap.FromJson(config, _logWarning);
+            var map = ModbusRegisterMap.FromJson(config, _logWarning);
 
             // 🔴 Mechanism 1 — see this class's doc comment. BEFORE Acquire, so the failure this rule actually
             // catches in the field (a device addressed at the broadcast address, or in the reserved 248–255
             // range) never causes a lease to be taken in the first place.
+            //
+            // 🔴 Review I-2 — and this ordering is OBSERVABLE at this seam, which is what overturns D-7a's own
+            // "no test can tell the two mechanisms apart" claim. Validation first means a device that cannot
+            // produce a driver is refused BY ITS OWN MESSAGE and never touches the bus registry at all; with
+            // it removed, the same map on a disposed registry is refused by the REGISTRY's message instead, so
+            // the operator is told about the host's shutdown rather than about their own map. The counterexample
+            // is AnUnbuildableDevice_IsRefusedByItsOwnMapsError_WithoutEverTouchingTheBusRegistry.
             ModbusRtuDriver.ValidateRtuUnitId(map);
-        }
-        catch (Exception ex)
-        {
-            error = ex.Message;
-            return false;
-        }
 
-        var lease = _busRegistry.Acquire(_busKey, _openLink, _busSettings);
-        try
-        {
+            var lease = _busRegistry.Acquire(_busKey, _openLink, _busSettings);
+
             driver = new ModbusRtuDriver(
                 lease, map, _logError, _readBackoff, _writeQueueBudgetMs,
                 logRecovery: _logWarning);
@@ -158,11 +170,11 @@ public sealed class ModbusRtuConnectorFactory : IConnectorFactory
         }
         catch (Exception ex)
         {
-            // Translates the throw into IConnectorFactory.TryCreate's non-throwing contract — and does NOT
-            // release the lease, because the constructor already did on its way out. Releasing again here
-            // would be harmless (ModbusBusLease.DisposeAsync is idempotent by Interlocked.Exchange) and would
-            // still be wrong: it would be a second statement of one remedy, and the next person to change
-            // either would have no way to know the other existed.
+            // Translates every throw into IConnectorFactory.TryCreate's non-throwing contract — and does NOT
+            // release the lease on the construction path, because ModbusRtuDriver's constructor already did on
+            // its way out. Releasing again here would be harmless (ModbusBusLease.DisposeAsync is idempotent by
+            // Interlocked.Exchange) and would still be wrong: it would be a second statement of one remedy, and
+            // the next person to change either would have no way to know the other existed.
             driver = null;
             error = ex.Message;
             return false;

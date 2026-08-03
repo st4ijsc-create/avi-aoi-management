@@ -426,10 +426,25 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
 
     /// <summary>🔴 Task D-7a — resets the failure streak and, if there WAS one, says so exactly once.
     ///
-    /// <para>Recovery is logged (through the same error callback, because that is the only channel this driver
-    /// has) for a reason that is the whole point of the backoff's operator story: a device that has been quiet
-    /// for a minute and then simply resumes gives an operator no way to tell "it was backed off and came back"
-    /// from "the logging stopped". Logged once per streak, never per poll, so a healthy device is silent.</para></summary>
+    /// <para>Recovery is reported for a reason that is the whole point of the backoff's operator story: a
+    /// device that has been quiet for a minute and then simply resumes gives an operator no way to tell "it was
+    /// backed off and came back" from "the logging stopped". Logged once per streak, never per poll, so a
+    /// healthy device is silent.</para>
+    ///
+    /// <para>🔴 <b>Review M-2 — this used to say "through the same error callback, because that is the only
+    /// channel this driver has".</b> Both halves were false by the time it shipped: the notice goes through
+    /// <see cref="_logRecovery"/>, a channel added for exactly this, precisely BECAUSE a recovery is not an
+    /// error and routing it through an error callback would have meant handing a logger a fabricated exception
+    /// to satisfy its signature. A stale sentence on a member D-7b is going to read is worth the same
+    /// correction as a stale claim in code.</para>
+    ///
+    /// <para>🔴 <b>Review M-1, second instance — found by SWEEPING the rule rather than fixing the
+    /// instance.</b> This message used to assert "its read backoff is cleared" unconditionally. For a driver
+    /// whose backoff is <see cref="ModbusRtuReadBackoff.Disabled"/> there was never a backoff to clear, so the
+    /// sentence told an operator about a mechanism that had not been running — the same defect M-1 named on
+    /// <see cref="DescribeFailedPoll"/>, one method away, and invisible to the fix for it. Both now branch on
+    /// <see cref="ModbusRtuReadBackoff.IsEnabled"/>, i.e. on the CONFIGURATION, never on a computed
+    /// delay.</para></summary>
     private void NoteReadSucceeded()
     {
         if (_consecutiveReadFailures == 0) return;
@@ -437,23 +452,45 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
         var streak = _consecutiveReadFailures;
         _consecutiveReadFailures = 0;
 
+        var cleared = _readBackoff.IsEnabled
+            ? "its read backoff is cleared and it is back to its declared cadence of "
+            : "it is polling at its declared cadence of ";
+
         _logRecovery?.Invoke(
             $"Modbus RTU device {_map.MachineCode} (unit {_map.UnitId}) on bus {_lease.Bus.Key} answered again " +
-            $"after {streak} consecutive failed poll(s); its read backoff is cleared and it is back to its " +
-            $"declared cadence of {_map.PollIntervalMs} ms.");
+            $"after {streak} consecutive failed poll(s); {cleared}{_map.PollIntervalMs} ms.");
     }
 
     /// <summary>🔴 Task D-7a — the failed-poll log line, which now carries the two facts that distinguish a
     /// BACKED-OFF device from a merely quiet one: how many polls in a row have failed, and how long this device
     /// will now wait before it takes the shared line again. Without them an operator watching a log sees the
     /// same message arriving less and less often and has no way to know whether the device is being retried
-    /// more slowly on purpose or whether the poll loop has stopped.</summary>
+    /// more slowly on purpose or whether the poll loop has stopped.
+    ///
+    /// <para>🔴 <b>Review M-1 — this branched on the COMPUTED DELAY (<c>next &gt; PollIntervalMs</c>) and
+    /// therefore lied about the CONFIGURATION.</b> <see cref="ModbusRtuReadBackoff.DelayMsFor"/> returns
+    /// <c>max(poll, hold) × mult^(n-1)</c>, so on the FIRST consecutive failure of any device whose
+    /// <see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/> is at or below its poll interval the answer equals
+    /// the poll interval — and the message then read <i>"no read backoff is configured for this driver"</i> to
+    /// an operator whose driver had one. Ordinary, not exotic: 1 register, default retries,
+    /// <c>readTimeoutMs: 100</c>, <c>pollIntervalMs: 1000</c> gives a 200 ms hold. <b>And it landed on
+    /// precisely the message pair task-7a-report.md §4.4 offers as the operator's way to tell a backed-off
+    /// device from a quiet one</b>, which is what makes it worse than a wording slip.</para>
+    ///
+    /// <para>This is D-5's I-1 class for the third time in this batch — <i>one string covering two producing
+    /// paths, true of only one of them</i> — so the fix is the rule and not the instance: <b>a sentence about
+    /// what is CONFIGURED must branch on the configuration.</b> The sweep of the rest of this file is recorded
+    /// in task-7a-report.md; it found a second instance in <see cref="NoteReadSucceeded"/> and one adjacent
+    /// over-claim in <see cref="QueueBudgetElapsedDetail"/> (review M-3), both fixed in the same round.</para>
+    ///
+    /// <para>The delay is still NAMED in the enabled branch — that number is what an operator acts on. What it
+    /// no longer does is DECIDE the branch.</para></summary>
     private string DescribeFailedPoll()
     {
         var next = NextPollDelayMs();
 
-        var backoffClause = next > _map.PollIntervalMs
-            ? $"; backing off — the next attempt is in {next} ms instead of its declared {_map.PollIntervalMs} ms, " +
+        var backoffClause = _readBackoff.IsEnabled
+            ? $"; backing off — the next attempt is in {next} ms (its declared cadence is {_map.PollIntervalMs} ms), " +
               $"because each failed poll holds the shared bus for up to {_map.WorstCaseBusHoldMs} ms and every " +
               "other device on this line waits behind it"
             : $"; retrying at its declared cadence of {_map.PollIntervalMs} ms (no read backoff is configured " +
@@ -1037,13 +1074,28 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// CALLER cancelled. Both are <see cref="WriteOutcome.Indeterminate"/> and both make the same provable
     /// claim about the wire; what differs is who to talk to about it, and an operator told "cancelled" for a
     /// wait nobody cancelled would go looking for the client that did it. Names the number so the person
-    /// reading it can see it is derived from their own map rather than from a constant this product
-    /// chose.</summary>
+    /// reading it can see it is derived from their own map rather than from a constant this product chose.
+    ///
+    /// <para>🔴 <b>Review M-3 — this used to DIAGNOSE, and the diagnosis was wrong.</b> It asserted that the
+    /// bound is "the longest a single poll of the SLOWEST device on this bus can hold the line, so waiting past
+    /// it means something on the line is not behaving as its own map declares." The first clause is right; the
+    /// inference is not. Arbitration is a <see cref="SemaphoreSlim"/>(1,1), so a write queues behind <b>however
+    /// many siblings are ahead of it</b>, not behind one — two devices that declare slow timeouts and honour
+    /// them exactly can exceed <c>max_j WorstCaseBusHoldMs</c> with nothing on the line misbehaving at all. The
+    /// message sent an operator hunting a fault that need not exist, which is the same defect
+    /// <see cref="BusRefusedDetail"/>'s own remarks record from D-5's review I-1: <i>a Detail an operator acts
+    /// on has to be true of the path they are actually on</i>.</para>
+    ///
+    /// <para><b>The SIZING is unchanged and is exactly what blueprint §10 item 2 prescribes</b> — only the
+    /// causal sentence went. What replaces it says what the number IS and what the two ordinary explanations
+    /// are, without picking one: a queue of siblings, or a device not answering. Both are actionable; asserting
+    /// the second is not.</para></summary>
     private string QueueBudgetElapsedDetail() =>
-        $"gave up waiting for the shared RTU bus '{_lease.Bus.Key}' after {_writeQueueBudgetMs} ms — that bound is " +
-        "the longest a single poll of the SLOWEST device on this bus can hold the line, so waiting past it means " +
-        "something on the line is not behaving as its own map declares. No byte of this write reached the line and " +
-        $"unit {_map.UnitId} ({_map.MachineCode}) is untouched. Retrying is safe.";
+        $"gave up waiting for the shared RTU bus '{_lease.Bus.Key}' after {_writeQueueBudgetMs} ms — this driver's " +
+        "own bound, sized from the longest single poll the slowest device on this bus declares. Exceeding it means " +
+        "either that several devices were queued ahead of this write (the bound covers ONE such poll, not a queue " +
+        "of them) or that a device is not answering. No byte of this write reached the line and unit " +
+        $"{_map.UnitId} ({_map.MachineCode}) is untouched. Retrying is safe.";
 
     /// <summary>The <c>Detail</c> for the two cancellation shapes in which the request PROVABLY never reached
     /// the line: cancelled before <see cref="ModbusBus.BeginTransactionAsync"/> returned, and cancelled while

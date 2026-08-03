@@ -224,6 +224,26 @@ public static class ModbusMultidropRegistration
     /// its own <c>_gate</c> under a bounded budget, which is the constraint that predates this batch and is
     /// absolute. See <see cref="ConnectorRegistry.Unregister"/> for the full statement of what an operator sees
     /// in that window.</para>
+    ///
+    /// <para>🔴 <b>Review M-4 — the ONE re-run shape this does NOT handle, named rather than left to be
+    /// found: a machine REASSIGNED at the same bus position.</b> This method skips any id the new map still
+    /// declares, so renaming unit 3 from <c>M3</c> to <c>M9</c> (or swapping two devices' positions) leaves the
+    /// old registration in place — and <see cref="OwnedBySomethingElse"/> then refuses the new one, because the
+    /// incumbent under that id serves a different machine. The refusal is safe (nothing is silently
+    /// overwritten) but its MESSAGE is wrong for this case: it says the id "already exists and serves a
+    /// DIFFERENT machine … Rename that connector or re-address this device", and the incumbent is <b>this
+    /// bus's own previous registration</b>, so neither remedy applies.</para>
+    ///
+    /// <para><b>Why it is not fixed here.</b> It is unreachable in production:
+    /// <c>ConnectorsJsonRegistration.RegisterAll</c> is called exactly once per process, from the
+    /// <c>ConnectorRegistry</c> DI singleton lambda, so a "second run" only exists in a test or in whatever
+    /// future feature re-reads configuration at run time. Closing it properly means this method distinguishing
+    /// "an id in MY namespace whose machine changed" from "an id someone else owns" — which is a two-pass
+    /// sweep (unregister every id in the namespace whose binding does not match the new map, then register),
+    /// and a wider change than a fix round should make to the one method that can delete another connector's
+    /// registration. <b>Whoever builds run-time reconfiguration owns it, and the two-pass shape above is the
+    /// answer.</b> Recorded here because m6's closure is stated as re-run safety, and this is the corner of
+    /// re-run safety it does not reach.</para>
     /// </summary>
     private static void SweepGhosts(
         IReadOnlyList<ModbusBusDevice> devices,

@@ -611,7 +611,36 @@ EXPECT_CONFORMANCE=22
 # short-circuits its arguments — so for every driver constructed without a log callback the counter never moved
 # and the backoff never engaged. Every unit test of the arithmetic passed. Only the end-to-end number could see
 # it, and it reported a 1.0x "improvement".
-EXPECT_EDGECORE=1009
+#
+# 🔴 D-7a's REVIEW FIX ROUND raises this 1009 -> 1012 (+3). One file; nothing rewritten, split or deleted. It
+# is again the ONLY executable line this task has changed in this script, and it is the ONLY total that moves —
+# the round touches src/St4i.EdgeCore and its tests plus doc comments in EngineApi, so a moved total anywhere
+# else would mean the fix round reached somewhere it had no business reaching.
+#
+#   + 3  ModbusRtuConnectorFactoryTests (6 -> 9)
+#        + 1  review I-2 — 🔴 THE ONE THAT MATTERS. D-7a's report claimed no test could distinguish
+#             "validate before Acquire" from "release on constructor failure", and that claim was FALSE: the
+#             reviewer built the counterexample. The observation is at the public seam, not on the lease —
+#             a device that cannot produce a driver must be refused BY ITS OWN MAP'S ERROR and must never
+#             touch the bus registry. A disposed registry plus a unitId:0 map discriminates, and it still
+#             discriminates after I-1's fix (the error becomes "Cannot access a disposed object" instead of
+#             the device's own configuration error), which is why it guards something outliving this round.
+#             M5 was SURVIVED across 20 runs in the original batch; it is KILLED by this test.
+#        + 1  review M-1 — a backed-off device whose WorstCaseBusHoldMs is at or below its poll interval told
+#             its operator "no read backoff is configured for this driver", because the message branched on
+#             the COMPUTED DELAY rather than on the configuration. Ordinary, not exotic: 1 register, default
+#             retries, readTimeoutMs 100, pollIntervalMs 1000 -> a 200 ms hold. D-5's I-1 class for the third
+#             time in this batch, landed on the exact message pair the report offers as the operator's way to
+#             tell backed-off from quiet.
+#        + 1  the SWEEP of M-1's rule rather than the instance: the RECOVERY notice had the same defect one
+#             method away, claiming "its read backoff is cleared" for a driver that never had one. Driven as a
+#             Default/Disabled PAIR on one bus, because "true of only one of two producing paths" is exactly
+#             what a single-path test cannot see. Both messages now branch on ModbusRtuReadBackoff.IsEnabled.
+#
+# Review M-6 STRENGTHENS an existing assertion without adding a test: UnitZero_IsNotRefusedHere_... now proves
+# "still legal for TCP" through ModbusConnectorFactory itself rather than at the parse layer, so the pair is
+# RTU-refuses / TCP-accepts at the SAME boundary. Same test, more teeth, no count change.
+EXPECT_EDGECORE=1012
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:

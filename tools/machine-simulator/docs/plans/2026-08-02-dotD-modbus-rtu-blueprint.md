@@ -128,6 +128,24 @@ D-2 tái tạo đúng lỗi I-5 **trong chính commit sửa I-5**, cách mười
 **Một bài test cấp giá trị mà nó đang kiểm thì mù với việc ai chọn giá trị đó.**
 D-2 **đã có** một bài test retry, viết từ trước vì một đột biến sống sót — và nó không thấy I-2, vì nó tự truyền vào cái con số nó đang kiểm. Thêm test cùng hình dạng sẽ không bao giờ tìm ra. → **Khẳng định trên giá trị đã tới ranh giới, không phải giá trị bạn đưa vào.**
 
+🔴 **Nguyên tắc thứ NĂM, thêm sau D-7a — và đây là lập luận mạnh nhất của cả đợt cho phép ĐO so với test hình-dạng-unit.**
+
+**Một cơ chế giảm thiểu có thể được nối vào kênh GHI LOG, và khi đó nó chỉ tồn tại cho những driver có người tình cờ đang theo dõi.**
+
+D-7a đếm số lần poll hỏng liên tiếp **bên trong ĐỐI SỐ** của `_logError?.Invoke(ex, DescribeFailedPoll())`. `?.` **đoản mạch cả đối số**, nên với mọi driver được dựng **không** kèm callback ghi log, bộ đếm không bao giờ nhúc nhích và **backoff không bao giờ khởi động**. Code đọc thì đúng. Số học thì đúng. Cái sai nằm ở chỗ **trạng thái của cơ chế được mang trên một kênh quan sát**.
+
+Kiểm chứng bằng cùng một đột biến, do reviewer chạy lại độc lập:
+
+| Chạy | Kết quả |
+|---|---|
+| `TheReadBackoff_CutsADeadDevicesTax…MeasuredBeforeAndAfter` (một phép ĐO đầu-cuối) | **KILLED** — *"backoff OFF 1.3 reads/s; backoff ON 2.0 reads/s — 1.5x"* so với ngưỡng 3× |
+| `ADriverBuiltByTheFactory_SaysItIsBackingOff…` (test thông điệp, có logger) | **SURVIVED** |
+| `ModbusRtuReadBackoffTests` + `ModbusRtuConnectorFactoryTests` — **16 test** của đúng cơ chế ấy | **SURVIVED 16/16** |
+
+**Mười sáu bài test hình-dạng-unit của đúng cơ chế đó đều mù. Một phép đo đầu-cuối giết nó.** Lý do không phải là "unit test dở": mọi bài trong số 16 đều gọi thẳng vào số học, và số học không hỏng. Cái hỏng là **dây nối**, và dây nối chỉ hiện ra khi đo **hệ quả** của cơ chế lên thứ nó phải bảo vệ — thông lượng đọc của các thiết bị lành trên cùng một dây.
+
+→ **Quy tắc:** với một cơ chế giảm thiểu, **ít nhất một bài kiểm chứng phải đo hệ quả của nó lên thứ nó bảo vệ, trên đường đi sản xuất, KHÔNG kèm bất kỳ quan sát viên nào mà bản thân cơ chế không cần.** Và cụ thể hơn: **trạng thái của một cơ chế không bao giờ được đi qua kênh log của nó** — hãy tách lệnh tăng biến ra khỏi đối số, luôn luôn.
+
 **Và một phân biệt về bằng chứng:** một diff chỉ sửa chú thích là **bằng chứng kết luận về cây mã, và không nói gì về môi trường**. Cổng đỏ trên một commit như vậy nghĩa là máy bẩn, không phải mã hỏng — nhưng cách chữa là **dọn máy**, không phải nới trần.
 
 **Và một đính chính về chính bộ công cụ này, do D-3 tìm ra.** Brief D-3 của tôi yêu cầu test phụ thuộc phần cứng phải *"bỏ qua sạch sẽ và ồn ào"*, trong khi `verify-suites.sh` — cũng của tôi — **fail khi `skipped != 0`**. Hai chỉ thị loại trừ nhau, và **cái phải đổi là brief, không phải script**: xUnit đếm test bị bỏ qua động vào `Total`, nên một bộ test phụ thuộc phần cứng làm `Skipped` **phụ thuộc môi trường** — và bất kỳ con số kỳ vọng cố định nào cũng sẽ làm **máy trang bị tốt hơn** bị đỏ. Đó là cái bẫy "một con số xanh mang nghĩa khác nhau trên các máy khác nhau", mặc áo phần cứng. **`skipped == 0` chính là thứ làm cho "817" mang cùng một nghĩa ở mọi nơi.**
@@ -152,11 +170,27 @@ báo cáo không phải là bản ghi nguồn**: người viết D-6/D-7 đọc 
 cũng đã được ghi ngay trên hai thành viên public `ModbusRtuDriver.WriteSetpointAsync` /
 `InvokeCommandAsync`; mục này tồn tại để brief của D-6 và D-7 thừa kế được.
 
-1. **Không bao giờ gọi `WriteSetpointAsync`/`InvokeCommandAsync` với một `CancellationToken` không có
-   biên.** Trên bus dùng chung, một lệnh ghi có thể xếp hàng sau trọn một lượt giữ của thiết bị khác —
+1. 🔴 **VIẾT LẠI SAU D-7a (review D-7a xác nhận cả hai vế) — biên áp cho phần CHỜ, không phải cho giao dịch,
+   và nó thuộc về DRIVER chứ không phải caller.**
+
+   *Câu cũ của tôi:* **"Không bao giờ gọi `WriteSetpointAsync`/`InvokeCommandAsync` với một
+   `CancellationToken` không có biên."* Vấn đề đã đo được: **caller sản xuất duy nhất không thể thực hiện
+   nghĩa vụ ấy, và câu trên biến một call site ĐÚNG thành một vi phạm.**
+   `MachineWriteEndpoints` truyền `CancellationToken.None` **có chủ đích** — nếu tôn trọng token của request
+   thì việc huỷ sẽ **phá kết nối DÙNG CHUNG** và làm `Health` của **mọi thiết bị trên bus đó** nhảy sang
+   `Degraded`, biến một teardown như vậy thành chuyện thường ngày. Trên một dây RS-485 multidrop đó đúng là
+   đính chính §2.1, nguyên văn. **`None` ở đó không phải lười; thay nó đi mới là hồi quy.**
+
+   *Câu đúng:* con số vẫn thế — một lệnh ghi có thể xếp hàng sau trọn một lượt giữ của thiết bị khác,
    `registers × (retries+1) × readTimeoutMs`, tức **16 000 ms ở giá trị mặc định của map** và **khoảng hai
-   giờ** ở các giá trị tối đa mà chính map chấp nhận. Chỗ chờ đó **huỷ được**, và khi caller bỏ cuộc thì
-   thiết bị được báo là **chắc chắn chưa bị đụng tới** — nhưng chỉ khi có ai đó cấp cái biên ấy.
+   giờ** ở các giá trị tối đa mà chính map chấp nhận. Nhưng **hai yêu cầu chỉ đồng thời thoả mãn được khi
+   biên áp cho phần CHỜ chứ không phải cho GIAO DỊCH**, và chỗ duy nhất phân biệt được hai thứ đó là bên
+   trong driver. Cơ chế: `ModbusRtuDriver.CreateQueueBudget` nối token của caller với một timer, và token đã
+   nối **chỉ đi tới `BeginTransactionAsync`** — hai phương thức thực thi nhận **hai** token đúng vì lẽ đó, nên
+   một cái biên **không bao giờ** cắt ngang một yêu cầu đã nằm trên dây. Khi biên hết hạn, kết quả là
+   `Indeterminate` với lời khẳng định vẫn nguyên vẹn: **không byte nào tới dây, thiết bị chắc chắn chưa bị
+   đụng tới, thử lại là an toàn** — và `Detail` của nó **khác** `Detail` của một lần caller huỷ, vì một người
+   vận hành được báo "đã huỷ" cho một cái chờ mà không ai huỷ sẽ đi tìm client nào đã huỷ.
 2. **Định cỡ biên đó theo `max_j WorstCaseBusHoldMs`** trên **các thiết bị cùng bus**, không phải của riêng
    thiết bị đang ghi. `ModbusRegisterMap.WorstCaseBusHoldMs` đã tính sẵn; `ModbusMultidropMap.FanOut` đã
    cảnh báo bằng đúng con số đó.

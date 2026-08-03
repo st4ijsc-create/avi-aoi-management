@@ -492,7 +492,7 @@ public class ModbusMultidropMapTests
     /// deleted instead. Neither test alone pins the decision; the pair does.</para>
     /// </summary>
     [Fact]
-    public void UnitZero_IsNotRefusedHere_BecauseTheSameDocumentShapeDrivesModbusTcpWhereItIsLegal()
+    public async Task UnitZero_IsNotRefusedHere_BecauseTheSameDocumentShapeDrivesModbusTcpWhereItIsLegal()
     {
         var busWithBroadcast = BusJson(
             DeviceJson("TCP-BROADCAST", unitId: 0),
@@ -506,6 +506,28 @@ public class ModbusMultidropMapTests
         // And the shared parse path itself is untouched — the single-device document a TCP connector stores
         // still parses with unit 0, which is the deployment m-9 protects.
         Assert.Equal((byte)0, ModbusRegisterMap.FromJson(DeviceJson("TCP-ONLY", unitId: 0)).UnitId);
+
+        // 🔴 Review M-6 — "still legal for TCP" was asserted one layer BELOW where the brief pointed: the
+        // parse yielding 0 says nothing about whether a TCP connector can be BUILT at unit 0, which is the
+        // deployment claim. Driven through the TCP factory itself, so the pair is now RTU-refuses /
+        // TCP-accepts at the same layer — the construction boundary — rather than at two different ones.
+        // (TryCreate performs no I/O: ModbusTcpDriver opens its socket lazily inside ReadAsync.)
+        var tcpFactory = new ModbusConnectorFactory(
+            new ModbusOptions { Enabled = true, Host = "127.0.0.1", Port = 502 });
+
+        Assert.True(
+            tcpFactory.TryCreate(DeviceJson("TCP-BROADCAST-BUILDS", unitId: 0), out var tcpDriver, out var tcpError),
+            $"Modbus TCP must still build at unit 0 — a device that ignores the unit id, or a TCP→RTU gateway " +
+            $"that uses it to select the serial slave, is an ordinary deployment. Error was: {tcpError}");
+        Assert.NotNull(tcpDriver);
+        // Awaited, not blocked on: the first revision of this used .AsTask().GetAwaiter().GetResult() in a
+        // synchronous test and moved the build's warning count off 115 for the first time in seven tasks
+        // (xUnit1031). The gate caught it, which is what the warning line is there for.
+        await tcpDriver!.DisposeAsync();
+
+        // The discriminating half of the pair, at the SAME boundary: RTU refuses what TCP accepts.
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => ModbusRtuDriver.ValidateRtuUnitId(ModbusRegisterMap.FromJson(DeviceJson("RTU-BROADCAST", unitId: 0))));
     }
 
     // ─────────────────────────────────────────────────────────────────────
