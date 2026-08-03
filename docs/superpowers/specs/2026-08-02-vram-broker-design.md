@@ -337,7 +337,38 @@ export const vramEvents = pgTable("vram_events", {
 
 Lý do là số học, không phải phòng xa: mỗi đêm `cron:kb-sync` chạy ~30 phút; **mọi** lượt nạp rơi vào cửa sổ đó có hai đầu đo chồng nhau ⇒ bị gắn `measureFailed` ⇒ `actualBytes` **không bao giờ** được ghi. Pha 2 khi ấy **cưỡng chế trên toàn ước lượng**, đúng thứ Pha 1.5 vừa chứng minh là sai tới **16.335 MiB** một lượt.
 
-**Điều kiện gỡ cổng:** một nguồn đo **theo tiến trình** (NVML `nvmlDeviceGetComputeRunningProcesses`, hoặc `nvidia-smi --query-compute-apps=pid,used_memory`), kèm bằng chứng: hai lượt nạp **cố ý chồng nhau** vẫn cho ra **hai** con số `actualBytes` đúng.
+**Điều kiện gỡ cổng:** một nguồn đo **theo tiến trình**, kèm bằng chứng: hai lượt nạp **cố ý chồng nhau** vẫn cho ra **hai** con số `actualBytes` đúng.
+
+#### ✅ Đã đo 2026-08-03 — cổng GỠ ĐƯỢC KÈM ĐIỀU KIỆN
+
+Báo cáo: `docs/superpowers/reports/2026-08-03-t511-per-process-feasibility.md`.
+
+⚠ **Nguồn tôi ghi vào bản spec đầu — NVML/`--query-compute-apps` — KHÔNG DÙNG ĐƯỢC.** Driver ở chế độ **WDDM** trả `[N/A]` cho **mọi** tiến trình; đây là giới hạn cứng của NVIDIA, không phải thiếu quyền. Ghi lại để không ai thử lại đường đó.
+
+**Nguồn thay thế đã kiểm:** bộ đếm hiệu năng Windows `\GPU Process Memory(pid_<PID>_luid_…)\Dedicated Usage`.
+
+| Câu hỏi | Kết quả đo |
+|---|---|
+| Có thấy cấp phát CUDA? | **CÓ.** `D/F = 0,990` (30B) và `0,996` (0,6B). Thấy **cả ba** đường: backend `getLlama` · trọng số `loadModel` · KV-cache `createContext`. |
+| Có nhiễu? | **Không.** Backend đọc **431,6 MiB byte-y-hệt ở 5/5** tiến trình — **khớp độc lập** với `+430/+431` đo bằng thước khác ở Pha 1. |
+| Tách được lượt chồng nhau? | **CÓ — đây là bằng chứng gỡ cổng.** Cửa sổ nhỏ lồng trọn trong cụm cấp phát của model lớn: bộ đếm trả **2.424,0** và **16.700,2 MiB** (sai −0,18% / −1,01% so với kích thước file), trong khi `nvidia-smi` gán **19.117 / 19.112** cho **cả hai** — sai **+687%** với model nhỏ. |
+| Có phải "thước thứ hai"? | **Có, nhưng vô hại ĐÚNG CHỖ TA DÙNG.** Lệch **tuyệt đối** +505…+511 MiB (hằng số, trải 5,9 MiB khi thiết bị chạy 1.097→21.077). Lệch theo **chênh lệch** — thứ broker thật sự dùng — chỉ **0…12 MiB, trung vị 1,6** = **2,3%** ngưỡng 512. |
+
+**Năm điều kiện bắt buộc mang vào Pha 2:**
+
+| # | Điều kiện |
+|---|---|
+| Đ1 | **Chỉ tách được GIỮA các tiến trình, KHÔNG tách được TRONG một tiến trình** — `inFlightLoads` khoá **theo `modelId`**, nên hai model **khác nhau** vẫn nạp song song trong cùng PID. **Cần cơ chế thứ hai** (xem quyết định dưới). |
+| Đ2 | **Cộng theo CÂY tiến trình, không phải `child.pid`** — `spawnKbSyncWithVram()` dùng `spawn("npm", …, { shell: true })` nên `child.pid` là `cmd.exe`, còn 5 script node chạy **nối tiếp**, mỗi script một PID. Một giấy phép ↔ nhiều PID kế tiếp. (`spawnEvalGateWithVram` thì sạch — `spawn(process.execPath, …)`.) |
+| Đ3 | **Lọc theo LUID của NVIDIA** — máy có **4 LUID**; hôm nay 3 cái đọc 0 nên cộng thô không sai, nhưng iGPU Intel có mặt. |
+| Đ4 | **KHÔNG trộn hai thước** — số **tuyệt đối** của hai nguồn không thay thế nhau được. Chỉ dùng bộ đếm cho **chênh lệch**. |
+| Đ5 | **Chi phí: `Get-Counter` p50 1.016 ms — VƯỢT 1 giây.** Từ Node, mỗi lượt đọc tốn **760 ms** (PDH .NET) hoặc **1.342 ms** (Get-Counter) vì phải spawn `powershell.exe`. Đường **4,3 ms** chỉ có khi PDH handle đã ấm **trong tiến trình** — cần helper sống lâu hoặc native addon, **chưa dựng**. |
+
+**Quyết định về Đ1 — nối tiếp hoá cửa sổ đo trong tiến trình.** Bộ đếm trả một số cho mỗi PID, nên hai model khác nhau nạp song song **trong cùng tiến trình** vẫn không tách được. Cơ chế thứ hai là **một khoá nạp DUY NHẤT toàn tiến trình** (thay vì khoá theo `modelId`) bao quanh cửa sổ đo.
+
+Đây **không phải cái giá phải trả, mà là điều đằng nào cũng nên làm**: hai lượt `cudaMalloc` 17 GB chạy song song đúng là kịch bản dễ chạm trần bất định nhất (Ư7: 3 OK/9 hỏng trên máy rảnh). Nối tiếp hoá vừa làm phép đo đúng, vừa giảm chính lớp lỗi đó.
+
+**Quyết định về Đ5 — chấp nhận 760 ms, KHÔNG dựng helper sống lâu.** Broker chỉ đọc **2 lần mỗi lượt NẠP**, không phải mỗi nhịp; +1,52 s trên một lượt nạp mất 5–120 s là ≤2%. Helper sống lâu là một thành phần chạy ngầm mới, đổi lấy khoản tiết kiệm không ai cảm nhận được. **YAGNI** — ghi vào tồn đọng, dựng khi có số chứng minh cần.
 
 Kèm theo, phải trả **T5-15** trong cùng pha: giấy phép `gguf-backend` **không có đường trả ở nhánh thành công** — nếu bị gắn `measureFailed` thì xấu nhất không phải "nên khởi động lại" mà là **"bắt buộc khởi động lại"**.
 
