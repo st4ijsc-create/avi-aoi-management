@@ -479,24 +479,13 @@ git commit -m "feat(vram/pha2a): khoa nap duy nhat toan tien trinh — dieu kien
 
 - [ ] **Bước 1: Viết test thất bại trước**
 
-```ts
-import { describe, expect, it, vi } from "vitest";
+⚠ Kế hoạch này **cố ý không cho sẵn mã test cho Task 3**. Bộ test wiring hiện có dùng một bộ bản giả riêng mà chỉ đọc mã mới biết chính xác; mã bịa sẵn ở đây sẽ sai và phải vứt đi. **Đọc `wiring.doubleCount.test.ts` và `wiring.backend.test.ts` trước, rồi viết theo đúng khuôn bản giả của chúng.**
 
-// Ca ★★ QUAN TRONG NHAT: hai luot nap chong nhau trong HAI tien trinh
-// => hai con so RIENG, moi con dung model tuong ung.
-// Fixture dung so co 17.000 MiB (rang buoc toan cuc 7).
-it("hai luot chong nhau cho hai so RIENG BIET", async () => {
-  const MODEL_LON = 17_512_000_000;
-  const MODEL_NHO = 2_542_000_000;
-  // dau do theo tien trinh tra so theo PID; dau do toan thiet bi chi co MOT tong
-  // => truoc Task 3, ca nay bat buoc do vi ca hai luot deu measureFailed.
-  // Sau Task 3: ca hai commit dung so cua minh.
-  // (Implementer viet ban gia cho readProcessVram theo khuon cac test wiring san co.)
-  expect(MODEL_LON).toBeGreaterThan(MODEL_NHO * 5);
-});
-```
+⚠ **Bản giả `getLlama()` phải cache theo tham số như thật.** Thiếu điều đó thì ca song song đo một thế giới không tồn tại và **giấu mất lease ma cần bắt** — đã trả giá một lần.
 
-⚠ Ca trên là **khung**, không phải bản cuối. Implementer phải viết đầy đủ theo khuôn bản giả đã dùng trong `wiring.doubleCount.test.ts` và `wiring.backend.test.ts` — đọc hai file đó trước. **Bản giả `getLlama()` phải cache theo tham số như thật**; thiếu điều đó thì ca song song đo một thế giới không tồn tại và **giấu mất lease ma cần bắt**.
+**Ca ★★ quan trọng nhất — hai lượt nạp chồng nhau trong HAI tiến trình:** đầu dò theo tiến trình trả số theo PID, đầu dò toàn thiết bị chỉ có **một** tổng. Khẳng định phải kiểm: **hai** bản ghi `actualBytes` riêng biệt, mỗi bản khớp model của mình. Fixture bắt buộc dùng số cỡ **17.000 MiB** cho model lớn (ràng buộc toàn cục 7) — số cỡ 600 MiB không phân biệt được và đã từng khoá một hành vi hỏng lại thành "đúng".
+
+Ca này phải **đỏ trước khi sửa `vramWiring.ts`** (cả hai lượt đều `measureFailed`) và **xanh sau khi sửa**. Nếu nó xanh ngay từ đầu thì ca viết sai — dừng lại và viết lại.
 
 Ngoài ca ★★, phải có:
 - đầu dò theo tiến trình trả `null` ⇒ `markMeasureFailed()`, **không** commit, **không** recordActual;
