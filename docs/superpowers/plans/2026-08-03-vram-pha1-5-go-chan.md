@@ -625,3 +625,67 @@ Hướng gợi ý (**bạn quyết, ghi rõ lý do**): **từ chối chụp nề
 git add server/services/vram/vramReconciler.ts server/services/vram/vramReconciler.test.ts
 git commit -m "fix(vram/pha1.5-7): nền thôi nuốt model đang nạp — đóng CẢ HAI đường"
 ```
+
+---
+
+### Task 8: C-1 — sổ commit thôi cộng trùng
+
+> **Thêm sau khi review Task 7 tái hiện được. Không có trong kế hoạch gốc.**
+
+**Files:**
+- Modify: `server/services/vram/vramWiring.ts` (`beginVramAllocation` / `commitMeasured`)
+- Test: `server/services/vram/wiring.doubleCount.test.ts` (**mới**)
+
+**Bối cảnh:** `vramWiring.ts:168` đọc `beforeUsed` và `:241` tính `const actual = after.usedBytes - beforeUsed;` — **cả hai đầu đo đọc `used` TOÀN THIẾT BỊ**. Mọi lượt cấp phát rơi vào khoảng `before→after` của một giấy phép bị quy **trọn vẹn** cho giấy phép đó ⇒ hai cửa sổ chồng nhau ⇒ **cùng một khối byte ghi HAI LẦN**.
+
+**Đã tái hiện** (broker + wiring thật): `thiết bị = 5.000 MiB · Σ actualBytes = 8.000 MiB [A=4000, B=4000]`. Khớp ca LIVE `thiết bị 8.445 < đã commit 9.797`.
+
+⚠ **Có thật, không giả định**: `GGUF_MAX_CONCURRENCY=4`, **6 nơi gọi do HTTP điều khiển**, log LIVE hiện **hai lease `gguf-model` pending cùng lúc**. `aiGgufEngine.ts:2756-2762`: *"4 lượt tuần tự 654 MiB; đồng thời 2.430 MiB"*.
+
+⚠ **Biến thể tệ hơn, KHÔNG tự lành**: một **tiến trình con** (kb-sync / vision / trainer) cấp phát trong cửa sổ đo của một giấy phép trong-tiến-trình ⇒ giấy phép đó **nuốt byte của con vĩnh viễn** vào `actualBytes`; con thoát, thiết bị tụt, **sổ không tụt**.
+
+⚠⚠ **Vì sao chặn Pha 2**: Pha 2 từ chối/thu hồi trên `headroom = trần − reserve − Σ leaseBytes`, mà `leaseBytes()` trả `actualBytes` sau commit ⇒ **từ chối nạp và ĐUỔI MODEL ĐANG CHẠY trên byte ma**.
+
+- [ ] **Step 1: Viết test đỏ**
+
+```ts
+it("★★ hai cửa sổ đo CHỒNG NHAU ⇒ tổng sổ KHÔNG được vượt delta thiết bị thật", async () => {
+  // thiết bị: 1000 → (A xin) → 3000 → (B xin) → 5000 ; delta THẬT = 4000
+  // A và B mỗi bên thấy after−before = 4000 ⇒ sổ 8000 nếu còn lỗi
+  const tA = await beginVramAllocation({ owner: "gguf:A", kind: "gguf-model", priority: "interactive" });
+  const tB = await beginVramAllocation({ owner: "gguf:B", kind: "gguf-model", priority: "interactive" });
+  await tA.commitMeasured();
+  await tB.commitMeasured();
+  const total = snapshot().leases.reduce((s, l) => s + (l.actualBytes ?? 0), 0);
+  expect(total).toBeLessThanOrEqual(4000 * MIB);   // KHÔNG được là 8000
+});
+```
+⚠ Chữ ký/mock **có thể sai** — đọc mã thật, sửa test cho khớp. Xem `wiring.inprocess.test.ts` để lấy quy ước.
+
+- [ ] **Step 2: Chạy, xác nhận ĐỎ.** Dán output.
+
+- [ ] **Step 3: Sửa**
+
+⚠⚠ **NGUYÊN TẮC BẤT DI BẤT DỊCH: KHÔNG BỊA SỐ.** Khi không đo sạch được thì **khai `measureFailed`**, đừng chia tỉ lệ, đừng ước lượng bù. Cả chương trình này dựng trên *"một ước lượng sai ĐƯỢC GẮN CỜ rẻ hơn một ước lượng sai ĐƯỢC TIN."*
+
+Ba hướng, **bạn chọn và ghi rõ lý do**:
+- **(c) Phát hiện chồng lấn ⇒ `markMeasureFailed()`** — trung thực: *"không cô lập được phép đo này"*. Cùng ngữ nghĩa `measureFailed` sẵn có, cùng đường tự lành (Task 3 đã dựng).
+- **(a) Tuần tự hoá phép đo** — chỉ một giấy phép được "đang đo" tại một thời điểm. Sạch nhất về số, nhưng **nối tiếp đường cấp phát** ⇒ hỏi ngay: có khoá chéo với `withGgufSlot` không? có làm chậm đường nóng không?
+- **(a)+(c)** — tuần tự khi rẻ, khai hỏng khi không.
+
+⚠⚠ **Hai câu hỏi bắt buộc trả lời trước khi viết** (Pha 1.5 đã trả **7 vòng sửa** cho chúng):
+1. **"Nếu nhánh mới này kích hoạt SAI thì bao lâu nó tự lành?"**
+2. **"Tôi vừa kiểm một đường — đường KIA có đi qua đúng chỗ này không?"**
+
+⚠ Và: **tiến trình con cấp phát trong cửa sổ đo** thì phát hiện chồng lấn **trong tiến trình** *không thấy được*. Nói rõ phạm vi bản vá phủ tới đâu — **đừng tuyên bố rộng hơn**.
+
+- [ ] **Step 4: Chạy XANH + đột biến**
+
+Đột biến: vô hiệu phát hiện chồng lấn ⇒ ca ★★ **phải đỏ**. Hoàn nguyên.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add server/services/vram/vramWiring.ts server/services/vram/wiring.doubleCount.test.ts
+git commit -m "fix(vram/pha1.5-8): sổ commit thôi cộng trùng khi hai cửa sổ đo chồng nhau"
+```
