@@ -874,22 +874,38 @@ WHERE owner='cuda-backend' ORDER BY id DESC LIMIT 4;   --  commit = 431 MiB
 > 8,9 / 10,9 / 13,6 / 15,6 / 16,3 GB) **ĐÃ BỊ RÚT** và **không** xuất hiện ở mục này. Mọi con số
 > khác dưới đây là **đo mới trong phiên này**.
 
-### 10.1 Vì sao NAY mới đo được — và vì sao 12 lượt của Pha 1 không phân biệt được gì
+### 10.1 Vì sao 12 lượt của Pha 1 không phân biệt được gì — và cái gì **thật sự** mở khoá
 
 Pha 1 §7.3 đọc `prior = []` từ sổ cái và kết luận *"không có cấp phát nào đi trước"*. Câu đó sai
 phạm vi: `prior = []` chỉ nói **"không có cấp phát ĐÃ VÀO SỔ"**. Backend CUDA của `getLlama()`
-(`aiGgufEngine.ts:727` ở HEAD Pha 1; **`:800`** ở HEAD hiện tại) đi trước khối lớn ở **cả 12 lượt** và sổ **mù** với nó.
+(`aiGgufEngine.ts:727` ở HEAD Pha 1; **`:800`** ở HEAD hiện tại) đi trước khối lớn ở **cả 12 lượt**.
 Biến độc lập của Ư0 vì thế **không đổi** trên toàn thí nghiệm ⇒ nó không xác nhận và không bác bỏ
 được gì.
 
-**Task 2 khép chỗ mù đó**: backend CUDA nay có giấy phép `kind: "gguf-backend"`, `owner:
-"cuda-backend"`, và `commitMeasured()` ghi số **đo được**. Phiên này đọc lại **24 lần** liên tiếp:
-**+425 … +446 MiB** (trung vị ≈ 431). Lần đầu tiên `prior` phản ánh **cấp phát GPU thật**.
+**Thứ mở khoá phép đo này KHÔNG phải việc sổ nhìn thấy backend — mà là ý tưởng phải THÊM một cấp
+phát THỨ HAI** (Pha 1 §7.6 mục 4 / I-1). Hai lý do, kiểm được bằng chính dữ liệu của task này:
 
-⇒ Nghĩa là: **điều kiện "có một cấp phát CUDA đi trước" đã ĐÚNG ở nhánh để nguyên**, và muốn thay
-đổi biến độc lập thì phải thêm **một cấp phát nữa** — cấp phát **có trọng số thật** — chứ không thể
-lấy đi cái backend (khối lớn không nạp được nếu không có backend). Đó chính là hình dạng của phép
-thử dưới đây, và cũng là **giới hạn cứng** của nó (§10.7).
+1. **Bằng chứng "+430 MiB đi trước khối lớn ở cả 12 lượt" đã có TRƯỚC Task 2**, đo bằng chính
+   `nvidia-smi` (Pha 1 §7.6 mục 3: đỉnh 1.438-1.443 MiB trên nền 998-1.012 MiB). Chỗ mù của Pha 1 là
+   **cách đọc dấu hiệu**, không phải thiếu thiết bị đo.
+2. **Thí nghiệm này KHÔNG dùng sổ để dựng biến độc lập.** Cấp phát 0,6B của nhánh B đi thẳng qua
+   `llama.loadModel()`, **không** qua `beginVram()` ⇒ sổ ở hai nhánh **giống hệt nhau** (§10.3), và
+   chỉ `nvidia-smi` phân biệt được. Nếu sổ là điều kiện cần thì phép đo này đã không chạy được.
+
+⇒ **Task 2 vẫn có giá trị** (nó khép khoản ~430 MiB lớn nhất của "sàn cấu trúc" — lý do ngưỡng báo
+động 512 MiB từng vô dụng; phiên này đọc lại `act` của giấy phép `cuda-backend` **24/24 lượt**,
+`totalReserved` 17.296-17.317 MiB) **nhưng nó KHÔNG phải điều kiện cần của phép đo Ư0.**
+
+⚠ **Tự đính chính — tiền đề của brief Task 6 (và của bản đầu mục này) SAI, và tôi chép lại nó mà
+không đối chiếu với dữ liệu mình vừa thu.** Câu *"nhờ Task 2 đưa backend vào sổ nên NAY mới đo được"*
+mâu thuẫn với chính §10.3 của mục này. Hại nếu để nguyên: người sau sẽ tin **phải vá sổ mới quan sát
+được một lớp cấp phát**, trong khi `nvidia-smi` là đủ. **Bài học: tiền đề của brief cũng phải kiểm
+bằng dữ liệu vừa thu, y như mọi phát biểu khác.**
+
+⇒ Hình dạng bắt buộc của phép thử: **điều kiện "có một cấp phát CUDA đi trước" đã ĐÚNG ở nhánh để
+nguyên** (+425 … +446 MiB, trung vị ≈ 431, đo 24/24 lượt), nên muốn làm **đổi** biến độc lập thì chỉ
+còn cách **thêm một cấp phát nữa** — có **trọng số thật** — chứ không thể lấy đi cái backend (khối
+lớn không nạp được nếu không có backend). Đó cũng là **giới hạn cứng** của nó (§10.7).
 
 ### 10.2 Thiết kế — hai nhánh, **MỘT bản mã**, N = 12 mỗi nhánh, xen kẽ
 
@@ -1071,12 +1087,29 @@ trên chính 24 lượt này (đó là dò dữ liệu).
 ### 10.8 Hệ quả cho Pha 2
 
 1. **★★ Cưỡng chế theo "byte còn trống" KHÔNG chạm được lớp lỗi này — và có thể làm nó IM LẶNG.**
-   18/18 lượt hỏng có **~30 GB trống** cho một yêu cầu **16,3 GiB**. Bất kỳ `wouldRefuse` nào tính
-   theo dung lượng sẽ **cho qua** (đúng về dung lượng) rồi lượt nạp **vẫn hỏng** (sai về kết cục).
-   ⇒ Khi bật cưỡng chế, **`VramRefusedError` và `cudaMalloc failed` phải là hai câu KHÁC NHAU trong
-   nhật ký**. Gộp chúng là xoá mất tín hiệu ồn ào duy nhất đang chỉ vào bí ẩn này. Đây là **điều
-   kiện chặn thứ tám**, xin bổ sung vào bảy điều kiện của §9.
-2. **★ KHÔNG viết đường vòng "chạm backend sớm" thành mã. Lý do §7.6 vẫn đứng, và mạnh hơn.**
+   18/18 lượt hỏng có **~30 GB trống** cho một yêu cầu **`16.698,37 MiB`**. Bất kỳ `wouldRefuse` nào
+   tính theo dung lượng sẽ **cho qua** (đúng về dung lượng) rồi lượt nạp **vẫn hỏng** (sai về kết cục).
+   ⇒ Khi bật cưỡng chế, nhật ký phải tách **BA** kết cục, không phải hai:
+
+   | # | Kết cục | Ai từ chối | Dấu hiệu trong log |
+   |---|---|---|---|
+   | 1 | `VramRefusedError` | **sổ** (Pha 2) | câu từ chối có `owner`/`holders` |
+   | 2 | `cudaMalloc failed` | **driver** | `allocating … MiB … out of memory` |
+   | 3 | **suy biến IM LẶNG** | *không ai* — lượt nạp trượt khỏi cả hai lưới | **không có dòng nào** |
+
+   Kết cục 3 **không phải giả thuyết**: **0/24** log của phiên này chứa `retrying with
+   gpuLayers:"auto"` ⇒ lớp lùi (`aiGgufEngine.ts:839-850`) **không chạy ở bất kỳ lượt hỏng nào**, và
+   `warmModel` có `catch {}` **rỗng**. Gộp ba kết cục này thành một là xoá mất tín hiệu ồn ào duy
+   nhất đang chỉ vào bí ẩn — đúng cái bẫy **§7.6 mục 2 (Pha 1)** đã cảnh báo. Đây là **điều kiện chặn
+   thứ tám**, xin bổ sung vào bảy điều kiện của **§9 báo cáo Pha 1**
+   (`docs/superpowers/reports/2026-08-02-vram-pha1-report.md`).
+   **⇒ Dạng TỔNG QUÁT của chỗ mù, ghi để Pha 2 đừng vá lẻ:** 1.138 MiB của nhánh B vô hình với sổ vì
+   nó **không đi qua `beginVram()`** — đó là **quy luật**, không phải mẹo của móc đo: **mọi cấp phát
+   không qua cổng đều vô hình với cưỡng chế.** Task 2 chỉ khép **một** thể hiện (backend CUDA); ba
+   thể hiện khác đã biết là sidecar thị giác 7,8 GB, hai tiến trình Python trainer, và bất kỳ tiến
+   trình con nào. Trước khi bật cưỡng chế phải liệt kê **tất cả** đường cấp phát, không phải vá từng
+   cái khi nó lộ ra.
+2. **★ KHÔNG viết đường vòng "chạm backend sớm" thành mã. Lý do §7.6 (Pha 1) vẫn đứng, và mạnh hơn.**
    Nhánh B là một **phiên bản MẠNH HƠN** của đường vòng đó (backend **cộng thêm** 1,1 GiB trọng số
    thật, đúng ngay trước khối lớn) — **và nó hỏng 9/12 lượt.** Tiền đề của bản vá (*"đưa được một
    cấp phát CUDA vào sớm thì khối lớn qua"*) bị dữ liệu của chính nó bác bỏ **trong phạm vi
@@ -1118,3 +1151,33 @@ git diff --stat HEAD -- server/ client/ drizzle/ scripts/ shared/ # (rỗng)
 
 **Tái tạo:** mỗi lượt = boot `npm run dev:worker`, đọc `[U0] tag=…` trong log. 24 log thô của phiên
 này (`run-01-A.log` … `run-24-B.log`) là bằng chứng gốc; mọi ô trong bảng §10.3 trích thẳng từ đó.
+
+#### ⚠⚠ BẪY HẠ TẦNG — đọc TRƯỚC khi tái chạy, nếu không sẽ ghi dữ liệu SAI vào bảng
+
+> **Đừng nối ống (pipe) stdout/stderr của lượt boot vào tiến trình cha. Phải cho tiến trình con kế
+> thừa THẲNG một handle FILE** (`stdio: ["ignore", fd, fd]` với `fd = fs.openSync(logPath, "a")`,
+> hoặc `> log 2>&1` do chính shell mở).
+
+Đã đo, tái hiện **2/2 lượt**: khi stdout/stderr đi qua ống của tiến trình cha, lượt boot **đứng im
+đúng ở dòng ngay TRƯỚC `getLlama()`** (log dừng ở dòng 71, `nvidia-smi` **không nhúc nhích** khỏi
+nền suốt 306 s, hết thời gian chờ). Cùng lệnh đó chạy với đầu ra ghi thẳng ra file thì `getLlama()`
+chạy bình thường sau **~50-70 s**.
+
+**Vì sao đây là bẫy ĐẮT NHẤT của phép đo này, không phải một phiền toái vặt:**
+
+1. **Một lượt treo GIẢ DẠNG đúng hiện tượng đang nghiên cứu** — "warm không nạp được 30B" — nhưng nó
+   là **lỗi của bộ đo**, không phải của hệ. Ghi nó vào bảng là bịa ra một lượt FAIL.
+   **Máy phân biệt:** lượt FAIL **thật** luôn có `[U0] tag=post-getLlama` với Δ ≈ +430 MiB **và**
+   dòng `allocating 16698.37 MiB … cudaMalloc failed`; lượt treo **không có dòng `[U0]` nào** và
+   `nvidia-smi` **không rời nền**. Thiếu một trong hai dấu ⇒ **loại lượt, chạy lại**, không được đếm.
+2. **`dev:worker` = `tsx watch` ⇒ cha + con.** `TaskStop`/đóng tiến trình cha **KHÔNG** giết con;
+   con sống sót giữ nguyên VRAM và **nhiễm sang lượt sau**. Runner phải `taskkill /F /T` theo PID rồi
+   quét **chỉ** những `node.exe` có dòng lệnh khớp `worker\.ts|dev:worker|tsx` (⚠ **không** quét
+   theo tên tiến trình: quét mù sẽ giết luôn chính runner — đã mắc một lần trong phiên này).
+   ⚠ **Không dùng `tasklist`** (trả rỗng khi có nhiều `node.exe`); dùng `Get-CimInstance Win32_Process`.
+3. **Lưới an toàn bắt buộc: đo `nvidia-smi` TRƯỚC mỗi lượt và chờ về nền trước khi boot lượt kế.**
+   Cột `smi trước boot` của §10.3 chính là lưới đó, **và nó đã qua 24/24**: **1.017-1.045 MiB** suốt
+   loạt, không lượt nào nền cao bất thường ⇒ **không có tiến trình con nào sống sót** nhiễm sang lượt
+   sau. Thiết kế before/after vì thế **kiêm luôn máy dò rò** — giữ nó khi tái chạy.
+4. Sidecar thị giác ~7,8 GB tự tắt sau ~10 phút nhàn rỗi; nếu nó thức lúc đo thì nền sẽ **≫ 1.045
+   MiB** và cột `smi trước boot` sẽ tố cáo ngay.
