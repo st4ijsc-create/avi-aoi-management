@@ -599,6 +599,38 @@ export const KNOWN_ALLOCATION_SITES: readonly { file: string; symbol: string; wi
 
 ---
 
+### Task 6: Biên lắng của bộ đếm phải là CỦA TA, không phải tác dụng phụ của PDH
+
+**Thêm 2026-08-03 sau re-review Task 3 (I-5).** Task này tồn tại vì một phát hiện đo được, không vì phòng xa.
+
+**Files:**
+- Modify: `server/services/vram/vramProcessProbe.ts`
+- Modify: `server/services/vram/vramWiring.ts`
+- Test: `server/services/vram/vramProcessProbe.test.ts`, `server/services/vram/wiring.settle.test.ts` (tạo mới)
+
+**Vấn đề, bằng số:**
+
+`seen` đo **sự tồn tại của khoá**, không đo **độ tươi**. Sau khi `cuda-backend` hình thành thì khoá của ta **luôn** tồn tại, nên lưới I-1 thực chất chỉ còn phủ ca "bộ đếm mù toàn máy". Nếu bộ đếm trễ, cửa sổ đo **bị dịch**: trễ một phần ⇒ `learned` hụt; trễ hoàn toàn ⇒ hai lượt đọc giống hệt ⇒ `actual === 0` với `seen === true` ⇒ **commit 0 + `recordActual(0)`**, tái tạo nguyên vẹn nấc `learned = 0`.
+
+Đo được (3 lượt, đọc dấu thời gian PDH của chính mẫu được dùng): PDH lấy mẫu lúc **t₀ + 1.299 / 1.304 / 1.352 ms**. Biên lắng thực tế **1,30–1,35 s**.
+
+⚠ **Biên đó là TÁC DỤNG PHỤ của `Get-Counter`** (mặc định `-SampleInterval 1`: thu, chờ 1 giây, thu lại). Không ai thiết kế, không ghi ở đâu, không test nào canh. Phân rã chi phí một lượt đọc: boot ~110 ms · **`Get-Counter` ~1.200 ms** · `Get-CimInstance` ~200 ms.
+
+⚠⚠ **Mục tồn đọng chi phí của chính chúng ta là một cái bẫy:** "bỏ `Get-CimInstance`, 3,1 s → ~1 s" chỉ rút **~13 %**. Người tiếp theo sẽ nhìn sang 1,2 giây còn lại và **cắt biên lắng trong một dòng, không ca test nào đỏ**.
+
+**Việc phải làm:**
+
+1. **Đo trực tiếp ẩn số #7** — độ trễ thật giữa lúc `cudaMalloc` hoàn tất và lúc bộ đếm phản ánh đủ. Giao thức: nạp model, rồi lấy mẫu **liên tiếp** với chu kỳ ngắn, ghi lại thời điểm giá trị **đạt mức ổn định cuối**. Ít nhất **5 lượt**, cả model lớn lẫn nhỏ. Đây là con số mà **hai** báo cáo trước đều tự khai là *chưa đo*.
+2. **Ghim `VRAM_MEASURE_SETTLE_MS`** — một hằng số **của ta**, đặt trên giá trị đo được với biên rõ ràng, `await` trước đầu đo SAU. Biên lắng phải thuộc về ta, **không** mượn nội tại của PDH.
+3. **Test canh biên** — ca đỏ khi ai đó hạ hằng số xuống dưới giá trị đo được. Đây chính là ca mà hôm nay **không tồn tại**, và là lý do cái bẫy ở trên nguy hiểm.
+4. Chỉ khi (1)–(3) xong mới được đụng tới `Get-Counter` trong bất kỳ lượt tối ưu chi phí nào.
+
+**Điều kiện đạt:** hằng số có tên, có số đo chống lưng, có test canh. Nếu phép đo (1) cho thấy độ trễ **vượt** biên 1,2 s hiện có, đó là phát hiện quan trọng hơn cả task — báo cáo ngay, đừng tự nới.
+
+⚠ Lệ thuộc thứ tự: **Task 4 là ĐIỀU KIỆN TIÊN QUYẾT** của task này (xem N-2 ở báo cáo Task 3) — bản vá I-1 mở thêm một cửa vào T5-15, và Task 4 là thứ đóng nó.
+
+---
+
 ## Điều kiện ra của Pha 2A
 
 | # | Điều kiện | Cách kiểm |
