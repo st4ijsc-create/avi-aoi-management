@@ -244,7 +244,10 @@ describe("Pha 1.5 Task 3 — lease chưa commit nới dung sai CHỈ phía ÂM",
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
     const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
-    await captureVramBaseline(); // nền = 1.000 (lease vẫn pending lúc chụp ⇒ không trừ gì thêm)
+    // ⚠ Task 7 (T5-1): lease vẫn pending lúc chụp ⇒ lượt chụp bị HOÃN, nền = "chưa biết". Người
+    // gọi `reconcileOnce()` TRỰC TIẾP (không qua `startVramReconciler()`) thì "chưa biết" = so
+    // số THÔ, đúng như hợp đồng I-1 — nên ca này vẫn đo đúng thứ nó sinh ra để đo.
+    await captureVramBaseline();
     // 30B đã nạp XONG về mặt vật lý (17.000, đúng ước lượng) NHƯNG chưa kịp commit(), CỘNG THÊM
     // một kẻ cấp phát chui 8.000 MiB — đúng lúc `pendingBytes` đang lớn nhất.
     used = 1_000 * MIB6 + 17_000 * MIB6 + 8_000 * MIB6;
@@ -409,12 +412,22 @@ describe("Pha 1.5 Task 1 review vòng 1 — EXP-2: sự kiện baseline phải g
     // `leases: []` ⇒ cả hai đều bằng 0 ⇒ đổi `ledgerTotal` thành `committedBytes` trong công thức
     // `driftIfNotResampled` KHÔNG làm test đỏ — lưới không canh được biến nào đang dùng, đúng
     // lớp lỗi brief đã cảnh báo ("Pha 1 mất ba vòng sửa vì đúng chỗ này").
+    //
+    // ⚠ Pha 1.5 Task 7 (T5-1) — giấy phép đó nay mang `measureFailed: true`, KHÔNG phải một
+    // lease "đang nạp" thuần. LÝ DO: từ Task 7, còn giấy phép ĐANG NẠP thì `captureVramBaseline()`
+    // HOÃN (byte của nó đã lên thiết bị nhưng chưa vào sổ ⇒ chụp là nuốt trọn model, đo được
+    // −16.700 MiB vĩnh viễn). Ca "đo hỏng" giữ NGUYÊN tính chất mà test này cần —
+    // `actualBytes === null` nên KHÔNG vào `committedBytes`, nhưng VẪN nằm trong `ledgerTotal` —
+    // mà không chạm lá chắn hoãn. Ý ĐỊNH của test KHÔNG đổi: canh `driftIfNotResampled` dùng
+    // ĐÚNG `ledgerTotal` chứ không phải `committedBytes`. Ca "hoãn ở nhánh resample vẫn phải để
+    // lại dấu vết EXP-2" nằm ở describe Task 7 bên dưới.
     const acquiredAt = new Date();
     const pendingLease = {
       id: "lease-pending",
       request: { owner: "gguf:pending", kind: "gguf-model", estimatedBytes: 500 * MIB3, priority: "interactive" },
       acquiredAt,
       actualBytes: null, // CHƯA commit ⇒ KHÔNG cộng vào committedBytes, NHƯNG vẫn nằm trong ledgerTotal
+      measureFailed: true, // …và sẽ KHÔNG BAO GIỜ commit ⇒ không phải "đang nạp" (Task 7)
       lastHeartbeatAt: acquiredAt,
       released: false,
     };
@@ -789,21 +802,40 @@ describe("NEW-1 — nền = thiết bị − phần ĐÃ COMMIT, nên boot chậ
    *   vài giây sau: 17.941 − 0 = 17.941 ⇒ drift = 941 ⇒ ALARM mỗi 60 s, MÃI MÃI.
    * Tức là lỗi I-1 sống lại qua cửa sau — chỉ khác: hỏng theo XÁC SUẤT thời điểm boot.
    *
-   * SỬA: chỉ trừ phần ĐÃ COMMIT. Giấy phép chưa commit nghĩa là "đã xin nhưng CHƯA cấp phát
-   * xong" ⇒ nó CHƯA nằm trong `deviceUsed` ⇒ trừ nó là trừ một thứ chưa tồn tại.
+   * SỬA (vòng 3): chỉ trừ phần ĐÃ COMMIT.
+   *
+   * ⚠⚠ SỬA LẠI (Pha 1.5 Task 7 / T5-1) — LÝ LẼ CỦA VÒNG 3 ĐÃ BỊ SỐ LIỆU BÁC BỎ: đo được
+   * `nvidia-smi = 18.115 MiB` KHI giấy phép 30B vẫn `pending` ⇒ *"chưa commit ⇒ chưa nằm trong
+   * deviceUsed"* là SAI, và công thức vòng 3 nuốt trọn model vào nền (978 → 17.891 MiB, drift
+   * −16.700 MiB, KHÔNG BAO GIỜ tự lành). Trong cửa sổ nạp KHÔNG CÔNG THỨC NÀO đúng — trừ 0 thì
+   * thừa nền, trừ cả ước lượng thì thiếu nền. ⇒ HOÃN chụp, thử lại nhịp sau.
+   *
+   * ⚠ Ý ĐỊNH của hai ca ★★ dưới đây KHÔNG ĐỔI — chúng vẫn canh đúng một điều: **nền phải ra 941,
+   * không được là 0 và cũng không được là 17.941**. Chỉ CƠ CHẾ đổi: từ "chụp ngay bằng một phỏng
+   * đoán" sang "chờ tới lúc biết chắc rồi mới chụp".
    */
-  it("★★ chụp nền TRÚNG cửa sổ chưa-commit ⇒ nền vẫn là 941, KHÔNG bị kẹp về 0", async () => {
+  it("★★ chụp nền TRÚNG cửa sổ chưa-commit ⇒ HOÃN (không kẹp về 0, cũng không nuốt model), rồi ra ĐÚNG 941", async () => {
     // Sổ đã cộng 17 GB ƯỚC LƯỢNG; thiết bị vật lý chưa kịp tăng.
+    let done = false;
     vi.doMock("./vramBroker", () => ({
-      snapshot: () => ({ totalReservedBytes: DEEP_30B, leases: [pending(DEEP_30B)] }),
+      snapshot: () =>
+        done
+          ? { totalReservedBytes: DEEP_30B, leases: [committed(DEEP_30B)] }
+          : { totalReservedBytes: DEEP_30B, leases: [pending(DEEP_30B)] },
     }));
     vi.doMock("./vramProbe", () => ({
-      readDeviceVram: async () => ({ usedBytes: BACKGROUND, totalBytes: 32_607 * MIB, source: "native" }),
+      readDeviceVram: async () => ({
+        usedBytes: done ? BACKGROUND + DEEP_30B : BACKGROUND,
+        totalBytes: 32_607 * MIB,
+        source: "native",
+      }),
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
 
     const { captureVramBaseline } = await import("./vramReconciler");
-    expect(await captureVramBaseline()).toBe(BACKGROUND);
+    expect(await captureVramBaseline()).toBeNull(); // TUYỆT ĐỐI không kết luận trong cửa sổ nạp
+    done = true;
+    expect(await captureVramBaseline()).toBe(BACKGROUND); // nhịp sau: 941, KHÔNG phải 0, KHÔNG phải 17.941
   });
 
   it("★★ …và vài giây sau khi model tải xong thì KHÔNG báo động", async () => {
@@ -828,11 +860,12 @@ describe("NEW-1 — nền = thiết bị − phần ĐÃ COMMIT, nên boot chậ
     }));
     vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
 
-    const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
-    await captureVramBaseline(); // TRÚNG cửa sổ chưa-commit
+    const { __runReconcileTick, captureVramBaseline } = await import("./vramReconciler");
+    await captureVramBaseline(); // TRÚNG cửa sổ chưa-commit ⇒ HOÃN (Task 7)
     done = true; // model tải xong, commit số thật
 
-    const r = await reconcileOnce();
+    // `__runReconcileTick()` = ĐÚNG thứ bộ đếm giờ gọi mỗi nhịp: thử chụp lại RỒI đối chiếu.
+    const r = await __runReconcileTick();
     expect(r.baselineUsedBytes).toBe(BACKGROUND);
     expect(r.driftBytes).toBe(0);
     expect(r.alarm).toBe(false);
@@ -941,5 +974,346 @@ describe("NEW-2 — đầu dò hồi phục thì nền TỰ LÀNH; chưa biết 
     expect(r.alarm).toBe(false);
 
     stopVramReconciler();
+  });
+});
+
+/**
+ * ★★ Pha 1.5 TASK 7 (T5-1) — NỀN THÔI NUỐT MODEL ĐANG NẠP.
+ *
+ * Task 5 (chỉ-đo) tìm ra: `nền = raw − Σ actualBytes` cho giấy phép ĐANG NẠP đóng góp **0**
+ * trong khi byte của nó **ĐÃ nằm trong `raw`** ⇒ nền nuốt trọn model. Đo được (báo cáo §5.3,
+ * `vram_events.id=83`): `priorBaseline 978 → baseline 17.891 MiB`, `drift = −16.700 MiB`,
+ * **báo động 100 % mọi nhịp, KHÔNG BAO GIỜ tự lành** (`baselineCaptured = true` đóng băng vĩnh
+ * viễn; chỉ khởi động lại tiến trình mới gỡ được).
+ *
+ * ⚠⚠ HAI ĐƯỜNG GỌI, CẢ HAI ĐỀU DÍNH — vá một đường là KHÔNG ĐẠT:
+ *   (a) `startVramReconciler()` — lượt chụp ĐẦU lúc boot, đua với `warmUpOllamaModels()`
+ *       (`setTimeout(2000)`, `index.ts:4931` → `:5229`). KHÔNG sinh sự kiện resample nào ⇒
+ *       KHÓ CHẨN ĐOÁN HƠN (b).
+ *   (b) `reconcileOnce()` — nhánh RESAMPLE. ĐÃ ĐO, tái hiện 2/2.
+ *
+ * ⚠ TIỀN ĐỀ CŨ BỊ BÁC BỎ (docstring `captureVramBaseline()`): *"giấy phép chưa commit ⇒ CHƯA
+ * nằm trong deviceUsed"*. Đo được `nvidia-smi = 18.115 MiB` khi giấy phép 30B vẫn `pending` —
+ * *"chưa commit"* chỉ nghĩa **sổ chưa theo kịp**, KHÔNG nghĩa thiết bị còn trống.
+ *
+ * SỬA: trong cửa sổ nạp, byte thật của lease pending nằm ĐÂU ĐÓ giữa 0 và ước lượng, và KHÔNG
+ * CÓ CÁCH NÀO biết từ một lượt đọc. `raw − Σ actualBytes` sai theo hướng THỪA nền (nuốt model),
+ * `raw − ledgerTotal` sai theo hướng THIẾU nền (kẹp về 0 — đúng lỗi vòng 3 đã vá). ⇒ Lượt chụp
+ * rơi vào cửa sổ đó KHÔNG ĐÁNG TIN theo BẤT KỲ công thức nào ⇒ **HOÃN, thử lại nhịp sau** —
+ * cùng khuôn `if (raw < committedBytes)` sẵn có, nằm BÊN TRONG hàm nên phủ CẢ HAI đường theo
+ * cấu trúc.
+ */
+describe("Pha 1.5 Task 7 (T5-1) — nền thôi nuốt model đang nạp, CẢ HAI đường gọi", () => {
+  beforeEach(() => vi.resetModules());
+
+  const MIB7 = 1024 * 1024;
+
+  const pendingLease = (owner: string, est: number) => ({
+    id: owner,
+    request: { owner, kind: "gguf-model", estimatedBytes: est, priority: "interactive" },
+    actualBytes: null as number | null,
+    measureFailed: false,
+    acquiredAt: new Date(),
+    lastHeartbeatAt: new Date(),
+    released: false,
+  });
+  const committedLease = (owner: string, actual: number, kind = "gguf-model") => ({
+    id: owner,
+    request: { owner, kind, estimatedBytes: actual, priority: "interactive" },
+    actualBytes: actual as number | null,
+    measureFailed: false,
+    acquiredAt: new Date(),
+    lastHeartbeatAt: new Date(),
+    released: false,
+  });
+  const leaseBytesMock = (l: { actualBytes: number | null; request: { estimatedBytes: number } }) =>
+    l.actualBytes ?? l.request.estimatedBytes;
+
+  // ── ĐƯỜNG (a): lượt chụp ĐẦU lúc boot ─────────────────────────────────────────────────────
+  const BG_A = 900 * MIB7;
+  const DEEP_A = 17_000 * MIB7;
+
+  it("★★ (a) chụp nền LẦN ĐẦU khi model đang nạp ⇒ KHÔNG nuốt 17 GB vào nền", async () => {
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: DEEP_A, leases: [pendingLease("gguf:30B", DEEP_A)] }),
+      leaseBytes: leaseBytesMock,
+    }));
+    // Trọng số ĐÃ lên thiết bị (đo được 18.115 MiB khi lease vẫn pending) nhưng sổ chưa theo kịp.
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: BG_A + DEEP_A, totalBytes: 32_607 * MIB7, source: "smi" }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { captureVramBaseline } = await import("./vramReconciler");
+    const base = await captureVramBaseline();
+
+    expect(base).not.toBe(BG_A + DEEP_A); // TUYỆT ĐỐI không được nuốt cả 17,9 GB
+    expect(base).toBeNull(); // không đoán bừa: HOÃN, thử lại nhịp sau
+  });
+
+  it("★★ (a) qua ĐÚNG startVramReconciler() ⇒ hoãn thì IM LẶNG, rồi TỰ LÀNH ra nền ĐÚNG", async () => {
+    let loaded = false;
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () =>
+        loaded
+          ? { totalReservedBytes: DEEP_A, leases: [committedLease("gguf:30B", DEEP_A)] }
+          : { totalReservedBytes: DEEP_A, leases: [pendingLease("gguf:30B", DEEP_A)] },
+      leaseBytes: leaseBytesMock,
+    }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: BG_A + DEEP_A, totalBytes: 32_607 * MIB7, source: "smi" }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { startVramReconciler, stopVramReconciler, __runReconcileTick, reconcileOnce } =
+      await import("./vramReconciler");
+    try {
+      startVramReconciler(); // ĐÚNG đường (a): `void captureVramBaseline()` ngay lúc boot
+      await new Promise((r) => setImmediate(r));
+
+      const during = await reconcileOnce();
+      expect(during.baselineUsedBytes).toBeNull(); // KHÔNG ghim 17.900 MiB
+      expect(during.alarm).toBe(false); // hoãn ngắn thì im lặng, chưa trip
+      expect(during.baselineBlocked).toBe(false);
+
+      loaded = true; // commitMeasured() đã chạy
+      const after = await __runReconcileTick();
+      expect(after.baselineUsedBytes).toBe(BG_A); // nền ĐÚNG, không phải 17.900
+      expect(after.driftBytes).toBe(0);
+      expect(after.alarm).toBe(false);
+    } finally {
+      stopVramReconciler();
+    }
+  });
+
+  // ── ĐƯỜNG (b): nhánh RESAMPLE — số liệu pháp y THẬT của `vram_events.id=83` ────────────────
+  const BG_B = 978 * MIB7; // nền ĐÚNG, đo được lúc boot
+  const BACKEND_B = 422 * MIB7; // gguf-backend, ĐÃ commit
+  const DEEP_EST_B = 16_871 * MIB7; // ước lượng 30B lúc reserve()
+  const DEEP_ACT_B = 16_913 * MIB7; // số THẬT sau commitMeasured()
+  const DEVICE_B = 18_313 * MIB7; // 978 + 422 + 16.913 — trọng số ĐÃ lên thiết bị
+  const POISONED_B = 17_891 * MIB7; // 18.313 − 422 — nền NHIỄM đã đo được
+
+  it("★★ (b) nhánh RESAMPLE khi model đang nạp ⇒ cũng KHÔNG nuốt (tái hiện vram_events.id=83)", async () => {
+    let phase: "boot" | "loading" | "loaded" = "boot";
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => {
+        if (phase === "boot") return { totalReservedBytes: 0, leases: [] };
+        if (phase === "loading") {
+          return {
+            totalReservedBytes: BACKEND_B + DEEP_EST_B,
+            leases: [committedLease("gguf:backend", BACKEND_B, "gguf-backend"), pendingLease("gguf:30B", DEEP_EST_B)],
+          };
+        }
+        return {
+          totalReservedBytes: BACKEND_B + DEEP_ACT_B,
+          leases: [committedLease("gguf:backend", BACKEND_B, "gguf-backend"), committedLease("gguf:30B", DEEP_ACT_B)],
+        };
+      },
+      leaseBytes: leaseBytesMock,
+    }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({
+        usedBytes: phase === "boot" ? BG_B : DEVICE_B,
+        totalBytes: 32_607 * MIB7,
+        // `loadGgufModel → getLlama → setLlamaInstanceHandle` ĐỔI THƯỚC, rồi `llama.loadModel`
+        // đẩy 17 GB — HAI sự kiện của CÙNG một chuỗi gọi, không độc lập (báo cáo §5.6).
+        source: phase === "boot" ? "smi" : "native",
+      }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { captureVramBaseline, __runReconcileTick, reconcileOnce } = await import("./vramReconciler");
+    expect(await captureVramBaseline()).toBe(BG_B); // nền ĐÚNG lúc boot, thước "smi"
+
+    phase = "loading";
+    const r = await reconcileOnce(); // đổi thước ⇒ RESAMPLE
+    expect(r.baselineResampled).toBe(true);
+    expect(r.baselineUsedBytes).not.toBe(POISONED_B); // ★ nền KHÔNG được thành 17.891 MiB
+    expect(r.baselineUsedBytes).toBeNull(); // hoãn, thử lại nhịp sau
+    expect(r.alarm).toBe(false);
+
+    phase = "loaded";
+    const r2 = await __runReconcileTick();
+    expect(r2.baselineUsedBytes).toBe(BG_B); // nền ĐÚNG được chụp lại, không phải 17.891
+    expect(r2.driftBytes).toBe(0); // và drift KHÔNG phải −16.700 MiB
+    expect(r2.alarm).toBe(false);
+  });
+
+  it("★ (b) lượt HOÃN ở nhánh resample vẫn PHẢI để lại dấu vết EXP-2 (nền cũ + drift-nếu-không-huỷ)", async () => {
+    // ⚠ Đường KIA của cùng bản vá: nền CŨ đã bị huỷ TRƯỚC khi gọi `captureVramBaseline()`. Nếu
+    // lượt hoãn không ghi gì, lưới pháp y mà Task 1 vòng 1 (EXP-2) dựng lên biến mất ĐÚNG trong
+    // kịch bản phổ biến nhất (resample xảy ra vì một lượt nạp model — tức LUÔN có lease pending).
+    let phase: "boot" | "loading" = "boot";
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () =>
+        phase === "boot"
+          ? { totalReservedBytes: 0, leases: [] }
+          : {
+              totalReservedBytes: BACKEND_B + DEEP_EST_B,
+              leases: [committedLease("gguf:backend", BACKEND_B, "gguf-backend"), pendingLease("gguf:30B", DEEP_EST_B)],
+            },
+      leaseBytes: leaseBytesMock,
+    }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({
+        usedBytes: phase === "boot" ? BG_B : DEVICE_B,
+        totalBytes: 32_607 * MIB7,
+        source: phase === "boot" ? "smi" : "native",
+      }),
+    }));
+    const logged: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: (e: never) => logged.push(e) }));
+
+    const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+    await captureVramBaseline();
+    phase = "loading";
+    await reconcileOnce();
+
+    const ev = logged.find((l) => l.event === "baseline_deferred");
+    expect(ev).toBeDefined();
+    expect(ev!.detail!.priorBaselineUsedBytes).toBe(BG_B);
+    expect(ev!.detail!.priorSource).toBe("smi");
+    // Cùng công thức EXP-2: raw − nềnCũ − ledgerTotal (KHÔNG phải committedBytes).
+    expect(ev!.detail!.driftIfNotResampled).toBe(DEVICE_B - BG_B - (BACKEND_B + DEEP_EST_B));
+    // Và phải nói RÕ ai đang chặn — đường (a) không có dòng resample nào để truy ngược.
+    expect(ev!.detail!.blockingOwners).toEqual(["gguf:30B"]);
+  });
+
+  // ── "NẾU LUÔN CÓ LEASE PENDING THÌ NỀN KHÔNG BAO GIỜ CHỤP ĐƯỢC?" ─────────────────────────
+  it("★ giấy phép ĐO HỎNG (measureFailed) KHÔNG được chặn chụp nền — nếu chặn là khoá VĨNH VIỄN", async () => {
+    // `measureFailed = true` nghĩa là phép đo ĐÃ CHẠY XONG và cho số vô nghĩa ⇒ lease này
+    // KHÔNG BAO GIỜ commit (types.ts) nhưng byte của nó đã ỔN ĐỊNH trên thiết bị — nó KHÔNG
+    // đang nạp. Chặn theo nó = nền không bao giờ chụp được cho tới khi restart tiến trình,
+    // đúng lớp lỗi EXP-1 (im lặng vĩnh viễn) mà bộ ngắt mạch sinh ra để diệt.
+    const failed = { ...pendingLease("reranker:bge", 606 * MIB7), measureFailed: true };
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: 606 * MIB7, leases: [failed] }),
+      leaseBytes: leaseBytesMock,
+    }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: 1_000 * MIB7, totalBytes: 32_607 * MIB7, source: "native" }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { captureVramBaseline } = await import("./vramReconciler");
+    expect(await captureVramBaseline()).toBe(1_000 * MIB7); // chụp được BÌNH THƯỜNG
+  });
+
+  it("★★ hoãn KÉO DÀI ⇒ PHẢI trip báo động 'không chụp được nền', KHÔNG được im lặng vĩnh viễn", async () => {
+    // Hộ `external-process` CỐ Ý không bao giờ commit (`cron:kb-sync` 30 phút, `cron:kb-eval-gate`
+    // 10 phút, `sidecar:local-trainer` 2 GIỜ — đo ở mã, xem báo cáo Task 7). Nếu một trong số đó
+    // đang sống lúc cần chụp nền, lượt hoãn kéo dài cả giờ. `baselineRequired && baseline ===
+    // null` trả `alarm:false` ⇒ IM LẶNG mà KHÔNG AI BIẾT là đang im lặng — đúng EXP-1.
+    const prev = process.env.VRAM_BASELINE_BLOCKED_ALARM_MS;
+    process.env.VRAM_BASELINE_BLOCKED_ALARM_MS = "0"; // trip ngay ở lượt hoãn đầu
+    try {
+      let running = true;
+      const cron = {
+        id: "cron:kb-sync",
+        request: { owner: "cron:kb-sync", kind: "external-process", estimatedBytes: 1_251 * MIB7, priority: "background" },
+        actualBytes: null as number | null,
+        measureFailed: false,
+        acquiredAt: new Date(),
+        lastHeartbeatAt: new Date(),
+        released: false,
+      };
+      vi.doMock("./vramBroker", () => ({
+        snapshot: () =>
+          running ? { totalReservedBytes: 1_251 * MIB7, leases: [cron] } : { totalReservedBytes: 0, leases: [] },
+        leaseBytes: leaseBytesMock,
+      }));
+      vi.doMock("./vramProbe", () => ({
+        readDeviceVram: async () => ({
+          usedBytes: running ? 2_251 * MIB7 : 1_000 * MIB7,
+          totalBytes: 32_607 * MIB7,
+          source: "native",
+        }),
+      }));
+      const logged: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+      vi.doMock("./vramEventLog", () => ({ logVramEvent: (e: never) => logged.push(e) }));
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const { startVramReconciler, stopVramReconciler, __runReconcileTick } = await import("./vramReconciler");
+      try {
+        startVramReconciler();
+        await new Promise((r) => setImmediate(r));
+
+        const blocked = await __runReconcileTick();
+        expect(blocked.baselineUsedBytes).toBeNull();
+        expect(blocked.baselineBlocked).toBe(true);
+        expect(blocked.alarm).toBe(true); // ★ KHÔNG được im lặng
+        expect(blocked.driftBytes).toBeNull(); // và KHÔNG được bịa một drift từ nền chưa biết
+        expect(logged.map((l) => l.event)).toContain("baseline_blocked");
+        const msg = warnSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
+        expect(msg).toContain("cron:kb-sync"); // nói RÕ ai đang chặn
+        expect(msg).not.toContain("KHÔNG XIN PHÉP"); // KHÔNG được đổ oan "cấp phát chui"
+
+        expect(logged.find((l) => l.event === "baseline_blocked")!.detail!.reason).toBe("loading-lease");
+
+        // ⚠ "Nhánh mới kích hoạt SAI thì bao lâu tự lành?" — NGAY nhịp sau khi hộ kia nhả chỗ.
+        running = false;
+        const healed = await __runReconcileTick();
+        expect(healed.baselineUsedBytes).toBe(1_000 * MIB7);
+        expect(healed.baselineBlocked).toBe(false);
+        expect(healed.alarm).toBe(false);
+        expect(healed.driftBytes).toBe(0);
+      } finally {
+        stopVramReconciler();
+        warnSpy.mockRestore();
+      }
+    } finally {
+      if (prev === undefined) delete process.env.VRAM_BASELINE_BLOCKED_ALARM_MS;
+      else process.env.VRAM_BASELINE_BLOCKED_ALARM_MS = prev;
+    }
+  });
+
+  it("★★ lá chắn CŨ 'thiết bị < đã commit' cũng phải lên ĐỒNG HỒ CHẶN — nếu không, Task 7 đổi nền-nhiễm lấy IM LẶNG vĩnh viễn", async () => {
+    // ⚠ ĐÂY LÀ PHÁT HIỆN CỦA LƯỢT NGHIỆM THU LIVE, không phải suy đoán. Trên máy thật, sau khi
+    // lá chắn HOÃN chặn lượt chụp ĐẦU, MỌI lượt chụp sau bị lá chắn CŨ chặn tiếp:
+    //     [vram] BỎ QUA lượt chụp nền: thiết bị 8445 MiB < tổng đã commit 9797 MiB
+    // lặp ở MỌI nhịp suốt cả lượt chạy. Lỗi cộng-trùng của sổ commit là CÓ TRƯỚC, nhưng trước
+    // Task 7 nó bị CHE (lượt chụp đầu luôn "thành công" với số đã nhiễm ⇒ `baselineCaptured`
+    // bật ⇒ lá chắn cũ không bao giờ chạy). Nếu nhánh này không lên đồng hồ, bản vá Task 7 đổi
+    // "nền nhiễm vĩnh viễn" lấy "im lặng vĩnh viễn" — đúng lớp lỗi EXP-1, chỉ đổi mặt.
+    const prev = process.env.VRAM_BASELINE_BLOCKED_ALARM_MS;
+    process.env.VRAM_BASELINE_BLOCKED_ALARM_MS = "0";
+    try {
+      // Sổ commit 9.797 MiB nhưng thiết bị chỉ có 8.445 — KHÔNG có lease nào đang nạp, nên lá
+      // chắn HOÃN của Task 7 KHÔNG chạm; chỉ lá chắn cũ chặn.
+      const over = committedLease("gguf:double-counted", 9_797 * MIB7);
+      vi.doMock("./vramBroker", () => ({
+        snapshot: () => ({ totalReservedBytes: 9_797 * MIB7, leases: [over] }),
+        leaseBytes: leaseBytesMock,
+      }));
+      vi.doMock("./vramProbe", () => ({
+        readDeviceVram: async () => ({ usedBytes: 8_445 * MIB7, totalBytes: 32_607 * MIB7, source: "native" }),
+      }));
+      const logged: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+      vi.doMock("./vramEventLog", () => ({ logVramEvent: (e: never) => logged.push(e) }));
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const { startVramReconciler, stopVramReconciler, __runReconcileTick } = await import("./vramReconciler");
+      try {
+        startVramReconciler();
+        await new Promise((r) => setImmediate(r));
+
+        const blocked = await __runReconcileTick();
+        expect(blocked.baselineUsedBytes).toBeNull();
+        expect(blocked.baselineBlocked).toBe(true); // ★ KHÔNG được im lặng
+        expect(blocked.alarm).toBe(true);
+        const ev = logged.find((l) => l.event === "baseline_blocked");
+        expect(ev!.detail!.reason).toBe("device-below-committed"); // chẩn đoán ĐÚNG chỗ cần sửa
+        const msg = warnSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
+        expect(msg).toContain("cộng trùng"); // chỉ vào commitMeasured(), không phải "giấy phép treo"
+        expect(msg).not.toContain("KHÔNG XIN PHÉP");
+      } finally {
+        stopVramReconciler();
+        warnSpy.mockRestore();
+      }
+    } finally {
+      if (prev === undefined) delete process.env.VRAM_BASELINE_BLOCKED_ALARM_MS;
+      else process.env.VRAM_BASELINE_BLOCKED_ALARM_MS = prev;
+    }
   });
 });

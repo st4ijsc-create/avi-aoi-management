@@ -8,8 +8,15 @@ import type { VramEstimateSource, VramLeaseKind, VramPriority } from "./types";
  */
 export interface VramEventInput {
   /**
-   * baseline | reserve | commit | measure_failed | release | refuse | preempt | drift | adopt |
-   * defer | defer_exceeded
+   * baseline | baseline_deferred | baseline_blocked | reserve | commit | measure_failed |
+   * release | refuse | preempt | drift | adopt | defer | defer_exceeded
+   *
+   * ⚠ `baseline_deferred` / `baseline_blocked` (Pha 1.5 Task 7 / T5-1) = lượt chụp nền bị HOÃN vì
+   * còn giấy phép ĐANG NẠP (byte đã lên thiết bị, chưa vào sổ ⇒ mọi công thức đều sai trong cửa
+   * sổ đó), và lượt đối chiếu phải BÁO ĐỘNG vì đã hoãn quá lâu. Ai đọc nhật ký thấy một khoảng
+   * TRỐNG sự kiện `drift` mà không biết hai sự kiện này sẽ tưởng reconciler đang chạy tốt trong
+   * khi nó đang MÙ. `baseline_deferred` của một lượt RESAMPLE mang theo nền CŨ + `driftIfNotResampled`
+   * — dấu vết EXP-2 vẫn còn nguyên dù lượt chụp không thành.
    *
    * ⚠ `baseline` (Task 5 review vòng 2, NEW-4) = ảnh chụp NỀN THIẾT BỊ lúc khởi động
    * (`nền = thiết bị − sổ`, xem `vramReconciler.captureVramBaseline`). Ai đọc nhật ký theo danh
