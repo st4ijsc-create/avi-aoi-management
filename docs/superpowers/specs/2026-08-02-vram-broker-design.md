@@ -414,6 +414,21 @@ Ba giới hạn còn lại của đối chiếu, phải khai chứ không đư�
 - **sổ theo tiến trình, thiết bị dùng chung** — reconciler chỉ chạy ở vai trò scheduler, nên `api` cấp phát mà không nhả thì không gì trong `api` phát hiện được;
 - **nền bị hoãn chừng nào còn lease `actualBytes === null`**, mà bốn hộ `external-process` **cố ý không bao giờ commit** với ttl **2 giờ** (`local-trainer`, đang bật) và **4 giờ** (`llm-finetune`) ⇒ khởi động lại server giữa một lượt huấn luyện ⇒ **đối chiếu mù tới 2 giờ**.
 
+### 🔴 XÉT LẠI BỐN CỔNG SAU §5.6c — chỉ MỘT còn là cổng (2026-08-04)
+
+Pha 2A đóng lại với bốn mục ghi là "cổng vào Pha 2B". Sau khi §5.6c đổi mô hình an toàn từ *"đã liệt kê hết"* sang *"khoản chưa liệt kê tự làm hẹp dư địa"*, ba trong bốn mục **không còn chặn** — và nói rõ vì sao quan trọng hơn là giữ chúng cho an tâm.
+
+| Cổng | Còn chặn? | Lý do |
+|---|---|---|
+| **1. Nền nuốt hộ tiêu thụ** | 🔴 **CÒN — cổng cứng duy nhất** | `attributable = deviceUsed − baseline` là **số chịu lực** của §5.6c. Nền nuốt một sidecar 7,8 GB ⇒ `attributable` **hụt đúng 7,8 GB** ⇒ dư địa bị phóng đại ⇒ **cho cấp phát khi thiết bị đã đầy**. Mô hình mới **phụ thuộc trực tiếp** vào mục này. |
+| **2. Đảo ngược ưu tiên** | ⬇ **thành TASK của Pha 2B** | Hậu quả là **độ trễ**, không phải OOM. Và ưu tiên chính là nội dung §5.2 — vốn đã nằm trong phạm vi Pha 2B. Không cần làm trước, cần làm **trong**. |
+| **3. `seen` đo tồn tại, không đo độ tươi** | ⬇ **KHÔNG còn chặn** | Nó làm **sổ báo thiếu**. Nhưng `max(ledgerTotal, attributable)` lấy **vế lớn hơn**, nên một sổ hụt được `attributable` che. Đây đúng lý do §5.6c chọn `max()` chứ không `+`. Vẫn đáng vá — **không đáng chặn**. |
+| **4. 89/157 điểm chưa nối** | ⬇ **KHÔNG còn chặn** | Đây **chính là** thứ §5.6c được viết ra để tháo. Điểm chưa nối vẫn nằm trong `deviceUsed` ⇒ vẫn làm hẹp dư địa. Việc nối thêm phục vụ **quy trách nhiệm** (biết từ chối ai, thu hồi của ai), **không** phục vụ an toàn. |
+
+⚠ **Đừng đảo ngược lý lẽ này thành "nối thêm là vô ích".** Không nối thì broker biết *còn bao nhiêu chỗ* nhưng không biết *ai đang giữ* — nên **từ chối được**, mà **thu hồi thì không**. Ưu tiên (§5.2) và thu hồi chỉ với tới được các hộ **đã nối**.
+
+⚠ **Và một ràng buộc cấu trúc của §5.6c:** `reserve()` là **ĐỒNG BỘ** — tính đồng bộ đó chính là lá chắn cấu trúc từ Pha 1. Nên đường cưỡng chế **không được `await` đầu dò**; nó phải đọc **kết quả tick gần nhất** đã lưu sẵn. Hệ quả đã khai ở trên: **60 s là độ trễ cưỡng chế thật.**
+
 ### ⚠ Hai điều kiện Pha 1 CHƯA đạt — khai thẳng
 
 Điều kiện ra của Pha 1 gồm *"sổ khớp thiết bị trong ±512 MiB suốt 24 h"*. **Lượt chạy 24 h CHƯA thực hiện.** Bằng chứng hiện có là 101 mẫu liên tục (lệch p50 15 / p90 210 MiB, **0 báo động**) — đủ để chốt ngưỡng và nhịp (§15), **không** đủ để tuyên bố điều kiện 24 h là ĐẠT. Ghi ở đây để không ai đọc bảng trên mà tưởng cả bốn điều kiện đều xanh.
