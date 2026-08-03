@@ -322,9 +322,25 @@ describe("Pha 1.5 Task 1 review vòng 1 — EXP-2: sự kiện baseline phải g
   it("★ KẺ CHUI grab ĐÚNG LÚC đổi thước ⇒ sự kiện `baseline` PHẢI ghi nền CŨ + drift-nếu-không-huỷ, không được vứt bỏ dấu vết", async () => {
     let src: "native" | "smi" = "smi";
     let used = 1000 * MIB3;
+    // ⚠ Review vòng 2, MỚI-2 — PHẢI có một giấy phép CHƯA COMMIT (`actualBytes: null`) để
+    // `ledgerTotal` (= `totalReservedBytes`, tổng CẢ SỔ) và `committedBytes` (chỉ tổng phần ĐÃ
+    // COMMIT, tính trong `captureVramBaseline()`) là HAI SỐ KHÁC NHAU. Bản trước dùng
+    // `leases: []` ⇒ cả hai đều bằng 0 ⇒ đổi `ledgerTotal` thành `committedBytes` trong công thức
+    // `driftIfNotResampled` KHÔNG làm test đỏ — lưới không canh được biến nào đang dùng, đúng
+    // lớp lỗi brief đã cảnh báo ("Pha 1 mất ba vòng sửa vì đúng chỗ này").
+    const acquiredAt = new Date();
+    const pendingLease = {
+      id: "lease-pending",
+      request: { owner: "gguf:pending", kind: "gguf-model", estimatedBytes: 500 * MIB3, priority: "interactive" },
+      acquiredAt,
+      actualBytes: null, // CHƯA commit ⇒ KHÔNG cộng vào committedBytes, NHƯNG vẫn nằm trong ledgerTotal
+      lastHeartbeatAt: acquiredAt,
+      released: false,
+    };
     vi.doMock("./vramBroker", () => ({
-      snapshot: () => ({ totalReservedBytes: 0, leases: [] }),
-      leaseBytes: (l: { actualBytes: number | null }) => l.actualBytes ?? 0,
+      snapshot: () => ({ totalReservedBytes: 500 * MIB3, leases: [pendingLease] }),
+      leaseBytes: (l: { actualBytes: number | null; request: { estimatedBytes: number } }) =>
+        l.actualBytes ?? l.request.estimatedBytes,
     }));
     vi.doMock("./vramProbe", () => ({
       readDeviceVram: async () => ({ usedBytes: used, totalBytes: 32_607 * MIB3, source: src }),
@@ -333,6 +349,8 @@ describe("Pha 1.5 Task 1 review vòng 1 — EXP-2: sự kiện baseline phải g
     vi.doMock("./vramEventLog", () => ({ logVramEvent: (e: never) => logged.push(e) }));
 
     const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+    // committedBytes = 0 (lease chưa commit) ⇒ nền vẫn = raw − 0 = 1000 MiB, KHÔNG bị ảnh hưởng
+    // bởi ledgerTotal = 500 MiB — hai số này chỉ được PHÂN BIỆT ở driftIfNotResampled bên dưới.
     expect(await captureVramBaseline()).toBe(1000 * MIB3); // nền cũ, thước "smi"
 
     src = "native";
@@ -346,8 +364,10 @@ describe("Pha 1.5 Task 1 review vòng 1 — EXP-2: sự kiện baseline phải g
     const resampleEvent = baselineEvents[1];
     expect(resampleEvent.detail!.priorBaselineUsedBytes).toBe(1000 * MIB3);
     expect(resampleEvent.detail!.priorSource).toBe("smi");
-    // Dấu vết kẻ chui: nếu KHÔNG huỷ nền mà so trực tiếp, drift đã là 8000 MiB.
-    expect(resampleEvent.detail!.driftIfNotResampled).toBe(8_000 * MIB3);
+    // Dấu vết kẻ chui, dùng ĐÚNG ledgerTotal (500 MiB), KHÔNG phải committedBytes (0 MiB):
+    // raw(9000) − priorBaseline(1000) − ledgerTotal(500) = 7500 MiB. Nếu công thức lỡ dùng
+    // committedBytes thay vì ledgerTotal, kết quả sẽ SAI thành 8000 MiB — test này bắt được.
+    expect(resampleEvent.detail!.driftIfNotResampled).toBe(7_500 * MIB3);
   });
 
   it("lượt chụp nền ĐẦU TIÊN (không có nền cũ) KHÔNG được có driftIfNotResampled — không bịa dữ liệu", async () => {
@@ -364,6 +384,111 @@ describe("Pha 1.5 Task 1 review vòng 1 — EXP-2: sự kiện baseline phải g
     const ev = logged.find((l) => l.event === "baseline")!;
     expect(ev.detail!.priorBaselineUsedBytes).toBeUndefined();
     expect(ev.detail!.driftIfNotResampled).toBeUndefined();
+  });
+});
+
+/**
+ * Pha 1.5 Task 1 review vòng 2 — MỚI-1: ngắt mạch KẸT VĨNH VIỄN nếu điều kiện đóng lại so với
+ * THƯỚC ĐÓNG BĂNG lúc trip, thay vì so "nhịp này với nhịp trước".
+ *
+ * Reviewer dựng hai ca:
+ *   Ca A — trip ở "native", ổn định lại ở ĐÚNG "native" ⇒ đóng lại được (code vòng 1 đã đúng).
+ *   Ca B — trip ở "native", ổn định lại ở "smi" (KHÁC thước đóng băng) ⇒ MỌI nhịp sau đó vẫn
+ *   `sourceUnstable=true, driftBytes=null` — breaker KHÔNG BAO GIỜ đóng lại dù thước đã hết dao
+ *   động hoàn toàn. Đây đúng kịch bản "hai tiến trình cạnh tranh gắn handle" mà chính comment
+ *   của round 1 nêu làm lý do cần ngắt mạch — có thể chốt ở thước nào cũng được, 50/50.
+ *
+ * Vòng 1 đã đổi "chuông câm vĩnh viễn" (EXP-1) lấy "mù drift vĩnh viễn + báo động treo mãi" —
+ * cả hai đều là hỏng im lặng, cái sau còn ồn ào theo cách vô dụng.
+ *
+ * SỬA: điều kiện thoát ngắt mạch không còn là `device.source === baselineSource` (so với thước
+ * ĐÓNG BĂNG) mà là "thước không đổi qua N nhịp liên tiếp" (so nhịp này với nhịp TRƯỚC, tự thân).
+ * Khi đã ổn định — kể cả ở thước KHÁC thước đóng băng — phải CHỤP LẠI nền theo thước mới rồi mới
+ * đối chiếu tiếp; nếu không nền đóng băng vẫn là một thước khác với số hiện tại, đúng lỗi Task 1
+ * sinh ra để diệt.
+ */
+describe("Pha 1.5 Task 1 review vòng 2 — MỚI-1: ngắt mạch phải tự lành dù ổn định ở THƯỚC KHÁC thước đóng băng", () => {
+  beforeEach(() => vi.resetModules());
+
+  const MIB5 = 1024 * 1024;
+
+  // Chuỗi ép TRIP dùng CHUNG cho cả hai ca — chốt "native" đúng như tên gọi reviewer đặt:
+  // chụp nền ban đầu ở "smi", rồi bốn nhịp mismatch native→smi→native→(mismatch thứ 4, TRIP).
+  // Ba resample đầu (count 1,2,3) lần lượt đặt baselineSource = native, smi, native — nhịp thứ
+  // tư đọc "smi" (mismatch vs "native", count đã =3) ⇒ TRIP, ĐÓNG BĂNG ở "native" đúng như tên ca.
+  async function tripFrozenAtNative(reconcileOnce: () => Promise<{ sourceUnstable: boolean }>, setSrc: (s: "native" | "smi") => void) {
+    setSrc("native");
+    await reconcileOnce(); // resample 1 → baselineSource="native"
+    setSrc("smi");
+    await reconcileOnce(); // resample 2 → baselineSource="smi"
+    setSrc("native");
+    await reconcileOnce(); // resample 3 → baselineSource="native"
+    setSrc("smi");
+    return reconcileOnce(); // mismatch thứ 4 ⇒ TRIP, đóng băng ở "native"
+  }
+
+  it("★ Ca B — trip ở \"native\", ổn định lại ở \"smi\" (khác thước đóng băng) ⇒ PHẢI tự lành, không mù drift vĩnh viễn", async () => {
+    let src: "native" | "smi" = "smi";
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: 0, leases: [] }),
+      leaseBytes: (l: { actualBytes: number | null }) => l.actualBytes ?? 0,
+    }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: 1000 * MIB5, totalBytes: 32_607 * MIB5, source: src }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+    await captureVramBaseline(); // nền ban đầu, thước "smi"
+
+    const trip = await tripFrozenAtNative(reconcileOnce, (s) => { src = s; });
+    expect(trip.sourceUnstable).toBe(true); // đóng băng ở "native"
+
+    // Bây giờ thước ổn định lại — nhưng ở "smi", KHÁC thước đã đóng băng ("native"). Nhịp TRIP
+    // ở trên vừa đọc "smi" nên streak đã =1 trước khi vòng lặp dưới bắt đầu.
+    src = "smi";
+    const results: Array<{ unstable: boolean; resampled: boolean; alarm: boolean; drift: number | null }> = [];
+    for (let i = 0; i < 5; i++) {
+      const r = await reconcileOnce();
+      results.push({ unstable: r.sourceUnstable, resampled: r.baselineResampled, alarm: r.alarm, drift: r.driftBytes });
+    }
+
+    // SOURCE_UNSTABLE_THRESHOLD=3 (mặc định): nhịp TRIP đã đọc "smi" (streak=1); cần đúng 2 nhịp
+    // "smi" liên tiếp NỮA để streak=3 ⇒ tự lành ở nhịp thứ hai của vòng lặp, resample theo "smi",
+    // rồi từ nhịp thứ ba trở đi đối chiếu THẬT.
+    expect(results.map((r) => r.unstable)).toEqual([true, false, false, false, false]);
+    expect(results.map((r) => r.resampled)).toEqual([false, true, false, false, false]);
+    expect(results.map((r) => r.alarm)).toEqual([true, false, false, false, false]);
+    // ★ QUAN TRỌNG NHẤT (điều Ca B đòi): phải có nhịp đối chiếu THẬT (driftBytes khác null) —
+    // không được mù drift vĩnh viễn.
+    expect(results.map((r) => r.drift)).toEqual([null, null, 0, 0, 0]);
+  });
+
+  it("Ca A — trip ở \"native\", ổn định lại ở ĐÚNG \"native\" (thước đóng băng) ⇒ đóng lại NGAY lập tức, không cần chờ streak", async () => {
+    let src: "native" | "smi" = "smi";
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: 0, leases: [] }),
+      leaseBytes: (l: { actualBytes: number | null }) => l.actualBytes ?? 0,
+    }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: 1000 * MIB5, totalBytes: 32_607 * MIB5, source: src }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+    await captureVramBaseline(); // thước "smi"
+
+    const trip = await tripFrozenAtNative(reconcileOnce, (s) => { src = s; });
+    expect(trip.sourceUnstable).toBe(true); // đóng băng ở "native"
+
+    // Ổn định lại ở ĐÚNG "native" — TRÙNG thước đóng băng ⇒ không hề mismatch, đóng lại NGAY ở
+    // nhịp đầu tiên (KHÔNG cần đợi streak — nền cũ vẫn đúng cho thước này, không có gì để resample).
+    src = "native";
+    const r1 = await reconcileOnce();
+    expect(r1.sourceUnstable).toBe(false);
+    expect(r1.baselineResampled).toBe(false); // không cần resample — nền đóng băng đã đúng thước
+    expect(r1.driftBytes).toBe(0); // đối chiếu THẬT ngay, không phải null
+    expect(r1.alarm).toBe(false);
   });
 });
 

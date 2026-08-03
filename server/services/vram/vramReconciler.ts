@@ -122,6 +122,19 @@ let baselineSource: "native" | "smi" | null = null;
  */
 let consecutiveResampleCount = 0;
 /**
+ * Pha 1.5 Task 1, review vòng 2 (MỚI-1) — thước đọc được ở lượt `reconcileOnce()` TRƯỚC (không
+ * phải thước đóng băng của nền!) và số nhịp LIÊN TIẾP đọc CÙNG một giá trị.
+ *
+ * ⚠ VÌ SAO BẮT BUỘC: bộ ngắt mạch (EXP-1) đóng lại theo `device.source === baselineSource` —
+ * so với thước ĐÓNG BĂNG lúc trip. Nếu thước ổn định lại ở một giá trị KHÁC thước đóng băng
+ * (vd. hai tiến trình cạnh tranh gắn handle, chốt ở nhánh nào cũng 50/50), điều kiện đó KHÔNG
+ * BAO GIỜ đúng nữa ⇒ ngắt mạch KẸT VĨNH VIỄN: mù drift + báo động treo mãi, tệ hơn cả chuông câm
+ * mà nó thay thế (review vòng 2, MỚI-1). Ổn định phải được đo bằng CHÍNH NÓ — nhịp này có giống
+ * nhịp trước không — không phải so với một giá trị đóng băng từ quá khứ.
+ */
+let lastObservedSource: "native" | "smi" | null = null;
+let sameSourceStreak = 0;
+/**
  * Bật khi `startVramReconciler()` đã chạy. Lúc đó "chưa biết nền" phải nghĩa là IM LẶNG, KHÔNG
  * phải nền = 0 (NEW-2). Khi cờ này TẮT — tức có người gọi `reconcileOnce()` trực tiếp (Task 7,
  * test, công cụ chẩn đoán) — ta giữ nguyên ngữ nghĩa "không trừ gì", vì người gọi đó tự biết họ
@@ -257,6 +270,11 @@ export function __resetVramBaselineForTests(): void {
   // Pha 1.5 Task 1, review vòng 1 (EXP-1) — cùng lý do: không reset thì test sau KẾ THỪA số lượt
   // resample liên tiếp của test trước, và bộ ngắt mạch có thể trip SAI ngay từ mismatch đầu tiên.
   consecutiveResampleCount = 0;
+  // Pha 1.5 Task 1, review vòng 2 (MỚI-1) — cùng lý do: không reset thì test sau KẾ THỪA
+  // `sameSourceStreak`/`lastObservedSource`, và lối thoát ngắt mạch có thể kích hoạt SAI (hoặc
+  // trễ hơn thật) ngay từ những nhịp đầu của test kế tiếp.
+  lastObservedSource = null;
+  sameSourceStreak = 0;
 }
 
 /**
@@ -308,6 +326,17 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
     };
   }
 
+  // Pha 1.5 Task 1, review vòng 2 (MỚI-1) — cập nhật TRẠNG THÁI ỔN ĐỊNH TỰ THÂN của thước, MỖI
+  // NHỊP, TRƯỚC mọi so sánh với `baselineSource`. Đây là dữ liệu duy nhất cho phép bộ ngắt mạch
+  // thoát trạng thái "bất ổn" khi thước ổn định lại ở một giá trị KHÁC thước đã đóng băng lúc
+  // trip — so với chính nhịp trước, không so với quá khứ đã đóng băng.
+  if (device.source === lastObservedSource) {
+    sameSourceStreak += 1;
+  } else {
+    sameSourceStreak = 1;
+    lastObservedSource = device.source;
+  }
+
   // Pha 1.5 Task 1 — MỘT THƯỚC DUY NHẤT. Nền được chụp bằng một thước (native ⇄ smi); nếu lượt
   // đối chiếu NÀY đến từ thước KHÁC, so trực tiếp là so hai thước với nhau — hai thước lệch
   // 165-178 MiB (báo cáo Pha 1 §3.4), ĐỦ MỘT MÌNH đẩy lệch qua ngưỡng 512 MiB và làm chuông kêu
@@ -325,6 +354,50 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
     // nguyên nhân và hành động sửa hoàn toàn khác nhau (đi sửa đầu dò/handle, không phải đi tìm
     // hộ tiêu thụ).
     if (consecutiveResampleCount >= SOURCE_UNSTABLE_THRESHOLD) {
+      // Pha 1.5 Task 1, review vòng 2 (MỚI-1) — LỐI THOÁT KHỎI NGẮT MẠCH.
+      //
+      // ⚠ VÌ SAO BẮT BUỘC: nhánh TRIP phía dưới đóng băng `baselineSource` và chỉ tự thoát khi
+      // `device.source === baselineSource` (điều kiện đó nằm ở đầu khối `if` bao ngoài — xem
+      // dòng so sánh mismatch). Nếu thước ổn định lại ở một giá trị KHÁC thước đóng băng (ca B,
+      // vd. hai tiến trình cạnh tranh gắn handle rồi CHỐT ở nhánh thua — 50/50 nó khác thước đã
+      // đóng băng), điều kiện đó KHÔNG BAO GIỜ đúng nữa ⇒ TRIP VĨNH VIỄN: `sourceUnstable=true,
+      // driftBytes=null` mọi nhịp, dù thước đã hết dao động hoàn toàn từ lâu. Đây là hỏng im lặng
+      // Y HỆT lớp lỗi mà bộ ngắt mạch sinh ra để diệt (EXP-1) — chỉ khác là ồn ào vô dụng thay vì
+      // câm lặng.
+      //
+      // SỬA: đo ổn định bằng `sameSourceStreak` (thước không đổi qua ĐỦ SỐ NHỊP LIÊN TIẾP, tự so
+      // với chính nó — xem khai báo ở đầu file), KHÔNG so với `baselineSource` đã đóng băng. Đạt
+      // ngưỡng thì đây là BẰNG CHỨNG THẬT (không phải may mắn trùng một lượt đọc) rằng thước đã
+      // định hình — RESAMPLE theo thước MỚI đó (dù khác thước đóng băng) rồi thoát ngắt mạch,
+      // đúng cơ chế "một thước duy nhất" gốc của Task 1: không đối chiếu tiếp cho tới khi nền và
+      // số liệu CÙNG một thước.
+      if (sameSourceStreak >= SOURCE_UNSTABLE_THRESHOLD) {
+        console.warn(
+          `[vram] THƯỚC ĐÃ ỔN ĐỊNH LẠI ở "${device.source}" (khác thước đóng băng "${baselineSource}") ` +
+            `sau ${sameSourceStreak} nhịp liên tiếp cùng giá trị — thoát ngắt mạch, chụp lại nền theo thước mới.`,
+        );
+        const priorSourceSnapshot = baselineSource;
+        const priorUsedBytesSnapshot = baselineUsedBytes;
+        baselineCaptured = false;
+        baselineUsedBytes = null;
+        baselineSource = null;
+        await captureVramBaseline(
+          priorUsedBytesSnapshot !== null && priorSourceSnapshot !== null
+            ? { usedBytes: priorUsedBytesSnapshot, source: priorSourceSnapshot }
+            : null,
+        );
+        consecutiveResampleCount = 0;
+        return {
+          driftBytes: null,
+          alarm: false,
+          ledgerTotalBytes: snap.totalReservedBytes,
+          deviceUsedBytes: device.usedBytes,
+          baselineUsedBytes,
+          baselineResampled: true,
+          sourceUnstable: false,
+        };
+      }
+
       console.warn(
         `[vram] THƯỚC ĐO KHÔNG ỔN ĐỊNH — đã đổi thước ≥ ${SOURCE_UNSTABLE_THRESHOLD} lần liên tiếp ` +
           `(nền đang đóng băng ở thước "${baselineSource}", lượt này đọc được "${device.source}"). ` +
