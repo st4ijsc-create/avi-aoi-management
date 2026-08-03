@@ -143,7 +143,13 @@ describe("withMeasureWindow — C-1: nguoi giu KHONG duoc nuot byte cua nguoi bo
 describe("withMeasureWindow — I-1: nguoi bo cuoc phai CHUYEN TIEP luot, khong nuot", () => {
   beforeEach(() => { __resetMeasureLockForTests(); });
 
-  it("B bo cuoc GIUA hang cho ⇒ C va D van nhan duoc luot, khoa KHONG ket vinh vien", async () => {
+  it("B bo cuoc GIUA hang cho ⇒ C va D van nhan duoc luot THEO DUNG THU TU FIFO, khoa KHONG ket vinh vien", async () => {
+    // review vong 2 Important — ca goc chi khang dinh "C va D deu nhan duoc luot",
+    // KHONG khang dinh C truoc D. Duoi LIFO (dot bien shift()->pop()) ca nay van
+    // xanh. FIFO khong phai tham my: khoa nay nam tren duong nap model, LIFO khien
+    // nguoi den SOM chet doi (het ngan sach, chay KHONG do) dung luc he ban nhat.
+    // Nhat ky thu tu duoc them vao CA DA CO (khong tach ca moi).
+    const nhatKyThuTu: string[] = [];
     let moKhoaA!: () => void;
     const a = withMeasureWindow(async () => {
       await new Promise<void>((r) => { moKhoaA = r; });
@@ -155,8 +161,8 @@ describe("withMeasureWindow — I-1: nguoi bo cuoc phai CHUYEN TIEP luot, khong 
     // khoa. C va D xep hang SAU B voi ngan sach mac dinh (rat dai) ⇒ van dang cho
     // THAT SU (khong bo cuoc) khi B het gio.
     const b = withMeasureWindow(async () => "b", 0);
-    const c = withMeasureWindow(async () => "c");
-    const d = withMeasureWindow(async () => "d");
+    const c = withMeasureWindow(async () => { nhatKyThuTu.push("C"); return "c"; });
+    const d = withMeasureWindow(async () => { nhatKyThuTu.push("D"); return "d"; });
 
     const bResult = await b; // cho B het gio va tu rut khoi hang cho
     expect(bResult.measurable).toBe(false);
@@ -170,6 +176,7 @@ describe("withMeasureWindow — I-1: nguoi bo cuoc phai CHUYEN TIEP luot, khong 
     expect(cResult.measurable).toBe(true);
     expect(dResult.measurable).toBe(true);
     expect(measureWindowDepth()).toBe(0); // khoa phai VE 0, KHONG ket vinh vien
+    expect(nhatKyThuTu).toEqual(["C", "D"]); // FIFO: nguoi xep hang TRUOC phai chay TRUOC
   });
 });
 

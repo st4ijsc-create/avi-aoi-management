@@ -54,6 +54,18 @@ function giuKhoa(waitBudgetMs: number, ownerLabel: string): Promise<boolean> {
       resolve(false);           // het ngan sach: chay tiep, KHONG do
     }, waitBudgetMs);
     const danhDau = () => {
+      // review vong 2 — nhanh nay BAT KHA DAT THEO CAU TRUC chung nao `splice` o
+      // tren con nam trong callback hen gio: `xong` chi chuyen false->true o HAI
+      // cho (o day va trong callback hen gio), va callback hen gio dat `xong =
+      // true` roi `splice` chinh no ra khoi `hangCho` TRONG CUNG mot khoi dong bo,
+      // khong co diem nhuong nao o giua — nen MOI entry con trong `hangCho` khi
+      // `nhaKhoa()` goi toi day luon co `xong === false`. Vi vay "go rieng nhanh
+      // nay ⇒ 0 ca do" la TUONG DUONG DA CHUNG MINH bang thuc nghiem co doi chung
+      // (thay than bang `throw` -> 14/14 xanh, khong lan nao chay; doi chung go
+      // splice giu nguyen nhanh nem -> 10/14 do, tuc dung cu do CO kha nang bat,
+      // nen so 0 la am tinh THAT) — MIEN TRU tuong minh khoi rang buoc toan cuc 5,
+      // KHONG PHAI lo hong test. Giu lai vi day la thu DUY NHAT do duoc khoa rò
+      // vinh vien neu mot ban sua tuong lai lam mat `splice` o tren.
       if (xong) { nhaKhoa(); return; }  // da bo cuoc — chuyen luot ngay, KHONG nuot
       xong = true;
       clearTimeout(hen);
