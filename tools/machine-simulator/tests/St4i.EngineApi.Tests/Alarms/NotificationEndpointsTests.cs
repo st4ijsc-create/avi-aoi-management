@@ -65,6 +65,38 @@ public sealed class NotificationEndpointsTests : IDisposable
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// 🔴 D-5 fix round 2 — how much EARLIER than its nominal deadline a timeout may legitimately fire,
+    /// measured by a <see cref="Stopwatch"/>. The two "non-vacuity" lower bounds below used to assert
+    /// <c>elapsed >= attemptTimeout</c> exactly, justified by the comment <i>"a Stopwatch measures real
+    /// time, so a timeout can only ever be LATE here, never early."</i> <b>That is false, and it produced a
+    /// real red gate at 997 ms against a 1000 ms bound.</b>
+    ///
+    /// <para>The two clocks are not the same clock. <see cref="CancellationTokenSource.CancelAfter(TimeSpan)"/>
+    /// schedules on the .NET <c>TimerQueue</c>, which is driven by <c>Environment.TickCount</c> — ~15.6 ms
+    /// granularity on Windows — while <see cref="Stopwatch"/> is QPC. A one-second timer can therefore fire
+    /// up to about one tick before QPC agrees a second has passed. The claim was never about the code; it was
+    /// about the author's model of the runtime, which is the defect class this batch keeps paying for.</para>
+    ///
+    /// <para>50 ms is ~3 quanta — enough that a scheduling artefact cannot reach it. The sibling bounds in
+    /// <c>ModbusTcpDriverWriteTests</c> (50 ms) and <c>ModbusRtuDriverWriteTests</c> (60 ms) already chose
+    /// the same shape; these two sites were the only ones in the repo with no margin at all (swept: the six
+    /// other <c>Elapsed &gt;=</c> bounds in the alarm suites all carry 100 ms or more against what they
+    /// measure).</para>
+    ///
+    /// <para>🔴 <b>What this slack does NOT rest on, said plainly because the obvious claim did not survive
+    /// checking.</b> The natural justification — "still decisive, because an attempt that failed instantly
+    /// for some reason other than the peer's silence returns in single-digit milliseconds, not 950" — is
+    /// UNVERIFIED, and the one substitute that should have demonstrated it does the opposite. Repointing
+    /// this test at a definitely-closed loopback port (a target that fails for a reason other than silence)
+    /// produces <b>1085 ms</b> elapsed and the byte-identical <c>Detail</c> <i>"did not answer within 1s"</i>
+    /// — so the lower bound does not discriminate that case, and neither does the assertion above it. The
+    /// slack is therefore justified ONLY by the clock argument, which is sound on its own. Whether either
+    /// lower bound can be violated at all by a loopback target is an open question about a Đợt C test, not
+    /// something this change created or resolved; it is recorded rather than asserted away.</para>
+    /// </summary>
+    private static readonly TimeSpan TimerQuantumSlack = TimeSpan.FromMilliseconds(50);
+
     // ─────────────────────────────────────────────────────────────────────
     // Harness
     // ─────────────────────────────────────────────────────────────────────
@@ -998,9 +1030,10 @@ public sealed class NotificationEndpointsTests : IDisposable
 
         // Non-vacuity: it really did WAIT for the timeout rather than failing instantly for some other
         // reason, so the assertion above is about the bound and not about a connection that never happened.
-        // A Stopwatch measures real time, so a timeout can only ever be LATE here, never early.
+        // The slack is not CI padding — see TimerQuantumSlack for why the timer may legitimately fire before
+        // the Stopwatch agrees the second has passed, and for the false claim that used to sit here.
         Assert.True(
-            elapsed.Elapsed >= attemptTimeout,
+            elapsed.Elapsed >= attemptTimeout - TimerQuantumSlack,
             $"The send test returned in {elapsed.ElapsedMilliseconds} ms, before the attempt timeout could " +
             "have elapsed — it failed for a reason other than the receiver's silence.");
     }
@@ -1050,8 +1083,9 @@ public sealed class NotificationEndpointsTests : IDisposable
             $"— the {attemptTimeout.TotalSeconds:0.#}s attempt bound did not hold.");
 
         // Non-vacuity: it waited for the silence rather than failing instantly for another reason.
+        // Same slack, same reason, same false comment removed from its sibling above — see TimerQuantumSlack.
         Assert.True(
-            elapsed.Elapsed >= attemptTimeout,
+            elapsed.Elapsed >= attemptTimeout - TimerQuantumSlack,
             $"The e-mail send test returned in {elapsed.ElapsedMilliseconds} ms, before its attempt timeout " +
             "could have elapsed — it failed for a reason other than the relay's silence.");
     }
