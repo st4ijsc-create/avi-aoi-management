@@ -636,7 +636,9 @@ public class ModbusRtuDriverWriteTests
     /// <para>Both arms in ONE test, deliberately: "distinguishable" is a claim about a pair, and a mutation that
     /// collapses the two back onto one string has to fail something that compares them. The
     /// <c>Assert.NotEqual</c> is the discriminating assertion; the two <c>Contains</c> are what stop it passing
-    /// on two strings that merely differ.</para>
+    /// on two strings that merely differ. 🔴 Re-review N-2: both arms use ONE bus key, because with two keys
+    /// the two Details differed by the key alone and <c>NotEqual</c> would have held even if both causes had
+    /// collapsed onto one canned string.</para>
     /// </summary>
     [Fact]
     public async Task ADrainFailureAndANeverQuietBus_RefuseTheWriteWithDifferentReasons_NotOneCannedString()
@@ -674,9 +676,15 @@ public class ModbusRtuDriverWriteTests
             }
         }
 
-        var neverQuiet = await RefusalDetailAsync("refusal-never-quiet", drain: null);
+        // 🔴 Re-review N-2 — ONE key for both arms, and that is what makes the Assert.NotEqual below mean
+        // anything. With two different keys the two Details differed by the key alone, so NotEqual would have
+        // passed even if both causes had collapsed back onto one canned string — the assertion this test calls
+        // its discriminating one could not discriminate. The two registries are independent objects, so the
+        // same key names a different bus in each.
+        const string oneKey = "refusal-cause-bus";
+        var neverQuiet = await RefusalDetailAsync(oneKey, drain: null);
         var drainFailed = await RefusalDetailAsync(
-            "refusal-drain-threw", drain: () => throw new IOException("the link went away underneath the drain"));
+            oneKey, drain: () => throw new IOException("the link went away underneath the drain"));
 
         _output.WriteLine($"never went quiet -> {neverQuiet}");
         _output.WriteLine($"drain threw     -> {drainFailed}");

@@ -831,11 +831,18 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// test: the refusal happened <b>before any byte reached the line</b>, WHICH unit and machine, that it is
     /// <b>untouched</b>, and that <b>retrying is safe</b> once the bus recovers — the two an operator acts on
     /// being the last two.</para>
+    ///
+    /// <para>🔴 <b>Re-review N-2 — the bus key is NOT repeated here, and that is deliberate.</b> Every
+    /// <see cref="ModbusBusResynchronisationException"/> message opens with <c>Modbus bus '{Key}':</c>, so
+    /// naming it in this prefix too put the same key twice in one string — introduced by the very fix whose
+    /// justification was removing a duplicate. The key is carried once, by the cause. What this prefix owns is
+    /// only what the transport cannot know: the unit, the machine, and the two facts an operator acts
+    /// on.</para>
     /// </remarks>
     private string BusRefusedDetail(ModbusBusResynchronisationException ex) =>
-        $"refused before any byte reached the line: the shared RTU bus '{_lease.Bus.Key}' could not be made " +
-        $"trustworthy again, so it cannot be written to safely. Unit {_map.UnitId} ({_map.MachineCode}) is " +
-        $"untouched and retrying is safe once the bus recovers. Cause: {ex.Message}";
+        "refused before any byte reached the line: the shared RTU bus could not be made trustworthy again, so it " +
+        $"cannot be written to safely. Unit {_map.UnitId} ({_map.MachineCode}) is untouched and retrying is safe " +
+        $"once the bus recovers. Cause: {ex.Message}";
 
     /// <summary>The <c>Detail</c> for a bus that was disposed before this write could start — the connector is
     /// being torn down. Makes the same provable claim as <see cref="NotOnTheWireDetail"/> (no byte reached the

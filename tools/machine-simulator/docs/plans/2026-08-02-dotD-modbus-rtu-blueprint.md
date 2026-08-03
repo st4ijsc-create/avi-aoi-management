@@ -167,6 +167,24 @@ cũng đã được ghi ngay trên hai thành viên public `ModbusRtuDriver.Writ
    §3.3). **D-6 không được khẳng định hiệu ứng vật lý từ nó; D-7 không được trình bày nó cho người vận hành
    như bằng chứng vật lý.**
 
+4. 🔴 **`Applied` của một command KHÔNG được hạ xuống `Indeterminate` dựa trên số byte mà lần
+   đồng bộ lại của chính giao dịch đó đã xả — và điều kiện để nó trở nên đúng.** Review D-5 đề xuất bộ phân
+   biệt này; D-5 cân nhắc và **từ chối**, và review đã tự bác bỏ lập luận chi phí của chính nó
+   (task-5-report.md §15). Lý do ngắn: `_lastResynchronisationBytesDiscarded` được ghi trên nhánh
+   **THÀNH CÔNG** của `ResynchroniseAsync`, nên một số khác 0 chính là chữ ký của một lần **hồi phục sạch**;
+   và khung tin thực sự lừa được ta là khung **chưa kịp tới** lúc đồng bộ lại — nên nó đóng góp 0.
+   Bộ phân biệt sẽ kêu to nhất đúng chỗ cửa sổ im lặng đã làm tròn việc của nó.
+
+   **Điều kiện để xây nó (thuộc về D-6):** một **drain có quy trách nhiệm theo unit id** — tức là biết
+   số byte vừa bỏ đi mang địa chỉ slave nào. **Hôm nay seam không cho điều đó, và đây là sự thật D-6 cần:**
+   `IModbusBusLink.DrainBufferedInput()` trả về một `int` trần (`IModbusBusLink.cs:61`), và **cả hai link đang
+   ship đều chỉ đếm chứ không phân tích khung tin** — `GatewayTcpBusLink.DrainBufferedInput` và
+   `SerialPortBusLink.DrainBufferedInput` đều đọc vào một bộ đệm tạm rồi cộng dồn. Chừng nào điều đó còn
+   đúng, tín hiệu không quy được cho thiết bị nào, mà trên bus dùng chung rác thường thuộc về **thiết bị
+   khác** — thứ mà NModbus đã loại trừ sẵn bằng kiểm tra địa chỉ slave (D-5 đo được:
+   `Response slave address does not match request`). Nếu D-6 thêm được quy trách nhiệm ấy thì **nên xây**,
+   chặn theo cùng unit id và cùng mã hàm.
+
 **Per-device backoff vẫn là điều kiện tiên quyết của D-7 — nhưng cho ĐƯỜNG ĐỌC, không phải đường ghi.**
 Lý lẽ đã được review D-5 kiểm chứng bằng cấu trúc: lượt giữ nằm *bên trong* khoá trọng tài, còn backoff
 đổi một `Task.Delay` nằm *ngoài* nó — nên trường hợp xấu nhất mà một lệnh ghi phải xếp hàng sau là **y hệt
