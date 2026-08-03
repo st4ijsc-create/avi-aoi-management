@@ -78,3 +78,20 @@ process.env.NODE_ENV ??= "test";
  * thêm hàng phút và bất định theo tải máy) — hãy mock `./vramProcessProbe` trong chính file đó.
  */
 process.env.VRAM_PROCESS_PROBE ??= "off";
+
+/**
+ * VRAM Pha 2B Task 1 — KHÔNG test đơn vị nào được hỏi THIẾT BỊ THẬT xem ai đang giữ GPU.
+ *
+ * `captureVramBaseline()` nay quét danh sách tiến trình đang giữ GPU (`vramGpuHolders`) trước khi
+ * chốt nền: một `nvidia-smi` (~70 ms) và đôi khi một `powershell.exe` (~200 ms). Để nguyên trong
+ * bộ test thì (a) chậm, và (b) — nặng hơn nhiều — **kết quả phụ thuộc vào việc máy chạy test đang
+ * mở cái gì**: lượt đo ngày 2026-08-04 cho **15** tiến trình desktop đang giữ GPU (explorer, VS
+ * Code, Edge, Docker Desktop…), và một `node.exe` lạc ngoài cây tiến trình là đủ để nhánh TỪ CHỐI
+ * bật lên giữa một ca chẳng liên quan gì. Test bất định theo màn hình nền của người chạy là thứ
+ * không ai gỡ được.
+ *
+ * `off` ⇒ quét trả `null` ngay ⇒ nền vẫn chốt như trước NHƯNG mang `baselineVerified: false`
+ * (đúng ngữ nghĩa: KHÔNG BIẾT, không phải "sạch"). Test nào cần đường này thì
+ * `vi.mock("./vramGpuHolders")` — xem `server/services/vram/reconciler.baselinePids.test.ts`.
+ */
+process.env.VRAM_GPU_HOLDER_SCAN ??= "off";

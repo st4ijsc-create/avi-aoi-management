@@ -8,8 +8,17 @@ import type { VramEstimateSource, VramLeaseKind, VramPriority } from "./types";
  */
 export interface VramEventInput {
   /**
-   * baseline | baseline_deferred | baseline_blocked | reserve | commit | commit_fallback |
-   * measure_failed | release | refuse | preempt | drift | adopt | defer | defer_exceeded
+   * baseline | baseline_deferred | baseline_blocked | baseline_foreign_pid | reserve | commit |
+   * commit_fallback | measure_failed | release | refuse | preempt | drift | adopt | defer |
+   * defer_exceeded
+   *
+   * ⚠ `baseline_foreign_pid` (Pha 2B Task 1) = lượt chụp nền bị **TỪ CHỐI** vì có tiến trình chạy
+   * ảnh thực thi CỦA HỆ nhưng NGOÀI cây tiến trình hiện tại (tàn dư sau khi server khởi động lại —
+   * điển hình sidecar thị giác 7,8 GB). Chốt nền lúc đó là nuốt khối byte ấy vào nền vĩnh viễn và
+   * phóng đại dư địa đúng bằng nó. Sự kiện mang `orphanHolders`/`thirdPartyHolders`/`ourHolders`
+   * (pid + tên) và **KHÔNG mang byte của hộ mồ côi** — `nvidia-smi` trả `used_memory = [N/A]` trên
+   * WDDM, nên ta biết AI mà không biết BAO NHIÊU. Ai đọc nhật ký thấy `baseline` biến mất một
+   * quãng mà không biết sự kiện này sẽ tưởng reconciler đang chạy tốt trong khi nó đang MÙ.
    *
    * ⚠ `commit_fallback` (Pha 2A Task 4, T5-15) = giấy phép được chốt sổ bằng **ƯỚC LƯỢNG DỰ
    * PHÒNG** sau khi phép đo hỏng, cho khối byte mà điểm gọi chắc chắn đang tồn tại (backend

@@ -84,11 +84,15 @@ export const WIRED_ALLOCATION_SITE_COUNT = 14;
 /**
  * Số DÒNG của `KNOWN_ALLOCATION_SITES` = số lần xuất hiện mà mẫu quét ngày 2026-08-04 nhìn thấy.
  *
- * ⚠⚠ **157 LÀ CẬN DƯỚI, KHÔNG PHẢI CẬN TRÊN.** Xem khối "ĐỌC TRƯỚC KHI DÙNG BẢNG NÀY" ở đầu file.
+ * ⚠⚠ **159 LÀ CẬN DƯỚI, KHÔNG PHẢI CẬN TRÊN.** Xem khối "ĐỌC TRƯỚC KHI DÙNG BẢNG NÀY" ở đầu file.
  * Bốn vòng review, bốn lần nới mẫu: 65 → 120 → 151 → 157, trong khi số điểm gọi vẫn 14. Con số này
  * nói về *mẫu quét*, không nói về *hệ thống*.
+ *
+ * ⚠ 157 → **159** (Pha 2B Task 1): hai dòng MỚI đều thuộc `vramGpuHolders.ts` (`child_process` +
+ * `execFile(`) và cả hai `wired: false` — file đó ĐỌC danh tính tiến trình đang giữ GPU, không cấp
+ * phát gì. Số điểm gọi `beginVramAllocation()` KHÔNG đổi (`WIRED_ALLOCATION_SITE_COUNT` vẫn 14).
  */
-export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 157;
+export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 159;
 
 /**
  * ★★ HAI CÁI BẪY ĐẾM-HAI-LẦN, khai TƯỜNG MINH thay vì lọc ngầm bằng regex.
@@ -273,6 +277,8 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "server/services/vram/vramProbe.ts", symbol: "child_process", wired: false, note: ":92 execFile('nvidia-smi') qua promisify — đầu dò TOÀN THIẾT BỊ, đọc chứ không cấp phát." },
   { file: "server/services/vram/vramProcessProbe.ts", symbol: "child_process", wired: false, note: ":1 import execFile — đầu dò THEO TIẾN TRÌNH (PDH), đọc chứ không cấp phát." },
   { file: "server/services/vram/vramProcessProbe.ts", symbol: "execFile(", wired: false, note: ":309 execFile('powershell.exe', …) đọc bộ đếm \\GPU Process Memory. ~1,5 s mỗi lượt; KHÔNG cấp phát VRAM. (M-1 review TOÀN NHÁNH — số cũ `:151` đã mục vì Task 6 sửa file này SAU Task 5.)" },
+  { file: "server/services/vram/vramGpuHolders.ts", symbol: "child_process", wired: false, note: "Pha 2B Task 1 — :1 import execFile. Đầu dò DANH TÍNH (ai đang giữ GPU), đọc chứ không cấp phát." },
+  { file: "server/services/vram/vramGpuHolders.ts", symbol: "execFile(", wired: false, note: "Pha 2B Task 1 — MỘT lời gọi `execFile` dùng chung cho `nvidia-smi --query-compute-apps` (~70 ms) và `powershell.exe` Win32_Process (~200 ms, CHỈ khi có ứng viên mồ côi). Trả về AI đang giữ GPU, KHÔNG trả về BAO NHIÊU (`used_memory = [N/A]` trên WDDM) ⇒ đủ để TỪ CHỐI chốt nền, KHÔNG đủ để TRỪ. Không cấp phát VRAM." },
 
   // ───── I-1 (review TOÀN NHÁNH): MÁY DUYỆT HEADLESS — thư viện GPU THỨ TƯ, vô hình cho tới nay ─────
   { file: "server/services/reportGenerator.ts", symbol: "import puppeteer", wired: false, note: '★★ :382 `await import("puppeteer")` trong generateNGVisualPDF(). `puppeteer` là **dependency SẢN XUẤT** (package.json:164). Đây là hộ ĐẦU TIÊN có điểm cấp phát trong `server/` mà bảng bỏ sót HOÀN TOÀN qua ba vòng nới mẫu — và nó lọt KHÔNG PHẢI vì né tránh, mà vì `MODULE_PATTERNS` liệt kê tay đúng ba thư viện. Xem khối I-1 ở `vramAllocationSites.test.ts`: đây là bằng chứng THỨ HAI (rẻ hơn `index.cjs`) cho kết luận "151/157 là cận DƯỚI".' },

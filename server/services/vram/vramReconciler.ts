@@ -2,6 +2,26 @@ import { snapshot, leaseBytes } from "./vramBroker";
 import { readDeviceVram } from "./vramProbe";
 import { logVramEvent } from "./vramEventLog";
 import type { VramLease } from "./types";
+import type { GpuHolderCensus } from "./vramGpuHolders";
+
+/**
+ * Pha 2B Task 1 — quét danh tính hộ đang giữ GPU, KHÔNG BAO GIỜ ném, KHÔNG BAO GIỜ chặn đường boot.
+ *
+ * ⚠ `await import()` (không phải import tĩnh) CÓ CHỦ ĐÍCH, và đây là bài học đã trả giá ở
+ * `vramReconciler.ts` dòng ~576: nhiều file test thay CẢ module `./vramProcessProbe` bằng bản giả
+ * chỉ khai đúng những export chúng cần. `vramGpuHolders` import `collectDescendants` từ đó, nên
+ * một import TĨNH ở đây sẽ làm mọi file test như thế vỡ ngay lúc nạp module ("No export is
+ * defined"), với lỗi chẳng liên quan gì tới thứ chúng đang kiểm. Nhập động + `catch` biến ca đó
+ * thành ĐÚNG ngữ nghĩa ta muốn: KHÔNG QUÉT ĐƯỢC ⇒ `null` ⇒ nền CHƯA XÁC MINH ⇒ cưỡng chế chạy mù.
+ */
+async function readGpuHoldersSafe(): Promise<GpuHolderCensus | null> {
+  try {
+    const { readGpuHolders } = await import("./vramGpuHolders");
+    return await readGpuHolders([process.pid]);
+  } catch {
+    return null;
+  }
+}
 
 const DRIFT_THRESHOLD_BYTES = Number(process.env.VRAM_DRIFT_THRESHOLD_MB ?? 512) * 1024 * 1024;
 const INTERVAL_MS = Number(process.env.VRAM_RECONCILE_INTERVAL_MS ?? 60_000);
@@ -130,6 +150,32 @@ export interface VramReconcileResult {
    * tìm hộ tiêu thụ lạ. Cùng khuôn với `sourceUnstable`.
    */
   baselineBlocked: boolean;
+  /**
+   * ★★★ Pha 2B Task 1 — SỐ CHỊU LỰC của mô hình cưỡng chế §5.6c
+   * (`headroom = trần − max(ledgerTotalBytes, attributableBytes)`), và là số DUY NHẤT nhìn thấy
+   * những khoản cấp phát CHƯA ĐƯỢC LIỆT KÊ (89/157 điểm chưa nối; bản tự khai chỉ là CẬN DƯỚI).
+   *
+   * `null` ⇔ **KHÔNG TÍNH ĐƯỢC** ⇒ người tiêu thụ PHẢI rơi về chỉ-sổ và ghi rõ **đang chạy mù**
+   * (ràng buộc toàn cục 10). Ba lối vào `null`:
+   *   1. chưa có nền (`baselineUsedBytes === null`);
+   *   2. nền CHƯA XÁC MINH ĐƯỢC (`baselineVerified === false` — không liệt kê được hộ giữ GPU);
+   *   3. lượt RESAMPLE (nền vừa bị huỷ/chụp lại; lượt đó CỐ Ý không đối chiếu).
+   *
+   * ⚠ KHÁC `detail.attributableBytes` của sự kiện `drift`: số đó là số học THÔ của **cái chuông**
+   * Pha 1 (luôn tính, kể cả trên nền chưa xác minh, vì chuông chỉ cần TÍN HIỆU TƯƠNG ĐỐI). Số ở
+   * ĐÂY là số dùng để **QUYẾT ĐỊNH CẤP PHÁT**, nên nó chỉ tồn tại khi có bằng chứng. Đừng "dọn
+   * dẹp" hai chỗ đó thành một — chúng khác nhau ở đúng chỗ chịu lực.
+   */
+  attributableBytes: number | null;
+  /**
+   * Pha 2B Task 1 — nền hiện tại đã được XÁC MINH là không có tiến trình MỒ CÔI nào của hệ đang
+   * giữ GPU hay chưa. `false` khi chưa chụp nền, hoặc chụp được nhưng KHÔNG quét được danh sách
+   * hộ giữ GPU (`vramGpuHolders.readGpuHolders()` trả `null`).
+   *
+   * ⚠ `false` KHÔNG có nghĩa "bẩn" — nó có nghĩa **KHÔNG BIẾT**, và trong mô hình này "không
+   * biết" phải được đối xử như "không dùng được" (xem `attributableBytes`).
+   */
+  baselineVerified: boolean;
 }
 
 let timer: NodeJS.Timeout | null = null;
@@ -327,7 +373,26 @@ let baselineBlockedSinceMs: number | null = null;
  * đồng hồ chặn thì đổi "nền nhiễm vĩnh viễn" lấy "IM LẶNG vĩnh viễn" — vẫn là hỏng im lặng, đúng
  * lớp lỗi EXP-1. Cả HAI lối từ chối vì thế cùng lên MỘT đồng hồ.
  */
-let baselineBlockedReason: "loading-lease" | "device-below-committed" | null = null;
+let baselineBlockedReason: "loading-lease" | "device-below-committed" | "foreign-gpu-holder" | null = null;
+/**
+ * ★★★ Pha 2B Task 1 — NỀN NÀY ĐÃ ĐƯỢC XÁC MINH CHƯA (xem `VramReconcileResult.baselineVerified`).
+ *
+ * ⚠ VÌ SAO PHẢI LÀ MỘT Ô RIÊNG, KHÔNG GỘP VÀO `baselineCaptured`: hai câu hỏi khác nhau và có
+ * hai người tiêu thụ khác nhau. `baselineCaptured` trả lời *"có số để TRỪ chưa?"* — cái chuông
+ * Pha 1 cần đúng thứ đó và tha thứ được cho sai số. `baselineVerified` trả lời *"số đó có đáng
+ * để QUYẾT ĐỊNH CẤP PHÁT không?"* — cưỡng chế Pha 2B cần đúng thứ này và KHÔNG tha thứ được:
+ * một nền nuốt mất 7,8 GB sidecar mồ côi làm dư địa phóng đại đúng 7,8 GB.
+ * Gộp hai ô lại là ép một trong hai người tiêu thụ nhận câu trả lời của người kia.
+ */
+let baselineVerified = false;
+/**
+ * Pha 2B Task 1 — tên các tiến trình MỒ CÔI đang chặn lượt chụp nền (rỗng = không có). Giữ lại để
+ * câu BÁO ĐỘNG sau `BASELINE_BLOCKED_ALARM_MS` nêu ĐÍCH DANH thứ cần tắt: `blockingOwners` (chủ
+ * giấy phép) VÔ DỤNG ở ca này — kẻ chặn không có trong sổ, đó chính là lý do nó chặn.
+ */
+let blockingForeignHolders: string[] = [];
+/** Pha 2B Task 1 — đã cảnh báo "nền chưa xác minh ⇒ chạy mù" chưa (một lần/vòng đời tiến trình). */
+let warnedUnverifiedBaseline = false;
 
 /**
  * Chụp nền. Thành công MỘT LẦN rồi thôi — nếu không, một lượt `stop()`/`start()` lại sẽ nuốt
@@ -456,9 +521,95 @@ export async function captureVramBaseline(
     return null;
   }
 
+  /**
+   * ★★★ Pha 2B Task 1 — CỔNG CỨNG: KHÔNG TUYÊN BỐ NỀN SẠCH KHI CÒN TÀN DƯ CỦA LƯỢT CHẠY TRƯỚC.
+   *
+   * Đây là bản vá cho khối "GIỚI HẠN ĐÃ BIẾT" ở docstring phía trên (nguyên văn: *"nếu server khởi
+   * động lại trong khi một tiến trình con vẫn đang sống — điển hình sidecar thị giác 7,8 GB — thì
+   * 7,8 GB đó bị NUỐT VÀO NỀN và ta sẽ KHÔNG BAO GIỜ THẤY NÓ"*). Ở Pha 1 điều đó chỉ làm hỏng một
+   * cái chuông; từ Pha 2B nó làm hỏng một PHÉP TÍNH DƯ ĐỊA: nền hụt 7,8 GB ⇒ `attributable` hụt
+   * 7,8 GB ⇒ broker cho cấp phát khi thiết bị đã đầy — đúng lớp lỗi cả kiến trúc này tồn tại để diệt.
+   *
+   * ⚠ ĐẶT Ở ĐÂY, SAU HAI LÁ CHẮN CŨ, CÓ LÝ DO: lượt quét tốn một `nvidia-smi` (~70 ms) và đôi khi
+   * một `powershell.exe` (~200 ms). Hai lá chắn trên đã `return` ở đúng những nhịp mà ta CHẮC CHẮN
+   * không chốt nền, nên quét ở đó là trả tiền cho một câu trả lời không ai dùng.
+   *
+   * ⚠ KHÔNG ĐOÁN BYTE. `nvidia-smi` trên máy WDDM này trả `used_memory = [N/A]` cho MỌI hộ, nên ta
+   * biết **AI** mà không biết **BAO NHIÊU**. Đủ để TỪ CHỐI, KHÔNG đủ để TRỪ. Ai định "ước lượng
+   * 7,8 GB rồi trừ": con số đó biến một trạng thái mù CÓ TIẾNG thành một con số sai IM LẶNG, và
+   * lượt sau sẽ không còn ai biết nó sai.
+   *
+   * ⚠ "Mồ côi" hẹp hơn "không phải PID của ta" — bản đọc nguyên văn đã bị SỐ ĐO bác bỏ (danh sách
+   * chứa cả `explorer.exe`/`Code.exe`/`msedge.exe`: 15 hộ trên chính máy này). Lý do đầy đủ +
+   * phần lỗ CÒN LẠI nằm ở docstring `vramGpuHolders.ts`. Đọc nó trước khi nới hay siết vị từ này.
+   */
+  const census = await readGpuHoldersSafe();
+  if (census && census.orphans.length > 0) {
+    const named = census.orphans.map((h) => `${h.name} (pid ${h.pid})`);
+    const firstOfStreak = baselineBlockedSinceMs === null;
+    if (firstOfStreak) baselineBlockedSinceMs = Date.now();
+    baselineBlockedReason = "foreign-gpu-holder";
+    blockingForeignHolders = named;
+    console.warn(
+      `[vram] TỪ CHỐI chốt nền: ${named.length} tiến trình của hệ đang giữ GPU NGOÀI cây tiến trình này ` +
+        `(${named.join(", ")}) — gần như chắc chắn là tàn dư của lượt chạy TRƯỚC. Chốt nền lúc này là nuốt ` +
+        `trọn khối byte đó vào nền VĨNH VIỄN ⇒ dư địa bị phóng đại đúng bằng nó. Tắt tiến trình đó THEO PID ` +
+        `rồi nền tự chụp lại ở nhịp sau. ⚠ KHÔNG biết nó giữ bao nhiêu (nvidia-smi trả [N/A]) nên KHÔNG trừ.`,
+    );
+    // Ghi sổ ở lượt ĐẦU của đợt (đủ truy ngược, không phình DB mỗi nhịp) và LUÔN ghi khi đây là
+    // lượt RESAMPLE — cùng lý do EXP-2 với `baseline_deferred`.
+    if (firstOfStreak || priorBaseline) {
+      logVramEvent({
+        event: "baseline_foreign_pid",
+        owner: "reconciler",
+        leaseKind: "external-process",
+        priority: "background",
+        deviceUsedBytes: raw,
+        ledgerTotalBytes: ledgerTotal,
+        detail: {
+          deviceUsedRawBytes: raw,
+          committedBytes,
+          ledgerTotalBytes: ledgerTotal,
+          // Nền SẼ LÀ bao nhiêu nếu cứ chốt bừa — bằng chứng của chính lỗi này khi đọc lại nhật
+          // ký. ⚠ KHÔNG phải một phép trừ nào có PID lạ trong đó: ta không biết byte của chúng.
+          baselineIfCapturedAnyway: raw - committedBytes,
+          orphanHolders: census.orphans.map((h) => ({ pid: h.pid, name: h.name })),
+          thirdPartyHolders: census.thirdParty.map((h) => ({ pid: h.pid, name: h.name })),
+          ourHolders: census.ours.map((h) => ({ pid: h.pid, name: h.name })),
+          note:
+            "TỪ CHỐI chốt nền: có tiến trình chạy ảnh thực thi CỦA HỆ nhưng NGOÀI cây tiến trình " +
+            "hiện tại (tàn dư sau khi server khởi động lại). KHÔNG biết nó giữ bao nhiêu byte " +
+            "(nvidia-smi: used_memory = [N/A]) nên KHÔNG trừ và KHÔNG đoán — nền giữ nguyên trạng " +
+            "thái CHƯA XÁC ĐỊNH, cưỡng chế rơi về chỉ-sổ và ghi rõ đang chạy mù.",
+        },
+      });
+    }
+    return null;
+  }
+
   baselineUsedBytes = raw - committedBytes;
   baselineCaptured = true;
   baselineSource = device.source;
+  /**
+   * `census === null` ⇒ KHÔNG QUÉT ĐƯỢC ⇒ nền này CHƯA XÁC MINH. Vẫn CHỐT (chuông Pha 1 sống
+   * tiếp — nó chỉ cần một mốc tương đối), nhưng `attributableBytes` sẽ là `null` nên cưỡng chế
+   * KHÔNG được phép tin nó.
+   *
+   * ⚠ VÌ SAO KHÔNG TỪ CHỐI LUÔN Ở NHÁNH NÀY: huỷ nền cũng CHỈ dẫn tới `attributable = null` (đúng
+   * nhánh mù đó), nhưng nó GIẾT THÊM lưới đối chiếu của Pha 1 — mất mát thuần tuý, không mua lại
+   * được gì về an toàn số học. Cả hai lối đều hội tụ về "mù ⇒ chỉ-sổ ⇒ có tiếng"; chọn lối giữ
+   * được nhiều lưới hơn.
+   */
+  baselineVerified = census !== null;
+  blockingForeignHolders = [];
+  if (!baselineVerified && !warnedUnverifiedBaseline) {
+    warnedUnverifiedBaseline = true;
+    console.warn(
+      "[vram] nền vừa chốt CHƯA XÁC MINH ĐƯỢC (không liệt kê được tiến trình đang giữ GPU) ⇒ " +
+        "attributable KHÔNG dùng được ⇒ cưỡng chế sẽ chạy MÙ (chỉ-sổ). Đây là mất phép ĐO, " +
+        "KHÔNG phải bằng chứng rằng thiết bị sạch.",
+    );
+  }
   // Pha 1.5 Task 7 (T5-1) — chụp được thì đợt hoãn kết thúc. Đây là lối thoát DUY NHẤT của
   // nhánh báo động "không chụp được nền", và nó đóng NGAY ở lượt chụp thành công đầu tiên.
   baselineBlockedSinceMs = null;
@@ -516,6 +667,24 @@ export async function captureVramBaseline(
       // phép chưa commit là 'đã xin, chưa cấp phát xong' nên trừ nó là trừ thứ chưa tồn tại".
       // Câu đó SAI (đo được `nvidia-smi = 18.115 MiB` khi lease 30B vẫn pending) và nó đi thẳng
       // vào bảng `vram_events` ở MỌI lượt chụp — đúng nghĩa "mìn cho người sau".
+      /**
+       * ★ Pha 2B Task 1 — nền này có bằng chứng hay không, và bằng chứng đó là GÌ.
+       *
+       * `baselineVerified: false` ⇒ `attributableBytes` của mọi nhịp sau là `null` ⇒ cưỡng chế
+       * chạy chỉ-sổ. Ai đọc nhật ký mà bỏ qua ô này sẽ tưởng con số nền là một sự thật đã kiểm.
+       *
+       * `gpuHolders` là **DỮ LIỆU CHO LƯỢT SAU**, không phải trang trí: nó là thứ duy nhất trả
+       * lời được câu "893 MiB nền kia gồm những ai" khi có người hỏi lại. Và nếu một ngày danh
+       * sách này xuất hiện một hộ CUDA lạ cỡ lớn (`ollama.exe`…), đây là chỗ nó lộ ra —
+       * cổng hiện tại KHÔNG bắt ca đó (xem docstring `vramGpuHolders.ts`).
+       */
+      baselineVerified,
+      gpuHolders: census
+        ? {
+            ours: census.ours.map((h) => ({ pid: h.pid, name: h.name })),
+            thirdParty: census.thirdParty.map((h) => ({ pid: h.pid, name: h.name })),
+          }
+        : null,
       note:
         "nền = thiết bị − tổng giấy phép ĐÃ CHỐT SỔ (số ĐO, hoặc ước lượng dự phòng T5-15 cho " +
         "khối byte chắc chắn tồn tại), và lượt chụp này chỉ chạy khi KHÔNG còn giấy " +
@@ -557,6 +726,11 @@ export function __resetVramBaselineForTests(): void {
   // trước và nhánh báo động "không chụp được nền" có thể trip SAI ngay từ lượt hoãn đầu tiên.
   baselineBlockedSinceMs = null;
   baselineBlockedReason = null;
+  // Pha 2B Task 1 — cùng lý do: không reset thì test sau KẾ THỪA "nền đã xác minh" của test trước,
+  // và `attributableBytes` sẽ có số ở đúng những ca sinh ra để chứng minh nó KHÔNG được có số.
+  baselineVerified = false;
+  blockingForeignHolders = [];
+  warnedUnverifiedBaseline = false;
 }
 
 /**
@@ -709,6 +883,10 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       sourceUnstable: false,
       pendingBytes,
       baselineBlocked: false,
+      // Không đọc được thiết bị ⇒ không có số tuyệt đối ⇒ không có `attributable`. Cưỡng chế
+      // rơi về chỉ-sổ (ràng buộc 10), KHÔNG được coi thiết bị là trống.
+      attributableBytes: null,
+      baselineVerified,
     };
   }
 
@@ -783,6 +961,10 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
           sourceUnstable: false,
           pendingBytes,
           baselineBlocked: false,
+          // Lượt RESAMPLE CỐ Ý không đối chiếu (số vừa bị huỷ không đáng tin để so) ⇒ cũng không
+          // được xuất bản một `attributable` để ai đó đem đi quyết định cấp phát.
+          attributableBytes: null,
+          baselineVerified,
         };
       }
 
@@ -820,6 +1002,10 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
         sourceUnstable: true,
         pendingBytes,
         baselineBlocked: false,
+        // Thước dao động ⇒ số so sánh KHÔNG đáng tin (chính câu cảnh báo ngay trên nói vậy) ⇒
+        // càng không được đem đi quyết định cấp phát.
+        attributableBytes: null,
+        baselineVerified,
       };
     }
 
@@ -859,6 +1045,9 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       sourceUnstable: false,
       pendingBytes,
       baselineBlocked: false,
+      // Cùng lý do với nhánh resample ở trên: lượt này CỐ Ý không đối chiếu.
+      attributableBytes: null,
+      baselineVerified,
     };
   }
 
@@ -898,17 +1087,26 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       // nếu lệch, câu báo động sẽ liệt kê một danh sách KHÁC với tập đang thật sự chặn, và người
       // trực đi tìm đúng cái tên KHÔNG có trong đó (ca điển hình: lease đo-hỏng đang chặn).
       const blockingOwners = snap.leases.filter(holdsUncommittedBytes).map((l) => l.request.owner);
-      // Hai NGUYÊN NHÂN, hai HÀNH ĐỘNG SỬA khác nhau — gộp một câu là bắt người trực đoán.
+      // BA NGUYÊN NHÂN, BA HÀNH ĐỘNG SỬA khác nhau — gộp một câu là bắt người trực đoán.
+      // ⚠ Pha 2B Task 1 — câu kết "Đây là lỗi SỔ/ĐO, KHÔNG PHẢI đi tìm hộ tiêu thụ lạ" ĐÃ ĐƯỢC
+      // ĐẨY VÀO TỪNG NHÁNH: với nguyên nhân MỚI (`foreign-gpu-holder`) nó SAI THẲNG — ở ca đó thủ
+      // phạm ĐÚNG LÀ một tiến trình ngoài sổ, và bảo người trực "đừng đi tìm" là dẫn họ đi lạc.
       const why =
         baselineBlockedReason === "device-below-committed"
           ? `Sổ đang cộng dồn NHIỀU HƠN thứ thật sự nằm trên thiết bị (lá chắn "thiết bị < đã commit" chặn mọi ` +
-            `lượt chụp) — đi soi các số commitMeasured() gần đây, chúng đang cộng trùng.`
-          : `Giấy phép ở trạng thái ĐANG NẠP quá lâu (${blockingOwners.join(", ") || "(không rõ)"}) = tiến trình ` +
-            `chết giữa chừng hoặc commit không bao giờ tới — đi xem giấy phép treo.`;
+            `lượt chụp) — đi soi các số commitMeasured() gần đây, chúng đang cộng trùng. ` +
+            `Đây là lỗi SỔ/ĐO, KHÔNG PHẢI đi tìm hộ tiêu thụ lạ.`
+          : baselineBlockedReason === "foreign-gpu-holder"
+            ? `Tiến trình của hệ còn sót lại từ lượt chạy TRƯỚC vẫn đang giữ GPU ngoài cây tiến trình này ` +
+              `(${blockingForeignHolders.join(", ") || "(không rõ)"}) — chốt nền lúc này là nuốt trọn khối byte ` +
+              `đó vào nền vĩnh viễn. Tắt ĐÚNG PID đó (nvidia-smi --query-compute-apps=pid rồi Stop-Process), ` +
+              `nền tự chụp lại ở nhịp sau. ⚠ KHÔNG biết nó giữ bao nhiêu (nvidia-smi trả [N/A]) nên KHÔNG trừ.`
+            : `Giấy phép ở trạng thái ĐANG NẠP quá lâu (${blockingOwners.join(", ") || "(không rõ)"}) = tiến trình ` +
+              `chết giữa chừng hoặc commit không bao giờ tới — đi xem giấy phép treo. ` +
+              `Đây là lỗi SỔ/ĐO, KHÔNG PHẢI đi tìm hộ tiêu thụ lạ.`;
       console.warn(
         `[vram] KHÔNG CHỤP ĐƯỢC NỀN suốt ${Math.round(blockedForMs / 1000)} giây — phép đối chiếu đang MÙ ` +
-          `(không có nền thì mọi con số lệch đều vô nghĩa). ${why} ` +
-          `Đây là lỗi SỔ/ĐO, KHÔNG PHẢI đi tìm hộ tiêu thụ lạ.`,
+          `(không có nền thì mọi con số lệch đều vô nghĩa). ${why}`,
       );
       logVramEvent({
         event: "baseline_blocked",
@@ -922,10 +1120,15 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
           thresholdMs: BASELINE_BLOCKED_ALARM_MS,
           reason: baselineBlockedReason,
           blockingOwners,
+          // Pha 2B Task 1 — kẻ chặn của nguyên nhân MỚI KHÔNG có trong sổ (đó chính là lý do nó
+          // chặn), nên `blockingOwners` luôn rỗng ở ca đó. Thiếu trường này thì sự kiện báo động
+          // không nói được phải tắt CÁI GÌ.
+          foreignHolders: blockingForeignHolders,
           pendingBytes,
           note:
-            "Nền chưa chụp được quá lâu (T5-1) ⇒ reconciler MÙ. Nguyên nhân nằm ở giấy phép kẹt " +
-            "trạng thái đang-nạp, KHÔNG phải cấp phát chui. Tự lành ngay ở lượt chụp nền thành công.",
+            "Nền chưa chụp được quá lâu (T5-1) ⇒ reconciler MÙ. Nguyên nhân: giấy phép kẹt trạng " +
+            "thái đang-nạp, sổ cộng dư, HOẶC (Pha 2B) tiến trình mồ côi của lượt chạy trước còn " +
+            "giữ GPU — đọc `reason` để biết đường nào. Tự lành ngay ở lượt chụp nền thành công.",
         },
       });
     }
@@ -939,6 +1142,10 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       sourceUnstable: false,
       pendingBytes,
       baselineBlocked: blocked,
+      // Chưa có nền ⇒ KHÔNG tính được `attributable`. Đây là nhánh "đang chạy mù" tường minh nhất
+      // của cả hàm (ràng buộc 10).
+      attributableBytes: null,
+      baselineVerified,
     };
   }
 
@@ -1062,6 +1269,21 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
     sourceUnstable: false,
     pendingBytes,
     baselineBlocked: false,
+    /**
+     * ★★★ Pha 2B Task 1 — CHỖ DUY NHẤT `attributable` ĐƯỢC XUẤT BẢN CHO NGƯỜI QUYẾT ĐỊNH.
+     *
+     * Điều kiện KÉP, và cả hai vế đều bắt buộc:
+     *   • `baselineUsedBytes !== null` — có nền để trừ. (`baseline = ?? 0` ở trên là ngữ nghĩa
+     *     của người gọi TRỰC TIẾP muốn so số THÔ; nó KHÔNG được biến thành một `attributable`
+     *     hợp lệ, vì "nền = 0" là một GIẢ ĐỊNH chứ không phải một phép đo.)
+     *   • `baselineVerified` — nền đó đã được xác minh không có tàn dư của lượt chạy trước.
+     *
+     * Thiếu vế nào ⇒ `null` ⇒ §5.6c rơi về chỉ-sổ + ghi rõ đang chạy mù (ràng buộc 10).
+     * ⚠ `driftBytes` ngay trên CỐ Ý vẫn tính trên nền chưa xác minh: chuông Pha 1 cần tín hiệu
+     * TƯƠNG ĐỐI và tha thứ được cho sai số nền; phép cưỡng chế thì không. Đừng hợp nhất hai chỗ.
+     */
+    attributableBytes: baselineVerified && baselineUsedBytes !== null ? attributable : null,
+    baselineVerified,
   };
 }
 
