@@ -127,12 +127,16 @@ export async function startBackgroundSchedulers(): Promise<void> {
   // khi tiến trình này CHƯA cấp phát gì. Đẩy khối này xuống sau lượt warm model là tự tay nuốt
   // ~17 GB trọng số vào "nền" và làm mù luôn cái sổ.
   //
-  // Pha 1.5 Task 4 — bộ đếm giờ nhật ký (`__setVramLogTimerEnabled(true)`) KHÔNG còn bật ở đây.
-  // `startBackgroundSchedulers()` chỉ chạy ở vai trò chạy scheduler (ROLE≠api), nhưng sự kiện
-  // phải tới DB từ MỌI vai trò kể cả `api` — nên lượt bật nay chuyển lên `index.ts` (:5198 lân
-  // cận), CHẠY TRƯỚC dòng này và trước cả nhánh role, cho MỌI vai trò. `__setVramLogTimerEnabled`
-  // idempotent (`if (on && !timer)`) nên gọi lại ở đây vẫn vô hại — CỐ Ý không gọi lại để chỉ có
-  // MỘT nơi bật, tránh việc sau này ai đó gỡ một chỗ mà tưởng lượt bật kia còn giữ nó sống.
+  // Pha 1.5 Task 4 — bộ đếm giờ nhật ký (`__setVramLogTimerEnabled(true)`) KHÔNG bật ở đây.
+  // `startBackgroundSchedulers()` (hàm hiện tại) được gọi từ HAI chỗ khác nhau, và MỖI chỗ gọi
+  // tự bật timer TRƯỚC khi gọi vào đây — không phải một điểm bật chung duy nhất:
+  //   • all-in-one / `ROLE=api` — bật ở `index.ts` (:5198 lân cận), trước cả nhánh role.
+  //   • `ROLE=worker` (`server/worker.ts` HOẶC `ROLE=worker` qua `index.ts`) — bật ở ĐẦU
+  //     `runWorkerProcess()` (trên, review vòng 1 Critical: bật ở `index.ts` KHÔNG phủ được
+  //     worker, vì `worker.ts` không import `index.ts`, và `ROLE=worker` qua `index.ts`
+  //     early-return trước khi chạm dòng bật ở đó).
+  // `__setVramLogTimerEnabled` idempotent (`if (on && !timer)`) nên hai điểm bật này không
+  // đụng nhau — không role nào đi qua CẢ HAI, mỗi nơi chỉ phủ đúng đường vào của chính nó.
   try {
     const { startVramReconciler } = await import("../services/vram/vramReconciler");
     startVramReconciler();
@@ -784,6 +788,25 @@ export function stopBackgroundSchedulers(): void {
  */
 export async function runWorkerProcess(): Promise<void> {
   console.log("[Worker] Starting scheduler-only worker (no HTTP listener).");
+
+  // Pha 1.5 Task 4, review vòng 1 (Critical) — BẬT nhật ký NGAY ĐÂY, không phải ở
+  // `index.ts`. `runWorkerProcess()` là điểm CHUNG của CẢ HAI đường vào worker:
+  //   1. `server/worker.ts` (`npm run start:worker` / `dev:worker`) import THẲNG
+  //      hàm này — KHÔNG BAO GIỜ chạm `index.ts`.
+  //   2. `ROLE=worker` qua `index.ts` — `startServer()` early-return RẤT SỚM
+  //      (đầu hàm), TRƯỚC lượt bật đặt gần khối `SERVER_ROLE === "api"` phía dưới.
+  // Đặt lượt bật ở `index.ts` (như bản vá đầu của Task 4 đã làm) là VÔ NGHĨA với
+  // cả hai đường trên ⇒ `worker` mất nhật ký hoàn toàn, kể cả sự kiện `baseline`/
+  // `drift` do CHÍNH `reconcileOnce()` của tiến trình này ghi — hồi quy so với
+  // trước Task 4. Đối xứng với `stopBackgroundSchedulers()` (dưới) vốn đã tắt nó
+  // VÔ ĐIỀU KIỆN bất kể ai gọi.
+  try {
+    const { __setVramLogTimerEnabled } = await import("../services/vram/vramEventLog");
+    __setVramLogTimerEnabled(true);
+  } catch (err) {
+    // Telemetry không bao giờ được làm hỏng boot của worker.
+    console.error("[Worker] không bật được bộ đếm giờ nhật ký vram:", (err as any)?.message || err);
+  }
 
   // Observability bootstrap (Sentry/OTel) — no-op unless configured.
   try {

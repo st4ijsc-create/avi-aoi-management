@@ -1,4 +1,27 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Cắt đúng THÂN của một hàm top-level `export (async )?function <name>(...)` bằng
+ * đếm ngoặc — không phải regex tham lam trên toàn file (sẽ dính luôn thân các hàm
+ * khác nằm sau). Trả về "" nếu không tìm thấy hàm.
+ */
+function extractFunctionBody(src: string, fnName: string): string {
+  const m = src.match(new RegExp(`export\\s+(?:async\\s+)?function\\s+${fnName}\\s*\\([^)]*\\)[^{]*\\{`));
+  if (!m || m.index === undefined) return "";
+  let depth = 1;
+  let i = m.index + m[0].length;
+  const start = i;
+  for (; i < src.length && depth > 0; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") depth--;
+  }
+  return src.slice(start, i - 1);
+}
 
 /**
  * Pha 1.5 Task 4 — ROLE=api: nhật ký BẬT ở mọi vai trò, đối chiếu CHỈ ở vai trò
@@ -92,5 +115,35 @@ describe("ROLE=api — nhật ký BẬT, đối chiếu TẮT", () => {
     const msg = String(warnSpy.mock.calls[0]?.[0] ?? "");
     expect(msg).not.toMatch(/tiến trình anh em/i);
     warnSpy.mockRestore();
+  });
+});
+
+/**
+ * Pha 1.5 Task 4, review vòng 1 (Critical) — HỒI QUY: lượt bật nhật ký bị chuyển
+ * lên `index.ts`, nhưng `index.ts` KHÔNG PHẢI đường vào của vai trò `worker`.
+ * Hai đường vào worker THẬT SỰ đều đi qua `runWorkerProcess()` trong
+ * `backgroundJobs.ts`, KHÔNG BAO GIỜ chạm dòng bật ở `index.ts`:
+ *   1. `server/worker.ts` (`npm run start:worker` / `dev:worker`) import THẲNG
+ *      `runWorkerProcess` — không import `index.ts`.
+ *   2. `ROLE=worker` qua `index.ts` — `startServer()` early-return ở đầu hàm
+ *      (TRƯỚC lượt bật đặt gần `SERVER_ROLE === "api"`, vốn nằm rất xa phía sau).
+ *
+ * Test này quét MÃ NGUỒN thật (không import module — tránh phải giả lập toàn bộ
+ * observability/DB-check/email/leader-election mà `runWorkerProcess()` gọi, và
+ * tránh interval KHÔNG unref'd ở cuối hàm làm treo tiến trình test) để khẳng định
+ * lượt bật nằm ĐÚNG bên trong thân hàm `runWorkerProcess`, không phải chỉ tồn tại
+ * đâu đó trong file. Đây là "cách rẻ" — cùng kiểu quét đã dùng ở
+ * `server/worker.smoke.test.ts` ("binds no HTTP").
+ */
+describe("worker — runWorkerProcess() PHẢI tự bật nhật ký (không dựa vào index.ts)", () => {
+  const backgroundJobsSrc = fs.readFileSync(
+    path.join(HERE, "..", "..", "_core", "backgroundJobs.ts"),
+    "utf-8",
+  );
+
+  it("thân hàm runWorkerProcess() gọi __setVramLogTimerEnabled(true)", () => {
+    const body = extractFunctionBody(backgroundJobsSrc, "runWorkerProcess");
+    expect(body, "không tìm thấy hàm runWorkerProcess trong backgroundJobs.ts").not.toBe("");
+    expect(body).toMatch(/__setVramLogTimerEnabled\(\s*true\s*\)/);
   });
 });

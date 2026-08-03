@@ -5200,13 +5200,17 @@ async function startServer() {
   // cùng đối chiếu trên MỘT thiết bị sẽ thấy nhau là "cấp phát chui" — biến chuông
   // thành nhiễu (sổ chung là Pha 3). Nhưng SỰ KIỆN thì phải tới DB từ MỌI vai trò —
   // nếu ROLE=api không ghi, Pha 2 sẽ chốt ngưỡng drift trên NỬA dữ liệu. Hàng đợi
-  // VRAM_LOG_QUEUE_MAX (5000) rơi im lặng khi không có ai xả, nên bật ở ĐÂY, ngoài
-  // khối role bên dưới, chạy cho CẢ api LẪN worker/all-in-one.
+  // VRAM_LOG_QUEUE_MAX (5000) rơi im lặng khi không có ai xả.
   //
-  // ⚠ ĐÂY LÀ NƠI DUY NHẤT bật bộ đếm giờ nhật ký cho vai trò `api` — backgroundJobs.ts
-  // (startBackgroundSchedulers, chạy ở nhánh else) KHÔNG bật lại nó; `__setVramLogTimerEnabled`
-  // idempotent nên bật hai chỗ vẫn vô hại, nhưng CHỌN MỘT tránh việc sau này ai đó gỡ một
-  // chỗ và tưởng lượt bật kia còn — chọn chỗ NÀY vì nó chạy cho MỌI vai trò, kể cả api.
+  // ⚠ review vòng 1 (Critical) — lượt bật này CHỈ phủ hai đường CHẠY ĐẾN ĐÂY: vai
+  // trò `api` (nhánh if bên dưới) và all-in-one/ROLE-không-đặt (nhánh else). Nó
+  // KHÔNG phủ vai trò `worker`: `startServer()` early-return cho `ROLE === "worker"`
+  // ở ĐẦU hàm (rất xa phía trên dòng này), và `server/worker.ts` (`npm run
+  // start:worker`/`dev:worker`) không import `index.ts` — không bao giờ chạy tới
+  // đây. Lượt bật cho `worker` nằm RIÊNG, ở ĐẦU `runWorkerProcess()`
+  // (`backgroundJobs.ts`) — điểm chung thật sự của cả hai đường vào worker. Hai
+  // nơi bật này KHÔNG trùng nhau (không role nào chạy qua cả hai), nên không phải
+  // "chọn một" — mỗi nơi phủ đúng tập vai trò của chính nó.
   try {
     const { __setVramLogTimerEnabled } = await import("../services/vram/vramEventLog");
     __setVramLogTimerEnabled(true);
