@@ -114,6 +114,43 @@ public sealed class ModbusTcpDriverWriteTests
         Assert.Equal(before, slave.Slave.DataStore.HoldingRegisters.ReadPoints(5, 1)[0]);
     }
 
+    /// <summary>
+    /// 🔴 Task D-5 review, m-2 — <b>a non-numeric setpoint value is rejected without touching the device, and
+    /// until now nothing in this suite ever passed one.</b>
+    ///
+    /// <para>Found by a D-5 mutation, not by reading. <see cref="SetpointWriteRequest.Value"/> is
+    /// <see langword="object"/>? (double|bool|string|null — B-1 deliberately reuses
+    /// <c>TelemetrySample.Value</c>'s domain), and the narrowing that refuses the three non-numeric shapes moved
+    /// to <c>ModbusWritePreflight.TryToEngineeringValue</c> so <see cref="ModbusRtuDriver"/> could share it
+    /// rather than hold a copy. Mutating that shared method to ACCEPT a <see langword="bool"/> killed a test in
+    /// the RTU suite and <b>none here</b> — this file had 13 tests and zero <c>[InlineData]</c>, so
+    /// <see cref="ModbusTcpDriver"/>'s own wrong-type refusal had never been exercised since B-4 wrote it.</para>
+    ///
+    /// <para>The behaviour was guarded (by the RTU suite, through the shared method), which is why this is a
+    /// Minor. What it retires is the failure mode where someone later re-inlines the narrowing into one driver
+    /// and silently unguards the other — a class this batch has paid for repeatedly. One row per shape, because
+    /// a mutation that drops one <c>case</c> survives a test that supplies another.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData("fast")]
+    [InlineData(null)]
+    public async Task WriteSetpointAsync_WithANonNumericValue_RejectedWithoutTouchingDevice(object? value)
+    {
+        await using var slave = ModbusLoopbackHarness.Start();
+        await using var driver = new ModbusTcpDriver("127.0.0.1", slave.Port, BuildWritableMap("PLC-WRITE-TYPE"));
+
+        var before = slave.Slave.DataStore.HoldingRegisters.ReadPoints(5, 1)[0];
+        var result = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", value), CancellationToken.None);
+
+        // Per B-3's own precedent there is no separate "wrong type" reason: every failure the value math can
+        // produce maps to OutOfRange, and "not a number" is the closest honest fit.
+        Assert.Equal(WriteOutcome.Rejected, result.Outcome);
+        Assert.Equal(SetpointRejectionReason.OutOfRange, result.RejectionReason);
+        Assert.Contains("expected a numeric value", result.Detail, StringComparison.Ordinal);
+        Assert.Equal(before, slave.Slave.DataStore.HoldingRegisters.ReadPoints(5, 1)[0]);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // 2) A write that times out reports Indeterminate — and genuinely times out.
     // ─────────────────────────────────────────────────────────────────────

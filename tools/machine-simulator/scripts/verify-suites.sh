@@ -450,7 +450,45 @@ EXPECT_CONFORMANCE=22
 # anywhere else would mean this task reached somewhere it had no business reaching. EXPECT_CONFORMANCE in
 # particular stays 22 — RTU conformance wiring is D-6, and no operator can turn the RTU write path on at all
 # until D-7 builds the connector factory, the policy gate and the RBAC route.
-EXPECT_EDGECORE=896
+#
+# 🔴 D-5's REVIEW FIX ROUND raises this 896 -> 905 (+9), counted from the runner
+# (`dotnet test --list-tests`: 889 -> 898). Two files; none is a rewrite, a split or a deletion. The expected
+# total is the ONLY executable line this task has changed in this script, per the standing rule the D-5 review
+# settled: totals may move with a per-file justification in this block; nothing else in this file may change.
+#
+#   + 5  ModbusRtuDriverWriteTests (35 -> 40) — 🔴 THE CRITICAL. The review applied FIVE mutations to
+#        InvokeCommandAsync SIMULTANEOUSLY (bus refusal -> Indeterminate, assert-half Detail -> the generic
+#        backstop string, queued cancellation -> Failed, in-flight cancellation Detail -> generic,
+#        bus-disposed -> Failed) and the whole suite reported `Passed! - Failed: 0, Passed: 896`; a sixth
+#        mutant in the same tree killed 1, so the pipeline was live. Every content assertion D-5 shipped was
+#        on the setpoint path or the pulse's RESET half, so the member that answers "did a machine cycle
+#        start?" asserted its outcome and nothing else. The four branches now have command-path equivalents
+#        of the setpoint tests (assert-half timeout with nine content assertions plus a DoesNotContain on the
+#        backstop string; in-flight cancel with LinkGeneration and a second machine still reading; queued
+#        cancel proven at the bus boundary with ZERO FC05 frames; bus refusal reporting Failed), and the
+#        fifth covers a branch that turned out to be unguarded on BOTH members: a bus disposed out from under
+#        a live driver. That last one is distinct from AWriteOrCommandAfterDisposal_..., which covers the
+#        DRIVER's own flag.
+#   + 1  ModbusRtuDriverWriteTests — review I-1. ModbusBusResynchronisationException is raised from exactly
+#        two places and the driver hard-coded the reason of ONE of them, so a failed drain (live and
+#        intentional: GatewayTcpBusLink lets an IOException escape on the strength of the bus's catch
+#        "saying so") told an operator to go hunting a babbling device. Both refusal causes are now driven
+#        through one parameterised link decorator in ONE test, because "distinguishable" is a claim about a
+#        pair: the Assert.NotEqual is the discriminating assertion and the two Contains stop it passing on
+#        any two strings that merely differ.
+#   + 3  ModbusTcpDriverWriteTests (13 -> 16) — review m-2. A [Theory] with one row per non-numeric setpoint
+#        shape (bool, string, null). Found by a D-5 mutation, not by reading: mutating the SHARED
+#        ModbusWritePreflight.TryToEngineeringValue to accept a bool killed a test in the RTU suite and NONE
+#        here, because this file had 13 tests and zero [InlineData] and had never passed a non-numeric value
+#        since B-4. The behaviour was guarded (through the shared method, by the RTU suite) — what these
+#        retire is a future re-inlining silently unguarding TCP.
+#
+# NO OTHER TOTAL MOVES. The fix round also REMOVES two assertions that could not discriminate (review m-1 and
+# m-5 — a frame-length count that is structurally always 0 because every RTU master request is 8 bytes, and an
+# Assert.All over a collection that can hold only the single frame the line above already checked) and adds
+# none in their place: each test's remaining assertions are the ones that carry it, so those two edits move no
+# count.
+EXPECT_EDGECORE=905
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:

@@ -144,3 +144,30 @@ Công cụ bắt buộc từ D-3: `scripts/mutate-guard.sh` (so dấu thời gia
 - Broadcast (slave 0) — quyết định và nói rõ.
 - S7 và EtherNet/IP vẫn không có.
 - Nếu multidrop có giới hạn số thiết bị trên một bus, nói con số.
+
+## 10. 🔴 Open items D-5 hands forward — D-6 và D-7 phải thừa kế ba điều này
+
+Thêm sau review D-5 (I-2c, I-3). Trước đó ba nghĩa vụ dưới đây chỉ nằm trong `task-5-report.md`, và **một
+báo cáo không phải là bản ghi nguồn**: người viết D-6/D-7 đọc thành viên, không đọc `.superpowers/`. Chúng
+cũng đã được ghi ngay trên hai thành viên public `ModbusRtuDriver.WriteSetpointAsync` /
+`InvokeCommandAsync`; mục này tồn tại để brief của D-6 và D-7 thừa kế được.
+
+1. **Không bao giờ gọi `WriteSetpointAsync`/`InvokeCommandAsync` với một `CancellationToken` không có
+   biên.** Trên bus dùng chung, một lệnh ghi có thể xếp hàng sau trọn một lượt giữ của thiết bị khác —
+   `registers × (retries+1) × readTimeoutMs`, tức **16 000 ms ở giá trị mặc định của map** và **khoảng hai
+   giờ** ở các giá trị tối đa mà chính map chấp nhận. Chỗ chờ đó **huỷ được**, và khi caller bỏ cuộc thì
+   thiết bị được báo là **chắc chắn chưa bị đụng tới** — nhưng chỉ khi có ai đó cấp cái biên ấy.
+2. **Định cỡ biên đó theo `max_j WorstCaseBusHoldMs`** trên **các thiết bị cùng bus**, không phải của riêng
+   thiết bị đang ghi. `ModbusRegisterMap.WorstCaseBusHoldMs` đã tính sẵn; `ModbusMultidropMap.FanOut` đã
+   cảnh báo bằng đúng con số đó.
+3. **`Applied` của một COMMAND là một sự xác nhận, không phải một quan sát.** Nó có nghĩa: một khung tin
+   quay về khớp với yêu cầu này ở địa chỉ slave, mã hàm, địa chỉ coil và giá trị. Nó **không** chứng minh
+   máy đã chuyển động — RTU không có gì để đối chiếu một khung tin với một yêu cầu, và một cặp echo cũ của
+   một xung đã hoàn tất trước đó về muộn, đúng thứ tự, có thể làm cả hai nửa được xác nhận (task-5-report.md
+   §3.3). **D-6 không được khẳng định hiệu ứng vật lý từ nó; D-7 không được trình bày nó cho người vận hành
+   như bằng chứng vật lý.**
+
+**Per-device backoff vẫn là điều kiện tiên quyết của D-7 — nhưng cho ĐƯỜNG ĐỌC, không phải đường ghi.**
+Lý lẽ đã được review D-5 kiểm chứng bằng cấu trúc: lượt giữ nằm *bên trong* khoá trọng tài, còn backoff
+đổi một `Task.Delay` nằm *ngoài* nó — nên trường hợp xấu nhất mà một lệnh ghi phải xếp hàng sau là **y hệt
+nhau** dù có backoff hay không. Cái nó cải thiện là thông lượng ĐỌC ở trạng thái dừng (D-4 đo được 67.5×).

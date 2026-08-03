@@ -111,8 +111,22 @@ internal sealed class InMemoryBusLink : IModbusBusLink
     public byte? SilentUnitId { get; set; }
 
     /// <summary>Total bytes this end has written, delivered or held. Lets a test assert the device really did
-    /// answer rather than infer it from the master's silence.</summary>
-    public int BytesWritten { get; private set; }
+    /// answer rather than infer it from the master's silence.
+    ///
+    /// <para>🔴 D-5 review m-3 — reads under <see cref="_gate"/>, the lock it is WRITTEN under. It was an
+    /// auto-property read from the test thread while a slave network's own thread was writing it, which is a
+    /// torn read this runtime happens not to produce for an <see cref="int"/> — benign today, and the
+    /// inconsistency was the cost: <see cref="WrittenFrames"/>, <see cref="BufferedInputCount"/> and
+    /// <see cref="AbortRequested"/> beside it all lock, so the next reader had to re-derive per member which
+    /// ones were safe. Made uniform rather than individually justified, the same call
+    /// <see cref="St4i.EdgeCore.Drivers.Modbus.ModbusBus"/> made for its own five counters.</para></summary>
+    public int BytesWritten
+    {
+        get { lock (_gate) { return _bytesWritten; } }
+    }
+
+    /// <inheritdoc cref="BytesWritten"/>
+    private int _bytesWritten;
 
     /// <summary>
     /// 🔴 Task D-5 — <b>every frame this end wrote, in order, as its own byte array: the bus boundary, recorded.</b>
@@ -142,8 +156,16 @@ internal sealed class InMemoryBusLink : IModbusBusLink
 
     /// <summary>How many frames <see cref="SilentUnitId"/> has swallowed. Observable so a test asserts the
     /// slave really did reply and the reply really was dropped, rather than inferring it from the master's
-    /// timeout — which is also what a slave that never saw the request would look like.</summary>
-    public int FramesSilenced { get; private set; }
+    /// timeout — which is also what a slave that never saw the request would look like.
+    ///
+    /// <para>🔴 D-5 review m-3 — reads under <see cref="_gate"/>; see <see cref="BytesWritten"/> for why.</para></summary>
+    public int FramesSilenced
+    {
+        get { lock (_gate) { return _framesSilenced; } }
+    }
+
+    /// <inheritdoc cref="FramesSilenced"/>
+    private int _framesSilenced;
 
     /// <summary>How many bytes this end's own abort flag is currently raised for — exposed as a bool.</summary>
     public bool AbortRequested { get { lock (_gate) { return _abort; } } }
@@ -242,7 +264,7 @@ internal sealed class InMemoryBusLink : IModbusBusLink
         lock (_gate)
         {
             if (_disposed) throw new ObjectDisposedException(nameof(InMemoryBusLink), $"the {_name} end was disposed");
-            BytesWritten += count;
+            _bytesWritten += count;
 
             // Recorded BEFORE the SilentUnitId/HoldWrites branches below, deliberately: this is what THIS END
             // put on the wire, and a frame the peer never receives still left this end. A test asking "did a
@@ -255,7 +277,7 @@ internal sealed class InMemoryBusLink : IModbusBusLink
             // whereas a held one is delivered later — the two model different failures and must not compose.
             if (SilentUnitId is { } silent && count > 0 && buffer[offset] == silent)
             {
-                FramesSilenced++;
+                _framesSilenced++;
                 return;
             }
 

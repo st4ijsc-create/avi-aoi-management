@@ -94,8 +94,20 @@ internal sealed class RawRtuResponder : IAsyncDisposable
     public int RequestsSeen => Volatile.Read(ref _requestsSeen);
 
     /// <summary>Every request frame this responder read, in order. A test asserts on these rather than on
-    /// anything it supplied.</summary>
-    public List<byte[]> Requests { get; } = new();
+    /// anything it supplied.
+    ///
+    /// <para>🔴 D-5 review m-3 — returns a SNAPSHOT taken under the same lock the pump writes under. It used to
+    /// hand out the live <see cref="List{T}"/> that <see cref="Pump"/> mutates from its own dedicated thread,
+    /// so a test enumerating it while a request landed could observe a torn count or throw. Benign in practice
+    /// because every reader waits on <see cref="RequestsSeen"/> first — and that "in practice" is exactly the
+    /// per-member reasoning the sibling members on <see cref="InMemoryBusLink"/> were made uniform to
+    /// remove.</para></summary>
+    public IReadOnlyList<byte[]> Requests
+    {
+        get { lock (_requests) { return _requests.ToArray(); } }
+    }
+
+    private readonly List<byte[]> _requests = new();
 
     private void Pump()
     {
@@ -122,10 +134,10 @@ internal sealed class RawRtuResponder : IAsyncDisposable
 
             var request = (byte[])frame.Clone();
             int index;
-            lock (Requests)
+            lock (_requests)
             {
-                Requests.Add(request);
-                index = Requests.Count - 1;
+                _requests.Add(request);
+                index = _requests.Count - 1;
             }
 
             Volatile.Write(ref _requestsSeen, index + 1);

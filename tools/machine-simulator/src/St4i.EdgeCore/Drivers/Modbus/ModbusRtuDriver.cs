@@ -369,6 +369,24 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// adds no second validation path — confirmed by reading the doc block attached to that method's own body
     /// rather than the one above it, because D-3's review found a doc block on that type had been re-parented
     /// onto the wrong member once already.</para>
+    ///
+    /// <para>🔴 <b>Review I-3 — the caller's obligation, recorded on the member rather than only in a
+    /// report.</b> <b>Never call this with an unbounded <see cref="CancellationToken"/>.</b> On a shared bus
+    /// this call can queue behind another device's whole hold — <c>registers × (retries+1) × readTimeoutMs</c>,
+    /// which is 16 000 ms at map defaults and about two hours at the map's own accepted maxima
+    /// (<see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/> computes it). The wait IS cancellable and a caller
+    /// that gives up is told the device is provably untouched — but only if someone supplies the bound. Size it
+    /// against the LARGEST <see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/> among the devices sharing this
+    /// bus, not this device's own. This is the standing reason the per-device backoff was deferred rather than
+    /// built (task-5-report.md §7): a backoff changes how OFTEN a dead device takes the line, never how long it
+    /// holds it, so it would not move this number at all.</para>
+    ///
+    /// <para>🔴 <b>And the same caveat <see cref="InvokeCommandAsync"/> carries, in its weaker form:</b> an
+    /// <see cref="WriteOutcome.Applied"/> here means a frame came back matching this request on slave address,
+    /// function code, register address and value — an acknowledgement, not an observation. For a setpoint the
+    /// residual is benign (an echo that matches the value is the echo of a write that would have left the
+    /// register at that value anyway); for a command it is not, which is why the full statement lives
+    /// there.</para>
     /// </summary>
     public async Task<SetpointWriteResult> WriteSetpointAsync(SetpointWriteRequest request, CancellationToken ct)
     {
@@ -433,6 +451,41 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// than the previous transaction's own read timeout PLUS a full window of observed silence — and what would
     /// close it does not exist in the protocol: an RTU frame carries nothing to correlate it with a request.
     /// Named rather than left for a commissioning engineer to find.</para>
+    ///
+    /// <para>🔴 <b>Review I-2(a) — and it is worse than the paragraph above said, because a pulse leaves TWO
+    /// echoes, not one.</b> A previously COMPLETED pulse on this coil emits an <c>FC05 = ON</c> echo and an
+    /// <c>FC05 = OFF</c> echo, in that order. If a whole pulse's request frames reach a device that has gone
+    /// away, and that earlier pair arrives late, in order, inside this transaction's two reads, then <b>both
+    /// halves are acknowledged and this method returns <see cref="WriteOutcome.Applied"/> with nothing having
+    /// reached the machine at all</b> — the one outcome that is supposed to mean the device confirmed it. The
+    /// earlier wording described only the assert half being fooled, which understated the residual; and since
+    /// the residual's entire mitigation is that it is documented, understating it was the defect.</para>
+    ///
+    /// <para>What still has to be true for it: the pair must survive
+    /// <see cref="ModbusBus.ResynchroniseAsync"/>'s observed-silent window, then NModbus's own
+    /// <c>DiscardInBuffer</c> immediately before each request, then arrive in assert-then-reset order. That is a
+    /// narrow window, and it is narrow rather than closed. <b>See task-5-report.md §15 for the discriminator
+    /// that was weighed for this and declined, and why</b> — the short form is that the only signal available
+    /// (bytes discarded by this transaction's entry resynchronisation) is unattributable to a unit id, so on a
+    /// shared line it fires mostly on another device's debris, which NModbus's slave-address validation has
+    /// already ruled out as an acknowledgement.</para>
+    ///
+    /// <para>🔴 <b>Consequence for D-6 and D-7, stated here because this is the member they gate:</b> an
+    /// <see cref="WriteOutcome.Applied"/> from this method is <b>an acknowledgement, not an observation.</b> It
+    /// means a frame arrived that matched this request on slave address, function code, coil address and value.
+    /// It is not proof that a machine moved. A conformance check must not assert physical effect from it, and an
+    /// audit row must not present it to an operator as one.</para>
+    ///
+    /// <para>🔴 <b>Review I-3 — the caller's obligation, recorded on the member rather than only in a
+    /// report.</b> <b>Never call this with an unbounded <see cref="CancellationToken"/>.</b> On a shared bus
+    /// this call can queue behind another device's whole hold — <c>registers × (retries+1) × readTimeoutMs</c>,
+    /// which is 16 000 ms at map defaults and about two hours at the map's own accepted maxima
+    /// (<see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/> computes it). The wait IS cancellable and a caller
+    /// that gives up is told the device is provably untouched — but only if someone supplies the bound. Size it
+    /// against the LARGEST <see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/> among the devices sharing this
+    /// bus, not this device's own. This is the standing reason the per-device backoff was deferred rather than
+    /// built (task-5-report.md §7): a backoff changes how OFTEN a dead device takes the line, never how long it
+    /// holds it, so it would not move this number at all.</para>
     /// </summary>
     public async Task<CommandResult> InvokeCommandAsync(CommandRequest request, CancellationToken ct)
     {
@@ -502,8 +555,11 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// The cost is real and is stated rather than tuned away: with no <c>readTimeoutMs</c> declared that value
     /// is <c>max(1000, PollIntervalMs × 4)</c>, a default D-4's review established was reasoned for a DEDICATED
     /// connection, so a write to a silent device holds the shared line for it — 4 s at a 1 s cadence, 240 s at
-    /// a 60 s one. The caller's own <paramref name="ct"/> is what bounds an operator's wait; D-7 must supply
-    /// one.</para>
+    /// a 60 s one. The caller's own <paramref name="ct"/> is what bounds an operator's wait — the full
+    /// obligation, including the sizing rule, is on the two PUBLIC members
+    /// (<see cref="WriteSetpointAsync"/>/<see cref="InvokeCommandAsync"/>) where a caller will actually be
+    /// standing. Review I-3: it used to live only here, on a private method, on the setpoint path, and in a
+    /// report — three places D-7 does not read.</para>
     ///
     /// <para><b>What happens to the BUS, and how the next machine's transaction knows it is safe.</b> The write
     /// runs inside <see cref="ModbusBusTransaction.ExecuteAsync(Func{NModbus.IModbusMaster, Task})"/>, which
@@ -534,7 +590,7 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
         catch (ModbusBusResynchronisationException ex)
         {
             _logError?.Invoke(ex, $"Modbus RTU bus '{_lease.Bus.Key}' refused a write to '{point}' on {_map.MachineCode}");
-            return new SetpointWriteResult(point, WriteOutcome.Failed, Detail: BusRefusedDetail());
+            return new SetpointWriteResult(point, WriteOutcome.Failed, Detail: BusRefusedDetail(ex));
         }
         catch (ObjectDisposedException)
         {
@@ -629,7 +685,7 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
         catch (ModbusBusResynchronisationException ex)
         {
             _logError?.Invoke(ex, $"Modbus RTU bus '{_lease.Bus.Key}' refused command '{commandName}' on {_map.MachineCode}");
-            return new CommandResult(commandName, WriteOutcome.Failed, Detail: BusRefusedDetail());
+            return new CommandResult(commandName, WriteOutcome.Failed, Detail: BusRefusedDetail(ex));
         }
         catch (ObjectDisposedException)
         {
@@ -660,17 +716,18 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
             }
             catch (Exception) when (ct.IsCancellationRequested)
             {
-                return new CommandResult(commandName, WriteOutcome.Indeterminate,
-                    Detail: $"cancelled before a definitive response arrived for coil {coilAddress}'s assert write — the " +
-                            $"request had already been written to the shared RTU bus, so whether unit {_map.UnitId} " +
-                            "asserted the coil is unconfirmed, and so is its rest state.");
+                return new CommandResult(commandName, WriteOutcome.Indeterminate, Detail: AssertHalfUnknownDetail(
+                    coilAddress,
+                    "cancelled before a definitive response arrived",
+                    "the request had already been written to the shared RTU bus"));
             }
             catch (Exception ex)
             {
                 _logError?.Invoke(ex, $"Modbus RTU coil {coilAddress}'s assert write did not complete for command '{commandName}' on {_map.MachineCode}");
-                return new CommandResult(commandName, WriteOutcome.Indeterminate,
-                    Detail: $"coil {coilAddress}'s assert write did not complete — whether unit {_map.UnitId} asserted it " +
-                            $"before the attempt gave up is unconfirmed ({ex.GetType().Name}).");
+                return new CommandResult(commandName, WriteOutcome.Indeterminate, Detail: AssertHalfUnknownDetail(
+                    coilAddress,
+                    $"command did not complete ({ex.GetType().Name})",
+                    $"the request reached the shared RTU bus and no valid acknowledgement came back within {_map.EffectiveReadTimeoutMs} ms"));
             }
 
             // The coil is now CONFIRMED asserted — NModbus validated an echo carrying this exact coil address and
@@ -730,20 +787,55 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
         : $"cancelled after taking the shared RTU bus '{_lease.Bus.Key}' but before any byte of the request was " +
           $"written, so unit {_map.UnitId} ({_map.MachineCode}) is untouched. Retrying is safe.";
 
-    /// <summary>The <c>Detail</c> for a bus that would not go quiet. <see cref="WriteOutcome.Failed"/> rather
-    /// than <see cref="WriteOutcome.Indeterminate"/>, deliberately, and the contract's own words are what decide
-    /// it: <see cref="WriteOutcome.Failed"/> is "the device <b>(or the transport talking to it)</b> was reached
-    /// and explicitly reported failure — the write did NOT apply", and that is exactly what happened.
+    /// <summary>The <c>Detail</c> for a bus that refused the transaction. <see cref="WriteOutcome.Failed"/>
+    /// rather than <see cref="WriteOutcome.Indeterminate"/>, deliberately, and the contract's own words are what
+    /// decide it: <see cref="WriteOutcome.Failed"/> is "the device <b>(or the transport talking to it)</b> was
+    /// reached and explicitly reported failure — the write did NOT apply", and that is exactly what happened.
     /// <see cref="ModbusBus.ResynchroniseAsync"/> refuses the transaction BEFORE
     /// <see cref="ModbusBus.BeginTransactionAsync"/> configures the transport, so no request frame of this write
     /// exists, and <see cref="WriteOutcome.Indeterminate"/> — "the caller does NOT know whether the device
     /// applied the write" — would be factually false. Reporting "we don't know" for a case we do know is how the
-    /// one outcome this contract exists to preserve gets discounted by the people it was written for.</summary>
-    private string BusRefusedDetail() =>
-        $"refused before any byte reached the line: the shared RTU bus '{_lease.Bus.Key}' would not go quiet after an " +
-        "earlier timed-out or aborted transaction, so it cannot be written to safely — an RTU response carries " +
-        "nothing to correlate it with a request, so the next answer on that line could be any of them. " +
-        $"Unit {_map.UnitId} ({_map.MachineCode}) is untouched and the link has been torn down for rebuild.";
+    /// one outcome this contract exists to preserve gets discounted by the people it was written for.
+    ///
+    /// <para>🔴 <b>Review I-1 — this method used to STATE A CAUSE, and the cause was false on one of the two
+    /// paths that produce it.</b> <see cref="ModbusBusResynchronisationException"/> is thrown from exactly two
+    /// places (verified by grep, both in <see cref="ModbusBus"/>): the link would not go quiet, and <b>the drain
+    /// itself failed</b> — which is live and intentional, because <see cref="GatewayTcpBusLink.DrainBufferedInput"/>
+    /// deliberately lets an <see cref="System.IO.IOException"/>/<c>SocketException</c> escape on the strength of
+    /// <see cref="ModbusBus.ResynchroniseAsync"/>'s catch "tearing it down AND SAYING SO". Hard-coding "would not
+    /// go quiet" made that second path say the opposite of the truth and sent an operator hunting a babbling
+    /// device while the fault was a dead link. It is the rule <see cref="NotOnTheWireDetail"/>'s own doc block
+    /// states one method above — <i>a <c>Detail</c> an operator acts on has to be true of the path they are
+    /// actually on</i> — broken inside the commit that articulates it, which is blueprint §8.1's point that a
+    /// fix for one instance of a defect class buys no immunity to the class.</para>
+    ///
+    /// <para><b>The cause now comes from the exception, which already words both paths correctly, and that is
+    /// safe to surface here</b> — checked rather than assumed. Both messages are built by
+    /// <see cref="ModbusBus"/> itself out of the bus key, the two window/budget numbers, a discarded-byte count
+    /// and an exception TYPE name; neither interpolates an inner <c>ex.Message</c>, and Modbus has no
+    /// credentials for a map to carry. The bus key is already in this method's own first sentence, so surfacing
+    /// it adds no exposure. What stays this driver's own is the part the transport cannot know: WHICH unit, that
+    /// it is untouched, and that retrying is safe.</para></summary>
+    /// <remarks>
+    /// 🔴 <b>The rationale sentence this method used to carry is GONE, and a surviving mutation is what found
+    /// it.</b> A fix-round mutation deleting <i>"…so the next answer on that line could be any of them"</i>
+    /// survived a green suite. The first reading is "a test is missing"; the consequence question gives a
+    /// different answer. Both <see cref="ModbusBusResynchronisationException"/> messages ALREADY say it —
+    /// <c>"an RTU response carries nothing to correlate it with a request, so the next answer could be any of
+    /// them"</c> — so the moment I-1 started appending <c>ex.Message</c>, this method's copy became the SECOND
+    /// copy of one sentence in one string. Adding an assertion would have frozen a duplicate into a contract;
+    /// deleting it removes a second thing that can drift from the first, which is the same argument that put
+    /// <see cref="ModbusWritePreflight.DescribeSlaveException"/> in one place.
+    ///
+    /// <para>What is left is exactly what the transport cannot know, and every clause of it is now pinned by a
+    /// test: the refusal happened <b>before any byte reached the line</b>, WHICH unit and machine, that it is
+    /// <b>untouched</b>, and that <b>retrying is safe</b> once the bus recovers — the two an operator acts on
+    /// being the last two.</para>
+    /// </remarks>
+    private string BusRefusedDetail(ModbusBusResynchronisationException ex) =>
+        $"refused before any byte reached the line: the shared RTU bus '{_lease.Bus.Key}' could not be made " +
+        $"trustworthy again, so it cannot be written to safely. Unit {_map.UnitId} ({_map.MachineCode}) is " +
+        $"untouched and retrying is safe once the bus recovers. Cause: {ex.Message}";
 
     /// <summary>The <c>Detail</c> for a bus that was disposed before this write could start — the connector is
     /// being torn down. Makes the same provable claim as <see cref="NotOnTheWireDetail"/> (no byte reached the
@@ -765,6 +857,28 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// address and value, so an <see cref="System.IO.IOException"/> here can mean "a frame came back that was
     /// not this write's answer". That is still <see cref="WriteOutcome.Indeterminate"/> — a stale frame on the
     /// line says nothing about whether the device applied the request.</para></summary>
+    /// <summary>
+    /// 🔴 <b>Review CRITICAL — the <c>Detail</c> for an assert half that got no usable answer, brought to parity
+    /// with <see cref="WriteDidNotCompleteDetail"/> and then past it.</b>
+    ///
+    /// <para>The two shapes that reach here — a bounded timeout and a cancellation — used to produce a message
+    /// that was materially thinner than the setpoint path's: no machine code, no elapsed bound, no "it was NOT
+    /// retried", no note that the bus is quarantined. <b>And it talked about a coil.</b> An operator reading
+    /// "coil 3's assert write did not complete" has to know the map to translate that into the only question
+    /// this member actually answers, which is <i>did a machine cycle start?</i> That is the one message on the
+    /// whole write path where the reader is standing next to something that may now be moving.</para>
+    ///
+    /// <para>So this says the cycle may have started, in those words, first — and then the coil, the unit, the
+    /// machine, the bound that elapsed, that nothing was resent, and that the bus is quarantined. The coil
+    /// address stays because it is what a commissioning engineer puts on a meter; it is no longer the headline.
+    /// The review found this branch unguarded by any content assertion at all, which is why the wording is now
+    /// pinned by tests on BOTH producing paths rather than only described here.</para>
+    /// </summary>
+    private string AssertHalfUnknownDetail(ushort coilAddress, string what, string howFarItGot) =>
+        $"{what} — THE CYCLE MAY HAVE STARTED: {howFarItGot}, so whether unit {_map.UnitId} ({_map.MachineCode}) " +
+        $"asserted coil {coilAddress} is unknown, and so is the coil's rest state — it may be latched. It was NOT " +
+        "retried; the bus is quarantined until the line has been observed silent.";
+
     private string WriteDidNotCompleteDetail(Exception ex) =>
         $"write did not complete ({ex.GetType().Name}) — the request reached the shared RTU bus and no valid " +
         $"acknowledgement came back within {_map.EffectiveReadTimeoutMs} ms, so whether unit {_map.UnitId} " +

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using NModbus;
 using St4i.Connector.Abstractions;
 using St4i.Connector.Abstractions.Models;
@@ -164,7 +165,13 @@ public class ModbusRtuDriverWriteTests
         Assert.Equal(2, frame[0]);
         Assert.Equal(SpeedRegister, RtuFrames.Word(frame, 2));
         Assert.Equal(123, RtuFrames.Word(frame, 4));
-        Assert.All(harness.Links.Master.WrittenFrames, f => Assert.Equal((byte)2, f[0]));
+
+        // 🔴 Review m-5 — an `Assert.All(WrittenFrames, f => f[0] == 2)` used to sit here. This driver only
+        // writes in this test, so that collection can hold exactly the one frame `Assert.Single` above already
+        // returned: the loop could not range over anything the line above had not already checked. Removed
+        // rather than reworded — the "no other device saw it" claim is carried by the three data-store
+        // assertions above, which read each slave's own storage and would catch a write that landed on a
+        // machine nobody addressed.
     }
 
     /// <summary>
@@ -563,7 +570,12 @@ public class ModbusRtuDriverWriteTests
         Assert.Null(refused.RejectionReason);
         Assert.Contains("refused before any byte reached the line", refused.Detail, StringComparison.Ordinal);
         Assert.Contains("untouched", refused.Detail, StringComparison.Ordinal);
-        Assert.Contains("would not go quiet", refused.Detail, StringComparison.Ordinal);
+        // 🔴 Review I-1 — the CAUSE now comes from the exception, which words the two refusal paths
+        // differently, instead of being a canned "would not go quiet" that was false for a drain failure.
+        // ADrainFailureAndANeverQuietBus_... is what proves the two are distinguishable; this asserts the
+        // never-quiet arm's own wording reaches the caller at all.
+        Assert.Contains("never went quiet", refused.Detail, StringComparison.Ordinal);
+        Assert.Contains("retrying is safe", refused.Detail, StringComparison.Ordinal);
 
         // 🔴 The claim in that Detail, checked: the refused write put NOTHING on the line.
         Assert.Equal(framesBefore, babbling.WriteCalls);
@@ -576,7 +588,7 @@ public class ModbusRtuDriverWriteTests
     /// observe a quiet window. Counts writes so the test above can assert that the refused write reached the
     /// line with zero frames — the counter is on the LINK rather than on the pair's own recorder because this
     /// decorator is what the bus actually holds.</summary>
-    private sealed class BabblingLink(InMemoryBusLink inner) : IModbusBusLink
+    private sealed class BabblingLink(InMemoryBusLink inner, Func<int>? drain = null) : IModbusBusLink
     {
         private int _writeCalls;
 
@@ -589,8 +601,12 @@ public class ModbusRtuDriverWriteTests
 
         public void DiscardInBuffer() => inner.DiscardInBuffer();
 
-        // Always claims to have drained something, so the quiet window restarts forever.
-        public int DrainBufferedInput() => 4;
+        // Default: always claims to have drained something, so the quiet window restarts forever. 🔴 Review I-1
+        // — a caller can instead supply a drain that THROWS, which is the second, live way
+        // ModbusBus.ResynchroniseAsync raises ModbusBusResynchronisationException (GatewayTcpBusLink
+        // deliberately lets an IOException escape its own drain). Parameterised rather than duplicated so the
+        // two refusal causes are driven through one decorator and cannot drift apart.
+        public int DrainBufferedInput() => drain is null ? 4 : drain();
 
         public void AbortPendingRead() => inner.AbortPendingRead();
 
@@ -605,6 +621,319 @@ public class ModbusRtuDriverWriteTests
         }
 
         public void Dispose() => inner.Dispose();
+    }
+
+    /// <summary>
+    /// 🔴 <b>Review I-1 — the two causes that refuse a transaction must produce DISTINGUISHABLE
+    /// <c>Detail</c>.</b>
+    ///
+    /// <para><c>ModbusBusResynchronisationException</c> is raised from exactly two places: the link would not go
+    /// quiet, and <b>the drain itself threw</b> — the second being live and intentional, because
+    /// <c>GatewayTcpBusLink.DrainBufferedInput</c> deliberately lets an <c>IOException</c>/<c>SocketException</c>
+    /// escape on the strength of the bus's catch "tearing it down AND SAYING SO". The driver used to hard-code
+    /// "would not go quiet" for both, so a dead link told an operator to go hunting a babbling device.</para>
+    ///
+    /// <para>Both arms in ONE test, deliberately: "distinguishable" is a claim about a pair, and a mutation that
+    /// collapses the two back onto one string has to fail something that compares them. The
+    /// <c>Assert.NotEqual</c> is the discriminating assertion; the two <c>Contains</c> are what stop it passing
+    /// on two strings that merely differ.</para>
+    /// </summary>
+    [Fact]
+    public async Task ADrainFailureAndANeverQuietBus_RefuseTheWriteWithDifferentReasons_NotOneCannedString()
+    {
+        async Task<string> RefusalDetailAsync(string busKey, Func<int>? drain)
+        {
+            var links = InMemoryBusLinkPair.Create();
+            var registry = new ModbusBusRegistry();
+            var link = new BabblingLink(links.Master, drain);
+            var lease = registry.Acquire(busKey, _ => Task.FromResult<IModbusBusLink>(link),
+                new ModbusBusSettings(QuietWindowMs: 30, PollSliceMs: 2));
+
+            await using (var driver = new ModbusRtuDriver(lease, WritableMap("REFUSE-M1", unitId: 1, readTimeoutMs: 150)))
+            {
+                // Quarantine the bus with a genuine timeout — nothing on the far end answers.
+                var first = await driver.WriteSetpointAsync(new SetpointWriteRequest(SpeedPoint, 10.0), CancellationToken.None);
+                Assert.Equal(WriteOutcome.Indeterminate, first.Outcome);
+                Assert.True(lease.Bus.IsDesynchronised);
+
+                var framesBefore = link.WriteCalls;
+                var refused = await driver.WriteSetpointAsync(new SetpointWriteRequest(SpeedPoint, 20.0), CancellationToken.None);
+
+                Assert.Equal(WriteOutcome.Failed, refused.Outcome);
+                Assert.Null(refused.RejectionReason);
+                // The claim both causes share, and the only one that is true on both paths.
+                Assert.Contains("refused before any byte reached the line", refused.Detail, StringComparison.Ordinal);
+                Assert.Contains("untouched", refused.Detail, StringComparison.Ordinal);
+                Assert.Contains("retrying is safe", refused.Detail, StringComparison.Ordinal);
+                Assert.Equal(framesBefore, link.WriteCalls);
+
+                await lease.DisposeAsync();
+                await registry.DisposeAsync();
+                links.Master.Dispose();
+                return refused.Detail!;
+            }
+        }
+
+        var neverQuiet = await RefusalDetailAsync("refusal-never-quiet", drain: null);
+        var drainFailed = await RefusalDetailAsync(
+            "refusal-drain-threw", drain: () => throw new IOException("the link went away underneath the drain"));
+
+        _output.WriteLine($"never went quiet -> {neverQuiet}");
+        _output.WriteLine($"drain threw     -> {drainFailed}");
+
+        // 🔴 The discriminating assertion: one canned string for two causes fails here.
+        Assert.NotEqual(neverQuiet, drainFailed);
+
+        Assert.Contains("never went quiet", neverQuiet, StringComparison.Ordinal);
+        Assert.DoesNotContain("failed while draining", neverQuiet, StringComparison.Ordinal);
+
+        Assert.Contains("failed while draining", drainFailed, StringComparison.Ordinal);
+        Assert.DoesNotContain("never went quiet", drainFailed, StringComparison.Ordinal);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 5b. THE CRITICAL — every in-flight failure branch of InvokeCommandAsync, which is the member that
+    //        answers "did a machine cycle start?". The review applied five mutations to this path
+    //        SIMULTANEOUSLY and the whole suite stayed green: the outcome was asserted, the Detail never was.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>An assert half that gets no answer says THE CYCLE MAY HAVE STARTED — in those words.</b>
+    ///
+    /// <para>This is the command-path counterpart of the setpoint's timeout test, and it is the branch the
+    /// review found completely unguarded: <c>InvokeCommandAsync_AgainstASilentDevice_...</c> asserted the
+    /// outcome and nothing else, so mutating this <c>Detail</c> to the generic backstop string survived a full
+    /// green suite. That is the exact defect Đợt B shipped twice — a <c>NullReferenceException</c> in a
+    /// <c>finally</c> replacing an authored message with "unexpected failure" — reachable here on the one
+    /// message whose reader may be standing next to something that is now moving.</para>
+    ///
+    /// <para>Every clause is asserted separately because each answers a different operator question, and a
+    /// mutation that drops one survives a test that checks another: what happened, that a cycle may have
+    /// started, which unit and machine, which coil and that it may be latched, the bound that elapsed, that
+    /// nothing was resent, and that the bus is quarantined. Plus the <c>DoesNotContain</c> that catches the
+    /// generic-backstop regression directly.</para>
+    /// </summary>
+    [Fact]
+    public async Task ACommandWhoseAssertHalfTimesOut_SaysTheCycleMayHaveStarted_NotJustThatACoilFailed()
+    {
+        const int boundMs = 400;
+
+        await using var harness = ModbusRtuLoopbackHarness.Start(((byte)4, new ushort[] { 1 }));
+        harness.Links.Device.SilentUnitId = 4;
+
+        await using var driver = new ModbusRtuDriver(harness.Lease(), WritableMap("CYCLE-C4", unitId: 4, readTimeoutMs: boundMs));
+
+        var stopwatch = Stopwatch.StartNew();
+        var result = await driver.InvokeCommandAsync(new CommandRequest(StartCycleCommand), CancellationToken.None);
+        stopwatch.Stop();
+
+        Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+        Assert.Null(result.RejectionReason);
+
+        Assert.Contains("command did not complete", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("THE CYCLE MAY HAVE STARTED", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("unit 4", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("CYCLE-C4", result.Detail, StringComparison.Ordinal);
+        Assert.Contains($"coil {StartCycleCoil}", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("latched", result.Detail, StringComparison.Ordinal);
+        Assert.Contains($"{boundMs} ms", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("NOT retried", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("quarantined", result.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("unexpected failure", result.Detail, StringComparison.Ordinal);
+
+        // It genuinely waited out the bound rather than short-circuiting it, with no retry.
+        Assert.True(stopwatch.ElapsedMilliseconds >= boundMs - 60,
+            $"the command returned after only {stopwatch.ElapsedMilliseconds} ms against a {boundMs} ms bound.");
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5),
+            $"the command took {stopwatch.Elapsed} — unexpectedly slow for one bounded attempt with no retry.");
+    }
+
+    /// <summary>🔴 The command path's in-flight cancellation, which the review mutated to the generic backstop
+    /// string and watched survive. Same content discipline as the setpoint's, plus the two claims only this
+    /// member can make; and the same two mechanism assertions that are the real load-bearing ones — the shared
+    /// line was NOT rebuilt, and a second machine on it still reads its own value afterwards.</summary>
+    [Fact]
+    public async Task ACancelledInFlightCommand_ReportsIndeterminate_NamingTheCycle_AndDoesNotTearDownTheBus()
+    {
+        await using var harness = ModbusRtuLoopbackHarness.Start(
+            ((byte)1, new ushort[] { 111 }),
+            ((byte)2, new ushort[] { 222 }));
+        harness.Links.Device.SilentUnitId = 1;
+
+        var lease = harness.Lease();
+        await using var driver = new ModbusRtuDriver(lease, WritableMap("CANCEL-C1", unitId: 1, readTimeoutMs: 30_000));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        var stopwatch = Stopwatch.StartNew();
+        var result = await driver.InvokeCommandAsync(new CommandRequest(StartCycleCommand), cts.Token);
+        stopwatch.Stop();
+
+        Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+        Assert.Contains("cancelled before a definitive response arrived", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("THE CYCLE MAY HAVE STARTED", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("already been written", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("latched", result.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("unexpected failure", result.Detail, StringComparison.Ordinal);
+
+        _output.WriteLine(
+            $"MEASURED cancellation of an in-flight RTU command: {stopwatch.Elapsed.TotalMilliseconds:F2} ms against a " +
+            "30 000 ms bound.");
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2),
+            $"cancellation took {stopwatch.Elapsed} to unblock a command bounded at 30 s.");
+
+        Assert.Equal(1, lease.Bus.LinkGeneration);
+
+        harness.Links.Device.SilentUnitId = null;
+        await using var reader = new ModbusRtuDriver(
+            harness.Lease(), ReadOnlySingleRegisterMap("CANCEL-C2", unitId: 2, pollIntervalMs: 60_000, readTimeoutMs: 1_000));
+
+        DeviceReading? fromTwo = null;
+        using var readCts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var pump = DriveAsync(reader, r => Volatile.Write(ref fromTwo, r), readCts.Token);
+        try
+        {
+            await WaitUntilAsync(() => Volatile.Read(ref fromTwo) is not null, "machine 2 to read after the cancelled command");
+        }
+        finally
+        {
+            await readCts.CancelAsync();
+            try { await pump; } catch (OperationCanceledException) { }
+        }
+
+        Assert.Equal(222.0, (double)Volatile.Read(ref fromTwo)!.Telemetry.Single().Value!, precision: 10);
+        Assert.Equal(1, lease.Bus.LinkGeneration);
+    }
+
+    /// <summary>🔴 A command cancelled while QUEUED reports <see cref="WriteOutcome.Indeterminate"/>, never
+    /// <see cref="WriteOutcome.Failed"/>. The review mutated exactly this to <c>Failed</c> and it survived —
+    /// which violates B-1 directly and silently, and would put "the machine definitely did not start" into
+    /// D-7's audit row for a command nobody can say that about. The claim is checked at the bus boundary: not
+    /// one FC05 frame, on a line busy with the dead device's reads throughout.</summary>
+    [Fact]
+    public async Task ACommandCancelledWhileQueuedBehindADeadDevice_ReportsIndeterminate_AndProvablyNeverFired()
+    {
+        const int deadHoldMs = 3_000;
+
+        await using var harness = ModbusRtuLoopbackHarness.Start(
+            ((byte)1, new ushort[] { 111 }),
+            ((byte)9, new ushort[] { 999 }));
+        harness.Links.Device.SilentUnitId = 9;
+
+        await using var keepAlive = harness.Lease();
+
+        using var deadCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await using var dead = new ModbusRtuDriver(
+            harness.Lease(), ReadOnlySingleRegisterMap("QUEUE-C-DEAD", unitId: 9, pollIntervalMs: 1, readTimeoutMs: deadHoldMs));
+        var deadPump = DriveAsync(dead, _ => { }, deadCts.Token);
+
+        try
+        {
+            await WaitUntilAsync(() => harness.Links.Device.FramesSilenced > 0, "the dead device to take the bus");
+
+            await using var commander = new ModbusRtuDriver(harness.Lease(), WritableMap("QUEUE-C1", unitId: 1, readTimeoutMs: 2_000));
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(150));
+            var stopwatch = Stopwatch.StartNew();
+            var result = await commander.InvokeCommandAsync(new CommandRequest(StartCycleCommand), cts.Token);
+            stopwatch.Stop();
+
+            Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+            Assert.Contains("queued for the shared RTU bus", result.Detail, StringComparison.Ordinal);
+            Assert.Contains("untouched", result.Detail, StringComparison.Ordinal);
+            Assert.Contains("Retrying is safe", result.Detail, StringComparison.Ordinal);
+
+            Assert.True(stopwatch.ElapsedMilliseconds < deadHoldMs / 3,
+                $"the cancelled command took {stopwatch.ElapsedMilliseconds} ms against a {deadHoldMs} ms hold.");
+
+            // 🔴 Provably never fired: no FC05 frame at all, on a line that was carrying FC03 frames throughout.
+            Assert.Empty(FramesWithFunction(harness.Links.Master, RtuFrames.FunctionWriteSingleCoil));
+            Assert.False(harness.Slaves[1].DataStore.CoilDiscretes.ReadPoints(StartCycleCoil, 1)[0]);
+            Assert.True(harness.Links.Master.WrittenFrames.Count > 0, "the bus should have been busy with the dead device's reads");
+        }
+        finally
+        {
+            await deadCts.CancelAsync();
+            try { await deadPump; } catch (OperationCanceledException) { }
+        }
+    }
+
+    /// <summary>🔴 A command refused by a bus that cannot be made trustworthy reports
+    /// <see cref="WriteOutcome.Failed"/> — the review mutated this to <see cref="WriteOutcome.Indeterminate"/>
+    /// and it survived, so §4.3's "pinned in both directions" was true of the setpoint member only. It is now
+    /// true of both, which is what that section claimed about the driver.</summary>
+    [Fact]
+    public async Task ACommandOntoABusThatWillNotGoQuiet_IsRefusedBeforeAnyByteReachesTheLine_AndReportsFailed()
+    {
+        var links = InMemoryBusLinkPair.Create();
+        await using var registry = new ModbusBusRegistry();
+
+        var babbling = new BabblingLink(links.Master);
+        var lease = registry.Acquire(
+            "babbling-command-bus",
+            _ => Task.FromResult<IModbusBusLink>(babbling),
+            new ModbusBusSettings(QuietWindowMs: 30, PollSliceMs: 2));
+
+        await using var driver = new ModbusRtuDriver(lease, WritableMap("BABBLE-C1", unitId: 1, readTimeoutMs: 150));
+
+        var first = await driver.InvokeCommandAsync(new CommandRequest(StartCycleCommand), CancellationToken.None);
+        Assert.Equal(WriteOutcome.Indeterminate, first.Outcome);
+        Assert.True(lease.Bus.IsDesynchronised);
+
+        var framesBefore = babbling.WriteCalls;
+        var refused = await driver.InvokeCommandAsync(new CommandRequest(StartCycleCommand), CancellationToken.None);
+
+        Assert.Equal(WriteOutcome.Failed, refused.Outcome);
+        Assert.Null(refused.RejectionReason);
+        Assert.Contains("refused before any byte reached the line", refused.Detail, StringComparison.Ordinal);
+        Assert.Contains("untouched", refused.Detail, StringComparison.Ordinal);
+        Assert.Contains("never went quiet", refused.Detail, StringComparison.Ordinal);
+        Assert.Contains("retrying is safe", refused.Detail, StringComparison.Ordinal);
+
+        // The Detail's claim, checked: the refused command put NOTHING on the line.
+        Assert.Equal(framesBefore, babbling.WriteCalls);
+
+        await lease.DisposeAsync();
+        links.Master.Dispose();
+    }
+
+    /// <summary>
+    /// 🔴 <b>A bus disposed out from under a driver reports <see cref="WriteOutcome.Indeterminate"/> on BOTH
+    /// members.</b> The review mutated the command path's <c>ObjectDisposedException</c> catch to
+    /// <see cref="WriteOutcome.Failed"/> and it survived; checking my own suite afterwards, the setpoint path's
+    /// equivalent was unguarded too — nothing exercised either. This is a different branch from
+    /// <c>AWriteOrCommandAfterDisposal_...</c>, which covers the DRIVER's own <c>_disposed</c> flag; here the
+    /// driver is alive and the bus underneath it is gone, which is what a registry teardown racing a live
+    /// connector produces.
+    ///
+    /// <para><see cref="WriteOutcome.Failed"/> would be wrong for the same reason it is right for a refusal:
+    /// a refusal is the transport explicitly reporting failure, whereas this is the transport no longer being
+    /// there to report anything. Both members asserted in one test because both must hold and either
+    /// regressing fails it.</para>
+    /// </summary>
+    [Fact]
+    public async Task AWriteOrCommandOnADisposedBus_ReportsIndeterminate_NotFailed()
+    {
+        var links = InMemoryBusLinkPair.Create();
+        var registry = new ModbusBusRegistry();
+        var lease = registry.Acquire("disposed-bus", _ => Task.FromResult<IModbusBusLink>(links.Master));
+
+        await using var driver = new ModbusRtuDriver(lease, WritableMap("DISPOSEDBUS-M1", unitId: 1, readTimeoutMs: 500));
+
+        // The registry goes away while this driver still holds its lease — the driver itself is untouched.
+        await registry.DisposeAsync();
+
+        var write = await driver.WriteSetpointAsync(new SetpointWriteRequest(SpeedPoint, 42.0), CancellationToken.None);
+        Assert.Equal(WriteOutcome.Indeterminate, write.Outcome);
+        Assert.Contains("was disposed before this write could start", write.Detail, StringComparison.Ordinal);
+        Assert.Contains("untouched", write.Detail, StringComparison.Ordinal);
+
+        var command = await driver.InvokeCommandAsync(new CommandRequest(StartCycleCommand), CancellationToken.None);
+        Assert.Equal(WriteOutcome.Indeterminate, command.Outcome);
+        Assert.Contains("was disposed before this write could start", command.Detail, StringComparison.Ordinal);
+
+        Assert.Empty(links.Master.WrittenFrames);
+
+        links.Master.Dispose();
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -1051,7 +1380,13 @@ public class ModbusRtuDriverWriteTests
         // slave holds. A corrupted frame on a line two operations shared would show up as a wrong number here.
         Assert.All(observed, r => Assert.Equal("SERIAL-M1", r.MachineCode));
         Assert.All(observed, r => Assert.Equal(111.0, (double)r.Telemetry.Single(t => t.Metric == ReadOnlyPoint).Value!, precision: 10));
-        Assert.Equal(0, harness.Links.Master.WrittenFrames.Count(f => f.Length != RtuFrames.RequestFrameLength));
+
+        // 🔴 Review m-1 — a `Count(f => f.Length != RequestFrameLength) == 0` assertion used to sit here as the
+        // "nothing interleaved" check. It could not discriminate: RtuFrames' own doc records that FC03/04/05/06
+        // master requests are ALL 8 bytes, and InMemoryBusLink records one frame per Write call, so that count
+        // is structurally always 0 whatever the driver does. D-4 found this exact shape twice in one task.
+        // The two Assert.All above are what carry the claim — a poll that had its bytes interleaved with the
+        // write's would decode a wrong temperature, and that is a number, not a length.
     }
 
     /// <summary>
