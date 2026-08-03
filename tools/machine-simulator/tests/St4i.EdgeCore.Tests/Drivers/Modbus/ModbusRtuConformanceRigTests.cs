@@ -152,14 +152,20 @@ public class ModbusRtuConformanceRigTests
 
     /// <summary>
     /// 🔴 <b>The conformance write map DECLARES a retry count the driver must not use, and the bus records
-    /// zero.</b> Blueprint §8.1's rule applied to the rig itself: a map declaring <c>retries: null</c> would
-    /// make the suite's no-retry check pass for a driver that inherited the read path's value, because that
-    /// default is 1 and the check's own arithmetic would still see one attempt short of a retry. Declaring 3
-    /// makes an inherited answer FOUR frames.
-    ///
-    /// <para>Both halves are asserted at a boundary this test did not supply: the frame count at the wire and
+    /// zero.</b> Blueprint §8.1's rule applied to the rig itself: the map declares a retry count and the
+    /// assertions are on values this test did not supply — the frame count at the wire and
     /// <see cref="ModbusBus.LastTransactionRetries"/>, the value the BUS applied to the shared transport. The
-    /// number this test DID supply (3) is the one asserted absent.</para>
+    /// number this test DID supply (3) is the one asserted absent.
+    ///
+    /// <para>🔴 <b>An earlier version of this doc block got the arithmetic wrong and is corrected here rather
+    /// than quietly reworded.</b> It claimed that with <c>retries: null</c> the suite's no-retry check would
+    /// still pass for a driver that inherited the read path's value. It would not:
+    /// <see cref="ModbusRegisterMap.EffectiveRetries"/> is <c>Retries ?? 1</c>, so an inheriting driver puts
+    /// <b>two</b> frames on the wire and <c>Assert.Equal(1, after - before)</c> already fails. Declaring 3
+    /// widens the margin to four-against-one and makes the count DIAGNOSTIC (4 = inherited the declared value,
+    /// 2 = hard-coded one retry, 1 = correct); it is not what makes the check discriminate. See
+    /// <c>ModbusRtuConformanceTestsBase.UnresponsiveWriteDeclaredRetries</c>, which carries the same
+    /// correction.</para>
     /// </summary>
     [Fact]
     public async Task TheConformanceWriteMapDeclaresARetryCountTheDriverMustNotUse_AndTheBusRecordsZero()
@@ -224,6 +230,71 @@ public class ModbusRtuConformanceRigTests
         Assert.Equal(0, silenced);
         Assert.True(bus.Links.Device.FramesSilenced > 0,
             "the slave never replied at all, so the negative half proves nothing about the reply being dropped.");
+    }
+
+    /// <summary>
+    /// 🔴 <b>The MULTIDROP rig's own "no device" target — a control it did not have.</b> Control #1 covers the
+    /// single-device rig's unopenable line; the multidrop rig cannot use that shape at all (the link is shared,
+    /// so refusing to open it makes every device unreachable, not one), and used a SILENCED SLAVE instead. That
+    /// substitution had no control of its own, which is the gap this closes.
+    ///
+    /// <para>Three claims, and each fails to a different way the multidrop "no device" target could be green
+    /// for the wrong reason: the silenced device really RECEIVED the request and its reply really was dropped
+    /// (<see cref="InMemoryBusLink.FramesSilenced"/> — "the master timed out" and "the master never
+    /// transmitted" are indistinguishable from the master's side); the driver addressed at it produces NO
+    /// readings; and its BUS-MATE, on the same line and paying a quiet window for every one of those timeouts,
+    /// still reads its own value. Without the third, "no readings" would also be satisfied by a rig whose whole
+    /// bus was broken.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheMultidropNoDeviceTarget_IsSilencedAtTheWire_AndItsBusMateStillReads()
+    {
+        const byte silenced = 7;
+        const byte busMate = 1;
+
+        await using var bus = ModbusRtuLoopbackHarness.Start(
+            (busMate, new ushort[] { 235, 0xFFFF }),
+            (silenced, new ushort[] { 111, 0 }));
+        await using var keepAlive = bus.Lease();
+        bus.Links.Device.SilentUnitId = silenced;
+
+        int fromSilenced;
+        await using (var absent = new ModbusRtuDriver(
+            bus.Lease(),
+            ModbusRtuLoopbackHarness.BuildWritableMap(
+                "RIG-MD-NODEVICE", unitId: silenced, readTimeoutMs: 250, pollIntervalMs: 30, retries: 0)))
+        {
+            fromSilenced = await CountReadingsAsync(absent, max: 1, window: TimeSpan.FromSeconds(3));
+            Assert.Equal(DriverHealthState.Degraded, absent.Health);
+        }
+
+        Assert.Equal(0, fromSilenced);
+        Assert.True(bus.Links.Device.FramesSilenced > 0,
+            "the silenced slave never replied at all, so 'no readings' proves nothing about its reply being " +
+            "dropped — it would look identical to a request that never went out.");
+
+        // 🔴 The line survived it: a bus-mate that paid a quiet window for every one of those timeouts still
+        // reads its OWN device's value.
+        await using var mate = new ModbusRtuDriver(
+            bus.Lease(),
+            ModbusRtuLoopbackHarness.BuildMap("RIG-MD-BUSMATE", unitId: busMate, pollIntervalMs: 20, readTimeoutMs: 1_000));
+
+        var readings = new List<DeviceReading>();
+        using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
+        {
+            try
+            {
+                await foreach (var reading in mate.ReadAsync(cts.Token))
+                {
+                    readings.Add(reading);
+                    break;
+                }
+            }
+            catch (OperationCanceledException) { }
+        }
+
+        var observed = Assert.Single(readings);
+        Assert.Equal(235.0, (double)observed.Telemetry.Single(t => t.Metric == "temperature").Value!, precision: 10);
     }
 
     // ─────────────────────────────────────────────────────────────────────

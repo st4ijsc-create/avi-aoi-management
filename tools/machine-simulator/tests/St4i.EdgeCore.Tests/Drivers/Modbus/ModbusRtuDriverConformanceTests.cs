@@ -88,41 +88,91 @@ public abstract class ModbusRtuConformanceTestsBase : DeviceDriverConformanceSui
     /// comment asks for, matched to <c>ModbusTcpDriverConformanceTests</c>' 300 ms so the two transports'
     /// write checks are timed the same.
     ///
-    /// <para>🔴 <b>What that shortness costs, found by a mutation that SURVIVED and reported rather than
-    /// papered over.</b> Neutering <see cref="ModbusBusTransaction"/>'s
+    /// <para>🔴 <b>300 ms is right for the four checks that issue an UNCANCELLED write, and it is wrong for the
+    /// one that does not — which is why
+    /// <see cref="Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice"/> is overridden
+    /// below to raise it.</b> A mutation neutering <see cref="ModbusBusTransaction"/>'s
     /// <see cref="IModbusBusLink.AbortPendingRead"/> registration killed
-    /// <see cref="DeviceDriverConformanceSuite.Check_ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable"/> in
-    /// both subclasses and left
-    /// <see cref="DeviceDriverConformanceSuite.Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice"/>
-    /// GREEN — because at 300 ms the driver's own timeout resolves the call long before that check's
-    /// <see cref="DeviceDriverConformanceSuite.CancellationBudget"/> (5 s) expires, so the check cannot tell a
-    /// honoured cancellation from an ordinary timeout. It is the shared suite's own shape, not this rig's: the
-    /// hook REQUIRES a short internal bound so the timeout checks resolve quickly, and the same session serves
-    /// the cancellation check. <c>ModbusTcpDriverConformanceTests</c> has it too, at the same 300 ms.</para>
+    /// <see cref="DeviceDriverConformanceSuite.Check_ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable"/> on
+    /// both subclasses and left the write-side cancellation check GREEN: at 300 ms the driver's own timeout
+    /// resolves the call long before that check's <see cref="DeviceDriverConformanceSuite.CancellationBudget"/>
+    /// (5 s) expires, so it could not tell an honoured cancellation from an ordinary timeout.</para>
     ///
-    /// <para><b>And it cannot be tuned away here, which is why it is recorded instead.</b> Making the bound
-    /// discriminating means <c>readTimeoutMs &gt; CancellationBudget</c>, i.e. &gt; 5 000 ms; but then
-    /// <c>WorstCaseBusHoldMs = registers × (retries + 1) × readTimeoutMs</c> is at least 10 000 ms for any map
-    /// with a single retry, which blows the §10 bound
-    /// <see cref="TheWriteChecksAreSizedAgainstTheWholeBusesWorstCaseHold_NotTheWritingDevicesOwn"/> requires to
-    /// fit inside an 8 000 ms <see cref="DeviceDriverConformanceSuite.WriteBudget"/>. The two constraints have no
-    /// common solution for a shared-bus driver. The property itself is NOT unguarded — D-5 pins it directly, at a
-    /// 30 000 ms bound where only cancellation can end the call:
-    /// <c>ModbusRtuDriverWriteTests.ACancelledInFlightCommand_ReportsIndeterminate_NamingTheCycle_AndDoesNotTearDownTheBus</c>
-    /// and its setpoint sibling.</para></summary>
+    /// <para>
+    /// 🔴 <b>THE RECORD THIS DOC BLOCK USED TO CARRY WAS A FALSE IMPOSSIBILITY PROOF, AND CORRECTING IT MATTERS
+    /// MORE THAN THE FIX.</b> It concluded that the blind spot <i>"cannot be tuned away"</i>, arguing: making
+    /// the bound discriminating needs <c>readTimeoutMs &gt; CancellationBudget</c> (5 000 ms), but then
+    /// <c>WorstCaseBusHoldMs = registers × (retries + 1) × readTimeoutMs</c> exceeds 10 000 ms and blows the
+    /// §10 bound <see cref="TheWriteChecksAreSizedAgainstTheWholeBusesWorstCaseHold_NotTheWritingDevicesOwn"/>
+    /// must fit inside an 8 000 ms <see cref="DeviceDriverConformanceSuite.WriteBudget"/> — <i>"the two
+    /// constraints have no common solution for a shared-bus driver"</i>. <b>That is wrong.</b>
+    /// </para>
+    ///
+    /// <para><b>Why it is wrong, in one line: a §10 bound was applied to the one call §10 does not govern.</b>
+    /// <c>WorstCaseBusHoldMs ≥ 10 000</c> binds the checks that issue <see cref="CancellationToken.None"/> —
+    /// the ones with no caller-supplied bound, which is exactly the situation blueprint §10 obligation 1 is
+    /// about.
+    /// <see cref="DeviceDriverConformanceSuite.Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice"/>
+    /// is the ONLY write check that issues no <see cref="CancellationToken.None"/> call at all — it passes
+    /// <c>cts.Token</c> — so it is bounded by that token and by
+    /// <see cref="DeviceDriverConformanceSuite.CancellationBudget"/>, never by
+    /// <see cref="DeviceDriverConformanceSuite.WriteBudget"/> and never by the sizing rule. It is the one check
+    /// that already DISCHARGES obligation 1 rather than needing to be bounded by it.</para>
+    ///
+    /// <para><b>Two premises were held silently and both are false:</b> that
+    /// <see cref="DeviceDriverConformanceSuite.CancellationBudget"/>/<see cref="DeviceDriverConformanceSuite.WriteBudget"/>
+    /// are constants (both are <see langword="protected virtual"/>), and that one session shape must serve every
+    /// write check (<see cref="DeviceDriverConformanceSuite.CreateUnresponsiveWritableDeviceAsync"/> is called
+    /// FRESH by each check, and every <c>Check_*</c> is <see langword="public virtual"/>). Neither was stated,
+    /// which is why neither was tested.</para>
+    ///
+    /// <para><b>The tell, recorded because the next author's failure mode is re-deriving the wrong
+    /// answer:</b> the identical problem was already solved on the READ side, in this same file, with this same
+    /// number — see <see cref="SilentPeerReadTimeoutMs"/> one member above, whose doc says <i>"if the driver's
+    /// own bound could expire inside the budget… the check would measure the map instead of the mechanism"</i>.
+    /// Blueprint §8.1 principle 1: <i>"cannot happen" and "cannot be tested" are both statements about the
+    /// limits of one's own toolkit, wearing the clothes of a statement about the source</i> — written here while
+    /// quoting that principle.</para>
+    ///
+    /// <para><b>What IS true and stays true:</b> the four uncancelled write checks genuinely need a short bound
+    /// (the hook's own doc comment requires it) and their 300 ms and their sizing test are unchanged; and the
+    /// TCP conformance class has the same 300 ms and the same blind spot on its own cancellation check, which is
+    /// a named finding for the whole-branch review rather than this task's to fix.</para></summary>
     protected const int UnresponsiveWriteTimeoutMs = 300;
+
+    /// <summary>Set for the duration of ONE check by
+    /// <see cref="Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice"/> and zero
+    /// otherwise. A plain field is safe: xunit constructs a fresh test-class instance per test and runs a
+    /// class's tests sequentially, and the override restores it in a <c>finally</c> regardless.</summary>
+    private int _unresponsiveWriteTimeoutOverrideMs;
+
+    /// <summary>The bound <see cref="BuildUnresponsiveWriteMap"/> must actually apply — see
+    /// <see cref="UnresponsiveWriteTimeoutMs"/> for why exactly one check needs a different one.</summary>
+    protected int EffectiveUnresponsiveWriteTimeoutMs =>
+        _unresponsiveWriteTimeoutOverrideMs > 0 ? _unresponsiveWriteTimeoutOverrideMs : UnresponsiveWriteTimeoutMs;
 
     /// <summary>
     /// 🔴 <b>The retry count the unresponsive write map DECLARES — i.e. the number the driver must NOT use.</b>
-    /// Blueprint §8.1: <i>a test that supplies the value it checks is blind to who chooses that value</i>.
+    /// Blueprint §8.1: <i>a test that supplies the value it checks is blind to who chooses that value</i>, so the
+    /// map declares a retry count and
     /// <see cref="DeviceDriverConformanceSuite.Check_Write_NoImplicitRetry_ExactlyOneCommandAttemptReachesTheDeviceOnTimeout"/>
-    /// asserts exactly one attempt reaches the device; against a map declaring <c>retries: null</c> that
-    /// assertion would also hold for a driver that inherited the map's value, because the default is 1 and
-    /// <c>EffectiveRetries + 1</c> attempts would be... two. Declaring 3 makes the inherited answer FOUR frames,
-    /// so the check discriminates. Three rather than <see cref="ModbusRegisterMap.MaxRetries"/> (5) because this
-    /// number is a MULTIPLIER on <see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/>, which
+    /// asserts the frame count at the wire.
+    ///
+    /// <para>🔴 <b>What this constant does NOT do, corrected — the earlier rationale here was arithmetically
+    /// wrong.</b> It claimed that with <c>retries: null</c> the no-retry check would still pass for a driver
+    /// that inherited the map's value. It would not: <see cref="ModbusRegisterMap.EffectiveRetries"/> is
+    /// <c>Retries ?? 1</c>, so an inheriting driver puts <b>two</b> frames on the wire and
+    /// <c>Assert.Equal(1, after - before)</c> already fails. <b>Declaring 3 is not what makes the check
+    /// discriminate.</b> What it buys is smaller and worth stating accurately: a wider margin (four frames
+    /// against one, so the delta is unmistakable rather than off-by-one), and a frame count that is
+    /// DIAGNOSTIC — 4 says the driver inherited the map's declared value, 2 says it hard-coded NModbus's
+    /// notion of "one retry", 1 is correct. Both defects fail either way; only the declared value tells you
+    /// which.</para>
+    ///
+    /// <para>Three rather than <see cref="ModbusRegisterMap.MaxRetries"/> (5) because this number is a
+    /// MULTIPLIER on <see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/>, which
     /// <see cref="TheWriteChecksAreSizedAgainstTheWholeBusesWorstCaseHold_NotTheWritingDevicesOwn"/> requires to
-    /// fit inside <see cref="DeviceDriverConformanceSuite.WriteBudget"/> with real headroom.
+    /// fit inside <see cref="DeviceDriverConformanceSuite.WriteBudget"/> with real headroom.</para>
     /// </summary>
     protected const int UnresponsiveWriteDeclaredRetries = 3;
 
@@ -235,22 +285,92 @@ public abstract class ModbusRtuConformanceTestsBase : DeviceDriverConformanceSui
     public Task Write_RoundTripsLosslesslyThroughConnectorJson() => Check_Write_RoundTripsLosslesslyThroughConnectorJson();
 
     // ─────────────────────────────────────────────────────────────────────
+    // 🔴 The ONE check whose target this rig has to strengthen — see UnresponsiveWriteTimeoutMs for the false
+    //    impossibility proof this replaces.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>Runs the shared write-side cancellation check against a target whose own bound cannot expire
+    /// inside <see cref="DeviceDriverConformanceSuite.CancellationBudget"/> — so that passing it proves
+    /// <see cref="IModbusBusLink.AbortPendingRead"/> did the work, not that a timeout got there first.</b>
+    /// Exactly the same reasoning, and exactly the same 8 000 ms, as the READ side's
+    /// <see cref="SilentPeerReadTimeoutMs"/>.
+    ///
+    /// <para><b>Legitimate here and nowhere else on the write path:</b> this is the only <c>Check_Write_*</c>
+    /// that supplies its own <see cref="CancellationToken"/> rather than
+    /// <see cref="CancellationToken.None"/>, so raising its target's bound cannot make any call unbounded —
+    /// the token bounds it. The four uncancelled checks keep <see cref="UnresponsiveWriteTimeoutMs"/> and the
+    /// §10 sizing rule, which is why
+    /// <see cref="TheWriteChecksAreSizedAgainstTheWholeBusesWorstCaseHold_NotTheWritingDevicesOwn"/> is
+    /// deliberately NOT extended to cover this variant. A future reader who "helpfully" folds the 8 000 ms map
+    /// into that test will turn it red for a call it does not govern.</para>
+    ///
+    /// <para>
+    /// 🔴 <b>THE CAVEAT, because this is a mechanism the census cannot police.</b>
+    /// <see cref="DeviceDriverConformanceSuite.EveryCheckIsWiredOrAcknowledged"/> proves every check is WIRED;
+    /// nothing proves a driver's own subclass has not overridden a <c>Check_*</c> body and weakened it — an
+    /// override is invisible to that census, and would be the quietest possible way to make a conformance suite
+    /// lie. <b>So an override of a <c>Check_*</c> in a driver's subclass must be a <c>base</c>-CALLING WRAPPER,
+    /// never a re-implementation</b>, and the strengthening is ASSERTED below rather than promised in prose:
+    /// the target's own bound must be strictly greater than the budget the check measures against, or this
+    /// wrapper fails before it delegates.</para>
+    /// </summary>
+    public override async Task Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice()
+    {
+        _unresponsiveWriteTimeoutOverrideMs = SilentPeerReadTimeoutMs;
+        try
+        {
+            var strengthened = BuildUnresponsiveWriteMap().EffectiveReadTimeoutMs;
+            Assert.True(
+                strengthened > CancellationBudget.TotalMilliseconds,
+                $"this wrapper exists to STRENGTHEN the check, and it has stopped doing so: the unresponsive " +
+                $"write target's own bound is {strengthened} ms against a {CancellationBudget.TotalMilliseconds} ms " +
+                "CancellationBudget, so an ordinary timeout could satisfy the check and a driver that ignored " +
+                "its token entirely would still pass. Raise the bound rather than deleting this assertion.");
+
+            await base.Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice()
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _unresponsiveWriteTimeoutOverrideMs = 0;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // 🔴 Blueprint §10 obligations 1 and 2, discharged as an assertion rather than as a sentence.
     // ─────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// 🔴 <b>The collision the brief names, resolved and pinned: the shared suite issues every write with
-    /// <see cref="CancellationToken.None"/>, and blueprint §10 obligation 1 says NEVER to do that.</b>
+    /// 🔴 <b>The collision the brief names, resolved and pinned — for the write checks that issue an
+    /// UNCANCELLED call, which is not all of them.</b> Blueprint §10 obligation 1 says never to call
+    /// <c>WriteSetpointAsync</c>/<c>InvokeCommandAsync</c> with an unbounded
+    /// <see cref="CancellationToken"/>, and four of the shared suite's write checks do exactly that.
     ///
-    /// <para><b>The finding first, because it outlives this rig.</b>
-    /// <see cref="DeviceDriverConformanceSuite.Check_Write_TimedOutWriteOrCommand_ReturnsIndeterminate_NeverThrows"/>
-    /// and three of its siblings pass <see cref="CancellationToken.None"/> deliberately — the hook's own doc
-    /// comment says they "issue a call with NO cancellation at all and wait for the driver's own bound to
-    /// elapse". That design silently assumes a 1:1 transport, where a driver's own bound IS the whole wait. On a
-    /// shared RS-485 line it is not: a write can queue behind another device's ENTIRE hold, which the map itself
-    /// will accept up to about two hours. The suite is shared with four other drivers and cannot be
-    /// per-driver-fixed, so the honest move is not to pretend the call is bounded — it is to make the BOUND
-    /// STRUCTURAL for this rig and to assert it, which is what this test does.</para>
+    /// <para><b>Which ones, precisely — the earlier "every write check" was wrong and the imprecision was
+    /// load-bearing.</b> It is what hid the fix now sitting on
+    /// <see cref="Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice"/>.
+    /// <see cref="DeviceDriverConformanceSuite.Check_Write_TimedOutWriteOrCommand_ReturnsIndeterminate_NeverThrows"/>,
+    /// <see cref="DeviceDriverConformanceSuite.Check_Write_NoImplicitRetry_ExactlyOneCommandAttemptReachesTheDeviceOnTimeout"/>,
+    /// <see cref="DeviceDriverConformanceSuite.Check_Write_RoundTripsLosslesslyThroughConnectorJson"/> and
+    /// <see cref="DeviceDriverConformanceSuite.Check_Write_Indeterminate_DetailIsNonEmpty_AndDistinguishesDistinctCauses"/>
+    /// each issue at least one <see cref="CancellationToken.None"/> call that reaches the bus — those four are
+    /// what this test bounds. (The last of the four also issues token-bounded calls, deliberately: two distinct
+    /// causes is the property it checks.) Two more checks pass
+    /// <see cref="CancellationToken.None"/> for PRE-FLIGHT rejections only, which never reach the line at all.
+    /// <see cref="DeviceDriverConformanceSuite.Check_Write_CapabilityLists_AreEffectivelyImmutable"/> issues no
+    /// write whatsoever. And
+    /// <see cref="DeviceDriverConformanceSuite.Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice"/>
+    /// passes only a token — it is the one check that DISCHARGES obligation 1 instead of needing to be bounded
+    /// by it, and it is deliberately outside this test.</para>
+    ///
+    /// <para><b>The finding, because it outlives this rig.</b> The hook's own doc comment says those calls
+    /// "issue a call with NO cancellation at all and wait for the driver's own bound to elapse". That design
+    /// silently assumes a 1:1 transport, where a driver's own bound IS the whole wait. On a shared RS-485 line it
+    /// is not: a write can queue behind another device's ENTIRE hold, which the map itself will accept up to
+    /// about two hours. The suite is shared with four other drivers and cannot be per-driver-fixed, so the honest
+    /// move is not to pretend the call is bounded — it is to make the BOUND STRUCTURAL for this rig and to assert
+    /// it, which is what this test does.</para>
     ///
     /// <para><b>How it is sized — obligation 2 taken literally.</b> <c>max_j</c>
     /// <see cref="ModbusRegisterMap.WorstCaseBusHoldMs"/> over every map alive on the bus (not the writing
@@ -321,11 +441,18 @@ public sealed class ModbusRtuDriverConformanceTests(ITestOutputHelper output) : 
     private readonly ModbusBusRegistry _registry = new();
     private ModbusBusLease? _keepAlive;
 
-    /// <summary>🔴 The keep-alive lease. See <see cref="ModbusRtuConformanceRig"/>'s own doc comment for the
-    /// <c>ClosedLoopbackPort</c> analogy: without it, the last <see cref="CreateDriver"/> instance's disposal
-    /// takes the reference count to zero, disposes the bus, and the NEXT call gets a fresh bus over the corpse.
-    /// It costs nothing here (no link is ever opened) and it is held anyway, because "this particular rig
-    /// happens not to need the rule" is how the rule stops being applied where it does.</summary>
+    /// <summary>🔴 The keep-alive lease, and an accurate statement of what it is for — see
+    /// <see cref="ModbusRtuConformanceRig"/>'s own doc comment for the mechanism and
+    /// <c>ModbusRtuConformanceRigTests.ReleasingTheLastLease_...</c> for the paired control that pins it.
+    ///
+    /// <para><b>This rig would NOT be destroyed without it, and the earlier claim that it would was
+    /// untested.</b> Removing this line leaves all 46 tests green, for the plain reason that this bus's link is
+    /// never opened at all: every <see cref="CreateDriver"/> instance's disposal does take the reference count
+    /// to zero and does dispose the bus, but the next <see cref="ModbusBusRegistry.Acquire"/> then builds a
+    /// fresh bus over a delegate that throws, which is indistinguishable from the previous one. What the lease
+    /// buys here is that the rig's correctness does not DEPEND on that — it holds whether or not a link is ever
+    /// opened, so pointing this rig at a live transport later cannot quietly turn a passing suite into one
+    /// building buses on a disposed link.</para></summary>
     public override Task InitializeAsync()
     {
         _keepAlive = AcquireNoDeviceLease();
@@ -353,7 +480,7 @@ public sealed class ModbusRtuDriverConformanceTests(ITestOutputHelper output) : 
         ModbusRtuLoopbackHarness.BuildWritableMap(
             "RTU-CONFORMANCE-WRITE-UNRESPONSIVE",
             unitId: 1,
-            readTimeoutMs: UnresponsiveWriteTimeoutMs,
+            readTimeoutMs: EffectiveUnresponsiveWriteTimeoutMs,
             pollIntervalMs: 60_000,
             retries: UnresponsiveWriteDeclaredRetries);
 

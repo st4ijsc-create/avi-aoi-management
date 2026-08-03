@@ -533,7 +533,34 @@ EXPECT_CONFORMANCE=22
 # EXPECT_ENGINEAPI staying 1190 is the evidence for the AmbiguousDriver claim: that guard lives in
 # ConnectorRegistry/FleetHost, the conformance rig never constructs either, and D-4's
 # ModbusMultidropRegistrationTests still prove the routing unchanged.
-EXPECT_EDGECORE=951
+#
+# 🔴 D-6's REVIEW FIX ROUND raises this 951 -> 952 (+1), counted from the runner (`--list-tests`: 944 -> 945).
+# ONE file, one test; the Critical's own fix adds none.
+#
+#   + 1  ModbusRtuConformanceRigTests (6 -> 7) — review M-5. The MULTIDROP rig's "no device" target is a
+#          SILENCED SLAVE, not the single-device rig's unopenable line (a shared link cannot be refused for one
+#          device without making every device on the segment unreachable), and that substitution had no harness
+#          control of its own. The new one asserts the three things that could each make it green for the wrong
+#          reason: the silenced slave really RECEIVED the request and its reply really was dropped
+#          (FramesSilenced > 0 — "the master timed out" and "the master never transmitted" are
+#          indistinguishable from the master's side), the driver addressed at it yields zero readings, and its
+#          BUS-MATE still reads its own value off the same line, which is what stops "no readings" also being
+#          satisfied by a rig whose whole bus was broken.
+#
+# The CRITICAL's fix moves no total, and that is the check rather than a coincidence: it is a `base`-calling
+# override of Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice on the shared abstract
+# base, raising ONLY that one check's target bound from 300 ms to the rig's existing 8 000 ms so that an
+# ordinary timeout can no longer satisfy a cancellation check. No shared-suite change, EXPECT_CONFORMANCE
+# unmoved, four other drivers untouched, no test added or removed. Proven by re-running the mutation that
+# neuters ModbusBusTransaction's AbortPendingRead registration: it used to kill 2 tests and now kills 4 — the
+# two write-side cancellation checks join the two read-side ones. Passing cost: 231 ms / 223 ms against the
+# 8 000 ms bound.
+#
+# The other fixes are documentation corrections on records that were WRONG rather than merely thin (a false
+# impossibility proof, an untested keep-alive claim, an arithmetically wrong retries rationale, an imprecise
+# "every write check" and an over-general "no fast per-device failure"), plus blueprint §10 item 4 answered on
+# IModbusBusLink.DrainBufferedInput where D-7 will stand. Comment-only in src/; none moves a count.
+EXPECT_EDGECORE=952
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:

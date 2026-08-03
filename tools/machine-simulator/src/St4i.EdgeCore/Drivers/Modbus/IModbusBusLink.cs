@@ -56,8 +56,38 @@ public interface IModbusBusLink : IStreamResource
     /// whether the bus has actually gone quiet or is still emitting.
     ///
     /// <para>Must be non-blocking: it drains what has ALREADY arrived and returns, never waits for more.</para>
+    ///
+    /// <para>
+    /// 🔴 <b>Task D-6 — blueprint §10 item 4 is ANSWERED HERE, and the answer is NO: this seam still cannot
+    /// attribute a discarded byte to a unit id, so the <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Applied"/>-downgrade
+    /// discriminator §10 item 4 describes remains unbuildable, and D-5's decision to decline it stands.</b>
+    /// </para>
+    ///
+    /// <para>§10 item 4 assigns D-6 one precondition — <i>"một drain có quy trách nhiệm theo unit id"</i>, a
+    /// drain that knows which slave address the bytes it just threw away carried. Checked, not assumed, and the
+    /// three facts are unchanged from when §10 was written: this method returns a bare <see cref="int"/>; and
+    /// <b>neither shipping implementation parses a frame</b> — <see cref="GatewayTcpBusLink.DrainBufferedInput"/>
+    /// and <c>SerialPortBusLink.DrainBufferedInput</c> both read into a scratch buffer and accumulate a count.
+    /// Nothing anywhere on this seam sees a slave address.</para>
+    ///
+    /// <para><b>Why that is fatal to the discriminator rather than merely inconvenient.</b> On a shared line the
+    /// debris a resynchronisation discards usually belongs to a DIFFERENT device — which NModbus's own
+    /// slave-address validation has already ruled out as an acknowledgement (D-5 measured <c>Response slave
+    /// address does not match request</c>). An unattributed byte count therefore fires loudest exactly where the
+    /// quiet window has already done its job, which is the argument D-5 recorded and this task re-checked rather
+    /// than re-derived. <b>Building it would mean widening this member</b> (a per-unit-id count, or a drain that
+    /// hands back the frames it dropped) <b>and teaching both links to frame</b> — a change to the shared
+    /// transport contract, not to a driver. D-6 does not make it: nothing in this task needs it, and widening a
+    /// safety seam for an unbuilt consumer is how a seam gets bent to fit.</para>
+    ///
+    /// <para><b>For whoever picks this up:</b> if the attribution is ever added, the discriminator should block
+    /// on the SAME unit id and the SAME function code, per §10 item 4's own wording; and
+    /// <see cref="ModbusRtuDriver.InvokeCommandAsync"/> is the member whose outcome it would change. Recorded on
+    /// the seam rather than only in a report, because §10 exists precisely because an obligation living only in
+    /// a report is an obligation the next author never reads.</para>
     /// </summary>
-    /// <returns>The number of bytes discarded — 0 when nothing was buffered.</returns>
+    /// <returns>The number of bytes discarded — 0 when nothing was buffered. <b>Not attributable to any unit
+    /// id</b> — see the remarks above, which is a load-bearing limitation and not an omission.</returns>
     int DrainBufferedInput();
 
     /// <summary>

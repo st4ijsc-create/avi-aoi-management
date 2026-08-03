@@ -31,11 +31,16 @@ namespace St4i.EdgeCore.Tests.Drivers.Modbus;
 /// <item><description><b>The fast-failure hook cannot be honoured the way TCP honours it, and the reason is
 /// structural rather than a harness limitation.</b> The single-device rig's fast failure is a LINK that will
 /// not open — but the link is SHARED, so refusing to open it would make every device on the segment
-/// unreachable, not one. On a multidrop bus the only per-device unreachability that exists is a TIMEOUT.
-/// <see cref="BuildNoDeviceMap"/> therefore declares <c>readTimeoutMs: 250</c> and <c>retries: 0</c>, so
-/// "unreachable" costs 250 ms per register instead of the map's 1 000 ms floor — bounded and cheap, but not
-/// instant. Every check that drives this target does so inside a 200 ms–3 s window, all of which absorb
-/// it.</description></item>
+/// unreachable, not one. <b>On a multidrop bus the only per-device UNREACHABILITY that exists is a
+/// TIMEOUT</b>, which is the narrow and true form of this claim: <i>absence is slow; wrongness is fast.</i> A
+/// device that is present and answers WRONGLY still fails fast and per-device — a Modbus exception frame, a
+/// CRC-broken frame, or a mismatched slave address (D-5 measured <c>Response slave address does not match
+/// request</c>). What the shared line takes away is only the CHEAP form of absence, which makes
+/// <see cref="DeviceDriverConformanceSuite.CreateDriver"/>'s "cheap and FAST to fail" a <b>1:1-transport
+/// assumption</b>. <see cref="BuildNoDeviceMap"/> therefore declares <c>readTimeoutMs: 250</c> and
+/// <c>retries: 0</c>, so absence costs 250 ms per register instead of the map's 1 000 ms floor — bounded and
+/// small, which is the best available. Every check that drives this target does so inside a 200 ms–3 s window,
+/// all of which absorb it.</description></item>
 /// <item><description><b>The quarantine is per-BUS, so the unresponsive device taxes its neighbour.</b> Every
 /// poll of the silenced device ends without a validated response, which marks the bus desynchronised, which
 /// makes the bus-mate's very next transaction observe a full <see cref="ModbusBusSettings.QuietWindowMs"/> of
@@ -55,13 +60,21 @@ namespace St4i.EdgeCore.Tests.Drivers.Modbus;
 /// open.</description></item>
 /// </list>
 ///
-/// <para>🔴 <b>The keep-alive lease is not optional in this class, and that is the finding.</b> The suite
-/// creates and disposes many drivers per check. Without a lease held for the whole fixture, the first check
-/// that disposed its last driver would take the reference count to zero, and
-/// <see cref="ModbusBusRegistry.ReleaseAsync"/> would dispose the bus AND its link — leaving the bus-mate
-/// driver, the slave network and the next <see cref="ModbusBusRegistry.Acquire"/> all pointing at a corpse. It
-/// is the RTU spelling of the <c>ClosedLoopbackPort</c> defect D-2's review found (release the resource, keep
-/// the identifier that names it); <c>ModbusRtuConformanceRigTests</c> pins it directly.</para>
+/// <para>🔴 <b>The keep-alive lease, stated accurately — an earlier version of this paragraph claimed a
+/// hazard this rig's own shape already covers, and that claim was untested.</b> It said that without the
+/// lease the first check disposing its last driver would take the reference count to zero and destroy the
+/// rig. Removing the line leaves all 21 tests green, and the reason is one line above it: <c>_busMate</c>
+/// holds its OWN lease for the whole fixture, so the count never reaches zero however many
+/// <see cref="DeviceDriverConformanceSuite.CreateDriver"/> instances come and go.</para>
+///
+/// <para>The mechanism is real — <see cref="ModbusBusRegistry.ReleaseAsync"/> genuinely disposes the bus AND
+/// its link at zero, which is the RTU spelling of the <c>ClosedLoopbackPort</c> defect D-2's review found
+/// (release the resource, keep the identifier that names it) — and it is pinned, as a paired control on real
+/// product behaviour, by <c>ModbusRtuConformanceRigTests.ReleasingTheLastLease_...</c>. What was wrong was
+/// attaching it to a scenario this class does not have. <b>The lease is kept</b>, and the honest reason is
+/// narrower and still worth having: it makes this rig's correctness independent of <c>_busMate</c>
+/// EXISTING. A later edit that stops polling a bus-mate, or moves it out of the fixture, would otherwise
+/// silently reintroduce the hazard with nothing to catch it.</para>
 ///
 /// <para><b>What this class does NOT do:</b> it never constructs a <c>ConnectorRegistry</c> or a
 /// <c>FleetHost</c>, so it cannot disturb the per-instance identity D-1 landed or the routing that makes
@@ -80,6 +93,15 @@ public sealed class ModbusRtuMultidropConformanceTests(ITestOutputHelper output)
     /// whole of every test so the bus under test is genuinely contended rather than nominally shared.</summary>
     private const byte BusMateUnit = 1;
 
+    /// <summary>The value at address 0 on each slave. DELIBERATELY different, and different from each other's,
+    /// so a read that reached the wrong slave is caught by its VALUE rather than only by a machine code the
+    /// driver stamps on itself — see
+    /// <see cref="TwoDriversOnOneBusHaveDistinctIds_AndAReadingCarriesExactlyItsOwnDevicesValues"/>.</summary>
+    private const ushort BusMateTemperatureRaw = 235;
+
+    /// <inheritdoc cref="BusMateTemperatureRaw"/>
+    private const ushort UnitUnderTestTemperatureRaw = 111;
+
     private const string BusMateMachineCode = "RTU-CONFORMANCE-MD-BUSMATE";
     private const string ReadingsMachineCode = "RTU-CONFORMANCE-MD-READINGS";
     private const string WriteMachineCode = "RTU-CONFORMANCE-MD-WRITE";
@@ -93,8 +115,8 @@ public sealed class ModbusRtuMultidropConformanceTests(ITestOutputHelper output)
     public override Task InitializeAsync()
     {
         _bus = ModbusRtuLoopbackHarness.Start(
-            (BusMateUnit, new ushort[] { 235, 0xFFFF, 0, 0, 0, 7 }),
-            (UnitUnderTest, new ushort[] { 111, 0, 0, 0, 0, 22 }));
+            (BusMateUnit, new ushort[] { BusMateTemperatureRaw, 0xFFFF, 0, 0, 0, 7 }),
+            (UnitUnderTest, new ushort[] { UnitUnderTestTemperatureRaw, 0, 0, 0, 0, 22 }));
 
         // D-4's mechanism: the slave under test still RECEIVES every request and still builds its reply; the
         // reply is dropped on the wire, so the master times out exactly as it does against an absent device
@@ -169,7 +191,7 @@ public sealed class ModbusRtuMultidropConformanceTests(ITestOutputHelper output)
         ModbusRtuLoopbackHarness.BuildWritableMap(
             WriteMachineCode,
             unitId: UnitUnderTest,
-            readTimeoutMs: UnresponsiveWriteTimeoutMs,
+            readTimeoutMs: EffectiveUnresponsiveWriteTimeoutMs,
             pollIntervalMs: 60_000,
             retries: UnresponsiveWriteDeclaredRetries);
 
@@ -282,11 +304,20 @@ public sealed class ModbusRtuMultidropConformanceTests(ITestOutputHelper output)
     ///
     /// <para>Both halves are asserted because they fail to different defects: an <see cref="IDeviceDriver.Id"/>
     /// built from the bus alone (the TCP driver's shape — endpoint only) would collide for every device on a
-    /// multidrop line and is caught by the first half; a driver that emitted another machine's code in a reading
-    /// is caught by the second. Neither is visible from a single-device rig.</para>
+    /// multidrop line and is caught by the first half; a read that landed on the WRONG SLAVE is caught by the
+    /// second. Neither is visible from a single-device rig.</para>
+    ///
+    /// <para>🔴 <b>The second half asserts the register VALUES, not the machine code, and the correction
+    /// matters.</b> <see cref="DeviceReading.MachineCode"/> is stamped from the driver's own map, so asserting
+    /// it is near-tautological — it would hold for a driver that read the wrong slave entirely, which is the
+    /// only defect this half exists to catch. The two slaves are loaded with DISTINGUISHABLE values for exactly
+    /// this reason: unit <see cref="BusMateUnit"/> holds <c>235</c> and <c>0xFFFF</c> at addresses 0 and 1,
+    /// unit <see cref="UnitUnderTest"/> holds <c>111</c> at address 0. A read that reached the wrong slave
+    /// returns 111 (or, since that slave is silenced, nothing at all); only a read that reached unit
+    /// <see cref="BusMateUnit"/> returns 235 and −0.1.</para>
     /// </summary>
     [Fact]
-    public async Task TwoDriversOnOneBusHaveDistinctIds_AndAReadingCarriesExactlyItsOwnMachineCode()
+    public async Task TwoDriversOnOneBusHaveDistinctIds_AndAReadingCarriesExactlyItsOwnDevicesValues()
     {
         var bus = RequireBus();
         await using var underTest = CreateDriver();
@@ -300,7 +331,18 @@ public sealed class ModbusRtuMultidropConformanceTests(ITestOutputHelper output)
 
         var readings = await CollectReadingsAsync(2, TimeSpan.FromSeconds(20));
         Assert.True(readings.Count >= 2, $"only collected {readings.Count} readings on the shared line.");
-        Assert.All(readings, r => Assert.Equal(ReadingsMachineCode, r.MachineCode));
+
+        foreach (var reading in readings)
+        {
+            Assert.Equal(ReadingsMachineCode, reading.MachineCode);
+
+            // 🔴 The load-bearing half: the values came off unit 1's own data store, not unit 7's.
+            var temperature = reading.Telemetry.Single(t => t.Metric == "temperature");
+            var pressure = reading.Telemetry.Single(t => t.Metric == "pressure");
+            Assert.Equal(BusMateTemperatureRaw, (double)temperature.Value!, precision: 10);
+            Assert.NotEqual((double)UnitUnderTestTemperatureRaw, (double)temperature.Value!);
+            Assert.Equal(-0.1, (double)pressure.Value!, precision: 10);
+        }
     }
 
     private ModbusRtuLoopbackHarness.RunningRtuBus RequireBus() =>

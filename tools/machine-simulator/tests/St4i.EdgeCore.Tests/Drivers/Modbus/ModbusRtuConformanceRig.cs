@@ -35,8 +35,17 @@ namespace St4i.EdgeCore.Tests.Drivers.Modbus;
 /// <see cref="InMemoryBusLinkPair"/> would then hand the next <see cref="ModbusBusRegistry.Acquire"/> a
 /// brand-new bus over an already-disposed link: same shape, same failure, RTU spelling. Holding one lease for
 /// the rig's whole lifetime holds the RESOURCE rather than the identifier, which is exactly what
-/// <c>ClosedLoopbackPort</c> does by binding without listening. <c>ModbusRtuConformanceRigTests</c> pins the
-/// trap itself, so this paragraph is a description of a tested fact rather than a caution.</para>
+/// <c>ClosedLoopbackPort</c> does by binding without listening.</para>
+///
+/// <para>🔴 <b>What that paragraph must NOT be read as claiming, corrected.</b> The mechanism above is real
+/// and is pinned as a paired control by
+/// <c>ModbusRtuConformanceRigTests.ReleasingTheLastLease_DisposesTheLink_...</c>, on real product behaviour.
+/// It is NOT true that either conformance rig would have been destroyed without its keep-alive: removing
+/// either line leaves the suite green, because the single-device rig's link is never opened at all and the
+/// multidrop rig's bus-mate driver holds its own lease for the whole fixture. The leases are held anyway, and
+/// the honest reason is the narrower one — <b>they make each rig's correctness independent of a fact that is
+/// currently true by accident</b> (no link is ever opened; a bus-mate happens to exist). Attaching a true
+/// mechanism to a scenario it does not apply to is the defect this correction exists to remove.</para>
 /// </summary>
 internal static class ModbusRtuConformanceRig
 {

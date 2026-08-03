@@ -470,6 +470,12 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
     /// shared line it fires mostly on another device's debris, which NModbus's slave-address validation has
     /// already ruled out as an acknowledgement.</para>
     ///
+    /// <para>🔴 <b>Task D-6 — blueprint §10 item 4 made that a question for THIS task, and the answer is on the
+    /// seam rather than in a report: see <see cref="IModbusBusLink.DrainBufferedInput"/>.</b> Its precondition
+    /// (a drain that can attribute discarded bytes to a unit id) is still not met by either shipping link, so
+    /// the discriminator remains unbuildable and D-5's refusal stands unchanged. The full check, and what
+    /// building it would cost, is recorded once — there — because two statements of one rule drift.</para>
+    ///
     /// <para>🔴 <b>Consequence for D-6 and D-7, stated here because this is the member they gate:</b> an
     /// <see cref="WriteOutcome.Applied"/> from this method is <b>an acknowledgement, not an observation.</b> It
     /// means a frame arrived that matched this request on slave address, function code, coil address and value.
