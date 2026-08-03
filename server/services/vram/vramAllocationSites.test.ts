@@ -122,6 +122,21 @@ const CALL_PATTERNS: Readonly<Record<string, RegExp>> = {
   ".createEmbeddingContext(": /\.\s*createEmbeddingContext\s*\(/g,
   ".createRankingContext(": /\.\s*createRankingContext\s*\(/g,
   "getLlama(": /\bgetLlama\s*\(/g,
+  /**
+   * ★★★ I-1 (review TOÀN NHÁNH) — MÁY DUYỆT HEADLESS LÀ MỘT HỘ GPU, VÀ NÓ TỪNG VÔ HÌNH HOÀN TOÀN.
+   *
+   * `reportGenerator.ts:384` gọi `puppeteer.launch({ headless: true, args: ["--no-sandbox",
+   * "--disable-setuid-sandbox"] })` — **KHÔNG có `--disable-gpu`**, nên Chromium headless hiện đại
+   * khởi tạo một tiến trình GPU riêng trên Windows+NVIDIA. `puppeteer` là **dependency SẢN XUẤT**
+   * (`package.json`). Trước lượt vá này `grep -c reportGenerator vramAllocationSites.ts` = **0**.
+   *
+   * ⚠ Mẫu này rẻ và KHÔNG ồn: `\.launch\s*\(` trả đúng **5** dòng trong `server/` + `scripts/`
+   * (1 puppeteer + 4 `chromium.launch` của Playwright trong `scripts/audit/`), cả 5 đều là lượt
+   * khởi động máy duyệt thật. So với `exec(` trần (~40 dòng nhiễu RegExp) hay định danh thư viện
+   * trần (38 dòng nhiễu thuần) — hai thứ đã bị từ chối có lý do — mẫu này ở phía bên kia của cùng
+   * một cán cân.
+   */
+  ".launch(": /\.\s*launch\s*\(/g,
   "spawn(": /\bspawn\s*\(/g,
   "spawnSync(": /\bspawnSync\s*\(/g,
   "execFile(": /\bexecFile\s*\(/g,
@@ -158,11 +173,35 @@ const CALL_PATTERNS: Readonly<Record<string, RegExp>> = {
  *     ⚠ P-2 (re-review vòng 2): bản trước ghi "212 lần", đo trong phạm vi CÓ CẢ file test và
  *     artifact. Quyết định không đổi, chỉ con số là sai phạm vi — và một con số sai phạm vi dùng
  *     để biện minh cho một quyết định đúng vẫn là một lập luận hỏng.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★★ I-1 (review TOÀN NHÁNH) — **GIỚI HẠN CẤU TRÚC CỦA CHÍNH BỘ MẪU NÀY**, viết vào đây vì
+ * người đọc bảng 157 dòng cần biết nó TRƯỚC khi tin bảng.
+ *
+ *   > **`MODULE_PATTERNS` liệt kê BẰNG TAY đúng bốn thư viện. Một hộ GPU đi qua thư viện THỨ NĂM
+ *   > là VÔ HÌNH THEO THIẾT KẾ — không cần né tránh gì cả.**
+ *
+ * Đây không phải suy đoán: `server/services/reportGenerator.ts` là **một hộ có điểm cấp phát
+ * trong `server/` và đã vắng mặt HOÀN TOÀN** khỏi bảng qua ba vòng nới mẫu (65 → 120 → 151 dòng).
+ * Nó lọt vì lý do TẦM THƯỜNG, khác hẳn ca `server/license/sdk/index.cjs`: nó KHÔNG né tránh gì —
+ * không import `child_process` (puppeteer tự sinh tiến trình trong thư viện của nó), và
+ * `puppeteer` đơn giản là KHÔNG có trong bộ mẫu. Một `await import("puppeteer")` viết hoàn toàn
+ * bình thường.
+ *
+ * ⇒ ĐÂY LÀ BẰNG CHỨNG **THỨ HAI**, và rẻ hơn hẳn `index.cjs`, cho kết luận cuối của Task 5:
+ * **con số dòng của bảng là cận DƯỚI**. Người đọc bảng có thể nghĩ "nó chỉ hụt ở những ca né
+ * tránh tinh vi". KHÔNG PHẢI VẬY — nó hụt ở một `import` bình thường của một dependency sản xuất.
+ * ⚠ Vì thế: thêm `puppeteer` vào bộ mẫu **KHÔNG** đóng lớp lỗi này, nó chỉ đóng một THỂ HIỆN
+ * (đúng cảnh báo N-2b: "đừng vá bằng cách thêm mẫu"). Lớp an toàn thật vẫn phải là đối chiếu với
+ * SỰ THẬT THIẾT BỊ lúc chạy.
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
  */
 const MODULE_PATTERNS: Readonly<Record<string, RegExp>> = {
   child_process: /\bchild_process/g,
   "import onnxruntime-node": /(?:from|import|require)\s*\(?\s*["'](?:node:)?onnxruntime-node(?:\/[^"']*)?["']/g,
   "import node-llama-cpp": /(?:from|import|require)\s*\(?\s*["'](?:node:)?node-llama-cpp(?:\/[^"']*)?["']/g,
+  // I-1 — thư viện GPU THỨ TƯ. `puppeteer-core` cũng khớp: cùng nhị phân Chromium, cùng hộ.
+  "import puppeteer": /(?:from|import|require)\s*\(?\s*["'](?:node:)?puppeteer(?:-core)?(?:\/[^"']*)?["']/g,
 };
 
 const ALL_SYMBOLS = new Set([...Object.keys(CALL_PATTERNS), ...Object.keys(MODULE_PATTERNS)]);

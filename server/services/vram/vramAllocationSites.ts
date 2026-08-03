@@ -41,7 +41,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════════════════
  * ★★★★ ĐỌC TRƯỚC KHI DÙNG BẢNG NÀY LÀM ĐẦU VÀO CHO PHA 2B — KẾT LUẬN CUỐI CỦA TASK 5:
  *
- *   > **151 là số dòng mà MẪU QUÉT NGÀY 2026-08-04 nhìn thấy. Nó là cận DƯỚI.
+ *   > **157 là số dòng mà MẪU QUÉT NGÀY 2026-08-04 nhìn thấy. Nó là cận DƯỚI.
  *   > KHÔNG phương pháp nào trong Pha 2A biến nó thành cận TRÊN.**
  *
  * Đây không phải sự khiêm tốn theo phép lịch sự; nó là một kết luận CẤU TRÚC. Tập hình dạng cấp
@@ -58,6 +58,13 @@
  * nguyên tên biến do TypeScript sinh — trong khi chính file đó đã đổi tên HÀM thành `_0x3a14ef`.
  * ⚠ ĐỪNG VÁ N-2b BẰNG CÁCH THÊM MẪU. Mỗi mẫu mới chỉ đóng một thể hiện, và làm lưới trông mạnh
  * hơn thực chất — đúng cơ chế đã khiến vòng 1 tuyên bố sai.
+ *
+ * ★★ VÀ BẰNG CHỨNG **THỨ HAI**, RẺ HƠN HẲN — **I-1 (review TOÀN NHÁNH)**: `reportGenerator.ts:384`
+ * gọi `puppeteer.launch()` **không `--disable-gpu`**, với `puppeteer` là dependency SẢN XUẤT — và
+ * nó vắng mặt HOÀN TOÀN khỏi bảng 151 dòng. Nó KHÔNG né tránh gì cả: nó chỉ đi qua thư viện thứ
+ * TƯ, trong khi `MODULE_PATTERNS` liệt kê BẰNG TAY đúng ba. **Một hộ GPU đi qua thư viện chưa được
+ * liệt kê là vô hình THEO THIẾT KẾ.** Ai đọc bảng này có thể nghĩ "nó chỉ hụt ở những ca né tránh
+ * tinh vi như `index.cjs`" — không phải vậy, nó hụt ở một `import` bình thường.
  *
  * ⇒ HỆ QUẢ CHO PHA 2B: bản liệt kê này **KHÔNG phải bảo đảm**. Nó là một **tiên nghiệm
  * best-effort** — tốt cho việc biết PHẢI ĐI HỎI Ở ĐÂU, vô dụng nếu bị dùng như một bằng chứng đã
@@ -77,11 +84,11 @@ export const WIRED_ALLOCATION_SITE_COUNT = 14;
 /**
  * Số DÒNG của `KNOWN_ALLOCATION_SITES` = số lần xuất hiện mà mẫu quét ngày 2026-08-04 nhìn thấy.
  *
- * ⚠⚠ **151 LÀ CẬN DƯỚI, KHÔNG PHẢI CẬN TRÊN.** Xem khối "ĐỌC TRƯỚC KHI DÙNG BẢNG NÀY" ở đầu file.
- * Ba vòng review, ba lần nới mẫu: 65 → 120 → 151, trong khi số điểm gọi vẫn 14. Con số này nói về
- * *mẫu quét*, không nói về *hệ thống*.
+ * ⚠⚠ **157 LÀ CẬN DƯỚI, KHÔNG PHẢI CẬN TRÊN.** Xem khối "ĐỌC TRƯỚC KHI DÙNG BẢNG NÀY" ở đầu file.
+ * Bốn vòng review, bốn lần nới mẫu: 65 → 120 → 151 → 157, trong khi số điểm gọi vẫn 14. Con số này
+ * nói về *mẫu quét*, không nói về *hệ thống*.
  */
-export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 151;
+export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 157;
 
 /**
  * ★★ HAI CÁI BẪY ĐẾM-HAI-LẦN, khai TƯỜNG MINH thay vì lọc ngầm bằng regex.
@@ -96,7 +103,7 @@ export const PERMIT_SYMBOL_OCCURRENCES_THAT_ARE_NOT_CALL_SITES: readonly {
   symbol: string;
   why: string;
 }[] = [
-  { file: "server/services/vram/vramWiring.ts", symbol: "beginVramAllocation(", why: ":397 KHAI BÁO hàm — nơi định nghĩa, không phải nơi gọi." },
+  { file: "server/services/vram/vramWiring.ts", symbol: "beginVramAllocation(", why: ":517 KHAI BÁO hàm — nơi định nghĩa, không phải nơi gọi." },
   { file: "server/services/aiGgufEngine.ts", symbol: "beginVram(", why: ":752 KHAI BÁO lớp bọc nội bộ `beginVram()`." },
   { file: "server/services/aiGgufEngine.ts", symbol: "beginVramAllocation(", why: ":757 PASS-THROUGH bên trong lớp bọc — đếm nó là đếm hai lần cùng bốn điểm gọi của file này." },
   { file: "server/services/aiInferenceEngine.ts", symbol: "beginVram(", why: ":22 KHAI BÁO lớp bọc nội bộ `beginVram()`." },
@@ -104,7 +111,7 @@ export const PERMIT_SYMBOL_OCCURRENCES_THAT_ARE_NOT_CALL_SITES: readonly {
 ];
 
 /**
- * MỘT DÒNG = MỘT LẦN XUẤT HIỆN của `symbol` trong `file` — **151 dòng / 2026-08-04**, khoá bằng
+ * MỘT DÒNG = MỘT LẦN XUẤT HIỆN của `symbol` trong `file` — **157 dòng / 2026-08-04**, khoá bằng
  * `KNOWN_ALLOCATION_SITE_ROW_COUNT` và một ca test riêng.
  *
  * ⚠ P-1 (re-review vòng 2): dòng này từng ghi "120" **sau khi** bảng đã lên 151 — một con số cũ
@@ -140,7 +147,16 @@ export const PERMIT_SYMBOL_OCCURRENCES_THAT_ARE_NOT_CALL_SITES: readonly {
  *      (`aiReranker.ts:486`) giấy phép chỉ ĐO SAU khi cấp phát xong; ở thời điểm cưỡng chế phải
  *      quyết định thì chưa tồn tại con số nào.
  *
- * ⚠ Số dòng đúng ở **2026-08-04** và sẽ trôi. Khoá đối chiếu là `file` + `symbol`.
+ * ⚠⚠ M-1 (review TOÀN NHÁNH) — **SỐ DÒNG TRONG `note` KHÔNG CÓ LƯỚI NÀO CANH, VÀ ĐÓ LÀ CÓ CHỦ Ý.**
+ * Ca test khoá `file` + `symbol` (thứ máy quét đối chiếu được); `note` là văn bản cho người đọc.
+ * Hệ quả đã XẢY RA THẬT, không phải rủi ro lý thuyết: Task 6 sửa `vramWiring.ts` và
+ * `vramProcessProbe.ts` **SAU KHI** Task 5 chốt bảng, làm mọi số dòng bảng trích cho hai file đó
+ * lệch đi — mà bảng vẫn XANH. Đó đúng là "lưới còn nguyên, BẰNG CHỨNG của lưới thì mục".
+ * ⇒ KỶ LUẬT: sửa một file được bảng trích dẫn thì **đọc lại các ô `note` của file đó**. Ba số đã
+ * được kiểm lại bằng máy ngày 2026-08-04 sau lượt vá review TOÀN NHÁNH: `vramWiring.ts` `:397 →
+ * :517`, `vramProcessProbe.ts` `:151 → :309`, `aiInferenceEngine.ts` `:181/:192 → :213/:224`.
+ * ⚠ KHÔNG khoá số dòng bằng test: một lưới đỏ mỗi lần ai đó thêm một dòng chú thích sẽ bị tắt.
+ * Số dòng đúng ở **2026-08-04** và sẽ trôi. Khoá đối chiếu vẫn là `file` + `symbol`.
  */
 export const KNOWN_ALLOCATION_SITES: readonly {
   file: string;
@@ -151,7 +167,7 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   // ═════════════════════════════════════════════════════════════════════════════════════════
   // A. server/ — 14 ĐIỂM MỞ GIẤY PHÉP + 5 lần xuất hiện KHÔNG phải điểm gọi
   // ═════════════════════════════════════════════════════════════════════════════════════════
-  { file: "server/services/vram/vramWiring.ts", symbol: "beginVramAllocation(", wired: true, note: ":397 KHAI BÁO hàm — không phải điểm gọi. Xem PERMIT_SYMBOL_OCCURRENCES_THAT_ARE_NOT_CALL_SITES." },
+  { file: "server/services/vram/vramWiring.ts", symbol: "beginVramAllocation(", wired: true, note: ":517 KHAI BÁO hàm — không phải điểm gọi. Xem PERMIT_SYMBOL_OCCURRENCES_THAT_ARE_NOT_CALL_SITES." },
   { file: "server/services/aiGgufEngine.ts", symbol: "beginVram(", wired: true, note: ":752 KHAI BÁO lớp bọc nội bộ — không phải điểm gọi (nuốt lỗi rồi uỷ quyền cho vramWiring)." },
   { file: "server/services/aiGgufEngine.ts", symbol: "beginVramAllocation(", wired: true, note: ":757 PASS-THROUGH trong lớp bọc `beginVram()` — không phải điểm gọi độc lập." },
   { file: "server/services/aiInferenceEngine.ts", symbol: "beginVram(", wired: true, note: ":22 KHAI BÁO lớp bọc nội bộ — không phải điểm gọi." },
@@ -161,7 +177,7 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "server/services/aiGgufEngine.ts", symbol: "beginVram(", wired: true, note: ':851 ĐIỂM GỌI 2/14 — owner "gguf:<modelId>", gguf-model, interactive. Bao quanh llama.loadModel() ở :861/:888 VÀ model.createContext() ở :904.' },
   { file: "server/services/aiGgufEngine.ts", symbol: "beginVram(", wired: true, note: ':1041 ĐIỂM GỌI 3/14 — owner "gguf-ctx:<modelId>", gguf-context, interactive. Bao quanh createContext() LƯỜI ở :1046.' },
   { file: "server/services/aiGgufEngine.ts", symbol: "beginVram(", wired: true, note: ':2824 ĐIỂM GỌI 4/14 — owner "gguf-embed-ctx:<modelId>", gguf-embed-context, background. Bao quanh createEmbeddingContext() ở :2830.' },
-  { file: "server/services/aiInferenceEngine.ts", symbol: "beginVram(", wired: true, note: ':181 ĐIỂM GỌI 5/14 — owner "onnx:<code>", onnx-session, production, releaseProof "unverified". EP = DirectML vì ENABLE_GPU=true.' },
+  { file: "server/services/aiInferenceEngine.ts", symbol: "beginVram(", wired: true, note: ':213 ĐIỂM GỌI 5/14 — owner "onnx:<code>", onnx-session, production, releaseProof "unverified". EP = DirectML vì ENABLE_GPU=true.' },
   { file: "server/services/aiImageEmbedding.ts", symbol: "beginVramAllocation(", wired: true, note: ':506 ĐIỂM GỌI 6/14 — owner "onnx-img:<code>", onnx-session, production, releaseProof "unverified".' },
   { file: "server/services/ai/ocrService.ts", symbol: "beginVramAllocation(", wired: true, note: ':328 ĐIỂM GỌI 7/14 — owner "onnx-ocr:<modelPath>", onnx-session, production.' },
   { file: "server/services/aiReranker.ts", symbol: "beginVramAllocation(", wired: true, note: ':393 ĐIỂM GỌI 8/14 — owner "cuda-backend:reranker", gguf-backend, background. getLlama() THỨ HAI của tiến trình (thể hiện Llama RIÊNG). fallbackBytes theo RAG_RERANKER_GPU (=false ⇒ 0).' },
@@ -182,7 +198,7 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "server/services/aiGgufEngine.ts", symbol: ".createContext(", wired: true, note: ":904 context thường tạo NGAY trong loadGgufModel() (bỏ qua khi embeddingOnly). Trong cửa sổ :851 ⇒ actualBytes của `gguf:*` gồm CẢ trọng số LẪN context này." },
   { file: "server/services/aiGgufEngine.ts", symbol: ".createContext(", wired: true, note: ":1046 context LƯỜI của ensureTextContext(), trong cửa sổ giấy phép :1041." },
   { file: "server/services/aiGgufEngine.ts", symbol: ".createEmbeddingContext(", wired: true, note: ":2830, trong cửa sổ :2824. contextSize = EMBED_CTX (:288, chốt theo GGUF_EMBED_CTX/GGUF_MAX_CTX) — KHÔNG phải 'auto', nên kích thước KHÔNG phụ thuộc dư địa lúc gọi." },
-  { file: "server/services/aiInferenceEngine.ts", symbol: "InferenceSession.create(", wired: true, note: ":192, trong cửa sổ giấy phép :181. EP từ getExecutionProviders() (:125) — ENABLE_GPU=true ⇒ DirectML ⇒ CÓ chiếm VRAM." },
+  { file: "server/services/aiInferenceEngine.ts", symbol: "InferenceSession.create(", wired: true, note: ":224, trong cửa sổ giấy phép :213. EP từ getExecutionProviders() (:157) — ENABLE_GPU=true ⇒ DirectML ⇒ CÓ chiếm VRAM." },
   { file: "server/services/aiImageEmbedding.ts", symbol: "InferenceSession.create(", wired: true, note: ":521, trong cửa sổ :506. ⚠⚠ EP Ở ĐÂY KHÁC hai hộ ONNX kia: :493-495 CHỈ đẩy 'cuda' khi ENABLE_CUDA==='true', KHÔNG gọi getExecutionProviders() và KHÔNG BAO GIỜ đẩy 'dml'. .env hôm nay có ENABLE_GPU=true nhưng KHÔNG có ENABLE_CUDA ⇒ hộ này chạy CPU, 0 byte, trong khi onnx:* và onnx-ocr:* chạy DirectML. Đổi đúng MỘT cờ là nó thành hộ thật — docstring :439 đã cảnh báo." },
   { file: "server/services/ai/ocrService.ts", symbol: "InferenceSession.create(", wired: true, note: ":337, trong cửa sổ :328. CHỈ model `rec` được nạp (:388) — không có session `det` nào trong repo hôm nay." },
   { file: "server/services/aiReranker.ts", symbol: "getLlama(", wired: true, note: ":417, trong cửa sổ giấy phép :393 (đóng ngay ở :448 TRƯỚC khi mở cửa sổ model — cố ý, để hai cửa sổ không chồng nhau)." },
@@ -211,7 +227,7 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "server/services/ai/ocrService.ts", symbol: "import onnxruntime-node", wired: true, note: ":308 nạp ort trong getOnnxSession() — lượt tạo session ở :337 nằm trong cửa sổ giấy phép :328." },
   { file: "server/services/ai/ocrService.ts", symbol: "import onnxruntime-node", wired: true, note: ":387 nạp ort trong recognizeSingleLine() CHỈ để dựng ort.Tensor — không tạo session, không cấp phát." },
   { file: "server/services/aiImageEmbedding.ts", symbol: "import onnxruntime-node", wired: true, note: ":1 import tĩnh — session ở :521 nằm trong cửa sổ giấy phép :506 (EP là CPU hôm nay, xem dòng :521)." },
-  { file: "server/services/aiInferenceEngine.ts", symbol: "import onnxruntime-node", wired: true, note: ":1 import tĩnh — session ở :192 nằm trong cửa sổ giấy phép :181 (EP DirectML)." },
+  { file: "server/services/aiInferenceEngine.ts", symbol: "import onnxruntime-node", wired: true, note: ":1 import tĩnh — session ở :224 nằm trong cửa sổ giấy phép :213 (EP DirectML)." },
 
   // ═════════════════════════════════════════════════════════════════════════════════════════
   // C. server/ — CHƯA NỐI. Phần Pha 2B phải quyết định.
@@ -221,7 +237,7 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "server/services/aiLocalTraining.ts", symbol: "InferenceSession.create(", wired: false, note: ":130 trainClassifierHead() — executionProviders GHIM CỨNG ['cpu'] ⇒ 0 byte VRAM. KHÔNG nối là ĐÚNG. ⚠ Đổi một chữ 'cpu' thành 'dml'/'cuda' là sinh một hộ VÔ HÌNH — bốn dòng này ở đây để lượt đổi đó không im lặng." },
   { file: "server/services/aiLocalTraining.ts", symbol: "InferenceSession.create(", wired: false, note: ":387 trainFewShot() — executionProviders ['cpu']. Cùng lý do như :130." },
   { file: "server/services/aiLocalTraining.ts", symbol: "InferenceSession.create(", wired: false, note: ":564 trainIncremental() — executionProviders ['cpu']. Cùng lý do như :130." },
-  { file: "server/services/aiLocalTraining.ts", symbol: "InferenceSession.create(", wired: false, note: ":882 classifyWithHead() — executionProviders ['cpu']. ⚠ File này có NĂM lời gọi session.release() (:332, :504, :765, :889, :954) ⇒ câu ở vramWiring.ts:49 ('grep toàn repo: KHÔNG một .release() nào lên ort.InferenceSession') SAI NHƯ ĐANG VIẾT; nó chỉ đúng nếu thu hẹp thành 'không session CÓ KHẢ NĂNG GPU nào được release'. Kết luận releaseProof='unverified' KHÔNG đổi." },
+  { file: "server/services/aiLocalTraining.ts", symbol: "InferenceSession.create(", wired: false, note: ":882 classifyWithHead() — executionProviders ['cpu']. ⚠ File này có NĂM lời gọi session.release() (:332, :504, :765, :889, :954) ⇒ câu ở vramWiring.ts:49 TỪNG viết 'grep toàn repo: KHÔNG một .release() nào lên ort.InferenceSession' và SAI NHƯ VẬY; I-2 (review TOÀN NHÁNH) đã sửa TẠI CHỖ ở CẢ HAI file (vramWiring.ts:49 và aiInferenceEngine.ts:96) thành 'không session CÓ KHẢ NĂNG GPU nào được release' — đính chính không còn nằm riêng ở dòng này. Kết luận releaseProof='unverified' KHÔNG đổi." },
   { file: "server/services/aiLocalTraining.ts", symbol: "import onnxruntime-node", wired: false, note: ":11 import tĩnh — BỐN session của file này đều ghim EP ['cpu'] ⇒ 0 byte VRAM. Dòng này là chỗ lượt đổi 'cpu'→'dml' sẽ đi qua." },
 
   // ───── N-2: `server/license/sdk/index.cjs` — BẰNG CHỨNG SỐNG của hình dạng né tránh ─────
@@ -256,7 +272,15 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "server/services/aiGgufEngine.ts", symbol: "child_process", wired: false, note: ":476 execFile('nvidia-smi', ['--query-gpu=memory.used,…']) qua promisify — ĐỌC VRAM, không cấp phát. Bản đồng bộ của chính lời gọi này từng làm đóng băng xử lý request (xem chú thích :474)." },
   { file: "server/services/vram/vramProbe.ts", symbol: "child_process", wired: false, note: ":92 execFile('nvidia-smi') qua promisify — đầu dò TOÀN THIẾT BỊ, đọc chứ không cấp phát." },
   { file: "server/services/vram/vramProcessProbe.ts", symbol: "child_process", wired: false, note: ":1 import execFile — đầu dò THEO TIẾN TRÌNH (PDH), đọc chứ không cấp phát." },
-  { file: "server/services/vram/vramProcessProbe.ts", symbol: "execFile(", wired: false, note: ":151 execFile('powershell.exe', …) đọc bộ đếm \\GPU Process Memory. ~1,5 s mỗi lượt; KHÔNG cấp phát VRAM." },
+  { file: "server/services/vram/vramProcessProbe.ts", symbol: "execFile(", wired: false, note: ":309 execFile('powershell.exe', …) đọc bộ đếm \\GPU Process Memory. ~1,5 s mỗi lượt; KHÔNG cấp phát VRAM. (M-1 review TOÀN NHÁNH — số cũ `:151` đã mục vì Task 6 sửa file này SAU Task 5.)" },
+
+  // ───── I-1 (review TOÀN NHÁNH): MÁY DUYỆT HEADLESS — thư viện GPU THỨ TƯ, vô hình cho tới nay ─────
+  { file: "server/services/reportGenerator.ts", symbol: "import puppeteer", wired: false, note: '★★ :382 `await import("puppeteer")` trong generateNGVisualPDF(). `puppeteer` là **dependency SẢN XUẤT** (package.json:164). Đây là hộ ĐẦU TIÊN có điểm cấp phát trong `server/` mà bảng bỏ sót HOÀN TOÀN qua ba vòng nới mẫu — và nó lọt KHÔNG PHẢI vì né tránh, mà vì `MODULE_PATTERNS` liệt kê tay đúng ba thư viện. Xem khối I-1 ở `vramAllocationSites.test.ts`: đây là bằng chứng THỨ HAI (rẻ hơn `index.cjs`) cho kết luận "151/157 là cận DƯỚI".' },
+  { file: "server/services/reportGenerator.ts", symbol: ".launch(", wired: false, note: '★★ :384 `puppeteer.launch({ headless: true, args: ["--no-sandbox","--disable-setuid-sandbox"] })` — **KHÔNG có `--disable-gpu`** ⇒ Chromium headless hiện đại khởi tạo một tiến trình GPU RIÊNG trên Windows+NVIDIA. KHÔNG giấy phép nào. BẤT ĐỘNG hôm nay: `generateNGVisualPDF` chỉ có một người gọi gián tiếp (`universalExportService.ts:717`) mà hàm đó không có người gọi nào — cùng mức bất động với `LLM_FINETUNE_CMD`/`WHISPER_BIN` vốn ĐANG được liệt kê. ⚠ Pha 2B: thêm `--disable-gpu` là cách rẻ nhất để hộ này thôi tồn tại; đó là ĐỔI HÀNH VI nên không thuộc Pha 2A.' },
+  { file: "scripts/audit/p1-live-triad.mjs", symbol: ".launch(", wired: false, note: ":124 `chromium.launch({ headless: true })` (@playwright/test, :23) — KHÔNG `--disable-gpu`. Script audit chạy TAY, không có mục package.json, không tiến trình API nào spawn ⇒ không giấy phép nào phủ. Cùng lớp với (E3) trong khối vùng mù: VRAM do mã của CHÍNH sản phẩm sinh ra nhưng đang bị đếm vào 'nền desktop'." },
+  { file: "scripts/audit/s5-net-probe.mjs", symbol: ".launch(", wired: false, note: ":8 `chromium.launch({ headless: true })` (@playwright/test, :2) — cùng lớp với p1-live-triad.mjs, chạy tay." },
+  { file: "scripts/audit/s5-poc.mjs", symbol: ".launch(", wired: false, note: ":25 `chromium.launch({ headless: true })` (@playwright/test, :12) — cùng lớp với p1-live-triad.mjs, chạy tay." },
+  { file: "scripts/audit/s6-pro-audit.mjs", symbol: ".launch(", wired: false, note: ":35 `chromium.launch({ headless: true })` (@playwright/test, :14) — cùng lớp với p1-live-triad.mjs, chạy tay." },
 
   // ═════════════════════════════════════════════════════════════════════════════════════════
   // D. scripts/ — CHẠY NGOÀI TIẾN TRÌNH API. Sổ cái là biến TRONG BỘ NHỚ của MỘT tiến trình,
@@ -378,11 +402,22 @@ export const KNOWN_ALLOCATION_SITES: readonly {
  *    sai số đúng dấu** — `headroom = trần − Σ leaseBytes` bị **phóng đại**, tức nghiêng về
  *    **cho phép cấp phát khi thiết bị đã đầy**. Hộ 30B (~17-19 GB) **chưa từng quan sát được**.
  *
- * 2. **Tiến trình `worker`** (`server/worker.ts` → `runWorkerProcess`). Sổ cái là biến trong bộ
- *    nhớ của MỘT tiến trình. `ROLE=worker` ⇒ hai sổ độc lập trên MỘT thiết bị, mỗi sổ thấy nửa
- *    của mình. Pha 1 đã ghi nhận ("ROLE=api ⇒ sổ MỘT tiến trình trong khi hệ chạy NĂM"); vẫn
- *    CHƯA giải. Cùng lớp: `vi-quality-ab.mjs` / `embed-space-probe.mjs` import thẳng
- *    `aiGgufEngine.ts` ⇒ chạy đúng mã đã nối, trong tiến trình riêng, sổ riêng.
+ * 2. **Tiến trình `worker` — VÀ tiến trình `edge`, tức BA sổ chứ không phải hai** (M-6, review
+ *    TOÀN NHÁNH). Sổ cái là biến trong bộ nhớ của MỘT tiến trình.
+ *      • `server/worker.ts` → `runWorkerProcess` (`ROLE=worker`);
+ *      • **`server/edge/edgeGatewayMain.ts`** — `package.json` có `start:edge` (`node
+ *        dist/edgeGatewayMain.js`) và `dev:edge`, và `build` esbuild-đóng-gói nó thành một
+ *        artefact RIÊNG. Bản trước của mục này chỉ nói `worker` ⇒ đếm thiếu đúng một sổ.
+ *    ⇒ mỗi sổ chỉ thấy phần của mình trên MỘT thiết bị. Pha 1 đã ghi nhận ("ROLE=api ⇒ sổ MỘT
+ *    tiến trình trong khi hệ chạy NĂM"); vẫn CHƯA giải. Cùng lớp: `vi-quality-ab.mjs` /
+ *    `embed-space-probe.mjs` import thẳng `aiGgufEngine.ts` ⇒ chạy đúng mã đã nối, trong tiến
+ *    trình riêng, sổ riêng.
+ *    ⚠ Cùng lớp, cấp độ triển khai: **`_deploy/avi-aoi-v1.0.0/`** là một BẢN SAO ĐẦY ĐỦ mang cùng
+ *    `node-llama-cpp`/`onnxruntime-node`/`puppeteer` kèm `install-service.bat` (wrapper NSSM) ⇒
+ *    chạy được như một DỊCH VỤ WINDOWS, song song với bản đang phát triển, với sổ riêng của nó.
+ *    ⚠ Và: **backend Vulkan CŨNG được cài** (`node_modules/@node-llama-cpp/win-x64-vulkan` bên
+ *    cạnh `win-x64-cuda`). Không đổi kết luận nào, nhưng "backend CUDA = 431,6 MiB" là hằng số
+ *    ĐO ĐƯỢC CỦA MỘT BACKEND — đừng đem nó áp cho một tiến trình chạy backend khác.
  *
  * 3. **`llama-server` bền bỉ khởi động BẰNG TAY** — `LLAMA_SERVER_ENABLED` + runbook
  *    `scripts/ai/llama-server.md`. Thêm: `.env:660-661` có `LLAMA_CODER_PORT=8090` /

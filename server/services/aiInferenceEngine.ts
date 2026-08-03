@@ -59,6 +59,30 @@ function envInt(name: string, def: number, min: number): number {
   const v = Number(process.env[name]);
   return Number.isFinite(v) && v >= min ? Math.floor(v) : def;
 }
+/**
+ * ⚠⚠ I-5 (review TOÀN NHÁNH Pha 2A) — **TRẦN CACHE LÀ 5, KHÔNG PHẢI VÔ HẠN**, và đó là ĐIỀU KIỆN
+ * CHƯA ĐƯỢC NÓI RA của kết luận "phiên ONNX được cache nên chi phí đo chấp nhận được".
+ *
+ * Từ Pha 2A, mỗi lượt tạo phiên mở một CỬA SỔ ĐO có giá **~3,35 s** (2 × ~1,5 s đầu dò
+ * `powershell.exe` + 250 ms biên lắng — `vram/vramProcessProbe.ts`), và các cửa sổ `self`
+ * **NỐI TIẾP NHAU** (`vram/vramMeasureLock.ts`). Ba điều kiện làm chi phí đó rơi vào một request
+ * `production` chứ không rơi vào lúc khởi động:
+ *   1. **`AI_SESSION_CACHE_MAX` mặc định 5** (`.env` để dòng này bị chú thích ⇒ chạy mặc định).
+ *      Quá 5 model AOI hoạt động ⇒ đuổi LRU ⇒ lượt kiểm kế tiếp trượt cache ⇒ vào lại TRỌN VẸN
+ *      cửa sổ ~3,35 s, **bên trong một request `production`**.
+ *   2. **`getSession()` KHÔNG có khoá in-flight** (xem `:245-251`): hai request đồng thời cùng một
+ *      model chưa cache mở **HAI** cửa sổ, rồi hai cửa sổ đó **nối tiếp nhau** ⇒ **2 × 3,35 s**
+ *      cho cùng một model.
+ *   3. `cacheKey` gồm `currentVersion` (`:190`) ⇒ mọi lượt `activateVersion`/`promoteStage`/
+ *      auto-rollback đổi khoá ⇒ lượt nạp CÓ ĐO bị hoãn sang **request kiểm tra đầu tiên sau khi
+ *      deploy**, không rơi vào lượt deploy.
+ * Để so sánh: khởi động nguội mở **4 cửa sổ nối tiếp ≈ 13,4 s** chi phí đo thuần
+ * (`cuda-backend` · `gguf:<30B>` · `gguf:<0,6B embed>` · `gguf-embed-ctx`).
+ *
+ * ⚠ Nâng `AI_SESSION_CACHE_MAX` để né lớp (1) là đổi lượng VRAM thường trú — quyết định của Pha 2B,
+ * không phải một nút vặn cho tiện. Xem thêm đảo ngược ưu tiên (I-3) ở `vram/vramWiring.ts`: lượt
+ * kiểm `production` này xếp hàng vào khoá đo theo FIFO, KHÔNG theo ưu tiên.
+ */
 const SESSION_CACHE_MAX = envInt("AI_SESSION_CACHE_MAX", 5, 1);
 const BATCH_MAX = envInt("AI_BATCH_MAX", 8, 1);
 const BATCH_WINDOW_MS = envInt("AI_BATCH_WINDOW_MS", 25, 0);
@@ -93,9 +117,17 @@ class LruSessionCache {
       // ⚠ I-1 (review TOÀN NHÁNH) — ĐÂY LÀ MỘT LƯỢT NHẢ **KHÔNG CÓ BẰNG CHỨNG**, và nó được
       // đánh dấu tường minh như vậy (`releaseProof: "unverified"` ở `getSession()`), KHÔNG được
       // im lặng coi như đã nhả thật. Đuổi khỏi cache chỉ gỡ THAM CHIẾU JS; bộ nhớ native của
-      // onnxruntime chỉ chắc chắn trả khi `session.release()` chạy — mà toàn repo KHÔNG có một
-      // lời gọi nào như vậy. Không thêm ở đây được: `getSession()` không có khoá in-flight
-      // (:192) và `gpuSessionSemaphore` cho phép 2 lượt `session.run` song song ⇒ nhả native
+      // onnxruntime chỉ chắc chắn trả khi `session.release()` chạy — mà **không một session CÓ
+      // KHẢ NĂNG GPU nào trong repo được `release()`**.
+      //
+      // ⚠⚠ I-2 (review TOÀN NHÁNH) — CÂU NÀY TRƯỚC ĐÂY VIẾT "toàn repo KHÔNG có một lời gọi nào
+      // như vậy", RỘNG HƠN SỰ THẬT: `server/services/aiLocalTraining.ts` có NĂM lời gọi
+      // `session.release()` (`:332`, `:504`, `:765`, `:889`, `:954`). Kết luận KHÔNG đổi — bốn
+      // session của file đó ghim `executionProviders: ["cpu"]` nên chúng không chiếm VRAM — nhưng
+      // một câu SAI dùng làm chỗ dựa vẫn là lập luận hỏng, và đính chính không được nằm ở file khác.
+      //
+      // Không thêm ở đây được: `getSession()` không có khoá in-flight
+      // (:245-251) và `gpuSessionSemaphore` cho phép 2 lượt `session.run` song song ⇒ nhả native
       // dưới chân một lượt run đang bay là ABORT ở tầng native, không phải exception bắt được.
       // Sửa đúng cần đếm tham chiếu = ĐỔI HÀNH VI đường suy luận nóng nhất ⇒ báo cáo §10, Pha 2.
       // Kỷ luật đầy đủ + bảng bốn điểm nhả: đầu `vram/vramWiring.ts`.
@@ -206,6 +238,16 @@ async function getSession(model: AiModel): Promise<ort.InferenceSession> {
   // ⚠ `getSession()` KHÔNG có khoá in-flight: hai lượt cùng cacheKey chạy song song đều trượt
   // cache và cùng tạo session (hành vi CÓ SẴN, không thuộc phạm vi Task 5). Trả giấy phép cũ
   // trước khi ghi đè, nếu không cái cũ treo vĩnh viễn trong sổ và sinh báo động lệch ÂM giả.
+  //
+  // ⚠⚠ I-5 (review TOÀN NHÁNH) — TỪ PHA 2A, "KHÔNG có khoá in-flight" KHÔNG CÒN chỉ là lãng phí
+  // một lượt tạo phiên: hai lượt song song mở HAI cửa sổ đo, và hai cửa sổ `self` **nối tiếp
+  // nhau** ⇒ **2 × ~3,35 s** chồng lên một request `production`. Xem khối số đo đầy đủ ở
+  // `SESSION_CACHE_MAX`. Thêm khoá in-flight ở đây là ĐỔI HÀNH VI đường suy luận — Pha 2B.
+  //
+  // ⚠ Dòng `releaseSessionVramTicket()` ngay dưới, và lượt đuổi LRU trong `sessionCache.set()`,
+  // đều là ĐIỂM NHẢ: từ bản vá C-1 (review TOÀN NHÁNH) chúng ghi vào mọi cửa sổ đo CÙNG PHẠM VI
+  // đang mở, khiến phép đo của người đang đo khai `measureFailed` thay vì commit một delta HỤT.
+  // Đó là hành vi ĐÚNG và KHÔNG chặn gì cả — xem `vram/vramWiring.ts`, khối `OpenMeasureWindow`.
   releaseSessionVramTicket(cacheKey);
   sessionVramTickets.set(cacheKey, vramTicket);
 

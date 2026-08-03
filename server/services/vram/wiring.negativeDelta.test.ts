@@ -1,9 +1,15 @@
 /**
  * I-2 (review TOÀN NHÁNH) — "cửa thứ ba": `vramWiring.ts:148` `if (actual < 0) return;`
  *
- * Đường sinh delta ÂM CÓ THẬT và dài NHIỀU GIÂY: `aiGgufEngine.ts:771` chạy
- * `while (await evictLRU())` — đuổi tới 17 GB — NGAY GIỮA `beforeUsed` (`:737`) và
- * `commitMeasured()` (`:802`). Đuổi 17 GB rồi nạp 4 GB ⇒ `after − before` ÂM.
+ * Đường sinh delta ÂM CÓ THẬT và dài NHIỀU GIÂY: `aiGgufEngine.ts:885` chạy
+ * `while (await evictLRU())` — đuổi tới 17 GB — NGAY GIỮA `beforeUsed` (giấy phép mở ở `:851`) và
+ * `commitMeasured()` (`:916`). Đuổi 17 GB rồi nạp 4 GB ⇒ `after − before` ÂM.
+ * (M-2 review TOÀN NHÁNH — ba số cũ `:771/:737/:802` đã mục; kiểm lại bằng máy 2026-08-04.)
+ *
+ * ⚠⚠ C-1 (review TOÀN NHÁNH) — **FILE NÀY CHỈ CANH NỬA LỚP LỖI.** Delta ÂM là biến thể TOÀN PHẦN
+ * của "có lượt nhả xen giữa hai đầu đo" (nhả NHIỀU HƠN cấp). Biến thể MỘT PHẦN (nhả ÍT hơn cấp ⇒
+ * delta DƯƠNG-nhưng-HỤT) không đổi dấu nên KHÔNG một lưới nào ở đây thấy nó — nó được canh riêng
+ * ở `wiring.releaseWindow.test.ts`. Hai file là MỘT lưới; đừng đọc file này như thể nó đủ.
  *
  * ⚠ HẬU QUẢ NẶNG NHẤT KHÔNG PHẢI ĐẦU ĐỘC NỀN (nền chụp MỘT lần lúc boot, sổ còn rỗng — xác
  * suất thấp). Nó là: giấy phép giữ ước lượng theo KÍCH THƯỚC FILE **VĨNH VIỄN**. Với

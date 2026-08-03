@@ -46,10 +46,20 @@ import type { VramLease, VramLeaseKind, VramMeasureSource, VramPriority } from "
  * | 4 | `aiImageEmbedding.evictEmbeddingSessionCache` | **KHÔNG CÓ** | `unverified` |
  *
  * ⚠ VÌ SAO #3/#4 KHÔNG SỬA ĐƯỢC Ở PHA 1 (và vì sao đánh dấu là câu trả lời ĐÚNG, không phải né):
- * reviewer grep toàn repo — **không MỘT lời gọi `.release()` nào lên `ort.InferenceSession`**.
+ * **không một lời gọi `.release()` nào lên một `ort.InferenceSession` CÓ KHẢ NĂNG GPU.**
+ *
+ * ⚠⚠ I-2 (review TOÀN NHÁNH) — CÂU NÀY TRƯỚC ĐÂY VIẾT RỘNG HƠN SỰ THẬT ("reviewer grep toàn repo:
+ * KHÔNG MỘT lời gọi `.release()` nào lên `ort.InferenceSession`") và ĐÍNH CHÍNH lại nằm ở một FILE
+ * KHÁC (`vramAllocationSites.ts`), nơi người đọc dòng này không bao giờ tới. Sự thật:
+ * `server/services/aiLocalTraining.ts` có **NĂM** lời gọi (`:332`, `:504`, `:765`, `:889`, `:954`).
+ * Kết luận `releaseProof: "unverified"` **KHÔNG ĐỔI** — cả bốn session của file đó ghim
+ * `executionProviders: ["cpu"]` nên chúng không phải hộ VRAM, và đường ONNX GPU (`aiInferenceEngine`
+ * / `aiImageEmbedding` / `ocrService`) vẫn không có lời gọi nào. Nhưng một lập luận chống lưng
+ * bằng một câu SAI thì vẫn là lập luận hỏng, và đây đúng lớp lỗi mà pha này tự đặt ra để diệt.
+ *
  * Đuổi khỏi cache chỉ gỡ tham chiếu JS; bộ nhớ native của onnxruntime chỉ chắc chắn được trả khi
  * `session.release()` chạy. Thêm lời gọi đó Ở ĐÂY sẽ giải phóng bộ nhớ native NGAY DƯỚI CHÂN một
- * `session.run` đang bay: `getSession()` KHÔNG có khoá in-flight (aiInferenceEngine.ts:192) và
+ * `session.run` đang bay: `getSession()` KHÔNG có khoá in-flight (aiInferenceEngine.ts:245-251) và
  * `gpuSessionSemaphore` cho phép 2 lượt `run` song song ⇒ một lượt đuổi đúng lúc là **abort ở
  * tầng native, không phải một exception bắt được**. Sửa đúng cần đếm tham chiếu — ĐỔI HÀNH VI
  * trong đường suy luận nóng nhất, thứ Pha 1 tự cấm mình làm. Nên Pha 1 làm việc Pha 1 làm được:
@@ -187,12 +197,73 @@ const NOOP_TICKET: VramTicket = {
  */
 type VramMeasureScope = "self" | "descendants";
 
+/**
+ * ★★★ C-1 (review TOÀN NHÁNH) — LƯỢT **NHẢ** XEN GIỮA HAI ĐẦU ĐO. Đọc trước khi sửa `release()`.
+ *
+ * LỖI ĐANG VÁ, và nó ở ĐÚNG CHIỀU NGUY HIỂM: khoá `withMeasureWindow` nối tiếp hoá các lượt
+ * **CẤP PHÁT** đi qua `beginVramAllocation()`. Nó **KHÔNG** nối tiếp hoá các lượt **NHẢ**.
+ * `ticket.release()` không lấy khoá, không mở cửa sổ. Ba đường nhả chạy hoàn toàn ngoài khoá:
+ *   1. `ensureCapacity()` chạy **TRƯỚC** `beginVram()` (`aiGgufEngine.ts:844` so với `:851`) ⇒ lượt
+ *      nạp model B gọi `evictLRU()` → `unloadGgufModel(A)` → `dispose()` **trước khi** B xếp hàng
+ *      vào khoá, tức B có thể giải phóng 17 GB NGAY GIỮA hai đầu đo của C;
+ *   2. `unloadGgufModel()` qua HTTP (`server/routers/aiGgufRouter.ts:73`), bất kỳ lúc nào;
+ *   3. `while (await evictLRU())` của nhánh OOM-retry (`aiGgufEngine.ts:885`), nằm TRONG chính
+ *      cửa sổ của nó.
+ *
+ * Hậu quả: `actual = after − beforeUsed` bị **TRỪ ĐI** phần vừa được nhả.
+ *   • nhả **NHIỀU HƠN** cấp ⇒ delta ÂM ⇒ nhánh `actual < 0` BẮT ĐƯỢC;
+ *   • nhả **ÍT HƠN** cấp ⇒ delta **DƯƠNG-NHƯNG-HỤT** ⇒ trước bản vá này **KHÔNG lưới nào bắt**:
+ *     `overlappedBy` rỗng (nhả không mở cửa sổ), `measurable === true` (bộ đếm của khoá chỉ đếm
+ *     lượt BỎ CUỘC, `vramMeasureLock.ts` — không đếm lượt nhả), `seen === true`, `actual > 0`.
+ *     Hệ `commit()` + `recordActual()` một con số HỤT và khai `measureSource: "process-delta"`,
+ *     `measureFailed: false` — **một phép đo hỏng TỰ KHAI LÀ THÀNH CÔNG**.
+ * ĐO ĐƯỢC 3/3 trên mã sản xuất (reviewer): cấp 4 GiB + nhả 1 GiB ⇒ sổ ghi 3 GiB, `measureFailed`
+ * falsy, và `estimateBytesFor()` trả `{ bytes: 3 GiB, source: "learned" }` — nấc `learned` bị
+ * **đóng đinh HỤT tới hết đời tiến trình**. Ở Pha 2B, `learned` hụt ⇒ `headroom` phóng đại ⇒
+ * KHÔNG BAO GIỜ từ chối ⇒ OOM. Nhánh delta-âm chỉ phủ NỬA lớp lỗi này.
+ *
+ * ⚠⚠ BẢN VÁ **KHÔNG CHẶN** LƯỢT NHẢ — điều lệ Pha 2A cấm đổi hành vi cấp phát/nhả, và chặn một
+ * lượt `evictLRU()` để giữ một phép đo là đánh đổi sai (đúng lý lẽ đã ghi ở khối `OpenMeasureWindow`
+ * bên trên cho phương án (a)). Nó chỉ làm phép đo **TRUNG THỰC**: một lượt nhả xảy ra TRONG khi
+ * một cửa sổ CÙNG PHẠM VI còn mở ⇒ cửa sổ đó `markMeasureFailed()` và thoát **TRƯỚC**
+ * `broker.commit()`/`estimator.recordActual()` — đúng khuôn các nhánh thoát đo-hỏng đã có.
+ * Đổi "sai LẶNG LẼ" thành "hỏng TRUNG THỰC".
+ *
+ * ⚠ DÙNG LẠI `openMeasureWindows`, KHÔNG dựng sổ thứ ba: cùng vòng đời, cùng `closeWindow()`,
+ * cùng bảy nhánh thoát. Một sổ thứ ba là một dân số nữa phải kiểm lại ở mọi vị từ dùng chung —
+ * đúng lớp lỗi đã đẻ ba Critical liên tiếp ở Pha 1.5.
+ *
+ * ⚠ CHỈ CÙNG PHẠM VI, cùng lý lẽ với `overlappedBy`: `self` và `descendants` đọc hai tập PID RỜI
+ * NHAU, nên byte một tiến trình con vừa trả lại KHÔNG THỂ xuất hiện trong hiệu số của `self`.
+ *
+ * ★★ RÀNG BUỘC TOÀN CỤC 6 — BẢN VÁ NÀY ĐỔI **DÂN SỐ** CỦA `measureFailed`, nên MỌI vị từ dùng
+ * chung phải được kiểm lại (lớp lỗi này đã đẻ BA Critical liên tiếp ở Pha 1.5 và tái diễn một lần
+ * trong chính Pha 2A). Đã kiểm TỪNG nơi tiêu thụ, 2026-08-04:
+ *
+ * | Vị từ / ô | Dân số có đổi? | Kết luận |
+ * |---|---|---|
+ * | `isLoadingLease()` = `actualBytes===null && !measureFailed` (`pendingBytes` · "ứng viên số một" của cảnh báo lệch ÂM) | **KHÔNG** | trước bản vá lease này rời vị từ vì `actualBytes` được điền; nay rời vì `measureFailed` — vào/ra y hệt. |
+ * | `holdsUncommittedBytes()` = `actualBytes===null` (lá chắn HOÃN chụp nền · `blockingOwners`) | **CÓ — TĂNG** | và phải tăng: giấy phép này ĐANG giữ byte thật mà đóng góp 0 vào `committedBytes`. Tự lành đúng như nhánh `overlappedBy` của Task 8: `gguf-model`/`onnx-session` rời sổ ở `release()`; `gguf-backend` (không có đường release) rời vị từ nhờ `chotSoBangDuPhong()` — vì thế nhánh mới BẮT BUỘC gọi nó. `BASELINE_BLOCKED_ALARM_MS` (Task 7) là lưới đã dựng sẵn cho đúng ca này. |
+ * | `leaseBytes()` = `actualBytes ?? estimatedBytes` | **CÓ** — nay trả ƯỚC LƯỢNG thay cho một số đo HỤT | đúng hướng: một ước lượng ĐƯỢC GẮN CỜ rẻ hơn một số đo sai ĐƯỢC TIN. Cùng đánh đổi đã cân ở năm nhánh đo-hỏng trước. |
+ * | `splitLedgerByMeasureSource()` | **CÓ** — chuyển từ nhóm `processDelta` sang `estimated` | `vramReconciler.ts:605` đã có nhánh `measureSource === "none"` từ Task 4; ba nhóm vẫn là một PHÂN HOẠCH. |
+ * | `measureFailed` (hàng rào của `commitFallback()`) | **CÓ — TĂNG** | hàng rào đòi `measureFailed === true`; nhánh mới gọi `markMeasureFailed()` TRƯỚC `chotSoBangDuPhong()` ⇒ thoả. Ca 7 của `wiring.releaseWindow.test.ts` canh. |
+ * | `fallbackReason` | **CÓ** — thêm giá trị `"release-during-measure-window"` | vòng đời KÍN, vẫn ĐÚNG 2 writer (`commitFallback` đặt, `commit` xoá). |
+ * | `measurable` (bộ đếm của `vramMeasureLock`) | **KHÔNG** | bản vá KHÔNG chạm khoá; nó CỐ Ý dùng một sổ khác, vì `measurable` đo "có lượt CẤP PHÁT không-đo chạy xen", không đo lượt nhả. |
+ * | `seen` (`ScopeReading`) | **KHÔNG** | không đường nào ở đây chạm đầu dò. |
+ * | `openMeasureWindows` (`overlappedBy`) | **KHÔNG** | trường mới `releasedDuring` nằm CẠNH, cùng vòng đời, cùng `closeWindow()`. |
+ */
 interface OpenMeasureWindow {
   owner: string;
   /** Phạm vi đo của cửa sổ — chỉ cửa sổ CÙNG phạm vi mới làm bẩn được nhau (xem khối trên). */
   scope: VramMeasureScope;
   /** Owner của những cửa sổ đã CHỒNG lên cửa sổ này. Rỗng = phép đo cô lập được. */
   overlappedBy: string[];
+  /**
+   * C-1 — owner của những giấy phép đã gọi `release()` TRONG LÚC cửa sổ này còn mở. Rỗng = không
+   * có byte nào rời thiết bị giữa hai đầu đo. Không rỗng ⇒ `after − beforeUsed` HỤT một lượng
+   * KHÔNG tách được ⇒ `measureFailed`, không commit.
+   */
+  releasedDuring: string[];
 }
 
 const openMeasureWindows = new Map<number, OpenMeasureWindow>();
@@ -212,7 +283,7 @@ let measureWindowSeq = 0;
  */
 function openMeasureWindow(owner: string, scope: VramMeasureScope): number {
   const id = ++measureWindowSeq;
-  const self: OpenMeasureWindow = { owner, scope, overlappedBy: [] };
+  const self: OpenMeasureWindow = { owner, scope, overlappedBy: [], releasedDuring: [] };
   for (const other of openMeasureWindows.values()) {
     if (other.scope !== scope) continue;
     if (!other.overlappedBy.includes(owner)) other.overlappedBy.push(owner);
@@ -220,6 +291,26 @@ function openMeasureWindow(owner: string, scope: VramMeasureScope): number {
   }
   openMeasureWindows.set(id, self);
   return id;
+}
+
+/**
+ * ★★★ C-1 (review TOÀN NHÁNH) — GHI NHẬN một lượt NHẢ vào MỌI cửa sổ CÙNG PHẠM VI đang mở.
+ * KHÔNG BAO GIỜ ném (chỉ thao tác Map trong bộ nhớ). Xem khối docstring `OpenMeasureWindow`.
+ *
+ * ⚠ ĐÁNH DẤU MỘT CHIỀU LÀ ĐÚNG Ở ĐÂY (khác `openMeasureWindow`, nơi đánh dấu HAI chiều là bắt
+ * buộc): một lượt nhả không có "cửa sổ của chính nó" cần được ai làm bẩn — nó chỉ LÀM BẨN người
+ * khác. Chiều ngược lại không tồn tại.
+ *
+ * ⚠ KHÔNG loại trừ cửa sổ của CHÍNH giấy phép đang nhả, và đó là CÓ CHỦ Ý: nếu `release()` chạy
+ * trong lúc `commitMeasured()` của cùng giấy phép còn đang bay (cửa sổ chưa đóng), thì byte của
+ * chính nó vừa rời thiết bị ⇒ hiệu số của nó cũng vô nghĩa. Đây là lối đóng của M-3 (review TOÀN
+ * NHÁNH) bằng CẤU TRÚC thay vì bằng một hàng rào riêng.
+ */
+function noteReleaseDuringOpenWindows(owner: string, scope: VramMeasureScope): void {
+  for (const w of openMeasureWindows.values()) {
+    if (w.scope !== scope) continue;
+    if (!w.releasedDuring.includes(owner)) w.releasedDuring.push(owner);
+  }
 }
 
 /** Đóng cửa sổ. Trả bản ghi để người gọi đọc `overlappedBy`; `null` nếu đã đóng rồi. */
@@ -495,6 +586,22 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
      * `commitMeasured()`/`release()` sẽ giải. `moCua` báo cho `begin` biết đã vào được bên trong
      * (hoặc đã bỏ cuộc vì hết ngân sách — `withMeasureWindow` vẫn CHẠY `fn` ở nhánh đó, nên
      * `begin` KHÔNG BAO GIỜ treo quá `waitBudgetMs`).
+     *
+     * ⚠⚠ I-3 (review TOÀN NHÁNH) — **ĐẢO NGƯỢC ƯU TIÊN CÓ THẬT VÀ ĐANG CHẠY HÔM NAY**, không phải
+     * một rủi ro của Pha 2B. Broker biết ưu tiên (`PRIORITY_RANK`, `vramBroker.ts`); **khoá đo thì
+     * KHÔNG**: lời gọi dưới đây truyền đúng `(fn, budget, owner)` — `opts.priority` dừng lại ở
+     * `reserve()` và ở nhật ký, không đi tiếp vào `withMeasureWindow`, mà hàng chờ của khoá là
+     * FIFO thuần (`vramMeasureLock.ts`). Hệ quả trên đường sản xuất:
+     *   • một lượt kiểm AOI mức `production` (`aiInferenceEngine.ts`, `priority: "production"`)
+     *     trượt cache phiên có thể xếp **SAU** một `gguf-embed-ctx`/`reranker` mức `background`,
+     *     hoặc sau một lượt nạp 30B mức `interactive` (cửa sổ của nó trải qua `loadModel()`
+     *     11–43 s **+** `createContext()` + biên lắng + 2 đầu dò);
+     *   • `VRAM_MEASURE_WAIT_MS` KHÔNG đặt trong `.env` ⇒ ngân sách chờ là **180 s**.
+     * ⚠ **KHÔNG hạ `VRAM_MEASURE_WAIT_MS` để chặn đảo ngược** — `vramMeasureLock.ts` khai rằng
+     * nhánh hết-giờ đang âm thầm gánh vai LƯỚI CHỐNG BẾ TẮC (thứ tự khoá với `withGgufSlot` không
+     * nhất quán giữa các đường gọi). Hạ nó là đổi "mất phép đo" lấy "treo cứng".
+     * ⇒ Lối vá đúng (khoá biết ưu tiên, hoặc `production` có đường không-đo-mà-không-chờ) là NỘI
+     * DUNG PHA 2B và đã nằm trong danh sách điều kiện vào cưỡng chế. Ở đây chỉ ghi cho đúng.
      */
     const scope: VramMeasureScope = opts.kind === "external-process" ? "descendants" : "self";
     let nhaCua: (() => void) | null = null;
@@ -554,10 +661,10 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
      * Đóng cửa sổ đúng MỘT lần, ở BẤT KỲ nhánh thoát nào, và NHẢ KHOÁ nối tiếp ngay trong cùng
      * lời gọi ĐỒNG BỘ. KHÔNG BAO GIỜ ném.
      *
-     * ⚠ Nhả khoá phải nằm ở ĐÂY chứ không phải ở từng nhánh: SÁU nhánh thoát (commit thành công ·
+     * ⚠ Nhả khoá phải nằm ở ĐÂY chứ không phải ở từng nhánh: MỌI nhánh thoát (commit thành công ·
      * `release()` · đầu dò trước null · đầu dò sau null · đầu dò NÉM · và mọi nhánh
-     * `measure_failed`) đều đi qua hàm này. Bỏ sót một nhánh = khoá rò = cả tiến trình chờ 180 s
-     * mỗi lượt nạp cho tới lúc khởi động lại.
+     * `measure_failed`, nay gồm cả `release-during-measure-window` của C-1) đều đi qua hàm này.
+     * Bỏ sót một nhánh = khoá rò = cả tiến trình chờ 180 s mỗi lượt nạp cho tới lúc khởi động lại.
      */
     const closeWindow = (): OpenMeasureWindow | null => {
       if (!windowOpen) return null;
@@ -615,13 +722,21 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
      * ★★★ Pha 2A Task 4 (T5-15) — CHỐT SỔ BẰNG ƯỚC LƯỢNG DỰ PHÒNG. Gọi ở CUỐI **MỌI** nhánh
      * đo-hỏng, ngay sau sự kiện `measure_failed` của nhánh đó.
      *
-     * ⚠⚠ NGƯỜI SAU THÊM NHÁNH ĐO-HỎNG THỨ BẢY: **phải gọi hàm này ở nhánh đó**. Bỏ sót một nhánh
-     * là T5-15 sống lại qua đúng cửa đó, IM LẶNG. SÁU nhánh hiện có, mỗi nhánh có ĐÚNG một ca
+     * ⚠⚠ NGƯỜI SAU THÊM NHÁNH ĐO-HỎNG THỨ TÁM: **phải gọi hàm này ở nhánh đó**. Bỏ sót một nhánh
+     * là T5-15 sống lại qua đúng cửa đó, IM LẶNG. BẢY nhánh hiện có, mỗi nhánh có ĐÚNG một ca
      * canh riêng trong `wiring.backendStuck.test.ts` (I-1 review vòng 1 — trước đó nhánh
      * `measure-window-not-exclusive` KHÔNG có ca nào: xoá lời gọi của nó, cả 209 ca vẫn xanh):
      *   `before-probe-null` (ca 8a) · `after-probe-null` (8b) · `measure-target-absent` (8c) ·
      *   `delta < 0` (8d) · `overlapping-measure-window` (ca 9) · `measure-window-not-exclusive`
-     *   (ca 9b — cửa sổ KHÔNG độc quyền, dựng bằng móc `beforeRead`).
+     *   (ca 9b — cửa sổ KHÔNG độc quyền, dựng bằng móc `beforeRead`) · `release-during-measure-window`
+     *   (ca 8e — C-1 review TOÀN NHÁNH).
+     *
+     * ⚠ VÌ SAO `release-during-measure-window` ĐƯỢC PHÉP CHỐT SỔ BẰNG DỰ PHÒNG (câu hỏi đúng phải
+     * hỏi, vì hàng rào của `fallbackBytes` đòi "khối byte CHẮC CHẮN đang tồn tại"): lượt nhả là
+     * của NGƯỜI KHÁC (hoặc của chính giấy phép này khi nó đã `released` — lúc đó `commitFallback`
+     * tự từ chối vì lease đã rời sổ). Byte của CHÍNH giấy phép này vẫn nằm nguyên trên thiết bị;
+     * thứ hỏng là phép TRỪ, không phải sự tồn tại của khối byte. Điều kiện của `fallbackBytes`
+     * giữ nguyên hiệu lực.
      *
      * ⚠ THỨ TỰ: sau `logVramEvent({event:"measure_failed"})`, không phải trước — đọc nhật ký phải
      * thấy "đo hỏng" RỒI mới thấy "chốt bằng ước lượng", không thể ngược lại.
@@ -696,10 +811,36 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
     };
 
     let released = false;
+    /**
+     * ★★ I-4 / T3-M6 (review TOÀN NHÁNH) — BẤT BIẾN "MỖI TICKET CHỈ ĐO ĐÚNG MỘT LẦN", NAY ĐƯỢC
+     * MÃ CƯỠNG CHẾ thay vì chỉ được chú thích khẳng định.
+     *
+     * `vramWiring.ts` (khối `markProbeFailed` bên dưới) phát biểu "mỗi điểm cấp phát chỉ `await`
+     * nó đúng MỘT lần" như một SỰ THẬT, và toàn bộ lý lẽ gắn `measureFailed` sớm dựa vào đó —
+     * nhưng trước bản vá này chỉ có cờ `released`, không có cờ nào cưỡng chế điều đang được khẳng
+     * định. Lời gọi thứ HAI sẽ chạy lại biên lắng + đầu đo SAU rồi `commit(after₂ − beforeUsed₁)`
+     * — một hiệu số tính từ đầu đo TRƯỚC đã cũ hàng giây tới hàng phút, tức **một con số bịa** —
+     * rồi `recordActual()` nó vào nấc `learned`. Cùng gốc với C-1: sai mà tự khai là thành công.
+     *
+     * Đặt cờ NGAY ĐẦU (trước mọi `await`) chứ không ở cuối: hai lời gọi ĐỒNG THỜI cũng phải bị
+     * chặn, không chỉ hai lời gọi tuần tự. Lời gọi thứ hai là **no-op có tiếng** — không ném, vì
+     * `commitMeasured()` đã hứa "KHÔNG BAO GIỜ ném" và telemetry không được làm hỏng đường cấp
+     * phát; nhưng cũng không im, vì im lặng chính là thứ đã để lỗ này sống.
+     */
+    let measured = false;
     return {
       async commitMeasured() {
         try {
           if (released) return;
+          if (measured) {
+            console.warn(
+              `[vram] "${opts.owner}" gọi commitMeasured() LẦN THỨ HAI trên cùng một giấy phép — ` +
+                `BỎ QUA. Đầu đo TRƯỚC đã cũ, mọi hiệu số tính từ nó là số bịa; đo lại đúng cách ` +
+                `là mở một giấy phép MỚI quanh lượt cấp phát mới.`,
+            );
+            return;
+          }
+          measured = true;
           if (beforeUsed === null) {
             closeWindow();
             markProbeFailed("before-probe-null", {});
@@ -839,6 +980,61 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
             return;
           }
 
+          /**
+           * ★★★ C-1 (review TOÀN NHÁNH) — "CỬA THỨ TÁM": CÓ LƯỢT **NHẢ** XEN GIỮA HAI ĐẦU ĐO.
+           * Lý do đầy đủ + đường đi + số đo 3/3 ở khối docstring `OpenMeasureWindow` đầu file.
+           *
+           * ⚠ ĐẶT **TRƯỚC** nhánh `actual < 0` — đây là điểm cốt lõi, không phải sở thích thứ tự:
+           * nhánh delta-âm chỉ **SUY RA** rằng "có lượt nhả/evict xen giữa" từ dấu của hiệu số, và
+           * vì thế nó chỉ phủ được NỬA lớp (nhả nhiều hơn cấp). Nhánh này **BIẾT** lượt nhả đã xảy
+           * ra và biết ĐÍCH DANH ai nhả, nên nó phủ CẢ nửa còn lại — biến thể **một phần**
+           * (nhả ÍT hơn cấp ⇒ delta dương-nhưng-hụt) mà trước bản vá này đi thẳng vào `commit()`
+           * + `recordActual()` và tự khai là đo được. Để delta-âm bắt trước sẽ ghi vào nhật ký một
+           * chẩn đoán NGHÈO HƠN cho đúng cùng một nguyên nhân gốc.
+           *
+           * ⚠ ĐẶT **SAU** `overlappedBy`/`!measurable`: hai nhánh đó nói về lượt CẤP PHÁT của
+           * người khác chồng lên cửa sổ này (hiệu số bị CỘNG THÊM); nhánh này nói về lượt NHẢ
+           * (hiệu số bị TRỪ BỚT). Khi cả hai cùng đúng, mất-cô-lập là điều kiện rộng hơn và đã có
+           * câu chẩn đoán riêng — giữ nguyên thứ tự đã lập ở Task 3/Task 8, không đảo.
+           *
+           * ⚠ KHÔNG CỘNG BÙ phần vừa nhả, dù `releasedDuring` có tên chủ nhân: sổ biết AI nhả,
+           * KHÔNG biết BAO NHIÊU byte đã thật sự rời thiết bị tại thời điểm nào (`leaseBytes()`
+           * của họ có thể chính là một ước lượng chưa xác minh, và `dispose()` của llama.cpp
+           * không trả byte tức thời). Mọi phép cộng bù ở đây là bịa — cùng lý lẽ với "KHÔNG chia
+           * tỉ lệ" của nhánh `overlappedBy`.
+           */
+          if (win && win.releasedDuring.length > 0) {
+            broker.markMeasureFailed(lease);
+            logVramEvent({
+              event: "measure_failed",
+              owner: opts.owner,
+              leaseKind: opts.kind,
+              priority: opts.priority,
+              estimatedBytes: est.bytes,
+              estimateSource: est.source,
+              detail: {
+                reason: "release-during-measure-window",
+                measureSource: "none" satisfies VramMeasureSource,
+                measureScope: scope,
+                measurable,
+                releasedDuring: win.releasedDuring,
+                discardedDeltaBytes: actual,
+                beforeUsedBytes: beforeUsed,
+                afterUsedBytes: after,
+                note:
+                  "một giấy phép CÙNG PHẠM VI đã gọi release() TRONG cửa sổ đo này ⇒ hiệu số " +
+                  "`after − before` bị TRỪ ĐI phần vừa rời thiết bị, tức HỤT một lượng không tách " +
+                  "được. Khoá nối tiếp CHỈ bao lượt CẤP PHÁT, KHÔNG bao lượt NHẢ (ensureCapacity() " +
+                  "chạy TRƯỚC beginVram(); unloadGgufModel() gọi được qua HTTP bất cứ lúc nào), nên " +
+                  "`measurable` vẫn true và `overlappedBy` vẫn rỗng — trước bản vá C-1 con số HỤT " +
+                  "này được commit + recordActual() và khai là ĐO ĐƯỢC. Giấy phép GIỮ ƯỚC LƯỢNG; " +
+                  "KHÔNG cộng bù phần đã nhả (sổ biết AI nhả, không biết BAO NHIÊU byte đã rời).",
+              },
+            });
+            chotSoBangDuPhong("release-during-measure-window");
+            return;
+          }
+
           // ⚠ Delta ÂM = phép đo bị nhiễu (một hộ khác vừa nhả chỗ giữa hai lượt đo, hoặc
           // đường OOM-retry vừa `evictLRU()` xong). Ghi số âm vào sổ còn tệ hơn không ghi.
           // Delta BẰNG 0 thì NGƯỢC LẠI: đó là số liệu THẬT và phải được ghi — hộ tiêu thụ
@@ -854,9 +1050,16 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
           // ước lượng theo kích thước FILE VĨNH VIỄN**. Với `reranker:` file 606 MiB / thật
           // 14-18 MiB ⇒ sổ thừa ~590 MiB ⇒ lệch ÂM vượt ngưỡng 512 **mỗi 60 giây, mãi mãi** —
           // đúng nhánh mà Task 5 đã phải đổi `> 0` thành `>= 0` để tránh, sống lại qua cửa `< 0`.
-          // Đường sinh delta âm có THẬT và dài NHIỀU GIÂY: `aiGgufEngine.ts:771`
-          // `while (await evictLRU())` chạy GIỮA `beforeUsed` (`:737`) và `commitMeasured()`
-          // (`:802`) — đuổi 17 GB rồi nạp 4 GB.
+          // Đường sinh delta âm có THẬT và dài NHIỀU GIÂY: `aiGgufEngine.ts:885`
+          // `while (await evictLRU())` chạy GIỮA `beforeUsed` (mở ở `:851`) và `commitMeasured()`
+          // (`:916`) — đuổi 17 GB rồi nạp 4 GB. (M-2 review TOÀN NHÁNH — ba số dòng cũ `:771/:737/
+          // :802` đã mục; kiểm lại bằng máy 2026-08-04.)
+          //
+          // ⚠⚠ C-1 (review TOÀN NHÁNH) — NHÁNH NÀY CHỈ PHỦ **NỬA** LỚP LỖI "có lượt nhả xen giữa",
+          // và phải nói ra: nó bắt được ca nhả NHIỀU HƠN cấp (delta đổi dấu). Ca nhả **ÍT HƠN**
+          // cấp cho delta DƯƠNG-nhưng-HỤT và đi lọt hoàn toàn qua đây — nửa đó nay do nhánh
+          // `release-during-measure-window` NGAY TRÊN bắt, bằng SỰ KIỆN nhả chứ không bằng dấu của
+          // hiệu số. Hai nhánh là MỘT lưới; gỡ nhánh trên thì nửa "hụt im lặng" sống lại nguyên vẹn.
           //
           // ⚠ VÌ SAO KHÔNG CHỌN "THỬ LẠI Ở NHỊP ĐỐI CHIẾU" (phương án A): `beforeUsed` được chụp
           // TRƯỚC lượt cấp phát. Một lượt thử lại ở thời điểm t₂ chỉ tính được
@@ -951,7 +1154,18 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
           // không phải suy ra theo ngày commit: đó là thứ duy nhất giữ cho Đ4 kiểm được bằng dữ
           // liệu (types.ts `VramMeasureSource`).
           broker.commit(lease, actual, "process-delta");
-          estimator.recordActual(opts.owner, actual);
+          /**
+           * ⚠ M-3 (review TOÀN NHÁNH) — HÀNG RÀO `released` LÀ CỦA `recordActual()`, KHÔNG PHẢI
+           * của `commit()`. `broker.commit()` tự kiểm `live.released` và là **no-op** trên một
+           * giấy phép đã rời sổ (`vramBroker.ts`); `estimator.recordActual()` **không kiểm gì**.
+           * Không có dòng này, một lượt `release()` chen vào giữa `commitMeasured()` đang bay để
+           * lại sổ ĐÚNG (không ghi gì) nhưng nấc `learned` VẪN bị đóng đinh bằng con số của một
+           * cửa sổ đã hỏng — và `learned` sống tới hết đời tiến trình, còn sổ thì không.
+           * ⚠ Đây là lưới THỨ HAI, không phải lưới duy nhất: ca đó thường đã bị nhánh
+           * `release-during-measure-window` (C-1) bắt trước, vì `release()` ghi vào cửa sổ TRƯỚC
+           * khi đóng nó. Giữ cả hai — hai lưới cho một lớp lỗi "tự khai là thành công" là đúng giá.
+           */
+          if (!released) estimator.recordActual(opts.owner, actual);
           logVramEvent({
             event: "commit",
             owner: opts.owner,
@@ -984,6 +1198,23 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
         try {
           if (released) return;
           released = true;
+          /**
+           * ★★★ C-1 (review TOÀN NHÁNH) — KHAI BÁO LƯỢT NHẢ CHO MỌI CỬA SỔ ĐANG MỞ. Lý do đầy đủ
+           * ở khối docstring `OpenMeasureWindow` đầu file.
+           *
+           * ⚠ PHẢI ĐỨNG **TRƯỚC** `closeWindow()`, và đó là điều kiện chứ không phải phong cách:
+           *   • đứng trước ⇒ cửa sổ của CHÍNH giấy phép này (nếu `commitMeasured()` còn đang bay)
+           *     cũng được đánh dấu — byte của nó vừa rời thiết bị nên hiệu số của nó cũng hỏng
+           *     (đây là lối đóng của M-3 bằng cấu trúc);
+           *   • đứng sau ⇒ đường "commit xong RỒI mới release" (đường THƯỜNG) không đổi gì cả, vì
+           *     cửa sổ đã đóng từ `commitMeasured()`. Nghĩa là dòng này KHÔNG gắn cờ oan cho lượt
+           *     nhả bình thường; nó chỉ nổ khi có người KHÁC đang đo.
+           *
+           * ⚠ KHÔNG lấy khoá, KHÔNG chờ, KHÔNG chặn: điều lệ Pha 2A cấm đổi hành vi nhả. Đây là
+           * một lời ghi chú ĐỒNG BỘ vào Map trong bộ nhớ — chi phí O(số cửa sổ đang mở), thực tế 0
+           * hoặc 1.
+           */
+          noteReleaseDuringOpenWindows(opts.owner, scope);
           // ★★ Task 8 (C-1) — LỐI ĐÓNG THỨ HAI, bắt buộc. BA điểm gọi trong repo CỐ Ý không bao
           // giờ gọi `commitMeasured()` (`kbSyncScheduler` ×2, `localSidecarTrainer`,
           // `aiLlmFinetuneSidecar` — xem docstring `beginTrainerVram()`), và MỌI đường lỗi của

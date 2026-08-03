@@ -2,6 +2,21 @@ const DEFAULT_WAIT_BUDGET_MS = 180_000;
 const DEFAULT_OWNER_LABEL = "(khong-nhan)";
 
 let dangGiu = false;
+/**
+ * ⚠⚠ I-3 (review TOÀN NHÁNH) — HÀNG CHỜ NÀY LÀ **FIFO THUẦN, KHÔNG BIẾT ƯU TIÊN**, và điều đó có
+ * hậu quả ĐANG CHẠY ở Pha 2A chứ không phải ở tương lai.
+ *
+ * `VramPriority` (`production` > `interactive` > `background`) tồn tại và được `vramBroker`
+ * (`PRIORITY_RANK`) dùng thật, nhưng `withMeasureWindow` **không nhận tham số ưu tiên** và
+ * `vramWiring` **không truyền** — nên một lượt kiểm AOI mức `production` trượt cache phiên xếp
+ * hàng SAU một việc nền (`gguf-embed-ctx`, `reranker`) hoặc sau một lượt nạp 30B (11–43 s + tạo
+ * context + biên lắng + hai đầu dò), với ngân sách chờ mặc định **180 s**.
+ *
+ * ⚠ KHÔNG "vá" bằng cách hạ `VRAM_MEASURE_WAIT_MS`: xem docstring `withMeasureWindow` — nhánh
+ * hết-giờ đang gánh vai lưới chống bế tắc. Lối vá đúng là cho hàng chờ này biết ưu tiên (chèn
+ * theo rank thay vì `push`), HOẶC cho `production` một đường không-đo-mà-không-chờ. Cả hai đều
+ * ĐỔI THỨ TỰ CHẠY ⇒ thuộc Pha 2B, không thuộc điều lệ Pha 2A ("chỉ QUAN SÁT").
+ */
 const hangCho: Array<() => void> = [];
 
 // review vong 1 Critical (C-1) — dem cac luot BO CUOC dang chay o ngoai khoa, de
@@ -53,6 +68,28 @@ function giuKhoa(waitBudgetMs: number, ownerLabel: string): Promise<boolean> {
       );
       resolve(false);           // het ngan sach: chay tiep, KHONG do
     }, waitBudgetMs);
+    /**
+     * ★★ T2-M4 / M-7 (review TOAN NHANH) — `.unref()`, VA DAY LA LY DO PHAI CO NO.
+     *
+     * Task 6 da phan tich dung lop cau hoi nay cho hen gio bien lang (`vramProcessProbe.ts`,
+     * `awaitCounterSettle`) roi GIU `.unref()` cho mot hen gio **250 ms**, voi ly do: *"mot hen gio
+     * co `ref` giu tien trinh song them o MOI luot cap phat dang bay… do la ranh gioi telemetry
+     * CHI QUAN SAT ma module nay tu cam minh vuot"*. Hen gio NAY giu tien trinh song toi **180
+     * giay** — dai hon **720 lan** — nen neu nguyen tac do dung o 250 ms thi no dung gap boi o day.
+     * Hai quyet dinh doi lap ve CUNG mot nguyen tac, trong CUNG mot pha, la thu khong duoc de lai.
+     *
+     * ⚠ CAI MAT, noi du de nguoi sau khong phai tu phat hien (cung khuon voi M-4 cua Task 6): neu
+     * hen gio nay la thu DUY NHAT con giu vong lap su kien, tien trinh thoat va loi hua **khong
+     * bao gio giai** ⇒ `giuKhoa()` khong tra, `beginVramAllocation()` dung giua chung. Moi thu mat
+     * theo deu la trang thai TRONG BO NHO cua mot tien trinh dang chet (khoa, so cua so, giay phep
+     * do dang) — chung bien mat cung no. Ve doi lap thi khong vo hai: telemetry gianh quyen quyet
+     * dinh luc nao tien trinh duoc phep thoat, toi 3 phut moi luot cho.
+     *
+     * ⚠ `.unref?.()` qua ep kieu vi `setTimeout` trong `lib.dom` tra `number` (khong co `unref`),
+     * con o Node la `Timeout` (co). Giu nguyen khuon cua `awaitCounterSettle` de hai cho doc giong
+     * nhau.
+     */
+    (hen as unknown as { unref?: () => void }).unref?.();
     const danhDau = () => {
       // review vong 2 — nhanh nay BAT KHA DAT THEO CAU TRUC chung nao `splice` o
       // tren con nam trong callback hen gio: `xong` chi chuyen false->true o HAI
@@ -109,6 +146,15 @@ function giuKhoa(waitBudgetMs: number, ownerLabel: string): Promise<boolean> {
  * CO CHU Y, khong chi la "hoan co day". HA waitBudgetMs xuong 0 hoac BO nhanh
  * het-gio se doi be tac tu "mat phep do" (an toan) thanh "treo cung vinh vien"
  * (khong an toan). Dung tu y thu tieu nhanh nay.
+ *
+ * ⚠⚠ C-1 (review TOAN NHANH) — PHAM VI CUA KHOA NAY: no noi tiep hoa cac luot **CAP PHAT** di qua
+ * `beginVramAllocation()`. No **KHONG** noi tiep hoa cac luot **NHA**: `ticket.release()` khong lay
+ * khoa, va `measurable` o duoi chi dem cac luot BO CUOC — no KHONG dem luot nha. Nghia la mot luot
+ * nha xen giua hai dau do van cho `measurable === true` trong khi hieu so da bi TRU BOT. Lop lo do
+ * duoc bat o TANG TREN (`vramWiring.ts`, nhanh `release-during-measure-window`) bang mot so rieng
+ * (`OpenMeasureWindow.releasedDuring`), KHONG bang bo dem cua khoa nay. ⚠ Dung tuong `measurable:
+ * true` nghia la "khong ai dong vao thiet bi trong cua so nay" — no chi nghia la "khong luot CAP
+ * PHAT khong-do nao chay xen".
  *
  * Het ngan sach cho => VAN CHAY, chi mat phep do (`measurable: false`), va ghi
  * MOT dong canh bao neu ro CA nguoi bo cuoc lan nguoi dang giu (I-2, xem

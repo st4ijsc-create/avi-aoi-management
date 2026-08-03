@@ -56,10 +56,32 @@ export function parseProcessCounters(rawJson: string, roots: readonly number[], 
     if (!wanted.has(pid)) continue;
     const bytes = Math.max(0, Math.round(c.v));
     const luid = `${m[2].toLowerCase()}_${m[3].toLowerCase()}`;
+    // ⚠⚠ M-4 (review TOÀN NHÁNH) — **`byPid` CỘNG GỘP MỌI LUID**, tức mọi ADAPTER. `byLuid` được
+    // tính đầy đủ ngay dưới nhưng **KHÔNG NƠI NÀO ĐỌC** (`vramWiring.readScopeBytes()` chỉ dùng
+    // `byPid`/`totalBytes`). Trên máy MỘT adapter điều đó vô hại và đó là máy phát triển hôm nay
+    // (i7-12700**KF** — không iGPU — + một RTX 5090). Trên máy HAI GPU (hoặc CPU có iGPU, hoặc một
+    // card thứ hai), hiệu số `after − before` TRỘN hai thiết bị mà `measureFailed` vẫn `false`:
+    // đúng lớp "sai LẶNG LẼ" của C-1, chỉ khác trục. Và `vramBroker` đã bắt đúng lớp lỗi "hằng số
+    // của MỘT máy" một lần rồi.
+    // ⇒ **ĐIỀU KIỆN VÀO CƯỠNG CHẾ PHA 2B** (giữ hoãn cho merge, chi phí vá gần bằng 0 vì số đã
+    // được tính sẵn): hoặc `readScopeBytes()` đọc `byLuid` của ĐÚNG adapter mà `vramProbe` đang
+    // đo, hoặc đầu dò TỪ CHỐI đo (trả `null`) khi thấy > 1 LUID. Không được commit một hiệu số
+    // trộn thiết bị rồi khai là `process-delta`.
     byPid.set(pid, (byPid.get(pid) ?? 0) + bytes);
     byLuid.set(luid, (byLuid.get(luid) ?? 0) + bytes);
     totalBytes += bytes;
   }
+  /**
+   * ⚠ M-5 (review TOÀN NHÁNH) — `sampledAtMs` LÀ **TRƯỜNG CHẾT**, và phải nói ra thay vì để người
+   * sau tưởng nó là một hàng rào độ tươi. Nó là `Date.now()` **LÚC PARSE** (không phải
+   * `$_.Timestamp` của mẫu PDH), và **không nơi nào trong repo đọc nó**.
+   * ⇒ GIỮ HOÃN cho merge (nó không sai, nó chỉ chưa có việc), nhưng đây là **ĐIỀU KIỆN VÀO PHA
+   * 2B**: hoặc nối nó vào một hàng rào "mẫu ÔI" thật (đầu dò treo/xếp hàng, `powershell.exe` chậm
+   * ⇒ kết quả về muộn — lớp đó CÓ THẬT và đáng bắt), hoặc XOÁ nó. Một ô dữ liệu không ai đọc mà
+   * mang cái tên nghe như một bảo đảm là bẫy.
+   * ⚠ ĐỪNG gọi việc đó là "vá I-5": dấu thời gian đo tuổi của **MẪU**, không đo tuổi của **GIÁ
+   * TRỊ** — xem cảnh báo dài ở docstring `ScopeReading` trong `vramWiring.ts`.
+   */
   return { totalBytes, byPid, byLuid, sampledAtMs: nowMs };
 }
 
