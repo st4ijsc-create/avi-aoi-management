@@ -38,10 +38,25 @@
          control so the absence assertions cannot pass vacuously.
 
          WHAT THIS DOES AND DOES NOT BUY, stated so nobody over-reads it: a build that references this
-         project ships the serial dependency, and one that does not, does not. D-7 owns that choice when it
-         wires a connector factory. Today NOTHING in src/ references this project — only the test
-         assembly does — so every shipping output is serial-free, which is exactly what the four
-         SerialDependencyScopingTests assert. -->
+         project ships the serial dependency, and one that does not, does not.
+
+         🔴 TASK D-7c ANSWERED THAT CHOICE, and the answer inverts the paragraph that used to end this
+         comment. D-3 recorded "today NOTHING in src/ references this project, so every shipping output is
+         serial-free". That is no longer true and must not be left standing: on the owner's ruling of
+         2026-08-03 all three hosts — St4i.EngineApi, St4i.EdgeService and St4iMachineSimulator — now
+         ProjectReference this assembly, and all three therefore ship System.IO.Ports.dll. The three
+         deployment assertions in SerialDependencyScopingTests were INVERTED to match (they now assert the
+         dependency IS present) rather than deleted, so the capability cannot vanish silently in a later
+         refactor.
+
+         WHAT DID NOT CHANGE, and is the whole remaining point of this project: the PackageReference stays
+         HERE and only here. St4i.EdgeCore — the RTU framing layer, the arbitration, the quarantine and the
+         gateway transport — still compiles with no System.IO.Ports in sight, and
+         SerialDependencyScopingTests.TheRtuFramingLayersOwnAssembly_ReferencesNeitherSystemIoPorts_NorTheSerialAssembly
+         is untouched and still green. That assertion is what stops someone "simplifying" the layout by
+         moving SerialPortBusLink back beside the seam it implements, which would push the package into every
+         consumer of EdgeCore rather than into the three deliberate ones. -->
+
     <PackageReference Include="System.IO.Ports" Version="10.0.0" />
   </ItemGroup>
 </Project>

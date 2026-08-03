@@ -18,6 +18,24 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\St4i.EdgeCore\St4i.EdgeCore.csproj" />
+    <!-- 🔴 Task D-7c (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-7c-brief.md) — the reference
+         that makes a DIRECTLY-ATTACHED RS-485 line reachable, and the headline capability of Đợt D.
+
+         WHAT IT BUYS HERE, specifically: Config/ConnectorsJsonRegistration.RegisterRtuBus switches on the
+         `transport` token in a connectors.json entry and, for "rtu-serial", builds its (busKey, openLink) pair
+         from ModbusRtuSerialBusSettings/SerialPortBusLink in this assembly. This is the ONLY host in the
+         product that hosts connectors at all (ConnectorRegistry/FleetHost are St4i.EngineApi types), so this
+         is the reference that turns a COM port into a configurable bus.
+
+         WHAT IT COSTS, stated because the constraint it relaxes was deliberate: System.IO.Ports.dll now lands
+         in this project's build output (flat plus runtimes/win|unix/lib/net10.0), including for a site that
+         only ever talks to a TCP serial gateway. That cost was weighed and accepted by the owner on
+         2026-08-03. The PackageReference itself has NOT moved and must not: it stays on
+         St4i.EdgeCore.Serial alone, which is what keeps St4i.EdgeCore — the RTU framing layer and the gateway
+         transport — compiling without System.IO.Ports at all. SerialDependencyScopingTests pins both halves:
+         three now-POSITIVE deployment assertions ("this deployment DOES carry it") and one unchanged
+         compile-time assertion that St4i.EdgeCore still references neither the package nor this assembly. -->
+    <ProjectReference Include="..\St4i.EdgeCore.Serial\St4i.EdgeCore.Serial.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Same packaging convention as St4iMachineSimulator.csproj (Task 22): ships the default

@@ -248,11 +248,7 @@ public sealed class SerialPortBusLink : IModbusBusLink
                                       or ArgumentException or IOException)
         {
             port.Dispose();
-            throw new SerialPortUnavailableException(
-                $"Could not open the Modbus RTU serial line {settings.Describe()}: {ex.Message} " +
-                "The port may not be present (an unplugged USB RS-485 adapter), may be held by another " +
-                "application, or the name may not be a serial port on this machine.",
-                ex);
+            throw new SerialPortUnavailableException(DescribeOpenFailure(settings, ex), ex);
         }
         catch
         {
@@ -261,6 +257,94 @@ public sealed class SerialPortBusLink : IModbusBusLink
         }
 
         return Task.FromResult<IModbusBusLink>(new SerialPortBusLink(new SystemSerialPortHandle(port), settings));
+    }
+
+    /// <summary>
+    /// 🔴 Task D-7c — <b>what an operator reads when a COM port will not open, and the ONE thing this method
+    /// exists to guarantee: that the sentence they read is true of the cause that actually happened.</b>
+    ///
+    /// <para>D-3's version appended a single sentence naming all three causes at once. Every reader of it acts
+    /// on the wrong two thirds — and the three remedies are not merely different, they send a person to three
+    /// different places (the cabinet, the task list, the configuration file). This is D-5's I-1 class exactly:
+    /// one operator-facing string covering several producing paths, true of only one. It is fixed here, at the
+    /// site where the fact is known, by branching on the BCL exception the open actually threw — a literal
+    /// chosen where the fact is known, not a value derived from something that can coincide across the states
+    /// the message distinguishes (D-7a's review draws that line explicitly).</para>
+    ///
+    /// <para><b>A pure function of its two arguments, and that is what makes it testable at all.</b> Only the
+    /// ABSENT arm is reachable end-to-end on a machine with no RS-485 hardware (name a port that is not there
+    /// and open it). The HELD arm needs a real port plus a second holder, and the NOT-A-PORT arm needs a name
+    /// the driver stack rejects; both were measured by D-3's standalone probe and neither can be a test inside
+    /// the five suites without making a green number mean different things on different machines (blueprint
+    /// §8.1, D-3's own correction). Extracting the decision from the I/O means all three arms are asserted
+    /// deterministically from their own exception, and the wiring is asserted once through the absent
+    /// arm.</para>
+    ///
+    /// <para><b>🔴 The held arm names TWO holders, and the second is the one this product can create.</b>
+    /// <see cref="CreateBusKey"/> folds every line parameter into the key, so two connector entries naming one
+    /// port with different framing are TWO buses and TWO opens of one port — the second of which lands here.
+    /// Telling that operator to go looking for another application would send them hunting a process that does
+    /// not exist, while their own configuration file holds the answer. Both are named, in the order they are
+    /// worth checking.</para>
+    ///
+    /// <para><b>The absent arm enumerates the ports this machine does have.</b> That is the operator's very next
+    /// question, and answering it distinguishes "the adapter is unplugged" from "COM3 versus COM13" without a
+    /// second round trip. It is done HERE and not at parse time on purpose: this is already a failure path, so
+    /// asking the operating system costs nothing that matters, whereas asking on the registration path would
+    /// make a configuration file's validity depend on which machine read it — see
+    /// <see cref="ModbusRtuSerialBusSettings"/> for the full statement of that split.</para>
+    /// </summary>
+    internal static string DescribeOpenFailure(SerialLineSettings settings, Exception ex)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(ex);
+
+        var prefix = $"Could not open the Modbus RTU serial line {settings.Describe()}: {ex.Message}";
+
+        return ex switch
+        {
+            FileNotFoundException =>
+                $"{prefix} The port {settings.PortName} is NOT PRESENT on this machine — most often an RS-485 " +
+                "adapter that is unplugged, powered down, or enumerated under a different number. " +
+                $"Serial ports present right now: {DescribePresentPorts()}. This is not a configuration " +
+                "refusal: the bus keeps retrying on the driver's own poll cadence, so plugging the adapter " +
+                "back in recovers it with no restart.",
+
+            UnauthorizedAccessException =>
+                $"{prefix} The port {settings.PortName} EXISTS but is already held — a serial port opens " +
+                "EXCLUSIVELY, so exactly one holder can have it. Two things produce this: another application " +
+                "on this machine (a terminal program, a vendor tool, an earlier instance of this service), or " +
+                "THIS process opening the same port twice because two connector entries name it with " +
+                "DIFFERENT line parameters — those are two buses by design, and the second one cannot open. " +
+                "Check the running processes first, then check that every connector on this segment declares " +
+                "the same baudRate/parity/dataBits/stopBits.",
+
+            ArgumentException =>
+                $"{prefix} The name '{settings.PortName}' does NOT resolve to a serial port on this machine — " +
+                "this is a naming problem, not a hardware one. Serial ports present right now: " +
+                $"{DescribePresentPorts()}.",
+
+            _ =>
+                $"{prefix} The port {settings.PortName} failed to open for an I/O reason the operating system " +
+                "did not attribute further; the message above is the whole of what it reported.",
+        };
+    }
+
+    /// <summary>The ports this machine reports right now, rendered for a human. Deliberately reads the machine
+    /// rather than any cached list: an RS-485 adapter is hot-pluggable and a stale answer is worse than none.
+    /// Never throws — a diagnostic that fails while diagnosing a failure replaces a useful message with a
+    /// useless one.</summary>
+    private static string DescribePresentPorts()
+    {
+        try
+        {
+            var names = SerialPort.GetPortNames();
+            return names.Length == 0 ? "(none)" : string.Join(", ", names.OrderBy(n => n, StringComparer.Ordinal));
+        }
+        catch (Exception ex)
+        {
+            return $"(could not be enumerated: {ex.GetType().Name})";
+        }
     }
 
     /// <summary>

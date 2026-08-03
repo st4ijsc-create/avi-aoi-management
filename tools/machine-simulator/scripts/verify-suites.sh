@@ -640,7 +640,62 @@ EXPECT_CONFORMANCE=22
 # Review M-6 STRENGTHENS an existing assertion without adding a test: UnitZero_IsNotRefusedHere_... now proves
 # "still legal for TCP" through ModbusConnectorFactory itself rather than at the parse layer, so the pair is
 # RTU-refuses / TCP-accepts at the SAME boundary. Same test, more teeth, no count change.
-EXPECT_EDGECORE=1012
+#
+# 🔴 TASK D-7c (direct RS-485: a COM port declarable in connectors.json, on all three hosts) raises this
+# 1012 -> 1053 (+41). One new file; nothing is rewritten, split or deleted. EXPECT_ENGINEAPI moves too (+7)
+# because the transport SWITCH lives in the composition root and can only be driven there — see its own note
+# below. EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_EDGESERVICE are deliberately unchanged: D-7c adds
+# no driver, no conformance check and nothing St4i.EdgeService executes, so a moved total in any of those
+# would mean this task reached somewhere it had no business reaching. EXPECT_CONFORMANCE in particular stays
+# 22 — the serial transport sits on the SAME IModbusBusLink seam D-2 built, so the RTU conformance rig is
+# untouched.
+#
+#   +27  ModbusRtuSerialBusSettingsTests (new) — the SERIAL half of the connectors.json schema, which cannot
+#          live beside the gateway half: ModbusRtuBusSettings is in St4i.EdgeCore and SerialLineSettings is in
+#          St4i.EdgeCore.Serial, which references it, so a third arm in that parser would be a CIRCULAR
+#          reference. 8 facts/theories (1 + 6 + 14 + 2 + 1 + 1 + 1 + 1 rows). The three that carry it:
+#          (a) the LITERAL bus key "modbus-rtu-serial:COM7:19200:8:E:1" from a document naming only its port —
+#              a literal because comparing against CreateBusKey(new SerialLineSettings("COM7")) would pass for
+#              a parser that read no defaults at all, both sides coming from the same constructor. It is red
+#              for SerialPort's own 9600-8-N-1 defaults, for any dropped line parameter, and for an
+#              un-normalised port name, all at once;
+#          (b) a port ABSENT from this machine parses cleanly and fails only when OPENED — the decision the
+#              brief asks for, asserted rather than argued (a config file is written for a SITE; an unplugged
+#              USB adapter must recover without a restart; TryCreate performs no I/O);
+#          (c) the same document fanned out by ModbusMultidropMap yields N devices whose stored MapJson
+#              contains NO port name — which is what makes D-7a's projection decision (host/SummaryColumns,
+#              never map_json) structurally true rather than filtered, with a positive control so the three
+#              DoesNotContain assertions are not satisfied by an empty string.
+#   +12  ModbusRtuBusSettingsTests (22 -> 34) — the gateway half, where the schema-level members live.
+#          +11  ReadTransport (new member) as an 11-row [Theory]: the routing peek the composition root
+#               switches on. It answers with the operator's OWN SPELLING (never normalised — the
+#               unknown-transport message has to quote what they wrote) and never throws for a document too
+#               malformed to read, which is what keeps a bad map reported by ONE path instead of two.
+#          + 1  'portName' refused on a gateway bus. The SWEEP half of the rule ModbusRtuSerialBusSettings
+#               applies to 'host'/'port' on a serial bus: a well-formed key that is silently IGNORED makes the
+#               file on disk and the configuration actually running two different things. Both directions ship
+#               in one commit, because fixing one is the "an instance, not the class" failure §8.1 records.
+#          + 0  TheSerialTransport_IsRefusedWithTheReasonAndTheAlternative_… RENAMED and re-pointed to
+#               …_IsNoLongerRefusedAsUnavailable_ButAsTheWrongParser. D-7a's message said the serial transport
+#               "is not available in this build"; that became FALSE with the ProjectReference, and it was
+#               actionable-false — an operator who believed it would buy and cable a gateway they do not need.
+#               The test now asserts against that sentence by content.
+#   + 2  SerialPortBusLinkTests (+2, and one existing test strengthened) — 🔴 THE DEFECT D-3 RECORDED AND DID
+#          NOT FIX. Its open-failure wrapper appended ONE sentence naming all three causes at once ("may not be
+#          present …, may be held by another application, or the name may not be a serial port"), which is true
+#          of exactly one producing path at a time and sends a reader to three different places. D-5's I-1
+#          class, the fourth sighting in this batch. DescribeOpenFailure now branches on the BCL exception the
+#          open actually threw, and the assertions are a MATRIX (each arm carries its own diagnosis AND not the
+#          other two) — three positive "contains" checks would all have passed on the old shotgun message.
+#          Driven from synthesised exceptions because reaching the HELD arm needs a real port plus a second
+#          holder; the existing absent-port test is what proves the function is the one OpenAsync calls.
+#   + 0  SerialDependencyScopingTests (7 -> 7) — the three deployment assertions INVERTED into positive ones
+#          (the owner's ruling of 2026-08-03: direct RS-485 in all three hosts), NOT deleted, because a deleted
+#          assertion lets the capability vanish in a later "remove the unused reference" refactor. The FOURTH,
+#          TheRtuFramingLayersOwnAssembly_ReferencesNeitherSystemIoPorts_NorTheSerialAssembly, is UNTOUCHED and
+#          still green — it is what forces D-7c's design, since the circular-reference-free alternative would
+#          have required inverting it.
+EXPECT_EDGECORE=1053
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
@@ -893,7 +948,43 @@ EXPECT_EDGESERVICE=28
 #          restating the production predicate; the real one is driven in ConnectorsJsonRegistrationTests. The
 #          three pre-existing ResolveEntries tests are untouched and still pass with no resolver supplied,
 #          which is the compatibility half.
-EXPECT_ENGINEAPI=1219
+#
+# 🔴 TASK D-7c raises this 1219 -> 1226 (+7), all in ConnectorsJsonRegistrationTests (13 -> 20). This suite
+# moves because the TRANSPORT SWITCH lives here and can live nowhere else: ModbusRtuBusSettings is in
+# St4i.EdgeCore, SerialPortBusLink is in St4i.EdgeCore.Serial which references it, so the choice between them
+# belongs to the composition root. No other EngineApi file gains or loses a test.
+#
+#   + 1  ASerialRtuBusEntry_FansOutToNInstances_AllSharingOneSerialBusBuiltFromItsLineParameters — THE
+#          deliverable. Three devices on one declared COM port, each bound to its own machine, all on the
+#          literal bus key "modbus-rtu-serial:COM7:19200:8:E:1" read off the DRIVERS' own ids (which embed the
+#          bus key) rather than off the registry's bookkeeping. Plus the routing proof D-7a met, by enumeration.
+#   + 1  OneOpenForNLeases_AndTheLastReleaseDisposes_ThroughTheSerialOpener — 3 leases, two releases leave the
+#          bus alive, the third disposes it. Asserted with HasBus and not LeaseCount at the end, because
+#          LeaseCount answers 0 for a key that never existed and therefore cannot tell "the last release
+#          disposed it" from "it was never created" — on serial that difference is a COM port held to exit.
+#   + 1  ASerialBusAndAGatewayBusInOneFile_AreTwoBusesOnTwoTransports — the switch is per ENTRY.
+#   + 1  TwoSerialBusesNamingOnePortWithDifferentFraming_AreTwoBuses_NotOneSharedLine — CreateBusKey's rule
+#          carried up to a file an operator writes, and the misconfiguration whose runtime symptom is the
+#          held-port message (which is why that message names TWO holders).
+#   + 1  ASerialBusWhoseAdapterIsNotThere_DegradesAndTellsTheOperatorWhichPort — 🔴 the only test in the batch
+#          that makes the SERIAL OPENER actually run on the production path. Everything else observes the bus
+#          KEY, which a switch could compute correctly while handing over the wrong opener — they are two
+#          arguments. One real poll, through ModbusBus and ModbusRtuDriver's poll catch, to the ILogger the
+#          composition root wired: no observer the mechanism does not itself need. Its first draft waited on
+#          "a message naming the port" and passed INSTANTLY off the §9 hardware notice logged at registration,
+#          reading Health as its initial Down; it now waits on the failed-poll line itself.
+#   + 1  TheAutoDirectionControlLimit_IsLoggedOncePerSerialBus_AndNeverForAGatewayOrADeadBus — blueprint §9's
+#          hardware limit said where an operator configuring a port will see it. The three NEGATIVE halves are
+#          the discriminating ones: not for a gateway bus, not for a serial bus that registered nothing, and
+#          exactly once for a bus of three devices.
+#   + 1  TheEngineApisOwnIl_ReferencesTheSerialAssembly_… — the half SerialDependencyScopingTests cannot make,
+#          because St4i.EdgeCore.Tests does not reference St4i.EngineApi and cannot load it. It distinguishes
+#          "this deployment carries System.IO.Ports.dll" (true of all three hosts, and true of anything that
+#          merely inherits a copied package asset) from "this host's own code can open a COM port". Asserted
+#          for the ENGINE ONLY, deliberately: measured, St4i.EdgeService and St4iMachineSimulator have no
+#          ConnectorRegistry, no IConnectorFactory and no connectors.json reader, so neither has IL that could
+#          reference the serial assembly and asserting that it does would assert something false.
+EXPECT_ENGINEAPI=1226
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

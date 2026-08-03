@@ -12,6 +12,18 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\St4i.EdgeCore\St4i.EdgeCore.csproj" />
+    <!-- 🔴 Task D-7c — the owner's ruling of 2026-08-03: direct RS-485 goes into ALL THREE hosts, so all three
+         reference St4i.EdgeCore.Serial and all three ship System.IO.Ports.dll. Accepted cost, the owner's
+         call; see the Đợt D ledger.
+
+         🔴 SAME MEASURED CAVEAT AS St4i.EdgeService, and it applies here too: Services/FleetService.cs has no
+         ConnectorRegistry, no IConnectorFactory and no connectors.json reader — it builds a
+         ScenarioAwareDriver over a SimulatedDriver, plus a HotFolderAoiDriver for the demo, and nothing else.
+         So this reference makes the serial transport AVAILABLE to the WPF shell; it does not give it a code
+         path that can open a COM port, because the shell has no connector plumbing to open one from.
+         SerialDependencyScopingTests.DesktopShellDeployment_CarriesSystemIoPorts_… asserts the shipped fact
+         in that honest form. -->
+    <ProjectReference Include="..\St4i.EdgeCore.Serial\St4i.EdgeCore.Serial.csproj" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="LiveChartsCore.SkiaSharpView.WPF" Version="2.0.0-rc5.4" />
     <!-- GĐ3 sub-3 OU-1 (OPC-UA driver) — bumped 9.0.9 -> 10.0.8: St4i.EdgeCore's new

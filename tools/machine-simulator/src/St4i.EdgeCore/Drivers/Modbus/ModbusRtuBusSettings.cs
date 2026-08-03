@@ -57,7 +57,10 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// </list></para>
 /// </summary>
 /// <param name="Transport">The normalised transport token — always <see cref="GatewayTransport"/> for a value
-/// this type returns, because it is the only one this build can open (see <see cref="Parse"/>).</param>
+/// this type returns. 🔴 Task D-7c: that is now a statement about which HALF OF THE SCHEMA this type reads, not
+/// about what the product can open. The <see cref="SerialTransport"/> half is read by
+/// <c>ModbusRtuSerialBusSettings</c> in <c>St4i.EdgeCore.Serial</c>, and both transports ship — see
+/// <see cref="SerialTransport"/> for why the two parsers cannot be one.</param>
 /// <param name="Host">The RTU-over-TCP gateway's host. NOT a Modbus TCP endpoint: the device on the far side
 /// speaks RTU framing over a serial line the gateway owns.</param>
 /// <param name="Port">The gateway's TCP port. Serial device servers conventionally expose 4001, 4002, … one
@@ -73,9 +76,21 @@ public sealed record ModbusRtuBusSettings(string Transport, string Host, int Por
     /// transport this build can actually open — see <see cref="Parse"/>.</summary>
     public const string GatewayTransport = "rtu-gateway";
 
-    /// <summary>🔴 RTU framing over a directly-attached COM port. <b>Accepted by the schema and REFUSED by this
-    /// build, with the reason</b> — see <see cref="Parse"/>. Named as a constant rather than left as a magic
-    /// string in one error message because the message has to be able to say what the operator wrote.</summary>
+    /// <summary>🔴 RTU framing over a directly-attached COM port.
+    ///
+    /// <para><b>Task D-7c — this transport now SHIPS.</b> Until D-7c the token was accepted by the schema and
+    /// refused by the build, because nothing that could open a COM port was referenced by any host. All three
+    /// hosts now reference <c>St4i.EdgeCore.Serial</c> (the owner's ruling of 2026-08-03), and the document is
+    /// read by <c>ModbusRtuSerialBusSettings</c> in that assembly — <b>not by <see cref="Parse"/> below</b>,
+    /// which cannot see it: <c>St4i.EdgeCore.Serial</c> references <c>St4i.EdgeCore</c>, so an arm here would
+    /// be a circular reference, and <c>SerialLineSettings</c> exposes <c>System.IO.Ports</c> types that must
+    /// never enter this assembly. The switch between the two parsers lives in the composition root
+    /// (<c>St4i.EngineApi.Config.ConnectorsJsonRegistration.RegisterRtuBus</c>).</para>
+    ///
+    /// <para>The constant stays HERE, beside <see cref="GatewayTransport"/>, because it is part of ONE
+    /// schema's discriminator vocabulary: <see cref="ReadTransport"/> — the routing peek every caller uses —
+    /// lives in this assembly and must be able to name both tokens, and a build with no serial assembly must
+    /// still be able to say what an <c>rtu-serial</c> document is.</para></summary>
     public const string SerialTransport = "rtu-serial";
 
     /// <summary>
@@ -108,6 +123,42 @@ public sealed record ModbusRtuBusSettings(string Transport, string Host, int Por
     }
 
     /// <summary>
+    /// 🔴 Task D-7c — <b>the transport token this document declares, verbatim (trimmed), or
+    /// <see langword="null"/> if it declares none.</b> This is the routing peek the composition root switches
+    /// on to choose between the gateway parser (this type) and the serial one
+    /// (<c>ModbusRtuSerialBusSettings</c>, in <c>St4i.EdgeCore.Serial</c>).
+    ///
+    /// <para><b>Never throws, exactly like <see cref="DeclaresATransport"/>, and for the same reason:</b> this
+    /// question is asked BEFORE validation, and a document too malformed to answer it must fall down the path
+    /// that already knows how to report a malformed document rather than take a new one that reports it a
+    /// second, different way.</para>
+    ///
+    /// <para><b>Returns the RAW token, not a normalised one.</b> The caller compares case-insensitively; what
+    /// it must not lose is the operator's own spelling, because the message for an unknown transport has to be
+    /// able to quote what they actually wrote. Normalising here would make "rtu-Gateway" and "rtu-gateway"
+    /// indistinguishable in exactly the message whose job is to show the difference.</para>
+    /// </summary>
+    public static string? ReadTransport(string? settingsJson)
+    {
+        if (string.IsNullOrWhiteSpace(settingsJson)) return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(settingsJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object) return null;
+            if (!document.RootElement.TryGetProperty(TransportProperty, out var transport)) return null;
+            if (transport.ValueKind != JsonValueKind.String) return null;
+
+            var raw = transport.GetString();
+            return string.IsNullOrWhiteSpace(raw) ? null : raw.Trim();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Parses the bus-level half of an RTU <c>settings</c> document. The DEVICE half is
     /// <see cref="ModbusMultidropMap.FanOut"/>'s and is deliberately not touched here — the same document is
     /// handed to both, and this method reads only the keys <see cref="ModbusMultidropMap"/> does not.
@@ -117,17 +168,17 @@ public sealed record ModbusRtuBusSettings(string Transport, string Host, int Por
     /// malformed document disables this connector for the run or crashes the host — and every existing caller
     /// of the parse path already makes that decision.</para>
     ///
-    /// <para>🔴 <b><see cref="SerialTransport"/> is refused, and the refusal is a deployment fact rather than a
-    /// missing feature.</b> The serial link exists, works and is tested — <c>SerialPortBusLink</c> in
-    /// <c>St4i.EdgeCore.Serial</c>, built by D-3. What does not exist is a build of the engine that carries it:
-    /// Đợt D §6 scopes <c>System.IO.Ports</c> to that one project so a gateway deployment does not acquire a
-    /// serial dependency, and <c>SerialDependencyScopingTests</c> pins that <c>St4i.EngineApi</c>'s own build
-    /// output contains no <c>System.IO.Ports.dll</c>. Referencing it from the engine is a one-line project
-    /// change that inverts a deliberately-pinned deployment assertion, which is a decision about what this
-    /// product ships rather than about how this file parses. So the token is recognised and answered with the
-    /// truth: this build cannot open a COM port. <b>A named refusal is the opposite of a stub</b> — an operator
-    /// who writes <c>COM3</c> is told exactly why it cannot work and what does, instead of being told the
-    /// transport is unknown or, worse, watching a connector fail to start for no stated reason.</para>
+    /// <para>🔴 <b>Task D-7c — <see cref="SerialTransport"/> is still refused HERE, but the refusal changed
+    /// meaning completely and the old wording was about to become a false record.</b> D-7a's message said the
+    /// serial transport "is not available in this build", because no host referenced
+    /// <c>St4i.EdgeCore.Serial</c>. That is no longer true: all three hosts reference it and a directly-attached
+    /// RS-485 line ships. What this method refuses now is not a missing feature but <b>the wrong parser</b> —
+    /// an <c>rtu-serial</c> document is read by <c>ModbusRtuSerialBusSettings</c>, which lives in
+    /// <c>St4i.EdgeCore.Serial</c> and therefore cannot be reached from this assembly at all (that reference
+    /// runs the other way; see <see cref="SerialTransport"/>). The composition root switches on
+    /// <see cref="ReadTransport"/> BEFORE choosing a parser, so an operator can no longer produce this message
+    /// through <c>connectors.json</c> — only a direct API caller can, and it tells them the one thing they need,
+    /// which is where the other half of the schema lives.</para>
     /// </summary>
     public static ModbusRtuBusSettings Parse(string settingsJson)
     {
@@ -157,20 +208,35 @@ public sealed record ModbusRtuBusSettings(string Transport, string Host, int Por
         if (string.Equals(transport, SerialTransport, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                $"Modbus RTU bus: transport '{SerialTransport}' (a directly-attached COM port) is not available " +
-                "in this build. The serial link itself exists and is tested, but the engine is deliberately built " +
-                "WITHOUT the System.IO.Ports dependency so that a gateway-only deployment does not carry it " +
-                "(Đợt D §6, pinned by SerialDependencyScopingTests) — so there is no code in this process that " +
-                $"can open a COM port. Put the RS-485 segment behind a serial device server and use " +
-                $"'{GatewayTransport}' with that gateway's host and port.");
+                $"Modbus RTU bus: this parser reads the '{GatewayTransport}' transport (RTU framing over a TCP " +
+                $"serial device server), but the document declares '{SerialTransport}' — a directly-attached COM " +
+                "port. That transport SHIPS; its settings are read by ModbusRtuSerialBusSettings.Parse in " +
+                "St4i.EdgeCore.Serial, which this assembly cannot reference (the project reference runs the other " +
+                "way, so that System.IO.Ports never enters the RTU framing layer). A connectors.json entry is " +
+                "routed to the right parser by the composition root before either is called, so reaching this " +
+                "message means a caller chose the parser by hand.");
         }
 
         if (!string.Equals(transport, GatewayTransport, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
                 $"Modbus RTU bus: unknown transport '{transport}'. This build understands '{GatewayTransport}' " +
-                $"(RTU framing over a TCP serial gateway); '{SerialTransport}' is recognised but unavailable — see " +
-                "the message it produces for why.");
+                $"(RTU framing over a TCP serial gateway) and '{SerialTransport}' (a directly-attached COM port, " +
+                "read by ModbusRtuSerialBusSettings in St4i.EdgeCore.Serial).");
+        }
+
+        // 🔴 Task D-7c — the SERIAL transport's own field, refused on a gateway bus. The sweep half of the same
+        // rule ModbusRtuSerialBusSettings applies to 'host'/'port' in the other direction: a key that reads as
+        // though it configures this bus and is silently IGNORED makes the file on disk and the configuration
+        // actually running two different things. Fixing only one direction would be the "fixed one instance of a
+        // class rather than sweeping it" failure blueprint §8.1 records.
+        if (root.TryGetProperty("portName", out _))
+        {
+            throw new InvalidOperationException(
+                $"Modbus RTU bus: 'portName' belongs to the '{SerialTransport}' transport (a directly-attached " +
+                $"COM port) and does NOTHING on a '{GatewayTransport}' bus, whose line is owned by the device " +
+                $"server named in 'host'. Remove 'portName', or change '{TransportProperty}' to " +
+                $"'{SerialTransport}' if this segment really is wired straight into this machine.");
         }
 
         if (!root.TryGetProperty("host", out var hostProperty)

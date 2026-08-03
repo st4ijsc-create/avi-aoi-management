@@ -195,6 +195,25 @@ public static class ConnectorsJsonRegistration
     /// the same posture <see cref="ModbusMultidropRegistration.RegisterAll(string,string,IConnectorFactory,ConnectorRegistry,ILogger)"/>
     /// takes for a map that will not fan out, and the same posture every other startup config path in this
     /// product takes. A second RTU bus in the same file, and every TCP/OPC-UA connector, is unaffected.</para>
+    ///
+    /// <para>🔴 <b>Task D-7c — THIS IS THE TRANSPORT SWITCH, and it is the only place in the product that knows
+    /// both transports exist.</b> Everything downstream of the two lines that pick a <c>(busKey, openLink)</c>
+    /// pair is transport-agnostic and was NOT touched by D-7c: <see cref="ModbusRtuConnectorFactory"/>'s
+    /// signature names no type from either transport (the transport is a
+    /// <c>Func&lt;CancellationToken, Task&lt;IModbusBusLink&gt;&gt;</c>, not a switch), and the fan-out, the
+    /// per-device backoff, the write budget, the ghost sweep, the bus registry and the DEVICE half of the schema
+    /// are all shared verbatim.</para>
+    ///
+    /// <para><b>Why the switch is HERE and cannot be in <see cref="ModbusRtuBusSettings.Parse"/>, where the
+    /// obvious design puts it.</b> <see cref="ModbusRtuBusSettings"/> lives in <c>St4i.EdgeCore</c>;
+    /// <c>SerialLineSettings</c>/<c>SerialPortBusLink</c> live in <c>St4i.EdgeCore.Serial</c>, which
+    /// <i>references</i> <c>St4i.EdgeCore</c>. A third arm inside that parser would be a circular project
+    /// reference, and the only way to break it — moving the serial link into <c>St4i.EdgeCore</c> — is exactly
+    /// what <c>SerialDependencyScopingTests.TheRtuFramingLayersOwnAssembly_…</c> forbids, because it would put
+    /// <c>System.IO.Ports</c> into the RTU framing layer and therefore into every consumer of it.
+    /// <c>SerialLineSettings</c> also exposes <c>System.IO.Ports.Parity</c>/<c>StopBits</c>, so no parser for it
+    /// can be compiled into <c>St4i.EdgeCore</c> at all. A composition root is the right owner of a choice
+    /// between two assemblies; a settings record is not.</para>
     /// </summary>
     /// <returns>How many DEVICES were registered — not how many entries. 0 for a bus that could not be built at
     /// all, which is the same value the fan-out returns for a map that would not parse.</returns>
@@ -210,10 +229,32 @@ public static class ConnectorsJsonRegistration
             return 0;
         }
 
-        ModbusRtuBusSettings busSettings;
+        string busKey;
+        Func<CancellationToken, Task<IModbusBusLink>> openLink;
+        string? limitNotice = null;
+
         try
         {
-            busSettings = ModbusRtuBusSettings.Parse(entry.SettingsJson);
+            // 🔴 The switch. ReadTransport never throws and answers null for a document too malformed to read —
+            // which cannot happen here (DeclaresATransport already said yes) but is answered anyway rather than
+            // asserted away: the ELSE arm is the gateway parser, which produces the same named refusal for a
+            // blank/absent transport that it always has, so an unreachable state degrades into an existing
+            // message instead of a NullReferenceException.
+            var transport = ModbusRtuBusSettings.ReadTransport(entry.SettingsJson);
+
+            if (string.Equals(transport, ModbusRtuBusSettings.SerialTransport, StringComparison.OrdinalIgnoreCase))
+            {
+                var serial = ModbusRtuSerialBusSettings.Parse(entry.SettingsJson);
+                busKey = serial.BusKey;
+                openLink = serial.Opener();
+                limitNotice = serial.DescribeLimit();
+            }
+            else
+            {
+                var gateway = ModbusRtuBusSettings.Parse(entry.SettingsJson);
+                busKey = gateway.BusKey;
+                openLink = gateway.Opener();
+            }
         }
         catch (Exception ex)
         {
@@ -228,17 +269,34 @@ public static class ConnectorsJsonRegistration
         // 🔴 The factory is built INSIDE the fan-out, from a number only the fan-out knows: the largest
         // WorstCaseBusHoldMs on this bus, which is blueprint §10 item 2's write-queue bound. See that overload's
         // own remarks for why it is threaded rather than computed by parsing the document a second time.
-        return ModbusMultidropRegistration.RegisterAll(
+        var registered = ModbusMultidropRegistration.RegisterAll(
             entry.SettingsJson,
             busInstanceId,
             busWideWorstCaseHoldMs => new ModbusRtuConnectorFactory(
-                busKey: busSettings.BusKey,
-                openLink: busSettings.Opener(),
+                busKey: busKey,
+                openLink: openLink,
                 busRegistry: modbusBusRegistry,
                 writeQueueBudgetMs: busWideWorstCaseHoldMs,
                 logWarning: msg => logger.LogWarning("{ModbusRtuMsg}", msg),
                 logError: (ex, msg) => logger.LogError(ex, "{ModbusRtuMsg}", msg)),
             registry,
             logger);
+
+        // 🔴 Task D-7c — blueprint §9's hardware limit, said WHERE AN OPERATOR CONFIGURING A PORT WILL SEE IT
+        // rather than only in a plan document nobody deploying this reads. It is a WARNING and not information
+        // because the failure it describes is SILENT: an RS-485 adapter that needs its transmit-enable line
+        // toggled by software does not throw, it simply never transmits, and that is indistinguishable at every
+        // layer above from a wiring fault or a wrong unit id.
+        //
+        // Logged AFTER the fan-out and only when the bus actually registered something, so a bus that was going
+        // to be disabled anyway does not also emit a hardware caveat about a line it will never drive — and
+        // once per bus, not once per device, because the limit is a property of the SEGMENT.
+        if (limitNotice is not null && registered > 0)
+        {
+            logger.LogWarning("connectors.json entry '{ConnectorId}': {ModbusRtuSerialLimit}",
+                entry.Id, limitNotice);
+        }
+
+        return registered;
     }
 }

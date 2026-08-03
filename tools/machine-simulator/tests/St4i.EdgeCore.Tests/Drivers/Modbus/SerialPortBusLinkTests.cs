@@ -31,6 +31,13 @@ namespace St4i.EdgeCore.Tests.Drivers.Modbus;
 /// </summary>
 public sealed class SerialPortBusLinkTests
 {
+    /// <summary>🔴 Task D-7c — the same derivation, shared with
+    /// <see cref="ModbusRtuSerialBusSettingsTests"/>, which needs the identical "a port that is genuinely not
+    /// here" fact to assert that absence is a START-UP issue rather than a parse-time refusal. Exposed rather
+    /// than copied: two independent probes of the same machine fact would drift, and the reason this one is
+    /// derived rather than hardcoded is the whole point of it.</summary>
+    internal static string AbsentPortNameForTests() => AbsentPortName();
+
     /// <summary>A COM name that is genuinely absent from this machine — DERIVED rather than hardcoded, the
     /// same reflex as <c>Drivers/ClosedLoopbackPort</c>: a hardcoded "COM99" is a guess about someone else's
     /// machine, and if the guess is wrong the test opens a stranger's device. Starts at 90 because a machine
@@ -249,8 +256,10 @@ public sealed class SerialPortBusLinkTests
     /// names the LINE PARAMETERS, which on RS-485 are the first thing to suspect — so the wrapper does, and
     /// this asserts that rather than only the exception type.
     ///
-    /// <para>Only the absent-port arm is exercised here; the "already held" arm needs a real port and was
-    /// measured by probe (see task-3-report.md).</para>
+    /// <para>Only the absent-port arm is exercised END TO END here; the "already held" arm needs a real port
+    /// plus a second holder and was measured by probe (see task-3-report.md). 🔴 Task D-7c makes all three
+    /// arms' MESSAGES assertable regardless — see
+    /// <see cref="TheOpenFailureMessage_SaysWhichOfTheThreeCausesItWas_NeverAllThreeAtOnce"/>.</para>
     /// </summary>
     [Fact]
     public async Task OpenAsync_AgainstAnAbsentPort_ThrowsSerialPortUnavailable_NamingThePortAndItsFraming()
@@ -264,10 +273,111 @@ public sealed class SerialPortBusLinkTests
         Assert.Contains("9600-8-O-2", ex.Message, StringComparison.Ordinal);
         Assert.NotNull(ex.InnerException);
 
+        // 🔴 Task D-7c — and it is the ABSENT arm's wording, not a shotgun listing all three causes. This is
+        // the one assertion that ties DescribeOpenFailure's decision to the real I/O path: every other arm is
+        // driven from a synthesised exception, so without this the discrimination could be perfect and simply
+        // not wired to OpenAsync at all.
+        Assert.Contains("NOT PRESENT", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("already held", ex.Message, StringComparison.Ordinal);
+
         // An IOException subclass deliberately: ModbusRtuDriver's poll catch and ModbusBus's link handling
         // already treat that as "degrade and rebuild", and a type outside that hierarchy would have escaped
         // handling that already exists.
         Assert.IsAssignableFrom<IOException>(ex);
+    }
+
+    /// <summary>
+    /// 🔴 <b>Task D-7c — what an operator reads when a COM port will not open, and the defect D-3 recorded
+    /// rather than fixed.</b>
+    ///
+    /// <para>D-3's message appended ONE sentence naming all three causes at once: "The port may not be present
+    /// …, may be held by another application, or the name may not be a serial port on this machine." It is
+    /// true of exactly one producing path at a time, and the three remedies send a person to three different
+    /// places — the cabinet, the task manager, the configuration file. That is D-5's I-1 class, which this
+    /// batch has now graded three times.</para>
+    ///
+    /// <para><b>Why the assertions are a MATRIX and not three independent "contains" checks.</b> Three
+    /// positive checks would all pass on the old shotgun message, because it contained every phrase. What
+    /// discriminates is the NEGATIVE half: each arm must carry its own diagnosis and must NOT carry the other
+    /// two. Only the pair of directions can tell "it says which one" from "it says all of them".</para>
+    ///
+    /// <para><b>Why it is driven from synthesised exceptions.</b> Reaching the HELD arm needs a real port and a
+    /// second holder; reaching the NOT-A-PORT arm needs a name this machine's driver stack rejects. Neither can
+    /// be a test inside the five suites without making a green number mean different things on different
+    /// machines — blueprint §8.1's own correction from D-3. Extracting the decision into a pure function of
+    /// (settings, exception) is what makes all three deterministic here, and the absent-port test above is what
+    /// proves the function is the one <c>OpenAsync</c> actually calls. The three BCL exception types are
+    /// D-3's own measurements, not guesses.</para>
+    /// </summary>
+    [Fact]
+    public void TheOpenFailureMessage_SaysWhichOfTheThreeCausesItWas_NeverAllThreeAtOnce()
+    {
+        var line = new SerialLineSettings("COM3", 19_200, Parity.Even, 8, StopBits.One);
+
+        var absent = SerialPortBusLink.DescribeOpenFailure(
+            line, new FileNotFoundException("Could not find file 'COM3'."));
+        var held = SerialPortBusLink.DescribeOpenFailure(
+            line, new UnauthorizedAccessException("Access to the path 'COM3' is denied."));
+        var notAPort = SerialPortBusLink.DescribeOpenFailure(
+            line, new ArgumentException("The given port name (COM3) does not resolve to a valid serial port."));
+
+        // Every arm still answers the question D-3's wrapper exists for: WHICH LINE was I driving.
+        foreach (var message in new[] { absent, held, notAPort })
+        {
+            Assert.Contains("COM3 19200-8-E-1", message, StringComparison.Ordinal);
+        }
+
+        // ── ABSENT: the adapter is not there. Says so, says the machine's actual ports, and says explicitly
+        // that this is NOT a refusal — because "plug it back in" only works if nothing has to be restarted.
+        Assert.Contains("NOT PRESENT", absent, StringComparison.Ordinal);
+        Assert.Contains("Serial ports present right now:", absent, StringComparison.Ordinal);
+        Assert.Contains("plugging the adapter", absent, StringComparison.Ordinal);
+        Assert.DoesNotContain("already held", absent, StringComparison.Ordinal);
+        Assert.DoesNotContain("does NOT resolve", absent, StringComparison.Ordinal);
+
+        // ── HELD: the port exists and someone has it. 🔴 It names BOTH holders, and the second one is the one
+        // this product can create itself: two connector entries naming one port with DIFFERENT line parameters
+        // are two bus keys by design (CreateBusKey folds every parameter in), so the second open lands here.
+        // Telling that operator to hunt "another application" would send them after a process that does not
+        // exist while their own configuration file holds the answer.
+        Assert.Contains("already held", held, StringComparison.Ordinal);
+        Assert.Contains("EXCLUSIVELY", held, StringComparison.Ordinal);
+        Assert.Contains("another application", held, StringComparison.Ordinal);
+        Assert.Contains("DIFFERENT line parameters", held, StringComparison.Ordinal);
+        Assert.DoesNotContain("NOT PRESENT", held, StringComparison.Ordinal);
+        Assert.DoesNotContain("does NOT resolve", held, StringComparison.Ordinal);
+
+        // ── NOT A PORT: a naming problem, and it says so in those words so nobody goes looking at hardware.
+        Assert.Contains("does NOT resolve", notAPort, StringComparison.Ordinal);
+        Assert.Contains("naming problem, not a hardware one", notAPort, StringComparison.Ordinal);
+        Assert.DoesNotContain("NOT PRESENT", notAPort, StringComparison.Ordinal);
+        Assert.DoesNotContain("already held", notAPort, StringComparison.Ordinal);
+
+        // 🔴 The one phrase that must be gone from ALL of them: D-3's shotgun. Asserted by content rather than
+        // by trusting the rewrite, because a message that keeps the old sentence AND adds a diagnosis is worse
+        // than either — it says "here is the cause" and then lists two more.
+        foreach (var message in new[] { absent, held, notAPort })
+        {
+            Assert.DoesNotContain("may be held by another", message, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// The fallback arm. A plain <see cref="IOException"/> out of <c>SerialPort.Open</c> is not one of D-3's
+    /// three measured shapes, and the message must NOT invent a diagnosis for it — the one thing worse than
+    /// "we do not know" is a confident wrong answer, which is the whole subject of the test above.
+    /// </summary>
+    [Fact]
+    public void AnUnattributedIoFailure_IsReportedAsUnattributed_RatherThanGuessingOneOfTheThree()
+    {
+        var message = SerialPortBusLink.DescribeOpenFailure(
+            new SerialLineSettings("COM3"), new IOException("The device is not ready."));
+
+        Assert.Contains("The device is not ready.", message, StringComparison.Ordinal);
+        Assert.Contains("did not attribute further", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("NOT PRESENT", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("already held", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("does NOT resolve", message, StringComparison.Ordinal);
     }
 
     /// <summary>

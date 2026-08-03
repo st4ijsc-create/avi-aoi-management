@@ -333,7 +333,7 @@ P2/P3 items below have since landed — see the **Status** column and **§16** f
 |---|---|---|---|
 | **P1 (this build)** | Simulator + EdgeCore + Normalizer + Live/Demo/Auto + Hot-folder AOI + MQTT + headless service seam + packaging | Hot-folder (doc 28), MQTT | Delivered |
 | P2 | Mapping UI + Sparkplug B + headless Device Manager | MQTT/Sparkplug B | **Sparkplug B: delivered** — a local UNS spine (always-on loopback MQTT broker + dual Sparkplug B/semantic-mirror publisher), see §16.1. Mapping UI + headless Device Manager: still future. |
-| P3 | Modbus TCP/RTU + Serial drivers (screw/glue guns, small PLCs, RS-232/485) | Modbus, Serial | **Modbus TCP: partially delivered** — TCP polling, `UInt16`/`Int16` registers, one register per read, see §16.4; **read-AND-write since Đợt B** (§21) for a Holding register/command a map declares writable — a zero-argument coil pulse only, see §21.6. **Not yet:** 32-bit/float registers, register-block batching, Modbus **RTU** (serial), a per-machine `MappingProfile` override for Modbus. Serial drivers: still future. |
+| P3 | Modbus TCP/RTU + Serial drivers (screw/glue guns, small PLCs, RS-232/485) | Modbus, Serial | **Modbus TCP: partially delivered** — TCP polling, `UInt16`/`Int16` registers, one register per read, see §16.4; **read-AND-write since Đợt B** (§21) for a Holding register/command a map declares writable — a zero-argument coil pulse only, see §21.6. **Modbus RTU delivered in Đợt D** — both `rtu-gateway` (over a TCP serial device server) and `rtu-serial` (a directly-attached COM port), declared per multidrop **bus** in `connectors.json`; auto-DE RS-485 adapters only, and no frame has yet crossed the serial transport on real hardware (see §16.4's D-7c note). **Not yet:** 32-bit/float registers, register-block batching, a per-machine `MappingProfile` override for Modbus. |
 | P4 | OPC-UA + Siemens S7 / EtherNet-IP drivers | OPC-UA, S7, EtherNet/IP | **OPC-UA client: partially delivered** — the licensing spike that used to gate this is resolved (the OPC Foundation .NET stack relicensed MIT on 2025-12-04); a poller against ONE OPC-UA server, `SecurityMode=None` (anonymous or username/password), poll-only (no subscriptions), see §16.6; **read-AND-write since Đợt B** (§21) for a node/method a map declares writable, including typed `CallAsync` arguments. **Not yet:** Siemens S7 / EtherNet-IP drivers, Sign/SignAndEncrypt security modes, complex/structured-type node decoding. |
 | P5 | SECS/GEM + Zmotion (koffi FFI) + HA/buffering + security hardening + OTA config | SECS/GEM, Zmotion | Future. |
 
@@ -406,7 +406,7 @@ Site.
 biết chi tiết đầy đủ (biến môi trường, endpoint, hành vi). Sparkplug B: ĐÃ GIAO qua UNS spine cục bộ
 (§16.1). Modbus TCP: GIAO MỘT PHẦN — đọc qua TCP, thanh ghi UInt16/Int16, mỗi lần đọc 1 thanh ghi
 (§16.4); **ĐỌC VÀ GHI từ Đợt B** (§21) cho thanh ghi Holding/lệnh map khai báo ghi được — chỉ xung coil
-không tham số, xem §21.6. CHƯA có 32-bit/float, đọc theo khối, Modbus RTU (nối tiếp), hay MappingProfile
+không tham số, xem §21.6. Modbus RTU ĐÃ GIAO ở Đợt D (cả `rtu-gateway` lẫn `rtu-serial` — cổng COM cắm thẳng; chỉ adapter tự đảo chiều, và chưa có khung tin nào chạy trên phần cứng thật). CHƯA có 32-bit/float, đọc theo khối, hay MappingProfile
 riêng cho từng máy Modbus. OPC-UA: GIAO MỘT PHẦN — "licensing spike" trước đây từng chặn mục này đã được
 giải quyết (bộ thư viện .NET của OPC Foundation đổi giấy phép sang MIT ngày 2025-12-04); một poller nối
 với MỘT server OPC-UA, `SecurityMode=None` (ẩn danh hoặc username/password), chỉ poll (chưa có
@@ -1734,9 +1734,35 @@ attempt identically; size the value for the slowest legitimate single round-trip
 
 **Honest deferrals** (documented in the driver's own source, not silently missing): 32-bit/float
 register values (combining a register PAIR) and register-block batching (today: one read per
-register, per poll) are follow-ups, not built; **Modbus RTU (serial)** is not implemented — TCP only;
+register, per poll) are follow-ups, not built;
 there is no per-machine `MappingProfile` override for Modbus yet (it uses one shared `Automation`-class
 fallback profile for every Modbus machine today).
+
+> 🔴 **Modbus RTU status, corrected (Đợt D task D-7c).** This paragraph used to say "**Modbus RTU
+> (serial)** is not implemented — TCP only". That is no longer true, and the correction matters because
+> the sentence is one an integrator would act on. RTU ships in two transports, both declared in
+> `connectors.json` (§16.7) by a `transport` field inside a Modbus entry's `settings`:
+> `"rtu-gateway"` (RTU framing over a TCP serial device server: `host` + `port`) and `"rtu-serial"`
+> (a **directly-attached COM port**: `portName`, plus optional `baudRate`/`parity`/`dataBits`/`stopBits`,
+> defaulting to MODBUS-over-Serial-Line's **19200-8-E-1** rather than `SerialPort`'s own 9600-8-N-1).
+> One entry declares a whole multidrop **bus**: its `devices` array fans out into one connector instance
+> per device, all sharing one open port and one arbitration lock.
+>
+> **Two limits, stated here rather than discovered on a bench.** (1) **RS-485 direction control must be
+> AUTOMATIC** (auto-DE / TXDEN adapters). This product drives no transmit-enable line and cannot —
+> `System.IO.Ports` exposes no transmit-complete signal, so a software RTS turnaround could only be a
+> timing guess, and a wrong guess corrupts another device's frame on the same segment. An adapter needing
+> manual DE will not transmit at all; the engine logs this caveat once per serial bus at start-up.
+> (2) **No Modbus frame has ever crossed the serial transport against real hardware.** The seam, the
+> exclusive open, the cancellation latency and the drain primitive were measured against a real COM port
+> by a standalone probe, and the RTU framing is exercised end to end against an in-memory paired
+> transport — neither is a wire. A bench acceptance step with a real RS-485 device remains outstanding.
+>
+> *(VI: đoạn trên trước đây ghi "Modbus RTU (nối tiếp) chưa có" — nay đã sai. RTU chạy được với HAI
+> transport khai trong `connectors.json`: `"rtu-gateway"` (qua serial device server TCP) và
+> `"rtu-serial"` (cổng COM cắm thẳng). Hai giới hạn: chỉ hỗ trợ adapter RS-485 **tự động đảo chiều**, và
+> **chưa từng có khung tin nào chạy qua transport nối tiếp trên phần cứng thật** — vẫn còn một bước
+> nghiệm thu trên bàn.)*
 
 *(VI: `St4i.EdgeCore.Drivers.Modbus` là driver giao thức trường thật đầu tiên — vòng lặp poll TCP định
 kỳ (NModbus) đọc danh sách thanh ghi cố định từ một Modbus TCP slave, chạy trong pipeline slot cách ly
@@ -1781,8 +1807,9 @@ chỉnh:** độ chịu lỗi thực tế cho một thiết bị khoẻ-nhưng-c
 trả lời hơi trễ hơn ngưỡng sẽ trượt MỌI lần thử như nhau; hãy đặt giá trị theo round-trip đơn hợp lý chậm
 nhất, không phải bội số của nó.
 
-**Những gì CHƯA làm** (đã ghi rõ trong code, không giấu): thanh ghi 32-bit/float, đọc theo khối, Modbus
-RTU (nối tiếp) — hiện chỉ có TCP; chưa có `MappingProfile` riêng cho từng máy Modbus.)*
+**Những gì CHƯA làm** (đã ghi rõ trong code, không giấu): thanh ghi 32-bit/float, đọc theo khối; chưa có
+`MappingProfile` riêng cho từng máy Modbus. (Modbus RTU nối tiếp ĐÃ GIAO ở Đợt D — xem khối đính chính
+tiếng Anh ngay phía trên.))*
 
 ### 16.5 Asset Registry / Sổ đăng ký tài sản
 

@@ -15,8 +15,20 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// <c>System.UnauthorizedAccessException: Access to the path 'COM1' is denied</c>; and a name that is not a
 /// port at all throws <c>System.ArgumentException: The given port name (NOTAPORT) does not resolve to a valid
 /// serial port</c>. None of the three names the LINE PARAMETERS, and on RS-485 the line parameters are the
-/// most common thing to have got wrong. This type puts the port, its framing and the three realistic causes
-/// into one message, and keeps the original as <see cref="Exception.InnerException"/>.</para>
+/// most common thing to have got wrong. This type puts the port and its framing into the message, and keeps
+/// the original as <see cref="Exception.InnerException"/>.</para>
+///
+/// <para>🔴 <b>Task D-7c — and the message now says WHICH of the three it was.</b> D-3 shipped one closing
+/// sentence covering all three causes at once ("The port may not be present …, may be held by another
+/// application, or the name may not be a serial port on this machine"). That sentence is <b>true of only one
+/// producing path at a time</b>, and the three have completely different remedies — plug the adapter in, find
+/// the application holding the port, or fix the name — so a reader acts on the wrong two thirds of it. It is
+/// the same defect class this batch has now graded three times (D-5's I-1; the Đợt C webhook message carried
+/// to the whole-branch review), and D-3 was right that the defect is the <b>message</b> rather than the
+/// detection: on serial the three causes ARE distinguishable, unlike D-2 §9.3's gateway case.
+/// <c>SerialPortBusLink.DescribeOpenFailure</c> is where it is closed, and it is a pure function of the
+/// settings and the exception so that all three arms are assertable on a machine with no RS-485
+/// hardware.</para>
 /// </summary>
 public sealed class SerialPortUnavailableException : IOException
 {
