@@ -862,3 +862,259 @@ WHERE event='baseline' AND detail ? 'driftIfNotResampled' ORDER BY id;
 SELECT id, event, owner, "actualBytes"/1048576 AS act_mib FROM vram_events
 WHERE owner='cuda-backend' ORDER BY id DESC LIMIT 4;   --  commit = 431 MiB
 ```
+
+---
+
+## 10. Ư0 (ratchet) — Task 6. **CHỈ ĐO, KHÔNG VÁ**
+
+> **Ư0:** *"một cấp phát CUDA nhỏ đi trước mới mở được cấp phát lớn."* — hạng ★★, ứng viên số một
+> còn sống sau khi review vòng 1 của Pha 1 **rút lại** kết luận *"12 lượt đã loại ratchet"* (I-1).
+>
+> ⚠ **Con số duy nhất được trích từ Đợt 2 vẫn là `16.698,37 MiB`.** Mọi ngưỡng trung gian (8,2 /
+> 8,9 / 10,9 / 13,6 / 15,6 / 16,3 GB) **ĐÃ BỊ RÚT** và **không** xuất hiện ở mục này. Mọi con số
+> khác dưới đây là **đo mới trong phiên này**.
+
+### 10.1 Vì sao NAY mới đo được — và vì sao 12 lượt của Pha 1 không phân biệt được gì
+
+Pha 1 §7.3 đọc `prior = []` từ sổ cái và kết luận *"không có cấp phát nào đi trước"*. Câu đó sai
+phạm vi: `prior = []` chỉ nói **"không có cấp phát ĐÃ VÀO SỔ"**. Backend CUDA của `getLlama()`
+(`aiGgufEngine.ts:727` ở HEAD Pha 1; **`:800`** ở HEAD hiện tại) đi trước khối lớn ở **cả 12 lượt** và sổ **mù** với nó.
+Biến độc lập của Ư0 vì thế **không đổi** trên toàn thí nghiệm ⇒ nó không xác nhận và không bác bỏ
+được gì.
+
+**Task 2 khép chỗ mù đó**: backend CUDA nay có giấy phép `kind: "gguf-backend"`, `owner:
+"cuda-backend"`, và `commitMeasured()` ghi số **đo được**. Phiên này đọc lại **24 lần** liên tiếp:
+**+425 … +446 MiB** (trung vị ≈ 431). Lần đầu tiên `prior` phản ánh **cấp phát GPU thật**.
+
+⇒ Nghĩa là: **điều kiện "có một cấp phát CUDA đi trước" đã ĐÚNG ở nhánh để nguyên**, và muốn thay
+đổi biến độc lập thì phải thêm **một cấp phát nữa** — cấp phát **có trọng số thật** — chứ không thể
+lấy đi cái backend (khối lớn không nạp được nếu không có backend). Đó chính là hình dạng của phép
+thử dưới đây, và cũng là **giới hạn cứng** của nó (§10.7).
+
+### 10.2 Thiết kế — hai nhánh, **MỘT bản mã**, N = 12 mỗi nhánh, xen kẽ
+
+| | |
+|---|---|
+| **Nền** | `npm run dev:worker` (HEAD `944ba516`, `.env` nguyên trạng, cùng nền cho cả hai nhánh) |
+| **Một "lượt"** | **một lần boot worker** → đường warm mặc định (`GGUF_WARM_DELAY_MS` 3.000 ms) nạp `Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL` `gpuLayers:"max"` ⇒ **đúng khối `16.698,37 MiB`** |
+| **Kết cục sơ cấp** | khối `16.698,37 MiB` **có cấp phát được không** — `Model loaded in …ms` (OK) so với `cudaMalloc failed: out of memory` (FAIL). Đây đúng là kết cục Ư0 nói tới, không phải "warm có thành công không" |
+| **Nhánh A** | để nguyên: `getLlama()` → (`ensureCapacity`, `beginVram`) → khối lớn |
+| **Nhánh B** | `getLlama()` → **một `llama.loadModel()` cho `Qwen3-Embedding-0.6B-f16.gguf`, `gpuLayers:"max"`** (giữ thường trú, không nhả) → khối lớn |
+| **N** | **12 mỗi nhánh**, chạy **xen kẽ A,B,A,B,…** (chống trôi theo thời gian — Pha 1 chạy A-1..A-5 rồi B-1..B-5, không chống được) |
+| **Mã** | **MỘT phiên bản file duy nhất** cho cả 24 lượt; nhánh chọn bằng biến môi trường `U0_BRANCH` ép qua **CLI**. Nhánh A **không bao giờ** vào khối của nhánh B ⇒ hai nhánh khác nhau **đúng một biến** |
+| **Đo bắt buộc** | `nvidia-smi` **ngay trước** và **ngay sau** `initLlama()` (dấu vết backend), quanh cấp phát nhỏ, và **ảnh chụp sổ + `nvidia-smi` ngay trước lượt cấp phát lớn** |
+
+**Móc đo là TẠM và ĐÃ XOÁ** (§10.9). Nó **không** đổi thời điểm/tham số của bất kỳ lời gọi sản
+xuất nào ở nhánh A; ở nhánh B nó **thêm** đúng một lời gọi — đó là biến độc lập.
+
+### 10.3 Bảng kết quả — cả 24 lượt, kèm `nvidia-smi` quanh `getLlama()`
+
+Tổng VRAM thiết bị **32.607 MiB**. Cột "Δbackend" = `smi` sau `getLlama()` − `smi` trước.
+
+| Lượt | Nhánh | smi trước boot | smi **TRƯỚC** `getLlama()` | smi **SAU** `getLlama()` | Δbackend | cấp phát nhỏ (0,6B) | smi ngay **TRƯỚC khối lớn** | khối xin | Kết quả | loadMs | đỉnh | smi sau |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | A | 1.044 | 1.043 | 1.474 | +431 | — | 1.474 | 16.698,37 | ❌ FAIL | — | 1.475 | 1.042 |
+| 2 | B | 1.042 | 1.045 | 1.474 | +429 | ✔ 1.474→2.612 (**+1.138**) | 2.612 | 16.698,37 | ❌ FAIL | — | 2.616 | 1.045 |
+| 3 | A | 1.045 | 1.043 | 1.468 | +425 | — | 1.468 | 16.698,37 | ❌ FAIL | — | 1.468 | 1.037 |
+| 4 | B | 1.037 | 1.037 | 1.468 | +431 | ✔ 1.473→2.622 (**+1.149**) | 2.622 | — | ✅ **OK** | 12.891 | 21.270 | 1.023 |
+| 5 | A | 1.023 | 1.023 | 1.461 | +438 | — | 1.461 | 16.698,37 | ❌ FAIL | — | 1.461 | 1.030 |
+| 6 | B | 1.030 | 1.031 | 1.461 | +430 | ✔ 1.461→2.599 (**+1.138**) | 2.599 | 16.698,37 | ❌ FAIL | — | 2.604 | 1.034 |
+| 7 | A | 1.034 | 1.033 | 1.464 | +431 | — | 1.464 | — | ✅ **OK** | 11.366 | 20.134 | 1.034 |
+| 8 | B | 1.034 | 1.034 | 1.465 | +431 | ✔ 1.465→2.601 (**+1.136**) | 2.601 | 16.698,37 | ❌ FAIL | — | 2.605 | 1.036 |
+| 9 | A | 1.036 | 1.036 | 1.468 | +432 | — | 1.468 | 16.698,37 | ❌ FAIL | — | 1.468 | 1.036 |
+| 10 | B | 1.036 | 1.038 | 1.469 | +431 | ✔ 1.469→2.604 (**+1.135**) | 2.604 | 16.698,37 | ❌ FAIL | — | 2.604 | 1.033 |
+| 11 | A | 1.032 | 1.032 | 1.465 | +433 | — | 1.465 | 16.698,37 | ❌ FAIL | — | 1.465 | 1.036 |
+| 12 | B | 1.036 | 1.037 | 1.464 | +427 | ✔ 1.466→2.605 (**+1.139**) | 2.605 | — | ✅ **OK** | 11.270 | 21.278 | 1.033 |
+| 13 | A | 1.033 | 1.034 | 1.466 | +432 | — | 1.466 | — | ✅ **OK** | 10.327 | 20.139 | 1.036 |
+| 14 | B | 1.036 | 1.036 | 1.471 | +435 | ✔ 1.471→2.606 (**+1.135**) | 2.606 | 16.698,37 | ❌ FAIL | — | 2.608 | 1.027 |
+| 15 | A | 1.027 | 1.028 | 1.464 | +436 | — | 1.464 | 16.698,37 | ❌ FAIL | — | 1.470 | 1.026 |
+| 16 | B | 1.026 | 1.020 | 1.451 | +431 | ✔ 1.451→2.589 (**+1.138**) | 2.589 | 16.698,37 | ❌ FAIL | — | 2.595 | 1.026 |
+| 17 | A | 1.026 | 1.028 | 1.456 | +428 | — | 1.456 | 16.698,37 | ❌ FAIL | — | 1.458 | 1.024 |
+| 18 | B | 1.024 | 1.019 | 1.456 | +437 | ✔ 1.456→2.594 (**+1.138**) | 2.594 | 16.698,37 | ❌ FAIL | — | 2.594 | 1.019 |
+| 19 | A | 1.019 | 1.025 | 1.456 | +431 | — | 1.456 | — | ✅ **OK** | 11.366 | 20.128 | 1.019 |
+| 20 | B | 1.019 | 1.025 | 1.457 | +432 | ✔ 1.457→2.593 (**+1.136**) | 2.588 | 16.698,37 | ❌ FAIL | — | 2.595 | 1.020 |
+| 21 | A | 1.020 | 1.024 | 1.451 | +427 | — | 1.451 | 16.698,37 | ❌ FAIL | — | 1.451 | 1.017 |
+| 22 | B | 1.017 | 1.017 | 1.448 | +431 | ✔ 1.448→2.586 (**+1.138**) | 2.586 | — | ✅ **OK** | 11.623 | 21.263 | 1.025 |
+| 23 | A | 1.025 | 1.004 | 1.450 | +446 | — | 1.450 | 16.698,37 | ❌ FAIL | — | 1.454 | 1.017 |
+| 24 | B | 1.017 | 1.012 | 1.438 | +426 | ✔ 1.438→2.579 (**+1.141**) | 2.579 | 16.698,37 | ❌ FAIL | — | 2.592 | 1.026 |
+
+**Ảnh chụp sổ ngay trước khối lớn — GIỐNG NHAU ở cả hai nhánh** (mẫu nguyên văn, lượt 2 nhánh B):
+
+```
+[U0] tag=pre-load:Qwen3-30B-… LEDGER totalReservedMiB=17300 n=2
+     [cuda-backend|gguf-backend|est=0|act=429 ; gguf:Qwen3-30B-…|gguf-model|est=16871|act=null]
+```
+
+24/24 lượt: **n = 2 giấy phép**, `totalReserved` **17.296 – 17.317 MiB**, khác nhau đúng bằng số
+`act` đo được của backend. **1.138 MiB trọng số 0,6B của nhánh B KHÔNG có trong sổ** — móc tạm cấp
+phát thẳng qua `llama.loadModel()`, cố ý không đi qua `beginVram()`. ⇒ **Chỉ `nvidia-smi` phân biệt
+được hai nhánh; sổ thì không.** Đây là minh hoạ sống của bài học I-1: *trước khi dùng sổ để bác bỏ
+một giả thuyết về cấp phát, hỏi trước "sổ có NHÌN THẤY lớp cấp phát đó không".*
+
+**Kiểm chứng chéo trên log thô (24 file):** 18 file chứa đúng `allocating 16698.37 MiB … cudaMalloc
+failed`; 6 file chứa `Model loaded in …ms: Qwen3-30B…`; **0 file** chứa `retrying with
+gpuLayers:"auto"` ⇒ lớp lùi `gpuLayers:"auto"` (`aiGgufEngine.ts:839-850`) **không chạy ở bất kỳ lượt
+nào trong 18 lượt hỏng**. Pha 1 đã chẩn đoán nguyên nhân (`isOom` không khớp chuỗi lỗi mà
+node-llama-cpp ném lên JS); phiên này **chỉ xác nhận hệ quả**, không đo lại nguyên nhân và **không
+sửa** — ngoài phạm vi task.
+
+### 10.4 Thống kê
+
+| Nhánh | OK / N | Tỉ lệ | KTC 95 % (Wilson) |
+|---|---|---|---|
+| **A** — để nguyên | **3 / 12** | 25,0 % | 8,9 – 53,2 % |
+| **B** — có cấp phát nhỏ đi trước | **3 / 12** | 25,0 % | 8,9 – 53,2 % |
+
+> **Fisher exact hai phía, A (3/12) vs B (3/12): `p = 1,0000`.**
+> Đối chiếu mốc Pha 1 (worker để nguyên **3/12**): A vs Pha 1 `p = 1,0000`; B vs Pha 1 `p = 1,0000`.
+
+Hàm Fisher dùng ở đây tái tạo **đúng** hai con số Pha 1 đã công bố (0/6 vs 3/12 → `p = 0,5147`;
+5/5 vs 3/11 → `p = 0,0256`) — dùng làm phép kiểm tra thiết bị tính toán trước khi tin số mới.
+
+**⚠ Độ nhạy của thiết kế — nêu TRƯỚC khi phát biểu, không phải sau.** Với nền A = 3/12, N = 12/nhánh
+chỉ đạt `p < 0,05` khi nhánh B lên tới **≥ 9/12**:
+
+| B = | 0/12 | 3/12 | 5/12 | 6/12 | 7/12 | 8/12 | **9/12** | 10/12 | 11/12 | 12/12 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| p | 0,217 | 1,000 | 0,667 | 0,400 | 0,214 | 0,100 | **0,039** | 0,012 | 0,003 | 0,0003 |
+
+Mô phỏng công suất (4.000 lượt/ô, α = 0,05 hai phía):
+
+| N mỗi nhánh | 12 | 20 | 30 | 40 | 60 | 80 | 100 |
+|---|---|---|---|---|---|---|---|
+| công suất phát hiện **25 % → 50 %** | 0,13 | 0,26 | 0,41 | 0,56 | 0,77 | 0,88 | 0,95 |
+| công suất phát hiện **25 % → 75 %** | 0,60 | 0,83 | 0,97 | 1,00 | 1,00 | 1,00 | 1,00 |
+
+⇒ Phép thử này **có lực** với hiệu ứng lớn (25 %→75 % trở lên) và **thiếu lực** với hiệu ứng vừa
+(25 %→50 %). Phát biểu ở §10.5 được viết **đúng trong khoảng lực đó**, không rộng hơn.
+
+### 10.5 PHÁN QUYẾT
+
+Ba câu **khác nhau**, trả lời riêng từng câu:
+
+#### (a) **ĐỦ** — *"có cấp phát nhỏ đi trước thì LUÔN được"*: **BÁC BỎ. Dứt điểm.**
+
+Đây là kết luận **suy diễn, không cần thống kê**: nhánh B có **9 phản ví dụ** (lượt 2, 6, 8, 10, 14,
+16, 18, 20, 24). Ở mỗi lượt đó, một model 0,6B **thật sự có trọng số** đã thường trú trên GPU
+(`nvidia-smi` xác nhận **+1.135 … +1.149 MiB**, không phải một lời gọi rỗng), đi trước khối lớn
+**1,63 – 2,27 s**, và khối `16.698,37 MiB` **vẫn hỏng**. Một điều kiện đủ không thể có phản ví dụ.
+
+**⇒ Phép đo "3/3 nhánh" ghi ở `aiGgufEngine.ts:1398-1400` (đánh số Pha 1; `:1471-1473` ở HEAD hiện tại) KHÔNG được đọc như "ratchet là điều kiện đủ".**
+Phép đo 3/3 đó nói về một điều kiện **KHÁC**: *CUDA context tồn tại **TRƯỚC KHI APP BOOT***. Phiên
+này **không chạm tới** điều kiện ấy — mọi cấp phát của nhánh B đều xảy ra **BÊN TRONG** vòng đời
+tiến trình worker, sau khi app đã boot. Xem §10.7.
+
+#### (b) **Hai nhánh có phân biệt được không**: **KHÔNG PHÂN BIỆT ĐƯỢC.**
+
+3/12 so với 3/12, **`p = 1,0000`**. Không phải "gần bằng nhau" — **bằng nhau đúng từng lượt**.
+
+⚠ **KHÔNG được gọi đây là "đã loại Ư0".** Câu đúng phạm vi, và không được nói rộng hơn:
+
+> *Trên nền worker, chèn một cấp phát 0,6B có trọng số giữa `getLlama()` và khối 16.698,37 MiB
+> **không làm dịch tỉ lệ thành công một cách phát hiện được ở N = 12/nhánh**. Với nền 25 %, thiết
+> kế này chỉ phát hiện được mức tăng lên **≥ 75 %**; một hiệu ứng vừa (lên ~50 %) sẽ lọt qua
+> (công suất 0,13).*
+
+#### (c) **CẦN** — *"không có cấp phát nhỏ đi trước thì LUÔN hỏng"*: **KHÔNG TRẢ LỜI ĐƯỢC bằng phép thử này.**
+
+**Lý do là cấu trúc, không phải thiếu N:** khối lớn **không thể** cấp phát nếu backend CUDA chưa
+tồn tại, mà chính backend **là** một cấp phát CUDA đi trước (+425…+446 MiB, đo 24/24 lượt). Nghĩa là
+**không dựng được nhánh "không có cấp phát nào đi trước"** trong khuôn này. Cùng chỗ mù mà Pha 1 mắc
+phải — chỉ khác là lần này nó **được nêu tên trước**, không bị đọc nhầm thành một kết luận.
+
+Điều **duy nhất** dữ liệu này nói theo hướng "cần": nhánh A thành công **3 lần** (lượt 7, 13, 19) mà
+**không** có cấp phát nhỏ **có trọng số** nào đi trước ⇒ **"cấp phát nhỏ có trọng số" KHÔNG phải điều
+kiện cần**. Dạng yếu hơn — *"phải có **một** cấp phát CUDA nào đó đi trước"* — vẫn **chưa được thử**
+và **không thử được** ở khuôn này.
+
+### 10.6 Bốn thứ phép thử này đo được thêm (đã đo, ghi để Pha 2 khỏi đo lại)
+
+1. **Trần KHÔNG tất định — tái lập lần thứ hai, độc lập.** 3/12 ở A, 3/12 ở B, khớp **đúng** 3/12
+   của Pha 1 (`p = 1,0000` cả hai phía). Gộp ba loạt: **9 OK / 36 lượt = 25 %** (KTC Wilson của
+   6/24 phiên này: 12,0 – 44,9 %). Ư7 (*"cùng một lượt thử thành công khoảng 1/4 số lần"*) nay có
+   **36 lượt** chống lưng thay vì 12.
+2. **Lỗi này KHÔNG phải lỗi thiếu VRAM.** Ngay tại thời điểm `cudaMalloc` hỏng, thiết bị còn trống
+   **31.133 – 31.157 MiB** (nhánh A) và **29.995 – 30.028 MiB** (nhánh B) cho một yêu cầu
+   **16.698,37 MiB** — tức **còn dư gần GẤP ĐÔI**. Xem §10.8 (1) để biết vì sao đây là hệ quả nặng
+   nhất cho Pha 2.
+3. **Ăn thêm 1.138 MiB KHÔNG làm xấu đi.** Nhánh B tiêu thêm hơn 1 GiB VRAM trước khối lớn mà tỉ lệ
+   **không tụt** (3/12 y hệt). Trong dải này, **VRAM trống không phải biến quyết định — theo cả hai
+   chiều.**
+4. **Kéo dài cửa sổ giữa backend và khối lớn gấp ~13 lần cũng không đổi gì.** Khoảng cách
+   `post-getLlama` → `pre-khối-lớn`: nhánh A trung vị **0,133 s** (0,125–0,217), nhánh B trung vị
+   **1,75 s** (1,63–2,75). Cùng 3/12. ⇒ *"thời gian trôi giữa backend và khối lớn"* cũng **không**
+   dịch được kết quả **trong dải đã thử** (0,13 s → 2,75 s). ⚠ Đây là **sản phẩm phụ**, cùng mức lực
+   như §10.4 — **không** phải một phép thử được thiết kế cho biến thời gian, và **không** loại được
+   thang thời gian khác (Đợt 1 đã thử `GGUF_WARM_DELAY_MS=120000` — nhưng đó là hoãn **cả** lượt
+   warm, tức dời **cả** backend, không phải giãn khoảng cách giữa hai cấp phát).
+
+**Quan sát hậu nghiệm, KHÔNG phải phát hiện:** ba lượt OK của nhánh A rơi vào vị trí A#4, A#7, A#10
+— cách đều 3. Xác suất 3 thành công rơi vào **một cấp số cộng bất kỳ** trong 12 vị trí là **≈ 13,6 %**
+⇒ **không đủ để gọi là gì cả**. Ghi lại chỉ vì nó gợi một phép thử rẻ cho Ư7a (trạng thái ngoài tiến
+trình biến thiên có chu kỳ): chạy ≥ 40 lượt **một nhánh duy nhất** rồi kiểm chu kỳ; **đừng** kiểm
+trên chính 24 lượt này (đó là dò dữ liệu).
+
+### 10.7 Điều phép thử này KHÔNG nói — đọc trước khi trích
+
+1. **Không nói gì về "CUDA context tạo TRƯỚC KHI app boot".** Đó là điều kiện của phép đo 3/3 ở
+   `aiGgufEngine.ts:1398-1400` và của ghi chép Đợt 1. Nhánh B đặt cấp phát nhỏ **sau khi app đã
+   boot**, trong **cùng** tiến trình. Hai điều kiện khác nhau ⇒ **kết quả này không xác nhận, không
+   bác bỏ** biến thể "trước-khi-boot". **Biến thể đó vẫn CÒN SỐNG và chưa được thử.**
+2. **Không loại "phải có một cấp phát CUDA nào đó đi trước"** (§10.5c) — không dựng được nhánh đối
+   chứng.
+3. **Không có lực với hiệu ứng vừa** (§10.4): mức tăng lên ~50 % sẽ lọt qua với xác suất 0,87.
+4. **Không nói gì về một cấp phát nhỏ có KÍCH THƯỚC hay LOẠI khác** (context thay vì trọng số; vài
+   MiB thay vì 1,1 GiB; `cudaMalloc` thô thay vì `loadModel`). Thử đúng **một** hiện thân của
+   "cấp phát nhỏ".
+5. **Không nói gì về tiến trình `ROLE=api` hay all-in-one** — cả 24 lượt đều là `dev:worker`.
+
+### 10.8 Hệ quả cho Pha 2
+
+1. **★★ Cưỡng chế theo "byte còn trống" KHÔNG chạm được lớp lỗi này — và có thể làm nó IM LẶNG.**
+   18/18 lượt hỏng có **~30 GB trống** cho một yêu cầu **16,3 GiB**. Bất kỳ `wouldRefuse` nào tính
+   theo dung lượng sẽ **cho qua** (đúng về dung lượng) rồi lượt nạp **vẫn hỏng** (sai về kết cục).
+   ⇒ Khi bật cưỡng chế, **`VramRefusedError` và `cudaMalloc failed` phải là hai câu KHÁC NHAU trong
+   nhật ký**. Gộp chúng là xoá mất tín hiệu ồn ào duy nhất đang chỉ vào bí ẩn này. Đây là **điều
+   kiện chặn thứ tám**, xin bổ sung vào bảy điều kiện của §9.
+2. **★ KHÔNG viết đường vòng "chạm backend sớm" thành mã. Lý do §7.6 vẫn đứng, và mạnh hơn.**
+   Nhánh B là một **phiên bản MẠNH HƠN** của đường vòng đó (backend **cộng thêm** 1,1 GiB trọng số
+   thật, đúng ngay trước khối lớn) — **và nó hỏng 9/12 lượt.** Tiền đề của bản vá (*"đưa được một
+   cấp phát CUDA vào sớm thì khối lớn qua"*) bị dữ liệu của chính nó bác bỏ **trong phạm vi
+   trong-tiến-trình**.
+   ⚠ Chính xác về phạm vi: điều **chưa** bị bác là biến thể **"context tạo trước khi app boot"**
+   (§10.7-1). Nếu Pha 2 vẫn muốn đường vòng, **phải thử đúng biến thể đó trước**, N ≥ 12, chứ không
+   được suy từ phép đo 3/3 hiện có (n = 3, không có nhánh đối chứng, tỉ lệ nền 25 % ⇒ 3/3 **một
+   mình** có xác suất ngẫu nhiên ≈ 1,6 % — gợi ý, **không** phải bằng chứng).
+3. **Ư0 hạ hạng: ★★ → ★ và ĐỔI CÁCH PHÁT BIỂU.** Dạng "cấp phát nhỏ có trọng số đi ngay trước" đã
+   **chết như điều kiện đủ** và **không đo được hiệu ứng** như biến dịch tỉ lệ. Ứng viên số một nay
+   là **Ư7a (ngân sách VRAM của WDDM/driver — trạng thái NGOÀI tiến trình)**: nó là thứ duy nhất còn
+   giải thích được việc kết quả lật với đầu vào giống hệt, **36 lượt trên ba loạt độc lập, tỉ lệ ổn
+   định 25 %**, trong khi mọi biến trong-tiến-trình đã thử đều không dịch được nó.
+4. **Phép thử tiếp theo phải đo lớp NGOÀI tiến trình.** Ngay trước lượt thử, ghi đồng thời
+   `llama.getVramState().free` (native) · `nvidia-smi --query-gpu=memory.reserved,memory.used` · số
+   tiến trình đồ hoạ đang giữ VRAM. **N ≥ 40 một nhánh** (không cần nhánh đối chứng: đây là phép so
+   **trong** nhóm OK/FAIL, nên lực cao hơn hẳn thiết kế hai nhánh). Nếu ba cột đó tách được hai nhóm
+   ⇒ trúng; nếu chồng nhau hoàn toàn như `memory.used` đã chồng ở **36/36 lượt** ⇒ Ư7a cũng phải
+   xuống hạng và bí ẩn chuyển sang lớp driver không quan sát được từ user-space.
+5. **Đừng chi thêm N cho Ư0.** Với hiệu ứng vừa (25 %→50 %) cần **~80 lượt/nhánh** để đạt công suất
+   0,88 — khoảng 1 giờ máy — mà kết cục tốt nhất chỉ là "có dịch một ít". Số tiền đó nên tiêu cho
+   (4).
+
+### 10.9 Xác nhận KHÔNG đụng mã sản xuất
+
+```bash
+git status --porcelain | wc -l                                   # 245  ← đúng con số yêu cầu
+git diff --stat HEAD -- server/ client/ drizzle/ scripts/ shared/ # (rỗng)
+```
+
+- Móc đo tạm nằm **duy nhất** trong `server/services/aiGgufEngine.ts` (thêm 75 dòng, không sửa dòng
+  nào có sẵn ngoài việc chèn 4 lời gọi telemetry), **đã hoàn nguyên bằng `git checkout --`**.
+- Runner + script thống kê nằm ngoài repo (thư mục tạm của phiên), **không** commit.
+- **Không** sửa `.env` (biến `U0_BRANCH` ép qua **CLI**), **không** migration, **không** DDL, không
+  `git add -A`/`-u`, **không push**.
+- Ghi vào DB: các lượt boot có sinh `vram_events` như mọi lượt boot bình thường (24 lượt × sự kiện
+  `baseline`/`reserve`/`release`/`commit`) — **không** có lượt ghi nào do móc tạm tạo ra; móc chỉ
+  **đọc** `snapshot()`.
+
+**Tái tạo:** mỗi lượt = boot `npm run dev:worker`, đọc `[U0] tag=…` trong log. 24 log thô của phiên
+này (`run-01-A.log` … `run-24-B.log`) là bằng chứng gốc; mọi ô trong bảng §10.3 trích thẳng từ đó.
