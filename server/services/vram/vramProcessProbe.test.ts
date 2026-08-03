@@ -108,6 +108,40 @@ describe("readProcessVram", () => {
     expect(goi).toBe(0);
   });
 
+  /**
+   * ★ M-3 (review vòng 1) — CÔNG TẮC HỎNG THEO CHIỀU "VẪN CHẠY" LÀ BẪY.
+   *
+   * Bản trước chỉ nhận `off|false|0`, nên mọi cách gõ khác (`disabled`, `no`, `OFF ` có khoảng
+   * trắng, chuỗi rỗng) làm đầu dò ÂM THẦM VẪN BẬT: người vận hành tin là đã tắt, hệ vẫn sinh
+   * `powershell.exe` mỗi lượt cấp phát, không dấu hiệu nào báo mình gõ sai. Nay là danh sách
+   * BẬT tường minh — biến KHÔNG đặt vẫn BẬT (hành vi sản xuất không đổi).
+   */
+  it("cong tac: MOI cach go khac 'bat' deu TAT; khong dat / 'on' thi BAT", async () => {
+    let goi = 0;
+    vi.doMock("node:child_process", () => ({
+      execFile: (_c: unknown, _a: unknown, _o: unknown, cb: (e: Error | null) => void) => {
+        goi++;
+        cb(new Error("ENOENT"));
+      },
+    }));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { readProcessVram } = await import("./vramProcessProbe");
+
+    for (const v of ["disabled", "no", "OFF ", "", "khong-biet-gi"]) {
+      process.env.VRAM_PROCESS_PROBE = v;
+      await expect(readProcessVram([123]), `"${v}" phải TẮT`).resolves.toBeNull();
+    }
+    expect(goi, "không cách gõ nào ở trên được sinh tiến trình con").toBe(0);
+
+    // …và cả hai đường BẬT vẫn chạy thật (nếu không, công tắc lại hỏng theo chiều ngược lại).
+    process.env.VRAM_PROCESS_PROBE = "on";
+    await readProcessVram([123]);
+    delete process.env.VRAM_PROCESS_PROBE;
+    await readProcessVram([123]);
+    expect(goi, "'on' và 'không đặt' đều phải chạy thật").toBe(2);
+    warnSpy.mockRestore();
+  });
+
   it("execFile loi ENOENT (khong co powershell.exe) -> tra null, KHONG nem", async () => {
     vi.doMock("node:child_process", () => ({
       execFile: (_c: unknown, _a: unknown, _o: unknown, cb: (e: Error | null, s?: string) => void) =>

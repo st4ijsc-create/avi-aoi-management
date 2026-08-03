@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
-  reserve, commit, release, snapshot, deviceTotalBytes, noteDeviceTotalBytes, __resetBrokerForTests,
+  reserve, commit, release, snapshot, deviceTotalBytes, noteDeviceTotalBytes,
+  markMeasureFailed, __resetBrokerForTests,
 } from "./vramBroker";
 
 const MIB = 1024 * 1024;
@@ -98,6 +99,32 @@ describe("vramBroker — sổ cái", () => {
       noteDeviceTotalBytes(0);
       noteDeviceTotalBytes(Number.NaN);
       expect(deviceTotalBytes()).toBe(8 * 1024 * MIB);
+    });
+  });
+
+  /**
+   * ★ Pha 2A Task 3 — `commit()` nay khai THƯỚC đã đẻ ra con số (`VramMeasureSource`).
+   * Mặc định `"device-delta"` CÓ CHỦ Ý: mọi lời gọi CŨ đo bằng `used` toàn thiết bị, và một con
+   * số "không rõ nguồn" là thứ mời người sau đem so với số của bộ đếm (Đ4 cấm).
+   */
+  describe("Pha 2A — commit() ghi THƯỚC vào giấy phép", () => {
+    it("khai nguồn tường minh ⇒ giấy phép giữ đúng nguồn đó", () => {
+      const r = reserve(req("gguf:A", 100 * MIB));
+      commit(r.lease!, 137 * MIB, "process-delta");
+      expect(snapshot().leases[0].measureSource).toBe("process-delta");
+    });
+
+    it("KHÔNG khai nguồn ⇒ mặc định 'device-delta' (mọi lời gọi cũ đo bằng thước thiết bị)", () => {
+      const r = reserve(req("gguf:A", 100 * MIB));
+      commit(r.lease!, 137 * MIB);
+      expect(snapshot().leases[0].measureSource).toBe("device-delta");
+    });
+
+    it("đo hỏng ⇒ nguồn về 'none', không giữ nguồn của một lượt commit trước", () => {
+      const r = reserve(req("gguf:A", 100 * MIB));
+      commit(r.lease!, 137 * MIB, "process-delta");
+      markMeasureFailed(r.lease!);
+      expect(snapshot().leases[0].measureSource).toBe("none");
     });
   });
 });

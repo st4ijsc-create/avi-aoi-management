@@ -99,9 +99,12 @@ describe("vramReconciler — bắt kẻ cấp phát không xin phép", () => {
     // ⚠ Review TOÀN NHÁNH (I-2) thêm `measureFailed` vào từng dòng ảnh chụp: chỉ cờ `committed`
     // thì "chưa cấp phát xong" (tạm thời) và "đã đo hỏng" (vĩnh viễn) trông giống hệt nhau khi
     // đọc lại nhật ký — mà hai thứ đó đòi hai hành động khác nhau của người trực.
+    // ⚠ I-4 (Pha 2A) thêm `measureSource` vào từng dòng ảnh chụp: từ Pha 2A tổng sổ là một phép
+    // cộng TRỘN hai thước, nên chỉ biết "tổng có trộn" là chưa đủ — phải truy được giấy phép NÀO
+    // đóng góp phần nào. `null` = giấy phép chưa từng commit (không có thước nào cả).
     expect(logged[0].detail!.leases).toEqual([
-      { owner: "sidecar:vision", kind: "external-process", priority: "background", bytes: 150 * MIB, committed: true, measureFailed: false },
-      { owner: "gguf:qwen30b", kind: "gguf-model", priority: "production", bytes: 500 * MIB, committed: false, measureFailed: false },
+      { owner: "sidecar:vision", kind: "external-process", priority: "background", bytes: 150 * MIB, committed: true, measureFailed: false, measureSource: null },
+      { owner: "gguf:qwen30b", kind: "gguf-model", priority: "production", bytes: 500 * MIB, committed: false, measureFailed: false, measureSource: null },
     ]);
     // Và phép trừ nền phải TRUY ĐƯỢC, không được vô hình.
     expect(logged[0].detail!.deviceUsedRawBytes).toBe(28_000 * MIB);
@@ -1527,5 +1530,66 @@ describe("Pha 1.5 Task 7 (T5-1) — nền thôi nuốt model đang nạp, CẢ H
       if (prev === undefined) delete process.env.VRAM_BASELINE_BLOCKED_ALARM_MS;
       else process.env.VRAM_BASELINE_BLOCKED_ALARM_MS = prev;
     }
+  });
+});
+
+/**
+ * ★★ I-4 (review vòng 1, Pha 2A) — TRỘN THƯỚC Ở MỨC TỔNG HỢP phải ĐO ĐƯỢC.
+ *
+ * `drift` so `Σ leaseBytes` — một phép cộng TRỘN (bộ đếm theo tiến trình + thiết bị + ước lượng)
+ * — với số TUYỆT ĐỐI của `nvidia-smi`, dưới ngưỡng 512 MiB cùng bậc độ lớn với khoản lệch
+ * +505…+511 MiB giữa hai thước. Hàm này KHÔNG sửa gì (Pha 2A không đổi hành vi, không đổi ngưỡng,
+ * không đổi công thức) — nó chỉ trả lời được câu "bao nhiêu phần của sổ đến từ thước nào".
+ *
+ * ⚠ Bản giả `./vramBroker` ở đây PHẢI khai `leaseBytes` với ĐÚNG công thức thật: hàm đang kiểm
+ * dựng TRÊN nó (cố ý — không nhân bản công thức, xem docstring của nó).
+ */
+describe("I-4 — tách tổng sổ theo THƯỚC", () => {
+  beforeEach(() => vi.resetModules());
+
+  const brokerMock = () =>
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: 0, leases: [] }),
+      leaseBytes: (l: { actualBytes: number | null; request: { estimatedBytes: number } }) =>
+        l.actualBytes ?? l.request.estimatedBytes,
+    }));
+
+  const leaseOf = (owner: string, est: number, actual: number | null, src?: string) =>
+    ({
+      id: owner,
+      request: { owner, kind: "gguf-model", estimatedBytes: est, priority: "interactive" },
+      actualBytes: actual,
+      measureSource: src,
+      measureFailed: false,
+      released: false,
+      acquiredAt: new Date(),
+      lastHeartbeatAt: new Date(),
+    }) as never;
+
+  it("ba nhóm PHÂN HOẠCH tổng sổ — không chồng lấn, không sót", async () => {
+    brokerMock();
+    const { splitLedgerByMeasureSource } = await import("./vramReconciler");
+
+    const s = splitLedgerByMeasureSource([
+      leaseOf("gguf:A", 100 * MIB, 111 * MIB, "process-delta"),
+      leaseOf("gguf:B", 200 * MIB, 222 * MIB, "device-delta"),
+      leaseOf("gguf:C", 300 * MIB, 333 * MIB, undefined), // bản ghi CŨ không khai nguồn
+      leaseOf("gguf:D", 400 * MIB, null, "none"), // đo hỏng ⇒ vẫn là ƯỚC LƯỢNG
+    ]);
+
+    expect(s.processDeltaBytes).toBe(111 * MIB);
+    expect(s.deviceDeltaBytes).toBe((222 + 333) * MIB);
+    expect(s.estimatedBytes).toBe(400 * MIB);
+    // ★ TRỌNG TÂM: phân hoạch — tổng ba nhóm bằng đúng tổng sổ mà `drift` đang dùng.
+    expect(s.totalBytes).toBe((111 + 222 + 333 + 400) * MIB);
+  });
+
+  it("giấy phép chưa commit nằm ở nhóm ƯỚC LƯỢNG, không thuộc thước nào", async () => {
+    brokerMock();
+    const { splitLedgerByMeasureSource } = await import("./vramReconciler");
+    const s = splitLedgerByMeasureSource([leaseOf("gguf:pending", 900 * MIB, null, undefined)]);
+    expect(s.processDeltaBytes).toBe(0);
+    expect(s.deviceDeltaBytes).toBe(0);
+    expect(s.estimatedBytes).toBe(900 * MIB);
   });
 });

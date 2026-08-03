@@ -94,9 +94,22 @@ let warnedUnavailable = false;
  * và sổ giữ ƯỚC LƯỢNG. Đó là mất phép đo, không phải mất an toàn (đúng khuôn "một ước lượng sai
  * ĐƯỢC GẮN CỜ rẻ hơn một ước lượng sai ĐƯỢC TIN").
  */
+/**
+ * ⚠ M-3 (review vòng 1) — DANH SÁCH **BẬT**, KHÔNG PHẢI DANH SÁCH TẮT.
+ *
+ * Bản trước chỉ nhận `off|false|0`, nên `VRAM_PROCESS_PROBE=disabled` (hay `no`, `OFF `, `""`)
+ * làm đầu dò **âm thầm VẪN BẬT**. Một công tắc vận hành hỏng theo chiều "vẫn chạy" là bẫy: người
+ * vận hành tin là đã tắt, hệ vẫn sinh `powershell.exe` mỗi lượt cấp phát, và không có dấu hiệu
+ * nào cho biết mình gõ sai. Đảo logic là cách DUY NHẤT đóng hẳn lớp lỗi đó thay vì đuổi theo từng
+ * biến thể chính tả: **chỉ chạy khi khớp danh sách BẬT tường minh** (mặc định, tức biến không
+ * đặt, vẫn là BẬT — hành vi sản xuất không đổi).
+ */
+const PROBE_ON_VALUES = new Set(["on", "true", "1", "yes", "enabled", "enable"]);
+
 function probeDisabled(): boolean {
-  const v = String(process.env.VRAM_PROCESS_PROBE ?? "").toLowerCase();
-  return v === "off" || v === "false" || v === "0";
+  const raw = process.env.VRAM_PROCESS_PROBE;
+  if (raw === undefined) return false; // không đặt ⇒ BẬT (mặc định sản xuất)
+  return !PROBE_ON_VALUES.has(raw.trim().toLowerCase());
 }
 
 export function readProcessVram(roots: readonly number[]): Promise<VramProcessSample | null> {

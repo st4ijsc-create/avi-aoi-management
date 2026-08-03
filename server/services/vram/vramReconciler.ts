@@ -532,6 +532,56 @@ export function __resetVramBaselineForTests(): void {
 }
 
 /**
+ * ★★ I-4 (review vòng 1, Pha 2A) — TÁCH TỔNG SỔ THEO THƯỚC ĐÃ ĐẺ RA TỪNG CON SỐ.
+ *
+ * VẤN ĐỀ NẰM Ở MỨC TỔNG HỢP, không ở từng điểm gọi: từ Pha 2A, `Σ leaseBytes` là một PHÉP CỘNG
+ * TRỘN — vài giấy phép mang chênh lệch đo bằng **bộ đếm theo tiến trình**, vài giấy phép mang
+ * **ước lượng**, và bản ghi cũ mang chênh lệch đo bằng **thiết bị**. `reconcileOnce()` đem tổng
+ * đó so với **số TUYỆT ĐỐI của `nvidia-smi`**, dưới ngưỡng 512 MiB — **cùng bậc độ lớn** với
+ * khoản lệch +505…+511 MiB giữa hai thước (Đ4). Trước hàm này không ai trả lời được câu "bao
+ * nhiêu phần của sổ đến từ thước nào", nên khoản trộn là VÔ HÌNH.
+ *
+ * ⚠ HÀM NÀY KHÔNG SỬA GÌ và KHÔNG được dùng để sửa: Pha 2A KHÔNG đổi ngưỡng 512, KHÔNG đổi nhịp
+ * 60 s, KHÔNG đổi công thức `drift` (ràng buộc toàn cục 3). Nó chỉ làm khoản trộn **ĐO ĐƯỢC** để
+ * lượt sau có SỐ mà quyết thay vì đoán.
+ *
+ * ⚠ ĐẶT Ở ĐÂY, KHÔNG Ở `vramBroker`, CÓ LÝ DO CỤ THỂ: 43 bản giả `./vramBroker` trong
+ * `vramReconciler.test.ts` chỉ khai đúng những export mà reconciler thật sự chạm. Thêm một export
+ * MỚI vào broker rồi gọi nó vô điều kiện ở đây làm CẢ 43 bản giả vỡ ("No export is defined"),
+ * tức bắt người sau phải sửa 43 chỗ mỗi lần reconciler cần thêm một hàm broker. Đặt ở đây và dựng
+ * TRÊN `leaseBytes()` đã import: **không nhân bản công thức** (đúng cảnh báo M-1 của Task 4 —
+ * hai bản cài đặt song song của cùng một công thức là lớp lỗi đã khiến `bench.mjs` sai bốn lần),
+ * mà cũng không đẻ thêm bề mặt mock.
+ *
+ * Ba nhóm là một PHÂN HOẠCH: cộng lại đúng bằng `snapshot().totalReservedBytes`.
+ */
+export function splitLedgerByMeasureSource(leases: readonly VramLease[]): {
+  processDeltaBytes: number;
+  deviceDeltaBytes: number;
+  estimatedBytes: number;
+  totalBytes: number;
+} {
+  let processDeltaBytes = 0;
+  let deviceDeltaBytes = 0;
+  let estimatedBytes = 0;
+  for (const l of leases) {
+    const bytes = leaseBytes(l);
+    // `actualBytes === null` ⇒ con số trong sổ là ƯỚC LƯỢNG, không thuộc thước nào (kể cả khi
+    // `measureSource === "none"` do đo hỏng). Phân loại theo `actualBytes` chứ KHÔNG theo
+    // `measureSource`: cờ nguồn chỉ có nghĩa khi thật sự tồn tại một con số ĐO.
+    if (l.actualBytes === null) estimatedBytes += bytes;
+    else if (l.measureSource === "process-delta") processDeltaBytes += bytes;
+    else deviceDeltaBytes += bytes; // gồm cả bản ghi CŨ không khai nguồn (mặc định của commit())
+  }
+  return {
+    processDeltaBytes,
+    deviceDeltaBytes,
+    estimatedBytes,
+    totalBytes: processDeltaBytes + deviceDeltaBytes + estimatedBytes,
+  };
+}
+
+/**
  * So sổ với thiết bị. Lệch quá ngưỡng ⇒ có sự cố cần điều tra:
  * - Lệch DƯƠNG (thiết bị > sổ): có hộ tiêu thụ cấp phát KHÔNG XIN PHÉP.
  * - Lệch ÂM (sổ > thiết bị): giấy phép TREO (tiến trình chết) hoặc commit() ghi số SAI —
@@ -930,6 +980,20 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
         // Pha 1.5 Task 3 — phần băng dung sai ÂM đã được nới cho lượt này; đọc nhật ký là biết
         // NGAY ngưỡng thực tế đã áp dụng là bao nhiêu, không phải đoán từ danh sách leases.
         pendingBytes,
+        /**
+         * ★★ I-4 (review vòng 1, Pha 2A) — TRỘN THƯỚC Ở MỨC TỔNG HỢP, nay ĐO ĐƯỢC.
+         *
+         * `driftBytes` so `ledgerTotalBytes` (một phép cộng TRỘN: chênh lệch từ bộ đếm theo tiến
+         * trình + chênh lệch từ thiết bị ở bản ghi cũ + ước lượng) với `deviceUsedBytes` (số
+         * TUYỆT ĐỐI của `nvidia-smi`/`getVramState`), dưới ngưỡng 512 MiB — CÙNG BẬC ĐỘ LỚN với
+         * khoản lệch +505…+511 MiB giữa hai thước. Trước trường này, không cách nào biết bao
+         * nhiêu phần của sổ đến từ thước nào.
+         *
+         * ⚠ KHÔNG đổi ngưỡng, KHÔNG đổi nhịp, KHÔNG đổi công thức `drift` (ràng buộc toàn cục 3;
+         * Pha 2A không đổi hành vi). Đây THUẦN TUÝ là dữ liệu để lượt sau có số mà quyết. Ba
+         * nhóm cộng lại đúng bằng `ledgerTotalBytes` — lệch là có người đổi `leaseBytes()`.
+         */
+        measureSourceSplit: splitLedgerByMeasureSource(snap.leases),
         leases: snap.leases.map((l) => ({
           owner: l.request.owner,
           kind: l.request.kind,
@@ -939,6 +1003,9 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
           // I-2 — "chưa commit" và "đo hỏng" trông giống nhau trong ảnh chụp nếu chỉ có cờ
           // `committed`. Ghi riêng để đọc lại nhật ký là phân biệt được tạm thời vs vĩnh viễn.
           measureFailed: l.measureFailed === true,
+          // I-4 — THƯỚC của từng con số, không chỉ của tổng: có nó mới truy được giấy phép NÀO
+          // đang đóng góp phần lệch giữa hai thước, thay vì chỉ biết "tổng có trộn".
+          measureSource: l.measureSource ?? null,
         })),
       },
     });

@@ -33,14 +33,19 @@ const CHILD_PID_2 = 999_002;
 /**
  * Một lượt đọc bộ đếm: `self` = byte của CHÍNH tiến trình này, `child`/`child2` = byte của tiến
  * trình con. `null` ⇒ đầu dò trả null; `"THROW"` ⇒ đầu dò NÉM (nhánh thoát thứ năm).
+ *
+ * ⚠ I-1 — `self: null` nghĩa là **mẫu HỢP LỆ nhưng KHÔNG CÓ khoá của tiến trình này** trong
+ * `byPid`. Đó là thứ hoàn toàn khác `self: 0` (có khoá, giá trị 0 = thật sự không chiếm byte nào),
+ * và `parseProcessCounters` CỐ Ý trả mẫu hợp lệ trong ca đó. Bản giả phải dựng được cả hai, nếu
+ * không ca I-1 không tồn tại.
  */
-type Sample = { self: number; child?: number; child2?: number } | null | "THROW";
+type Sample = { self: number | null; child?: number; child2?: number } | null | "THROW";
 
 /**
  * Hàng đợi mẫu giả. Ngữ nghĩa CỐ Ý giống `wiring.doubleCount.test.ts`: còn >1 phần tử thì SHIFT,
  * còn đúng 1 thì lặp lại mãi — nhờ vậy một fixture ngắn phục vụ được cả những lượt đọc phát sinh.
  */
-const readings = vi.hoisted(() => [] as Array<{ self: number; child?: number; child2?: number } | null | "THROW">);
+const readings = vi.hoisted(() => [] as Array<{ self: number | null; child?: number; child2?: number } | null | "THROW">);
 
 /** Bao nhiêu lượt `readProcessVram()` đã chạy — dùng để chứng minh đường đo KHÔNG chạm vramProbe. */
 const probeCalls = vi.hoisted(() => ({ process: 0, device: 0 }));
@@ -61,7 +66,8 @@ vi.mock("./vramProcessProbe", () => ({
     const r: Sample = readings.length > 1 ? readings.shift()! : (readings[0] ?? null);
     if (r === "THROW") throw new Error("đầu dò theo tiến trình NÉM");
     if (r === null) return null;
-    const byPid = new Map<number, number>([[process.pid, r.self]]);
+    const byPid = new Map<number, number>();
+    if (r.self !== null) byPid.set(process.pid, r.self);
     if (r.child !== undefined) byPid.set(CHILD_PID, r.child);
     if (r.child2 !== undefined) byPid.set(CHILD_PID_2, r.child2);
     let totalBytes = 0;
@@ -481,7 +487,7 @@ describe("Pha 2A — actualBytes đến từ bộ đếm THEO TIẾN TRÌNH", ()
       .toBe(-16_000 * MiB);
   });
 
-  it("14. delta BẰNG 0 vẫn là số liệu THẬT và vẫn được commit (hộ chạy CPU)", async () => {
+  it("14. delta BẰNG 0 vẫn là số liệu THẬT và vẫn được commit (hộ chạy CPU, bộ đếm CÓ thấy ta)", async () => {
     readings.push({ self: 4_000 * MiB });
     readings.push({ self: 4_000 * MiB });
 
@@ -493,5 +499,94 @@ describe("Pha 2A — actualBytes đến từ bộ đếm THEO TIẾN TRÌNH", ()
     expect(l!.actualBytes).toBe(0);
     expect(l!.measureSource).toBe("process-delta");
     expect(l!.measureFailed).toBeFalsy();
+  });
+
+  /**
+   * ★★★ I-1 (review vòng 1) — MẪU HỢP LỆ NHƯNG KHÔNG CÓ KHOÁ CỦA TA ≠ 0 BYTE.
+   *
+   * `parseProcessCounters` CỐ Ý trả mẫu hợp lệ khi không PID nào khớp, nên `byPid.get(self) ?? 0`
+   * biến "bộ đếm không thấy ta" thành "ta chiếm 0 byte". Hậu quả dây chuyền: `commit(0)` kèm
+   * `measureSource: "process-delta"` (KHAI LÀ ĐO ĐƯỢC) rồi `recordActual(owner, 0)` đóng đinh nấc
+   * `learned = 0` tới hết đời tiến trình. Ở Pha 2B: ước lượng 0 = dư địa VÔ HẠN = không bao giờ
+   * từ chối = OOM. Ca này canh đúng chỗ đó.
+   */
+  it("★★★ 15. I-1: mẫu HỢP LỆ nhưng KHÔNG có khoá self ⇒ measureFailed, KHÔNG commit, KHÔNG recordActual", async () => {
+    // Mẫu hợp lệ (đầu dò KHÔNG trả null), chỉ là không PID nào của cây ta có mặt.
+    readings.push({ self: null });
+
+    const { beginVramAllocation } = await import("./vramWiring");
+    const { snapshot } = await import("./vramBroker");
+    const { estimateBytesFor } = await import("./vramEstimator");
+
+    await (await beginVramAllocation(inProcess("gguf:khong-thay", 900))).commitMeasured();
+
+    const l = snapshot().leases.find((x) => x.request.owner === "gguf:khong-thay");
+    // KHÔNG được là 0: đó là con số suy ra từ một khoá VẮNG MẶT, không phải số đo.
+    expect(l!.actualBytes).toBeNull();
+    expect(l!.measureFailed).toBe(true);
+    expect(l!.measureSource).toBe("none");
+
+    const ev = events.find((e) => e.event === "measure_failed" && e.owner === "gguf:khong-thay");
+    expect((ev!.detail as Record<string, unknown>).reason).toBe("measure-target-absent");
+
+    // ★ TRỌNG TÂM: nấc "learned" KHÔNG được nhiễm 0 — đây là thứ sống tới hết đời tiến trình.
+    const est = await estimateBytesFor("gguf:khong-thay", { fileBytes: 900 * MiB });
+    expect(est.source).toBe("file-size");
+    expect(est.bytes).toBe(900 * MiB);
+  });
+
+  /**
+   * ★★ I-4 (review vòng 1) — SỰ KIỆN LỆCH PHẢI MANG PHẦN TÁCH THEO NGUỒN.
+   *
+   * Từ Pha 2A, `ledgerTotalBytes` là một phép cộng TRỘN (chênh lệch từ bộ đếm + ước lượng + bản
+   * ghi cũ từ thiết bị) và `drift` đem nó so với số TUYỆT ĐỐI của `nvidia-smi`, dưới ngưỡng 512
+   * MiB — cùng bậc độ lớn với khoản lệch +505…+511 MiB giữa hai thước. Ca này canh: đọc nhật ký
+   * là biết ĐƯỢC bao nhiêu byte đến từ thước nào (KHÔNG đổi ngưỡng, KHÔNG đổi công thức).
+   */
+  it("★★ 17. I-4: sự kiện `drift` mang phần tách theo THƯỚC, và ba nhóm cộng lại bằng tổng sổ", async () => {
+    readings.push({ self: 1_000 * MiB });
+    readings.push({ self: 3_000 * MiB });
+
+    const { beginVramAllocation } = await import("./vramWiring");
+    const { snapshot } = await import("./vramBroker");
+    await (await beginVramAllocation(inProcess("gguf:A", 2_000))).commitMeasured();
+    // Một giấy phép thứ hai CHƯA commit ⇒ phần "ước lượng" khác 0, để phép phân hoạch có việc.
+    await beginVramAllocation(inProcess("gguf:B", 500));
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { reconcileOnce, __resetVramBaselineForTests } = await import("./vramReconciler");
+    __resetVramBaselineForTests();
+    await reconcileOnce();
+    warn.mockRestore();
+
+    const ev = events.find((e) => e.event === "drift");
+    expect(ev, "phải có sự kiện drift để mà đọc").toBeDefined();
+    const split = (ev!.detail as Record<string, unknown>).measureSourceSplit as Record<string, number>;
+    expect(split.processDeltaBytes).toBe(2_000 * MiB);
+    expect(split.deviceDeltaBytes).toBe(0);
+    expect(split.estimatedBytes).toBe(500 * MiB);
+    // ★ TRỌNG TÂM: phân hoạch — không byte nào bị đếm hai lần hay rơi ra ngoài.
+    expect(split.totalBytes).toBe(snapshot().totalReservedBytes);
+    expect(split.totalBytes).toBe(ev!.ledgerTotalBytes);
+  });
+
+  /**
+   * ĐỐI CHỨNG cho ca 15 — chặn theo đầu đo TRƯỚC sẽ giết lượt cấp phát ĐẦU TIÊN của cả tiến
+   * trình: trước `getLlama()` tiến trình chưa có byte VRAM nào nên bộ đếm KHÔNG có khoá của nó.
+   * Nếu `gguf-backend` luôn `measureFailed` thì T5-15 (giấy phép backend chặn nền vĩnh viễn) sống
+   * lại nguyên vẹn. Vì vậy "trước không thấy, sau thấy" PHẢI commit số thật.
+   */
+  it("★ 16. 'trước KHÔNG thấy, sau THẤY' vẫn commit số THẬT (lượt cấp phát đầu tiên của tiến trình)", async () => {
+    readings.push({ self: null });         // trước getLlama(): chưa có thể hiện bộ đếm nào
+    readings.push({ self: 430 * MiB });    // sau: backend CUDA đã hình thành
+
+    const { beginVramAllocation } = await import("./vramWiring");
+    const { snapshot } = await import("./vramBroker");
+    await (await beginVramAllocation({ owner: "cuda-backend", kind: "gguf-backend", priority: "production" })).commitMeasured();
+
+    const l = snapshot().leases.find((x) => x.request.owner === "cuda-backend");
+    expect(l!.actualBytes).toBe(430 * MiB);
+    expect(l!.measureFailed).toBeFalsy();
+    expect(l!.measureSource).toBe("process-delta");
   });
 });

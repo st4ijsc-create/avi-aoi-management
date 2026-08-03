@@ -262,15 +262,39 @@ export function __openMeasureWindowCount(): number {
  * khoá được đóng. Bọc thêm một `catch` ở ĐÂY sẽ làm nhánh "đầu dò SAU NÉM" (nhánh thoát thứ NĂM)
  * trở thành mã chết mà không ai thấy.
  */
-async function readScopeBytes(scope: VramMeasureScope): Promise<number | null> {
+/**
+ * ★★★ I-1 (review vòng 1) — MỘT ĐẦU ĐO GỒM HAI THÔNG TIN, KHÔNG PHẢI MỘT.
+ *
+ * `bytes` là con số; `seen` trả lời câu hỏi KHÁC HẲN: **bộ đếm có nhìn thấy cây tiến trình của ta
+ * hay không.** Gộp hai thứ đó vào một số (`byPid.get(self) ?? 0`) là để "bộ đếm vắng mặt / regex
+ * không khớp / mẫu không có khoá của ta" và "thật sự 0 byte" cho **cùng một kết quả** — rồi commit
+ * `0` kèm `measureSource: "process-delta"`, tức KHAI LÀ ĐO ĐƯỢC, rồi `recordActual(owner, 0)`
+ * **đóng đinh nấc `learned` = 0 tới hết đời tiến trình**. Ở Pha 2B, ước lượng 0 nghĩa là dư địa
+ * VÔ HẠN ⇒ broker không bao giờ từ chối ⇒ OOM. Chiều lỗi này là chiều nguy hiểm.
+ *
+ * ⚠ `parseProcessCounters` CỐ Ý trả mẫu HỢP LỆ khi không PID nào khớp (`vramProcessProbe.ts`) —
+ * đó là hợp đồng đúng cho hàm đó (nó không biết người gọi mong đợi gì), nên chỗ phải phân biệt
+ * chính là ĐÂY, phía gọi.
+ */
+interface ScopeReading {
+  readonly bytes: number;
+  /** Bộ đếm CÓ thấy cây của ta ở lượt đọc này không. `false` ⇒ `bytes` là 0 SUY RA, không phải 0 ĐO ĐƯỢC. */
+  readonly seen: boolean;
+}
+
+async function readScopeBytes(scope: VramMeasureScope): Promise<ScopeReading | null> {
   const { readProcessVram } = await import("./vramProcessProbe");
   const sample = await readProcessVram([process.pid]);
   if (!sample) return null;
   const own = sample.byPid.get(process.pid) ?? 0;
-  if (scope === "self") return own;
+  if (scope === "self") return { bytes: own, seen: sample.byPid.has(process.pid) };
   // Cây trừ CHÍNH ta = tổng của con/cháu. `Math.max(0, …)` vì hai số này đến từ CÙNG một lượt
   // đọc nên về lý thuyết không âm được; nếu âm thì đó là dữ liệu hỏng, không phải số đo.
-  return Math.max(0, sample.totalBytes - own);
+  // `seen` ở phạm vi này = có ÍT NHẤT MỘT PID con/cháu trong bộ đếm (khoá của chính ta không
+  // tính): chỉ khi đó con số "cây con chiếm bao nhiêu" mới là số ĐO ĐƯỢC.
+  const hasSelf = sample.byPid.has(process.pid);
+  const descendantKeys = sample.byPid.size - (hasSelf ? 1 : 0);
+  return { bytes: Math.max(0, sample.totalBytes - own), seen: descendantKeys > 0 };
 }
 
 /**
@@ -414,12 +438,13 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
     // `getVramState()` native (~0 ms) mà nó thay thế. Chấp nhận được vì mỗi hộ tiêu thụ chỉ trả
     // chi phí này ở lượt cấp phát THẬT (model/session đều được cache), không phải mỗi request, và
     // lượt cấp phát thật tính bằng giây tới phút.
-    let beforeUsed: number | null = null;
+    let before: ScopeReading | null = null;
     try {
-      beforeUsed = await readScopeBytes(scope);
+      before = await readScopeBytes(scope);
     } catch {
       /* không đo được ⇒ bỏ qua phần commit, giấy phép vẫn giữ ước lượng */
     }
+    const beforeUsed: number | null = before === null ? null : before.bytes;
 
     /**
      * ★★ Task 8 (C-1) — MỞ CỬA SỔ ĐO. Xem khối docstring `OpenMeasureWindow` ở đầu file.
@@ -532,12 +557,13 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
             markProbeFailed("before-probe-null", {});
             return;
           }
-          const after = await readScopeBytes(scope);
-          if (after === null) {
+          const afterReading = await readScopeBytes(scope);
+          if (afterReading === null) {
             closeWindow();
             markProbeFailed("after-probe-null", { beforeUsedBytes: beforeUsed });
             return;
           }
+          const after = afterReading.bytes;
 
           // ★★ Task 8 (C-1) — cửa sổ đo ĐÓNG NGAY SAU đầu đo "sau", không muộn hơn. Từ điểm này
           // giấy phép đã ổn định trên thiết bị: nó không còn làm bẩn phép đo của ai nữa, và giữ
@@ -687,6 +713,57 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
                   "GIỮ NGUYÊN ước lượng và sẽ KHÔNG BAO GIỜ được xác minh — đây là nguồn lệch ÂM " +
                   "dai dẳng, KHÔNG phải 'đang cấp phát dở'. KHÔNG thử lại: beforeUsed đã cũ, " +
                   "thử lại chỉ tạo ra một số sai trông như số thật.",
+              },
+            });
+            return;
+          }
+
+          /**
+           * ★★★ I-1 (review vòng 1) — "CỬA THỨ TÁM": DELTA 0 MÀ BỘ ĐẾM CHƯA TỪNG THẤY TA.
+           *
+           * `0` ở đây có thể là HAI thứ khác hẳn nhau, và trước bản vá này chúng cho cùng một kết
+           * quả: (a) hộ tiêu thụ THẬT SỰ chiếm 0 byte VRAM (reranker chạy CPU) — số liệu THẬT,
+           * PHẢI ghi; (b) bộ đếm KHÔNG THẤY cây tiến trình của ta (bộ đếm vắng, regex không khớp,
+           * mẫu hợp lệ nhưng không có khoá của ta) — KHÔNG có phép đo nào cả.
+           *
+           * Ghi (b) như thể là (a) là điều nguy hiểm nhất mà đường này làm được: `commit(0)` kèm
+           * `measureSource: "process-delta"` + `measureFailed: false` = **khai là đo được**, rồi
+           * `recordActual(owner, 0)` **đóng đinh nấc `learned` = 0 tới hết đời tiến trình**. Ở
+           * Pha 2B, ước lượng 0 nghĩa là dư địa VÔ HẠN ⇒ broker KHÔNG BAO GIỜ từ chối ⇒ OOM.
+           * Một phép đo hỏng tự khai là thành công tệ hơn hẳn một phép đo tự khai là hỏng.
+           *
+           * ⚠ CHỈ CHẶN KHI `actual === 0` VÀ đầu đo SAU không thấy ta — KHÔNG chặn theo đầu đo
+           * TRƯỚC, và đây là chỗ dễ sai nhất:
+           *   • "trước không thấy, sau thấy" là ca BÌNH THƯỜNG và BẮT BUỘC phải commit — đó chính
+           *     là lượt cấp phát ĐẦU TIÊN của cả tiến trình (`cuda-backend`): trước `getLlama()`
+           *     tiến trình chưa có một byte VRAM nào nên không có thể hiện bộ đếm nào mang PID của
+           *     nó. Chặn theo đầu đo trước = `gguf-backend` LUÔN `measureFailed` = tái sinh đúng
+           *     T5-15 (giấy phép backend đo hỏng chặn nền VĨNH VIỄN) mà Task 4 sinh ra để đóng.
+           *   • "trước thấy (>0), sau không thấy" ⇒ delta ÂM ⇒ đã bị nhánh trên bắt.
+           *   • "cả hai đều thấy, delta = 0" ⇒ số liệu THẬT của hộ chạy CPU ⇒ vẫn commit, giữ
+           *     nguyên hành vi mà I-2/Task 5 đã cố ý dựng (`>= 0`, `??` chứ không `||`).
+           */
+          if (actual === 0 && !afterReading.seen) {
+            broker.markMeasureFailed(lease);
+            logVramEvent({
+              event: "measure_failed",
+              owner: opts.owner,
+              leaseKind: opts.kind,
+              priority: opts.priority,
+              estimatedBytes: est.bytes,
+              estimateSource: est.source,
+              detail: {
+                reason: "measure-target-absent",
+                measureSource: "none" satisfies VramMeasureSource,
+                measureScope: scope,
+                beforeUsedBytes: beforeUsed,
+                afterUsedBytes: after,
+                note:
+                  "delta = 0 NHƯNG bộ đếm không có khoá nào cho cây tiến trình này ở đầu đo SAU ⇒ " +
+                  "không phân biệt được 'thật sự 0 byte' với 'bộ đếm không thấy ta'. Ghi 0 ở đây là " +
+                  "khai một phép đo KHÔNG TỒN TẠI là thành công, và recordActual(0) sẽ đóng đinh nấc " +
+                  "learned = 0 tới hết đời tiến trình — ở Pha 2B nghĩa là dư địa VÔ HẠN, tức OOM. " +
+                  "Giấy phép GIỮ ƯỚC LƯỢNG.",
               },
             });
             return;
