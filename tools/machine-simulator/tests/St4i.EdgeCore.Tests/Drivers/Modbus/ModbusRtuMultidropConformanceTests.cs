@@ -48,11 +48,19 @@ namespace St4i.EdgeCore.Tests.Drivers.Modbus;
 /// everyone) and it is why the bus-mate polls a HEALTHY slave: a bus-mate that also timed out would make every
 /// timing here a measurement of the rig.</description></item>
 /// <item><description><b><see cref="DeviceDriverConformanceSuite.Check_ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable"/>
-/// runs against a device holding the SHARED lock for up to 8 s.</b> That is deliberate — it is the only
-/// arrangement in which passing the check proves
+/// and <see cref="Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice"/> BOTH run
+/// against a device holding the SHARED lock for up to 8 s.</b> That is deliberate — it is the only
+/// arrangement in which passing either check proves
 /// <see cref="IModbusBusLink.AbortPendingRead"/> did the work rather than a timeout expiring inside the
-/// budget — and it means a FAILURE of that check starves the bus-mate for those 8 s. Bounded, per test, and
-/// preferable to a check that cannot discriminate.</description></item>
+/// budget — and it means a FAILURE of either starves the bus-mate for those 8 s. Bounded, per test, and
+/// preferable to a check that cannot discriminate.
+///
+/// <para>🔴 The write half of that sentence is new as of the D-6 fix round, and its absence here was the
+/// review's N-1. Worth naming rather than quietly amending: this bullet enumerated the checks that pay the
+/// 8 s cost, a second check joined them, and the enumeration was not revisited — the same "a list was
+/// worked instead of the rule behind it" shape that produced the Critical this file now documents at
+/// <see cref="ModbusRtuDriverConformanceTests"/>. On a PASSING run the write check costs 211 ms, not 8 s;
+/// the bound is what a failure costs.</para></description></item>
 /// <item><description><b>A shared bus cannot be force-unstuck the way a TCP peer can.</b> The TCP class's
 /// <c>ForceUnstickAsync</c> closes the listener; the RTU equivalent would tear down the line every other
 /// machine is using, which is precisely the cancellation design D-2 rejected (blueprint §2.1). So the unstick
