@@ -256,11 +256,16 @@ export function __openMeasureWindowCount(): number {
  *   • Bộ đếm TRỄ thì cửa sổ **BỊ DỊCH** chứ không co: mất phần cấp phát rơi vào khoảng trễ cuối.
  *     Trễ hoàn toàn ⇒ hai lượt đọc GIỐNG HỆT nhau ⇒ `actual === 0` với `seen === true` ⇒ commit 0
  *     + `recordActual(0)` — tái tạo nguyên vẹn nấc `learned = 0` mà I-1 sinh ra để chặn.
- *   • **Hôm nay lỗ đó CHƯA MỞ, và đó là nhờ một thứ KHÔNG AI THIẾT KẾ:** `-SampleInterval` mặc
- *     định của `Get-Counter` tạo ra biên lắng **~1,2 s** trong `PS_SCRIPT` (`vramProcessProbe.ts`),
- *     đo được PDH lấy mẫu ở t₀ + 1.299/1.304/1.352 ms. Biên đó **ĐANG LÀ ĐIỀU KIỆN ĐÚNG ĐẮN CỦA
- *     PHÉP ĐO**, không phải chi phí thừa — hạ nó xuống là mở lỗ này, IM LẶNG, không ca test nào đỏ.
- *     Đọc khối chú thích ở `PS_SCRIPT` trước khi tối ưu bất cứ thứ gì trong đường đo.
+ *   • **★ TASK 6 ĐÃ ĐÓNG LỖ NÀY — và câu trả lời KHÁC với dự đoán của I-5.** Trước Task 6, lỗ chưa
+ *     mở là nhờ một thứ KHÔNG AI THIẾT KẾ: `-SampleInterval` mặc định của `Get-Counter` tạo biên
+ *     lắng ~1,2 s trong `PS_SCRIPT`. I-5 kết luận biên đó "ĐANG LÀ ĐIỀU KIỆN ĐÚNG ĐẮN CỦA PHÉP
+ *     ĐO". **Đo trực tiếp (8/8 lượt) BÁC BỎ vế đó:** bộ đếm phản ánh ĐỦ lượt cấp phát **TRƯỚC**
+ *     khi lượt nạp trả về (đi trước 429–7.140 ms), nên yêu cầu thật là **0 ms** và 1,2 giây kia
+ *     luôn là chi phí thuần. Điều I-5 nói ĐÚNG là phần còn lại: cửa sổ đo đang tựa vào một biên
+ *     KHÔNG THUỘC VỀ TA. Nay biên đó là `VRAM_MEASURE_SETTLE_MS` (`vramProcessProbe.ts`), được
+ *     `await` ngay trước đầu đo SAU trong `commitMeasured()` và có ca đỏ canh
+ *     (`wiring.settle.test.ts`). ⚠ `seen` VẪN chỉ đo sự tồn tại của khoá — Task 6 KHÔNG thêm tín
+ *     hiệu ĐỘ TƯƠI; nó chỉ làm cho khoảng chờ trở thành của ta, đo được và test được.
  *   • **RÀNG BUỘC ĐẦY ĐỦ:** tính an toàn của ca "bộ đếm có-mà-mù" phụ thuộc vào **nhánh delta-âm
  *     CŨNG gắn cờ** (`actual < 0` ⇒ `markMeasureFailed`). Nếu một bản sửa tương lai bỏ nhánh đó
  *     (hoặc đổi nó thành `commit(0)`), ca "trước thấy X, sau mù ⇒ 0 − X < 0" sẽ rơi thẳng vào
@@ -317,6 +322,20 @@ async function readScopeBytes(scope: VramMeasureScope): Promise<ScopeReading | n
   const hasSelf = sample.byPid.has(process.pid);
   const descendantKeys = sample.byPid.size - (hasSelf ? 1 : 0);
   return { bytes: Math.max(0, sample.totalBytes - own), seen: descendantKeys > 0 };
+}
+
+/**
+ * Pha 2A Task 6 — CHỜ BIÊN LẮNG của bộ đếm. Import động cùng khuôn với `readScopeBytes()` ở trên.
+ *
+ * ⚠ HÀM NÀY CÓ THỂ NÉM (và phải được để cho ném): nếu một bộ test giả `./vramProcessProbe` mà
+ * QUÊN khai `awaitCounterSettle`, lời gọi này ném ⇒ `commitMeasured()` rơi vào `catch` ngoài cùng
+ * ⇒ KHÔNG commit. Đó là hướng đúng: thà mất một phép đo còn hơn commit một hiệu số đọc trước khi
+ * bộ đếm kịp phản ánh. Nuốt lỗi ở đây sẽ biến "quên biên lắng" thành im lặng — đúng lớp lỗi Task 6
+ * sinh ra để đóng.
+ */
+async function awaitMeasureSettle(): Promise<void> {
+  const { awaitCounterSettle } = await import("./vramProcessProbe");
+  await awaitCounterSettle();
 }
 
 /**
@@ -676,6 +695,28 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
             markProbeFailed("before-probe-null", {});
             return;
           }
+          /**
+           * ★★★ PHA 2A TASK 6 — BIÊN LẮNG **CỦA TA**, ĐẶT ĐÚNG Ở ĐÂY. Đọc `VRAM_MEASURE_SETTLE_MS`
+           * trong `vramProcessProbe.ts` để biết số đo chống lưng cho nó.
+           *
+           * ⚠ VÌ SAO TRƯỚC ĐẦU ĐO SAU, KHÔNG PHẢI TRƯỚC ĐẦU ĐO TRƯỚC: đầu đo TRƯỚC đọc một trạng
+           * thái đã đứng yên (khoá nối tiếp đang giữ, chưa ai cấp phát gì); đầu đo SAU là đầu duy
+           * nhất phải đuổi theo một lượt cấp phát VỪA XONG. Chờ ở đầu kia là trả tiền mà không mua
+           * được gì.
+           *
+           * ⚠ VÌ SAO **BÊN TRONG** CỬA SỔ (`closeWindow()` nằm dưới, không phải trên): trong khoảng
+           * chờ này giấy phép vẫn giữ khoá nối tiếp. Chờ ở NGOÀI cửa sổ mở đúng bằng ngần ấy thời
+           * gian cho một lượt cấp phát khác chen vào giữa hai đầu đo — tức tự tay tái tạo lớp lỗi
+           * cộng-trùng mà `withMeasureWindow` sinh ra để diệt.
+           *
+           * ⚠⚠ NGƯỜI SAU ĐỌC ĐẾN ĐÂY VÌ ĐANG TỐI ƯU CHI PHÍ ĐƯỜNG ĐO: `Get-Counter` trong
+           * `PS_SCRIPT` có một biên ~1,2 s ĐI KÈM (mặc định `-SampleInterval 1`). Đó là **tác dụng
+           * phụ**, không phải thiết kế, và Task 6 tồn tại chính vì nó. Gỡ/hạ nó thì được — nhưng
+           * dòng `await` NÀY phải ở lại, vì nó là biên duy nhất còn thuộc về ta và là biên duy nhất
+           * có ca test canh (`wiring.settle.test.ts`).
+           */
+          await awaitMeasureSettle();
+
           const afterReading = await readScopeBytes(scope);
           if (afterReading === null) {
             closeWindow();

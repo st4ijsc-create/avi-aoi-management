@@ -64,8 +64,12 @@ export function parseProcessCounters(rawJson: string, roots: readonly number[], 
 }
 
 /**
- * ★★★ I-5 (re-review vòng 1) — **BIÊN LẮNG ~1,2 s CỦA `Get-Counter` LÀ ĐIỀU KIỆN ĐÚNG ĐẮN CỦA
- * PHÉP ĐO, KHÔNG PHẢI CHI PHÍ THỪA.** Đọc hết khối này trước khi tối ưu bất cứ thứ gì ở đây.
+ * ★★★ I-5 → **ĐÃ ĐÓNG BỞI TASK 6.** Khối này giữ lại lịch sử vì nó giải thích vì sao cửa sổ đo
+ * từng đúng mà không ai biết tại sao. **Trạng thái hôm nay đã KHÁC — đọc mục "SAU TASK 6" ở cuối
+ * khối trước khi hành động theo bất cứ câu nào ở giữa.**
+ *
+ * *(Nguyên văn I-5, re-review vòng 1: "biên lắng ~1,2 s của `Get-Counter` là ĐIỀU KIỆN ĐÚNG ĐẮN của
+ * phép đo, không phải chi phí thừa".)*
  *
  * PHÂN RÃ CHI PHÍ MỘT LƯỢT ĐỌC (đo được, không ước):
  *   • khởi động `powershell.exe`      ~110 ms
@@ -89,10 +93,26 @@ export function parseProcessCounters(rawJson: string, roots: readonly number[], 
  * ⚠ CẠM BẪY CỤ THỂ ĐANG CHỜ NGƯỜI SẬP (nói thẳng để khỏi ai sập): mục tồn đọng "bỏ
  * `Get-CimInstance` để 3,1 s → ~1 s" **được ước trên số SAI** — thực tế chỉ rút ~200 ms/lượt
  * (~13 %). Người cầm mục đó sẽ nhìn ngay sang 1,2 giây còn lại và cắt `-SampleInterval` xuống
- * ~0,1 s **trong một dòng**. ĐỪNG. Bỏ `Get-CimInstance` thì được (chỉ cần khi phạm vi
- * `descendants` cần cây tiến trình); **KHÔNG đụng `Get-Counter`** cho tới khi độ trễ thật của bộ
- * đếm được ĐO TRỰC TIẾP và ghim thành hằng số của CHÍNH TA (`VRAM_MEASURE_SETTLE_MS`) thay vì
- * mượn biên nội tại của PDH — việc đó là **Task 6** của pha này, không phải một lượt tối ưu.
+ * ~0,1 s **trong một dòng**.
+ *
+ * ─── ★★★ SAU TASK 6 (2026-08-04) — CỔNG NÀY ĐÃ MỞ, CÓ ĐIỀU KIỆN ─────────────────────────────
+ *
+ * Độ trễ thật của bộ đếm **ĐÃ ĐƯỢC ĐO TRỰC TIẾP** (8 lượt, PDH handle ấm, 0,018 ms/mẫu) và biên
+ * lắng **ĐÃ THÀNH HẰNG SỐ CỦA TA**: `VRAM_MEASURE_SETTLE_MS` ngay bên dưới, được `vramWiring
+ * .commitMeasured()` `await` trước đầu đo SAU, và được `wiring.settle.test.ts` canh bằng ca đỏ.
+ * Cửa sổ đo **KHÔNG CÒN phụ thuộc** biên nội tại của `Get-Counter`.
+ *
+ * ⇒ **NAY ĐƯỢC PHÉP** tối ưu `PS_SCRIPT`, kể cả hạ `-SampleInterval` hay bỏ `Get-CimInstance`
+ *   (cái sau chỉ cần cho phạm vi `descendants`). Kết quả đo cho thấy `-SampleInterval` **không hề
+ *   là điều kiện đúng đắn của phép đo** — bộ đếm đã phản ánh đủ **TRƯỚC** khi lượt cấp phát trả
+ *   về ở 8/8 lượt, tức 1,2 giây đó luôn là chi phí thuần.
+ *
+ * ⚠ HAI ĐIỀU KIỆN, KHÔNG ĐƯỢC BỎ:
+ *   1. **Dòng `await awaitMeasureSettle()` trong `commitMeasured()` PHẢI Ở LẠI.** Nó là biên duy
+ *      nhất còn thuộc về ta và là biên duy nhất có ca test canh. Gỡ `Get-Counter` mà gỡ luôn nó
+ *      là dựng lại đúng lỗ I-5, lần này KHÔNG còn thứ gì che.
+ *   2. Đổi cách đọc bộ đếm ⇒ **đo lại** theo giao thức ở `VRAM_MEASURE_SETTLE_MS`. Số 0 ms là số
+ *      đo của đường `Get-Counter`; một đường đọc khác là một phép đo khác.
  */
 const PS_SCRIPT = [
   "$ErrorActionPreference='Stop';",
@@ -101,6 +121,84 @@ const PS_SCRIPT = [
   "$p=Get-CimInstance Win32_Process|ForEach-Object{ @{ pid=[int]$_.ProcessId; ppid=[int]$_.ParentProcessId } };",
   "@{counters=$c;procs=$p}|ConvertTo-Json -Depth 4 -Compress",
 ].join(" ");
+
+/**
+ * ★★★ PHA 2A TASK 6 — BIÊN LẮNG **CỦA TA**. Đọc khối này TRƯỚC khi đụng `PS_SCRIPT` ở trên.
+ *
+ * **Vấn đề mà hằng số này đóng lại (I-5):** cửa sổ đo chỉ đúng khi bộ đếm đã phản ánh ĐỦ lượt cấp
+ * phát tại thời điểm đầu đo SAU. Trước Task 6, điều đó đúng **nhờ tác dụng phụ**: `-SampleInterval`
+ * mặc định của `Get-Counter` chèn ~1,2 s vào MỖI lượt đọc. Không ai thiết kế, không ghi ở đâu,
+ * không ca test nào canh — nên một lượt tối ưu chi phí gỡ được nó **trong một dòng**, im lặng.
+ *
+ * ─── SỐ ĐO (Task 6, 2026-08-04) ──────────────────────────────────────────────────────────────
+ * Giao thức: nạp model thật trong một tiến trình con, lấy mẫu bộ đếm **LIÊN TỤC** từ tiến trình
+ * khác bằng PDH P/Invoke **giữ handle ấm** (`pdh.dll` — CHÍNH thư viện `Get-Counter` dùng), chi
+ * phí trung vị **0,018 ms/mẫu**, nhịp lấy mẫu thực **~0,04–0,1 ms**. Mốc "lượt cấp phát xong" =
+ * thời điểm `llama.loadModel()` trả về (ĐÚNG điểm mà `commitMeasured()` được gọi trong sản xuất),
+ * quan sát bằng file mốc nên KHÔNG có sai lệch đồng hồ giữa hai tiến trình.
+ *
+ *   • **8/8 lượt** (0,6B ×3 · 4B ×2 · 30B ×3, 0 lượt hỏng phải thử lại): bộ đếm đã đạt **100,0000 %**
+ *     giá trị cuối **TRƯỚC** khi lượt cấp phát trả về. Nó ĐI TRƯỚC **429,5 / 460,6 / 480,2 / 962,2 /
+ *     1.017,5 / 6.571,8 / 6.881,1 / 7.140,3 ms** — **chưa lượt nào đi SAU**.
+ *     ⇒ **YÊU CẦU ĐO ĐƯỢC TẠI ĐIỂM SẢN XUẤT = 0 ms.**
+ *   • Cơ chế giải thích vì sao: `\GPU Process Memory\Dedicated Usage` đếm **lượt CẤP PHÁT**
+ *     (`cudaMalloc`), không đếm lượt CHÉP xong. llama.cpp cấp phát buffer trước rồi mới chép
+ *     host→device, nên bộ đếm lên hết TRONG lúc lượt nạp còn đang chạy.
+ *   • Độ trễ của bộ đếm với một sự kiện có thời điểm biết TỪ BÊN NGOÀI (giết tiến trình đang giữ
+ *     17,5 GB): bắt đầu tụt sau **7,1–9,5 ms**, về 0 sau **27,3–120,9 ms**.
+ *     ⇒ **QUAN SÁT LỚN NHẤT VỀ ĐỘ TRỄ CỦA CHÍNH BỘ ĐẾM: 121 ms** — đây là số chống lưng cho
+ *     `VRAM_MEASURE_SETTLE_SAFETY_MS`, KHÔNG phải con số 0 ở trên.
+ *   • Bộ đếm KHÔNG được làm mới theo nhịp đồng hồ thô: hai giá trị KHÁC NHAU quan sát được cách
+ *     nhau **0,127 ms** (min qua 8 lượt) ⇒ chu kỳ làm mới của nguồn < 0,13 ms.
+ *   • ĐỐI CHỨNG: `delta` đo bằng thước này trùng **tới từng byte** với nghiệm thu sống Task 3
+ *     (1.193.291.776 / 17.511.354.368) dù hai lượt dùng hai thiết bị đo hoàn toàn khác nhau; và
+ *     nền backend đọc được **452.595.712 B ở 8/8 lượt** = đúng `CUDA_BACKEND_FALLBACK_BYTES`.
+ *
+ * ⚠⚠ **HẰNG SỐ NÀY KHÔNG PHẢI THỨ CÓ THỂ HẠ BẰNG SUY LUẬN.** Nó chống lưng cho một lớp lỗi CÂM:
+ * bộ đếm trễ ⇒ cửa sổ đo BỊ DỊCH ⇒ `actual === 0` với `seen === true` ⇒ `commit(0)` +
+ * `recordActual(0)` ⇒ nấc `learned = 0` sống tới hết đời tiến trình ⇒ ở Pha 2B là dư địa VÔ HẠN,
+ * tức OOM. Muốn hạ thì **đo lại** theo đúng giao thức trên rồi sửa CẢ hằng số lẫn sàn trong
+ * `wiring.settle.test.ts`; đừng sửa một mình hằng số.
+ *
+ * ⚠ **CỐ Ý KHÔNG cho ép bằng biến môi trường** — khác `VRAM_MEASURE_WAIT_MS` (Task 3). Ngân sách
+ * chờ khoá là câu hỏi VẬN HÀNH ("chờ bao lâu thì thôi"), hạ nó chỉ làm mất phép đo và có nhánh
+ * `measure-window-not-exclusive` khai ra. Biên lắng là câu hỏi VẬT LÝ về bộ đếm, và hạ nó làm phép
+ * đo **SAI mà vẫn tự khai là đúng**. Một công tắc cho phép đặt `0` chính là cái bẫy này ở dạng
+ * được chống lưng bởi tài liệu.
+ */
+export const VRAM_COUNTER_SETTLE_MEASURED_MS = 0;
+
+/**
+ * Biên an toàn CHỦ ĐỘNG cộng thêm cho những đường cấp phát mà Task 6 **KHÔNG đo** (xem §4 báo cáo):
+ * ONNX Runtime (DirectML/CUDA), `spawn()` sidecar `llama-server.exe`, máy/driver/GPU khác. Đây là
+ * một PHÁN ĐOÁN được ghi tên, không phải số đo — tách khỏi `…_MEASURED_MS` chính là để người sau
+ * biết phần nào có thước chống lưng và phần nào không.
+ */
+export const VRAM_MEASURE_SETTLE_SAFETY_MS = 250; // = 2,07× quan sát 121 ms ở trên
+
+/** Biên lắng áp dụng trước ĐẦU ĐO SAU. Đơn vị: ms (ràng buộc toàn cục: mọi hằng số có đơn vị ở tên). */
+export const VRAM_MEASURE_SETTLE_MS = VRAM_COUNTER_SETTLE_MEASURED_MS + VRAM_MEASURE_SETTLE_SAFETY_MS;
+
+/**
+ * CHỜ cho bộ đếm phản ánh đủ lượt cấp phát vừa xong. Gọi NGAY TRƯỚC đầu đo SAU, BÊN TRONG cửa sổ
+ * đo (nếu chờ ngoài cửa sổ thì một lượt cấp phát khác chen vào đúng khoảng chờ và làm bẩn hiệu số
+ * — đúng lớp lỗi mà khoá nối tiếp sinh ra để diệt).
+ *
+ * ⚠ `.unref()`: telemetry KHÔNG BAO GIỜ được giữ vòng lặp sự kiện sống. Tiến trình đang thoát thì
+ * lượt commit này mất — đó là hướng đúng (mất phép đo, không mất an toàn).
+ *
+ * ⚠ Hàm nằm ở ĐÂY chứ không ở `vramWiring.ts` có chủ ý: biên lắng là thuộc tính của BỘ ĐẾM, nên nó
+ * phải ở cạnh `PS_SCRIPT`. Hệ quả kỹ thuật cũng đúng hướng — mọi `wiring.*.test.ts` đã
+ * `vi.mock("./vramProcessProbe")` nên chúng phải KHAI báo một bản giả cho hàm này, tức phụ thuộc
+ * "đường đo có chờ lắng" trở nên NHÌN THẤY ĐƯỢC trong từng bộ test thay vì ẩn.
+ */
+export function awaitCounterSettle(ms: number = VRAM_MEASURE_SETTLE_MS): Promise<void> {
+  if (!(ms > 0)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    (t as unknown as { unref?: () => void }).unref?.();
+  });
+}
 
 const PROBE_TIMEOUT_MS = 10_000;
 let warnedUnavailable = false;

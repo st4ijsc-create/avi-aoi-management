@@ -71,6 +71,13 @@ vi.mock("./vramProcessProbe", () => ({
     for (const v of byPid.values()) totalBytes += v;
     return { totalBytes, byPid, byLuid: new Map<string, number>(), sampledAtMs: Date.now() };
   },
+  /**
+   * ★ Pha 2A Task 6 — BẢN GIẢ CỦA BIÊN LẮNG, cố ý KHÔNG chờ. Bộ test này không đo bộ đếm thật nên
+   * chờ 250 ms mỗi lượt `commitMeasured()` chỉ là thời gian chết. Biên lắng THẬT được canh ở
+   * `wiring.settle.test.ts` (thứ tự gọi + sàn của hằng số) — nơi duy nhất được phép khẳng định nó.
+   * ⚠ PHẢI khai ở MỌI bản giả của module này: `vramWiring` để lời gọi NÉM nếu thiếu (không nuốt).
+   */
+  awaitCounterSettle: async () => {},
 }));
 
 /** Thước TOÀN THIẾT BỊ — của reconciler/nền. Đ4: hai thước, không trộn. */
