@@ -4,6 +4,18 @@ import { logVramEvent } from "./vramEventLog";
 
 const DRIFT_THRESHOLD_BYTES = Number(process.env.VRAM_DRIFT_THRESHOLD_MB ?? 512) * 1024 * 1024;
 const INTERVAL_MS = Number(process.env.VRAM_RECONCILE_INTERVAL_MS ?? 60_000);
+/**
+ * Pha 1.5 Task 1, review vòng 1 (EXP-1) — BỘ NGẮT MẠCH cho thước dao động.
+ *
+ * ⚠ VÌ SAO BẮT BUỘC: cơ chế "đổi thước thì huỷ nền và chụp lại" đúng cho MỘT lần đổi thước, nhưng
+ * nếu thước DAO ĐỘNG (vd. handle native chập chờn, hoặc hai tiến trình cạnh tranh gắn handle),
+ * MỌI nhịp đều rơi vào nhánh resample — không nhịp nào đối chiếu được. Một khoản cấp phát chui
+ * tồn tại xuyên suốt sẽ KHÔNG BAO GIỜ bị phát hiện: chuông CÂM VĨNH VIỄN, và tệ hơn báo động giả
+ * — không ai biết nó đang câm. Quá `SOURCE_UNSTABLE_THRESHOLD` lần resample LIÊN TIẾP thì NGỪNG
+ * resample và báo động về chính sự BẤT ỔN của thước (nội dung khác hẳn "cấp phát chui" — người
+ * trực phải đi sửa đầu dò/handle, không phải đi tìm hộ tiêu thụ chui).
+ */
+const SOURCE_UNSTABLE_THRESHOLD = Number(process.env.VRAM_SOURCE_UNSTABLE_THRESHOLD ?? 3);
 
 export interface VramReconcileResult {
   driftBytes: number | null;
@@ -18,6 +30,13 @@ export interface VramReconcileResult {
    * không đáng tin để so.
    */
   baselineResampled: boolean;
+  /**
+   * Pha 1.5 Task 1, review vòng 1 (EXP-1) — true KHI VÀ CHỈ KHI bộ ngắt mạch vừa TRIP: thước đã
+   * đổi ≥ `SOURCE_UNSTABLE_THRESHOLD` lần liên tiếp, lượt này KHÔNG resample nữa mà báo động về
+   * sự bất ổn của thước. `alarm` cũng = true ở lượt này (đây là báo động THẬT, không phải im
+   * lặng) nhưng nguyên nhân KHÁC "cấp phát chui" — đọc `sourceUnstable` để phân biệt.
+   */
+  sourceUnstable: boolean;
 }
 
 let timer: NodeJS.Timeout | null = null;
@@ -95,6 +114,14 @@ let baselineCaptured = false;
  */
 let baselineSource: "native" | "smi" | null = null;
 /**
+ * Pha 1.5 Task 1, review vòng 1 (EXP-1) — số lượt resample LIÊN TIẾP (chưa xen kẽ một nhịp đối
+ * chiếu BÌNH THƯỜNG nào). Đạt `SOURCE_UNSTABLE_THRESHOLD` thì bộ ngắt mạch TRIP ở lượt kế —
+ * lượt trip đó KHÔNG resample nên KHÔNG cộng thêm vào bộ đếm này (nó ở nhánh riêng). Bộ đếm chỉ
+ * reset về 0 khi có một nhịp đối chiếu BÌNH THƯỜNG (không mismatch) — dao động một đợt rồi ổn
+ * định lại không bị coi là "hỏng vĩnh viễn", nhưng một lượt trip đơn lẻ cũng không tự "chữa" nó.
+ */
+let consecutiveResampleCount = 0;
+/**
  * Bật khi `startVramReconciler()` đã chạy. Lúc đó "chưa biết nền" phải nghĩa là IM LẶNG, KHÔNG
  * phải nền = 0 (NEW-2). Khi cờ này TẮT — tức có người gọi `reconcileOnce()` trực tiếp (Task 7,
  * test, công cụ chẩn đoán) — ta giữ nguyên ngữ nghĩa "không trừ gì", vì người gọi đó tự biết họ
@@ -113,8 +140,15 @@ let baselineRequired = false;
  * Nay hỏng thì để nguyên trạng "chưa biết" và THỬ LẠI ở nhịp đối chiếu sau.
  *
  * KHÔNG BAO GIỜ ném: máy không GPU ⇒ trả `null` mãi, hệ chạy tiếp im lặng.
+ *
+ * @param priorBaseline Pha 1.5 Task 1, review vòng 1 (EXP-2) — CHỈ truyền khi hàm này được gọi
+ *   từ nhánh RESAMPLE của `reconcileOnce()` (đổi thước). Đây là nền VỪA BỊ HUỶ (giá trị + thước
+ *   cũ), dùng để tính "drift NẾU KHÔNG huỷ" và ghi vào sự kiện `baseline` — xem lý do bắt buộc ở
+ *   khối comment "GIỚI HẠN ĐÃ BIẾT" cạnh nhánh resample trong `reconcileOnce()`.
  */
-export async function captureVramBaseline(): Promise<number | null> {
+export async function captureVramBaseline(
+  priorBaseline?: { usedBytes: number; source: "native" | "smi" } | null,
+): Promise<number | null> {
   if (baselineCaptured) return baselineUsedBytes;
 
   let device: { usedBytes: number; source: "native" | "smi" } | null = null;
@@ -177,6 +211,22 @@ export async function captureVramBaseline(): Promise<number | null> {
       // Pha 1.5 Task 1 — thước đã dùng để chụp nền này. `reconcileOnce()` so nó với thước của
       // lượt đối chiếu; khác nhau thì huỷ nền và chụp lại thay vì so hai thước với nhau.
       source: device.source,
+      // Pha 1.5 Task 1, review vòng 1 (EXP-2) — CHỈ có khi lượt chụp này là RESAMPLE (đổi
+      // thước), KHÔNG bịa ra cho lượt chụp đầu tiên (không có nền cũ để so). Đây là dấu vết
+      // DUY NHẤT còn lại của một kẻ chui grab ĐÚNG LÚC đổi thước: lượt phát hiện đổi thước cố ý
+      // KHÔNG báo động (số vừa huỷ không đáng tin để so trực tiếp — quyết định ĐÃ DUYỆT), nhưng
+      // nếu không ghi lại gì thì kẻ chui đó biến mất VĨNH VIỄN không cách nào truy ngược.
+      ...(priorBaseline
+        ? {
+            priorBaselineUsedBytes: priorBaseline.usedBytes,
+            priorSource: priorBaseline.source,
+            newSource: device.source,
+            // "Nếu KHÔNG huỷ nền cũ mà so trực tiếp nền CŨ với số liệu MỚI, drift sẽ là bao
+            // nhiêu?" — CHÍNH XÁC phép so hai thước mà Task 1 sinh ra để TRÁNH khi so LIVE, nhưng
+            // ở đây chỉ dùng để GHI SỔ, không dùng để báo động.
+            driftIfNotResampled: raw - priorBaseline.usedBytes - ledgerTotal,
+          }
+        : {}),
       note:
         "nền = thiết bị − tổng giấy phép ĐÃ COMMIT. Chỉ trừ phần đã commit vì chỉ phần đó chắc " +
         "chắn đã nằm trong deviceUsed; giấy phép chưa commit là 'đã xin, chưa cấp phát xong' nên " +
@@ -204,6 +254,9 @@ export function __resetVramBaselineForTests(): void {
   // Pha 1.5 Task 1 — KHÔNG reset thì test sau KẾ THỪA thước của test trước, và một lượt chụp
   // nền mới (thước A) có thể bị hiểu nhầm là "đổi thước" ngay từ lượt đối chiếu đầu tiên.
   baselineSource = null;
+  // Pha 1.5 Task 1, review vòng 1 (EXP-1) — cùng lý do: không reset thì test sau KẾ THỪA số lượt
+  // resample liên tiếp của test trước, và bộ ngắt mạch có thể trip SAI ngay từ mismatch đầu tiên.
+  consecutiveResampleCount = 0;
 }
 
 /**
@@ -251,6 +304,7 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       deviceUsedBytes: null,
       baselineUsedBytes,
       baselineResampled: false,
+      sourceUnstable: false,
     };
   }
 
@@ -262,14 +316,76 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
   // bằng cấu trúc: huỷ nền cũ, chụp lại bằng thước MỚI, và KHÔNG báo động ở lượt phát hiện — số
   // vừa bị huỷ không đáng tin để so.
   if (baselineCaptured && baselineSource !== null && device.source !== baselineSource) {
+    // Pha 1.5 Task 1, review vòng 1 (EXP-1) — BỘ NGẮT MẠCH. Nếu thước DAO ĐỘNG (đổi liên tục mỗi
+    // nhịp), nhánh resample phía dưới sẽ chạy MÃI — mọi nhịp huỷ nền rồi chụp lại, KHÔNG nhịp
+    // nào từng đối chiếu được, và một khoản cấp phát chui tồn tại xuyên suốt sẽ KHÔNG BAO GIỜ lộ
+    // ra: chuông CÂM VĨNH VIỄN mà không ai biết nó đang câm — tệ hơn một báo động giả. Quá
+    // `SOURCE_UNSTABLE_THRESHOLD` lần resample LIÊN TIẾP thì NGỪNG resample, ĐÓNG BĂNG nền hiện
+    // tại, và báo động về chính sự BẤT ỔN của thước — nội dung PHẢI khác "cấp phát chui" vì
+    // nguyên nhân và hành động sửa hoàn toàn khác nhau (đi sửa đầu dò/handle, không phải đi tìm
+    // hộ tiêu thụ).
+    if (consecutiveResampleCount >= SOURCE_UNSTABLE_THRESHOLD) {
+      console.warn(
+        `[vram] THƯỚC ĐO KHÔNG ỔN ĐỊNH — đã đổi thước ≥ ${SOURCE_UNSTABLE_THRESHOLD} lần liên tiếp ` +
+          `(nền đang đóng băng ở thước "${baselineSource}", lượt này đọc được "${device.source}"). ` +
+          `DỪNG chụp lại để tránh im lặng vĩnh viễn — số so sánh KHÔNG ĐÁNG TIN cho tới khi thước ổn định. ` +
+          `Đây là lỗi ĐO (đầu dò/handle chập chờn), KHÔNG PHẢI cấp phát chui.`,
+      );
+      logVramEvent({
+        event: "source_unstable",
+        owner: "reconciler",
+        leaseKind: "external-process",
+        priority: "background",
+        deviceUsedBytes: device.usedBytes,
+        ledgerTotalBytes: snap.totalReservedBytes,
+        detail: {
+          frozenSource: baselineSource,
+          attemptedSource: device.source,
+          consecutiveResampleCount,
+          threshold: SOURCE_UNSTABLE_THRESHOLD,
+          note:
+            "Thước dao động liên tục ⇒ bộ ngắt mạch dừng resample để tránh chuông câm vĩnh viễn " +
+            "(EXP-1). Số so sánh hiện KHÔNG đáng tin — điều tra đầu dò/handle, không phải đi tìm " +
+            "hộ tiêu thụ chui.",
+        },
+      });
+      return {
+        driftBytes: null,
+        alarm: true,
+        ledgerTotalBytes: snap.totalReservedBytes,
+        deviceUsedBytes: device.usedBytes,
+        baselineUsedBytes,
+        baselineResampled: false,
+        sourceUnstable: true,
+      };
+    }
+
     console.warn(
       `[vram] ĐỔI THƯỚC ${baselineSource} → ${device.source} — huỷ nền cũ và chụp lại, ` +
         `không so hai thước với nhau.`,
     );
+    // Pha 1.5 Task 1, review vòng 1 (EXP-2) — GIỚI HẠN ĐÃ BIẾT, CHẤP NHẬN Ở PHA 1.5, cùng lớp
+    // với ca "sidecar sống khi restart" đã ghi ở `captureVramBaseline()` phía trên: một cấp phát
+    // chui xuất hiện ĐÚNG LÚC đổi thước sẽ bị NUỐT VÀO NỀN MỚI và KHÔNG nhịp nào sau bắt được —
+    // `alarm: false` ở lượt phát hiện đổi thước là ĐÚNG THIẾT KẾ (số vừa huỷ không đáng tin để so
+    // trực tiếp), nhưng hệ quả là kẻ chui đó biến mất vào nền như thể nó luôn ở đó. Cửa sổ rủi ro
+    // này NHÂN ĐÔI so với ca sidecar-restart (vốn chỉ một lần lúc boot): nay còn mở lại mỗi lần
+    // đổi thước. Pha 1.5 CHẤP NHẬN đánh đổi này một cách TƯỜNG MINH — không có cách nào phân biệt
+    // "đổi thước sạch" với "đổi thước đúng lúc có kẻ chui" chỉ từ MỘT lượt đọc — nhưng KHÔNG được
+    // để dấu vết biến mất: nền CŨ + "drift nếu không huỷ" được ghi vào sự kiện `baseline` bên
+    // dưới, để điều tra SAU vẫn còn dữ liệu để truy ngược (không sống lại được nền đã mất, nhưng
+    // ít nhất biết ĐÃ MẤT gì).
+    const priorSourceSnapshot = baselineSource;
+    const priorUsedBytesSnapshot = baselineUsedBytes;
     baselineCaptured = false;
     baselineUsedBytes = null;
     baselineSource = null;
-    await captureVramBaseline();
+    await captureVramBaseline(
+      priorUsedBytesSnapshot !== null && priorSourceSnapshot !== null
+        ? { usedBytes: priorUsedBytesSnapshot, source: priorSourceSnapshot }
+        : null,
+    );
+    consecutiveResampleCount += 1;
     return {
       driftBytes: null,
       alarm: false,
@@ -277,8 +393,15 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       deviceUsedBytes: device.usedBytes,
       baselineUsedBytes,
       baselineResampled: true,
+      sourceUnstable: false,
     };
   }
+
+  // Pha 1.5 Task 1, review vòng 1 (EXP-1) — nhịp này KHÔNG mismatch (đối chiếu bình thường) ⇒
+  // thước đã ỔN ĐỊNH lại. Reset bộ đếm resample-liên-tiếp — một đợt dao động rồi ổn định lại
+  // không được coi là "hỏng vĩnh viễn". (Lượt ngắt mạch TRIP ở nhánh trên KHÔNG chạy tới đây vì
+  // nó `return` sớm — count chỉ reset khi thước THẬT SỰ ổn định, không phải mỗi khi ngừng resample.)
+  consecutiveResampleCount = 0;
 
   // NEW-2 — reconciler ĐANG CHẠY mà CHƯA BIẾT nền ⇒ IM LẶNG. "Chưa biết" TUYỆT ĐỐI không được
   // hiểu thành "nền = 0": hiểu vậy thì toàn bộ ~1 GB nền của máy bị báo là cấp phát chui, mỗi
@@ -292,6 +415,7 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       deviceUsedBytes: device.usedBytes,
       baselineUsedBytes: null,
       baselineResampled: false,
+      sourceUnstable: false,
     };
   }
 
@@ -370,6 +494,7 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
     deviceUsedBytes: device.usedBytes,
     baselineUsedBytes,
     baselineResampled: false,
+    sourceUnstable: false,
   };
 }
 

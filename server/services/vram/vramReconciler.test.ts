@@ -211,6 +211,163 @@ describe("Pha 1.5 Task 1 — đổi thước thì huỷ nền và chụp lại, 
 });
 
 /**
+ * Pha 1.5 Task 1 — REVIEW VÒNG 1 (EXP-1 + EXP-2).
+ *
+ * Reviewer tự dựng hai thực nghiệm lộ ra rằng cơ chế "đổi thước thì huỷ nền và chụp lại" của
+ * vòng trước, tuy đúng cho ca ĐƠN LẺ, có hai lỗ khi ĐỔI THƯỚC LẶP LẠI:
+ *
+ *   EXP-1 — thước DAO ĐỘNG (xen kẽ mỗi nhịp) ⇒ MỌI nhịp đều rơi vào nhánh resample, KHÔNG nhịp
+ *   nào đối chiếu được. Một khoản cấp phát chui tồn tại xuyên suốt sẽ KHÔNG BAO GIỜ bị phát
+ *   hiện — chuông CÂM VĨNH VIỄN, và không ai biết nó đang câm.
+ *
+ *   EXP-2 — kẻ chui grab ĐÚNG LÚC đổi thước thì bị NUỐT VÀO NỀN MỚI (đúng thiết kế: lượt đó
+ *   không báo động) nhưng KHÔNG để lại dấu vết nào ⇒ không cách nào truy ngược sau này.
+ */
+describe("Pha 1.5 Task 1 review vòng 1 — EXP-1: thước dao động phải có bộ ngắt mạch", () => {
+  beforeEach(() => vi.resetModules());
+
+  const MIB2 = 1024 * 1024;
+
+  it("★ THƯỚC DAO ĐỘNG LIÊN TỤC (EXP-1) ⇒ sau 3 lần resample liên tiếp phải NGỪNG và báo động THƯỚC BẤT ỔN — không được câm mãi", async () => {
+    // Nền sạch chụp ban đầu bằng thước "smi" (1000 MiB, KHÔNG có kẻ chui). Ngay sau đó một
+    // khoản 8 GB chui xuất hiện và TỒN TẠI XUYÊN SUỐT, trong khi đầu dò XEN KẼ thước mỗi nhịp —
+    // mỗi nhịp lại là một lượt đổi thước ⇒ nếu không ngắt mạch, MỌI nhịp đều resample, KHÔNG
+    // nhịp nào đối chiếu được, và 8 GB kia không bao giờ bị phát hiện (thực nghiệm EXP-1).
+    let tick = 0;
+    const ROGUE = 8_000 * MIB2;
+    const CLEAN = 1000 * MIB2;
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: 0, leases: [] }),
+      leaseBytes: (l: { actualBytes: number | null }) => l.actualBytes ?? 0,
+    }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({
+        usedBytes: CLEAN + (tick === 0 ? 0 : ROGUE),
+        totalBytes: 32_607 * MIB2,
+        source: tick === 0 ? "smi" : tick % 2 === 1 ? "native" : "smi",
+      }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+    expect(await captureVramBaseline()).toBe(CLEAN); // nhịp 0 — nền sạch, thước "smi"
+
+    const results: Array<{ resampled: boolean; alarm: boolean; unstable: boolean }> = [];
+    for (let i = 1; i <= 10; i++) {
+      tick = i;
+      const r = await reconcileOnce();
+      results.push({ resampled: r.baselineResampled, alarm: r.alarm, unstable: r.sourceUnstable });
+    }
+
+    // Ba nhịp resample liên tiếp (i=1,2,3) rồi NGỪNG ở nhịp thứ tư — đây là bộ ngắt mạch. Nhịp
+    // thứ năm trùng lại thước đã đóng băng nên đối chiếu bình thường (không resample), rồi chu
+    // kỳ lặp lại.
+    expect(results.map((r) => r.resampled)).toEqual([
+      true, true, true, false, false, true, true, true, false, false,
+    ]);
+    // Đúng hai nhịp báo "THƯỚC BẤT ỔN" (i=4 và i=9) — nội dung PHẢI khác "cấp phát chui".
+    expect(results.map((r) => r.unstable)).toEqual([
+      false, false, false, true, false, false, false, false, true, false,
+    ]);
+    // ★ QUAN TRỌNG NHẤT (đây là điều EXP-1 đòi): KHÔNG được câm suốt 10 nhịp.
+    expect(results.some((r) => r.alarm)).toBe(true);
+  });
+
+  it("bộ đếm ngắt mạch RESET về 0 khi có một nhịp đối chiếu bình thường (không phải cứ dao động một lần là hỏng vĩnh viễn)", async () => {
+    // Đổi thước đúng 2 lần liên tiếp (dưới ngưỡng 3) rồi ỔN ĐỊNH lại — KHÔNG được trip breaker.
+    let src: "native" | "smi" = "smi";
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: 0, leases: [] }),
+      leaseBytes: (l: { actualBytes: number | null }) => l.actualBytes ?? 0,
+    }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: 1000 * MIB2, totalBytes: 32_607 * MIB2, source: src }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+
+    const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+    await captureVramBaseline(); // thước "smi"
+
+    src = "native";
+    const r1 = await reconcileOnce();
+    expect(r1.baselineResampled).toBe(true);
+    expect(r1.sourceUnstable).toBe(false);
+
+    src = "smi";
+    const r2 = await reconcileOnce();
+    expect(r2.baselineResampled).toBe(true);
+    expect(r2.sourceUnstable).toBe(false);
+
+    // Nhịp thứ ba TRÙNG thước hiện tại ("smi") ⇒ đối chiếu bình thường, KHÔNG resample, và bộ
+    // đếm phải reset — hai lần đổi thước liên tiếp trước đó KHÔNG được cộng dồn qua nhịp ổn định.
+    const r3 = await reconcileOnce();
+    expect(r3.baselineResampled).toBe(false);
+    expect(r3.sourceUnstable).toBe(false);
+  });
+});
+
+/**
+ * Pha 1.5 Task 1 review vòng 1 — EXP-2: kẻ chui grab đúng lúc đổi thước phải để lại DẤU VẾT.
+ *
+ * `alarm: false` ở lượt phát hiện đổi thước là ĐÚNG THIẾT KẾ (đã duyệt) — số vừa bị huỷ không
+ * đáng tin để so trực tiếp. Nhưng nếu sự kiện `baseline` không ghi lại GÌ về nền cũ, một kẻ chui
+ * grab đúng lúc đó biến mất VĨNH VIỄN không cách nào truy ngược. Sửa: TRƯỚC khi huỷ nền, tính
+ * "drift nếu KHÔNG huỷ" (so nền CŨ với số liệu MỚI) và ghi vào `detail` của sự kiện `baseline`.
+ */
+describe("Pha 1.5 Task 1 review vòng 1 — EXP-2: sự kiện baseline phải ghi drift-nếu-không-huỷ", () => {
+  beforeEach(() => vi.resetModules());
+
+  const MIB3 = 1024 * 1024;
+
+  it("★ KẺ CHUI grab ĐÚNG LÚC đổi thước ⇒ sự kiện `baseline` PHẢI ghi nền CŨ + drift-nếu-không-huỷ, không được vứt bỏ dấu vết", async () => {
+    let src: "native" | "smi" = "smi";
+    let used = 1000 * MIB3;
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () => ({ totalReservedBytes: 0, leases: [] }),
+      leaseBytes: (l: { actualBytes: number | null }) => l.actualBytes ?? 0,
+    }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: used, totalBytes: 32_607 * MIB3, source: src }),
+    }));
+    const logged: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: (e: never) => logged.push(e) }));
+
+    const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+    expect(await captureVramBaseline()).toBe(1000 * MIB3); // nền cũ, thước "smi"
+
+    src = "native";
+    used = 1000 * MIB3 + 8_000 * MIB3; // 8 GB chui grab ĐÚNG lúc đổi thước
+    const r = await reconcileOnce();
+    expect(r.baselineResampled).toBe(true);
+    expect(r.alarm).toBe(false); // đúng thiết kế Task 1 — KHÔNG báo động lượt phát hiện đổi thước
+
+    const baselineEvents = logged.filter((l) => l.event === "baseline");
+    expect(baselineEvents).toHaveLength(2); // nhịp 0 (chụp lần đầu) + nhịp resample này
+    const resampleEvent = baselineEvents[1];
+    expect(resampleEvent.detail!.priorBaselineUsedBytes).toBe(1000 * MIB3);
+    expect(resampleEvent.detail!.priorSource).toBe("smi");
+    // Dấu vết kẻ chui: nếu KHÔNG huỷ nền mà so trực tiếp, drift đã là 8000 MiB.
+    expect(resampleEvent.detail!.driftIfNotResampled).toBe(8_000 * MIB3);
+  });
+
+  it("lượt chụp nền ĐẦU TIÊN (không có nền cũ) KHÔNG được có driftIfNotResampled — không bịa dữ liệu", async () => {
+    vi.doMock("./vramBroker", () => ({ snapshot: () => ({ totalReservedBytes: 0, leases: [] }) }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({ usedBytes: 1000 * MIB3, totalBytes: 32_607 * MIB3, source: "smi" }),
+    }));
+    const logged: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: (e: never) => logged.push(e) }));
+
+    const { captureVramBaseline } = await import("./vramReconciler");
+    await captureVramBaseline();
+
+    const ev = logged.find((l) => l.event === "baseline")!;
+    expect(ev.detail!.priorBaselineUsedBytes).toBeUndefined();
+    expect(ev.detail!.driftIfNotResampled).toBeUndefined();
+  });
+});
+
+/**
  * Task 5 review vòng 1, I-1 — NỀN THIẾT BỊ.
  *
  * Reviewer đo lúc app KHÔNG chạy (netstat sạch): GPU đã dùng **1.090 MiB** — desktop
