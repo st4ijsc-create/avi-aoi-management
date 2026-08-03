@@ -259,6 +259,26 @@ let _rankModel: unknown = null;
  * cờ môi trường là có ngay một model nữa trên card mà không bảng nào cộng vào.
  */
 let _rankVramTicket: import("./vram/vramWiring").VramTicket | null = null;
+/**
+ * ★ I-1 (Pha 1.5, vá sau review TOÀN NHÁNH) — giấy phép của BACKEND CUDA **THỨ HAI** của tiến trình.
+ *
+ * Task 2 đã đưa backend CUDA (~430 MiB — khoản LỚN NHẤT của "sàn cấu trúc" mà Pha 1 đo được) vào
+ * sổ, nhưng chỉ khép **MỘT** thể hiện: `aiGgufEngine.getLlama()`. Hàm bên dưới gọi `getLlama()`
+ * của node-llama-cpp **THẲNG** và mở giấy phép mãi SAU đó ⇒ ~430 MiB của backend nằm gọn trong
+ * `beforeUsed` của giấy phép model và **KHÔNG BAO GIỜ vào sổ**. Chính comment cạnh lượt gọi đó tự
+ * khai: *"Runs on the reranker's own backend instance"*.
+ *
+ * ⚠ Hôm nay vô hại vì `.env` đang `RAG_RERANKER_GPU=false` ⇒ `gpu:false` ⇒ backend không chiếm
+ * VRAM. **Một lần lật cờ** là Pha 2 tính `headroom` thiếu ~430 MiB — đúng quy luật Ư0 đã tự rút
+ * ("Task 2 chỉ khép MỘT thể hiện") và đúng lớp mù đã sinh ra hộ tiêu thụ thứ sáu/thứ bảy.
+ *
+ * ⚠ GIỮ QUA `disposeReranker()`, CỐ Ý: hàm đó dispose ranking-context và model, nhưng KHÔNG hề
+ * dispose thể hiện `Llama` — backend vẫn sống trong tiến trình. Trả giấy phép ở đó là nói dối sổ.
+ * Biến này còn là KHOÁ chống cộng trùng: `getLlama()` của node-llama-cpp cache theo tham số, nên
+ * một lượt gọi thứ hai sau `disposeReranker()` sẽ KHÔNG cấp phát lại — mở giấy phép thứ hai ở đó
+ * là ghi CÙNG MỘT KHỐI BYTE hai lần, đúng lỗi C-1 mà Task 8 vừa vá ở chỗ khác.
+ */
+let _rankBackendTicket: import("./vram/vramWiring").VramTicket | null = null;
 let _rankCtx: { rankAll: (q: string, docs: string[]) => Promise<number[]> } | null = null;
 let _rankCtxFailed = false;
 // One-time "which backend is active" log guard, so we emit exactly one clear line
@@ -348,6 +368,9 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
   // hai lượt nạp chạy song song (không có khoá in-flight — hành vi CÓ SẴN), lượt ĐẦU commit
   // nhầm lease của lượt SAU.
   let localTicket: import("./vram/vramWiring").VramTicket | null = null;
+  // ★ I-1 — giấy phép của backend CUDA riêng của reranker. Khai NGOÀI `try` cùng lý do với
+  // `localTicket`: nhánh `catch` ở cuối hàm phải trả được chỗ khi `getLlama()` ném giữa chừng.
+  let backendTicket: import("./vram/vramWiring").VramTicket | null = null;
 
   try {
     // doc 11 fix — the reranker is a tiny cross-encoder (~0.6B). By DEFAULT we load
@@ -359,6 +382,26 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     const nlc = (await import("node-llama-cpp")) as any;
     const { getLlama, LlamaLogLevel } = nlc;
     const L = LlamaLogLevel ?? {};
+    // ★ I-1 — MỞ giấy phép NGAY TRƯỚC lượt gọi `getLlama()` thật (và đóng NGAY SAU, dưới đây):
+    // đó là cách DUY NHẤT để delta đo được là của backend chứ không phải của trọng số model nạp
+    // sau nó. CHỈ QUAN SÁT — thời điểm/tham số lượt gọi `getLlama()` KHÔNG ĐỔI.
+    // ⚠ Chỉ mở khi CHƯA có giấy phép backend (xem docstring `_rankBackendTicket`): `getLlama()`
+    // cache theo tham số nên lượt gọi thứ hai không cấp phát lại, mở thêm là cộng trùng.
+    if (_rankBackendTicket === null) {
+      try {
+        const { beginVramAllocation } = await import("./vram/vramWiring");
+        backendTicket = await beginVramAllocation({
+          owner: "cuda-backend:reranker",
+          kind: "gguf-backend",
+          // `background` (KHÁC `production` của backend aiGgufEngine): backend này chỉ phục vụ
+          // rerank — tiện ích của RAG — nên nó phải nhường chỗ trước AOI và chat/RCA.
+          priority: "background",
+        });
+      } catch {
+        /* telemetry KHÔNG được làm hỏng đường nạp reranker */
+        backendTicket = null;
+      }
+    }
     const llama = (await getLlama({
       gpu: useGpu ? (process.env.GGUF_GPU === "false" ? false : "auto") : false,
       // Quiet the benign llama.cpp ranking-context init spam ("embeddings required
@@ -373,6 +416,18 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
         // drop info/log/debug
       },
     })) as { loadModel: (o: { modelPath: string; gpuLayers?: number }) => Promise<unknown> };
+    // ★ I-1 — ĐÓNG cửa sổ đo của backend NGAY, TRƯỚC khi mở cửa sổ của model bên dưới. Giữ nó mở
+    // qua `loadModel()` sẽ làm HAI cửa sổ CHỒNG nhau và Task 8 (C-1) gắn `measureFailed` cho CẢ
+    // HAI — bản vá này tự tay làm mù đúng phép đo nó vừa thêm. `wiring.rerankerBackend.test.ts`
+    // ca 2 canh chính xác điều đó.
+    if (backendTicket) {
+      _rankBackendTicket = backendTicket;
+      try {
+        await backendTicket.commitMeasured();
+      } catch {
+        /* telemetry KHÔNG được làm hỏng đường nạp reranker */
+      }
+    }
     _rankLlama = llama;
     // Pha 1 Task 5 — KHAI BÁO hộ tiêu thụ thứ sáu vào sổ cái. `background`: rerank là tiện ích
     // của RAG, phải nhường chỗ cho AOI (`production`) và cho chat/RCA (`interactive`).
@@ -417,6 +472,17 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
       localTicket?.release();
     } catch {
       /* telemetry KHÔNG được làm hỏng đường degrade sang backend llm */
+    }
+    // ★ I-1 — giấy phép backend: TRẢ chỉ khi `getLlama()` ĐÃ NÉM (khi đó `_rankBackendTicket` chưa
+    // được gán, tức backend KHÔNG hình thành thật). Nếu backend đã sống mà `loadModel()`/
+    // `createRankingContext()` mới ném thì KHÔNG trả — backend vẫn đang giữ VRAM, trả là nói dối sổ
+    // và mở lại đúng lỗ hổng "hộ tiêu thụ vô hình" mà bản vá này vừa bịt.
+    if (backendTicket && _rankBackendTicket !== backendTicket) {
+      try {
+        backendTicket.release();
+      } catch {
+        /* telemetry KHÔNG được làm hỏng đường degrade sang backend llm */
+      }
     }
     // Chỉ xoá con trỏ chung nếu nó ĐANG trỏ vào giấy phép vừa trả. Lượt song song thành công
     // giữ nguyên giấy phép của nó.

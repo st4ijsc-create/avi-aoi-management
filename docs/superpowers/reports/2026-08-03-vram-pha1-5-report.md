@@ -17,7 +17,7 @@ dung sai phía âm cho cửa sổ chưa-commit). Task này đo lại trên mã �
 | **(1) Cổng eval `cron:kb-eval-gate`** | ✅ **ĐẠT** — 3 lượt LIVE, mỗi lượt đúng **1 `reserve` + 1 `release`** (`releaseProof: "process-exit"`), giấy phép sống đúng bằng khoảng tiến trình con sống. Kèm số đo: hộ này thật sự dùng **1.022 / 1.036 / 1.033 MiB** so với ước lượng **1.251 MiB**. |
 | **(2) Hai trainer Python** | ❌ **KHÔNG ĐO ĐƯỢC** — máy này **không có `torch`** (và không có `torchvision`/`ultralytics`/`transformers`/`peft`/`bitsandbytes`, không có checkpoint HuggingFace nào, không có bộ ảnh). 4 lượt chạy thật (2 mỗi cái) đều chết sau ~1,7 s tại `import torch`, delta VRAM = **0 MiB**. **Đó KHÔNG phải số đo của trainer** — xem §3. `VRAM_TRAINER_ESTIMATE_MB` / `VRAM_FINETUNE_ESTIMATE_MB` **giữ nguyên**. |
 | **(3) Phân bố lệch mới** | ✅ Đo được, **101 mẫu** trên nền hợp lệ: p50 **15**, p90 **210**, p95 **210**, max **1.002** MiB (max ở **trạng thái ổn định** chỉ **210**), **báo động 0/101 = 0 %**. Pha 1: p50 536, p90 664, p95/max 16.335, **100 % báo động kể từ lượt `commit` đầu**. **Sàn cấu trúc đã sập từ 536-882 MiB xuống ≤ 210 MiB.** ⚠ **`p95` KHÔNG so thẳng được với Pha 1** — 10 dòng cửa sổ nạp 30B (đúng loại sinh ra `p95` của Pha 1) đã bị lọc; tính cả chúng: n=111, p50 134, **p95 17.287**, max 17.290, **báo động vẫn 0/111**. Quá độ **−17,29 GiB VẪN CÒN NGUYÊN độ lớn — thứ đổi là nó KHÔNG CÒN BÁO ĐỘNG**. Xem §4.2. |
-| **(4) Ngưỡng** | **`VRAM_DRIFT_THRESHOLD_MB` giữ **512**** — lần đầu tiên con số này **nằm TRÊN sàn** (2,4× dự phòng) thay vì nằm dưới. **Sàn KHÔNG còn trên 512.** Nhịp: **giữ 60 s**, và **RÚT LẠI khuyến nghị "hạ xuống 10 s" của Pha 1 §4.1** — xem §5. |
+| **(4) Ngưỡng** | **`VRAM_DRIFT_THRESHOLD_MB` giữ **512**** — lần đầu tiên con số này **nằm TRÊN sàn** (2,4× dự phòng) thay vì nằm dưới. **Sàn KHÔNG còn trên 512.** Nhịp: **giữ 60 s**, và **RÚT LẠI khuyến nghị "hạ xuống 10 s" của Pha 1 §4.1** — lập luận đầy đủ ở **§6.1** (ngưỡng) và **§6.2** (nhịp). ⚠ *Minor-3 (review TOÀN NHÁNH): bản trước trỏ "xem §5" — §5 là mô tả LỖI, không phải chỗ ra quyết định ngưỡng/nhịp.* |
 | **(5) 24 giờ** | ❌ **CHƯA CHẠY.** Phiên này dài ~1,5 giờ. Thủ tục chính xác để người sau chạy ở §7. **KHÔNG công bố điều kiện chặn số 4 và 6 là ĐẠT.** |
 
 ### ★★ Phát hiện CHẶN mới, nghiêm trọng hơn mọi thứ Task 5 đi tìm
@@ -38,6 +38,19 @@ thái trước Pha 1.5. Chi tiết + bằng chứng pháp y ở **§5**.
 
 ⇒ **Mọi khuyến nghị ngưỡng ở §6 chỉ có nghĩa SAU khi khoản này được xử lý** — không ngưỡng nào
 cứu được một cái nền sai 17 GiB. ⇒ **Bản vá chỉ chạm nhánh resample sẽ để nguyên đường (a).**
+
+> ### ✅ CẬP NHẬT SAU BÁO CÁO NÀY — đọc §11 trước khi trích bất cứ dòng nào ở trên
+>
+> Báo cáo này là bản của **Task 5**. Sau nó còn **ba lượt sửa mã sản xuất**, và chúng làm **lạc
+> hậu** phần lớn khối cảnh báo vừa đọc:
+>
+> | Lượt | Việc | Trạng thái |
+> |---|---|---|
+> | **Task 7** | **VÁ T5-1** — lá chắn HOÃN chụp nền + đồng hồ `BASELINE_BLOCKED_ALARM_MS` (im lặng có hạn). Đóng **CẢ HAI** đường (a) và (b) theo cấu trúc. | ✅ **XONG** |
+> | **Task 8** | **C-1 — sổ commit cộng trùng khi hai CỬA SỔ ĐO chồng nhau.** Đây là lượt **đổi ngữ nghĩa phép đo mạnh nhất cả pha** và **báo cáo này không hề biết nó tồn tại**. | ✅ **XONG** |
+> | **Vá sau review TOÀN NHÁNH** | Task 8 **MỞ LẠI** đúng cửa T5-1 qua ngả `measureFailed` (drift −17 GB, alarm 100 %, chỉ restart mới gỡ) + `getLlama()` thứ hai ngoài sổ. | ✅ **XONG** |
+>
+> ⇒ **T5-1 KHÔNG CÒN LÀ MỤC CHẶN.** Ngưỡng/nhịp ở §6 nay đọc được. Chi tiết + số liệu: **§11**.
 
 ---
 
@@ -564,8 +577,9 @@ Lý do giữ **512** thay vì siết xuống 384 (cũng nằm trong khuyến ngh
    thầm lặng trong `.env` không ai review được".
 
 ⚠ **Điều kiện kèm theo, không thương lượng:** con số 512 chỉ có nghĩa khi **nền đúng**. Với nền bị
-nhiễm (§5) thì mọi ngưỡng từ 384 tới 16.000 đều cho ra **100 % báo động**. **Xử lý §5 trước, rồi
-mới nói tới ngưỡng.**
+nhiễm (§5) thì mọi ngưỡng từ 384 tới 16.000 đều cho ra **100 % báo động**.
+✅ **ĐIỀU KIỆN NÀY ĐÃ ĐƯỢC ĐÁP ỨNG** — T5-1 đã vá ở Task 7 và vá tiếp ở lượt sau review TOÀN NHÁNH
+(§11). **Khuyến nghị GIỮ 512 nay có hiệu lực, không còn treo.**
 
 ### 6.2 `VRAM_RECONCILE_INTERVAL_MS` — **GIỮ 60.000 ms**, và RÚT LẠI khuyến nghị 10 s của Pha 1
 
@@ -581,6 +595,12 @@ mới nói tới ngưỡng.**
   ≈ **100 %**.
 - ⇒ **Giữ 60 s.** Sau khi §5 được vá (và **chỉ** khi ấy), hạ xuống **10 s** là hợp lý — thu hẹp
   cửa sổ "kẻ chui chưa ai thấy" **6 lần** với chi phí đo được ≈ 0.
+- ✅ **CẬP NHẬT (§11):** §5 **ĐÃ VÁ**, nên điều kiện treo ở trên đã gỡ. **Nhưng khuyến nghị vẫn là
+  GIỮ 60 s ở Pha 1.5**, và nay vì một lý do KHÁC, đo được: `BASELINE_BLOCKED_ALARM_MS` mặc định
+  **300.000 ms** neo vào **thời lượng nạp thật** (11-43 s cho 30B, ≤120 s cho sidecar thị giác) chứ
+  KHÔNG vào nhịp — hạ nhịp xuống 10 s **không** kéo ngưỡng đó xuống theo. Điều đổi là **mật độ ghi
+  sổ trong lúc bị chặn**: ở 60 s là 1 dòng `baseline_blocked`/nhịp, ở 10 s là **6 dòng/phút** cho
+  cùng một sự cố (số liệu §11.4). Hạ nhịp nên đi kèm một lượt xem lại nhịp GHI của nhánh chặn.
 
 ### 6.3 Hai khoản còn lại — và mỗi khoản là lỗi ĐO hay lỗi HỆ
 
@@ -718,8 +738,8 @@ kết quả thiếu. Muốn có phân bố thì vẫn phải đo NGOÀI sổ nh�
 
 | # | Mục | Mức |
 |---|---|---|
-| **T5-1** | **§5 — `captureVramBaseline()` nuốt model đang nạp vào nền, không tự lành.** ⚠ **Phạm vi là CẢ HÀM, không phải riêng nhánh resample**: đường (a) *lượt chụp đầu đua với `warmUpOllamaModels`* và đường (b) *resample* đều dính, và (a) **không** sinh dấu vết resample nào để truy ngược. **Bản vá chỉ chạm (b) là KHÔNG ĐẠT.** Chi tiết dưới bảng. | **CHẶN** |
-| **T5-2** | Rút lại khuyến nghị nhịp 10 s của Pha 1 §4.1 khỏi mọi tài liệu kế tiếp cho tới khi T5-1 xong. | **Cao** |
+| **T5-1** | **§5 — `captureVramBaseline()` nuốt model đang nạp vào nền, không tự lành.** ⚠ **Phạm vi là CẢ HÀM, không phải riêng nhánh resample**: đường (a) *lượt chụp đầu đua với `warmUpOllamaModels`* và đường (b) *resample* đều dính, và (a) **không** sinh dấu vết resample nào để truy ngược. **Bản vá chỉ chạm (b) là KHÔNG ĐẠT.** Chi tiết dưới bảng. | ✅ **ĐÃ VÁ** (Task 7 đóng cả (a) và (b); lượt vá sau review TOÀN NHÁNH đóng nốt ngả `measureFailed` do Task 8 mở lại — **§11**). Không còn CHẶN. |
+| **T5-2** | Rút lại khuyến nghị nhịp 10 s của Pha 1 §4.1 khỏi mọi tài liệu kế tiếp cho tới khi T5-1 xong. | ✅ **GỠ TREO** — T5-1 xong. Khuyến nghị nhịp cập nhật ở §6.2 (vẫn **giữ 60 s**, lý do MỚI). |
 | **T5-3** | `pendingBytes` nới băng âm **suốt vòng đời job** cho hộ `external-process` không bao giờ commit (1.251 MiB cron, 6.144 MiB trainer). Sửa docstring Task 3 hoặc tách hai lớp hộ. | Cao |
 | **T5-4** | `sidecar:local-trainer` và `sidecar:llm-finetune` **chưa từng nghiệm thu LIVE**; không có hook `__run…ForTests()` như `kbSyncScheduler`. | Cao |
 | **T5-5** | `.env:259` bật `LOCAL_TRAINER_CMD` trong khi máy **không chạy nổi** ⇒ Tier-2 "bật mà chết". | Trung bình |
@@ -1189,3 +1209,222 @@ chạy bình thường sau **~50-70 s**.
    sau. Thiết kế before/after vì thế **kiêm luôn máy dò rò** — giữ nó khi tái chạy.
 4. Sidecar thị giác ~7,8 GB tự tắt sau ~10 phút nhàn rỗi; nếu nó thức lúc đo thì nền sẽ **≫ 1.045
    MiB** và cột `smi trước boot` sẽ tố cáo ngay.
+
+---
+
+## 11. Vá sau review TOÀN NHÁNH
+
+> **Bổ sung SAU báo cáo Task 5.** Tám task của Pha 1.5 đã qua **8 lượt review theo-task + 10 vòng
+> sửa**. Lượt review **TOÀN NHÁNH** (đọc cả nhánh một lượt, không đọc theo task) tìm ra thứ mà
+> **không lượt review theo-task nào thấy được**. Mục này ghi lại lượt vá đó — nó là lượt vá **cuối
+> cùng** trước khi đẩy nhánh.
+
+### 11.1 Vì sao báo cáo trên (§0-§10) lạc hậu HAI task
+
+Báo cáo này là bản của **Task 5**. Grep `Task 7` / `Task 8` / `C-1` trong nó ⇒ **0 kết quả**. Người
+quyết đọc deliverable chính thức vì thế **không có cách nào biết T5-1 đã được vá**, và **hoàn toàn
+không biết Task 8 tồn tại** — trong khi Task 8 là lượt **đổi ngữ nghĩa phép đo mạnh nhất cả pha**.
+Đã sửa: khối cập nhật ở **§0**, gỡ treo ở **§6.1**/**§6.2**, đổi trạng thái **T5-1**/**T5-2** ở §8.
+
+| Task | Việc | Chỗ đọc |
+|---|---|---|
+| **Task 7** | Vá **T5-1**: `captureVramBaseline()` **HOÃN** khi còn giấy phép chưa commit, và im lặng có **HẠN** — quá `BASELINE_BLOCKED_ALARM_MS` (mặc định **300.000 ms**) thì báo động `baseline_blocked` **nêu đích danh** giấy phép đang chặn. Nằm **bên trong** hàm nên phủ **cả (a) lẫn (b)** theo cấu trúc. | `vramReconciler.ts` |
+| **Task 8** | Vá **C-1**: hai **cửa sổ đo** chồng nhau ⇒ `after − before` (cả hai đầu đo là `used` **toàn thiết bị**) gộp cả byte của người khác ⇒ sổ ghi **cùng một khối byte hai lần**. Bản vá **đánh dấu `measureFailed`** cho mọi giấy phép có cửa sổ chồng lấn, **không chia tỉ lệ, không ước lượng bù**. | `vramWiring.ts`, `wiring.doubleCount.test.ts` |
+
+### 11.2 CRITICAL — Task 8 **MỞ LẠI** đúng cửa Task 7 sinh ra để đóng
+
+**Giao điểm ba chỗ:** `vramWiring.ts` (Task 8 gắn `markMeasureFailed` khi cửa sổ đo chồng) ×
+`vramReconciler.ts` `isLoadingLease()` (**LOẠI** `measureFailed`) × `committedBytes = Σ actualBytes ?? 0`.
+
+Một giấy phép bị Task 8 gắn `measureFailed` có `actualBytes === null` **vĩnh viễn**, **nhưng byte
+thật của nó ĐANG NẰM TRÊN THIẾT BỊ**. Nó rơi khỏi lá chắn HOÃN của Task 7 **và** đóng góp **0** vào
+`committedBytes` ⇒ `nền = raw − committedBytes` **nuốt trọn nó** ⇒ `baselineCaptured = true`,
+**không bao giờ tự lành**. **Đúng chữ ký T5-1**: drift **−17 GB**, alarm **100 % mọi nhịp**, chỉ
+**restart** mới gỡ.
+
+**Reviewer tái hiện 3/3** bằng broker + wiring + reconciler THẬT:
+
+| Ca | Kết quả |
+|---|---|
+| Hai lượt nạp **CHỒNG** (17.000 + 300 MiB) | `A.actualBytes = null, measureFailed = true` → **nền 18.300** (thật **1.000**); sau khi nhả: **drift −17.300, alarm true, nền VẪN 18.300** |
+| **ĐỐI CHỨNG** tuần tự | nền **1.000** — chồng lấn là nguyên nhân |
+| `cron:kb-sync` sống + **MỘT** lượt nạp **tuần tự** | gguf `measureFailed = true`; cron thoát → nền **18.000** |
+
+**Ca thứ ba là đường TẤT ĐỊNH, không cần đua**: bốn hộ `external-process` **cố ý không gọi
+`commitMeasured()`** ⇒ cửa sổ đo của chúng mở tới tận `release()` — `cron:kb-eval-gate` ≤ 10 phút ·
+`cron:kb-sync` ≤ 30 phút · `sidecar:local-trainer` ≤ 2 giờ · `sidecar:llm-finetune` ≤ **4 giờ**.
+**Trong suốt khoảng đó MỌI lượt nạp trong tiến trình thành `measureFailed`.** `.env` đang bật
+`KB_AUTOSYNC_ENABLED=true`, cron `0 3 * * *` — **đúng hình dạng tiền lệ Pha 1**.
+
+**Vì sao 8 lượt review theo-task không thấy:** `isLoadingLease()` là **một vị từ dùng chung cho BA
+hộ tiêu thụ** (`pendingBytes` · câu cảnh báo I-2 · lá chắn HOÃN). Task 8 đổi tận gốc **dân số** của
+lease `measureFailed`, nhưng 9 ca của `wiring.doubleCount.test.ts` chỉ soi lại **một** (ca 8);
+**không ca nào chạm `captureVramBaseline()`**. Cảnh báo này đã được ghi thẳng vào đầu
+`wiring.doubleCount.test.ts` cho người sau.
+
+**Tệ hơn: hành vi hỏng ĐANG ĐƯỢC MỘT TEST KHOÁ LẠI LÀ ĐÚNG.** `vramReconciler.test.ts` có một ca
+khẳng định nền vẫn chụp bình thường khi có lease `measureFailed`; ca đó dùng **reranker 606 MiB**
+(thật 14-18 MiB, vô hại) nên **không phân biệt được** với model 17 GB. **Đã thay** bằng ca dùng
+lease **17.000 MiB** — xem §11.3.
+
+**Bản vá.** Tách vị từ. Tiêu chí đúng của lá chắn HOÃN là *"giữ byte thật mà đóng góp **0** vào
+`committedBytes`"* = **`actualBytes === null`, BẤT KỂ `measureFailed`**:
+
+```ts
+function isLoadingLease(l)        { return l.actualBytes === null && !l.measureFailed; } // pendingBytes + câu I-2
+function holdsUncommittedBytes(l) { return l.actualBytes === null; }                     // LÁ CHẮN HOÃN
+```
+
+- Lập luận biện minh cũ (*"byte của nó đã ỔN ĐỊNH — nó KHÔNG còn đang nạp"*) **đúng về trạng thái
+  nhưng sai về điều lá chắn cần canh**: lá chắn không canh *"đang nạp"*, nó canh *"phép trừ
+  `raw − committedBytes` có bỏ sót byte nào không"*. Byte ổn định đầu độc nền **y như** byte đang
+  lên — và còn tệ hơn, vì nó **không tự biến mất sau vài giây**.
+- Lý do gốc loại `measureFailed` (sợ **khoá nền vĩnh viễn**) **nay đã THỪA**: chính Task 7 đã dựng
+  `BASELINE_BLOCKED_ALARM_MS` để lo đúng việc đó.
+- Danh sách `blockingOwners` trong câu báo động cũng đổi sang cùng vị từ — lệch nhau thì người trực
+  đi tìm đúng cái tên **không có** trong danh sách.
+
+### 11.3 Lưới test — và ĐỘT BIẾN chứng minh nó không giả
+
+Bốn ca mới trong `vramReconciler.test.ts` (ĐỎ trước, XANH sau):
+
+| Ca | Canh gì |
+|---|---|
+| `C-1×T5-1: lease ĐO HỎNG 17 GB vẫn GIỮ BYTE THẬT` | nền **không được** thành 18.000 MiB ⇒ phải `null` (HOÃN) |
+| `C-1×T5-1: nền nhiễm ⇒ drift −17 GB … bản đúng phải TỰ LÀNH` | sau khi 30B nhả: nền **1.000**, drift **0**, alarm **false** |
+| `ĐỐI CHỨNG (đột biến): KHÔNG lease nào actualBytes === null` | chụp **NGAY** — lưới **không phải** "hoãn tất" |
+| `lease ĐO HỎNG chặn nền thì KHÔNG được im lặng` | `baselineBlocked = true`, câu cảnh báo nêu `gguf:30B`, **không** chứa "KHÔNG XIN PHÉP", rồi **tự lành** |
+
+**Ba lượt đột biến, đều ĐỎ đúng chỗ:**
+
+| Đột biến | Kết quả |
+|---|---|
+| `holdsUncommittedBytes` → `actualBytes === null && !measureFailed` (đảo bản vá) | **3 ca ĐỎ** — đúng ba ca Critical |
+| `holdsUncommittedBytes` → `return true` (hoãn tất) | **12 ca ĐỎ**, gồm cả ĐỐI CHỨNG và toàn bộ lưới NEW-1/Task 7 cũ |
+| Bỏ `commitMeasured()` của backend reranker (để cửa sổ mở qua `loadModel`) | **2 ca ĐỎ** — cả hai lease thành `measureFailed`, đúng cơ chế Task 8 |
+
+**Một test cũ đã phải sửa vì bản vá làm tiền đề của nó bất khả đạt** (ghi lại để không ai tưởng là
+"sửa test cho xanh"): ca EXP-2 *"KẺ CHUI grab đúng lúc đổi thước"* trước đây lách lá chắn Task 7
+bằng `measureFailed: true` để giữ `ledgerTotal ≠ committedBytes`. Lối lách đó nay đóng. Mà
+`totalReservedBytes = Σ (actualBytes ?? estimatedBytes)`, nên **hễ lượt chụp THÀNH CÔNG thì mọi
+lease đã có `actualBytes` ⇒ `ledgerTotal ≡ committedBytes`**: hoán hai biến ở sự kiện `baseline` là
+một **đột biến vô nghĩa**. Phép phân biệt hai biến đã **chuyển** sang sự kiện `baseline_deferred`,
+và ca *"(b) lượt HOÃN ở nhánh resample vẫn phải để lại dấu vết EXP-2"* canh đúng nó (ledgerTotal
+**17.293 MiB** ≠ committedBytes **422 MiB**).
+
+### 11.4 CÂU HỎI BẮT BUỘC — *"nhánh mới kích hoạt SAI thì bao lâu tự lành?"*, trả lời bằng SỐ
+
+**Câu hỏi:** đưa `measureFailed` **trở lại** lá chắn HOÃN có làm nền **không bao giờ** chụp được khi
+cron chạy 30 phút không? Đồng hồ chặn 5 phút sẽ kêu — **đó có phải điều ta muốn, hay là chuông kêu
+oan mỗi đêm?**
+
+**(1) Cron 03:00 KHÔNG kêu oan — và đó là tính chất CẤU TRÚC, không phải may.**
+`captureVramBaseline()` thoát ngay ở dòng đầu khi `baselineCaptured` đã bật, **trước cả lượt đọc đầu
+dò** ⇒ trên một tiến trình **đã có nền**, lá chắn HOÃN **không có đường chạy**. Cron `0 3 * * *` giữ
+`actualBytes === null` suốt 30 phút mỗi đêm vẫn **không chạm được** vào nó.
+⇒ **Đã đóng đinh bằng test**: `ĐÁNH ĐỔI ĐO ĐƯỢC: cron 03:00 trên server đã CHỤP ĐƯỢC NỀN ⇒ KHÔNG
+kêu` — `baselineBlocked = false`, **0** sự kiện `baseline_blocked`, **0** sự kiện `baseline_deferred`.
+
+**(2) Cửa sổ mà lá chắn thật sự tác dụng — hẹp:** từ `startVramReconciler()` tới **lượt chụp thành
+công đầu tiên**, cộng mỗi nhánh **RESAMPLE** (đổi thước; thực tế **1 lần/đời tiến trình** smi→native,
+và bộ ngắt mạch chặn ở **3** lần liên tiếp).
+
+**(3) Ngân sách im lặng: 300 s, phủ 100 % cửa sổ nạp HỢP LỆ đã đo.**
+
+| Cửa sổ nạp hợp lệ | Đo được | Dự phòng so với 300 s |
+|---|---|---|
+| Nạp 30B (§3.5) | **11-43 s** | **7,0×** |
+| Sidecar thị giác (`READY_TIMEOUT_MS`) | ≤ **120 s** | **2,5×** |
+
+⇒ **0 báo động giả cho mọi lượt nạp bình thường.**
+
+**(4) Cái giá khi nhánh mới kích hoạt — đếm bằng dòng ghi sổ.** Trong lúc bị chặn, `reconcileOnce()`
+ghi **1 dòng `baseline_blocked` mỗi nhịp** (nhịp mặc định 60 s), tức `(T − 300)/60` dòng:
+
+| Hộ chặn | Trần | Dòng ghi | Tự lành |
+|---|---|---|---|
+| `cron:kb-eval-gate` | 10 phút | **5** | ≤ 1 nhịp sau khi nhả |
+| `cron:kb-sync` | 30 phút | **25** | ≤ 1 nhịp |
+| `sidecar:local-trainer` | 2 giờ | **115** | ≤ 1 nhịp |
+| `sidecar:llm-finetune` | **4 giờ** | **235** | ≤ 1 nhịp |
+| Lease `measureFailed` (gguf) | **tới lúc unload/evict** | **1.440/ngày** | ≤ 1 nhịp sau unload/evict; **xấu nhất = restart** |
+
+**(5) So thẳng với thứ nó thay thế — cùng NHỊP ghi, khác hẳn SỰ THẬT và khác hẳn LỐI THOÁT:**
+
+| | Trước bản vá (nền nhiễm) | Sau bản vá (hoãn + kêu) |
+|---|---|---|
+| Nhịp báo động | 1 dòng `drift`/nhịp | 1 dòng `baseline_blocked`/nhịp |
+| Bắt đầu kêu sau | **0 s** (ngay nhịp kế lượt chụp nhiễm) | **300 s** |
+| Nội dung | `drift = −17.000 MiB`, `baselineUsedBytes = 18.000 MiB` — **SAI**, và sai một hướng: đổ oan *"sổ giữ nhiều hơn thực tế"* | `driftBytes = null` + *"KHÔNG CHỤP ĐƯỢC NỀN"* + **tên** giấy phép chặn — **ĐÚNG** |
+| Mọi số hạ nguồn (`attributable`, `baselineUsedBytes` trong `vram_events`) | lệch **17 GB** | không phát hành số nào (`null`) |
+| Tự lành | **KHÔNG BAO GIỜ** (`baselineCaptured` đã chốt) — chỉ restart | **≤ 1 nhịp (60 s)** sau khi hộ chặn nhả; **không có trạng thái chốt** |
+
+**Kết luận đánh đổi (ghi rõ, không né):** đây **không** phải đổi im lặng lấy chuông oan. Cùng một
+lượng dòng ghi, bản vá đổi **một con số sai 17 GB được tin là đúng và không bao giờ tự lành** lấy
+**một lời khai đúng rằng phép đối chiếu đang mù, kèm tên thủ phạm, tự lành sau một nhịp**. Nguyên
+tắc đã dùng nhất quán từ I-2/Task 3: *một ước lượng sai ĐƯỢC GẮN CỜ rẻ hơn một ước lượng sai ĐƯỢC
+TIN.*
+
+**RỦI RO CÒN LẠI, CHẤP NHẬN TƯỜNG MINH (dòng cuối bảng (4)).** Một lease `measureFailed` **phát sinh
+TRƯỚC lượt chụp nền thành công đầu tiên** sống tới lúc model bị unload/evict — với model 30B ít khi
+bị đuổi khỏi cache, đó có thể là **cả đời tiến trình**. Khi đó reconciler **mù + kêu 1.440 dòng/ngày**
+cho tới khi model rời cache hoặc khởi động lại. Ca này **không hiếm**: §5.2 đo được lượt chụp đầu
+**rơi đúng vào** cửa sổ nạp trên máy thật. Không có bản vá nào trong phạm vi Pha 1.5 gỡ được — §5.2
+đã bác **mọi công thức thứ ba** trong cửa sổ đó. Lối ra thật sự là **Pha 2** (đo theo từng giấy phép
+thay vì một lượt đọc `used` toàn thiết bị) — ghi thành **T5-11** dưới đây.
+
+### 11.5 I-1 — `getLlama()` THỨ HAI ngoài sổ
+
+`aiReranker.ts` gọi `getLlama({ gpu: "auto" })` của node-llama-cpp **thẳng**, còn
+`beginVramAllocation()` mãi **20 dòng sau** ⇒ **~430 MiB backend CUDA nằm gọn trong `beforeUsed`,
+KHÔNG BAO GIỜ vào sổ**. Chính comment cạnh lượt gọi tự khai: *"Runs on the reranker's own backend
+instance"*. Và `types.ts` ghi `gguf-backend` là *"singleton cả tiến trình"* — **SAI**: tiến trình có
+**hai** thể hiện độc lập.
+
+Hôm nay vô hại (`.env` `RAG_RERANKER_GPU=false` ⇒ `gpu:false`), nhưng **một lần lật cờ là Pha 2 tính
+`headroom` thiếu 430 MiB**. Đúng quy luật §10 tự rút: *"Task 2 chỉ khép MỘT thể hiện."*
+
+**Bản vá:** giấy phép `cuda-backend:reranker` (`kind: "gguf-backend"`, `priority: "background"` — hộ
+này phải nhường AOI và chat/RCA), mở **ngay trước** lượt gọi thật và **commit ngay sau**, trước khi
+mở cửa sổ của model; giữ qua `disposeReranker()` (hàm đó **không** dispose thể hiện `Llama`, trả
+giấy phép ở đó là nói dối sổ) và dùng chính biến ticket làm khoá chống cộng trùng. Câu *"singleton
+cả tiến trình"* trong `types.ts` đã sửa lại cho đúng. Lưới: `wiring.rerankerBackend.test.ts`
+(3 ca, ĐỎ trước / XANH sau, kèm đột biến ở §11.3).
+
+### 11.6 Năm khoản Minor cùng lượt
+
+| # | Khoản | Đã sửa ở |
+|---|---|---|
+| M-1 | Bảng điểm cấp phát ghi **"12 điểm"**, thật là **13** — thiếu `aiLlmFinetuneSidecar` (`sidecar:llm-finetune`, trần **4 giờ**, tức **dài hơn** "2 GIỜ" mà bảng gọi là trần lớn nhất). Bảng này **chống lưng cho ngưỡng 5 phút của Task 7** ⇒ sai ở chỗ chịu lực. | `vramReconciler.ts` (bảng đủ **13** dòng) + `vramWiring.ts` |
+| M-2 | Trường `note` của sự kiện `baseline` **vẫn ghi nguyên văn tiền đề ĐÃ RÚT LẠI** (*"giấy phép chưa commit … trừ nó là trừ thứ chưa tồn tại"*) và nó đi thẳng vào `vram_events` **mọi lượt**. | `vramReconciler.ts` |
+| M-3 | §0 hàng (4) dẫn *"xem §5"* cho quyết định ngưỡng/nhịp — đúng phải là **§6.1/§6.2**. | báo cáo này |
+| M-4 | `backgroundJobs.ts` trỏ `index.ts:5198`, thật là `:5216`. Đổi sang **mô tả tương đối** (grep được). | `server/_core/backgroundJobs.ts` |
+| M-5 | `wiring.doubleCount.test.ts` thiếu cảnh báo: ca ★★ **đứng một mình KHÔNG đủ** (đột biến đánh dấu một chiều làm nó vẫn xanh) ⇒ **đừng dọn bớt ca 2/3/7/9**. | `wiring.doubleCount.test.ts` |
+
+### 11.7 Ghi sổ — KHÔNG sửa ở lượt này
+
+| # | Mục | Mức |
+|---|---|---|
+| **T5-11** | Ca *"lease `measureFailed` phát sinh trước lượt chụp nền đầu ⇒ reconciler mù + kêu tới lúc unload/evict"* (§11.4, rủi ro còn lại). Chỉ Pha 2 (đo theo từng giấy phép) gỡ được. | **Cao** |
+| **T5-12** | `llama-server` bền ~17 GB **không có chỗ xin phép** (đang TẮT). Bật lên là một hộ 17 GB vô hình. | Cao |
+| **T5-13** | `vramEventLog.ts` `QUEUE_MAX` **rơi im lặng** — hàng đợi đầy thì sự kiện biến mất không dấu vết. | Trung bình |
+| **T5-14** | `releaseProof` **backend chưa hình thành**: `gguf-backend` không có đường `release` ở nhánh thành công, nên không lớp nào chứng minh được thiết bị đã nhả. | Trung bình |
+| **T5-6** (nhắc lại) | `vram_events."createdAt"` = **thời điểm XẢ**, không phải thời điểm sự kiện. Chỉ `id` giữ thứ tự. | Trung bình |
+
+**Một mục trong sổ đã bị BÁC.** *"Nhánh resample trả cứng `alarm: false` kể cả khi đồng hồ chặn đã
+vượt"* là **BẤT KHẢ ĐẠT**: nhánh resample đòi `baselineCaptured === true`, mà cờ đó chỉ bật trong
+**cùng một khối** với `baselineBlockedSinceMs = null`. **Hai điều kiện loại trừ nhau** ⇒ không có
+trạng thái nào vừa "đang resample" vừa "đồng hồ chặn đã vượt". Ghi lại là **đã bác**, để không ai đi
+vá một nhánh không tồn tại.
+
+### 11.8 Cổng đã chạy
+
+| Cổng | Kết quả |
+|---|---|
+| `npx vitest run server/services/vram/` | **144/144 XANH** (137 cũ **còn nguyên** + 7 mới) |
+| Cùng lệnh với `--sequence.shuffle.tests` | **144/144 XANH** |
+| `tsc` | không lỗi mới (lỗi tiền tồn tại `client/src/pages/SessionManagement.tsx:195`) |
+| `npm run kb:eval` | **151/151** |
+
+**VẪN KHÔNG CƯỠNG CHẾ.** Lượt vá này không chạm `enforceVramGuard` / `ensureCapacity` /
+`evictLRU`. Pha 1.5 vẫn **CHỈ QUAN SÁT**.

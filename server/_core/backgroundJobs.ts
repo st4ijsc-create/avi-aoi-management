@@ -130,7 +130,11 @@ export async function startBackgroundSchedulers(): Promise<void> {
   // Pha 1.5 Task 4 — bộ đếm giờ nhật ký (`__setVramLogTimerEnabled(true)`) KHÔNG bật ở đây.
   // `startBackgroundSchedulers()` (hàm hiện tại) được gọi từ HAI chỗ khác nhau, và MỖI chỗ gọi
   // tự bật timer TRƯỚC khi gọi vào đây — không phải một điểm bật chung duy nhất:
-  //   • all-in-one / `ROLE=api` — bật ở `index.ts` (:5198 lân cận), trước cả nhánh role.
+  //   • all-in-one / `ROLE=api` — bật ở `server/_core/index.ts`, tại lượt gọi
+  //     `__setVramLogTimerEnabled(true)` DUY NHẤT của file đó, đứng TRƯỚC nhánh rẽ theo `ROLE`.
+  //     ⚠ Minor-4 (review TOÀN NHÁNH): bản trước ghi số dòng cứng (`:5198`) và nó đã LỆCH sang
+  //     `:5216` chỉ sau vài commit. Con trỏ vào một file 5.000 dòng phải là MÔ TẢ TƯƠNG ĐỐI
+  //     (grep được), không phải một số đếm mà mọi lượt chèn dòng đều làm sai.
   //   • `ROLE=worker` (`server/worker.ts` HOẶC `ROLE=worker` qua `index.ts`) — bật ở ĐẦU
   //     `runWorkerProcess()` (trên, review vòng 1 Critical: bật ở `index.ts` KHÔNG phủ được
   //     worker, vì `worker.ts` không import `index.ts`, và `ROLE=worker` qua `index.ts`

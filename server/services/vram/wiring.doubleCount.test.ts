@@ -17,6 +17,24 @@
  * ⚠ QUY ƯỚC MODULE-IDENTITY (giống `wiring.negativeDelta.test.ts`): mã sản xuất `import()` ĐỘNG
  * `./vramBroker`, nên MỌI lượt import (cả sản xuất lẫn sổ cái) phải nằm TRONG thân test, SAU cùng
  * một `vi.resetModules()` — không thì test soi vào MỘT SỔ KHÁC và xanh/đỏ đều sai lý do.
+ *
+ * ⚠⚠ NGƯỜI SAU MUỐN "DỌN BỚT CA": ĐỪNG. Ca ★★ 1 ĐỨNG MỘT MÌNH **KHÔNG ĐỦ** — nó chỉ khẳng định
+ * `Σ actualBytes ≤ 4.000 MiB`, nên một đột biến "đánh dấu MỘT CHIỀU" (chỉ gắn `measureFailed` cho
+ * cửa sổ MỚI, bỏ qua cửa sổ CŨ trong `openMeasureWindow()`) vẫn làm nó XANH: một bên giữ `null`,
+ * tổng vẫn ≤ 4.000. Bốn ca chống lưng cho nó, mỗi ca một hướng KHÁC nhau:
+ *   • ca 2 — CẢ HAI phía phải bị gắn cờ (chính là ca giết đột biến một chiều);
+ *   • ca 3 — dấu vết phải nêu ĐÍCH DANH `overlappedBy` (không thì không điều tra được);
+ *   • ca 7 — bộ ước lượng KHÔNG được HỌC con số chồng lấn (nấc "learned" đóng đinh vĩnh viễn);
+ *   • ca 9 — không RÒ cửa sổ ở CẢ NĂM nhánh thoát (một cửa sổ rò làm mọi phép đo sau bị gắn cờ
+ *     sai tới lúc khởi động lại).
+ * Và ca 4 (tuần tự) là ĐỐI CHỨNG chứng minh lưới không phải "gắn cờ tất".
+ *
+ * ⚠⚠ LỖ HỔNG ĐÃ TỪNG CÓ THẬT Ở ĐÂY (review TOÀN NHÁNH, C-1 × T5-1): chín ca của file này chỉ soi
+ * lại **MỘT** trong ba hộ tiêu thụ của `isLoadingLease()` (ca 8 — `pendingBytes`), KHÔNG ca nào
+ * chạm `captureVramBaseline()`. Task 8 đổi tận gốc DÂN SỐ của `measureFailed` (nay có cả model
+ * 17 GB) và vì thế MỞ LẠI đúng cửa T5-1 mà Task 7 sinh ra để đóng — chín ca xanh không thấy gì.
+ * Thêm một nhánh vào `vramWiring` mà đổi dân số một cờ dùng chung: phải đi soi **MỌI** hộ tiêu thụ
+ * của cờ đó, không phải chỉ hộ gần nhất.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 

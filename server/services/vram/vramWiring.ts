@@ -119,7 +119,9 @@ const NOOP_TICKET: VramTicket = {
  * *một ước lượng sai ĐƯỢC GẮN CỜ rẻ hơn một ước lượng sai ĐƯỢC TIN.*
  *
  * ⚠ PHẠM VI — nói đúng, đừng nói rộng hơn:
- *   PHỦ: mọi hộ tiêu thụ đi qua `beginVramAllocation()` (12 điểm gọi trong repo), kể cả các hộ
+ *   PHỦ: mọi hộ tiêu thụ đi qua `beginVramAllocation()` (**13** điểm gọi trong repo — bản trước
+ *        ghi "12", đếm THIẾU `aiLlmFinetuneSidecar` (`sidecar:llm-finetune`, trần **4 GIỜ**);
+ *        bảng đầy đủ ở docstring `captureVramBaseline()` trong `vramReconciler.ts`), kể cả các hộ
  *        NGOÀI tiến trình đã KHAI BÁO bằng giấy phép (`sidecar:vision`, `cron:kb-sync`,
  *        `sidecar:local-trainer`, `sidecar:llm-finetune`) — cửa sổ của chúng mở từ `begin` tới
  *        `commitMeasured()`/`release()`, nên một lượt nạp model chồng lên lượt spawn của chúng

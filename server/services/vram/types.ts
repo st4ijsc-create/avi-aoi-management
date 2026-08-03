@@ -2,7 +2,17 @@
 export type VramPriority = "production" | "interactive" | "background";
 
 export type VramLeaseKind =
-  | "gguf-backend" // Pha 1.5 Task 2 — backend CUDA của getLlama() — ~430 MiB, singleton cả tiến trình
+  /**
+   * Pha 1.5 Task 2 — backend CUDA của `getLlama()`, ~430 MiB/thể hiện.
+   *
+   * ⚠ I-1 (review TOÀN NHÁNH) — bản trước ghi *"singleton cả tiến trình"*: **SAI**. Singleton là
+   * `aiGgufEngine.llamaInstance`, KHÔNG phải lớp giấy phép này. Tiến trình có **HAI** thể hiện
+   * backend ĐỘC LẬP: `cuda-backend` (`aiGgufEngine`) và `cuda-backend:reranker` (`aiReranker`
+   * gọi thẳng `getLlama()` trên backend riêng của nó). Người sau đọc "singleton" rồi giả định
+   * "chỉ cần cộng một khoản 430 MiB" sẽ tính thiếu đúng một backend — đó là cách I-1 lọt qua
+   * TÁM lượt review.
+   */
+  | "gguf-backend"
   | "gguf-model"
   | "gguf-context"
   | "gguf-embed-context"

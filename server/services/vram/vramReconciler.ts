@@ -26,21 +26,50 @@ const INTERVAL_MS = Number(process.env.VRAM_RECONCILE_INTERVAL_MS ?? 60_000);
 const BASELINE_BLOCKED_ALARM_MS = Number(process.env.VRAM_BASELINE_BLOCKED_ALARM_MS ?? 300_000);
 
 /**
- * Pha 1.5 Task 7 (T5-1) — MỘT ĐỊNH NGHĨA DUY NHẤT của "giấy phép ĐANG NẠP".
+ * Pha 1.5 Task 7 (T5-1) — "giấy phép ĐANG NẠP", theo nghĩa **byte thật sắp tới, sổ chưa theo kịp**.
  *
- * Dùng ở BA chỗ: `pendingBytes` (băng dung sai âm, Task 3), danh sách "ứng viên số một" trong
- * câu cảnh báo lệch âm (I-2), và lá chắn HOÃN chụp nền (Task 7). Ba chỗ đó BẮT BUỘC phải cùng
- * một tập: nếu tập HOÃN rộng hơn tập DUNG SAI thì có lease chặn nền mãi mà không được nới dung
- * sai; hẹp hơn thì có lease được nới dung sai nhưng vẫn đầu độc nền. Tách rời ba bản sao của
- * cùng một vị từ là cách chắc chắn nhất để chúng lệch nhau sau vài vòng sửa.
+ * Dùng ở HAI chỗ: `pendingBytes` (băng dung sai âm, Task 3) và danh sách "ứng viên số một" trong
+ * câu cảnh báo lệch âm (I-2). Hai chỗ đó BẮT BUỘC cùng một tập — cả hai đều trả lời câu hỏi
+ * *"khoản thiếu hụt này có TỰ LÀNH không?"*, và câu trả lời cho `measureFailed` là KHÔNG.
  *
  * ⚠ LOẠI `measureFailed === true` (lý do đầy đủ ở docstring `pendingBytes` trong `reconcileOnce`):
- * cờ đó nghĩa là phép đo ĐÃ CHẠY XONG và cho số vô nghĩa ⇒ lease KHÔNG BAO GIỜ commit nhưng byte
- * của nó đã ỔN ĐỊNH trên thiết bị — nó KHÔNG còn đang nạp. Chặn chụp nền theo nó là khoá nền
- * VĨNH VIỄN cho tới khi khởi động lại tiến trình.
+ * cờ đó nghĩa là phép đo ĐÃ CHẠY XONG và cho số vô nghĩa ⇒ lease KHÔNG BAO GIỜ commit; nới băng
+ * dung sai theo nó là nới VĨNH VIỄN, tự tay bịt miệng chuông mà `measure_failed` cố ý để lại dấu.
+ *
+ * ⚠⚠ KHÔNG DÙNG CHO LÁ CHẮN HOÃN CHỤP NỀN — xem `holdsUncommittedBytes()` ngay dưới. Bản trước
+ * dùng CHUNG một vị từ cho cả ba hộ tiêu thụ và đó chính là lỗ hổng mà review TOÀN NHÁNH bắt được:
+ * hai câu hỏi KHÁC NHAU ("có tự lành không?" vs "nó có giữ byte mà sổ commit không thấy không?")
+ * bị ép trả lời bằng CÙNG một tập.
  */
 function isLoadingLease(l: VramLease): boolean {
   return l.actualBytes === null && !l.measureFailed;
+}
+
+/**
+ * ★★ VÁ SAU REVIEW TOÀN NHÁNH (C-1 × T5-1) — vị từ của LÁ CHẮN HOÃN chụp nền, TÁCH khỏi
+ * `isLoadingLease()`. Tiêu chí đúng là **"giữ byte THẬT trên thiết bị mà đóng góp 0 vào
+ * `committedBytes`"** = `actualBytes === null`, **BẤT KỂ `measureFailed`**.
+ *
+ * ⚠ VÌ SAO PHẢI TÁCH: Task 8 (C-1) gắn `markMeasureFailed()` cho MỌI giấy phép có cửa sổ đo CHỒNG
+ * lấn. Cờ đó vì thế không còn chỉ đậu trên reranker 606 MiB vô hại — một model 30B **17 GB** cũng
+ * mang nó, `actualBytes` đứng `null` VĨNH VIỄN, mà **byte thật của nó ĐANG NẰM TRÊN THIẾT BỊ**.
+ * Với vị từ cũ, lease đó rơi khỏi lá chắn HOÃN **và** đóng góp 0 vào `committedBytes`, nên
+ * `nền = raw − committedBytes` NUỐT TRỌN nó rồi `baselineCaptured` bật ⇒ drift **−17 GB**, alarm
+ * 100 % mọi nhịp, **chỉ restart mới gỡ** — ĐÚNG chữ ký T5-1 mà Task 7 vừa vá, sống lại qua cửa sau.
+ *
+ * ⚠ LẬP LUẬN CŨ ("byte của nó đã ỔN ĐỊNH — nó KHÔNG còn đang nạp") ĐÚNG VỀ TRẠNG THÁI nhưng SAI
+ * VỀ ĐIỀU LÁ CHẮN CẦN CANH: lá chắn không canh "đang nạp", nó canh "phép trừ `raw − committedBytes`
+ * có bỏ sót byte nào không". Ổn định hay đang lên, byte bỏ sót đầu độc nền y như nhau — và ổn định
+ * thì còn TỆ HƠN, vì nó không tự biến mất sau vài giây.
+ *
+ * ⚠ LÝ DO GỐC LOẠI `measureFailed` (sợ khoá nền VĨNH VIỄN) NAY ĐÃ THỪA: chính Task 7 đã dựng
+ * `BASELINE_BLOCKED_ALARM_MS` (khai báo ở trên) để biến "im lặng vĩnh viễn" thành "báo động có tên
+ * thủ phạm", và mốc hoãn bị XOÁ ở lượt chụp thành công đầu tiên. Đánh đổi đã cân: **chuông kêu
+ * đúng chỗ, đọc được, tự lành** — đổi lấy việc KHÔNG BAO GIỜ ghim một con số nền đã nhiễm 17 GB
+ * cho suốt vòng đời tiến trình. Số liệu của đánh đổi này ở báo cáo §11.
+ */
+function holdsUncommittedBytes(l: VramLease): boolean {
+  return l.actualBytes === null;
 }
 /**
  * Pha 1.5 Task 1, review vòng 1 (EXP-1) — BỘ NGẮT MẠCH cho thước dao động.
@@ -160,27 +189,35 @@ let timer: NodeJS.Timeout | null = null;
  * (đường b). Vá riêng một đường là để nguyên đường kia với **cùng hậu quả, cùng độ lớn**.
  *
  * ⚠⚠ "NẾU LUÔN CÓ LEASE PENDING THÌ NỀN KHÔNG BAO GIỜ CHỤP ĐƯỢC?" — câu hỏi đúng, và câu trả
- * lời phải ĐO, không suy đoán. Đọc toàn bộ 12 điểm `beginVramAllocation()` trong repo:
+ * lời phải ĐO, không suy đoán. Đọc toàn bộ **13** điểm `beginVramAllocation()` trong repo
+ * (review TOÀN NHÁNH: bản trước ghi "12", đếm THIẾU `aiLlmFinetuneSidecar.ts:466` — và đó đúng
+ * là hộ có TRẦN LỚN NHẤT, tức bảng này sai ngay ở chỗ nó chịu lực cho ngưỡng 5 phút của Task 7):
  *
  * | Lớp giấy phép | `commitMeasured()`? | Trần cửa sổ pending |
  * |---|---|---|
- * | `gguf-backend/-model/-context/-embed-context` (`aiGgufEngine`) | CÓ | 11-43 s (nạp 30B) |
- * | `onnx-session` (`aiInferenceEngine`/`aiImageEmbedding`/`aiReranker`/`ocrService`) | CÓ | vài giây |
+ * | `gguf-backend/-model/-context/-embed-context` (`aiGgufEngine` ×4) | CÓ | 11-43 s (nạp 30B) |
+ * | `gguf-backend` `cuda-backend:reranker` (`aiReranker`, I-1) | CÓ | vài giây |
+ * | `gguf-model` `reranker:*` (`aiReranker`) | CÓ | vài giây |
+ * | `onnx-session` (`aiInferenceEngine`/`aiImageEmbedding`/`ocrService` ×3) | CÓ | vài giây |
  * | `external-process` `sidecar:vision` (`llamaVisionSidecar`) | **CÓ** (sau healthcheck) | ≤ `READY_TIMEOUT_MS` = 120 s |
  * | `external-process` `cron:kb-eval-gate` (`kbSyncScheduler`) | **KHÔNG, CỐ Ý** | ≤ `evalTimeoutMs()` = 10 phút |
  * | `external-process` `cron:kb-sync` (`kbSyncScheduler`) | **KHÔNG, CỐ Ý** | ≤ `TIMEOUT_MS` = 30 phút |
  * | `external-process` `sidecar:local-trainer` (`localSidecarTrainer`) | **KHÔNG, CỐ Ý** | ≤ `sidecarTimeoutMs()` = 2 GIỜ |
+ * | `external-process` `sidecar:llm-finetune` (`aiLlmFinetuneSidecar`) | **KHÔNG, CỐ Ý** | ≤ `finetuneTimeoutMs()` = **4 GIỜ** |
  *
- * ⇒ **KHÔNG có lớp nào pending VĨNH VIỄN theo thiết kế.** Ba hộ "cố ý không commit" vẫn `release()`
+ * ⇒ **KHÔNG có lớp nào pending VĨNH VIỄN theo thiết kế.** BỐN hộ "cố ý không commit" vẫn `release()`
  * ở nhánh `"exit"`/`"error"` của tiến trình con, và khi chúng nhả thì byte của chúng cũng đã rời
  * thiết bị ⇒ lượt chụp SAU đó là lượt chụp ĐÚNG. Hoãn ở đây **không vô ích, nó chỉ chờ đúng lúc**.
  * ⇒ **KHÔNG thu hẹp theo `kind`**: `external-process` chứa CẢ hộ commit (`sidecar:vision`, 7,8 GB
- * — hộ lớn nhất hệ) LẪN ba hộ không commit, nên lọc theo `kind` sẽ để lọt đúng hộ lớn nhất.
- * ⇒ **Thu hẹp DUY NHẤT là `measureFailed`** (xem `isLoadingLease()`), vì đó là lớp duy nhất mà
- * `actualBytes === null` KHÔNG còn nghĩa "đang nạp".
- * ⇒ Ca "pending tới lúc restart" CÒN LẠI đúng MỘT: **tiến trình chết hẳn giữa `reserve()` và
- * `commitMeasured()`** (kill -9 — đường 3 trong docstring `pendingBytes` bên dưới). Ca đó KHÔNG
- * được im lặng: `BASELINE_BLOCKED_ALARM_MS` biến nó thành BÁO ĐỘNG có tên thủ phạm.
+ * — hộ lớn nhất hệ) LẪN bốn hộ không commit, nên lọc theo `kind` sẽ để lọt đúng hộ lớn nhất.
+ * ⇒ **KHÔNG thu hẹp theo `measureFailed`** (review TOÀN NHÁNH đã BÁC bản trước — xem
+ * `holdsUncommittedBytes()`): sau Task 8 thì `measureFailed` đậu lên cả model 17 GB đang giữ byte
+ * thật, nên thu hẹp theo nó là mở lại đúng cửa T5-1. **KHÔNG THU HẸP GÌ CẢ**: `actualBytes === null`.
+ * ⇒ Ca "pending tới lúc restart" CÒN LẠI hai: **tiến trình chết hẳn giữa `reserve()` và
+ * `commitMeasured()`** (kill -9 — đường 3 trong docstring `pendingBytes` bên dưới) và **lease
+ * `measureFailed` sống tới lúc unload/evict**. Cả hai KHÔNG được im lặng:
+ * `BASELINE_BLOCKED_ALARM_MS` biến chúng thành BÁO ĐỘNG có tên thủ phạm, và đó là ĐÁNH ĐỔI ĐÃ
+ * CHỌN — chuông kêu đọc được và tự lành, thay cho một con số nền nhiễm 17 GB ghim vĩnh viễn.
  *
  * ⚠ Lượt HOÃN vẫn GHI SỔ (`event: "baseline_deferred"`). Bắt buộc, vì ở nhánh resample nền CŨ
  * đã bị huỷ TRƯỚC lời gọi này — không ghi thì lưới pháp y EXP-2 (nền cũ + `driftIfNotResampled`)
@@ -318,7 +355,10 @@ export async function captureVramBaseline(
   // trong cửa sổ đó ⇒ HOÃN. Đặt TRƯỚC lá chắn `raw < committedBytes` vì đây là chẩn đoán CỤ THỂ
   // hơn (biết ĐÍCH DANH ai đang nạp), và vì trong cửa sổ này `committedBytes` thấp giả tạo nên
   // lá chắn kia gần như không bao giờ chạm.
-  const loading = snap.leases.filter(isLoadingLease);
+  // ⚠⚠ VÁ SAU REVIEW TOÀN NHÁNH (C-1 × T5-1) — vị từ ở đây là `holdsUncommittedBytes()`, KHÔNG
+  // phải `isLoadingLease()`. Lý do đầy đủ ở docstring hàm đó; tóm tắt: lease `measureFailed` cũng
+  // giữ byte thật mà đóng góp 0 vào `committedBytes`, và Task 8 vừa đưa cả model 17 GB vào lớp đó.
+  const loading = snap.leases.filter(holdsUncommittedBytes);
   if (loading.length > 0) {
     const blockingOwners = loading.map((l) => l.request.owner);
     const firstOfStreak = baselineBlockedSinceMs === null;
@@ -430,10 +470,15 @@ export async function captureVramBaseline(
             driftIfNotResampled: raw - priorBaseline.usedBytes - ledgerTotal,
           }
         : {}),
+      // ⚠ Minor-2 (review TOÀN NHÁNH): bản trước ghi nguyên văn tiền đề ĐÃ BỊ RÚT LẠI — "giấy
+      // phép chưa commit là 'đã xin, chưa cấp phát xong' nên trừ nó là trừ thứ chưa tồn tại".
+      // Câu đó SAI (đo được `nvidia-smi = 18.115 MiB` khi lease 30B vẫn pending) và nó đi thẳng
+      // vào bảng `vram_events` ở MỌI lượt chụp — đúng nghĩa "mìn cho người sau".
       note:
-        "nền = thiết bị − tổng giấy phép ĐÃ COMMIT. Chỉ trừ phần đã commit vì chỉ phần đó chắc " +
-        "chắn đã nằm trong deviceUsed; giấy phép chưa commit là 'đã xin, chưa cấp phát xong' nên " +
-        "trừ nó là trừ thứ chưa tồn tại. ⚠ Sidecar chạy tiến trình RIÊNG thì KHÔNG có trong sổ ⇒ " +
+        "nền = thiết bị − tổng giấy phép ĐÃ COMMIT, và lượt chụp này chỉ chạy khi KHÔNG còn giấy " +
+        "phép nào `actualBytes === null` (lá chắn HOÃN, T5-1) — vì byte của một giấy phép chưa " +
+        "commit CÓ THỂ đã nằm trong deviceUsed mà đóng góp 0 vào committedBytes, và không công " +
+        "thức nào đúng trong cửa sổ đó. ⚠ Sidecar chạy tiến trình RIÊNG thì KHÔNG có trong sổ ⇒ " +
         "vẫn bị nuốt vào đây (spec §6 — Pha 3 nhận nuôi).",
     },
   });
@@ -751,7 +796,10 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
     const blockedForMs = baselineBlockedSinceMs === null ? 0 : Date.now() - baselineBlockedSinceMs;
     const blocked = baselineBlockedSinceMs !== null && blockedForMs >= BASELINE_BLOCKED_ALARM_MS;
     if (blocked) {
-      const blockingOwners = snap.leases.filter(isLoadingLease).map((l) => l.request.owner);
+      // ⚠ CÙNG vị từ với lá chắn HOÃN (`holdsUncommittedBytes`), KHÔNG phải `isLoadingLease` —
+      // nếu lệch, câu báo động sẽ liệt kê một danh sách KHÁC với tập đang thật sự chặn, và người
+      // trực đi tìm đúng cái tên KHÔNG có trong đó (ca điển hình: lease đo-hỏng đang chặn).
+      const blockingOwners = snap.leases.filter(holdsUncommittedBytes).map((l) => l.request.owner);
       // Hai NGUYÊN NHÂN, hai HÀNH ĐỘNG SỬA khác nhau — gộp một câu là bắt người trực đoán.
       const why =
         baselineBlockedReason === "device-below-committed"
