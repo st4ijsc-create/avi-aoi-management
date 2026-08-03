@@ -24,8 +24,21 @@ export type VramLeaseKind =
  * `"unknown"` (review round 1, Task 3): KHÔNG có learned, KHÔNG có file, KHÔNG có hằng số
  * cấu hình nào — khác "config-default" (có hằng số, chỉ là chưa đo thật). Tách riêng để
  * Task 7 đọc `estimateSource` không bị chỉ sai địa chỉ "chỗ nào còn dùng hằng số".
+ *
+ * `"fallback-after-measure-failure"` (Pha 2A Task 4, T5-15): con số trong `actualBytes` KHÔNG đến
+ * từ phép đo nào — nó là ƯỚC LƯỢNG DỰ PHÒNG được chốt sổ SAU khi phép đo hỏng, cho một khối byte
+ * mà điểm gọi CHẮC CHẮN là đang tồn tại (hôm nay: backend CUDA, 452.595.712 byte đo được giống hệt
+ * ở 5/5 tiến trình trên hai thước độc lập). ⚠ Nấc này KHÔNG BAO GIỜ đi qua `vramEstimator`: nó
+ * không được sinh bởi `estimateBytesFor()` và cũng KHÔNG được nạp vào nấc `learned` — xem
+ * `vramBroker.commitFallback()`.
+ * ⚠ Cột DB `vram_events.estimateSource` phải đủ rộng cho chuỗi 30 ký tự này (migration 0311).
  */
-export type VramEstimateSource = "learned" | "file-size" | "config-default" | "unknown";
+export type VramEstimateSource =
+  | "learned"
+  | "file-size"
+  | "config-default"
+  | "unknown"
+  | "fallback-after-measure-failure";
 
 /**
  * Pha 2A Task 3 — CÁI THƯỚC nào đã đẻ ra con số `actualBytes`. Ghi vào giấy phép VÀ vào sự kiện
@@ -61,7 +74,18 @@ export interface VramLease {
   id: string;
   request: VramReserveRequest;
   acquiredAt: Date;
-  /** null cho tới khi commit(). */
+  /**
+   * null cho tới khi `commit()`.
+   *
+   * ⚠⚠ Pha 2A Task 4 (T5-15) — `actualBytes !== null` KHÔNG CÒN đồng nghĩa "đã đo được".
+   * `commitFallback()` cũng điền ô này bằng một ƯỚC LƯỢNG DỰ PHÒNG (kèm `measureFailed: true` và
+   * `measureSource: "none"`). Ai cần "con số này có phải SỐ ĐO không" phải hỏi `measureSource`
+   * (`"none"` = không thước nào đẻ ra nó), KHÔNG được suy ra từ `actualBytes !== null`.
+   * Ba nhóm, đọc bằng HAI trường:
+   *   • `null`                              → chưa có số nào (đang nạp, hoặc đo hỏng chưa dự phòng)
+   *   • `!== null` + `measureSource !== "none"` → SỐ ĐO của đúng thước đó
+   *   • `!== null` + `measureSource === "none"` → ƯỚC LƯỢNG DỰ PHÒNG (T5-15)
+   */
   actualBytes: number | null;
   /**
    * I-2 (review TOÀN NHÁNH) — phép ĐO đã chạy nhưng cho kết quả VÔ NGHĨA (delta âm), nên

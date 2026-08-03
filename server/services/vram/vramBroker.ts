@@ -168,6 +168,55 @@ export function markMeasureFailed(lease: VramLease): void {
 }
 
 /**
+ * ★★★ Pha 2A Task 4 (T5-15) — CHỐT SỔ BẰNG ƯỚC LƯỢNG DỰ PHÒNG sau khi phép đo đã hỏng.
+ *
+ * ⚠ VÌ SAO PHẢI CÓ, và vì sao nó KHÔNG phải là "commit() bản lỏng tay": `gguf-backend` KHÔNG có
+ * đường `release()` ở nhánh THÀNH CÔNG (đúng thiết kế — backend CUDA sống suốt đời tiến trình).
+ * Nên một lượt `markMeasureFailed()` trên giấy phép đó ghim `actualBytes = null` VĨNH VIỄN, mà
+ * `holdsUncommittedBytes()` (vramReconciler) = `actualBytes === null` **bất kể `measureFailed`**
+ * ⇒ lá chắn HOÃN chụp nền đóng VĨNH VIỄN ⇒ quá `BASELINE_BLOCKED_ALARM_MS` là báo động KHÔNG BAO
+ * GIỜ TỰ LÀNH. Xấu nhất không phải "nên khởi động lại" mà là **"BẮT BUỘC khởi động lại"**.
+ *
+ * ⚠⚠ BA KHÁC BIỆT VỚI `commit()` — cả ba đều là ĐIỀU KIỆN, không phải chi tiết:
+ *   1. **KHÔNG xoá `measureFailed`.** Phép đo THẬT SỰ đã hỏng; xoá cờ là khai một con số ước
+ *      lượng thành "đã đo được" — đúng chiều lỗi nguy hiểm mà I-1 (Task 3) đã dựng lưới để chặn.
+ *   2. **`measureSource` giữ nguyên `"none"`.** Không thước nào đẻ ra con số này. Đây là thứ duy
+ *      nhất phân biệt được "ước lượng dự phòng" với "số đo" khi đọc lại sổ (types.ts
+ *      `VramLease.actualBytes`), và `splitLedgerByMeasureSource()` đọc đúng nó.
+ *   3. **KHÔNG gọi `estimator.recordActual()`** — và điều đó được bảo đảm bằng CẤU TRÚC: module
+ *      này KHÔNG import `vramEstimator` một dòng nào. Một ước lượng dự phòng lọt vào nấc
+ *      `learned` sẽ tự khai là "đã đo thật lượt trước" cho MỌI lượt `reserve()` sau, tới hết đời
+ *      tiến trình — đúng lý do C-1 (Pha 1.5) đã phải TÁCH `commit()` khỏi `recordActual()`.
+ *
+ * ⚠ HÀNG RÀO (`false` = KHÔNG làm gì): chỉ chạy khi phép đo ĐÃ HỎNG và ô số còn TRỐNG. Thiếu hàng
+ * rào này thì đây là cửa sau để ghi một con số bịa đè lên số ĐO của một giấy phép đang đo tốt.
+ *
+ * ⚠ NGƯỜI GỌI phải chắc chắn khối byte ĐANG TỒN TẠI và biết kích thước của nó (xem
+ * `VramAllocationOptions.fallbackBytes` — CỐ Ý opt-in theo ĐIỂM GỌI, không theo `kind`). `0` là
+ * một giá trị HỢP LỆ và có nghĩa: backend chạy CPU chiếm đúng 0 byte VRAM.
+ *
+ * @returns `true` nếu sổ vừa được chốt bằng ước lượng; `false` nếu không đủ điều kiện.
+ */
+export function commitFallback(leaseId: string, bytes: number, reason: string): boolean {
+  const live = ledger.get(leaseId);
+  if (!live || live.released) return false;
+  // Đã có số (đo thật HOẶC đã chốt dự phòng lượt trước) ⇒ không đè.
+  if (live.actualBytes !== null) return false;
+  // Chưa hỏng ⇒ số THẬT vẫn đang trên đường tới; chốt bây giờ là cướp chỗ của nó.
+  if (live.measureFailed !== true) return false;
+  if (!Number.isFinite(bytes) || bytes < 0) return false;
+  live.actualBytes = bytes;
+  live.measureSource = "none";
+  live.request.estimateSource = "fallback-after-measure-failure";
+  live.lastHeartbeatAt = new Date();
+  // `reason` không lưu vào sổ SỐNG (sổ chỉ giữ trạng thái, không giữ lịch sử) — nó đi vào sự kiện
+  // `commit_fallback` mà `vramWiring` ghi ngay sau lời gọi này. Nhận ở đây để chữ ký buộc người
+  // gọi phải nói ra LÝ DO thay vì chốt sổ im lặng.
+  void reason;
+  return true;
+}
+
+/**
  * Trả chỗ. **BẤT BIẾN khi gọi nhiều lần** — cờ `released` là thứ bảo đảm điều đó.
  * ⚠ Gỡ cờ này ra thì test "release HAI LẦN" phải ĐỎ. Nếu nó vẫn xanh, test là lưới giả.
  */

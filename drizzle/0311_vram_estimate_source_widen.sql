@@ -1,0 +1,24 @@
+-- ============================================================================
+-- Migration 0311: vram_events."estimateSource" varchar(16) -> varchar(48)
+-- (Pha 2A Task 4 — T5-15, docs/superpowers/plans/2026-08-03-vram-pha2a-do-dung-va-liet-ke.md)
+--
+-- VÌ SAO BẮT BUỘC: Task 4 thêm giá trị `fallback-after-measure-failure` cho
+-- `VramEstimateSource` (server/services/vram/types.ts) — **30 ký tự**, không
+-- lọt qua varchar(16). Postgres ném 22001 ("value too long"), và vì
+-- `flushVramEvents()` (vramEventLog.ts) ghi MỘT LÔ nhiều dòng bằng một câu
+-- INSERT, MỘT sự kiện dự phòng làm mất TOÀN BỘ lô đó — telemetry thủng mà chỉ
+-- có một dòng console.warn báo. Nới cột là cách duy nhất giữ cho nhật ký VRAM
+-- không mất dữ liệu ở đúng lúc có sự cố đo lường.
+--
+-- Chọn 48 (không phải 32): còn chỗ cho một giá trị mô tả nữa mà không phải
+-- migrate lần ba. Giá trị dài nhất hôm nay = 30.
+--
+-- ADDITIVE + IDEMPOTENT (nới độ rộng varchar KHÔNG viết lại dữ liệu, không
+-- khoá bảng lâu — Postgres xử lý như một thay đổi metadata). Run by owner
+-- `aoi` (DDL convention — KHÔNG chạy bằng role `avi_app`, sẽ lỗi 42501).
+-- Áp lên CẢ DB chính LẪN DB test `aoi_management_test`.
+-- ROLLBACK: ALTER TABLE "vram_events" ALTER COLUMN "estimateSource" TYPE varchar(16);
+--           (chỉ an toàn khi chưa có dòng nào dài quá 16 ký tự)
+-- ============================================================================
+
+ALTER TABLE "vram_events" ALTER COLUMN "estimateSource" TYPE varchar(48);

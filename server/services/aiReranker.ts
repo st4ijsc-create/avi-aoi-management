@@ -389,10 +389,22 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     // cache theo tham số nên lượt gọi thứ hai không cấp phát lại, mở thêm là cộng trùng.
     if (_rankBackendTicket === null) {
       try {
-        const { beginVramAllocation } = await import("./vram/vramWiring");
+        const { beginVramAllocation, CUDA_BACKEND_FALLBACK_BYTES } = await import("./vram/vramWiring");
         backendTicket = await beginVramAllocation({
           owner: "cuda-backend:reranker",
           kind: "gguf-backend",
+          /**
+           * ★★★ Pha 2A Task 4 (T5-15) — giấy phép này CỐ Ý sống qua `disposeReranker()` (thể hiện
+           * `Llama` vẫn sống) ⇒ nó KHÔNG có đường release nào ⇒ một lượt đo hỏng ghim
+           * `actualBytes = null` VĨNH VIỄN và khoá lá chắn nền tới lúc khởi động lại tiến trình.
+           *
+           * ⚠ SỐ DỰ PHÒNG PHẢI THEO ĐÚNG THAM SỐ `gpu` TRUYỀN CHO `getLlama()` NGAY DƯỚI:
+           * `RAG_RERANKER_GPU=false` (MẶC ĐỊNH của `.env` hôm nay) ⇒ `gpu:false` ⇒ backend này
+           * chiếm **0 byte**. Dùng 431,6 MiB ở cấu hình đó là bơm một khoản MA bằng 84 % ngân sách
+           * ngưỡng 512 MiB vào sổ — đúng lý do `fallbackBytes` là opt-in theo ĐIỂM GỌI chứ không
+           * theo `kind`. `0` vẫn gỡ được chặn nền, nên cả hai cấu hình đều thoát T5-15.
+           */
+          fallbackBytes: useGpu && process.env.GGUF_GPU !== "false" ? CUDA_BACKEND_FALLBACK_BYTES : 0,
           // `background` (KHÁC `production` của backend aiGgufEngine): backend này chỉ phục vụ
           // rerank — tiện ích của RAG — nên nó phải nhường chỗ trước AOI và chat/RCA.
           priority: "background",

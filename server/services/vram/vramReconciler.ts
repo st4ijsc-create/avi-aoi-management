@@ -68,6 +68,17 @@ function isLoadingLease(l: VramLease): boolean {
  * đúng chỗ, đọc được, tự lành** — đổi lấy việc KHÔNG BAO GIỜ ghim một con số nền đã nhiễm 17 GB
  * cho suốt vòng đời tiến trình. Số liệu của đánh đổi này ở báo cáo §11.
  */
+/*
+ * ⚠⚠ Pha 2A Task 4 (T5-15) — DÂN SỐ CỦA VỊ TỪ NÀY ĐÃ ĐỔI, và đó là mục đích của Task 4.
+ * `commitFallback()` (vramBroker) điền `actualBytes` bằng một ƯỚC LƯỢNG DỰ PHÒNG cho những khối
+ * byte mà điểm gọi CHẮC CHẮN là đang tồn tại (hôm nay: backend CUDA). Những giấy phép đó vì thế
+ * rơi KHỎI vị từ này — và phải rơi: byte của chúng nay CÓ mặt trong `committedBytes`, nên phép trừ
+ * `raw − committedBytes` không còn nuốt chúng vào nền. Đây là lối thoát DUY NHẤT cho lớp giấy phép
+ * KHÔNG có đường `release()` ở nhánh thành công (`gguf-backend`), thứ trước Task 4 khoá nền VĨNH
+ * VIỄN và chỉ khởi động lại tiến trình mới gỡ.
+ * ⚠ Điều KHÔNG đổi: lease đo hỏng mà KHÔNG khai dự phòng (mọi `gguf-model`/`onnx-session`/…) vẫn ở
+ * lại vị từ này và vẫn (đúng) chặn nền — nới cho chúng là nuốt 17 GB vào nền, tức tái sinh T5-1.
+ */
 function holdsUncommittedBytes(l: VramLease): boolean {
   return l.actualBytes === null;
 }
@@ -221,7 +232,14 @@ let timer: NodeJS.Timeout | null = null;
  * thật, nên thu hẹp theo nó là mở lại đúng cửa T5-1. **KHÔNG THU HẸP GÌ CẢ**: `actualBytes === null`.
  * ⇒ Ca "pending tới lúc restart" CÒN LẠI hai: **tiến trình chết hẳn giữa `reserve()` và
  * `commitMeasured()`** (kill -9 — đường 3 trong docstring `pendingBytes` bên dưới) và **lease
- * `measureFailed` sống tới lúc unload/evict**. Cả hai KHÔNG được im lặng:
+ * `measureFailed` sống tới lúc unload/evict**.
+ * ⚠ Pha 2A Task 4 (T5-15) đã CẮT ca thứ hai ở đúng chỗ nó KHÔNG có unload: `gguf-backend` không có
+ * đường `release()` ở nhánh thành công, nên "tới lúc unload/evict" ở đó nghĩa là "tới lúc khởi
+ * động lại tiến trình". Nay điểm gọi khai `fallbackBytes` và `commitFallback()` chốt sổ bằng ước
+ * lượng dự phòng ⇒ lease đó rời khỏi `holdsUncommittedBytes()` ngay trong chính lượt
+ * `commitMeasured()` đang chạy. Các lease đo-hỏng KHÁC (không khai dự phòng) vẫn giữ nguyên hành
+ * vi cũ — và vẫn phải giữ, xem docstring `holdsUncommittedBytes()`.
+ * Cả hai ca còn lại KHÔNG được im lặng:
  * `BASELINE_BLOCKED_ALARM_MS` biến chúng thành BÁO ĐỘNG có tên thủ phạm, và đó là ĐÁNH ĐỔI ĐÃ
  * CHỌN — chuông kêu đọc được và tự lành, thay cho một con số nền nhiễm 17 GB ghim vĩnh viễn.
  *
@@ -352,6 +370,15 @@ export async function captureVramBaseline(
   // phải PHÂN BIỆT hai thứ đó, vì chỉ phần ĐÃ COMMIT mới chắc chắn nằm trong `deviceUsed`.
   // ⚠ Người sau: đừng "dọn dẹp" dòng này thành `leaseBytes()` — làm vậy là tái tạo đúng lỗi
   // đã mô tả ở docstring trên (nền bị đầu độc vĩnh viễn khi chụp trúng cửa sổ chưa-commit).
+  //
+  // ⚠⚠ Pha 2A Task 4 (T5-15) — TỪ ĐÂY, TỔNG NÀY CÓ THỂ CHỨA MỘT ƯỚC LƯỢNG. `commitFallback()`
+  // điền `actualBytes` bằng số dự phòng cho những khối byte mà điểm gọi CHẮC CHẮN đang tồn tại,
+  // nên "đã commit" ở đây phải đọc là **"sổ khẳng định khối byte này đang nằm trên thiết bị"**,
+  // không phải "đã đo được". Đó là ĐÚNG thứ phép trừ này cần (nó hỏi byte có tồn tại không, không
+  // hỏi ai đo), nhưng nó KÉO THEO một ràng buộc: sai số của con số dự phòng đi THẲNG vào nền và
+  // ở lại đó suốt vòng đời tiến trình. Vì vậy `fallbackBytes` chỉ được khai cho khối byte có kích
+  // thước là HẰNG SỐ ĐO ĐƯỢC LẶP LẠI (backend CUDA: 5/5 tiến trình, hai thước độc lập) — xem
+  // `VramAllocationOptions.fallbackBytes`. KHÔNG nới điều kiện đó ở đây bằng cách sửa dòng dưới.
   const committedBytes = snap.leases.reduce((sum, l) => sum + (l.actualBytes ?? 0), 0);
 
   // ⚠⚠ Pha 1.5 Task 7 (T5-1) — LÁ CHẮN CỬA SỔ ĐANG NẠP. Lý do đầy đủ + bảng ĐO 12 điểm cấp phát
@@ -490,7 +517,8 @@ export async function captureVramBaseline(
       // Câu đó SAI (đo được `nvidia-smi = 18.115 MiB` khi lease 30B vẫn pending) và nó đi thẳng
       // vào bảng `vram_events` ở MỌI lượt chụp — đúng nghĩa "mìn cho người sau".
       note:
-        "nền = thiết bị − tổng giấy phép ĐÃ COMMIT, và lượt chụp này chỉ chạy khi KHÔNG còn giấy " +
+        "nền = thiết bị − tổng giấy phép ĐÃ CHỐT SỔ (số ĐO, hoặc ước lượng dự phòng T5-15 cho " +
+        "khối byte chắc chắn tồn tại), và lượt chụp này chỉ chạy khi KHÔNG còn giấy " +
         "phép nào `actualBytes === null` (lá chắn HOÃN, T5-1) — vì byte của một giấy phép chưa " +
         "commit CÓ THỂ đã nằm trong deviceUsed mà đóng góp 0 vào committedBytes, và không công " +
         "thức nào đúng trong cửa sổ đó. ⚠ Sidecar chạy tiến trình RIÊNG thì KHÔNG có trong sổ ⇒ " +
@@ -566,10 +594,15 @@ export function splitLedgerByMeasureSource(leases: readonly VramLease[]): {
   let estimatedBytes = 0;
   for (const l of leases) {
     const bytes = leaseBytes(l);
-    // `actualBytes === null` ⇒ con số trong sổ là ƯỚC LƯỢNG, không thuộc thước nào (kể cả khi
-    // `measureSource === "none"` do đo hỏng). Phân loại theo `actualBytes` chứ KHÔNG theo
-    // `measureSource`: cờ nguồn chỉ có nghĩa khi thật sự tồn tại một con số ĐO.
-    if (l.actualBytes === null) estimatedBytes += bytes;
+    // `actualBytes === null` ⇒ con số trong sổ là ƯỚC LƯỢNG, không thuộc thước nào.
+    //
+    // ⚠⚠ Pha 2A Task 4 (T5-15) — VẾ THỨ HAI LÀ BẮT BUỘC, KHÔNG PHẢI CHO ĐỦ: `commitFallback()`
+    // điền `actualBytes` bằng một ƯỚC LƯỢNG DỰ PHÒNG (kèm `measureSource: "none"`), nên từ Task 4
+    // trở đi "có số" KHÔNG còn đồng nghĩa "đo được". Phân loại chỉ theo `actualBytes` sẽ ném con
+    // số đó vào nhánh `else` cuối và khai nó là **deviceDelta** — tức khai một ước lượng thành
+    // "đo bằng nvidia-smi", đúng kiểu TRỘN THƯỚC mà Đ4/I-4 sinh ra để làm cho NHÌN THẤY ĐƯỢC.
+    // Ba nhóm vẫn là một PHÂN HOẠCH (cộng lại đúng `totalReservedBytes`), chỉ ranh giới đổi.
+    if (l.actualBytes === null || l.measureSource === "none") estimatedBytes += bytes;
     else if (l.measureSource === "process-delta") processDeltaBytes += bytes;
     else deviceDeltaBytes += bytes; // gồm cả bản ghi CŨ không khai nguồn (mặc định của commit())
   }
@@ -1000,6 +1033,11 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
           priority: l.request.priority,
           bytes: leaseBytes(l),
           committed: l.actualBytes !== null,
+          // ⚠ Pha 2A Task 4 (T5-15) — `committed: true` KHÔNG còn đủ để kết luận "đã đo được":
+          // một ước lượng dự phòng cũng điền `actualBytes`. Trường này là thứ phân biệt được hai
+          // thứ đó khi đọc lại nhật ký, thay vì phải suy từ `measureSource` (dễ đọc nhầm là
+          // "chưa khai nguồn"). `false` cho mọi bản ghi trước Task 4.
+          fallbackEstimate: l.actualBytes !== null && l.measureSource === "none",
           // I-2 — "chưa commit" và "đo hỏng" trông giống nhau trong ảnh chụp nếu chỉ có cờ
           // `committed`. Ghi riêng để đọc lại nhật ký là phân biệt được tạm thời vs vĩnh viễn.
           measureFailed: l.measureFailed === true,

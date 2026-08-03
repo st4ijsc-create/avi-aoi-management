@@ -357,7 +357,42 @@ export interface VramAllocationOptions {
    * `dispose()` đã `await` xong, trừ hai ca ONNX đã đánh dấu tường minh là `"unverified"`.
    */
   releaseProof?: VramReleaseProof;
+  /**
+   * ★★★ Pha 2A Task 4 (T5-15) — ƯỚC LƯỢNG DỰ PHÒNG để CHỐT SỔ khi phép đo hỏng.
+   *
+   * Không truyền (mặc định) ⇒ hành vi y hệt trước Task 4: đo hỏng thì giấy phép giữ ước lượng,
+   * `actualBytes` đứng `null`. Truyền ⇒ MỌI nhánh đo-hỏng của `commitMeasured()` sẽ chốt sổ bằng
+   * con số này thay vì để ô số trống vĩnh viễn.
+   *
+   * ⚠⚠ CHỈ TRUYỀN KHI HAI ĐIỀU KIỆN CÙNG ĐÚNG — đây không phải "ước lượng dự phòng cho tiện":
+   *   1. khối byte **CHẮC CHẮN đang tồn tại** tại thời điểm `commitMeasured()` (lượt cấp phát đã
+   *      chạy xong, không có đường nhả nào ở giữa);
+   *   2. kích thước của nó là **HẰNG SỐ ĐO ĐƯỢC LẶP LẠI**, không phụ thuộc dữ liệu đầu vào.
+   *
+   * ⚠ VÌ SAO OPT-IN THEO ĐIỂM GỌI, KHÔNG THEO `kind` (hai ca ĐỐI NGHỊCH, cùng chứng minh một điều):
+   *   • theo `kind: "gguf-backend"` ⇒ `cuda-backend:reranker` chạy `getLlama({gpu:false})` (mặc
+   *     định `.env` hôm nay) chiếm ĐÚNG 0 byte, sẽ bị bơm 431,6 MiB MA vào sổ;
+   *   • nới cho `gguf-model` ⇒ một model 17 GB đo hỏng sẽ được chốt bằng ước lượng theo KÍCH THƯỚC
+   *     FILE và nuốt vào nền, tức tái sinh T5-1 mà Task 7 vừa vá.
+   *   ⇒ chỉ điểm gọi mới biết "có chắc chắn không, và bằng bao nhiêu". `0` là giá trị HỢP LỆ.
+   */
+  fallbackBytes?: number;
 }
+
+/**
+ * ★ Pha 2A Task 4 (T5-15) — VRAM của backend CUDA (`getLlama({gpu:"auto"})`, CHƯA nạp model nào).
+ *
+ * **452.595.712 byte = 431,6 MiB**, và đây là con số ĐO ĐƯỢC, không phải hằng số cấu hình:
+ *   • bộ đếm PDH `\GPU Process Memory` (T5-11): **byte-y-hệt ở 5/5 tiến trình**;
+ *   • `nvidia-smi`/`getVramState` ở Pha 1 (thước ĐỘC LẬP): +431/+430/+431 MiB, 3 lượt.
+ * Hai thước khác nhau, hai lượt khảo sát khác nhau, cùng một con số ⇒ đây là lớp cấp phát DUY NHẤT
+ * trong hệ hôm nay đủ điều kiện để chốt sổ bằng ước lượng khi phép đo hỏng.
+ *
+ * ⚠ Đơn vị là BYTE (ràng buộc toàn cục: đơn vị nội bộ luôn là byte). ⚠ Số này chỉ đúng khi backend
+ * thật sự lên GPU — `gpu: false` (hoặc máy không GPU) ⇒ dự phòng đúng phải là **0**, và đó là việc
+ * của điểm gọi, không phải của hằng số này.
+ */
+export const CUDA_BACKEND_FALLBACK_BYTES = 452_595_712;
 
 export async function beginVramAllocation(opts: VramAllocationOptions): Promise<VramTicket> {
   /**
@@ -547,6 +582,56 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
      * ro gắn cờ sai lớn hơn lợi ích (ba hàm đó đều đồng bộ/không I/O, catch-all gần như không
      * bao giờ chạm) nên KHÔNG mở rộng sang nhánh này.
      */
+    /**
+     * ★★★ Pha 2A Task 4 (T5-15) — CHỐT SỔ BẰNG ƯỚC LƯỢNG DỰ PHÒNG. Gọi ở CUỐI **MỌI** nhánh
+     * đo-hỏng, ngay sau sự kiện `measure_failed` của nhánh đó.
+     *
+     * ⚠⚠ NGƯỜI SAU THÊM NHÁNH ĐO-HỎNG THỨ BẢY: **phải gọi hàm này ở nhánh đó**. Bỏ sót một nhánh
+     * là T5-15 sống lại qua đúng cửa đó, IM LẶNG, và không ca test nào đỏ trừ
+     * `wiring.backendStuck.test.ts` ca 8/9 (chúng đi qua từng nhánh một, đúng để bắt việc này).
+     * SÁU nhánh hiện có: `before-probe-null` · `after-probe-null` · `overlapping-measure-window` ·
+     * `measure-window-not-exclusive` · `delta < 0` · `measure-target-absent`.
+     *
+     * ⚠ THỨ TỰ: sau `logVramEvent({event:"measure_failed"})`, không phải trước — đọc nhật ký phải
+     * thấy "đo hỏng" RỒI mới thấy "chốt bằng ước lượng", không thể ngược lại.
+     *
+     * ⚠ Đây KHÔNG phải "cứu" phép đo: `measureFailed` ở lại `true`, `measureSource` ở lại `"none"`.
+     * Nó chỉ trả lời một câu hỏi KHÁC: *"sổ có được phép nói rằng khối byte này đang tồn tại
+     * không?"* — và với backend CUDA thì có, vì hai thước độc lập đã đo nó ra cùng một số.
+     */
+    const chotSoBangDuPhong = (reason: string) => {
+      if (opts.fallbackBytes === undefined) return;
+      if (!broker.commitFallback(lease.id, opts.fallbackBytes, reason)) return;
+      const mib = Math.round(opts.fallbackBytes / 1024 / 1024);
+      console.warn(
+        `[vram] "${opts.owner}" đo hỏng (${reason}) ⇒ chốt sổ bằng ƯỚC LƯỢNG DỰ PHÒNG ${mib} MiB. ` +
+          `ĐÂY LÀ SỐ ƯỚC LƯỢNG, KHÔNG PHẢI SỐ ĐO — khối byte này chắc chắn đang nằm trên thiết bị ` +
+          `nên sổ phải nói ra, nhưng con số thì không có thước nào xác nhận (measureSource=none).`,
+      );
+      logVramEvent({
+        event: "commit_fallback",
+        owner: opts.owner,
+        leaseKind: opts.kind,
+        priority: opts.priority,
+        estimatedBytes: est.bytes,
+        actualBytes: opts.fallbackBytes,
+        estimateSource: "fallback-after-measure-failure",
+        detail: {
+          reason,
+          measureSource: "none" satisfies VramMeasureSource,
+          measureScope: scope,
+          /** Trường đọc-được-bằng-SQL để không ai phải đọc `note` mới biết đây không phải số đo. */
+          measured: false,
+          note:
+            "phép đo hỏng nhưng khối byte CHẮC CHẮN đang tồn tại ⇒ chốt sổ bằng ƯỚC LƯỢNG DỰ PHÒNG " +
+            "do điểm gọi khai (VramAllocationOptions.fallbackBytes). Đây KHÔNG phải số đo: " +
+            "measureFailed vẫn true, measureSource vẫn 'none', và recordActual() KHÔNG chạy (không " +
+            "được đầu độc nấc learned). Mục đích DUY NHẤT: giấy phép không còn `actualBytes === null` " +
+            "vĩnh viễn, nên nó thôi chặn captureVramBaseline() (T5-15).",
+        },
+      });
+    };
+
     const markProbeFailed = (reason: "before-probe-null" | "after-probe-null", extraDetail: Record<string, unknown>) => {
       broker.markMeasureFailed(lease);
       logVramEvent({
@@ -567,6 +652,7 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
             "cùng ticket) — đánh dấu ngay để không câm tới lúc release().",
         },
       });
+      chotSoBangDuPhong(reason);
     };
 
     let released = false;
@@ -640,6 +726,7 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
                   "tin nào trong tiến trình tách được phần của ai. Giấy phép giữ ƯỚC LƯỢNG.",
               },
             });
+            chotSoBangDuPhong("overlapping-measure-window");
             return;
           }
 
@@ -686,6 +773,7 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
                   "LƯỢNG; hạ VRAM_MEASURE_WAIT_MS hay nạp bớt song song sẽ làm nhánh này thưa đi.",
               },
             });
+            chotSoBangDuPhong("measure-window-not-exclusive");
             return;
           }
 
@@ -737,6 +825,7 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
                   "thử lại chỉ tạo ra một số sai trông như số thật.",
               },
             });
+            chotSoBangDuPhong("negative-delta");
             return;
           }
 
@@ -788,6 +877,11 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
                   "Giấy phép GIỮ ƯỚC LƯỢNG.",
               },
             });
+            // ★ N-2 (Pha 2A Task 4) — CỬA MÀ CHÍNH TASK 3 VỪA MỞ. Trước Task 3, "bộ đếm có mà mù"
+            // đi thẳng vào `commit(0)`; nay nó là một nhánh đo-hỏng, nên với `gguf-backend` (không
+            // có đường release) nó cũng dẫn tới `actualBytes === null` VĨNH VIỄN. Đánh đổi của
+            // Task 3 đúng, nhưng nó biến T5-15 từ HIẾM thành THƯỜNG GẶP — phải chốt sổ ở đây.
+            chotSoBangDuPhong("measure-target-absent");
             return;
           }
 

@@ -389,10 +389,18 @@ async function getLlama(): Promise<any> {
       // `releaseProof: "unverified"` ở đây sẽ SAI ngữ nghĩa (nó ngụ ý "có thể nhả, chỉ chưa xác
       // minh được"); sự thật là backend này KHÔNG BAO GIỜ được nhả trong suốt vòng đời tiến
       // trình, và đó là ĐÚNG — không phải một lỗ hổng cần vá.
+      //
+      // ★★★ Pha 2A Task 4 (T5-15) — `fallbackBytes` LÀ HỆ QUẢ TRỰC TIẾP của đoạn trên: vì giấy
+      // phép này KHÔNG có đường release, một lượt đo hỏng ghim `actualBytes = null` VĨNH VIỄN,
+      // và lá chắn HOÃN chụp nền (vramReconciler) đóng theo nó ⇒ báo động không bao giờ tự lành,
+      // BẮT BUỘC khởi động lại. Khai số dự phòng ở ĐÂY (chứ không theo `kind` trong vramWiring)
+      // vì chỉ chỗ này biết `gpu` được truyền là gì: `gpu:false` ⇒ backend chiếm ĐÚNG 0 byte, và
+      // 0 cũng là một con số chắc chắn — nó gỡ chặn nền mà không bơm byte MA vào sổ.
       const backendTicket = await beginVram({
         owner: "cuda-backend",
         kind: "gguf-backend",
         priority: "production",
+        fallbackBytes: await cudaBackendFallbackBytes(),
       });
       let backendCommitted = false;
       try {
@@ -749,6 +757,32 @@ async function beginVram(
     return await beginVramAllocation(opts);
   } catch {
     return { commitMeasured: async () => {}, release: () => {} };
+  }
+}
+
+/**
+ * Pha 2A Task 4 (T5-15) — số byte DỰ PHÒNG cho giấy phép backend CUDA, dùng KHI VÀ CHỈ KHI phép đo
+ * hỏng (xem `VramAllocationOptions.fallbackBytes`). KHÔNG BAO GIỜ ném: module telemetry hỏng ⇒
+ * `undefined` ⇒ hành vi y hệt trước Task 4.
+ *
+ * ⚠ `GGUF_GPU=false` ⇒ `initLlama({gpu:false})` ⇒ backend chiếm ĐÚNG 0 byte VRAM. Trả `0` chứ
+ * KHÔNG trả `undefined`: `0` là số CHẮC CHẮN và nó vẫn gỡ được lá chắn nền, trong khi `undefined`
+ * để nguyên T5-15 cho cấu hình chạy CPU. Hằng số nằm ở MỘT chỗ (`vramWiring`) — không chép số.
+ *
+ * ⚠ GIỚI HẠN ĐÃ BIẾT, CHẤP NHẬN TƯỜNG MINH: `gpu:"auto"` trên máy KHÔNG CÓ GPU cũng lùi về CPU,
+ * nhưng ta không biết điều đó tại thời điểm này (phải gọi `initLlama()` xong mới biết `llama.gpu`
+ * lùi về đâu, mà số dự phòng thì phải khai TRƯỚC). Ở ca đó sổ giữ thừa 431,6 MiB. Hệ quả bị chặn
+ * theo hai lớp: (a) trên máy không GPU, `readDeviceVram()` trả `null` ⇒ reconciler IM LẶNG, không
+ * có báo động giả nào; (b) chiều sai là chiều AN TOÀN — Pha 2B tính `headroom` DÈ DẶT hơn thật,
+ * ngược hẳn với chiều ước-lượng-thiếu vốn dẫn tới OOM.
+ */
+async function cudaBackendFallbackBytes(): Promise<number | undefined> {
+  if (process.env.GGUF_GPU === "false") return 0;
+  try {
+    const { CUDA_BACKEND_FALLBACK_BYTES } = await import("./vram/vramWiring");
+    return CUDA_BACKEND_FALLBACK_BYTES;
+  } catch {
+    return undefined;
   }
 }
 

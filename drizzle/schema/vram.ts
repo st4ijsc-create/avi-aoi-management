@@ -25,12 +25,17 @@ export const vramEvents = pgTable("vram_events", {
   priority: varchar("priority", { length: 16 }).notNull(),
   estimatedBytes: bigint("estimatedBytes", { mode: "number" }),
   actualBytes: bigint("actualBytes", { mode: "number" }),
-  // learned | file-size | config-default | unknown — truy được chỗ nào còn dùng hằng số.
+  // learned | file-size | config-default | unknown | fallback-after-measure-failure
+  // — truy được chỗ nào còn dùng hằng số.
   // ⚠ `unknown` (Task 3 review vòng 1, thiếu ở đây tới tận review TOÀN NHÁNH — M-1) = KHÔNG có
   // learned, KHÔNG có file, KHÔNG có hằng số nào ⇒ ước lượng = **0**. Đây là nấc NGUY HIỂM NHẤT
   // (báo cáo §5.4: ước lượng 0 trong khi thật 526 MiB), nên tuyệt đối không được vắng khỏi danh
   // sách mà người đọc nhật ký dựa vào — cùng lớp lỗi với `baseline` thiếu ở cột `event` bên trên.
-  estimateSource: varchar("estimateSource", { length: 16 }),
+  // ⚠⚠ ĐỘ RỘNG 48, KHÔNG PHẢI 16 (Pha 2A Task 4, migration 0311): `fallback-after-measure-failure`
+  // dài **30** ký tự. Với `varchar(16)` cũ, Postgres ném 22001 và vì `flushVramEvents()` ghi MỘT
+  // LÔ nhiều dòng, MỘT sự kiện dự phòng làm mất TOÀN BỘ lô — telemetry thủng im lặng (lỗi chỉ đi
+  // ra một dòng console.warn). Ai thêm giá trị mới cho `VramEstimateSource` phải đếm lại ký tự.
+  estimateSource: varchar("estimateSource", { length: 48 }),
   deviceUsedBytes: bigint("deviceUsedBytes", { mode: "number" }),
   ledgerTotalBytes: bigint("ledgerTotalBytes", { mode: "number" }),
   driftBytes: bigint("driftBytes", { mode: "number" }),
