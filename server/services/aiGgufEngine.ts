@@ -346,9 +346,40 @@ async function getLlama(): Promise<any> {
     }
 
     const { getLlama: initLlama } = await import("node-llama-cpp");
-    llamaInstance = await initLlama({
-      gpu: process.env.GGUF_GPU === "false" ? false : "auto",
+
+    // Pha 1.5 Task 2 — backend CUDA của initLlama() là khoản ~430 MiB LỚN NHẤT của "sàn cấu
+    // trúc" mà Pha 1 đo được (+431/+430/+431 MiB, 3 lượt) nhưng KHÔNG đưa vào sổ được — đây là
+    // lý do ngưỡng báo động 512 MiB từng vô dụng. CHỈ QUAN SÁT: thời điểm/tham số gọi
+    // `initLlama()` ngay dưới KHÔNG ĐỔI so với trước; chỉ bọc thêm ba lời gọi telemetry quanh
+    // lượt khởi tạo ĐÃ CÓ. `beginVram()` ngay TRƯỚC lượt gọi thật, `commitMeasured()` ngay SAU
+    // — đó là cách duy nhất delta đo được là của backend, không phải của thứ khác.
+    //
+    // ⚠ Backend là SINGLETON cả tiến trình — dòng `if (llamaInstance) return llamaInstance` ở
+    // đầu hàm này đảm bảo khối dưới đây chỉ chạy MỘT LẦN khi thành công. Vì vậy: KHÔNG có đường
+    // release — không ai gọi `ticket.release()` khi backend đã sống. Khai `releaseProof:
+    // "unverified"` ở đây sẽ SAI ngữ nghĩa (nó ngụ ý "có thể nhả, chỉ chưa xác minh được");
+    // sự thật là backend này KHÔNG BAO GIỜ được nhả trong suốt vòng đời tiến trình, và đó là
+    // ĐÚNG — không phải một lỗ hổng cần vá.
+    const backendTicket = await beginVram({
+      owner: "cuda-backend",
+      kind: "gguf-backend",
+      priority: "production",
     });
+    let backendCommitted = false;
+    try {
+      llamaInstance = await initLlama({
+        gpu: process.env.GGUF_GPU === "false" ? false : "auto",
+      });
+      await backendTicket.commitMeasured();
+      backendCommitted = true;
+    } finally {
+      // `initLlama()` ném GIỮA reserve() và commit() ⇒ backend KHÔNG hình thành thật. TRẢ giấy
+      // phép để lượt retry sau (llamaInstance vẫn null ⇒ getLlama() sẽ chạy lại khối này) không
+      // đẻ thêm một giấy phép treo vĩnh viễn mỗi lần thử — chỉ nhánh THẤT BẠI mới release; nhánh
+      // thành công không bao giờ chạm release (xem cảnh báo SINGLETON ở trên).
+      if (!backendCommitted) releaseVramTicketQuietly(backendTicket);
+    }
+
     console.log("[aiGgufEngine] llama.cpp engine initialized (GPU:", process.env.GGUF_GPU !== "false" ? "auto" : "disabled", ")");
     // Pha 1 Task 5 — NỐI ĐẦU DÒ VRAM vào thể hiện llama vừa tạo. Không nối thì
     // `vram/vramProbe.readDeviceVram()` LUÔN lùi về `nvidia-smi` (~80 ms/lượt đo trên máy này,

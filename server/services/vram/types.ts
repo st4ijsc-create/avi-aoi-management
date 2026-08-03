@@ -2,6 +2,7 @@
 export type VramPriority = "production" | "interactive" | "background";
 
 export type VramLeaseKind =
+  | "gguf-backend" // Pha 1.5 Task 2 — backend CUDA của getLlama() — ~430 MiB, singleton cả tiến trình
   | "gguf-model"
   | "gguf-context"
   | "gguf-embed-context"
