@@ -10,8 +10,12 @@ export const vramEvents = pgTable("vram_events", {
   id: serial("id").primaryKey(),
   // Luôn "vram" ở pha này. Một CỘT để sau thêm ram/cpu/disk, KHÔNG phải một framework.
   resourceKind: varchar("resourceKind", { length: 16 }).default("vram").notNull(),
-  // baseline | reserve | commit | measure_failed | release | refuse | preempt | drift | adopt
-  // | defer | defer_exceeded
+  // baseline | reserve | commit | commit_fallback | measure_failed | release | refuse | preempt
+  // | drift | adopt | defer | defer_exceeded
+  // ⚠ `commit_fallback` (Pha 2A Task 4, T5-15) = sổ được chốt bằng ƯỚC LƯỢNG DỰ PHÒNG sau một
+  // phép đo hỏng (khối byte chắc chắn tồn tại — backend CUDA). Ai đọc nhật ký mà không biết loại
+  // này sẽ thấy `measure_failed` không có `commit` đi kèm và tưởng giấy phép còn treo. `actualBytes`
+  // của dòng đó KHÔNG PHẢI SỐ ĐO (`detail->>'measured' = 'false'`).
   // ⚠ `baseline` (Task 5 review vòng 2, NEW-4) = ảnh chụp NỀN THIẾT BỊ lúc khởi động
   // (nền = thiết bị − sổ). Task 7 và Agent đọc nhật ký PHẢI biết loại này, nếu không sẽ đọc
   // `drift` mà không biết nó đã được trừ đi bao nhiêu.

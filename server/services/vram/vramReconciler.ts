@@ -1036,8 +1036,11 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
           // ⚠ Pha 2A Task 4 (T5-15) — `committed: true` KHÔNG còn đủ để kết luận "đã đo được":
           // một ước lượng dự phòng cũng điền `actualBytes`. Trường này là thứ phân biệt được hai
           // thứ đó khi đọc lại nhật ký, thay vì phải suy từ `measureSource` (dễ đọc nhầm là
-          // "chưa khai nguồn"). `false` cho mọi bản ghi trước Task 4.
-          fallbackEstimate: l.actualBytes !== null && l.measureSource === "none",
+          // "chưa khai nguồn"). `null` = KHÔNG phải dự phòng — đúng cho mọi bản ghi trước Task 4.
+          // Ghi thẳng LÝ DO (không phải một cờ boolean): cùng độ dễ truy vấn
+          // (`detail->'leases' @> '[{"fallbackReason":"measure-target-absent"}]'`) nhưng nói được
+          // NHÁNH nào đã đẻ ra nó — dữ liệu Task 5/Pha 2B cần để biết cửa nào đang mở rộng nhất.
+          fallbackReason: l.fallbackReason ?? null,
           // I-2 — "chưa commit" và "đo hỏng" trông giống nhau trong ảnh chụp nếu chỉ có cờ
           // `committed`. Ghi riêng để đọc lại nhật ký là phân biệt được tạm thời vs vĩnh viễn.
           measureFailed: l.measureFailed === true,

@@ -84,7 +84,11 @@ export interface VramLease {
    * Ba nhóm, đọc bằng HAI trường:
    *   • `null`                              → chưa có số nào (đang nạp, hoặc đo hỏng chưa dự phòng)
    *   • `!== null` + `measureSource !== "none"` → SỐ ĐO của đúng thước đó
-   *   • `!== null` + `measureSource === "none"` → ƯỚC LƯỢNG DỰ PHÒNG (T5-15)
+   *   • `!== null` + `measureSource === "none"` → ƯỚC LƯỢNG DỰ PHÒNG (T5-15), và `fallbackReason`
+   *     nói VÌ SAO. Hai câu hỏi khác nhau, hai ô khác nhau: `measureSource` trả lời *"thước nào đẻ
+   *     ra con số"* (dùng cho phép tách theo thước, Đ4/I-4), `fallbackReason` trả lời *"con số này
+   *     có phải dự phòng không, vì sao"* (dùng cho nhật ký). Hôm nay hai ô luôn khớp nhau; đừng
+   *     "dọn dẹp" bằng cách bỏ một ô — chúng sẽ tách nhau ngay khi có một thước thứ ba.
    */
   actualBytes: number | null;
   /**
@@ -104,6 +108,20 @@ export interface VramLease {
    * ⚠ Đ4: KHÔNG được so `actualBytes` của hai giấy phép có `measureSource` khác nhau.
    */
   measureSource?: VramMeasureSource;
+  /**
+   * ★ Pha 2A Task 4 (T5-15), review vòng 1 (I-2 × M-3) — LÝ DO phải chốt sổ bằng ƯỚC LƯỢNG DỰ
+   * PHÒNG. `undefined` = con số trong `actualBytes` KHÔNG phải dự phòng (hoặc chưa có số nào).
+   *
+   * ⚠ VÌ SAO LÀ TRƯỜNG RIÊNG, KHÔNG PHẢI GHI ĐÈ `request.estimateSource` (M-3): bản đầu của Task 4
+   * ghi `"fallback-after-measure-failure"` đè lên đó và làm HAI việc sai cùng lúc — (a) **xoá xuất
+   * xứ ước lượng GỐC** (`file-size`/`config-default`/`unknown`), thứ Task 7 đọc để trả lời "chỗ nào
+   * còn dựa hằng số"; (b) **mutate object của người gọi** — `reserve()` lưu `request` theo THAM
+   * CHIẾU, nên lời gọi đó sửa luôn object nằm ngoài sổ. Hai sự thật khác nhau thì hai ô khác nhau.
+   *
+   * ⚠ Đây cũng là nơi `reason` của `commitFallback()` được lưu, thay vì bốc hơi sau lời gọi: sự
+   * kiện `release` (và mọi chỗ đọc sổ SỐNG) nhờ nó mà nói được "số này là ước lượng, và vì sao".
+   */
+  fallbackReason?: string;
   lastHeartbeatAt: Date;
   released: boolean;
 }

@@ -587,13 +587,24 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
      * đo-hỏng, ngay sau sự kiện `measure_failed` của nhánh đó.
      *
      * ⚠⚠ NGƯỜI SAU THÊM NHÁNH ĐO-HỎNG THỨ BẢY: **phải gọi hàm này ở nhánh đó**. Bỏ sót một nhánh
-     * là T5-15 sống lại qua đúng cửa đó, IM LẶNG, và không ca test nào đỏ trừ
-     * `wiring.backendStuck.test.ts` ca 8/9 (chúng đi qua từng nhánh một, đúng để bắt việc này).
-     * SÁU nhánh hiện có: `before-probe-null` · `after-probe-null` · `overlapping-measure-window` ·
-     * `measure-window-not-exclusive` · `delta < 0` · `measure-target-absent`.
+     * là T5-15 sống lại qua đúng cửa đó, IM LẶNG. SÁU nhánh hiện có, mỗi nhánh có ĐÚNG một ca
+     * canh riêng trong `wiring.backendStuck.test.ts` (I-1 review vòng 1 — trước đó nhánh
+     * `measure-window-not-exclusive` KHÔNG có ca nào: xoá lời gọi của nó, cả 209 ca vẫn xanh):
+     *   `before-probe-null` (ca 8a) · `after-probe-null` (8b) · `measure-target-absent` (8c) ·
+     *   `delta < 0` (8d) · `overlapping-measure-window` (ca 9) · `measure-window-not-exclusive`
+     *   (ca 9b — cửa sổ KHÔNG độc quyền, dựng bằng móc `beforeRead`).
      *
      * ⚠ THỨ TỰ: sau `logVramEvent({event:"measure_failed"})`, không phải trước — đọc nhật ký phải
      * thấy "đo hỏng" RỒI mới thấy "chốt bằng ước lượng", không thể ngược lại.
+     *
+     * ⚠ M-2 (review vòng 1) — NHÁNH THỨ BẢY (`catch` cuối `commitMeasured()`) HÀM NÀY **KHÔNG**
+     * CỨU ĐƯỢC, và đó là sự thật phải nói ra thay vì để người sau tự phát hiện: ở đó lease đứng
+     * `actualBytes: null, measureFailed: false` (catch-all CỐ Ý không gắn cờ — xem docstring
+     * `markProbeFailed`), mà hàng rào của `commitFallback()` đòi `measureFailed === true`. Ca đó
+     * gần như bất khả đạt (`vramProcessProbe.readProcessVram()` **resolve `null`** chứ không
+     * reject, kể cả khi `execFile` lỗi/timeout), nên KHÔNG nới hàng rào để với tới nó — nới hàng
+     * rào là mở đường chốt sổ cho một lease có thể vẫn đang nạp dở. Nếu một ngày nhánh đó chạm
+     * được thật, lối vá đúng là gắn cờ ở catch-all TRƯỚC, không phải bỏ hàng rào ở đây.
      *
      * ⚠ Đây KHÔNG phải "cứu" phép đo: `measureFailed` ở lại `true`, `measureSource` ở lại `"none"`.
      * Nó chỉ trả lời một câu hỏi KHÁC: *"sổ có được phép nói rằng khối byte này đang tồn tại
@@ -938,11 +949,29 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
             priority: opts.priority,
             estimatedBytes: est.bytes,
             actualBytes: lease.actualBytes ?? undefined,
-            estimateSource: est.source,
+            /**
+             * ⚠ I-2 (review vòng 1, Task 4) — ĐỌC TỪ GIẤY PHÉP, KHÔNG DÙNG BIẾN CỤC BỘ CŨ.
+             * `est.source` được chốt ở `beginVramAllocation()` và KHÔNG bao giờ đổi nữa; mọi thứ
+             * xảy ra với giấy phép sau đó (kể cả chốt sổ bằng dự phòng) đều vô hình với nó. Dòng
+             * `release` vì thế từng ghi một `actualBytes` ƯỚC LƯỢNG cạnh một `estimateSource` của
+             * lượt reserve — hai nửa nói hai chuyện, và người đọc nhật ký (lẫn Pha 2B) không có
+             * cách nào biết đó là số đo hay số ước lượng.
+             */
+            estimateSource: lease.request.estimateSource ?? est.source,
             // I-1 — bằng chứng thiết bị đã nhả (bảng bốn điểm nhả ở đầu file). Truy vấn được:
             //   SELECT owner, count(*) FROM vram_events
             //   WHERE event='release' AND detail->>'releaseProof'='unverified' GROUP BY 1;
-            detail: { releaseProof: opts.releaseProof ?? "device-disposed" },
+            detail: {
+              releaseProof: opts.releaseProof ?? "device-disposed",
+              /**
+               * I-2 × T5-15 — HAI trường trả lời dứt điểm câu "`actualBytes` ở dòng này là SỐ ĐO
+               * hay ƯỚC LƯỢNG?". Truy vấn được, không cần migration (jsonb):
+               *   SELECT owner, detail->>'fallbackReason' FROM vram_events
+               *   WHERE event='release' AND detail->>'measured'='false';
+               */
+              measured: lease.actualBytes !== null && lease.fallbackReason === undefined,
+              fallbackReason: lease.fallbackReason ?? null,
+            },
           });
         } catch {
           /* telemetry hỏng KHÔNG được làm hỏng lượt nhả tài nguyên */

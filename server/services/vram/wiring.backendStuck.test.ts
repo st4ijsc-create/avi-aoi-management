@@ -50,8 +50,18 @@ type Sample = { self: number | null } | null | "THROW";
 
 /** Hàng đợi mẫu: còn >1 phần tử thì SHIFT, còn đúng 1 thì lặp mãi (như wiring.processProbe.test). */
 const readings = vi.hoisted(() => [] as Sample[]);
+
+/**
+ * Móc chạy NGAY TRƯỚC khi một lượt đọc trả kết quả (cùng quy ước `wiring.processProbe.test.ts`).
+ * Ca 9b cần một thứ tự mà lời gọi thường không cho phép: người đang giữ khoá ĐÓNG cửa sổ đúng
+ * giữa lúc kẻ bỏ cuộc đọc đầu đo "trước" — đó là cách DUY NHẤT tách phán quyết của KHOÁ khỏi
+ * phán quyết của SỔ CỬA SỔ, tức cách duy nhất chạm tới nhánh `measure-window-not-exclusive`.
+ */
+const beforeRead = vi.hoisted(() => ({ fn: null as null | (() => void) }));
+
 vi.mock("./vramProcessProbe", () => ({
   readProcessVram: async () => {
+    if (beforeRead.fn) { const f = beforeRead.fn; beforeRead.fn = null; f(); }
     const r: Sample = readings.length > 1 ? readings.shift()! : (readings[0] ?? null);
     if (r === "THROW") throw new Error("đầu dò theo tiến trình NÉM");
     if (r === null) return null;
@@ -86,6 +96,7 @@ beforeEach(() => {
   vi.resetModules();
   readings.length = 0;
   events.length = 0;
+  beforeRead.fn = null;
   device.usedBytes = 3_000 * MiB;
   process.env = { ...ORIGINAL_ENV };
   // Câu cảnh báo là MỘT PHẦN của bản vá (log phải nói rõ "ước lượng"), nhưng in ra mỗi ca thì
@@ -178,7 +189,12 @@ describe("T5-15 — giấy phép backend đo hỏng KHÔNG còn chặn nền vĩ
     // thành "đã đo được" — đúng chiều lỗi nguy hiểm mà I-1/Task 3 đã dựng lưới để chặn.
     expect(l.measureFailed).toBe(true);
     expect(l.measureSource, "không thước nào đẻ ra con số này").toBe("none");
-    expect(l.request.estimateSource).toBe("fallback-after-measure-failure");
+    // Dấu "đây là dự phòng" + LÝ DO nằm ở ô RIÊNG…
+    expect(l.fallbackReason).toBe("before-probe-null");
+    // …và XUẤT XỨ ƯỚC LƯỢNG GỐC phải còn NGUYÊN (M-3, review vòng 1): bản đầu ghi đè
+    // `"fallback-after-measure-failure"` lên đây, vừa xoá thứ Task 7 đọc để truy "chỗ nào còn
+    // dựa hằng số", vừa mutate object mà người gọi `reserve()` đang giữ tham chiếu.
+    expect(l.request.estimateSource).toBe("unknown");
 
     expect(await captureVramBaseline()).toBe(3_000 * MiB - FALLBACK_BYTES);
   });
@@ -311,6 +327,61 @@ describe("T5-15 — giấy phép backend đo hỏng KHÔNG còn chặn nền vĩ
     expect(l.actualBytes).toBe(FALLBACK_BYTES);
     // …còn model 17 GB thì KHÔNG có dự phòng ⇒ vẫn giữ ước lượng, vẫn (đúng) chặn nền.
     expect(snapshot().leases.find((x) => x.request.owner === "gguf:Qwen3-30B")!.actualBytes).toBeNull();
+    // Ca này đi qua nhánh `overlapping-measure-window`; nhánh THỨ SÁU ở ca 9b ngay dưới.
+    const ev = events.find((e) => e.event === "measure_failed" && e.owner === "cuda-backend");
+    expect((ev!.detail as Record<string, unknown>).reason).toBe("overlapping-measure-window");
+  });
+
+  /**
+   * ★★★ I-1 (review vòng 1) — NHÁNH THỨ SÁU PHẢI TỰ ĐỨNG ĐƯỢC.
+   *
+   * Trước ca này, xoá dòng `chotSoBangDuPhong("measure-window-not-exclusive")` ở `vramWiring.ts`
+   * thì **cả 209 ca vẫn xanh** — tức nhánh đó không được bảo vệ bởi bất cứ thứ gì (vi phạm ràng
+   * buộc toàn cục 5), và báo cáo lẫn docstring đều đang nói sai khi ghi "ca canh: 9". Ca 9 chỉ đi
+   * qua `overlapping-measure-window`, vì hai cửa sổ chồng nhau thì nhánh CỤ THỂ HƠN thắng trước.
+   *
+   * Cách cô lập phán quyết của KHOÁ (sao đúng khuôn `wiring.processProbe.test.ts` ca 8): A giữ
+   * khoá + cửa sổ; backend hết ngân sách chờ (`VRAM_MEASURE_WAIT_MS=0`) nên chạy NGOÀI khoá
+   * (`measurable=false` vĩnh viễn cho cửa sổ đó); rồi A ĐÓNG cửa sổ đúng giữa lượt đọc đầu đo
+   * "trước" của backend ⇒ khi backend mở cửa sổ, sổ `openMeasureWindows` KHÔNG thấy ai. Chỉ còn
+   * phán quyết của khoá lên tiếng — và nó phải dẫn tới dự phòng, nếu không T5-15 sống lại qua
+   * đúng cửa này (backend không có đường release nào để tự lành).
+   */
+  it("★★★ 9b. cửa sổ đo KHÔNG ĐỘC QUYỀN (hết ngân sách chờ) — nhánh THỨ SÁU cũng chốt sổ bằng dự phòng", async () => {
+    readings.push({ self: 1_000 * MiB });
+
+    const { beginVramAllocation } = await import("./vramWiring");
+    const { snapshot } = await import("./vramBroker");
+    const { captureVramBaseline, __resetVramBaselineForTests } = await import("./vramReconciler");
+    const { __resetMeasureLockForTests } = await import("./vramMeasureLock");
+    __resetMeasureLockForTests();
+    __resetVramBaselineForTests();
+
+    // A giữ khoá VÀ cửa sổ (ngân sách mặc định) — 17.000 MiB để không lẫn với bất cứ số nào khác.
+    const tA = await beginVramAllocation({
+      owner: "gguf:holder", kind: "gguf-model", priority: "interactive", fileBytes: 17_000 * MiB,
+    });
+
+    process.env.VRAM_MEASURE_WAIT_MS = "0"; // backend KHÔNG chờ ⇒ bỏ cuộc, chạy ngoài khoá
+    readings.length = 0;
+    readings.push({ self: 2_000 * MiB });   // backend.before
+    readings.push({ self: 2_431 * MiB });   // backend.after — delta DƯƠNG, hợp lệ về mọi mặt khác
+    // ĐÓNG cửa sổ của A ngay giữa lượt đọc đầu đo "trước" ⇒ hai cửa sổ KHÔNG chồng nhau trong sổ.
+    beforeRead.fn = () => { tA.release(); };
+
+    const backend = await beginVramAllocation(backendOnGpu());
+    await backend.commitMeasured();
+
+    const ev = events.find((e) => e.event === "measure_failed" && e.owner === "cuda-backend");
+    // ★ Phải là nhánh THỨ SÁU, không phải nhánh chồng lấn — nếu lẫn, ca này chỉ là bản sao ca 9.
+    expect((ev!.detail as Record<string, unknown>).reason).toBe("measure-window-not-exclusive");
+
+    const l = snapshot().leases.find((x) => x.request.owner === "cuda-backend")!;
+    expect(l.actualBytes, "★ TRỌNG TÂM I-1: nhánh này cũng phải chốt sổ").toBe(FALLBACK_BYTES);
+    expect(l.measureFailed).toBe(true);
+    expect(l.fallbackReason).toBe("measure-window-not-exclusive");
+    // …và vì thế nó rời khỏi `holdsUncommittedBytes()` ⇒ nền chụp được (đây mới là điều T5-15 cần).
+    expect(await captureVramBaseline()).toBe(3_000 * MiB - FALLBACK_BYTES);
   });
 
   /**
@@ -413,5 +484,44 @@ describe("T5-15 — giấy phép backend đo hỏng KHÔNG còn chặn nền vĩ
     expect(l.measureFailed).toBeFalsy();
     expect(l.measureSource).toBe("process-delta");
     expect(events.some((e) => e.event === "commit_fallback")).toBe(false);
+  });
+
+  /**
+   * ★★ I-2 (review vòng 1) — SỰ KIỆN `release` KHÔNG ĐƯỢC TỰ MÂU THUẪN.
+   *
+   * Nó ghi `actualBytes` lấy TỪ GIẤY PHÉP (có thể là số dự phòng) nhưng trước bản vá lại đặt cạnh
+   * `estimateSource: est.source` — biến cục bộ chốt từ lượt `reserve()`, mù với mọi thứ xảy ra sau
+   * đó. Dòng trong DB nói hai chuyện, và `detail` không có trường nào phân biệt ⇒ người đọc nhật
+   * ký (và Pha 2B) không biết đó là số ĐO hay số ƯỚC LƯỢNG. Ca này khoá cả ba trường.
+   */
+  it("★★ 15. sự kiện `release` nói rõ actualBytes là ƯỚC LƯỢNG (measured=false + lý do), không tự mâu thuẫn", async () => {
+    const { beginVramAllocation } = await import("./vramWiring");
+    const ticket = await beginVramAllocation(backendOnGpu());
+    await ticket.commitMeasured();   // đầu dò rỗng ⇒ before-probe-null ⇒ chốt bằng dự phòng
+    ticket.release();
+
+    const ev = events.find((e) => e.event === "release")!;
+    expect(ev.actualBytes).toBe(FALLBACK_BYTES);
+    const d = ev.detail as Record<string, unknown>;
+    expect(d.measured, "số này KHÔNG phải số đo — dòng nhật ký phải tự nói ra").toBe(false);
+    expect(d.fallbackReason).toBe("before-probe-null");
+    // Đọc TỪ GIẤY PHÉP, và giấy phép vẫn giữ xuất xứ ước lượng GỐC (M-3).
+    expect(ev.estimateSource).toBe("unknown");
+  });
+
+  /** ĐỐI CHỨNG cho ca 15 — lượt nhả BÌNH THƯỜNG (đo được) phải khai `measured: true`. */
+  it("16. ĐỐI CHỨNG: release của một lượt ĐO ĐƯỢC khai measured=true, fallbackReason=null", async () => {
+    readings.push({ self: 1_000 * MiB });
+    readings.push({ self: 1_430 * MiB });
+    const { beginVramAllocation } = await import("./vramWiring");
+    const ticket = await beginVramAllocation(backendOnGpu());
+    await ticket.commitMeasured();
+    ticket.release();
+
+    const ev = events.find((e) => e.event === "release")!;
+    expect(ev.actualBytes).toBe(430 * MiB);
+    const d = ev.detail as Record<string, unknown>;
+    expect(d.measured).toBe(true);
+    expect(d.fallbackReason).toBeNull();
   });
 });

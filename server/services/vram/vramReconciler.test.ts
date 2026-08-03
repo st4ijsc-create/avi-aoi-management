@@ -102,13 +102,13 @@ describe("vramReconciler — bắt kẻ cấp phát không xin phép", () => {
     // ⚠ I-4 (Pha 2A) thêm `measureSource` vào từng dòng ảnh chụp: từ Pha 2A tổng sổ là một phép
     // cộng TRỘN hai thước, nên chỉ biết "tổng có trộn" là chưa đủ — phải truy được giấy phép NÀO
     // đóng góp phần nào. `null` = giấy phép chưa từng commit (không có thước nào cả).
-    // ⚠ T5-15 (Pha 2A Task 4) thêm `fallbackEstimate`: từ Task 4, `committed: true` KHÔNG còn đủ
+    // ⚠ T5-15 (Pha 2A Task 4) thêm `fallbackReason`: từ Task 4, `committed: true` KHÔNG còn đủ
     // để kết luận "đã đo được" — `commitFallback()` cũng điền `actualBytes` bằng một ƯỚC LƯỢNG dự
-    // phòng. Hai dòng dưới đây đều `false` (không dòng nào là dự phòng), đúng như mọi bản ghi
+    // phòng. Hai dòng dưới đây đều `null` (không dòng nào là dự phòng), đúng như mọi bản ghi
     // trước Task 4 — nên ẢNH CHỤP CŨ vẫn đọc được y nguyên, chỉ thêm một cột.
     expect(logged[0].detail!.leases).toEqual([
-      { owner: "sidecar:vision", kind: "external-process", priority: "background", bytes: 150 * MIB, committed: true, measureFailed: false, measureSource: null, fallbackEstimate: false },
-      { owner: "gguf:qwen30b", kind: "gguf-model", priority: "production", bytes: 500 * MIB, committed: false, measureFailed: false, measureSource: null, fallbackEstimate: false },
+      { owner: "sidecar:vision", kind: "external-process", priority: "background", bytes: 150 * MIB, committed: true, measureFailed: false, measureSource: null, fallbackReason: null },
+      { owner: "gguf:qwen30b", kind: "gguf-model", priority: "production", bytes: 500 * MIB, committed: false, measureFailed: false, measureSource: null, fallbackReason: null },
     ]);
     // Và phép trừ nền phải TRUY ĐƯỢC, không được vô hình.
     expect(logged[0].detail!.deviceUsedRawBytes).toBe(28_000 * MIB);

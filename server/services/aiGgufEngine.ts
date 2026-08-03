@@ -771,10 +771,17 @@ async function beginVram(
  *
  * ⚠ GIỚI HẠN ĐÃ BIẾT, CHẤP NHẬN TƯỜNG MINH: `gpu:"auto"` trên máy KHÔNG CÓ GPU cũng lùi về CPU,
  * nhưng ta không biết điều đó tại thời điểm này (phải gọi `initLlama()` xong mới biết `llama.gpu`
- * lùi về đâu, mà số dự phòng thì phải khai TRƯỚC). Ở ca đó sổ giữ thừa 431,6 MiB. Hệ quả bị chặn
- * theo hai lớp: (a) trên máy không GPU, `readDeviceVram()` trả `null` ⇒ reconciler IM LẶNG, không
- * có báo động giả nào; (b) chiều sai là chiều AN TOÀN — Pha 2B tính `headroom` DÈ DẶT hơn thật,
- * ngược hẳn với chiều ước-lượng-thiếu vốn dẫn tới OOM.
+ * lùi về đâu, mà số dự phòng thì phải khai TRƯỚC). Ở ca đó sổ giữ thừa 431,6 MiB. BÁN KÍNH ĐO
+ * ĐƯỢC, không phải "chiều an toàn" nói suông (M-5, review vòng 1) — hai ca, hai con số:
+ *   • nền chụp **SAU** lượt dự phòng (ca thường: `startVramReconciler()` chạy ở boot còn backend
+ *     hình thành ở lượt nạp model đầu): `committedBytes` đã gồm 431,6 MiB **và** `ledgerTotal`
+ *     cũng gồm đúng 431,6 MiB đó ⇒ `drift = (raw − nền) − ledgerTotal` **triệt tiêu hoàn toàn**
+ *     khoản ma, sai số **0**;
+ *   • nền chụp **TRƯỚC** (backend đã sống trước lượt chụp đầu tiên): nền không chứa khoản ma
+ *     nhưng `ledgerTotal` có ⇒ `drift = −431,6 MiB` **cố định**, vẫn **dưới** ngưỡng 512 MiB
+ *     (dùng 84,3 % ngân sách phía ÂM) ⇒ không đẻ báo động, nhưng ăn gần hết dư địa phía đó.
+ * Và trên máy không GPU thì `readDeviceVram()` trả `null` ⇒ reconciler IM LẶNG, không nhánh nào
+ * trong hai ca trên chạy. Với Pha 2B, chiều sai là chiều AN TOÀN (`headroom` dè dặt hơn thật).
  */
 async function cudaBackendFallbackBytes(): Promise<number | undefined> {
   if (process.env.GGUF_GPU === "false") return 0;

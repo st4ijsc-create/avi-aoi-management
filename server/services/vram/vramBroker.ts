@@ -148,6 +148,11 @@ export function commit(lease: VramLease, actualBytes: number, measureSource: Vra
   // Đo lại được sau một lượt hỏng thì cờ phải TẮT — nếu không "đo hỏng" thành vĩnh viễn ngay
   // cả khi số thật đã về, và câu chẩn đoán của reconciler lại chỉ sai hướng, chỉ theo chiều kia.
   live.measureFailed = false;
+  // Pha 2A Task 4 (T5-15) — cùng lý do với dòng trên, chỉ khác cái ô: một con số ĐO vừa về thì
+  // dấu "đây là ước lượng dự phòng" PHẢI biến mất, nếu không nhật ký sẽ gọi một số thật là ước
+  // lượng. (Hôm nay không đường nào commit() sau commitFallback() — `commitMeasured()` chỉ chạy
+  // một lần cho mỗi ticket — nhưng bất biến "hai ô luôn khớp `actualBytes`" phải đúng tại chỗ.)
+  live.fallbackReason = undefined;
   live.lastHeartbeatAt = new Date();
 }
 
@@ -188,6 +193,12 @@ export function markMeasureFailed(lease: VramLease): void {
  *      `learned` sẽ tự khai là "đã đo thật lượt trước" cho MỌI lượt `reserve()` sau, tới hết đời
  *      tiến trình — đúng lý do C-1 (Pha 1.5) đã phải TÁCH `commit()` khỏi `recordActual()`.
  *
+ * ⚠⚠ M-3 (review vòng 1) — **KHÔNG ĐỘNG VÀO `live.request`**. Bản đầu ghi
+ * `request.estimateSource = "fallback-after-measure-failure"` và làm hai việc sai cùng lúc: XOÁ
+ * xuất xứ ước lượng GỐC (thứ Task 7 đọc), và MUTATE object của người gọi — `reserve()` lưu
+ * `request` theo THAM CHIẾU (`:123`), nên lời gọi đó sửa cả object nằm ngoài sổ. Dấu "đây là dự
+ * phòng" nay nằm ở ô RIÊNG `lease.fallbackReason` (types.ts).
+ *
  * ⚠ HÀNG RÀO (`false` = KHÔNG làm gì): chỉ chạy khi phép đo ĐÃ HỎNG và ô số còn TRỐNG. Thiếu hàng
  * rào này thì đây là cửa sau để ghi một con số bịa đè lên số ĐO của một giấy phép đang đo tốt.
  *
@@ -207,12 +218,12 @@ export function commitFallback(leaseId: string, bytes: number, reason: string): 
   if (!Number.isFinite(bytes) || bytes < 0) return false;
   live.actualBytes = bytes;
   live.measureSource = "none";
-  live.request.estimateSource = "fallback-after-measure-failure";
+  // I-2 (review vòng 1) — `reason` PHẢI ở lại sổ SỐNG, không được bốc hơi sau lời gọi: sự kiện
+  // `release` đọc `lease.actualBytes` và nếu không có ô này thì nó ghi một con số ƯỚC LƯỢNG mà
+  // không có cách nào nói ra rằng đó là ước lượng. Một dòng nhật ký tự mâu thuẫn còn tệ hơn một
+  // dòng thiếu thông tin.
+  live.fallbackReason = reason;
   live.lastHeartbeatAt = new Date();
-  // `reason` không lưu vào sổ SỐNG (sổ chỉ giữ trạng thái, không giữ lịch sử) — nó đi vào sự kiện
-  // `commit_fallback` mà `vramWiring` ghi ngay sau lời gọi này. Nhận ở đây để chữ ký buộc người
-  // gọi phải nói ra LÝ DO thay vì chốt sổ im lặng.
-  void reason;
   return true;
 }
 

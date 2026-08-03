@@ -30,8 +30,14 @@
  * Và ca 4 (tuần tự) là ĐỐI CHỨNG chứng minh lưới không phải "gắn cờ tất".
  *
  * ⚠⚠ LỖ HỔNG ĐÃ TỪNG CÓ THẬT Ở ĐÂY (review TOÀN NHÁNH, C-1 × T5-1): chín ca của file này chỉ soi
- * lại **MỘT** trong ba hộ tiêu thụ của `isLoadingLease()` (ca 8 — `pendingBytes`), KHÔNG ca nào
- * chạm `captureVramBaseline()`. Task 8 đổi tận gốc DÂN SỐ của `measureFailed` (nay có cả model
+ * lại **MỘT** hộ tiêu thụ của `isLoadingLease()` (ca 8 — `pendingBytes`), KHÔNG ca nào
+ * chạm `captureVramBaseline()`.
+ * ⚠ BẢN KIỂM KÊ, ĐẾM LẠI Ở PHA 2A TASK 4 (M-4): câu này từng ghi "ba hộ tiêu thụ" — con số của
+ * thời `isLoadingLease()` phục vụ CẢ lá chắn HOÃN. Từ bản vá C-1 × T5-1, lá chắn đó đã tách sang
+ * `holdsUncommittedBytes()`, nên hôm nay là **HAI + HAI**: `isLoadingLease()` → `pendingBytes` và
+ * "ứng viên số một" của câu cảnh báo lệch ÂM; `holdsUncommittedBytes()` → lá chắn HOÃN và
+ * `blockingOwners`. Đếm lại bằng `grep`, đừng chép con số cũ — đó đúng là lỗi mà chính đoạn này
+ * đang cảnh báo. Task 8 đổi tận gốc DÂN SỐ của `measureFailed` (nay có cả model
  * 17 GB) và vì thế MỞ LẠI đúng cửa T5-1 mà Task 7 sinh ra để đóng — chín ca xanh không thấy gì.
  * Thêm một nhánh vào `vramWiring` mà đổi dân số một cờ dùng chung: phải đi soi **MỌI** hộ tiêu thụ
  * của cờ đó, không phải chỉ hộ gần nhất.

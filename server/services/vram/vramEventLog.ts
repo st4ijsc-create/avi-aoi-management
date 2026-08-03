@@ -8,8 +8,15 @@ import type { VramEstimateSource, VramLeaseKind, VramPriority } from "./types";
  */
 export interface VramEventInput {
   /**
-   * baseline | baseline_deferred | baseline_blocked | reserve | commit | measure_failed |
-   * release | refuse | preempt | drift | adopt | defer | defer_exceeded
+   * baseline | baseline_deferred | baseline_blocked | reserve | commit | commit_fallback |
+   * measure_failed | release | refuse | preempt | drift | adopt | defer | defer_exceeded
+   *
+   * ⚠ `commit_fallback` (Pha 2A Task 4, T5-15) = giấy phép được chốt sổ bằng **ƯỚC LƯỢNG DỰ
+   * PHÒNG** sau khi phép đo hỏng, cho khối byte mà điểm gọi chắc chắn đang tồn tại (backend
+   * CUDA). Ai đọc nhật ký theo danh sách này mà thiếu nó sẽ thấy một `measure_failed` rồi KHÔNG
+   * thấy `commit` nào và kết luận sai rằng giấy phép đó còn treo — trong khi sổ đã chốt. Đây là
+   * sự kiện DUY NHẤT mang `estimateSource: "fallback-after-measure-failure"`, và con số
+   * `actualBytes` của nó **KHÔNG PHẢI SỐ ĐO** (`detail.measured = false`).
    *
    * ⚠ `baseline_deferred` / `baseline_blocked` (Pha 1.5 Task 7 / T5-1) = lượt chụp nền bị HOÃN vì
    * còn giấy phép ĐANG NẠP (byte đã lên thiết bị, chưa vào sổ ⇒ mọi công thức đều sai trong cửa
