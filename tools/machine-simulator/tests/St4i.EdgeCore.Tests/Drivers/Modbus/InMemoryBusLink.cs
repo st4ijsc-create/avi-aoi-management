@@ -114,6 +114,32 @@ internal sealed class InMemoryBusLink : IModbusBusLink
     /// answer rather than infer it from the master's silence.</summary>
     public int BytesWritten { get; private set; }
 
+    /// <summary>
+    /// 🔴 Task D-5 — <b>every frame this end wrote, in order, as its own byte array: the bus boundary, recorded.</b>
+    ///
+    /// <para><see cref="BytesWritten"/> answers "how much" and D-2's no-retry test used it because one FC03
+    /// request is exactly 8 bytes. A WRITE needs more than a count. "Exactly one request reached the wire"
+    /// and "the request that reached the wire named unit 2, function code 6, address 5 and value 123, and no
+    /// frame naming any other unit ever went out" are different claims, and the second is the one a multidrop
+    /// write has to make. Recording the frames lets a test assert the second WITHOUT supplying any of it — which
+    /// is the difference between a test that checks the plumbing and a test that checks who chose the values,
+    /// the distinction D-2's own surviving retry mutation was about.</para>
+    ///
+    /// <para><b>One <see cref="Write"/> call per request frame is MEASURED, not assumed.</b> Probed against
+    /// NModbus 3.0.83 with a recording <c>IStreamResource</c>: one FC06 write attempt produces exactly one
+    /// <c>Write</c> call carrying the whole 8-byte frame, two calls at <c>Retries = 1</c>, four at
+    /// <c>Retries = 3</c> — and D-2 independently measured the same for FC03 by byte count. If a future NModbus
+    /// ever split a frame across two calls, the length assertions in the tests that read this would go RED
+    /// rather than quietly mean something else, which is the correct direction for a measurement-based
+    /// assertion to fail in.</para>
+    /// </summary>
+    public IReadOnlyList<byte[]> WrittenFrames
+    {
+        get { lock (_gate) { return _writtenFrames.ToArray(); } }
+    }
+
+    private readonly List<byte[]> _writtenFrames = new();
+
     /// <summary>How many frames <see cref="SilentUnitId"/> has swallowed. Observable so a test asserts the
     /// slave really did reply and the reply really was dropped, rather than inferring it from the master's
     /// timeout — which is also what a slave that never saw the request would look like.</summary>
@@ -217,6 +243,13 @@ internal sealed class InMemoryBusLink : IModbusBusLink
         {
             if (_disposed) throw new ObjectDisposedException(nameof(InMemoryBusLink), $"the {_name} end was disposed");
             BytesWritten += count;
+
+            // Recorded BEFORE the SilentUnitId/HoldWrites branches below, deliberately: this is what THIS END
+            // put on the wire, and a frame the peer never receives still left this end. A test asking "did a
+            // retry happen" must see the retried frame even when the far end swallows every one of them.
+            var frame = new byte[count];
+            Array.Copy(buffer, offset, frame, 0, count);
+            _writtenFrames.Add(frame);
 
             // See SilentUnitId. Checked before HoldWrites because a silenced frame is never delivered at all,
             // whereas a held one is delivered later — the two model different failures and must not compose.

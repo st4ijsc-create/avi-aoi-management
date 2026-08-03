@@ -509,22 +509,10 @@ public class ModbusBusResynchronisationTests
         await Assert.ThrowsAnyAsync<Exception>(() => operation);
     }
 
-    private static byte[] AppendCrc(byte[] pdu)
-    {
-        ushort crc = 0xFFFF;
-        foreach (var b in pdu)
-        {
-            crc ^= b;
-            for (var i = 0; i < 8; i++)
-                crc = (crc & 1) != 0 ? (ushort)((crc >> 1) ^ 0xA001) : (ushort)(crc >> 1);
-        }
-
-        var framed = new byte[pdu.Length + 2];
-        Array.Copy(pdu, framed, pdu.Length);
-        framed[pdu.Length] = (byte)(crc & 0xFF);
-        framed[pdu.Length + 1] = (byte)(crc >> 8);
-        return framed;
-    }
+    /// <summary>🔴 Task D-5 moved the CRC-16/MODBUS arithmetic to <see cref="RtuFrames.WithCrc"/> so this suite
+    /// and the write suite share one implementation. Behaviour-preserving by construction: a drifted CRC makes
+    /// NModbus reject every frame built with it, so this file's own tests are what prove the move.</summary>
+    private static byte[] AppendCrc(byte[] pdu) => RtuFrames.WithCrc(pdu);
 
     private static async Task WaitUntilAsync(Func<bool> predicate, string because)
     {

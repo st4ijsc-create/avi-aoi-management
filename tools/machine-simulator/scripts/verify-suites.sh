@@ -371,7 +371,86 @@ EXPECT_CONFORMANCE=22
 # src/St4i.EdgeCore/Drivers/OpcUa/OpcUaDriver.cs (the identical `_sessionLock.Dispose()`, a second instance
 # of the same defect class) — both ADD assertions/delete a line and add NO test, so a moved total on
 # Abstractions, Conformance, EdgeService or EngineApi would mean this task reached further than it meant to.
-EXPECT_EDGECORE=861
+#
+# 🔴 TASK D-5 (the RTU WRITE path) raises this 861 -> 896 (+35). COUNTED FROM THE RUNNER
+# (`dotnet test --list-tests`: 854 -> 889), not by hand, for the reason D-2 wrote down: a total that
+# reconciles is not evidence that anybody knows where the tests are. ONE file, ONE new test class; nothing
+# else in this suite gains or loses a test.
+#
+#     +35  ModbusRtuDriverWriteTests (new) — 24 methods, 35 cases (three theories: 3 wrong-answer shapes,
+#          9 setpoint rejections, 2 command rejections). What each group buys:
+#
+#      * ATTRIBUTION (2) — a setpoint written to unit 2 of a three-device bus lands on unit 2 and NOWHERE
+#        else, and a coil pulse addresses only its own coil, TRUE then FALSE. Asserted twice over: off each
+#        slave's OWN data store, AND off the frames that reached the bus boundary — because a pulse ends with
+#        the coil back at FALSE, which the data store cannot distinguish from "never touched".
+#      * NO IMPLICIT RETRY (3) — exactly ONE request FRAME on the wire for a write and for a command, plus
+#        the read path getting its own tolerance back afterwards. 🔴 NON-VACUOUS BY CONSTRUCTION: the map
+#        declares `retries: 5`, i.e. the test supplies the number that must NOT be used, and the assertions
+#        are on the frame count at the boundary and on ModbusBus.LastTransactionRetries — neither of which
+#        this test provides. D-2's equivalent read test passed while the driver hardcoded a different count
+#        precisely because it supplied the value it checked. MEASURED for a WRITE specifically against NModbus
+#        3.0.83 (D-2 had only measured it for a read): 1 request frame at Retries=0, 2 at 1, 4 at 3 — i.e.
+#        retries+1, from which 5 gives 6. The 6 is derived; the other three are on the probe's own output.
+#      * INDETERMINATE (1) — produced by a GENUINE timeout (elapsed >= the bound), with four separate
+#        content assertions on Detail (what happened, that it is unknown, WHICH unit, that nothing was
+#        resent) plus a DoesNotContain on the generic backstop string. Đợt B shipped two defects in which a
+#        NullReferenceException replaced an authored Indeterminate message with a generic one, and both were
+#        invisible to a "Detail is not null" check.
+#      * NO STALE FRAME CAN ACKNOWLEDGE A WRITE (4) — three hand-crafted responses that differ from the true
+#        echo in exactly one field (wrong register, wrong value, a stale FC03 read response) are each refused,
+#        plus the correct-echo CONTROL without which all three would pass on a driver that can never report
+#        Applied at all. Driven through the new RawRtuResponder, because a real NModbus slave always answers
+#        correctly and this question needs an answer that is wrong on purpose. In effect a contract test on
+#        NModbus's echo validation, which D-5 measured and which is STRICTLY STRONGER than a read's: a write
+#        response is an echo checked on slave address, function code, start address AND value.
+#      * THE BUS AFTER A FAILED WRITE (2) — a write times out on machine A, its echo arrives LATE on the
+#        shared line, and machine B's next read still returns B's own value; the quarantine is asserted
+#        ENTERED and paid ONCE, with real bytes discarded, and LinkGeneration never moves. Plus: a bus that
+#        will not go quiet REFUSES the write and reports Failed, with ZERO frames on the line — the one place
+#        this driver reports a definite "no" that is not a device rejection, decided on WriteOutcome.Failed's
+#        own words ("the device OR THE TRANSPORT TALKING TO IT was reached and explicitly reported failure").
+#      * CANCELLATION AND WHAT AN OPERATOR WAITS (4) — an in-flight write cancelled in ~209 ms against a
+#        30 000 ms bound, with the link NOT rebuilt and a second machine still reading (the mechanism
+#        assertions; the clock is not the claim); a write queued behind a dead device's 700 ms hold served
+#        after ~1.7 s; and the same write cancelled after 150 ms returning in ~151 ms with NOT ONE FC06 frame
+#        on a line that was busy throughout. Those three are the evidence behind task-5-report.md §7's
+#        decision NOT to build the per-device backoff. The fourth pins the branch for a cancellation observed
+#        AFTER the bus was taken but BEFORE the request was written — reachable only in a race, so a mutation
+#        could never find a defect in it (the reachability gap D-1's review found by READING); made
+#        deterministic by cancelling from inside the bus's own openLink delegate, which ModbusBus invokes with
+#        the arbitration lock already held.
+#      * B-3's LIMITS THROUGH THIS ENTRY POINT (12) — nine setpoint rejections (unknown point, read-only
+#        point, over, under, NaN, +Infinity, bool, string, null) and three command ones (unknown, arguments
+#        supplied, no declared coil address), each asserting the shared bus saw ZERO bytes. "No frame ever
+#        left the master" is what B-1 requires; "the register still holds its old value" also passes for a
+#        write the device refused. One row per rejection because a mutation deleting one guard survives a
+#        test that exercises another.
+#      * THE REST OF THE SURFACE (7) — WritablePoints/Commands immutable and not castable back to a List;
+#        a write after disposal; a write serialised against this driver's own running poll; a device-rejected
+#        write and a device-rejected pulse assert (Failed, naming the Modbus exception code); a pulse whose
+#        RESET never completes (Indeterminate, naming the coil and that it may be latched); and both halves
+#        of a pulse sharing ONE transaction so no other machine can run between them with a coil latched high.
+#
+# 🔴 NO OTHER TOTAL IN THIS SUITE MOVES, and that is the check rather than a coincidence. D-5 also does two
+# behaviour-preserving extractions, both of which add NO test and both of which are proved by a total that
+# does not move:
+#   * src/…/Modbus/ModbusWritePreflight.cs (new) takes five `private static` members VERBATIM off
+#     ModbusTcpDriver (point/command lookup, the object?->double narrowing, and the hand-written six-entry
+#     Modbus-exception-code table) so the RTU driver reuses them instead of holding a second copy that can
+#     drift silently. ModbusTcpDriverWriteTests is what proves it behaviour-preserving.
+#   * tests/…/Modbus/RawRtuResponder.cs (new) carries RtuFrames.WithCrc, which ModbusBusResynchronisationTests'
+#     own private AppendCrc now delegates to. That suite stays at 9.
+# ModbusBusTransaction gains an ADDITIVE Task-returning ExecuteAsync overload that delegates to the existing
+# generic one (NModbus's write calls return Task, not Task<T>), so the quarantine accounting D-4 and D-6 sit
+# on is literally the same code for a write as for a read.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGESERVICE and EXPECT_ENGINEAPI are deliberately unchanged:
+# D-5 adds no code outside src/St4i.EdgeCore/Drivers/Modbus and tests/St4i.EdgeCore.Tests, so a moved total
+# anywhere else would mean this task reached somewhere it had no business reaching. EXPECT_CONFORMANCE in
+# particular stays 22 — RTU conformance wiring is D-6, and no operator can turn the RTU write path on at all
+# until D-7 builds the connector factory, the policy gate and the RBAC route.
+EXPECT_EDGECORE=896
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
