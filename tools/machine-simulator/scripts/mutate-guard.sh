@@ -58,7 +58,24 @@
 # failure a human is least likely to question.
 
 set -uo pipefail
-STATE="${TMPDIR:-/tmp}/st4i-mutate-control-$PPID"
+
+# 🔴 D-6 concern 6 — this used to key on $PPID, and that made `control` and `check` unable to
+# see each other from any runner that does not hold ONE shell open across the whole round. An
+# agent harness starts a fresh process per command, so `control KILLED` was recorded under one
+# PPID and `check` looked under another and reported "no positive control recorded" — the
+# script's own refusal, fired at a session that had done exactly what it asked.
+#
+# Nothing was lost when it was found (no mutation SURVIVED that round, so the gate had nothing
+# to carry) and that is precisely why it is worth fixing now: a check that misfires only when
+# it does not matter is a check that gets ignored by the time it does. Note the direction of
+# the failure — it was SAFE (a false NO-VERDICT, never a false "believable"), which is the
+# right way for this script to break, and still not free.
+#
+# Keyed on the tree instead: stable across processes, distinct per checkout, and two concurrent
+# rounds on ONE tree now collide deliberately rather than silently running blind. Override with
+# ST4I_MUTATE_SESSION if you genuinely want two independent rounds in one tree.
+_tree_key=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd | tr -c '[:alnum:]' '-')
+STATE="${TMPDIR:-/tmp}/st4i-mutate-control-${ST4I_MUTATE_SESSION:-$_tree_key}"
 
 case "${1:-}" in
   fresh)
