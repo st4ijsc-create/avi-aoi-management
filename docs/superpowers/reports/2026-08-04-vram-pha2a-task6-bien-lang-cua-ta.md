@@ -68,7 +68,9 @@ thay đổi kết luận nào ở đây.
    dù Task 3 đo bằng `Get-Counter` qua `powershell.exe` còn đợt này đo bằng PDH P/Invoke handle ấm.
    Hai thiết bị đo khác hẳn nhau, cùng một con số.
 2. **Nền backend = 452.595.712 B ở 8/8 lượt**, đúng bằng `CUDA_BACKEND_FALLBACK_BYTES` mà Task 4
-   ghim. Đây là lần xác nhận thứ **ba** cho hằng số đó (PDH T5-11 · `nvidia-smi` Pha 1 · đợt này).
+   ghim. **⚠ Đính chính (M-6, §8):** đây là **lượt khảo sát thứ BA** nhưng mới là **thước ĐỘC LẬP
+   thứ HAI** — T5-11 và đợt này đọc **CÙNG một bộ đếm**, chỉ khác đường truy cập (`Get-Counter` vs
+   PDH P/Invoke). Thước độc lập còn lại là `nvidia-smi`/`getVramState` ở Pha 1.
 3. Ba lượt lặp lại của cùng một model cho `Δ cuối` **giống hệt nhau tới từng byte** ⇒ bộ đếm ổn
    định, không phải số nhiễu.
 
@@ -259,12 +261,13 @@ Liệt kê tường minh, vì đây là chỗ dễ đọc rộng hơn số liệ
 1. **⚠⚠ LỖ GỐC CỦA I-5 VẪN MỞ VỀ CẤU TRÚC, chỉ là không với tới được trên máy này.** `seen` đo sự
    tồn tại của khoá. Nếu một ngày bộ đếm trễ thật (driver khác, máy tải nặng, đường cấp phát khác),
    250 ms có thể không đủ và **không nhánh nào nổ** — ca 7 mô tả chính xác điều xảy ra khi đó.
-   **Lối vá đúng đã nhìn thấy và RẺ:** `PS_SCRIPT` bỏ qua `$_.Timestamp` của mẫu PDH, còn
-   `VramProcessSample.sampledAtMs` đang là `Date.now()` **lúc parse**, không phải lúc PDH lấy mẫu.
-   Đưa dấu thời gian THẬT của PDH vào là có **tín hiệu độ tươi đo được**, và khi đó `readScopeBytes`
-   từ chối được một mẫu quá cũ thay vì tin nó. **CỐ Ý KHÔNG làm trong Task 6**: nó đổi hợp đồng
-   `parseProcessCounters` (bề mặt Task 1 đã khoá bằng test) và vượt bốn việc brief giao. **Đề nghị
-   đưa vào Pha 2B như điều kiện vào cưỡng chế.**
+   **⚠ ĐÃ SỬA LẠI TOÀN BỘ MỤC NÀY SAU REVIEW — xem I-2 ở §8.** Bản đầu đề nghị đưa `$_.Timestamp`
+   của PDH vào `sampledAtMs` và gọi đó là **"lối vá ĐÚNG"** cho I-5, kèm đề nghị làm điều kiện vào
+   cưỡng chế Pha 2B. **Sai:** dấu thời gian PDH đo tuổi của **MẪU**, không đo tuổi của **GIÁ TRỊ**
+   — bộ đếm trễ trao một giá trị cũ kèm dấu thời gian mới tinh, hàng rào đi qua, lỗ còn nguyên. Nó
+   bắt được **mẫu ôi** (đầu dò treo/về muộn) — lớp có thật, đáng bắt, **không phải** lớp `seen` bỏ
+   sót — nên **đã hạ khỏi vị trí "điều kiện vào cưỡng chế"**. Điều kiện vào cưỡng chế phải là một
+   hàng rào **ĐỘ TƯƠI CỦA GIÁ TRỊ**, và **Task 6 không biết hàng rào đó nên có hình dạng gì**.
 2. **Chi phí tăng +250 ms mỗi lượt cấp phát đo được** (~3,1 s → ~3,35 s, **+8 %**). Nặng nhất ở
    `onnx-session` (đường AOI production). Task 3 đã xác nhận session được cache ⇒ mỗi lượt **TẠO**
    session, không phải mỗi ảnh. Ba điều kiện làm chi phí quay lại (trần LRU=5 · deploy model · cụm
@@ -294,3 +297,78 @@ Script tạm (ngoài repo, KHÔNG commit): `…/scratchpad/sampler.ps1` (PDH P/I
 `runall.ps1` · `t6-analyze.mjs` · `t6-mutate.sh`; số thô ở `…/scratchpad/runs/*.csv|meta.json`.
 
 **KHÔNG chạm** `knowledge/**`, không `kb:sync`, không DDL, không sửa DB, không chạy trainer.
+
+---
+
+# §8. VÒNG SỬA 1 — sau review Task 6 (0 Critical · 2 Important · 6 Minor)
+
+**Cả hai Important nằm ở CHỮ, không ở mã chạy.** Không một dòng mã thực thi nào đổi trong vòng này;
+diff gồm chú thích, một bản giả test bị sót, và mục bàn giao được viết lại. Bộ test: **233/233**.
+
+## I-1 — CỔNG TỐI ƯU ĐÃ TỪNG MỞ RỘNG HƠN PHÉP ĐO CHỐNG LƯNG ĐƯỢC ✅ đã sửa
+
+Khối "SAU TASK 6" ở `vramProcessProbe.ts` viết **"NAY ĐƯỢC PHÉP … kể cả hạ `-SampleInterval`"**,
+trong khi điều kiện ngay dưới lại **đòi đo lại khi đổi cách đọc** ⇒ khối **tự mâu thuẫn**, và vế
+được đọc trước là vế cho phép.
+
+**Reviewer đúng, và cái giá cụ thể hơn tôi viết:** ai lấy cái cổng đó sẽ rút biên thật từ
+**~1.450 ms xuống 250 ms — 5,8 lần** — trên **cả ba** nhóm đường cùng lúc, trong đó có
+**`onnx-session` (AOI sản xuất)** mà chính §4.2 của báo cáo này khai là **chưa đo**. Tôi đã viết
+"đường chưa đo" ở §4 rồi phát giấy phép ở chú thích như thể §4 không tồn tại.
+
+⚠ **Đây đúng hình dạng cái bẫy Task 6 sinh ra để tháo, chỉ dời lên một tầng:** trước là một biên
+tình cờ không ai biết; sau lượt vá của tôi suýt thành một **giấy phép hạ biên rộng hơn bằng chứng**
+— tệ hơn, vì nó có tài liệu chống lưng.
+
+**Đã sửa:** đổi tiêu đề khối thành **"CỔNG TỐI ƯU CHƯA MỞ SẴN"**; bỏ hẳn câu cho phép sẵn; liệt kê
+tường minh ba nhóm đường mà số 0 ms **không phủ** (ONNX/DirectML — *nêu đích danh là đường AOI sản
+xuất* · sidecar `spawn()` · máy/GPU/driver khác); ghi con số **5,8 lần** ngay tại chỗ; **hạ
+`-SampleInterval` chỉ được phép SAU KHI đo lại trên ĐÚNG đường sắp bị ảnh hưởng**. Việc duy nhất
+được phép ngay, không cần đo lại: **bỏ `Get-CimInstance`** (~200 ms/lượt) — nó không phải nguồn của
+biên lắng.
+
+## I-2 — MỤC BÀN GIAO GỌI SAI BẢN CHẤT LỐI VÁ I-5 ✅ đã sửa
+
+§6.1 gọi việc đưa `$_.Timestamp` của PDH vào `sampledAtMs` là **"lối vá ĐÚNG"** cho I-5 và đề nghị
+làm **điều kiện vào cưỡng chế Pha 2B**. **Sai, và reviewer bác đúng:**
+
+> Dấu thời gian PDH đo tuổi của **MẪU**, không đo tuổi của **GIÁ TRỊ**. Một bộ đếm trễ trao một giá
+> trị **cũ** kèm một dấu thời gian **mới tinh** — hàng rào đi qua, lỗ vẫn nguyên.
+
+Phần tôi đúng chỉ là **"rẻ"**: `sampledAtMs` hôm nay là `Date.now()` **lúc parse** và **không nơi
+nào đọc** — trường chết.
+
+**Đã sửa, và viết lại nó mua được gì:**
+- (A) đưa `$_.Timestamp` thật vào ⇒ bắt được **MẪU ÔI** (đầu dò treo/xếp hàng, `powershell.exe` về
+  muộn). Lớp đó **có thật và đáng bắt** — chỉ **không phải** lớp mà `seen` đang bỏ sót.
+- **KHÔNG** bắt được **GIÁ TRỊ CŨ**, tức **không** đóng I-5. **Đã hạ khỏi vị trí "điều kiện vào
+  cưỡng chế Pha 2B"** và đổi tên thành đúng thứ nó là: một hàng rào **độ ôi của mẫu**, ưu tiên
+  thường.
+- **Mức nguy hiểm của I-5 sau khi có (A):** **thấp hơn hẳn** trên đường **GGUF/CUDA đã đo** (bộ đếm
+  đi trước 429–7.140 ms; chu kỳ làm mới nguồn < 0,13 ms); **KHÔNG LƯỢNG HOÁ ĐƯỢC** trên
+  **ONNX/DirectML và sidecar `spawn()`** — chưa có phép đo nào ở đó, nên không có cơ sở nói nó cao
+  hay thấp.
+- Cảnh báo này **đã đưa vào MÃ** (khối I-5 ở `ScopeReading`, `vramWiring.ts`), không chỉ nằm trong
+  báo cáo — vì người sẽ sập bẫy đọc mã trước khi đọc báo cáo.
+
+⇒ **Điều kiện vào cưỡng chế Pha 2B phải là một hàng rào ĐỘ TƯƠI CỦA GIÁ TRỊ**, và Task 6 **không
+biết** hàng rào đó nên có hình dạng gì. Nói thẳng như vậy thay vì bàn giao một lời giải sai tên.
+
+## Sáu Minor — sửa cả sáu
+
+| # | Nội dung | Xử lý |
+|---|---|---|
+| **M-1** | `wiring.inprocess.test.ts:591` — điểm giả module **thứ CHÍN** thiếu `awaitCounterSettle`; tôi khai "phải khai ở MỌI bản giả" rồi sót một ⇒ phạm **ràng buộc 6** | Đã thêm. Nguyên nhân gốc ghi vào chú thích: đó là `vi.doMock` **trong thân ca**, không phải `vi.mock` đầu file, nên lượt quét theo `vi.mock(` của tôi không thấy. **Người sau tìm bằng `grep -n 'vramProcessProbe'`, đừng tìm bằng `vi.mock(`.** Vô hại hôm nay (đầu dò NÉM ⇒ thoát ở `before-probe-null`, không với tới biên lắng) — nhưng "vô hại hôm nay" không phải lý do để sót |
+| **M-2** | Lệch tệp test so với brief **không được khai** | **Khai ở đây:** brief nêu `vramProcessProbe.test.ts` **+** `wiring.settle.test.ts`. Tôi **không đụng** `vramProcessProbe.test.ts`; **cả 4 ca đơn vị** về hằng số/`awaitCounterSettle` (ca 1, 2, 3, 3b) nằm trong file **mới**. Lý do: chúng dùng `vi.importActual` để với tới module thật **xuyên qua** `vi.mock` ở đầu chính file đó — đặt cạnh ba ca hành vi (4, 5, 6) giữ toàn bộ lập luận "hằng số + nơi áp + hậu quả" trong **một** file đọc liền mạch. **Đánh đổi phải nói ra:** ai `grep` `vramProcessProbe.test.ts` để tìm test của hằng số sẽ **không thấy gì** |
+| **M-3** | `vramProcessProbe.ts` — câu "ĐÚNG điểm `commitMeasured()` sản xuất" **sai** cho model sinh chữ | Đã sửa. Với model sinh chữ còn `createContext()` (KV-cache) **sau** `loadModel()` rồi mới commit (`aiGgufEngine.ts:904` → `:916`) ⇒ mốc của phép đo **SỚM HƠN** điểm sản xuất ⇒ sai lệch đẩy kết quả về phía **BI QUAN HƠN**. 429–7.140 ms là **CẬN DƯỚI** của khoảng dẫn trước, không phải cận trên |
+| **M-4** | `.unref()` mất nhiều hơn "một phép đo" | Đã viết đúng hậu quả: lời hứa **không bao giờ giải** ⇒ mất **cả phần đuôi** của `commitMeasured()` — `broker.commit()`, `estimator.recordActual()`, **`closeWindow()` (cửa sổ + khoá nối tiếp không nhả)**, và **không sự kiện nào** vào nhật ký ⇒ rơi đúng "nhánh thoát thứ BẢY". **Vẫn giữ `.unref()`**, lý do ghi kèm: mọi thứ đó là trạng thái trong bộ nhớ của một tiến trình **đang chết**; vế đối lập là telemetry giữ tiến trình sống thêm 250 ms mỗi lượt cấp phát đang bay — vượt ranh giới "chỉ QUAN SÁT" |
+| **M-5** | Ca 7 đặc tả **hiện trạng**, sẽ **đỏ khi ai đó vá I-5**, mà chú thích lại bảo đỏ là đúng ⇒ bẫy nhỏ cùng họ | Đã viết lại thành lệnh dứt khoát: **"Ca này CHẾT vào đúng ngày I-5 được vá. Lúc đó hãy XOÁ nó — tuyệt đối không sửa mã sản xuất cho vừa nó, và cũng không sửa kỳ vọng cho nó xanh."** Kèm cách tự kiểm 1 dòng (`readScopeBytes()` đã có đường từ chối mẫu/giá trị quá cũ chưa) để phân biệt "ca đã hết vai" với "bản vá chưa xong" |
+| **M-6** | "Xác nhận thứ BA" **gộp hai lượt cùng một thước** | Đếm lại: Task 3 và Task 6 đọc **CÙNG một bộ đếm** `\GPU Process Memory\Dedicated Usage`, chỉ khác **đường truy cập** (`Get-Counter` qua `powershell.exe` vs PDH P/Invoke handle ấm). ⇒ **lượt khảo sát thứ BA, nhưng mới là thước ĐỘC LẬP thứ HAI** (thước độc lập còn lại: `nvidia-smi`/`getVramState` ở Pha 1). Nó chứng minh **đường truy cập không làm lệch con số**; nó **KHÔNG** chứng minh bản thân bộ đếm nói đúng sự thật của thiết bị. §1b đã đính chính theo |
+
+## Kiểm chứng vòng sửa 1
+
+- `npx vitest run server/services/vram/` → **233/233 xanh**; `--sequence.shuffle.tests` → **233/233
+  xanh**.
+- `NODE_OPTIONS="--max-old-space-size=8192" npx tsc --noEmit` → **sạch**.
+- Không đụng `knowledge/**`, `docs/ECOSYSTEM/62_…`, `tools/machine-simulator/**`. Không `kb:sync`,
+  không DDL/DB, không trainer.

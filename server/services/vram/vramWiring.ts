@@ -256,7 +256,8 @@ export function __openMeasureWindowCount(): number {
  *   • Bộ đếm TRỄ thì cửa sổ **BỊ DỊCH** chứ không co: mất phần cấp phát rơi vào khoảng trễ cuối.
  *     Trễ hoàn toàn ⇒ hai lượt đọc GIỐNG HỆT nhau ⇒ `actual === 0` với `seen === true` ⇒ commit 0
  *     + `recordActual(0)` — tái tạo nguyên vẹn nấc `learned = 0` mà I-1 sinh ra để chặn.
- *   • **★ TASK 6 ĐÃ ĐÓNG LỖ NÀY — và câu trả lời KHÁC với dự đoán của I-5.** Trước Task 6, lỗ chưa
+ *   • **★ TASK 6 KHÔNG ĐÓNG LỖ NÀY** — nó chỉ làm biên chờ thành CỦA TA. Câu trả lời của phép đo
+ *     KHÁC với dự đoán của I-5. Trước Task 6, lỗ chưa
  *     mở là nhờ một thứ KHÔNG AI THIẾT KẾ: `-SampleInterval` mặc định của `Get-Counter` tạo biên
  *     lắng ~1,2 s trong `PS_SCRIPT`. I-5 kết luận biên đó "ĐANG LÀ ĐIỀU KIỆN ĐÚNG ĐẮN CỦA PHÉP
  *     ĐO". **Đo trực tiếp (8/8 lượt) BÁC BỎ vế đó:** bộ đếm phản ánh ĐỦ lượt cấp phát **TRƯỚC**
@@ -266,6 +267,15 @@ export function __openMeasureWindowCount(): number {
  *     `await` ngay trước đầu đo SAU trong `commitMeasured()` và có ca đỏ canh
  *     (`wiring.settle.test.ts`). ⚠ `seen` VẪN chỉ đo sự tồn tại của khoá — Task 6 KHÔNG thêm tín
  *     hiệu ĐỘ TƯƠI; nó chỉ làm cho khoảng chờ trở thành của ta, đo được và test được.
+ *   • **⚠⚠ CẢNH BÁO CHO NGƯỜI SẼ VÁ (I-2, review Task 6) — ĐỪNG TIN DẤU THỜI GIAN PDH LÀ LỜI GIẢI.**
+ *     Lối vá "hiển nhiên" là đưa `$_.Timestamp` của mẫu PDH vào `VramProcessSample.sampledAtMs`
+ *     (hôm nay trường đó là `Date.now()` LÚC PARSE, và **không nơi nào đọc nó** — mã chết) rồi từ
+ *     chối mẫu quá cũ. **Việc đó KHÔNG đóng được lỗ này.** Dấu thời gian PDH đo tuổi của **MẪU**,
+ *     không đo tuổi của **GIÁ TRỊ**: một bộ đếm trễ trao một giá trị CŨ kèm một dấu thời gian MỚI
+ *     TINH, hàng rào đi qua, lỗ còn nguyên. Nó chỉ bắt được đúng một lớp khác — **mẫu ôi** (đầu dò
+ *     bị treo/xếp hàng, `powershell.exe` chậm, kết quả về muộn) — và lớp đó có thật, đáng bắt, chỉ
+ *     là KHÔNG PHẢI lớp mà `seen` đang bỏ sót. Đặt tên đúng cho nó rồi hãy làm; đừng gọi nó là
+ *     "vá I-5".
  *   • **RÀNG BUỘC ĐẦY ĐỦ:** tính an toàn của ca "bộ đếm có-mà-mù" phụ thuộc vào **nhánh delta-âm
  *     CŨNG gắn cờ** (`actual < 0` ⇒ `markMeasureFailed`). Nếu một bản sửa tương lai bỏ nhánh đó
  *     (hoặc đổi nó thành `commit(0)`), ca "trước thấy X, sau mù ⇒ 0 − X < 0" sẽ rơi thẳng vào

@@ -592,6 +592,20 @@ describe("I-4 — tám nhánh LỖI: trả chỗ đúng, và telemetry hỏng kh
       readProcessVram: async () => {
         throw new Error("đầu dò hỏng (ca thử nghiệm)");
       },
+      /**
+       * ★ M-1 (review Task 6) — ĐIỂM GIẢ MODULE **THỨ CHÍN**, bản vá Task 6 đã sót.
+       *
+       * Vô hại hôm nay (đầu dò NÉM ở đầu đo TRƯỚC ⇒ `beforeUsed === null` ⇒ `commitMeasured()`
+       * thoát ở nhánh `before-probe-null`, KHÔNG bao giờ với tới biên lắng), nhưng để trống là
+       * phạm ràng buộc 6: đổi DÂN SỐ của một vị từ dùng chung thì phải kiểm **MỌI** nơi tiêu thụ,
+       * không phải mọi nơi dễ tìm. Chính docstring của `awaitCounterSettle` khai "phải khai ở MỌI
+       * bản giả" — một lời khai sót một chỗ là lời khai sai.
+       *
+       * ⚠ Đây là `vi.doMock` TRONG THÂN CA, không phải `vi.mock` ở đầu file — đó là lý do nó
+       * không lọt vào lượt quét theo `vi.mock(` của bản vá trước. Người sau thêm điểm giả mới:
+       * tìm bằng `grep -n 'vramProcessProbe'` chứ đừng tìm bằng `vi.mock(`.
+       */
+      awaitCounterSettle: async () => {},
     }));
 
     const { loadGgufModel } = await import("../aiGgufEngine");

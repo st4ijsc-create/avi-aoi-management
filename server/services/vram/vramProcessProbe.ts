@@ -95,24 +95,37 @@ export function parseProcessCounters(rawJson: string, roots: readonly number[], 
  * (~13 %). Người cầm mục đó sẽ nhìn ngay sang 1,2 giây còn lại và cắt `-SampleInterval` xuống
  * ~0,1 s **trong một dòng**.
  *
- * ─── ★★★ SAU TASK 6 (2026-08-04) — CỔNG NÀY ĐÃ MỞ, CÓ ĐIỀU KIỆN ─────────────────────────────
+ * ─── ★★★ SAU TASK 6 (2026-08-04) — BIÊN ĐÃ THUỘC VỀ TA; CỔNG TỐI ƯU **CHƯA** MỞ SẴN ──────────
  *
- * Độ trễ thật của bộ đếm **ĐÃ ĐƯỢC ĐO TRỰC TIẾP** (8 lượt, PDH handle ấm, 0,018 ms/mẫu) và biên
- * lắng **ĐÃ THÀNH HẰNG SỐ CỦA TA**: `VRAM_MEASURE_SETTLE_MS` ngay bên dưới, được `vramWiring
- * .commitMeasured()` `await` trước đầu đo SAU, và được `wiring.settle.test.ts` canh bằng ca đỏ.
- * Cửa sổ đo **KHÔNG CÒN phụ thuộc** biên nội tại của `Get-Counter`.
+ * Điều Task 6 đã làm xong: biên lắng **ĐÃ THÀNH HẰNG SỐ CỦA TA** (`VRAM_MEASURE_SETTLE_MS` ngay
+ * bên dưới), được `vramWiring.commitMeasured()` `await` trước đầu đo SAU, và được
+ * `wiring.settle.test.ts` canh bằng ca đỏ. Cửa sổ đo **không còn phụ thuộc CÂM** vào biên nội tại
+ * của `Get-Counter` — nếu ai đó gỡ biên đó, ít nhất còn 250 ms **được khai báo** ở lại.
  *
- * ⇒ **NAY ĐƯỢC PHÉP** tối ưu `PS_SCRIPT`, kể cả hạ `-SampleInterval` hay bỏ `Get-CimInstance`
- *   (cái sau chỉ cần cho phạm vi `descendants`). Kết quả đo cho thấy `-SampleInterval` **không hề
- *   là điều kiện đúng đắn của phép đo** — bộ đếm đã phản ánh đủ **TRƯỚC** khi lượt cấp phát trả
- *   về ở 8/8 lượt, tức 1,2 giây đó luôn là chi phí thuần.
+ * ⚠⚠ **ĐIỀU TASK 6 KHÔNG LÀM XONG — ĐỌC KỸ TRƯỚC KHI COI ĐÂY LÀ GIẤY PHÉP HẠ BIÊN.**
+ * Phép đo cho số 0 ms **CHỈ trên đường đã đo**: `node-llama-cpp` / GGUF / CUDA, ba cỡ model
+ * (0,6B · 4B · 30B), một máy (RTX 5090), một driver. Nó **KHÔNG phủ**:
+ *   • **ONNX Runtime (DirectML/CUDA)** — `aiInferenceEngine`, `aiImageEmbedding`. ⚠ Đây là đường
+ *     **AOI SẢN XUẤT** (`onnx-session`), và nó là đường **chưa đo**;
+ *   • **sidecar `spawn()`** — `llamaVisionSidecar`, `localSidecarTrainer`, `aiLlmFinetuneSidecar`
+ *     (phạm vi `descendants`: khoá bộ đếm của tiến trình con phải KỊP XUẤT HIỆN);
+ *   • máy / GPU / driver khác, hoặc máy đang tải nặng.
  *
- * ⚠ HAI ĐIỀU KIỆN, KHÔNG ĐƯỢC BỎ:
- *   1. **Dòng `await awaitMeasureSettle()` trong `commitMeasured()` PHẢI Ở LẠI.** Nó là biên duy
- *      nhất còn thuộc về ta và là biên duy nhất có ca test canh. Gỡ `Get-Counter` mà gỡ luôn nó
- *      là dựng lại đúng lỗ I-5, lần này KHÔNG còn thứ gì che.
- *   2. Đổi cách đọc bộ đếm ⇒ **đo lại** theo giao thức ở `VRAM_MEASURE_SETTLE_MS`. Số 0 ms là số
- *      đo của đường `Get-Counter`; một đường đọc khác là một phép đo khác.
+ * ⇒ **HẠ `-SampleInterval` LÀ RÚT BIÊN THẬT TỪ ~1.450 ms XUỐNG 250 ms — 5,8 LẦN — VÀ RÚT TRÊN CẢ
+ *   BA NHÓM ĐƯỜNG Ở TRÊN CÙNG LÚC.** Không được làm chỉ vì đọc thấy số 0 ở dưới: số 0 đó không
+ *   nói gì về chúng. **Chỉ được hạ SAU KHI đo lại trên ĐÚNG đường sắp bị ảnh hưởng**, theo giao
+ *   thức ghi ở `VRAM_MEASURE_SETTLE_MS`.
+ *
+ *   ⚠ Đây đúng hình dạng cái bẫy mà Task 6 sinh ra để tháo, chỉ dời lên một tầng: trước là một
+ *   biên tình cờ không ai biết; nếu viết cổng rộng hơn bằng chứng thì thành một **giấy phép** hạ
+ *   biên rộng hơn bằng chứng. Nên câu ở đây là "chưa mở", không phải "nay được phép".
+ *
+ * ⇒ ĐƯỢC PHÉP NGAY, KHÔNG CẦN ĐO LẠI: **bỏ `Get-CimInstance`** (~200 ms/lượt) — nó chỉ cần cho
+ *   phạm vi `descendants`, và nó KHÔNG phải nguồn của biên lắng.
+ *
+ * ⚠ VÀ DÙ ĐO LẠI XONG: **dòng `await awaitMeasureSettle()` trong `commitMeasured()` PHẢI Ở LẠI.**
+ * Nó là biên duy nhất thuộc về ta và là biên duy nhất có ca test canh. Gỡ `Get-Counter` mà gỡ
+ * luôn nó là dựng lại đúng lỗ I-5, lần này KHÔNG còn thứ gì che.
  */
 const PS_SCRIPT = [
   "$ErrorActionPreference='Stop';",
@@ -134,8 +147,15 @@ const PS_SCRIPT = [
  * Giao thức: nạp model thật trong một tiến trình con, lấy mẫu bộ đếm **LIÊN TỤC** từ tiến trình
  * khác bằng PDH P/Invoke **giữ handle ấm** (`pdh.dll` — CHÍNH thư viện `Get-Counter` dùng), chi
  * phí trung vị **0,018 ms/mẫu**, nhịp lấy mẫu thực **~0,04–0,1 ms**. Mốc "lượt cấp phát xong" =
- * thời điểm `llama.loadModel()` trả về (ĐÚNG điểm mà `commitMeasured()` được gọi trong sản xuất),
- * quan sát bằng file mốc nên KHÔNG có sai lệch đồng hồ giữa hai tiến trình.
+ * thời điểm `llama.loadModel()` trả về, quan sát bằng file mốc mà đầu dò `Test-Path` trong CÙNG
+ * vòng lặp lấy mẫu ⇒ mốc và bộ đếm dùng MỘT đồng hồ, KHÔNG có sai lệch đồng hồ liên tiến-trình.
+ *
+ * ⚠ M-3 — MỐC ĐÓ **KHÔNG** ĐÚNG BẰNG ĐIỂM `commitMeasured()` CỦA MỌI ĐƯỜNG SẢN XUẤT, nói cho
+ * đúng: với model SINH CHỮ, `aiGgufEngine.ts` còn `createContext()` (cấp phát KV-cache) SAU
+ * `loadModel()` rồi mới `commitMeasured()` (`:904` → `:916`). Điểm đo của phép đo này vì thế **SỚM
+ * HƠN** điểm sản xuất ở đường đó ⇒ nếu có sai lệch thì nó làm kết quả **BI QUAN HƠN** sự thật (đo
+ * ở điểm sớm hơn thì bộ đếm có ít thời gian hơn để đuổi kịp). Kết luận "bộ đếm đi TRƯỚC" vì thế
+ * an toàn theo đúng hướng; con số 429–7.140 ms là CẬN DƯỚI của khoảng dẫn trước, không phải cận trên.
  *
  *   • **8/8 lượt** (0,6B ×3 · 4B ×2 · 30B ×3, 0 lượt hỏng phải thử lại): bộ đếm đã đạt **100,0000 %**
  *     giá trị cuối **TRƯỚC** khi lượt cấp phát trả về. Nó ĐI TRƯỚC **429,5 / 460,6 / 480,2 / 962,2 /
@@ -150,9 +170,16 @@ const PS_SCRIPT = [
  *     `VRAM_MEASURE_SETTLE_SAFETY_MS`, KHÔNG phải con số 0 ở trên.
  *   • Bộ đếm KHÔNG được làm mới theo nhịp đồng hồ thô: hai giá trị KHÁC NHAU quan sát được cách
  *     nhau **0,127 ms** (min qua 8 lượt) ⇒ chu kỳ làm mới của nguồn < 0,13 ms.
- *   • ĐỐI CHỨNG: `delta` đo bằng thước này trùng **tới từng byte** với nghiệm thu sống Task 3
- *     (1.193.291.776 / 17.511.354.368) dù hai lượt dùng hai thiết bị đo hoàn toàn khác nhau; và
- *     nền backend đọc được **452.595.712 B ở 8/8 lượt** = đúng `CUDA_BACKEND_FALLBACK_BYTES`.
+ *   • ĐỐI CHỨNG, **đếm cho đúng** (M-6 — bản trước gộp hai lượt CÙNG MỘT THƯỚC rồi gọi là "xác
+ *     nhận thứ ba"): `delta` đo ở đây trùng **tới từng byte** với nghiệm thu sống Task 3
+ *     (1.193.291.776 / 17.511.354.368), và nền backend đọc được **452.595.712 B ở 8/8 lượt** =
+ *     đúng `CUDA_BACKEND_FALLBACK_BYTES`.
+ *     ⚠ Nhưng cả Task 3 lẫn Task 6 đều đọc **CÙNG MỘT bộ đếm** `\GPU Process Memory\Dedicated
+ *     Usage`, chỉ khác **đường truy cập** (`Get-Counter` qua `powershell.exe` vs PDH P/Invoke
+ *     handle ấm). Vậy nên đây là **lượt khảo sát thứ BA nhưng mới là thước ĐỘC LẬP thứ HAI**:
+ *     thước độc lập duy nhất còn lại là `nvidia-smi`/`getVramState` ở Pha 1 (+431/+430/+431 MiB).
+ *     Điều nó chứng minh: đường truy cập và cách lấy mẫu KHÔNG làm lệch con số. Điều nó **KHÔNG**
+ *     chứng minh: bản thân bộ đếm nói đúng sự thật của thiết bị.
  *
  * ⚠⚠ **HẰNG SỐ NÀY KHÔNG PHẢI THỨ CÓ THỂ HẠ BẰNG SUY LUẬN.** Nó chống lưng cho một lớp lỗi CÂM:
  * bộ đếm trễ ⇒ cửa sổ đo BỊ DỊCH ⇒ `actual === 0` với `seen === true` ⇒ `commit(0)` +
@@ -184,8 +211,19 @@ export const VRAM_MEASURE_SETTLE_MS = VRAM_COUNTER_SETTLE_MEASURED_MS + VRAM_MEA
  * đo (nếu chờ ngoài cửa sổ thì một lượt cấp phát khác chen vào đúng khoảng chờ và làm bẩn hiệu số
  * — đúng lớp lỗi mà khoá nối tiếp sinh ra để diệt).
  *
- * ⚠ `.unref()`: telemetry KHÔNG BAO GIỜ được giữ vòng lặp sự kiện sống. Tiến trình đang thoát thì
- * lượt commit này mất — đó là hướng đúng (mất phép đo, không mất an toàn).
+ * ⚠ M-4 — `.unref()` MẤT NHIỀU HƠN "MỘT PHÉP ĐO", nói đủ để người sau không phải tự phát hiện.
+ * Nếu hẹn giờ này là thứ DUY NHẤT còn giữ vòng lặp sự kiện, tiến trình thoát và lời hứa **không
+ * bao giờ giải** ⇒ `commitMeasured()` dừng giữa chừng, và mất theo **cả phần đuôi của nó**:
+ * `broker.commit()` KHÔNG chạy · `estimator.recordActual()` KHÔNG chạy · **`closeWindow()` KHÔNG
+ * chạy** (cửa sổ đo + khoá nối tiếp không được nhả) · không sự kiện `commit` lẫn `measure_failed`
+ * nào vào nhật ký ⇒ giấy phép đứng `actualBytes: null, measureFailed: false`, đúng "nhánh thoát
+ * thứ BẢY" mà `chotSoBangDuPhong()` đã khai là KHÔNG cứu được.
+ *
+ * ⚠ VẪN GIỮ `.unref()`, và đây là lý do: mọi thứ vừa liệt kê đều là trạng thái **TRONG BỘ NHỚ của
+ * một tiến trình đang chết** — khoá rò, cửa sổ rò, sổ dở dang đều biến mất cùng nó. Vế đối lập
+ * thì không vô hại như vậy: một hẹn giờ có `ref` **giữ tiến trình sống thêm tới 250 ms ở MỖI lượt
+ * cấp phát đang bay**, tức telemetry giành quyền quyết định lúc nào tiến trình được thoát. Đó là
+ * ranh giới "telemetry chỉ QUAN SÁT" mà module này tự cấm mình vượt.
  *
  * ⚠ Hàm nằm ở ĐÂY chứ không ở `vramWiring.ts` có chủ ý: biên lắng là thuộc tính của BỘ ĐẾM, nên nó
  * phải ở cạnh `PS_SCRIPT`. Hệ quả kỹ thuật cũng đúng hướng — mọi `wiring.*.test.ts` đã

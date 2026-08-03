@@ -210,13 +210,28 @@ describe("Task 6 — biên lắng phải ĐƯỢC ÁP, đúng chỗ (đây là l
 
 describe("Task 6 — HẬU QUẢ nếu biên lắng biến mất (vì sao ba ca trên đáng giá)", () => {
   /**
-   * ★★★ CA CHỨNG MINH. Đây KHÔNG phải test cho một lỗi cần vá — nó DIỄN LẠI thế giới mà bộ đếm
-   * trễ hoàn toàn tạo ra, để cái giá của việc gỡ biên lắng nằm trong bộ test chứ không nằm trong
-   * một đoạn văn.
+   * ★★★ CA ĐẶC TẢ **HIỆN TRẠNG**, KHÔNG PHẢI CA ĐẶC TẢ **HÀNH VI MONG MUỐN**.
    *
-   * Bộ đếm trễ hoàn toàn ⇒ đầu đo SAU trả **y hệt** đầu đo TRƯỚC, và khoá của ta VẪN CÓ (`seen`
-   * đo SỰ TỒN TẠI của khoá, KHÔNG đo ĐỘ TƯƠI) ⇒ không nhánh nào trong SÁU nhánh đo-hỏng nổ:
-   * không âm, không chồng lấn, không mất độc chiếm, không mù. Hệ **commit 0 và khai là đo được**.
+   * Nó DIỄN LẠI thế giới mà bộ đếm trễ hoàn toàn tạo ra, để cái giá của việc gỡ biên lắng nằm
+   * trong bộ test chứ không nằm trong một đoạn văn. Bộ đếm trễ hoàn toàn ⇒ đầu đo SAU trả **y
+   * hệt** đầu đo TRƯỚC, và khoá của ta VẪN CÓ (`seen` đo SỰ TỒN TẠI của khoá, KHÔNG đo ĐỘ TƯƠI)
+   * ⇒ không nhánh nào trong SÁU nhánh đo-hỏng nổ: không âm, không chồng lấn, không mất độc
+   * chiếm, không mù. Hệ **commit 0 và khai là đo được**.
+   *
+   * ⚠⚠ **NGƯỜI VÁ I-5 SẼ THẤY CA NÀY ĐỎ. ĐỌC ĐOẠN NÀY TRƯỚC KHI ĐỘNG VÀO BẤT CỨ THỨ GÌ.**
+   *
+   *   > **Ca này CHẾT vào đúng ngày I-5 được vá. Lúc đó hãy XOÁ nó — TUYỆT ĐỐI không sửa mã sản
+   *   > xuất cho vừa nó, và cũng không "sửa kỳ vọng" để nó xanh trở lại.**
+   *
+   * Vì sao phải nói thẳng ra: một ca khẳng định `commit(0)` + `learned = 0` là **hành vi nguy
+   * hiểm mà ta đang chịu đựng**, không phải hành vi ta muốn giữ. Khi có hàng rào độ tươi thật,
+   * lượt "hai đầu đo giống hệt vì bộ đếm cũ" PHẢI thành một nhánh đo-hỏng — tức ca này PHẢI đỏ.
+   * Một ca đặc tả hiện trạng mà không tự khai là đặc tả hiện trạng chính là cái bẫy cùng họ với
+   * cái Task 6 vừa tháo: người sau đọc ca đỏ, tưởng mình vừa làm hỏng thứ gì, rồi lùi bản vá.
+   *
+   * Kiểm tra nhanh trước khi xoá: `readScopeBytes()` (`vramWiring.ts`) đã có đường từ chối một
+   * MẪU/GIÁ TRỊ quá cũ chưa? Nếu rồi ⇒ xoá ca này. Nếu chưa ⇒ ca đỏ là dấu hiệu bản vá chưa
+   * xong, không phải dấu hiệu ca sai.
    */
   it("7. bộ đếm trễ hoàn toàn ⇒ commit(0) + nấc learned = 0 — KHÔNG lưới nào bắt được", async () => {
     const { __resetEstimatorForTests, estimateBytesFor } = await import("./vramEstimator");
