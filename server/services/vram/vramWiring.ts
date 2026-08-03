@@ -956,6 +956,14 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
              * `release` vì thế từng ghi một `actualBytes` ƯỚC LƯỢNG cạnh một `estimateSource` của
              * lượt reserve — hai nửa nói hai chuyện, và người đọc nhật ký (lẫn Pha 2B) không có
              * cách nào biết đó là số đo hay số ước lượng.
+             *
+             * ⚠ HẠ GIỌNG (re-review vòng 1) — DÒNG NÀY HÔM NAY LÀ MÃ TRƠ, đừng tin nó làm việc.
+             * Sau khi M-3 gỡ lời ghi đè, KHÔNG còn writer nào chạm `request.estimateSource`, mà
+             * `reserve()` luôn được gọi với đúng `estimateSource: est.source` ⇒ hai vế LUÔN BẰNG
+             * NHAU. Chứng minh bằng đột biến: trả dòng này về `est.source` thì 212/212 VẪN XANH —
+             * tức ca 15 KHÔNG phải lưới cho dòng này.
+             * Giữ lại vì đọc từ sổ SỐNG là hướng đúng khi có thêm writer, NHƯNG:
+             * thứ thật sự phân biệt số đo với số ước lượng là `detail.measured`, KHÔNG phải ô này.
              */
             estimateSource: lease.request.estimateSource ?? est.source,
             // I-1 — bằng chứng thiết bị đã nhả (bảng bốn điểm nhả ở đầu file). Truy vấn được:

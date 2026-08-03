@@ -286,8 +286,8 @@ describe("T5-15 — giấy phép backend đo hỏng KHÔNG còn chặn nền vĩ
    * ★★ SÁU NHÁNH THOÁT ĐO-HỎNG, KHÔNG PHẢI MỘT. Bản vá gốc của brief chỉ nêu hai (`measurable ===
    * false` và đầu dò `null`); Task 3 vừa mở nhánh THỨ SÁU (`measure-target-absent`). Bỏ sót một
    * nhánh = T5-15 sống lại qua đúng cửa đó, và không ca nào đỏ. Ca này đi qua BỐN nhánh dựng được
-   * bằng đầu dò (hai nhánh còn lại — `overlapping-measure-window`/`measure-window-not-exclusive` —
-   * ở ca 9).
+   * bằng đầu dò (hai nhánh còn lại — `overlapping-measure-window` ở ca 9,
+   * `measure-window-not-exclusive` ở ca 9b).
    */
   it.each([
     ["before-probe-null", [null] as Sample[]],
