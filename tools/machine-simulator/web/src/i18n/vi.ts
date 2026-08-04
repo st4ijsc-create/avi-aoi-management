@@ -1945,17 +1945,41 @@ export const vi = {
       empty: "Chưa có kết nối nào được cấu hình.",
       loadFailed: "Không tải được danh sách kết nối đã cấu hình.",
       table: {
+        // 🔴 Task D-7b — cột định danh KẾT NỐI, thứ mà nút Xoá thực sự tác động lên. "Giao thức" không còn
+        // xác định được cái gì để xoá kể từ khi nhiều thiết bị dùng chung một đường: trên một tuyến RS-485
+        // tất cả đều là "Modbus".
+        instanceId: "Kết nối",
         kind: "Giao thức",
         machineCode: "Mã máy",
-        hostPort: "Host : Port",
+        hostPort: "Đường truyền",
+        state: "Trạng thái",
         updated: "Cập nhật lần cuối",
         remove: "Xoá",
+        removeAria: (vars: Vars) => `Xoá kết nối ${vars.id}, đang phục vụ máy ${vars.machineCode}`,
+      },
+      // 🔴 Task D-7b — trạng thái sống của một thiết bị đã cấu hình, lấy từ đúng những gì sản phẩm này công
+      // bố. Cố ý KHÔNG có nhãn "đang giãn nhịp" — xem `list.bus.quietVersusBackedOff`.
+      state: {
+        failedToStart: "Khởi động thất bại",
+        notInRoster: "Không có trong danh sách phiên này",
+      },
+      bus: {
+        title: (vars: Vars) => `Tuyến RS-485 “${vars.bus}”`,
+        deviceCount: (vars: Vars) => `— ${vars.count} thiết bị trên đường này`,
+        quietVersusBackedOff:
+          "Một thiết bị ngừng trả lời sẽ hiện là suy giảm ở đây, và sản phẩm sẽ tự giãn nhịp hỏi nó ra để các thiết bị còn lành trên cùng dây giữ được thông lượng. Còn việc một thiết bị cụ thể HIỆN ĐANG GIÃN NHỊP (và giãn bao lâu) hay chỉ đơn thuần là im lặng thì được ghi vào nhật ký ứng dụng: mỗi lần đọc hỏng đều ghi số lần hỏng liên tiếp và khoảng chờ tới lần thử kế tiếp, còn khi thiết bị hồi phục thì ghi đúng một lần kèm nhịp đọc được khôi phục. Ở đây cố ý không hiện thành nhãn: hợp đồng driver mà mọi kết nối trong sản phẩm này đều cài đặt không có trường nào như vậy, và thêm một trường riêng cho một loại đường truyền sẽ đưa một khái niệm của Modbus lên cái giao diện dùng chung cho tất cả.",
       },
     },
     removeConfirm: {
       title: "Xoá cấu hình kết nối này?",
+      // 🔴 Task D-7b — hộp thoại nói rõ nó sắp xoá CÁI GÌ. Trước task này luồng xoá chỉ mang theo tên giao
+      // thức, nên trên một tuyến multidrop nó vừa không nói được xoá thiết bị nào trong tám cái, vừa không
+      // bảo đảm được máy chủ xoá đúng cái người vận hành muốn.
+      target: (vars: Vars) => `Kết nối “${vars.id}”, đang phục vụ máy ${vars.machineCode}.`,
+      deviceTarget: (vars: Vars) =>
+        `Thiết bị “${vars.id}” trên tuyến RS-485 “${vars.bus}”, đang phục vụ máy ${vars.machineCode}. Các thiết bị còn lại trên đường đó không bị ảnh hưởng.`,
       description:
-        "Thao tác này chỉ xoá cấu hình ĐÃ LƯU — không xoá máy khỏi danh sách dây chuyền. Nếu kết nối này đang chạy, nó vẫn tiếp tục chạy cho đến khi khởi động lại toàn bộ ứng dụng; hệ thống hiện chưa hỗ trợ gỡ máy khỏi danh sách khi đang chạy.",
+        "Thao tác này chỉ xoá cấu hình ĐÃ LƯU — không xoá máy khỏi danh sách dây chuyền. Nếu kết nối này đang chạy, nó vẫn tiếp tục chạy cho đến khi khởi động lại toàn bộ ứng dụng; hệ thống hiện chưa hỗ trợ gỡ máy khỏi danh sách khi đang chạy, nên một kết nối thay thế cho cùng mã máy vẫn sẽ bị từ chối cho tới lúc đó.",
       submit: "Xoá",
       removing: "Đang xoá…",
       cancel: "Huỷ",
@@ -1964,7 +1988,25 @@ export const vi = {
       title: "Thêm một kết nối",
       description: "Chọn giao thức, nhập thông số kết nối, rồi dán hoặc tải lên JSON sơ đồ thanh ghi/nút của máy này.",
       kindModbus: "Modbus TCP",
+      kindModbusRtu: "Modbus RTU (RS-485)",
       kindOpcUa: "OPC-UA",
+      busIdLabel: "Tên tuyến (bus)",
+      busIdPlaceholder: "line1-rs485",
+      busIdHint:
+        "Tên do bạn đặt cho đường dây vật lý này. Mọi thiết bị trên đó được đánh địa chỉ theo dạng <tuyến>:unit<địa chỉ slave>, nên đây chính là cái tên bạn sẽ thấy ở danh sách phía trên và trong cảnh báo. Tuyến không có tên mặc định — một trạm có thể có nhiều đường dây, và không thể có cái nào là “cái Modbus”.",
+      busIdRequired: "Bắt buộc phải đặt tên tuyến.",
+      rtuNote:
+        "Một đường RS-485, N thiết bị, một tài liệu duy nhất. Đặt loại đường truyền và thông số đường dây ở mức gốc (“transport”: “rtu-serial” kèm portName/baudRate/parity/dataBits/stopBits, hoặc “rtu-gateway” kèm host/port của bộ chuyển đổi serial sang TCP), và đặt mọi thiết bị trong mảng “devices” — mỗi phần tử là một sơ đồ thanh ghi hoàn chỉnh của MỘT thiết bị, có machineCode và unitId riêng. Không có gì được kế thừa từ mức tuyến xuống thiết bị, và đó là chủ ý: cái bạn dán vào đây chính là cái mỗi thiết bị lưu lại và driver của nó đọc lại sau này. Nếu chỉ một thiết bị trong mảng bị sai, sẽ KHÔNG có gì được lưu — một tuyến được lưu trọn vẹn hoặc không lưu gì cả.",
+      rtuHardwareLimit:
+        "CHỈ hỗ trợ bộ chuyển đổi RS-485 tự động đảo chiều. Sản phẩm này không điều khiển chân cho phép phát (DE/RE), và cũng không thể làm được: không có tín hiệu “đã phát xong” nào đáng tin để bám vào, nên đảo chiều bằng phần mềm chỉ là một phép đoán thời gian — mà đoán sai thì làm hỏng khung tin của thiết bị khác trên cùng dây. Nếu bộ chuyển đổi của bạn cần phần mềm bật/tắt DE thì sản phẩm này không hỗ trợ. Cũng xin nói rõ: bản build này chưa từng truyền một khung Modbus nào qua cổng COM thật; đường truyền serial mới được kiểm chứng ở lớp ghép nối và qua gateway, chưa nghiệm thu trên bàn với phần cứng.",
+      appliedIsNotProof:
+        "Một lệnh báo “Đã áp dụng” chỉ có nghĩa là đã có một khung xác nhận quay về khớp với yêu cầu — khớp địa chỉ slave, mã hàm, địa chỉ coil và giá trị. Nó KHÔNG chứng minh máy đã thực sự chuyển động: RTU không có gì để buộc một khung tin với một yêu cầu cụ thể, nên một khung echo về muộn của một xung đã kết thúc trước đó vẫn được xác nhận y hệt. Hãy kiểm chứng tác động vật lý bằng cách nhìn vào máy, đừng nhìn vào trường này.",
+      testUnavailableForBus:
+        "Chức năng kiểm tra kết nối chỉ thử MỘT thiết bị và không hiểu khái niệm tuyến — hãy lưu đường dây rồi xem trạng thái từng thiết bị ở danh sách phía trên.",
+      busAppliedLive: (vars: Vars) =>
+        `Đã lưu ${vars.count} thiết bị trên đường dây này và thêm vào dây chuyền. Nếu dây chuyền đang chạy, hệ thống đã tự khởi động lại để áp dụng ngay.`,
+      busSavedRestartNeeded: (vars: Vars) =>
+        `Đã lưu ${vars.count} thiết bị trên đường dây này. Các máy tương ứng đã có sẵn trong danh sách — thay đổi sẽ được áp dụng vào lần Dừng/Chạy lại tiếp theo (hoặc khi khởi động lại ứng dụng), không áp dụng ngay cho dây chuyền đang chạy.`,
       hostLabel: "Host / Địa chỉ IP",
       hostPlaceholder: "10.0.0.5",
       portLabel: "Cổng (Port)",

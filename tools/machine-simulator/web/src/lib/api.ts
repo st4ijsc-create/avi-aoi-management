@@ -1659,6 +1659,27 @@ export interface ConnectorConfigSummary {
   host: string | null
   port: number | null
   updatedAtUtc: string
+  /** 🔴 Task D-1 (`.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md`) — **this
+   * connector INSTANCE's id, and the segment `DELETE /v1/connectors/{instanceId}` takes.** It has been on
+   * the wire since D-1 and this client simply never read it: until Task D-7b `Connectors.tsx` keyed its
+   * list AND built its DELETE URL from `kind`, which was correct only while the registry allowed one
+   * connector per protocol. It no longer does — N devices on one RS-485 line are N connectors of kind
+   * `Modbus` — so `kind` collides as a React key and, far worse, cannot say WHICH of them a Remove button
+   * meant. Use `effectiveInstanceId()` below rather than this field directly: it is optional on the wire
+   * (an older engine omits it) and falls back to `kind`, which is exactly the id such an engine's rows
+   * actually have. */
+  instanceId?: string | null
+  /** 🔴 Task D-7b — the Modbus RTU **bus** this row is one device on, or `null`/absent for a connector
+   * that is not on a shared line (every Modbus TCP and OPC-UA connector). This is what lets the list group
+   * eight rows named `line1:unit1` … `line1:unit8` into ONE physical line instead of showing eight rows
+   * that differ only by a suffix — see `Connectors.tsx`'s own grouping. Deliberately a real field rather
+   * than something a client parses out of `instanceId`: an id is a label, not a schema. */
+  busInstanceId?: string | null
+  /** Task B-6 — `ConnectorConfigSource`: `"Operator"` for a row somebody saved through this screen,
+   * `"Seeded"` for a visibility row auto-populated from this run's `connectors.json`/env-var
+   * configuration (which is where an RS-485 bus declared in a file shows up). Optional so an older engine
+   * that omits it is simply treated as operator-owned, which is that column's own default. */
+  source?: string | null
   /** Task B-3 (`.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md`) —
    * `ConnectorWriteCapability` (`Fleet/ConnectorConfigStore.cs`). `null` for every connector this build has
    * ever accepted before this task, and for any map that simply declares no writable point/command — safe
@@ -1717,6 +1738,12 @@ export interface ConnectorRequestInput {
    * confirmation UI wired up in this build yet (B-6's job) — this field exists so a caller CAN confirm, not
    * so this form does today. */
   confirmedWriteCapabilityFingerprint?: string
+  /** 🔴 Task D-7b — this connector INSTANCE's own id. Omitted means "use `kind`", which is the id every
+   * pre-D-1 row already has, so a form that never sets it keeps configuring exactly the one Modbus / one
+   * OPC-UA connector it always did. **Required when `mapJson` is an RS-485 BUS document** (one that
+   * declares a `transport`): a bus is N connectors sharing one line and cannot fall back to the protocol
+   * kind — the server refuses it with that exact sentence. */
+  instanceId?: string
 }
 
 /** `ConnectorCreateResultDto` (`Fleet/Dtos.cs`). `appliedLive` distinguishes the two honest outcomes a
@@ -1731,6 +1758,20 @@ export interface ConnectorCreateResult {
   appliedLive: boolean
   message: string
   writeCapability: ConnectorWriteCapability
+  /** 🔴 Task D-7b — every device row an RS-485 BUS save produced, in bus order; absent/`null` for a
+   * single-connector save. `config` stays populated for a bus too (it is the FIRST device), so a client
+   * that only reads that field still gets a well-formed row. */
+  devices?: ConnectorConfigSummary[] | null
+}
+
+/** 🔴 Task D-7b — the id that actually addresses one connector, for a wire shape where `instanceId` is
+ * optional. Falls back to `kind`, which is precisely the id a row written by an engine that omits the
+ * field has (the server derives an unnamed instance's id from its kind, on disk and in the registry, and
+ * has done since D-1). Used as the React key AND as the `DELETE` segment — deliberately ONE function, so
+ * the thing the list identifies a row by and the thing the server is asked to remove cannot drift. */
+export function effectiveInstanceId(connector: ConnectorConfigSummary): string {
+  const id = connector.instanceId
+  return id !== null && id !== undefined && id.trim() !== "" ? id : connector.kind
 }
 
 /** `ConnectorDeleteResultDto` (`Fleet/Dtos.cs`). */
@@ -1791,8 +1832,13 @@ const connectorConfigEndpoints = {
   configured: () => connectorConfigRequest<ConnectorConfigSummary[]>("/v1/connectors/configured"),
   create: (input: ConnectorRequestInput) =>
     connectorConfigRequest<ConnectorCreateResult>("/v1/connectors", { method: "POST", body: JSON.stringify(input) }),
-  remove: (kind: string) =>
-    connectorConfigRequest<ConnectorDeleteResult>(`/v1/connectors/${encodeURIComponent(kind)}`, { method: "DELETE" }),
+  // 🔴 Task D-7b — the parameter is the connector INSTANCE id, not the protocol kind. The URL shape is
+  // byte-identical (the server has taken `{instanceId}` since D-1, and for every pre-D-1 row the two
+  // strings are equal), so this is a change to what the CALLER passes, not to the contract: a page that
+  // passed `kind` could only ever delete one connector per protocol, and on a multidrop bus it deleted
+  // whichever device the server's normalisation happened to land on.
+  remove: (instanceId: string) =>
+    connectorConfigRequest<ConnectorDeleteResult>(`/v1/connectors/${encodeURIComponent(instanceId)}`, { method: "DELETE" }),
   test: (input: ConnectorRequestInput) =>
     connectorConfigRequest<ConnectorTestResult>("/v1/connectors/test", { method: "POST", body: JSON.stringify(input) }),
 }

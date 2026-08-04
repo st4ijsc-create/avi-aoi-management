@@ -8,10 +8,14 @@ import { useT } from "@/i18n"
 import { useAuth } from "@/lib/auth"
 import {
   ConnectorConfigApiError,
+  effectiveInstanceId,
   useConfiguredConnectors,
+  useConnectorIssues,
   useCreateConnector,
   useDeleteConnector,
+  useFleet,
   useTestConnector,
+  type ConnectorConfigSummary,
   type ConnectorKind,
   type ConnectorRequestInput,
 } from "@/lib/api"
@@ -88,29 +92,176 @@ function formatUpdatedTime(iso: string): string {
 // Configured connectors — Operator-visible list (GET /v1/connectors/configured), Engineer+ Remove.
 // ─────────────────────────────────────────────────────────────────────────
 
+/** 🔴 Task D-7b — how the list is ORGANISED, which is the decision this screen had to make.
+ *
+ * A multidrop bus arrives as N rows sharing one `busInstanceId`. Rendering them flat produces eight rows
+ * that differ only by a `:unitN` suffix, and the brief is right that that is not intelligible: it makes the
+ * operator do the grouping in their head, every time, and it gives the Remove button nothing to say about
+ * WHICH device it is about to take off the line.
+ *
+ * So a bus is ONE group with its own header — the line it runs on, named once, because the line is a
+ * property of the segment and repeating `COM3` eight times says nothing eight times — and the devices under
+ * it are addressed by their slave position, which is the thing an operator can point at on the physical
+ * wire. Non-bus connectors (Modbus TCP, OPC-UA) are one group of their own with no header, i.e. exactly the
+ * list this screen has always shown; a site with no RS-485 sees no change at all.
+ *
+ * Groups are keyed by `busInstanceId` (a server field), never by parsing `instanceId` — an id is a label,
+ * not a schema. The unit LABEL under a bus header is derived from the id by stripping the bus prefix, and
+ * that is a display transformation on a string the server minted from that same bus id; the identity used
+ * for the React key and the DELETE call is always `effectiveInstanceId`, never this label. */
+interface ConnectorGroup {
+  busInstanceId: string | null
+  connectors: ConnectorConfigSummary[]
+}
+
+function groupConnectors(items: ConnectorConfigSummary[]): ConnectorGroup[] {
+  const groups: ConnectorGroup[] = []
+  const byBus = new Map<string, ConnectorGroup>()
+
+  for (const connector of items) {
+    const bus = connector.busInstanceId
+    if (bus === null || bus === undefined || bus.trim() === "") {
+      let standalone = groups.find((g) => g.busInstanceId === null)
+      if (!standalone) {
+        standalone = { busInstanceId: null, connectors: [] }
+        groups.push(standalone)
+      }
+      standalone.connectors.push(connector)
+      continue
+    }
+
+    let group = byBus.get(bus)
+    if (!group) {
+      group = { busInstanceId: bus, connectors: [] }
+      byBus.set(bus, group)
+      groups.push(group)
+    }
+    group.connectors.push(connector)
+  }
+
+  return groups
+}
+
+/** The device's position on its bus, for display only — `line1:unit3` under bus `line1` reads as `unit3`.
+ * Falls back to the whole id when the prefix does not match, which is the honest answer for a row whose id
+ * the server minted some other way: showing the full id is never wrong, only longer. */
+function devicePositionLabel(instanceId: string, busInstanceId: string): string {
+  const prefix = `${busInstanceId}:`
+  return instanceId.toLowerCase().startsWith(prefix.toLowerCase()) ? instanceId.slice(prefix.length) : instanceId
+}
+
+/** 🔴 Task D-7b — what an operator can actually be told about ONE device, from what this product publishes.
+ *
+ * Two sources, neither of which this screen used before:
+ * - `GET /v1/connectors` (`useConnectorIssues`) is keyed by connector INSTANCE id, and has been since D-1 —
+ *   so on a bus of eight it names the exact device whose factory refused its configuration, not "the Modbus
+ *   connector". That is the difference between "this device did not start" and "something is wrong".
+ * - the fleet snapshot's tile for this device's machine code — present means the machine is in the roster
+ *   and its `statusText` is what every other screen shows for it; absent means the row is configured but
+ *   the machine is not in the roster this session (which is what a refused registration looks like from
+ *   here).
+ *
+ * 🔴 **What is deliberately NOT claimed here: whether this device is BACKED OFF or merely quiet.** D-7a
+ * built that distinction and publishes it on exactly one channel — the application log, where a failed poll
+ * says how many consecutive polls have failed and how long this device is now waiting, and where recovery
+ * says so once with the cadence being restored. It is not on any HTTP projection, and the reason is
+ * recorded on `ModbusRtuReadBackoff` itself: `IDeviceDriver` has no such member, and inventing one would put
+ * a Modbus concept on the seam every driver in the product implements. This card therefore SAYS where the
+ * distinction is published rather than inventing a badge for it — a badge that guessed would be worse than
+ * the sentence, because "backed off" and "not answering" have different remedies. */
+type DeviceLiveState = { kind: "issue"; detail: string } | { kind: "roster"; detail: string } | { kind: "absent" }
+
 function ConfiguredConnectorsCard() {
   const t = useT()
   const gloss = useGloss()
   const { user } = useAuth()
   const { data, isPending, isError } = useConfiguredConnectors()
+  const { data: issues } = useConnectorIssues()
+  const { data: fleet } = useFleet()
   const remove = useDeleteConnector()
-  const [pendingRemoveKind, setPendingRemoveKind] = React.useState<string | null>(null)
+  // 🔴 Task D-7b — the WHOLE row, not a kind. The dialog has to be able to name exactly what it is about to
+  // remove (which device, on which line, serving which machine), and the mutation has to send that row's
+  // instance id. Holding a bare string was what made both impossible: `kind` identifies a protocol, and N
+  // devices on one bus all have the same one.
+  const [pendingRemove, setPendingRemove] = React.useState<ConnectorConfigSummary | null>(null)
 
   const canRemove = meetsMinRole("Engineer", user?.role)
-  const items = data ?? []
+  // Memoized on `data` itself (not on a fresh `?? []` literal, which is a new array identity every render
+  // and would defeat the grouping memo below — oxlint's exhaustive-deps caught exactly that).
+  const items = React.useMemo(() => data ?? [], [data])
+  const groups = React.useMemo(() => groupConnectors(items), [items])
+
+  function liveStateOf(connector: ConnectorConfigSummary): DeviceLiveState {
+    const id = effectiveInstanceId(connector)
+    const issue = (issues ?? []).find((i) => i.id.toLowerCase() === id.toLowerCase())
+    if (issue) return { kind: "issue", detail: issue.error }
+
+    const tile = (fleet?.machines ?? []).find(
+      (m) => m.code.toLowerCase() === connector.machineCode.toLowerCase(),
+    )
+    return tile ? { kind: "roster", detail: tile.statusText } : { kind: "absent" }
+  }
 
   function handleConfirmRemove() {
-    if (!pendingRemoveKind) return
-    remove.mutate(pendingRemoveKind, {
+    if (!pendingRemove) return
+    remove.mutate(effectiveInstanceId(pendingRemove), {
       onSuccess: () => {
         toast.success(t("toast.connectorRemoved"))
-        setPendingRemoveKind(null)
+        setPendingRemove(null)
       },
       onError: () => {
         toast.error(t("toast.connectorRemoveFailed"))
-        setPendingRemoveKind(null)
+        setPendingRemove(null)
       },
     })
+  }
+
+  const columnCount = canRemove ? 7 : 6
+
+  function renderRow(connector: ConnectorConfigSummary, busInstanceId: string | null) {
+    const id = effectiveInstanceId(connector)
+    const live = liveStateOf(connector)
+    const label = busInstanceId === null ? id : devicePositionLabel(id, busInstanceId)
+
+    return (
+      // 🔴 Task D-7b — keyed on the connector INSTANCE, not on `kind`. Eight devices on one bus are eight
+      // rows of kind "Modbus", so the old key collided and React reconciled them as one.
+      <TableRow key={id} data-connector-instance={id}>
+        <TableCell className="font-mono text-xs text-text-strong">{label}</TableCell>
+        <TableCell>
+          <StatusBadge status="ok">{driverKindLabel(t, connector.kind)}</StatusBadge>
+        </TableCell>
+        <TableCell className="font-medium text-text-strong">{connector.machineCode}</TableCell>
+        {/* The line, on every row and not only on the bus header: a row that has scrolled away from its
+            header must still say which physical wire it is on. */}
+        <TableCell className="font-mono text-xs text-text-muted">{formatLine(connector)}</TableCell>
+        <TableCell className="text-xs">
+          {live.kind === "issue" ? (
+            <span className="text-danger-text">{t("connectorConfig.list.state.failedToStart")}</span>
+          ) : live.kind === "absent" ? (
+            <span className="text-warn-text">{t("connectorConfig.list.state.notInRoster")}</span>
+          ) : (
+            <span className="text-text-muted">{live.detail}</span>
+          )}
+        </TableCell>
+        <TableCell className="font-numeric whitespace-nowrap text-text-muted">
+          {formatUpdatedTime(connector.updatedAtUtc)}
+        </TableCell>
+        {canRemove ? (
+          <TableCell className="text-right">
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              aria-label={t("connectorConfig.list.table.removeAria", { id, machineCode: connector.machineCode })}
+              onClick={() => setPendingRemove(connector)}
+            >
+              {t("connectorConfig.list.table.remove")}
+            </Button>
+          </TableCell>
+        ) : null}
+      </TableRow>
+    )
   }
 
   return (
@@ -129,50 +280,83 @@ function ConfiguredConnectorsCard() {
           {t("connectorConfig.list.empty")}
         </div>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("connectorConfig.list.table.kind")}</TableHead>
-              <TableHead>{t("connectorConfig.list.table.machineCode")}</TableHead>
-              <TableHead>{t("connectorConfig.list.table.hostPort")}</TableHead>
-              <TableHead>{t("connectorConfig.list.table.updated")}</TableHead>
-              {canRemove ? <TableHead className="text-right">{t("connectorConfig.list.table.remove")}</TableHead> : null}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.map((connector) => (
-              <TableRow key={connector.kind}>
-                <TableCell>
-                  <StatusBadge status="ok">{driverKindLabel(t, connector.kind)}</StatusBadge>
-                </TableCell>
-                <TableCell className="font-medium text-text-strong">{connector.machineCode}</TableCell>
-                <TableCell className="font-mono text-xs text-text-muted">
-                  {connector.host ? `${connector.host}:${connector.port}` : "—"}
-                </TableCell>
-                <TableCell className="font-numeric whitespace-nowrap text-text-muted">
-                  {formatUpdatedTime(connector.updatedAtUtc)}
-                </TableCell>
-                {canRemove ? (
-                  <TableCell className="text-right">
-                    <Button type="button" variant="outline" size="xs" onClick={() => setPendingRemoveKind(connector.kind)}>
-                      {t("connectorConfig.list.table.remove")}
-                    </Button>
-                  </TableCell>
-                ) : null}
+        <>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("connectorConfig.list.table.instanceId")}</TableHead>
+                <TableHead>{t("connectorConfig.list.table.kind")}</TableHead>
+                <TableHead>{t("connectorConfig.list.table.machineCode")}</TableHead>
+                <TableHead>{t("connectorConfig.list.table.hostPort")}</TableHead>
+                <TableHead>{t("connectorConfig.list.table.state")}</TableHead>
+                <TableHead>{t("connectorConfig.list.table.updated")}</TableHead>
+                {canRemove ? <TableHead className="text-right">{t("connectorConfig.list.table.remove")}</TableHead> : null}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {groups.map((group) =>
+                group.busInstanceId === null ? (
+                  <React.Fragment key="__standalone">{group.connectors.map((c) => renderRow(c, null))}</React.Fragment>
+                ) : (
+                  <React.Fragment key={group.busInstanceId}>
+                    {/* The bus header: the LINE, named once, because it is a property of the segment. The
+                        first device's host/port is the whole bus's — every row of one bus carries the same
+                        line (see ConnectorConfigRecord.Host server-side), so reading it off any of them is
+                        reading the bus's own, not picking between candidates. */}
+                    <TableRow className="bg-surface-subtle" data-connector-bus={group.busInstanceId}>
+                      <TableCell colSpan={columnCount} className="text-xs">
+                        <span className="font-medium text-text-strong">
+                          {t("connectorConfig.list.bus.title", { bus: group.busInstanceId })}
+                        </span>{" "}
+                        <span className="font-mono text-text-muted">
+                          {formatLine(group.connectors[0])}
+                        </span>{" "}
+                        <span className="text-text-muted">
+                          {t("connectorConfig.list.bus.deviceCount", { count: group.connectors.length })}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                    {group.connectors.map((c) => renderRow(c, group.busInstanceId))}
+                  </React.Fragment>
+                ),
+              )}
+            </TableBody>
+          </Table>
+
+          {/* 🔴 Blueprint §9 + D-7a's backoff reporting, said where an operator configuring a line will
+              read it rather than only in a plan document. See DeviceLiveState's own comment for why the
+              backed-off/quiet distinction is a sentence here and not a badge. */}
+          {groups.some((g) => g.busInstanceId !== null) ? (
+            <p className="text-xs text-text-muted">{t("connectorConfig.list.bus.quietVersusBackedOff")}</p>
+          ) : null}
+        </>
       )}
 
-      <Dialog open={pendingRemoveKind !== null} onOpenChange={(open) => !open && setPendingRemoveKind(null)}>
+      <Dialog open={pendingRemove !== null} onOpenChange={(open) => !open && setPendingRemove(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("connectorConfig.removeConfirm.title")}</DialogTitle>
+            {/* 🔴 Task D-7b — the dialog NAMES the connector instance and its machine. Before this task it
+                could not: the flow carried a protocol kind, so on a bus of eight it could neither say which
+                device was about to go nor guarantee the server removed the one meant. */}
+            <DialogDescription>
+              {pendingRemove
+                ? pendingRemove.busInstanceId
+                  ? t("connectorConfig.removeConfirm.deviceTarget", {
+                      id: effectiveInstanceId(pendingRemove),
+                      machineCode: pendingRemove.machineCode,
+                      bus: pendingRemove.busInstanceId,
+                    })
+                  : t("connectorConfig.removeConfirm.target", {
+                      id: effectiveInstanceId(pendingRemove),
+                      machineCode: pendingRemove.machineCode,
+                    })
+                : null}
+            </DialogDescription>
             <DialogDescription>{t("connectorConfig.removeConfirm.description")}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setPendingRemoveKind(null)} disabled={remove.isPending}>
+            <Button type="button" variant="outline" onClick={() => setPendingRemove(null)} disabled={remove.isPending}>
               {t("connectorConfig.removeConfirm.cancel")}
             </Button>
             <Button type="button" variant="destructive" onClick={handleConfirmRemove} disabled={remove.isPending}>
@@ -186,14 +370,32 @@ function ConfiguredConnectorsCard() {
   )
 }
 
+/** The physical line a connector runs on, as the server projected it into `host`/`port`. A serial RS-485
+ * bus has a port NAME and no port number, and the server writes `null` there deliberately so this never
+ * renders `COM3:0` — a string that reads as an address that could be dialled. */
+function formatLine(connector: ConnectorConfigSummary | undefined): string {
+  if (!connector?.host) return "—"
+  return connector.port === null || connector.port === undefined ? connector.host : `${connector.host}:${connector.port}`
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Add a connector — Engineer+ only (the whole card; see ConnectorsScreen's own RequireRole wrap).
 // ─────────────────────────────────────────────────────────────────────────
 
+/** 🔴 Task D-7b — the three things this form can create, which is NOT the same list as the two protocols
+ * the product drives. `ModbusRtu` is not a fourth `DriverKinds` value and never was (see
+ * `ModbusRtuBusSettings.TransportProperty` server-side: the thing that makes a Modbus document a BUS is that
+ * it declares a transport, not a different kind) — it is a different SHAPE of the same kind, and it needs a
+ * different form because a bus has a name and N devices and no single host/port of its own. Keeping it a tab
+ * rather than "paste a bus document into the Modbus tab and hope" is what lets the form ask for the one field
+ * a bus cannot do without: its id. */
+type FormMode = "Modbus" | "OpcUa" | "ModbusRtu"
+
 function AddConnectorCard() {
   const t = useT()
   const gloss = useGloss()
-  const [kind, setKind] = React.useState<ConnectorKind>("Modbus")
+  const [mode, setMode] = React.useState<FormMode>("Modbus")
+  const [busInstanceId, setBusInstanceId] = React.useState("")
   const [host, setHost] = React.useState("")
   const [port, setPort] = React.useState(502)
   const [mapJson, setMapJson] = React.useState("")
@@ -205,11 +407,16 @@ function AddConnectorCard() {
   const test = useTestConnector()
 
   function buildInput(): ConnectorRequestInput {
-    return kind === "Modbus" ? { kind, host: host.trim(), port, mapJson } : { kind, mapJson }
+    if (mode === "OpcUa") return { kind: "OpcUa" as ConnectorKind, mapJson }
+    if (mode === "Modbus") return { kind: "Modbus" as ConnectorKind, host: host.trim(), port, mapJson }
+    // An RS-485 bus: the KIND is still Modbus (see FormMode) and there is no host/port at this level —
+    // the line lives inside the document, as a port name or a gateway address, and the server projects it
+    // into the store's own host/port columns from there. What the request must carry is the bus's id.
+    return { kind: "Modbus" as ConnectorKind, mapJson, instanceId: busInstanceId.trim() }
   }
 
   function handleKindChange(value: string) {
-    setKind(value as ConnectorKind)
+    setMode(value as FormMode)
     setTestResult(null)
     setFormError(null)
   }
@@ -246,7 +453,22 @@ function AddConnectorCard() {
         // One toast, not two — its own text already carries whether this applied live or needs a
         // restart (see ConnectorCreateResult.appliedLive's own doc comment in lib/api.ts), so a separate
         // generic "connector saved" toast right before it would just be noise.
-        toast.success(result.appliedLive ? t("connectorConfig.form.appliedLive") : t("connectorConfig.form.savedRestartNeeded"))
+        //
+        // 🔴 Task D-7b — a bus save created N connectors, and saying "connector saved" for eight devices
+        // would understate by a factor of eight exactly where the operator most needs to know the count
+        // matched the file they pasted. `devices` is the server's own count, never this form's.
+        const devices = result.devices
+        if (devices && devices.length > 0) {
+          toast.success(
+            t(
+              result.appliedLive ? "connectorConfig.form.busAppliedLive" : "connectorConfig.form.busSavedRestartNeeded",
+              { count: devices.length },
+            ),
+          )
+          setBusInstanceId("")
+        } else {
+          toast.success(result.appliedLive ? t("connectorConfig.form.appliedLive") : t("connectorConfig.form.savedRestartNeeded"))
+        }
       },
       onError: (err) => {
         let key = "connectorConfig.errors.generic"
@@ -260,16 +482,23 @@ function AddConnectorCard() {
     })
   }
 
-  const missingRequiredField = !mapJson.trim() || (kind === "Modbus" && !host.trim())
+  const missingRequiredField =
+    !mapJson.trim() || (mode === "Modbus" && !host.trim()) || (mode === "ModbusRtu" && !busInstanceId.trim())
   const busy = create.isPending || test.isPending
+  // 🔴 The connectivity probe builds ONE throwaway driver from ONE single-device map
+  // (ConnectorEndpoints.TestConnectorAsync) — it has no concept of a bus, and handing it a bus document
+  // would report the fan-out's own parse refusal as "cannot reach the device", which is a different
+  // problem with a different remedy. Disabled rather than silently misleading; the form says why.
+  const canTest = mode !== "ModbusRtu"
 
   return (
     <Sheet title={t("connectorConfig.form.title")} titleEn={gloss("connectorConfig.form.title")} bodyClassName="flex flex-col gap-4">
       <p className="text-sm text-text-muted">{t("connectorConfig.form.description")}</p>
 
-      <Tabs value={kind} onValueChange={handleKindChange}>
+      <Tabs value={mode} onValueChange={handleKindChange}>
         <TabsList>
           <TabsTrigger value="Modbus">{t("connectorConfig.form.kindModbus")}</TabsTrigger>
+          <TabsTrigger value="ModbusRtu">{t("connectorConfig.form.kindModbusRtu")}</TabsTrigger>
           <TabsTrigger value="OpcUa">{t("connectorConfig.form.kindOpcUa")}</TabsTrigger>
         </TabsList>
 
@@ -295,6 +524,34 @@ function AddConnectorCard() {
                 className="font-numeric"
               />
             </FormField>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="ModbusRtu" className="pt-4">
+          <div className="flex flex-col gap-3">
+            <FormField
+              label={t("connectorConfig.form.busIdLabel")}
+              labelEn={gloss("connectorConfig.form.busIdLabel")}
+              htmlFor="conn-bus-id"
+              hint={t("connectorConfig.form.busIdHint")}
+            >
+              <Input
+                id="conn-bus-id"
+                value={busInstanceId}
+                onChange={(e) => setBusInstanceId(e.target.value)}
+                placeholder={t("connectorConfig.form.busIdPlaceholder")}
+                className="font-mono"
+              />
+            </FormField>
+            <p className="text-xs text-text-muted">{t("connectorConfig.form.rtuNote")}</p>
+            {/* 🔴 Blueprint §9, at the point of configuration rather than only in a plan document: the
+                failure an automatic-DE-only product has with a manual-DE adapter is SILENT. */}
+            <p className="text-xs text-warn-text" role="note">
+              {t("connectorConfig.form.rtuHardwareLimit")}
+            </p>
+            {/* 🔴 Blueprint §10 item 3: `Applied` is an acknowledgement, not an observation. Said where the
+                capability is granted, because that is where the operator forms the belief. */}
+            <p className="text-xs text-text-muted">{t("connectorConfig.form.appliedIsNotProof")}</p>
           </div>
         </TabsContent>
 
@@ -343,7 +600,7 @@ function AddConnectorCard() {
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="outline" onClick={handleTest} disabled={busy || missingRequiredField}>
+        <Button type="button" variant="outline" onClick={handleTest} disabled={busy || missingRequiredField || !canTest}>
           {test.isPending ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
           ) : (
@@ -351,6 +608,7 @@ function AddConnectorCard() {
           )}
           {test.isPending ? t("connectorConfig.form.testing") : t("connectorConfig.form.test")}
         </Button>
+        {canTest ? null : <span className="text-xs text-text-muted">{t("connectorConfig.form.testUnavailableForBus")}</span>}
         <Button type="button" onClick={handleSave} disabled={busy || missingRequiredField}>
           {create.isPending ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />

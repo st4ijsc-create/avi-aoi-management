@@ -229,32 +229,16 @@ public static class ConnectorsJsonRegistration
             return 0;
         }
 
-        string busKey;
-        Func<CancellationToken, Task<IModbusBusLink>> openLink;
-        string? limitNotice = null;
+        ModbusRtuBusPlan plan;
 
         try
         {
-            // 🔴 The switch. ReadTransport never throws and answers null for a document too malformed to read —
-            // which cannot happen here (DeclaresATransport already said yes) but is answered anyway rather than
-            // asserted away: the ELSE arm is the gateway parser, which produces the same named refusal for a
-            // blank/absent transport that it always has, so an unreachable state degrades into an existing
-            // message instead of a NullReferenceException.
-            var transport = ModbusRtuBusSettings.ReadTransport(entry.SettingsJson);
-
-            if (string.Equals(transport, ModbusRtuBusSettings.SerialTransport, StringComparison.OrdinalIgnoreCase))
-            {
-                var serial = ModbusRtuSerialBusSettings.Parse(entry.SettingsJson);
-                busKey = serial.BusKey;
-                openLink = serial.Opener();
-                limitNotice = serial.DescribeLimit();
-            }
-            else
-            {
-                var gateway = ModbusRtuBusSettings.Parse(entry.SettingsJson);
-                busKey = gateway.BusKey;
-                openLink = gateway.Opener();
-            }
+            // 🔴 Task D-7b — THE switch used to be written out here. It now lives in ModbusRtuBusPlan.Resolve,
+            // because D-7b adds three more callers of it (POST /v1/connectors, the visibility seeder, and the
+            // startup path that rebuilds a bus from persisted rows) and four copies of a two-arm transport
+            // switch is four chances for one of them to open the wrong thing. Behaviour here is unchanged, arm
+            // for arm — see that type's own remarks, which carry this method's original reasoning verbatim.
+            plan = ModbusRtuBusPlan.Resolve(entry.SettingsJson);
         }
         catch (Exception ex)
         {
@@ -273,8 +257,8 @@ public static class ConnectorsJsonRegistration
             entry.SettingsJson,
             busInstanceId,
             busWideWorstCaseHoldMs => new ModbusRtuConnectorFactory(
-                busKey: busKey,
-                openLink: openLink,
+                busKey: plan.BusKey,
+                openLink: plan.OpenLink,
                 busRegistry: modbusBusRegistry,
                 writeQueueBudgetMs: busWideWorstCaseHoldMs,
                 logWarning: msg => logger.LogWarning("{ModbusRtuMsg}", msg),
@@ -291,10 +275,10 @@ public static class ConnectorsJsonRegistration
         // Logged AFTER the fan-out and only when the bus actually registered something, so a bus that was going
         // to be disabled anyway does not also emit a hardware caveat about a line it will never drive — and
         // once per bus, not once per device, because the limit is a property of the SEGMENT.
-        if (limitNotice is not null && registered > 0)
+        if (plan.LimitNotice is not null && registered > 0)
         {
             logger.LogWarning("connectors.json entry '{ConnectorId}': {ModbusRtuSerialLimit}",
-                entry.Id, limitNotice);
+                entry.Id, plan.LimitNotice);
         }
 
         return registered;

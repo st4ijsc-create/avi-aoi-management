@@ -153,6 +153,18 @@ public static class ConnectorConfigValidation
         return true;
     }
 
+    /// <summary>🔴 Task D-7b — the SAME capability adaptation the single-connector Modbus path above performs,
+    /// exposed for the multidrop path (<see cref="RtuBusConfiguration"/>), which has already parsed each
+    /// device's map through <see cref="ModbusMultidropMap.FanOut"/> and must not re-derive what a map grants a
+    /// second, possibly-inconsistent way. One derivation, two callers — the same rule
+    /// <see cref="ConnectorConfigVisibilitySeeder"/> follows by reusing <see cref="TryValidate"/> rather than
+    /// re-computing.</summary>
+    public static ConnectorWriteCapability CapabilityOf(ModbusRegisterMap map)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        return BuildWriteCapability(map.WritablePointBounds, map.CommandTargets);
+    }
+
     /// <summary>Task B-3 fix round 1 (Important #1) — adapts <see cref="ModbusRegisterMap.WritablePointBounds"/>/
     /// <see cref="ModbusRegisterMap.CommandTargets"/> into the generic <see cref="ConnectorWriteCapability"/>
     /// shape the store/save-gate share. Modbus's bounds are always non-null (mandatory at parse time) but

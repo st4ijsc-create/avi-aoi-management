@@ -271,7 +271,14 @@ public sealed record ConnectorWriteCapabilityDto(
 /// <see cref="St4i.EngineApi.Endpoints.SiteEndpoints.RotateIdentityAsync"/>'s own doc comment): whatever a
 /// save just granted must be impossible to miss in the response, not a field a caller has to know to go
 /// looking for.</para></summary>
-public sealed record ConnectorCreateResultDto(ConnectorWriteCapabilityDto WriteCapability, ConnectorConfigSummary Config, bool AppliedLive, string Message);
+/// <param name="Devices">🔴 Task D-7b — every device row a Modbus RTU BUS save produced, in bus order;
+/// <see langword="null"/> for every single-connector save (which is every save this endpoint accepted before
+/// D-7b). <see cref="Config"/> stays populated for a bus too — it is the FIRST device — so a pre-D-7b client
+/// reading only that field still gets a well-formed row rather than a null, and a D-7b client reading this
+/// one learns that the request created N connectors rather than the one its shape implies.</param>
+public sealed record ConnectorCreateResultDto(
+    ConnectorWriteCapabilityDto WriteCapability, ConnectorConfigSummary Config, bool AppliedLive, string Message,
+    IReadOnlyList<ConnectorConfigSummary>? Devices = null);
 
 /// <summary>The <c>DELETE /v1/connectors/{instanceId}</c> response (the segment was <c>{kind}</c> before Task D-1). <c>Message</c> states plainly that this only
 /// removes the PERSISTED configuration — <see cref="FleetHost.RegisterMachine"/> has no unregister, so a

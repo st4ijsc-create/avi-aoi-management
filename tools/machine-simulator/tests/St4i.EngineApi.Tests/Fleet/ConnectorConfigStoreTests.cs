@@ -502,7 +502,10 @@ public sealed class ConnectorConfigStoreTests
         // Opening the store is what runs the ladder — the same thing a product upgrade does on first boot.
         var store = new ConnectorConfigStore(dir);
 
-        Assert.Equal(4, ReadUserVersion(dir));
+        // 🔴 Task D-7b raised the ladder's top rung 4 -> 5 (bus_instance_id/bus_settings_json). The number is
+        // the CURRENT top, not "the rung this test is about": a v3 database opened by this build must land on
+        // the newest rung, and an assertion frozen at 4 would go green while the last rung silently never ran.
+        Assert.Equal(5, ReadUserVersion(dir));
 
         var all = await store.ListAsync();
         Assert.Equal(2, all.Count);
@@ -581,7 +584,8 @@ public sealed class ConnectorConfigStoreTests
 
         var store = new ConnectorConfigStore(dir);
 
-        Assert.Equal(4, ReadUserVersion(dir));
+        // 🔴 Task D-7b — see the sibling test above for why this is the ladder's current top rung, not 4.
+        Assert.Equal(5, ReadUserVersion(dir));
         Assert.Empty(await store.ListAsync());
 
         await store.SaveAsync("Modbus", "MB-AFTER-UPGRADE", "10.0.0.5", 502, "{}");

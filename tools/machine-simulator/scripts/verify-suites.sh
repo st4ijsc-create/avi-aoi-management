@@ -1019,7 +1019,58 @@ EXPECT_EDGESERVICE=28
 #          for the ENGINE ONLY, deliberately: measured, St4i.EdgeService and St4iMachineSimulator have no
 #          ConnectorRegistry, no IConnectorFactory and no connectors.json reader, so neither has IL that could
 #          reference the serial assembly and asserting that it does would assert something false.
-EXPECT_ENGINEAPI=1226
+#
+# 🔴 TASK D-7b raises this 1226 -> 1251 (+25). Counted from the runner (three `dotnet test --filter` runs,
+# 14/6/5), not by hand — D-2's rule: a total that reconciles is not evidence that anybody knows where the
+# tests are. Three NEW files; no pre-existing EngineApi test is added or removed. Two pre-existing assertions
+# CHANGE VALUE without moving the count: ConnectorConfigStoreTests' two `Assert.Equal(4, ReadUserVersion(dir))`
+# become 5, because the migration ladder grew a rung (bus_instance_id/bus_settings_json). They assert the
+# ladder's CURRENT top rather than "the rung this test is about", which is what makes a v3 database opened by
+# this build prove that the LAST rung ran too.
+#
+#   +14  ConnectorRtuBusEndpointTests           (new) — POST /v1/connectors creating a BUS, the first of the
+#          two endpoint gaps D-7a deferred with an argument. 3 devices -> 3 store rows, 3 registry claims, 3
+#          roster machines; the LINE projection through the endpoint for both transports; 🔴 the partial-
+#          failure pair, which is the point — device 5 of 8 invalid and a third device colliding with an
+#          existing claim BOTH leave zero rows, zero registrations and an unchanged roster, asserted on all
+#          three surfaces rather than on a status code (a 400 that had already written seven rows satisfies a
+#          status assertion); a re-save that DROPS a device losing exactly that row; a bus with no instanceId
+#          and a bus named like a device position both refused; an ordinary Modbus TCP save proved to still
+#          take the single-connector path; DELETE removing exactly one device of two with its sibling's claim
+#          intact; the last device's delete saying the bus is gone; and B-3's save gate over a whole bus, whose
+#          discriminating half is that re-pointing ONE device's register changes the required fingerprint.
+#          🔴 The LAST TWO of the fourteen exist ONLY because a mutation survived, and both were reached by
+#          attempting the counterexample on a DIFFERENT AXIS than the one the code was reasoned about
+#          (blueprint §8.1, principle 1). The rollback branch was written for a concurrent registration,
+#          which no test can stage — so deleting the rollback SURVIVED. The axis that reaches it is not
+#          concurrency at all but the BUS'S OWN NAMESPACE: swapping two devices' machine codes between two
+#          slave addresses passes the pre-check (every incumbent claim belongs to an id this bus is about to
+#          re-register) and is then refused by Register itself, deterministically, after the store has been
+#          written. ABusSaveThatFailsToRegister_… kills the store half; a SECOND mutation (leave the partial
+#          registrations behind) then survived THAT, because in a two-device swap the first device is the one
+#          that fails and nothing is registered yet to undo — so ABusSaveThatFailsPartWayThrough_… moves the
+#          swap to units 2 and 3 of three, putting one success ahead of the refusal. Its assertion is the
+#          DOCUMENTED LIMIT (the re-registered id ends up registered by nothing, because Register is
+#          last-write-wins and the incumbent entry was destroyed at the moment of success), not an optimistic
+#          one — asserting that the previous binding came back would assert something false.
+#   + 6  ConnectorConfigStoreBusProjectionTests (new) — 🔴 the store BOUNDARY, where the SummaryColumns/
+#          FullColumns split actually lives and where D-7c said D-7a's projection decision had to be asserted:
+#          portName in `host`, NULL in `port`, through BOTH projections. The credential-free projection is
+#          proved to carry neither the bus document nor the map — by putting a recognisable sentinel in each
+#          and serializing the whole returned summary, which is a statement about the SQL rather than about a
+#          C# type's property list. Plus: a bus save replaces its whole row set; a restore puts the exact
+#          previous set back INCLUDING created_at (without the explicit @created_at parameter this is the one
+#          that fails, and it fails in the direction that rewrites history); an empty restore is a pure delete;
+#          a bus save leaves a connector whose id merely SHARES A PREFIX alone; and a pre-D-7b row reads back
+#          with no bus at all.
+#   + 5  ConnectorConfigVisibilitySeederBusTests (new) — the second endpoint gap: GET /v1/connectors/configured
+#          now seeds an RTU bus, removing D-7a's explicit Program.cs skip. N rows one per device, tagged
+#          Seeded, carrying the line; a re-seed LOSING a device the operator deleted from connectors.json (an
+#          insert-only seeder leaves a row for a device that is not on the wire); 🔴 a bus with ANY operator-
+#          owned row skipped WHOLE and warned about, because half a seeded bus is worse than none; and two
+#          never-throws arms (a malformed device, an unreadable transport) that seed nothing and warn naming
+#          the offending element.
+EXPECT_ENGINEAPI=1251
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

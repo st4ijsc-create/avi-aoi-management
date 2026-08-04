@@ -1194,16 +1194,21 @@ var persistedConnectorSeeds = new List<St4i.EdgeCore.Models.MachineDescriptor>()
 
     foreach (var entry in resolvedConnectorEntriesForSeeding)
     {
-        // 🔴 Task D-7a — a Modbus RTU entry is a BUS, not a connector: it fans out into N registered
-        // instances, and ConnectorConfigVisibilitySeeder seeds exactly ONE row from ONE single-device map.
-        // Handing it a bus document would make ModbusRegisterMap.FromJson throw on every startup and log a
-        // warning about a 'machineCode' the operator never omitted. Skipped explicitly rather than left to
-        // fail: seeding N visibility rows for a bus is the UI half of this feature (D-7b), and until it
-        // exists an RTU bus is visible through GET /v1/connectors and the startup log, not through
-        // GET /v1/connectors/configured. Stated here because a silently missing row is exactly the shape an
-        // operator cannot diagnose.
+        // 🔴 Task D-7b — a Modbus RTU entry is a BUS, not a connector: it fans out into N registered
+        // instances, and SeedVisibility above seeds exactly ONE row from ONE single-device map. D-7a skipped
+        // this case explicitly, with the reason written at the skip, because seeding N rows was the UI half
+        // of the feature; that placeholder is removed here. The bus is seeded through the arm that knows what
+        // a bus is — N device rows in one transaction, keyed under the SAME id
+        // ConnectorsJsonRegistration.RegistrationKeyOf registers this entry under, so the visibility rows and
+        // the live registrations share one namespace by construction.
         if (St4i.EdgeCore.Drivers.Modbus.ModbusRtuBusSettings.DeclaresATransport(entry.SettingsJson))
         {
+            St4i.EngineApi.Fleet.ConnectorConfigVisibilitySeeder.SeedBusAsync(
+                    connectorConfigStore,
+                    St4i.EngineApi.Config.ConnectorsJsonRegistration.RegistrationKeyOf(entry),
+                    entry.SettingsJson,
+                    logWarning: msg => Console.Error.WriteLine($"[startup] {msg}"))
+                .GetAwaiter().GetResult();
             continue;
         }
 
@@ -1348,8 +1353,77 @@ builder.Services.AddSingleton(sp =>
     alreadyConfiguredKinds.UnionWith(
         resolvedConnectorEntries.Select(St4i.EngineApi.Config.ConnectorsJsonRegistration.RegistrationKeyOf));
 
+    // 🔴 Task D-7b — the persisted RS-485 buses, registered BEFORE the single-connector loop below and never
+    // through it. A device row is not independently registerable: it carries its own single-device map and its
+    // own line (see ConnectorConfigRecord.BusSettingsJson), but the ONE ModbusRtuConnectorFactory a bus needs
+    // is built from a bus-wide number (the largest WorstCaseBusHoldMs on the line) and holds the one bus key
+    // its N drivers share — so the unit of registration is the bus, not the row. Handing a device row to the
+    // loop below would register it as a Modbus TCP connector against a host it does not have.
+    var persistedBusGroups = persistedConnectorRows
+        .Where(r => !string.IsNullOrWhiteSpace(r.BusInstanceId))
+        .GroupBy(r => r.BusInstanceId!, StringComparer.Ordinal);
+
+    foreach (var group in persistedBusGroups)
+    {
+        if (alreadyConfiguredKinds.Contains(St4i.Connector.Abstractions.Models.DriverKinds.Normalize(group.Key)))
+        {
+            // A connectors.json entry already registered this same bus id this run and wins, exactly as it
+            // does for a single connector. Only an OPERATOR-owned bus is worth warning about — a Seeded one is
+            // this run's own visibility artifact for the very entry that just won (Task B-6 fix round 1, I3).
+            if (group.Any(r => r.Source == St4i.EngineApi.Fleet.ConnectorConfigSource.Operator))
+            {
+                connectorsLogger.LogWarning(
+                    "Persisted Modbus RTU bus '{BusInstanceId}' ({DeviceCount} device(s)) ignored — a " +
+                    "connectors.json entry already configures a connector under this same id for this run; that " +
+                    "source takes precedence.", group.Key, group.Count());
+            }
+            continue;
+        }
+
+        var busRows = group.OrderBy(r => r.EffectiveInstanceId, StringComparer.Ordinal).ToList();
+
+        // Every row of one bus was written by ONE SaveBusAsync transaction, so their bus documents are the
+        // same string. Taking the first (by instance id, so the choice is deterministic rather than
+        // dictionary-ordered) is therefore reading the bus's document, not picking between candidates.
+        var busSettingsJson = busRows[0].BusSettingsJson;
+        if (!St4i.EngineApi.Fleet.RtuBusConfiguration.TryResolve(
+                group.Key, busSettingsJson,
+                logWarning: msg => connectorsLogger.LogWarning("{ModbusRtuMsg}", msg),
+                out var persistedBus, out var busError))
+        {
+            connectorsLogger.LogWarning(
+                "Persisted Modbus RTU bus '{BusInstanceId}' failed to validate at startup and was skipped — no " +
+                "device on that line runs this session: {Error}", group.Key, busError);
+            continue;
+        }
+
+        if (!St4i.EngineApi.Fleet.RtuBusConfiguration.TryRegisterAll(
+                persistedBus, sp.GetRequiredService<St4i.EdgeCore.Drivers.Modbus.ModbusBusRegistry>(),
+                registry, connectorsLogger, out var busRefusal))
+        {
+            connectorsLogger.LogWarning(
+                "Persisted Modbus RTU bus '{BusInstanceId}' did not register and no device on that line runs " +
+                "this session: {Refusal}", group.Key, busRefusal);
+            continue;
+        }
+
+        if (persistedBus.Plan.LimitNotice is not null)
+        {
+            connectorsLogger.LogWarning("Modbus RTU bus '{BusInstanceId}': {ModbusRtuSerialLimit}",
+                group.Key, persistedBus.Plan.LimitNotice);
+        }
+
+        foreach (var device in persistedBus.Devices)
+        {
+            persistedConnectorSeeds.Add(St4i.EngineApi.Fleet.RtuBusConfiguration.DescriptorFor(device));
+        }
+    }
+
     foreach (var row in persistedConnectorRows)
     {
+        // 🔴 Task D-7b — a bus DEVICE row was already handled, as part of its bus, above.
+        if (!string.IsNullOrWhiteSpace(row.BusInstanceId)) continue;
+
         // Task D-1 — matched on the row's INSTANCE id, not its kind. `alreadyConfiguredKinds` is also
         // precisely the set of instance ids the two sources above registered under, because both of them
         // deliberately leave the instance id to default to the kind (see their own notes) — so for every row

@@ -2053,12 +2053,32 @@ file existed** — an existing install driven purely by env vars is unaffected.
   a `connectors.json` entry missing a non-blank `kind` or a `settings` value is skipped with a warning
   naming it (by `id`, or its 1-based position); every other valid entry still loads. Only genuinely
   unparseable JSON (bad syntax, or a non-array root) falls back to "no connectors.json entries" wholesale.
-- **Precedence when both an env var and a `connectors.json` entry configure the same kind: the env var
-  always wins**, and the conflicting `connectors.json` entry is skipped with a logged warning naming the
-  conflict — this is what keeps "an existing install with only the four env vars set behaves
-  byte-identically" true even after that install later gains an unrelated `connectors.json`. Two
-  `connectors.json` entries for the same kind are similarly de-duplicated (first one in the file wins,
-  the rest are skipped with a warning), since the registry itself only ever holds one factory per kind.
+- **Precedence when both an env var and a `connectors.json` entry configure the same connector: the env
+  var always wins**, and the conflicting `connectors.json` entry is skipped with a logged warning naming
+  the conflict — this is what keeps "an existing install with only the four env vars set behaves
+  byte-identically" true even after that install later gains an unrelated `connectors.json`. Two entries
+  for the same connector are similarly de-duplicated (first one in the file wins, the rest are skipped
+  with a warning).
+
+  > 🔴 **CORRECTED (Đợt D, D-7b census) — this bullet used to say "the same KIND", and to justify it
+  > with "since the registry itself only ever holds one factory per kind".** That justification is
+  > **false** since D-1 (the registry is keyed per connector INSTANCE — §19.4), and the rule it justified
+  > was **incomplete**: both comparisons are made on the **registration key**
+  > (`ConnectorsJsonRegistration.RegistrationKeyOf`), which is the kind for a Modbus TCP / OPC-UA entry
+  > and the entry's **own `id`** for an RTU bus. Stated as "kind", an unrelated env-var Modbus TCP
+  > connector would suppress an RS-485 line, and a site's second RS-485 line would be called a duplicate
+  > of its first.
+
+> 🔴 **Modbus RTU / RS-485 (Đợt D) — where the schema actually is, and this pointer closes a dead
+> end.** §16.4's own RTU paragraph sends a reader here "for that file's general mechanics" while noting
+> that this section **said nothing about RTU**, and until D-7b that was literally true — the RTU schema
+> existed only in §16.4's own block and in `ModbusRtuBusSettings`'s doc comment. The general mechanics
+> above (loading, precedence, per-entry failure isolation) **do all apply unchanged to an RTU entry**; what
+> is different is three things, and every one of them is in **§23**: an RTU `settings` blob declares a
+> `transport` and therefore describes a **bus** rather than one connector (§23.1); that entry's own `id`
+> becomes the bus's instance id rather than being discarded (§23.2); and one entry fans out into **N**
+> registered connectors, N machine claims and N roster machines (§23.3). A Modbus entry that declares no
+> `transport` is a Modbus **TCP** connector and behaves exactly as this section describes.
 
 **`GET /v1/connectors`** (Operator role) surfaces every currently-configured connector whose most recent
 start attempt failed — an operator-visible answer to "my connector just isn't there," instead of only a
@@ -2076,7 +2096,15 @@ nạp plugin bên thứ ba); `settings` là JSON NHÚNG TRỰC TIẾP (không ph
 Modbus/OPC-UA đúng bằng nội dung file register-/node-map hiện có, chuyển nguyên văn cho connector, không
 diễn giải lại. Một mục lỗi (thiếu `kind`/`settings`) chỉ bị bỏ qua kèm cảnh báo nêu tên, không huỷ cả
 file — cùng bài học đã áp dụng cho `fleet.json`. Khi biến môi trường VÀ một mục `connectors.json` cùng
-cấu hình một `kind`: **biến môi trường luôn thắng**, mục xung đột bị bỏ qua kèm cảnh báo nêu rõ xung đột.
+cấu hình MỘT KẾT NỐI: **biến môi trường luôn thắng**, mục xung đột bị bỏ qua kèm cảnh báo nêu rõ xung đột.
+🔴 **Đính chính (Đợt D, D-7b):** câu này trước đây viết là "cùng một `kind`" và giải thích bằng "vì
+registry chỉ giữ một factory cho mỗi kind" — lời giải thích đó **đã sai** từ D-1 (registry key theo TỪNG
+THỂ kết nối, §19.4), và quy tắc nó biện minh thì **thiếu**: cả hai phép so sánh đều dựa trên KHOÁ ĐĂNG KÝ
+(`ConnectorsJsonRegistration.RegistrationKeyOf`) — bằng `kind` với entry Modbus TCP / OPC-UA, và bằng
+CHÍNH `id` của entry với một tuyến RTU. Nếu hiểu theo "kind", một kết nối Modbus TCP cấu hình bằng biến môi
+trường sẽ chặn mất một đường RS-485 hoàn toàn không liên quan, còn đường RS-485 thứ hai của một trạm sẽ bị
+coi là trùng với đường thứ nhất. Về RTU/RS-485, xem **§23**: một `settings` có khai báo `transport` mô tả
+một TUYẾN chứ không phải một kết nối, và một entry như vậy nở ra thành N kết nối đã đăng ký.
 `GET /v1/connectors` (vai trò Operator) hiển thị mọi connector đã cấu hình nhưng lần khởi động gần nhất
 thất bại — KHÔNG BAO GIỜ làm `GET /v1/health` báo unhealthy. **Web UI (GP-7):** danh sách này nay hiển
 thị ngay trên `/assets` — xem phần web-visibility ở §19.4 và §19.7 để biết chính xác `id`/`kind`/registry
@@ -3277,16 +3305,29 @@ no promise beyond "readable text" for a future third-party factory, so it is ren
 untrusted text (React already escapes it — no markup injection is possible) inside a wrapping container
 so an unusually long message cannot break the page layout.
 
-**Small doc correction (batch review) — the `id` field is actually the `kind`.** `ConnectorRegistry`
-keys purely on the normalized `Kind` (§19.3) — a `connectors.json` entry's OWN `id` field (e.g.
-`{"id":"line3-weld","kind":"Modbus"}`) is used only for the per-entry warning naming during config
-loading (`ConnectorsConfig.Load`/`ResolveEntries`) and is discarded before `Register` is ever called, so
-it never reaches the registry at all. `ConnectorStatusDto`'s `Id` field (`GET /v1/connectors`) is
-populated from the registry's own key — i.e. the entry above surfaces as `{"id":"Modbus","error":...}`,
-NOT `{"id":"line3-weld",...}`. Kept as documentation rather than a rename: renaming the DTO field would
-touch `AssetRegistry.tsx` and every existing test asserting on `Id`/`SlotLabel` naming for a field whose
-actual (undocumented) behavior this note now simply makes explicit — a wire-format change is a separate
-decision from writing down what the wire format already, honestly, does today.
+> 🔴 **CORRECTED (Đợt D, task D-7b documentation census) — a doc correction that had itself become the
+> thing it was correcting.** This paragraph used to be headed *"Small doc correction (batch review) — the
+> `id` field is actually the `kind`"* and stated that **`ConnectorRegistry` keys purely on the normalized
+> `Kind`**. **Task D-1 made that false**, and it is the load-bearing half of Đợt D: the registry is keyed
+> **per connector INSTANCE**, `Register` takes an `instanceId` (defaulting to the kind, which is why every
+> pre-D-1 deployment behaves byte-identically), and two connectors of one protocol now genuinely run side
+> by side. `ConnectorStatusDto.Id` therefore carries an **instance id**, and N devices on one RS-485 line
+> produce **N distinct entries** here rather than one silently replacing the other.
+>
+> What is still true, and is the part worth keeping: a `connectors.json` entry's own `id` field is read
+> only to NAME per-entry warnings and is discarded for a **Modbus TCP / OPC-UA** entry — that dispatch
+> deliberately lets the instance id default to the kind, because adopting `entry.Id` would move every such
+> connector's pipeline slot label and therefore its alarm `TargetId`. So `{"id":"line3-weld","kind":"Modbus"}`
+> STILL surfaces as `{"id":"Modbus","error":…}` today — **for a different reason than the one the old note
+> gave.** The exception, added by D-7a, is an **RTU bus**: an entry declaring a `transport` registers under
+> its own `id` (see `ConnectorsJsonRegistration.RegistrationKeyOf`), because a site with two RS-485 lines
+> has two buses of one kind and that is the entire point of instance identity. Each device on such a bus
+> then registers under the derived id `{bus}:unit{slave address}` — a reserved namespace both allocation
+> doors refuse to let anything else into (§23.2).
+>
+> The DTO field is still not renamed, and the original reason still holds: renaming it would touch
+> `AssetRegistry.tsx` and every test asserting on `Id`/`SlotLabel`. What changed is not the wire format —
+> it is what the value in that field MEANS.
 
 *(VI: `St4i.EngineApi.Fleet.ConnectorRegistry` thay thế việc hard-code từng loại driver trong `FleetHost`
 (trước đây mỗi loại Modbus/OPC-UA có RIÊNG một tham số constructor + một khối `StartLocked` copy-paste).
@@ -3312,16 +3353,29 @@ cấu trúc, nhưng kiểu dữ liệu không hứa hẹn gì hơn "văn bản �
 nên được hiển thị như văn bản KHÔNG ĐÁNG TIN CẬY thuần tuý (React tự động escape — không thể chèn mã) bên
 trong một khung bao để một thông báo dài bất thường không phá layout trang.
 
-**Đính chính tài liệu nhỏ (đợt review toàn batch) — trường `id` thực ra là `kind`.** `ConnectorRegistry`
-chỉ key theo `Kind` đã chuẩn hoá (§19.3) — trường `id` riêng của một entry `connectors.json` (vd
-`{"id":"line3-weld","kind":"Modbus"}`) chỉ dùng để đặt tên cảnh báo lúc load config
-(`ConnectorsConfig.Load`/`ResolveEntries`) rồi bị bỏ trước khi `Register` được gọi, nên KHÔNG BAO GIỜ tới
-được registry. Trường `Id` của `ConnectorStatusDto` (`GET /v1/connectors`) lấy từ chính KHOÁ của registry
-— tức entry trên sẽ hiển thị thành `{"id":"Modbus","error":...}`, KHÔNG PHẢI `{"id":"line3-weld",...}`.
-Chọn ghi tài liệu thay vì đổi tên trường: đổi tên DTO sẽ đụng tới `AssetRegistry.tsx` và mọi test đang
-assert theo `Id`/`SlotLabel` cho một trường mà hành vi thật (chưa từng ghi rõ) nay chỉ được nói thẳng ra —
-đổi định dạng wire là một quyết định khác, tách biệt với việc ghi lại đúng những gì định dạng đó đang thật
-sự làm hôm nay.)*
+🔴 **ĐÃ ĐƯỢC ĐÍNH CHÍNH (Đợt D, task D-7b — đợt rà soát tài liệu): một bản đính chính đã tự biến
+thành đúng cái lỗi mà nó đi sửa.** Đoạn này trước đây có tiêu đề *"Đính chính tài liệu nhỏ — trường `id`
+thực ra là `kind`"* và khẳng định **`ConnectorRegistry` chỉ key theo `Kind` đã chuẩn hoá**. **Task D-1 đã
+làm điều đó trở thành SAI**, và đây chính là nửa chịu lực của cả Đợt D: registry giờ key theo **TỪNG THỂ
+KẾT NỐI (instance)**, `Register` nhận `instanceId` (mặc định bằng kind, nên mọi triển khai trước D-1 chạy
+y hệt như cũ), và hai kết nối cùng một giao thức giờ thực sự chạy song song. Do đó `ConnectorStatusDto.Id`
+mang một **instance id**, và N thiết bị trên một đường RS-485 sinh ra **N mục riêng biệt** thay vì cái này
+âm thầm thay thế cái kia.
+
+Phần VẪN ĐÚNG và đáng giữ lại: trường `id` của một entry `connectors.json` vẫn chỉ dùng để ĐẶT TÊN cảnh
+báo và vẫn bị bỏ đi đối với một entry **Modbus TCP / OPC-UA** — nhánh đó cố ý để instance id mặc định bằng
+kind, vì nếu lấy `entry.Id` thì nhãn slot pipeline — và do đó `TargetId` của cảnh báo — của mọi kết nối
+loại đó sẽ bị dịch đi. Nên `{"id":"line3-weld","kind":"Modbus"}` VẪN hiển thị thành
+`{"id":"Modbus","error":…}` — **nhưng vì một lý do KHÁC với lý do mà ghi chú cũ đưa ra.** Ngoại lệ, do
+D-7a thêm vào, là **tuyến RTU**: một entry có khai báo `transport` sẽ đăng ký dưới chính `id` của nó (xem
+`ConnectorsJsonRegistration.RegistrationKeyOf`), vì một trạm có hai đường RS-485 là có hai tuyến cùng một
+loại, và đó chính là toàn bộ lý do tồn tại của định danh theo thể. Mỗi thiết bị trên tuyến đó đăng ký dưới
+id dẫn xuất `{tuyến}:unit{địa chỉ slave}` — một vùng tên được dành riêng mà cả hai cửa cấp phát đều từ chối
+cho bất kỳ thứ gì khác đi vào (§23.2).
+
+DTO vẫn không đổi tên, và lý do cũ vẫn đúng: đổi tên sẽ đụng tới `AssetRegistry.tsx` và mọi test đang
+assert theo `Id`/`SlotLabel`. Cái đã thay đổi không phải định dạng wire — mà là Ý NGHĨA của giá trị trong
+trường đó.)*
 
 ### 19.5 The conformance suite — `St4i.Connector.Conformance` / Bộ kiểm tra tuân thủ connector (GP-6, GP-6b)
 
@@ -3594,11 +3648,20 @@ routes on `ConnectorEndpoints.cs`:
 |---|---|---|
 | `GET /v1/connectors/configured` | Operator | Every persisted connector configuration, **without** its register/node-map JSON (which may embed an OPC-UA username/password — never even `SELECT`ed by this projection's SQL). |
 | `POST /v1/connectors` | Engineer, audited `connector.save` | Validates, persists (`ConnectorConfigStore`), registers the factory live, and seeds the roster via `FleetHost.RegisterMachine`. |
-| `DELETE /v1/connectors/{kind}` | Engineer, audited `connector.delete` | Removes **only the persisted row** — see the honest-limitations note below. |
+| `DELETE /v1/connectors/{instanceId}` | Engineer, audited `connector.delete` | Removes **only the persisted row**, and (since D-7a) releases that instance's live machine claim — see the honest-limitations note below. |
 | `POST /v1/connectors/test` | Engineer, **not audited** (mutates nothing) | Builds a throwaway driver, attempts one bounded read, reports reachable or not — never registered, never touches the running fleet. |
 
+> 🔴 **UPDATED (Đợt D, D-7b census) — the route's segment was `{kind}`, and this table said so.**
+> D-1 renamed it to `{instanceId}` because with two connectors of one protocol configurable, "the kind" no
+> longer identifies anything deletable; every pre-D-1 URL keeps working unchanged, because a migrated row's
+> instance id IS its kind. **The web page itself did not catch up until D-7b** — it keyed its list, and
+> built its DELETE URL, from `kind`, so on an RS-485 bus it could not say which of N devices a Remove
+> button meant. §23.4 is the full write-up of what that screen shows now.
+
 **Only Modbus TCP and OPC-UA are offered** — the two protocols this build has a working driver for
-(§20.5). **The "map JSON"** is the exact same shape the `ST4I_MODBUS_MAP`/`ST4I_OPCUA_MAP` environment
+(§20.5). 🔴 **Đợt D adds a third choice on that form, and it is not a third protocol:** "Modbus RTU
+(RS-485)" is the same `Modbus` kind with a document that declares a `transport`, i.e. a whole multidrop
+**bus** rather than one connector — see §23. **The "map JSON"** is the exact same shape the `ST4I_MODBUS_MAP`/`ST4I_OPCUA_MAP` environment
 variables already used: for Modbus, `{ machineCode, unitId, pollIntervalMs, registers: [{ address,
 type, dataType, scale, metric, unit?, writable? }], commands?: [...] }` (`ModbusRegisterMap.cs`); for
 OPC-UA, `{ machineCode, endpointUrl, securityMode, username?, password?, pollIntervalMs, nodes: [{
@@ -4472,3 +4535,240 @@ số. **`Lost` khác 0 ở bất kỳ kênh nào là một sự MẤT, và đư�
 hàng đợi gửi lại, nên những cạnh đó sẽ không được phát lại. **Danh sách `Attention` RỖNG nghĩa đúng là
 như vậy** — hiện tại không có gì cần chú ý; nó được hiện thành một câu, không bao giờ là một khoảng
 trắng có thể bị hiểu là "chưa tải xong".)*
+
+---
+
+## 23. Đợt D (D-1…D-7) — Modbus RTU / RS-485 multidrop / Modbus RTU / RS-485 nhiều thiết bị một dây
+
+**EN** — Đợt D added the ability to drive **N devices that share one physical wire**. Everything before it
+assumed one connector per protocol and one device per connector; RS-485 breaks both. This section is what
+Đợt D actually built, what it deliberately did not, and the limits that must be said out loud.
+
+### 23.1 Two transports, one framing, one document
+
+A Modbus `connectors.json` entry whose `settings` declares a **`transport`** is not a connector — it is a
+**bus**. Two transports ship:
+
+| `transport` | What it is | Bus-level fields |
+|---|---|---|
+| `"rtu-gateway"` | RTU framing over a TCP socket to a serial device server (Moxa/USR-class). The device on the far side speaks RTU on a wire the gateway owns. | `host`, `port` (no default — a device server exposes one TCP port per physical line, and guessing which line was meant is how a write reaches the wrong bus) |
+| `"rtu-serial"` | A **directly attached COM port**. | `portName` (required, no default), plus optional `baudRate`/`parity`/`dataBits`/`stopBits`, defaulting to MODBUS-over-Serial-Line's **19200-8-E-1** rather than `SerialPort`'s own 9600-8-N-1 |
+
+Every device on the line goes in a **`devices`** array — required, **even for a single device**: a bus of
+one is still a bus, and letting the root double as the only device would store the port path inside that
+device's own configuration. Each element is a **complete single-device register map** with its own
+`machineCode` and `unitId`, and **nothing is inherited from the bus level** — no shared `pollIntervalMs`,
+no shared `readTimeoutMs`. That costs repetition and buys the property the whole design rests on: what an
+operator pastes is exactly what each device stores and what its driver re-reads, so the file on disk and
+the configuration running are one thing rather than two that have to be reconciled by hand.
+
+An unrecognised bus-level key is **refused, not ignored** — a misspelled `baudRate` used to produce a
+silent 19200-8-E-1 line, and a silently-ignored key is how "I set the port to 4001" becomes a belief the
+system does not share.
+
+### 23.2 Identity: connectors are per INSTANCE, and a bus owns a namespace
+
+`ConnectorRegistry` is keyed by connector **instance id** (§19.4's correction). One RS-485 bus registers
+**N** instances, each under the derived id **`{bus}:unit{slave address}`**, each claiming exactly one
+machine code. That is what keeps a write routable: `SetpointWriteRequest` carries no machine code, so a
+driver serving several machines could not tell which one a write was for — which is precisely the state
+Đợt B's `AmbiguousDriver` guard exists to refuse. N instances × 1 machine each makes that state
+unreachable rather than merely guarded against.
+
+The `:unit<n>` namespace is **reserved**, and both doors into it refuse: a bus may not be NAMED like a
+device position, and `POST /v1/connectors` refuses an operator-supplied instance id of that shape. Without
+that rule a connector could be silently replaced — or deleted — by the next registration pass of a bus it
+never belonged to.
+
+### 23.3 The endpoints: one request, N of everything
+
+`POST /v1/connectors` with a document that declares a `transport` creates a bus. Its shape, and the
+reasoning, because "1 request → 1 machine → 1 audit row → 1 rollback" was this endpoint's whole contract:
+
+- **N persisted rows** — one per device, keyed `{bus}:unit{n}`, written in **one SQLite transaction**. Each
+  row carries the LINE in its `host`/`port` columns (`COM3` + `null` for a serial bus; the gateway's host
+  and port for a gateway one) and the bus document in a column the credential-free projection **never
+  selects**, the same structural discipline the register map itself has had since Đợt A.
+- **A bus is saved whole or not at all.** If device 5 of 8 is invalid, **nothing** is saved and nothing is
+  registered — the fan-out throws on the first device it cannot parse, naming which element of the array it
+  was, before any store or registry mutation happens. "Register the 7 that parsed" was rejected: it leaves
+  the operator with a bus silently one device short of the file they are reading, which is indistinguishable
+  from a device that is merely unplugged.
+- **ONE audit row**, targeted at the bus, whose after-state enumerates every device (instance id, unit id,
+  machine code) and names the physical line. N rows would be N records of one operator action, and an
+  auditor could not then tell one save of eight devices from eight saves.
+- **The rollback cannot be half-done.** Its store half is one transaction and its undo is one transaction;
+  its registry half is a set of removals that perform no I/O and cannot fail; and the one **irreversible**
+  step — adding a machine to the fleet roster, which has no removal path — runs only after every reversible
+  step has already succeeded, so no failure the endpoint can see ever has to undo it.
+
+`GET /v1/connectors/configured` lists those rows, so an RS-485 line is finally visible on the one screen
+this product has for "what is configured here" (before D-7b it was visible only in the startup log and in
+`GET /v1/connectors`). `DELETE /v1/connectors/{instanceId}` removes **one device** off a bus — its siblings
+keep running, and the response says how many devices remain on that line.
+
+### 23.4 The `/connectors` screen
+
+A bus renders as **one group with its own header** naming the line, with its devices listed by slave
+position underneath. Eight rows differing only by a `:unit<n>` suffix is not intelligible — it makes the
+operator do the grouping in their head every time, and it gives the Remove button nothing to say about
+which device it is about to take off the wire. The confirmation dialog now names the device, its bus and
+the machine it serves; the row's identity, the React key and the `DELETE` URL are all the **same** instance
+id, so the thing the list points at and the thing the server is asked to remove cannot drift.
+
+Per device the screen shows: the line it is on, the machine it serves, and its live state — *failed to
+start* (from `GET /v1/connectors`, which is keyed per instance and therefore names the exact device whose
+factory refused its configuration), *not in the roster this session*, or the machine's own status text.
+
+🔴 **What the screen deliberately does NOT show is a "backed off" badge.** A device that stops answering
+shows as degraded, and the product slows how often it takes the shared line so the healthy devices keep
+their throughput (measured: one dead device on a bus collapses everyone else's read throughput by **67.5×**
+without it). Whether a given device is *currently* backed off, as opposed to merely quiet, is published on
+exactly one channel — the **application log**, where every failed poll records the consecutive-failure
+count and the wait until the next attempt, and where recovery is logged once with the cadence being
+restored. It is not on any HTTP projection because `IDeviceDriver` — the contract every connector in this
+product implements — has no such member, and inventing one for a single transport would put a Modbus
+concept on a seam shared by all of them. The screen says where the distinction lives rather than guessing
+at a badge, because "backed off" and "not answering" have different remedies.
+
+### 23.5 🔴 Limits that must be said out loud
+
+- **RS-485 adapters with AUTOMATIC direction control only.** This product does not drive a transmit-enable
+  (DE/RE) line, and it cannot: `System.IO.Ports.SerialPort` has no "transmission complete" event, no
+  `RTS_CONTROL_TOGGLE`, and `BaseStream.Flush()` drains the driver's write buffer but **not** the UART's
+  shift register — so software direction control could only ever be a timing guess, and on a shared wire a
+  wrong guess corrupts another device's frame. An adapter that needs DE toggled by software is **not
+  supported**. This is stated on the configuration form itself, not only here.
+- **No Modbus frame has yet crossed a real serial port.** The serial transport is proven at the seam
+  (reference scoping, cancellation, exclusive open, one open shared by N leases, the port actually being
+  closed on disposal) and end to end **over a gateway socket**, but there was no virtual COM pair available,
+  so **a bench acceptance step with real hardware remains outstanding**. That is a step, not a formality
+  after a green gate.
+- 🔴 **`Applied` on a command is an acknowledgement, not an observation.** It means a frame came back
+  matching this request's slave address, function code, coil address and value. It does **not** prove the
+  machine moved: RTU has nothing that ties a frame to a specific request, so a late echo of an earlier,
+  already-finished pulse can be acknowledged in exactly the same way. Neither the UI nor these docs may
+  present it to an operator as physical proof, and the UI says so at the point the capability is granted.
+- **A deleted connector's MACHINE stays in the fleet roster until the process restarts.** `DELETE`
+  releases the connector's live machine claim (D-7a), but `FleetHost.RegisterMachine` has no un-register, so
+  the machine itself remains — and a replacement connector for that same machine code is still refused until
+  a restart. What the released claim buys is that the refusal is the **roster's**, naming a machine that
+  genuinely is in the fleet, instead of a ghost connector's, naming an instance the operator had already
+  deleted. Roster removal reaches pipeline slots, alarm `TargetId`s, the historian and the asset registry;
+  it is a named future batch. The `DELETE` response and the removal dialog both say this rather than letting
+  an operator find it by trying.
+- **ASCII framing is not implemented** (NModbus supports it; this product does not use it).
+- **Broadcast (slave 0) is refused** at the RTU construction boundary — a broadcast write is unacknowledged
+  by definition, so it can never report anything but `Indeterminate`, and a write path whose only honest
+  answer is "unknown" is worse than no write path.
+- **A device's own worst-case hold can starve the rest of its bus**, and the fan-out warns with the exact
+  number when it does. A device declaring `readTimeoutMs: 60000` with `retries: 5` over 20 registers holds
+  the line for about **two hours** per poll cycle. This is warned about, not refused: the arithmetic is
+  decidable, but whether it is wrong depends on hardware this product cannot see.
+
+### 23.6 🔴 The three hosts are NOT peers today — do not infer parity from three identical csproj lines
+
+`St4i.EngineApi`, `St4i.EdgeService` and `St4iMachineSimulator` all `ProjectReference`
+`St4i.EdgeCore.Serial` and all ship `System.IO.Ports.dll`. **Only `St4i.EngineApi` can open a COM port.**
+
+The other two have no connector-hosting layer at all: `ConnectorRegistry`, `ConnectorsConfig` and
+`ConnectorsJsonRegistration` are EngineApi-only and are **not even reachable** from those projects (neither
+csproj references `St4i.EngineApi`), and `EdgeWorker` collapses the whole fleet into **one**
+`SimulatedDriver` driving **one** pipeline — it has no multi-driver concept to hang a connector on.
+
+This is deliberate and it is going somewhere: the owner has confirmed `St4i.EdgeService` does run on the
+machine with the RS-485 port, so the capability is wanted. What stands in the way is not the missing
+registry (~1 342 lines, relocatable) but `FleetHost`'s **2 406-line N-driver lifecycle core** — machine
+claims, slot resolution, health, restart, roster — which all three hosts would have to consume. Extracting
+it is a **named future batch**, not an omission. The dependency is pre-positioned; the capability is not
+there yet. `SerialDependencyScopingTests`' own assertion names carry the distinction
+(`…_ByTheAllThreeHostsRuling` for the two that cannot open a port, a separate capability assertion for the
+engine that can) and it must not be flattened.
+
+*(VI — **Đợt D thêm khả năng điều khiển N thiết bị dùng CHUNG một sợi dây.** Mọi thứ trước đó giả định mỗi
+giao thức một kết nối và mỗi kết nối một thiết bị; RS-485 phá vỡ cả hai.
+
+**23.1 — Hai loại đường truyền, một kiểu đóng khung, một tài liệu.** Một entry Modbus trong
+`connectors.json` mà `settings` có khai báo **`transport`** thì không phải một kết nối — nó là một
+**TUYẾN**. `"rtu-gateway"`: đóng khung RTU qua socket TCP tới bộ chuyển đổi serial (cần `host` + `port`,
+không có mặc định — mỗi đường dây vật lý là một cổng TCP riêng, đoán nhầm là ghi nhầm dây).
+`"rtu-serial"`: **cổng COM gắn trực tiếp** (cần `portName`, không mặc định; `baudRate`/`parity`/`dataBits`/
+`stopBits` tuỳ chọn, mặc định **19200-8-E-1** theo chuẩn MODBUS-over-Serial-Line chứ không phải 9600-8-N-1
+của `SerialPort`). Mọi thiết bị nằm trong mảng **`devices`** — bắt buộc, **kể cả khi chỉ có một thiết bị**:
+một tuyến một thiết bị vẫn là một tuyến. Mỗi phần tử là một sơ đồ thanh ghi HOÀN CHỈNH của một thiết bị, và
+**không có gì được kế thừa từ mức tuyến xuống**. Tốn công lặp lại, nhưng đổi lấy tính chất mà toàn bộ thiết
+kế dựa vào: cái operator dán vào chính là cái mỗi thiết bị lưu và driver của nó đọc lại — file trên đĩa và
+cấu hình đang chạy là MỘT thứ. Một khoá lạ ở mức tuyến bị **từ chối, không bị bỏ qua**: một `baudRate` gõ
+sai trước đây tạo ra một đường 19200-8-E-1 im lặng.
+
+**23.2 — Định danh theo THỂ, và một tuyến sở hữu một vùng tên.** `ConnectorRegistry` key theo **instance
+id**. Một tuyến RS-485 đăng ký **N** thể, mỗi thể dưới id dẫn xuất **`{tuyến}:unit{địa chỉ slave}`**, mỗi
+thể chiếm đúng MỘT mã máy. Đó là thứ giữ cho một lệnh ghi định tuyến được: `SetpointWriteRequest` không
+mang mã máy, nên một driver phục vụ nhiều máy sẽ không biết lệnh ghi dành cho máy nào — đúng trạng thái mà
+`AmbiguousDriver` của Đợt B sinh ra để từ chối. Vùng tên `:unit<n>` được **dành riêng**, và cả hai cửa cấp
+phát đều từ chối.
+
+**23.3 — Endpoint: một yêu cầu, N của mọi thứ.** `POST /v1/connectors` với tài liệu có `transport` sẽ tạo
+một tuyến: **N dòng lưu trữ** (mỗi thiết bị một dòng, ghi trong MỘT giao dịch SQLite; cột `host`/`port`
+mang ĐƯỜNG DÂY — `COM3` + `null` với serial, host/port của gateway với gateway; tài liệu tuyến nằm ở một
+cột mà phép chiếu không chứa bí mật **không bao giờ SELECT**). **Một tuyến được lưu trọn vẹn hoặc không lưu
+gì cả**: nếu thiết bị thứ 5 trong 8 bị sai thì **không có gì** được lưu và không có gì được đăng ký — phép
+nở ra ném lỗi ngay ở thiết bị đầu tiên không parse được, nêu rõ phần tử nào, TRƯỚC mọi thay đổi. "Đăng ký 7
+cái parse được" bị từ chối: nó để lại cho operator một tuyến thiếu âm thầm một thiết bị so với file họ đang
+đọc, không phân biệt được với một thiết bị chỉ đơn giản là chưa cắm dây. **MỘT dòng audit**, nhắm vào tuyến,
+với trạng thái-sau liệt kê từng thiết bị. **Bản hoàn tác không thể dở dang**: nửa lưu trữ là một giao dịch
+và phần hoàn tác cũng là một giao dịch; nửa registry là các thao tác gỡ không làm I/O và không thể hỏng; và
+bước **không thể đảo ngược** duy nhất — thêm máy vào danh sách dây chuyền, thứ không có đường gỡ — chỉ chạy
+SAU khi mọi bước đảo ngược được đã thành công. `DELETE /v1/connectors/{instanceId}` gỡ **một thiết bị** khỏi
+tuyến; các thiết bị anh em vẫn chạy, và phản hồi nói rõ còn lại bao nhiêu thiết bị trên đường đó.
+
+**23.4 — Màn hình `/connectors`.** Một tuyến hiển thị thành **một nhóm có tiêu đề riêng** nêu tên đường dây,
+các thiết bị liệt kê bên dưới theo vị trí slave. Tám dòng chỉ khác nhau ở hậu tố `:unit<n>` là không đọc
+được — nó bắt operator tự gom nhóm trong đầu mỗi lần, và làm cho nút Xoá không nói được nó sắp gỡ thiết bị
+nào khỏi dây. Hộp thoại xác nhận nay nêu tên thiết bị, tuyến của nó và máy nó phục vụ; định danh của dòng,
+khoá React và URL `DELETE` đều là **cùng một** instance id. 🔴 **Màn hình cố ý KHÔNG hiện nhãn "đang giãn
+nhịp".** Việc một thiết bị cụ thể hiện có đang giãn nhịp hay chỉ im lặng được ghi ở đúng một nơi — **nhật ký
+ứng dụng** — vì `IDeviceDriver`, hợp đồng mà mọi kết nối trong sản phẩm này đều cài đặt, không có trường nào
+như thế, và thêm một trường riêng cho một loại đường truyền sẽ đưa khái niệm của Modbus lên giao diện dùng
+chung cho tất cả. "Đang giãn nhịp" và "không trả lời" có cách xử lý khác nhau, nên đoán là tệ hơn nói thẳng.
+
+**23.5 — Những giới hạn phải nói thẳng.** (a) **CHỈ hỗ trợ bộ chuyển đổi RS-485 tự động đảo chiều.** Sản
+phẩm này không điều khiển chân DE/RE và cũng không thể: `SerialPort` không có sự kiện "đã phát xong", không
+có `RTS_CONTROL_TOGGLE`, và `BaseStream.Flush()` chỉ xả bộ đệm ghi của driver chứ **không** xả thanh ghi
+dịch của UART — nên đảo chiều bằng phần mềm chỉ có thể là một phép đoán thời gian, và trên dây dùng chung
+một phép đoán sai làm hỏng khung tin của thiết bị khác. Adapter cần phần mềm bật/tắt DE thì **không được hỗ
+trợ**; điều này được nói ngay trên biểu mẫu cấu hình, không chỉ ở đây. (b) **Chưa có khung Modbus nào đi qua
+một cổng serial thật.** Đường truyền serial đã được kiểm chứng ở lớp ghép nối và đầu-cuối **qua gateway**,
+nhưng không có cặp COM ảo, nên **vẫn còn một bước nghiệm thu trên bàn với phần cứng thật** — đó là một
+bước, không phải thủ tục sau một cổng xanh. (c) 🔴 **`Applied` của một lệnh là một sự XÁC NHẬN, không phải
+một QUAN SÁT.** Nó chỉ có nghĩa là một khung tin quay về khớp địa chỉ slave, mã hàm, địa chỉ coil và giá
+trị. Nó **không** chứng minh máy đã chuyển động: RTU không có gì buộc một khung tin với một yêu cầu cụ thể,
+nên một khung echo về muộn của một xung đã kết thúc trước đó vẫn được xác nhận y hệt. Cả giao diện lẫn tài
+liệu đều không được trình bày nó cho operator như bằng chứng vật lý, và giao diện nói đúng điều đó ngay tại
+chỗ cấp quyền ghi. (d) **Máy của một kết nối đã xoá VẪN nằm trong danh sách dây chuyền cho tới khi khởi động
+lại tiến trình.** `DELETE` giải phóng quyền chiếm mã máy (D-7a), nhưng `FleetHost.RegisterMachine` không có
+đường gỡ, nên bản thân cái máy vẫn còn — và một kết nối thay thế cho cùng mã máy vẫn bị từ chối cho tới khi
+khởi động lại. Cái mà việc giải phóng quyền chiếm mua được là: lời từ chối giờ là của **danh sách dây
+chuyền**, nêu tên một cỗ máy thật sự đang trong đội hình, chứ không phải của một kết nối ma mà operator đã
+xoá. Gỡ máy khỏi danh sách chạm tới slot pipeline, `TargetId` của cảnh báo, historian và sổ tài sản — đó là
+một đợt việc riêng đã được đặt tên. Cả phản hồi `DELETE` lẫn hộp thoại xoá đều nói rõ điều này. (e) **Không
+làm đóng khung ASCII.** (f) **Broadcast (slave 0) bị từ chối** ngay ở ranh giới dựng RTU — một lệnh ghi
+broadcast theo định nghĩa là không có phản hồi, nên nó không bao giờ báo được gì ngoài `Indeterminate`.
+(g) **Thời gian giữ dây tệ nhất của một thiết bị có thể bỏ đói cả tuyến**, và phép nở ra cảnh báo kèm đúng
+con số đó khi điều này xảy ra.
+
+**23.6 — 🔴 Ba host KHÔNG ngang hàng nhau ở thời điểm này; đừng suy ra sự ngang hàng từ ba dòng csproj
+giống nhau.** `St4i.EngineApi`, `St4i.EdgeService` và `St4iMachineSimulator` đều `ProjectReference`
+`St4i.EdgeCore.Serial` và đều mang theo `System.IO.Ports.dll`. **Chỉ `St4i.EngineApi` mở được cổng COM.**
+Hai host còn lại không có lớp chứa connector nào cả: `ConnectorRegistry`, `ConnectorsConfig`,
+`ConnectorsJsonRegistration` chỉ có trong EngineApi và **thậm chí không với tới được** từ hai project kia
+(không csproj nào tham chiếu `St4i.EngineApi`), còn `EdgeWorker` gộp cả đội hình vào **một**
+`SimulatedDriver` chạy **một** pipeline — nó không có khái niệm nhiều driver để gắn connector vào. Đây là
+chủ ý và nó đang đi tới đâu đó: chủ sản phẩm đã xác nhận `St4i.EdgeService` CÓ chạy trên chính cái máy có
+cổng RS-485, nên khả năng này là thứ được mong muốn. Thứ cản đường không phải cái registry còn thiếu
+(~1 342 dòng, di dời được) mà là **lõi vòng đời N-driver 2 406 dòng của `FleetHost`** — quyền chiếm máy,
+phân giải slot, sức khoẻ, khởi động lại, danh sách đội hình — thứ cả ba host sẽ phải dùng chung. Tách nó ra
+là **một đợt việc riêng đã được đặt tên**, không phải một thiếu sót. Phụ thuộc đã được đặt sẵn; khả năng thì
+chưa có. Tên các assertion trong `SerialDependencyScopingTests` đã mang sẵn sự phân biệt này
+(`…_ByTheAllThreeHostsRuling` cho hai host chưa mở được cổng, và một assertion khả-năng riêng cho engine mở
+được) và không được làm phẳng nó đi.)*

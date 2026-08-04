@@ -295,6 +295,30 @@ public enum ConnectorConfigSource
 /// alternative, putting the primary key first where it conceptually belongs, would have rewritten every one
 /// of them for a cosmetic gain. <see cref="ConnectorConfigStore"/> itself always populates it explicitly
 /// from the column, so a record that came out of the store never carries the derived default.</param>
+/// <param name="BusInstanceId">🔴 Task D-7b — the Modbus RTU BUS this row is one device on, or
+/// <see langword="null"/> for every connector that is not on a shared line (every row this store held before
+/// D-7b, and every Modbus TCP / OPC-UA connector after it). Non-null makes this row a DEVICE row: its
+/// <see cref="InstanceId"/> is <c>{bus}:unit{n}</c>, minted by
+/// <see cref="St4i.EdgeCore.Drivers.Modbus.ModbusMultidropMap.DeviceInstanceId"/>, and it is not
+/// independently registerable — see <see cref="BusSettingsJson"/>.</param>
+/// <param name="BusSettingsJson">🔴 Task D-7b — the BUS-LEVEL half of the RTU document (the transport token
+/// plus the line parameters: <c>portName</c>/<c>baudRate</c>/<c>parity</c>/… for a serial line, <c>host</c>/
+/// <c>port</c> for a gateway). <see langword="null"/> for every non-RTU row.
+///
+/// <para><b>Why it is stored per DEVICE and not once per bus, which is the obvious alternative.</b> A bus row
+/// would need a <c>machine_code</c>, and a bus serves N machines — so that column would have to hold either a
+/// lie or a synthesised value, in the one table whose whole job is "which connector serves which machine".
+/// Denormalising the LINE onto each device on it costs one duplicated (small, immutable-per-operation)
+/// document and buys three things: every row is self-sufficient, so deleting one device is a one-row delete
+/// with nothing left dangling; the table keeps exactly one row KIND; and <c>host</c> — which already carries
+/// the line identity for exactly this reason (D-7a's projection decision) — is denormalised the same way, so
+/// this is the existing shape rather than a new one.</para>
+///
+/// <para><b>It is never in <see cref="ConnectorConfigSummary"/>.</b> Structurally, by never being in
+/// <see cref="ConnectorConfigStore"/>'s <c>SummaryColumns</c> — the same discipline <c>map_json</c> is held
+/// to. Today's two transports carry no credential, and that is precisely why the exclusion has to be
+/// structural now: a third transport that carries one (a gateway behind an authenticated tunnel, say) would
+/// otherwise leak on the day it is added, with nothing in this file to stop it.</para></param>
 public sealed record ConnectorConfigRecord(
     string Kind,
     string MachineCode,
@@ -305,7 +329,9 @@ public sealed record ConnectorConfigRecord(
     DateTimeOffset UpdatedAtUtc,
     ConnectorWriteCapability? WriteCapability = null,
     ConnectorConfigSource Source = ConnectorConfigSource.Operator,
-    string? InstanceId = null)
+    string? InstanceId = null,
+    string? BusInstanceId = null,
+    string? BusSettingsJson = null)
 {
     /// <summary>Task D-1 — the instance id this row is keyed by, never <see langword="null"/>: falls back to
     /// <see cref="Kind"/>, the exact same default <see cref="ConnectorRegistry.Register"/> and migration v4
@@ -313,6 +339,26 @@ public sealed record ConnectorConfigRecord(
     /// know whether one was supplied.</summary>
     public string EffectiveInstanceId => string.IsNullOrWhiteSpace(InstanceId) ? Kind : InstanceId;
 }
+
+/// <summary>🔴 Task D-7b — ONE device's row as <see cref="ConnectorConfigStore.SaveBusAsync"/> takes it.
+/// Deliberately not <see cref="ConnectorConfigRecord"/>: a caller writing a bus supplies no timestamps and no
+/// provenance (the store stamps the first, the call stamps the second for the whole set at once), and letting
+/// it hand in a <c>CreatedAtUtc</c> it invented is exactly the drift this shape removes.</summary>
+/// <param name="Host">🔴 The LINE, not a device address — D-7a's projection decision, and the half D-7c
+/// handed to D-7b with no code path. A serial bus puts its <c>portName</c> here (and <c>null</c> in
+/// <paramref name="Port"/>, because a COM port has no port number and a 0 would read as one); a gateway bus
+/// puts the gateway's host and TCP port. That is what makes "which physical line is this device on?" answerable
+/// from the credential-free projection — see <see cref="ConnectorConfigRecord.BusSettingsJson"/> for why the
+/// rest of the line's parameters are NOT.</param>
+public sealed record ConnectorBusDeviceRow(
+    string InstanceId,
+    string Kind,
+    string MachineCode,
+    string? Host,
+    int? Port,
+    string MapJson,
+    string BusSettingsJson,
+    ConnectorWriteCapability? WriteCapability);
 
 /// <summary>The credential-free projection every caller OUTSIDE startup wiring gets — see
 /// <see cref="ConnectorConfigStore"/>'s own doc comment for why <c>MapJson</c> (which may embed OPC-UA
@@ -336,6 +382,12 @@ public sealed record ConnectorConfigRecord(
 /// the field a client needs to address one of two same-kind connectors at
 /// <c>DELETE /v1/connectors/&#123;instanceId&#125;</c>. Equals <see cref="Kind"/> for every row that predates
 /// D-1 and for every connector saved without naming an id of its own.</param>
+/// <param name="BusInstanceId">🔴 Task D-7b — see <see cref="ConnectorConfigRecord.BusInstanceId"/>. This is
+/// the ONE of the two D-7b columns that IS in the credential-free projection, and the reason is the whole
+/// point of the task: without it a web client receiving eight rows named <c>line1:unit1</c> …
+/// <c>line1:unit8</c> would have to parse an id to learn they are one physical line, and an id is a label,
+/// not a schema. <see cref="ConnectorConfigRecord.BusSettingsJson"/> is NOT here — see its own remarks.
+/// <see langword="null"/> for every connector that is not on a shared RS-485 line.</param>
 public sealed record ConnectorConfigSummary(
     string Kind,
     string MachineCode,
@@ -344,7 +396,8 @@ public sealed record ConnectorConfigSummary(
     DateTimeOffset UpdatedAtUtc,
     ConnectorWriteCapabilityDto? WriteCapability = null,
     ConnectorConfigSource Source = ConnectorConfigSource.Operator,
-    string? InstanceId = null)
+    string? InstanceId = null,
+    string? BusInstanceId = null)
 {
     /// <summary>Task D-1 — see <see cref="ConnectorConfigRecord.EffectiveInstanceId"/>.</summary>
     public string EffectiveInstanceId => string.IsNullOrWhiteSpace(InstanceId) ? Kind : InstanceId;
@@ -448,6 +501,22 @@ public sealed class ConnectorConfigStore
             """,
             "DROP TABLE connector_configs;",
             "ALTER TABLE connector_configs_v4 RENAME TO connector_configs;",
+        }),
+        // 🔴 Task D-7b (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-7b-brief.md) — the two
+        // columns an RS-485 DEVICE row needs and no other row has. See ConnectorConfigRecord.BusInstanceId/
+        // BusSettingsJson for why the line is denormalised onto each device rather than held in a bus row.
+        //
+        // What a pre-existing row means (this ladder's own required question): NULL in both, which is not a
+        // placeholder but the CORRECT value — no schema before D-7b could express a shared line at all, so
+        // every row written before this rung is, in fact, a connector that is on no bus. SQLite's ADD COLUMN
+        // with no DEFAULT sets exactly that for every existing row, the same mechanism v2 already relies on.
+        //
+        // Two plain ADD COLUMNs rather than v4's table rebuild: neither column is (or is part of) a key, so
+        // there is nothing ALTER TABLE cannot do here.
+        (5, new[]
+        {
+            "ALTER TABLE connector_configs ADD COLUMN bus_instance_id TEXT NULL;",
+            "ALTER TABLE connector_configs ADD COLUMN bus_settings_json TEXT NULL;",
         }),
     };
 
@@ -606,11 +675,15 @@ public sealed class ConnectorConfigStore
     /// and <paramref name="writeCapability"/> positionally, so any earlier slot would have silently changed
     /// what an existing positional argument binds to. A convention broken visibly in one signature is
     /// cheaper than a mis-bound argument nobody notices.</param>
+    /// <param name="busInstanceId">🔴 Task D-7b — see <see cref="ConnectorConfigRecord.BusInstanceId"/>.
+    /// <see langword="null"/> (the default) for every connector that is not one device on a shared RS-485
+    /// line, which is every call site that predates D-7b.</param>
+    /// <param name="busSettingsJson">🔴 Task D-7b — see <see cref="ConnectorConfigRecord.BusSettingsJson"/>.</param>
     public async Task<ConnectorConfigSummary> SaveAsync(
         string kind, string machineCode, string? host, int? port, string mapJson,
         ConnectorWriteCapability? writeCapability = null,
         ConnectorConfigSource source = ConnectorConfigSource.Operator, CancellationToken ct = default,
-        string? instanceId = null)
+        string? instanceId = null, string? busInstanceId = null, string? busSettingsJson = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(kind);
         ArgumentException.ThrowIfNullOrWhiteSpace(machineCode);
@@ -636,25 +709,54 @@ public sealed class ConnectorConfigStore
 
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
-        // Task D-1 — the conflict target is instance_id (the primary key), NOT kind: two rows of one kind
-        // under two different instance ids must both survive, which is the entire point of this task.
-        // `kind` moved into the DO UPDATE SET list for the same reason it is now an ordinary column — an
-        // instance keeps its id across a re-save while everything else about it, protocol included, is
-        // whatever the caller just supplied.
-        cmd.CommandText = """
-            INSERT INTO connector_configs (instance_id, kind, machine_code, host, port, map_json, write_capability_json, source, created_at, updated_at)
-            VALUES (@instance_id, @kind, @machine_code, @host, @port, @map_json, @write_capability_json, @source, @now, @now)
-            ON CONFLICT(instance_id) DO UPDATE SET
-                kind = excluded.kind,
-                machine_code = excluded.machine_code,
-                host = excluded.host,
-                port = excluded.port,
-                map_json = excluded.map_json,
-                write_capability_json = excluded.write_capability_json,
-                source = excluded.source,
-                updated_at = excluded.updated_at;
-            """;
-        cmd.Parameters.AddWithValue("@instance_id", effectiveInstanceId);
+        cmd.CommandText = UpsertSql;
+        BindUpsert(
+            cmd, effectiveInstanceId, kind, machineCode, host, port, mapJson, writeCapabilityJson, sourceText,
+            nowIso, createdAtIso: nowIso, busInstanceId, busSettingsJson);
+
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+        return new ConnectorConfigSummary(
+            kind, machineCode, host, port, ParseIso(nowIso),
+            normalizedCapability is null ? null : ConnectorWriteCapabilityDto.From(normalizedCapability),
+            source, effectiveInstanceId, NullIfBlank(busInstanceId));
+    }
+
+    // Task D-1 — the conflict target is instance_id (the primary key), NOT kind: two rows of one kind under
+    // two different instance ids must both survive, which is the entire point of that task. `kind` is in the
+    // DO UPDATE SET list for the same reason it is now an ordinary column — an instance keeps its id across a
+    // re-save while everything else about it, protocol included, is whatever the caller just supplied.
+    //
+    // 🔴 Task D-7b — hoisted out of SaveAsync into a shared const because SaveBusAsync and RestoreBusAsync
+    // must write rows through the SAME statement. A second copy of an upsert is a second place for a column
+    // to be forgotten, and the column most likely to be forgotten is exactly the one D-7b adds.
+    //
+    // @created_at is a parameter rather than reusing @now: an ordinary save never touches created_at (the
+    // upsert simply does not list it), but RestoreBusAsync re-INSERTS rows this request already deleted, so
+    // it has to be able to put the original creation timestamp back. Passing @now for it — what SaveAsync
+    // does — is byte-identical to the previous behaviour for an insert and irrelevant for an update.
+    private const string UpsertSql = """
+        INSERT INTO connector_configs (instance_id, kind, machine_code, host, port, map_json, write_capability_json, source, created_at, updated_at, bus_instance_id, bus_settings_json)
+        VALUES (@instance_id, @kind, @machine_code, @host, @port, @map_json, @write_capability_json, @source, @created_at, @now, @bus_instance_id, @bus_settings_json)
+        ON CONFLICT(instance_id) DO UPDATE SET
+            kind = excluded.kind,
+            machine_code = excluded.machine_code,
+            host = excluded.host,
+            port = excluded.port,
+            map_json = excluded.map_json,
+            write_capability_json = excluded.write_capability_json,
+            source = excluded.source,
+            updated_at = excluded.updated_at,
+            bus_instance_id = excluded.bus_instance_id,
+            bus_settings_json = excluded.bus_settings_json;
+        """;
+
+    private static void BindUpsert(
+        SqliteCommand cmd, string instanceId, string kind, string machineCode, string? host, int? port,
+        string mapJson, string? writeCapabilityJson, string sourceText, string nowIso, string createdAtIso,
+        string? busInstanceId, string? busSettingsJson)
+    {
+        cmd.Parameters.AddWithValue("@instance_id", instanceId);
         cmd.Parameters.AddWithValue("@kind", kind);
         cmd.Parameters.AddWithValue("@machine_code", machineCode);
         cmd.Parameters.AddWithValue("@host", (object?)host ?? DBNull.Value);
@@ -663,21 +765,156 @@ public sealed class ConnectorConfigStore
         cmd.Parameters.AddWithValue("@write_capability_json", (object?)writeCapabilityJson ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@source", sourceText);
         cmd.Parameters.AddWithValue("@now", nowIso);
+        cmd.Parameters.AddWithValue("@created_at", createdAtIso);
+        cmd.Parameters.AddWithValue("@bus_instance_id", (object?)NullIfBlank(busInstanceId) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@bus_settings_json", (object?)NullIfBlank(busSettingsJson) ?? DBNull.Value);
+    }
 
-        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
-        return new ConnectorConfigSummary(
-            kind, machineCode, host, port, ParseIso(nowIso),
-            normalizedCapability is null ? null : ConnectorWriteCapabilityDto.From(normalizedCapability),
-            source, effectiveInstanceId);
+    /// <summary>
+    /// 🔴 <b>Task D-7b — every device on one RS-485 bus, written in ONE SQLite transaction.</b>
+    ///
+    /// <para><b>This is the answer to "a rollback that is itself partial is worse than no rollback".</b>
+    /// <c>POST /v1/connectors</c> creating a bus of eight makes eight machine claims and eight persisted rows;
+    /// the obvious implementation — eight <see cref="SaveAsync"/> calls, and eight compensating deletes if
+    /// something later fails — has a failure mode where the compensation itself dies after undoing three of
+    /// them, and the operator is then told the operation failed while five rows stand. Making the store write
+    /// atomic removes that state rather than reporting it: the transaction either commits every row or none,
+    /// and the same is true of <see cref="RestoreBusAsync"/>, so neither direction can be half-done.</para>
+    ///
+    /// <para><b>Delete-then-insert, not upsert-and-leave.</b> Re-saving a bus whose map lost a device must
+    /// LOSE that device's row — an upsert per surviving device would leave the removed one behind as a row
+    /// describing a device the operator deleted from their configuration, which is the persisted half of
+    /// exactly the ghost <c>ModbusMultidropRegistration.SweepGhosts</c> exists to stop in the registry. Both
+    /// statements are inside the one transaction, so there is no window in which the bus has no rows.</para>
+    /// </summary>
+    /// <param name="busInstanceId">The bus every row in <paramref name="rows"/> belongs to. Every row with
+    /// this <c>bus_instance_id</c> that is NOT in <paramref name="rows"/> is deleted by the same
+    /// transaction.</param>
+    /// <param name="rows">One entry per device, in bus order.</param>
+    /// <param name="source">Provenance for every row written — <see cref="ConnectorConfigSource.Operator"/>
+    /// for <c>POST /v1/connectors</c>, <see cref="ConnectorConfigSource.Seeded"/> for
+    /// <see cref="ConnectorConfigVisibilitySeeder"/>'s <c>connectors.json</c> pass.</param>
+    /// <returns>The credential-free summary of each row written, in the order supplied.</returns>
+    public async Task<IReadOnlyList<ConnectorConfigSummary>> SaveBusAsync(
+        string busInstanceId, IReadOnlyList<ConnectorBusDeviceRow> rows, ConnectorConfigSource source,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(busInstanceId);
+        ArgumentNullException.ThrowIfNull(rows);
+
+        var nowIso = ToIso(DateTimeOffset.UtcNow);
+        var sourceText = source.ToString();
+        var summaries = new List<ConnectorConfigSummary>(rows.Count);
+
+        using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
+        using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        using (var deleteCmd = connection.CreateCommand())
+        {
+            deleteCmd.Transaction = transaction;
+            deleteCmd.CommandText = "DELETE FROM connector_configs WHERE bus_instance_id = @bus_instance_id;";
+            deleteCmd.Parameters.AddWithValue("@bus_instance_id", busInstanceId);
+            await deleteCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        foreach (var row in rows)
+        {
+            var capability = (row.WriteCapability is not null && row.WriteCapability.GrantsCapability) ? row.WriteCapability : null;
+            using var cmd = connection.CreateCommand();
+            cmd.Transaction = transaction;
+            cmd.CommandText = UpsertSql;
+            BindUpsert(
+                cmd, row.InstanceId, row.Kind, row.MachineCode, row.Host, row.Port, row.MapJson,
+                capability?.ToJson(), sourceText, nowIso, createdAtIso: nowIso, busInstanceId, row.BusSettingsJson);
+            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+            summaries.Add(new ConnectorConfigSummary(
+                row.Kind, row.MachineCode, row.Host, row.Port, ParseIso(nowIso),
+                capability is null ? null : ConnectorWriteCapabilityDto.From(capability),
+                source, row.InstanceId, busInstanceId));
+        }
+
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
+        return summaries;
+    }
+
+    /// <summary>🔴 Task D-7b — every persisted row belonging to one RS-485 bus, FULL rows (including
+    /// <see cref="ConnectorConfigRecord.MapJson"/>/<see cref="ConnectorConfigRecord.BusSettingsJson"/>).
+    /// Engine-internal only, never routed to an HTTP response — this is what
+    /// <c>POST /v1/connectors</c> captures BEFORE it writes, so a failed registration can put the store back
+    /// exactly as it was.</summary>
+    public async Task<IReadOnlyList<ConnectorConfigRecord>> ListBusAsync(string busInstanceId, CancellationToken ct = default)
+    {
+        using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"SELECT {FullColumns} FROM connector_configs WHERE bus_instance_id = @bus_instance_id ORDER BY instance_id;";
+        cmd.Parameters.AddWithValue("@bus_instance_id", busInstanceId);
+
+        var results = new List<ConnectorConfigRecord>();
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            results.Add(ReadFullRecord(reader));
+        }
+        return results;
+    }
+
+    /// <summary>
+    /// 🔴 Task D-7b — puts one bus's rows back the way <see cref="ListBusAsync"/> found them, in ONE
+    /// transaction. An empty <paramref name="previous"/> means "there was no such bus", so this is a pure
+    /// delete — the same two arms <see cref="Endpoints.ConnectorEndpoints.CompensateFailedLiveRegistrationAsync"/>
+    /// already has for the single-connector case, with the whole set as the unit instead of one row.
+    ///
+    /// <para><see cref="ConnectorConfigRecord.CreatedAtUtc"/> is restored verbatim — unlike the single-row
+    /// compensation, whose one documented residue is that <c>created_at</c> survives only because its upsert
+    /// never touches it. Here the rows were DELETED, so the restore has to carry the original value itself or
+    /// the bus would silently claim to have been created by the failed request.</para>
+    /// </summary>
+    public async Task RestoreBusAsync(
+        string busInstanceId, IReadOnlyList<ConnectorConfigRecord> previous, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(busInstanceId);
+        ArgumentNullException.ThrowIfNull(previous);
+
+        using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
+        using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        using (var deleteCmd = connection.CreateCommand())
+        {
+            deleteCmd.Transaction = transaction;
+            deleteCmd.CommandText = "DELETE FROM connector_configs WHERE bus_instance_id = @bus_instance_id;";
+            deleteCmd.Parameters.AddWithValue("@bus_instance_id", busInstanceId);
+            await deleteCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        foreach (var row in previous)
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.Transaction = transaction;
+            cmd.CommandText = UpsertSql;
+            BindUpsert(
+                cmd, row.EffectiveInstanceId, row.Kind, row.MachineCode, row.Host, row.Port, row.MapJson,
+                row.WriteCapability?.ToJson(), row.Source.ToString(), ToIso(row.UpdatedAtUtc),
+                ToIso(row.CreatedAtUtc), row.BusInstanceId, row.BusSettingsJson);
+            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
     }
 
     // ─────────────────────────────────────────────────────────────────────
     // Read
     // ─────────────────────────────────────────────────────────────────────
 
-    private const string FullColumns = "instance_id, kind, machine_code, host, port, map_json, created_at, updated_at, write_capability_json, source";
-    private const string SummaryColumns = "instance_id, kind, machine_code, host, port, updated_at, write_capability_json, source";
+    // 🔴 Task D-7b — `bus_settings_json` is in FullColumns and NOT in SummaryColumns, and that asymmetry is
+    // the same one `map_json` has had since SM-5: the credential-free projection does not select it, so there
+    // is no redaction step anywhere that could be forgotten. `bus_instance_id` IS in both — an operator-chosen
+    // bus label is the same class of thing as `instance_id`, never a credential, and it is what lets a client
+    // group eight device rows into one physical line without parsing an id.
+    private const string FullColumns = "instance_id, kind, machine_code, host, port, map_json, created_at, updated_at, write_capability_json, source, bus_instance_id, bus_settings_json";
+    private const string SummaryColumns = "instance_id, kind, machine_code, host, port, updated_at, write_capability_json, source, bus_instance_id";
 
     /// <summary>The FULL row (including <see cref="ConnectorConfigRecord.MapJson"/>, which may embed OPC-UA
     /// credentials) for one connector INSTANCE — engine-internal use only (validating an update targets the
@@ -770,7 +1007,9 @@ public sealed class ConnectorConfigStore
         UpdatedAtUtc: ParseIso(reader.GetString(reader.GetOrdinal("updated_at"))),
         WriteCapability: GetWriteCapability(reader),
         Source: GetSource(reader),
-        InstanceId: reader.GetString(reader.GetOrdinal("instance_id")));
+        InstanceId: reader.GetString(reader.GetOrdinal("instance_id")),
+        BusInstanceId: GetNullableString(reader, "bus_instance_id"),
+        BusSettingsJson: GetNullableString(reader, "bus_settings_json"));
 
     private static ConnectorConfigSummary ReadSummary(SqliteDataReader reader)
     {
@@ -783,7 +1022,8 @@ public sealed class ConnectorConfigStore
             UpdatedAtUtc: ParseIso(reader.GetString(reader.GetOrdinal("updated_at"))),
             WriteCapability: rawCapability is null ? null : ConnectorWriteCapabilityDto.From(rawCapability),
             Source: GetSource(reader),
-            InstanceId: reader.GetString(reader.GetOrdinal("instance_id")));
+            InstanceId: reader.GetString(reader.GetOrdinal("instance_id")),
+            BusInstanceId: GetNullableString(reader, "bus_instance_id"));
     }
 
     /// <summary>Task B-6 — <see cref="Enum.Parse{TEnum}(string)"/>, not a raw string comparison: this column

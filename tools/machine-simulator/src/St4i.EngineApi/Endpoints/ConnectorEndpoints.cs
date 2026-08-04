@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Drivers.Modbus;
 using St4i.EdgeCore.Drivers.OpcUa;
@@ -122,6 +123,21 @@ public static class ConnectorEndpoints
     // ─────────────────────────────────────────────────────────────────────
     // POST /v1/connectors {kind, host?, port?, mapJson}
     // ─────────────────────────────────────────────────────────────────────
+    /// <param name="busRegistry">🔴 Task D-7b — the process-wide reference-counted Modbus bus registry, needed
+    /// only by the RS-485 arm below. Declared LAST, after <paramref name="ct"/>, with a
+    /// <see langword="null"/> default — the SAME convention break, for the SAME reason, that
+    /// <see cref="ConnectorConfigStore.SaveAsync"/>'s own <c>instanceId</c> parameter documents: every
+    /// pre-existing caller passes <paramref name="ctx"/>/<paramref name="recorder"/>/<paramref name="ct"/>
+    /// POSITIONALLY, so any earlier slot would have silently changed what an existing argument binds to. A
+    /// convention broken visibly in one signature is cheaper than a mis-bound argument nobody notices. ASP.NET
+    /// Core's own parameter binding injects it regardless of the default, because it is a registered service.
+    /// <see langword="null"/> means "this host offers no RTU transport" and an RTU document is then refused
+    /// with a named message — the same arm, and the same message shape,
+    /// <see cref="Config.ConnectorsJsonRegistration.RegisterAll"/> already has.</param>
+    /// <param name="loggerFactory">🔴 Task D-7b — where an RTU bus's driver-level warnings/errors go. Declared
+    /// last for the same reason as <paramref name="busRegistry"/>; <see langword="null"/> falls back to
+    /// <see cref="NullLoggerFactory"/>, so a caller that supplies none loses log output and nothing
+    /// else.</param>
     internal static async Task<IResult> CreateConnectorAsync(
         ConnectorCreateRequest? body,
         ConnectorConfigStore store,
@@ -130,11 +146,26 @@ public static class ConnectorEndpoints
         OpcUaOptions opcUaOptions,
         HttpContext ctx,
         AuditRecorder recorder,
-        CancellationToken ct)
+        CancellationToken ct,
+        ModbusBusRegistry? busRegistry = null,
+        ILoggerFactory? loggerFactory = null)
     {
         if (body is null)
         {
             return Results.BadRequest(new ApiErrorDto("Request body is required."));
+        }
+
+        // 🔴 Task D-7b — the RTU arm, taken BEFORE validation for the same reason
+        // ConnectorsJsonRegistration.RegisterAll takes its own before the kind dispatch: a document that
+        // declares a transport is not one connector at all, it is a BUS, and ConnectorConfigValidation's
+        // Modbus arm would reject it (a bus document has no top-level machineCode) with a message about a
+        // field the operator correctly omitted. The ONE thing that routes a request here is the same
+        // predicate connectors.json uses, so the two surfaces cannot disagree about what an RTU document is.
+        if (ModbusRtuBusSettings.DeclaresATransport(body.MapJson))
+        {
+            return await CreateRtuBusAsync(
+                body, store, connectorRegistry, busRegistry, fleetHost, loggerFactory, ctx, recorder, ct)
+                .ConfigureAwait(false);
         }
 
         if (!ConnectorConfigValidation.TryValidate(body.Kind, body.Host, body.Port, body.MapJson, opcUaOptions.PkiDir, out var validated, out var error))
@@ -390,6 +421,250 @@ public static class ConnectorEndpoints
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // POST /v1/connectors — the RS-485 BUS arm
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>Task D-7b — <c>POST /v1/connectors</c> creating a Modbus RTU bus, which D-7a deferred with an
+    /// argument this method exists to answer.</b>
+    ///
+    /// <para>The argument was: this endpoint's contract is <i>1 request → 1 machine → 1 audit row → 1
+    /// compensating rollback</i>, and a bus is N of each. The answers, in the order a reader will want them:</para>
+    ///
+    /// <list type="bullet">
+    /// <item><description><b>N machines, and the whole bus is one unit.</b> A bus with an invalid device
+    /// registers NOTHING — see <see cref="RtuBusConfiguration"/>, whose class doc carries the full ordering
+    /// argument. "7 of 8 register" was rejected: it leaves the operator with a bus silently one device short
+    /// of the file they are reading, indistinguishable from a device that is merely unplugged.</description></item>
+    /// <item><description><b>ONE audit row, targeted at the BUS.</b> N rows would be N records of one operator
+    /// action, and an auditor reading them could not tell one save of eight devices from eight saves. Its
+    /// after-state enumerates every device (instance id, unit id, machine code) and names the physical line, so
+    /// nothing about what was granted is lost by collapsing the count — and its target id is the bus, which is
+    /// the thing the operator actually named. Recorded AFTER the roster seeding, so a row exists only for a
+    /// request that fully succeeded.</description></item>
+    /// <item><description><b>The rollback undoes the store and the registry, and it cannot be interrupted into
+    /// a half state.</b> The store write and its undo are each ONE SQLite transaction
+    /// (<see cref="ConnectorConfigStore.SaveBusAsync"/>/<see cref="ConnectorConfigStore.RestoreBusAsync"/>);
+    /// the registry undo is a set of <see cref="ConnectorRegistry.Unregister"/> calls, which perform no I/O and
+    /// cannot fail. <see cref="FleetHost.RegisterMachine"/> — the one irreversible step, because the roster has
+    /// no removal path — runs only after every reversible step has succeeded, so no failure this method can
+    /// see ever has to undo it.</description></item>
+    /// </list>
+    ///
+    /// <para><b>Two costs, stated rather than discovered.</b> (1) <see cref="FleetHost.RegisterMachine"/>
+    /// restarts a running pipeline per NEW machine, so a bus of eight new machines restarts it eight times.
+    /// Batching that needs a plural roster API, and roster surgery is explicitly not this task's
+    /// (<c>FleetHost</c> is 2 406 lines and its removal path is a named future batch). (2) A re-save of an
+    /// existing bus that then fails the concurrent-claim check restores the STORE exactly but cannot restore
+    /// the registry ENTRY it replaced, because <see cref="ConnectorRegistry.Register"/> is last-write-wins and
+    /// the replacement already happened; the store is authoritative and the registry is rebuilt from it at the
+    /// next start. The response says so.</para>
+    ///
+    /// <para><b>The write-capability save gate is applied per DEVICE, and the fingerprint is over the whole
+    /// bus.</b> A bus is one deliberate act; making an operator confirm eight fingerprints for one paste would
+    /// train them to paste whatever the error message printed, which is the failure mode the gate exists to
+    /// avoid. The bus's fingerprint is computed over the union of every device's grants, so re-pointing ONE
+    /// device's command still changes what has to be confirmed.</para>
+    /// </summary>
+    internal static async Task<IResult> CreateRtuBusAsync(
+        ConnectorCreateRequest body,
+        ConnectorConfigStore store,
+        ConnectorRegistry connectorRegistry,
+        ModbusBusRegistry? busRegistry,
+        FleetHost fleetHost,
+        ILoggerFactory? loggerFactory,
+        HttpContext ctx,
+        AuditRecorder recorder,
+        CancellationToken ct)
+    {
+        if (busRegistry is null)
+        {
+            // Same arm, and the same shape of message, ConnectorsJsonRegistration.RegisterAll already has for
+            // a host composed without a bus registry: refuse by NAME rather than dispatch into a path that
+            // cannot work. Unreachable through the HTTP surface (Program.cs registers the singleton
+            // unconditionally — it costs one empty object) and answered anyway, because the alternative is a
+            // NullReferenceException reported to an operator as a 500.
+            return Results.BadRequest(new ApiErrorDto(
+                "This document declares a Modbus RTU transport, but this host was composed without a Modbus bus " +
+                "registry — no RTU connector can be built in this process."));
+        }
+
+        var logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger("ModbusRtu");
+
+        // The warnings the fan-out raises (a device whose worst-case hold can monopolise the line, a map
+        // falling back on a derived readTimeoutMs) are collected rather than dropped: they are exactly the
+        // sentences an operator needs while they still have the paste in front of them, and the startup path
+        // already logs them for a connectors.json bus.
+        var notices = new List<string>();
+        if (!RtuBusConfiguration.TryResolve(body.InstanceId, body.MapJson, notices.Add, out var bus, out var resolveError))
+        {
+            return Results.BadRequest(new ApiErrorDto(resolveError));
+        }
+
+        if (ModbusMultidropMap.LooksLikeADeviceInstanceId(bus.BusInstanceId))
+        {
+            // Unreachable — ValidateBusInstanceId inside TryResolve already refuses this shape — and checked
+            // anyway, because this is the endpoint that owns the OTHER door into the derived namespace (see
+            // the single-connector path's own guard thirty lines up) and a reader comparing the two arms must
+            // not find one of them missing the rule.
+            return Results.BadRequest(new ApiErrorDto(
+                $"Connector instance id '{bus.BusInstanceId}' is reserved for a device position on a bus."));
+        }
+
+        var rows = RtuBusConfiguration.BuildRows(bus);
+
+        // Task B-3's deliberate-save gate, over the UNION of every device's grants — see this method's own
+        // remarks for why one fingerprint per bus rather than one per device.
+        var busCapability = UnionCapability(rows);
+        if (busCapability.GrantsCapability)
+        {
+            var required = busCapability.ComputeFingerprint();
+            var summary = DescribeGrantedCapability(busCapability);
+
+            if (string.IsNullOrWhiteSpace(body.ConfirmedWriteCapabilityFingerprint))
+            {
+                return Results.BadRequest(new ApiErrorDto(
+                    $"This bus declares write/command capability across its {rows.Count} device(s) — {summary}. " +
+                    "Saving a map that grants write or command capability requires deliberate confirmation: " +
+                    $"resubmit this SAME request with confirmedWriteCapabilityFingerprint = \"{required}\" to proceed."));
+            }
+
+            if (!string.Equals(body.ConfirmedWriteCapabilityFingerprint, required, StringComparison.Ordinal))
+            {
+                return Results.Conflict(new ApiErrorDto(
+                    $"confirmedWriteCapabilityFingerprint does not match what this bus currently declares — {summary}. " +
+                    "It may be stale (a device was edited after the fingerprint was computed, e.g. a limit widened " +
+                    "or a command re-pointed) or copied from a different bus. The current required value is " +
+                    $"\"{required}\" — confirm the granted capability shown above and retry with that exact value."));
+            }
+        }
+
+        // 🔴 Every refusal that is decidable from the current state is decided HERE, before the first
+        // mutation — one snapshot, one roster read, all N devices. See RtuBusConfiguration.TryFindBlockedDevice.
+        if (RtuBusConfiguration.TryFindBlockedDevice(
+                bus, connectorRegistry.SnapshotBindings(), fleetHost.Fleet, out var blocked))
+        {
+            return Results.Conflict(new ApiErrorDto(blocked));
+        }
+
+        // What the store held for THIS bus before the request — the unit the rollback restores.
+        var previousRows = await store.ListBusAsync(bus.BusInstanceId, ct).ConfigureAwait(false);
+
+        var savedRows = await store.SaveBusAsync(
+            bus.BusInstanceId, rows, ConnectorConfigSource.Operator, ct).ConfigureAwait(false);
+
+        if (!RtuBusConfiguration.TryRegisterAll(bus, busRegistry, connectorRegistry, logger, out var refusal))
+        {
+            // CancellationToken.None, deliberately — D-1's re-review finding I-A, unchanged in force here: a
+            // compensating action must not be cancelled by the very token whose cancellation caused it.
+            var rolledBack = true;
+            try
+            {
+                await store.RestoreBusAsync(bus.BusInstanceId, previousRows, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                rolledBack = false;
+                logger.LogError(ex,
+                    "Rolling back the persisted rows for Modbus RTU bus '{BusInstanceId}' failed after its live " +
+                    "registration was refused.", bus.BusInstanceId);
+            }
+
+            return Results.Conflict(new ApiErrorDto(
+                $"Modbus RTU bus '{bus.BusInstanceId}' was not saved. {refusal} " +
+                (rolledBack
+                    ? previousRows.Count == 0
+                        ? "Its persisted rows were rolled back in one transaction, so nothing is left behind."
+                        : "Its persisted rows were restored, in one transaction, to the " +
+                          $"{previousRows.Count} device(s) this bus had before the request. Note that the LIVE " +
+                          "registry entries for the devices that did register were replaced before the refusal " +
+                          "and cannot be put back — the persisted configuration is authoritative and is rebuilt " +
+                          "into the registry at the next application start."
+                    : $"⚠ The rollback did NOT complete, so rows for '{bus.BusInstanceId}' may have been left " +
+                      "behind that will never run. Check GET /v1/connectors/configured and remove them with " +
+                      "DELETE /v1/connectors/{instanceId} if they are there.")));
+        }
+
+        // 🔴 The only irreversible step, and it is last. RegisterMachine restarts a RUNNING pipeline per new
+        // machine (see its own doc comment), so a bus of N new machines restarts it N times — the cost of not
+        // having a plural roster API, stated in this method's remarks rather than hidden.
+        var addedMachines = new List<string>();
+        foreach (var device in bus.Devices)
+        {
+            if (fleetHost.RegisterMachine(RtuBusConfiguration.DescriptorFor(device)))
+            {
+                addedMachines.Add(device.MachineCode);
+            }
+        }
+
+        var deviceAudit = bus.Devices
+            .Select(d => new { d.InstanceId, d.UnitId, d.MachineCode })
+            .ToList();
+
+        await recorder.RecordAsync(
+            ctx, "connector.save", "connector", bus.BusInstanceId,
+            previousRows.Count == 0
+                ? null
+                : new
+                {
+                    Devices = previousRows.Select(r => new { InstanceId = r.EffectiveInstanceId, r.MachineCode }).ToList(),
+                },
+            new
+            {
+                Kind = DriverKinds.Modbus,
+                bus.Plan.Transport,
+                Line = bus.Plan.DescribeLine(),
+                DeviceCount = bus.Devices.Count,
+                Devices = deviceAudit,
+                busCapability.WritablePoints,
+                busCapability.Commands,
+            },
+            ct).ConfigureAwait(false);
+
+        // English, deliberately — see CreateConnectorAsync's own remark on this; the web client derives its
+        // own vi/en copy from AppliedLive rather than displaying this verbatim.
+        var message =
+            $"Saved {bus.Devices.Count} device(s) on Modbus RTU bus '{bus.BusInstanceId}' ({bus.Plan.Transport}, " +
+            $"line {bus.Plan.DescribeLine()}). " +
+            (addedMachines.Count > 0
+                ? $"{addedMachines.Count} machine(s) joined the fleet: {string.Join(", ", addedMachines)}. If the " +
+                  "fleet was already running, it was restarted to apply this immediately."
+                : "Every machine on this bus was already in the roster — the change applies on the next " +
+                  "Stop/Start (or a full application restart), not immediately to an already-running fleet.") +
+            (bus.Plan.LimitNotice is null ? string.Empty : " " + bus.Plan.LimitNotice) +
+            (notices.Count == 0 ? string.Empty : " " + string.Join(" ", notices));
+
+        return Results.Ok(new ConnectorCreateResultDto(
+            ConnectorWriteCapabilityDto.From(busCapability),
+            savedRows[0],
+            AppliedLive: addedMachines.Count > 0,
+            message,
+            Devices: savedRows));
+    }
+
+    /// <summary>🔴 Task D-7b — every grant declared anywhere on one bus, as ONE capability. Used for the
+    /// deliberate-save fingerprint (see <see cref="CreateRtuBusAsync"/>'s own remarks) and for the response's
+    /// headline <c>writeCapability</c>. Order-independent by construction —
+    /// <see cref="ConnectorWriteCapability.ComputeFingerprint"/> sorts its material — so reordering the
+    /// <c>devices</c> array does not change what has to be confirmed, while re-pointing any one device's
+    /// command does.</summary>
+    internal static ConnectorWriteCapability UnionCapability(IReadOnlyList<ConnectorBusDeviceRow> rows)
+    {
+        var points = new List<ConnectorWritablePointGrant>();
+        var commands = new List<ConnectorCommandGrant>();
+        foreach (var row in rows)
+        {
+            if (row.WriteCapability is null) continue;
+            points.AddRange(row.WriteCapability.WritablePoints);
+            commands.AddRange(row.WriteCapability.Commands);
+        }
+
+        return points.Count == 0 && commands.Count == 0
+            ? ConnectorWriteCapability.None
+            : new ConnectorWriteCapability(points, commands);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // DELETE /v1/connectors/{instanceId}
     // ─────────────────────────────────────────────────────────────────────
     /// <summary>
@@ -460,9 +735,36 @@ public static class ConnectorEndpoints
 
         await recorder.RecordAsync(
             ctx, "connector.delete", "connector", normalized,
-            new { existing.MachineCode, existing.Host, existing.Port, existing.Source },
+            new { existing.MachineCode, existing.Host, existing.Port, existing.Source, existing.BusInstanceId },
             new { liveClaimReleased = claimReleased },
             ct).ConfigureAwait(false);
+
+        // 🔴 Task D-7b — a DEVICE on a shared RS-485 line. The delete itself is already exactly right (one
+        // row, one claim, keyed on the primary key — its seven siblings are untouched, which is the property
+        // D-1's per-instance identity bought and which the web UI could not express until this task). What
+        // changes is only what the operator is TOLD: they deleted one device off a bus, not "the Modbus
+        // connector", and the line keeps running for the rest of the devices on it.
+        if (!string.IsNullOrWhiteSpace(existing.BusInstanceId))
+        {
+            var remaining = await store.ListBusAsync(existing.BusInstanceId, ct).ConfigureAwait(false);
+            return Results.Ok(new ConnectorDeleteResultDto(
+                normalized,
+                $"Removed device '{normalized}' (machine '{existing.MachineCode}') from Modbus RTU bus " +
+                $"'{existing.BusInstanceId}'. " +
+                (remaining.Count > 0
+                    ? $"{remaining.Count} device(s) remain configured on that line and are unaffected — the bus " +
+                      "itself is still configured. "
+                    : "That was the last device on that line, so the bus is no longer configured at all. ") +
+                (claimReleased
+                    ? $"This device's live claim on machine '{existing.MachineCode}' was released. "
+                    : "Nothing was registered live under this device id in this process, so there was no " +
+                      "machine claim to release. ") +
+                "Two things are unchanged and are worth knowing: the driver that was already polling this " +
+                "slave address keeps polling until the fleet is stopped and started (there is no way to stop " +
+                "one mid-run), and the machine itself REMAINS IN THE FLEET ROSTER — the roster has no removal " +
+                "path, so a replacement connector for this same machine code is still refused until the " +
+                "application is restarted."));
+        }
 
         // English, deliberately — see CreateConnectorAsync's own remark on this.
         //

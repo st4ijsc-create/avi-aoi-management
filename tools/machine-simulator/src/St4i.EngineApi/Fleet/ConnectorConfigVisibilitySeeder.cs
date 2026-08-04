@@ -154,4 +154,77 @@ public static class ConnectorConfigVisibilitySeeder
             logWarning?.Invoke($"Failed to seed connector-configuration visibility for kind '{kind}': {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// 🔴 <b>Task D-7b — the Modbus RTU BUS arm, and the removal of D-7a's explicit placeholder.</b>
+    ///
+    /// <para>D-7a's <c>Program.cs</c> skipped every RTU <c>connectors.json</c> entry in this seeding pass, with
+    /// the reason written at the skip: <see cref="SeedAsync"/> above writes exactly ONE row from ONE
+    /// single-device map, and handing it a bus document would make <c>ModbusRegisterMap.FromJson</c> throw on
+    /// every startup and warn about a <c>machineCode</c> the operator never omitted. Its consequence was that
+    /// an RS-485 bus was visible through <c>GET /v1/connectors</c> and the startup log but NOT through
+    /// <c>GET /v1/connectors/configured</c> — i.e. invisible on the one screen this product has for "what is
+    /// configured here". This method is what that skip was a placeholder for.</para>
+    ///
+    /// <para><b>N rows, one per device, written in ONE transaction</b>
+    /// (<see cref="ConnectorConfigStore.SaveBusAsync"/>) — see <see cref="RtuBusConfiguration"/> for why the
+    /// persisted shape is device rows rather than a bus row, and <see cref="ConnectorConfigRecord.Host"/> for
+    /// what the LINE columns carry.</para>
+    ///
+    /// <para><b>Provenance rules, inherited unchanged from <see cref="SeedAsync"/> and applied to the whole
+    /// bus.</b> If ANY existing row in this bus's namespace was persisted by an OPERATOR, the whole bus is
+    /// skipped with the same loud warning — never a partial seed that half-overwrites someone's own
+    /// configuration. A bus made entirely of this mechanism's own <see cref="ConnectorConfigSource.Seeded"/>
+    /// rows (or of nothing at all) is refreshed in place, which is what makes a hand-edited
+    /// <c>connectors.json</c> show up correctly on the next boot instead of going stale.</para>
+    ///
+    /// <para><b>Why the whole bus and not per device.</b> Half a seeded bus is a worse artefact than none: the
+    /// screen would show four devices of eight with nothing saying the other four exist, which is the exact
+    /// "silently missing row an operator cannot diagnose" shape D-7a's skip comment named.</para>
+    /// </summary>
+    /// <param name="busInstanceId">The <c>connectors.json</c> entry's own id — the id
+    /// <see cref="Config.ConnectorsJsonRegistration.RegistrationKeyOf"/> registers this bus under, so the
+    /// visibility rows and the live registrations share one namespace by construction rather than by
+    /// coincidence.</param>
+    /// <param name="settingsJson">The bus document this run already loaded and is actively driving —
+    /// persisted verbatim per device row, no re-serialization.</param>
+    public static async Task SeedBusAsync(
+        ConnectorConfigStore store, string busInstanceId, string settingsJson,
+        Action<string>? logWarning = null, CancellationToken ct = default)
+    {
+        try
+        {
+            var existing = await store.ListBusAsync(busInstanceId, ct).ConfigureAwait(false);
+            var operatorOwned = existing.FirstOrDefault(r => r.Source == ConnectorConfigSource.Operator);
+            if (operatorOwned is not null)
+            {
+                logWarning?.Invoke(
+                    $"GET /v1/connectors/configured is showing PERSISTED rows for Modbus RTU bus '{busInstanceId}' " +
+                    $"that an operator saved themselves (e.g. device '{operatorOwned.EffectiveInstanceId}', machine " +
+                    $"'{operatorOwned.MachineCode}'), but this run's connectors.json entry is the one actually " +
+                    "driving that line — it takes precedence at the live-registry level. What that list shows may " +
+                    "NOT match what is running, device for device. Delete those rows " +
+                    "(DELETE /v1/connectors/{instanceId}) and restart to let this run's own configuration be " +
+                    "seeded and reported accurately.");
+                return;
+            }
+
+            if (!RtuBusConfiguration.TryResolve(busInstanceId, settingsJson, logWarning: null, out var bus, out var error))
+            {
+                logWarning?.Invoke(
+                    $"Could not seed connector-configuration visibility for Modbus RTU bus '{busInstanceId}' — the " +
+                    $"bus document that already registered failed re-validation here: {error}");
+                return;
+            }
+
+            await store.SaveBusAsync(
+                    busInstanceId, RtuBusConfiguration.BuildRows(bus), ConnectorConfigSource.Seeded, ct)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logWarning?.Invoke(
+                $"Failed to seed connector-configuration visibility for Modbus RTU bus '{busInstanceId}': {ex.Message}");
+        }
+    }
 }
