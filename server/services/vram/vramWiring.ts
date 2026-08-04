@@ -386,17 +386,36 @@ interface ScopeReading {
  * số của `nvidia-smi`/`getVramState`. Reconciler và nền (`captureVramBaseline`) vẫn dùng NGUYÊN
  * đầu dò toàn thiết bị — hai thước chạy song song, không có điểm giao.
  *
- * ⚠ PID WINDOWS TÁI DỤNG (nợ Task 1 giao lại cho người gọi) — đã phân tích, KHÔNG cần cơ chế
- * riêng, và đây là lý do:
+ * ⚠⚠ PID WINDOWS TÁI DỤNG — KHỐI PHÂN TÍCH NÀY TỪNG **THIẾU MỘT CHIỀU**, và bản vá dưới đây bổ
+ * sung chiều đó (Pha 2B Task 1, re-review vòng 2 / N2-2). Bản cũ chỉ xét **PID CON** bị cấp lại và
+ * kết luận "không cần cơ chế riêng". Kết luận đó ĐÚNG cho chiều nó xét và **SAI cho chiều kia**:
  *   • phạm vi `self`: gốc là `process.pid` — PID của CHÍNH tiến trình đang chạy. Hệ điều hành
  *     không thể cấp lại PID đó cho ai khác khi tiến trình còn sống, mà nếu nó chết thì không còn
  *     ai đọc phép đo này nữa. Bất khả đạt theo cấu trúc, không phải "xác suất thấp".
- *   • phạm vi `descendants`: `readProcessVram()` đọc LẠI `Win32_Process` ở MỖI lượt gọi và dựng
- *     lại cây từ đầu, nên một PID đã chết rơi ra khỏi tập ngay ở đầu đo kế tiếp; một PID được
- *     cấp lại cho tiến trình LẠ nằm ngoài cây ⇒ bị loại. Ca duy nhất còn lại là PID được cấp lại
- *     cho một tiến trình con KHÁC CỦA CHÍNH TA — và byte của nó vốn dĩ THUỘC phạm vi này, nên
- *     hiệu số vẫn đúng nghĩa "cây con của ta phình thêm bao nhiêu". Việc quy sai cho giấy phép
- *     NÀO trong cùng phạm vi lại đúng là ca chồng lấn, đã có `overlappedBy` bắt.
+ *   • phạm vi `descendants`, **chiều PID CON** (bản cũ): `readProcessVram()` đọc LẠI
+ *     `Win32_Process` mỗi lượt và dựng lại cây, nên PID đã chết rơi khỏi tập ngay ở đầu đo kế
+ *     tiếp; PID cấp lại cho tiến trình LẠ nằm ngoài cây ⇒ bị loại. Ca còn lại (cấp lại cho một
+ *     tiến trình con KHÁC CỦA TA) vẫn thuộc phạm vi ⇒ hiệu số vẫn đúng nghĩa; quy sai giấy phép
+ *     nào thì đúng là ca chồng lấn, đã có `overlappedBy` bắt.
+ *   • ★★ phạm vi `descendants`, **chiều PID CHA — CHIỀU BỊ BỎ SÓT**: `PS_SCRIPT` **không đọc
+ *     `CreationDate`**, nên `collectDescendants()` tin `ppid` theo mệnh giá. Một **tàn dư đang giữ
+ *     GPU có cha đã chết** (đó chính là ĐỊNH NGHĨA của tàn dư), rồi PID người cha đó được cấp cho
+ *     một tiến trình con của TA ⇒ tàn dư bị hút vào cây và bị tính là "của ta". Hai điều kiện này
+ *     **TƯƠNG QUAN MẠNH**, không độc lập — vòng lặp kill→restart sinh ra cả hai cùng lúc.
+ *     Hậu quả NẶNG HƠN ca ở reconciler: byte của tàn dư có mặt ở CẢ hai đầu đo nên **triệt tiêu
+ *     trong `after − before`**, nhưng `seen` thì KHÔNG triệt tiêu (`descendantKeys > 0`) ⇒
+ *     `seen = true` ⇒ **vô hiệu hoá đúng lá chắn `actual === 0 && !seen`** ⇒ `commit(0)` +
+ *     `recordActual(0)` ⇒ nấc `learned = 0` sống hết đời tiến trình.
+ *
+ * ⇒ **CỐ Ý MANG SANG (nợ đã ghi, không vá ở Task 1), và đây là lý do ĐẦY ĐỦ — đừng bắt người sau
+ * tự suy lại:** dưới §5.6c, `headroom = trần − max(ledgerTotalBytes, attributableBytes)`. Một
+ * `learned = 0` chỉ đầu độc **vế `ledgerTotal`**; vế `attributable` vẫn nhìn mức dùng THẬT của
+ * thiết bị (thước `nvidia-smi`/`getVramState`, đường hoàn toàn khác), và `max()` lấy vế LỚN HƠN.
+ * ⇒ Rủi ro OOM ở đây bị **`max()` chặn**, KHÔNG phải bị lá chắn `seen` chặn. Nói cách khác: lá
+ * chắn `seen` mất tác dụng trong ca này, nhưng nó không phải lớp phòng thủ cuối.
+ * ⚠ Hệ quả nếu ai đó đổi §5.6c thành `ledgerTotal` đơn thuần (bỏ `max`): lỗ này **lập tức thành
+ * đường OOM**. Đóng nó rẻ: thêm `CreationDate` vào `PS_SCRIPT` rồi dùng lại
+ * `vramGpuHolders.pruneUnprovenParentLinks()` — cơ chế đã có sẵn, chỉ chưa nối vào đường đo.
  *
  * ⚠ HÀM NÀY CÓ THỂ NÉM (đúng như `readDeviceVramUncached()` mà nó thay thế): `readProcessVram()`
  * tự nuốt lỗi thành `null`, nhưng lời gọi `execFile` vẫn có thể ném đồng bộ. Hai điểm gọi xử lý

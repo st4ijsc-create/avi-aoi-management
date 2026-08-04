@@ -57,11 +57,21 @@ import { collectDescendants, type RawProcRow } from "./vramProcessProbe";
  *      đúng liều thuốc reviewer chỉ định cho (A), và đủ cho MỌI sidecar vì tất cả đều `spawn()`
  *      TRỰC TIẾP từ tiến trình vai trò.
  *
- * ⇒ **VÀ QUAN TRỌNG NHẤT — MỨC AN TOÀN KHÔNG CÒN PHỤ THUỘC VÀO PHÉP PHÂN LOẠI NÀY.**
- * `baselineVerified` tắt khi **`orphans` HOẶC `peers` khác rỗng**, tức khi có BẤT KỲ mã nào của hệ
- * đang giữ GPU ngoài cây tiến trình này. Phân loại sai (cả hai chiều) chỉ đổi CÂU NÓI, **không thể**
- * đẻ ra một con số sai được TIN — lối hỏng của (A) bị đóng bằng CẤU TRÚC, không bằng độ chính xác
- * của một vị từ. Đây là điều kiện để phần còn lại được phép là suy đoán tốt nhất có thể.
+ * ⇒ **MỨC AN TOÀN KHÔNG PHỤ THUỘC VÀO VIỆC CHIA `peers` ⇄ `orphans`** — nhưng CHỈ ĐÚNG TRONG PHẠM
+ * VI ĐÓ, và N2-2 (re-review vòng 2) bắt đúng chỗ câu này từng viết RỘNG HƠN MÃ. Phạm vi chính xác:
+ *
+ *   | Ngăn | Tắt cờ `baselineVerified`? | Cái gì bảo đảm |
+ *   |---|---|---|
+ *   | `peers` / `orphans` | **CÓ (cả hai)** | dòng gán DUY NHẤT ở `vramReconciler.ts` (`orphans === 0 && peers === 0`) ⇒ chia nhầm giữa hai ngăn này chỉ đổi CÂU NÓI |
+ *   | `ours` | không | **BẰNG CHỨNG `ctime`**: `pruneUnprovenParentLinks()` đòi cha có mặt trong bảng VÀ `ctime(cha) ≤ ctime(con)` ⇒ PID cấp lại không lọt vào được (tính chất CẤU TRÚC) |
+ *   | `thirdParty` | không | **CHỈ có `runsOurCode()` không BẮT SÓT** — không có lưới cấu trúc nào đỡ |
+ *
+ * ⚠⚠ Ô cuối là biên MỎNG NHẤT của cả cổng, và nó đã HỞ một lần thật (N2-1: `exact` chưa từng được
+ * so với token đầu của dòng lệnh ⇒ một hộ `[Insufficient Permissions]` chạy đúng `LLAMA_SERVER_BIN`
+ * rơi vào `thirdParty` ⇒ nền nuốt 7,8 GB và được đóng dấu TIN). Ai thêm một đường sinh tiến trình
+ * mới: **bắt sót ở `runsOurCode()` KHÔNG kêu**, nó âm thầm trả cờ TIN. Đó là lý do có lưới I-2
+ * (biến môi trường) và lưới `package.json` (điểm vào) — và là lý do đừng siết `APP_SUBDIR_MARKERS`
+ * hay `runsOurCode()` mà không thêm ca canh (N2-3).
  *
  * ⚠ VÀ VẾ THỨ HAI PHẢI HẸP (I-3, review vòng 1): bản đầu so khớp cả **TÊN FILE TRẦN** để đỡ ca
  * `LOCAL_TRAINER_CMD=python tools/trainer/train.py` (`.env:259`). Hệ quả: **mọi** `python.exe` giữ
@@ -224,6 +234,22 @@ function firstTokenIfPath(cmd: string | undefined): string | undefined {
   return first.includes("\\") || first.includes("/") ? first : undefined;
 }
 
+/**
+ * N2-1 — ẢNH THỰC THI của một dòng lệnh Windows, HIỂU DẤU NHÁY.
+ * `"C:\Program Files\x\y.exe" -m z` ⇒ `c:\program files\x\y.exe` (KHÔNG phải `"c:\program`).
+ * Chuỗi vào đã được `norm()` (thường hoá + `/`→`\`), nên kết quả cũng đã chuẩn hoá.
+ */
+function firstCommandToken(cmd: string): string | undefined {
+  const t = cmd.trim();
+  if (t.startsWith('"')) {
+    const end = t.indexOf('"', 1);
+    return end > 1 ? t.slice(1, end) : undefined;
+  }
+  const sp = t.indexOf(" ");
+  const first = sp < 0 ? t : t.slice(0, sp);
+  return first.length > 0 ? first : undefined;
+}
+
 /** Phần SAU token đầu của một lệnh (vd. `tools/trainer/train.py`) — chữ ký nhận dạng dòng lệnh. */
 function commandSignature(cmd: string | undefined): string | undefined {
   const rest = (cmd ?? "").trim().split(/\s+/).filter(Boolean).slice(1).join(" ");
@@ -339,6 +365,24 @@ export function classifyHolders(input: {
     if (root.length > 0 && n.startsWith(`${root}\\`)) return true;
     const cmd = cmdOf(h.pid);
     if (!cmd) return false;
+    /**
+     * ★★★ N2-1 (re-review vòng 2) — ẢNH THỰC THI CÒN ĐẾN TỪ **TOKEN ĐẦU CỦA DÒNG LỆNH**, và bỏ
+     * qua nguồn đó là để hở đúng biên nguy hiểm nhất.
+     *
+     * ⚠ KỊCH BẢN ĐO ĐƯỢC TRÊN CHÍNH MÁY NÀY: `nvidia-smi` trả `[Insufficient Permissions]` ở cột
+     * tên cho một hộ (1/15 hộ, có ca parse riêng cho nó) — nhưng `Win32_Process` **vẫn đọc được
+     * dòng lệnh**, và dòng lệnh đó bắt đầu bằng ĐÚNG `LLAMA_SERVER_BIN`. Thiếu ba dòng dưới đây
+     * thì hộ đó rơi vào `thirdParty`, mà `thirdParty` **KHÔNG tắt cờ `baselineVerified`** ⇒ nền
+     * nuốt trọn **7,8 GB** của sidecar thị giác **VÀ được đóng dấu TIN**. Đó đúng là kịch bản mà
+     * cả cổng này sinh ra để bắt, hỏng vì bằng chứng mạnh nhất trong tay bị vứt chỉ do nó đến từ
+     * nguồn khác.
+     *
+     * ⚠ `firstCommandToken()` phải hiểu DẤU NHÁY: `"C:\Program Files\…\llama-server.exe" -m …`
+     * tách theo khoảng trắng sẽ cho `"c:\program` — một chuỗi vô nghĩa, và lỗ vẫn còn nguyên.
+     */
+    const exe = firstCommandToken(cmd);
+    if (exe && exact.has(exe)) return true;
+    if (exe && root.length > 0 && exe.startsWith(`${root}\\`)) return true;
     if (root.length > 0 && APP_SUBDIR_MARKERS.some((s) => cmd.includes(`${root}\\${s}`))) return true;
     if (sigs.some((s) => cmd.includes(s))) return true;
     return markers.some((m) => cmd.includes(m));

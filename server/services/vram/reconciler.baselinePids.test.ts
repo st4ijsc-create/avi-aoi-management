@@ -362,6 +362,40 @@ describe("Pha 2B Task 1 — nền + tàn dư giữ GPU", () => {
     expect((await reconcileOnce()).baselineVerified).toBe(true);
   });
 
+
+  /**
+   * ★★★ BIÊN ĐỘ (re-review vòng 2 lưu ý) — TÍNH CHẤT CHỊU LỰC NHẤT ĐI TỪ HƯỚNG THỨ HAI.
+   *
+   * Ca `★★★ C-1+(A)` canh tính chất "có mã của hệ ngoài cây ⇒ KHÔNG đóng dấu TIN" bằng ĐÚNG MỘT
+   * khẳng định ở ĐÚNG MỘT cấu hình (chỉ `peers`). Đủ để bắt đột biến, nhưng biên bằng 0. Ca này đi
+   * từ hướng khác: quét **cả ba** cấu hình khác rỗng, và khẳng định ĐỒNG THỜI hai nửa của hợp đồng
+   *   (1) cờ TẮT  — để Task 2/5 chạy chặt hơn;
+   *   (2) con số VẪN CÒN — vì `null` là chỉ-sổ, tức CHẶN TRÊN của headroom (I-1).
+   * Bỏ vế nào trong hai vế đó cũng ĐỎ ở đây, dù đột biến rơi vào cấu hình nào.
+   */
+  it("★★★ BIÊN ĐỘ: MỌI cấu hình có mã của hệ ngoài cây ⇒ verified TẮT nhưng attributable VẪN CÒN", async () => {
+    const cases: Array<{ ten: string; census: ReturnType<typeof census> }> = [
+      { ten: "chỉ tàn dư", census: census({ orphans: [ORPHAN], thirdParty: DESK }) },
+      { ten: "chỉ anh em", census: census({ peers: [WORKER], thirdParty: DESK }) },
+      { ten: "cả hai", census: census({ peers: [WORKER], orphans: [ORPHAN], thirdParty: DESK }) },
+    ];
+    for (const { ten, census: c } of cases) {
+      vi.resetModules();
+      mockEmptyLedger();
+      mockDevice();
+      vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+      vi.doMock("./vramGpuHolders", () => ({ readGpuHolders: async () => c }));
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+      expect(await captureVramBaseline(), ten).toBe(DEVICE_USED);
+      const r = await reconcileOnce();
+      expect(r.baselineVerified, `${ten}: cờ PHẢI tắt`).toBe(false);
+      expect(r.attributableBytes, `${ten}: con số PHẢI còn — null là chỉ-sổ = chặn trên`).not.toBeNull();
+      warnSpy.mockRestore();
+    }
+  });
+
   it("nền ĐÃ XÁC MINH thì KHÔNG quét lại ở mỗi nhịp (chi phí nvidia-smi chỉ trả một lần)", async () => {
     mockEmptyLedger();
     mockDevice();
@@ -692,6 +726,101 @@ describe("vramGpuHolders — phân loại tiến trình đang giữ GPU (hàm TH
       appRoot: "D:\\SOURCES\\avi-aoi-management",
     });
     expect(c.orphans.map((h) => h.pid)).toEqual([31337]);
+  });
+
+
+  /**
+   * ★★★ N2-1 (re-review vòng 2) — BIÊN `thirdParty` LÀ BIÊN MỎNG NHẤT, VÀ NÓ ĐÃ HỞ THẬT.
+   *
+   * `thirdParty` KHÔNG tắt cờ `baselineVerified` (chỉ `peers`/`orphans` tắt), nên **bắt SÓT** ở
+   * `runsOurCode()` là đường duy nhất còn lại để một nền nhiễm được đóng dấu TIN.
+   *
+   * Kịch bản dựng đúng số đo của máy này: `nvidia-smi` trả `[Insufficient Permissions]` ở cột tên
+   * (1/15 hộ — có ca parse riêng ở trên), nhưng `Win32_Process` VẪN đọc được dòng lệnh, và dòng
+   * lệnh bắt đầu bằng ĐÚNG `LLAMA_SERVER_BIN`. Đây chính là sidecar thị giác **7,8 GB** — hộ lớn
+   * nhất hệ và là ca mà cả cổng này sinh ra để bắt.
+   */
+  it("★★★ N2-1: tên là [Insufficient Permissions] nhưng DÒNG LỆNH khớp LLAMA_SERVER_BIN ⇒ TÀN DƯ, KHÔNG phải thirdParty", async () => {
+    const { classifyHolders } = await import("./vramGpuHolders");
+    const BIN = "D:\\SOURCES\\16.AI\\llama-cuda\\llama-server.exe";
+    const c = classifyHolders({
+      holders: [{ pid: 2056, name: "[Insufficient Permissions]" }],
+      procs: [
+        { pid: 100, ppid: 50, cmdline: "node dist/index.js", ctime: 100 },
+        { pid: 2056, ppid: 60001, cmdline: `${BIN} -m qwen3-vl.gguf --port 8081`, ctime: 50 },
+      ],
+      roots: [100],
+      ownExecutables: ["C:\\Program Files\\nodejs\\node.exe", BIN],
+      appRoot: "D:\\SOURCES\\avi-aoi-management",
+    });
+    expect(c.thirdParty, "rơi vào thirdParty = nền nuốt 7,8 GB VÀ được đóng dấu TIN").toEqual([]);
+    expect(c.orphans.map((h) => h.pid)).toEqual([2056]);
+  });
+
+  it("★★ N2-1: token đầu có DẤU NHÁY (đường dẫn có khoảng trắng) vẫn phải khớp", async () => {
+    // Tách theo khoảng trắng sẽ cho `"c:\program` — vô nghĩa, và lỗ N2-1 còn nguyên.
+    const { classifyHolders } = await import("./vramGpuHolders");
+    const BIN = "C:\\Program Files\\llama.cpp\\llama-server.exe";
+    const c = classifyHolders({
+      holders: [{ pid: 2057, name: "[Insufficient Permissions]" }],
+      procs: [
+        { pid: 100, ppid: 50, cmdline: "node dist/index.js", ctime: 100 },
+        { pid: 2057, ppid: 60001, cmdline: `"${BIN}" -m x.gguf`, ctime: 50 },
+      ],
+      roots: [100],
+      ownExecutables: [BIN],
+      appRoot: "D:\\SOURCES\\avi-aoi-management",
+    });
+    expect(c.orphans.map((h) => h.pid)).toEqual([2057]);
+  });
+
+  /**
+   * ★★ N2-3 (re-review vòng 2) — `APP_SUBDIR_MARKERS` gỡ 4/5 mục mà 275 ca vẫn xanh.
+   *
+   * ⚠ Chiều SIẾT ở đây KHÔNG vô hại: siết = bắt sót = `thirdParty` = cờ `verified` giữ TRUE. Ca
+   * này canh TỪNG mục, nên gỡ bất kỳ mục nào là ĐỎ.
+   */
+  it("★★ N2-3: MỖI thư mục con trong APP_SUBDIR_MARKERS phải thật sự nhận ra hộ của ta", async () => {
+    const { classifyHolders } = await import("./vramGpuHolders");
+    const APP = "D:\\SOURCES\\avi-aoi-management";
+    for (const sub of ["uploads", "dist", "server", "tools", "scripts"]) {
+      const c = classifyHolders({
+        holders: [{ pid: 900, name: "C:\\Python312\\python.exe" }],
+        procs: [{ pid: 900, ppid: 60001, cmdline: `python run.py ${APP}\\${sub}\\job\\7`, ctime: 1 }],
+        roots: [100],
+        ownExecutables: ["C:\\Program Files\\nodejs\\node.exe"],
+        appRoot: APP,
+      });
+      expect(c.orphans.map((h) => h.pid), `thư mục "${sub}" phải được nhận ra`).toEqual([900]);
+    }
+  });
+
+  /**
+   * ★ N2-5 (re-review vòng 2) — MỘT `ct = 0` TRÊN TIẾN TRÌNH VAI TRÒ LÀM ĐỔI CÂU NÓI CỦA MỌI
+   * SIDECAR CỦA NÓ.
+   *
+   * Không đọc được `CreationDate` của một vai trò (chạy dưới tài khoản khác / thiếu quyền) ⇒ mọi
+   * sidecar ĐANG SỐNG của nó mất tư cách `peers` và bị gọi là "TÀN DƯ — tắt theo đúng PID".
+   * **Mức an toàn vẫn ĐÚNG** (cả hai ngăn đều tắt cờ `verified`), nhưng lời khuyên thì SAI — và
+   * trước ca này không ai canh. Ca khoá hành vi hiện tại để lượt sau đổi nó là một quyết định
+   * CÓ Ý THỨC, không phải một lượt trôi.
+   */
+  it("★ N2-5: vai trò KHÔNG đọc được CreationDate ⇒ sidecar sống của nó bị gọi là TÀN DƯ (mức an toàn vẫn đúng)", async () => {
+    const { classifyHolders } = await import("./vramGpuHolders");
+    const BIN = "D:\\tools\\llama.cpp\\llama-server.exe";
+    const c = classifyHolders({
+      holders: [{ pid: 300, name: BIN }],
+      procs: [
+        { pid: 100, ppid: 50, cmdline: "node dist/index.js", ctime: 100 },
+        { pid: 200, ppid: 60, cmdline: "node dist/worker.js", ctime: 0 }, // vai trò, KHÔNG đọc được mốc
+        { pid: 300, ppid: 200, cmdline: "llama-server -m x.gguf", ctime: 900 },
+      ],
+      roots: [100],
+      ownExecutables: ["C:\\Program Files\\nodejs\\node.exe", BIN],
+      appRoot: "D:\\SOURCES\\avi-aoi-management",
+    });
+    expect(c.peers, "thiếu bằng chứng ⇒ KHÔNG cấp tư cách anh em").toEqual([]);
+    expect(c.orphans.map((h) => h.pid)).toEqual([300]);
   });
 
   it("★ M-2: parseProcTable phân biệt 'RỖNG' với 'KHÔNG PARSE ĐƯỢC'", async () => {

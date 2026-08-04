@@ -182,6 +182,16 @@ export interface VramReconcileResult {
    * nuốt byte của kẻ khác hay không**. `attributableBytes` vẫn dùng được (xem trên); cờ này là
    * ĐẦU VÀO để Task 2/5 chạy **CHẶT HƠN** (đệm an toàn lớn hơn / từ chối lượt xin lớn), TUYỆT ĐỐI
    * không phải cái cớ để nới.
+   *
+   * ⚠⚠⚠ N2-4 (re-review vòng 2) — **CHƯA CÓ NGƯỜI TIÊU THỤ NÀO NGOÀI `server/services/vram/**`.**
+   * Đo được bằng `git grep baselineVerified`: mọi lượt đọc đều nằm trong chính module này và bộ
+   * test của nó. Nghĩa là **toàn bộ giá trị của cổng Task 1 hiện ở dạng TIỀM NĂNG**: nó phát hiện
+   * đúng, ghi sổ đúng, kêu đúng — nhưng chưa có ai ĐỔI QUYẾT ĐỊNH vì nó.
+   * ⇒ **MỤC CHUYỂN TIẾP CỨNG cho Task 2/5:** `computeHeadroom()` phải nhận cờ này và làm hệ chặt
+   * hơn (ứng viên: tăng `safetyReserveBytes`, hoặc từ chối lượt xin vượt một tỉ lệ dư địa). Nếu
+   * Task 5 đóng lại mà cờ vẫn không ai đọc, thì Task 1 đã chỉ dựng một cái đồng hồ không kim —
+   * và điều kiện ra số 1 của Pha 2B ("nền từ chối tuyên bố sạch khi có PID lạ") coi như CHƯA ĐẠT
+   * về mặt hiệu lực, dù đạt về mặt phát hiện.
    */
   baselineVerified: boolean;
 }
