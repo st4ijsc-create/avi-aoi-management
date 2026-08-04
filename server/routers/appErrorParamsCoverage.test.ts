@@ -55,6 +55,9 @@ const PARAM_SPACE: Record<string, string> = {
   // tuyên bố cổng này đã phủ đường VRAM.
   holders: "list",
   preemptable: "list",
+  // Pha 2B Task 4 vòng sửa 1 (I-3) — `errors.trust.*`: lời hạ giọng CÓ ĐIỀU KIỆN
+  // (`trusted` = chuỗi RỖNG, `degraded` = câu cảnh báo). Cùng lý do giữ bản sao khớp.
+  trust: "trust",
 };
 const PARAM_KEYS = Object.keys(PARAM_SPACE);
 

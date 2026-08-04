@@ -135,8 +135,13 @@ export type VramRefusalCaveat =
   | "vramUnattributedUnreliable"
   /** MÙ (`blind`) hoặc **CHƯA HỎI** ống ngoài sổ ⇒ không biết phần ngoài sổ lớn bao nhiêu. */
   | "vramUnattributedUnknownExtent"
-  /** ĐO ĐƯỢC một khoản ngoài sổ: `usedBytes − ledgerTotalBytes > 0`. */
-  | "vramUnattributedMeasured"
+  /**
+   * PHÁT HIỆN ĐƯỢC một khoản ngoài sổ — theo **một trong hai** đường: hiệu
+   * `usedBytes − ledgerTotalBytes` (SỐ ĐO) **hoặc** `unledgeredBytes` (ƯỚC LƯỢNG).
+   * ⚠ Tên cũ `vramUnattributedMeasured` đã ĐỔI (I-1): nó khai "đo được" trong khi nhánh này
+   * cũng phục vụ một con số ƯỚC LƯỢNG — và câu nói sai loại số là đúng thứ §5.3 cấm.
+   */
+  | "vramUnattributedDetected"
   /** Sổ giải thích hết phần thiết bị ở nhịp gần nhất — nhưng sổ mới bao 15/160 dòng. */
   | "vramLedgerCoverageOnly";
 
@@ -152,8 +157,12 @@ export interface VramRefusalFacts {
   readonly holders: readonly VramHolderFact[];
   /** Ai có thể nhường — mức THẤP HƠN mức đang xin. */
   readonly preemptable: readonly VramHolderFact[];
-  /** Tổng byte nhường được (bỏ qua hộ có byte không hữu hạn). */
-  readonly preemptableBytes: number;
+  /**
+   * Tổng byte nhường được. `null` ⇔ **không cộng nổi** (tổng tràn thành `±Infinity`, dù từng số
+   * hạng hữu hạn — M-1/M-2). Hộ có byte không dùng được bị bỏ khỏi phép cộng nhưng **vẫn được gọi
+   * tên** trong `preemptable`.
+   */
+  readonly preemptableBytes: number | null;
   /** Phần thiết bị đang dùng mà sổ KHÔNG giải thích được. `null` ⇔ không đo được (mù/bẩn). */
   readonly unattributedBytes: number | null;
   /** ƯỚC LƯỢNG byte đã chạy ngoài sổ. `null` ⇔ CHƯA HỎI / không hữu hạn. */
@@ -211,24 +220,51 @@ export function buildVramRefusal(input: VramRefusalInput): VramRefusalFacts {
   const unledgeredEstimateBytes = input.unledgered === null ? null : finiteOrNull(input.unledgered.bytes);
   const unknownCount = input.unledgered === null ? null : finiteOrNull(input.unledgered.unknownCount);
 
-  const preemptableBytes = input.preemptable.reduce((sum, h) => sum + (finiteOrNull(h.bytes) ?? 0), 0);
+  /**
+   * ★ M-1/M-2 (review vòng 1) — LƯỚI PHẢI Ở TRÊN **TỔNG**, KHÔNG CHỈ TỪNG SỐ HẠNG. Bản trước
+   * viết `(finiteOrNull(h.bytes) ?? 0)` cho từng hộ rồi cộng — mỗi số hạng hữu hạn mà TỔNG vẫn
+   * tràn: reviewer đo hai hộ `1e308` ⇒ câu ra `"… tổng Infinity MiB."`, đúng hình dạng rơi vào
+   * bẫy `bigint(mode:"number")` ⇒ MẤT CẢ LÔ sự kiện. Và cái `?? 0` ấy chính là **một cái DÂY**
+   * theo đúng quy tắc Task 3 để lại. Nay: bỏ qua hộ có byte không dùng được (nó vẫn được GỌI TÊN
+   * ở danh sách, chỉ không cộng được), rồi **lọc lần cuối trên TỔNG** ⇒ `null` = "không cộng nổi".
+   */
+  const preemptableBytes = finiteOrNull(
+    input.preemptable.reduce((sum, h) => sum + (Number.isFinite(h.bytes) ? h.bytes : 0), 0),
+  );
 
   /**
    * THỨ TỰ NÀY LÀ MỘT QUYẾT ĐỊNH, KHÔNG PHẢI TIỆN TAY:
    *  1. `unknownCount > 0` thắng TẤT CẢ — bàn giao (2): mọi hộ ONNX/sidecar/`gguf-context` đóng
    *     góp 0 byte vào `unledgeredBytes` và **chỉ** hiện ở đây. Câu này phải nói *"đừng dùng con
    *     số ước lượng để tính"*, và nó KHÔNG phụ thuộc `unattributedBytes` (có thể đang `null`).
-   *  2. mù / chưa hỏi — không biết phần ngoài sổ lớn bao nhiêu.
-   *  3. đo được một khoản ngoài sổ.
+   *  2. **KHÔNG BIẾT** — mù · chưa hỏi · **hoặc bất kỳ ô nào trong ba ô đó không dùng được**.
+   *     ⚠ I-2 (review vòng 1): bản trước để `unattributedBytes === null` (đầu vào bẩn: `usedBytes`
+   *     `+Infinity`, sổ `NaN`) **rơi thẳng xuống nhánh 4** ⇒ câu ra *"chưa phát hiện khoản nào"*
+   *     trong khi sự thật là **KHÔNG BIẾT**. Đó là `null` bị đọc thành `0` — đúng lớp lỗi mà cả
+   *     file này tồn tại để diệt, tái phát ngay trong file.
+   *  3. **PHÁT HIỆN ĐƯỢC** một khoản ngoài sổ — theo **một trong hai** đường, và cả hai đều phải
+   *     kích hoạt: (a) hiệu `usedBytes − ledgerTotalBytes` (SỐ ĐO), (b) `unledgeredBytes` (ƯỚC
+   *     LƯỢNG của những lượt `beginVramAllocation()` hỏng).
+   *     ⚠ I-1 (review vòng 1): bản trước chỉ nhìn (a) ⇒ hình dạng **thường gặp**
+   *     `{bytes: 5.000 MiB, unknownCount: 0}` của `vramWiring.vramBeginFailureState()` cho ra câu
+   *     *"chưa phát hiện khoản nào"* trong khi 5.242.880.000 byte **nằm ngay trong `facts`**.
+   *     Câu của nhánh này vì thế **nêu CẢ HAI con số**, không chọn một.
    *  4. sổ giải thích hết — vẫn phải nói bản liệt kê là CẬN DƯỚI.
    */
+  const khongBiet =
+    input.blind ||
+    input.unledgered === null ||
+    unattributedBytes === null ||
+    unledgeredEstimateBytes === null ||
+    unknownCount === null;
+
   const caveat: VramRefusalCaveat =
     unknownCount !== null && unknownCount > 0
       ? "vramUnattributedUnreliable"
-      : input.blind || input.unledgered === null
+      : khongBiet
         ? "vramUnattributedUnknownExtent"
-        : unattributedBytes !== null && unattributedBytes > 0
-          ? "vramUnattributedMeasured"
+        : (unattributedBytes ?? 0) > 0 || (unledgeredEstimateBytes ?? 0) > 0
+          ? "vramUnattributedDetected"
           : "vramLedgerCoverageOnly";
 
   return {
@@ -275,10 +311,13 @@ function caveatText(facts: VramRefusalFacts): string {
         `hệ không đo được phần đang dùng ngoài sổ ở nhịp gần nhất, nên không biết nó lớn bao ` +
         `nhiêu. ${coverageTail(facts)}`
       );
-    case "vramUnattributedMeasured":
+    case "vramUnattributedDetected":
+      // I-1 — NÊU CẢ HAI con số, và nói rõ con số nào là ĐO, con số nào là ƯỚC LƯỢNG. Chọn một
+      // trong hai là để con số còn lại biến mất khỏi câu dù nó nằm ngay trong `facts`.
       return (
         `${mibText(facts.unattributedBytes)} MiB đang dùng trên thiết bị không thuộc về hộ nào ` +
-        `trong sổ. ${coverageTail(facts)}`
+        `trong sổ (số ĐO); và ${mibText(facts.unledgeredEstimateBytes)} MiB đã chạy ngoài sổ theo ` +
+        `ƯỚC LƯỢNG. ${coverageTail(facts)}`
       );
     case "vramLedgerCoverageOnly": {
       const tail = coverageTail(facts);
@@ -348,8 +387,15 @@ export function vramRefusalAppError(facts: VramRefusalFacts): {
     // thành "không có" ĐÚNG NGÔN NGỮ — thay vì một chỗ trống mà người đọc tự điền nghĩa.
     holders: facts.holders.length === 0 ? "none" : facts.holders.map(holderText).join(", "),
     preemptable: facts.preemptable.length === 0 ? "none" : facts.preemptable.map(holderText).join(", "),
-    preemptableMb: mib(facts.preemptableBytes) ?? 0,
+    // M-1/M-2 — `?? 0` cũ là một DÂY: tổng KHÔNG cộng nổi (tràn) sẽ hiện thành "0 MiB nhường
+    // được", tức nói NGƯỢC. `"?"` nói đúng: có ứng viên, nhưng không cộng được tổng.
+    preemptableMb: mibText(facts.preemptableBytes),
     reason: facts.caveat,
+    // I-3 — lời hạ giọng CÓ ĐIỀU KIỆN cho câu i18n: `trust` là khoá từ điển (`errors.trust.*`),
+    // `trusted` là chuỗi RỖNG nên khuôn câu không đổi khi số đáng tin. Câu máy chủ đã có lời hạ
+    // giọng này từ đầu; trước bản vá, đường i18n thì KHÔNG.
+    trust: facts.degradedReasons.length > 0 ? "degraded" : "trusted",
+    degradedReasons: facts.degradedReasons.join(", ") || "-",
     // Placeholder RIÊNG của các khoá `errors.reason.*` — luôn truyền đủ, kể cả khi khoá đang chọn
     // không cần tới: thiếu một placeholder là đẩy "{{unknownCount}}" thô ra màn hình (đúng lớp lỗi
     // mà cổng "reason→placeholder" của `appErrorParamsCoverage.test.ts` canh ở phía router).
@@ -358,7 +404,6 @@ export function vramRefusalAppError(facts: VramRefusalFacts): {
     unattributedMb: mibText(facts.unattributedBytes),
     unledgeredMb: mibText(facts.unledgeredEstimateBytes),
     unknownCount: facts.unknownCount === null ? "?" : facts.unknownCount,
-    degraded: facts.degradedReasons.join(", ") || "-",
   };
   // ⚠ CHỈ có mặt ở nhánh `VRAM_REFUSED`: khuôn câu `VRAM_HEADROOM_UNKNOWN` KHÔNG có
   // `{{availableMb}}`, và bơm một ô "còn bao nhiêu" vào đó là mời người sau đi in nó.

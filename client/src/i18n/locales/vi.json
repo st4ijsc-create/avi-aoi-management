@@ -3563,12 +3563,16 @@
     "KB_PARSE_FAILED": "Không đọc được nội dung tệp.",
     "KB_NO_TEXT_EXTRACTED": "Tệp \"{{source}}\" không có chữ nào để nạp.",
     "KB_FETCH_FAILED": "Không tải được nội dung từ {{url}}.",
-    "VRAM_REFUSED": "Không đủ VRAM cho {{owner}} (mức {{priority}}): xin {{requestedMb}} MiB, còn {{availableMb}} MiB. Đang giữ trong sổ: {{holders}}. Có thể nhường: {{preemptable}}.",
-    "VRAM_REFUSED_WITH_REASON": "Không đủ VRAM cho {{owner}} (mức {{priority}}): xin {{requestedMb}} MiB, còn {{availableMb}} MiB. Đang giữ trong sổ: {{holders}}. Có thể nhường: {{preemptable}}. {{reason}}",
-    "VRAM_HEADROOM_UNKNOWN": "Không cấp được VRAM cho {{owner}} (mức {{priority}}): xin {{requestedMb}} MiB, nhưng hệ không tính được dư địa còn lại ({{degraded}}) nên từ chối để an toàn. Đang giữ trong sổ: {{holders}}. Có thể nhường: {{preemptable}}.",
-    "VRAM_HEADROOM_UNKNOWN_WITH_REASON": "Không cấp được VRAM cho {{owner}} (mức {{priority}}): xin {{requestedMb}} MiB, nhưng hệ không tính được dư địa còn lại ({{degraded}}) nên từ chối để an toàn. Đang giữ trong sổ: {{holders}}. Có thể nhường: {{preemptable}}. {{reason}}",
+    "VRAM_REFUSED": "Không đủ VRAM cho {{owner}} (mức {{priority}}): xin {{requestedMb}} MiB, còn {{availableMb}} MiB{{trust}}. Đang giữ trong sổ (\"≈\" = ước lượng chưa đo): {{holders}}. Có thể nhường ({{preemptableMb}} MiB): {{preemptable}}.",
+    "VRAM_REFUSED_WITH_REASON": "Không đủ VRAM cho {{owner}} (mức {{priority}}): xin {{requestedMb}} MiB, còn {{availableMb}} MiB{{trust}}. Đang giữ trong sổ (\"≈\" = ước lượng chưa đo): {{holders}}. Có thể nhường ({{preemptableMb}} MiB): {{preemptable}}. {{reason}}",
+    "VRAM_HEADROOM_UNKNOWN": "Không cấp được VRAM cho {{owner}} (mức {{priority}}): xin {{requestedMb}} MiB, nhưng hệ không tính được dư địa còn lại ({{degradedReasons}}) nên từ chối để an toàn. Đang giữ trong sổ (\"≈\" = ước lượng chưa đo): {{holders}}. Có thể nhường ({{preemptableMb}} MiB): {{preemptable}}.",
+    "VRAM_HEADROOM_UNKNOWN_WITH_REASON": "Không cấp được VRAM cho {{owner}} (mức {{priority}}): xin {{requestedMb}} MiB, nhưng hệ không tính được dư địa còn lại ({{degradedReasons}}) nên từ chối để an toàn. Đang giữ trong sổ (\"≈\" = ước lượng chưa đo): {{holders}}. Có thể nhường ({{preemptableMb}} MiB): {{preemptable}}. {{reason}}",
     "list": {
       "none": "không có"
+    },
+    "trust": {
+      "trusted": "",
+      "degraded": " (con số này kém tin hơn bình thường: {{degradedReasons}})"
     },
     "entity": {
       "product": "sản phẩm",
@@ -4036,7 +4040,7 @@
     "reason": {
       "vramUnattributedUnreliable": "Phần không quy trách nhiệm được: {{unknownCount}} lượt cấp phát đã chạy ngoài sổ mà không ước được byte, nên phần đang dùng ngoài sổ không đo được; ước lượng {{unledgeredMb}} MiB là không đáng tin, đừng dùng nó để tính. Sổ mới bao {{wiredSites}}/{{knownRows}} điểm cấp phát đã biết, và chính bản liệt kê đó là cận dưới ⇒ danh sách trên không chắc đầy đủ.",
       "vramUnattributedUnknownExtent": "Phần không quy trách nhiệm được: hệ không đo được phần đang dùng ngoài sổ ở nhịp gần nhất, nên không biết nó lớn bao nhiêu. Sổ mới bao {{wiredSites}}/{{knownRows}} điểm cấp phát đã biết, và chính bản liệt kê đó là cận dưới ⇒ danh sách trên không chắc đầy đủ.",
-      "vramUnattributedMeasured": "Phần không quy trách nhiệm được: {{unattributedMb}} MiB đang dùng trên thiết bị không thuộc về hộ nào trong sổ. Sổ mới bao {{wiredSites}}/{{knownRows}} điểm cấp phát đã biết, và chính bản liệt kê đó là cận dưới ⇒ danh sách trên không chắc đầy đủ.",
+      "vramUnattributedDetected": "Phần không quy trách nhiệm được: {{unattributedMb}} MiB đang dùng trên thiết bị không thuộc về hộ nào trong sổ (số đo); và {{unledgeredMb}} MiB đã chạy ngoài sổ theo ước lượng. Sổ mới bao {{wiredSites}}/{{knownRows}} điểm cấp phát đã biết, và chính bản liệt kê đó là cận dưới ⇒ danh sách trên không chắc đầy đủ.",
       "vramLedgerCoverageOnly": "Phần không quy trách nhiệm được: chưa phát hiện khoản nào ở nhịp gần nhất — nhưng sổ mới bao {{wiredSites}}/{{knownRows}} điểm cấp phát đã biết, và chính bản liệt kê đó là cận dưới ⇒ danh sách trên không chắc đầy đủ.",
       "scheduleConflict": "Lịch trùng với {{conflictCount}} lệnh sản xuất khác. Dùng forceOverride=true để bỏ qua.",
       "lineCapacityExceeded": "Dây chuyền {{lineName}} chỉ hỗ trợ tối đa {{maxConcurrent}} lệnh cùng lúc, hiện đã có {{currentCount}}. Dùng forceOverride=true để bỏ qua.",

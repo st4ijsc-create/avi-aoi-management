@@ -15,7 +15,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 
-import { translateAppError } from "./errorCodes";
+import { translateAppError, stripInterpolationSyntax } from "./errorCodes";
 import {
   buildVramRefusal,
   vramRefusalAppError,
@@ -115,15 +115,15 @@ describe("VRAM_REFUSED — câu người vận hành đọc, cả ba ngôn ngữ
   it("★ vi: danh sách RỖNG hiện thành 'không có', KHÔNG phải một chỗ trống", async () => {
     await i18n.changeLanguage("vi");
     const out = render(input({ preemptable: [], holders: [] }));
-    expect(out).toContain("Có thể nhường: không có.");
-    expect(out).toContain("Đang giữ trong sổ: không có.");
+    expect(out).toContain("Có thể nhường (0 MiB): không có.");
+    expect(out).toContain("không có"); // vế "đang giữ" cũng vậy
   });
 
   it("en/zh: danh sách RỖNG hiện ĐÚNG NGÔN NGỮ (không rơi về 'không có' tiếng Việt)", async () => {
     await i18n.changeLanguage("en");
-    expect(render(input({ preemptable: [] }))).toContain("Can yield: none.");
+    expect(render(input({ preemptable: [] }))).toContain("Can yield (0 MiB): none.");
     await i18n.changeLanguage("zh");
-    expect(render(input({ preemptable: [] }))).toContain("可让出：无。");
+    expect(render(input({ preemptable: [] }))).toContain("可让出（0 MiB）：无。");
   });
 
   it("★★ vi: unknownCount > 0 ⇒ câu NÓI RA rằng ước lượng KHÔNG đáng tin", async () => {
@@ -145,29 +145,101 @@ describe("VRAM_REFUSED — câu người vận hành đọc, cả ba ngôn ngữ
     expect(out).not.toMatch(/còn \S+ MiB/);
   });
 
-  /**
-   * M-2 (Sprint 5 review round 1) áp cho không gian `list` MỚI: giá trị tự do ghép từ tên chủ sở
-   * hữu có thể tình cờ chứa cú pháp interpolation của i18next. Trước Task 4, `sanitizeFreeParams`
-   * BỎ QUA mọi khoá từ điển — mà `localizeParams` lại hiện chúng thẳng qua `defaultValue`.
-   */
-  it("tên chủ sở hữu chứa cú pháp i18next ⇒ bị làm sạch, không cướp chỗ placeholder thật", async () => {
+  it("★ I-3: dư địa KÉM TIN ⇒ câu i18n cũng HẠ GIỌNG (không chỉ câu máy chủ)", async () => {
     await i18n.changeLanguage("vi");
-    const out = render(input({ holders: [holder("{{availableMb}}$t(errors.generic)", 1, "background")] }));
-    expect(out).not.toContain("{{");
-    expect(out).not.toContain("$t(");
-    expect(hasUnresolvedPlaceholder(out)).toBe(false);
-    // ★ BẰNG CHỨNG THẬT rằng phép làm sạch có tác dụng — ba assert ở trên KHÔNG đủ và điều đó
-    // đã được chứng minh bằng đột biến: bỏ phép làm sạch đi thì `{{` vẫn biến mất, chỉ khác là
-    // nó biến mất vì i18next ĐÃ DIỄN GIẢI nó. Cái phải khoá là chuỗi lạ ở lại dạng CHỮ:
-    //   • KHÔNG bị thay bằng giá trị của một placeholder thật (`{{availableMb}}` → "1200");
-    //   • KHÔNG bị nối khoá lồng (`$t(errors.generic)` → "Đã xảy ra lỗi").
-    expect(out).toContain("availableMb");
-    expect(out).not.toContain("Đã xảy ra lỗi");
+    const degraded = render(input({ degradedReasons: ["no-tick", "unverified-baseline"] }));
+    expect(degraded).toContain("kém tin hơn bình thường");
+    expect(degraded).toContain("no-tick");
+    // Và KHÔNG hạ giọng khi số đáng tin — `errors.trust.trusted` là chuỗi RỖNG.
+    const trusted = render(input());
+    expect(trusted).not.toContain("kém tin");
+    expect(trusted).toContain("còn 1200 MiB.");
+  });
+
+  it("★ I-3b: câu i18n GIẢI THÍCH ký hiệu '≈' và nêu TỔNG byte nhường được", async () => {
+    await i18n.changeLanguage("vi");
+    const out = render(input());
+    expect(out).toContain('"≈" = ước lượng chưa đo');
+    expect(out).toContain("Có thể nhường (1000 MiB)");
   });
 
   it("6 khoá từ điển CŨ không đổi hành vi sau khi sanitize phủ cả khoá từ điển", async () => {
     await i18n.changeLanguage("vi");
     const out = translateAppError("ENTITY_NOT_FOUND", { entity: "product" }, "fallback");
     expect(out).toBe("Không tìm thấy sản phẩm.");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ C-1 (review vòng 1) — ĐÓNG **LỚP**, không đóng THỂ HIỆN.
+//
+// Bản vá đầu làm sạch bằng THAY THẾ MẪU và reviewer chạy **3/3 biến thể tự huỷ đều SỐNG** — một
+// lượt quét không quét lại, nên payload tái tạo cú pháp SAU khi đã quét. Biến thể thứ ba là một
+// đường **TREO TIẾN TRÌNH** (`i18n.t()` không trả về, đo được > 8 phút), không chỉ hiển thị sai.
+//
+// ⚠ VÌ SAO MỖI CA KIỂM TIỀN ĐIỀU KIỆN TRƯỚC KHI RENDER: một vòng lặp/đệ quy ĐỒNG BỘ trong
+// `i18n.t()` thì `timeout` của vitest KHÔNG cắt được (một luồng, không điểm nhả) — nó chỉ treo
+// runner. Chứng minh trên hàm THUẦN trước: nếu chuỗi đã sạch `{`/`}`/`$` thì i18next không còn gì
+// để diễn giải, nên lượt render sau đó KHÔNG THỂ treo. Thứ tự này là BẮT BUỘC, không phải khẩu vị.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+describe("C-1 — payload TỰ HUỶ: đóng lớp, không vá mẫu", () => {
+  /** Tính chất PHẢI đạt: làm sạch là BẤT ĐỘNG, và kết quả không dựng nổi cú pháp nào. */
+  function assertInert(raw: string): string {
+    const once = stripInterpolationSyntax(raw);
+    expect(once, `còn ký tự dựng cú pháp: ${JSON.stringify(once)}`).not.toMatch(/[{}$]/);
+    // Lặp lại KHÔNG sinh cú pháp mới — đúng tính chất mà một lượt thay-thế-MẪU không có.
+    expect(stripInterpolationSyntax(once)).toBe(once);
+    return once;
+  }
+
+  /** `[tên, payload, mẩu chữ PHẢI còn nguyên trong câu ra]` — mẩu chữ là bằng chứng "ở lại dạng
+   *  CHỮ": nếu i18next diễn giải được payload thì đúng mẩu đó biến mất (thành `1200`, thành câu
+   *  của khoá `errors.generic`, hoặc thành một lượt đệ quy không trả về). */
+  const VARIANTS: Array<[string, string, string]> = [
+    ["1. cướp placeholder thật", "{$t({availableMb}}", "availableMb"],
+    ["2. nối khoá i18n bất kỳ", "$$t(t(errors.generic)", "errors.generic"],
+    [
+      "3. TỰ THAM CHIẾU (treo tiến trình)",
+      "$$t(t(errors.VRAM_REFUSED_WITH_REASON)",
+      "errors.VRAM_REFUSED_WITH_REASON",
+    ],
+  ];
+
+  it("làm sạch BẤT ĐỘNG với cả ba biến thể tự huỷ (hàm THUẦN, không render)", () => {
+    for (const [name, raw] of VARIANTS) {
+      const cleaned = assertInert(raw);
+      expect(cleaned, name).not.toContain("{{");
+      expect(cleaned, name).not.toContain("$t(");
+    }
+  });
+
+  for (const [name, raw, residue] of VARIANTS) {
+    it(`${name} — ở tham số TỪ ĐIỂN (holders) ⇒ ở lại dạng CHỮ`, async () => {
+      assertInert(raw); // TIỀN ĐIỀU KIỆN: sau bước này render không thể treo.
+      await i18n.changeLanguage("vi");
+      const out = render(input({ holders: [holder(raw, 1, "background")] }));
+      expect(out).not.toMatch(/[{}$]/);
+      expect(out).not.toContain("Đã xảy ra lỗi"); // không nối được khoá i18n nào
+      expect(out).toContain("1200 MiB"); // placeholder THẬT vẫn thay đúng, không bị cướp
+      expect(out).toContain(residue); // chuỗi lạ ở lại dạng chữ
+    });
+  }
+
+  /**
+   * ⚠⚠ LỚP NÀY CÒN NGUYÊN Ở THAM SỐ **TỰ DO** mà bản vá đầu không đụng tới — reviewer đo:
+   * `owner = "{$t({availableMb}}"` ⇒ `Không đủ VRAM cho 1200 … còn {{availableMb}} MiB`, vừa cướp
+   * giá trị vừa đẩy `{{}}` THÔ ra màn hình. Bề mặt là THẬT, không lý thuyết: `gguf:${modelId}` /
+   * `reranker:${modelPath}` (`aiGgufEngine.ts:950,986,1168,1680,3035`; `aiReranker.ts:472,523`)
+   * ⇐ id model trong DB, `.env`, tên tệp `.gguf`.
+   */
+  it("★ biến thể ở tham số TỰ DO (owner) — cùng lớp, cũng phải câm", async () => {
+    const raw = "{$t({availableMb}}";
+    assertInert(raw);
+    await i18n.changeLanguage("vi");
+    const out = render(input({ owner: raw }));
+    expect(out).not.toMatch(/[{}$]/);
+    expect(hasUnresolvedPlaceholder(out)).toBe(false);
+    expect(out).toContain("availableMb");
+    expect(out).toContain("1200");
   });
 });

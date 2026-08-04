@@ -199,9 +199,34 @@ describe("§5.6b — câu từ chối phải nói ra phần KHÔNG quy trách nh
 
   it("đo được phần ngoài sổ ⇒ nêu ĐÚNG con số đó (usedBytes − ledgerTotalBytes)", () => {
     const f = buildVramRefusal(input({ usedBytes: 21_000 * MIB, ledgerTotalBytes: 18_000 * MIB }));
-    expect(f.caveat).toBe("vramUnattributedMeasured");
+    expect(f.caveat).toBe("vramUnattributedDetected");
     expect(f.unattributedBytes).toBe(3_000 * MIB);
     expect(formatVramRefusal(f)).toContain("3000 MiB");
+  });
+
+  /**
+   * ★ I-1 (review vòng 1) — hình dạng **THƯỜNG GẶP** của `vramWiring.vramBeginFailureState()`:
+   * có byte ngoài sổ, nhưng `unknownCount === 0` và nhịp gần nhất không thấy khoản không quy được.
+   * Bản trước cho ra câu *"chưa phát hiện khoản nào"* trong khi 5.242.880.000 byte **nằm ngay
+   * trong `facts`** — câu nói SAI ở đúng hình dạng bình thường nhất.
+   */
+  it("★ I-1: có unledgeredBytes mà unknownCount = 0 ⇒ KHÔNG được nói 'chưa phát hiện khoản nào'", () => {
+    const f = buildVramRefusal(input({ unledgered: { bytes: 5_000 * MIB, unknownCount: 0 } }));
+    expect(f.caveat).toBe("vramUnattributedDetected");
+    expect(f.unledgeredEstimateBytes).toBe(5_000 * MIB);
+    const s = formatVramRefusal(f);
+    expect(s).not.toMatch(/chưa phát hiện khoản nào/);
+    expect(s).toContain("5000 MiB");
+  });
+
+  it("★ I-1b: có CẢ HAI (đo được + ước lượng) ⇒ câu nêu CẢ HAI con số, không chọn một", () => {
+    const f = buildVramRefusal(
+      input({ usedBytes: 21_000 * MIB, unledgered: { bytes: 5_000 * MIB, unknownCount: 0 } }),
+    );
+    expect(f.caveat).toBe("vramUnattributedDetected");
+    const s = formatVramRefusal(f);
+    expect(s).toContain("3000 MiB"); // số ĐO
+    expect(s).toContain("5000 MiB"); // ƯỚC LƯỢNG
   });
 
   it("sổ ≥ thiết bị ⇒ phần ngoài sổ = 0, nhưng câu VẪN nói danh sách không chắc đầy đủ", () => {
@@ -234,6 +259,26 @@ describe("bàn giao (1) — không một giá trị KHÔNG HỮU HẠN nào đư
     expect(formatVramRefusal(f)).toContain("no-tick");
   });
 
+  /**
+   * ★ I-2 (review vòng 1) — `null` BỊ ĐỌC THÀNH `0`. Đầu vào bẩn làm `unattributedBytes` và
+   * `unknownCount` cùng thành `null` ("KHÔNG BIẾT"), nhưng bản trước để nó **rơi thẳng** xuống
+   * nhánh cuối ⇒ câu ra *"chưa phát hiện khoản nào"*. Ca "đầu vào BẨN" cũ lái đúng vào đây mà
+   * **không nhìn `caveat`** — nên lỗ hổng đi lọt ngay dưới một ca đang xanh.
+   */
+  it("★ I-2: mọi ô 'ngoài sổ' đều KHÔNG BIẾT ⇒ caveat phải là 'không biết', KHÔNG phải 'chưa phát hiện'", () => {
+    const f = buildVramRefusal(
+      input({
+        usedBytes: Number.POSITIVE_INFINITY,
+        ledgerTotalBytes: Number.NaN,
+        unledgered: { bytes: Number.NaN, unknownCount: Number.NaN },
+      }),
+    );
+    expect(f.unattributedBytes).toBeNull();
+    expect(f.unknownCount).toBeNull();
+    expect(f.caveat).toBe("vramUnattributedUnknownExtent");
+    expect(formatVramRefusal(f)).not.toMatch(/chưa phát hiện khoản nào/);
+  });
+
   it("đầu vào BẨN (NaN/±Infinity ở mọi ô byte) ⇒ params KHÔNG chứa giá trị không hữu hạn", () => {
     const f = buildVramRefusal(
       input({
@@ -254,6 +299,24 @@ describe("bàn giao (1) — không một giá trị KHÔNG HỮU HẠN nào đư
     const s = formatVramRefusal(f);
     expect(s).not.toContain("Infinity");
     expect(s).not.toContain("NaN");
+  });
+
+  /**
+   * ★ M-1/M-2 (review vòng 1) — TỔNG tràn dù MỌI SỐ HẠNG hữu hạn. Reviewer đo: hai hộ `1e308`
+   * ⇒ `"… tổng Infinity MiB."`, đúng hình dạng rơi vào bẫy `bigint(mode:"number")` ⇒ mất cả lô
+   * sự kiện. Cái `?? 0` cũ là một DÂY: nó biến "không cộng nổi" thành "nhường được 0 MiB" — nói
+   * NGƯỢC, và ngược đúng chiều nguy hiểm (người trực bỏ qua ứng viên nhường được).
+   */
+  it("★ M-1: TỔNG byte nhường được tràn (mọi số hạng hữu hạn) ⇒ '?', KHÔNG phải Infinity, KHÔNG phải 0", () => {
+    const huge = { ...holder("a", 1, "background"), bytes: 1e308 };
+    const f = buildVramRefusal(
+      input({ preemptable: [huge, { ...huge, owner: "b" }] }),
+    );
+    expect(f.preemptableBytes).toBeNull();
+    const s = formatVramRefusal(f);
+    expect(s).not.toContain("Infinity");
+    expect(s).toContain("tổng ? MiB");
+    expect(vramRefusalAppError(f).params.preemptableMb).toBe("?");
   });
 
   it("hộ có byte KHÔNG hữu hạn ⇒ vẫn được GỌI TÊN nhưng số bị thay bằng '?', không bịa 0", () => {
@@ -295,7 +358,7 @@ describe("nối vào hệ mã lỗi Sprint 5 (client/src/lib/errorCodes.ts)", ()
     const caveats = [
       "vramUnattributedUnreliable",
       "vramUnattributedUnknownExtent",
-      "vramUnattributedMeasured",
+      "vramUnattributedDetected",
       "vramLedgerCoverageOnly",
     ];
     for (const locale of LOCALES) {
@@ -304,7 +367,44 @@ describe("nối vào hệ mã lỗi Sprint 5 (client/src/lib/errorCodes.ts)", ()
       for (const c of caveats) expect(typeof reason[c], `${locale}.errors.reason.${c}`).toBe("string");
       const list = dict.list as Record<string, string>;
       expect(typeof list?.none, `${locale}.errors.list.none`).toBe("string");
+      // I-3 — hai khoá hạ giọng; `trusted` CỐ Ý là chuỗi RỖNG (khuôn câu không đổi khi số đáng tin).
+      const trust = dict.trust as Record<string, string>;
+      expect(trust?.trusted, `${locale}.errors.trust.trusted`).toBe("");
+      expect(trust?.degraded, `${locale}.errors.trust.degraded`).toContain("{{degradedReasons}}");
     }
+  });
+
+  /**
+   * ★ I-3 (review vòng 1) — CỔNG "tham số truyền rồi BỎ". `{{degraded}}` từng được truyền mà
+   * KHÔNG khuôn `VRAM_REFUSED*` nào dùng ⇒ người vận hành đọc "còn 1200 MiB" như một số CỨNG
+   * đúng lúc hệ tự khai nó kém tin. Ca này bắt CẢ HỌ vấn đề, không chỉ thể hiện đó.
+   */
+  it("★ I-3: mọi tham số CÓ NGHĨA đều được ÍT NHẤT một khuôn dùng tới (không truyền rồi bỏ)", () => {
+    const dict = localeErrors("vi");
+    const reasonDict = dict.reason as Record<string, string>;
+    const trustDict = dict.trust as Record<string, string>;
+    const allTemplates = [
+      String(dict.VRAM_REFUSED),
+      String(dict.VRAM_REFUSED_WITH_REASON),
+      String(dict.VRAM_HEADROOM_UNKNOWN),
+      String(dict.VRAM_HEADROOM_UNKNOWN_WITH_REASON),
+      ...Object.values(reasonDict).filter((v) => v.startsWith("Phần không quy trách nhiệm được")),
+      ...Object.values(trustDict),
+    ];
+    const used = new Set(allTemplates.flatMap(placeholdersOf));
+    const shapes: VramRefusalInput[] = [
+      input(),
+      input({ blind: true, degradedReasons: ["probe-blind"] }),
+      input({ unledgered: { bytes: 452 * MIB, unknownCount: 2 } }),
+      input({ headroomBytes: Number.NEGATIVE_INFINITY, degradedReasons: ["invalid-input"] }),
+    ];
+    const unused = new Set<string>();
+    for (const inp of shapes) {
+      for (const key of Object.keys(vramRefusalAppError(buildVramRefusal(inp)).params)) {
+        if (!used.has(key)) unused.add(key);
+      }
+    }
+    expect([...unused].sort()).toEqual([]);
   });
 
   /**
@@ -398,6 +498,32 @@ describe("vramBroker — nguồn của 'ai đang giữ' và 'ai có thể như�
     commit(a.lease!, 16_900 * MIB, "process-delta");
     markMeasureFailed(a.lease!);
     expect(ledgerHolders()[0].measured).toBe(false);
+  });
+
+  /**
+   * ★ I-4 (review vòng 1) — bản sao THỨ HAI của vị từ `measured` nằm trong `preemptCandidates()`
+   * và **KHÔNG ca nào chạm tới** ⇒ một đột biến ở đó SỐNG. Nay hai hàm dùng chung
+   * `holderFactFromLease()`, và ca này canh CHÍNH đường `preemptCandidates`.
+   */
+  it("★ I-4: preemptCandidates() khai ĐÚNG số nào là SỐ ĐO (không chỉ ledgerHolders)", () => {
+    const bg = reserve(req("bg:kb-sync", 1_000, "background"));
+    reserve(req("bg:trainer", 2_000, "background"));
+    commit(bg.lease!, 900 * MIB, "process-delta");
+    const cands = preemptCandidates("production", 20_000 * MIB);
+    expect(cands.find((h) => h.owner === "bg:kb-sync")!.measured).toBe(true);
+    expect(cands.find((h) => h.owner === "bg:kb-sync")!.bytes).toBe(900 * MIB);
+    expect(cands.find((h) => h.owner === "bg:trainer")!.measured).toBe(false);
+    // Và ước lượng DỰ PHÒNG sau khi đo hỏng cũng KHÔNG được khai là số đo, ở CẢ đường này.
+    markMeasureFailed(bg.lease!);
+    expect(preemptCandidates("production", 20_000 * MIB).find((h) => h.owner === "bg:kb-sync")!.measured).toBe(false);
+  });
+
+  it("★ I-4b: ledgerHolders() và preemptCandidates() khai CÙNG một sự thật cho cùng một giấy phép", () => {
+    const a = reserve(req("bg:kb-sync", 1_000, "background"));
+    commit(a.lease!, 900 * MIB, "process-delta");
+    const fromLedger = ledgerHolders().find((h) => h.owner === "bg:kb-sync")!;
+    const fromCandidates = preemptCandidates("production", 20_000 * MIB).find((h) => h.owner === "bg:kb-sync")!;
+    expect(fromCandidates).toEqual(fromLedger);
   });
 
   it("preemptCandidates() KHÔNG BAO GIỜ nêu mức bằng hoặc cao hơn mức đang xin", () => {

@@ -14,8 +14,12 @@ import i18n from "i18next";
  *  chỉ có MỘT chuỗi cho mọi ngôn ngữ. Mỗi khoá dưới đây có KHÔNG GIAN TỪ ĐIỂN
  *  riêng (`errors.<space>.*`) vì cùng một chữ có thể mang nghĩa khác nhau ở
  *  entity vs operation (vd "recipe" là thực thể, không phải hành động).
- *  Không đổi field-value → dùng nguyên văn (defaultValue) khi chưa có bản dịch —
- *  KHÔNG BAO GIỜ sập vì thiếu khoá, chỉ hiện thô (khoá camelCase) như trước nay. */
+ *  Không đổi field-value → hiện nguyên văn khi chưa có bản dịch — KHÔNG BAO GIỜ sập
+ *  vì thiếu khoá, chỉ hiện thô (khoá camelCase) như trước nay.
+ *  ⚠ ĐÍNH CHÍNH (C-1, Pha 2B Task 4 vòng sửa 1): cơ chế "hiện nguyên văn" trước đây
+ *  làm bằng `defaultValue: raw` — nay KHÔNG còn, vì `defaultValue` là một TEMPLATE
+ *  và đó chính là bề mặt tiêm. Hành vi giữ y nguyên; đường đi đổi (SENTINEL rồi trả
+ *  `raw` thẳng, không cho nó chạm bộ diễn giải). Xem `localizeParams`. */
 const PARAM_DICTIONARY_SPACE: Record<string, string> = {
   entity: "entity",
   parent: "entity",
@@ -35,8 +39,9 @@ const PARAM_DICTIONARY_SPACE: Record<string, string> = {
   // `preemptable` = ai có thể nhường). Hai tính chất, và chính chỗ giao nhau của
   // chúng là lý do phải có không gian riêng:
   //   • giá trị THẬT là chuỗi tự do do máy chủ ghép ("gguf-model:x=17000 MiB
-  //     (production), …") — không có khoá dịch nào, nên nó rơi về `defaultValue:
-  //     raw` và hiện NGUYÊN VĂN, đúng như 6 khoá trên khi chưa dịch;
+  //     (production), …") — không có khoá dịch nào, nên nó hiện NGUYÊN VĂN, đúng
+  //     như 6 khoá trên khi chưa dịch (qua SENTINEL, KHÔNG qua `defaultValue` —
+  //     xem C-1 ở `stripInterpolationSyntax`/`localizeParams`);
   //   • giá trị RỖNG lại là một Ý NGHĨA phải dịch: máy chủ gửi khoá `"none"` ⇒
   //     `errors.list.none` ⇒ "không có"/"none"/"无". Nếu để chuỗi rỗng đi thẳng vào
   //     câu, người vận hành đọc "Có thể nhường: ." và tự điền nghĩa — đúng lớp lỗi
@@ -44,7 +49,51 @@ const PARAM_DICTIONARY_SPACE: Record<string, string> = {
   // ⚠ Hai tên tham số, MỘT không gian — cùng khuôn `entity`/`parent` ở trên.
   holders: "list",
   preemptable: "list",
+  // Pha 2B Task 4 vòng sửa 1 (I-3) — không gian `errors.trust.*`: HAI khoá,
+  // `trusted` (chuỗi RỖNG) và `degraded` (câu hạ giọng, tự mang `{{degradedReasons}}`).
+  // i18next KHÔNG có "chỉ nội suy nếu có tham số", nên đây là cách duy nhất trong
+  // khuôn hiện có để một câu i18n mang được lời hạ giọng CÓ ĐIỀU KIỆN. Trước bản vá
+  // này, `{{degraded}}` được truyền nhưng KHÔNG khuôn `VRAM_REFUSED*` nào dùng ⇒ người
+  // vận hành đọc "còn 1200 MiB" như một số CỨNG đúng lúc hệ tự khai nó KÉM TIN.
+  trust: "trust",
 };
+
+/**
+ * ★★★ C-1 (review vòng 1, Pha 2B Task 4) — ĐÓNG **LỚP**, KHÔNG VÁ THÊM MẪU.
+ *
+ * Bản trước làm sạch bằng **thay thế MẪU** (`{{` → ``, `$t(` → ``). Reviewer chạy
+ * **3/3 biến thể tự huỷ đều SỐNG**, vì một lượt quét thay-thế **không quét lại**:
+ *
+ * | Vào | Sau "làm sạch" | Hậu quả |
+ * |---|---|---|
+ * | `{$t({availableMb}}`                     | `{{availableMb}}`  | cướp placeholder thật ⇒ in `1200` |
+ * | `$$t(t(errors.generic)`                  | `$t(errors.generic)` | nối nội dung khoá i18n bất kỳ |
+ * | `$$t(t(errors.VRAM_REFUSED_WITH_REASON)` | tự tham chiếu       | **`i18n.t()` KHÔNG TRẢ VỀ** — treo tiến trình > 8 phút |
+ *
+ * Biến thể thứ ba là **một đường TREO TIẾN TRÌNH**, không chỉ hiển thị sai. Và bề mặt
+ * là THẬT, không lý thuyết: `gguf:${modelId}` / `reranker:${modelPath}`
+ * (`aiGgufEngine.ts:950,986,1168,1680,3035`; `aiReranker.ts:472,523`) ⇐ id model trong
+ * DB, `.env`, tên tệp `.gguf`.
+ *
+ * ⇒ Cách chữa **theo cấu trúc**, không theo mẫu: **xoá cả một LỚP KÝ TỰ**. Mọi cú pháp
+ * mà i18next nhận diện — `{{…}}` (nội suy), `}}`, `$t(…)` (lồng khoá) — đều **bắt buộc**
+ * chứa ít nhất một trong ba ký tự `{`, `}`, `$`. Xoá sạch ba ký tự đó thì:
+ *   • **KHÔNG cú pháp nào còn dựng được** — không phải "chưa gặp mẫu nào", mà là không
+ *     tồn tại đường dựng;
+ *   • phép làm sạch **BẤT ĐỘNG** (`S(S(x)) === S(x)`): kết quả không còn ký tự nào để
+ *     lượt sau bắt được ⇒ **payload tự huỷ mất hẳn cơ chế**. Đây chính là tính chất mà
+ *     review đòi phải có ca kiểm riêng, và nó được kiểm TRỰC TIẾP trên hàm này.
+ * Giá phải trả: một tên chủ sở hữu có `{`/`}`/`$` sẽ mất đúng mấy ký tự đó. Đổi lại là
+ * đóng một đường **treo tiến trình** — không có phép cân nào khác.
+ *
+ * ⚠ CỐ Ý export: ca kiểm biến thể tự-tham-chiếu phải chứng minh **TIỀN ĐIỀU KIỆN**
+ * (chuỗi đã sạch ba ký tự) **TRƯỚC KHI** render. Một vòng lặp/đệ quy ĐỒNG BỘ trong
+ * `i18n.t()` thì `timeout` của vitest **không cắt được** — nó chỉ treo runner. Kiểm hàm
+ * thuần trước, render sau, là cách duy nhất chạy được biến thể đó mà không treo.
+ */
+export function stripInterpolationSyntax(value: string): string {
+  return value.replace(/[{}$]/g, "");
+}
 
 /** Review round 1 (M-2) — reviewer dựng harness i18next THẬT tái hiện: khi một
  *  giá trị TỰ DO (không phải 1 trong 7 khoá từ điển ở trên — vd `lineName`,
@@ -53,45 +102,31 @@ const PARAM_DICTIONARY_SPACE: Record<string, string> = {
  *  nhiều-placeholder có thể lòi placeholder THẬT ra màn hình thô (vd
  *  `lineName = "{{maxConcurrent}}"` ⇒ "...chỉ hỗ trợ tối đa {{maxConcurrent}}
  *  lệnh..." không được thay số — placeholder thật bị "cướp chỗ"/không thay).
- *  KHÔNG phải lỗ injection (`skipOnVariables` đã chặn `$t()` chạy nesting từ
- *  biến, React tự escape HTML) — nhưng ĐÚNG lớp lỗi "hiện `{{}}` thô cho người
- *  dùng" mà cả file này tồn tại để diệt, nên vẫn phải chặn. Strip (loại bỏ)
- *  `{{` và `$t(` khỏi MỌI giá trị chuỗi KHÔNG phải khoá từ điển, trước khi giá
- *  trị đó được dùng ở BẤT KỲ lời gọi i18n.t nào (kể cả lời gọi lồng cho `reason`
- *  bên dưới — nếu chỉ làm sạch ở `out` cuối cùng mà không làm sạch trước khi
- *  truyền vào lời gọi lồng thì lỗ hổng vẫn còn nguyên ở đó). */
-/* Pha 2B Task 4 — ĐÍNH CHÍNH một câu SAI trong chính hàm này: bản trước bỏ qua
- * (`continue`) mọi khoá từ điển với lý do "dùng làm khoá tra, không hiện thẳng".
- * Vế sau KHÔNG ĐÚNG: `localizeParams` bên dưới gọi `i18n.t(..., { defaultValue: raw })`,
- * nên khi khoá `errors.<space>.<raw>` KHÔNG tồn tại thì `raw` **hiện thẳng ra màn
- * hình** — đó là hành vi THIẾT KẾ ("chưa dịch ⇒ hiện thô"), không phải tai nạn.
- * ⇒ Giá trị khoá từ điển cũng đi qua cùng đường hiển thị với tham số tự do, nên
- * phải chịu cùng phép làm sạch M-2. Với 6 khoá enum camelCase cũ, phép này KHÔNG
- * đổi gì (chúng không bao giờ chứa `{{` hay `$t(`); ca test khoá điều đó lại). Nó
- * chỉ thật sự có tác dụng cho không gian `list` MỚI — nơi giá trị là chuỗi tự do
- * ghép từ tên chủ sở hữu, tức đúng loại dữ liệu M-2 sinh ra để chặn.
+ *  ⚠⚠ HAI ĐÍNH CHÍNH ĐO ĐƯỢC (Pha 2B Task 4 + vòng sửa 1) cho khối M-2 gốc:
  *
- * ⚠⚠ VÀ MỘT ĐÍNH CHÍNH NẶNG HƠN, ĐO ĐƯỢC (đột biến của Task 4, không phải suy
- * luận): khối M-2 ngay trên có câu *"KHÔNG phải lỗ injection — `skipOnVariables`
- * đã chặn `$t()` chạy nesting từ biến"*. Câu đó ĐÚNG cho tham số TỰ DO (giá trị
- * đi vào chỗ nội suy ⇒ `skipOnVariables` phủ), nhưng SAI cho khoá TỪ ĐIỂN: ở đó
- * `raw` được truyền làm `defaultValue`, tức nó trở thành **TEMPLATE**, không phải
- * biến — và `skipOnVariables` không phủ template. Đo thật, bỏ phép làm sạch rồi
- * dựng một `holders` tên `"{{availableMb}}$t(errors.generic)"`: câu ra là
- * `"…Đang giữ trong sổ: 1200Đã xảy ra lỗi=1 MiB…"` — vừa CƯỚP giá trị của một
- * placeholder thật, vừa NỐI nội dung của một khoá i18n bất kỳ. ⇒ Với khoá từ
- * điển, đây ĐÚNG là một lỗ nội suy, và ca test khoá lại bằng chính hai dấu vết
- * đó (`"availableMb"` phải còn nguyên dạng chữ, `"Đã xảy ra lỗi"` không được
- * xuất hiện) — ba assert "không còn `{{`" ĐẦU TIÊN của tôi SỐNG SÓT đột biến,
- * vì `{{` cũng biến mất khi i18next diễn giải nó. */
-function sanitizeFreeParams(
+ *  (1) Câu *"KHÔNG phải lỗ injection — `skipOnVariables` đã chặn `$t()` chạy
+ *      nesting từ biến"* ĐÚNG cho tham số **TỰ DO** (giá trị đi vào chỗ nội suy)
+ *      nhưng **SAI cho khoá TỪ ĐIỂN**: `raw` từng được truyền làm `defaultValue`,
+ *      tức nó là **TEMPLATE** (chuỗi `res` đi vào `extendTranslation()`), và
+ *      `skipOnVariables` không phủ template. Reviewer chạy đối chứng: cùng payload
+ *      đặt ở `owner` (tự do) thì nesting TẮT; đặt ở `holders` (từ điển) thì nesting
+ *      CHẠY. ⇒ Với khoá từ điển, đây ĐÚNG là một lỗ nội suy.
+ *      Đóng bằng **hai lớp độc lập** (đọc `stripInterpolationSyntax` ở trên và
+ *      `localizeParams` bên dưới): dữ liệu **không bao giờ** còn nằm trong
+ *      `defaultValue`, VÀ không bao giờ còn chứa ký tự dựng được cú pháp.
+ *
+ *  (2) Phép "làm sạch theo MẪU" của cả M-2 lẫn bản vá đầu của Task 4 **không đóng
+ *      được LỚP** — payload TỰ HUỶ tái tạo cú pháp SAU khi đã quét (3/3 biến thể
+ *      sống, một biến thể treo tiến trình > 8 phút). Nay là **xoá LỚP KÝ TỰ**,
+ *      bất động, áp cho **MỌI** giá trị chuỗi — tự do LẪN khoá từ điển (khoá từ
+ *      điển cũng hiện thẳng ra màn hình khi chưa có bản dịch, nên vế *"dùng làm
+ *      khoá tra, không hiện thẳng"* của bản gốc là SAI). */
+function sanitizeAllParams(
   params: Record<string, string | number>,
 ): Record<string, string | number> {
   const out: Record<string, string | number> = { ...params };
   for (const [key, value] of Object.entries(out)) {
-    if (typeof value === "string") {
-      out[key] = value.replace(/\{\{/g, "").replace(/\$t\(/g, "");
-    }
+    if (typeof value === "string") out[key] = stripInterpolationSyntax(value);
   }
   return out;
 }
@@ -120,8 +155,15 @@ function localizeParams(
   activeLng: string,
 ) {
   if (!params) return undefined;
-  const sanitized = sanitizeFreeParams(params);
+  const sanitized = sanitizeAllParams(params);
   const out: Record<string, string | number> = { ...sanitized };
+  // C-1 lớp 1 — SENTINEL RIÊNG cho lời gọi lồng: `raw` (dữ liệu) KHÔNG BAO GIỜ được
+  // truyền làm `defaultValue` nữa. `defaultValue` là chuỗi `res` đi vào
+  // `extendTranslation()`, tức một TEMPLATE — đó chính là bề mặt mà lỗ tiêm đi qua.
+  // Nay khoá thiếu ⇒ i18next trả SENTINEL ⇒ ta trả `raw` NGUYÊN VĂN, không cho nó
+  // chạm bộ diễn giải một lần nào. Hành vi với 6 khoá enum cũ không đổi (chúng là
+  // camelCase, không có gì để nội suy) — ca test khoá lại điều đó.
+  const DICT_SENTINEL = " __missing_dict__";
   for (const [key, space] of Object.entries(PARAM_DICTIONARY_SPACE)) {
     const raw = out[key];
     if (typeof raw === "string") {
@@ -142,16 +184,18 @@ function localizeParams(
       // (chưa kịp thêm en/zh), thiếu 2 option này sẽ khiến lời gọi lồng lặng lẽ
       // trả câu CHỈ DẪN TIẾNG VIỆT trong khi câu chính (khung `_WITH_REASON` bên
       // dưới) vẫn đúng tiếng Anh — ca "câu chính đúng, phần lý do lồng sai ngôn
-      // ngữ" mà reviewer round 2 chỉ đích danh. `defaultValue: raw` GIỮ NGUYÊN
-      // (không đổi) — không liên quan SENTINEL, đây là quy tắc "hiện thô khoá
-      // camelCase khi chưa dịch" đã có từ trước Task 5/6, không phải cùng bất
-      // biến "thiếu khoá appCode ⇒ fallback máy chủ".
-      out[key] = i18n.t(`errors.${space}.${raw}`, {
+      // ngữ" mà reviewer round 2 chỉ đích danh.
+      //
+      // ⚠ C-1 (vòng sửa 1) — `defaultValue` nay là SENTINEL, KHÔNG phải `raw`. Quy
+      // tắc "hiện thô khoá camelCase khi chưa dịch" GIỮ NGUYÊN về hành vi (dòng dưới
+      // trả đúng `raw`), chỉ khác ở chỗ `raw` không còn đi qua bộ diễn giải.
+      const translated = i18n.t(`errors.${space}.${raw}`, {
         ...sanitized,
         lng: activeLng,
         fallbackLng: false,
-        defaultValue: raw,
+        defaultValue: DICT_SENTINEL,
       });
+      out[key] = typeof translated === "string" && translated !== DICT_SENTINEL ? translated : raw;
     }
   }
   return out;

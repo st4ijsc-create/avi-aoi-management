@@ -86,6 +86,27 @@ function totalReserved(): number {
 }
 
 /**
+ * ★ I-4 (review vòng 1) — MỘT bản cài đặt duy nhất của phép ánh xạ giấy phép → hộ, và của vị từ
+ * `measured`. Bản trước chép nguyên khối này ở HAI chỗ (`ledgerHolders` và `preemptCandidates`)
+ * — ngay bên dưới một chú thích viện dẫn *"hai bản cài đặt song song của CÙNG một công thức là
+ * đúng lớp lỗi khiến `bench.mjs` sai bốn lần"*. Bản sao thứ hai lại **không ca nào chạm tới**,
+ * nên một đột biến ở đó **sống**.
+ *
+ * ⚠ `measured` đọc bằng `measureSource`, KHÔNG suy ra từ `actualBytes !== null`: từ T5-15,
+ * `commitFallback()` cũng điền `actualBytes` bằng một **ước lượng dự phòng** (types.ts
+ * `VramLease.actualBytes` — ba nhóm, đọc bằng HAI trường).
+ */
+function holderFactFromLease(l: VramLease): VramHolderFact {
+  return {
+    owner: l.request.owner,
+    kind: l.request.kind,
+    bytes: leaseBytes(l),
+    priority: l.request.priority,
+    measured: l.actualBytes !== null && l.measureSource !== undefined && l.measureSource !== "none",
+  };
+}
+
+/**
  * ★ Pha 2B Task 4 — "AI ĐANG GIỮ GÌ" (§5.3, vế thứ ba của bốn).
  *
  * ⚠⚠ PHẠM VI CHÍNH XÁC, và đây là chỗ dễ nói quá nhất trong cả task: hàm này trả về **những hộ
@@ -93,18 +114,10 @@ function totalReserved(): number {
  * 160 dòng** đã liệt kê, và bản liệt kê ấy **tự khai là CẬN DƯỚI** (§5.6b). Mọi câu chữ dựng từ
  * danh sách này **bắt buộc** đi kèm phần "KHÔNG quy trách nhiệm được" — xem `vramRefusal.ts`.
  *
- * `measured` khai con số là SỐ ĐO hay ƯỚC LƯỢNG. Đọc bằng `measureSource` chứ KHÔNG suy ra từ
- * `actualBytes !== null`: từ T5-15, `commitFallback()` cũng điền `actualBytes` bằng một **ước
- * lượng dự phòng** (types.ts `VramLease.actualBytes`, ba nhóm/hai ô).
+ * `measured` khai con số là SỐ ĐO hay ƯỚC LƯỢNG — xem `holderFactFromLease()`.
  */
 export function ledgerHolders(): VramHolderFact[] {
-  return [...ledger.values()].map((l) => ({
-    owner: l.request.owner,
-    kind: l.request.kind,
-    bytes: leaseBytes(l),
-    priority: l.request.priority,
-    measured: l.actualBytes !== null && l.measureSource !== undefined && l.measureSource !== "none",
-  }));
+  return [...ledger.values()].map(holderFactFromLease);
 }
 
 /**
@@ -133,13 +146,7 @@ export function preemptCandidates(priority: VramPriority, deficitBytes: number):
   let freed = 0;
   for (const c of candidates) {
     if (freed >= enough) break;
-    out.push({
-      owner: c.request.owner,
-      kind: c.request.kind,
-      bytes: leaseBytes(c),
-      priority: c.request.priority,
-      measured: c.actualBytes !== null && c.measureSource !== undefined && c.measureSource !== "none",
-    });
+    out.push(holderFactFromLease(c));
     freed += leaseBytes(c);
   }
   return out;
