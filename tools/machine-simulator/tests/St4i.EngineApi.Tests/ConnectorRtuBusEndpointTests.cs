@@ -407,6 +407,96 @@ public sealed class ConnectorRtuBusEndpointTests
         Assert.DoesNotContain("no leftover configuration", message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 🔴 <b>Whole-branch review I-1 — deleting a device off a SEEDED bus must not say the bus is gone.</b>
+    ///
+    /// <para>A bus declared in <c>connectors.json</c> — which §23.1 makes the primary way an RS-485 line is
+    /// declared — has its device rows persisted as <see cref="ConnectorConfigSource.Seeded"/>, and the seeder
+    /// re-seeds on <b>every boot</b>. The previous message selected on <c>BusInstanceId</c> alone and told the
+    /// operator <i>"the bus is no longer configured at all"</i>, which is false: the line and its live
+    /// connector come straight back at the next start. The standalone-connector branch has carried exactly
+    /// this caveat since B-6 and is pinned by a test; the bus branch had neither.</para>
+    ///
+    /// <para>Driven through the real seeder and the real endpoint rather than by hand-writing a Seeded row,
+    /// so the provenance under test is the one production actually produces.</para>
+    /// </summary>
+    [Fact]
+    public async Task DeletingTheLastDeviceOfASEEDEDBus_SaysItComesBack_NeverThatTheBusIsGone()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+        var registry = new ConnectorRegistry();
+
+        await ConnectorConfigVisibilitySeeder.SeedBusAsync(
+            store, "line1", SerialBus(Device("SEEDED-ONE", 4)), logWarning: null);
+
+        var (recorder, ctx) = AuditPlumbing();
+        var deleted = await ConnectorEndpoints.DeleteConnectorAsync(
+            "line1:unit4", store, registry, ctx, recorder, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, StatusOf(deleted));
+        var message = Assert.IsType<ConnectorDeleteResultDto>(
+            Assert.IsAssignableFrom<IValueHttpResult>(deleted).Value).Message;
+
+        // 🔴 The false sentence, and it is asserted as an ABSENCE because that is the defect: the message
+        // was not merely missing a caveat, it actively asserted the opposite.
+        Assert.DoesNotContain("no longer configured at all", message, StringComparison.Ordinal);
+        Assert.Contains("STILL CONFIGURED", message, StringComparison.Ordinal);
+        Assert.Contains("reappears the next time this process starts", message, StringComparison.Ordinal);
+        Assert.Contains("connectors.json", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>The OTHER arm, so the fix is a fork rather than a blanket caveat: an operator-created bus IS
+    /// gone when its last device is deleted, and telling them it will come back would be the same defect
+    /// pointing the other way.</summary>
+    [Fact]
+    public async Task DeletingTheLastDeviceOfAnOPERATORBus_StillSaysTheBusIsGone()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+        var registry = new ConnectorRegistry();
+
+        Assert.Equal(StatusCodes.Status200OK, StatusOf(await PostAsync(
+            store, registry, new ModbusBusRegistry(), CreateHost(registry), "solo",
+            SerialBus(Device("OP-ONE", 7)))));
+
+        var (recorder, ctx) = AuditPlumbing();
+        var deleted = await ConnectorEndpoints.DeleteConnectorAsync(
+            "solo:unit7", store, registry, ctx, recorder, CancellationToken.None);
+
+        var message = Assert.IsType<ConnectorDeleteResultDto>(
+            Assert.IsAssignableFrom<IValueHttpResult>(deleted).Value).Message;
+
+        Assert.Contains("no longer configured at all", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("reappears the next time", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>🔴 I-1's SWEEP, not its instance: the same class one door over. "Remove that connector
+    /// first (DELETE …)" is the remedy for an OPERATOR-owned incumbent and is <b>wrong</b> for a Seeded one,
+    /// which is re-created on every start — so the DELETE frees the machine until the next restart and no
+    /// longer. A pure function, all three arms, because two of them are otherwise reachable only by
+    /// constructing a specific store state at a specific endpoint.</summary>
+    [Fact]
+    public void TheRemedyForAnIncumbentConnector_DependsOnWhereThatConnectorCameFrom()
+    {
+        var operatorOwned = ConnectorEndpoints.DescribeHowToFreeTheMachine(
+            "Modbus", ConnectorConfigSource.Operator, incumbentBusInstanceId: null);
+        Assert.Contains("DELETE /v1/connectors/Modbus", operatorOwned, StringComparison.Ordinal);
+        Assert.DoesNotContain("re-created on every start", operatorOwned, StringComparison.Ordinal);
+
+        // A seeded DEVICE names its bus, because that is what makes the connectors.json entry findable —
+        // "change the entry for line1:unit3" would send an operator looking for a key that is not in the file.
+        var seeded = ConnectorEndpoints.DescribeHowToFreeTheMachine(
+            "line1:unit3", ConnectorConfigSource.Seeded, incumbentBusInstanceId: "line1");
+        Assert.Contains("re-created on every start", seeded, StringComparison.Ordinal);
+        Assert.Contains("Modbus RTU bus 'line1'", seeded, StringComparison.Ordinal);
+        Assert.Contains("only until the", seeded, StringComparison.Ordinal);
+
+        var noRow = ConnectorEndpoints.DescribeHowToFreeTheMachine(
+            "ghost", incumbentSource: null, incumbentBusInstanceId: null);
+        Assert.Contains("no persisted configuration", noRow, StringComparison.Ordinal);
+        Assert.Contains("restarting the application", noRow, StringComparison.Ordinal);
+        Assert.DoesNotContain("DELETE /v1/connectors/ghost", noRow, StringComparison.Ordinal);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Identity and refusals
     // ─────────────────────────────────────────────────────────────────────

@@ -354,6 +354,16 @@ function ConfiguredConnectorsCard() {
                 : null}
             </DialogDescription>
             <DialogDescription>{t("connectorConfig.removeConfirm.description")}</DialogDescription>
+            {/* 🔴 Whole-branch review I-1 — a Seeded row is a visibility artifact of this machine's own
+                connectors.json/env configuration and is re-created on every start, so "removed" is true of
+                the row and false of the line behind it. The server's DELETE response says this; the dialog
+                has to say it BEFORE the click, which is the only moment it can change what the operator
+                does. */}
+            {pendingRemove?.source === "Seeded" ? (
+              <DialogDescription className="text-warn-text">
+                {t("connectorConfig.removeConfirm.seededNote")}
+              </DialogDescription>
+            ) : null}
           </DialogHeader>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setPendingRemove(null)} disabled={remove.isPending}>

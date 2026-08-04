@@ -466,7 +466,17 @@ public static class ModbusMultidropMap
     /// a check between two buses but a rule that makes the two namespaces disjoint —
     /// <see cref="ValidateBusInstanceId"/> refuses any bus id that already looks like a device position. After
     /// that, <c>{bus}:unit{n}</c> can only ever have been derived, by exactly one bus, and the collision is
-    /// unconstructible rather than merely reported.</para></summary>
+    /// unconstructible rather than merely reported.</para>
+    ///
+    /// <para>🔴 <b>Whole-branch review M-1's sweep — that sentence is TRUE, and here is what it does NOT
+    /// license, because a downstream predicate read it as licensing exactly this and was wrong for two
+    /// tasks.</b> "Exactly one bus derives a given id" is a statement about the id's <b>full</b> shape: the
+    /// deriving bus is everything before the <b>final</b> <see cref="DeviceIdSuffixPrefix"/>. It does NOT say
+    /// that an id merely <i>beginning</i> with <c>{X}:unit</c> and ending in digits was derived by <c>X</c> —
+    /// <see cref="ValidateBusInstanceId"/> reserves only an all-<b>digit</b> suffix, so <c>line1:unitA</c> is a
+    /// legal bus name and <c>line1:unitA:unit3</c> is its device, derived by <c>line1:unitA</c> and by nothing
+    /// else. A namespace test written as "starts with, ends in digits" therefore hands one bus another's
+    /// devices; see <c>RtuBusConfiguration.IsInBusNamespace</c> for the test that does not.</para></summary>
     public static string DeviceInstanceId(string busInstanceId, byte unitId) => $"{busInstanceId}{DeviceIdSuffixPrefix}{unitId}";
 
     /// <summary>The literal that separates a bus id from a device's unit id in

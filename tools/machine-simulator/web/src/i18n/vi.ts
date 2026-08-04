@@ -413,6 +413,11 @@ export const vi = {
         indeterminate: "Không xác định — trạng thái thiết bị hiện KHÔNG RÕ.",
         indeterminateGuidance:
           "Đừng bắn lại theo phản xạ — thử lại có thể gây tác động kép. Hãy kiểm tra trạng thái vật lý thật của máy trước, rồi mới quyết định.",
+        // 🔴 Whole-branch review M-2 — §10 mục 3, nói ngay tại chỗ người vận hành ĐỌC lời khẳng định
+        // đó. Chỉ hiện cho kết quả của một LỆNH: một lệnh ghi setpoint là một giá trị thanh ghi đọc lại được,
+        // nên đây là chuyện của đường LỆNH.
+        appliedIsAcknowledgement:
+          "Đây là một sự XÁC NHẬN, không phải một QUAN SÁT: đã có khung tin khớp quay về, nhưng không có gì ở đây chứng minh máy đã thực sự chuyển động. Modbus RTU không thể buộc một khung tin quay về với một yêu cầu cụ thể, nên một khung echo về muộn của xung trước đó trông y hệt. Hãy xác nhận tác động bằng cách nhìn vào máy.",
       },
       rejectionReason: {
         UnknownPoint: "Tên điểm này driver đang chạy không nhận ra.",
@@ -1980,6 +1985,11 @@ export const vi = {
         `Thiết bị “${vars.id}” trên tuyến RS-485 “${vars.bus}”, đang phục vụ máy ${vars.machineCode}. Các thiết bị còn lại trên đường đó không bị ảnh hưởng.`,
       description:
         "Thao tác này chỉ xoá cấu hình ĐÃ LƯU — không xoá máy khỏi danh sách dây chuyền. Nếu kết nối này đang chạy, nó vẫn tiếp tục chạy cho đến khi khởi động lại toàn bộ ứng dụng; hệ thống hiện chưa hỗ trợ gỡ máy khỏi danh sách khi đang chạy, nên một kết nối thay thế cho cùng mã máy vẫn sẽ bị từ chối cho tới lúc đó.",
+      // 🔴 Whole-branch review I-1 — nửa giao diện. Một dòng do sản phẩm tự điền để hiển thị, lấy từ
+      // `connectors.json`, sẽ được tạo lại ở mỗi lần khởi động: "đã xoá" đúng với DÒNG đó và sai với cấu
+      // hình đứng sau nó. Chỉ hiện khi `source` của dòng là `Seeded`.
+      seededNote:
+        "Lưu ý: kết nối này KHÔNG do người vận hành lưu — nó được tự động điền vào để hiển thị, lấy từ cấu hình connectors.json / biến môi trường của chính máy này, và cấu hình đó không bị ảnh hưởng. Nó (và kết nối mà nó mô tả) sẽ quay lại vào lần khởi động ứng dụng tiếp theo. Muốn dừng hẳn thì phải sửa hoặc xoá chính mục cấu hình đó.",
       submit: "Xoá",
       removing: "Đang xoá…",
       cancel: "Huỷ",

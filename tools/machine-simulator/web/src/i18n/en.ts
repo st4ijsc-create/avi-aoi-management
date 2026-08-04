@@ -424,6 +424,12 @@ export const en: Dictionary = {
         indeterminate: "Indeterminate — the device's state is now UNKNOWN.",
         indeterminateGuidance:
           "Do not resubmit this reflexively — a retry can double-actuate. Go check the machine's actual physical state first, then decide.",
+        // 🔴 Whole-branch review M-2 — blueprint §10 item 3, said where the claim is READ. Rendered only
+        // for a COMMAND outcome (see `MachineControlPanel`'s `OutcomeBanner`): a setpoint write is a register
+        // value that can be read back, so this is a command-path fact and showing it on both would be the
+        // same imprecision one size down.
+        appliedIsAcknowledgement:
+          "This is an acknowledgement, not an observation: a matching frame came back, but nothing here proves the machine physically moved. Modbus RTU cannot tie a returned frame to a specific request, so a late echo of an earlier pulse looks identical. Confirm the effect by looking at the machine.",
       },
       rejectionReason: {
         UnknownPoint: "This point name isn't recognized by the live driver.",
@@ -1940,6 +1946,11 @@ export const en: Dictionary = {
         `Device “${vars.id}” on RS-485 bus “${vars.bus}”, serving machine ${vars.machineCode}. The other devices on that line are not affected.`,
       description:
         "This only removes the SAVED configuration — it does not remove the machine from the fleet roster. If this connector is currently running, it keeps running until the application is fully restarted; there is no way to remove a machine from a live roster yet, so a replacement connector for the same machine code is still refused until then.",
+      // 🔴 Whole-branch review I-1 — the UI half. A row this product auto-populated for visibility from
+      // `connectors.json` is re-created on every start, so "removed" is true of the row and false of the
+      // configuration behind it. Shown only when the row's `source` says `Seeded`.
+      seededNote:
+        "Heads up: this connector was NOT saved by an operator — it was auto-populated from this machine's connectors.json / environment-variable configuration, and that configuration is unaffected. It (and the connector it describes) will come back the next time this application starts. Change or remove that entry itself to stop it.",
       submit: "Remove",
       removing: "Removing…",
       cancel: "Cancel",

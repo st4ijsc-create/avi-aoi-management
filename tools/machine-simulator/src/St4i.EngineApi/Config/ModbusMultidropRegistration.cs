@@ -52,11 +52,21 @@ namespace St4i.EngineApi.Config;
 /// <c>Register</c> is last-write-wins, so the second silently dropped the first device's machine claim while
 /// this method still counted it registered). D-4 proposed either rejecting a bus id containing <c>":unit"</c>
 /// or checking derived ids against the registry. <b>Both</b> ship, and they are not redundant:
-/// <see cref="ModbusMultidropMap.ValidateBusInstanceId"/> makes the two namespaces disjoint by construction —
-/// which is also what makes the ghost sweep above safe, because it is the only thing that guarantees
-/// <c>X:unit1</c> can only ever have been derived by bus <c>X</c> — while the registry check below catches an
+/// <see cref="ModbusMultidropMap.ValidateBusInstanceId"/> reserves the all-digit suffix, so no bus can be
+/// NAMED like a device position — while the registry check below catches an
 /// id that arrived from a DIFFERENT registration path (an operator naming a connector <c>X:unit1</c> through
 /// <c>POST /v1/connectors</c>) and refuses to overwrite it rather than silently winning.</para>
+///
+/// <para>🔴 <b>Whole-branch review M-1 — the clause above used to add "it is the only thing that GUARANTEES
+/// <c>X:unit1</c> can only ever have been derived by bus <c>X</c>", and D-7b's review (N-2) falsified exactly
+/// that reasoning.</b> <c>ValidateBusInstanceId</c> reserves only an all-<b>digit</b> suffix, so
+/// <c>line1:unitA</c> is a perfectly legal bus name and <c>line1:unitA:unit3</c> is a legitimate device of
+/// <i>it</i> — which the old namespace predicate handed to bus <c>line1</c>. The naming rule was doing less
+/// than this paragraph claimed, and the sweep below was resting its safety on the difference. What makes the
+/// sweep safe now is arithmetic in the predicate itself, not a rule elsewhere: see
+/// <see cref="RtuBusConfiguration.IsInBusNamespace"/>. The wording is corrected HERE, at the site the
+/// over-broad predicate propagated from byte-identically, because a disproven safety argument left standing
+/// is how the next author re-derives the same predicate.</para>
 /// </summary>
 public static class ModbusMultidropRegistration
 {
@@ -154,9 +164,11 @@ public static class ModbusMultidropRegistration
         foreach (var device in devices)
         {
             // 🔴 Review m5's second half — refuse to overwrite an entry that is NOT this bus's to overwrite.
-            // ModbusMultidropMap.ValidateBusInstanceId already makes it impossible for another BUS to own this
-            // derived id, but a connector registered from another path entirely (POST /v1/connectors naming an
-            // instance "line1:unit3") can. Register is last-write-wins on the id, so without this the fan-out
+            // ModbusMultidropMap.ValidateBusInstanceId stops another bus being NAMED like a device position
+            // (whole-branch M-1: that is all it does — it reserves an all-DIGIT suffix, so `line1:unitA` is a
+            // legal bus name; the claim that it made another bus's ownership "impossible" was falsified by
+            // D-7b's N-2 and is not restated here). A connector registered from another path entirely
+            // (POST /v1/connectors naming an instance "line1:unit3") can hold this id regardless. Register is last-write-wins on the id, so without this the fan-out
             // would silently drop that connector's machine claim while still counting this device registered —
             // which is exactly the shape D-4's review named.
             if (OwnedBySomethingElse(before, device, out var incumbentMachine))
@@ -205,12 +217,26 @@ public static class ModbusMultidropRegistration
     /// 🔴 Task D-7a (D-4 review m6) — <b>unregisters the entries this bus left behind.</b>
     ///
     /// <para><b>What it touches, and why that set is exactly right.</b> Only ids in THIS bus's own namespace:
-    /// the bus id itself (the degenerate single-device form) and <c>{bus}:unit{n}</c>. Nothing else can be in
-    /// that namespace, and that is a guarantee rather than a hope —
-    /// <see cref="ModbusMultidropMap.ValidateBusInstanceId"/> refuses to let any bus be NAMED like a device
-    /// position, so <c>line1:unit3</c> can only ever have been derived by <c>line1</c>. Without that rule this
-    /// sweep would be the most dangerous method in the file: a bus legitimately named <c>line1:unit3</c> would
-    /// see its own registration deleted by bus <c>line1</c>'s sweep.</para>
+    /// the bus id itself (the degenerate single-device form) and <c>{bus}:unit{n}</c>. The membership test is
+    /// <see cref="RtuBusConfiguration.IsInBusNamespace"/> — <b>shared, not restated</b>, which is the half of
+    /// D-7b's review finding N-3 that reaches this method.</para>
+    ///
+    /// <para>🔴 <b>Whole-branch review M-1 — this paragraph used to say "Nothing else can be in that
+    /// namespace, and that is a GUARANTEE rather than a hope", resting it on
+    /// <see cref="ModbusMultidropMap.ValidateBusInstanceId"/>. D-7b's review (N-2) disproved that reasoning
+    /// and the predicate it justified, and the predicate this method used was the one the over-broad copy was
+    /// taken FROM.</b> <c>ValidateBusInstanceId</c> reserves only an all-<b>digit</b> suffix: <c>line1:unitA</c>
+    /// is a legal bus name, so <c>line1:unitA:unit3</c> is a legitimate device of a DIFFERENT bus, and the old
+    /// test — "starts with <c>{bus}:unit</c>, ends in digits" — swept it. This method was, for that input,
+    /// exactly the most dangerous one in the file that the old paragraph said it could not be.</para>
+    ///
+    /// <para><b>What is true now, stated as the arithmetic rather than as a guarantee:</b> an id belongs to
+    /// the LONGEST bus name that can precede its final <c>:unit</c>, and therefore to at most one bus. That is
+    /// a property of <see cref="RtuBusConfiguration.IsInBusNamespace"/>, checkable by reading it, rather than
+    /// a property of a naming rule elsewhere that happens not to cover the case.
+    /// <c>ValidateBusInstanceId</c> still earns its place — it stops a bus and a device sharing one identity
+    /// for the all-digit shape — but it was never load-bearing for THIS sweep and must not be described as
+    /// though it were.</para>
     ///
     /// <para><b>The one id in the namespace it will NOT remove</b> is one whose machine code the CURRENT map
     /// still declares under a different unit — i.e. a device that was re-addressed. It is unregistered (the old

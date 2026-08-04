@@ -1114,7 +1114,27 @@ EXPECT_EDGESERVICE=28
 # TheGhostSweep_NeverTouchesAnotherBusOrAnOrdinaryConnector is what a redirection must not break — verified
 # by mutation (making the sweep ignore the namespace kills 2 of its 13). A redirection that moved the total
 # there would mean it was not behaviour-preserving.
-EXPECT_ENGINEAPI=1269
+#
+# 🔴 WHOLE-BRANCH REVIEW, I-1 raises this 1269 -> 1272 (+3), all in ConnectorRtuBusEndpointTests (18 -> 21).
+# Counted from the runner (21/14/6/5). The bus-device DELETE branch selected on BusInstanceId alone and never
+# consulted Source, so for a bus declared in connectors.json — the PRIMARY way an RS-485 line is declared —
+# it told the operator "the bus is no longer configured at all" while the seeder re-seeds that bus on every
+# boot. One operator-facing string covering two producing paths, true of only one: the sixth instance of this
+# batch's defect class #1, and the THIRD in that one file.
+#
+#     + 1  DeletingTheLastDeviceOfASEEDEDBus_SaysItComesBack_NeverThatTheBusIsGone — driven through the REAL
+#            seeder and the real endpoint rather than a hand-written Seeded row, so the provenance under test
+#            is the one production produces. Asserts the false sentence as an ABSENCE, because the defect was
+#            not a missing caveat but an active assertion of the opposite.
+#     + 1  DeletingTheLastDeviceOfAnOPERATORBus_StillSaysTheBusIsGone — the other arm, so the fix is a FORK
+#            rather than a blanket caveat. Telling an operator their own deleted bus will come back is the
+#            same defect pointing the other way.
+#     + 1  TheRemedyForAnIncumbentConnector_DependsOnWhereThatConnectorCameFrom — I-1's SWEEP, not its
+#            instance. "Remove that connector first (DELETE …)" is right for an Operator-owned incumbent and
+#            WRONG for a Seeded one, which is re-created at every start, so the DELETE frees the machine only
+#            until the next restart. A pure function, three arms; two of them are otherwise reachable only by
+#            constructing a specific store state at a specific endpoint.
+EXPECT_ENGINEAPI=1272
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

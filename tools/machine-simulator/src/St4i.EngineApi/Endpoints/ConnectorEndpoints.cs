@@ -283,14 +283,18 @@ public static class ConnectorEndpoints
             // Not a regression (the same POST was equally blocked before D-1, by the roster guard) but the
             // message is now specific enough to be actively wrong, so it forks on whether the claimant still
             // has a row. Only a message change; the refusal itself is identical in both branches.
-            var claimantStillConfigured = await store.GetAsync(claimingInstanceId, ct).ConfigureAwait(false) is not null;
+            // 🔴 Branch review I-1's SWEEP — the remedy is provenance-aware, and this is the sibling the
+            // sweep found. "Remove that connector first (DELETE …)" is true of an OPERATOR-owned incumbent
+            // and false of a SEEDED one, which comes straight back at the next start; the store lookup that
+            // decides the outer fork was already here, so learning the provenance costs nothing.
+            var claimant = await store.GetAsync(claimingInstanceId, ct).ConfigureAwait(false);
             return Results.Conflict(new ApiErrorDto(
-                claimantStillConfigured
+                claimant is not null
                     ? $"Machine '{validated.MachineCode}' is already served by connector '{claimingInstanceId}'. " +
                       "Two connectors may not drive one machine — a write could not then be resolved to a " +
-                      "single device. Remove that connector first (DELETE /v1/connectors/" +
-                      $"{claimingInstanceId}), or point this one at a different machine code in its " +
-                      "register/node map."
+                      "single device. " +
+                      DescribeHowToFreeTheMachine(claimingInstanceId, claimant.Source, claimant.BusInstanceId) +
+                      " Or point this one at a different machine code in its register/node map."
                     : $"Machine '{validated.MachineCode}' is still held by connector '{claimingInstanceId}', " +
                       "which was already removed from the persisted configuration but is STILL RUNNING: this " +
                       "build has no live \"unregister\" path, so a connector keeps driving its machine until " +
@@ -702,6 +706,109 @@ public static class ConnectorEndpoints
                "write for one of those machines is refused rather than sent to the wrong device.";
     }
 
+    /// <summary>
+    /// 🔴 <b>Whole-branch review I-1 — what an operator is told when they delete ONE device off an RS-485
+    /// bus, and it forks on the row's PROVENANCE because the two answers are opposite.</b>
+    ///
+    /// <para>The previous version selected on <see cref="ConnectorConfigRecord.BusInstanceId"/> alone and
+    /// never consulted <see cref="ConnectorConfigRecord.Source"/>, so for a bus declared in
+    /// <c>connectors.json</c> — which §23.1 makes the PRIMARY way an RS-485 line is declared — it said
+    /// <i>"That was the last device on that line, so the bus is no longer configured at all."</i> That bus is
+    /// still configured: <see cref="ConnectorConfigVisibilitySeeder.SeedBusAsync"/> persists its rows as
+    /// <see cref="ConnectorConfigSource.Seeded"/> and re-seeds on <b>every boot</b>, so the line and its live
+    /// connector come straight back at the next start. The standalone-connector branch directly below has
+    /// carried exactly this caveat since B-6, and is pinned by a test; the bus branch had neither.</para>
+    ///
+    /// <para><b>This is the sixth instance of one operator-facing string covering two producing paths, true
+    /// of only one — the third in THIS file.</b> Extracted as a pure function rather than fixed in place, for
+    /// the reason the previous two extractions in this file give: the arms are otherwise reachable only by
+    /// constructing a specific store state at a specific endpoint, so nobody ever asks them a consequence
+    /// question. All four combinations are now ordinary arguments.</para>
+    /// </summary>
+    /// <param name="remainingDeviceCount">Rows still on this bus AFTER the delete. 0 means this was the last
+    /// one — the case whose honest answer differs most between the two provenances.</param>
+    internal static string DescribeBusDeviceDeletion(
+        string instanceId, string machineCode, string busInstanceId, ConnectorConfigSource source,
+        int remainingDeviceCount, bool claimReleased)
+    {
+        var opening =
+            $"Removed device '{instanceId}' (machine '{machineCode}') from Modbus RTU bus '{busInstanceId}'. ";
+
+        var line = source == ConnectorConfigSource.Seeded
+            // 🔴 The arm I-1 found missing. NOT "the bus is no longer configured": this row was never
+            // something an operator asked this product to persist — it was auto-populated for visibility from
+            // this run's connectors.json — and the seeding pass re-creates the WHOLE bus on every start.
+            ? (remainingDeviceCount > 0
+                ? $"{remainingDeviceCount} device(s) remain listed on that line. "
+                : "That was the last row listed for that line. ") +
+              "⚠ This row was not created by an operator — it was auto-populated for visibility from this " +
+              $"run's connectors.json entry for bus '{busInstanceId}', and that entry is unaffected. The bus " +
+              "is STILL CONFIGURED: this row (and the live connector it describes) reappears the next time " +
+              "this process starts, and the whole bus is re-seeded with it. Change or remove the " +
+              "connectors.json entry itself to stop that."
+            : remainingDeviceCount > 0
+                ? $"{remainingDeviceCount} device(s) remain configured on that line and are unaffected — the " +
+                  "bus itself is still configured. "
+                : "That was the last device on that line, so the bus is no longer configured at all. ";
+
+        var claim = claimReleased
+            ? $"This device's live claim on machine '{machineCode}' was released. "
+            : "Nothing was registered live under this device id in this process, so there was no machine " +
+              "claim to release. ";
+
+        return opening + line + (source == ConnectorConfigSource.Seeded ? " " : string.Empty) + claim +
+               "Two things are unchanged and are worth knowing: the driver that was already polling this " +
+               "slave address keeps polling until the fleet is stopped and started (there is no way to stop " +
+               "one mid-run), and the machine itself REMAINS IN THE FLEET ROSTER — the roster has no removal " +
+               "path, so a replacement connector for this same machine code is still refused until the " +
+               "application is restarted.";
+    }
+
+    /// <summary>
+    /// 🔴 <b>Whole-branch review, I-1's sweep — how an operator actually frees a machine an incumbent
+    /// connector is holding, which depends on WHERE that connector came from.</b>
+    ///
+    /// <para>"Remove that connector first (<c>DELETE /v1/connectors/{id}</c>)" is true of a row an operator
+    /// saved and <b>false</b> of one <see cref="ConnectorConfigVisibilitySeeder"/> wrote: that row is a
+    /// visibility artifact of an env-var/<c>connectors.json</c> source that is re-seeded on <i>every</i> boot,
+    /// so deleting it frees the machine until the next start and no longer. Sending an operator to a
+    /// <c>DELETE</c> that will silently undo itself is the same defect class as the message this method was
+    /// extracted to fix — one sentence covering two producing paths, true of only one.</para>
+    ///
+    /// <para>A pure function taking the provenance rather than the store, so every arm is an ordinary
+    /// unit-testable argument — the same shape <see cref="DescribeRollbackOutcome"/> and
+    /// <see cref="DescribeBusRollbackOutcome"/> already have, and for the same reason: two of these three arms
+    /// are otherwise reachable only by constructing a specific store state at a specific endpoint.</para>
+    /// </summary>
+    /// <param name="incumbentSource"><see langword="null"/> when nothing is persisted under this id at all —
+    /// a live claim with no configuration behind it, which only a restart clears.</param>
+    /// <param name="incumbentBusInstanceId">Non-null when the incumbent is one DEVICE on an RS-485 bus, in
+    /// which case naming the bus is what makes the <c>connectors.json</c> entry findable.</param>
+    internal static string DescribeHowToFreeTheMachine(
+        string incumbentInstanceId, ConnectorConfigSource? incumbentSource, string? incumbentBusInstanceId)
+    {
+        if (incumbentSource is null)
+        {
+            return $"Connector '{incumbentInstanceId}' has no persisted configuration — it is a live claim " +
+                   "left by a connector that was already removed, and this build has no way to stop one " +
+                   "mid-run, so only restarting the application clears it.";
+        }
+
+        if (incumbentSource == ConnectorConfigSource.Seeded)
+        {
+            var where = string.IsNullOrWhiteSpace(incumbentBusInstanceId)
+                ? $"the environment-variable/connectors.json entry that configures '{incumbentInstanceId}'"
+                : $"the connectors.json entry for Modbus RTU bus '{incumbentBusInstanceId}'";
+
+            return $"Connector '{incumbentInstanceId}' was NOT saved by an operator — it is a visibility row " +
+                   $"auto-populated from this run's own configuration, and it is re-created on every start. " +
+                   $"DELETE /v1/connectors/{incumbentInstanceId} therefore frees the machine only until the " +
+                   $"next restart: change or remove {where} instead.";
+        }
+
+        return $"Remove that connector first (DELETE /v1/connectors/{incumbentInstanceId}).";
+    }
+
     /// <summary>🔴 Task D-7b — every grant declared anywhere on one bus, as ONE capability. Used for the
     /// deliberate-save fingerprint (see <see cref="CreateRtuBusAsync"/>'s own remarks) and for the response's
     /// headline <c>writeCapability</c>. Order-independent by construction —
@@ -809,21 +916,9 @@ public static class ConnectorEndpoints
             var remaining = await store.ListBusAsync(existing.BusInstanceId, ct).ConfigureAwait(false);
             return Results.Ok(new ConnectorDeleteResultDto(
                 normalized,
-                $"Removed device '{normalized}' (machine '{existing.MachineCode}') from Modbus RTU bus " +
-                $"'{existing.BusInstanceId}'. " +
-                (remaining.Count > 0
-                    ? $"{remaining.Count} device(s) remain configured on that line and are unaffected — the bus " +
-                      "itself is still configured. "
-                    : "That was the last device on that line, so the bus is no longer configured at all. ") +
-                (claimReleased
-                    ? $"This device's live claim on machine '{existing.MachineCode}' was released. "
-                    : "Nothing was registered live under this device id in this process, so there was no " +
-                      "machine claim to release. ") +
-                "Two things are unchanged and are worth knowing: the driver that was already polling this " +
-                "slave address keeps polling until the fleet is stopped and started (there is no way to stop " +
-                "one mid-run), and the machine itself REMAINS IN THE FLEET ROSTER — the roster has no removal " +
-                "path, so a replacement connector for this same machine code is still refused until the " +
-                "application is restarted."));
+                DescribeBusDeviceDeletion(
+                    normalized, existing.MachineCode, existing.BusInstanceId!, existing.Source,
+                    remaining.Count, claimReleased)));
         }
 
         // English, deliberately — see CreateConnectorAsync's own remark on this.
