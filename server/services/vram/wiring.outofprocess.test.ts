@@ -154,12 +154,15 @@ describe("Pha 1 Task 6 — dây nối ngoài tiến trình: người giám sát 
      * hai hướng với hai comment cùng tự tin — test này khoá chiều đúng lại.
      */
     it("2. stopSidecar ⇒ GIỮ giấy phép cho tới khi tiến trình THẬT SỰ chết (không nhả sổ trước thiết bị)", async () => {
+      process.env.LLAMA_VISION_STOP_WAIT_MS = "40";
       stubHealthyFetch();
       const { __startSidecarForTests, __stopSidecarForTests } = await import("../llamaVisionSidecar");
       await __startSidecarForTests();
       expect((await currentLeases()).some((x) => x.request.owner.startsWith("sidecar:"))).toBe(true);
 
-      await __stopSidecarForTests();
+      // ★ C-2 — lượt stop KHÔNG quan sát được cái chết ⇒ phải khai `false`, không phải `undefined`
+      // (bản trước) mà người thi hành đè lên bằng `return true`.
+      expect(await __stopSidecarForTests()).toBe(false);
       // SIGTERM đã gửi nhưng tiến trình CHƯA thoát — thiết bị VẪN giữ 7.825 MiB ⇒ sổ phải giữ.
       expect(lastSidecarProc!.killed).toBe(true);
       expect((await currentLeases()).some((x) => x.request.owner.startsWith("sidecar:"))).toBe(true);
@@ -167,6 +170,76 @@ describe("Pha 1 Task 6 — dây nối ngoài tiến trình: người giám sát 
       // Tiến trình chết thật ⇒ ĐÂY mới là lúc sổ được nhả.
       lastSidecarProc!.emit("exit", 0, "SIGTERM");
       expect((await currentLeases()).some((x) => x.request.owner.startsWith("sidecar:"))).toBe(false);
+    });
+
+    /**
+     * ★★★ C-2 (review TOÀN NHÁNH) — NGỮ NGHĨA **THẬT** CỦA NGƯỜI THI HÀNH, KHÔNG PHẢI BẢN GIẢ.
+     *
+     * `consolidation.test.ts` thay `stopSidecar` bằng một bản giả, nên đường bất đồng bộ THẬT
+     * (SIGTERM → `setTimeout(SIGKILL).unref()` → `proc.on("exit")` mới `release()`) **chưa từng
+     * chạy trong test** — và đó chính là chỗ bug C-2 sống: người thi hành `return true` vô điều
+     * kiện ⇒ `vramWiring` xin lại NGAY trên một sổ chưa đổi ⇒ **TỪ CHỐI LẦN HAI sau khi đã giết
+     * 7,8 GB**. File này KHÔNG giả `llamaVisionSidecar`: nó giả `fs`/`child_process`/`fetch`, tức
+     * đúng ba biên của thế giới ngoài, nên `preempt()` ở đây đi qua đường thật từ đầu tới cuối.
+     */
+    it("★★★ C-2a — `preempt()` THẬT: tiến trình chưa chết ⇒ `failed`, sổ KHÔNG nhả, `freedBytes = 0`", async () => {
+      process.env.LLAMA_VISION_STOP_WAIT_MS = "40";
+      stubHealthyFetch();
+      const { __startSidecarForTests } = await import("../llamaVisionSidecar");
+      await __startSidecarForTests();
+
+      const { setLeaseRefCount, snapshot } = await import("./vramBroker");
+      const l = (await currentLeases()).find((x) => x.request.owner === "sidecar:vision")!;
+      expect(l).toBeDefined();
+      setLeaseRefCount(l.id, 0); // nhàn rỗi ⇒ đủ điều kiện thu hồi (`nguoiThiHanhThuHoi`)
+      const truoc = snapshot().totalReservedBytes;
+
+      const { preempt } = await import("./vramPreempt");
+      const kq = await preempt("production", Number.POSITIVE_INFINITY);
+
+      expect(kq.planned).toBe(1);                       // đã có kế hoạch …
+      expect(lastSidecarProc!.killed).toBe(true);       // … và đã THẬT SỰ gửi tín hiệu giết …
+      expect(kq.reclaimed).toEqual([]);                 // … nhưng KHÔNG được khai là xong
+      expect(kq.failed).toEqual(["sidecar:vision"]);
+      expect(kq.freedBytes).toBe(0);
+      expect(snapshot().totalReservedBytes).toBe(truoc); // sổ y nguyên ⇒ xin lại là chắc chắn hỏng
+    });
+
+    it("★★★ C-2b — `preempt()` THẬT: tiến trình CHẾT trong lúc chờ ⇒ `reclaimed`, sổ nhả ĐỦ 7.825 MiB", async () => {
+      process.env.LLAMA_VISION_STOP_WAIT_MS = "2000";
+      stubHealthyFetch();
+      const { __startSidecarForTests } = await import("../llamaVisionSidecar");
+      await __startSidecarForTests();
+
+      const { setLeaseRefCount, snapshot } = await import("./vramBroker");
+      const l = (await currentLeases()).find((x) => x.request.owner === "sidecar:vision")!;
+      setLeaseRefCount(l.id, 0);
+      const truoc = snapshot().totalReservedBytes;
+      expect(truoc).toBe(7825 * 1024 * 1024);
+
+      /**
+       * llama-server chết SAU khi SIGTERM tới — đúng hình dạng sản xuất, và là lý do lượt chờ của
+       * `stopSidecar()` phải là một lượt chờ THẬT chứ không phải một phép đo tức thời.
+       * ⚠ Móc vào `kill()` chứ KHÔNG hẹn giờ tuyệt đối: một `setTimeout(…, 5)` có thể nổ TRƯỚC khi
+       * `preempt()` kịp lập kế hoạch (lượt `await import()` đầu tiên đủ chậm), khi đó giấy phép đã
+       * rời sổ và ca xanh/đỏ vì lý do KHÁC hẳn thứ nó canh — đúng một lượt bất định đo được.
+       */
+      const proc = lastSidecarProc!;
+      const killGoc = proc.kill.bind(proc);
+      (proc as { kill: (s?: string) => boolean }).kill = (s?: string) => {
+        const r = killGoc();
+        setTimeout(() => proc.emit("exit", 0, s ?? "SIGTERM"), 1);
+        return r;
+      };
+
+      const { preempt } = await import("./vramPreempt");
+      const kq = await preempt("production", Number.POSITIVE_INFINITY);
+
+      expect(kq.reclaimed).toEqual(["sidecar:vision"]);
+      expect(kq.failed).toEqual([]);
+      // ⚠ Đo bằng SỔ: con số này chỉ khác 0 khi giấy phép ĐÃ rời sổ, tức khi OS đã thu hồi VRAM.
+      expect(kq.freedBytes).toBe(truoc);
+      expect(snapshot().totalReservedBytes).toBe(0);
     });
 
     it('3. ĐỘT BIẾN — sidecar CHẾT ĐỘT NGỘT (proc "exit", KHÔNG qua stopSidecar) ⇒ vẫn TRẢ giấy phép', async () => {

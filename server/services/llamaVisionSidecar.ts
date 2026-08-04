@@ -218,6 +218,12 @@ interface SidecarState {
    *  giờ ném) phải chạy ở MỌI nhánh thoát: `stopSidecar()` tường minh, `proc.on("exit")` (chết
    *  đột ngột), `proc.on("error")` (spawn lỗi) — thiếu một nhánh là giấy phép TREO vĩnh viễn. */
   vramTicket: VramTicket;
+  /**
+   * ★★★ C-2 (review TOÀN NHÁNH) — LỜI HỨA "TIẾN TRÌNH NÀY ĐÃ CHẾT", giải quyết ở ĐÚNG hai nhánh
+   * trả giấy phép (`"exit"` và `"error"`). Đây là thứ làm `stopSidecar()` khai được sự thật thay
+   * vì khai ý định: giữa `SIGTERM` và lúc OS thật sự thu hồi 7.825 MiB, **không ai được nói xong**.
+   */
+  daChet: Promise<void>;
 }
 
 let sidecar: SidecarState | null = null;
@@ -364,6 +370,15 @@ export async function ensureSidecar(): Promise<void> {
 
     let exited = false;
     let exitInfo = "";
+    /**
+     * ★★★ C-2 — mốc "ĐÃ CHẾT". Dựng TRƯỚC khi gắn hai nhánh thoát để không có cửa sổ nào mà một
+     * lượt `exit` sớm rơi vào hư không. `resolve` gọi nhiều lần là vô hại (Promise idempotent) —
+     * cùng lý do `ticket.release()` được phép gọi từ cả hai nhánh.
+     */
+    let danhDauDaChet: () => void = () => {};
+    const daChet = new Promise<void>((res) => {
+      danhDauDaChet = res;
+    });
     // ⚠ release() PHẢI chạy ở MỌI nhánh thoát: "exit" (chết đột ngột — crash/kill/OOM, KHÔNG
     // qua stopSidecar()) VÀ "error" (spawn thất bại — ENOENT/EACCES; "exit" có thể KHÔNG BAO GIỜ
     // tới trong ca này). Thiếu một nhánh là giấy phép TREO vĩnh viễn — reconciler báo lệch ÂM
@@ -378,6 +393,9 @@ export async function ensureSidecar(): Promise<void> {
       } catch {
         /* telemetry KHÔNG được làm hỏng vòng đời sidecar */
       }
+      // ⚠ C-2 — NGOÀI `try`: một `release()` ném không được phép nuốt mốc "đã chết", nếu không
+      // `stopSidecar()` chờ hết hạn rồi khai `false` cho một tiến trình ĐÃ chết thật.
+      danhDauDaChet();
       if (sidecar?.proc === proc) {
         sidecar = null;
         if (idleTimer) {
@@ -395,6 +413,7 @@ export async function ensureSidecar(): Promise<void> {
       } catch {
         /* telemetry KHÔNG được làm hỏng vòng đời sidecar */
       }
+      danhDauDaChet();
       if (sidecar?.proc === proc) {
         sidecar = null;
         if (idleTimer) {
@@ -404,7 +423,7 @@ export async function ensureSidecar(): Promise<void> {
       }
     });
 
-    sidecar = { proc, config: cfg, startedAt: Date.now(), vramTicket };
+    sidecar = { proc, config: cfg, startedAt: Date.now(), vramTicket, daChet };
 
     // Poll healthcheck until ready or timeout.
     const deadline = Date.now() + READY_TIMEOUT_MS;
@@ -440,15 +459,39 @@ export async function ensureSidecar(): Promise<void> {
   }
 }
 
-/** Stop the sidecar process and clear timers. Safe to call when nothing is running. */
-export async function stopSidecar(): Promise<void> {
+/**
+ * Stop the sidecar process and clear timers. Safe to call when nothing is running.
+ *
+ * ★★★ C-2 (review TOÀN NHÁNH) — **TRẢ VỀ `true` CHỈ KHI TIẾN TRÌNH ĐÃ CHẾT THẬT.**
+ *
+ * Bản trước trả `void` sau khi gửi `SIGTERM` + hẹn `SIGKILL` 5.000 ms rồi **return ngay**, còn
+ * người thi hành `vram/vramPreempt.ts` thì `return true` **vô điều kiện**. Hợp đồng ghi trong
+ * chính file đó (*"trả `true` chỉ khi đã THẬT SỰ dispose/giết, KHÔNG phải khi đã gọi lệnh"*) bị
+ * phá, và chuỗi thật là:
+ *
+ *   1. `preempt()` → `reclaimed = ["sidecar:vision"]`, `freedBytes = 0` (sổ chưa nhả);
+ *   2. `vramWiring` thấy `reclaimed.length > 0` ⇒ **xin lại NGAY** (đúng một lượt, không vòng lặp);
+ *   3. giấy phép 7,8 GB vẫn còn trong sổ ⇒ **TỪ CHỐI LẦN HAI**.
+ *
+ * ⇒ Giết hộ tiêu thụ LỚN NHẤT hệ (khởi động lại tốn tới `READY_TIMEOUT_MS` = 120 s) **và lượt xin
+ * vẫn hỏng** — net-âm, tệ hơn không thu hồi.
+ *
+ * ⚠ CHỜ CÓ HẠN GIỜ, và hạn đó phải > mốc `SIGKILL` (5.000 ms) — chờ vô hạn ở đây là treo đường
+ * `beginVramAllocation()` của một lượt nạp model. Hết hạn ⇒ **`false`** = *"tôi chưa quan sát được
+ * cái chết"*, và người gọi **không** xin lại (`preempt()` xếp hộ này vào `failed`). Đó là câu trả
+ * lời TRUNG THỰC: thiết bị THẬT SỰ còn giữ 7.825 MiB khi tiến trình chưa chết.
+ * ⚠ `!current` ⇒ `false` chứ không phải `true`: "tôi không có tiến trình nào để giết" KHÔNG đồng
+ * nghĩa "byte đã ra khỏi sổ" — ca giấy phép còn treo vì một lượt stop trước đó chưa chết được rơi
+ * đúng vào đây, và khai `true` ở đó là dựng lại chính lỗi C-2.
+ */
+export async function stopSidecar(): Promise<boolean> {
   if (idleTimer) {
     clearTimeout(idleTimer);
     idleTimer = null;
   }
   const current = sidecar;
   sidecar = null;
-  if (!current) return;
+  if (!current) return false;
   // ★ I-1 (review TOÀN NHÁNH) — KHÔNG trả giấy phép ở đây. Kỷ luật DUY NHẤT về thứ tự nhả nằm
   // ở đầu `vram/vramWiring.ts`: **sổ chỉ nhả SAU khi thiết bị đã nhả**.
   //
@@ -487,6 +530,39 @@ export async function stopSidecar(): Promise<void> {
   } catch (err) {
     console.warn("[llamaVisionSidecar] stopSidecar error:", (err as any)?.message ?? err);
   }
+
+  // ★★★ C-2 — CHỜ CÁI CHẾT THẬT, có hạn giờ. `daChet` được giải quyết ở `proc.on("exit")` /
+  // `proc.on("error")` — hai nhánh CŨNG là nơi `vramTicket.release()` chạy ⇒ khi lời hứa này về
+  // thì SỔ đã nhả, không phải "sắp nhả".
+  const daChetThat = await Promise.race([
+    current.daChet.then(() => true),
+    hetGio(stopWaitMs()).then(() => false),
+  ]);
+  if (!daChetThat) {
+    console.warn(
+      `[llamaVisionSidecar] SIGTERM/SIGKILL đã gửi nhưng tiến trình CHƯA chết sau ${stopWaitMs()} ms — ` +
+        `giấy phép VRAM (7.825 MiB) VẪN GIỮ vì thiết bị vẫn giữ. Lượt thu hồi khai THẤT BẠI, ` +
+        `không xin lại (xem C-2 ở vram/vramPreempt.ts).`,
+    );
+  }
+  return daChetThat;
+}
+
+/**
+ * Hạn chờ cái chết của tiến trình con (ms). Mặc định **8.000** = mốc `SIGKILL` (5.000) + 3.000 ms
+ * cho OS thu hồi. ⚠ Sàn 1 ms: `0`/rác biến lượt chờ thành một phép đo tức thời và dựng lại C-2.
+ */
+function stopWaitMs(): number {
+  const n = Number(process.env.LLAMA_VISION_STOP_WAIT_MS);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 8000;
+}
+
+/** Hẹn giờ KHÔNG giữ vòng lặp sự kiện sống (`unref`) — cùng kỷ luật với `idleTimer`. */
+function hetGio(ms: number): Promise<void> {
+  return new Promise((res) => {
+    const t = setTimeout(res, ms);
+    if (typeof t.unref === "function") t.unref();
+  });
 }
 
 /**

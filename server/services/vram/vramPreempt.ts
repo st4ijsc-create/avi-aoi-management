@@ -49,6 +49,10 @@ export interface VramPreemptResult {
  * lệnh". Lượt nhả SỔ vẫn do chính điểm gọi cũ làm (`unloadGgufModel` trả ticket, `stopSidecar` để
  * `proc.on("exit")` trả ticket) — `preempt()` **không tự tay `release()` giấy phép của người khác**:
  * nhả sổ khi thiết bị chưa nhả là nói dối đúng chiều OOM (`vramBroker.coTheNhuong`).
+ * ⚠⚠ C-2 (review TOÀN NHÁNH) — HỢP ĐỒNG NÀY TỪNG BỊ PHÁ BỞI CHÍNH FILE NÀY: `"vision-sidecar"`
+ * `return true` vô điều kiện trong khi `stopSidecar()` mới chỉ gửi `SIGTERM`. Nay cả hai người thi
+ * hành đều **chuyển nguyên** câu trả lời của lượt dọn thật lên, và có ca chạy ngữ nghĩa THẬT
+ * (`wiring.outofprocess.test.ts` C-2a/C-2b — không giả `stopSidecar`).
  */
 const NGUOI_THI_HANH: Record<VramReclaimerId, (step: VramPreemptStep) => Promise<boolean>> = {
   /**
@@ -71,9 +75,23 @@ const NGUOI_THI_HANH: Record<VramReclaimerId, (step: VramPreemptStep) => Promise
    * giác nào đang bay. Đây là toàn bộ khác biệt giữa "thu hồi" và "giết ngang một lượt suy luận".
    */
   "vision-sidecar": async () => {
+    /**
+     * ★★★ C-2 (review TOÀN NHÁNH) — `return true` VÔ ĐIỀU KIỆN Ở ĐÂY LÀ MỘT LỜI NÓI DỐI ĐÚNG
+     * CHIỀU OOM, và nó phá hợp đồng ghi cách đây 25 dòng.
+     *
+     * `stopSidecar()` bản trước gửi `SIGTERM`, hẹn `SIGKILL` sau 5.000 ms rồi **return ngay**;
+     * giấy phép chỉ rời sổ ở `proc.on("exit")`. Chuỗi thật: `reclaimed = ["sidecar:vision"]` với
+     * `freedBytes = 0` ⇒ `vramWiring` xin lại NGAY ⇒ sổ vẫn còn 7,8 GB ⇒ **TỪ CHỐI LẦN HAI**. Tức
+     * giết hộ tiêu thụ lớn nhất hệ (khởi động lại tới 120 s) mà lượt xin **vẫn hỏng**.
+     *
+     * Nay `stopSidecar()` trả `boolean` = *"đã quan sát được tiến trình CHẾT"* (nhánh `exit`/`error`
+     * — cũng chính là nơi `release()` chạy) và ta chuyển nguyên câu trả lời đó lên. Hết hạn chờ ⇒
+     * `false` ⇒ hộ này vào `failed`, `reclaimed` rỗng, **không xin lại**: một lời từ chối trung
+     * thực thay vì một lượt xin lại chắc chắn hỏng.
+     * ⚠ Ca test chạy NGỮ NGHĨA THẬT (không giả `stopSidecar`): `wiring.outofprocess.test.ts`.
+     */
     const { stopSidecar } = await import("../llamaVisionSidecar");
-    await stopSidecar();
-    return true;
+    return await stopSidecar();
   },
 };
 

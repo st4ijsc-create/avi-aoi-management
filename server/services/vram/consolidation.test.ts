@@ -56,12 +56,18 @@ vi.mock("./vramProbe", () => ({
   probeOnce: async () => null,
   __resetVramProbeCacheForTests: () => {},
 }));
-const daTatSidecar = vi.hoisted(() => ({ n: 0 }));
+/**
+ * ⚠ C-2 — `ketQua` là câu trả lời của `stopSidecar()`: **`true` ⇔ đã quan sát được tiến trình
+ * CHẾT**. Bản trước trả `undefined` và người thi hành `return true` vô điều kiện đè lên, nên
+ * nhánh "giết mà chưa chết" **chưa từng chạy trong test**. Ngữ nghĩa THẬT (không giả) nằm ở
+ * `wiring.outofprocess.test.ts`; ở đây ta chỉ canh việc câu trả lời ĐƯỢC CHUYỂN LÊN nguyên vẹn.
+ */
+const daTatSidecar = vi.hoisted(() => ({ n: 0, ketQua: true }));
 vi.mock("../llamaVisionSidecar", async (goc) => {
   // ⚠ `importOriginal`: ta CHỈ thay `stopSidecar` (người thi hành), còn `visionSidecarVramRequest()`
   // phải là bản THẬT — nó chính là thứ ca "đường thoát" bên dưới đọc.
   const that = await goc<typeof import("../llamaVisionSidecar")>();
-  return { ...that, stopSidecar: async () => { daTatSidecar.n += 1; } };
+  return { ...that, stopSidecar: async () => { daTatSidecar.n += 1; return daTatSidecar.ketQua; } };
 });
 
 import {
@@ -115,6 +121,7 @@ beforeEach(() => {
   suKien.length = 0;
   daDonModel.length = 0;
   daTatSidecar.n = 0;
+  daTatSidecar.ketQua = true;
   donModelKetQua.value = true;
   donModelKetQua.nhaSo = false;
   nhaSoTheoOwner.clear();
@@ -361,6 +368,28 @@ describe("C. `evictLRU()` HẤP THỤ thành `preempt()`", () => {
     const kq = await preempt("production", Number.POSITIVE_INFINITY);
     expect(kq.reclaimed).toEqual(["sidecar:vision"]);
     expect(daTatSidecar.n).toBe(1);
+  });
+
+  /**
+   * ★★★ C-2 (review TOÀN NHÁNH) — CÂU TRẢ LỜI CỦA NGƯỜI THI HÀNH PHẢI ĐI LÊN NGUYÊN VẸN.
+   *
+   * Bản trước: `"vision-sidecar"` gọi `stopSidecar()` rồi `return true` **vô điều kiện** ⇒ một
+   * tiến trình mới nhận `SIGTERM` (chưa chết, sổ chưa nhả) vẫn được khai `reclaimed`, và
+   * `vramWiring` xin lại NGAY trên một sổ chưa đổi ⇒ TỪ CHỐI LẦN HAI **sau khi đã giết 7,8 GB**.
+   */
+  it("★★★ C-2: người thi hành khai CHƯA CHẾT ⇒ vào `failed`, KHÔNG vào `reclaimed`", async () => {
+    const l = moNhanRoi("sidecar:vision", 7_825 * MIB, {
+      kind: "external-process", priority: "interactive", reclaimer: "vision-sidecar",
+    });
+    setLeaseRefCount(l.id, 0);
+    daTatSidecar.ketQua = false;           // SIGTERM đã gửi, tiến trình CHƯA chết
+    const kq = await preempt("production", Number.POSITIVE_INFINITY);
+    expect(daTatSidecar.n).toBe(1);        // đã CỐ dọn …
+    expect(kq.reclaimed).toEqual([]);      // … nhưng KHÔNG được khai là xong
+    expect(kq.failed).toEqual(["sidecar:vision"]);
+    expect(kq.freedBytes).toBe(0);
+    // và sổ vẫn giữ đúng khối byte đó — đây là lý do người gọi KHÔNG được xin lại.
+    expect(snapshot().totalReservedBytes).toBe(7_825 * MIB);
   });
 
   it("★★ THỨ TỰ §5.2: mức THẤP trước, rồi NHÀN RỖI, rồi CŨ — y như `preemptCandidates()`", () => {
