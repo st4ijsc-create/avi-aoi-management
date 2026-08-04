@@ -120,6 +120,17 @@ const DISTRUST_UNITS: Record<VramDegradationReason, number> = {
   "unledgered-unasked": 1,
   // nhân với số lượt, KẸP ở 4 — xem `unknownUnits()`.
   "unledgered-unknown": 1,
+  /**
+   * ★★★ Pha 2B Task 7 — **0 ĐƠN VỊ, VÀ ĐÓ LÀ ĐIỀU KIỆN Đ4, KHÔNG PHẢI MỘT CHỖ QUÊN.**
+   *
+   * `"gguf-slot-cap"` là lý do của thước **ĐẾM** (hết khe `GGUF_MAX_LOADED_MODELS`). Quy nó thành
+   * một phụ phí BYTE là **trộn hai thước** — đúng thứ ràng buộc 4 cấm, và nó sẽ nói dối theo cả hai
+   * chiều: một lượt bị chặn vì hết KHE sẽ in ra một dư địa byte NHỎ HƠN sự thật, rồi lượt kế tiếp
+   * (không phải `gguf-model`, không dính trần khe) bị chặn oan theo con số bịa đó.
+   * ⇒ Lý do này chỉ đi vào **câu chữ** (`degradedReasons`), không đi vào **phép tính byte**. Cửa
+   * cưỡng chế của nó là `vramBroker.kheGgufConThieu()`, một nhánh RIÊNG.
+   */
+  "gguf-slot-cap": 0,
 };
 
 /**

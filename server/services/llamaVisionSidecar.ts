@@ -176,6 +176,25 @@ let sidecar: SidecarState | null = null;
 let startPromise: Promise<void> | null = null;
 let lastUsedAt = 0;
 let idleTimer: NodeJS.Timeout | null = null;
+/**
+ * ★★ Pha 2B Task 7 — SỐ REQUEST THỊ GIÁC ĐANG BAY, đồng bộ vào SỔ qua `noteRefCount()`.
+ *
+ * Đây là điều kiện làm `preempt()` **an toàn** cho hộ này: `nguoiThiHanhThuHoi()` chỉ trả tên
+ * người thi hành khi `refCount === 0`. Thiếu bộ đếm này, giấy phép đứng nguyên `refCount = 1`
+ * (mặc định an toàn của `reserve()`) ⇒ sidecar **không bao giờ** là ứng viên nhường chỗ, tức mở
+ * rộng này là MÃ CHẾT — đúng hình dạng "lưới an toàn thứ 4 là mã chết" của Đợt 1.
+ * ⚠ Đếm bằng `try/finally` quanh lượt gọi — một lượt ném mà không giảm là chốt kẹt VĨNH VIỄN
+ * (đúng lớp lỗi C-1 mà Task 5 vừa vá ở `kbSyncScheduler`).
+ */
+let soRequestDangBay = 0;
+
+function dongBoRefCountSidecar(): void {
+  try {
+    sidecar?.vramTicket.noteRefCount(soRequestDangBay);
+  } catch {
+    /* telemetry KHÔNG được làm hỏng đường thị giác */
+  }
+}
 
 function touchIdle(): void {
   lastUsedAt = Date.now();
@@ -260,6 +279,21 @@ export async function ensureSidecar(): Promise<void> {
         owner: "sidecar:vision",
         kind: "external-process",
         priority: "interactive",
+        /**
+         * ★★★ Pha 2B Task 7 (§8) — **HỘ NÀY THU HỒI ĐƯỢC, VÀ ĐÂY LÀ MỞ RỘNG DUY NHẤT CỦA
+         * `preempt()` NGOÀI GGUF.**
+         *
+         * Lý do nó đủ điều kiện trong khi ONNX/trainer thì không:
+         *   1. đường thu hồi ĐÃ TỒN TẠI và đã chạy hàng ngày — chính module này gọi `stopSidecar()`
+         *      khi hết hạn nhàn rỗi (`LLAMA_VISION_IDLE_TIMEOUT_MS`);
+         *   2. bằng chứng nhả là `"process-exit"` — **lớp mạnh nhất trong repo** (OS thu hồi VRAM khi
+         *      tiến trình chết), khác hẳn `"unverified"` của ONNX (chỉ gỡ tham chiếu JS);
+         *   3. nó là hộ tiêu thụ **LỚN NHẤT hệ** (7,8 GB đo được ở Đợt 0) — và từng vắng mặt khỏi MỌI
+         *      phép cộng VRAM suốt ba đợt.
+         * ⚠ `nguoiThiHanhThuHoi()` chỉ cho phép khi `refCount === 0` ⇒ không bao giờ giết ngang một
+         * request thị giác đang bay. `noteRefCount()` dưới đây là thứ giữ lời hứa đó.
+         */
+        reclaimer: "vision-sidecar",
         // ⚠ 7825 là hằng số ĐO ĐƯỢC ở Đợt 2, dùng cho LƯỢT ĐẦU TIÊN thôi — sau lượt commit đầu
         // (xem `vramTicket.commitMeasured()` dưới), bộ ước lượng dùng số THẬT (nấc "learned").
         // Truyền qua `configDefaultBytes` (không hard-code thẳng vào estimatedBytes) để sự kiện
@@ -490,6 +524,10 @@ export async function describeImageViaSidecar(
   const startTime = Date.now();
   await ensureSidecar();
   touchIdle();
+  // ★ Task 7 — từ đây tới `finally` cuối hàm, sổ khai hộ này ĐANG DÙNG ⇒ `preempt()` không chạm tới.
+  soRequestDangBay += 1;
+  dongBoRefCountSidecar();
+  try {
 
   const cfg = sidecar?.config ?? getVisionSidecarConfig();
   const modelId = cfg ? path.basename(cfg.modelPath, ".gguf") : "vision";
@@ -561,4 +599,11 @@ export async function describeImageViaSidecar(
       : 0,
     modelId: data.model || modelId,
   };
+  } finally {
+    // ★ Task 7 — `finally`, KHÔNG phải cuối nhánh thành công: một lượt ném (HTTP lỗi, completion
+    // rỗng) mà không giảm bộ đếm là chốt kẹt VĨNH VIỄN — sidecar 7,8 GB thành không bao giờ
+    // nhường chỗ được nữa, và không ai thấy vì số đó không hiện ở đâu.
+    soRequestDangBay = Math.max(0, soRequestDangBay - 1);
+    dongBoRefCountSidecar();
+  }
 }

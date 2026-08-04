@@ -1,4 +1,4 @@
-import type { VramLease, VramLeaseKind, VramMeasureSource, VramPriority } from "./types";
+import type { VramLease, VramLeaseKind, VramMeasureSource, VramPriority, VramReclaimerId } from "./types";
 /**
  * ★★ Pha 2B Task 3 — BA CỬA `await import()` CỦA `beginVramAllocation()` ĐÃ THÀNH IMPORT TĨNH.
  *
@@ -565,6 +565,18 @@ export interface VramAllocationOptions {
    *   ⇒ chỉ điểm gọi mới biết "có chắc chắn không, và bằng bao nhiêu". `0` là giá trị HỢP LỆ.
    */
   fallbackBytes?: number;
+  /**
+   * ★★★ Pha 2B Task 7 (§8) — **AI ĐI LẤY LẠI ĐƯỢC KHỐI BYTE NÀY** (`types.VramReclaimerId`).
+   *
+   * Không khai ⇒ hộ này **KHÔNG BAO GIỜ** được cộng vào "tổng nhường được" của một câu từ chối, và
+   * `preempt()` không bao giờ chạm tới nó. Mặc định AN TOÀN theo chiều **câu chữ**: không hứa.
+   *
+   * ⚠ CỐ Ý opt-in theo ĐIỂM GỌI, y như `fallbackBytes` ngay trên, và vì đúng một lý do đã đo được:
+   * `aiReranker` xin `kind: "gguf-model"` cho một model nạp qua **backend riêng của nó**, vắng mặt
+   * khỏi `loadedModels` ⇒ `unloadGgufModel()` không với tới. Suy theo `kind` là hứa hộ về một khối
+   * byte không ai lấy lại được.
+   */
+  reclaimer?: VramReclaimerId;
 }
 
 /**
@@ -661,15 +673,20 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
      * phải lỗi chờ sửa: `null` ⇒ `"no-tick"` ⇒ chính sách CHẶT HƠN, chứ tuyệt đối KHÔNG phải
      * "coi như thiết bị trống".
      */
-    const res = broker.reserve(
-      {
-        owner: opts.owner,
-        kind: opts.kind,
-        estimatedBytes: est.bytes,
-        priority: opts.priority,
-        estimateSource: est.source,
-        ttlMs: opts.ttlMs,
-      },
+    const yeuCau = {
+      owner: opts.owner,
+      kind: opts.kind,
+      estimatedBytes: est.bytes,
+      priority: opts.priority,
+      estimateSource: est.source,
+      ttlMs: opts.ttlMs,
+      // ★ Task 7 — AI đi lấy lại được khối byte này (types.ts `VramReclaimerId`). Khai theo ĐIỂM
+      // GỌI, không suy theo `kind` — xem khối docstring ở đó để biết vì sao (model của
+      // `aiReranker` cũng là `kind: "gguf-model"` nhưng KHÔNG ai thu hồi được).
+      reclaimer: opts.reclaimer,
+    };
+    let res = broker.reserve(
+      yeuCau,
       { tick: readDecisionTick(), unledgered: vramUnledgeredFact(), nowMs: Date.now() },
     );
 
@@ -683,6 +700,7 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
       wouldRefuse: res.wouldRefuse,
       detail: {
         wouldPreempt: res.wouldPreempt,
+        slotsNeeded: res.decision.slotsNeeded,
         // ★ Task 5 — SỐ LIỆU của lượt quyết định. Không có nó thì một lượt từ chối trong nhật ký
         // không dựng lại được phép tính, và câu hỏi "vì sao lượt này bị chặn" chỉ trả lời được
         // bằng cách đoán. ⚠ `-Infinity` được `logVramEvent` thay + GHI TÊN (hàng rào Task 3).
@@ -699,6 +717,51 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
         distrustChargeBytes: res.decision.distrustChargeBytes,
       },
     });
+
+    /**
+     * ★★★ Pha 2B Task 7 (§8) — **THU HỒI RỒI XIN LẠI ĐÚNG MỘT LƯỢT.**
+     *
+     * ⚠⚠ ĐÂY LÀ CHỖ `ensureCapacity()` ĐƯỢC HẤP THỤ, và đọc kỹ vì sao nó phải nằm **ở đây** chứ
+     * không nằm trong `reserve()`: `reserve()` **ĐỒNG BỘ** (ràng buộc 1, lá chắn cấu trúc giữ
+     * đường quyết định sạch I/O), còn nhả một khối VRAM thật là **BẤT ĐỒNG BỘ**
+     * (`model.dispose()`, giết tiến trình con). Broker **liệt kê**; `beginVramAllocation` — vốn
+     * đã `async` — **thi hành**.
+     *
+     * ⚠ VỊ TRÍ CŨNG QUAN TRỌNG: khối này nằm **TRƯỚC** lượt mở cửa sổ đo (`withMeasureWindow` bên
+     * dưới), y như `ensureCapacity()` cũ chạy TRƯỚC `beginVram()`. Nhờ vậy lượt dispose không rơi
+     * vào giữa hai đầu đo của chính lượt này — đúng "tác dụng phụ có lợi" mà Task 3 đã ghi.
+     *
+     * ⚠ ĐÚNG MỘT LƯỢT, không vòng lặp: `preemptPlan()` đã dọn ĐỦ theo cả hai thước ngay từ đầu.
+     * Một vòng lặp ở đây là cách biến một lượt xin quá lớn thành một cuộc dọn sạch cả hệ.
+     */
+    if (!res.lease) {
+      const canByte = Math.max(0, est.bytes - res.decision.effectiveHeadroomBytes);
+      const { preempt } = await import("./vramPreempt");
+      const thuHoi = await preempt(opts.priority, canByte, res.decision.slotsNeeded);
+      if (thuHoi.reclaimed.length > 0) {
+        res = broker.reserve(
+          yeuCau,
+          { tick: readDecisionTick(), unledgered: vramUnledgeredFact(), nowMs: Date.now() },
+        );
+        logVramEvent({
+          event: "reserve",
+          owner: opts.owner,
+          leaseKind: opts.kind,
+          priority: opts.priority,
+          estimatedBytes: est.bytes,
+          estimateSource: est.source,
+          wouldRefuse: res.wouldRefuse,
+          detail: {
+            afterPreempt: true,
+            reclaimed: [...thuHoi.reclaimed],
+            failed: [...thuHoi.failed],
+            freedBytes: thuHoi.freedBytes,
+            slotsNeeded: res.decision.slotsNeeded,
+            effectiveHeadroomBytes: res.decision.effectiveHeadroomBytes,
+          },
+        });
+      }
+    }
 
     const lease: VramLease | null = res.lease;
     /**

@@ -1,4 +1,4 @@
-import type { VramLeaseKind, VramPriority } from "./types";
+import type { VramLeaseKind, VramPriority, VramReclaimerId } from "./types";
 import { beginVramAllocation, type VramReleaseProof, type VramTicket } from "./vramWiring";
 import { logVramEvent, type VramEventInput } from "./vramEventLog";
 import { isVramRefusal } from "./vramRefusalSignal";
@@ -284,6 +284,8 @@ export interface VramLoadOutcomeSpec<T> {
   fallbackBytes?: number;
   ttlMs?: number;
   releaseProof?: VramReleaseProof;
+  /** ★ Task 7 — ai THI HÀNH được lượt thu hồi hộ này (`types.VramReclaimerId`). Xem `VramAllocationOptions.reclaimer`. */
+  reclaimer?: VramReclaimerId;
   /** Số lớp NGƯỜI GỌI xin. Mặc định `"max"`. Số âm bị chuẩn hoá — xem `chuanHoaSoLop()`. */
   requestedGpuLayers?: VramGpuLayerValue;
   /** MỘT lượt nạp. Ném ⇒ thất bại của lượt đó. */
@@ -554,6 +556,7 @@ export async function loadWithVramOutcomes<T>(spec: VramLoadOutcomeSpec<T>): Pro
       fallbackBytes: spec.fallbackBytes,
       ttlMs: spec.ttlMs,
       releaseProof: spec.releaseProof,
+      reclaimer: spec.reclaimer,
     });
 
   const chay = async (plan: VramLoadPlan): Promise<{ ok: true; value: T; ticket: VramTicket } | { ok: false }> => {

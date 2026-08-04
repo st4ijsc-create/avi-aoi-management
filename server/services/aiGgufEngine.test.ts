@@ -250,12 +250,39 @@ describe("LRU eviction", () => {
     const inFlight = eng.generateEmbedding("busy", "m1");
     // Wait until the embedding call is actually in progress (refCount already incremented).
     await enteredP;
-    // Now load m2 — capacity is 1, but m1 is in use → must NOT be evicted. ⚠ Pha 2B Task 5: khe
-    // vẫn kín, nhưng lượt nạp KHÔNG còn được cho qua ở đây — cổng SỔ (reserve) quyết định ngay sau.
-    await eng.loadGgufModel({ modelPath: "m2.gguf" });
+    /**
+     * ★★★ Pha 2B Task 7 (§8) — **ĐÂY CHÍNH LÀ CÁI CHẾT CỦA LƯỢT TRÀN IM LẶNG** (ràng buộc 9).
+     *
+     * Khe = 1, m1 ĐANG DÙNG (`refCount > 0`) ⇒ không dọn được khe nào.
+     *   • TRƯỚC: `ensureCapacity()` ghi một dòng cảnh báo rồi **NẠP TIẾP** — đúng câu
+     *     `At capacity (N/N) but all models are in use; allowing t… o…` mà ràng buộc 9 đòi xoá sạch
+     *     (cụm đó KHÔNG được viết nguyên văn ở đây: `git grep` không phân biệt mã với chú thích).
+     *   • TỪ ĐÂY: **TỪ CHỐI TRUNG THỰC** — `VramRefusedError`, kèm lý do `gguf-slot-cap`.
+     * ⚠ Và hai bảo đảm cũ **không đổi một chụt nào**: m1 KHÔNG bị đuổi, và lượt suy luận đang
+     * bay trên nó vẫn chạy xong.
+     */
+    await expect(eng.loadGgufModel({ modelPath: "m2.gguf" })).rejects.toMatchObject({
+      name: "VramRefusedError",
+    });
     expect(eng.getLoadedGgufModelNames()).toContain("m1");
+    expect(eng.getLoadedGgufModelNames()).not.toContain("m2");
     release();
     await inFlight;
+  });
+
+  /**
+   * ★★ ĐỐI CHỨNG của ca trên: khe cũng kín, nhưng model đang giữ khe là **NHÀN RỖI** ⇒
+   * `preempt()` dọn được ⇒ lượt nạp ĐI TIẾP. Thiếu ca này thì "từ chối khi hết khe" không
+   * phân biệt được với "từ chối luôn luôn" — tức một lưới nói đúng vì lý do sai.
+   */
+  it("★★ khe kín nhưng model NHÀN RỖI ⇒ preempt() dọn được ⇒ lượt nạp VẪN ĐI TIẾP", async () => {
+    process.env.GGUF_MAX_LOADED_MODELS = "1";
+    const eng = await freshEngine();
+    await eng.loadGgufModel({ modelPath: "m1.gguf" });
+    expect(eng.getLoadedGgufModelNames()).toEqual(["m1"]);
+    await eng.loadGgufModel({ modelPath: "m2.gguf" });
+    const names = eng.getLoadedGgufModelNames();
+    expect(names).toEqual(["m2"]);
   });
 });
 

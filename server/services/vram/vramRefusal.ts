@@ -89,7 +89,13 @@ export type VramDegradationReason =
   | "stale-tick"
   | "tick-failing"
   | "unledgered-unasked"
-  | "unledgered-unknown";
+  | "unledgered-unknown"
+  /**
+   * ★ Pha 2B Task 7 (§8) — hết **KHE** `gguf-model` (`GGUF_MAX_LOADED_MODELS`), hấp thụ từ
+   * `aiGgufEngine.ensureCapacity()`. ⚠ Đ4: đây là thước ĐẾM, KHÔNG phải byte — nó xuất hiện KỂ CẢ
+   * khi dư địa byte còn thừa, và khi đó câu từ chối không được để người đọc hiểu là thiếu byte.
+   */
+  | "gguf-slot-cap";
 
 /** Một hộ đang giữ chỗ trong SỔ. ⚠ `bytes` có thể là ƯỚC LƯỢNG — xem `measured`. */
 export interface VramHolderFact {

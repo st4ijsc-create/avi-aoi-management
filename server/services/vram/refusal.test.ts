@@ -502,7 +502,13 @@ describe("VramRefusedError — vẫn là Error, nhưng mang được cả bốn 
 // F. SỔ → LỜI TỪ CHỐI (vramBroker)
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 describe("vramBroker — nguồn của 'ai đang giữ' và 'ai có thể nhường'", () => {
-  beforeEach(() => __resetBrokerForTests());
+  beforeEach(() => {
+    // ★ Task 7 — khối ca này canh "AI ĐANG GIỮ / AI CÓ THỂ NHƯỜNG", **không** canh trần ĐẾM
+    // mới (`GGUF_MAX_LOADED_MODELS`, mặc định 2). Nới trần ở đây để các ca giữ nguyên điều kiện
+    // ban đầu của chúng; trần đếm có ca riêng ở `consolidation.test.ts`.
+    process.env.GGUF_MAX_LOADED_MODELS = "64";
+    __resetBrokerForTests();
+  });
 
   function req(owner: string, mib: number, priority: "production" | "interactive" | "background") {
     return { owner, kind: "gguf-model" as const, estimatedBytes: mib * MIB, priority };

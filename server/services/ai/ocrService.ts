@@ -34,6 +34,7 @@ import path from "path";
 // LÁ (không import gì, không I/O): nó phải dùng được NGAY TRONG `catch` của một lượt
 // `await import()` vừa hỏng. Xem `vramRefusalSignal.ts` để biết vì sao so TÊN, không `instanceof`.
 import { isVramRefusal } from "../vram/vramRefusalSignal";
+import { sessionCacheMax } from "../vram/vramCaps";
 import type sharpNs from "sharp";
 
 // ─── Flags ────────────────────────────────────────────────────────────────────
@@ -297,18 +298,67 @@ function getCharset(dictPath: string, blankIndex: number): string[] {
   return charset;
 }
 
+/**
+ * ★★★ Pha 2B Task 7 (§8) — **KHO NÀY ĐÃ VÀO DƯỚI BROKER.**
+ *
+ * Trước task này nó là một `Map` **KHÔNG GIỚI HẠN**, và docstring cũ ngay tại đây khẳng định
+ * *"session sống tới hết vòng đời tiến trình — đó là ĐÚNG, không phải rò"*. Câu đó đúng về **vòng
+ * đời** và sai về **hậu quả**: mỗi `modelPath` OCR mới thêm một giấy phép **vĩnh viễn** vào sổ, nên
+ * `headroom` của toàn hệ **chỉ có giảm**, không bao giờ hồi — một cái rò theo nghĩa SỔ, dù không
+ * phải rò theo nghĩa bộ nhớ. Nay nó dùng **cùng trần `AI_SESSION_CACHE_MAX`** với kho phiên của
+ * `aiInferenceEngine` (một người đọc duy nhất: `vram/vramCaps.ts`), đuổi LRU, và **trả giấy phép**
+ * khi đuổi.
+ *
+ * ⚠⚠ LƯỢT ĐUỔI NÀY **KHÔNG CHỨNG MINH ĐƯỢC THIẾT BỊ ĐÃ NHẢ** — cùng ca với
+ * `aiInferenceEngine.LruSessionCache`: gỡ tham chiếu JS không gọi `ort.InferenceSession.release()`,
+ * và gọi `release()` dưới chân một `session.run` đang bay là ABORT ở tầng native. Vì vậy hộ này
+ * **KHÔNG khai `reclaimer`** ⇒ `preempt()` không bao giờ chạm tới nó và câu từ chối không bao giờ
+ * cộng nó vào "tổng nhường được". Việc task này làm là **chặn nó phình vô hạn**, không phải biến
+ * nó thành thu-hồi-được. (Giấy phép vẫn khai `releaseProof` mặc định như trước — xem
+ * `getOnnxSession()`.)
+ */
 const recSessionCache = new Map<string, unknown>();
 
-/**
- * Pha 1 Task 5 (điều phối VRAM) — giấy phép theo modelPath. ⚠ `recSessionCache` KHÔNG có đường
- * đuổi nào trong sản xuất: session sống tới hết vòng đời tiến trình, nên giấy phép cũng vậy —
- * đó là ĐÚNG, không phải rò. Chỉ `_resetOcrCachesForTests()` mới trả chỗ.
- */
+/** Pha 1 Task 5 (điều phối VRAM) — giấy phép theo modelPath, vòng đời khớp `recSessionCache`. */
 const recSessionVramTickets = new Map<string, import("../vram/vramWiring").VramTicket>();
+
+/** Trả giấy phép của một phiên rời kho. KHÔNG BAO GIỜ ném. */
+function traGiayPhepPhien(key: string): void {
+  try {
+    const t = recSessionVramTickets.get(key);
+    if (!t) return;
+    recSessionVramTickets.delete(key);
+    t.release();
+  } catch {
+    /* telemetry KHÔNG được làm hỏng vòng đời cache */
+  }
+}
+
+/**
+ * Đuổi LRU cho tới khi kho vừa trần. `Map` của JS giữ **thứ tự chèn**, nên phần tử đầu tiên là cũ
+ * nhất — cùng kỹ thuật `LruSessionCache` của `aiInferenceEngine` dùng.
+ * ⚠ `guard`: một vòng `while` trên một trần đọc được từ `.env` là một vòng lặp vô tận chờ một
+ * cấu hình hỏng; trần đã được kẹp ở `vramCaps` nhưng lưới này rẻ hơn một lời tin.
+ */
+function donKhoPhienOcr(): void {
+  const tran = Math.max(1, sessionCacheMax());
+  let guard = 0;
+  while (recSessionCache.size > tran && guard++ <= recSessionCache.size) {
+    const cuNhat = recSessionCache.keys().next().value;
+    if (cuNhat === undefined) break;
+    recSessionCache.delete(cuNhat);
+    traGiayPhepPhien(cuNhat);
+  }
+}
 
 async function getOnnxSession(modelPath: string): Promise<unknown> {
   const cached = recSessionCache.get(modelPath);
-  if (cached) return cached;
+  if (cached) {
+    // ★ Task 7 — chạm vào = đẩy xuống cuối (mới dùng nhất), để trần LRU đuổi ĐÚNG kẻ cũ nhất.
+    recSessionCache.delete(modelPath);
+    recSessionCache.set(modelPath, cached);
+    return cached;
+  }
   const ort = await import("onnxruntime-node");
   // Reuse the same EP resolution style as aiInferenceEngine (DirectML/CPU).
   const providers: string[] = [];
@@ -353,9 +403,13 @@ async function getOnnxSession(modelPath: string): Promise<unknown> {
   await vramTicket.commitMeasured();
   // Cùng lý do đã ghi ở aiInferenceEngine.getSession(): không có khoá in-flight ⇒ trả giấy
   // phép cũ trước khi ghi đè, không để nó treo trong sổ.
-  recSessionVramTickets.get(modelPath)?.release();
+  traGiayPhepPhien(modelPath);
   recSessionVramTickets.set(modelPath, vramTicket);
+  // Ghi lại cuối map = "vừa dùng" (thứ tự chèn của `Map` chính là thứ tự LRU).
+  recSessionCache.delete(modelPath);
   recSessionCache.set(modelPath, session);
+  // ★ Task 7 — vào dưới trần `AI_SESSION_CACHE_MAX`. Trước đây kho này phình VÔ HẠN.
+  donKhoPhienOcr();
   return session;
 }
 

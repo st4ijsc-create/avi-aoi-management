@@ -202,6 +202,38 @@ let llamaInitInFlight: Promise<any> | null = null;
  *  Khoá theo modelId: lượt thứ hai chờ lượt đầu thay vì nạp song song. */
 const inFlightLoads = new Map<string, Promise<string>>();
 
+/**
+ * ★★★ Pha 2B Task 7 (§8) — **MỘT helper cho BA bản sao cùng hình dạng.**
+ *
+ * `inFlightLoads` · `embeddingContextInFlight` · `textContextInFlight` đều chép đúng ba bước:
+ * *trà lại lượt đang chạy nếu có* → *ghi vào map* → *xoá khỏi map trong `finally`*. Ba bản chép
+ * của cùng một cơ chế là đúng lớp lỗi đã khiến `bench.mjs` sai bốn lần — và bước thứ ba là thứ không
+ * được quên: **thiếu nó, một lượt hỏng bị ghim vĩnh viễn** (mọi lượt sau nhận lại đúng promise
+ * lỗi đó, không bao giờ thử lại) — cùng hình dạng với chốt kẹt `running` mà Task 5 vừa vá.
+ *
+ * ⚠⚠ **KHÔNG HẤP THỤ VÀO BROKER**, và đó là một quyết định, không phải một việc còn sót: ba khoá
+ * này giải bài toán **CHỐNG LÀM TRÙNG VIỆC** (hai lượt gọi cùng một `modelId`), không phải bài toán
+ * **SỞ HỮU BỘ NHỚ** (ai được giữ bao nhiêu byte). Nhồi chúng vào broker là trộn hai câu hỏi —
+ * cùng lý do `vram/vramMeasureLock.ts` đã ghi khi nó tự tách mình khỏi ba khoá này.
+ *
+ * ⚠ Người gọi THỨ HAI nhận **đúng promise** của người thứ nhất (không phải một bản sao), nên
+ * mọi ngữ nghĩa cũ — gồm cả "lượt thứ hai không tự trả giấy phép của lượt đầu" — giữ nguyên.
+ */
+function motLuotThoi<T>(khoa: Map<string, Promise<T>>, key: string, tao: () => Promise<T>): Promise<T> {
+  const dangChay = khoa.get(key);
+  if (dangChay) return dangChay;
+  const luot = tao();
+  khoa.set(key, luot);
+  // `finally` trên promise (KHÔNG phải `try/finally` quanh một `await`): dù người gọi có `await`
+  // hay không, khoá vẫn được gỡ. Trả về chính `luot` để người gọi thứ hai và thứ nhất nhận cùng
+  // một đối tượng promise.
+  void luot.then(
+    () => { if (khoa.get(key) === luot) khoa.delete(key); },
+    () => { if (khoa.get(key) === luot) khoa.delete(key); },
+  );
+  return luot;
+}
+
 const GGUF_MODELS_DIR = process.env.GGUF_MODELS_DIR
   ? path.resolve(process.env.GGUF_MODELS_DIR)
   : path.join(process.cwd(), "uploads", "gguf-models");
@@ -222,27 +254,18 @@ const GGUF_EMBED_DIM = (() => {
   const n = parseInt(process.env.GGUF_EMBED_DIM || "1024", 10);
   return Number.isFinite(n) && n > 0 ? n : 1024;
 })();
-/** Max number of GGUF models kept resident simultaneously. Default 2. */
-const GGUF_MAX_LOADED_MODELS = (() => {
-  const n = parseInt(process.env.GGUF_MAX_LOADED_MODELS || "2", 10);
-  return Number.isFinite(n) && n > 0 ? n : 2;
-})();
-/** Soft VRAM cap in MB. 0 = disabled (default). Opt-in because getVramState is unreliable on CPU/unified memory. */
-const GGUF_MAX_VRAM_MB = (() => {
-  const n = parseInt(process.env.GGUF_MAX_VRAM_MB || "0", 10);
-  return Number.isFinite(n) && n >= 0 ? n : 0;
-})();
 /**
- * B0.1 — VRAM threshold guard (%): before loading another model, if VRAM usage is at/above
- * this percentage of total, evict LRU idle model(s) first; if none can be freed, log a clear
- * warning and DEFER rather than crash. ⚠ Pha 2B Task 5: đây KHÔNG còn là cổng quyết định —
- * `beginVramAllocation()` (cổng SỔ) đã chặn TRƯỚC lượt nạp; guard này chỉ còn dọn chỗ. Default 90. Set 0/100+ to
- * disable. Best-effort & fail-safe: telemetry failures never throw.
+ * ★★★ Pha 2B Task 7 (§8) — **BA TRẦN NÀY KHÔNG CÒN ĐƯỢC ĐỌC Ở ĐÂY.**
+ *
+ * `GGUF_MAX_LOADED_MODELS` · `GGUF_MAX_VRAM_MB` · `GGUF_VRAM_GUARD_PCT` giữ nguyên TÊN (người vận
+ * hành đã đặt chúng trong `.env`) nhưng nay có **một người đọc duy nhất**:
+ * `vram/vramCaps.ts`. Hai trần BYTE đi thẳng vào trần của broker (`deviceUsableBytes()`), trần ĐẾM
+ * thành chính sách đếm của broker (`kheGgufConThieu()`). Lý do đầy đủ ở `vramCaps.ts`.
+ *
+ * ⚠ File này chỉ còn **ĐỌC LẠI để BÁO CÁO** (mặt sức khoẻ `getGgufEngineStatus()`), không còn
+ * quyết định gì bằng chúng.
  */
-const GGUF_VRAM_GUARD_PCT = (() => {
-  const n = parseInt(process.env.GGUF_VRAM_GUARD_PCT || "90", 10);
-  return Number.isFinite(n) && n > 0 && n < 100 ? n : 90;
-})();
+import { ggufMaxLoadedModels, ggufMaxVramBytes } from "./vram/vramCaps";
 /** Number of parallel sequences per context. Default 4. */
 const GGUF_SEQUENCES = (() => {
   const n = parseInt(process.env.GGUF_SEQUENCES || "4", 10);
@@ -465,163 +488,26 @@ async function getLlama(): Promise<any> {
   }
 }
 
-// ─── LRU eviction & memory guard ───────────────────────────────
+// ─── Sở hữu bộ nhớ — ĐÃ RÚT RA (Pha 2B Task 7) ─────────────────
 
 /**
- * B0.1 — Best-effort VRAM snapshot in bytes. Primary source is node-llama-cpp's
- * `getVramState()` ({ total, used, free }); if that is unavailable/zero (e.g. CPU build
- * or unified memory), fall back to `nvidia-smi`. NEVER throws — returns null on any failure
- * so the load path degrades truthfully instead of crashing.
- */
-async function readVramState(): Promise<{ used: number; total: number } | null> {
-  // 1) node-llama-cpp native VRAM state.
-  if (llamaInstance && typeof llamaInstance.getVramState === "function") {
-    try {
-      const v = await llamaInstance.getVramState();
-      if (v && typeof v.used === "number" && typeof v.total === "number" && v.total > 0) {
-        return { used: v.used, total: v.total };
-      }
-    } catch {
-      // fall through to nvidia-smi
-    }
-  }
-  // 2) nvidia-smi fallback (bytes = MiB * 1024 * 1024).
-  // R-1 (doc 38): use the ASYNC execFile so the ~3s nvidia-smi call never blocks
-  // the event loop (the sync variant froze all request handling for its duration).
-  try {
-    const { execFile } = await import("child_process");
-    const { promisify } = await import("util");
-    const execFileAsync = promisify(execFile);
-    const { stdout } = await execFileAsync(
-      "nvidia-smi",
-      ["--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
-      { timeout: 3000, windowsHide: true },
-    );
-    const out = stdout.toString();
-    const first = out.split(/\r?\n/).find((l) => l.trim().length > 0) || "";
-    const [usedMib, totalMib] = first.split(",").map((s) => parseInt(s.trim(), 10));
-    if (Number.isFinite(usedMib) && Number.isFinite(totalMib) && totalMib > 0) {
-      return { used: usedMib * 1024 * 1024, total: totalMib * 1024 * 1024 };
-    }
-  } catch {
-    // nvidia-smi missing / not a GPU host — telemetry unavailable.
-  }
-  return null;
-}
-
-/**
- * B0.1 — VRAM threshold guard. Before loading the Nth model, if VRAM usage is at/above
- * GGUF_VRAM_GUARD_PCT of total, evict LRU idle model(s) until back under threshold.
+ * ★★★ Pha 2B Task 7 (§8) — **BA HÀM ĐÃ RỜI KHỎI FILE NÀY**, và đây là chỗ chúng từng đứng.
  *
- * ★★★ Pha 2B Task 5 — VAI TRÒ CỦA HÀM NÀY ĐÃ ĐỔI, dù một dòng mã cũng không đổi (Task 7 mới xoá
- * nó). Trước đây nó là **lớp quyết định cuối**: hết chỗ mà không đuổi được ai thì *"cảnh báo rồi
- * vẫn làm"* — đúng cái tràn im lặng mà spec này tồn tại để diệt (ràng buộc 9). Từ Task 5, quyết
- * định CHO/KHÔNG CHO nằm ở **cổng sổ** (`beginVramAllocation()` → `broker.reserve()`), và cổng đó
- * chạy SAU hàm này (`ensureCapacity()` ở `loadGgufModel`, trước `loadWithVramOutcomes`). Nên hàm
- * này nay chỉ còn một việc: **DỌN CHỖ TRƯỚC** để cổng sổ nhìn thấy một cuốn sổ đã gọn.
- * ⇒ Nhánh "không đuổi được ai" không còn là một lượt cho-qua: nó chỉ nói *"tôi không dọn được gì"*,
- * rồi cổng sổ sẽ TỪ CHỐI nếu thật sự không đủ chỗ.
+ * | Đã xoá/hấp thụ | Nay nằm ở đâu | Vì sao |
+ * |---|---|---|
+ * | `enforceVramGuard()` | `vramCaps.usableCeilingBytes()` → `vramBroker.deviceUsableBytes()` | Guard cũ đọc mức dùng **HIỆN TẠI** rồi mới quyết ⇒ **qua cổng ở 85% rồi mới xin 19 GB** (spec §2.2). `reserve()` biết **kích thước TRƯỚC**. |
+ * | `ensureCapacity()` | `vramBroker.kheGgufConThieu()` + `vramWiring` (thu hồi rồi xin lại) | Trần đếm nay là chính sách của broker; dân số RỘNG HƠN `loadedModels.size` (gồm cả model của `aiReranker`, thứ bản cũ đếm thiếu). |
+ * | `evictLRU()` | `vram/vramPreempt.preempt()` | Thứ tự §5.2 (`production` KHÔNG BAO GIỜ · mức thấp trước · nhàn rỗi trước · cũ trước) thay cho LRU thuần, và **dừng khi ĐỦ** thay vì dọn sạch. |
  *
- * Fail-safe: telemetry failure skips the guard silently.
- */
-async function enforceVramGuard(): Promise<void> {
-  if (!llamaInstance) return; // engine not initialized → nothing loaded yet
-  let guard = 0;
-  while (guard++ < loadedModels.size + 1) {
-    const vram = await readVramState();
-    if (!vram) return; // telemetry unavailable → best-effort: skip guard
-    const usedPct = (vram.used / vram.total) * 100;
-    if (usedPct < GGUF_VRAM_GUARD_PCT) return; // under threshold → ok to load
-    const usedMb = Math.round(vram.used / 1024 / 1024);
-    const totalMb = Math.round(vram.total / 1024 / 1024);
-    const evicted = await evictLRU();
-    if (!evicted) {
-      console.warn(
-        `[aiGgufEngine] VRAM guard: used ${usedMb}/${totalMb}MB (${usedPct.toFixed(0)}%) ` +
-          `≥ ${GGUF_VRAM_GUARD_PCT}% và KHÔNG có model nhàn rỗi nào để dọn. ` +
-          `KHÔNG cho qua ở đây: cổng SỔ (beginVramAllocation → reserve) quyết định ngay sau bước này.`,
-      );
-      return;
-    }
-    console.warn(
-      `[aiGgufEngine] VRAM guard: used ${usedMb}/${totalMb}MB (${usedPct.toFixed(0)}%) ` +
-        `≥ ${GGUF_VRAM_GUARD_PCT}% — evicted LRU model "${evicted}" before loading.`,
-    );
-  }
-}
-
-/**
- * Pick the least-recently-used model with refCount === 0 and unload it.
- * Returns the evicted modelId, or null if no eligible candidate exists.
- */
-async function evictLRU(): Promise<string | null> {
-  let oldestId: string | null = null;
-  let oldestTime = Infinity;
-  for (const [id, m] of loadedModels) {
-    if (m.refCount > 0) continue; // never evict a model that is in use
-    const t = m.lastUsedAt.getTime();
-    if (t < oldestTime) {
-      oldestTime = t;
-      oldestId = id;
-    }
-  }
-  if (!oldestId) return null;
-  await unloadGgufModel(oldestId);
-  console.log(`[aiGgufEngine] Evicted LRU model: ${oldestId}`);
-  return oldestId;
-}
-
-/**
- * Ensure there is capacity for one more model before loading.
- * Enforces GGUF_MAX_LOADED_MODELS (count) and, if enabled, GGUF_MAX_VRAM_MB (best-effort).
- * Evicts the LRU idle model(s).
+ * ⚠⚠ TÁC DỤNG LỚN NHẤT KHÔNG PHẢI Ở CHỖ ĐẶT MÃ: cả ba hàm trên, khi bí, **cảnh báo rồi vẫn cho
+ * nạp** — đúng cụm chữ mà **ràng buộc 9** của spec đòi xoá sạch khỏi repo (cụm đó cố ý KHÔNG
+ * được chép lại ở đây: `git grep` không phân biệt mã với chú thích). Từ task này không còn nhánh nào
+ * như thế: hết chỗ mà không thu hồi được gì ⇒ **TỪ CHỐI TRUNG THỰC** (`VramRefusedError`).
  *
- * ★ Pha 2B Task 5 — ĐÂY LÀ BƯỚC **DỌN CHỖ**, KHÔNG PHẢI BƯỚC **CHO PHÉP** (xem docstring
- * `enforceVramGuard`). Không còn nhánh nào ở đây "cho qua vì không đuổi được ai": việc cho/không
- * cho thuộc về cổng sổ chạy ngay sau. Hai bộ đếm này là trần theo SỐ MODEL, còn cưỡng chế theo
- * BYTE nằm ở broker — Task 7 hấp thụ nốt.
+ * ⚠ `withGgufSlot`/`withGgufSlotGenerator`/`ensureTextContext` **giữ nguyên ngữ nghĩa** — chúng trả
+ * lời câu hỏi KHÁC ("bao nhiêu lượt suy luận song song", "model này có context thường chưa"), không
+ * phải câu hỏi sở hữu bộ nhớ.
  */
-async function ensureCapacity(): Promise<void> {
-  // Count-based cap: make room so that loading one more stays within the limit.
-  let guard = 0;
-  while (loadedModels.size >= GGUF_MAX_LOADED_MODELS && guard++ < loadedModels.size + 1) {
-    const evicted = await evictLRU();
-    if (!evicted) {
-      console.warn(
-        `[aiGgufEngine] Đã kín khe (${loadedModels.size}/${GGUF_MAX_LOADED_MODELS}) và MỌI model đang ` +
-          `được dùng (refCount>0) ⇒ không dọn được khe nào. Cổng SỔ (reserve) quyết định lượt nạp này.`,
-      );
-      break;
-    }
-  }
-
-  // VRAM-based cap (opt-in). Best-effort: getVramState may be inaccurate on CPU/unified memory.
-  if (GGUF_MAX_VRAM_MB > 0 && llamaInstance) {
-    try {
-      const capBytes = GGUF_MAX_VRAM_MB * 1024 * 1024;
-      let vguard = 0;
-      while (vguard++ < loadedModels.size + 1) {
-        const vram = await llamaInstance.getVramState();
-        if (!vram || typeof vram.used !== "number" || vram.used < capBytes) break;
-        const evicted = await evictLRU();
-        if (!evicted) {
-          console.warn(
-            `[aiGgufEngine] VRAM đang dùng (${Math.round((vram.used) / 1024 / 1024)}MB) vượt trần ` +
-              `(${GGUF_MAX_VRAM_MB}MB) và không có model nhàn rỗi để dọn. Cổng SỔ quyết định lượt nạp này.`,
-          );
-          break;
-        }
-      }
-    } catch (err) {
-      // getVramState unsupported / failed — VRAM cap is best-effort only.
-      console.warn("[aiGgufEngine] getVramState failed; skipping VRAM cap enforcement:", (err as any)?.message ?? err);
-    }
-  }
-
-  // B0.1 — percentage-based VRAM threshold guard (default on at 90%). Evicts LRU idle
-  // model(s) when VRAM is near full before loading another; never throws on telemetry failure.
-  await enforceVramGuard();
-}
 
 /**
  * Resolve model file path — supports absolute, relative, and uploads directory
@@ -941,27 +827,28 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
     return modelId;
   }
 
-  // Đợt 1 Task 1 — khoá in-flight: nếu modelId này đang được nạp bởi một lượt gọi khác
-  // (xem giải thích ở khai báo inFlightLoads), CHỜ lượt đó thay vì nạp song song.
-  const pending = inFlightLoads.get(modelId);
-  if (pending) return pending;
-
-  // Pha 1 Task 5 — giữ giấy phép NGOÀI IIFE để nhánh `catch` bên dưới trả được chỗ khi lượt
+  // Đợt 1 Task 1 — khoá in-flight (nay qua helper `motLuotThoi()`, xem khai báo `inFlightLoads`).
+  return motLuotThoi(inFlightLoads, modelId, async () => {
+  // Pha 1 Task 5 — giữ giấy phép NGOÀI khối `try` để nhánh `catch` bên dưới trả được chỗ khi lượt
   // nạp hỏng giữa chừng (không thì sổ giữ một giấy phép MA cho model chưa bao giờ tồn tại).
   // Dùng object holder chứ không `let` để TypeScript không thu hẹp kiểu về `null` ở nơi dùng.
   const vramHolder: { ticket: VramTicket | null } = { ticket: null };
-
-  const loadPromise = (async () => {
+  try {
     const llama = await getLlama();
 
-    // Free memory before loading another model (LRU + VRAM guard).
-    await ensureCapacity();
+    /**
+     * ★★★ Pha 2B Task 7 — `await ensureCapacity()` TỪNG ĐỨNG ĐÚNG Ở ĐÂY.
+     *
+     * Nó không biến mất, nó **đổi chủ**: trần đếm nay là chính sách của broker
+     * (`vramBroker.kheGgufConThieu()`), và lượt dọn chỗ do `vramWiring` thực hiện **bên trong**
+     * `beginVramAllocation()` — tức vẫn TRƯỚC lượt cấp phát và vẫn NGOÀI cửa sổ đo, y như cũ.
+     * Khác biệt thật sự: hết chỗ mà không dọn được ai thì **TỪ CHỐI**, không còn "cảnh báo rồi
+     * vẫn nạp".
+     */
 
     console.log(`[aiGgufEngine] Loading model: ${resolvedPath}`);
     const startTime = Date.now();
 
-    // Pha 1 Task 5 — CHỈ KHAI BÁO. `ensureCapacity()`/`enforceVramGuard()`/`evictLRU()` ngay
-    // bên trên vẫn chạy y nguyên; các lời gọi telemetry ở đây không quyết định gì.
     // ⚠ Pha 2B Task 3 — `beginVram()` KHÔNG còn gọi ở đây: giấy phép nay mở/đóng THEO TỪNG LƯỢT
     // THỬ bên trong `loadWithVramOutcomes()` (lý do đầy đủ ở khối ngay dưới).
     const requestedGpuLayers = config.gpuLayers ?? "max";
@@ -988,6 +875,10 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
           kind: "gguf-model",
           priority: "interactive",
           filePath: resolvedPath,
+          // ★ Task 7 — hộ NÀY có người dọn: `unloadGgufModel()` dispose THẬT rồi mới nhả sổ.
+          // ⚠ Khai ở ĐỊA CHỈ NÀY chứ không theo `kind`: `aiReranker` cũng xin `kind: "gguf-model"`
+          // cho một model NẰM NGOÀI `loadedModels` ⇒ không ai dọn được (types.VramReclaimerId).
+          reclaimer: "gguf-idle-model",
           requestedGpuLayers,
           load: async (plan) =>
             await llama.loadModel({
@@ -1000,10 +891,17 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
             } as any),
           // `LlamaModel.gpuLayers` — getter số lớp THẬT đã nạp (LlamaModel.d.ts:189).
           resolvedGpuLayers: (m: any) => (typeof m?.gpuLayers === "number" ? m.gpuLayers : null),
+          /**
+           * ★★ Task 7 — `while (await evictLRU())` ĐÃ ĐỔI CHỦ (§8). Lượt giành lại chỗ giữa hai
+           * lượt thử nay đi qua `preempt()` — cùng người thi hành, cùng vị từ, cùng thứ tự §5.2 với
+           * mọi lượt thu hồi khác trong hệ. Đường này vẫn cần riêng: nó chạy khi **driver từ chối
+           * dù cổng sổ đã cho qua** (§5.5 bước 2) — tức sổ đang LẠC QUAN, không phải đang đầy.
+           * ⚠ `Number.POSITIVE_INFINITY` = *"dọn tất cả những gì dọn được"*, giữ nguyên ngữ nghĩa
+           * `while (await evictLRU())` cũ: ở nhánh này ta KHÔNG biết mình thiếu bao nhiêu.
+           */
           reclaim: async () => {
-            while (await evictLRU()) {
-              /* evict every idle (refCount===0) model to reclaim maximum VRAM */
-            }
+            const { preempt } = await import("./vram/vramPreempt");
+            await preempt("interactive", Number.POSITIVE_INFINITY, 0);
           },
         });
         model = outcome.value;
@@ -1024,6 +922,9 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
           kind: "gguf-model",
           priority: "interactive",
           filePath: resolvedPath,
+          // ★ Task 7 — cùng hộ, cùng người dọn: đường DỰ PHÒNG không được tạo ra một model
+          // "vô hình với thu hồi" chỉ vì module chính sách không nạp được.
+          reclaimer: "gguf-idle-model",
         });
         try {
           model = await llama.loadModel({
@@ -1105,22 +1006,14 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
     dongBoRefCountVaoSo(loadedModels.get(modelId));
 
     return modelId;
-  })();
-
-  inFlightLoads.set(modelId, loadPromise);
-  try {
-    return await loadPromise;
   } catch (err) {
     // Pha 1 Task 5 — lượt nạp hỏng ⇒ TRẢ chỗ. Không trả thì sổ giữ một giấy phép treo mãi mãi
     // và `vramReconciler` sẽ báo lệch ÂM (sổ > thiết bị) — đúng lớp báo động giả phải tránh.
     // Ném lại NGUYÊN lỗi cũ: nhánh này không đổi hành vi của lượt nạp.
     releaseVramTicketQuietly(vramHolder.ticket);
     throw err;
-  } finally {
-    // Bắt buộc: nạp thất bại mà không xoá khỏi map thì mọi lượt sau sẽ nhận lại đúng
-    // promise lỗi đó vĩnh viễn (không bao giờ thử nạp lại).
-    inFlightLoads.delete(modelId);
   }
+  });
 }
 
 /** Đợt 2 Task 3 — review round 1 Critical-1: khoá in-flight cho ensureTextContext() (tạo LƯỜI
@@ -1184,9 +1077,6 @@ async function ensureTextContext(
 
   if (loaded.context) return loaded.context;
 
-  const pending = textContextInFlight.get(modelId);
-  if (pending) return pending;
-
   console.warn(
     `[aiGgufEngine] ${modelId}: sinh chữ trên model KHÔNG có context thường (trước đó nạp qua ` +
       `đường nhúng — embeddingOnly) — tạo LƯỜI ngay bây giờ. Nếu log này lặp lại, kiểm tra modelId ` +
@@ -1198,15 +1088,15 @@ async function ensureTextContext(
   // createContext() ném (VRAM gần đầy) — cùng lý do đã ghi ở loadGgufModel().
   const vramHolder: { ticket: VramTicket | null } = { ticket: null };
 
-  const createPromise = (async () => {
-    // review round 2 M-a — cùng hàng rào loadGgufModel() dùng TRƯỚC khi cấp phát VRAM: giải
-    // phóng model rảnh (LRU + GGUF_MAX_VRAM_MB) trước khi tạo context ~2GB. Thiếu bước này,
-    // kịch bản alias khi VRAM gần đầy sẽ OOM (ném ở createContext bên dưới) thay vì evict được
-    // model rảnh trước — đây chính xác là điều kiện kích hoạt Important-mới (rò refCount) dễ
-    // xảy ra nhất trên thực tế.
-    await ensureCapacity();
+  return motLuotThoi(textContextInFlight, modelId, async () => {
+    /**
+     * ★ Task 7 — `await ensureCapacity()` từng đứng ở đây (review round 2 M-a: *"giải phóng model
+     * rảnh trước khi tạo context ~2GB"*). Ngữ nghĩa ĐÓ ĐƯỢC GIỮ: `beginVram()` ngay dưới nay tự
+     * dọn chỗ khi thiếu (`vramWiring` → `preempt()`), và dọn theo đúng thứ tự §5.2 thay vì LRU thuần.
+     * Khác biệt thật sự: dọn không ra chỗ thì **TỪ CHỐI**, thay vì đi tiếp rồi OOM ở `createContext`.
+     */
+    try {
     const resolvedCtx = resolveContextSize(requestedContextSize ?? loaded.config.contextSize);
-    // Pha 1 Task 5 — CHỈ KHAI BÁO. `ensureCapacity()` ngay trên vẫn chạy y nguyên.
     // KHÔNG có file trên đĩa để suy ra kích thước context ⇒ ước lượng nấc "unknown" ở lượt
     // ĐẦU; `commitMeasured()` bên dưới ghi số THẬT và từ lượt sau nấc "learned" tiếp quản.
     // ⚠ CỐ Ý không truyền `configDefaultBytes`: một hằng số bịa ra ở đây chính là thứ đã trôi
@@ -1240,20 +1130,12 @@ async function ensureTextContext(
     // hiển thị nhầm cho admin xem trạng thái model.
     loaded.config.embeddingOnly = false;
     return ctx;
-  })();
-
-  textContextInFlight.set(modelId, createPromise);
-  try {
-    return await createPromise;
-  } catch (err) {
-    // Pha 1 Task 5 — tạo context hỏng ⇒ TRẢ chỗ, rồi ném lại NGUYÊN lỗi cũ (không đổi hành vi).
-    releaseVramTicketQuietly(vramHolder.ticket);
-    throw err;
-  } finally {
-    // Bắt buộc: tạo thất bại mà không xoá khỏi map thì mọi lượt sau nhận lại đúng promise lỗi
-    // đó vĩnh viễn — cùng lý do inFlightLoads/embeddingContextInFlight đã ghi.
-    textContextInFlight.delete(modelId);
-  }
+    } catch (err) {
+      // Pha 1 Task 5 — tạo context hỏng ⇒ TRẢ chỗ, rồi ném lại NGUYÊN lỗi cũ (không đổi hành vi).
+      releaseVramTicketQuietly(vramHolder.ticket);
+      throw err;
+    }
+  });
 }
 
 /**
@@ -2981,11 +2863,11 @@ export async function getEngineHealth(): Promise<{
     engineReady,
     modelsLoaded: loadedModels.size,
     modelsAvailable: available,
-    maxLoadedModels: GGUF_MAX_LOADED_MODELS,
+    maxLoadedModels: ggufMaxLoadedModels(),
     totalLoadedBytes,
     totalLoadedHuman: formatBytes(totalLoadedBytes),
     vram,
-    vramCapMb: GGUF_MAX_VRAM_MB,
+    vramCapMb: Math.round(ggufMaxVramBytes() / 1024 / 1024),
     gpuMode: process.env.GGUF_GPU === "false" ? "cpu" : "auto (CUDA/Vulkan)",
     modelsDir: GGUF_MODELS_DIR,
     queue: getGgufQueueStats(),
@@ -3096,12 +2978,8 @@ const embeddingContextInFlight = new Map<string, Promise<any>>();
 async function getEmbeddingContext(modelId: string, loaded: LoadedModel): Promise<any> {
   if (loaded.embeddingContext) return loaded.embeddingContext;
 
-  // Đợt 2 Task 3 — nếu modelId này đang được tạo embedding context bởi một lượt gọi khác
-  // (xem giải thích ở khai báo embeddingContextInFlight), CHỜ lượt đó thay vì tạo song song.
-  const pending = embeddingContextInFlight.get(modelId);
-  if (pending) return pending;
-
-  const createPromise = (async () => {
+  // Đợt 2 Task 3 — khoá in-flight (nay qua helper `motLuotThoi()` dùng chung — Task 7 §8).
+  return motLuotThoi(embeddingContextInFlight, modelId, async () => {
     // Pha 1 Task 5 — CHỈ KHAI BÁO. Cùng lý do đã ghi ở ensureTextContext(): không có file
     // trên đĩa để suy ra kích thước, và CỐ Ý không bịa `configDefaultBytes` — đo rồi học.
     // Mức `background`: đường nhúng phục vụ RAG, nhường chỗ cho suy luận và cho AOI.
@@ -3157,17 +3035,7 @@ async function getEmbeddingContext(modelId: string, loaded: LoadedModel): Promis
           `[VI] Mô hình không hỗ trợ embedding — cấu hình GGUF_EMBED_MODEL trỏ tới mxbai.`,
       );
     }
-  })();
-
-  embeddingContextInFlight.set(modelId, createPromise);
-  try {
-    return await createPromise;
-  } finally {
-    // Bắt buộc: lượt tạo thất bại mà không xoá khỏi map thì mọi lượt sau sẽ nhận lại đúng
-    // promise lỗi đó vĩnh viễn (không bao giờ thử tạo lại) — cùng lý do Đợt 1 Task 1 đã ghi
-    // ở inFlightLoads.
-    embeddingContextInFlight.delete(modelId);
-  }
+  });
 }
 
 /**

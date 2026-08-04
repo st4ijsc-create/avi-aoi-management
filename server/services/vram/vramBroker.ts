@@ -1,6 +1,8 @@
 import type {
-  VramLease, VramMeasureSource, VramReserveRequest, VramReserveResult, VramSnapshot, VramPriority,
+  VramLease, VramMeasureSource, VramReclaimerId, VramReserveRequest, VramReserveResult, VramSnapshot,
+  VramPriority,
 } from "./types";
+import { __resetVramCapsForTests, ggufMaxLoadedModels, usableCeilingBytes } from "./vramCaps";
 import type { HeadroomBasis, HeadroomInput, HeadroomResult } from "./vramHeadroom";
 import { assertHeadroomPolicy, computeHeadroom, headroomInputFromTick } from "./vramHeadroom";
 import type { VramDegradationReason, VramHolderFact, VramRefusalFacts, VramUnledgeredFact } from "./vramRefusal";
@@ -53,6 +55,20 @@ const SAFETY_RESERVE_BYTES = Number(process.env.VRAM_SAFETY_RESERVE_MB ?? 1024) 
  */
 export function deviceTotalBytes(): number {
   return DEVICE_TOTAL_ENV_BYTES ?? measuredDeviceTotalBytes ?? DEVICE_TOTAL_FALLBACK_BYTES;
+}
+
+/**
+ * ★★★ Pha 2B Task 7 (§8) — TRẦN mà `reserve()` THẬT SỰ dùng, sau khi **hấp thụ**
+ * `GGUF_VRAM_GUARD_PCT` và `GGUF_MAX_VRAM_MB` (xem `vramCaps.ts` để biết hai biến đó trước đây
+ * nằm ở đâu và làm gì).
+ *
+ * ⚠ Đây là toàn bộ nội dung của dòng *"`enforceVramGuard()` — XOÁ, thay bằng `reserve()`, vốn biết
+ * kích thước TRƯỚC"*: guard cũ đọc mức dùng HIỆN TẠI rồi mới quyết, nên nó **qua cổng ở 85% rồi mới
+ * xin 19 GB** (spec §2.2 gọi đích danh). Trần ở đây đi vào `computeHeadroom()` **trước** phép so
+ * `estimatedBytes <= dư địa`, tức lượt xin bị cân đúng bằng kích thước của chính nó.
+ */
+export function deviceUsableBytes(): number {
+  return usableCeilingBytes(deviceTotalBytes());
 }
 
 /**
@@ -111,22 +127,54 @@ function holderFactFromLease(l: VramLease): VramHolderFact {
 }
 
 /**
- * ★★★ Pha 2B Task 5, review vòng 1 (C) — VỊ TỪ *"CÓ NGƯỜI THI HÀNH THU HỒI HỘ NÀY KHÔNG"*.
+ * ★★★ Pha 2B Task 5 (C) → **Task 7 mở rộng ĐÚNG Ở ĐÂY** (bàn giao cứng của Task 5:
+ * *"`coThiHanhThuHoi()` là vị từ DUY NHẤT; sửa chỗ khác là câu chữ và cơ chế lại trôi khỏi nhau"*).
  *
- * ⚠ TÁCH HẲN khỏi `coTheNhuong()` (quyền — §5.2) vì đây là câu hỏi KHÁC: **khả năng**. Gộp hai câu
- * ấy là cách câu từ chối HỨA NGƯỢC — nêu tên một hộ có quyền nhường mà không cơ chế nào lấy lại
- * được khối byte của nó, rồi cộng nó vào một cái "tổng nhường được".
+ * VỊ TỪ: *"CÓ NGƯỜI THI HÀNH THU HỒI HỘ NÀY KHÔNG"* — và từ Task 7 nó trả về **TÊN người thi hành**
+ * chứ không phải một `boolean`. Đó là một quyết định về KIỂU, không phải khẩu vị:
  *
- * Hôm nay người thi hành DUY NHẤT là `vramLoadOutcome.reclaim()` → `aiGgufEngine.evictLRU()`, và
- * nó chỉ với tới **model GGUF NHÀN RỖI** (`unloadGgufModel()` — dispose thật, rồi mới nhả sổ).
- *   • `gguf-backend` — KHÔNG: backend CUDA sống suốt đời tiến trình, không có đường nhả.
- *   • `onnx-session` — KHÔNG: `ort.InferenceSession` không có lời gọi `release()` nào trên đường GPU.
- *   • `external-process` (sidecar · trainer · cron) — KHÔNG: thu hồi xuyên tiến trình là Pha 3.
- * ⇒ Khi Task 7 hấp thụ `evictLRU()` thành `preempt()` thật, **mở rộng ĐÚNG hàm này** — đừng để câu
- * chữ và cơ chế trôi khỏi nhau lần nữa.
+ *   • `preempt()` **không tự hỏi lại** "hộ này thu hồi được không" — nó nhận `VramReclaimerId` do
+ *     chính hàm này trả ra. Một bản sao thứ hai của vị từ (viết tay ở nơi tiêu thụ) **không đẻ ra
+ *     được** một `VramReclaimerId`, nên nó không lái được lượt thi hành. Đây là lần thứ BA trong
+ *     pha này lời giải đúng là *"làm cho sai lầm không biểu diễn được"* (Task 4:
+ *     `VramUnledgeredFact = … | null`; Task 6: `DeferStreak` hai biến thể).
+ *   • `NGUOI_THI_HANH` ở `vramPreempt.ts` là `Record<VramReclaimerId, …>` ⇒ thêm một người thi hành
+ *     mà quên cài đặt là **lỗi `tsc`**.
+ *
+ * ⚠ TÁCH HẲN khỏi `coTheNhuong()` (quyền — §5.2): đây là câu hỏi **khả năng**. Gộp hai câu ấy là
+ * cách câu từ chối HỨA NGƯỢC — nêu tên một hộ có quyền nhường mà không cơ chế nào lấy lại được khối
+ * byte của nó, rồi cộng nó vào một cái "tổng nhường được".
+ *
+ * ⚠⚠ HAI ĐIỀU KIỆN, VÀ CẢ HAI ĐỀU CẦN:
+ *   1. **điểm gọi ĐÃ KHAI người thi hành** (`request.reclaimer`) — xem `types.VramReclaimerId` để
+ *      biết vì sao KHÔNG suy theo `kind`: bản Task 5 suy theo `kind === "gguf-model"` và đã **cộng
+ *      nhầm model của `aiReranker`** (nạp qua backend riêng, KHÔNG nằm trong `loadedModels`, nên
+ *      `evictLRU()` không với tới) vào "tổng nhường được";
+ *   2. **NHÀN RỖI** (`refCount === 0`). Thu hồi một hộ đang có người dùng là giết lượt dùng đó:
+ *      với model GGUF là `dispose()` dưới chân một lượt sinh chữ; với sidecar thị giác là SIGKILL
+ *      giữa một request. Bộ đếm dùng ở đây là **bộ đếm của SỔ** (`setLeaseRefCount`), thứ mà
+ *      `aiGgufEngine`/`llamaVisionSidecar` đồng bộ vào — MỘT bộ đếm, không phải hai.
+ *
+ * Dân số HÔM NAY (và vì sao những hộ khác vẫn KHÔNG):
+ *   • `gguf-backend` — backend CUDA sống suốt đời tiến trình, **không có đường nhả**.
+ *   • `onnx-session` — đuổi khỏi cache chỉ gỡ THAM CHIẾU JS; `ort.InferenceSession.release()` dưới
+ *     chân một `session.run` đang bay là ABORT ở tầng native, không phải ngoại lệ bắt được
+ *     (`aiInferenceEngine.ts` — khối `LruSessionCache`, `releaseProof: "unverified"`). Cả ba hộ ONNX
+ *     còn là mức `production` ⇒ `coTheNhuong()` đã trả `false` trước đó.
+ *   • `gguf-context` / `gguf-embed-context` — không có đường dispose ĐỘC LẬP; chúng chết cùng model.
+ *   • `external-process` **trainer/cron** — giết tiến trình con = đánh HỎNG một job huấn luyện
+ *     (báo cáo Task 6 §8). Thu hồi có điều phối xuyên tiến trình là **Pha 3**.
  */
+export function nguoiThiHanhThuHoi(l: VramLease): VramReclaimerId | null {
+  const nguoi = l.request.reclaimer;
+  if (nguoi === undefined) return null;
+  if (l.refCount !== 0) return null;
+  return nguoi;
+}
+
+/** Dạng `boolean` của vị từ trên — **KHÔNG có bản cài đặt thứ hai**, chỉ là một phép so `!== null`. */
 function coThiHanhThuHoi(l: VramLease): boolean {
-  return l.request.kind === "gguf-model" && l.refCount === 0;
+  return nguoiThiHanhThuHoi(l) !== null;
 }
 
 /**
@@ -185,9 +233,34 @@ function coTheNhuong(l: VramLease, rankNguoiXin: number): boolean {
  * liệt kê nếu `coTheNhuong()` cho phép. Đây là danh sách ỨNG VIÊN để NÓI RA và để người thi hành
  * bất đồng bộ đọc, không phải một lệnh thu hồi.
  */
-export function preemptCandidates(priority: VramPriority, deficitBytes: number): VramHolderFact[] {
+export function preemptCandidates(
+  priority: VramPriority,
+  deficitBytes: number,
+  /**
+   * ★ Task 7 — số **KHE** `gguf-model` còn phải dọn (trần ĐẾM `GGUF_MAX_LOADED_MODELS`). Đ4: đây
+   * là thước THỨ HAI và nó **không bao giờ** được cộng vào `deficitBytes`; nó là một điều kiện
+   * dừng RIÊNG. Danh sách chỉ dừng khi CẢ HAI điều kiện đã đủ.
+   */
+  slotsNeeded = 0,
+): VramHolderFact[] {
   const rank = PRIORITY_RANK[priority];
-  const candidates = [...ledger.values()]
+  const candidates = xepThuTuNhuong(rank);
+  const enough = Number.isFinite(deficitBytes) ? deficitBytes : Number.POSITIVE_INFINITY;
+  const out: VramHolderFact[] = [];
+  let freed = 0;
+  let slots = 0;
+  for (const c of candidates) {
+    if (freed >= enough && slots >= slotsNeeded) break;
+    out.push(holderFactFromLease(c));
+    freed += leaseBytes(c);
+    if (c.request.kind === "gguf-model") slots += 1;
+  }
+  return out;
+}
+
+/** Thứ tự nhường (§5.2), dùng chung cho `preemptCandidates()` và `preemptPlan()`. */
+function xepThuTuNhuong(rank: number): VramLease[] {
+  return [...ledger.values()]
     .filter((l) => coTheNhuong(l, rank))
     .sort(
       (a, b) =>
@@ -198,13 +271,59 @@ export function preemptCandidates(priority: VramPriority, deficitBytes: number):
         // 3) CŨ trước
         a.acquiredAt.getTime() - b.acquiredAt.getTime(),
     );
+}
+
+/**
+ * ★★★ Task 7 — MỘT BƯỚC THU HỒI THẬT SỰ THI HÀNH ĐƯỢC.
+ *
+ * ⚠ `reclaimer` là `VramReclaimerId` (KHÔNG optional): kiểu này chính là bằng chứng *"đã đi qua
+ * `nguoiThiHanhThuHoi()`"*. `vramPreempt` không nhận đầu vào nào khác, nên không có đường nào để
+ * một vị từ viết tay ở nơi khác lái được lượt thi hành.
+ */
+export interface VramPreemptStep {
+  readonly leaseId: string;
+  readonly owner: string;
+  readonly kind: VramLease["request"]["kind"];
+  readonly bytes: number;
+  readonly reclaimer: VramReclaimerId;
+}
+
+/**
+ * ★★★ Task 7 — KẾ HOẠCH THU HỒI: `preemptCandidates()` lọc theo **quyền**, hàm này lọc thêm theo
+ * **khả năng** (`nguoiThiHanhThuHoi`). Đây là hàm mà `vramPreempt.preempt()` đọc.
+ *
+ * ⚠ Vẫn **CHỈ LIỆT KÊ** — không một dòng nào trong file này thu hồi gì (xem `coTheNhuong()`:
+ * `reserve()` ĐỒNG BỘ, nhả VRAM thật là BẤT ĐỒNG BỘ; nhả sổ trước khi thiết bị nhả là nói dối
+ * đúng chiều OOM).
+ *
+ * ⚠ Dừng khi ĐỦ theo CẢ HAI thước (byte và khe), giống `preemptCandidates()` — nhưng danh sách ứng
+ * viên hẹp hơn, nên **`preemptPlan()` có thể ngắn hơn `preemptCandidates()` và đó là ĐÚNG**: câu từ
+ * chối gọi tên MỌI hộ đang giữ (người trực cần biết), còn lượt thi hành chỉ chạm những hộ có người
+ * dọn.
+ */
+export function preemptPlan(
+  priority: VramPriority,
+  deficitBytes: number,
+  slotsNeeded = 0,
+): VramPreemptStep[] {
+  const rank = PRIORITY_RANK[priority];
   const enough = Number.isFinite(deficitBytes) ? deficitBytes : Number.POSITIVE_INFINITY;
-  const out: VramHolderFact[] = [];
+  const out: VramPreemptStep[] = [];
   let freed = 0;
-  for (const c of candidates) {
-    if (freed >= enough) break;
-    out.push(holderFactFromLease(c));
-    freed += leaseBytes(c);
+  let slots = 0;
+  for (const l of xepThuTuNhuong(rank)) {
+    if (freed >= enough && slots >= slotsNeeded) break;
+    const nguoi = nguoiThiHanhThuHoi(l);
+    if (nguoi === null) continue;
+    out.push({
+      leaseId: l.id,
+      owner: l.request.owner,
+      kind: l.request.kind,
+      bytes: leaseBytes(l),
+      reclaimer: nguoi,
+    });
+    freed += leaseBytes(l);
+    if (l.request.kind === "gguf-model") slots += 1;
   }
   return out;
 }
@@ -241,6 +360,8 @@ export function refusalFactsFor(args: {
    */
   readonly effectiveHeadroomBytes: number;
   readonly degradedReasons: readonly VramDegradationReason[];
+  /** ★ Task 7 — số khe `gguf-model` phải dọn (trần ĐẾM). Đ4: KHÔNG cộng vào thiếu hụt BYTE. */
+  readonly slotsNeeded?: number;
 }): VramRefusalFacts {
   const { request, headroomInput, headroom, unledgered } = args;
   return buildVramRefusal({
@@ -256,9 +377,33 @@ export function refusalFactsFor(args: {
     preemptable: preemptCandidates(
       request.priority,
       request.estimatedBytes - args.effectiveHeadroomBytes,
+      args.slotsNeeded ?? 0,
     ),
     unledgered,
   });
+}
+
+/**
+ * ★★★ Task 7 (§8) — **HẤP THỤ `ensureCapacity()`**: trần theo SỐ MODEL GGUF thường trú, nay là
+ * chính sách của broker.
+ *
+ * ⚠ Đ4 — thước ĐẾM, **cửa RIÊNG**, lý do RIÊNG (`"gguf-slot-cap"`). Nó KHÔNG được biến thành byte
+ * và không bao giờ chạm vào `effectiveHeadroomBytes`: một lượt từ chối vì hết KHE mà lại in ra một
+ * con số byte bịa là đúng thứ "trộn hai thước" mà ràng buộc 4 cấm.
+ *
+ * ⚠ DÂN SỐ RỘNG HƠN `loadedModels.size` cũ, và đó là SỬA chứ không phải trôi: sổ đếm **mọi** giấy
+ * phép `gguf-model`, gồm cả model của `aiReranker` (nạp qua backend riêng, vô hình với
+ * `loadedModels`). Bản cũ đếm thiếu đúng hộ đó.
+ *
+ * @returns số khe còn phải dọn để lượt xin này vừa (0 ⇒ còn khe).
+ */
+function kheGgufConThieu(request: VramReserveRequest): number {
+  if (request.kind !== "gguf-model") return 0;
+  let dangCo = 0;
+  for (const l of ledger.values()) if (l.request.kind === "gguf-model") dangCo += 1;
+  const tran = ggufMaxLoadedModels();
+  // Cần chỗ cho MỘT model nữa ⇒ sau khi cấp phải còn ≤ trần.
+  return Math.max(0, dangCo + 1 - tran);
 }
 
 /**
@@ -289,6 +434,11 @@ export interface VramReserveDecision {
   readonly headroomBytes: number;
   /** Sau chính sách suy giảm — **con số đã so với lượt xin**. Luôn ≤ `headroomBytes`. */
   readonly effectiveHeadroomBytes: number;
+  /**
+   * ★ Task 7 — số khe `gguf-model` còn phải dọn (trần ĐẾM `GGUF_MAX_LOADED_MODELS`).
+   * ⚠ Đ4: đây là thước THỨ HAI. `> 0` ⇒ TỪ CHỐI **kể cả khi byte thừa thãi**, và ngược lại.
+   */
+  readonly slotsNeeded: number;
   readonly usedBytes: number;
   readonly basis: HeadroomBasis;
   readonly blind: boolean;
@@ -338,7 +488,8 @@ export interface VramReserveOutcome extends VramReserveResult {
  * chắn cấu trúc từ Pha 1 — nó là thứ giữ đường quyết định sạch I/O, không phải một tối ưu hiệu năng.
  */
 export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): VramReserveOutcome {
-  const ceilingBytes = deviceTotalBytes();
+  // ★ Task 7 — TRẦN HIỆU LỰC (đã hấp thụ `GGUF_VRAM_GUARD_PCT` + `GGUF_MAX_VRAM_MB`).
+  const ceilingBytes = deviceUsableBytes();
   const ledgerTotalBytes = totalReserved();
   const headroomInput = headroomInputFromTick(ctx.tick, {
     ceilingBytes,
@@ -357,14 +508,20 @@ export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): 
     unledgered: ctx.unledgered,
   });
 
+  // ★ Task 7 — cửa ĐẾM, chạy độc lập với cửa BYTE (Đ4).
+  const slotsNeeded = kheGgufConThieu(request);
+  const reasons: readonly VramDegradationReason[] =
+    slotsNeeded > 0 ? [...enf.reasons, "gguf-slot-cap"] : enf.reasons;
+
   const decision: VramReserveDecision = {
     headroomBytes: headroom.headroomBytes,
     effectiveHeadroomBytes: enf.effectiveHeadroomBytes,
+    slotsNeeded,
     usedBytes: headroom.usedBytes,
     basis: headroom.basis,
     blind: headroom.blind,
     baselineVerified: headroom.baselineVerified,
-    reasons: enf.reasons,
+    reasons,
     trusted: enf.trusted,
     staleMarginBytes: enf.staleMarginBytes,
     unledgeredChargeBytes: enf.unledgeredChargeBytes,
@@ -374,7 +531,7 @@ export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): 
     safetyReserveBytes: SAFETY_RESERVE_BYTES,
   };
 
-  const vua = request.estimatedBytes <= enf.effectiveHeadroomBytes;
+  const vua = request.estimatedBytes <= enf.effectiveHeadroomBytes && slotsNeeded === 0;
   if (!vua) {
     const refusal = refusalFactsFor({
       request,
@@ -382,7 +539,8 @@ export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): 
       headroom,
       unledgered: ctx.unledgered,
       effectiveHeadroomBytes: enf.effectiveHeadroomBytes,
-      degradedReasons: enf.reasons,
+      degradedReasons: reasons,
+      slotsNeeded,
     });
     return {
       lease: null,
@@ -586,7 +744,17 @@ export function assertVramEnforcementPolicy(): void {
   kiemBienMoiTruong("VRAM_DEVICE_TOTAL_MB", { toiThieu: 0, chapNhanBang: false });
   kiemBienMoiTruong("VRAM_SAFETY_RESERVE_MB", { toiThieu: 0, chapNhanBang: true });
   kiemBienMoiTruong("VRAM_DISTRUST_UNIT_MB", { toiThieu: 0, chapNhanBang: true });
-  assertHeadroomPolicy({ ceilingBytes: deviceTotalBytes(), safetyReserveBytes: SAFETY_RESERVE_BYTES });
+  /**
+   * ★ Task 7 — BỐN BIẾN HẤP THỤ cũng phải qua cùng một cổng. Trước task này chúng được đọc bằng
+   * `parseInt(… || "mặc_định")`: `GGUF_MAX_LOADED_MODELS=` (để TRỐNG) ⇒ `parseInt("")` ⇒ `NaN` ⇒
+   * lặng lẽ về 2. Nay chúng LÁI một quyết định TỪ CHỐI, nên "đặt rồi để trống" phải kêu — đúng
+   * quy tắc (F) của Task 5.
+   */
+  kiemBienMoiTruong("GGUF_VRAM_GUARD_PCT", { toiThieu: 1, chapNhanBang: true });
+  kiemBienMoiTruong("GGUF_MAX_VRAM_MB", { toiThieu: 0, chapNhanBang: true });
+  kiemBienMoiTruong("GGUF_MAX_LOADED_MODELS", { toiThieu: 1, chapNhanBang: true });
+  kiemBienMoiTruong("AI_SESSION_CACHE_MAX", { toiThieu: 1, chapNhanBang: true });
+  assertHeadroomPolicy({ ceilingBytes: deviceUsableBytes(), safetyReserveBytes: SAFETY_RESERVE_BYTES });
 }
 
 /**
@@ -622,4 +790,5 @@ export function __resetBrokerForTests(): void {
   ledger.clear();
   seq = 0;
   measuredDeviceTotalBytes = null;
+  __resetVramCapsForTests();
 }

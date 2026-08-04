@@ -115,8 +115,13 @@ export const WIRED_ALLOCATION_SITE_COUNT = 15;
  * (ĐIỂM GỌI 15/15). Ba lần xuất hiện khác của `beginVramAllocation` trong file đó (import, kiểu
  * của tham số tiêm, giá trị mặc định) đều KHÔNG có `(` theo sau nên máy quét không đếm — và lần
  * xuất hiện thứ tư nằm trong một chuỗi mẫu (`console.warn`), thứ mà máy quét đã xoá trước khi khớp.
+ *
+ * ⚠ 160 → **159** (Pha 2B Task 7): MỘT dòng CHẾT đã bị gỡ — `aiGgufEngine.ts` → `child_process`.
+ * Nó tồn tại vì `readVramState()` gọi `nvidia-smi` qua `promisify(execFile)`; hàm đó là bộ đọc của
+ * `enforceVramGuard()`, và khi guard bị XOÁ (§8) nó thành **MÃ CHẾT** nên bị xoá theo. Số ĐIỂM GỌI
+ * `beginVramAllocation()` KHÔNG đổi (`WIRED_ALLOCATION_SITE_COUNT` vẫn 15).
  */
-export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 160;
+export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 159;
 
 /**
  * ★★ HAI CÁI BẪY ĐẾM-HAI-LẦN, khai TƯỜNG MINH thay vì lọc ngầm bằng regex.
@@ -298,7 +303,6 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "server/services/backupService.ts", symbol: "spawn(", wired: false, note: ":578 spawn(psql) — phục hồi CSDL, KHÔNG chạm GPU." },
   { file: "server/services/backupReplicationService.ts", symbol: "child_process", wired: false, note: ":1 import spawn — đẩy bản sao lên S3, KHÔNG chạm GPU." },
   { file: "server/services/backupReplicationService.ts", symbol: "spawn(", wired: false, note: ":87 spawn('aws', …) — sao chép đối tượng, KHÔNG chạm GPU." },
-  { file: "server/services/aiGgufEngine.ts", symbol: "child_process", wired: false, note: ":476 execFile('nvidia-smi', ['--query-gpu=memory.used,…']) qua promisify — ĐỌC VRAM, không cấp phát. Bản đồng bộ của chính lời gọi này từng làm đóng băng xử lý request (xem chú thích :474)." },
   { file: "server/services/vram/vramProbe.ts", symbol: "child_process", wired: false, note: ":92 execFile('nvidia-smi') qua promisify — đầu dò TOÀN THIẾT BỊ, đọc chứ không cấp phát." },
   { file: "server/services/vram/vramProcessProbe.ts", symbol: "child_process", wired: false, note: ":1 import execFile — đầu dò THEO TIẾN TRÌNH (PDH), đọc chứ không cấp phát." },
   { file: "server/services/vram/vramProcessProbe.ts", symbol: "execFile(", wired: false, note: ":309 execFile('powershell.exe', …) đọc bộ đếm \\GPU Process Memory. ~1,5 s mỗi lượt; KHÔNG cấp phát VRAM. (M-1 review TOÀN NHÁNH — số cũ `:151` đã mục vì Task 6 sửa file này SAU Task 5.)" },

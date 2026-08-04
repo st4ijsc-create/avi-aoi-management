@@ -17,6 +17,7 @@ import { recordVisionInferenceLatency } from "./ai/visionInferenceSlo";
 // Pha 1 Task 5 (điều phối VRAM) — `import type` bị xoá hoàn toàn lúc biên dịch; module telemetry
 // chỉ được nạp bằng `import()` động tại đúng điểm cấp phát, không nằm trên đường nạp file này.
 import type { VramTicket } from "./vram/vramWiring";
+import { sessionCacheMax } from "./vram/vramCaps";
 
 /**
  * Pha 1 Task 5 — mở MỘT giấy phép VRAM quanh một lượt cấp phát. KHÔNG BAO GIỜ ném.
@@ -89,7 +90,16 @@ function envInt(name: string, def: number, min: number): number {
  * không phải một nút vặn cho tiện. Xem thêm đảo ngược ưu tiên (I-3) ở `vram/vramWiring.ts`: lượt
  * kiểm `production` này xếp hàng vào khoá đo theo FIFO, KHÔNG theo ưu tiên.
  */
-const SESSION_CACHE_MAX = envInt("AI_SESSION_CACHE_MAX", 5, 1);
+/**
+ * ★ Pha 2B Task 7 (§8) — **KHÔNG CÒN ĐỌC `process.env` Ở ĐÂY.** `AI_SESSION_CACHE_MAX` có MỘT
+ * người đọc duy nhất (`vram/vramCaps.ts`) vì nó nay là trần của **hai** kho phiên ONNX: kho này
+ * và `ai/ocrService.recSessionCache` (trước Task 7 kho đó **không có trần nào**).
+ * ⚠ Gọi hàm ở ĐIỂM DÙNG chứ không chụp vào một `const` mức module: xem `vramCaps.ts` — hơn hai
+ * chục bộ test đặt biến này trong `beforeEach`.
+ */
+function sessionCacheMaxHienTai(): number {
+  return sessionCacheMax();
+}
 const BATCH_MAX = envInt("AI_BATCH_MAX", 8, 1);
 const BATCH_WINDOW_MS = envInt("AI_BATCH_WINDOW_MS", 25, 0);
 const GPU_CONCURRENCY = envInt("AI_GPU_CONCURRENCY", 2, 1);
@@ -115,7 +125,7 @@ class LruSessionCache {
   set(key: string, session: ort.InferenceSession): void {
     if (this.map.has(key)) this.map.delete(key);
     this.map.set(key, session);
-    if (this.map.size > SESSION_CACHE_MAX) {
+    if (this.map.size > sessionCacheMaxHienTai()) {
       // Evict the oldest (first) entry
       // Pha 1 Task 5 — giữ lại key trước khi xoá để TRẢ giấy phép VRAM tương ứng.
       // Ngữ nghĩa y hệt dòng cũ `this.map.delete(this.map.keys().next().value!)`.
@@ -420,7 +430,7 @@ export function getMicroBatchStats() {
     batchMax: BATCH_MAX,
     batchWindowMs: BATCH_WINDOW_MS,
     gpuConcurrency: GPU_CONCURRENCY,
-    sessionCacheMax: SESSION_CACHE_MAX,
+    sessionCacheMax: sessionCacheMaxHienTai(),
     activeBatchers: batchers.size,
     noBatchModels: Array.from(noBatchModels),
     gpuRunning: gpuSessionSemaphore.running,

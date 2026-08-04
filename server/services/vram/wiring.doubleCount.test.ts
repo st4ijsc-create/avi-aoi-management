@@ -115,6 +115,11 @@ beforeEach(() => {
   readings.length = 0;
   events.length = 0;
   process.env = { ...ORIGINAL_ENV };
+  // ★ Task 7 — trần ĐẾM mới (`GGUF_MAX_LOADED_MODELS`, mặc định 2) là một thước KHÁC với thứ
+  // file này canh (cửa sổ ĐO). Các ca ở đây mở 3–5 giấy phép `gguf-model` cùng lúc ⇒ sẽ bị trần
+  // đếm chặn oan. Nới trần = giữ nguyên điều kiện ban đầu; trần đếm có ca riêng ở
+  // `consolidation.test.ts`.
+  process.env.GGUF_MAX_LOADED_MODELS = "64";
   // ⚠ Xem điểm 2 của khối chú thích đầu file: 0 = KHÔNG chờ khoá ⇒ tái lập đúng thế giới "nối
   // tiếp hoá bị bỏ qua" mà chín ca dưới đây sinh ra để canh. Bỏ dòng này là mọi ca hết giờ.
   process.env.VRAM_MEASURE_WAIT_MS = "0";

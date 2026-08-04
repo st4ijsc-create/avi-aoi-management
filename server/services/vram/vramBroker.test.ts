@@ -31,7 +31,12 @@ function req(owner: string, bytes: number, priority: "production" | "interactive
 }
 
 describe("vramBroker — sổ cái", () => {
-  beforeEach(() => __resetBrokerForTests());
+  beforeEach(() => {
+    // ★ Task 7 — bộ ca NÀY canh SỔ CÁI và THƯỚC ĐO, không canh trần ĐẾM mới. Xem
+    // `consolidation.test.ts` cho trần `GGUF_MAX_LOADED_MODELS`.
+    process.env.GGUF_MAX_LOADED_MODELS = "64";
+    __resetBrokerForTests();
+  });
 
   it("cấp giấy phép và cộng vào tổng đã cấp", () => {
     const r = reserve(req("gguf:A", 100 * MIB));

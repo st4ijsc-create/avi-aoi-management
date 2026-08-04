@@ -240,6 +240,9 @@ describe("A. vramEnforcement — mỗi mức suy giảm một chính sách RIÊN
 
 describe("B. vramBroker.reserve() — CƯỠNG CHẾ THẬT", () => {
   beforeEach(() => {
+    // ★ Task 7 — khối này canh cưỡng chế theo BYTE. Trần ĐẾM là thước THỨ HAI (Ā4) và có ca
+    // riêng ở `consolidation.test.ts` — nới nó ở đây để hai thước không trộn vào nhau.
+    process.env.GGUF_MAX_LOADED_MODELS = "64";
     __resetBrokerForTests();
     process.env.VRAM_DISTRUST_UNIT_MB = "1024";
     noteDeviceTotalBytes(32_607 * MIB);
@@ -384,13 +387,37 @@ describe("B. vramBroker.reserve() — CƯỠNG CHẾ THẬT", () => {
       expect(cau).not.toContain("Có thể nhường (mức thấp hơn");
     });
 
-    it("★★ (C) model GGUF NHÀN RỖI thì CÓ cơ chế thu hồi (evictLRU) ⇒ được cộng vào tổng", () => {
-      const idle = reserve(req("gguf:idle", 6_000 * MIB, "interactive"), ctxSach(0));
+    it("★★ (C) model GGUF NHÀN RỖI **có khai người thi hành** ⇒ được cộng vào tổng", () => {
+      const idle = reserve(
+        { ...req("gguf:idle", 6_000 * MIB, "interactive"), reclaimer: "gguf-idle-model" as const },
+        ctxSach(0),
+      );
       setLeaseRefCount(idle.lease!.id, 0);
       const r = reserve(req("gguf:big", 26_000 * MIB, "interactive"), ctxSach(0));
       const h = r.refusal!.preemptable.find((x) => x.owner === "gguf:idle")!;
       expect(h.reclaimable).toBe(true);
       expect(r.refusal!.preemptableBytes).toBe(6_000 * MIB);
+    });
+
+    /**
+     * ★★★ Pha 2B Task 7 — **LỖI CÓ THẬT CỦA BẢN TASK 5, đo được bằng chính ca này.**
+     *
+     * Vị từ cũ viết `kind === "gguf-model" && refCount === 0`. `aiReranker.ts:480` cũng xin
+     * `kind: "gguf-model"` — nhưng cho một model nạp qua **backend RIÊNG của nó**, nằm NGOÀI
+     * `loadedModels`, nên `unloadGgufModel()`/`evictLRU()` **không với tới**. Câu từ chối vì thế
+     * cộng khối byte của nó vào *"tổng nhường được"* trong khi không cơ chế nào lấy lại được —
+     * đúng lớp **HỨA NGƯỢC** mà ô `reclaimable` được đẻ ra để diệt.
+     */
+    it("★★★ (Task 7) `gguf-model` KHÔNG khai người thi hành (ca aiReranker) ⇒ **KHÔNG** vào tổng", () => {
+      const rer = reserve(req("gguf-reranker:bge", 6_000 * MIB, "interactive"), ctxSach(0));
+      setLeaseRefCount(rer.lease!.id, 0);   // NHÀN RỖI — vị từ cũ sẽ nói "thu hồi được"
+      const r = reserve(req("gguf:big", 26_000 * MIB, "interactive"), ctxSach(0));
+      const h = r.refusal!.preemptable.find((x) => x.owner === "gguf-reranker:bge")!;
+      // vẫn ĐƯỢC GỌI TÊN (người trực phải biết ai đang giữ) …
+      expect(h).toBeDefined();
+      // … nhưng KHÔNG được hứa là lấy lại được.
+      expect(h.reclaimable).toBe(false);
+      expect(r.refusal!.preemptableBytes).toBe(0);
     });
 
     it("`reserve().wouldPreempt` và `preemptCandidates()` đọc CÙNG MỘT vị từ", () => {

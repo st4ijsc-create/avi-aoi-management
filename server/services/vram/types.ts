@@ -60,6 +60,30 @@ export type VramEstimateSource =
  */
 export type VramMeasureSource = "device-delta" | "process-delta" | "none";
 
+/**
+ * ★★★ Pha 2B Task 7 (§8) — **AI ĐI LẤY LẠI ĐƯỢC KHỐI BYTE NÀY**, khai bởi ĐIỂM GỌI.
+ *
+ * ⚠⚠ VÌ SAO KHAI THEO ĐIỂM GỌI, KHÔNG SUY THEO `kind` — và đây là một LỖI CÓ THẬT vừa bắt được,
+ * không phải một lo xa: vị từ của Task 5 viết `kind === "gguf-model" && refCount === 0`, và
+ * `aiReranker` cũng xin giấy phép `kind: "gguf-model"` (`aiReranker.ts:480`) **cho một model nạp
+ * thẳng qua backend riêng của nó** — nó KHÔNG nằm trong `loadedModels`, nên `evictLRU()` (người thi
+ * hành DUY NHẤT hôm đó) **không với tới**. Tức câu từ chối đã cộng model của reranker vào *"tổng
+ * nhường được"* trong khi không cơ chế nào lấy lại được nó: **HỨA NGƯỢC**, đúng lớp lỗi mà chính
+ * `reclaimable` được đẻ ra để diệt. Suy theo `kind` là suy theo HÌNH DẠNG; chỉ điểm gọi mới biết
+ * **ai** dọn được khối byte của nó.
+ *
+ * ⚠ Không khai ⇒ **KHÔNG ai thu hồi được** (mặc định AN TOÀN theo chiều câu chữ: không hứa).
+ *
+ * Mỗi giá trị BẮT BUỘC có đúng một người thi hành trong `vramPreempt.NGUOI_THI_HANH` — bảng đó là
+ * `Record<VramReclaimerId, …>` nên thêm một giá trị ở đây mà quên người thi hành là **lỗi `tsc`**,
+ * không phải một lời hứa suông chạy được tới sản xuất.
+ */
+export type VramReclaimerId =
+  /** `aiGgufEngine.unloadGgufModel()` — dispose THẬT trọng số + context, rồi mới nhả sổ. */
+  | "gguf-idle-model"
+  /** `llamaVisionSidecar.stopSidecar()` — SIGTERM/SIGKILL tiến trình con (`releaseProof: "process-exit"`). */
+  | "vision-sidecar";
+
 export interface VramReserveRequest {
   owner: string;
   kind: VramLeaseKind;
@@ -68,6 +92,12 @@ export interface VramReserveRequest {
   /** Bắt buộc cho external-process: thiếu nhịp quá hạn thì reconciler xác minh rồi thu hồi. */
   ttlMs?: number;
   estimateSource?: VramEstimateSource;
+  /**
+   * ★ Task 7 — ai THI HÀNH được lượt thu hồi hộ này. Xem `VramReclaimerId`.
+   * ⚠ Khai ở đây KHÔNG có nghĩa "được phép thu hồi" (quyền là `coTheNhuong()` — §5.2), mà là
+   * "CÓ NGƯỜI làm được". Hai câu hỏi khác nhau, cố ý hai ô khác nhau.
+   */
+  reclaimer?: VramReclaimerId;
 }
 
 export interface VramLease {
