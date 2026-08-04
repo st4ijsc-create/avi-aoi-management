@@ -219,6 +219,73 @@ describe("B. HAI VẾ TRONG MỘT LƯỢT — nền KHÔNG nuốt byte anh em, s
    * ★★ Vế còn lại của cùng một bất biến: một khoản cấp phát **THẬT SỰ** ngoài mọi cuốn sổ vẫn phải
    * lộ ra. Không có ca này thì "sửa lệch về 0" có thể đạt được bằng cách làm chuông CÂM.
    */
+  /**
+   * ★★ HÀNG MA: sổ chung khai NHIỀU HƠN thứ nằm trên thiết bị (một tiến trình bị `kill -9` để lại
+   * giấy phép của nó — nợ đã bàn giao cho Task 4). Chụp bừa ở đây cho ra **NỀN ÂM**, và một nền âm
+   * phồng `attributable` lên đúng bằng khoản ma ⇒ báo động "cấp phát chui" mỗi nhịp cho một khối
+   * byte KHÔNG TỒN TẠI. ⇒ HOÃN, và câu hoãn phải chỉ vào **sổ CHUNG**, không vào sổ cục bộ.
+   */
+  it("★★ B-5 — sổ chung khai NHIỀU HƠN thiết bị (hàng MA) ⇒ HOÃN chụp nền, KHÔNG chụp một nền ÂM", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const a = reserve(xin("gguf:30B@ma", KHOI_30B), ctxTrong());
+    commit(a.lease!.id, KHOI_30B);
+    await syncSharedLedger();
+
+    chuyenTienTrinh("api:2002:boot-b");
+    // Tiến trình kia đã CHẾT: byte của nó không còn trên card, nhưng hàng vẫn nằm trong bảng.
+    thietBiUsedBytes = DESKTOP;
+    await syncSharedLedger();
+    expect(sharedLedgerFact(Date.now())!.foreignBytes).toBe(KHOI_30B);
+
+    const nen = await captureVramBaseline();
+    expect(nen, "KHÔNG chụp: 1.000 − 17.000 là một nền ÂM").toBeNull();
+    expect(
+      warnSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n"),
+      "câu hoãn phải chỉ vào SỔ CHUNG — người trực không được đi soi nhầm commitMeasured() của mình",
+    ).toMatch(/Sổ CHUNG đang khai nhiều hơn thực tế/);
+  });
+
+  /**
+   * ★★★ CA NÀY SINH RA TỪ MỘT ĐỘT BIẾN **SỐNG SÓT 614/614** (vòng đột biến 1, M-8): đổi
+   * `soChung === null ? null : …` thành `soChung?.foreignBytes ?? 0` thì không ca nào đỏ.
+   * Đúng ràng buộc 4 của brief: **`?? <mặc_định>` là một DÂY — dây phải có LƯỚI**.
+   *
+   * ⚠ TRẠNG THÁI NÀY **HÔM NAY KHÔNG VỚI TỚI ĐƯỢC TỪ SẢN XUẤT**, và phải nói rõ vì sao — nếu không
+   * người sau sẽ xoá nhánh phòng vệ này như mã chết: `banSao` chỉ được gán bởi
+   * `publishSharedLedgerReplica()` và **không đường nào đưa nó về `null`**, còn cả hai lối vào chế
+   * độ chung (`"captured"` và `"adopted"`) đều ĐÒI `banSao !== null`. ⇒ Nhánh là một **lưới cho một
+   * dây**, và ca này dựng trạng thái bằng lượt dọn module (đường DUY NHẤT tới được).
+   *
+   * ⚠ HẬU QUẢ NẾU DÙNG `?? 0`: nền đã trừ 17 GB của anh em mà vế sổ cộng 0 ⇒ `drift = +17 GB` ⇒
+   * nhánh `drift > 0` gọi đó là *"cấp phát KHÔNG XIN PHÉP"* — **đúng lỗi quy trách nhiệm SAI mà cả
+   * task này trả**, chỉ khác cửa vào.
+   */
+  it("★★★ B-6 — nền đã trừ anh em mà sổ chung KHÔNG đọc được ⇒ KHÔNG so (drift `null`), KHÔNG đổ oan", async () => {
+    const a = reserve(xin("gguf:30B@A", KHOI_30B), ctxTrong());
+    commit(a.lease!.id, KHOI_30B);
+    await syncSharedLedger();
+
+    chuyenTienTrinh("api:2002:boot-b");
+    thietBiUsedBytes = DESKTOP + KHOI_30B;
+    await syncSharedLedger();
+    await captureVramBaseline();
+    expect((await reconcileOnce()).baselineOrigin, "đang ở chế độ CHUNG").toBe("captured");
+
+    // Bản sao đọc biến mất (đường DUY NHẤT tới trạng thái này — xem docstring).
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    __resetSharedLedgerForTests();
+    __setSharedLedgerSelfKeyForTests("api:2002:boot-b");
+    expect(sharedLedgerFact(Date.now())).toBeNull();
+
+    const r = await reconcileOnce();
+    expect(r.driftBytes, "thiếu MỘT VẾ ⇒ KHÔNG so được — so bừa là đổ oan +17 GB").toBeNull();
+    expect(r.alarm).toBe(false);
+    expect(r.foreignLedgerBytes, "`null` = KHÔNG BIẾT, khác hẳn `0` = anh em không giữ gì").toBeNull();
+    // …nhưng cưỡng chế KHÔNG bị bỏ đói: nó có đường xử lý riêng (`shared-ledger-unasked`).
+    expect(r.attributableBytes).not.toBeNull();
+    expect(warnSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n")).toMatch(/KHÔNG SO ĐƯỢC/);
+  });
+
   it("★★ B-4 — hộ NGOÀI MỌI CUỐN SỔ vẫn bị bắt: 2.000 MiB không ai khai ⇒ báo động LỆCH DƯƠNG", async () => {
     chuyenTienTrinh("api:2002:boot-b");
     await syncSharedLedger();
@@ -343,6 +410,43 @@ describe("C. MỘT NGƯỜI CHỤP — những người khác ĐỌC", () => {
     expect(r2.baselineUsedBytes, "nền KHÔNG được chụp lại (nếu chụp lại nó sẽ nuốt hộ lạ)").toBe(DESKTOP);
     expect(r2.driftBytes).toBe(2_000 * MIB);
     expect(r2.alarm).toBe(true);
+  });
+
+  /**
+   * ★★★ CA NÀY SINH RA TỪ MỘT ĐỘT BIẾN **SỐNG SÓT 612/612** (vòng đột biến 1, M-5): bỏ điều kiện
+   * `baselineOrigin !== "adopted"` khỏi nhánh RESAMPLE thì không một ca nào đỏ. Lần thứ MƯỜI MỘT
+   * của *"lưới đi theo FILE, không theo ĐƯỜNG THOÁT"* — điều kiện đó có docstring dài, có lý lẽ,
+   * và **0 ca test**.
+   *
+   * ⚠ HẬU QUẢ THẬT của đột biến, và vì sao nó NẶNG: người ĐỌC không có gì để chụp lại —
+   * `captureVramBaseline()` nhận lại đúng con số ấy với đúng thước ấy ⇒ mismatch LẶP ở MỌI nhịp ⇒
+   * bộ ngắt mạch EXP-1 trip sau `SOURCE_UNSTABLE_THRESHOLD` lượt ⇒ `attributableBytes: null`
+   * **VĨNH VIỄN** = nhánh RỘNG NHẤT, vì một lý do (hai vai trò gắn handle khác nhau) chẳng liên
+   * quan gì tới sự bất ổn của thước. Tức một cơ chế phòng vệ (ngắt mạch) vô hiệu hoá cơ chế mới —
+   * đúng lớp lỗi đã tái diễn ba lần.
+   */
+  it("★★★ C-5 — người ĐỌC có thước KHÁC người chụp: KHÔNG resample, KHÔNG trip ngắt mạch, KHÔNG về null", async () => {
+    thietBiSource = "smi";
+    await syncSharedLedger();
+    await captureVramBaseline();
+    await syncSharedLedger();
+    expect(bang.rows.get(SHARED_BASELINE_KEY)!.leaseId, "thước của người chụp đi theo hàng nền").toBe("smi");
+
+    chuyenTienTrinh("api:2002:boot-b");
+    await syncSharedLedger();
+    // Người đọc gắn handle native ⇒ thước của NÓ khác thước của người chụp. Ca THẬT: hai vai trò
+    // gắn `getLlama()` ở hai thời điểm khác nhau.
+    thietBiSource = "native";
+
+    // Chạy QUÁ ngưỡng ngắt mạch (`VRAM_SOURCE_UNSTABLE_THRESHOLD`, mặc định 3).
+    for (let i = 0; i < 5; i++) {
+      await captureVramBaseline();
+      const r = await reconcileOnce();
+      expect(r.baselineOrigin, `nhịp ${i}: vẫn là người ĐỌC`).toBe("adopted");
+      expect(r.baselineResampled, `nhịp ${i}: người đọc KHÔNG có gì để chụp lại`).toBe(false);
+      expect(r.sourceUnstable, `nhịp ${i}: thước KHÔNG hề dao động — chỉ là hai vai gắn handle khác nhau`).toBe(false);
+      expect(r.attributableBytes, `nhịp ${i}: TUYỆT ĐỐI không rơi về chỉ-sổ (nhánh RỘNG NHẤT)`).not.toBeNull();
+    }
   });
 
   it("★★ C-4 — hàng nền QUÁ HẠN (chủ nhân coi như đã chết) ⇒ tiến trình đọc GIÀNH lại vai người chụp", async () => {
