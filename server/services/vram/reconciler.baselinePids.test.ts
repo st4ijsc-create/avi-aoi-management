@@ -40,12 +40,12 @@ const DEVICE_USED = SWALLOWED + DESKTOP; // 18.000 MiB
 const CEILING = 32_607 * MIB;
 
 type Holder = { pid: number; name: string };
-function census(p: Partial<Record<"ours" | "siblings" | "orphans" | "thirdParty", Holder[]>>) {
+function census(p: Partial<Record<"ours" | "peers" | "orphans" | "thirdParty", Holder[]>>) {
   const ours = p.ours ?? [];
-  const siblings = p.siblings ?? [];
+  const peers = p.peers ?? [];
   const orphans = p.orphans ?? [];
   const thirdParty = p.thirdParty ?? [];
-  return { holders: [...ours, ...siblings, ...orphans, ...thirdParty], ours, siblings, orphans, thirdParty };
+  return { holders: [...ours, ...peers, ...orphans, ...thirdParty], ours, peers, orphans, thirdParty };
 }
 
 const DESK: Holder[] = [
@@ -186,7 +186,7 @@ describe("Pha 2B Task 1 — nền + tàn dư giữ GPU", () => {
     expect(r.attributableBytes).toBe(0);
   });
 
-  it("★★★ C-1: vai trò ANH EM (api ⇄ worker) đang sống ⇒ nền VẪN XÁC MINH ĐƯỢC, KHÔNG ai bị vu là tàn dư", async () => {
+  it("★★★ C-1+(A): vai trò ANH EM đang sống ⇒ KHÔNG ai bị vu là tàn dư, NHƯNG nền vẫn CHƯA XÁC MINH", async () => {
     // `package.json`: `start` = node dist/index.js, `start:worker` = node dist/worker.js ⇒ hai tiến
     // trình ANH EM, và cả hai vai trò đều gọi `startVramReconciler()`. Nếu anh em bị xếp `orphans`,
     // mỗi vai trò sẽ đánh dấu nền KHÔNG XÁC MINH VĨNH VIỄN và bảo người trực tắt tiến trình sản
@@ -196,7 +196,7 @@ describe("Pha 2B Task 1 — nền + tàn dư giữ GPU", () => {
     const logged: Logged[] = [];
     vi.doMock("./vramEventLog", () => ({ logVramEvent: (e: Logged) => logged.push(e) }));
     vi.doMock("./vramGpuHolders", () => ({
-      readGpuHolders: async () => census({ siblings: [WORKER], thirdParty: DESK }),
+      readGpuHolders: async () => census({ peers: [WORKER], thirdParty: DESK }),
     }));
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -204,12 +204,18 @@ describe("Pha 2B Task 1 — nền + tàn dư giữ GPU", () => {
     expect(await captureVramBaseline()).toBe(DEVICE_USED);
     const r = await reconcileOnce();
 
-    expect(r.baselineVerified).toBe(true); // ★ KHÔNG bị hạ cấp vì có anh em
-    expect(logged.some((l) => l.event === "baseline_foreign_pid")).toBe(false); // ★ KHÔNG cáo buộc
-    expect(warnSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n")).not.toMatch(/tàn dư|Stop-Process/i);
-    // …nhưng anh em VẪN phải xuất hiện trong nhật ký: byte của chúng là của HỆ NÀY, chỉ nằm ở sổ khác.
-    const ev = logged.find((l) => l.event === "baseline")!;
-    expect(JSON.stringify((ev.detail!.gpuHolders as Record<string, unknown>).siblings)).toContain("4711");
+    // ★★ (A) — mã của hệ nằm NGOÀI cây tiến trình thì nền KHÔNG được đóng dấu TIN, kể cả khi đó là
+    // anh em đang phục vụ: byte của anh em nằm ở sổ KHÁC (sổ chung là Pha 3) nên nền vẫn có thể đã
+    // nuốt chúng. Đây là chỗ lỗ (A) bị đóng bằng CẤU TRÚC thay vì bằng độ chính xác của vị từ.
+    expect(r.baselineVerified).toBe(false);
+    // ★★★ …nhưng TUYỆT ĐỐI không được cáo buộc nó là tàn dư, và không được khuyên tắt.
+    const warns = warnSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
+    expect(warns).toMatch(/VAI TRÒ ANH EM/);
+    expect(warns).toMatch(/ĐỪNG TẮT/);
+    expect(warns).not.toMatch(/TÀN DƯ/);
+    const ev = logged.find((l) => l.event === "baseline_foreign_pid")!;
+    expect(ev.detail!.orphanHolders).toEqual([]); // không ai bị xếp nhầm vào ngăn "tắt được"
+    expect(JSON.stringify(ev.detail!.peerHolders)).toContain("4711");
   });
 
   it("hậu duệ CỦA TA đang giữ GPU (sidecar còn sống, cùng cây) ⇒ KHÔNG phải tàn dư", async () => {
@@ -287,6 +293,75 @@ describe("Pha 2B Task 1 — nền + tàn dư giữ GPU", () => {
     expect(order).toEqual(["scan", "device"]);
   });
 
+
+  /**
+   * ★★★ N-1 (re-review vòng 1) — LỖI DO CHÍNH BẢN VÁ I-1 ĐẺ RA.
+   *
+   * Bản trước VỨT nền ngay khi thấy "đã sạch", rồi mới đi qua hai lá chắn hoãn. Nếu một lá chắn
+   * chặn (còn giấy phép ĐANG NẠP — ttl `sidecar:local-trainer` tới **2 GIỜ**), hàm `return null` ⇒
+   * `attributableBytes` thành `null` ⇒ **rơi thẳng về chỉ-sổ, tức CHẶN TRÊN** — đúng thứ I-1 vừa
+   * sửa để tránh, chỉ khác cửa vào.
+   *
+   * ⚠ Ca `TỰ LÀNH` phía trên dùng SỔ RỖNG nên KHÔNG phủ được lối này — re-review chỉ ra đúng chỗ
+   * đó. Ca này dùng sổ CÓ một giấy phép đang nạp.
+   */
+  it("★★★ N-1: tàn dư rời GPU nhưng còn giấy phép ĐANG NẠP ⇒ GIỮ nền cũ, TUYỆT ĐỐI không rơi về null", async () => {
+    let orphanAlive = true;
+    let loading = false;
+    const acquiredAt = new Date();
+    const pendingLease = {
+      id: "lease-trainer",
+      request: {
+        owner: "sidecar:local-trainer",
+        kind: "external-process",
+        estimatedBytes: 4_000 * MIB,
+        priority: "background",
+      },
+      acquiredAt,
+      actualBytes: null, // ĐANG NẠP ⇒ `holdsUncommittedBytes()` ⇒ lá chắn HOÃN bật
+      measureFailed: false,
+      lastHeartbeatAt: acquiredAt,
+      released: false,
+    };
+    vi.doMock("./vramBroker", () => ({
+      snapshot: () =>
+        loading
+          ? { totalReservedBytes: 4_000 * MIB, leases: [pendingLease] }
+          : { totalReservedBytes: 0, leases: [] },
+      leaseBytes: () => 4_000 * MIB,
+    }));
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => ({
+        usedBytes: orphanAlive ? DEVICE_USED : DESKTOP,
+        totalBytes: CEILING,
+        source: "smi",
+      }),
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: () => {} }));
+    vi.doMock("./vramGpuHolders", () => ({
+      readGpuHolders: async () => (orphanAlive ? orphanCensus : cleanCensus),
+    }));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const { captureVramBaseline, reconcileOnce } = await import("./vramReconciler");
+    expect(await captureVramBaseline()).toBe(DEVICE_USED); // nền NHIỄM, chưa xác minh
+
+    // Tàn dư chết, NHƯNG đúng lúc một sidecar đang nạp ⇒ lá chắn HOÃN chặn lượt chụp lại.
+    orphanAlive = false;
+    loading = true;
+    const kept = await captureVramBaseline();
+    expect(kept, "PHẢI giữ nền cũ — trả null là rơi về chỉ-sổ, tức nới dư địa").toBe(DEVICE_USED);
+    const r = await reconcileOnce();
+    expect(r.baselineUsedBytes).toBe(DEVICE_USED);
+    expect(r.attributableBytes, "TUYỆT ĐỐI không được null ở đây").not.toBeNull();
+
+    // Sidecar nạp xong ⇒ nhịp sau mới thật sự chụp lại được.
+    loading = false;
+    expect(await captureVramBaseline()).toBe(DESKTOP);
+    expect((await reconcileOnce()).baselineVerified).toBe(true);
+  });
+
   it("nền ĐÃ XÁC MINH thì KHÔNG quét lại ở mỗi nhịp (chi phí nvidia-smi chỉ trả một lần)", async () => {
     mockEmptyLedger();
     mockDevice();
@@ -352,11 +427,11 @@ describe("vramGpuHolders — phân loại tiến trình đang giữ GPU (hàm TH
         { pid: 100, name: "C:\\Program Files\\nodejs\\node.exe" }, // CHÍNH ta
       ],
       procs: [
-        { pid: 100, ppid: 50, cmdline: "" },
-        { pid: 50, ppid: 20, cmdline: "" }, // npm/supervisor
-        { pid: 4242, ppid: 100, cmdline: "" },
-        { pid: 31337, ppid: 9999, cmdline: "" }, // cha đã chết ⇒ không chung neo với ta
-        { pid: 7824, ppid: 1000, cmdline: "" },
+        { pid: 100, ppid: 50, cmdline: "node dist/index.js", ctime: 200 },
+        { pid: 50, ppid: 20, cmdline: "npm run start", ctime: 100 },
+        { pid: 4242, ppid: 100, cmdline: "llama-server --port 8081", ctime: 300 },
+        { pid: 31337, ppid: 9999, cmdline: "llama-server --port 8081", ctime: 50 }, // cha đã chết
+        { pid: 7824, ppid: 1000, cmdline: "explorer.exe", ctime: 10 },
       ],
       roots: [100],
       ownExecutables: ["C:\\Program Files\\nodejs\\node.exe", "D:\\tools\\llama.cpp\\llama-server.exe"],
@@ -365,30 +440,162 @@ describe("vramGpuHolders — phân loại tiến trình đang giữ GPU (hàm TH
     expect(c.orphans.map((h) => h.pid)).toEqual([31337]);
     expect(c.ours.map((h) => h.pid).sort()).toEqual([100, 4242]);
     expect(c.thirdParty.map((h) => h.pid)).toEqual([7824]);
-    expect(c.siblings).toEqual([]);
+    expect(c.peers).toEqual([]);
   });
 
-  it("★★★ C-1: ANH EM cùng người giám sát (chung cha còn sống) ⇒ siblings, KHÔNG phải tàn dư", async () => {
+  /**
+   * ★★★ (D) re-review vòng 1 — TOPOLOGY THẬT MÀ TÀI LIỆU CỦA DỰ ÁN CHỈ ĐỊNH.
+   *
+   * `backgroundJobs.ts` ghi chính thức "run `npm run start:worker` alongside", và `package.json`
+   * bọc mỗi vai trò trong `cross-env`; `npm run` còn chèn `cmd.exe` + `npm-cli.js`. Neo tổ tiên
+   * chung vì thế nằm ở ĐỘ SÂU 3-5 — cơ chế cũ (`ANCESTOR_DEPTH = 2`) trượt và vu cho anh em ĐANG
+   * SỐNG là tàn dư. Bảng dưới dựng ĐÚNG chuỗi đó, và còn tách hẳn hai nhánh (đúng ca "hai
+   * terminal") để chứng minh vị từ MỚI không phụ thuộc neo chung nữa.
+   */
+  it("★★★ C-1/(D): chuỗi npm → cmd → cross-env → node (sâu 4, KHÔNG neo chung) vẫn nhận ra ANH EM", async () => {
     const { classifyHolders } = await import("./vramGpuHolders");
     const c = classifyHolders({
       holders: [
         { pid: 100, name: "C:\\Program Files\\nodejs\\node.exe" }, // api = CHÍNH ta
-        { pid: 200, name: "C:\\Program Files\\nodejs\\node.exe" }, // worker = ANH EM
-        { pid: 300, name: "C:\\Program Files\\nodejs\\node.exe" }, // tàn dư lượt TRƯỚC (cha đã chết)
+        { pid: 200, name: "C:\\Program Files\\nodejs\\node.exe" }, // worker = ANH EM (sâu 4)
+        { pid: 300, name: "C:\\Program Files\\nodejs\\node.exe" }, // TÀN DƯ: không mang điểm vào
       ],
       procs: [
-        { pid: 50, ppid: 20, cmdline: "npm run start" }, // người giám sát CHUNG, còn sống
-        { pid: 100, ppid: 50, cmdline: "node dist/index.js" },
-        { pid: 200, ppid: 50, cmdline: "node dist/worker.js" },
-        { pid: 300, ppid: 60001, cmdline: "node dist/worker.js" }, // ppid không tồn tại trong bảng
+        { pid: 10, ppid: 4, cmdline: "C:\\Windows\\explorer.exe", ctime: 1 },
+        // nhánh api
+        { pid: 40, ppid: 10, cmdline: "cmd.exe /c npm run start", ctime: 10 },
+        { pid: 45, ppid: 40, cmdline: "node npm-cli.js run start", ctime: 11 },
+        { pid: 48, ppid: 45, cmdline: "cross-env NODE_ENV=production node dist/index.js", ctime: 12 },
+        { pid: 100, ppid: 48, cmdline: "node dist/index.js", ctime: 13 },
+        // nhánh worker — người giám sát KHÁC ở tầng trên, đúng ca "hai terminal riêng"
+        { pid: 60, ppid: 10, cmdline: "cmd.exe /c npm run start:worker", ctime: 20 },
+        { pid: 65, ppid: 60, cmdline: "node npm-cli.js run start:worker", ctime: 21 },
+        { pid: 68, ppid: 65, cmdline: "cross-env NODE_ENV=production node dist/worker.js", ctime: 22 },
+        { pid: 200, ppid: 68, cmdline: "node dist/worker.js", ctime: 23 },
+        // tàn dư lượt trước: cha đã chết, dòng lệnh KHÔNG mang điểm vào vai trò
+        { pid: 300, ppid: 60001, cmdline: "node D:\\SOURCES\\avi-aoi-management\\tools\\x.js", ctime: 5 },
       ],
       roots: [100],
       ownExecutables: ["C:\\Program Files\\nodejs\\node.exe"],
       appRoot: "D:\\SOURCES\\avi-aoi-management",
     });
-    expect(c.siblings.map((h) => h.pid)).toEqual([200]); // ★ anh em SỐNG — không được cáo buộc
+    expect(c.peers.map((h) => h.pid)).toEqual([200]); // ★ anh em SỐNG — không được cáo buộc
     expect(c.orphans.map((h) => h.pid)).toEqual([300]); // ★ tàn dư thật vẫn bị bắt
     expect(c.ours.map((h) => h.pid)).toEqual([100]);
+  });
+
+  /**
+   * ★★★ RÀNG BUỘC VỊ TỪ Ở **CHIỀU NỚI** — thứ re-review đòi và bản trước không có.
+   * Ai cho "chạy `process.execPath` ngoài cây ⇒ anh em" (bỏ đòi hỏi ĐIỂM VÀO) thì ca này ĐỎ: một
+   * sidecar mất chủ được miễn tội, và người trực mất luôn lời khuyên duy nhất đúng.
+   */
+  it("★★★ CHIỀU NỚI: hộ chạy mã của ta nhưng KHÔNG mang điểm vào vai trò ⇒ TÀN DƯ, không được thành anh em", async () => {
+    const { classifyHolders } = await import("./vramGpuHolders");
+    const c = classifyHolders({
+      holders: [{ pid: 31337, name: "D:\\tools\\llama.cpp\\llama-server.exe" }],
+      procs: [
+        { pid: 100, ppid: 50, cmdline: "node dist/index.js", ctime: 100 },
+        { pid: 31337, ppid: 60001, cmdline: "llama-server -m model.gguf", ctime: 50 },
+      ],
+      roots: [100],
+      ownExecutables: ["C:\\Program Files\\nodejs\\node.exe", "D:\\tools\\llama.cpp\\llama-server.exe"],
+      appRoot: "D:\\SOURCES\\avi-aoi-management",
+    });
+    expect(c.orphans.map((h) => h.pid)).toEqual([31337]);
+    expect(c.peers).toEqual([]);
+  });
+
+  /**
+   * ★★★ (A) re-review vòng 1 — PID ĐƯỢC CẤP LẠI: `ppid` trùng số KHÔNG phải bằng chứng cha-con.
+   * Reviewer chạy thật vị từ cũ và nó cho `orphans=[] peers=[300]` — một tàn dư THẬT được miễn tội
+   * đúng trong vòng lặp kill→restart, tức đúng lúc cổng này sinh ra để bắt.
+   * `ctime(cha) ≤ ctime(con)` là thứ duy nhất phân biệt được, và ba nhánh dưới khoá cả ba ca.
+   */
+  it("★★★ (A) PID CẤP LẠI: cha trẻ hơn con ⇒ KHÔNG được nhận là con của vai trò", async () => {
+    const { classifyHolders } = await import("./vramGpuHolders");
+    const base = {
+      holders: [{ pid: 300, name: "D:\\tools\\llama.cpp\\llama-server.exe" }],
+      roots: [100],
+      ownExecutables: ["C:\\Program Files\\nodejs\\node.exe", "D:\\tools\\llama.cpp\\llama-server.exe"],
+      appRoot: "D:\\SOURCES\\avi-aoi-management",
+    };
+    // Cha khai báo (worker pid 200) SINH SAU con (pid 300) ⇒ số 200 kia là PID ĐƯỢC CẤP LẠI.
+    const reused = classifyHolders({
+      ...base,
+      procs: [
+        { pid: 100, ppid: 50, cmdline: "node dist/index.js", ctime: 10 },
+        { pid: 200, ppid: 60, cmdline: "node dist/worker.js", ctime: 900 },
+        { pid: 300, ppid: 200, cmdline: "llama-server -m model.gguf", ctime: 100 },
+      ],
+    });
+    expect(reused.orphans.map((h) => h.pid), "cha trẻ hơn con ⇒ tàn dư").toEqual([300]);
+    expect(reused.peers).toEqual([]);
+
+    // Cha sinh TRƯỚC con ⇒ quan hệ thật ⇒ sidecar của một vai trò đang sống, ĐỪNG tắt.
+    const real = classifyHolders({
+      ...base,
+      procs: [
+        { pid: 100, ppid: 50, cmdline: "node dist/index.js", ctime: 10 },
+        { pid: 200, ppid: 60, cmdline: "node dist/worker.js", ctime: 100 },
+        { pid: 300, ppid: 200, cmdline: "llama-server -m model.gguf", ctime: 900 },
+      ],
+    });
+    expect(real.peers.map((h) => h.pid)).toEqual([300]);
+    expect(real.orphans).toEqual([]);
+
+    // KHÔNG đọc được mốc tạo (thiếu quyền) ⇒ KHÔNG có bằng chứng ⇒ không cấp tư cách anh em.
+    const unknown = classifyHolders({
+      ...base,
+      procs: [
+        { pid: 100, ppid: 50, cmdline: "node dist/index.js", ctime: 10 },
+        { pid: 200, ppid: 60, cmdline: "node dist/worker.js", ctime: 0 },
+        { pid: 300, ppid: 200, cmdline: "llama-server -m model.gguf", ctime: 0 },
+      ],
+    });
+    expect(unknown.orphans.map((h) => h.pid)).toEqual([300]);
+  });
+
+
+  /**
+   * ★★★ (A) MỞ RỘNG — PID CẤP LẠI ĐÁNH LỪA CẢ NGĂN `ours`, VÀ ĐÓ LÀ CHỖ NGUY HIỂM NHẤT.
+   *
+   * Reviewer chỉ ra ca "tàn dư → anh em". Khi viết ca đó tôi tìm ra ca NẶNG HƠN: nếu `ppid` được
+   * cấp lại trùng đúng PID của TIẾN TRÌNH NÀY, `collectDescendants()` xếp tàn dư vào `ours` —
+   * và `ours` **KHÔNG tắt cờ `baselineVerified`**, cũng **không có ngăn nào để lộ ra**. Nền nhiễm
+   * được TIN, im lặng, vĩnh viễn. Đây chính là lối hỏng (A) mô tả, ở cửa mà không ai canh.
+   *
+   * `pruneUnprovenParentLinks()` cắt liên kết đó TRƯỚC khi dựng cây; ca này khoá nó.
+   */
+  it("★★★ (A) ours: liên kết cha-con KHÔNG có bằng chứng thời gian ⇒ KHÔNG được nhận vào cây của ta", async () => {
+    const { classifyHolders } = await import("./vramGpuHolders");
+    const args = {
+      holders: [{ pid: 300, name: "D:\\tools\\llama.cpp\\llama-server.exe" }],
+      roots: [100],
+      ownExecutables: ["C:\\Program Files\\nodejs\\node.exe", "D:\\tools\\llama.cpp\\llama-server.exe"],
+      appRoot: "D:\\SOURCES\\avi-aoi-management",
+    };
+    // Tàn dư (sinh lúc 100) mang ppid = 100 — nhưng TIẾN TRÌNH 100 CỦA TA mới sinh lúc 900.
+    // Tức số 100 kia là PID của một tiến trình ĐÃ CHẾT, được cấp lại cho ta.
+    const reused = classifyHolders({
+      ...args,
+      procs: [
+        { pid: 100, ppid: 50, cmdline: "node dist/index.js", ctime: 900 },
+        { pid: 300, ppid: 100, cmdline: "llama-server -m model.gguf", ctime: 100 },
+      ],
+    });
+    expect(reused.ours, "KHÔNG được nhận vơ vào cây của ta").toEqual([]);
+    expect(reused.orphans.map((h) => h.pid), "phải LỘ RA, vì `ours` không tắt cờ verified").toEqual([300]);
+
+    // Cha sinh TRƯỚC con ⇒ quan hệ thật ⇒ đúng là hậu duệ của ta.
+    const real = classifyHolders({
+      ...args,
+      procs: [
+        { pid: 100, ppid: 50, cmdline: "node dist/index.js", ctime: 100 },
+        { pid: 300, ppid: 100, cmdline: "llama-server -m model.gguf", ctime: 900 },
+      ],
+    });
+    expect(real.ours.map((h) => h.pid)).toEqual([300]);
+    expect(real.orphans).toEqual([]);
   });
 
   it("★★ I-3: `python.exe` CỦA NGƯỜI KHÁC KHÔNG bị nhận vơ, dù LOCAL_TRAINER_CMD khai `python …`", async () => {
@@ -401,7 +608,7 @@ describe("vramGpuHolders — phân loại tiến trình đang giữ GPU (hàm TH
       expect(ownExecutablePaths(), "lệnh trần KHÔNG được vào danh sách ảnh thực thi").not.toContain("python");
       const c = classifyHolders({
         holders: [{ pid: 777, name: "C:\\Python312\\python.exe" }],
-        procs: [{ pid: 777, ppid: 9999, cmdline: "python C:\\ai-cua-nguoi-khac\\train.py" }],
+        procs: [{ pid: 777, ppid: 9999, cmdline: "python C:\\ai-cua-nguoi-khac\\train.py", ctime: 1 }],
         roots: [100],
         ownExecutables: ownExecutablePaths(),
         appRoot: "D:\\SOURCES\\avi-aoi-management",
@@ -415,7 +622,24 @@ describe("vramGpuHolders — phân loại tiến trình đang giữ GPU (hàm TH
     }
   });
 
-  it("★★ I-3 bù: trainer CỦA TA (python trần) VẪN bị bắt qua dòng lệnh — chữ ký lệnh + thư mục ứng dụng", async () => {
+  it("★★ m-6: dòng lệnh chỉ ĐỌC một file trong thư mục ứng dụng KHÔNG biến hộ của người khác thành của ta", async () => {
+    // `cmd.includes(appRoot)` trần là biến thể HẸP của I-3: một job của người khác đọc dữ liệu
+    // trong repo ta là đủ bị nhận vơ. Nay đòi đường dẫn trỏ vào thư mục ta THẬT SỰ sinh tiến trình.
+    const { classifyHolders } = await import("./vramGpuHolders");
+    const c = classifyHolders({
+      holders: [{ pid: 888, name: "C:\\Python312\\python.exe" }],
+      procs: [
+        { pid: 888, ppid: 9999, cmdline: "python doc.py D:\\SOURCES\\avi-aoi-management\\data\\x.csv", ctime: 1 },
+      ],
+      roots: [100],
+      ownExecutables: ["C:\\Program Files\\nodejs\\node.exe"],
+      appRoot: "D:\\SOURCES\\avi-aoi-management",
+    });
+    expect(c.thirdParty.map((h) => h.pid)).toEqual([888]);
+    expect(c.orphans).toEqual([]);
+  });
+
+  it("★★ I-3 bù: trainer CỦA TA (python trần) VẪN bị bắt qua dòng lệnh — chữ ký lệnh + thư mục job", async () => {
     const prev = process.env.LOCAL_TRAINER_CMD;
     process.env.LOCAL_TRAINER_CMD = "python tools/trainer/train.py";
     try {
@@ -423,11 +647,16 @@ describe("vramGpuHolders — phân loại tiến trình đang giữ GPU (hàm TH
       const c = classifyHolders({
         holders: [
           { pid: 778, name: "C:\\Python312\\python.exe" }, // khớp CHỮ KÝ LỆNH
-          { pid: 779, name: "C:\\Python312\\python.exe" }, // khớp THƯ MỤC ỨNG DỤNG trong dòng lệnh
+          { pid: 779, name: "C:\\Python312\\python.exe" }, // khớp thư mục job (uploads\)
         ],
         procs: [
-          { pid: 778, ppid: 9999, cmdline: "python tools/trainer/train.py D:\\x\\jobs\\7" },
-          { pid: 779, ppid: 9999, cmdline: "python x.py D:\\SOURCES\\avi-aoi-management\\uploads\\training\\jobs\\7" },
+          { pid: 778, ppid: 9999, cmdline: "python tools/trainer/train.py D:\\x\\jobs\\7", ctime: 1 },
+          {
+            pid: 779,
+            ppid: 9999,
+            cmdline: "python x.py D:\\SOURCES\\avi-aoi-management\\uploads\\training\\jobs\\7",
+            ctime: 1,
+          },
         ],
         roots: [100],
         ownExecutables: ownExecutablePaths(),
@@ -445,7 +674,7 @@ describe("vramGpuHolders — phân loại tiến trình đang giữ GPU (hàm TH
     const { classifyHolders } = await import("./vramGpuHolders");
     const c = classifyHolders({
       holders: [{ pid: 555, name: "D:\\SOURCES\\avi-aoi-management\\.venv\\Scripts\\python.exe" }],
-      procs: [{ pid: 555, ppid: 9999, cmdline: "" }],
+      procs: [{ pid: 555, ppid: 9999, cmdline: "", ctime: 1 }],
       roots: [100],
       ownExecutables: ["C:\\Program Files\\nodejs\\node.exe"],
       appRoot: "D:\\SOURCES\\avi-aoi-management",
@@ -457,7 +686,7 @@ describe("vramGpuHolders — phân loại tiến trình đang giữ GPU (hàm TH
     const { classifyHolders } = await import("./vramGpuHolders");
     const c = classifyHolders({
       holders: [{ pid: 31337, name: "d:/tools/llama.cpp/LLAMA-SERVER.EXE" }],
-      procs: [{ pid: 31337, ppid: 9999, cmdline: "" }],
+      procs: [{ pid: 31337, ppid: 9999, cmdline: "", ctime: 1 }],
       roots: [100],
       ownExecutables: ["D:\\tools\\llama.cpp\\llama-server.exe"],
       appRoot: "D:\\SOURCES\\avi-aoi-management",
@@ -470,7 +699,7 @@ describe("vramGpuHolders — phân loại tiến trình đang giữ GPU (hàm TH
     expect(parseProcTable("khong-phai-json"), "hỏng ⇒ null").toBeNull();
     expect(parseProcTable("[]"), "rỗng hợp lệ ⇒ mảng rỗng, KHÔNG phải null").toEqual([]);
     // `ConvertTo-Json` trả OBJECT khi chỉ có một phần tử.
-    expect(parseProcTable('{"pid":4,"ppid":0,"cmd":"x"}')).toEqual([{ pid: 4, ppid: 0, cmdline: "x" }]);
+    expect(parseProcTable('{"pid":4,"ppid":0,"cmd":"x","ct":7}')).toEqual([{ pid: 4, ppid: 0, cmdline: "x", ctime: 7 }]);
   });
 
   it("★ M-3: nền tảng KHÔNG phải Windows ⇒ trả null NGAY, KHÔNG gọi powershell/nvidia-smi", async () => {
@@ -496,6 +725,70 @@ describe("vramGpuHolders — phân loại tiến trình đang giữ GPU (hàm TH
     const { readGpuHolders } = await import("./vramGpuHolders");
     await expect(readGpuHolders([process.pid])).resolves.toBeNull();
     expect(goi).toBe(0);
+  });
+
+
+  /**
+   * ★★★ (D) — LƯỚI cho `ROLE_ENTRYPOINT_MARKERS`, thứ thay thế hằng số độ sâu đã bị gỡ.
+   *
+   * ⚠ VÌ SAO BẮT BUỘC: re-review chạy đột biến `ANCESTOR_DEPTH = 2 → 6` và `→ 1` ⇒ **0 ca đỏ cả
+   * hai chiều**. Một hằng số chịu lực mà không ai canh thì coi như chưa có. Cơ chế mới không còn
+   * hằng số nào, nhưng nó có một DANH SÁCH — và danh sách cũng mục y hệt nếu không ai canh: thêm
+   * một vai trò vào `package.json` mà quên khai marker ⇒ vai trò đó bị vu là "tàn dư" và người
+   * trực được khuyên tắt một tiến trình đang phục vụ (đúng lỗi C-1, tái sinh qua cửa khác).
+   */
+  it("★★★ mọi điểm vào trong package.json (start*/dev*) phải có marker trong ROLE_ENTRYPOINT_MARKERS", async () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const pkg = JSON.parse(fs.readFileSync(path.join(here, "..", "..", "..", "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    const { ROLE_ENTRYPOINT_MARKERS } = await import("./vramGpuHolders");
+    const markers = ROLE_ENTRYPOINT_MARKERS.map((m) => m.toLowerCase().replace(/\\/g, "/"));
+
+    const missing: string[] = [];
+    for (const [name, cmd] of Object.entries(pkg.scripts)) {
+      if (!/^(start|dev)(:|$)/.test(name)) continue;
+      // Điểm vào = token cuối trông như một file .ts/.js mà lệnh đem chạy.
+      const entry = cmd
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((t) => /\.(ts|js|mjs)$/.test(t))
+        .pop();
+      if (!entry) continue;
+      if (!markers.some((m) => entry.includes(m))) missing.push(`${name} → ${entry}`);
+    }
+
+    expect(
+      missing,
+      "Có vai trò trong package.json mà cổng nền KHÔNG nhận ra được.\n" +
+        "Hệ quả: vai trò đó đang PHỤC VỤ nhưng bị xếp là TÀN DƯ, và người trực được khuyên tắt nó.\n" +
+        "Thêm điểm vào tương ứng vào ROLE_ENTRYPOINT_MARKERS (vramGpuHolders.ts).\n" +
+        `Thiếu: ${missing.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("★ m-5: ảnh thực thi khai bằng TÊN TRẦN phải KÊU — khai kiểu đó không bao giờ khớp", async () => {
+    // nvidia-smi luôn trả ĐƯỜNG DẪN ĐẦY ĐỦ, nên `WHISPER_BIN=whisper-cli.exe` là một khai báo VÔ
+    // HÌNH: lưới I-2 vẫn thấy tên biến (nên nó im), còn cổng thì không bao giờ khớp được hộ đó.
+    const prev = process.env.WHISPER_BIN;
+    process.env.WHISPER_BIN = "whisper-cli.exe";
+    process.env.VRAM_GPU_HOLDER_SCAN = "on";
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.doMock("node:child_process", () => ({
+      execFile: (_c: unknown, _a: unknown, _o: unknown, cb: (e: Error | null, s?: string) => void) =>
+        cb(null, "7824, C:\\Windows\\explorer.exe\n"),
+    }));
+    try {
+      const { readGpuHolders } = await import("./vramGpuHolders");
+      await readGpuHolders([process.pid]);
+      const msg = warnSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
+      expect(msg).toMatch(/TÊN TRẦN/);
+      expect(msg).toContain("whisper-cli.exe");
+    } finally {
+      warnSpy.mockRestore();
+      if (prev === undefined) delete process.env.WHISPER_BIN;
+      else process.env.WHISPER_BIN = prev;
+    }
   });
 
   it("nvidia-smi lỗi/vắng ⇒ trả null, KHÔNG NÉM (máy không GPU vẫn chạy)", async () => {

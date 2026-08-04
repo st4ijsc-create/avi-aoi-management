@@ -30,16 +30,38 @@ import { collectDescendants, type RawProcRow } from "./vramProcessProbe";
  * thụ thứ đó (Pha 1 I-1: máy sạch, app tắt, GPU đã dùng 1.090 MiB). Lỗ đó là: **server khởi động
  * lại trong khi TIẾN TRÌNH CON CỦA CHÍNH TA còn sống** (sidecar thị giác 7,8 GB).
  *
- *     MỒ CÔI = đang giữ GPU  ∧  chạy đúng thứ CHÍNH TA được cấu hình để sinh ra
- *              ∧  KHÔNG nằm trong cây tiến trình của ta
- *              ∧  KHÔNG phải ANH EM ĐANG SỐNG của cùng một lượt khởi chạy   ← C-1, review vòng 1
+ *     NGHI NGỜ = đang giữ GPU  ∧  chạy đúng thứ CHÍNH TA được cấu hình để sinh ra
+ *                ∧  KHÔNG nằm trong cây tiến trình của ta
  *
- * ⚠⚠ VẾ THỨ BA LÀ BẮT BUỘC, KHÔNG PHẢI TINH CHỈNH (C-1). `package.json` có `start` =
- * `node dist/index.js` và `start:worker` = `node dist/worker.js`: **hai tiến trình ANH EM**, và
- * `backgroundJobs.ts` cho **cả hai** vai trò gọi `startVramReconciler()`. Anh em chạy đúng
- * `process.execPath` và **ngoài cây tiến trình của nhau** ⇒ nếu chỉ có hai vế đầu, mỗi vai trò sẽ
- * gọi vai trò kia là "mồ côi", đánh dấu nền KHÔNG XÁC MINH **vĩnh viễn**, và bảo người trực
- * `Stop-Process` một **tiến trình sản xuất đang sống**.
+ *     …rồi TÁCH LÀM HAI, và **chỉ để chọn CÂU NÓI**, không để chọn mức an toàn:
+ *       • **VAI TRÒ ANH EM** (`peers`) — dòng lệnh mang một ĐIỂM VÀO đã khai (`dist/worker.js`…),
+ *         hoặc là con trực tiếp của một vai trò như thế ⇒ tiến trình ĐANG PHỤC VỤ, sổ RIÊNG.
+ *         **KHÔNG BAO GIỜ khuyên tắt.**
+ *       • **TÀN DƯ** (`orphans`) — phần còn lại ⇒ sidecar mất chủ ⇒ khuyên tắt THEO ĐÚNG PID.
+ *
+ * ⚠⚠⚠ RE-REVIEW VÒNG 1 (A + D) — **TÁCH MỨC AN TOÀN KHỎI MỨC CHẨN ĐOÁN.** Bản trước suy quan hệ
+ * từ **HÌNH DẠNG CÂY TIẾN TRÌNH** (neo tổ tiên, `ANCESTOR_DEPTH`), và nó hỏng ở CẢ HAI ĐẦU:
+ *   • (A) `ppid` lấy nguyên văn ⇒ khi Windows **cấp lại PID** của một launcher đã chết — đúng vòng
+ *     lặp kill→restart mà cổng này sinh ra để bắt — một tàn dư THẬT bị xếp là anh em, nền đóng dấu
+ *     `verified = TRUE`, và **không lượt quét nào tự sửa nữa**. Bắt sót để lại một cảnh báo; bắt
+ *     quá tay để lại một **con số sai ĐƯỢC TIN** — tệ hơn hẳn.
+ *   • (D) đường khởi chạy mà `backgroundJobs.ts` **ghi chính thức** (`npm run start:worker`
+ *     alongside) chèn `cmd.exe` + `npm-cli` + `cross-env` ⇒ neo chung ở **độ sâu 3-5**; ở độ sâu 2
+ *     anh em ĐANG SỐNG vẫn bị vu là tàn dư. Nới độ sâu thì neo chạm `Code.exe`/`explorer.exe` —
+ *     đổi bắt-sót lấy bắt-quá-tay.
+ *
+ * ⇒ **CẢ CƠ CHẾ NEO TỔ TIÊN ĐÃ BỊ GỠ** (`ANCESTOR_DEPTH` không còn tồn tại — một hằng số chịu lực
+ * mà không ca test nào ràng được ở cả hai chiều thì coi như chưa có). Thay bằng hai thứ ĐO ĐƯỢC:
+ *   1. **ĐIỂM VÀO ĐÃ KHAI** (`ROLE_ENTRYPOINT_MARKERS`, có lưới đối chiếu với `package.json`);
+ *   2. **QUAN HỆ CHA-CON MỘT BƯỚC, có `CreationDate` làm chứng** (`ctime(cha) ≤ ctime(con)`) —
+ *      đúng liều thuốc reviewer chỉ định cho (A), và đủ cho MỌI sidecar vì tất cả đều `spawn()`
+ *      TRỰC TIẾP từ tiến trình vai trò.
+ *
+ * ⇒ **VÀ QUAN TRỌNG NHẤT — MỨC AN TOÀN KHÔNG CÒN PHỤ THUỘC VÀO PHÉP PHÂN LOẠI NÀY.**
+ * `baselineVerified` tắt khi **`orphans` HOẶC `peers` khác rỗng**, tức khi có BẤT KỲ mã nào của hệ
+ * đang giữ GPU ngoài cây tiến trình này. Phân loại sai (cả hai chiều) chỉ đổi CÂU NÓI, **không thể**
+ * đẻ ra một con số sai được TIN — lối hỏng của (A) bị đóng bằng CẤU TRÚC, không bằng độ chính xác
+ * của một vị từ. Đây là điều kiện để phần còn lại được phép là suy đoán tốt nhất có thể.
  *
  * ⚠ VÀ VẾ THỨ HAI PHẢI HẸP (I-3, review vòng 1): bản đầu so khớp cả **TÊN FILE TRẦN** để đỡ ca
  * `LOCAL_TRAINER_CMD=python tools/trainer/train.py` (`.env:259`). Hệ quả: **mọi** `python.exe` giữ
@@ -68,13 +90,17 @@ export interface GpuHolderCensus {
   /** Nằm trong cây tiến trình của ta ⇒ byte của chúng thuộc về sổ, không thuộc về nền. */
   readonly ours: readonly GpuHolder[];
   /**
-   * C-1 — VAI TRÒ ANH EM ĐANG SỐNG của cùng một lượt khởi chạy (`api` ⇄ `worker`): chung tổ tiên
-   * còn sống với ta. KHÔNG phải mồ côi, và TUYỆT ĐỐI không được khuyên người trực tắt.
-   * ⚠ Byte của anh em vẫn nằm ngoài sổ CỦA TIẾN TRÌNH NÀY (mỗi vai trò một sổ riêng — xem
-   * `describeTopologyHint()`); sổ chung là Pha 3. Ở đây chúng chỉ được miễn khỏi cáo buộc "tàn dư".
+   * C-1 — VAI TRÒ ANH EM ĐANG PHỤC VỤ (`api` ⇄ `worker` ⇄ `edge`), nhận ra bằng **ĐIỂM VÀO đã
+   * khai trong dòng lệnh**, hoặc là **con trực tiếp** của một tiến trình như thế. TUYỆT ĐỐI không
+   * được khuyên người trực tắt: `backgroundJobs.ts` ghi chính thức rằng topology này là cách chạy
+   * được chỉ định, nên "tắt nó đi" là lời khuyên phá sản xuất.
+   *
+   * ⚠ Byte của anh em vẫn nằm NGOÀI sổ của tiến trình này (mỗi vai trò một sổ riêng — xem
+   * `describeTopologyHint()`; sổ chung là Pha 3) ⇒ nó **VẪN LÀM `baselineVerified` TẮT**. Ngăn này
+   * chỉ đổi CÂU NÓI, không đổi mức an toàn — xem khối (A)+(D) ở đầu file.
    */
-  readonly siblings: readonly GpuHolder[];
-  /** ⚠ Chạy thứ của ta, ngoài cây, KHÔNG phải anh em sống ⇒ tàn dư lượt chạy TRƯỚC ⇒ nền NHIỄM. */
+  readonly peers: readonly GpuHolder[];
+  /** ⚠ Chạy thứ của ta, ngoài cây, KHÔNG phải vai trò anh em ⇒ tàn dư lượt trước ⇒ nền NHIỄM. */
   readonly orphans: readonly GpuHolder[];
   /** Của người khác (desktop, trình duyệt…) ⇒ đúng thứ nền sinh ra để hấp thụ. */
   readonly thirdParty: readonly GpuHolder[];
@@ -83,6 +109,15 @@ export interface GpuHolderCensus {
 /** Một dòng bảng tiến trình. `cmdline` có thể rỗng (tiến trình ta không đủ quyền đọc). */
 export interface ProcTableRow extends RawProcRow {
   readonly cmdline: string;
+  /**
+   * ★ (A) re-review vòng 1 — `Win32_Process.CreationDate` đổi ra số (FILETIME UTC). `0` = KHÔNG
+   * ĐỌC ĐƯỢC (thiếu quyền) và phải được đối xử như **không có bằng chứng**, không phải "rất cũ".
+   *
+   * ⚠ VÌ SAO BẮT BUỘC: PID trên Windows **được cấp lại**. Không có mốc tạo, quan hệ "cha-con" chỉ
+   * là một con số trùng nhau — và nó trùng ĐÚNG LÚC nguy hiểm nhất: vòng lặp kill→restart chính là
+   * lúc PID của tiến trình vừa chết được cấp cho tiến trình mới.
+   */
+  readonly ctime: number;
 }
 
 /** `pid, process_name` — một dòng CSV, KHÔNG header. Không bao giờ ném. */
@@ -124,9 +159,14 @@ export function parseProcTable(rawJson: string): ProcTableRow[] | null {
   const rows = Array.isArray(parsed) ? parsed : [parsed];
   const out: ProcTableRow[] = [];
   for (const row of rows) {
-    const r = row as { pid?: unknown; ppid?: unknown; cmd?: unknown };
+    const r = row as { pid?: unknown; ppid?: unknown; cmd?: unknown; ct?: unknown };
     if (typeof r?.pid === "number" && typeof r?.ppid === "number") {
-      out.push({ pid: r.pid, ppid: r.ppid, cmdline: typeof r.cmd === "string" ? r.cmd : "" });
+      out.push({
+        pid: r.pid,
+        ppid: r.ppid,
+        cmdline: typeof r.cmd === "string" ? r.cmd : "",
+        ctime: typeof r.ct === "number" && Number.isFinite(r.ct) && r.ct > 0 ? r.ct : 0,
+      });
     }
   }
   return out;
@@ -138,34 +178,25 @@ function norm(p: string): string {
 }
 
 /**
- * C-1 — chuỗi TỔ TIÊN còn sống của một tiến trình, GIỚI HẠN ĐỘ SÂU.
+ * ★★★ (D) re-review vòng 1 — ĐIỂM VÀO CỦA CÁC VAI TRÒ, khai TƯỜNG MINH.
  *
- * ⚠⚠ ĐỘ SÂU LÀ ĐÁNH ĐỔI CÓ HAI ĐẦU, ĐỪNG NỚI MÀ KHÔNG ĐỌC HẾT ĐOẠN NÀY:
- *   • sâu QUÁ ⇒ tổ tiên chung trở thành cái vỏ (`cmd.exe`, `Code.exe`, `explorer.exe`) mà MỌI thứ
- *     người dùng khởi chạy đều nằm dưới ⇒ mọi hộ đều thành "anh em" ⇒ cổng này mù hoàn toàn;
- *   • nông QUÁ ⇒ hai vai trò do hai người giám sát khác nhau khởi chạy không tìm thấy neo chung ⇒
- *     anh em SỐNG bị gọi là mồ côi (đúng lỗi C-1).
- * `2` phủ đúng hình dạng ĐANG CÓ trong `package.json`: một người giám sát (`pm2`/`npm`/Docker)
- * sinh cả hai vai trò ⇒ **chung cha** (độ sâu 1), và `tsx watch` chèn thêm một tầng ⇒ độ sâu 2.
- * Ca "hai terminal riêng" KHÔNG có neo chung ở bất kỳ độ sâu hợp lý nào — nó được xử ở chỗ khác:
- * câu cảnh báo của `vramReconciler` NÓI RÕ có thể là anh em sống và CẤM tự ý tắt khi `ROLE` bật.
+ * Đây là thứ thay thế cho cơ chế "neo tổ tiên" đã bị gỡ. Nhận ra một vai trò anh em bằng **thứ nó
+ * đang CHẠY** (dòng lệnh chứa điểm vào) thay vì bằng **chỗ nó nằm trong cây tiến trình**: hình dạng
+ * cây phụ thuộc `npm`/`cross-env`/`tsx`/Docker và đo được là 1→5 tầng, còn điểm vào thì KHÔNG đổi
+ * dù ai khởi chạy nó bằng cách gì.
+ *
+ * ⚠ THÊM VAI TRÒ MỚI mà quên khai ở đây ⇒ vai trò đó bị vu là "tàn dư" và người trực được khuyên
+ * tắt một tiến trình đang phục vụ. `reconciler.baselinePids.test.ts` có LƯỚI đối chiếu danh sách
+ * này với `package.json` (`start*`/`dev*`) — quên là ĐỎ.
  */
-const ANCESTOR_DEPTH = 2;
-
-export function collectAncestors(procs: readonly RawProcRow[], pid: number, maxDepth = ANCESTOR_DEPTH): Set<number> {
-  const parentOf = new Map<number, number>();
-  for (const row of procs) parentOf.set(row.pid, row.ppid);
-  const out = new Set<number>();
-  let cur = pid;
-  for (let i = 0; i < maxDepth; i++) {
-    const parent = parentOf.get(cur);
-    // pid ≤ 4 là System/Idle của Windows — neo vào đó thì cả máy là "anh em".
-    if (parent === undefined || parent <= 4 || out.has(parent)) break;
-    out.add(parent);
-    cur = parent;
-  }
-  return out;
-}
+export const ROLE_ENTRYPOINT_MARKERS = [
+  "dist\\index.js",
+  "dist\\worker.js",
+  "dist\\edgegatewaymain.js",
+  "server\\_core\\index.ts",
+  "server\\worker.ts",
+  "server\\edge\\edgegatewaymain.ts",
+] as const;
 
 /**
  * Biến môi trường khai ẢNH THỰC THI mà hệ này được cấu hình để sinh ra.
@@ -222,48 +253,123 @@ export function ownCommandSignatures(): string[] {
   return out;
 }
 
+/**
+ * ⚠ m-6 (re-review vòng 1) — `cmdline.includes(appRoot)` TRẦN là một biến thể HẸP của I-3: một
+ * tiến trình của người khác chỉ cần ĐỌC một file trong thư mục ứng dụng (`python doc.py
+ * D:\…\avi-aoi-management\data\x.csv`) là bị nhận vơ. Nay đòi thêm: đường dẫn đó phải trỏ vào một
+ * thư mục mà CHÍNH TA sinh tiến trình con từ đó. `uploads\` phủ `jobRootDir()`
+ * (`<appRoot>/uploads/training/jobs/<id>`), ba cái còn lại phủ mã và công cụ.
+ */
+const APP_SUBDIR_MARKERS = ["uploads\\", "dist\\", "server\\", "tools\\", "scripts\\"] as const;
+
+/**
+ * ★★★ (A) re-review vòng 1, MỞ RỘNG — CẮT MỌI LIÊN KẾT CHA-CON KHÔNG CÓ BẰNG CHỨNG, **TRƯỚC** khi
+ * dựng cây.
+ *
+ * ⚠⚠ PHÁT HIỆN KHI VIẾT CA TEST CHO (A), VÀ NÓ NẶNG HƠN CHỖ REVIEWER CHỈ: PID được cấp lại không
+ * chỉ đánh lừa phép "con của vai trò" — nó đánh lừa **cả `collectDescendants()`**. Một tàn dư mang
+ * `ppid` trùng số với tiến trình CỦA TA sẽ bị xếp thẳng vào `ours`, mà `ours` **KHÔNG tắt cờ
+ * `baselineVerified`** ⇒ đúng lối hỏng (A) mô tả (nền nhiễm được TIN), chỉ khác cửa vào và không
+ * có ngăn nào để lộ ra.
+ *
+ * ⇒ Bằng chứng phải áp ở NGUỒN: một liên kết `ppid` chỉ được giữ khi CẢ HAI mốc tạo đọc được VÀ
+ * `ctime(cha) ≤ ctime(con)`. Không có bằng chứng ⇒ KHÔNG có liên kết (đặt `ppid = 0`, một PID
+ * không tồn tại). Hệ quả đã cân nhắc: một tiến trình con THẬT mà ta không đọc được mốc tạo sẽ rơi
+ * khỏi `ours` — nhưng nó rơi vào `peers`/`orphans`, tức **tắt cờ verified**, tức phía AN TOÀN.
+ */
+function pruneUnprovenParentLinks(procs: readonly ProcTableRow[]): ProcTableRow[] {
+  const byPid = new Map<number, ProcTableRow>();
+  for (const r of procs) byPid.set(r.pid, r);
+  return procs.map((r) => {
+    const parent = byPid.get(r.ppid);
+    const proven = parent !== undefined && r.ctime > 0 && parent.ctime > 0 && parent.ctime <= r.ctime;
+    return proven ? r : { ...r, ppid: 0 };
+  });
+}
+
 export function classifyHolders(input: {
   holders: readonly GpuHolder[];
-  procs: readonly ProcTableRow[] | readonly RawProcRow[];
+  /**
+   * ⚠ CỐ Ý KHÔNG nhận `RawProcRow` (chỉ pid/ppid): thiếu `ctime` thì mọi liên kết cha-con đều là
+   * một con số trùng nhau, và `pruneUnprovenParentLinks()` sẽ cắt sạch — im lặng biến `ours` thành
+   * rỗng. Bắt lỗi ở KIỂU rẻ hơn nhiều so với bắt bằng một lượt nghiệm thu sống.
+   */
+  procs: readonly ProcTableRow[];
   roots: readonly number[];
   ownExecutables: readonly string[];
   appRoot?: string;
   commandSignatures?: readonly string[];
+  roleMarkers?: readonly string[];
 }): GpuHolderCensus {
-  const { holders, procs, roots, ownExecutables, appRoot, commandSignatures = [] } = input;
+  const {
+    holders,
+    procs,
+    roots,
+    ownExecutables,
+    appRoot,
+    commandSignatures = [],
+    roleMarkers = ROLE_ENTRYPOINT_MARKERS,
+  } = input;
   // ⚠ DÙNG LẠI cây tiến trình của Pha 2A — KHÔNG dựng đường thứ hai. Hai bản dựng cây song song
   // là đúng lớp lỗi "sổ song song" mà bốn pha trước đã trả giá.
-  const ourTree = collectDescendants(procs, roots);
+  // ⚠ (A) — cắt liên kết KHÔNG CÓ BẰNG CHỨNG trước khi dựng cây, xem `pruneUnprovenParentLinks()`.
+  // Làm ở đây (thay vì sửa `collectDescendants`) để KHÔNG đụng vào đường đo của `vramProcessProbe`.
+  const provenProcs = pruneUnprovenParentLinks(procs);
+  const ourTree = collectDescendants(provenProcs, roots);
   const rootSet = new Set(roots);
-  // C-1 — NEO ANH EM: tổ tiên còn sống của ta. Một hộ có tổ tiên chung với ta là vai trò khác của
-  // CÙNG lượt khởi chạy, không phải tàn dư của lượt trước.
-  const ourAnchors = new Set<number>();
-  for (const r of roots) for (const a of collectAncestors(procs, r)) ourAnchors.add(a);
 
   const exact = new Set(ownExecutables.map(norm));
   const root = appRoot ? norm(appRoot).replace(/\\+$/, "") : "";
   const sigs = commandSignatures.map(norm).filter((s) => s.length > 0);
-  const cmdlineOf = new Map<number, string>();
+  const markers = roleMarkers.map(norm).filter((s) => s.length > 0);
+  const rowOf = new Map<number, ProcTableRow>();
   for (const row of procs) {
-    const c = (row as ProcTableRow).cmdline;
-    if (typeof c === "string" && c.length > 0) cmdlineOf.set(row.pid, norm(c));
+    const r = row as ProcTableRow;
+    rowOf.set(r.pid, { pid: r.pid, ppid: r.ppid, cmdline: norm(r.cmdline ?? ""), ctime: r.ctime ?? 0 });
   }
+  const cmdOf = (pid: number) => rowOf.get(pid)?.cmdline ?? "";
 
-  // ⚠ I-3 — KHÔNG so khớp theo TÊN FILE TRẦN. Bốn lối dưới đây đều đòi một dấu vết CỦA RIÊNG HỆ
-  // NÀY (đường dẫn đã khai / thư mục ứng dụng / chữ ký lệnh đã khai), nên `python.exe` của người
-  // khác KHÔNG thể lọt vào.
+  // ⚠ I-3 — KHÔNG so khớp theo TÊN FILE TRẦN. Mọi lối dưới đây đều đòi một dấu vết CỦA RIÊNG HỆ
+  // NÀY (đường dẫn đã khai / ảnh thực thi trong thư mục ứng dụng / dòng lệnh trỏ vào thư mục con
+  // của ứng dụng / chữ ký lệnh đã khai / điểm vào vai trò), nên `python.exe` của người khác KHÔNG
+  // thể lọt vào.
   const runsOurCode = (h: GpuHolder) => {
     const n = norm(h.name);
     if (exact.has(n)) return true;
     if (root.length > 0 && n.startsWith(`${root}\\`)) return true;
-    const cmd = cmdlineOf.get(h.pid);
+    const cmd = cmdOf(h.pid);
     if (!cmd) return false;
-    if (root.length > 0 && cmd.includes(root)) return true;
-    return sigs.some((s) => cmd.includes(s));
+    if (root.length > 0 && APP_SUBDIR_MARKERS.some((s) => cmd.includes(`${root}\\${s}`))) return true;
+    if (sigs.some((s) => cmd.includes(s))) return true;
+    return markers.some((m) => cmd.includes(m));
+  };
+
+  /** Dòng lệnh mang một ĐIỂM VÀO vai trò đã khai ⇒ tiến trình này đang PHỤC VỤ. */
+  const isRoleProcess = (pid: number) => {
+    const cmd = cmdOf(pid);
+    return cmd.length > 0 && markers.some((m) => cmd.includes(m));
+  };
+
+  /**
+   * ★ (A) — CON TRỰC TIẾP của một vai trò, có `CreationDate` LÀM CHỨNG.
+   *
+   * Một bước duy nhất là ĐỦ vì mọi sidecar đều `spawn()` thẳng từ tiến trình vai trò
+   * (`llamaVisionSidecar` · `localSidecarTrainer` · `aiLlmFinetuneSidecar` · `kbSyncScheduler`).
+   * ⚠ Hai vế `ctime` là BẮT BUỘC: thiếu chúng, một PID được cấp lại (đúng vòng lặp kill→restart)
+   * đủ để một tàn dư nhận nhầm một "cha" chưa từng sinh ra nó. `0` = không đọc được mốc tạo ⇒
+   * KHÔNG có bằng chứng ⇒ KHÔNG cấp tư cách anh em (chỉ đổi câu nói, không đổi mức an toàn).
+   */
+  const isChildOfRole = (h: GpuHolder) => {
+    const me = rowOf.get(h.pid);
+    if (!me) return false;
+    const parent = rowOf.get(me.ppid);
+    if (!parent || !isRoleProcess(parent.pid)) return false;
+    if (me.ctime <= 0 || parent.ctime <= 0) return false;
+    return parent.ctime <= me.ctime;
   };
 
   const ours: GpuHolder[] = [];
-  const siblings: GpuHolder[] = [];
+  const peers: GpuHolder[] = [];
   const orphans: GpuHolder[] = [];
   const thirdParty: GpuHolder[] = [];
   for (const h of holders) {
@@ -275,12 +381,10 @@ export function classifyHolders(input: {
       thirdParty.push(h);
       continue;
     }
-    // C-1 — chung tổ tiên CÒN SỐNG ⇒ vai trò anh em của cùng lượt khởi chạy, KHÔNG phải tàn dư.
-    const anchors = collectAncestors(procs, h.pid);
-    if ([...anchors].some((a) => ourAnchors.has(a))) siblings.push(h);
+    if (isRoleProcess(h.pid) || isChildOfRole(h)) peers.push(h);
     else orphans.push(h);
   }
-  return { holders, ours, siblings, orphans, thirdParty };
+  return { holders, ours, peers, orphans, thirdParty };
 }
 
 const SMI_TIMEOUT_MS = 3000;
@@ -327,7 +431,11 @@ function run(cmd: string, args: string[], timeout: number): Promise<string | nul
  */
 const PS_PROC_TABLE = [
   "$ErrorActionPreference='Stop';",
-  "Get-CimInstance Win32_Process|ForEach-Object{ @{ pid=[int]$_.ProcessId; ppid=[int]$_.ParentProcessId; cmd=[string]$_.CommandLine } }|",
+  "Get-CimInstance Win32_Process|ForEach-Object{ @{ pid=[int]$_.ProcessId; ppid=[int]$_.ParentProcessId;",
+  "cmd=[string]$_.CommandLine;",
+  // ★ (A) — mốc TẠO, thứ duy nhất phân biệt "cha thật" với "PID được cấp lại". `0` khi không đọc
+  // được (thiếu quyền) — người đọc phải hiểu là KHÔNG CÓ BẰNG CHỨNG, không phải "rất cũ".
+  "ct=$(if($_.CreationDate){[long]$_.CreationDate.ToFileTimeUtc()}else{0}) } }|",
   "ConvertTo-Json -Compress",
 ].join(" ");
 
@@ -335,6 +443,30 @@ function warnOnce(msg: string): void {
   if (warnedUnavailable) return;
   warnedUnavailable = true;
   console.warn(msg);
+}
+
+let warnedBareDeclarations = false;
+/**
+ * ★ m-5 (re-review vòng 1) — MỘT KHAI BÁO **VÔ HÌNH** PHẢI KÊU, KHÔNG ĐƯỢC IM.
+ *
+ * `nvidia-smi` luôn trả **đường dẫn đầy đủ**, nên một biến `*_BIN` khai bằng **tên trần**
+ * (`WHISPER_BIN=whisper-cli.exe`, dựa vào `PATH`) sẽ **không bao giờ khớp** — hộ đó vô hình với
+ * cổng, và lưới I-2 cũng không thấy vì tên biến VẪN có mặt trong danh sách. Đó đúng là "khai cho
+ * có" — tệ hơn không khai, vì nó tạo cảm giác đã phủ.
+ *
+ * ⚠ KHÔNG "sửa" bằng cách so khớp theo tên file: đó là quay lại đúng I-3 (mọi `python.exe` của
+ * người khác thành của ta). Lối đúng là NÓI RA để người vận hành khai đường dẫn tuyệt đối.
+ */
+function warnAboutBareExecutableDeclarations(ownExecutables: readonly string[]): void {
+  if (warnedBareDeclarations) return;
+  const bare = ownExecutables.filter((p) => !p.includes("\\") && !p.includes("/"));
+  if (bare.length === 0) return;
+  warnedBareDeclarations = true;
+  console.warn(
+    `[vram] ${bare.length} ảnh thực thi được khai bằng TÊN TRẦN (${bare.join(", ")}) — nvidia-smi luôn trả ` +
+      "ĐƯỜNG DẪN ĐẦY ĐỦ nên khai kiểu này KHÔNG BAO GIỜ khớp: tàn dư của hộ đó sẽ vô hình với cổng nền. " +
+      "Khai bằng đường dẫn TUYỆT ĐỐI trong .env.",
+  );
 }
 
 /**
@@ -348,6 +480,14 @@ function warnOnce(msg: string): void {
  * về **byte PDH theo tiến trình**, tức đặt một thước KHÁC ngay cạnh chỗ đang tính nền bằng
  * `nvidia-smi` — mồi cho một vi phạm Đ4 mà người sau chỉ cần "dọn dẹp" một dòng là sập vào. Thứ
  * DÙNG LẠI ở đây là `collectDescendants` — cây tiến trình, không phải phép đo.
+ *
+ * ⚠ m-3 (re-review vòng 1) — CHI PHÍ THẬT, ĐO LẠI, KHÔNG PHẢI SỐ TÔI ĐOÁN Ở VÒNG TRƯỚC:
+ * `nvidia-smi` **56-62 ms** + `powershell.exe` (Win32_Process) **316-341 ms** ⇒ **≈ 380-400 ms**
+ * mỗi lượt quét. Và câu "đôi khi mới cần PowerShell" của bản trước SAI: trên máy có desktop **luôn
+ * có** hộ ngoài `roots` (đo được 15), nên lượt PowerShell là **LUÔN LUÔN**; lối tắt bên dưới chỉ
+ * cứu được máy headless không ai giữ GPU.
+ * ⇒ Chi phí này chỉ trả **cho tới khi nền được XÁC MINH** — sau đó `captureVramBaseline()` thoát ở
+ * dòng đầu và không lượt quét nào chạy nữa.
  *
  * KHÔNG BAO GIỜ ném.
  */
@@ -378,7 +518,9 @@ export async function readGpuHolders(roots: readonly number[]): Promise<GpuHolde
   const commandSignatures = ownCommandSignatures();
   const appRoot = process.cwd();
   const rootSet = new Set(roots);
-  // Không hộ nào ngoài chính ta ⇒ khỏi bảng tiến trình (không cần cây, tổ tiên, hay dòng lệnh).
+  warnAboutBareExecutableDeclarations(ownExecutables);
+  // Không hộ nào ngoài chính ta ⇒ khỏi bảng tiến trình. ⚠ Trên máy có desktop nhánh này KHÔNG BAO
+  // GIỜ chạy (đo được 15 hộ) — xem m-3 ở docstring.
   if (!holders.some((h) => !rootSet.has(h.pid))) {
     return classifyHolders({ holders, procs: [], roots, ownExecutables, appRoot, commandSignatures });
   }

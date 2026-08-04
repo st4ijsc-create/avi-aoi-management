@@ -393,12 +393,6 @@ let baselineBlockedReason: "loading-lease" | "device-below-committed" | null = n
  * Gộp hai ô lại là ép một trong hai người tiêu thụ nhận câu trả lời của người kia.
  */
 let baselineVerified = false;
-/**
- * Pha 2B Task 1 — tên các tiến trình MỒ CÔI đang chặn lượt chụp nền (rỗng = không có). Giữ lại để
- * câu BÁO ĐỘNG sau `BASELINE_BLOCKED_ALARM_MS` nêu ĐÍCH DANH thứ cần tắt: `blockingOwners` (chủ
- * giấy phép) VÔ DỤNG ở ca này — kẻ chặn không có trong sổ, đó chính là lý do nó chặn.
- */
-let blockingForeignHolders: string[] = [];
 /** Pha 2B Task 1 — đã cảnh báo "nền chưa xác minh ⇒ chạy mù" chưa (một lần/vòng đời tiến trình). */
 let warnedUnverifiedBaseline = false;
 
@@ -446,9 +440,11 @@ export async function captureVramBaseline(
    * Đảo thứ tự thì cửa sổ đua đổi sang chiều AN TOÀN: quét thấy tàn dư (T₀) rồi nó chết (T₀+ε) ⇒
    * ta đánh dấu `unverified` cho một con số thật ra đã sạch — bi quan, và tự lành ở nhịp sau.
    *
-   * ⚠ GIÁ PHẢI TRẢ, nói rõ: lượt quét nay chạy TRƯỚC cả hai lá chắn hoãn, nên những nhịp bị hoãn
-   * (đang nạp model / sổ cộng dư) vẫn tốn một `nvidia-smi` (~70 ms) + đôi khi một `powershell.exe`
-   * (~200 ms). Chỉ tới khi nền được XÁC MINH — thì dòng `return` ngay trên cắt sạch chi phí đó.
+   * ⚠ GIÁ PHẢI TRẢ, nói rõ (m-3 — số ĐO LẠI, số cũ ở đây SAI): lượt quét nay chạy TRƯỚC cả hai lá
+   * chắn hoãn, nên những nhịp bị hoãn (đang nạp model / sổ cộng dư) vẫn tốn `nvidia-smi`
+   * **56-62 ms** + `powershell.exe` **316-341 ms** ≈ **380-400 ms**, và lượt PowerShell là **LUÔN
+   * LUÔN** trên máy có desktop (15 hộ), không phải "đôi khi". Chỉ tới khi nền được XÁC MINH thì
+   * dòng `return` ngay trên mới cắt sạch chi phí đó.
    *
    * ⚠ CÒN MỘT NGUỒN CŨ HƠN, ĐÃ KIỂM: `readDeviceVram()` có ĐỆM `VRAM_PROBE_CACHE_MS` (5 s). Trong
    * sản xuất nó KHÔNG chạm được ca này — nhịp đối chiếu cách nhau 60 s và `__runReconcileTick()`
@@ -458,14 +454,25 @@ export async function captureVramBaseline(
    * khác, đúng lỗi I-3 mà `vramProbe.ts` đã phải tách hàm để diệt.
    */
   const census = await readGpuHoldersSafe();
-  if (baselineCaptured) {
-    // Tới đây ⇒ đã chốt nhưng CHƯA XÁC MINH. Còn mù hoặc còn tàn dư thì giữ nguyên con số hiện có
-    // (nó vẫn chặt hơn chỉ-sổ — xem I-1); sạch rồi thì VỨT nó và chụp lại bằng đường bình thường.
-    if (census === null || census.orphans.length > 0) return baselineUsedBytes;
-    console.log("[vram] tàn dư đã rời GPU ⇒ HUỶ nền chưa xác minh và chụp lại (Pha 2B Task 1, I-1).");
-    baselineCaptured = false;
-    baselineUsedBytes = null;
-    baselineSource = null;
+  /**
+   * ★★ N-1 (re-review vòng 1) — GIỮ NỀN CŨ CHO TỚI KHI THẬT SỰ CÓ NỀN MỚI.
+   *
+   * ⚠ LỖI CỦA CHÍNH BẢN VÁ I-1, DO RE-REVIEW BẮT: bản trước **vứt nền ngay tại đây** (`baselineCaptured
+   * = false; baselineUsedBytes = null`) rồi mới đi qua hai lá chắn hoãn. Ba lối `return null` phía
+   * sau (đầu dò hỏng · còn giấy phép đang nạp · thiết bị < đã commit) để lại `baselineUsedBytes ===
+   * null` ⇒ `attributableBytes` thành `null` ⇒ **rơi thẳng về chỉ-sổ, tức CHẶN TRÊN** — đúng thứ
+   * I-1 vừa sửa để tránh, chỉ khác đường vào. Chạm được thật: tàn dư chết đúng lúc đang nạp model,
+   * hoặc khi còn một lease `sidecar:local-trainer` (ttl **2 giờ**) ở trạng thái đang-nạp.
+   *
+   * ⇒ Nay chỉ ghi cờ Ý ĐỊNH; nền cũ **không bị chạm** cho tới dòng gán ở cuối hàm (nơi đã chắc chắn
+   * có số mới). Ba lối `return` kia trả về **nền CŨ**, không trả `null`.
+   */
+  const recapturing = baselineCaptured;
+  if (recapturing) {
+    // Đã chốt nhưng CHƯA XÁC MINH. Còn mù / còn tàn dư / còn vai trò anh em ⇒ giữ nguyên con số
+    // hiện có (vẫn chặt hơn chỉ-sổ — I-1). Sạch hẳn rồi mới chụp lại.
+    if (census === null || census.orphans.length > 0 || census.peers.length > 0) return baselineUsedBytes;
+    console.log("[vram] mã của hệ đã rời GPU ⇒ chụp LẠI nền chưa xác minh (Pha 2B Task 1, I-1).");
   }
 
   let device: { usedBytes: number; source: "native" | "smi" } | null = null;
@@ -475,7 +482,8 @@ export async function captureVramBaseline(
     device = null;
   }
   // Chưa đọc được ⇒ KHÔNG ghim, KHÔNG kết luận. Nhịp sau thử lại.
-  if (!device) return null;
+  // ⚠ N-1: đang chụp LẠI thì trả nền CŨ, KHÔNG trả `null` — `null` là chỉ-sổ, tức chặn trên.
+  if (!device) return recapturing ? baselineUsedBytes : null;
 
   const snap = snapshot();
   const ledgerTotal = snap.totalReservedBytes;
@@ -511,9 +519,11 @@ export async function captureVramBaseline(
   const loading = snap.leases.filter(holdsUncommittedBytes);
   if (loading.length > 0) {
     const blockingOwners = loading.map((l) => l.request.owner);
-    const firstOfStreak = baselineBlockedSinceMs === null;
+    // ⚠ N-1: đồng hồ này đo "đã BAO LÂU không có nền". Đang chụp lại (nền cũ còn nguyên) thì ta
+    // KHÔNG mù, nên không được bấm giờ — bấm là gieo một báo động sai cho tương lai.
+    const firstOfStreak = !recapturing && baselineBlockedSinceMs === null;
     if (firstOfStreak) baselineBlockedSinceMs = Date.now();
-    baselineBlockedReason = "loading-lease";
+    if (!recapturing) baselineBlockedReason = "loading-lease";
     console.warn(
       `[vram] HOÃN lượt chụp nền: còn ${loading.length} giấy phép ĐANG NẠP (${blockingOwners.join(", ")}) — ` +
         `byte của chúng đã lên thiết bị nhưng CHƯA vào sổ, chụp lúc này là nuốt trọn chúng vào nền ` +
@@ -553,7 +563,8 @@ export async function captureVramBaseline(
         },
       });
     }
-    return null;
+    // ⚠ N-1: đang chụp LẠI thì trả nền CŨ, KHÔNG trả `null` — `null` là chỉ-sổ, tức chặn trên.
+    return recapturing ? baselineUsedBytes : null;
   }
 
   // Trạng thái MÂU THUẪN: thiết bị đang giữ ÍT HƠN tổng ta đã ĐO ĐƯỢC trên chính nó. Không thể
@@ -568,9 +579,10 @@ export async function captureVramBaseline(
     // Pha 1.5 Task 7 — LÊN CÙNG MỘT ĐỒNG HỒ với lối từ chối vì lease đang nạp (lý do đầy đủ ở
     // khai báo `baselineBlockedReason`). Nghiệm thu LIVE bắt được nhánh này lặp ở MỌI nhịp suốt
     // cả lượt chạy; nếu nó không kêu thì reconciler mù VĨNH VIỄN mà không ai biết.
-    if (baselineBlockedSinceMs === null) baselineBlockedSinceMs = Date.now();
-    baselineBlockedReason = "device-below-committed";
-    return null;
+    if (!recapturing && baselineBlockedSinceMs === null) baselineBlockedSinceMs = Date.now();
+    if (!recapturing) baselineBlockedReason = "device-below-committed";
+    // ⚠ N-1: cùng lý do — nền cũ vẫn chặt hơn chỉ-sổ.
+    return recapturing ? baselineUsedBytes : null;
   }
 
   /**
@@ -601,31 +613,49 @@ export async function captureVramBaseline(
    * đầy đủ + phần lỗ CÒN LẠI nằm ở docstring `vramGpuHolders.ts`. Đọc trước khi nới/siết vị từ.
    */
   const orphans = census?.orphans ?? [];
+  const peers = census?.peers ?? [];
+  const nameOf = (h: { pid: number; name: string }) => `${h.name} (pid ${h.pid})`;
 
   baselineUsedBytes = raw - committedBytes;
   baselineCaptured = true;
   baselineSource = device.source;
   /**
-   * Hai lối vào `unverified`, khác nguyên nhân nhưng CÙNG hệ quả (nền có thể đã nuốt byte của kẻ
-   * khác ⇒ Task 2/5 phải chặt hơn):
+   * ★★★ BA lối vào `unverified`, khác nguyên nhân nhưng CÙNG hệ quả (nền có thể đã nuốt byte nằm
+   * ngoài sổ của tiến trình này ⇒ Task 2/5 phải chặt hơn):
    *   • `census === null` — KHÔNG quét được (nvidia-smi vắng, không phải Windows, công tắc tắt);
-   *   • `orphans.length > 0` — quét được và THẤY tàn dư.
+   *   • `orphans.length > 0` — thấy TÀN DƯ (sidecar mất chủ);
+   *   • `peers.length > 0`   — thấy VAI TRÒ ANH EM đang phục vụ (sổ RIÊNG, sổ chung là Pha 3).
+   *
+   * ⚠⚠ VẾ THỨ BA LÀ CHỖ ĐÓNG LỖ (A) BẰNG CẤU TRÚC (re-review vòng 1). Nếu `verified` chỉ nhìn
+   * `orphans`, thì MỘT lần phân loại nhầm "tàn dư → anh em" là đủ đóng dấu TIN lên một nền nhiễm,
+   * và không lượt quét nào sửa được nữa (`captureVramBaseline()` thoát ở dòng đầu khi đã verified).
+   * Nay mọi mã của hệ nằm ngoài cây tiến trình đều tắt cờ, nên **phân loại sai chỉ đổi CÂU NÓI**,
+   * không đổi mức an toàn. Đừng "tối ưu" vế `peers` ra khỏi dòng dưới.
+   *
    * ⚠ `unverified` KHÔNG có nghĩa "bẩn", nó có nghĩa **KHÔNG BIẾT** — và không được suy ra một
    * con số nào từ nó.
    */
-  baselineVerified = census !== null && orphans.length === 0;
-  blockingForeignHolders = orphans.map((h) => `${h.name} (pid ${h.pid})`);
+  baselineVerified = census !== null && orphans.length === 0 && peers.length === 0;
 
-  if (orphans.length > 0) {
+  if (orphans.length > 0 || peers.length > 0) {
+    const mibNow = Math.round(baselineUsedBytes / 1024 / 1024);
+    // Hai CÂU khác nhau vì hai HÀNH ĐỘNG khác nhau. Gộp một câu là hoặc bỏ sót lời khuyên đúng,
+    // hoặc khuyên tắt một tiến trình đang phục vụ.
+    const orphanSentence =
+      orphans.length > 0
+        ? `${orphans.length} TÀN DƯ của lượt chạy trước (${orphans.map(nameOf).join(", ")}) — tắt chúng ` +
+          `THEO ĐÚNG PID; nền sẽ tự chụp lại ngay khi chúng rời GPU. `
+        : "";
+    const peerSentence =
+      peers.length > 0
+        ? `${peers.length} VAI TRÒ ANH EM đang phục vụ (${peers.map(nameOf).join(", ")}) — ĐỪNG TẮT: mỗi vai ` +
+          `trò giữ sổ RIÊNG, sổ chung là Pha 3. `
+        : "";
     console.warn(
-      `[vram] nền vừa chốt (${Math.round(baselineUsedBytes / 1024 / 1024)} MiB) ĐÃ NHIỄM: ` +
-        `${orphans.length} tiến trình chạy ảnh thực thi CỦA HỆ đang giữ GPU ngoài cây tiến trình này ` +
-        `(${blockingForeignHolders.join(", ")}) — tàn dư của lượt chạy TRƯỚC, byte của chúng vừa bị nuốt ` +
-        `vào nền. Nền được đánh dấu CHƯA XÁC MINH (cưỡng chế sẽ chặt hơn), và sẽ TỰ CHỤP LẠI ngay khi ` +
-        `chúng rời GPU. Tắt chúng THEO ĐÚNG PID nếu là tàn dư thật. ` +
+      `[vram] nền vừa chốt (${mibNow} MiB) CHƯA XÁC MINH: có mã của hệ đang giữ GPU ngoài cây tiến trình ` +
+        `này. ${orphanSentence}${peerSentence}` +
+        `Con số nền VẪN ĐƯỢC DÙNG (nền nhiễm luôn chặt hơn chỉ-sổ), nhưng cưỡng chế sẽ chạy CHẶT HƠN. ` +
         `⚠ KHÔNG biết chúng giữ bao nhiêu (nvidia-smi trả [N/A]) nên KHÔNG trừ và KHÔNG đoán.` +
-        // C-1 — ở topology đa vai trò, một tiến trình "ngoài cây" có thể là ANH EM ĐANG SỐNG mà
-        // neo tổ tiên không bắt được (hai người giám sát khác nhau). Câu này CẤM tay nhanh.
         describeTopologyHint(),
     );
     logVramEvent({
@@ -639,18 +669,19 @@ export async function captureVramBaseline(
         deviceUsedRawBytes: raw,
         committedBytes,
         ledgerTotalBytes: ledgerTotal,
-        // Nền ĐÃ chốt (đã nhiễm) — ghi ra để đọc lại nhật ký là dựng lại được phép tính.
-        // ⚠ KHÔNG trường nào mang byte của hộ mồ côi: ta không biết, và không đoán.
+        // Nền ĐÃ chốt (có thể đã nhiễm) — ghi ra để đọc lại nhật ký là dựng lại được phép tính.
+        // ⚠ KHÔNG trường nào mang byte của hộ ngoài cây: ta không biết, và không đoán.
         baselineUsedBytes,
         orphanHolders: orphans.map((h) => ({ pid: h.pid, name: h.name })),
-        siblingHolders: (census?.siblings ?? []).map((h) => ({ pid: h.pid, name: h.name })),
+        peerHolders: peers.map((h) => ({ pid: h.pid, name: h.name })),
         thirdPartyHolders: (census?.thirdParty ?? []).map((h) => ({ pid: h.pid, name: h.name })),
         ourHolders: (census?.ours ?? []).map((h) => ({ pid: h.pid, name: h.name })),
         note:
-          "Nền CHỐT nhưng CHƯA XÁC MINH: có tiến trình chạy ảnh thực thi CỦA HỆ, ngoài cây tiến " +
-          "trình và không phải anh em đang sống (tàn dư sau khi server khởi động lại). Nền vẫn " +
-          "được chốt vì một nền NHIỄM luôn CHẶT HƠN chỉ-sổ (max(L,A) ≥ L) — vứt nó đi là tự nới " +
-          "dư địa. KHÔNG biết hộ đó giữ bao nhiêu (used_memory = [N/A]) nên KHÔNG trừ, KHÔNG đoán.",
+          "Nền CHỐT nhưng CHƯA XÁC MINH: có mã của hệ đang giữ GPU ngoài cây tiến trình này — " +
+          "`orphanHolders` = tàn dư (tắt được), `peerHolders` = vai trò anh em đang phục vụ (ĐỪNG " +
+          "tắt, sổ riêng, Pha 3). Nền vẫn được chốt vì một nền NHIỄM luôn CHẶT HƠN chỉ-sổ " +
+          "(max(L,A) ≥ L) — vứt nó đi là tự nới dư địa. KHÔNG biết chúng giữ bao nhiêu " +
+          "(used_memory = [N/A]) nên KHÔNG trừ, KHÔNG đoán.",
       },
     });
   } else if (!baselineVerified && !warnedUnverifiedBaseline) {
@@ -722,8 +753,11 @@ export async function captureVramBaseline(
       /**
        * ★ Pha 2B Task 1 — nền này có bằng chứng hay không, và bằng chứng đó là GÌ.
        *
-       * `baselineVerified: false` ⇒ `attributableBytes` của mọi nhịp sau là `null` ⇒ cưỡng chế
-       * chạy chỉ-sổ. Ai đọc nhật ký mà bỏ qua ô này sẽ tưởng con số nền là một sự thật đã kiểm.
+       * ⚠ m-1 (re-review vòng 1) — bản trước của chính dòng này còn viết *"`baselineVerified:
+       * false` ⇒ `attributableBytes` của mọi nhịp sau là `null`"*. Câu đó **ĐÃ BỊ I-1 BÁC BỎ** và
+       * nay khẳng định NGƯỢC với mã: `attributableBytes` KHÔNG phụ thuộc `baselineVerified` nữa
+       * (vì `max(L, A) ≥ L`, vứt một nền nhiễm là NỚI dư địa). Cờ này là ĐẦU VÀO để Task 2/5 chạy
+       * CHẶT HƠN — nó không xoá con số nào cả.
        *
        * `gpuHolders` là **DỮ LIỆU CHO LƯỢT SAU**, không phải trang trí: nó là thứ duy nhất trả
        * lời được câu "893 MiB nền kia gồm những ai" khi có người hỏi lại. Và nếu một ngày danh
@@ -734,10 +768,10 @@ export async function captureVramBaseline(
       gpuHolders: census
         ? {
             ours: census.ours.map((h) => ({ pid: h.pid, name: h.name })),
-            // C-1 — vai trò ANH EM đang sống (api ⇄ worker). Ghi riêng khỏi `thirdParty`: byte của
-            // chúng là của HỆ NÀY (chỉ nằm ở sổ khác), nên người đọc nhật ký không được gộp chúng
-            // vào "nền của máy" khi đi truy một khoản lệch.
-            siblings: census.siblings.map((h) => ({ pid: h.pid, name: h.name })),
+            // C-1 — vai trò ANH EM đang phục vụ (api ⇄ worker ⇄ edge). Ghi riêng khỏi `thirdParty`:
+            // byte của chúng là của HỆ NÀY (chỉ nằm ở sổ khác), nên người đọc nhật ký không được
+            // gộp chúng vào "nền của máy" khi đi truy một khoản lệch.
+            peers: census.peers.map((h) => ({ pid: h.pid, name: h.name })),
             orphans: census.orphans.map((h) => ({ pid: h.pid, name: h.name })),
             thirdParty: census.thirdParty.map((h) => ({ pid: h.pid, name: h.name })),
           }
@@ -786,7 +820,6 @@ export function __resetVramBaselineForTests(): void {
   // Pha 2B Task 1 — cùng lý do: không reset thì test sau KẾ THỪA "nền đã xác minh" của test trước,
   // và `attributableBytes` sẽ có số ở đúng những ca sinh ra để chứng minh nó KHÔNG được có số.
   baselineVerified = false;
-  blockingForeignHolders = [];
   warnedUnverifiedBaseline = false;
 }
 
