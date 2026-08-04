@@ -149,6 +149,15 @@ D-1: *phân tích khả-năng-với-tới là một câu hỏi về tính hợp 
 **Sửa một trường hợp của một lớp lỗi không cho miễn nhiễm với lớp lỗi đó, và có thể còn làm yếu đi.**
 D-2 tái tạo đúng lỗi I-5 **trong chính commit sửa I-5**, cách mười hai file. D-2 cũng tìm đúng cơ chế rò cổng rồi **khẳng định phạm vi thay vì đi grep**, và hai chỗ bỏ sót **tệ hơn** chỗ đã sửa. → **Biện pháp đối kháng là một đợt quét, không phải sự cẩn thận. Mọi bản sửa kèm một lệnh grep tìm anh em của nó.**
 
+🔴 **Bổ sung sau Đợt D — ba trên ba, và đó không phải sự bất cẩn.** Cùng một hình dạng xảy ra ba lần trong đợt này, mỗi lần **bên trong chính bản sửa cho nó**: D-2 tái tạo I-5 trong commit sửa I-5; D-7c quét nửa vời trong lúc đang viết ra quy tắc chống quét nửa vời; và tôi thêm `EXPECT_WARNINGS` với lập luận *"một con số được in không phải một phép kiểm"* rồi **để nguyên một con số được in y hệt cách đó mười một dòng** (`BUILD_NODES` — bộ đo của chính bẫy số 8).
+
+→ **Chẩn đoán: bản sửa và phép quét *cảm giác* như một hành động, nhưng là hai.** Khi đã hiểu ra cơ chế, việc sửa chỗ đang nhìn cho ta cảm giác *đã xong* — và cảm giác đó chính là lúc phép quét bị bỏ. Vậy nên phép quét phải là một bước **riêng, sau khi commit đã xanh**, không phải một phần của việc sửa.
+
+🔴 **Và một đính chính về cách quét, sau khi một phép quét ĐÚNG vẫn mù (D-7b, ca thứ sáu của lớp "một chuỗi, hai đường sinh").**
+Phép quét ấy grep tên trường phân biệt hai đường (`existing.Source`). Công thức đúng, phép tìm sai: tên trường **chỉ xuất hiện ở nơi nó đã nằm trong tầm nhìn**, nên phép quét liệt kê được những lệnh trả về *nhìn thấy* trường ấy mà bỏ qua nó, và **mù về cấu trúc** với một lệnh trả về trong một kiểu **chưa bao giờ nhận** trường ấy. Ca sống sót (`TryFindBlockedDevice`) nhận `bindings` + `roster`, không bao giờ nhận store — `Source` **không thể nào** xuất hiện trong grep đó.
+
+→ **Bắt đầu từ TẬP CÁC LỆNH TRẢ VỀ, không phải từ tên trường**, rồi hỏi ở từng chỗ xem trường ấy có nằm trong tầm nhìn không. **"Không nằm trong tầm nhìn" là câu trả lời NGUY HIỂM, không phải câu an toàn.** Nếu đưa nó vào tầm nhìn là quá đắt ở một chỗ nào đó, hãy viết một câu **đúng mà không cần trường ấy** — tốt hơn một phép rẽ không dựng nổi — và nói rõ tại chỗ đó rằng câu hỏi **đã được đặt ra**.
+
 **Một bài test cấp giá trị mà nó đang kiểm thì mù với việc ai chọn giá trị đó.**
 D-2 **đã có** một bài test retry, viết từ trước vì một đột biến sống sót — và nó không thấy I-2, vì nó tự truyền vào cái con số nó đang kiểm. Thêm test cùng hình dạng sẽ không bao giờ tìm ra. → **Khẳng định trên giá trị đã tới ranh giới, không phải giá trị bạn đưa vào.**
 
