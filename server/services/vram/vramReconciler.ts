@@ -7,6 +7,16 @@ import type { HeadroomTickFields } from "./vramHeadroom";
 import {
   __resetDecisionTickForTests, decisionTickFailureStreak, noteDecisionTickFailure, publishDecisionTick,
 } from "./vramTickCell";
+/**
+ * ★★★ Pha 3 Task 3 (N-WB-1) — SỔ CHUNG. Nhập TĨNH được vì `vramSharedLedger` là **module LÁ**:
+ * nó chỉ `import type`, không I/O, không kéo theo `vramBroker`/DB (xem docstring ở đó). Đây cũng
+ * là lý do nửa ĐỒNG BỘ của sổ chung phải nằm ở một file riêng với nửa I/O.
+ */
+import {
+  publishOwnSharedBaseline, readSharedBaseline, readSharedLedgerReplica, sharedLedgerFact,
+  sharedLedgerSelfKey,
+} from "./vramSharedLedger";
+import type { SharedBaselineRecord } from "./vramSharedLedger";
 
 /**
  * Pha 2B Task 1 — quét danh tính hộ đang giữ GPU, KHÔNG BAO GIỜ ném, KHÔNG BAO GIỜ chặn đường boot.
@@ -206,7 +216,32 @@ export interface VramReconcileResult {
    * về mặt hiệu lực, dù đạt về mặt phát hiện.
    */
   readonly baselineVerified: boolean;
+  /**
+   * ★★★ Pha 3 Task 3 (N-WB-1) — **NỀN NÀY ĐÃ TRỪ BYTE CỦA ANH EM CHƯA, VÀ BẰNG CÁCH NÀO.**
+   *
+   * ⚠⚠ ĐÂY LÀ Ô GHÉP HAI VẾ LẠI VỚI NHAU, và nó tồn tại vì **sửa một vế là tạo ra một lỗi mới cùng
+   * độ lớn, ngược dấu** (bàn giao cứng của Task 2):
+   *   • `"local"`    — nền chụp theo công thức Pha 2B (`raw − committedLocal`), tức **ĐÃ NUỐT** byte
+   *     anh em ⇒ vế SỔ **KHÔNG ĐƯỢC** cộng `foreignBytes` (cộng vào là **TRỪ HAI LẦN**, lệch âm giả
+   *     đúng bằng khối anh em đang giữ — đo được ~17 GB).
+   *   • `"captured"` — chính tiến trình này chụp, đã trừ `foreignBytes` ⇒ vế SỔ **PHẢI** cộng.
+   *   • `"adopted"`  — đọc nền của người chụp (cũng đã trừ) ⇒ vế SỔ **PHẢI** cộng.
+   *
+   * ⇒ **MỘT biến, MỘT người ghi (`captureVramBaseline`), HAI người đọc** (công thức nền và công thức
+   * lệch) — đúng khuôn `MocCaiChet` của Task 1. Không có ô này thì hai vế là hai bản sao của cùng
+   * một giả định và chúng sẽ trôi khỏi nhau (ràng buộc 12).
+   */
+  readonly baselineOrigin: BaselineOrigin;
+  /**
+   * Byte anh em ĐÃ THẬT SỰ được cộng vào vế SỔ ở lượt này. `0` khi `baselineOrigin === "local"`
+   * (cố ý — xem trên); `null` khi nền đã trừ anh em mà sổ chung **không đọc được** ⇒ lượt này
+   * KHÔNG so được, `driftBytes` cũng `null`. Ghi ra để đọc kết quả là dựng lại được phép tính.
+   */
+  readonly foreignLedgerBytes: number | null;
 }
+
+/** Xem `VramReconcileResult.baselineOrigin`. */
+export type BaselineOrigin = "local" | "captured" | "adopted";
 
 let timer: NodeJS.Timeout | null = null;
 
@@ -422,7 +457,18 @@ let baselineBlockedSinceMs: number | null = null;
  * đồng hồ chặn thì đổi "nền nhiễm vĩnh viễn" lấy "IM LẶNG vĩnh viễn" — vẫn là hỏng im lặng, đúng
  * lớp lỗi EXP-1. Cả HAI lối từ chối vì thế cùng lên MỘT đồng hồ.
  */
-let baselineBlockedReason: "loading-lease" | "device-below-committed" | null = null;
+let baselineBlockedReason:
+  | "loading-lease"
+  | "device-below-committed"
+  /**
+   * ★ Pha 3 Task 3 — lối từ chối THỨ BA: `thiết bị < đã commit + byte anh em`. Phải TÁCH khỏi
+   * `"device-below-committed"` vì HÀNH ĐỘNG SỬA khác hẳn: ở đây sổ CỤC BỘ có thể hoàn toàn đúng,
+   * thứ sai là **con số anh em công bố** (một hàng MA của tiến trình đã chết, hoặc một bản sao cũ
+   * bắt kịp muộn). Gộp hai lối vào một câu là bắt người trực đi soi `commitMeasured()` của chính
+   * mình cho một khoản do tiến trình khác gây ra.
+   */
+  | "device-below-shared"
+  | null = null;
 /**
  * ★★★ Pha 2B Task 1 — NỀN NÀY ĐÃ ĐƯỢC XÁC MINH CHƯA (xem `VramReconcileResult.baselineVerified`).
  *
@@ -436,6 +482,81 @@ let baselineBlockedReason: "loading-lease" | "device-below-committed" | null = n
 let baselineVerified = false;
 /** Pha 2B Task 1 — đã cảnh báo "nền chưa xác minh ⇒ chạy mù" chưa (một lần/vòng đời tiến trình). */
 let warnedUnverifiedBaseline = false;
+
+/** Xem `VramReconcileResult.baselineOrigin`. Người ghi DUY NHẤT: `captureVramBaseline()`. */
+let baselineOrigin: BaselineOrigin = "local";
+/** Danh tính người chụp mà ta đã ĐỌC gần nhất — để không in một dòng nhận nền ở MỌI nhịp. */
+let lastAdoptedFrom: string | null = null;
+/** Đã kêu "không có sổ chung ⇒ nền chụp CỤC BỘ" chưa (một lần mỗi quãng, xoá khi lên được chế độ chung). */
+let warnedLocalBaseline = false;
+/** Đã kêu "nền đã trừ anh em nhưng sổ chung không đọc được ⇒ KHÔNG so được" chưa. */
+let warnedUnpairedDrift = false;
+
+/**
+ * ★★★ VỊ TỪ DÙNG CHUNG CỦA HAI VẾ. **Đọc kỹ trước khi đụng vào một trong hai công thức.**
+ *
+ * `true` ⇒ nền hiện tại đã **loại** byte anh em ⇒ vế SỔ phải **cộng** `foreignBytes`.
+ * `false` ⇒ nền đã **nuốt** byte anh em ⇒ vế SỔ **không được** cộng.
+ * Một bản cài đặt duy nhất, hai người đọc: lượt chụp (quyết định có trừ hay không) và lượt đối
+ * chiếu (quyết định có cộng hay không). Viết lại nó inline ở một trong hai chỗ là dựng bản sao thứ
+ * hai của cùng một giả định — đúng lớp lỗi đã trả giá SÁU lần ở Pha 1.5/2B.
+ */
+function nenDaTruAnhEm(): boolean {
+  return baselineOrigin !== "local";
+}
+
+/**
+ * ★★★ DUNG SAI CHO BẢN SAO CŨ. **60 s là con số CÓ NGUỒN, không phải tiện tay**: bản sao đọc sổ
+ * chung được làm mới **theo nhịp reconciler** (`__runReconcileTick` → `syncSharedLedger`, mặc định
+ * 60 s), nên một hàng nền vừa được chủ nhân làm mới có thể tới tay ta **muộn tới trọn một chu kỳ**.
+ * Trong dải đó, "cũ" KHÔNG phải bằng chứng của bất cứ điều gì.
+ *
+ * ⚠ `?? mặc_định` LÀ MỘT DÂY, VÀ NÓ CÓ LƯỚI (ràng buộc 11): số rác/âm ⇒ về mặc định, KHÔNG thành
+ * một dung sai bằng 0 (mọi nền đọc được lập tức thành "cũ" ⇒ cờ xác minh tắt vĩnh viễn) và cũng
+ * không thành vô hạn. Ca `B-6` khoá cả hai mép.
+ * ⚠ Đọc `.env` MỖI lượt — cùng khuôn `syncTimeoutMs()`.
+ */
+export function sharedBaselineStaleMs(): number {
+  const n = Number(process.env.VRAM_SHARED_BASELINE_STALE_MS);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 60_000;
+}
+
+/**
+ * Quá mốc này thì **CHỦ NHÂN COI NHƯ ĐÃ CHẾT** và hàng nền hết hiệu lực — tiến trình khác được
+ * quyền chụp lại. `3 × dung sai` = một chu kỳ tới tay ta + một nhịp lỡ của chủ nhân + một biên.
+ * ⚠ Hai mốc PHẢI dẫn xuất từ MỘT nguồn: hai hằng số độc lập sẽ trôi khỏi nhau và sinh ra dải
+ * "không ai đọc, cũng không ai chụp" — tức MÙ, tức nhánh RỘNG NHẤT.
+ */
+export function sharedBaselineTtlMs(): number {
+  return sharedBaselineStaleMs() * 3;
+}
+
+/**
+ * ★★★ CUỘC BẦU — **AI ĐƯỢC CÔNG BỐ NỀN.** Thuần, đồng bộ, tất định: cùng một bản sao ⇒ mọi tiến
+ * trình cho **cùng một câu trả lời**, nên không cần khoá phân tán và không có ping-pong.
+ *
+ * Ứng viên = { chính ta } ∪ { mọi `processKey` đang có giấy phép trong sổ chung } ∪ { chủ nhân hàng
+ * nền, nếu hàng còn hiệu lực }. Người thắng = `processKey` **nhỏ nhất theo thứ tự chuỗi**.
+ *
+ * ⚠ VÌ SAO VẾ THỨ BA BẮT BUỘC: một tiến trình KHÔNG giữ giấy phép nào thì **vô hình** trong sổ
+ * chung (không có hàng nào) — trừ khi nó đang là người chụp. Không tính hàng nền vào tập ứng viên
+ * thì người chụp không-giấy-phép biến mất khỏi mắt anh em, anh em bầu người khác, và **hai người
+ * cùng công bố** — đúng triệu chứng N-WB-1, chỉ đổi cửa vào.
+ *
+ * ⚠ ĐIỀU NÀY **KHÔNG** QUYẾT ĐỊNH "AI ĐƯỢC CÓ NỀN". Ai không thắng mà **cũng không có nền để đọc**
+ * thì VẪN chụp cho riêng mình (xem `captureVramBaseline`) — vì không có nền nghĩa là
+ * `attributableBytes === null`, tức `max(L,A) → L`, tức **nhánh RỘNG NHẤT**. Cuộc bầu chỉ quyết
+ * định **ai được GHI hàng dùng chung**.
+ */
+function nguoiChupNen(selfKey: string, nowMs: number): string {
+  const banSao = readSharedLedgerReplica();
+  if (banSao === null) return selfKey;
+  const ungVien = new Set<string>([selfKey]);
+  for (const r of banSao.foreignLeases) if (r.processKey) ungVien.add(r.processKey);
+  const nen = banSao.baseline;
+  if (nen !== null && nowMs - nen.atMs <= sharedBaselineTtlMs()) ungVien.add(nen.processKey);
+  return [...ungVien].sort()[0] ?? selfKey;
+}
 
 /**
  * Chụp nền. Thành công MỘT LẦN rồi thôi — nếu không, một lượt `stop()`/`start()` lại sẽ nuốt
@@ -469,7 +590,43 @@ export async function captureVramBaseline(
    * ⇒ Nền CHƯA XÁC MINH thì mỗi nhịp quét LẠI; hết mồ côi thì **huỷ nền nhiễm và chụp lại**.
    * Nền ĐÃ xác minh thì thoát ngay ở dòng đầu như cũ (không tốn lượt quét nào).
    */
-  if (baselineCaptured && baselineVerified) return baselineUsedBytes;
+  /**
+   * ★★★ Pha 3 Task 3 (N-WB-1) — **NGƯỜI ĐỌC NỀN. ĐẶT TRƯỚC MỌI THỨ, KỂ CẢ LỐI THOÁT NHANH I-1.**
+   *
+   * Triệu chứng gốc: `api` và `worker` **cùng chụp nền trên MỘT thiết bị** ⇒ nền của `api` nuốt
+   * trọn 17 GB của anh em. Không vá được bằng số (`nvidia-smi` trả `used_memory=[N/A]`), cũng không
+   * vá được bằng cách bỏ nền (`max(L,A) ≥ L` ⇒ `attributable = null` là **CHẶN TRÊN**). Lời giải là
+   * **sổ chung**: nền chỉ được chụp bởi MỘT tiến trình, các tiến trình khác ĐỌC nó.
+   *
+   * ⚠ ĐẶT TRƯỚC lối thoát `baselineCaptured && baselineVerified` vì một tiến trình đã tự chụp
+   * (chế độ `"local"`, hợp lệ lúc chưa có sổ chung) phải **nhường** ngay khi người chụp thật xuất
+   * hiện — nếu không, hai con số nền cùng sống trên một thiết bị và không con số nào biết con số kia.
+   * ⚠ Lượt đọc này ĐỒNG BỘ và MIỄN PHÍ (một ô trong bộ nhớ), nên nó không đánh đổi gì với chi phí
+   * `nvidia-smi`/`powershell` mà lối thoát nhanh sinh ra để tiết kiệm.
+   */
+  const selfKey = sharedLedgerSelfKey();
+  const nenChung = readSharedBaseline();
+  const bayGio = Date.now();
+  if (nenChung !== null && nenChung.processKey !== selfKey) {
+    const tuoi = bayGio - nenChung.atMs;
+    if (tuoi >= 0 && tuoi <= sharedBaselineTtlMs()) {
+      nhanNenDungChung(nenChung, tuoi);
+      return baselineUsedBytes;
+    }
+    // Quá hạn ⇒ chủ nhân coi như đã chết. KHÔNG đọc con số của một tiến trình không còn tồn tại;
+    // rơi xuống dưới và tự chụp (cuộc bầu ở cuối hàm quyết ai được ghi lại hàng dùng chung).
+  }
+
+  /**
+   * ★ LỐI THOÁT NHANH, nay có thêm MỘT lối vào: nền đang ở chế độ `"local"` (đã nuốt byte anh em)
+   * mà sổ chung **nay đã đọc được** ⇒ phải chụp LẠI đúng một lần để lên chế độ `"captured"`.
+   * ⚠ Sau lượt nâng cấp đó `baselineOrigin !== "local"` ⇒ điều kiện tắt ⇒ **KHÔNG** chụp lại mỗi
+   * nhịp. Đó là ràng buộc SỐNG CÒN, không phải tối ưu: chụp lại mỗi nhịp thì mọi khoản cấp phát
+   * chui bị hấp thụ vào nền ngay nhịp kế và `drift` **mất hẳn khả năng phát hiện** — đúng lớp
+   * "cơ chế phòng vệ mới vô hiệu hoá cơ chế cũ" đã tái diễn ba lần.
+   */
+  const canNangCapNen = baselineCaptured && baselineOrigin === "local" && readSharedLedgerReplica() !== null;
+  if (baselineCaptured && baselineVerified && !canNangCapNen) return baselineUsedBytes;
 
   /**
    * ★★ QUÉT TRƯỚC, ĐỌC THIẾT BỊ SAU — THỨ TỰ NÀY LÀ MỘT LƯỚI, KHÔNG PHẢI SỞ THÍCH.
@@ -510,10 +667,25 @@ export async function captureVramBaseline(
    */
   const recapturing = baselineCaptured;
   if (recapturing) {
-    // Đã chốt nhưng CHƯA XÁC MINH. Còn mù / còn tàn dư / còn vai trò anh em ⇒ giữ nguyên con số
-    // hiện có (vẫn chặt hơn chỉ-sổ — I-1). Sạch hẳn rồi mới chụp lại.
-    if (census === null || census.orphans.length > 0 || census.peers.length > 0) return baselineUsedBytes;
-    console.log("[vram] mã của hệ đã rời GPU ⇒ chụp LẠI nền chưa xác minh (Pha 2B Task 1, I-1).");
+    /**
+     * ★ Pha 3 Task 3 — CỬA THỨ HAI của lượt chụp lại. Cửa CŨ (Pha 2B, I-1) hỏi *"thiết bị đã sạch
+     * mã của hệ chưa"*; cửa MỚI hỏi *"nền hiện tại có đang ở chế độ SAI không"*. Hai câu hỏi khác
+     * nhau nên hai cửa — gộp lại thì cửa cũ (đòi `peers.length === 0`) sẽ **khoá vĩnh viễn** lượt
+     * nâng cấp trong đúng topology `api`+`worker` mà task này sinh ra để phục vụ: ở đó `peers`
+     * KHÔNG BAO GIỜ rỗng, nên nền `"local"` sẽ nuốt 17 GB của anh em cho tới lúc khởi động lại.
+     * ⚠ Cửa mới chạy ĐÚNG MỘT LẦN cho mỗi vòng đời nền (`baselineOrigin` rời `"local"` sau đó).
+     */
+    if (!canNangCapNen) {
+      // Đã chốt nhưng CHƯA XÁC MINH. Còn mù / còn tàn dư / còn vai trò anh em ⇒ giữ nguyên con số
+      // hiện có (vẫn chặt hơn chỉ-sổ — I-1). Sạch hẳn rồi mới chụp lại.
+      if (census === null || census.orphans.length > 0 || census.peers.length > 0) return baselineUsedBytes;
+      console.log("[vram] mã của hệ đã rời GPU ⇒ chụp LẠI nền chưa xác minh (Pha 2B Task 1, I-1).");
+    } else {
+      console.log(
+        "[vram] SỔ CHUNG đã đọc được ⇒ chụp LẠI nền để TRỪ byte anh em (Pha 3 Task 3, N-WB-1). " +
+          "Nền cũ chụp theo công thức Pha 2B nên đã NUỐT byte của tiến trình anh em.",
+      );
+    }
   }
 
   let device: { usedBytes: number; source: "native" | "smi" } | null = null;
@@ -612,6 +784,44 @@ export async function captureVramBaseline(
   // xảy ra nếu số liệu đúng ⇒ lượt chụp này VÔ LÝ. Không ghim, không kết luận, thử lại nhịp sau
   // (cùng nguyên tắc với ca đầu dò `null` ở NEW-2): một phép chụp cho ra kết quả vô lý TUYỆT ĐỐI
   // không được phép trở thành hằng số cho suốt vòng đời tiến trình.
+  /**
+   * ★★★ Pha 3 Task 3 (N-WB-1) — **VẾ NỀN.** Byte của anh em phải bị TRỪ ở đây, nếu không nền nuốt
+   * trọn chúng và mọi phép so sau đó quy trách nhiệm cho một hộ hợp lệ.
+   *
+   * ⚠⚠ **NGUỒN DUY NHẤT của vị từ "byte của anh em" là SỔ CHUNG (`foreignBytes`)**, KHÔNG PHẢI
+   * `census.peers` — và đây là một lựa chọn bắt buộc, không phải sở thích (ràng buộc 12: hai bản
+   * sao của một vị từ thì không viết ra được). Lý do vật lý: `nvidia-smi` trả `used_memory=[N/A]`
+   * trên WDDM ⇒ `census.peers` biết **AI** mà **không bao giờ biết BAO NHIÊU**. Nó giữ nguyên vai
+   * trò cũ — một tín hiệu **CÓ MẶT** để hạ `baselineVerified` — và **tuyệt đối không được** dùng
+   * để suy ra một con số byte.
+   *
+   * ⚠ `sharedLedgerFact() === null` ⇒ **KHÔNG CÓ SỔ CHUNG** (chưa lượt đồng bộ nào chạy / không DB).
+   * Đó là nhánh `"local"`: ta chụp theo đúng công thức Pha 2B và **KHAI RA**, chứ không giả vờ rằng
+   * `foreignBytes = 0` là một phép đo. Xem `baselineOrigin`.
+   */
+  const soChungLucChup = sharedLedgerFact(Date.now());
+  const byteAnhEm = soChungLucChup === null ? 0 : Math.max(0, soChungLucChup.foreignBytes);
+  const cheDoChung = soChungLucChup !== null;
+
+  /**
+   * ★ Task 3 — LÁ CHẮN THỨ BA. Cùng khuôn `raw < committedBytes` ngay dưới, nhưng nguyên nhân KHÁC
+   * (xem `baselineBlockedReason`): sổ chung khai NHIỀU HƠN thứ đang nằm trên thiết bị — điển hình
+   * một **hàng MA** của tiến trình bị `kill -9` (nợ đã bàn giao cho Task 4). Chụp bừa ở đây cho ra
+   * **nền ÂM**, và một nền âm làm `attributable` phồng lên đúng bằng khoản ma đó ⇒ báo động "cấp
+   * phát chui" mỗi nhịp cho một khối byte KHÔNG TỒN TẠI.
+   */
+  if (cheDoChung && raw >= committedBytes && raw < committedBytes + byteAnhEm) {
+    console.warn(
+      `[vram] BỎ QUA lượt chụp nền: thiết bị ${Math.round(raw / 1024 / 1024)} MiB < đã commit ` +
+        `${Math.round(committedBytes / 1024 / 1024)} + sổ chung khai ${Math.round(byteAnhEm / 1024 / 1024)} MiB. ` +
+        `Sổ CHUNG đang khai nhiều hơn thực tế (hàng MA của một tiến trình đã chết?), KHÔNG phải sổ cục bộ ` +
+        `của tiến trình này. Sẽ thử lại ở nhịp sau.`,
+    );
+    if (!recapturing && baselineBlockedSinceMs === null) baselineBlockedSinceMs = Date.now();
+    if (!recapturing) baselineBlockedReason = "device-below-shared";
+    return recapturing ? baselineUsedBytes : null;
+  }
+
   if (raw < committedBytes) {
     console.warn(
       `[vram] BỎ QUA lượt chụp nền: thiết bị ${Math.round(raw / 1024 / 1024)} MiB < tổng đã commit ` +
@@ -657,9 +867,13 @@ export async function captureVramBaseline(
   const peers = census?.peers ?? [];
   const nameOf = (h: { pid: number; name: string }) => `${h.name} (pid ${h.pid})`;
 
-  baselineUsedBytes = raw - committedBytes;
+  // ★★★ Task 3 — VẾ NỀN, dòng chịu lực. `byteAnhEm` là 0 ở chế độ `"local"` (không có sổ chung),
+  // và **đúng bằng 0 đó** là lý do `baselineOrigin` phải đi kèm: vế SỔ ở `reconcileOnce()` đọc nó
+  // để biết được phép cộng `foreignBytes` hay không.
+  baselineUsedBytes = raw - committedBytes - byteAnhEm;
   baselineCaptured = true;
   baselineSource = device.source;
+  baselineOrigin = cheDoChung ? "captured" : "local";
   /**
    * ★★★ BA lối vào `unverified`, khác nguyên nhân nhưng CÙNG hệ quả (nền có thể đã nuốt byte nằm
    * ngoài sổ của tiến trình này ⇒ Task 2/5 phải chặt hơn):
@@ -740,10 +954,68 @@ export async function captureVramBaseline(
   baselineBlockedReason = null;
 
   const mib = (b: number) => Math.round(b / 1024 / 1024);
+
+  /**
+   * ★★★ Pha 3 Task 3 — CUỘC BẦU: ta có được **CÔNG BỐ** nền cho anh em đọc không.
+   *
+   * ⚠⚠ **ĐIỀU GÌ XẢY RA KHI KHÔNG AI THẮNG** — brief đòi ghi rõ, và câu trả lời là chỗ dễ hỏng nhất
+   * của cả task: **KHÔNG AI THẮNG ⇔ không có sổ chung** (`sharedLedgerFact() === null`: DB chưa
+   * lên, `getDb()` trả `null`, cài đặt không DB, hoặc `startVramReconciler()` chưa bật đồng bộ).
+   * Ở trạng thái đó:
+   *   • **KHÔNG** rơi về `attributableBytes === null`. Đó mới là "âm thầm về nhánh RỘNG NHẤT":
+   *     `max(L,A) ≥ L` ⇒ bỏ nền là **NỚI** dư địa đúng bằng khối anh em đang giữ. Ta VẪN chụp, vẫn
+   *     có số, chỉ là số đó ở chế độ `"local"`.
+   *   • **KHÔNG công bố** con số đó ra sổ chung: nền `"local"` đã nuốt byte anh em, đưa nó cho anh
+   *     em đọc là phát tán một con số nhiễm ra cả cụm.
+   *   • **KÊU**, và câu kêu nói đúng hai việc người trực phải làm (kiểm DB / bảng `vram_leases`).
+   *   • Cờ `baselineVerified` giữ nguyên cơ chế Pha 2B: thấy `peers` ⇒ TẮT ⇒ cưỡng chế chặt hơn.
+   *
+   * ⚠ Người thắng bầu mà đang ở chế độ `"local"` cũng KHÔNG công bố — điều kiện là `cheDoChung`,
+   * không phải chỉ "thắng".
+   */
+  const nguoiChup = nguoiChupNen(selfKey, Date.now());
+  const taLaNguoiChup = cheDoChung && nguoiChup === selfKey;
+  if (taLaNguoiChup) {
+    publishOwnSharedBaseline({
+      processKey: selfKey,
+      pid: process.pid,
+      bytes: baselineUsedBytes,
+      source: device.source,
+      verified: baselineVerified,
+      atMs: Date.now(),
+    });
+    lastAdoptedFrom = null;
+  } else {
+    // Thua bầu (hoặc không có bầu) ⇒ THÔI công bố. Không xoá hàng của người khác: xoá một hàng
+    // dùng chung mà ta không sở hữu là đúng lớp lỗi "hàng MA" mà C-4 của Task 2 sinh ra để chống.
+    publishOwnSharedBaseline(null);
+  }
+  if (!cheDoChung) {
+    if (!warnedLocalBaseline) {
+      warnedLocalBaseline = true;
+      console.warn(
+        `[vram] SỔ CHUNG CHƯA ĐỌC ĐƯỢC ⇒ nền ${mib(baselineUsedBytes)} MiB chụp theo công thức CỤC BỘ ` +
+          `(Pha 2B): nó ĐÃ NUỐT byte của mọi tiến trình anh em đang giữ GPU, và lượt đối chiếu vì thế ` +
+          `KHÔNG cộng byte anh em vào sổ (cộng vào là TRỪ HAI LẦN). Đây KHÔNG phải trạng thái an toàn — ` +
+          `nó chỉ là trạng thái CŨ. Kiểm DB và bảng \`vram_leases\` (migration 0312); nền dùng chung tự ` +
+          `bật lại ở nhịp đầu tiên đọc được sổ chung.`,
+      );
+    }
+  } else {
+    warnedLocalBaseline = false;
+    if (!taLaNguoiChup) {
+      console.log(
+        `[vram] nền vừa chụp CỤC BỘ (${mib(baselineUsedBytes)} MiB, đã trừ ${mib(byteAnhEm)} MiB của anh em) ` +
+          `nhưng KHÔNG công bố: cuộc bầu chọn "${nguoiChup}". Ta vẫn có số để quyết định (không có nền = ` +
+          `nhánh rộng nhất), và sẽ ĐỌC nền của người chụp ngay khi hàng của họ tới bản sao.`,
+      );
+    }
+  }
   console.log(
     `[vram] nền thiết bị: ${mib(baselineUsedBytes)} MiB ` +
-      `(thiết bị ${mib(raw)} − đã commit ${mib(committedBytes)}, thước "${device.source}") — không phải của ` +
-      `tiến trình này, sẽ TRỪ khỏi mọi phép so sổ.`,
+      `(thiết bị ${mib(raw)} − đã commit ${mib(committedBytes)} − anh em ${mib(byteAnhEm)}, thước ` +
+      `"${device.source}", chế độ "${baselineOrigin}") — không phải của tiến trình này lẫn anh em, ` +
+      `sẽ TRỪ khỏi mọi phép so sổ.`,
   );
   logVramEvent({
     event: "baseline",
@@ -768,6 +1040,13 @@ export async function captureVramBaseline(
       committedBytes,
       ledgerTotalBytes: ledgerTotal,
       baselineUsedBytes,
+      /**
+       * ★★★ Pha 3 Task 3 — BA Ô LÀM PHÉP TRỪ MỚI DỰNG LẠI ĐƯỢC TỪ NHẬT KÝ. Không có chúng thì
+       * `baselineUsedBytes` đổi 17 GB giữa hai lượt boot mà không ai truy được vì sao.
+       */
+      foreignLedgerBytes: byteAnhEm,
+      baselineOrigin,
+      baselineOwnerProcessKey: taLaNguoiChup ? selfKey : nguoiChup,
       // Pha 1.5 Task 1 — thước đã dùng để chụp nền này. `reconcileOnce()` so nó với thước của
       // lượt đối chiếu; khác nhau thì huỷ nền và chụp lại thay vì so hai thước với nhau.
       source: device.source,
@@ -827,6 +1106,48 @@ export async function captureVramBaseline(
     },
   });
   return baselineUsedBytes;
+}
+
+/**
+ * ★★★ Pha 3 Task 3 — **NHẬN NỀN CỦA NGƯỜI CHỤP.** Một người ghi, gọi từ đúng một chỗ.
+ *
+ * ⚠⚠ CỜ `baselineVerified` KHÔNG BAO GIỜ ĐƯỢC NÂNG CẤP Ở ĐÂY. Nó là **VỊ TỪ DÙNG CHUNG với
+ * `applyEnforcement()`** (`vramEnforcement.DISTRUST_UNITS["unverified-baseline"]`) và với
+ * `computeHeadroom()` (`degradedReasons`), nên một lượt "làm tròn lên" ở đây là **nới dư địa ở hai
+ * người tiêu thụ khác** — đúng lớp lỗi đã tái diễn ba lần. Người đọc chỉ được LÀM YẾU cờ:
+ *   • người chụp khai `verified: false` ⇒ ta cũng `false`;
+ *   • hàng nền cũ hơn **dung sai một chu kỳ đồng bộ** ⇒ `false` dù người chụp khai `true`.
+ *
+ * ⚠ **DUNG SAI cho bản sao cũ tới 60 s là bắt buộc, không phải rộng rãi**: bản sao đọc chỉ được làm
+ * mới theo nhịp reconciler, nên MỌI hàng nền đọc được đều "cũ" theo nghĩa đó. Không có dung sai thì
+ * cờ tắt vĩnh viễn ở mọi tiến trình đọc — một cờ luôn bật là một cờ không còn thông tin (bài học
+ * I-3 của Task 2).
+ *
+ * ⚠ THƯỚC: ta nhận luôn thước của người chụp (`baselineSource`), và `reconcileOnce()` **KHÔNG** đưa
+ * nền đã nhận vào nhánh resample (xem điều kiện ở đó) — một người đọc không có gì để chụp lại, nên
+ * resample chỉ dẫn tới bộ ngắt mạch trip rồi `attributableBytes: null`, tức nhánh RỘNG NHẤT.
+ */
+function nhanNenDungChung(nen: SharedBaselineRecord, tuoiMs: number): void {
+  const doiChu = lastAdoptedFrom !== nen.processKey;
+  baselineUsedBytes = nen.bytes;
+  baselineCaptured = true;
+  baselineSource = nen.source;
+  baselineOrigin = "adopted";
+  baselineVerified = nen.verified && tuoiMs <= sharedBaselineStaleMs();
+  // Ta là NGƯỜI ĐỌC ⇒ thôi công bố. Hai người cùng công bố là đúng triệu chứng N-WB-1.
+  publishOwnSharedBaseline(null);
+  // Có nền rồi ⇒ đợt "không chụp được nền" kết thúc (cùng lối thoát với lượt chụp thành công).
+  baselineBlockedSinceMs = null;
+  baselineBlockedReason = null;
+  warnedLocalBaseline = false;
+  if (doiChu) {
+    lastAdoptedFrom = nen.processKey;
+    console.log(
+      `[vram] ĐỌC nền dùng chung ${Math.round(nen.bytes / 1024 / 1024)} MiB do "${nen.processKey}" chụp ` +
+        `(thước "${nen.source}", người chụp khai xác minh: ${nen.verified}, bản sao cũ ${Math.round(tuoiMs / 1000)} s) ` +
+        `— tiến trình này KHÔNG tự chụp nền nữa, nên nó KHÔNG nuốt byte của anh em.`,
+    );
+  }
 }
 
 /**
@@ -1002,6 +1323,16 @@ export function __resetVramBaselineForTests(): void {
   // `ring: false` sẽ làm mọi test SAU nó mất hết sự kiện `drift`, và triệu chứng sẽ hiện ở một
   // file khác hẳn.
   ringEnabled = true;
+  // Pha 3 Task 3 — cùng lý do, và ở đây hậu quả là NGƯỢC DẤU: ca sau thừa kế `baselineOrigin` của
+  // ca trước ⇒ vế SỔ cộng (hoặc không cộng) `foreignBytes` theo một quyết định của ca khác ⇒ lệch
+  // đúng bằng khối anh em, và triệu chứng hiện ra ở một phép so chẳng liên quan.
+  baselineOrigin = "local";
+  lastAdoptedFrom = null;
+  warnedLocalBaseline = false;
+  warnedUnpairedDrift = false;
+  // ⚠ Ô "ta là người chụp nền" nằm ở module LÁ (`vramSharedLedger`) và có hàm reset RIÊNG
+  // (`__resetSharedLedgerForTests`). KHÔNG gọi nó từ đây: file này không được kéo một lượt dọn
+  // trạng thái của module khác vào, và bộ ca sổ chung đã gọi đúng hàm của nó.
 }
 
 /**
@@ -1158,6 +1489,8 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       // rơi về chỉ-sổ (ràng buộc 10), KHÔNG được coi thiết bị là trống.
       attributableBytes: null,
       baselineVerified,
+      baselineOrigin,
+      foreignLedgerBytes: null,
     };
   }
 
@@ -1179,7 +1512,17 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
   // — đó là đua với thứ tự boot (đã tốn ba vòng sửa vì đúng lỗi này ở NEW-1/NEW-2 trên). Sửa
   // bằng cấu trúc: huỷ nền cũ, chụp lại bằng thước MỚI, và KHÔNG báo động ở lượt phát hiện — số
   // vừa bị huỷ không đáng tin để so.
-  if (baselineCaptured && baselineSource !== null && device.source !== baselineSource) {
+  /**
+   * ⚠⚠ Pha 3 Task 3 — **NỀN ĐÃ NHẬN (`"adopted"`) KHÔNG ĐI VÀO NHÁNH RESAMPLE.** Người ĐỌC không có
+   * gì để chụp lại: `captureVramBaseline()` sẽ nhận lại đúng con số ấy với đúng thước ấy ⇒ mismatch
+   * lặp ở MỌI nhịp ⇒ bộ ngắt mạch EXP-1 trip sau `SOURCE_UNSTABLE_THRESHOLD` lượt ⇒
+   * `attributableBytes: null` **vĩnh viễn** = nhánh RỘNG NHẤT, vì một lý do (hai vai trò gắn handle
+   * khác nhau) chẳng liên quan gì tới sự bất ổn của thước.
+   * ⇒ Người đọc chịu đúng khoản lệch giữa hai thước (**165-178 MiB**, Pha 1 §3.4) và khai nó bằng
+   * `baselineVerified: false` ở `nhanNenDungChung()`. Đánh đổi đã cân: 165-178 MiB có tên, đổi lấy
+   * việc KHÔNG mở lại cửa 17 GB mà cả task này sinh ra để đóng.
+   */
+  if (baselineCaptured && baselineOrigin !== "adopted" && baselineSource !== null && device.source !== baselineSource) {
     // Pha 1.5 Task 1, review vòng 1 (EXP-1) — BỘ NGẮT MẠCH. Nếu thước DAO ĐỘNG (đổi liên tục mỗi
     // nhịp), nhánh resample phía dưới sẽ chạy MÃI — mọi nhịp huỷ nền rồi chụp lại, KHÔNG nhịp
     // nào từng đối chiếu được, và một khoản cấp phát chui tồn tại xuyên suốt sẽ KHÔNG BAO GIỜ lộ
@@ -1236,6 +1579,8 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
           // được xuất bản một `attributable` để ai đó đem đi quyết định cấp phát.
           attributableBytes: null,
           baselineVerified,
+          baselineOrigin,
+          foreignLedgerBytes: null,
         };
       }
 
@@ -1281,6 +1626,8 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
         // càng không được đem đi quyết định cấp phát.
         attributableBytes: null,
         baselineVerified,
+        baselineOrigin,
+        foreignLedgerBytes: null,
       };
     }
 
@@ -1323,6 +1670,8 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       // Cùng lý do với nhánh resample ở trên: lượt này CỐ Ý không đối chiếu.
       attributableBytes: null,
       baselineVerified,
+      baselineOrigin,
+      foreignLedgerBytes: null,
     };
   }
 
@@ -1369,10 +1718,16 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       // SỔ/ĐO, nên câu kết dùng chung vẫn đúng.
       const why =
         baselineBlockedReason === "device-below-committed"
-          ? `Sổ đang cộng dồn NHIỀU HƠN thứ thật sự nằm trên thiết bị (lá chắn "thiết bị < đã commit" chặn mọi ` +
-            `lượt chụp) — đi soi các số commitMeasured() gần đây, chúng đang cộng trùng.`
-          : `Giấy phép ở trạng thái ĐANG NẠP quá lâu (${blockingOwners.join(", ") || "(không rõ)"}) = tiến trình ` +
-            `chết giữa chừng hoặc commit không bao giờ tới — đi xem giấy phép treo.`;
+          ? `Sổ CỤC BỘ đang cộng dồn NHIỀU HƠN thứ thật sự nằm trên thiết bị (lá chắn "thiết bị < đã commit" ` +
+            `chặn mọi lượt chụp) — đi soi các số commitMeasured() gần đây, chúng đang cộng trùng.`
+          : // ★ Task 3 — lối thứ BA phải có CÂU RIÊNG: thủ phạm nằm ở tiến trình KHÁC, nên câu của
+            // `device-below-committed` sẽ chỉ người trực đi soi nhầm cuốn sổ.
+            baselineBlockedReason === "device-below-shared"
+            ? `SỔ CHUNG (\`vram_leases\`) đang khai NHIỀU HƠN thứ nằm trên thiết bị — sổ cục bộ của tiến trình ` +
+              `này có thể hoàn toàn đúng. Điển hình: HÀNG MA của một tiến trình bị kill -9. Soi bảng ` +
+              `\`vram_leases\` theo \`processKey\`/\`updatedAt\`, KHÔNG soi commitMeasured() của tiến trình này.`
+            : `Giấy phép ở trạng thái ĐANG NẠP quá lâu (${blockingOwners.join(", ") || "(không rõ)"}) = tiến trình ` +
+              `chết giữa chừng hoặc commit không bao giờ tới — đi xem giấy phép treo.`;
       console.warn(
         `[vram] KHÔNG CHỤP ĐƯỢC NỀN suốt ${Math.round(blockedForMs / 1000)} giây — phép đối chiếu đang MÙ ` +
           `(không có nền thì mọi con số lệch đều vô nghĩa). ${why} ` +
@@ -1411,6 +1766,8 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
       // của cả hàm (ràng buộc 10).
       attributableBytes: null,
       baselineVerified,
+      baselineOrigin,
+      foreignLedgerBytes: null,
     };
   }
 
@@ -1419,7 +1776,55 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
   // test, công cụ chẩn đoán) ⇒ nền = 0 ⇒ so số THÔ, đúng như họ yêu cầu.
   const baseline = baselineUsedBytes ?? 0;
   const attributable = device.usedBytes - baseline;
-  const drift = attributable - snap.totalReservedBytes;
+
+  /**
+   * ★★★ Pha 3 Task 3 (N-WB-1) — **VẾ SỔ. ĐỌC CÙNG LÚC VỚI VẾ NỀN Ở `captureVramBaseline()`.**
+   *
+   * Task 2 CỐ Ý không cộng `foreignBytes` ở đây, và lý do của nó vẫn nguyên giá trị: nền hôm đó ĐÃ
+   * NUỐT byte anh em, nên cộng thêm là **TRỪ HAI LẦN** (lệch âm giả ~17 GB). Task 3 sửa vế NỀN, nên
+   * vế SỔ phải đổi **TRONG CÙNG MỘT LƯỢT** — hai vế được ghép bằng `nenDaTruAnhEm()`, một vị từ,
+   * một bản cài đặt:
+   *
+   *     nền `"local"`               ⇒ cộng 0        ⇒ y hệt Pha 2B (đúng, vì nền đã nuốt)
+   *     nền `"captured"`/`"adopted"` ⇒ cộng foreign  ⇒ drift ≈ 0 ở trạng thái ổn định
+   *
+   * ⚠⚠ **`?? 0` LÀ MỘT DÂY, VÀ ĐÂY LÀ LƯỚI CỦA NÓ**: nếu nền đã trừ anh em mà sổ chung KHÔNG đọc
+   * được, một `?? 0` im lặng sẽ cho `drift = +foreignBytes` ≈ **+17 GB**, và nhánh `drift > 0` gọi
+   * đó là *"cấp phát KHÔNG XIN PHÉP"* — tức **quy trách nhiệm SAI cho một hộ hợp lệ**, đúng nợ mà
+   * task này trả. ⇒ Trạng thái đó KHÔNG được đoán: lượt này **không so được**, `driftBytes: null`,
+   * `alarm: false`, và **CÓ TIẾNG**. (`attributableBytes` vẫn được xuất bản: cưỡng chế có đường xử
+   * lý riêng cho sổ chung vắng mặt — `"shared-ledger-unasked"`, 2 đơn vị.)
+   */
+  const soChung = sharedLedgerFact(Date.now());
+  const byteAnhEmSo: number | null = nenDaTruAnhEm() ? (soChung === null ? null : soChung.foreignBytes) : 0;
+  if (byteAnhEmSo === null) {
+    if (!warnedUnpairedDrift) {
+      warnedUnpairedDrift = true;
+      console.warn(
+        `[vram] KHÔNG SO ĐƯỢC SỔ VỚI THIẾT BỊ ở lượt này: nền hiện tại (chế độ "${baselineOrigin}") đã TRỪ ` +
+          `byte của anh em, nhưng bản sao sổ chung đang KHÔNG đọc được ⇒ vế sổ thiếu đúng khối đó. So bừa ` +
+          `sẽ cho một khoản LỆCH DƯƠNG bằng cả khối anh em và đổ oan cho "cấp phát chui". Bỏ qua lượt đối ` +
+          `chiếu này (KHÔNG bỏ qua cưỡng chế — nó có đường xử lý riêng). Kiểm DB và bảng \`vram_leases\`.`,
+      );
+    }
+    return {
+      driftBytes: null,
+      alarm: false,
+      ledgerTotalBytes: snap.totalReservedBytes,
+      deviceUsedBytes: device.usedBytes,
+      baselineUsedBytes,
+      baselineResampled: false,
+      sourceUnstable: false,
+      pendingBytes,
+      baselineBlocked: false,
+      attributableBytes: baselineUsedBytes !== null ? attributable : null,
+      baselineVerified,
+      baselineOrigin,
+      foreignLedgerBytes: null,
+    };
+  }
+  warnedUnpairedDrift = false;
+  const drift = attributable - (snap.totalReservedBytes + byteAnhEmSo);
   /**
    * Pha 1.5 Task 3 — BĂNG DUNG SAI CHỈ MỘT PHÍA (ÂM). `snap.totalReservedBytes` đã cộng ƯỚC
    * LƯỢNG của MỌI giấy phép pending ngay từ `reserve()` (`vramBroker.leaseBytes`), nên trong
@@ -1445,11 +1850,23 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
     const holders = () => snap.leases.map((l) => `${l.request.owner}=${mib(leaseBytes(l))}`).join(", ") || "(sổ rỗng)";
     // Luôn nói rõ đã trừ bao nhiêu — người trực phải kiểm chứng được con số, không phải tin.
     const baseNote = baseline > 0 ? ` (đã trừ nền ${mib(baseline)} MiB)` : "";
+    /**
+     * ★★★ Pha 3 Task 3 — CÂU NÀY QUYẾT ĐỊNH NGƯỜI TRỰC ĐI TÌM AI, nên nó phải khai chế độ nền.
+     * Ở chế độ `"local"` khoản lệch dương **vẫn có thể là của anh em**; ở chế độ chung thì byte anh
+     * em đã nằm trong vế sổ, nên lệch dương mới thật sự là "ngoài mọi cuốn sổ".
+     */
+    const soNote =
+      byteAnhEmSo > 0
+        ? ` (đã cộng ${mib(byteAnhEmSo)} MiB của anh em từ sổ chung)`
+        : nenDaTruAnhEm()
+          ? " (sổ chung đọc được, anh em đang giữ 0)"
+          : " (⚠ CHƯA có sổ chung: nền đã nuốt byte anh em ⇒ khoản lệch này VẪN có thể là của họ)";
 
     if (drift > 0) {
       console.warn(
-        `[vram] LỆCH ${mib(drift)} MiB — sổ ${mib(snap.totalReservedBytes)}, thiết bị ${mib(attributable)}${baseNote}. ` +
-          `Có hộ tiêu thụ cấp phát KHÔNG XIN PHÉP (sidecar? tiến trình con? thư viện khác?). ` +
+        `[vram] LỆCH ${mib(drift)} MiB — sổ ${mib(snap.totalReservedBytes)}${soNote}, thiết bị ${mib(attributable)}${baseNote}. ` +
+          `${nenDaTruAnhEm() ? "Byte của tiến trình anh em ĐÃ được tính vào vế sổ ⇒ khoản này nằm NGOÀI mọi cuốn sổ: h" : "H"}` +
+          `ộ tiêu thụ cấp phát KHÔNG XIN PHÉP (sidecar? tiến trình con? thư viện khác?). ` +
           `Đang giữ: ${holders()}${describeTopologyHint()}`,
       );
     } else {
@@ -1464,8 +1881,9 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
         ? `⚠ ĐO HỎNG (ước lượng KHÔNG xác minh được, KHÔNG tự lành): ${failed.join(", ")}. `
         : "";
       console.warn(
-        `[vram] LỆCH ${mib(drift)} MiB — sổ ${mib(snap.totalReservedBytes)}, thiết bị ${mib(attributable)}${baseNote}. ` +
+        `[vram] LỆCH ${mib(drift)} MiB — sổ ${mib(snap.totalReservedBytes)}${soNote}, thiết bị ${mib(attributable)}${baseNote}. ` +
           `Sổ đang giữ NHIỀU HƠN thực tế — giấy phép treo, đo hỏng, hoặc số commit sai, KHÔNG PHẢI cấp phát chui. ` +
+          `${byteAnhEmSo > 0 ? "⚠ Một phần vế sổ là của ANH EM: hàng MA của một tiến trình đã chết cũng cho đúng hình dạng này. " : ""}` +
           `${failedNote}Ứng viên số một (chưa commit): ${pending.join(", ") || "(không có)"}. Đang giữ: ${holders()}`,
       );
     }
@@ -1484,6 +1902,11 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
         deviceUsedRawBytes: device.usedBytes,
         baselineUsedBytes: baseline,
         attributableBytes: attributable,
+        // ★★★ Task 3 — HAI Ô DỰNG LẠI ĐƯỢC PHÉP SO: vế sổ nay là `ledgerTotalBytes + foreignLedgerBytes`.
+        // Thiếu chúng thì `driftBytes` không kiểm chứng được từ nhật ký, và một lượt đọc lại sẽ tính
+        // ra một con số khác rồi kết luận mã sai.
+        foreignLedgerBytes: byteAnhEmSo,
+        baselineOrigin,
         // Pha 1.5 Task 3 — phần băng dung sai ÂM đã được nới cho lượt này; đọc nhật ký là biết
         // NGAY ngưỡng thực tế đã áp dụng là bao nhiêu, không phải đoán từ danh sách leases.
         pendingBytes,
@@ -1550,6 +1973,10 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
      */
     attributableBytes: baselineUsedBytes !== null ? attributable : null,
     baselineVerified,
+    baselineOrigin,
+    // ★ Task 3 — con số ĐÃ THẬT SỰ cộng vào vế sổ ở lượt này. `0` ở chế độ `"local"` là CỐ Ý (nền
+    // đã nuốt byte anh em), KHÔNG phải "anh em không giữ gì" — `baselineOrigin` ngay trên phân biệt.
+    foreignLedgerBytes: byteAnhEmSo,
   };
 }
 
@@ -1646,16 +2073,18 @@ export function describeTopologyHint(): string {
    * Người trực đọc câu này phải biết cả hai nửa, nếu không họ sẽ tin sổ chung nhiều hơn nó đáng.
    */
   /**
-   * ⚠⚠ M-5 (review vòng 1) — CÂU NÀY ĐI KÈM MỘT CON SỐ **CHƯA** DÙNG SỔ CHUNG. Bản trước khẳng
-   * định *"hai bên dùng SỔ CHUNG"* ngay trong câu chuông LỆCH, trong khi `reconcileOnce()` vẫn
-   * tính `drift = attributable − snapshot().totalReservedBytes` trên sổ **CỤC BỘ** (Task 3 mới nối
-   * nền dùng chung). Câu cũ có rào đón nên không SAI, nhưng nó **mời người trực gán khoản lệch cho
-   * độ trễ đồng bộ** — trong khi cơ chế đó chưa hề tham gia vào con số họ đang nhìn.
+   * ⚠⚠ M-5 (review vòng 1) đã đòi câu này thôi khẳng định *"hai bên dùng SỔ CHUNG"* khi con số lệch
+   * còn tính trên sổ CỤC BỘ. **Pha 3 Task 3 nay đã nối cả hai vế**, nên câu đổi lần nữa — và nó
+   * phải nói đúng cái CÒN LẠI, không phải quảng cáo cái vừa xong:
+   *   • byte anh em nay CÓ trong vế sổ (`foreignLedgerBytes` của kết quả), và nền KHÔNG còn nuốt
+   *     chúng — nhưng chỉ khi `baselineOrigin !== "local"`; chế độ `"local"` vẫn tồn tại và câu
+   *     cảnh báo LỆCH in kèm nó ở `soNote`.
+   *   • cái CÒN LẠI là **ĐỘ TRỄ 60 s**: một giấy phép vừa mở ở anh em có thể chưa tới bản sao đọc.
    */
   return (
-    " ⚠ Hệ đang tách vai trò api/worker. Từ Pha 3 hai bên CẤP PHÁT trên một SỔ CHUNG " +
-    "(`vram_leases`), nhưng **con số lệch ở dòng trên vẫn tính trên sổ CỤC BỘ** — nền dùng chung là " +
-    "Task 3. Nên khoản lệch này vẫn có thể là của tiến trình anh em, và cưỡng chế thì đã thấy anh " +
-    "em còn chuông thì chưa."
+    " ⚠ Hệ đang tách vai trò api/worker. Từ Pha 3 Task 3 cả HAI vế đã nối vào SỔ CHUNG " +
+    "(`vram_leases`): nền do MỘT tiến trình chụp (không còn nuốt byte anh em) và vế sổ đã cộng " +
+    "`foreignLedgerBytes`. CÒN LẠI là ĐỘ TRỄ: bản sao đọc làm mới theo nhịp 60 s, nên một giấy phép " +
+    "vừa mở ở tiến trình anh em có thể chưa có mặt trong con số trên."
   );
 }

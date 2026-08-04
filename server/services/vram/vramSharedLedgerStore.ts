@@ -18,9 +18,9 @@
  * được giả vờ là có.
  */
 import {
-  drainSharedLedgerWrites, noteSharedLedgerSyncFailure, publishSharedLedgerReplica,
-  noteSharedLedgerWritesApplied, requeueSharedLedgerWrites, rowFromLease, sharedLedgerSelfKey,
-  sharedLedgerUnsyncedCount,
+  SHARED_BASELINE_KEY, drainSharedLedgerWrites, noteSharedLedgerSyncFailure, ownSharedBaseline,
+  publishSharedLedgerReplica, noteSharedLedgerWritesApplied, requeueSharedLedgerWrites,
+  rowFromBaseline, rowFromLease, sharedLedgerSelfKey, sharedLedgerUnsyncedCount,
 } from "./vramSharedLedger";
 import type { SharedLeaseRow, SharedLedgerWrite } from "./vramSharedLedger";
 
@@ -163,6 +163,25 @@ async function chayMotLuot(): Promise<void> {
   const tuSoCucBo = await dungLaiTuSoCucBo(selfKey, nowMs, daXoa);
   const writes: SharedLedgerWrite[] = [...xoa, ...tuSoCucBo];
 
+  /**
+   * ★★★ Pha 3 Task 3 — NHỊP SỐNG CỦA NGƯỜI CHỤP NỀN. Chỉ tiến trình đang GIỮ vai người chụp
+   * (`ownSharedBaseline() !== null`) mới ghi hàng này, và nó ghi lại ở **MỌI** lượt đồng bộ.
+   *
+   * ⚠ `updatedAtMs` lấy `nowMs` của lượt này (không phải mốc chụp) — đó chính là nhịp sống: người
+   * đọc đo tuổi hàng để biết **chủ nhân còn sống không**. Nếu ghi mốc chụp, một tiến trình chết
+   * sau khi chụp sẽ để lại một hàng "mãi mãi mới" và không ai giành lại được vai người chụp.
+   * ⚠ Đứng SAU `tuSoCucBo`: hai tập khoá rời nhau (`SHARED_BASELINE_KEY` không chứa `#`), nên thứ
+   * tự không đổi kết quả — nhưng đặt cuối cho người đọc thấy ngay nó KHÔNG phải một giấy phép.
+   */
+  const nen = ownSharedBaseline();
+  if (nen !== null) {
+    writes.push({
+      op: "upsert",
+      leaseKey: SHARED_BASELINE_KEY,
+      row: rowFromBaseline({ ...nen, atMs: nowMs }),
+    });
+  }
+
   let ghiHong = false;
   if (writes.length > 0) {
     try {
@@ -295,6 +314,22 @@ async function layGateway(): Promise<SharedLedgerGateway | null> {
           .onConflictDoUpdate({
             target: vramLeases.leaseKey,
             set: {
+              /**
+               * ★★★ Task 3 — BỐN CỘT DANH TÍNH PHẢI NẰM TRONG DANH SÁCH NÀY, và đây KHÔNG phải
+               * "cho đủ": hàng `vram:baseline` là **một khoá DÙNG CHUNG giữa các tiến trình**, nên
+               * một lượt CHUYỂN VAI người chụp là một lượt đổi `processKey`/`pid`/`role`/`leaseId`
+               * trên đúng hàng đó. Thiếu chúng thì người chụp mới ghi được `bytes` nhưng bảng vẫn
+               * khai chủ nhân CŨ ⇒ mọi tiến trình đọc thấy một chủ nhân đã chết ⇒ **không ai giành
+               * lại được vai**, và cuộc bầu kẹt vĩnh viễn ở một hàng ma.
+               * ⚠ Với GIẤY PHÉP thường thì bốn cột này nằm SẴN trong `leaseKey`
+               * (`${processKey}#${leaseId}`) nên lượt ghi đè là **đồng nhất** — không đổi hành vi.
+               * ⚠ `acquiredAt` CỐ Ý vắng mặt: nó là mốc GỐC, ghi đè nó là xoá dấu vết.
+               */
+              processKey: sqlExcluded("processKey"),
+              pid: sqlExcluded("pid"),
+              role: sqlExcluded("role"),
+              leaseId: sqlExcluded("leaseId"),
+              owner: sqlExcluded("owner"),
               bytes: sqlExcluded("bytes"),
               measured: sqlExcluded("measured"),
               refCount: sqlExcluded("refCount"),

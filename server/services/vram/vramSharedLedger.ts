@@ -102,6 +102,45 @@ export type SharedLedgerWrite =
   | { readonly op: "upsert"; readonly leaseKey: string; readonly row: SharedLeaseRow }
   | { readonly op: "delete"; readonly leaseKey: string; readonly row?: undefined };
 
+/**
+ * ★★★ Pha 3 Task 3 (N-WB-1) — KHOÁ CỦA **HÀNG DÀNH RIÊNG** MANG NỀN DÙNG CHUNG.
+ *
+ * ⚠⚠ VÌ SAO MỘT HÀNG TRONG `vram_leases` CHỨ KHÔNG PHẢI MỘT BẢNG RIÊNG: Task 3 **KHÔNG được chạy
+ * DDL** (migration 0312 đã áp lên cả hai DB; thêm bảng là một lượt DDL nữa). Bảng này đã có đúng
+ * bốn thứ một cuộc bầu cần: **khoá chính** (loại trừ lẫn nhau), `processKey` (danh tính), `bytes`
+ * (con số), `updatedAt` + chỉ mục (nhịp sống). Đánh đổi đã cân và phải khai: **ba ô bị dùng cho
+ * nghĩa KHÁC** — xem `rowFromBaseline()`, nơi giữ **bản dịch DUY NHẤT**.
+ *
+ * ⚠ KHÔNG THỂ TRÙNG VỚI MỘT GIẤY PHÉP THẬT, và đó là tính chất CẤU TRÚC chứ không phải may:
+ * `rowFromLease()` dựng `leaseKey = \`${selfKey}#${lease.id}\`` ⇒ **luôn chứa `#`**. Chuỗi dưới đây
+ * **không có `#`** ⇒ không giấy phép nào sinh ra được nó. Ca `B-0` khoá tính chất này.
+ */
+export const SHARED_BASELINE_KEY = "vram:baseline";
+
+/**
+ * ★★★ NỀN DÙNG CHUNG — thứ mà **MỘT** tiến trình chụp và các tiến trình khác **ĐỌC**.
+ *
+ * ⚠ `atMs` là **mốc CÔNG BỐ GẦN NHẤT (nhịp sống)**, KHÔNG phải mốc chụp. Người chụp ghi lại hàng
+ * này ở MỌI lượt đồng bộ (xem `vramSharedLedgerStore.chayMotLuot`), nên tuổi của nó trả lời
+ * *"chủ nhân còn sống không"* — đúng câu hỏi mà một cuộc bầu cần — chứ không phải *"con số này đo
+ * lúc nào"*. Nền là một đại lượng gần như HẰNG (desktop/compositor/hộ bên thứ ba), nên tuổi của
+ * con số không phải rủi ro; **chủ nhân đã chết mà hàng còn nằm đó** mới là rủi ro.
+ */
+export interface SharedBaselineRecord {
+  /** `${role}:${pid}:${bootMs}` của NGƯỜI CHỤP. */
+  readonly processKey: string;
+  /** PID của người chụp — lấy thẳng từ cột, không tách chuỗi lại lần thứ hai. */
+  readonly pid: number;
+  /** Nền THIẾT BỊ (byte) — đã trừ cả sổ cục bộ của người chụp LẪN byte anh em. */
+  readonly bytes: number;
+  /** THƯỚC đã dùng để chụp. Người đọc phải biết, nếu không là so hai thước (lệch 165-178 MiB). */
+  readonly source: "native" | "smi";
+  /** Người chụp có tuyên bố nền này ĐÃ XÁC MINH không. Người đọc KHÔNG được nâng cấp cờ này. */
+  readonly verified: boolean;
+  /** Mốc công bố gần nhất (`updatedAt`). */
+  readonly atMs: number;
+}
+
 /** Ảnh chụp sổ chung mà đường quyết định ĐỌC. Thuần dữ liệu, đông cứng. */
 export interface SharedLedgerReplica {
   /** `Date.now()` lúc lượt làm mới KẾT THÚC — con số để đo TUỔI. */
@@ -113,6 +152,16 @@ export interface SharedLedgerReplica {
    */
   readonly foreignBytes: number;
   readonly foreignLeases: readonly SharedLeaseRow[];
+  /**
+   * ★★★ Task 3 — HÀNG NỀN DÙNG CHUNG, đã TÁCH khỏi `foreignLeases`/`foreignBytes`.
+   *
+   * ⚠⚠ TÁCH LÀ BẮT BUỘC, KHÔNG PHẢI GỌN GÀNG: nền **KHÔNG PHẢI byte của anh em** — nó là byte của
+   * desktop/hộ bên thứ ba, và nó đã bị TRỪ khỏi `attributable`. Để nó lọt vào `foreignBytes` là
+   * cộng nó lần thứ hai vào vế SỔ ⇒ mọi lượt xin bị trừ oan đúng một lần nền (~1 GB), và tệ hơn:
+   * `drift` lệch âm đúng bằng đó. Phép tách nằm ở **một chỗ duy nhất** (`publishSharedLedgerReplica`).
+   * `null` = bảng chưa có hàng nền (chưa ai chụp / chưa ai công bố kịp).
+   */
+  readonly baseline: SharedBaselineRecord | null;
   /** Danh tính đã dùng để lọc — ghi lại để một lượt đổi danh tính không âm thầm đọc số cũ. */
   readonly selfKey: string;
 }
@@ -264,16 +313,116 @@ export function publishSharedLedgerReplica(
   atMs: number,
   selfKey: string,
 ): void {
-  const ngoai = rows.filter((r) => r.processKey !== selfKey);
+  /**
+   * ★★★ Task 3 — PHÉP TÁCH DUY NHẤT giữa "hàng nền" và "giấy phép". Đặt ở đây vì đây là chỗ
+   * **mọi** người đọc đi qua, bất kể cổng thật (Drizzle) hay cổng giả (test): một phép lọc đặt
+   * trong câu SQL của cổng thật sẽ KHÔNG có mặt ở cổng giả, và bộ ca sẽ canh một hình dạng dữ
+   * liệu mà sản xuất không bao giờ thấy (ràng buộc 10 — lưới theo ĐƯỜNG THOÁT, không theo file).
+   */
+  const hangNen = rows.find((r) => r.leaseKey === SHARED_BASELINE_KEY) ?? null;
+  const ngoai = rows.filter((r) => r.leaseKey !== SHARED_BASELINE_KEY && r.processKey !== selfKey);
   let tong = 0;
   for (const r of ngoai) if (Number.isFinite(r.bytes) && r.bytes > 0) tong += r.bytes;
   banSao = Object.freeze({
     atMs,
     foreignBytes: tong,
     foreignLeases: Object.freeze([...ngoai]),
+    baseline: hangNen === null ? null : baselineFromRow(hangNen),
     selfKey,
   });
   soLuotDongBoHongLienTiep = 0;
+}
+
+/**
+ * Đọc NỀN DÙNG CHUNG. **ĐỒNG BỘ, không I/O** — cùng kỷ luật `readSharedLedgerReplica()`.
+ * `null` = chưa làm mới lần nào **HOẶC** chưa ai công bố nền. Hai thứ đó KHÁC NHAU với người gọi
+ * (`readSharedLedgerReplica() === null` phân biệt được), nên hàm này KHÔNG gộp chúng lại thành một
+ * câu trả lời — nó chỉ trả về thứ đang có.
+ */
+export function readSharedBaseline(): SharedBaselineRecord | null {
+  return banSao?.baseline ?? null;
+}
+
+/**
+ * ★★★ NỀN **CỦA CHÍNH TA** ĐANG CÔNG BỐ — `null` ⇔ ta KHÔNG phải người chụp.
+ *
+ * ⚠ MỘT biến, MỘT người ghi (`vramReconciler.captureVramBaseline`), MỘT người đọc
+ * (`vramSharedLedgerStore`) — đúng khuôn `MocCaiChet` của Task 1, để không đẻ ra bản sao thứ hai
+ * của vị từ *"ai là người chụp nền"* (ràng buộc 12).
+ * ⚠ Hàng này KHÔNG đi qua `enqueueSharedLedgerWrite()`: hàng đợi bị `drainSharedLedgerWrites()`
+ * dọn sạch mỗi lượt và chỉ lệnh `delete` sống sót (`upsert` được dựng lại từ sổ CỤC BỘ), nên một ý
+ * định `upsert` nền xếp hàng ở đó sẽ **bị nuốt im lặng**. Đặt ở một ô TRẠNG THÁI và cho lượt đồng
+ * bộ dựng lại mỗi lần chính là **nhịp sống** mà cuộc bầu cần.
+ */
+let nenCuaTa: SharedBaselineRecord | null = null;
+
+/** Chỉ `vramReconciler` gọi. `null` = thôi làm người chụp (đã nhường / đã đọc nền của người khác). */
+export function publishOwnSharedBaseline(rec: SharedBaselineRecord | null): void {
+  nenCuaTa = rec;
+}
+
+/** Chỉ `vramSharedLedgerStore` gọi — nguồn của hàng nền trong mỗi lô ghi. */
+export function ownSharedBaseline(): SharedBaselineRecord | null {
+  return nenCuaTa;
+}
+
+/**
+ * ★★★ GIẤY THÔNG HÀNH: `SharedBaselineRecord` → MỘT HÀNG `vram_leases`. **BẢN DỊCH DUY NHẤT.**
+ *
+ * ⚠⚠ BA Ô ĐANG MANG NGHĨA KHÁC — đây là cái giá của việc KHÔNG chạy DDL, và nó phải được đọc to:
+ *   | cột | nghĩa cho GIẤY PHÉP | nghĩa cho HÀNG NỀN |
+ *   |---|---|---|
+ *   | `leaseId`  | id giấy phép trong tiến trình | **THƯỚC** (`"native"` \| `"smi"`) |
+ *   | `measured` | `bytes` do một THƯỚC đẻ ra | **`baselineVerified` của người chụp** |
+ *   | `bytes`    | byte của giấy phép | **byte NỀN** |
+ * `owner` cố định `"reconciler:baseline"` để đọc bảng bằng mắt là nhận ra ngay.
+ * Ai đổi bảng này phải đổi `baselineFromRow()` ngay dưới — ca `B-1` khoá vòng đi-về.
+ *
+ * ⚠ `leaseKind`/`priority` là hai ô **KHÔNG mang tin**: chúng phải hợp lệ để `varchar` nhận, và
+ * `"external-process"`/`"background"` là cặp trung tính nhất (không hộ nào thu hồi được hàng này —
+ * `reclaimer: null`).
+ */
+export function rowFromBaseline(rec: SharedBaselineRecord): SharedLeaseRow {
+  const [role = "all"] = rec.processKey.split(":");
+  return {
+    leaseKey: SHARED_BASELINE_KEY,
+    processKey: cat(rec.processKey, 96),
+    pid: soHuuHan(rec.pid, 0),
+    role: cat(role, 32),
+    leaseId: rec.source,
+    owner: "reconciler:baseline",
+    leaseKind: "external-process",
+    priority: "background",
+    // ⚠ Nền ÂM là vô nghĩa; `0` là giá trị dự phòng duy nhất KHÔNG BỊA (cùng kỷ luật `rowFromLease`).
+    bytes: Math.max(0, soHuuHan(rec.bytes, 0)),
+    measured: rec.verified,
+    refCount: 1,
+    reclaimer: null,
+    acquiredAtMs: soHuuHan(rec.atMs, 0),
+    updatedAtMs: soHuuHan(rec.atMs, 0),
+  };
+}
+
+/**
+ * Chiều ngược lại. `null` ⇔ hàng KHÔNG đọc được thành một nền — và **`null` ở đây phải được người
+ * gọi hiểu là "KHÔNG CÓ NỀN DÙNG CHUNG", tức đi chụp lấy, TUYỆT ĐỐI không phải "nền = 0"**.
+ *
+ * ⚠ Từ chối THẲNG một hàng có thước lạ thay vì đoán `"smi"`: thước sai làm phép so lệch 165-178
+ * MiB **âm thầm**, còn từ chối thì người đọc tự đi chụp lấy một nền có thước ĐÚNG của mình.
+ */
+export function baselineFromRow(row: SharedLeaseRow): SharedBaselineRecord | null {
+  if (row.leaseKey !== SHARED_BASELINE_KEY) return null;
+  if (row.leaseId !== "native" && row.leaseId !== "smi") return null;
+  if (!Number.isFinite(row.bytes) || row.bytes < 0) return null;
+  if (!Number.isFinite(row.updatedAtMs)) return null;
+  return {
+    processKey: row.processKey,
+    pid: Number.isFinite(row.pid) ? row.pid : 0,
+    bytes: row.bytes,
+    source: row.leaseId,
+    verified: row.measured === true,
+    atMs: row.updatedAtMs,
+  };
 }
 
 /**
@@ -425,6 +574,9 @@ export function __resetSharedLedgerForTests(): void {
   // I-3 — không xoá thì ca sau KẾ THỪA "đã gửi bao nhiêu byte" của ca trước, và một ý định ĐỔI BYTE
   // thật sẽ bị đếm nhầm là "lặp lại con số cũ" ⇒ cờ chưa-đồng-bộ tự mù.
   byteDaGui.clear();
+  // Task 3 — cùng lý do, và hậu quả nặng hơn: ca sau thừa kế "ta là NGƯỜI CHỤP NỀN" của ca trước ⇒
+  // hai tiến trình cùng chụp, đúng lỗi task này sinh ra để diệt, ở một file test chẳng liên quan.
+  nenCuaTa = null;
 }
 
 /**
