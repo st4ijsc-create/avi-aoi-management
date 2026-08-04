@@ -55,8 +55,21 @@ export interface VramEventInput {
    *     `detail.cpuOnly = true` ⇒ 0 lớp trên GPU (chậm gấp bội) — đây chính là suy biến im lặng
    *     mà `gpuLayers: -1` từng tạo ra, nay có tiếng.
    *   • `refuse` — **bước 4**: từ chối trung thực, đã hết mọi nấc. (Đã có sẵn trong từ vựng §5.3.)
-   *   • `warm_failed` — lượt warm lúc khởi động (`aiGgufEngine.warmModel`) trả `false`. Trước
-   *     Pha 2B nhánh đó là `catch {}` NUỐT TRỌN: `0/24` log của Ư0 có dấu vết nào của nó.
+   *   • `warm_failed` — lượt warm lúc khởi động (`aiGgufEngine.warmModel`) trả `false` vì một
+   *     THẤT BẠI THẬT (`generate-threw` — nhánh Ư0 cần — hoặc `availability-probe-threw`). Trước
+   *     Pha 2B nhánh đó là `catch {}` NUỐT TRỌN: `0/24` log của Ư0 không có dấu vết nào của nó.
+   *   • `warm_skipped` (M-5, review vòng 1) — `warmModel` trả `false` vì **KHÔNG CẤU HÌNH GGUF**
+   *     (`gguf-unavailable`). ⚠ TÁCH khỏi `warm_failed` CÓ CHỦ Ý: một cài đặt cố ý không dùng GGUF
+   *     ghi một dòng **mỗi lần khởi động**, và gộp nó vào "failed" là bắt Task 7 lọc rác trong
+   *     chính bảng nó dùng để ĐẾM THẤT BẠI. Vẫn phải có sự kiện (người gọi vẫn nhận `false`, nên
+   *     vẫn phải phân biệt được với hai nhánh kia) — chỉ khác TÊN.
+   *
+   * ★ I-1 (review vòng 1) — `driver_refused`/`refuse` cũng đến từ **NGOÀI** §5.5
+   * (`vramLoadOutcome.noteVramAllocationFailure`), phân biệt bằng `detail.reason`:
+   * `driver-refused-outside-load-outcomes` / `allocation-failed-not-vram`, kèm `detail.site` nói
+   * đích danh đường nào (`loadGgufModel.createContext` · `ensureTextContext.createContext` ·
+   * `getEmbeddingContext.createEmbeddingContext` · `loadGgufModel.fallbackNoRunner`). Bốn đường
+   * này KHÔNG thử lại và KHÔNG hạ số lớp — ai đọc nhật ký đừng đi tìm một `retry` không bao giờ tới.
    */
   event: string;
   owner: string;
