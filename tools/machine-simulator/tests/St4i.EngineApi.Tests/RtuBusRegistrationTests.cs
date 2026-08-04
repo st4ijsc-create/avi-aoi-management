@@ -119,10 +119,21 @@ public sealed class RtuBusRegistrationTests
         Assert.Equal("line1-spare", spare);
     }
 
-    /// <summary>The namespace rule <see cref="RtuBusConfiguration.TryFindBlockedDevice"/> exempts and
-    /// <see cref="RtuBusConfiguration.ReleaseOwnNamespace"/> removes, stated as a table so the two callers
-    /// cannot drift apart silently. The two FALSE rows are the load-bearing ones — a rule that answered
-    /// <see langword="true"/> for either would let one bus delete a neighbour's registration.</summary>
+    /// <summary>
+    /// The namespace rule <see cref="RtuBusConfiguration.TryFindBlockedDevice"/> exempts,
+    /// <see cref="RtuBusConfiguration.ReleaseOwnNamespace"/> removes and
+    /// <c>ModbusMultidropRegistration.SweepGhosts</c> sweeps — stated as a table so those three cannot drift
+    /// apart silently. The FALSE rows are the load-bearing ones: a rule answering <see langword="true"/> for
+    /// any of them lets one bus delete a neighbour's registration.
+    ///
+    /// <para>🔴 <b>Fix round 2, review N-2 — the two <c>:unitA:unit3</c> rows are the ones this theory was
+    /// missing, and their absence is why it could be named <c>…AndNothingElse</c> while being false.</b>
+    /// <c>ValidateBusInstanceId</c> reserves only an all-DIGIT suffix, so <c>line1:unitA</c> is a legal bus
+    /// name and <c>line1:unitA:unit3</c> is a legitimate device of it. The previous predicate answered
+    /// <see langword="true"/> for bus <c>line1</c>, which would release that device's machine claim while its
+    /// driver kept polling. The positive row beneath it is the other half: the id must still belong to the bus
+    /// that DID derive it.</para>
+    /// </summary>
     [Theory]
     [InlineData("line1", "line1", true)]
     [InlineData("line1", "line1:unit1", true)]
@@ -131,8 +142,38 @@ public sealed class RtuBusRegistrationTests
     [InlineData("line1", "line10:unit1", false)]
     [InlineData("line1", "line1:unitA", false)]
     [InlineData("line1", "Modbus", false)]
+    // 🔴 N-2's falsifying row, and its mirror: an id belongs to the LONGEST bus name that can precede its
+    // final ":unit", and to no other.
+    [InlineData("line1", "line1:unitA:unit3", false)]
+    [InlineData("line1:unitA", "line1:unitA:unit3", true)]
+    // Same length as the bus name, nothing else in common — proves the position check has not replaced the
+    // prefix check.
+    [InlineData("abcde", "xyzab:unit3", false)]
     public void TheBusNamespaceRule_CoversItsOwnDerivedIdsAndNothingElse(string bus, string candidate, bool expected)
         => Assert.Equal(expected, RtuBusConfiguration.IsInBusNamespace(bus, candidate));
+
+    /// <summary>🔴 Fix round 2, N-2/N-3 — the over-breadth reaching its CONSEQUENCE on the production path,
+    /// not just the predicate. Bus <c>line1:unitA</c> is registered; saving bus <c>line1</c> must not release
+    /// it. Before this fix the release took it, so a device on a different line lost its machine claim while
+    /// its driver kept polling and its store row stayed — with nothing said until a restart.</summary>
+    [Fact]
+    public async Task SavingOneBus_NeverReleasesADeviceOfADifferentBusWhoseNameSharesItsPrefix()
+    {
+        var registry = new ConnectorRegistry();
+        Assert.True(registry.Register(
+            new OutsiderFactory(), "cfg", instanceId: "line1:unitA:unit3", machineCode: "NEIGHBOUR"));
+
+        var bus = Resolve("line1", SerialBus(Device("RTU-A", 1)));
+        await using var busRegistry = new ModbusBusRegistry();
+
+        var outcome = RtuBusConfiguration.TryRegisterAll(bus, busRegistry, registry, NullLogger.Instance);
+
+        Assert.True(outcome.Succeeded);
+        Assert.Equal(0, outcome.IncumbentsReleased);
+        Assert.Contains("line1:unitA:unit3", registry.RegisteredIds);
+        Assert.True(registry.TryGetInstanceIdForMachine("NEIGHBOUR", out var neighbour));
+        Assert.Equal("line1:unitA:unit3", neighbour);
+    }
 
     /// <summary>A factory that never builds a driver — enough to hold a registry claim. Its
     /// <c>[NotNullWhen]</c> attributes match <see cref="IConnectorFactory.TryCreate"/>'s own, because a

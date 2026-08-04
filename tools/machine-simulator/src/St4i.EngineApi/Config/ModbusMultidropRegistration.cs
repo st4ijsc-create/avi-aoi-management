@@ -265,19 +265,19 @@ public static class ModbusMultidropRegistration
             stillDeclared.Add(DriverKinds.Normalize(device.InstanceId));
         }
 
-        var busNamespacePrefix = DriverKinds.Normalize(busInstanceId) + ModbusMultidropMap.DeviceIdSuffixPrefix;
-        var normalizedBusId = DriverKinds.Normalize(busInstanceId);
-
         foreach (var binding in before)
         {
             if (stillDeclared.Contains(binding.InstanceId)) continue;
 
-            var isThisBus =
-                string.Equals(binding.InstanceId, normalizedBusId, StringComparison.Ordinal)
-                || (binding.InstanceId.StartsWith(busNamespacePrefix, StringComparison.Ordinal)
-                    && ModbusMultidropMap.LooksLikeADeviceInstanceId(binding.InstanceId));
-
-            if (!isThisBus) continue;
+            // 🔴 D-7b fix round 2 (review N-2/N-3) — the namespace test used to be written out here, and D-7b
+            // copied it into RtuBusConfiguration for the endpoint path while citing THIS method as sharing the
+            // rule. Two statements of one rule, on a fix whose own justification was principle 3. Both were
+            // also OVER-BROAD in the same way: they asked only that an id start with "{bus}:unit" and end in
+            // digits, so bus `line1` swept `line1:unitA:unit3` — a device of the different, legally-named bus
+            // `line1:unitA`. Redirected here rather than fixed twice, so the correction reaches the path it
+            // was inherited from. See RtuBusConfiguration.IsInBusNamespace for the arithmetic and for what it
+            // does and does not promise.
+            if (!RtuBusConfiguration.IsInBusNamespace(busInstanceId, binding.InstanceId)) continue;
 
             if (!registry.Unregister(binding.InstanceId)) continue;
 

@@ -1092,7 +1092,29 @@ EXPECT_EDGESERVICE=28
 #          rule would take the first), and a 7-row [Theory] stating the namespace rule itself, since
 #          TryFindBlockedDevice's exemption and ReleaseOwnNamespace's removal must be the SAME set or an edit
 #          is refused that the register pass was about to make work.
-EXPECT_ENGINEAPI=1265
+#
+# 🔴 D-7b FIX ROUND 2 raises this 1265 -> 1269 (+4), all in RtuBusRegistrationTests (10 -> 14). Counted from
+# the runner (18/14/6/5). Review N-2: the shared bus-namespace predicate was OVER-BROAD — it asked only that
+# an id start with "{bus}:unit" and end in digits, so bus `line1` claimed `line1:unitA:unit3`, which is a
+# legitimate device of the DIFFERENT bus `line1:unitA` (a legal name: ValidateBusInstanceId reserves only an
+# all-DIGIT suffix). Saving `line1` released that device's machine claim while its driver kept polling.
+#
+#     + 3  three rows added to TheBusNamespaceRule_… — the falsifying row the reviewer supplied
+#            (`line1` vs `line1:unitA:unit3` = false), its mirror (`line1:unitA` vs the same id = true, so the
+#            fix does not simply narrow the rule into uselessness), and a same-length/different-prefix row
+#            (`abcde` vs `xyzab:unit3`) proving the new position check did not REPLACE the prefix check. The
+#            theory was named `…AndNothingElse` while omitting the row that falsified it, which is what let a
+#            doc call the property "a guarantee rather than a hope".
+#     + 1  SavingOneBus_NeverReleasesADeviceOfADifferentBusWhoseNameSharesItsPrefix — the same defect at its
+#            CONSEQUENCE on the production path rather than at the predicate: a registered device of bus
+#            `line1:unitA` survives a save of bus `line1`, with IncumbentsReleased == 0.
+#
+# No test is added for N-3 (SweepGhosts now calls the shared predicate instead of its own inline copy) and
+# that is deliberate: ModbusMultidropRegistrationTests already owns that behaviour and its
+# TheGhostSweep_NeverTouchesAnotherBusOrAnOrdinaryConnector is what a redirection must not break — verified
+# by mutation (making the sweep ignore the namespace kills 2 of its 13). A redirection that moved the total
+# there would mean it was not behaviour-preserving.
+EXPECT_ENGINEAPI=1269
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

@@ -3717,8 +3717,10 @@ gieo vào đội hình qua `RegisterMachine`), `DELETE /v1/connectors/{instanceI
 đổi gì — dựng driver dùng-một-lần, thử đọc có giới hạn thời gian). 🔴 **ĐÍNH CHÍNH (D-7b):** đoạn URL ngay trên đây trước là `{kind}`; từ D-1 nó là `{instanceId}`, vì khi
 đã cấu hình được hai kết nối cùng giao thức thì "kind" không còn xác định được cái gì để xoá — mọi URL từ
 trước D-1 vẫn chạy nguyên vì instance id của một dòng đã migrate CHÍNH LÀ kind của nó. Bản thân trang web
-mãi tới D-7b mới bắt kịp (xem §23.4). **Chỉ Modbus TCP và OPC-UA** được
-chọn — 2 giao thức build này có driver thật. **"JSON map"** đúng y hệt shape 2 biến môi trường
+mãi tới D-7b mới bắt kịp (xem §23.4). **Chỉ Modbus và OPC-UA** được chọn — những giao thức mà build này
+có driver thật. 🔴 **Và Đợt D thêm một lựa chọn THỨ BA trên biểu mẫu đó, không phải một giao thức thứ
+ba:** "Modbus RTU (RS-485)" vẫn là kind `Modbus`, chỉ khác ở chỗ tài liệu của nó khai báo `transport` — tức
+là cả một TUYẾN multidrop chứ không phải một kết nối đơn lẻ. Xem §23. **"JSON map"** đúng y hệt shape 2 biến môi trường
 `ST4I_MODBUS_MAP`/`ST4I_OPCUA_MAP` đã dùng, nhập bằng cách dán/tải file `.json` vào một `<textarea>`
 thường — **CHƯA có bộ dựng map trực quan/đồ hoạ**. **Thêm máy MỚI áp dụng sống ngay; lưu lại một máy ĐÃ
 CÓ thì KHÔNG** — `RegisterMachine` chỉ biết THÊM, không "gỡ đăng ký"/"cập nhật tại chỗ", nên máy mới vào
