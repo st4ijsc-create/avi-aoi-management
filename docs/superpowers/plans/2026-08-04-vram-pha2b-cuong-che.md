@@ -187,7 +187,12 @@ Chỉ thu hồi được giấy phép **đang nhàn rỗi** (`refCount === 0`) h
 **Cổng 2 nằm ở đây:** khoá cửa sổ đo hiện là **FIFO không ưu tiên**, nên `onnx-session` mức `production` xếp sau việc nền **tối đa 180 s**. Đưa ưu tiên vào hàng chờ của khoá.
 ⚠ Ưu tiên trong hàng chờ **dễ gây chết đói** cho mức thấp. Phải có cơ chế chống chết đói (ví dụ nâng hạng theo thời gian chờ) **và test chứng minh nó**, nếu không ta vừa đổi một vấn đề độ trễ lấy một vấn đề treo vĩnh viễn.
 
-- [ ] **Bước 1: Viết test thất bại trước** — `production` không bị thu hồi · `background` nhường trước · chỉ thu hồi lease nhàn rỗi · **chống chết đói** · headroom âm ⇒ từ chối · `blind: true` ⇒ suy biến an toàn (chỉ-sổ) và **ghi rõ đang chạy mù**.
+🔴 **ĐÍNH CHÍNH (sau review Task 2) — hai câu dưới đây trong bản đầu là SAI, đọc trước khi viết ca:**
+- *"`blind: true` ⇒ suy biến an toàn (chỉ-sổ)"* — **SAI**, xem ràng buộc toàn cục 10. Chỉ-sổ là **nhánh RỘNG RÃI NHẤT**.
+- *"tick quá cũ ⇒ vứt `attributable` ⇒ `null`"* — **cũng là phép LÀM LỎNG**, không phải làm chặt, vì `null` là **chặn TRÊN**. Chính sách hết hạn đúng: **giữ số VÀ cộng biên theo tuổi**, rồi hạ `trusted` — **tuyệt đối không đi qua `attributableBytes = null`**.
+- Tick cũ là một **phạm trù thứ ba chưa có cờ**: nó khai **số sai kèm dấu ĐÁNG TIN** (`blind: false`, `trusted` có thể `true`). Đừng gộp nó vào `blind`.
+
+- [ ] **Bước 1: Viết test thất bại trước** — `production` không bị thu hồi · `background` nhường trước · chỉ thu hồi lease nhàn rỗi · **chống chết đói** · headroom âm ⇒ từ chối · **`blind`/`unverified` ⇒ hệ CHẶT HƠN** (mỗi mức suy giảm một chính sách riêng, không gộp) và **ghi rõ đang chạy mù**.
 - [ ] **Bước 2: Chạy để thấy đỏ.**
 - [ ] **Bước 3: Cài đặt.** ⚠ Giữ `reserve()` **đồng bộ** (ràng buộc 1) — đọc ô tick gần nhất, **không `await`**.
 - [ ] **Bước 4: Chạy toàn bộ + xáo thứ tự ×2.**
@@ -251,7 +256,7 @@ Quyết định của chủ dự án: việc **`background`** bị từ chối t
 | # | Điều kiện | Cách kiểm |
 |---|---|---|
 | 1 | Nền **từ chối** tuyên bố sạch khi có PID lạ | nghiệm thu sống Task 1 |
-| 2 | `headroom` dùng `max(ledger, attributable)`, `blind` suy biến an toàn | test Task 2 |
+| 2 | `headroom` dùng `max(ledger, attributable)`; `blind`/`unverified` làm hệ **CHẶT HƠN**, mỗi mức một chính sách riêng | test Task 2 + Task 5 |
 | 3 | **Không còn** suy biến im lặng — mọi nhánh thất bại để lại sự kiện | test Task 3 |
 | 4 | Từ chối trung thực mang đủ **bốn** thành phần + phần không quy trách nhiệm được | test Task 4 |
 | 5 | `production` không bị thu hồi; **chống chết đói** có test | test Task 5 |
