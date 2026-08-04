@@ -4,7 +4,13 @@
 
 **Mục tiêu:** Gỡ giả định cuối còn lại của cả kiến trúc — **mỗi tiến trình giữ một sổ riêng**. Sau pha này, `api` · `worker` · `edge` · sidecar · cron đọc **một sổ dùng chung**, giấy phép mồ côi được **nhận nuôi** thay vì bị nuốt vào nền, và `preempt()` với tới được hộ **ngoài tiến trình**.
 
-**Kiến trúc:** Sổ chung nằm ở **DB** (bảng `vram_leases` đã tồn tại từ Pha 1). ⚠ **`reserve()` phải giữ ĐỒNG BỘ** — đó là lá chắn cấu trúc từ Pha 1 — nên nó **không được `await` DB**. Mô hình: mỗi tiến trình giữ **bản sao đọc** của sổ chung, làm mới theo nhịp reconciler; **quyết định** đọc bản sao đồng bộ; **ghi** đi qua DB bất đồng bộ sau khi đã quyết.
+**Kiến trúc:** Sổ chung nằm ở **DB**, bảng `vram_leases`.
+
+> 🔴 **ĐÍNH CHÍNH (2026-08-05, do Task 2 phát hiện) — bản đầu của dòng này viết *"bảng `vram_leases` đã tồn tại từ Pha 1"*. SAI.** Pha 1 (migration `0310`) chỉ dựng **`vram_events`** — một nhật ký **chỉ-ghi-thêm**, và docstring của chính nó ghi rõ *"sổ cái SỐNG nằm trong bộ nhớ tiến trình"*. **Sổ chung ở DB CHƯA TỪNG TỒN TẠI**; migration `0312` là lượt tạo **đầu tiên** (đã áp lên cả `aoi_management` và `aoi_management_test`, owner `aoi`).
+>
+> **Hai bảng, hai vai — đừng nhầm:** `vram_events` = **LỊCH SỬ**, chỉ-ghi-thêm, **không ai đọc để quyết định**. `vram_leases` = **TRẠNG THÁI SỐNG**, có xoá, và **đường quyết định ĐỌC NÓ**.
+>
+> ⚠ Đây là một khẳng định **sự thật về CSDL** trong kế hoạch của controller mà không ai kiểm trước khi task khởi động — cùng lớp lỗi mà pha trước bắt được tám lần ở phía implementer. ⚠ **`reserve()` phải giữ ĐỒNG BỘ** — đó là lá chắn cấu trúc từ Pha 1 — nên nó **không được `await` DB**. Mô hình: mỗi tiến trình giữ **bản sao đọc** của sổ chung, làm mới theo nhịp reconciler; **quyết định** đọc bản sao đồng bộ; **ghi** đi qua DB bất đồng bộ sau khi đã quyết.
 
 **Đây là pha ĐỔI HÀNH VI.** Một tiến trình nay có thể bị từ chối vì **tiến trình KHÁC** đang giữ chỗ.
 
