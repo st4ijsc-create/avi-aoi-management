@@ -56,8 +56,18 @@ class FakeChildProc extends EventEmitter {
   pid = 4242;
   stdout = new EventEmitter();
   stderr = new EventEmitter();
-  kill() {
+  /**
+   * ★★★ Pha 3 Task 1 (I-1) — GHI LẠI **TÍN HIỆU**, không chỉ ghi "đã bị giết".
+   *
+   * `killed = true` ĐỒNG BỘ ngay khi lời gọi `kill()` gửi tín hiệu thành công là hành vi THẬT của
+   * `ChildProcess` (Node đặt cờ này ở chính lời gọi, không đợi tiến trình chết) — bản giả phải sao
+   * đúng, nếu không ca I-1 xanh nhầm. Danh sách tín hiệu là thứ cho phép hỏi *"SIGKILL có thật sự
+   * được gửi không"* thay vì chỉ hỏi *"có ai đó từng gọi kill không"*.
+   */
+  killSignals: string[] = [];
+  kill(sig?: string) {
     this.killed = true;
+    this.killSignals.push(sig ?? "SIGTERM");
     return true;
   }
 }
@@ -92,6 +102,43 @@ function stubHealthyFetch() {
     }),
   );
 }
+
+/**
+ * ★★★ I-2 — `/health` **và** `/v1/chat/completions`, để ca test đi được ĐƯỜNG THẬT
+ * `describeImageViaSidecar()` thay vì tự đặt `refCount` bằng tay.
+ *
+ * `chan` (nếu truyền) là một lời hứa mà lượt suy luận sẽ CHỜ — cửa để quan sát trạng thái
+ * **GIỮA CHỪNG**, tức chứng minh cả vế TĂNG lẫn vế GIẢM của bộ đếm đều đi qua sổ.
+ */
+function stubVisionFetch(opts: { chan?: Promise<void>; hong?: boolean } = {}) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.endsWith("/health")) {
+        return { ok: true, json: async () => ({ status: "ok" }) } as unknown as Response;
+      }
+      if (u.endsWith("/v1/chat/completions")) {
+        if (opts.chan) await opts.chan;
+        if (opts.hong) {
+          return { ok: false, status: 500, text: async () => "boom (ca thử nghiệm)" } as unknown as Response;
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [{ message: { content: "một mô tả" } }],
+            usage: { prompt_tokens: 3, completion_tokens: 2 },
+            model: "qwen2-vl",
+          }),
+        } as unknown as Response;
+      }
+      return { ok: false, status: 404, text: async () => "" } as unknown as Response;
+    }),
+  );
+}
+
+/** Ảnh nhỏ nhất đủ để `detectMime()` nhận ra PNG — nội dung không quan trọng với ca test này. */
+const ANH_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 let lastSidecarProc: FakeChildProc | undefined;
 let lastCronChild: FakeChildProc | undefined;
@@ -226,6 +273,91 @@ describe("Pha 1 Task 6 — dây nối ngoài tiến trình: người giám sát 
     });
 
     /**
+     * ★★★ I-1 (review Task 1) — **`proc.killed` KHÔNG PHẢI VỊ TỪ CÁI CHẾT, NÊN SIGKILL KHÔNG BAO
+     * GIỜ ĐƯỢC GỬI.**
+     *
+     * Hẹn giờ cưỡng bức trong `stopSidecar()` canh cửa bằng `if (!proc.killed)`. Nhưng Node đặt
+     * `child.killed = true` **ĐỒNG BỘ ngay tại lời gọi `kill()`** khi tín hiệu GỬI thành công — nó
+     * khai *"tôi đã gửi được tín hiệu"*, **không** khai *"tiến trình đã chết"*. Sau `SIGTERM` thành
+     * công thì `killed` LUÔN `true` ⇒ điều kiện luôn sai ⇒ **`SIGKILL` là mã chết**. Nhánh duy nhất
+     * còn nổ được là khi chính `SIGTERM` **thất bại** — tức ĐÚNG NGƯỢC ý định.
+     *
+     * ⚠⚠ Nguy hiểm nhất không phải mã mà là VĂN BẢN: chú thích ngay trên đó mô tả trạng thái
+     * *"tiến trình không chết được cả sau SIGKILL"* như một ca có thật, và **Task 4 sẽ dựng `ttlMs`
+     * lên trên câu đó**. Một câu chữ mô tả trạng thái mà mã KHÔNG tạo ra được là nền cát.
+     *
+     * ⚠ Vị từ đúng là chính `daChet` — và nó phải được đọc từ **CÙNG MỘT nguồn** với `Promise.race`
+     * bên dưới (ràng buộc 12: không đẻ bản sao thứ hai của một vị từ).
+     */
+    it("★★★ I-1 — SIGKILL PHẢI được gửi ở mốc 5.000 ms khi tiến trình CHƯA chết (`proc.killed` không phải vị từ cái chết)", async () => {
+      vi.useFakeTimers();
+      try {
+        delete process.env.LLAMA_VISION_STOP_WAIT_MS; // mặc định 8.000
+        stubHealthyFetch();
+        const { __startSidecarForTests, __stopSidecarForTests } = await import("../llamaVisionSidecar");
+        await __startSidecarForTests();
+
+        const proc = lastSidecarProc!;
+        const p = __stopSidecarForTests();
+        // SIGTERM gửi ngay, và Node đặt `killed = true` NGAY — đây chính là cái bẫy.
+        expect(proc.killSignals).toEqual(["SIGTERM"]);
+        expect(proc.killed, "Node đặt cờ này đồng bộ ở lời gọi kill(), không đợi cái chết").toBe(true);
+
+        await vi.advanceTimersByTimeAsync(4999);
+        expect(proc.killSignals, "chưa tới mốc cưỡng bức").toEqual(["SIGTERM"]);
+
+        await vi.advanceTimersByTimeAsync(1);
+        expect(
+          proc.killSignals,
+          "tiến trình CHƯA phát 'exit' ⇒ mốc 5.000 ms phải cưỡng bức SIGKILL; canh bằng `proc.killed` thì nhánh này là MÃ CHẾT",
+        ).toEqual(["SIGTERM", "SIGKILL"]);
+
+        // dọn: để lượt chờ kết thúc trung thực thay vì treo một promise
+        await vi.advanceTimersByTimeAsync(3000);
+        await expect(p).resolves.toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * ★★★ M-3 (review Task 1) — **HAI ca hạn chờ ở trên chỉ chặn phía DƯỚI.**
+     *
+     * Chúng chứng minh *"có CHỜ"*, nên đột biến `: 8000 → : 60000` **sống sót**: chờ lâu hơn vẫn
+     * qua được cả hai. Mà chờ quá lâu là một lỗi thật — `stopSidecar()` nằm trên đường
+     * `beginVramAllocation()` của một lượt nạp model, kéo hạn lên 60 s là biến một lượt thu hồi
+     * hỏng thành một **lượt treo 60 giây** cho người đang xin.
+     * ⇒ Ca này khoá **CẢ HAI MÉP** của hạn mặc định bằng đồng hồ giả: 7.999 ms chưa trả lời,
+     * 8.000 ms trả `false`.
+     */
+    it("★★★ M-3 — hạn mặc định là 8.000 ms ĐÚNG NGHĨA: 7.999 ms chưa trả lời, 8.000 ms trả `false`", async () => {
+      vi.useFakeTimers();
+      try {
+        delete process.env.LLAMA_VISION_STOP_WAIT_MS;
+        stubHealthyFetch();
+        const { __startSidecarForTests, __stopSidecarForTests } = await import("../llamaVisionSidecar");
+        await __startSidecarForTests();
+
+        let daTraLoi = false;
+        const p = __stopSidecarForTests().then((v) => {
+          daTraLoi = true;
+          return v;
+        });
+
+        await vi.advanceTimersByTimeAsync(7999);
+        expect(daTraLoi, "mép DƯỚI: hạn ngắn hơn 8.000 ⇒ trả lời sớm").toBe(false);
+
+        await vi.advanceTimersByTimeAsync(1);
+        await expect(p, "mép TRÊN: hạn dài hơn 8.000 ⇒ chưa trả lời ở đây").resolves.toBe(false);
+
+        // Sổ vẫn GIỮ: chưa quan sát được cái chết thì thiết bị vẫn coi như đang giữ.
+        expect((await currentLeases()).some((x) => x.request.owner.startsWith("sidecar:"))).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
      * ★★★ C-2 (review TOÀN NHÁNH) — NGỮ NGHĨA **THẬT** CỦA NGƯỜI THI HÀNH, KHÔNG PHẢI BẢN GIẢ.
      *
      * `consolidation.test.ts` thay `stopSidecar` bằng một bản giả, nên đường bất đồng bộ THẬT
@@ -293,6 +425,105 @@ describe("Pha 1 Task 6 — dây nối ngoài tiến trình: người giám sát 
       // ⚠ Đo bằng SỔ: con số này chỉ khác 0 khi giấy phép ĐÃ rời sổ, tức khi OS đã thu hồi VRAM.
       expect(kq.freedBytes).toBe(truoc);
       expect(snapshot().totalReservedBytes).toBe(0);
+    });
+
+    /**
+     * ★★★ I-2 (review Pha 3 Task 1) — **DÂY `refCount` ĐỨT MÀ 559/559 VẪN XANH. LẦN THỨ SÁU.**
+     *
+     * Reviewer vô hiệu `broker.setLeaseRefCount(lease.id, n)` ở `vramWiring.ts` (thân
+     * `noteRefCount`) ⇒ **KHÔNG MỘT CA NÀO ĐỎ**. Nếu dây đó đứt thật: `refCount` kẹt `1` (mặc định
+     * an toàn của `reserve()`) ⇒ `nguoiThiHanhThuHoi()` trả `null` **vĩnh viễn** ⇒ **toàn bộ người
+     * thi hành `"vision-sidecar"` — đúng thứ Task 1 vừa nghiệm thu SỐNG — thành MÃ CHẾT**, và mọi
+     * lượt hết chỗ thành từ chối cứng. Im lặng tuyệt đối.
+     *
+     * ⚠⚠ VÌ SAO HAI NỬA LƯỚI CŨ KHÔNG BẮT ĐƯỢC — và đây đúng là *"lưới đi theo FILE chứ không theo
+     * ĐƯỜNG THOÁT"*, lần thứ SÁU trong pha này:
+     *   • `enforcement.callsites.test.ts` canh **đầu trên** (điểm gọi có `noteRefCount` không) bằng
+     *     một **ticket GIẢ** ⇒ không chạm `vramWiring`;
+     *   • `consolidation` / `C-2a` / `C-2b` canh **đầu dưới** (`refCount === 0` ⇒ thu hồi được)
+     *     bằng số 0 **do chính ca test đặt** qua `setLeaseRefCount` ⇒ không chạm `noteRefCount`.
+     *   ⇒ Hai nửa đứng hai đầu sợi dây, **không nửa nào đi qua dây**.
+     *
+     * ⇒ Khuôn đúng: đi **HẾT** đường thật `describeImageViaSidecar` → `soRequestDangBay` →
+     * `dongBoRefCountSidecar` → `ticket.noteRefCount` → `broker.setLeaseRefCount`, rồi đọc **con số
+     * mà mã sản xuất gửi vào sổ**. Ca này KHÔNG gọi `setLeaseRefCount` một lần nào.
+     */
+    it("★★★ I-2 — `refCount` về 0 QUA ĐƯỜNG THẬT (một lượt suy luận xong) ⇒ hộ 7,8 GB mới thu hồi được", async () => {
+      stubVisionFetch();
+      const { __startSidecarForTests, describeImageViaSidecar } = await import("../llamaVisionSidecar");
+      await __startSidecarForTests();
+
+      const { nguoiThiHanhThuHoi, preemptPlan } = await import("./vramBroker");
+      const tim = async () => (await currentLeases()).find((x) => x.request.owner === "sidecar:vision")!;
+
+      // Trước lượt suy luận đầu tiên: mặc định AN TOÀN của reserve() ⇒ CHƯA thu hồi được.
+      const truoc = await tim();
+      expect(truoc.refCount, "reserve() mặc định 1 = 'coi như đang dùng'").toBe(1);
+      expect(nguoiThiHanhThuHoi(truoc)).toBeNull();
+
+      await describeImageViaSidecar({ image: ANH_PNG, prompt: "mô tả" });
+
+      // ★ Con số này do MÃ SẢN XUẤT ghi vào sổ — ca test không đặt nó.
+      const sau = await tim();
+      expect(sau.refCount, "finally của describeImageViaSidecar phải hạ bộ đếm QUA sổ").toBe(0);
+      expect(nguoiThiHanhThuHoi(sau)).toBe("vision-sidecar");
+      expect(preemptPlan("production", 1024).map((s) => s.owner)).toContain("sidecar:vision");
+    });
+
+    /**
+     * ★★ I-2 (vế TĂNG) — nửa còn lại của cùng sợi dây: khi một request ĐANG BAY, sổ phải khai
+     * `refCount = 1`, nếu không `preempt()` sẽ giết ngang một lượt suy luận thị giác đang chạy.
+     * Quan sát GIỮA CHỪNG bằng một lời hứa chặn ở tầng `fetch`.
+     */
+    it("★★★ I-2 (vế TĂNG) — request ĐANG BAY ⇒ sổ khai `refCount = 1` ⇒ KHÔNG thu hồi ngang", async () => {
+      let moChan: () => void = () => {};
+      const chan = new Promise<void>((r) => {
+        moChan = r;
+      });
+      stubVisionFetch({ chan });
+      const { __startSidecarForTests, describeImageViaSidecar } = await import("../llamaVisionSidecar");
+      await __startSidecarForTests();
+
+      const { nguoiThiHanhThuHoi } = await import("./vramBroker");
+      const tim = async () => (await currentLeases()).find((x) => x.request.owner === "sidecar:vision")!;
+
+      // Lượt 1 chạy trọn để đưa bộ đếm về 0 qua đường thật.
+      moChan();
+      await describeImageViaSidecar({ image: ANH_PNG, prompt: "mô tả" });
+      expect((await tim()).refCount).toBe(0);
+
+      // Lượt 2: chặn giữa chừng.
+      let moChan2: () => void = () => {};
+      const chan2 = new Promise<void>((r) => {
+        moChan2 = r;
+      });
+      stubVisionFetch({ chan: chan2 });
+      const dangBay = describeImageViaSidecar({ image: ANH_PNG, prompt: "mô tả" });
+      await new Promise((r) => setTimeout(r, 10));
+
+      const giua = await tim();
+      expect(giua.refCount, "đang có request bay ⇒ sổ phải khai ĐANG DÙNG").toBe(1);
+      expect(nguoiThiHanhThuHoi(giua), "đang dùng ⇒ KHÔNG ai được nhường chỗ hộ này").toBeNull();
+
+      moChan2();
+      await dangBay;
+      expect((await tim()).refCount).toBe(0);
+    });
+
+    /**
+     * ★★ I-2 (đường LỖI) — *"đặt cờ trước một lời gọi có thể ném, gỡ ngoài `finally`"*. Một lượt
+     * suy luận NÉM mà không hạ bộ đếm là **chốt kẹt VĨNH VIỄN**: hộ 7,8 GB không bao giờ nhường
+     * chỗ được nữa, và không ai thấy vì con số đó không hiện ở đâu.
+     */
+    it("★★★ I-2 (đường LỖI) — lượt suy luận NÉM ⇒ bộ đếm vẫn về 0 (finally), không chốt kẹt", async () => {
+      stubVisionFetch({ hong: true });
+      const { __startSidecarForTests, describeImageViaSidecar } = await import("../llamaVisionSidecar");
+      await __startSidecarForTests();
+
+      await expect(describeImageViaSidecar({ image: ANH_PNG, prompt: "mô tả" })).rejects.toThrow(/500/);
+
+      const l = (await currentLeases()).find((x) => x.request.owner === "sidecar:vision")!;
+      expect(l.refCount, "ném mà không hạ bộ đếm = chốt kẹt vĩnh viễn").toBe(0);
     });
 
     it('3. ĐỘT BIẾN — sidecar CHẾT ĐỘT NGỘT (proc "exit", KHÔNG qua stopSidecar) ⇒ vẫn TRẢ giấy phép', async () => {

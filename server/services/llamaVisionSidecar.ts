@@ -223,7 +223,48 @@ interface SidecarState {
    * trả giấy phép (`"exit"` và `"error"`). Đây là thứ làm `stopSidecar()` khai được sự thật thay
    * vì khai ý định: giữa `SIGTERM` và lúc OS thật sự thu hồi 7.825 MiB, **không ai được nói xong**.
    */
-  daChet: Promise<void>;
+  daChet: MocCaiChet;
+}
+
+/**
+ * ★★★ I-1 (review Pha 3 Task 1) — **VỊ TỪ "ĐÃ CHẾT", MỘT NGUỒN, HAI KIỂU ĐỌC.**
+ *
+ * Có đúng HAI nơi cần biết tiến trình đã chết chưa, và chúng cần hai HÌNH DẠNG khác nhau:
+ *   • `stopSidecar()` chờ ⇒ cần một **lời hứa** (`xong`);
+ *   • hẹn giờ cưỡng bức `SIGKILL` chạy trong một callback đồng bộ ⇒ cần một **câu trả lời NGAY**
+ *     (`daXong()`).
+ *
+ * ⚠⚠ Chúng **KHÔNG được** là hai bản cài đặt (ràng buộc 12 — vị từ dùng chung). Cái bẫy vừa bị bắt
+ * đúng là hậu quả của việc hẹn giờ tự chế một vị từ riêng bằng `proc.killed`: Node đặt cờ đó ĐỒNG
+ * BỘ ngay khi `kill()` **gửi được tín hiệu**, nên nó khai *"đã gửi"* chứ không khai *"đã chết"* ⇒
+ * điều kiện luôn sai ⇒ `SIGKILL` thành **mã chết**, và nhánh duy nhất còn nổ được là khi chính
+ * `SIGTERM` thất bại — đúng ngược ý định.
+ *
+ * ⇒ MỘT người ghi (`danhDau`), hai người đọc, không có đường nào để hai người đọc lệch nhau.
+ */
+interface MocCaiChet {
+  /** Lời hứa — giải quyết đúng một lần, gọi lại vô hại (Promise idempotent). */
+  readonly xong: Promise<void>;
+  /** Câu trả lời ĐỒNG BỘ cho đúng cùng một câu hỏi. Không phải bản sao: cùng một biến. */
+  daXong(): boolean;
+  /** Người ghi DUY NHẤT. Gọi nhiều lần vô hại — cùng lý do `ticket.release()` được phép. */
+  danhDau(): void;
+}
+
+function moMocCaiChet(): MocCaiChet {
+  let roi = false;
+  let giaiQuyet: () => void = () => {};
+  const xong = new Promise<void>((res) => {
+    giaiQuyet = res;
+  });
+  return {
+    xong,
+    daXong: () => roi,
+    danhDau: () => {
+      roi = true;
+      giaiQuyet();
+    },
+  };
 }
 
 let sidecar: SidecarState | null = null;
@@ -375,10 +416,7 @@ export async function ensureSidecar(): Promise<void> {
      * lượt `exit` sớm rơi vào hư không. `resolve` gọi nhiều lần là vô hại (Promise idempotent) —
      * cùng lý do `ticket.release()` được phép gọi từ cả hai nhánh.
      */
-    let danhDauDaChet: () => void = () => {};
-    const daChet = new Promise<void>((res) => {
-      danhDauDaChet = res;
-    });
+    const daChet = moMocCaiChet();
     // ⚠ release() PHẢI chạy ở MỌI nhánh thoát: "exit" (chết đột ngột — crash/kill/OOM, KHÔNG
     // qua stopSidecar()) VÀ "error" (spawn thất bại — ENOENT/EACCES; "exit" có thể KHÔNG BAO GIỜ
     // tới trong ca này). Thiếu một nhánh là giấy phép TREO vĩnh viễn — reconciler báo lệch ÂM
@@ -395,7 +433,7 @@ export async function ensureSidecar(): Promise<void> {
       }
       // ⚠ C-2 — NGOÀI `try`: một `release()` ném không được phép nuốt mốc "đã chết", nếu không
       // `stopSidecar()` chờ hết hạn rồi khai `false` cho một tiến trình ĐÃ chết thật.
-      danhDauDaChet();
+      daChet.danhDau();
       if (sidecar?.proc === proc) {
         sidecar = null;
         if (idleTimer) {
@@ -413,7 +451,7 @@ export async function ensureSidecar(): Promise<void> {
       } catch {
         /* telemetry KHÔNG được làm hỏng vòng đời sidecar */
       }
-      danhDauDaChet();
+      daChet.danhDau();
       if (sidecar?.proc === proc) {
         sidecar = null;
         if (idleTimer) {
@@ -508,16 +546,25 @@ export async function stopSidecar(): Promise<boolean> {
   // SIGKILL cưỡng bức, crash, OOM — và chúng chạy khi tiến trình ĐÃ chết, tức khi OS đã thu hồi
   // VRAM của nó. `release()` idempotent nên gọi từ cả hai là vô hại.
   //
-  // ⚠ Ca duy nhất còn giữ giấy phép: tiến trình không chết được cả sau SIGKILL. Khi đó thiết bị
-  // THẬT SỰ vẫn giữ 7.825 MiB ⇒ giữ giấy phép là ĐÚNG, không phải rò rỉ. `ttlMs` là thứ Pha 2/3
-  // dùng để xác minh rồi thu hồi ca đó (spec §6).
+  // ⚠ Ca duy nhất còn giữ giấy phép: tiến trình không chết được cả sau SIGKILL — tức `TerminateProcess`
+  // được gọi mà tiến trình vẫn không tháo dỡ xong (driver treo, I/O nhân không huỷ được). Khi đó
+  // thiết bị THẬT SỰ vẫn giữ 7.825 MiB ⇒ giữ giấy phép là ĐÚNG, không phải rò rỉ. `ttlMs` là thứ
+  // Pha 2/3 dùng để xác minh rồi thu hồi ca đó (spec §6).
+  // ⚠⚠ I-1 (review Pha 3 Task 1) — CÂU TRÊN CHỈ ĐÚNG TỪ BẢN VÁ NÀY. Trước đó hẹn giờ cưỡng bức
+  // canh cửa bằng `if (!proc.killed)`, mà Node đặt `killed = true` ĐỒNG BỘ ngay khi `kill()` GỬI
+  // được tín hiệu ⇒ điều kiện luôn sai ⇒ **SIGKILL chưa bao giờ được gửi**, và trạng thái "không
+  // chết cả sau SIGKILL" mà đoạn văn này mô tả là một trạng thái mã KHÔNG TẠO RA ĐƯỢC. Task 4 định
+  // dựng `ttlMs` lên trên đúng câu đó.
   try {
     if (!current.proc.killed) {
       current.proc.kill("SIGTERM");
       // Force-kill if it lingers.
       const proc = current.proc;
+      const moc = current.daChet;
       const t = setTimeout(() => {
-        if (!proc.killed) {
+        // ★★★ I-1 — VỊ TỪ ĐÚNG: "đã chết chưa", đọc từ CÙNG MỘT nguồn với `Promise.race` bên dưới
+        // (`MocCaiChet`). KHÔNG dùng `proc.killed` — đó là "đã gửi tín hiệu chưa", một câu hỏi khác.
+        if (!moc.daXong()) {
           try {
             proc.kill("SIGKILL");
           } catch {
@@ -535,7 +582,7 @@ export async function stopSidecar(): Promise<boolean> {
   // `proc.on("error")` — hai nhánh CŨNG là nơi `vramTicket.release()` chạy ⇒ khi lời hứa này về
   // thì SỔ đã nhả, không phải "sắp nhả".
   const daChetThat = await Promise.race([
-    current.daChet.then(() => true),
+    current.daChet.xong.then(() => true),
     hetGio(stopWaitMs()).then(() => false),
   ]);
   if (!daChetThat) {
@@ -557,20 +604,60 @@ export async function stopSidecar(): Promise<boolean> {
  * **485,3 · 485,6 · 488,3 · 500,4 · 495,6 ms** (min 485,3 · trung vị 488,3 · max 500,4) ⇒ hạn 8.000
  * còn **≈16 lần** biên. Không lượt nào chạm hạn.
  *
- * ⚠⚠ VÀ ĐÂY LÀ THỨ SỐ ĐO NÓI RA MÀ KHÔNG AI ĐOÁN ĐƯỢC: gần như TOÀN BỘ ~500 ms đó **không phải**
- * thời gian tiến trình chết, cũng không phải thời gian thiết bị nhả VRAM. Đo tách hai mốc trên cùng
- * một lượt: OS đặt mã thoát sau **10,9 ms**, `nvidia-smi` đã về nền (**1.284 MiB**) trong vòng
- * ~150 ms, nhưng Node mới phát `"exit"` ở **514,8 ms** — **chênh 503,8 ms**. Tức lượt chờ ở đây đo
- * **ĐỘ TRỄ QUAN SÁT của libuv**, không đo cái chết.
- * ⇒ Hệ quả cho Pha 3, phải đọc kỹ trước khi dựng thu hồi xuyên tiến trình lên trên: có một cửa sổ
- * **~0,5 giây** trong đó **thiết bị ĐÃ nhả 7,8 GB nhưng SỔ vẫn khai còn giữ**. Cửa sổ đó lệch về
- * phía AN TOÀN (sổ khai THỪA, không bao giờ khai thiếu ⇒ không cấp trên chỗ trống ma), nhưng bất kỳ
- * cơ chế nào của Pha 3 lấy `after − before` quanh mốc này sẽ **thấy 0** và kết luận "thu hồi hỏng".
+ * ⚠⚠ CÓ MỘT CỬA SỔ, VÀ NGUYÊN NHÂN CỦA NÓ KHÔNG PHẢI THỨ AI CŨNG ĐOÁN ĐÚNG (I-3, review Task 1).
+ * Đo tách các mốc trên cùng một lượt dừng, hai lượt độc lập:
+ *   • `kill(pid,0)` → `ESRCH`: **10,9 ms** / **16,6 ms**
+ *   • `nvidia-smi` đã về nền: trong **~150 ms** / ngay ở mẫu ĐẦU TIÊN **≤33 ms**
+ *   • Node phát `"exit"`: **514,8 ms** / **559,9 ms** ⇒ chênh **503,8** / **543,3 ms**
+ *
+ * ⚠⚠ "ĐỘ TRỄ QUAN SÁT CỦA libuv" LÀ MỘT CHẨN ĐOÁN SAI — bản chứng: **CÙNG khuôn đo, CÙNG cấu hình
+ * stdio, tiến trình con KHÔNG GPU** (`node -e "setInterval(…)"`) cho chênh **3,4–4,1 ms (5/5 lượt)**
+ * và `ESRCH` ở **0,2–0,4 ms**. libuv giao `"exit"` trong vài mili giây; nó không chậm.
+ *
+ * ⇒ Sự thật là **ngữ nghĩa `TerminateProcess`**, và nó có hai nửa:
+ *   1. **mã thoát được đóng dấu NGAY** ⇒ `GetExitCodeProcess` thôi trả `STILL_ACTIVE` ⇒ `kill(pid,0)`
+ *      trả `ESRCH` **gần như tức thì**. Tức **`kill(pid,0)` KHÔNG PHẢI một quan sát cái chết** — nó
+ *      SỚM GIẢ. Đừng dùng nó làm bằng chứng "đã nhả" ở bất cứ đâu trong Pha 3.
+ *   2. **handle tiến trình chỉ BÁO HIỆU khi tháo dỡ xong** — với một tiến trình CUDA giữ 7,8 GB,
+ *      việc đó tốn ~0,5 s. Đó mới là thứ `"exit"` (và lượt chờ này) đang đo. Nó ĐANG ĐO ĐÚNG THỨ
+ *      CẦN ĐO; con số lớn là bản chất của hộ tiêu thụ, không phải khuyết tật của bộ đo.
  */
 function stopWaitMs(): number {
   const n = Number(process.env.LLAMA_VISION_STOP_WAIT_MS);
   return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 8000;
 }
+
+/**
+ * ★★★ I-4 (review Pha 3 Task 1) — **HẬU QUẢ CỦA CỬA SỔ ~0,5 s, NÓI CHO ĐỦ.** Tách khỏi docstring
+ * `stopWaitMs()` vì đây là điều Pha 3 phải đọc, không phải điều người chỉnh biến môi trường cần.
+ *
+ * Trong cửa sổ giữa "thiết bị đã nhả" (~33 ms) và "sổ nhả" (~0,5 s), **sổ khai THỪA 7,8 GB**.
+ *
+ * 1. **AN TOÀN — nhưng chỉ cho ĐÚNG MỘT người đọc.** Với **quyết định cấp phát**, khai thừa là
+ *    chiều đúng: không ai được cấp trên chỗ trống ma. Câu "lệch về phía an toàn" **dừng ở đây**.
+ *
+ * 2. ⚠⚠ **KHÔNG IM LẶNG — NÓ CÓ CHUÔNG, VÀ CHUÔNG SẼ KÊU SAI.** `vramReconciler.reconcileOnce()`
+ *    tính `alarm = drift > NGƯỠNG || drift < -(NGƯỠNG + pendingBytes)`. Trong cửa sổ này
+ *    `drift ≈ −7.830 MiB` và `pendingBytes = 0` (giấy phép không còn ở trạng thái đang nạp), mà
+ *    ngưỡng mặc định là **512 MiB** (`VRAM_DRIFT_THRESHOLD_MB`) ⇒ **vượt xa** ⇒ một nhịp đối chiếu
+ *    rơi đúng vào cửa sổ sẽ in *"Sổ đang giữ NHIỀU HƠN thực tế — giấy phép treo, đo hỏng, hoặc số
+ *    commit sai"*. **Cả ba lời quy trách đó đều SAI**: đây là một lượt dừng hoàn toàn bình thường.
+ *    Xác suất mỗi lượt dừng ≈ 0,5 s / 60 s (`VRAM_RECONCILE_INTERVAL_MS`) ≈ **0,8%** — hiếm, nhưng
+ *    sidecar tự tắt sau mỗi 10 phút nhàn rỗi nên nó **sẽ** xảy ra. Đây đúng hình dạng bài học I-1
+ *    của Pha 1: *module TỰ SINH ra đúng cái báo động giả nó được viết ra để bắt*.
+ *
+ * 3. ⚠ **"Mọi cơ chế lấy `after − before` sẽ thấy 0" là ĐÚNG MỘT NỬA, và nửa sai gọi nhầm tên dụng
+ *    cụ.** Phải hỏi *đọc cái gì*:
+ *      • đọc **SỔ** trong cửa sổ ⇒ thấy **0 byte được nhả** ⇒ kết luận "thu hồi hỏng" (đúng lớp lỗi
+ *        T5-11 của Pha 1.5);
+ *      • đọc **THIẾT BỊ** trong cửa sổ ⇒ thấy **NGƯỢC LẠI**: toàn bộ 7,8 GB đã nhả từ ~33 ms.
+ *    Hai thước cho hai câu trả lời trái nhau trong cùng 0,5 giây — và Đ4 đã cấm trộn chúng.
+ *
+ * 4. **`preempt()` hôm nay KHÔNG dính**, và lý do là cấu trúc chứ không phải may mắn: nó đọc sổ
+ *    **SAU** `await NGUOI_THI_HANH[…]`, tức sau khi `stopSidecar()` đã thấy `"exit"` ⇒ sổ đã nhả ⇒
+ *    `freedBytes` đúng. Nghiệm thu SỐNG lượt (b) đo được đúng `8.210.137.088` byte. Ai dời phép đo
+ *    đó lên TRƯỚC lượt chờ sẽ dựng lại toàn bộ lớp lỗi này.
+ */
 
 /** Hẹn giờ KHÔNG giữ vòng lặp sự kiện sống (`unref`) — cùng kỷ luật với `idleTimer`. */
 function hetGio(ms: number): Promise<void> {
