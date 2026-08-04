@@ -188,7 +188,15 @@ describe("Pha 2B Task 1 — nền + tàn dư giữ GPU", () => {
 
   it("★★★ C-1+(A): vai trò ANH EM đang sống ⇒ KHÔNG ai bị vu là tàn dư, NHƯNG nền vẫn CHƯA XÁC MINH", async () => {
     // `package.json`: `start` = node dist/index.js, `start:worker` = node dist/worker.js ⇒ hai tiến
-    // trình ANH EM, và cả hai vai trò đều gọi `startVramReconciler()`. Nếu anh em bị xếp `orphans`,
+    // trình ANH EM.
+    // ⚠ M-3 (review Pha 2B Task 2) — bản trước viết tiếp: *"và CẢ HAI vai trò đều gọi
+    // `startVramReconciler()`"*. Câu đó **SAI ở thời điểm Task 1** (`ROLE=api` không bao giờ chạy
+    // `startBackgroundSchedulers()`, nơi lượt bật khi ấy nằm) và nó khẳng định ngược đúng cái sự
+    // thật mà cả mối lo "ô tick rỗng vĩnh viễn ở api" đứng lên. Task 2 (I-1) đã **làm cho nó
+    // thành đúng**: lượt bật chuyển lên `index.ts` TRƯỚC nhánh rẽ `ROLE`, nên nay cả hai vai trò
+    // thật sự đều chạy nhịp (`api` chạy với `ring: false`). Giữ ghi chú này để người sau biết câu
+    // trên là KẾT QUẢ của một bản vá, không phải một tiền đề luôn đúng.
+    // Nếu anh em bị xếp `orphans`,
     // mỗi vai trò sẽ đánh dấu nền KHÔNG XÁC MINH VĨNH VIỄN và bảo người trực tắt tiến trình sản
     // xuất của vai trò kia.
     mockEmptyLedger();

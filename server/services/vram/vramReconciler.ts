@@ -3,6 +3,7 @@ import { readDeviceVram } from "./vramProbe";
 import { logVramEvent } from "./vramEventLog";
 import type { VramLease } from "./types";
 import type { GpuHolderCensus } from "./vramGpuHolders";
+import type { HeadroomTickFields } from "./vramHeadroom";
 
 /**
  * Pha 2B Task 1 — quét danh tính hộ đang giữ GPU, KHÔNG BAO GIỜ ném, KHÔNG BAO GIỜ chặn đường boot.
@@ -115,33 +116,41 @@ function holdsUncommittedBytes(l: VramLease): boolean {
  */
 const SOURCE_UNSTABLE_THRESHOLD = Number(process.env.VRAM_SOURCE_UNSTABLE_THRESHOLD ?? 3);
 
+/**
+ * ⚠ I-4 (review Task 2) — MỌI TRƯỜNG `readonly`, và đó KHÔNG phải trang trí kiểu.
+ * `readLastReconcileTick()` phát ra tham chiếu tới CHÍNH đối tượng này cho đường cưỡng chế; một
+ * người tiêu thụ sửa `result.attributableBytes` tại chỗ sẽ đầu độc **mọi** lượt quyết định cho
+ * tới nhịp kế. Trước bản này, kỷ luật đó chỉ nằm trong một câu comment — và chính module này đã
+ * tự dạy: *"một kỷ luật chỉ tồn tại trong comment thì lần sau lại có comment thứ ba"*
+ * (`vramWiring.ts`). Nay `tsc` chặn.
+ */
 export interface VramReconcileResult {
-  driftBytes: number | null;
-  alarm: boolean;
-  ledgerTotalBytes: number;
-  deviceUsedBytes: number | null;
+  readonly driftBytes: number | null;
+  readonly alarm: boolean;
+  readonly ledgerTotalBytes: number;
+  readonly deviceUsedBytes: number | null;
   /** Nền thiết bị đã TRỪ khỏi phép so (null = chưa chụp / máy không GPU). */
-  baselineUsedBytes: number | null;
+  readonly baselineUsedBytes: number | null;
   /**
    * Pha 1.5 Task 1 — true KHI VÀ CHỈ KHI lượt gọi này phát hiện đổi thước đo (native ⇄ smi) và
    * đã HUỶ nền cũ để chụp lại. Lượt đó KHÔNG báo động, dù drift trông thế nào — số vừa bị huỷ
    * không đáng tin để so.
    */
-  baselineResampled: boolean;
+  readonly baselineResampled: boolean;
   /**
    * Pha 1.5 Task 1, review vòng 1 (EXP-1) — true KHI VÀ CHỈ KHI bộ ngắt mạch vừa TRIP: thước đã
    * đổi ≥ `SOURCE_UNSTABLE_THRESHOLD` lần liên tiếp, lượt này KHÔNG resample nữa mà báo động về
    * sự bất ổn của thước. `alarm` cũng = true ở lượt này (đây là báo động THẬT, không phải im
    * lặng) nhưng nguyên nhân KHÁC "cấp phát chui" — đọc `sourceUnstable` để phân biệt.
    */
-  sourceUnstable: boolean;
+  readonly sourceUnstable: boolean;
   /**
    * Pha 1.5 Task 3 — tổng ƯỚC LƯỢNG của các giấy phép ĐÃ XIN nhưng CHƯA cấp phát xong
    * (`actualBytes === null`), TRỪ những giấy phép ĐÃ ĐO HỎNG (`measureFailed === true` — xem
    * ghi chú dài ở chỗ tính `pendingBytes` trong `reconcileOnce()` để biết vì sao loại chúng ra
    * là BẮT BUỘC, không phải tuỳ chọn). Đây là phần băng dung sai được nới ở PHÍA ÂM của `alarm`.
    */
-  pendingBytes: number;
+  readonly pendingBytes: number;
   /**
    * Pha 1.5 Task 7 (T5-1) — true KHI VÀ CHỈ KHI lượt này KHÔNG đối chiếu được vì nền vẫn CHƯA
    * chụp được, và tình trạng đó đã kéo dài quá `BASELINE_BLOCKED_ALARM_MS`. `alarm` cũng = true
@@ -149,7 +158,7 @@ export interface VramReconcileResult {
    * chui": người trực phải đi xem giấy phép nào đang treo ở trạng thái đang-nạp, không phải đi
    * tìm hộ tiêu thụ lạ. Cùng khuôn với `sourceUnstable`.
    */
-  baselineBlocked: boolean;
+  readonly baselineBlocked: boolean;
   /**
    * ★★★ Pha 2B Task 1 — SỐ CHỊU LỰC của mô hình cưỡng chế §5.6c
    * (`headroom = trần − max(ledgerTotalBytes, attributableBytes)`), và là số DUY NHẤT nhìn thấy
@@ -172,7 +181,7 @@ export interface VramReconcileResult {
    * Pha 1 chấp nhận nền = 0 cho người gọi trực tiếp); số ở đây `null` khi không có nền. Đừng "dọn
    * dẹp" hai chỗ đó thành một.
    */
-  attributableBytes: number | null;
+  readonly attributableBytes: number | null;
   /**
    * ★★ Pha 2B Task 1 — nền hiện tại đã được XÁC MINH là không có tàn dư nào của lượt chạy trước
    * đang giữ GPU hay chưa. `false` khi chưa chụp nền, khi KHÔNG quét được danh sách hộ giữ GPU
@@ -193,7 +202,7 @@ export interface VramReconcileResult {
    * và điều kiện ra số 1 của Pha 2B ("nền từ chối tuyên bố sạch khi có PID lạ") coi như CHƯA ĐẠT
    * về mặt hiệu lực, dù đạt về mặt phát hiện.
    */
-  baselineVerified: boolean;
+  readonly baselineVerified: boolean;
 }
 
 let timer: NodeJS.Timeout | null = null;
@@ -367,6 +376,16 @@ let sameSourceStreak = 0;
  * đang so số thô.
  */
 let baselineRequired = false;
+/**
+ * ★★ Pha 2B Task 2 (I-1) — CÓ ĐƯỢC TUYÊN BỐ BÁO ĐỘNG KHÔNG. Xem docstring `startVramReconciler()`
+ * để biết vì sao cờ này phải TÁCH khỏi việc chạy nhịp.
+ *
+ * ⚠ Mặc định **true** ⇒ mọi đường gọi cũ (kể cả `reconcileOnce()` trực tiếp trong test và công cụ
+ * chẩn đoán) giữ nguyên hành vi. Chỉ `startVramReconciler({ ring: false })` mới tắt.
+ * ⚠ Nó KHÔNG che giấu gì: `alarm`, `driftBytes`, `sourceUnstable`, `baselineBlocked` vẫn nằm
+ * nguyên trong `VramReconcileResult` và vẫn vào ô tick. Tắt là tắt **CÂU NÓI**, không phải phép đo.
+ */
+let ringEnabled = true;
 /**
  * Pha 1.5 Task 7 (T5-1) — mốc thời gian lượt HOÃN chụp nền ĐẦU TIÊN của đợt hoãn hiện tại
  * (`null` = không đang hoãn). Đặt khi `captureVramBaseline()` từ chối vì còn giấy phép đang nạp,
@@ -817,23 +836,51 @@ export interface VramTickRecord {
   readonly result: VramReconcileResult;
   /** `Date.now()` lúc nhịp KẾT THÚC (không phải lúc bắt đầu) — con số dùng để đo độ cũ. */
   readonly atMs: number;
+  /**
+   * ★ M-5 (review Task 2) — SỐ NHỊP HỎNG LIÊN TIẾP kể từ lượt thành công gần nhất.
+   *
+   * ⚠ VÌ SAO CẦN: khi một nhịp NÉM, `lastTick` giữ nguyên bản cũ và `atMs` ĐỨNG YÊN. Task 5 đo được
+   * TUỔI, nhưng "nhịp chưa tới hạn" và "nhịp đã hỏng 5 lần liên tiếp" có **tuổi giống nhau** mà mức
+   * đáng tin khác hẳn: cái đầu sẽ tự lành, cái sau thì không. Không có ô này thì hai thứ đó không
+   * phân biệt được — đúng lớp lỗi "hỏng im lặng" mà cả module tồn tại để diệt.
+   * `0` = nhịp gần nhất chạy trót lọt.
+   */
+  readonly consecutiveFailures: number;
 }
-let lastTick: VramTickRecord | null = null;
+let lastTick: { readonly result: VramReconcileResult; readonly atMs: number } | null = null;
+let tickFailureStreak = 0;
+
+/**
+ * ★ M-4 (review Task 2) — NEO BIÊN DỊCH cho lời hứa "khớp theo cấu trúc".
+ *
+ * `vramHeadroom.ts` CỐ Ý không `import type` từ file này (không kéo một module có I/O + trạng thái
+ * toàn cục vào đường quyết định), nên nó chỉ *mô tả* hình dạng nó cần (`HeadroomTickFields`). Nếu
+ * không có dòng dưới đây, một lượt đổi tên/đổi kiểu `attributableBytes` hay `baselineVerified` ở
+ * file này sẽ **build XANH** và chỉ file test đỏ — đúng lớp "lời hứa chỉ nằm trong comment".
+ * Neo đặt ở ĐÂY vì đây là phía **được phép** import cả hai. Thuần kiểu: `import type` bị xoá sạch
+ * lúc biên dịch, không thêm một byte runtime nào.
+ */
+type __TickFieldsAnchor = VramReconcileResult extends HeadroomTickFields ? true : never;
+const __tickFieldsAnchor: __TickFieldsAnchor = true;
+void __tickFieldsAnchor;
 
 /**
  * Đọc kết quả nhịp gần nhất. **ĐỒNG BỘ, không I/O, không tác dụng phụ** — gọi được từ trong
  * `reserve()`.
  *
- * `null` = **CHƯA có nhịp nào chạy trong tiến trình này**, và người đọc PHẢI hiểu là **ĐANG MÙ**,
- * TUYỆT ĐỐI không phải "thiết bị trống". Ca này thường trực chứ không hiếm: dưới topology
- * `api`+`worker` (`backgroundJobs.ts:11`), `startVramReconciler()` chỉ chạy ở vai trò chạy
- * scheduler ⇒ ở tiến trình `api` ô này **rỗng vĩnh viễn**.
+ * `null` = **CHƯA có nhịp nào chạy trong tiến trình này** ⇒ người đọc PHẢI hiểu là **ĐANG MÙ**
+ * (`"no-tick"`), TUYỆT ĐỐI không phải "thiết bị trống". Sau I-1 ca này còn đúng hai cửa: khoảng
+ * thời gian ngắn giữa `startVramReconciler()` và lúc nhịp NGAY hoàn tất, và một tiến trình không
+ * gọi `startVramReconciler()` bao giờ.
  *
- * ⚠ Trả về CHÍNH đối tượng đã lưu (không sao chép): `VramReconcileResult` là dữ liệu chỉ-đọc theo
- * quy ước của module này. Đừng sửa nó tại chỗ.
+ * ⚠ Trả về một BẢN GHI MỚI mỗi lượt, nhưng `result` bên trong là **cùng một tham chiếu** với ô đã
+ * lưu. `VramReconcileResult` nay `readonly` toàn bộ (I-4) nên `tsc` chặn việc sửa tại chỗ — trước
+ * đó kỷ luật này chỉ nằm trong comment, và "một kỷ luật chỉ tồn tại trong comment thì lần sau lại
+ * có comment thứ ba" (`vramWiring.ts`).
  */
 export function readLastReconcileTick(): VramTickRecord | null {
-  return lastTick;
+  if (lastTick === null) return null;
+  return { result: lastTick.result, atMs: lastTick.atMs, consecutiveFailures: tickFailureStreak };
 }
 
 /**
@@ -845,12 +892,26 @@ export function readLastReconcileTick(): VramTickRecord | null {
  * Task 7 của Pha 1.5) chạy với `baselineRequired === false` ⇒ nền = 0 ⇒ nó CỐ Ý so **số THÔ**, và
  * `attributable` của nó là "cả tấm card kể cả desktop". Xuất bản con số đó vào ô quyết định là để
  * một công cụ chẩn đoán LÁI đường cưỡng chế của sản xuất. Có ca test khoá việc này.
+ *
+ * ⚠ M-5 — nhịp NÉM thì **KHÔNG đè lên ô tick** (số cũ vẫn là số tốt nhất ta có) nhưng phải ĐẾM và
+ * ném tiếp cho người gọi. Bộ đếm giờ tự nuốt (đã đếm rồi); người gọi trong test thấy nguyên lỗi.
  */
 export async function __runReconcileTick(): Promise<VramReconcileResult> {
-  await captureVramBaseline();
-  const result = await reconcileOnce();
-  lastTick = { result, atMs: Date.now() };
-  return result;
+  try {
+    await captureVramBaseline();
+    const result = await reconcileOnce();
+    lastTick = { result, atMs: Date.now() };
+    tickFailureStreak = 0;
+    return result;
+  } catch (err) {
+    tickFailureStreak += 1;
+    console.warn(
+      `[vram] NHỊP ĐỐI CHIẾU HỎNG (lần thứ ${tickFailureStreak} liên tiếp): ${(err as Error)?.message ?? String(err)}. ` +
+        `Ô quyết định giữ số CŨ — tuổi của nó KHÔNG tăng theo nhịp hỏng, nên đọc \`consecutiveFailures\` ` +
+        `chứ đừng chỉ nhìn \`atMs\`.`,
+    );
+    throw err;
+  }
 }
 
 /** Chỉ dùng trong test. */
@@ -880,6 +941,11 @@ export function __resetVramBaselineForTests(): void {
   // Pha 2B Task 2 — cùng lý do, và ở đây hậu quả NẶNG HƠN: không xoá thì test sau thừa kế một
   // QUYẾT ĐỊNH CẤP PHÁT của test trước (dư địa tính từ một tick không còn liên quan gì).
   lastTick = null;
+  tickFailureStreak = 0;
+  // Pha 2B Task 2 (I-1) — cờ CHUÔNG cũng phải về mặc định: không reset thì một test bật
+  // `ring: false` sẽ làm mọi test SAU nó mất hết sự kiện `drift`, và triệu chứng sẽ hiện ở một
+  // file khác hẳn.
+  ringEnabled = true;
 }
 
 /**
@@ -1117,6 +1183,9 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
         };
       }
 
+      // I-1 — CHUÔNG, không phải phép đo: `sourceUnstable: true` vẫn được trả về bên dưới dù
+      // `ring: false`. Xem docstring `startVramReconciler()`.
+      if (ringEnabled) {
       console.warn(
         `[vram] THƯỚC ĐO KHÔNG ỔN ĐỊNH — đã đổi thước ≥ ${SOURCE_UNSTABLE_THRESHOLD} lần liên tiếp ` +
           `(nền đang đóng băng ở thước "${baselineSource}", lượt này đọc được "${device.source}"). ` +
@@ -1141,6 +1210,7 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
             "hộ tiêu thụ chui.",
         },
       });
+      }
       return {
         driftBytes: null,
         alarm: true,
@@ -1231,7 +1301,8 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
      */
     const blockedForMs = baselineBlockedSinceMs === null ? 0 : Date.now() - baselineBlockedSinceMs;
     const blocked = baselineBlockedSinceMs !== null && blockedForMs >= BASELINE_BLOCKED_ALARM_MS;
-    if (blocked) {
+    // I-1 — CHUÔNG. `baselineBlocked` vẫn đi ra trong kết quả khi `ring: false`.
+    if (blocked && ringEnabled) {
       // ⚠ CÙNG vị từ với lá chắn HOÃN (`holdsUncommittedBytes`), KHÔNG phải `isLoadingLease` —
       // nếu lệch, câu báo động sẽ liệt kê một danh sách KHÁC với tập đang thật sự chặn, và người
       // trực đi tìm đúng cái tên KHÔNG có trong đó (ca điển hình: lease đo-hỏng đang chặn).
@@ -1311,7 +1382,9 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
    */
   const alarm = drift > DRIFT_THRESHOLD_BYTES || drift < -(DRIFT_THRESHOLD_BYTES + pendingBytes);
 
-  if (alarm) {
+  // I-1 — CHUÔNG. `alarm`/`driftBytes` vẫn đi ra trong kết quả (và vào ô tick) khi `ring: false`;
+  // chỉ CÂU NÓI bị tắt, vì một tiến trình có sổ RIÊNG không đủ dữ kiện để nói đúng.
+  if (alarm && ringEnabled) {
     const mib = (b: number) => Math.round(b / 1024 / 1024);
     const holders = () => snap.leases.map((l) => `${l.request.owner}=${mib(leaseBytes(l))}`).join(", ") || "(sổ rỗng)";
     // Luôn nói rõ đã trừ bao nhiêu — người trực phải kiểm chứng được con số, không phải tin.
@@ -1424,15 +1497,45 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
   };
 }
 
-export function startVramReconciler(): void {
+/**
+ * ★★ I-1 (review Task 2) — BẬT ĐỐI CHIẾU. Nay có HAI công tắc, và **tách chúng ra là mấu chốt**.
+ *
+ * @param opts.ring — có ĐÁNH CHUÔNG không (`console.warn` + sự kiện `drift`/`baseline_blocked`/
+ *   `source_unstable`). Mặc định **true** = hành vi cũ y nguyên.
+ *
+ * ⚠⚠ VÌ SAO PHẢI TÁCH "CHẠY NHỊP" KHỎI "ĐÁNH CHUÔNG": lý do cấm chạy đối chiếu ở `api`
+ * (`index.ts`, Pha 1.5 Task 4) nguyên văn là *"hai tiến trình cùng đối chiếu trên MỘT thiết bị sẽ
+ * thấy nhau là cấp phát chui — biến chuông thành nhiễu"*. Lý do đó nói về **CHUÔNG**, mà §5.6c
+ * **cấm thừa kế tham số chuông** (ràng buộc 8) và tiêu thụ `attributable` như một **SỐ**. ⇒ Phản
+ * đối cũ **không áp** cho đường quyết định. Gộp hai cờ lại thì hoặc `api` mù vĩnh viễn (cưỡng chế
+ * chạy trên nhánh RỘNG NHẤT ở đúng tiến trình có mọi điểm cấp phát), hoặc chuông kêu oan mỗi 60 s
+ * ở cả hai tiến trình. Tách ra thì được cả hai.
+ * ⚠ `ring: false` KHÔNG tắt phát hiện: `alarm`/`driftBytes` vẫn nằm nguyên trong kết quả và vẫn
+ * vào ô tick. Nó chỉ tắt phần **TUYÊN BỐ** — thứ mà một tiến trình có sổ RIÊNG không đủ dữ kiện để
+ * nói đúng (sổ chung là Pha 3).
+ *
+ * ⚠⚠ CHẠY MỘT NHỊP NGAY, không chỉ `setInterval`: bản trước chỉ đặt bộ đếm giờ ⇒ nhịp đầu rơi vào
+ * **T+60 s** ⇒ `readLastReconcileTick()` trả `null` suốt 60 giây đầu ở **MỌI vai trò**, mà 60 giây
+ * đó là đúng lúc `warmUpOllamaModels()` và model 30B **17 GB** lên card. Cửa sổ mù phủ trọn **đợt
+ * cấp phát lớn nhất của cả vòng đời tiến trình**. Nhịp NGAY rút cửa sổ đó xuống còn đúng thời gian
+ * chụp nền + một lượt đọc đầu dò.
+ */
+export function startVramReconciler(opts: { ring?: boolean } = {}): void {
   if (timer) return;
+  ringEnabled = opts.ring !== false;
   // Từ đây trở đi, "chưa biết nền" nghĩa là IM LẶNG chứ không phải nền = 0 (NEW-2).
   baselineRequired = true;
-  // Chụp nền NGAY. Không `await` (hàm này đồng bộ, nằm trên đường boot). Không kịp / đầu dò
-  // hỏng cũng không sao: mỗi nhịp `__runReconcileTick()` đều THỬ LẠI, và công thức
-  // `nền = thiết bị − sổ` khiến lượt chụp muộn vẫn cho ra ĐÚNG con số (NEW-1).
-  void captureVramBaseline();
-  timer = setInterval(() => { void __runReconcileTick(); }, INTERVAL_MS);
+  // Chụp nền NGAY **và đối chiếu NGAY**. Không `await` (hàm này đồng bộ, nằm trên đường boot).
+  // Không kịp / đầu dò hỏng cũng không sao: mỗi nhịp `__runReconcileTick()` đều THỬ LẠI, và công
+  // thức `nền = thiết bị − sổ` khiến lượt chụp muộn vẫn cho ra ĐÚNG con số (NEW-1).
+  // ⚠ `.catch()` chứ không `void`: `__runReconcileTick()` nay NÉM tiếp sau khi đếm (M-5), và một
+  // promise bị bỏ rơi ở đây là `unhandledRejection` giết tiến trình dưới `--unhandled-rejections=strict`.
+  void __runReconcileTick().catch(() => {
+    /* đã đếm + đã cảnh báo trong `__runReconcileTick()`; nhịp sau thử lại */
+  });
+  timer = setInterval(() => {
+    void __runReconcileTick().catch(() => {});
+  }, INTERVAL_MS);
   timer.unref?.();
 }
 

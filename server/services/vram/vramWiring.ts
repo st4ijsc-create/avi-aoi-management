@@ -1287,10 +1287,27 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
         }
       },
     };
-  } catch {
+  } catch (err) {
     // Sổ cái/nhật ký/đầu dò hỏng ở BẤT KỲ khâu nào ⇒ hệ chạy như chưa từng có module này.
     // ⚠ Pha 2A — NHẢ KHOÁ trước khi bỏ đi: từ đây không còn ticket nào để gọi `closeWindow()`.
     try { nhaKhoaKhanCap?.(); } catch { /* không có gì cứu được nữa, nhưng KHÔNG được ném */ }
+    /**
+     * ★★ Pha 2B Task 2 (C-1) — NUỐT LỖI THÌ ĐƯỢC, NUỐT **IM LẶNG** THÌ KHÔNG.
+     *
+     * Bản trước `catch { … }` không ghi lấy một chữ. Hậu quả đo được bằng lập luận, không phải giả
+     * định: từ Pha 2B, `beginVramAllocation()` là nơi cổng cưỡng chế đứng, và **cả `await
+     * import("./vramBroker")` lẫn `broker.reserve()` đều nằm trong cùng cái `try` này**. Một lỗi
+     * CẤU HÌNH (`.env` hỏng ⇒ hằng số mức module ném) vì thế biến thành `NOOP_TICKET` — tức
+     * **cưỡng chế tắt VÀ khối byte không vào sổ**, không một dòng nào để lần ra. Đó đúng là lớp lỗi
+     * ràng buộc 9 cấm ("không đường nào tràn im lặng").
+     * ⚠ VẪN KHÔNG NÉM: telemetry chết thì hệ vẫn phải nạp được model (chính sách của file này, giữ
+     * nguyên). Chỉ thêm TIẾNG. Sự kiện vào DB là việc của Task 3 — ở đây chỉ cần không câm.
+     */
+    console.warn(
+      `[vram] beginVramAllocation("${opts.owner}") HỎNG ⇒ chạy như chưa từng có sổ cái ` +
+        `(KHÔNG có giấy phép cho lượt cấp phát này, nên sổ sẽ HỤT đúng khối byte đó): ` +
+        `${(err as Error)?.message ?? String(err)}`,
+    );
     return NOOP_TICKET;
   }
 }

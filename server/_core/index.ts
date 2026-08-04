@@ -5219,6 +5219,40 @@ async function startServer() {
     console.error("[vram] không bật được bộ đếm giờ nhật ký:", (err as any)?.message || err);
   }
 
+  /**
+   * ★★ Pha 2B Task 2 (I-1) — ĐỐI CHIẾU CHUYỂN LÊN ĐÂY, ra khỏi `startBackgroundSchedulers()`.
+   *
+   * ⚠ VÌ SAO PHẢI CHUYỂN: từ Pha 2B, nhịp đối chiếu không còn chỉ nuôi **cái chuông** — nó là
+   * **NGUỒN SỐ DUY NHẤT** của đường cưỡng chế (`readLastReconcileTick()` → `computeHeadroom()`,
+   * §5.6c). Ở chỗ cũ (`backgroundJobs.ts`, chỉ chạy ở nhánh `else` của `ROLE === "api"`), tiến
+   * trình `api` **không bao giờ** có một nhịp nào ⇒ `readLastReconcileTick()` trả `null` **vĩnh
+   * viễn** ⇒ headroom rơi về **chỉ-sổ**, tức nhánh **RỘNG NHẤT** của cả mô hình (`max(L,A) ≥ L`),
+   * với `L` là cuốn sổ mới nối 14/159 dòng. Mà **mọi điểm gọi `beginVramAllocation()` đều
+   * request-coupled**, tức cổng cưỡng chế đặt đúng ở tiến trình mù.
+   *
+   * ⚠ Lý do cấm cũ (ghi ngay phía trên: *"hai tiến trình cùng đối chiếu ⇒ thấy nhau là cấp phát
+   * chui ⇒ biến chuông thành nhiễu"*) **vẫn đúng — nhưng nó nói về CHUÔNG**. §5.6c cấm thừa kế
+   * tham số chuông (ràng buộc 8) và tiêu thụ `attributable` như một **SỐ**. ⇒ `api` chạy **nhịp**
+   * nhưng **không đánh chuông** (`ring: false`): nó có số để quyết định, và không ai bị đánh thức
+   * bởi một khoản "lệch" thật ra là model của tiến trình anh em. Sổ chung là Pha 3.
+   *
+   * ⚠ Lượt bật này phủ `api` + all-in-one (hai đường CHẠY ĐẾN ĐÂY). `ROLE=worker` early-return từ
+   * rất xa phía trên và `server/worker.ts` không import file này ⇒ lượt bật cho worker nằm RIÊNG ở
+   * đầu `runWorkerProcess()` — **cùng khuôn với `__setVramLogTimerEnabled(true)` ngay trên**, và
+   * hai nơi KHÔNG trùng nhau (không vai trò nào đi qua cả hai).
+   */
+  try {
+    const { startVramReconciler } = await import("../services/vram/vramReconciler");
+    const ring = SERVER_ROLE !== "api";
+    startVramReconciler({ ring });
+    console.log(
+      `[vram] sổ cái + đối chiếu đã bật (nhịp NGAY, rồi mỗi VRAM_RECONCILE_INTERVAL_MS) — ` +
+        `chuông: ${ring ? "BẬT" : "TẮT (vai trò api: có sổ riêng, chuông sẽ kêu oan; số vẫn được ghi để cưỡng chế đọc)"}.`,
+    );
+  } catch (err) {
+    console.error("[vram] không bật được sổ cái/đối chiếu:", (err as any)?.message || err);
+  }
+
   if (SERVER_ROLE === "api") {
     console.log(
       "[Role] ROLE=api — cron schedulers skipped; run the worker process (`npm run start:worker`)",

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   computeHeadroom,
   headroomInputFromTick,
+  assertHeadroomPolicy,
   type HeadroomInput,
   type HeadroomTickFields,
 } from "./vramHeadroom";
@@ -26,6 +27,7 @@ function input(over: Partial<HeadroomInput> = {}): HeadroomInput {
     attributableBytes: MODEL_30B,
     safetyReserveBytes: RESERVE,
     baselineVerified: true,
+    tickPresent: true,
     ...over,
   };
 }
@@ -76,7 +78,8 @@ describe("vramHeadroom §5.6c — hàm quyết định THUẦN (chưa cưỡng c
     expect(r.usedBytes).toBe(MODEL_30B);
     expect(r.headroomBytes).toBe(12_000 * MIB);
     expect(r.trusted).toBe(false);
-    expect(r.degradedReasons).toContain("blind");
+    // I-2 — CÓ nhịp mà nhịp đó không tính được ⇒ `probe-blind` (TẠM THỜI), KHÔNG phải `no-tick`.
+    expect(r.degradedReasons).toEqual(["probe-blind"]);
   });
 
   /**
@@ -138,7 +141,31 @@ describe("vramHeadroom §5.6c — hàm quyết định THUẦN (chưa cưỡng c
     const r = computeHeadroom(input({ attributableBytes: null, baselineVerified: false }));
     expect(r.blind).toBe(true);
     expect(r.trusted).toBe(false);
-    expect(r.degradedReasons).toEqual(["blind", "unverified-baseline"]);
+    expect(r.degradedReasons).toEqual(["probe-blind", "unverified-baseline"]);
+  });
+
+  /**
+   * ★★★ I-2 (review Task 2) — CA NÀY GIẾT ĐÚNG ĐỘT BIẾN ĐÃ **SỐNG SÓT 302/302** Ở BẢN TRƯỚC.
+   *
+   * Reviewer hợp nhất *"có tick nhưng đầu dò hỏng"* với *"không có tick nào"* trong
+   * `headroomInputFromTick` — một đổi hành vi quan sát được — mà **không ca nào đỏ**, vì khối ca
+   * cũ không có tổ hợp `attributableBytes: null` + `baselineVerified: true`.
+   *
+   * Hai trạng thái này đòi hai đối xử khác nhau (ràng buộc 10): `probe-blind` **lành ở nhịp sau**;
+   * `no-tick` là suy biến **CẤU TRÚC**, không tự lành. Gộp là bắt Task 5 đối xử với "không bao giờ
+   * có số" y như "nhịp này chưa có số".
+   */
+  it("★★★ I-2: `no-tick` và `probe-blind` là HAI MỨC KHÁC NHAU, không được hợp nhất", () => {
+    const chuaCoNhip = computeHeadroom(input({ tickPresent: false, attributableBytes: null, baselineVerified: false }));
+    const nhipMu = computeHeadroom(input({ tickPresent: true, attributableBytes: null, baselineVerified: true }));
+
+    expect(chuaCoNhip.degradedReasons).toEqual(["no-tick", "unverified-baseline"]);
+    expect(nhipMu.degradedReasons).toEqual(["probe-blind"]);
+    // Hai lý do KHÁC NHAU dù cùng `blind` và cùng một con số dư địa — chính chỗ đó là thông tin.
+    expect(chuaCoNhip.blind).toBe(true);
+    expect(nhipMu.blind).toBe(true);
+    expect(chuaCoNhip.headroomBytes).toBe(nhipMu.headroomBytes);
+    expect(chuaCoNhip.degradedReasons).not.toEqual(nhipMu.degradedReasons);
   });
 
   /**
@@ -160,25 +187,94 @@ describe("vramHeadroom §5.6c — hàm quyết định THUẦN (chưa cưỡng c
       attributableBytes: 1 * MIB + 2,
       safetyReserveBytes: 5,
       baselineVerified: true,
+      tickPresent: true,
     });
     expect(r.headroomBytes).toBe(MODEL_30B + 7 - (1 * MIB + 3) - 5);
     expect(r.usedBytes).toBe(1 * MIB + 3);
   });
 
   /**
-   * `Number(process.env.VRAM_CEILING_MB)` của một chuỗi hỏng cho `NaN`, và `NaN < 0 === false`
-   * ⇒ MỌI lượt xin đều lọt cổng, IM LẶNG. Đó đúng lớp lỗi mà cả pha này tồn tại để diệt (ràng
-   * buộc 9: không đường nào tràn im lặng) ⇒ KÊU TO tại chỗ, không trả một con số vô nghĩa.
+   * ★★★ C-1 (review Task 2) — HÀM NÀY KHÔNG BAO GIỜ ĐƯỢC NÉM.
+   *
+   * Bản đầu NÉM khi đầu vào vô nghĩa. Động cơ đúng (một `NaN` làm `estimated > headroom` thành
+   * `false` cho MỌI lượt xin ⇒ cưỡng chế tắt im lặng, ràng buộc 9), nhưng **vị trí sai**:
+   * `broker.reserve()` nằm trong `try` của `beginVramAllocation()`, `vramWiring` kết bằng
+   * `catch { return NOOP_TICKET }`, và `reserve()` tạo lease ở **CUỐI** hàm ⇒ một cú ném =
+   * **cưỡng chế tắt CỘNG một khối byte không vào sổ** ⇒ vế `L` hụt ⇒ `max(L, A)` mất vế `L` ⇒
+   * headroom **phóng đại cho mọi lượt xin sau**. Tệ hơn hẳn cái `NaN` nó định phòng — `NaN` ít
+   * nhất còn để **sổ đúng**.
    */
-  it("★★ đầu vào không phải SỐ HỮU HẠN ⇒ NÉM, không trả `NaN` im lặng", () => {
-    expect(() => computeHeadroom(input({ ceilingBytes: Number.NaN }))).toThrow(/hữu hạn/);
-    expect(() => computeHeadroom(input({ ledgerTotalBytes: Number.POSITIVE_INFINITY }))).toThrow(/hữu hạn/);
-    expect(() => computeHeadroom(input({ attributableBytes: Number.NaN }))).toThrow(/hữu hạn/);
-    expect(() => computeHeadroom(input({ safetyReserveBytes: Number.NaN }))).toThrow(/hữu hạn/);
+  it("★★★ C-1: đầu vào vô nghĩa ⇒ KHÔNG NÉM (ném trên đường reserve() làm MẤT giấy phép)", () => {
+    for (const bad of [
+      input({ ceilingBytes: Number.NaN }),
+      input({ ledgerTotalBytes: Number.POSITIVE_INFINITY }),
+      input({ attributableBytes: Number.NaN }),
+      input({ safetyReserveBytes: Number.NaN }),
+      input({ safetyReserveBytes: -1 }),
+      input({ ceilingBytes: 0 }),
+    ]) {
+      expect(() => computeHeadroom(bad)).not.toThrow();
+    }
   });
 
-  it("★ đệm an toàn ÂM ⇒ NÉM — một đệm âm là NỚI dư địa, đúng chiều nguy hiểm", () => {
-    expect(() => computeHeadroom(input({ safetyReserveBytes: -1 }))).toThrow(/âm/);
+  it("★★★ C-1: đầu vào vô nghĩa ⇒ FAIL-CLOSED CÓ TÊN (−Infinity + lý do), KHÔNG phải `NaN` im lặng", () => {
+    const r = computeHeadroom(input({ ceilingBytes: Number.NaN }));
+    expect(r.headroomBytes).toBe(Number.NEGATIVE_INFINITY);
+    // `NaN` là thứ TUYỆT ĐỐI không được trả: mọi so sánh với nó đều `false` ⇒ cưỡng chế TẮT im lặng.
+    expect(Number.isNaN(r.headroomBytes)).toBe(false);
+    expect(r.degradedReasons).toContain("invalid-input");
+    expect(r.trusted).toBe(false);
+    // Từ chối TẤT ĐỊNH: mọi lượt xin, kể cả 1 byte, đều lớn hơn dư địa.
+    expect(1 > r.headroomBytes).toBe(true);
+  });
+
+  it("★ đệm an toàn ÂM ⇒ fail-closed CÓ TÊN (đệm âm là phép CỘNG dư địa)", () => {
+    const r = computeHeadroom(input({ safetyReserveBytes: -1 }));
+    expect(r.headroomBytes).toBe(Number.NEGATIVE_INFINITY);
+    expect(r.degradedReasons).toContain("invalid-input");
+  });
+
+  /**
+   * ★★ M-1 — `VRAM_CEILING_MB=` (để TRỐNG, khác hẳn "không đặt") ⇒ `Number("") === 0` ⇒ **lọt**
+   * `Number.isFinite` ⇒ dư địa âm khổng lồ ⇒ từ chối 100% lượt xin, **im lặng**, toàn hệ AI chết.
+   * Chiều fail-closed nên không nguy hiểm về an toàn, nhưng nó phải CÓ TÊN.
+   */
+  it("★★ M-1: trần = 0 (VRAM_CEILING_MB rỗng) ⇒ `invalid-input`, không phải một lượt từ chối bí ẩn", () => {
+    expect(computeHeadroom(input({ ceilingBytes: 0 })).degradedReasons).toContain("invalid-input");
+    expect(computeHeadroom(input({ ceilingBytes: -1 })).degradedReasons).toContain("invalid-input");
+  });
+
+  it("`attributableBytes` HỎNG (`NaN` từ đầu dò) ⇒ coi là MÙ, KHÔNG để nó nuốt vế sổ", () => {
+    const r = computeHeadroom(input({ attributableBytes: Number.NaN }));
+    expect(r.blind).toBe(true);
+    expect(r.usedBytes).toBe(MODEL_30B); // vế sổ còn nguyên, không bị `Math.max(NaN, …)` nuốt
+  });
+
+  it("M-2: `degradedReasons` ĐÔNG CỨNG — không ai bơm thêm lý do vào bản tóm tắt của Task 4", () => {
+    const r = computeHeadroom(input({ attributableBytes: null }));
+    expect(Object.isFrozen(r.degradedReasons)).toBe(true);
+  });
+});
+
+/**
+ * ★★ C-1 — chỗ DUY NHẤT của module được phép NÉM: cổng cấu hình, gọi MỘT LẦN lúc nạp, **NGOÀI**
+ * `try` của `beginVramAllocation()`. Ở đó một cú ném giết boot thật to thay vì bị `catch` nuốt.
+ */
+describe("assertHeadroomPolicy — cổng cấu hình lúc BOOT (chỗ duy nhất được ném)", () => {
+  it("cấu hình hợp lệ ⇒ im lặng đi qua", () => {
+    expect(() => assertHeadroomPolicy({ ceilingBytes: CEILING, safetyReserveBytes: RESERVE })).not.toThrow();
+    expect(() => assertHeadroomPolicy({ ceilingBytes: 1, safetyReserveBytes: 0 })).not.toThrow();
+  });
+
+  it("★★ trần NaN / 0 / âm ⇒ NÉM, và câu lỗi nêu đích danh nguồn thường gặp", () => {
+    expect(() => assertHeadroomPolicy({ ceilingBytes: Number.NaN, safetyReserveBytes: RESERVE })).toThrow(/trần/);
+    expect(() => assertHeadroomPolicy({ ceilingBytes: 0, safetyReserveBytes: RESERVE })).toThrow(/VRAM_CEILING_MB/);
+    expect(() => assertHeadroomPolicy({ ceilingBytes: -1, safetyReserveBytes: RESERVE })).toThrow(/trần/);
+  });
+
+  it("đệm NaN / âm ⇒ NÉM", () => {
+    expect(() => assertHeadroomPolicy({ ceilingBytes: CEILING, safetyReserveBytes: Number.NaN })).toThrow(/đệm/);
+    expect(() => assertHeadroomPolicy({ ceilingBytes: CEILING, safetyReserveBytes: -1 })).toThrow(/đệm/);
   });
 });
 
@@ -186,17 +282,32 @@ describe("headroomInputFromTick — nối ô tick vào hàm quyết định", ()
   const policy = { ceilingBytes: CEILING, safetyReserveBytes: RESERVE, ledgerTotalBytes: MODEL_30B };
 
   /**
-   * ⚠ CA NÀY LÀ SỰ THẬT VẬN HÀNH, KHÔNG PHẢI GIẢ ĐỊNH: dưới topology `api` + `worker`
-   * (`backgroundJobs.ts:11`), `startVramReconciler()` KHÔNG chạy ở tiến trình `api` ⇒ ô tick ở đó
-   * VĨNH VIỄN rỗng ⇒ cưỡng chế trong `api` chạy MÙ mãi mãi. Phải nói ra được, không được im.
+   * ⚠ CA NÀY LÀ SỰ THẬT VẬN HÀNH, KHÔNG PHẢI GIẢ ĐỊNH: một tiến trình không gọi
+   * `startVramReconciler()` thì ô tick **rỗng vĩnh viễn**, và **60 giây đầu của MỌI vai trò** cũng
+   * ở trạng thái này trước khi I-1 thêm nhịp NGAY. Phải nói ra được, không được im.
    */
-  it("★★ KHÔNG có nhịp nào (vd. tiến trình `api`) ⇒ mù + chưa xác minh, KHÔNG coi thiết bị là trống", () => {
+  it("★★ KHÔNG có nhịp nào ⇒ `no-tick` + chưa xác minh, KHÔNG coi thiết bị là trống", () => {
     const r = computeHeadroom(headroomInputFromTick(null, policy));
     expect(r.blind).toBe(true);
     expect(r.basis).toBe("ledger-only");
     expect(r.trusted).toBe(false);
-    expect(r.degradedReasons).toEqual(["blind", "unverified-baseline"]);
+    expect(r.degradedReasons).toEqual(["no-tick", "unverified-baseline"]);
     expect(r.headroomBytes).toBe(12_000 * MIB); // chỉ-sổ: 30.000 − 17.000 − 1.000
+  });
+
+  /**
+   * ★★★ I-2 — NỬA CÒN LẠI CỦA CA GIẾT ĐỘT BIẾN, ở đúng chỗ đột biến sống sót: `headroomInputFromTick`
+   * phải PHÂN BIỆT "có tick mà tick mù" với "không có tick". Tổ hợp `attributableBytes: null` +
+   * `baselineVerified: true` là tổ hợp mà bộ ca cũ **không hề có**.
+   */
+  it("★★★ I-2: CÓ tick nhưng tick MÙ ⇒ `probe-blind` (tạm thời), TUYỆT ĐỐI không phải `no-tick`", () => {
+    const tick: HeadroomTickFields = { attributableBytes: null, baselineVerified: true };
+    const inp = headroomInputFromTick(tick, policy);
+    expect(inp.tickPresent).toBe(true);
+    expect(inp.baselineVerified).toBe(true);
+    const r = computeHeadroom(inp);
+    expect(r.blind).toBe(true);
+    expect(r.degradedReasons).toEqual(["probe-blind"]);
   });
 
   it("tick có số ⇒ `attributableBytes` và `baselineVerified` đi THẲNG vào đầu vào", () => {
@@ -204,6 +315,7 @@ describe("headroomInputFromTick — nối ô tick vào hàm quyết định", ()
     const inp = headroomInputFromTick(tick, policy);
     expect(inp.attributableBytes).toBe(20_000 * MIB);
     expect(inp.baselineVerified).toBe(true);
+    expect(inp.tickPresent).toBe(true);
     const r = computeHeadroom(inp);
     expect(r.basis).toBe("attributable");
     expect(r.headroomBytes).toBe(9_000 * MIB); // 30.000 − 20.000 − 1.000
@@ -344,5 +456,129 @@ describe("vramReconciler — ô lưu kết quả tick gần nhất, đọc ĐỒ
     expect(r.baselineVerified).toBe(false);
     expect(r.trusted).toBe(false);
     expect(r.degradedReasons).toEqual(["unverified-baseline"]);
+  });
+
+  /**
+   * ★ M-5 (review Task 2) — NHỊP HỎNG PHẢI ĐẾM ĐƯỢC. `atMs` đứng yên ở cả hai ca "chưa tới hạn"
+   * và "đã hỏng N lần liên tiếp", mà mức đáng tin của chúng khác hẳn: cái đầu sẽ tự lành, cái sau
+   * thì không. Không có bộ đếm thì Task 5 không phân biệt được hai thứ đó.
+   */
+  it("★ M-5: nhịp HỎNG ⇒ giữ số CŨ, KHÔNG đè ô tick, và ĐẾM được — nhịp lành sau đó reset bộ đếm", async () => {
+    mockLedger(MODEL_30B);
+    let fail = false;
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => {
+        if (fail) throw new Error("đầu dò nổ");
+        return { usedBytes: 18_000 * MIB, totalBytes: 32_607 * MIB, source: "native" };
+      },
+    }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { __runReconcileTick, readLastReconcileTick, __resetVramBaselineForTests } = await import("./vramReconciler");
+    __resetVramBaselineForTests();
+
+    await __runReconcileTick();
+    const good = readLastReconcileTick()!;
+    expect(good.consecutiveFailures).toBe(0);
+
+    fail = true;
+    await expect(__runReconcileTick()).rejects.toThrow("đầu dò nổ");
+    const afterFail = readLastReconcileTick()!;
+    // Số CŨ vẫn là số tốt nhất ta có ⇒ không đè, không xoá. Nhưng phải BIẾT là nó đang cũ VÌ HỎNG.
+    expect(afterFail.atMs).toBe(good.atMs);
+    expect(afterFail.result).toBe(good.result);
+    expect(afterFail.consecutiveFailures).toBe(1);
+    expect(warn.mock.calls.some((c) => String(c[0]).includes("NHỊP ĐỐI CHIẾU HỎNG"))).toBe(true);
+
+    fail = false;
+    await __runReconcileTick();
+    expect(readLastReconcileTick()!.consecutiveFailures).toBe(0);
+    warn.mockRestore();
+  });
+});
+
+/**
+ * ★★ I-1 (review Task 2) — HAI CÔNG TẮC, TÁCH RỜI: chạy NHỊP (nguồn số của cưỡng chế) và đánh
+ * CHUÔNG (câu cảnh báo của Pha 1). Gộp chúng là hoặc để `api` mù vĩnh viễn, hoặc để chuông kêu oan
+ * mỗi 60 giây ở cả hai tiến trình.
+ */
+describe("startVramReconciler — nhịp NGAY, và cờ CHUÔNG tách khỏi cờ NHỊP", () => {
+  beforeEach(() => vi.resetModules());
+
+  function mockAll(): { events: string[] } {
+    const events: string[] = [];
+    vi.doMock("./vramBroker", () => ({
+      // Sổ RỖNG, nhưng thiết bị nhảy 1.000 → 18.000 MiB SAU lượt chụp nền ⇒ lệch DƯƠNG 17.000 MiB
+      // (đúng hình dạng "có hộ cấp phát KHÔNG XIN PHÉP") ⇒ chuông PHẢI reo, khi được phép reo.
+      snapshot: () => ({ totalReservedBytes: 0, leases: [] }),
+      leaseBytes: () => 0,
+    }));
+    let n = 0;
+    vi.doMock("./vramProbe", () => ({
+      readDeviceVram: async () => {
+        n += 1;
+        return { usedBytes: (n === 1 ? 1_000 : 18_000) * MIB, totalBytes: 32_607 * MIB, source: "native" };
+      },
+    }));
+    vi.doMock("./vramEventLog", () => ({ logVramEvent: (e: { event: string }) => events.push(e.event) }));
+    return { events };
+  }
+
+  /**
+   * ★★★ CỬA SỔ MÙ 60 GIÂY ĐẦU. Bản trước chỉ `setInterval` ⇒ nhịp đầu ở **T+60 s** ⇒ ô quyết định
+   * `null` suốt 60 giây đó ở **MỌI vai trò** — đúng lúc `warmUpOllamaModels()` và model 30B
+   * **17 GB** lên card, tức đợt cấp phát LỚN NHẤT của cả vòng đời tiến trình.
+   */
+  it("★★★ chạy MỘT NHỊP NGAY, không đợi hết một chu kỳ (đóng cửa sổ mù 60 giây đầu)", async () => {
+    mockAll();
+    const rec = await import("./vramReconciler");
+    rec.__resetVramBaselineForTests();
+    try {
+      rec.startVramReconciler();
+      // Nhịp NGAY là bất đồng bộ (không `await` được từ một hàm đồng bộ trên đường boot) — nhưng
+      // nó phải xong sau vài microtask, KHÔNG phải sau 60 giây.
+      await vi.waitFor(() => expect(rec.readLastReconcileTick()).not.toBeNull());
+      expect(rec.readLastReconcileTick()!.result.deviceUsedBytes).toBe(18_000 * MIB);
+    } finally {
+      rec.stopVramReconciler();
+      rec.__resetVramBaselineForTests();
+    }
+  });
+
+  it("★★ `ring: false` TẮT CHUÔNG nhưng KHÔNG tắt phép đo — số vẫn vào ô quyết định", async () => {
+    const { events } = mockAll();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const rec = await import("./vramReconciler");
+    rec.__resetVramBaselineForTests();
+    try {
+      rec.startVramReconciler({ ring: false });
+      await vi.waitFor(() => expect(rec.readLastReconcileTick()).not.toBeNull());
+      const tick = rec.readLastReconcileTick()!;
+      // PHÁT HIỆN còn nguyên: lệch dương khổng lồ vẫn được tính và vẫn đi ra kết quả…
+      expect(tick.result.alarm).toBe(true);
+      expect(tick.result.driftBytes).toBe(17_000 * MIB);
+      // …nhưng KHÔNG có câu tuyên bố nào, và KHÔNG có dòng `drift` nào vào nhật ký.
+      expect(events).not.toContain("drift");
+      expect(warn.mock.calls.some((c) => String(c[0]).includes("LỆCH"))).toBe(false);
+    } finally {
+      rec.stopVramReconciler();
+      rec.__resetVramBaselineForTests();
+      warn.mockRestore();
+    }
+  });
+
+  it("mặc định (không truyền `ring`) ⇒ CHUÔNG BẬT — hành vi Pha 1 không đổi", async () => {
+    const { events } = mockAll();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const rec = await import("./vramReconciler");
+    rec.__resetVramBaselineForTests();
+    try {
+      rec.startVramReconciler();
+      await vi.waitFor(() => expect(events).toContain("drift"));
+      expect(warn.mock.calls.some((c) => String(c[0]).includes("LỆCH"))).toBe(true);
+    } finally {
+      rec.stopVramReconciler();
+      rec.__resetVramBaselineForTests();
+      warn.mockRestore();
+    }
   });
 });

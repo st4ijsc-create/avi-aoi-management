@@ -40,23 +40,48 @@
  *
  * tức **`attributable = null` là CHẶN TRÊN của mọi headroom**. Rơi về chỉ-sổ ⇒ dư địa **lớn nhất
  * có thể**, trong khi sổ mới nối **14/159** dòng ⇒ hệ mất tầm nhìn với gần như cả tấm card.
- * ⇒ **Mọi đường sinh `blind` là một đường VÔ HIỆU HOÁ lớp bảo vệ** (đã đếm 11 đường; đường tệ nhất
- * không phải đầu dò hỏng mà là lease `sidecar:local-trainer` **ttl 2 GIỜ, đang bật, cố ý không
- * commit** ⇒ mù hàng giờ). Đây cũng là lý do Task 1 **chụp-và-đánh-dấu** thay vì **từ chối**: một
- * nền NHIỄM vẫn CHẶT HƠN chỉ-sổ.
+ * ⇒ **Mọi đường sinh `blind` là một đường VÔ HIỆU HOÁ lớp bảo vệ** — đã đếm **11** đường **bên
+ * trong** `reconcileOnce()`, cộng đường thứ **12** do chính Task 2 đẻ ra: **chưa có nhịp nào chạy**
+ * (`readLastReconcileTick() === null`, xem `HeadroomInput.tickPresent`). Đường 12 là đường **dài
+ * nhất về thời lượng** — dài hơn cả lease `local-trainer` ttl 2 giờ. Đây cũng là lý do Task 1
+ * **chụp-và-đánh-dấu** thay vì **từ chối**: một nền NHIỄM vẫn CHẶT HƠN chỉ-sổ.
  *
  * ⇒ Hàm này vì thế **không im lặng** ở trạng thái suy biến: `blind`, `baselineVerified`, `trusted`
  * và `degradedReasons` là những thứ hệ **BIẾT** và **NÓI RA ĐƯỢC**. Chính sách "mù thì chặt hơn"
  * là của **Task 5** — task này không quyết thay, nhưng **phải làm cho nó khả thi**, và đó là toàn
  * bộ lý do bốn trường kia tồn tại.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ C-1 (review Task 2) — VÌ SAO `computeHeadroom()` **KHÔNG BAO GIỜ NÉM**.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản đầu của task này NÉM khi đầu vào vô nghĩa (`NaN` từ một `.env` hỏng). **Động cơ đúng** — một
+ * `NaN` làm `estimated > headroom` thành `false` cho MỌI lượt xin, tức cưỡng chế **tắt im lặng**,
+ * đúng lớp lỗi ràng buộc 9 cấm. **Nhưng vị trí sai, và review chứng minh hậu quả TỆ HƠN thứ nó
+ * phòng:**
+ *   • toàn thân `beginVramAllocation()` nằm trong một `try`, và `vramWiring.ts` kết bằng
+ *     `catch { … return NOOP_TICKET; }` — **nuốt mọi ngoại lệ**;
+ *   • `broker.reserve()` được gọi **bên trong** cái `try` đó, và `vramBroker.reserve()` **tạo
+ *     lease ở CUỐI hàm** ⇒ một cú ném xảy ra **TRƯỚC** `ledger.set`.
+ *   ⇒ Ném = **cưỡng chế tắt im lặng CỘNG một khối byte không vào sổ**. Vế `L` hụt ⇒ `max(L, A)`
+ *     mất vế `L` ⇒ headroom **phóng đại cho mọi lượt xin sau**. `NaN` mà không ném thì ít nhất
+ *     **sổ vẫn đúng**.
+ *
+ * ⇒ Nguyên tắc *"thà hỏng ồn còn hơn sai lặng"* giữ nguyên, nhưng dời chỗ:
+ *   • **đường nóng** (`computeHeadroom`): KHÔNG ném — suy biến **FAIL-CLOSED CÓ TÊN**:
+ *     `headroomBytes = -Infinity` (từ chối mọi lượt xin, KHÔNG dùng `NaN` vì mọi so sánh với
+ *     `NaN` đều `false` = tắt cưỡng chế) + `degradedReasons` chứa `"invalid-input"`. Không nhánh
+ *     nào mất giấy phép, và Task 4 **nói ra được** lý do.
+ *   • **boot**: `assertHeadroomPolicy()` (cuối file) NÉM — gọi MỘT LẦN lúc nạp cấu hình, **ngoài**
+ *     `beginVramAllocation()`, nơi một cú ném giết boot thật to thay vì bị nuốt.
+ * ⇒ **Không còn đường nào mà cưỡng chế tắt VÀ sổ hụt cùng lúc.**
  */
 
 export interface HeadroomInput {
-  /** Trần cấp phát (BYTE). Chính sách của Task 5 — hàm này không đọc cấu hình. */
+  /** Trần cấp phát (BYTE). Phải **> 0** — xem `assertHeadroomPolicy()`. Chính sách của Task 5. */
   readonly ceilingBytes: number;
   /**
    * Tổng sổ (BYTE). ⚠ Phải là sổ **SỐNG** (`snapshot().totalReservedBytes` tại thời điểm quyết
-   * định), KHÔNG phải `ledgerTotalBytes` của tick cũ — xem `headroomInputFromTick()`.
+   * định), KHÔNG phải `ledgerTotalBytes` của tick cũ — xem `HeadroomPolicy.ledgerTotalBytes`.
    */
   readonly ledgerTotalBytes: number;
   /**
@@ -78,14 +103,32 @@ export interface HeadroomInput {
    * đúng, kêu đúng, nhưng **chưa có ai ĐỔI QUYẾT ĐỊNH vì nó**, tức Task 1 mới dựng một cái đồng hồ
    * không kim. Bắt nó thành trường **BẮT BUỘC** của đầu vào là cách duy nhất khiến người gọi
    * (Task 5) không thể "quên" nó một cách im lặng — trình biên dịch sẽ chặn.
+   * ⚠ Giới hạn đã biết: `tsc` chặn **QUÊN**, không chặn **KHAI BỪA** (`baselineVerified: true` viết
+   * tay vẫn qua cửa). Lối chống duy nhất là đi qua `headroomInputFromTick()`.
    *
    * ⚠ `false` KHÔNG có nghĩa "bẩn" và KHÔNG được suy ra con số nào từ nó — nó nghĩa **KHÔNG BIẾT
-   * nền có nuốt byte của kẻ khác không**. Dưới topology `api`+`worker` (đường khởi chạy mà
-   * `backgroundJobs.ts:11` chỉ định) nó là **VĨNH VIỄN false** — đó là **câu trả lời đúng theo
-   * thiết kế** (mỗi vai trò một sổ riêng; sổ chung là Pha 3), KHÔNG phải một lỗi chờ sửa. ⇒ Tuyệt
-   * đối đừng thiết kế chính sách kiểu "chỉ chạy tốt khi đã xác minh".
+   * nền có nuốt byte của kẻ khác không**. Dưới topology `api`+`worker` nó là **VĨNH VIỄN false** ở
+   * **cả hai** tiến trình (vai trò anh em luôn rơi vào `peers`, và `peers` tắt cờ) — đó là **câu
+   * trả lời đúng theo thiết kế**, KHÔNG phải một lỗi chờ sửa. ⇒ Tuyệt đối đừng thiết kế chính sách
+   * kiểu "chỉ chạy tốt khi đã xác minh".
    */
   readonly baselineVerified: boolean;
+  /**
+   * ★★ I-2 (review Task 2) — CÓ NHỊP ĐỐI CHIẾU NÀO ĐÃ CHẠY CHƯA.
+   *
+   * ⚠ VÌ SAO KHÔNG SUY RA ĐƯỢC TỪ `attributableBytes === null`: hai trạng thái rất khác nhau cùng
+   * cho `null`, và ràng buộc 10 đòi đối xử khác nhau:
+   *   • **`tickPresent: false`** — *chưa có nhịp nào* (`readLastReconcileTick() === null`): tiến
+   *     trình không chạy reconciler, và **60 giây đầu của MỌI vai trò**. Suy biến **CẤU TRÚC**,
+   *     KHÔNG tự lành.
+   *   • **`tickPresent: true` + `attributableBytes === null`** — *có nhịp, nhưng nhịp đó không
+   *     tính được* (đầu dò hỏng, resample, ngắt mạch, nền chưa chụp): suy biến **TẠM THỜI**, lành
+   *     ở nhịp sau.
+   * Gộp hai thứ đó là bắt Task 5 đối xử với "không bao giờ có số" y như "nhịp này chưa có số".
+   * ⚠ Review đã CHỨNG MINH khoảng trống này bằng một đột biến **SỐNG SÓT 302/302** trên bản trước
+   * (hợp nhất hai trạng thái mà không ca nào đỏ). Đừng gộp lại.
+   */
+  readonly tickPresent: boolean;
 }
 
 /**
@@ -97,29 +140,38 @@ export interface HeadroomInput {
  */
 export type HeadroomBasis = "ledger-only" | "attributable" | "ledger";
 
-/** Vì sao lượt tính này KHÔNG đáng tin bằng một lượt bình thường. Có TÊN để Task 4/5 nói ra được. */
-export type HeadroomDegradation = "blind" | "unverified-baseline";
+/**
+ * Vì sao lượt tính này KHÔNG đáng tin bằng một lượt bình thường. Có TÊN để Task 4/5 nói ra được,
+ * và **phân biệt được MỨC** (I-2). Thứ tự trong `degradedReasons` là thứ tự khai báo dưới đây:
+ *  • `"invalid-input"` — trần/đệm/sổ/`attributable` không phải số dùng được (C-1). **FAIL-CLOSED**;
+ *  • `"no-tick"` — CHƯA CÓ NHỊP NÀO (cấu trúc, không tự lành);
+ *  • `"probe-blind"` — có nhịp nhưng nhịp đó không tính được `attributable` (tạm thời, lành nhịp sau);
+ *  • `"unverified-baseline"` — có số, nhưng nền chưa xác minh (N2-4).
+ */
+export type HeadroomDegradation = "invalid-input" | "no-tick" | "probe-blind" | "unverified-baseline";
 
 export interface HeadroomResult {
   /**
    * Dư địa còn lại (BYTE). **CÓ THỂ ÂM** và **KHÔNG BAO GIỜ được kẹp về 0**: âm nghĩa là đã vượt
    * trần, và độ lớn của phần âm chính là thứ câu từ-chối-trung-thực (Task 4) phải nói ra —
    * "thiếu bao nhiêu", không phải "hết chỗ".
+   * ⚠ `-Infinity` ⇔ `degradedReasons` chứa `"invalid-input"`: dư địa **không xác định được**, hệ
+   * từ chối mọi lượt xin. Task 4 phải đọc LÝ DO chứ không in con số đó ra cho người dùng.
    */
   readonly headroomBytes: number;
   readonly basis: HeadroomBasis;
-  /** `true` ⇔ `attributableBytes === null`. ⚠ Là CHẶN TRÊN, không phải trạng thái an toàn. */
+  /** `true` ⇔ không có `attributable` dùng được. ⚠ Là CHẶN TRÊN, không phải trạng thái an toàn. */
   readonly blind: boolean;
   /** Nguyên văn cờ của tick (N2-4) — đi vào thì phải đi ra được, nếu không nó lại vô hình. */
   readonly baselineVerified: boolean;
   /**
-   * `!blind && baselineVerified`. Đây là MỘT chỗ duy nhất để Task 5 treo chính sách **CHẶT HƠN**
-   * (đệm lớn hơn / từ chối lượt xin lớn / hạ trần), thay vì phải tự ghép hai cờ và ghép sai.
+   * `degradedReasons.length === 0`. Đây là MỘT chỗ duy nhất để Task 5 treo chính sách **CHẶT HƠN**
+   * (đệm lớn hơn / từ chối lượt xin lớn / hạ trần), thay vì mỗi điểm gọi tự ghép các cờ và ghép sai.
    * ⚠ `trusted === false` **KHÔNG** được hiểu là "cấm mọi thứ" — hệ vẫn phải chạy được; nó nghĩa
-   * "con số này mua được ít lòng tin hơn bình thường".
+   * "con số này mua được ít lòng tin hơn bình thường". **MỨC** nằm ở `degradedReasons`.
    */
   readonly trusted: boolean;
-  /** Danh sách lý do (rỗng ⇔ `trusted`). Thứ tự cố định để test/nhật ký so được trực tiếp. */
+  /** Danh sách lý do (rỗng ⇔ `trusted`), **đông cứng** và thứ tự cố định để so trực tiếp được. */
   readonly degradedReasons: readonly HeadroomDegradation[];
   /**
    * `max(ledgerTotalBytes, attributableBytes)` — con số ĐÃ TRỪ khỏi trần. Xuất ra để câu từ chối
@@ -128,37 +180,36 @@ export interface HeadroomResult {
   readonly usedBytes: number;
 }
 
-function assertFinite(name: string, v: number): void {
-  if (!Number.isFinite(v)) {
-    throw new TypeError(
-      `[vram] computeHeadroom: "${name}" phải là SỐ hữu hạn (nhận: ${String(v)}). ` +
-        `Một NaN đi qua đây sẽ cho headroom = NaN, mà MỌI so sánh với NaN đều false ⇒ cưỡng chế ` +
-        `TẮT IM LẶNG (đúng lớp lỗi ràng buộc 9 cấm). Nguồn thường gặp: Number(process.env.…) của ` +
-        `một chuỗi hỏng — hãy kiểm cấu hình MỘT LẦN lúc nạp module, đừng để nó tới đường nóng.`,
-    );
-  }
+/** Số dùng được cho phép cộng trừ byte: hữu hạn. (`null` được xử riêng, không đi qua đây.) */
+function usable(v: number): boolean {
+  return Number.isFinite(v);
 }
 
 /**
- * Tính dư địa theo §5.6c. **Thuần và đồng bộ** — không I/O, không đồng hồ, không trạng thái.
+ * Tính dư địa theo §5.6c. **Thuần, đồng bộ, KHÔNG BAO GIỜ NÉM** (lý do đầy đủ ở khối C-1 đầu file:
+ * một cú ném trên đường `reserve()` bị `vramWiring` nuốt và làm mất luôn giấy phép).
  *
- * @throws TypeError nếu có đầu vào không hữu hạn, hoặc `safetyReserveBytes < 0`. Ném là CÓ CHỦ Ý:
- *   một đệm ÂM **nới** dư địa và một `NaN` **tắt** cưỡng chế — cả hai đều hỏng theo chiều nguy
- *   hiểm và cả hai đều IM LẶNG. Người gọi phải kiểm cấu hình lúc nạp, không phải mỗi lượt xin.
+ * Đầu vào vô nghĩa ⇒ **FAIL-CLOSED CÓ TÊN**: `headroomBytes = -Infinity` + lý do `"invalid-input"`.
+ * Muốn hỏng TO và SỚM thì gọi `assertHeadroomPolicy()` lúc nạp cấu hình — đó là chỗ được phép ném.
  */
 export function computeHeadroom(input: HeadroomInput): HeadroomResult {
-  assertFinite("ceilingBytes", input.ceilingBytes);
-  assertFinite("ledgerTotalBytes", input.ledgerTotalBytes);
-  assertFinite("safetyReserveBytes", input.safetyReserveBytes);
-  if (input.attributableBytes !== null) assertFinite("attributableBytes", input.attributableBytes);
-  if (input.safetyReserveBytes < 0) {
-    throw new TypeError(
-      `[vram] computeHeadroom: "safetyReserveBytes" âm (${input.safetyReserveBytes}) — một đệm an ` +
-        `toàn âm là phép CỘNG dư địa, tức nới đúng chiều nguy hiểm. Không có ca dùng hợp lệ nào.`,
-    );
-  }
+  // M-6 — một biến cục bộ khử cả hai lượt ép kiểu `as number` của bản trước, đúng chỗ dễ đọc nhầm nhất.
+  const attributable = input.attributableBytes;
+  // MÙ = không có số dùng được. `null` (không tính được) và một số HỎNG (`NaN` từ đầu dò) đều phải
+  // rơi vào đây: một `NaN` lọt xuống `Math.max` sẽ nuốt cả vế sổ và cho headroom `NaN`.
+  const blind = attributable === null || !usable(attributable);
 
-  const blind = input.attributableBytes === null;
+  const invalidInput =
+    !usable(input.ceilingBytes) ||
+    // M-1 — `VRAM_CEILING_MB=` (để TRỐNG) ⇒ `Number("") === 0` ⇒ lọt `isFinite` ⇒ headroom âm
+    // khổng lồ ⇒ TỪ CHỐI 100% lượt xin, IM LẶNG, toàn hệ AI chết. Chiều fail-closed, nhưng vẫn
+    // đúng lớp lỗi `.env` mà C-1 sinh ra để diệt ⇒ phải CÓ TÊN.
+    input.ceilingBytes <= 0 ||
+    !usable(input.ledgerTotalBytes) ||
+    !usable(input.safetyReserveBytes) ||
+    // Đệm ÂM là phép CỘNG dư địa — nới đúng chiều nguy hiểm. Không có ca dùng hợp lệ nào.
+    input.safetyReserveBytes < 0 ||
+    (attributable !== null && !usable(attributable));
 
   /**
    * ⚠⚠ HAI DÒNG DƯỚI LÀ TOÀN BỘ CÔNG THỨC. Đọc khối đầu file trước khi đổi bất cứ ký tự nào —
@@ -166,18 +217,21 @@ export function computeHeadroom(input: HeadroomInput): HeadroomResult {
    * `attributableBytes ?? 0` (một `0` giả sẽ khai rằng ta ĐÃ ĐO và thiết bị TRỐNG, xoá luôn cả
    * `blind` lẫn cơ hội để Task 5 chạy chặt hơn — trong khi sự thật là ta KHÔNG BIẾT GÌ).
    */
-  const usedBytes = blind ? input.ledgerTotalBytes : Math.max(input.ledgerTotalBytes, input.attributableBytes as number);
-  // KHÔNG kẹp về 0: vượt trần phải trả về ÂM, và độ lớn phần âm là thông tin của câu từ chối.
-  const headroomBytes = input.ceilingBytes - usedBytes - input.safetyReserveBytes;
+  const usedBytes = blind ? input.ledgerTotalBytes : Math.max(input.ledgerTotalBytes, attributable);
+  const headroomBytes = invalidInput
+    ? // KHÔNG dùng `NaN`: mọi so sánh với `NaN` đều `false` ⇒ cưỡng chế TẮT im lặng (C-1).
+      // `-Infinity` từ chối mọi lượt xin một cách TẤT ĐỊNH, và `"invalid-input"` nói ra vì sao.
+      Number.NEGATIVE_INFINITY
+    : // KHÔNG kẹp về 0: vượt trần phải trả về ÂM, và độ lớn phần âm là thông tin của câu từ chối.
+      input.ceilingBytes - usedBytes - input.safetyReserveBytes;
 
-  const basis: HeadroomBasis = blind
-    ? "ledger-only"
-    : (input.attributableBytes as number) > input.ledgerTotalBytes
-      ? "attributable"
-      : "ledger";
+  const basis: HeadroomBasis = blind ? "ledger-only" : attributable > input.ledgerTotalBytes ? "attributable" : "ledger";
 
   const degradedReasons: HeadroomDegradation[] = [];
-  if (blind) degradedReasons.push("blind");
+  if (invalidInput) degradedReasons.push("invalid-input");
+  // I-2 — HAI MỨC KHÁC NHAU, không được gộp: "chưa bao giờ có số" (cấu trúc) vs "nhịp này không
+  // có số" (tạm thời, lành ở nhịp sau).
+  if (blind) degradedReasons.push(input.tickPresent ? "probe-blind" : "no-tick");
   if (!input.baselineVerified) degradedReasons.push("unverified-baseline");
 
   return {
@@ -186,15 +240,20 @@ export function computeHeadroom(input: HeadroomInput): HeadroomResult {
     blind,
     baselineVerified: input.baselineVerified,
     trusted: degradedReasons.length === 0,
-    degradedReasons,
+    // M-2 — `readonly` chỉ là kiểu, không chặn `push` lúc chạy. Đông cứng để không ai bơm thêm lý
+    // do vào bản tóm tắt mà Task 4 sẽ dán thẳng vào câu từ chối.
+    degradedReasons: Object.freeze(degradedReasons),
     usedBytes,
   };
 }
 
 /**
  * Hình dạng TỐI THIỂU mà `computeHeadroom` cần từ một nhịp đối chiếu. `VramReconcileResult` khớp
- * được kiểu này theo cấu trúc — CỐ Ý không `import type` từ `./vramReconciler` để file này không
- * kéo theo một module có I/O và trạng thái toàn cục (xem lý do "không import gì" ở đầu file).
+ * kiểu này theo cấu trúc — CỐ Ý không `import type` từ `./vramReconciler` để file này không kéo
+ * theo một module có I/O và trạng thái toàn cục (xem "không import gì" ở đầu file).
+ * ⚠ M-4: **neo biên dịch** cho phép khớp đó nằm ở phía `vramReconciler.ts` (nơi được phép import
+ * cả hai) — tìm `HeadroomTickFields` ở đó. Không có neo ấy thì Task 1 đổi tên trường vẫn build xanh
+ * và chỉ file test này đỏ.
  */
 export interface HeadroomTickFields {
   readonly attributableBytes: number | null;
@@ -208,33 +267,79 @@ export interface HeadroomPolicy {
    * ⚠ SỔ **SỐNG**, đọc đồng bộ tại thời điểm quyết định (`snapshot().totalReservedBytes`).
    * KHÔNG lấy `tick.ledgerTotalBytes`: tick có thể cũ tới trọn một nhịp (**60 s là độ trễ cưỡng
    * chế THẬT**, spec §5.6c), và mọi lượt `reserve()` xảy ra trong khoảng đó sẽ VÔ HÌNH — tức đúng
-   * cái cửa mà cưỡng chế sinh ra để đóng. Sổ là thứ DUY NHẤT ta có chính xác và đồng bộ; dùng bản
-   * cũ của nó là tự vứt đi ưu thế đó.
+   * cái cửa mà cưỡng chế sinh ra để đóng.
+   *
+   * ★★ ĐÂY LÀ THỨ KHOÁ LẠI PHẦN LỚN NHẤT CỦA RỦI RO "TICK CŨ" (I-3, review Task 2). Gọi `A₀` là
+   * `attributable` đo lúc `atMs`, `A*` là giá trị thật lúc quyết định: phần `A* − A₀` **do CHÍNH TA
+   * cấp phát** đã được `reserve()` đặt cọc vào sổ **ngay lập tức và đồng bộ** ⇒ vế `L` **vẫn bắt
+   * được nó**. Phần KHÔNG bắt được chỉ còn là mức tăng của **hộ NGOÀI SỔ** (145/159 dòng chưa nối)
+   * kể từ `atMs`. Đọc sổ từ tick là tự tay vứt bỏ lá chắn này.
    */
   readonly ledgerTotalBytes: number;
 }
 
 /**
- * Ghép ô tick gần nhất + chính sách thành đầu vào của `computeHeadroom`. Thuần, đồng bộ.
+ * Ghép ô tick gần nhất + chính sách thành đầu vào của `computeHeadroom`. Thuần, đồng bộ, không ném.
  *
- * ⚠ `tick === null` (CHƯA có nhịp nào) ⇒ mù + chưa xác minh. Ca này **có thật và thường trực**,
- * không phải lý thuyết: dưới topology `api`+`worker`, `startVramReconciler()` chỉ chạy ở vai trò
- * chạy scheduler (`backgroundJobs.ts`), nên ở tiến trình `api` ô tick **rỗng vĩnh viễn** ⇒ cưỡng
- * chế ở đó chạy mù mãi mãi. Hàm này không giấu điều đó đi — nó trả về đúng trạng thái mù, để
- * Task 5 buộc phải xử lý.
+ * ⚠ `tick === null` (CHƯA có nhịp nào) ⇒ `tickPresent: false` ⇒ lý do **`"no-tick"`**, KHÁC hẳn
+ * `"probe-blind"`. Ca này **có thật và thường trực**: 60 giây đầu của mọi vai trò, và **vĩnh viễn**
+ * ở tiến trình nào không chạy reconciler.
  *
- * ⚠ HÀM NÀY KHÔNG HẾT HẠN TICK. "Tick cũ bao lâu thì hết đáng tin" là **chính sách của Task 5**
- * (`readLastReconcileTick()` trả kèm `atMs` để làm việc đó). Đặt một ngưỡng ở đây là chôn một
- * hằng số không ai canh vào giữa một hàm thuần.
+ * ⚠⚠ HÀM NÀY KHÔNG HẾT HẠN TICK, và ngưỡng tuổi của Task 5 **PHẢI KHÔNG đi qua
+ * `attributableBytes = null`** (I-3 — hệ quả ngược đời, phải nhận trước khi chọn ngưỡng):
+ *   • một tick CŨ **vẫn có số** ⇒ `blind: false`, `trusted` có thể `true` ⇒ nó **không** tắt lớp
+ *     bảo vệ, nó **khai một con số có thể sai kèm dấu ĐÁNG TIN**. Đó là một **phạm trù RIÊNG**,
+ *     KHÔNG phải một đường `blind` (đường `blind` thứ 12 là `tickPresent: false`, không phải cái này);
+ *   • chiều nguy hiểm của nó là **LỎNG HƠN** (thiết bị đã chiếm thêm mà số chưa biết); chiều
+ *     "chặt hơn" chỉ xảy ra khi thiết bị NHẢ bớt, và ca đó tự lành trong ≤ 1 nhịp;
+ *   • vì `max(L, A) ≥ L`, **"quá hạn ⇒ vứt `A` ⇒ `null`" là phép LÀM LỎNG** (tự nâng headroom lên
+ *     chặn TRÊN) — tức phản ứng với *"số của tôi có thể đã cũ"* bằng *"vậy coi như thiết bị trống"*.
+ *   ⇒ Chính sách hết hạn ĐÚNG: **GIỮ số, CỘNG một biên theo tuổi** (spec §5.6c đã chỉ vật liệu:
+ *   *"biên bằng tốc độ cấp phát lớn nhất quan sát được trong một tick"*) **rồi hạ `trusted`**.
+ *   `readLastReconcileTick()` trả kèm `atMs` và `consecutiveFailures` để làm đúng việc đó.
  */
 export function headroomInputFromTick(tick: HeadroomTickFields | null, policy: HeadroomPolicy): HeadroomInput {
   return {
     ceilingBytes: policy.ceilingBytes,
     safetyReserveBytes: policy.safetyReserveBytes,
     ledgerTotalBytes: policy.ledgerTotalBytes,
-    attributableBytes: tick?.attributableBytes ?? null,
+    attributableBytes: tick === null ? null : tick.attributableBytes,
     // Không có tick ⇒ KHÔNG có bằng chứng nào về nền ⇒ `false`. Mặc định phải là "chưa xác minh",
     // không bao giờ là "coi như đã xác minh".
-    baselineVerified: tick?.baselineVerified ?? false,
+    baselineVerified: tick === null ? false : tick.baselineVerified,
+    // I-2 — thông tin mà CHỈ chỗ này biết. Vứt nó đi là xoá ranh giới giữa "không bao giờ có số"
+    // và "nhịp này không có số".
+    tickPresent: tick !== null,
   };
+}
+
+/**
+ * ★★ C-1 — CỔNG CẤU HÌNH, và là **chỗ DUY NHẤT trong module này được phép NÉM**.
+ *
+ * Gọi **MỘT LẦN lúc nạp cấu hình cưỡng chế** (Task 5), ở nơi **KHÔNG nằm trong** `try` của
+ * `beginVramAllocation()` — ví dụ mức module của `vramBroker`, hoặc khối bật VRAM lúc boot. Một cú
+ * ném ở đó **giết boot thật to** (`.env` hỏng lộ ra trong một giây); cùng cú ném đó trên đường
+ * `reserve()` thì bị `catch { return NOOP_TICKET }` nuốt và còn làm **mất giấy phép** — xem khối
+ * C-1 ở đầu file.
+ *
+ * ⚠ Đây là lưới **bổ sung**, không phải lưới duy nhất: dù không ai gọi hàm này, `computeHeadroom()`
+ * vẫn fail-closed CÓ TÊN. Hai lớp phục vụ hai mục tiêu khác nhau (hỏng SỚM vs không hỏng SAI).
+ */
+export function assertHeadroomPolicy(policy: {
+  readonly ceilingBytes: number;
+  readonly safetyReserveBytes: number;
+}): void {
+  if (!usable(policy.ceilingBytes) || policy.ceilingBytes <= 0) {
+    throw new TypeError(
+      `[vram] cấu hình cưỡng chế hỏng: trần = ${String(policy.ceilingBytes)} byte (phải là số hữu hạn > 0). ` +
+        `Nguồn thường gặp: VRAM_CEILING_MB để TRỐNG ⇒ Number("") === 0 ⇒ dư địa âm ⇒ TỪ CHỐI 100% lượt xin; ` +
+        `hoặc một chuỗi hỏng ⇒ NaN ⇒ mọi so sánh false ⇒ cưỡng chế TẮT. Sửa cấu hình, đừng bắt đường nóng đoán.`,
+    );
+  }
+  if (!usable(policy.safetyReserveBytes) || policy.safetyReserveBytes < 0) {
+    throw new TypeError(
+      `[vram] cấu hình cưỡng chế hỏng: đệm an toàn = ${String(policy.safetyReserveBytes)} byte ` +
+        `(phải là số hữu hạn ≥ 0). Một đệm ÂM là phép CỘNG dư địa — nới đúng chiều nguy hiểm.`,
+    );
+  }
 }

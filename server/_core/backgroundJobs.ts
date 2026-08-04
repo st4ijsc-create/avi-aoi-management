@@ -141,13 +141,18 @@ export async function startBackgroundSchedulers(): Promise<void> {
   //     early-return trước khi chạm dòng bật ở đó).
   // `__setVramLogTimerEnabled` idempotent (`if (on && !timer)`) nên hai điểm bật này không
   // đụng nhau — không role nào đi qua CẢ HAI, mỗi nơi chỉ phủ đúng đường vào của chính nó.
-  try {
-    const { startVramReconciler } = await import("../services/vram/vramReconciler");
-    startVramReconciler();
-    console.log("[vram] sổ cái + đối chiếu đã bật (Pha 1 — CHỈ QUAN SÁT, không cưỡng chế).");
-  } catch (err) {
-    console.error("[vram] không bật được sổ cái/đối chiếu:", (err as any)?.message || err);
-  }
+  // ★★ Pha 2B Task 2 (I-1) — LƯỢT BẬT ĐỐI CHIẾU ĐÃ RỜI KHỎI ĐÂY, CÓ CHỦ ĐÍCH. Từ Pha 2B, nhịp đối
+  // chiếu là NGUỒN SỐ của đường cưỡng chế chứ không chỉ nuôi cái chuông, nên nó không được phụ
+  // thuộc vào việc tiến trình này có chạy scheduler hay không: `ROLE=api` không bao giờ vào hàm
+  // này ⇒ ô tick rỗng vĩnh viễn ⇒ headroom rơi về chỉ-sổ (nhánh RỘNG NHẤT) đúng ở tiến trình chứa
+  // MỌI điểm cấp phát. Hai điểm bật mới nằm cùng chỗ với `__setVramLogTimerEnabled(true)`:
+  //   • `server/_core/index.ts` — TRƯỚC nhánh rẽ theo `ROLE` (phủ `api` + all-in-one; `api` bật ở
+  //     chế độ `ring: false` — có SỐ, không có CHUÔNG);
+  //   • đầu `runWorkerProcess()` (dưới, phủ `ROLE=worker` qua cả `worker.ts` lẫn `index.ts`).
+  // ⚠ ĐỪNG THÊM LẠI ở đây: `startVramReconciler()` idempotent (`if (timer) return`) nên lượt gọi
+  // thứ hai sẽ ÂM THẦM BỎ QUA tham số `ring` của nó — một cái bẫy im lặng, không phải một no-op.
+  // ⚠ Ràng buộc thứ tự CŨ vẫn còn nguyên giá trị và nay do `index.ts` gánh: lượt chụp nền phải
+  // đứng TRƯỚC `initDeepModelWarmup()` bên dưới, nếu không ~17 GB trọng số bị nuốt vào "nền".
 
   // doc69 W1 "modelfix" — WARM THE DEEP (text-generation) MODEL FIRST. node-llama-cpp fragments
   // VRAM when the 30B loads AFTER a small model, and RAG pulls in the 0.6B embedder on the first
@@ -663,8 +668,11 @@ export function stopBackgroundSchedulers(): void {
     clearInterval(machineKeyExpiryTimer);
     machineKeyExpiryTimer = null;
   }
-  // Pha 1 điều phối VRAM (Task 5) — tắt đối xứng với chỗ bật ở startBackgroundSchedulers().
-  // Cả hai đều idempotent (no-op khi chưa từng bật).
+  // Pha 1 điều phối VRAM (Task 5) — tắt VÔ ĐIỀU KIỆN, idempotent (no-op khi chưa từng bật).
+  // ⚠ Pha 2B Task 2 (I-1) — KHÔNG CÒN ĐỐI XỨNG với một chỗ bật trong CÙNG file: lượt bật đã dời
+  // sang `index.ts` (trước nhánh rẽ `ROLE`) và đầu `runWorkerProcess()`. Giữ lượt tắt ở đây là CỐ
+  // Ý và đúng khuôn `__setVramLogTimerEnabled(false)` ngay dưới — vốn đã tắt vô điều kiện từ Pha
+  // 1.5 Task 4 dù chỗ bật của nó cũng nằm ở hai file khác. Đường tắt duy nhất phải phủ mọi đường bật.
   import("../services/vram/vramReconciler")
     .then((m) => m.stopVramReconciler())
     .catch(() => {});
@@ -810,6 +818,22 @@ export async function runWorkerProcess(): Promise<void> {
   } catch (err) {
     // Telemetry không bao giờ được làm hỏng boot của worker.
     console.error("[Worker] không bật được bộ đếm giờ nhật ký vram:", (err as any)?.message || err);
+  }
+
+  // ★★ Pha 2B Task 2 (I-1) — ĐỐI CHIẾU: bật NGAY ĐÂY, cùng khuôn và cùng lý do với lượt bật nhật
+  // ký ngay trên (`runWorkerProcess()` là điểm CHUNG của cả hai đường vào worker; `index.ts` không
+  // phủ được đường nào trong hai đường đó). Trước Pha 2B nó nằm trong `startBackgroundSchedulers()`
+  // — vẫn chạy cho worker, nhưng chỗ đó KHÔNG phủ `ROLE=api`, và từ Pha 2B nhịp đối chiếu là
+  // NGUỒN SỐ của đường cưỡng chế chứ không chỉ là cái chuông. Lý do đầy đủ ở `index.ts`.
+  // ⚠ Đặt TRƯỚC `startBackgroundSchedulers()` bên dưới: nền phải được chụp khi tiến trình này CHƯA
+  // cấp phát gì (ràng buộc thứ tự có từ Pha 1 — đẩy xuống sau lượt warm model là nuốt ~17 GB vào nền).
+  // Worker chạy scheduler ⇒ nó LÀ vai trò được đánh chuông (`ring` mặc định true).
+  try {
+    const { startVramReconciler } = await import("../services/vram/vramReconciler");
+    startVramReconciler();
+    console.log("[Worker] [vram] sổ cái + đối chiếu đã bật (nhịp NGAY, chuông BẬT).");
+  } catch (err) {
+    console.error("[Worker] không bật được sổ cái/đối chiếu vram:", (err as any)?.message || err);
   }
 
   // Observability bootstrap (Sentry/OTel) — no-op unless configured.
