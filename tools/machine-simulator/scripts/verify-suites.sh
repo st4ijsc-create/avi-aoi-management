@@ -1134,7 +1134,25 @@ EXPECT_EDGESERVICE=28
 #            WRONG for a Seeded one, which is re-created at every start, so the DELETE frees the machine only
 #            until the next restart. A pure function, three arms; two of them are otherwise reachable only by
 #            constructing a specific store state at a specific endpoint.
-EXPECT_ENGINEAPI=1272
+#
+# 🔴 WHOLE-BRANCH REVIEW, LAST ITEM raises this 1272 -> 1276 (+4). Counted from the runner (23/16/6/5).
+# TryFindBlockedDevice — the refusal an operator hits SAVING an RS-485 bus — still emitted "Remove that
+# connector (DELETE …)" with no provenance fork, wrong the same way for a connectors.json-seeded incumbent
+# (the DELETE frees the machine until the next restart and no longer). The sibling of the I-1 sweep, and the
+# reason that sweep could not reach it is the finding: the grep was on `existing.Source`/`ConnectorConfigSource`,
+# tokens that appear ONLY where the field is already in scope, and TryFindBlockedDevice takes bindings +
+# roster and never the store — so `Source` could not have appeared in it under any circumstances.
+#
+#     + 2  ConnectorRtuBusEndpointTests (21 -> 23) — both arms at the endpoint, where the store is in scope:
+#            a SEEDED incumbent is told to change the connectors.json entry (naming its bus) and is NOT told
+#            to delete a row that comes back; an OPERATOR incumbent still gets the DELETE, which for it works.
+#            The seeded one is driven through the REAL seeder.
+#     + 2  RtuBusRegistrationTests (14 -> 16) — the seam: the refusal names the incumbent and the remedy is
+#            ABSENT (a type that cannot see provenance must not ship a sentence that depends on it), and the
+#            ROSTER arm hands out no incumbent and keeps its advice — nothing removes a machine from the
+#            roster, so "use a different machine code" is true whatever wrote it. A sentence true without the
+#            field beats a fork that cannot be built.
+EXPECT_ENGINEAPI=1276
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

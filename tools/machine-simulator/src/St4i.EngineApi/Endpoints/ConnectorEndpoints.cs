@@ -549,8 +549,20 @@ public static class ConnectorEndpoints
         // 🔴 Every refusal that is decidable from the current state is decided HERE, before the first
         // mutation — one snapshot, one roster read, all N devices. See RtuBusConfiguration.TryFindBlockedDevice.
         if (RtuBusConfiguration.TryFindBlockedDevice(
-                bus, connectorRegistry.SnapshotBindings(), fleetHost.Fleet, out var blocked))
+                bus, connectorRegistry.SnapshotBindings(), fleetHost.Fleet, out var blocked, out var incumbentId))
         {
+            // 🔴 Fix round 4 (branch review) — the remedy is appended HERE because this is the first
+            // frame that can see the store, and therefore the first that can tell an operator-saved incumbent
+            // from a connectors.json-seeded one. TryFindBlockedDevice states the problem and hands the
+            // incumbent out; it cannot state the remedy, because the field the remedy depends on is not in
+            // its scope and never was. Null incumbent = the ROSTER arm, whose advice needs no field.
+            if (incumbentId is not null)
+            {
+                var incumbent = await store.GetAsync(incumbentId, ct).ConfigureAwait(false);
+                blocked += " " + DescribeHowToFreeTheMachine(incumbentId, incumbent?.Source, incumbent?.BusInstanceId) +
+                           " Or give this device a different machine code and save the bus again.";
+            }
+
             return Results.Conflict(new ApiErrorDto(blocked));
         }
 

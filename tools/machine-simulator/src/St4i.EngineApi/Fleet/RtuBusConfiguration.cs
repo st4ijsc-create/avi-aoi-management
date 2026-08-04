@@ -228,14 +228,34 @@ public static class RtuBusConfiguration
     /// "persisted, listed, and permanently never running" state <c>ConnectorEndpoints</c>' own SM-5 comment
     /// says must never be creatable.</para>
     /// </summary>
+/// <para>🔴 <b>Fix round 4 (branch review) — this method states the PROBLEM and never the REMEDY for
+    /// the claim arm, and the reason is a fact about this signature.</b> "Remove that connector
+    /// (DELETE /v1/connectors/{id})" is correct for an incumbent an operator saved and WRONG for one
+    /// <see cref="ConnectorConfigVisibilitySeeder"/> wrote — that row is re-created at every start, so the
+    /// DELETE frees the machine until the next restart and no longer. Deciding between those needs
+    /// <see cref="ConnectorConfigRecord.Source"/>, and this method takes <paramref name="bindings"/> and
+    /// <paramref name="roster"/> and <b>never the store</b>: the field is not in scope here and cannot be.
+    /// So the incumbent's id goes OUT through <paramref name="incumbentInstanceId"/> and the caller — which
+    /// does have the store — appends
+    /// <see cref="Endpoints.ConnectorEndpoints.DescribeHowToFreeTheMachine"/>. Guessing a remedy from a type
+    /// that cannot see what decides it is exactly how this sentence was wrong on two paths already.</para>
+    /// </summary>
+    /// <param name="incumbentInstanceId">The connector instance holding the contested machine, when one
+    /// does — so the caller can look up its provenance and say how to free it. <see langword="null"/> for the
+    /// ROSTER arm, which has no incumbent connector at all: a roster entry cannot be removed by any endpoint
+    /// (<see cref="FleetHost.RegisterMachine"/> has no un-register — the residual this batch carries), so the
+    /// only advice that arm can honestly give is "use a different machine code", and that advice is the same
+    /// whatever wrote the row. A remedy that needs no field is better than a fork that cannot be built.</param>
     /// <returns><see langword="true"/> if some device cannot be registered, with
     /// <paramref name="reason"/> naming it and why.</returns>
     public static bool TryFindBlockedDevice(
         ResolvedBus bus,
         IReadOnlyList<ConnectorRegistry.ConnectorBinding> bindings,
         IReadOnlyList<MachineDescriptor> roster,
-        [NotNullWhen(true)] out string? reason)
+        [NotNullWhen(true)] out string? reason,
+        out string? incumbentInstanceId)
     {
+        incumbentInstanceId = null;
         ArgumentNullException.ThrowIfNull(bus);
         ArgumentNullException.ThrowIfNull(bindings);
         ArgumentNullException.ThrowIfNull(roster);
@@ -257,13 +277,12 @@ public static class RtuBusConfiguration
                 // claim through to a refusal after the store had been written.
                 if (IsInBusNamespace(bus.BusInstanceId, binding.InstanceId)) continue;
 
+                incumbentInstanceId = binding.InstanceId;
                 reason =
                     $"Device at unit {device.UnitId} serves machine '{device.MachineCode}', which is already " +
                     $"served by connector instance '{binding.InstanceId}'. Two connectors may not drive one " +
                     "machine — a write could not then be resolved to a single device. NOTHING was saved: a bus " +
-                    "is saved whole or not at all, so no device on this line was registered. Remove that " +
-                    $"connector (DELETE /v1/connectors/{binding.InstanceId}) or give this device a different " +
-                    "machine code, then save the bus again.";
+                    "is saved whole or not at all, so no device on this line was registered.";
                 return true;
             }
 
@@ -281,10 +300,16 @@ public static class RtuBusConfiguration
                 d => string.Equals(d.Code, device.MachineCode, StringComparison.OrdinalIgnoreCase));
             if (rosterHit is not null)
             {
+                // 🔴 Fix round 4's sweep — no provenance fork here, and that is a finding rather than an
+                // omission: nothing removes a machine from the roster (FleetHost.RegisterMachine has no
+                // un-register), so "use a different machine code" is the only honest advice regardless of what
+                // put the machine there. The sentence is true without the field, which is better than a fork
+                // this method could not build.
                 reason =
                     $"Device at unit {device.UnitId} serves machine '{device.MachineCode}', which is already in " +
                     $"the fleet roster under driver kind '{rosterHit.DriverKind}'. Machine codes must be unique " +
-                    "across the whole fleet. NOTHING was saved: a bus is saved whole or not at all. Use a " +
+                    "across the whole fleet, and nothing can remove a machine from the roster while the " +
+                    "application is running. NOTHING was saved: a bus is saved whole or not at all. Use a " +
                     "different machine code for this device and save the bus again.";
                 return true;
             }

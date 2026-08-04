@@ -152,6 +152,59 @@ public sealed class RtuBusRegistrationTests
     public void TheBusNamespaceRule_CoversItsOwnDerivedIdsAndNothingElse(string bus, string candidate, bool expected)
         => Assert.Equal(expected, RtuBusConfiguration.IsInBusNamespace(bus, candidate));
 
+    /// <summary>
+    /// 🔴 <b>Fix round 4 (branch review) — the bus-save refusal names the incumbent and states the
+    /// PROBLEM; it no longer guesses the remedy, because the field the remedy depends on is not in this
+    /// method's scope.</b>
+    ///
+    /// <para>"Remove that connector (DELETE …)" was emitted unconditionally, and it is wrong for a
+    /// <see cref="ConnectorConfigSource.Seeded"/> incumbent — a <c>connectors.json</c> row is re-created at
+    /// every start, so the DELETE frees the machine until the next restart and no longer. This method takes
+    /// bindings and a roster and never the store, so it could not have decided that. It hands the incumbent
+    /// out instead.</para>
+    ///
+    /// <para>The ROSTER arm hands out <see langword="null"/> and keeps its advice, and that is a finding
+    /// rather than an omission: nothing removes a machine from the roster, so "use a different machine code"
+    /// is the only honest advice whatever wrote it. A sentence true without the field beats a fork that
+    /// cannot be built.</para>
+    /// </summary>
+    [Fact]
+    public void TheBusSaveRefusal_NamesTheIncumbent_AndLeavesTheRemedyToTheCallerThatCanSeeItsProvenance()
+    {
+        var registry = new ConnectorRegistry();
+        Assert.True(registry.Register(
+            new OutsiderFactory(), "cfg", instanceId: "some-other-connector", machineCode: "RTU-B"));
+
+        var bus = Resolve("line1", SerialBus(Device("RTU-A", 1), Device("RTU-B", 2)));
+
+        Assert.True(RtuBusConfiguration.TryFindBlockedDevice(
+            bus, registry.SnapshotBindings(), Array.Empty<MachineDescriptor>(), out var reason, out var incumbent));
+
+        Assert.Equal("some-other-connector", incumbent);
+        Assert.Contains("unit 2", reason, StringComparison.Ordinal);
+        Assert.Contains("NOTHING was saved", reason, StringComparison.Ordinal);
+        // 🔴 The remedy is ABSENT here, not merely different: a type that cannot see provenance must not
+        // ship a sentence that depends on it.
+        Assert.DoesNotContain("DELETE /v1/connectors", reason, StringComparison.Ordinal);
+    }
+
+    /// <summary>The roster arm: no incumbent connector exists, so there is nothing whose provenance could
+    /// change the advice — and the advice says so, naming the reason nothing can be removed.</summary>
+    [Fact]
+    public void TheRosterArm_HandsOutNoIncumbent_AndItsAdviceNeedsNoProvenance()
+    {
+        var bus = Resolve("line1", SerialBus(Device("ROSTER-HIT", 1)));
+        var roster = new[] { RtuBusConfiguration.DescriptorFor(bus.Devices[0]) };
+
+        Assert.True(RtuBusConfiguration.TryFindBlockedDevice(
+            bus, Array.Empty<ConnectorRegistry.ConnectorBinding>(), roster, out var reason, out var incumbent));
+
+        Assert.Null(incumbent);
+        Assert.Contains("nothing can remove a machine from the roster", reason, StringComparison.Ordinal);
+        Assert.Contains("different machine code", reason, StringComparison.Ordinal);
+        Assert.DoesNotContain("DELETE /v1/connectors", reason, StringComparison.Ordinal);
+    }
+
     /// <summary>🔴 Fix round 2, N-2/N-3 — the over-breadth reaching its CONSEQUENCE on the production path,
     /// not just the predicate. Bus <c>line1:unitA</c> is registered; saving bus <c>line1</c> must not release
     /// it. Before this fix the release took it, so a device on a different line lost its machine claim while

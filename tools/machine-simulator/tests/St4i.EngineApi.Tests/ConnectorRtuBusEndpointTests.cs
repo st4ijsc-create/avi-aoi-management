@@ -497,6 +497,69 @@ public sealed class ConnectorRtuBusEndpointTests
         Assert.DoesNotContain("DELETE /v1/connectors/ghost", noRow, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 🔴 <b>Branch review, the last instance — saving a bus blocked by a SEEDED incumbent must not
+    /// advise a DELETE that undoes itself.</b>
+    ///
+    /// <para>The refusal used to say "Remove that connector (DELETE /v1/connectors/{id})" unconditionally.
+    /// For a <c>connectors.json</c>-seeded incumbent that DELETE frees the machine <b>until the next
+    /// restart</b> — the seeder re-creates the row on every boot — so the advice sends an operator down a
+    /// path that undoes itself. Driven through the real seeder so the provenance is the one production
+    /// produces.</para>
+    /// </summary>
+    [Fact]
+    public async Task ABusBlockedByASEEDEDIncumbent_IsToldToChangeTheConfigFile_NotToDeleteARowThatComesBack()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+        var registry = new ConnectorRegistry();
+
+        // A DIFFERENT bus, seeded from connectors.json, already serving the contested machine.
+        await ConnectorConfigVisibilitySeeder.SeedBusAsync(
+            store, "other-line", SerialBus(Device("CONTESTED", 9)), logWarning: null);
+        Assert.True(registry.Register(
+            new AlwaysRefusesFactory(), "cfg", instanceId: "other-line:unit9", machineCode: "CONTESTED"));
+
+        var result = await PostAsync(
+            store, registry, new ModbusBusRegistry(), CreateHost(registry), "line1",
+            SerialBus(Device("CONTESTED", 1)));
+
+        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
+        var error = ErrorOf(result);
+
+        Assert.Contains("other-line:unit9", error, StringComparison.Ordinal);
+        // 🔴 The advice that would have undone itself, asserted as an ABSENCE.
+        Assert.DoesNotContain(
+            "Remove that connector first (DELETE /v1/connectors/other-line:unit9)", error, StringComparison.Ordinal);
+        Assert.Contains("re-created on every start", error, StringComparison.Ordinal);
+        Assert.Contains("Modbus RTU bus 'other-line'", error, StringComparison.Ordinal);
+        Assert.Contains("give this device a different machine code", error, StringComparison.Ordinal);
+
+        Assert.Empty(await store.ListBusAsync("line1"));
+    }
+
+    /// <summary>The other arm, so the fix is a fork: an OPERATOR-saved incumbent still gets the DELETE, which
+    /// for it genuinely works.</summary>
+    [Fact]
+    public async Task ABusBlockedByAnOPERATORIncumbent_IsStillToldToDeleteIt()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+        var registry = new ConnectorRegistry();
+        var host = CreateHost(registry);
+
+        Assert.Equal(StatusCodes.Status200OK, StatusOf(await PostAsync(
+            store, registry, new ModbusBusRegistry(), host, "other-line",
+            SerialBus(Device("CONTESTED", 9)))));
+
+        var result = await PostAsync(
+            store, registry, new ModbusBusRegistry(), host, "line1",
+            SerialBus(Device("CONTESTED", 1)));
+
+        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
+        var error = ErrorOf(result);
+        Assert.Contains("DELETE /v1/connectors/other-line:unit9", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("re-created on every start", error, StringComparison.Ordinal);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Identity and refusals
     // ─────────────────────────────────────────────────────────────────────
