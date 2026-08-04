@@ -70,6 +70,21 @@ export interface VramEventInput {
    * đích danh đường nào (`loadGgufModel.createContext` · `ensureTextContext.createContext` ·
    * `getEmbeddingContext.createEmbeddingContext` · `loadGgufModel.fallbackNoRunner`). Bốn đường
    * này KHÔNG thử lại và KHÔNG hạ số lớp — ai đọc nhật ký đừng đi tìm một `retry` không bao giờ tới.
+   *
+   * ★ N-5 (re-review) — BA TỪ CÒN THIẾU. Đây đúng chỗ đã trả giá HAI lần (`baseline` vắng ở Task 5
+   * Pha 1, `unknown` vắng ở Task 3 Pha 2A); người đọc nhật ký dựa vào danh sách này và **không có
+   * cách nào biết thứ không được liệt kê**:
+   *   • `measure_failed` + `detail.reason = "resolve-gpu-layers-threw"` — **KHÔNG phải một phép đo
+   *     VRAM hỏng.** Nó nghĩa là bộ đọc `LlamaModel.gpuLayers` ném ⇒ lá chắn
+   *     `zero-gpu-layers-on-success` **không chạy được cho lượt đó**. Ai đếm `measure_failed` để
+   *     ước lượng chất lượng phép đo VRAM phải TRỪ loại này ra.
+   *   • `degraded` + `detail.reason = "non-finite-gpu-layers"` — `gpuLayers` là `NaN`/`Infinity`,
+   *     bị chuẩn hoá thành `"auto"`. `detail.requestedGpuLayers` là **CHUỖI** (`"NaN"`), vì
+   *     `JSON.stringify(NaN)` cho `null` và số sẽ biến mất im lặng trong jsonb.
+   *   • `detail.droppedBeforeThis` (trên MỌI loại sự kiện) — số sự kiện đã bị **VỨT** vì hàng đợi
+   *     đầy, tính tới ngay TRƯỚC dòng này. Nó là dấu vết DUY NHẤT của một quãng nhật ký THỦNG:
+   *     những sự kiện kia không tồn tại, nên chỉ đếm được từ phía sự kiện còn sống. Thấy ô này > 0
+   *     nghĩa là mọi thống kê trên quãng đó đều THIẾU, và thiếu bao nhiêu thì chính ô này nói.
    */
   event: string;
   owner: string;
@@ -159,8 +174,15 @@ function nonFiniteLabel(v: number): "NaN" | "Infinity" | "-Infinity" {
  * thì lại đúng lớp lỗi đang diệt: `detail` lồng 11 tầng có `-Infinity` ở đáy từng cho
  * `nonFiniteFields === undefined` và một `null` không giải thích được trong jsonb.
  */
+/**
+ * ⚠ N-6 (re-review) — HAI Ô, KHÔNG PHẢI MỘT. `nonFiniteFields` trả lời *"số nào đã hỏng"*;
+ * `unscrubbedPaths` trả lời *"chỗ nào bộ làm sạch KHÔNG đi tới được"* (vòng · quá sâu). Đổ chung
+ * một ô thì `count(nonFiniteFields)` của Task 7 **đếm thừa** — nó sẽ báo có giá trị không hữu hạn ở
+ * những chỗ chỉ đơn giản là chưa được duyệt. Hai câu hỏi khác nhau thì hai ô khác nhau (cùng kỷ
+ * luật với `measureSource` vs `fallbackReason` ở `types.ts`).
+ */
 function scrubDetail(
-  value: unknown, path: string, found: string[], depth: number, dangDi: Set<object>,
+  value: unknown, path: string, found: string[], choTrong: string[], depth: number, dangDi: Set<object>,
 ): unknown {
   if (typeof value === "number") {
     if (Number.isFinite(value)) return value;
@@ -172,21 +194,21 @@ function scrubDetail(
   const proto = Object.getPrototypeOf(value);
   if (!Array.isArray(value) && proto !== Object.prototype && proto !== null) return value;
   if (dangDi.has(value as object)) {
-    found.push(`detail.${path}=<vòng, không duyệt tiếp>`);
+    choTrong.push(`detail.${path}=<vòng, không duyệt tiếp>`);
     return value;
   }
   if (depth >= MAX_DETAIL_DEPTH) {
-    found.push(`detail.${path}=<sâu quá ${MAX_DETAIL_DEPTH} tầng, KHÔNG làm sạch>`);
+    choTrong.push(`detail.${path}=<sâu quá ${MAX_DETAIL_DEPTH} tầng, KHÔNG làm sạch>`);
     return value;
   }
   dangDi.add(value as object);
   try {
     if (Array.isArray(value)) {
-      return value.map((v, i) => scrubDetail(v, `${path}[${i}]`, found, depth + 1, dangDi));
+      return value.map((v, i) => scrubDetail(v, `${path}[${i}]`, found, choTrong, depth + 1, dangDi));
     }
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = scrubDetail(v, path ? `${path}.${k}` : k, found, depth + 1, dangDi);
+      out[k] = scrubDetail(v, path ? `${path}.${k}` : k, found, choTrong, depth + 1, dangDi);
     }
     return out;
   } finally {
@@ -221,14 +243,17 @@ export function sanitizeVramEvent(e: VramEventInput): VramEventInput {
     out[field as string] = v.slice(0, max);
   }
 
+  const choTrong: string[] = [];
   let detail = e.detail;
   if (detail !== undefined && detail !== null) {
-    detail = scrubDetail(detail, "", nonFinite, 0, new Set<object>()) as Record<string, unknown>;
+    detail = scrubDetail(detail, "", nonFinite, choTrong, 0, new Set<object>()) as Record<string, unknown>;
   }
-  if (nonFinite.length > 0 || truncated.length > 0) {
+  if (nonFinite.length > 0 || truncated.length > 0 || choTrong.length > 0) {
     detail = { ...(detail ?? {}) };
     if (nonFinite.length > 0) (detail as Record<string, unknown>).nonFiniteFields = nonFinite;
     if (truncated.length > 0) (detail as Record<string, unknown>).truncatedFields = truncated;
+    // ⚠ N-6 — Ô RIÊNG: "chỗ chưa duyệt tới" KHÔNG PHẢI "số hỏng". Gộp là để Task 7 đếm thừa.
+    if (choTrong.length > 0) (detail as Record<string, unknown>).unscrubbedPaths = choTrong;
   }
   out.detail = detail;
   return out as unknown as VramEventInput;

@@ -123,18 +123,35 @@ export function vramLoadRetryDelayMs(): number {
  * ⚠ THỨ TỰ CÓ NGHĨA: dòng khớp ĐẦU TIÊN quyết định `signal`, nên chuỗi CỤ THỂ phải đứng trước
  * chuỗi CHUNG (`insufficient memory` là câu mặc định của `InsufficientMemoryError`).
  */
-export const VRAM_EXHAUSTION_SIGNALS: ReadonlyArray<readonly [pattern: string, signal: string]> = Object.freeze([
-  ["failed to load model", "llama-model-init-false"],
-  ["not enough vram", "insufficient-vram-preflight"],
-  ["too large for the available vram", "insufficient-vram-context"],
-  ["too large for the available ram", "insufficient-ram-context"],
-  ["too large for the available resources", "insufficient-resources-context"],
-  ["failed to create context", "llama-context-init-false"],
-  ["insufficient memory", "insufficient-memory-generic"],
-  ["out of memory", "cuda-oom"],
-  ["cudamalloc", "cuda-malloc"],
-  ["failed to allocate", "alloc-failed"],
-  ["unable to allocate", "alloc-unable"],
+/**
+ * ★ N-3 (re-review) — CỘT THỨ BA LÀ **CÁI GÌ HẾT**, và nó không phải trang trí.
+ *
+ * Bảng này gắn `exhausted: true` cho CẢ `"…too large for the available ram"` (RAM **HỆ THỐNG**) lẫn
+ * `"…too large for the available resources"` (không rõ cái nào). Câu lỗi của vòng trước nói thẳng
+ * *"OUT OF VRAM"* cho mọi phán quyết ⇒ **người trực đi kiểm nhầm thiết bị**: `nvidia-smi` thấy 30 GB
+ * trống, kết luận "sổ nói láo", trong khi thật ra máy hết RAM. Đúng lớp *"chỉ người trực đi sai
+ * hướng"* mà cả pha này sinh ra để diệt — chỉ đổi trục.
+ *
+ * `"unknown"` là câu trả lời TRUNG THỰC, không phải câu lười: `Failed to load model` đến từ
+ * `_model.init()` trả `false` (native nuốt nguyên nhân), `Failed to create context` cũng vậy.
+ * Khai bừa là VRAM ở hai dòng đó chính là cái sai vừa nói.
+ */
+export type VramExhaustionScope = "device-vram" | "host-ram" | "unknown";
+
+export const VRAM_EXHAUSTION_SIGNALS: ReadonlyArray<
+  readonly [pattern: string, signal: string, scope: VramExhaustionScope]
+> = Object.freeze([
+  ["failed to load model", "llama-model-init-false", "unknown"],
+  ["not enough vram", "insufficient-vram-preflight", "device-vram"],
+  ["too large for the available vram", "insufficient-vram-context", "device-vram"],
+  ["too large for the available ram", "insufficient-ram-context", "host-ram"],
+  ["too large for the available resources", "insufficient-resources-context", "unknown"],
+  ["failed to create context", "llama-context-init-false", "unknown"],
+  ["insufficient memory", "insufficient-memory-generic", "unknown"],
+  ["out of memory", "cuda-oom", "unknown"],
+  ["cudamalloc", "cuda-malloc", "device-vram"],
+  ["failed to allocate", "alloc-failed", "unknown"],
+  ["unable to allocate", "alloc-unable", "unknown"],
 ] as const);
 
 export interface VramExhaustionVerdict {
@@ -142,6 +159,8 @@ export interface VramExhaustionVerdict {
   readonly exhausted: boolean;
   /** Tín hiệu nào đã khớp — đi thẳng vào `detail.signal` để truy được bằng SQL. */
   readonly signal: string | null;
+  /** ★ N-3 — HẾT CÁI GÌ. `"unknown"` là câu trung thực, đừng "dọn dẹp" thành `"device-vram"`. */
+  readonly scope: VramExhaustionScope;
 }
 
 /**
@@ -156,20 +175,75 @@ export function classifyLoadFailure(err: unknown): VramExhaustionVerdict {
     const anyErr = err as { message?: unknown; constructor?: { name?: string } } | null | undefined;
     const ctorName = anyErr?.constructor?.name;
     const msg = String(anyErr?.message ?? err ?? "").toLowerCase();
-    for (const [pattern, signal] of VRAM_EXHAUSTION_SIGNALS) {
-      if (msg.includes(pattern)) return { exhausted: true, signal };
+    for (const [pattern, signal, scope] of VRAM_EXHAUSTION_SIGNALS) {
+      if (msg.includes(pattern)) return { exhausted: true, signal, scope };
     }
     if (ctorName === "InsufficientMemoryError") {
-      return { exhausted: true, signal: "insufficient-memory-error-class" };
+      return { exhausted: true, signal: "insufficient-memory-error-class", scope: "unknown" };
     }
-    return { exhausted: false, signal: null };
+    return { exhausted: false, signal: null, scope: "unknown" };
   } catch {
-    return { exhausted: false, signal: null };
+    return { exhausted: false, signal: null, scope: "unknown" };
   }
 }
 
 /** Giá trị `gpuLayers` được phép truyền cho node-llama-cpp. Số ÂM không nằm trong đây, có chủ ý. */
 export type VramGpuLayerValue = "max" | "auto" | number;
+
+/**
+ * ★★ N-4 (re-review) — `"auto"` **KHÔNG BAO GIỜ NÉM**, VÀ ĐÓ LÀ MỘT CỬA SUY BIẾN RIÊNG.
+ *
+ * `resolveModelGpuLayersOption` ở nhánh chuỗi kết bằng `?? 0`: khi thiết bị chật, nó **âm thầm trả
+ * 0 lớp** thay vì ném. Nghĩa là đổi `-1` → `"auto"` (I-3) mới chỉ hạ suy biến im lặng từ **"LUÔN
+ * LUÔN"** xuống **"mỗi khi thiết bị đầy"** — tốt hơn nhiều, nhưng **CHƯA DIỆT**.
+ *
+ * Thứ diệt được nó là **ĐỌC LẠI `model.gpuLayers`** sau lượt nạp — đúng lá chắn
+ * `zero-gpu-layers-on-success` mà `loadWithVramOutcomes()` đã có. Hàm này mang lá chắn đó ra cho
+ * những điểm gọi **KHÔNG** đi qua bộ bọc §5.5 (hôm nay: `aiReranker`).
+ *
+ * KHÔNG BAO GIỜ ném. Không sinh sự kiện khi số lớp > 0 — im lặng ở đường ĐÚNG là im lặng đúng.
+ */
+export function noteGpuLayersResolved(n: {
+  owner: string;
+  kind: VramLeaseKind;
+  priority: VramPriority;
+  site: string;
+  requestedGpuLayers: VramGpuLayerValue;
+  /** Đọc từ `LlamaModel.gpuLayers`. `null`/không đọc được ⇒ ghi `layerCountUnknown`. */
+  resolvedGpuLayers: unknown;
+  emit?: (e: VramEventInput) => void;
+}): void {
+  try {
+    const n2 = typeof n.resolvedGpuLayers === "number" && Number.isFinite(n.resolvedGpuLayers)
+      ? n.resolvedGpuLayers
+      : null;
+    if (n2 !== null && n2 > 0) return; // đường ĐÚNG — không ồn
+    (n.emit ?? logVramEvent)({
+      event: "degraded",
+      owner: n.owner,
+      leaseKind: n.kind,
+      priority: n.priority,
+      detail: {
+        reason: n2 === 0 ? "zero-gpu-layers-on-success" : "gpu-layer-count-unreadable",
+        site: n.site,
+        requestedGpuLayers: n.requestedGpuLayers,
+        gpuLayers: n2,
+        layerCountUnknown: n2 === null,
+        cpuOnly: n2 === 0,
+        note:
+          "lượt nạp THÀNH CÔNG nhưng 0 lớp nằm trên GPU ⇒ suy luận chạy CPU, chậm gấp bội. " +
+          "`\"auto\"` KHÔNG BAO GIỜ ném — nhánh chuỗi của resolveModelGpuLayersOption kết bằng " +
+          "`?? 0`, nên thiết bị chật cho ra một lượt nạp 'thành công' trên CPU. Đây là cửa suy " +
+          "biến còn lại sau khi hằng số -1 đã bị gỡ, và nó chỉ bắt được bằng cách ĐỌC LẠI số lớp.",
+      },
+    });
+  } catch (err) {
+    console.warn(
+      `[vram] KHÔNG ghi được sự kiện số-lớp cho "${n.owner}" tại ${n.site}: ` +
+        `${(err as Error)?.message ?? String(err)}`,
+    );
+  }
+}
 
 export type VramLoadStep = "initial" | "retry" | "degrade";
 
@@ -272,9 +346,16 @@ export function chuanHoaSoLop(requested: VramGpuLayerValue | undefined): VramLay
  *
  * ⚠ VÌ SAO KHÔNG KÉO BỐN ĐƯỜNG ĐÓ VÀO `loadWithVramOutcomes()`: bốn bước §5.5 (trả chỗ · thử lại ·
  * hạ số lớp) là chính sách của lượt nạp **TRỌNG SỐ**. `createContext()` là một lượt cấp phát KHÁC,
- * đã có cơ chế co lại RIÊNG của node-llama-cpp (`LlamaContext.failedCreationRemedy`), và ràng buộc
- * của task cấm viết lại `aiGgufEngine.ts` / đổi ngữ nghĩa `ensureTextContext`. Ở đây ta chỉ làm
- * đúng việc Task 3 tự nhận: **cho nó một cái miệng**, không đổi một nhánh điều khiển nào.
+ * đã có cơ chế co lại RIÊNG của node-llama-cpp (`LlamaContext.failedCreationRemedy` — vòng co đó
+ * chạy TRƯỚC, và `LlamaContext.js:770` chỉ ném khi nó đã CẠN, nên lời gọi này nằm đúng **DƯỚI** cơ
+ * chế của thư viện, không giẫm lên nó), và ràng buộc của task cấm viết lại `aiGgufEngine.ts` / đổi
+ * ngữ nghĩa `ensureTextContext`.
+ *
+ * ⚠⚠ N-2 (re-review) — ĐÍNH CHÍNH MỘT CÂU CỦA CHÍNH TÔI. Vòng trước tôi viết *"không đổi một nhánh
+ * điều khiển nào"*. Câu đó đúng **3/4** và sai **1/4**: ở `getEmbeddingContext`, phán quyết trả về
+ * ĐƯỢC DÙNG để chọn câu lỗi ⇒ **luồng lỗi ở đó CÓ đổi** (cố ý, vì câu cũ nói sai nguyên nhân). Ba
+ * đường kia ném lại nguyên lỗi cũ, không đổi gì. Một câu "không đổi gì" nói rộng hơn sự thật là
+ * đúng lớp lỗi mà pha này đang diệt, nên nó phải được sửa TẠI CHỖ chứ không chỉ trong báo cáo.
  *
  * KHÔNG BAO GIỜ ném. Trả phán quyết để điểm gọi dùng lại (vd. sửa câu lỗi cho đúng nguyên nhân).
  */
@@ -298,6 +379,8 @@ export function noteVramAllocationFailure(n: {
       detail: {
         reason: verdict.exhausted ? "driver-refused-outside-load-outcomes" : "allocation-failed-not-vram",
         signal: verdict.signal,
+        /** ★ N-3 — HẾT CÁI GÌ. Task 7 lọc theo ô này thay vì đoán từ tên sự kiện. */
+        scope: verdict.scope,
         site: n.site,
         ...n.detail,
         error: (n.err as Error)?.message ?? String(n.err),

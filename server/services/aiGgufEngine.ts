@@ -784,8 +784,12 @@ async function beginVram(
  *   3. `getEmbeddingContext` → `createEmbeddingContext()` — đường này còn **nói SAI nguyên nhân**.
  *   4. `loadGgufModel` đường DỰ PHÒNG (`runner === null`) — do chính Task 3 đẻ ra.
  *
- * ⚠ KHÔNG đổi một nhánh điều khiển nào: mọi điểm gọi vẫn `throw err` NGUYÊN VĂN ngay sau. Chính
- * sách "telemetry không bao giờ làm hỏng đường cấp phát" giữ nguyên — hàm này KHÔNG BAO GIỜ ném.
+ * ⚠⚠ N-2 (re-review) — ĐÍNH CHÍNH: **BA TRÊN BỐN** điểm gọi ném lại NGUYÊN lỗi cũ, không đổi nhánh
+ * nào. Điểm gọi (3) `getEmbeddingContext` **CÓ ĐỔI luồng lỗi**, cố ý: nó dùng `verdict` để chọn câu
+ * lỗi, vì câu cũ (*"Model does not support embeddings"*) **nói sai nguyên nhân**. Vòng trước tôi
+ * viết "không đổi một nhánh điều khiển nào" — câu đó rộng hơn sự thật, và một lời khai rộng hơn sự
+ * thật là đúng lớp lỗi pha này đang diệt.
+ * ⚠ Chính sách "telemetry không bao giờ làm hỏng đường cấp phát" giữ nguyên — hàm này KHÔNG ném.
  * ⚠ `await` có chủ ý (không `void`): sự kiện phải nằm TRƯỚC lượt ném lại trong nhật ký, và điểm gọi
  * (3) cần phán quyết để chọn câu lỗi đúng.
  */
@@ -796,7 +800,7 @@ async function noteContextFailure(
   site: string,
   err: unknown,
   detail?: Record<string, unknown>,
-): Promise<{ exhausted: boolean; signal: string | null } | null> {
+): Promise<import("./vram/vramLoadOutcome").VramExhaustionVerdict | null> {
   try {
     const { noteVramAllocationFailure } = await import("./vram/vramLoadOutcome");
     return noteVramAllocationFailure({ owner, kind, priority, site, err, detail });
@@ -3054,11 +3058,23 @@ async function getEmbeddingContext(modelId: string, loaded: LoadedModel): Promis
         "getEmbeddingContext.createEmbeddingContext", err, { contextSize: EMBED_CTX },
       );
       if (verdict?.exhausted) {
+        /**
+         * ⚠ N-3 (re-review) — CÂU NÀY TỪNG NÓI *"OUT OF VRAM"* CHO MỌI PHÁN QUYẾT, KỂ CẢ KHI TÍN
+         * HIỆU LÀ **RAM HỆ THỐNG** (`…too large for the available ram`) hoặc **không rõ**
+         * (`Failed to create context` — native nuốt nguyên nhân). Người trực đọc "VRAM" rồi chạy
+         * `nvidia-smi`, thấy 30 GB trống, kết luận "sổ nói láo" — đúng lớp *chỉ người trực đi sai
+         * hướng* mà cả pha này sinh ra để diệt, chỉ đổi trục. Câu chữ nay đi theo `verdict.scope`,
+         * và `"unknown"` được NÓI RA là không biết thay vì đoán bừa một thiết bị.
+         */
+        const cai =
+          verdict.scope === "device-vram" ? "VRAM (bộ nhớ GPU)"
+          : verdict.scope === "host-ram" ? "RAM HỆ THỐNG (KHÔNG phải VRAM — đừng đi kiểm GPU)"
+          : "BỘ NHỚ, nhưng KHÔNG XÁC ĐỊNH ĐƯỢC là VRAM hay RAM hệ thống (llama.cpp nuốt nguyên nhân) — kiểm CẢ HAI";
         throw new Error(
-          `createEmbeddingContext failed because the device is OUT OF VRAM (${err?.message ?? err}). ` +
-            `This is NOT a model-capability problem — do not change GGUF_EMBED_MODEL. ` +
-            `[VI] Không tạo được embedding context vì HẾT VRAM (tín hiệu: ${verdict.signal}) — ` +
-            `KHÔNG phải do model thiếu khả năng nhúng, đừng đổi GGUF_EMBED_MODEL.`,
+          `createEmbeddingContext failed: out of memory (scope=${verdict.scope}, signal=${verdict.signal}; ` +
+            `${err?.message ?? err}). This is NOT a model-capability problem — do not change GGUF_EMBED_MODEL. ` +
+            `[VI] Không tạo được embedding context vì HẾT ${cai} — KHÔNG phải do model thiếu khả năng ` +
+            `nhúng, đừng đổi GGUF_EMBED_MODEL.`,
         );
       }
       throw new Error(

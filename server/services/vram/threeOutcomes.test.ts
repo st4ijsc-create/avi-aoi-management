@@ -24,6 +24,7 @@ import {
   VRAM_LOAD_RETRY_DELAY_MS_DEFAULT,
   VRAM_EXHAUSTION_SIGNALS,
   noteVramAllocationFailure,
+  noteGpuLayersResolved,
 } from "./vramLoadOutcome";
 import { sanitizeVramEvent } from "./vramEventLog";
 
@@ -78,6 +79,10 @@ beforeEach(() => {
   vi.doUnmock("./vramEstimator");
   vi.doUnmock("./vramProcessProbe");
   vi.doUnmock("node-llama-cpp");
+  // ⚠ Lần THỨ HAI trong chính file này: ca N-1b thêm `doMock("fs")`, và nếu không gỡ thì ca
+  // `warmModel generate-threw` (dựa vào việc file model KHÔNG tồn tại thật) đỏ vì lý do hoàn toàn
+  // khác. Đo được: 1 ca đỏ khi chạy cả file, xanh khi chạy riêng.
+  vi.doUnmock("fs");
   vi.doUnmock("../aiLlamaServerClient");
   vi.doUnmock("../../db/connection");
   vi.resetModules();
@@ -152,6 +157,55 @@ describe("§1 — NGUYÊN NHÂN 1: `isOom` cũ trượt chuỗi lỗi THẬT c�
     expect(err.name, "lớp này KHÔNG đặt this.name — đừng nhận diện bằng err.name").toBe("Error");
     expect(classifyLoadFailure(err).exhausted).toBe(true);
     expect(classifyLoadFailure(err).signal).toBe("insufficient-memory-error-class");
+  });
+
+  it("★★ 5b. N-3 — phán quyết phải nói HẾT CÁI GÌ, và `unknown` là câu TRUNG THỰC", () => {
+    // Người trực đọc "OUT OF VRAM" rồi chạy nvidia-smi, thấy 30 GB trống, kết luận "sổ nói láo" —
+    // trong khi thật ra máy hết RAM HỆ THỐNG. Cùng lớp "chỉ người trực đi sai hướng", khác trục.
+    const scope = (m: string) => classifyLoadFailure(new Error(m)).scope;
+    expect(scope("A context size of 32768 is too large for the available VRAM")).toBe("device-vram");
+    expect(scope("Not enough VRAM to fit the model with the specified settings")).toBe("device-vram");
+    expect(scope("A context size of 32768 is too large for the available RAM")).toBe("host-ram");
+    // llama.cpp nuốt nguyên nhân ở hai câu này (init trả boolean) ⇒ đoán bừa là VRAM chính là lỗi.
+    expect(scope("Failed to load model")).toBe("unknown");
+    expect(scope("Failed to create context")).toBe("unknown");
+    expect(scope("A context size of 32768 is too large for the available resources")).toBe("unknown");
+    // Mọi dòng trong bảng phải khai scope — thiếu một dòng là một câu chữ đoán bừa đang chờ.
+    for (const [pattern, , sc] of VRAM_EXHAUSTION_SIGNALS) {
+      expect(["device-vram", "host-ram", "unknown"], pattern).toContain(sc);
+    }
+  });
+
+  it("★★ 5c. N-4 — `\"auto\"` KHÔNG BAO GIỜ ném ⇒ 0 lớp phải bị ĐỌC LẠI mà bắt, ở điểm gọi NGOÀI §5.5", () => {
+    const log = thuSuKien();
+    // Thiết bị chật ⇒ resolveModelGpuLayersOption nhánh chuỗi kết bằng `?? 0` ⇒ "thành công" trên CPU.
+    noteGpuLayersResolved({
+      owner: "reranker:bge.gguf", kind: "gguf-model", priority: "background",
+      site: "aiReranker.loadModel", requestedGpuLayers: "auto", resolvedGpuLayers: 0, emit: log.emit,
+    });
+    const d = log.ofType("degraded")[0].detail as Record<string, unknown>;
+    expect(d.reason).toBe("zero-gpu-layers-on-success");
+    expect(d.cpuOnly).toBe(true);
+    expect(d.site).toBe("aiReranker.loadModel");
+
+    // Không đọc được số lớp ⇒ vẫn phải kêu, nhưng KHÔNG được khai là 0 (hai thứ khác nhau).
+    const log2 = thuSuKien();
+    noteGpuLayersResolved({
+      owner: "reranker:bge.gguf", kind: "gguf-model", priority: "background",
+      site: "aiReranker.loadModel", requestedGpuLayers: "auto", resolvedGpuLayers: undefined, emit: log2.emit,
+    });
+    const d2 = log2.ofType("degraded")[0].detail as Record<string, unknown>;
+    expect(d2.reason).toBe("gpu-layer-count-unreadable");
+    expect(d2.cpuOnly).toBe(false);
+    expect(d2.layerCountUnknown).toBe(true);
+
+    // ĐỐI CHỨNG — đường ĐÚNG phải IM. Im lặng ở đường đúng là im lặng đúng.
+    const log3 = thuSuKien();
+    noteGpuLayersResolved({
+      owner: "reranker:bge.gguf", kind: "gguf-model", priority: "background",
+      site: "aiReranker.loadModel", requestedGpuLayers: "auto", resolvedGpuLayers: 25, emit: log3.emit,
+    });
+    expect(log3.events).toEqual([]);
   });
 
   it("4. ĐỐI CHỨNG — lỗi KHÔNG phải cạn VRAM vẫn là KHÔNG (không nới bừa cho 'chắc ăn')", () => {
@@ -908,6 +962,101 @@ describe("§5 ★★ CA BẮT BUỘC — KHÔNG CÓ ĐƯỜNG NÀO IM LẶNG", (
     expect(rows.filter((r) => r.event === "driver_refused").every((r) => r.owner === "gguf:fixture-17000")).toBe(true);
   });
 
+  /**
+   * ★★★ N-1 (re-review) — DÂY THỨ HAI, DO CHÍNH VÒNG SỬA I-2 ĐẺ RA.
+   *
+   * Vòng trước tôi đóng dây của `loadWithVramOutcomes`, rồi **thêm `noteVramAllocationFailure` với
+   * ĐÚNG cùng hình dạng `?? logVramEvent` mà không dựng lưới cho nó**. Reviewer đột biến `emit` mặc
+   * định của nó thành hàm rỗng ⇒ **452/452 XANH, không ca nào bắt**. Lần thứ BA cùng một hình dạng
+   * trong một task: chứng minh được thứ mình viết ra, không chứng minh được thứ hệ thống nhận được.
+   */
+  it("★★★ N-1a — sự kiện của noteVramAllocationFailure TỚI ĐƯỢC ỐNG DẪN THẬT (không tiêm emit)", async () => {
+    const insert = vi.fn(async () => undefined);
+    vi.doMock("../../db/connection", () => ({ getDb: async () => ({ insert: () => ({ values: insert }) }) }));
+    const eventLog = await import("./vramEventLog");
+    eventLog.__setVramLogTimerEnabled(false);
+    await eventLog.flushVramEvents();
+    const { noteVramAllocationFailure: ghi } = await import("./vramLoadOutcome");
+
+    // ⚠ KHÔNG truyền `emit` — ĐÓ LÀ TOÀN BỘ NỘI DUNG CỦA CA NÀY.
+    const v = ghi({
+      owner: "gguf:fixture-17000", kind: "gguf-model", priority: "interactive",
+      site: "loadGgufModel.createContext",
+      err: new Error("A context size of 32768 is too large for the available VRAM"),
+    });
+    expect(v.exhausted).toBe(true);
+    expect(v.scope).toBe("device-vram");
+
+    expect(await eventLog.flushVramEvents()).toBeGreaterThan(0);
+    const rows = insert.mock.calls.flatMap((c) => (c as unknown as [Array<Record<string, unknown>>])[0]);
+    const ev = rows.find((r) => r.event === "driver_refused");
+    expect(ev, "dây emit→logVramEvent của noteVramAllocationFailure đã đứt").toBeDefined();
+    expect((ev!.detail as Record<string, unknown>).site).toBe("loadGgufModel.createContext");
+    expect((ev!.detail as Record<string, unknown>).scope).toBe("device-vram");
+  });
+
+  /**
+   * ★★★ N-1b — DÂY THỨ BA: `noteContextFailure` của `aiGgufEngine`, **cầu nối DUY NHẤT của cả bốn
+   * đường I-1**, và vòng trước nó KHÔNG có một ca nào. Nó còn nuốt lỗi nhập động bằng `console.warn`
+   * ⇒ nếu lượt `import("./vram/vramLoadOutcome")` hỏng, bốn đường quay lại IM LẶNG mà không ai biết.
+   *
+   * Ca này đi ĐƯỜNG THẬT: `loadGgufModel()` với `createContext` ném lỗi hết VRAM ⇒ đòi thấy sự kiện
+   * ở ĐẦU KIA của ống dẫn (`db.insert`), không phải ở một `emit` tiêm vào.
+   */
+  it("★★★ N-1b — bốn đường I-1 để lại vết THẬT: loadGgufModel.createContext → db.insert()", async () => {
+    const insert = vi.fn(async () => undefined);
+    vi.doMock("../../db/connection", () => ({ getDb: async () => ({ insert: () => ({ values: insert }) }) }));
+    vi.doMock("./vramProcessProbe", () => ({
+      readProcessVram: async () => ({
+        totalBytes: 2048 * MiB, byPid: new Map([[process.pid, 2048 * MiB]]), byLuid: new Map(), sampledAtMs: Date.now(),
+      }),
+      awaitCounterSettle: async () => {},
+    }));
+    vi.doMock("node-llama-cpp", () => ({
+      getLlama: async () => ({
+        loadModel: async () => ({
+          size: 1234, gpuLayers: 48,
+          tokenize: (t: string) => t.split(" "),
+          // ⚠ ĐỈNH áp lực VRAM: trọng số đã nạp XONG, giờ mới xin KV cache và hỏng.
+          createContext: async () => { throw new Error("A context size of 32768 is too large for the available VRAM"); },
+          createEmbeddingContext: async () => ({ getEmbeddingFor: async () => ({ vector: [] }), dispose: async () => {} }),
+          dispose: async () => {},
+        }),
+        getVramState: async () => ({ total: 32 * 1024 * MiB, used: 2048 * MiB, free: 30 * 1024 * MiB, unifiedSize: 0 }),
+      }),
+      LlamaChatSession: class { async prompt() { return "ok"; } },
+      LlamaJsonSchemaGrammar: class {},
+      LlamaLogLevel: { fatal: "fatal", error: "error", warn: "warn", info: "info" },
+    }));
+    const fsApi = {
+      existsSync: () => true, mkdirSync: () => {}, readdirSync: () => [] as string[],
+      statSync: () => ({ size: FIXTURE_BYTES, mtime: new Date(), isFile: () => true }),
+    };
+    vi.doMock("fs", () => ({ default: fsApi, ...fsApi }));
+
+    const eventLog = await import("./vramEventLog");
+    eventLog.__setVramLogTimerEnabled(false);
+    await eventLog.flushVramEvents();
+    const eng = await import("../aiGgufEngine");
+
+    await expect(eng.loadGgufModel({ modelPath: "big.gguf" })).rejects.toThrow(/too large for the available VRAM/);
+
+    expect(await eventLog.flushVramEvents()).toBeGreaterThan(0);
+    const rows = insert.mock.calls.flatMap((c) => (c as unknown as [Array<Record<string, unknown>>])[0]);
+    const ev = rows.find((r) => (r.detail as Record<string, unknown>)?.site === "loadGgufModel.createContext");
+    expect(
+      ev,
+      "bốn đường I-1 đi qua noteContextFailure — không ca nào chứng minh chúng để lại vết trong " +
+        "vram_events thì bản vá I-1 chỉ là mã chưa ai chạy",
+    ).toBeDefined();
+    expect(ev!.event).toBe("driver_refused");
+    expect(ev!.owner).toBe("gguf:big");
+    expect((ev!.detail as Record<string, unknown>).scope).toBe("device-vram");
+    // Và giấy phép của lượt nạp hỏng KHÔNG được treo lại trong sổ.
+    const { snapshot } = await import("./vramBroker");
+    expect(snapshot().leases.filter((l) => l.request.owner === "gguf:big")).toHaveLength(0);
+  });
+
   it("★★★ `warmModel()` KHÔNG còn nuốt — cả hai nhánh trả false đều để lại `warm_failed`", async () => {
     // node-llama-cpp KHÔNG nạp được ⇒ isGgufAvailable() false ⇒ nhánh "gguf-unavailable".
     vi.doMock("node-llama-cpp", () => { throw new Error("không có binding native (ca thử nghiệm)"); });
@@ -1041,7 +1190,10 @@ describe("§6 — ỐNG DẪN SỰ KIỆN: giá trị không hữu hạn KHÔNG 
     const out = sanitizeVramEvent({
       event: "drift", owner: "a", leaseKind: "gguf-model", priority: "interactive", detail: a,
     });
-    expect(String((out.detail!.nonFiniteFields as string[])?.join("|"))).toMatch(/vòng/);
+    // ⚠ N-6 (re-review) — Ô RIÊNG `unscrubbedPaths`, KHÔNG đổ chung vào `nonFiniteFields`:
+    // "chỗ chưa duyệt tới" KHÔNG PHẢI "số hỏng", và gộp lại là để Task 7 ĐẾM THỪA.
+    expect(String((out.detail!.unscrubbedPaths as string[])?.join("|"))).toMatch(/vòng/);
+    expect(out.detail!.nonFiniteFields, "không có số hỏng nào ở đây").toBeUndefined();
   });
 
   it("★★★ 6b. M-1 — tham chiếu DÙNG CHUNG (DAG, KHÔNG vòng) phải được làm sạch ĐỦ MỌI LẦN", () => {
@@ -1067,12 +1219,17 @@ describe("§6 — ỐNG DẪN SỰ KIỆN: giá trị không hữu hạn KHÔNG 
     const out = sanitizeVramEvent({
       event: "drift", owner: "a", leaseKind: "gguf-model", priority: "interactive", detail: sau,
     });
-    const ten = (out.detail!.nonFiniteFields as string[]) ?? [];
+    // ⚠ N-6 — lượt CẮT đi vào `unscrubbedPaths`; `nonFiniteFields` chỉ dành cho SỐ hỏng thật.
+    const ten = (out.detail!.unscrubbedPaths as string[]) ?? [];
     expect(ten.length, "trần độ sâu là đúng; cắt mà không ghi tên thì không").toBeGreaterThan(0);
     expect(ten.some((s) => /sâu quá 8 tầng/.test(s))).toBe(true);
+    expect(out.detail!.nonFiniteFields, "số ở đáy KHÔNG được duyệt tới ⇒ không được khai là đã bắt").toBeUndefined();
   });
 
   it("★★ 6d. M-4 — hàng đợi ĐẦY thì có ĐẾM và có TIẾNG, không vứt im lặng", async () => {
+    // ⚠ N-7 (re-review) — `try/finally`: nếu một assertion đỏ SỚM, biến môi trường rò sang mọi ca
+    // sau (QUEUE_MAX=2 ⇒ chúng vứt sự kiện) và ta được một tràng đỏ chỉ vào SAI chỗ.
+    try {
     process.env.VRAM_LOG_QUEUE_MAX = "2";
     const insert = vi.fn(async () => undefined);
     vi.doMock("../../db/connection", () => ({ getDb: async () => ({ insert: () => ({ values: insert }) }) }));
@@ -1098,7 +1255,9 @@ describe("§6 — ỐNG DẪN SỰ KIỆN: giá trị không hữu hạn KHÔNG 
     const rows = insert.mock.calls.flatMap((c) => (c as unknown as [Array<Record<string, unknown>>])[0]);
     const cuoi = rows[rows.length - 1];
     expect((cuoi.detail as Record<string, unknown>).droppedBeforeThis).toBe(2);
-    delete process.env.VRAM_LOG_QUEUE_MAX;
+    } finally {
+      delete process.env.VRAM_LOG_QUEUE_MAX;
+    }
   });
 
   it("★★ 7. `logVramEvent()` THẬT SỰ áp bộ làm sạch — lô vẫn ghi được với `-Infinity` đi vào", async () => {

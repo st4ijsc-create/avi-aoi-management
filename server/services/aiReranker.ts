@@ -507,6 +507,30 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
       }>;
     };
     _rankModel = model;
+    /**
+     * ★★ N-4 (re-review) — LÁ CHẮN THỨ HAI, VÀ NÓ LÀ CÁI DIỆT ĐƯỢC LỚP LỖI.
+     *
+     * Đổi `-1` → `"auto"` ở trên mới hạ suy biến im lặng từ **"luôn luôn"** xuống **"mỗi khi thiết
+     * bị đầy"**: `"auto"` **KHÔNG BAO GIỜ NÉM** (`resolveModelGpuLayersOption` nhánh chuỗi kết bằng
+     * `?? 0`), nên máy chật cho ra một lượt nạp "thành công" chạy CPU thuần. Chỉ ĐỌC LẠI
+     * `model.gpuLayers` mới bắt được — đúng lá chắn `zero-gpu-layers-on-success` mà lượt nạp model
+     * sinh chữ đã có. KHÔNG BAO GIỜ ném, và im lặng ở đường ĐÚNG (số lớp > 0).
+     */
+    if (useGpu) {
+      try {
+        const { noteGpuLayersResolved } = await import("./vram/vramLoadOutcome");
+        noteGpuLayersResolved({
+          owner: `reranker:${modelPath}`,
+          kind: "gguf-model",
+          priority: "background",
+          site: "aiReranker.loadModel",
+          requestedGpuLayers: "auto",
+          resolvedGpuLayers: (model as unknown as { gpuLayers?: unknown }).gpuLayers,
+        });
+      } catch {
+        /* telemetry KHÔNG được làm hỏng đường nạp reranker (chính sách của file này) */
+      }
+    }
     _rankCtx = await model.createRankingContext({ contextSize: "auto" });
     // Số THẬT sau khi CẢ trọng số LẪN ranking context đã cấp phát. Chạy CPU (mặc định) thì
     // delta đúng bằng 0 — và 0 được ghi làm số liệu thật, nên sổ KHÔNG cộng nhầm cả trăm MiB
