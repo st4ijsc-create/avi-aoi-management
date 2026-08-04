@@ -1242,6 +1242,34 @@ fi
 WARNINGS=$(grep -oE '^ *[0-9]+ Warning\(s\)' "$BUILD_LOG" | grep -oE '[0-9]+' | head -1)
 note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on an unlocked tree)"
 
+# 🔴 TRAP 9 — this line PRINTED the number for eight tasks and never checked it, and the branch's
+# own history is the argument. The count sat at 115 across D-1..D-7; THREE separate rounds drifted
+# it by exactly one (xUnit1031, then xUnit1030 from a ConfigureAwait(false) written out of src/
+# habit, then two CS8767 from a test double), and every one of those was caught by a HUMAN reading
+# this line -- never by the gate. One warning is precisely the size of signal that gets waved
+# through, which is why it needs a check rather than better attention.
+#
+# This is the same shape as trap 2, one field over: a printed number that looks like evidence.
+# The whole batch's rule is "assert a POSITIVE expected quantity, never the absence of failure",
+# and a warning count is a quantity like any other. Move it deliberately, in the same breath as a
+# test total, and say why in the block below -- a warning that arrives with a task is a fact to be
+# justified, not a number to be pasted over.
+#
+# Deliberately NOT a ratchet ("<= EXPECTED"): a DROP is also a fact worth a sentence, and a
+# one-sided bound would let a real fix that removes a warning silently rot the number until the
+# next addition hides inside the slack.
+EXPECT_WARNINGS=115
+if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
+  echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
+  echo "  A warning count is an expected quantity, not a readout. If this move is intended,"
+  echo "  update EXPECT_WARNINGS and justify it beside the suite totals below."
+  echo "  Warning CODES in this build, by occurrence count across all projects (NOT the 115 --"
+  echo "  MSBuild counts a warning once per project that emits it; this is a pointer, not the total):"
+  grep -oE 'warning [A-Za-z]+[0-9]+' "$BUILD_LOG" | sort | uniq -c | sort -rn | head -10
+  echo "  full log: $BUILD_LOG"
+  exit 1
+fi
+
 # ── Gate 2: each suite, sequentially, asserting an EXACT total. ──────────────────
 # Trap 2. `Failed: 0` is not evidence: an aborted run prints it with a short total.
 # Trap 8 (see the build above): the build's own server population must not still be resident
