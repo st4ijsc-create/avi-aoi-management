@@ -106,6 +106,9 @@ function input(over: Partial<VramRefusalInput> = {}): VramRefusalInput {
     ],
     preemptable: [holder("kb-sync:embed", 1_000, "background", false)],
     unledgered: { bytes: 0, unknownCount: 0 },
+    // ★ I-3 (review TOÀN NHÁNH) — trần ĐẾM là trường BẮT BUỘC của sự thật từ chối. `0` = "trần
+    // ĐẾM không dính tới lượt này"; ca của `VRAM_SLOT_CAP` truyền số dương tường minh.
+    slotsNeeded: 0,
     ...over,
   };
 }
@@ -364,6 +367,7 @@ describe("nối vào hệ mã lỗi Sprint 5 (client/src/lib/errorCodes.ts)", ()
     const codes = new Set<string>(APP_ERROR_CODES);
     expect(codes.has("VRAM_REFUSED")).toBe(true);
     expect(codes.has("VRAM_HEADROOM_UNKNOWN")).toBe(true);
+    expect(codes.has("VRAM_SLOT_CAP")).toBe(true);
   });
 
   it("khoá i18n của CẢ HAI mã (+ bản _WITH_REASON) có đủ ở vi/en/zh", () => {
@@ -374,6 +378,9 @@ describe("nối vào hệ mã lỗi Sprint 5 (client/src/lib/errorCodes.ts)", ()
         "VRAM_REFUSED_WITH_REASON",
         "VRAM_HEADROOM_UNKNOWN",
         "VRAM_HEADROOM_UNKNOWN_WITH_REASON",
+        // ★ I-3 — mã THỨ BA: byte VỪA nhưng hết KHE model GGUF.
+        "VRAM_SLOT_CAP",
+        "VRAM_SLOT_CAP_WITH_REASON",
       ]) {
         expect(typeof dict[key], `${locale}.errors.${key}`).toBe("string");
       }
@@ -414,6 +421,8 @@ describe("nối vào hệ mã lỗi Sprint 5 (client/src/lib/errorCodes.ts)", ()
       String(dict.VRAM_REFUSED_WITH_REASON),
       String(dict.VRAM_HEADROOM_UNKNOWN),
       String(dict.VRAM_HEADROOM_UNKNOWN_WITH_REASON),
+      String(dict.VRAM_SLOT_CAP),
+      String(dict.VRAM_SLOT_CAP_WITH_REASON),
       ...Object.values(reasonDict).filter((v) => v.startsWith("Phần không quy trách nhiệm được")),
       ...Object.values(trustDict),
     ];
@@ -423,6 +432,8 @@ describe("nối vào hệ mã lỗi Sprint 5 (client/src/lib/errorCodes.ts)", ()
       input({ blind: true, degradedReasons: ["probe-blind"] }),
       input({ unledgered: { bytes: 452 * MIB, unknownCount: 2 } }),
       input({ headroomBytes: Number.NEGATIVE_INFINITY, degradedReasons: ["invalid-input"] }),
+      // ★ I-3 — hình dạng THỨ NĂM: byte VỪA, hết KHE ⇒ `VRAM_SLOT_CAP` + tham số `slotsNeeded`.
+      input({ requestedBytes: 600 * MIB, slotsNeeded: 1 }),
     ];
     const unused = new Set<string>();
     for (const inp of shapes) {
@@ -449,6 +460,8 @@ describe("nối vào hệ mã lỗi Sprint 5 (client/src/lib/errorCodes.ts)", ()
       input({ unledgered: null }),
       input({ headroomBytes: Number.NEGATIVE_INFINITY, degradedReasons: ["invalid-input"] }),
       input({ preemptable: [], holders: [] }),
+      input({ requestedBytes: 600 * MIB, slotsNeeded: 1 }),
+      input({ requestedBytes: 600 * MIB, slotsNeeded: 1, degradedReasons: ["stale-tick"] }),
     ];
     for (const inp of shapes) {
       const f = buildVramRefusal(inp);
@@ -465,6 +478,65 @@ describe("nối vào hệ mã lỗi Sprint 5 (client/src/lib/errorCodes.ts)", ()
         }
       }
     }
+  });
+
+  /**
+   * ★★★ I-3 (review TOÀN NHÁNH) — TRẦN ĐẾM CÓ CÂU RIÊNG, KHÔNG MƯỢN KHUNG "SỐ KÉM TIN".
+   *
+   * ⚠ ĐÍNH CHÍNH một mệnh đề của review: `{{degradedReasons}}` **KHÔNG** vắng mặt khỏi khuôn
+   * `VRAM_REFUSED*` — nó tới client qua ô `{{trust}}` (`errors.trust.degraded` tự mang
+   * `{{degradedReasons}}`, nội suy LỒNG ở `client/src/lib/errorCodes.ts`), và ca `:399` bên trên đã
+   * khoá đúng việc đó. Lỗi THẬT khác và nặng hơn: **khung sai** — một trần ĐẾM cứng bị in ra dưới
+   * nhãn *"con số này kém tin hơn bình thường"* trong một câu vừa khai *"còn 25.000 MiB"* vừa nói
+   * *"không đủ"*.
+   */
+  describe("I-3 — VRAM_SLOT_CAP: byte VỪA, hết KHE", () => {
+    const slotCap = () => buildVramRefusal(input({ requestedBytes: 600 * MIB, slotsNeeded: 2 }));
+
+    it("★★★ byte VỪA + hết KHE ⇒ mã RIÊNG, KHÔNG phải VRAM_REFUSED", () => {
+      const f = slotCap();
+      expect(f.appCode).toBe("VRAM_SLOT_CAP");
+      expect(f.slotsNeeded).toBe(2);
+      // ⚠ Đ4 — trần ĐẾM KHÔNG được biến thành một lý do suy giảm (đó là chỗ nó từng nấp).
+      expect(f.degradedReasons).toEqual([]);
+    });
+
+    it("★★★ câu KHÔNG còn tự mâu thuẫn: gọi tên trần ĐẾM, và vẫn in CẢ HAI con số byte", () => {
+      const s = formatVramRefusal(slotCap());
+      expect(s).toContain("HẾT KHE model GGUF");
+      expect(s).toContain("trần ĐẾM");
+      expect(s).toContain("600");     // xin bao nhiêu
+      expect(s).toContain("1200");    // dư địa byte CÒN LẠI — không giấu số
+      expect(s).not.toContain("Không đủ VRAM");
+      expect(s).not.toContain("kém tin hơn bình thường");
+    });
+
+    it("★★ thiếu CẢ HAI ⇒ VRAM_REFUSED (byte là rào cao hơn), nhưng câu NÊU CẢ trần ĐẾM", () => {
+      const f = buildVramRefusal(input({ slotsNeeded: 1 })); // xin 17.000 > còn 1.200
+      expect(f.appCode).toBe("VRAM_REFUSED");
+      const s = formatVramRefusal(f);
+      expect(s).toContain("Không đủ VRAM");
+      expect(s).toContain("hết KHE");
+    });
+
+    it("★★ dư địa KHÔNG tính được THẮNG cả trần ĐẾM (không có ô 'còn bao nhiêu' để so)", () => {
+      const f = buildVramRefusal(
+        input({ headroomBytes: Number.NEGATIVE_INFINITY, degradedReasons: ["invalid-input"], slotsNeeded: 3 }),
+      );
+      expect(f.appCode).toBe("VRAM_HEADROOM_UNKNOWN");
+      expect(f.slotsNeeded).toBe(3);
+    });
+
+    it("`slotsNeeded` bẩn (âm/NaN/∞) ⇒ 0, và KHÔNG có giá trị không hữu hạn nào rời khỏi đây", () => {
+      for (const xau of [-1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+        const f = buildVramRefusal(input({ requestedBytes: 600 * MIB, slotsNeeded: xau }));
+        expect(f.slotsNeeded).toBe(0);
+        expect(f.appCode).toBe("VRAM_REFUSED");   // không đủ điều kiện cho mã trần ĐẾM
+        expect(String(vramRefusalAppError(f).params.slotsNeeded)).not.toMatch(/Infinity|NaN/);
+      }
+      // và số lẻ bị cắt về NGUYÊN (nó đi vào câu chữ cho người đọc)
+      expect(buildVramRefusal(input({ requestedBytes: 600 * MIB, slotsNeeded: 2.7 })).slotsNeeded).toBe(2);
+    });
   });
 
   it("danh sách RỖNG ⇒ params dùng khoá từ điển 'none', không phải chuỗi rỗng", () => {

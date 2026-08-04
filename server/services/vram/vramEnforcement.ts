@@ -130,16 +130,17 @@ const DISTRUST_UNITS: Record<VramDegradationReason, number> = {
   // nhân với số lượt, KẸP ở 4 — xem `unknownUnits()`.
   "unledgered-unknown": 1,
   /**
-   * ★★★ Pha 2B Task 7 — **0 ĐƠN VỊ, VÀ ĐÓ LÀ ĐIỀU KIỆN Đ4, KHÔNG PHẢI MỘT CHỖ QUÊN.**
+   * ★★★ I-3 (review TOÀN NHÁNH) — **HÀNG `"gguf-slot-cap": 0` ĐÃ BỊ XOÁ Ở ĐÂY, CÓ CHỦ Ý.**
    *
-   * `"gguf-slot-cap"` là lý do của thước **ĐẾM** (hết khe `GGUF_MAX_LOADED_MODELS`). Quy nó thành
-   * một phụ phí BYTE là **trộn hai thước** — đúng thứ ràng buộc 4 cấm, và nó sẽ nói dối theo cả hai
-   * chiều: một lượt bị chặn vì hết KHE sẽ in ra một dư địa byte NHỎ HƠN sự thật, rồi lượt kế tiếp
-   * (không phải `gguf-model`, không dính trần khe) bị chặn oan theo con số bịa đó.
-   * ⇒ Lý do này chỉ đi vào **câu chữ** (`degradedReasons`), không đi vào **phép tính byte**. Cửa
-   * cưỡng chế của nó là `vramBroker.kheGgufConThieu()`, một nhánh RIÊNG.
+   * Task 7 đặt nó vào bảng này với `0` đơn vị để "không trộn hai thước" (Đ4) — đúng về phép tính,
+   * nhưng nó vẫn phải nằm trong `VramDegradationReason`, tức vẫn phải đi qua `degradedReasons`, tức
+   * vẫn được in ra dưới nhãn *"con số này kém tin hơn bình thường"* cho một con số **hoàn toàn
+   * đúng**, và vẫn làm `trusted === true` cùng lúc `reasons.length > 0`.
+   * ⇒ Trần ĐẾM nay là `VramRefusalFacts.slotsNeeded` + mã lỗi `VRAM_SLOT_CAP` (`vramRefusal.ts`),
+   * KHÔNG phải một lý do suy giảm. Bảng này quay lại đúng một vai: **phụ phí BYTE cho những lý do
+   * làm con số kém tin**. `Record<VramDegradationReason, number>` là hàng rào — ai đưa nó trở lại
+   * từ vựng đó sẽ bị `tsc` bắt khai một phụ phí byte cho một thước ĐẾM.
    */
-  "gguf-slot-cap": 0,
 };
 
 /**

@@ -22,6 +22,13 @@ import {
   type VramHolderFact,
   type VramRefusalInput,
 } from "../../../server/services/vram/vramRefusal";
+// ★ Lượt vá sau review TOÀN NHÁNH — ĐỌC HAI HẰNG SỐ, KHÔNG chép "15/160" vào ca test: bản liệt kê
+// đường cấp phát đổi theo từng task (nay 15/159), và một con số chép tay ở đây đã đỏ IM LẶNG suốt
+// hai task vì file này không nằm trong `npx vitest run server/services/vram/`.
+import {
+  KNOWN_ALLOCATION_SITE_ROW_COUNT,
+  WIRED_ALLOCATION_SITE_COUNT,
+} from "../../../server/services/vram/vramAllocationSites";
 
 import "../i18n";
 import i18n from "i18next";
@@ -46,8 +53,18 @@ function holder(
   mib: number,
   priority: "production" | "interactive" | "background",
   measured = true,
+  /**
+   * ★★★ LƯỢT VÁ SAU REVIEW TOÀN NHÁNH — **FILE NÀY ĐÃ ĐỎ TỪ Task 4 mà không ai thấy.**
+   *
+   * `VramHolderFact.reclaimable` (Task 4 vòng sửa 1) là trường BẮT BUỘC, nhưng fixture ở đây không
+   * khai nó ⇒ `undefined` ⇒ `preemptableBytes` cộng ra **0** ⇒ hai ca đỏ (*"câu mang ĐỦ BỐN thứ"* và
+   * *"I-3b … nêu TỔNG byte nhường được"*). `tsc` KHÔNG bắt vì `tsconfig.json` loại mọi tệp `.test.ts`,
+   * và `npx vitest run server/services/vram/` KHÔNG chạy file này (nó ở `client/`).
+   * ⇒ Nấc i18n — nấc DUY NHẤT chạy i18next thật với bản dịch thật — đã tối suốt hai task.
+   */
+  reclaimable = true,
 ): VramHolderFact {
-  return { owner, kind: "gguf-model", bytes: mib * MIB, priority, measured };
+  return { owner, kind: "gguf-model", bytes: mib * MIB, priority, measured, reclaimable };
 }
 
 /** Fixture cỡ **17.000 MiB** (ràng buộc toàn cục 7). */
@@ -64,6 +81,8 @@ function input(over: Partial<VramRefusalInput> = {}): VramRefusalInput {
     holders: [holder("gguf-model:qwen3-30b", 17_000, "production")],
     preemptable: [holder("kb-sync:embed", 1_000, "background", false)],
     unledgered: { bytes: 0, unknownCount: 0 },
+    // ★ I-3 — trần ĐẾM là trường BẮT BUỘC của sự thật từ chối (xem vramRefusal.ts).
+    slotsNeeded: 0,
     ...over,
   };
 }
@@ -84,6 +103,8 @@ const SHAPES: Array<[string, VramRefusalInput]> = [
     input({ headroomBytes: Number.NEGATIVE_INFINITY, degradedReasons: ["invalid-input"] }),
   ],
   ["không ai nhường được", input({ preemptable: [], holders: [] })],
+  // ★ I-3 (review TOÀN NHÁNH) — hình dạng THỨ BẢY: byte VỪA, hết KHE ⇒ khoá `VRAM_SLOT_CAP`.
+  ["hết KHE model GGUF", input({ requestedBytes: 600 * MIB, slotsNeeded: 2 })],
 ];
 
 describe("VRAM_REFUSED — câu người vận hành đọc, cả ba ngôn ngữ", () => {
@@ -109,7 +130,8 @@ describe("VRAM_REFUSED — câu người vận hành đọc, cả ba ngôn ngữ
     expect(out).toContain("gguf-model:qwen3-30b"); // ai đang giữ
     expect(out).toContain("kb-sync:embed"); // ai có thể nhường
     expect(out).toContain("không quy trách nhiệm được");
-    expect(out).toContain("15/160"); // bao phủ của sổ — nói rõ danh sách KHÔNG đầy đủ
+    // bao phủ của sổ — nói rõ danh sách KHÔNG đầy đủ
+    expect(out).toContain(`${WIRED_ALLOCATION_SITE_COUNT}/${KNOWN_ALLOCATION_SITE_ROW_COUNT}`);
   });
 
   it("★ vi: danh sách RỖNG hiện thành 'không có', KHÔNG phải một chỗ trống", async () => {
@@ -161,6 +183,28 @@ describe("VRAM_REFUSED — câu người vận hành đọc, cả ba ngôn ngữ
     const out = render(input());
     expect(out).toContain('"≈" = ước lượng chưa đo');
     expect(out).toContain("Có thể nhường (1000 MiB)");
+  });
+
+  /**
+   * ★★★ I-3 (review TOÀN NHÁNH) — NẤC CUỐI: người vận hành đọc ĐÚNG cửa đã chặn.
+   *
+   * Trước bản vá, ca này in ra *"Không đủ VRAM … xin 600 MiB, còn 1200 MiB (con số này kém tin hơn
+   * bình thường: gguf-slot-cap)"* — một câu vừa khai còn thừa vừa nói không đủ, rồi đổ cho độ tin
+   * cậy của một con số hoàn toàn đúng.
+   */
+  it("★★★ I-3: hết KHE ⇒ câu nói về KHE, không nói về byte thiếu (vi/en/zh)", async () => {
+    const inp = input({ requestedBytes: 600 * MIB, slotsNeeded: 2 });
+    await i18n.changeLanguage("vi");
+    const vi = render(inp);
+    expect(vi).toContain("Hết KHE model GGUF");
+    expect(vi).toContain("nhả thêm 2 model");
+    expect(vi).toContain("1200 MiB");            // dư địa byte vẫn được in — không giấu số
+    expect(vi).not.toContain("Không đủ VRAM");
+    expect(vi).not.toContain("kém tin hơn bình thường");
+    await i18n.changeLanguage("en");
+    expect(render(inp)).toContain("No free GGUF model slot");
+    await i18n.changeLanguage("zh");
+    expect(render(inp)).toContain("GGUF 模型槽位");
   });
 
   it("6 khoá từ điển CŨ không đổi hành vi sau khi sanitize phủ cả khoá từ điển", async () => {

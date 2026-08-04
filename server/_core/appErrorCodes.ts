@@ -102,6 +102,13 @@ export const APP_ERROR_CODES = [
                           // TÁCH khỏi VRAM_REFUSED vì câu "còn {{availableMb}} MiB" ở đó buộc ta
                           // hoặc in `-Infinity` hoặc BỊA một con số — cả hai đều là nói dối người
                           // vận hành; cùng lý do ENTITY_EXPIRED được tách khỏi ENTITY_NOT_FOUND.
+  "VRAM_SLOT_CAP",        // params: như VRAM_REFUSED + `slotsNeeded` — byte VỪA nhưng HẾT KHE
+                          // model GGUF (GGUF_MAX_LOADED_MODELS, cửa ĐẾM Đ4). TÁCH khỏi
+                          // VRAM_REFUSED vì câu ở đó ("xin 1.000 MiB, còn 25.000 MiB") **tự mâu
+                          // thuẫn** trong ca này: nó vừa khai còn thừa 25 GB vừa nói không đủ, rồi
+                          // đổ cho độ tin cậy của một con số hoàn toàn đúng ⇒ người trực đi tìm
+                          // lỗi ở chỗ không có lỗi. Cách gỡ cũng khác hẳn: **nhả một model**, không
+                          // phải tìm thêm byte (review TOÀN NHÁNH, I-3).
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];

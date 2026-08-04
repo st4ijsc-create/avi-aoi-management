@@ -80,6 +80,7 @@ import {
   ggufMaxLoadedModels, ggufMaxVramBytes, ggufVramGuardPct, sessionCacheMax, usableCeilingBytes,
   __resetVramCapsForTests,
 } from "./vramCaps";
+import { formatVramRefusal } from "./vramRefusal";
 import type { VramLeaseKind, VramPriority, VramReclaimerId, VramReserveRequest } from "./types";
 
 const MIB = 1024 * 1024;
@@ -270,10 +271,42 @@ describe("B. `ensureCapacity()` HẤP THỤ — chính sách ĐẾM của broker
     const r = reserve(xin("gguf:c", 1 * MIB), ctx());
     expect(r.lease).toBeNull();
     expect(r.decision.slotsNeeded).toBe(1);
-    expect(r.decision.reasons).toContain("gguf-slot-cap");
     // ⚠ Đ4: lý do ĐẾM KHÔNG được biến thành một khoản phụ phí BYTE.
     expect(r.decision.effectiveHeadroomBytes).toBe(r.decision.headroomBytes);
     expect(r.decision.effectiveHeadroomBytes).toBeGreaterThan(KHOI_30B);
+
+    /**
+     * ★★★ I-3 (review TOÀN NHÁNH) — TRẦN ĐẾM **KHÔNG** LÀ MỘT LÝ DO SUY GIẢM.
+     *
+     * Bản trước nối `"gguf-slot-cap"` vào `decision.reasons` SAU khi `enf.trusted` đã tính ⇒ cùng
+     * một lượt cho `trusted: true` (nhật ký) và `degraded` (client, suy từ `degradedReasons`).
+     * Bất biến đúng, và ca này khoá nó: **`trusted ⇔ reasons rỗng`**.
+     */
+    expect(r.decision.reasons).not.toContain("gguf-slot-cap" as never);
+    expect(r.decision.trusted).toBe(r.decision.reasons.length === 0);
+    expect(r.decision.trusted).toBe(true);
+    // … và sự thật của lời từ chối mang trần ĐẾM ở TRƯỜNG RIÊNG + MÃ LỖI RIÊNG.
+    expect(r.refusal!.slotsNeeded).toBe(1);
+    expect(r.refusal!.appCode).toBe("VRAM_SLOT_CAP");
+    expect(r.refusal!.degradedReasons).toEqual([]);
+  });
+
+  /**
+   * ★★★ I-3 — THIẾU CẢ HAI ⇒ mã vẫn là `VRAM_REFUSED` (byte là rào cao hơn), nhưng câu **nêu cả
+   * hai**: nói "chỉ hết khe" trong khi byte cũng thiếu là đẩy người trực nhả một model rồi vẫn bị
+   * chặn.
+   */
+  it("★★ I-3: thiếu CẢ byte LẪN khe ⇒ VRAM_REFUSED, và câu nêu CẢ HAI", () => {
+    process.env.GGUF_MAX_LOADED_MODELS = "1";
+    __resetVramCapsForTests();
+    reserve(xin("gguf:a", 30_000 * MIB), ctx());
+    const r = reserve(xin("gguf:b", 30_000 * MIB), ctx());
+    expect(r.lease).toBeNull();
+    expect(r.decision.slotsNeeded).toBe(1);
+    expect(r.refusal!.appCode).toBe("VRAM_REFUSED");
+    const cau = formatVramRefusal(r.refusal!);
+    expect(cau).toContain("Không đủ VRAM");
+    expect(cau).toContain("hết KHE");
   });
 
   it("★★ trần KHE chỉ áp cho `gguf-model` — hộ khác KHÔNG dính", () => {

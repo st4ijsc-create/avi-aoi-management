@@ -3556,6 +3556,8 @@
     "KB_FETCH_FAILED": "无法从 {{url}} 获取内容。",
     "VRAM_REFUSED": "{{owner}}（优先级 {{priority}}）的显存不足：申请 {{requestedMb}} MiB，剩余 {{availableMb}} MiB{{trust}}。台账中占用（“≈”表示估算值，非实测）：{{holders}}。可让出（{{preemptableMb}} MiB）：{{preemptable}}。",
     "VRAM_REFUSED_WITH_REASON": "{{owner}}（优先级 {{priority}}）的显存不足：申请 {{requestedMb}} MiB，剩余 {{availableMb}} MiB{{trust}}。台账中占用（“≈”表示估算值，非实测）：{{holders}}。可让出（{{preemptableMb}} MiB）：{{preemptable}}。{{reason}}",
+    "VRAM_SLOT_CAP": "{{owner}}（优先级 {{priority}}）没有空余的 GGUF 模型槽位：需再卸载 {{slotsNeeded}} 个模型才能满足 GGUF_MAX_LOADED_MODELS 上限。这是数量上限，并非显存不足——申请 {{requestedMb}} MiB 时显存余量仍有 {{availableMb}} MiB{{trust}}。台账中占用（“≈”表示估算值，非实测）：{{holders}}。可让出（{{preemptableMb}} MiB）：{{preemptable}}。",
+    "VRAM_SLOT_CAP_WITH_REASON": "{{owner}}（优先级 {{priority}}）没有空余的 GGUF 模型槽位：需再卸载 {{slotsNeeded}} 个模型才能满足 GGUF_MAX_LOADED_MODELS 上限。这是数量上限，并非显存不足——申请 {{requestedMb}} MiB 时显存余量仍有 {{availableMb}} MiB{{trust}}。台账中占用（“≈”表示估算值，非实测）：{{holders}}。可让出（{{preemptableMb}} MiB）：{{preemptable}}。{{reason}}",
     "VRAM_HEADROOM_UNKNOWN": "无法为 {{owner}}（优先级 {{priority}}）分配显存：申请 {{requestedMb}} MiB，但系统无法计算剩余余量（{{degradedReasons}}），为安全起见予以拒绝。台账中占用（“≈”表示估算值，非实测）：{{holders}}。可让出（{{preemptableMb}} MiB）：{{preemptable}}。",
     "VRAM_HEADROOM_UNKNOWN_WITH_REASON": "无法为 {{owner}}（优先级 {{priority}}）分配显存：申请 {{requestedMb}} MiB，但系统无法计算剩余余量（{{degradedReasons}}），为安全起见予以拒绝。台账中占用（“≈”表示估算值，非实测）：{{holders}}。可让出（{{preemptableMb}} MiB）：{{preemptable}}。{{reason}}",
     "list": {

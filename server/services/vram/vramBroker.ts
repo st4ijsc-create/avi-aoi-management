@@ -409,6 +409,8 @@ export function refusalFactsFor(args: {
       args.slotsNeeded ?? 0,
     ),
     unledgered,
+    // ★ I-3 — trần ĐẾM là một trường RIÊNG của sự thật từ chối, không còn nấp trong `degradedReasons`.
+    slotsNeeded: args.slotsNeeded ?? 0,
   });
 }
 
@@ -539,8 +541,18 @@ export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): 
 
   // ★ Task 7 — cửa ĐẾM, chạy độc lập với cửa BYTE (Đ4).
   const slotsNeeded = kheGgufConThieu(request);
-  const reasons: readonly VramDegradationReason[] =
-    slotsNeeded > 0 ? [...enf.reasons, "gguf-slot-cap"] : enf.reasons;
+  /**
+   * ★★★ I-3 (review TOÀN NHÁNH) — **`reasons` LÀ `enf.reasons`, KHÔNG CỘNG THÊM GÌ.**
+   *
+   * Bản trước nối `"gguf-slot-cap"` vào đây **SAU** khi `enf.trusted` đã được tính, nên cùng một
+   * lượt cho ra `trusted: true` (nhật ký) **và** `degraded` (client, vì `vramRefusalAppError()`
+   * suy `trust` từ `degradedReasons`) — hai nguồn nói ngược nhau về CÙNG một quyết định. Kèm một
+   * khung sai: một trần ĐẾM cứng được in ra dưới nhãn *"con số này kém tin hơn bình thường"* cho
+   * một con số hoàn toàn đúng.
+   * ⇒ Trần ĐẾM đi bằng đường RIÊNG (`decision.slotsNeeded` → `VramRefusalFacts.slotsNeeded` → mã
+   * lỗi `VRAM_SLOT_CAP`), và bất biến **`trusted ⇔ reasons.length === 0`** được trả lại (có ca khoá).
+   */
+  const reasons: readonly VramDegradationReason[] = enf.reasons;
 
   const decision: VramReserveDecision = {
     headroomBytes: headroom.headroomBytes,

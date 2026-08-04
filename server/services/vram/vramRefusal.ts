@@ -83,19 +83,28 @@ const BYTES_PER_MIB = 1024 * 1024;
  * ⚠ Từ vựng này đi thẳng vào câu i18n qua `{{degradedReasons}}` (một chuỗi nối, KHÔNG phải khoá từ
  * điển) — thêm giá trị mới KHÔNG cần khoá i18n mới, nhưng **phải** giữ tên máy đọc được (kebab-case,
  * không dấu cách) vì Task 7 sẽ đếm chúng trong `vram_events.detail`.
+ *
+ * ⚠⚠ I-3 (review TOÀN NHÁNH) — **`"gguf-slot-cap"` ĐÃ RỜI TỪ VỰNG NÀY, và đó là một lời đính chính
+ * chứ không phải dọn dẹp.** Từ vựng ở đây trả lời đúng MỘT câu: *"vì sao CON SỐ dư địa kém tin hơn
+ * bình thường"*. Hết **KHE** `gguf-model` không làm con số nào kém tin — nó là một **trần ĐẾM cứng**,
+ * một cửa từ chối RIÊNG (Đ4). Nhét nó vào đây đẻ ra ba thứ sai cùng lúc:
+ *   (a) câu ra *"xin 1.000 MiB, còn 25.000 MiB — con số này kém tin hơn bình thường (gguf-slot-cap)"*
+ *       ⇒ **khung sai**: người trực đi tìm một vấn đề BYTE không tồn tại;
+ *   (b) bất biến gãy: `vramBroker` nối lý do này vào `reasons` **SAU** khi `enf.trusted` đã tính ⇒
+ *       nhật ký nói `trusted: true` trong khi client nói `degraded` cho **cùng một lượt**;
+ *   (c) `DISTRUST_UNITS` phải mang một hàng `0` chỉ để không tính phí — một ngoại lệ trong bảng
+ *       chính sách byte cho một thứ không phải byte.
+ * ⇒ Nay nó là **trường riêng** `slotsNeeded` trên `VramRefusalFacts` + **mã lỗi riêng**
+ * `VRAM_SLOT_CAP`. Kiểu là hàng rào: `DISTRUST_UNITS` là `Record<VramDegradationReason, number>`
+ * nên ai đưa nó trở lại từ vựng này sẽ phải khai lại một phụ phí byte cho một thước ĐẾM — và đó
+ * đúng là lúc phải dừng lại đọc Đ4.
  */
 export type VramDegradationReason =
   | HeadroomDegradation
   | "stale-tick"
   | "tick-failing"
   | "unledgered-unasked"
-  | "unledgered-unknown"
-  /**
-   * ★ Pha 2B Task 7 (§8) — hết **KHE** `gguf-model` (`GGUF_MAX_LOADED_MODELS`), hấp thụ từ
-   * `aiGgufEngine.ensureCapacity()`. ⚠ Đ4: đây là thước ĐẾM, KHÔNG phải byte — nó xuất hiện KỂ CẢ
-   * khi dư địa byte còn thừa, và khi đó câu từ chối không được để người đọc hiểu là thiếu byte.
-   */
-  | "gguf-slot-cap";
+  | "unledgered-unknown";
 
 /** Một hộ đang giữ chỗ trong SỔ. ⚠ `bytes` có thể là ƯỚC LƯỢNG — xem `measured`. */
 export interface VramHolderFact {
@@ -157,18 +166,34 @@ export interface VramRefusalInput {
   readonly preemptable: readonly VramHolderFact[];
   /** ⚠ BẮT BUỘC CÓ MẶT (không optional): xem `VramUnledgeredFact`. */
   readonly unledgered: VramUnledgeredFact;
+  /**
+   * ★★★ I-3 (review TOÀN NHÁNH) — SỐ **KHE** `gguf-model` còn phải dọn (`GGUF_MAX_LOADED_MODELS`).
+   *
+   * ⚠ BẮT BUỘC CÓ MẶT, không optional và **không** `?? 0`: `0` nghĩa *"trần ĐẾM không liên quan tới
+   * lượt này"* và `> 0` nghĩa *"đây là cửa từ chối"* — một mặc định lặng lẽ ở đây sẽ xoá hẳn cửa
+   * thứ hai khỏi câu chữ, đúng thứ vừa xảy ra khi nó còn nấp trong `degradedReasons`.
+   * ⚠ Đ4: **KHÔNG BAO GIỜ** đổi thành byte, không trừ vào `headroomBytes`.
+   */
+  readonly slotsNeeded: number;
 }
 
 /**
- * HAI mã lỗi, KHÔNG phải một — và lý do là bàn giao (1), không phải khẩu vị đặt tên.
- *  • `VRAM_REFUSED` — dư địa là một SỐ: câu nói được *"còn bao nhiêu"*.
+ * BA mã lỗi, KHÔNG phải một — và lý do là bàn giao (1), không phải khẩu vị đặt tên.
+ *  • `VRAM_REFUSED` — dư địa là một SỐ và **byte là thứ thiếu**: câu nói được *"còn bao nhiêu"*.
  *  • `VRAM_HEADROOM_UNKNOWN` — `headroomBytes` KHÔNG hữu hạn (`-Infinity` + `"invalid-input"`):
  *    hệ **từ chối để an toàn** mà **không biết** còn bao nhiêu. Một khuôn câu duy nhất có
  *    `{{availableMb}}` sẽ buộc ta hoặc in `-Infinity` (bẫy 1/2 của ống dẫn) hoặc bịa một con số.
  *    Đây đúng khuôn mà registry `APP_ERROR_CODES` đang dùng để tách `ENTITY_EXPIRED` khỏi
  *    `ENTITY_NOT_FOUND`: tình huống khác thì câu khác, không nhồi vào một mã.
+ *  • ★★★ `VRAM_SLOT_CAP` (I-3, review TOÀN NHÁNH) — **byte VỪA, hết KHE**. Đây là cửa Đ4, và cho
+ *    tới bản vá này nó mượn khuôn `VRAM_REFUSED` nên câu ra là *"Không đủ VRAM … xin 1.000 MiB,
+ *    còn 25.000 MiB (con số này kém tin hơn bình thường: gguf-slot-cap)"* — một câu **tự mâu
+ *    thuẫn**: nó vừa nói còn thừa 25 GB vừa nói không đủ, và đổ lỗi cho độ tin cậy của con số
+ *    trong khi con số ấy hoàn toàn đúng. Người trực đọc xong đi tìm lỗi ở chỗ không có lỗi. Mã
+ *    riêng để câu nói ĐÚNG THỨ ĐANG THIẾU: một trần ĐẾM, dọn bằng cách **nhả một model**, không
+ *    phải bằng cách tìm thêm byte.
  */
-export type VramRefusalAppCode = "VRAM_REFUSED" | "VRAM_HEADROOM_UNKNOWN";
+export type VramRefusalAppCode = "VRAM_REFUSED" | "VRAM_HEADROOM_UNKNOWN" | "VRAM_SLOT_CAP";
 
 /**
  * Câu cảnh báo về **phần KHÔNG quy trách nhiệm được**, xếp theo mức nghiêm trọng GIẢM DẦN. Tên
@@ -216,6 +241,11 @@ export interface VramRefusalFacts {
   readonly unknownCount: number | null;
   readonly caveat: VramRefusalCaveat;
   readonly degradedReasons: readonly VramDegradationReason[];
+  /**
+   * ★ I-3 — số KHE `gguf-model` còn phải dọn. `0` ⇒ trần ĐẾM không dính tới lượt này.
+   * ⚠ Đã lọc hữu hạn + `≥ 0` + số nguyên (bàn giao 1): nó đi vào `params` của mã lỗi.
+   */
+  readonly slotsNeeded: number;
   readonly wiredSiteCount: number;
   readonly knownSiteRowCount: number;
 }
@@ -317,8 +347,28 @@ export function buildVramRefusal(input: VramRefusalInput): VramRefusalFacts {
           ? "vramUnattributedDetected"
           : "vramLedgerCoverageOnly";
 
+  /**
+   * ★★★ I-3 — CHỌN MÃ THEO **THỨ ĐANG THIẾU**, không theo thứ dễ nhất.
+   *
+   * `VRAM_SLOT_CAP` chỉ khi **byte VỪA mà hết KHE** — đúng ca mà câu cũ tự mâu thuẫn. Khi thiếu
+   * CẢ HAI, mã vẫn là `VRAM_REFUSED` (byte là rào cao hơn, và câu của nó nêu thêm mệnh đề khe ở
+   * `formatVramRefusal` + tham số `slotsNeeded`) — nói *"chỉ hết khe"* trong khi byte cũng thiếu
+   * là đẩy người trực đi nhả một model rồi vẫn bị chặn.
+   * ⚠ `requestedBytes`/`availableBytes` `null` ⇒ KHÔNG so được ⇒ không rơi vào nhánh này.
+   */
+  const slotsNeeded = (() => {
+    const n = input.slotsNeeded;
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  })();
+  const duByte = requestedBytes !== null && availableBytes !== null && requestedBytes <= availableBytes;
+
   return {
-    appCode: availableBytes === null ? "VRAM_HEADROOM_UNKNOWN" : "VRAM_REFUSED",
+    appCode:
+      availableBytes === null
+        ? "VRAM_HEADROOM_UNKNOWN"
+        : slotsNeeded > 0 && duByte
+          ? "VRAM_SLOT_CAP"
+          : "VRAM_REFUSED",
     owner: input.owner,
     priority: input.priority,
     requestedBytes,
@@ -331,6 +381,7 @@ export function buildVramRefusal(input: VramRefusalInput): VramRefusalFacts {
     unknownCount,
     caveat,
     degradedReasons: Object.freeze([...input.degradedReasons]),
+    slotsNeeded,
     wiredSiteCount: WIRED_ALLOCATION_SITE_COUNT,
     knownSiteRowCount: KNOWN_ALLOCATION_SITE_ROW_COUNT,
   };
@@ -385,13 +436,29 @@ function caveatText(facts: VramRefusalFacts): string {
  * có đúng một ô `{{reason}}`, và ta không phát minh khuôn mới.
  */
 export function formatVramRefusal(facts: VramRefusalFacts): string {
+  /**
+   * ★★★ I-3 — ĐẦU CÂU PHẢI GỌI TÊN THỨ ĐANG THIẾU.
+   *
+   * Nhánh `VRAM_SLOT_CAP` (byte VỪA, hết KHE) trước đây dùng chung đầu câu *"Không đủ VRAM … xin
+   * 1.000 MiB, còn 25.000 MiB"* — hai vế của một câu nói hai chuyện ngược nhau. Nay nó nói đúng
+   * cửa đã chặn, **và vẫn in cả hai con số byte** để không ai tưởng hệ đang giấu số.
+   */
   const head =
     facts.availableBytes === null
       ? `Không cấp được VRAM cho ${facts.owner} (mức ${facts.priority}): xin ` +
         `${mibText(facts.requestedBytes)} MiB, nhưng hệ KHÔNG tính được dư địa còn lại ` +
         `(lý do: ${facts.degradedReasons.join(", ") || "không rõ"}) nên từ chối để an toàn.`
-      : `Không đủ VRAM cho ${facts.owner} (mức ${facts.priority}): xin ` +
-        `${mibText(facts.requestedBytes)} MiB, còn ${mibText(facts.availableBytes)} MiB.`;
+      : facts.appCode === "VRAM_SLOT_CAP"
+        ? `HẾT KHE model GGUF cho ${facts.owner} (mức ${facts.priority}): cần nhả thêm ` +
+          `${facts.slotsNeeded} model để lượt này vừa trần GGUF_MAX_LOADED_MODELS. ` +
+          `⚠ Đây là trần ĐẾM, KHÔNG phải thiếu byte — dư địa byte còn ` +
+          `${mibText(facts.availableBytes)} MiB cho lượt xin ${mibText(facts.requestedBytes)} MiB.`
+        : `Không đủ VRAM cho ${facts.owner} (mức ${facts.priority}): xin ` +
+          `${mibText(facts.requestedBytes)} MiB, còn ${mibText(facts.availableBytes)} MiB.` +
+          // Thiếu CẢ HAI ⇒ nêu cả hai: nhả một model xong vẫn bị chặn vì byte thì phải biết trước.
+          (facts.slotsNeeded > 0
+            ? ` Và KỂ CẢ khi đủ byte thì vẫn hết KHE: cần nhả thêm ${facts.slotsNeeded} model GGUF.`
+            : "");
 
   const degraded =
     facts.availableBytes !== null && facts.degradedReasons.length > 0
@@ -463,6 +530,12 @@ export function vramRefusalAppError(facts: VramRefusalFacts): {
     // giọng này từ đầu; trước bản vá, đường i18n thì KHÔNG.
     trust: facts.degradedReasons.length > 0 ? "degraded" : "trusted",
     degradedReasons: facts.degradedReasons.join(", ") || "-",
+    /**
+     * ★ I-3 — trần ĐẾM có **ô riêng**, không còn nấp trong `{{degradedReasons}}`.
+     * ⚠ Luôn truyền (kể cả `0`): khuôn `VRAM_REFUSED*` dùng nó ở mệnh đề "kể cả khi đủ byte…",
+     * và một placeholder thiếu là `{{slotsNeeded}}` thô ra màn hình.
+     */
+    slotsNeeded: facts.slotsNeeded,
     // Placeholder RIÊNG của các khoá `errors.reason.*` — luôn truyền đủ, kể cả khi khoá đang chọn
     // không cần tới: thiếu một placeholder là đẩy "{{unknownCount}}" thô ra màn hình (đúng lớp lỗi
     // mà cổng "reason→placeholder" của `appErrorParamsCoverage.test.ts` canh ở phía router).
