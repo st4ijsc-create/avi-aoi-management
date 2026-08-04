@@ -40,6 +40,7 @@ let nho: {
   maxVramBytes: number;
   maxLoadedModels: number;
   sessionCacheMax: number;
+  safetyReserveBytes: number;
 } | null = null;
 
 const MIB = 1024 * 1024;
@@ -72,6 +73,17 @@ function doc() {
     maxLoadedModels: soNguyenTuEnv("GGUF_MAX_LOADED_MODELS", 2, 1, 1024),
     /** Trần LRU cho kho phiên ONNX. Mặc định 5 — y như bản cũ của `aiInferenceEngine`. */
     sessionCacheMax: soNguyenTuEnv("AI_SESSION_CACHE_MAX", 5, 1, 1024),
+    /**
+     * ★★★ M-3 (review TOÀN NHÁNH) — **Ô ĐỆM AN TOÀN, DỜI TỪ `const` MỨC MODULE CỦA `vramBroker`.**
+     *
+     * Task 7 chuyển bốn biến trần sang đọc-lười-có-nhớ với lý do ghi ở đầu file này (*"một `const`
+     * mức module khoá cứng giá trị của lượt nhập ĐẦU TIÊN"*), nhưng bỏ lại đúng ô này — **ô đi
+     * THẲNG vào công thức §5.6c** (`headroom = trần − đệm − Σ sổ`), tức ô có ảnh hưởng trực tiếp
+     * nhất tới việc một lượt xin được cấp hay bị TỪ CHỐI. Cùng lớp, khác chỗ.
+     * ⚠ `0` HỢP LỆ và có nghĩa: người vận hành tắt hẳn đệm. Bản cũ (`Number(env ?? 1024)`) để một
+     * giá trị RÁC thành `NaN` rồi đẩy `NaN` thẳng vào phép trừ — nay rác về mặc định.
+     */
+    safetyReserveBytes: soNguyenTuEnv("VRAM_SAFETY_RESERVE_MB", 1024, 0, 1024 * 1024) * MIB,
   };
   /**
    * ★★★ I-1 (review TOÀN NHÁNH) — **LÀM HẬU QUẢ HIỆN RA, ĐÚNG MỘT LẦN MỖI TIẾN TRÌNH.**
@@ -108,9 +120,33 @@ export function ggufMaxVramBytes(): number {
   return doc().maxVramBytes;
 }
 
-/** Trần theo ĐẾM số model GGUF thường trú. ⚠ KHÔNG phải byte — Đ4. */
+/**
+ * Trần theo ĐẾM số model GGUF thường trú. ⚠ KHÔNG phải byte — Đ4.
+ *
+ * ⚠⚠ M-2 (review TOÀN NHÁNH) — **DÂN SỐ CỦA TRẦN NÀY RỘNG HƠN Ý ĐỊNH BAN ĐẦU CỦA NGƯỜI VẬN HÀNH,
+ * VÀ ĐIỀU ĐÓ CHƯA TỪNG ĐƯỢC NÓI RA.** Bản cũ (`aiGgufEngine.ensureCapacity`) đếm `loadedModels.size`
+ * — chỉ model SINH CHỮ. Broker đếm **mọi giấy phép `kind: "gguf-model"` trong sổ**, và một hộ nữa
+ * lọt vào: `reranker:<modelPath>` (`aiReranker.ts`). Hộ đó
+ *   • xin giấy phép **kể cả khi chạy CPU** (`RAG_RERANKER_GPU=false` — mặc định của `.env`),
+ *   • giữ nó **suốt đời tiến trình**,
+ *   • `refCount` đứng nguyên `1` (không ai gọi `noteRefCount`) và **không khai `reclaimer`**
+ *     ⇒ không nhàn rỗi, không thu hồi được, không bao giờ nhường khe.
+ * ⇒ `GGUF_MAX_LOADED_MODELS=N` trên thực tế là **N−1 model sinh chữ** khi reranker mode=gguf bật.
+ * Việc SỬA dân số là ĐÚNG (bản cũ đếm thiếu một hộ có thật), nhưng **giá trị cấu hình của người
+ * vận hành chưa được hiệu chỉnh lại** — đó là quyết định của họ, không phải của mã, nên ở đây chỉ
+ * NÓI RA. `.env` đã được chú thích tương ứng.
+ */
 export function ggufMaxLoadedModels(): number {
   return doc().maxLoadedModels;
+}
+
+/**
+ * Đệm an toàn (BYTE) giữ lại khỏi dư địa: `headroom = trần − đệm − Σ giấy phép` (§5.6c).
+ * ⚠ KHÔNG phải "nền desktop" — xem khối docstring ở `vramBroker.deviceUsableBytes()`/`reserve()`.
+ * ⚠ M-3: đọc LƯỜI + nhớ, KHÔNG `const` mức module (lý do ở `safetyReserveBytes` trong `doc()`).
+ */
+export function safetyReserveBytes(): number {
+  return doc().safetyReserveBytes;
 }
 
 /** Trần LRU cho kho phiên ONNX (`aiInferenceEngine` + `ai/ocrService`). ⚠ KHÔNG phải byte. */

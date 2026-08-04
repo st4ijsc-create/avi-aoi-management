@@ -2,7 +2,7 @@ import type {
   VramLease, VramMeasureSource, VramReclaimerId, VramReserveRequest, VramReserveResult, VramSnapshot,
   VramPriority,
 } from "./types";
-import { __resetVramCapsForTests, ggufMaxLoadedModels, usableCeilingBytes } from "./vramCaps";
+import { __resetVramCapsForTests, ggufMaxLoadedModels, safetyReserveBytes, usableCeilingBytes } from "./vramCaps";
 import type { HeadroomBasis, HeadroomInput, HeadroomResult } from "./vramHeadroom";
 import { assertHeadroomPolicy, computeHeadroom, headroomInputFromTick } from "./vramHeadroom";
 import type { VramDegradationReason, VramHolderFact, VramRefusalFacts, VramUnledgeredFact } from "./vramRefusal";
@@ -46,16 +46,47 @@ let measuredDeviceTotalBytes: number | null = null;
  * thật (`captureVramBaseline()`); Pha 2 phải trừ SỐ ĐO ĐÓ khỏi `headroom` (báo cáo §10 mục 10),
  * lúc đó `SAFETY_RESERVE` mới quay về đúng vai trò của nó: biên an toàn cho phần phình LƯỜI mà
  * llama.cpp cấp phát ở lượt suy luận đầu, không phải chỗ đắp cho một phép đo còn thiếu.
+ *
+ * ⚠⚠ M-3 (review TOÀN NHÁNH) — **`const SAFETY_RESERVE_BYTES` MỨC MODULE ĐÃ BỊ XOÁ Ở ĐÂY.** Task 7
+ * chuyển bốn biến trần sang đọc-lười-có-nhớ (`vramCaps.ts`) với lý do rõ ràng — *"một `const` mức
+ * module khoá cứng giá trị của lượt nhập ĐẦU TIÊN"*, và hơn hai chục bộ test đặt env trong
+ * `beforeEach` rồi `vi.resetModules()` — nhưng bỏ lại đúng ô này, ô đi THẲNG vào công thức §5.6c.
+ * Nay nó là người đọc thứ NĂM của `vramCaps`, cùng cơ chế, cùng `__resetVramCapsForTests()`.
  */
-const SAFETY_RESERVE_BYTES = Number(process.env.VRAM_SAFETY_RESERVE_MB ?? 1024) * 1024 * 1024;
 
 /**
  * Trần thiết bị đang dùng. ĐỒNG BỘ, không I/O — `reserve()` gọi được mà không phá lá chắn
  * cấu trúc "đường quyết định không chạm I/O" (xem docstring `reserve()`).
  */
 export function deviceTotalBytes(): number {
-  return DEVICE_TOTAL_ENV_BYTES ?? measuredDeviceTotalBytes ?? DEVICE_TOTAL_FALLBACK_BYTES;
+  const tran = DEVICE_TOTAL_ENV_BYTES ?? measuredDeviceTotalBytes;
+  if (tran !== null) return tran;
+  /**
+   * ★★★ M-1 (review TOÀN NHÁNH) — **NGUỒN (3) LÀ MỘT HẰNG SỐ CỦA MỘT MÁY, VÀ PHA 2 QUYẾT ĐỊNH
+   * TRÊN NÓ.** Nguồn (2) *"tự đúng trên MỌI máy mà không ai phải khai báo gì"* chỉ tới **SAU nhịp
+   * đo đầu tiên** (`noteDeviceTotalBytes()` ⇐ `vramProbe.probeOnce()`), và `.env` của repo này
+   * KHÔNG đặt `VRAM_DEVICE_TOTAL_MB` (chỉ `.env.example` có). Mọi lượt `beginVramAllocation()`
+   * xảy ra TRƯỚC nhịp đó chạy trên **32.607 MiB của MỘT máy phát triển** — trên card 12 GB đó là
+   * một dư địa phóng đại 20 GB, và Pha 2 **cấp phát** theo con số ấy.
+   *
+   * Không thể sửa bằng cách "chặt hơn": đây là TRẦN, hạ nó tuỳ tiện là bịa một con số khác của
+   * cùng một máy (đúng cái sai I-3 đang bắt). Thứ rẻ và đúng là **làm nó thôi im lặng** — cùng
+   * khuôn với cảnh báo `GGUF_VRAM_GUARD_PCT` ở `vramCaps.ts`.
+   * ⚠ ĐÚNG MỘT LẦN mỗi tiến trình: hàm này nằm trên đường `reserve()` (đồng bộ, mỗi lượt xin).
+   */
+  if (!daKeuTranDuPhong) {
+    daKeuTranDuPhong = true;
+    console.warn(
+      `[vram] ⚠ TRẦN THIẾT BỊ đang dùng HẰNG SỐ DỰ PHÒNG ${Math.round(DEVICE_TOTAL_FALLBACK_BYTES / 1024 / 1024)} ` +
+        `MiB (dung lượng RTX 5090 của MỘT máy phát triển) vì chưa có số đo và \`VRAM_DEVICE_TOTAL_MB\` ` +
+        `không được đặt. Mọi quyết định cấp/TỪ CHỐI trước nhịp đo đầu tiên dựa trên con số này — ` +
+        `trên card nhỏ hơn nó phóng đại dư địa. Đặt VRAM_DEVICE_TOTAL_MB trong .env nếu card khác.`,
+    );
+  }
+  return DEVICE_TOTAL_FALLBACK_BYTES;
 }
+/** M-1 — cờ "đã kêu về trần dự phòng", đúng một lần mỗi tiến trình. */
+let daKeuTranDuPhong = false;
 
 /**
  * ★★★ Pha 2B Task 7 (§8) — TRẦN mà `reserve()` THẬT SỰ dùng, sau khi **hấp thụ**
@@ -524,7 +555,7 @@ export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): 
   const ledgerTotalBytes = totalReserved();
   const headroomInput = headroomInputFromTick(ctx.tick, {
     ceilingBytes,
-    safetyReserveBytes: SAFETY_RESERVE_BYTES,
+    safetyReserveBytes: safetyReserveBytes(),
     // ⚠ SỔ **SỐNG**, đọc ngay tại thời điểm quyết định — KHÔNG lấy `ledgerTotalBytes` của tick cũ:
     // mọi lượt `reserve()` xảy ra trong một nhịp sẽ vô hình, tức đúng cái cửa cưỡng chế sinh ra để
     // đóng (vramHeadroom.HeadroomPolicy).
@@ -569,7 +600,7 @@ export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): 
     distrustChargeBytes: enf.distrustChargeBytes,
     ledgerTotalBytes,
     ceilingBytes,
-    safetyReserveBytes: SAFETY_RESERVE_BYTES,
+    safetyReserveBytes: safetyReserveBytes(),
   };
 
   const vua = request.estimatedBytes <= enf.effectiveHeadroomBytes && slotsNeeded === 0;
@@ -795,7 +826,7 @@ export function assertVramEnforcementPolicy(): void {
   kiemBienMoiTruong("GGUF_MAX_VRAM_MB", { toiThieu: 0, chapNhanBang: true });
   kiemBienMoiTruong("GGUF_MAX_LOADED_MODELS", { toiThieu: 1, chapNhanBang: true });
   kiemBienMoiTruong("AI_SESSION_CACHE_MAX", { toiThieu: 1, chapNhanBang: true });
-  assertHeadroomPolicy({ ceilingBytes: deviceUsableBytes(), safetyReserveBytes: SAFETY_RESERVE_BYTES });
+  assertHeadroomPolicy({ ceilingBytes: deviceUsableBytes(), safetyReserveBytes: safetyReserveBytes() });
 }
 
 /**
@@ -831,5 +862,7 @@ export function __resetBrokerForTests(): void {
   ledger.clear();
   seq = 0;
   measuredDeviceTotalBytes = null;
+  // M-1 — không reset thì ca sau KẾ THỪA "đã kêu" của ca trước và lưới cho lời cảnh báo tự mù.
+  daKeuTranDuPhong = false;
   __resetVramCapsForTests();
 }

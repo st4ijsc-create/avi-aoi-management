@@ -196,6 +196,37 @@ describe("A. `enforceVramGuard()` XOÁ — trần nay là của BROKER, và nó 
     }
   });
 
+  /**
+   * ★★★ M-1 (review TOÀN NHÁNH) — TRẦN DỰ PHÒNG LÀ HẰNG SỐ CỦA **MỘT MÁY**, VÀ PHA 2 QUYẾT ĐỊNH
+   * TRÊN NÓ. Nguồn "số đo thật" chỉ tới SAU nhịp đo đầu tiên; trước đó, trên một card 12 GB, dư địa
+   * bị phóng đại 20 GB **trong im lặng**. Không hạ trần được (bịa một con số khác của cùng máy) —
+   * nên nó phải KÊU.
+   */
+  it("★★★ M-1: chưa có số đo + không đặt VRAM_DEVICE_TOTAL_MB ⇒ KÊU đúng MỘT lần; có số đo ⇒ IM", () => {
+    const keu = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const loc = () => keu.mock.calls.filter((c) => String(c[0]).includes("HẰNG SỐ DỰ PHÒNG"));
+    try {
+      __resetBrokerForTests();                 // xoá luôn số đo + cờ đã-kêu
+      expect(deviceTotalBytes()).toBe(TRAN_THIET_BI);   // hằng số dự phòng = 32.607 MiB
+      deviceTotalBytes();
+      deviceUsableBytes();
+      expect(loc().length).toBe(1);
+      // câu phải NÊU hành động sửa được, không chỉ than
+      expect(String(loc()[0]![0])).toContain("VRAM_DEVICE_TOTAL_MB");
+
+      // có số đo THẬT ⇒ thôi kêu (và trần đi theo số đo, không theo hằng số)
+      keu.mockClear();
+      __resetBrokerForTests();
+      noteDeviceTotalBytes(12_282 * MIB);
+      expect(deviceTotalBytes()).toBe(12_282 * MIB);
+      expect(loc()).toEqual([]);
+    } finally {
+      keu.mockRestore();
+      __resetBrokerForTests();
+      noteDeviceTotalBytes(TRAN_THIET_BI);
+    }
+  });
+
   it("GGUF_MAX_VRAM_MB là trần BYTE; `0` = tắt (ngữ nghĩa cũ giữ nguyên)", () => {
     expect(ggufMaxVramBytes()).toBe(0);
     expect(usableCeilingBytes(TRAN_THIET_BI)).toBe(TRAN_THIET_BI);
