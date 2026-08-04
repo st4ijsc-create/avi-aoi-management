@@ -167,14 +167,14 @@ describe("Pha 3 Task 2 — ĐƯỜNG SẢN XUẤT đọc ô sổ chung THẬT", 
      * Đây là dây nối duy nhất giữa sổ chung và cái đồng hồ 60 s; đứt nó thì bản sao đọc **không
      * bao giờ tự làm mới** và cả cơ chế lùi về Pha 2B trong im lặng.
      * ⚠ Nhịp có thể NÉM vì đầu dò (bộ ca này cố ý không giả `vramProbe`) — không sao: lượt đồng bộ
-     * nằm trong `finally` của `__runReconcileTick()`, tức chạy **kể cả khi nhịp ném**, và lời hứa
-     * chỉ giải quyết SAU nó. Đó chính là điều ca này khoá lại.
+     * nằm trong `finally`, tức được bắn **kể cả khi nhịp ném**. Đó chính là điều ca này khoá lại.
+     * ⚠ `vi.waitFor` chứ không phải đọc thẳng: lượt đồng bộ được **bắn-rồi-đi** (không `await`) để
+     * thời lượng nhịp đối chiếu không buộc vào độ trễ DB — xem khối docstring ở `__runReconcileTick`.
      */
     const { __runReconcileTick } = await import("./vramReconciler");
     await __runReconcileTick().catch(() => {});
 
-    const ban = readSharedLedgerReplica();
-    expect(ban, "nhịp đối chiếu PHẢI làm mới bản sao đọc").not.toBeNull();
-    expect(ban!.foreignBytes).toBe(KHOI_30B);
+    await vi.waitFor(() => expect(readSharedLedgerReplica()).not.toBeNull());
+    expect(readSharedLedgerReplica()!.foreignBytes).toBe(KHOI_30B);
   });
 });

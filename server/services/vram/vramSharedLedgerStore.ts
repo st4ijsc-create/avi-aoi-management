@@ -160,6 +160,28 @@ let gatewayThat: SharedLedgerGateway | null | undefined;
 async function layGateway(): Promise<SharedLedgerGateway | null> {
   if (gatewayOverride !== null) return gatewayOverride;
   if (gatewayThat !== undefined) return gatewayThat;
+  /**
+   * ⚠⚠ DƯỚI VITEST: **KHÔNG tự đi mở kết nối DB.** Đây là một hàng rào ĐO ĐƯỢC, không phải một
+   * lượt né tránh:
+   *
+   *   • `__runReconcileTick()` chạy ở rất nhiều file test (bất cứ ca nào gọi `startVramReconciler`),
+   *     và nhánh này kéo `server/db/connection` + drizzle + `pg` vào **đồ thị biến đổi của Vite**
+   *     cho từng file đó. Đo được: 4/8 lượt `--sequence.shuffle.tests` ĐỎ ở
+   *     `vramHeadroom.test.ts` với `AssertionError: expected null not to be null` tại
+   *     `vi.waitFor(readLastReconcileTick() !== null)` — **hết 1.423 ms** trong khi nhịp lẽ ra
+   *     xong sau vài mili giây. Nhật ký lượt đỏ có đúng dòng `[Database] Connecting to PostgreSQL`
+   *     do chính nhánh này sinh ra.
+   *   • Và đây đúng GOTCHA đã trả giá ở Đợt trước: *"`setInterval` unref'd của `aiGateway` RÒ vào
+   *     bộ test, tự bắn, tự kết nối và **TỰ GHI VÀO DB TEST**"*. Một lượt ghi ngầm vào
+   *     `aoi_management_test` từ một file test chẳng liên quan là thứ không ai gỡ được lúc 3 giờ sáng.
+   *
+   * ⚠ Hàng rào này **KHÔNG** làm cơ chế thành mã chết trong test: mọi ca thật sự canh sổ chung đều
+   * **CẮM GATEWAY tường minh** (`__setSharedLedgerGatewayForTests`) và đi qua `gatewayOverride`
+   * ngay dòng đầu — 25 ca của `sharedLedger*.test.ts` chạy hết đường thật trên một bảng dùng chung.
+   * ⚠ ĐIỀU NÓ KHÔNG BẢO ĐẢM, và phải khai: **bản cài đặt Drizzle bên dưới KHÔNG có ca test nào**
+   * (nó cũng chưa chạy được — bảng `vram_leases` chưa migrate). Xem §7 báo cáo Task 2.
+   */
+  if (process.env.VITEST) return null;
   const { getDb } = await import("../../db/connection");
   const db = await getDb();
   if (!db) return null; // ⚠ KHÔNG nhớ `null`: DB có thể lên sau. Nhớ là tự khoá mình ngoài sổ chung.

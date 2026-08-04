@@ -229,6 +229,39 @@ describe("C. GHI HỎNG ⇒ GIẤY PHÉP VẪN CÓ HIỆU LỰC CỤC BỘ, NHƯ
     ).toBeLessThan(sach.decision.effectiveHeadroomBytes);
   });
 
+  /**
+   * ★★★ C-4 — NỬA NGUY HIỂM CỦA "GIỮ Ý ĐỊNH GHI", VÀ NÓ ĐƯỢC TÌM RA BẰNG ĐỘT BIẾN.
+   *
+   * Đột biến "ghi hỏng IM LẶNG" (vòng 1) giết C-1 và C-2 nhưng **C-3 SỐNG SÓT**. Lý do: một ý định
+   * `upsert` **tự dựng lại được** từ sổ CỤC BỘ ở lượt đồng bộ sau (`dungLaiTuSoCucBo()`), nên C-3
+   * xanh nhờ một cơ chế KHÁC với cơ chế nó tưởng đang canh — đúng nghĩa một lưới giả.
+   *
+   * ⚠⚠ Ý định `delete` thì **KHÔNG dựng lại được**: giấy phép đã rời sổ cục bộ, không còn gì để
+   * suy ra. Mất nó ⇒ **HÀNG MA nằm lại trong `vram_leases` VĨNH VIỄN** ⇒ mọi tiến trình anh em trừ
+   * dư địa cho một khối byte **đã nhả**, cho tới khi có người xoá tay. Với hộ sidecar thị giác đó
+   * là **7,8 GB bị khoá khỏi cả cụm** vì một lượt mất kết nối 200 ms.
+   * ⇒ Đây mới là nửa cần `requeueSharedLedgerWrites()`, và trước ca này nó KHÔNG có lưới nào.
+   */
+  it("★★★ C-4 — lệnh XOÁ hỏng KHÔNG được bốc hơi (mất nó ⇒ HÀNG MA khoá byte của cả cụm)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const a = reserve(xin("gguf:a", 5_000 * MIB), ctx());
+    await syncSharedLedger();
+    expect(bang.rows.size).toBe(1);
+
+    // Nhả THẬT (đường `release()`), nhưng DB gãy đúng lúc đó.
+    bang.nemKhiGhi = new Error("db down giữa lượt xoá");
+    release(a.lease!);
+    await syncSharedLedger();
+    expect(bang.rows.size, "DB gãy ⇒ hàng còn nằm đó (đây là cửa sổ HÀNG MA)").toBe(1);
+    expect(sharedLedgerFact(NOW)?.unsyncedWrites ?? 0, "phải GẮN CỜ").toBeGreaterThan(0);
+
+    // DB lành ⇒ lệnh xoá phải được THỬ LẠI. Sổ cục bộ KHÔNG còn giấy phép nào để suy ra lệnh này.
+    bang.nemKhiGhi = null;
+    await syncSharedLedger();
+    expect(bang.rows.size, "lệnh XOÁ phải được giữ và thử lại — nếu không, hàng MA ở lại mãi").toBe(0);
+    expect(sharedLedgerFact(NOW)?.unsyncedWrites ?? -1, "đồng bộ xong ⇒ cờ TẮT").toBe(0);
+  });
+
   it("★★★ C-3 — lượt ghi HỎNG được GIỮ LẠI để thử lại, không bốc hơi", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     bang.nemKhiGhi = new Error("db down");
@@ -318,6 +351,12 @@ describe("E. 🔴 BẰNG CHỨNG NHẢ PHẢI LÀ MỘT LƯỢT GHI TƯỜNG MIN
     expect(w[0]!.leaseKey).toBe(`${sharedLedgerSelfKey()}#${a.lease!.id}`);
   });
 
+  /**
+   * ⚠ HẠ GIỌNG CÓ CHỦ Ý (đo được ở vòng đột biến 3): ca này canh **hậu quả** — sổ cục bộ và giấy
+   * phép không đổi khi hàng biến mất — nhưng nó **KHÔNG bắt được** một cơ chế suy luận theo hiệu
+   * số, vì lượt ghi-lại-từ-sổ-cục-bộ (E-3) đưa hàng trở lại bảng **trước** phép đọc. Lưới đích
+   * danh cho phép suy luận bị cấm là **E-4**; ca này là vành đai ngoài, không phải mũi nhọn.
+   */
   it("★★★ E-2 — hàng BIẾN KHỎI bản sao đọc KHÔNG phải bằng chứng ta đã nhả (hình dạng lỗi T5-11)", async () => {
     const a = reserve(xin("gguf:a", 5_000 * MIB), ctx());
     await syncSharedLedger();
@@ -342,6 +381,37 @@ describe("E. 🔴 BẰNG CHỨNG NHẢ PHẢI LÀ MỘT LƯỢT GHI TƯỜNG MIN
     bang.rows.clear();
     await syncSharedLedger();
     expect(bang.rows.size, "sổ chung phải được ghi lại từ sổ CỤC BỘ (nguồn sự thật của ta)").toBe(1);
+  });
+
+  /**
+   * ★★★ E-4 — LƯỚI ĐÍCH DANH CHO PHÉP SUY LUẬN BỊ CẤM, VÀ NÓ RA ĐỜI VÌ MỘT ĐỘT BIẾN SỐNG SÓT.
+   *
+   * ⚠⚠ E-2 **KHÔNG** bắt được đột biến *"hàng vắng trong bản sao đọc ⇒ coi như đã nhả"*, và lý do
+   * đáng ghi lại: mỗi lượt đồng bộ **GHI LẠI** giấy phép của ta từ sổ cục bộ (E-3) **TRƯỚC** khi
+   * đọc, nên trong kịch bản của E-2 hàng đã quay lại bảng đúng lúc phép đọc chạy — cơ chế E-3
+   * **che mất** đột biến. Đo được: đột biến vòng 3 giết C-1 và C-3 nhưng E-2 **XANH**.
+   *
+   * ⇒ Kịch bản dựng đúng cửa sổ đó, và nó là một ca SẢN XUẤT có thật chứ không phải một dàn dựng:
+   * **DB cho ĐỌC nhưng từ chối GHI** (bảng thiếu · quyền chỉ-đọc · replica chỉ-đọc · đĩa đầy).
+   * Khi ấy hàng của ta **thật sự vắng** trong lượt đọc, và một cơ chế suy luận theo hiệu số sẽ
+   * **nhả giấy phép 5.000 MiB của một khối byte đang nằm trên card** — sổ khai trống, card vẫn
+   * giữ, lượt xin kế tiếp được cấp trên chỗ trống ma. Đúng lớp lỗi T5-11, và đúng thứ phát hiện
+   * `kill(pid,0)` sớm giả của Task 1 cấm.
+   */
+  it("★★★ E-4 — DB cho ĐỌC nhưng chặn GHI ⇒ hàng vắng trong lượt đọc VẪN KHÔNG nhả giấy phép", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const a = reserve(xin("gguf:a", 5_000 * MIB), ctx());
+    bang.nemKhiGhi = new Error("permission denied for table vram_leases");
+
+    await syncSharedLedger();
+
+    expect(bang.rows.size, "ghi bị chặn ⇒ bảng KHÔNG có hàng của ta").toBe(0);
+    expect(readSharedLedgerReplica()!.foreignLeases.length, "và lượt ĐỌC vẫn chạy").toBe(0);
+    expect(
+      snapshot().totalReservedBytes,
+      "🔴 hàng VẮNG trong bản sao đọc KHÔNG phải bằng chứng ta đã nhả — sổ CỤC BỘ là chủ",
+    ).toBe(5_000 * MIB);
+    expect(a.lease!.released, "giấy phép KHÔNG được tự khai đã nhả").toBe(false);
   });
 });
 

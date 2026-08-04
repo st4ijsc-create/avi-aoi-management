@@ -946,18 +946,25 @@ export async function __runReconcileTick(): Promise<VramReconcileResult> {
      * ⇒ ô tick già đi ⇒ cưỡng chế tự chặt lại **vì một lý do chẳng liên quan gì tới VRAM**. Đúng
      * lớp lỗi "một cơ chế phòng vệ mới vô hiệu hoá cơ chế cũ" đã tái diễn ba lần ở Pha 1.5.
      *
-     * ⇒ Đặt trong `finally`, SAU khi `publishDecisionTick()` đã chạy: ô tick không bao giờ phải
-     * đợi DB, mà lượt đồng bộ vẫn chạy đủ mỗi nhịp — kể cả nhịp NÉM (đó là lý do dùng `finally`
-     * chứ không phải một dòng ở cuối khối `try`).
-     * ⚠ `syncSharedLedger()` **KHÔNG BAO GIỜ NÉM** (tự đếm + tự kêu). `catch` ở đây chỉ canh lượt
-     * NHẬP module — một `finally` mà ném sẽ **nuốt mất lỗi gốc** của nhịp đối chiếu.
+     * ⇒ Đặt trong `finally` (chạy kể cả nhịp NÉM) và **KHÔNG `await`**: nhịp đối chiếu bắn lượt
+     * đồng bộ rồi đi tiếp. Bản thứ hai vẫn `await` trong `finally`, và **vẫn chưa đủ** — đo được
+     * 4/8 lượt shuffle ĐỎ ở `vramHeadroom.test.ts`: chừng nào lời hứa của nhịp còn treo theo một
+     * vòng đi DB thì **thời lượng nhịp vẫn buộc vào độ trễ DB**, chỉ là buộc muộn hơn. Bắn-rồi-đi
+     * cắt hẳn sợi dây đó: thời lượng `__runReconcileTick()` nay **độc lập tuyệt đối** với DB.
+     *
+     * ⚠ KHÔNG dồn đống: `syncSharedLedger()` có khoá chống chạy chồng (một lời hứa dùng chung), nên
+     * một lượt đồng bộ chậm hơn 60 s chỉ làm nhịp sau **bỏ qua**, không xếp hàng.
+     * ⚠ `syncSharedLedger()` **KHÔNG BAO GIỜ NÉM** (tự đếm + tự kêu); `.catch()` ở đây canh lượt
+     * NHẬP module — một lời hứa bị bỏ rơi là `unhandledRejection`, giết tiến trình dưới
+     * `--unhandled-rejections=strict`.
+     * ⚠ Hệ quả cho người viết test: bản sao đọc được làm mới **BẤT ĐỒNG BỘ SAU** nhịp ⇒ đọc nó
+     * ngay sau `await __runReconcileTick()` là một cuộc đua. Dùng `vi.waitFor` (ca W-5).
      */
-    try {
-      const { syncSharedLedger } = await import("./vramSharedLedgerStore");
-      await syncSharedLedger();
-    } catch {
-      /* một lỗi sổ chung không được thay thế (hay đánh hỏng) kết quả của nhịp đối chiếu */
-    }
+    void import("./vramSharedLedgerStore")
+      .then((m) => m.syncSharedLedger())
+      .catch(() => {
+        /* một lỗi sổ chung không được thay thế (hay đánh hỏng) kết quả của nhịp đối chiếu */
+      });
   }
 }
 
