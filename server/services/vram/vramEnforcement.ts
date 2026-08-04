@@ -320,6 +320,33 @@ export function applyEnforcement(input: EnforcementInput): EnforcementDecision {
    * là con số tốt nhất ta có; bỏ nó đi là tự nâng dư địa lên chặn TRÊN (ràng buộc toàn cục 8) —
    * đúng chiều mà cả pha này tồn tại để đóng. `foreignBytes` đi vào `ledgerTotalBytes` ở
    * `vramBroker.reserve()`, TRƯỚC `computeHeadroom()`; ở đây chỉ còn phần BIÊN và LÝ DO.
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ I-4 — GỌI ĐÚNG TÊN: `sharedLedgerMarginBytes` LÀ **MỘT KHOẢN THUẾ PHẲNG 1.024 MiB**,
+   * KHÔNG PHẢI "MỘT BIÊN THEO TUỔI"
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * Ghép hai con số của chính file này: trần biên = `unit` = **1.073.741.824 B**, tốc độ =
+   * `OBSERVED_MAX_ALLOC_BYTES_PER_MS` = **1.591.942 B/ms** ⇒ biên **chạm trần sau ≈ 674 ms**,
+   * trong khi nhịp làm mới bản sao đọc là **60.000 ms**. ⇒ **≥ 98,9 % thời gian nó đứng NGUYÊN Ở
+   * TRẦN.** Phần "tỉ lệ tuổi" chỉ sống trong ~1 % thời gian ngay sau mỗi lượt đồng bộ.
+   *
+   * **Đo được ở nghiệm thu SỐNG, không phải suy đoán** (review Task 2, mục D): `ageMs = 1 ⇒ margin
+   * = 1.591.942` (đúng hệ số); và ở ô tick — cùng công thức, cùng trần —
+   * `headroom − effective = 1.073.741.824` **đúng bằng trần** với `reasons = []` và tick chỉ già
+   * ~1 s.
+   *
+   * ⇒ **HỆ QUẢ PHẢI BIẾT KHI ĐỌC SỐ:** một tiến trình khoẻ mạnh, sổ rỗng, tick tươi, sổ chung tươi
+   * vẫn mất **hai** khoản trừ cố định — `staleMarginBytes` 1.024 MiB **+** `sharedLedgerMarginBytes`
+   * 1.024 MiB = **2.048 MiB ≈ 2 GiB thường trực** trên card 32,6 GiB, **trước** mọi phụ phí
+   * mất-tin-cậy. §8.4 của báo cáo Task 2 chỉ khai trần 2.048 MiB **của phụ phí** và **không nhắc**
+   * hai khoản biên này — nay khai ở đây.
+   *
+   * ⚠⚠ **CỐ Ý KHÔNG ĐỔI CON SỐ**, và lý do là một ràng buộc chứ không phải sự lười: mọi cách "cân
+   * lại" (hạ trần biên · lấy `max` thay vì cộng hai biên · hạ `rate`) đều là **NỚI LỎNG** dư địa,
+   * và ràng buộc toàn cục 8 nói thẳng rằng suy giảm phải làm hệ **CHẶT HƠN**. Còn nâng `rate` cho
+   * "đúng tốc độ cấp phát XUYÊN TIẾN TRÌNH" thì cần một phép đo **chưa ai làm** — bịa một hằng số
+   * mới của cùng một máy là đúng lỗi I-3 của Pha 1. ⇒ Lượt vá này làm đúng thứ tiền lệ M-2 (ô tick)
+   * đã làm: **giữ số, gọi đúng tên, khai con số ra**. Ca `I-4` khoá điểm bão hoà để nó không trôi.
    */
   const soChung = input.sharedLedger;
   let sharedLedgerMarginBytes = 0;

@@ -29,7 +29,7 @@ import {
 import type { SharedLedgerGateway } from "./vramSharedLedgerStore";
 import { __resetDecisionTickForTests, publishDecisionTick } from "./vramTickCell";
 import { beginVramAllocation } from "./vramWiring";
-import { VramRefusedError } from "./vramRefusal";
+import { formatVramRefusal, VramRefusedError } from "./vramRefusal";
 
 const MIB = 1024 * 1024;
 /** Ràng buộc 7 — fixture đủ lớn để phân biệt. Khối 30B. */
@@ -139,6 +139,18 @@ describe("Pha 3 Task 2 — ĐƯỜNG SẢN XUẤT đọc ô sổ chung THẬT", 
       err!.facts.availableBytes ?? Number.POSITIVE_INFINITY,
       "dư địa in ra phải là dư địa ĐÃ TRỪ phần của anh em",
     ).toBeLessThan(32_607 * MIB - KHOI_30B);
+
+    /**
+     * ★★★ M-6 (review vòng 1) — **CÂU CHỮ PHẢI GỌI TÊN PHẦN CỦA ANH EM.** `holders` của B **RỖNG**
+     * trong khi dư địa của nó bị trừ 17.825.792.000 B; câu rào đón *"chỉ các hộ ĐÃ NỐI SỔ"* nói về
+     * **điểm cấp phát chưa nối**, KHÔNG về **tiến trình khác** ⇒ người trực đọc *"còn X MiB, đang
+     * giữ: (không có)"* rồi kết luận **con số dư địa SAI** và đi tìm lỗi ở chỗ không có lỗi.
+     */
+    expect(err!.facts.foreignLedgerBytes, "sự thật từ chối phải MANG con số của anh em").toBe(KHOI_30B);
+    expect(err!.facts.holders, "và danh sách hộ CỤC BỘ đúng là RỖNG — đó chính là vấn đề").toEqual([]);
+    const cau = formatVramRefusal(err!.facts);
+    expect(cau, "câu từ chối phải NÓI RA rằng có tiến trình khác").toMatch(/TIẾN TRÌNH KHÁC/);
+    expect(cau).toContain("17000 MiB");
   });
 
   it("★★★ W-4 — giấy phép của TA đi RA sổ chung qua đúng đường sản xuất (nửa còn lại của 'một sổ')", async () => {

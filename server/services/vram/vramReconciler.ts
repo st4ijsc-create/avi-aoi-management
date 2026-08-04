@@ -1645,10 +1645,17 @@ export function describeTopologyHint(): string {
    * nên trong tối đa một chu kỳ, một giấy phép vừa mở ở tiến trình anh em vẫn **vô hình** ở đây.
    * Người trực đọc câu này phải biết cả hai nửa, nếu không họ sẽ tin sổ chung nhiều hơn nó đáng.
    */
+  /**
+   * ⚠⚠ M-5 (review vòng 1) — CÂU NÀY ĐI KÈM MỘT CON SỐ **CHƯA** DÙNG SỔ CHUNG. Bản trước khẳng
+   * định *"hai bên dùng SỔ CHUNG"* ngay trong câu chuông LỆCH, trong khi `reconcileOnce()` vẫn
+   * tính `drift = attributable − snapshot().totalReservedBytes` trên sổ **CỤC BỘ** (Task 3 mới nối
+   * nền dùng chung). Câu cũ có rào đón nên không SAI, nhưng nó **mời người trực gán khoản lệch cho
+   * độ trễ đồng bộ** — trong khi cơ chế đó chưa hề tham gia vào con số họ đang nhìn.
+   */
   return (
-    " ⚠ Hệ đang tách vai trò api/worker. Từ Pha 3 hai bên dùng SỔ CHUNG (`vram_leases`), nhưng " +
-    "đường quyết định đọc một BẢN SAO làm mới mỗi 60 s — nên một giấy phép của tiến trình anh em " +
-    "mở trong chu kỳ hiện tại CHƯA hiện ra ở đây. Khoản lệch này có thể là của anh em, và có thể " +
-    "chỉ là độ trễ đồng bộ."
+    " ⚠ Hệ đang tách vai trò api/worker. Từ Pha 3 hai bên CẤP PHÁT trên một SỔ CHUNG " +
+    "(`vram_leases`), nhưng **con số lệch ở dòng trên vẫn tính trên sổ CỤC BỘ** — nền dùng chung là " +
+    "Task 3. Nên khoản lệch này vẫn có thể là của tiến trình anh em, và cưỡng chế thì đã thấy anh " +
+    "em còn chuông thì chưa."
   );
 }

@@ -11,16 +11,19 @@
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
-  __resetBrokerForTests, deviceUsableBytes, release, reserve, setLeaseRefCount, snapshot,
+  __resetBrokerForTests, commit, deviceUsableBytes, release, reserve, setLeaseRefCount, snapshot,
 } from "./vramBroker";
 import type { VramDecisionContext } from "./vramBroker";
+import { applyEnforcement } from "./vramEnforcement";
+import { computeHeadroom } from "./vramHeadroom";
 import {
   __resetSharedLedgerForTests, __setSharedLedgerSelfKeyForTests, drainSharedLedgerWrites,
   publishSharedLedgerReplica, readSharedLedgerReplica, sharedLedgerFact, sharedLedgerSelfKey,
 } from "./vramSharedLedger";
 import type { SharedLeaseRow } from "./vramSharedLedger";
 import {
-  __setSharedLedgerGatewayForTests, syncSharedLedger,
+  __resetSharedLedgerStoreForTests, __setSharedLedgerGatewayForTests, syncSharedLedger,
+  syncTimeoutMs,
 } from "./vramSharedLedgerStore";
 import type { SharedLedgerGateway } from "./vramSharedLedgerStore";
 import { __resetDecisionTickForTests, publishDecisionTick } from "./vramTickCell";
@@ -39,6 +42,11 @@ class BangDungChung implements SharedLedgerGateway {
   /** Bật để mô phỏng DB gãy (bảng chưa có, mất kết nối…). */
   nemKhiGhi: Error | null = null;
   nemKhiDoc: Error | null = null;
+  /**
+   * ⚠ I-1 — chế độ **TREO**: không ném, không trả. Đây là chế độ hỏng mà `nemKhi*` **không dựng
+   * được**, và trước lượt vá này không cơ chế nào canh nó (xem describe `C2`).
+   */
+  treoKhiDoc = false;
 
   async apply(writes: readonly { op: string; row?: SharedLeaseRow; leaseKey?: string }[]): Promise<void> {
     this.soLuotGhi += 1;
@@ -52,6 +60,8 @@ class BangDungChung implements SharedLedgerGateway {
   async selectAll(): Promise<readonly SharedLeaseRow[]> {
     this.soLuotDoc += 1;
     if (this.nemKhiDoc) throw this.nemKhiDoc;
+    // ⚠ Lời hứa KHÔNG BAO GIỜ giải quyết — đúng nghĩa "DB nhận rồi im".
+    if (this.treoKhiDoc) return new Promise<never>(() => {});
     return [...this.rows.values()];
   }
 }
@@ -66,13 +76,25 @@ function tickSach(): void {
   publishDecisionTick({ attributableBytes: 0, baselineVerified: true }, NOW);
 }
 
+/**
+ * ⚠⚠ MỘT ĐỒNG HỒ CHO CẢ HAI TUỔI. `syncSharedLedger()` đóng dấu bản sao bằng **`Date.now()` THẬT**,
+ * còn bộ ca này dùng hằng số `NOW`. Trộn hai đồng hồ cho ra `ageMs` **ÂM khổng lồ** ⇒ nhánh *"tuổi
+ * không đọc được"* ⇒ `"shared-ledger-stale"` bật oan ở **mọi** ca đã sync. Bản đầu của helper này
+ * làm đúng thế, và nó chỉ lộ ra khi ca `I-3` bắt đầu khẳng định `trusted === true`.
+ * ⇒ Lấy mốc từ **chính bản sao** khi đã có; chưa có thì mới rơi về `NOW`.
+ */
+function bayGio(): number {
+  return readSharedLedgerReplica()?.atMs ?? NOW;
+}
+
 function ctx(): VramDecisionContext {
+  const now = bayGio();
   return {
-    tick: { attributableBytes: 0, baselineVerified: true, atMs: NOW, consecutiveFailures: 0 },
+    tick: { attributableBytes: 0, baselineVerified: true, atMs: now, consecutiveFailures: 0 },
     unledgered: { bytes: 0, unknownCount: 0 },
     // ⚠ ĐỌC Ô THẬT — không tự dựng một bản sao đọc bằng tay.
-    sharedLedger: sharedLedgerFact(NOW),
-    nowMs: NOW,
+    sharedLedger: sharedLedgerFact(now),
+    nowMs: now,
   };
 }
 
@@ -84,16 +106,20 @@ beforeEach(() => {
   bang = new BangDungChung();
   __resetBrokerForTests();
   __resetSharedLedgerForTests();
+  __resetSharedLedgerStoreForTests();
   __resetDecisionTickForTests();
+  delete process.env.VRAM_SHARED_LEDGER_SYNC_TIMEOUT_MS;
   __setSharedLedgerGatewayForTests(bang);
   tickSach();
 });
 
 afterEach(() => {
   __setSharedLedgerGatewayForTests(null);
+  __resetSharedLedgerStoreForTests();
   __resetSharedLedgerForTests();
   __resetBrokerForTests();
   __resetDecisionTickForTests();
+  delete process.env.VRAM_SHARED_LEDGER_SYNC_TIMEOUT_MS;
   vi.restoreAllMocks();
 });
 
@@ -124,6 +150,69 @@ describe("A. HAI TIẾN TRÌNH, MỘT SỔ", () => {
     const b = reserve(xin("gguf:30B@B", KHOI_30B), ctx());
     expect(b.lease, "B xin thêm 17.000 MiB ⇒ PHẢI bị từ chối vì A đang giữ").toBeNull();
     expect(b.decision.ledgerTotalBytes, "sổ mà B quyết định trên = CỤC BỘ + CHUNG").toBe(KHOI_30B);
+  });
+
+  /**
+   * ★★★ I-2 (review vòng 1) — **HAI TIẾN TRÌNH CÙNG VAI TRÒ.** Hai đột biến của reviewer SỐNG SÓT
+   * 590/590 vì **cả năm cặp fixture** ở bộ ca này đều là `"api:…"` ⟷ `"worker:…"` — hai VAI KHÁC
+   * NHAU, LUÔN LUÔN — nên một phép lọc bằng **role** (thay vì `processKey` đầy đủ) **vô tình phân
+   * biệt được**. Lưới đi theo **hình dạng fixture**, không theo **đường thoát**: lần thứ CHÍN.
+   *
+   * ⚠ "Hai tiến trình cùng vai" là dân số **CÓ THẬT** và không hiếm: nhiều `worker`; một lượt khởi
+   * động lại chồng lấn (worker cũ chưa thoát hẳn, worker mới đã lên); và **mọi tiến trình không
+   * đặt `ROLE`** — `sharedLedgerSelfKey()` mặc định `"all"`, nên hai script CLI/cron bất kỳ đều là
+   * `all:…`. Dưới đột biến đó chúng **vô hình với nhau** — đúng cái lỗ mà cả Pha 3 tồn tại để bịt.
+   */
+  it("★★★ I-2 — HAI TIẾN TRÌNH CÙNG VAI TRÒ vẫn phải thấy nhau (vị từ là `processKey`, KHÔNG phải role)", async () => {
+    __setSharedLedgerSelfKeyForTests("worker:1001:boot-a");
+    const a = reserve(xin("gguf:30B@A", KHOI_30B), ctx());
+    expect(a.lease).not.toBeNull();
+    await syncSharedLedger();
+
+    // Tiến trình thứ hai — **CÙNG VAI `worker`**, chỉ khác pid + bootMs.
+    __resetBrokerForTests();
+    __resetSharedLedgerForTests();
+    __setSharedLedgerSelfKeyForTests("worker:2002:boot-b");
+    tickSach();
+    await syncSharedLedger();
+
+    const ban = readSharedLedgerReplica();
+    expect(ban!.foreignBytes, "cùng vai KHÔNG có nghĩa là cùng tiến trình").toBe(KHOI_30B);
+    expect(ban!.foreignLeases.map((r) => r.role), "hộ ngoài mang ĐÚNG vai `worker`").toEqual(["worker"]);
+    expect(reserve(xin("gguf:30B@B", KHOI_30B), ctx()).lease, "PHẢI bị từ chối").toBeNull();
+  });
+
+  /**
+   * ★★★ I-2 (vế `bootMs`) — **HĐH CẤP LẠI PID.** `bootMs` có docstring ở `vramSharedLedger.ts`, có
+   * mặt trong cột `processKey` của `drizzle/0312_vram_leases.sql`, có lý lẽ dẫn thẳng nợ **N2-2**
+   * của Pha 2A… và **KHÔNG CÓ MỘT CA NÀO** — nên một đột biến bỏ hẳn `bootMs` (lọc bằng pid) sống
+   * sót 590/590.
+   *
+   * ⚠ Hậu quả nếu mất `bootMs`: một `worker` chết, HĐH cấp lại đúng PID cho tiến trình mới, và
+   * tiến trình mới **coi giấy phép của người đã chết là CỦA MÌNH** ⇒ nó tự trừ dư địa cho một khối
+   * byte **không tồn tại**, và không ai dọn hàng đó (sổ cục bộ của nó không có giấy phép ấy để
+   * dựng lại, cũng không có lệnh `delete` nào được phát). Chiều hỏng: **khoá VRAM vĩnh viễn**.
+   */
+  it("★★★ I-2 (bootMs) — CÙNG vai CÙNG pid, khác `bootMs` ⇒ hàng của 'kiếp trước' là NGOÀI, không phải của ta", async () => {
+    __setSharedLedgerSelfKeyForTests("worker:7777:boot-CU");
+    reserve(xin("gguf:30B@kiepTruoc", KHOI_30B), ctx());
+    await syncSharedLedger();
+    expect(bang.rows.size).toBe(1);
+
+    // Tiến trình MỚI nhận lại ĐÚNG pid 7777 — chỉ `bootMs` khác.
+    __resetBrokerForTests();
+    __resetSharedLedgerForTests();
+    __setSharedLedgerSelfKeyForTests("worker:7777:boot-MOI");
+    tickSach();
+    await syncSharedLedger();
+
+    const ban = readSharedLedgerReplica();
+    expect(
+      ban!.foreignBytes,
+      "cùng pid KHÔNG có nghĩa là cùng tiến trình — HĐH cấp lại PID (nợ N2-2 Pha 2A)",
+    ).toBe(KHOI_30B);
+    expect(ban!.foreignLeases[0]!.pid, "và hàng đó THẬT SỰ mang cùng pid").toBe(7777);
+    expect(reserve(xin("gguf:x", KHOI_30B), ctx()).lease, "PHẢI bị từ chối").toBeNull();
   });
 
   it("★★★ A-2 — KHÔNG có sổ chung thì B vẫn cấp (chứng minh A-1 đo đúng thứ nó nói)", async () => {
@@ -201,7 +290,7 @@ describe("C. GHI HỎNG ⇒ GIẤY PHÉP VẪN CÓ HIỆU LỰC CỤC BỘ, NHƯ
     await syncSharedLedger();
 
     expect(snapshot().totalReservedBytes, "giấy phép vẫn có hiệu lực CỤC BỘ").toBe(5_000 * MIB);
-    const fact = sharedLedgerFact(NOW);
+    const fact = sharedLedgerFact(bayGio());
     expect(fact?.unsyncedWrites ?? 0, "phải GẮN CỜ chưa đồng bộ").toBeGreaterThan(0);
     expect(keu, "phải CÓ TIẾNG").toHaveBeenCalled();
     expect(keu.mock.calls.flat().join(" ")).toMatch(/sổ chung|vram_leases/i);
@@ -253,13 +342,13 @@ describe("C. GHI HỎNG ⇒ GIẤY PHÉP VẪN CÓ HIỆU LỰC CỤC BỘ, NHƯ
     release(a.lease!);
     await syncSharedLedger();
     expect(bang.rows.size, "DB gãy ⇒ hàng còn nằm đó (đây là cửa sổ HÀNG MA)").toBe(1);
-    expect(sharedLedgerFact(NOW)?.unsyncedWrites ?? 0, "phải GẮN CỜ").toBeGreaterThan(0);
+    expect(sharedLedgerFact(bayGio())?.unsyncedWrites ?? 0, "phải GẮN CỜ").toBeGreaterThan(0);
 
     // DB lành ⇒ lệnh xoá phải được THỬ LẠI. Sổ cục bộ KHÔNG còn giấy phép nào để suy ra lệnh này.
     bang.nemKhiGhi = null;
     await syncSharedLedger();
     expect(bang.rows.size, "lệnh XOÁ phải được giữ và thử lại — nếu không, hàng MA ở lại mãi").toBe(0);
-    expect(sharedLedgerFact(NOW)?.unsyncedWrites ?? -1, "đồng bộ xong ⇒ cờ TẮT").toBe(0);
+    expect(sharedLedgerFact(bayGio())?.unsyncedWrites ?? -1, "đồng bộ xong ⇒ cờ TẮT").toBe(0);
   });
 
   it("★★★ C-3 — lượt ghi HỎNG được GIỮ LẠI để thử lại, không bốc hơi", async () => {
@@ -273,8 +362,92 @@ describe("C. GHI HỎNG ⇒ GIẤY PHÉP VẪN CÓ HIỆU LỰC CỤC BỘ, NHƯ
     await syncSharedLedger();
     expect(bang.rows.size, "lượt sau DB lành ⇒ hàng phải lên sổ chung").toBe(1);
     expect([...bang.rows.values()][0]!.bytes).toBe(5_000 * MIB);
-    expect(sharedLedgerFact(NOW)?.unsyncedWrites ?? -1, "đồng bộ xong ⇒ cờ phải TẮT").toBe(0);
+    expect(sharedLedgerFact(bayGio())?.unsyncedWrites ?? -1, "đồng bộ xong ⇒ cờ phải TẮT").toBe(0);
     expect(a.lease).not.toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+describe("C2. 🔴 I-1 — 'DB TREO' KHÁC 'DB NÉM', và trước lượt vá này KHÔNG AI CANH", () => {
+  /**
+   * ⚠⚠ Toàn bộ họ ca `C-*` mô phỏng hỏng bằng **NÉM**. Một lượt **TREO** (Postgres nhận TCP nhưng
+   * không trả · pool 25 kết nối cạn nên truy vấn **xếp hàng trong JS** nơi `statement_timeout`
+   * chưa áp · `DB_STATEMENT_TIMEOUT_MS=0`) đi một đường khác hẳn, và **mọi** cơ chế phòng vệ im:
+   * không ném ⇒ `consecutiveFailures` đứng `0` · `keuMotLan()` không chạy ⇒ **không một dòng cảnh
+   * báo** · `dangDongBo` không bao giờ về `null` ⇒ **mọi** lượt sync sau đó là no-op ⇒ lệnh
+   * `delete` của `release()` nằm lại **VÔ THỜI HẠN** ⇒ đúng **HÀNG MA** mà `C-4` sinh ra để chống,
+   * qua một cửa `C-4` không đi qua.
+   */
+  it("★★★ I-1 — DB TREO (không ném) ⇒ QUÁ HẠN phải ĐẾM NHƯ MỘT LƯỢT HỎNG, KÊU, và KHÔNG kẹt `dangDongBo`", async () => {
+    const keu = vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env.VRAM_SHARED_LEDGER_SYNC_TIMEOUT_MS = "30";
+    // TREO: không ném, không trả — đúng chế độ mà `nemKhiDoc/nemKhiGhi` KHÔNG dựng được.
+    bang.treoKhiDoc = true;
+
+    reserve(xin("gguf:a", 5_000 * MIB), ctx());
+    await syncSharedLedger();
+
+    expect(keu, "TREO phải CÓ TIẾNG, y như NÉM").toHaveBeenCalled();
+    expect(keu.mock.calls.flat().join(" ")).toMatch(/QUÁ HẠN|TREO/i);
+
+    // ⚠ Và quan trọng nhất: khoá KHÔNG kẹt — lượt sau phải CHẠY THẬT, không trả lại lời hứa treo.
+    bang.treoKhiDoc = false;
+    bang.soLuotDoc = 0;
+    await syncSharedLedger();
+    expect(bang.soLuotDoc, "`dangDongBo` không được kẹt: lượt sau phải đi DB thật").toBeGreaterThan(0);
+    expect(readSharedLedgerReplica(), "và lượt sau phải xuất bản được bản sao").not.toBeNull();
+  });
+
+  it("★★★ I-1b — hạn RÁC/DƯỚI SÀN ⇒ vẫn dùng mặc định, KHÔNG thành một phép đo tức thời (dây `??`)", () => {
+    for (const rac of ["", "abc", "0", "-5", "NaN"]) {
+      process.env.VRAM_SHARED_LEDGER_SYNC_TIMEOUT_MS = rac;
+      expect(syncTimeoutMs(), `hạn="${rac}"`).toBe(120_000);
+    }
+    process.env.VRAM_SHARED_LEDGER_SYNC_TIMEOUT_MS = "5000";
+    expect(syncTimeoutMs(), "số hợp lệ thì PHẢI được tôn trọng").toBe(5000);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+describe("C3. I-3 — cờ chưa-đồng-bộ chỉ bắn cho ý định ĐỔI BYTE", () => {
+  /**
+   * ⚠⚠ `llamaVisionSidecar`/`aiGgufEngine` gọi `noteRefCount()` **mỗi lượt request vào/ra** ⇒ với
+   * phép đếm cũ (`hangCho.length`), một `worker` **đang phục vụ** mang `shared-ledger-unsynced`
+   * gần như liên tục ⇒ `trusted:false` **thường trực** + **−1.024 MiB thường trực**.
+   * *Một cờ luôn bật là một cờ không còn thông tin* — đúng lớp NHIỄU mà Wave 3/4 tốn hai đợt để dập.
+   */
+  it("★★★ I-3 — bump `refCount` KHÔNG đổi byte ⇒ KHÔNG bật `shared-ledger-unsynced`", async () => {
+    const a = reserve(xin("gguf:a", 5_000 * MIB, { reclaimer: "gguf-idle-model" }), ctx());
+    await syncSharedLedger();
+    expect(sharedLedgerFact(bayGio())?.unsyncedWrites, "đồng bộ xong ⇒ 0").toBe(0);
+
+    // Đúng thứ xảy ra mỗi lượt suy luận: refCount 1 → 0 → 1 → 0. KHÔNG một byte nào đổi.
+    for (const n of [0, 1, 0]) setLeaseRefCount(a.lease!.id, n);
+
+    const fact = sharedLedgerFact(bayGio());
+    expect(fact!.unsyncedWrites, "bump refCount KHÔNG phải một sự cố đồng bộ").toBe(0);
+    const r = reserve(xin("gguf:b", 1 * MIB), { ...ctx(), sharedLedger: fact });
+    expect(r.decision.reasons).not.toContain("shared-ledger-unsynced");
+    expect(r.decision.trusted, "một worker BẬN không được mất tin cậy vì chính việc nó bận").toBe(true);
+  });
+
+  it("★★★ I-3 (chiều NGƯỢC) — ý định ĐỔI BYTE vẫn phải bật cờ", async () => {
+    const a = reserve(xin("gguf:a", 5_000 * MIB), ctx());
+    await syncSharedLedger();
+    expect(sharedLedgerFact(bayGio())?.unsyncedWrites).toBe(0);
+
+    // `commit()` thay ước lượng bằng số ĐO ⇒ byte anh em đọc SẼ khác ⇒ phải bật cờ.
+    commit(a.lease!, 9_000 * MIB, "process-delta");
+    expect(sharedLedgerFact(bayGio())!.unsyncedWrites, "đổi byte ⇒ anh em đang đọc số SAI").toBeGreaterThan(0);
+  });
+
+  it("★★★ I-3 (giấy phép MỚI) — chưa công bố lần nào ⇒ vẫn đếm (không nới ở chiều nguy hiểm)", async () => {
+    await syncSharedLedger();
+    reserve(xin("gguf:moi", 17_000 * MIB), ctx());
+    expect(
+      sharedLedgerFact(bayGio())!.unsyncedWrites,
+      "hàng chưa từng lên sổ chung ⇒ anh em KHÔNG thấy 17 GB của ta",
+    ).toBeGreaterThan(0);
   });
 });
 
@@ -322,6 +495,37 @@ describe("D. BẢN SAO ĐỌC CŨ LÀ 'PHẠM TRÙ THỨ BA' — giữ SỐ, c�
       nowMs: gia,
     });
     expect(r.decision.sharedLedgerMarginBytes).toBe(1024 * MIB);
+  });
+
+  /**
+   * ★★★ I-4 (review vòng 1) — **KHOÁ ĐIỂM BÃO HOÀ, VÌ "BIÊN THEO TUỔI" THẬT RA LÀ MỘT THUẾ PHẲNG.**
+   *
+   * `trần / tốc_độ = 1.073.741.824 / 1.591.942 ≈ 674 ms`, trong khi nhịp làm mới là **60.000 ms**
+   * ⇒ **≥ 98,9 % thời gian biên đứng NGUYÊN Ở TRẦN**. Một tiến trình khoẻ mạnh vẫn mất
+   * `staleMarginBytes` 1.024 MiB **+** `sharedLedgerMarginBytes` 1.024 MiB = **~2 GiB thường trực**.
+   * Ca này khoá cả hai mép để con số đó **không trôi trong im lặng** (đổi `rate` hay `unit` mà quên
+   * khai là đúng thứ I-4 vừa bắt).
+   */
+  it("★★★ I-4 — biên 'theo tuổi' BÃO HOÀ ở ~674 ms: 673 ms CHƯA kịch trần, 675 ms ĐÃ kịch trần", () => {
+    const bien = (ageMs: number) =>
+      applyEnforcement({
+        headroom: computeHeadroom({
+          ceilingBytes: 32_607 * MIB,
+          safetyReserveBytes: 1024 * MIB,
+          ledgerTotalBytes: 0,
+          attributableBytes: 0,
+          baselineVerified: true,
+        }),
+        tickAgeMs: 0,
+        tickConsecutiveFailures: 0,
+        unledgered: { bytes: 0, unknownCount: 0 },
+        sharedLedger: { foreignBytes: 0, ageMs, unsyncedWrites: 0, consecutiveFailures: 0 },
+      }).sharedLedgerMarginBytes;
+
+    expect(bien(1), "hệ số đo được ở nghiệm thu SỐNG: ageMs=1 ⇒ 1.591.942").toBe(1_591_942);
+    expect(bien(673), "673 ms — CHƯA chạm trần").toBeLessThan(1024 * MIB);
+    expect(bien(675), "675 ms — ĐÃ kịch trần").toBe(1024 * MIB);
+    expect(bien(60_000), "ở NHỊP THẬT (60 s) nó là một khoản trừ CỐ ĐỊNH, không 'theo tuổi'").toBe(1024 * MIB);
   });
 
   it("★★★ D-3 — CHƯA LÀM MỚI LẦN NÀO (`null`) là MÙ ⇒ CHẶT HƠN, không phải 'không có ai khác'", () => {
@@ -437,6 +641,32 @@ describe("F. Ô DỮ LIỆU ĐI RA SỔ CHUNG", () => {
       expect(Number.isFinite(row.refCount)).toBe(true);
       expect(Number.isFinite(row.acquiredAtMs)).toBe(true);
     }
+  });
+
+  /**
+   * ★★★ M-1 (review vòng 1) — `rowFromLease()` tự nhận là "cửa vào DUY NHẤT" lọc mọi ô, nhưng bản
+   * trước **chỉ lọc SỐ** — trong khi tiền lệ mà chính docstring của nó viện dẫn (migration 0311,
+   * `22001`, **mất CẢ LÔ**) là một lỗi **CHUỖI**. `owner` là chuỗi ĐỘNG lấy từ **đường dẫn tuyệt
+   * đối** (`onnx-ocr:${modelPath}` · `reranker:${modelPath}`) ⇒ một lượt đổi thư mục model là đủ
+   * vượt `varchar(160)`.
+   * ⚠ Và ở bảng này hậu quả NẶNG HƠN `vram_events`: `requeueSharedLedgerWrites()` **ném lại đúng
+   * hàng độc** ⇒ hỏng **VĨNH VIỄN**, `unsyncedWrites` không bao giờ về 0 — tức cơ chế thử-lại biến
+   * một lỗi TẠM thành một lỗi CHẾT.
+   */
+  it("★★★ M-1 — chuỗi VƯỢT độ rộng `varchar` bị CẮT, không để `22001` làm mất cả lô", async () => {
+    const duongDanDai = `onnx-ocr:${"D:/rat/rat/dai/".repeat(30)}model.onnx`;
+    expect(duongDanDai.length, "fixture phải THẬT SỰ vượt 160").toBeGreaterThan(160);
+    reserve(xin(duongDanDai, 1_000 * MIB), ctx());
+    await syncSharedLedger();
+
+    const row = [...bang.rows.values()][0]!;
+    // Các con số đúng bằng độ rộng cột ở `drizzle/0312_vram_leases.sql`.
+    expect(row.owner.length, "owner varchar(160)").toBeLessThanOrEqual(160);
+    expect(row.leaseKey.length, "leaseKey varchar(200)").toBeLessThanOrEqual(200);
+    expect(row.processKey.length, "processKey varchar(96)").toBeLessThanOrEqual(96);
+    expect(row.role.length, "role varchar(32)").toBeLessThanOrEqual(32);
+    expect(row.leaseId.length, "leaseId varchar(64)").toBeLessThanOrEqual(64);
+    expect(row.owner, "CẮT chứ không VỨT — phần đầu phải còn nhận ra được").toContain("onnx-ocr:");
   });
 
   it("★★★ F-3 — dư địa PHẢI trừ cả sổ chung: một anh em 17.000 MiB đẩy dư địa xuống đúng chừng ấy", async () => {

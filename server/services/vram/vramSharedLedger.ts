@@ -189,9 +189,65 @@ export function sharedLedgerFact(nowMs: number): SharedLedgerFact {
     // Đồng hồ chạy lùi / số bẩn ⇒ **tuổi âm** là vô nghĩa. Trả nguyên số cho `applyEnforcement`
     // (nó lấy TRẦN biên cho tuổi không đọc được — chiều CHẶT), KHÔNG kẹp về 0 ở đây.
     ageMs: tuoi,
-    unsyncedWrites: soLuotGhiHong + hangCho.length,
+    unsyncedWrites: soLuotGhiHong + demYDinhDoiByte(),
     consecutiveFailures: soLuotDongBoHongLienTiep,
   };
+}
+
+/**
+ * ★★★ I-3 (review vòng 1) — **CHỈ ĐẾM Ý ĐỊNH LÀM ĐỔI SỐ BYTE MÀ ANH EM ĐỌC.**
+ *
+ * ⚠⚠ VÌ SAO KHÔNG PHẢI `hangCho.length`, và đây là một lỗi ĐANG SỐNG chứ không phải lo xa:
+ * `llamaVisionSidecar` gọi `noteRefCount()` **mỗi lượt request thị giác vào/ra**, `aiGgufEngine`
+ * tương tự cho GGUF ⇒ trên một `worker` **đang phục vụ**, hàng đợi có ≥ 1 ý định gần như liên tục.
+ * Với phép đếm cũ, **MỌI** quyết định `reserve()` mang `"shared-ledger-unsynced"` ⇒ `trusted:false`
+ * **thường trực** + **−1.024 MiB thường trực**. *Một cờ luôn bật là một cờ không còn thông tin* —
+ * đúng lớp NHIỄU mà Wave 3/4 tốn hai đợt để dập (52 cảnh báo ACTIVE → 6).
+ *
+ * ⇒ Vị từ đúng là hẹp hơn hẳn: **"anh em có đang đọc một con số BYTE sai vì ta chưa gửi kịp không"**.
+ *   • `delete` — **LUÔN đếm.** Chưa gửi được ⇒ anh em còn thấy một **HÀNG MA** và trừ dư địa cho
+ *     byte đã nhả. Đây là chiều hỏng nặng nhất (xem `C-4`).
+ *   • `upsert` có `bytes` **KHÁC** con số đã công bố — đếm. Điển hình: `commit()` thay ước lượng
+ *     bằng số ĐO.
+ *   • `upsert` có `bytes` **BẰNG** con số đã công bố — **KHÔNG đếm.** Đó là một lượt bump
+ *     `refCount`/`measured`: nó **không đổi một byte nào** trong phép tính dư địa của anh em.
+ *
+ * ⚠ ĐIỀU NÀY **KHÔNG** LÀM HỆ LỎNG ĐI Ở CHIỀU NGUY HIỂM: một giấy phép MỚI chưa công bố không có
+ * hàng nào trong bản sao ⇒ `daCongBo === undefined` ⇒ **vẫn đếm**. Chỉ những ý định thật sự không
+ * đổi byte mới rơi ra ngoài.
+ * ⚠ Và `refCount` KHÔNG bị bỏ rơi: nó vẫn đi lên sổ chung ở lượt sync kế, và `vramWiring` nay hẹn
+ * một lượt sync ngay sau khi đồng bộ `refCount` (nếu không, ô mà Task 5 đứng lên **cũ tới 60 s**).
+ * Nó chỉ thôi **giả vờ là một sự cố đồng bộ**.
+ */
+function demYDinhDoiByte(): number {
+  const daCongBo = new Map<string, number>();
+  if (banSao !== null) for (const r of banSao.foreignLeases) daCongBo.set(r.leaseKey, r.bytes);
+  // ⚠ Hàng CỦA TA đã bị `publishSharedLedgerReplica()` lọc khỏi `foreignLeases`, nên bản sao KHÔNG
+  // đủ để trả lời "ta đã công bố bao nhiêu". Ô riêng bên dưới giữ đúng con số ĐÃ GỬI THÀNH CÔNG.
+  let n = 0;
+  for (const w of hangCho) {
+    if (w.op === "delete") { n += 1; continue; }
+    const cu = byteDaGui.get(w.leaseKey);
+    if (cu === undefined || cu !== w.row.bytes) n += 1;
+  }
+  return n;
+}
+
+/**
+ * Byte **ĐÃ GỬI THÀNH CÔNG** lên sổ chung cho từng giấy phép CỦA TA. Không có ô này thì không có
+ * cách nào phân biệt *"ý định làm đổi byte"* với *"ý định lặp lại đúng con số cũ"* — và mọi lượt
+ * bump `refCount` lại thành một sự cố đồng bộ (I-3).
+ * ⚠ Chỉ `vramSharedLedgerStore` ghi, và **chỉ SAU khi `gw.apply()` trót lọt**: ghi trước là khai
+ * "anh em đã thấy" cho một con số còn nằm trong hàng đợi.
+ */
+const byteDaGui = new Map<string, number>();
+
+/** Xác nhận một lô ý định đã LÊN được sổ chung. Chỉ `vramSharedLedgerStore` gọi. */
+export function noteSharedLedgerWritesApplied(writes: readonly SharedLedgerWrite[]): void {
+  for (const w of writes) {
+    if (w.op === "delete") byteDaGui.delete(w.leaseKey);
+    else byteDaGui.set(w.leaseKey, w.row.bytes);
+  }
 }
 
 /**
@@ -230,7 +286,11 @@ export function noteSharedLedgerSyncFailure(): number {
 }
 
 /**
- * Xếp một ý định ghi. **ĐỒNG BỘ, O(1), không I/O** — gọi được từ trong `reserve()`/`release()`.
+ * Xếp một ý định ghi. **ĐỒNG BỘ, không I/O** — gọi được từ trong `reserve()`/`release()`.
+ * ⚠ M-2 (review vòng 1) — **O(n), KHÔNG PHẢI O(1)** như câu cũ ở đây nói (`findIndex`). `n` bị chặn
+ * bởi số giấy phép SỐNG (mỗi lượt sync `drain` sạch rồi dựng lại từ sổ cục bộ) nên thực tế n ≲ chục;
+ * `QUEUE_MAX` chỉ chạm được khi sync hỏng liên tục **và** số lease bùng nổ. Không đổi tính đồng bộ —
+ * nhưng một docstring nói quá là chỗ người sau dựng giả định lên, nên sửa cho đúng.
  * ⚠ Gộp theo `leaseKey`: một giấy phép bị `commit()` rồi `setLeaseRefCount()` rồi `release()`
  * trong cùng một cửa sổ đồng bộ chỉ cần **trạng thái CUỐI**. Không gộp thì hàng đợi phình theo số
  * lượt suy luận, và lượt ghi cuối vẫn thắng — tức tốn băng thông cho không.
@@ -278,7 +338,11 @@ export function requeueSharedLedgerWrites(batch: readonly SharedLedgerWrite[]): 
   }
 }
 
-/** Số ý định ghi đang chờ + số đã bị vứt. `> 0` ⇒ anh em **chưa thấy** ta đầy đủ. */
+/**
+ * Số ý định ghi đang chờ + số đã bị vứt — **phép đếm THÔ**, dùng cho việc *"còn việc để gửi không"*
+ * (nhịp hẹn lại của `syncSharedLedger`). ⚠ KHÁC `SharedLedgerFact.unsyncedWrites`, thứ chỉ đếm ý
+ * định **làm đổi byte** (I-3): hai câu hỏi khác nhau thì hai phép đếm khác nhau.
+ */
 export function sharedLedgerUnsyncedCount(): number {
   return soLuotGhiHong + hangCho.length;
 }
@@ -305,12 +369,12 @@ export function rowFromLease(
 ): SharedLeaseRow {
   const [role = "all", pidText = "0"] = selfKey.split(":");
   return {
-    leaseKey: `${selfKey}#${lease.id}`,
-    processKey: selfKey,
+    leaseKey: cat(`${selfKey}#${lease.id}`, 200),
+    processKey: cat(selfKey, 96),
     pid: soHuuHan(Number(pidText), 0),
-    role,
-    leaseId: lease.id,
-    owner: lease.request.owner,
+    role: cat(role, 32),
+    leaseId: cat(lease.id, 64),
+    owner: cat(lease.request.owner, 160),
     leaseKind: lease.request.kind,
     priority: lease.request.priority,
     bytes: soHuuHan(bytes, 0),
@@ -329,6 +393,27 @@ function soHuuHan(v: number, mac: number): number {
   return Number.isFinite(v) ? Math.trunc(v) : mac;
 }
 
+/**
+ * ★★★ M-1 (review vòng 1) — **CẮT ĐỘ RỘNG `varchar`. Bản trước chỉ lọc SỐ, và tiền lệ mà chính
+ * docstring này viện dẫn (migration 0311) là một lỗi CHUỖI.**
+ *
+ * `owner` là chuỗi **ĐỘNG lấy từ ĐƯỜNG DẪN TUYỆT ĐỐI**: `ocrService` dựng `onnx-ocr:${modelPath}`,
+ * `aiReranker` dựng `reranker:${modelPath}`. Với `GGUF_MODELS_DIR=D:/SOURCES/16.AI` hôm nay là ~54
+ * ký tự — **vừa**. Một lượt đổi thư mục model là đủ vượt `varchar(160)`.
+ *
+ * ⚠ VÀ HẬU QUẢ Ở ĐÂY NẶNG HƠN Ở `vram_events`: `22001` làm **mất cả lô**, rồi
+ * `requeueSharedLedgerWrites()` **ném lại đúng hàng độc** ⇒ hỏng **VĨNH VIỄN**, `unsyncedWrites`
+ * không bao giờ về 0, và chỉ **một** dòng cảnh báo (`keuMotLan` kêu một lần mỗi quãng hỏng). Tức
+ * cơ chế thử-lại — thứ được dựng để chống mất dữ liệu — **biến một lỗi tạm thành một lỗi chết**.
+ *
+ * ⚠ CẮT chứ không VỨT: cùng kỷ luật `sanitizeVramEvent()` — *"vứt dòng đi là đổi một lỗi im lặng
+ * lấy một lỗi im lặng khác"*. Ai đổi độ rộng cột ở `drizzle/0312_vram_leases.sql` phải đổi các con
+ * số ở đây (ca `M-1` khoá hai bảng khớp nhau).
+ */
+function cat(s: string, max: number): string {
+  return s.length <= max ? s : s.slice(0, max);
+}
+
 /** Chỉ dùng trong test. */
 export function __resetSharedLedgerForTests(): void {
   banSao = null;
@@ -337,6 +422,9 @@ export function __resetSharedLedgerForTests(): void {
   soLuotDongBoHongLienTiep = 0;
   selfKeyOverride = null;
   selfKeyCache = null;
+  // I-3 — không xoá thì ca sau KẾ THỪA "đã gửi bao nhiêu byte" của ca trước, và một ý định ĐỔI BYTE
+  // thật sẽ bị đếm nhầm là "lặp lại con số cũ" ⇒ cờ chưa-đồng-bộ tự mù.
+  byteDaGui.clear();
 }
 
 /**

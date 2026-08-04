@@ -429,6 +429,11 @@ export function refusalFactsFor(args: {
   readonly degradedReasons: readonly VramDegradationReason[];
   /** ★ Task 7 — số khe `gguf-model` phải dọn (trần ĐẾM). Đ4: KHÔNG cộng vào thiếu hụt BYTE. */
   readonly slotsNeeded?: number;
+  /**
+   * ★ M-6 (Pha 3 Task 2) — phần `ledgerTotalBytes` do TIẾN TRÌNH KHÁC giữ.
+   * ⚠ BẮT BUỘC (không optional, không `?? 0`): xem `VramRefusalInput.foreignLedgerBytes`.
+   */
+  readonly foreignLedgerBytes: number;
 }): VramRefusalFacts {
   const { request, headroomInput, headroom, unledgered } = args;
   return buildVramRefusal({
@@ -439,6 +444,8 @@ export function refusalFactsFor(args: {
     degradedReasons: args.degradedReasons,
     blind: headroom.blind,
     ledgerTotalBytes: headroomInput.ledgerTotalBytes,
+    // ★ M-6 — phần của con số trên do TIẾN TRÌNH KHÁC giữ. Cùng nguồn với `decision.foreignLedgerBytes`.
+    foreignLedgerBytes: args.foreignLedgerBytes,
     usedBytes: headroom.usedBytes,
     holders: ledgerHolders(),
     preemptable: preemptCandidates(
@@ -467,6 +474,25 @@ export function refusalFactsFor(args: {
  * @returns số khe còn phải dọn để lượt xin này vừa (0 ⇒ còn khe).
  */
 function kheGgufConThieu(request: VramReserveRequest): number {
+  /**
+   * ★★★ I-5 (review Pha 3 Task 2) — **`ledger` CÓ HAI PHÉP CHIẾU, VÀ PHA 3 CHỈ MỞ MỘT.**
+   *
+   * `totalReserved()` (phép chiếu **BYTE**) nay là **cục bộ + CHUNG** — `reserve()` đọc
+   * `ctx.sharedLedger.foreignBytes`. Phép chiếu **ĐẾM** ngay dưới đây thì **vẫn CỤC BỘ**.
+   *
+   * ⚠⚠ HỆ QUẢ PHẢI KHAI, KHÔNG ĐƯỢC ĐỂ NGƯỜI SAU TỰ PHÁT HIỆN: với hai tiến trình,
+   * **trần thực tế trên MỘT card là `2 × GGUF_MAX_LOADED_MODELS`** (hôm nay `4` ⇒ **8 model GGUF
+   * thường trú**), không phải 4. Và vì Đ4 tách cửa ĐẾM khỏi cửa BYTE **có chủ ý**
+   * (`vramEnforcement` đã xoá `"gguf-slot-cap"` khỏi bảng phụ phí byte), **cửa BYTE KHÔNG cứu được
+   * cửa ĐẾM**: 8 model nhỏ vẫn qua cửa byte và vẫn vượt trần đếm gấp đôi.
+   *
+   * ⚠ **CỐ Ý CHƯA SỬA**, và lý do không phải "quên": đổi trần ĐẾM từ *mỗi-tiến-trình* sang
+   * *toàn-cụm* là đổi **CHÍNH SÁCH**, không phải vá một lỗi — nó có thể bắt đầu TỪ CHỐI những lượt
+   * nạp hôm nay đang chạy tốt, và nó cần một quyết định (trần cụm bằng bao nhiêu? chia theo vai
+   * trò?). Vật liệu đã sẵn: `SharedLedgerReplica.foreignLeases` mang `leaseKind`, nên phép đếm
+   * xuyên tiến trình là một dòng `filter`. Nơi quyết định: Pha 3 Task 5 / chủ dự án.
+   * ⚠ Cho tới lúc đó, câu đúng khi đọc mã này là: **"trần ĐẾM vẫn là trần MỖI TIẾN TRÌNH"**.
+   */
   if (request.kind !== "gguf-model") return 0;
   let dangCo = 0;
   for (const l of ledger.values()) if (l.request.kind === "gguf-model") dangCo += 1;
@@ -669,6 +695,7 @@ export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): 
       effectiveHeadroomBytes: enf.effectiveHeadroomBytes,
       degradedReasons: reasons,
       slotsNeeded,
+      foreignLedgerBytes: decision.foreignLedgerBytes,
     });
     return {
       lease: null,
@@ -873,10 +900,17 @@ export function release(lease: VramLease): void {
   live.released = true;
   ledger.delete(lease.id);
   /**
-   * ⚠ Người gọi có thể cầm một object KHÁC với `live` (đường `vramWiring` cầm chính object trả về
-   * từ `reserve()`, nên hôm nay chúng là một). Đánh dấu CẢ HAI: một ca test đọc `lease.released`
-   * để chứng minh *"hàng biến khỏi bản sao đọc KHÔNG nhả giấy phép"* (E-2), và nó phải đọc đúng
-   * object mà mã sản xuất đưa ra.
+   * ⚠⚠ M-3 (review vòng 1) — ĐÂY LÀ **HỢP ĐỒNG CỦA `release()`**, không phải một lượt chiều lòng
+   * một ca test (lý lẽ cũ ở đây viết đúng như thế, và *"mã sản xuất đổi vì một ca test là chỗ nợ
+   * hay mọc"*).
+   *
+   * Hợp đồng: **sau `release(l)`, `l.released` là `true` cho MỌI tham chiếu tới giấy phép đó.**
+   * `ledger` giữ một tham chiếu và người gọi giữ một tham chiếu; hôm nay chúng là **một** object
+   * (`reserve()` trả chính object đã `ledger.set`), nên dòng này là no-op. Nhưng cờ `released`
+   * là thứ `commit()` · `commitFallback()` · `setLeaseRefCount()` · `heartbeat()` đều đọc để
+   * TỪ CHỐI làm việc trên một giấy phép đã chết. Một ngày nào đó `reserve()` trả bản sao đông
+   * cứng (đúng hướng), thì bản của người gọi sẽ khai `released: false` **vĩnh viễn** — và mọi
+   * lượt kiểm ở phía người gọi im lặng đi sai. Viết cả hai là đóng cửa đó lại trước.
    */
   lease.released = true;
   rutKhoiSoChung(live);

@@ -1117,6 +1117,20 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
         try {
           if (released) return;
           broker.setLeaseRefCount(lease.id, n);
+          /**
+           * ★★★ I-3 (review vòng 1) — **HẸN MỘT LƯỢT ĐỒNG BỘ Ở ĐÂY.** Trước lượt vá này,
+           * `setLeaseRefCount()` là điểm ghi **DUY NHẤT** không có nhịp hẹn đi kèm (hai chỗ kia là
+           * cấp phát và nhả) ⇒ ô `refCount` trên sổ chung **cũ tới 60 s**.
+           *
+           * ⚠ Ô đó chính là ô mà **Task 5 (`preempt()` xuyên tiến trình) đứng lên**, và chiều hỏng
+           * nguy hiểm là `0 → 1` (model vừa BẬN trở lại): anh em còn đọc `0` sẽ coi nó **nhàn rỗi**
+           * và thu hồi **giữa một lượt suy luận**. Rút từ 60 s xuống một nhịp hẹn không XOÁ được
+           * cuộc đua đó — xem §8 mục 9 của báo cáo — nhưng thu hẹp nó đúng một bậc độ lớn.
+           * ⚠ `void` + nhập MUỘN: đường nóng, không `await`, không kéo tầng DB vào nhập tĩnh.
+           */
+          void import("./vramSharedLedgerStore")
+            .then((m) => m.scheduleSharedLedgerSync())
+            .catch(() => {});
         } catch {
           /* telemetry KHÔNG BAO GIỜ được làm hỏng đường cấp phát — và một lượt khai hỏng chỉ có
              nghĩa "giấy phép này vẫn coi như ĐANG DÙNG", tức chiều AN TOÀN. */

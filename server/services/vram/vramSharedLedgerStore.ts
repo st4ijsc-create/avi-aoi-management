@@ -19,7 +19,8 @@
  */
 import {
   drainSharedLedgerWrites, noteSharedLedgerSyncFailure, publishSharedLedgerReplica,
-  requeueSharedLedgerWrites, rowFromLease, sharedLedgerSelfKey,
+  noteSharedLedgerWritesApplied, requeueSharedLedgerWrites, rowFromLease, sharedLedgerSelfKey,
+  sharedLedgerUnsyncedCount,
 } from "./vramSharedLedger";
 import type { SharedLeaseRow, SharedLedgerWrite } from "./vramSharedLedger";
 
@@ -58,10 +59,78 @@ export function __setSharedLedgerGatewayForTests(g: SharedLedgerGateway | null):
  */
 export async function syncSharedLedger(): Promise<void> {
   if (dangDongBo) return dangDongBo;
-  dangDongBo = chayMotLuot().finally(() => {
+  dangDongBo = chayCoHanGio().finally(() => {
     dangDongBo = null;
+    /**
+     * ★ M-4 (review vòng 1) — **TÁI VŨ TRANG NHỊP HẸN.** `scheduleSharedLedgerSync()` no-op khi có
+     * hẹn đang chờ, và lượt hẹn đó tự xoá `henGio` **TRƯỚC** khi gọi ⇒ một ý định xếp hàng ngay
+     * *sau* lúc lượt sync bắt đầu sẽ **lỡ cả lượt đang chạy lẫn lượt hẹn**, rồi **không ai hẹn
+     * lại** ⇒ cửa sổ HÀNG MA thường gặp là **tới 60 s**, không phải 250 ms như §8.5 hàm ý.
+     * ⇒ Xong một lượt mà hàng đợi vẫn còn ý định thì hẹn tiếp. Không phải vòng lặp bận: chỉ hẹn
+     * khi THẬT SỰ còn việc, và `enqueue` gộp theo `leaseKey` nên hàng đợi hữu hạn.
+     */
+    if (batDongBo && sharedLedgerUnsyncedCount() > 0) scheduleSharedLedgerSync();
   });
   return dangDongBo;
+}
+
+/**
+ * ★★★ I-1 (review vòng 1) — **HẠN GIỜ, VÌ "DB TREO" KHÁC "DB NÉM" VÀ TRƯỚC ĐÓ KHÔNG AI CANH.**
+ *
+ * Toàn bộ họ ca `C-*` mô phỏng hỏng bằng **NÉM**. Một lượt **TREO** (Postgres nhận TCP nhưng không
+ * trả · pool 25 kết nối cạn nên câu truy vấn **xếp hàng trong JS**, nơi `statement_timeout` chưa
+ * áp · `DB_STATEMENT_TIMEOUT_MS=0`) đi một đường hoàn toàn khác, và mọi cơ chế phòng vệ đều **im**:
+ *
+ *   1. không ai ném ⇒ `noteSharedLedgerSyncFailure()` **không chạy** ⇒ `consecutiveFailures` đứng
+ *      `0` ⇒ nhánh `"shared-ledger-stale"` theo *"đang hỏng liên tiếp"* **không bật**;
+ *   2. `keuMotLan()` **không chạy** ⇒ **không một dòng cảnh báo nào**;
+ *   3. `dangDongBo` **không bao giờ** về `null` ⇒ **mọi** lượt sync sau đó — kể cả nhịp 60 s — trả
+ *      lại đúng lời hứa treo ấy và **không làm gì**;
+ *   4. ⇒ lệnh `delete` của `release()` nằm lại hàng đợi **VÔ THỜI HẠN** ⇒ anh em trừ dư địa cho
+ *      7,8/17 GB **đã nhả**, vĩnh viễn. Đó đúng **HÀNG MA** mà ca `C-4` sinh ra để chống, qua một
+ *      cửa `C-4` không đi qua.
+ *
+ * ⇒ Quá hạn được **ĐẾM NHƯ MỘT LƯỢT HỎNG** (`noteSharedLedgerSyncFailure()` + `keuMotLan()`), tức
+ * chế độ TREO rơi vào đúng cơ chế mà `C-1`/`C-4` đã canh. Đây là toàn bộ ý nghĩa của lượt vá: không
+ * phải "cho nhanh hơn" mà là **đưa một chế độ hỏng vô hình vào một đường đã có người canh**.
+ *
+ * ⚠ Lượt treo **KHÔNG bị huỷ** (không huỷ được một truy vấn đã bay). Ta chỉ thôi CHỜ nó. Nếu nó về
+ * muộn, `.catch()` nuốt — và lượt sync kế tiếp dựng lại ý định ghi từ sổ CỤC BỘ nên không mất gì.
+ */
+async function chayCoHanGio(): Promise<void> {
+  let hen: NodeJS.Timeout | null = null;
+  const quaHan = new Promise<"qua-han">((resolve) => {
+    hen = setTimeout(() => resolve("qua-han"), syncTimeoutMs());
+    hen.unref?.();
+  });
+  try {
+    const ketQua = await Promise.race([chayMotLuot().then(() => "xong" as const), quaHan]);
+    if (ketQua === "qua-han") {
+      keuMotLan(
+        new Error(
+          `lượt đồng bộ QUÁ HẠN ${syncTimeoutMs()} ms (DB TREO, không ném) — ý định ghi còn ` +
+            `${sharedLedgerUnsyncedCount()} mục trong hàng đợi`,
+        ),
+      );
+      noteSharedLedgerSyncFailure();
+    }
+  } catch {
+    /* `chayMotLuot()` đã tự đếm + tự kêu ở mọi nhánh của nó */
+  } finally {
+    if (hen) clearTimeout(hen);
+  }
+}
+
+/**
+ * Hạn của MỘT lượt đồng bộ. Mặc định **120.000 ms = HAI chu kỳ nhịp** — cùng lý lẽ với
+ * `TICK_STALE_AFTER_MS`: một chu kỳ chậm là bình thường, hai chu kỳ nghĩa là nguồn đã hỏng.
+ * ⚠ Đọc `.env` MỖI lượt (không đóng băng lúc nạp module) — cùng khuôn `distrustUnitBytes()`.
+ * ⚠ `?? <mặc_định>` là một DÂY: lưới của nó là ca `I-1b` (hạn RÁC ⇒ vẫn dùng mặc định, KHÔNG
+ * thành một phép đo tức thời) — đúng bài học `stopWaitMs()` của Task 1.
+ */
+export function syncTimeoutMs(): number {
+  const n = Number(process.env.VRAM_SHARED_LEDGER_SYNC_TIMEOUT_MS);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 120_000;
 }
 
 async function chayMotLuot(): Promise<void> {
@@ -98,6 +167,10 @@ async function chayMotLuot(): Promise<void> {
   if (writes.length > 0) {
     try {
       await gw.apply(writes);
+      // ★ I-3 — ghi nhận CHỈ SAU khi lô đã lên thật: ô `byteDaGui` là thứ phân biệt "ý định đổi
+      // byte" với "ý định lặp lại con số cũ". Ghi trước là khai "anh em đã thấy" cho một con số
+      // còn nằm trong hàng đợi.
+      noteSharedLedgerWritesApplied(writes);
     } catch (err) {
       // ⚠ TRẢ LẠI hàng đợi rồi mới kêu: một lượt ghi bị vứt để lại hàng MA (delete hỏng) hoặc làm
       // anh em tính THIẾU byte (upsert hỏng) — cả hai đều im lặng nếu không giữ ý định lại.
@@ -296,6 +369,20 @@ export function scheduleSharedLedgerSync(delayMs = 250): void {
  * GOTCHA `aiGateway` đã đo được ở Đợt trước (*"setInterval unref'd tự bắn, tự kết nối và TỰ GHI VÀO
  * DB TEST"*). `syncSharedLedger()` gọi TAY thì vẫn chạy bất kể công tắc: nhịp reconciler 60 s không
  * đi qua đây.
+ */
+/**
+ * ⚠⚠ M-7 (review vòng 1) — **RÀNG BUỘC CẤU TRÚC PHẢI KHAI: VIỆC CÔNG BỐ RA SỔ CHUNG BỊ KHOÁ SAU
+ * `startVramReconciler()`.** Cả HAI đường gọi `syncSharedLedger()` đều phụ thuộc nó — nhịp đối
+ * chiếu (`vramReconciler.__runReconcileTick()`) và công tắc này. ⇒ Một tiến trình Node **cấp phát
+ * VRAM mà KHÔNG bật đối chiếu** sẽ xếp hàng ý định ghi và **KHÔNG BAO GIỜ gửi đi**: 17 GB của nó
+ * **vô hình** với anh em — chiều **KHÔNG an toàn**.
+ *
+ * ⚠ Dân số đó **HÔM NAY RỖNG**, và đó là lý do đây là một ràng buộc chứ không phải một lỗi đang
+ * sống: quét `beginVramAllocation` trong `scripts/` và `tools/` cho **0 kết quả**; 22 file có điểm
+ * gọi đều nằm trong `server/`; và `server/_core/index.ts` bật đối chiếu **TRƯỚC** nhánh rẽ `ROLE`
+ * nên mọi vai trò đều bật. ⇒ Ai thêm một điểm cấp phát VRAM ở một tiến trình mới (script CLI, cron
+ * riêng, worker phụ) **phải gọi `startVramReconciler()`**, nếu không tiến trình đó là một hộ tiêu
+ * thụ VÔ HÌNH — đúng loại hộ mà Đợt 0 tốn cả một pha để đếm cho đủ.
  */
 export function enableSharedLedgerSync(on: boolean): void {
   batDongBo = on;

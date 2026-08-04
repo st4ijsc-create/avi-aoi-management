@@ -176,6 +176,13 @@ export interface VramRefusalInput {
   readonly blind: boolean;
   /** `HeadroomInput.ledgerTotalBytes` — sổ SỐNG đã dùng để tính chính `headroomBytes` này. */
   readonly ledgerTotalBytes: number;
+  /**
+   * ★ M-6 (Pha 3 Task 2) — phần của `ledgerTotalBytes` **do TIẾN TRÌNH KHÁC giữ** (sổ chung).
+   * ⚠ **BẮT BUỘC CÓ MẶT**, không optional và **không** `?? 0`: `0` nghĩa *"không anh em nào đang
+   * giữ"* — một câu khẳng định — trong khi thiếu trường là *"chưa hỏi"*. Một mặc định lặng lẽ ở
+   * đây xoá hẳn dòng cảnh báo khỏi câu từ chối đúng lúc nó cần nhất.
+   */
+  readonly foreignLedgerBytes: number;
   /** `HeadroomResult.usedBytes` = `max(ledgerTotalBytes, attributableBytes)`. */
   readonly usedBytes: number;
   readonly holders: readonly VramHolderFact[];
@@ -251,6 +258,12 @@ export interface VramRefusalFacts {
   readonly preemptableBytes: number | null;
   /** Phần thiết bị đang dùng mà sổ KHÔNG giải thích được. `null` ⇔ không đo được (mù/bẩn). */
   readonly unattributedBytes: number | null;
+  /**
+   * ★ M-6 — byte do TIẾN TRÌNH KHÁC giữ (sổ chung). `null` ⇔ số không hữu hạn (không bịa).
+   * ⚠ `> 0` mà `holders` rỗng là trạng thái HỢP LỆ và thường gặp — danh sách hộ ngoài tiến trình
+   * là Pha 3 Task 5. Chính vì thế con số này phải được in ra.
+   */
+  readonly foreignLedgerBytes: number | null;
   /** ƯỚC LƯỢNG byte đã chạy ngoài sổ. `null` ⇔ CHƯA HỎI / không hữu hạn. */
   readonly unledgeredEstimateBytes: number | null;
   /** Số lượt ngoài sổ mà ngay cả byte cũng không ước được. `null` ⇔ CHƯA HỎI. */
@@ -393,6 +406,8 @@ export function buildVramRefusal(input: VramRefusalInput): VramRefusalFacts {
     preemptable: Object.freeze([...input.preemptable]),
     preemptableBytes,
     unattributedBytes,
+    // ★ M-6 — `finiteOrNull`: một `NaN` ở đây không được biến thành `0` (tức "không có anh em nào").
+    foreignLedgerBytes: finiteOrNull(input.foreignLedgerBytes),
     unledgeredEstimateBytes,
     unknownCount,
     caveat,
@@ -485,6 +500,31 @@ export function formatVramRefusal(facts: VramRefusalFacts): string {
     ` Đang giữ (chỉ các hộ ĐÃ NỐI SỔ; "≈" = ước lượng chưa đo): ${holderListText(facts.holders)}.`;
 
   /**
+   * ★★★ M-6 (review Pha 3 Task 2) — **GỌI TÊN PHẦN CỦA TIẾN TRÌNH ANH EM.**
+   *
+   * Từ Pha 3 Task 2, `ledgerTotalBytes` (và qua đó `availableBytes`) **đã trừ** byte mà tiến trình
+   * anh em đang giữ, nhưng `holders` **vẫn chỉ liệt kê sổ CỤC BỘ** (danh sách hộ ngoài tiến trình
+   * là Task 5). ⇒ Bất biến ngầm *"Σ holders ≈ ledgerTotalBytes"* **VỠ**, và câu rào đón *"chỉ các
+   * hộ ĐÃ NỐI SỔ"* ngay trên **không cứu được**: nó nói về **điểm cấp phát chưa nối** (15/160),
+   * KHÔNG về **tiến trình khác**.
+   *
+   * Hậu quả đo được ở nghiệm thu sống: dư địa của `worker` bị trừ **17.825.792.000 B** trong khi
+   * `holders` của nó **RỖNG**. Người trực đọc *"còn 13.000 MiB, đang giữ: (không có)"* sẽ kết luận
+   * **con số dư địa SAI**, chứ không kết luận *"có một tiến trình khác"* — rồi đi tìm lỗi ở chỗ
+   * không có lỗi. Đúng lớp lỗi mà cả file này tồn tại để diệt, chỉ đổi dân số.
+   *
+   * ⇒ MỘT CON SỐ, không phải một danh sách và không phải một vị từ mới: `foreignLedgerBytes` đã
+   * nằm sẵn trong `VramReserveDecision`. Danh sách hộ vẫn hoãn sang Task 5 (dựng nó ở hai nơi là
+   * hai bản sao của một vị từ — ràng buộc 12).
+   */
+  const anhEm =
+    facts.foreignLedgerBytes !== null && facts.foreignLedgerBytes > 0
+      ? ` ⚠ Trong đó ${mibText(facts.foreignLedgerBytes)} MiB do TIẾN TRÌNH KHÁC giữ (sổ chung ` +
+        `\`vram_leases\`) — KHÔNG nằm trong danh sách "Đang giữ" ở trên, và bản sao đọc có thể cũ ` +
+        `tới 60 s. Danh sách hộ ngoài tiến trình: Pha 3 Task 5.`
+      : "";
+
+  /**
    * ★★★ Review vòng 1 (C) — HAI NHÓM, KHÔNG MỘT. Và nhãn cũ *"(mức thấp hơn X)"* **SAI**: vị từ
    * §5.2 CỐ Ý cho phép cả giấy phép **NHÀN RỖI CÙNG MỨC** (đó chính là việc `evictLRU()` vẫn làm).
    */
@@ -499,7 +539,7 @@ export function formatVramRefusal(facts: VramRefusalFacts): string {
       : ` Nêu tên nhưng CHƯA có cơ chế thu hồi (đừng ngồi chờ chúng tự nhường): ` +
         `${holderListText(chiGoiTen)}.`);
 
-  return `${head}${degraded}${holding}${yielding} Phần KHÔNG quy trách nhiệm được: ${caveatText(facts)}`;
+  return `${head}${degraded}${holding}${anhEm}${yielding} Phần KHÔNG quy trách nhiệm được: ${caveatText(facts)}`;
 }
 
 /**
