@@ -168,39 +168,51 @@ describe("A. vramEnforcement — mỗi mức suy giảm một chính sách RIÊN
   });
 
   describe("ống NGOÀI SỔ — trừ như thứ ĐÃ TIÊU, và `unknownCount` làm mất tin cậy", () => {
-    it("`unledgeredBytes` bị TRỪ khỏi dư địa đúng bằng số byte đó", () => {
-      const d = applyEnforcement({
-        headroom: computeHeadroom(headroomInput()),
-        tickAgeMs: 0,
-        tickConsecutiveFailures: 0,
+    /** MÙ ⇒ `used = ledgerTotal`, khối byte ngoài sổ VÔ HÌNH ⇒ đây là chỗ DUY NHẤT phải trừ. */
+    const mu = (unledgered: { bytes: number; unknownCount: number } | null) =>
+      applyEnforcement({
+        headroom: computeHeadroom(headroomInput({ attributableBytes: null, tickPresent: true })),
+        tickAgeMs: 0, tickConsecutiveFailures: 0, unledgered,
+      });
+
+    it("MÙ ⇒ `unledgeredBytes` bị TRỪ khỏi dư địa đúng bằng số byte đó", () => {
+      const d = mu({ bytes: 2_000 * MIB, unknownCount: 0 });
+      expect(d.unledgeredChargeBytes).toBe(2_000 * MIB);
+      expect(d.effectiveHeadroomBytes).toBe(
+        mu({ bytes: 0, unknownCount: 0 }).effectiveHeadroomBytes - 2_000 * MIB,
+      );
+    });
+
+    it("★★★ (A) CÓ `attributable` ⇒ KHÔNG trừ: số đo THIẾT BỊ đã bao khối byte đó (ĐẾM HAI LẦN)", () => {
+      // `attributable` = `deviceUsed − baseline` ⇒ khối byte chạy ngoài sổ NẰM TRONG con số này.
+      // Trừ thêm lần nữa là phạt hai lần cùng một khối byte — và ở `worker` (LUÔN có tick) đó là
+      // đường THƯỜNG TRỰC, không phải ca hiếm.
+      const coSo = applyEnforcement({
+        headroom: computeHeadroom(headroomInput({ attributableBytes: 20_000 * MIB })),
+        tickAgeMs: 0, tickConsecutiveFailures: 0,
         unledgered: { bytes: 5_000 * MIB, unknownCount: 0 },
       });
-      expect(d.unledgeredChargeBytes).toBe(5_000 * MIB);
-      expect(d.effectiveHeadroomBytes).toBe(sach().effectiveHeadroomBytes - 5_000 * MIB);
+      expect(coSo.unledgeredChargeBytes).toBe(0);
+    });
+
+    it("★★★ (A) ô byte có TRẦN — HAI lượt hỏng của khối 30B KHÔNG được làm dư địa ÂM trên card TRỐNG", () => {
+      // Bộ tích luỹ CHỈ TĂNG, không bao giờ trả lại: 2 × 17.000 MiB = 34.000 MiB > cả tấm card.
+      // Không trần ⇒ dư địa âm ⇒ TỪ CHỐI 100% trên một tấm card không có gì trên đó.
+      const d = mu({ bytes: 2 * KHOI_30B, unknownCount: 0 });
+      expect(d.unledgeredChargeBytes).toBeLessThanOrEqual(4 * distrustUnitBytes());
+      expect(d.effectiveHeadroomBytes).toBeGreaterThan(0);
     });
 
     it("★ `unknownCount > 0` ⇒ thêm phụ phí RIÊNG (đọc byte mà bỏ đếm là đúng chiều nguy hiểm)", () => {
-      const chiByte = applyEnforcement({
-        headroom: computeHeadroom(headroomInput()),
-        tickAgeMs: 0, tickConsecutiveFailures: 0,
-        unledgered: { bytes: 5_000 * MIB, unknownCount: 0 },
-      });
-      const coDem = applyEnforcement({
-        headroom: computeHeadroom(headroomInput()),
-        tickAgeMs: 0, tickConsecutiveFailures: 0,
-        unledgered: { bytes: 5_000 * MIB, unknownCount: 3 },
-      });
+      const chiByte = mu({ bytes: 2_000 * MIB, unknownCount: 0 });
+      const coDem = mu({ bytes: 2_000 * MIB, unknownCount: 3 });
       expect(coDem.reasons).toContain("unledgered-unknown");
       expect(coDem.effectiveHeadroomBytes).toBeLessThan(chiByte.effectiveHeadroomBytes);
     });
 
     it("CHƯA HỎI (`null`) ⇒ lý do riêng, và CHẶT HƠN 'đã hỏi và rỗng'", () => {
-      const chuaHoi = applyEnforcement({
-        headroom: computeHeadroom(headroomInput()),
-        tickAgeMs: 0, tickConsecutiveFailures: 0, unledgered: null,
-      });
-      expect(chuaHoi.reasons).toContain("unledgered-unasked");
-      expect(chuaHoi.effectiveHeadroomBytes).toBeLessThan(sach().effectiveHeadroomBytes);
+      expect(mu(null).reasons).toContain("unledgered-unasked");
+      expect(mu(null).effectiveHeadroomBytes).toBeLessThan(mu({ bytes: 0, unknownCount: 0 }).effectiveHeadroomBytes);
     });
   });
 
@@ -260,7 +272,10 @@ describe("B. vramBroker.reserve() — CƯỠNG CHẾ THẬT", () => {
   });
 
   it("câu từ chối in ĐÚNG con số đã dùng để quyết định (dư địa HIỆU LỰC, không phải dư địa thô)", () => {
-    const r = reserve(req("gguf:B", 31_000 * MIB), ctxSach(0, { unledgered: { bytes: 2_000 * MIB, unknownCount: 0 } }));
+    // MÙ + có byte đã chạy ngoài sổ ⇒ CẢ HAI phụ phí đều áp ⇒ dư địa hiệu lực thấp hơn hẳn dư địa thô.
+    const r = reserve(req("gguf:B", 31_000 * MIB), {
+      tick: null, unledgered: { bytes: 2_000 * MIB, unknownCount: 0 }, nowMs: NOW,
+    });
     expect(r.lease).toBeNull();
     expect(r.refusal!.availableBytes).toBe(r.decision.effectiveHeadroomBytes);
     expect(r.decision.effectiveHeadroomBytes).toBeLessThan(r.decision.headroomBytes);
@@ -348,6 +363,36 @@ describe("B. vramBroker.reserve() — CƯỠNG CHẾ THẬT", () => {
       expect(r.refusal!.preemptable.map((h) => h.owner)).toContain("gguf:idle");
     });
 
+    it("★★★ (C) câu từ chối KHÔNG hứa ngược: chỉ hộ CÓ CƠ CHẾ THU HỒI mới vào tổng 'nhường được'", async () => {
+      const { formatVramRefusal } = await import("./vramRefusal");
+      // Hộ NGOÀI tiến trình (sidecar) — mức THẤP HƠN nên CÓ QUYỀN nhường, nhưng KHÔNG cơ chế nào
+      // thu hồi được nó (thu hồi xuyên tiến trình là Pha 3).
+      reserve(
+        { owner: "sidecar:vision", kind: "external-process", estimatedBytes: 7_825 * MIB, priority: "background" },
+        ctxSach(0),
+      );
+      const r = reserve(req("gguf:big", 26_000 * MIB, "interactive"), ctxSach(0));
+      expect(r.lease).toBeNull();
+      // nó VẪN được gọi tên (người trực phải biết ai đang giữ) …
+      expect(r.refusal!.preemptable.map((h) => h.owner)).toContain("sidecar:vision");
+      // … nhưng KHÔNG được cộng vào "tổng nhường được", vì không ai lấy lại được khối byte đó.
+      expect(r.refusal!.preemptable.find((h) => h.owner === "sidecar:vision")!.reclaimable).toBe(false);
+      expect(r.refusal!.preemptableBytes).toBe(0);
+      const cau = formatVramRefusal(r.refusal!);
+      expect(cau).toContain("CHƯA có cơ chế thu hồi");
+      // ⚠ nhãn cũ "(mức thấp hơn X)" SAI với ca nhàn-rỗi-cùng-mức mà §5.2 cố ý cho phép
+      expect(cau).not.toContain("Có thể nhường (mức thấp hơn");
+    });
+
+    it("★★ (C) model GGUF NHÀN RỖI thì CÓ cơ chế thu hồi (evictLRU) ⇒ được cộng vào tổng", () => {
+      const idle = reserve(req("gguf:idle", 6_000 * MIB, "interactive"), ctxSach(0));
+      setLeaseRefCount(idle.lease!.id, 0);
+      const r = reserve(req("gguf:big", 26_000 * MIB, "interactive"), ctxSach(0));
+      const h = r.refusal!.preemptable.find((x) => x.owner === "gguf:idle")!;
+      expect(h.reclaimable).toBe(true);
+      expect(r.refusal!.preemptableBytes).toBe(6_000 * MIB);
+    });
+
     it("`reserve().wouldPreempt` và `preemptCandidates()` đọc CÙNG MỘT vị từ", () => {
       const bg = reserve(req("bg:kb-sync", 6_000 * MIB, "background"), ctxSach(0));
       nhanRoi(bg.lease!.id);
@@ -371,9 +416,14 @@ describe("B. vramBroker.reserve() — CƯỠNG CHẾ THẬT", () => {
       expect(chuaXacMinh).toBeLessThan(daXacMinh);
     });
 
-    it("Task 3 `unledgeredBytes` ⇒ dư địa hiệu lực bị TRỪ đúng bằng khối byte đã chạy ngoài sổ", () => {
-      const co = reserve(req("gguf:X", 100 * MIB), ctxSach(0, { unledgered: { bytes: 3_000 * MIB, unknownCount: 0 } }));
-      expect(co.decision.unledgeredChargeBytes).toBe(3_000 * MIB);
+    it("Task 3 `unledgeredBytes` ⇒ dư địa hiệu lực bị TRỪ khi MÙ (và KHÔNG bị trừ hai lần khi có số)", () => {
+      const muCtx: VramDecisionContext = {
+        tick: null, unledgered: { bytes: 3_000 * MIB, unknownCount: 0 }, nowMs: NOW,
+      };
+      expect(reserve(req("gguf:X", 100 * MIB), muCtx).decision.unledgeredChargeBytes).toBe(3_000 * MIB);
+      // có `attributable` ⇒ khối byte đó đã nằm trong số đo thiết bị ⇒ KHÔNG trừ nữa
+      const coSo = reserve(req("gguf:Y", 100 * MIB), ctxSach(0, { unledgered: { bytes: 3_000 * MIB, unknownCount: 0 } }));
+      expect(coSo.decision.unledgeredChargeBytes).toBe(0);
     });
 
     it("Task 2 `degradedReasons` đi thẳng vào `decision.reasons` (không bị nuốt trên đường)", () => {
@@ -388,6 +438,53 @@ describe("B. vramBroker.reserve() — CƯỠNG CHẾ THẬT", () => {
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 // D. LỜI TỪ CHỐI PHẢI TỚI ĐƯỢC NGƯỜI GỌI — vị từ DÙNG CHUNG và những sợi dây quanh nó
 // ═══════════════════════════════════════════════════════════════════════════════════════════
+describe("F. cổng cấu hình lúc BOOT — `.env` hỏng phải chết TO và SỚM", () => {
+  const bien = ["VRAM_DEVICE_TOTAL_MB", "VRAM_SAFETY_RESERVE_MB", "VRAM_DISTRUST_UNIT_MB"] as const;
+  afterEach(() => { for (const b of bien) delete process.env[b]; });
+
+  it("không đặt gì ⇒ IM LẶNG (mặc định hợp lệ)", async () => {
+    const { assertVramEnforcementPolicy } = await import("./vramBroker");
+    for (const b of bien) delete process.env[b];
+    expect(() => assertVramEnforcementPolicy()).not.toThrow();
+  });
+
+  /**
+   * ★★★ (F) — CA MÀ BẢN TRƯỚC ĐỂ LỌT, VÀ CẢ BA ĐỀU THEO CHIỀU **NỚI**.
+   *
+   * `Number("") === 0` lọt `isFinite`, rồi mỗi ô lại có một lượt lọc riêng ăn mất bằng chứng:
+   * trần 0 bị `deviceTotalBytes()` bỏ qua (rơi về hằng số dự phòng của MỘT máy khác), đệm 0 và đơn
+   * vị 0 thì "hợp lệ về kiểu" trong khi chúng xoá sạch biên an toàn / TẮT chính sách suy giảm.
+   */
+  it.each(bien)("★★★ %s được ĐẶT nhưng để TRỐNG ⇒ NÉM (không âm thầm về mặc định)", async (b) => {
+    const { assertVramEnforcementPolicy } = await import("./vramBroker");
+    process.env[b] = "";
+    expect(() => assertVramEnforcementPolicy()).toThrow(new RegExp(b));
+  });
+
+  it.each(bien)("%s = chuỗi hỏng ⇒ NÉM kèm ĐÚNG tên biến", async (b) => {
+    const { assertVramEnforcementPolicy } = await import("./vramBroker");
+    process.env[b] = "nhieu-lam";
+    expect(() => assertVramEnforcementPolicy()).toThrow(new RegExp(b));
+  });
+
+  it("trần = 0 TƯỜNG MINH vẫn NÉM (không có card 0 byte), nhưng đệm/đơn vị = 0 thì HỢP LỆ", async () => {
+    const { assertVramEnforcementPolicy } = await import("./vramBroker");
+    process.env.VRAM_DEVICE_TOTAL_MB = "0";
+    expect(() => assertVramEnforcementPolicy()).toThrow(/VRAM_DEVICE_TOTAL_MB/);
+    delete process.env.VRAM_DEVICE_TOTAL_MB;
+    // `0` TƯỜNG MINH = người vận hành CỐ Ý tắt — khác hẳn một ô để trống.
+    process.env.VRAM_SAFETY_RESERVE_MB = "0";
+    process.env.VRAM_DISTRUST_UNIT_MB = "0";
+    expect(() => assertVramEnforcementPolicy()).not.toThrow();
+  });
+
+  it("số ÂM ⇒ NÉM (đệm âm là phép CỘNG dư địa — nới đúng chiều nguy hiểm)", async () => {
+    const { assertVramEnforcementPolicy } = await import("./vramBroker");
+    process.env.VRAM_SAFETY_RESERVE_MB = "-2048";
+    expect(() => assertVramEnforcementPolicy()).toThrow(/VRAM_SAFETY_RESERVE_MB/);
+  });
+});
+
 describe("D. từ chối KHÔNG được biến mất trên đường ra", () => {
   it("★★ `isVramRefusal()` nhận đúng `VramRefusedError` — hai bên đọc CÙNG một hằng số tên", async () => {
     const { VramRefusedError, buildVramRefusal } = await import("./vramRefusal");

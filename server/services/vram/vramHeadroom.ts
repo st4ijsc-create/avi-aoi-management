@@ -230,7 +230,7 @@ export function computeHeadroom(input: HeadroomInput): HeadroomResult {
 
   const invalidInput =
     !usable(input.ceilingBytes) ||
-    // M-1 — `VRAM_CEILING_MB=` (để TRỐNG) ⇒ `Number("") === 0` ⇒ lọt `isFinite` ⇒ headroom âm
+    // M-1 — `VRAM_DEVICE_TOTAL_MB=` (để TRỐNG) ⇒ `Number("") === 0` ⇒ lọt `isFinite` ⇒ headroom âm
     // khổng lồ ⇒ TỪ CHỐI 100% lượt xin, IM LẶNG, toàn hệ AI chết. Chiều fail-closed, nhưng vẫn
     // đúng lớp lỗi `.env` mà C-1 sinh ra để diệt ⇒ phải CÓ TÊN.
     input.ceilingBytes <= 0 ||
@@ -376,7 +376,7 @@ export function assertHeadroomPolicy(policy: {
   if (!usable(policy.ceilingBytes) || policy.ceilingBytes <= 0) {
     throw new TypeError(
       `[vram] cấu hình cưỡng chế hỏng: trần = ${String(policy.ceilingBytes)} byte (phải là số hữu hạn > 0). ` +
-        `Nguồn thường gặp: VRAM_CEILING_MB để TRỐNG ⇒ Number("") === 0 ⇒ dư địa âm ⇒ TỪ CHỐI 100% lượt xin; ` +
+        `Nguồn thường gặp: VRAM_DEVICE_TOTAL_MB để TRỐNG ⇒ Number("") === 0 ⇒ dư địa âm ⇒ TỪ CHỐI 100% lượt xin; ` +
         `hoặc một chuỗi hỏng ⇒ NaN ⇒ mọi so sánh false ⇒ cưỡng chế TẮT. Sửa cấu hình, đừng bắt đường nóng đoán.`,
     );
   }

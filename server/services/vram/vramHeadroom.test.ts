@@ -235,11 +235,11 @@ describe("vramHeadroom §5.6c — hàm quyết định THUẦN (chưa cưỡng c
   });
 
   /**
-   * ★★ M-1 — `VRAM_CEILING_MB=` (để TRỐNG, khác hẳn "không đặt") ⇒ `Number("") === 0` ⇒ **lọt**
+   * ★★ M-1 — `VRAM_DEVICE_TOTAL_MB=` (để TRỐNG, khác hẳn "không đặt") ⇒ `Number("") === 0` ⇒ **lọt**
    * `Number.isFinite` ⇒ dư địa âm khổng lồ ⇒ từ chối 100% lượt xin, **im lặng**, toàn hệ AI chết.
    * Chiều fail-closed nên không nguy hiểm về an toàn, nhưng nó phải CÓ TÊN.
    */
-  it("★★ M-1: trần = 0 (VRAM_CEILING_MB rỗng) ⇒ `invalid-input`, không phải một lượt từ chối bí ẩn", () => {
+  it("★★ M-1: trần = 0 (VRAM_DEVICE_TOTAL_MB rỗng) ⇒ `invalid-input`, không phải một lượt từ chối bí ẩn", () => {
     expect(computeHeadroom(input({ ceilingBytes: 0 })).degradedReasons).toContain("invalid-input");
     expect(computeHeadroom(input({ ceilingBytes: -1 })).degradedReasons).toContain("invalid-input");
   });
@@ -268,7 +268,7 @@ describe("assertHeadroomPolicy — cổng cấu hình lúc BOOT (chỗ duy nhấ
 
   it("★★ trần NaN / 0 / âm ⇒ NÉM, và câu lỗi nêu đích danh nguồn thường gặp", () => {
     expect(() => assertHeadroomPolicy({ ceilingBytes: Number.NaN, safetyReserveBytes: RESERVE })).toThrow(/trần/);
-    expect(() => assertHeadroomPolicy({ ceilingBytes: 0, safetyReserveBytes: RESERVE })).toThrow(/VRAM_CEILING_MB/);
+    expect(() => assertHeadroomPolicy({ ceilingBytes: 0, safetyReserveBytes: RESERVE })).toThrow(/VRAM_DEVICE_TOTAL_MB/);
     expect(() => assertHeadroomPolicy({ ceilingBytes: -1, safetyReserveBytes: RESERVE })).toThrow(/trần/);
   });
 

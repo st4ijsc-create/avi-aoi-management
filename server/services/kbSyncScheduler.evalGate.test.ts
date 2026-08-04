@@ -121,6 +121,30 @@ vi.mock("node:fs", () => {
   return { default: api, ...api };
 });
 
+
+// ─── ./vram/vramWiring — cổng SỔ có thể TỪ CHỐI (Pha 2B Task 5) ───────────────
+/**
+ * ★★★ Pha 2B Task 5, review vòng 1 (C-1/I-6) — giả lập một LỜI TỪ CHỐI của cổng sổ.
+ *
+ * ⚠ Lỗi giả được nhận diện bằng `name` (đúng cách `isVramRefusal()` nhận diện), nên ca này CŨNG
+ * chứng minh vị từ đó đi qua được ranh giới `await import()` — thứ `instanceof` KHÔNG làm được
+ * dưới `vi.mock`.
+ */
+let vramRefuse: "none" | "sync" | "eval" = "none";
+vi.mock("./vram/vramWiring", () => ({
+  beginVramAllocation: async (opts: { owner: string }) => {
+    const target = vramRefuse === "sync" ? "cron:kb-sync" : vramRefuse === "eval" ? "cron:kb-eval-gate" : null;
+    if (target !== null && opts.owner === target) {
+      const err = new Error(`Không đủ VRAM cho ${opts.owner} (mức background): xin 1251 MiB, còn 12 MiB.`);
+      err.name = "VramRefusedError";
+      (err as unknown as { facts: unknown }).facts = { preemptable: [], holders: [] };
+      throw err;
+    }
+    return { commitMeasured: async () => {}, release: () => {}, noteRefCount: () => {} };
+  },
+  CUDA_BACKEND_FALLBACK_BYTES: 452_595_712,
+}));
+
 // ─── node:child_process — spawn → controllable FakeChild ──────────────────────
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter();
@@ -222,6 +246,7 @@ beforeEach(() => {
   snapshotFailuresRemaining = 0;
   syncBehavior = syncSucceedsMutating;
   evalBehavior = evalPass(0.95);
+  vramRefuse = "none";
   process.env.KB_AUTOSYNC_EVAL_GATE = "true";
   delete process.env.KB_AUTOSYNC_EVAL_TIMEOUT_MS;
   seedOldKb();
@@ -233,6 +258,50 @@ afterEach(() => {
 });
 
 describe("kbSyncScheduler — B1 answer-eval gate", () => {
+
+  // ═════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ Pha 2B Task 5, review vòng 1 — CỔNG SỔ NAY TỪ CHỐI ĐƯỢC. Hai ca dưới đây khoá đúng hai
+  // chỗ mà một lời từ chối BÌNH THƯỜNG có thể giết một hệ con.
+  // ═════════════════════════════════════════════════════════════════════════════════════════
+  it("★★★ C-1: kb:sync BỊ TỪ CHỐI VRAM ⇒ KHÔNG chốt kẹt `running`, KHÔNG ném, để lại VẾT", async () => {
+    vramRefuse = "sync";
+
+    const stats = await runKbSyncNow();
+
+    // 1) hợp đồng "never throws" còn nguyên, và lượt này CÓ VẾT (Task 6 sẽ đọc `reason`)
+    expect(stats.skipped).toBe(true);
+    expect(stats.reason).toBe("vram_refused");
+    expect(stats.ok).toBe(false);
+    // 2) KHÔNG tiến trình con nào được sinh ra — từ chối xảy ra TRƯỚC spawn
+    expect(spawnCalls).toHaveLength(0);
+    // 3) ★ CỜ ĐƯỢC TRẢ. Đây là toàn bộ C-1: thiếu `finally` thì cờ kẹt `true` tới lúc khởi động lại.
+    expect(getKbSyncSchedulerStatus().running).toBe(false);
+    // 4) …và bằng chứng MẠNH HƠN một lời khai: lượt SAU phải chạy THẬT, không phải "already_running"
+    vramRefuse = "none";
+    const lai = await runKbSyncNow();
+    expect(lai.reason).not.toBe("already_running");
+    expect(lai.ok).toBe(true);
+    expect(spawnCalls.length).toBeGreaterThan(0);
+  });
+
+  it("★★★ I-6: cổng EVAL bị từ chối VRAM ⇒ evalGate 'skipped', KHÔNG lùi một lượt sync ĐÃ THÀNH CÔNG", async () => {
+    vramRefuse = "eval";
+
+    const stats = await runKbSyncNow();
+
+    // eval không chạy được ≠ KB tụt chất lượng ⇒ GIỮ KB MỚI (nguyên tắc có sẵn của file này)
+    expect(stats.evalGate).toBe("skipped");
+    expect(stats.evalReason).toBe("vram_refused");
+    expect(stats.rolledBack).toBeFalsy();
+    expect(stats.rollbackFailed).toBeFalsy();
+    expect(stats.ok).toBe(true);
+    // ★ KB MỚI CÒN NGUYÊN — nhánh `gate_exception` cũ sẽ `restoreKbArtifacts()` và lùi hết về đây.
+    expect(read("embeddings.jsonl")).toBe("NEW_EMBEDDINGS");
+    expect(read("chunks.jsonl")).toBe("NEW_CHUNK_LINE\n");
+    expect(exists("semantic-graph.json")).toBe(true);
+    expect(getKbSyncSchedulerStatus().running).toBe(false);
+  });
+
   it('PASS: eval exit 0 with a fresh result → new KB kept, snapshot discarded, evalGate:"pass"', async () => {
     evalBehavior = evalPass(0.97);
 

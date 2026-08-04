@@ -104,6 +104,19 @@ export interface VramHolderFact {
    * người trực một độ chính xác không có thật (types.ts `VramLease.actualBytes`, ba nhóm/hai ô).
    */
   readonly measured: boolean;
+  /**
+   * ★★★ Review vòng 1 (C) — CÓ CƠ CHẾ NÀO THẬT SỰ THU HỒI ĐƯỢC HỘ NÀY KHÔNG.
+   *
+   * `preemptCandidates()` chọn theo **quyền** (§5.2: rank + nhàn rỗi) — nó KHÔNG hỏi *"ai đi lấy
+   * lại khối byte đó?"*. Hôm nay chỉ có MỘT người thi hành: `vramLoadOutcome.reclaim()` →
+   * `aiGgufEngine.evictLRU()`, và nó chỉ đuổi được **model GGUF đang nhàn rỗi**. ONNX · sidecar
+   * thị giác · trainer · cron **không ai thu hồi được**.
+   *
+   * ⚠ Thiếu ô này, câu từ chối in *"Có thể nhường … tổng N MiB"* trong khi **không cơ chế nào lấy
+   * được N MiB đó** — tức HỨA NGƯỢC, đúng lớp "hứa nhiều hơn dữ liệu" mà cả file này tồn tại để
+   * diệt. Người trực đọc câu đó sẽ ngồi chờ một lượt nhường chỗ không bao giờ tới.
+   */
+  readonly reclaimable: boolean;
 }
 
 /**
@@ -255,7 +268,12 @@ export function buildVramRefusal(input: VramRefusalInput): VramRefusalFacts {
    * ở danh sách, chỉ không cộng được), rồi **lọc lần cuối trên TỔNG** ⇒ `null` = "không cộng nổi".
    */
   const preemptableBytes = finiteOrNull(
-    input.preemptable.reduce((sum, h) => sum + (Number.isFinite(h.bytes) ? h.bytes : 0), 0),
+    input.preemptable.reduce(
+      // ★ (C) — CHỈ cộng hộ có người THI HÀNH. Một con số gộp cả những hộ không ai thu hồi được là
+      // một lời hứa mà hệ không giữ nổi.
+      (sum, h) => sum + (h.reclaimable && Number.isFinite(h.bytes) ? h.bytes : 0),
+      0,
+    ),
   );
 
   /**
@@ -377,9 +395,20 @@ export function formatVramRefusal(facts: VramRefusalFacts): string {
   const holding =
     ` Đang giữ (chỉ các hộ ĐÃ NỐI SỔ; "≈" = ước lượng chưa đo): ${holderListText(facts.holders)}.`;
 
+  /**
+   * ★★★ Review vòng 1 (C) — HAI NHÓM, KHÔNG MỘT. Và nhãn cũ *"(mức thấp hơn X)"* **SAI**: vị từ
+   * §5.2 CỐ Ý cho phép cả giấy phép **NHÀN RỖI CÙNG MỨC** (đó chính là việc `evictLRU()` vẫn làm).
+   */
+  const thuHoiDuoc = facts.preemptable.filter((h) => h.reclaimable);
+  const chiGoiTen = facts.preemptable.filter((h) => !h.reclaimable);
   const yielding =
-    ` Có thể nhường (mức thấp hơn ${facts.priority}): ${holderListText(facts.preemptable)}` +
-    (facts.preemptable.length === 0 ? "." : ` — tổng ${mibText(facts.preemptableBytes)} MiB.`);
+    ` Có thể nhường (nhàn rỗi, hoặc mức thấp hơn ${facts.priority}) — CÓ cơ chế thu hồi: ` +
+    `${holderListText(thuHoiDuoc)}` +
+    (thuHoiDuoc.length === 0 ? "." : ` — tổng ${mibText(facts.preemptableBytes)} MiB.`) +
+    (chiGoiTen.length === 0
+      ? ""
+      : ` Nêu tên nhưng CHƯA có cơ chế thu hồi (đừng ngồi chờ chúng tự nhường): ` +
+        `${holderListText(chiGoiTen)}.`);
 
   return `${head}${degraded}${holding}${yielding} Phần KHÔNG quy trách nhiệm được: ${caveatText(facts)}`;
 }
@@ -412,7 +441,13 @@ export function vramRefusalAppError(facts: VramRefusalFacts): {
     // tự do rơi về nguyên văn qua `defaultValue`, còn danh sách RỖNG dùng khoá `none` để hiện
     // thành "không có" ĐÚNG NGÔN NGỮ — thay vì một chỗ trống mà người đọc tự điền nghĩa.
     holders: facts.holders.length === 0 ? "none" : facts.holders.map(holderText).join(", "),
-    preemptable: facts.preemptable.length === 0 ? "none" : facts.preemptable.map(holderText).join(", "),
+    // ★ (C) — CHỈ hộ THU HỒI ĐƯỢC. Câu i18n có đúng một ô `{{preemptable}}` và một ô
+    // `{{preemptableMb}}`; nhồi cả nhóm "không ai thu hồi được" vào đó là in một danh sách mà con
+    // số bên cạnh KHÔNG tính tới — hai nửa của cùng một câu nói hai chuyện khác nhau.
+    preemptable: (() => {
+      const t = facts.preemptable.filter((h) => h.reclaimable);
+      return t.length === 0 ? "none" : t.map(holderText).join(", ");
+    })(),
     // M-1/M-2 — `?? 0` cũ là một DÂY: tổng KHÔNG cộng nổi (tràn) sẽ hiện thành "0 MiB nhường
     // được", tức nói NGƯỢC. `"?"` nói đúng: có ứng viên, nhưng không cộng được tổng.
     preemptableMb: mibText(facts.preemptableBytes),

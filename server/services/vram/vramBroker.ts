@@ -106,7 +106,27 @@ function holderFactFromLease(l: VramLease): VramHolderFact {
     bytes: leaseBytes(l),
     priority: l.request.priority,
     measured: l.actualBytes !== null && l.measureSource !== undefined && l.measureSource !== "none",
+    reclaimable: coThiHanhThuHoi(l),
   };
+}
+
+/**
+ * ★★★ Pha 2B Task 5, review vòng 1 (C) — VỊ TỪ *"CÓ NGƯỜI THI HÀNH THU HỒI HỘ NÀY KHÔNG"*.
+ *
+ * ⚠ TÁCH HẲN khỏi `coTheNhuong()` (quyền — §5.2) vì đây là câu hỏi KHÁC: **khả năng**. Gộp hai câu
+ * ấy là cách câu từ chối HỨA NGƯỢC — nêu tên một hộ có quyền nhường mà không cơ chế nào lấy lại
+ * được khối byte của nó, rồi cộng nó vào một cái "tổng nhường được".
+ *
+ * Hôm nay người thi hành DUY NHẤT là `vramLoadOutcome.reclaim()` → `aiGgufEngine.evictLRU()`, và
+ * nó chỉ với tới **model GGUF NHÀN RỖI** (`unloadGgufModel()` — dispose thật, rồi mới nhả sổ).
+ *   • `gguf-backend` — KHÔNG: backend CUDA sống suốt đời tiến trình, không có đường nhả.
+ *   • `onnx-session` — KHÔNG: `ort.InferenceSession` không có lời gọi `release()` nào trên đường GPU.
+ *   • `external-process` (sidecar · trainer · cron) — KHÔNG: thu hồi xuyên tiến trình là Pha 3.
+ * ⇒ Khi Task 7 hấp thụ `evictLRU()` thành `preempt()` thật, **mở rộng ĐÚNG hàm này** — đừng để câu
+ * chữ và cơ chế trôi khỏi nhau lần nữa.
+ */
+function coThiHanhThuHoi(l: VramLease): boolean {
+  return l.request.kind === "gguf-model" && l.refCount === 0;
 }
 
 /**
@@ -546,7 +566,55 @@ export function snapshot(): VramSnapshot {
  * `NaN`); không đặt gì thì cả hai đều về mặc định hợp lệ và hàm im lặng.
  */
 export function assertVramEnforcementPolicy(): void {
+  /**
+   * ★★★ Review vòng 1 (F) — KIỂM **CHUỖI THÔ CỦA `.env`**, KHÔNG KIỂM SỐ ĐÃ QUA LỌC.
+   *
+   * Reviewer đo bằng tiến trình thật: bản trước chỉ bắt **1/4** ca, và **cả ba ca lọt đều theo
+   * chiều NỚI** — vì mỗi ô đều có một lượt lọc riêng ăn mất bằng chứng TRƯỚC khi lời kiểm nhìn thấy:
+   *   • `VRAM_DEVICE_TOTAL_MB=` (để TRỐNG) ⇒ `Number("") === 0` ⇒ `deviceTotalBytes()` **tự bỏ qua**
+   *     (chỉ nhận `> 0`) và lặng lẽ rơi về hằng số dự phòng 32.607 MiB — tức máy 8 GB chạy trên trần
+   *     của một RTX 5090. Đây ĐÚNG ca mà docstring của lời kiểm nêu ĐẦU TIÊN, và nhánh kiểm trần khi
+   *     đó là **MÃ CHẾT**.
+   *   • `VRAM_SAFETY_RESERVE_MB=` ⇒ đệm **0** — hợp lệ về kiểu, nhưng xoá sạch biên an toàn.
+   *   • `VRAM_DISTRUST_UNIT_MB=` ⇒ đơn vị **0** — **TẮT TOÀN BỘ chính sách suy giảm** (mù/nền chưa
+   *     xác minh/tick cũ đều thành miễn phí) mà không một dòng nào kêu.
+   *
+   * ⇒ Quy tắc: **đặt một biến rồi để trống là một LỖI CẤU HÌNH, không phải một giá trị.** Không đặt
+   * gì thì im lặng (mặc định hợp lệ); đặt `0` TƯỜNG MINH cho đệm/đơn vị vẫn hợp lệ (người vận hành
+   * cố ý tắt), nhưng trần thì `0` không bao giờ hợp lệ.
+   */
+  kiemBienMoiTruong("VRAM_DEVICE_TOTAL_MB", { toiThieu: 0, chapNhanBang: false });
+  kiemBienMoiTruong("VRAM_SAFETY_RESERVE_MB", { toiThieu: 0, chapNhanBang: true });
+  kiemBienMoiTruong("VRAM_DISTRUST_UNIT_MB", { toiThieu: 0, chapNhanBang: true });
   assertHeadroomPolicy({ ceilingBytes: deviceTotalBytes(), safetyReserveBytes: SAFETY_RESERVE_BYTES });
+}
+
+/**
+ * Một biến môi trường SỐ: **không đặt** thì im lặng, **đặt sai** thì chết ngay lúc boot với đúng
+ * tên biến trong câu lỗi. `chapNhanBang: true` ⇒ đúng bằng `toiThieu` là hợp lệ (vd. `0` để tắt).
+ */
+function kiemBienMoiTruong(
+  ten: string,
+  opts: { readonly toiThieu: number; readonly chapNhanBang: boolean },
+): void {
+  const raw = process.env[ten];
+  if (raw === undefined) return;
+  const chuoi = raw.trim();
+  if (chuoi === "") {
+    throw new TypeError(
+      `[vram] cấu hình cưỡng chế hỏng: ${ten} được ĐẶT nhưng để TRỐNG. \`Number("") === 0\`, và ` +
+        `một số 0 lọt qua đây sẽ hoặc rơi về hằng số dự phòng của MỘT máy khác, hoặc xoá sạch biên ` +
+        `an toàn/phụ phí mất-tin-cậy — cả hai đều IM LẶNG. Xoá hẳn dòng đó, hoặc ghi một số.`,
+    );
+  }
+  const so = Number(chuoi);
+  const hopLe = Number.isFinite(so) && (opts.chapNhanBang ? so >= opts.toiThieu : so > opts.toiThieu);
+  if (!hopLe) {
+    throw new TypeError(
+      `[vram] cấu hình cưỡng chế hỏng: ${ten}="${raw}" không dùng được (phải là số hữu hạn ` +
+        `${opts.chapNhanBang ? "≥" : ">"} ${opts.toiThieu}). Sửa cấu hình, đừng bắt đường nóng đoán.`,
+    );
+  }
 }
 
 /** Chỉ dùng trong test. */

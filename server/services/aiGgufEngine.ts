@@ -436,6 +436,17 @@ async function getLlama(): Promise<any> {
       }
       return llamaInstance;
     } catch (err) {
+      /**
+       * ★★★ Pha 2B Task 5, review vòng 1 (I-3) — LỜI TỪ CHỐI KHÔNG ĐƯỢC BỊ VIẾT LẠI THÀNH MỘT LỖI
+       * CÀI ĐẶT. Đây là hộ NẶNG NHẤT trong nhóm này: giấy phép `cuda-backend` mang mức
+       * `production`, và nếu nó bị từ chối thì:
+       *   • câu lỗi MẤT DANH TÍNH (`name` không còn là `VramRefusedError`) ⇒ **mọi** `catch` phía
+       *     trên không nhận ra nó nữa ⇒ cưỡng chế tắt trên cả nhánh này;
+       *   • mất luôn đường "nhường chỗ rồi xin lại" của `vramLoadOutcome` (nó đọc `facts`);
+       *   • và người trực nhận đúng một chỉ dẫn: **đi cài một gói đã có sẵn**.
+       * Câu viết lại vẫn giữ nguyên cho MỌI lỗi khác — đó mới là thứ nó sinh ra để nói.
+       */
+      if (isVramRefusal(err)) throw err;
       console.error("[aiGgufEngine] Failed to initialize llama.cpp:", err);
       throw new Error("node-llama-cpp is not available. Install with: pnpm add node-llama-cpp");
     }

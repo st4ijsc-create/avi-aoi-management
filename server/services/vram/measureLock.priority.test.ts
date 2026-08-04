@@ -90,8 +90,16 @@ describe("cổng 2 — hàng chờ khoá cửa sổ đo BIẾT ƯU TIÊN", () =>
       const bg = withMeasureWindow(async () => { nhatKy.push("nen-cho-lau"); }, 600_000, "nen", "background");
       await nhip();
 
-      // Nền đã chờ đủ lâu để được nâng ít nhất HAI hạng (background → trên cả production).
-      await vi.advanceTimersByTimeAsync(MEASURE_QUEUE_PROMOTE_EVERY_MS * 3);
+      /**
+       * ★★★ Review vòng 1 (B) — MỐC TUYỆT ĐỐI, KHÔNG PHẢI BỘI SỐ CỦA HẰNG SỐ ĐANG KIỂM.
+       *
+       * Bản trước đẩy đồng hồ `MEASURE_QUEUE_PROMOTE_EVERY_MS * 3` — một ca **TỰ THAM CHIẾU**: đổi
+       * hằng số thành `MAX_SAFE_INTEGER` (tức TẮT HẲN chống chết đói) thì đồng hồ cũng nhảy theo và
+       * ca vẫn XANH. Reviewer chứng minh bằng đột biến: **0 đỏ / 17 xanh**.
+       * ⇒ Nay là **30 giây tuyệt đối**: ca này khoá một lời hứa VẬN HÀNH ("việc nền chờ nửa phút thì
+       * phải được chạy"), không khoá một phép nhân với chính nó.
+       */
+      await vi.advanceTimersByTimeAsync(30_000);
 
       const prod = withMeasureWindow(async () => { nhatKy.push("aoi-vua-toi"); }, 600_000, "aoi", "production");
       await nhip();
@@ -130,7 +138,8 @@ describe("cổng 2 — hàng chờ khoá cửa sổ đo BIẾT ƯU TIÊN", () =>
       for (let i = 0; i < 10; i++) {
         dsProd.push(withMeasureWindow(async () => { nhatKy.push(`p${i}`); }, 600_000, `p${i}`, "production"));
         await nhip();
-        await vi.advanceTimersByTimeAsync(MEASURE_QUEUE_PROMOTE_EVERY_MS);
+        // Mốc TUYỆT ĐỐI (xem ca trên): 10 s giữa hai lượt production.
+        await vi.advanceTimersByTimeAsync(10_000);
       }
       a.tha();
       await vi.advanceTimersByTimeAsync(10);
@@ -139,6 +148,18 @@ describe("cổng 2 — hàng chờ khoá cửa sổ đo BIẾT ƯU TIÊN", () =>
       expect(nhatKy[nhatKy.length - 1]).not.toBe("nen");
       expect(nhatKy).toContain("nen");
     });
+  });
+
+  /**
+   * ★★★ Review vòng 1 (B) — LƯỚI CHO CHÍNH HẰNG SỐ. Hai ca trên nay dùng mốc tuyệt đối nên bắt được
+   * một hằng số bị đẩy QUÁ LỚN; ca này khoá CẢ HAI đầu và nêu ràng buộc thật: một việc nền phải leo
+   * qua `production` (chênh 2 hạng) **trong** ngân sách chờ 180 s, nếu không nhánh hết-giờ cắt
+   * trước và "chống chết đói" chỉ còn là chữ.
+   */
+  it("★★ hằng số nâng hạng phải nằm trong dải DÙNG ĐƯỢC (2 hạng phải leo xong trước ngân sách chờ)", () => {
+    expect(Number.isFinite(MEASURE_QUEUE_PROMOTE_EVERY_MS)).toBe(true);
+    expect(MEASURE_QUEUE_PROMOTE_EVERY_MS).toBeGreaterThanOrEqual(1_000);
+    expect(MEASURE_QUEUE_PROMOTE_EVERY_MS * 2).toBeLessThanOrEqual(30_000);
   });
 
   it("ưu tiên KHÔNG đụng tới lá chắn chống bế tắc: hết ngân sách vẫn CHẠY TIẾP, mất phép đo", async () => {

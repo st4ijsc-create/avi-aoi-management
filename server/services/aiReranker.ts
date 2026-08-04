@@ -550,6 +550,18 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     );
     return _rankCtx;
   } catch (err) {
+    /**
+     * ★★★ Pha 2B Task 5, review vòng 1 (E) — CỬA MỘT CHIỀU: LỜI TỪ CHỐI PHẢI ĐI TIẾP.
+     *
+     * `catch` này bao **cả hai** điểm `beginVramAllocation()` bên trên, và nhánh dưới đặt
+     * `_rankCtxFailed = true` — một cửa **KHÔNG BAO GIỜ mở lại** trong đời tiến trình. Nuốt một
+     * lời từ chối ở đây nghĩa là **một lần thiếu VRAM TẠM THỜI = MẤT reranker GGUF VĨNH VIỄN**,
+     * kèm chẩn đoán sai *"model not a reranker?"*. Một lượt xin `background` bị từ chối là kết cục
+     * BÌNH THƯỜNG của §5.2 — nó phải trả lại chỗ rồi ném tiếp, để lượt sau còn thử lại được.
+     *
+     * ⚠ Vẫn trả giấy phép TRƯỚC khi ném (khối `try` ngay dưới), nếu không sổ giữ chỗ cho một
+     * thứ không tồn tại.
+     */
     // Pha 1 Task 5 — nạp/tạo ranking context hỏng ⇒ TRẢ chỗ ngay, không để giấy phép treo.
     //
     // ⚠ NEW-6 (review vòng 2): CHỈ trả giấy phép của CHÍNH lượt này. Bản trước còn thu hồi cả
@@ -575,6 +587,30 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     // Chỉ xoá con trỏ chung nếu nó ĐANG trỏ vào giấy phép vừa trả. Lượt song song thành công
     // giữ nguyên giấy phép của nó.
     if (_rankVramTicket === localTicket) _rankVramTicket = null;
+    /**
+     * ★★★ (E) — CỬA MỘT CHIỀU KHÔNG ĐƯỢC ĐÓNG VÌ MỘT LỜI TỪ CHỐI.
+     *
+     * `_rankCtxFailed = true` bên dưới là VĨNH VIỄN (`:343` thoát sớm ở mọi lượt sau). Đóng nó vì
+     * một lượt xin `background` bị từ chối — kết cục BÌNH THƯỜNG và TẠM THỜI của §5.2 — là mất
+     * reranker GGUF tới lúc khởi động lại, kèm một chẩn đoán SAI hoàn toàn (*"model not a
+     * reranker?"*). Nay: KHÔNG đóng cửa, nói ĐÚNG nguyên nhân, và lượt sau thử lại.
+     *
+     * ⚠⚠ VÌ SAO **KHÔNG NÉM TIẾP** ở đây (khác 11 điểm gọi kia — một sai lệch CÓ CHỦ Ý, khai
+     * thẳng để review bác được nếu thấy sai): ném ở đây KHÔNG chặn thêm được lượt cấp phát nào —
+     * giấy phép đã trả ở ngay trên, và không byte nào được cấp. Cái nó làm là **giết luôn nấc lùi
+     * đã có sẵn**: `rankWithGguf()` trả `null` ⇒ `rerank()` chuyển sang **reranker LLM** (`:131`);
+     * một cú ném đi thẳng vào `catch` của `rerank()` và rơi về `identity`, tức chất lượng xếp hạng
+     * TỆ HƠN cho cùng một lượt truy vấn. "Từ chối" ở đây được **XỬ LÝ** (hạ cấp có tiếng), không
+     * phải bị **NUỐT** (chạy tiếp như chưa có gì).
+     */
+    if (isVramRefusal(err)) {
+      console.warn(
+        `[aiReranker] cổng SỔ TỪ CHỐI giấy phép VRAM cho reranker GGUF (mức background — §5.2 ` +
+          `nhường trước tiên) ⇒ lượt này hạ xuống reranker LLM. KHÔNG đóng cửa vĩnh viễn: lượt sau ` +
+          `sẽ xin lại. ${(err as Error)?.message ?? String(err)}`,
+      );
+      return null;
+    }
     // Most common cause: the model isn't a reranker (no rank head) → llama.cpp
     // throws on createRankingContext. Mark failed so we don't retry per-query.
     console.warn(

@@ -122,6 +122,25 @@ const DISTRUST_UNITS: Record<VramDegradationReason, number> = {
  */
 const UNKNOWN_UNITS_CAP = 4;
 
+/**
+ * ★★★ Review vòng 1 (A) — TRẦN CHO **Ô BYTE**, và vì sao thiếu nó là một đường TỪ CHỐI SAI.
+ *
+ * `vramWiring.vramBeginFailureState().unledgeredBytes` là một **bộ tích luỹ CHỈ TĂNG**: nó cộng
+ * dồn ước lượng của mọi lượt `beginVramAllocation()` hỏng, **không bao giờ trả lại** — kể cả khi
+ * khối byte đó đã được nhả từ lâu (sidecar hết nhàn rỗi, model unload). Trừ thẳng con số ấy khỏi
+ * dư địa ⇒ **hai lượt hỏng của khối 30B (2 × 17.000 MiB) là dư địa ÂM trên một tấm card TRỐNG**,
+ * tức từ chối 100% cho tới khi khởi động lại tiến trình.
+ *
+ * ⚠ Trớ trêu mà review chỉ ra: ống `unknownCount` đã được kẹp ở 4 đơn vị **với đúng lý do này**,
+ * trong khi ống BYTE — nặng gấp 4 lần — không có trần nào. Nay hai ống cùng một trần.
+ *
+ * ⚠ VÌ SAO KHÔNG CÓ "ĐƯỜNG TRẢ LẠI" (và đó là một giới hạn ĐƯỢC KHAI, không phải chỗ quên): muốn
+ * trả lại thì phải biết khối byte đó **đã được nhả chưa** — mà chính vì không biết nó là gì và ở
+ * đâu nên nó mới nằm NGOÀI SỔ. Thứ duy nhất thấy được nó là `attributable` (số đo THIẾT BỊ), và
+ * đó chính là nhánh không tính phí bên dưới.
+ */
+const UNLEDGERED_BYTES_UNITS_CAP = 4;
+
 export interface EnforcementInput {
   /** Kết quả `computeHeadroom()` — nguồn của `headroomBytes` và bốn lý do đầu tiên. */
   readonly headroom: HeadroomResult;
@@ -200,10 +219,22 @@ export function applyEnforcement(input: EnforcementInput): EnforcementDecision {
   } else {
     const bytes = input.unledgered.bytes;
     if (huuHan(bytes) && bytes >= 0) {
-      // ⚠ TRỪ NHƯ THỨ ĐÃ TIÊU (bàn giao Task 3). Đây là ƯỚC LƯỢNG: `fileBytes` của khối 30B CAO
-      // HƠN số đo 170,8 MiB, còn reranker thì THẤP HƠN 2,1 lần ⇒ KHÔNG có hệ số chung để hiệu
-      // chỉnh. Dùng nó làm TÍN DỤNG/TRẦN mới là chiều nguy hiểm; trừ đi thì không.
-      unledgeredChargeBytes = bytes;
+      /**
+       * ⚠⚠ TRỪ **CHỈ KHI MÙ**, và có TRẦN — review vòng 1 (A). Hai lỗi độc lập trong một dòng cũ:
+       *
+       *   1. **ĐẾM HAI LẦN.** Khi có `attributable` (`blind === false`), con số đó là
+       *      `deviceUsed − baseline` — tức phép đo THIẾT BỊ, và nó **đã bao gồm** đúng khối byte
+       *      đã chạy ngoài sổ (khối ấy có thật trên card, chỉ là không ai ghi sổ). Trừ thêm lần
+       *      nữa là phạt hai lần cùng một khối byte, và ở tiến trình `worker` — nơi LUÔN có tick —
+       *      đó là đường thường trực.
+       *   2. **KHÔNG TRẦN.** Xem `UNLEDGERED_BYTES_UNITS_CAP`.
+       *
+       * ⇒ Chỉ nhánh MÙ mới trả phí: ở đó `used = ledgerTotal` và khối byte kia **vô hình**, nên
+       * đây là chỗ DUY NHẤT con số này thêm thông tin. Vẫn là ƯỚC LƯỢNG (`fileBytes` của khối 30B
+       * CAO HƠN số đo 170,8 MiB, reranker thì THẤP HƠN 2,1 lần ⇒ không có hệ số chung), nên nó
+       * chỉ được dùng để **TRỪ**, không bao giờ làm tín dụng/trần.
+       */
+      unledgeredChargeBytes = input.headroom.blind ? Math.min(bytes, UNLEDGERED_BYTES_UNITS_CAP * unit) : 0;
     } else if (bytes !== 0) {
       // Có ô byte nhưng số không dùng được ⇒ ngang một lượt "không ước được byte".
       donViUnknown = UNKNOWN_UNITS_CAP;

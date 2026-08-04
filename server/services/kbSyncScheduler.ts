@@ -576,137 +576,202 @@ export async function runKbSyncNow(): Promise<KbSyncRunStats> {
     return { ok: true, exitCode: null, chunksBefore: 0, chunksAfter: 0, added: 0, durationMs: 0, skipped: true, reason: "already_running" };
   }
   running = true;
-  const chunksBefore = countChunks();
+  /**
+   * ★★★ Pha 2B Task 5, review vòng 1 (C-1) — `running` PHẢI ĐƯỢC TRẢ TRONG `finally`.
+   *
+   * LỖI ĐANG VÁ, và nó CHẾT VĨNH VIỄN chứ không phải hỏng một lượt: `beginKbSyncVram()` ngay dưới
+   * đây **nay NÉM** (`VramRefusedError`, từ Task 5) và nó nằm NGOÀI mọi `try`; dòng
+   * `running = false` cũ thì nằm ở CUỐI thân hàm, không có lưới nào. ⇒ Một lời từ chối bình thường
+   * — thứ pha này sinh ra để tạo — sẽ chốt cờ ở `true` **tới lúc khởi động lại tiến trình**: mọi
+   * lượt sau trả `skipped: "already_running"` trong khi **không có lượt nào đang chạy**, và ảnh
+   * chụp KB rò lại trên đĩa.
+   *
+   * ⚠ Đây KHÔNG phải cơ chế hoãn-không-chặn (§5.4, Task 6). Đây là "không để một hệ con chết vì
+   * một lời từ chối bình thường" — hai việc khác nhau, và việc này không được chờ Task 6.
+   */
+  try {
+    const chunksBefore = countChunks();
 
-  // B1 — snapshot the KB artifacts BEFORE the sync so a regressing rebuild can
-  // be rolled back. null when the gate is off, OR when the snapshot itself
-  // failed (in which case we run this sync WITHOUT the gate rather than risk
-  // a rollback we can't actually perform).
-  const snapshot = isEvalGateEnabled() ? snapshotKbArtifacts() : null;
+    // B1 — snapshot the KB artifacts BEFORE the sync so a regressing rebuild can
+    // be rolled back. null when the gate is off, OR when the snapshot itself
+    // failed (in which case we run this sync WITHOUT the gate rather than risk
+    // a rollback we can't actually perform).
+    const snapshot = isEvalGateEnabled() ? snapshotKbArtifacts() : null;
 
-  // Pha 1 Task 6 — xin giấy phép VRAM NGAY TRƯỚC khi spawn (spec §3.1). TRƯỚC khi vào Promise
-  // theo dõi vì `beginKbSyncVram()` là async còn executor bên dưới cố tình giữ ĐỒNG BỘ.
-  const kbSyncVramTicket = await beginKbSyncVram();
-
-  const stats: KbSyncRunStats = await new Promise<KbSyncRunStats>((resolve) => {
-    let settled = false;
-    const done = (s: KbSyncRunStats) => {
-      if (settled) return;
-      settled = true;
-      resolve(s);
+    // Pha 1 Task 6 — xin giấy phép VRAM NGAY TRƯỚC khi spawn (spec §3.1). TRƯỚC khi vào Promise
+    // theo dõi vì `beginKbSyncVram()` là async còn executor bên dưới cố tình giữ ĐỒNG BỘ.
+    /**
+   * ★★★ C-1 (review vòng 1) — LỜI TỪ CHỐI PHẢI THÀNH MỘT KẾT QUẢ, KHÔNG PHẢI MỘT NGOẠI LỆ.
+   *
+   * `runKbSyncNow()` khai ngay trong docstring: *"Fail-safe: never throws"*, và người gọi là CRON
+   * (`node-cron` nuốt lỗi im lặng) lẫn router. Từ Task 5, `beginKbSyncVram()` ném `VramRefusedError`
+   * — một kết cục HỢP LỆ và THƯỜNG GẶP của mức `background` (§5.2: nền nhường trước tiên), không
+   * phải một sự cố. Để nó bay ra ngoài là vỡ hợp đồng và **bỏ lại ảnh chụp KB trên đĩa**.
+   *
+   * ⚠ `skipped: true` + `reason: "vram_refused"` là VẾT mà Task 6 sẽ đọc để lùi dần 15→60 phút và
+   * kêu khi quá đáy (§5.4). Ở đây CHƯA hoãn gì cả — chỉ bảo đảm lượt này **để lại dấu** thay vì
+   * biến mất, và hệ con còn gọi được lần sau.
+   */
+  let kbSyncVramTicket: VramTicket;
+  try {
+    kbSyncVramTicket = await beginKbSyncVram();
+  } catch (err) {
+    if (!isVramRefusal(err)) throw err;
+    // ⚠ `snapshot` là `null` khi cổng eval tắt — chỉ dọn khi THẬT SỰ có ảnh chụp, nếu không lượt
+    // dọn này lại là một cú ném mới trên đúng đường vừa vá.
+    if (snapshot) discardKbSnapshot(snapshot);
+    console.warn(
+      `[kbSyncScheduler] kb:sync BỊ TỪ CHỐI VRAM ⇒ BỎ QUA lượt này (chưa có cơ chế hoãn — §5.4 là ` +
+        `Task 6). Ảnh chụp KB đã dọn, cờ running đã trả: ${(err as Error)?.message ?? String(err)}`,
+    );
+    return {
+      ok: false, exitCode: null, chunksBefore, chunksAfter: chunksBefore, added: 0,
+      durationMs: Date.now() - start, skipped: true, reason: "vram_refused",
     };
-
-    let child: ReturnType<typeof spawn> | null = null;
-    const timer = setTimeout(() => {
-      console.error(`[kbSyncScheduler] run exceeded ${TIMEOUT_MS}ms — killing`);
-      try { child?.kill("SIGKILL"); } catch { /* ignore */ }
-      const after = countChunks();
-      done({ ok: false, exitCode: null, chunksBefore, chunksAfter: after, added: after - chunksBefore, durationMs: Date.now() - start, reason: "timeout" });
-    }, TIMEOUT_MS);
-
-    try {
-      // shell:true so `npm`/`npm.cmd` resolves on both Windows and POSIX. `spawnKbSyncWithVram`
-      // already wires "exit"/"error" → `kbSyncVramTicket.release()` (Task 6) — the listeners
-      // below are ADDITIONAL (Node supports many listeners per event) and only compute stats.
-      child = spawnKbSyncWithVram(kbSyncVramTicket);
-      child.stdout?.on("data", (d) => {
-        const line = String(d).trim();
-        if (line) console.log(`[kbSyncScheduler] ${line}`);
-      });
-      child.stderr?.on("data", (d) => {
-        const line = String(d).trim();
-        if (line) console.warn(`[kbSyncScheduler] ${line}`);
-      });
-      child.on("error", (err) => {
-        clearTimeout(timer);
-        console.error("[kbSyncScheduler] spawn error:", (err as Error)?.message ?? err);
-        const after = countChunks();
-        done({ ok: false, exitCode: null, chunksBefore, chunksAfter: after, added: after - chunksBefore, durationMs: Date.now() - start, reason: "spawn_error" });
-      });
-      child.on("close", (code) => {
-        clearTimeout(timer);
-        const after = countChunks();
-        done({ ok: code === 0, exitCode: code, chunksBefore, chunksAfter: after, added: after - chunksBefore, durationMs: Date.now() - start });
-      });
-    } catch (err) {
-      clearTimeout(timer);
-      // `spawnKbSyncWithVram` threw BEFORE it could attach its own "exit"/"error" listeners
-      // (e.g. `spawn()` itself threw synchronously) — no event will ever fire to release the
-      // ticket, so release it here directly. Idempotent; harmless if it also already fired.
-      try { kbSyncVramTicket.release(); } catch { /* telemetry KHÔNG được làm hỏng lượt sync */ }
-      console.error("[kbSyncScheduler] run error:", (err as Error)?.message ?? err);
-      done({ ok: false, exitCode: null, chunksBefore, chunksAfter: chunksBefore, added: 0, durationMs: Date.now() - start, reason: "exception" });
-    }
-  });
-
-  // B1 — the answer-eval gate. Only runs when we HAVE a snapshot AND the sync
-  // itself succeeded (a failed sync gets no eval, no rollback — same as before
-  // B1; the pre-sync KB was never at risk because kb:sync never touched it
-  // successfully).
-  if (snapshot && stats.ok) {
-    try {
-      const evalStartedAt = Date.now();
-      const run = await runEvalHarness();
-      const verdict = readEvalVerdict(evalStartedAt, run);
-      stats.evalGate = verdict.outcome;
-      stats.evalRecall = verdict.recall;
-      stats.evalReason = verdict.reason;
-
-      if (verdict.outcome === "fail") {
-        restoreKbArtifacts(snapshot); // may throw → caught below (fail-safe)
-        stats.rolledBack = true;
-        stats.ok = false; // the new KB did NOT get promoted this run
-        console.error(
-          `[kbSyncScheduler] eval-gate FAIL (${verdict.reason}, recall=${verdict.recall ?? "n/a"}) — rolled back to the pre-sync KB`,
-        );
-      } else if (verdict.outcome === "pass") {
-        console.log(`[kbSyncScheduler] eval-gate PASS (recall=${verdict.recall ?? "n/a"}) — new KB kept`);
-      } else {
-        console.warn(
-          `[kbSyncScheduler] eval-gate SKIPPED (${verdict.reason}) — keeping the new KB (eval-unavailable ≠ regressed)`,
-        );
-      }
-    } catch (err) {
-      // Fail-safe: an unexpected error ANYWHERE in the gate's own decision
-      // logic (including a failed restore above) must not leave a half-swapped
-      // KB live. Best-effort restore again; if even that fails, say so loudly
-      // but never throw out of runKbSyncNow.
-      console.error("[kbSyncScheduler] eval-gate threw — attempting fail-safe restore:", (err as Error)?.message ?? err);
-      try {
-        restoreKbArtifacts(snapshot);
-        stats.rolledBack = true;
-      } catch (restoreErr) {
-        console.error(
-          "[kbSyncScheduler] CRITICAL — fail-safe restore ALSO failed; the KB may be inconsistent:",
-          (restoreErr as Error)?.message ?? restoreErr,
-        );
-        // Both restore attempts failed — record the honest, durable signal so
-        // the KB health surface can flag the corpus as possibly mixed until
-        // the next successful autosync self-heals it.
-        stats.rollbackFailed = true;
-      }
-      stats.evalGate = "fail";
-      stats.evalReason = "gate_exception";
-      stats.ok = false;
-    } finally {
-      discardKbSnapshot(snapshot);
-    }
-  } else if (snapshot) {
-    // Sync failed (or was killed/timed out) before the gate could matter —
-    // nothing to evaluate, nothing to roll back. Clean up the unused snapshot.
-    discardKbSnapshot(snapshot);
   }
 
-  running = false;
-  lastRunAt = new Date();
-  lastRunStats = stats;
-  console.log(
-    `[kbSyncScheduler] done in ${stats.durationMs}ms — ok=${stats.ok} exit=${stats.exitCode} ` +
-      `chunks ${stats.chunksBefore}→${stats.chunksAfter} (Δ${stats.added})` +
-      (stats.evalGate ? ` evalGate=${stats.evalGate}` : "") +
-      (stats.rollbackFailed ? " rollbackFailed=true (KB may be inconsistent until next autosync)" : ""),
-  );
-  return stats;
+    const stats: KbSyncRunStats = await new Promise<KbSyncRunStats>((resolve) => {
+      let settled = false;
+      const done = (s: KbSyncRunStats) => {
+        if (settled) return;
+        settled = true;
+        resolve(s);
+      };
+
+      let child: ReturnType<typeof spawn> | null = null;
+      const timer = setTimeout(() => {
+        console.error(`[kbSyncScheduler] run exceeded ${TIMEOUT_MS}ms — killing`);
+        try { child?.kill("SIGKILL"); } catch { /* ignore */ }
+        const after = countChunks();
+        done({ ok: false, exitCode: null, chunksBefore, chunksAfter: after, added: after - chunksBefore, durationMs: Date.now() - start, reason: "timeout" });
+      }, TIMEOUT_MS);
+
+      try {
+        // shell:true so `npm`/`npm.cmd` resolves on both Windows and POSIX. `spawnKbSyncWithVram`
+        // already wires "exit"/"error" → `kbSyncVramTicket.release()` (Task 6) — the listeners
+        // below are ADDITIONAL (Node supports many listeners per event) and only compute stats.
+        child = spawnKbSyncWithVram(kbSyncVramTicket);
+        child.stdout?.on("data", (d) => {
+          const line = String(d).trim();
+          if (line) console.log(`[kbSyncScheduler] ${line}`);
+        });
+        child.stderr?.on("data", (d) => {
+          const line = String(d).trim();
+          if (line) console.warn(`[kbSyncScheduler] ${line}`);
+        });
+        child.on("error", (err) => {
+          clearTimeout(timer);
+          console.error("[kbSyncScheduler] spawn error:", (err as Error)?.message ?? err);
+          const after = countChunks();
+          done({ ok: false, exitCode: null, chunksBefore, chunksAfter: after, added: after - chunksBefore, durationMs: Date.now() - start, reason: "spawn_error" });
+        });
+        child.on("close", (code) => {
+          clearTimeout(timer);
+          const after = countChunks();
+          done({ ok: code === 0, exitCode: code, chunksBefore, chunksAfter: after, added: after - chunksBefore, durationMs: Date.now() - start });
+        });
+      } catch (err) {
+        clearTimeout(timer);
+        // `spawnKbSyncWithVram` threw BEFORE it could attach its own "exit"/"error" listeners
+        // (e.g. `spawn()` itself threw synchronously) — no event will ever fire to release the
+        // ticket, so release it here directly. Idempotent; harmless if it also already fired.
+        try { kbSyncVramTicket.release(); } catch { /* telemetry KHÔNG được làm hỏng lượt sync */ }
+        console.error("[kbSyncScheduler] run error:", (err as Error)?.message ?? err);
+        done({ ok: false, exitCode: null, chunksBefore, chunksAfter: chunksBefore, added: 0, durationMs: Date.now() - start, reason: "exception" });
+      }
+    });
+
+    // B1 — the answer-eval gate. Only runs when we HAVE a snapshot AND the sync
+    // itself succeeded (a failed sync gets no eval, no rollback — same as before
+    // B1; the pre-sync KB was never at risk because kb:sync never touched it
+    // successfully).
+    if (snapshot && stats.ok) {
+      try {
+        const evalStartedAt = Date.now();
+        const run = await runEvalHarness();
+        const verdict = readEvalVerdict(evalStartedAt, run);
+        stats.evalGate = verdict.outcome;
+        stats.evalRecall = verdict.recall;
+        stats.evalReason = verdict.reason;
+
+        if (verdict.outcome === "fail") {
+          restoreKbArtifacts(snapshot); // may throw → caught below (fail-safe)
+          stats.rolledBack = true;
+          stats.ok = false; // the new KB did NOT get promoted this run
+          console.error(
+            `[kbSyncScheduler] eval-gate FAIL (${verdict.reason}, recall=${verdict.recall ?? "n/a"}) — rolled back to the pre-sync KB`,
+          );
+        } else if (verdict.outcome === "pass") {
+          console.log(`[kbSyncScheduler] eval-gate PASS (recall=${verdict.recall ?? "n/a"}) — new KB kept`);
+        } else {
+          console.warn(
+            `[kbSyncScheduler] eval-gate SKIPPED (${verdict.reason}) — keeping the new KB (eval-unavailable ≠ regressed)`,
+          );
+        }
+      } catch (err) {
+        /**
+         * ★★★ I-6 (review vòng 1) — LỜI TỪ CHỐI **KHÔNG** ĐƯỢC ĐI VÀO NHÁNH FAIL-SAFE BÊN DƯỚI.
+       *
+       * Nhánh đó gọi `restoreKbArtifacts()` — tức **LÙI LẠI MỘT LƯỢT SYNC ĐÃ THÀNH CÔNG** — vì nó
+       * giả định "lỗi trong logic quyết định của cổng ⇒ KB có thể đang nửa vời". Nhưng một lượt xin
+       * VRAM bị từ chối thì **KB chưa hề bị đụng tới**: tiến trình eval còn chưa được sinh ra.
+       *
+       * ⇒ Đúng ngữ nghĩa là `"skipped"`, và file này ĐÃ CÓ SẴN nguyên tắc ấy bằng chữ ở nhánh trên:
+       * *"eval-unavailable ≠ regressed"* ⇒ **GIỮ KB MỚI**, không lùi, không hạ `stats.ok`.
+       */
+      if (isVramRefusal(err)) {
+        stats.evalGate = "skipped";
+        stats.evalReason = "vram_refused";
+        console.warn(
+          `[kbSyncScheduler] eval-gate BỊ TỪ CHỐI VRAM — GIỮ KB MỚI (eval không chạy được ≠ KB tụt ` +
+            `chất lượng, và KB chưa hề bị đụng tới): ${(err as Error)?.message ?? String(err)}`,
+        );
+      } else {
+        // Fail-safe: an unexpected error ANYWHERE in the gate's own decision
+        // logic (including a failed restore above) must not leave a half-swapped
+        // KB live. Best-effort restore again; if even that fails, say so loudly
+        // but never throw out of runKbSyncNow.
+        console.error("[kbSyncScheduler] eval-gate threw — attempting fail-safe restore:", (err as Error)?.message ?? err);
+        try {
+          restoreKbArtifacts(snapshot);
+          stats.rolledBack = true;
+        } catch (restoreErr) {
+          console.error(
+            "[kbSyncScheduler] CRITICAL — fail-safe restore ALSO failed; the KB may be inconsistent:",
+            (restoreErr as Error)?.message ?? restoreErr,
+          );
+          // Both restore attempts failed — record the honest, durable signal so
+          // the KB health surface can flag the corpus as possibly mixed until
+          // the next successful autosync self-heals it.
+          stats.rollbackFailed = true;
+        }
+        stats.evalGate = "fail";
+        stats.evalReason = "gate_exception";
+        stats.ok = false;
+      }
+    } finally {
+      discardKbSnapshot(snapshot);
+      }
+    } else if (snapshot) {
+      // Sync failed (or was killed/timed out) before the gate could matter —
+      // nothing to evaluate, nothing to roll back. Clean up the unused snapshot.
+      discardKbSnapshot(snapshot);
+    }
+
+    lastRunAt = new Date();
+    lastRunStats = stats;
+    console.log(
+      `[kbSyncScheduler] done in ${stats.durationMs}ms — ok=${stats.ok} exit=${stats.exitCode} ` +
+        `chunks ${stats.chunksBefore}→${stats.chunksAfter} (Δ${stats.added})` +
+        (stats.evalGate ? ` evalGate=${stats.evalGate}` : "") +
+        (stats.rollbackFailed ? " rollbackFailed=true (KB may be inconsistent until next autosync)" : ""),
+    );
+    return stats;
+  } finally {
+    // ⚠ TRẢ CỜ Ở ĐÂY, KHÔNG Ở CUỐI THÂN HÀM: mọi đường thoát (trả về bình thường · `await` NÉM ·
+    // lời từ chối VRAM) đều đi qua đây. Đây là thứ DUY NHẤT bảo đảm hàm còn gọi được lần sau.
+    running = false;
+  }
 }
 
 /** B1 — the last autosync run's answer-eval gate outcome, for the KB health

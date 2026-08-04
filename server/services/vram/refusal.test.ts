@@ -74,13 +74,19 @@ function placeholdersOf(template: string): string[] {
   return out;
 }
 
+/**
+ * ★ Pha 2B Task 5, review vòng 1 (C) — `reclaimable` mặc định `true` ở đây có chủ đích: phần lớn ca
+ * trong file này canh CÂU CHỮ và các phép lọc số, nên chúng cần một hộ "nhường được thật". Ca dành
+ * riêng cho nhóm CHỈ-GỌI-TÊN truyền `reclaimable: false` tường minh.
+ */
 function holder(
   owner: string,
   mib: number,
   priority: "production" | "interactive" | "background",
   measured = true,
+  reclaimable = true,
 ): VramHolderFact {
-  return { owner, kind: "gguf-model", bytes: mib * MIB, priority, measured };
+  return { owner, kind: "gguf-model", bytes: mib * MIB, priority, measured, reclaimable };
 }
 
 /** Fixture cỡ **17.000 MiB** (ràng buộc toàn cục 7) — không dùng cỡ 600 MiB. */

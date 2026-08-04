@@ -580,8 +580,16 @@ export async function loadWithVramOutcomes<T>(spec: VramLoadOutcomeSpec<T>): Pro
        * Đuổi mù khi không có ai nhường được là vứt một model đang tốt để rồi vẫn bị từ chối.
        */
       if (isVramRefusal(err)) {
-        const facts = (err as { facts?: { preemptable?: readonly { owner: string }[] } }).facts;
-        const ungVien = facts?.preemptable ?? [];
+        const facts = (err as {
+          facts?: { preemptable?: readonly { owner: string; reclaimable?: boolean }[] };
+        }).facts;
+        /**
+         * ★★★ Review vòng 1 (C) — CHỈ những hộ THẬT SỰ THU HỒI ĐƯỢC mới đáng gọi `reclaim()`.
+         * `preemptable` là danh sách theo QUYỀN (§5.2); `reclaimable` là câu trả lời cho *"có ai
+         * đi lấy lại được không"*. Gọi `reclaim()` cho một danh sách toàn hộ ONNX/sidecar là đuổi
+         * một vòng lặp rỗng rồi xin lại trên đúng dư địa cũ — tốn một lượt, không đổi gì.
+         */
+        const ungVien = (facts?.preemptable ?? []).filter((h) => h.reclaimable === true);
         ghiSuKien({
           event: "refuse",
           detail: {
