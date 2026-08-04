@@ -163,6 +163,38 @@ describe("A. `enforceVramGuard()` XOÁ — trần nay là của BROKER, và nó 
     expect(reserve(xin("gguf:30B", 29_000 * MIB), ctx()).lease).not.toBeNull();
   });
 
+  /**
+   * ★★★ I-1 (review TOÀN NHÁNH) — MỘT LỰA CHỌN TƯỜNG MINH MÀ HẬU QUẢ IM LẶNG THÌ KHÔNG PHẢI TƯỜNG MINH.
+   *
+   * `.env` của repo ĐÃ đặt `GGUF_VRAM_GUARD_PCT=90` từ thời nghĩa CŨ (ngưỡng phản ứng), và ba task
+   * sau đó tính mọi con số nghiệm thu như thể không có nó — **−3.261 MiB không ai nhận ra suốt cả
+   * pha**, trong khi nghĩa MỚI là một trần CỨNG có hậu quả TỪ CHỐI. Đã gỡ khỏi `.env`; đây là lưới
+   * cho lần sau: ai đặt lại thì hệ phải KÊU.
+   */
+  it("★★★ I-1: đặt guard < 100 ⇒ KÊU đúng MỘT lần; mặc định 100 ⇒ IM", () => {
+    const keu = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // mặc định (không đặt biến) ⇒ không có gì để cảnh báo
+      __resetVramCapsForTests();
+      expect(ggufVramGuardPct()).toBe(100);
+      ggufVramGuardPct();
+      expect(keu.mock.calls.filter((c) => String(c[0]).includes("GGUF_VRAM_GUARD_PCT"))).toEqual([]);
+
+      process.env.GGUF_VRAM_GUARD_PCT = "90";
+      __resetVramCapsForTests();
+      // đọc NHIỀU lần: bộ nhớ đệm của `doc()` là thứ giữ lời cảnh báo ở đúng MỘT lần/tiến trình
+      ggufVramGuardPct();
+      deviceUsableBytes();
+      usableCeilingBytes(TRAN_THIET_BI);
+      const canhBao = keu.mock.calls.filter((c) => String(c[0]).includes("GGUF_VRAM_GUARD_PCT"));
+      expect(canhBao.length).toBe(1);
+      // và câu đó phải nói đúng HẬU QUẢ (từ chối), không phải chỉ nhắc tên biến
+      expect(String(canhBao[0]![0])).toMatch(/TỪ\s+CHỐI/);
+    } finally {
+      keu.mockRestore();
+    }
+  });
+
   it("GGUF_MAX_VRAM_MB là trần BYTE; `0` = tắt (ngữ nghĩa cũ giữ nguyên)", () => {
     expect(ggufMaxVramBytes()).toBe(0);
     expect(usableCeilingBytes(TRAN_THIET_BI)).toBe(TRAN_THIET_BI);

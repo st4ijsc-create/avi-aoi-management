@@ -48,6 +48,15 @@
  * TỐT NHẤT (tick vừa chạy 1,4 ms trước), không phải ca thường gặp. Ai muốn biên thật sự tỉ lệ theo
  * tuổi phải nâng TRẦN (đắt: khoá thêm VRAM), không phải sửa phép nhân.
  *
+ * ⚠⚠ I-1 (review TOÀN NHÁNH) — **CON SỐ 30.559 CÓ HAI ĐIỀU KIỆN, VÀ CẢ HAI ĐỀU TỪNG BỊ BỎ QUÊN**:
+ *   (a) `GGUF_VRAM_GUARD_PCT` **không đặt** (trần = 32.607 MiB). `.env` của repo này từng đặt `=90`
+ *       từ thời nghĩa CŨ ⇒ trần thật **29.346 MiB** (−3.261) và con số ổn định tụt xuống
+ *       **27.298 MiB** — không ai nhận ra suốt cả pha. Đã GỠ khỏi `.env`; `vramCaps.doc()` nay KÊU
+ *       một dòng ở lượt đọc trần đầu tiên nếu ai đặt lại.
+ *   (b) nền **đã xác minh** (`baselineVerified`). Chưa xác minh ⇒ thêm một đơn vị nữa ⇒
+ *       **29.535 MiB** (và **26.274 MiB** nếu cộng cả guard 90).
+ * Bốn con số, một phép trừ: `trần − 1.024 (đệm) − 1.024 (biên tuổi) − [1.024 nếu nền chưa xác minh]`.
+ *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠⚠ ĐƠN VỊ MẤT-TIN-CẬY LÀ MỘT **BIÊN**, KHÔNG PHẢI MỘT **ƯỚC LƯỢNG** CỦA PHẦN KHÔNG THẤY
  * ══════════════════════════════════════════════════════════════════════════════════════════════

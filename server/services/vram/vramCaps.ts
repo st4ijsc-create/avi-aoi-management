@@ -73,6 +73,28 @@ function doc() {
     /** Trần LRU cho kho phiên ONNX. Mặc định 5 — y như bản cũ của `aiInferenceEngine`. */
     sessionCacheMax: soNguyenTuEnv("AI_SESSION_CACHE_MAX", 5, 1, 1024),
   };
+  /**
+   * ★★★ I-1 (review TOÀN NHÁNH) — **LÀM HẬU QUẢ HIỆN RA, ĐÚNG MỘT LẦN MỖI TIẾN TRÌNH.**
+   *
+   * Câu biện minh ở trên (*"ai muốn sàn phần trăm CỨNG thì đặt tường minh và nhận đúng hậu quả
+   * đó"*) đã đúng về nguyên tắc và SAI trên thực tế: `.env` của repo này **đã đặt** `=90` từ thời
+   * nghĩa CŨ, và ba task sau đó tính mọi con số nghiệm thu như thể không có nó — **−3.261 MiB
+   * không ai nhận ra suốt cả pha**. Một lựa chọn tường minh mà hậu quả của nó im lặng thì không
+   * phải một lựa chọn tường minh; đây là chỗ rẻ nhất để nó thôi im.
+   *
+   * ⚠ ĐỒNG BỘ và ĐÚNG MỘT LẦN: `doc()` có bộ nhớ đệm nên khối này chạy ở lượt đọc trần ĐẦU TIÊN
+   * của tiến trình. Không `await`, không I/O — `reserve()` phải giữ đồng bộ (ràng buộc 1).
+   * ⚠ KHÔNG ném và KHÔNG đổi con số: nó chỉ NÓI. Một cảnh báo làm hỏng đường nạp model là đổi một
+   * vấn đề im lặng lấy một vấn đề ồn ào hơn nhưng tệ hơn.
+   */
+  if (nho.guardPct < 100) {
+    console.warn(
+      `[vram] ⚠ GGUF_VRAM_GUARD_PCT=${nho.guardPct} — đây là TRẦN CỨNG của broker (hậu quả: TỪ ` +
+        `CHỐI cấp phát), KHÔNG còn là ngưỡng phản ứng "evict rồi vẫn nạp" của bản cũ. Nó cắt ` +
+        `${100 - nho.guardPct}% trần thiết bị, CHỒNG LÊN VRAM_SAFETY_RESERVE_MB và các đơn vị ` +
+        `mất-tin-cậy. Bỏ biến này nếu bạn chỉ định giữ hành vi cũ (xem vramCaps.ts + .env).`,
+    );
+  }
   return nho;
 }
 
