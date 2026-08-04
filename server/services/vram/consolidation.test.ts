@@ -30,14 +30,22 @@ const daDonModel = vi.hoisted(() => [] as string[]);
  */
 const donModelKetQua = vi.hoisted(() => ({ value: true as boolean | "THROW", nhaSo: false }));
 const nhaSoTheoOwner = vi.hoisted(() => new Map<string, () => void>());
-vi.mock("../aiGgufEngine", () => ({
-  unloadGgufModel: async (modelId: string) => {
-    daDonModel.push(modelId);
-    if (donModelKetQua.value === "THROW") throw new Error("unloadGgufModel hỏng (ca thử nghiệm)");
-    if (donModelKetQua.nhaSo) nhaSoTheoOwner.get(`gguf:${modelId}`)?.();
-    return donModelKetQua.value;
-  },
-}));
+// ⚠ C-1 (review TOÀN NHÁNH) — `importOriginal` CHỨ KHÔNG thay cả module: ta CHỈ thay
+// `unloadGgufModel` (người thi hành), còn `ggufModelVramRequest()` phải là bản THẬT — nó chính là
+// thứ ca "đường thoát" của nhóm C-bis đọc. Bản trước thay TRỌN module nên hàm thuần đó vô hình,
+// và đột biến "gỡ `reclaimer`" đi lọt 0 ĐỎ/539.
+vi.mock("../aiGgufEngine", async (goc) => {
+  const that = await goc<typeof import("../aiGgufEngine")>();
+  return {
+    ...that,
+    unloadGgufModel: async (modelId: string) => {
+      daDonModel.push(modelId);
+      if (donModelKetQua.value === "THROW") throw new Error("unloadGgufModel hỏng (ca thử nghiệm)");
+      if (donModelKetQua.nhaSo) nhaSoTheoOwner.get(`gguf:${modelId}`)?.();
+      return donModelKetQua.value;
+    },
+  };
+});
 vi.mock("./vramProcessProbe", () => ({
   readProcessVram: async () => null,
   __resetProcessProbeCacheForTests: () => {},
@@ -468,6 +476,49 @@ describe("C-bis. LƯỚI THEO ĐƯỜNG THOÁT — `beginVramAllocation()` là n
     // và bằng chứng nhả PHẢI là lớp mạnh nhất — nếu ai hạ nó xuống "unverified" thì lời hứa
     // "thu hồi được" mất chỗ dựa.
     expect(yc.releaseProof).toBe("process-exit");
+  });
+
+  /**
+   * ★★★ C-1 (review TOÀN NHÁNH) — ĐỘT BIẾN THỨ HAI ĐÃ SỐNG SÓT, CÙNG LỚP, HỘ QUAN TRỌNG HƠN.
+   *
+   * Gỡ `reclaimer: "gguf-idle-model"` khỏi điểm gọi SẢN XUẤT của `loadGgufModel()` cho **0 ĐỎ/539**
+   * và `tsc` sạch, vì mọi ca chạm vị từ đều tự khai `reclaimer` BẰNG TAY (nhóm C và D bên dưới đều
+   * dựng hộ qua `xin(..., { reclaimer })`). `gguf-idle-model` là người thi hành DUY NHẤT chạy hằng
+   * ngày ⇒ mất nó là `preemptPlan()` rỗng vĩnh viễn và mọi lượt hết khe/hết byte thành TỪ CHỐI CỨNG.
+   *
+   * ⚠ Ca này đọc ĐÚNG object mà mã sản xuất gửi đi (`ggufModelVramRequest()`), KHÔNG tự khai lại —
+   * đó là toàn bộ khác biệt giữa "lưới theo FILE" và "lưới theo ĐƯỜNG THOÁT".
+   */
+  it("★★★ điểm gọi SẢN XUẤT của model GGUF THẬT SỰ khai người thi hành (cả hai đường)", async () => {
+    const { ggufModelVramRequest } = await import("../aiGgufEngine");
+    const yc = ggufModelVramRequest("qwen3-30b", "D:/models/qwen3-30b.gguf");
+    expect(yc.owner).toBe("gguf:qwen3-30b");
+    expect(yc.kind).toBe("gguf-model");
+    expect(yc.priority).toBe("interactive");
+    expect(yc.filePath).toBe("D:/models/qwen3-30b.gguf");
+    expect(yc.reclaimer).toBe<VramReclaimerId>("gguf-idle-model");
+
+    // … và lời khai đó PHẢI đi qua được vị từ dùng chung: một hộ dựng TỪ CHÍNH object này, khi nhàn
+    // rỗi, phải nằm trong kế hoạch thu hồi. Kiểm cả hai nấc để một `reclaimer` đúng-tên-sai-nghĩa
+    // (vd đổi thành một id chưa có người thi hành) cũng đỏ.
+    process.env.GGUF_MAX_LOADED_MODELS = "64";
+    __resetVramCapsForTests();
+    const r = reserve({ ...yc, estimatedBytes: KHOI_30B }, ctx());
+    setLeaseRefCount(r.lease!.id, 0);
+    expect(nguoiThiHanhThuHoi(r.lease!)).toBe<VramReclaimerId>("gguf-idle-model");
+    expect(preemptPlan("interactive", Number.POSITIVE_INFINITY).map((s) => s.owner)).toEqual([
+      "gguf:qwen3-30b",
+    ]);
+
+    // ⚠ ĐƯỜNG DỰ PHÒNG (`vramLoadOutcome` không nạp được) dùng CÙNG hàm này — khoá lại bằng MÁY để
+    // hai đường không trôi khỏi nhau (bản trước viết object hai lần, mỗi lần một chỗ).
+    const { readFileSync } = await import("node:fs");
+    const { join, dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const goc = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const src = readFileSync(join(goc, "server/services/aiGgufEngine.ts"), "utf8");
+    const soLuotDung = src.match(/ggufModelVramRequest\(modelId, resolvedPath\)/g) ?? [];
+    expect(soLuotDung.length, "cả ĐƯỜNG CHÍNH lẫn ĐƯỜNG DỰ PHÒNG phải dùng hàm thuần").toBe(2);
   });
 });
 

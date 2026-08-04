@@ -814,6 +814,42 @@ function releaseModelVramTickets(loaded: LoadedModel): void {
 }
 
 /**
+ * ★★★ Review TOÀN NHÁNH C-1 — **LƯỚI THEO ĐƯỜNG THOÁT cho lời khai người thi hành của hộ GGUF.**
+ *
+ * Đột biến *"gỡ `reclaimer: "gguf-idle-model"` khỏi điểm gọi sản xuất"* **SỐNG SÓT 0 ĐỎ/539** khi
+ * lời khai còn nằm trực tiếp trong thân `loadGgufModel()`: mọi ca chạm vị từ đều tự khai `reclaimer`
+ * **bằng tay** (`vram/consolidation.test.ts`), nên **không ca nào đọc cái mà đường sản xuất thật sự
+ * gửi đi**. Đây là LẦN THỨ TƯ của lớp *"lưới đi theo FILE chứ không theo ĐƯỜNG THOÁT"*, và lần này
+ * ngay bên trong bản vá dựng ra để đóng nó (`llamaVisionSidecar.visionSidecarVramRequest()` vá
+ * đúng lớp này cho hộ 7,8 GB, nhưng bỏ lại hộ chạy HẰNG NGÀY).
+ *
+ * Hậu quả nếu hồi quy, và toàn bộ chuỗi đó IM LẶNG: `nguoiThiHanhThuHoi()` → `null` cho **mọi**
+ * model GGUF ⇒ `preemptPlan()` **rỗng vĩnh viễn** ⇒ `evictLRU()` vừa được hấp thụ thành **MÃ CHẾT**
+ * ⇒ nhánh `thuHoi.reclaimed.length > 0` (`vram/vramWiring.ts`) không bao giờ chạy ⇒ **mọi lượt hết
+ * khe / hết byte thành TỪ CHỐI CỨNG thay vì "dọn rồi cấp"** — đúng chiều dừng dây chuyền. Kèm:
+ * `reclaimable:false` ở mọi hộ ⇒ `preemptableBytes = 0` ⇒ câu từ chối in *"CÓ cơ chế thu hồi: không có"*.
+ *
+ * ⇒ Object yêu cầu tách thành MỘT hàm THUẦN (cùng khuôn `visionSidecarVramRequest()`); **cả hai**
+ * điểm gọi — đường chính (`vramLoadOutcome` runner) và đường DỰ PHÒNG (`beginVram` trực tiếp) —
+ * trải kết quả của nó, và một ca test đọc ĐÚNG object ấy.
+ * ⚠ Khoảng hở còn lại, khai thẳng: ai thôi dùng hàm này và viết lại object tại chỗ thì lưới lại mù.
+ * ⚠ `owner`/`filePath` là THAM SỐ chứ không tự tính lại bên trong: hàm phải THUẦN để ca test gọi
+ * được mà không cần một file `.gguf` thật.
+ */
+export function ggufModelVramRequest(modelId: string, resolvedPath: string) {
+  return {
+    owner: `gguf:${modelId}`,
+    kind: "gguf-model",
+    priority: "interactive",
+    filePath: resolvedPath,
+    // ★ Task 7 — hộ NÀY có người dọn: `unloadGgufModel()` dispose THẬT rồi mới nhả sổ.
+    // ⚠ Khai ở ĐỊA CHỈ NÀY chứ không theo `kind`: `aiReranker` cũng xin `kind: "gguf-model"`
+    // cho một model NẰM NGOÀI `loadedModels` ⇒ không ai dọn được (vram/types.VramReclaimerId).
+    reclaimer: "gguf-idle-model",
+  } as const;
+}
+
+/**
  * Load a GGUF model into memory and create a context/session
  */
 export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
@@ -871,14 +907,9 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
       const runner = await loadOutcomeRunner();
       if (runner) {
         const outcome = await runner({
-          owner: `gguf:${modelId}`,
-          kind: "gguf-model",
-          priority: "interactive",
-          filePath: resolvedPath,
-          // ★ Task 7 — hộ NÀY có người dọn: `unloadGgufModel()` dispose THẬT rồi mới nhả sổ.
-          // ⚠ Khai ở ĐỊA CHỈ NÀY chứ không theo `kind`: `aiReranker` cũng xin `kind: "gguf-model"`
-          // cho một model NẰM NGOÀI `loadedModels` ⇒ không ai dọn được (types.VramReclaimerId).
-          reclaimer: "gguf-idle-model",
+          // ★★★ C-1 (review TOÀN NHÁNH) — object yêu cầu đến từ HÀM THUẦN, không viết tay tại chỗ.
+          // Đọc khối docstring của `ggufModelVramRequest()` trước khi tách nó ra lại.
+          ...ggufModelVramRequest(modelId, resolvedPath),
           requestedGpuLayers,
           load: async (plan) =>
             await llama.loadModel({
@@ -917,15 +948,10 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
         // Module chính sách không nạp được. Đã kêu to ở `loadOutcomeRunner()`. Lượt nạp vẫn phải
         // chạy (telemetry không được làm hỏng đường nạp) — nhưng chạy ở hình dạng TỐI THIỂU và
         // KHÔNG có ba kết cục: một lượt, một giấy phép, hỏng thì ném.
-        vramHolder.ticket = await beginVram({
-          owner: `gguf:${modelId}`,
-          kind: "gguf-model",
-          priority: "interactive",
-          filePath: resolvedPath,
-          // ★ Task 7 — cùng hộ, cùng người dọn: đường DỰ PHÒNG không được tạo ra một model
-          // "vô hình với thu hồi" chỉ vì module chính sách không nạp được.
-          reclaimer: "gguf-idle-model",
-        });
+        // ★ Task 7 — cùng hộ, cùng người dọn: đường DỰ PHÒNG không được tạo ra một model
+        // "vô hình với thu hồi" chỉ vì module chính sách không nạp được. C-1: CÙNG hàm thuần với
+        // đường chính ⇒ hai đường không thể trôi khỏi nhau, và một ca đọc được cả hai.
+        vramHolder.ticket = await beginVram(ggufModelVramRequest(modelId, resolvedPath));
         try {
           model = await llama.loadModel({
             modelPath: resolvedPath,
