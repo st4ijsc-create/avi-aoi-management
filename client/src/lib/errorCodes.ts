@@ -30,6 +30,20 @@ const PARAM_DICTIONARY_SPACE: Record<string, string> = {
   // trên (đều là DANH TỪ enum cố định), `reason` là một CÂU/CỤM chỉ dẫn — xem
   // translateAppError() bên dưới để biết khi nào nó được nội suy.
   reason: "reason",
+  // Pha 2B Task 4 (§5.3 — từ chối trung thực VRAM) — không gian MỚI `errors.list.*`,
+  // cho những tham số là DANH SÁCH ĐỘNG có thể RỖNG (`holders` = ai đang giữ VRAM,
+  // `preemptable` = ai có thể nhường). Hai tính chất, và chính chỗ giao nhau của
+  // chúng là lý do phải có không gian riêng:
+  //   • giá trị THẬT là chuỗi tự do do máy chủ ghép ("gguf-model:x=17000 MiB
+  //     (production), …") — không có khoá dịch nào, nên nó rơi về `defaultValue:
+  //     raw` và hiện NGUYÊN VĂN, đúng như 6 khoá trên khi chưa dịch;
+  //   • giá trị RỖNG lại là một Ý NGHĨA phải dịch: máy chủ gửi khoá `"none"` ⇒
+  //     `errors.list.none` ⇒ "không có"/"none"/"无". Nếu để chuỗi rỗng đi thẳng vào
+  //     câu, người vận hành đọc "Có thể nhường: ." và tự điền nghĩa — đúng lớp lỗi
+  //     "câu lỗi hứa/nói mập mờ hơn dữ liệu" mà §5.3 tồn tại để diệt.
+  // ⚠ Hai tên tham số, MỘT không gian — cùng khuôn `entity`/`parent` ở trên.
+  holders: "list",
+  preemptable: "list",
 };
 
 /** Review round 1 (M-2) — reviewer dựng harness i18next THẬT tái hiện: khi một
@@ -46,13 +60,35 @@ const PARAM_DICTIONARY_SPACE: Record<string, string> = {
  *  trị đó được dùng ở BẤT KỲ lời gọi i18n.t nào (kể cả lời gọi lồng cho `reason`
  *  bên dưới — nếu chỉ làm sạch ở `out` cuối cùng mà không làm sạch trước khi
  *  truyền vào lời gọi lồng thì lỗ hổng vẫn còn nguyên ở đó). */
+/* Pha 2B Task 4 — ĐÍNH CHÍNH một câu SAI trong chính hàm này: bản trước bỏ qua
+ * (`continue`) mọi khoá từ điển với lý do "dùng làm khoá tra, không hiện thẳng".
+ * Vế sau KHÔNG ĐÚNG: `localizeParams` bên dưới gọi `i18n.t(..., { defaultValue: raw })`,
+ * nên khi khoá `errors.<space>.<raw>` KHÔNG tồn tại thì `raw` **hiện thẳng ra màn
+ * hình** — đó là hành vi THIẾT KẾ ("chưa dịch ⇒ hiện thô"), không phải tai nạn.
+ * ⇒ Giá trị khoá từ điển cũng đi qua cùng đường hiển thị với tham số tự do, nên
+ * phải chịu cùng phép làm sạch M-2. Với 6 khoá enum camelCase cũ, phép này KHÔNG
+ * đổi gì (chúng không bao giờ chứa `{{` hay `$t(`); ca test khoá điều đó lại). Nó
+ * chỉ thật sự có tác dụng cho không gian `list` MỚI — nơi giá trị là chuỗi tự do
+ * ghép từ tên chủ sở hữu, tức đúng loại dữ liệu M-2 sinh ra để chặn.
+ *
+ * ⚠⚠ VÀ MỘT ĐÍNH CHÍNH NẶNG HƠN, ĐO ĐƯỢC (đột biến của Task 4, không phải suy
+ * luận): khối M-2 ngay trên có câu *"KHÔNG phải lỗ injection — `skipOnVariables`
+ * đã chặn `$t()` chạy nesting từ biến"*. Câu đó ĐÚNG cho tham số TỰ DO (giá trị
+ * đi vào chỗ nội suy ⇒ `skipOnVariables` phủ), nhưng SAI cho khoá TỪ ĐIỂN: ở đó
+ * `raw` được truyền làm `defaultValue`, tức nó trở thành **TEMPLATE**, không phải
+ * biến — và `skipOnVariables` không phủ template. Đo thật, bỏ phép làm sạch rồi
+ * dựng một `holders` tên `"{{availableMb}}$t(errors.generic)"`: câu ra là
+ * `"…Đang giữ trong sổ: 1200Đã xảy ra lỗi=1 MiB…"` — vừa CƯỚP giá trị của một
+ * placeholder thật, vừa NỐI nội dung của một khoá i18n bất kỳ. ⇒ Với khoá từ
+ * điển, đây ĐÚNG là một lỗ nội suy, và ca test khoá lại bằng chính hai dấu vết
+ * đó (`"availableMb"` phải còn nguyên dạng chữ, `"Đã xảy ra lỗi"` không được
+ * xuất hiện) — ba assert "không còn `{{`" ĐẦU TIÊN của tôi SỐNG SÓT đột biến,
+ * vì `{{` cũng biến mất khi i18next diễn giải nó. */
 function sanitizeFreeParams(
   params: Record<string, string | number>,
 ): Record<string, string | number> {
-  const dictKeys = new Set(Object.keys(PARAM_DICTIONARY_SPACE));
   const out: Record<string, string | number> = { ...params };
   for (const [key, value] of Object.entries(out)) {
-    if (dictKeys.has(key)) continue; // khoá từ điển: xử lý riêng (dùng làm khoá tra, không hiện thẳng)
     if (typeof value === "string") {
       out[key] = value.replace(/\{\{/g, "").replace(/\$t\(/g, "");
     }

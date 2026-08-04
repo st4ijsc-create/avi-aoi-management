@@ -3562,6 +3562,13 @@
     "KB_PARSE_FAILED": "Could not read file content.",
     "KB_NO_TEXT_EXTRACTED": "File \"{{source}}\" has no text to ingest.",
     "KB_FETCH_FAILED": "Could not fetch content from {{url}}.",
+    "VRAM_REFUSED": "Not enough VRAM for {{owner}} (priority {{priority}}): requested {{requestedMb}} MiB, {{availableMb}} MiB left. Currently held (ledger): {{holders}}. Can yield: {{preemptable}}.",
+    "VRAM_REFUSED_WITH_REASON": "Not enough VRAM for {{owner}} (priority {{priority}}): requested {{requestedMb}} MiB, {{availableMb}} MiB left. Currently held (ledger): {{holders}}. Can yield: {{preemptable}}. {{reason}}",
+    "VRAM_HEADROOM_UNKNOWN": "Cannot grant VRAM to {{owner}} (priority {{priority}}): requested {{requestedMb}} MiB, but the system could not compute the remaining headroom ({{degraded}}) and refused to stay safe. Currently held (ledger): {{holders}}. Can yield: {{preemptable}}.",
+    "VRAM_HEADROOM_UNKNOWN_WITH_REASON": "Cannot grant VRAM to {{owner}} (priority {{priority}}): requested {{requestedMb}} MiB, but the system could not compute the remaining headroom ({{degraded}}) and refused to stay safe. Currently held (ledger): {{holders}}. Can yield: {{preemptable}}. {{reason}}",
+    "list": {
+      "none": "none"
+    },
     "entity": {
       "product": "product",
       "machine": "machine",
@@ -4034,6 +4041,10 @@
     "cannotDisplayChart": "Cannot display chart",
     "analyticsRenderError": "Analytics render error",
     "reason": {
+      "vramUnattributedUnreliable": "Unattributable share: {{unknownCount}} allocation(s) ran outside the ledger without even a byte estimate, so the out-of-ledger usage cannot be measured; the {{unledgeredMb}} MiB estimate is unreliable — do not compute with it. The ledger covers only {{wiredSites}} of {{knownRows}} known allocation sites, and that inventory is itself a lower bound ⇒ the list above is not necessarily complete.",
+      "vramUnattributedUnknownExtent": "Unattributable share: the system could not measure out-of-ledger usage on the latest tick, so its size is unknown. The ledger covers only {{wiredSites}} of {{knownRows}} known allocation sites, and that inventory is itself a lower bound ⇒ the list above is not necessarily complete.",
+      "vramUnattributedMeasured": "Unattributable share: {{unattributedMb}} MiB in use on the device belongs to no holder in the ledger. The ledger covers only {{wiredSites}} of {{knownRows}} known allocation sites, and that inventory is itself a lower bound ⇒ the list above is not necessarily complete.",
+      "vramLedgerCoverageOnly": "Unattributable share: none detected on the latest tick — but the ledger covers only {{wiredSites}} of {{knownRows}} known allocation sites, and that inventory is itself a lower bound ⇒ the list above is not necessarily complete.",
       "scheduleConflict": "Schedule conflicts with {{conflictCount}} other production order(s). Use forceOverride=true to bypass.",
       "lineCapacityExceeded": "Line {{lineName}} supports at most {{maxConcurrent}} concurrent order(s); there are already {{currentCount}}. Use forceOverride=true to bypass.",
       "productionCapacityExceeded": "Quantity {{quantity}} exceeds line capacity ({{maxCapacity}} units over {{hours}} hours). Use forceOverride=true to bypass.",

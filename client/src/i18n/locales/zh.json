@@ -3554,6 +3554,13 @@
     "KB_PARSE_FAILED": "无法读取文件内容。",
     "KB_NO_TEXT_EXTRACTED": "文件 \"{{source}}\" 没有可导入的文本。",
     "KB_FETCH_FAILED": "无法从 {{url}} 获取内容。",
+    "VRAM_REFUSED": "{{owner}}（优先级 {{priority}}）的显存不足：申请 {{requestedMb}} MiB，剩余 {{availableMb}} MiB。台账中占用：{{holders}}。可让出：{{preemptable}}。",
+    "VRAM_REFUSED_WITH_REASON": "{{owner}}（优先级 {{priority}}）的显存不足：申请 {{requestedMb}} MiB，剩余 {{availableMb}} MiB。台账中占用：{{holders}}。可让出：{{preemptable}}。{{reason}}",
+    "VRAM_HEADROOM_UNKNOWN": "无法为 {{owner}}（优先级 {{priority}}）分配显存：申请 {{requestedMb}} MiB，但系统无法计算剩余余量（{{degraded}}），为安全起见予以拒绝。台账中占用：{{holders}}。可让出：{{preemptable}}。",
+    "VRAM_HEADROOM_UNKNOWN_WITH_REASON": "无法为 {{owner}}（优先级 {{priority}}）分配显存：申请 {{requestedMb}} MiB，但系统无法计算剩余余量（{{degraded}}），为安全起见予以拒绝。台账中占用：{{holders}}。可让出：{{preemptable}}。{{reason}}",
+    "list": {
+      "none": "无"
+    },
     "entity": {
       "product": "产品",
       "machine": "机台",
@@ -4026,6 +4033,10 @@
     "cannotDisplayChart": "无法显示图表",
     "analyticsRenderError": "分析render错误",
     "reason": {
+      "vramUnattributedUnreliable": "无法归属的部分：有 {{unknownCount}} 次分配在台账之外执行且连字节数都无法估算，因此台账之外的占用无法测得；{{unledgeredMb}} MiB 这一估算值不可信，请勿据此计算。台账仅覆盖已知 {{knownRows}} 个分配点中的 {{wiredSites}} 个，而该清单本身也只是下界 ⇒ 上面的列表未必完整。",
+      "vramUnattributedUnknownExtent": "无法归属的部分：系统在最近一次对账中未能测得台账之外的占用，因此不知其规模。台账仅覆盖已知 {{knownRows}} 个分配点中的 {{wiredSites}} 个，而该清单本身也只是下界 ⇒ 上面的列表未必完整。",
+      "vramUnattributedMeasured": "无法归属的部分：设备上正在使用的 {{unattributedMb}} MiB 不属于台账中的任何占用方。台账仅覆盖已知 {{knownRows}} 个分配点中的 {{wiredSites}} 个，而该清单本身也只是下界 ⇒ 上面的列表未必完整。",
+      "vramLedgerCoverageOnly": "无法归属的部分：最近一次对账未发现此类占用——但台账仅覆盖已知 {{knownRows}} 个分配点中的 {{wiredSites}} 个，而该清单本身也只是下界 ⇒ 上面的列表未必完整。",
       "scheduleConflict": "排程与另外 {{conflictCount}} 个生产订单冲突。使用 forceOverride=true 可忽略。",
       "lineCapacityExceeded": "产线 {{lineName}} 最多支持 {{maxConcurrent}} 个并发订单，目前已有 {{currentCount}} 个。使用 forceOverride=true 可忽略。",
       "productionCapacityExceeded": "数量 {{quantity}} 超出产线能力（{{hours}} 小时内 {{maxCapacity}} 件）。使用 forceOverride=true 可忽略。",

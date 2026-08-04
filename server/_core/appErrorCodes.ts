@@ -85,6 +85,23 @@ export const APP_ERROR_CODES = [
                           // đó dành cho TÀI KHOẢN NGƯỜI, không phải khoá máy tự động). Không mã nào
                           // trong 24 mã trên khớp — machine credential là một khái niệm riêng
                           // (server_api_keys.machineId), không phải RBAC người dùng.
+
+  // ── Pha 2B Task 4 (§5.3) — TỪ CHỐI TRUNG THỰC khi xin VRAM ────────────────
+  "VRAM_REFUSED",         // params: { owner, priority, requestedMb, availableMb, holders,
+                          // preemptable, preemptableMb, reason?, … } — sổ VRAM từ chối một lượt
+                          // cấp phát. KHÁC FEATURE_DISABLED/FEATURE_NOT_CONFIGURED (tính năng vẫn
+                          // bật và cấu hình đủ — chỉ là hết chỗ NGAY LÚC NÀY, thử lại sau có thể
+                          // được) và KHÁC OPERATION_FAILED (thao tác không "hỏng": nó bị TỪ CHỐI
+                          // có chủ đích, kèm đủ bốn thứ §5.3 để người vận hành tự gỡ được).
+                          // `holders`/`preemptable` đi qua không gian từ điển `errors.list.*`
+                          // (client/src/lib/errorCodes.ts) để danh sách RỖNG hiện ra "không có"
+                          // đúng ngôn ngữ thay vì một chỗ trống.
+  "VRAM_HEADROOM_UNKNOWN", // params: như trên NHƯNG KHÔNG có `availableMb` — dư địa KHÔNG tính
+                          // được (`computeHeadroom` fail-closed: `headroomBytes = -Infinity` +
+                          // lý do `"invalid-input"`, xem server/services/vram/vramHeadroom.ts).
+                          // TÁCH khỏi VRAM_REFUSED vì câu "còn {{availableMb}} MiB" ở đó buộc ta
+                          // hoặc in `-Infinity` hoặc BỊA một con số — cả hai đều là nói dối người
+                          // vận hành; cùng lý do ENTITY_EXPIRED được tách khỏi ENTITY_NOT_FOUND.
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];

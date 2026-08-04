@@ -140,18 +140,15 @@ export interface VramSnapshot {
   leases: VramLease[];
 }
 
-/** Từ chối trung thực (Pha 2). Định nghĩa sẵn ở Pha 1 để mặt tiếp xúc ổn định. */
-export class VramRefusedError extends Error {
-  constructor(
-    public readonly requestedBytes: number,
-    public readonly availableBytes: number,
-    public readonly holders: Array<{ owner: string; bytes: number; priority: VramPriority }>,
-  ) {
-    super(
-      `Không đủ VRAM: xin ${Math.round(requestedBytes / 1024 / 1024)} MiB, ` +
-        `còn ${Math.round(availableBytes / 1024 / 1024)} MiB. ` +
-        `Đang giữ: ${holders.map((h) => `${h.owner}=${Math.round(h.bytes / 1024 / 1024)}MiB(${h.priority})`).join(", ")}`,
-    );
-    this.name = "VramRefusedError";
-  }
-}
+/**
+ * ★ Pha 2B Task 4 — `VramRefusedError` **ĐÃ CHUYỂN NHÀ** sang `./vramRefusal`.
+ *
+ * Bản Pha 1 sống ở đây và nhận ba tham số rời (`requestedBytes`, `availableBytes`, `holders`).
+ * Nó **thiếu hẳn một trong bốn thứ §5.3 đòi** — *"ai có thể nhường"* — và không có chỗ nào để nói
+ * ra **phần KHÔNG quy trách nhiệm được** (sổ mới nối 15/160 dòng, và bản liệt kê ấy là CẬN DƯỚI).
+ * Một câu từ chối liệt kê "A, B" trong khi C, D, E vô hình khiến người trực đi **giết nhầm**.
+ *
+ * Việc chuyển nhà cũng đúng chỗ theo phân vai của chính file này: đây là nơi giữ **kiểu dùng
+ * chung, không logic**, còn dựng câu chữ + lọc số không hữu hạn là HÀNH VI. Bản Pha 1 chưa có
+ * điểm gọi sản xuất nào (`git grep VramRefusedError` chỉ ra chính nó), nên không phá ai.
+ */

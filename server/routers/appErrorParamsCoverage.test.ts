@@ -45,6 +45,16 @@ const PARAM_SPACE: Record<string, string> = {
   // không gian mới ngay khi thêm — nếu không, một lời gọi `reason: "..."` thiếu bản
   // dịch sẽ lọt qua trong im lặng, đúng lớp lỗi mà cả file này tồn tại để chặn.
   reason: "reason",
+  // Pha 2B Task 4 (§5.3) — không gian MỚI `errors.list.*` cho DANH SÁCH ĐỘNG có thể
+  // RỖNG (`holders`/`preemptable` của VRAM_REFUSED). Giữ BẢN SAO này khớp với
+  // `PARAM_DICTIONARY_SPACE` ở client/src/lib/errorCodes.ts.
+  // ⚠ PHẠM VI: lời gọi sinh ra hai tham số này nằm ở `server/services/vram/**`, NGOÀI
+  // đường quét của cổng này (chỉ `server/routers/**`) — cổng tương đương cho chúng nằm
+  // ở `server/services/vram/refusal.test.ts`. Thêm vào đây là để một lời gọi appError()
+  // TRONG router lỡ dùng hai tên tham số này cũng phải có khoá dịch, không phải để
+  // tuyên bố cổng này đã phủ đường VRAM.
+  holders: "list",
+  preemptable: "list",
 };
 const PARAM_KEYS = Object.keys(PARAM_SPACE);
 
