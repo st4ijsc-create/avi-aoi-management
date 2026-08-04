@@ -193,6 +193,7 @@ vi.mock("node:child_process", () => ({
 
 import {
   runKbSyncNow,
+  startKbSyncScheduler,
   stopKbSyncScheduler,
   getKbSyncSchedulerStatus,
   planKbSyncDefer,
@@ -964,13 +965,49 @@ describe("§5 — I-1: chuỗi hoãn SỐNG QUA một lần khởi động lại
     expect(getKbSyncSchedulerStatus().defer?.attempts).toBe(1); // KHÔNG bị dòng log ghi đè
   });
 
-  it("★★ `startKbSyncScheduler()` gọi đường khôi phục (không chỉ đăng ký cron)", async () => {
-    // bằng chứng TĨNH đi kèm ca động ở trên: đường boot phải nhắc tên hàm khôi phục.
-    const { readFile } = await import("node:fs/promises");
-    const src = await readFile(path.join(process.cwd(), "server", "services", "kbSyncScheduler.ts"), "utf8");
-    const boot = src.slice(src.indexOf("export function startKbSyncScheduler"));
-    const than = boot.slice(0, boot.indexOf("\n}\n"));
-    expect(than).toContain("resumeKbSyncDeferFromLog()");
+  /**
+   * ★★★ ĐƯỜNG BOOT THẬT — và ca này là bản THAY THẾ cho một ca quét-văn-bản đã **NÓI DỐI**.
+   *
+   * Bản đầu của tôi kiểm *"thân `startKbSyncScheduler` có chứa chuỗi tên hàm khôi phục không"*.
+   * Đột biến xoá đúng LỜI GỌI cho **0 đỏ**: chuỗi ấy vẫn còn — trong **docstring** ngay phía trên.
+   * Đúng bài học đã trả giá hai lần ở pha này (*"lưới đi theo ĐƯỜNG THOÁT, không theo FILE"* và
+   * *"ca quét không đóng lớp alias"*), lần này tôi tự dẫm vào. ⇒ Gọi THẬT `start…()` và đo TÁC DỤNG.
+   *
+   * ⚠ Đồng hồ THẬT ở ca này (không `useFakeTimers`): đường khôi phục là `void`-fire-and-forget và
+   * đi qua ba lượt `await import()`; ép nó vào đồng hồ giả là canh một thứ khác.
+   */
+  it("★★★ (I-1) `startKbSyncScheduler()` CHẠY đường khôi phục — bằng chứng HÀNH VI, không phải quét chữ", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const bayGio = Date.now();
+    kho.coDb = true;
+    kho.rows = [{
+      event: "defer",
+      detail: {
+        attempt: 3,
+        firstRefusedAt: new Date(bayGio - 60 * PHUT).toISOString(),
+        budgetMs: 6 * GIO,
+        delayMs: 60 * PHUT,
+        nextRetryAt: new Date(bayGio + 45 * PHUT).toISOString(),
+        holdersKnown: true,
+        holders: [{ owner: "gguf:fixture-17000", kind: "gguf-model", mib: 17_000, priority: "interactive", measured: false, reclaimable: true }],
+        refusalMessage: "Không đủ VRAM cho cron:kb-sync (mức background).",
+      },
+    }];
+    gate.che_do = "tuChoi";
+
+    try {
+      startKbSyncScheduler();
+      for (let i = 0; i < 200 && getKbSyncSchedulerStatus().defer === null; i++) {
+        await new Promise((r) => setTimeout(r, 0));
+      }
+      // chuỗi CŨ được nhặt lên VÀ hẹn giờ được vũ trang — chỉ đăng ký cron thôi thì cả hai đều rỗng
+      expect(getKbSyncSchedulerStatus().defer?.attempts).toBe(3);
+      expect(getKbSyncSchedulerStatus().defer?.exceeded).toBe(false);
+      expect(__hasKbSyncDeferTimer()).toBe(true);
+    } finally {
+      stopKbSyncScheduler();
+    }
   });
 });
 
