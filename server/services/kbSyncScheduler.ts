@@ -601,6 +601,12 @@ const DEFER_FIRST_DELAY_MS = 15 * 60 * 1000;
 const DEFER_MAX_DELAY_MS = 60 * 60 * 1000;
 /** §5.4 — đáy mặc định **6 giờ** (03:00 → 09:00, vẫn trong đêm). */
 const DEFER_DEFAULT_BUDGET_HOURS = 6;
+/**
+ * M-1 — SÀN cho đường **vũ trang LẠI** (`ensureDeferArmed`), KHÔNG phải cho lịch chính. Một
+ * `nextRetryAt` đã qua (cửa sổ `already_running`, hoặc mọi lượt khôi phục sau khởi động lại) cho
+ * `delay ≤ 0`; không có sàn thì chuỗi quay vòng 0 ms cho tới khi cổng sổ trả lời.
+ */
+const DEFER_REARM_FLOOR_MS = 60 * 1000;
 const MS_PER_HOUR = 60 * 60 * 1000;
 const BYTES_PER_MIB = 1024 * 1024;
 
@@ -624,14 +630,21 @@ let deferBudgetWarned = false;
  *     §5.4 tồn tại để chặn.
  *   • **`0` TƯỜNG MINH** vẫn hợp lệ: nghĩa *"đừng hoãn, kêu ngay"* — chiều AN TOÀN (ồn hơn, không
  *     im hơn), cùng kỷ luật với "0 tường minh hợp lệ cho đệm/đơn vị" ở cổng cấu hình Task 5.
+ *
+ * ⚠⚠ M-6 (review) — THAM SỐ `keu` KHÔNG PHẢI KHẨU VỊ. Chốt một-lần `deferBudgetWarned` là một
+ * **tài nguyên tiêu thụ được**: chỉ đúng MỘT lời gọi trong cả đời tiến trình được in dòng cảnh
+ * báo cấu hình. `getKbSyncSchedulerStatus()` cũng cần con số này, và nếu một mặt sức khoẻ bị
+ * **poll định kỳ** gọi vào đây thì lượt poll đó **ăn mất** tiếng kêu trước khi người vận hành kịp
+ * thấy — cảnh báo bốc hơi vào một lượt poll lúc 03:00:01. ⇒ Chỉ **đường QUYẾT ĐỊNH** được kêu;
+ * mọi đường CHỈ-ĐỌC dùng `keu = false`.
  */
-export function kbSyncDeferBudgetMs(): number {
+function docDayHoanMs(keu: boolean): number {
   const raw = process.env.KB_SYNC_MAX_DEFER_HOURS;
   if (raw === undefined) return DEFER_DEFAULT_BUDGET_HOURS * MS_PER_HOUR;
   const trimmed = String(raw).trim();
   const hours = trimmed === "" ? Number.NaN : Number(trimmed);
   if (!Number.isFinite(hours) || hours < 0) {
-    if (!deferBudgetWarned) {
+    if (keu && !deferBudgetWarned) {
       deferBudgetWarned = true;
       console.error(
         `[kbSyncScheduler] KB_SYNC_MAX_DEFER_HOURS=${JSON.stringify(raw)} KHÔNG dùng được ` +
@@ -642,6 +655,11 @@ export function kbSyncDeferBudgetMs(): number {
     return DEFER_DEFAULT_BUDGET_HOURS * MS_PER_HOUR;
   }
   return hours * MS_PER_HOUR;
+}
+
+/** Đáy hoãn cho **đường QUYẾT ĐỊNH** — được phép kêu khi cấu hình vô nghĩa. */
+export function kbSyncDeferBudgetMs(): number {
+  return docDayHoanMs(true);
 }
 
 export type KbSyncDeferPlan =
@@ -777,6 +795,50 @@ export function readKbSyncRefusalNote(err: unknown): KbSyncRefusalNote {
   }
 }
 
+/**
+ * ★ I-1 — dựng lại `KbSyncRefusalNote` từ **`detail` đã ghi vào `vram_events`** (khôi phục sau
+ * khởi động lại). Khác `readKbSyncRefusalNote()` ở đầu vào: ở đó hộ mang `bytes` THÔ, ở đây hộ đã
+ * là `KbSyncDeferHolder` (đã sang MiB). **KHÔNG BAO GIỜ NÉM.**
+ *
+ * ⚠⚠ `holdersKnown` mặc định **`false`**, và đó là fail-closed có chủ ý: một dòng cũ (ghi bởi một
+ * bản trước khi có ô này) hoặc một `detail` bị cắt sẽ khai *"KHÔNG ĐỌC ĐƯỢC"* chứ **không** khai
+ * *"sổ rỗng"*. Đây đúng sợi dây mà §2.3 của báo cáo dựng ra để chặn, chỉ khác đầu vào.
+ */
+function readKbSyncRefusalNoteFromDetail(detail: Record<string, unknown> | null): KbSyncRefusalNote {
+  const trong: KbSyncRefusalNote = {
+    holdersKnown: false,
+    holders: [],
+    requestedBytes: null,
+    message: "(khôi phục sau khởi động lại — không có câu từ chối gốc)",
+  };
+  if (detail === null || typeof detail !== "object") return trong;
+  try {
+    const raw = detail.holders;
+    const holders: KbSyncDeferHolder[] = Array.isArray(raw)
+      ? raw.map((h) => {
+          const o = (h ?? {}) as Record<string, unknown>;
+          return {
+            owner: String(o.owner ?? "?"),
+            kind: String(o.kind ?? "?"),
+            priority: String(o.priority ?? "?"),
+            mib: typeof o.mib === "number" && Number.isFinite(o.mib) ? o.mib : "?",
+            measured: o.measured === true,
+            reclaimable: o.reclaimable === true,
+          };
+        })
+      : [];
+    return {
+      holdersKnown: detail.holdersKnown === true && Array.isArray(raw),
+      holders,
+      requestedBytes: null,
+      message:
+        typeof detail.refusalMessage === "string" ? detail.refusalMessage : trong.message,
+    };
+  } catch {
+    return trong;
+  }
+}
+
 function holderLine(h: KbSyncDeferHolder): string {
   // `=` số ĐO · `≈` ƯỚC LƯỢNG — cùng ký hiệu với `vramRefusal.holderText()`, không phát minh
   // ký hiệu thứ hai cho cùng một ý (Đ4: nói rõ con số đến từ thước nào).
@@ -798,6 +860,34 @@ function holdersText(note: KbSyncRefusalNote): string {
     );
   }
   return note.holders.map(holderLine).join(", ");
+}
+
+/**
+ * ★ M-4 (review) — RÚT KẾT LUẬN MÀ CHÍNH HỆ ĐÃ CÓ ĐỦ DỮ LIỆU ĐỂ RÚT.
+ *
+ * Khi **mọi** hộ đang giữ chỗ đều `reclaimable === false`, câu "thử lại sau N phút" được in **bảy
+ * lần liên tiếp** trong khi hệ đã biết lượt thử lại nhiều khả năng trượt vì đúng lý do cũ.
+ * `holderLine()` in cờ `reclaimable` từng hộ nên người trực **suy ra được** — nhưng *"suy ra
+ * được"* không bằng *"được nói"*, và đó đúng lớp "hứa nhiều hơn dữ liệu" đã bắt tám lần.
+ *
+ * ⚠⚠ VÀ SỰ THẬT CÒN CỨNG HƠN (review (C), kiểm bằng mã): `cron:kb-sync` chạy ở mức
+ * **`background`** — mức **THẤP NHẤT** (`vramBroker.PRIORITY_RANK`) — còn `preemptable` được định
+ * nghĩa là *"mức THẤP HƠN mức đang xin"* ⇒ với hộ này nó **RỖNG THEO ĐỊNH NGHĨA, VĨNH VIỄN**.
+ * Nghĩa là `preempt()` mở rộng của Task 7 **cũng KHÔNG giành được byte nào** cho `kb:sync`. Đường
+ * DUY NHẤT để một lượt thử lại thành công là **một hộ khác TỰ NHẢ** (model bị dispose, sidecar
+ * thoát, trainer xong việc) — điều đó CÓ xảy ra thật, nên cửa sổ chờ 6 giờ không vô nghĩa; nhưng
+ * câu chữ không được để người trực ngồi đợi một cơ chế không tồn tại.
+ *
+ * ⚠ Một CÂU, không phải một cơ chế: không đổi lịch, không rút ngắn đáy. Rút ngắn đáy dựa trên
+ * `reclaimable` là để một ô ƯỚC LƯỢNG lái một quyết định — đúng thứ pha này cấm.
+ */
+function trienVongText(note: KbSyncRefusalNote): string {
+  if (!note.holdersKnown || note.holders.length === 0) return "";
+  if (note.holders.some((h) => h.reclaimable)) return "";
+  return (
+    ` ⚠ KHÔNG hộ nào thu hồi được ⇒ lượt thử lại nhiều khả năng VẪN BỊ TỪ CHỐI vì đúng lý do này; ` +
+    `nó chỉ thành công nếu một hộ TỰ NHẢ. Cần người can thiệp.`
+  );
 }
 
 /** Trạng thái hoãn — máy đọc được qua `getKbSyncSchedulerStatus().defer` và `lastRunStats.defer`. */
@@ -827,6 +917,40 @@ interface DeferStreak {
 
 let deferStreak: DeferStreak | null = null;
 let deferTimer: NodeJS.Timeout | null = null;
+
+/**
+ * ★★★ I-2 (review) — VỊ TỪ DÙNG CHUNG: *"chuỗi hoãn này còn SỐNG không"* (= còn một lượt thử lại
+ * để lên lịch).
+ *
+ * ⚠⚠ TRƯỚC BẢN VÁ NÀY VỊ TỪ ĐƯỢC VIẾT **HAI LẦN**, hai hình dạng khác nhau:
+ *   • người SẢN XUẤT (`ghiNhanKbSyncBiTuChoi`): `deferStreak !== null && !deferStreak.exceeded`
+ *   • người TIÊU THỤ (`ensureDeferArmed`): `s === null || s.exceeded || s.nextRetryAt === null`
+ * Chúng tương đương **chỉ nhờ** bất biến `exceeded ⇔ nextRetryAt === null` — một bất biến mà
+ * **không hàm nào cưỡng chế**. Đột biến (D) của review chứng minh: bỏ `s.exceeded ||` khỏi bản
+ * TIÊU THỤ cho **0 đỏ / 500**. Hướng hỏng nguy hiểm nhất là **vũ trang lại một chuỗi đã tuyên bố
+ * quá đáy** ⇒ cơ chế chống-hoãn-mãi **tự phá chính nó**, sau khi đã kêu "NGỪNG thử lại".
+ *
+ * ⇒ **MỘT bản cài đặt, hai người gọi.** Đây đúng lớp lỗi *"cơ chế phòng vệ mới vô hiệu hoá cơ chế
+ * cũ qua VỊ TỪ DÙNG CHUNG"* đã đẻ ba Critical liên tiếp ở pha trước và tái diễn hai lần ở pha này.
+ * Ai thêm một trạng thái thứ ba (vd. "tạm dừng theo lệnh người vận hành", hoặc khôi phục
+ * `nextRetryAt` từ DB mà chưa khôi phục `exceeded`) chỉ phải sửa ĐÚNG MỘT CHỖ.
+ *
+ * ⚠ EXPORT có lý do, không phải rò rỉ nội bộ: dưới bất biến của người sản xuất, tổ hợp
+ * `(exceeded: true, nextRetryAt: ≠ null)` **không đạt tới được từ ngoài** ⇒ một ca hành vi KHÔNG
+ * thể phân biệt "bỏ mệnh đề `!exceeded`" với "bỏ mệnh đề `nextRetryAt !== null`". Ghim **trực
+ * tiếp** cả bốn tổ hợp là cách duy nhất làm **từng mệnh đề** đột biến-được — và "đột biến-được"
+ * chính là điều review đòi.
+ */
+export function kbSyncDeferStreakIsAlive(
+  s: { readonly exceeded: boolean; readonly nextRetryAt: number | null } | null,
+): boolean {
+  return s !== null && !s.exceeded && s.nextRetryAt !== null;
+}
+
+/** Bản có type-guard cho dùng nội bộ. **Ủy quyền**, không chép lại — nếu không lại là hai bản. */
+function chuoiHoanConSong(s: DeferStreak | null): s is DeferStreak {
+  return kbSyncDeferStreakIsAlive(s);
+}
 
 /** `new Date(NaN).toISOString()` NÉM `RangeError` — và hàm gọi nó khai "không bao giờ ném". */
 function isoOrNull(ms: number): string | null {
@@ -900,21 +1024,40 @@ function armDeferTimer(delayMs: number): void {
  * rơi vào một nhánh khác — điển hình `skipped: "already_running"` khi cron 03:00 và hẹn giờ hoãn
  * chạm nhau — và nhánh đó **không vũ trang gì cả**. Thiếu lưới này, chuỗi hoãn đứng im mãi mãi
  * với `nextRetryAt` đã qua: một lượt `kb:sync` **biến mất, im lặng**, đúng thứ bị cấm.
+ *
+ * ⚠ M-1 (review) — SÀN `DEFER_REARM_FLOOR_MS`. `nextRetryAt` đã qua (ca `already_running`, và mọi
+ * lượt khôi phục sau khởi động lại) cho `delay ≤ 0` ⇒ `Math.max(0, …)` ⇒ chuỗi quay vòng **0 ms
+ * liên tục** tới khi cổng sổ trả lời. Mỗi vòng gần như miễn phí (`runKbSyncNow` trả sớm) nên đây
+ * không phải lỗi đúng-sai — nhưng nếu phép đo thiết bị làm cổng sổ chậm vài trăm ms thì đó là
+ * hàng nghìn lượt gọi vô ích, và sau khởi động lại nó là một lượt nện vào đúng lúc máy đang bận
+ * khởi động. Sàn chỉ áp cho **đường vũ trang LẠI**, không đụng lịch 15→60 phút của đường chính.
  */
 function ensureDeferArmed(): void {
   if (deferTimer !== null) return;
   const s = deferStreak;
-  if (s === null || s.exceeded || s.nextRetryAt === null) return;
-  armDeferTimer(s.nextRetryAt - Date.now());
+  if (!chuoiHoanConSong(s)) return;
+  armDeferTimer(Math.max(DEFER_REARM_FLOOR_MS, s.nextRetryAt! - Date.now()));
 }
 
-/** Chuỗi hoãn kết thúc vì lượt xin ĐƯỢC CẤP. Gỡ cả hẹn giờ lẫn trạng thái. */
-function clearKbSyncDefer(): void {
+/**
+ * Chuỗi hoãn kết thúc. Gỡ cả hẹn giờ lẫn trạng thái.
+ *
+ * ⚠ M-2 (review) — `lyDo` KHÔNG PHẢI TRANG TRÍ. `stopKbSyncScheduler()` trước bản vá chỉ gỡ HẸN
+ * GIỜ và để lại chuỗi mồ côi ⇒ `getKbSyncSchedulerStatus().defer` vẫn khai `exceeded: false` +
+ * `nextRetryAt` ở TƯƠNG LAI + `nextDelayMs: 900000` cho một lượt thử lại **không bao giờ nổ**.
+ * Mặt trạng thái NÓI DỐI. Nhưng dùng đúng câu "cổng sổ đã CẤP" cho đường tắt máy thì cũng là nói
+ * dối theo chiều khác — nên hai đường, hai câu.
+ */
+function clearKbSyncDefer(lyDo: "granted" | "shutdown"): void {
   clearDeferTimer();
   if (deferStreak !== null) {
     console.log(
-      `[kbSyncScheduler] chuỗi HOÃN kết thúc — cổng sổ đã CẤP sau ${deferStreak.attempts} lượt bị ` +
-        `từ chối${deferStreak.exceeded ? " (chuỗi trước đã quá đáy)" : ""}.`,
+      lyDo === "granted"
+        ? `[kbSyncScheduler] chuỗi HOÃN kết thúc — cổng sổ đã CẤP sau ${deferStreak.attempts} lượt ` +
+            `bị từ chối${deferStreak.exceeded ? " (chuỗi trước đã quá đáy)" : ""}.`
+        : `[kbSyncScheduler] chuỗi HOÃN bị BỎ DỞ vì tiến trình đang tắt (${deferStreak.attempts} ` +
+            `lượt bị từ chối). Lượt thử lại đã hứa KHÔNG nổ; chuỗi được khôi phục từ ` +
+            `\`vram_events\` ở lần khởi động sau (xem khoiPhucChuoiHoan).`,
     );
     deferStreak = null;
   }
@@ -970,7 +1113,9 @@ async function ghiNhanKbSyncBiTuChoi(err: unknown): Promise<KbSyncDeferState | n
     const budgetMs = kbSyncDeferBudgetMs();
     // Một chuỗi ĐÃ quá đáy thì KHÔNG kéo dài thêm: lượt cron kế tiếp (đêm sau) mở một ngân sách
     // MỚI. Nếu nối tiếp, đáy 6 giờ sẽ chỉ kêu đúng MỘT lần trong cả đời tiến trình.
-    const truoc = deferStreak !== null && !deferStreak.exceeded ? deferStreak : null;
+    // ★ I-2 — CÙNG MỘT vị từ mà `ensureDeferArmed()` dùng. Đây là người SẢN XUẤT của bất biến
+    // `exceeded ⇔ nextRetryAt === null`; trước bản vá, người TIÊU THỤ tự viết lại nó.
+    const truoc = chuoiHoanConSong(deferStreak) ? deferStreak : null;
     const firstRefusedAt = truoc !== null ? truoc.firstRefusedAt : now;
     const attempts = (truoc !== null ? truoc.attempts : 0) + 1;
     const plan = planKbSyncDefer({
@@ -1012,7 +1157,7 @@ async function ghiNhanKbSyncBiTuChoi(err: unknown): Promise<KbSyncDeferState | n
         `[kbSyncScheduler] kb:sync BỊ TỪ CHỐI VRAM ⇒ HOÃN (§5.4), thử lại sau ` +
           `${Math.round(plan.delayMs / 60_000)} phút — lượt ${attempts}, đã hoãn ` +
           `${Math.round(plan.elapsedMs / 60_000)}/${Math.round(budgetMs / 60_000)} phút của đáy. ` +
-          `Đang giữ chỗ: ${holdersText(note)}.`,
+          `Đang giữ chỗ: ${holdersText(note)}.${trienVongText(note)}`,
       );
       armDeferTimer(plan.delayMs);
     } else {
@@ -1057,6 +1202,212 @@ async function ghiNhanKbSyncBiTuChoi(err: unknown): Promise<KbSyncDeferState | n
       e,
     );
     return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ I-1 (review) — CHUỖI HOÃN PHẢI SỐNG QUA MỘT LẦN KHỞI ĐỘNG LẠI
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// Bản đầu của Task 6 giữ `deferStreak` + `deferTimer` **hoàn toàn trong bộ nhớ**, và
+// `startKbSyncScheduler()` chỉ đăng ký cron. Hậu quả nặng hơn một bậc so với điều báo cáo tự khai
+// (*"ngân sách mở lại từ đầu"*):
+//
+//   1. lượt thử lại đã hứa (`nextRetryAt`) **KHÔNG BAO GIỜ NỔ** — không phải "hoãn lâu hơn", mà là
+//      **không thử lại nữa**; người gọi sản xuất kế tiếp là **cron 03:00 ĐÊM SAU** (`runKbSyncNow`
+//      không có điểm gọi sản xuất nào khác);
+//   2. `firstRefusedAt` mất ⇒ đáy 6 giờ **không bao giờ chạm tới**;
+//   3. ⇒ trong một vòng khởi-động-lại lặp, `defer_exceeded` **KHÔNG BAO GIỜ KÊU** — bảo đảm
+//      *"quá đáy phải CÓ TIẾNG"* bốc hơi im lặng, đúng lớp lỗi §5.4 tồn tại để diệt.
+//
+// ⚠ Kịch bản khởi-động-lại lặp là THẬT ở cả hai môi trường của dự án này:
+// `docker-compose.yml` dịch vụ `app` mang `restart: unless-stopped`; `package.json`
+// `"dev": "tsx watch …"` ⇒ **mỗi lần lưu file là một lần khởi động lại**. Và cửa sổ 03:00→09:00 mà
+// đáy 6 giờ sống trong đó là cửa sổ DÀI NHẤT và THƯA NHẤT: một lần khởi động lại bất kỳ trong 6
+// giờ đó xoá sạch cả đêm.
+//
+// ⚠⚠ **KHÔNG DDL, KHÔNG CỘT MỚI, KHÔNG BẢNG MỚI.** Dữ liệu **đã bền rồi** — mỗi sự kiện `defer` đã
+// mang `detail.firstRefusedAt` · `deadlineAt` · `attempt` · `budgetMs` · `delayMs` · `nextRetryAt`
+// vào `vram_events`, và bảng đã có index `vram_events_owner_idx`. Thứ thiếu là **CHIỀU ĐỌC NGƯỢC**:
+// đúng MỘT câu `SELECT … ORDER BY id DESC LIMIT 1`, một lần trong đời tiến trình.
+
+/**
+ * Kết luận của lượt đọc ngược. **Bốn** kết cục, và ba trong số đó KHÔNG vũ trang lại gì cả —
+ * `"none"` là kết cục **FAIL-CLOSED** cho mọi dòng méo mó: thà mở một chuỗi mới (đáy đầy đủ, có
+ * tiếng) còn hơn khôi phục một trạng thái rác rồi hoãn theo nó.
+ */
+export type KbSyncDeferResumePlan =
+  | { readonly kind: "none"; readonly reason: string }
+  | {
+      /**
+       * `resume` — chuỗi còn trong ngân sách ⇒ vũ trang lại.
+       * `overdue` — hạn đáy **đã qua trong lúc tiến trình chết** ⇒ hệ đang **NỢ MỘT TIẾNG KÊU**;
+       *   phát `defer_exceeded` NGAY rồi đóng chuỗi.
+       * `already-exceeded` — đêm trước đã kêu rồi ⇒ khôi phục để mặt trạng thái trung thực,
+       *   **KHÔNG** kêu lại, **KHÔNG** vũ trang.
+       */
+      readonly kind: "resume" | "overdue" | "already-exceeded";
+      readonly firstRefusedAt: number;
+      readonly attempts: number;
+      readonly lastDelayMs: number | null;
+      readonly nextRetryAt: number | null;
+      readonly budgetMs: number;
+      readonly reason: string;
+    };
+
+function soTuDetail(v: unknown): number | null {
+  // ⚠ M-3 — ô số trong `detail` là kiểu hợp `number | string`: `soHuuHan()` (và
+  // `sanitizeVramEvent()`) thay giá trị không hữu hạn bằng NHÃN CHUỖI `"NaN"`/`"Infinity"`. Một
+  // `Number("NaN")` ở đây sẽ cho `NaN` rồi trôi thẳng vào phép so đáy — đúng đường "hoãn vô hạn,
+  // im lặng". Nên: CHỈ nhận `number` HỮU HẠN, mọi thứ khác là `null` ⇒ fail-closed về `"none"`.
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function mocThoiGianTuDetail(v: unknown): number | null {
+  if (typeof v !== "string") return null;
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * **Thuần, đồng bộ, KHÔNG BAO GIỜ NÉM.** Đọc một dòng `vram_events` thành kết luận khôi phục.
+ * Tách khỏi I/O để đột biến hoá được mà không cần DB.
+ */
+export function planKbSyncDeferResume(input: {
+  readonly now: number;
+  readonly event: string | null;
+  readonly detail: Record<string, unknown> | null;
+}): KbSyncDeferResumePlan {
+  const { now, event, detail } = input;
+  if (event !== "defer" && event !== "defer_exceeded") {
+    return { kind: "none", reason: "khong-co-dong-hoan-nao" };
+  }
+  if (detail === null || typeof detail !== "object") {
+    return { kind: "none", reason: "dong-hoan-khong-co-detail" };
+  }
+  const firstRefusedAt = mocThoiGianTuDetail(detail.firstRefusedAt);
+  const budgetMs = soTuDetail(detail.budgetMs);
+  const attempts = soTuDetail(detail.attempt);
+  if (firstRefusedAt === null || budgetMs === null || attempts === null || attempts < 1) {
+    return { kind: "none", reason: "detail-thieu-hoac-khong-huu-han" };
+  }
+  const lastDelayMs = soTuDetail(detail.delayMs);
+  const chung = { firstRefusedAt, attempts, lastDelayMs, budgetMs };
+
+  if (event === "defer_exceeded") {
+    return { ...chung, kind: "already-exceeded", nextRetryAt: null, reason: "dem-truoc-da-keu" };
+  }
+  // ⚠ So với ĐÁY, không so với `nextRetryAt`: một lượt thử lại trễ 3 phút vẫn đáng chạy, nhưng một
+  // chuỗi đã vượt ngân sách thì **món nợ là TIẾNG KÊU**, không phải một lượt thử nữa.
+  if (!Number.isFinite(now) || now >= firstRefusedAt + budgetMs) {
+    return { ...chung, kind: "overdue", nextRetryAt: null, reason: "day-da-qua-luc-tien-trinh-chet" };
+  }
+  const nextRetryAt = mocThoiGianTuDetail(detail.nextRetryAt);
+  if (nextRetryAt === null) {
+    return { kind: "none", reason: "dong-defer-khong-co-nextRetryAt" };
+  }
+  return { ...chung, kind: "resume", nextRetryAt, reason: "con-trong-ngan-sach" };
+}
+
+/** Dòng `defer`/`defer_exceeded` gần nhất của `cron:kb-sync`. `null` = không có / không đọc được. */
+async function docDongHoanGanNhat(): Promise<{ event: string; detail: Record<string, unknown> | null } | null> {
+  try {
+    const { getDb } = await import("../db/connection");
+    const db = await getDb();
+    if (!db) return null; // không có DB (vd. test/cài đặt tối giản) — xem giới hạn ở báo cáo
+    const { vramEvents } = await import("../../drizzle/schema/vram");
+    const { and, desc, eq, inArray } = await import("drizzle-orm");
+    const rows = await db
+      .select({ event: vramEvents.event, detail: vramEvents.detail })
+      .from(vramEvents)
+      // ⚠ `inArray`, KHÔNG `= ANY(${jsArray})` — antipattern đã đo: `42809` ⇒ 500.
+      .where(and(eq(vramEvents.owner, "cron:kb-sync"), inArray(vramEvents.event, ["defer", "defer_exceeded"])))
+      .orderBy(desc(vramEvents.id))
+      .limit(1);
+    const row = Array.isArray(rows) ? rows[0] : undefined;
+    if (!row) return null;
+    return {
+      event: String(row.event),
+      detail: row.detail !== null && typeof row.detail === "object" ? (row.detail as Record<string, unknown>) : null,
+    };
+  } catch (e) {
+    console.warn("[kbSyncScheduler] không đọc lại được chuỗi hoãn từ vram_events:", (e as Error)?.message ?? e);
+    return null;
+  }
+}
+
+/**
+ * ★★★ Khôi phục chuỗi hoãn sau một lần khởi động lại. Gọi từ `startKbSyncScheduler()`.
+ * **KHÔNG BAO GIỜ NÉM.**
+ *
+ * ⚠ `ensureDeferArmed()` là **điểm quyết định DUY NHẤT** ở cuối hàm — kể cả cho nhánh
+ * `already-exceeded`. Đó là chủ ý: nó buộc vị từ dùng chung `chuoiHoanConSong()` phải TỰ từ chối
+ * vũ trang một chuỗi đã quá đáy, thay vì để lời từ chối đó nằm rải ở ba nhánh `if` khác nhau.
+ * Đây chính là đường thoát mà đột biến (D) của review đi qua mà **không ca nào đỏ** — nay có.
+ */
+export async function resumeKbSyncDeferFromLog(): Promise<KbSyncDeferResumePlan> {
+  try {
+    // Trạng thái SỐNG trong bộ nhớ luôn thắng một dòng lịch sử: không đè lên chuỗi đang chạy.
+    if (deferStreak !== null) return { kind: "none", reason: "da-co-chuoi-trong-bo-nho" };
+    const row = await docDongHoanGanNhat();
+    const plan = planKbSyncDeferResume({
+      now: Date.now(),
+      event: row?.event ?? null,
+      detail: row?.detail ?? null,
+    });
+    if (plan.kind === "none") return plan;
+
+    const note = readKbSyncRefusalNoteFromDetail(row?.detail ?? null);
+    deferStreak = {
+      firstRefusedAt: plan.firstRefusedAt,
+      attempts: plan.attempts,
+      lastDelayMs: plan.lastDelayMs,
+      nextRetryAt: plan.nextRetryAt,
+      exceeded: plan.kind !== "resume",
+      budgetMs: plan.budgetMs,
+      note,
+    };
+
+    if (plan.kind === "resume") {
+      console.warn(
+        `[kbSyncScheduler] khôi phục chuỗi HOÃN từ vram_events sau khởi động lại — lượt ` +
+          `${plan.attempts}, hạn đáy ${isoOrNull(plan.firstRefusedAt + plan.budgetMs)}, ` +
+          `thử lại lúc ${isoOrNull(plan.nextRetryAt ?? 0)}. Đang giữ chỗ (theo dòng cuối): ` +
+          `${holdersText(note)}.`,
+      );
+    } else if (plan.kind === "overdue") {
+      // ⚠ MÓN NỢ: đáy đã qua trong lúc tiến trình chết, nên tiếng kêu chưa ai phát. Phát BÂY GIỜ,
+      // và nói rõ nó đến muộn — một `defer_exceeded` không có nhãn này sẽ bị Task 7 đọc thành
+      // "đêm nay vừa quá đáy" trong khi thật ra là "đêm qua, và hệ vừa mới biết".
+      await logDeferEvent(
+        "defer_exceeded",
+        {
+          attempt: plan.attempts,
+          elapsedMs: soHuuHan(Date.now() - plan.firstRefusedAt),
+          budgetMs: soHuuHan(plan.budgetMs),
+          firstRefusedAt: isoOrNull(plan.firstRefusedAt),
+          deadlineAt: isoOrNull(plan.firstRefusedAt + plan.budgetMs),
+          holdersKnown: note.holdersKnown,
+          holders: note.holders,
+          refusalMessage: note.message,
+          recoveredAfterRestart: true,
+        },
+        null,
+      );
+      console.error(
+        `[kbSyncScheduler] ★ QUÁ ĐÁY HOÃN (defer_exceeded, PHÁT MUỘN sau khởi động lại) — chuỗi ` +
+          `bắt đầu ${isoOrNull(plan.firstRefusedAt)} đã vượt đáy ` +
+          `${(plan.budgetMs / MS_PER_HOUR).toFixed(2)} giờ trong lúc tiến trình không chạy, nên ` +
+          `tiếng kêu này BỊ NỢ tới bây giờ. Lượt kb:sync kế tiếp là cron theo lịch. AI ĐANG GIỮ ` +
+          `CHỖ (theo dòng cuối trước khi tắt): ${holdersText(note)}.`,
+      );
+    }
+    // ĐIỂM QUYẾT ĐỊNH DUY NHẤT — vị từ dùng chung tự lọc `overdue`/`already-exceeded`.
+    ensureDeferArmed();
+    return plan;
+  } catch (e) {
+    console.error("[kbSyncScheduler] khôi phục chuỗi hoãn tự hỏng (bỏ qua, chuỗi mới sẽ mở ở lượt cron):", e);
+    return { kind: "none", reason: "khoi-phuc-tu-hong" };
   }
 }
 
@@ -1180,7 +1531,7 @@ export async function runKbSyncNow(): Promise<KbSyncRunStats> {
   // ĐƯỢC CẤP ⇒ chuỗi hoãn (nếu có) kết thúc tại đây. Đặt NGAY SAU lời gọi thành công, không đợi
   // tới cuối hàm: một lượt sync hỏng VÌ LÝ DO KHÁC (hết giờ / spawn lỗi) không phải là lý do để
   // giữ lại một chuỗi hoãn của VRAM — cổng sổ đã cho qua rồi.
-  clearKbSyncDefer();
+  clearKbSyncDefer("granted");
 
     const stats: KbSyncRunStats = await new Promise<KbSyncRunStats>((resolve) => {
       let settled = false;
@@ -1367,6 +1718,13 @@ export function startKbSyncScheduler(): void {
     { timezone: TZ },
   );
   console.log(`[kbSyncScheduler] scheduled '${CRON}' (${TZ})`);
+  /**
+   * ★★★ I-1 (review) — KHÔI PHỤC CHUỖI HOÃN. Không có dòng này thì một lượt thử lại đã hứa
+   * **không bao giờ nổ** sau khởi động lại, và trong vòng khởi-động-lại lặp `defer_exceeded`
+   * **không bao giờ kêu**. Fire-and-forget có chủ ý: `startKbSyncScheduler()` nằm trên đường boot
+   * và **không được** chờ DB; `resumeKbSyncDeferFromLog()` khai KHÔNG BAO GIỜ NÉM và tự bắt hết.
+   */
+  void resumeKbSyncDeferFromLog();
 }
 
 /** Stop the cron job (shutdown). Safe to call when not started. */
@@ -1374,7 +1732,12 @@ export function stopKbSyncScheduler(): void {
   // ⚠ Pha 2B Task 6 — GỠ CẢ HẸN GIỜ HOÃN, không chỉ cron. Một hẹn giờ 15–60 phút còn sống sau khi
   // đã "stopped" sẽ khởi động lại `runKbSyncNow()` ở một tiến trình đang tắt dở. (Nó `.unref()`
   // nên không giữ tiến trình sống, nhưng "không giữ sống" ≠ "không nổ".)
-  clearDeferTimer();
+  //
+  // ⚠⚠ M-2 (review) — XOÁ CẢ CHUỖI, không chỉ hẹn giờ. Gỡ hẹn giờ mà để lại chuỗi mồ côi khiến
+  // `getKbSyncSchedulerStatus().defer` tiếp tục khai `exceeded: false` + `nextRetryAt` ở TƯƠNG LAI
+  // + `nextDelayMs: 900000` cho một lượt thử lại **không bao giờ nổ** — mặt trạng thái NÓI DỐI.
+  // An toàn vì dòng `defer` vẫn nằm trong `vram_events`: lần khởi động sau đọc lại được (I-1).
+  clearKbSyncDefer("shutdown");
   if (job) {
     job.stop();
     job = null;
@@ -1400,6 +1763,7 @@ export function getKbSyncSchedulerStatus() {
      * bổ sung cho biển báo `staleDays` vốn chỉ nói *"nó cũ"* chứ không nói *"vì sao"*.
      */
     defer: publicDeferState(),
-    deferBudgetMs: kbSyncDeferBudgetMs(),
+    // ⚠ M-6 — đường CHỈ-ĐỌC: KHÔNG được tiêu thụ chốt một-lần `deferBudgetWarned`.
+    deferBudgetMs: docDayHoanMs(false),
   };
 }

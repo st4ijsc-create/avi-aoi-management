@@ -81,6 +81,13 @@ export interface VramEventInput {
    *   • `degraded` + `detail.reason = "non-finite-gpu-layers"` — `gpuLayers` là `NaN`/`Infinity`,
    *     bị chuẩn hoá thành `"auto"`. `detail.requestedGpuLayers` là **CHUỖI** (`"NaN"`), vì
    *     `JSON.stringify(NaN)` cho `null` và số sẽ biến mất im lặng trong jsonb.
+   *   • ⚠⚠ **MỌI ô SỐ trong `detail` là kiểu hợp `number | string`** (Pha 2B Task 6, review M-3).
+   *     Bộ làm sạch bên dưới **cố ý** thay một giá trị không hữu hạn bằng NHÃN CHUỖI
+   *     (`"NaN"` · `"Infinity"` · `"-Infinity"`) thay vì `null`, vì `null` không phân biệt được với
+   *     "không có số" — và một số điểm sản xuất (`kbSyncScheduler.soHuuHan()`) làm đúng như vậy
+   *     **ngay tại NGUỒN**. ⇒ Ai viết truy vấn kiểu `(detail->>'budgetMs')::bigint` sẽ ăn `22P02`
+   *     đúng lúc gặp một dòng hỏng — tức **mù đúng những dòng đáng đọc nhất**. Lọc bằng
+   *     `jsonb_typeof(detail->'x') = 'number'` trước khi ép kiểu.
    *   • `detail.droppedBeforeThis` (trên MỌI loại sự kiện) — số sự kiện đã bị **VỨT** vì hàng đợi
    *     đầy, tính tới ngay TRƯỚC dòng này. Nó là dấu vết DUY NHẤT của một quãng nhật ký THỦNG:
    *     những sự kiện kia không tồn tại, nên chỉ đếm được từ phía sự kiện còn sống. Thấy ô này > 0

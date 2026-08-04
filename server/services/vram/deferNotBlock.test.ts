@@ -152,6 +152,24 @@ vi.mock("./vramWiring", () => ({
   CUDA_BACKEND_FALLBACK_BYTES: 452_595_712,
 }));
 
+// ─── ../../db/connection — MỘT dòng `vram_events` cho đường khôi phục sau khởi động lại (I-1) ──
+/**
+ * ⚠ Mặc định `coDb = false` ⇒ `getDb()` trả `null` ⇒ **không** khôi phục gì — đúng hình dạng của
+ * mọi ca khác trong file này, và đúng hình dạng của một cài đặt không DB (giới hạn đã khai).
+ * Chuỗi builder của drizzle được giả bằng một object tự-trả-về, kết thúc ở `.limit()` (chỗ duy
+ * nhất mã sản xuất `await`).
+ */
+const kho = vi.hoisted(() => ({ coDb: false, rows: [] as Record<string, unknown>[] }));
+vi.mock("../../db/connection", () => ({
+  getDb: async () => {
+    if (!kho.coDb) return null;
+    const chain: Record<string, unknown> = {};
+    for (const k of ["select", "from", "where", "orderBy"]) chain[k] = () => chain;
+    chain.limit = async () => kho.rows;
+    return chain;
+  },
+}));
+
 // ─── node:child_process ───────────────────────────────────────────────────────────────────────
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter();
@@ -178,7 +196,10 @@ import {
   stopKbSyncScheduler,
   getKbSyncSchedulerStatus,
   planKbSyncDefer,
+  planKbSyncDeferResume,
+  resumeKbSyncDeferFromLog,
   kbSyncDeferBudgetMs,
+  kbSyncDeferStreakIsAlive,
   readKbSyncRefusalNote,
   __resetKbSyncDeferForTests,
   __hasKbSyncDeferTimer,
@@ -216,6 +237,8 @@ beforeEach(() => {
   gate.soLuotXin = 0;
   gate.moKhoaTreo = null;
   gate.facts = factsMau();
+  kho.coDb = false;
+  kho.rows = [];
   __resetKbSyncDeferForTests();
   delete process.env.KB_SYNC_MAX_DEFER_HOURS;
   // Cổng eval TẮT mặc định: cơ chế hoãn trực giao với nó. Đúng một ca bật lại (§4).
@@ -578,6 +601,40 @@ describe("§4 — VÒNG ĐỜI THẬT qua runKbSyncNow()", () => {
     expect(tt.running).toBe(false);
   });
 
+  /**
+   * ★★★ (B) của review — LƯỚI CỦA CHÍNH TASK 6, KHÔNG PHẢI LƯỚI THỪA KẾ.
+   *
+   * Đột biến của reviewer (*"chỉ ghi `lastRunStats` khi `defer === null || defer.exceeded`"*) cho
+   * **1 đỏ / 500** — nhưng ca đỏ đó nằm ở **FILE KỀ BÊN** (ca `C-1` của Task 5). Cả 28 ca của Task
+   * 6 XANH, vì ca `KHÔNG lượt nào biến mất không vết` đếm **sự kiện** (vết #2) rồi đọc
+   * `lastRunStats` **đúng một lần, sau khi đã quá đáy** — tức chỉ khoá lượt CUỐI. Vết #1 của **7
+   * lượt giữa** là vết THỪA KẾ: ngày nào ai sửa ca C-1 của Task 5, lớp bảo vệ ấy rơi mà không ai đỏ.
+   *
+   * Ca này khoá **TỪNG LƯỢT**: sau mỗi nhịp hẹn giờ, `lastRunStats` phải là của **lượt vừa rồi**.
+   */
+  it("★★★ (B) MỌI lượt trong chuỗi để lại vết #1 — không chỉ lượt CUỐI", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.useFakeTimers();
+    gate.che_do = "tuChoi";
+    const vet = () => {
+      const st = getKbSyncSchedulerStatus().lastRunStats;
+      return `${st?.reason}/${st?.defer?.attempts}/${st?.defer?.exceeded}`;
+    };
+
+    await runKbSyncNow();
+    expect(`lượt 1: ${vet()}`).toBe("lượt 1: vram_refused/1/false");
+
+    // các nhịp đưa chuỗi tới lượt 2…7 (15 → 30 → 60 → 60 → 60 → 60), tất cả CÒN TRONG đáy
+    const buoc = [15, 30, 60, 60, 60, 60].map((m) => m * PHUT);
+    let n = 1;
+    for (const d of buoc) {
+      await vi.advanceTimersByTimeAsync(d);
+      n++;
+      expect(`lượt ${n}: ${vet()}`).toBe(`lượt ${n}: vram_refused/${n}/false`);
+    }
+    expect(gate.soLuotXin).toBe(7);
+  });
+
   it("★★ KHÔNG một giá trị KHÔNG HỮU HẠN nào rời khỏi NGUỒN vào ống dẫn sự kiện", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -699,5 +756,320 @@ describe("§4 — VÒNG ĐỜI THẬT qua runKbSyncNow()", () => {
     expect(lai.ok).toBe(true);
     expect(getKbSyncSchedulerStatus().defer).toBeNull();
     expect(getKbSyncSchedulerStatus().running).toBe(false);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// §5 — VÒNG SỬA 1 (review): I-1 khôi phục qua khởi động lại · I-2 vị từ dùng chung · M-1·M-2·M-4·M-6
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+describe("§5 — I-2: VỊ TỪ DÙNG CHUNG *chuỗi hoãn còn sống không*", () => {
+  /**
+   * ★★★ Đột biến (D) của review — bỏ `s.exceeded ||` khỏi bản sao THỨ HAI — cho **0 đỏ / 500**:
+   * bản sao ấy không được ghim bởi bất kỳ ca nào. Nay chỉ còn MỘT bản cài đặt, và ca này ghim
+   * **từng mệnh đề RIÊNG**.
+   *
+   * ⚠ Vì sao phải ghim TRỰC TIẾP chứ không qua hành vi: dưới bất biến của người sản xuất
+   * (`exceeded ⇔ nextRetryAt === null`), tổ hợp `(exceeded: true, nextRetryAt: ≠ null)` **không
+   * đạt tới được từ ngoài** ⇒ mọi ca hành vi đều KHÔNG phân biệt nổi "bỏ mệnh đề `!exceeded`" với
+   * "bỏ mệnh đề `nextRetryAt !== null`". Đây đúng chỗ mà một ca hành vi sẽ nói dối là mình có lưới.
+   */
+  it("★★★ (I-2) bốn tổ hợp, mỗi mệnh đề ghim RIÊNG — đột biến-được từng cái một", () => {
+    expect(kbSyncDeferStreakIsAlive(null)).toBe(false);
+    expect(kbSyncDeferStreakIsAlive({ exceeded: false, nextRetryAt: 1 })).toBe(true);
+    // ↓ ĐỎ nếu ai bỏ mệnh đề `!s.exceeded` — hướng hỏng NGUY HIỂM NHẤT (vũ trang lại một chuỗi đã
+    //   tuyên bố quá đáy ⇒ cơ chế chống-hoãn-mãi tự phá chính nó)
+    expect(kbSyncDeferStreakIsAlive({ exceeded: true, nextRetryAt: 1 })).toBe(false);
+    // ↓ ĐỎ nếu ai bỏ mệnh đề `s.nextRetryAt !== null`
+    expect(kbSyncDeferStreakIsAlive({ exceeded: false, nextRetryAt: null })).toBe(false);
+  });
+});
+
+describe("§5 — I-1: chuỗi hoãn SỐNG QUA một lần khởi động lại (đọc ngược vram_events, KHÔNG DDL)", () => {
+  const T0 = Date.parse("2026-08-05T03:00:00.000Z");
+  function detailDefer(over: Record<string, unknown> = {}) {
+    return {
+      attempt: 3,
+      firstRefusedAt: "2026-08-05T03:00:00.000Z",
+      deadlineAt: "2026-08-05T09:00:00.000Z",
+      budgetMs: 6 * GIO,
+      delayMs: 60 * PHUT,
+      nextRetryAt: "2026-08-05T04:45:00.000Z",
+      holdersKnown: true,
+      holders: [
+        { owner: "gguf:fixture-17000", kind: "gguf-model", mib: 17_000, priority: "interactive", measured: false, reclaimable: true },
+      ],
+      refusalMessage: "Không đủ VRAM cho cron:kb-sync (mức background): xin 1251 MiB, còn 12 MiB.",
+      ...over,
+    };
+  }
+  function dongLog(event: string, detail: unknown) {
+    kho.coDb = true;
+    kho.rows = [{ event, detail }];
+  }
+
+  // ── người quyết định thuần ──────────────────────────────────────────────────────────────────
+  it("thuần: dòng `defer` còn trong ngân sách ⇒ `resume` + đúng mốc", () => {
+    const p = planKbSyncDeferResume({ now: T0 + 90 * PHUT, event: "defer", detail: detailDefer() });
+    expect(p.kind).toBe("resume");
+    if (p.kind === "none") return;
+    expect(p.attempts).toBe(3);
+    expect(p.firstRefusedAt).toBe(T0);
+    expect(p.lastDelayMs).toBe(60 * PHUT);
+    expect(p.nextRetryAt).toBe(Date.parse("2026-08-05T04:45:00.000Z"));
+  });
+
+  it("★★ thuần: dòng `defer` mà ĐÁY ĐÃ QUA lúc tiến trình chết ⇒ `overdue` (nợ một tiếng kêu)", () => {
+    const p = planKbSyncDeferResume({ now: T0 + 7 * GIO, event: "defer", detail: detailDefer() });
+    expect(p.kind).toBe("overdue");
+    if (p.kind === "none") return;
+    expect(p.nextRetryAt).toBeNull();
+  });
+
+  it("thuần: dòng `defer_exceeded` ⇒ `already-exceeded` (đêm trước đã kêu, KHÔNG kêu lại)", () => {
+    const p = planKbSyncDeferResume({ now: T0 + 30 * PHUT, event: "defer_exceeded", detail: detailDefer({ attempt: 8 }) });
+    expect(p.kind).toBe("already-exceeded");
+  });
+
+  /**
+   * ★★★ FAIL-CLOSED. Mỗi ô hỏng ở đây, nếu được "khôi phục" thay vì bị từ chối, sẽ dựng lại một
+   * chuỗi có đáy `NaN`/thiếu mốc ⇒ **hoãn vô hạn, im lặng** — đúng đường §5.4 tồn tại để chặn.
+   * ⚠ Ô `budgetMs: "NaN"` là **mìn M-3 có thật**: `soHuuHan()` ghi NHÃN CHUỖI vào `detail`.
+   */
+  it("★★★ thuần: MỌI dòng méo mó ⇒ `none` (mở chuỗi mới, đáy đầy đủ) — KHÔNG khôi phục rác", () => {
+    const xau: Array<[string, unknown, unknown]> = [
+      ["không phải sự kiện hoãn", "reserve", detailDefer()],
+      ["không có detail", "defer", null],
+      ["detail không phải object", "defer", 42],
+      ["thiếu firstRefusedAt", "defer", detailDefer({ firstRefusedAt: undefined })],
+      ["firstRefusedAt không phải ngày", "defer", detailDefer({ firstRefusedAt: "hôm-qua" })],
+      ["budgetMs là NHÃN CHUỖI (mìn M-3)", "defer", detailDefer({ budgetMs: "NaN" })],
+      ["budgetMs là chuỗi số", "defer", detailDefer({ budgetMs: "21600000" })],
+      ["attempt = 0", "defer", detailDefer({ attempt: 0 })],
+      ["thiếu nextRetryAt", "defer", detailDefer({ nextRetryAt: undefined })],
+      ["không có dòng nào", null, null],
+    ];
+    for (const [ten, event, detail] of xau) {
+      const p = planKbSyncDeferResume({
+        now: T0 + 30 * PHUT,
+        event: event as string | null,
+        detail: detail as Record<string, unknown> | null,
+      });
+      expect(`${ten}: ${p.kind}`).toBe(`${ten}: none`);
+    }
+  });
+
+  it("thuần: `now` không hữu hạn ⇒ `overdue` (KÊU), không phải `resume` (IM)", () => {
+    const p = planKbSyncDeferResume({ now: Number.NaN, event: "defer", detail: detailDefer() });
+    expect(p.kind).toBe("overdue");
+  });
+
+  // ── vòng đời thật ───────────────────────────────────────────────────────────────────────────
+  it("★★★ (I-1) khởi động lại giữa chuỗi ⇒ VŨ TRANG LẠI, và lượt thử lại NỔ THẬT", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-05T04:00:00.000Z")); // 60' sau khi chuỗi bắt đầu
+    dongLog("defer", detailDefer());
+    gate.che_do = "tuChoi";
+
+    const plan = await resumeKbSyncDeferFromLog();
+
+    expect(plan.kind).toBe("resume");
+    expect(__hasKbSyncDeferTimer()).toBe(true);
+    const d = getKbSyncSchedulerStatus().defer;
+    expect(d?.attempts).toBe(3);
+    expect(d?.exceeded).toBe(false);
+    expect(d?.deadlineAt).toBe("2026-08-05T09:00:00.000Z"); // đáy của chuỗi CŨ, không mở lại
+    // hộ đang giữ chỗ đọc lại được từ dòng log
+    expect(d?.holdersKnown).toBe(true);
+    expect(d?.holders[0]?.owner).toBe("gguf:fixture-17000");
+
+    // …và nó NỔ THẬT: 45 phút nữa là 04:45
+    await vi.advanceTimersByTimeAsync(45 * PHUT);
+    expect(gate.soLuotXin).toBe(1);
+    expect(getKbSyncSchedulerStatus().defer?.attempts).toBe(4); // nối tiếp chuỗi CŨ, không về 1
+  });
+
+  /**
+   * ★★★ CA NÀY LÀ NGƯỜI TIÊU THỤ của vị từ dùng chung (I-2) trên một ĐƯỜNG SẢN XUẤT THẬT.
+   * `ensureDeferArmed()` được gọi vô điều kiện ở cuối `resumeKbSyncDeferFromLog()` — chính vị từ
+   * phải TỰ từ chối, chứ không phải một `if` rải rác ở ba nhánh.
+   */
+  it("★★★ (I-2 tiêu thụ) khôi phục dòng `defer_exceeded` ⇒ TUYỆT ĐỐI KHÔNG vũ trang lại", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-05T04:00:00.000Z"));
+    dongLog("defer_exceeded", detailDefer({ attempt: 8 }));
+    gate.che_do = "tuChoi";
+
+    const plan = await resumeKbSyncDeferFromLog();
+
+    expect(plan.kind).toBe("already-exceeded");
+    expect(__hasKbSyncDeferTimer()).toBe(false);
+    const d = getKbSyncSchedulerStatus().defer;
+    expect(d?.exceeded).toBe(true);
+    expect(d?.nextRetryAt).toBeNull();
+    expect(d?.nextDelayMs).toBeNull();
+    // KHÔNG kêu lại — đêm trước đã kêu rồi
+    expect(suKien).toHaveLength(0);
+    // …và 2 giờ sau vẫn không có lượt thử lại nào
+    await vi.advanceTimersByTimeAsync(2 * GIO);
+    expect(gate.soLuotXin).toBe(0);
+  });
+
+  /**
+   * ★★★ MÓN NỢ TIẾNG KÊU. Đây là lỗ mà review (I-1) gọi tên: trong một vòng khởi-động-lại lặp,
+   * `defer_exceeded` **không bao giờ kêu**. Nay nó kêu — MUỘN, và **tự khai là muộn**.
+   */
+  it("★★★ (I-1) đáy đã qua lúc tiến trình chết ⇒ PHÁT `defer_exceeded` NGAY, có nhãn phát-muộn", async () => {
+    const keu = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-05T11:00:00.000Z")); // 8 giờ sau, đáy 6 giờ đã qua
+    dongLog("defer", detailDefer());
+    gate.che_do = "tuChoi";
+
+    const plan = await resumeKbSyncDeferFromLog();
+
+    expect(plan.kind).toBe("overdue");
+    expect(suKien.map((e) => e.event)).toEqual(["defer_exceeded"]);
+    const ct = suKien[0].detail as Record<string, unknown>;
+    // ⚠ nhãn phát-muộn: thiếu nó, Task 7 đọc dòng này thành "đêm NAY vừa quá đáy"
+    expect(ct.recoveredAfterRestart).toBe(true);
+    expect(ct.attempt).toBe(3);
+    expect(JSON.stringify(ct.holders)).toContain("gguf:fixture-17000");
+    // KHÔNG vũ trang lại — đã quá đáy
+    expect(__hasKbSyncDeferTimer()).toBe(false);
+    const canhBao = keu.mock.calls.map((c) => c.map(String).join(" ")).join("\n");
+    expect(canhBao).toContain("PHÁT MUỘN");
+    expect(canhBao).toContain("gguf:fixture-17000");
+    keu.mockRestore();
+  });
+
+  it("không có DB (getDb → null) ⇒ `none`, không ném, không vũ trang — giới hạn ĐÃ KHAI", async () => {
+    kho.coDb = false;
+    const plan = await resumeKbSyncDeferFromLog();
+    expect(plan.kind).toBe("none");
+    expect(__hasKbSyncDeferTimer()).toBe(false);
+  });
+
+  it("chuỗi ĐANG SỐNG trong bộ nhớ THẮNG một dòng lịch sử — không đè lên nhau", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.useFakeTimers();
+    gate.che_do = "tuChoi";
+    await runKbSyncNow(); // chuỗi sống, lượt 1
+    dongLog("defer", detailDefer({ attempt: 99 }));
+
+    const plan = await resumeKbSyncDeferFromLog();
+
+    expect(plan.kind).toBe("none");
+    expect(getKbSyncSchedulerStatus().defer?.attempts).toBe(1); // KHÔNG bị dòng log ghi đè
+  });
+
+  it("★★ `startKbSyncScheduler()` gọi đường khôi phục (không chỉ đăng ký cron)", async () => {
+    // bằng chứng TĨNH đi kèm ca động ở trên: đường boot phải nhắc tên hàm khôi phục.
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(path.join(process.cwd(), "server", "services", "kbSyncScheduler.ts"), "utf8");
+    const boot = src.slice(src.indexOf("export function startKbSyncScheduler"));
+    const than = boot.slice(0, boot.indexOf("\n}\n"));
+    expect(than).toContain("resumeKbSyncDeferFromLog()");
+  });
+});
+
+describe("§5 — M-1 · M-2 · M-4 · M-6 (Minor của review)", () => {
+  it("★ (M-1) vũ trang LẠI có SÀN — `nextRetryAt` đã qua KHÔNG cho quay vòng 0 ms", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-05T04:00:00.000Z"));
+    // dòng log có `nextRetryAt` ĐÃ QUA (03:30) nhưng đáy thì chưa
+    kho.coDb = true;
+    kho.rows = [{
+      event: "defer",
+      detail: {
+        attempt: 2, firstRefusedAt: "2026-08-05T03:00:00.000Z", budgetMs: 6 * GIO,
+        delayMs: 30 * PHUT, nextRetryAt: "2026-08-05T03:30:00.000Z",
+        holdersKnown: true, holders: [], refusalMessage: "x",
+      },
+    }];
+    gate.che_do = "tuChoi";
+
+    await resumeKbSyncDeferFromLog();
+    expect(__hasKbSyncDeferTimer()).toBe(true);
+
+    // 59 giây: CHƯA nổ (không có sàn thì nó đã nổ ở 0 ms)
+    await vi.advanceTimersByTimeAsync(59 * 1000);
+    expect(gate.soLuotXin).toBe(0);
+    await vi.advanceTimersByTimeAsync(2 * 1000);
+    expect(gate.soLuotXin).toBe(1);
+  });
+
+  it("★ (M-2) `stopKbSyncScheduler()` KHÔNG để lại chuỗi mồ côi ⇒ mặt trạng thái không NÓI DỐI", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.useFakeTimers();
+    gate.che_do = "tuChoi";
+    await runKbSyncNow();
+    expect(getKbSyncSchedulerStatus().defer?.nextRetryAt).toBeTruthy();
+
+    stopKbSyncScheduler();
+
+    // trước bản vá: `defer` vẫn khai exceeded:false + nextRetryAt TƯƠNG LAI cho một lượt
+    // thử lại KHÔNG BAO GIỜ nổ.
+    expect(getKbSyncSchedulerStatus().defer).toBeNull();
+    expect(__hasKbSyncDeferTimer()).toBe(false);
+  });
+
+  /**
+   * ★ (M-4 / review C) `background` là mức THẤP NHẤT ⇒ `preemptable` RỖNG VĨNH VIỄN với `kb:sync`
+   * ⇒ ngay cả `preempt()` mở rộng của Task 7 cũng không giành được byte nào. Khi KHÔNG hộ nào
+   * thu hồi được, câu "thử lại sau N phút" phải NÓI RA điều đó thay vì để người trực tự suy.
+   */
+  it("★ (M-4) mọi hộ KHÔNG thu hồi được ⇒ câu hoãn NÓI THẲNG là thử lại nhiều khả năng vẫn trượt", async () => {
+    const canh = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.useFakeTimers();
+    gate.facts = {
+      requestedBytes: 1251 * MIB,
+      holders: [
+        { owner: "sidecar:vision", kind: "external-process", bytes: 7825 * MIB, priority: "interactive", measured: true, reclaimable: false },
+        { owner: "onnx-aoi:seg", kind: "onnx-session", bytes: 339 * MIB, priority: "production", measured: true, reclaimable: false },
+      ],
+      preemptable: [],
+    };
+    gate.che_do = "tuChoi";
+
+    await runKbSyncNow();
+
+    const noi = canh.mock.calls.map((c) => c.map(String).join(" ")).join("\n");
+    expect(noi).toContain("KHÔNG hộ nào thu hồi được");
+    expect(noi).toContain("TỰ NHẢ");
+    expect(noi).toContain("sidecar:vision");
+    canh.mockRestore();
+  });
+
+  it("★ (M-4) CÓ hộ thu hồi được ⇒ KHÔNG thêm câu đó (không kêu oan)", async () => {
+    const canh = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.useFakeTimers();
+    gate.che_do = "tuChoi"; // fixture mặc định: `gguf:fixture-17000` reclaimable
+
+    await runKbSyncNow();
+
+    const noi = canh.mock.calls.map((c) => c.map(String).join(" ")).join("\n");
+    expect(noi).not.toContain("KHÔNG hộ nào thu hồi được");
+    canh.mockRestore();
+  });
+
+  /**
+   * ★★ (M-6) Chốt một-lần `deferBudgetWarned` là một TÀI NGUYÊN TIÊU THỤ ĐƯỢC. Nếu một mặt sức
+   * khoẻ bị poll định kỳ gọi vào đường có kêu, lượt poll đó ĂN MẤT tiếng kêu cấu hình trước khi
+   * người vận hành kịp thấy.
+   */
+  it("★★ (M-6) `getKbSyncSchedulerStatus()` KHÔNG tiêu thụ chốt cảnh báo cấu hình", () => {
+    const keu = vi.spyOn(console, "error").mockImplementation(() => {});
+    process.env.KB_SYNC_MAX_DEFER_HOURS = "sáu";
+
+    // "poll" mặt trạng thái nhiều lần — KHÔNG được kêu, và KHÔNG được ăn mất lượt kêu
+    for (let i = 0; i < 5; i++) expect(getKbSyncSchedulerStatus().deferBudgetMs).toBe(6 * GIO);
+    expect(keu).not.toHaveBeenCalled();
+
+    // đường QUYẾT ĐỊNH vẫn kêu được
+    expect(kbSyncDeferBudgetMs()).toBe(6 * GIO);
+    expect(keu).toHaveBeenCalledTimes(1);
+    keu.mockRestore();
   });
 });
