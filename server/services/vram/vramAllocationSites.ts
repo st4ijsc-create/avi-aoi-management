@@ -78,8 +78,16 @@
  * của `server/`. Không phải số lần xuất hiện của ký hiệu — xem docstring đầu file.
  *
  * Đếm lại ngày 2026-08-04 bằng HAI cách độc lập sau khi nới mẫu quét (I-7), cùng ra 14.
+ *
+ * ⚠ 14 → **15** (Pha 2B Task 3): điểm gọi MỚI ở `vram/vramLoadOutcome.ts` mở giấy phép cho MỖI
+ * LƯỢT THỬ của §5.5. Nó KHÔNG phải một hộ tiêu thụ mới — nó là điểm gọi 2/14 cũ (`gguf:<modelId>`)
+ * **chuyển chỗ**: lượt nạp model nay mở/đóng một giấy phép riêng cho từng lượt thử, thay vì giữ
+ * MỘT giấy phép suốt cả lượt đầu lẫn lượt lùi. Dòng `aiGgufEngine.ts` cũ ở lại vì nó vẫn là điểm
+ * gọi THẬT của **đường dự phòng** (khi `vramLoadOutcome` không nạp được).
+ * ⚠⚠ Điểm gọi mới chỉ đếm được vì biến nhận hàm ở đó **ĐƯỢC ĐẶT TÊN `beginVram`**. Đặt tên khác
+ * (`begin`, `fn`, …) là tái tạo đúng lỗ alias mà N-1 mô tả — xem chú thích tại chỗ.
  */
-export const WIRED_ALLOCATION_SITE_COUNT = 14;
+export const WIRED_ALLOCATION_SITE_COUNT = 15;
 
 /**
  * Số DÒNG của `KNOWN_ALLOCATION_SITES` = số lần xuất hiện mà mẫu quét ngày 2026-08-04 nhìn thấy.
@@ -91,8 +99,13 @@ export const WIRED_ALLOCATION_SITE_COUNT = 14;
  * ⚠ 157 → **159** (Pha 2B Task 1): hai dòng MỚI đều thuộc `vramGpuHolders.ts` (`child_process` +
  * `execFile(`) và cả hai `wired: false` — file đó ĐỌC danh tính tiến trình đang giữ GPU, không cấp
  * phát gì. Số điểm gọi `beginVramAllocation()` KHÔNG đổi (`WIRED_ALLOCATION_SITE_COUNT` vẫn 14).
+ *
+ * ⚠ 159 → **160** (Pha 2B Task 3): MỘT dòng mới — `vram/vramLoadOutcome.ts` → `beginVram(`
+ * (ĐIỂM GỌI 15/15). Ba lần xuất hiện khác của `beginVramAllocation` trong file đó (import, kiểu
+ * của tham số tiêm, giá trị mặc định) đều KHÔNG có `(` theo sau nên máy quét không đếm — và lần
+ * xuất hiện thứ tư nằm trong một chuỗi mẫu (`console.warn`), thứ mà máy quét đã xoá trước khi khớp.
  */
-export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 159;
+export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 160;
 
 /**
  * ★★ HAI CÁI BẪY ĐẾM-HAI-LẦN, khai TƯỜNG MINH thay vì lọc ngầm bằng regex.
@@ -178,7 +191,8 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "server/services/aiInferenceEngine.ts", symbol: "beginVramAllocation(", wired: true, note: ":27 PASS-THROUGH trong lớp bọc `beginVram()` — không phải điểm gọi độc lập." },
 
   { file: "server/services/aiGgufEngine.ts", symbol: "beginVram(", wired: true, note: ':399 ĐIỂM GỌI 1/14 — owner "cuda-backend", gguf-backend, production. Backend CUDA của cả tiến trình. ĐO ĐƯỢC 431,6 MiB trong tiến trình sạch 2026-08-04.' },
-  { file: "server/services/aiGgufEngine.ts", symbol: "beginVram(", wired: true, note: ':851 ĐIỂM GỌI 2/14 — owner "gguf:<modelId>", gguf-model, interactive. Bao quanh llama.loadModel() ở :861/:888 VÀ model.createContext() ở :904.' },
+  { file: "server/services/aiGgufEngine.ts", symbol: "beginVram(", wired: true, note: 'ĐIỂM GỌI 2/15 — owner "gguf:<modelId>", gguf-model, interactive. ⚠ Pha 2B Task 3: đây nay là ĐƯỜNG DỰ PHÒNG (chạy KHI VÀ CHỈ KHI `vram/vramLoadOutcome` không nạp được). Đường CHÍNH mở giấy phép ở vramLoadOutcome.ts, một giấy phép cho MỖI lượt thử của §5.5. Cả hai đường đều bao quanh llama.loadModel() và model.createContext().' },
+  { file: "server/services/vram/vramLoadOutcome.ts", symbol: "beginVram(", wired: true, note: 'ĐIỂM GỌI 15/15 (Pha 2B Task 3) — MỘT giấy phép cho MỖI lượt thử của §5.5 (lượt đầu · 2 lượt thử lại · lượt hạ số lớp). Lượt hỏng TRẢ CHỖ ngay tại chỗ hỏng (finally), nên chỉ giấy phép của lượt THẮNG còn mở và nó được giao lại cho loadGgufModel() để commitMeasured(). owner/kind/priority do điểm gọi truyền — hôm nay chỉ có "gguf:<modelId>"/gguf-model/interactive.' },
   { file: "server/services/aiGgufEngine.ts", symbol: "beginVram(", wired: true, note: ':1041 ĐIỂM GỌI 3/14 — owner "gguf-ctx:<modelId>", gguf-context, interactive. Bao quanh createContext() LƯỜI ở :1046.' },
   { file: "server/services/aiGgufEngine.ts", symbol: "beginVram(", wired: true, note: ':2824 ĐIỂM GỌI 4/14 — owner "gguf-embed-ctx:<modelId>", gguf-embed-context, background. Bao quanh createEmbeddingContext() ở :2830.' },
   { file: "server/services/aiInferenceEngine.ts", symbol: "beginVram(", wired: true, note: ':213 ĐIỂM GỌI 5/14 — owner "onnx:<code>", onnx-session, production, releaseProof "unverified". EP = DirectML vì ENABLE_GPU=true.' },
@@ -197,8 +211,8 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   // ═════════════════════════════════════════════════════════════════════════════════════════
   { file: "server/services/aiGgufEngine.ts", symbol: "getLlama(", wired: true, note: ":338 KHAI BÁO hàm nội bộ `getLlama()`. Lượt khởi tạo backend THẬT (initLlama của node-llama-cpp) ở :376, BÊN TRONG cửa sổ giấy phép :399." },
   { file: "server/services/aiGgufEngine.ts", symbol: "getLlama(", wired: true, note: ":841 lời gọi trong loadGgufModel(). Lượt thứ hai trở đi trả thể hiện đã cache (:339) ⇒ không cấp phát thêm; giấy phép :399 chỉ mở đúng một lần cho cả tiến trình." },
-  { file: "server/services/aiGgufEngine.ts", symbol: ".loadModel(", wired: true, note: ":861 llama.loadModel({gpuLayers:'max'}) — lượt nạp CHÍNH, trong cửa sổ giấy phép :851." },
-  { file: "server/services/aiGgufEngine.ts", symbol: ".loadModel(", wired: true, note: ":888 llama.loadModel({gpuLayers:'auto'}) — lượt RETRY sau khi :861 ném OOM (đã evictLRU hết model rảnh). CÙNG giấy phép :851." },
+  { file: "server/services/aiGgufEngine.ts", symbol: ".loadModel(", wired: true, note: "llama.loadModel({gpuLayers: plan.gpuLayers}) — callback `load` truyền cho loadWithVramOutcomes(). MỘT dòng mã, CHẠY TỚI 4 LƯỢT (lượt đầu · 2 lượt thử lại · lượt hạ số lớp), mỗi lượt trong một cửa sổ giấy phép RIÊNG do vramLoadOutcome mở. ⚠ Pha 2B Task 3: bản trước có HAI dòng (:861 'max' + :888 'auto') vì đường lùi được viết tay tại chỗ." },
+  { file: "server/services/aiGgufEngine.ts", symbol: ".loadModel(", wired: true, note: "llama.loadModel() của ĐƯỜNG DỰ PHÒNG (nhánh `else` khi vram/vramLoadOutcome không nạp được). Một lượt, không thử lại, không hạ số lớp — nhưng vẫn trong cửa sổ giấy phép của beginVram() ngay trên, và vẫn CHẶN gpuLayers âm." },
   { file: "server/services/aiGgufEngine.ts", symbol: ".createContext(", wired: true, note: ":904 context thường tạo NGAY trong loadGgufModel() (bỏ qua khi embeddingOnly). Trong cửa sổ :851 ⇒ actualBytes của `gguf:*` gồm CẢ trọng số LẪN context này." },
   { file: "server/services/aiGgufEngine.ts", symbol: ".createContext(", wired: true, note: ":1046 context LƯỜI của ensureTextContext(), trong cửa sổ giấy phép :1041." },
   { file: "server/services/aiGgufEngine.ts", symbol: ".createEmbeddingContext(", wired: true, note: ":2830, trong cửa sổ :2824. contextSize = EMBED_CTX (:288, chốt theo GGUF_EMBED_CTX/GGUF_MAX_CTX) — KHÔNG phải 'auto', nên kích thước KHÔNG phụ thuộc dư địa lúc gọi." },

@@ -41,6 +41,22 @@ export interface VramEventInput {
    * ⚠ `measure_failed` (review TOÀN NHÁNH, I-2) = delta đo được ÂM ⇒ phép đo vô nghĩa ⇒ giấy
    * phép giữ ƯỚC LƯỢNG **vĩnh viễn**. Trước lượt vá này nhánh đó `return` IM LẶNG tuyệt đối —
    * không sự kiện, không dấu vết — nên một nguồn lệch ÂM dai dẳng là VÔ HÌNH với Task 7.
+   *
+   * ★★ Pha 2B Task 3 — NĂM LOẠI MỚI, một loại cho MỖI bước của §5.5 (`vramLoadOutcome.ts`).
+   * Ai đọc nhật ký mà không biết chúng sẽ thấy một `reserve` rồi KHÔNG thấy `commit` nào và
+   * tưởng giấy phép còn treo — trong khi thật ra driver đã từ chối và sổ đã được trả chỗ:
+   *   • `driver_refused` — **bước 1**: cổng sổ ĐÃ CHO QUA nhưng driver vẫn từ chối lượt cấp phát.
+   *     Giấy phép được TRẢ NGAY trong cùng lời gọi (`detail.leaseReleased`), vì driver từ chối mà
+   *     lease còn treo thì sổ cộng dư VĨNH VIỄN và lượt xin kế tiếp bị từ chối trên **byte ma**.
+   *   • `retry` — **bước 2**: sắp thử lại sau `detail.delayMs`. Thử lại KHÔNG phải mê tín: trần
+   *     đo được là KHÔNG TẤT ĐỊNH (3 OK / 9 hỏng trên cùng một khối 16.698,37 MiB, máy rảnh).
+   *   • `degraded` — **bước 3**: nạp được nhưng ở mức THẤP HƠN yêu cầu. `detail.gpuLayers` là
+   *     **số lớp THẬT đã nạp** đọc lại từ đối tượng model, KHÔNG phải số đã xin.
+   *     `detail.cpuOnly = true` ⇒ 0 lớp trên GPU (chậm gấp bội) — đây chính là suy biến im lặng
+   *     mà `gpuLayers: -1` từng tạo ra, nay có tiếng.
+   *   • `refuse` — **bước 4**: từ chối trung thực, đã hết mọi nấc. (Đã có sẵn trong từ vựng §5.3.)
+   *   • `warm_failed` — lượt warm lúc khởi động (`aiGgufEngine.warmModel`) trả `false`. Trước
+   *     Pha 2B nhánh đó là `catch {}` NUỐT TRỌN: `0/24` log của Ư0 có dấu vết nào của nó.
    */
   event: string;
   owner: string;
@@ -65,13 +81,132 @@ let queue: VramEventInput[] = [];
 let timer: NodeJS.Timeout | null = null;
 
 /**
+ * ★★★ Pha 2B Task 3 (bàn giao N-2 của Task 2) — HAI BẪY IM LẶNG CỦA CHÍNH ỐNG DẪN NÀY.
+ *
+ * Task 2 chọn `-Infinity` làm giá trị fail-closed của `computeHeadroom()`. Kiểm trên schema THẬT
+ * (`drizzle/schema/vram.ts:30-48`) cho ra hai đường mất dữ liệu, cả hai đều KHÔNG kêu:
+ *
+ *   1. **Năm cột byte là `bigint(mode:"number")`.** Một `-Infinity`/`NaN` đi tới đó thành chuỗi
+ *      `"-Infinity"`/`"NaN"` trên dây, Postgres ném `22P02`. Vì `flushVramEvents()` ghi **MỘT LÔ
+ *      nhiều dòng**, một sự kiện hỏng làm **MẤT TOÀN BỘ LÔ** — `catch` bên dưới nuốt và chỉ để
+ *      lại một dòng `console.warn`. Đây ĐÚNG tiền lệ đã trả giá một lần rồi:
+ *      `estimateSource` từng là `varchar(16)` trong khi `"fallback-after-measure-failure"` dài 30
+ *      ⇒ `22001` ⇒ mất cả lô (migration 0311).
+ *   2. **`detail` là `jsonb`.** `JSON.stringify(-Infinity)` cho `null` — con số **biến mất IM
+ *      LẶNG**, dòng vẫn ghi thành công, và người đọc nhật ký thấy `null` thì tưởng "không có số".
+ *
+ * ⇒ Task 3 là task ghi nhiều sự kiện nhất từ trước tới nay (5 loại mới, mỗi bước một dòng). **Một
+ * cơ chế chống-im-lặng mà tự nó im lặng thì tệ hơn không có.** Nên hàng rào đặt ở ĐÂY — cửa vào
+ * DUY NHẤT của hàng đợi (`queue.push` chỉ xuất hiện trong `logVramEvent`) — chứ không ở từng điểm
+ * sản xuất: 20 điểm gọi hôm nay, và mọi điểm gọi của Task 4/5/6/7 sau này, đều đi qua đây.
+ *
+ * ⚠ KHÔNG VỨT SỰ KIỆN. Giá trị không hữu hạn bị THAY, và chỗ nó từng ở được GHI TÊN
+ * (`detail.nonFiniteFields` / `detail.truncatedFields`). Vứt dòng đi là đổi một lỗi im lặng lấy
+ * một lỗi im lặng khác.
+ * ⚠ Trong `detail`, giá trị thay thế là **CHUỖI** `"-Infinity"`/`"Infinity"`/`"NaN"` chứ không
+ * phải `null`: `null` không phân biệt được với "không có số", mà phân biệt được chính là mục đích.
+ */
+const NUMERIC_COLUMNS = [
+  "estimatedBytes", "actualBytes", "deviceUsedBytes", "ledgerTotalBytes", "driftBytes",
+] as const;
+
+/**
+ * Độ rộng THẬT của các cột `varchar` trong `drizzle/schema/vram.ts`. Vượt ⇒ Postgres `22001` ⇒
+ * MẤT CẢ LÔ, cùng một lớp lỗi với bẫy số. Ai đổi schema phải đổi bảng này (test canh hai bảng khớp).
+ */
+const VARCHAR_LIMITS: ReadonlyArray<readonly [keyof VramEventInput, number]> = [
+  ["event", 24], ["owner", 160], ["leaseKind", 32], ["priority", 16], ["estimateSource", 48],
+];
+
+const MAX_DETAIL_DEPTH = 8;
+
+function nonFiniteLabel(v: number): "NaN" | "Infinity" | "-Infinity" {
+  return Number.isNaN(v) ? "NaN" : v > 0 ? "Infinity" : "-Infinity";
+}
+
+function scrubDetail(
+  value: unknown, path: string, found: string[], depth: number, seen: WeakSet<object>,
+): unknown {
+  if (typeof value === "number") {
+    if (Number.isFinite(value)) return value;
+    found.push(`detail.${path}=${nonFiniteLabel(value)}`);
+    return nonFiniteLabel(value);
+  }
+  if (value === null || typeof value !== "object") return value;
+  // Date/Map/Set/Buffer… — KHÔNG bóc: `Object.entries(new Date())` là `[]`, bóc ra là XOÁ dữ liệu.
+  const proto = Object.getPrototypeOf(value);
+  if (!Array.isArray(value) && proto !== Object.prototype && proto !== null) return value;
+  if (depth >= MAX_DETAIL_DEPTH || seen.has(value as object)) return value;
+  seen.add(value as object);
+  if (Array.isArray(value)) {
+    return value.map((v, i) => scrubDetail(v, `${path}[${i}]`, found, depth + 1, seen));
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    out[k] = scrubDetail(v, path ? `${path}.${k}` : k, found, depth + 1, seen);
+  }
+  return out;
+}
+
+/**
+ * Làm sạch MỘT sự kiện trước khi vào hàng đợi. Thuần, không I/O, KHÔNG BAO GIỜ ném.
+ * Export để test gọi thẳng (và để Task 4/5 dùng lại nếu cần ghi ra đường khác).
+ */
+export function sanitizeVramEvent(e: VramEventInput): VramEventInput {
+  const nonFinite: string[] = [];
+  const truncated: string[] = [];
+  const out = { ...e } as Record<string, unknown>;
+
+  for (const field of NUMERIC_COLUMNS) {
+    const v = out[field];
+    if (v === undefined || v === null) continue;
+    if (typeof v !== "number" || !Number.isFinite(v)) {
+      nonFinite.push(`${field}=${typeof v === "number" ? nonFiniteLabel(v) : String(v)}`);
+      // `undefined` ⇒ `flushVramEvents()` ghi `null`: ô TRỐNG có lý do kèm bên `detail`,
+      // thay vì một lô 5.000 dòng bốc hơi.
+      out[field] = undefined;
+    }
+  }
+
+  for (const [field, max] of VARCHAR_LIMITS) {
+    const v = out[field as string];
+    if (typeof v !== "string" || v.length <= max) continue;
+    truncated.push(`${String(field)}: ${v.length}>${max}`);
+    out[field as string] = v.slice(0, max);
+  }
+
+  let detail = e.detail;
+  if (detail !== undefined && detail !== null) {
+    detail = scrubDetail(detail, "", nonFinite, 0, new WeakSet()) as Record<string, unknown>;
+  }
+  if (nonFinite.length > 0 || truncated.length > 0) {
+    detail = { ...(detail ?? {}) };
+    if (nonFinite.length > 0) (detail as Record<string, unknown>).nonFiniteFields = nonFinite;
+    if (truncated.length > 0) (detail as Record<string, unknown>).truncatedFields = truncated;
+  }
+  out.detail = detail;
+  return out as unknown as VramEventInput;
+}
+
+/**
  * Xếp hàng rồi trả về NGAY — KHÔNG BAO GIỜ chờ DB. Hàm này nằm cạnh đường
  * cấp phát (reserve/commit/release của vramBroker); có test canh bằng mock
  * `insert` và assert chưa được gọi khi hàm này return.
+ *
+ * ⚠ Pha 2B Task 3 — CỬA VÀO DUY NHẤT của hàng đợi, nên cũng là chỗ duy nhất phải làm sạch
+ * (xem khối `NUMERIC_COLUMNS` bên trên). Người sau thêm một đường `queue.push` thứ hai ở đâu đó
+ * là mở lại cả hai bẫy.
  */
 export function logVramEvent(e: VramEventInput): void {
   if (queue.length >= QUEUE_MAX) return;
-  queue.push(e);
+  let safe: VramEventInput;
+  try {
+    safe = sanitizeVramEvent(e);
+  } catch {
+    // Làm sạch hỏng thì vẫn phải giữ sự kiện — mất telemetry là thứ đang đi vá, không phải công cụ.
+    safe = e;
+  }
+  queue.push(safe);
 }
 
 /** Ghi hết hàng đợi hiện tại thành MỘT lô (không phải một lượt insert mỗi sự kiện), rồi dọn. */

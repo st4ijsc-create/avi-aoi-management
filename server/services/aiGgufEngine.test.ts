@@ -103,6 +103,14 @@ beforeEach(() => {
   process.env.GGUF_MAX_LOADED_MODELS = "2";
   process.env.GGUF_EMBED_DIM = "1024";
   delete process.env.GGUF_MAX_VRAM_MB;
+  /**
+   * ★ Pha 2B Task 3 — biên chờ giữa hai lượt thử là 5.000 ms THẬT (§5.5 bước 2). File này canh
+   * HÀNH VI của đường lùi, không canh biên chờ; để nguyên 5.000 thì ca dưới hết giờ ở 5.000 ms và
+   * — nguy hiểm hơn — công việc còn dang dở của nó rò sang ca kế tiếp, làm hỏng bộ đếm lời gọi
+   * (đo được: ca "rethrows a non-OOM error" thấy 2 lời gọi thay vì 1, KHÔNG phải vì mã sai).
+   * Biên chờ mặc định được chứng minh ở ĐÚNG MỘT chỗ: `vram/threeOutcomes.test.ts` §2.
+   */
+  process.env.VRAM_LOAD_RETRY_DELAY_MS = "0";
 });
 
 // Import AFTER mocks. Re-import fresh each test to reset module-level loadedModels Map.
@@ -250,24 +258,46 @@ describe("LRU eviction", () => {
   });
 });
 
-describe("VRAM OOM fallback", () => {
-  it("retries with gpuLayers:'auto' when a full GPU offload runs out of VRAM", async () => {
+/**
+ * ★★★ Pha 2B Task 3 — BA KẾT CỤC (§5.5) NHÌN TỪ `loadGgufModel()`.
+ *
+ * ⚠ Bản trước của khối này khoá **CHÍNH SÁCH CŨ** (2 lượt: "max" rồi "auto") và — quan trọng hơn —
+ * dựng lỗi bằng chuỗi `ggml_backend_cuda_buffer_type_alloc_buffer: … cudaMalloc failed: out of
+ * memory`, tức **dòng llama.cpp in ra STDERR**, KHÔNG PHẢI `err.message` mà JS nhận được. Vì thế nó
+ * xanh suốt trong khi đường lùi THẬT chưa bao giờ chạy trên máy thật (Ư0: 0/24 lượt).
+ * Chuỗi THẬT là ba chữ `Failed to load model` (`LlamaModel.js:593`) — canh ở
+ * `vram/threeOutcomes.test.ts` §1 bằng cách đọc thẳng `node_modules`.
+ */
+describe("VRAM OOM fallback — ba kết cục §5.5", () => {
+  it("★★★ chuỗi lỗi THẬT ('Failed to load model') kích hoạt đủ 4 lượt: max · max · max · auto", async () => {
     const eng = await freshEngine();
-    // First load attempt OOMs on the full ("max") offload; the retry succeeds.
     fakeLlama.loadModel
-      .mockRejectedValueOnce(
-        new Error("ggml_backend_cuda_buffer_type_alloc_buffer: cudaMalloc failed: out of memory"),
-      )
+      .mockRejectedValueOnce(new Error("Failed to load model"))
+      .mockRejectedValueOnce(new Error("Failed to load model"))
+      .mockRejectedValueOnce(new Error("Failed to load model"))
       .mockImplementationOnce(async (opts: any) => makeFakeModel(opts.modelPath));
 
     await eng.loadGgufModel({ modelPath: "big.gguf" });
 
-    // Model still loaded despite the initial OOM.
     expect(eng.getLoadedGgufModelNames()).toContain("big");
-    // Two attempts: first "max" (default), retry "auto".
+    // Lượt đầu + 2 lượt THỬ LẠI (trần không tất định) + 1 lượt HẠ SỐ LỚP.
+    expect(fakeLlama.loadModel).toHaveBeenCalledTimes(4);
+    expect(fakeLlama.loadModel.mock.calls.map((c: any[]) => c[0].gpuLayers)).toEqual([
+      "max", "max", "max", "auto",
+    ]);
+  });
+
+  it("chuỗi CŨ (cudaMalloc/out of memory) vẫn kích hoạt đường lùi — bản vá NỚI, không THAY", async () => {
+    const eng = await freshEngine();
+    fakeLlama.loadModel
+      .mockRejectedValueOnce(new Error("cudaMalloc failed: out of memory"))
+      .mockImplementationOnce(async (opts: any) => makeFakeModel(opts.modelPath));
+
+    await eng.loadGgufModel({ modelPath: "big.gguf" });
+    expect(eng.getLoadedGgufModelNames()).toContain("big");
+    // Thắng ngay ở lượt THỬ LẠI đầu tiên ⇒ vẫn "max", chưa cần hạ số lớp.
     expect(fakeLlama.loadModel).toHaveBeenCalledTimes(2);
-    expect(fakeLlama.loadModel.mock.calls[0][0].gpuLayers).toBe("max");
-    expect(fakeLlama.loadModel.mock.calls[1][0].gpuLayers).toBe("auto");
+    expect(fakeLlama.loadModel.mock.calls.map((c: any[]) => c[0].gpuLayers)).toEqual(["max", "max"]);
   });
 
   it("rethrows a non-OOM load error without retrying", async () => {
@@ -275,6 +305,13 @@ describe("VRAM OOM fallback", () => {
     fakeLlama.loadModel.mockRejectedValueOnce(new Error("corrupt gguf header"));
     await expect(eng.loadGgufModel({ modelPath: "bad.gguf" })).rejects.toThrow("corrupt gguf header");
     expect(fakeLlama.loadModel).toHaveBeenCalledTimes(1); // no retry
+  });
+
+  it("★★ gpuLayers: -1 (đường vào THẬT của aiGgufRouter) KHÔNG BAO GIỜ tới node-llama-cpp", async () => {
+    const eng = await freshEngine();
+    await eng.loadGgufModel({ modelPath: "neg.gguf", gpuLayers: -1 });
+    // -1 ⇒ Math.max(0, Math.min(totalLayers, -1)) === 0 ⇒ nạp 0 lớp, chạy CPU, không báo gì.
+    expect(fakeLlama.loadModel.mock.calls[0][0].gpuLayers).toBe("auto");
   });
 });
 

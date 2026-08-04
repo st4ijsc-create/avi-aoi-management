@@ -267,6 +267,14 @@ beforeEach(() => {
   process.env.GGUF_MAX_VRAM_MB = "0";
   process.env.GGUF_MAX_CONCURRENCY = "4";
   process.env.AI_BATCH_MAX = "1"; // đường trực tiếp, không micro-batch → xác định
+  /**
+   * ★ Pha 2B Task 3 — ca A dựng một `loadModel` LUÔN ném "cudaMalloc", nên nó nay đi HẾT bốn bước
+   * của §5.5 (lượt đầu + 2 lượt thử lại + lượt hạ số lớp). Với biên chờ THẬT (5.000 ms × 2) ca đó
+   * hết giờ ở 5.000 ms và đỏ vì LÝ DO SAI. Hạ về 0 ở đây: file này canh "sổ RỖNG sau khi nạp
+   * hỏng", KHÔNG canh biên chờ. Biên chờ mặc định (2 lượt × 5.000 ms) được chứng minh ở ĐÚNG MỘT
+   * chỗ — `threeOutcomes.test.ts`, bằng một hàm `sleep` tiêm vào ghi lại từng lượt gọi.
+   */
+  process.env.VRAM_LOAD_RETRY_DELAY_MS = "0";
   onnxFail.on = false;
   delete process.env.GGUF_EMBED_MODEL;
   delete process.env.GGUF_RERANKER_MODEL;

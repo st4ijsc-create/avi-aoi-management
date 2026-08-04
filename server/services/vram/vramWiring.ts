@@ -1,4 +1,29 @@
 import type { VramLease, VramLeaseKind, VramMeasureSource, VramPriority } from "./types";
+/**
+ * ★★ Pha 2B Task 3 — BA CỬA `await import()` CỦA `beginVramAllocation()` ĐÃ THÀNH IMPORT TĨNH.
+ *
+ * Bàn giao của Task 2 (S2/§6.2) viết: *"ba cửa ấy nay CÓ TIẾNG, KHÔNG phải ĐÃ ĐÓNG"* — một lỗi
+ * nạp `./vramBroker` | `./vramEstimator` | `./vramEventLog` vẫn rơi vào `catch` cuối hàm và biến
+ * thành `NOOP_TICKET`, tức **cưỡng chế tắt + sổ hụt**, lẫn lộn với mọi lỗi khác của cùng cái `try`.
+ *
+ * VÌ SAO ĐỔI SANG TĨNH ĐÓNG ĐƯỢC **NỬA IM LẶNG** (và chỉ nửa đó — xem cảnh báo cuối khối):
+ *   1. **Tách hai lớp lỗi từng dùng chung MỘT cửa.** Trước: "module telemetry không nạp được" và
+ *      "`broker.reserve()` ném" cho ra CÙNG một dòng `console.warn`, cùng một `NOOP_TICKET` —
+ *      người trực không có cách nào biết mình đang gặp cái nào. Nay lỗi nạp module nổ khi
+ *      `vramWiring` được ĐÁNH GIÁ, ở một chỗ khác hẳn, với một câu khác hẳn.
+ *   2. **Một cửa thay vì ba**, và nó là cửa mà `aiGgufEngine.beginVram()` đã bọc sẵn — nơi Task 3
+ *      vừa thêm tiếng (`catch` đó trước đây RỖNG TUYỆT ĐỐI).
+ *   3. Bốn module này ở CÙNG thư mục, chỉ `import type` lẫn nhau (`vramBroker`/`vramEstimator`/
+ *      `vramEventLog` đều chỉ import `./types`) ⇒ **không có vòng import** để lo.
+ *
+ * ⚠⚠ **KHÔNG ĐÓNG ĐƯỢC** phần "sổ hụt + cưỡng chế tắt": muốn đóng thì `beginVramAllocation()` phải
+ * **TỪ CHỐI** lượt cấp phát khi sổ hỏng thay vì cho qua — mà đó đúng là cái công tắc cưỡng chế,
+ * **quyết định của Task 5**, và file này có chính sách ngược lại từ Pha 1 (*"telemetry chết thì hệ
+ * vẫn phải nạp được model"*). Task 3 chỉ được phép làm cho nó KHÔNG CÂM.
+ */
+import * as broker from "./vramBroker";
+import * as estimator from "./vramEstimator";
+import { logVramEvent } from "./vramEventLog";
 
 /**
  * Pha 1 Task 5 — DÂY NỐI dùng chung cho BẢY hộ tiêu thụ VRAM trong tiến trình.
@@ -533,6 +558,10 @@ export interface VramAllocationOptions {
  */
 export const CUDA_BACKEND_FALLBACK_BYTES = 452_595_712;
 
+/** Pha 2B Task 3 — đếm lượt `beginVramAllocation()` rơi vào `catch` cuối hàm (xem `vramBeginFailureState`). */
+let soLuotBeginHong = 0;
+let lyDoBeginHongCuoi: string | null = null;
+
 export async function beginVramAllocation(opts: VramAllocationOptions): Promise<VramTicket> {
   /**
    * ★★ Pha 2A Task 3 — LỐI THOÁT KHẨN CỦA KHOÁ NỐI TIẾP. Khai NGOÀI `try` có chủ ý.
@@ -545,10 +574,9 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
    */
   let nhaKhoaKhanCap: (() => void) | null = null;
   try {
-    const broker = await import("./vramBroker");
-    const estimator = await import("./vramEstimator");
-    const { logVramEvent } = await import("./vramEventLog");
-
+    // Pha 2B Task 3 — `broker`/`estimator`/`logVramEvent` nay là import TĨNH ở đầu file
+    // (xem khối docstring ở đó). Ba lệnh `await import()` từng đứng ở đây không còn ném được
+    // BÊN TRONG `try` này nữa, nên `catch` cuối hàm nay chỉ còn nói về MỘT lớp lỗi.
     let fileBytes = opts.fileBytes;
     if (fileBytes === undefined && opts.filePath) {
       try {
@@ -1295,19 +1323,70 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
      * ★★ Pha 2B Task 2 (C-1) — NUỐT LỖI THÌ ĐƯỢC, NUỐT **IM LẶNG** THÌ KHÔNG.
      *
      * Bản trước `catch { … }` không ghi lấy một chữ. Hậu quả đo được bằng lập luận, không phải giả
-     * định: từ Pha 2B, `beginVramAllocation()` là nơi cổng cưỡng chế đứng, và **cả `await
-     * import("./vramBroker")` lẫn `broker.reserve()` đều nằm trong cùng cái `try` này**. Một lỗi
-     * CẤU HÌNH (`.env` hỏng ⇒ hằng số mức module ném) vì thế biến thành `NOOP_TICKET` — tức
-     * **cưỡng chế tắt VÀ khối byte không vào sổ**, không một dòng nào để lần ra. Đó đúng là lớp lỗi
-     * ràng buộc 9 cấm ("không đường nào tràn im lặng").
+     * định: từ Pha 2B, `beginVramAllocation()` là nơi cổng cưỡng chế đứng, nên một lỗi ở bất kỳ
+     * khâu nào trong `try` biến thành `NOOP_TICKET` — tức **cưỡng chế tắt VÀ khối byte không vào
+     * sổ**, không một dòng nào để lần ra. Đó đúng lớp lỗi ràng buộc 9 cấm.
+     *
+     * ⚠ Pha 2B Task 3 — **PHẠM VI CỦA `catch` NÀY ĐÃ HẸP LẠI**: ba lệnh `await import()` từng đứng
+     * đầu `try` nay là import TĨNH (khối docstring đầu file). Câu cũ *"cả `await
+     * import("./vramBroker")` lẫn `broker.reserve()` đều nằm trong cùng cái `try` này"* KHÔNG CÒN
+     * ĐÚNG và đã bị gỡ — lỗi nạp module nay nổ ở nơi khác, với câu khác.
      * ⚠ VẪN KHÔNG NÉM: telemetry chết thì hệ vẫn phải nạp được model (chính sách của file này, giữ
-     * nguyên). Chỉ thêm TIẾNG. Sự kiện vào DB là việc của Task 3 — ở đây chỉ cần không câm.
+     * nguyên). Đóng nốt phần "sổ hụt" = TỪ CHỐI lượt cấp phát = công tắc cưỡng chế = **Task 5**.
      */
+    soLuotBeginHong++;
+    lyDoBeginHongCuoi = (err as Error)?.message ?? String(err);
     console.warn(
       `[vram] beginVramAllocation("${opts.owner}") HỎNG ⇒ chạy như chưa từng có sổ cái ` +
-        `(KHÔNG có giấy phép cho lượt cấp phát này, nên sổ sẽ HỤT đúng khối byte đó): ` +
-        `${(err as Error)?.message ?? String(err)}`,
+        `(KHÔNG có giấy phép cho lượt cấp phát này, nên sổ sẽ HỤT đúng khối byte đó; ` +
+        `lượt hỏng thứ ${soLuotBeginHong} của tiến trình): ${lyDoBeginHongCuoi}`,
     );
+    /**
+     * Sự kiện — KHÔNG chỉ một dòng console. `logVramEvent()` là import TĨNH nên nếu nó nạp được
+     * thì nó luôn gọi được; nếu nó KHÔNG nạp được thì cả module này cũng không, và ta không ở đây.
+     * ⚠ Bọc `try`: một `catch` chống-im-lặng mà tự nó ném là biến một lỗi telemetry thành một lỗi
+     * cấp phát — đúng thứ chính sách của file này cấm.
+     */
+    try {
+      logVramEvent({
+        event: "refuse",
+        owner: opts.owner,
+        leaseKind: opts.kind,
+        priority: opts.priority,
+        detail: {
+          reason: "begin-allocation-failed",
+          failureCount: soLuotBeginHong,
+          error: lyDoBeginHongCuoi,
+          note:
+            "beginVramAllocation() hỏng ⇒ trả NOOP_TICKET ⇒ lượt cấp phát này chạy NGOÀI SỔ: " +
+            "cưỡng chế mù cho khối byte đó VÀ dư địa bị phóng đại đúng bằng nó. Đây KHÔNG phải " +
+            "một lượt từ chối — không ai bị chặn cả; tên `refuse` dùng lại từ vựng §5.3 để câu " +
+            "truy vấn của Task 7 không phải biết thêm một loại. Phân biệt bằng detail.reason.",
+        },
+      });
+    } catch {
+      /* đã có console.warn ở trên — không còn gì cứu được, nhưng KHÔNG được ném */
+    }
     return NOOP_TICKET;
   }
+}
+
+/**
+ * ★ Pha 2B Task 3 — TRẠNG THÁI HỎNG CỦA `beginVramAllocation()`, ĐỌC ĐƯỢC BẰNG MÃ.
+ *
+ * Task 2 để lại một `console.warn`. Một dòng console KHÔNG PHẢI một cơ chế: không ai `grep` được
+ * nó từ trong tiến trình, và Task 5 (cưỡng chế) lẫn Task 7 (đọc sổ) đều cần biết *"sổ này có đang
+ * hụt không, và hụt bao nhiêu lượt"* để không quyết định trên một con số đã biết là thiếu.
+ *
+ * ⚠ Hôm nay HÀM NÀY CHƯA CÓ NGƯỜI ĐỌC ngoài bộ test — nói thẳng ra thay vì để người sau tưởng nó
+ * đang canh gì đó (cùng hình dạng "sổ đã tới cửa, cửa chưa mở" mà Task 2 bàn giao cho Task 5).
+ */
+export function vramBeginFailureState(): { readonly count: number; readonly lastReason: string | null } {
+  return { count: soLuotBeginHong, lastReason: lyDoBeginHongCuoi };
+}
+
+/** Chỉ dùng trong test. */
+export function __resetVramBeginFailureState(): void {
+  soLuotBeginHong = 0;
+  lyDoBeginHongCuoi = null;
 }

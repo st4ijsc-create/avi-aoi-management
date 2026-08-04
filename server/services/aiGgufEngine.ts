@@ -755,8 +755,45 @@ async function beginVram(
   try {
     const { beginVramAllocation } = await import("./vram/vramWiring");
     return await beginVramAllocation(opts);
-  } catch {
+  } catch (err) {
+    /**
+     * ★★ Pha 2B Task 3 — `catch` NÀY TRƯỚC ĐÂY RỖNG TUYỆT ĐỐI, và nó là **cửa cuối cùng** của cả
+     * chuỗi: từ khi Task 3 đổi ba `await import()` bên trong `vramWiring` thành import TĨNH, một
+     * lỗi nạp của `vramBroker`/`vramEstimator`/`vramEventLog` rơi **thẳng vào đây**. Nuốt im lặng
+     * ở đây nghĩa là cả module sổ cái biến mất mà không ai biết.
+     * ⚠ VẪN KHÔNG NÉM (chính sách Pha 1, giữ nguyên): hệ phải nạp được model kể cả khi telemetry
+     * chết. Chỉ thêm TIẾNG.
+     */
+    console.error(
+      `[aiGgufEngine] KHÔNG nạp/chạy được vram/vramWiring cho "${opts.owner}" ⇒ lượt cấp phát này ` +
+        `chạy NGOÀI SỔ (dư địa bị phóng đại đúng khối byte đó, cưỡng chế mù với nó): ` +
+        `${(err as Error)?.message ?? String(err)}`,
+    );
     return { commitMeasured: async () => {}, release: () => {} };
+  }
+}
+
+/**
+ * ★★★ Pha 2B Task 3 — nạp module CHÍNH SÁCH ba kết cục (§5.5). `null` = không nạp được.
+ *
+ * ⚠ VÌ SAO CÓ ĐƯỜNG `null` THAY VÌ ĐỂ NÉM: `loadGgufModel()` phục vụ MỌI lượt suy luận của hệ.
+ * Một lỗi nạp module telemetry không được phép làm cả hệ mất khả năng nạp model — đó là chính
+ * sách có từ Pha 1 và Task 3 không được đổi nó. Nhưng "không ném" ≠ "không nói": nhánh này kêu ở
+ * mức `error`, và người gọi ghi rõ mình đang chạy ở hình dạng TỐI THIỂU (không ba kết cục).
+ */
+async function loadOutcomeRunner(): Promise<
+  typeof import("./vram/vramLoadOutcome").loadWithVramOutcomes | null
+> {
+  try {
+    const { loadWithVramOutcomes } = await import("./vram/vramLoadOutcome");
+    return loadWithVramOutcomes;
+  } catch (err) {
+    console.error(
+      `[aiGgufEngine] KHÔNG nạp được vram/vramLoadOutcome ⇒ lượt nạp model chạy KHÔNG CÓ ba kết cục ` +
+        `§5.5 (không trả giấy phép sớm, không thử lại, không hạ số lớp, không sự kiện): ` +
+        `${(err as Error)?.message ?? String(err)}`,
+    );
+    return null;
   }
 }
 
@@ -847,48 +884,76 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
     const startTime = Date.now();
 
     // Pha 1 Task 5 — CHỈ KHAI BÁO. `ensureCapacity()`/`enforceVramGuard()`/`evictLRU()` ngay
-    // bên trên vẫn chạy y nguyên; ba lời gọi telemetry ở đây không quyết định gì.
-    vramHolder.ticket = await beginVram({
-      owner: `gguf:${modelId}`,
-      kind: "gguf-model",
-      priority: "interactive",
-      filePath: resolvedPath,
-    });
-
+    // bên trên vẫn chạy y nguyên; các lời gọi telemetry ở đây không quyết định gì.
+    // ⚠ Pha 2B Task 3 — `beginVram()` KHÔNG còn gọi ở đây: giấy phép nay mở/đóng THEO TỪNG LƯỢT
+    // THỬ bên trong `loadWithVramOutcomes()` (lý do đầy đủ ở khối ngay dưới).
     const requestedGpuLayers = config.gpuLayers ?? "max";
+    /**
+     * ★★★ Pha 2B Task 3 — BA KẾT CỤC (§5.5). Toàn bộ chính sách (phân loại lỗi thật · trả giấy
+     * phép NGAY · thử lại 2×5 s · hạ số lớp · từ chối trung thực) nằm ở
+     * `server/services/vram/vramLoadOutcome.ts` — đọc khối docstring đầu file đó trước khi sửa.
+     *
+     * ⚠ VÌ SAO GIẤY PHÉP CHUYỂN VÀO TRONG: bản cũ mở MỘT giấy phép ở đây rồi giữ nó qua CẢ lượt
+     * nạp đầu LẪN lượt lùi. Khi driver từ chối, giấy phép đó **còn treo** ⇒ sổ cộng dư vĩnh viễn
+     * và lượt xin kế tiếp bị từ chối trên BYTE MA. Nay mỗi lượt thử có đúng một giấy phép, lượt
+     * hỏng trả chỗ ngay tại chỗ hỏng, và `outcome.ticket` là giấy phép CÒN MỞ của lượt thắng —
+     * `commitMeasured()` bên dưới vẫn chạy đúng một lần, đúng ngữ nghĩa cũ.
+     * ⚠ TÁC DỤNG PHỤ CÓ LỢI, ghi ra để không ai tưởng là tình cờ: `evictLRU()` nay chạy **NGOÀI**
+     * cửa sổ đo (giấy phép đã trả trước đó), nên nó thôi là nguồn delta-âm mà `vramWiring.ts`
+     * (nhánh `actual < 0`) mô tả đích danh là "đuổi 17 GB rồi nạp 4 GB giữa hai đầu đo".
+     */
     let model;
-    try {
-      model = await llama.loadModel({
-        modelPath: resolvedPath,
-        // "max" offloads ALL layers to GPU (full speed). When the engine runs CPU-only
-        // (GGUF_GPU=false → getLlama gpu:false), node-llama-cpp ignores this. Never pass -1
-        // here: node-llama-cpp 3.x interprets -1 as 0 layers → silent CPU inference.
-        gpuLayers: requestedGpuLayers,
-      } as any);
-    } catch (err: any) {
-      // VRAM OOM on a FULL GPU offload — the VRAM guard only checks current-usage %,
-      // it can't know the incoming model's size, so a large model (e.g. the 30B deep
-      // tier) can still exceed free VRAM. Recover instead of failing the load: free
-      // every idle model, then retry with gpuLayers:"auto" so node-llama-cpp offloads
-      // as many layers as fit and runs the rest on CPU (slower, but the model loads).
-      const msg = String(err?.message ?? err).toLowerCase();
-      const isOom =
-        msg.includes("out of memory") ||
-        msg.includes("cudamalloc") ||
-        msg.includes("failed to allocate") ||
-        msg.includes("unable to allocate");
-      if (!isOom || requestedGpuLayers === "auto" || requestedGpuLayers === 0) throw err;
-
-      console.warn(
-        `[aiGgufEngine] ${modelId}: full GPU offload ran out of VRAM — freeing idle models and retrying with gpuLayers:"auto" (partial offload, CPU fallback for the rest).`,
-      );
-      while (await evictLRU()) {
-        /* evict every idle (refCount===0) model to reclaim maximum VRAM */
+    {
+      const runner = await loadOutcomeRunner();
+      if (runner) {
+        const outcome = await runner({
+          owner: `gguf:${modelId}`,
+          kind: "gguf-model",
+          priority: "interactive",
+          filePath: resolvedPath,
+          requestedGpuLayers,
+          load: async (plan) =>
+            await llama.loadModel({
+              modelPath: resolvedPath,
+              // "max" offloads ALL layers to GPU (full speed). When the engine runs CPU-only
+              // (GGUF_GPU=false → getLlama gpu:false), node-llama-cpp ignores this.
+              // ⚠ `plan.gpuLayers` KHÔNG BAO GIỜ là số âm — `chuanHoaSoLop()` chặn ở cửa, vì
+              // node-llama-cpp 3.x đọc -1 thành 0 lớp (suy luận CPU IM LẶNG).
+              gpuLayers: plan.gpuLayers,
+            } as any),
+          // `LlamaModel.gpuLayers` — getter số lớp THẬT đã nạp (LlamaModel.d.ts:189).
+          resolvedGpuLayers: (m: any) => (typeof m?.gpuLayers === "number" ? m.gpuLayers : null),
+          reclaim: async () => {
+            while (await evictLRU()) {
+              /* evict every idle (refCount===0) model to reclaim maximum VRAM */
+            }
+          },
+        });
+        model = outcome.value;
+        vramHolder.ticket = outcome.ticket;
+        if (outcome.outcome !== "loaded") {
+          console.warn(
+            `[aiGgufEngine] ${modelId}: nạp được ở kết cục "${outcome.outcome}" sau ${outcome.attempts} lượt ` +
+              `(gpuLayers xin "${requestedGpuLayers}" ⇒ chạy "${outcome.plan.gpuLayers}", số lớp THẬT ` +
+              `${outcome.resolvedGpuLayers ?? "không đọc được"}).`,
+          );
+        }
+      } else {
+        // Module chính sách không nạp được. Đã kêu to ở `loadOutcomeRunner()`. Lượt nạp vẫn phải
+        // chạy (telemetry không được làm hỏng đường nạp) — nhưng chạy ở hình dạng TỐI THIỂU và
+        // KHÔNG có ba kết cục: một lượt, một giấy phép, hỏng thì ném.
+        vramHolder.ticket = await beginVram({
+          owner: `gguf:${modelId}`,
+          kind: "gguf-model",
+          priority: "interactive",
+          filePath: resolvedPath,
+        });
+        model = await llama.loadModel({
+          modelPath: resolvedPath,
+          // ⚠ Chặn -1 NGAY CẢ Ở ĐƯỜNG DỰ PHÒNG: đây đúng là đường mà một cấu hình hỏng đi qua.
+          gpuLayers: typeof requestedGpuLayers === "number" && requestedGpuLayers < 0 ? "auto" : requestedGpuLayers,
+        } as any);
       }
-      model = await llama.loadModel({
-        modelPath: resolvedPath,
-        gpuLayers: "auto",
-      } as any);
     }
 
     // Đợt 2 Task 3 — model chỉ-nhúng (config.embeddingOnly, truyền tường minh từ đường nhúng —
@@ -1476,13 +1541,77 @@ async function getOrLoadModel(
  * ideally the ops chat/RCA paths) should call this before the RAG step. See doc 34 §P4.
  */
 export async function warmModel(modelId?: string, contextSize?: number): Promise<boolean> {
+  let available = false;
   try {
-    if (!(await isGgufAvailable())) return false;
-    await generateText({ prompt: "ok", maxTokens: 1, contextSize }, modelId);
-    return true;
-  } catch {
+    available = await isGgufAvailable();
+  } catch (err) {
+    noteWarmFailure(modelId, "availability-probe-threw", err);
     return false;
   }
+  if (!available) {
+    noteWarmFailure(modelId, "gguf-unavailable", null);
+    return false;
+  }
+  try {
+    await generateText({ prompt: "ok", maxTokens: 1, contextSize }, modelId);
+    return true;
+  } catch (err) {
+    noteWarmFailure(modelId, "generate-threw", err);
+    return false;
+  }
+}
+
+/**
+ * ★★★ Pha 2B Task 3 — NGUYÊN NHÂN THỨ HAI (độc lập) CỦA `0/24` LƯỢT KHÔNG CÓ VẾT.
+ *
+ * `warmModel()` là điểm gọi nạp model 30B (~16,7 GB) LỚN NHẤT của cả hệ và là lượt nạp mà Ư0 đo,
+ * nhưng nhánh lỗi của nó là một `catch` **nuốt trọn**: `return false`, không log, không sự kiện.
+ * Người gọi duy nhất ở boot (`initDeepModelWarmup`) chỉ in *"deep model warm FAILED"* — một câu
+ * KHÔNG mang lỗi, KHÔNG mang model, KHÔNG vào DB. Kết quả: mọi thất bại nạp lúc khởi động — kể cả
+ * chính lượt `cudaMalloc failed` mà cả Đợt 1 lẫn Đợt 2 đi tìm — **vô hình với Task 7**.
+ *
+ * Ba nhánh trả `false`, ba lý do KHÁC HẲN nhau, nay ba `reason` riêng:
+ *   • `availability-probe-threw` — `isGgufAvailable()` NÉM (đường hiếm; trước đây lẫn hoàn toàn
+ *     vào nhánh dưới vì cả hai nằm trong cùng một `try`);
+ *   • `gguf-unavailable` — không cấu hình/không có file. KHÔNG phải lỗi, nhưng người gọi vẫn nhận
+ *     `false` nên vẫn phải phân biệt được với hai nhánh kia;
+ *   • `generate-threw` — lượt nạp/suy luận THẬT hỏng. **Đây là nhánh mà Ư0 cần.**
+ *
+ * ⚠ KHÔNG BAO GIỜ ném (`warmModel` hứa "best-effort, never throws" và `initDeepModelWarmup` dựa
+ * vào đó để không làm hỏng boot). Mọi thứ trong đây bọc `try`.
+ */
+function noteWarmFailure(modelId: string | undefined, reason: string, err: unknown): void {
+  const message = err === null || err === undefined ? null : (err as Error)?.message ?? String(err);
+  try {
+    console.warn(
+      `[aiGgufEngine] warmModel("${modelId ?? "(mặc định)"}") trả FALSE — ${reason}` +
+        (message ? `: ${message}` : "") +
+        `. Trước Pha 2B nhánh này im lặng tuyệt đối; đó là lý do 0/24 lượt của Ư0 không có vết nào.`,
+    );
+  } catch {
+    /* console hỏng thì cũng không được làm ngã boot */
+  }
+  void (async () => {
+    try {
+      const { logVramEvent } = await import("./vram/vramEventLog");
+      logVramEvent({
+        event: "warm_failed",
+        owner: `gguf:${modelId ?? "default"}`,
+        leaseKind: "gguf-model",
+        priority: "interactive",
+        detail: {
+          reason,
+          modelId: modelId ?? null,
+          error: message,
+          note:
+            "warmModel() trả false. Đây là điểm gọi nạp model 30B lớn nhất của hệ và là lượt nạp " +
+            "mà Ư0 đo được 0/24 lượt CÓ VẾT — vì nhánh này từng là một catch nuốt trọn.",
+        },
+      });
+    } catch {
+      /* nhật ký hỏng KHÔNG được làm hỏng lượt warm (đã có console.warn ở trên) */
+    }
+  })();
 }
 
 /**
