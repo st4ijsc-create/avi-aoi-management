@@ -38,6 +38,16 @@
  * ⇒ Biên bị kẹp ở **một đơn vị mất-tin-cậy**, và phần vượt quá KHÔNG bị bịa thành số: nó hiện ra
  * bằng lý do `"stale-tick"` (+ `"tick-failing"` khi nhịp đang hỏng liên tiếp), tức bằng **tầm nhìn**.
  *
+ * ⚠⚠ M-2 (re-review) — GỌI ĐÚNG TÊN THỨ NÀY: **TRÊN THỰC TẾ NÓ LÀ MỘT KHOẢN THUẾ PHẲNG 1.024 MiB**,
+ * không phải "một biên tỉ lệ tuổi". Ghép hai con số của chính file này: trần (1 đơn vị = 1.073.741.824
+ * B) chia cho tốc độ (1.592.005 B/ms) ⇒ biên **chạm trần sau ≈ 675 ms**, trong khi **nhịp xuất bản ô
+ * tick là 60 s** ⇒ **≥ 98,8 % thời gian biên đứng NGUYÊN Ở TRẦN**. Phần "tỉ lệ tuổi" chỉ sống trong
+ * ~1 % thời gian, ngay sau mỗi nhịp.
+ * ⇒ Hệ quả phải biết khi đọc số: dư địa hiệu lực **ỔN ĐỊNH** của một tiến trình có tick (`worker`,
+ * sổ rỗng) là **≈ 30.559 MiB**, KHÔNG phải 31.581 MiB — con số 31.581 trong nghiệm thu sống là ca
+ * TỐT NHẤT (tick vừa chạy 1,4 ms trước), không phải ca thường gặp. Ai muốn biên thật sự tỉ lệ theo
+ * tuổi phải nâng TRẦN (đắt: khoá thêm VRAM), không phải sửa phép nhân.
+ *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠⚠ ĐƠN VỊ MẤT-TIN-CẬY LÀ MỘT **BIÊN**, KHÔNG PHẢI MỘT **ƯỚC LƯỢNG** CỦA PHẦN KHÔNG THẤY
  * ══════════════════════════════════════════════════════════════════════════════════════════════

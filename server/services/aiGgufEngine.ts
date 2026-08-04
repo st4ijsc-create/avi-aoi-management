@@ -1093,6 +1093,16 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
       refCount: 0,
       vramTicket: vramHolder.ticket ?? undefined,
     });
+    /**
+     * ★★ M-5 (review vòng 1) — ĐỒNG BỘ NGAY LÚC ĐĂNG KÝ, không đợi lượt dùng đầu tiên.
+     *
+     * `reserve()` mở giấy phép ở trạng thái ĐANG DÙNG (`refCount = 1` — mặc định an toàn), còn bản
+     * ghi engine vừa tạo ở đây khai `refCount: 0`. Không có dòng này thì hai cuốn sổ **lệch nhau**
+     * cho tới lượt `takeLoadedModel`/`releaseModel` ĐẦU TIÊN: một model được **làm ấm rồi để đó**
+     * (`warmModel`) là **ứng viên nhường chỗ VÔ HÌNH** — `evictLRU()` đuổi được nó, còn câu từ chối
+     * thì khai "không có ai nhường được". Đúng ca dễ xảy ra nhất lúc khởi động.
+     */
+    dongBoRefCountVaoSo(loadedModels.get(modelId));
 
     return modelId;
   })();

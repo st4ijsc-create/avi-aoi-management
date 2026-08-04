@@ -416,7 +416,26 @@ async function recognizeSingleLine(image: Buffer, models: OcrModelPaths): Promis
     const charset = getCharset(models.dictPath, models.blankIndex);
     const decoded = ctcGreedyDecode(o.data, o.dims, charset, { blankIndex: models.blankIndex, layout: "TC" });
     return { text: decoded.text, score: decoded.score };
-  } catch {
+  } catch (err) {
+    /**
+     * ★★ M-6 (review vòng 1) — MỘT LỜI TỪ CHỐI MỨC `production` KHÔNG ĐƯỢC SUY BIẾN **IM LẶNG**.
+     *
+     * `getOnnxSession()` ngay trên nay ném `VramRefusedError` (cổng sổ, Pha 2B Task 5), và `catch`
+     * này nuốt nó **một tầng bên trên** cái `catch` đã được dạy ⇒ OCR trả rỗng, người trực thấy
+     * "đọc không ra chữ" và đi soi ảnh/ánh sáng/mã vạch, trong khi nguyên nhân thật là **hết VRAM**.
+     * Chiều AN TOÀN (không cấp phát byte nào), nhưng mất hẳn tín hiệu — đúng lớp *"suy biến im
+     * lặng"* mà §5.5 tồn tại để diệt.
+     *
+     * ⚠ VẪN GIỮ HỢP ĐỒNG *"Never throws → degrade"* (khai ngay ở docstring, và OCR là đường
+     * `production`: một cú ném ở đây làm hỏng cả lượt kiểm thay vì chỉ mất một dòng chữ). Việc phải
+     * làm là **CÓ TIẾNG**, không phải đổi luồng.
+     */
+    if (isVramRefusal(err)) {
+      console.warn(
+        `[ocrService] cổng SỔ TỪ CHỐI giấy phép VRAM cho session OCR (mức production) ⇒ lượt đọc ` +
+          `này trả RỖNG. Đây KHÔNG phải ảnh xấu hay charset sai: ${(err as Error)?.message ?? String(err)}`,
+      );
+    }
     return null; // fail-safe: caller degrades honestly
   }
 }

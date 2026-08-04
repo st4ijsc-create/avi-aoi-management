@@ -29,9 +29,15 @@ function taoLoiTuChoi(owner: string): Error {
   return err;
 }
 
+/** Mọi lượt `noteRefCount()` đã khai, theo thứ tự — để ca M-5 đọc được "khai lúc nào, bằng mấy". */
+const refCountCalls: { owner: string; n: number }[] = [];
 const beginSpy = vi.fn(async (opts: { owner: string }) => {
   if (tuChoiOwner !== null && opts.owner.startsWith(tuChoiOwner)) throw taoLoiTuChoi(opts.owner);
-  return { commitMeasured: async () => {}, release: () => {}, noteRefCount: () => {} };
+  return {
+    commitMeasured: async () => {},
+    release: () => {},
+    noteRefCount: (n: number) => { refCountCalls.push({ owner: opts.owner, n }); },
+  };
 });
 let tuChoiOwner: string | null = null;
 
@@ -92,6 +98,7 @@ vi.mock("node:fs", fsMock);
 
 beforeEach(() => {
   beginSpy.mockClear();
+  refCountCalls.length = 0;
   tuChoiOwner = null;
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -120,6 +127,20 @@ describe("E — lời từ chối phải sống sót qua các `catch` RỘNG", (
     expect((bat as Error).message).not.toContain("node-llama-cpp is not available");
     // …và lỗi KHÁC vẫn được viết lại như cũ (câu đó sinh ra để nói đúng ca thiếu gói).
     expect(beginSpy).toHaveBeenCalled();
+  });
+
+  it("★★ (M-5) model vừa nạp xong PHẢI khai NHÀN RỖI ngay — không đợi lượt dùng đầu tiên", async () => {
+    const engine = await import("../aiGgufEngine");
+    await engine.loadGgufModel({ modelPath: "C:/khong-quan-trong/model.gguf" });
+    /**
+     * `reserve()` mở giấy phép ở trạng thái ĐANG DÙNG (mặc định an toàn `refCount = 1`), còn bản
+     * ghi engine khai `refCount: 0`. Thiếu lượt đồng bộ lúc ĐĂNG KÝ, hai cuốn sổ lệch nhau cho tới
+     * lượt dùng ĐẦU TIÊN ⇒ một model được **làm ấm rồi để đó** là ứng viên nhường chỗ **VÔ HÌNH**:
+     * `evictLRU()` đuổi được nó, còn câu từ chối thì khai "không có ai nhường được".
+     */
+    const cuaModel = refCountCalls.filter((c) => c.owner.startsWith("gguf:"));
+    expect(cuaModel.length).toBeGreaterThan(0);
+    expect(cuaModel[cuaModel.length - 1]!.n).toBe(0);
   });
 
   it("★★★ (E) reranker: từ chối KHÔNG đóng cửa vĩnh viễn — lượt sau PHẢI xin lại", async () => {

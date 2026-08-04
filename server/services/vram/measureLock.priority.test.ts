@@ -151,12 +151,19 @@ describe("cổng 2 — hàng chờ khoá cửa sổ đo BIẾT ƯU TIÊN", () =>
   });
 
   /**
-   * ★★★ Review vòng 1 (B) — LƯỚI CHO CHÍNH HẰNG SỐ. Hai ca trên nay dùng mốc tuyệt đối nên bắt được
-   * một hằng số bị đẩy QUÁ LỚN; ca này khoá CẢ HAI đầu và nêu ràng buộc thật: một việc nền phải leo
-   * qua `production` (chênh 2 hạng) **trong** ngân sách chờ 180 s, nếu không nhánh hết-giờ cắt
-   * trước và "chống chết đói" chỉ còn là chữ.
+   * ★★★ Review vòng 1 (B) — LƯỚI CHO CHÍNH HẰNG SỐ; N-3 (re-review) — LÝ DO NAY KHỚP CON SỐ.
+   *
+   * Bản trước viết lý do là *"phải leo xong trong ngân sách chờ 180 s"* rồi khẳng định `× 2 ≤
+   * 30_000` — **chặt hơn lý do đã nêu SÁU LẦN**, tức con số không truy được từ câu chữ (và người
+   * sau sẽ nới nó ra 90.000 mà tưởng vẫn đúng tinh thần). Ràng buộc THẬT của mốc 30 s là:
+   *   • **CẬN TRÊN 30.000 ms** — đến từ chính hai ca chống chết đói bên trên: chúng đẩy đồng hồ
+   *     **30 giây tuyệt đối** rồi đòi việc nền phải thắng, tức 2 nấc nâng hạng PHẢI xong trong 30 s.
+   *     Đây là con số ràng buộc trực tiếp, không phải suy ra từ 180 s.
+   *   • **CẬN DƯỚI 1.000 ms** — dưới mốc này, hai lượt tới cách nhau vài trăm ms đã đổi hạng lẫn
+   *     nhau, và "ưu tiên" thành ngẫu nhiên theo thời điểm gọi.
+   * (Ngân sách chờ 180 s vẫn là trần CỨNG của cả cơ chế, nhưng nó KHÔNG phải nguồn của số 30.000.)
    */
-  it("★★ hằng số nâng hạng phải nằm trong dải DÙNG ĐƯỢC (2 hạng phải leo xong trước ngân sách chờ)", () => {
+  it("★★ hằng số nâng hạng phải nằm trong dải DÙNG ĐƯỢC (2 nấc phải xong trong 30 s mà hai ca trên đẩy)", () => {
     expect(Number.isFinite(MEASURE_QUEUE_PROMOTE_EVERY_MS)).toBe(true);
     expect(MEASURE_QUEUE_PROMOTE_EVERY_MS).toBeGreaterThanOrEqual(1_000);
     expect(MEASURE_QUEUE_PROMOTE_EVERY_MS * 2).toBeLessThanOrEqual(30_000);

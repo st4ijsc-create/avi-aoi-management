@@ -276,6 +276,15 @@ describe("kbSyncScheduler — B1 answer-eval gate", () => {
     expect(spawnCalls).toHaveLength(0);
     // 3) ★ CỜ ĐƯỢC TRẢ. Đây là toàn bộ C-1: thiếu `finally` thì cờ kẹt `true` tới lúc khởi động lại.
     expect(getKbSyncSchedulerStatus().running).toBe(false);
+    /**
+     * ★★ N-2 (re-review) — VẾT PHẢI ĐỌC ĐƯỢC BẰNG MÃ. Người gọi sản xuất DUY NHẤT là cron và nó
+     * **vứt giá trị trả về**; nếu lượt bị từ chối không vào `lastRunStats` thì "vết" chỉ là một
+     * dòng console — và Task 6 (hoãn-không-chặn §5.4) sẽ đi tìm ở đúng chỗ không có gì.
+     */
+    const tt = getKbSyncSchedulerStatus();
+    expect(tt.lastRunStats?.reason).toBe("vram_refused");
+    expect(tt.lastRunStats?.skipped).toBe(true);
+    expect(tt.lastRunAt).toBeInstanceOf(Date);
     // 4) …và bằng chứng MẠNH HƠN một lời khai: lượt SAU phải chạy THẬT, không phải "already_running"
     vramRefuse = "none";
     const lai = await runKbSyncNow();

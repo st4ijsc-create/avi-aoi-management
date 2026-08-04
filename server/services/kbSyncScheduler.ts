@@ -313,10 +313,19 @@ function spawnEvalGateWithVram(ticket: VramTicket): ReturnType<typeof spawn> {
   return child;
 }
 
-/** Spawn `node scripts/ai-kb/eval-rag.mjs --ci` as an argv array (NO shell
- * string) and wait for it to exit. Bounded by evalTimeoutMs(). Never throws —
- * every failure mode (spawn error, timeout) resolves to a result the caller
- * can read the meaning of. */
+/**
+ * Spawn `node scripts/ai-kb/eval-rag.mjs --ci` as an argv array (NO shell string) and wait for it
+ * to exit. Bounded by evalTimeoutMs(). Mọi kết cục của TIẾN TRÌNH CON (spawn error, hết giờ, exit
+ * khác 0) đều **giải thành một kết quả** để người gọi đọc được nghĩa — hàm không ném vì chúng.
+ *
+ * ⚠⚠ N-1 (re-review) — NHƯNG NÓ **NÉM CÓ CHỦ Ý** ĐÚNG MỘT ĐƯỜNG: `beginEvalGateVram()` ngay dòng
+ * đầu ném `VramRefusedError` khi cổng sổ từ chối (Pha 2B Task 5). Câu *"Never throws"* của bản
+ * trước nay **SAI**, và nó sai đúng lớp hợp-đồng-lệch mà C-1 vừa bắt — chỉ ngược chiều: C-1 là mã
+ * ném trong khi tài liệu hứa không ném **và người gọi tin lời hứa**; ở đây chính bản vá I-6 **DỰA
+ * VÀO** lượt ném đó để phân biệt "từ chối" với "cổng eval hỏng". Ai xoá lượt ném này (hoặc bọc nó
+ * lại thành một kết quả) sẽ làm nhánh I-6 chết âm thầm và một lời từ chối lại đi lùi cả một lượt
+ * sync ĐÃ THÀNH CÔNG.
+ */
 async function runEvalHarness(): Promise<EvalRunResult> {
   // C-1 — xin giấy phép NGAY TRƯỚC khi spawn (spec §3.1). TRƯỚC khi vào Promise theo dõi vì
   // `beginEvalGateVram()` là async còn executor bên dưới cố tình giữ ĐỒNG BỘ (cùng khuôn
@@ -624,10 +633,22 @@ export async function runKbSyncNow(): Promise<KbSyncRunStats> {
       `[kbSyncScheduler] kb:sync BỊ TỪ CHỐI VRAM ⇒ BỎ QUA lượt này (chưa có cơ chế hoãn — §5.4 là ` +
         `Task 6). Ảnh chụp KB đã dọn, cờ running đã trả: ${(err as Error)?.message ?? String(err)}`,
     );
-    return {
+    /**
+     * ★★ N-2 (re-review) — VẾT PHẢI ĐỌC ĐƯỢC BẰNG MÃ, KHÔNG CHỈ BẰNG MẮT TRÊN CONSOLE.
+     *
+     * Người gọi sản xuất DUY NHẤT là cron (`startKbSyncScheduler`) và nó **vứt giá trị trả về**.
+     * Một nhánh return sớm không cập nhật `lastRunAt`/`lastRunStats` là một lượt **vô hình với mọi
+     * câu truy vấn** (`getKbSyncSchedulerStatus()` — thứ Task 6 và mặt sức khoẻ KB sẽ đọc). Báo cáo
+     * vòng trước của tôi hứa *"có vết cho Task 6"* trong khi vết đó mới chỉ là một dòng console —
+     * đúng lớp "hứa nhiều hơn cơ chế".
+     */
+    const stats: KbSyncRunStats = {
       ok: false, exitCode: null, chunksBefore, chunksAfter: chunksBefore, added: 0,
       durationMs: Date.now() - start, skipped: true, reason: "vram_refused",
     };
+    lastRunAt = new Date();
+    lastRunStats = stats;
+    return stats;
   }
 
     const stats: KbSyncRunStats = await new Promise<KbSyncRunStats>((resolve) => {
