@@ -107,6 +107,14 @@ public sealed class ModbusRtuSerialBusSettingsTests
             () => ModbusRtuSerialBusSettings.Parse(SerialBus(busFields)));
 
         Assert.Contains(expectedField, error.Message, StringComparison.Ordinal);
+
+        // 🔴 D-7c re-review, the round's LAST instance of its own asymmetry. The unknown-key refusal added
+        // this round ends with "Keys this transport understands: 'transport', 'portName', 'baudRate', …",
+        // which quotes every field name these 14 rows look for — so from this round on, every one of them
+        // is ALSO satisfiable by the generic message, and a mutation that reorders or replaces the specific
+        // refusal would pass them all. That is exactly the shape that let the ordering mutation survive one
+        // test over: a positive Contains that the wrong message happens to satisfy.
+        Assert.DoesNotContain("Keys this transport understands", error.Message, StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -170,6 +170,19 @@ Kiểm chứng bằng cùng một đột biến, do reviewer chạy lại độc
 
 → **Quy tắc:** với một cơ chế giảm thiểu, **ít nhất một bài kiểm chứng phải đo hệ quả của nó lên thứ nó bảo vệ, trên đường đi sản xuất, KHÔNG kèm bất kỳ quan sát viên nào mà bản thân cơ chế không cần.** Và cụ thể hơn: **trạng thái của một cơ chế không bao giờ được đi qua kênh log của nó** — hãy tách lệnh tăng biến ra khỏi đối số, luôn luôn.
 
+→ 🔴 **Và đây là LÚC phải hỏi (thêm sau D-7c): khi một bài test LOẠI BỎ một nhân chứng rồi THAY bằng một nhân chứng khác, hãy kiểm xem cái thay thế có phải HÀNG XÓM của cái bị loại không.**
+
+Quy tắc ở trên nói **thế nào là** một nhân chứng tốt. Câu này nói **khi nào** phải đặt câu hỏi ấy — và D-7c là bằng chứng rằng hai điều đó cần được viết riêng. Người viết D-7c **đã thấm quy tắc trên**: nó tự viết ra đoạn giải thích trung thực vì sao `LeaseCount` không đủ cho phép kiểm cuối — rồi vẫn hạ cánh xuống `HasBus`. `LeaseCount` → `HasBus` chỉ **dịch sang một trường**, cả hai đều là sổ sách của chính `ModbusBusRegistry`. **Biết quy tắc đã không kích hoạt nó; một cái cò súng thì có.**
+
+Bằng chứng, do reviewer chạy lại độc lập trên cả hai nhân chứng:
+
+| Đột biến | Nhân chứng CŨ (`LeaseCount`/`HasBus`) | Nhân chứng MỚI (`IsOpen` của chính cổng) |
+|---|---|---|
+| `DisposeAsync` không còn gọi `TearDownLink()` — bus bị dispose, link **vẫn mở** | **PASSED** — sống sót | **FAILED** — bị giết |
+| Bỏ cache link-còn-sống trong `EnsureLinkAsync` — **mở lại mỗi giao dịch** | **PASSED** — sống sót | **FAILED** — bị giết |
+
+Thứ được bảo vệ là **một cổng COM không bị giữ tới hết đời tiến trình**, và điều đó chỉ đọc được **từ chính cái cổng**. Đây cùng dạng với nguyên tắc thứ BA (mỗi bản sửa đi kèm một phép quét tìm anh em của nó): một cái cò súng cụ thể, gắn vào một khoảnh khắc cụ thể trong lúc viết test.
+
 **Và một phân biệt về bằng chứng:** một diff chỉ sửa chú thích là **bằng chứng kết luận về cây mã, và không nói gì về môi trường**. Cổng đỏ trên một commit như vậy nghĩa là máy bẩn, không phải mã hỏng — nhưng cách chữa là **dọn máy**, không phải nới trần.
 
 **Và một đính chính về chính bộ công cụ này, do D-3 tìm ra.** Brief D-3 của tôi yêu cầu test phụ thuộc phần cứng phải *"bỏ qua sạch sẽ và ồn ào"*, trong khi `verify-suites.sh` — cũng của tôi — **fail khi `skipped != 0`**. Hai chỉ thị loại trừ nhau, và **cái phải đổi là brief, không phải script**: xUnit đếm test bị bỏ qua động vào `Total`, nên một bộ test phụ thuộc phần cứng làm `Skipped` **phụ thuộc môi trường** — và bất kỳ con số kỳ vọng cố định nào cũng sẽ làm **máy trang bị tốt hơn** bị đỏ. Đó là cái bẫy "một con số xanh mang nghĩa khác nhau trên các máy khác nhau", mặc áo phần cứng. **`skipped == 0` chính là thứ làm cho "817" mang cùng một nghĩa ở mọi nơi.**
