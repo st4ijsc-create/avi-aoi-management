@@ -61,6 +61,10 @@
 
 import * as cron from "node-cron";
 import { spawn } from "node:child_process";
+// ★★★ Pha 2B Task 5 — vị từ "lỗi này có phải LỜI TỪ CHỐI không". Import TĨNH của một module
+// LÁ (không import gì, không I/O): nó phải dùng được NGAY TRONG `catch` của một lượt
+// `await import()` vừa hỏng. Xem `vramRefusalSignal.ts` để biết vì sao so TÊN, không `instanceof`.
+import { isVramRefusal } from "./vram/vramRefusalSignal";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -269,8 +273,12 @@ async function beginEvalGateVram(): Promise<VramTicket> {
       ttlMs: evalTimeoutMs(),
       releaseProof: "process-exit",
     });
-  } catch {
-    return { commitMeasured: async () => {}, release: () => {} };
+  } catch (err) {
+    // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG: nuốt ở đây là TẮT cưỡng chế tại điểm gọi này.
+    // ⚠ Việc NỀN bị từ chối thì phải HOÃN rồi thử lại (§5.4) — đó là Task 6. Task 5 chỉ bảo đảm
+    // lời từ chối tới được người gọi thay vì biến mất ở đây.
+    if (isVramRefusal(err)) throw err;
+    return { commitMeasured: async () => {}, release: () => {}, noteRefCount: () => {} };
   }
 }
 
@@ -486,8 +494,11 @@ async function beginKbSyncVram(): Promise<VramTicket> {
       configDefaultBytes: Number(process.env.VRAM_KB_SYNC_ESTIMATE_MB ?? 1251) * 1024 * 1024,
       ttlMs: TIMEOUT_MS,
     });
-  } catch {
-    return { commitMeasured: async () => {}, release: () => {} };
+  } catch (err) {
+    // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG (xem `beginEvalGateVram`). Hoãn-không-chặn
+    // (§5.4) là Task 6; ở đây chỉ bảo đảm lời từ chối KHÔNG biến mất.
+    if (isVramRefusal(err)) throw err;
+    return { commitMeasured: async () => {}, release: () => {}, noteRefCount: () => {} };
   }
 }
 

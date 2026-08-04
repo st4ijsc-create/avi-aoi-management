@@ -30,6 +30,10 @@
  */
 import fs from "fs";
 import path from "path";
+// ★★★ Pha 2B Task 5 — vị từ "lỗi này có phải LỜI TỪ CHỐI không". Import TĨNH của một module
+// LÁ (không import gì, không I/O): nó phải dùng được NGAY TRONG `catch` của một lượt
+// `await import()` vừa hỏng. Xem `vramRefusalSignal.ts` để biết vì sao so TÊN, không `instanceof`.
+import { isVramRefusal } from "../vram/vramRefusalSignal";
 import type sharpNs from "sharp";
 
 // ─── Flags ────────────────────────────────────────────────────────────────────
@@ -322,6 +326,7 @@ async function getOnnxSession(modelPath: string): Promise<unknown> {
   let vramTicket: import("../vram/vramWiring").VramTicket = {
     commitMeasured: async () => {},
     release: () => {},
+    noteRefCount: () => {},
   };
   try {
     const { beginVramAllocation } = await import("../vram/vramWiring");
@@ -331,7 +336,9 @@ async function getOnnxSession(modelPath: string): Promise<unknown> {
       priority: "production",
       filePath: modelPath,
     });
-  } catch {
+  } catch (err) {
+    // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG: nuốt ở đây là TẮT cưỡng chế tại điểm gọi này.
+    if (isVramRefusal(err)) throw err;
     /* telemetry KHÔNG được làm hỏng đường tạo session */
   }
   const session = await ort.InferenceSession.create(modelPath, {

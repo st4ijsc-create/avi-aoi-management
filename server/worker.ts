@@ -19,9 +19,17 @@
 import "dotenv/config";
 import { installConsoleBridge } from "./logger";
 import { runWorkerProcess } from "./_core/backgroundJobs";
+import { assertVramEnforcementPolicy } from "./services/vram/vramBroker";
 
 // Structured logging parity with the main entry (no-op unless LOG_JSON=1).
 installConsoleBridge();
+
+/**
+ * ★★★ Pha 2B Task 5 — cùng cổng cấu hình với `server/_core/index.ts` (đọc khối docstring ở đó).
+ * Điểm vào thứ HAI, và là điểm vào của tiến trình DUY NHẤT có nhịp đối chiếu ở topology
+ * `api`+`worker` — cấu hình cưỡng chế hỏng ở đây phải chết SỚM y hệt, ngoài mọi `try`.
+ */
+assertVramEnforcementPolicy();
 
 runWorkerProcess().catch((err) => {
   console.error("[Worker] Fatal startup error:", err);

@@ -1,8 +1,28 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
-  reserve, commit, release, snapshot, deviceTotalBytes, noteDeviceTotalBytes,
+  reserve as reserveRaw, commit, release, snapshot, deviceTotalBytes, noteDeviceTotalBytes,
   markMeasureFailed, __resetBrokerForTests,
 } from "./vramBroker";
+
+
+/**
+ * ★★★ Pha 2B Task 5 — `reserve()` NAY ĐÒI NGỮ CẢNH QUYẾT ĐỊNH (ô tick · ống ngoài sổ · đồng hồ).
+ *
+ * Lớp bọc dưới đây truyền một ngữ cảnh **SẠCH** (có số, nền đã xác minh, vừa chạy, ống ngoài sổ đã
+ * hỏi và rỗng) cho các ca CŨ, và đó là một lựa chọn có chủ đích: những ca này sinh ra để kiểm SỔ
+ * CÁI và THƯỚC ĐO, không phải để kiểm cưỡng chế. Truyền một ngữ cảnh suy giảm vào đây sẽ làm chúng
+ * đỏ vì một lý do chẳng liên quan gì tới thứ chúng đang canh. Cưỡng chế có bộ ca RIÊNG:
+ * `enforcement.test.ts`.
+ */
+function ctxSachChoCaCu(): import("./vramBroker").VramDecisionContext {
+  const now = Date.now();
+  return {
+    tick: { attributableBytes: 0, baselineVerified: true, atMs: now, consecutiveFailures: 0 },
+    unledgered: { bytes: 0, unknownCount: 0 },
+    nowMs: now,
+  };
+}
+const reserve = (r: import("./types").VramReserveRequest) => reserveRaw(r, ctxSachChoCaCu());
 
 const MIB = 1024 * 1024;
 
@@ -46,11 +66,23 @@ describe("vramBroker — sổ cái", () => {
     void b;
   });
 
-  it("PHA 1: KHÔNG BAO GIỜ từ chối, kể cả khi vượt trần", () => {
+  /**
+   * ★★★ Pha 2B Task 5 — CA NÀY ĐÃ ĐỔI CHIỀU, và đó là toàn bộ nội dung của task.
+   *
+   * Bản Pha 1 khẳng định *"KHÔNG BAO GIỜ từ chối, kể cả khi vượt trần"* (cấp giấy phép + bật cờ
+   * `wouldRefuse` như một phán quyết BÓNG). Từ Task 5, `wouldRefuse` KHÔNG còn là bóng: nó luôn
+   * bằng `lease === null`. Giữ nguyên ca cũ ở đây sẽ là một cái lưới KHOÁ CHÍNH SÁCH ĐÃ CHẾT vào
+   * hợp đồng — đúng lớp lỗi mà `aiGgufEngine.test.ts` khối "VRAM OOM fallback" đã mắc (Task 3):
+   * nó XANH SUỐT trong khi đường lùi thật chưa bao giờ chạy.
+   */
+  it("PHA 2B: vượt trần ⇒ TỪ CHỐI THẬT (không còn phán quyết bóng)", () => {
     reserve(req("gguf:A", 30_000 * MIB));
     const r = reserve(req("gguf:B", 30_000 * MIB));
-    expect(r.lease).not.toBeNull();      // vẫn cấp
-    expect(r.wouldRefuse).toBe(true);    // nhưng ghi nhận là SẼ từ chối ở Pha 2
+    expect(r.lease).toBeNull();          // KHÔNG cấp
+    expect(r.wouldRefuse).toBe(true);
+    expect(r.refusal).not.toBeNull();    // và nói ra được VÌ SAO (bốn thứ §5.3)
+    // Sổ KHÔNG được cộng gì cho lượt bị từ chối — nếu cộng, lượt xin sau bị từ chối trên BYTE MA.
+    expect(snapshot().totalReservedBytes).toBe(30_000 * MIB);
   });
 
   it("wouldPreempt nêu ĐÚNG các giấy phép nền có thể nhường", () => {

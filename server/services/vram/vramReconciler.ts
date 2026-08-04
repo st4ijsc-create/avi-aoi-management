@@ -4,6 +4,9 @@ import { logVramEvent } from "./vramEventLog";
 import type { VramLease } from "./types";
 import type { GpuHolderCensus } from "./vramGpuHolders";
 import type { HeadroomTickFields } from "./vramHeadroom";
+import {
+  __resetDecisionTickForTests, decisionTickFailureStreak, noteDecisionTickFailure, publishDecisionTick,
+} from "./vramTickCell";
 
 /**
  * Pha 2B Task 1 — quét danh tính hộ đang giữ GPU, KHÔNG BAO GIỜ ném, KHÔNG BAO GIỜ chặn đường boot.
@@ -857,7 +860,6 @@ export interface VramTickRecord {
   readonly consecutiveFailures: number;
 }
 let lastTick: { readonly result: VramReconcileResult; readonly atMs: number } | null = null;
-let tickFailureStreak = 0;
 
 /**
  * ★ M-4 (review Task 2) — NEO BIÊN DỊCH cho lời hứa "khớp theo cấu trúc".
@@ -889,7 +891,10 @@ void __tickFieldsAnchor;
  */
 export function readLastReconcileTick(): VramTickRecord | null {
   if (lastTick === null) return null;
-  return { result: lastTick.result, atMs: lastTick.atMs, consecutiveFailures: tickFailureStreak };
+  // ⚠ Chuỗi hỏng đọc từ `vramTickCell` — MỘT bộ đếm duy nhất cho CÙNG một sự thật. Giữ một bản
+  // thứ hai ở file này thì hai con số sẽ trôi khỏi nhau, và đường quyết định (đọc ô lá) sẽ tin
+  // một con số khác với con số mà chẩn đoán in ra.
+  return { result: lastTick.result, atMs: lastTick.atMs, consecutiveFailures: decisionTickFailureStreak() };
 }
 
 /**
@@ -909,11 +914,19 @@ export async function __runReconcileTick(): Promise<VramReconcileResult> {
   try {
     await captureVramBaseline();
     const result = await reconcileOnce();
-    lastTick = { result, atMs: Date.now() };
-    tickFailureStreak = 0;
+    const atMs = Date.now();
+    lastTick = { result, atMs };
+    /**
+     * ★★ Pha 2B Task 5 — XUẤT BẢN SANG Ô LÁ (`vramTickCell`). Đây là con đường DUY NHẤT mà một con
+     * số của reconciler tới được đường cưỡng chế: `vramBroker`/`vramWiring` KHÔNG nhập file này
+     * (vòng nhập + bề mặt mock — xem docstring `vramTickCell.ts`).
+     * ⚠ Hai lệnh gán nằm CẠNH NHAU có chủ ý: chúng khai CÙNG một sự thật, và một ca test khoá việc
+     * hai bên luôn khớp sau mỗi nhịp.
+     */
+    publishDecisionTick(result, atMs);
     return result;
   } catch (err) {
-    tickFailureStreak += 1;
+    const tickFailureStreak = noteDecisionTickFailure();
     console.warn(
       `[vram] NHỊP ĐỐI CHIẾU HỎNG (lần thứ ${tickFailureStreak} liên tiếp): ${(err as Error)?.message ?? String(err)}. ` +
         `Ô quyết định giữ số CŨ — tuổi của nó KHÔNG tăng theo nhịp hỏng, nên đọc \`consecutiveFailures\` ` +
@@ -950,7 +963,9 @@ export function __resetVramBaselineForTests(): void {
   // Pha 2B Task 2 — cùng lý do, và ở đây hậu quả NẶNG HƠN: không xoá thì test sau thừa kế một
   // QUYẾT ĐỊNH CẤP PHÁT của test trước (dư địa tính từ một tick không còn liên quan gì).
   lastTick = null;
-  tickFailureStreak = 0;
+  // Pha 2B Task 5 — ô lá là NGUỒN của đường quyết định: không xoá thì test sau thừa kế một quyết
+  // định cấp phát của test trước (dư địa tính từ một tick không còn liên quan gì).
+  __resetDecisionTickForTests();
   // Pha 2B Task 2 (I-1) — cờ CHUÔNG cũng phải về mặc định: không reset thì một test bật
   // `ring: false` sẽ làm mọi test SAU nó mất hết sự kiện `drift`, và triệu chứng sẽ hiện ở một
   // file khác hẳn.

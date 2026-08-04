@@ -24,7 +24,7 @@ import {
   type VramRefusalInput,
 } from "./vramRefusal";
 import {
-  reserve,
+  reserve as reserveRaw,
   commit,
   markMeasureFailed,
   __resetBrokerForTests,
@@ -35,6 +35,26 @@ import {
 import { computeHeadroom, headroomInputFromTick, type HeadroomInput } from "./vramHeadroom";
 import { WIRED_ALLOCATION_SITE_COUNT, KNOWN_ALLOCATION_SITE_ROW_COUNT } from "./vramAllocationSites";
 import { APP_ERROR_CODES } from "../../_core/appErrorCodes";
+
+
+/**
+ * ★★★ Pha 2B Task 5 — `reserve()` NAY ĐÒI NGỮ CẢNH QUYẾT ĐỊNH (ô tick · ống ngoài sổ · đồng hồ).
+ *
+ * Lớp bọc dưới đây truyền một ngữ cảnh **SẠCH** (có số, nền đã xác minh, vừa chạy, ống ngoài sổ đã
+ * hỏi và rỗng) cho các ca CŨ, và đó là một lựa chọn có chủ đích: những ca này sinh ra để kiểm SỔ
+ * CÁI và THƯỚC ĐO, không phải để kiểm cưỡng chế. Truyền một ngữ cảnh suy giảm vào đây sẽ làm chúng
+ * đỏ vì một lý do chẳng liên quan gì tới thứ chúng đang canh. Cưỡng chế có bộ ca RIÊNG:
+ * `enforcement.test.ts`.
+ */
+function ctxSachChoCaCu(): import("./vramBroker").VramDecisionContext {
+  const now = Date.now();
+  return {
+    tick: { attributableBytes: 0, baselineVerified: true, atMs: now, consecutiveFailures: 0 },
+    unledgered: { bytes: 0, unknownCount: 0 },
+    nowMs: now,
+  };
+}
+const reserve = (r: import("./types").VramReserveRequest) => reserveRaw(r, ctxSachChoCaCu());
 
 const MIB = 1024 * 1024;
 
@@ -565,6 +585,11 @@ describe("vramBroker — nguồn của 'ai đang giữ' và 'ai có thể như�
       headroomInput: hi,
       headroom: h,
       unledgered: null,
+      // ★ Pha 2B Task 5 — hai trường BẮT BUỘC mới: câu từ chối phải in con số ĐÃ QUYẾT ĐỊNH (dư
+      // địa HIỆU LỰC) và danh sách lý do ĐẦY ĐỦ. Ở ca này chính sách suy giảm không được áp
+      // (ta gọi thẳng `refusalFactsFor`), nên truyền đúng dư địa thô + lý do của headroom.
+      effectiveHeadroomBytes: h.headroomBytes,
+      degradedReasons: h.degradedReasons,
     });
     expect(f.requestedBytes).toBe(17_000 * MIB);
     expect(f.availableBytes).toBe(h.headroomBytes);

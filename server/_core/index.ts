@@ -43,9 +43,32 @@ import { correlationRequestMiddleware } from "./correlationMiddleware";
 import { livenessProbe, readinessProbe } from "./healthProbes";
 import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, OT_INGEST_PATHS } from "./rateLimitConfig";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
+import { assertVramEnforcementPolicy } from "../services/vram/vramBroker";
 
 // Chuẩn hoá log sang structured khi LOG_JSON=1 / LOG_BRIDGE_CONSOLE=1 (no-op nếu tắt).
 installConsoleBridge();
+
+/**
+ * ★★★ Pha 2B Task 5 — CỔNG CẤU HÌNH CƯỠNG CHẾ, VÀ ĐÂY LÀ **CHỖ DUY NHẤT TRONG REPO NGOÀI MỌI `try`**.
+ *
+ * Task 2 dựng `assertHeadroomPolicy()` rồi bàn giao thẳng một câu: *"lớp 'hỏng SỚM' hiện KHÔNG đạt
+ * được ở đâu cả — mọi vị trí khả dĩ đều nằm trong try/catch"*, và liệt kê ba vị trí đã bị nuốt (mức
+ * module `vramBroker` — nhập bên trong `try` của `beginVramAllocation()`; khối bật VRAM lúc boot;
+ * `startVramReconciler()`). Dòng dưới đây là câu trả lời: nó chạy ở **thân module của điểm vào**,
+ * sau `import "dotenv/config"` (ESM đánh giá xong toàn bộ import rồi mới chạy thân), và **không có
+ * `try` nào bao quanh** — một `.env` hỏng làm tiến trình chết NGAY, với đúng câu giải thích.
+ *
+ * ⚠ CÓ CHỦ Ý LÀM TIẾN TRÌNH KHÔNG KHỞI ĐỘNG ĐƯỢC. Nghe nguy hiểm, nhưng ca ngược lại nguy hiểm hơn
+ * nhiều: `VRAM_DEVICE_TOTAL_MB=` (để trống) ⇒ `Number("") === 0` ⇒ dư địa âm khổng lồ ⇒ **TỪ CHỐI
+ * 100% lượt xin, im lặng, cả cụm AI chết ba giờ sau** mà không ai nối được nguyên nhân với `.env`.
+ * Hàm chỉ ném khi người vận hành ĐÃ ĐẶT một giá trị vô nghĩa; không đặt gì thì mọi thứ về mặc định
+ * hợp lệ và dòng này im lặng tuyệt đối.
+ *
+ * ⚠ `server/worker.ts` có lượt gọi RIÊNG cùng khuôn — nó KHÔNG import file này (hai điểm vào độc
+ * lập, không vai trò nào đi qua cả hai).
+ */
+assertVramEnforcementPolicy();
+
 
 /** Strip trailing Z so dates are always parsed as local time, not UTC */
 // drizzle-orm serializes Date via toISOString() (UTC representation).

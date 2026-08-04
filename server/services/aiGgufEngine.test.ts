@@ -250,7 +250,8 @@ describe("LRU eviction", () => {
     const inFlight = eng.generateEmbedding("busy", "m1");
     // Wait until the embedding call is actually in progress (refCount already incremented).
     await enteredP;
-    // Now load m2 — capacity is 1, but m1 is in use → must NOT be evicted (temporary overflow).
+    // Now load m2 — capacity is 1, but m1 is in use → must NOT be evicted. ⚠ Pha 2B Task 5: khe
+    // vẫn kín, nhưng lượt nạp KHÔNG còn được cho qua ở đây — cổng SỔ (reserve) quyết định ngay sau.
     await eng.loadGgufModel({ modelPath: "m2.gguf" });
     expect(eng.getLoadedGgufModelNames()).toContain("m1");
     release();

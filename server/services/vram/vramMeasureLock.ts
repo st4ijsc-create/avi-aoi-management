@@ -1,23 +1,56 @@
+import type { VramPriority } from "./types";
+
 const DEFAULT_WAIT_BUDGET_MS = 180_000;
 const DEFAULT_OWNER_LABEL = "(khong-nhan)";
 
-let dangGiu = false;
 /**
- * ⚠⚠ I-3 (review TOÀN NHÁNH) — HÀNG CHỜ NÀY LÀ **FIFO THUẦN, KHÔNG BIẾT ƯU TIÊN**, và điều đó có
- * hậu quả ĐANG CHẠY ở Pha 2A chứ không phải ở tương lai.
+ * ★★★ Pha 2B Task 5 — CỔNG 2: HÀNG CHỜ NAY BIẾT ƯU TIÊN, VÀ CÓ CHỐNG CHẾT ĐÓI.
  *
- * `VramPriority` (`production` > `interactive` > `background`) tồn tại và được `vramBroker`
- * (`PRIORITY_RANK`) dùng thật, nhưng `withMeasureWindow` **không nhận tham số ưu tiên** và
- * `vramWiring` **không truyền** — nên một lượt kiểm AOI mức `production` trượt cache phiên xếp
- * hàng SAU một việc nền (`gguf-embed-ctx`, `reranker`) hoặc sau một lượt nạp 30B (11–43 s + tạo
- * context + biên lắng + hai đầu dò), với ngân sách chờ mặc định **180 s**.
+ * LỖI ĐANG VÁ (I-3, review TOÀN NHÁNH — **đang chạy ở Pha 2A**, không phải rủi ro tương lai): hàng
+ * chờ là **FIFO thuần**, trong khi `vramBroker` đã biết `VramPriority` từ Pha 1. Một lượt kiểm AOI
+ * mức `production` trượt cache phiên xếp hàng SAU một việc nền (`gguf-embed-ctx`, `reranker`) hoặc
+ * sau một lượt nạp 30B (11–43 s **+** tạo context + biên lắng + hai đầu dò), với ngân sách chờ mặc
+ * định **180 s**.
  *
- * ⚠ KHÔNG "vá" bằng cách hạ `VRAM_MEASURE_WAIT_MS`: xem docstring `withMeasureWindow` — nhánh
- * hết-giờ đang gánh vai lưới chống bế tắc. Lối vá đúng là cho hàng chờ này biết ưu tiên (chèn
- * theo rank thay vì `push`), HOẶC cho `production` một đường không-đo-mà-không-chờ. Cả hai đều
- * ĐỔI THỨ TỰ CHẠY ⇒ thuộc Pha 2B, không thuộc điều lệ Pha 2A ("chỉ QUAN SÁT").
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ ƯU TIÊN THUẦN LÀ MỘT CÁI BẪY: NÓ ĐỔI MỘT VẤN ĐỀ **ĐỘ TRỄ** LẤY MỘT VẤN ĐỀ **TREO VĨNH VIỄN**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Với một hàng chờ chỉ xếp theo rank, một dòng `production` liên tục (đường kiểm tra AOI **là**
+ * một dòng liên tục) giữ việc nền ở cuối hàng **mãi mãi**. Kết cục không phải "chậm" mà là "không
+ * bao giờ" — và nó tệ hơn cái nó vừa vá.
+ *
+ * ⇒ Hạng dùng để chọn là **HẠNG HIỆU LỰC**, không phải hạng khai báo:
+ *
+ *     hangHieuLuc = rank + floor(thoiGianCho / MEASURE_QUEUE_PROMOTE_EVERY_MS)
+ *
+ * Nó **tăng không giới hạn theo thời gian chờ**, nên với mọi hạng cố định của kẻ mới tới, một kẻ
+ * đang chờ CHẮC CHẮN vượt qua sau hữu hạn thời gian. Đó là một lập luận về giới hạn, không phải
+ * một lời hứa: `background` (rank 1) vượt `production` (rank 3) sau **2 khoảng nâng hạng**. Hoà
+ * hạng ⇒ **FIFO** (ai vào trước chạy trước), nên công bằng trong cùng mức không bị ưu tiên phá.
+ *
+ * ⚠ KHÔNG "vá" bằng cách hạ `VRAM_MEASURE_WAIT_MS`: nhánh hết-giờ đang gánh vai LƯỚI CHỐNG BẾ TẮC
+ * (thứ tự khoá với `withGgufSlot` không nhất quán giữa các đường gọi — xem `withMeasureWindow`).
+ * Hạ nó là đổi "mất phép đo" (an toàn) lấy "treo cứng" (không an toàn).
  */
-const hangCho: Array<() => void> = [];
+export const MEASURE_QUEUE_PROMOTE_EVERY_MS = 10_000;
+
+const RANK: Record<VramPriority, number> = { production: 3, interactive: 2, background: 1 };
+
+/**
+ * ⚠ MẶC ĐỊNH `background` — mặc định AN TOÀN, và đây là chỗ dễ chọn sai nhất: một mặc định
+ * `production` khiến MỌI điểm gọi chưa khai mức tự động chen lên đầu hàng, tức ưu tiên bị vô hiệu
+ * hoá bởi chính sự im lặng. Người muốn chen phải NÓI RA.
+ */
+const DEFAULT_PRIORITY: VramPriority = "background";
+
+let dangGiu = false;
+
+interface MucCho {
+  readonly danhDau: () => void;
+  readonly rank: number;
+  readonly vaoLucMs: number;
+}
+const hangCho: MucCho[] = [];
 
 // review vong 1 Critical (C-1) — dem cac luot BO CUOC dang chay o ngoai khoa, de
 // nguoi dang GIU biet cua so cua minh co bi mot luot khong-do "chay xen" hay
@@ -44,21 +77,44 @@ export function __resetMeasureLockForTests(): void {
   currentHolderLabel = DEFAULT_OWNER_LABEL;
 }
 
+/**
+ * HẠNG HIỆU LỰC — hạng khai báo cộng phần NÂNG theo thời gian chờ. Xem khối docstring đầu file:
+ * đây là toàn bộ cơ chế chống chết đói, và nó là một hàm THUẦN để đọc được bằng mắt.
+ */
+function hangHieuLuc(m: MucCho, nowMs: number): number {
+  const cho = Math.max(0, nowMs - m.vaoLucMs);
+  return m.rank + Math.floor(cho / MEASURE_QUEUE_PROMOTE_EVERY_MS);
+}
+
+/** Chọn người kế tiếp: hạng hiệu lực CAO NHẤT; hoà ⇒ **FIFO** (vào trước chạy trước). */
+function chonNguoiKeTiep(): MucCho | undefined {
+  if (hangCho.length === 0) return undefined;
+  const now = Date.now();
+  let iTot = 0;
+  for (let i = 1; i < hangCho.length; i++) {
+    const a = hangHieuLuc(hangCho[i]!, now);
+    const b = hangHieuLuc(hangCho[iTot]!, now);
+    // `>` chứ KHÔNG `>=`: bằng hạng thì giữ nguyên người đứng TRƯỚC trong mảng = FIFO.
+    if (a > b) iTot = i;
+  }
+  return hangCho.splice(iTot, 1)[0];
+}
+
 function nhaKhoa(): void {
-  const tiepTheo = hangCho.shift();
-  if (tiepTheo) { tiepTheo(); return; }
+  const tiepTheo = chonNguoiKeTiep();
+  if (tiepTheo) { tiepTheo.danhDau(); return; }
   dangGiu = false;
   currentHolderLabel = DEFAULT_OWNER_LABEL;
 }
 
-function giuKhoa(waitBudgetMs: number, ownerLabel: string): Promise<boolean> {
+function giuKhoa(waitBudgetMs: number, ownerLabel: string, priority: VramPriority): Promise<boolean> {
   if (!dangGiu) { dangGiu = true; currentHolderLabel = ownerLabel; return Promise.resolve(true); }
   return new Promise<boolean>((resolve) => {
     let xong = false;
     const hen = setTimeout(() => {
       if (xong) return;
       xong = true;
-      const i = hangCho.indexOf(danhDau);
+      const i = hangCho.findIndex((m) => m.danhDau === danhDau);
       if (i >= 0) hangCho.splice(i, 1);
       // I-2 — hoan phai CO DAY va CO TIENG (spec §5.4): mot dong canh bao neu ro
       // CA hai phia, khong duoc cam lang.
@@ -109,7 +165,7 @@ function giuKhoa(waitBudgetMs: number, ownerLabel: string): Promise<boolean> {
       currentHolderLabel = ownerLabel;
       resolve(true);
     };
-    hangCho.push(danhDau);
+    hangCho.push({ danhDau, rank: RANK[priority], vaoLucMs: Date.now() });
   });
 }
 
@@ -164,13 +220,16 @@ function giuKhoa(waitBudgetMs: number, ownerLabel: string): Promise<boolean> {
  *   dong canh bao khi het ngan sach cho. Tuy chon; khong truyen thi dung nhan
  *   mac dinh ro rang (khong phai chuoi rong). Task 2 khong bat buoc goi phai
  *   truyen nhan nay — chu ky cu (fn) va (fn, waitBudgetMs) van hoat dong nguyen ven.
+ * @param priority ★ Pha 2B Task 5 (cổng 2) — mức ưu tiên trong HÀNG CHỜ. Mặc định `background`:
+ *   xem `DEFAULT_PRIORITY` để biết vì sao mặc định phải là mức THẤP NHẤT.
  */
 export async function withMeasureWindow<T>(
   fn: () => Promise<T>,
   waitBudgetMs: number = DEFAULT_WAIT_BUDGET_MS,
   ownerLabel: string = DEFAULT_OWNER_LABEL,
+  priority: VramPriority = DEFAULT_PRIORITY,
 ): Promise<MeasureWindowResult<T>> {
-  const doDuoc = await giuKhoa(waitBudgetMs, ownerLabel);
+  const doDuoc = await giuKhoa(waitBudgetMs, ownerLabel, priority);
   if (!doDuoc) {
     unmeasuredStarted++;
     unmeasuredInFlight++;

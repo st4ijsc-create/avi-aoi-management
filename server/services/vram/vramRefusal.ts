@@ -65,8 +65,31 @@ import type { AppErrorCode, AppErrorParams } from "../../_core/appErrorCodes";
  * (`vramAllocationSites.ts` là module DỮ LIỆU thuần: không import, không tác dụng phụ.)
  */
 import { KNOWN_ALLOCATION_SITE_ROW_COUNT, WIRED_ALLOCATION_SITE_COUNT } from "./vramAllocationSites";
+import { VRAM_REFUSED_ERROR_NAME } from "./vramRefusalSignal";
 
 const BYTES_PER_MIB = 1024 * 1024;
+
+/**
+ * ★ Pha 2B Task 5 — TỪ VỰNG ĐẦY ĐỦ của "vì sao con số này kém tin hơn bình thường".
+ *
+ * Bốn giá trị đầu do `computeHeadroom()` sinh ra (Task 2); bốn giá trị sau do **chính sách cưỡng
+ * chế** sinh ra (`vramEnforcement.ts`) và chỉ tồn tại từ lúc `reserve()` biết từ chối:
+ *   • `"stale-tick"` — ô tick quá hạn. ⚠ **KHÔNG PHẢI** một đường `blind`: nó khai một con số CÓ
+ *     THẬT nhưng có thể đã cũ. Đường xử lý là **giữ số + cộng biên**, không phải vứt số.
+ *   • `"tick-failing"` — nhịp đối chiếu đang hỏng liên tiếp ⇒ tuổi sẽ chỉ tăng, KHÔNG tự lành.
+ *   • `"unledgered-unasked"` — chưa ai hỏi `vramBeginFailureState()` (`unledgered === null`).
+ *   • `"unledgered-unknown"` — có lượt cấp phát chạy ngoài sổ mà **byte cũng không ước được**.
+ *
+ * ⚠ Từ vựng này đi thẳng vào câu i18n qua `{{degradedReasons}}` (một chuỗi nối, KHÔNG phải khoá từ
+ * điển) — thêm giá trị mới KHÔNG cần khoá i18n mới, nhưng **phải** giữ tên máy đọc được (kebab-case,
+ * không dấu cách) vì Task 7 sẽ đếm chúng trong `vram_events.detail`.
+ */
+export type VramDegradationReason =
+  | HeadroomDegradation
+  | "stale-tick"
+  | "tick-failing"
+  | "unledgered-unasked"
+  | "unledgered-unknown";
 
 /** Một hộ đang giữ chỗ trong SỔ. ⚠ `bytes` có thể là ƯỚC LƯỢNG — xem `measured`. */
 export interface VramHolderFact {
@@ -100,8 +123,11 @@ export interface VramRefusalInput {
   readonly priority: VramPriority;
   /** `HeadroomResult.headroomBytes`. ⚠ **CÓ THỂ `-Infinity`** — fail-closed hợp lệ (Task 2 C-1). */
   readonly headroomBytes: number;
-  /** `HeadroomResult.degradedReasons` — phải đọc TRƯỚC khi in số. */
-  readonly degradedReasons: readonly HeadroomDegradation[];
+  /**
+   * `HeadroomResult.degradedReasons` **cộng** các lý do của chính sách cưỡng chế
+   * (`EnforcementDecision.reasons`) — phải đọc TRƯỚC khi in số.
+   */
+  readonly degradedReasons: readonly VramDegradationReason[];
   /** `HeadroomResult.blind` — ⚠ là CHẶN TRÊN, KHÔNG phải trạng thái an toàn. */
   readonly blind: boolean;
   /** `HeadroomInput.ledgerTotalBytes` — sổ SỐNG đã dùng để tính chính `headroomBytes` này. */
@@ -170,7 +196,7 @@ export interface VramRefusalFacts {
   /** Số lượt ngoài sổ mà ngay cả byte cũng không ước được. `null` ⇔ CHƯA HỎI. */
   readonly unknownCount: number | null;
   readonly caveat: VramRefusalCaveat;
-  readonly degradedReasons: readonly HeadroomDegradation[];
+  readonly degradedReasons: readonly VramDegradationReason[];
   readonly wiredSiteCount: number;
   readonly knownSiteRowCount: number;
 }
@@ -427,6 +453,13 @@ export function vramRefusalAppError(facts: VramRefusalFacts): {
 export class VramRefusedError extends Error {
   constructor(public readonly facts: VramRefusalFacts) {
     super(formatVramRefusal(facts));
-    this.name = "VramRefusedError";
+    /**
+     * ⚠ Pha 2B Task 5 — LẤY TÊN TỪ HẰNG SỐ DÙNG CHUNG, không viết lại chuỗi. Mười một điểm gọi
+     * nhận diện lời từ chối bằng đúng cái tên này (`vramRefusalSignal.isVramRefusal`) vì chúng
+     * chạy qua ranh giới `await import()` nơi `instanceof` không đáng tin. Hai chuỗi viết tay ở
+     * hai file là hai thứ có thể trôi khỏi nhau — và lần trôi đó sẽ TẮT cưỡng chế ở cả mười một
+     * điểm, im lặng.
+     */
+    this.name = VRAM_REFUSED_ERROR_NAME;
   }
 }

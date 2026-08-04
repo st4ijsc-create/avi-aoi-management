@@ -24,6 +24,16 @@ import type { VramLease, VramLeaseKind, VramMeasureSource, VramPriority } from "
 import * as broker from "./vramBroker";
 import * as estimator from "./vramEstimator";
 import { logVramEvent } from "./vramEventLog";
+/**
+ * ★★★ Pha 2B Task 5 — HAI CỬA CUỐI CỦA ĐƯỜNG CƯỠNG CHẾ, cả hai đều là import TĨNH và cả hai đều là
+ * **module LÁ** (không I/O, không trạng thái ngoài một ô nhớ):
+ *   • `vramTickCell` — ô tick, nguồn số của quyết định. ⚠ CỐ Ý **không** nhập `./vramReconciler`:
+ *     nó nhập TĨNH `./vramBroker` (vòng nhập), và nó kéo theo I/O + đồng hồ vào đường nhập của mọi
+ *     file test đang thay `./vramBroker` bằng bản giả.
+ *   • `vramRefusal` — lớp lỗi `VramRefusedError`. Từ task này nó **ĐƯỢC NÉM THẬT**.
+ */
+import { readDecisionTick } from "./vramTickCell";
+import { VramRefusedError } from "./vramRefusal";
 
 /**
  * Pha 1 Task 5 — DÂY NỐI dùng chung cho BẢY hộ tiêu thụ VRAM trong tiến trình.
@@ -101,12 +111,26 @@ export interface VramTicket {
   commitMeasured(): Promise<void>;
   /** Trả chỗ trong sổ. KHÔNG BAO GIỜ ném. Gọi nhiều lần là vô hại. */
   release(): void;
+  /**
+   * ★★★ Pha 2B Task 5 (§5.2) — KHAI SỐ NGƯỜI ĐANG DÙNG khối byte này. `0` = **NHÀN RỖI** ⇒ giấy
+   * phép trở thành ứng viên nhường chỗ. KHÔNG BAO GIỜ ném.
+   *
+   * ⚠ Mặc định của một giấy phép mới là **ĐANG DÙNG** (`refCount = 1`), nên KHÔNG gọi hàm này là
+   * một câu trả lời hợp lệ và AN TOÀN: không ai thu hồi được nó. Hôm nay có đúng MỘT hộ tiêu thụ
+   * gọi tới — `aiGgufEngine` đồng bộ `LoadedModel.refCount` (đúng bộ đếm mà `evictLRU()` cũ dùng
+   * làm điều kiện đuổi) — nên **cơ chế nhường chỗ chỉ THẬT SỰ có ứng viên ở đường GGUF**. Mọi hộ
+   * khác (ONNX, sidecar, trainer) sẽ luôn hiện ra là "đang dùng", tức lượt xin bị TỪ CHỐI thay vì
+   * lấy chỗ của chúng. Đó là chiều an toàn, và nó được khai thẳng ở đây thay vì để người sau đọc
+   * mã mới biết.
+   */
+  noteRefCount(refCount: number): void;
 }
 
 /** Giấy phép "rỗng" khi telemetry hỏng — mọi lời gọi đều là no-op. */
 const NOOP_TICKET: VramTicket = {
   commitMeasured: async () => {},
   release: () => {},
+  noteRefCount: () => {},
 };
 
 /**
@@ -623,14 +647,31 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
       configDefaultBytes: opts.configDefaultBytes,
     });
 
-    const res = broker.reserve({
-      owner: opts.owner,
-      kind: opts.kind,
-      estimatedBytes: est.bytes,
-      priority: opts.priority,
-      estimateSource: est.source,
-      ttlMs: opts.ttlMs,
-    });
+    /**
+     * ★★★ Pha 2B Task 5 — BỘ BA ĐẦU VÀO QUYẾT ĐỊNH, và đây là chỗ DUY NHẤT trong repo dựng nó.
+     *
+     * Cả ba đều là **bàn giao cứng** của ba task trước, và cả ba trước dòng này **chưa có người
+     * tiêu thụ nào trên đường sản xuất** — đúng hình dạng "số đã tới cửa, cửa chưa mở":
+     *   • `tick` (Task 1 + 2) mang `attributableBytes` **và** `baselineVerified`;
+     *   • `unledgered` (Task 3) mang byte đã chạy NGOÀI SỔ + số lượt không ước được byte;
+     *   • `nowMs` để tuổi tick là một con số, không phải một lượt `Date.now()` ẩn.
+     *
+     * ⚠ `readDecisionTick()` trả `null` ở tiến trình `api` **vĩnh viễn** (`startVramReconciler`
+     * không chạy ở vai trò đó — `backgroundJobs.ts`). Đó là câu trả lời ĐÚNG theo thiết kế, không
+     * phải lỗi chờ sửa: `null` ⇒ `"no-tick"` ⇒ chính sách CHẶT HƠN, chứ tuyệt đối KHÔNG phải
+     * "coi như thiết bị trống".
+     */
+    const res = broker.reserve(
+      {
+        owner: opts.owner,
+        kind: opts.kind,
+        estimatedBytes: est.bytes,
+        priority: opts.priority,
+        estimateSource: est.source,
+        ttlMs: opts.ttlMs,
+      },
+      { tick: readDecisionTick(), unledgered: vramUnledgeredFact(), nowMs: Date.now() },
+    );
 
     logVramEvent({
       event: "reserve",
@@ -640,12 +681,50 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
       estimatedBytes: est.bytes,
       estimateSource: est.source,
       wouldRefuse: res.wouldRefuse,
-      detail: { wouldPreempt: res.wouldPreempt },
+      detail: {
+        wouldPreempt: res.wouldPreempt,
+        // ★ Task 5 — SỐ LIỆU của lượt quyết định. Không có nó thì một lượt từ chối trong nhật ký
+        // không dựng lại được phép tính, và câu hỏi "vì sao lượt này bị chặn" chỉ trả lời được
+        // bằng cách đoán. ⚠ `-Infinity` được `logVramEvent` thay + GHI TÊN (hàng rào Task 3).
+        headroomBytes: res.decision.headroomBytes,
+        effectiveHeadroomBytes: res.decision.effectiveHeadroomBytes,
+        usedBytes: res.decision.usedBytes,
+        basis: res.decision.basis,
+        blind: res.decision.blind,
+        baselineVerified: res.decision.baselineVerified,
+        trusted: res.decision.trusted,
+        degradedReasons: [...res.decision.reasons],
+        staleMarginBytes: res.decision.staleMarginBytes,
+        unledgeredChargeBytes: res.decision.unledgeredChargeBytes,
+        distrustChargeBytes: res.decision.distrustChargeBytes,
+      },
     });
 
     const lease: VramLease | null = res.lease;
-    // Pha 1 KHÔNG BAO GIỜ từ chối (vramBroker.ts:32) — nhánh này dành cho Pha 2.
-    if (!lease) return NOOP_TICKET;
+    /**
+     * ★★★ ĐÂY LÀ CÔNG TẮC CƯỠNG CHẾ. Trước Task 5 nhánh này `return NOOP_TICKET` — tức "không có
+     * giấy phép thì cứ cấp phát đi", đúng lớp TRÀN IM LẶNG mà cả spec này tồn
+     * tại để diệt, chỉ khác chỗ đứng.
+     *
+     * ⚠⚠ VÌ SAO **NÉM** CHỨ KHÔNG TRẢ MỘT TICKET RỖNG: một ticket rỗng là một câu trả lời mà người
+     * gọi **không phân biệt được** với "đã cấp" — họ nạp model xong mới biết. Ném là cách DUY NHẤT
+     * làm lượt cấp phát KHÔNG XẢY RA. Bù lại, mọi điểm gọi phải **thả** `VramRefusedError` đi qua
+     * `catch` của nó (bảng "vị từ dùng chung" trong báo cáo Task 5) — 11 điểm, đã kiểm từng điểm.
+     *
+     * ⚠ `res.refusal` KHÔNG BAO GIỜ `null` khi `lease === null` (bất biến của `reserve()`), nhưng
+     * `??` ở đây KHÔNG phải một cái DÂY: nó là một lối thoát để `tsc` không phải tin một bất biến
+     * runtime, và nếu nó chạy thì câu lỗi vẫn nói đúng "không cấp được", chỉ nghèo hơn.
+     */
+    if (!lease) {
+      const facts = res.refusal;
+      if (facts) throw new VramRefusedError(facts);
+      throw new Error(
+        `[vram] TỪ CHỐI cấp phát cho "${opts.owner}" (${opts.kind}, mức ${opts.priority}) — ` +
+          `xin ${Math.round(est.bytes / 1024 / 1024)} MiB, dư địa hiệu lực ` +
+          `${Math.round(res.decision.effectiveHeadroomBytes / 1024 / 1024)} MiB. ` +
+          `⚠ Sự thật chi tiết KHÔNG dựng được (refusal rỗng) — đây là lỗi nội bộ của broker.`,
+      );
+    }
 
     /**
      * ★★★ Pha 2A Task 3 — PHẠM VI ĐO + KHOÁ NỐI TIẾP (điều kiện Đ1). Xem khối `VramMeasureScope`
@@ -691,6 +770,11 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
         async () => { baoDaVao(); await giuToiKhiDong; },
         measureWaitBudgetMs(),
         opts.owner,
+        // ★★ Pha 2B Task 5 (cổng 2) — MỨC ƯU TIÊN NAY ĐI TIẾP VÀO HÀNG CHỜ CỦA KHOÁ. Trước dòng
+        // này `opts.priority` dừng lại ở `reserve()` và ở nhật ký, nên một lượt kiểm AOI mức
+        // `production` xếp sau việc nền tối đa 180 s — đảo ngược ưu tiên ĐANG CHẠY, không phải
+        // một rủi ro tương lai (I-3, review TOÀN NHÁNH).
+        opts.priority,
       ).catch(() => ({ measurable: false }));
       await daVao;
     }
@@ -904,6 +988,20 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
      */
     let measured = false;
     return {
+      /**
+       * ★★★ Pha 2B Task 5 (§5.2) — KHAI "còn ai đang dùng khối byte này không". Xem
+       * `VramTicket.noteRefCount()` để biết vì sao đây là cửa DUY NHẤT mở đường thu hồi, và vì sao
+       * nó nhận một SỐ chứ không phải một cờ.
+       */
+      noteRefCount(n: number) {
+        try {
+          if (released) return;
+          broker.setLeaseRefCount(lease.id, n);
+        } catch {
+          /* telemetry KHÔNG BAO GIỜ được làm hỏng đường cấp phát — và một lượt khai hỏng chỉ có
+             nghĩa "giấy phép này vẫn coi như ĐANG DÙNG", tức chiều AN TOÀN. */
+        }
+      },
       async commitMeasured() {
         try {
           if (released) return;
@@ -1348,6 +1446,24 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
     // ⚠ Pha 2A — NHẢ KHOÁ trước khi bỏ đi: từ đây không còn ticket nào để gọi `closeWindow()`.
     try { nhaKhoaKhanCap?.(); } catch { /* không có gì cứu được nữa, nhưng KHÔNG được ném */ }
     /**
+     * ★★★ Pha 2B Task 5 — MỘT LỜI TỪ CHỐI **KHÔNG PHẢI** MỘT LỖI TELEMETRY. ĐỌC TRƯỚC KHI SỬA.
+     *
+     * `catch` này có một chính sách từ Pha 1: *"telemetry chết thì hệ vẫn phải nạp được model"* ⇒
+     * nuốt lỗi, trả `NOOP_TICKET`, lượt cấp phát chạy tiếp NGOÀI SỔ. Chính sách đó vẫn đúng cho
+     * cái nó sinh ra để xử: sổ hỏng, nhật ký hỏng, đầu dò hỏng.
+     *
+     * ⚠⚠ Nhưng `VramRefusedError` đi qua ĐÚNG cái `catch` này, và nuốt nó ở đây thì **toàn bộ pha
+     * cưỡng chế thành vô hiệu trong đúng một dòng**: broker từ chối → wiring nuốt → trả ticket
+     * rỗng → model vẫn nạp → OOM. Ném lại TRƯỚC MỌI THỨ KHÁC, và cố ý đặt ngay dưới lượt nhả khoá
+     * (một lượt từ chối cũng phải nhả khoá nối tiếp — nếu không, cả tiến trình chờ 180 s ở lượt
+     * nạp sau).
+     *
+     * ⚠ Và KHÔNG đếm nó vào `vramBeginFailureState()`: ô đó đo **sổ đang HỤT bao nhiêu byte**. Một
+     * lượt bị từ chối KHÔNG cấp phát byte nào ⇒ sổ không hụt gì cả. Cộng nó vào là tự trừ dư địa
+     * của mình hai lần cho một khối byte chưa bao giờ tồn tại.
+     */
+    if (err instanceof VramRefusedError) throw err;
+    /**
      * ★★ Pha 2B Task 2 (C-1) — NUỐT LỖI THÌ ĐƯỢC, NUỐT **IM LẶNG** THÌ KHÔNG.
      *
      * Bản trước `catch { … }` không ghi lấy một chữ. Hậu quả đo được bằng lập luận, không phải giả
@@ -1445,6 +1561,22 @@ export function vramBeginFailureState(): {
     unledgeredBytes: byteNgoaiSo,
     unknownCount: soLuotBeginHongKhongBietByte,
   };
+}
+
+/**
+ * ★ Pha 2B Task 5 — cùng sự thật, đúng hình dạng mà đường QUYẾT ĐỊNH đòi (`VramUnledgeredFact`).
+ *
+ * ⚠ VÌ SAO KHÔNG BAO GIỜ TRẢ `null` Ở ĐÂY: `null` nghĩa **"CHƯA HỎI"**, và trên đường sản xuất thì
+ * ta LUÔN hỏi — hàm này chính là lượt hỏi. `null` được giữ trong kiểu cho những người gọi KHÁC
+ * (test, và bất kỳ điểm quyết định tương lai nào không đọc được ô này), và nó có phụ phí riêng
+ * (`"unledgered-unasked"`) đúng vì "chưa hỏi" ≠ "đã kiểm và không có gì".
+ *
+ * ⚠ Hai ô đổi tên có chủ ý: `unledgeredBytes` (ngôn ngữ của người ĐO) → `bytes` (ngôn ngữ của người
+ * QUYẾT ĐỊNH). Đây là chỗ DUY NHẤT dịch giữa hai từ vựng đó.
+ */
+export function vramUnledgeredFact(): { readonly bytes: number; readonly unknownCount: number } {
+  const s = vramBeginFailureState();
+  return { bytes: s.unledgeredBytes, unknownCount: s.unknownCount };
 }
 
 /** Chỉ dùng trong test. */

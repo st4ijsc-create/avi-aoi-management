@@ -91,6 +91,10 @@
 
 import { spawn } from "child_process";
 import path from "path";
+// ★★★ Pha 2B Task 5 — vị từ "lỗi này có phải LỜI TỪ CHỐI không". Import TĨNH của một module
+// LÁ (không import gì, không I/O): nó phải dùng được NGAY TRONG `catch` của một lượt
+// `await import()` vừa hỏng. Xem `vramRefusalSignal.ts` để biết vì sao so TÊN, không `instanceof`.
+import { isVramRefusal } from "./vram/vramRefusalSignal";
 import fs from "fs";
 import crypto from "crypto";
 import { getAiModelById, getModelVersions, createModelVersion, updateModelVersion } from "../db/ai";
@@ -472,8 +476,10 @@ async function beginFinetuneVram(baseModelPath: string): Promise<import("./vram/
       ttlMs: finetuneTimeoutMs(),
       releaseProof: "process-exit",
     });
-  } catch {
-    return { commitMeasured: async () => {}, release: () => {} };
+  } catch (err) {
+    // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG: nuốt ở đây là TẮT cưỡng chế tại điểm gọi này.
+    if (isVramRefusal(err)) throw err;
+    return { commitMeasured: async () => {}, release: () => {}, noteRefCount: () => {} };
   }
 }
 

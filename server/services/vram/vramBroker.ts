@@ -1,9 +1,12 @@
 import type {
   VramLease, VramMeasureSource, VramReserveRequest, VramReserveResult, VramSnapshot, VramPriority,
 } from "./types";
-import type { HeadroomInput, HeadroomResult } from "./vramHeadroom";
-import type { VramHolderFact, VramRefusalFacts, VramUnledgeredFact } from "./vramRefusal";
+import type { HeadroomBasis, HeadroomInput, HeadroomResult } from "./vramHeadroom";
+import { assertHeadroomPolicy, computeHeadroom, headroomInputFromTick } from "./vramHeadroom";
+import type { VramDegradationReason, VramHolderFact, VramRefusalFacts, VramUnledgeredFact } from "./vramRefusal";
 import { buildVramRefusal } from "./vramRefusal";
+import { applyEnforcement } from "./vramEnforcement";
+import type { VramDecisionTick } from "./vramTickCell";
 
 /**
  * Trần thiết bị và dự trữ an toàn (spec §5.1). Đọc một lần, không I/O trên đường quyết định.
@@ -121,26 +124,60 @@ export function ledgerHolders(): VramHolderFact[] {
 }
 
 /**
- * ★ Pha 2B Task 4 — "AI CÓ THỂ NHƯỜNG" (§5.3, vế thứ tư). **Chỉ liệt kê, KHÔNG thu hồi gì** —
- * việc thu hồi là của Task 5.
+ * ★★★ Pha 2B Task 5 (§5.2) — VỊ TỪ "CÓ ĐƯỢC THU HỒI GIẤY PHÉP NÀY KHÔNG". **MỘT bản cài đặt duy
+ * nhất**, và mọi nơi hỏi câu đó đều phải đi qua đây (bảng "vị từ dùng chung" của báo cáo Task 5).
  *
- * Quy tắc §5.2: chỉ nhường được mức **THẤP HƠN** mức đang xin. Cũ trước, mới sau (`acquiredAt`),
- * và dừng khi đã đủ bù `deficitBytes`.
+ * §5.2 nguyên văn: *"Chỉ thu hồi được giấy phép **đang nhàn rỗi** (`refCount === 0`) **hoặc** mức
+ * **thấp hơn** mức đang xin."* — và **`production` KHÔNG BAO GIỜ bị thu hồi** phủ lên trên cả hai
+ * vế đó. Ba câu, thứ tự này, không đổi được:
+ *
+ *   1. `production` ⇒ **KHÔNG**, tuyệt đối, kể cả khi nhàn rỗi và kể cả khi người xin cũng là
+ *      `production`. Đường kiểm tra AOI là thứ cả nhà máy đứng trên.
+ *   2. nhàn rỗi (`refCount === 0`) ⇒ **CÓ**, kể cả CÙNG mức — đây đúng là việc `evictLRU()` cũ vẫn
+ *      làm được (đuổi model GGUF rảnh để nạp model GGUF khác), và bỏ nó đi là đổi một vấn đề tràn
+ *      lấy một vấn đề "không bao giờ nạp được model thứ hai".
+ *   3. mức THẤP HƠN ⇒ **CÓ**, kể cả khi đang dùng — `background` (nạp tri thức, huấn luyện, cron)
+ *      **nhường trước tiên**, đó là toàn bộ ý nghĩa của bậc thang ưu tiên.
+ *
+ * ⚠⚠ VÀ ĐÂY LÀ RANH GIỚI PHẢI ĐỌC KỸ: hàm này **CHỈ LIỆT KÊ**. Không một dòng nào trong file này
+ * thu hồi gì cả, và điều đó là CỐ Ý: `reserve()` **ĐỒNG BỘ** (ràng buộc 1), trong khi nhả một khối
+ * VRAM thật là việc **BẤT ĐỒNG BỘ** (`model.dispose()`, `session.release()`, giết tiến trình con).
+ * Nhả giấy phép trong sổ mà thiết bị chưa nhả là **nói dối đúng chiều OOM** — sổ khai trống, card
+ * vẫn giữ 17 GB, và lượt xin kế tiếp được cấp trên chỗ trống ma. ⇒ Người THI HÀNH là điểm gọi bất
+ * đồng bộ (`vramLoadOutcome.reclaim` hôm nay), sau khi đọc danh sách này.
+ */
+function coTheNhuong(l: VramLease, rankNguoiXin: number): boolean {
+  if (l.request.priority === "production") return false;
+  return l.refCount === 0 || PRIORITY_RANK[l.request.priority] < rankNguoiXin;
+}
+
+/**
+ * ★ Pha 2B Task 4 — "AI CÓ THỂ NHƯỜNG" (§5.3, vế thứ tư). **Chỉ liệt kê, KHÔNG thu hồi gì.**
+ *
+ * Thứ tự (Task 5): mức THẤP trước (`background` nhường trước tiên), rồi NHÀN RỖI trước, rồi CŨ
+ * trước. Dừng khi đã đủ bù `deficitBytes`.
  *
  * ⚠ `deficitBytes` KHÔNG hữu hạn (`headroom = -Infinity` ⇒ thiếu `+Infinity`; hoặc `NaN` từ một ô
  * bẩn) ⇒ liệt kê **TOÀN BỘ** ứng viên mức thấp hơn. Cắt danh sách khi không biết mình thiếu bao
  * nhiêu là để người trực nhường xong vẫn không đủ mà không hiểu vì sao.
  *
  * ⚠ KHÔNG lọc theo trạng thái commit — một giấy phép "chưa commit" (đang cấp phát dở) VẪN được
- * liệt kê nếu rank thấp hơn. Đây là danh sách ỨNG VIÊN để NÓI RA, không phải lệnh thu hồi; câu
- * hỏi "có được thu hồi một giấy phép đang cấp phát giữa chừng không" (và §5.2 `refCount === 0`)
- * là QUYẾT ĐỊNH TƯỜNG MINH của Task 5, không phải mặc định của một hàm liệt kê.
+ * liệt kê nếu `coTheNhuong()` cho phép. Đây là danh sách ỨNG VIÊN để NÓI RA và để người thi hành
+ * bất đồng bộ đọc, không phải một lệnh thu hồi.
  */
 export function preemptCandidates(priority: VramPriority, deficitBytes: number): VramHolderFact[] {
   const rank = PRIORITY_RANK[priority];
   const candidates = [...ledger.values()]
-    .filter((l) => PRIORITY_RANK[l.request.priority] < rank)
-    .sort((a, b) => a.acquiredAt.getTime() - b.acquiredAt.getTime());
+    .filter((l) => coTheNhuong(l, rank))
+    .sort(
+      (a, b) =>
+        // 1) mức THẤP nhường TRƯỚC TIÊN (§5.2)
+        PRIORITY_RANK[a.request.priority] - PRIORITY_RANK[b.request.priority] ||
+        // 2) NHÀN RỖI trước kẻ đang dùng — nhường một thứ không ai dùng rẻ hơn hẳn
+        (a.refCount === 0 ? 0 : 1) - (b.refCount === 0 ? 0 : 1) ||
+        // 3) CŨ trước
+        a.acquiredAt.getTime() - b.acquiredAt.getTime(),
+    );
   const enough = Number.isFinite(deficitBytes) ? deficitBytes : Number.POSITIVE_INFINITY;
   const out: VramHolderFact[] = [];
   let freed = 0;
@@ -173,45 +210,170 @@ export function refusalFactsFor(args: {
   readonly headroomInput: HeadroomInput;
   readonly headroom: HeadroomResult;
   readonly unledgered: VramUnledgeredFact;
+  /**
+   * ★ Task 5 — con số mà cưỡng chế THẬT SỰ đã so với lượt xin, và danh sách lý do ĐẦY ĐỦ (gồm cả
+   * lý do do chính sách sinh ra: `stale-tick`, `unledgered-unknown`, …).
+   *
+   * ⚠⚠ BẮT BUỘC CÓ MẶT, và **không** mặc định về `headroom.headroomBytes`: in dư địa THÔ trong một
+   * câu từ chối được quyết định bằng dư địa HIỆU LỰC là nói một con số **không phải cơ sở của quyết
+   * định** — người trực nhìn "còn 5.000 MiB" rồi không hiểu vì sao lượt xin 3.000 MiB bị chặn, và
+   * đi tìm lỗi ở chỗ không có lỗi.
+   */
+  readonly effectiveHeadroomBytes: number;
+  readonly degradedReasons: readonly VramDegradationReason[];
 }): VramRefusalFacts {
   const { request, headroomInput, headroom, unledgered } = args;
   return buildVramRefusal({
     requestedBytes: request.estimatedBytes,
     owner: request.owner,
     priority: request.priority,
-    headroomBytes: headroom.headroomBytes,
-    degradedReasons: headroom.degradedReasons,
+    headroomBytes: args.effectiveHeadroomBytes,
+    degradedReasons: args.degradedReasons,
     blind: headroom.blind,
     ledgerTotalBytes: headroomInput.ledgerTotalBytes,
     usedBytes: headroom.usedBytes,
     holders: ledgerHolders(),
-    preemptable: preemptCandidates(request.priority, request.estimatedBytes - headroom.headroomBytes),
+    preemptable: preemptCandidates(
+      request.priority,
+      request.estimatedBytes - args.effectiveHeadroomBytes,
+    ),
     unledgered,
   });
 }
 
 /**
- * Xin chỗ. **Pha 1: KHÔNG BAO GIỜ từ chối** — luôn trả giấy phép.
- * `wouldRefuse`/`wouldPreempt` là phán quyết BÓNG của Pha 2, chỉ để ghi sổ.
- * ⚠ Hàm này KHÔNG được làm I/O: quyết định đọc sổ trong bộ nhớ.
+ * ★★★ Pha 2B Task 5 — ĐẦU VÀO QUYẾT ĐỊNH mà **chỉ người gọi biết**, và vì sao nó là tham số
+ * BẮT BUỘC chứ không phải thứ broker tự đi lấy:
  *
- * Bảo đảm CẤU TRÚC (mạnh hơn mọi test): hàm này ĐỒNG BỘ — trả thẳng `VramReserveResult`,
- * không phải `Promise`, và không `import` bất kỳ module I/O nào (fs/net/http/child_process).
- * Không `await` được gì bên trong một hàm không `async`. Test "reserve KHÔNG gọi đầu dò
- * thiết bị" chỉ canh MỘT trường hợp cụ thể (vramProbe); chính chữ ký đồng bộ này mới là
- * thứ chặn I/O nói chung. ⚠ Người sau: đừng đổi hàm này thành `async` mà không nhận ra
- * đang gỡ mất lá chắn cấu trúc đó.
+ *   • `tick` — ô tick nằm ở `vramTickCell` (module lá). Broker CÓ THỂ tự đọc, nhưng đọc ở đây thì
+ *     hai vế `L` và `A` của phép `max` đến từ HAI thời điểm khác nhau khi người gọi đã đọc trước;
+ *     một tham số đóng cửa đó lại.
+ *   • `unledgered` — `vramWiring.vramBeginFailureState()`. `vramWiring` nhập `vramBroker`, chiều
+ *     ngược lại là **vòng nhập** (bàn giao Task 4).
+ *   • `nowMs` — đồng hồ. Truyền vào để tuổi tick là một con số KIỂM ĐƯỢC, không phải một lượt gọi
+ *     `Date.now()` ẩn giữa đường quyết định.
+ *
+ * ⚠ Cả ba đều **không optional**: `tsc` chặn người gọi quên (cùng cơ chế Task 2 dùng cho
+ * `baselineVerified` và Task 4 cho `unledgered`). `tick: null` và `unledgered: null` là những câu
+ * trả lời HỢP LỆ và có nghĩa riêng — "chưa có nhịp nào" và "chưa hỏi" — cả hai đều làm hệ CHẶT HƠN.
  */
-export function reserve(request: VramReserveRequest): VramReserveResult {
-  const headroom = deviceTotalBytes() - SAFETY_RESERVE_BYTES - totalReserved();
-  const wouldRefuse = request.estimatedBytes > headroom;
+export interface VramDecisionContext {
+  readonly tick: VramDecisionTick | null;
+  readonly unledgered: VramUnledgeredFact;
+  readonly nowMs: number;
+}
 
-  // Pha 2B Task 4 — MỘT bản cài đặt duy nhất cho "ai có thể nhường". Trước đây phép chọn này nằm
-  // ngay tại đây; câu từ chối (§5.3) cần đúng phép chọn ấy, và hai bản cài đặt song song của CÙNG
-  // một công thức là đúng lớp lỗi đã khiến `bench.mjs` sai bốn lần.
-  const wouldPreempt: string[] = wouldRefuse
-    ? preemptCandidates(request.priority, request.estimatedBytes - headroom).map((h) => h.owner)
-    : [];
+/** Số liệu của MỘT lượt quyết định — đi thẳng vào nhật ký để lượt từ chối dựng lại được phép tính. */
+export interface VramReserveDecision {
+  /** `computeHeadroom()` thô (§5.6c). */
+  readonly headroomBytes: number;
+  /** Sau chính sách suy giảm — **con số đã so với lượt xin**. Luôn ≤ `headroomBytes`. */
+  readonly effectiveHeadroomBytes: number;
+  readonly usedBytes: number;
+  readonly basis: HeadroomBasis;
+  readonly blind: boolean;
+  readonly baselineVerified: boolean;
+  readonly reasons: readonly VramDegradationReason[];
+  readonly trusted: boolean;
+  readonly staleMarginBytes: number;
+  readonly unledgeredChargeBytes: number;
+  readonly distrustChargeBytes: number;
+  readonly ledgerTotalBytes: number;
+  readonly ceilingBytes: number;
+  readonly safetyReserveBytes: number;
+}
+
+export interface VramReserveOutcome extends VramReserveResult {
+  /** `null` ⇔ được cấp. Khác `null` ⇔ `lease === null` (bất biến, có ca test khoá). */
+  readonly refusal: VramRefusalFacts | null;
+  readonly decision: VramReserveDecision;
+}
+
+/**
+ * ★★★ Pha 2B Task 5 — XIN CHỖ, VÀ ĐÂY LÀ NƠI MỘT LƯỢT XIN CÓ THỂ BỊ **TỪ CHỐI**.
+ *
+ * Trước task này hàm luôn trả giấy phép và `wouldRefuse` chỉ là phán quyết BÓNG. Từ đây:
+ *
+ *     lease === null  ⇔  wouldRefuse === true  ⇔  refusal !== null
+ *
+ * và `vramWiring` dựng `VramRefusedError` từ `refusal` rồi **NÉM** — lượt cấp phát KHÔNG chạy.
+ *
+ * BỐN BƯỚC, không bước nào chạm I/O:
+ *   1. `computeHeadroom()` (§5.6c) trên **sổ SỐNG** + ô tick người gọi đưa vào;
+ *   2. `applyEnforcement()` — chính sách suy giảm: mỗi mức một phụ phí RIÊNG, **mọi mức CHẶT HƠN**;
+ *   3. so `estimatedBytes` với dư địa **HIỆU LỰC** (bước 2), không phải dư địa thô;
+ *   4. không đủ ⇒ dựng SỰ THẬT của lời từ chối (bốn thứ §5.3 + phần không quy trách nhiệm được).
+ *
+ * ⚠⚠ VÌ SAO KHÔNG CÓ NGOẠI LỆ CHO LƯỢT XIN **0 BYTE**: nghe thì "0 byte thì hại ai", nhưng nấc
+ * `learned` **đang có đường sinh ra `0` cho một model 17 GB** (nợ N2-2 mang sang từ Pha 2A: PID
+ * cấp lại ⇒ tập `seen` sai ⇒ `commit(0)` + `recordActual(0)`). Một cửa "0 byte luôn được cấp" là
+ * cửa mà đúng khối 17 GB đó đi qua. Dư địa hiệu lực âm ⇒ **mọi** lượt xin bị từ chối, kể cả 0.
+ *
+ * ⚠ `estimatedBytes = NaN` ⇒ `NaN <= x` là `false` ⇒ **TỪ CHỐI**. Đúng chiều fail-closed, và đó là
+ * lý do phép so viết theo chiều `<=` chứ không phải `!(... > ...)`.
+ *
+ * Bảo đảm CẤU TRÚC (mạnh hơn mọi test): hàm này ĐỒNG BỘ — trả thẳng kết quả, không phải `Promise`,
+ * và không `import` module I/O nào (fs/net/http/child_process). Không `await` được gì bên trong một
+ * hàm không `async`. ⚠ Người sau: đừng đổi hàm này thành `async` mà không nhận ra đang gỡ mất lá
+ * chắn cấu trúc từ Pha 1 — nó là thứ giữ đường quyết định sạch I/O, không phải một tối ưu hiệu năng.
+ */
+export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): VramReserveOutcome {
+  const ceilingBytes = deviceTotalBytes();
+  const ledgerTotalBytes = totalReserved();
+  const headroomInput = headroomInputFromTick(ctx.tick, {
+    ceilingBytes,
+    safetyReserveBytes: SAFETY_RESERVE_BYTES,
+    // ⚠ SỔ **SỐNG**, đọc ngay tại thời điểm quyết định — KHÔNG lấy `ledgerTotalBytes` của tick cũ:
+    // mọi lượt `reserve()` xảy ra trong một nhịp sẽ vô hình, tức đúng cái cửa cưỡng chế sinh ra để
+    // đóng (vramHeadroom.HeadroomPolicy).
+    ledgerTotalBytes,
+  });
+  const headroom = computeHeadroom(headroomInput);
+  const enf = applyEnforcement({
+    headroom,
+    // Tuổi tick: `null` khi CHƯA CÓ NHỊP NÀO (ca đó đã có lý do `"no-tick"` riêng).
+    tickAgeMs: ctx.tick === null ? null : ctx.nowMs - ctx.tick.atMs,
+    tickConsecutiveFailures: ctx.tick === null ? 0 : ctx.tick.consecutiveFailures,
+    unledgered: ctx.unledgered,
+  });
+
+  const decision: VramReserveDecision = {
+    headroomBytes: headroom.headroomBytes,
+    effectiveHeadroomBytes: enf.effectiveHeadroomBytes,
+    usedBytes: headroom.usedBytes,
+    basis: headroom.basis,
+    blind: headroom.blind,
+    baselineVerified: headroom.baselineVerified,
+    reasons: enf.reasons,
+    trusted: enf.trusted,
+    staleMarginBytes: enf.staleMarginBytes,
+    unledgeredChargeBytes: enf.unledgeredChargeBytes,
+    distrustChargeBytes: enf.distrustChargeBytes,
+    ledgerTotalBytes,
+    ceilingBytes,
+    safetyReserveBytes: SAFETY_RESERVE_BYTES,
+  };
+
+  const vua = request.estimatedBytes <= enf.effectiveHeadroomBytes;
+  if (!vua) {
+    const refusal = refusalFactsFor({
+      request,
+      headroomInput,
+      headroom,
+      unledgered: ctx.unledgered,
+      effectiveHeadroomBytes: enf.effectiveHeadroomBytes,
+      degradedReasons: enf.reasons,
+    });
+    return {
+      lease: null,
+      wouldRefuse: true,
+      // MỘT bản cài đặt duy nhất cho "ai có thể nhường" — cùng nguồn với câu từ chối, vì hai bản
+      // song song của CÙNG một công thức là đúng lớp lỗi đã khiến `bench.mjs` sai bốn lần.
+      wouldPreempt: refusal.preemptable.map((h) => h.owner),
+      refusal,
+      decision,
+    };
+  }
 
   const lease: VramLease = {
     id: `lease-${++seq}`,
@@ -221,9 +383,33 @@ export function reserve(request: VramReserveRequest): VramReserveResult {
     measureFailed: false,
     lastHeartbeatAt: new Date(),
     released: false,
+    // ⚠ `1` = ĐANG DÙNG. Xem `VramLease.refCount` (types.ts) để biết vì sao mặc định KHÔNG phải 0.
+    refCount: 1,
   };
   ledger.set(lease.id, lease);
-  return { lease, wouldRefuse, wouldPreempt };
+  return { lease, wouldRefuse: false, wouldPreempt: [], refusal: null, decision };
+}
+
+/**
+ * ★★★ Pha 2B Task 5 (§5.2) — KHAI "CÓ AI ĐANG DÙNG KHỐI BYTE NÀY KHÔNG".
+ *
+ * Đây là **cửa duy nhất** làm một giấy phép trở thành ứng viên nhường chỗ, và nó CỐ Ý bắt điểm gọi
+ * khai bằng SỐ NGƯỜI DÙNG chứ không phải bằng một cờ `idle`: `aiGgufEngine` đã đếm sẵn
+ * (`LoadedModel.refCount`, thứ `evictLRU()` cũ dùng làm điều kiện đuổi), và một cờ boolean sẽ buộc
+ * nó phải tự dịch `n → boolean` — tức một bản cài đặt thứ hai của cùng một vị từ.
+ *
+ * ⚠ Số vô lý (âm/NaN) bị TỪ CHỐI (trả `false`, không ghi): một `NaN` lọt vào đây làm
+ * `refCount === 0` thành `false` vĩnh viễn — nghe thì "an toàn" (không ai bị thu hồi) nhưng nó
+ * **khoá cứng** cả cơ chế nhường chỗ mà không ai thấy. Từ chối ồn hơn là nuốt.
+ *
+ * @returns `true` nếu sổ vừa nhận số mới.
+ */
+export function setLeaseRefCount(leaseId: string, refCount: number): boolean {
+  const live = ledger.get(leaseId);
+  if (!live || live.released) return false;
+  if (!Number.isFinite(refCount) || refCount < 0) return false;
+  live.refCount = Math.floor(refCount);
+  return true;
 }
 
 /**
@@ -340,6 +526,27 @@ export function heartbeat(lease: VramLease): void {
 
 export function snapshot(): VramSnapshot {
   return { totalReservedBytes: totalReserved(), leases: [...ledger.values()] };
+}
+
+/**
+ * ★★ Pha 2B Task 5 — CỔNG CẤU HÌNH LÚC BOOT, người tiêu thụ **đầu tiên** của
+ * `vramHeadroom.assertHeadroomPolicy()` (Task 2 để lại nó KHÔNG AI GỌI, kèm một câu bàn giao thẳng:
+ * *"lớp hỏng SỚM hiện KHÔNG đạt được ở đâu cả — mọi vị trí khả dĩ đều nằm trong try/catch"*).
+ *
+ * ⚠⚠ QUYẾT ĐỊNH VỊ TRÍ (và nó là một quyết định, không phải một chỗ tiện tay): lời gọi đặt ở
+ * **mức module của điểm vào** (`server/_core/index.ts` và `server/worker.ts`) — chỗ DUY NHẤT trong
+ * repo hôm nay nằm NGOÀI mọi `try`. Ba vị trí từng được đề xuất đều bị nuốt:
+ *   • mức module `vramBroker` — điểm nhập của nó nằm trong `try` của `beginVramAllocation()`;
+ *   • khối bật VRAM lúc boot — `try { … } catch { console.error(…) }`, cố ý từ Pha 1;
+ *   • `startVramReconciler()` — cùng khối `try` đó.
+ *
+ * ⚠ Hàm này NÉM. Đó là toàn bộ mục đích: `.env` hỏng phải lộ ra **TO và SỚM**, chứ không phải hiện
+ * thành "từ chối 100% lượt xin" ba giờ sau. Nó chỉ ném khi người vận hành ĐÃ ĐẶT một giá trị vô
+ * nghĩa (`VRAM_DEVICE_TOTAL_MB=` để trống ⇒ `Number("") === 0`, `VRAM_SAFETY_RESERVE_MB=abc` ⇒
+ * `NaN`); không đặt gì thì cả hai đều về mặc định hợp lệ và hàm im lặng.
+ */
+export function assertVramEnforcementPolicy(): void {
+  assertHeadroomPolicy({ ceilingBytes: deviceTotalBytes(), safetyReserveBytes: SAFETY_RESERVE_BYTES });
 }
 
 /** Chỉ dùng trong test. */

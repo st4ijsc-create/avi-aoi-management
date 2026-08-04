@@ -17,6 +17,10 @@
 
 import path from "path";
 import fs from "fs";
+// ★★★ Pha 2B Task 5 — vị từ "lỗi này có phải LỜI TỪ CHỐI không". Import TĨNH của một module
+// LÁ (không import gì, không I/O): nó phải dùng được NGAY TRONG `catch` của một lượt
+// `await import()` vừa hỏng. Xem `vramRefusalSignal.ts` để biết vì sao so TÊN, không `instanceof`.
+import { isVramRefusal } from "./vram/vramRefusalSignal";
 import { withGgufSlot, withGgufSlotGenerator, getGgufQueueStats } from "./ggufConcurrency";
 // Read-only telemetry hook (TASK A): observeInference is a no-op when METRICS_ENABLED is off
 // and never throws. Imported only to record per-generation latency into the histogram.
@@ -231,7 +235,8 @@ const GGUF_MAX_VRAM_MB = (() => {
 /**
  * B0.1 — VRAM threshold guard (%): before loading another model, if VRAM usage is at/above
  * this percentage of total, evict LRU idle model(s) first; if none can be freed, log a clear
- * warning and DEFER (allow temporary overflow rather than crash). Default 90. Set 0/100+ to
+ * warning and DEFER rather than crash. ⚠ Pha 2B Task 5: đây KHÔNG còn là cổng quyết định —
+ * `beginVramAllocation()` (cổng SỔ) đã chặn TRƯỚC lượt nạp; guard này chỉ còn dọn chỗ. Default 90. Set 0/100+ to
  * disable. Best-effort & fail-safe: telemetry failures never throw.
  */
 const GGUF_VRAM_GUARD_PCT = (() => {
@@ -495,10 +500,18 @@ async function readVramState(): Promise<{ used: number; total: number } | null> 
 
 /**
  * B0.1 — VRAM threshold guard. Before loading the Nth model, if VRAM usage is at/above
- * GGUF_VRAM_GUARD_PCT of total, evict LRU idle model(s) until back under threshold. If no
- * idle model can be freed while still over threshold, log a clear warning and DEFER (allow
- * temporary overflow) rather than throw — node-llama-cpp will still attempt the load, but the
- * operator is warned of OOM risk. Fail-safe: telemetry failure skips the guard silently.
+ * GGUF_VRAM_GUARD_PCT of total, evict LRU idle model(s) until back under threshold.
+ *
+ * ★★★ Pha 2B Task 5 — VAI TRÒ CỦA HÀM NÀY ĐÃ ĐỔI, dù một dòng mã cũng không đổi (Task 7 mới xoá
+ * nó). Trước đây nó là **lớp quyết định cuối**: hết chỗ mà không đuổi được ai thì *"cảnh báo rồi
+ * vẫn làm"* — đúng cái tràn im lặng mà spec này tồn tại để diệt (ràng buộc 9). Từ Task 5, quyết
+ * định CHO/KHÔNG CHO nằm ở **cổng sổ** (`beginVramAllocation()` → `broker.reserve()`), và cổng đó
+ * chạy SAU hàm này (`ensureCapacity()` ở `loadGgufModel`, trước `loadWithVramOutcomes`). Nên hàm
+ * này nay chỉ còn một việc: **DỌN CHỖ TRƯỚC** để cổng sổ nhìn thấy một cuốn sổ đã gọn.
+ * ⇒ Nhánh "không đuổi được ai" không còn là một lượt cho-qua: nó chỉ nói *"tôi không dọn được gì"*,
+ * rồi cổng sổ sẽ TỪ CHỐI nếu thật sự không đủ chỗ.
+ *
+ * Fail-safe: telemetry failure skips the guard silently.
  */
 async function enforceVramGuard(): Promise<void> {
   if (!llamaInstance) return; // engine not initialized → nothing loaded yet
@@ -514,7 +527,8 @@ async function enforceVramGuard(): Promise<void> {
     if (!evicted) {
       console.warn(
         `[aiGgufEngine] VRAM guard: used ${usedMb}/${totalMb}MB (${usedPct.toFixed(0)}%) ` +
-          `≥ ${GGUF_VRAM_GUARD_PCT}% but no idle model to evict — deferring/allowing load with OOM risk.`,
+          `≥ ${GGUF_VRAM_GUARD_PCT}% và KHÔNG có model nhàn rỗi nào để dọn. ` +
+          `KHÔNG cho qua ở đây: cổng SỔ (beginVramAllocation → reserve) quyết định ngay sau bước này.`,
       );
       return;
     }
@@ -549,8 +563,12 @@ async function evictLRU(): Promise<string | null> {
 /**
  * Ensure there is capacity for one more model before loading.
  * Enforces GGUF_MAX_LOADED_MODELS (count) and, if enabled, GGUF_MAX_VRAM_MB (best-effort).
- * Evicts the LRU idle model(s). If no idle candidate exists (all in use), logs a warning
- * and allows a temporary overflow rather than throwing.
+ * Evicts the LRU idle model(s).
+ *
+ * ★ Pha 2B Task 5 — ĐÂY LÀ BƯỚC **DỌN CHỖ**, KHÔNG PHẢI BƯỚC **CHO PHÉP** (xem docstring
+ * `enforceVramGuard`). Không còn nhánh nào ở đây "cho qua vì không đuổi được ai": việc cho/không
+ * cho thuộc về cổng sổ chạy ngay sau. Hai bộ đếm này là trần theo SỐ MODEL, còn cưỡng chế theo
+ * BYTE nằm ở broker — Task 7 hấp thụ nốt.
  */
 async function ensureCapacity(): Promise<void> {
   // Count-based cap: make room so that loading one more stays within the limit.
@@ -559,7 +577,8 @@ async function ensureCapacity(): Promise<void> {
     const evicted = await evictLRU();
     if (!evicted) {
       console.warn(
-        `[aiGgufEngine] At capacity (${loadedModels.size}/${GGUF_MAX_LOADED_MODELS}) but all models are in use (refCount>0); allowing temporary overflow.`,
+        `[aiGgufEngine] Đã kín khe (${loadedModels.size}/${GGUF_MAX_LOADED_MODELS}) và MỌI model đang ` +
+          `được dùng (refCount>0) ⇒ không dọn được khe nào. Cổng SỔ (reserve) quyết định lượt nạp này.`,
       );
       break;
     }
@@ -576,7 +595,8 @@ async function ensureCapacity(): Promise<void> {
         const evicted = await evictLRU();
         if (!evicted) {
           console.warn(
-            `[aiGgufEngine] VRAM used (${Math.round((vram.used) / 1024 / 1024)}MB) over cap (${GGUF_MAX_VRAM_MB}MB) but no idle model to evict; allowing temporary overflow.`,
+            `[aiGgufEngine] VRAM đang dùng (${Math.round((vram.used) / 1024 / 1024)}MB) vượt trần ` +
+              `(${GGUF_MAX_VRAM_MB}MB) và không có model nhàn rỗi để dọn. Cổng SỔ quyết định lượt nạp này.`,
           );
           break;
         }
@@ -757,6 +777,12 @@ async function beginVram(
     return await beginVramAllocation(opts);
   } catch (err) {
     /**
+     * ★★★ Pha 2B Task 5 — CỬA CUỐI CỦA ĐƯỜNG GGUF, và là cửa mà cưỡng chế dễ chết nhất: bốn điểm
+     * cấp phát của `aiGgufEngine` (backend CUDA · model · context · embedding context) đều đi qua
+     * lớp bọc này. Một lời từ chối bị nuốt ở đây = model 17 GB vẫn nạp sau khi cổng sổ đã chặn.
+     */
+    if (isVramRefusal(err)) throw err;
+    /**
      * ★★ Pha 2B Task 3 — `catch` NÀY TRƯỚC ĐÂY RỖNG TUYỆT ĐỐI, và nó là **cửa cuối cùng** của cả
      * chuỗi: từ khi Task 3 đổi ba `await import()` bên trong `vramWiring` thành import TĨNH, một
      * lỗi nạp của `vramBroker`/`vramEstimator`/`vramEventLog` rơi **thẳng vào đây**. Nuốt im lặng
@@ -769,7 +795,7 @@ async function beginVram(
         `chạy NGOÀI SỔ (dư địa bị phóng đại đúng khối byte đó, cưỡng chế mù với nó): ` +
         `${(err as Error)?.message ?? String(err)}`,
     );
-    return { commitMeasured: async () => {}, release: () => {} };
+    return { commitMeasured: async () => {}, release: () => {}, noteRefCount: () => {} };
   }
 }
 
@@ -1249,11 +1275,35 @@ export async function unloadGgufModel(modelId: string): Promise<boolean> {
 }
 
 /**
+ * ★★★ Pha 2B Task 5 (§5.2) — ĐỒNG BỘ `refCount` CỦA ENGINE SANG SỔ CÁI VRAM.
+ *
+ * `evictLRU()` đã dùng `refCount === 0` làm điều kiện đuổi từ trước khi có broker; cưỡng chế dùng
+ * ĐÚNG con số đó để trả lời *"giấy phép này có nhàn rỗi không"*. Không có bốn lời gọi này thì mọi
+ * giấy phép mãi mãi ở trạng thái ĐANG DÙNG (mặc định an toàn của `reserve()`), và câu từ chối sẽ
+ * luôn nói *"có thể nhường: không có"* — tức cơ chế nhường chỗ có mã, có test, mà **không bao giờ
+ * có ứng viên trên máy thật**.
+ *
+ * ⚠ KHÔNG đổi một nhánh điều khiển nào của engine (ràng buộc 2 — không viết lại `aiGgufEngine`):
+ * hàm này chỉ CHÉP một con số đã có sang một cuốn sổ khác, và nó KHÔNG BAO GIỜ ném.
+ * ⚠ Chép ĐÚNG SỐ, không chép một cờ `idle`: một phép dịch `n → boolean` ở đây là bản cài đặt THỨ
+ * HAI của cùng một vị từ, ở phía không ai kiểm.
+ */
+function dongBoRefCountVaoSo(loaded: LoadedModel | undefined): void {
+  try {
+    loaded?.vramTicket?.noteRefCount(loaded.refCount);
+  } catch {
+    /* telemetry KHÔNG BAO GIỜ được làm hỏng đường suy luận — và một lượt chép hỏng chỉ có nghĩa
+       "giấy phép vẫn coi như ĐANG DÙNG", tức chiều AN TOÀN (không ai bị thu hồi nhầm). */
+  }
+}
+
+/**
  * Release an in-flight reference acquired via getOrLoadModel().
  * Call in a `finally` block so eviction can reclaim the model once idle.
  */
 function releaseModel(loaded: LoadedModel | undefined): void {
   if (loaded && loaded.refCount > 0) loaded.refCount--;
+  dongBoRefCountVaoSo(loaded);
 }
 
 /**
@@ -1390,6 +1440,7 @@ function takeLoadedModel(modelId: string): { modelId: string; loaded: LoadedMode
   loaded.lastUsedAt = new Date();
   loaded.useCount++;
   loaded.refCount++;
+  dongBoRefCountVaoSo(loaded);
   return { modelId, loaded };
 }
 
@@ -1552,6 +1603,7 @@ async function getOrLoadModel(
     loaded.lastUsedAt = new Date();
     loaded.useCount++;
     loaded.refCount++;
+    dongBoRefCountVaoSo(loaded);
     return { modelId, loaded };
   }
 
@@ -1569,6 +1621,7 @@ async function getOrLoadModel(
       firstModel.lastUsedAt = new Date();
       firstModel.useCount++;
       firstModel.refCount++;
+      dongBoRefCountVaoSo(firstModel);
       return { modelId: firstId as string, loaded: firstModel };
     }
 

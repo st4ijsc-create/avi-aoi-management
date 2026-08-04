@@ -1,6 +1,7 @@
 import type { VramLeaseKind, VramPriority } from "./types";
 import { beginVramAllocation, type VramReleaseProof, type VramTicket } from "./vramWiring";
 import { logVramEvent, type VramEventInput } from "./vramEventLog";
+import { isVramRefusal } from "./vramRefusalSignal";
 
 /**
  * ★★★ Pha 2B Task 3 — BA KẾT CỤC CỦA §5.5, VÀ CÁI CHẾT CỦA SUY BIẾN IM LẶNG.
@@ -304,6 +305,7 @@ export interface VramLoadOutcomeSpec<T> {
 const NOOP_TICKET: VramTicket = {
   async commitMeasured() {},
   release() {},
+  noteRefCount() {},
 };
 
 export type VramNormalizeReason = "negative-gpu-layers" | "non-finite-gpu-layers";
@@ -532,33 +534,98 @@ export async function loadWithVramOutcomes<T>(spec: VramLoadOutcomeSpec<T>): Pro
   let loiCuoi: unknown = new Error(`[vram] "${spec.owner}": không lượt nạp nào chạy`);
   let tinHieuCuoi: string | null = null;
 
+  /**
+   * ★★★ Pha 2B Task 5 — ĐÃ NHƯỜNG CHỖ CHƯA (đúng MỘT lần cho cả lượt nạp).
+   *
+   * ⚠ MỘT LẦN, không phải mỗi lượt thử: `reclaim()` đuổi **mọi** model nhàn rỗi, nên lượt gọi thứ
+   * hai chắc chắn không còn gì để đuổi. Cho phép lặp là dựng một vòng "từ chối → đuổi → từ chối"
+   * không thoát ra được.
+   */
+  let daNhuongCho = false;
+
+  const xinGiayPhep = async (plan: VramLoadPlan): Promise<VramTicket> =>
+    await beginVram({
+      owner: spec.owner,
+      kind: spec.kind,
+      priority: spec.priority,
+      filePath: spec.filePath,
+      fileBytes: spec.fileBytes,
+      configDefaultBytes: spec.configDefaultBytes,
+      fallbackBytes: spec.fallbackBytes,
+      ttlMs: spec.ttlMs,
+      releaseProof: spec.releaseProof,
+    });
+
   const chay = async (plan: VramLoadPlan): Promise<{ ok: true; value: T; ticket: VramTicket } | { ok: false }> => {
     let ticket: VramTicket = NOOP_TICKET;
     try {
-      ticket = await beginVram({
-        owner: spec.owner,
-        kind: spec.kind,
-        priority: spec.priority,
-        filePath: spec.filePath,
-        fileBytes: spec.fileBytes,
-        configDefaultBytes: spec.configDefaultBytes,
-        fallbackBytes: spec.fallbackBytes,
-        ttlMs: spec.ttlMs,
-        releaseProof: spec.releaseProof,
-      });
+      ticket = await xinGiayPhep(plan);
     } catch (err) {
-      // `beginVramAllocation()` HỨA không bao giờ ném; nếu lời hứa đó vỡ, lượt nạp vẫn phải chạy —
-      // nhưng KHÔNG ĐƯỢC im lặng, vì từ đây khối byte sắp cấp phát KHÔNG có mặt trong sổ.
-      console.warn(
-        `[vram] beginVramAllocation("${spec.owner}") NÉM (lẽ ra không bao giờ) ⇒ lượt nạp này chạy ` +
-          `NGOÀI SỔ, dư địa sẽ bị phóng đại đúng khối byte đó: ${(err as Error)?.message ?? String(err)}`,
-      );
-      ghiSuKien({
-        event: "measure_failed",
-        detail: { reason: "begin-allocation-threw", step: plan.step, attemptNo: plan.attemptNo,
-          error: (err as Error)?.message ?? String(err) },
-      });
-      ticket = NOOP_TICKET;
+      /**
+       * ★★★ Pha 2B Task 5 — CỔNG SỔ ĐÃ TỪ CHỐI. ĐÂY LÀ NHÁNH MỚI, VÀ NÓ KHÔNG ĐƯỢC RƠI XUỐNG
+       * NHÁNH "chạy tiếp ngoài sổ" BÊN DƯỚI.
+       *
+       * §5.5 nói về driver từ chối **SAU KHI ĐÃ QUA CỔNG SỔ**; đây là ca ngược lại — **chưa từng
+       * cấp phát byte nào**. Nên: không `measure_failed` (không có phép đo nào), không thử lại
+       * (trần không tất định là chuyện của DRIVER, cổng sổ thì tất định), không hạ số lớp (hạ lớp
+       * không làm dư địa lớn lên).
+       *
+       * ⚠⚠ NHƯNG CÓ MỘT VIỆC PHẢI LÀM TRƯỚC KHI BỎ CUỘC: **NHƯỜNG CHỖ** (§5.2). `reclaim()` là
+       * người THI HÀNH duy nhất có thật hôm nay — nó gọi `evictLRU()` tới khi hết model NHÀN RỖI,
+       * tức nhả THIẾT BỊ THẬT (`model.dispose()` đã `await` xong) rồi mới nhả sổ. Đó là lý do
+       * `reserve()` chỉ LIỆT KÊ ứng viên chứ không tự thu hồi: nhả sổ mà thiết bị chưa nhả là nói
+       * dối đúng chiều OOM.
+       *
+       * ⚠ Chỉ nhường khi câu từ chối THẬT SỰ nêu được ứng viên (`wouldPreempt`/`preemptable`).
+       * Đuổi mù khi không có ai nhường được là vứt một model đang tốt để rồi vẫn bị từ chối.
+       */
+      if (isVramRefusal(err)) {
+        const facts = (err as { facts?: { preemptable?: readonly { owner: string }[] } }).facts;
+        const ungVien = facts?.preemptable ?? [];
+        ghiSuKien({
+          event: "refuse",
+          detail: {
+            reason: "ledger-gate-refused",
+            step: plan.step,
+            attemptNo: plan.attemptNo,
+            willPreempt: ungVien.map((h) => h.owner),
+            daNhuongCho,
+            error: (err as Error)?.message ?? String(err),
+            note:
+              "cổng SỔ từ chối TRƯỚC khi cấp phát (khác driver_refused: chưa byte nào lên card). " +
+              "Có ứng viên nhường chỗ và chưa nhường lần nào ⇒ gọi reclaim() rồi xin LẠI MỘT LẦN.",
+          },
+        });
+        if (ungVien.length > 0 && !daNhuongCho && spec.reclaim) {
+          daNhuongCho = true;
+          try {
+            await spec.reclaim();
+          } catch (e) {
+            console.warn(
+              `[vram] "${spec.owner}": nhường chỗ HỎNG (${(e as Error)?.message ?? String(e)}) ⇒ ` +
+                `xin lại trên đúng dư địa cũ, nhiều khả năng bị từ chối lần nữa.`,
+            );
+          }
+          // Lượt xin LẠI: nếu vẫn bị từ chối, lời từ chối đi thẳng ra ngoài — KHÔNG nuốt.
+          ticket = await xinGiayPhep(plan);
+        } else {
+          throw err;
+        }
+      } else {
+        // `beginVramAllocation()` HỨA không bao giờ ném (ngoài lời từ chối); nếu lời hứa đó vỡ,
+        // lượt nạp vẫn phải chạy — nhưng KHÔNG ĐƯỢC im lặng, vì từ đây khối byte sắp cấp phát
+        // KHÔNG có mặt trong sổ.
+        console.warn(
+          `[vram] beginVramAllocation("${spec.owner}") NÉM (lẽ ra không bao giờ) ⇒ lượt nạp này chạy ` +
+            `NGOÀI SỔ, dư địa sẽ bị phóng đại đúng khối byte đó: ${(err as Error)?.message ?? String(err)}`,
+        );
+        ghiSuKien({
+          event: "measure_failed",
+          detail: { reason: "begin-allocation-threw", step: plan.step, attemptNo: plan.attemptNo,
+            error: (err as Error)?.message ?? String(err) },
+        });
+        ticket = NOOP_TICKET;
+      }
     }
 
     try {

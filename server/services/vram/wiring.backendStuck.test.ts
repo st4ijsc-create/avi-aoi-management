@@ -36,6 +36,17 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+/** ★ Pha 2B Task 5 — ngữ cảnh quyết định SẠCH cho các ca cũ (xem `enforcement.test.ts` cho cưỡng chế). */
+function ctxSachChoCaCu(): import("./vramBroker").VramDecisionContext {
+  const now = Date.now();
+  return {
+    tick: { attributableBytes: 0, baselineVerified: true, atMs: now, consecutiveFailures: 0 },
+    unledgered: { bytes: 0, unknownCount: 0 },
+    nowMs: now,
+  };
+}
+
+
 const MiB = 1024 * 1024;
 
 /** Đúng con số đo được ở T5-11 (`readProcessVram` trên tiến trình con: 452.595.712 byte). */
@@ -133,7 +144,7 @@ describe("T5-15 — giấy phép backend đo hỏng KHÔNG còn chặn nền vĩ
     const { captureVramBaseline, __resetVramBaselineForTests } = await import("./vramReconciler");
     __resetVramBaselineForTests();
 
-    const { lease } = reserve({ owner: "cuda-backend", kind: "gguf-backend", estimatedBytes: 0, priority: "production" });
+    const { lease } = reserve({ owner: "cuda-backend", kind: "gguf-backend", estimatedBytes: 0, priority: "production" }, ctxSachChoCaCu());
     markMeasureFailed(lease!);
 
     // TRƯỚC bản vá — và đây là toàn bộ T5-15: nền KHÔNG BAO GIỜ chụp được.
@@ -157,7 +168,7 @@ describe("T5-15 — giấy phép backend đo hỏng KHÔNG còn chặn nền vĩ
     const rec = await import("./vramReconciler");
     rec.__resetVramBaselineForTests();
 
-    const { lease } = reserve({ owner: "cuda-backend", kind: "gguf-backend", estimatedBytes: 0, priority: "production" });
+    const { lease } = reserve({ owner: "cuda-backend", kind: "gguf-backend", estimatedBytes: 0, priority: "production" }, ctxSachChoCaCu());
     markMeasureFailed(lease!);
 
     // `baselineRequired` chỉ bật qua startVramReconciler(); dừng timer ngay, tự lái từng nhịp.
@@ -405,7 +416,7 @@ describe("T5-15 — giấy phép backend đo hỏng KHÔNG còn chặn nền vĩ
 
     await (await beginVramAllocation(backendOnGpu())).commitMeasured();
     // Một lease ĐANG NẠP THẬT (chưa commit, chưa hỏng) — 17.000 MiB để phân biệt được.
-    reserve({ owner: "gguf:dang-nap", kind: "gguf-model", estimatedBytes: 17_000 * MiB, priority: "interactive" });
+    reserve({ owner: "gguf:dang-nap", kind: "gguf-model", estimatedBytes: 17_000 * MiB, priority: "interactive" }, ctxSachChoCaCu());
 
     const r = await rec.reconcileOnce();
     expect(r.pendingBytes, "đúng bằng lease đang nạp thật, KHÔNG cộng thêm khoản dự phòng").toBe(17_000 * MiB);
@@ -423,7 +434,7 @@ describe("T5-15 — giấy phép backend đo hỏng KHÔNG còn chặn nền vĩ
     rec.__resetVramBaselineForTests();
 
     await (await beginVramAllocation(backendOnGpu())).commitMeasured();
-    reserve({ owner: "gguf:dang-nap", kind: "gguf-model", estimatedBytes: 17_000 * MiB, priority: "interactive" });
+    reserve({ owner: "gguf:dang-nap", kind: "gguf-model", estimatedBytes: 17_000 * MiB, priority: "interactive" }, ctxSachChoCaCu());
 
     rec.startVramReconciler();
     rec.stopVramReconciler();
@@ -460,18 +471,18 @@ describe("T5-15 — giấy phép backend đo hỏng KHÔNG còn chặn nền vĩ
     const { reserve, commit, markMeasureFailed, commitFallback, snapshot } = await import("./vramBroker");
 
     // (a) đang nạp bình thường (chưa hỏng) — số thật vẫn đang trên đường tới.
-    const a = reserve({ owner: "A", kind: "gguf-backend", estimatedBytes: 0, priority: "production" }).lease!;
+    const a = reserve({ owner: "A", kind: "gguf-backend", estimatedBytes: 0, priority: "production" }, ctxSachChoCaCu()).lease!;
     expect(commitFallback(a.id, FALLBACK_BYTES, "test")).toBe(false);
     expect(snapshot().leases.find((l) => l.request.owner === "A")!.actualBytes).toBeNull();
 
     // (b) đã có số ĐO THẬT — ước lượng KHÔNG được đè lên số đo.
-    const b = reserve({ owner: "B", kind: "gguf-backend", estimatedBytes: 0, priority: "production" }).lease!;
+    const b = reserve({ owner: "B", kind: "gguf-backend", estimatedBytes: 0, priority: "production" }, ctxSachChoCaCu()).lease!;
     commit(b, 123 * MiB, "process-delta");
     expect(commitFallback(b.id, FALLBACK_BYTES, "test")).toBe(false);
     expect(snapshot().leases.find((l) => l.request.owner === "B")!.actualBytes).toBe(123 * MiB);
 
     // (c) hỏng thật ⇒ chạy, và chỉ chạy MỘT lần (lượt hai không còn gì để chốt).
-    const c = reserve({ owner: "C", kind: "gguf-backend", estimatedBytes: 0, priority: "production" }).lease!;
+    const c = reserve({ owner: "C", kind: "gguf-backend", estimatedBytes: 0, priority: "production" }, ctxSachChoCaCu()).lease!;
     markMeasureFailed(c);
     expect(commitFallback(c.id, FALLBACK_BYTES, "test")).toBe(true);
     expect(commitFallback(c.id, 9_999, "test")).toBe(false);

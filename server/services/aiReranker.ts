@@ -34,6 +34,9 @@
  */
 
 import path from "node:path";
+// ★★★ Pha 2B Task 5 — vị từ "lỗi này có phải LỜI TỪ CHỐI không" (module LÁ, dùng được ngay
+// trong `catch` của một lượt `await import()` vừa hỏng). Xem `vram/vramRefusalSignal.ts`.
+import { isVramRefusal } from "./vram/vramRefusalSignal";
 import fs from "node:fs";
 // doc69 W1 "modelfix" — shared env→GGUF-basename resolver. The "llm" backend below documents that
 // it scores with the FAST model (Qwen3-4B); that intent is now PINNED rather than implicit.
@@ -409,7 +412,11 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
           // rerank — tiện ích của RAG — nên nó phải nhường chỗ trước AOI và chat/RCA.
           priority: "background",
         });
-      } catch {
+      } catch (err) {
+        // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG: nuốt ở đây là TẮT cưỡng chế tại điểm gọi
+        // này. Hộ `background` bị từ chối là ca THƯỜNG GẶP NHẤT của cả pha (§5.2: nền nhường
+        // trước tiên) — nếu nó tự nuốt lời từ chối rồi nạp tiếp thì bậc thang ưu tiên vô nghĩa.
+        if (isVramRefusal(err)) throw err;
         /* telemetry KHÔNG được làm hỏng đường nạp reranker */
         backendTicket = null;
       }
@@ -477,7 +484,9 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
       // Trả giấy phép cũ trước khi ghi đè, không để nó treo trong sổ.
       _rankVramTicket?.release();
       _rankVramTicket = localTicket;
-    } catch {
+    } catch (err) {
+      // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG (xem lời gọi backend ở trên).
+      if (isVramRefusal(err)) throw err;
       /* telemetry KHÔNG được làm hỏng đường nạp reranker */
     }
     /**

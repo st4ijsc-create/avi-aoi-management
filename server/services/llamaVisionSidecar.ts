@@ -29,6 +29,10 @@
 
 import { spawn, type ChildProcess } from "child_process";
 import fs from "fs";
+// ★★★ Pha 2B Task 5 — vị từ "lỗi này có phải LỜI TỪ CHỐI không". Import TĨNH của một module
+// LÁ (không import gì, không I/O): nó phải dùng được NGAY TRONG `catch` của một lượt
+// `await import()` vừa hỏng. Xem `vramRefusalSignal.ts` để biết vì sao so TÊN, không `instanceof`.
+import { isVramRefusal } from "./vram/vramRefusalSignal";
 import path from "path";
 
 import type { GgufGenerateResult } from "./aiGgufEngine";
@@ -249,7 +253,7 @@ export async function ensureSidecar(): Promise<void> {
     // ta sửa THỨ KHỞI ĐỘNG nó. Người GIÁM SÁT (module này) xin giấy phép THAY CHO tiến trình con,
     // NGAY TRƯỚC khi spawn (spec §3.1) — đây là hộ tiêu thụ LỚN NHẤT hệ, vắng mặt khỏi MỌI phép
     // cộng VRAM suốt Đợt 0, chỉ bị bắt bởi một lượt review toàn nhánh (Đợt 2).
-    let vramTicket: VramTicket = { commitMeasured: async () => {}, release: () => {} };
+    let vramTicket: VramTicket = { commitMeasured: async () => {}, release: () => {}, noteRefCount: () => {} };
     try {
       const { beginVramAllocation } = await import("./vram/vramWiring");
       vramTicket = await beginVramAllocation({
@@ -268,7 +272,11 @@ export async function ensureSidecar(): Promise<void> {
         // nhả ở đầu `vram/vramWiring.ts` và ghi chú dài trong `stopSidecar()`.
         releaseProof: "process-exit",
       });
-    } catch {
+    } catch (err) {
+      // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG. Hộ này là hộ tiêu thụ LỚN NHẤT hệ (7,8 GB
+      // đo được) và từng vắng mặt khỏi MỌI phép cộng VRAM suốt Đợt 0 — nuốt lời từ chối ở đúng
+      // đây là để nó tiếp tục vô hình với cưỡng chế.
+      if (isVramRefusal(err)) throw err;
       /* telemetry KHÔNG được làm hỏng đường khởi động sidecar */
     }
 

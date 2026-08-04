@@ -124,14 +124,36 @@ export interface VramLease {
   fallbackReason?: string;
   lastHeartbeatAt: Date;
   released: boolean;
+  /**
+   * ★★★ Pha 2B Task 5 (§5.2) — SỐ NGƯỜI ĐANG DÙNG khối byte này. `0` = **NHÀN RỖI** ⇒ được phép
+   * thu hồi. Mọi giá trị khác = **ĐANG DÙNG**.
+   *
+   * ⚠⚠ MẶC ĐỊNH LÀ `1`, KHÔNG PHẢI `0`, và đó là một quyết định an toàn chứ không phải một chi
+   * tiết: `reserve()` mở giấy phép cho một lượt cấp phát **sắp chạy** — thứ đang-được-dùng theo
+   * đúng nghĩa đen. Một mặc định `0` biến MỌI giấy phép vừa mở thành ứng viên bị thu hồi ngay
+   * trong lúc nó đang nạp 17 GB lên card.
+   *
+   * ⚠ Ai khai `0` phải CHẮC CHẮN khối byte đó không có người dùng. Hôm nay có đúng MỘT người khai:
+   * `aiGgufEngine` đồng bộ `LoadedModel.refCount` (bộ đếm mà `evictLRU()` cũ đã dùng làm điều
+   * kiện đuổi) sang đây. Xem `vramBroker.setLeaseRefCount()`.
+   */
+  refCount: number;
 }
 
 export interface VramReserveResult {
-  /** Pha 1 luôn khác null. Pha 2 sẽ trả null kèm ném VramRefusedError. */
+  /**
+   * ★ Pha 2B Task 5 — `null` = **ĐÃ TỪ CHỐI**. Từ đây đây là một kết cục CÓ THẬT trên đường sản
+   * xuất, không còn là chỗ dành sẵn: `vramWiring.beginVramAllocation()` dựng `VramRefusedError`
+   * từ `refusal` và **NÉM**, thay vì trả một giấy phép rỗng rồi để lượt cấp phát chạy ngoài sổ.
+   */
   lease: VramLease | null;
-  /** Pha 2 SẼ từ chối lượt này không? Ghi vào nhật ký để biết bán kính trước khi bật cưỡng chế. */
+  /**
+   * Lượt này CÓ bị từ chối không. ⚠ Từ Task 5, đây KHÔNG còn là phán quyết BÓNG: nó luôn bằng
+   * `lease === null`. Giữ tên cũ vì nhật ký `vram_events.wouldRefuse` (và mọi câu truy vấn Pha 1)
+   * đọc đúng ô này — đổi tên là làm gãy chuỗi số liệu trước/sau khi bật cưỡng chế.
+   */
   wouldRefuse: boolean;
-  /** Owner của các giấy phép mà Pha 2 sẽ thu hồi để lấy chỗ. */
+  /** Owner của các giấy phép có thể nhường chỗ (§5.2). Xem `vramBroker.preemptCandidates()`. */
   wouldPreempt: string[];
 }
 
