@@ -77,8 +77,8 @@ import {
 } from "./vramBroker";
 import { preempt } from "./vramPreempt";
 import {
-  ggufMaxLoadedModels, ggufMaxVramBytes, ggufVramGuardPct, sessionCacheMax, usableCeilingBytes,
-  __resetVramCapsForTests,
+  ggufMaxLoadedModels, ggufMaxVramBytes, ggufVramGuardPct, safetyReserveBytes, sessionCacheMax,
+  usableCeilingBytes, __resetVramCapsForTests,
 } from "./vramCaps";
 import { formatVramRefusal } from "./vramRefusal";
 import type { VramLeaseKind, VramPriority, VramReclaimerId, VramReserveRequest } from "./types";
@@ -91,6 +91,8 @@ const TRAN_THIET_BI = 32_607 * MIB;
 
 const BIEN_CAP = [
   "GGUF_VRAM_GUARD_PCT", "GGUF_MAX_VRAM_MB", "GGUF_MAX_LOADED_MODELS", "AI_SESSION_CACHE_MAX",
+  // ★ M-3 (review TOÀN NHÁNH) — người đọc thứ NĂM của `vramCaps`, dời từ `const` mức module.
+  "VRAM_SAFETY_RESERVE_MB",
 ] as const;
 
 function xin(
@@ -225,6 +227,46 @@ describe("A. `enforceVramGuard()` XOÁ — trần nay là của BROKER, và nó 
       __resetBrokerForTests();
       noteDeviceTotalBytes(TRAN_THIET_BI);
     }
+  });
+
+  /**
+   * ★★★ M-3 (review TOÀN NHÁNH) — Ô ĐỆM AN TOÀN PHẢI ĐỌC LƯỜI, KHÔNG PHẢI `const` MỨC MODULE.
+   *
+   * ⚠ VÒNG SỬA 1: bản vá đầu chuyển ô này sang `vramCaps` **mà không có lưới** — đột biến
+   * *"ghim cứng `1024 * MIB`, thôi đọc `.env`"* **SỐNG SÓT 556/556**. Tức việc dời chỗ chỉ là dọn
+   * dẹp cho tới khi có ca đọc ĐÚNG ĐƯỜNG: `.env` đổi ⇒ dư địa đổi ⇒ một lượt xin sát mép **lật
+   * kết quả**. Đó mới là thứ ô này làm.
+   */
+  it("★★★ M-3: VRAM_SAFETY_RESERVE_MB đọc LƯỜI, và nó LÁI được kết quả một lượt xin sát mép", () => {
+    expect(safetyReserveBytes()).toBe(1024 * MIB);         // mặc định
+    const duDia = (r: ReturnType<typeof reserve>) => r.decision.headroomBytes;
+
+    // dư địa thô = trần − đệm (sổ rỗng, tick sạch)
+    expect(duDia(reserve(xin("gguf:a", 1 * MIB), ctx()))).toBe(TRAN_THIET_BI - 1024 * MIB);
+
+    process.env.VRAM_SAFETY_RESERVE_MB = "5000";
+    __resetBrokerForTests();
+    noteDeviceTotalBytes(TRAN_THIET_BI);
+    expect(safetyReserveBytes()).toBe(5_000 * MIB);
+    expect(duDia(reserve(xin("gguf:b", 1 * MIB), ctx()))).toBe(TRAN_THIET_BI - 5_000 * MIB);
+
+    // … và một lượt xin NẰM GIỮA hai con số đó LẬT kết quả — đây là hậu quả thật của ô này.
+    const satMep = TRAN_THIET_BI - 3_000 * MIB;
+    __resetBrokerForTests();
+    noteDeviceTotalBytes(TRAN_THIET_BI);
+    expect(reserve(xin("gguf:c", satMep), ctx()).lease, "đệm 5.000 ⇒ phải TỪ CHỐI").toBeNull();
+    delete process.env.VRAM_SAFETY_RESERVE_MB;
+    __resetBrokerForTests();
+    noteDeviceTotalBytes(TRAN_THIET_BI);
+    expect(reserve(xin("gguf:c", satMep), ctx()).lease, "đệm 1.024 ⇒ phải CẤP").not.toBeNull();
+
+    // `0` HỢP LỆ (tắt hẳn đệm); rác ⇒ mặc định, KHÔNG phải NaN đi vào phép trừ (bản `const` cũ).
+    process.env.VRAM_SAFETY_RESERVE_MB = "0";
+    __resetVramCapsForTests();
+    expect(safetyReserveBytes()).toBe(0);
+    process.env.VRAM_SAFETY_RESERVE_MB = "rác";
+    __resetVramCapsForTests();
+    expect(safetyReserveBytes()).toBe(1024 * MIB);
   });
 
   it("GGUF_MAX_VRAM_MB là trần BYTE; `0` = tắt (ngữ nghĩa cũ giữ nguyên)", () => {
