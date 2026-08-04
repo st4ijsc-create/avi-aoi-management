@@ -1582,12 +1582,14 @@ export function __hasReconcilerTimer(): boolean { return timer !== null; }
  * treo/đo hỏng CỦA CHÍNH tiến trình này (xem chú thích I-2 phía trên), gợi ý
  * "tiến trình anh em" ở đó là sai hướng và làm người trực đi tìm nhầm chỗ.
  *
- * ⚠ Vì sao đây là dây an toàn còn thiếu: tiến trình `api` nay GHI sự kiện
- * (Task 4) nhưng KHÔNG BAO GIỜ tự đối chiếu (`startVramReconciler()` chỉ chạy
- * ở vai trò chạy scheduler) — nếu `api` tự cấp phát rồi không nhả, KHÔNG có
- * gì bên trong chính tiến trình `api` phát hiện ra. Chuông chỉ reo được ở
- * tiến trình đối chiếu (worker/all-in-one), và hint này là thứ giúp người
- * trực không đổ oan cho "kẻ lạ" khi thủ phạm là chính `api`.
+ * ⚠⚠ I-4 (review TOÀN NHÁNH) — ĐÍNH CHÍNH: câu cũ ở đây viết *"tiến trình `api`
+ * … KHÔNG BAO GIỜ tự đối chiếu (`startVramReconciler()` chỉ chạy ở vai trò chạy
+ * scheduler)"*. Task 2 (I-1) đã nhấc lượt bật lên `server/_core/index.ts`
+ * **TRƯỚC** nhánh rẽ `ROLE` ⇒ `api` **CÓ đối chiếu**, chỉ là `ring: false` nên
+ * nó **không ĐÁNH CHUÔNG**. Vế còn lại giữ nguyên và vẫn là lý do tồn tại của
+ * hint này: chuông chỉ reo ở tiến trình có `ring` (worker/all-in-one), nên khi
+ * một khoản lệch DƯƠNG hiện ra ở đó, thủ phạm rất có thể là tiến trình anh em —
+ * hint này giúp người trực không đổ oan cho "kẻ lạ".
  */
 export function describeTopologyHint(): string {
   const role = process.env.ROLE ?? "";

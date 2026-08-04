@@ -147,3 +147,63 @@ describe("worker — runWorkerProcess() PHẢI tự bật nhật ký (không d�
     expect(body).toMatch(/__setVramLogTimerEnabled\(\s*true\s*\)/);
   });
 });
+
+/**
+ * ★★★ I-4 (review TOÀN NHÁNH) — **`api` CÓ TICK, VÀ BA DOCSTRING ĐÃ NÓI NGƯỢC SUỐT BA TASK.**
+ *
+ * Task 2 (I-1) nhấc `startVramReconciler()` lên `index.ts` **TRƯỚC** nhánh rẽ `ROLE`, nhưng Task
+ * 5/6/7 vẫn viết và **lập luận** theo dân số CŨ (*"`api` mù VĨNH VIỄN"*) ở `vramWiring.ts`,
+ * `vramEnforcement.ts`, `vramReconciler.ts` và `progress.md`. Hậu quả không chỉ là câu chữ: mức
+ * nặng nhất `"no-tick"` (2 đơn vị) được viện dẫn như một lá chắn THƯỜNG TRỰC của `api` trong khi
+ * thực tế nó gần như **bất khả đạt**.
+ *
+ * Không có ca nào khoá THỨ TỰ đó, nên nó trôi được. Ca dưới đây khoá bằng MÁY — cùng "cách rẻ"
+ * (quét mã nguồn) mà nhóm ngay trên đã dùng, và vì đúng lý do đó: import `index.ts` trong test kéo
+ * theo cả server.
+ */
+describe("I-4 — `api` CÓ nhịp đối chiếu (chỉ TẮT CHUÔNG), không phải mù vĩnh viễn", () => {
+  const indexSrc = fs.readFileSync(path.join(HERE, "..", "..", "_core", "index.ts"), "utf-8");
+
+  it("★★★ `startVramReconciler()` được gọi TRƯỚC nhánh rẽ `SERVER_ROLE === \"api\"`", () => {
+    const batNhip = indexSrc.indexOf("startVramReconciler({");
+    const nhanhRole = indexSrc.indexOf('if (SERVER_ROLE === "api")');
+    expect(batNhip, "không tìm thấy lượt bật reconciler trong index.ts").toBeGreaterThan(-1);
+    expect(nhanhRole, "không tìm thấy nhánh rẽ ROLE trong index.ts").toBeGreaterThan(-1);
+    expect(batNhip, "lượt bật nhịp phải nằm TRƯỚC nhánh rẽ ROLE — nếu không, `api` mù thật").toBeLessThan(nhanhRole);
+  });
+
+  it("★★ `api` chỉ TẮT CHUÔNG (`ring: false`), KHÔNG tắt nhịp", () => {
+    expect(indexSrc).toMatch(/const ring = SERVER_ROLE !== "api";/);
+    expect(indexSrc).toMatch(/startVramReconciler\(\{\s*ring\s*\}\)/);
+  });
+
+  it("★★★ `__runReconcileTick()` xuất bản ô quyết định BẤT KỂ `ring`", async () => {
+    const reconcilerSrc = fs.readFileSync(path.join(HERE, "vramReconciler.ts"), "utf-8");
+    const body = extractFunctionBody(reconcilerSrc, "__runReconcileTick");
+    expect(body, "không tìm thấy __runReconcileTick").not.toBe("");
+    expect(body).toMatch(/publishDecisionTick\(/);
+    // … và lượt xuất bản đó KHÔNG nấp sau một điều kiện chuông.
+    expect(body).not.toMatch(/ringEnabled/);
+  });
+
+  it("★★ ba docstring KHÔNG được khai lại rằng tiến trình `api` không bao giờ có nhịp", () => {
+    /**
+     * ⚠ Cụm được GHÉP lúc chạy: `git grep`/chính ca này không phân biệt mã với chú thích, nên viết
+     * nguyên văn ở đây là tự làm mình đỏ (đúng bẫy Task 6 đã dẫm).
+     * ⚠ Và cụm đó CÓ những lượt dùng HỢP LỆ trong cùng file (vd *"reconciler … VĨNH VIỄN mà không
+     * ai biết"* nói về nhánh chụp nền, không nói về vai trò) — nên ca chỉ đỏ khi cụm đứng **gần
+     * chữ `api`**, tức đúng lời khai đã sai.
+     */
+    const cum = ["mù", "VĨNH VIỄN"].join(" ");
+    for (const rel of ["vramWiring.ts", "vramEnforcement.ts", "vramReconciler.ts"]) {
+      const src = fs.readFileSync(path.join(HERE, rel), "utf-8");
+      for (let i = src.indexOf(cum); i !== -1; i = src.indexOf(cum, i + 1)) {
+        const quanh = src.slice(Math.max(0, i - 200), i + 200);
+        expect(
+          /\bapi\b/.test(quanh),
+          `${rel}: cụm "${cum}" đứng cạnh chữ "api" — lời khai đó SAI từ Task 2 (I-4). Ngữ cảnh:\n${quanh}`,
+        ).toBe(false);
+      }
+    }
+  });
+});

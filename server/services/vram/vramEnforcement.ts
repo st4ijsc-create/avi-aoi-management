@@ -86,8 +86,13 @@ const MIB = 1024 * 1024;
 /**
  * ĐƠN VỊ MẤT-TIN-CẬY (BYTE). Mặc định **1.024 MiB** = cận DƯỚI đo được của nền thiết bị ngoài sổ
  * (996 MiB, làm tròn lên bội số 1.024). Xem khối docstring đầu file trước khi nâng nó lên "cho an
- * toàn": mỗi đơn vị là VRAM bị khoá khỏi mọi lượt nạp, và ở tiến trình `api` (mù VĨNH VIỄN — xem
- * `no-tick`) hệ luôn trả **ba** đơn vị.
+ * toàn": mỗi đơn vị là VRAM bị khoá khỏi mọi lượt nạp.
+ *
+ * ⚠⚠ I-4 (review TOÀN NHÁNH) — **CÂU CŨ Ở ĐÂY SAI**: nó khai tiến trình `api` không bao giờ có
+ * nhịp (dẫn `no-tick`) nên *"hệ luôn trả ba đơn vị"*. Task 2 (I-1) đã nhấc `startVramReconciler()` lên TRƯỚC nhánh
+ * rẽ `ROLE` (`server/_core/index.ts`) và `__runReconcileTick()` xuất bản ô tick **bất kể `ring`**
+ * ⇒ **`api` CÓ tick**. Hình dạng thường trực của `api` là `unverified-baseline` (vì thấy vai trò
+ * anh em — xem `vramReconciler.captureVramBaseline`), tức **MỘT** đơn vị, không phải ba.
  */
 export const DISTRUST_UNIT_DEFAULT_BYTES = 1024 * MIB;
 
@@ -120,7 +125,13 @@ const DISTRUST_UNITS: Record<VramDegradationReason, number> = {
   // `-Infinity` đã từ chối mọi lượt xin (fail-closed CÓ TÊN của Task 2) — cộng thêm phụ phí không
   // làm nó chặt hơn được nữa, chỉ làm con số khó đọc.
   "invalid-input": 0,
-  // CẤU TRÚC, KHÔNG TỰ LÀNH (`api` mù vĩnh viễn) ⇒ nặng gấp đôi mù TẠM THỜI.
+  /**
+   * CẤU TRÚC, KHÔNG TỰ LÀNH ⇒ nặng gấp đôi mù TẠM THỜI.
+   * ⚠ I-4 — lý do gốc (*"`api` mù vĩnh viễn"*) KHÔNG CÒN ĐÚNG (xem `DISTRUST_UNIT_DEFAULT_BYTES`).
+   * Trọng số `2` GIỮ NGUYÊN vì nó vẫn đúng cho dân số CÒN LẠI của `"no-tick"`: cửa sổ trước nhịp
+   * ĐẦU TIÊN, và ca `startVramReconciler()` không bật được. Nhưng đừng viện dẫn mức này như một lá
+   * chắn THƯỜNG TRỰC của `api` — nó gần như bất khả đạt trong sản xuất.
+   */
   "no-tick": 2,
   "probe-blind": 1,
   "unverified-baseline": 1,

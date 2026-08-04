@@ -668,10 +668,25 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
      *   • `unledgered` (Task 3) mang byte đã chạy NGOÀI SỔ + số lượt không ước được byte;
      *   • `nowMs` để tuổi tick là một con số, không phải một lượt `Date.now()` ẩn.
      *
-     * ⚠ `readDecisionTick()` trả `null` ở tiến trình `api` **vĩnh viễn** (`startVramReconciler`
-     * không chạy ở vai trò đó — `backgroundJobs.ts`). Đó là câu trả lời ĐÚNG theo thiết kế, không
-     * phải lỗi chờ sửa: `null` ⇒ `"no-tick"` ⇒ chính sách CHẶT HƠN, chứ tuyệt đối KHÔNG phải
-     * "coi như thiết bị trống".
+     * ⚠⚠ I-4 (review TOÀN NHÁNH) — **ĐÍNH CHÍNH MỘT CÂU ĐÃ SAI TỪ KHI TASK 2 SỬA MÃ TRONG CHÍNH
+     * NHÁNH NÀY.** Câu cũ ở đây viết: *"`readDecisionTick()` trả `null` ở tiến trình `api` VĨNH
+     * VIỄN (`startVramReconciler` không chạy ở vai trò đó)"*. Không còn đúng:
+     *   • Task 2 (I-1, `212c2aea`) nhấc `startVramReconciler()` ra khỏi `startBackgroundSchedulers()`
+     *     lên `server/_core/index.ts` — **TRƯỚC** nhánh rẽ `ROLE`. `api` chạy với `ring: false`
+     *     (không đánh chuông) nhưng **vẫn chạy nhịp**;
+     *   • `__runReconcileTick()` gọi `publishDecisionTick()` **bất kể `ring`** (`vramReconciler.ts`).
+     * ⇒ Tiến trình `api` **CÓ tick**. Mức nặng nhất `"no-tick"` (2 đơn vị) vì thế gần như **bất khả
+     * đạt trong sản xuất** — nó chỉ còn phủ cửa sổ trước nhịp đầu tiên và ca reconciler không bật
+     * được. Đừng viện dẫn nó như một lá chắn thường trực.
+     * ⚠ Ngữ nghĩa của `null` KHÔNG đổi và vẫn đúng: `null` ⇒ `"no-tick"` ⇒ chính sách CHẶT HƠN, chứ
+     * tuyệt đối KHÔNG phải "coi như thiết bị trống".
+     * ⚠ ĐÁNH ĐỔI THẬT nay nằm ở chỗ KHÁC, và nó là NỢ CÓ ĐỊA CHỈ (không vá được rẻ): `api` và
+     * `worker` **cùng chụp nền trên MỘT thiết bị**. Nếu `api` khởi động lại khi `worker` đang giữ
+     * 17 GB, nền của `api` nuốt trọn khối đó. Phản ứng hiện có là ĐÚNG HƯỚNG nhưng **17× thiếu**:
+     * `captureVramBaseline()` phát hiện vai trò anh em và hạ `baselineVerified` ⇒ đúng **1.024 MiB**
+     * phụ phí cho một sai số **17.000 MiB**. Không đoán được byte của hộ lạ (`nvidia-smi` trả
+     * `[N/A]` cho `used_memory` trên WDDM — đo được), nên mọi con số ở đây là số BỊA; sổ CHUNG giữa
+     * các tiến trình là Pha 3.
      */
     const yeuCau = {
       owner: opts.owner,
