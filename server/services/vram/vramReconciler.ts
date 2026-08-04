@@ -384,6 +384,15 @@ let baselineRequired = false;
  * chẩn đoán) giữ nguyên hành vi. Chỉ `startVramReconciler({ ring: false })` mới tắt.
  * ⚠ Nó KHÔNG che giấu gì: `alarm`, `driftBytes`, `sourceUnstable`, `baselineBlocked` vẫn nằm
  * nguyên trong `VramReconcileResult` và vẫn vào ô tick. Tắt là tắt **CÂU NÓI**, không phải phép đo.
+ *
+ * ⚠⚠ N-4 (re-review) — ĐÂY LÀ MỘT VỊ TỪ DÙNG CHUNG Ở MỨC **TIẾN TRÌNH**, không phải một tuỳ chọn
+ * của riêng bộ đếm giờ. Một khi `startVramReconciler({ ring: false })` đã chạy, **MỌI** lượt gọi
+ * `reconcileOnce()` trong tiến trình đó đều câm — kể cả lượt gọi TRỰC TIẾP của một công cụ chẩn
+ * đoán hay của người trực đang đi tìm sự cố, và họ **không có cách nào biết** mình đang xem một
+ * hàm bị bịt miệng ngoài việc đọc dòng log lúc boot. Đánh đổi chấp nhận ở Pha 2B (một cờ mức tiến
+ * trình đúng với đúng một quyết định vận hành: vai trò này có được TUYÊN BỐ hay không), nhưng nếu
+ * sau này có người cần chẩn đoán ồn trong một tiến trình câm, lối đúng là **tham số cho từng lượt
+ * gọi** (`reconcileOnce({ ring: true })`), KHÔNG phải lật cờ toàn cục rồi quên lật lại.
  */
 let ringEnabled = true;
 /**

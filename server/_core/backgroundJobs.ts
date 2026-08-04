@@ -820,22 +820,6 @@ export async function runWorkerProcess(): Promise<void> {
     console.error("[Worker] không bật được bộ đếm giờ nhật ký vram:", (err as any)?.message || err);
   }
 
-  // ★★ Pha 2B Task 2 (I-1) — ĐỐI CHIẾU: bật NGAY ĐÂY, cùng khuôn và cùng lý do với lượt bật nhật
-  // ký ngay trên (`runWorkerProcess()` là điểm CHUNG của cả hai đường vào worker; `index.ts` không
-  // phủ được đường nào trong hai đường đó). Trước Pha 2B nó nằm trong `startBackgroundSchedulers()`
-  // — vẫn chạy cho worker, nhưng chỗ đó KHÔNG phủ `ROLE=api`, và từ Pha 2B nhịp đối chiếu là
-  // NGUỒN SỐ của đường cưỡng chế chứ không chỉ là cái chuông. Lý do đầy đủ ở `index.ts`.
-  // ⚠ Đặt TRƯỚC `startBackgroundSchedulers()` bên dưới: nền phải được chụp khi tiến trình này CHƯA
-  // cấp phát gì (ràng buộc thứ tự có từ Pha 1 — đẩy xuống sau lượt warm model là nuốt ~17 GB vào nền).
-  // Worker chạy scheduler ⇒ nó LÀ vai trò được đánh chuông (`ring` mặc định true).
-  try {
-    const { startVramReconciler } = await import("../services/vram/vramReconciler");
-    startVramReconciler();
-    console.log("[Worker] [vram] sổ cái + đối chiếu đã bật (nhịp NGAY, chuông BẬT).");
-  } catch (err) {
-    console.error("[Worker] không bật được sổ cái/đối chiếu vram:", (err as any)?.message || err);
-  }
-
   // Observability bootstrap (Sentry/OTel) — no-op unless configured.
   try {
     const { initObservability } = await import("./observability");
@@ -887,6 +871,35 @@ export async function runWorkerProcess(): Promise<void> {
       "[Worker] SINGLE-WORKER ASSUMPTION: leader-election OFF — run exactly ONE worker " +
         "(set WORKER_LEADER_ELECTION_ENABLED=true to run HA replicas).",
     );
+  }
+
+  /**
+   * ★★ Pha 2B Task 2 (I-1) — ĐỐI CHIẾU: điểm bật của vai trò `worker`.
+   * `runWorkerProcess()` là điểm CHUNG của cả HAI đường vào worker (`server/worker.ts` import
+   * thẳng hàm này và KHÔNG BAO GIỜ chạm `index.ts`; còn `ROLE=worker` qua `index.ts` thì
+   * early-return từ rất sớm) — cùng khuôn và cùng lý do với lượt bật nhật ký ở đầu hàm. Trước
+   * Pha 2B nó nằm TRONG `startBackgroundSchedulers()`; nay ra ngoài vì chỗ đó không phủ `ROLE=api`,
+   * và từ Pha 2B nhịp đối chiếu là NGUỒN SỐ của đường cưỡng chế chứ không chỉ là cái chuông.
+   *
+   * ⚠⚠ N-3 (re-review) — VỊ TRÍ NÀY LÀ **SAU** KHỐI BẦU LEADER, CÓ CHỦ ĐÍCH, VÀ ĐÃ TỪNG ĐẶT SAI.
+   * Bản vá I-1 đặt nó ở ĐẦU hàm (cạnh lượt bật nhật ký) ⇒ với `WORKER_LEADER_ELECTION_ENABLED=true`,
+   * một replica **ĐANG CHỜ** leadership sẽ đối chiếu **và ĐÁNH CHUÔNG** suốt thời gian chờ — nó
+   * thấy VRAM của leader và gọi đó là "cấp phát KHÔNG XIN PHÉP", tức đúng cái nhiễu mà cờ `ring`
+   * sinh ra để diệt, chỉ khác vai. Chỗ CŨ (trong `startBackgroundSchedulers()`) nằm **sau** khối
+   * bầu, nên đặt ở đây là **khôi phục đúng ngữ nghĩa cũ** cho worker.
+   * ⚠ Đánh đổi đã cân và chấp nhận: replica ở chế độ CHỜ **không có nhịp nào** ⇒ ô tick rỗng ⇒
+   * `"no-tick"`. Đúng: một replica chờ **không chạy scheduler và không cấp phát gì**, nên nó không
+   * có quyết định nào để ra; và ngay khi giành được leadership nó chạy nhịp NGAY tại dòng dưới.
+   * ⚠ VẪN ĐỨNG TRƯỚC `startBackgroundSchedulers()`: nền phải được chụp khi tiến trình này CHƯA cấp
+   * phát gì (ràng buộc thứ tự từ Pha 1 — đẩy xuống sau lượt warm model là nuốt ~17 GB vào nền).
+   * Worker chạy scheduler ⇒ nó LÀ vai trò được đánh chuông (`ring` mặc định true).
+   */
+  try {
+    const { startVramReconciler } = await import("../services/vram/vramReconciler");
+    startVramReconciler();
+    console.log("[Worker] [vram] sổ cái + đối chiếu đã bật (nhịp NGAY, chuông BẬT).");
+  } catch (err) {
+    console.error("[Worker] không bật được sổ cái/đối chiếu vram:", (err as any)?.message || err);
   }
 
   await startBackgroundSchedulers();

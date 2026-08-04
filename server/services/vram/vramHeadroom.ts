@@ -71,9 +71,15 @@
  *     `headroomBytes = -Infinity` (từ chối mọi lượt xin, KHÔNG dùng `NaN` vì mọi so sánh với
  *     `NaN` đều `false` = tắt cưỡng chế) + `degradedReasons` chứa `"invalid-input"`. Không nhánh
  *     nào mất giấy phép, và Task 4 **nói ra được** lý do.
- *   • **boot**: `assertHeadroomPolicy()` (cuối file) NÉM — gọi MỘT LẦN lúc nạp cấu hình, **ngoài**
- *     `beginVramAllocation()`, nơi một cú ném giết boot thật to thay vì bị nuốt.
- * ⇒ **Không còn đường nào mà cưỡng chế tắt VÀ sổ hụt cùng lúc.**
+ *   • **boot**: `assertHeadroomPolicy()` (cuối file) NÉM — nhưng **đọc docstring của nó trước khi
+ *     tin**: hôm nay **chưa có vị trí nào trong repo nằm ngoài mọi `try`** để đặt lời gọi đó.
+ *
+ * ⚠⚠ HẠ GIỌNG, ĐÚNG PHẠM VI (re-review) — bản trước viết *"không còn đường nào mà cưỡng chế tắt VÀ
+ * sổ hụt cùng lúc"*. **Nói quá.** Câu đúng: **Task 2 không CÒN ĐẺ RA đường đó.** Lớp hỏng cũ vẫn
+ * còn nguyên và **không thuộc phạm vi Task 2**: `catch` của `vramWiring` vẫn `return NOOP_TICKET`
+ * (bản vá chỉ thêm TIẾNG, **không đổi luồng**), `reserve()` vẫn `ledger.set` ở **cuối**, và **ba
+ * lệnh vẫn ném được TRƯỚC đó** — `await import("./vramBroker" | "./vramEstimator" | "./vramEventLog")`
+ * ở đầu `beginVramAllocation()`. ⇒ **Ba cửa ấy nay CÓ TIẾNG, KHÔNG phải ĐÃ ĐÓNG.**
  */
 
 export interface HeadroomInput {
@@ -157,6 +163,17 @@ export interface HeadroomResult {
    * "thiếu bao nhiêu", không phải "hết chỗ".
    * ⚠ `-Infinity` ⇔ `degradedReasons` chứa `"invalid-input"`: dư địa **không xác định được**, hệ
    * từ chối mọi lượt xin. Task 4 phải đọc LÝ DO chứ không in con số đó ra cho người dùng.
+   *
+   * ⚠⚠ N-2 (re-review) — BÀN GIAO CỨNG CHO TASK 3/4: `-Infinity` hôm nay **không chảy tới đâu**
+   * (ba hàm của file này chưa có điểm gọi sản xuất nào). Nhưng ống dẫn sự kiện có **HAI BẪY**, và
+   * cả hai đều hỏng IM LẶNG — đúng thứ Task 3 sinh ra để diệt:
+   *   1. các cột byte của `vram_events` là `bigint(mode: "number")` ⇒ Postgres **từ chối**
+   *      `"-Infinity"` ⇒ lượt `insert` ném ⇒ `vramEventLog` nuốt và **MẤT CẢ LÔ** sự kiện, không
+   *      chỉ dòng hỏng (nó ghi theo lô);
+   *   2. `detail` là `jsonb` ⇒ `JSON.stringify(-Infinity)` cho **`null`**, tức con số biến mất mà
+   *      không ai biết nó từng là gì.
+   * ⇒ Chỗ nào ghi `headroomBytes` xuống DB **phải** kiểm `Number.isFinite()` trước và ghi lý do
+   * (`"invalid-input"`) thay cho con số — đừng để một giá trị hợp lệ về ngữ nghĩa giết cả lô nhật ký.
    */
   readonly headroomBytes: number;
   readonly basis: HeadroomBasis;
@@ -171,7 +188,19 @@ export interface HeadroomResult {
    * "con số này mua được ít lòng tin hơn bình thường". **MỨC** nằm ở `degradedReasons`.
    */
   readonly trusted: boolean;
-  /** Danh sách lý do (rỗng ⇔ `trusted`), **đông cứng** và thứ tự cố định để so trực tiếp được. */
+  /**
+   * Danh sách lý do (rỗng ⇔ `trusted`), **đông cứng** và thứ tự cố định để so trực tiếp được.
+   *
+   * ⚠ N-5 (re-review) — VÌ SAO CHỖ NÀY `Object.freeze` mà `VramReconcileResult` chỉ `readonly`:
+   * hai thứ khác nhau về hình dạng, không phải hai mức kỷ luật tuỳ hứng. Mảng này **PHẲNG và nhỏ**,
+   * dựng mới mỗi lượt gọi ⇒ `freeze` là **toàn phần** và gần như miễn phí. `VramReconcileResult`
+   * thì **lồng nhau** (`leases[]`, `measureSourceSplit`, `detail`…) ⇒ `Object.freeze` trên nó chỉ
+   * đông cứng **tầng ngoài**, tức mua một cảm giác an toàn SAI trong khi tầng trong vẫn sửa được;
+   * `readonly` phủ **mọi trường ở mọi điểm tiêu thụ** lúc biên dịch, và mọi điểm tiêu thụ hôm nay
+   * đều nằm trong `server/services/vram/**` **không chỗ nào ép kiểu** (`git grep "as any"` /
+   * `"as VramReconcileResult"` trong thư mục đó: **rỗng**). Muốn đồng nhất thì phải `deepFreeze`
+   * trên đường nóng mỗi nhịp — một quyết định hiệu năng + hành vi, không phải một lượt dọn dẹp.
+   */
   readonly degradedReasons: readonly HeadroomDegradation[];
   /**
    * `max(ledgerTotalBytes, attributableBytes)` — con số ĐÃ TRỪ khỏi trần. Xuất ra để câu từ chối
@@ -316,14 +345,29 @@ export function headroomInputFromTick(tick: HeadroomTickFields | null, policy: H
 /**
  * ★★ C-1 — CỔNG CẤU HÌNH, và là **chỗ DUY NHẤT trong module này được phép NÉM**.
  *
- * Gọi **MỘT LẦN lúc nạp cấu hình cưỡng chế** (Task 5), ở nơi **KHÔNG nằm trong** `try` của
- * `beginVramAllocation()` — ví dụ mức module của `vramBroker`, hoặc khối bật VRAM lúc boot. Một cú
- * ném ở đó **giết boot thật to** (`.env` hỏng lộ ra trong một giây); cùng cú ném đó trên đường
- * `reserve()` thì bị `catch { return NOOP_TICKET }` nuốt và còn làm **mất giấy phép** — xem khối
- * C-1 ở đầu file.
+ * Mục tiêu: `.env` hỏng thì lộ ra **TO và SỚM** (lớp "hỏng SỚM"), thay vì đợi tới lượt xin đầu tiên.
  *
- * ⚠ Đây là lưới **bổ sung**, không phải lưới duy nhất: dù không ai gọi hàm này, `computeHeadroom()`
- * vẫn fail-closed CÓ TÊN. Hai lớp phục vụ hai mục tiêu khác nhau (hỏng SỚM vs không hỏng SAI).
+ * ⚠⚠⚠ N-1 (re-review) — **KHÔNG CÓ VỊ TRÍ NÀO TRONG REPO HÔM NAY ĐẠT ĐƯỢC LỚP ĐÓ. ĐỌC HẾT TRƯỚC
+ * KHI ĐẶT LỜI GỌI.** Bản trước của chính docstring này khuyến nghị *"mức module của `vramBroker`
+ * hoặc khối bật VRAM lúc boot"*. **CẢ HAI ĐỀU BỊ NUỐT**, và đó là tài liệu SAI về một lưới:
+ *   • **mức module `vramBroker`** chính là chỗ đã được chứng minh là bị nuốt: điểm nhập của nó nằm
+ *     ở `await import("./vramBroker")` **bên trong `try` của `beginVramAllocation()`**, và `catch`
+ *     ở đó trả `NOOP_TICKET`. Hôm nay nó *"có vẻ chạy"* chỉ vì I-1 vừa kéo `vramReconciler` (import
+ *     TĨNH `vramBroker`) lên đường boot — một **TAI NẠN THỨ TỰ IMPORT**, không phải một thiết kế;
+ *     đổi thứ tự import là mất, mà không lưới nào bắt.
+ *   • **khối bật VRAM lúc boot** — cả hai điểm (`index.ts` trước nhánh rẽ `ROLE`, và đầu
+ *     `runWorkerProcess()`) đều là `try { … } catch { console.error(…) }`, cố ý như vậy từ Pha 1
+ *     (*"telemetry không bao giờ được làm hỏng boot"*).
+ *
+ * ⇒ **Trạng thái thật: lớp "không hỏng SAI" CÓ THẬT (fail-closed có tên trong `computeHeadroom`);
+ * lớp "hỏng SỚM" hiện KHÔNG đạt được ở đâu cả.** Muốn có nó, Task 5 phải chọn một cách **đứng ngoài
+ * mọi `try`** và nói rõ mình chọn gì — ứng viên: một `import` **TĨNH** ở mức module của điểm vào
+ * (`server/_core/index.ts` / `server/worker.ts`), nơi lỗi nạp module nổ trước khi bất kỳ `try` nào
+ * tồn tại; hoặc một lượt kiểm cấu hình ở đường khởi chạy **không** bọc `try`. Đây là **quyết định
+ * của Task 5** (nó sở hữu cấu hình trần/đệm), và Task 2 **không được** tự dựng cấu hình đó.
+ *
+ * ⚠ Vì vậy: gọi hàm này là **bổ sung**, không phải điều kiện. Dù KHÔNG ai gọi, `computeHeadroom()`
+ * vẫn fail-closed CÓ TÊN — hai lớp phục vụ hai mục tiêu khác nhau, và hôm nay chỉ có một lớp chạy.
  */
 export function assertHeadroomPolicy(policy: {
   readonly ceilingBytes: number;
