@@ -172,9 +172,29 @@ describe("I-4 — `api` CÓ nhịp đối chiếu (chỉ TẮT CHUÔNG), không 
     expect(batNhip, "lượt bật nhịp phải nằm TRƯỚC nhánh rẽ ROLE — nếu không, `api` mù thật").toBeLessThan(nhanhRole);
   });
 
-  it("★★ `api` chỉ TẮT CHUÔNG (`ring: false`), KHÔNG tắt nhịp", () => {
+  /**
+   * ⚠ VÒNG SỬA 1 CỦA CHÍNH CA NÀY — bản đầu chỉ so `startVramReconciler({ ring })` **có mặt** và
+   * đứng TRƯỚC nhánh `ROLE`. Đột biến `if (ring) startVramReconciler({ ring })` **SỐNG SÓT**: cả
+   * hai điều kiện vẫn đúng trong khi `api` mất sạch nhịp — tức lưới canh SỰ CÓ MẶT chứ không canh
+   * ĐƯỜNG THOÁT, đúng lớp lỗi mà cả lượt vá này tồn tại để đóng. Nay canh **VÔ ĐIỀU KIỆN**.
+   */
+  it("★★★ `api` chỉ TẮT CHUÔNG (`ring: false`), và lượt bật nhịp là VÔ ĐIỀU KIỆN", () => {
     expect(indexSrc).toMatch(/const ring = SERVER_ROLE !== "api";/);
-    expect(indexSrc).toMatch(/startVramReconciler\(\{\s*ring\s*\}\)/);
+    const at = indexSrc.indexOf("startVramReconciler({");
+    expect(at).toBeGreaterThan(-1);
+    expect(indexSrc.slice(at)).toMatch(/^startVramReconciler\(\{\s*ring\s*\}\)/);
+
+    // Lượt gọi phải là MỘT CÂU LỆNH đứng riêng, không nấp sau một điều kiện nào …
+    const dauDong = indexSrc.lastIndexOf("\n", at) + 1;
+    expect(indexSrc.slice(dauDong, at).trim(), "lượt bật nhịp KHÔNG được đứng sau bất kỳ tiền tố nào").toBe("");
+    // … và không có `if (`/`else` nào chen giữa `try {` bao quanh và lượt gọi.
+    const tryAt = indexSrc.lastIndexOf("try {", at);
+    expect(tryAt).toBeGreaterThan(-1);
+    const giua = indexSrc.slice(tryAt, at);
+    expect(
+      /\bif\s*\(|\belse\b|\breturn\b/.test(giua),
+      `có nhánh rẽ giữa "try {" và lượt bật nhịp — \`api\` sẽ mất tick:\n${giua}`,
+    ).toBe(false);
   });
 
   it("★★★ `__runReconcileTick()` xuất bản ô quyết định BẤT KỂ `ring`", async () => {
