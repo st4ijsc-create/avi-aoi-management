@@ -173,6 +173,59 @@ describe("Pha 1 Task 6 — dây nối ngoài tiến trình: người giám sát 
     });
 
     /**
+     * ★★★ Pha 3 Task 1 — **HẠN CHỜ LÀ MỘT DÂY `?? <mặc_định>`, VÀ DÂY PHẢI CÓ LƯỚI.**
+     *
+     * `stopWaitMs()` (llamaVisionSidecar.ts) là `Number.isFinite(n) && n >= 1 ? Math.floor(n) : 8000`
+     * — một đường ra duy nhất, không ai canh. Đổi vế `else` thành `0`, hoặc bỏ điều kiện sàn `>= 1`,
+     * biến lượt chờ thành **một phép đo tức thời**: `Promise.race` thấy hết giờ NGAY, `stopSidecar()`
+     * khai `false` cho MỌI lượt dừng, `preempt()` xếp hộ 7,8 GB vào `failed` VĨNH VIỄN ⇒ thu hồi
+     * không bao giờ chạy và mọi lượt hết chỗ thành từ chối cứng. Đó đúng là **nửa còn lại** của C-2
+     * (nửa kia là khai `true` khi chưa chết) và nó **không có một ca nào canh** trước task này.
+     *
+     * ⚠ Lưới đi theo ĐƯỜNG THOÁT: ca gọi chính `stopSidecar()` công khai và đo **hành vi chờ**, chứ
+     * không đọc hằng số `8000` ở đâu cả — một ca so hằng số vẫn xanh khi `Promise.race` bị gỡ.
+     * ⚠ Đo SỐNG (báo cáo Task 1 §1): lượt chờ thật trên sidecar THẬT là **485–500 ms** (5/5 lượt),
+     * nên hạn 8.000 ms còn ~16 lần biên; điều phải khoá ở đây là *"có CHỜ"*, không phải con số.
+     */
+    it("★★★ Task 1 — hạn chờ RÁC/DƯỚI SÀN (`LLAMA_VISION_STOP_WAIT_MS=0`) ⇒ vẫn CHỜ, không thành phép đo tức thời", async () => {
+      process.env.LLAMA_VISION_STOP_WAIT_MS = "0";
+      stubHealthyFetch();
+      const { __startSidecarForTests, __stopSidecarForTests } = await import("../llamaVisionSidecar");
+      await __startSidecarForTests();
+
+      let daTraLoi = false;
+      const p = __stopSidecarForTests().then((v) => {
+        daTraLoi = true;
+        return v;
+      });
+      await new Promise((r) => setTimeout(r, 150));
+      // `0` là RÁC (dưới sàn 1) ⇒ phải rơi về mặc định 8.000, tức SAU 150 ms vẫn đang chờ.
+      expect(daTraLoi, "hạn rác kéo lượt chờ về 0 ⇒ dựng lại C-2 theo chiều 'luôn khai false'").toBe(false);
+
+      lastSidecarProc!.emit("exit", 0, "SIGTERM");
+      await expect(p).resolves.toBe(true);
+    });
+
+    it("★★★ Task 1 — hạn chờ KHÔNG ĐẶT ⇒ dùng mặc định (vẫn CHỜ), rồi khai `true` khi tiến trình chết", async () => {
+      delete process.env.LLAMA_VISION_STOP_WAIT_MS;
+      stubHealthyFetch();
+      const { __startSidecarForTests, __stopSidecarForTests } = await import("../llamaVisionSidecar");
+      await __startSidecarForTests();
+
+      let daTraLoi = false;
+      const p = __stopSidecarForTests().then((v) => {
+        daTraLoi = true;
+        return v;
+      });
+      await new Promise((r) => setTimeout(r, 150));
+      expect(daTraLoi).toBe(false);
+
+      lastSidecarProc!.emit("exit", 0, "SIGTERM");
+      await expect(p).resolves.toBe(true);
+      expect((await currentLeases()).some((x) => x.request.owner.startsWith("sidecar:"))).toBe(false);
+    });
+
+    /**
      * ★★★ C-2 (review TOÀN NHÁNH) — NGỮ NGHĨA **THẬT** CỦA NGƯỜI THI HÀNH, KHÔNG PHẢI BẢN GIẢ.
      *
      * `consolidation.test.ts` thay `stopSidecar` bằng một bản giả, nên đường bất đồng bộ THẬT

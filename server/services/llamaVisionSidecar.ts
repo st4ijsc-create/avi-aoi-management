@@ -551,6 +551,21 @@ export async function stopSidecar(): Promise<boolean> {
 /**
  * Hạn chờ cái chết của tiến trình con (ms). Mặc định **8.000** = mốc `SIGKILL` (5.000) + 3.000 ms
  * cho OS thu hồi. ⚠ Sàn 1 ms: `0`/rác biến lượt chờ thành một phép đo tức thời và dựng lại C-2.
+ *
+ * ★★★ Pha 3 Task 1 — **CON SỐ NÀY ĐÃ ĐƯỢC ĐO, KHÔNG CÒN LÀ MỘT PHỎNG ĐOÁN.** 5 lượt spawn→stop
+ * trên sidecar THẬT (llama-server + Qwen3-VL-8B, 7.825–7.840 MiB đo bằng `nvidia-smi`):
+ * **485,3 · 485,6 · 488,3 · 500,4 · 495,6 ms** (min 485,3 · trung vị 488,3 · max 500,4) ⇒ hạn 8.000
+ * còn **≈16 lần** biên. Không lượt nào chạm hạn.
+ *
+ * ⚠⚠ VÀ ĐÂY LÀ THỨ SỐ ĐO NÓI RA MÀ KHÔNG AI ĐOÁN ĐƯỢC: gần như TOÀN BỘ ~500 ms đó **không phải**
+ * thời gian tiến trình chết, cũng không phải thời gian thiết bị nhả VRAM. Đo tách hai mốc trên cùng
+ * một lượt: OS đặt mã thoát sau **10,9 ms**, `nvidia-smi` đã về nền (**1.284 MiB**) trong vòng
+ * ~150 ms, nhưng Node mới phát `"exit"` ở **514,8 ms** — **chênh 503,8 ms**. Tức lượt chờ ở đây đo
+ * **ĐỘ TRỄ QUAN SÁT của libuv**, không đo cái chết.
+ * ⇒ Hệ quả cho Pha 3, phải đọc kỹ trước khi dựng thu hồi xuyên tiến trình lên trên: có một cửa sổ
+ * **~0,5 giây** trong đó **thiết bị ĐÃ nhả 7,8 GB nhưng SỔ vẫn khai còn giữ**. Cửa sổ đó lệch về
+ * phía AN TOÀN (sổ khai THỪA, không bao giờ khai thiếu ⇒ không cấp trên chỗ trống ma), nhưng bất kỳ
+ * cơ chế nào của Pha 3 lấy `after − before` quanh mốc này sẽ **thấy 0** và kết luận "thu hồi hỏng".
  */
 function stopWaitMs(): number {
   const n = Number(process.env.LLAMA_VISION_STOP_WAIT_MS);
