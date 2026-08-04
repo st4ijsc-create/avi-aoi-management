@@ -15,6 +15,7 @@ import {
 } from "./vramBroker";
 import { applyEnforcement, distrustUnitBytes, TICK_STALE_AFTER_MS } from "./vramEnforcement";
 import { computeHeadroom, type HeadroomInput } from "./vramHeadroom";
+import { __freshSharedLedgerFactForTests } from "./vramSharedLedger";
 import type { VramPriority } from "./types";
 
 const MIB = 1024 * 1024;
@@ -31,6 +32,7 @@ function ctxSach(attributableBytes: number, over: Partial<VramDecisionContext> =
   return {
     tick: { attributableBytes, baselineVerified: true, atMs: NOW, consecutiveFailures: 0 },
     unledgered: { bytes: 0, unknownCount: 0 },
+    sharedLedger: __freshSharedLedgerFactForTests(),
     nowMs: NOW,
     ...over,
   };
@@ -54,6 +56,7 @@ describe("A. vramEnforcement — mỗi mức suy giảm một chính sách RIÊN
       headroom: computeHeadroom(headroomInput()),
       tickAgeMs: 0,
       tickConsecutiveFailures: 0,
+      sharedLedger: __freshSharedLedgerFactForTests(),
       unledgered: { bytes: 0, unknownCount: 0 },
     });
 
@@ -70,12 +73,14 @@ describe("A. vramEnforcement — mỗi mức suy giảm một chính sách RIÊN
       headroom: computeHeadroom(headroomInput({ attributableBytes: null, tickPresent: false })),
       tickAgeMs: null,
       tickConsecutiveFailures: 0,
+      sharedLedger: __freshSharedLedgerFactForTests(),
       unledgered: { bytes: 0, unknownCount: 0 },
     });
     const probeBlind = applyEnforcement({
       headroom: computeHeadroom(headroomInput({ attributableBytes: null, tickPresent: true })),
       tickAgeMs: 0,
       tickConsecutiveFailures: 0,
+      sharedLedger: __freshSharedLedgerFactForTests(),
       unledgered: { bytes: 0, unknownCount: 0 },
     });
     expect(noTick.reasons).toContain("no-tick");
@@ -92,6 +97,7 @@ describe("A. vramEnforcement — mỗi mức suy giảm một chính sách RIÊN
       headroom: computeHeadroom(headroomInput({ attributableBytes: null, tickPresent: true })),
       tickAgeMs: 0,
       tickConsecutiveFailures: 0,
+      sharedLedger: __freshSharedLedgerFactForTests(),
       unledgered: { bytes: 0, unknownCount: 0 },
     });
     expect(mu.distrustChargeBytes).toBeGreaterThan(0);
@@ -103,6 +109,7 @@ describe("A. vramEnforcement — mỗi mức suy giảm một chính sách RIÊN
       headroom: computeHeadroom(headroomInput({ baselineVerified: false })),
       tickAgeMs: 0,
       tickConsecutiveFailures: 0,
+      sharedLedger: __freshSharedLedgerFactForTests(),
       unledgered: { bytes: 0, unknownCount: 0 },
     });
     expect(chuaXacMinh.reasons).toEqual(["unverified-baseline"]);
@@ -114,8 +121,8 @@ describe("A. vramEnforcement — mỗi mức suy giảm một chính sách RIÊN
     const muVaChuaXacMinh = computeHeadroom(
       headroomInput({ attributableBytes: null, tickPresent: true, baselineVerified: false }),
     );
-    const a = applyEnforcement({ headroom: mu, tickAgeMs: 0, tickConsecutiveFailures: 0, unledgered: { bytes: 0, unknownCount: 0 } });
-    const b = applyEnforcement({ headroom: muVaChuaXacMinh, tickAgeMs: 0, tickConsecutiveFailures: 0, unledgered: { bytes: 0, unknownCount: 0 } });
+    const a = applyEnforcement({ headroom: mu, tickAgeMs: 0, tickConsecutiveFailures: 0, unledgered: { bytes: 0, unknownCount: 0 }, sharedLedger: __freshSharedLedgerFactForTests() });
+    const b = applyEnforcement({ headroom: muVaChuaXacMinh, tickAgeMs: 0, tickConsecutiveFailures: 0, unledgered: { bytes: 0, unknownCount: 0 }, sharedLedger: __freshSharedLedgerFactForTests() });
     expect(b.reasons.length).toBeGreaterThan(a.reasons.length);
     expect(b.effectiveHeadroomBytes).toBeLessThan(a.effectiveHeadroomBytes);
   });
@@ -127,6 +134,7 @@ describe("A. vramEnforcement — mỗi mức suy giảm một chính sách RIÊN
         headroom: h,
         tickAgeMs: TICK_STALE_AFTER_MS + 1,
         tickConsecutiveFailures: 0,
+        sharedLedger: __freshSharedLedgerFactForTests(),
         unledgered: { bytes: 0, unknownCount: 0 },
       });
       // `attributable` THẮNG phép max ⇒ số vẫn được dùng, KHÔNG bị vứt thành null (phép LÀM LỎNG).
@@ -142,12 +150,14 @@ describe("A. vramEnforcement — mỗi mức suy giảm một chính sách RIÊN
         headroom: computeHeadroom(headroomInput({ attributableBytes: 20_000 * MIB })),
         tickAgeMs: TICK_STALE_AFTER_MS + 1,
         tickConsecutiveFailures: 0,
+        sharedLedger: __freshSharedLedgerFactForTests(),
         unledgered: { bytes: 0, unknownCount: 0 },
       });
       const vutSo = applyEnforcement({
         headroom: computeHeadroom(headroomInput({ attributableBytes: null })),
         tickAgeMs: TICK_STALE_AFTER_MS + 1,
         tickConsecutiveFailures: 0,
+        sharedLedger: __freshSharedLedgerFactForTests(),
         unledgered: { bytes: 0, unknownCount: 0 },
       });
       expect(giuSo.effectiveHeadroomBytes).toBeLessThan(vutSo.effectiveHeadroomBytes);
@@ -158,6 +168,7 @@ describe("A. vramEnforcement — mỗi mức suy giảm một chính sách RIÊN
         headroom: computeHeadroom(headroomInput({ attributableBytes: 0 })),
         tickAgeMs: 3_600_000,
         tickConsecutiveFailures: 60,
+        sharedLedger: __freshSharedLedgerFactForTests(),
         unledgered: { bytes: 0, unknownCount: 0 },
       });
       expect(Number.isFinite(mot_gio.effectiveHeadroomBytes)).toBe(true);
@@ -172,7 +183,7 @@ describe("A. vramEnforcement — mỗi mức suy giảm một chính sách RIÊN
     const mu = (unledgered: { bytes: number; unknownCount: number } | null) =>
       applyEnforcement({
         headroom: computeHeadroom(headroomInput({ attributableBytes: null, tickPresent: true })),
-        tickAgeMs: 0, tickConsecutiveFailures: 0, unledgered,
+        tickAgeMs: 0, tickConsecutiveFailures: 0, unledgered, sharedLedger: __freshSharedLedgerFactForTests(),
       });
 
     it("MÙ ⇒ `unledgeredBytes` bị TRỪ khỏi dư địa đúng bằng số byte đó", () => {
@@ -189,7 +200,7 @@ describe("A. vramEnforcement — mỗi mức suy giảm một chính sách RIÊN
       // đường THƯỜNG TRỰC, không phải ca hiếm.
       const coSo = applyEnforcement({
         headroom: computeHeadroom(headroomInput({ attributableBytes: 20_000 * MIB })),
-        tickAgeMs: 0, tickConsecutiveFailures: 0,
+        tickAgeMs: 0, tickConsecutiveFailures: 0, sharedLedger: __freshSharedLedgerFactForTests(),
         unledgered: { bytes: 5_000 * MIB, unknownCount: 0 },
       });
       expect(coSo.unledgeredChargeBytes).toBe(0);
@@ -220,6 +231,7 @@ describe("A. vramEnforcement — mỗi mức suy giảm một chính sách RIÊN
     const d = applyEnforcement({
       headroom: computeHeadroom(headroomInput({ ceilingBytes: Number.NaN })),
       tickAgeMs: 0, tickConsecutiveFailures: 0, unledgered: { bytes: 0, unknownCount: 0 },
+      sharedLedger: __freshSharedLedgerFactForTests(),
     });
     expect(d.effectiveHeadroomBytes).toBe(Number.NEGATIVE_INFINITY);
     expect(Number.isNaN(d.effectiveHeadroomBytes)).toBe(false);
@@ -229,7 +241,7 @@ describe("A. vramEnforcement — mỗi mức suy giảm một chính sách RIÊN
   it("mọi phụ phí đều HỮU HẠN kể cả khi ống ngoài sổ trả số bẩn", () => {
     const d = applyEnforcement({
       headroom: computeHeadroom(headroomInput()),
-      tickAgeMs: Number.NaN, tickConsecutiveFailures: Number.NaN,
+      tickAgeMs: Number.NaN, tickConsecutiveFailures: Number.NaN, sharedLedger: __freshSharedLedgerFactForTests(),
       unledgered: { bytes: Number.POSITIVE_INFINITY, unknownCount: Number.NaN },
     });
     expect(Number.isFinite(d.staleMarginBytes)).toBe(true);
@@ -277,7 +289,7 @@ describe("B. vramBroker.reserve() — CƯỠNG CHẾ THẬT", () => {
   it("câu từ chối in ĐÚNG con số đã dùng để quyết định (dư địa HIỆU LỰC, không phải dư địa thô)", () => {
     // MÙ + có byte đã chạy ngoài sổ ⇒ CẢ HAI phụ phí đều áp ⇒ dư địa hiệu lực thấp hơn hẳn dư địa thô.
     const r = reserve(req("gguf:B", 31_000 * MIB), {
-      tick: null, unledgered: { bytes: 2_000 * MIB, unknownCount: 0 }, nowMs: NOW,
+      tick: null, unledgered: { bytes: 2_000 * MIB, unknownCount: 0 }, sharedLedger: __freshSharedLedgerFactForTests(), nowMs: NOW,
     });
     expect(r.lease).toBeNull();
     expect(r.refusal!.availableBytes).toBe(r.decision.effectiveHeadroomBytes);
@@ -285,7 +297,7 @@ describe("B. vramBroker.reserve() — CƯỠNG CHẾ THẬT", () => {
   });
 
   it("MÙ ⇒ vẫn quyết định được, nhưng lý do phải ĐI VÀO câu từ chối (ghi rõ đang chạy mù)", () => {
-    const muCtx: VramDecisionContext = { tick: null, unledgered: { bytes: 0, unknownCount: 0 }, nowMs: NOW };
+    const muCtx: VramDecisionContext = { tick: null, unledgered: { bytes: 0, unknownCount: 0 }, sharedLedger: __freshSharedLedgerFactForTests(), nowMs: NOW };
     const r = reserve(req("gguf:B", 31_000 * MIB), muCtx);
     expect(r.lease).toBeNull();
     expect(r.decision.blind).toBe(true);
@@ -300,7 +312,7 @@ describe("B. vramBroker.reserve() — CƯỠNG CHẾ THẬT", () => {
     const coSo = reserve(xin(), ctxSach(0));
     expect(coSo.lease).not.toBeNull();
     release(coSo.lease!);
-    const mu = reserve(xin(), { tick: null, unledgered: { bytes: 0, unknownCount: 0 }, nowMs: NOW });
+    const mu = reserve(xin(), { tick: null, unledgered: { bytes: 0, unknownCount: 0 }, sharedLedger: __freshSharedLedgerFactForTests(), nowMs: NOW });
     expect(mu.lease).toBeNull();
   });
 
@@ -308,6 +320,7 @@ describe("B. vramBroker.reserve() — CƯỠNG CHẾ THẬT", () => {
     const r = reserve(req("gguf:X", 100 * MIB), {
       tick: { attributableBytes: 20_000 * MIB, baselineVerified: true, atMs: NOW - 600_000, consecutiveFailures: 0 },
       unledgered: { bytes: 0, unknownCount: 0 },
+      sharedLedger: __freshSharedLedgerFactForTests(),
       nowMs: NOW,
     });
     // `null` là CHẶN TRÊN ⇒ "quá hạn thì vứt số" là phép LÀM LỎNG. Số phải còn nguyên trong phép max.
@@ -438,14 +451,14 @@ describe("B. vramBroker.reserve() — CƯỠNG CHẾ THẬT", () => {
       noteDeviceTotalBytes(32_607 * MIB);
       const chuaXacMinh = reserve(xin(), {
         tick: { attributableBytes: 0, baselineVerified: false, atMs: NOW, consecutiveFailures: 0 },
-        unledgered: { bytes: 0, unknownCount: 0 }, nowMs: NOW,
+        unledgered: { bytes: 0, unknownCount: 0 }, sharedLedger: __freshSharedLedgerFactForTests(), nowMs: NOW,
       }).decision.effectiveHeadroomBytes;
       expect(chuaXacMinh).toBeLessThan(daXacMinh);
     });
 
     it("Task 3 `unledgeredBytes` ⇒ dư địa hiệu lực bị TRỪ khi MÙ (và KHÔNG bị trừ hai lần khi có số)", () => {
       const muCtx: VramDecisionContext = {
-        tick: null, unledgered: { bytes: 3_000 * MIB, unknownCount: 0 }, nowMs: NOW,
+        tick: null, unledgered: { bytes: 3_000 * MIB, unknownCount: 0 }, sharedLedger: __freshSharedLedgerFactForTests(), nowMs: NOW,
       };
       expect(reserve(req("gguf:X", 100 * MIB), muCtx).decision.unledgeredChargeBytes).toBe(3_000 * MIB);
       // có `attributable` ⇒ khối byte đó đã nằm trong số đo thiết bị ⇒ KHÔNG trừ nữa
@@ -454,7 +467,7 @@ describe("B. vramBroker.reserve() — CƯỠNG CHẾ THẬT", () => {
     });
 
     it("Task 2 `degradedReasons` đi thẳng vào `decision.reasons` (không bị nuốt trên đường)", () => {
-      const r = reserve(req("gguf:X", 100 * MIB), { tick: null, unledgered: null, nowMs: NOW });
+      const r = reserve(req("gguf:X", 100 * MIB), { tick: null, unledgered: null, sharedLedger: __freshSharedLedgerFactForTests(), nowMs: NOW });
       expect(r.decision.reasons).toContain("no-tick");
       expect(r.decision.reasons).toContain("unledgered-unasked");
       expect(r.decision.trusted).toBe(false);

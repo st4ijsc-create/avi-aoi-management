@@ -1278,8 +1278,19 @@ describe("§6 — ỐNG DẪN SỰ KIỆN: giá trị không hữu hạn KHÔNG 
 
   it("★★ 8. bảng độ rộng varchar KHỚP schema thật (đổi schema mà quên bảng = mất lô, im lặng)", () => {
     const src = fs.readFileSync(path.join(process.cwd(), "drizzle", "schema", "vram.ts"), "utf8");
+    /**
+     * ⚠⚠ Pha 3 Task 2 — QUÉT ĐÚNG **KHỐI `vramEvents`**, không quét cả file. `VARCHAR_LIMITS`
+     * (`vramEventLog.ts`) là bảng độ rộng của **một bảng DB duy nhất** — `vram_events`. Từ khi file
+     * schema có bảng thứ hai (`vramLeases`, sổ chung), một lượt quét cả file kéo theo `leaseKey`
+     * (200) · `processKey` (96) · `role` (32) · `leaseId` (64) · `reclaimer` (32) — những cột mà
+     * `sanitizeVramEvent()` **không có việc gì** phải biết, và ca này đỏ vì một lý do sai.
+     * ⚠ `expect(khoi)` bên dưới là hàng rào cho chính lượt thu hẹp này: đổi tên bảng/biến mà quên
+     * ca này thì nó phải ĐỎ, chứ không được lặng lẽ quét một chuỗi rỗng và xanh giả.
+     */
+    const khoi = /export const vramEvents = pgTable\([\s\S]*?\n\}, \(table\)/.exec(src)?.[0];
+    expect(khoi, "không tìm thấy khối `vramEvents` trong drizzle/schema/vram.ts").toBeTruthy();
     const thuc = new Map<string, number>();
-    for (const m of src.matchAll(/(\w+):\s*varchar\("(\w+)",\s*\{\s*length:\s*(\d+)/g)) thuc.set(m[2], Number(m[3]));
+    for (const m of khoi!.matchAll(/(\w+):\s*varchar\("(\w+)",\s*\{\s*length:\s*(\d+)/g)) thuc.set(m[2], Number(m[3]));
     for (const [ten, rong] of [["event", 24], ["owner", 160], ["leaseKind", 32], ["priority", 16], ["estimateSource", 48]] as const) {
       expect(thuc.get(ten), `cột ${ten}`).toBe(rong);
     }

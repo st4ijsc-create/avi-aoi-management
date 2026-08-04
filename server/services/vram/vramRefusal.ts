@@ -104,7 +104,23 @@ export type VramDegradationReason =
   | "stale-tick"
   | "tick-failing"
   | "unledgered-unasked"
-  | "unledgered-unknown";
+  | "unledgered-unknown"
+  /**
+   * ★★★ Pha 3 Task 2 — BA LÝ DO CỦA **SỔ CHUNG**, và cả ba đều nói về *"con số dư địa kém tin hơn
+   * bình thường"* (đúng một câu mà từ vựng này trả lời), nên chúng thuộc về đây chứ không phải một
+   * ô riêng như `slotsNeeded`.
+   *
+   *   • `shared-ledger-unasked` — **CHƯA LÀM MỚI LẦN NÀO** trong tiến trình này. Không phải "không
+   *     có ai khác": ta **không biết** anh em đang giữ gì. Cùng hạng cấu trúc với `"no-tick"`.
+   *   • `shared-ledger-stale` — CÓ số nhưng đã cũ hơn HAI chu kỳ đồng bộ. ⚠ **Giữ nguyên số**,
+   *     cộng biên theo tuổi — hạ nó về 0 là NỚI dư địa đúng bằng khối byte anh em đang giữ.
+   *   • `shared-ledger-unsynced` — lượt ghi CỦA TA chưa lên được sổ chung ⇒ **anh em không thấy
+   *     ta**, và rất có thể ta cũng không thấy anh em (cùng một DB hỏng). Bất đối xứng này nguy
+   *     hiểm hơn cả hai lý do trên: hai bên cùng tưởng card còn trống.
+   */
+  | "shared-ledger-unasked"
+  | "shared-ledger-stale"
+  | "shared-ledger-unsynced";
 
 /** Một hộ đang giữ chỗ trong SỔ. ⚠ `bytes` có thể là ƯỚC LƯỢNG — xem `measured`. */
 export interface VramHolderFact {

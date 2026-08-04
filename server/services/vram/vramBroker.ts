@@ -9,6 +9,13 @@ import type { VramDegradationReason, VramHolderFact, VramRefusalFacts, VramUnled
 import { buildVramRefusal } from "./vramRefusal";
 import { applyEnforcement } from "./vramEnforcement";
 import type { VramDecisionTick } from "./vramTickCell";
+/**
+ * ★★★ Pha 3 Task 2 — SỔ CHUNG. ⚠ `vramSharedLedger` là **module LÁ** (không import gì ngoài kiểu,
+ * không I/O): nhập nó ở đây KHÔNG phá lá chắn "đường quyết định sạch I/O". Nửa I/O nằm ở
+ * `vramSharedLedgerStore`, và file này **không** nhập file đó một dòng nào.
+ */
+import { enqueueSharedLedgerWrite, rowFromLease, sharedLedgerSelfKey } from "./vramSharedLedger";
+import type { SharedLedgerFact } from "./vramSharedLedger";
 
 /**
  * Trần thiết bị và dự trữ an toàn (spec §5.1). Đọc một lần, không I/O trên đường quyết định.
@@ -487,6 +494,24 @@ function kheGgufConThieu(request: VramReserveRequest): number {
 export interface VramDecisionContext {
   readonly tick: VramDecisionTick | null;
   readonly unledgered: VramUnledgeredFact;
+  /**
+   * ★★★ Pha 3 Task 2 — BẢN SAO ĐỌC CỦA SỔ CHUNG (`vramSharedLedger.readSharedLedgerReplica()`).
+   *
+   * ⚠ THAM SỐ, KHÔNG TỰ ĐỌC — cùng ba lý do với `tick`, và lý do thứ nhất là quyết định:
+   *   1. hai vế của phép cộng sổ (`cục bộ` và `chung`) phải đến từ **một thời điểm**; broker tự đi
+   *      lấy ở đây thì chúng lệch nhau đúng khoảng giữa hai lượt đọc của người gọi;
+   *   2. `tsc` chặn người gọi QUÊN (cùng cơ chế `tick`/`unledgered` — cả ba đều không optional);
+   *   3. bộ test dựng được ca "sổ chung nói gì" mà không phải giả một module I/O.
+   *
+   * ⚠⚠ `null` = **CHƯA LÀM MỚI LẦN NÀO trong tiến trình này** ⇒ ĐANG MÙ về anh em. **TUYỆT ĐỐI
+   * KHÔNG** phải "không có tiến trình nào khác giữ gì". Cưỡng chế phản ứng bằng
+   * `"shared-ledger-unasked"` (2 đơn vị) — xem `vramEnforcement`.
+   *
+   * ⚠ Kiểu là `SharedLedgerFact` (đã quy đổi bằng `sharedLedgerFact(nowMs)`), KHÔNG phải bản sao
+   * thô: **MỘT bản cài đặt duy nhất** của phép quy đổi bản-sao → sự-thật (ràng buộc 12). Nếu để
+   * mỗi người gọi tự tính `ageMs` thì sẽ có hai công thức tuổi, và chúng sẽ trôi khỏi nhau.
+   */
+  readonly sharedLedger: SharedLedgerFact;
   readonly nowMs: number;
 }
 
@@ -508,9 +533,22 @@ export interface VramReserveDecision {
   readonly reasons: readonly VramDegradationReason[];
   readonly trusted: boolean;
   readonly staleMarginBytes: number;
+  /** ★ Pha 3 Task 2 — biên theo tuổi của BẢN SAO ĐỌC sổ chung (BYTE). Ô RIÊNG, xem `vramEnforcement`. */
+  readonly sharedLedgerMarginBytes: number;
   readonly unledgeredChargeBytes: number;
   readonly distrustChargeBytes: number;
+  /** Σ giấy phép — **CỤC BỘ + CHUNG** kể từ Pha 3 Task 2. */
   readonly ledgerTotalBytes: number;
+  /** ★ Pha 3 Task 2 — riêng phần CỤC BỘ. Tách ra để một dòng nhật ký nói được *ai* đang giữ. */
+  readonly localLedgerBytes: number;
+  /** ★ Pha 3 Task 2 — riêng phần của ANH EM. `0` khi chưa làm mới (kèm `"shared-ledger-unasked"`). */
+  readonly foreignLedgerBytes: number;
+  /**
+   * ★ Pha 3 Task 2 — TUỔI của bản sao đọc (ms). `null` ⇔ chưa làm mới lần nào.
+   * ⚠ Đây là **ĐỘ TRỄ CƯỠNG CHẾ XUYÊN TIẾN TRÌNH** đi vào nhật ký. Nó phải KHAI được, nếu không
+   * "vì sao hai tiến trình cùng cấp" là một câu hỏi chỉ trả lời được bằng cách đoán.
+   */
+  readonly sharedLedgerAgeMs: number | null;
   readonly ceilingBytes: number;
   readonly safetyReserveBytes: number;
 }
@@ -552,7 +590,20 @@ export interface VramReserveOutcome extends VramReserveResult {
 export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): VramReserveOutcome {
   // ★ Task 7 — TRẦN HIỆU LỰC (đã hấp thụ `GGUF_VRAM_GUARD_PCT` + `GGUF_MAX_VRAM_MB`).
   const ceilingBytes = deviceUsableBytes();
-  const ledgerTotalBytes = totalReserved();
+  /**
+   * ★★★ Pha 3 Task 2 — **SỔ = CỤC BỘ + CHUNG.** Đây là dòng gỡ giả định cuối của cả kiến trúc
+   * (*"mỗi tiến trình một sổ riêng"*): từ đây một lượt xin có thể bị từ chối vì **tiến trình KHÁC**
+   * đang giữ chỗ.
+   *
+   * ⚠ `?? 0` LÀ MỘT DÂY, VÀ NÓ CÓ LƯỚI (ràng buộc 11): `sharedLedger === null` nghĩa *"chưa làm mới
+   * lần nào"* — nếu chỉ có dòng này thì nó âm thầm thành *"anh em không giữ gì"*. Lưới là
+   * `"shared-ledger-unasked"` bên `applyEnforcement()` (2 đơn vị mất-tin-cậy) + ca `D-3`, và đột
+   * biến "bỏ lý do đó" phải làm ca ấy đỏ.
+   * ⚠ `foreignBytes` **KHÔNG BAO GIỜ** bị hạ về 0 vì bản sao cũ — xem `vramSharedLedger` (phạm trù
+   * thứ ba). Cũ thì CỘNG BIÊN, không phải XOÁ SỐ.
+   */
+  const localTotalBytes = totalReserved();
+  const ledgerTotalBytes = localTotalBytes + (ctx.sharedLedger?.foreignBytes ?? 0);
   const headroomInput = headroomInputFromTick(ctx.tick, {
     ceilingBytes,
     safetyReserveBytes: safetyReserveBytes(),
@@ -568,6 +619,7 @@ export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): 
     tickAgeMs: ctx.tick === null ? null : ctx.nowMs - ctx.tick.atMs,
     tickConsecutiveFailures: ctx.tick === null ? 0 : ctx.tick.consecutiveFailures,
     unledgered: ctx.unledgered,
+    sharedLedger: ctx.sharedLedger,
   });
 
   // ★ Task 7 — cửa ĐẾM, chạy độc lập với cửa BYTE (Đ4).
@@ -596,9 +648,13 @@ export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): 
     reasons,
     trusted: enf.trusted,
     staleMarginBytes: enf.staleMarginBytes,
+    sharedLedgerMarginBytes: enf.sharedLedgerMarginBytes,
     unledgeredChargeBytes: enf.unledgeredChargeBytes,
     distrustChargeBytes: enf.distrustChargeBytes,
     ledgerTotalBytes,
+    localLedgerBytes: localTotalBytes,
+    foreignLedgerBytes: ctx.sharedLedger?.foreignBytes ?? 0,
+    sharedLedgerAgeMs: ctx.sharedLedger?.ageMs ?? null,
     ceilingBytes,
     safetyReserveBytes: safetyReserveBytes(),
   };
@@ -637,7 +693,49 @@ export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): 
     refCount: 1,
   };
   ledger.set(lease.id, lease);
+  congBoRaSoChung(lease);
   return { lease, wouldRefuse: false, wouldPreempt: [], refusal: null, decision };
+}
+
+/**
+ * ★★★ Pha 3 Task 2 — CÔNG BỐ một giấy phép ra sổ chung. **XẾP HÀNG, KHÔNG GHI.**
+ *
+ * ⚠⚠ ĐÂY LÀ TOÀN BỘ LÝ DO NÓ ĐỒNG BỘ ĐƯỢC: hàm này chỉ `push` vào một mảng trong bộ nhớ. Lượt
+ * `INSERT` thật do `vramSharedLedgerStore.syncSharedLedger()` chạy **SAU** khi đã quyết. Ai "dọn
+ * dẹp" bằng cách `await` một lượt ghi ở đây là gỡ mất lá chắn cấu trúc Pha 1 — `reserve()` sẽ phải
+ * thành `async` và cả đường quyết định mất tính đồng bộ.
+ *
+ * ⚠ KHÔNG BAO GIỜ NÉM: một cú ném trên đường `reserve()` bị `vramWiring` nuốt và làm **mất luôn
+ * giấy phép** (C-1 của Pha 2B Task 2). Sổ chung hỏng thì hệ chạy như Pha 2B, không phải sập.
+ *
+ * ⚠ Chỉ chuyển trạng thái, **không dựng hàng**: dựng `SharedLeaseRow` cần biết hình dạng bảng, mà
+ * đó là việc của nửa I/O. Ở đây chỉ khai *"giấy phép này vừa đổi, đồng bộ lại đi"*.
+ */
+function congBoRaSoChung(lease: VramLease): void {
+  try {
+    const selfKey = sharedLedgerSelfKey();
+    const row = rowFromLease(lease, leaseBytes(lease), selfKey, Date.now());
+    enqueueSharedLedgerWrite({ op: "upsert", leaseKey: row.leaseKey, row });
+  } catch {
+    /* sổ chung hỏng KHÔNG được làm hỏng lượt xin — hệ lùi về hành vi Pha 2B */
+  }
+}
+
+/**
+ * ★★★ Pha 3 Task 2 — RÚT một giấy phép khỏi sổ chung. **XẾP HÀNG, KHÔNG GHI** (như trên).
+ *
+ * ⚠⚠⚠ ĐÂY LÀ NƠI PHÁT HIỆN CỦA TASK 1 THÀNH MỘT DÒNG MÃ. Lệnh xoá phát **TỪ CHÍNH `release()`** —
+ * tức từ nhánh `proc.on("exit")`/`proc.on("error")` của sidecar, qua `vramWiring.release()` →
+ * `broker.release()`. **KHÔNG** có đường nào kết luận "đã nhả" từ việc một hàng biến mất khỏi bản
+ * sao đọc: đó là hiệu số của một bản sao CŨ, đúng hình dạng lỗi T5-11 đã tốn cả một pha để gỡ
+ * (`kill(pid,0)` sớm giả ~0,5 s so với lúc handle báo hiệu). Ca `E-1`/`E-2` khoá cả hai chiều.
+ */
+function rutKhoiSoChung(lease: VramLease): void {
+  try {
+    enqueueSharedLedgerWrite({ op: "delete", leaseKey: `${sharedLedgerSelfKey()}#${lease.id}` });
+  } catch {
+    /* xem `congBoRaSoChung` */
+  }
 }
 
 /**
@@ -659,6 +757,10 @@ export function setLeaseRefCount(leaseId: string, refCount: number): boolean {
   if (!live || live.released) return false;
   if (!Number.isFinite(refCount) || refCount < 0) return false;
   live.refCount = Math.floor(refCount);
+  // ★ Pha 3 Task 2 — `refCount` là ô mà Task 5 (`preempt()` xuyên tiến trình) đứng lên: một hộ
+  // NHÀN RỖI ở tiến trình khác chỉ thu hồi được nếu anh em ĐỌC được con số 0. Không công bố ô này
+  // thì mọi hộ ngoài tiến trình mãi mãi mang `refCount = 1` mặc định ⇒ **không ai thu hồi được**.
+  congBoRaSoChung(live);
   return true;
 }
 
@@ -685,6 +787,8 @@ export function commit(lease: VramLease, actualBytes: number, measureSource: Vra
   // một lần cho mỗi ticket — nhưng bất biến "hai ô luôn khớp `actualBytes`" phải đúng tại chỗ.)
   live.fallbackReason = undefined;
   live.lastHeartbeatAt = new Date();
+  // ★ Pha 3 Task 2 — số ĐO vừa về ⇒ sổ chung phải mang số đó, không phải ước lượng lúc `reserve()`.
+  congBoRaSoChung(live);
 }
 
 /**
@@ -755,6 +859,7 @@ export function commitFallback(leaseId: string, bytes: number, reason: string): 
   // dòng thiếu thông tin.
   live.fallbackReason = reason;
   live.lastHeartbeatAt = new Date();
+  congBoRaSoChung(live);
   return true;
 }
 
@@ -767,6 +872,14 @@ export function release(lease: VramLease): void {
   if (!live || live.released) return;
   live.released = true;
   ledger.delete(lease.id);
+  /**
+   * ⚠ Người gọi có thể cầm một object KHÁC với `live` (đường `vramWiring` cầm chính object trả về
+   * từ `reserve()`, nên hôm nay chúng là một). Đánh dấu CẢ HAI: một ca test đọc `lease.released`
+   * để chứng minh *"hàng biến khỏi bản sao đọc KHÔNG nhả giấy phép"* (E-2), và nó phải đọc đúng
+   * object mà mã sản xuất đưa ra.
+   */
+  lease.released = true;
+  rutKhoiSoChung(live);
 }
 
 export function heartbeat(lease: VramLease): void {
@@ -861,6 +974,9 @@ function kiemBienMoiTruong(
 export function __resetBrokerForTests(): void {
   ledger.clear();
   seq = 0;
+  // ⚠ Pha 3 Task 2 — KHÔNG reset ô sổ chung ở đây có chủ ý: `__resetBrokerForTests()` cũng là cách
+  // ca A-1 dựng "một tiến trình KHÁC" (bộ nhớ cục bộ mới, cùng bảng dùng chung). Ai gộp hai lượt
+  // reset lại sẽ xoá mất chính thứ ca đó đang đo. Bộ test gọi `__resetSharedLedgerForTests()` RIÊNG.
   measuredDeviceTotalBytes = null;
   // M-1 — không reset thì ca sau KẾ THỪA "đã kêu" của ca trước và lưới cho lời cảnh báo tự mù.
   daKeuTranDuPhong = false;

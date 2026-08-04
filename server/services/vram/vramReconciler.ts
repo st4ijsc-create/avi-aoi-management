@@ -933,6 +933,31 @@ export async function __runReconcileTick(): Promise<VramReconcileResult> {
         `chứ đừng chỉ nhìn \`atMs\`.`,
     );
     throw err;
+  } finally {
+    /**
+     * ★★★ Pha 3 Task 2 — LÀM MỚI BẢN SAO ĐỌC CỦA SỔ CHUNG. Nhịp này là nguồn nuôi DUY NHẤT của
+     * tuổi bản sao (**60 s = ĐỘ TRỄ CƯỠNG CHẾ THẬT xuyên tiến trình**).
+     *
+     * ⚠⚠ VỊ TRÍ LÀ MỘT ĐIỀU KIỆN, VÀ NÓ ĐƯỢC ĐO CHỨ KHÔNG PHẢI ĐOÁN. Bản đầu đặt lượt đồng bộ
+     * **ĐẦU** hàm, và hậu quả xuất hiện ngay trong bộ test (2/3 lượt shuffle ĐỎ ở
+     * `startVramReconciler — nhịp NGAY`): `syncSharedLedger()` phải `await getDb()`, tức **một
+     * lượt mở kết nối Postgres đứng CHẶN TRƯỚC lượt chụp nền và đối chiếu**. Đó không phải một
+     * trục trặc của test mà là một **liên đới có thật**: DB chậm/chết ⇒ nhịp đối chiếu chậm theo
+     * ⇒ ô tick già đi ⇒ cưỡng chế tự chặt lại **vì một lý do chẳng liên quan gì tới VRAM**. Đúng
+     * lớp lỗi "một cơ chế phòng vệ mới vô hiệu hoá cơ chế cũ" đã tái diễn ba lần ở Pha 1.5.
+     *
+     * ⇒ Đặt trong `finally`, SAU khi `publishDecisionTick()` đã chạy: ô tick không bao giờ phải
+     * đợi DB, mà lượt đồng bộ vẫn chạy đủ mỗi nhịp — kể cả nhịp NÉM (đó là lý do dùng `finally`
+     * chứ không phải một dòng ở cuối khối `try`).
+     * ⚠ `syncSharedLedger()` **KHÔNG BAO GIỜ NÉM** (tự đếm + tự kêu). `catch` ở đây chỉ canh lượt
+     * NHẬP module — một `finally` mà ném sẽ **nuốt mất lỗi gốc** của nhịp đối chiếu.
+     */
+    try {
+      const { syncSharedLedger } = await import("./vramSharedLedgerStore");
+      await syncSharedLedger();
+    } catch {
+      /* một lỗi sổ chung không được thay thế (hay đánh hỏng) kết quả của nhịp đối chiếu */
+    }
   }
 }
 
@@ -1547,6 +1572,16 @@ export async function reconcileOnce(): Promise<VramReconcileResult> {
 export function startVramReconciler(opts: { ring?: boolean } = {}): void {
   if (timer) return;
   ringEnabled = opts.ring !== false;
+  /**
+   * ★★ Pha 3 Task 2 — BẬT lượt đồng bộ sổ chung TỰ ĐỘNG (nhịp hẹn sau mỗi lượt ghi cục bộ). Đặt ở
+   * đây vì đây là **đường boot của sản xuất** (`server/_core/index.ts`, TRƯỚC nhánh rẽ `ROLE` ⇒
+   * mọi vai trò đều bật). Không có nó thì mọi file test chạm `reserve()` sẽ đẻ một bộ đếm giờ tự
+   * đi mở kết nối DB test — GOTCHA `aiGateway` đã đo được ở Đợt trước.
+   * ⚠ Nhập MUỘN + nuốt lỗi: một module sổ chung hỏng không được chặn lượt bật đối chiếu.
+   */
+  void import("./vramSharedLedgerStore")
+    .then((m) => m.enableSharedLedgerSync(true))
+    .catch(() => {});
   // Từ đây trở đi, "chưa biết nền" nghĩa là IM LẶNG chứ không phải nền = 0 (NEW-2).
   baselineRequired = true;
   // Chụp nền NGAY **và đối chiếu NGAY**. Không `await` (hàm này đồng bộ, nằm trên đường boot).
@@ -1567,6 +1602,9 @@ export function stopVramReconciler(): void {
   if (!timer) return;
   clearInterval(timer);
   timer = null;
+  // Pha 3 Task 2 — tắt luôn nhịp hẹn của sổ chung: một bộ đếm giờ sống sót sau khi đối chiếu đã
+  // dừng là đúng thứ `__setVramLogTimerEnabled()` đã phải sửa một lần rồi.
+  void import("./vramSharedLedgerStore").then((m) => m.enableSharedLedgerSync(false)).catch(() => {});
 }
 
 export function __hasReconcilerTimer(): boolean { return timer !== null; }
@@ -1594,8 +1632,16 @@ export function __hasReconcilerTimer(): boolean { return timer !== null; }
 export function describeTopologyHint(): string {
   const role = process.env.ROLE ?? "";
   if (role !== "api" && role !== "worker") return "";
+  /**
+   * ★★★ Pha 3 Task 2 — CÂU NÀY ĐÃ ĐỔI, và lời đổi là một lời KHAI, không phải một lời quảng cáo.
+   * Sổ chung (`vram_leases`) nay có thật, nhưng nó được đọc qua một **BẢN SAO** làm mới mỗi 60 s —
+   * nên trong tối đa một chu kỳ, một giấy phép vừa mở ở tiến trình anh em vẫn **vô hình** ở đây.
+   * Người trực đọc câu này phải biết cả hai nửa, nếu không họ sẽ tin sổ chung nhiều hơn nó đáng.
+   */
   return (
-    " ⚠ Hệ đang tách vai trò api/worker — mỗi tiến trình có sổ RIÊNG, nên khoản lệch này " +
-    "có thể là của tiến trình anh em chứ không phải kẻ lạ. Sổ chung là Pha 3."
+    " ⚠ Hệ đang tách vai trò api/worker. Từ Pha 3 hai bên dùng SỔ CHUNG (`vram_leases`), nhưng " +
+    "đường quyết định đọc một BẢN SAO làm mới mỗi 60 s — nên một giấy phép của tiến trình anh em " +
+    "mở trong chu kỳ hiện tại CHƯA hiện ra ở đây. Khoản lệch này có thể là của anh em, và có thể " +
+    "chỉ là độ trễ đồng bộ."
   );
 }

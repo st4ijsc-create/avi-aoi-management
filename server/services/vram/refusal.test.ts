@@ -33,6 +33,7 @@ import {
   refusalFactsFor,
 } from "./vramBroker";
 import { computeHeadroom, headroomInputFromTick, type HeadroomInput } from "./vramHeadroom";
+import { __freshSharedLedgerFactForTests } from "./vramSharedLedger";
 import { WIRED_ALLOCATION_SITE_COUNT, KNOWN_ALLOCATION_SITE_ROW_COUNT } from "./vramAllocationSites";
 import { APP_ERROR_CODES } from "../../_core/appErrorCodes";
 
@@ -51,6 +52,7 @@ function ctxSachChoCaCu(): import("./vramBroker").VramDecisionContext {
   return {
     tick: { attributableBytes: 0, baselineVerified: true, atMs: now, consecutiveFailures: 0 },
     unledgered: { bytes: 0, unknownCount: 0 },
+    sharedLedger: __freshSharedLedgerFactForTests(),
     nowMs: now,
   };
 }

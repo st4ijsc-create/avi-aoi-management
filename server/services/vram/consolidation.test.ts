@@ -76,6 +76,7 @@ import {
   __resetBrokerForTests, type VramDecisionContext,
 } from "./vramBroker";
 import { preempt } from "./vramPreempt";
+import { __freshSharedLedgerFactForTests } from "./vramSharedLedger";
 import {
   ggufMaxLoadedModels, ggufMaxVramBytes, ggufVramGuardPct, safetyReserveBytes, sessionCacheMax,
   usableCeilingBytes, __resetVramCapsForTests,
@@ -114,6 +115,7 @@ function ctx(over: Partial<VramDecisionContext> = {}): VramDecisionContext {
   return {
     tick: { attributableBytes: 0, baselineVerified: true, atMs: NOW, consecutiveFailures: 0 },
     unledgered: { bytes: 0, unknownCount: 0 },
+    sharedLedger: __freshSharedLedgerFactForTests(),
     nowMs: NOW,
     ...over,
   };

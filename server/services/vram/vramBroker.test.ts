@@ -3,6 +3,7 @@ import {
   reserve as reserveRaw, commit, release, snapshot, deviceTotalBytes, noteDeviceTotalBytes,
   markMeasureFailed, __resetBrokerForTests,
 } from "./vramBroker";
+import { __freshSharedLedgerFactForTests } from "./vramSharedLedger";
 
 
 /**
@@ -19,6 +20,7 @@ function ctxSachChoCaCu(): import("./vramBroker").VramDecisionContext {
   return {
     tick: { attributableBytes: 0, baselineVerified: true, atMs: now, consecutiveFailures: 0 },
     unledgered: { bytes: 0, unknownCount: 0 },
+    sharedLedger: __freshSharedLedgerFactForTests(),
     nowMs: now,
   };
 }

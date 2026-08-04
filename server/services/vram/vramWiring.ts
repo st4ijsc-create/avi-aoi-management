@@ -33,6 +33,13 @@ import { logVramEvent } from "./vramEventLog";
  *   • `vramRefusal` — lớp lỗi `VramRefusedError`. Từ task này nó **ĐƯỢC NÉM THẬT**.
  */
 import { readDecisionTick } from "./vramTickCell";
+/**
+ * ★★★ Pha 3 Task 2 — SỔ CHUNG. ⚠ Nhập **module LÁ** (`vramSharedLedger`), KHÔNG nhập nửa I/O
+ * (`vramSharedLedgerStore`) ở mức module: `vramWiring` nằm trên đường nóng và bị 40+ file test
+ * nhập; kéo tầng DB vào đây là đúng cái bẫy `vramTickCell` được đẻ ra để tránh. Lượt đồng bộ (I/O)
+ * được gọi bằng `await import()` MUỘN, ngoài đường quyết định.
+ */
+import { sharedLedgerFact } from "./vramSharedLedger";
 import { VramRefusedError } from "./vramRefusal";
 
 /**
@@ -700,10 +707,21 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
       // `aiReranker` cũng là `kind: "gguf-model"` nhưng KHÔNG ai thu hồi được).
       reclaimer: opts.reclaimer,
     };
-    let res = broker.reserve(
-      yeuCau,
-      { tick: readDecisionTick(), unledgered: vramUnledgeredFact(), nowMs: Date.now() },
-    );
+    /**
+     * ★★★ Pha 3 Task 2 — MỘT lượt đọc đồng hồ cho CẢ hai tuổi (tick và sổ chung). Hai lượt
+     * `Date.now()` riêng thì hai con số tuổi lệch nhau một khoảng không ai kiểm được, và chính đây
+     * là lý do `nowMs` đã là tham số từ Pha 2B ("tuổi tick là một con số KIỂM ĐƯỢC, không phải một
+     * lượt gọi `Date.now()` ẩn giữa đường quyết định").
+     */
+    const nowMs = Date.now();
+    let res = broker.reserve(yeuCau, {
+      tick: readDecisionTick(),
+      unledgered: vramUnledgeredFact(),
+      // ⚠ Ô THẬT của sổ chung — KHÔNG dựng một bản sao đọc bằng tay ở đây. Đây là điểm nối duy
+      // nhất giữa sổ chung và đường quyết định của sản xuất.
+      sharedLedger: sharedLedgerFact(nowMs),
+      nowMs,
+    });
 
     logVramEvent({
       event: "reserve",
@@ -730,6 +748,16 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
         staleMarginBytes: res.decision.staleMarginBytes,
         unledgeredChargeBytes: res.decision.unledgeredChargeBytes,
         distrustChargeBytes: res.decision.distrustChargeBytes,
+        /**
+         * ★★★ Pha 3 Task 2 — SỔ CHUNG ĐI VÀO NHẬT KÝ. Không có bốn ô này thì câu hỏi *"vì sao hai
+         * tiến trình cùng được cấp"* chỉ trả lời được bằng cách đoán: `ledgerTotalBytes` một mình
+         * không nói được phần nào là của TA và phần nào của ANH EM, còn `sharedLedgerAgeMs` là
+         * **độ trễ cưỡng chế thật** tại đúng thời điểm quyết định. `null` = chưa làm mới lần nào.
+         */
+        localLedgerBytes: res.decision.localLedgerBytes,
+        foreignLedgerBytes: res.decision.foreignLedgerBytes,
+        sharedLedgerAgeMs: res.decision.sharedLedgerAgeMs,
+        sharedLedgerMarginBytes: res.decision.sharedLedgerMarginBytes,
       },
     });
 
@@ -754,10 +782,13 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
       const { preempt } = await import("./vramPreempt");
       const thuHoi = await preempt(opts.priority, canByte, res.decision.slotsNeeded);
       if (thuHoi.reclaimed.length > 0) {
-        res = broker.reserve(
-          yeuCau,
-          { tick: readDecisionTick(), unledgered: vramUnledgeredFact(), nowMs: Date.now() },
-        );
+        const lai = Date.now();
+        res = broker.reserve(yeuCau, {
+          tick: readDecisionTick(),
+          unledgered: vramUnledgeredFact(),
+          sharedLedger: sharedLedgerFact(lai),
+          nowMs: lai,
+        });
         logVramEvent({
           event: "reserve",
           owner: opts.owner,
@@ -793,6 +824,17 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
      * `??` ở đây KHÔNG phải một cái DÂY: nó là một lối thoát để `tsc` không phải tin một bất biến
      * runtime, và nếu nó chạy thì câu lỗi vẫn nói đúng "không cấp được", chỉ nghèo hơn.
      */
+    /**
+     * ★★★ Pha 3 Task 2 — LÀM MỚI **SAU MỖI LƯỢT GHI CỦA CHÍNH TIẾN TRÌNH NÀY** (brief). Hẹn giờ,
+     * gộp lượt, `unref`'d — xem `scheduleSharedLedgerSync()`. Đặt ở đây (trước cả nhánh từ chối)
+     * vì một lượt từ chối cũng có thể vừa kéo theo một lượt **thu hồi** ⇒ sổ chung đã đổi.
+     * ⚠ `void` + nhập MUỘN: đây là đường nóng, không được `await` và không được kéo tầng DB vào
+     * đường nhập tĩnh của file này.
+     */
+    void import("./vramSharedLedgerStore")
+      .then((m) => m.scheduleSharedLedgerSync())
+      .catch(() => {});
+
     if (!lease) {
       const facts = res.refusal;
       if (facts) throw new VramRefusedError(facts);
@@ -1475,6 +1517,18 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
           // "ngay khi giấy phép kia rời sổ", không phải "khi restart".
           closeWindow();
           broker.release(lease);
+          /**
+           * ★★★ Pha 3 Task 2 × PHÁT HIỆN CỦA TASK 1 — LỆNH GHI NHẢ PHÁT **TỪ CHÍNH NHÁNH THOÁT**.
+           *
+           * `broker.release()` ngay trên vừa xếp hàng một lệnh `delete` cho sổ chung, và dòng dưới
+           * đây hẹn lượt ghi đi ngay chứ không đợi nhịp 60 s. Với sidecar thị giác, đường tới đây
+           * là `proc.on("exit")` / `proc.on("error")` — đúng nhánh mà Task 1 đòi.
+           * ⚠ **CẤM** thay dòng này bằng *"cứ để reconciler thấy hàng biến mất"*: đó là hiệu số của
+           * một bản sao CŨ, đúng hình dạng lỗi T5-11.
+           */
+          void import("./vramSharedLedgerStore")
+            .then((m) => m.scheduleSharedLedgerSync())
+            .catch(() => {});
           logVramEvent({
             event: "release",
             owner: opts.owner,

@@ -1,4 +1,6 @@
-import { pgTable, serial, varchar, bigint, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import {
+  pgTable, serial, varchar, bigint, integer, boolean, jsonb, timestamp, index,
+} from "drizzle-orm/pg-core";
 
 /**
  * Nhật ký chỉ-ghi-thêm cho module điều phối VRAM.
@@ -54,3 +56,59 @@ export const vramEvents = pgTable("vram_events", {
 
 export type VramEvent = typeof vramEvents.$inferSelect;
 export type InsertVramEvent = typeof vramEvents.$inferInsert;
+
+/**
+ * ★★★ Pha 3 Task 2 — **SỔ CHUNG SỐNG**, xuyên tiến trình. Migration `0312_vram_leases.sql`.
+ *
+ * ⚠⚠ ĐỌC KỸ SỰ KHÁC BIỆT VỚI `vram_events` NGAY TRÊN, vì hai bảng dễ bị nhầm là một:
+ *   • `vram_events` — **LỊCH SỬ**, chỉ-ghi-thêm, không ai đọc để quyết định. Một dòng cho mỗi
+ *     BIẾN CỐ.
+ *   • `vram_leases` — **TRẠNG THÁI SỐNG**, có xoá, và **đường quyết định ĐỌC nó**. Một dòng cho
+ *     mỗi GIẤY PHÉP đang tồn tại, ở bất kỳ tiến trình nào.
+ * Trước Pha 3 mỗi tiến trình giữ một sổ RIÊNG trong bộ nhớ (`vramBroker.ledger`) ⇒ `api` và
+ * `worker` cùng tưởng card còn trống. Bảng này là chỗ hai bên nhìn thấy nhau.
+ *
+ * ⚠⚠ ĐÂY **KHÔNG** PHẢI NGUỒN SỰ THẬT CỦA MỘT TIẾN TRÌNH VỀ CHÍNH NÓ. Sổ CỤC BỘ mới là. Bảng này
+ * là **bản công bố**: mỗi tiến trình GHI trạng thái của mình vào đây và ĐỌC của anh em ra. Một
+ * hàng của ta biến mất khỏi đây KHÔNG có nghĩa ta đã nhả — xem khối "bằng chứng đã nhả" ở
+ * `server/services/vram/vramSharedLedger.ts` (phát hiện của Pha 3 Task 1: `kill(pid,0)` sớm giả,
+ * và một hiệu số của bản sao cũ là đúng hình dạng lỗi T5-11).
+ *
+ * ⚠ `bytes` là `bigint` ⇒ mọi giá trị không hữu hạn phải bị chặn TRƯỚC khi tới đây (`22P02` làm
+ * mất **cả lô**, đúng tiền lệ migration 0311). Hàng rào: `vramSharedLedgerStore.rowFromLease()`.
+ */
+export const vramLeases = pgTable("vram_leases", {
+  /**
+   * `${processKey}#${leaseId}` — KHOÁ CHÍNH. ⚠ KHÔNG dùng `leaseId` một mình: nó là
+   * `lease-${++seq}` **theo tiến trình**, nên `api` và `worker` cùng đẻ ra `lease-1`.
+   */
+  leaseKey: varchar("leaseKey", { length: 200 }).primaryKey(),
+  /**
+   * `${role}:${pid}:${bootMs}`. ⚠ `bootMs` CÓ MẶT vì **HĐH CẤP LẠI PID**: một `worker` chết rồi
+   * tiến trình khác nhận đúng PID đó sẽ "kế thừa" giấy phép của người đã chết, và sổ chung khai
+   * một khối byte không tồn tại (cùng lớp lỗi nợ N2-2 của Pha 2A).
+   */
+  processKey: varchar("processKey", { length: 96 }).notNull(),
+  pid: integer("pid").notNull(),
+  role: varchar("role", { length: 32 }).notNull(),
+  leaseId: varchar("leaseId", { length: 64 }).notNull(),
+  owner: varchar("owner", { length: 160 }).notNull(),
+  leaseKind: varchar("leaseKind", { length: 32 }).notNull(),
+  priority: varchar("priority", { length: 16 }).notNull(),
+  /** `actualBytes ?? estimatedBytes` — cùng công thức `vramBroker.leaseBytes()`, một nguồn. */
+  bytes: bigint("bytes", { mode: "number" }).notNull(),
+  /** `true` ⇔ `bytes` do một THƯỚC đẻ ra. `false` ⇒ ƯỚC LƯỢNG (types.ts, ba nhóm/hai ô). */
+  measured: boolean("measured").default(false).notNull(),
+  /** `0` = NHÀN RỖI ⇒ thu hồi được. Task 5 (`preempt()` xuyên tiến trình) đứng trên ô này. */
+  refCount: integer("refCount").default(1).notNull(),
+  /** `VramReclaimerId` hoặc `null` = **KHÔNG ai thu hồi được** hộ này. */
+  reclaimer: varchar("reclaimer", { length: 32 }),
+  acquiredAt: timestamp("acquiredAt").notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("vram_leases_process_idx").on(table.processKey),
+  index("vram_leases_updated_idx").on(table.updatedAt),
+]);
+
+export type VramLeaseRow = typeof vramLeases.$inferSelect;
+export type InsertVramLeaseRow = typeof vramLeases.$inferInsert;

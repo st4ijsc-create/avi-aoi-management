@@ -5,10 +5,14 @@
  * với một câu bàn giao thẳng: *"chính sách 'mù thì chặt hơn' là của Task 5"*. File này là chính sách
  * đó, và nó chỉ có MỘT hình dạng đầu ra:
  *
- *     effective = headroomBytes − biênTuổiTick − byteĐãChạyNgoàiSổ − phụPhíMẤTTINCẬY
+ *     effective = headroomBytes − biênTuổiTick − biênTuổiSổChung − byteĐãChạyNgoàiSổ − phụPhíMẤTTINCẬY
+ *
+ * ⚠ Pha 3 Task 2 thêm **số hạng thứ hai** (`biênTuổiSổChung`) — cùng hàm `bienTheoTuoi()`, cùng
+ * trần, khác NGUỒN TUỔI: ô tick già theo đầu dò, bản sao đọc sổ chung già theo DB. Một cái hỏng
+ * không kéo cái kia, nên chúng là hai ô riêng.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * ⚠⚠⚠ VÌ SAO CẢ BA SỐ HẠNG ĐỀU **TRỪ**, KHÔNG SỐ HẠNG NÀO CỘNG — VÀ ĐÓ LÀ TOÀN BỘ BẤT BIẾN
+ * ⚠⚠⚠ VÌ SAO MỌI SỐ HẠNG ĐỀU **TRỪ**, KHÔNG SỐ HẠNG NÀO CỘNG — VÀ ĐÓ LÀ TOÀN BỘ BẤT BIẾN
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * Vì `headroom = trần − max(L, A) − đệm` và `max(L, A) ≥ L`, **`attributableBytes = null` là CHẶN
  * TRÊN của mọi headroom**. Nên mọi phản ứng kiểu *"không chắc thì rơi về chỉ-sổ"* là một phép **LÀM
@@ -80,6 +84,9 @@
  */
 import type { HeadroomResult } from "./vramHeadroom";
 import type { VramDegradationReason, VramUnledgeredFact } from "./vramRefusal";
+// ⚠ CHỈ KIỂU: `import type` bị xoá sạch lúc biên dịch, nên file này vẫn "không import gì ngoài
+// KIỂU" và vẫn đồng bộ tuyệt đối (ràng buộc 1).
+import type { SharedLedgerFact } from "./vramSharedLedger";
 
 const MIB = 1024 * 1024;
 
@@ -115,6 +122,22 @@ export function distrustUnitBytes(): number {
 export const TICK_STALE_AFTER_MS = 120_000;
 
 /**
+ * ★★★ Pha 3 Task 2 — bản sao đọc sổ chung già hơn mốc này ⇒ `"shared-ledger-stale"`.
+ *
+ * ⚠ CÙNG MỘT LÝ LẼ với `TICK_STALE_AFTER_MS`, và CÙNG một con số vì **cùng một nhịp nuôi cả hai**:
+ * `vramReconciler.__runReconcileTick()` chạy mỗi 60 s và làm mới CẢ ô tick LẪN bản sao đọc. Hai
+ * chu kỳ lỡ ⇒ nguồn số đã hỏng, không còn là "một nhịp trễ".
+ *
+ * ⚠⚠ VÀ ĐÂY LÀ CON SỐ PHẢI ĐỌC TO: **60 s là ĐỘ TRỄ CƯỠNG CHẾ THẬT XUYÊN TIẾN TRÌNH.** Trong cửa
+ * sổ đó, một giấy phép vừa mở ở `worker` là **vô hình** với `api`, và ngược lại. Đây không phải
+ * khuyết tật ngẫu nhiên mà là **cái giá của việc giữ `reserve()` đồng bộ** (ràng buộc 1): đường
+ * quyết định không được `await` DB, nên nó chỉ có thể đọc một bản sao. Ai muốn cửa sổ hẹp hơn phải
+ * rút nhịp đồng bộ xuống (đắt: một lượt đi DB mỗi nhịp × số tiến trình), KHÔNG phải bằng cách cho
+ * `reserve()` đi hỏi DB.
+ */
+export const SHARED_LEDGER_STALE_AFTER_MS = 120_000;
+
+/**
  * Tốc độ cấp phát lớn nhất QUAN SÁT ĐƯỢC, dùng cho biên theo tuổi (§5.6c). Đo được: khối 30B
  * **17.511.354.368 B** nạp xong trong **11 s** (dải quan sát 11–43 s ⇒ lấy đầu NHANH nhất).
  */
@@ -140,6 +163,24 @@ const DISTRUST_UNITS: Record<VramDegradationReason, number> = {
   "unledgered-unasked": 1,
   // nhân với số lượt, KẸP ở 4 — xem `unknownUnits()`.
   "unledgered-unknown": 1,
+  /**
+   * ★★★ Pha 3 Task 2 — SỔ CHUNG. Trọng số theo đúng khuôn đã dùng cho ô tick:
+   *   • `shared-ledger-unasked` = **2** — CẤU TRÚC, KHÔNG TỰ LÀNH (chưa có lượt đồng bộ nào chạy
+   *     trong tiến trình này ⇒ nó sẽ không tự chạy), cùng hạng `"no-tick"`.
+   *   • `shared-ledger-stale` = **1** — có số, số cũ; phần "cũ bao nhiêu" đã đi vào biên theo tuổi.
+   *   • `shared-ledger-unsynced` = **1** — ta vô hình với anh em.
+   *
+   * ⚠⚠ VÀ ĐÂY LÀ GIỚI HẠN PHẢI KHAI, KHÔNG ĐƯỢC ĐỌC NHƯ MỘT BẢO ĐẢM: một tiến trình anh em có thể
+   * đang giữ **7,8 GB** (sidecar thị giác) hay **17 GB** (khối 30B), trong khi phụ phí ở đây tối đa
+   * là 2 đơn vị = **2.048 MiB**. Con số này là **một BIÊN đủ để loại những lượt xin SÁT MÉP khi hệ
+   * không nhìn rõ**, KHÔNG phải một lời hứa rằng phần không thấy đã được tính vào — đúng câu mà
+   * `DISTRUST_UNIT_DEFAULT_BYTES` đã phải nói một lần rồi. Trừ đủ 17 GB cho một khả năng là
+   * **đóng băng cả hệ**; lời giải thật cho cửa sổ đó là **rút ngắn độ trễ đồng bộ**, không phải
+   * nâng phụ phí.
+   */
+  "shared-ledger-unasked": 2,
+  "shared-ledger-stale": 1,
+  "shared-ledger-unsynced": 1,
   /**
    * ★★★ I-3 (review TOÀN NHÁNH) — **HÀNG `"gguf-slot-cap": 0` ĐÃ BỊ XOÁ Ở ĐÂY, CÓ CHỦ Ý.**
    *
@@ -196,6 +237,14 @@ export interface EnforcementInput {
   readonly tickConsecutiveFailures: number;
   /** `vramWiring.vramBeginFailureState()`. ⚠ `null` = **CHƯA HỎI**, KHÔNG phải "không có lượt nào". */
   readonly unledgered: VramUnledgeredFact;
+  /**
+   * ★★★ Pha 3 Task 2 — `vramSharedLedger.sharedLedgerFact(nowMs)`.
+   * ⚠ `null` = **CHƯA LÀM MỚI LẦN NÀO**, KHÔNG phải "không có tiến trình nào khác giữ gì". Cùng
+   * kỷ luật với `unledgered: null`, và cùng lý do: một mặc định lặng lẽ ở đây biến câu *"tôi không
+   * biết anh em đang giữ gì"* thành *"tôi đã kiểm và anh em không giữ gì"* — trên một tài nguyên
+   * mà một tiến trình anh em có thể đang giữ 17 GB.
+   */
+  readonly sharedLedger: SharedLedgerFact;
 }
 
 export interface EnforcementDecision {
@@ -203,6 +252,13 @@ export interface EnforcementDecision {
   readonly effectiveHeadroomBytes: number;
   /** Biên theo tuổi tick (BYTE) — đã kẹp trần. */
   readonly staleMarginBytes: number;
+  /**
+   * ★ Pha 3 Task 2 — biên theo tuổi của **BẢN SAO ĐỌC SỔ CHUNG** (BYTE), đã kẹp cùng một trần.
+   * ⚠ Ô RIÊNG, không gộp vào `staleMarginBytes`: hai bản sao **già độc lập với nhau** (ô tick do
+   * đầu dò nuôi, bản sao đọc do DB nuôi — một cái hỏng không kéo cái kia), và gộp lại thì không ai
+   * đọc được đường nào đang cũ. Cùng kỷ luật "hai câu hỏi khác nhau thì hai ô khác nhau".
+   */
+  readonly sharedLedgerMarginBytes: number;
   /** Byte đã chạy NGOÀI SỔ, trừ như thứ **ĐÃ TIÊU** (bàn giao Task 3). */
   readonly unledgeredChargeBytes: number;
   /** Tổng phụ phí mất-tin-cậy (BYTE) = Σ đơn vị × `distrustUnitBytes()`. */
@@ -253,6 +309,38 @@ export function applyEnforcement(input: EnforcementInput): EnforcementDecision {
     reasons.push("tick-failing");
   }
 
+  /**
+   * ── SỔ CHUNG (Pha 3 Task 2) ───────────────────────────────────────────────────────────────
+   * ⚠⚠ ĐÂY LÀ CHỖ **ĐỘ TRỄ CƯỠNG CHẾ XUYÊN TIẾN TRÌNH ĐƯỢC KHAI RA**, thay vì bị giấu. Bản sao
+   * đọc được làm mới theo nhịp reconciler (60 s), nên một giấy phép 17 GB vừa mở ở tiến trình anh
+   * em **có thể mất tới một chu kỳ** mới hiện ra ở đây. Cách trả giá là biên byte + lý do, không
+   * phải một lời hứa rằng số luôn tươi.
+   *
+   * ⚠ **KHÔNG có nhánh nào biến `foreignBytes` thành `null`/`0`.** Con số của một bản sao cũ vẫn
+   * là con số tốt nhất ta có; bỏ nó đi là tự nâng dư địa lên chặn TRÊN (ràng buộc toàn cục 8) —
+   * đúng chiều mà cả pha này tồn tại để đóng. `foreignBytes` đi vào `ledgerTotalBytes` ở
+   * `vramBroker.reserve()`, TRƯỚC `computeHeadroom()`; ở đây chỉ còn phần BIÊN và LÝ DO.
+   */
+  const soChung = input.sharedLedger;
+  let sharedLedgerMarginBytes = 0;
+  if (soChung === null) {
+    reasons.push("shared-ledger-unasked");
+  } else {
+    sharedLedgerMarginBytes = bienTheoTuoi(soChung.ageMs, unit);
+    const tuoiKhongDocSoChung = !huuHan(soChung.ageMs) || soChung.ageMs < 0;
+    if (tuoiKhongDocSoChung || soChung.ageMs > SHARED_LEDGER_STALE_AFTER_MS) {
+      reasons.push("shared-ledger-stale");
+    }
+    // "Đang hỏng liên tiếp" và "đã cũ" là HAI câu khác nhau — cùng lý do M-5 của ô tick: một lượt
+    // đồng bộ chưa tới hạn và một lượt đã hỏng 5 lần có TUỔI GIỐNG NHAU cho tới khi quá hạn.
+    if (!huuHan(soChung.consecutiveFailures) || soChung.consecutiveFailures >= 1) {
+      if (!reasons.includes("shared-ledger-stale")) reasons.push("shared-ledger-stale");
+    }
+    if (!huuHan(soChung.unsyncedWrites) || soChung.unsyncedWrites > 0) {
+      reasons.push("shared-ledger-unsynced");
+    }
+  }
+
   // ── ống NGOÀI SỔ ──────────────────────────────────────────────────────────────────────────
   let unledgeredChargeBytes = 0;
   let donViUnknown = 0;
@@ -301,11 +389,16 @@ export function applyEnforcement(input: EnforcementInput): EnforcementDecision {
    * (fail-closed giữ nguyên); không nhánh nào cho ra `NaN` vì cả ba số hạng đã được lọc hữu hạn.
    */
   const effectiveHeadroomBytes =
-    input.headroom.headroomBytes - staleMarginBytes - unledgeredChargeBytes - distrustChargeBytes;
+    input.headroom.headroomBytes -
+    staleMarginBytes -
+    sharedLedgerMarginBytes -
+    unledgeredChargeBytes -
+    distrustChargeBytes;
 
   return {
     effectiveHeadroomBytes,
     staleMarginBytes,
+    sharedLedgerMarginBytes,
     unledgeredChargeBytes,
     distrustChargeBytes,
     // Đông cứng: `readonly` chỉ là kiểu, không chặn `push` lúc chạy — và danh sách này đi thẳng vào
