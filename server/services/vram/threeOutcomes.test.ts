@@ -23,6 +23,7 @@ import {
   VRAM_LOAD_RETRIES_DEFAULT,
   VRAM_LOAD_RETRY_DELAY_MS_DEFAULT,
   VRAM_EXHAUSTION_SIGNALS,
+  noteVramAllocationFailure,
 } from "./vramLoadOutcome";
 import { sanitizeVramEvent } from "./vramEventLog";
 
@@ -392,10 +393,29 @@ describe("§3 — CẠM BẪY `gpuLayers: -1` (Math.max(0, Math.min(totalLayers,
       expect(d.requestedGpuLayers).toBe(xin);
     }
     // Hàm chuẩn hoá thuần — canh trực tiếp để lá chắn không phụ thuộc đường dài.
-    expect(chuanHoaSoLop(-1)).toEqual({ gpuLayers: "auto", normalizedFrom: -1 });
-    expect(chuanHoaSoLop(0)).toEqual({ gpuLayers: 0, normalizedFrom: null });
-    expect(chuanHoaSoLop(undefined)).toEqual({ gpuLayers: "max", normalizedFrom: null });
-    expect(chuanHoaSoLop(NaN)).toEqual({ gpuLayers: "auto", normalizedFrom: null });
+    expect(chuanHoaSoLop(-1)).toEqual({ gpuLayers: "auto", normalizedFrom: -1, reason: "negative-gpu-layers" });
+    expect(chuanHoaSoLop(0)).toEqual({ gpuLayers: 0, normalizedFrom: null, reason: null });
+    expect(chuanHoaSoLop(undefined)).toEqual({ gpuLayers: "max", normalizedFrom: null, reason: null });
+    // ★ M-3 (review vòng 1) — bản trước KHOÁ `reason: null` ở đây, tức viết một nhánh IM LẶNG vào
+    // HỢP ĐỒNG, ngay trong task diệt im lặng. Nay `NaN`/`Infinity` cũng phải có lý do ⇒ có sự kiện.
+    expect(chuanHoaSoLop(NaN)).toEqual({ gpuLayers: "auto", normalizedFrom: NaN, reason: "non-finite-gpu-layers" });
+    expect(chuanHoaSoLop(Infinity).reason).toBe("non-finite-gpu-layers");
+  });
+
+  it("★★ 2b. M-3 — `NaN` KHÔNG được lọt vào jsonb dưới dạng `null` (sự kiện phải đọc được)", async () => {
+    const log = thuSuKien();
+    await loadWithVramOutcomes({
+      owner: "gguf:fixture-17000", kind: "gguf-model", priority: "interactive",
+      fileBytes: FIXTURE_BYTES, requestedGpuLayers: NaN,
+      load: async () => ({ gpuLayers: 12 }),
+      resolvedGpuLayers: (m) => m.gpuLayers,
+      begin: soGiaySo().begin, emit: log.emit, sleep: dongHoGia().sleep,
+    });
+    const d = log.ofType("degraded")[0].detail as Record<string, unknown>;
+    expect(d.reason).toBe("non-finite-gpu-layers");
+    // `JSON.stringify(NaN)` là `null` ⇒ số biến mất IM LẶNG trong cột jsonb. Điểm gọi tự hoá chuỗi.
+    expect(d.requestedGpuLayers).toBe("NaN");
+    expect(JSON.parse(JSON.stringify(d)).requestedGpuLayers).toBe("NaN");
   });
 
   it("★★★ 3. nạp THÀNH CÔNG ngay lượt đầu nhưng số lớp THẬT = 0 ⇒ VẪN kêu (`cpuOnly`)", async () => {
@@ -426,6 +446,57 @@ describe("§3 — CẠM BẪY `gpuLayers: -1` (Math.max(0, Math.min(totalLayers,
     expect(ket.outcome).toBe("loaded");
     expect(ket.resolvedGpuLayers).toBe(48);
     expect(log.events).toEqual([]);
+  });
+
+  /**
+   * ★★★ I-3 (review vòng 1) — CỬA THỨ HAI CỦA BẪY `-1`, TRONG MÃ SẢN XUẤT, KHÔNG LÁ CHẮN.
+   *
+   * `chuanHoaSoLop()` chỉ với tới những gì đi qua `loadWithVramOutcomes()`. `aiReranker.ts` gọi
+   * `llama.loadModel()` THẲNG với một hằng số `-1` GHIM CỨNG. Reviewer đo trên phần cứng thật, đúng
+   * file model đó (`bge-reranker-v2-m3-Q8_0.gguf`): `gpuLayers: -1` ⇒ `model.gpuLayers === 0` trong
+   * khi `totalLayers === 25`. `.env` hôm nay có `RAG_RERANKER_GPU=false` nên vô hại — nhưng bật
+   * đúng một cờ là có ngay một hộ tiêu thụ chạy CPU trong im lặng.
+   *
+   * ⚠ Ca này quét THEO LỚP, không theo một dòng: bất kỳ `gpuLayers` ÂM nào mới xuất hiện trong
+   * `server/**` đều đỏ. Đó là khác biệt giữa "sửa một thể hiện" và "khoá một lớp".
+   */
+  it("★★★ 4b. I-3 — KHÔNG file nào trong server/ còn truyền `gpuLayers` ÂM cho node-llama-cpp", () => {
+    const goc = path.join(process.cwd(), "server");
+    const viPham: string[] = [];
+    const duyet = (thuMuc: string) => {
+      for (const e of fs.readdirSync(thuMuc, { withFileTypes: true })) {
+        const p = path.join(thuMuc, e.name);
+        if (e.isDirectory()) { duyet(p); continue; }
+        if (!/\.ts$/.test(e.name) || /\.test\.ts$/.test(e.name)) continue;
+        const src = fs.readFileSync(p, "utf8");
+        /**
+         * Bỏ chú thích VÀ chuỗi. Cả hai đều cần, và đã đo:
+         *   • chú thích — `vramLoadOutcome.ts`/`aiReranker.ts` GIẢI THÍCH bẫy `-1` bằng chữ; máy
+         *     quét bắt chính lời giải thích của mình là một lưới GIẢ;
+         *   • chuỗi — một `note:` sản xuất chứa đúng chữ "gpuLayers:-1" cũng khớp.
+         */
+        const ma = src
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/\/\/[^\n]*/g, "")
+          .replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g, '""');
+        /**
+         * ⚠ Chỉ khớp khi GIÁ TRỊ bắt đầu bằng dấu trừ + chữ số, tức một HẰNG SỐ ÂM truyền thẳng.
+         * KHÔNG khớp `z.number().min(-1)` ở `aiGgufRouter.ts` — đó là lược đồ ĐẦU VÀO, và cửa đó
+         * đã có `chuanHoaSoLop()` chặn KÈM SỰ KIỆN (cố ý giữ nguyên: từ chối thẳng ở API sẽ làm
+         * hỏng một lời gọi hợp lệ theo quy ước llama.cpp CLI, còn chuẩn hoá-có-tiếng thì không).
+         */
+        for (const m of ma.matchAll(/gpuLayers\s*:\s*(-\s*\d+)/g)) {
+          viPham.push(`${path.relative(process.cwd(), p)} → gpuLayers: ${m[1].trim()}`);
+        }
+      }
+    };
+    duyet(goc);
+    expect(
+      viPham,
+      "node-llama-cpp 3.x tính Math.max(0, Math.min(totalLayers, n)) ⇒ MỌI số âm nghĩa là 0 LỚP " +
+        "TRÊN GPU: suy luận chạy CPU, chậm gấp bội, KHÔNG một dòng cảnh báo. Dùng \"auto\" (nạp " +
+        "nhiều lớp nhất còn vừa) hoặc \"max\" (tất cả, ném nếu không đủ).",
+    ).toEqual([]);
   });
 
   it("5. không khai được cách đọc số lớp ⇒ `layerCountUnknown`, KHÔNG bịa ra 0", async () => {
@@ -648,6 +719,69 @@ describe("§5 ★★ CA BẮT BUỘC — KHÔNG CÓ ĐƯỜNG NÀO IM LẶNG", (
       },
     },
     {
+      // ⚠ M-6 — trước bản vá, nhánh này KHÔNG sinh sự kiện nào: `resolved` thành `null`, `cpuOnly`
+      // thành `false`, và lá chắn `zero-gpu-layers-on-success` MÙ đúng lúc nó cần thấy nhất.
+      ten: "bộ đọc số lớp (resolvedGpuLayers) NÉM",
+      reason: "resolve-gpu-layers-threw",
+      chay: async () => {
+        const log = thuSuKien();
+        await loadWithVramOutcomes({
+          owner: "gguf:fixture-17000", kind: "gguf-model", priority: "interactive",
+          fileBytes: FIXTURE_BYTES, requestedGpuLayers: "max",
+          load: async () => ({ gpuLayers: 12 }),
+          resolvedGpuLayers: () => { throw new Error("getter hỏng"); },
+          begin: soGiaySo().begin, emit: log.emit, sleep: dongHoGia().sleep,
+        });
+        return log.events;
+      },
+    },
+    {
+      // ⚠ M-3 — `NaN` từng đổi ngầm sang "auto" KHÔNG sự kiện, và ca test còn KHOÁ hành vi đó.
+      ten: "gpuLayers KHÔNG HỮU HẠN bị chuẩn hoá",
+      reason: "non-finite-gpu-layers",
+      chay: async () => {
+        const log = thuSuKien();
+        await loadWithVramOutcomes({
+          owner: "gguf:fixture-17000", kind: "gguf-model", priority: "interactive",
+          fileBytes: FIXTURE_BYTES, requestedGpuLayers: NaN,
+          load: async () => ({ gpuLayers: 12 }),
+          resolvedGpuLayers: (m) => m.gpuLayers,
+          begin: soGiaySo().begin, emit: log.emit, sleep: dongHoGia().sleep,
+        });
+        return log.events;
+      },
+    },
+    {
+      // ⚠ I-1 — bốn đường cấp phát NGOÀI §5.5 (ba createContext + đường dự phòng). Chúng KHÔNG đi
+      // qua loadWithVramOutcomes nên bảng này canh chúng qua `noteVramAllocationFailure`.
+      ten: "cấp phát hỏng NGOÀI §5.5 vì hết VRAM (createContext)",
+      reason: "driver-refused-outside-load-outcomes",
+      chay: async () => {
+        const log = thuSuKien();
+        noteVramAllocationFailure({
+          owner: "gguf:fixture-17000", kind: "gguf-model", priority: "interactive",
+          site: "loadGgufModel.createContext",
+          err: new Error("A context size of 32768 is too large for the available VRAM"),
+          emit: log.emit,
+        });
+        return log.events;
+      },
+    },
+    {
+      ten: "cấp phát hỏng NGOÀI §5.5 vì lý do KHÁC",
+      reason: "allocation-failed-not-vram",
+      chay: async () => {
+        const log = thuSuKien();
+        noteVramAllocationFailure({
+          owner: "gguf-embed-ctx:x", kind: "gguf-embed-context", priority: "background",
+          site: "getEmbeddingContext.createEmbeddingContext",
+          err: new Error("model has no embedding head"),
+          emit: log.emit,
+        });
+        return log.events;
+      },
+    },
+    {
       ten: "beginVramAllocation NÉM (lời hứa 'không bao giờ ném' bị vỡ)",
       reason: "begin-allocation-threw",
       chay: async () => {
@@ -702,6 +836,76 @@ describe("§5 ★★ CA BẮT BUỘC — KHÔNG CÓ ĐƯỜNG NÀO IM LẶNG", (
     expect(vramBeginFailureState().lastReason).toMatch(/ước lượng hỏng/);
     const ev = events.find((e) => (e.detail as Record<string, unknown>)?.reason === "begin-allocation-failed");
     expect(ev, "Task 2 chỉ để lại console.warn; một dòng console KHÔNG PHẢI một cơ chế").toBeDefined();
+
+    /**
+     * ★★★ C-1 (review vòng 1) — SỔ PHẢI TỰ KHAI PHẦN HỤT BẰNG **BYTE**, KHÔNG PHẢI BẰNG **LƯỢT**.
+     * Vòng trước tôi từ chối cả (i) cưỡng chế lẫn (ii) kế toán, viện cùng một lý do. (i) đúng là
+     * Task 5; (ii) **không cần từ chối ai cả**. Và một cái đếm KHÔNG đổi ngược thành byte được.
+     */
+    expect(vramBeginFailureState().unledgeredBytes).toBe(FIXTURE_BYTES);
+    expect(vramBeginFailureState().unknownCount).toBe(0);
+    expect((ev!.detail as Record<string, unknown>).unledgeredBytes).toBe(FIXTURE_BYTES);
+    expect((ev!.detail as Record<string, unknown>).unledgeredBytesTotal).toBe(FIXTURE_BYTES);
+
+    // Lượt thứ hai KHÔNG có căn cứ nào để ước byte ⇒ phải TÁCH, không cộng một số 0 giả vào tổng.
+    const t2 = await beginVramAllocation({ owner: "gguf-ctx:x", kind: "gguf-context", priority: "interactive" });
+    t2.release();
+    expect(vramBeginFailureState().count).toBe(2);
+    expect(vramBeginFailureState().unledgeredBytes, "0 giả sẽ làm cuốn sổ hụt tự khai là đủ").toBe(FIXTURE_BYTES);
+    expect(vramBeginFailureState().unknownCount).toBe(1);
+    const ev2 = events.filter((e) => (e.detail as Record<string, unknown>)?.reason === "begin-allocation-failed")[1];
+    expect((ev2.detail as Record<string, unknown>).unledgeredBytesUnknown).toBe(true);
+    expect((ev2.detail as Record<string, unknown>).unledgeredBytes).toBeNull();
+  });
+
+  /**
+   * ★★★ I-2 (review vòng 1) — LỖ NẶNG NHẤT CỦA VÒNG TRƯỚC, VÀ NÓ TÁI TẠO ĐÚNG LỚP LỖI `0/24`
+   * CAO HƠN MỘT TẦNG.
+   *
+   * Toàn bộ bảng ★★ ở trên tiêm `emit` vào, nên nó chứng minh **CHÍNH SÁCH gọi emit**, KHÔNG chứng
+   * minh **emit nối được vào sổ**. Reviewer đột biến `const emit = spec.emit ?? logVramEvent` thành
+   * một **hàm rỗng** ⇒ `server/services/vram/` **355/355 XANH** và `aiGgufEngine` **87/87 XANH**.
+   * Tức: bốn bước §5.5 có thể trở lại VÔ HÌNH mà không một ca nào đỏ — đúng hình dạng "thứ con
+   * người đọc được ≠ thứ hệ thống nhận được" mà cả task này sinh ra để diệt.
+   *
+   * Ca này chạy `loadWithVramOutcomes` **KHÔNG truyền `emit`**, rồi đòi thấy sự kiện ở **đầu kia
+   * của ống dẫn** — trong lô mà `flushVramEvents()` đưa cho `db.insert()`.
+   */
+  it("★★★ I-2 — sự kiện của loadWithVramOutcomes TỚI ĐƯỢC ỐNG DẪN THẬT (không tiêm emit)", async () => {
+    const insert = vi.fn(async () => undefined);
+    vi.doMock("../../db/connection", () => ({ getDb: async () => ({ insert: () => ({ values: insert }) }) }));
+    vi.doMock("./vramProcessProbe", () => ({
+      readProcessVram: async () => ({
+        totalBytes: 2048 * MiB, byPid: new Map([[process.pid, 2048 * MiB]]), byLuid: new Map(), sampledAtMs: Date.now(),
+      }),
+      awaitCounterSettle: async () => {},
+    }));
+
+    const eventLog = await import("./vramEventLog");
+    eventLog.__setVramLogTimerEnabled(false);
+    await eventLog.flushVramEvents(); // dọn hàng đợi của ca trước
+    const { loadWithVramOutcomes: chay } = await import("./vramLoadOutcome");
+    const { __resetBrokerForTests } = await import("./vramBroker");
+    __resetBrokerForTests();
+
+    await expect(
+      chay({
+        owner: "gguf:fixture-17000", kind: "gguf-model", priority: "interactive",
+        fileBytes: FIXTURE_BYTES, requestedGpuLayers: "max",
+        load: async () => { throw LOI_THAT_CUA_LLAMA; },
+        sleep: async () => {},
+        // ⚠ KHÔNG truyền `emit` — ĐÓ LÀ TOÀN BỘ NỘI DUNG CỦA CA NÀY.
+      }),
+    ).rejects.toThrow();
+
+    expect(await eventLog.flushVramEvents()).toBeGreaterThan(0);
+    const rows = insert.mock.calls.flatMap((c) => (c as unknown as [Array<Record<string, unknown>>])[0]);
+    const loai = new Set(rows.map((r) => String(r.event)));
+    for (const mong of ["driver_refused", "retry", "refuse"]) {
+      expect(loai, `"${mong}" KHÔNG tới được db.insert() — dây emit→logVramEvent đã đứt`).toContain(mong);
+    }
+    // Và chúng phải mang đúng chủ — không phải một dòng lạc của module khác.
+    expect(rows.filter((r) => r.event === "driver_refused").every((r) => r.owner === "gguf:fixture-17000")).toBe(true);
   });
 
   it("★★★ `warmModel()` KHÔNG còn nuốt — cả hai nhánh trả false đều để lại `warm_failed`", async () => {
@@ -722,8 +926,12 @@ describe("§5 ★★ CA BẮT BUỘC — KHÔNG CÓ ĐƯỜNG NÀO IM LẶNG", (
     }, { timeout: 2000 });
 
     const rows = insert.mock.calls.flatMap((c) => (c as unknown as [Array<Record<string, unknown>>])[0]);
-    const warm = rows.filter((r) => r.event === "warm_failed");
+    // ⚠ M-5 (review vòng 1) — `warm_skipped`, KHÔNG PHẢI `warm_failed`: "chưa cấu hình GGUF" không
+    // phải một thất bại, và nó ghi MỘT DÒNG MỖI LẦN KHỞI ĐỘNG. Để nó mang tên "failed" là bắt
+    // Task 7 lọc rác trong chính bảng nó dùng để đếm thất bại.
+    const warm = rows.filter((r) => r.event === "warm_skipped");
     expect(warm.length, "0/24 lượt của Ư0 không có vết vì đúng nhánh này là một `catch {}`").toBeGreaterThan(0);
+    expect(rows.some((r) => r.event === "warm_failed"), "không cấu hình GGUF KHÔNG phải thất bại").toBe(false);
     expect(String((warm[0].detail as Record<string, unknown>).reason)).toBe("gguf-unavailable");
     expect(warm[0].owner).toBe("gguf:Qwen3-30B-khong-ton-tai");
   });
@@ -827,12 +1035,70 @@ describe("§6 — ỐNG DẪN SỰ KIỆN: giá trị không hữu hạn KHÔNG 
     expect(JSON.parse(JSON.stringify(out.detail)).luc).toBe("2026-08-04T00:00:00.000Z");
   });
 
-  it("6. tham chiếu VÒNG không làm treo bộ làm sạch", () => {
+  it("6. tham chiếu VÒNG không làm treo bộ làm sạch, và lượt cắt vòng ĐƯỢC GHI TÊN", () => {
     const a: Record<string, unknown> = { x: 1 };
     a.self = a;
-    expect(() =>
-      sanitizeVramEvent({ event: "drift", owner: "a", leaseKind: "gguf-model", priority: "interactive", detail: a }),
-    ).not.toThrow();
+    const out = sanitizeVramEvent({
+      event: "drift", owner: "a", leaseKind: "gguf-model", priority: "interactive", detail: a,
+    });
+    expect(String((out.detail!.nonFiniteFields as string[])?.join("|"))).toMatch(/vòng/);
+  });
+
+  it("★★★ 6b. M-1 — tham chiếu DÙNG CHUNG (DAG, KHÔNG vòng) phải được làm sạch ĐỦ MỌI LẦN", () => {
+    // Bản đầu dùng visited-set không bao giờ xoá ⇒ lần gặp THỨ HAI trả nguyên bản ⇒ `y` mất số
+    // IM LẶNG và KHÔNG được ghi tên. Chính bộ làm sạch chống-im-lặng tự đẻ ra một đường im lặng.
+    const shared = { headroomBytes: -Infinity };
+    const out = sanitizeVramEvent({
+      event: "drift", owner: "a", leaseKind: "gguf-model", priority: "interactive",
+      detail: { x: shared, y: shared },
+    });
+    const json = JSON.parse(JSON.stringify(out.detail));
+    expect(json.x.headroomBytes).toBe("-Infinity");
+    expect(json.y.headroomBytes, "nhánh DÙNG CHUNG thứ hai KHÔNG được thành null").toBe("-Infinity");
+    expect(out.detail!.nonFiniteFields).toEqual([
+      "detail.x.headroomBytes=-Infinity",
+      "detail.y.headroomBytes=-Infinity",
+    ]);
+  });
+
+  it("★★ 6c. M-2 — sâu quá trần thì CẮT, nhưng phải KÊU (cắt im lặng vẫn là im lặng)", () => {
+    let sau: Record<string, unknown> = { v: -Infinity };
+    for (let i = 0; i < 11; i++) sau = { n: sau };
+    const out = sanitizeVramEvent({
+      event: "drift", owner: "a", leaseKind: "gguf-model", priority: "interactive", detail: sau,
+    });
+    const ten = (out.detail!.nonFiniteFields as string[]) ?? [];
+    expect(ten.length, "trần độ sâu là đúng; cắt mà không ghi tên thì không").toBeGreaterThan(0);
+    expect(ten.some((s) => /sâu quá 8 tầng/.test(s))).toBe(true);
+  });
+
+  it("★★ 6d. M-4 — hàng đợi ĐẦY thì có ĐẾM và có TIẾNG, không vứt im lặng", async () => {
+    process.env.VRAM_LOG_QUEUE_MAX = "2";
+    const insert = vi.fn(async () => undefined);
+    vi.doMock("../../db/connection", () => ({ getDb: async () => ({ insert: () => ({ values: insert }) }) }));
+    const { logVramEvent, flushVramEvents, __setVramLogTimerEnabled, __vramDroppedEventCount } =
+      await import("./vramEventLog");
+    __setVramLogTimerEnabled(false);
+    const mot = (n: number) => ({
+      event: "retry", owner: `gguf:${n}`, leaseKind: "gguf-model" as const, priority: "interactive" as const,
+    });
+
+    logVramEvent(mot(1));
+    logVramEvent(mot(2));
+    logVramEvent(mot(3)); // VỨT
+    logVramEvent(mot(4)); // VỨT
+    expect(__vramDroppedEventCount()).toBe(2);
+
+    expect(await flushVramEvents()).toBe(2);
+    // Sự kiện ĐẦU TIÊN ghi được sau quãng thủng phải mang theo con số đó — nếu không, số sự kiện
+    // bị vứt là VÔ HÌNH với mọi truy vấn của Task 7.
+    logVramEvent(mot(5));
+    expect(__vramDroppedEventCount()).toBe(0);
+    await flushVramEvents();
+    const rows = insert.mock.calls.flatMap((c) => (c as unknown as [Array<Record<string, unknown>>])[0]);
+    const cuoi = rows[rows.length - 1];
+    expect((cuoi.detail as Record<string, unknown>).droppedBeforeThis).toBe(2);
+    delete process.env.VRAM_LOG_QUEUE_MAX;
   });
 
   it("★★ 7. `logVramEvent()` THẬT SỰ áp bộ làm sạch — lô vẫn ghi được với `-Infinity` đi vào", async () => {

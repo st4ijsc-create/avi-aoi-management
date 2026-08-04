@@ -79,6 +79,8 @@ const QUEUE_MAX = Number(process.env.VRAM_LOG_QUEUE_MAX ?? 5000);
 
 let queue: VramEventInput[] = [];
 let timer: NodeJS.Timeout | null = null;
+/** M-4 — số sự kiện bị VỨT vì hàng đợi đầy, chưa được khai vào sự kiện nào. */
+let soSuKienBiVut = 0;
 
 /**
  * ★★★ Pha 2B Task 3 (bàn giao N-2 của Task 2) — HAI BẪY IM LẶNG CỦA CHÍNH ỐNG DẪN NÀY.
@@ -100,7 +102,9 @@ let timer: NodeJS.Timeout | null = null;
  * DUY NHẤT của hàng đợi (`queue.push` chỉ xuất hiện trong `logVramEvent`) — chứ không ở từng điểm
  * sản xuất: 20 điểm gọi hôm nay, và mọi điểm gọi của Task 4/5/6/7 sau này, đều đi qua đây.
  *
- * ⚠ KHÔNG VỨT SỰ KIỆN. Giá trị không hữu hạn bị THAY, và chỗ nó từng ở được GHI TÊN
+ * ⚠ BỘ LÀM SẠCH KHÔNG VỨT SỰ KIỆN NÀO. (Câu này nói về BỘ LÀM SẠCH, không phải về cả hàm: cửa
+ * `queue.length >= QUEUE_MAX` bên dưới **có** vứt — nay có đếm và có tiếng, xem M-4 tại chỗ.)
+ * Giá trị không hữu hạn bị THAY, và chỗ nó từng ở được GHI TÊN
  * (`detail.nonFiniteFields` / `detail.truncatedFields`). Vứt dòng đi là đổi một lỗi im lặng lấy
  * một lỗi im lặng khác.
  * ⚠ Trong `detail`, giá trị thay thế là **CHUỖI** `"-Infinity"`/`"Infinity"`/`"NaN"` chứ không
@@ -124,8 +128,26 @@ function nonFiniteLabel(v: number): "NaN" | "Infinity" | "-Infinity" {
   return Number.isNaN(v) ? "NaN" : v > 0 ? "Infinity" : "-Infinity";
 }
 
+/**
+ * ⚠⚠ M-1 (review vòng 1) — `dangDi` LÀ TẬP **ĐƯỜNG ĐI**, KHÔNG PHẢI TẬP **ĐÃ THĂM**.
+ *
+ * Bản đầu dùng một visited-set và **không bao giờ xoá**. Hệ quả đo được: một object DÙNG CHUNG
+ * (DAG — hai khoá cùng trỏ một object, **không hề có vòng**) bị bỏ qua ở lần gặp THỨ HAI ⇒
+ * `-Infinity` ở nhánh đó **thành `null` im lặng VÀ không được ghi tên**:
+ *
+ *     detail = { x: shared, y: shared }, shared = { headroomBytes: -Infinity }
+ *     ⇒ {"x":{"headroomBytes":"-Infinity"}, "y":{"headroomBytes":null}}   ← y MẤT SỐ, KHÔNG ai biết
+ *
+ * Tức chính bộ làm sạch chống-im-lặng tự đẻ ra một đường im lặng. Xoá khỏi tập sau khi đệ quy
+ * xong biến nó thành path-set: **vòng** vẫn bị chặn (nút còn nằm trên đường đi hiện tại), **dùng
+ * chung** thì được làm sạch đủ mọi lần.
+ *
+ * ⚠ M-2 — CHẠM TRẦN ĐỘ SÂU CŨNG PHẢI KÊU. Trần là đúng (chống nổ ngăn xếp), nhưng cắt mà không nói
+ * thì lại đúng lớp lỗi đang diệt: `detail` lồng 11 tầng có `-Infinity` ở đáy từng cho
+ * `nonFiniteFields === undefined` và một `null` không giải thích được trong jsonb.
+ */
 function scrubDetail(
-  value: unknown, path: string, found: string[], depth: number, seen: WeakSet<object>,
+  value: unknown, path: string, found: string[], depth: number, dangDi: Set<object>,
 ): unknown {
   if (typeof value === "number") {
     if (Number.isFinite(value)) return value;
@@ -136,16 +158,27 @@ function scrubDetail(
   // Date/Map/Set/Buffer… — KHÔNG bóc: `Object.entries(new Date())` là `[]`, bóc ra là XOÁ dữ liệu.
   const proto = Object.getPrototypeOf(value);
   if (!Array.isArray(value) && proto !== Object.prototype && proto !== null) return value;
-  if (depth >= MAX_DETAIL_DEPTH || seen.has(value as object)) return value;
-  seen.add(value as object);
-  if (Array.isArray(value)) {
-    return value.map((v, i) => scrubDetail(v, `${path}[${i}]`, found, depth + 1, seen));
+  if (dangDi.has(value as object)) {
+    found.push(`detail.${path}=<vòng, không duyệt tiếp>`);
+    return value;
   }
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    out[k] = scrubDetail(v, path ? `${path}.${k}` : k, found, depth + 1, seen);
+  if (depth >= MAX_DETAIL_DEPTH) {
+    found.push(`detail.${path}=<sâu quá ${MAX_DETAIL_DEPTH} tầng, KHÔNG làm sạch>`);
+    return value;
   }
-  return out;
+  dangDi.add(value as object);
+  try {
+    if (Array.isArray(value)) {
+      return value.map((v, i) => scrubDetail(v, `${path}[${i}]`, found, depth + 1, dangDi));
+    }
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = scrubDetail(v, path ? `${path}.${k}` : k, found, depth + 1, dangDi);
+    }
+    return out;
+  } finally {
+    dangDi.delete(value as object);
+  }
 }
 
 /**
@@ -177,7 +210,7 @@ export function sanitizeVramEvent(e: VramEventInput): VramEventInput {
 
   let detail = e.detail;
   if (detail !== undefined && detail !== null) {
-    detail = scrubDetail(detail, "", nonFinite, 0, new WeakSet()) as Record<string, unknown>;
+    detail = scrubDetail(detail, "", nonFinite, 0, new Set<object>()) as Record<string, unknown>;
   }
   if (nonFinite.length > 0 || truncated.length > 0) {
     detail = { ...(detail ?? {}) };
@@ -198,7 +231,27 @@ export function sanitizeVramEvent(e: VramEventInput): VramEventInput {
  * là mở lại cả hai bẫy.
  */
 export function logVramEvent(e: VramEventInput): void {
-  if (queue.length >= QUEUE_MAX) return;
+  if (queue.length >= QUEUE_MAX) {
+    /**
+     * ⚠⚠ M-4 (review vòng 1) — CỬA VỨT SỰ KIỆN, VÀ NÓ TỪNG IM LẶNG TUYỆT ĐỐI.
+     *
+     * Có từ trước Task 3, nhưng Task 3 **nhân sản lượng sự kiện lên ~4 lần cho mỗi lượt nạp hỏng**
+     * (`driver_refused` ×4 + `retry` ×2 + `refuse`), nên ngưỡng 5.000 gần hơn hẳn. Và docstring
+     * của chính bản vá này viết *"KHÔNG VỨT SỰ KIỆN"* — câu đó **không đúng** cho đúng cửa này.
+     *
+     * KHÔNG nới `QUEUE_MAX` (thà mất telemetry còn hơn phình bộ nhớ khi DB gián đoạn kéo dài —
+     * chính sách cũ, giữ nguyên). Chỉ ĐẾM, và số đó **đi theo sự kiện kế tiếp ghi được**
+     * (`detail.droppedBeforeThis`) nên nó truy được bằng SQL, không phải chỉ nằm trong bộ nhớ.
+     */
+    soSuKienBiVut++;
+    if (soSuKienBiVut === 1 || soSuKienBiVut % QUEUE_MAX === 0) {
+      console.warn(
+        `[vram] hàng đợi sự kiện ĐẦY (${QUEUE_MAX}) ⇒ đã VỨT ${soSuKienBiVut} sự kiện. ` +
+          `Nhật ký VRAM đang THỦNG — mọi truy vấn của Task 7 trên quãng này đều thiếu.`,
+      );
+    }
+    return;
+  }
   let safe: VramEventInput;
   try {
     safe = sanitizeVramEvent(e);
@@ -206,7 +259,18 @@ export function logVramEvent(e: VramEventInput): void {
     // Làm sạch hỏng thì vẫn phải giữ sự kiện — mất telemetry là thứ đang đi vá, không phải công cụ.
     safe = e;
   }
+  if (soSuKienBiVut > 0) {
+    // Đính vào sự kiện ĐẦU TIÊN ghi được sau quãng thủng, rồi đặt lại. Không có chỗ nào khác để
+    // nói ra: các sự kiện bị vứt không tồn tại, nên chúng chỉ đếm được từ phía sự kiện còn sống.
+    safe = { ...safe, detail: { ...(safe.detail ?? {}), droppedBeforeThis: soSuKienBiVut } };
+    soSuKienBiVut = 0;
+  }
   queue.push(safe);
+}
+
+/** M-4 — số sự kiện bị vứt kể từ lần cuối có sự kiện ghi được. Test canh trực tiếp. */
+export function __vramDroppedEventCount(): number {
+  return soSuKienBiVut;
 }
 
 /** Ghi hết hàng đợi hiện tại thành MỘT lô (không phải một lượt insert mỗi sự kiện), rồi dọn. */

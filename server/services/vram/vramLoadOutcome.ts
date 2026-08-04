@@ -232,20 +232,89 @@ const NOOP_TICKET: VramTicket = {
   release() {},
 };
 
+export type VramNormalizeReason = "negative-gpu-layers" | "non-finite-gpu-layers";
+
+export interface VramLayerNormalization {
+  gpuLayers: VramGpuLayerValue;
+  /** Giá trị NGUYÊN VĂN người gọi đưa vào, khi nó phải bị chuẩn hoá. `null` = không đụng gì. */
+  normalizedFrom: unknown;
+  reason: VramNormalizeReason | null;
+}
+
 /**
  * ⚠ CHẶN SỐ ÂM Ở CỬA — xem khối `-1` ở đầu file. Trả về cả LÝ DO để người gọi ghi sự kiện:
  * chuẩn hoá âm thầm cũng là một suy biến im lặng, chỉ khác chỗ đứng.
+ *
+ * ⚠ M-3 (review vòng 1) — NHÁNH `NaN`/`Infinity` TỪNG TRẢ `normalizedFrom: null`, tức **đổi ngầm
+ * sang `"auto"` mà KHÔNG sinh sự kiện**, và bộ test còn **khoá hành vi im lặng đó thành hợp đồng**.
+ * Xác suất tới được thấp (`z.number()` của router loại `NaN`), nhưng một nhánh im lặng được viết
+ * vào hợp đồng NGAY TRONG task diệt im lặng là thứ không được để lại. Nay cả hai nhánh chuẩn hoá
+ * đều có `reason` ⇒ đều có sự kiện.
  */
-export function chuanHoaSoLop(
-  requested: VramGpuLayerValue | undefined,
-): { gpuLayers: VramGpuLayerValue; normalizedFrom: number | null } {
-  if (requested === undefined || requested === null) return { gpuLayers: "max", normalizedFrom: null };
-  if (requested === "max" || requested === "auto") return { gpuLayers: requested, normalizedFrom: null };
+export function chuanHoaSoLop(requested: VramGpuLayerValue | undefined): VramLayerNormalization {
+  if (requested === undefined || requested === null) return { gpuLayers: "max", normalizedFrom: null, reason: null };
+  if (requested === "max" || requested === "auto") return { gpuLayers: requested, normalizedFrom: null, reason: null };
   if (typeof requested !== "number" || !Number.isFinite(requested)) {
-    return { gpuLayers: "auto", normalizedFrom: null };
+    return { gpuLayers: "auto", normalizedFrom: requested, reason: "non-finite-gpu-layers" };
   }
-  if (requested < 0) return { gpuLayers: "auto", normalizedFrom: requested };
-  return { gpuLayers: Math.floor(requested), normalizedFrom: null };
+  if (requested < 0) return { gpuLayers: "auto", normalizedFrom: requested, reason: "negative-gpu-layers" };
+  return { gpuLayers: Math.floor(requested), normalizedFrom: null, reason: null };
+}
+
+/**
+ * ★★ I-1 (review vòng 1) — GHI MỘT SỰ KIỆN CHO LƯỢT CẤP PHÁT HỎNG **NGOÀI** `loadWithVramOutcomes()`.
+ *
+ * Reviewer chỉ ra một dấu tự tố đáng suy nghĩ hơn bản thân lỗi: bảng `VRAM_EXHAUSTION_SIGNALS` chứa
+ * `"too large for the available vram"` và `"failed to create context"` — **hai câu CHỈ đến từ
+ * `createContext()`**, tức từ những đường mà bộ bọc §5.5 **không bao giờ nhìn thấy**. Bảng được
+ * dựng bằng cách **ĐỌC `dist`**, không bằng cách **LẦN xem `throw` nào tới được `spec.load`**. Bộ
+ * phân loại biết những câu nó không thể gặp; những chỗ gặp được chúng thì không có bộ phân loại.
+ *
+ * ⚠ VÌ SAO KHÔNG KÉO BỐN ĐƯỜNG ĐÓ VÀO `loadWithVramOutcomes()`: bốn bước §5.5 (trả chỗ · thử lại ·
+ * hạ số lớp) là chính sách của lượt nạp **TRỌNG SỐ**. `createContext()` là một lượt cấp phát KHÁC,
+ * đã có cơ chế co lại RIÊNG của node-llama-cpp (`LlamaContext.failedCreationRemedy`), và ràng buộc
+ * của task cấm viết lại `aiGgufEngine.ts` / đổi ngữ nghĩa `ensureTextContext`. Ở đây ta chỉ làm
+ * đúng việc Task 3 tự nhận: **cho nó một cái miệng**, không đổi một nhánh điều khiển nào.
+ *
+ * KHÔNG BAO GIỜ ném. Trả phán quyết để điểm gọi dùng lại (vd. sửa câu lỗi cho đúng nguyên nhân).
+ */
+export function noteVramAllocationFailure(n: {
+  owner: string;
+  kind: VramLeaseKind;
+  priority: VramPriority;
+  /** Đường nào đã ném — đi thẳng vào `detail.site`, truy được bằng SQL. */
+  site: string;
+  err: unknown;
+  detail?: Record<string, unknown>;
+  emit?: (e: VramEventInput) => void;
+}): VramExhaustionVerdict {
+  const verdict = classifyLoadFailure(n.err);
+  try {
+    (n.emit ?? logVramEvent)({
+      event: verdict.exhausted ? "driver_refused" : "refuse",
+      owner: n.owner,
+      leaseKind: n.kind,
+      priority: n.priority,
+      detail: {
+        reason: verdict.exhausted ? "driver-refused-outside-load-outcomes" : "allocation-failed-not-vram",
+        signal: verdict.signal,
+        site: n.site,
+        ...n.detail,
+        error: (n.err as Error)?.message ?? String(n.err),
+        note:
+          "lượt cấp phát này KHÔNG đi qua bốn bước §5.5 (nó không phải lượt nạp trọng số): không " +
+          "thử lại, không hạ số lớp. Sự kiện tồn tại để đường đó thôi IM LẶNG TUYỆT ĐỐI — trước " +
+          "bản vá I-1, một lượt nạp 30B thành công phần trọng số rồi CHẾT Ở KV CACHE (hình dạng " +
+          "hỏng dễ xảy ra nhất khi VRAM sát trần) để lại ĐÚNG 0 sự kiện.",
+      },
+    });
+  } catch (err) {
+    console.warn(
+      `[vram] KHÔNG ghi được sự kiện cấp phát hỏng cho "${n.owner}" tại ${n.site}: ` +
+        `${(err as Error)?.message ?? String(err)}`,
+    );
+  }
+  return verdict;
 }
 
 /** Có nấc nào THẤP HƠN để lùi xuống không. `"auto"`/`0` đã ở đáy — không có gì để hạ nữa. */
@@ -303,18 +372,23 @@ export async function loadWithVramOutcomes<T>(spec: VramLoadOutcomeSpec<T>): Pro
     }
   };
 
-  const { gpuLayers: soLopGoc, normalizedFrom } = chuanHoaSoLop(spec.requestedGpuLayers);
-  if (normalizedFrom !== null) {
+  const { gpuLayers: soLopGoc, normalizedFrom, reason: lyDoChuanHoa } = chuanHoaSoLop(spec.requestedGpuLayers);
+  if (lyDoChuanHoa !== null) {
     // Không phải một lượt hạ cấp do thiếu VRAM, nhưng ĐÚNG là một lượt chạy khác thứ người gọi
     // xin — và trước bản vá này nó tuyệt đối im lặng (rồi nạp 0 lớp).
     ghiSuKien({
       event: "degraded",
       detail: {
-        reason: "negative-gpu-layers",
-        requestedGpuLayers: normalizedFrom,
+        reason: lyDoChuanHoa,
+        // ⚠ `String()`: `NaN`/`Infinity` đi thẳng vào `detail` (jsonb) sẽ thành `null` IM LẶNG.
+        // Bộ làm sạch của `vramEventLog` cũng bắt, nhưng đừng dựa vào lưới của người khác cho một
+        // giá trị mà ngay tại đây ta đã BIẾT là không hữu hạn.
+        requestedGpuLayers: typeof normalizedFrom === "number" && !Number.isFinite(normalizedFrom)
+          ? String(normalizedFrom)
+          : normalizedFrom,
         appliedGpuLayers: "auto",
         note:
-          "gpuLayers ÂM bị chuẩn hoá thành \"auto\". node-llama-cpp 3.x tính " +
+          "gpuLayers không dùng được bị chuẩn hoá thành \"auto\". node-llama-cpp 3.x tính " +
           "Math.max(0, Math.min(totalLayers, n)) nên MỌI số âm (kể cả -1, thứ llama.cpp CLI hiểu " +
           "là 'tất cả các lớp') nghĩa là 0 LỚP TRÊN GPU — chạy CPU, chậm gấp bội, không báo gì. " +
           "Đường vào: server/routers/aiGgufRouter.ts gpuLayers z.number().min(-1).",
@@ -322,12 +396,29 @@ export async function loadWithVramOutcomes<T>(spec: VramLoadOutcomeSpec<T>): Pro
     });
   }
 
+  /**
+   * ⚠ M-6 (review vòng 1) — BỘ ĐỌC SỐ LỚP NÉM THÌ PHẢI KÊU. Trước bản vá, `catch` ở đây trả `null`
+   * im lặng ⇒ `cpuOnly` thành `false` ⇒ lá chắn `zero-gpu-layers-on-success` (thứ mạnh nhất của
+   * thiết kế này) **MÙ đúng lúc nó cần thấy nhất**: một lượt nạp thành công ở nấc đầu, không nhánh
+   * nào khác sinh sự kiện, và ta vừa mất cách duy nhất để biết mình đang chạy CPU.
+   */
   const ganNhan = (value: T): number | null => {
     if (!spec.resolvedGpuLayers) return null;
     try {
       const n = spec.resolvedGpuLayers(value);
       return typeof n === "number" && Number.isFinite(n) ? n : null;
-    } catch {
+    } catch (err) {
+      ghiSuKien({
+        event: "measure_failed",
+        detail: {
+          reason: "resolve-gpu-layers-threw",
+          error: (err as Error)?.message ?? String(err),
+          note:
+            "bộ đọc số lớp (spec.resolvedGpuLayers) NÉM ⇒ không biết model vừa nạp có bao nhiêu lớp " +
+            "trên GPU ⇒ lá chắn zero-gpu-layers-on-success KHÔNG chạy được cho lượt này. Lượt nạp " +
+            "vẫn thành công; thứ mất là khả năng phát hiện suy biến.",
+        },
+      });
       return null;
     }
   };

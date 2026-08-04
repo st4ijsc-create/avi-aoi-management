@@ -85,7 +85,18 @@
  * MỘT giấy phép suốt cả lượt đầu lẫn lượt lùi. Dòng `aiGgufEngine.ts` cũ ở lại vì nó vẫn là điểm
  * gọi THẬT của **đường dự phòng** (khi `vramLoadOutcome` không nạp được).
  * ⚠⚠ Điểm gọi mới chỉ đếm được vì biến nhận hàm ở đó **ĐƯỢC ĐẶT TÊN `beginVram`**. Đặt tên khác
- * (`begin`, `fn`, …) là tái tạo đúng lỗ alias mà N-1 mô tả — xem chú thích tại chỗ.
+ * (`begin`, `fn`, …) làm nó vô hình — xem chú thích tại chỗ.
+ *
+ * ⚠⚠⚠ **HẠ GIỌNG (M-7, review vòng 1) — ĐỪNG ĐỌC RÀNG BUỘC TÊN Ở TRÊN NHƯ MỘT LUẬT ĐÓNG LỖ.**
+ * Nó bảo vệ **ĐÚNG ĐIỂM GỌI HIỆN CÓ**, và chỉ thế. Reviewer đo hai đột biến:
+ *   • đổi tên biến đã ràng buộc (`beginVram` → `moGiayPhep`) ⇒ **3 ca ĐỎ** ⇒ ràng buộc CÓ hiệu lực;
+ *   • thêm một điểm cấp phát **MỚI** qua `import { beginVramAllocation as moChoTrongSoPhu }` rồi
+ *     gọi `moChoTrongSoPhu({…})` ⇒ **12/12 XANH, không một ca nào đỏ**. Một điểm mở giấy phép THẬT,
+ *     trong mã sản xuất, **hoàn toàn vô hình**, và `WIRED_ALLOCATION_SITE_COUNT` vẫn khớp.
+ * ⇒ **Lớp alias VẪN MỞ.** Đây KHÔNG phải hồi quy — nó nhất quán với kết luận N-2b/I-1 của chính
+ * file này (*"157 là cận DƯỚI; quyết định thành viên bằng regex là bài toán KHÔNG QUYẾT ĐỊNH
+ * ĐƯỢC"*). Đừng cố đóng nó ở đây. Và **Task 5 tuyệt đối không được dùng con số này như một bảo
+ * đảm** rằng mọi hộ tiêu thụ đều trong sổ.
  */
 export const WIRED_ALLOCATION_SITE_COUNT = 15;
 
@@ -220,7 +231,7 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "server/services/aiImageEmbedding.ts", symbol: "InferenceSession.create(", wired: true, note: ":521, trong cửa sổ :506. ⚠⚠ EP Ở ĐÂY KHÁC hai hộ ONNX kia: :493-495 CHỈ đẩy 'cuda' khi ENABLE_CUDA==='true', KHÔNG gọi getExecutionProviders() và KHÔNG BAO GIỜ đẩy 'dml'. .env hôm nay có ENABLE_GPU=true nhưng KHÔNG có ENABLE_CUDA ⇒ hộ này chạy CPU, 0 byte, trong khi onnx:* và onnx-ocr:* chạy DirectML. Đổi đúng MỘT cờ là nó thành hộ thật — docstring :439 đã cảnh báo." },
   { file: "server/services/ai/ocrService.ts", symbol: "InferenceSession.create(", wired: true, note: ":337, trong cửa sổ :328. CHỈ model `rec` được nạp (:388) — không có session `det` nào trong repo hôm nay." },
   { file: "server/services/aiReranker.ts", symbol: "getLlama(", wired: true, note: ":417, trong cửa sổ giấy phép :393 (đóng ngay ở :448 TRƯỚC khi mở cửa sổ model — cố ý, để hai cửa sổ không chồng nhau)." },
-  { file: "server/services/aiReranker.ts", symbol: ".loadModel(", wired: true, note: ":480, trong cửa sổ :468. gpuLayers = useGpu ? -1 : 0 — RAG_RERANKER_GPU=false trong .env ⇒ 0 byte VRAM hôm nay." },
+  { file: "server/services/aiReranker.ts", symbol: ".loadModel(", wired: true, note: 'trong cửa sổ giấy phép ngay trên. ⚠⚠ Pha 2B Task 3 (I-3): `gpuLayers` từng là `useGpu ? -1 : 0` — và `-1` KHÔNG nghĩa "tất cả các lớp", nó nghĩa **0 LỚP** (Math.max(0, Math.min(totalLayers, -1))). ĐO TRÊN PHẦN CỨNG THẬT với đúng file bge-reranker-v2-m3-Q8_0.gguf: model.gpuLayers === 0 trong khi totalLayers === 25 ⇒ reranker chạy CPU trong IM LẶNG ngay khi ai đó bật RAG_RERANKER_GPU=true. Nay là `useGpu ? "auto" : 0`. RAG_RERANKER_GPU=false trong .env ⇒ vẫn 0 byte VRAM hôm nay.' },
   { file: "server/services/aiReranker.ts", symbol: ".createRankingContext(", wired: true, note: ':486 ⚠⚠ contextSize:"auto" — ĐIỂM "auto" THỨ HAI, và là điểm DUY NHẤT nằm trong MÃ SẢN XUẤT (I-1 review vòng 1; bản trước của tôi khẳng định chỉ có một, ở scripts/ — SAI). Mở khoá bằng RAG_RERANKER_GPU=true. ⚠ "ĐÃ NỐI" KHÔNG cứu được lớp này: giấy phép ĐO SAU khi cấp phát xong, còn cưỡng chế phải quyết định TRƯỚC — không có con số nào để từ chối dựa vào.' },
   { file: "server/services/llamaVisionSidecar.ts", symbol: "child_process", wired: true, note: ":30 import spawn — tiến trình con là llama-server CUDA, nằm trong giấy phép :255." },
   { file: "server/services/llamaVisionSidecar.ts", symbol: "spawn(", wired: true, note: ":283 spawn(LLAMA_SERVER_BIN, ['-ngl', GPU_LAYERS, …]). .env: LLAMA_SERVER_BIN=D:/SOURCES/16.AI/llama-cuda/llama-server.exe, LLAMA_VISION_GPU_LAYERS=999. Trong cửa sổ :255." },

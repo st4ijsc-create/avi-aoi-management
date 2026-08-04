@@ -427,7 +427,10 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
         else if (level === L.warn) console.warn(msg);
         // drop info/log/debug
       },
-    })) as { loadModel: (o: { modelPath: string; gpuLayers?: number }) => Promise<unknown> };
+    // ⚠ Pha 2B Task 3 (I-3) — `gpuLayers` của node-llama-cpp 3.x là `"auto" | "max" | number | {…}`,
+    // KHÔNG phải `number`. Chữ ký hẹp cũ ở đây chính là thứ làm `-1` trông như lựa chọn hợp lệ duy
+    // nhất để nói "tất cả các lớp" — trong khi `-1` nghĩa là 0 lớp. Nới cho khớp thư viện thật.
+    })) as { loadModel: (o: { modelPath: string; gpuLayers?: "auto" | "max" | number }) => Promise<unknown> };
     // ★ I-1 — ĐÓNG cửa sổ đo của backend NGAY, TRƯỚC khi mở cửa sổ của model bên dưới. Giữ nó mở
     // qua `loadModel()` sẽ làm HAI cửa sổ CHỒNG nhau và Task 8 (C-1) gắn `measureFailed` cho CẢ
     // HAI — bản vá này tự tay làm mù đúng phép đo nó vừa thêm. `wiring.rerankerBackend.test.ts`
@@ -477,7 +480,28 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     } catch {
       /* telemetry KHÔNG được làm hỏng đường nạp reranker */
     }
-    const model = (await llama.loadModel({ modelPath, gpuLayers: useGpu ? -1 : 0 })) as {
+    /**
+     * ★★ Pha 2B Task 3, I-3 (review vòng 1) — `-1` GHIM CỨNG Ở ĐÂY LÀ MỘT SUY BIẾN IM LẶNG THẬT.
+     *
+     * `node-llama-cpp` 3.x (`gguf/insights/utils/resolveModelGpuLayersOption.js:23`) tính
+     * `Math.max(0, Math.min(totalLayers, gpuLayers))` ⇒ **mọi số âm nghĩa là 0 LỚP TRÊN GPU**, tức
+     * suy luận chạy CPU, chậm gấp bội, **không một dòng cảnh báo**. `-1` = "tất cả các lớp" là quy
+     * ước của llama.cpp **CLI**, KHÔNG phải của thư viện này.
+     *
+     * **Đo trên phần cứng thật, đúng file model này** (`bge-reranker-v2-m3-Q8_0.gguf`, reviewer
+     * 2026-08-04): `gpuLayers: -1` ⇒ `model.gpuLayers === 0` trong khi `totalLayers === 25`.
+     *
+     * Hôm nay `.env` có `RAG_RERANKER_GPU=false` nên nhánh này truyền `0` và vô hại — nhưng
+     * `vramAllocationSites.ts` đã ghi *"Mở khoá bằng RAG_RERANKER_GPU=true"*, và bật đúng một cờ
+     * đó là có ngay một hộ tiêu thụ chạy CPU trong im lặng.
+     *
+     * ⚠ Dùng `"auto"` chứ KHÔNG phải `"max"`: reranker ở mức `background` (nó phải nhường chỗ cho
+     * AOI/chat), nên "nạp nhiều lớp nhất còn vừa" là đúng ngữ nghĩa của nó, còn `"max"` sẽ NÉM khi
+     * không đủ chỗ và làm hỏng cả lượt rerank thay vì chạy chậm hơn.
+     * ⚠ Điểm gọi này KHÔNG đi qua `loadWithVramOutcomes()` (nó không phải lượt nạp model sinh chữ),
+     * nên `chuanHoaSoLop()` không với tới — hằng số phải đúng NGAY TẠI CHỖ.
+     */
+    const model = (await llama.loadModel({ modelPath, gpuLayers: useGpu ? "auto" : 0 })) as {
       createRankingContext: (o?: { contextSize?: "auto" | number }) => Promise<{
         rankAll: (q: string, docs: string[]) => Promise<number[]>;
       }>;

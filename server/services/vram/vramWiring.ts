@@ -561,6 +561,28 @@ export const CUDA_BACKEND_FALLBACK_BYTES = 452_595_712;
 /** Pha 2B Task 3 — đếm lượt `beginVramAllocation()` rơi vào `catch` cuối hàm (xem `vramBeginFailureState`). */
 let soLuotBeginHong = 0;
 let lyDoBeginHongCuoi: string | null = null;
+/** ★ C-1 (review vòng 1) — TỔNG BYTE mà sổ đang HỤT vì những lượt hỏng đó. Xem `vramBeginFailureState`. */
+let byteNgoaiSo = 0;
+/** ★ C-1 — số lượt hỏng mà ngay cả BYTE cũng không ước được. TÁCH khỏi tổng, không cộng 0 giả. */
+let soLuotBeginHongKhongBietByte = 0;
+
+/**
+ * ★ C-1 (review vòng 1) — ƯỚC LƯỢNG SỐ BYTE của một lượt cấp phát ĐÃ RƠI RA NGOÀI SỔ.
+ *
+ * ⚠ KHÔNG gọi `vramEstimator`: ta đang ở trong `catch`, và `estimateBytesFor()` **chính là** thứ có
+ * thể vừa ném. Chỉ dùng những gì điểm gọi đã cầm sẵn trên tay + kích thước file NẾU lượt `statSync`
+ * bên trong `try` đã kịp chạy xong (`byteDaBiet`). Thứ tự: chắc chắn nhất trước.
+ *
+ * ⚠ `null` nghĩa là **"KHÔNG CÓ CĂN CỨ NÀO"**, KHÔNG phải "không tốn byte nào" — hai thứ đó khác
+ * hẳn nhau và gộp lại chính là cách một cuốn sổ hụt tự khai là đủ. Điểm gọi ghi ra ô riêng
+ * (`unledgeredBytesUnknown`) thay vì cộng một số 0 giả vào tổng.
+ */
+function byteUocCuaLuotHong(opts: VramAllocationOptions, byteDaBiet: number | undefined): number | null {
+  for (const v of [byteDaBiet, opts.fileBytes, opts.fallbackBytes, opts.configDefaultBytes]) {
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) return v;
+  }
+  return null;
+}
 
 export async function beginVramAllocation(opts: VramAllocationOptions): Promise<VramTicket> {
   /**
@@ -573,6 +595,11 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
    * gọi biến này.
    */
   let nhaKhoaKhanCap: (() => void) | null = null;
+  /**
+   * ★ C-1 (review vòng 1) — khai NGOÀI `try` để `catch` cuối hàm đọc được. Đây là con số DUY NHẤT
+   * mà lượt hỏng còn cầm trên tay để nói ra sổ đang hụt BAO NHIÊU (xem `byteUocCuaLuotHong`).
+   */
+  let byteDaBiet: number | undefined;
   try {
     // Pha 2B Task 3 — `broker`/`estimator`/`logVramEvent` nay là import TĨNH ở đầu file
     // (xem khối docstring ở đó). Ba lệnh `await import()` từng đứng ở đây không còn ném được
@@ -586,6 +613,7 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
         /* không đọc được kích thước — tụt xuống nấc ước lượng thấp hơn, không phải lỗi */
       }
     }
+    byteDaBiet = fileBytes;
 
     // ⚠ `estimateBytesFor()` là ASYNC; `await` nó XONG Ở ĐÂY rồi mới truyền số vào `reserve()`.
     // `reserve()` ĐỒNG BỘ và TUYỆT ĐỐI không được `await` gì bên trong — chữ ký đồng bộ đó
@@ -1336,10 +1364,25 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
      */
     soLuotBeginHong++;
     lyDoBeginHongCuoi = (err as Error)?.message ?? String(err);
+    /**
+     * ★ C-1 (review vòng 1) — SỔ PHẢI TỰ KHAI PHẦN HỤT BẰNG **BYTE**, KHÔNG PHẢI BẰNG **LƯỢT**.
+     *
+     * Reviewer bác đúng một nửa lập luận của vòng trước: thiệt hại tồn dư có HAI thành phần —
+     * (i) **cưỡng chế mù** cho khối byte đó, (ii) **sổ hụt** đúng khối byte đó. Đóng (i) bắt buộc
+     * phải TỪ CHỐI ⇒ công tắc cưỡng chế ⇒ Task 5, và Task 3 không được làm. Nhưng (ii) **không
+     * cần từ chối ai cả**: đó là KẾ TOÁN, không phải chính sách. Và **một cái đếm KHÔNG BAO GIỜ
+     * đổi ngược lại thành byte được** — Task 5 sẽ cần *"sổ đang hụt BAO NHIÊU"*, không phải
+     * *"hụt mấy lượt"*.
+     */
+    const byteHut = byteUocCuaLuotHong(opts, byteDaBiet);
+    if (byteHut !== null) byteNgoaiSo += byteHut;
+    else soLuotBeginHongKhongBietByte++;
     console.warn(
       `[vram] beginVramAllocation("${opts.owner}") HỎNG ⇒ chạy như chưa từng có sổ cái ` +
-        `(KHÔNG có giấy phép cho lượt cấp phát này, nên sổ sẽ HỤT đúng khối byte đó; ` +
-        `lượt hỏng thứ ${soLuotBeginHong} của tiến trình): ${lyDoBeginHongCuoi}`,
+        `(KHÔNG có giấy phép cho lượt cấp phát này, nên sổ HỤT ` +
+        `${byteHut === null ? "MỘT LƯỢNG KHÔNG BIẾT ĐƯỢC" : `~${Math.round(byteHut / 1024 / 1024)} MiB`}` +
+        `; lượt hỏng thứ ${soLuotBeginHong}, tổng hụt ~${Math.round(byteNgoaiSo / 1024 / 1024)} MiB ` +
+        `của tiến trình): ${lyDoBeginHongCuoi}`,
     );
     /**
      * Sự kiện — KHÔNG chỉ một dòng console. `logVramEvent()` là import TĨNH nên nếu nó nạp được
@@ -1356,6 +1399,10 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
         detail: {
           reason: "begin-allocation-failed",
           failureCount: soLuotBeginHong,
+          /** ★ C-1 — byte của LƯỢT NÀY và TỔNG tích luỹ. `null` = không có căn cứ nào để ước. */
+          unledgeredBytes: byteHut,
+          unledgeredBytesTotal: byteNgoaiSo,
+          unledgeredBytesUnknown: byteHut === null,
           error: lyDoBeginHongCuoi,
           note:
             "beginVramAllocation() hỏng ⇒ trả NOOP_TICKET ⇒ lượt cấp phát này chạy NGOÀI SỔ: " +
@@ -1380,13 +1427,30 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
  *
  * ⚠ Hôm nay HÀM NÀY CHƯA CÓ NGƯỜI ĐỌC ngoài bộ test — nói thẳng ra thay vì để người sau tưởng nó
  * đang canh gì đó (cùng hình dạng "sổ đã tới cửa, cửa chưa mở" mà Task 2 bàn giao cho Task 5).
+ *
+ * ★ C-1 (review vòng 1) — `unledgeredBytes` là ô mà **Task 5 thật sự cần**: cưỡng chế quyết định
+ * trên BYTE, và **một cái đếm không đổi ngược thành byte được**. `unknownCount` là số lượt hỏng mà
+ * ngay cả byte cũng không ước được — nó phải TÁCH khỏi `unledgeredBytes`, vì cộng 0 cho một lượt
+ * "không biết" là để cuốn sổ hụt tự khai là đủ.
  */
-export function vramBeginFailureState(): { readonly count: number; readonly lastReason: string | null } {
-  return { count: soLuotBeginHong, lastReason: lyDoBeginHongCuoi };
+export function vramBeginFailureState(): {
+  readonly count: number;
+  readonly lastReason: string | null;
+  readonly unledgeredBytes: number;
+  readonly unknownCount: number;
+} {
+  return {
+    count: soLuotBeginHong,
+    lastReason: lyDoBeginHongCuoi,
+    unledgeredBytes: byteNgoaiSo,
+    unknownCount: soLuotBeginHongKhongBietByte,
+  };
 }
 
 /** Chỉ dùng trong test. */
 export function __resetVramBeginFailureState(): void {
   soLuotBeginHong = 0;
   lyDoBeginHongCuoi = null;
+  byteNgoaiSo = 0;
+  soLuotBeginHongKhongBietByte = 0;
 }

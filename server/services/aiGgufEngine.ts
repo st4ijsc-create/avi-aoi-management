@@ -774,6 +774,42 @@ async function beginVram(
 }
 
 /**
+ * ★★ Pha 2B Task 3, I-1 (review vòng 1) — CHO BỐN ĐƯỜNG CẤP PHÁT CÒN LẠI MỘT CÁI MIỆNG.
+ *
+ * `loadWithVramOutcomes()` chỉ bọc lượt nạp **TRỌNG SỐ**. Bốn đường khác vẫn cấp phát VRAM thật và
+ * trước bản vá này im lặng tuyệt đối khi hết chỗ:
+ *   1. `loadGgufModel` → `model.createContext()` — **đỉnh áp lực VRAM**: trọng số 16,7 GB đã trên
+ *      card, giờ mới xin KV cache. Đây là hình dạng hỏng dễ xảy ra nhất khi VRAM sát trần.
+ *   2. `ensureTextContext` → `createContext()` (context LƯỜI).
+ *   3. `getEmbeddingContext` → `createEmbeddingContext()` — đường này còn **nói SAI nguyên nhân**.
+ *   4. `loadGgufModel` đường DỰ PHÒNG (`runner === null`) — do chính Task 3 đẻ ra.
+ *
+ * ⚠ KHÔNG đổi một nhánh điều khiển nào: mọi điểm gọi vẫn `throw err` NGUYÊN VĂN ngay sau. Chính
+ * sách "telemetry không bao giờ làm hỏng đường cấp phát" giữ nguyên — hàm này KHÔNG BAO GIỜ ném.
+ * ⚠ `await` có chủ ý (không `void`): sự kiện phải nằm TRƯỚC lượt ném lại trong nhật ký, và điểm gọi
+ * (3) cần phán quyết để chọn câu lỗi đúng.
+ */
+async function noteContextFailure(
+  owner: string,
+  kind: import("./vram/types").VramLeaseKind,
+  priority: import("./vram/types").VramPriority,
+  site: string,
+  err: unknown,
+  detail?: Record<string, unknown>,
+): Promise<{ exhausted: boolean; signal: string | null } | null> {
+  try {
+    const { noteVramAllocationFailure } = await import("./vram/vramLoadOutcome");
+    return noteVramAllocationFailure({ owner, kind, priority, site, err, detail });
+  } catch (e) {
+    console.warn(
+      `[aiGgufEngine] KHÔNG ghi được sự kiện cấp phát hỏng cho "${owner}" tại ${site} — đường này ` +
+        `trở lại IM LẶNG: ${(e as Error)?.message ?? String(e)}`,
+    );
+    return null;
+  }
+}
+
+/**
  * ★★★ Pha 2B Task 3 — nạp module CHÍNH SÁCH ba kết cục (§5.5). `null` = không nạp được.
  *
  * ⚠ VÌ SAO CÓ ĐƯỜNG `null` THAY VÌ ĐỂ NÉM: `loadGgufModel()` phục vụ MỌI lượt suy luận của hệ.
@@ -948,11 +984,21 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
           priority: "interactive",
           filePath: resolvedPath,
         });
-        model = await llama.loadModel({
-          modelPath: resolvedPath,
-          // ⚠ Chặn -1 NGAY CẢ Ở ĐƯỜNG DỰ PHÒNG: đây đúng là đường mà một cấu hình hỏng đi qua.
-          gpuLayers: typeof requestedGpuLayers === "number" && requestedGpuLayers < 0 ? "auto" : requestedGpuLayers,
-        } as any);
+        try {
+          model = await llama.loadModel({
+            modelPath: resolvedPath,
+            // ⚠ Chặn -1 NGAY CẢ Ở ĐƯỜNG DỰ PHÒNG: đây đúng là đường mà một cấu hình hỏng đi qua.
+            gpuLayers: typeof requestedGpuLayers === "number" && requestedGpuLayers < 0 ? "auto" : requestedGpuLayers,
+          } as any);
+        } catch (err) {
+          // ★★ I-1 — CỬA IM LẶNG THỨ TƯ, và nó do CHÍNH Task 3 đẻ ra: bảng ★★ "không đường nào im
+          // lặng" của vòng trước không có dòng nào cho nhánh này. Reviewer bắt đúng.
+          await noteContextFailure(`gguf:${modelId}`, "gguf-model", "interactive", "loadGgufModel.fallbackNoRunner", err, {
+            requestedGpuLayers,
+            note2: "đường DỰ PHÒNG (vramLoadOutcome không nạp được) — không thử lại, không hạ số lớp",
+          });
+          throw err;
+        }
       }
     }
 
@@ -966,12 +1012,23 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
     if (!config.embeddingOnly) {
       // B0.2 — respect a requested per-task contextSize (clamped); else GGUF_DEFAULT_CTX.
       const resolvedCtx = resolveContextSize(config.contextSize);
-      context = await model.createContext({
-        contextSize: resolvedCtx,
-        batchSize: config.batchSize ?? 512,
-        flashAttention: config.flashAttention !== false,
-        sequences: GGUF_SEQUENCES,
-      });
+      try {
+        context = await model.createContext({
+          contextSize: resolvedCtx,
+          batchSize: config.batchSize ?? 512,
+          flashAttention: config.flashAttention !== false,
+          sequences: GGUF_SEQUENCES,
+        });
+      } catch (err) {
+        // ★★ I-1 (review vòng 1) — ĐƯỜNG HỎNG DỄ XẢY RA NHẤT KHI VRAM SÁT TRẦN, và trước bản vá
+        // này nó IM LẶNG TUYỆT ĐỐI: trọng số 16,7 GB đã nằm trên card, giờ mới xin thêm KV cache.
+        // Không đổi một nhánh điều khiển nào — chỉ thêm sự kiện rồi ném lại NGUYÊN lỗi cũ.
+        await noteContextFailure(`gguf:${modelId}`, "gguf-model", "interactive", "loadGgufModel.createContext", err, {
+          contextSize: resolvedCtx,
+          sequences: GGUF_SEQUENCES,
+        });
+        throw err;
+      }
     }
 
     // Pha 1 Task 5 — GHI SỐ THẬT. ⚠ Số này là TRỌNG SỐ + CONTEXT, **CHƯA GỒM** buffer suy luận:
@@ -1108,12 +1165,23 @@ async function ensureTextContext(
       kind: "gguf-context",
       priority: "interactive",
     });
-    const ctx = await loaded.model.createContext({
-      contextSize: resolvedCtx,
-      batchSize: loaded.config.batchSize ?? 512,
-      flashAttention: loaded.config.flashAttention !== false,
-      sequences: GGUF_SEQUENCES,
-    });
+    let ctx: any;
+    try {
+      ctx = await loaded.model.createContext({
+        contextSize: resolvedCtx,
+        batchSize: loaded.config.batchSize ?? 512,
+        flashAttention: loaded.config.flashAttention !== false,
+        sequences: GGUF_SEQUENCES,
+      });
+    } catch (err) {
+      // ★★ I-1 — cùng lớp với `loadGgufModel.createContext`. Ngữ nghĩa `ensureTextContext` KHÔNG
+      // đổi (ràng buộc của task): `catch` bên dưới vẫn trả giấy phép và ném lại nguyên lỗi cũ.
+      await noteContextFailure(`gguf-ctx:${modelId}`, "gguf-context", "interactive", "ensureTextContext.createContext", err, {
+        contextSize: resolvedCtx,
+        sequences: GGUF_SEQUENCES,
+      });
+      throw err;
+    }
     await vramHolder.ticket.commitMeasured();
     loaded.textCtxVramTicket = vramHolder.ticket;
     loaded.context = ctx;
@@ -1549,7 +1617,11 @@ export async function warmModel(modelId?: string, contextSize?: number): Promise
     return false;
   }
   if (!available) {
-    noteWarmFailure(modelId, "gguf-unavailable", null);
+    // ⚠ M-5 (review vòng 1) — `warm_skipped`, KHÔNG PHẢI `warm_failed`. Một cài đặt cố ý không cấu
+    // hình GGUF sẽ ghi một dòng MỖI LẦN KHỞI ĐỘNG; để nó mang tên "failed" là bắt Task 7 phải lọc
+    // rác trong chính bảng nó dùng để đếm thất bại. Vẫn có sự kiện (người gọi vẫn nhận `false`,
+    // nên vẫn phải phân biệt được với hai nhánh kia), chỉ khác TÊN.
+    noteWarmFailure(modelId, "gguf-unavailable", null, "warm_skipped");
     return false;
   }
   try {
@@ -1580,7 +1652,12 @@ export async function warmModel(modelId?: string, contextSize?: number): Promise
  * ⚠ KHÔNG BAO GIỜ ném (`warmModel` hứa "best-effort, never throws" và `initDeepModelWarmup` dựa
  * vào đó để không làm hỏng boot). Mọi thứ trong đây bọc `try`.
  */
-function noteWarmFailure(modelId: string | undefined, reason: string, err: unknown): void {
+function noteWarmFailure(
+  modelId: string | undefined,
+  reason: string,
+  err: unknown,
+  event: "warm_failed" | "warm_skipped" = "warm_failed",
+): void {
   const message = err === null || err === undefined ? null : (err as Error)?.message ?? String(err);
   try {
     console.warn(
@@ -1595,7 +1672,7 @@ function noteWarmFailure(modelId: string | undefined, reason: string, err: unkno
     try {
       const { logVramEvent } = await import("./vram/vramEventLog");
       logVramEvent({
-        event: "warm_failed",
+        event,
         owner: `gguf:${modelId ?? "default"}`,
         leaseKind: "gguf-model",
         priority: "interactive",
@@ -2966,6 +3043,24 @@ async function getEmbeddingContext(modelId: string, loaded: LoadedModel): Promis
       return ctx;
     } catch (err: any) {
       releaseVramTicketQuietly(vramTicket);
+      /**
+       * ★★ I-1 (review vòng 1) — ĐƯỜNG NÀY KHÔNG CHỈ IM LẶNG, NÓ CÒN **NÓI SAI NGUYÊN NHÂN**.
+       * Câu `"Model does not support embeddings"` gửi người trực đi đổi `GGUF_EMBED_MODEL` trong
+       * khi sự thật có thể là hết VRAM — đúng lớp "chỉ người trực đi sai hướng" mà cả pha này
+       * sinh ra để diệt. Nay: sự kiện luôn có, và câu chữ ĐỔI THEO phán quyết.
+       */
+      const verdict = await noteContextFailure(
+        `gguf-embed-ctx:${modelId}`, "gguf-embed-context", "background",
+        "getEmbeddingContext.createEmbeddingContext", err, { contextSize: EMBED_CTX },
+      );
+      if (verdict?.exhausted) {
+        throw new Error(
+          `createEmbeddingContext failed because the device is OUT OF VRAM (${err?.message ?? err}). ` +
+            `This is NOT a model-capability problem — do not change GGUF_EMBED_MODEL. ` +
+            `[VI] Không tạo được embedding context vì HẾT VRAM (tín hiệu: ${verdict.signal}) — ` +
+            `KHÔNG phải do model thiếu khả năng nhúng, đừng đổi GGUF_EMBED_MODEL.`,
+        );
+      }
       throw new Error(
         `Model does not support embeddings (createEmbeddingContext failed: ${err?.message ?? err}). ` +
           `Set GGUF_EMBED_MODEL to point to an embedding model such as mxbai-embed-large. ` +
