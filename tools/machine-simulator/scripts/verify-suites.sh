@@ -1258,6 +1258,13 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # Deliberately NOT a ratchet ("<= EXPECTED"): a DROP is also a fact worth a sentence, and a
 # one-sided bound would let a real fix that removes a warning silently rot the number until the
 # next addition hides inside the slack.
+# 🔴 THIS NUMBER IS PINNED TO AN SDK THAT IS NOT PINNED. There is no global.json in this repo;
+# 115 was measured on 10.0.302. A colleague on a different SDK gets a red gate on a CLEAN tree from
+# a shifted analyzer set. The direction is safe — it fails closed, never falsely green, and the
+# message says what to do — but it is §8.1's `skipped != 0` reasoning inverted: there, an
+# environment-dependent count was refused so one number would mean the same thing everywhere; here,
+# an environment-dependent number is asserted. If this bites someone, the fix is a global.json, not
+# a looser check. Recorded rather than left for them to discover.
 EXPECT_WARNINGS=115
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
@@ -1281,6 +1288,25 @@ BUILD_NODES=$(powershell -NoProfile -NonInteractive -Command \
   "(Get-Process dotnet,VBCSCompiler -ErrorAction SilentlyContinue | Measure-Object).Count" \
   2>/dev/null | tr -d '\r' | head -1)
 note "build servers still resident entering the test phase: ${BUILD_NODES:-unknown}"
+
+# 🔴 TRAP 9 AGAIN, ELEVEN LINES BELOW ITS OWN FIX. The whole-branch review found this while
+# reviewing the EXPECT_WARNINGS commit directly above: that commit argues "a printed number is not
+# a check" and then left an identical printed number here — trap 8's OWN instrument, reporting the
+# population this script creates, asserting nothing about it. The header records it measured at 14
+# processes and 1955 MB alive through all five suites. The sweep that added the warnings check
+# stopped at the number it was looking at.
+#
+# So the rule this script keeps re-learning, now stated where both instances sit: EVERY number
+# this script computes is either asserted or deleted. A `note` is for something a human reads
+# alongside a verdict, never for something the verdict depends on.
+EXPECT_BUILD_NODES=0
+if [[ "${BUILD_NODES:-}" != "$EXPECT_BUILD_NODES" ]]; then
+  echo "FAIL: ${BUILD_NODES:-unknown} build-server process(es) are resident entering the test phase,"
+  echo "  expected ${EXPECT_BUILD_NODES}. The suites would run under a population this script created"
+  echo "  (measured once at 14 processes / 1955 MB), which is machine-wide memory pressure in the same"
+  echo "  window as the memory-sensitive part of this run. Trap 8 in the build gate above is the story."
+  exit 1
+fi
 echo "[2/3] Running ${#SUITES[@]} suites sequentially..."
 for entry in "${SUITES[@]}"; do
   proj="${entry%%:*}"; expected="${entry##*:}"; name=$(basename "$proj")
