@@ -24,13 +24,29 @@ vi.mock("./vramEventLog", () => ({
 
 /** Người thi hành GIẢ — ta canh AI bị gọi và THEO THỨ TỰ NÀO, không canh llama.cpp. */
 const daDonModel = vi.hoisted(() => [] as string[]);
-const donModelKetQua = vi.hoisted(() => ({ value: true as boolean | "THROW" }));
+/**
+ * `nhaSo` = người thi hành có THẬT SỰ nhả giấy phép không. Hai giá trị là hai THẾ GIỚI khác nhau
+ * và cả hai đều có ca: `false` là ca *"sổ khai trống mà card vẫn giữ"* (⇒ `freedBytes` phải bằng 0).
+ */
+const donModelKetQua = vi.hoisted(() => ({ value: true as boolean | "THROW", nhaSo: false }));
+const nhaSoTheoOwner = vi.hoisted(() => new Map<string, () => void>());
 vi.mock("../aiGgufEngine", () => ({
   unloadGgufModel: async (modelId: string) => {
     daDonModel.push(modelId);
     if (donModelKetQua.value === "THROW") throw new Error("unloadGgufModel hỏng (ca thử nghiệm)");
+    if (donModelKetQua.nhaSo) nhaSoTheoOwner.get(`gguf:${modelId}`)?.();
     return donModelKetQua.value;
   },
+}));
+vi.mock("./vramProcessProbe", () => ({
+  readProcessVram: async () => null,
+  __resetProcessProbeCacheForTests: () => {},
+}));
+vi.mock("./vramProbe", () => ({
+  readDeviceVram: async () => null,
+  readDeviceVramUncached: async () => null,
+  probeOnce: async () => null,
+  __resetVramProbeCacheForTests: () => {},
 }));
 const daTatSidecar = vi.hoisted(() => ({ n: 0 }));
 vi.mock("../llamaVisionSidecar", () => ({
@@ -89,12 +105,16 @@ beforeEach(() => {
   daDonModel.length = 0;
   daTatSidecar.n = 0;
   donModelKetQua.value = true;
+  donModelKetQua.nhaSo = false;
+  nhaSoTheoOwner.clear();
+  process.env.VRAM_MEASURE_WAIT_MS = "0";
   __resetBrokerForTests();
   __resetVramCapsForTests();
   noteDeviceTotalBytes(TRAN_THIET_BI);
 });
 afterEach(() => {
   for (const b of BIEN_CAP) delete process.env[b];
+  delete process.env.VRAM_MEASURE_WAIT_MS;
   __resetVramCapsForTests();
 });
 
@@ -245,6 +265,7 @@ describe("C. `evictLRU()` HẤP THỤ thành `preempt()`", () => {
     const r = reserve(xin(owner, bytes, over), ctx());
     expect(r.lease, `không mở được giấy phép cho ${owner}`).not.toBeNull();
     setLeaseRefCount(r.lease!.id, 0);
+    nhaSoTheoOwner.set(owner, () => release(r.lease!));
     return r.lease!;
   }
 
@@ -384,6 +405,50 @@ describe("C. `evictLRU()` HẤP THỤ thành `preempt()`", () => {
       return [];
     };
     expect(suKien.flatMap((e, i) => quet(e, `sk[${i}]`))).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("C-bis. LƯỚI THEO ĐƯỜNG THOÁT — `beginVramAllocation()` là nơi lượt thu hồi THẬT SỰ chạy", () => {
+  /**
+   * ★★★ Bài học Task 5 (*"lưới phải đi theo ĐƯỜNG THOÁT, không theo FILE"*): ca ở nhóm C gọi
+   * `preempt()` TRỰC TIẾP, nên nó chứng minh **cơ chế**, KHÔNG chứng minh rằng cơ chế đó **được
+   * nối vào đường sản xuất**. Đường sản xuất là `beginVramAllocation()` — nơi `ensureCapacity()`
+   * cũ từng đứng ngay trước. Gỡ lượt thu hồi khỏi đó mà không có ca này thì lưới duy nhất còn lại
+   * nằm ở FILE KHÁC (`aiGgufEngine.test.ts`) — đúng hình dạng "vết thừa kế" mà Task 6 (B) đã bị bắt.
+   */
+  it("★★★ hết KHE + hộ NHÀN RỖI ⇒ `beginVramAllocation()` tự dọn rồi CẤP (không ném)", async () => {
+    process.env.GGUF_MAX_LOADED_MODELS = "1";
+    __resetVramCapsForTests();
+    const r = reserve(xin("gguf:cu", 1 * MIB, { reclaimer: "gguf-idle-model" }), ctx());
+    setLeaseRefCount(r.lease!.id, 0);
+    nhaSoTheoOwner.set("gguf:cu", () => release(r.lease!));
+    donModelKetQua.nhaSo = true;
+
+    const wiring = await import("./vramWiring");
+    const ve = await wiring.beginVramAllocation({
+      owner: "gguf:moi", kind: "gguf-model", priority: "interactive",
+      fileBytes: 1 * MIB, reclaimer: "gguf-idle-model",
+    });
+    expect(ve).toBeTruthy();
+    expect(daDonModel).toEqual(["cu"]);          // đã dọn ĐÚNG hộ nhàn rỗi
+    ve.release();
+  });
+
+  it("★★★ hết KHE + hộ ĐANG DÙNG ⇒ không dọn được ai ⇒ NÉM (KHÔNG còn 'cảnh báo rồi vẫn nạp')", async () => {
+    process.env.GGUF_MAX_LOADED_MODELS = "1";
+    __resetVramCapsForTests();
+    reserve(xin("gguf:ban", 1 * MIB, { reclaimer: "gguf-idle-model" }), ctx());  // refCount = 1
+    const { isVramRefusal } = await import("./vramRefusalSignal");
+    const wiring = await import("./vramWiring");
+    await expect(
+      wiring.beginVramAllocation({
+        owner: "gguf:moi", kind: "gguf-model", priority: "interactive",
+        fileBytes: 1 * MIB, reclaimer: "gguf-idle-model",
+      }),
+    ).rejects.toSatisfy((e: unknown) => isVramRefusal(e));
+    expect(daDonModel).toEqual([]);
+    expect(snapshot().totalReservedBytes).toBe(1 * MIB);   // lượt bị từ chối KHÔNG ghi byte nào
   });
 });
 
