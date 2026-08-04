@@ -26,6 +26,17 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\St4i.EdgeCore\St4i.EdgeCore.csproj" />
+    <!-- Task D-3 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-3-brief.md) — the native serial
+         transport lives in its OWN assembly so that System.IO.Ports cannot leak into St4i.EdgeCore, the RTU
+         framing layer (see St4i.EdgeCore.Serial.csproj for the argument).
+
+         🔴 Task D-7c — D-3's note here said "this is the ONLY reference to it anywhere in the repository:
+         nothing under src/ references it". That is no longer true: all three hosts reference it now (the
+         owner's ruling of 2026-08-03), so the three deployment assertions in SerialDependencyScopingTests run
+         POSITIVE. This reference is still what makes that suite's positive control possible — and the
+         control's role changed with the assertions, from "prove the search can find a leak" to "prove the
+         search can find the dependency at all"; see that class's own remarks. -->
+    <ProjectReference Include="..\..\src\St4i.EdgeCore.Serial\St4i.EdgeCore.Serial.csproj" />
     <!-- GP-6 — the shared conformance suite, applied to SimulatedDriver/ModbusTcpDriver/OpcUaDriver below
          (see Drivers/*ConformanceTests.cs). -->
     <ProjectReference Include="..\..\src\St4i.Connector.Conformance\St4i.Connector.Conformance.csproj" />

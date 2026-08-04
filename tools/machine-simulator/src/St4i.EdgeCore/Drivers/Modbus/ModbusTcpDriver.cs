@@ -366,10 +366,10 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                 throw new OperationCanceledException("Modbus read interrupted by cancellation.", ct);
             }
 
-            // UInt16 keeps the raw 16-bit word as-is; Int16 reinterprets the SAME bits as two's-complement
-            // signed (e.g. raw 0xFFFF -> -1) BEFORE Scale is applied — see ModbusDataType's doc comment.
-            double decoded = reg.DataType == ModbusDataType.UInt16 ? raw[0] : unchecked((short)raw[0]);
-            var value = decoded * reg.Scale;
+            // Task D-2 — this decode (UInt16 as-is; Int16 reinterpreted two's-complement BEFORE Scale) moved
+            // VERBATIM to ModbusRegister.DecodeRawWord so ModbusRtuDriver reuses the identical math rather
+            // than owning a second copy that could drift silently. Behaviour here is unchanged.
+            var value = reg.DecodeRawWord(raw[0]);
 
             samples.Add(new TelemetrySample(reg.Metric, value, reg.Unit, "good"));
         }
@@ -399,7 +399,7 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var register = FindRegisterByMetric(request.Point);
+        var register = ModbusWritePreflight.FindRegisterByMetric(_map, request.Point);
         if (register is null)
         {
             return new SetpointWriteResult(request.Point, WriteOutcome.Rejected, SetpointRejectionReason.UnknownPoint,
@@ -412,7 +412,7 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                 $"'{request.Point}' is declared read-only in this map.");
         }
 
-        if (!TryToEngineeringValue(request.Value, out var engineeringValue, out var typeError))
+        if (!ModbusWritePreflight.TryToEngineeringValue(request.Value, out var engineeringValue, out var typeError))
         {
             return new SetpointWriteResult(request.Point, WriteOutcome.Rejected, SetpointRejectionReason.OutOfRange, typeError);
         }
@@ -453,7 +453,7 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var command = FindCommandByName(request.Command);
+        var command = ModbusWritePreflight.FindCommandByName(_map, request.Command);
         if (command is null)
         {
             return new CommandResult(request.Command, WriteOutcome.Rejected, CommandRejectionReason.UnknownCommand,
@@ -502,106 +502,14 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
         }
     }
 
-    private ModbusRegister? FindRegisterByMetric(string metric)
-    {
-        foreach (var register in _map.Registers)
-        {
-            if (string.Equals(register.Metric, metric, StringComparison.Ordinal))
-            {
-                return register;
-            }
-        }
-
-        return null;
-    }
-
-    private ModbusCommand? FindCommandByName(string name)
-    {
-        foreach (var command in _map.Commands)
-        {
-            if (string.Equals(command.Name, name, StringComparison.Ordinal))
-            {
-                return command;
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>Review fix round 2 (Important) — the ONE deliberate exception to this class's "TYPE name
-    /// only, never <c>ex.Message</c>" redaction discipline (see the three <see cref="SlaveException"/>
-    /// catches below, and contrast with every OTHER catch in this class, which still redacts). A
-    /// <see cref="SlaveException"/> carries no credentials and nothing derived from the map's own
-    /// configuration — it is a small, fixed vocabulary of Modbus protocol exception codes
-    /// (<see cref="SlaveExceptionCodes"/>, empirically confirmed by reflection against the installed
-    /// NModbus 3.0.83 to be exactly six <see langword="const byte"/> values, 1-6) reported by the DEVICE
-    /// ITSELF over the wire — not arbitrary text, and structurally incapable of echoing
-    /// <c>_map.Username</c>/<c>Password</c> (Modbus has neither) or anything else this class does not
-    /// already show the operator verbatim (a point/command name, a coil address). It is also the single
-    /// most useful message on the commissioning path: an integrator who sees "Illegal Data Address" learns
-    /// immediately their register address is wrong, without going log-diving for a message the device
-    /// already handed them plainly. Deliberately does NOT surface NModbus's own <c>ex.Message</c>
-    /// (confirmed by reflection to be several sentences of verbatim Modbus-spec prose per code — accurate,
-    /// but unsuited to a one-line operator Detail, and not a shape this class controls if NModbus ever
-    /// reword it) — this hand-written, six-entry mapping is the deliberate, controlled shape instead. If a
-    /// future NModbus version reports a code outside 1-6, the fallback still names the raw numeric code
-    /// rather than silently reverting to <c>ex.Message</c>.</summary>
-    private static string DescribeSlaveException(SlaveException ex) => ex.SlaveExceptionCode switch
-    {
-        SlaveExceptionCodes.IllegalFunction =>
-            $"Illegal Function (Modbus exception code {ex.SlaveExceptionCode})",
-        SlaveExceptionCodes.IllegalDataAddress =>
-            $"Illegal Data Address (Modbus exception code {ex.SlaveExceptionCode})",
-        SlaveExceptionCodes.IllegalDataValue =>
-            $"Illegal Data Value (Modbus exception code {ex.SlaveExceptionCode})",
-        SlaveExceptionCodes.SlaveDeviceFailure =>
-            $"Slave Device Failure (Modbus exception code {ex.SlaveExceptionCode})",
-        SlaveExceptionCodes.Acknowledge =>
-            $"Acknowledge — device accepted the request but needs more time (Modbus exception code {ex.SlaveExceptionCode})",
-        SlaveExceptionCodes.SlaveDeviceBusy =>
-            $"Slave Device Busy (Modbus exception code {ex.SlaveExceptionCode})",
-        _ => $"unrecognized Modbus exception code {ex.SlaveExceptionCode}",
-    };
-
-    /// <summary>Narrows <see cref="SetpointWriteRequest.Value"/>'s object? domain (double|bool|string|null,
-    /// widened at deserialization — see that property's own doc comment) down to the <see langword="double"/>
-    /// <see cref="ModbusRegister.TryComputeRawWordForWrite"/> needs, mirroring the numeric branch of
-    /// <c>OpcUaNodeMap.TryNarrowForWrite</c> exactly (double|long accepted; a JSON integral number arrives as
-    /// <see langword="long"/> — see <c>Json.ConnectorObjectConverter</c>'s own doc comment). Every Modbus
-    /// register is numeric, so a <see langword="bool"/>/<see langword="string"/>/<see langword="null"/>
-    /// value has no legitimate meaning here; per B-3's own precedent (every failure
-    /// <c>TryComputeRawWordForWrite</c> itself can produce maps to EXACTLY ONE <see cref="SetpointRejectionReason"/>
-    /// member — <see cref="SetpointRejectionReason.OutOfRange"/>), a wrong-type value is rejected the same
-    /// way: there is no separate "wrong type" rejection reason in this contract, and treating "not a number"
-    /// as a range failure is the closest honest fit.</summary>
-    private static bool TryToEngineeringValue(object? value, out double engineeringValue, out string? error)
-    {
-        switch (value)
-        {
-            case double d:
-                engineeringValue = d;
-                error = null;
-                return true;
-            case long l:
-                engineeringValue = l;
-                error = null;
-                return true;
-            default:
-                engineeringValue = default;
-                error = $"expected a numeric value, got {DescribeRuntimeType(value)}.";
-                return false;
-        }
-    }
-
-    private static string DescribeRuntimeType(object? value) => value switch
-    {
-        null => "null",
-        bool => "a bool",
-        string => "a string",
-        long => "an integral number",
-        double => "a floating-point number",
-        _ => value.GetType().Name,
-    };
+    // 🔴 Task D-5 — FindRegisterByMetric, FindCommandByName, TryToEngineeringValue, DescribeRuntimeType and
+    // DescribeSlaveException were all `private static` here and are now on ModbusWritePreflight, VERBATIM, so
+    // ModbusRtuDriver reuses the identical implementations instead of owning a second copy. Same move D-2 made
+    // with ModbusRegister.DecodeRawWord, for the same reason: a copy is not a reuse, and the drift would be
+    // silent — a wrong operator-visible string is still a string. Behaviour here is unchanged, and
+    // ModbusTcpDriverWriteTests is what proves it: its total must not move, and a moved total there would mean
+    // this extraction did more than move code. (Deliberately no number here — D-3's review M-6 found a
+    // hand-kept test count that had drifted, and the runner is the only place that knows.)
 
     /// <summary>Task B-4 — the actual I/O for <see cref="WriteSetpointAsync"/>: acquires <see cref="_ioLock"/>
     /// (see the class doc comment's "Write/poll interleaving" remarks), connects if needed, forces exactly
@@ -665,7 +573,7 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                 // DescribeSlaveException's own doc comment for why this one stays un-redacted while every
                 // other Detail site in this class does not. Full exception still logged too.
                 _logError?.Invoke(ex, $"Modbus device rejected the write to '{point}' on {_map.MachineCode}");
-                return new SetpointWriteResult(point, WriteOutcome.Failed, Detail: $"device rejected the write: {DescribeSlaveException(ex)}.");
+                return new SetpointWriteResult(point, WriteOutcome.Failed, Detail: $"device rejected the write: {ModbusWritePreflight.DescribeSlaveException(ex)}.");
             }
             catch (Exception) when (ct.IsCancellationRequested)
             {
@@ -773,7 +681,7 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                     // ExecuteRegisterWriteAsync's own SlaveException catch (see DescribeSlaveException's own
                     // doc comment). Full exception still logged too.
                     _logError?.Invoke(ex, $"Modbus device rejected command '{commandName}' on {_map.MachineCode}");
-                    return new CommandResult(commandName, WriteOutcome.Failed, Detail: $"device rejected the command: {DescribeSlaveException(ex)}.");
+                    return new CommandResult(commandName, WriteOutcome.Failed, Detail: $"device rejected the command: {ModbusWritePreflight.DescribeSlaveException(ex)}.");
                 }
                 catch (Exception) when (ct.IsCancellationRequested)
                 {
@@ -828,7 +736,7 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                     // doc comment). Full exception still logged too.
                     _logError?.Invoke(ex, $"Modbus coil {coilAddress}'s reset write rejected for command '{commandName}' on {_map.MachineCode}");
                     return new CommandResult(commandName, WriteOutcome.Indeterminate,
-                        Detail: $"coil {coilAddress} was asserted but the device rejected the reset write: {DescribeSlaveException(ex)}.");
+                        Detail: $"coil {coilAddress} was asserted but the device rejected the reset write: {ModbusWritePreflight.DescribeSlaveException(ex)}.");
                 }
                 catch (Exception ex)
                 {

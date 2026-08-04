@@ -347,9 +347,14 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
         }
         catch (ObjectDisposedException)
         {
-            // A concurrent DisposeAsync already disposed the lock — re-shape as the SAME cancellation-like
-            // outcome every existing caller already handles safely (write/call: Indeterminate; the poll
-            // loop: yield break) rather than adding a third exception shape for callers to reason about.
+            // 🔴 NOT a live path since backlog-test-deadlines removed `_sessionLock.Dispose()` from
+            // DisposeAsync (see the comment there for the measured reason) — nothing in this class disposes
+            // the semaphore any more, so WaitAsync cannot report one. Kept as a belt-and-braces guard: if a
+            // future change re-introduces that Dispose, a caller that arrives AFTER it still gets the same
+            // cancellation-like outcome every existing caller already handles safely (write/call:
+            // Indeterminate; the poll loop: yield break) rather than a third exception shape. It never
+            // covered the caller that was ALREADY PARKED when disposal landed — that one was stranded
+            // silently and forever, which is why the Dispose had to go rather than be guarded harder.
             throw new OperationCanceledException("OpcUaDriver was disposed.", ct);
         }
 
@@ -364,14 +369,18 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
         }
     }
 
-    /// <summary>Review fix round 1 (Minor) — <see cref="_sessionLock"/> is now disposed in
-    /// <see cref="DisposeAsync"/> (it previously never was). A bare <c>_sessionLock.Release()</c> in a
-    /// <c>finally</c> would throw <see cref="ObjectDisposedException"/> if <see cref="DisposeAsync"/> races
-    /// and disposes the semaphore WHILE another caller is still holding it — replacing whatever result/
-    /// exception was already flowing through that `finally`, the EXACT B-4 Critical #2 shape this whole task
-    /// has been careful to avoid reproducing elsewhere. Every <c>Release()</c> call site goes through this
-    /// helper instead, so that race is merely a no-op, never a thrown exception that clobbers a real
-    /// result.</summary>
+    /// <summary>Guards every <c>_sessionLock.Release()</c> so a race can never throw out of a
+    /// <c>finally</c>, replacing whatever result/exception was already flowing through it — the EXACT B-4
+    /// Critical #2 shape this whole task has been careful to avoid reproducing elsewhere.
+    ///
+    /// <para>🔴 <b>Historical note, corrected rather than deleted.</b> This helper was introduced by a
+    /// review Minor that ALSO added <c>_sessionLock.Dispose()</c> to <see cref="DisposeAsync"/>, and this
+    /// comment used to say so. <c>backlog-test-deadlines</c> removed that <c>Dispose</c> (see the comment
+    /// at its former site for the measurement), so the <see cref="ObjectDisposedException"/> below is no
+    /// longer reachable from anything in this class. The helper stays because funnelling every release
+    /// through one guarded call site is worth keeping on its own merits, and because a comment that still
+    /// claimed the semaphore was disposed would send the next reader looking for a race that no longer
+    /// exists.</para></summary>
     private void ReleaseSessionLock()
     {
         try
@@ -1073,6 +1082,26 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
         _disposed = true;
         Health = DriverHealthState.Down;
         await DisposeSessionAsync().ConfigureAwait(false);
-        _sessionLock.Dispose();
+
+        // 🔴 backlog-test-deadlines — `_sessionLock.Dispose()` USED TO BE HERE and was removed, because it
+        // is the same defect (in the same defect CLASS, in a second subsystem) that
+        // HotFolderAoiDriver.DisposeAsync's own doc comment documents at length:
+        // SemaphoreSlim.Dispose() empties the queue of pending ASYNC waiters WITHOUT completing them, so a
+        // caller already parked in `await _sessionLock.WaitAsync(ct)` when disposal lands is stranded
+        // FOREVER — its token can no longer end the wait, because the cancellation path is exactly the one
+        // that checks "is my node still in the list", finds it is not, and falls through to
+        // `return await asyncWaiter` on a task nothing will complete. Measured on this runtime: 200/200
+        // permanently-stranded awaits for that ordering.
+        //
+        // AcquireSessionAsync's own `catch (ObjectDisposedException)` never covered this: it only
+        // fires when WaitAsync is CALLED after disposal, never for a caller that was already parked. So the
+        // shape that a review Minor introduced this Dispose to tidy was never the dangerous one, and the
+        // dangerous one had no guard at all. This driver's read path parks here on every poll, and its own
+        // DisposeAsync doc comment (above) is explicit that disposal must not wait for in-flight work — i.e.
+        // "a parked waiter at disposal time" is the DESIGNED case, not an edge case.
+        //
+        // Not disposing costs nothing: a SemaphoreSlim owns only the AvailableWaitHandle it allocates
+        // lazily on first access, and this class never touches that property. Same conclusion, for the same
+        // reason, as SiteBridgeManager's `_gate` and ModbusBus's `_arbitration`.
     }
 }

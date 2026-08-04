@@ -47,8 +47,14 @@ public sealed class ConnectorEndpointsTests
     /// <c>ST4I_MODBUS_MAP</c> pointed at this path, proving the persisted-store layer never shadows an
     /// existing env-var-configured Modbus connector (the SAME "an established source always wins" rule
     /// <c>ConnectorsConfig.ResolveEntries</c> already applies between env vars and <c>connectors.json</c>).</param>
+    /// <param name="opcUaEnvMapPath">Task D-1 — additive (default <see langword="null"/>, so every existing
+    /// caller boots byte-identically). Added because NO test in this repository has ever booted with
+    /// <c>ST4I_OPCUA_MAP</c> set: the env-var OPC-UA registration in Program.cs was completely uncovered, and
+    /// D-1 gives that line a machine binding that a write's resolvability now depends on. Covering only the
+    /// Modbus twin and calling the OPC-UA one "symmetric" is exactly the assumption Đợt B's review punished.</param>
     private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync(
-        string? connectorConfigDirOverride = null, bool demoEnabled = false, string? modbusEnvMapPath = null)
+        string? connectorConfigDirOverride = null, bool demoEnabled = false, string? modbusEnvMapPath = null,
+        string? opcUaEnvMapPath = null)
     {
         var securityDir = Directory.CreateTempSubdirectory("st4i-connectors-ep-security-").FullName;
         var historianDir = Directory.CreateTempSubdirectory("st4i-connectors-ep-historian-").FullName;
@@ -76,6 +82,8 @@ public sealed class ConnectorEndpointsTests
         var prevConnectorConfigDir = Environment.GetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR");
         var prevModbusEnabled = Environment.GetEnvironmentVariable("ST4I_MODBUS_ENABLED");
         var prevModbusMap = Environment.GetEnvironmentVariable("ST4I_MODBUS_MAP");
+        var prevOpcUaEnabled = Environment.GetEnvironmentVariable("ST4I_OPCUA_ENABLED");
+        var prevOpcUaMap = Environment.GetEnvironmentVariable("ST4I_OPCUA_MAP");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         try
         {
@@ -92,6 +100,8 @@ public sealed class ConnectorEndpointsTests
             Environment.SetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR", connectorConfigDir);
             Environment.SetEnvironmentVariable("ST4I_MODBUS_ENABLED", modbusEnvMapPath is null ? null : "true");
             Environment.SetEnvironmentVariable("ST4I_MODBUS_MAP", modbusEnvMapPath);
+            Environment.SetEnvironmentVariable("ST4I_OPCUA_ENABLED", opcUaEnvMapPath is null ? null : "true");
+            Environment.SetEnvironmentVariable("ST4I_OPCUA_MAP", opcUaEnvMapPath);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
             var factory = new WebApplicationFactory<Program>();
@@ -113,6 +123,8 @@ public sealed class ConnectorEndpointsTests
             Environment.SetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR", prevConnectorConfigDir);
             Environment.SetEnvironmentVariable("ST4I_MODBUS_ENABLED", prevModbusEnabled);
             Environment.SetEnvironmentVariable("ST4I_MODBUS_MAP", prevModbusMap);
+            Environment.SetEnvironmentVariable("ST4I_OPCUA_ENABLED", prevOpcUaEnabled);
+            Environment.SetEnvironmentVariable("ST4I_OPCUA_MAP", prevOpcUaMap);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             EnvLock.Release();
         }
@@ -946,6 +958,266 @@ public sealed class ConnectorEndpointsTests
             {
                 ConnectorEndpoints.ConnectionTestTimeout = previousTimeout;
             }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) — two connectors
+    // of ONE kind, through the real HTTP surface: configurable, separately visible, separately deletable.
+    // The FleetHost-level routing proof (a write for B reaching B's driver and only B's) is
+    // FleetHostConnectorInstanceRoutingTests; this suite covers the operator-facing half.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task TwoModbusConnectors_UnderDistinctInstanceIds_BothSave_BothAppearConfigured_BothJoinTheRoster()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, engineer, operatorClient) = await SetUpAllRolesAsync(factory);
+        using (admin) using (engineer) using (operatorClient)
+        {
+            const string codeA = "D1-EP-LINE-A";
+            const string codeB = "D1-EP-LINE-B";
+
+            using (var createA = await engineer.PostAsJsonAsync(
+                       "/v1/connectors",
+                       new ConnectorCreateRequest("Modbus", "10.30.0.5", 502, ValidModbusMap(codeA), InstanceId: "modbus-line-a"),
+                       JsonOptions))
+            {
+                Assert.Equal(HttpStatusCode.OK, createA.StatusCode);
+            }
+
+            // The second one is the whole point: before D-1 this either 409'd ("this build supports one live
+            // connector per protocol") or, had that guard not existed, would have silently replaced the
+            // first in both the store (kind was the PRIMARY KEY) and the registry (kind was the key).
+            using (var createB = await engineer.PostAsJsonAsync(
+                       "/v1/connectors",
+                       new ConnectorCreateRequest("Modbus", "10.30.0.6", 502, ValidModbusMap(codeB), InstanceId: "modbus-line-b"),
+                       JsonOptions))
+            {
+                Assert.Equal(HttpStatusCode.OK, createB.StatusCode);
+            }
+
+            using (var configured = await operatorClient.GetAsync("/v1/connectors/configured"))
+            {
+                Assert.Equal(HttpStatusCode.OK, configured.StatusCode);
+                var rows = await configured.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);
+                Assert.Equal(2, rows!.Count);
+                Assert.Contains(rows, r => r.EffectiveInstanceId == "modbus-line-a" && r.MachineCode == codeA);
+                Assert.Contains(rows, r => r.EffectiveInstanceId == "modbus-line-b" && r.MachineCode == codeB);
+                // Same protocol, two identities — identity and kind are genuinely separate fields now.
+                Assert.All(rows, r => Assert.Equal(DriverKinds.Modbus, r.Kind));
+            }
+
+            // Both machines are real roster members, so an operator sees two tiles rather than one connector
+            // quietly overwriting the other's.
+            using (var fleet = await operatorClient.GetAsync("/v1/fleet"))
+            {
+                var snapshot = await fleet.Content.ReadFromJsonAsync<FleetSnapshotDto>(JsonOptions);
+                Assert.Single(snapshot!.Machines, m => m.Code == codeA);
+                Assert.Single(snapshot.Machines, m => m.Code == codeB);
+            }
+
+            // Deleting one must not take its sibling with it — the failure a DELETE still keyed on `kind`
+            // would produce, and the reason the route segment is now {instanceId}.
+            using (var delete = await engineer.DeleteAsync("/v1/connectors/modbus-line-a"))
+            {
+                Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+            }
+
+            using (var configured = await operatorClient.GetAsync("/v1/connectors/configured"))
+            {
+                var rows = await configured.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);
+                var only = Assert.Single(rows!);
+                Assert.Equal("modbus-line-b", only.EffectiveInstanceId);
+                Assert.Equal(codeB, only.MachineCode);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ASecondConnectorNamingAMachineAlreadyServed_Is409_AndTheIncumbentIsUntouched()
+    {
+        // 🔴 The invariant that had to get STRONGER: a machine served by two connectors is a machine whose
+        // writes cannot be resolved to one device — i.e. exactly the Đợt B Critical. Refused at CONFIGURATION
+        // time, so the ambiguous state is never constructed rather than being detected and refused later.
+        await using var factory = await CreateFactoryAsync();
+        var (admin, engineer, operatorClient) = await SetUpAllRolesAsync(factory);
+        using (admin) using (engineer) using (operatorClient)
+        {
+            const string sharedCode = "D1-EP-CONTESTED";
+
+            using (var first = await engineer.PostAsJsonAsync(
+                       "/v1/connectors",
+                       new ConnectorCreateRequest("Modbus", "10.30.0.5", 502, ValidModbusMap(sharedCode), InstanceId: "modbus-line-a"),
+                       JsonOptions))
+            {
+                Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+            }
+
+            using (var second = await engineer.PostAsJsonAsync(
+                       "/v1/connectors",
+                       new ConnectorCreateRequest("Modbus", "10.30.0.9", 502, ValidModbusMap(sharedCode), InstanceId: "modbus-line-b"),
+                       JsonOptions))
+            {
+                Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+            }
+
+            // Nothing was written for the rejected connector, and the incumbent still points where it did —
+            // a rejection that half-applied would leave a persisted row that never registers.
+            using (var configured = await operatorClient.GetAsync("/v1/connectors/configured"))
+            {
+                var rows = await configured.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);
+                var only = Assert.Single(rows!);
+                Assert.Equal("modbus-line-a", only.EffectiveInstanceId);
+                Assert.Equal("10.30.0.5", only.Host);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ARequestWithNoInstanceId_StillConfiguresTheOneConnectorForItsKind_AndIsStillDeletableByKind()
+    {
+        // The compatibility guarantee, end to end through the real HTTP surface: a client that has never
+        // heard of instance ids (every shipped web build, every existing script) posts exactly what it
+        // always posted and deletes at exactly the URL it always used. This is the same derived default an
+        // upgraded database's rows get from migration v4 — if the two ever disagreed, an upgrade would
+        // orphan the operator's existing connector.
+        await using var factory = await CreateFactoryAsync();
+        var (admin, engineer, operatorClient) = await SetUpAllRolesAsync(factory);
+        using (admin) using (engineer) using (operatorClient)
+        {
+            const string code = "D1-EP-LEGACY-SHAPE";
+
+            using (var create = await engineer.PostAsJsonAsync(
+                       "/v1/connectors",
+                       new ConnectorCreateRequest("Modbus", "10.30.0.5", 502, ValidModbusMap(code)),
+                       JsonOptions))
+            {
+                Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+            }
+
+            using (var configured = await operatorClient.GetAsync("/v1/connectors/configured"))
+            {
+                var only = Assert.Single(await configured.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions));
+                Assert.Equal(DriverKinds.Modbus, only.EffectiveInstanceId);
+                Assert.Equal(DriverKinds.Modbus, only.Kind);
+            }
+
+            using (var delete = await engineer.DeleteAsync("/v1/connectors/Modbus"))
+            {
+                Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+            }
+
+            using (var configured = await operatorClient.GetAsync("/v1/connectors/configured"))
+            {
+                Assert.Empty(await configured.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions));
+            }
+        }
+    }
+
+    [Fact]
+    public async Task TwoConnectorsOfOneKind_SurviveARestart_BothReRegister_AndBothMachinesAreBackInTheRoster()
+    {
+        // The migration/compat claim that only a restart can test: two same-kind rows must both be read back
+        // by Program.cs's persisted-row loop, both re-register into the ConnectorRegistry under their own
+        // instance ids, and both re-seed their machine. A startup loop that still skipped by KIND would
+        // silently drop the second one, and an operator would find one of their two machines simply gone
+        // after a reboot.
+        var sharedConnectorConfigDir = Directory.CreateTempSubdirectory("st4i-connectors-ep-d1-restart-").FullName;
+        const string codeA = "D1-EP-RESTART-A";
+        const string codeB = "D1-EP-RESTART-B";
+
+        await using (var factory1 = await CreateFactoryAsync(connectorConfigDirOverride: sharedConnectorConfigDir))
+        {
+            var (admin1, engineer1, _) = await SetUpAllRolesAsync(factory1);
+            using (admin1) using (engineer1)
+            {
+                using (var a = await engineer1.PostAsJsonAsync(
+                           "/v1/connectors",
+                           new ConnectorCreateRequest("Modbus", "10.30.0.5", 502, ValidModbusMap(codeA), InstanceId: "modbus-line-a"),
+                           JsonOptions))
+                {
+                    Assert.Equal(HttpStatusCode.OK, a.StatusCode);
+                }
+
+                using (var b = await engineer1.PostAsJsonAsync(
+                           "/v1/connectors",
+                           new ConnectorCreateRequest("Modbus", "10.30.0.6", 502, ValidModbusMap(codeB), InstanceId: "modbus-line-b"),
+                           JsonOptions))
+                {
+                    Assert.Equal(HttpStatusCode.OK, b.StatusCode);
+                }
+            }
+        }
+
+        await using var factory2 = await CreateFactoryAsync(connectorConfigDirOverride: sharedConnectorConfigDir);
+        var (admin2, _, operator2) = await SetUpAllRolesAsync(factory2);
+        using (admin2) using (operator2)
+        {
+            using var fleet = await operator2.GetAsync("/v1/fleet");
+            var snapshot = await fleet.Content.ReadFromJsonAsync<FleetSnapshotDto>(JsonOptions);
+            Assert.Single(snapshot!.Machines, m => m.Code == codeA);
+            Assert.Single(snapshot.Machines, m => m.Code == codeB);
+
+            using var configured = await operator2.GetAsync("/v1/connectors/configured");
+            var rows = await configured.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);
+            Assert.Equal(2, rows!.Count);
+
+            // 🔴 And the part that makes a WRITE resolvable rather than merely a row visible: the REAL
+            // composition root's registry must have BOUND each instance to the machine its map declares.
+            // Asserted against the live singleton (not against a hand-built registry) because the binding
+            // is Program.cs's job at three separate registration sites, and a binding omitted at any of
+            // them looks exactly like a working connector until someone writes to it — at which point
+            // resolution silently falls back to the pre-D-1 kind rule and a second same-kind machine makes
+            // both of them ambiguous again.
+            var liveRegistry = factory2.Services.GetRequiredService<ConnectorRegistry>();
+            Assert.True(liveRegistry.TryGetInstanceIdForMachine(codeA, out var boundA));
+            Assert.Equal("modbus-line-a", boundA);
+            Assert.True(liveRegistry.TryGetInstanceIdForMachine(codeB, out var boundB));
+            Assert.Equal("modbus-line-b", boundB);
+        }
+    }
+
+    [Fact]
+    public async Task TheEnvVarConfiguredConnectors_AreBoundToTheMachinesTheirMapsDeclare()
+    {
+        // 🔴 A mutation finding. Dropping `machineCode:` from Program.cs's env-var Modbus registration left
+        // every test in this repository green, and NO test had ever booted with ST4I_OPCUA_MAP set at all —
+        // so both env-var registrations, the deployment shape a machine builder is most likely to ship, were
+        // uncovered for the one property a write's resolvability now depends on. An unbound registration is
+        // indistinguishable from a working one until somebody writes to it.
+        //
+        // Both kinds are asserted, in one boot, rather than covering Modbus and calling OPC-UA "the same
+        // code" — that inference is exactly what Đợt B's review round 1 found to be false for the two halves
+        // of a symmetric pair.
+        const string modbusCode = "D1-ENVBIND-MODBUS";
+        const string opcUaCode = "D1-ENVBIND-OPCUA";
+        var modbusMapPath = Path.Combine(Path.GetTempPath(), $"st4i-d1-envbind-modbus-{Guid.NewGuid():N}.json");
+        var opcUaMapPath = Path.Combine(Path.GetTempPath(), $"st4i-d1-envbind-opcua-{Guid.NewGuid():N}.json");
+        await File.WriteAllTextAsync(modbusMapPath, ValidModbusMap(modbusCode));
+        await File.WriteAllTextAsync(opcUaMapPath, ValidOpcUaMap(opcUaCode));
+
+        try
+        {
+            await using var factory = await CreateFactoryAsync(
+                modbusEnvMapPath: modbusMapPath, opcUaEnvMapPath: opcUaMapPath);
+
+            var registry = factory.Services.GetRequiredService<ConnectorRegistry>();
+
+            Assert.True(registry.TryGetInstanceIdForMachine(modbusCode, out var modbusInstance));
+            Assert.Equal(DriverKinds.Modbus, modbusInstance);
+            Assert.True(registry.TryGetInstanceIdForMachine(opcUaCode, out var opcUaInstance));
+            Assert.Equal(DriverKinds.OpcUa, opcUaInstance);
+
+            // The derived default is what keeps an env-var deployment's slot label, alarm TargetId and
+            // DELETE URL exactly what they were before D-1.
+            Assert.Contains(DriverKinds.Modbus, registry.RegisteredIds);
+            Assert.Contains(DriverKinds.OpcUa, registry.RegisteredIds);
+        }
+        finally
+        {
+            File.Delete(modbusMapPath);
+            File.Delete(opcUaMapPath);
         }
     }
 }

@@ -31,6 +31,48 @@ namespace St4i.EngineApi.Fleet;
 /// EngineApi-specific (no ASP.NET Core, no <see cref="FleetHost"/> type reference) precisely so that move
 /// stays cheap if it's ever warranted.</para>
 ///
+/// <para><b>Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) — this registry
+/// is keyed by CONNECTOR INSTANCE, not by protocol kind.</b> Until D-1 the key WAS
+/// <see cref="IConnectorFactory.Kind"/>, which meant this build could run exactly ONE Modbus connector and
+/// ONE OPC-UA connector system-wide: a second <see cref="Register"/> for the same kind silently replaced the
+/// first. That is the structural reason RS-485 multidrop (N logical devices, N slave addresses, N machines,
+/// one bus) could not be expressed at all, and it is the reason Đợt B had to add
+/// <see cref="MachineDriverAvailability.AmbiguousDriver"/>: several roster machines resolved to one slot and
+/// nothing could tell which physical device the single live driver was talking to.</para>
+///
+/// <para>An INSTANCE ID is now the key. It is a free-form, operator-meaningful string, independent of the
+/// protocol <see cref="Entry.Kind"/> the instance speaks. <see cref="Register"/>'s <c>instanceId</c>
+/// parameter is OPTIONAL and defaults to the factory's own normalized <see cref="IConnectorFactory.Kind"/> —
+/// which is EXACTLY the key this class used before D-1, so every pre-existing call site, every
+/// pre-existing slot label, and every migrated <see cref="ConnectorConfigStore"/> row behaves byte-for-byte
+/// as it did (see that store's migration v4 for the on-disk half of the same decision). "One Modbus
+/// connector" is now a special case of "N Modbus connectors", not a law of the type system.</para>
+///
+/// <para><b>The machine binding is what makes routing possible — and what makes
+/// <see cref="MachineDriverAvailability.AmbiguousDriver"/> unreachable.</b> An instance MAY declare the
+/// machine code it serves (<see cref="Register"/>'s <c>machineCode</c>). Every production registration path
+/// does (they all start from a parsed register/node map, which carries <c>machineCode</c> as a required
+/// field — see <see cref="ConnectorConfigValidation"/>). A registration whose machine code is ALREADY
+/// claimed by a DIFFERENT instance is REFUSED (<see cref="Register"/> returns <see langword="false"/> and
+/// mutates nothing) — that refusal is the structural uniqueness gate <see cref="FleetHost.ResolveWritableDriver"/>
+/// relies on: because at most one instance can ever claim a given machine code, a machine that IS claimed
+/// resolves to exactly one identifiable driver, and a write can never be handed to a sibling's device.
+/// An UNBOUND instance (<c>machineCode</c> null — only reachable from test code and from a third-party
+/// registration path that has no parsed map to read a code from) claims nothing and leaves
+/// <see cref="FleetHost"/>'s pre-D-1, kind-based resolution rule in force for every machine, including its
+/// <see cref="MachineDriverAvailability.AmbiguousDriver"/> guard.</para>
+///
+/// <para><b>Why one machine code per instance, and why that does not preclude multidrop.</b> D-4's multidrop
+/// is N driver instances sharing one physical bus, each at its own slave address, each its own machine — so
+/// N instances × 1 machine each, which this shape expresses directly: the instance id is independent of the
+/// protocol AND of the transport, so two RTU instances naming the same COM port are just two ordinary
+/// entries here. What this shape does NOT express is the inverse (ONE instance serving N machine codes), and
+/// that is deliberate: <see cref="St4i.Connector.Abstractions.Models.SetpointWriteRequest"/> still carries no
+/// machine code, so a driver serving several machines could not tell which one a write was for — precisely
+/// the condition <see cref="MachineDriverAvailability.AmbiguousDriver"/> exists to refuse. If D-4 chooses that
+/// inverse shape it must extend the WRITE REQUEST first; this registry would then need a plural claim, which
+/// is a change to this class and to one store column, not to the identity model.</para>
+///
 /// <para><b>Id comparison semantics:</b> every id this class is given (via <see cref="Register"/> or
 /// looked up via <see cref="TryCreateDriver"/>) is folded through <see cref="DriverKinds.Normalize"/> —
 /// the SAME rule GP-3 established (a case-insensitive fold for the five built-in ids only; a third-party
@@ -53,18 +95,30 @@ namespace St4i.EngineApi.Fleet;
 /// </summary>
 public sealed class ConnectorRegistry
 {
-    private sealed record Entry(IConnectorFactory Factory, string Config);
+    private sealed record Entry(IConnectorFactory Factory, string Config, string Kind, string? MachineCode);
 
-    /// <summary>Keyed by the NORMALIZED id (see the class doc comment) — <see cref="StringComparer.Ordinal"/>
+    /// <summary>Keyed by the NORMALIZED INSTANCE id (see the class doc comment) — <see cref="StringComparer.Ordinal"/>
     /// deliberately, not <see cref="StringComparer.OrdinalIgnoreCase"/>: casing tolerance is
     /// <see cref="DriverKinds.Normalize"/>'s job alone, applied once on the way in and once on the way out,
     /// never re-applied a second time by this dictionary's own comparer.</summary>
     private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
 
-    /// <summary>Registers (or replaces) the factory + configuration for <see cref="IConnectorFactory.Kind"/>.
+    /// <summary>Task D-1 — serializes <see cref="Register"/>'s check-then-write. The machine-code claim is a
+    /// CROSS-ENTRY invariant ("no two instances claim the same code"), which a per-key
+    /// <see cref="ConcurrentDictionary{TKey,TValue}"/> operation cannot enforce on its own: two concurrent
+    /// registrations for two DIFFERENT instance ids naming the SAME machine code would each scan, each find
+    /// nothing, and each write. Registration is a startup/HTTP-mutation path (never a hot path), so a plain
+    /// lock is the right cost. <see cref="TryCreateDriver"/>/<see cref="RegisteredIds"/>/
+    /// <see cref="TryGetInstanceIdForMachine"/> deliberately do NOT take it — they read the concurrent
+    /// dictionary directly, exactly as they did before this task.</summary>
+    private readonly object _registerGate = new();
+
+    /// <summary>Registers (or replaces) the factory + configuration for one connector INSTANCE — keyed by
+    /// <paramref name="instanceId"/>, which defaults to <see cref="IConnectorFactory.Kind"/> (the pre-D-1
+    /// key, so an omitted id reproduces this method's previous behaviour exactly).
     /// <paramref name="config"/> is stored verbatim and opaque — this method never parses it, only hands it
     /// back to <paramref name="factory"/> unchanged on every future <see cref="TryCreateDriver"/> call for
-    /// this id. Re-registering the same id replaces the previous entry (last write wins) rather than
+    /// this id. Re-registering the same instance id replaces the previous entry (last write wins) rather than
     /// throwing — a host is free to reconfigure a connector and register again.
     ///
     /// <para><b>Review finding (fix round 1) — this is the one unguarded third-party entry point.</b>
@@ -83,16 +137,36 @@ public sealed class ConnectorRegistry
     /// something a vendor's <see cref="IConnectorFactory"/> implementation can trigger) and still
     /// throws <see cref="ArgumentNullException"/>, same as any other .NET API.</para>
     /// </summary>
+    /// <param name="factory">The connector's factory. Its <see cref="IConnectorFactory.Kind"/> is still read
+    /// here (it is what <paramref name="instanceId"/> defaults to, and it is recorded as the instance's
+    /// protocol) and is still guarded — see the remarks above.</param>
+    /// <param name="config">Stored verbatim and opaque; see the remarks above.</param>
+    /// <param name="instanceId">Task D-1 — this connector INSTANCE's own id, the key this registry uses.
+    /// <see langword="null"/>/blank (the default) means "use the factory's own normalized
+    /// <see cref="IConnectorFactory.Kind"/>", which is byte-for-byte the key this method used before D-1 —
+    /// so every pre-existing call site keeps its exact previous behaviour, including last-write-wins for a
+    /// second registration of the same kind. Pass a distinct id to run two connectors of the SAME kind side
+    /// by side (the whole point of D-1). Normalized through <see cref="DriverKinds.Normalize"/> like every
+    /// other id in this codebase, which is also what keeps an operator-chosen id of <c>"modbus"</c> from
+    /// becoming a SECOND entry alongside the built-in <c>"Modbus"</c>.</param>
+    /// <param name="machineCode">Task D-1 — the machine code this instance serves, if it knows it. This is
+    /// the binding <see cref="FleetHost"/> routes a write on; see the class doc comment for why a claim that
+    /// another instance already holds is REFUSED rather than allowed to overwrite. <see langword="null"/>
+    /// (the default) means "this instance declares no machine binding" — every pre-existing call site, so
+    /// their behaviour is unchanged.</param>
     /// <returns><see langword="true"/> if <paramref name="factory"/> was registered; <see langword="false"/>
-    /// if its <see cref="IConnectorFactory.Kind"/> getter threw or returned null/blank/whitespace.</returns>
-    public bool Register(IConnectorFactory factory, string config)
+    /// if its <see cref="IConnectorFactory.Kind"/> getter threw or returned null/blank/whitespace, or if
+    /// <paramref name="machineCode"/> is already claimed by a DIFFERENT instance id (in which case nothing
+    /// is mutated — the existing claim wins, and the caller can name the incumbent via
+    /// <see cref="TryGetInstanceIdForMachine"/> to log a message an operator can act on).</returns>
+    public bool Register(IConnectorFactory factory, string config, string? instanceId = null, string? machineCode = null)
     {
         ArgumentNullException.ThrowIfNull(factory);
 
-        string id;
+        string kind;
         try
         {
-            id = DriverKinds.Normalize(factory.Kind);
+            kind = DriverKinds.Normalize(factory.Kind);
         }
         catch
         {
@@ -101,19 +175,217 @@ public sealed class ConnectorRegistry
             return false;
         }
 
+        if (string.IsNullOrWhiteSpace(kind))
+        {
+            return false;
+        }
+
+        // The instance id defaults to the kind — the pre-D-1 key, verbatim. A blank/whitespace explicit id is
+        // treated the same as omitting it rather than rejected: an empty key is never a useful identity, and
+        // silently keying on "" would be strictly worse than falling back to the one sensible default.
+        var id = string.IsNullOrWhiteSpace(instanceId) ? kind : DriverKinds.Normalize(instanceId.Trim());
         if (string.IsNullOrWhiteSpace(id))
         {
             return false;
         }
 
-        _entries[id] = new Entry(factory, config ?? string.Empty);
-        return true;
+        var claim = string.IsNullOrWhiteSpace(machineCode) ? null : machineCode.Trim();
+
+        lock (_registerGate)
+        {
+            if (claim is not null)
+            {
+                foreach (var (existingId, existingEntry) in _entries)
+                {
+                    if (string.Equals(existingId, id, StringComparison.Ordinal)) continue;
+                    if (existingEntry.MachineCode is null) continue;
+                    if (!string.Equals(existingEntry.MachineCode, claim, StringComparison.OrdinalIgnoreCase)) continue;
+
+                    // Task D-1 — the structural gate. Two live connector instances claiming ONE machine code
+                    // is exactly the state MachineDriverAvailability.AmbiguousDriver was built to refuse a
+                    // write in; refusing the second REGISTRATION means that state can never be constructed
+                    // through this registry in the first place. Ordinal-ignore-case because every machine-code
+                    // comparison in this codebase is (FleetHost.RegisterMachine's own duplicate guard,
+                    // ResolveWritableDriver's roster lookup, ConnectorEndpoints' collision checks) — a claim
+                    // that differed only by casing would slip past this and reintroduce the ambiguity.
+                    return false;
+                }
+            }
+
+            _entries[id] = new Entry(factory, config ?? string.Empty, kind, claim);
+            return true;
+        }
     }
 
-    /// <summary>Every currently-registered connector id, normalized. A point-in-time snapshot — safe to
-    /// enumerate even if another thread is concurrently <see cref="Register"/>ing (this task never removes
-    /// entries once added, so there is no torn-read hazard to guard against).</summary>
+    /// <summary>
+    /// 🔴 Task D-7a — <b>the removal path this class spent three tasks not having.</b> Removes the entry
+    /// registered under <paramref name="instanceId"/> and, with it, <b>that instance's machine-code claim</b>,
+    /// so another instance can claim the same machine afterwards. Returns <see langword="false"/> (mutating
+    /// nothing) for an id nothing is registered under.
+    ///
+    /// <para><b>Why this had to exist before multidrop could ship.</b> <see cref="Register"/> refuses a second
+    /// claim on a machine code — that refusal is the structural gate
+    /// <see cref="FleetHost.ResolveWritableDriver"/> rests on. With no removal, a device deleted from a bus map
+    /// (or a connector deleted through <c>DELETE /v1/connectors/{instanceId}</c>) left a GHOST entry still
+    /// holding that machine's claim until the process restarted: the machine could not be re-served by
+    /// anything, and the refusal named an instance the operator had already deleted from their file.
+    /// <c>ModbusMultidropRegistration</c>'s own doc comment recorded the whole failure as D-7's to close, and
+    /// D-4's review carried it as <c>m6</c>.</para>
+    ///
+    /// <para><b>🔴 This method performs NO I/O and disposes NOTHING, and that is the design, not an
+    /// omission.</b> This registry holds <see cref="IConnectorFactory"/> objects and opaque configuration
+    /// strings — it has never held a driver. The live <see cref="IDeviceDriver"/> built from an entry belongs
+    /// to a <see cref="FleetHost"/> pipeline slot, and <see cref="FleetHost"/> already disposes slots
+    /// <b>outside</b> its <c>_gate</c>, under a bounded per-driver budget
+    /// (<c>WaitAndDisposeOldPipeline</c>/<c>DisposeOrphanedConnectorDrivers</c>, both invoked only after the
+    /// lock block closes — that constraint predates this batch and is absolute). So removal here is a pure
+    /// dictionary mutation that cannot block a caller holding any lock, and the driver it orphans is reclaimed
+    /// by the pipeline restart that <see cref="FleetHost"/> already owns. <b>An in-flight read is therefore
+    /// completely unaffected by this call</b> — it keeps its lease, keeps the shared RTU bus, and finishes
+    /// normally; what it loses is only its right to be rebuilt on the next start.</para>
+    ///
+    /// <para><b>What an operator sees between this call and the next start:</b> the removed instance's driver
+    /// keeps polling and keeps emitting readings for its machine. That is unchanged from before this method
+    /// existed (nothing ever stopped it) — what changes is that the machine's CLAIM is now free, so a
+    /// replacement connector can be configured immediately instead of after a restart. A write for that
+    /// machine in the window resolves to the NEW instance, which has no running slot yet, and is refused with
+    /// <see cref="MachineDriverAvailability.NoLiveDriver"/> — it is never handed to the orphaned driver, which
+    /// is the property that matters.</para>
+    /// </summary>
+    /// <param name="instanceId">The instance id to remove. Normalized through <see cref="DriverKinds.Normalize"/>
+    /// exactly like every id this class is given, so <c>"modbus"</c> removes the <c>"Modbus"</c> entry.</param>
+    /// <returns><see langword="true"/> if an entry was removed; <see langword="false"/> for a null/blank id or
+    /// an id nothing is registered under. Never throws.</returns>
+    public bool Unregister(string? instanceId)
+    {
+        if (string.IsNullOrWhiteSpace(instanceId)) return false;
+
+        var id = DriverKinds.Normalize(instanceId.Trim());
+        if (string.IsNullOrWhiteSpace(id)) return false;
+
+        // Under the SAME gate Register takes. Not for the dictionary's sake (ConcurrentDictionary.TryRemove is
+        // atomic on its own) but for the CROSS-ENTRY invariant Register enforces: a removal that landed in the
+        // middle of Register's claim scan could let a claim be refused against an entry that no longer exists
+        // by the time the scan finished. Serialising the two removes the interleaving instead of reasoning
+        // about it — the same argument SnapshotBindings' own doc comment makes for resolution.
+        lock (_registerGate)
+        {
+            return _entries.TryRemove(id, out _);
+        }
+    }
+
+    /// <summary>Every currently-registered connector INSTANCE id, normalized. A point-in-time snapshot.
+    ///
+    /// <para>🔴 Task D-7a — <b>this used to say "this task never removes entries once added, so there is no
+    /// torn-read hazard to guard against", and <see cref="Unregister"/> made that sentence false.</b> The
+    /// conclusion survives the premise, and the reason is worth stating rather than deleting: the hazard a
+    /// removal introduces is a torn ENUMERATION, and <see cref="ConcurrentDictionary{TKey,TValue}.Keys"/>
+    /// materialises a snapshot list under the dictionary's own locks, so an id removed mid-enumeration either
+    /// appears in the returned list or does not — never a corrupt read. What a caller CAN now see is a
+    /// returned id that is already gone by the time it is used, and that is exactly the shape
+    /// <see cref="TryCreateDriver"/> was already built for: it answers an unknown id with
+    /// <see langword="false"/> plus a descriptive error, the same way it answers a factory that rejected its
+    /// own configuration. <c>FleetHost.StartLocked</c> reports that as a per-connector start issue and starts
+    /// every sibling — which is the correct behaviour for "this connector was removed while the fleet was
+    /// starting", not a defect to guard against.</para></summary>
     public IReadOnlyList<string> RegisteredIds => _entries.Keys.ToList();
+
+    /// <summary>Task D-1 — the protocol kind an instance speaks (<see cref="IConnectorFactory.Kind"/>,
+    /// normalized), or <see langword="null"/> for an id nothing is registered under. Distinct from the
+    /// instance id itself the moment two connectors of one kind coexist.</summary>
+    public string? KindOf(string instanceId) =>
+        _entries.TryGetValue(DriverKinds.Normalize(instanceId), out var entry) ? entry.Kind : null;
+
+    /// <summary>
+    /// Task D-1 — the ONE lookup that makes per-machine write routing possible: which registered connector
+    /// instance declared that it serves <paramref name="machineCode"/>? Returns <see langword="false"/> when
+    /// no instance claims this code (the machine is simulated, or driven by an instance that never declared
+    /// a binding, or not connector-backed at all).
+    ///
+    /// <para>At most ONE instance can ever claim a given code — <see cref="Register"/> refuses a second
+    /// claim outright (see its own remarks) — so this is genuinely a lookup, not a "pick the first of
+    /// several". That is the property <see cref="FleetHost.ResolveWritableDriver"/> depends on to report
+    /// <see cref="MachineDriverAvailability.Writable"/> without needing Đợt B's roster-sharing count: a
+    /// claimed machine resolves to exactly one identifiable driver by construction.</para>
+    ///
+    /// <para>Case-insensitive on <paramref name="machineCode"/>, matching every other machine-code
+    /// comparison in this codebase (<see cref="FleetHost.RegisterMachine"/>'s duplicate guard,
+    /// <c>ConnectorEndpoints</c>' collision checks). Never throws; a null/blank code simply matches
+    /// nothing.</para>
+    /// </summary>
+    public bool TryGetInstanceIdForMachine(string? machineCode, [NotNullWhen(true)] out string? instanceId)
+    {
+        instanceId = null;
+        if (string.IsNullOrWhiteSpace(machineCode)) return false;
+
+        var wanted = machineCode.Trim();
+        foreach (var (id, entry) in _entries)
+        {
+            if (entry.MachineCode is not null
+                && string.Equals(entry.MachineCode, wanted, StringComparison.OrdinalIgnoreCase))
+            {
+                instanceId = id;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Task D-1 — <see langword="true"/> if <paramref name="instanceId"/> is registered AND declared
+    /// a machine binding. Tells "this connector slot belongs to a specific, identified machine (and therefore
+    /// serves no other roster member)" from "this slot is unbound, so the pre-D-1 kind-based rule — ambiguity
+    /// guard included — still governs it."
+    ///
+    /// <para>Prefer <see cref="SnapshotBindings"/> when asking more than one question in a row — see its own
+    /// remarks. This overload is for single, standalone queries.</para>
+    ///
+    /// <para><b>Census (D-1 re-review, m-B): this member has NO production caller.</b>
+    /// <see cref="FleetHost"/> used it until m3 replaced its three independent registry reads with one
+    /// <see cref="SnapshotBindings"/> call, and nothing else in <c>src/</c> asks the question. It is kept
+    /// rather than deleted for one reason, stated so the next census does not have to re-derive it: it is
+    /// the readable way for a TEST to assert that a registration is bound (the alternative,
+    /// <c>SnapshotBindings().Any(b =&gt; b.InstanceId == id &amp;&amp; b.MachineCode is not null)</c>, restates
+    /// the predicate at every call site), and "is this connector bound to a machine?" is a first-class fact
+    /// about this type rather than an accident of one caller. If a future census wants it gone, the four
+    /// tests using it are the whole blast radius.</para></summary>
+    public bool IsBoundToAMachine(string instanceId) =>
+        _entries.TryGetValue(DriverKinds.Normalize(instanceId), out var entry) && entry.MachineCode is not null;
+
+    /// <summary>Task D-1 — one registered connector instance's identity and machine binding, as carried by
+    /// <see cref="SnapshotBindings"/>. Deliberately carries no factory/config: a caller asking "who serves
+    /// this machine, and which slots belong to a bound instance" has no business reaching the factory.</summary>
+    public readonly record struct ConnectorBinding(string InstanceId, string? MachineCode);
+
+    /// <summary>
+    /// 🔴 D-1 review, m3 — ONE consistent point-in-time view of every registered instance's binding.
+    ///
+    /// <para><see cref="FleetHost.ResolveWritableDriver"/> asks three separate questions per resolution
+    /// ("who claims this machine", "does a bound instance own this slot label", and the same first question
+    /// again for every roster member while counting slot-sharers). Asked as three independent reads they are
+    /// three independent points in time: <see cref="FleetHost"/> holds its own <c>_gate</c> during
+    /// resolution, but <see cref="Register"/> takes <see cref="_registerGate"/> and nothing else, so a
+    /// concurrent registration CAN land between them. No interleaving produces a wrong-machine write today —
+    /// but only because every path that can register without a machine binding also fails to build a driver,
+    /// so no writable slot exists for it, which is a property of today's five call sites rather than of the
+    /// resolution method. Resting a safety invariant on that is exactly the kind of reasoning this project
+    /// has been burned by; taking one snapshot removes the question instead of answering it.</para>
+    ///
+    /// <para>A snapshot, not a lock: this is a copy of the dictionary's entries at one moment, so it can be
+    /// stale the instant it returns. That is fine and is the point — resolution needs an internally
+    /// CONSISTENT view, not a fresh one, because a registration that lands mid-resolution is
+    /// indistinguishable from one that lands immediately after it.</para>
+    /// </summary>
+    public IReadOnlyList<ConnectorBinding> SnapshotBindings()
+    {
+        var snapshot = new List<ConnectorBinding>(_entries.Count);
+        foreach (var (id, entry) in _entries)
+        {
+            snapshot.Add(new ConnectorBinding(id, entry.MachineCode));
+        }
+
+        return snapshot;
+    }
 
     /// <summary>
     /// Attempts to build a fresh <see cref="IDeviceDriver"/> for <paramref name="id"/> — called anew every

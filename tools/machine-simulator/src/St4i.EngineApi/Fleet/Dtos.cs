@@ -180,17 +180,29 @@ public sealed record ApiErrorDto(string Error);
 // FleetHost.GetConfiguredConnectorIssues's own doc comment for why this is deliberately informational,
 // never a /v1/health fault.
 //
-// Small doc correction (batch review) — `Id` here is actually the REGISTRY KEY, i.e. the normalized
-// `kind` (see ConnectorRegistry's own doc comment on id-comparison semantics), NOT a connectors.json
-// entry's own `id` field: ConnectorsConfig.Load reads that field only to NAME per-entry warnings, then
-// discards it — ConnectorRegistry.Register keys purely on IConnectorFactory.Kind. A connectors.json entry
-// `{"id":"line3-weld","kind":"Modbus"}` therefore surfaces here as `{"id":"Modbus","error":...}`. See
-// README §19.4 for the fuller writeup and why this is documented rather than renamed.
+// `Id` here is the REGISTRY KEY — FleetHost.GetConfiguredConnectorIssues projects the keys of
+// _connectorStartIssues, which StartLocked populates from ConnectorRegistry.RegisteredIds.
+//
+// 🔴 Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) — WHAT that registry
+// key IS changed under this comment, so the previous wording is corrected rather than left standing. It
+// used to read: "`Id` here is actually the REGISTRY KEY, i.e. the normalized `kind` … ConnectorRegistry.
+// Register keys purely on IConnectorFactory.Kind. A connectors.json entry `{"id":"line3-weld",
+// "kind":"Modbus"}` therefore surfaces here as `{"id":"Modbus","error":...}`." Both halves of that are now
+// false: Register keys on a per-connector INSTANCE id, so this field carries an instance id, and two
+// connectors of one kind produce two distinct entries here rather than one silently replacing the other.
+//
+// What did NOT change, and is the part worth keeping: a connectors.json entry's own `id` field is still
+// read only to NAME per-entry warnings and is still discarded — Program.cs's connectors.json dispatch
+// deliberately lets the instance id default to the kind (see ConnectorsJsonRegistration's own remarks for
+// why adopting entry.Id would silently move every such connector's pipeline slot label, and therefore its
+// alarm TargetId). So that example entry STILL surfaces as `{"id":"Modbus","error":...}` today — for a
+// different reason than the one the old comment gave. README §19.4's fuller writeup is stale on the same
+// point and is D-7's to correct.
 // ─────────────────────────────────────────────────────────────────────────
 public sealed record ConnectorStatusDto(string Id, string Error);
 
 // ─────────────────────────────────────────────────────────────────────────
-// POST /v1/connectors, GET /v1/connectors/configured, DELETE /v1/connectors/{kind},
+// POST /v1/connectors, GET /v1/connectors/configured, DELETE /v1/connectors/{instanceId},
 // POST /v1/connectors/test — SM-5 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/
 // task-5-brief.md): the write path connectors.json never had. See ConnectorEndpoints' own doc comment for
 // the full RBAC/audit/apply-live-or-restart write-up.
@@ -210,7 +222,15 @@ public sealed record ConnectorStatusDto(string Id, string Error);
 /// EXACT map — <see cref="Endpoints.ConnectorEndpoints.CreateConnectorAsync"/> returns 400 (missing/blank) or
 /// 409 (present but not matching what this specific map currently declares) rather than silently arming the
 /// capability on a bare, unconfirmed POST.</param>
-public sealed record ConnectorCreateRequest(string Kind, string? Host, int? Port, string MapJson, string? ConfirmedWriteCapabilityFingerprint = null);
+/// <param name="InstanceId">Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md)
+/// — this connector INSTANCE's own id, and the segment <c>DELETE /v1/connectors/&#123;instanceId&#125;</c>
+/// takes. Optional: omitted/blank means "use <paramref name="Kind"/>", which is the id every pre-D-1 row
+/// already has and the id <see cref="St4i.EngineApi.Fleet.ConnectorRegistry.Register"/> defaults to — so a
+/// client that has never heard of instance ids keeps configuring exactly the one Modbus / one OPC-UA
+/// connector it always did, at the same URLs. Supply a distinct id to run a SECOND connector of the same
+/// kind (two RS-485 devices on one bus, two Modbus TCP PLCs): that is what this field exists for, and it is
+/// the only field that makes the second one addressable.</param>
+public sealed record ConnectorCreateRequest(string Kind, string? Host, int? Port, string MapJson, string? ConfirmedWriteCapabilityFingerprint = null, string? InstanceId = null);
 
 /// <summary>Task B-3 — the write/command capability a saved (or about-to-be-saved) map declares, shaped for
 /// direct display: never omit <see cref="Fingerprint"/> only because it's inconvenient to compute twice —
@@ -251,12 +271,22 @@ public sealed record ConnectorWriteCapabilityDto(
 /// <see cref="St4i.EngineApi.Endpoints.SiteEndpoints.RotateIdentityAsync"/>'s own doc comment): whatever a
 /// save just granted must be impossible to miss in the response, not a field a caller has to know to go
 /// looking for.</para></summary>
-public sealed record ConnectorCreateResultDto(ConnectorWriteCapabilityDto WriteCapability, ConnectorConfigSummary Config, bool AppliedLive, string Message);
+/// <param name="Devices">🔴 Task D-7b — every device row a Modbus RTU BUS save produced, in bus order;
+/// <see langword="null"/> for every single-connector save (which is every save this endpoint accepted before
+/// D-7b). <see cref="Config"/> stays populated for a bus too — it is the FIRST device — so a pre-D-7b client
+/// reading only that field still gets a well-formed row rather than a null, and a D-7b client reading this
+/// one learns that the request created N connectors rather than the one its shape implies.</param>
+public sealed record ConnectorCreateResultDto(
+    ConnectorWriteCapabilityDto WriteCapability, ConnectorConfigSummary Config, bool AppliedLive, string Message,
+    IReadOnlyList<ConnectorConfigSummary>? Devices = null);
 
-/// <summary>The <c>DELETE /v1/connectors/{kind}</c> response. <c>Message</c> states plainly that this only
+/// <summary>The <c>DELETE /v1/connectors/{instanceId}</c> response (the segment was <c>{kind}</c> before Task D-1). <c>Message</c> states plainly that this only
 /// removes the PERSISTED configuration — <see cref="FleetHost.RegisterMachine"/> has no unregister, so a
 /// machine already in the roster (and any currently-running connector for this kind) is unaffected until a
 /// full process restart, which is when Program.cs would next decide what to seed from a (now-empty) store.</summary>
+/// <param name="Kind">Task D-1 — kept as the property NAME (a wire-shape change no client asked for is a
+/// gratuitous break) but it now carries the deleted connector's INSTANCE id, which for every pre-D-1 row and
+/// every connector saved without its own id is the same string it always was.</param>
 public sealed record ConnectorDeleteResultDto(string Kind, string Message);
 
 /// <summary>Same shape as <see cref="ConnectorCreateRequest"/> — a connection test never persists anything,

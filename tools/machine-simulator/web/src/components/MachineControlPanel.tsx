@@ -103,16 +103,30 @@ function rejectionReasonLabel(t: TFunc, reason: string | null): string | null {
   return label === key ? reason : label
 }
 
+/** 🔴 Whole-branch review M-2 — blueprint §10 item 3, carried to where the claim is actually READ.
+ *
+ * `Applied` renders as "the device confirmed it", which is true and, for a COMMAND, incomplete in the one
+ * direction that matters: it means a returned frame matched this request's slave address, function code, coil
+ * address and value. It does **not** prove the machine moved. Modbus RTU has nothing that ties a frame to a
+ * specific request, so a late echo of an earlier, already-finished pulse is acknowledged identically.
+ *
+ * The paragraph that says so existed — on the `/connectors` configuration form, seen once by an engineer at
+ * setup — and §10 item 3 is explicit that this must not be presented to an operator as physical proof. The
+ * operator reading a command outcome never met it. `isCommand` is what makes that caveat land here instead:
+ * a SETPOINT write is a register value that can be read back, so the caveat is a command-path fact and
+ * showing it on both would be the same imprecision one size down. */
 function OutcomeBanner({
   t,
   outcome,
   rejectionReason,
   detail,
+  isCommand = false,
 }: {
   t: TFunc
   outcome: WriteOutcome
   rejectionReason: string | null
   detail: string | null
+  isCommand?: boolean
 }) {
   const reasonLabel = rejectionReasonLabel(t, rejectionReason)
   return (
@@ -123,6 +137,9 @@ function OutcomeBanner({
       </div>
       {outcome === "Indeterminate" ? (
         <p className="text-xs font-medium text-text-strong">{t("machineDetail.control.outcome.indeterminateGuidance")}</p>
+      ) : null}
+      {isCommand && outcome === "Applied" ? (
+        <p className="text-xs font-medium text-text-strong">{t("machineDetail.control.outcome.appliedIsAcknowledgement")}</p>
       ) : null}
       {reasonLabel ? <p className="text-xs text-text-muted">{reasonLabel}</p> : null}
       {detail ? <p className="text-xs text-text-muted">{detail}</p> : null}
@@ -404,7 +421,15 @@ function CommandRow({
       )}
 
       {notAvailable ? <NotAvailableBanner message={notAvailable} /> : null}
-      {result ? <OutcomeBanner t={t} outcome={result.outcome} rejectionReason={result.rejectionReason} detail={result.detail} /> : null}
+      {result ? (
+        <OutcomeBanner
+          t={t}
+          outcome={result.outcome}
+          rejectionReason={result.rejectionReason}
+          detail={result.detail}
+          isCommand
+        />
+      ) : null}
 
       <CommandConfirmDialog
         t={t}

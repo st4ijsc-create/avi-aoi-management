@@ -62,6 +62,36 @@ public sealed record ModbusRegister(
     ModbusWritableRange? Writable = null)
 {
     /// <summary>
+    /// Task D-2 — the READ-side decode, extracted verbatim out of <see cref="ModbusTcpDriver.PollOnceAsync"/>
+    /// so <see cref="ModbusRtuDriver"/> reuses the identical math instead of re-deriving it. The brief for
+    /// D-2 requires the TCP driver's decode be reused ("both are protocol-generic"), and a copy is not a
+    /// reuse: two copies can drift, and the drift would be silent (a wrong number is still a number).
+    /// <see cref="ModbusTcpDriver"/> now calls this too, so there is exactly one implementation and the
+    /// existing TCP decode tests cover both transports.
+    ///
+    /// <para><see cref="ModbusDataType.UInt16"/> keeps the raw 16-bit word as-is;
+    /// <see cref="ModbusDataType.Int16"/> reinterprets the SAME bits as two's-complement signed
+    /// (raw 0xFFFF → -1) BEFORE <see cref="Scale"/> is applied. This is the exact inverse of
+    /// <see cref="TryComputeRawWordForWrite"/>'s own <c>unchecked((ushort)(short)…)</c> bit-cast.</para>
+    ///
+    /// <para>🔴 <b>This method is FIRST in the type deliberately, and moving it is not a cosmetic edit.</b>
+    /// D-2 originally inserted it between <see cref="TryComputeRawWordForWrite"/>'s doc block and the method
+    /// itself, which silently re-parented that block — a <c>&lt;summary&gt;</c>, three <c>&lt;param&gt;</c>
+    /// tags and a <c>&lt;remarks&gt;</c> recording B-3's Critical #1 (this is the ONE place the declared-range
+    /// check lives) and Critical #2 (the NaN gap) — onto THIS method, leaving the write-side math D-5 builds
+    /// on with no documentation at all. Nothing catches that: <c>GenerateDocumentationFile</c> is not set
+    /// anywhere in this repository, so no compiler warning fires for a doc comment attached to the wrong
+    /// member. The argument is this file's own history — that <c>&lt;remarks&gt;</c> exists precisely because
+    /// a doc comment that said the wrong thing shipped a Critical once already. Keep the two methods'
+    /// doc blocks adjacent to their own bodies.</para>
+    /// </summary>
+    public double DecodeRawWord(ushort rawWord)
+    {
+        double decoded = DataType == ModbusDataType.UInt16 ? rawWord : unchecked((short)rawWord);
+        return decoded * Scale;
+    }
+
+    /// <summary>
     /// Task B-3 — the write-side mirror of <see cref="ModbusTcpDriver"/>'s own read-side decode
     /// (<c>raw*Scale</c>, with an Int16 register's raw word reinterpreted two's-complement BEFORE scaling):
     /// given an engineering-unit <paramref name="engineeringValue"/> ALREADY known to be within
@@ -224,7 +254,24 @@ public sealed record ModbusCommand(string Name, ushort? CoilAddress, IReadOnlyLi
 /// address on the wire, NOT related to <see cref="MachineCode"/>), poll cadence, and the ordered registers
 /// <see cref="ModbusTcpDriver"/> reads each poll (one register per poll, per register — block/batch reads
 /// are a documented follow-up, see the driver's own remarks). Loaded from JSON via <see cref="FromJson"/>,
-/// the same idiom as <see cref="St4i.EdgeCore.Mapping.MappingProfile.FromJson"/>.</summary>
+/// the same idiom as <see cref="St4i.EdgeCore.Mapping.MappingProfile.FromJson"/>.
+///
+/// <para><b>🔴 Task D-4 — this type stays 1:1 with ONE machine and ONE unit id, and that is the safety
+/// property, not a limitation to be grown out of.</b> A bus of N devices is declared by wrapping N of these
+/// documents in a <c>devices</c> array and fanning it out into N connector instances — see
+/// <see cref="ModbusMultidropMap"/>, which parses every element through THIS method rather than forking a
+/// second map type or a second validation path. The inverse shape (one map declaring N machines, handed to one
+/// factory, producing one driver that emits N machine codes) is refused by blueprint §7.1 because
+/// <see cref="Models.SetpointWriteRequest"/> carries no machine code, so such a driver could not route a write
+/// to the right machine — verbatim the hole that produced Đợt B's
+/// <see cref="Models.MachineDriverAvailability.AmbiguousDriver"/> guard.</para>
+///
+/// <para><b>This method is SHARED with the Modbus TCP driver, and transport-specific rules must not be added
+/// to it.</b> <see cref="UnitId"/> 0 is broadcast — meaningless to read over RTU, but entirely legal and
+/// common over TCP (a device that ignores the unit id, or a TCP→RTU gateway that uses it to select the serial
+/// slave). The RTU refusal therefore lives on <see cref="ModbusRtuDriver"/>'s constructor, the RTU
+/// construction boundary. See D-2's task-2-report.md §10b (m-9) for the regression that reasoning
+/// prevents.</para></summary>
 public sealed class ModbusRegisterMap
 {
     /// <summary>Upper guard for <see cref="ReadTimeoutMs"/>: 60 seconds. Generous relative to the
@@ -382,14 +429,49 @@ public sealed class ModbusRegisterMap
     [JsonIgnore]
     public int? Retries { get; init; }
 
-    /// <summary>The value <see cref="ModbusTcpDriver"/> actually applies to
+    /// <summary>The value <see cref="ModbusTcpDriver"/> <b>and <see cref="ModbusRtuDriver"/></b> apply to
     /// <c>Transport.ReadTimeout</c>/<c>WriteTimeout</c>: <see cref="ReadTimeoutMs"/> if the register map
-    /// set one, else the original derived default.</summary>
+    /// set one, else the original derived default.
+    ///
+    /// <para>🔴 <b>Task D-4 — the derived default was reasoned for a DEDICATED connection, and on a shared
+    /// RS-485 bus it is the largest term in the cost one unanswering device charges everyone else.</b>
+    /// <c>Math.Max(1000, PollIntervalMs * 4)</c> is generous precisely because on <see cref="ModbusTcpDriver"/>'s
+    /// own socket a device that answers slowly costs only ITSELF — nothing else is waiting on that connection.
+    /// On a multidrop bus the same value is multiplied by <see cref="Registers"/>.Count and by
+    /// <see cref="EffectiveRetries"/> + 1 and is charged to the SHARED arbitration lock. See
+    /// <see cref="WorstCaseBusHoldMs"/> for the number and <see cref="ModbusMultidropMap.FanOut"/> for the
+    /// parse-time warning. <b>A multidrop device should normally DECLARE this field</b>, sized for its slowest
+    /// legitimate single round trip, rather than inherit a value derived from its poll cadence.</para></summary>
     public int EffectiveReadTimeoutMs => ReadTimeoutMs ?? Math.Max(1000, PollIntervalMs * 4);
 
-    /// <summary>The value <see cref="ModbusTcpDriver"/> actually applies to <c>Transport.Retries</c>:
-    /// <see cref="Retries"/> if the register map set one, else the original default of 1.</summary>
+    /// <summary>The value <see cref="ModbusTcpDriver"/> and <see cref="ModbusRtuDriver"/> apply to
+    /// <c>Transport.Retries</c>: <see cref="Retries"/> if the register map set one, else the original default
+    /// of 1. On a shared bus this is a MULTIPLIER on <see cref="WorstCaseBusHoldMs"/>, because a retry is a
+    /// whole fresh request under the same per-attempt bound rather than an extension of the first one.</summary>
     public int EffectiveRetries => Retries ?? 1;
+
+    /// <summary>
+    /// 🔴 Task D-4 — <b>the longest this device can hold a shared RS-485 bus for ONE poll, decidable entirely
+    /// from this document.</b> <c>Registers.Count × (EffectiveRetries + 1) × EffectiveReadTimeoutMs</c>: a poll
+    /// issues one request per register (block batching is a documented follow-up — see
+    /// <see cref="ModbusTcpDriver"/>'s class remarks), each request is re-sent <see cref="EffectiveRetries"/>
+    /// times when it fails, and each attempt is bounded by <see cref="EffectiveReadTimeoutMs"/>. The whole poll
+    /// runs inside ONE <see cref="ModbusBusTransaction"/>, so the arbitration lock is held across all of it and
+    /// every other device on the line waits.
+    ///
+    /// <para><b>Why this is a computed property rather than a sentence in a report.</b> Values this class
+    /// already accepts as valid reach genuinely absurd holds: <c>readTimeoutMs: 60000</c> (its own
+    /// <see cref="MaxReadTimeoutMs"/>) with <c>retries: 5</c> (<see cref="MaxRetries"/>) on a 20-register device
+    /// is <c>20 × 6 × 60 000 ≈ 2 HOURS</c> of shared bus per poll cycle — and every input to that number is in
+    /// this document. Nothing outside it is needed, which is exactly why it IS checked, unlike bus THROUGHPUT
+    /// (which needs the line rate, and which <see cref="ModbusMultidropMap"/> deliberately does not check).</para>
+    ///
+    /// <para><see langword="long"/>, not <see langword="int"/>, deliberately: <see cref="Registers"/> has no
+    /// declared upper bound, so a large map at the two maxima above overflows a 32-bit product — and a number
+    /// that silently wrapped NEGATIVE would make the very check written to catch an absurd hold report a
+    /// comfortable one.</para>
+    /// </summary>
+    public long WorstCaseBusHoldMs => (long)Registers.Count * (EffectiveRetries + 1) * EffectiveReadTimeoutMs;
 
     /// <summary>Parses a register-map JSON document (see the class doc comment for the expected shape;
     /// property names are matched case-insensitively, enum values as their C# member names — "Holding"/

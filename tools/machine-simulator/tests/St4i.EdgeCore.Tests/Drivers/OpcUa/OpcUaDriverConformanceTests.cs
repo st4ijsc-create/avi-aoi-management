@@ -28,17 +28,13 @@ namespace St4i.EdgeCore.Tests.Drivers.OpcUa;
 public sealed class OpcUaDriverConformanceTests : DeviceDriverConformanceSuite
 {
     /// <summary>A definitely-closed loopback port, computed ONCE (not inside <see cref="CreateDriver"/>).
-    /// Connecting here fails FAST, unlike <see cref="CreateUnresponsiveDeviceAsync"/>'s target below.</summary>
-    private static readonly int ClosedPort = FindAndReleaseFreePort();
-
-    private static int FindAndReleaseFreePort()
-    {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
-    }
+    /// Connecting here fails FAST, unlike <see cref="CreateUnresponsiveDeviceAsync"/>'s target below.
+    ///
+    /// <para>🔴 D-2 review (I-3) — was <c>FindAndReleaseFreePort()</c>, which released the port back to the
+    /// OS and let it be reassigned to another test's listener. See
+    /// <see cref="St4i.EdgeCore.Tests.Drivers.ClosedLoopbackPort"/> for the cross-test failure that
+    /// established this and for the bind-without-listen mechanism that removes it.</para></summary>
+    private static int ClosedPort => St4i.EdgeCore.Tests.Drivers.ClosedLoopbackPort.Port;
 
     private static string NewPkiRoot(string tag) =>
         Path.Combine(Path.GetTempPath(), $"st4i-opcua-conf-{tag}-" + Guid.NewGuid().ToString("N")[..8]);

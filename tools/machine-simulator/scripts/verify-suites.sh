@@ -58,7 +58,679 @@ EXPECT_CONFORMANCE=22
 # chore/test-hygiene raised this 735 -> 741 (+6): guards proving the test-isolation seam added to
 # CredentialStore, which was the only one of FOURTEEN stores without one — which is exactly why
 # 2,999 DPAPI blobs accumulated in the product's REAL credential directory, dating to 2026-07-18.
-EXPECT_EDGECORE=741
+# 🔴 Đợt D, D-1 re-review — this total is UNCHANGED at 741, and that is the point. A reviewer's gate run
+# came back EdgeCore 740/741 on WalFlushPumpTests.Pump_DrainsAnIdleBacklogOnItsOwnTimer_..., an IOException
+# out of File.ReadAllLines (not out of any assertion), reproducing 1 run in 4. Byte-for-byte the defect Đợt C
+# closed in StoreAndForwardRestartSurvivalTests: a FileShare.Read reader opened against a LIVE writer — the
+# pump is `await using`, so it is still ticking on the assertion line, and every tick's drain ends in the
+# vendored SDK's unconditional File.WriteAllText(queuePath, ""). Fixed at the mechanism in all three of this
+# file's reads by disposing the pump first (DisposeAsync cancels the loop AND awaits it, so no handle can be
+# open afterwards) — no retry, no share-mode tolerance, NO NEW TUNABLE, and no test added or removed. The
+# reviewer's 1-in-4 became 0 failures in 12 consecutive runs, but the load-bearing argument is the mechanism,
+# not the sample: after DisposeAsync returns there is no writer for the read to collide with.
+# 🔴 Đợt D, D-2 raises this 741 -> 787 (+46).
+#
+# 🔴 COUNTED FROM THE RUNNER (`dotnet test --list-tests`), not by hand. The previous revision of this block
+# said 7/4/8/12/8 where the truth was 7/4/9/11/8 — two files wrong, and the two errors CANCELLED, so the
+# grand total was right and the justification was not. That is the failure mode this per-file breakdown
+# exists to prevent: a total that reconciles is not evidence that anybody knows where the tests are. Both
+# numbers now come from the runner enumerating them.
+#
+#     + 8  ModbusRtuDriverLoopbackTests      (new) — a real read against an in-process RTU slave; Input
+#                                             registers read through FC04 not FC03; two drivers on ONE bus
+#                                             each reading their own slave address; the driver handing the bus
+#                                             ITS OWN map's timeout and retry count; the device going quiet
+#                                             (Health degrades, iterator survives); Health never reporting
+#                                             Connected even transiently against a device that never answers;
+#                                             construction opening no link; disposal releasing the lease once.
+#     + 6  ModbusBusCancellationTests        (new) — the task's non-negotiable: cancel while queued for the
+#                                             bus; cancel an in-flight read WITHOUT rebuilding the link; a
+#                                             second device on the same bus still reading correctly after the
+#                                             first one's cancellation; a cancellation BETWEEN two registers
+#                                             leaving the bus clean; an aborted read never retrying even when
+#                                             the transport allows three; an already-cancelled token refused at
+#                                             the arbitration gate.
+#     + 9  ModbusBusResynchronisationTests   (new) — the post-timeout bus state: the hazard demonstrated
+#                                             against raw NModbus; the late frame discarded; the quiet window
+#                                             restarting rather than expiring on a schedule; a fresh link NOT
+#                                             clearing the quarantine; exactly one request on the wire
+#                                             (Retries honoured); a transaction that executed nothing staying
+#                                             clean; a clean transaction costing the next one nothing; a bus
+#                                             that never goes quiet being refused AND its link rebuilt; the
+#                                             arbitration lock surviving that refusal.
+#     +15  ModbusBusRegistryTests            (new) — the sharing/refcount contract D-4 consumes: sharing per
+#                                             key, distinct keys, one release vs the last release, a double
+#                                             release decrementing once, re-acquire after disposal, registry
+#                                             disposal, acquire-after-disposal, the settings defaults and their
+#                                             validation, 32 concurrent acquires, BeginTransactionAsync's own
+#                                             argument validation (3 cases) and its one-operation-at-a-time
+#                                             guard.
+#     + 8  GatewayTcpBusLinkTests            (new) — the RTU-over-TCP transport: DiscardInBuffer head to head
+#                                             against NModbus's own TcpClientAdapter, abort-without-close,
+#                                             the bounded timeout, the hang-up, disposal, RTU end to end over
+#                                             a real socket, the bus-key rule, and a dead endpoint.
+#
+# Eight of those 46 exist only because a mutation survived an earlier version of this suite: a fresh link
+# clearing the quarantine; Transport.Retries left at NModbus's own default of 3; Health reporting Connected
+# transiently; DiscardInBuffer's own hook being unwired from the drain it delegates to; the quiet window's
+# TRAILING silence; the FC04 (Input register) arm, which no RTU map in the suite had ever declared; and the
+# driver's own map reaching the bus at all. The 46th (AnAbortedInFlightRead_NeverRetries_...) pins a property
+# of a THIRD-PARTY exception filter rather than of this code: NModbus happens not to retry the
+# OperationCanceledException the abort throws from inside its own retry loop, and nothing here would notice if
+# that changed — a retried abort re-transmits a request whose caller has given up, which on D-5's write path is
+# a physical double-actuation. Verified to have teeth: making the link throw TimeoutException instead makes the
+# same test see 32 bytes (four attempts) rather than 8. See task-2-report.md §8 — none was found by reading.
+#
+# EVERY OTHER SUITE IS UNCHANGED, and that is a check rather than a coincidence: D-2 adds no code outside
+# src/St4i.EdgeCore/Drivers/Modbus, so a moved total anywhere else would mean this task reached somewhere it
+# had no business reaching. In particular EXPECT_CONFORMANCE stays 22 — RTU conformance wiring is D-6 — and
+# every pre-existing Modbus test passes UNCHANGED (verified: 114/114 on four consecutive baseline runs at
+# 36d9454c). The D-2 review fix round also rewrites two PRE-EXISTING conformance helpers
+# (Modbus/OpcUaDriverConformanceTests' FindAndReleaseFreePort -> Drivers/ClosedLoopbackPort) and adds NO test
+# for them: a released ephemeral port can be reassigned to another test's listener, which is what made an
+# unrelated TLS test fail once. A moved total there would mean that rewrite was not behaviour-preserving.
+#
+# 🔴 Đợt D, D-3 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-3-brief.md) raises this
+# 787 -> 817 (+30). D-3 adds the NATIVE SERIAL transport — Modbus RTU over a real COM port — in its OWN
+# assembly (src/St4i.EdgeCore.Serial), which is the only place in the product allowed to depend on
+# System.IO.Ports. Every number below is COUNTED FROM THE RUNNER (`dotnet test --list-tests`), not by hand,
+# for the reason D-2 wrote down: a total that reconciles is not evidence that anybody knows where the tests
+# are.
+#
+#     + 9  SerialLineSettingsTests          (new) — the line parameters of one RS-485 segment: the defaults
+#                                            are the MODBUS spec's 19200-8-E-1 and not SerialPort's own
+#                                            9600-8-N-1 (asserted against a real SerialPort as the control,
+#                                            so the test is about the decision rather than about reading back
+#                                            the numbers written in the type); six rows of lines a port cannot
+#                                            honour (baud <= 0, 7/9 data bits, StopBits.None/OnePointFive);
+#                                            a blank port name; and the port-name normalisation, because
+#                                            "com3" and "COM3" are one physical port and the bus key is built
+#                                            from that string.
+#     +14  SerialPortBusLinkTests           (new) — the transport itself, to the exact extent a machine with
+#                                            no RS-485 hardware can drive it: SerialPort.DiscardInBuffer
+#                                            verified to reach Kernel32.PurgeComm while TWO of NModbus's three
+#                                            own adapters are 1-IL-byte empty bodies (the brief's "verify,
+#                                            don't trust the name" obligation, discharged by reading the
+#                                            shipped IL because no loopback exists to measure it
+#                                            behaviourally); the port configured from an explicit line AND
+#                                            from the default line (both arms — D-2's I-2 lesson); the
+#                                            handshake forced off and RTS left deasserted, which is the
+#                                            RS-485 direction-control decision; four theory rows proving the
+#                                            bus key distinguishes every line parameter, plus its
+#                                            case-insensitivity; an absent port failing with the port AND its
+#                                            framing in the message; the abort check firing BEFORE the port is
+#                                            touched (with the cleared-abort arm as the discriminator); the
+#                                            write timeout reaching the port object; a closed port draining to
+#                                            nothing without throwing, and disposal being idempotent; and two
+#                                            registry tests — two connectors on one line sharing ONE bus and
+#                                            ONE open, and two connectors that disagree about baud rate
+#                                            getting TWO buses rather than one silently shared port.
+#     + 7  SerialDependencyScopingTests     (new) — the STRUCTURAL proof the brief demands instead of
+#                                            inspection: the three shipping executables (EdgeService, EngineApi,
+#                                            the WPF shell) carry no System.IO.Ports.dll; St4i.EdgeCore — which
+#                                            holds ModbusBus, the RTU framing and GatewayTcpBusLink — references
+#                                            neither the package nor the serial assembly; plus THREE positive
+#                                            controls without which those FOUR would be vacuous (this test
+#                                            assembly's own output DOES carry the DLL, the serial assembly DOES
+#                                            reference the package, and the output search refuses a project that
+#                                            was never built rather than reporting it clean). 4 + 3 = the 7 above.
+#                                            (Review M-6: this said "those five" — a hand-kept count that drifted
+#                                            when the never-built guard landed.)
+#
+# Six of those 30 exist only because a mutation survived an earlier version of this suite: the "never built"
+# guard (which every caller bypassed, so nothing ever ASKED it — a reachability gap a mutation cannot find on
+# its own); the abort check and the write timeout (unreachable until an internal Adopt() let a test drive the
+# pre-I/O half of those members without hardware); the write timeout's non-positive arm (the test originally
+# used -1, which IS SerialPort.InfiniteTimeout, so its expected value coincided with its input); and the read
+# slice's own bound, which is that defect's sibling found by sweeping rather than by care.
+#
+# 🔴 FIVE mutations still SURVIVE and are recorded rather than papered over — see task-3-report.md §8. Four of
+# the five need a COM port with something on the other end of it, which no CI machine and no portable virtual
+# COM pair provides; the fifth is untestable by construction. Nothing hardware-conditional was committed: a
+# dynamically skipped test would fail this very gate, which expects 0 skipped.
+#
+# EVERY OTHER SUITE IS UNCHANGED, and that is the check rather than a coincidence: D-3 adds no code outside
+# src/St4i.EdgeCore.Serial and tests/St4i.EdgeCore.Tests. In particular EXPECT_ABSTRACTIONS stays 151 even
+# though St4i.Connector.Abstractions.Tests owns the sibling "this assembly references only the BCL" guard, and
+# EXPECT_CONFORMANCE stays 22 because RTU conformance wiring is D-6. D-3 also EXTRACTS MakaretuNotShippedTests'
+# solution-root walk and output search into tests/St4i.EdgeCore.Tests/BuildOutputProbe.cs so the new scoping
+# suite shares one implementation rather than growing a second copy that can drift silently — that rewrite is
+# behaviour-preserving and adds NO test (MakaretuNotShippedTests stays at 3, counted from the runner). A moved
+# total there would mean it was not.
+#
+# 🔴 D-3's REVIEW FIX round raises this 817 -> 824 (+7), all in SerialPortBusLinkTests (14 -> 21), counted
+# from the runner. Every one closes something the review found; none is a rewrite or a split:
+#   + 1  I-1  Read_WithAZeroLengthCount_ReturnsImmediately_WithoutTouchingThePort. SerialPort.Read(buf,0,0)
+#             returns 0 WITHOUT WAITING (measured: 0.46 ms; a bare loop over it ran at 33 MILLION
+#             iterations/second), so a zero count fell through the `read > 0` check and span the loop holding
+#             the bus's arbitration lock and a core — with no deadline at all when ReadTimeout <= 0.
+#             GatewayTcpBusLink never had this because Socket.Poll consumes its slice whatever the count is:
+#             a divergence between two links on one seam that the report's own §8.6 was written to catch and
+#             did not. The discriminating assertion is that the port is CLOSED, so anything that reached it
+#             would throw.
+#   + 1  I-2  EveryLink_PinsThePortsReadTimeoutToOneSlice_HoweverItWasConstructed. The slice pin lived in
+#             CreatePort, so Adopt produced a link whose port kept SerialPort's own default of -1
+#             (InfiniteTimeout) — the unbounded blocking read measured as releasable by nothing but Dispose(),
+#             i.e. Đợt B's forbidden mechanism on a shared bus. All three mutations defending the pin targeted
+#             CreatePort, so the evidence had a hole the same shape as the code. The pin moved to the
+#             constructor; the test's first assertion (the factory leaves the BCL default alone) is what makes
+#             the second one discriminating.
+#   + 4  I-3  The four members that were unreachable while the class held a concrete SerialPort — every member
+#             of which is non-virtual and which cannot be constructed without hardware. A ~40-line internal
+#             ISerialPortHandle (7 members) with a real-backed impl and a fake whose every behaviour was
+#             MEASURED against a real port makes them CI-testable: the drain's true count (M19b, the most
+#             consequential survivor), the outer deadline (M21b), the between-slice abort recheck with the
+#             port left OPEN, and a read returning as soon as a byte arrives. Same move D-2 made when
+#             NModbus's IStreamResource could not be driven.
+#   + 1        AnRtuFrameRoundTripsThroughThisLinksOwnReadAndWrite — a real NModbus RTU master and slave on
+#             opposite ends of a paired handle, so real CRC, real t3.5 framing and real slave dispatch pass
+#             through THIS transport's own Read/Write rather than through D-2's in-memory link. It narrows
+#             "no Modbus frame has ever traversed this transport" to "…has ever traversed a real SerialPort".
+#             Verified to have teeth: truncating the write by one byte kills it.
+#
+# The hardware half is now a COMMITTED, runnable artefact — tools/serial-bench, an executable OUTSIDE the five
+# suites, so `skipped == 0` is untouched. That constraint is right and the brief was wrong about it: xUnit
+# counts a dynamically skipped test in Total, so a hardware-conditional suite would make Skipped
+# environment-dependent and any fixed expectation would fail on the BETTER-equipped machine — trap #2 in a
+# hardware costume. It is in the solution so this gate's build keeps it compiling, and it adds no test.
+#
+# 🔴 D-3's SECOND review round raises this 824 -> 825 (+1), in SerialPortBusLinkTests (21 -> 22), for M-10:
+#   + 1  DrainBufferedInput_WhenThePortIsTornDownMidDrain_ReturnsWhatItAlreadyRemoved_RatherThanThrowing.
+#        The drain swallowed the two "the port went away underneath me" shapes around BytesToRead and NOT
+#        around Read, so a disposal landing between them threw out of the drain — and
+#        ModbusBus.ResynchroniseAsync turns any throw from there into ModbusBusResynchronisationException +
+#        FaultLink(). Noisier teardown rather than a wrong number, but the half-guarded shape was the defect.
+#        The test has TWO arms because the drain touches the port twice per iteration and a mutation aimed at
+#        the Read catch matched the BytesToRead one instead and SURVIVED — fixing one instance of a defect
+#        class buys no immunity to the class. Its load-bearing assertion is that PARTIAL progress is still
+#        reported: a `catch { return 0; }` would pass a "doesn't throw" test while telling the quiet window
+#        the line had been silent when 512 bytes had just come off it.
+#
+# 🔴 GatewayTcpBusLink gets the IDENTICAL one-line fix in the same commit and adds NO test. It is a shared
+# nit, not a serial regression, and fixing only the serial one would create exactly the two-links-on-one-seam
+# divergence D-3's report §8.6 exists to catch. It is untestable for the same reason the serial drain was
+# before review I-3 — that class holds a concrete TcpClient — and the mutation disabling it SURVIVES and is
+# recorded as such rather than papered over. All 198 Drivers.Modbus tests pass unchanged, which is the check
+# that the edit is behaviour-preserving.
+#
+# 🔴 TASK D-4 (multidrop) raises this 825 -> 850 (+25), counted from the runner (`dotnet test --list-tests`),
+# not by hand. Three files; none is a rewrite, a split or a deletion:
+#   +17  ModbusMultidropMapTests      (new file — how a bus of N devices is DECLARED and how it fans out)
+#   + 5  ModbusMultidropBusTests      (new file — N devices actually RUNNING on one bus)
+#   + 3  ModbusRtuDriverLoopbackTests (8 -> 11 — the RTU addressing boundary; see below)
+#
+# The 17 map tests are each a configuration that would otherwise fail SILENTLY or WRONGLY rather than throw:
+# two devices at one slave address (both answer, the frames collide, and the master decodes whichever survived
+# — a plausible wrong number); two devices claiming one machine (the second silently never registers, and the
+# reason is a log line); a bus declaring no devices (indistinguishable from a connector that failed); a device
+# element that will not parse (an error naming no device out of eight). Plus the ONE refusal that is
+# deliberately ABSENT: unit 0 parses fine here, because this document shape is shared with the Modbus TCP
+# driver where unit 0 is legal and common — D-2's own m-9 correction, which is why the RTU rule lives at the
+# RTU CONSTRUCTION boundary instead, i.e. the 3 tests below.
+#
+# The +3 in ModbusRtuDriverLoopbackTests are that boundary and its control: unit 0 (broadcast — a read to it
+# can NEVER be answered, and on a multidrop bus each of those timeouts holds the shared arbitration lock for a
+# full read timeout), units 248-255 (reserved by MODBUS over Serial Line V1.02 §2.2 — a separate check with a
+# separate message, so a mutation deleting one leaves the other standing), and BOTH EDGES of the addressable
+# range accepted, because a refusal that is too WIDE takes a legitimately-addressed device off the bus while
+# blaming the operator. That last one is the control: without it, narrowing the range to 1..127 kills nothing.
+#
+# 🔴 The 5 bus tests MEASURE the costs of sharing one wire rather than asserting them, and each prints its own
+# figures (`--logger "console;verbosity=detailed"`) so nobody has to take task-4-report.md's word for them —
+# D-3's reviewer had to rewrite its whole hardware probe to check its numbers. On this machine:
+#   * one timeout quarantines the bus ONCE for the WHOLE bus (14 stale bytes discarded, both healthy devices
+#     reading again 92 ms later against a 50 ms quiet window) — NARROWER than D-2 §5.5's own wording, which
+#     reads as though every device pays a window;
+#   * one unanswered device collapses two healthy devices from 135.0 to 2.0 reads/s — a 67.5x tax, three
+#     orders of magnitude worse than the quarantine, and the finding of the task;
+#   * a device polling at 200 ms hit 15 of a nominal 15 polls while three others completed 119,069 flat out —
+#     not starved, because the driver delays AFTER each poll rather than on a schedule.
+# The two ratio tests compare a rate against a rate measured on the SAME machine in the SAME test and assert a
+# 4x margin against a ~50x effect, so they state a mechanism rather than a machine's speed.
+#
+# 28 mutations, all KILLED, every round opened with a positive control and every verdict gated on all five
+# verbs of scripts/mutate-guard.sh. One SURVIVED on the first pass and was a real vacuous test: the
+# nested-`devices` refusal could be deleted with every test green, because the generic "this element is not a
+# valid single-device map" wrapper names the same element index. What the dedicated check buys is the WORDING,
+# so the assertions are now on the phrase and on the ABSENCE of an inner exception. One reported NOT-APPLIED
+# (a needle that no longer matched the source) and was re-run rather than read as a gap.
+#
+# EXPECT_ENGINEAPI moves too (+6) because the fan-out's REGISTRATION half necessarily lives beside
+# ConnectorRegistry — see its own note below. EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_EDGESERVICE
+# are deliberately unchanged: D-4 adds no code outside src/St4i.EdgeCore/Drivers/Modbus,
+# src/St4i.EngineApi/Config and their two test projects, so a moved total anywhere else would mean this task
+# reached somewhere it had no business reaching. EXPECT_CONFORMANCE in particular stays 22 — RTU conformance
+# wiring is still D-6.
+#
+# 🔴 D-4's REVIEW FIX round raises this 850 -> 860 (+10), counted from the runner. Two files:
+#   + 9  ModbusMultidropMapTests      (17 -> 26)
+#   + 1  ModbusRtuDriverLoopbackTests (11 -> 12)
+# ModbusMultidropBusTests stays 5 — the m2/m7 fixes there change only what the test PRINTS, not what it
+# asserts, and a moved total would mean they did more than that.
+#
+#   + 5  I-2  EveryDeviceLevelKeyAtTheRoot_IsRefused_NotOnlyTheMandatoryOnes — one InlineData per device-level
+#             key. {"pollIntervalMs": 5000, "devices": […]} parsed cleanly and every device silently ran its
+#             own value: verbatim the failure the class's own no-inheritance doc uses to justify itself, left
+#             reachable by the check written to prevent it. The first list held only the two MANDATORY fields
+#             — the wrong test; the right one is "could a reader believe this applies to the bus", which is
+#             every key the per-device parse consumes. Each key is a separate case because a mutation deleting
+#             one entry survives a test that checks another.
+#   + 3  I-1  The worst-case arbitration hold is decidable from the map alone and nothing computed it:
+#             20 registers x (5 retries + 1) x 60 000 ms readTimeout ~= TWO HOURS of shared bus per poll, every
+#             input declared, every value inside this map's own accepted maxima. ModbusRegisterMap gains
+#             WorstCaseBusHoldMs (long, because that product overflows int and a NEGATIVE hold would make the
+#             check report a comfortable number) and FanOut warns, comparing each device's hold against the SUM
+#             OF THE OTHER devices' poll intervals. Three tests: the hog is named with its arithmetic; a
+#             correctly-sized bus is SILENT (the control — without it the check could be tightened into noise);
+#             and the warning names the DOMINANT term, because a derived timeout is the product's own default
+#             and a declared one is the operator's number.
+#   + 1  I-1  ABusOfOne_IsNeverWarnedAbout_InEitherDocumentShape, and it is here because a mutation found the
+#             first version could not fail: it used only the LEGACY single-device document, which RETURNS
+#             EARLY and never reaches the check. The shape the devices.Count < 2 guard actually defends is a
+#             one-element `devices` ARRAY, where the siblings' cadence is 0 and every such bus would otherwise
+#             be warned about. Both arms now.
+#   + 1  I-5  ValidateRtuUnitId_RefusesWithoutALease_AndTheConstructorUsesTheSameRule. The rule moved out of
+#             the ctor into a public static so D-7 can refuse a bad map BEFORE ModbusBusRegistry.Acquire — a
+#             ctor throw after a lease is taken leaks a reference count nothing decrements, and D-3 measured
+#             that SerialPort opens a COM port EXCLUSIVELY, so the port is dead for the process lifetime and
+#             presents as an unrelated connector failing to start. The discriminating assertion is that it
+#             throws with no bus, no lease and no registry at all; the second half pins that both paths give
+#             the SAME message so they cannot drift.
+#
+# 9 further mutations this round (8 + a re-run), all KILLED, every verdict gated on all five verbs. ONE
+# survived first — the devices.Count < 2 guard — and was a real vacuous test rather than dead code; see the
+# +1 above.
+#
+# 🔴 backlog-test-deadlines (edgecore-host-crash-report.md) raises this 860 -> 861 (+1), counted from the
+# runner (`dotnet test --list-tests`: 853 -> 854). ONE file, ONE new test, none rewritten and none deleted:
+#
+#     + 1  HotFolderDriverTests (4 -> 5)
+#          DisposeAsync_WhileTheReadLoopIsIdle_EndsTheEnumeration_RatherThanStrandingItForever
+#
+# 🔴 IT IS THE REGRESSION TEST FOR THIS SCRIPT'S OWN RECURRING "ABORTED SUITE", and the diagnosis every
+# previous reading got wrong. The log said `Test host process crashed : [deviceidentity] ... corrupt or
+# unreadable` and printed `Passed! ... 731` — trap #2's exact costume — so four tasks recorded it as "a
+# pre-existing DeviceIdentityStore flake, no root cause". None of that was the defect:
+#   * the "crash reason" is just whatever the host last wrote to STDERR. That line comes from the
+#     corrupt-blob test's own HANDLED path, which had already PASSED. A red herring, printed by a green test.
+#   * the host did not crash. The trx's own <Times> shows start 20:47:53, last result 20:48:36, and the
+#     abort recorded at 21:03:58 — 966 s later, i.e. the exact moment THIS SCRIPT's ceiling fired
+#     `taskkill //F //IM testhost.exe`. The gate manufactured the crash it then reported. Trap 7 again, in a
+#     third costume: a healthy-looking negative produced by the checker itself.
+#   * the CPU heuristic could not have caught it either (trap 7(d), already documented above).
+# The real defect: HotFolderAoiDriver.DisposeAsync disposed the SemaphoreSlim its own ReadAsync was parked
+# on. SemaphoreSlim.Dispose() drops queued ASYNC waiters WITHOUT completing them, so the await is stranded
+# permanently and its CancellationToken can no longer reach it — measured 200/200 on this runtime. Because
+# xunit starts a DisableParallelization collection only after the whole parallel phase drains, that one
+# stranded test kept the Site (70) and OpcUa (52) collections from ever starting: 731 of the 860 this line
+# then expected, forever.
+# Reproduced 2 times in 8 runs under two-worker load, 0 in 24 runs after the fix.
+#
+# EXPECT_EDGECORE is the ONLY total that moves. The fix also touches src/St4i.Connector.Conformance
+# (bounding the unbounded `await runTask` that let one stranded driver hang a whole assembly) and
+# src/St4i.EdgeCore/Drivers/OpcUa/OpcUaDriver.cs (the identical `_sessionLock.Dispose()`, a second instance
+# of the same defect class) — both ADD assertions/delete a line and add NO test, so a moved total on
+# Abstractions, Conformance, EdgeService or EngineApi would mean this task reached further than it meant to.
+#
+# 🔴 TASK D-5 (the RTU WRITE path) raises this 861 -> 896 (+35). COUNTED FROM THE RUNNER
+# (`dotnet test --list-tests`: 854 -> 889), not by hand, for the reason D-2 wrote down: a total that
+# reconciles is not evidence that anybody knows where the tests are. ONE file, ONE new test class; nothing
+# else in this suite gains or loses a test.
+#
+#     +35  ModbusRtuDriverWriteTests (new) — 24 methods, 35 cases (three theories: 3 wrong-answer shapes,
+#          9 setpoint rejections, 2 command rejections). What each group buys:
+#
+#      * ATTRIBUTION (2) — a setpoint written to unit 2 of a three-device bus lands on unit 2 and NOWHERE
+#        else, and a coil pulse addresses only its own coil, TRUE then FALSE. Asserted twice over: off each
+#        slave's OWN data store, AND off the frames that reached the bus boundary — because a pulse ends with
+#        the coil back at FALSE, which the data store cannot distinguish from "never touched".
+#      * NO IMPLICIT RETRY (3) — exactly ONE request FRAME on the wire for a write and for a command, plus
+#        the read path getting its own tolerance back afterwards. 🔴 NON-VACUOUS BY CONSTRUCTION: the map
+#        declares `retries: 5`, i.e. the test supplies the number that must NOT be used, and the assertions
+#        are on the frame count at the boundary and on ModbusBus.LastTransactionRetries — neither of which
+#        this test provides. D-2's equivalent read test passed while the driver hardcoded a different count
+#        precisely because it supplied the value it checked. MEASURED for a WRITE specifically against NModbus
+#        3.0.83 (D-2 had only measured it for a read): 1 request frame at Retries=0, 2 at 1, 4 at 3 — i.e.
+#        retries+1, from which 5 gives 6. The 6 is derived; the other three are on the probe's own output.
+#      * INDETERMINATE (1) — produced by a GENUINE timeout (elapsed >= the bound), with four separate
+#        content assertions on Detail (what happened, that it is unknown, WHICH unit, that nothing was
+#        resent) plus a DoesNotContain on the generic backstop string. Đợt B shipped two defects in which a
+#        NullReferenceException replaced an authored Indeterminate message with a generic one, and both were
+#        invisible to a "Detail is not null" check.
+#      * NO STALE FRAME CAN ACKNOWLEDGE A WRITE (4) — three hand-crafted responses that differ from the true
+#        echo in exactly one field (wrong register, wrong value, a stale FC03 read response) are each refused,
+#        plus the correct-echo CONTROL without which all three would pass on a driver that can never report
+#        Applied at all. Driven through the new RawRtuResponder, because a real NModbus slave always answers
+#        correctly and this question needs an answer that is wrong on purpose. In effect a contract test on
+#        NModbus's echo validation, which D-5 measured and which is STRICTLY STRONGER than a read's: a write
+#        response is an echo checked on slave address, function code, start address AND value.
+#      * THE BUS AFTER A FAILED WRITE (2) — a write times out on machine A, its echo arrives LATE on the
+#        shared line, and machine B's next read still returns B's own value; the quarantine is asserted
+#        ENTERED and paid ONCE, with real bytes discarded, and LinkGeneration never moves. Plus: a bus that
+#        will not go quiet REFUSES the write and reports Failed, with ZERO frames on the line — the one place
+#        this driver reports a definite "no" that is not a device rejection, decided on WriteOutcome.Failed's
+#        own words ("the device OR THE TRANSPORT TALKING TO IT was reached and explicitly reported failure").
+#      * CANCELLATION AND WHAT AN OPERATOR WAITS (4) — an in-flight write cancelled in ~209 ms against a
+#        30 000 ms bound, with the link NOT rebuilt and a second machine still reading (the mechanism
+#        assertions; the clock is not the claim); a write queued behind a dead device's 700 ms hold served
+#        after ~1.7 s; and the same write cancelled after 150 ms returning in ~151 ms with NOT ONE FC06 frame
+#        on a line that was busy throughout. Those three are the evidence behind task-5-report.md §7's
+#        decision NOT to build the per-device backoff. The fourth pins the branch for a cancellation observed
+#        AFTER the bus was taken but BEFORE the request was written — reachable only in a race, so a mutation
+#        could never find a defect in it (the reachability gap D-1's review found by READING); made
+#        deterministic by cancelling from inside the bus's own openLink delegate, which ModbusBus invokes with
+#        the arbitration lock already held.
+#      * B-3's LIMITS THROUGH THIS ENTRY POINT (12) — nine setpoint rejections (unknown point, read-only
+#        point, over, under, NaN, +Infinity, bool, string, null) and three command ones (unknown, arguments
+#        supplied, no declared coil address), each asserting the shared bus saw ZERO bytes. "No frame ever
+#        left the master" is what B-1 requires; "the register still holds its old value" also passes for a
+#        write the device refused. One row per rejection because a mutation deleting one guard survives a
+#        test that exercises another.
+#      * THE REST OF THE SURFACE (7) — WritablePoints/Commands immutable and not castable back to a List;
+#        a write after disposal; a write serialised against this driver's own running poll; a device-rejected
+#        write and a device-rejected pulse assert (Failed, naming the Modbus exception code); a pulse whose
+#        RESET never completes (Indeterminate, naming the coil and that it may be latched); and both halves
+#        of a pulse sharing ONE transaction so no other machine can run between them with a coil latched high.
+#
+# 🔴 NO OTHER TOTAL IN THIS SUITE MOVES, and that is the check rather than a coincidence. D-5 also does two
+# behaviour-preserving extractions, both of which add NO test and both of which are proved by a total that
+# does not move:
+#   * src/…/Modbus/ModbusWritePreflight.cs (new) takes five `private static` members VERBATIM off
+#     ModbusTcpDriver (point/command lookup, the object?->double narrowing, and the hand-written six-entry
+#     Modbus-exception-code table) so the RTU driver reuses them instead of holding a second copy that can
+#     drift silently. ModbusTcpDriverWriteTests is what proves it behaviour-preserving.
+#   * tests/…/Modbus/RawRtuResponder.cs (new) carries RtuFrames.WithCrc, which ModbusBusResynchronisationTests'
+#     own private AppendCrc now delegates to. That suite stays at 9.
+# ModbusBusTransaction gains an ADDITIVE Task-returning ExecuteAsync overload that delegates to the existing
+# generic one (NModbus's write calls return Task, not Task<T>), so the quarantine accounting D-4 and D-6 sit
+# on is literally the same code for a write as for a read.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGESERVICE and EXPECT_ENGINEAPI are deliberately unchanged:
+# D-5 adds no code outside src/St4i.EdgeCore/Drivers/Modbus and tests/St4i.EdgeCore.Tests, so a moved total
+# anywhere else would mean this task reached somewhere it had no business reaching. EXPECT_CONFORMANCE in
+# particular stays 22 — RTU conformance wiring is D-6, and no operator can turn the RTU write path on at all
+# until D-7 builds the connector factory, the policy gate and the RBAC route.
+#
+# 🔴 D-5's REVIEW FIX ROUND raises this 896 -> 905 (+9), counted from the runner
+# (`dotnet test --list-tests`: 889 -> 898). Two files; none is a rewrite, a split or a deletion. The expected
+# total is the ONLY executable line this task has changed in this script, per the standing rule the D-5 review
+# settled: totals may move with a per-file justification in this block; nothing else in this file may change.
+#
+#   + 5  ModbusRtuDriverWriteTests (35 -> 40) — 🔴 THE CRITICAL. The review applied FIVE mutations to
+#        InvokeCommandAsync SIMULTANEOUSLY (bus refusal -> Indeterminate, assert-half Detail -> the generic
+#        backstop string, queued cancellation -> Failed, in-flight cancellation Detail -> generic,
+#        bus-disposed -> Failed) and the whole suite reported `Passed! - Failed: 0, Passed: 896`; a sixth
+#        mutant in the same tree killed 1, so the pipeline was live. Every content assertion D-5 shipped was
+#        on the setpoint path or the pulse's RESET half, so the member that answers "did a machine cycle
+#        start?" asserted its outcome and nothing else. The four branches now have command-path equivalents
+#        of the setpoint tests (assert-half timeout with nine content assertions plus a DoesNotContain on the
+#        backstop string; in-flight cancel with LinkGeneration and a second machine still reading; queued
+#        cancel proven at the bus boundary with ZERO FC05 frames; bus refusal reporting Failed), and the
+#        fifth covers a branch that turned out to be unguarded on BOTH members: a bus disposed out from under
+#        a live driver. That last one is distinct from AWriteOrCommandAfterDisposal_..., which covers the
+#        DRIVER's own flag.
+#   + 1  ModbusRtuDriverWriteTests — review I-1. ModbusBusResynchronisationException is raised from exactly
+#        two places and the driver hard-coded the reason of ONE of them, so a failed drain (live and
+#        intentional: GatewayTcpBusLink lets an IOException escape on the strength of the bus's catch
+#        "saying so") told an operator to go hunting a babbling device. Both refusal causes are now driven
+#        through one parameterised link decorator in ONE test, because "distinguishable" is a claim about a
+#        pair: the Assert.NotEqual is the discriminating assertion and the two Contains stop it passing on
+#        any two strings that merely differ.
+#   + 3  ModbusTcpDriverWriteTests (13 -> 16) — review m-2. A [Theory] with one row per non-numeric setpoint
+#        shape (bool, string, null). Found by a D-5 mutation, not by reading: mutating the SHARED
+#        ModbusWritePreflight.TryToEngineeringValue to accept a bool killed a test in the RTU suite and NONE
+#        here, because this file had 13 tests and zero [InlineData] and had never passed a non-numeric value
+#        since B-4. The behaviour was guarded (through the shared method, by the RTU suite) — what these
+#        retire is a future re-inlining silently unguarding TCP.
+#
+# NO OTHER TOTAL MOVES. The fix round also REMOVES two assertions that could not discriminate (review m-1 and
+# m-5 — a frame-length count that is structurally always 0 because every RTU master request is 8 bytes, and an
+# Assert.All over a collection that can hold only the single frame the line above already checked) and adds
+# none in their place: each test's remaining assertions are the ones that carry it, so those two edits move no
+# count.
+#
+# 🔴 TASK D-6 (conformance) raises this 905 -> 951 (+46), counted from the runner (`dotnet test --list-tests`:
+# 898 -> 944 — the two agree here because none of the new tests is a [Theory]). Three new files; nothing is
+# rewritten, split or deleted. The expected total is again the ONLY executable line this task changes in this
+# script, per the standing rule.
+#
+#   +19  ModbusRtuDriverConformanceTests (new) — the shared DeviceDriverConformanceSuite against the real
+#          ModbusRtuDriver on a bus it owns alone: the 17 Check_* wirings, the suite's own
+#          EveryCheckIsWiredOrAcknowledged census (ZERO AcknowledgedGaps — every check runs), and one test
+#          this transport needs that the other four drivers do not (below). Three device shapes, all in
+#          St4i.EdgeCore.Tests because there is no portable virtual COM port: CreateDriver() rides a bus whose
+#          LINK CANNOT BE OPENED (RTU's real fast failure — SerialPortBusLink.OpenAsync throws on an absent
+#          port with no handshake to wait out; a silent line could only produce a timeout, which is not fast),
+#          CreateUnresponsiveDeviceAsync/CreateUnresponsiveWritableDeviceAsync ride D-2's paired in-memory link
+#          with D-5's RawRtuResponder answering nothing, and CollectReadingsAsync drives a REAL in-process
+#          NModbus RTU slave network.
+#   +21  ModbusRtuMultidropConformanceTests (new) — the SAME 19 (inherited from a shared abstract base, so the
+#          wirings exist once and run twice) with the device under test sharing a live, continuously polled
+#          line with another machine, plus 2 claims only this shape can make. D-4 shipped N devices on one bus
+#          and no conformance check had ever run against it. Worth its runtime, measured: the mutation that
+#          reduces ModbusRtuDriver.Id to the BUS alone (the TCP driver's endpoint-only shape) is KILLED here
+#          and INVISIBLE to every one of the 19 single-device checks.
+#   + 6  ModbusRtuConformanceRigTests (new) — the harness's own teeth, per the brief's rule that a loopback
+#          peer which always behaves makes several checks vacuous. The no-device target is proved genuinely
+#          ASKED and to fail an order of magnitude inside its own read timeout; the silent peer is proved to
+#          RECEIVE every request and answer none (otherwise Indeterminate could be passing because nothing was
+#          transmitted); the attempt counter the no-retry check reads is proved able to report TWO; the rig's
+#          map is proved to declare a retry count the bus then records as 0; the readings rig is a control PAIR
+#          (readings when the slave answers, none when it is silenced); and the last one pins the RTU form of
+#          the ClosedLoopbackPort defect — releasing the last lease disposes the bus AND its link, which is why
+#          every rig holds a keep-alive lease.
+#
+# ModbusRtuDriverWriteTests's own count is UNCHANGED (the +46 above is exactly the three new files, counted
+# from the runner and reconciling to the suite total with nothing left over), and that is the check rather
+# than a coincidence: D-6 MOVES its
+# private `WritableMap` into ModbusRtuLoopbackHarness.BuildWritableMap (with the point/coil/command names as
+# named constants) so RTU has ONE writable map shape rather than two, and that suite's own tests are what prove
+# the move behaviour-preserving. Same call D-5 made twice (ModbusWritePreflight, RtuFrames).
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGESERVICE and EXPECT_ENGINEAPI are deliberately unchanged.
+# EXPECT_CONFORMANCE in particular stays 22: D-6 WIRES the shared suite, it does not change it — no Check_*
+# method was added, removed or edited, so the suite's own negative controls still describe it exactly.
+# EXPECT_ENGINEAPI staying 1190 is the evidence for the AmbiguousDriver claim: that guard lives in
+# ConnectorRegistry/FleetHost, the conformance rig never constructs either, and D-4's
+# ModbusMultidropRegistrationTests still prove the routing unchanged.
+#
+# 🔴 D-6's REVIEW FIX ROUND raises this 951 -> 952 (+1), counted from the runner (`--list-tests`: 944 -> 945).
+# ONE file, one test; the Critical's own fix adds none.
+#
+#   + 1  ModbusRtuConformanceRigTests (6 -> 7) — review M-5. The MULTIDROP rig's "no device" target is a
+#          SILENCED SLAVE, not the single-device rig's unopenable line (a shared link cannot be refused for one
+#          device without making every device on the segment unreachable), and that substitution had no harness
+#          control of its own. The new one asserts the three things that could each make it green for the wrong
+#          reason: the silenced slave really RECEIVED the request and its reply really was dropped
+#          (FramesSilenced > 0 — "the master timed out" and "the master never transmitted" are
+#          indistinguishable from the master's side), the driver addressed at it yields zero readings, and its
+#          BUS-MATE still reads its own value off the same line, which is what stops "no readings" also being
+#          satisfied by a rig whose whole bus was broken.
+#
+# The CRITICAL's fix moves no total, and that is the check rather than a coincidence: it is a `base`-calling
+# override of Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice on the shared abstract
+# base, raising ONLY that one check's target bound from 300 ms to the rig's existing 8 000 ms so that an
+# ordinary timeout can no longer satisfy a cancellation check. No shared-suite change, EXPECT_CONFORMANCE
+# unmoved, four other drivers untouched, no test added or removed. Proven by re-running the mutation that
+# neuters ModbusBusTransaction's AbortPendingRead registration: it used to kill 2 tests and now kills 4 — the
+# two write-side cancellation checks join the two read-side ones. Passing cost: 231 ms / 223 ms against the
+# 8 000 ms bound.
+#
+# The other fixes are documentation corrections on records that were WRONG rather than merely thin (a false
+# impossibility proof, an untested keep-alive claim, an arithmetically wrong retries rationale, an imprecise
+# "every write check" and an over-general "no fast per-device failure"), plus blueprint §10 item 4 answered on
+# IModbusBusLink.DrainBufferedInput where D-7 will stand. Comment-only in src/; none moves a count.
+#
+# 🔴 TASK D-7a (backend: configuration, lifecycle, and a path an operator can reach) raises this 952 -> 1009
+# (+57). Three new files; nothing is rewritten, split or deleted. Both moved EXPECT_* constants are again the
+# ONLY executable lines this task changes in this script, per the standing rule.
+#
+#   +22  ModbusRtuBusSettingsTests (new) — the schema half of "connectors.json can declare a multidrop RTU
+#          bus". 6 facts + two [Theory] blocks (10 rows + 6). The two that carry it: the COMPATIBILITY rule
+#          (10 rows of documents that must NOT be read as RTU, including three that do not parse at all —
+#          DeclaresATransport must answer false rather than throw, or a malformed map would be reported twice
+#          by two different paths), and the SERIAL refusal, which asserts the reason and the alternative AND
+#          asserts the message does NOT read as "unknown transport" — the wording an operator would act on by
+#          assuming they had a typo.
+#   +15  ModbusMultidropMapTests (25 -> 40) — D-4 review m5 and blueprint §10 item 2. A [Theory] of 12 rows
+#          pins the derived-id namespace at its boundaries (":unit" with no digits, "unit1a", ":unit1" with no
+#          bus half); one fact proves a bus named like a device position is REFUSED, which is what makes the
+#          namespace disjoint and is what the ghost sweep depends on; one computes the bus-wide write bound on
+#          a bus whose devices differ by 20x so "the first" or "its own" is red rather than merely different;
+#          and one finally pins the LITERAL "{bus}:unit{n}" (D-4 review m1 — every existing assertion goes
+#          through the generator, which cannot see a change to the format).
+#   +10  ModbusRtuReadBackoffTests (new) — the backoff arithmetic. The load-bearing ones are about
+#          RELATIONSHIPS, not an input/output table: that the base is the HOLD and not the poll interval
+#          (asserted against a second device whose hold is small, so a constant floor would fail), that the
+#          multiplier really drives the growth (a 1.5x instance, whose answers this test does not also supply
+#          as inputs), and that 60 consecutive failures cannot overflow into a NEGATIVE delay — which would
+#          make a dead device poll in a tight loop, i.e. the opposite of the mechanism, produced by it.
+#   + 6  ModbusRtuConnectorFactoryTests (new) — the first thing in src/ that builds an RTU driver from
+#          configuration. THE LEASE LEAK is here twice: once as "an unbuildable device takes no lease at all"
+#          (validate before Acquire), and once as the discriminating version — a driver-constructor throw AFTER
+#          the lease is owned, observed through the OPENER being invoked a SECOND time. A lease count cannot
+#          discriminate: had it leaked, a later Acquire would silently ride the leaked bus and every read would
+#          still work, which is the leak's whole signature. Also pins that the factory turns the read backoff
+#          ON where a directly-constructed driver leaves it off, asserted through the two drivers' own
+#          failed-poll messages on one bus in one test.
+#   + 3  ModbusRtuDriverWriteTests (40 -> 43) — blueprint §10 items 1, 2 and 3. The budget test passes
+#          CancellationToken.None deliberately — literally the unbounded token §10 item 1 forbids — so only the
+#          driver's own bound can end the call, and asserts the Detail does NOT say "cancelled" (nobody
+#          cancelled anything). Its control is a driver with NO budget, which still waits the hold out and
+#          applies; without that pair the first would pass against an implementation that bounded every write
+#          at a constant. The third pins that an Applied COMMAND now carries the acknowledgement-not-observation
+#          sentence, with the pulse having genuinely worked.
+#   + 1  ModbusMultidropBusTests (11 -> 12) — the read backoff measured on D-4's OWN harness, before and after,
+#          in one process. Measured: 2.0 reads/s with the backoff off, 60.0 with it on — a 30x recovery, against
+#          an asserted 3x. D-4's own dead-device tax test is unchanged (82x collapse on this machine) and now
+#          passes ModbusRtuReadBackoff.Disabled EXPLICITLY, so a future flip of the driver's default cannot
+#          silently turn that baseline into a measurement of something else.
+#
+# 🔴 AND ONE DEFECT THIS MOVE PAID FOR, recorded because it is the reason the measurement exists: the failure
+# counter was incremented inside the ARGUMENT of `_logError?.Invoke(ex, DescribeFailedPoll())`, and `?.`
+# short-circuits its arguments — so for every driver constructed without a log callback the counter never moved
+# and the backoff never engaged. Every unit test of the arithmetic passed. Only the end-to-end number could see
+# it, and it reported a 1.0x "improvement".
+#
+# 🔴 D-7a's REVIEW FIX ROUND raises this 1009 -> 1012 (+3). One file; nothing rewritten, split or deleted. It
+# is again the ONLY executable line this task has changed in this script, and it is the ONLY total that moves —
+# the round touches src/St4i.EdgeCore and its tests plus doc comments in EngineApi, so a moved total anywhere
+# else would mean the fix round reached somewhere it had no business reaching.
+#
+#   + 3  ModbusRtuConnectorFactoryTests (6 -> 9)
+#        + 1  review I-2 — 🔴 THE ONE THAT MATTERS. D-7a's report claimed no test could distinguish
+#             "validate before Acquire" from "release on constructor failure", and that claim was FALSE: the
+#             reviewer built the counterexample. The observation is at the public seam, not on the lease —
+#             a device that cannot produce a driver must be refused BY ITS OWN MAP'S ERROR and must never
+#             touch the bus registry. A disposed registry plus a unitId:0 map discriminates, and it still
+#             discriminates after I-1's fix (the error becomes "Cannot access a disposed object" instead of
+#             the device's own configuration error), which is why it guards something outliving this round.
+#             M5 was SURVIVED across 20 runs in the original batch; it is KILLED by this test.
+#        + 1  review M-1 — a backed-off device whose WorstCaseBusHoldMs is at or below its poll interval told
+#             its operator "no read backoff is configured for this driver", because the message branched on
+#             the COMPUTED DELAY rather than on the configuration. Ordinary, not exotic: 1 register, default
+#             retries, readTimeoutMs 100, pollIntervalMs 1000 -> a 200 ms hold. D-5's I-1 class for the third
+#             time in this batch, landed on the exact message pair the report offers as the operator's way to
+#             tell backed-off from quiet.
+#        + 1  the SWEEP of M-1's rule rather than the instance: the RECOVERY notice had the same defect one
+#             method away, claiming "its read backoff is cleared" for a driver that never had one. Driven as a
+#             Default/Disabled PAIR on one bus, because "true of only one of two producing paths" is exactly
+#             what a single-path test cannot see. Both messages now branch on ModbusRtuReadBackoff.IsEnabled.
+#
+# Review M-6 STRENGTHENS an existing assertion without adding a test: UnitZero_IsNotRefusedHere_... now proves
+# "still legal for TCP" through ModbusConnectorFactory itself rather than at the parse layer, so the pair is
+# RTU-refuses / TCP-accepts at the SAME boundary. Same test, more teeth, no count change.
+#
+# 🔴 TASK D-7c (direct RS-485: a COM port declarable in connectors.json, on all three hosts) raises this
+# 1012 -> 1053 (+41). One new file; nothing is rewritten, split or deleted. EXPECT_ENGINEAPI moves too (+7)
+# because the transport SWITCH lives in the composition root and can only be driven there — see its own note
+# below. EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_EDGESERVICE are deliberately unchanged: D-7c adds
+# no driver, no conformance check and nothing St4i.EdgeService executes, so a moved total in any of those
+# would mean this task reached somewhere it had no business reaching. EXPECT_CONFORMANCE in particular stays
+# 22 — the serial transport sits on the SAME IModbusBusLink seam D-2 built, so the RTU conformance rig is
+# untouched.
+#
+#   +27  ModbusRtuSerialBusSettingsTests (new) — the SERIAL half of the connectors.json schema, which cannot
+#          live beside the gateway half: ModbusRtuBusSettings is in St4i.EdgeCore and SerialLineSettings is in
+#          St4i.EdgeCore.Serial, which references it, so a third arm in that parser would be a CIRCULAR
+#          reference. 8 facts/theories (1 + 6 + 14 + 2 + 1 + 1 + 1 + 1 rows). The three that carry it:
+#          (a) the LITERAL bus key "modbus-rtu-serial:COM7:19200:8:E:1" from a document naming only its port —
+#              a literal because comparing against CreateBusKey(new SerialLineSettings("COM7")) would pass for
+#              a parser that read no defaults at all, both sides coming from the same constructor. It is red
+#              for SerialPort's own 9600-8-N-1 defaults, for any dropped line parameter, and for an
+#              un-normalised port name, all at once;
+#          (b) a port ABSENT from this machine parses cleanly and fails only when OPENED — the decision the
+#              brief asks for, asserted rather than argued (a config file is written for a SITE; an unplugged
+#              USB adapter must recover without a restart; TryCreate performs no I/O);
+#          (c) the same document fanned out by ModbusMultidropMap yields N devices whose stored MapJson
+#              contains NO port name — which is what makes D-7a's projection decision (host/SummaryColumns,
+#              never map_json) structurally true rather than filtered, with a positive control so the three
+#              DoesNotContain assertions are not satisfied by an empty string.
+#   +12  ModbusRtuBusSettingsTests (22 -> 34) — the gateway half, where the schema-level members live.
+#          +11  ReadTransport (new member) as an 11-row [Theory]: the routing peek the composition root
+#               switches on. It answers with the operator's OWN SPELLING (never normalised — the
+#               unknown-transport message has to quote what they wrote) and never throws for a document too
+#               malformed to read, which is what keeps a bad map reported by ONE path instead of two.
+#          + 1  'portName' refused on a gateway bus. The SWEEP half of the rule ModbusRtuSerialBusSettings
+#               applies to 'host'/'port' on a serial bus: a well-formed key that is silently IGNORED makes the
+#               file on disk and the configuration actually running two different things. Both directions ship
+#               in one commit, because fixing one is the "an instance, not the class" failure §8.1 records.
+#          + 0  TheSerialTransport_IsRefusedWithTheReasonAndTheAlternative_… RENAMED and re-pointed to
+#               …_IsNoLongerRefusedAsUnavailable_ButAsTheWrongParser. D-7a's message said the serial transport
+#               "is not available in this build"; that became FALSE with the ProjectReference, and it was
+#               actionable-false — an operator who believed it would buy and cable a gateway they do not need.
+#               The test now asserts against that sentence by content.
+#   + 2  SerialPortBusLinkTests (+2, and one existing test strengthened) — 🔴 THE DEFECT D-3 RECORDED AND DID
+#          NOT FIX. Its open-failure wrapper appended ONE sentence naming all three causes at once ("may not be
+#          present …, may be held by another application, or the name may not be a serial port"), which is true
+#          of exactly one producing path at a time and sends a reader to three different places. D-5's I-1
+#          class, the fourth sighting in this batch. DescribeOpenFailure now branches on the BCL exception the
+#          open actually threw, and the assertions are a MATRIX (each arm carries its own diagnosis AND not the
+#          other two) — three positive "contains" checks would all have passed on the old shotgun message.
+#          Driven from synthesised exceptions because reaching the HELD arm needs a real port plus a second
+#          holder; the existing absent-port test is what proves the function is the one OpenAsync calls.
+#   + 0  SerialDependencyScopingTests (7 -> 7) — the three deployment assertions INVERTED into positive ones
+#          (the owner's ruling of 2026-08-03: direct RS-485 in all three hosts), NOT deleted, because a deleted
+#          assertion lets the capability vanish in a later "remove the unused reference" refactor. The FOURTH,
+#          TheRtuFramingLayersOwnAssembly_ReferencesNeitherSystemIoPorts_NorTheSerialAssembly, is UNTOUCHED and
+#          still green — it is what forces D-7c's design, since the circular-reference-free alternative would
+#          have required inverting it.
+#
+# 🔴 D-7c's REVIEW FIX ROUND raises this 1053 -> 1071 (+18). It is the ONLY total that moves — EXPECT_ENGINEAPI
+# stays 1226 because the round's EngineApi edits are doc comments (review M-1's pair obligation, and the I-3
+# correction on the lease test's own remarks). No test is rewritten, split or deleted.
+#
+#   + 1  SerialPortBusLinkTests — 🔴 review I-3, and the finding is that D-7c's report said this could not be
+#          done. OneOpenForNLeases_ObservedThroughTheSerialLink_AndTheLastReleaseClosesThePort OBSERVES what
+#          the EngineApi test derives: the opener mints one handle per call so the openings are COUNTED (1 for
+#          3 leases), ModbusBus.LinkGeneration is pinned at 1, and the PORT's own IsOpen is asserted after each
+#          release — open, open, CLOSED. The shipped test asserted LeaseCount, correctly rejected it for the
+#          final check, and substituted HasBus: the same witness one field over, both being the registry's own
+#          bookkeeping, while the thing protected is a COM port not held to process exit. Everything it needs
+#          already existed for exactly this reason — AdoptHandle is internal behind D-3's InternalsVisibleTo
+#          and FakeSerialPortHandle.Unpaired is D-6's. No hardware, no virtual COM pair, no conditional skip.
+#   + 8  ModbusRtuSerialBusSettingsTests — 🔴 review I-2, the THIRD direction of the sweep. A devices[] element
+#          carrying a BUS-level key was accepted, did nothing, and was copied VERBATIM into that device's
+#          MapJson, which falsified D-7c report section 6's structural guarantee for any malformed document.
+#          ModbusMultidropMap now refuses BusLevelKeys inside an element, mirroring the DeviceLevelKeys check
+#          at the root it already had. The [Theory]'s 8 rows are the two parsers' own const fields, which makes
+#          it the DRIFT GUARD for a list that cannot be shared: half those keys are declared in
+#          St4i.EdgeCore.Serial, which St4i.EdgeCore may never reference, so BusLevelKeys must hold literals.
+#   + 1  ModbusRtuSerialBusSettingsTests — the same leak in its PUREST shape, found while fixing I-2 and not
+#          named by the review: FanOut's DEGENERATE branch makes the root simultaneously the bus and its only
+#          device, so {"transport":"rtu-serial","portName":"COM3","machineCode":"M1",…} stored the port path
+#          inside the device's configuration with nothing malformed anywhere. Now refused, with a control
+#          proving an ordinary legacy single-device map still fans out under its own instance id unchanged.
+#   + 5  ModbusRtuSerialBusSettingsTests — 🔴 review M-2 (4 [Theory] rows + 1 fact). A misspelled key of the
+#          operator's OWN transport was silently ignored: {"portName":"COM31","baudrate":9600,"Parity":"none"}
+#          parsed to 19200-8-E-1 — TryGetProperty is case-sensitive — so the operator asked for 9600-8-N-1 and
+#          got a line whose parity mismatch has no symptom but a device that never answers. The near-miss
+#          ("Did you mean 'baudRate'?") is asserted, not merely the refusal.
+#   + 3  ModbusRtuBusSettingsTests — M-2 swept to the GATEWAY parser (2 rows) rather than matched, per the
+#          coordinator's ruling, through ONE shared implementation with a per-transport key list so the two
+#          cannot diverge; plus 1 fact pinning that the unknown-key refusal runs LAST and never pre-empts a
+#          more specific one ('portName' on a gateway bus must still be answered by the cross-transport rule).
+EXPECT_EDGECORE=1071
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
@@ -128,7 +800,359 @@ EXPECT_EDGESERVICE=28
 # "this suite never calls anything that writes there" — FALSE: 613 of the 2,999 leaked blobs carry
 # exactly the prefixes 04-onboarding.spec.ts mints, one per e2e run. A claim in a comment, believed
 # because nobody measured it, is what kept this leak open.
-EXPECT_ENGINEAPI=1136
+#
+# Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) raised this 1136 -> 1165
+# (+29), all in St4i.EngineApi.Tests. D-1 moves connector identity from "the protocol kind" to "this
+# connector instance"; every number below is a NEW test, none is a rewritten or split one, and no test was
+# deleted:
+#   + 9  ConnectorRegistryTests — instance identity at the unit level: two instances of ONE kind coexisting;
+#          the derived default (omitting the id == naming the kind, the fact the whole migration rests on);
+#          id normalization and blank-id fallback; and the four covering the MACHINE-CODE CLAIM, which is the
+#          structural gate that makes MachineDriverAvailability.AmbiguousDriver unconstructible — a second
+#          instance claiming a served machine is refused with nothing mutated, a claim differing only by
+#          casing is still the same claim, an instance may keep its OWN claim across a reconfigure, and an
+#          unbound instance blocks nobody. The ninth drives 20 threads through a Barrier at one machine code
+#          and asserts exactly one winner (the claim is a CROSS-entry invariant that a ConcurrentDictionary's
+#          per-key atomicity cannot supply).
+#   + 5  ConnectorConfigStoreTests — migration v4 (kind PRIMARY KEY -> instance_id PRIMARY KEY, a table
+#          rebuild). Three build a GENUINE version-3 database with raw SQL, in the old column ORDER, and
+#          assert every row and every field survives with instance_id = kind. This is deliberately NOT how
+#          the two pre-existing "MigratesExistingRowsToVersionN" tests work: those construct their "old"
+#          database by calling THIS build's own constructor, which runs the ladder to the current version
+#          first, so they can never exercise a migration FROM an older schema — a rung that dropped every row
+#          would have passed both. Plus two rows of one kind being independently readable/deletable, and a
+#          re-pin that ListAsync still never selects map_json (its SELECT list was edited by this task).
+#   + 7  FleetHostConnectorInstanceRoutingTests (new file) — the routing proof. The non-negotiable: two
+#          machines on two connector instances, a write for B reaching B's driver and ONLY B's (asserted as
+#          driverA.WriteCallCount == 0, never as a status code); the same for the command path, which Đợt B
+#          treats as the higher-risk member; each machine cycling off its own connector and not double-driven;
+#          a machine claimed by an instance whose id is NOT its DriverKind still excluded from simulation;
+#          Đợt B's exact ambiguity recipe now resolving instead of refusing, with zero I/O reaching the
+#          unclaimed machine; every roster member enumerated and none landing on AmbiguousDriver; and
+#          AmbiguousDriver still being returned AND still refusing a write through the one seam that can
+#          still construct it.
+#   + 5  ConnectorEndpointsTests — two same-kind connectors over the real HTTP surface (both save, both
+#          visible, both in the roster, deleting one leaves the other); a second connector naming an
+#          already-served machine refused; the no-instanceId request still configuring and deleting exactly as
+#          before; both surviving a simulated restart with the live registry's bindings re-established; and
+#          the env-var-configured Modbus AND OPC-UA connectors being bound to their maps' machines. That last
+#          one required adding an opcUaEnvMapPath parameter to this file's own factory helper (additive,
+#          default null): NO test in this repository had ever booted with ST4I_OPCUA_MAP set.
+#   + 3  ConnectorEndpointsMachineClaimTests (new file) — the claim check at the handler level, because the
+#          HTTP-level version of it could not fail: a machine a live connector serves is also a machine in the
+#          roster, so the PRE-EXISTING cross-kind roster-collision guard answers one branch earlier. Proven by
+#          mutation (the first draft passed with the claim check deleted). Calling the handler directly with a
+#          registry claim that has no roster entry separates the two invariants; the discriminating assertion
+#          is that the store is still EMPTY, since without the pre-check the row is written and only then
+#          refused.
+# RbacPolicyTests' ExpectedRoutes changes one STRING (/v1/connectors/{kind} -> /v1/connectors/{instanceId})
+# and adds no test — the route count is unchanged, and the exact-count sweep passes in both directions.
+#
+# 🔴 EVERY OTHER SUITE IS UNCHANGED. D-1 adds no code outside St4i.EngineApi, and the four other totals below
+# are deliberately untouched: a moved total on Abstractions, Conformance, EdgeCore or EdgeService would mean
+# this task reached somewhere it had no business reaching.
+#
+# D-1's REVIEW-FIX round raised this again, 1165 -> 1181 (+16), all in St4i.EngineApi.Tests. Every one closes
+# something the review found; none is a rewrite or a split:
+#   + 6  ConnectorEndpointsMachineClaimTests — I-1 and m2. THREE for the rollback the review proved was
+#          missing: the claim pre-check, SaveAsync and Register are not atomic, so two concurrent POSTs for
+#          one machine both pass the pre-check and the loser wrote its row, was refused, and left that row
+#          behind PERMANENTLY (persisted, listed in GET /v1/connectors/configured, refused again by
+#          Program.cs on every boot, never in the roster) — exactly the state this endpoint's own SM-5
+#          comment says must never be creatable. Two cover the compensation's arms deterministically
+#          (delete when this request created the row; restore field-for-field, provenance included, when it
+#          overwrote one) and one covers its never-throws contract with a cancelled token. A FOURTH proves
+#          the compensation is actually WIRED, by producing the interleaving for real: 8 rounds x 16 racers.
+#          It is probabilistic in what it KILLS and never in whether it passes (its invariant holds under
+#          every interleaving), and the rate was MEASURED, not assumed — 1 round x 12 killed 3/10, the
+#          shipped 8 x 16 killed 10/10. TWO more for m2: a 409 naming a claimant whose row is already gone
+#          must say "restart", not "delete the connector you already deleted", with the still-configured
+#          case as its control.
+#   + 7  ConnectorsJsonRegistrationTests (new file) — I-3. The connectors.json -> registry dispatch had NEVER
+#          been covered, before or after D-1, and D-1 added code to it: a mutation making every such
+#          connector register UNBOUND left the whole suite green. It was untestable where it lived
+#          (Program.cs reads connectors.json from AppContext.BaseDirectory, one shared artifact in this
+#          assembly's output), so the loop moved verbatim to ConnectorsJsonRegistration — an extraction, NOT
+#          a new ST4I_CONNECTORS_CONFIG knob, because a configuration surface added to serve a test is a
+#          permanent commitment. Covers both dispatch arms separately (never one plus an inference that the
+#          other "is the same code"), the machine binding, the deliberate non-adoption of the entry's own id,
+#          an unparseable blob still registering but unbound, an undispatchable kind being skipped and never
+#          registered, the claim gate from this path, and one bad entry not aborting the loop.
+#   + 2  FleetHostConnectorInstanceRoutingTests — one for m3's snapshot lookup being case-INSENSITIVE like
+#          every other machine-code comparison in the codebase (mutation-found: all existing routing tests
+#          spelled the code identically on both sides, so a case-sensitive lookup survived); one recording a
+#          hazard D-1 silently FIXES rather than leaving it to be rediscovered as a bug — a connector whose
+#          map names a machine already in the roster as Simulated now leaves the simulated group, closing the
+#          two-EdgePipelines-one-MachineState double-drive corruption GP-5 closed for third-party kinds.
+#   + 1  ConnectorConfigStoreTests — m1: SaveAsync now folds the instance id through DriverKinds.Normalize
+#          rather than a bare Trim(), matching the registry and the DELETE route. A row written as
+#          instance_id = "modbus" was UNDELETABLE (the route normalizes to "Modbus", GetAsync misses, 404 for
+#          a row the operator can see). Also pins that a third-party id stays case-SENSITIVE.
+# No suite other than EngineApi is touched by this round either.
+#
+# D-1's RE-REVIEW round raised this 1181 -> 1184 (+3), all ConnectorEndpointsMachineClaimTests, all for I-A:
+# the 409 returned on a failed live registration ASSERTED that a rollback had happened instead of checking.
+# It said "its configuration was rolled back, so there is no leftover row to clean up" unconditionally —
+# directly contradicting this suite's own CompensatingAFailedRegistration_NeverThrows_... test, which pins
+# that a FAILED compensation leaves the row, and false in the direction that stops an operator looking.
+# Guaranteed, not exotic: the compensation was handed the REQUEST's CancellationToken, so for any client
+# that hung up the rollback threw at its first store call while the message claimed success.
+#   + 2  the sentence's own three outcomes, now a pure extracted function (DescribeRollbackOutcome) because
+#          the branch that produces it is only reachable under a concurrent registration — code a test
+#          cannot reach is code nothing ever asks a consequence question about, which is exactly how the
+#          contradictory wording shipped. One test for the failed-rollback arm (must point at
+#          GET /v1/connectors/configured and must NOT claim "no leftover row"), one for the two success arms
+#          NOT being interchangeable (a restored row still exists at that instance id).
+#   + 1  both compensation arms driven through the store together, so a wrong sentence and a wrong rollback
+#          cannot drift apart.
+# The existing race test (ConcurrentSavesForOneMachine_...) additionally gained cancellation on half its
+# racers, which is what makes the CancellationToken.None fix observable at all: an already-cancelled token
+# cannot reach that branch through the handler, because the handler's FIRST store read takes the request
+# token and throws long before it. Measured against the mutation that restores `ct`: KILLED 8/8 runs. That
+# test's own count is unchanged.
+#
+# 🔴 TASK D-4 (multidrop) raises this 1184 -> 1190 (+6), counted from the runner. One new file,
+# ModbusMultidropRegistrationTests — the REGISTRATION half of blueprint §7.1, which is the half that decides
+# whether multidrop is safe. The map format alone does not: the same document can be registered two ways and
+# only one preserves D-1's routing invariant, so this has to live where ConnectorRegistry and FleetHost do.
+#   + 1  a three-device bus map fans out into three instances and a write for the middle one reaches ONLY its
+#          device — the load-bearing assertion is the pair of ZEROES on its bus-mates, not the status code,
+#          and the COMMAND path is driven in the same test because CommandRequest carries no machine code
+#          either and "one fix, one sibling untouched" is this batch's most repeated defect.
+#   + 1  each instance stores its OWN device's standalone document, asserted on what the registry handed the
+#          FACTORY. A fan-out that stored the whole bus under three ids passes every count in the test above
+#          and would then hand D-7's real factory a document declaring three machines — verbatim the
+#          "one driver emitting N machine codes" shape §7.1 forbids.
+#   + 1  every registered instance holds exactly ONE machine code and no code is held twice, enumerated over
+#          the registry's own snapshot and resolved BACK per code.
+#   + 1  a device whose machine another BUS already claims is skipped, NAMED (with the incumbent), and its
+#          bus-mates still come up.
+#   + 1  a malformed bus map registers nothing, logs, and does not throw — it runs inside startup wiring.
+#   + 1  a LEGACY single-device map registers under the bus id ITSELF, so an existing connector keeps its
+#          instance id, its slot label and therefore its alarm TargetId when a registration path starts
+#          calling the fan-out. The discriminating assertion is the id, not the count.
+# The fake factory in that suite builds its driver from the CONFIG IT IS HANDED (parsing the machine code out
+# of the map) rather than from a lookup the test keeps — otherwise it would report the machine the test
+# expects no matter what the registry stored, which is D-2's I-2 shape exactly.
+#
+# Nothing in Program.cs calls RegisterAll: the RTU connector factory is still D-7's, so no operator can turn
+# multidrop on yet — the same posture D-2 and D-3 both shipped with and said so.
+#
+# 🔴 TASK D-7a raises this 1190 -> 1219 (+29), and the sentence directly above stops being true: Program.cs
+# now calls ModbusMultidropRegistration.RegisterAll through ConnectorsJsonRegistration's RTU arm, so a
+# connectors.json entry can declare a multidrop bus and an operator can turn it on. No file is rewritten,
+# split or deleted, and NO NEW ROUTE IS ADDED — RbacPolicyTests.ExpectedRoutes is unchanged and its
+# exact-count sweep still runs in both directions, which is why that suite's own total does not move.
+#
+#   + 7  ConnectorsJsonRegistrationTests (11 -> 18) — the deliverable. A three-device bus entry produces THREE
+#          registered instances, each bound to its own machine, each building a real ModbusRtuDriver, all three
+#          leasing ONE bus (asserted on the ModbusBusRegistry that enforces it, not on three drivers that
+#          merely work); two RS-485 lines in one file are two buses, not a duplicate, with two bus keys and one
+#          lease each; the registration-key rule is pinned as a discriminating pair (every pre-D-7a entry shape
+#          still answers with its KIND, including one carrying an explicit id — the case that must NOT move,
+#          because its slot label and therefore its alarm TargetId would fork); a bus in a host composed with
+#          no ModbusBusRegistry is skipped rather than half-wired; a bus whose settings will not parse disables
+#          THAT BUS and nothing else; and re-running registration after a device is deleted from the file
+#          leaves no ghost.
+#   + 7  ModbusMultidropRegistrationTests (12 -> 19) — D-4 review m5 and m6. m6: a removed device is
+#          unregistered AND another connector can then claim its machine, which is the only way to prove a
+#          CLAIM was released (the brief's own instruction: prove the ghost is gone, not that a method returned
+#          true). A RE-ADDRESSED device (unit 2 -> unit 4) is the ordinary edit and is why removal runs BEFORE
+#          registration. m5: a derived id already held by something serving a DIFFERENT machine is refused and
+#          COUNTED as refused — the half D-4's review found broken. The sweep is proved not to touch a second
+#          bus whose id SHARES A PREFIX, nor an ordinary connector. Plus: the factory is built once per bus
+#          with the LARGEST device's hold (a bus built so those answers differ by 20x), and a bus that will not
+#          parse never builds its factory at all, so a transport that would have been dialled for it is not.
+#   + 7  ConnectorRegistryTests (24 -> 31) — the removal path itself: the claim is released (proved by another
+#          instance taking it, after asserting the gate was real first), unknown/blank/null ids are ordinary
+#          false answers ([Theory], 4 rows), removal uses the SAME DriverKinds.Normalize as everything else
+#          (with the third-party half — "vendor.acme.weld" must NOT remove "Vendor.Acme.Weld"), and a
+#          TryCreateDriver for an id removed after a snapshot is a visible failure rather than a throw. That
+#          last one is the consequence question the old "this task never removes entries" comment let nobody
+#          ask, asked.
+#   + 6  ConnectorEndpointsMachineClaimTests (13 -> 19) — DELETE releases the live claim, so the 409 that used
+#          to tell an operator to restart because a connector they had already deleted was "STILL RUNNING" is
+#          gone. 🔴 AND ITS LIMIT, which a failing run corrected: FleetHost.RegisterMachine has no un-register
+#          either, so with the machine in the ROSTER the replacement save is still refused — by the roster
+#          guard. The first draft of that test asserted the optimistic version and went red. Both are now
+#          pinned, and the DELETE response says the roster half in advance. Plus the reserved-instance-id 400
+#          (the second door into the derived namespace) and its control [Theory] (3 rows) proving names that
+#          are merely SIMILAR are still accepted.
+#   + 2  ConnectorsConfigTests (30 -> 32) — ResolveEntries de-duplicates and applies env precedence on the
+#          REGISTRATION KEY. Driven with a stand-in resolver so this suite states the RULE rather than
+#          restating the production predicate; the real one is driven in ConnectorsJsonRegistrationTests. The
+#          three pre-existing ResolveEntries tests are untouched and still pass with no resolver supplied,
+#          which is the compatibility half.
+#
+# 🔴 TASK D-7c raises this 1219 -> 1226 (+7), all in ConnectorsJsonRegistrationTests (13 -> 20). This suite
+# moves because the TRANSPORT SWITCH lives here and can live nowhere else: ModbusRtuBusSettings is in
+# St4i.EdgeCore, SerialPortBusLink is in St4i.EdgeCore.Serial which references it, so the choice between them
+# belongs to the composition root. No other EngineApi file gains or loses a test.
+#
+#   + 1  ASerialRtuBusEntry_FansOutToNInstances_AllSharingOneSerialBusBuiltFromItsLineParameters — THE
+#          deliverable. Three devices on one declared COM port, each bound to its own machine, all on the
+#          literal bus key "modbus-rtu-serial:COM7:19200:8:E:1" read off the DRIVERS' own ids (which embed the
+#          bus key) rather than off the registry's bookkeeping. Plus the routing proof D-7a met, by enumeration.
+#   + 1  OneOpenForNLeases_AndTheLastReleaseDisposes_ThroughTheSerialOpener — 3 leases, two releases leave the
+#          bus alive, the third disposes it. Asserted with HasBus and not LeaseCount at the end, because
+#          LeaseCount answers 0 for a key that never existed and therefore cannot tell "the last release
+#          disposed it" from "it was never created" — on serial that difference is a COM port held to exit.
+#   + 1  ASerialBusAndAGatewayBusInOneFile_AreTwoBusesOnTwoTransports — the switch is per ENTRY.
+#   + 1  TwoSerialBusesNamingOnePortWithDifferentFraming_AreTwoBuses_NotOneSharedLine — CreateBusKey's rule
+#          carried up to a file an operator writes, and the misconfiguration whose runtime symptom is the
+#          held-port message (which is why that message names TWO holders).
+#   + 1  ASerialBusWhoseAdapterIsNotThere_DegradesAndTellsTheOperatorWhichPort — 🔴 the only test in the batch
+#          that makes the SERIAL OPENER actually run on the production path. Everything else observes the bus
+#          KEY, which a switch could compute correctly while handing over the wrong opener — they are two
+#          arguments. One real poll, through ModbusBus and ModbusRtuDriver's poll catch, to the ILogger the
+#          composition root wired: no observer the mechanism does not itself need. Its first draft waited on
+#          "a message naming the port" and passed INSTANTLY off the §9 hardware notice logged at registration,
+#          reading Health as its initial Down; it now waits on the failed-poll line itself.
+#   + 1  TheAutoDirectionControlLimit_IsLoggedOncePerSerialBus_AndNeverForAGatewayOrADeadBus — blueprint §9's
+#          hardware limit said where an operator configuring a port will see it. The three NEGATIVE halves are
+#          the discriminating ones: not for a gateway bus, not for a serial bus that registered nothing, and
+#          exactly once for a bus of three devices.
+#   + 1  TheEngineApisOwnIl_ReferencesTheSerialAssembly_… — the half SerialDependencyScopingTests cannot make,
+#          because St4i.EdgeCore.Tests does not reference St4i.EngineApi and cannot load it. It distinguishes
+#          "this deployment carries System.IO.Ports.dll" (true of all three hosts, and true of anything that
+#          merely inherits a copied package asset) from "this host's own code can open a COM port". Asserted
+#          for the ENGINE ONLY, deliberately: measured, St4i.EdgeService and St4iMachineSimulator have no
+#          ConnectorRegistry, no IConnectorFactory and no connectors.json reader, so neither has IL that could
+#          reference the serial assembly and asserting that it does would assert something false.
+#
+# 🔴 TASK D-7b raises this 1226 -> 1251 (+25). Counted from the runner (three `dotnet test --filter` runs,
+# 14/6/5), not by hand — D-2's rule: a total that reconciles is not evidence that anybody knows where the
+# tests are. Three NEW files; no pre-existing EngineApi test is added or removed. Two pre-existing assertions
+# CHANGE VALUE without moving the count: ConnectorConfigStoreTests' two `Assert.Equal(4, ReadUserVersion(dir))`
+# become 5, because the migration ladder grew a rung (bus_instance_id/bus_settings_json). They assert the
+# ladder's CURRENT top rather than "the rung this test is about", which is what makes a v3 database opened by
+# this build prove that the LAST rung ran too.
+#
+#   +14  ConnectorRtuBusEndpointTests           (new) — POST /v1/connectors creating a BUS, the first of the
+#          two endpoint gaps D-7a deferred with an argument. 3 devices -> 3 store rows, 3 registry claims, 3
+#          roster machines; the LINE projection through the endpoint for both transports; 🔴 the partial-
+#          failure pair, which is the point — device 5 of 8 invalid and a third device colliding with an
+#          existing claim BOTH leave zero rows, zero registrations and an unchanged roster, asserted on all
+#          three surfaces rather than on a status code (a 400 that had already written seven rows satisfies a
+#          status assertion); a re-save that DROPS a device losing exactly that row; a bus with no instanceId
+#          and a bus named like a device position both refused; an ordinary Modbus TCP save proved to still
+#          take the single-connector path; DELETE removing exactly one device of two with its sibling's claim
+#          intact; the last device's delete saying the bus is gone; and B-3's save gate over a whole bus, whose
+#          discriminating half is that re-pointing ONE device's register changes the required fingerprint.
+#          🔴 The LAST TWO of the fourteen exist ONLY because a mutation survived, and both were reached by
+#          attempting the counterexample on a DIFFERENT AXIS than the one the code was reasoned about
+#          (blueprint §8.1, principle 1). The rollback branch was written for a concurrent registration,
+#          which no test can stage — so deleting the rollback SURVIVED. The axis that reaches it is not
+#          concurrency at all but the BUS'S OWN NAMESPACE: swapping two devices' machine codes between two
+#          slave addresses passes the pre-check (every incumbent claim belongs to an id this bus is about to
+#          re-register) and is then refused by Register itself, deterministically, after the store has been
+#          written. ABusSaveThatFailsToRegister_… kills the store half; a SECOND mutation (leave the partial
+#          registrations behind) then survived THAT, because in a two-device swap the first device is the one
+#          that fails and nothing is registered yet to undo — so ABusSaveThatFailsPartWayThrough_… moves the
+#          swap to units 2 and 3 of three, putting one success ahead of the refusal. Its assertion is the
+#          DOCUMENTED LIMIT (the re-registered id ends up registered by nothing, because Register is
+#          last-write-wins and the incumbent entry was destroyed at the moment of success), not an optimistic
+#          one — asserting that the previous binding came back would assert something false.
+#   + 6  ConnectorConfigStoreBusProjectionTests (new) — 🔴 the store BOUNDARY, where the SummaryColumns/
+#          FullColumns split actually lives and where D-7c said D-7a's projection decision had to be asserted:
+#          portName in `host`, NULL in `port`, through BOTH projections. The credential-free projection is
+#          proved to carry neither the bus document nor the map — by putting a recognisable sentinel in each
+#          and serializing the whole returned summary, which is a statement about the SQL rather than about a
+#          C# type's property list. Plus: a bus save replaces its whole row set; a restore puts the exact
+#          previous set back INCLUDING created_at (without the explicit @created_at parameter this is the one
+#          that fails, and it fails in the direction that rewrites history); an empty restore is a pure delete;
+#          a bus save leaves a connector whose id merely SHARES A PREFIX alone; and a pre-D-7b row reads back
+#          with no bus at all.
+#   + 5  ConnectorConfigVisibilitySeederBusTests (new) — the second endpoint gap: GET /v1/connectors/configured
+#          now seeds an RTU bus, removing D-7a's explicit Program.cs skip. N rows one per device, tagged
+#          Seeded, carrying the line; a re-seed LOSING a device the operator deleted from connectors.json (an
+#          insert-only seeder leaves a row for a device that is not on the wire); 🔴 a bus with ANY operator-
+#          owned row skipped WHOLE and warned about, because half a seeded bus is worse than none; and two
+#          never-throws arms (a malformed device, an unreadable transport) that seed nothing and warn naming
+#          the offending element.
+#
+# 🔴 D-7b FIX ROUND 1 raises this 1251 -> 1265 (+14). Counted from the runner (18/10/6/5), not by hand.
+#   + 4  ConnectorRtuBusEndpointTests (14 -> 18) — review I-1 and I-2, and the count moves for a reason worth
+#          reading: TWO tests were REPLACED rather than added to. The rollback pair I built last round drove a
+#          device SWAP, and I-2's fix makes that swap SUCCEED — re-addressing two devices on a line was a
+#          permanent DEAD END (the registry kept the old claims, so the identical retry failed identically,
+#          forever, and the refusal named a cause that had not happened). So those two became
+#          TwoDevicesTradingSlaveAddresses_… (the save works, and a write for the moved machine resolves to
+#          its NEW unit) and ADeviceDroppedFromTheMap_LosesItsMachineClaimToo_… (the endpoint half of D-4's
+#          own m6 ghost). Net +4 is those two plus I-1's three: the failed-save SENTENCE is now a pure
+#          function (DescribeBusRollbackOutcome) driven over every combination, because the version it
+#          replaces told an operator their live registry had been destroyed on a path where nothing was
+#          touched — a [Theory] of 2 rows pinning that false half, plus the released-count arm and the
+#          failed-rollback arm.
+#   +10  RtuBusRegistrationTests (new) — 🔴 where the rollback is provable now that I-2 removed the only
+#          deterministic path to it through the endpoint. Both halves of the undo driven directly against an
+#          OUTSIDE claim (one success ahead of the refusal, taken back), the IncumbentsReleased count I-1's
+#          message branches on (0 on a first save, 2 on a re-save), the proof that a release touches this
+#          bus's namespace and nothing else (`line1-spare` and `line2:unit1` both survive — a bare-prefix
+#          rule would take the first), and a 7-row [Theory] stating the namespace rule itself, since
+#          TryFindBlockedDevice's exemption and ReleaseOwnNamespace's removal must be the SAME set or an edit
+#          is refused that the register pass was about to make work.
+#
+# 🔴 D-7b FIX ROUND 2 raises this 1265 -> 1269 (+4), all in RtuBusRegistrationTests (10 -> 14). Counted from
+# the runner (18/14/6/5). Review N-2: the shared bus-namespace predicate was OVER-BROAD — it asked only that
+# an id start with "{bus}:unit" and end in digits, so bus `line1` claimed `line1:unitA:unit3`, which is a
+# legitimate device of the DIFFERENT bus `line1:unitA` (a legal name: ValidateBusInstanceId reserves only an
+# all-DIGIT suffix). Saving `line1` released that device's machine claim while its driver kept polling.
+#
+#     + 3  three rows added to TheBusNamespaceRule_… — the falsifying row the reviewer supplied
+#            (`line1` vs `line1:unitA:unit3` = false), its mirror (`line1:unitA` vs the same id = true, so the
+#            fix does not simply narrow the rule into uselessness), and a same-length/different-prefix row
+#            (`abcde` vs `xyzab:unit3`) proving the new position check did not REPLACE the prefix check. The
+#            theory was named `…AndNothingElse` while omitting the row that falsified it, which is what let a
+#            doc call the property "a guarantee rather than a hope".
+#     + 1  SavingOneBus_NeverReleasesADeviceOfADifferentBusWhoseNameSharesItsPrefix — the same defect at its
+#            CONSEQUENCE on the production path rather than at the predicate: a registered device of bus
+#            `line1:unitA` survives a save of bus `line1`, with IncumbentsReleased == 0.
+#
+# No test is added for N-3 (SweepGhosts now calls the shared predicate instead of its own inline copy) and
+# that is deliberate: ModbusMultidropRegistrationTests already owns that behaviour and its
+# TheGhostSweep_NeverTouchesAnotherBusOrAnOrdinaryConnector is what a redirection must not break — verified
+# by mutation (making the sweep ignore the namespace kills 2 of its 13). A redirection that moved the total
+# there would mean it was not behaviour-preserving.
+#
+# 🔴 WHOLE-BRANCH REVIEW, I-1 raises this 1269 -> 1272 (+3), all in ConnectorRtuBusEndpointTests (18 -> 21).
+# Counted from the runner (21/14/6/5). The bus-device DELETE branch selected on BusInstanceId alone and never
+# consulted Source, so for a bus declared in connectors.json — the PRIMARY way an RS-485 line is declared —
+# it told the operator "the bus is no longer configured at all" while the seeder re-seeds that bus on every
+# boot. One operator-facing string covering two producing paths, true of only one: the sixth instance of this
+# batch's defect class #1, and the THIRD in that one file.
+#
+#     + 1  DeletingTheLastDeviceOfASEEDEDBus_SaysItComesBack_NeverThatTheBusIsGone — driven through the REAL
+#            seeder and the real endpoint rather than a hand-written Seeded row, so the provenance under test
+#            is the one production produces. Asserts the false sentence as an ABSENCE, because the defect was
+#            not a missing caveat but an active assertion of the opposite.
+#     + 1  DeletingTheLastDeviceOfAnOPERATORBus_StillSaysTheBusIsGone — the other arm, so the fix is a FORK
+#            rather than a blanket caveat. Telling an operator their own deleted bus will come back is the
+#            same defect pointing the other way.
+#     + 1  TheRemedyForAnIncumbentConnector_DependsOnWhereThatConnectorCameFrom — I-1's SWEEP, not its
+#            instance. "Remove that connector first (DELETE …)" is right for an Operator-owned incumbent and
+#            WRONG for a Seeded one, which is re-created at every start, so the DELETE frees the machine only
+#            until the next restart. A pure function, three arms; two of them are otherwise reachable only by
+#            constructing a specific store state at a specific endpoint.
+#
+# 🔴 WHOLE-BRANCH REVIEW, LAST ITEM raises this 1272 -> 1276 (+4). Counted from the runner (23/16/6/5).
+# TryFindBlockedDevice — the refusal an operator hits SAVING an RS-485 bus — still emitted "Remove that
+# connector (DELETE …)" with no provenance fork, wrong the same way for a connectors.json-seeded incumbent
+# (the DELETE frees the machine until the next restart and no longer). The sibling of the I-1 sweep, and the
+# reason that sweep could not reach it is the finding: the grep was on `existing.Source`/`ConnectorConfigSource`,
+# tokens that appear ONLY where the field is already in scope, and TryFindBlockedDevice takes bindings +
+# roster and never the store — so `Source` could not have appeared in it under any circumstances.
+#
+#     + 2  ConnectorRtuBusEndpointTests (21 -> 23) — both arms at the endpoint, where the store is in scope:
+#            a SEEDED incumbent is told to change the connectors.json entry (naming its bus) and is NOT told
+#            to delete a row that comes back; an OPERATOR incumbent still gets the DELETE, which for it works.
+#            The seeded one is driven through the REAL seeder.
+#     + 2  RtuBusRegistrationTests (14 -> 16) — the seam: the refusal names the incumbent and the remedy is
+#            ABSENT (a type that cannot see provenance must not ship a sentence that depends on it), and the
+#            ROSTER arm hands out no incumbent and keeps its advice — nothing removes a machine from the
+#            roster, so "use a different machine code" is true whatever wrote it. A sentence true without the
+#            field beats a fork that cannot be built.
+EXPECT_ENGINEAPI=1276
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -155,6 +1179,29 @@ note() { printf '  %s\n' "$*"; }
 # return empty forever, the CPU check would go permanently inert (correctly reading "cannot
 # tell", never "flat"), and only the wall-clock ceiling would remain. That degrades safely --
 # but SILENTLY. If an SDK bump ever removes half this detector, this comment is why.
+# 🔴 TRAP 7(i) and 7(j), BOTH FOUND BY AN AGENT DEBUGGING A FAILURE THIS SCRIPT CAUSED.
+#
+# (i) THE REMEDY MANUFACTURED THE EVIDENCE. When the ceiling fired, this script ran
+#     `taskkill //F //IM testhost.exe`, and vstest then wrote "Test host process crashed"
+#     into the log. Four tasks read that line as a product crash and carried it forward as
+#     "a pre-existing DeviceIdentityStore flake, no root cause". The trx timestamps settle
+#     it: last result 20:48:36, abort recorded 21:03:58 -- 966s later, the exact second the
+#     ceiling fired. THE SUITE HUNG; IT NEVER CRASHED. A tool whose remedy fabricates a
+#     different diagnosis than the fault is worse than one that only reports.
+#
+# (j) THE CLEANUP WAS NAME-WIDE, NOT RUN-SCOPED. `//IM testhost.exe` kills EVERY test host
+#     on the machine, so two overlapping gate runs execute each other. That accounts for
+#     three further aborts in the preserved history -- including a set I produced myself and
+#     briefly read as a code regression.
+#
+# So: kill only the descendants of THIS run's `dotnet test`, and say plainly in the failure
+# text that the kill is ours, so nobody reads vstest's crash line as a product fault again.
+kill_this_runs_hosts() {
+  local root_pid="${1:?pid}"
+  # //T on a PID kills that process tree only. The name-wide form is what caused (j).
+  taskkill //F //T //PID "$root_pid" >/dev/null 2>&1 || true
+}
+
 testhost_cpu_seconds() {
   powershell -NoProfile -NonInteractive -Command \
     "(Get-Process testhost -ErrorAction SilentlyContinue | Measure-Object -Property CPU -Sum).Sum" \
@@ -170,7 +1217,25 @@ taskkill //F //IM vstest.console.exe //T >/dev/null 2>&1 || true
 dotnet build-server shutdown >/dev/null 2>&1 || true
 
 BUILD_LOG="$LOGDIR/build.log"
-dotnet build -t:Rebuild --nologo > "$BUILD_LOG" 2>&1 || true
+# 🔴 TRAP 8, and it is this script's own cleanup being right once and then never again.
+# D-6 hit a RED first gate run: UnsBridgeSpoolTests died on WSAENOBUFS ("lacked sufficient
+# buffer space") on a LOOPBACK MQTT connect -- a machine-wide resource failure in a subsystem
+# nothing in that task touched. The implementer diagnosed it as orphaned build-server nodes and
+# concluded this script does not clean them. It does, on the line above -- so that story is
+# self-refuting: any TRUE pre-existing orphan is already dead by the time the build starts.
+#
+# The review then measured what actually happens, which is worse and is ours:
+#   * ONE `dotnet build` leaves 13 MSBuild nodes (~110-150 MB each) plus a ~705 MB VBCSCompiler.
+#     "13 orphaned dotnet.exe" is not the signature of accumulated rounds; it is one build.
+#   * The shutdown above runs ONCE, BEFORE the build. During [2/3], with the gate unattended:
+#     14 build-server processes, 1955 MB resident, alive through ALL FIVE suites.
+# So the gate created a ~2 GB population and then ran the memory-sensitive part of its own job
+# underneath it. That is the same shape as trap 7(i) -- the remedy manufacturing the evidence --
+# one step earlier: here the tool manufactures the CONDITIONS it then measures under.
+#
+# Node reuse buys nothing for a one-shot -t:Rebuild, so refuse it, and shut the servers down
+# again after the build so the suites do not run under the build's leftovers.
+MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo > "$BUILD_LOG" 2>&1 || true
 
 if ! grep -qE '^ *0 Error\(s\)' "$BUILD_LOG"; then
   echo "FAIL: build did not report 0 errors. Refusing to read any test count."
@@ -195,8 +1260,71 @@ fi
 WARNINGS=$(grep -oE '^ *[0-9]+ Warning\(s\)' "$BUILD_LOG" | grep -oE '[0-9]+' | head -1)
 note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on an unlocked tree)"
 
+# 🔴 TRAP 9 — this line PRINTED the number for eight tasks and never checked it, and the branch's
+# own history is the argument. The count sat at 115 across D-1..D-7; THREE separate rounds drifted
+# it by exactly one (xUnit1031, then xUnit1030 from a ConfigureAwait(false) written out of src/
+# habit, then two CS8767 from a test double), and every one of those was caught by a HUMAN reading
+# this line -- never by the gate. One warning is precisely the size of signal that gets waved
+# through, which is why it needs a check rather than better attention.
+#
+# This is the same shape as trap 2, one field over: a printed number that looks like evidence.
+# The whole batch's rule is "assert a POSITIVE expected quantity, never the absence of failure",
+# and a warning count is a quantity like any other. Move it deliberately, in the same breath as a
+# test total, and say why in the block below -- a warning that arrives with a task is a fact to be
+# justified, not a number to be pasted over.
+#
+# Deliberately NOT a ratchet ("<= EXPECTED"): a DROP is also a fact worth a sentence, and a
+# one-sided bound would let a real fix that removes a warning silently rot the number until the
+# next addition hides inside the slack.
+# 🔴 THIS NUMBER IS PINNED TO AN SDK THAT IS NOT PINNED. There is no global.json in this repo;
+# 115 was measured on 10.0.302. A colleague on a different SDK gets a red gate on a CLEAN tree from
+# a shifted analyzer set. The direction is safe — it fails closed, never falsely green, and the
+# message says what to do — but it is §8.1's `skipped != 0` reasoning inverted: there, an
+# environment-dependent count was refused so one number would mean the same thing everywhere; here,
+# an environment-dependent number is asserted. If this bites someone, the fix is a global.json, not
+# a looser check. Recorded rather than left for them to discover.
+EXPECT_WARNINGS=115
+if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
+  echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
+  echo "  A warning count is an expected quantity, not a readout. If this move is intended,"
+  echo "  update EXPECT_WARNINGS and justify it beside the suite totals below."
+  echo "  Warning CODES in this build, by occurrence count across all projects (NOT the 115 --"
+  echo "  MSBuild counts a warning once per project that emits it; this is a pointer, not the total):"
+  grep -oE 'warning [A-Za-z]+[0-9]+' "$BUILD_LOG" | sort | uniq -c | sort -rn | head -10
+  echo "  full log: $BUILD_LOG"
+  exit 1
+fi
+
 # ── Gate 2: each suite, sequentially, asserting an EXACT total. ──────────────────
 # Trap 2. `Failed: 0` is not evidence: an aborted run prints it with a short total.
+# Trap 8 (see the build above): the build's own server population must not still be resident
+# while the suites run. Measured before this line existed: 14 processes, 1955 MB, alive through
+# all five suites. Report what the suites are actually running underneath, so the next person
+# reading a machine-wide failure has the number instead of a hypothesis.
+dotnet build-server shutdown >/dev/null 2>&1 || true
+BUILD_NODES=$(powershell -NoProfile -NonInteractive -Command \
+  "(Get-Process dotnet,VBCSCompiler -ErrorAction SilentlyContinue | Measure-Object).Count" \
+  2>/dev/null | tr -d '\r' | head -1)
+note "build servers still resident entering the test phase: ${BUILD_NODES:-unknown}"
+
+# 🔴 TRAP 9 AGAIN, ELEVEN LINES BELOW ITS OWN FIX. The whole-branch review found this while
+# reviewing the EXPECT_WARNINGS commit directly above: that commit argues "a printed number is not
+# a check" and then left an identical printed number here — trap 8's OWN instrument, reporting the
+# population this script creates, asserting nothing about it. The header records it measured at 14
+# processes and 1955 MB alive through all five suites. The sweep that added the warnings check
+# stopped at the number it was looking at.
+#
+# So the rule this script keeps re-learning, now stated where both instances sit: EVERY number
+# this script computes is either asserted or deleted. A `note` is for something a human reads
+# alongside a verdict, never for something the verdict depends on.
+EXPECT_BUILD_NODES=0
+if [[ "${BUILD_NODES:-}" != "$EXPECT_BUILD_NODES" ]]; then
+  echo "FAIL: ${BUILD_NODES:-unknown} build-server process(es) are resident entering the test phase,"
+  echo "  expected ${EXPECT_BUILD_NODES}. The suites would run under a population this script created"
+  echo "  (measured once at 14 processes / 1955 MB), which is machine-wide memory pressure in the same"
+  echo "  window as the memory-sensitive part of this run. Trap 8 in the build gate above is the story."
+  exit 1
+fi
 echo "[2/3] Running ${#SUITES[@]} suites sequentially..."
 for entry in "${SUITES[@]}"; do
   proj="${entry%%:*}"; expected="${entry##*:}"; name=$(basename "$proj")
@@ -306,8 +1434,8 @@ for entry in "${SUITES[@]}"; do
     if [[ $((SECONDS - started)) -ge $SUITE_CEILING_SECONDS ]]; then
       hung=1
       note "$name: EXCEEDED the ${SUITE_CEILING_SECONDS}s ceiling ($((SECONDS - started))s) -- killing. A suite creeping slowly is invisible to the CPU check."
+      kill_this_runs_hosts "$test_pid"
       kill -9 "$test_pid" 2>/dev/null || true
-      taskkill //F //IM testhost.exe //T >/dev/null 2>&1 || true
       break
     fi
     cpu1=$(testhost_cpu_seconds)
@@ -333,14 +1461,16 @@ for entry in "${SUITES[@]}"; do
 
     hung=1
     note "$name: HUNG (test host CPU flat at ${cpu1}s of processor time across ${HUNG_SAMPLES} consecutive 90s periods while alive) -- killing"
+    kill_this_runs_hosts "$test_pid"
     kill -9 "$test_pid" 2>/dev/null || true
-    taskkill //F //IM testhost.exe //T >/dev/null 2>&1 || true
     break
   done
   wait "$test_pid" 2>/dev/null || true
 
   if [[ $hung -eq 1 ]]; then
-    FAILURES+=("$name: HUNG and was killed -- rebuild before trusting anything that follows")
+    # Say whose kill it was. vstest will write "Test host process crashed" into the log
+    # BECAUSE WE KILLED IT -- that line is our own remedy talking, not a product fault.
+    FAILURES+=("$name: HUNG, and WE killed it -- any 'Test host process crashed' in its log is OUR taskkill, not a crash. Rebuild before trusting anything that follows.")
     continue
   fi
 

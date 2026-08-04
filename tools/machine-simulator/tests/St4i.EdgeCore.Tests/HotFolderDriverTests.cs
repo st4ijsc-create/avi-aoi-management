@@ -81,6 +81,56 @@ public class HotFolderDriverTests {
     } finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
   }
 
+  /// <summary>
+  /// 🔴 backlog-test-deadlines — the regression test for the defect that wedged the whole
+  /// <c>St4i.EdgeCore.Tests</c> assembly for 900 s at a time and was read, for four consecutive tasks, as
+  /// "a pre-existing flake in DeviceIdentityStore, no root cause".
+  ///
+  /// <para><b>What it pins.</b> <see cref="HotFolderAoiDriver.DisposeAsync"/> must END an in-flight
+  /// <see cref="HotFolderAoiDriver.ReadAsync"/>, and end it CLEANLY. It used to call
+  /// <c>_wake.Dispose()</c>, and <see cref="System.Threading.SemaphoreSlim.Dispose()"/> drops queued async
+  /// waiters WITHOUT completing them — so disposing the driver while its read loop was parked in the idle
+  /// wait stranded that <c>await</c> permanently: no completion, no exception, and no
+  /// <see cref="CancellationToken"/> that could reach it, because the cancellation path is precisely the
+  /// one that gets swallowed. A standalone probe measured that ordering at <b>200/200</b> stranded.</para>
+  ///
+  /// <para><b>Why NO token is cancelled here.</b> Cancelling would let the token end the enumeration and
+  /// hide the defect; <see cref="HotFolderAoiDriver.DisposeAsync"/> alone must be sufficient, which is also
+  /// exactly what <c>FleetHost</c> relies on when it stops a connector. The 400 ms delay is what makes the
+  /// old failure DETERMINISTIC rather than a race: the watch directory is empty, so the loop spends all but
+  /// a few microseconds of every 120 ms poll interval parked, and "disposed while parked" is the certain
+  /// case rather than the lucky one.</para>
+  ///
+  /// <para><b>Both assertions are load-bearing, because the old code failed two different ways.</b> Parked
+  /// at disposal it hung (caught by the first); NOT parked at disposal, its next
+  /// <c>WaitAsync</c> threw <see cref="ObjectDisposedException"/> straight out of the enumeration (caught
+  /// only by the second). A fix for one arm alone still fails this test.</para>
+  /// </summary>
+  [Fact] public async Task DisposeAsync_WhileTheReadLoopIsIdle_EndsTheEnumeration_RatherThanStrandingItForever() {
+    var root=Path.Combine(Path.GetTempPath(),"st4i-hf-"+Guid.NewGuid().ToString("N"));
+    var watch=Path.Combine(root,"in"); var arch=Path.Combine(root,"archive"); var err=Path.Combine(root,"error");
+    Directory.CreateDirectory(watch);
+    try {
+      var drv=new HotFolderAoiDriver(watch,arch,err);
+      using var neverCancelled=new CancellationTokenSource();
+      var run=Task.Run(async () => { await foreach(var _ in drv.ReadAsync(neverCancelled.Token)) { } });
+
+      await Task.Delay(TimeSpan.FromMilliseconds(400));
+      Assert.False(run.IsCompleted, "sanity: with an empty watch dir the read loop must still be running");
+
+      await drv.DisposeAsync();
+
+      var ended = await Task.WhenAny(run, Task.Delay(TimeSpan.FromSeconds(5))) == run;
+      Assert.True(ended,
+        "DisposeAsync did not end the in-flight ReadAsync within 5s. A read loop that outlives its own " +
+        "driver can never be reclaimed — its token was never cancelled and now cannot help, so nothing " +
+        "in-process can stop it. The usual cause is disposing a synchronisation primitive the loop is " +
+        "parked on: SemaphoreSlim.Dispose() drops queued async waiters without completing them.");
+
+      Assert.Null(await Record.ExceptionAsync(() => run));
+    } finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+  }
+
   [Fact] public void Ignores_tmp_files_still_being_written() {
     var root=Path.Combine(Path.GetTempPath(),"st4i-hf-"+Guid.NewGuid().ToString("N"));
     var watch=Path.Combine(root,"in"); var arch=Path.Combine(root,"archive"); var err=Path.Combine(root,"error");

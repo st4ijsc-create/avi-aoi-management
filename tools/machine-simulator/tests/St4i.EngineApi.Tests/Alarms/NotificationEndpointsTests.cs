@@ -65,6 +65,55 @@ public sealed class NotificationEndpointsTests : IDisposable
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// 🔴 D-5 fix round 2 — how much EARLIER than its nominal deadline a timeout may legitimately fire,
+    /// measured by a <see cref="Stopwatch"/>. The two "non-vacuity" lower bounds below used to assert
+    /// <c>elapsed >= attemptTimeout</c> exactly, justified by the comment <i>"a Stopwatch measures real
+    /// time, so a timeout can only ever be LATE here, never early."</i> <b>That is false, and it produced a
+    /// real red gate at 997 ms against a 1000 ms bound.</b>
+    ///
+    /// <para>The two clocks are not the same clock. <see cref="CancellationTokenSource.CancelAfter(TimeSpan)"/>
+    /// schedules on the .NET <c>TimerQueue</c>, which is driven by <c>Environment.TickCount</c> — ~15.6 ms
+    /// granularity on Windows — while <see cref="Stopwatch"/> is QPC. A one-second timer can therefore fire
+    /// up to about one tick before QPC agrees a second has passed. The claim was never about the code; it was
+    /// about the author's model of the runtime, which is the defect class this batch keeps paying for.</para>
+    ///
+    /// <para>50 ms is ~3 quanta — enough that a scheduling artefact cannot reach it. The sibling bounds in
+    /// <c>ModbusTcpDriverWriteTests</c> (50 ms) and <c>ModbusRtuDriverWriteTests</c> (60 ms) already chose
+    /// the same shape; these two sites were the only ones in the repo with no margin at all (swept: the six
+    /// other <c>Elapsed &gt;=</c> bounds in the alarm suites all carry 100 ms or more against what they
+    /// measure).</para>
+    ///
+    /// <para>🔴 <b>What this slack does NOT rest on, said plainly because the obvious claim did not survive
+    /// checking.</b> The natural justification — "still decisive, because an attempt that failed instantly
+    /// for some reason other than the peer's silence returns in single-digit milliseconds, not 950" — is
+    /// FALSE as written. Repointing this test at a definitely-closed loopback port produces <b>~1013 ms</b>
+    /// elapsed and the byte-identical <c>Detail</c> <i>"did not answer within 1s"</i>. The slack is
+    /// therefore justified ONLY by the clock argument above, which is sound on its own.</para>
+    ///
+    /// <para><b>Why that happens — and why it is NOT a weakness in these assertions.</b> The first version
+    /// of this note said "neither does the assertion above it", which over-generalised a single measurement
+    /// into a property of the mechanism. It is not.
+    /// <see cref="Alarms.WebhookNotificationChannel"/> maps a refusal to a genuinely different
+    /// <c>Detail</c> (<i>"could not be reached: …actively refused it"</i>), and
+    /// <c>Assert.Contains("did not answer within")</c> does catch the substitution — at an
+    /// <c>attemptTimeout</c> of 5 s the same closed port yields 2027 ms and the refusal message. What
+    /// defeats it at <b>1 s</b> is the platform, not the test: on Windows the connect path takes roughly two
+    /// seconds to surface <c>HttpRequestException</c> for a plainly refused TCP connection — a number this
+    /// codebase already measured, see <c>WebhookNotificationChannel</c>'s own remarks on its connect
+    /// behaviour. The attempt token simply fires first. So these lower bounds are <b>narrowed, not
+    /// vacuous</b>: they still fail an attempt issued with no bound applied at all, and they still fail a
+    /// DNS failure, which surfaces in milliseconds.</para>
+    ///
+    /// <para>🟠 The real finding underneath this is about the CHANNEL, not this test, and is recorded for
+    /// the whole-branch review: below ~2 s of attempt timeout a refused endpoint is reported to an operator
+    /// as <i>"nothing is holding the connection open without responding"</i> — sending them to hunt a
+    /// black-holing peer when the endpoint is actively refusing — because the branch that would say so is
+    /// unreachable at that bound. That is D-5's I-1 defect class (one operator-facing string covering two
+    /// producing paths, true of only one), and it predates this change.</para>
+    /// </summary>
+    private static readonly TimeSpan TimerQuantumSlack = TimeSpan.FromMilliseconds(50);
+
     // ─────────────────────────────────────────────────────────────────────
     // Harness
     // ─────────────────────────────────────────────────────────────────────
@@ -998,9 +1047,10 @@ public sealed class NotificationEndpointsTests : IDisposable
 
         // Non-vacuity: it really did WAIT for the timeout rather than failing instantly for some other
         // reason, so the assertion above is about the bound and not about a connection that never happened.
-        // A Stopwatch measures real time, so a timeout can only ever be LATE here, never early.
+        // The slack is not CI padding — see TimerQuantumSlack for why the timer may legitimately fire before
+        // the Stopwatch agrees the second has passed, and for the false claim that used to sit here.
         Assert.True(
-            elapsed.Elapsed >= attemptTimeout,
+            elapsed.Elapsed >= attemptTimeout - TimerQuantumSlack,
             $"The send test returned in {elapsed.ElapsedMilliseconds} ms, before the attempt timeout could " +
             "have elapsed — it failed for a reason other than the receiver's silence.");
     }
@@ -1050,8 +1100,9 @@ public sealed class NotificationEndpointsTests : IDisposable
             $"— the {attemptTimeout.TotalSeconds:0.#}s attempt bound did not hold.");
 
         // Non-vacuity: it waited for the silence rather than failing instantly for another reason.
+        // Same slack, same reason, same false comment removed from its sibling above — see TimerQuantumSlack.
         Assert.True(
-            elapsed.Elapsed >= attemptTimeout,
+            elapsed.Elapsed >= attemptTimeout - TimerQuantumSlack,
             $"The e-mail send test returned in {elapsed.ElapsedMilliseconds} ms, before its attempt timeout " +
             "could have elapsed — it failed for a reason other than the relay's silence.");
     }

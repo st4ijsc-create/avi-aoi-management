@@ -424,6 +424,12 @@ export const en: Dictionary = {
         indeterminate: "Indeterminate — the device's state is now UNKNOWN.",
         indeterminateGuidance:
           "Do not resubmit this reflexively — a retry can double-actuate. Go check the machine's actual physical state first, then decide.",
+        // 🔴 Whole-branch review M-2 — blueprint §10 item 3, said where the claim is READ. Rendered only
+        // for a COMMAND outcome (see `MachineControlPanel`'s `OutcomeBanner`): a setpoint write is a register
+        // value that can be read back, so this is a command-path fact and showing it on both would be the
+        // same imprecision one size down.
+        appliedIsAcknowledgement:
+          "This is an acknowledgement, not an observation: a matching frame came back, but nothing here proves the machine physically moved. Modbus RTU cannot tie a returned frame to a specific request, so a late echo of an earlier pulse looks identical. Confirm the effect by looking at the machine.",
       },
       rejectionReason: {
         UnknownPoint: "This point name isn't recognized by the live driver.",
@@ -1904,17 +1910,47 @@ export const en: Dictionary = {
       empty: "No connector configured yet.",
       loadFailed: "Couldn't load the configured connectors.",
       table: {
+        // 🔴 Task D-7b — the connector INSTANCE, which is what a Remove button actually acts on. "Protocol"
+        // stopped identifying anything removable the moment N devices could share one: on an RS-485 line all
+        // of them are "Modbus".
+        instanceId: "Connector",
         kind: "Protocol",
         machineCode: "Machine code",
-        hostPort: "Host : Port",
+        hostPort: "Line",
+        state: "State",
         updated: "Last updated",
         remove: "Remove",
+        removeAria: (vars: Vars) => `Remove connector ${vars.id}, serving machine ${vars.machineCode}`,
+      },
+      // 🔴 Task D-7b — the live state of one configured device, from what this product actually publishes.
+      // Deliberately NOT a "backed off" badge — see `list.bus.quietVersusBackedOff` and `Connectors.tsx`'s
+      // own `DeviceLiveState` comment for why guessing that would be worse than the sentence.
+      state: {
+        failedToStart: "Failed to start",
+        notInRoster: "Not in the roster this session",
+      },
+      bus: {
+        title: (vars: Vars) => `RS-485 bus “${vars.bus}”`,
+        deviceCount: (vars: Vars) => `— ${vars.count} device(s) on this line`,
+        quietVersusBackedOff:
+          "A device that stops answering shows as degraded here, and the product slows how often it takes the shared line so the healthy devices keep their throughput. Whether a given device is currently BACKED OFF (and by how long), as opposed to merely quiet, is written to the application log — every failed poll records the consecutive-failure count and the wait until the next attempt, and recovery is logged once with the cadence being restored. It is deliberately not shown as a badge here: the driver contract every connector in this product implements has no such field, and inventing one for one transport would put a Modbus concept on a seam shared by all of them.",
       },
     },
     removeConfirm: {
       title: "Remove this connector configuration?",
+      // 🔴 Task D-7b — the dialog names WHAT it is about to remove. Before this task the removal flow
+      // carried a protocol kind, so on a multidrop bus it could neither say which of eight devices was
+      // going nor guarantee the server removed the one meant.
+      target: (vars: Vars) => `Connector “${vars.id}”, serving machine ${vars.machineCode}.`,
+      deviceTarget: (vars: Vars) =>
+        `Device “${vars.id}” on RS-485 bus “${vars.bus}”, serving machine ${vars.machineCode}. The other devices on that line are not affected.`,
       description:
-        "This only removes the SAVED configuration — it does not remove the machine from the fleet roster. If this connector is currently running, it keeps running until the application is fully restarted; there is no way to remove a machine from a live roster yet.",
+        "This only removes the SAVED configuration — it does not remove the machine from the fleet roster. If this connector is currently running, it keeps running until the application is fully restarted; there is no way to remove a machine from a live roster yet, so a replacement connector for the same machine code is still refused until then.",
+      // 🔴 Whole-branch review I-1 — the UI half. A row this product auto-populated for visibility from
+      // `connectors.json` is re-created on every start, so "removed" is true of the row and false of the
+      // configuration behind it. Shown only when the row's `source` says `Seeded`.
+      seededNote:
+        "Heads up: this connector was NOT saved by an operator — it was auto-populated from this machine's connectors.json / environment-variable configuration, and that configuration is unaffected. It (and the connector it describes) will come back the next time this application starts. Change or remove that entry itself to stop it.",
       submit: "Remove",
       removing: "Removing…",
       cancel: "Cancel",
@@ -1923,7 +1959,24 @@ export const en: Dictionary = {
       title: "Add a connector",
       description: "Pick the protocol, enter the connection settings, and paste or upload the register/node map JSON for this machine.",
       kindModbus: "Modbus TCP",
+      kindModbusRtu: "Modbus RTU (RS-485)",
       kindOpcUa: "OPC-UA",
+      busIdLabel: "Bus name",
+      busIdPlaceholder: "line1-rs485",
+      busIdHint:
+        "Your own name for this physical line. Every device on it is addressed as <bus>:unit<slave address>, so this is the name you will see on the list above and in alarms. A bus has no default name — several lines can exist and one of them cannot be “the Modbus one”.",
+      rtuNote:
+        "One RS-485 line, N devices, one document. Put the transport and the line parameters at the top level (“transport”: “rtu-serial” with a portName/baudRate/parity/dataBits/stopBits, or “rtu-gateway” with a host/port for a serial device server), and every device inside a “devices” array — one complete single-device register map each, with its own machineCode and unitId. Nothing is inherited from the bus level, deliberately: what you paste here is what each device stores and what its driver re-reads. If any device in the array is invalid, NOTHING is saved — a bus is saved whole or not at all.",
+      rtuHardwareLimit:
+        "RS-485 adapters with AUTOMATIC direction control only. This product does not drive a transmit-enable (DE/RE) line, and it cannot: there is no reliable “transmission finished” signal to switch on, so software direction control would be a timing guess — and a wrong guess corrupts another device's frame on a shared wire. If your adapter needs DE toggled by software, it is not supported. Note also that no Modbus frame has yet been carried over a real serial port by this build; the serial transport has been proven at the seam and against a gateway, not on a bench with hardware.",
+      appliedIsNotProof:
+        "A command reporting “Applied” means a matching acknowledgement frame came back — the slave address, function code, coil address and value all matched the request. It is NOT proof the machine physically moved: RTU has nothing that ties a frame to a specific request, so a late echo of an earlier, already-finished pulse can be acknowledged in exactly the same way. Confirm physical effect by looking at the machine, never at this field.",
+      testUnavailableForBus:
+        "The connection test probes ONE device and has no concept of a bus — save the line and read each device's state in the list above instead.",
+      busAppliedLive: (vars: Vars) =>
+        `Saved ${vars.count} device(s) on this line and added them to the fleet. If the fleet was already running, it restarted to apply this immediately.`,
+      busSavedRestartNeeded: (vars: Vars) =>
+        `Saved ${vars.count} device(s) on this line. Their machines were already in the roster — the change applies on the next Stop/Start (or a full application restart), not immediately to an already-running fleet.`,
       hostLabel: "Host / IP address",
       hostPlaceholder: "10.0.0.5",
       portLabel: "Port",

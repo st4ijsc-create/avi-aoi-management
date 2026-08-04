@@ -1006,8 +1006,24 @@ public sealed class LocalAnnunciationChannelTests : IDisposable
         for (var i = 0; i < 240; i++) await alarms.RaiseAsync(raise);
         await alarms.ClearAsync(raise.Key);
 
+        // 🔴 Waits on Announced, NOT on Considered, and the difference is a real race rather than a nicety.
+        // LocalAnnunciationChannel.DispatchAsync increments _considered at its very FIRST statement — before
+        // `await _store.ListAsync(ct)` and long before Announce() calls _hub.Publish. So "Considered == 2"
+        // means only that the second dispatch has ENTERED; its annunciation is still inside a SQLite read and
+        // has not reached this listener. Draining there returns 1 of 2 and the test fails on a system that is
+        // behaving perfectly. _announced is incremented after Announce() returns, i.e. after the synchronous
+        // Publish, so it is the counter that actually means "both are in the listener's queue".
+        //
+        // Found by D-5's gate run: 3 failures in 8 isolated runs on a loaded machine, 4 in 8 with D-5's
+        // changes fully reverted — so it is this test's own defect and pre-dates that task, which touches no
+        // EngineApi code. It reproduces as a "flake" and is not one; the batch rule is to fix the mechanism
+        // rather than widen the window, and widening it would not have helped at all here — the deadline was
+        // already 20 s and the wait was simply on the wrong signal.
+        //
+        // The Announced assertion below stays and is not made vacuous by this: waiting for >= 2 and then
+        // asserting == 2 is what pins "exactly once per edge", which is the property this test is named for.
         var deadline = DateTimeOffset.UtcNow.AddSeconds(20);
-        while (channel.Stats.Considered < 2 && DateTimeOffset.UtcNow < deadline) await Task.Delay(10);
+        while (channel.Stats.Announced < 2 && DateTimeOffset.UtcNow < deadline) await Task.Delay(10);
 
         var received = Drain(listener);
         Assert.Equal(2, received.Count);

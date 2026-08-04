@@ -91,8 +91,27 @@ internal sealed class WebhookLoopbackServer : IAsyncDisposable
     /// <summary>Always answers the same thing.</summary>
     public static WebhookLoopbackServer Start(ScriptedResponse? response) => Start(_ => response);
 
-    /// <summary>A port nothing is listening on — bound then released, the same find-and-release idiom the
-    /// OPC-UA and Modbus conformance suites use for their "unreachable device" cases.</summary>
+    /// <summary>
+    /// A port nothing is listening on — bound then released.
+    ///
+    /// <para>🔴 <b>This is a known-hazardous idiom and the citation that used to justify it has been
+    /// withdrawn.</b> This comment previously read "the same find-and-release idiom the OPC-UA and Modbus
+    /// conformance suites use". <b>They no longer use it</b>: D-2's review (I-3) removed it from both,
+    /// deliberately, because releasing an ephemeral port hands it back to the OS, which can reassign it to
+    /// another test's <see cref="TcpListener"/> — a later connect then lands on a stranger's listener and
+    /// drops it, and the stranger sees an unexplained connection reset. That is not hypothetical: it failed
+    /// <c>DeviceIdentityStoreTests.Certificate_LoadedFromStore_CanCompleteARealMutualTlsHandshake</c> in
+    /// <c>St4i.EdgeCore.Tests</c>, in a subsystem the change never touched, and read convincingly as a
+    /// pre-existing TLS flake.</para>
+    ///
+    /// <para><b>The mechanism here is deliberately left alone</b> — D-2 had no business changing an
+    /// EngineApi test helper, and this suite's total is one D-2's own report claims it does not move. Only
+    /// the false sentence is corrected, because a comment citing a removed precedent is how a bad idiom gets
+    /// re-adopted <i>with a reference</i>. <b>The fix, when someone takes it:</b> bind a socket and never
+    /// call <c>Listen</c> — bound means no one else can be assigned the port, not listening means a connect
+    /// is refused with RST. See <c>St4i.EdgeCore.Tests.Drivers.ClosedLoopbackPort</c> for the worked version.
+    /// <c>NotificationEndpointsTests</c> has the same idiom and the same fix pending.</para>
+    /// </summary>
     public static int FindClosedPort()
     {
         var probe = new TcpListener(IPAddress.Loopback, 0);

@@ -1,3 +1,5 @@
+using Microsoft.Data.Sqlite;
+using St4i.Connector.Abstractions.Models;
 using St4i.EngineApi.Fleet;
 using Xunit;
 
@@ -58,8 +60,13 @@ public sealed class ConnectorConfigStoreTests
         await store.SaveAsync("Modbus", "MODBUS-02", "10.0.0.6", 503, "{}");
 
         var all = await store.ListAsync();
-        Assert.Single(all); // still ONE row for "Modbus" — mirrors ConnectorRegistry.Register's own
-                             // "last write wins, never two entries for the same kind" semantics.
+        Assert.Single(all); // still ONE row — both saves omit an instanceId, so both key on the DERIVED
+                             // default ("Modbus"), mirroring ConnectorRegistry.Register's own last-write-wins
+                             // semantics for one instance. Task D-1 note: this is no longer a statement about
+                             // the KIND — two Modbus rows under two instance ids is now a supported, tested
+                             // shape (TwoInstancesOfTheSameKind_AreTwoRows_...); what this pins is that the
+                             // default identity did not change, which is what keeps every pre-D-1 caller
+                             // writing exactly the row it always did.
         Assert.Equal("MODBUS-02", all[0].MachineCode);
         Assert.Equal("10.0.0.6", all[0].Host);
         Assert.Equal(503, all[0].Port);
@@ -396,5 +403,273 @@ public sealed class ConnectorConfigStoreTests
         {
             Environment.SetEnvironmentVariable(ConnectorConfigStore.EnvVarDir, prev);
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) — migration v4:
+    // `kind TEXT PRIMARY KEY` becomes `instance_id TEXT PRIMARY KEY`, and an installed system's real
+    // connector rows must survive it with their behaviour intact.
+    //
+    // These tests build a GENUINE version-3 database with raw SQL — the pre-D-1 schema, byte for byte,
+    // including its own column ORDER — rather than re-opening a store this build already created. That
+    // distinction is the whole point: the two pre-existing "migrates existing rows to version N" tests in
+    // this file (v2 and v3) construct their "old" database by calling THIS build's own constructor, which
+    // runs the ladder to the CURRENT version first, so they can never actually exercise a migration from an
+    // older schema. They pin what a fresh install reads back; they cannot see a rung that loses data. A
+    // migration that dropped every row would pass both of them.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>The exact pre-D-1 (migration v3) schema, including its own declaration order —
+    /// write_capability_json and source were APPENDED by v2/v3's ALTER TABLE, so they sit after the
+    /// timestamps, whereas v4's rebuilt table groups them before. That difference is deliberate here: it is
+    /// what makes `INSERT INTO ... SELECT *` (positional) produce visibly wrong rows, so this fixture would
+    /// catch a rebuild written that way.</summary>
+    private static void CreateVersion3Database(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        using var connection = new SqliteConnection($"Data Source={Path.Combine(dir, "connector-config.db")}");
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            CREATE TABLE connector_configs (
+              kind TEXT PRIMARY KEY,
+              machine_code TEXT NOT NULL,
+              host TEXT NULL,
+              port INTEGER NULL,
+              map_json TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              write_capability_json TEXT NULL,
+              source TEXT NOT NULL DEFAULT 'Operator');
+            PRAGMA user_version = 3;
+            """;
+        cmd.ExecuteNonQuery();
+    }
+
+    private static void InsertVersion3Row(
+        string dir, string kind, string machineCode, string? host, int? port, string mapJson,
+        string? writeCapabilityJson, string source, string createdAt, string updatedAt)
+    {
+        using var connection = new SqliteConnection($"Data Source={Path.Combine(dir, "connector-config.db")}");
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO connector_configs (kind, machine_code, host, port, map_json, created_at, updated_at, write_capability_json, source)
+            VALUES (@kind, @machine_code, @host, @port, @map_json, @created_at, @updated_at, @write_capability_json, @source);
+            """;
+        cmd.Parameters.AddWithValue("@kind", kind);
+        cmd.Parameters.AddWithValue("@machine_code", machineCode);
+        cmd.Parameters.AddWithValue("@host", (object?)host ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@port", (object?)port ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@map_json", mapJson);
+        cmd.Parameters.AddWithValue("@created_at", createdAt);
+        cmd.Parameters.AddWithValue("@updated_at", updatedAt);
+        cmd.Parameters.AddWithValue("@write_capability_json", (object?)writeCapabilityJson ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@source", source);
+        cmd.ExecuteNonQuery();
+    }
+
+    private static long ReadUserVersion(string dir)
+    {
+        using var connection = new SqliteConnection($"Data Source={Path.Combine(dir, "connector-config.db")}");
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "PRAGMA user_version;";
+        return Convert.ToInt64(cmd.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    [Fact]
+    public async Task MigrationV4_AGenuineVersion3Database_KeepsEveryRow_EveryField_AndGivesEachOneItsKindAsItsInstanceId()
+    {
+        var dir = TempDir();
+        CreateVersion3Database(dir);
+
+        var capability = new ConnectorWriteCapability(
+            new[] { new ConnectorWritablePointGrant("speed", "address:40001", 0, 500) },
+            new[] { new ConnectorCommandGrant("StartCycle", "coil:5") });
+
+        InsertVersion3Row(
+            dir, kind: "Modbus", machineCode: "MB-LEGACY-01", host: "10.0.0.5", port: 502,
+            mapJson: """{"machineCode":"MB-LEGACY-01","registers":[]}""",
+            writeCapabilityJson: capability.ToJson(), source: "Operator",
+            createdAt: "2026-01-02T03:04:05.0000000+00:00", updatedAt: "2026-02-03T04:05:06.0000000+00:00");
+        InsertVersion3Row(
+            dir, kind: "OpcUa", machineCode: "UA-LEGACY-01", host: null, port: null,
+            mapJson: """{"endpointUrl":"opc.tcp://10.0.0.9:4840"}""",
+            writeCapabilityJson: null, source: "Seeded",
+            createdAt: "2026-03-04T05:06:07.0000000+00:00", updatedAt: "2026-04-05T06:07:08.0000000+00:00");
+
+        // Opening the store is what runs the ladder — the same thing a product upgrade does on first boot.
+        var store = new ConnectorConfigStore(dir);
+
+        // 🔴 Task D-7b raised the ladder's top rung 4 -> 5 (bus_instance_id/bus_settings_json). The number is
+        // the CURRENT top, not "the rung this test is about": a v3 database opened by this build must land on
+        // the newest rung, and an assertion frozen at 4 would go green while the last rung silently never ran.
+        Assert.Equal(5, ReadUserVersion(dir));
+
+        var all = await store.ListAsync();
+        Assert.Equal(2, all.Count);
+
+        // Addressed by the SAME string an operator/UI/DELETE URL already used before the upgrade.
+        var modbus = await store.GetAsync("Modbus");
+        Assert.NotNull(modbus);
+        Assert.Equal("Modbus", modbus!.EffectiveInstanceId);
+        Assert.Equal("Modbus", modbus.InstanceId);
+        Assert.Equal("Modbus", modbus.Kind);
+        Assert.Equal("MB-LEGACY-01", modbus.MachineCode);
+        Assert.Equal("10.0.0.5", modbus.Host);
+        Assert.Equal(502, modbus.Port);
+        Assert.Equal("""{"machineCode":"MB-LEGACY-01","registers":[]}""", modbus.MapJson);
+        Assert.Equal(ConnectorConfigSource.Operator, modbus.Source);
+        Assert.Equal(DateTimeOffset.Parse("2026-01-02T03:04:05.0000000+00:00", System.Globalization.CultureInfo.InvariantCulture), modbus.CreatedAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-02-03T04:05:06.0000000+00:00", System.Globalization.CultureInfo.InvariantCulture), modbus.UpdatedAtUtc);
+
+        // The write capability survives the rebuild intact — this is the field an operator already
+        // deliberately confirmed, so losing or corrupting it would silently change what the product
+        // believes it is allowed to command.
+        Assert.NotNull(modbus.WriteCapability);
+        Assert.Equal(capability.ComputeFingerprint(), modbus.WriteCapability!.ComputeFingerprint());
+
+        var opcUa = await store.GetAsync("OpcUa");
+        Assert.NotNull(opcUa);
+        Assert.Equal("OpcUa", opcUa!.EffectiveInstanceId);
+        Assert.Equal("UA-LEGACY-01", opcUa.MachineCode);
+        Assert.Null(opcUa.Host);
+        Assert.Null(opcUa.Port);
+        Assert.Null(opcUa.WriteCapability);
+        // The Source provenance rule Đợt B added (Seeded vs Operator) must cross this rung intact —
+        // ConnectorConfigVisibilitySeeder and Program.cs's startup loop both branch on it, so a row that
+        // came out the far side mislabelled would either start warning every boot or stop protecting an
+        // operator's own row.
+        Assert.Equal(ConnectorConfigSource.Seeded, opcUa.Source);
+        Assert.Equal("""{"endpointUrl":"opc.tcp://10.0.0.9:4840"}""", opcUa.MapJson);
+    }
+
+    [Fact]
+    public async Task MigrationV4_AMigratedRow_BehavesIdentically_ASameKindSaveStillUpsertsIt_RatherThanAddingASecond()
+    {
+        // "Existing rows must survive with their behaviour intact" — not just their bytes. The behaviour a
+        // pre-D-1 install depends on is that saving the same kind again UPDATES its one row; that only
+        // stays true after the key change because the migrated row's instance id is its kind and SaveAsync
+        // defaults the instance id the same way.
+        var dir = TempDir();
+        CreateVersion3Database(dir);
+        InsertVersion3Row(
+            dir, "Modbus", "MB-LEGACY-01", "10.0.0.5", 502, "{}", null, "Operator",
+            "2026-01-02T03:04:05.0000000+00:00", "2026-01-02T03:04:05.0000000+00:00");
+
+        var store = new ConnectorConfigStore(dir);
+        await store.SaveAsync("Modbus", "MB-LEGACY-01", "10.0.0.9", 5020, """{"updated":true}""");
+
+        var all = await store.ListAsync();
+        var only = Assert.Single(all);
+        Assert.Equal("Modbus", only.EffectiveInstanceId);
+        Assert.Equal("10.0.0.9", only.Host);
+        Assert.Equal(5020, only.Port);
+
+        var record = await store.GetAsync("Modbus");
+        // created_at is preserved across the upsert exactly as it was before D-1 — proof the row was
+        // UPDATED in place, not deleted and re-inserted by the migration or by the save.
+        Assert.Equal(DateTimeOffset.Parse("2026-01-02T03:04:05.0000000+00:00", System.Globalization.CultureInfo.InvariantCulture), record!.CreatedAtUtc);
+    }
+
+    [Fact]
+    public async Task MigrationV4_AnEmptyVersion3Database_MigratesCleanly_AndIsImmediatelyUsable()
+    {
+        // The overwhelmingly common upgrade shape: the store file exists (something constructed it once)
+        // but holds no connector at all. A rebuild that assumed at least one row, or that left the renamed
+        // table in a half state, would break every install that never configured a connector.
+        var dir = TempDir();
+        CreateVersion3Database(dir);
+
+        var store = new ConnectorConfigStore(dir);
+
+        // 🔴 Task D-7b — see the sibling test above for why this is the ladder's current top rung, not 4.
+        Assert.Equal(5, ReadUserVersion(dir));
+        Assert.Empty(await store.ListAsync());
+
+        await store.SaveAsync("Modbus", "MB-AFTER-UPGRADE", "10.0.0.5", 502, "{}");
+        Assert.Equal("Modbus", Assert.Single(await store.ListAsync()).EffectiveInstanceId);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task D-1 — two connectors of ONE kind, side by side. Before this task the schema itself made this
+    // impossible (`kind TEXT PRIMARY KEY`), which is one of the two independent structural blocks on
+    // RS-485 multidrop the blueprint names.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task TwoInstancesOfTheSameKind_AreTwoRows_IndependentlyReadable_AndIndependentlyDeletable()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+
+        var a = await store.SaveAsync("Modbus", "MB-A", "10.0.0.5", 502, """{"a":1}""", instanceId: "modbus-line-a");
+        var b = await store.SaveAsync("Modbus", "MB-B", "10.0.0.6", 502, """{"b":1}""", instanceId: "modbus-line-b");
+
+        Assert.Equal("modbus-line-a", a.EffectiveInstanceId);
+        Assert.Equal("modbus-line-b", b.EffectiveInstanceId);
+        Assert.Equal(2, (await store.ListAsync()).Count);
+
+        var readA = await store.GetAsync("modbus-line-a");
+        var readB = await store.GetAsync("modbus-line-b");
+        Assert.Equal("MB-A", readA!.MachineCode);
+        Assert.Equal("MB-B", readB!.MachineCode);
+        Assert.Equal("""{"a":1}""", readA.MapJson);
+        Assert.Equal("""{"b":1}""", readB.MapJson);
+        // Both are Modbus — identity and protocol are genuinely separate now, not two names for one thing.
+        Assert.Equal("Modbus", readA.Kind);
+        Assert.Equal("Modbus", readB.Kind);
+
+        // Removing one must never take its sibling with it — the failure a DELETE still keyed on `kind`
+        // would produce, and the reason DeleteAsync moved to the primary key.
+        Assert.True(await store.DeleteAsync("modbus-line-a"));
+        var remaining = Assert.Single(await store.ListAsync());
+        Assert.Equal("modbus-line-b", remaining.EffectiveInstanceId);
+        Assert.Equal("MB-B", remaining.MachineCode);
+    }
+
+    [Fact]
+    public async Task SaveAsync_NormalizesTheInstanceIdTheSameWayTheRegistryAndTheDeleteRouteDo()
+    {
+        // 🔴 D-1 review, m1. ConnectorRegistry.Register and DELETE /v1/connectors/{instanceId} both fold an
+        // id through DriverKinds.Normalize; SaveAsync only Trim()med it. A row written with
+        // instance_id = "modbus" would therefore be UNDELETABLE — the DELETE route normalizes its segment to
+        // "Modbus", GetAsync misses, and the operator gets a 404 for a row they can see in
+        // GET /v1/connectors/configured. The store, the registry and the route must all fold identically or
+        // the identity has two spellings.
+        var store = new ConnectorConfigStore(TempDir());
+
+        var saved = await store.SaveAsync("Modbus", "MB-NORM-01", "10.0.0.5", 502, "{}", instanceId: "modbus");
+        Assert.Equal(DriverKinds.Modbus, saved.EffectiveInstanceId);
+
+        // Addressable by the canonical spelling — which is the one the DELETE route will hand GetAsync.
+        Assert.NotNull(await store.GetAsync(DriverKinds.Modbus));
+
+        // And a second save under yet another casing is the SAME row, never a second one.
+        await store.SaveAsync("Modbus", "MB-NORM-01", "10.0.0.6", 502, "{}", instanceId: "MODBUS");
+        var only = Assert.Single(await store.ListAsync());
+        Assert.Equal(DriverKinds.Modbus, only.EffectiveInstanceId);
+        Assert.Equal("10.0.0.6", only.Host);
+
+        // A third-party id stays case-SENSITIVE, exactly as DriverKinds documents — normalization must not
+        // become a blanket lowercase that folds two genuinely different vendor connectors together.
+        await store.SaveAsync("Modbus", "MB-NORM-02", "10.0.0.7", 502, "{}", instanceId: "vendor.acme.weld");
+        await store.SaveAsync("Modbus", "MB-NORM-03", "10.0.0.8", 502, "{}", instanceId: "Vendor.Acme.Weld");
+        Assert.Equal(3, (await store.ListAsync()).Count);
+    }
+
+    [Fact]
+    public async Task ListAsync_StillNeverSelectsMapJson_EvenNowThatItCarriesAnInstanceId()
+    {
+        // The credential-free projection is load-bearing (an OPC-UA map may embed a username/password) and
+        // its SELECT list was edited by this task — re-pinned here rather than assumed, since a column
+        // added to that list by accident is exactly the kind of change that reads as harmless.
+        var mapWithSecret = """{"endpointUrl":"opc.tcp://10.0.0.9:4840","username":"admin","password":"hunter2"}""";
+        var store = new ConnectorConfigStore(TempDir());
+        await store.SaveAsync("OpcUa", "UA-01", null, null, mapWithSecret, instanceId: "opcua-cell-1");
+
+        var summary = Assert.Single(await store.ListAsync());
+        Assert.Equal("opcua-cell-1", summary.EffectiveInstanceId);
+        Assert.DoesNotContain("hunter2", System.Text.Json.JsonSerializer.Serialize(summary));
     }
 }

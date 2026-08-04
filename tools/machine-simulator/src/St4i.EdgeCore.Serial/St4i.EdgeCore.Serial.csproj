@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Task D-3 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-3-brief.md) — this assembly
+         exists FOR ONE REASON: to be the only place in the product that depends on System.IO.Ports.
+
+         net10.0-windows, not plain net10.0, because it ProjectReferences St4i.EdgeCore, which is
+         net10.0-windows (DPAPI CredentialStore, a WPF-adjacent vendored SDK). System.IO.Ports itself is
+         cross-platform; this TFM is inherited from what it sits on, not a statement about serial. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\St4i.EdgeCore\St4i.EdgeCore.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 🔴 Đợt D §6 — the FIRST NuGet exception in four batches, and it is deliberately bounded by this
+         project's existence rather than by a promise in a comment.
+
+         WHY THE PACKAGE IS ACCEPTED: published by Microsoft itself (not a third-party convenience
+         library); it grants a capability that has no substitute (COM/RS-485 port access); and it is in NO
+         shared framework at any TFM — verified on this machine rather than assumed:
+         C:\Program Files\dotnet\shared\Microsoft.NETCore.App\{10.0.10,10.0.8,8.0.29} and
+         Microsoft.WindowsDesktop.App both contain no System.IO.Ports.dll, so it genuinely has to be
+         restored.
+
+         WHY IT IS IN A SEPARATE PROJECT rather than in St4i.EdgeCore beside the RTU framing layer it
+         serves. NuGet copies a restored package's runtime assets into the output directory of EVERY
+         project that transitively ProjectReferences it, whether or not that project's own IL touches a
+         single type from it — the mechanism GĐ3 closeout WI-1 already had to unpick once for
+         Makaretu.Dns (see St4i.EdgeCore.csproj's own comment, and MakaretuNotShippedTests). Putting the
+         PackageReference on St4i.EdgeCore would therefore have put System.IO.Ports.dll into the build
+         output of St4i.EdgeService, St4i.EngineApi and the WPF shell — i.e. into a gateway-only
+         deployment, which the brief forbids. Scoping it here makes "the RTU framing layer and the gateway
+         transport compile and run without it" a STRUCTURAL fact (they cannot see the types at all) rather
+         than an inspection result; SerialDependencyScopingTests proves both halves, with a positive
+         control so the absence assertions cannot pass vacuously.
+
+         WHAT THIS DOES AND DOES NOT BUY, stated so nobody over-reads it: a build that references this
+         project ships the serial dependency, and one that does not, does not.
+
+         🔴 TASK D-7c ANSWERED THAT CHOICE, and the answer inverts the paragraph that used to end this
+         comment. D-3 recorded "today NOTHING in src/ references this project, so every shipping output is
+         serial-free". That is no longer true and must not be left standing: on the owner's ruling of
+         2026-08-03 all three hosts — St4i.EngineApi, St4i.EdgeService and St4iMachineSimulator — now
+         ProjectReference this assembly, and all three therefore ship System.IO.Ports.dll. The three
+         deployment assertions in SerialDependencyScopingTests were INVERTED to match (they now assert the
+         dependency IS present) rather than deleted, so the capability cannot vanish silently in a later
+         refactor.
+
+         WHAT DID NOT CHANGE, and is the whole remaining point of this project: the PackageReference stays
+         HERE and only here. St4i.EdgeCore — the RTU framing layer, the arbitration, the quarantine and the
+         gateway transport — still compiles with no System.IO.Ports in sight, and
+         SerialDependencyScopingTests.TheRtuFramingLayersOwnAssembly_ReferencesNeitherSystemIoPorts_NorTheSerialAssembly
+         is untouched and still green. That assertion is what stops someone "simplifying" the layout by
+         moving SerialPortBusLink back beside the seam it implements, which would push the package into every
+         consumer of EdgeCore rather than into the three deliberate ones. -->
+
+    <PackageReference Include="System.IO.Ports" Version="10.0.0" />
+  </ItemGroup>
+</Project>

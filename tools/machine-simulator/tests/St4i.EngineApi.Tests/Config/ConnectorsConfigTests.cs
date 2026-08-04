@@ -348,6 +348,66 @@ public sealed class ConnectorsConfigTests
         Assert.Empty(resolved);
     }
 
+    /// <summary>
+    /// 🔴 Task D-7a — <b>both rules compare on the REGISTRATION KEY, and the resolver is what supplies it.</b>
+    ///
+    /// <para>Two entries of one kind used to be a duplicate by definition, because both built-in arms register
+    /// under the kind. A Modbus RTU BUS does not: it registers under its own instance id and fans out into N
+    /// instances, so two RS-485 lines in one file are two connectors that do not conflict — and neither of them
+    /// conflicts with an <c>ST4I_MODBUS_MAP</c>-configured TCP connector. Driven here with a stand-in resolver
+    /// so this test says what the RULE is rather than restating the production predicate;
+    /// <c>ConnectorsJsonRegistrationTests</c> drives the real one.</para>
+    /// </summary>
+    [Fact]
+    public void ResolveEntries_withARegistrationKeyResolver_deDuplicatesOnThatKeyRatherThanTheKind()
+    {
+        var entries = new[]
+        {
+            new ConnectorConfigEntry("line1", DriverKinds.Modbus, """{"transport":"rtu-gateway"}"""),
+            new ConnectorConfigEntry("line2", DriverKinds.Modbus, """{"transport":"rtu-gateway"}"""),
+            new ConnectorConfigEntry("line1-again", DriverKinds.Modbus, """{"transport":"rtu-gateway"}"""),
+        };
+        var warnings = new List<string>();
+
+        // The stand-in: "an entry whose settings mention a transport registers under its own id". line1 and
+        // line1-again deliberately collapse onto ONE key so the de-duplication is still proved to fire.
+        static string KeyOf(ConnectorConfigEntry e) =>
+            e.SettingsJson.Contains("transport", StringComparison.Ordinal)
+                ? e.Id.Replace("-again", string.Empty, StringComparison.Ordinal)
+                : e.Kind;
+
+        var resolved = ConnectorsConfig.ResolveEntries(entries, new HashSet<string>(), warnings.Add, KeyOf);
+
+        Assert.Equal(new[] { "line1", "line2" }, resolved.Select(e => e.Id));
+        var warning = Assert.Single(warnings);
+        Assert.Contains("line1-again", warning);
+    }
+
+    /// <summary>🔴 The compatibility half of the same change: with NO resolver supplied, this method behaves
+    /// byte-for-byte as it did before D-7a — which is what the three tests above already pin, and what this one
+    /// states as the contract rather than leaving as a coincidence of their inputs. The env-precedence set
+    /// still holds KINDS, so an entry whose key is its own id is never suppressed by an env-configured
+    /// connector of the same protocol.</summary>
+    [Fact]
+    public void ResolveEntries_envPrecedence_comparesTheRegistrationKey_soAnInstanceKeyedEntrySurvives()
+    {
+        var entries = new[]
+        {
+            new ConnectorConfigEntry("plain-modbus", DriverKinds.Modbus, "{}"),
+            new ConnectorConfigEntry("rs485-line1", DriverKinds.Modbus, """{"transport":"rtu-gateway"}"""),
+        };
+        var alreadyConfigured = new HashSet<string> { DriverKinds.Modbus };
+
+        static string KeyOf(ConnectorConfigEntry e) =>
+            e.SettingsJson.Contains("transport", StringComparison.Ordinal) ? e.Id : e.Kind;
+
+        var resolved = ConnectorsConfig.ResolveEntries(entries, alreadyConfigured, logWarning: null, KeyOf);
+
+        // The kind-keyed entry is suppressed by the env var, exactly as before. The instance-keyed one is not:
+        // it is a different connector that merely shares a protocol.
+        Assert.Equal(new[] { "rs485-line1" }, resolved.Select(e => e.Id));
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // End-to-end (no ASP.NET host, no network I/O): a connectors.json entry, parsed by THIS class, feeds
     // the REAL (production) ModbusConnectorFactory/ConnectorRegistry and produces a genuinely working

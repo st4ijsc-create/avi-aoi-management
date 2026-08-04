@@ -7,6 +7,24 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\St4i.EdgeCore\St4i.EdgeCore.csproj" />
+    <!-- 🔴 Task D-7c — the owner's ruling of 2026-08-03: direct RS-485 goes into ALL THREE hosts, so all three
+         reference St4i.EdgeCore.Serial and all three ship System.IO.Ports.dll. The accepted cost (a
+         gateway-only site carrying an OS-specific dependency it never uses) is the owner's call and is
+         recorded in the Đợt D ledger.
+
+         🔴 WHAT THIS REFERENCE DOES AND DOES NOT DO IN *THIS* HOST, measured rather than assumed, because the
+         ruling's stated basis was that EdgeWorker.cs uses FleetHost/ConnectorRegistry and it does not:
+         St4i.EdgeService has NO connector plumbing whatsoever — no ConnectorRegistry, no IConnectorFactory,
+         no connectors.json reader. EdgeWorker.ExecuteAsync builds one SimulatedDriver from fleet.json and
+         nothing else; ConnectorRegistry and FleetHost are St4i.EngineApi types and are referenced nowhere
+         under src/ outside that project. So this reference makes the serial transport AVAILABLE to this host
+         and nothing more: no code path here can open a COM port today, and giving it one means giving this
+         host a connector registry first, which is a separate piece of work nobody has scoped.
+
+         Stated here, and asserted in the honest form by
+         SerialDependencyScopingTests.EdgeServiceDeployment_CarriesSystemIoPorts_…, so that the shipped
+         artifact and the record of why it ships agree. -->
+    <ProjectReference Include="..\St4i.EdgeCore.Serial\St4i.EdgeCore.Serial.csproj" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
   </ItemGroup>
 </Project>
