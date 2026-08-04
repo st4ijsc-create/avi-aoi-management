@@ -49,9 +49,12 @@ vi.mock("./vramProbe", () => ({
   __resetVramProbeCacheForTests: () => {},
 }));
 const daTatSidecar = vi.hoisted(() => ({ n: 0 }));
-vi.mock("../llamaVisionSidecar", () => ({
-  stopSidecar: async () => { daTatSidecar.n += 1; },
-}));
+vi.mock("../llamaVisionSidecar", async (goc) => {
+  // ⚠ `importOriginal`: ta CHỈ thay `stopSidecar` (người thi hành), còn `visionSidecarVramRequest()`
+  // phải là bản THẬT — nó chính là thứ ca "đường thoát" bên dưới đọc.
+  const that = await goc<typeof import("../llamaVisionSidecar")>();
+  return { ...that, stopSidecar: async () => { daTatSidecar.n += 1; } };
+});
 
 import {
   reserve, release, snapshot, noteDeviceTotalBytes, setLeaseRefCount, deviceTotalBytes,
@@ -449,6 +452,22 @@ describe("C-bis. LƯỚI THEO ĐƯỜNG THOÁT — `beginVramAllocation()` là n
     ).rejects.toSatisfy((e: unknown) => isVramRefusal(e));
     expect(daDonModel).toEqual([]);
     expect(snapshot().totalReservedBytes).toBe(1 * MIB);   // lượt bị từ chối KHÔNG ghi byte nào
+  });
+
+  /**
+   * ★★★ ĐỘT BIẾN ĐÃ SỐNG SÓT MỘT LẦN, và đây là lưới vá nó: gỡ `reclaimer: "vision-sidecar"` khỏi
+   * điểm gọi SẢN XUẤT cho **538/538 XANH**, vì mọi ca khác tự dựng hộ sidecar bằng tay. Hộ 7,8 GB
+   * khi đó biến khỏi `preempt()` và khỏi "tổng nhường được" — IM LẶNG.
+   */
+  it("★★★ điểm gọi SẢN XUẤT của sidecar thị giác THẬT SỰ khai người thi hành", async () => {
+    const { visionSidecarVramRequest } = await import("../llamaVisionSidecar");
+    const yc = visionSidecarVramRequest();
+    expect(yc.owner).toBe("sidecar:vision");
+    expect(yc.kind).toBe("external-process");
+    expect(yc.reclaimer).toBe<VramReclaimerId>("vision-sidecar");
+    // và bằng chứng nhả PHẢI là lớp mạnh nhất — nếu ai hạ nó xuống "unverified" thì lời hứa
+    // "thu hồi được" mất chỗ dựa.
+    expect(yc.releaseProof).toBe("process-exit");
   });
 });
 

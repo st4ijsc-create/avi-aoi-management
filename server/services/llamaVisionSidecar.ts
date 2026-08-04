@@ -160,6 +160,54 @@ export function isVisionSidecarAvailable(): boolean {
   }
 }
 
+/**
+ * ★★★ Pha 2B Task 7 — **LƯỚI THEO ĐƯỜNG THOÁT cho chính lời khai của hộ này.**
+ *
+ * Đột biến *"gỡ `reclaimer` ở điểm gọi sản xuất"* **đã SỐNG SÓT 538/538** khi lời khai còn nằm
+ * trực tiếp trong thân `ensureSidecar()`: mọi ca của Task 7 tự dựng hộ sidecar bằng tay nên
+ * **không ca nào đọc cái mà đường sản xuất thật sự gửi đi**. Gỡ lời khai = hộ 7,8 GB biến khỏi
+ * `preempt()` và khỏi "tổng nhường được" — IM LẶNG. Đúng lớp *"lưới đi theo FILE chứ không theo
+ * ĐƯỜNG THOÁT"* (bài học Task 5, tái diễn ở Task 6, và tái diễn LẦN NỮA ở đây).
+ *
+ * ⇒ Tách thành MỘT hàm THUẦN: đường sản xuất truyền THẮNG kết quả của nó vào
+ * `beginVramAllocation()`, và một ca test đọc ĐÚNG object ấy.
+ * ⚠ Khoảng hở còn lại, khai thẳng: ai thôi dùng hàm này và viết lại object tại chỗ thì lưới lại mù.
+ * Bề mặt đó nhỏ hơn hẳn một thân hàm 40 dòng, nhưng nó KHÔNG bằng không.
+ */
+export function visionSidecarVramRequest() {
+  return {
+      owner: "sidecar:vision",
+      kind: "external-process",
+      priority: "interactive",
+      /**
+       * ★★★ Pha 2B Task 7 (§8) — **HỘ NÀY THU HỒI ĐƯỢC, VÀ ĐÂY LÀ MỞ RỘNG DUY NHẤT CỦA
+       * `preempt()` NGOÀI GGUF.**
+       *
+       * Lý do nó đủ điều kiện trong khi ONNX/trainer thì không:
+       *   1. đường thu hồi ĐÃ TỒN TẠI và đã chạy hàng ngày — chính module này gọi `stopSidecar()`
+       *      khi hết hạn nhàn rỗi (`LLAMA_VISION_IDLE_TIMEOUT_MS`);
+       *   2. bằng chứng nhả là `"process-exit"` — **lớp mạnh nhất trong repo** (OS thu hồi VRAM khi
+       *      tiến trình chết), khác hẳn `"unverified"` của ONNX (chỉ gỡ tham chiếu JS);
+       *   3. nó là hộ tiêu thụ **LỚN NHẤT hệ** (7,8 GB đo được ở Đợt 0) — và từng vắng mặt khỏi MỌI
+       *      phép cộng VRAM suốt ba đợt.
+       * ⚠ `nguoiThiHanhThuHoi()` chỉ cho phép khi `refCount === 0` ⇒ không bao giờ giết ngang một
+       * request thị giác đang bay. `noteRefCount()` dưới đây là thứ giữ lời hứa đó.
+       */
+      reclaimer: "vision-sidecar",
+      // ⚠ 7825 là hằng số ĐO ĐƯỢC ở Đợt 2, dùng cho LƯỢT ĐẦU TIÊN thôi — sau lượt commit đầu
+      // (xem `vramTicket.commitMeasured()` dưới), bộ ước lượng dùng số THẬT (nấc "learned").
+      // Truyền qua `configDefaultBytes` (không hard-code thẳng vào estimatedBytes) để sự kiện
+      // ghi `estimateSource: "config-default"` — dấu vết để Task 7 truy "chỗ nào còn dựa hằng số".
+      configDefaultBytes: Number(process.env.VRAM_SIDECAR_ESTIMATE_MB ?? 7825) * 1024 * 1024,
+      // Sidecar tự tắt sau IDLE_TIMEOUT_MS (mặc định 10 phút) nhàn rỗi — ttlMs PHẢI dài hơn,
+      // nếu không reconciler tưởng nó chết trong khi nó đang sống khoẻ.
+      ttlMs: Number(process.env.VRAM_SIDECAR_TTL_MS ?? 900_000),
+      // I-1 — bằng chứng nhả: tiến trình con đã CHẾT (OS thu hồi VRAM). Xem bảng bốn điểm
+      // nhả ở đầu `vram/vramWiring.ts` và ghi chú dài trong `stopSidecar()`.
+      releaseProof: "process-exit",
+  } as const;
+}
+
 // ─── Process lifecycle (singleton) ─────────────────────────────
 
 interface SidecarState {
@@ -275,37 +323,7 @@ export async function ensureSidecar(): Promise<void> {
     let vramTicket: VramTicket = { commitMeasured: async () => {}, release: () => {}, noteRefCount: () => {} };
     try {
       const { beginVramAllocation } = await import("./vram/vramWiring");
-      vramTicket = await beginVramAllocation({
-        owner: "sidecar:vision",
-        kind: "external-process",
-        priority: "interactive",
-        /**
-         * ★★★ Pha 2B Task 7 (§8) — **HỘ NÀY THU HỒI ĐƯỢC, VÀ ĐÂY LÀ MỞ RỘNG DUY NHẤT CỦA
-         * `preempt()` NGOÀI GGUF.**
-         *
-         * Lý do nó đủ điều kiện trong khi ONNX/trainer thì không:
-         *   1. đường thu hồi ĐÃ TỒN TẠI và đã chạy hàng ngày — chính module này gọi `stopSidecar()`
-         *      khi hết hạn nhàn rỗi (`LLAMA_VISION_IDLE_TIMEOUT_MS`);
-         *   2. bằng chứng nhả là `"process-exit"` — **lớp mạnh nhất trong repo** (OS thu hồi VRAM khi
-         *      tiến trình chết), khác hẳn `"unverified"` của ONNX (chỉ gỡ tham chiếu JS);
-         *   3. nó là hộ tiêu thụ **LỚN NHẤT hệ** (7,8 GB đo được ở Đợt 0) — và từng vắng mặt khỏi MỌI
-         *      phép cộng VRAM suốt ba đợt.
-         * ⚠ `nguoiThiHanhThuHoi()` chỉ cho phép khi `refCount === 0` ⇒ không bao giờ giết ngang một
-         * request thị giác đang bay. `noteRefCount()` dưới đây là thứ giữ lời hứa đó.
-         */
-        reclaimer: "vision-sidecar",
-        // ⚠ 7825 là hằng số ĐO ĐƯỢC ở Đợt 2, dùng cho LƯỢT ĐẦU TIÊN thôi — sau lượt commit đầu
-        // (xem `vramTicket.commitMeasured()` dưới), bộ ước lượng dùng số THẬT (nấc "learned").
-        // Truyền qua `configDefaultBytes` (không hard-code thẳng vào estimatedBytes) để sự kiện
-        // ghi `estimateSource: "config-default"` — dấu vết để Task 7 truy "chỗ nào còn dựa hằng số".
-        configDefaultBytes: Number(process.env.VRAM_SIDECAR_ESTIMATE_MB ?? 7825) * 1024 * 1024,
-        // Sidecar tự tắt sau IDLE_TIMEOUT_MS (mặc định 10 phút) nhàn rỗi — ttlMs PHẢI dài hơn,
-        // nếu không reconciler tưởng nó chết trong khi nó đang sống khoẻ.
-        ttlMs: Number(process.env.VRAM_SIDECAR_TTL_MS ?? 900_000),
-        // I-1 — bằng chứng nhả: tiến trình con đã CHẾT (OS thu hồi VRAM). Xem bảng bốn điểm
-        // nhả ở đầu `vram/vramWiring.ts` và ghi chú dài trong `stopSidecar()`.
-        releaseProof: "process-exit",
-      });
+      vramTicket = await beginVramAllocation(visionSidecarVramRequest());
     } catch (err) {
       // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG. Hộ này là hộ tiêu thụ LỚN NHẤT hệ (7,8 GB
       // đo được) và từng vắng mặt khỏi MỌI phép cộng VRAM suốt Đợt 0 — nuốt lời từ chối ở đúng
