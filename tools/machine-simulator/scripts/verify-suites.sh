@@ -695,7 +695,42 @@ EXPECT_CONFORMANCE=22
 #          TheRtuFramingLayersOwnAssembly_ReferencesNeitherSystemIoPorts_NorTheSerialAssembly, is UNTOUCHED and
 #          still green — it is what forces D-7c's design, since the circular-reference-free alternative would
 #          have required inverting it.
-EXPECT_EDGECORE=1053
+#
+# 🔴 D-7c's REVIEW FIX ROUND raises this 1053 -> 1071 (+18). It is the ONLY total that moves — EXPECT_ENGINEAPI
+# stays 1226 because the round's EngineApi edits are doc comments (review M-1's pair obligation, and the I-3
+# correction on the lease test's own remarks). No test is rewritten, split or deleted.
+#
+#   + 1  SerialPortBusLinkTests — 🔴 review I-3, and the finding is that D-7c's report said this could not be
+#          done. OneOpenForNLeases_ObservedThroughTheSerialLink_AndTheLastReleaseClosesThePort OBSERVES what
+#          the EngineApi test derives: the opener mints one handle per call so the openings are COUNTED (1 for
+#          3 leases), ModbusBus.LinkGeneration is pinned at 1, and the PORT's own IsOpen is asserted after each
+#          release — open, open, CLOSED. The shipped test asserted LeaseCount, correctly rejected it for the
+#          final check, and substituted HasBus: the same witness one field over, both being the registry's own
+#          bookkeeping, while the thing protected is a COM port not held to process exit. Everything it needs
+#          already existed for exactly this reason — AdoptHandle is internal behind D-3's InternalsVisibleTo
+#          and FakeSerialPortHandle.Unpaired is D-6's. No hardware, no virtual COM pair, no conditional skip.
+#   + 8  ModbusRtuSerialBusSettingsTests — 🔴 review I-2, the THIRD direction of the sweep. A devices[] element
+#          carrying a BUS-level key was accepted, did nothing, and was copied VERBATIM into that device's
+#          MapJson, which falsified D-7c report section 6's structural guarantee for any malformed document.
+#          ModbusMultidropMap now refuses BusLevelKeys inside an element, mirroring the DeviceLevelKeys check
+#          at the root it already had. The [Theory]'s 8 rows are the two parsers' own const fields, which makes
+#          it the DRIFT GUARD for a list that cannot be shared: half those keys are declared in
+#          St4i.EdgeCore.Serial, which St4i.EdgeCore may never reference, so BusLevelKeys must hold literals.
+#   + 1  ModbusRtuSerialBusSettingsTests — the same leak in its PUREST shape, found while fixing I-2 and not
+#          named by the review: FanOut's DEGENERATE branch makes the root simultaneously the bus and its only
+#          device, so {"transport":"rtu-serial","portName":"COM3","machineCode":"M1",…} stored the port path
+#          inside the device's configuration with nothing malformed anywhere. Now refused, with a control
+#          proving an ordinary legacy single-device map still fans out under its own instance id unchanged.
+#   + 5  ModbusRtuSerialBusSettingsTests — 🔴 review M-2 (4 [Theory] rows + 1 fact). A misspelled key of the
+#          operator's OWN transport was silently ignored: {"portName":"COM31","baudrate":9600,"Parity":"none"}
+#          parsed to 19200-8-E-1 — TryGetProperty is case-sensitive — so the operator asked for 9600-8-N-1 and
+#          got a line whose parity mismatch has no symptom but a device that never answers. The near-miss
+#          ("Did you mean 'baudRate'?") is asserted, not merely the refusal.
+#   + 3  ModbusRtuBusSettingsTests — M-2 swept to the GATEWAY parser (2 rows) rather than matched, per the
+#          coordinator's ruling, through ONE shared implementation with a per-transport key list so the two
+#          cannot diverge; plus 1 fact pinning that the unknown-key refusal runs LAST and never pre-empts a
+#          more specific one ('portName' on a gateway bus must still be answered by the cross-transport rule).
+EXPECT_EDGECORE=1071
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:

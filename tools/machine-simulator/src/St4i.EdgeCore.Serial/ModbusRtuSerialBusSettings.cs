@@ -137,6 +137,18 @@ public sealed record ModbusRtuSerialBusSettings(string Transport, SerialLineSett
         ("mark", Parity.Mark), ("space", Parity.Space),
     };
 
+    /// <summary>🔴 Fix round 1, review M-2 — every root key an <c>rtu-serial</c> document may carry. Anything
+    /// else is refused rather than ignored (see <see cref="ModbusRtuBusSettings.RefuseUnknownBusLevelKey"/>).
+    /// <see cref="ModbusMultidropMap.DevicesProperty"/> is in the list because the two parsers read the SAME
+    /// document and this one must not refuse the half it does not read. The gateway transport's own
+    /// <c>host</c>/<c>port</c> are deliberately NOT here — they are refused earlier, by a rule that says where
+    /// they belong instead of merely that they are unrecognised.</summary>
+    private static readonly string[] SerialBusKeys =
+    {
+        ModbusRtuBusSettings.TransportProperty, PortNameProperty, BaudRateProperty, ParityProperty,
+        DataBitsProperty, StopBitsProperty, ModbusMultidropMap.DevicesProperty,
+    };
+
     /// <summary>
     /// Parses the bus-level half of an <c>rtu-serial</c> <c>settings</c> document. The DEVICE half is
     /// <see cref="ModbusMultidropMap.FanOut"/>'s and is deliberately not touched here — the same document is
@@ -189,6 +201,19 @@ public sealed record ModbusRtuSerialBusSettings(string Transport, SerialLineSett
         // ("I set the port to 4001") is wrong in the one direction that puts a write on a line they did not mean.
         RefuseGatewayField(root, "host");
         RefuseGatewayField(root, "port");
+
+        // 🔴 Fix round 1, review M-2 — AFTER the cross-transport refusals above and BEFORE every value check
+        // below, and the ordering was decided by a failing test rather than by argument.
+        //
+        // AFTER, because 'host'/'port' must be answered by the rule that says WHICH TRANSPORT they belong to,
+        // never by "unrecognised".
+        //
+        // BEFORE the required-'portName' check, because that is where the first draft put it and the
+        // `"portname":"COM3"` row went red: the operator was told *"'portName' is required"* while looking at a
+        // document that visibly contains a portname. A true sentence that reads as a lie is D-5's I-1 shape, and
+        // it is exactly what this fix exists to remove — so the misspelling is named first, and only a document
+        // with no such key at all falls through to "required".
+        ModbusRtuBusSettings.RefuseUnknownBusLevelKey(root, ModbusRtuBusSettings.SerialTransport, SerialBusKeys);
 
         if (!root.TryGetProperty(PortNameProperty, out var portNameProperty)
             || portNameProperty.ValueKind != JsonValueKind.String

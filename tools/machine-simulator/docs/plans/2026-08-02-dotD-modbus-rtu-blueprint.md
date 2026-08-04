@@ -73,7 +73,31 @@ Gỡ chặn = đổi định danh connector từ **theo giao thức** sang **the
 
 Lý do chấp nhận: gói do **chính Microsoft phát hành**, không phải thư viện tiện ích bên thứ ba; nó cấp một **năng lực mới không thể thay thế** (truy cập cổng COM/RS-485), không phải sự tiện lợi; và nó **không có trong shared framework** ở bất kỳ TFM nào — đã kiểm.
 
-**Giới hạn:** chỉ D-3 được phụ thuộc vào nó. Tầng đóng khung RTU và transport TCP-gateway **phải biên dịch được mà không có nó**, để một triển khai dùng gateway không kéo theo phụ thuộc serial.
+**Giới hạn — 🔴 ĐÍNH CHÍNH sau D-7c (review D-7c, I-1). Câu cũ giờ SAI và phải đọc bản mới:**
+
+*Câu cũ:* ~~"chỉ D-3 được phụ thuộc vào nó … để một triển khai dùng gateway không kéo theo phụ thuộc serial."~~
+Cả hai vế đều **không còn đúng**: **ba** host phụ thuộc vào nó, và **mọi** triển khai — kể cả nơi chỉ dùng
+gateway — đều mang `System.IO.Ports.dll`.
+
+*Câu đúng:* **`PackageReference` chỉ nằm ở đúng MỘT project — `St4i.EdgeCore.Serial`** — và đó là ranh giới
+duy nhất còn hiệu lực. Cái đã đổi là **project nào tham chiếu assembly ấy**, chứ không phải nơi đặt
+`PackageReference`. Theo **quyết định của chủ sản phẩm ngày 2026-08-03**, cả `St4i.EngineApi`,
+`St4i.EdgeService` và `St4iMachineSimulator` đều `ProjectReference` tới `St4i.EdgeCore.Serial`, để RS-485 cắm
+thẳng có mặt ở mọi host. Ba chốt `..._NeverCarriesSystemIoPorts` trong `SerialDependencyScopingTests` đã được
+**đảo thành khẳng định DƯƠNG** (không xoá — một chốt bị xoá để năng lực biến mất im lặng), còn chốt thứ tư —
+`TheRtuFramingLayersOwnAssembly_ReferencesNeitherSystemIoPorts_NorTheSerialAssembly` — **giữ nguyên, không
+đụng tới**, và chính nó là thứ ép hình dạng của D-7c.
+
+🔴 **Trạng thái người đọc dễ hiểu sai, nên nói thẳng:** đo được ở thời điểm D-7c, **chỉ `St4i.EngineApi` có
+đường mã nào mở được cổng COM.** `ConnectorRegistry`/`ConnectorsConfig`/`ConnectorsJsonRegistration`/
+`ModbusMultidropRegistration`/`FleetHost` đều là kiểu của `St4i.EngineApi`, và **hai host còn lại thậm chí
+không `ProjectReference` tới `St4i.EngineApi`** — nên chúng **mang phụ thuộc mà không có gì gọi được nó**.
+`EdgeWorker.cs` dựng một `SimulatedDriver`; `FleetService.cs` dựng `ScenarioAwareDriver`/`HotFolderAoiDriver`.
+Biến điều đó thành năng lực thật là tách tầng hosting ra thư viện dùng chung — **một việc cỡ D-1, chưa ai
+lên phạm vi (D-7d)**, không phải một dòng csproj.
+
+Tầng đóng khung RTU và transport TCP-gateway **vẫn phải biên dịch được mà không có nó** — câu này **không
+đổi**, và đó chính là điều chốt thứ tư ghim.
 
 ## 7. Phân rã công việc
 

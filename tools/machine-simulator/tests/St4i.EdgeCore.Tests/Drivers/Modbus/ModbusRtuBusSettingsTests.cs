@@ -201,6 +201,44 @@ public sealed class ModbusRtuBusSettingsTests
         Assert.Contains("one port per physical line", error.Message);
     }
 
+    /// <summary>
+    /// 🔴 <b>Fix round 1, review M-2 — the gateway parser had the SAME silently-ignored-key hole, and the
+    /// coordinator's ruling is that the consistency is the argument for fixing rather than for matching.</b>
+    ///
+    /// <para>Both parsers now go through one implementation
+    /// (<see cref="ModbusRtuBusSettings.RefuseUnknownBusLevelKey"/>) with a per-transport key list, so "they
+    /// cannot diverge" is structural rather than a promise. The gateway's exposure is smaller than the serial
+    /// one's — a misspelled <c>host</c> or <c>port</c> is refused for being ABSENT, which is loud — but
+    /// <c>"Port": 4001</c> was accepted as an unknown key and then the bus was refused for having no
+    /// <c>'port'</c>, which tells an operator staring at a document containing <c>Port</c> that <c>port</c> is
+    /// missing. That is the D-5 I-1 shape again: a true statement that reads as a lie.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("""{"transport":"rtu-gateway","host":"h","port":4001,"Port":4002}""", "Port", "port")]
+    [InlineData("""{"transport":"rtu-gateway","host":"h","port":4001,"HOST":"h2"}""", "HOST", "host")]
+    public void AMisspelledGatewayKey_IsRefusedWithTheNearMiss_NotSilentlyIgnored(
+        string settingsJson, string written, string meant)
+    {
+        var error = Assert.Throws<InvalidOperationException>(() => ModbusRtuBusSettings.Parse(settingsJson));
+
+        Assert.Contains($"'{written}'", error.Message, StringComparison.Ordinal);
+        Assert.Contains($"Did you mean '{meant}'?", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>🔴 Fix round 1 — the unknown-key check runs LAST, so every more specific refusal still wins.
+    /// <c>portName</c> on a gateway bus must be answered by the cross-transport rule (which says which transport
+    /// it belongs to), never by "unrecognised" — the specific message is strictly more useful and the ordering
+    /// is the only thing that keeps it reachable.</summary>
+    [Fact]
+    public void TheUnknownKeyRefusal_NeverPreemptsAMoreSpecificOne()
+    {
+        var error = Assert.Throws<InvalidOperationException>(() => ModbusRtuBusSettings.Parse(
+            """{"transport":"rtu-gateway","host":"h","port":4001,"portName":"COM3"}"""));
+
+        Assert.Contains(ModbusRtuBusSettings.SerialTransport, error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("not a key this build reads", error.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TransportMatchingIsCaseInsensitive_AndTrimmed()
     {

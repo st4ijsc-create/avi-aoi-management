@@ -1740,13 +1740,17 @@ fallback profile for every Modbus machine today).
 
 > 🔴 **Modbus RTU status, corrected (Đợt D task D-7c).** This paragraph used to say "**Modbus RTU
 > (serial)** is not implemented — TCP only". That is no longer true, and the correction matters because
-> the sentence is one an integrator would act on. RTU ships in two transports, both declared in
-> `connectors.json` (§16.7) by a `transport` field inside a Modbus entry's `settings`:
+> the sentence is one an integrator would act on. RTU ships in two transports, declared by a `transport`
+> field inside a Modbus entry's `settings` in `connectors.json` (§16.7 covers that file's general
+> mechanics — loading, precedence, per-entry failure — but **says nothing about RTU**; the RTU schema is
+> stated here and nowhere else until D-7b's documentation census lands):
 > `"rtu-gateway"` (RTU framing over a TCP serial device server: `host` + `port`) and `"rtu-serial"`
 > (a **directly-attached COM port**: `portName`, plus optional `baudRate`/`parity`/`dataBits`/`stopBits`,
 > defaulting to MODBUS-over-Serial-Line's **19200-8-E-1** rather than `SerialPort`'s own 9600-8-N-1).
-> One entry declares a whole multidrop **bus**: its `devices` array fans out into one connector instance
-> per device, all sharing one open port and one arbitration lock.
+> One entry declares a whole multidrop **bus**: its `devices` array — required, **even for a single
+> device** — fans out into one connector instance per device, all sharing one open port and one
+> arbitration lock. Bus-level keys go beside `devices`, never inside an element, and an unrecognised or
+> misspelled key is **refused** rather than silently ignored.
 >
 > **Two limits, stated here rather than discovered on a bench.** (1) **RS-485 direction control must be
 > AUTOMATIC** (auto-DE / TXDEN adapters). This product drives no transmit-enable line and cannot —

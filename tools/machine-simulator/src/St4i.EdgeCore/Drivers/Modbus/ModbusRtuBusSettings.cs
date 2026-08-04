@@ -261,7 +261,85 @@ public sealed record ModbusRtuBusSettings(string Transport, string Host, int Por
                 "reaches the wrong bus.");
         }
 
+        // 🔴 Fix round 1, review M-2 — LAST, deliberately. Every refusal above is more specific than "I do not
+        // know that key", so a document that trips one of them must get that message rather than this one. In
+        // particular 'portName' is caught above by the cross-transport rule, which tells the operator which
+        // transport it belongs to; reaching it through here would tell them only that it is unrecognised.
+        RefuseUnknownBusLevelKey(root, GatewayTransport, GatewayBusKeys);
+
         return new ModbusRtuBusSettings(GatewayTransport, hostProperty.GetString()!.Trim(), port);
+    }
+
+    /// <summary>Every root key a <see cref="GatewayTransport"/> document may carry.
+    /// <see cref="ModbusMultidropMap.DevicesProperty"/> is in the list because the two parsers read the SAME
+    /// document and this one must not refuse the half it does not read.</summary>
+    private static readonly string[] GatewayBusKeys =
+    {
+        TransportProperty, "host", "port", ModbusMultidropMap.DevicesProperty,
+    };
+
+    /// <summary>
+    /// 🔴 Fix round 1, review M-2 — <b>a bus-level key this build does not recognise is REFUSED, not ignored,
+    /// and a near-miss is named.</b> Shared by both bus-settings parsers: this one and
+    /// <c>ModbusRtuSerialBusSettings</c> in <c>St4i.EdgeCore.Serial</c>, which calls it with its own key list.
+    ///
+    /// <para><b>The measured failure it closes.</b>
+    /// <c>{"transport":"rtu-serial","portName":"COM31","baudrate":9600,"Parity":"none", …}</c> parsed cleanly to
+    /// <c>modbus-rtu-serial:COM31:19200:8:E:1</c> — <see cref="System.Text.Json.JsonElement.TryGetProperty(string,out System.Text.Json.JsonElement)"/>
+    /// is case-sensitive and nothing refused the two misspellings. <b>The operator asked for 9600-8-N-1 and got
+    /// 19200-8-E-1.</b> That lands in the one place with no symptom: this file's own doc warns that "a parity
+    /// mismatch never throws on the wire: it surfaces as a device that simply never answers", which is
+    /// indistinguishable from a wiring fault or a wrong unit id.</para>
+    ///
+    /// <para><b>Why ONE implementation for two parsers in two assemblies.</b> The review graded this Minor for
+    /// consistency with the pre-existing gateway parser; the coordinator's ruling is that the consistency is the
+    /// argument for fixing rather than for matching, and that the two must not silently diverge. A shared method
+    /// with a per-transport key list is what makes "they cannot diverge" structural instead of a promise —
+    /// <c>St4i.EdgeCore.Serial</c> references this assembly, so the dependency runs the only direction it can.</para>
+    ///
+    /// <para><b>The near-miss half is the actionable half.</b> An unknown key that matches a known one
+    /// case-insensitively is reported as <i>"did you mean 'baudRate'?"</i>, because the failure this closes is a
+    /// misspelling of the operator's OWN key, not an invented one.</para>
+    /// </summary>
+    /// <param name="root">The already-validated <c>settings</c> object.</param>
+    /// <param name="transportToken">Named in the message so an operator with two buses knows which one.</param>
+    /// <param name="knownKeys">Every root key this transport's parser reads, plus the device half's own.</param>
+    /// <exception cref="InvalidOperationException">A root key outside <paramref name="knownKeys"/>.</exception>
+    public static void RefuseUnknownBusLevelKey(
+        JsonElement root, string transportToken, IReadOnlyList<string> knownKeys)
+    {
+        ArgumentNullException.ThrowIfNull(knownKeys);
+
+        foreach (var property in root.EnumerateObject())
+        {
+            var known = false;
+            string? nearMiss = null;
+
+            foreach (var candidate in knownKeys)
+            {
+                if (string.Equals(property.Name, candidate, StringComparison.Ordinal))
+                {
+                    known = true;
+                    break;
+                }
+
+                if (string.Equals(property.Name, candidate, StringComparison.OrdinalIgnoreCase))
+                {
+                    nearMiss = candidate;
+                }
+            }
+
+            if (known) continue;
+
+            var suggestion = nearMiss is null
+                ? $"Keys this transport understands: {string.Join(", ", knownKeys.Select(k => $"'{k}'"))}."
+                : $"Did you mean '{nearMiss}'? Keys are case-SENSITIVE.";
+
+            throw new InvalidOperationException(
+                $"Modbus RTU bus ('{transportToken}'): '{property.Name}' is not a key this build reads, so it " +
+                $"would have been SILENTLY IGNORED — and the bus would have run on defaults the document does " +
+                $"not state. {suggestion}");
+        }
     }
 
     /// <summary>The shared bus's key, built by the link type's own <c>CreateBusKey</c> and never by string

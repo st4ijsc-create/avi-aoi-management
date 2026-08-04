@@ -133,6 +133,43 @@ public static class ModbusMultidropMap
     };
 
     /// <summary>
+    /// 🔴 Task D-7c fix round 1, review I-2 — <b>the mirror of <see cref="DeviceLevelKeys"/>: every key that
+    /// belongs to the BUS, none of which may appear inside a <see cref="DevicesProperty"/> element.</b>
+    ///
+    /// <para><b>The leak this closes, measured.</b> A device element carrying <c>"portName":"COM99"</c> (or
+    /// <c>baudRate</c>, <c>parity</c>, <c>transport</c>, …) was accepted by every parser, did nothing, and was
+    /// copied <b>verbatim into that device's <c>MapJson</c></b> — because a device's stored configuration is its
+    /// own array element's raw text. Two separate defects in one: the file on disk and the configuration
+    /// actually running were different (D-4's I-2 exactly, one level down), and a machine-identifying port path
+    /// ended up inside the very column D-7a's projection decision keeps it out of.</para>
+    ///
+    /// <para><b>Why this direction is the one the new schema created.</b> <see cref="DeviceLevelKeys"/> asks
+    /// "could a reader believe this field applies to the bus"; this list asks the converse, and it is the MORE
+    /// likely operator error, because <c>portName</c> is the one field the serial schema teaches an operator to
+    /// write and nothing in the document says which level owns it.</para>
+    ///
+    /// <para>🔴 <b>Why these are string literals rather than the parsers' own constants.</b> Half of them are
+    /// declared in <c>ModbusRtuSerialBusSettings</c>, which lives in <c>St4i.EdgeCore.Serial</c> — an assembly
+    /// that references THIS one, so naming it here is a circular reference and pushing
+    /// <c>System.IO.Ports</c> into the RTU framing layer, which is the exact migration
+    /// <c>SerialDependencyScopingTests.TheRtuFramingLayersOwnAssembly_…</c> forbids. The document is one schema
+    /// even though its two bus-level parsers cannot see each other, and this is the price. <b>The drift guard is
+    /// a test, not a type:</b> <c>ModbusRtuSerialBusSettingsTests.EveryBusLevelKeyOfBothTransports_IsRefused…</c>
+    /// is a [Theory] whose rows are the parsers' own <c>const</c> fields, so renaming one breaks the test's
+    /// compilation. <b>ADDING a bus-level key is NOT caught automatically</b> — whoever adds one adds a row
+    /// here and a row there, and this sentence is the only thing that will tell them so.</para>
+    /// </summary>
+    private static readonly string[] BusLevelKeys =
+    {
+        // Shared by both transports.
+        "transport",
+        // rtu-gateway (ModbusRtuBusSettings).
+        "host", "port",
+        // rtu-serial (ModbusRtuSerialBusSettings, in St4i.EdgeCore.Serial).
+        "portName", "baudRate", "parity", "dataBits", "stopBits",
+    };
+
+    /// <summary>
     /// Parses <paramref name="json"/> — either shape (see this class's doc comment) — and fans it out into one
     /// <see cref="ModbusBusDevice"/> per device on the bus, in document order.
     ///
@@ -198,6 +235,28 @@ public static class ModbusMultidropMap
 
         if (!root.TryGetProperty(DevicesProperty, out var devices))
         {
+            // 🔴 Task D-7c fix round 1 — the SAME rule as the per-element check below, applied to the degenerate
+            // form, and it closes review I-2's leak in its purest shape. Here the root IS the device, so its raw
+            // text becomes that device's MapJson verbatim: a document like
+            // {"transport":"rtu-serial","portName":"COM3","machineCode":"M1",…} therefore stored the port path
+            // inside the device's own configuration — the exact thing the per-element check below refuses one
+            // level down, reachable without any malformed element at all.
+            //
+            // Refusing costs nothing that exists: this branch is the LEGACY single-device map (a pre-D-4 Modbus
+            // TCP document), which carries no bus-level key, and RTU has no legacy at all — nothing in src/
+            // could construct an RTU driver before D-7a. So an RTU bus declares `devices`, even for one device,
+            // and no shipped instance id moves.
+            foreach (var busLevel in BusLevelKeys)
+            {
+                if (!root.TryGetProperty(busLevel, out _)) continue;
+
+                throw new InvalidOperationException(
+                    $"Modbus register map: the document declares '{busLevel}' — a BUS-level key — but has no " +
+                    $"'{DevicesProperty}' array, so its root is simultaneously the bus and its only device and " +
+                    $"that key would be stored as part of the DEVICE's configuration. Put the device inside " +
+                    $"'{DevicesProperty}': [ … ], even when there is only one: a bus of one is still a bus.");
+            }
+
             // The degenerate bus: one device, parsed by exactly the method every single-device map already
             // goes through, keyed under exactly the instance id it already had.
             var single = ModbusRegisterMap.FromJson(json, logWarning);
@@ -253,6 +312,20 @@ public static class ModbusMultidropMap
                 throw new InvalidOperationException(
                     $"Modbus register map: '{DevicesProperty}[{position}]' itself declares '{DevicesProperty}' — " +
                     "a bus of buses is not a shape this format has; each element is one device.");
+            }
+
+            // 🔴 Fix round 1, review I-2 — the MIRROR of the DeviceLevelKeys check above, and the direction the
+            // D-7c schema created. See BusLevelKeys for the full argument and for the leak this closes.
+            foreach (var busLevel in BusLevelKeys)
+            {
+                if (!element.TryGetProperty(busLevel, out _)) continue;
+
+                throw new InvalidOperationException(
+                    $"Modbus register map: '{DevicesProperty}[{position}]' declares '{busLevel}', which is a " +
+                    "BUS-level key and does nothing inside a device. Line parameters and the transport belong to " +
+                    "the whole segment — every device on one wire shares them by physics — so they go beside " +
+                    $"'{DevicesProperty}', not inside it. Left accepted it would be silently ignored AND copied " +
+                    "verbatim into this device's stored configuration.");
             }
 
             // 🔴 The element's own text, verbatim — this is what the connector instance stores and what its

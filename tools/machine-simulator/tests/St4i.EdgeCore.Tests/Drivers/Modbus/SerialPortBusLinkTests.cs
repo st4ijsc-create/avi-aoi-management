@@ -363,6 +363,102 @@ public sealed class SerialPortBusLinkTests
     }
 
     /// <summary>
+    /// 🔴 <b>Task D-7c fix round 1, review I-3 — "one open for N leases, last release closes the port", OBSERVED
+    /// rather than derived, and the finding is that I said this could not be done.</b>
+    ///
+    /// <para>D-7c shipped this property as arithmetic: three leases on one key, and D-2's proof that
+    /// <see cref="ModbusBusRegistry.Acquire"/> invokes <c>openLink</c> only for the caller that CREATES the bus.
+    /// The report then claimed no observation was available without hardware. <b>That was a claim about the
+    /// tools I had picked up, not about the code</b> — §8.1 principle 1, the fourth time in this batch — and the
+    /// reviewer refuted it by building this test. Everything it needs already existed and was built for exactly
+    /// this purpose: <see cref="SerialPortBusLink.AdoptHandle"/> is <c>internal</c> behind D-3's own
+    /// <c>InternalsVisibleTo</c>, and its doc comment says in as many words that it exists because "a
+    /// <c>SerialPort</c> cannot be constructed without a real port".</para>
+    ///
+    /// <para><b>What is OBSERVED here, and why each observation is not the one I shipped.</b> The shipped
+    /// EngineApi test asserts <c>LeaseCount</c>, correctly rejects it for the final check because it answers 0
+    /// for a key that never existed, and substitutes <c>HasBus</c> — <b>which is the same witness one field
+    /// over</b>. Both are <see cref="ModbusBusRegistry"/>'s own bookkeeping, and §8.1 principle 5's rule is to
+    /// measure the consequence <i>on the thing the mechanism protects</i>. The thing protected is <b>a COM port
+    /// not held open to process exit</b>, and that is readable off the port:</para>
+    /// <list type="number">
+    /// <item><description><b>How many ports were opened at all</b> — the opener mints a new handle per call, so
+    /// <c>handles.Count</c> is the open count. One, for three leases.</description></item>
+    /// <item><description><b><see cref="ModbusBus.LinkGeneration"/></b> — the bus's own count of physical links
+    /// built, which D-2 added precisely so "the link survived" is distinguishable from "the link was rebuilt
+    /// fast enough that nobody noticed".</description></item>
+    /// <item><description><b>The port's own <c>IsOpen</c></b>, after each release. Still open after two,
+    /// <b>closed after the third</b>. That is the consequence, not a proxy for it.</description></item>
+    /// </list>
+    ///
+    /// <para><b>What it still does not prove, unchanged:</b> no <c>System.IO.Ports.SerialPort</c> is opened
+    /// anywhere in these suites, and nothing here touches baud, parity, half duplex or direction control.
+    /// <see cref="FakeSerialPortHandle"/>'s own doc comment lists what it models and what it refuses to model,
+    /// and <c>tools/serial-bench</c> is where the hardware-dependent half lives — it already contains
+    /// <c>PortOpens</c> and <c>ExclusiveOpen</c> against a real port, and is the right home for a
+    /// two-adapter multidrop measurement whenever one exists.</para>
+    /// </summary>
+    [Fact]
+    public async Task OneOpenForNLeases_ObservedThroughTheSerialLink_AndTheLastReleaseClosesThePort()
+    {
+        var line = new SerialLineSettings("COM7");
+        var key = SerialPortBusLink.CreateBusKey(line);
+        var handles = new List<FakeSerialPortHandle>();
+
+        Task<IModbusBusLink> Open(CancellationToken _)
+        {
+            var handle = FakeSerialPortHandle.Unpaired("COM7");
+            handles.Add(handle);
+            return Task.FromResult<IModbusBusLink>(SerialPortBusLink.AdoptHandle(handle, line));
+        }
+
+        await using var buses = new ModbusBusRegistry();
+
+        var first = buses.Acquire(key, Open);
+        var second = buses.Acquire(key, Open);
+        var third = buses.Acquire(key, Open);
+
+        // Three leases, ONE bus — the precondition. Asserted by reference so it cannot be satisfied by two
+        // buses that merely compare equal.
+        Assert.Same(first.Bus, second.Bus);
+        Assert.Same(first.Bus, third.Bus);
+
+        // Nothing is opened until a transaction runs — the deferred-open contract that keeps
+        // IConnectorFactory.TryCreate's "no I/O" promise true all the way down.
+        Assert.Empty(handles);
+
+        foreach (var lease in new[] { first, second, third })
+        {
+            // No ConfigureAwait(false): xUnit1030 — inside a test method it can bypass the runner's
+            // parallelization limits. The first draft carried it out of src/ habit and drifted the gate's
+            // warning count 115 -> 116, which is exactly the size of signal the brief says gets waved through.
+            await using var transaction = await lease.Bus
+                .BeginTransactionAsync(readTimeoutMs: 250, retries: 0, CancellationToken.None);
+        }
+
+        // 🔴 ONE open for three leases, counted rather than inferred.
+        var port = Assert.Single(handles);
+        Assert.Equal(1, first.Bus.LinkGeneration);
+        Assert.True(port.IsOpen, "the shared port must be open while any lease is held");
+
+        await first.DisposeAsync();
+        Assert.True(port.IsOpen, "releasing one of three leases must NOT close a port two devices are still on");
+
+        await second.DisposeAsync();
+        Assert.True(port.IsOpen, "one device is still on this line — the port must stay open");
+
+        await third.DisposeAsync();
+
+        // 🔴 The consequence, read off the PORT rather than off the registry: a COM port that outlived its last
+        // device would be unopenable until the process restarted (the open is exclusive — D-3 measured it), and
+        // would present as an unrelated connector failing to start.
+        Assert.False(port.IsOpen,
+            "the LAST release must close the port; a serial port opens exclusively, so one left open is one no " +
+            "other process — or this one, after a reconfiguration — can ever have again before a restart");
+        Assert.Single(handles);
+    }
+
+    /// <summary>
     /// The fallback arm. A plain <see cref="IOException"/> out of <c>SerialPort.Open</c> is not one of D-3's
     /// three measured shapes, and the message must NOT invent a diagnosis for it — the one thing worse than
     /// "we do not know" is a confident wrong answer, which is the whole subject of the test above.

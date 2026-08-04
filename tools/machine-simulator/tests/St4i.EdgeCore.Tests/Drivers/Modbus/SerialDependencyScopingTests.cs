@@ -120,6 +120,15 @@ public sealed class SerialDependencyScopingTests
     /// <c>St4i.EngineApi.Tests.Config.ConnectorsJsonRegistrationTests.TheEngineApisOwnIl_ReferencesTheSerialAssembly_…</c>
     /// — and it reads <c>St4i.EngineApi</c>'s own <see cref="Assembly.GetReferencedAssemblies"/>, which a host
     /// that merely inherits a copied package asset does not populate.
+    ///
+    /// <para>🔴 <b>Fix round 1, review M-1 — THE OBLIGATION, stated because this test DOES NOT VERIFY ITS OWN
+    /// NAME.</b> Measured by the reviewer: delete the serial arm from
+    /// <c>ConnectorsJsonRegistration.RegisterRtuBus</c> but keep the ProjectReference, and all seven tests in
+    /// this class stay green — only the companion goes red. The <c>…BecauseItCanOpenAComPortDirectly</c> half of
+    /// this name is true <b>only because a test in another assembly makes it true</b>.
+    /// <b>THE TWO MOVE TOGETHER: renaming, weakening or deleting either one without the other leaves a name
+    /// asserting something nothing checks</b> — which is the defect class this batch keeps grading, wearing a
+    /// test's costume instead of a comment's.</para>
     /// </summary>
     [Fact]
     public void EngineApiDeployment_CarriesSystemIoPorts_BecauseItCanOpenAComPortDirectly()

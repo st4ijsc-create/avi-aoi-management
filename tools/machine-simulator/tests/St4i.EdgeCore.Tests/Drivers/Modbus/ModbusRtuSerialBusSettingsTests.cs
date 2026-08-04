@@ -133,6 +133,16 @@ public sealed class ModbusRtuSerialBusSettingsTests
         Assert.Contains($"'{field}'", error.Message, StringComparison.Ordinal);
         // …and it says what to write instead, which is the half that makes it actionable.
         Assert.Contains("portName", error.Message, StringComparison.Ordinal);
+
+        // 🔴 Fix round 1, MUTATION-FOUND (F6). The two assertions above are BOTH satisfied by the generic
+        // unknown-key refusal added in this round — it quotes the offending key and lists 'portName' among the
+        // keys this transport understands — so a mutation that ran the unknown-key check FIRST survived them
+        // both. That is the "a test cannot tell which of two producing paths answered it" shape, and it makes
+        // the ordering comment in Parse unenforced. These two are what discriminate: this refusal must name the
+        // transport the key BELONGS to, and must not read as "we do not know that key", because the operator's
+        // remedy differs (move the segment behind a gateway vs fix a typo).
+        Assert.Contains(ModbusRtuBusSettings.GatewayTransport, error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("not a key this build reads", error.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -259,4 +269,136 @@ public sealed class ModbusRtuSerialBusSettingsTests
         }
     }
 
+    /// <summary>
+    /// 🔴 <b>Fix round 1, review I-2 — the THIRD direction of the sweep, and the one the new schema created.</b>
+    ///
+    /// <para>D-7c swept the cross-TRANSPORT directions (<c>host</c>/<c>port</c> refused on a serial bus,
+    /// <c>portName</c> on a gateway bus) and missed the cross-LEVEL one. Measured by the reviewer: a
+    /// <c>devices[]</c> element carrying <c>"portName":"COM99"</c> was accepted by every parser, did nothing,
+    /// and was copied <b>verbatim into that device's <c>MapJson</c></b> — so the bus ran on <c>COM31</c> while
+    /// the device's stored configuration said <c>COM99</c>. It is the most likely operator error of the three,
+    /// because <c>portName</c> is the one field the serial schema teaches an operator to write and nothing in
+    /// the document says which level owns it. It also falsified this file's own
+    /// <see cref="TheDeviceHalfOfTheDocumentIsUntouched_AndNoDevicesStoredConfigCarriesThePortName"/> claim for
+    /// anything but a well-formed document.</para>
+    ///
+    /// <para><b>This [Theory] is also the DRIFT GUARD for a list that cannot be shared.</b>
+    /// <c>ModbusMultidropMap.BusLevelKeys</c> must hold string literals, because half of these keys are declared
+    /// in <c>St4i.EdgeCore.Serial</c> — which <c>St4i.EdgeCore</c> may never reference. The rows below are the
+    /// parsers' own <c>const</c> fields, so RENAMING one breaks this file's compilation and points at the list.
+    /// <b>ADDING a bus-level key is not caught automatically</b>; that is stated on <c>BusLevelKeys</c>
+    /// itself.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(ModbusRtuBusSettings.TransportProperty)]
+    [InlineData(ModbusRtuSerialBusSettings.PortNameProperty)]
+    [InlineData(ModbusRtuSerialBusSettings.BaudRateProperty)]
+    [InlineData(ModbusRtuSerialBusSettings.ParityProperty)]
+    [InlineData(ModbusRtuSerialBusSettings.DataBitsProperty)]
+    [InlineData(ModbusRtuSerialBusSettings.StopBitsProperty)]
+    [InlineData("host")]
+    [InlineData("port")]
+    public void EveryBusLevelKeyOfBothTransports_IsRefusedInsideADeviceElement(string busLevelKey)
+    {
+        var json = $$"""
+            {"transport":"rtu-serial","portName":"COM31",
+             "devices":[{"machineCode":"S1","unitId":1,"pollIntervalMs":1000,"{{busLevelKey}}":"x",
+                         "registers":[{"address":0,"type":"Holding","dataType":"UInt16","scale":1.0,"metric":"t","unit":"C"}]}]}
+            """;
+
+        var error = Assert.Throws<InvalidOperationException>(() => ModbusMultidropMap.FanOut(json, "line1"));
+
+        Assert.Contains($"'{busLevelKey}'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("devices[0]", error.Message, StringComparison.Ordinal);
+        // …and it says WHY, which is the half that stops a reader "fixing" it by moving the key somewhere else
+        // it also does nothing.
+        Assert.Contains("BUS-level key", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 🔴 <b>Fix round 1 — the same leak in its PUREST shape, which the review did not name and which the
+    /// per-element check above cannot reach.</b>
+    ///
+    /// <para><see cref="ModbusMultidropMap.FanOut"/> has a degenerate branch for a document with no
+    /// <c>devices</c> array: the root IS the device, and the WHOLE document becomes that device's
+    /// <c>MapJson</c>. So a single-device serial bus with nothing malformed in it at all —
+    /// <c>{"transport":"rtu-serial","portName":"COM3","machineCode":"M1", …}</c> — stored the port path inside
+    /// the device's own configuration. Refusing it is what makes the guarantee unconditional rather than "true
+    /// for the <c>devices</c> form".</para>
+    ///
+    /// <para><b>It forecloses nothing that exists.</b> The degenerate branch is the LEGACY single-device map (a
+    /// pre-D-4 Modbus TCP document), which carries no bus-level key, and RTU has no legacy at all — nothing in
+    /// <c>src/</c> could construct an RTU driver before D-7a. The control below is that half: an ordinary
+    /// single-device map still fans out exactly as it did, under its own instance id, so no shipped pipeline
+    /// slot label or alarm <c>TargetId</c> moves.</para>
+    /// </summary>
+    [Fact]
+    public void ADegenerateSingleDeviceDocumentDeclaringABusLevelKey_IsRefused_BecauseItsRootIsAlsoItsDevice()
+    {
+        const string deviceFields =
+            """
+            "machineCode":"M1","unitId":1,"pollIntervalMs":1000,
+            "registers":[{"address":0,"type":"Holding","dataType":"UInt16","scale":1.0,"metric":"t","unit":"C"}]
+            """;
+
+        var error = Assert.Throws<InvalidOperationException>(() => ModbusMultidropMap.FanOut(
+            $$"""{"transport":"rtu-serial","portName":"COM3",{{deviceFields}}}""", "line1"));
+
+        Assert.Contains("BUS-level key", error.Message, StringComparison.Ordinal);
+        Assert.Contains($"'{ModbusMultidropMap.DevicesProperty}'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("a bus of one is still a bus", error.Message, StringComparison.Ordinal);
+
+        // 🔴 The control, and it is what makes the refusal a narrowing rather than a break: the SAME degenerate
+        // document without a bus-level key still fans out to one device under its own instance id verbatim.
+        var legacy = ModbusMultidropMap.FanOut($$"""{{{deviceFields}}}""", "legacy-modbus");
+        var only = Assert.Single(legacy);
+        Assert.Equal("legacy-modbus", only.InstanceId);
+        Assert.Equal("M1", only.MachineCode);
+    }
+
+    /// <summary>
+    /// 🔴 <b>Fix round 1, review M-2 — a misspelled key of the operator's OWN transport, in the one place with
+    /// no symptom.</b>
+    ///
+    /// <para>Measured: <c>{"transport":"rtu-serial","portName":"COM31","baudrate":9600,"Parity":"none"}</c>
+    /// parsed cleanly to <c>modbus-rtu-serial:COM31:19200:8:E:1</c>. <c>TryGetProperty</c> is case-sensitive and
+    /// nothing refused the two misspellings, so <b>the operator asked for 9600-8-N-1 and got
+    /// 19200-8-E-1</b> — and this type's own doc says what that costs: "a parity mismatch never throws on the
+    /// wire: it surfaces as a device that simply never answers", indistinguishable from a wiring fault or a
+    /// wrong unit id.</para>
+    ///
+    /// <para>The near-miss suggestion is asserted, not merely the refusal: the failure being closed is a
+    /// misspelling of a key the operator already knows, so "did you mean 'baudRate'?" is the actionable half and
+    /// a bare "unrecognised" would leave them re-reading their own document.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(""" "portName":"COM3","baudrate":9600, """, "baudrate", "baudRate")]
+    [InlineData(""" "portName":"COM3","Parity":"none", """, "Parity", "parity")]
+    [InlineData(""" "portName":"COM3","STOPBITS":2, """, "STOPBITS", "stopBits")]
+    [InlineData(""" "portname":"COM3", """, "portname", "portName")]
+    public void AMisspelledBusLevelKey_IsRefusedWithTheNearMiss_NotSilentlyIgnored(
+        string busFields, string written, string meant)
+    {
+        var error = Assert.Throws<InvalidOperationException>(
+            () => ModbusRtuSerialBusSettings.Parse(SerialBus(busFields)));
+
+        Assert.Contains($"'{written}'", error.Message, StringComparison.Ordinal);
+        Assert.Contains($"Did you mean '{meant}'?", error.Message, StringComparison.Ordinal);
+        Assert.Contains("SILENTLY IGNORED", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>An invented key gets the list of what this transport understands, since there is no near miss to
+    /// suggest. Both halves ship because a message that only ever says "did you mean X" has nothing to say when
+    /// there is no X.</summary>
+    [Fact]
+    public void AnInventedBusLevelKey_IsRefusedNamingWhatThisTransportUnderstands()
+    {
+        var error = Assert.Throws<InvalidOperationException>(
+            () => ModbusRtuSerialBusSettings.Parse(SerialBus(""" "portName":"COM3","flowControl":"rts", """)));
+
+        Assert.Contains("'flowControl'", error.Message, StringComparison.Ordinal);
+        Assert.Contains($"'{ModbusRtuSerialBusSettings.PortNameProperty}'", error.Message, StringComparison.Ordinal);
+        Assert.Contains($"'{ModbusRtuSerialBusSettings.StopBitsProperty}'", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Did you mean", error.Message, StringComparison.Ordinal);
+    }
 }

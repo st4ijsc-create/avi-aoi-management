@@ -524,14 +524,24 @@ public sealed class ConnectorsJsonRegistrationTests
     /// <summary>
     /// 🔴 <b>One open for N leases, and the LAST release disposes — through the SERIAL opener.</b>
     ///
-    /// <para><b>What this proves and what it does not, stated because the difference is the whole honesty of
-    /// this task.</b> It proves the reference-count arithmetic end-to-end from a configuration file: three
-    /// devices on one declared line take three leases on ONE <c>ModbusBus</c>, two releases leave it alive, and
-    /// the third disposes it. Since <c>ModbusBusRegistry.Acquire</c> invokes <c>openLink</c> only for the caller
-    /// that CREATES the bus (D-2, proven there), one bus is one open. It does <b>not</b> prove a port was
-    /// opened: no portable virtual COM port exists, so the opener is never successfully invoked anywhere in
-    /// these suites. What is exercised on the physical opener is the FAILURE path —
-    /// <see cref="ASerialBusWhoseAdapterIsNotThere_DegradesAndTellsTheOperatorWhichPort"/>.</para>
+    /// <para><b>What this proves and what it does not.</b> It proves the reference-count arithmetic
+    /// <b>end-to-end from a configuration file</b>: three devices on one declared line take three leases on ONE
+    /// <c>ModbusBus</c>, two releases leave it alive, and the third disposes it. That is this test's job — the
+    /// path from `connectors.json` to the shared bus — and it is why it lives here.</para>
+    ///
+    /// <para>🔴 <b>Fix round 1, review I-3 — what it does NOT do is OBSERVE the port, and D-7c's report wrongly
+    /// claimed no observation was available.</b> Both assertions here read <c>ModbusBusRegistry</c>'s own
+    /// bookkeeping (<c>LeaseCount</c>, and <c>HasBus</c> for the final check — <b>the same witness one field
+    /// over</b>), while the thing the mechanism protects is a COM port not held open to process exit. §8.1
+    /// principle 5's rule is to measure the consequence on the thing protected, and it IS measurable with no
+    /// hardware: <c>St4i.EdgeCore.Tests.…SerialPortBusLinkTests.OneOpenForNLeases_ObservedThroughTheSerialLink_AndTheLastReleaseClosesThePort</c>
+    /// counts the openings, pins <c>ModbusBus.LinkGeneration</c>, and asserts the port handle's own
+    /// <c>IsOpen</c> after each release. It lives there because <c>SerialPortBusLink.AdoptHandle</c> is
+    /// <c>internal</c> behind D-3's <c>InternalsVisibleTo("St4i.EdgeCore.Tests")</c>.</para>
+    ///
+    /// <para>Still true, and still worth stating: <b>no <c>System.IO.Ports.SerialPort</c> is ever opened
+    /// successfully anywhere in these suites.</b> The only thing exercised on the PHYSICAL opener is the failure
+    /// path — <see cref="ASerialBusWhoseAdapterIsNotThere_DegradesAndTellsTheOperatorWhichPort"/>.</para>
     /// </summary>
     [Fact]
     public async Task OneOpenForNLeases_AndTheLastReleaseDisposes_ThroughTheSerialOpener()
@@ -789,9 +799,17 @@ public sealed class ConnectorsJsonRegistrationTests
     /// <para>🔴 <b>And it is deliberately asserted for the ENGINE ONLY.</b> Measured: <c>St4i.EdgeService</c>
     /// and <c>St4iMachineSimulator</c> reference <c>St4i.EdgeCore.Serial</c> and ship the DLL on the owner's
     /// ruling, but neither has a <c>ConnectorRegistry</c>, an <c>IConnectorFactory</c> or a
-    /// <c>connectors.json</c> reader — those are <c>St4i.EngineApi</c> types, and nothing under <c>src/</c>
-    /// outside that project names one. So neither of them has IL that could reference the serial assembly, and
-    /// asserting that it does would be asserting something false.</para>
+    /// <c>connectors.json</c> reader — those are <c>St4i.EngineApi</c> types, and <b>neither host csproj even
+    /// references <c>St4i.EngineApi</c></b>, so those names are not merely unused there, they are not
+    /// reachable. Neither host has IL that could reference the serial assembly, and asserting that it does
+    /// would be asserting something false.</para>
+    ///
+    /// <para>🔴 <b>Fix round 1, review M-1 — THE OBLIGATION, stated at this end too.</b> This test is what makes
+    /// <c>St4i.EdgeCore.Tests.…SerialDependencyScopingTests.EngineApiDeployment_CarriesSystemIoPorts_BecauseItCanOpenAComPortDirectly</c>
+    /// deserve the second half of its name. Measured by the reviewer: delete the serial arm from
+    /// <see cref="ConnectorsJsonRegistration"/> and keep the ProjectReference, and all seven of that class's
+    /// tests stay green while THIS one goes red. <b>The two move together</b> — renaming, weakening or deleting
+    /// either without the other leaves a test name asserting a capability that nothing checks.</para>
     /// </summary>
     [Fact]
     public void TheEngineApisOwnIl_ReferencesTheSerialAssembly_WhichIsWhatMakesAComPortReachableAtAll()
