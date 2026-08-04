@@ -905,15 +905,45 @@ export interface KbSyncDeferState {
   readonly lastRefusalMessage: string;
 }
 
-interface DeferStreak {
-  firstRefusedAt: number;
-  attempts: number;
-  lastDelayMs: number | null;
-  nextRetryAt: number | null;
-  exceeded: boolean;
-  budgetMs: number;
-  note: KbSyncRefusalNote;
-}
+/**
+ * ★★★ I-2, vòng sửa 2 — **HAI BIẾN THỂ, KHÔNG PHẢI MỘT BẢN GHI CÓ CỜ.**
+ *
+ * Bản trước là `{ exceeded: boolean; nextRetryAt: number | null; … }` với bất biến
+ * `exceeded ⇔ nextRetryAt === null`. Reviewer đột biến người TIÊU THỤ để nó **tự viết lại** vị từ
+ * (`s === null || s.nextRetryAt === null`, quên `exceeded`) và bộ test cho **0 đỏ / 500**: dưới
+ * bất biến đó hai cách viết trùng nhau, nên **không ca hành vi nào phân biệt nổi**.
+ *
+ * ⇒ Lời giải không phải thêm một ca nữa, mà là làm cho **bản sao thứ hai KHÔNG VIẾT RA ĐƯỢC**:
+ * biến thể `"exceeded"` **không có trường `nextRetryAt`**, nên mọi cách viết lại vị từ bằng
+ * `nextRetryAt` đều **`tsc` chặn**, và nếu ai lách qua `tsc` (esbuild của vitest KHÔNG kiểm kiểu)
+ * thì giá trị là `undefined` ⇒ `armDeferTimer(NaN)` ⇒ hẹn giờ vẫn được vũ trang ⇒ ca khôi phục
+ * `already-exceeded` ĐỎ. Trình biên dịch là lưới thứ nhất, ca test là lưới thứ hai.
+ *
+ * Đây cùng khuôn với `VramUnledgeredFact = {…} | null` (Task 4): dùng KIỂU để chặn người gọi
+ * đọc "chưa biết" thành "không có gì", thay vì dùng một quy ước và hy vọng.
+ */
+type DeferStreak =
+  | {
+      readonly kind: "alive";
+      readonly firstRefusedAt: number;
+      readonly attempts: number;
+      /** Khoảng lùi vừa dùng — LUÔN biết khi chuỗi còn sống. */
+      readonly lastDelayMs: number;
+      readonly nextRetryAt: number;
+      readonly budgetMs: number;
+      readonly note: KbSyncRefusalNote;
+    }
+  | {
+      readonly kind: "exceeded";
+      readonly firstRefusedAt: number;
+      readonly attempts: number;
+      /** `null` khi chuỗi quá đáy ngay lượt ĐẦU (chưa từng lùi lần nào). */
+      readonly lastDelayMs: number | null;
+      readonly budgetMs: number;
+      readonly note: KbSyncRefusalNote;
+    };
+
+type DeferStreakAlive = Extract<DeferStreak, { kind: "alive" }>;
 
 let deferStreak: DeferStreak | null = null;
 let deferTimer: NodeJS.Timeout | null = null;
@@ -941,14 +971,12 @@ let deferTimer: NodeJS.Timeout | null = null;
  * tiếp** cả bốn tổ hợp là cách duy nhất làm **từng mệnh đề** đột biến-được — và "đột biến-được"
  * chính là điều review đòi.
  */
-export function kbSyncDeferStreakIsAlive(
-  s: { readonly exceeded: boolean; readonly nextRetryAt: number | null } | null,
-): boolean {
-  return s !== null && !s.exceeded && s.nextRetryAt !== null;
+export function kbSyncDeferStreakIsAlive(s: { readonly kind: "alive" | "exceeded" } | null): boolean {
+  return s !== null && s.kind === "alive";
 }
 
 /** Bản có type-guard cho dùng nội bộ. **Ủy quyền**, không chép lại — nếu không lại là hai bản. */
-function chuoiHoanConSong(s: DeferStreak | null): s is DeferStreak {
+function chuoiHoanConSong(s: DeferStreak | null): s is DeferStreakAlive {
   return kbSyncDeferStreakIsAlive(s);
 }
 
@@ -968,11 +996,13 @@ function publicDeferState(): KbSyncDeferState | null {
   return {
     firstRefusedAt: isoOrNull(s.firstRefusedAt),
     attempts: s.attempts,
-    nextRetryAt: s.nextRetryAt === null ? null : isoOrNull(s.nextRetryAt),
-    nextDelayMs: s.exceeded ? null : s.lastDelayMs,
+    // ⚠ Mặt CÔNG KHAI giữ nguyên hình dạng `exceeded` + `nextRetryAt` (hợp đồng của Task 6 gốc);
+    // biến thể chỉ là cách BIỂU DIỄN bên trong. Người ngoài không phải biết.
+    nextRetryAt: s.kind === "alive" ? isoOrNull(s.nextRetryAt) : null,
+    nextDelayMs: s.kind === "alive" ? s.lastDelayMs : null,
     budgetMs: s.budgetMs,
     deadlineAt: isoOrNull(s.firstRefusedAt + s.budgetMs),
-    exceeded: s.exceeded,
+    exceeded: s.kind === "exceeded",
     holdersKnown: s.note.holdersKnown,
     holders: s.note.holders,
     lastRefusalMessage: s.note.message,
@@ -1036,7 +1066,7 @@ function ensureDeferArmed(): void {
   if (deferTimer !== null) return;
   const s = deferStreak;
   if (!chuoiHoanConSong(s)) return;
-  armDeferTimer(Math.max(DEFER_REARM_FLOOR_MS, s.nextRetryAt! - Date.now()));
+  armDeferTimer(Math.max(DEFER_REARM_FLOOR_MS, s.nextRetryAt - Date.now()));
 }
 
 /**
@@ -1054,7 +1084,7 @@ function clearKbSyncDefer(lyDo: "granted" | "shutdown"): void {
     console.log(
       lyDo === "granted"
         ? `[kbSyncScheduler] chuỗi HOÃN kết thúc — cổng sổ đã CẤP sau ${deferStreak.attempts} lượt ` +
-            `bị từ chối${deferStreak.exceeded ? " (chuỗi trước đã quá đáy)" : ""}.`
+            `bị từ chối${deferStreak.kind === "exceeded" ? " (chuỗi trước đã quá đáy)" : ""}.`
         : `[kbSyncScheduler] chuỗi HOÃN bị BỎ DỞ vì tiến trình đang tắt (${deferStreak.attempts} ` +
             `lượt bị từ chối). Lượt thử lại đã hứa KHÔNG nổ; chuỗi được khôi phục từ ` +
             `\`vram_events\` ở lần khởi động sau (xem khoiPhucChuoiHoan).`,
@@ -1140,11 +1170,11 @@ async function ghiNhanKbSyncBiTuChoi(err: unknown): Promise<KbSyncDeferState | n
 
     if (plan.kind === "retry") {
       deferStreak = {
+        kind: "alive",
         firstRefusedAt,
         attempts,
         lastDelayMs: plan.delayMs,
         nextRetryAt: plan.retryAt,
-        exceeded: false,
         budgetMs,
         note,
       };
@@ -1162,11 +1192,10 @@ async function ghiNhanKbSyncBiTuChoi(err: unknown): Promise<KbSyncDeferState | n
       armDeferTimer(plan.delayMs);
     } else {
       deferStreak = {
+        kind: "exceeded",
         firstRefusedAt,
         attempts,
         lastDelayMs: truoc !== null ? truoc.lastDelayMs : null,
-        nextRetryAt: null,
-        exceeded: true,
         budgetMs,
         note,
       };
@@ -1358,15 +1387,28 @@ export async function resumeKbSyncDeferFromLog(): Promise<KbSyncDeferResumePlan>
     if (plan.kind === "none") return plan;
 
     const note = readKbSyncRefusalNoteFromDetail(row?.detail ?? null);
-    deferStreak = {
-      firstRefusedAt: plan.firstRefusedAt,
-      attempts: plan.attempts,
-      lastDelayMs: plan.lastDelayMs,
-      nextRetryAt: plan.nextRetryAt,
-      exceeded: plan.kind !== "resume",
-      budgetMs: plan.budgetMs,
-      note,
-    };
+    // ⚠ `tsc` là thứ bắt buộc hai nhánh này phải TÁCH: biến thể `"alive"` đòi `nextRetryAt` và
+    // `lastDelayMs` là SỐ, nên một lượt "khôi phục quá đáy nhưng vẫn giữ nextRetryAt" — đúng hình
+    // dạng đã làm bản sao thứ hai của vị từ trôi — **không viết ra được**.
+    deferStreak =
+      plan.kind === "resume" && plan.nextRetryAt !== null
+        ? {
+            kind: "alive",
+            firstRefusedAt: plan.firstRefusedAt,
+            attempts: plan.attempts,
+            lastDelayMs: plan.lastDelayMs ?? DEFER_FIRST_DELAY_MS,
+            nextRetryAt: plan.nextRetryAt,
+            budgetMs: plan.budgetMs,
+            note,
+          }
+        : {
+            kind: "exceeded",
+            firstRefusedAt: plan.firstRefusedAt,
+            attempts: plan.attempts,
+            lastDelayMs: plan.lastDelayMs,
+            budgetMs: plan.budgetMs,
+            note,
+          };
 
     if (plan.kind === "resume") {
       console.warn(

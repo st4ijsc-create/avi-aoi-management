@@ -768,19 +768,20 @@ describe("§5 — I-2: VỊ TỪ DÙNG CHUNG *chuỗi hoãn còn sống không*"
    * bản sao ấy không được ghim bởi bất kỳ ca nào. Nay chỉ còn MỘT bản cài đặt, và ca này ghim
    * **từng mệnh đề RIÊNG**.
    *
-   * ⚠ Vì sao phải ghim TRỰC TIẾP chứ không qua hành vi: dưới bất biến của người sản xuất
-   * (`exceeded ⇔ nextRetryAt === null`), tổ hợp `(exceeded: true, nextRetryAt: ≠ null)` **không
-   * đạt tới được từ ngoài** ⇒ mọi ca hành vi đều KHÔNG phân biệt nổi "bỏ mệnh đề `!exceeded`" với
-   * "bỏ mệnh đề `nextRetryAt !== null`". Đây đúng chỗ mà một ca hành vi sẽ nói dối là mình có lưới.
+   * ⚠⚠ VÒNG SỬA 2 — LƯỚI THẬT KHÔNG PHẢI CA NÀY, MÀ LÀ **KIỂU**. Bản đầu của tôi giữ
+   * `{ exceeded, nextRetryAt }` và ghim bốn tổ hợp; nhưng đột biến nguy hiểm nhất của reviewer
+   * (*người TIÊU THỤ tự viết lại vị từ, quên `exceeded`*) vẫn **0 đỏ** — vì dưới bất biến của
+   * người sản xuất, hai cách viết trùng nhau và **không ca hành vi nào phân biệt nổi**.
+   * ⇒ `DeferStreak` nay là **hai BIẾN THỂ**, và biến thể `"exceeded"` **không có trường
+   * `nextRetryAt`** ⇒ bản sao thứ hai **không viết ra được** (`tsc` chặn), và nếu lách qua `tsc`
+   * thì ca `already-exceeded` bên dưới ĐỎ. Ca này chỉ còn là lưới cho chính vị từ.
    */
-  it("★★★ (I-2) bốn tổ hợp, mỗi mệnh đề ghim RIÊNG — đột biến-được từng cái một", () => {
+  it("★★★ (I-2) ba đầu vào, ghim TRỰC TIẾP — đảo vị từ là ĐỎ", () => {
     expect(kbSyncDeferStreakIsAlive(null)).toBe(false);
-    expect(kbSyncDeferStreakIsAlive({ exceeded: false, nextRetryAt: 1 })).toBe(true);
-    // ↓ ĐỎ nếu ai bỏ mệnh đề `!s.exceeded` — hướng hỏng NGUY HIỂM NHẤT (vũ trang lại một chuỗi đã
-    //   tuyên bố quá đáy ⇒ cơ chế chống-hoãn-mãi tự phá chính nó)
-    expect(kbSyncDeferStreakIsAlive({ exceeded: true, nextRetryAt: 1 })).toBe(false);
-    // ↓ ĐỎ nếu ai bỏ mệnh đề `s.nextRetryAt !== null`
-    expect(kbSyncDeferStreakIsAlive({ exceeded: false, nextRetryAt: null })).toBe(false);
+    expect(kbSyncDeferStreakIsAlive({ kind: "alive" })).toBe(true);
+    // ↓ hướng hỏng NGUY HIỂM NHẤT: vũ trang lại một chuỗi đã tuyên bố quá đáy ⇒ cơ chế
+    //   chống-hoãn-mãi tự phá chính nó, sau khi đã kêu "NGỪNG thử lại".
+    expect(kbSyncDeferStreakIsAlive({ kind: "exceeded" })).toBe(false);
   });
 });
 
