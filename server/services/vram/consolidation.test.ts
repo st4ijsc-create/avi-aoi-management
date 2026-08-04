@@ -442,6 +442,36 @@ describe("C. `evictLRU()` HẤP THỤ thành `preempt()`", () => {
     expect(preemptPlan("interactive", 0, 0)).toEqual([]);
   });
 
+  /**
+   * ★★★ I-2 (review TOÀN NHÁNH) — **KHÔNG DỌN THỪA Ở NHÁNH CHỈ-THIẾU-KHE.**
+   *
+   * Ca `:372` bên trên **MÙ** với lỗi này vì cả ba hộ trong nó đều là `gguf-model`. Hình dạng thật
+   * của sản xuất khác hẳn: `sidecar:vision` (7,8 GB, `external-process`) nhàn rỗi và CŨ HƠN ⇒ xếp
+   * TRƯỚC theo `xepThuTuNhuong` bước 3. Với `deficitBytes = 0` (byte còn thừa, chỉ hết KHE), vòng
+   * lặp cũ đẩy nó vào kế hoạch dù nó **không góp một khe nào** ⇒ giết 7,8 GB để giành một khe GGUF.
+   */
+  it("★★★ I-2: chỉ thiếu KHE ⇒ hộ KHÔNG góp khe (sidecar 7,8 GB) KHÔNG bị kéo vào kế hoạch", () => {
+    // CŨ HƠN + nhàn rỗi + `external-process` ⇒ đứng ĐẦU danh sách nhường, nhưng góp 0 KHE.
+    moNhanRoi("sidecar:vision", 7_825 * MIB, {
+      kind: "external-process", priority: "interactive", reclaimer: "vision-sidecar",
+    });
+    moNhanRoi("gguf:idle", KHOI_30B, { reclaimer: "gguf-idle-model" });
+
+    // thiếu ĐÚNG một KHE, không thiếu byte ⇒ chỉ hộ gguf-model mới giải quyết được
+    expect(preemptPlan("interactive", 0, 1).map((s) => s.owner)).toEqual(["gguf:idle"]);
+    // … và câu từ chối cũng không được HỨA rằng giết sidecar sẽ giúp
+    expect(preemptCandidates("interactive", 0, 1).map((h) => h.owner)).toEqual(["gguf:idle"]);
+
+    // ⚠ Chiều ngược lại KHÔNG đổi: khi thật sự thiếu BYTE thì MỌI hộ đều góp, sidecar vào trước.
+    expect(preemptPlan("interactive", 20_000 * MIB, 1).map((s) => s.owner)).toEqual([
+      "sidecar:vision", "gguf:idle",
+    ]);
+    // và khi không biết thiếu bao nhiêu (không hữu hạn) thì vẫn liệt kê TOÀN BỘ
+    expect(preemptPlan("interactive", Number.POSITIVE_INFINITY, 0).map((s) => s.owner)).toEqual([
+      "sidecar:vision", "gguf:idle",
+    ]);
+  });
+
   it("★★★ `freedBytes` đo bằng SỔ, KHÔNG cộng theo lời khai của kế hoạch", async () => {
     const l = moNhanRoi("gguf:idle", KHOI_30B, { reclaimer: "gguf-idle-model" });
     // Người thi hành GIẢ trả `true` nhưng KHÔNG nhả sổ (đúng ca "sổ khai trống, card vẫn giữ").

@@ -243,17 +243,55 @@ export function preemptCandidates(
    */
   slotsNeeded = 0,
 ): VramHolderFact[] {
-  const rank = PRIORITY_RANK[priority];
-  const candidates = xepThuTuNhuong(rank);
+  return duyetTheoNhuCau(priority, deficitBytes, slotsNeeded, holderFactFromLease);
+}
+
+/**
+ * ★★★ I-2 (review TOÀN NHÁNH) — **MỘT bản cài đặt duy nhất của "dừng khi ĐỦ, và KHÔNG DỌN THỪA".**
+ *
+ * `preemptCandidates()` và `preemptPlan()` từng chép **cùng một vòng lặp** với cùng điều kiện dừng,
+ * khác nhau đúng ở phép `chon`. Hai bản sao dưới một bất biến ⇒ theo đúng bài học của pha này, lời
+ * giải không phải "thêm một ca canh chúng khớp nhau" mà là **làm cho bản sao sai không viết ra
+ * được**: chỉ còn một vòng lặp, và người gọi chỉ được truyền vào *"lấy gì ra khỏi mỗi giấy phép"*.
+ *
+ * ⚠⚠ LỖI ĐƯỢC VÁ Ở ĐÂY, và nó có hậu quả 7,8 GB: khi lượt từ chối là do **KHE** (`deficitBytes = 0`
+ * — `vramWiring` `Math.max(0, est − effective)` cho ra 0 vì byte còn thừa), điều kiện `freed >= 0`
+ * đã đúng NGAY TỪ ĐẦU, nên vòng lặp cũ chỉ dừng khi `slots >= slotsNeeded`, và **mọi ứng viên
+ * đứng TRƯỚC model GGUF cần dọn đều bị đẩy vào kế hoạch — kể cả khi nó không góp một KHE nào**.
+ * Điển hình `sidecar:vision` (`interactive`, nhàn rỗi, `acquiredAt` cũ hơn ⇒ xếp trước theo
+ * `xepThuTuNhuong` bước 3): để giành **một khe GGUF**, hệ giết **7,8 GB** thứ không giải phóng khe
+ * nào — ngược đúng câu `vramPreempt.ts` tự khai (*"dừng khi đủ byte VÀ đủ khe, không dọn thừa"*).
+ *
+ * ⇒ `if (duByte && !gopKhe) continue;` — ứng viên **không góp vào điều kiện CÒN THIẾU** thì không
+ * vào danh sách. Chiều ngược lại không cần điều kiện: khi còn thiếu BYTE thì **mọi** hộ đều góp.
+ *
+ * ⚠ `deficitBytes` không hữu hạn ⇒ `enough = +Infinity` ⇒ `duByte` luôn `false` ⇒ liệt kê TOÀN BỘ
+ * (ngữ nghĩa cũ giữ nguyên: cắt danh sách khi không biết mình thiếu bao nhiêu là để người trực
+ * nhường xong vẫn không đủ mà không hiểu vì sao).
+ * ⚠ `chon` trả `null` ⇒ **bỏ qua và KHÔNG cộng** byte/khe của hộ đó: nó không nằm trong danh sách
+ * thì cũng không được tính là đã giành lại được gì.
+ */
+function duyetTheoNhuCau<T>(
+  priority: VramPriority,
+  deficitBytes: number,
+  slotsNeeded: number,
+  chon: (l: VramLease) => T | null,
+): T[] {
   const enough = Number.isFinite(deficitBytes) ? deficitBytes : Number.POSITIVE_INFINITY;
-  const out: VramHolderFact[] = [];
+  const out: T[] = [];
   let freed = 0;
   let slots = 0;
-  for (const c of candidates) {
-    if (freed >= enough && slots >= slotsNeeded) break;
-    out.push(holderFactFromLease(c));
-    freed += leaseBytes(c);
-    if (c.request.kind === "gguf-model") slots += 1;
+  for (const l of xepThuTuNhuong(PRIORITY_RANK[priority])) {
+    const duByte = freed >= enough;
+    const duKhe = slots >= slotsNeeded;
+    if (duByte && duKhe) break;
+    const gopKhe = l.request.kind === "gguf-model";
+    if (duByte && !gopKhe) continue;
+    const muc = chon(l);
+    if (muc === null) continue;
+    out.push(muc);
+    freed += leaseBytes(l);
+    if (gopKhe) slots += 1;
   }
   return out;
 }
@@ -296,36 +334,27 @@ export interface VramPreemptStep {
  * `reserve()` ĐỒNG BỘ, nhả VRAM thật là BẤT ĐỒNG BỘ; nhả sổ trước khi thiết bị nhả là nói dối
  * đúng chiều OOM).
  *
- * ⚠ Dừng khi ĐỦ theo CẢ HAI thước (byte và khe), giống `preemptCandidates()` — nhưng danh sách ứng
- * viên hẹp hơn, nên **`preemptPlan()` có thể ngắn hơn `preemptCandidates()` và đó là ĐÚNG**: câu từ
- * chối gọi tên MỌI hộ đang giữ (người trực cần biết), còn lượt thi hành chỉ chạm những hộ có người
- * dọn.
+ * ⚠ Dừng khi ĐỦ theo CẢ HAI thước (byte và khe), giống `preemptCandidates()` — **cùng MỘT vòng lặp**
+ * (`duyetTheoNhuCau`, xem I-2 ở đó), khác đúng phép `chon`. Danh sách ứng viên hẹp hơn, nên
+ * **`preemptPlan()` có thể ngắn hơn `preemptCandidates()` và đó là ĐÚNG**: câu từ chối gọi tên MỌI
+ * hộ đang giữ (người trực cần biết), còn lượt thi hành chỉ chạm những hộ có người dọn.
  */
 export function preemptPlan(
   priority: VramPriority,
   deficitBytes: number,
   slotsNeeded = 0,
 ): VramPreemptStep[] {
-  const rank = PRIORITY_RANK[priority];
-  const enough = Number.isFinite(deficitBytes) ? deficitBytes : Number.POSITIVE_INFINITY;
-  const out: VramPreemptStep[] = [];
-  let freed = 0;
-  let slots = 0;
-  for (const l of xepThuTuNhuong(rank)) {
-    if (freed >= enough && slots >= slotsNeeded) break;
+  return duyetTheoNhuCau(priority, deficitBytes, slotsNeeded, (l) => {
     const nguoi = nguoiThiHanhThuHoi(l);
-    if (nguoi === null) continue;
-    out.push({
+    if (nguoi === null) return null;
+    return {
       leaseId: l.id,
       owner: l.request.owner,
       kind: l.request.kind,
       bytes: leaseBytes(l),
       reclaimer: nguoi,
-    });
-    freed += leaseBytes(l);
-    if (l.request.kind === "gguf-model") slots += 1;
-  }
-  return out;
+    };
+  });
 }
 
 /**
