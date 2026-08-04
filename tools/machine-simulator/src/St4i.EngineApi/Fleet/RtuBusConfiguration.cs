@@ -52,11 +52,27 @@ namespace St4i.EngineApi.Fleet;
 /// it.</description></item>
 /// </list>
 ///
-/// <para><b>What can still go wrong, stated rather than claimed away.</b> Between the pre-checks and the
-/// registrations, a concurrent <c>POST</c> can take one of these machine codes — the exact interleaving D-1's
-/// review proved reachable for the single-connector case (the pre-check, the save and the register are not one
-/// atomic unit). That is the ONE path that reaches the rollback, and it is why the rollback exists at all
-/// rather than being replaced by the pre-checks.</para>
+/// <para>🔴 <b>Fix round 1, review I-2 — a bus RE-CLAIMS ITS OWN NAMESPACE BEFORE it registers, and that is a
+/// correctness fix rather than a message fix.</b> Until this round, re-addressing two devices on a line (unit 2
+/// and unit 3 swapping machine codes — routine RS-485 maintenance) was a <b>permanent dead end</b>:
+/// <see cref="TryFindBlockedDevice"/> correctly let it through, <see cref="ConnectorRegistry.Register"/> then
+/// refused the first device against this same bus's own previous registration, the store was rolled back, the
+/// registry was left exactly as it was — so <b>retrying the identical request failed identically, forever</b>,
+/// and the only exit was a <c>DELETE</c> the refusal never mentioned. <see cref="ReleaseOwnNamespace"/> now
+/// removes every registration in this bus's namespace immediately before the register pass, so the edit simply
+/// works. The message that described the dead end is gone with the dead end.</para>
+///
+/// <para><b>What that changes about the rollback, said plainly because it is a coverage loss as well as a
+/// correctness win.</b> With the namespace released first, every refusal that a single request can produce on
+/// its own is now caught by <see cref="TryFindBlockedDevice"/> before anything is written. What remains for the
+/// rollback is exactly what D-1's review proved reachable for the single-connector case and no more: a
+/// CONCURRENT <c>POST</c> taking one of these machine codes between the pre-check and the register pass (the
+/// pre-check, the save and the register are not one atomic unit). That is now a true statement where before
+/// this round it was a false one — the swap reached it deterministically — and the price is that the endpoint's
+/// own composition of store-rollback + registry-rollback has no deterministic test. Both halves are proved at
+/// the seam instead: <see cref="TryRegisterAll"/> driven directly against an outside claim, and
+/// <see cref="ConnectorConfigStore.RestoreBusAsync"/> driven directly. See the fix-round section of
+/// <c>task-7b-report.md</c> for the mutation evidence and for what that leaves unpinned.</para>
 /// </summary>
 public static class RtuBusConfiguration
 {
@@ -212,9 +228,6 @@ public static class RtuBusConfiguration
     /// "persisted, listed, and permanently never running" state <c>ConnectorEndpoints</c>' own SM-5 comment
     /// says must never be creatable.</para>
     /// </summary>
-    /// <param name="ownBusInstanceIds">The set of instance ids this same bus is about to (re-)register.
-    /// A device whose machine is claimed by one of THOSE is an ordinary re-save of the bus's own device, not a
-    /// collision — without this the second save of any bus would refuse itself.</param>
     /// <returns><see langword="true"/> if some device cannot be registered, with
     /// <paramref name="reason"/> naming it and why.</returns>
     public static bool TryFindBlockedDevice(
@@ -227,12 +240,6 @@ public static class RtuBusConfiguration
         ArgumentNullException.ThrowIfNull(bindings);
         ArgumentNullException.ThrowIfNull(roster);
 
-        var ownBusInstanceIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var device in bus.Devices)
-        {
-            ownBusInstanceIds.Add(DriverKinds.Normalize(device.InstanceId));
-        }
-
         foreach (var device in bus.Devices)
         {
             var wantedId = DriverKinds.Normalize(device.InstanceId);
@@ -242,7 +249,13 @@ public static class RtuBusConfiguration
                 if (binding.MachineCode is null) continue;
                 if (!string.Equals(binding.MachineCode, device.MachineCode, StringComparison.OrdinalIgnoreCase)) continue;
                 if (string.Equals(binding.InstanceId, wantedId, StringComparison.Ordinal)) continue;
-                if (ownBusInstanceIds.Contains(binding.InstanceId)) continue;
+                // 🔴 Fix round 1, I-2 — exempt on THIS BUS'S NAMESPACE, not on the new device set. The two must
+                // be the same rule, because ReleaseOwnNamespace below removes exactly the namespace: exempting
+                // a narrower set here would refuse an edit the register pass was about to make possible (a
+                // device DROPPED at unit 5 whose machine moves to unit 1 is not in the new set, but its
+                // registration is about to be released), and exempting a wider one would let a genuine outside
+                // claim through to a refusal after the store had been written.
+                if (IsInBusNamespace(bus.BusInstanceId, binding.InstanceId)) continue;
 
                 reason =
                     $"Device at unit {device.UnitId} serves machine '{device.MachineCode}', which is already " +
@@ -258,7 +271,7 @@ public static class RtuBusConfiguration
             // the claim check: re-saving a bus finds its own machines in the roster, every time, and that is
             // the ordinary update path rather than a collision. `RegisterMachine` will simply answer false for
             // them, which is the documented "already present" outcome and not a failure.
-            if (bindings.Any(b => ownBusInstanceIds.Contains(b.InstanceId)
+            if (bindings.Any(b => IsInBusNamespace(bus.BusInstanceId, b.InstanceId)
                                   && string.Equals(b.MachineCode, device.MachineCode, StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
@@ -281,30 +294,106 @@ public static class RtuBusConfiguration
         return false;
     }
 
-    /// <summary>
-    /// 🔴 Task D-7b — registers every device on <paramref name="bus"/> into
-    /// <paramref name="registry"/>, and UNDOES ITSELF COMPLETELY if any one of them is refused.
+    /// <summary>🔴 Fix round 1, review I-2/I-3 — <b>whether an instance id belongs to one bus's own derived
+    /// namespace.</b> The bus id itself (the degenerate single-device form) and <c>{bus}:unit{n}</c>, and
+    /// nothing else can be in it — that is a guarantee rather than a hope, because
+    /// <see cref="ModbusMultidropMap.ValidateBusInstanceId"/> refuses to let any bus be NAMED like a device
+    /// position, so <c>line1:unit3</c> can only ever have been derived by <c>line1</c>.
     ///
-    /// <para>Reachable only under a concurrent registration (every ordinary refusal is caught by
-    /// <see cref="TryFindBlockedDevice"/> before anything is mutated) — which is precisely why the undo is
-    /// written as an operation rather than as a comment claiming the branch cannot happen. D-1's review proved
-    /// this exact class of branch reachable after its author had claimed otherwise.</para>
+    /// <para>Stated ONCE because two callers must agree exactly: <see cref="TryFindBlockedDevice"/> exempts
+    /// this set from its collision check, and <see cref="ReleaseOwnNamespace"/> removes it. A drift between
+    /// them is either a refused edit the register pass would have made work, or a claim let through to a
+    /// refusal after the store has already been written. It is the same rule
+    /// <c>ModbusMultidropRegistration.SweepGhosts</c> uses, and both normalise both sides through
+    /// <see cref="DriverKinds.Normalize"/> for the reason that method's own remarks give.</para></summary>
+    public static bool IsInBusNamespace(string busInstanceId, string instanceId)
+    {
+        var normalizedBus = DriverKinds.Normalize(busInstanceId);
+        var normalized = DriverKinds.Normalize(instanceId);
+
+        return string.Equals(normalized, normalizedBus, StringComparison.Ordinal)
+               || (normalized.StartsWith(normalizedBus + ModbusMultidropMap.DeviceIdSuffixPrefix, StringComparison.Ordinal)
+                   && ModbusMultidropMap.LooksLikeADeviceInstanceId(normalized));
+    }
+
+    /// <summary>
+    /// 🔴 <b>Fix round 1, review I-2 — releases every registration in this bus's own namespace, immediately
+    /// before the register pass, and this is what turns routine RS-485 maintenance from a permanent dead end
+    /// into an ordinary save.</b>
+    ///
+    /// <para>Two devices trading slave addresses (unit 2 ⇄ unit 3) is the ordinary re-addressing edit. Without
+    /// this, the new <c>line1:unit2</c> was refused against the OLD <c>line1:unit3</c>'s surviving claim, the
+    /// store was rolled back and the registry was left untouched — so the identical retry failed identically,
+    /// forever, and the only exit was a <c>DELETE</c> the refusal never named. Releasing first removes the
+    /// incumbent that the edit is replacing, which is the only thing that was ever in the way.</para>
+    ///
+    /// <para><b>It also closes the persisted half of D-4's own <c>m6</c> for this path:</b> a device DROPPED
+    /// from the map has its store row deleted by <see cref="ConnectorConfigStore.SaveBusAsync"/> but used to
+    /// keep its registry claim until the process restarted, so the machine could be served by nothing.
+    /// <c>ModbusMultidropRegistration.SweepGhosts</c> already did this for the <c>connectors.json</c> path;
+    /// this is the same rule for the endpoint path, sharing <see cref="IsInBusNamespace"/> rather than
+    /// restating it.</para>
+    ///
+    /// <para><b>Cost, stated:</b> a save that later fails cannot put these entries back — the store is
+    /// authoritative and the registry is rebuilt from it at the next start. That was already true of every
+    /// entry a successful <c>Register</c> replaced (last-write-wins destroys the previous one at that moment),
+    /// so this widens an existing limit rather than creating one, and
+    /// <see cref="Endpoints.ConnectorEndpoints.DescribeBusRollbackOutcome"/> reports it from the COUNT this
+    /// method returns instead of asserting it unconditionally.</para>
+    /// </summary>
+    /// <returns>How many registrations were released. 0 means this bus had none live in this process — an
+    /// ordinary outcome (a first save, or rows persisted by an earlier process run), not a failure.</returns>
+    public static int ReleaseOwnNamespace(string busInstanceId, ConnectorRegistry registry)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+
+        var released = 0;
+        foreach (var binding in registry.SnapshotBindings())
+        {
+            if (!IsInBusNamespace(busInstanceId, binding.InstanceId)) continue;
+            if (registry.Unregister(binding.InstanceId)) released++;
+        }
+
+        return released;
+    }
+
+    /// <summary>🔴 Fix round 1, review I-1 — what <see cref="TryRegisterAll"/> actually DID, because the
+    /// endpoint's 409 used to assert the registry had been disturbed on a path where it had not been touched
+    /// at all. A message that branches on a fact has to be given the fact.</summary>
+    /// <param name="Succeeded"><see langword="true"/> when every device registered.</param>
+    /// <param name="Registered">How many devices this call registered before it stopped.</param>
+    /// <param name="IncumbentsReleased"><see cref="ReleaseOwnNamespace"/>'s own return value — how many live
+    /// registrations of THIS bus were released before the register pass, and therefore how many the rollback
+    /// cannot put back.</param>
+    /// <param name="Refusal">Operator-readable, <see langword="null"/> on success.</param>
+    public readonly record struct BusRegistrationOutcome(
+        bool Succeeded, int Registered, int IncumbentsReleased, string? Refusal);
+
+    /// <summary>
+    /// 🔴 Task D-7b — registers every device on <paramref name="bus"/> into <paramref name="registry"/>, and
+    /// UNDOES ITSELF COMPLETELY if any one of them is refused.
+    ///
+    /// <para><b>What reaches the failure branch, stated accurately after fix round 1's I-2.</b> With
+    /// <see cref="ReleaseOwnNamespace"/> running first, every refusal a single request can produce on its own
+    /// is caught by <see cref="TryFindBlockedDevice"/> before anything is written; what is left is a
+    /// CONCURRENT registration taking one of these machine codes between the pre-check and this call — the
+    /// interleaving D-1's review proved reachable for the single-connector case. Before that fix this
+    /// paragraph was FALSE (a device swap reached the branch deterministically, and the message it printed
+    /// named a cause that had not happened); it is written this way now because the fix removed the path, not
+    /// because the path was re-argued away. This method is still driven directly by a test against an outside
+    /// claim rather than left to a comment — see <c>RtuBusRegistrationTests</c>.</para>
     ///
     /// <para>The undo cannot itself be partial: <see cref="ConnectorRegistry.Unregister"/> is a dictionary
-    /// mutation that performs no I/O, never throws, and is applied only to the ids THIS call registered — so a
-    /// re-save that is rolled back leaves the incumbent bus registration it replaced... <b>gone</b>, which is
-    /// the one honest limit here and is stated in <paramref name="refusal"/> rather than hidden: replacing a
-    /// registration is last-write-wins, so the previous entry for an id is destroyed at the moment of the
-    /// successful <c>Register</c>, before any later device could fail. The rollback restores the STORE
-    /// exactly, and the registry is rebuilt from the store at the next start.</para>
+    /// mutation that performs no I/O and never throws. What it cannot do is put back an entry this call
+    /// destroyed — the ones <see cref="ReleaseOwnNamespace"/> released, and any that a successful
+    /// <c>Register</c> replaced (last-write-wins). <see cref="BusRegistrationOutcome.IncumbentsReleased"/>
+    /// carries that count out so the caller's message can be true instead of assuming.</para>
     /// </summary>
-    /// <returns><see langword="true"/> when every device registered.</returns>
-    public static bool TryRegisterAll(
+    public static BusRegistrationOutcome TryRegisterAll(
         ResolvedBus bus,
         ModbusBusRegistry busRegistry,
         ConnectorRegistry registry,
-        ILogger logger,
-        [NotNullWhen(false)] out string? refusal)
+        ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(bus);
         ArgumentNullException.ThrowIfNull(busRegistry);
@@ -317,6 +406,9 @@ public static class RtuBusConfiguration
             writeQueueBudgetMs: ModbusMultidropMap.MaxWorstCaseBusHoldMs(bus.Devices),
             logWarning: msg => logger.LogWarning("{ModbusRtuMsg}", msg),
             logError: (ex, msg) => logger.LogError(ex, "{ModbusRtuMsg}", msg));
+
+        // 🔴 I-2 — first, so the edit this bus is making is never blocked by the state this bus is replacing.
+        var incumbentsReleased = ReleaseOwnNamespace(bus.BusInstanceId, registry);
 
         var registered = new List<string>(bus.Devices.Count);
 
@@ -334,15 +426,18 @@ public static class RtuBusConfiguration
             }
 
             registry.TryGetInstanceIdForMachine(device.MachineCode, out var incumbent);
-            refusal =
-                $"Device at unit {device.UnitId} (machine '{device.MachineCode}') could not be registered — " +
-                $"machine '{device.MachineCode}' was claimed by connector instance '{incumbent ?? "(unknown)"}' " +
-                "while this request was in flight. Every device this request had already registered has been " +
-                "unregistered, so no part of this bus is live.";
-            return false;
+            return new BusRegistrationOutcome(
+                Succeeded: false,
+                Registered: 0,
+                IncumbentsReleased: incumbentsReleased,
+                Refusal:
+                    $"Device at unit {device.UnitId} (machine '{device.MachineCode}') could not be registered — " +
+                    $"machine '{device.MachineCode}' is served by connector instance " +
+                    $"'{incumbent ?? "(unknown)"}', which is not part of this bus and took that claim after this " +
+                    "request had already been checked. Every device this request had registered has been " +
+                    "unregistered, so no part of this bus is live.");
         }
 
-        refusal = null;
-        return true;
+        return new BusRegistrationOutcome(true, registered.Count, incumbentsReleased, null);
     }
 }

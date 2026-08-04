@@ -1070,7 +1070,29 @@ EXPECT_EDGESERVICE=28
 #          owned row skipped WHOLE and warned about, because half a seeded bus is worse than none; and two
 #          never-throws arms (a malformed device, an unreadable transport) that seed nothing and warn naming
 #          the offending element.
-EXPECT_ENGINEAPI=1251
+#
+# 🔴 D-7b FIX ROUND 1 raises this 1251 -> 1265 (+14). Counted from the runner (18/10/6/5), not by hand.
+#   + 4  ConnectorRtuBusEndpointTests (14 -> 18) — review I-1 and I-2, and the count moves for a reason worth
+#          reading: TWO tests were REPLACED rather than added to. The rollback pair I built last round drove a
+#          device SWAP, and I-2's fix makes that swap SUCCEED — re-addressing two devices on a line was a
+#          permanent DEAD END (the registry kept the old claims, so the identical retry failed identically,
+#          forever, and the refusal named a cause that had not happened). So those two became
+#          TwoDevicesTradingSlaveAddresses_… (the save works, and a write for the moved machine resolves to
+#          its NEW unit) and ADeviceDroppedFromTheMap_LosesItsMachineClaimToo_… (the endpoint half of D-4's
+#          own m6 ghost). Net +4 is those two plus I-1's three: the failed-save SENTENCE is now a pure
+#          function (DescribeBusRollbackOutcome) driven over every combination, because the version it
+#          replaces told an operator their live registry had been destroyed on a path where nothing was
+#          touched — a [Theory] of 2 rows pinning that false half, plus the released-count arm and the
+#          failed-rollback arm.
+#   +10  RtuBusRegistrationTests (new) — 🔴 where the rollback is provable now that I-2 removed the only
+#          deterministic path to it through the endpoint. Both halves of the undo driven directly against an
+#          OUTSIDE claim (one success ahead of the refusal, taken back), the IncumbentsReleased count I-1's
+#          message branches on (0 on a first save, 2 on a re-save), the proof that a release touches this
+#          bus's namespace and nothing else (`line1-spare` and `line2:unit1` both survive — a bare-prefix
+#          rule would take the first), and a 7-row [Theory] stating the namespace rule itself, since
+#          TryFindBlockedDevice's exemption and ReleaseOwnNamespace's removal must be the SAME set or an edit
+#          is refused that the register pass was about to make work.
+EXPECT_ENGINEAPI=1265
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

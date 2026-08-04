@@ -29,8 +29,18 @@ namespace St4i.EngineApi.Config;
 /// would render as <c>COM3:0</c>, which reads as an address that could be dialled. <see langword="null"/>
 /// renders as the line alone, which is what it is.</para>
 /// </summary>
-/// <param name="Transport">The transport token this document declared, verbatim (never normalised — see
-/// <see cref="ModbusRtuBusSettings.ReadTransport"/> for why an operator's own spelling has to survive).</param>
+/// <param name="Transport">🔴 <b>The CANONICAL transport constant this document resolved to</b> —
+/// <see cref="ModbusRtuBusSettings.SerialTransport"/> or <see cref="ModbusRtuBusSettings.GatewayTransport"/>,
+/// never the operator's own spelling.
+///
+/// <para>Fix round 1, review M-1: this used to say "verbatim (never normalised — an operator's own spelling
+/// has to survive)", which described <see cref="ModbusRtuBusSettings.ReadTransport"/>'s contract rather than
+/// this one and was false of both arms of <see cref="Resolve"/>. The distinction is real and belongs where it
+/// is true: <c>ReadTransport</c> must keep the raw spelling because the message for an UNKNOWN transport has
+/// to quote what the operator actually wrote. By the time a plan exists the token has been RECOGNISED, and
+/// every consumer of this field (the audit row's after-state, the save response) wants the canonical name —
+/// an audit trail that recorded <c>rtu-Serial</c> for one bus and <c>rtu-serial</c> for its neighbour would
+/// make two identical configurations look different to whoever reads it.</para></param>
 /// <param name="BusKey">The reference-counting key <see cref="ModbusBusRegistry"/> shares one open link
 /// under. Two documents naming the same physical line MUST produce the same key, which is why it comes from
 /// the transport's own <c>CreateBusKey</c> rather than from the operator's bus id.</param>

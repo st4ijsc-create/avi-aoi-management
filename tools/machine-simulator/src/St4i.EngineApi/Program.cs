@@ -1397,13 +1397,14 @@ builder.Services.AddSingleton(sp =>
             continue;
         }
 
-        if (!St4i.EngineApi.Fleet.RtuBusConfiguration.TryRegisterAll(
-                persistedBus, sp.GetRequiredService<St4i.EdgeCore.Drivers.Modbus.ModbusBusRegistry>(),
-                registry, connectorsLogger, out var busRefusal))
+        var busRegistration = St4i.EngineApi.Fleet.RtuBusConfiguration.TryRegisterAll(
+            persistedBus, sp.GetRequiredService<St4i.EdgeCore.Drivers.Modbus.ModbusBusRegistry>(),
+            registry, connectorsLogger);
+        if (!busRegistration.Succeeded)
         {
             connectorsLogger.LogWarning(
                 "Persisted Modbus RTU bus '{BusInstanceId}' did not register and no device on that line runs " +
-                "this session: {Refusal}", group.Key, busRefusal);
+                "this session: {Refusal}", group.Key, busRegistration.Refusal);
             continue;
         }
 

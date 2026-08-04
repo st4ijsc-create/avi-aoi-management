@@ -3513,10 +3513,18 @@ hardcode chỉ mới huỷ được, chưa cấu hình được.)*
   from `ModbusOptions`/`OpcUaOptions` (both `FromEnvironment()`-sourced) and reuses that same instance for
   BOTH the env-var path and any `connectors.json` entry of the same kind — only the register/node MAP
   (`settings`) is genuinely swappable via `connectors.json` today.
-- **The `id`/`kind` split has no functional effect today** — the registry is one-factory-per-kind, and
-  `id` is used only for log/slot-label naming (see §19.4's own doc correction: `GET /v1/connectors`'
-  `id` field is actually the registry key — the normalized `kind` — not a `connectors.json` entry's own
-  `id`, which is discarded after config loading).
+- **The `id`/`kind` split HAS a functional effect, since Đợt D.**
+
+  > 🔴 **CORRECTED (D-7b fix round 1).** This bullet read *"The `id`/`kind` split has no functional
+  > effect today — the registry is one-factory-per-kind, and `id` is used only for log/slot-label naming
+  > (see §19.4's own doc correction: `GET /v1/connectors`' `id` field is actually the registry key — the
+  > normalized `kind`)."* **Both halves are false since D-1/D-7a**, and it pointed the reader at the very
+  > paragraph D-7b rewrote. The registry is keyed per connector **INSTANCE**; `ConnectorStatusDto.Id`
+  > carries an instance id; and an RTU **bus** entry registers under its own `id`, with each of its devices
+  > under the derived `{bus}:unit{n}` (§23.2). What survives is narrow and worth keeping: a Modbus TCP /
+  > OPC-UA `connectors.json` entry still leaves its instance id defaulting to the kind, so ITS `id` is
+  > still naming-only — deliberately, because adopting it would move that connector's pipeline slot label
+  > and therefore its alarm `TargetId`.
 - **A known hazard for whoever builds the loader:** the simulated-fleet carve-out means a connector
   registered under a **built-in** id (notably `Simulated`) could re-open a double-drive path where two
   pipelines write the same machine and corrupt cycle counts. **Unreachable today** — no dispatch path
@@ -3556,10 +3564,16 @@ lấy từ môi trường bất kể connector được cấu hình qua 2 biến
 `Program.cs` dựng ĐÚNG MỘT `ModbusConnectorFactory`/`OpcUaConnectorFactory` cho mỗi loại từ
 `ModbusOptions`/`OpcUaOptions` (đều lấy từ `FromEnvironment()`) và dùng lại CHÍNH instance đó cho cả
 đường env-var lẫn mọi entry `connectors.json` cùng loại — chỉ riêng MAP thanh ghi/node (`settings`) mới
-thực sự thay được qua `connectors.json` hôm nay. **Việc tách `id`/`kind` CHƯA có tác dụng chức
-năng nào hôm nay** — registry là một-factory-một-kind, `id` chỉ dùng để đặt tên log/slot (xem đính chính ở
-§19.4: trường `id` của `GET /v1/connectors` thực ra là khoá registry — `kind` đã chuẩn hoá — không phải
-`id` riêng của entry `connectors.json`, vốn đã bị bỏ sau khi load config). **Một rủi ro đã
+thực sự thay được qua `connectors.json` hôm nay. **Việc tách `id`/`kind` ĐÃ CÓ tác dụng chức
+năng, từ Đợt D.** 🔴 **ĐÍNH CHÍNH (D-7b, vòng sửa 1):** câu cũ viết *"CHƯA có tác dụng chức năng nào — registry
+là một-factory-một-kind, `id` chỉ dùng để đặt tên log/slot (xem đính chính §19.4: trường `id` của
+`GET /v1/connectors` thực ra là khoá registry — `kind` đã chuẩn hoá)."* **Cả hai vế đều SAI kể từ
+D-1/D-7a**, và nó còn trỏ người đọc tới đúng đoạn mà D-7b đã viết lại. Registry key theo TỪNG THỂ kết nối;
+`ConnectorStatusDto.Id` mang một instance id; và một entry **tuyến** RTU đăng ký dưới chính `id` của nó,
+với từng thiết bị dưới id dẫn xuất `{tuyến}:unit{n}` (§23.2). Phần còn đúng thì hẹp và đáng giữ: một entry
+`connectors.json` loại Modbus TCP / OPC-UA vẫn để instance id mặc định bằng kind, nên `id` CỦA NÓ vẫn chỉ
+để đặt tên — và đó là chủ ý, vì lấy `id` đó sẽ làm dịch nhãn slot pipeline và kéo theo `TargetId` của cảnh
+báo. **Một rủi ro đã
 biết cho ai xây loader sau này:** carve-out cho simulated-fleet nghĩa là một connector đăng ký dưới một id
 **có sẵn** (đặc biệt `Simulated`) có thể MỞ LẠI đường double-drive khiến hai pipeline cùng ghi một máy và
 làm hỏng số đếm chu kỳ. **KHÔNG THỂ xảy ra hôm nay** — không có đường dispatch nào đăng ký id tuỳ ý — **NHƯNG
@@ -3658,8 +3672,7 @@ routes on `ConnectorEndpoints.cs`:
 > built its DELETE URL, from `kind`, so on an RS-485 bus it could not say which of N devices a Remove
 > button meant. §23.4 is the full write-up of what that screen shows now.
 
-**Only Modbus TCP and OPC-UA are offered** — the two protocols this build has a working driver for
-(§20.5). 🔴 **Đợt D adds a third choice on that form, and it is not a third protocol:** "Modbus RTU
+**Only Modbus and OPC-UA are offered** — the protocols this build has a working driver for (§20.5). 🔴 **Đợt D adds a third choice on that form, and it is not a third protocol:** "Modbus RTU
 (RS-485)" is the same `Modbus` kind with a document that declares a `transport`, i.e. a whole multidrop
 **bus** rather than one connector — see §23. **The "map JSON"** is the exact same shape the `ST4I_MODBUS_MAP`/`ST4I_OPCUA_MAP` environment
 variables already used: for Modbus, `{ machineCode, unitId, pollIntervalMs, registers: [{ address,
@@ -3699,9 +3712,12 @@ is no live "unregister" path either.
 yêu cầu Engineer+; xem danh sách là Operator) gọi 4 route mới trên `ConnectorEndpoints.cs`:
 `GET /v1/connectors/configured` (Operator, không kèm JSON map vì có thể chứa mật khẩu OPC-UA),
 `POST /v1/connectors` (Engineer, có audit `connector.save` — validate, lưu, đăng ký factory sống, và
-gieo vào đội hình qua `RegisterMachine`), `DELETE /v1/connectors/{kind}` (Engineer, audit
+gieo vào đội hình qua `RegisterMachine`), `DELETE /v1/connectors/{instanceId}` (Engineer, audit
 `connector.delete` — CHỈ xoá dòng đã lưu), `POST /v1/connectors/test` (Engineer, KHÔNG audit vì không
-đổi gì — dựng driver dùng-một-lần, thử đọc có giới hạn thời gian). **Chỉ Modbus TCP và OPC-UA** được
+đổi gì — dựng driver dùng-một-lần, thử đọc có giới hạn thời gian). 🔴 **ĐÍNH CHÍNH (D-7b):** đoạn URL ngay trên đây trước là `{kind}`; từ D-1 nó là `{instanceId}`, vì khi
+đã cấu hình được hai kết nối cùng giao thức thì "kind" không còn xác định được cái gì để xoá — mọi URL từ
+trước D-1 vẫn chạy nguyên vì instance id của một dòng đã migrate CHÍNH LÀ kind của nó. Bản thân trang web
+mãi tới D-7b mới bắt kịp (xem §23.4). **Chỉ Modbus TCP và OPC-UA** được
 chọn — 2 giao thức build này có driver thật. **"JSON map"** đúng y hệt shape 2 biến môi trường
 `ST4I_MODBUS_MAP`/`ST4I_OPCUA_MAP` đã dùng, nhập bằng cách dán/tải file `.json` vào một `<textarea>`
 thường — **CHƯA có bộ dựng map trực quan/đồ hoạ**. **Thêm máy MỚI áp dụng sống ngay; lưu lại một máy ĐÃ
@@ -3814,7 +3830,8 @@ KHÔNG PHẢI cảnh báo** — và luôn thu gọn; widget chỉ tự mở khi 
   Đợt B** (B-1 through B-8): `IDeviceDriver` gained an OPTIONAL `IWritableDeviceDriver` capability, and
   both `ModbusTcpDriver` and `OpcUaDriver` execute a real write for a machine whose map declares one
   (`POST /v1/machines/{code}/setpoint`/`.../command`). §21 states the honest limitations of THAT
-  capability plainly (only two protocols write, a Modbus command is a zero-argument coil pulse, there is
+  capability plainly (only Modbus and OPC-UA write — Modbus TCP and, since Đợt D, Modbus RTU over RS-485
+  (§23); a Modbus command is a zero-argument coil pulse, there is
   no rate limiting, the Critical-alarm gate is fleet-wide, `Indeterminate` is a real operational state,
   and Sparkplug NCMD — inbound commands from the ecosystem — is still never received, so this write path
   is local-caller-only). Left here, corrected rather than deleted, so anyone who bookmarked this
@@ -3837,10 +3854,18 @@ KHÔNG PHẢI cảnh báo** — và luôn thu gọn; widget chỉ tự mở khi 
   configured**, an alarm is visible on `/alarms` and in the `alarms.db` history and reaches nobody else.
   A fresh install therefore starts silent, and the engine prints a startup **warning** saying so
   (`NotificationStartupNotices`) rather than leaving that state to be discovered.
-- **Only Modbus TCP and OPC-UA actually work.** `MqttDriver` exists and is proven by
-  `MqttDriverTests`, but it is registered into **no** host's dependency injection — neither
-  `St4i.EngineApi`'s nor `St4i.EdgeService`'s `Program.cs`/startup wiring references it. Serial/RS-485,
-  S7, EtherNet/IP, and SECS/GEM have no driver at all.
+- **Only Modbus and OPC-UA actually work — and "Modbus" now means TCP *and* RTU.** `MqttDriver` exists
+  and is proven by `MqttDriverTests`, but it is registered into **no** host's dependency injection —
+  neither `St4i.EngineApi`'s nor `St4i.EdgeService`'s `Program.cs`/startup wiring references it. S7,
+  EtherNet/IP and SECS/GEM have no driver at all.
+
+  > 🔴 **CORRECTED (Đợt D, D-7b fix round 1).** This bullet used to list **Serial/RS-485** among the
+  > protocols with "no driver at all". That is false: `ModbusRtuDriver` ships, over both transports
+  > (`rtu-gateway` and a directly-attached `rtu-serial` COM port), and `St4i.EngineApi` registers it — see
+  > §23. What IS still true and is the part worth keeping: **no Modbus frame has yet crossed a real serial
+  > port** (§23.5), and **only `St4i.EngineApi` can open one** (§23.6). RS-485 is a shipped driver with an
+  > outstanding bench acceptance step, which is a different statement from "no driver at all" and has a
+  > different remedy.
 - **Re-saving an existing connector's settings while the fleet runs does not apply live; a fresh add
   does.** See §20.2's own explanation — `FleetHost.RegisterMachine` only ever adds, never updates an
   already-running slot in place.
@@ -3879,9 +3904,14 @@ relay; và không kênh nào có bảo đảm gửi tới nơi). Giữ lại ở
 đoạn này ở đợt trước vẫn thấy chỗ sửa. **Điều vẫn đúng, đã thu hẹp lại đúng phạm vi của nó:** trên một
 bản cài **chưa cấu hình gì**, cảnh báo chỉ thấy ở `/alarms` và trong lịch sử `alarms.db`, không tới ai
 khác — và engine in một **cảnh báo lúc khởi động** nói đúng điều đó thay vì để người dùng tự phát hiện.
-**Chỉ Modbus TCP và OPC-UA THẬT SỰ chạy được.**
+**Chỉ Modbus và OPC-UA THẬT SỰ chạy được — và "Modbus" giờ gồm cả TCP LẪN RTU.**
 `MqttDriver` tồn tại, được `MqttDriverTests` chứng minh, nhưng KHÔNG được đăng ký DI ở host nào cả.
-Serial/RS-485, S7, EtherNet/IP, SECS/GEM chưa có driver. **Lưu lại cấu hình một connector ĐÃ CÓ trong
+S7, EtherNet/IP, SECS/GEM chưa có driver. 🔴 **ĐÍNH CHÍNH (Đợt D, D-7b, vòng sửa 1):** câu này trước
+đây xếp cả **Serial/RS-485** vào nhóm "chưa có driver". Điều đó SAI: `ModbusRtuDriver` đã ship, trên cả hai
+đường truyền (`rtu-gateway` và cổng COM cắm thẳng `rtu-serial`), và `St4i.EngineApi` có đăng ký nó — xem
+§23. Phần VẪN ĐÚNG và đáng giữ: **chưa có khung Modbus nào đi qua một cổng serial thật** (§23.5), và **chỉ
+`St4i.EngineApi` mở được cổng đó** (§23.6). "Đã có driver nhưng còn thiếu bước nghiệm thu trên bàn" là một
+câu khác hẳn "chưa có driver", và cách xử lý cũng khác. **Lưu lại cấu hình một connector ĐÃ CÓ trong
 khi đội hình đang chạy KHÔNG áp dụng sống; thêm máy MỚI thì có** — xem §20.2. **Sửa một connector đòi
 dán/tải JSON map; CHƯA có bộ dựng trực quan** — ô nhập duy nhất của `/connectors` là một `<textarea>`
 thường. **Phát UNS/Sparkplug hướng lên KHÔNG có bộ lọc nguồn gốc.** Khác với các mặt
@@ -4013,10 +4043,24 @@ first never calls the second, by design, and that is not going to change.
 
 Stated plainly, verified against the source below, not softened:
 
-- **Only Modbus TCP and OPC-UA can write.** Serial/RS-485, S7, EtherNet/IP, and SECS/GEM have no driver at
-  all (§20.5). `MqttDriver` (`St4i.EdgeCore.Drivers.Mqtt`) exists and is proven by its own test suite but
-  is wired into **no** host's dependency injection — it cannot write, or even read, in a running instance
-  of this product today.
+- **Only Modbus and OPC-UA can write — Modbus TCP, and (since Đợt D) Modbus RTU over RS-485.** S7,
+  EtherNet/IP and SECS/GEM have no driver at all (§20.5). `MqttDriver`
+  (`St4i.EdgeCore.Drivers.Mqtt`) exists and is proven by its own test suite but is wired into **no** host's
+  dependency injection — it cannot write, or even read, in a running instance of this product today.
+
+  > 🔴 **CORRECTED (Đợt D, D-7b fix round 1), and this is the correction that mattered most.** This
+  > bullet used to read *"Only Modbus TCP and OPC-UA can write. Serial/RS-485 … have no driver at all."*
+  > `ModbusRtuDriver` is declared `: IWritableDeviceDriver` and is registered by `St4i.EngineApi`, so an
+  > RS-485 device **can be written to**. This is the write-SAFETY section, so the stale sentence did more
+  > than mislead: an engineer reading it concluded an RTU device was unwritable and therefore that
+  > everything below — the four `WriteOutcome` states, the limits, and above all what `Applied` does and
+  > does not prove — did not apply to them.
+  >
+  > 🔴 **It applies, and it is sharper for RTU than for TCP.** `Applied` on an RTU command is an
+  > **acknowledgement, not an observation**: RTU has nothing that ties a returned frame to a specific
+  > request, so a late echo of an earlier, already-finished pulse is acknowledged identically. See §23.5.
+  > The two RTU-specific limits an integrator must also read are there: automatic-DE adapters only, and no
+  > frame has yet crossed a real serial port.
 - **A Modbus command is a zero-argument coil pulse.** `ModbusRegisterMap`'s command declaration
   (`coilAddress` + optional `arguments`) rejects any command that declares an argument **at parse time** —
   a real wire convention for delivering an argument to a Modbus coil pulse was never defined, so a map that
@@ -4042,9 +4086,19 @@ Stated plainly, verified against the source below, not softened:
   only from an authenticated local HTTP caller (the web UI, or a direct API call), never from a SYNAPSE
   Site or any other upstream system.
 
-*(VI: Ghi rõ, đã đối chiếu mã nguồn, không mềm hoá: **Chỉ Modbus TCP và OPC-UA ghi được** — Serial/RS-485,
-S7, EtherNet/IP, SECS/GEM chưa có driver (§20.5); `MqttDriver` tồn tại, có test riêng, nhưng KHÔNG được
-đăng ký DI ở host nào — không đọc, không ghi được trong một instance đang chạy của sản phẩm này.
+*(VI: Ghi rõ, đã đối chiếu mã nguồn, không mềm hoá: **Chỉ Modbus và OPC-UA ghi được — Modbus TCP, và
+(từ Đợt D) Modbus RTU trên RS-485** — S7, EtherNet/IP, SECS/GEM chưa có driver (§20.5); `MqttDriver` tồn
+tại, có test riêng, nhưng KHÔNG được đăng ký DI ở host nào — không đọc, không ghi được trong một instance
+đang chạy của sản phẩm này. 🔴 **ĐÍNH CHÍNH (Đợt D, D-7b, vòng sửa 1) — và đây là bản đính chính quan
+trọng nhất.** Câu này trước đây viết *"Chỉ Modbus TCP và OPC-UA ghi được — Serial/RS-485 … chưa có
+driver."* `ModbusRtuDriver` được khai báo `: IWritableDeviceDriver` và được `St4i.EngineApi` đăng ký, nên
+một thiết bị RS-485 **GHI ĐƯỢC**. Đây là mục nói về AN TOÀN KHI GHI, nên câu cũ không chỉ gây hiểu nhầm:
+một kỹ sư đọc nó sẽ kết luận thiết bị RTU không ghi được, và do đó mọi thứ bên dưới — bốn trạng thái
+`WriteOutcome`, các giới hạn, và trên hết là ý nghĩa thật của `Applied` — không áp dụng cho họ. 🔴 **Nó CÓ
+áp dụng, và với RTU còn gắt hơn với TCP:** `Applied` của một lệnh RTU là một sự **XÁC NHẬN, không phải một
+QUAN SÁT** — RTU không có gì buộc một khung tin quay về với một yêu cầu cụ thể, nên một khung echo về muộn
+của một xung đã kết thúc trước đó vẫn được xác nhận y hệt. Xem §23.5, nơi cũng nêu hai giới hạn riêng của
+RTU: chỉ adapter tự động đảo chiều, và chưa có khung nào đi qua cổng serial thật.
 **Một lệnh Modbus là một xung coil không tham số** — khai báo lệnh của `ModbusRegisterMap` (`coilAddress`
 + `arguments` tuỳ chọn) từ chối NGAY LÚC NẠP bất kỳ lệnh nào khai báo tham số — chưa có quy ước dây thật
 nào để truyền tham số vào một xung coil Modbus, nên map nào cố khai báo sẽ bị từ chối ngay, nêu rõ tên

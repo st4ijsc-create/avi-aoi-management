@@ -1994,7 +1994,6 @@ export const vi = {
       busIdPlaceholder: "line1-rs485",
       busIdHint:
         "Tên do bạn đặt cho đường dây vật lý này. Mọi thiết bị trên đó được đánh địa chỉ theo dạng <tuyến>:unit<địa chỉ slave>, nên đây chính là cái tên bạn sẽ thấy ở danh sách phía trên và trong cảnh báo. Tuyến không có tên mặc định — một trạm có thể có nhiều đường dây, và không thể có cái nào là “cái Modbus”.",
-      busIdRequired: "Bắt buộc phải đặt tên tuyến.",
       rtuNote:
         "Một đường RS-485, N thiết bị, một tài liệu duy nhất. Đặt loại đường truyền và thông số đường dây ở mức gốc (“transport”: “rtu-serial” kèm portName/baudRate/parity/dataBits/stopBits, hoặc “rtu-gateway” kèm host/port của bộ chuyển đổi serial sang TCP), và đặt mọi thiết bị trong mảng “devices” — mỗi phần tử là một sơ đồ thanh ghi hoàn chỉnh của MỘT thiết bị, có machineCode và unitId riêng. Không có gì được kế thừa từ mức tuyến xuống thiết bị, và đó là chủ ý: cái bạn dán vào đây chính là cái mỗi thiết bị lưu lại và driver của nó đọc lại sau này. Nếu chỉ một thiết bị trong mảng bị sai, sẽ KHÔNG có gì được lưu — một tuyến được lưu trọn vẹn hoặc không lưu gì cả.",
       rtuHardwareLimit:

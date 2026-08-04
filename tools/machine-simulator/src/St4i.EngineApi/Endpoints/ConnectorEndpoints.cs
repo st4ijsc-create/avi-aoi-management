@@ -455,10 +455,13 @@ public static class ConnectorEndpoints
     /// restarts a running pipeline per NEW machine, so a bus of eight new machines restarts it eight times.
     /// Batching that needs a plural roster API, and roster surgery is explicitly not this task's
     /// (<c>FleetHost</c> is 2 406 lines and its removal path is a named future batch). (2) A re-save of an
-    /// existing bus that then fails the concurrent-claim check restores the STORE exactly but cannot restore
-    /// the registry ENTRY it replaced, because <see cref="ConnectorRegistry.Register"/> is last-write-wins and
-    /// the replacement already happened; the store is authoritative and the registry is rebuilt from it at the
-    /// next start. The response says so.</para>
+    /// existing bus that then fails restores the STORE exactly but cannot restore the registry entries it had
+    /// already released — <see cref="RtuBusConfiguration.ReleaseOwnNamespace"/> runs before the register pass
+    /// (fix round 1, I-2: without it, re-addressing two devices on a line was a permanent dead end), and
+    /// <see cref="ConnectorRegistry.Register"/> is last-write-wins besides. The store is authoritative and the
+    /// registry is rebuilt from it at the next start. <see cref="DescribeBusRollbackOutcome"/> reports this
+    /// from the released COUNT rather than asserting it whenever the bus happened to have rows — which is
+    /// exactly what it used to do, and what made it false on the path this task's own headline test drives.</para>
     ///
     /// <para><b>The write-capability save gate is applied per DEVICE, and the fingerprint is over the whole
     /// bus.</b> A bus is one deliberate act; making an operator confirm eight fingerprints for one paste would
@@ -553,7 +556,8 @@ public static class ConnectorEndpoints
         var savedRows = await store.SaveBusAsync(
             bus.BusInstanceId, rows, ConnectorConfigSource.Operator, ct).ConfigureAwait(false);
 
-        if (!RtuBusConfiguration.TryRegisterAll(bus, busRegistry, connectorRegistry, logger, out var refusal))
+        var registration = RtuBusConfiguration.TryRegisterAll(bus, busRegistry, connectorRegistry, logger);
+        if (!registration.Succeeded)
         {
             // CancellationToken.None, deliberately — D-1's re-review finding I-A, unchanged in force here: a
             // compensating action must not be cancelled by the very token whose cancellation caused it.
@@ -571,18 +575,9 @@ public static class ConnectorEndpoints
             }
 
             return Results.Conflict(new ApiErrorDto(
-                $"Modbus RTU bus '{bus.BusInstanceId}' was not saved. {refusal} " +
-                (rolledBack
-                    ? previousRows.Count == 0
-                        ? "Its persisted rows were rolled back in one transaction, so nothing is left behind."
-                        : "Its persisted rows were restored, in one transaction, to the " +
-                          $"{previousRows.Count} device(s) this bus had before the request. Note that the LIVE " +
-                          "registry entries for the devices that did register were replaced before the refusal " +
-                          "and cannot be put back — the persisted configuration is authoritative and is rebuilt " +
-                          "into the registry at the next application start."
-                    : $"⚠ The rollback did NOT complete, so rows for '{bus.BusInstanceId}' may have been left " +
-                      "behind that will never run. Check GET /v1/connectors/configured and remove them with " +
-                      "DELETE /v1/connectors/{instanceId} if they are there.")));
+                $"Modbus RTU bus '{bus.BusInstanceId}' was not saved. {registration.Refusal} " +
+                DescribeBusRollbackOutcome(
+                    bus.BusInstanceId, rolledBack, previousRows.Count, registration.IncumbentsReleased)));
         }
 
         // 🔴 The only irreversible step, and it is last. RegisterMachine restarts a RUNNING pipeline per new
@@ -640,6 +635,71 @@ public static class ConnectorEndpoints
             AppliedLive: addedMachines.Count > 0,
             message,
             Devices: savedRows));
+    }
+
+    /// <summary>
+    /// 🔴 <b>Fix round 1, review I-1 — the operator-facing sentence describing what a failed bus save left
+    /// behind, and it is a PURE FUNCTION for exactly the reason <see cref="DescribeRollbackOutcome"/> is.</b>
+    ///
+    /// <para>The branch that produces it is reachable only under a concurrent registration, so no test drives
+    /// the handler into it. <b>What the code does when it happens anyway</b> (§8.1 principle 1's own
+    /// requirement of any sentence like the previous one): this function is called with
+    /// <see cref="RtuBusConfiguration.BusRegistrationOutcome.IncumbentsReleased"/> and the previous row count
+    /// and is exercised directly, over all four combinations, by
+    /// <c>ConnectorRtuBusEndpointTests.TheBusRollbackSentence_…</c> — code a test cannot reach is code nothing
+    /// ever asks a consequence question about, so the sentence is moved to where the question can be asked.
+    /// That is precisely how the previous version shipped a false sentence: it appended
+    /// <i>"the LIVE registry entries for the devices that did register were replaced before the refusal and
+    /// cannot be put back"</i> <b>unconditionally whenever the bus already had rows</b>, while on the path the
+    /// task's own headline test drives the FIRST device was refused, nothing had been registered, and the
+    /// registry was byte-identical to before. The operator was told their live configuration had diverged from
+    /// the store and needed a restart, about a system that had not been touched. Pulled out here, all four
+    /// outcomes are ordinary unit-testable arguments.</para>
+    ///
+    /// <para>Three facts vary independently and each changes what an operator should do: whether the rollback
+    /// completed, whether this bus had any persisted rows before the request, and whether any LIVE registration
+    /// of this bus was actually released (fix round 1's I-2 releases the bus's own namespace before the
+    /// register pass, so this is now a real count rather than an inference from "some rows existed").</para>
+    /// </summary>
+    /// <param name="previousDeviceCount">How many rows this bus had before the request. 0 means the request
+    /// created it, so a completed rollback leaves nothing at all.</param>
+    /// <param name="incumbentsReleased"><see cref="RtuBusConfiguration.BusRegistrationOutcome.IncumbentsReleased"/>
+    /// — never an assumption about it. 0 means the registry was not disturbed and must not be described as
+    /// though it were.</param>
+    internal static string DescribeBusRollbackOutcome(
+        string busInstanceId, bool rolledBack, int previousDeviceCount, int incumbentsReleased)
+    {
+        if (!rolledBack)
+        {
+            // Stated as a possibility rather than a certainty, for the same reason the single-connector
+            // version is: the compensation can fail either before or after doing its work, and this method is
+            // not in a position to know which. Pointing at the endpoint that would SHOW it is the actionable
+            // part.
+            return $"⚠ The rollback did NOT complete, so rows for '{busInstanceId}' may have been left behind " +
+                   "that will never run: they would be listed by GET /v1/connectors/configured and refused " +
+                   "again at every restart. Check that endpoint and remove them with " +
+                   "DELETE /v1/connectors/{instanceId} if they are there.";
+        }
+
+        var stored = previousDeviceCount == 0
+            ? "Nothing was persisted for this bus: its rows were rolled back in one transaction, so there is " +
+              "no leftover configuration to clean up."
+            : $"Its persisted rows were restored, in one transaction, to the {previousDeviceCount} device(s) " +
+              "this bus had before the request — including their original creation timestamps.";
+
+        if (incumbentsReleased == 0)
+        {
+            // 🔴 The half that used to be asserted unconditionally and was false. Say plainly that nothing
+            // live changed, because "your registry is now inconsistent and needs a restart" sends an operator
+            // to restart a machine for no reason.
+            return stored + " No live connector on this bus was disturbed, so the running configuration is " +
+                   "exactly what it was before this request.";
+        }
+
+        return stored + $" Note that the {incumbentsReleased} live registration(s) this bus already held were " +
+               "released before the register pass and cannot be put back — the persisted configuration is " +
+               "authoritative and is rebuilt into the registry at the next application start. Until then, a " +
+               "write for one of those machines is refused rather than sent to the wrong device.";
     }
 
     /// <summary>🔴 Task D-7b — every grant declared anywhere on one bus, as ONE capability. Used for the

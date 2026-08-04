@@ -35,6 +35,16 @@ import { vi as viDict } from "../src/i18n/vi"
  * asserted separately, against a real store, a real `ConnectorRegistry` and a real roster, by
  * `ConnectorRtuBusEndpointTests.DeletingOneDeviceOfATwoDeviceBus_RemovesExactlyThatOne_AndLeavesItsSiblingRunning`
  * (which is inside the gate). The two halves together are the claim; neither is it alone.
+ *
+ * 🔴 **One assertion in here has a dependency on the harness that is invisible from the assertion itself, and
+ * it is written down rather than left to be discovered** (fix round 1, review M-3). The duplicate-React-key
+ * witness in the first multidrop test reads `console.error`, and React emits that message **only in a
+ * development build**. `playwright.config.ts`'s own `webServer` runs `npm run dev` (Vite, unminified React),
+ * so it holds today — but repointing that command at `vite preview` or any production build would **silently
+ * disarm the assertion with no test failure**, which is the exact "a green number that means something
+ * different on a different machine" shape `verify-suites.sh` exists to refuse. If that webServer ever changes,
+ * this witness must be replaced (the honest alternative is asserting on reconciliation behaviour across a list
+ * update, which is what a duplicate key actually corrupts), not deleted.
  */
 
 const NOW = new Date().toISOString()

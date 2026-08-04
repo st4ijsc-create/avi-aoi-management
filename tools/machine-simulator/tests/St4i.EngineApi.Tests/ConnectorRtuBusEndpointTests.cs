@@ -282,28 +282,22 @@ public sealed class ConnectorRtuBusEndpointTests
     }
 
     /// <summary>
-    /// 🔴 <b>THE ROLLBACK, driven through the real endpoint — and this test exists because a mutation that
-    /// DELETED the rollback survived without it.</b>
+    /// 🔴 <b>Fix round 1, review I-2 — re-addressing two devices on a line WORKS. Before this round it was a
+    /// permanent dead end, and the endpoint's own refusal named a cause that had not happened.</b>
     ///
-    /// <para>The rollback branch was written for a concurrent registration, which no test can stage. That
-    /// framing is what made it look unreachable, and blueprint §8.1's first principle says a "cannot be
-    /// reached" claim needs a counterexample attempted <b>on a different axis</b> than the one being reasoned
-    /// about. The axis here is not concurrency at all — it is the <b>bus's own namespace</b>:</para>
+    /// <para>Two devices trading slave addresses is routine RS-485 maintenance. Until fix round 1 it produced
+    /// a 409 saying the machine <i>"was claimed ... while this request was in flight"</i> — where the claimant
+    /// was this same bus's own device from the PREVIOUS save, claimed long before the request. Worse than a
+    /// wrong cause: the store was rolled back and the registry left untouched, so <b>the identical retry
+    /// failed identically, forever</b>, and the only exit was a <c>DELETE</c> the message never mentioned.</para>
     ///
-    /// <para>Swap two devices' machine codes between two slave addresses (the ordinary re-addressing edit).
-    /// <see cref="RtuBusConfiguration.TryFindBlockedDevice"/> lets it through, correctly — every incumbent
-    /// claim belongs to an id THIS bus is about to re-register, so refusing there would make the second save
-    /// of every bus impossible. <see cref="ConnectorRegistry.Register"/> then refuses the FIRST device
-    /// anyway, because at that instant <c>line1:unit2</c> still holds the machine <c>line1:unit1</c> is now
-    /// claiming. So the store has already been written and the registration fails afterwards — deterministic,
-    /// reproducible, and exactly the state the rollback exists for.</para>
-    ///
-    /// <para>The assertion is that the store is back to the EXACT set it held before the request, not merely
-    /// that the response is a 409: a rollback that left the new rows behind would produce the identical
-    /// status code and leave a configuration that can never go live.</para>
+    /// <para>The fix is structural, not a rewording: the bus releases its OWN namespace immediately before the
+    /// register pass. The assertions below are the operator-facing consequence — the save succeeds, the
+    /// machines end up on the addresses the operator's file declares, and a write for <c>SWAP-A</c> now
+    /// resolves to unit 2. A message that correctly describes a dead end is still a dead end.</para>
     /// </summary>
     [Fact]
-    public async Task ABusSaveThatFailsToRegister_RollsTheStoreBackToExactlyItsPreviousDeviceSet()
+    public async Task TwoDevicesTradingSlaveAddresses_SavesAndReRegistersOnTheNewAddresses()
     {
         var store = new ConnectorConfigStore(TempDir());
         var registry = new ConnectorRegistry();
@@ -313,47 +307,38 @@ public sealed class ConnectorRtuBusEndpointTests
             store, registry, new ModbusBusRegistry(), host, "line1",
             SerialBus(Device("SWAP-A", 1), Device("SWAP-B", 2)))));
 
-        var before = (await store.ListAsync())
-            .Select(r => (r.EffectiveInstanceId, r.MachineCode))
-            .OrderBy(x => x.EffectiveInstanceId, StringComparer.Ordinal)
-            .ToArray();
-
-        // The two devices trade slave addresses.
-        var result = await PostAsync(
+        var swap = await PostAsync(
             store, registry, new ModbusBusRegistry(), host, "line1",
             SerialBus(Device("SWAP-B", 1), Device("SWAP-A", 2)));
 
-        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
-        Assert.Contains("no part of this bus is live", ErrorOf(result), StringComparison.Ordinal);
-        Assert.Contains("restored", ErrorOf(result), StringComparison.Ordinal);
+        Assert.Equal(StatusCodes.Status200OK, StatusOf(swap));
 
-        // 🔴 The discriminating assertion. Delete the rollback and this fails: the swapped rows are written,
-        // the registration is refused, and the operator is left with a persisted bus that contradicts the
-        // registry and that no restart can reconcile in their favour.
-        var after = (await store.ListAsync())
-            .Select(r => (r.EffectiveInstanceId, r.MachineCode))
-            .OrderBy(x => x.EffectiveInstanceId, StringComparer.Ordinal)
-            .ToArray();
-        Assert.Equal(before, after);
+        // The persisted half: the machines moved, and both rows still belong to this bus.
+        Assert.Equal(
+            new[] { ("line1:unit1", "SWAP-B"), ("line1:unit2", "SWAP-A") },
+            (await store.ListAsync())
+                .Select(r => (r.EffectiveInstanceId, r.MachineCode))
+                .OrderBy(x => x.EffectiveInstanceId, StringComparer.Ordinal)
+                .ToArray());
+
+        // 🔴 The live half, and the one that matters: a write for SWAP-A must now resolve to unit 2. A save
+        // that persisted the swap while the registry still routed SWAP-A to unit 1 would send that write to
+        // the wrong slave address on a shared wire — the failure the whole identity model exists to make
+        // unreachable.
+        Assert.True(registry.TryGetInstanceIdForMachine("SWAP-A", out var a));
+        Assert.Equal("line1:unit2", a);
+        Assert.True(registry.TryGetInstanceIdForMachine("SWAP-B", out var b));
+        Assert.Equal("line1:unit1", b);
+        Assert.Equal(2, registry.RegisteredIds.Count);
     }
 
-    /// <summary>
-    /// 🔴 <b>The REGISTRY half of the rollback — a second mutation (leave the partial registrations behind)
-    /// survived the test above, because in a two-device swap the FIRST device is the one that fails and there
-    /// is nothing registered yet to undo.</b> Three devices, with the swap moved to units 2 and 3, puts one
-    /// successful registration ahead of the refusal, which is the only shape in which "undo what I already
-    /// did" means anything.
-    ///
-    /// <para>The assertion is deliberately the DOCUMENTED LIMIT rather than an optimistic one:
-    /// <c>line1:unit1</c> ends up registered by NOTHING. Re-registering it succeeded (same id, same claim)
-    /// and destroyed the incumbent entry at that instant — <see cref="ConnectorRegistry.Register"/> is
-    /// last-write-wins — so undoing this request cannot put the previous entry back. The store is
-    /// authoritative and the registry is rebuilt from it at the next start; the endpoint's own 409 says
-    /// exactly this. Asserting the optimistic version ("unit1 is still bound to SWAP-A") would assert
-    /// something false, which is the mistake D-7a's own DELETE response made once already.</para>
-    /// </summary>
+    /// <summary>🔴 Fix round 1, I-2's second half — a device DROPPED from the map no longer keeps its machine
+    /// claim. <see cref="ConnectorConfigStore.SaveBusAsync"/> already deleted its row; before this round the
+    /// registry entry survived until the process restarted, so the machine could be served by nothing and a
+    /// replacement connector for it was refused by a ghost. This is the endpoint half of the same sweep
+    /// <c>ModbusMultidropRegistration.SweepGhosts</c> does for <c>connectors.json</c>.</summary>
     [Fact]
-    public async Task ABusSaveThatFailsPartWayThrough_LeavesNoRegistrationOfItsOwnBehind()
+    public async Task ADeviceDroppedFromTheMap_LosesItsMachineClaimToo_NotJustItsRow()
     {
         var store = new ConnectorConfigStore(TempDir());
         var registry = new ConnectorRegistry();
@@ -361,29 +346,65 @@ public sealed class ConnectorRtuBusEndpointTests
 
         Assert.Equal(StatusCodes.Status200OK, StatusOf(await PostAsync(
             store, registry, new ModbusBusRegistry(), host, "line1",
-            SerialBus(Device("SW-A", 1), Device("SW-B", 2), Device("SW-C", 3)))));
+            SerialBus(Device("KEEP", 1), Device("DROP", 2)))));
 
-        // Units 2 and 3 trade machines; unit 1 is unchanged, so it re-registers successfully BEFORE unit 2 is
-        // refused against unit 3's surviving claim on SW-C.
-        var result = await PostAsync(
+        Assert.Equal(StatusCodes.Status200OK, StatusOf(await PostAsync(
             store, registry, new ModbusBusRegistry(), host, "line1",
-            SerialBus(Device("SW-A", 1), Device("SW-C", 2), Device("SW-B", 3)));
+            SerialBus(Device("KEEP", 1)))));
 
-        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
-        Assert.Contains("unit 2", ErrorOf(result), StringComparison.Ordinal);
+        Assert.Equal(new[] { "line1:unit1" }, registry.RegisteredIds);
+        Assert.False(registry.TryGetInstanceIdForMachine("DROP", out _));
+    }
 
-        // 🔴 The discriminating assertion: the one device this request DID register is gone again. Without the
-        // undo, "line1:unit1" stays registered by a request that returned 409 — a live connector created by an
-        // operation the operator was told had failed.
-        Assert.DoesNotContain("line1:unit1", registry.RegisteredIds);
+    /// <summary>
+    /// 🔴 <b>Fix round 1, review I-1 — the sentence a failed bus save prints, over every combination.</b>
+    ///
+    /// <para>The previous version appended <i>"the LIVE registry entries ... were replaced before the refusal
+    /// and cannot be put back"</i> UNCONDITIONALLY whenever the bus already had rows — telling an operator
+    /// their running configuration had diverged from the store and needed a restart, on a path where nothing
+    /// live had been touched at all. The branch is reachable only under a concurrent registration, so the
+    /// sentence is a pure function and this is where the consequence question gets asked.</para>
+    ///
+    /// <para>These two rows are the discriminating ones: with nothing released, the message must NOT claim the
+    /// registry was disturbed, and must say plainly that it was not.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public void TheBusRollbackSentence_NeverClaimsTheRegistryWasDisturbed_WhenNothingWasReleased(
+        int previousDeviceCount)
+    {
+        var message = ConnectorEndpoints.DescribeBusRollbackOutcome(
+            "line1", rolledBack: true, previousDeviceCount, incumbentsReleased: 0);
 
-        // The store is intact and unchanged, which is the half the operator can actually see and act on.
-        Assert.Equal(
-            new[] { ("line1:unit1", "SW-A"), ("line1:unit2", "SW-B"), ("line1:unit3", "SW-C") },
-            (await store.ListAsync())
-                .Select(r => (r.EffectiveInstanceId, r.MachineCode))
-                .OrderBy(x => x.EffectiveInstanceId, StringComparer.Ordinal)
-                .ToArray());
+        Assert.DoesNotContain("cannot be put back", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("released before the register pass", message, StringComparison.Ordinal);
+        Assert.Contains("No live connector on this bus was disturbed", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheBusRollbackSentence_SaysWhatCannotBePutBack_WhenRegistrationsWereActuallyReleased()
+    {
+        var message = ConnectorEndpoints.DescribeBusRollbackOutcome(
+            "line1", rolledBack: true, previousDeviceCount: 3, incumbentsReleased: 3);
+
+        Assert.Contains("3 live registration(s)", message, StringComparison.Ordinal);
+        Assert.Contains("cannot be put back", message, StringComparison.Ordinal);
+        Assert.Contains("restored", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("No live connector on this bus was disturbed", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheBusRollbackSentence_ForAFailedRollback_PointsAtTheEndpointThatWouldShowTheWreckage()
+    {
+        var message = ConnectorEndpoints.DescribeBusRollbackOutcome(
+            "line1", rolledBack: false, previousDeviceCount: 0, incumbentsReleased: 0);
+
+        Assert.Contains("did NOT complete", message, StringComparison.Ordinal);
+        Assert.Contains("GET /v1/connectors/configured", message, StringComparison.Ordinal);
+        // Never the reassuring half: a message false in the direction of "nothing to check here" stops the one
+        // person who could clean up from looking.
+        Assert.DoesNotContain("no leftover configuration", message, StringComparison.Ordinal);
     }
 
     // ─────────────────────────────────────────────────────────────────────

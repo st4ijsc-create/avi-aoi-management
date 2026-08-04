@@ -1954,7 +1954,6 @@ export const en: Dictionary = {
       busIdPlaceholder: "line1-rs485",
       busIdHint:
         "Your own name for this physical line. Every device on it is addressed as <bus>:unit<slave address>, so this is the name you will see on the list above and in alarms. A bus has no default name — several lines can exist and one of them cannot be “the Modbus one”.",
-      busIdRequired: "A bus name is required.",
       rtuNote:
         "One RS-485 line, N devices, one document. Put the transport and the line parameters at the top level (“transport”: “rtu-serial” with a portName/baudRate/parity/dataBits/stopBits, or “rtu-gateway” with a host/port for a serial device server), and every device inside a “devices” array — one complete single-device register map each, with its own machineCode and unitId. Nothing is inherited from the bus level, deliberately: what you paste here is what each device stores and what its driver re-reads. If any device in the array is invalid, NOTHING is saved — a bus is saved whole or not at all.",
       rtuHardwareLimit:
