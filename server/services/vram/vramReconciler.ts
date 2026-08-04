@@ -799,12 +799,58 @@ export async function captureVramBaseline(
 }
 
 /**
+ * ★★★ Pha 2B Task 2 — Ô LƯU KẾT QUẢ NHỊP GẦN NHẤT. Đây là NGUỒN SỐ của `computeHeadroom()`
+ * (`vramHeadroom.ts`, §5.6c), và lý do nó phải tồn tại là một ràng buộc CẤU TRÚC, không phải tiện lợi:
+ *
+ * `reserve()` là **ĐỒNG BỘ**, và tính đồng bộ đó **LÀ** lá chắn từ Pha 1 — không có `await` thì
+ * không có cửa sổ để hai lượt xin chen nhau giữa lúc đọc số và lúc ghi sổ. Đường cưỡng chế vì thế
+ * **không được `await` đầu dò**; nó đọc con số của nhịp gần nhất đã lưu sẵn ở đây.
+ *
+ * ⚠ CÁI GIÁ, ĐÃ KHAI Ở SPEC §5.6c: **60 s là ĐỘ TRỄ CƯỠNG CHẾ THẬT.** Một hộ lạ xuất hiện ngay
+ * sau một nhịp sẽ vô hình với cổng tới trọn một nhịp. Vì vậy ô này mang theo `atMs` — "tick cũ bao
+ * lâu thì hết đáng tin" là chính sách của Task 5, và nó cần con số để quyết.
+ *
+ * ⚠⚠ ĐÂY KHÔNG PHẢI MỘT BỘ ĐỆM ĐẦU DÒ. Không ai được "làm mới" nó bằng cách gọi lại đầu dò từ
+ * đường đọc — làm vậy là đưa I/O trở lại đúng chỗ Pha 1 đã dọn đi.
+ */
+export interface VramTickRecord {
+  readonly result: VramReconcileResult;
+  /** `Date.now()` lúc nhịp KẾT THÚC (không phải lúc bắt đầu) — con số dùng để đo độ cũ. */
+  readonly atMs: number;
+}
+let lastTick: VramTickRecord | null = null;
+
+/**
+ * Đọc kết quả nhịp gần nhất. **ĐỒNG BỘ, không I/O, không tác dụng phụ** — gọi được từ trong
+ * `reserve()`.
+ *
+ * `null` = **CHƯA có nhịp nào chạy trong tiến trình này**, và người đọc PHẢI hiểu là **ĐANG MÙ**,
+ * TUYỆT ĐỐI không phải "thiết bị trống". Ca này thường trực chứ không hiếm: dưới topology
+ * `api`+`worker` (`backgroundJobs.ts:11`), `startVramReconciler()` chỉ chạy ở vai trò chạy
+ * scheduler ⇒ ở tiến trình `api` ô này **rỗng vĩnh viễn**.
+ *
+ * ⚠ Trả về CHÍNH đối tượng đã lưu (không sao chép): `VramReconcileResult` là dữ liệu chỉ-đọc theo
+ * quy ước của module này. Đừng sửa nó tại chỗ.
+ */
+export function readLastReconcileTick(): VramTickRecord | null {
+  return lastTick;
+}
+
+/**
  * Đúng một nhịp của bộ đếm giờ: THỬ LẠI lượt chụp nền (no-op khi đã có) rồi đối chiếu.
  * Tách ra để test canh được hành vi thử-lại mà không phải giả lập đồng hồ.
+ *
+ * ⚠⚠ Pha 2B Task 2 — CHỈ ĐƯỜNG NÀY XUẤT BẢN VÀO Ô TICK, **KHÔNG PHẢI `reconcileOnce()`**. Lý do
+ * là ngữ nghĩa, không phải gọn gàng: `reconcileOnce()` gọi TRỰC TIẾP (test, công cụ chẩn đoán,
+ * Task 7 của Pha 1.5) chạy với `baselineRequired === false` ⇒ nền = 0 ⇒ nó CỐ Ý so **số THÔ**, và
+ * `attributable` của nó là "cả tấm card kể cả desktop". Xuất bản con số đó vào ô quyết định là để
+ * một công cụ chẩn đoán LÁI đường cưỡng chế của sản xuất. Có ca test khoá việc này.
  */
 export async function __runReconcileTick(): Promise<VramReconcileResult> {
   await captureVramBaseline();
-  return reconcileOnce();
+  const result = await reconcileOnce();
+  lastTick = { result, atMs: Date.now() };
+  return result;
 }
 
 /** Chỉ dùng trong test. */
@@ -831,6 +877,9 @@ export function __resetVramBaselineForTests(): void {
   // và `attributableBytes` sẽ có số ở đúng những ca sinh ra để chứng minh nó KHÔNG được có số.
   baselineVerified = false;
   warnedUnverifiedBaseline = false;
+  // Pha 2B Task 2 — cùng lý do, và ở đây hậu quả NẶNG HƠN: không xoá thì test sau thừa kế một
+  // QUYẾT ĐỊNH CẤP PHÁT của test trước (dư địa tính từ một tick không còn liên quan gì).
+  lastTick = null;
 }
 
 /**
