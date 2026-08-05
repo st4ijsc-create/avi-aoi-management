@@ -1534,7 +1534,9 @@ async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Pro
           `sinh ra nó đã chết (server khởi động lại?) nhưng byte của nó VẪN NẰM TRÊN CARD — spec §6. ` +
           `Giấy phép đã được DỰNG LẠI và công bố ra sổ chung để anh em thấy. ` +
           `Hộ này NHÀN RỖI và CÓ người thi hành thu hồi ("orphan-pid", Pha 3 Task 5): một lượt ` +
-          `preempt() sẽ tắt ĐÚNG pid ${ho.pid} và chỉ khai thành công khi nvidia-smi xác nhận byte đã nhả.`,
+          `preempt() chỉ tắt pid ${ho.pid} khi mốc tạo của nó VẪN KHỚP mốc ghi kèm ở đây — cùng số ` +
+          `PID mà CreationDate đổi ⇒ TỪ CHỐI, không tắt (C-1) — và chỉ khai thành công khi ` +
+          `nvidia-smi xác nhận byte đã nhả.`,
       );
     } catch {
       /* sổ hỏng KHÔNG được đánh hỏng nhịp đối chiếu */
@@ -1621,6 +1623,43 @@ export async function thuHoiHoNhanNuoi(
 ): Promise<boolean> {
   const muc = leaseNhanNuoi.get(pid);
   if (muc === undefined) return false;
+
+  /**
+   * ★★★ C-1 (review TOÀN NHÁNH) — **ĐỌC MỐC TẠO TRƯỚC KHI GIẾT.** Đây là dòng phân biệt
+   * *"tắt ĐÚNG pid N"* với *"tắt cái tiến trình đang MANG số N hôm nay"*.
+   *
+   * `leaseNhanNuoi` lưu `ctime` đúng vì lý do PID-CẤP-LẠI (docstring của nó gọi tên `notepad.exe`),
+   * nhưng trước bản vá `ctime` **chỉ được đọc ở nhịp 60 s** (`chayLuotNhanNuoi`) — đường PHÁ HUỶ
+   * này chỉ kiểm `leaseNhanNuoi.get(pid)` CÓ MẶT. Ba sự thật cộng lại thành một lượt giết nhầm:
+   *   1. hộ nhận nuôi có `refCount = 0` **VĨNH VIỄN** ⇒ `coTheNhuong()` cho **MỌI** mức người xin
+   *      ⇒ **mọi** `reserve()` bị từ chối đều lên kế hoạch giết nó;
+   *   2. cửa sổ **rộng hơn 60 s**: nhịp bỏ qua khi bảng tiến trình không đọc được, và Task 4 đo
+   *      được `readProcTable()` trả `null` **4 lượt liên tiếp** dưới tải;
+   *   3. sau lượt giết, phép kiểm bằng chứng thoả **RỖNG TUẾCH** — tiến trình mới không phải
+   *      compute-app ⇒ `!pids.includes(pid)` đúng NGAY lượt đầu ⇒ `return true` + một dòng log
+   *      *"nvidia-smi XÁC NHẬN"*. Sai **và** tự khai là đúng: hình dạng tệ nhất có thể.
+   *
+   * ⚠ `procs === null` ⇒ **KHÔNG CÓ BẰNG CHỨNG** ⇒ `false`, cùng kỷ luật đã áp cho `docPidGiuGpu()`
+   * ngay dưới. *"Không kiểm được"* không được đọc thành *"được phép"* — đó đúng lớp lỗi cả module
+   * này tồn tại để diệt, chỉ khác chỗ hậu quả ở đây là một `process.kill()` vào PID tuỳ ý.
+   * ⚠ KHÔNG nhả giấy phép ở nhánh này dù ta vừa biết tiến trình cũ đã chết: người dọn `leaseNhanNuoi`
+   * theo mốc tạo là nhịp đối chiếu (`:1441-1455`), và giữ thêm một nhịp là chiều CHẶT.
+   */
+  const bang = await readProcTableSafe();
+  const hienTai = bang === null ? undefined : bang.find((p) => p.pid === pid);
+  if (bang === null || hienTai === undefined || hienTai.ctime !== muc.ctime) {
+    console.error(
+      `[vram] KHÔNG THU HỒI pid ${pid}: ` +
+        (bang === null
+          ? "KHÔNG ĐỌC ĐƯỢC bảng tiến trình ⇒ không có bằng chứng nó vẫn là tiến trình ta đứng tên"
+          : hienTai === undefined
+            ? "PID đã BIẾN MẤT khỏi bảng tiến trình ⇒ không còn gì để tắt"
+            : "PID đã được CẤP LẠI cho một tiến trình KHÁC (CreationDate đổi) ⇒ tắt nó là giết một tiến trình VÔ CAN") +
+        `. Giữ nguyên giấy phép và khai THẤT BẠI; nhịp đối chiếu là người dọn bảng nhận nuôi.`,
+    );
+    return false;
+  }
+
   const cua: Partial<CuaThuHoiNgoaiTienTrinh> | undefined =
     cuaVao ?? cuaThuHoiCuaTest ?? undefined;
 
@@ -1655,8 +1694,11 @@ export async function thuHoiHoNhanNuoi(
       pids = null;
     }
     if (pids !== null && !pids.includes(pid)) {
-      // ⚠ MỘT NGƯỜI GHI cho `leaseNhanNuoi`: gỡ khỏi bảng TRƯỚC khi nhả sổ, để một nhịp đối chiếu
-      // chen vào giữa không thấy một mục trỏ tới giấy phép đã nhả.
+      // ⚠ HAI NGƯỜI GHI cho `leaseNhanNuoi`, và **cả hai nằm trong file này** (chỗ kia:
+      // `chayLuotNhanNuoi` :1443, lượt dọn theo mốc tạo). Ý vẫn đúng — `vramPreempt` KHÔNG tự ghi,
+      // nó gọi sang đây — nhưng câu chữ cũ ("MỘT NGƯỜI GHI") dựng một giả định sai cho người sau
+      // (m-5, review TOÀN NHÁNH). Gỡ khỏi bảng TRƯỚC khi nhả sổ, để một nhịp đối chiếu chen vào
+      // giữa không thấy một mục trỏ tới giấy phép đã nhả.
       leaseNhanNuoi.delete(pid);
       const bytes = muc.lease.actualBytes ?? 0;
       try {

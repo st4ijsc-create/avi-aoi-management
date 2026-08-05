@@ -646,6 +646,61 @@ describe("E. THU HỒI XUYÊN TIẾN TRÌNH — hộ nhận nuôi nay CÓ ngư�
   });
 
   /**
+   * ★★★ C-1 (review TOÀN NHÁNH) — **GIẾT NHẦM RỒI KHAI THÀNH CÔNG.** Ba ca dưới đây khoá đúng lỗ
+   * mà E-5 KHÔNG canh: E-5 hỏi *"pid này có phải hộ của ta không"*; ba ca này hỏi
+   * *"cái pid ta đứng tên HÔM NAY còn là ĐÚNG TIẾN TRÌNH đó không"*.
+   *
+   * `leaseNhanNuoi` lưu `ctime` **đúng vì lý do PID-CẤP-LẠI** (xem docstring của nó), nhưng trước
+   * bản vá `ctime` chỉ được đọc ở **nhịp 60 s**; đường **PHÁ HUỶ** chỉ kiểm `leaseNhanNuoi.get(pid)`
+   * có mặt rồi `process.kill()`. Cửa sổ còn **rộng hơn 60 s**: `chayLuotNhanNuoi` `continue` khi
+   * bảng tiến trình không đọc được, và Task 4 đo được `readProcTable()` trả `null` **4 lượt liên
+   * tiếp** dưới tải.
+   *
+   * ⚠⚠ Và hình dạng TỆ NHẤT không phải lượt giết — mà là lời khai sau đó: hộ nhận nuôi có
+   * `refCount = 0` VĨNH VIỄN ⇒ `coTheNhuong` cho MỌI mức người xin ⇒ mọi `reserve()` bị từ chối đều
+   * lên kế hoạch giết nó; rồi lượt kiểm bằng chứng thoả **RỖNG TUẾCH** (một `notepad.exe` không
+   * phải compute-app ⇒ `!pids.includes(pid)` đúng ngay lượt đầu) ⇒ `return true` kèm một dòng log
+   * *"nvidia-smi XÁC NHẬN"*. Sai **và** tự khai là đúng.
+   */
+  it("★★★ E-10 (C-1): PID được CẤP LẠI (cùng số, KHÁC `ctime`) ⇒ KHÔNG giết, KHÔNG khai thành công", async () => {
+    await __runReconcileTick();
+    expect(__pidDangNhanNuoi(), "tiền đề: ta đang đứng tên đúng pid này").toEqual([31337]);
+
+    // Hộ mồ côi đã chết; HĐH cấp lại đúng số PID cho một tiến trình vô can.
+    bangTienTrinh = [
+      procsCoSidecar[0]!,
+      { pid: 31337, ppid: 5, cmdline: "C:\\Windows\\notepad.exe", ctime: ft(20_000) },
+    ];
+    const ghi = { giet: [] as number[] };
+
+    // ⚠ Cửa thiết bị nói "pid KHÔNG giữ GPU" — đúng thứ làm bằng chứng THOẢ RỖNG TUẾCH ở bản cũ.
+    const ok = await thuHoiHoNhanNuoi(31337, cua([7824], ghi));
+
+    expect(ghi.giet, "một `notepad.exe` vô can TUYỆT ĐỐI không được nhận SIGTERM").toEqual([]);
+    expect(ok, "và một lượt giết NHẦM không được khai là thành công").toBe(false);
+    expect(snapshot().totalReservedBytes, "sổ giữ nguyên: nhịp 60 s mới là người dọn").toBe(KHOI_17K);
+    expect(__pidDangNhanNuoi()).toEqual([31337]);
+  });
+
+  it("★★ E-11 (C-1): pid VẮNG HẲN khỏi bảng tiến trình ⇒ không có gì để giết ⇒ không khai thành công", async () => {
+    await __runReconcileTick();
+    bangTienTrinh = [procsCoSidecar[0]!];
+    const ghi = { giet: [] as number[] };
+    expect(await thuHoiHoNhanNuoi(31337, cua([7824], ghi))).toBe(false);
+    expect(ghi.giet, "gửi tín hiệu tới một số PID trống là bắn vào bóng tối").toEqual([]);
+    expect(snapshot().totalReservedBytes).toBe(KHOI_17K);
+  });
+
+  it("★★ E-12 (C-1): KHÔNG đọc được bảng tiến trình ⇒ KHÔNG bằng chứng ⇒ KHÔNG hành động", async () => {
+    await __runReconcileTick();
+    bangTienTrinh = null;
+    const ghi = { giet: [] as number[] };
+    expect(await thuHoiHoNhanNuoi(31337, cua([7824], ghi))).toBe(false);
+    expect(ghi.giet, '"không kiểm được" KHÔNG được đọc thành "được phép"').toEqual([]);
+    expect(snapshot().totalReservedBytes).toBe(KHOI_17K);
+  });
+
+  /**
    * ★★★ ĐƯỜNG THOÁT ĐẦY ĐỦ: `preempt()` → `preemptPlan()` → `NGUOI_THI_HANH["orphan-pid"]` →
    * `pidTuOwnerNhanNuoi()` → `thuHoiHoNhanNuoi()`. `freedBytes` đo bằng **CHÊNH LỆCH SỔ**, không
    * cộng theo lời khai của kế hoạch.
