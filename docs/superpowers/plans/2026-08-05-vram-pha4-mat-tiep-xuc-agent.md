@@ -27,8 +27,6 @@ Bảy pha vừa rồi để lại một danh sách dài những **"đồng hồ 
 
 ⚠ **Quy tắc của pha:** mỗi ô ở trên phải **có người đọc** sau Pha 4, **hoặc** bị **xoá kèm lý do**. Không được để nguyên. Giữ một ô không ai đọc là giữ một lời hứa không ai giữ.
 
-⚠⚠ **CỔNG RA CỦA TASK 4 ĐÃ SIẾT (review Task 1, mục B):** *"nối vào router (Task 1/2)"* là một **vòng tròn** — ô được coi là "có người đọc" vì nó nằm trong payload của một router mà **chính router đó chưa ai đọc** (`grep -rn "\.vram\." client/src` ⇒ **0 khớp**; và AI Agent của repo này tiêu thụ năng lực qua `server/services/aiLocalTools/toolRegistry.ts`, **không** qua tRPC). ⇒ Phép thử máy-chạy-được thay thế: với mỗi ô, `git grep` phải chỉ ra **≥ 1 điểm gọi NGOÀI `server/routers/**` VÀ NGOÀI `server/services/vram/**`**.
-
 > 🔴 **ĐÍNH CHÍNH (2026-08-05, review Task 1) — bảng trên SAI một hàng, và luật của Task 4 BỊ VÒNG TRÒN.**
 >
 > 1. **Hàng 1 sai từ Pha 3**: `getKbSyncSchedulerStatus()` **đã có** người tiêu thụ — `aiLocalKnowledgeService.ts:1486-1492`.
