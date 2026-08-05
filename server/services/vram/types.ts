@@ -220,3 +220,50 @@ export interface VramSnapshot {
  * chung, không logic**, còn dựng câu chữ + lọc số không hữu hạn là HÀNH VI. Bản Pha 1 chưa có
  * điểm gọi sản xuất nào (`git grep VramRefusedError` chỉ ra chính nó), nên không phá ai.
  */
+
+/**
+ * ★★★ Pha 4 Task 1 — **HAI UNION NỀN ĐÃ DỜI XUỐNG ĐÂY TỪ `vramReconciler`.**
+ *
+ * Lý do là một ràng buộc cấu trúc, không phải sắp xếp cho gọn: từ Pha 4, `vramTickCell` — **module LÁ,
+ * không nhập gì** — mang luôn hai ô chẩn đoán của nền (xem `VramDecisionTickFields`), nên nó cần hai
+ * kiểu này. Kéo `vramReconciler` (một module có I/O, đồng hồ, trạng thái toàn cục) vào đường nhập
+ * của ô quyết định là đúng thứ `vramTickCell.ts` được dựng ra để tránh. `import type` bị xoá sạch lúc
+ * biên dịch, và file này **thuần kiểu** — không thêm một byte runtime nào.
+ * ⚠ `vramReconciler` **xuất lại** hai tên này để mọi điểm nhập cũ không phải đổi một dòng.
+ */
+/** Xem `VramReconcileResult.baselineOrigin`. */
+export type BaselineOrigin = "local" | "captured" | "adopted";
+
+/**
+ * ★★★ Pha 3 Task 3, QUYẾT ĐỊNH 2 — VÌ SAO NỀN KHÔNG ĐÁNG TIN. Xem
+ * `VramReconcileResult.baselineUnverifiedReasons` và `lyDoNenKhongTin()`.
+ */
+export type VramBaselineDistrustReason =
+  /** Chưa có lượt chụp/nhận nào trong tiến trình này — KHÔNG phải "nền sạch". */
+  | "chua-chup-nen"
+  /** Không liệt kê được tiến trình đang giữ GPU ⇒ **không biết** có tàn dư hay không. */
+  | "khong-quet-duoc-ho-giu-gpu"
+  /** Có TÀN DƯ của lượt chạy trước giữ GPU — byte của nó không quy trách nhiệm được cho ai. */
+  | "co-tan-du-giu-gpu"
+  /**
+   * ★★★ VỊ TỪ THAY CHO VẾ `peers` CŨ. Có vai trò ANH EM trên card **mà byte của họ CHƯA được tính**
+   * — tức sổ chung không đọc được (`baselineOrigin === "local"`, không ai thắng bầu) **hoặc** sổ
+   * chung đọc được nhưng **KHÔNG có một hàng nào của ai khác** (anh em đang giữ card mà im lặng).
+   *
+   * ⚠⚠ VÌ SAO VẾ `peers` CŨ PHẢI CHẾT: nó hạ cờ **chỉ vì có anh em**, và lý do của nó là *"nền đã
+   * NUỐT byte của họ"* — mà **chính Task 3 vừa xoá bỏ tình trạng đó** (nền do MỘT tiến trình chụp,
+   * byte anh em nằm ở `attributable`; nghiệm thu sống: nền **1.234.386.944** thay vì
+   * **9.444.524.032**, `drift = 0`). Giữ nguyên vế cũ trong topo `api`+`worker` là biến cờ thành
+   * **hằng số `false`** kèm **1.024 MiB phạt thường trực** — mất dư địa VÀ mất thông tin, đúng lớp
+   * lỗi I-3 mà Task 2 đã phải sửa một lần cho `shared-ledger-unsynced`.
+   *
+   * ⚠ VÀ VÌ SAO KHÔNG **BỎ HẲN** VẾ ĐÓ: `census.peers` vẫn là câu trả lời DUY NHẤT cho *"có ai khác
+   * của hệ đang ở trên card không"*. Cái đổi là **câu hỏi thứ hai** — *"byte của họ đã được tính
+   * chưa"* — và câu đó nay **có nguồn** (sổ chung). Hai câu, hai nguồn, không nguồn nào đoán byte
+   * (`nvidia-smi` trả `used_memory=[N/A]`, ràng buộc không đổi).
+   */
+  | "anh-em-tren-card-chua-duoc-tinh"
+  /** Nền ĐỌC ĐƯỢC của người khác đã cũ hơn một chu kỳ làm mới bản sao. */
+  | "nen-nhan-nuoi-qua-cu"
+  /** Người chụp tự khai nền của họ CHƯA xác minh — người đọc KHÔNG được nâng cấp lời khai đó. */
+  | "nguoi-chup-khai-chua-xac-minh";

@@ -11,6 +11,7 @@
  * đều phải mang **phần KHÔNG quy trách nhiệm được** — và các ca dưới đây khoá đúng điều đó.
  */
 import { describe, it, expect, beforeEach } from "vitest";
+import { __tickFieldsForTests } from "./vramTickCell";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,7 +51,7 @@ import { APP_ERROR_CODES } from "../../_core/appErrorCodes";
 function ctxSachChoCaCu(): import("./vramBroker").VramDecisionContext {
   const now = Date.now();
   return {
-    tick: { attributableBytes: 0, baselineVerified: true, atMs: now, consecutiveFailures: 0 },
+    tick: { ...__tickFieldsForTests(0, true), atMs: now, consecutiveFailures: 0 },
     unledgered: { bytes: 0, unknownCount: 0 },
     sharedLedger: __freshSharedLedgerFactForTests(),
     nowMs: now,
@@ -722,7 +723,7 @@ describe("vramBroker — nguồn của 'ai đang giữ' và 'ai có thể như�
   it("refusalFactsFor() ghép sổ SỐNG với kết quả headroom, và BẮT BUỘC khai ống ngoài sổ", () => {
     reserve(req("bg:kb-sync", 1_000, "background"));
     const hi: HeadroomInput = headroomInputFromTick(
-      { attributableBytes: 21_000 * MIB, baselineVerified: true },
+      __tickFieldsForTests(21_000 * MIB, true),
       { ceilingBytes: 32_607 * MIB, safetyReserveBytes: 1_024 * MIB, ledgerTotalBytes: 1_000 * MIB },
     );
     const h = computeHeadroom(hi);

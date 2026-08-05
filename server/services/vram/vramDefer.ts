@@ -34,17 +34,27 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠⚠ HAI KIỂU "HOÃN", VÀ CHÚNG KHÁC NHAU Ở **AI ĐANG ĐỢI** — ĐỌC TRƯỚC KHI ĐẶT NGÂN SÁCH
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- *   • **Đường JOB NỀN** (`sidecar:local-trainer` · `sidecar:llm-finetune` · `cron:kb-eval-gate`):
- *     không ai ngồi đợi. Chờ 15→60 phút rồi thử lại là **đúng nghĩa đen** của "hoãn": job không
- *     hỏng, nó chỉ chạy muộn. Ngân sách mặc định **6 giờ** (cùng con số §5.4).
+ *   • **Đường JOB NỀN** (`sidecar:local-trainer` · `sidecar:llm-finetune`): không ai ngồi đợi.
+ *     Chờ 15→60 phút rồi thử lại là **đúng nghĩa đen** của "hoãn": job không hỏng, nó chỉ chạy
+ *     muộn. Ngân sách mặc định **6 giờ** (cùng con số §5.4).
  *   • **Đường PHỤC VỤ YÊU CẦU** (`cuda-backend:reranker` · `reranker:<path>` ·
- *     `gguf-embed-ctx:<id>`): có một request HTTP đang treo. Ngủ 15 phút ở đó **là CHẶN**, đúng
+ *     `gguf-embed-ctx:<id>` · **`cron:kb-eval-gate`**): có một request HTTP đang treo — hoặc, với
+ *     cổng eval, **một chốt đơn-luồng đang bị giữ**. Ngủ 15 phút ở đó **là CHẶN**, đúng
  *     thứ tên module này cấm. Hai hộ ấy vốn đã **không chặn** theo cách khác — chúng **suy giảm
  *     tại chỗ** (`aiReranker.rerank()` trả về thứ tự cosine gốc; `getEmbeddingContext` ném một câu
  *     lỗi đã nói đúng nguyên nhân) — thứ chúng THIẾU là **VẾT**. ⇒ ngân sách mặc định **0**, nghĩa
  *     *"đừng đợi, kêu ngay"* (đúng ngữ nghĩa "0 tường minh" của §5.4): không một mili giây chờ
  *     nào, nhưng từ nay có `defer_exceeded` trong `vram_events` + một ô trạng thái đọc được.
  *     Người vận hành muốn chúng ĐỢI thì đặt `VRAM_DEFER_REQUEST_BUDGET_MS`.
+ *
+ * ⚠⚠ ĐÍNH CHÍNH (Pha 4 Task 1, review) — **`cron:kb-eval-gate` KHÔNG thuộc đường JOB NỀN**, dù cái
+ * tên `cron:` gợi thế. Bản trước của chính khối này xếp nó vào đường JOB (6 giờ) trong khi
+ * `kbSyncScheduler.beginEvalGateVram()` truyền `vramRequestDeferBudgetMs()` (mặc định **0**) — và
+ * docstring TẠI ĐIỂM GỌI đã giải thích đúng lý do: cổng eval chạy **BÊN TRONG** `runKbSyncNow()`,
+ * tức **đang giữ chốt đơn-luồng `running`**; ngủ 15-60 phút ở đó làm **mọi** lượt thử lại của
+ * chuỗi hoãn `cron:kb-sync` rơi vào `already_running` — cơ chế hoãn mới vô hiệu hoá cơ chế hoãn cũ.
+ * ⇒ Bảng này nay khai theo **MÃ ĐANG CHẠY**. Một tài liệu SAI về một cơ chế an toàn là chỗ người
+ * sau dựng giả định lên.
  *
  * ⚠ Ba việc module này CỐ Ý KHÔNG làm (chép nguyên kỷ luật của `kbSyncScheduler`): không đo byte,
  * không cộng byte, không so hai thước (Đ4).

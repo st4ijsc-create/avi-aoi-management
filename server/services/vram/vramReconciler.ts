@@ -1,7 +1,8 @@
 import { snapshot, leaseBytes } from "./vramBroker";
 import { readDeviceVram } from "./vramProbe";
 import { logVramEvent } from "./vramEventLog";
-import type { VramLease } from "./types";
+import type { BaselineOrigin, VramBaselineDistrustReason, VramLease } from "./types";
+import { reconcileIntervalMs } from "./vramEnforcement";
 import type { GpuHolderCensus } from "./vramGpuHolders";
 import type { HeadroomTickFields } from "./vramHeadroom";
 import {
@@ -63,22 +64,12 @@ async function readProcTableSafe(): Promise<readonly ProcTableRow[] | null> {
 }
 
 const DRIFT_THRESHOLD_BYTES = Number(process.env.VRAM_DRIFT_THRESHOLD_MB ?? 512) * 1024 * 1024;
-const INTERVAL_MS = Number(process.env.VRAM_RECONCILE_INTERVAL_MS ?? 60_000);
-
 /**
- * ★ Pha 4 Task 1 — NHỊP LÀM MỚI, ĐỌC ĐƯỢC TỪ NGOÀI. **MỘT hằng số, hai người đọc**
- * (`startVramReconciler()` và mặt đọc của Agent).
- *
- * ⚠⚠ CON SỐ NÀY LÀ **ĐỘ TRỄ CƯỠNG CHẾ THẬT XUYÊN TIẾN TRÌNH**, không phải một chi tiết vận hành:
- * bản sao đọc sổ chung được làm mới theo đúng nhịp này, nên một giấy phép 17 GB vừa mở ở tiến
- * trình anh em **có thể mất tới trọn một chu kỳ** mới hiện ra. Mặt đọc của Agent **phải khai nó**
- * — nếu không, một Agent thấy `foreignBytes: 0` sẽ tưởng card trống trong đúng cửa sổ nguy hiểm
- * nhất. Chép lại `Number(process.env.VRAM_RECONCILE_INTERVAL_MS ?? 60_000)` ở nơi khác là dựng
- * bản sao thứ hai của cùng một cấu hình (ràng buộc 12).
+ * ★ Pha 4 Task 1 (M-6) — nhịp làm mới đã DỜI sang `vramEnforcement.reconcileIntervalMs()` (module
+ * LÁ). Lý do đầy đủ ở đó: mặt đọc của Agent cần con số này, và nếu nó nhập FILE NÀY thì
+ * `server/routers.ts` kéo cả `vramReconciler` lên đồ thị nạp SỚM. **MỘT** nguồn, hai người đọc.
  */
-export function reconcileIntervalMs(): number {
-  return INTERVAL_MS;
-}
+const INTERVAL_MS = reconcileIntervalMs();
 /**
  * Pha 1.5 Task 7 (T5-1) — sau BAO LÂU thì "hoãn chụp nền" phải thành BÁO ĐỘNG.
  *
@@ -293,42 +284,12 @@ export interface VramReconcileResult {
   readonly foreignLedgerBytes: number | null;
 }
 
-/** Xem `VramReconcileResult.baselineOrigin`. */
-export type BaselineOrigin = "local" | "captured" | "adopted";
-
 /**
- * ★★★ Pha 3 Task 3, QUYẾT ĐỊNH 2 — VÌ SAO NỀN KHÔNG ĐÁNG TIN. Xem
- * `VramReconcileResult.baselineUnverifiedReasons` và `lyDoNenKhongTin()`.
+ * ★ Pha 4 Task 1 — hai union này đã DỜI xuỐNG `./types` (module thuần kiểu) vì `vramTickCell` — module
+ * **LÁ** — nay mang luôn hai ô chẩn đoán của nền. Xuất lại ở đây để mọi điểm nhập cũ không phải
+ * đổi một dòng, và để người đọc `VramReconcileResult` vẫn tìm thấy chúng ở đúng chỗ cũ.
  */
-export type VramBaselineDistrustReason =
-  /** Chưa có lượt chụp/nhận nào trong tiến trình này — KHÔNG phải "nền sạch". */
-  | "chua-chup-nen"
-  /** Không liệt kê được tiến trình đang giữ GPU ⇒ **không biết** có tàn dư hay không. */
-  | "khong-quet-duoc-ho-giu-gpu"
-  /** Có TÀN DƯ của lượt chạy trước giữ GPU — byte của nó không quy trách nhiệm được cho ai. */
-  | "co-tan-du-giu-gpu"
-  /**
-   * ★★★ VỊ TỪ THAY CHO VẾ `peers` CŨ. Có vai trò ANH EM trên card **mà byte của họ CHƯA được tính**
-   * — tức sổ chung không đọc được (`baselineOrigin === "local"`, không ai thắng bầu) **hoặc** sổ
-   * chung đọc được nhưng **KHÔNG có một hàng nào của ai khác** (anh em đang giữ card mà im lặng).
-   *
-   * ⚠⚠ VÌ SAO VẾ `peers` CŨ PHẢI CHẾT: nó hạ cờ **chỉ vì có anh em**, và lý do của nó là *"nền đã
-   * NUỐT byte của họ"* — mà **chính Task 3 vừa xoá bỏ tình trạng đó** (nền do MỘT tiến trình chụp,
-   * byte anh em nằm ở `attributable`; nghiệm thu sống: nền **1.234.386.944** thay vì
-   * **9.444.524.032**, `drift = 0`). Giữ nguyên vế cũ trong topo `api`+`worker` là biến cờ thành
-   * **hằng số `false`** kèm **1.024 MiB phạt thường trực** — mất dư địa VÀ mất thông tin, đúng lớp
-   * lỗi I-3 mà Task 2 đã phải sửa một lần cho `shared-ledger-unsynced`.
-   *
-   * ⚠ VÀ VÌ SAO KHÔNG **BỎ HẲN** VẾ ĐÓ: `census.peers` vẫn là câu trả lời DUY NHẤT cho *"có ai khác
-   * của hệ đang ở trên card không"*. Cái đổi là **câu hỏi thứ hai** — *"byte của họ đã được tính
-   * chưa"* — và câu đó nay **có nguồn** (sổ chung). Hai câu, hai nguồn, không nguồn nào đoán byte
-   * (`nvidia-smi` trả `used_memory=[N/A]`, ràng buộc không đổi).
-   */
-  | "anh-em-tren-card-chua-duoc-tinh"
-  /** Nền ĐỌC ĐƯỢC của người khác đã cũ hơn một chu kỳ làm mới bản sao. */
-  | "nen-nhan-nuoi-qua-cu"
-  /** Người chụp tự khai nền của họ CHƯA xác minh — người đọc KHÔNG được nâng cấp lời khai đó. */
-  | "nguoi-chup-khai-chua-xac-minh";
+export type { BaselineOrigin, VramBaselineDistrustReason } from "./types";
 
 let timer: NodeJS.Timeout | null = null;
 

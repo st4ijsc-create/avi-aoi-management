@@ -27,7 +27,7 @@ import {
   syncTimeoutMs,
 } from "./vramSharedLedgerStore";
 import type { SharedLedgerGateway } from "./vramSharedLedgerStore";
-import { __resetDecisionTickForTests, publishDecisionTick } from "./vramTickCell";
+import { __resetDecisionTickForTests, publishDecisionTick, __tickFieldsForTests } from "./vramTickCell";
 import { safetyReserveBytes } from "./vramCaps";
 
 const MIB = 1024 * 1024;
@@ -74,7 +74,7 @@ let bang: BangDungChung;
  * quy về đúng thứ task này thêm vào.
  */
 function tickSach(): void {
-  publishDecisionTick({ attributableBytes: 0, baselineVerified: true }, NOW);
+  publishDecisionTick(__tickFieldsForTests(0, true), NOW);
 }
 
 /**
@@ -91,7 +91,7 @@ function bayGio(): number {
 function ctx(): VramDecisionContext {
   const now = bayGio();
   return {
-    tick: { attributableBytes: 0, baselineVerified: true, atMs: now, consecutiveFailures: 0 },
+    tick: { ...__tickFieldsForTests(0, true), atMs: now, consecutiveFailures: 0 },
     unledgered: { bytes: 0, unknownCount: 0 },
     // ⚠ ĐỌC Ô THẬT — không tự dựng một bản sao đọc bằng tay.
     sharedLedger: sharedLedgerFact(now),
@@ -472,7 +472,7 @@ describe("D. BẢN SAO ĐỌC CŨ LÀ 'PHẠM TRÙ THỨ BA' — giữ SỐ, c�
     expect(fact!.ageMs).toBe(600_000);
 
     const r = reserve(xin("gguf:B", 1 * MIB), {
-      tick: { attributableBytes: 0, baselineVerified: true, atMs: giaMs, consecutiveFailures: 0 },
+      tick: { ...__tickFieldsForTests(0, true), atMs: giaMs, consecutiveFailures: 0 },
       unledgered: { bytes: 0, unknownCount: 0 },
       sharedLedger: fact,
       nowMs: giaMs,
@@ -490,7 +490,7 @@ describe("D. BẢN SAO ĐỌC CŨ LÀ 'PHẠM TRÙ THỨ BA' — giữ SỐ, c�
     const gia = readSharedLedgerReplica()!.atMs + 10_000_000;
     const mot = sharedLedgerFact(gia);
     const r = reserve(xin("gguf:a", 1 * MIB), {
-      tick: { attributableBytes: 0, baselineVerified: true, atMs: gia, consecutiveFailures: 0 },
+      tick: { ...__tickFieldsForTests(0, true), atMs: gia, consecutiveFailures: 0 },
       unledgered: { bytes: 0, unknownCount: 0 },
       sharedLedger: mot,
       nowMs: gia,

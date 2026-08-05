@@ -13,6 +13,7 @@
  * số dưới đây đủ lớn để một lỗi làm tròn/đơn vị không trốn được.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { __tickFieldsForTests } from "./vramTickCell";
 
 const suKien = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 vi.mock("./vramEventLog", () => ({
@@ -113,7 +114,7 @@ function xin(
 /** Ô tick SẠCH — bộ ca này canh §8, không canh chính sách suy giảm. */
 function ctx(over: Partial<VramDecisionContext> = {}): VramDecisionContext {
   return {
-    tick: { attributableBytes: 0, baselineVerified: true, atMs: NOW, consecutiveFailures: 0 },
+    tick: { ...__tickFieldsForTests(0, true), atMs: NOW, consecutiveFailures: 0 },
     unledgered: { bytes: 0, unknownCount: 0 },
     sharedLedger: __freshSharedLedgerFactForTests(),
     nowMs: NOW,

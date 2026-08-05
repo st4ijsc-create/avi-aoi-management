@@ -8,6 +8,7 @@
  *   C. bàn giao: bốn món của Task 1–4 nay CÓ NGƯỜI TIÊU THỤ trên đường quyết định.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { __tickFieldsForTests } from "./vramTickCell";
 import {
   reserve, release, snapshot, noteDeviceTotalBytes, setLeaseRefCount,
   preemptCandidates, __resetBrokerForTests,
@@ -30,7 +31,7 @@ function req(owner: string, bytes: number, priority: VramPriority = "interactive
 /** Ô tick SẠCH: có số, nền đã xác minh, vừa mới chạy, ống ngoài sổ đã hỏi và rỗng. */
 function ctxSach(attributableBytes: number, over: Partial<VramDecisionContext> = {}): VramDecisionContext {
   return {
-    tick: { attributableBytes, baselineVerified: true, atMs: NOW, consecutiveFailures: 0 },
+    tick: { ...__tickFieldsForTests(attributableBytes, true), atMs: NOW, consecutiveFailures: 0 },
     unledgered: { bytes: 0, unknownCount: 0 },
     sharedLedger: __freshSharedLedgerFactForTests(),
     nowMs: NOW,
@@ -318,7 +319,7 @@ describe("B. vramBroker.reserve() — CƯỠNG CHẾ THẬT", () => {
 
   it("★★★ TICK CŨ ở ĐƯỜNG QUYẾT ĐỊNH: giữ SỐ + cộng biên — KHÔNG BAO GIỜ đi qua `attributable = null`", () => {
     const r = reserve(req("gguf:X", 100 * MIB), {
-      tick: { attributableBytes: 20_000 * MIB, baselineVerified: true, atMs: NOW - 600_000, consecutiveFailures: 0 },
+      tick: { ...__tickFieldsForTests(20_000 * MIB, true), atMs: NOW - 600_000, consecutiveFailures: 0 },
       unledgered: { bytes: 0, unknownCount: 0 },
       sharedLedger: __freshSharedLedgerFactForTests(),
       nowMs: NOW,
@@ -450,7 +451,7 @@ describe("B. vramBroker.reserve() — CƯỠNG CHẾ THẬT", () => {
       __resetBrokerForTests();
       noteDeviceTotalBytes(32_607 * MIB);
       const chuaXacMinh = reserve(xin(), {
-        tick: { attributableBytes: 0, baselineVerified: false, atMs: NOW, consecutiveFailures: 0 },
+        tick: { ...__tickFieldsForTests(0, false), atMs: NOW, consecutiveFailures: 0 },
         unledgered: { bytes: 0, unknownCount: 0 }, sharedLedger: __freshSharedLedgerFactForTests(), nowMs: NOW,
       }).decision.effectiveHeadroomBytes;
       expect(chuaXacMinh).toBeLessThan(daXacMinh);

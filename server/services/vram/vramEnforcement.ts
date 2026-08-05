@@ -138,6 +138,32 @@ export const TICK_STALE_AFTER_MS = 120_000;
 export const SHARED_LEDGER_STALE_AFTER_MS = 120_000;
 
 /**
+ * ★★★ Pha 4 Task 1 (M-6) — **NHỊP LÀM MỚI, ĐẶT Ở MỘT MODULE LÁ.**
+ *
+ * ⚠⚠ VÌ SAO Ở ĐÂY CHỨ KHÔNG Ở `vramReconciler`: bản đầu của Task 1 export nó từ `vramReconciler`,
+ * và mặt đọc của Agent nhập module đó ⇒ `server/routers.ts` kéo `vramReconciler` (+ `vramBroker`,
+ * + `child_process` qua `vramProbe`) lên **đồ thị nạp SỚM của mọi tiến trình**. Trước đó
+ * `vramReconciler` **chỉ** tới được qua `await import()`. `vramHeadroom.ts` đã ghi rõ repo này
+ * **từng trả giá** vì *"một TAI NẠN THỨ TỰ IMPORT"* ở đúng module đó, và `vramTickCell.ts` tồn tại
+ * **chỉ để** giữ `vramReconciler` khỏi những đồ thị nhập nhạy cảm. File này không import gì ngoài
+ * kiểu ⇒ đặt hằng số ở đây là chỗ rẻ nhất.
+ *
+ * ⚠ MỘT nguồn duy nhất: `vramReconciler.startVramReconciler()` và mặt đọc của Agent đọc **cùng**
+ * hàm này. Chép lại `Number(process.env.VRAM_RECONCILE_INTERVAL_MS ?? 60_000)` ở nơi khác là dựng
+ * bản sao thứ hai của cùng một cấu hình (ràng buộc 12).
+ *
+ * ⚠⚠ VÀ CON SỐ NÀY LÀ **ĐỘ TRỄ CƯỠNG CHẾ THẬT XUYÊN TIẾN TRÌNH** — xem khối ngay trên. Mặt đọc
+ * **phải khai nó**, nếu không một Agent thấy `foreignBytes: 0` sẽ tưởng card trống trong đúng cửa
+ * sổ nguy hiểm nhất.
+ */
+const RECONCILE_INTERVAL_MS = Number(process.env.VRAM_RECONCILE_INTERVAL_MS ?? 60_000);
+
+/** Xem `RECONCILE_INTERVAL_MS`. */
+export function reconcileIntervalMs(): number {
+  return RECONCILE_INTERVAL_MS;
+}
+
+/**
  * Tốc độ cấp phát lớn nhất QUAN SÁT ĐƯỢC, dùng cho biên theo tuổi (§5.6c). Đo được: khối 30B
  * **17.511.354.368 B** nạp xong trong **11 s** (dải quan sát 11–43 s ⇒ lấy đầu NHANH nhất).
  */

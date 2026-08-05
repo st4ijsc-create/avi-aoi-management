@@ -37,7 +37,7 @@
  *   • `vramTickCell.readDecisionTick()` — **ĐÚNG ô mà `reserve()` đọc** (không phải bản ghi chẩn
  *     đoán của `vramReconciler`, thứ có thể lệch nhịp).
  *   • `vramDefer.docTrangThaiHoanVram()` + `kbSyncScheduler.getKbSyncSchedulerStatus().defer`.
- *   • `vramWiring.vramBeginFailureState()` · `vramReconciler.reconcileIntervalMs()`.
+ *   • `vramWiring.vramBeginFailureState()` · `vramEnforcement.reconcileIntervalMs()`.
  *
  * ⚠ **KHÔNG đụng tính ĐỒNG BỘ của `reserve()`.** File này `async` (nó đứng sau một lượt gọi tRPC),
  * nhưng nó **không** thêm một `await` nào vào đường quyết định: mọi hàm nó gọi đều đồng bộ và
@@ -45,17 +45,24 @@
  *
  * ⚠ **ĐƠN VỊ: BYTE.** MiB chỉ ở câu chữ (Đ4 — không trộn hai thước). Mọi ô thời gian là **ms**.
  */
-import type { VramPriority } from "./types";
+/**
+ * ⚠⚠ M-6 (review Task 1) — **KHÔNG NHẬP `./vramReconciler` Ở ĐÂY.** Bản đầu của Task 1 nhập nó
+ * (cho `reconcileIntervalMs` + `readLastReconcileTick`), và vì `server/routers.ts` nhập file này,
+ * `vramReconciler` (+ `vramProbe` ⇒ `child_process`) bị kéo lên **đồ thị nạp SỚM của mọi tiến
+ * trình** — trước đó nó **chỉ** tới được qua `await import()`. `vramHeadroom.ts` đã ghi rõ repo này
+ * **từng trả giá** vì *"một TAI NẠN THỨ TỰ IMPORT"* ở đúng module đó, và `vramTickCell.ts` tồn tại
+ * **chỉ để** giữ nó khỏi những đồ thị nhập nhạy cảm. Nay: nhịp làm mới đọc từ `vramEnforcement`
+ * (module lá), và hai ô chẩn đoán của nền đi **cùng ô tick** (xem `baseline`, sửa (D)).
+ */
+import type { BaselineOrigin, VramBaselineDistrustReason, VramPriority } from "./types";
 import type { HeadroomBasis } from "./vramHeadroom";
 import type { VramDegradationReason, VramRefusalCaveat } from "./vramRefusal";
 import { vramUnattributedFacts } from "./vramRefusal";
 import * as broker from "./vramBroker";
 import { readDecisionTick } from "./vramTickCell";
 import { sharedLedgerFact, sharedLedgerSelfKey } from "./vramSharedLedger";
-import { SHARED_LEDGER_STALE_AFTER_MS, TICK_STALE_AFTER_MS } from "./vramEnforcement";
+import { reconcileIntervalMs, SHARED_LEDGER_STALE_AFTER_MS, TICK_STALE_AFTER_MS } from "./vramEnforcement";
 import { vramUnledgeredFact, vramBeginFailureState } from "./vramWiring";
-import type { BaselineOrigin, VramBaselineDistrustReason } from "./vramReconciler";
-import { readLastReconcileTick, reconcileIntervalMs } from "./vramReconciler";
 import { docTrangThaiHoanVram, vramJobDeferBudgetMs, vramRequestDeferBudgetMs } from "./vramDefer";
 import type { VramDeferState } from "./vramDefer";
 import { getKbSyncSchedulerStatus } from "../kbSyncScheduler";
@@ -127,43 +134,103 @@ export type VramAgentTick =
       readonly consecutiveFailures: number | null;
     };
 
-/** Trạng thái hoãn ĐANG SỐNG của một hộ. */
+/**
+ * ★★★ TRẠNG THÁI HOÃN CỦA MỘT HỘ — **KHÔNG CÓ PHẠM TRÙ `"idle"`, VÀ ĐÓ LÀ CHỦ ĐÍCH.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ C-1 (review Task 1) — KHỐI NÀY TỪNG KHAI MỘT TRẠNG THÁI NÓ **KHÔNG QUAN SÁT ĐƯỢC**.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Cả hai nguồn — `vramDefer.oTrangThai` (Map mức module) và `kbSyncScheduler.deferStreak` — là ảnh
+ * chụp **TRONG BỘ NHỚ CỦA TIẾN TRÌNH ĐANG TRẢ LỜI**. Nhưng cron `kb:sync` và hai sidecar job sống ở
+ * tiến trình **`worker`** (`backgroundJobs.startBackgroundSchedulers`), còn `vram.state` được phục
+ * vụ ở **`api`**. ⇒ Một `"idle"` phát ra từ `api` là một **LỜI KHẲNG ĐỊNH** (*"không có chuỗi hoãn
+ * nào"*) về một thứ tiến trình này **không nhìn thấy** — trong khi `cron:kb-sync` có thể đã
+ * `exceeded` nhiều giờ ở worker. Repo **đã viết đúng lời rào đón này** ở người tiêu thụ khác
+ * (`aiLocalKnowledgeService.readVramDefer`) và bản đầu của Task 1 **không mang theo**.
+ *
+ * ⇒ Phạm trù `"idle"` bị **XOÁ KHỎI KIỂU**, thay bằng `"no-chain-in-this-process"`. Đó là ràng
+ * buộc 8 (*"đổi KIỂU, đừng thêm ca"*): mọi người tiêu thụ từng đọc `"idle"` như một câu trả lời
+ * TOÀN CỤC nay **gãy lúc biên dịch**, thay vì im lặng đọc sai. Và Task 2 (`retryDeferred`) đọc
+ * thẳng khối này, nên một trường nói quá ở đây **đã là một hành động sai**.
+ *
+ * ⚠ Vết BỀN xuyên tiến trình đã có sẵn: `vram_events` (`defer` / `defer_exceeded`). Ai cần số
+ * THẬT của cả cụm thì truy bảng đó, không phải ô này.
+ */
 export type VramAgentDeferStatus =
-  | { readonly kind: "idle" }
+  | {
+      /** Tiến trình này **KHÔNG quan sát được** hộ. `"no-chain-in-this-process"` KHÔNG áp dụng. */
+      readonly kind: "not-observable-here";
+      readonly meaning: "host-not-running-in-this-process" | "defer-state-unreadable";
+    }
+  | {
+      /**
+       * ⚠ **KHÔNG CÓ CHUỖI HOÃN NÀO TRONG TIẾN TRÌNH NÀY** — không phải "hộ này ổn". Xem
+       * `hostedHere`: `null` ⇒ ta **không chứng minh được** hộ có chạy ở đây hay không.
+       */
+      readonly kind: "no-chain-in-this-process";
+    }
   | {
       readonly kind: "deferring";
       readonly owner: string;
       readonly attempts: number | null;
-      readonly firstRefusedAt: string;
+      readonly firstRefusedAt: string | null;
       readonly nextRetryAt: string | null;
-      readonly lastRefusalMessage: string;
+      readonly lastRefusalMessage: string | null;
+      /** ★ M-7 — ngân sách **CHỐT LÚC BỊ TỪ CHỐI**, thứ điều khiển hạn chót đang chạy. */
+      readonly chainBudgetMs: number | null;
     }
   | {
       readonly kind: "exceeded";
       readonly owner: string;
       readonly attempts: number | null;
-      readonly firstRefusedAt: string;
-      readonly lastRefusalMessage: string;
+      readonly firstRefusedAt: string | null;
+      readonly lastRefusalMessage: string | null;
+      readonly chainBudgetMs: number | null;
     };
 
 /**
- * ★★★ MỘT HỘ `background`, VÀ **HAI Ô KHÔNG ĐƯỢC GỘP**.
+ * ★★★ MỘT HỘ `background`, VÀ **BA Ô KHÔNG ĐƯỢC GỘP**.
  *
- * ⚠⚠ `mechanism` trả lời *"hộ này CÓ ĐỢI không"*; `status` trả lời *"nó CÓ ĐANG hoãn không"*.
+ * ⚠⚠ `mechanism` trả lời *"hộ này CÓ ĐỢI không"*; `hostedHere` trả lời *"tiến trình này có nhìn
+ * thấy hộ không"*; `status` trả lời *"nó CÓ ĐANG hoãn không, THEO CHỖ ĐỨNG NÀY"*.
  * **3/6 hộ có ngân sách 0** — chúng **KHÔNG chờ một mili giây nào**, chúng **suy giảm tại chỗ**
  * (`aiReranker.rerank()` trả về thứ tự cosine gốc; `getEmbeddingContext` ném một câu đã nói đúng
- * nguyên nhân). Với những hộ đó, `status.kind === "idle"` **KHÔNG** nghĩa *"nó đã xin được VRAM"*
- * — nó nghĩa *"không có chuỗi hoãn nào, vì hộ này không bao giờ hoãn"*. Gộp hai ô lại là **nói
+ * nguyên nhân). Với những hộ đó, `no-chain-in-this-process` **KHÔNG** nghĩa *"nó đã xin được
+ * VRAM"* — nó nghĩa *"không có chuỗi hoãn, vì hộ này không bao giờ hoãn"*. Gộp ba ô lại là **nói
  * dối bằng cách im lặng**.
  */
 export interface VramAgentDeferHostView {
   readonly host: string;
   /** Khuôn `owner` mà hộ này sinh ra (một số hộ có `owner` ĐỘNG: đường dẫn model / id model). */
   readonly ownerPattern: string;
-  /** Đáy hoãn (ms) đọc từ **đúng hàm ngân sách của điểm gọi**. `0` = "đừng đợi, kêu ngay". */
+  /**
+   * Đáy hoãn (ms) theo **cấu hình HIỆN TẠI**, đọc từ đúng hàm ngân sách của điểm gọi. `0` = "đừng
+   * đợi, kêu ngay". ⚠ M-7 — đây là ngân sách mà một chuỗi **MỚI** sẽ nhận, KHÔNG phải ngân sách
+   * của chuỗi đang sống (ô đó là `status.chainBudgetMs`, chốt lúc bị từ chối).
+   */
   readonly budgetMs: number | null;
   readonly mechanism: "waits-and-retries" | "no-wait-degrades-in-place";
+  /**
+   * ★★★ C-1 — **TIẾN TRÌNH NÀY CÓ CHỦ TRÌ HỘ KHÔNG.**
+   * `true`/`false` = **chứng minh được** · `null` = **KHÔNG XÁC ĐỊNH ĐƯỢC** (không có cơ chế nào
+   * trả lời câu đó cho hộ này) ⇒ `status` chỉ nói về **chỗ đứng này**, đừng đọc thành toàn cục.
+   */
+  readonly hostedHere: boolean | null;
   readonly status: VramAgentDeferStatus;
+}
+
+/** Khối hoãn — mang **PHẠM VI** của chính nó, không để người đọc tự đoán. */
+export interface VramAgentDeferView {
+  /**
+   * ★★★ C-1 — **PHẠM VI CỦA MỌI Ô TRONG `hosts`.** Không có ô này thì `hosts[].status` là một lời
+   * khẳng định toàn cục mà dữ liệu không đỡ nổi.
+   */
+  readonly scope: "this-process-only";
+  /** Ai đang quan sát — `${role}:${pid}:${bootMs}`. So với `hosts[].hostedHere` để đọc đúng. */
+  readonly observedFromProcessKey: string;
+  /** Vết BỀN, xuyên tiến trình, cho ai cần số THẬT của cả cụm. */
+  readonly durableTrace: "vram_events(defer|defer_exceeded)";
+  readonly hosts: readonly VramAgentDeferHostView[];
 }
 
 export interface VramAgentState {
@@ -221,22 +288,40 @@ export interface VramAgentState {
   readonly attributable: VramAgentAttributable;
   readonly tick: VramAgentTick;
 
+  /**
+   * ★★★ (D) — **BA Ô, MỘT NGUỒN.** Cả ba đọc từ **ô quyết định** (`vramTickCell`), tức đúng ô mà
+   * `reserve()` đọc. Bản đầu của Task 1 lấy `verified` ở đây và `unverifiedReasons`/`origin` ở
+   * `vramReconciler.readLastReconcileTick()` — hai ô, không bất biến nào ép cùng nhịp. Nay bất biến
+   * là **CẤU TRÚC**, và ô `diagnosticAtMs` (thứ bắt người đọc tự đối chiếu) đã biến mất.
+   */
   readonly baseline: {
-    /** Nguyên văn cờ của **ô quyết định** (`vramTickCell`) — thứ `reserve()` đọc. */
     readonly verified: boolean;
     /**
-     * **VÌ SAO** cờ trên tắt. `null` ⇔ **CHƯA CÓ bản ghi chẩn đoán nào** (≠ mảng rỗng, thứ nghĩa
-     * "đã có bản ghi và không có lý do nào").
+     * **VÌ SAO** cờ trên tắt. `null` ⇔ **CHƯA CÓ NHỊP NÀO** (`tick.present === false`) — khác hẳn
+     * mảng rỗng, thứ nghĩa *"đã có nhịp và nhịp đó không nêu lý do nào"*.
      */
     readonly unverifiedReasons: readonly VramBaselineDistrustReason[] | null;
     readonly origin: BaselineOrigin | null;
-    /** Mốc của bản ghi chẩn đoán. So với `tick` để biết hai ô có cùng một nhịp không. */
-    readonly diagnosticAtMs: number | null;
   };
 
   readonly unattributed: {
-    /** Phần thiết bị đang dùng mà SỔ KHÔNG giải thích được. `null` ⇔ **KHÔNG ĐO ĐƯỢC** (≠ `0`). */
+    /**
+     * Phần **`max(sổ, attributable)`** mà SỔ không giải thích được, với
+     * `attributable = deviceUsed − NỀN`. `null` ⇔ **KHÔNG ĐO ĐƯỢC** (≠ `0`).
+     *
+     * ⚠⚠ I-3 (review Task 1) — **ĐÂY LÀ MỘT CẬN DƯỚI CỦA CON SỐ, KHÔNG CHỈ CỦA DANH SÁCH.** Câu cũ
+     * viết *"phần THIẾT BỊ đang dùng mà sổ không giải thích được"* — **nói quá**: mọi byte nằm
+     * TRONG nền (sidecar của lượt chạy trước, tiến trình bên thứ ba, desktop compositor — đo được
+     * 996–2.112 MiB trên chính máy này) đã bị **TRỪ khỏi `attributable`** nên **không bao giờ**
+     * xuất hiện ở con số này. ⇒ `bytes: 0` phát ra được trong khi card có nhiều GB không ai giải
+     * thích. Xem `excludesBaselineBytes`.
+     */
     readonly bytes: number | null;
+    /**
+     * ★ LUÔN `true`. Con số `bytes` **loại trừ toàn bộ NỀN THIẾT BỊ** — nó trả lời *"ngoài sổ, KỂ
+     * TỪ LÚC CHỤP NỀN"*, không phải *"ngoài sổ trên cả tấm card"*.
+     */
+    readonly excludesBaselineBytes: true;
     /** Nhãn máy-đọc-được, **CÙNG** vị từ với câu từ chối. */
     readonly caveat: VramRefusalCaveat;
     /** ★ LUÔN `true`. Bản liệt kê hộ là **CẬN DƯỚI** — đừng đọc `holders` như một danh sách đầy đủ. */
@@ -256,10 +341,16 @@ export interface VramAgentState {
     readonly estimateUsable: boolean;
     /** `vramBeginFailureState().count` — số lượt `beginVramAllocation()` đã hỏng. */
     readonly beginFailureCount: number | null;
+    /**
+     * ⚠ M-5 — **CHUỖI THÔ, CHƯA LÀM SẠCH.** Nguồn gồm `.env`, id model trong DB và tên tệp
+     * `.gguf`. Task 3 (câu chữ i18n) **KHÔNG được giả định** router đã làm sạch: mọi giá trị đi
+     * vào `i18n.t()` phải qua **cùng** hàm làm sạch bất động đã có. Cùng cảnh báo cho
+     * `defer.hosts[].status.lastRefusalMessage` và mọi `owner` (chứa đường dẫn model tuyệt đối).
+     */
     readonly lastReason: string | null;
   };
 
-  readonly defer: readonly VramAgentDeferHostView[];
+  readonly defer: VramAgentDeferView;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -283,15 +374,15 @@ export interface VramAgentState {
 const HO_BACKGROUND: readonly {
   readonly host: string;
   readonly ownerPattern: string;
-  readonly budget: () => number;
-  /** `null` ⇒ hộ này KHÔNG đi qua `vramDefer` (nó có cơ chế hẹn giờ riêng — xem `kbSync`). */
+  readonly budget: (kb: KbSyncStatus | null) => number;
+  /** `null` ⇒ hộ này KHÔNG đi qua `vramDefer` (nó có cơ chế hẹn giờ riêng — xem `cron:kb-sync`). */
   readonly matches: ((owner: string) => boolean) | null;
 }[] = [
   {
     // Cơ chế hoãn RIÊNG của Pha 2B Task 6 (có khôi phục sau khởi động lại) — KHÔNG qua `vramDefer`.
     host: "cron:kb-sync",
     ownerPattern: "cron:kb-sync",
-    budget: () => getKbSyncSchedulerStatus().deferBudgetMs,
+    budget: (kb) => (kb === null ? Number.NaN : kb.deferBudgetMs),
     matches: null,
   },
   {
@@ -327,80 +418,136 @@ const HO_BACKGROUND: readonly {
   },
 ];
 
+/**
+ * ★★★ (E) — **DÂN SỐ NÀY CÓ MÁY QUÉT, KHÔNG PHẢI MỘT LỜI HỨA.**
+ *
+ * `vramReadModel.roster.test.ts` đếm `xinVramCoHoan({ owner: … })` trong mã sản xuất **bằng máy**
+ * rồi khẳng định: mọi `owner` quét được khớp đúng MỘT hàng ở đây, **và** mọi hàng đều được ít nhất
+ * một `owner` chạm tới. Cùng khuôn với `vramAllocationSites.test.ts` — thứ đã canh
+ * `WIRED_ALLOCATION_SITE_COUNT` đúng cách đó, và là tiền lệ nói rằng ở repo này một bản khai tay
+ * thì **nhận lưới**, không phải được miễn. Một hộ `background` MỚI mà quên khai ở đây ⇒ ca **ĐỎ**.
+ */
+export const VRAM_BACKGROUND_HOST_IDS: readonly string[] = HO_BACKGROUND.map((h) => h.host);
+
+/**
+ * Chỉ dùng cho lưới (E) — **cùng vị từ `matches` mà ảnh chụp dùng**, không phải một bản sao thứ
+ * hai: một lưới viết lại phép khớp sẽ xanh trong khi ảnh chụp thật khớp sai.
+ * `null` ⇒ KHÔNG hộ nào nhận `owner` này.
+ */
+export function vramBackgroundHostForOwner(owner: string): string | null {
+  for (const h of HO_BACKGROUND) {
+    if (h.matches !== null && h.matches(owner)) return h.host;
+    if (h.matches === null && h.host === owner) return h.host;
+  }
+  return null;
+}
+
 /** Hạng NGHIÊM TRỌNG — khi một hộ có nhiều `owner` đang hoãn, ô trạng thái lấy cái NẶNG nhất. */
-const HANG: Record<VramAgentDeferStatus["kind"], number> = { idle: 0, deferring: 1, exceeded: 2 };
+const HANG: Record<VramAgentDeferStatus["kind"], number> = {
+  "not-observable-here": 0,
+  "no-chain-in-this-process": 1,
+  deferring: 2,
+  exceeded: 3,
+};
 
 function trangThaiTuOVramDefer(s: VramDeferState): VramAgentDeferStatus {
+  const chung = {
+    owner: s.owner,
+    attempts: s.attempts,
+    firstRefusedAt: s.firstRefusedAt,
+    lastRefusalMessage: s.lastRefusalMessage,
+    // ★ M-7 — ngân sách CHỐT LÚC BỊ TỪ CHỐI, thứ điều khiển hạn chót đang chạy.
+    chainBudgetMs: s.budgetMs,
+  } as const;
   return s.exceeded
-    ? {
-        kind: "exceeded",
-        owner: s.owner,
-        attempts: s.attempts,
-        firstRefusedAt: s.firstRefusedAt,
-        lastRefusalMessage: s.lastRefusalMessage,
-      }
-    : {
-        kind: "deferring",
-        owner: s.owner,
-        attempts: s.attempts,
-        firstRefusedAt: s.firstRefusedAt,
-        nextRetryAt: s.nextRetryAt,
-        lastRefusalMessage: s.lastRefusalMessage,
-      };
+    ? { kind: "exceeded", ...chung }
+    : { kind: "deferring", ...chung, nextRetryAt: s.nextRetryAt };
 }
 
 /**
- * Trạng thái hoãn của cả sáu hộ. **KHÔNG BAO GIỜ NÉM** — một mặt đọc ngã vì một ô phụ thì mất luôn
- * những ô chính (cùng kỷ luật `aiLocalKnowledgeService.readVramDefer`).
+ * ★ M-2 — MỘT lượt đọc `getKbSyncSchedulerStatus()` cho CẢ ảnh chụp. Bản trước đọc hai lần (ngân
+ * sách ở một chỗ, trạng thái ở chỗ khác) ⇒ hai ảnh chụp ở hai thời điểm, đúng lớp lỗi mà chính
+ * task này vừa vá ở `reserve()` (`safetyReserveBytes` gọi hai lần).
  */
-function docSauHo(): VramAgentDeferHostView[] {
+type KbSyncStatus = ReturnType<typeof getKbSyncSchedulerStatus>;
+
+/**
+ * ★★★ TRẠNG THÁI HOÃN CỦA CẢ SÁU HỘ — **THEO CHỖ ĐỨNG CỦA TIẾN TRÌNH NÀY.** KHÔNG BAO GIỜ NÉM:
+ * một mặt đọc ngã vì một ô phụ thì mất luôn những ô chính (kỷ luật `aiLocalKnowledgeService`).
+ *
+ * ⚠⚠ C-1 — không một nhánh nào ở đây được phát ra một câu trả lời TOÀN CỤC. Ba kết cục, ba nghĩa
+ * khác nhau, và chúng **không gộp được** vì KIỂU không cho:
+ *   • `not-observable-here` — chứng minh được là hộ KHÔNG chạy ở tiến trình này, **hoặc** ô trạng
+ *     thái đọc không được (hai `meaning` khác nhau — M-3);
+ *   • `no-chain-in-this-process` — nhìn được, và **ở đây** không có chuỗi nào;
+ *   • `deferring`/`exceeded` — có chuỗi thật.
+ */
+function docSauHo(kb: KbSyncStatus | null): VramAgentDeferHostView[] {
   let oVramDefer: readonly VramDeferState[] = [];
+  let oDocDuoc = true;
   try {
     oVramDefer = docTrangThaiHoanVram();
   } catch {
-    oVramDefer = [];
+    // ★ M-3 — CHẶN CÓ TÊN: "đọc không được" ≠ "không có chuỗi hoãn". Không hạ về một câu khẳng định.
+    oDocDuoc = false;
   }
   return HO_BACKGROUND.map((h) => {
     let budgetMs = Number.NaN;
     try {
-      budgetMs = h.budget();
+      budgetMs = h.budget(kb);
     } catch {
       /* ngân sách không đọc được ⇒ `NaN` ⇒ bị CHẶN CÓ TÊN ở lượt lọc hữu hạn cuối cùng */
     }
-    let status: VramAgentDeferStatus = { kind: "idle" };
+
+    let hostedHere: boolean | null;
+    let status: VramAgentDeferStatus;
+
     if (h.matches === null) {
-      // `cron:kb-sync` — cơ chế RIÊNG, đọc thẳng ô công khai của nó.
-      try {
-        const d = getKbSyncSchedulerStatus().defer;
-        if (d !== null) {
-          status = d.exceeded
-            ? {
-                kind: "exceeded",
-                owner: "cron:kb-sync",
-                attempts: d.attempts,
-                firstRefusedAt: d.firstRefusedAt ?? "",
-                lastRefusalMessage: d.lastRefusalMessage ?? "",
-              }
-            : {
-                kind: "deferring",
-                owner: "cron:kb-sync",
-                attempts: d.attempts,
-                firstRefusedAt: d.firstRefusedAt ?? "",
-                nextRetryAt: d.nextRetryAt,
-                lastRefusalMessage: d.lastRefusalMessage ?? "",
-              };
-        }
-      } catch {
-        /* giữ `idle` — và `mechanism` bên dưới vẫn nói đúng bản chất của hộ */
+      /**
+       * `cron:kb-sync` — cơ chế RIÊNG, và là hộ DUY NHẤT ta **chứng minh được** có chủ trì ở đây
+       * hay không (`getKbSyncSchedulerStatus().hostedHere` ⇔ `job !== null`). Cron sống ở `worker`
+       * (`backgroundJobs.startBackgroundSchedulers`); ở `api` ô này là `false`, và khi đó
+       * `defer === null` **TUYỆT ĐỐI KHÔNG** được đọc thành *"hộ này không đang hoãn"*.
+       */
+      hostedHere = kb === null ? null : kb.hostedHere;
+      if (kb === null) {
+        status = { kind: "not-observable-here", meaning: "defer-state-unreadable" };
+      } else if (kb.defer !== null) {
+        const d = kb.defer;
+        const chung = {
+          owner: "cron:kb-sync",
+          attempts: d.attempts,
+          firstRefusedAt: d.firstRefusedAt,
+          lastRefusalMessage: d.lastRefusalMessage,
+          chainBudgetMs: d.budgetMs,
+        } as const;
+        status = d.exceeded
+          ? { kind: "exceeded", ...chung }
+          : { kind: "deferring", ...chung, nextRetryAt: d.nextRetryAt };
+      } else if (kb.hostedHere) {
+        status = { kind: "no-chain-in-this-process" };
+      } else {
+        // ⚠ ĐÂY LÀ DÒNG C-1 SINH RA ĐỂ VIẾT: cron không chạy ở tiến trình này ⇒ ta KHÔNG BIẾT.
+        status = { kind: "not-observable-here", meaning: "host-not-running-in-this-process" };
       }
     } else {
+      /**
+       * Năm hộ đi qua `vramDefer`: **KHÔNG có cơ chế nào** trả lời *"hộ này có chạy ở tiến trình
+       * này không"* (một `owner` chỉ xuất hiện SAU lượt từ chối đầu tiên) ⇒ `hostedHere: null` =
+       * **KHÔNG XÁC ĐỊNH ĐƯỢC**, và `status` chỉ nói về chỗ đứng này.
+       */
+      hostedHere = null;
       const khop = h.matches;
+      status = oDocDuoc
+        ? { kind: "no-chain-in-this-process" }
+        : { kind: "not-observable-here", meaning: "defer-state-unreadable" };
       for (const s of oVramDefer) {
         if (!khop(s.owner)) continue;
         const ung = trangThaiTuOVramDefer(s);
         if (HANG[ung.kind] > HANG[status.kind]) status = ung;
       }
     }
+
     return {
       host: h.host,
       ownerPattern: h.ownerPattern,
@@ -412,6 +559,7 @@ function docSauHo(): VramAgentDeferHostView[] {
        * CHẶT: không hứa một lượt chờ mà ta không chứng minh được.
        */
       mechanism: Number.isFinite(budgetMs) && budgetMs > 0 ? "waits-and-retries" : "no-wait-degrades-in-place",
+      hostedHere,
       status,
     };
   });
@@ -470,6 +618,17 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
   const shared = sharedLedgerFact(atMs);
   const unledgered = vramUnledgeredFact();
   const beginFailure = vramBeginFailureState();
+  /**
+   * ★ M-2 — **MỘT** lượt đọc `getKbSyncSchedulerStatus()` cho cả ảnh chụp (ngân sách + trạng thái
+   * + `hostedHere` đều lấy từ đây). `null` ⇔ lượt đọc NÉM ⇒ `docSauHo()` khai
+   * `not-observable-here / defer-state-unreadable`, KHÔNG hạ về một câu khẳng định (M-3).
+   */
+  let kbSync: KbSyncStatus | null = null;
+  try {
+    kbSync = getKbSyncSchedulerStatus();
+  } catch {
+    kbSync = null;
+  }
 
   /**
    * ★★★ CÙNG phép ghép mà `reserve()` chạy — xem `vramBroker.decisionStateFor()`. Đây là chỗ bảo
@@ -491,19 +650,25 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
    * đã có đúng một bản cài đặt của phép phân biệt `"no-tick"` ↔ `"probe-blind"`, và viết bản thứ
    * hai ở đây là để hai câu trả lời trôi khỏi nhau (ràng buộc 12).
    */
-  const attributable: VramAgentAttributable = st.headroom.blind
-    ? {
-        known: false,
-        meaning: "headroom-upper-bound",
-        reason: st.headroom.degradedReasons.includes("no-tick")
-          ? "no-tick"
-          : st.headroom.degradedReasons.includes("probe-blind")
-            ? "probe-blind"
-            : "invalid-input",
-      }
-    : // KHÔNG `blind` ⇒ `computeHeadroom` đã chứng minh con số này HỮU HẠN (`usable()`), nên
-      // `bytes: number` ở nhánh này là một lời khai đúng, không phải một lời hứa.
-      { known: true, bytes: tick?.attributableBytes as number };
+  /**
+   * ⚠ M-1 — **KHÔNG `as number`.** Bất biến `blind === false ⇒ tick !== null ∧ hữu hạn` đúng hôm
+   * nay, nhưng một `as number` là một DÂY: nếu bất biến vỡ, `bytes` thành `undefined`, lượt quét
+   * hữu hạn (`locHuuHan` chỉ xử `number`) **không thấy**, và payload ra ngoài với `known: true`
+   * mà **thiếu hẳn ô `bytes`** — đúng "hứa nhiều hơn dữ liệu". Kiểm bằng giá trị, không bằng ép kiểu.
+   */
+  const aBytes = tick === null ? null : tick.attributableBytes;
+  const attributable: VramAgentAttributable =
+    st.headroom.blind || aBytes === null || !Number.isFinite(aBytes)
+      ? {
+          known: false,
+          meaning: "headroom-upper-bound",
+          reason: st.headroom.degradedReasons.includes("no-tick")
+            ? "no-tick"
+            : st.headroom.degradedReasons.includes("probe-blind")
+              ? "probe-blind"
+              : "invalid-input",
+        }
+      : { known: true, bytes: aBytes };
 
   const ho = (h: {
     owner: string;
@@ -548,25 +713,6 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
           consecutiveFailures: tick.consecutiveFailures,
         };
 
-  /**
-   * ⚠ BẢN GHI CHẨN ĐOÁN, **Ô KHÁC với ô quyết định**. `verified` lấy từ ô QUYẾT ĐỊNH (thứ
-   * `reserve()` đọc), còn `unverifiedReasons`/`origin` chỉ có ở bản ghi chẩn đoán —
-   * `diagnosticAtMs` để người đọc tự thấy hai ô có cùng một nhịp hay không, thay vì ta hứa hộ.
-   */
-  let chanDoan: { reasons: readonly VramBaselineDistrustReason[]; origin: BaselineOrigin; atMs: number } | null = null;
-  try {
-    const rec = readLastReconcileTick();
-    if (rec !== null) {
-      chanDoan = {
-        reasons: rec.result.baselineUnverifiedReasons,
-        origin: rec.result.baselineOrigin,
-        atMs: rec.atMs,
-      };
-    }
-  } catch {
-    /* bản ghi chẩn đoán không đọc được ⇒ `null` = CHƯA CÓ, chứ không phải "không có lý do nào" */
-  }
-
   let sharedRefreshIntervalMs = Number.NaN;
   try {
     sharedRefreshIntervalMs = reconcileIntervalMs();
@@ -604,14 +750,27 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
     },
     attributable,
     tick: tickView,
+    /**
+     * ★★★ (D) — BA Ô, **MỘT Ô NGUỒN**. Trước bản này `verified` đến từ `vramTickCell` còn
+     * `unverifiedReasons`/`origin` đến từ `vramReconciler.readLastReconcileTick()` — hai ô, và
+     * `__resetDecisionTickForTests()` **không** xoá ô thứ hai ⇒ chúng lệch nhịp THẬT trong bộ test.
+     * Nay cả ba đọc `tick`, tức đúng ô mà `reserve()` đọc: bất biến "cùng nhịp" là CẤU TRÚC.
+     * ⚠ `null` ⇔ **CHƯA CÓ NHỊP NÀO** (≠ mảng rỗng = "có nhịp, không lý do nào").
+     */
     baseline: {
       verified: st.headroom.baselineVerified,
-      unverifiedReasons: chanDoan === null ? null : [...chanDoan.reasons],
-      origin: chanDoan === null ? null : chanDoan.origin,
-      diagnosticAtMs: chanDoan === null ? null : chanDoan.atMs,
+      unverifiedReasons: tick === null ? null : [...tick.baselineUnverifiedReasons],
+      origin: tick === null ? null : tick.baselineOrigin,
     },
     unattributed: {
       bytes: kqn.unattributedBytes,
+      /**
+       * ★ I-3 — con số trên **LOẠI TRỪ TOÀN BỘ NỀN THIẾT BỊ** (`attributable = deviceUsed − nền`).
+       * Byte của sidecar lượt chạy trước, của tiến trình bên thứ ba, của desktop compositor
+       * (996–2.112 MiB đo được trên chính máy này) nằm TRONG nền ⇒ **không bao giờ** hiện ở đây.
+       * Không có ô này thì `bytes: 0` đọc thành *"cả card đã giải thích hết"*.
+       */
+      excludesBaselineBytes: true as const,
       caveat: kqn.caveat,
       /**
        * ★★★ KHÔNG BAO GIỜ `false`, VÀ ĐÓ LÀ TOÀN BỘ Ý NGHĨA CỦA NÓ. Sổ mới nối 15/159 dòng liệt
@@ -634,7 +793,19 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
       beginFailureCount: beginFailure.count,
       lastReason: beginFailure.lastReason,
     },
-    defer: docSauHo(),
+    /**
+     * ★★★ C-1 — khối hoãn **MANG PHẠM VI CỦA CHÍNH NÓ**. Cả hai nguồn (`vramDefer.oTrangThai`,
+     * `kbSyncScheduler.deferStreak`) là ảnh chụp trong bộ nhớ của **tiến trình đang trả lời**,
+     * trong khi cron KB sync + hai sidecar job sống ở `worker`. Không có `scope` +
+     * `observedFromProcessKey` + `hostedHere`, mọi `status` ở đây là một lời khẳng định toàn cục
+     * mà dữ liệu không đỡ nổi — và Task 2 (`retryDeferred`) đọc thẳng khối này.
+     */
+    defer: {
+      scope: "this-process-only" as const,
+      observedFromProcessKey: sharedLedgerSelfKey(),
+      durableTrace: "vram_events(defer|defer_exceeded)" as const,
+      hosts: docSauHo(kbSync),
+    },
   };
 
   const nonFiniteFields: { path: string; was: string }[] = [];

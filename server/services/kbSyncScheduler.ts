@@ -1931,5 +1931,18 @@ export function getKbSyncSchedulerStatus() {
     defer: publicDeferState(),
     // ⚠ M-6 — đường CHỈ-ĐỌC: KHÔNG được tiêu thụ chốt một-lần `deferBudgetWarned`.
     deferBudgetMs: docDayHoanMs(false),
+    /**
+     * ★★★ Pha 4 Task 1 (C-1) — **TIẾN TRÌNH NÀY CÓ CHỦ TRÌ CRON `kb:sync` KHÔNG.**
+     *
+     * ⚠⚠ VÌ SAO Ô NÀY BẮT BUỘC TỒN TẠI: `defer` ngay trên là một ảnh chụp **TRONG BỘ NHỚ CỦA TIẾN
+     * TRÌNH ĐANG TRẢ LỜI**. Cron chạy ở `worker` (`backgroundJobs.startBackgroundSchedulers`),
+     * còn mặt đọc VRAM của Agent được phục vụ ở `api`. Không có ô này thì `defer === null` ở `api`
+     * **không phân biệt được** *"không có chuỗi hoãn nào"* với *"tiến trình này không hề quan sát
+     * được hộ đó"* — và cái sau, đọc thành cái trước, là một **lời khẳng định sai** mà Agent sẽ
+     * hành động theo (Task 2 sắp giao lệnh `retryDeferred`).
+     * ⚠ `enabled` KHÔNG thay được ô này: `enabled` là **cấu hình** (`KB_AUTOSYNC_ENABLED`), giống
+     * nhau ở mọi tiến trình; ô này là **sự thật của tiến trình này**.
+     */
+    hostedHere: job !== null,
   };
 }

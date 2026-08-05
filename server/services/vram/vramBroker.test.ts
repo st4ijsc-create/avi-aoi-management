@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { __tickFieldsForTests } from "./vramTickCell";
 import {
   reserve as reserveRaw, commit, release, snapshot, deviceTotalBytes, noteDeviceTotalBytes,
   markMeasureFailed, __resetBrokerForTests,
@@ -18,7 +19,7 @@ import { __freshSharedLedgerFactForTests } from "./vramSharedLedger";
 function ctxSachChoCaCu(): import("./vramBroker").VramDecisionContext {
   const now = Date.now();
   return {
-    tick: { attributableBytes: 0, baselineVerified: true, atMs: now, consecutiveFailures: 0 },
+    tick: { ...__tickFieldsForTests(0, true), atMs: now, consecutiveFailures: 0 },
     unledgered: { bytes: 0, unknownCount: 0 },
     sharedLedger: __freshSharedLedgerFactForTests(),
     nowMs: now,

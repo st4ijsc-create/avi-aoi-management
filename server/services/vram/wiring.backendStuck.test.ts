@@ -35,13 +35,14 @@
  * `vi.resetModules()` — không thì test soi vào MỘT SỔ KHÁC và xanh/đỏ đều sai lý do.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { __tickFieldsForTests } from "./vramTickCell";
 import { __freshSharedLedgerFactForTests } from "./vramSharedLedger";
 
 /** ★ Pha 2B Task 5 — ngữ cảnh quyết định SẠCH cho các ca cũ (xem `enforcement.test.ts` cho cưỡng chế). */
 function ctxSachChoCaCu(): import("./vramBroker").VramDecisionContext {
   const now = Date.now();
   return {
-    tick: { attributableBytes: 0, baselineVerified: true, atMs: now, consecutiveFailures: 0 },
+    tick: { ...__tickFieldsForTests(0, true), atMs: now, consecutiveFailures: 0 },
     unledgered: { bytes: 0, unknownCount: 0 },
     sharedLedger: __freshSharedLedgerFactForTests(),
     nowMs: now,

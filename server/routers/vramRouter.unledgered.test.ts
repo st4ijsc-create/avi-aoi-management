@@ -37,7 +37,7 @@ vi.mock("../services/vram/vramEventLog", () => ({
 
 import { vramRouter } from "./vramRouter";
 import * as broker from "../services/vram/vramBroker";
-import { __resetDecisionTickForTests, publishDecisionTick } from "../services/vram/vramTickCell";
+import { __resetDecisionTickForTests, publishDecisionTick, __tickFieldsForTests } from "../services/vram/vramTickCell";
 import { __resetSharedLedgerForTests, publishSharedLedgerReplica, sharedLedgerSelfKey } from "../services/vram/vramSharedLedger";
 import { __resetVramDeferForTests } from "../services/vram/vramDefer";
 import { beginVramAllocation, __resetVramBeginFailureState } from "../services/vram/vramWiring";
@@ -98,7 +98,7 @@ describe("vramRouter.state — ống 'chạy NGOÀI SỔ' phơi ra ĐÚNG độ 
   it("★★ `unknownCount > 0` THẮNG cả khi sổ đã giải thích hết phần thiết bị (caveat không bị nhánh khác cướp)", async () => {
     (await beginVramAllocation({ owner: "gguf-ctx:x", kind: "gguf-context", priority: "interactive" })).release();
     // Sổ giải thích hết: thiết bị = 0, sổ = 0, tick tươi, nền đã xác minh, sổ chung tươi.
-    publishDecisionTick({ attributableBytes: 0, baselineVerified: true }, Date.now());
+    publishDecisionTick(__tickFieldsForTests(0, true), Date.now());
     publishSharedLedgerReplica([], Date.now(), sharedLedgerSelfKey());
 
     const s = await caller().state();
@@ -109,7 +109,7 @@ describe("vramRouter.state — ống 'chạy NGOÀI SỔ' phơi ra ĐÚNG độ 
   });
 
   it("đối chứng — KHÔNG lượt nào hỏng ⇒ đếm 0, ước lượng 0, và caveat KHÔNG phải 'không đáng tin'", async () => {
-    publishDecisionTick({ attributableBytes: 0, baselineVerified: true }, Date.now());
+    publishDecisionTick(__tickFieldsForTests(0, true), Date.now());
     publishSharedLedgerReplica([], Date.now(), sharedLedgerSelfKey());
     const s = await caller().state();
     expect(s.unledgered.beginFailureCount).toBe(0);

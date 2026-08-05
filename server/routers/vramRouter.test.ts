@@ -15,10 +15,12 @@
  * dưới một ống cấp phát đã hỏng.
  */
 import { describe, it, expect, beforeEach } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 
 import { vramRouter } from "./vramRouter";
 import * as broker from "../services/vram/vramBroker";
-import { __resetDecisionTickForTests, publishDecisionTick } from "../services/vram/vramTickCell";
+import { __resetDecisionTickForTests, publishDecisionTick, __tickFieldsForTests } from "../services/vram/vramTickCell";
 import {
   __resetSharedLedgerForTests,
   __setSharedLedgerSelfKeyForTests,
@@ -30,6 +32,7 @@ import { __resetVramDeferForTests, xinVramCoHoan } from "../services/vram/vramDe
 import { __resetVramBeginFailureState } from "../services/vram/vramWiring";
 import { buildVramRefusal, VramRefusedError } from "../services/vram/vramRefusal";
 import type { VramAgentState } from "../services/vram/vramReadModel";
+import { VRAM_BACKGROUND_HOST_IDS, vramBackgroundHostForOwner } from "../services/vram/vramReadModel";
 
 const MIB = 1024 * 1024;
 
@@ -145,7 +148,7 @@ describe("vramRouter.state — `attributable === null` là CHẶN TRÊN, không 
   });
 
   it("CÓ nhịp nhưng nhịp đó không tính được ⇒ `reason:'probe-blind'` (KHÁC 'no-tick')", async () => {
-    publishDecisionTick({ attributableBytes: null, baselineVerified: true }, Date.now());
+    publishDecisionTick(__tickFieldsForTests(null, true), Date.now());
     const s = await caller().state();
     expect(s.attributable.known).toBe(false);
     if (s.attributable.known) throw new Error("attributable null ⇒ phải KHÔNG known");
@@ -155,7 +158,7 @@ describe("vramRouter.state — `attributable === null` là CHẶN TRÊN, không 
 
   it("CÓ số ⇒ `known:true` + con số, và `basis` nói vế nào thắng", async () => {
     xinThat("gguf:local-model", 1_000 * MIB);
-    publishDecisionTick({ attributableBytes: 9_000 * MIB, baselineVerified: true }, Date.now());
+    publishDecisionTick(__tickFieldsForTests(9_000 * MIB, true), Date.now());
     const s = await caller().state();
     expect(s.attributable.known).toBe(true);
     if (!s.attributable.known) throw new Error("có số ⇒ phải known");
@@ -169,7 +172,7 @@ describe("vramRouter.state — `attributable === null` là CHẶN TRÊN, không 
 
 describe("vramRouter.state — `trusted` / `degradedReasons` / `baselineVerified` ở CẢ HAI chiều", () => {
   it("nền CHƯA xác minh ⇒ `verified:false` + lý do `unverified-baseline`", async () => {
-    publishDecisionTick({ attributableBytes: 1 * MIB, baselineVerified: false }, Date.now());
+    publishDecisionTick(__tickFieldsForTests(1 * MIB, false), Date.now());
     const s = await caller().state();
     expect(s.baseline.verified).toBe(false);
     expect(s.headroom.degradedReasons).toContain("unverified-baseline");
@@ -177,7 +180,7 @@ describe("vramRouter.state — `trusted` / `degradedReasons` / `baselineVerified
   });
 
   it("nền ĐÃ xác minh + tick tươi + sổ chung tươi ⇒ `verified:true`, KHÔNG còn hai lý do kia", async () => {
-    publishDecisionTick({ attributableBytes: 1 * MIB, baselineVerified: true }, Date.now());
+    publishDecisionTick(__tickFieldsForTests(1 * MIB, true), Date.now());
     publishSharedLedgerReplica([], Date.now(), sharedLedgerSelfKey());
     const s = await caller().state();
     expect(s.baseline.verified).toBe(true);
@@ -187,14 +190,48 @@ describe("vramRouter.state — `trusted` / `degradedReasons` / `baselineVerified
     expect(s.headroom.trusted).toBe(true);
   });
 
-  it("`baselineUnverifiedReasons === null` khi CHƯA có bản ghi chẩn đoán — KHÔNG phải mảng rỗng", async () => {
+  it("`unverifiedReasons === null` khi CHƯA CÓ NHỊP NÀO — KHÔNG phải mảng rỗng", async () => {
     const s = await caller().state();
+    expect(s.tick.present).toBe(false);
     expect(s.baseline.unverifiedReasons).toBeNull();
     expect(s.baseline.origin).toBeNull();
   });
 
+  /**
+   * ★★★ (D) — BA Ô CỦA `baseline` PHẢI ĐẾN TỪ **CÙNG MỘT NHỊP**.
+   *
+   * Chiều nguy hiểm mà review gọi tên: `verified:false` (nhịp MỚI) + `unverifiedReasons: []`
+   * (bản ghi CŨ, hồi đó sạch) ⇒ Agent đọc *"chưa xác minh nhưng không có lý do nào"* ⇒ kết luận
+   * **"chỉ là chưa kịp chụp"** rồi bỏ qua. Ca này đi qua ĐÚNG ô mà `reserve()` đọc.
+   */
+  it("★★★ ba ô `baseline` đọc MỘT ô tick — `verified:false` KHÔNG BAO GIỜ đi với `unverifiedReasons: []`", async () => {
+    publishDecisionTick(
+      {
+        attributableBytes: 1 * MIB,
+        baselineVerified: false,
+        baselineUnverifiedReasons: ["co-tan-du-giu-gpu"],
+        baselineOrigin: "captured",
+      },
+      Date.now(),
+    );
+    const s = await caller().state();
+    expect(s.baseline.verified).toBe(false);
+    expect(s.baseline.unverifiedReasons).toEqual(["co-tan-du-giu-gpu"]);
+    expect(s.baseline.origin).toBe("captured");
+    // ⚠ Bất biến: cờ TẮT ⇒ danh sách lý do KHÔNG rỗng.
+    expect(s.baseline.unverifiedReasons!.length).toBeGreaterThan(0);
+  });
+
+  it("CHIỀU KIA — nền ĐÃ xác minh ⇒ `unverifiedReasons` RỖNG (có nhịp), KHÔNG phải `null`", async () => {
+    publishDecisionTick(__tickFieldsForTests(1 * MIB, true), Date.now());
+    const s = await caller().state();
+    expect(s.baseline.verified).toBe(true);
+    expect(s.baseline.unverifiedReasons).toEqual([]);
+    expect(s.baseline.origin).toBe("local");
+  });
+
   it("★★ tick CŨ ⇒ `stale:true` + lý do `stale-tick`, nhưng con số VẪN CÒN (không bị xoá)", async () => {
-    publishDecisionTick({ attributableBytes: 5_000 * MIB, baselineVerified: true }, Date.now() - 500_000);
+    publishDecisionTick(__tickFieldsForTests(5_000 * MIB, true), Date.now() - 500_000);
     const s = await caller().state();
     expect(s.tick.present).toBe(true);
     if (!s.tick.present) throw new Error("đã công bố tick");
@@ -223,10 +260,10 @@ describe("vramRouter.state — `unledgeredBytes` là ƯỚC LƯỢNG, và nó KH
 });
 
 describe("vramRouter.state — trạng thái hoãn của CẢ SÁU hộ `background`", () => {
-  it("★★★ đủ SÁU hộ, và MỖI hộ khai `mechanism` RIÊNG khỏi `status`", async () => {
+  it("★★★ đủ SÁU hộ, và MỖI hộ khai `mechanism` + `hostedHere` RIÊNG khỏi `status`", async () => {
     const s = await caller().state();
-    expect(s.defer).toHaveLength(6);
-    expect(s.defer.map((d) => d.host).sort()).toEqual(
+    expect(s.defer.hosts).toHaveLength(6);
+    expect(s.defer.hosts.map((d) => d.host).sort()).toEqual(
       [
         "cron:kb-eval-gate",
         "cron:kb-sync",
@@ -236,23 +273,60 @@ describe("vramRouter.state — trạng thái hoãn của CẢ SÁU hộ `backgro
         "sidecar:local-trainer",
       ].sort(),
     );
-    for (const d of s.defer) {
+    for (const d of s.defer.hosts) {
       expect(Object.hasOwn(d, "mechanism"), `hộ ${d.host} thiếu 'mechanism'`).toBe(true);
       expect(Object.hasOwn(d, "status"), `hộ ${d.host} thiếu 'status'`).toBe(true);
+      expect(Object.hasOwn(d, "hostedHere"), `hộ ${d.host} thiếu 'hostedHere'`).toBe(true);
+    }
+  });
+
+  /**
+   * ★★★ C-1 — KHỐI HOÃN PHẢI KHAI **PHẠM VI** CỦA CHÍNH NÓ.
+   *
+   * Cả hai nguồn là ảnh chụp trong bộ nhớ của tiến trình đang trả lời, trong khi cron KB-sync và
+   * hai sidecar job sống ở `worker`. Không có ba ô dưới đây, mọi `status` là một lời khẳng định
+   * toàn cục mà dữ liệu không đỡ nổi — và Task 2 (`retryDeferred`) đọc thẳng khối này.
+   */
+  it("★★★ khối `defer` khai PHẠM VI TIẾN TRÌNH + ai đang quan sát + vết BỀN xuyên tiến trình", async () => {
+    const s = await caller().state();
+    expect(s.defer.scope).toBe("this-process-only");
+    expect(s.defer.observedFromProcessKey).toBe(s.processKey);
+    expect(s.defer.durableTrace).toBe("vram_events(defer|defer_exceeded)");
+  });
+
+  /**
+   * ★★★ C-1 — hộ `cron:kb-sync` KHÔNG chạy ở tiến trình test (cron chưa đăng ký) ⇒ **KHÔNG ĐƯỢC**
+   * khai `no-chain-in-this-process`. Đó là lời khẳng định *"ở đây không có chuỗi hoãn nào"* cho một
+   * hộ mà tiến trình này **không nhìn thấy** — đúng câu ràng buộc 11 cấm.
+   */
+  it("★★★ hộ KHÔNG chủ trì ở tiến trình này ⇒ `not-observable-here`, KHÔNG phải `no-chain-in-this-process`", async () => {
+    const s = await caller().state();
+    const kb = s.defer.hosts.find((d) => d.host === "cron:kb-sync")!;
+    expect(kb.hostedHere).toBe(false);
+    expect(kb.status.kind).toBe("not-observable-here");
+    if (kb.status.kind !== "not-observable-here") throw new Error("cron chưa đăng ký ở tiến trình test");
+    expect(kb.status.meaning).toBe("host-not-running-in-this-process");
+  });
+
+  it("★★ năm hộ đi qua `vramDefer` KHÔNG chứng minh được chỗ đứng ⇒ `hostedHere === null` (không bịa `false`)", async () => {
+    const s = await caller().state();
+    for (const d of s.defer.hosts.filter((x) => x.host !== "cron:kb-sync")) {
+      expect(d.hostedHere, `hộ ${d.host}`).toBeNull();
+      expect(d.status.kind, `hộ ${d.host}`).toBe("no-chain-in-this-process");
     }
   });
 
   it("★★★ BA hộ 'không có cơ chế hoãn' (ngân sách 0) PHÂN BIỆT ĐƯỢC với ba hộ có chờ", async () => {
     const s = await caller().state();
-    const khongCho = s.defer.filter((d) => d.mechanism === "no-wait-degrades-in-place").map((d) => d.host);
-    const coCho = s.defer.filter((d) => d.mechanism === "waits-and-retries").map((d) => d.host);
+    const khongCho = s.defer.hosts.filter((d) => d.mechanism === "no-wait-degrades-in-place").map((d) => d.host);
+    const coCho = s.defer.hosts.filter((d) => d.mechanism === "waits-and-retries").map((d) => d.host);
     expect(khongCho.sort()).toEqual(["cron:kb-eval-gate", "gguf-embed-ctx", "reranker"]);
     expect(coCho.sort()).toEqual(["cron:kb-sync", "sidecar:llm-finetune", "sidecar:local-trainer"]);
-    // ⚠ Với hộ không-chờ, `idle` KHÔNG có nghĩa "đã xin được" — chính vì thế hai ô phải TÁCH.
-    for (const d of s.defer) expect(d.status.kind).toBe("idle");
+    // ⚠ Với hộ không-chờ, "không có chuỗi" KHÔNG nghĩa "đã xin được" — chính vì thế hai ô phải TÁCH.
+    for (const d of s.defer.hosts) expect(d.status.kind).not.toBe("deferring");
   });
 
-  it("★★ một hộ ĐANG HOÃN THẬT (đi qua `xinVramCoHoan`) hiện ra `status.kind === 'exceeded'`", async () => {
+  it("★★ một hộ ĐANG HOÃN THẬT (đi qua `xinVramCoHoan`) hiện ra `status.kind === 'exceeded'` + ngân sách CỦA CHUỖI", async () => {
     // ⚠ Lời từ chối dựng bằng ĐÚNG người dựng của mã sản xuất — không bịa một Error khác hình dạng.
     const facts = buildVramRefusal({
       requestedBytes: 1_000 * MIB,
@@ -283,19 +357,73 @@ describe("vramRouter.state — trạng thái hoãn của CẢ SÁU hộ `backgro
     ).rejects.toThrow();
 
     const s = await caller().state();
-    const ho = s.defer.find((d) => d.host === "reranker")!;
+    const ho = s.defer.hosts.find((d) => d.host === "reranker")!;
     expect(ho.status.kind).toBe("exceeded");
     if (ho.status.kind !== "exceeded") throw new Error("đã quá đáy");
     expect(ho.status.attempts).toBe(1);
     expect(ho.status.lastRefusalMessage).toContain("cuda-backend:reranker");
+    // ★ M-7 — ngân sách CHỐT LÚC BỊ TỪ CHỐI, không phải cấu hình hiện tại.
+    expect(ho.status.chainBudgetMs).toBe(0);
     // ⚠ Và `mechanism` vẫn nói đúng bản chất của hộ — hai ô KHÔNG gộp.
     expect(ho.mechanism).toBe("no-wait-degrades-in-place");
   });
 });
 
+/**
+ * ★★★ (E) — DÂN SỐ SÁU HỘ CÓ **MÁY QUÉT**, không phải một bản khai tay được miễn lưới.
+ * Cùng khuôn `vramAllocationSites.test.ts` (thứ đã canh `WIRED_ALLOCATION_SITE_COUNT` bằng máy).
+ */
+describe("vramReadModel — bảng sáu hộ khớp ĐÚNG các điểm gọi `xinVramCoHoan` trong mã sản xuất", () => {
+  /** Quét `server/services/**` (bỏ file test) tìm `xinVramCoHoan({ owner: "…" })`. */
+  function quetOwnerXinVramCoHoan(): string[] {
+    const goc = path.resolve(__dirname, "..", "services");
+    const ra: string[] = [];
+    const di = (d: string) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) {
+          di(p);
+          continue;
+        }
+        if (!e.name.endsWith(".ts") || e.name.includes(".test.")) continue;
+        const src = fs.readFileSync(p, "utf8");
+        const re = /xinVramCoHoan\(\{\s*owner:\s*[`"']([^`"'$]*)/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(src)) !== null) ra.push(m[1]!);
+      }
+    };
+    di(goc);
+    return ra;
+  }
+
+  it("★★★ MỌI `owner` quét được đều khớp MỘT hàng trong bảng — một hộ MỚI mà quên khai ⇒ ĐỎ", () => {
+    const owners = quetOwnerXinVramCoHoan();
+    // Lưới của lưới: mẫu quét phải THẬT SỰ thấy các điểm gọi, không phải im lặng trả rỗng.
+    expect(owners.length, "máy quét không thấy điểm gọi nào ⇒ chính lưới này đã mù").toBeGreaterThanOrEqual(6);
+    for (const o of owners) {
+      expect(vramBackgroundHostForOwner(o), `owner "${o}" KHÔNG có hàng nào trong HO_BACKGROUND`).not.toBeNull();
+    }
+  });
+
+  it("★★ và NGƯỢC LẠI — mọi hàng trong bảng đều được ít nhất một điểm gọi chạm tới (không có hàng CHẾT)", () => {
+    const owners = quetOwnerXinVramCoHoan();
+    // `cron:kb-sync` có cơ chế hẹn giờ RIÊNG (không qua `xinVramCoHoan`) ⇒ nó tự khớp bằng tên hộ.
+    const chamToi = new Set<string>(["cron:kb-sync"]);
+    for (const o of owners) {
+      const h = vramBackgroundHostForOwner(o);
+      if (h !== null) chamToi.add(h);
+    }
+    expect([...chamToi].sort()).toEqual([...VRAM_BACKGROUND_HOST_IDS].sort());
+  });
+
+  it("máy quét thấy ĐÚNG sáu điểm gọi `xinVramCoHoan` (số này đổi ⇒ đọc lại bảng, đừng sửa ca cho xanh)", () => {
+    expect(quetOwnerXinVramCoHoan().length).toBe(6);
+  });
+});
+
 describe("vramRouter.state — KHÔNG một giá trị KHÔNG HỮU HẠN nào rời khỏi API", () => {
   it("★★★ `attributableBytes` không hữu hạn ⇒ payload sạch + `nonFiniteFields` GỌI TÊN từng ô", async () => {
-    publishDecisionTick({ attributableBytes: Number.POSITIVE_INFINITY, baselineVerified: true }, Date.now());
+    publishDecisionTick(__tickFieldsForTests(Number.POSITIVE_INFINITY, true), Date.now());
     const s = await caller().state();
 
     const bay = quetSoKhongHuuHan(s);
@@ -313,7 +441,7 @@ describe("vramRouter.state — KHÔNG một giá trị KHÔNG HỮU HẠN nào r
   });
 
   it("fixture ĐỐI CHỨNG — cùng đường, chỉ khác ở CHIỀU đang kiểm: số hữu hạn ⇒ `nonFiniteFields` RỖNG", async () => {
-    publishDecisionTick({ attributableBytes: 9_000 * MIB, baselineVerified: true }, Date.now());
+    publishDecisionTick(__tickFieldsForTests(9_000 * MIB, true), Date.now());
     const s = await caller().state();
     expect(s.nonFiniteFields).toEqual([]);
     expect(quetSoKhongHuuHan(s)).toEqual([]);
@@ -324,7 +452,7 @@ describe("vramRouter.state — KHÔNG một giá trị KHÔNG HỮU HẠN nào r
 
 describe("vramRouter.state — con số phơi ra PHẢI là con số đang cưỡng chế", () => {
   it("★★ `headroom.effectiveBytes` khớp ĐÚNG `decision.effectiveHeadroomBytes` của một lượt `reserve()` cùng ngữ cảnh", async () => {
-    publishDecisionTick({ attributableBytes: 3_000 * MIB, baselineVerified: true }, Date.now());
+    publishDecisionTick(__tickFieldsForTests(3_000 * MIB, true), Date.now());
     publishSharedLedgerReplica([hangAnhEm({ bytes: 2_000 * MIB })], Date.now(), sharedLedgerSelfKey());
     xinThat("gguf:local-model", 1_000 * MIB);
 

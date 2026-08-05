@@ -18,7 +18,7 @@ Bảy pha vừa rồi để lại một danh sách dài những **"đồng hồ 
 
 | Ô | Ai dựng | Người tiêu thụ hôm nay |
 |---|---|---|
-| `getKbSyncSchedulerStatus().defer` | 2B Task 6 | **không ai** |
+| `getKbSyncSchedulerStatus().defer` | 2B Task 6 | ~~**không ai**~~ → ⚠ **ĐÍNH CHÍNH (review Task 1, M-4): hàng này SAI TỪ PHA 3.** `aiLocalKnowledgeService.readVramDefer()` đã đọc **đúng ô này** + `docTrangThaiHoanVram()` từ **Pha 3 Task 5 (D)** và nối vào `getKbHealth().vramDefer`. Task 4 **phải sửa bảng trước khi chấm**, nếu không nó sẽ tick một hàng đã có người đọc. |
 | `trusted` / `degradedReasons` | 3 Task 2 | chỉ trong module |
 | `baselineUnverifiedReasons` | 3 Task 3 | chỉ trong module |
 | `vramBeginFailureState()` | 2B Task 3 | chỉ trong module |
@@ -26,6 +26,8 @@ Bảy pha vừa rồi để lại một danh sách dài những **"đồng hồ 
 | `VRAM_SIDECAR_TTL_MS` | — | **không ai** |
 
 ⚠ **Quy tắc của pha:** mỗi ô ở trên phải **có người đọc** sau Pha 4, **hoặc** bị **xoá kèm lý do**. Không được để nguyên. Giữ một ô không ai đọc là giữ một lời hứa không ai giữ.
+
+⚠⚠ **CỔNG RA CỦA TASK 4 ĐÃ SIẾT (review Task 1, mục B):** *"nối vào router (Task 1/2)"* là một **vòng tròn** — ô được coi là "có người đọc" vì nó nằm trong payload của một router mà **chính router đó chưa ai đọc** (`grep -rn "\.vram\." client/src` ⇒ **0 khớp**; và AI Agent của repo này tiêu thụ năng lực qua `server/services/aiLocalTools/toolRegistry.ts`, **không** qua tRPC). ⇒ Phép thử máy-chạy-được thay thế: với mỗi ô, `git grep` phải chỉ ra **≥ 1 điểm gọi NGOÀI `server/routers/**` VÀ NGOÀI `server/services/vram/**`**.
 
 > 🔴 **ĐÍNH CHÍNH (2026-08-05, review Task 1) — bảng trên SAI một hàng, và luật của Task 4 BỊ VÒNG TRÒN.**
 >

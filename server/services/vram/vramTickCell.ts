@@ -19,6 +19,14 @@
  * đặt song song" đã khiến `bench.mjs` sai bốn lần. `readLastReconcileTick()` đọc đúng bộ đếm này.
  */
 
+/**
+ * Hình dạng TỐI THIỂU mà đường quyết định **và mặt đọc của Agent** cần từ một nhịp đối chiếu.
+ *
+ * ⚠ `import type` từ `./types` — module THUẦN KIỂU, bị xoá sạch lúc biên dịch ⇒ tính "module LÁ"
+ * của file này KHÔNG đổi. Tuyệt đối **đừng** nhập `./vramReconciler` vào đây (xem đầu file).
+ */
+import type { BaselineOrigin, VramBaselineDistrustReason } from "./types";
+
 /** Hình dạng TỐI THIỂU mà đường quyết định cần từ một nhịp đối chiếu. */
 export interface VramDecisionTickFields {
   /**
@@ -27,6 +35,27 @@ export interface VramDecisionTickFields {
    */
   readonly attributableBytes: number | null;
   readonly baselineVerified: boolean;
+  /**
+   * ★★★ Pha 4 Task 1 (D) — **VÌ SAO cờ trên tắt. ĐI CÙNG MỘT Ô, KHÔNG PHẢI HAI.**
+   *
+   * ⚠⚠ TRƯỚC BẢN NÀY, mặt đọc lấy `baselineVerified` từ ĐÂY và `baselineUnverifiedReasons` từ
+   * `vramReconciler.readLastReconcileTick()` — **HAI ô**. Hôm nay hai ô được xuất bản bởi hai lệnh
+   * gán CẠNH NHAU, đồng bộ, cùng `result` + cùng `atMs`, nên chúng khớp; nhưng **không bất biến
+   * nào ép** chúng khớp, và trong BỘ TEST chúng lệch thật (`__resetDecisionTickForTests()` không
+   * xoá `vramReconciler.lastTick`). Chiều Agent kết luận SAI là chiều nguy hiểm:
+   * `verified:false` (nhịp mới) + `unverifiedReasons: []` (bản ghi cũ, hồi đó sạch) ⇒ đọc thành
+   * *"chỉ chưa kịp chụp, không có vấn đề"* ⇒ **bỏ qua**.
+   * ⇒ Ràng buộc 8 (*"hai bản sao vị từ dưới một bất biến ⇒ ĐỔI KIỂU, đừng thêm ca"*): hai ô nhập
+   * làm MỘT, và bất biến "cùng nhịp" thành **CẤU TRÚC**. `publishDecisionTick(result, atMs)` vốn
+   * đã nhận cả `result` — hai trường này chỉ là hai ô nó đang có sẵn.
+   *
+   * ⚠ Rỗng ⇔ `baselineVerified === true`. **KHÔNG** phải `VramDegradationReason`: đây là CHẨN
+   * ĐOÁN, nó không đổi một byte nào của phép tính (`applyEnforcement` vẫn chỉ thấy
+   * `"unverified-baseline"`, 1 đơn vị).
+   */
+  readonly baselineUnverifiedReasons: readonly VramBaselineDistrustReason[];
+  /** Nền này đã trừ byte của anh em chưa, và bằng cách nào. Xem `VramReconcileResult.baselineOrigin`. */
+  readonly baselineOrigin: BaselineOrigin;
 }
 
 export interface VramDecisionTick extends VramDecisionTickFields {
@@ -67,8 +96,30 @@ export function readDecisionTick(): VramDecisionTick | null {
   return {
     attributableBytes: o.fields.attributableBytes,
     baselineVerified: o.fields.baselineVerified,
+    // ★ (D) — CÙNG một `fields`, cùng một nhịp. Không có đường nào để hai vế lệch nhau.
+    baselineUnverifiedReasons: o.fields.baselineUnverifiedReasons,
+    baselineOrigin: o.fields.baselineOrigin,
     atMs: o.atMs,
     consecutiveFailures: soLuotHongLienTiep,
+  };
+}
+
+/**
+ * ★ Pha 4 Task 1 (D) — Chỉ dùng trong test: **MỘT bản định nghĩa** của hai ô chẩn đoán mới.
+ *
+ * ⚠ VÌ SAO MỘT HÀM CHỨ KHÔNG PHẢI HAI DÒNG CHÉP VÀO MỖI FIXTURE: bất biến *"`unverifiedReasons`
+ * rỗng ⇔ `baselineVerified === true`"* là thứ khối `baseline` của mặt đọc đứng lên. Mười ba fixture
+ * tự khai hai ô đó là mười ba chỗ bất biến ấy vỡ được, im lặng, ở một file test chẳng liên quan.
+ */
+export function __tickFieldsForTests(
+  attributableBytes: number | null,
+  baselineVerified: boolean,
+): VramDecisionTickFields {
+  return {
+    attributableBytes,
+    baselineVerified,
+    baselineUnverifiedReasons: baselineVerified ? [] : ["chua-chup-nen"],
+    baselineOrigin: "local",
   };
 }
 

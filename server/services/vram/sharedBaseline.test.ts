@@ -69,7 +69,7 @@ import {
   __resetVramBaselineForTests, captureVramBaseline, reconcileOnce, sharedBaselineStaleMs,
   sharedBaselineTtlMs,
 } from "./vramReconciler";
-import { __resetDecisionTickForTests } from "./vramTickCell";
+import { __resetDecisionTickForTests, __tickFieldsForTests } from "./vramTickCell";
 import { distrustUnitBytes } from "./vramEnforcement";
 
 /** Bảng `vram_leases` GIẢ — MỘT bảng, NHIỀU tiến trình. Đây là "thế giới ngoài". */
@@ -774,7 +774,7 @@ describe("E. HÀNG NỀN KHÔNG PHẢI MỘT GIẤY PHÉP", () => {
 function ctxTrong(): VramDecisionContext {
   const now = Date.now();
   return {
-    tick: { attributableBytes: 0, baselineVerified: true, atMs: now, consecutiveFailures: 0 },
+    tick: { ...__tickFieldsForTests(0, true), atMs: now, consecutiveFailures: 0 },
     unledgered: { bytes: 0, unknownCount: 0 },
     sharedLedger: sharedLedgerFact(now),
     nowMs: now,

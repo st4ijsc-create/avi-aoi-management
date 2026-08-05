@@ -27,7 +27,7 @@ import {
   __resetSharedLedgerStoreForTests, __setSharedLedgerGatewayForTests, syncSharedLedger,
 } from "./vramSharedLedgerStore";
 import type { SharedLedgerGateway } from "./vramSharedLedgerStore";
-import { __resetDecisionTickForTests, publishDecisionTick } from "./vramTickCell";
+import { __resetDecisionTickForTests, publishDecisionTick, __tickFieldsForTests } from "./vramTickCell";
 import { beginVramAllocation } from "./vramWiring";
 import { formatVramRefusal, VramRefusedError } from "./vramRefusal";
 
@@ -82,7 +82,7 @@ beforeEach(() => {
   __setSharedLedgerGatewayForTests(gateway);
   __setSharedLedgerSelfKeyForTests("api:1:boot-toi");
   // Ô tick SẠCH: mọi phụ phí KHÁC bằng 0 ⇒ thứ duy nhất đổi được kết cục là sổ chung.
-  publishDecisionTick({ attributableBytes: 0, baselineVerified: true }, Date.now());
+  publishDecisionTick(__tickFieldsForTests(0, true), Date.now());
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
