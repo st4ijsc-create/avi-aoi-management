@@ -164,6 +164,15 @@ export interface SharedLedgerReplica {
   readonly baseline: SharedBaselineRecord | null;
   /** Danh tính đã dùng để lọc — ghi lại để một lượt đổi danh tính không âm thầm đọc số cũ. */
   readonly selfKey: string;
+  /**
+   * ★ Pha 3 Task 4 — **TOÀN BỘ hàng đúng như lượt đọc trả về** (kể cả hàng của ta và hàng nền).
+   *
+   * ⚠ VÌ SAO PHẢI GIỮ: `loaiHangDaChungMinhLaMa()` cần dựng lại bản sao **thiếu đúng mấy hàng MA**,
+   * và nó chỉ được phép dùng LẠI người dựng (`dungBanSao`) chứ không được viết bản thứ hai của
+   * phép tách/cộng (ràng buộc 12). Không có ô này thì hàng của CHÍNH TA — thứ đã bị lọc khỏi
+   * `foreignLeases` — sẽ **biến mất vĩnh viễn** sau lượt dọn đầu tiên.
+   */
+  readonly rows: readonly SharedLeaseRow[];
 }
 
 /**
@@ -319,18 +328,57 @@ export function publishSharedLedgerReplica(
    * trong câu SQL của cổng thật sẽ KHÔNG có mặt ở cổng giả, và bộ ca sẽ canh một hình dạng dữ
    * liệu mà sản xuất không bao giờ thấy (ràng buộc 10 — lưới theo ĐƯỜNG THOÁT, không theo file).
    */
+  banSao = dungBanSao(rows, atMs, selfKey);
+  soLuotDongBoHongLienTiep = 0;
+}
+
+/** NGƯỜI DỰNG DUY NHẤT của một bản sao đọc. Thuần — không đụng bộ đếm hỏng, không I/O. */
+function dungBanSao(
+  rows: readonly SharedLeaseRow[],
+  atMs: number,
+  selfKey: string,
+): SharedLedgerReplica {
   const hangNen = rows.find((r) => r.leaseKey === SHARED_BASELINE_KEY) ?? null;
   const ngoai = rows.filter((r) => r.leaseKey !== SHARED_BASELINE_KEY && r.processKey !== selfKey);
   let tong = 0;
   for (const r of ngoai) if (Number.isFinite(r.bytes) && r.bytes > 0) tong += r.bytes;
-  banSao = Object.freeze({
+  return Object.freeze({
     atMs,
     foreignBytes: tong,
     foreignLeases: Object.freeze([...ngoai]),
     baseline: hangNen === null ? null : baselineFromRow(hangNen),
     selfKey,
+    rows: Object.freeze([...rows]),
   });
-  soLuotDongBoHongLienTiep = 0;
+}
+
+/**
+ * ★★★ Pha 3 Task 4 — **VỨT KHỎI BẢN SAO NHỮNG HÀNG VỪA ĐƯỢC CHỨNG MINH LÀ MA.**
+ *
+ * ⚠⚠ VÌ SAO BẮT BUỘC, VÀ NÓ ĐƯỢC TÌM RA BỞI **NGHIỆM THU SỐNG**, không phải bởi suy luận: lệnh
+ * `delete` chỉ được **XẾP HÀNG** (nó phải thế — `reserve()` đồng bộ), nên nếu bản sao không được
+ * dọn thì **chính nhịp vừa chứng minh hàng là MA** vẫn đem 17.000 MiB ma đó đi tính lệch. Số đo
+ * của lượt nghiệm thu: `LỆCH −16.671 MiB` + `alarm = true` + một dòng `drift` vào DB, cho một khối
+ * byte mà nhịp đó **vừa tự tay tuyên bố là không tồn tại**. Và tệ hơn: hàng `vram:baseline` của
+ * đúng tiến trình đã chết đó vẫn được `captureVramBaseline()` **NHẬN NUÔI** (`baselineOrigin =
+ * "adopted"`, nền đọc từ một tiến trình không còn tồn tại).
+ * ⇒ *"Một nhịp không được vứt đi bằng chứng của chính nó"* — cùng lớp lỗi với `?? mặc_định` nuốt
+ * một câu trả lời đã có.
+ *
+ * ⚠ KHÔNG chạm `soLuotDongBoHongLienTiep`: đây KHÔNG phải một lượt đọc thành công, và xoá chuỗi
+ * hỏng ở đây là để một lượt DỌN che mất một DB đang hỏng (đúng lỗi mà `noteSharedLedgerSyncFailure`
+ * ở `chayMotLuot` phải thêm một dòng để tránh).
+ * ⚠ `atMs` GIỮ NGUYÊN: bản sao **không trẻ lại**. Ta chỉ biết một số hàng đã chết, không biết gì
+ * mới về những hàng còn lại — làm trẻ nó là khai một phép đo chưa xảy ra.
+ */
+export function loaiHangDaChungMinhLaMa(leaseKeys: readonly string[]): void {
+  if (banSao === null || leaseKeys.length === 0) return;
+  const bo = new Set(leaseKeys);
+  banSao = dungBanSao(
+    banSao.rows.filter((r) => !bo.has(r.leaseKey)),
+    banSao.atMs,
+    banSao.selfKey,
+  );
 }
 
 /**

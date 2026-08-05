@@ -13,8 +13,8 @@ import {
  * là lý do nửa ĐỒNG BỘ của sổ chung phải nằm ở một file riêng với nửa I/O.
  */
 import {
-  enqueueSharedLedgerWrite, publishOwnSharedBaseline, readSharedBaseline, readSharedLedgerReplica,
-  sharedLedgerFact, sharedLedgerSelfKey,
+  enqueueSharedLedgerWrite, loaiHangDaChungMinhLaMa, publishOwnSharedBaseline, readSharedBaseline,
+  readSharedLedgerReplica, sharedLedgerFact, sharedLedgerSelfKey,
 } from "./vramSharedLedger";
 import type { SharedBaselineRecord, SharedLeaseRow } from "./vramSharedLedger";
 /**
@@ -1121,11 +1121,25 @@ export async function captureVramBaseline(
     const mibNow = Math.round(baselineUsedBytes / 1024 / 1024);
     // Hai CÂU khác nhau vì hai HÀNH ĐỘNG khác nhau. Gộp một câu là hoặc bỏ sót lời khuyên đúng,
     // hoặc khuyên tắt một tiến trình đang phục vụ.
+    /**
+     * ★★★ Pha 3 Task 4 — CÂU NÀY PHẢI TÁCH **TÀN DƯ VÔ CHỦ** KHỎI **TÀN DƯ ĐÃ NHẬN NUÔI**.
+     *
+     * ⚠ Nghiệm thu sống bắt được đúng lỗi câu chữ này: bản trước in *"1 TÀN DƯ … tắt chúng THEO
+     * ĐÚNG PID"* NGAY CẠNH *"Nền vẫn XÁC MINH ĐƯỢC"* — hai vế mâu thuẫn trong một dòng. Một hộ đã
+     * có chủ thì byte của nó **đang nằm trong một cuốn sổ**, và người trực không cần làm gì cả.
+     * Cùng kỷ luật với câu `peerSentence` (*"ĐỪNG TẮT"*): hai HÀNH ĐỘNG khác nhau ⇒ hai CÂU khác nhau.
+     */
+    const tanDuVoChu = orphans.filter((h) => !pidTanDuDaCoChu.has(h.pid));
+    const tanDuCoChu = orphans.filter((h) => pidTanDuDaCoChu.has(h.pid));
     const orphanSentence =
-      orphans.length > 0
-        ? `${orphans.length} TÀN DƯ của lượt chạy trước (${orphans.map(nameOf).join(", ")}) — tắt chúng ` +
-          `THEO ĐÚNG PID; nền sẽ tự chụp lại ngay khi chúng rời GPU. `
-        : "";
+      (tanDuVoChu.length > 0
+        ? `${tanDuVoChu.length} TÀN DƯ VÔ CHỦ của lượt chạy trước (${tanDuVoChu.map(nameOf).join(", ")}) — ` +
+          `tắt chúng THEO ĐÚNG PID; nền sẽ tự chụp lại ngay khi chúng rời GPU. `
+        : "") +
+      (tanDuCoChu.length > 0
+        ? `${tanDuCoChu.length} hộ ngoài cây đã ĐƯỢC ĐỨNG TÊN (${tanDuCoChu.map(nameOf).join(", ")}) — byte của ` +
+          `chúng ĐÃ nằm trong sổ (nhận nuôi, Pha 3 Task 4), KHÔNG cần làm gì. `
+        : "");
     const peerSentence =
       peers.length > 0
         ? `${peers.length} VAI TRÒ ANH EM đang phục vụ (${peers.map(nameOf).join(", ")}) — ĐỪNG TẮT: mỗi vai ` +
@@ -1461,6 +1475,14 @@ async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Pro
     sidecar: moTaSidecarNhanNuoi(),
   });
   pidTanDuDaCoChu = ke.pidTanDuDaCoChu;
+
+  /**
+   * ★★★ VỨT HÀNG MA KHỎI BẢN SAO **NGAY TRONG NHỊP NÀY**, trước khi lượt chụp nền và lượt đối
+   * chiếu đọc nó. Xem docstring `loaiHangDaChungMinhLaMa()` — số đo của nghiệm thu sống cho thấy
+   * không có dòng này thì chính nhịp vừa chứng minh hàng là MA vẫn báo động cho 17.000 MiB ma đó,
+   * và vẫn nhận nuôi nền của một tiến trình đã chết.
+   */
+  if (ke.xoaHangMa.length > 0) loaiHangDaChungMinhLaMa(ke.xoaHangMa.map((m) => m.leaseKey));
 
   for (const ma of ke.xoaHangMa) {
     // ⚠ Đi qua ĐÚNG hàng đợi mà `release()` dùng — một lượt xoá thẳng vào DB ở đây sẽ bỏ qua cơ

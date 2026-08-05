@@ -484,6 +484,56 @@ describe("D. ĐƯỜNG THẬT — nhịp đối chiếu, sổ chung thật, gi�
     expect(r.baselineUnverifiedReasons).toContain("co-tan-du-giu-gpu");
   });
 
+  /**
+   * ★★★ CA DO **NGHIỆM THU SỐNG** ĐẺ RA (không phải suy luận). Lệnh `delete` chỉ được XẾP HÀNG,
+   * nên nếu bản sao đọc không được dọn NGAY thì **chính nhịp vừa chứng minh hàng là MA** vẫn:
+   *   • đem 17.000 MiB ma đi tính lệch ⇒ `LỆCH −16.671 MiB` + `alarm` + một dòng `drift` vào DB
+   *     (số ĐO ĐƯỢC ở lượt nghiệm thu đầu tiên);
+   *   • **NHẬN NUÔI nền** của đúng tiến trình đã chết đó (`baselineOrigin: "adopted"`).
+   */
+  it("★★★ D-9: hàng MA bị vứt khỏi bản sao NGAY trong nhịp — không báo động, không nhận nuôi nền của xác chết", async () => {
+    bang.rows.set("api:900:1000#lease-ma", hangGiaySo({
+      leaseKey: "api:900:1000#lease-ma", processKey: "api:900:1000", pid: 900, role: "api",
+      bytes: KHOI_17K,
+    }));
+    bang.rows.set(SHARED_BASELINE_KEY, hangGiaySo({
+      leaseKey: SHARED_BASELINE_KEY, processKey: "api:900:1000", pid: 900, role: "api",
+      leaseId: "smi", owner: "reconciler:baseline", bytes: DESKTOP,
+    }));
+    await syncSharedLedger();
+    expect(readSharedLedgerReplica()!.foreignBytes, "trước nhịp: bản sao VẪN mang hàng ma").toBe(KHOI_17K);
+
+    const r = await __runReconcileTick();
+    expect(r.foreignLedgerBytes, "byte của hàng MA KHÔNG được vào vế sổ").toBe(0);
+    expect(r.baselineOrigin, "KHÔNG được nhận nuôi nền của một tiến trình đã chết").not.toBe("adopted");
+    expect(r.baselineUsedBytes, "nền = thiết bị − giấy phép nhận nuôi").toBe(DESKTOP);
+    expect(r.driftBytes, "hai vế khớp ⇒ lệch 0").toBe(0);
+    expect(r.alarm, "KHÔNG báo động cho một khối byte nhịp này vừa tuyên bố là không tồn tại").toBe(false);
+  });
+
+  /**
+   * ★★ Câu cảnh báo phải NÓI ĐÚNG HÀNH ĐỘNG. Nghiệm thu sống in ra *"1 TÀN DƯ … tắt chúng THEO
+   * ĐÚNG PID"* ngay cạnh *"Nền vẫn XÁC MINH ĐƯỢC"* — hai vế mâu thuẫn, và vế đầu mời người trực đi
+   * giết một tiến trình mà byte của nó đã được tính đủ.
+   */
+  it("★★ D-10: hộ ĐÃ ĐỨNG TÊN không được gọi là 'TÀN DƯ VÔ CHỦ'; hộ vô chủ thì PHẢI bị gọi tên", async () => {
+    const warn = console.warn as unknown as ReturnType<typeof vi.fn>;
+    await __runReconcileTick();
+    const daNhan = warn.mock.calls.map((c: unknown[]) => String(c[0] ?? "")).join("\n");
+    expect(daNhan).toMatch(/ĐƯỢC ĐỨNG TÊN/);
+    expect(daNhan, "hộ có chủ KHÔNG được khuyên tắt").not.toMatch(/TÀN DƯ VÔ CHỦ/);
+
+    chuyenTienTrinh(SELF);
+    warn.mockClear();
+    bangTienTrinh = [
+      procsCoSidecar[0]!,
+      { pid: 31337, ppid: 60001, cmdline: `${BIN} -m x.gguf --port 9099`, ctime: ft(1_000) },
+    ];
+    await __runReconcileTick();
+    const voChu = warn.mock.calls.map((c: unknown[]) => String(c[0] ?? "")).join("\n");
+    expect(voChu).toMatch(/TÀN DƯ VÔ CHỦ/);
+  });
+
   it("★ D-8: giấy phép nhận nuôi KHÔNG chặn lượt chụp nền (byte của nó ĐÃ nằm trên thiết bị)", async () => {
     await __runReconcileTick();
     const nen = await captureVramBaseline();
