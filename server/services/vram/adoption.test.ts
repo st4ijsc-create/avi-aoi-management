@@ -48,7 +48,8 @@ vi.mock("./vramGpuHolders", () => ({
 }));
 
 import {
-  __resetBrokerForTests, nguoiThiHanhThuHoi, preemptCandidates, preemptPlan, snapshot,
+  __resetBrokerForTests, nguoiThiHanhThuHoi, nguoiThiHanhThuHoiTu, preemptCandidates, preemptPlan,
+  snapshot,
 } from "./vramBroker";
 import { preempt } from "./vramPreempt";
 import {
@@ -803,5 +804,76 @@ describe("F. CHƯA CÓ BẦU CHO LƯỢT NHẬN NUÔI — cửa sổ đếm hai 
       sidecar: moTaSidecarNhanNuoi(),
     });
     expect(keA.nhanNuoi).toEqual([]);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ (4) review TOÀN NHÁNH — **KHOÁ MỘT ĐỘT BIẾN ĐÃ SỐNG SÓT 692/692, 0 ĐỎ.**
+ *
+ * Nợ Task 5 tự khai: *"ai đưa `foreignLeases` vào `preemptPlan()` thì race `refCount` quay lại
+ * NGAY và không ca nào đỏ"*. Người review đã **tự chạy đúng đột biến đó** (nối `foreignLeases` đã
+ * lọc bằng CHÍNH `nguoiThiHanhThuHoiTu` vào kết quả `preemptPlan`) và cả 692 ca vẫn xanh.
+ *
+ * ⚠⚠ VÀ HẬU QUẢ NẶNG HƠN LỜI KHAI. Không chỉ là một race trên `refCount` đọc từ bản sao cũ tới
+ * 60 s. `NGUOI_THI_HANH[step.reclaimer]` (`vramPreempt.ts:57`) chạy **TRONG TIẾN TRÌNH NÀY**, nên
+ * một hàng của **anh em** mang `reclaimer: "gguf-idle-model"` sẽ gọi `unloadGgufModel(modelId)`
+ * trên **engine CỦA TA** cho một model mà **anh em** đang nạp, và `"vision-sidecar"` sẽ
+ * `stopSidecar()` giết **sidecar CỦA TA**. Đó không phải "mở lại một race" — đó là **quy trách
+ * nhiệm SAI HỘ**, và vì `freedBytes` đo bằng chênh lệch sổ CỤC BỘ nên hậu quả **im lặng**.
+ *
+ * ⚠ Khuôn của ca này là khuôn RẺ NHẤT mà người review chỉ ra, và nó cố ý **không biết `foreignLeases`
+ * là gì**: nó chỉ khẳng định một bất biến — *mỗi bước thi hành phải trỏ tới một giấy phép CÓ TRONG
+ * `snapshot().leases`*. Bất kỳ đường nào đưa hàng của người khác vào kế hoạch đều đỏ ở đây, kể cả
+ * đường chưa ai nghĩ ra.
+ */
+describe("G. RANH GIỚI THI HÀNH — `preemptPlan()` CHỈ trả giấy phép CỦA TA", () => {
+  const SELF = "worker:1001:5000";
+  /** ⚠ pid 900 phải CÒN SỐNG (ctime ≤ bootMs của `api:900:1000`), nếu không hàng của nó bị dọn như
+   *  HÀNG MA ngay trong nhịp và ca này xanh RỖNG. */
+  const procs: Proc[] = [
+    { pid: 1001, ppid: 1, cmdline: "node dist/worker.js", ctime: ft(9_000) },
+    { pid: 900, ppid: 1, cmdline: "node dist/index.js", ctime: ft(900) },
+    { pid: 31337, ppid: 60001, cmdline: `${BIN} -m qwen3-vl.gguf --port ${CONG} --jinja`, ctime: ft(1_000) },
+  ];
+
+  beforeEach(() => {
+    chuyenTienTrinh(SELF);
+    hoGiuGpu = census({ orphans: [SIDECAR] });
+    bangTienTrinh = procs;
+    thietBiUsedBytes = DESKTOP + KHOI_17K;
+  });
+
+  it("★★★ G-1: hàng của ANH EM nhàn rỗi + CÓ người thi hành vẫn KHÔNG được vào kế hoạch thi hành", async () => {
+    // Hàng của anh em ở đúng hình dạng HẤP DẪN NHẤT với đột biến: nhàn rỗi, mức thấp nhất, và
+    // `reclaimer` mà bảng `NGUOI_THI_HANH` CÓ cài đặt.
+    bang.rows.set(`api:900:1000#lease-9`, hangGiaySo({
+      leaseKey: "api:900:1000#lease-9", processKey: "api:900:1000", pid: 900, role: "api",
+      leaseId: "lease-9", owner: "gguf:cua-anh-em", priority: "background",
+      refCount: 0, reclaimer: "gguf-idle-model",
+    }));
+    await syncSharedLedger();
+
+    // ⚠ TIỀN ĐỀ, kiểm bằng chính bản sao mã sản xuất đọc — không có hai dòng này thì ca có thể
+    // xanh vì hàng anh em KHÔNG TỒN TẠI, chứ không vì bất biến được giữ.
+    const banSao = readSharedLedgerReplica()!;
+    expect(banSao.foreignLeases.map((r) => r.leaseId), "hàng anh em PHẢI có trong bản sao").toEqual(["lease-9"]);
+    expect(
+      nguoiThiHanhThuHoiTu(banSao.foreignLeases[0]!.reclaimer, banSao.foreignLeases[0]!.refCount),
+      "và nó PHẢI thu hồi được theo vị từ DÙNG CHUNG — đó đúng là thứ làm đột biến hấp dẫn",
+    ).toBe("gguf-idle-model");
+
+    await __runReconcileTick(); // sổ CỤC BỘ có hộ nhận nuôi ⇒ kế hoạch KHÔNG rỗng
+
+    const cuaTa = new Set(snapshot().leases.map((l) => l.id));
+    const ke = preemptPlan("interactive", Number.POSITIVE_INFINITY);
+    expect(ke.length, "kế hoạch rỗng thì ca này không khẳng định được gì").toBeGreaterThan(0);
+    for (const b of ke) {
+      expect(
+        cuaTa.has(b.leaseId),
+        `bước "${b.owner}" (leaseId ${b.leaseId}, reclaimer ${b.reclaimer}) trỏ tới một giấy phép ` +
+          `KHÔNG có trong sổ cục bộ — người thi hành chạy TRONG tiến trình này, nên nó sẽ dọn hộ CỦA TA`,
+      ).toBe(true);
+    }
   });
 });
