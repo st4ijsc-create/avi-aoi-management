@@ -50,48 +50,83 @@ describe("I-1 — nút `vram.retryDeferred` CHỈ hiện khi lệnh thật sự 
 });
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-// ★★★ LƯỚI CẤU TRÚC — panel KHÔNG được tự dựng lại phép so, và KHÔNG được `||` thêm điều kiện
+// ★★★ LƯỚI CẤU TRÚC — PHÁT BIỂU VỀ **CÁI NÓ PHẢI LÀ**, KHÔNG PHẢI DANH SÁCH CÁI NÓ KHÔNG ĐƯỢC CHỨA
+//
+// ⚠⚠⚠ N-2 (re-review) — BẢN TRƯỚC CỦA LƯỚI NÀY **LÁCH ĐƯỢC**, và cách lách rất rẻ:
+//     const rk = h.retryReach.kind;
+//     const canRetry = rk === "reachable-here" || h.status.kind === "deferring";
+// ⇒ lỗi I-1 **khôi phục NGUYÊN VẸN**, lưới **XANH 153/153** — vì lưới cũ cấm *"một `||` chạm
+// `retryReach`"*, tức nó chép **CHỮ KÝ của lỗi vừa rồi** thay vì phát biểu **BẤT BIẾN**. Một biến
+// trung gian đổi chữ ký; `?:`, `&&`, `??` cũng vậy. Đây là **lần thứ BA** trong chuỗi pha một lưới
+// được nặn theo hình dạng của lỗi cũ.
+//
+// ⇒ BẤT BIẾN, phát biểu MỘT LẦN: **khởi tạo của `canRetry` PHẢI LÀ một lời gọi
+// `vramRetryButtonEnabled(...)`** — không phải "không được chứa X". Mọi biểu thức khác (biến trung
+// gian, `?:`, `&&`, hằng `true`, một hàm khác) đều **không phải** lời gọi ấy ⇒ ĐỎ, bất kể hình dạng.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-describe("I-1 — `VramBrokerPanel` phải ĐI QUA vị từ này, không viết lại một phép so nào", () => {
+describe("N-2 — khởi tạo của `canRetry` PHẢI LÀ lời gọi `vramRetryButtonEnabled` (bất biến, không phải chữ ký)", () => {
   const HERE = fileURLToPath(new URL(".", import.meta.url)); // .../client/src/lib
   const PANEL = join(HERE, "..", "components", "ai", "VramBrokerPanel.tsx");
 
-  function ast() {
+  function ast(): ts.SourceFile {
     return ts.createSourceFile(PANEL, readFileSync(PANEL, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   }
 
-  it("★★★ panel GỌI `vramRetryButtonEnabled(` (hỏi trên AST — chú thích không phải node)", () => {
-    let n = 0;
-    const di = (node: ts.Node): void => {
-      if (
-        ts.isCallExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        node.expression.text === "vramRetryButtonEnabled"
-      ) {
-        n++;
-      }
-      ts.forEachChild(node, di);
-    };
-    di(ast());
-    expect(n, "panel phải đi qua vị từ dùng chung, không tự so").toBeGreaterThanOrEqual(1);
-  });
-
-  it('★★★ panel KHÔNG so `status.kind === "deferring"/"exceeded"` để quyết định NÚT THỬ LẠI', () => {
-    /**
-     * ⚠ Phép so ấy vẫn HỢP LỆ ở chỗ khác của panel (badge "đang hoãn", và `owner` truyền vào lệnh).
-     * Thứ bị cấm là dùng nó **trong một biểu thức `||`** — chữ ký chính xác của lỗi I-1. Hỏi trên
-     * AST: có `BinaryExpression` `||` nào mà một vế chạm `retryReach` không.
-     */
-    const sf = ast();
-    const viPham: string[] = [];
-    const di = (node: ts.Node): void => {
-      if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
-        const text = node.getText(sf);
-        if (/\bretryReach\b/.test(text)) viPham.push(text.slice(0, 160));
-      }
-      ts.forEachChild(node, di);
+  /** MỌI khai báo biến mang tên `ten` trong file (kể cả trong hàm/JSX callback). */
+  function khaiBao(sf: ts.SourceFile, ten: string): ts.VariableDeclaration[] {
+    const ra: ts.VariableDeclaration[] = [];
+    const di = (n: ts.Node): void => {
+      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === ten) ra.push(n);
+      ts.forEachChild(n, di);
     };
     di(sf);
-    expect(viPham, "một `||` quanh `retryReach` là đúng chữ ký của lỗi I-1").toEqual([]);
+    return ra;
+  }
+
+  /** `true` ⇔ node LÀ một lời gọi đúng hàm ấy (không phải "có chứa" nó ở đâu đó bên trong). */
+  function laLoiGoi(n: ts.Node | undefined, ten: string): boolean {
+    return n !== undefined && ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === ten;
+  }
+
+  it("★★★ có ĐÚNG ≥1 `canRetry`, và MỌI khởi tạo của nó LÀ `vramRetryButtonEnabled(...)`", () => {
+    const sf = ast();
+    const kb = khaiBao(sf, "canRetry");
+    expect(kb.length, "panel phải có biến quyết định nút thử lại").toBeGreaterThanOrEqual(1);
+    const sai = kb
+      .filter((d) => !laLoiGoi(d.initializer, "vramRetryButtonEnabled"))
+      .map((d) => d.getText(sf).slice(0, 160));
+    // ⚠ Thông điệp nói BẤT BIẾN, không nói "đừng dùng ||" — người sau đọc là hiểu phải làm gì.
+    expect(sai, "khởi tạo của `canRetry` phải LÀ lời gọi `vramRetryButtonEnabled(...)`, không phải một biểu thức tự chế").toEqual([]);
+  });
+
+  it("★★ (lưới cho chính lưới) BỐN hình dạng lách khác nhau đều bị bắt bởi CÙNG một phát biểu", () => {
+    /**
+     * Bốn biến thể: biến trung gian · `?:` · `&&` · `??`. Lưới cũ (cấm `||`) **để lọt cả bốn**.
+     * Ca này chạy phép hỏi mới trên nguồn giả lập — chứng minh nó bắt theo BẤT BIẾN, không theo
+     * chữ ký của lỗi đã gặp.
+     */
+    const bienThe: Record<string, string> = {
+      "biến trung gian": 'const rk = x.retryReach.kind; const canRetry = rk === "reachable-here" || x.status.kind === "deferring";',
+      "toán tử ?:": 'const canRetry = x.retryReach.kind === "unknown" ? true : x.status.kind === "deferring";',
+      "toán tử &&": 'const canRetry = x.status.kind === "deferring" && x.retryReach.kind !== "unreachable";',
+      "toán tử ??": "const canRetry = x.coBam ?? true;",
+      "hằng số": "const canRetry = true;",
+      "hàm KHÁC": "const canRetry = motHamKhac(x.retryReach.kind);",
+    };
+    for (const [ten, nguon] of Object.entries(bienThe)) {
+      const sf = ts.createSourceFile("giả.tsx", nguon, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const kb = khaiBao(sf, "canRetry");
+      expect(kb.length, ten).toBeGreaterThanOrEqual(1);
+      expect(kb.every((d) => laLoiGoi(d.initializer, "vramRetryButtonEnabled")), `${ten} PHẢI bị bắt`).toBe(false);
+    }
+    // Và hình dạng ĐÚNG thì lọt qua — lưới không phải một cái cấm-tất-cả.
+    const dung = ts.createSourceFile(
+      "giả.tsx",
+      "const canRetry = vramRetryButtonEnabled(x.retryReach.kind);",
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    expect(khaiBao(dung, "canRetry").every((d) => laLoiGoi(d.initializer, "vramRetryButtonEnabled"))).toBe(true);
   });
 });

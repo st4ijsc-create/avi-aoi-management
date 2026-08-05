@@ -59,18 +59,35 @@ export { classifyToolIntent, classifyToolIntentLLM, listTools };
  * ⚠⚠ CHỈ TIÊM KHI SCHEMA CỦA TOOL **CÓ KHAI** `__authCtx` (các schema đều `.strict()`): một tool
  * không khai mà bị nhét thêm khoá lạ sẽ **vỡ** ở bất kỳ lượt `safeParse` nào về sau. Phép tiêm này
  * do đó **cộng thêm, không đổi gì** với tool cũ không dùng RBAC.
- * ⚠⚠ `__authCtx` được gán **SAU** phép trải: một `__authCtx` do LLM/người dùng bịa trong `args`
- * **KHÔNG BAO GIỜ** thắng danh tính phiên thật. Đây là ranh giới an toàn, không phải thứ tự tuỳ ý.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 N-1 (re-review) — **`__authCtx` ĐẾN TỪ ARGS BỊ XOÁ, LUÔN LUÔN, TRƯỚC MỌI NHÁNH.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản trước mở bằng `if (!execCtx) return args` — **trả lại NGUYÊN VĂN** một `__authCtx` do đầu vào
+ * bịa. Người review đo được thật: `checkPermission` nhận `[999, "superadmin", …]` và **tool CHẠY**.
+ * Đường vào là **LLM fallback**: `classifyToolIntentLLM()` cho `tool.parameters.safeParse(args)`,
+ * và vì `__authCtx` là ô **ĐÃ KHAI** trong schema nên `safeParse` **GIỮ NGUYÊN** nó. Chưa nổ hôm
+ * nay (bốn điểm vào đều xác thực + truyền `execCtx`; fallback mặc định TẮT) — nhưng đây là một
+ * **đường LEO THANG QUYỀN**, không phải một ô hiển thị sai.
+ *
+ * ⇒ Thứ tự **KHÔNG ĐẢO ĐƯỢC**: (1) **XOÁ** `__authCtx` khỏi args — nó **KHÔNG BAO GIỜ** là nguồn
+ * danh tính, dù có `execCtx` hay không; (2) chỉ khi CÓ `execCtx` **và** schema có khai thì mới gán
+ * lại từ `ToolExecContext.user` (người dùng phiên THẬT, máy chủ tự đọc).
+ * ⚠ Một `return args` nào chen vào **trước** bước (1) là mở lại đúng lỗ này.
+ *
+ * ⚠⚠ VÀ ĐÂY LÀ PHẦN ĐẮT NHẤT: ca cũ *"không `execCtx` ⇒ DENY"* **xanh vì args RỖNG**, không phải vì
+ * có phòng thủ — "lưới xanh vì LÝ DO SAI", lần thứ mười hai trong chuỗi pha. Ca thay thế
+ * (`authCtxInjection.test.ts`) **bơm `__authCtx` BỊA** vào đúng nhánh không có `execCtx`.
  */
 function argsWithAuthCtx(tool: Tool<any, any>, args: unknown, execCtx?: ToolExecContext): unknown {
-  if (!execCtx) return args;
-  const shape = (tool.parameters as unknown as { shape?: Record<string, unknown> })?.shape;
-  if (!shape || !Object.hasOwn(shape, "__authCtx")) return args;
   if (args === null || typeof args !== "object" || Array.isArray(args)) return args;
-  return {
-    ...(args as Record<string, unknown>),
-    __authCtx: { userId: execCtx.user.id, role: execCtx.user.role },
-  };
+  // (1) XOÁ TRƯỚC — vô điều kiện. Đầu vào KHÔNG BAO GIỜ được là nguồn của danh tính.
+  const { __authCtx: _tuDauVao, ...sach } = args as Record<string, unknown>;
+  if (!execCtx) return sach;
+  const shape = (tool.parameters as unknown as { shape?: Record<string, unknown> })?.shape;
+  if (!shape || !Object.hasOwn(shape, "__authCtx")) return sach;
+  // (2) GÁN LẠI từ phiên THẬT — nguồn duy nhất.
+  return { ...sach, __authCtx: { userId: execCtx.user.id, role: execCtx.user.role } };
 }
 
 /**

@@ -157,6 +157,57 @@ lời trôi khỏi nhau).
 - [ ] **Bước 5:** ra lệnh lên một hộ **không thu hồi được** ⇒ **thất bại trung thực**, không "im lặng thành công".
 - [ ] **Bước 6: Commit + báo cáo.**
 
+---
+
+#### ★★★ BÀN GIAO CỨNG TỪ TASK 4 (re-review) — HAI MỤC, KHÔNG GỘP VÀO CÁC BƯỚC TRÊN
+
+##### (T5-A) ⚠⚠ **BÁN KÍNH NỔ CỦA BẢN VÁ C-1 — ĐÂY LÀ THAY ĐỔI AN NINH, KHÔNG PHẢI VRAM.**
+
+Task 4 vá `tryExecuteTool()` để `__authCtx` (danh tính phiên THẬT) đi vào args của read tool — **nợ
+có sẵn của repo**: trước đó `execCtx` không bao giờ vào args nên **mọi** read tool có RBAC **LUÔN**
+trả `PERMISSION_DENIED`. Số ĐO của người review: **30 tool khai `__authCtx`, 29 tool HỒI SINH**
+(đếm tĩnh của Task 4 khớp về bản chất: `analyticsTools` 7 · `readToolsP2` 4 · `readToolsP2bc` 6 ·
+`readToolsP2d` 4 · `readToolsProgramming` 6 khai trực tiếp + 2 dùng chung `kindCodeParams` = **8/8**
+· `vramTools` 1).
+
+⚠⚠ **"215/215 xanh" KHÔNG chứng minh gì**: mọi ca đó **tiêm `__authCtx` bằng tay**, nên chúng đã
+xanh **suốt thời gian tool chết**. Đường thoát thật chưa từng chạy.
+
+🔴 **ĐÁNG LO NHẤT, ĐÍCH DANH — `readToolsProgramming`: cả 8 tool đều ở `machine_monitoring/canView`
+(sàn THẤP NHẤT):** `retrieve_programming_kb` · `lookup_error_code` · `syntax_check_program` ·
+`compile_program` · `simulate_program` · `generate_program` · **`calc`** · **`read_project_file`**.
+Chặn đường dẫn (`read_project_file`) và hộp cát (`calc`) **CHƯA TỪNG CHẠY** trên đường Agent.
+
+**Điều kiện nghiệm thu — NGUYÊN VĂN, không diễn giải lại:**
+- [ ] **Mỗi LỚP RỦI RO một lượt SỐNG** (không phải mỗi tool): (a) đọc dữ liệu nghiệp vụ
+      (`readToolsP2*`), (b) phân tích/tổng hợp (`analyticsTools`), (c) lập trình thiết bị
+      (`readToolsProgramming`), (d) hạ tầng VRAM (`vramTools`).
+- [ ] **Mỗi lớp phải có MỘT lượt với role BỊ TỪ CHỐI** — và lượt đó phải trả `PERMISSION_DENIED`
+      **kèm 0 byte dữ liệu**. Một lớp chỉ chạy lượt "được phép" là **chưa nghiệm thu**.
+- [ ] **`read_project_file` phải có lượt THỬ VƯỢT RÀO riêng**: đường dẫn ra ngoài workspace
+      (`../`, đường dẫn tuyệt đối, symlink) ⇒ phải bị chặn, và ghi lại NGUYÊN VĂN câu từ chối.
+- [ ] **`calc` phải có lượt THỬ VƯỢT RÀO riêng**: biểu thức chạm `process`/`require`/`global`/vòng
+      lặp vô hạn ⇒ phải bị chặn, và ghi lại NGUYÊN VĂN.
+- [ ] Ghi vào báo cáo Task 5 **một bảng**: lớp · tool đại diện · role được phép · role bị từ chối ·
+      kết quả thật.
+
+##### (T5-B) ⚠ **CỔNG AST CỦA TASK 4 CHƯA PHỦ "NHÁNH CHẾT" — TASK 5 PHẢI PHỦ.**
+
+Task 4 đổi cổng (ii) / cổng mount / cổng `canRetry` sang hỏi trên **AST** (đóng được lớp "lời gọi bị
+biến thành CHÚ THÍCH" mà người review đã lách). **Lớp CÒN MỞ, người review đo được:** một lời gọi
+nằm trong **nhánh chết** — `{false ? <X/> : null}` — vẫn làm mọi cổng **XANH 153/153**. Cùng lớp:
+một hàm không ai gọi, một file không ai import.
+
+**Điều kiện nghiệm thu — NGUYÊN VĂN:**
+- [ ] Nghiệm thu sống phải **RENDER THẬT** màn `AIBrainDashboard` và **chụp màn hình** panel VRAM,
+      chứng minh nó **THẬT SỰ hiện ra** — không chỉ "có mặt trong mã".
+- [ ] Trên màn đó phải **đọc được bằng mắt** đủ **tám** câu do `translateVram*` sinh ra
+      (scope · hostedHere · holderListIsLowerBound · estimateUsable · nonFiniteFields · và ba câu
+      kết cục lệnh sau khi bấm) — **đây mới là bằng chứng "lời gọi CÓ CHẠY"**; cổng AST chỉ chứng
+      minh "chương trình CÓ lời gọi".
+- [ ] Nếu một câu **không hiện ra** dù cổng AST xanh ⇒ đó là một **nhánh chết**, và phải ghi vào
+      báo cáo là **cổng ra CHƯA ĐẠT**, không được im lặng bỏ qua.
+
 ⚠ Không nối ống stdio vào tiến trình con. Dọn theo **đúng PID** (`nvidia-smi --query-compute-apps=pid`), **không quét mù theo tên**. `getLlama()` **không nạp được** trong `tsx` trần — dùng sidecar thật.
 
 ---

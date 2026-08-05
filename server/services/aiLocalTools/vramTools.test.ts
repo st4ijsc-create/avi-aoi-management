@@ -355,15 +355,73 @@ describe("cổng ra — `buildVramAgentState` có điểm gọi NGOÀI `server/r
     expect(hits.length, `điểm gọi tìm được: ${JSON.stringify(hits)}`).toBeGreaterThanOrEqual(1);
   });
 
-  it("★★★ mặt ĐỌC được tiêu thụ ở CLIENT qua `trpc.vram.state` — và `AIBrainDashboard` KHÔNG còn đọc VRAM thô", () => {
-    const dashboard = readFileSync(join(REPO_ROOT, "client", "src", "pages", "AIBrainDashboard.tsx"), "utf8");
-    expect(dashboard).toMatch(/trpc\.vram\.state\.useQuery/);
-    /**
-     * ⚠ Đồng hồ CŨ: `const vram = h?.vram ?? null` ⇐ `aiGguf.health` ⇐ `llamaInstance.getVramState()`.
-     * Hai nguồn số cho cùng một câu hỏi là lớp lỗi "hai bản sao vị từ" (review Task 1 gọi tên đích
-     * danh dòng đó). Nó phải KHÔNG còn lái thẻ VRAM.
-     */
-    expect(dashboard).not.toMatch(/h\?\.vram/);
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ N-2 (re-review) — PHÁT BIỂU VỀ **CÁI NÓ PHẢI LÀ**, KHÔNG PHẢI CÁI NÓ KHÔNG ĐƯỢC CHỨA
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * Bản trước của ca này là `expect(dashboard).not.toMatch(/h\?\.vram/)` — **chép CHỮ KÝ** của
+   * đúng dòng cũ (`const vram = h?.vram ?? null`). Người sau viết `h?.vram?.used`, hay đọc qua một
+   * biến trung gian, hay `const v = h; v.vram` là **đi lọt**, y hệt cách người review vừa lách lưới
+   * `||` bằng một biến trung gian. Người review gọi tên nguyên tắc, và đây là lần thứ BA nó xuất
+   * hiện: **một lưới nặn theo chữ ký của lỗi vừa rồi không canh được bất biến.**
+   *
+   * ⇒ BẤT BIẾN, phát biểu DƯƠNG: **chuỗi nguồn của con số VRAM PHẢI LÀ**
+   *   `vramState` ← lời gọi `trpc.vram.state.useQuery(...)` → `vb` ← `vramState.data`
+   *   → `vramUsed`/`vramCeiling` ← đọc từ `vb`.
+   * Bất kỳ nguồn nào khác (kể cả `aiGguf.health`) **không phải** chuỗi này ⇒ ĐỎ, bất kể cú pháp.
+   */
+  function astCua(rel: string[]): ts.SourceFile {
+    const f = join(REPO_ROOT, ...rel);
+    return ts.createSourceFile(f, readFileSync(f, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  }
+
+  function khoiTao(sf: ts.SourceFile, ten: string): ts.Expression | undefined {
+    let ra: ts.Expression | undefined;
+    const di = (n: ts.Node): void => {
+      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === ten && n.initializer) {
+        ra ??= n.initializer;
+      }
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+    return ra;
+  }
+
+  it("★★★ con số VRAM của `AIBrainDashboard` PHẢI đến từ chuỗi `trpc.vram.state` → `vb` → used/ceiling", () => {
+    const sf = astCua(["client", "src", "pages", "AIBrainDashboard.tsx"]);
+
+    // (1) `vramState` PHẢI LÀ một lời gọi `trpc.vram.state.useQuery(...)`.
+    const kState = khoiTao(sf, "vramState");
+    expect(kState, "phải có biến `vramState`").toBeDefined();
+    expect(ts.isCallExpression(kState!), "`vramState` phải LÀ một lời gọi query").toBe(true);
+    expect((kState! as ts.CallExpression).expression.getText(sf)).toBe("trpc.vram.state.useQuery");
+
+    // (2) `vb` PHẢI đọc từ `vramState`.
+    const kVb = khoiTao(sf, "vb");
+    expect(kVb, "phải có biến ảnh chụp broker").toBeDefined();
+    expect(kVb!.getText(sf)).toContain("vramState");
+
+    // (3) Hai con số hiển thị PHẢI đọc từ `vb` — tức từ broker, không từ một nguồn thứ hai.
+    for (const ten of ["vramUsed", "vramCeiling"]) {
+      const k = khoiTao(sf, ten);
+      expect(k, `phải có biến ${ten}`).toBeDefined();
+      expect(k!.getText(sf), `${ten} phải đọc từ ảnh chụp broker`).toContain("vb");
+    }
+  });
+
+  it("★★ (lưới cho chính lưới) BA hình dạng nguồn-thô khác nhau đều bị bắt bởi CÙNG phát biểu", () => {
+    /** Lưới cũ (`not.toMatch(/h\?\.vram/)`) để lọt biến thể 2 và 3. */
+    const bienThe: Record<string, string> = {
+      "nguyên văn lỗi cũ": "const vramUsed = h?.vram ?? null;",
+      "thêm một nấc": "const vramUsed = h?.vram?.used ?? null;",
+      "qua biến trung gian": "const hh = h; const vramUsed = hh.vram.used;",
+    };
+    for (const [ten, nguon] of Object.entries(bienThe)) {
+      const sf = ts.createSourceFile("giả.tsx", nguon, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const k = khoiTao(sf, "vramUsed");
+      expect(k, ten).toBeDefined();
+      expect(k!.getText(sf).includes("vb"), `${ten} PHẢI bị bắt`).toBe(false);
+    }
   });
 
   /**
