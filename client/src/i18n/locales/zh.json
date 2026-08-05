@@ -3560,12 +3560,39 @@
     "VRAM_SLOT_CAP_WITH_REASON": "{{owner}}（优先级 {{priority}}）没有空余的 GGUF 模型槽位：需再卸载 {{slotsNeeded}} 个模型才能满足 GGUF_MAX_LOADED_MODELS 上限。这是数量上限，并非显存不足——申请 {{requestedMb}} MiB 时显存余量仍有 {{availableMb}} MiB{{trust}}。台账中占用（“≈”表示估算值，非实测）：{{holders}}。可让出（{{preemptableMb}} MiB）：{{preemptable}}。{{reason}}",
     "VRAM_HEADROOM_UNKNOWN": "无法为 {{owner}}（优先级 {{priority}}）分配显存：申请 {{requestedMb}} MiB，但系统无法计算剩余余量（{{degradedReasons}}），为安全起见予以拒绝。台账中占用（“≈”表示估算值，非实测）：{{holders}}。可让出（{{preemptableMb}} MiB）：{{preemptable}}。",
     "VRAM_HEADROOM_UNKNOWN_WITH_REASON": "无法为 {{owner}}（优先级 {{priority}}）分配显存：申请 {{requestedMb}} MiB，但系统无法计算剩余余量（{{degradedReasons}}），为安全起见予以拒绝。台账中占用（“≈”表示估算值，非实测）：{{holders}}。可让出（{{preemptableMb}} MiB）：{{preemptable}}。{{reason}}",
+    "VRAM_CMD_PREEMPT_RECLAIMED": "已回收持有者 {{owner}}：其租约已离开台账。若 freedBytes 为 0，这仍是真实的成功——只是同一时刻有另一笔分配抢先占用，并非该持有者未能释放。",
+    "VRAM_CMD_PREEMPT_FAILED": "回收持有者 {{owner}} 失败——没有具体原因。",
+    "VRAM_CMD_PREEMPT_FAILED_WITH_REASON": "回收持有者 {{owner}} 失败：{{reason}}",
+    "VRAM_CMD_PREEMPT_REFUSED": "回收持有者 {{owner}} 的指令被拒绝——没有具体原因。",
+    "VRAM_CMD_PREEMPT_REFUSED_WITH_REASON": "回收持有者 {{owner}} 的指令被拒绝：{{reason}}",
+    "VRAM_CMD_RELEASE_STALE_RELEASED": "已清理行 {{leaseKey}}（原持有进程：{{processKey}}）。{{rowKind}} {{durability}}",
+    "VRAM_CMD_RELEASE_STALE_REFUSED": "清理行 {{leaseKey}} 的指令被拒绝——没有具体原因。",
+    "VRAM_CMD_RELEASE_STALE_REFUSED_WITH_REASON": "清理行 {{leaseKey}} 的指令被拒绝：{{reason}}",
+    "VRAM_CMD_RETRY_DEFERRED_ARMED": "已为持有者 {{owner}}（由 {{host}} 承载）重新设置重试期限——这只是重新设定期限，并不表示本次运行已完成。",
+    "VRAM_CMD_RETRY_DEFERRED_REFUSED": "为持有者 {{owner}} 重新设定期限的指令被拒绝——没有具体原因。",
+    "VRAM_CMD_RETRY_DEFERRED_REFUSED_WITH_REASON": "为持有者 {{owner}} 重新设定期限的指令被拒绝：{{reason}}",
+    "VRAM_FIELD_SCOPE_THIS_PROCESS_ONLY": "此结果仅反映应答进程所能看到的内容（参见 observedFromProcessKey）；集群中的其他进程可能看到不同的情况。请勿将其解读为整个集群的结论。",
+    "VRAM_FIELD_HOSTED_HERE_TRUE": "应答进程确认它正在承载此持有者。",
+    "VRAM_FIELD_HOSTED_HERE_FALSE": "应答进程确认它并未承载此持有者——此处观察到的延迟状态（如有）与该持有者无关。",
+    "VRAM_FIELD_HOSTED_HERE_UNKNOWN": "无法确定此进程是否承载该持有者——没有任何机制能回答这个问题。请勿将其解读为“未承载”。",
+    "VRAM_FIELD_HOLDER_LIST_LOWER_BOUND": "此“持有者”列表仅覆盖已接入台账的持有者——它自称为下限，而非完整列表。将空列表解读为“无人占用”是错误的。",
+    "VRAM_FIELD_ESTIMATE_USABLE": "此数值为估算值，并非实测值——但所有台账外分配均可估算字节数，因此可用于计算。",
+    "VRAM_FIELD_ESTIMATE_UNUSABLE": "此数值为估算值，并非实测值——且有 {{unknownCount}} 笔台账外分配无法估算字节数，因此该估算不可信，请勿用于计算。",
+    "VRAM_FIELD_NON_FINITE_NONE": "此快照中没有任何数字字段因非有限值而被拦截。",
+    "VRAM_FIELD_NON_FINITE_PRESENT": "{{count}} 个数字字段因非有限值被拦截（替换为 null）——这是有效的失败关闭（fail-closed）应答，并非数据缺失。字段/原始值：{{fields}}",
     "list": {
       "none": "无"
     },
     "trust": {
       "trusted": "",
       "degraded": "（该数值的可信度低于平常：{{degradedReasons}}）"
+    },
+    "vramRowKind": {
+      "sibling-lease": "刚清理的这一行是另一个兄弟进程的租约——freedBytes 如实反映了这一行自身的字节数。",
+      "shared-baseline": "刚清理的这一行是共享台账的基线（并非某个具体租约）——此处 freedBytes 恒为 0，因为该量表从未测量过这部分基线，而不是因为什么都没发生。"
+    },
+    "vramDurability": {
+      "queued-for-shared-ledger": "读取副本已立即清理（余量会立刻反映出来），但该行要到下一次共享台账同步时才会真正从数据库中移除——查看 unsyncedWritesAfter 了解还有多少写入尚未发送。"
     },
     "entity": {
       "product": "产品",
@@ -4039,6 +4066,22 @@
     "cannotDisplayChart": "无法显示图表",
     "analyticsRenderError": "分析render错误",
     "reason": {
+      "owner-not-in-local-ledger": "此持有者不在应答进程的本地台账中——它可能由另一个进程持有（参见 state.ledger.foreign.holders）。请在真正持有它的那个进程上执行 vram.preempt。",
+      "production-never-preempted": "此持有者的优先级为 production——根据 §5.2，production 持有者永远不会被抢占/回收，无论谁在申请。此指令无法覆盖该规则。",
+      "busy-in-use": "该持有者目前正在使用中（refCount > 0），尚不具备回收条件。请等待当前使用结束后重试，或检查它为何尚未释放。",
+      "no-reclaimer-declared": "该持有者未声明任何回收执行者（不属于 gguf-idle-model / vision-sidecar / orphan-pid 之一）——系统没有自动回收它的机制，需要在此指令之外手动介入。",
+      "reclaimer-returned-false": "回收执行者已运行并自报无法回收（返回 false）——该持有者仍在台账中。查看 detail 了解其给出的原因。",
+      "reclaimer-threw": "回收执行者在回收过程中抛出了异常——该持有者可能仍然存在，也可能处于未知状态。查看 detail 了解错误信息，并在重试前手动核实。",
+      "no-bytes-freed": "回收执行者报告成功，但该持有者的租约仍然留在台账中（leaseLeftLedger: false）——这一说法与证据不符。请将本次视为失败，而非相信执行者报告的 true，并进一步调查。",
+      "shared-ledger-never-refreshed": "此进程的共享台账副本从未被刷新过——进程目前对其他兄弟进程处于失明状态，而不是看到了一个空台账。请等待首次刷新后重试。",
+      "row-not-in-shared-ledger-replica": "当前副本中找不到此 leaseKey 对应的行——它可能已在之前被清理、从未存在，或副本已经过期（参见读取模型上的 ageMs / stale）。重试前请再次核对该键值。",
+      "own-row-local-ledger-is-authority": "此 leaseKey 属于应答进程本身——对该租约拥有权威的是本地台账，而不是共享台账中的这一行。releaseStale 只清理其他进程拥有的行；请为自己的持有者使用本地释放机制。",
+      "process-not-proven-dead": "拥有此行的进程尚未被证明已经死亡（缺少完整的 role:pid:bootMs 证据，或进程表无法读取）——在没有确凿死亡证据的情况下清理该行是有风险的。指令将持续拒绝，直到证据足够充分。",
+      "unknown-background-host": "此 owner 与任何已声明的 background 主机都不匹配（cron:kb-sync、cron:kb-eval-gate、sidecar:local-trainer、sidecar:llm-finetune、reranker、gguf-embed-ctx:*）——请检查 owner 名称，可能是拼写错误，或该主机尚未加入名册。",
+      "no-retry-mechanism-for-this-host": "该持有者通过 vramDefer.xinVramCoHoan() 等待——其等待循环存在于正在运行的作业自身的调用栈中，没有任何外部机制能提前唤醒它。此指令对该持有者无能为力；只能等它按自己的节奏重试。",
+      "host-not-running-in-this-process": "cron:kb-sync 运行在 worker 进程中，而此指令正在未承载该 cron 的进程（通常是 api）中执行——本进程看不到该 cron 的延迟链，因此没有可重新设定的对象。请在 worker 进程上执行此指令。",
+      "no-defer-chain-in-this-process": "cron:kb-sync 确实运行在本进程中，但当前没有存活的延迟链（deferStreak === null）——没有可重新设定的对象，因为最近一次申请并未被拒绝，或已经成功。",
+      "defer-budget-exceeded": "cron:kb-sync 的延迟链已超出预算（已 exceeded）——按照“不得重新武装”的规则，此指令拒绝为一条已经见底的链重新设定期限。需要 retryDeferred 之外的其他介入（例如提高预算，或修复导致 VRAM 无法释放的根本原因）。",
       "vramUnattributedUnreliable": "无法归属的部分：有 {{unknownCount}} 次分配在台账之外执行且连字节数都无法估算，因此台账之外的占用无法测得；{{unledgeredMb}} MiB 这一估算值不可信，请勿据此计算。台账仅覆盖已知 {{knownRows}} 个分配点中的 {{wiredSites}} 个，而该清单本身也只是下界 ⇒ 上面的列表未必完整。",
       "vramUnattributedUnknownExtent": "无法归属的部分：系统在最近一次对账中未能测得台账之外的占用，因此不知其规模。台账仅覆盖已知 {{knownRows}} 个分配点中的 {{wiredSites}} 个，而该清单本身也只是下界 ⇒ 上面的列表未必完整。",
       "vramUnattributedDetected": "无法归属的部分：设备上正在使用的 {{unattributedMb}} MiB 不属于台账中的任何占用方（实测）；另有约 {{unledgeredMb}} MiB 在台账之外运行（估算）。台账仅覆盖已知 {{knownRows}} 个分配点中的 {{wiredSites}} 个，而该清单本身也只是下界 ⇒ 上面的列表未必完整。",

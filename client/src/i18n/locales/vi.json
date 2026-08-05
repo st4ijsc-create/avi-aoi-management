@@ -3569,12 +3569,39 @@
     "VRAM_SLOT_CAP_WITH_REASON": "Hết KHE model GGUF cho {{owner}} (mức {{priority}}): cần nhả thêm {{slotsNeeded}} model để lượt này vừa trần GGUF_MAX_LOADED_MODELS. Đây là trần ĐẾM, KHÔNG phải thiếu byte — dư địa byte còn {{availableMb}} MiB cho lượt xin {{requestedMb}} MiB{{trust}}. Đang giữ trong sổ (\"≈\" = ước lượng chưa đo): {{holders}}. Có thể nhường ({{preemptableMb}} MiB): {{preemptable}}. {{reason}}",
     "VRAM_HEADROOM_UNKNOWN": "Không cấp được VRAM cho {{owner}} (mức {{priority}}): xin {{requestedMb}} MiB, nhưng hệ không tính được dư địa còn lại ({{degradedReasons}}) nên từ chối để an toàn. Đang giữ trong sổ (\"≈\" = ước lượng chưa đo): {{holders}}. Có thể nhường ({{preemptableMb}} MiB): {{preemptable}}.",
     "VRAM_HEADROOM_UNKNOWN_WITH_REASON": "Không cấp được VRAM cho {{owner}} (mức {{priority}}): xin {{requestedMb}} MiB, nhưng hệ không tính được dư địa còn lại ({{degradedReasons}}) nên từ chối để an toàn. Đang giữ trong sổ (\"≈\" = ước lượng chưa đo): {{holders}}. Có thể nhường ({{preemptableMb}} MiB): {{preemptable}}. {{reason}}",
+    "VRAM_CMD_PREEMPT_RECLAIMED": "Đã thu hồi hộ {{owner}}: giấy phép của hộ này đã rời sổ. Nếu freedBytes bằng 0, đó vẫn là một lượt thành công thật — một lượt cấp phát khác đã chen vào đúng lúc, không phải hộ chưa nhả.",
+    "VRAM_CMD_PREEMPT_FAILED": "Thu hồi hộ {{owner}} THẤT BẠI — không rõ nguyên nhân cụ thể.",
+    "VRAM_CMD_PREEMPT_FAILED_WITH_REASON": "Thu hồi hộ {{owner}} THẤT BẠI: {{reason}}",
+    "VRAM_CMD_PREEMPT_REFUSED": "Lệnh thu hồi hộ {{owner}} bị TỪ CHỐI — không rõ nguyên nhân cụ thể.",
+    "VRAM_CMD_PREEMPT_REFUSED_WITH_REASON": "Lệnh thu hồi hộ {{owner}} bị TỪ CHỐI: {{reason}}",
+    "VRAM_CMD_RELEASE_STALE_RELEASED": "Đã dọn hàng {{leaseKey}} (chủ cũ: {{processKey}}). {{rowKind}} {{durability}}",
+    "VRAM_CMD_RELEASE_STALE_REFUSED": "Lệnh dọn hàng {{leaseKey}} bị TỪ CHỐI — không rõ nguyên nhân cụ thể.",
+    "VRAM_CMD_RELEASE_STALE_REFUSED_WITH_REASON": "Lệnh dọn hàng {{leaseKey}} bị TỪ CHỐI: {{reason}}",
+    "VRAM_CMD_RETRY_DEFERRED_ARMED": "Đã dời hạn thử lại cho hộ {{owner}} (chủ trì bởi {{host}}) — đây là DỜI HẠN, không phải xác nhận lượt chạy đã xong.",
+    "VRAM_CMD_RETRY_DEFERRED_REFUSED": "Lệnh dời hạn cho hộ {{owner}} bị TỪ CHỐI — không rõ nguyên nhân cụ thể.",
+    "VRAM_CMD_RETRY_DEFERRED_REFUSED_WITH_REASON": "Lệnh dời hạn cho hộ {{owner}} bị TỪ CHỐI: {{reason}}",
+    "VRAM_FIELD_SCOPE_THIS_PROCESS_ONLY": "Kết quả này chỉ phản ánh những gì TIẾN TRÌNH ĐANG TRẢ LỜI nhìn thấy (xem observedFromProcessKey); các tiến trình khác trong cụm có thể thấy khác. Đừng đọc thành một lời khẳng định toàn cụm.",
+    "VRAM_FIELD_HOSTED_HERE_TRUE": "Tiến trình đang trả lời XÁC NHẬN nó đang chủ trì hộ này.",
+    "VRAM_FIELD_HOSTED_HERE_FALSE": "Tiến trình đang trả lời XÁC NHẬN nó KHÔNG chủ trì hộ này — trạng thái hoãn quan sát được ở đây (nếu có) không nói lên điều gì về hộ đó.",
+    "VRAM_FIELD_HOSTED_HERE_UNKNOWN": "KHÔNG XÁC ĐỊNH ĐƯỢC tiến trình này có chủ trì hộ hay không — không có cơ chế nào trả lời câu đó cho hộ này. Đừng đọc thành \"không chủ trì\".",
+    "VRAM_FIELD_HOLDER_LIST_LOWER_BOUND": "Danh sách \"đang giữ\" này chỉ phủ những hộ ĐÃ NỐI vào sổ — nó TỰ KHAI là CẬN DƯỚI, không phải danh sách đầy đủ. Đọc danh sách rỗng thành \"không ai giữ gì\" là SAI.",
+    "VRAM_FIELD_ESTIMATE_USABLE": "Con số này là ƯỚC LƯỢNG, không phải số đo — nhưng mọi lượt ngoài sổ đều ước được byte, nên có thể dùng để tính.",
+    "VRAM_FIELD_ESTIMATE_UNUSABLE": "Con số này là ƯỚC LƯỢNG, không phải số đo — và {{unknownCount}} lượt ngoài sổ KHÔNG ước được byte, nên ước lượng này KHÔNG ĐÁNG TIN. Đừng dùng nó để tính.",
+    "VRAM_FIELD_NON_FINITE_NONE": "Không ô số nào bị chặn vì không hữu hạn ở ảnh chụp này.",
+    "VRAM_FIELD_NON_FINITE_PRESENT": "{{count}} ô số đã bị CHẶN vì không hữu hạn (thay bằng null) — đây là câu trả lời fail-closed HỢP LỆ, không phải dữ liệu thiếu. Ô/giá trị gốc: {{fields}}",
     "list": {
       "none": "không có"
     },
     "trust": {
       "trusted": "",
       "degraded": " (con số này kém tin hơn bình thường: {{degradedReasons}})"
+    },
+    "vramRowKind": {
+      "sibling-lease": "Hàng vừa dọn là giấy phép của một ANH EM (tiến trình khác) — freedBytes phản ánh đúng byte của hàng này.",
+      "shared-baseline": "Hàng vừa dọn là NỀN của sổ chung (không phải một giấy phép cụ thể) — freedBytes luôn là 0 ở đây vì thước này chưa từng đo phần nền đó, KHÔNG phải vì không có gì xảy ra."
+    },
+    "vramDurability": {
+      "queued-for-shared-ledger": "Bản sao đọc đã sạch NGAY (dư địa thấy đúng ngay lập tức), nhưng hàng chỉ thật sự RỜI DATABASE ở lượt đồng bộ sổ chung KẾ TIẾP — xem unsyncedWritesAfter để biết còn bao nhiêu ý định ghi chưa gửi."
     },
     "entity": {
       "product": "sản phẩm",
@@ -4040,6 +4067,22 @@
       "viewGlobalAiReport": "xem báo cáo AI toàn hệ thống"
     },
     "reason": {
+      "owner-not-in-local-ledger": "Hộ này không có trong SỔ CỤC BỘ của tiến trình đang trả lời; nó có thể do một tiến trình khác giữ (xem state.ledger.foreign.holders) — hãy ra lệnh vram.preempt ở ĐÚNG tiến trình đang giữ hộ đó.",
+      "production-never-preempted": "Hộ này có mức ưu tiên production — theo §5.2, hộ production KHÔNG BAO GIỜ bị nhường/thu hồi, bất kể ai xin. Không có cách nào để lệnh này thắng quy tắc đó.",
+      "busy-in-use": "Hộ đang được DÙNG (refCount > 0), chưa đủ điều kiện để thu hồi. Đợi lượt dùng hiện tại kết thúc rồi thử lại, hoặc kiểm tra vì sao hộ chưa nhả.",
+      "no-reclaimer-declared": "Hộ này KHÔNG khai người thi hành thu hồi nào (không thuộc gguf-idle-model / vision-sidecar / orphan-pid) — hệ không có cơ chế nào để thu hồi nó tự động; cần can thiệp thủ công ngoài lệnh này.",
+      "reclaimer-returned-false": "Người thi hành đã chạy và tự báo KHÔNG thu hồi được (trả false) — hộ vẫn còn nguyên trong sổ. Xem detail để biết lý do người thi hành đưa ra.",
+      "reclaimer-threw": "Người thi hành NÉM lỗi khi đang thu hồi — hộ có thể còn nguyên hoặc ở trạng thái không rõ. Xem detail để biết lỗi, và kiểm tra thủ công trước khi thử lại.",
+      "no-bytes-freed": "Người thi hành báo THÀNH CÔNG nhưng giấy phép của hộ này VẪN CÒN trong sổ (leaseLeftLedger: false) — lời khai không khớp bằng chứng. Coi lượt này là thất bại, đừng tin true của người thi hành, và điều tra thêm.",
+      "shared-ledger-never-refreshed": "Bản sao đọc của sổ CHUNG chưa từng được làm mới ở tiến trình này — tiến trình đang MÙ về anh em, không phải đã thấy sổ trống. Đợi lượt làm mới đầu tiên rồi thử lại.",
+      "row-not-in-shared-ledger-replica": "Không tìm thấy hàng nào mang leaseKey này trong bản sao đọc hiện tại — nó có thể đã được dọn ở lượt trước, chưa từng tồn tại, hoặc bản sao đang CŨ (xem ageMs/stale ở mặt đọc). Kiểm lại khoá trước khi thử lại.",
+      "own-row-local-ledger-is-authority": "leaseKey này thuộc CHÍNH tiến trình đang trả lời — sổ CỤC BỘ, không phải hàng trong sổ chung, là chủ về giấy phép này. Lệnh releaseStale chỉ dọn hàng của TIẾN TRÌNH KHÁC; dùng cơ chế giải phóng cục bộ cho hộ của chính mình.",
+      "process-not-proven-dead": "Tiến trình sở hữu hàng này CHƯA được CHỨNG MINH LÀ ĐÃ CHẾT (thiếu bằng chứng role:pid:bootMs đầy đủ, hoặc bảng tiến trình không đọc được) — dọn một hàng khi chưa chắc chủ còn sống là RỦI RO. Lệnh từ chối cho tới khi có bằng chứng chết đủ mạnh.",
+      "unknown-background-host": "owner này không khớp bất kỳ hộ background nào đã khai (cron:kb-sync, cron:kb-eval-gate, sidecar:local-trainer, sidecar:llm-finetune, reranker, gguf-embed-ctx:*) — kiểm lại tên owner, có thể gõ sai hoặc hộ chưa được thêm vào bản khai dân số.",
+      "no-retry-mechanism-for-this-host": "Hộ này đi qua vramDefer.xinVramCoHoan() — vòng chờ nằm TRONG ngăn xếp của chính job đang chạy, KHÔNG có cơ chế nào bên ngoài đánh thức nó sớm. Lệnh này không thể làm gì cho hộ này; phải đợi hộ tự thử lại theo hạn của nó.",
+      "host-not-running-in-this-process": "Cron kb:sync chủ trì ở tiến trình worker, còn lệnh này đang chạy ở một tiến trình KHÔNG chủ trì cron (thường là api) — tiến trình này KHÔNG NHÌN THẤY chuỗi hoãn của cron, nên không có gì để dời hạn. Ra lệnh này ở đúng tiến trình worker.",
+      "no-defer-chain-in-this-process": "Cron kb:sync CHỦ TRÌ ở tiến trình này, nhưng hiện KHÔNG có chuỗi hoãn nào đang sống (deferStreak === null) — không có gì để dời hạn vì lượt xin gần nhất không bị từ chối, hoặc đã thành công.",
+      "defer-budget-exceeded": "Chuỗi hoãn của cron kb:sync đã VƯỢT NGÂN SÁCH (đã exceeded) — theo đúng quy tắc \"không vũ trang lại\", lệnh này TỪ CHỐI dời hạn cho một chuỗi đã quá đáy. Cần can thiệp khác ngoài retryDeferred (vd nới ngân sách, hoặc xử lý nguyên nhân gốc khiến VRAM không giải phóng).",
       "vramUnattributedUnreliable": "Phần không quy trách nhiệm được: {{unknownCount}} lượt cấp phát đã chạy ngoài sổ mà không ước được byte, nên phần đang dùng ngoài sổ không đo được; ước lượng {{unledgeredMb}} MiB là không đáng tin, đừng dùng nó để tính. Sổ mới bao {{wiredSites}}/{{knownRows}} điểm cấp phát đã biết, và chính bản liệt kê đó là cận dưới ⇒ danh sách trên không chắc đầy đủ.",
       "vramUnattributedUnknownExtent": "Phần không quy trách nhiệm được: hệ không đo được phần đang dùng ngoài sổ ở nhịp gần nhất, nên không biết nó lớn bao nhiêu. Sổ mới bao {{wiredSites}}/{{knownRows}} điểm cấp phát đã biết, và chính bản liệt kê đó là cận dưới ⇒ danh sách trên không chắc đầy đủ.",
       "vramUnattributedDetected": "Phần không quy trách nhiệm được: {{unattributedMb}} MiB đang dùng trên thiết bị không thuộc về hộ nào trong sổ (số đo); và {{unledgeredMb}} MiB đã chạy ngoài sổ theo ước lượng. Sổ mới bao {{wiredSites}}/{{knownRows}} điểm cấp phát đã biết, và chính bản liệt kê đó là cận dưới ⇒ danh sách trên không chắc đầy đủ.",

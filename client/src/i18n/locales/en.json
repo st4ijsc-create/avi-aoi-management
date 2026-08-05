@@ -3568,12 +3568,39 @@
     "VRAM_SLOT_CAP_WITH_REASON": "No free GGUF model slot for {{owner}} (priority {{priority}}): {{slotsNeeded}} more model(s) must be unloaded to fit under GGUF_MAX_LOADED_MODELS. This is a COUNT cap, not a byte shortage — byte headroom is still {{availableMb}} MiB for a {{requestedMb}} MiB request{{trust}}. Currently held (ledger; \"≈\" = estimate, not measured): {{holders}}. Can yield ({{preemptableMb}} MiB): {{preemptable}}. {{reason}}",
     "VRAM_HEADROOM_UNKNOWN": "Cannot grant VRAM to {{owner}} (priority {{priority}}): requested {{requestedMb}} MiB, but the system could not compute the remaining headroom ({{degradedReasons}}) and refused to stay safe. Currently held (ledger; \"≈\" = estimate, not measured): {{holders}}. Can yield ({{preemptableMb}} MiB): {{preemptable}}.",
     "VRAM_HEADROOM_UNKNOWN_WITH_REASON": "Cannot grant VRAM to {{owner}} (priority {{priority}}): requested {{requestedMb}} MiB, but the system could not compute the remaining headroom ({{degradedReasons}}) and refused to stay safe. Currently held (ledger; \"≈\" = estimate, not measured): {{holders}}. Can yield ({{preemptableMb}} MiB): {{preemptable}}. {{reason}}",
+    "VRAM_CMD_PREEMPT_RECLAIMED": "Reclaimed holder {{owner}}: its lease has left the ledger. If freedBytes is 0, this is still a genuine success — another allocation slipped in at the same moment, not that the holder failed to release.",
+    "VRAM_CMD_PREEMPT_FAILED": "Failed to reclaim holder {{owner}} — no specific reason available.",
+    "VRAM_CMD_PREEMPT_FAILED_WITH_REASON": "Failed to reclaim holder {{owner}}: {{reason}}",
+    "VRAM_CMD_PREEMPT_REFUSED": "Command to reclaim holder {{owner}} was REFUSED — no specific reason available.",
+    "VRAM_CMD_PREEMPT_REFUSED_WITH_REASON": "Command to reclaim holder {{owner}} was REFUSED: {{reason}}",
+    "VRAM_CMD_RELEASE_STALE_RELEASED": "Cleaned up row {{leaseKey}} (former owner: {{processKey}}). {{rowKind}} {{durability}}",
+    "VRAM_CMD_RELEASE_STALE_REFUSED": "Command to clean up row {{leaseKey}} was REFUSED — no specific reason available.",
+    "VRAM_CMD_RELEASE_STALE_REFUSED_WITH_REASON": "Command to clean up row {{leaseKey}} was REFUSED: {{reason}}",
+    "VRAM_CMD_RETRY_DEFERRED_ARMED": "Rearmed the retry deadline for holder {{owner}} (hosted by {{host}}) — this REARMS the deadline; it does not confirm the run has finished.",
+    "VRAM_CMD_RETRY_DEFERRED_REFUSED": "Command to rearm holder {{owner}} was REFUSED — no specific reason available.",
+    "VRAM_CMD_RETRY_DEFERRED_REFUSED_WITH_REASON": "Command to rearm holder {{owner}} was REFUSED: {{reason}}",
+    "VRAM_FIELD_SCOPE_THIS_PROCESS_ONLY": "This result reflects only what the RESPONDING PROCESS can see (see observedFromProcessKey); other processes in the cluster may see something different. Don't read it as a cluster-wide claim.",
+    "VRAM_FIELD_HOSTED_HERE_TRUE": "The responding process CONFIRMS it hosts this holder.",
+    "VRAM_FIELD_HOSTED_HERE_FALSE": "The responding process CONFIRMS it does NOT host this holder — any defer status observed here (if present) says nothing about that holder.",
+    "VRAM_FIELD_HOSTED_HERE_UNKNOWN": "It is UNDETERMINED whether this process hosts the holder — no mechanism can answer that for this holder. Don't read this as \"not hosted\".",
+    "VRAM_FIELD_HOLDER_LIST_LOWER_BOUND": "This \"holders\" list only covers holders that have been WIRED into the ledger — it declares itself a LOWER BOUND, not a complete list. Reading an empty list as \"nobody holds anything\" is WRONG.",
+    "VRAM_FIELD_ESTIMATE_USABLE": "This figure is an ESTIMATE, not a measurement — but every off-ledger allocation could be estimated, so it is safe to use in calculations.",
+    "VRAM_FIELD_ESTIMATE_UNUSABLE": "This figure is an ESTIMATE, not a measurement — and {{unknownCount}} off-ledger allocation(s) could NOT be estimated, so this estimate is UNRELIABLE. Don't use it in calculations.",
+    "VRAM_FIELD_NON_FINITE_NONE": "No numeric field was blocked for being non-finite in this snapshot.",
+    "VRAM_FIELD_NON_FINITE_PRESENT": "{{count}} numeric field(s) were BLOCKED for being non-finite (replaced with null) — this is a VALID fail-closed answer, not missing data. Field/original value: {{fields}}",
     "list": {
       "none": "none"
     },
     "trust": {
       "trusted": "",
       "degraded": " (this figure is less trustworthy than usual: {{degradedReasons}})"
+    },
+    "vramRowKind": {
+      "sibling-lease": "The row just cleaned up was a SIBLING process's lease — freedBytes reflects this row's own bytes.",
+      "shared-baseline": "The row just cleaned up was the shared-ledger BASELINE (not a specific lease) — freedBytes is always 0 here because this gauge never measured that baseline, not because nothing happened."
+    },
+    "vramDurability": {
+      "queued-for-shared-ledger": "The read replica was cleaned IMMEDIATELY (headroom reflects it right away), but the row only actually LEAVES the database at the NEXT shared-ledger sync — see unsyncedWritesAfter for how many writes are still pending."
     },
     "entity": {
       "product": "product",
@@ -4047,6 +4074,22 @@
     "cannotDisplayChart": "Cannot display chart",
     "analyticsRenderError": "Analytics render error",
     "reason": {
+      "owner-not-in-local-ledger": "This owner isn't in the responding process's LOCAL ledger; it may be held by another process (see state.ledger.foreign.holders) — issue vram.preempt against the process that actually holds it.",
+      "production-never-preempted": "This holder has production priority — per §5.2, production holders are NEVER preempted or reclaimed, no matter who's asking. There is no way for this command to override that rule.",
+      "busy-in-use": "The holder is currently IN USE (refCount > 0) and isn't eligible for reclaim yet. Wait for the current use to finish and retry, or check why it hasn't released.",
+      "no-reclaimer-declared": "This holder declared no reclaimer (not one of gguf-idle-model / vision-sidecar / orphan-pid) — there is no mechanism to reclaim it automatically; manual intervention outside this command is required.",
+      "reclaimer-returned-false": "The reclaimer ran and reported it could NOT reclaim (returned false) — the holder is still in the ledger. See detail for the reason it gave.",
+      "reclaimer-threw": "The reclaimer THREW while attempting to reclaim — the holder may still be there or in an unknown state. See detail for the error, and verify manually before retrying.",
+      "no-bytes-freed": "The reclaimer reported SUCCESS, but this holder's lease is STILL in the ledger (leaseLeftLedger: false) — the claim doesn't match the evidence. Treat this as a failure, don't trust the reclaimer's true, and investigate further.",
+      "shared-ledger-never-refreshed": "This process's replica of the SHARED ledger has never been refreshed — it is BLIND to siblings, not looking at an empty ledger. Wait for the first refresh and retry.",
+      "row-not-in-shared-ledger-replica": "No row with this leaseKey exists in the current replica — it may already have been cleaned up, never existed, or the replica is STALE (see ageMs/stale on the read model). Double-check the key before retrying.",
+      "own-row-local-ledger-is-authority": "This leaseKey belongs to THIS process — the LOCAL ledger, not the shared-ledger row, is the authority for it. releaseStale only cleans up rows owned by OTHER processes; use the local release path for your own holders.",
+      "process-not-proven-dead": "The process that owns this row has NOT been proven dead (missing full role:pid:bootMs evidence, or the process table couldn't be read) — cleaning up a row without solid proof of death is RISKY. The command refuses until proof is strong enough.",
+      "unknown-background-host": "This owner doesn't match any declared background host (cron:kb-sync, cron:kb-eval-gate, sidecar:local-trainer, sidecar:llm-finetune, reranker, gguf-embed-ctx:*) — check the owner name; it may be a typo or a host not yet added to the roster.",
+      "no-retry-mechanism-for-this-host": "This holder goes through vramDefer.xinVramCoHoan() — its wait loop lives INSIDE the running job's own stack, and nothing external can wake it early. This command can't do anything for this holder; wait for it to retry on its own schedule.",
+      "host-not-running-in-this-process": "cron:kb-sync is hosted in the worker process, and this command is running in a process that does NOT host the cron (typically api) — this process can't see the cron's defer chain, so there's nothing to rearm. Issue this command against the worker process.",
+      "no-defer-chain-in-this-process": "cron:kb-sync DOES run in this process, but there is currently no live defer chain (deferStreak === null) — there's nothing to rearm because the most recent request wasn't refused, or already succeeded.",
+      "defer-budget-exceeded": "cron:kb-sync's defer chain has EXCEEDED its budget (already exceeded) — per the \"don't rearm\" rule, this command REFUSES to rearm a chain that's already past its floor. Something other than retryDeferred is needed (e.g. raise the budget, or fix the root cause keeping VRAM from freeing).",
       "vramUnattributedUnreliable": "Unattributable share: {{unknownCount}} allocation(s) ran outside the ledger without even a byte estimate, so the out-of-ledger usage cannot be measured; the {{unledgeredMb}} MiB estimate is unreliable — do not compute with it. The ledger covers only {{wiredSites}} of {{knownRows}} known allocation sites, and that inventory is itself a lower bound ⇒ the list above is not necessarily complete.",
       "vramUnattributedUnknownExtent": "Unattributable share: the system could not measure out-of-ledger usage on the latest tick, so its size is unknown. The ledger covers only {{wiredSites}} of {{knownRows}} known allocation sites, and that inventory is itself a lower bound ⇒ the list above is not necessarily complete.",
       "vramUnattributedDetected": "Unattributable share: {{unattributedMb}} MiB in use on the device belongs to no holder in the ledger (measured); and {{unledgeredMb}} MiB ran outside the ledger by estimate. The ledger covers only {{wiredSites}} of {{knownRows}} known allocation sites, and that inventory is itself a lower bound ⇒ the list above is not necessarily complete.",

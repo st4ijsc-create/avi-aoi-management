@@ -56,6 +56,12 @@ const PARAM_DICTIONARY_SPACE: Record<string, string> = {
   // này, `{{degraded}}` được truyền nhưng KHÔNG khuôn `VRAM_REFUSED*` nào dùng ⇒ người
   // vận hành đọc "còn 1200 MiB" như một số CỨNG đúng lúc hệ tự khai nó KÉM TIN.
   trust: "trust",
+  // Pha 4 Task 3 — hai không gian MỚI cho phần "released" của lệnh `vram.releaseStale`
+  // (`server/services/vram/vramCommands.ts`). Cùng khuôn `trust`/`list` ở trên: giá trị
+  // là một KHOÁ (kebab-case, đúng literal của `rowKind`/`durability` trong kiểu TS),
+  // không phải dữ liệu tự do — tra `errors.vramRowKind.*`/`errors.vramDurability.*`.
+  rowKind: "vramRowKind",
+  durability: "vramDurability",
 };
 
 /**
@@ -295,4 +301,157 @@ export function translateAppError(
   });
   if (typeof translated !== "string" || translated === SENTINEL) return fallback;
   return translated;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ Pha 4 Task 3 — CÂU CHỮ CHO MẶT ĐỌC (`vramReadModel.ts`) + MẶT LỆNH (`vramCommands.ts`)
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * Hai hạng người đọc CÙNG một câu: người vận hành (*"chuyện gì xảy ra, tôi làm gì tiếp"*) và AI
+ * Agent (*"lệnh này thi hành được không, và VÌ SAO không"*). Dịch thẳng mã (`owner-not-in-local-
+ * ledger` → "chủ sở hữu không có trong sổ cục bộ") là THẤT BẠI: nó lặp lại mã bằng tiếng Việt mà
+ * không nói *hộ đó do tiến trình khác giữ, phải ra lệnh ở tiến trình đó* — mọi câu dưới đây viết
+ * theo yêu cầu đó, không phải theo kiểu "dịch định danh". Xem `errorCodes.vramCommands.unit.test.ts`
+ * cho ca kiểm nội dung (không chỉ "không rỗng").
+ *
+ * ⚠⚠⚠ KHÔNG HÀM LÀM SẠCH THỨ HAI (ràng buộc 1, Pha 2B trả giá cho lỗi này). Mọi tham số TỰ DO
+ * (`owner`/`host`/`leaseKey`/`processKey`) đi vào `translateAppError()` dưới đây qua ĐÚNG con đường
+ * đã có: `localizeParams()` → `sanitizeAllParams()` → `stripInterpolationSyntax()` (bất động,
+ * `S(S(x)) === S(x)`, xoá cả lớp ký tự `[{}$]`) — không đường thứ hai. Riêng `detail` (bàn giao M-5
+ * từ Task 2 — `VramPreemptCommandResult.detail` là "câu thô của người thi hành ... CHƯA LÀM SẠCH
+ * cho i18n") KHÔNG đi qua template i18n vì nó chỉ có mặt ở MỘT nhánh của MỘT outcome (không phải
+ * một placeholder cố định trong mọi bản dịch); nó được nối SAU câu chính bằng ĐÚNG cùng
+ * `stripInterpolationSyntax()` đã export — KHÔNG một hàm cắt/thay-thế nào khác được viết ở đây.
+ * ⚠⚠ `owner`/`leaseKey`/`processKey`/`host` KHÔNG BAO GIỜ bị cắt ngắn (ràng buộc 3) — làm sạch chỉ
+ * xoá `{`/`}`/`$`, không đụng độ dài; đó là DANH TÍNH Agent truyền thẳng lại vào lệnh kế tiếp.
+ *
+ * 23 mã kết cục (đọc từ `vramCommands.ts` bằng `git grep`), mỗi mã một trong bốn hình dạng:
+ *   • VĂN BẢN của `errors.reason.*` (16: 7 preempt + 4 releaseStale + 5 retryDeferred) — không gian
+ *     `reason` ĐÃ CÓ (dùng chung với `errors.reason.*` của Pha 2B/doc71, không gian thứ hai);
+ *   • VĂN BẢN của không gian MỚI (`errors.vramRowKind.*` × 2, `errors.vramDurability.*` × 1);
+ *   • CHỌN appCode (`reclaimed`/`failed`/`retry-armed` — 3, xem `translateVram*Command` dưới);
+ *   • chính `scope: "this-process-only"` (1) — `VRAM_FIELD_SCOPE_THIS_PROCESS_ONLY`, DÙNG CHUNG
+ *     giữa `VramCommandScope.scope` (cả ba lệnh) và `VramAgentDeferView.scope` (mặt đọc).
+ * `"refused"`/`"released"` KHÔNG có mặt trong 23 mã — chúng là NHÃN OUTCOME chung, câu thật nằm ở
+ * `reason` (refused) hoặc `rowKind`+`durability` (released); một câu "refused" trần không nói gì
+ * hơn chữ "refused", nên không có khoá riêng cho nó.
+ */
+
+/** `hostedHere: boolean | null` → khoá appCode. JSON không có khoá boolean, và `null` KHÔNG được
+ *  đọc thành `false` (Task 1 C-1) — ba nhánh, ba khoá, không suy ra bằng phép so đơn giản. */
+function hostedHereAppCode(hostedHere: boolean | null): string {
+  return hostedHere === null
+    ? "VRAM_FIELD_HOSTED_HERE_UNKNOWN"
+    : hostedHere
+      ? "VRAM_FIELD_HOSTED_HERE_TRUE"
+      : "VRAM_FIELD_HOSTED_HERE_FALSE";
+}
+
+/** `scope: "this-process-only"` — DÙNG CHUNG giữa mọi kết quả lệnh (`VramCommandScope.scope`) và
+ *  khối `defer` của mặt đọc (`VramAgentDeferView.scope`): CÙNG MỘT Ý NGHĨA, một hàm, một khoá. */
+export function translateVramScope(scope: "this-process-only"): string {
+  return translateAppError("VRAM_FIELD_SCOPE_THIS_PROCESS_ONLY", undefined, scope);
+}
+
+/** `hostedHere` — DÙNG CHUNG giữa mặt đọc (`VramAgentDeferHostView.hostedHere`) và lệnh
+ *  `retryDeferred` (`VramRetryDeferredCommandResult.hostedHere`): CÙNG MỘT Ý NGHĨA, một hàm. */
+export function translateVramHostedHere(hostedHere: boolean | null): string {
+  return translateAppError(hostedHereAppCode(hostedHere), undefined, String(hostedHere));
+}
+
+/** `unattributed.holderListIsLowerBound` — LUÔN `true`; câu tĩnh, không tham số (xem docstring gốc
+ *  ở `vramReadModel.ts`: một Agent đọc danh sách rỗng thành "card trống" là đúng lớp lỗi này chặn). */
+export function translateVramHolderListIsLowerBound(): string {
+  return translateAppError("VRAM_FIELD_HOLDER_LIST_LOWER_BOUND", undefined, "holder list is a lower bound");
+}
+
+/** `unledgered.estimateKind`/`unknownCount`/`estimateUsable` — MỘT câu nói cả hai điều cùng lúc:
+ *  đây là ước lượng, VÀ nó có đáng tin để tính hay không. Không tách hai câu vì Task 1 đã khoá
+ *  "bốn ô này dựng CÙNG MỘT CHỖ, MỘT LẦN — không có đường nào để ai đó gửi `estimateBytes` ra ngoài
+ *  mà bỏ quên lời cảnh báo đi kèm nó"; câu chữ giữ đúng kỷ luật đó. */
+export function translateVramEstimateUsable(estimateUsable: boolean, unknownCount: number | null): string {
+  if (estimateUsable) return translateAppError("VRAM_FIELD_ESTIMATE_USABLE", undefined, "estimate (usable)");
+  const params: Record<string, string | number> = {};
+  if (unknownCount !== null) params.unknownCount = unknownCount;
+  return translateAppError("VRAM_FIELD_ESTIMATE_UNUSABLE", params, "estimate (unreliable)");
+}
+
+/** `nonFiniteFields` — mảng RỖNG là một câu trả lời thật ("không ô nào bị chặn"), không phải im
+ *  lặng; mảng có phần tử là câu fail-closed HỢP LỆ (xem docstring `vramReadModel.ts`), không phải
+ *  dữ liệu thiếu. `path`/`was` đi qua `params` ⇒ tự động sạch qua `sanitizeAllParams`. */
+export function translateVramNonFiniteFields(
+  fields: readonly { readonly path: string; readonly was: string }[],
+): string {
+  if (fields.length === 0) {
+    return translateAppError("VRAM_FIELD_NON_FINITE_NONE", undefined, "no fields blocked");
+  }
+  const joined = fields.map((f) => `${f.path}=${f.was}`).join(", ");
+  return translateAppError(
+    "VRAM_FIELD_NON_FINITE_PRESENT",
+    { count: fields.length, fields: joined },
+    `${fields.length} field(s) blocked`,
+  );
+}
+
+// ── BA LỆNH CỦA AGENT (`vramCommands.ts`) — mỗi hàm CHỌN appCode theo `outcome`, đẩy `reason` (nếu
+// có) làm tham số TỪ ĐIỂN (không gian `reason` đã có) để `translateAppError()` tự chọn biến thể
+// `_WITH_REASON`. KHÔNG import kiểu từ `server/**` (file này bundle vào client) — hình dạng đầu vào
+// khai LỎNG, khớp đủ trường mà `vramCommands.ts` phơi ra. ────────────────────────────────────────
+
+export interface VramPreemptCommandForI18n {
+  readonly outcome: "reclaimed" | "failed" | "refused";
+  readonly reason: string | null;
+  readonly owner: string;
+  readonly detail: string | null;
+}
+
+/** `vram.preempt` → câu người đọc được. `detail` (M-5, CHUỖI THÔ) làm sạch bằng ĐÚNG
+ *  `stripInterpolationSyntax` rồi nối SAU câu chính — xem khối ràng buộc đầu phần Task 3. */
+export function translateVramPreemptCommand(r: VramPreemptCommandForI18n): string {
+  const params: Record<string, string | number> = { owner: r.owner };
+  if (r.reason !== null) params.reason = r.reason;
+  const appCode =
+    r.outcome === "reclaimed"
+      ? "VRAM_CMD_PREEMPT_RECLAIMED"
+      : r.outcome === "failed"
+        ? "VRAM_CMD_PREEMPT_FAILED"
+        : "VRAM_CMD_PREEMPT_REFUSED";
+  const sentence = translateAppError(appCode, params, `${r.outcome}: ${r.owner}`);
+  return r.detail === null ? sentence : `${sentence} — ${stripInterpolationSyntax(r.detail)}`;
+}
+
+export interface VramReleaseStaleCommandForI18n {
+  readonly outcome: "released" | "refused";
+  readonly reason: string | null;
+  readonly leaseKey: string;
+  readonly processKey: string | null;
+  readonly rowKind: "sibling-lease" | "shared-baseline" | null;
+  readonly durability: string | null;
+}
+
+/** `vram.releaseStale` → câu người đọc được. */
+export function translateVramReleaseStaleCommand(r: VramReleaseStaleCommandForI18n): string {
+  const params: Record<string, string | number> = { leaseKey: r.leaseKey };
+  if (r.processKey !== null) params.processKey = r.processKey;
+  if (r.rowKind !== null) params.rowKind = r.rowKind;
+  if (r.durability !== null) params.durability = r.durability;
+  if (r.reason !== null) params.reason = r.reason;
+  const appCode = r.outcome === "released" ? "VRAM_CMD_RELEASE_STALE_RELEASED" : "VRAM_CMD_RELEASE_STALE_REFUSED";
+  return translateAppError(appCode, params, `${r.outcome}: ${r.leaseKey}`);
+}
+
+export interface VramRetryDeferredCommandForI18n {
+  readonly outcome: "retry-armed" | "refused";
+  readonly reason: string | null;
+  readonly owner: string;
+  readonly host: string | null;
+}
+
+/** `vram.retryDeferred` → câu người đọc được. */
+export function translateVramRetryDeferredCommand(r: VramRetryDeferredCommandForI18n): string {
+  const params: Record<string, string | number> = { owner: r.owner };
+  if (r.host !== null) params.host = r.host;
+  if (r.reason !== null) params.reason = r.reason;
+  const appCode = r.outcome === "retry-armed" ? "VRAM_CMD_RETRY_DEFERRED_ARMED" : "VRAM_CMD_RETRY_DEFERRED_REFUSED";
+  return translateAppError(appCode, params, `${r.outcome}: ${r.owner}`);
 }
