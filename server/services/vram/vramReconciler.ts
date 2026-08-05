@@ -64,6 +64,21 @@ async function readProcTableSafe(): Promise<readonly ProcTableRow[] | null> {
 
 const DRIFT_THRESHOLD_BYTES = Number(process.env.VRAM_DRIFT_THRESHOLD_MB ?? 512) * 1024 * 1024;
 const INTERVAL_MS = Number(process.env.VRAM_RECONCILE_INTERVAL_MS ?? 60_000);
+
+/**
+ * ★ Pha 4 Task 1 — NHỊP LÀM MỚI, ĐỌC ĐƯỢC TỪ NGOÀI. **MỘT hằng số, hai người đọc**
+ * (`startVramReconciler()` và mặt đọc của Agent).
+ *
+ * ⚠⚠ CON SỐ NÀY LÀ **ĐỘ TRỄ CƯỠNG CHẾ THẬT XUYÊN TIẾN TRÌNH**, không phải một chi tiết vận hành:
+ * bản sao đọc sổ chung được làm mới theo đúng nhịp này, nên một giấy phép 17 GB vừa mở ở tiến
+ * trình anh em **có thể mất tới trọn một chu kỳ** mới hiện ra. Mặt đọc của Agent **phải khai nó**
+ * — nếu không, một Agent thấy `foreignBytes: 0` sẽ tưởng card trống trong đúng cửa sổ nguy hiểm
+ * nhất. Chép lại `Number(process.env.VRAM_RECONCILE_INTERVAL_MS ?? 60_000)` ở nơi khác là dựng
+ * bản sao thứ hai của cùng một cấu hình (ràng buộc 12).
+ */
+export function reconcileIntervalMs(): number {
+  return INTERVAL_MS;
+}
 /**
  * Pha 1.5 Task 7 (T5-1) — sau BAO LÂU thì "hoãn chụp nền" phải thành BÁO ĐỘNG.
  *

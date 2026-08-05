@@ -331,15 +331,55 @@ function holderListText(hs: readonly VramHolderFact[]): string {
 }
 
 /**
- * Dựng SỰ THẬT của một lời từ chối. **Thuần, đồng bộ, KHÔNG BAO GIỜ NÉM** — cùng lý do với
- * `computeHeadroom()`: đường này chạy bên trong `try` của `beginVramAllocation()`, mà `catch` ở đó
- * trả `NOOP_TICKET`; một cú ném ở đây sẽ biến "từ chối trung thực" thành "cấp phát ngoài sổ".
+ * ★★★ Pha 4 Task 1 — **PHẦN KHÔNG QUY TRÁCH NHIỆM ĐƯỢC. MỘT BẢN CÀI ĐẶT, HAI NGƯỜI ĐỌC.**
+ *
+ * Người đọc: `buildVramRefusal()` (câu từ chối, §5.3) và `vramReadModel` (router ĐỌC của AI Agent,
+ * Pha 4). Tách ra là bắt buộc chứ không phải dọn dẹp: nếu router tự tính lại bốn ô này thì hai bên
+ * sẽ khai hai `caveat` khác nhau cho **cùng một trạng thái**, và Agent — thứ đọc API để **QUYẾT
+ * ĐỊNH** — sẽ hành động theo cái sai. Đúng ràng buộc 12 (*"hai bản sao vị từ dưới một bất biến"*).
  */
-export function buildVramRefusal(input: VramRefusalInput): VramRefusalFacts {
-  const requestedBytes = finiteOrNull(input.requestedBytes);
-  // ⚠ ĐỌC LÝ DO TRƯỚC KHI IN SỐ (bàn giao 1): `-Infinity` không hữu hạn ⇒ KHÔNG có "còn bao nhiêu".
-  const availableBytes = finiteOrNull(input.headroomBytes);
+export interface VramUnattributedFacts {
+  /** Phần thiết bị đang dùng mà SỔ không giải thích được. `null` ⇔ **KHÔNG ĐO ĐƯỢC** (≠ `0`). */
+  readonly unattributedBytes: number | null;
+  /** ƯỚC LƯỢNG byte đã chạy ngoài sổ. `null` ⇔ CHƯA HỎI / không hữu hạn. **KHÔNG phải số đo.** */
+  readonly unledgeredEstimateBytes: number | null;
+  /** Số lượt ngoài sổ mà ngay cả byte cũng không ước được. `null` ⇔ CHƯA HỎI. */
+  readonly unknownCount: number | null;
+  readonly caveat: VramRefusalCaveat;
+  readonly wiredSiteCount: number;
+  readonly knownSiteRowCount: number;
+}
 
+/**
+ * Thuần, đồng bộ, KHÔNG BAO GIỜ NÉM.
+ *
+ * THỨ TỰ CHỌN `caveat` LÀ MỘT QUYẾT ĐỊNH, KHÔNG PHẢI TIỆN TAY:
+ *  1. `unknownCount > 0` thắng TẤT CẢ — bàn giao (2): mọi hộ ONNX/sidecar/`gguf-context` đóng
+ *     góp 0 byte vào `unledgeredBytes` và **chỉ** hiện ở đây. Câu này phải nói *"đừng dùng con
+ *     số ước lượng để tính"*, và nó KHÔNG phụ thuộc `unattributedBytes` (có thể đang `null`).
+ *  2. **KHÔNG BIẾT** — mù · chưa hỏi · **hoặc bất kỳ ô nào trong ba ô đó không dùng được**.
+ *     ⚠ I-2 (review vòng 1): bản trước để `unattributedBytes === null` (đầu vào bẩn: `usedBytes`
+ *     `+Infinity`, sổ `NaN`) **rơi thẳng xuống nhánh 4** ⇒ câu ra *"chưa phát hiện khoản nào"*
+ *     trong khi sự thật là **KHÔNG BIẾT**. Đó là `null` bị đọc thành `0` — đúng lớp lỗi mà cả
+ *     file này tồn tại để diệt, tái phát ngay trong file.
+ *  3. **PHÁT HIỆN ĐƯỢC** một khoản ngoài sổ — theo **một trong hai** đường, và cả hai đều phải
+ *     kích hoạt: (a) hiệu `usedBytes − ledgerTotalBytes` (SỐ ĐO), (b) `unledgeredBytes` (ƯỚC
+ *     LƯỢNG của những lượt `beginVramAllocation()` hỏng).
+ *     ⚠ I-1 (review vòng 1): bản trước chỉ nhìn (a) ⇒ hình dạng **thường gặp**
+ *     `{bytes: 5.000 MiB, unknownCount: 0}` của `vramWiring.vramBeginFailureState()` cho ra câu
+ *     *"chưa phát hiện khoản nào"* trong khi 5.242.880.000 byte **nằm ngay trong `facts`**.
+ *     Câu của nhánh này vì thế **nêu CẢ HAI con số**, không chọn một.
+ *  4. sổ giải thích hết — vẫn phải nói bản liệt kê là CẬN DƯỚI.
+ */
+export function vramUnattributedFacts(input: {
+  /** `HeadroomResult.blind` — MÙ ⇒ hiệu số không mang thông tin nào về phần ngoài sổ. */
+  readonly blind: boolean;
+  readonly ledgerTotalBytes: number;
+  /** `max(ledgerTotalBytes, attributableBytes)`. */
+  readonly usedBytes: number;
+  /** ⚠ BẮT BUỘC CÓ MẶT: `null` = **CHƯA HỎI**, KHÔNG phải "không có lượt nào". */
+  readonly unledgered: VramUnledgeredFact;
+}): VramUnattributedFacts {
   const ledgerTotal = finiteOrNull(input.ledgerTotalBytes);
   const used = finiteOrNull(input.usedBytes);
   // MÙ ⇒ `usedBytes` chỉ là sổ (CHẶN TRÊN của mọi headroom) ⇒ hiệu số không mang thông tin nào về
@@ -349,6 +389,56 @@ export function buildVramRefusal(input: VramRefusalInput): VramRefusalFacts {
 
   const unledgeredEstimateBytes = input.unledgered === null ? null : finiteOrNull(input.unledgered.bytes);
   const unknownCount = input.unledgered === null ? null : finiteOrNull(input.unledgered.unknownCount);
+
+  const khongBiet =
+    input.blind ||
+    input.unledgered === null ||
+    unattributedBytes === null ||
+    unledgeredEstimateBytes === null ||
+    unknownCount === null;
+
+  const caveat: VramRefusalCaveat =
+    unknownCount !== null && unknownCount > 0
+      ? "vramUnattributedUnreliable"
+      : khongBiet
+        ? "vramUnattributedUnknownExtent"
+        : (unattributedBytes ?? 0) > 0 || (unledgeredEstimateBytes ?? 0) > 0
+          ? "vramUnattributedDetected"
+          : "vramLedgerCoverageOnly";
+
+  return {
+    unattributedBytes,
+    unledgeredEstimateBytes,
+    unknownCount,
+    caveat,
+    wiredSiteCount: WIRED_ALLOCATION_SITE_COUNT,
+    knownSiteRowCount: KNOWN_ALLOCATION_SITE_ROW_COUNT,
+  };
+}
+
+/**
+ * Dựng SỰ THẬT của một lời từ chối. **Thuần, đồng bộ, KHÔNG BAO GIỜ NÉM** — cùng lý do với
+ * `computeHeadroom()`: đường này chạy bên trong `try` của `beginVramAllocation()`, mà `catch` ở đó
+ * trả `NOOP_TICKET`; một cú ném ở đây sẽ biến "từ chối trung thực" thành "cấp phát ngoài sổ".
+ */
+export function buildVramRefusal(input: VramRefusalInput): VramRefusalFacts {
+  const requestedBytes = finiteOrNull(input.requestedBytes);
+  // ⚠ ĐỌC LÝ DO TRƯỚC KHI IN SỐ (bàn giao 1): `-Infinity` không hữu hạn ⇒ KHÔNG có "còn bao nhiêu".
+  const availableBytes = finiteOrNull(input.headroomBytes);
+
+  /**
+   * ★ Pha 4 Task 1 — **PHẦN KHÔNG QUY TRÁCH NHIỆM ĐƯỢC ĐI QUA MỘT VỊ TỪ DÙNG CHUNG.** Khối này
+   * trước đây nằm tại chỗ; nay `vramReadModel` (router ĐỌC của Agent) cần **đúng** bốn ô ấy, và
+   * hai bản cài đặt song song của cùng một vị từ là đúng lớp lỗi ràng buộc 12 cấm — câu từ chối
+   * và câu trả lời của API sẽ trôi khỏi nhau, mỗi bên nói một `caveat` khác cho cùng một trạng thái.
+   */
+  const kqn = vramUnattributedFacts({
+    blind: input.blind,
+    ledgerTotalBytes: input.ledgerTotalBytes,
+    usedBytes: input.usedBytes,
+    unledgered: input.unledgered,
+  });
+  const { unattributedBytes, unledgeredEstimateBytes, unknownCount, caveat } = kqn;
 
   /**
    * ★ M-1/M-2 (review vòng 1) — LƯỚI PHẢI Ở TRÊN **TỔNG**, KHÔNG CHỈ TỪNG SỐ HẠNG. Bản trước
@@ -366,41 +456,6 @@ export function buildVramRefusal(input: VramRefusalInput): VramRefusalFacts {
       0,
     ),
   );
-
-  /**
-   * THỨ TỰ NÀY LÀ MỘT QUYẾT ĐỊNH, KHÔNG PHẢI TIỆN TAY:
-   *  1. `unknownCount > 0` thắng TẤT CẢ — bàn giao (2): mọi hộ ONNX/sidecar/`gguf-context` đóng
-   *     góp 0 byte vào `unledgeredBytes` và **chỉ** hiện ở đây. Câu này phải nói *"đừng dùng con
-   *     số ước lượng để tính"*, và nó KHÔNG phụ thuộc `unattributedBytes` (có thể đang `null`).
-   *  2. **KHÔNG BIẾT** — mù · chưa hỏi · **hoặc bất kỳ ô nào trong ba ô đó không dùng được**.
-   *     ⚠ I-2 (review vòng 1): bản trước để `unattributedBytes === null` (đầu vào bẩn: `usedBytes`
-   *     `+Infinity`, sổ `NaN`) **rơi thẳng xuống nhánh 4** ⇒ câu ra *"chưa phát hiện khoản nào"*
-   *     trong khi sự thật là **KHÔNG BIẾT**. Đó là `null` bị đọc thành `0` — đúng lớp lỗi mà cả
-   *     file này tồn tại để diệt, tái phát ngay trong file.
-   *  3. **PHÁT HIỆN ĐƯỢC** một khoản ngoài sổ — theo **một trong hai** đường, và cả hai đều phải
-   *     kích hoạt: (a) hiệu `usedBytes − ledgerTotalBytes` (SỐ ĐO), (b) `unledgeredBytes` (ƯỚC
-   *     LƯỢNG của những lượt `beginVramAllocation()` hỏng).
-   *     ⚠ I-1 (review vòng 1): bản trước chỉ nhìn (a) ⇒ hình dạng **thường gặp**
-   *     `{bytes: 5.000 MiB, unknownCount: 0}` của `vramWiring.vramBeginFailureState()` cho ra câu
-   *     *"chưa phát hiện khoản nào"* trong khi 5.242.880.000 byte **nằm ngay trong `facts`**.
-   *     Câu của nhánh này vì thế **nêu CẢ HAI con số**, không chọn một.
-   *  4. sổ giải thích hết — vẫn phải nói bản liệt kê là CẬN DƯỚI.
-   */
-  const khongBiet =
-    input.blind ||
-    input.unledgered === null ||
-    unattributedBytes === null ||
-    unledgeredEstimateBytes === null ||
-    unknownCount === null;
-
-  const caveat: VramRefusalCaveat =
-    unknownCount !== null && unknownCount > 0
-      ? "vramUnattributedUnreliable"
-      : khongBiet
-        ? "vramUnattributedUnknownExtent"
-        : (unattributedBytes ?? 0) > 0 || (unledgeredEstimateBytes ?? 0) > 0
-          ? "vramUnattributedDetected"
-          : "vramLedgerCoverageOnly";
 
   /**
    * ★★★ I-3 — CHỌN MÃ THEO **THỨ ĐANG THIẾU**, không theo thứ dễ nhất.
@@ -439,8 +494,10 @@ export function buildVramRefusal(input: VramRefusalInput): VramRefusalFacts {
     caveat,
     degradedReasons: Object.freeze([...input.degradedReasons]),
     slotsNeeded,
-    wiredSiteCount: WIRED_ALLOCATION_SITE_COUNT,
-    knownSiteRowCount: KNOWN_ALLOCATION_SITE_ROW_COUNT,
+    // ★ Pha 4 Task 1 — cùng nguồn với `caveat` ở trên: hai vế của một lời rào đón không được
+    // đến từ hai lượt đọc khác nhau.
+    wiredSiteCount: kqn.wiredSiteCount,
+    knownSiteRowCount: kqn.knownSiteRowCount,
   };
 }
 

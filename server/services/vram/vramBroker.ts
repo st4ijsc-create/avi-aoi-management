@@ -7,6 +7,7 @@ import type { HeadroomBasis, HeadroomInput, HeadroomResult } from "./vramHeadroo
 import { assertHeadroomPolicy, computeHeadroom, headroomInputFromTick } from "./vramHeadroom";
 import type { VramDegradationReason, VramHolderFact, VramRefusalFacts, VramUnledgeredFact } from "./vramRefusal";
 import { buildVramRefusal } from "./vramRefusal";
+import type { EnforcementDecision } from "./vramEnforcement";
 import { applyEnforcement } from "./vramEnforcement";
 import type { VramDecisionTick } from "./vramTickCell";
 /**
@@ -674,6 +675,83 @@ export interface VramReserveOutcome extends VramReserveResult {
 }
 
 /**
+ * ★★★ Pha 4 Task 1 — **PHÉP GHÉP TRẠNG THÁI QUYẾT ĐỊNH. MỘT BẢN CÀI ĐẶT, HAI NGƯỜI ĐỌC.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ VÌ SAO TÁCH RA KHỎI `reserve()` — VÀ ĐÓ LÀ MỘT BẢO ĐẢM CẤU TRÚC, KHÔNG PHẢI MỘT LƯỢT DỌN DẸP
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Pha 4 phơi trạng thái VRAM ra cho **AI Agent đọc để QUYẾT ĐỊNH**. Nếu router tự ghép lại bốn
+ * dòng dưới đây (trần · sổ cục bộ + chung · `headroomInputFromTick` · `applyEnforcement`) thì có
+ * **hai** bản sao của cùng một phép ghép, và chúng sẽ trôi khỏi nhau — API sẽ khai một con số dư
+ * địa **khác** con số đang thật sự cưỡng chế. Đó đúng lớp lỗi "hai bản cài đặt song song" đã khiến
+ * `bench.mjs` sai bốn lần và đã tái diễn năm lần trong chuỗi pha này.
+ * ⇒ `reserve()` và `vramReadModel` gọi **cùng** hàm này. Router **không thể** nói sai con số.
+ *
+ * ⚠⚠ **ĐỒNG BỘ, KHÔNG I/O, KHÔNG BAO GIỜ NÉM** — nó chạy TRONG `reserve()`, mà tính đồng bộ của
+ * `reserve()` **LÀ** lá chắn cấu trúc từ Pha 1 (xem docstring ngay dưới). Ai thêm một `await` vào
+ * đây là gỡ mất lá chắn đó ở cả hai người đọc cùng lúc.
+ */
+export interface VramDecisionState {
+  /** Trần HIỆU LỰC (đã hấp thụ `GGUF_VRAM_GUARD_PCT` + `GGUF_MAX_VRAM_MB`). */
+  readonly ceilingBytes: number;
+  readonly safetyReserveBytes: number;
+  /** Σ giấy phép của **CHÍNH tiến trình này**. */
+  readonly localLedgerBytes: number;
+  /** `localLedgerBytes` + byte của ANH EM (sổ chung). Con số đi vào `computeHeadroom()`. */
+  readonly ledgerTotalBytes: number;
+  readonly headroomInput: HeadroomInput;
+  readonly headroom: HeadroomResult;
+  readonly enforcement: EnforcementDecision;
+}
+
+/** Xem `VramDecisionState`. Thuần, ĐỒNG BỘ, không I/O, không tác dụng phụ. */
+export function decisionStateFor(ctx: VramDecisionContext): VramDecisionState {
+  // ★ Task 7 — TRẦN HIỆU LỰC (đã hấp thụ `GGUF_VRAM_GUARD_PCT` + `GGUF_MAX_VRAM_MB`).
+  const ceilingBytes = deviceUsableBytes();
+  const safetyBytes = safetyReserveBytes();
+  /**
+   * ★★★ Pha 3 Task 2 — **SỔ = CỤC BỘ + CHUNG.** Đây là dòng gỡ giả định cuối của cả kiến trúc
+   * (*"mỗi tiến trình một sổ riêng"*): từ đây một lượt xin có thể bị từ chối vì **tiến trình KHÁC**
+   * đang giữ chỗ.
+   *
+   * ⚠ `?? 0` LÀ MỘT DÂY, VÀ NÓ CÓ LƯỚI (ràng buộc 11): `sharedLedger === null` nghĩa *"chưa làm mới
+   * lần nào"* — nếu chỉ có dòng này thì nó âm thầm thành *"anh em không giữ gì"*. Lưới là
+   * `"shared-ledger-unasked"` bên `applyEnforcement()` (2 đơn vị mất-tin-cậy) + ca `D-3`, và đột
+   * biến "bỏ lý do đó" phải làm ca ấy đỏ.
+   * ⚠ `foreignBytes` **KHÔNG BAO GIỜ** bị hạ về 0 vì bản sao cũ — xem `vramSharedLedger` (phạm trù
+   * thứ ba). Cũ thì CỘNG BIÊN, không phải XOÁ SỐ.
+   */
+  const localLedgerBytes = totalReserved();
+  const ledgerTotalBytes = localLedgerBytes + (ctx.sharedLedger?.foreignBytes ?? 0);
+  const headroomInput = headroomInputFromTick(ctx.tick, {
+    ceilingBytes,
+    safetyReserveBytes: safetyBytes,
+    // ⚠ SỔ **SỐNG**, đọc ngay tại thời điểm quyết định — KHÔNG lấy `ledgerTotalBytes` của tick cũ:
+    // mọi lượt `reserve()` xảy ra trong một nhịp sẽ vô hình, tức đúng cái cửa cưỡng chế sinh ra để
+    // đóng (vramHeadroom.HeadroomPolicy).
+    ledgerTotalBytes,
+  });
+  const headroom = computeHeadroom(headroomInput);
+  const enforcement = applyEnforcement({
+    headroom,
+    // Tuổi tick: `null` khi CHƯA CÓ NHỊP NÀO (ca đó đã có lý do `"no-tick"` riêng).
+    tickAgeMs: ctx.tick === null ? null : ctx.nowMs - ctx.tick.atMs,
+    tickConsecutiveFailures: ctx.tick === null ? 0 : ctx.tick.consecutiveFailures,
+    unledgered: ctx.unledgered,
+    sharedLedger: ctx.sharedLedger,
+  });
+  return {
+    ceilingBytes,
+    safetyReserveBytes: safetyBytes,
+    localLedgerBytes,
+    ledgerTotalBytes,
+    headroomInput,
+    headroom,
+    enforcement,
+  };
+}
+
+/**
  * ★★★ Pha 2B Task 5 — XIN CHỖ, VÀ ĐÂY LÀ NƠI MỘT LƯỢT XIN CÓ THỂ BỊ **TỪ CHỐI**.
  *
  * Trước task này hàm luôn trả giấy phép và `wouldRefuse` chỉ là phán quyết BÓNG. Từ đây:
@@ -702,39 +780,9 @@ export interface VramReserveOutcome extends VramReserveResult {
  * chắn cấu trúc từ Pha 1 — nó là thứ giữ đường quyết định sạch I/O, không phải một tối ưu hiệu năng.
  */
 export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): VramReserveOutcome {
-  // ★ Task 7 — TRẦN HIỆU LỰC (đã hấp thụ `GGUF_VRAM_GUARD_PCT` + `GGUF_MAX_VRAM_MB`).
-  const ceilingBytes = deviceUsableBytes();
-  /**
-   * ★★★ Pha 3 Task 2 — **SỔ = CỤC BỘ + CHUNG.** Đây là dòng gỡ giả định cuối của cả kiến trúc
-   * (*"mỗi tiến trình một sổ riêng"*): từ đây một lượt xin có thể bị từ chối vì **tiến trình KHÁC**
-   * đang giữ chỗ.
-   *
-   * ⚠ `?? 0` LÀ MỘT DÂY, VÀ NÓ CÓ LƯỚI (ràng buộc 11): `sharedLedger === null` nghĩa *"chưa làm mới
-   * lần nào"* — nếu chỉ có dòng này thì nó âm thầm thành *"anh em không giữ gì"*. Lưới là
-   * `"shared-ledger-unasked"` bên `applyEnforcement()` (2 đơn vị mất-tin-cậy) + ca `D-3`, và đột
-   * biến "bỏ lý do đó" phải làm ca ấy đỏ.
-   * ⚠ `foreignBytes` **KHÔNG BAO GIỜ** bị hạ về 0 vì bản sao cũ — xem `vramSharedLedger` (phạm trù
-   * thứ ba). Cũ thì CỘNG BIÊN, không phải XOÁ SỐ.
-   */
-  const localTotalBytes = totalReserved();
-  const ledgerTotalBytes = localTotalBytes + (ctx.sharedLedger?.foreignBytes ?? 0);
-  const headroomInput = headroomInputFromTick(ctx.tick, {
-    ceilingBytes,
-    safetyReserveBytes: safetyReserveBytes(),
-    // ⚠ SỔ **SỐNG**, đọc ngay tại thời điểm quyết định — KHÔNG lấy `ledgerTotalBytes` của tick cũ:
-    // mọi lượt `reserve()` xảy ra trong một nhịp sẽ vô hình, tức đúng cái cửa cưỡng chế sinh ra để
-    // đóng (vramHeadroom.HeadroomPolicy).
-    ledgerTotalBytes,
-  });
-  const headroom = computeHeadroom(headroomInput);
-  const enf = applyEnforcement({
-    headroom,
-    // Tuổi tick: `null` khi CHƯA CÓ NHỊP NÀO (ca đó đã có lý do `"no-tick"` riêng).
-    tickAgeMs: ctx.tick === null ? null : ctx.nowMs - ctx.tick.atMs,
-    tickConsecutiveFailures: ctx.tick === null ? 0 : ctx.tick.consecutiveFailures,
-    unledgered: ctx.unledgered,
-    sharedLedger: ctx.sharedLedger,
-  });
+  const st = decisionStateFor(ctx);
+  const { ceilingBytes, localLedgerBytes: localTotalBytes, ledgerTotalBytes, headroomInput, headroom } = st;
+  const enf = st.enforcement;
 
   // ★ Task 7 — cửa ĐẾM, chạy độc lập với cửa BYTE (Đ4).
   const slotsNeeded = kheGgufConThieu(request);
@@ -770,7 +818,9 @@ export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): 
     foreignLedgerBytes: ctx.sharedLedger?.foreignBytes ?? 0,
     sharedLedgerAgeMs: ctx.sharedLedger?.ageMs ?? null,
     ceilingBytes,
-    safetyReserveBytes: safetyReserveBytes(),
+    // ⚠ Lấy từ `st`, KHÔNG gọi lại `safetyReserveBytes()`: hai lượt đọc cùng một cấu hình ở hai
+    // thời điểm là đúng lớp lỗi "hai vế của một phép tính đến từ hai thời điểm khác nhau".
+    safetyReserveBytes: st.safetyReserveBytes,
   };
 
   const vua = request.estimatedBytes <= enf.effectiveHeadroomBytes && slotsNeeded === 0;

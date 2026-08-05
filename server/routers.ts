@@ -117,6 +117,7 @@ import { aiChatRouter } from "./routers/aiChatRouter";
 import { aiAnalysisHubRouter } from "./routers/aiAnalysisHubRouter";
 import { aiSettingsRouter } from "./routers/aiSettingsRouter";
 import { aiGgufRouter } from "./routers/aiGgufRouter";
+import { vramRouter } from "./routers/vramRouter"; // Pha 4 Task 1: mặt ĐỌC trạng thái VRAM cho AI Agent
 import { aiInspectionAnalyticsRouter } from "./routers/aiInspectionAnalyticsRouter";
 import { aiAdvancedVisionRouter } from "./routers/aiAdvancedVisionRouter";
 import { aiSpecialistAgentRouter } from "./routers/aiSpecialistAgentRouter";
@@ -683,6 +684,8 @@ export const appRouter = router({
   aiSettings: aiSettingsRouter,
   // AI GGUF — Local LLM model management & inference
   aiGguf: aiGgufRouter,
+  // VRAM — mặt ĐỌC trạng thái điều phối VRAM (Pha 4 Task 1). CHỈ ĐỌC: không đổi hành vi cấp phát.
+  vram: vramRouter,
   // AI Specialist Agents — Data/Backend/Frontend/QA assistants on local GGUF
   aiSpecialistAgent: aiSpecialistAgentRouter,
   // AI Inspection Analytics — Trend, Pareto, forecast, SPC, risk
