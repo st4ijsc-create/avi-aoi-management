@@ -458,6 +458,14 @@ export interface VramPreemptCommandForI18n {
    * dán lời cảnh báo đó vào MỌI lượt thu hồi thành công (kể cả lượt bình thường, `freedBytes > 0`).
    */
   readonly freedBytes: number;
+  /**
+   * ★★★ M-5 nửa sau (Task 4) — **ĐỌC, KHÔNG ĐO.** Nguồn duy nhất là `vramPreempt.catCau()`
+   * (`VramPreemptCommandResult.detailTruncated`). ⚠⚠ **CẤM** thay ô này bằng `r.detail.length === 400`
+   * ở đây: một bất biến hai người viết là đúng lớp lỗi đã đẻ ba Critical trong chuỗi pha này, và
+   * phép so ấy còn SAI cho một câu dài **đúng 400** ký tự (chưa cắt mà bị khai là đã cắt).
+   * ⚠ BẮT BUỘC (không optional): một `?: boolean` sẽ để mọi điểm gọi cũ âm thầm khai "chưa cắt".
+   */
+  readonly detailTruncated: boolean;
 }
 
 /** `vram.preempt` → câu người đọc được. `detail` (M-5, CHUỖI THÔ) làm sạch bằng ĐÚNG
@@ -476,7 +484,17 @@ export function translateVramPreemptCommand(r: VramPreemptCommandForI18n): strin
   // ★ I-2 (review vòng 1) — `fallback` KHÔNG đi qua localizeParams/sanitizeAllParams
   // (translateAppError trả nó NGUYÊN VĂN khi khoá thiếu ở activeLng); làm sạch tại điểm dựng.
   const sentence = translateAppError(appCode, params, `${r.outcome}: ${stripInterpolationSyntax(r.owner)}`);
-  return r.detail === null ? sentence : `${sentence} — ${stripInterpolationSyntax(r.detail)}`;
+  if (r.detail === null) return sentence;
+  /**
+   * ★ M-5 nửa sau (Task 4) — câu ghép PHẢI nói ra rằng `detail` đã bị cắt, nếu không người đọc (và
+   * Agent) sẽ coi một câu cụt là câu ĐẦY ĐỦ rồi kết luận sai về nguyên nhân. Mẩu chữ đi qua ĐÚNG
+   * `translateAppError()` (ba locale), không phải một chuỗi viết tay.
+   */
+  const detail = stripInterpolationSyntax(r.detail);
+  const suffix = r.detailTruncated
+    ? ` ${translateAppError("VRAM_CMD_PREEMPT_DETAIL_TRUNCATED", undefined, "(truncated)")}`
+    : "";
+  return `${sentence} — ${detail}${suffix}`;
 }
 
 export interface VramReleaseStaleCommandForI18n {

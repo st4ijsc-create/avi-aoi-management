@@ -32,6 +32,7 @@ import { preemptOwner } from "./vramPreempt";
 import { releaseStaleSharedRow } from "./vramReconciler";
 import { sharedLedgerSelfKey } from "./vramSharedLedger";
 import { vramBackgroundHostForOwner } from "./vramReadModel";
+import type { VramDeferRetryUnreachable } from "./vramReadModel";
 import { retryKbSyncDeferNow } from "../kbSyncScheduler";
 
 /**
@@ -94,6 +95,15 @@ export interface VramPreemptCommandResult extends VramCommandScope {
   readonly reason: VramPreemptCommandReason | null;
   /** Câu thô của người thi hành (đã cắt 400 ký tự ở nguồn). ⚠ CHƯA LÀM SẠCH cho i18n — xem Task 3. */
   readonly detail: string | null;
+  /**
+   * ★★★ Task 4 (M-5 nửa sau) — **`detail` ĐÃ BỊ CẮT HAY CHƯA**, đo tại **đúng chỗ cắt**
+   * (`vramPreempt.catCau()`), không phải suy lại ở người đọc.
+   *
+   * ⚠⚠ Người ghép câu **KHÔNG ĐƯỢC** tự đoán bằng `detail.length === 400`: đó là bản sao thứ hai của
+   * MỘT vị từ (lớp lỗi đã đẻ ba Critical liên tiếp), **và** nó sai — một câu dài **đúng 400** ký tự
+   * chưa hề bị cắt. `false` khi `detail === null`.
+   */
+  readonly detailTruncated: boolean;
   /** `null` ⇔ lệnh dừng ở cổng quyền/khả năng, chưa có người thi hành nào được chọn. */
   readonly reclaimer: VramReclaimerId | null;
   /**
@@ -124,11 +134,18 @@ export async function vramPreemptCommand(owner: string): Promise<VramPreemptComm
     ...chungPhamVi(),
   };
   if (kq.plan.kind === "refused") {
-    return { ...chung, outcome: "refused", reason: kq.plan.reason, detail: null };
+    return { ...chung, outcome: "refused", reason: kq.plan.reason, detail: null, detailTruncated: false };
   }
   return kq.failure === null
-    ? { ...chung, outcome: "reclaimed", reason: null, detail: null }
-    : { ...chung, outcome: "failed", reason: kq.failure, detail: kq.message };
+    ? { ...chung, outcome: "reclaimed", reason: null, detail: null, detailTruncated: false }
+    : {
+        ...chung,
+        outcome: "failed",
+        reason: kq.failure,
+        detail: kq.message,
+        // ★ M-5 — CHỞ cờ từ nguồn, không đo lại. `message === null` ⇒ nguồn đã trả `false`.
+        detailTruncated: kq.messageTruncated,
+      };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -233,8 +250,12 @@ export async function vramReleaseStaleCommand(leaseKey: string): Promise<VramRel
  */
 export type VramRetryDeferredCommandReason =
   | "unknown-background-host"
-  | "no-retry-mechanism-for-this-host"
-  | "host-not-running-in-this-process"
+  /**
+   * ★ Task 4 ((D)) — HAI mã này **KHÔNG viết lại ở đây**: chúng là `VramDeferRetryUnreachable` của
+   * mặt ĐỌC (`vramReadModel.VramAgentDeferHostView.retryReach`). Một định nghĩa, hai mặt ⇒ mặt đọc
+   * không thể hứa "với tới được" một hộ mà lệnh từ chối, và ngược lại.
+   */
+  | VramDeferRetryUnreachable
   | "no-defer-chain-in-this-process"
   | "defer-budget-exceeded";
 

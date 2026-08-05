@@ -3566,6 +3566,7 @@
     "VRAM_CMD_PREEMPT_FAILED_WITH_REASON": "回收持有者 {{owner}} 失败：{{reason}}",
     "VRAM_CMD_PREEMPT_REFUSED": "回收持有者 {{owner}} 的指令被拒绝——没有具体原因。",
     "VRAM_CMD_PREEMPT_REFUSED_WITH_REASON": "回收持有者 {{owner}} 的指令被拒绝：{{reason}}",
+    "VRAM_CMD_PREEMPT_DETAIL_TRUNCATED": "（以上信息已在来源处被截断——其余部分未被保存在任何地方；请勿当作完整语句阅读。）",
     "VRAM_CMD_RELEASE_STALE_RELEASED": "已清理行 {{leaseKey}}（原持有进程：{{processKey}}）。{{rowKind}} {{durability}}",
     "VRAM_CMD_RELEASE_STALE_REFUSED": "清理行 {{leaseKey}} 的指令被拒绝——没有具体原因。",
     "VRAM_CMD_RELEASE_STALE_REFUSED_WITH_REASON": "清理行 {{leaseKey}} 的指令被拒绝：{{reason}}",

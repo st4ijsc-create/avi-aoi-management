@@ -3574,6 +3574,7 @@
     "VRAM_CMD_PREEMPT_FAILED_WITH_REASON": "Failed to reclaim holder {{owner}}: {{reason}}",
     "VRAM_CMD_PREEMPT_REFUSED": "Command to reclaim holder {{owner}} was REFUSED — no specific reason available.",
     "VRAM_CMD_PREEMPT_REFUSED_WITH_REASON": "Command to reclaim holder {{owner}} was REFUSED: {{reason}}",
+    "VRAM_CMD_PREEMPT_DETAIL_TRUNCATED": "(the message above was TRUNCATED at the source — the remainder is kept nowhere; do not read it as a complete sentence.)",
     "VRAM_CMD_RELEASE_STALE_RELEASED": "Cleaned up row {{leaseKey}} (former owner: {{processKey}}). {{rowKind}} {{durability}}",
     "VRAM_CMD_RELEASE_STALE_REFUSED": "Command to clean up row {{leaseKey}} was REFUSED — no specific reason available.",
     "VRAM_CMD_RELEASE_STALE_REFUSED_WITH_REASON": "Command to clean up row {{leaseKey}} was REFUSED: {{reason}}",

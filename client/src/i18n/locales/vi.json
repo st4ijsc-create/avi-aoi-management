@@ -3575,6 +3575,7 @@
     "VRAM_CMD_PREEMPT_FAILED_WITH_REASON": "Thu hồi hộ {{owner}} THẤT BẠI: {{reason}}",
     "VRAM_CMD_PREEMPT_REFUSED": "Lệnh thu hồi hộ {{owner}} bị TỪ CHỐI — không rõ nguyên nhân cụ thể.",
     "VRAM_CMD_PREEMPT_REFUSED_WITH_REASON": "Lệnh thu hồi hộ {{owner}} bị TỪ CHỐI: {{reason}}",
+    "VRAM_CMD_PREEMPT_DETAIL_TRUNCATED": "(câu trên đã bị CẮT ở nguồn — phần còn lại KHÔNG được giữ ở đâu cả; đừng đọc nó như một câu đầy đủ.)",
     "VRAM_CMD_RELEASE_STALE_RELEASED": "Đã dọn hàng {{leaseKey}} (chủ cũ: {{processKey}}). {{rowKind}} {{durability}}",
     "VRAM_CMD_RELEASE_STALE_REFUSED": "Lệnh dọn hàng {{leaseKey}} bị TỪ CHỐI — không rõ nguyên nhân cụ thể.",
     "VRAM_CMD_RELEASE_STALE_REFUSED_WITH_REASON": "Lệnh dọn hàng {{leaseKey}} bị TỪ CHỐI: {{reason}}",

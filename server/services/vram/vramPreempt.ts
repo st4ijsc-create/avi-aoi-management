@@ -126,9 +126,21 @@ function soHuuHan(n: number): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** ⚠ Cột chuỗi + `detail` `jsonb` — một câu dài vô hạn là một lô sự kiện mất. Cắt tại NGUỒN. */
-function catCau(err: unknown): string {
-  return String((err as { message?: unknown } | null)?.message ?? err ?? "").slice(0, 400);
+/**
+ * ⚠ Cột chuỗi + `detail` `jsonb` — một câu dài vô hạn là một lô sự kiện mất. Cắt tại NGUỒN.
+ *
+ * ★★★ Pha 4 Task 4 (bàn giao M-5 nửa sau, review Task 3) — **"ĐÃ CẮT HAY CHƯA" ĐƯỢC ĐO ĐÚNG Ở ĐÂY,
+ * MỘT LẦN.** Câu ghép của Task 3 phải nói ra rằng câu đã bị cắt, nhưng nó **KHÔNG được** tự đoán
+ * bằng `detail.length === 400` ở client: đó là **bản sao thứ hai của MỘT vị từ** (một bất biến, hai
+ * người viết, hai câu trả lời trôi khỏi nhau) — đúng lớp lỗi đã đẻ ba Critical liên tiếp trong chuỗi
+ * pha này. Và bản sao ấy còn **SAI**: một câu **đúng 400 ký tự** không hề bị cắt, nhưng phép so ở
+ * client sẽ khai là đã cắt.
+ */
+const CAU_TOI_DA = 400;
+
+function catCau(err: unknown): { readonly cau: string; readonly daCat: boolean } {
+  const tho = String((err as { message?: unknown } | null)?.message ?? err ?? "");
+  return { cau: tho.slice(0, CAU_TOI_DA), daCat: tho.length > CAU_TOI_DA };
 }
 
 /** Vì sao MỘT bước thi hành không thành. `null` ⇔ nó thành. */
@@ -148,24 +160,31 @@ export type VramReclaimFailure = "reclaimer-returned-false" | "reclaimer-threw";
 async function thiHanhMotBuoc(
   step: VramPreemptStep,
   priority: VramPriority,
-): Promise<{ readonly xong: boolean; readonly failure: VramReclaimFailure | null; readonly message: string | null }> {
+): Promise<{
+  readonly xong: boolean;
+  readonly failure: VramReclaimFailure | null;
+  readonly message: string | null;
+  /** ★ M-5 — đo Ở ĐÚNG CHỖ CẮT. `false` khi `message === null` (không có câu thì không có gì bị cắt). */
+  readonly messageTruncated: boolean;
+}> {
   try {
     const xong = await NGUOI_THI_HANH[step.reclaimer](step);
     return xong
-      ? { xong: true, failure: null, message: null }
-      : { xong: false, failure: "reclaimer-returned-false", message: null };
+      ? { xong: true, failure: null, message: null, messageTruncated: false }
+      : { xong: false, failure: "reclaimer-returned-false", message: null, messageTruncated: false };
   } catch (err) {
     // KHÔNG ném, nhưng cũng KHÔNG im: một người thi hành hỏng là lý do câu từ chối kế tiếp sẽ nói
     // "nhường được N MiB" mà mãi không nhường được.
-    const message = catCau(err);
+    const { cau: message, daCat } = catCau(err);
     logVramEvent({
       event: "preempt",
       owner: step.owner,
       leaseKind: step.kind,
       priority,
-      detail: { reason: "reclaimer-threw", reclaimer: step.reclaimer, message },
+      // ★ M-5 — nhật ký BỀN cũng mang cờ: ai đọc `vram_events` về sau biết câu này đã bị cắt.
+      detail: { reason: "reclaimer-threw", reclaimer: step.reclaimer, message, messageTruncated: daCat },
     });
-    return { xong: false, failure: "reclaimer-threw", message };
+    return { xong: false, failure: "reclaimer-threw", message, messageTruncated: daCat };
   }
 }
 
@@ -206,6 +225,12 @@ export interface VramPreemptOwnerResult {
   /** `null` ⇔ thu hồi THÀNH CÔNG (và byte đã nhả). */
   readonly failure: VramPreemptOwnerFailure | null;
   readonly message: string | null;
+  /**
+   * ★★★ M-5 (bàn giao Task 3 → Task 4) — **NGUỒN DUY NHẤT của sự thật "câu trên đã bị cắt hay
+   * chưa"**, đo tại `catCau()`. Người ghép câu (`client/src/lib/errorCodes.ts`) chỉ được ĐỌC ô này;
+   * đo lại độ dài ở đó là dựng bản sao thứ hai của một vị từ.
+   */
+  readonly messageTruncated: boolean;
   readonly ledgerBytesBefore: number;
   readonly ledgerBytesAfter: number;
 }
@@ -225,6 +250,7 @@ export async function preemptOwner(owner: string): Promise<VramPreemptOwnerResul
       failed: [],
       failure: null,
       message: null,
+      messageTruncated: false,
       ledgerBytesBefore: truoc,
       ledgerBytesAfter: truoc,
     };
@@ -294,6 +320,7 @@ export async function preemptOwner(owner: string): Promise<VramPreemptOwnerResul
     failed: failure === null ? [] : [step.owner],
     failure,
     message: kq.message,
+    messageTruncated: kq.messageTruncated,
     ledgerBytesBefore: truoc,
     ledgerBytesAfter: sau,
   };

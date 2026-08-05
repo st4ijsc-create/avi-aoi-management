@@ -1,0 +1,342 @@
+/**
+ * ★★★ Pha 4 Task 4 — **PANEL VRAM ĐỌC TỪ BROKER.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO PANEL NÀY TỒN TẠI: HAI ĐỒNG HỒ ĐANG NÓI HAI SỐ
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `AIBrainDashboard` in `vram.used / vram.total` lấy từ `trpc.aiGguf.health` ⇐
+ * `llamaInstance.getVramState()` — **số THÔ của thiết bị, KHÔNG qua broker**. Bảy pha vừa rồi dựng
+ * một phép ghép hoàn toàn khác (trần · sổ cục bộ + sổ chung · `computeHeadroom` · `applyEnforcement`)
+ * và **chính con số đó** mới là thứ đang TỪ CHỐI các lượt xin. Hai nguồn số cho cùng một câu hỏi là
+ * lớp lỗi "hai bản sao vị từ": người trực đọc card còn trống rồi không hiểu vì sao model không nạp
+ * được. ⇒ Panel này đọc `trpc.vram.state` (⇐ `buildVramAgentState()` ⇐ `broker.decisionStateFor()`),
+ * tức **đúng phép ghép mà `reserve()` chạy**.
+ *
+ * ⚠⚠ **KHÔNG MỘT CÂU CHỮ VIẾT TAY NÀO CHO KẾT CỤC LỆNH / Ô ĐỘ-CHẮC-CHẮN.** Mọi câu đi qua tám hàm
+ * `translateVram*` của Task 3 (`client/src/lib/errorCodes.ts`) — ba locale, đã làm sạch, không
+ * đường tiêm. Cổng (i) quét template literal chứa CẢ `outcome` LẪN `reason`/`rowKind`/`durability`
+ * — và nó vừa BẮT ĐƯỢC chính khối chú thích này ở bản đầu (nó quét **văn bản thô**, kể cả comment),
+ * nên đoạn mẫu ấy đã bị gỡ. Nhưng cổng đó **mù** với biến trung gian, `+`, `.join()` và với việc
+ * render thô một trường mô tả trong JSX; **mù không phải là cho phép** — file này KHÔNG render
+ * `reason`/`rowKind`/`durability` thô ở bất kỳ đâu.
+ *
+ * ⚠ `owner`/`leaseKey` **KHÔNG BAO GIỜ bị cắt ngắn**: chúng là DANH TÍNH mà Agent/người vận hành
+ * lấy từ mặt đọc rồi truyền THẲNG vào lệnh (ràng buộc 3). Dùng `break-all`, không dùng `slice()`.
+ */
+
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
+import type { usePollingInterval } from "@/hooks/usePollingInterval";
+import { mapTrpcError } from "@/lib/trpcErrors";
+import {
+  translateVramScope,
+  translateVramHostedHere,
+  translateVramHolderListIsLowerBound,
+  translateVramEstimateUsable,
+  translateVramNonFiniteFields,
+  translateVramPreemptCommand,
+  translateVramReleaseStaleCommand,
+  translateVramRetryDeferredCommand,
+} from "@/lib/errorCodes";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Gauge, ShieldAlert, RotateCcw, Trash2, Ban } from "lucide-react";
+
+const MIB = 1024 * 1024;
+
+/** MiB chỉ ở câu chữ (Đ4). `null` ra chữ, **không** ra `0` — `0` là một lời khẳng định. */
+function fmtMiB(bytes: number | null | undefined, unknown: string): string {
+  if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return unknown;
+  return `${Math.round(bytes / MIB).toLocaleString()} MiB`;
+}
+
+interface Props {
+  /** Chỉ admin/engineer mới thấy nút lệnh. ⚠ Máy chủ vẫn cưỡng chế độc lập (deploy/actuation + RBAC). */
+  canCommand: boolean;
+  /**
+   * Nhịp poll dùng chung với dashboard (`usePollingInterval` — đã tạm dừng khi tab ẩn).
+   * ⚠ Kiểu lấy THẲNG từ hook, không khai lại bằng tay: bản đầu viết
+   * `{ refetchOnWindowFocus?: boolean }` và `tsc` bắt ngay (hook trả `"always"`).
+   */
+  polling: ReturnType<typeof usePollingInterval>;
+}
+
+export function VramBrokerPanel({ canCommand, polling }: Props) {
+  const { t } = useTranslation();
+  const state = trpc.vram.state.useQuery(undefined, { ...polling });
+  /** Câu KẾT CỤC gần nhất của một lệnh — LUÔN là đầu ra của một hàm `translateVram*Command`. */
+  const [lastOutcome, setLastOutcome] = useState<string | null>(null);
+
+  const onFail = (err: unknown) =>
+    toast.error(t("vramBroker.commandError", "Lệnh VRAM không chạy được."), {
+      description: mapTrpcError(err as never),
+    });
+
+  const preempt = trpc.vram.preempt.useMutation({
+    onSuccess: (r) => {
+      // ★ Cổng (ii) — call-site SẢN PHẨM của `translateVramPreemptCommand`.
+      // ⚠ `detailTruncated` ĐỌC từ máy chủ (nguồn duy nhất), KHÔNG đo `detail.length` ở đây.
+      const sentence = translateVramPreemptCommand({
+        outcome: r.outcome,
+        reason: r.reason,
+        owner: r.owner,
+        detail: r.detail,
+        detailTruncated: r.detailTruncated,
+        freedBytes: r.freedBytes,
+      });
+      setLastOutcome(sentence);
+      state.refetch();
+    },
+    onError: onFail,
+  });
+
+  const releaseStale = trpc.vram.releaseStale.useMutation({
+    onSuccess: (r) => {
+      // ★ Cổng (ii) — call-site SẢN PHẨM của `translateVramReleaseStaleCommand`.
+      const sentence = translateVramReleaseStaleCommand({
+        outcome: r.outcome,
+        reason: r.reason,
+        leaseKey: r.leaseKey,
+        processKey: r.processKey,
+        rowKind: r.rowKind,
+        durability: r.durability,
+      });
+      setLastOutcome(sentence);
+      state.refetch();
+    },
+    onError: onFail,
+  });
+
+  const retryDeferred = trpc.vram.retryDeferred.useMutation({
+    onSuccess: (r) => {
+      // ★ Cổng (ii) — call-site SẢN PHẨM của `translateVramRetryDeferredCommand`.
+      const sentence = translateVramRetryDeferredCommand({
+        outcome: r.outcome,
+        reason: r.reason,
+        owner: r.owner,
+        host: r.host,
+      });
+      setLastOutcome(sentence);
+      state.refetch();
+    },
+    onError: onFail,
+  });
+
+  const s = state.data;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Gauge className="h-4 w-4 text-primary" />
+          {t("vramBroker.title", "Bộ điều phối VRAM (số ĐANG CƯỠNG CHẾ)")}
+        </CardTitle>
+        <CardDescription>
+          {t(
+            "vramBroker.subtitle",
+            "Đọc từ chính phép ghép mà reserve() chạy — không phải số thô của thiết bị. Mỗi ô nói đúng độ chắc chắn của nó.",
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {state.isLoading || !s ? (
+          <>
+            <Skeleton className="h-6 w-56" />
+            <Skeleton className="h-20 w-full" />
+          </>
+        ) : (
+          <>
+            {/* ── Dư địa + độ chắc chắn ─────────────────────────────────────────────────── */}
+            <div>
+              <div className="text-lg font-semibold">
+                {fmtMiB(s.headroom.effectiveBytes, t("vramBroker.unknown", "KHÔNG BIẾT"))}
+                <span className="text-sm text-muted-foreground font-normal">
+                  {" / "}
+                  {fmtMiB(s.headroom.ceilingBytes, t("vramBroker.unknown", "KHÔNG BIẾT"))}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                <Badge variant="outline">basis: {s.headroom.basis}</Badge>
+                {s.headroom.blind ? (
+                  <Badge variant="destructive">
+                    {t("vramBroker.blind", "MÙ — con số này là CHẶN TRÊN, không phải trạng thái an toàn")}
+                  </Badge>
+                ) : null}
+                <Badge variant={s.headroom.trusted ? "default" : "secondary"}>
+                  {s.headroom.trusted
+                    ? t("vramBroker.trusted", "tin cậy")
+                    : t("vramBroker.untrusted", "ĐANG SUY GIẢM")}
+                </Badge>
+                {s.headroom.degradedReasons.map((r) => (
+                  <Badge key={r} variant="secondary">
+                    {r}
+                  </Badge>
+                ))}
+                {s.baseline.verified ? null : (
+                  <Badge variant="secondary">
+                    {t("vramBroker.baselineUnverified", "nền CHƯA xác minh")}
+                    {s.baseline.unverifiedReasons === null
+                      ? ` · ${t("vramBroker.noTickYet", "chưa có nhịp nào")}`
+                      : s.baseline.unverifiedReasons.length === 0
+                        ? ""
+                        : ` · ${s.baseline.unverifiedReasons.join(", ")}`}
+                  </Badge>
+                )}
+              </div>
+              {/* ★ translateVramScope — phạm vi quan sát của MỌI ô hoãn ở dưới. */}
+              <p className="text-xs text-muted-foreground mt-2">{translateVramScope(s.defer.scope)}</p>
+              {/* ★ translateVramNonFiniteFields — mảng rỗng CŨNG là một câu trả lời. */}
+              <p className="text-xs text-muted-foreground mt-1">{translateVramNonFiniteFields(s.nonFiniteFields)}</p>
+            </div>
+
+            {/* ── Ước lượng ngoài sổ + số lượt beginVramAllocation() hỏng ────────────────── */}
+            <div className="rounded-md border p-3">
+              <div className="text-sm font-medium">
+                {t("vramBroker.unledgered", "Chạy NGOÀI sổ (ước lượng)")}:{" "}
+                {fmtMiB(s.unledgered.estimateBytes, t("vramBroker.unknown", "KHÔNG BIẾT"))}
+              </div>
+              {/* ★ translateVramEstimateUsable — nói cả "là ước lượng" LẪN "có dùng được để tính không". */}
+              <p className="text-xs text-muted-foreground mt-1">
+                {translateVramEstimateUsable(s.unledgered.estimateUsable, s.unledgered.unknownCount)}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {t("vramBroker.beginFailures", "Lượt beginVramAllocation() đã hỏng")}:{" "}
+                {s.unledgered.beginFailureCount ?? "?"}
+                {s.unledgered.lastReason === null ? "" : ` · ${s.unledgered.lastReason}`}
+              </p>
+            </div>
+
+            {/* ── Hộ đang giữ: cục bộ + ANH EM ──────────────────────────────────────────── */}
+            <div>
+              <div className="text-sm font-medium">
+                {t("vramBroker.holders", "Đang giữ theo sổ")} ·{" "}
+                {t("vramBroker.local", "cục bộ")} {fmtMiB(s.ledger.localBytes, "?")} ·{" "}
+                {t("vramBroker.foreign", "anh em")}{" "}
+                {s.ledger.foreign.known
+                  ? fmtMiB(s.ledger.foreign.bytes, "?")
+                  : t("vramBroker.blindToSiblings", "ĐANG MÙ (chưa làm mới sổ chung lần nào)")}
+              </div>
+              {/* ★ translateVramHolderListIsLowerBound — danh sách rỗng KHÔNG nghĩa là card trống. */}
+              <p className="text-xs text-muted-foreground mt-1">{translateVramHolderListIsLowerBound()}</p>
+              <div className="flex flex-col gap-2 mt-2">
+                {[...s.ledger.localHolders, ...(s.ledger.foreign.known ? s.ledger.foreign.holders : [])].map((h) => (
+                  <div
+                    key={`${h.processKey ?? "self"}#${h.leaseKey ?? h.owner}`}
+                    className="flex flex-wrap items-center gap-2 rounded-md border p-2 text-xs"
+                  >
+                    {/* ⚠ owner KHÔNG cắt ngắn — danh tính đi thẳng vào lệnh. */}
+                    <span className="font-mono break-all">{h.owner}</span>
+                    <Badge variant="outline">{h.kind}</Badge>
+                    <Badge variant="outline">{h.priority}</Badge>
+                    <span className="text-muted-foreground">{fmtMiB(h.bytes, "?")}</span>
+                    {h.measured ? null : (
+                      <Badge variant="secondary">{t("vramBroker.estimated", "ước lượng")}</Badge>
+                    )}
+                    {h.processKey === null ? null : (
+                      <Badge variant="secondary" className="font-mono">
+                        {h.processKey}
+                      </Badge>
+                    )}
+                    {h.ttlExpired ? (
+                      <Badge variant="destructive">
+                        {t("vramBroker.ttlExpired", "quá TTL — KHÔNG có nhịp nào tự gặt, phải ra lệnh")}
+                      </Badge>
+                    ) : null}
+                    {h.reclaim.kind === "reclaimable-here" ? (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={!canCommand || preempt.isPending}
+                        onClick={() => preempt.mutate({ owner: h.owner })}
+                      >
+                        <Trash2 className="h-3 w-3 mr-1" />
+                        {t("vramBroker.preempt", "Thu hồi")} ({h.reclaim.reclaimer})
+                      </Button>
+                    ) : h.reclaim.kind === "declared-by-owner-process" ? (
+                      <span className="text-muted-foreground inline-flex items-center gap-1">
+                        <Ban className="h-3 w-3" />
+                        {t(
+                          "vramBroker.ownerProcessOnly",
+                          "chỉ tiến trình chủ thu hồi được — lệnh từ đây sẽ bị từ chối",
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground inline-flex items-center gap-1">
+                        <Ban className="h-3 w-3" />
+                        {t("vramBroker.noCommandReaches", "không lệnh nào với tới")}
+                      </span>
+                    )}
+                    {h.leaseKey === null ? null : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!canCommand || releaseStale.isPending}
+                        onClick={() => releaseStale.mutate({ leaseKey: h.leaseKey! })}
+                      >
+                        <ShieldAlert className="h-3 w-3 mr-1" />
+                        {t("vramBroker.releaseStale", "Dọn hàng ma")}
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Sáu hộ nền: đang hoãn / KHÔNG CÓ cơ chế hoãn — không gộp ───────────────── */}
+            <div>
+              <div className="text-sm font-medium">{t("vramBroker.deferHosts", "Hộ nền (background)")}</div>
+              <div className="flex flex-col gap-2 mt-2">
+                {s.defer.hosts.map((h) => {
+                  const owner =
+                    h.status.kind === "deferring" || h.status.kind === "exceeded" ? h.status.owner : h.host;
+                  const canRetry = h.retryReach.kind === "reachable-here" || h.status.kind === "deferring" || h.status.kind === "exceeded";
+                  return (
+                    <div key={h.host} className="rounded-md border p-2 text-xs flex flex-col gap-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono break-all">{h.host}</span>
+                        <Badge variant="outline">
+                          {h.mechanism === "waits-and-retries"
+                            ? t("vramBroker.waits", "có chờ + thử lại")
+                            : t("vramBroker.noWait", "KHÔNG có cơ chế chờ — suy giảm tại chỗ")}
+                        </Badge>
+                        {h.status.kind === "deferring" ? (
+                          <Badge variant="secondary">{t("vramBroker.deferring", "đang hoãn")}</Badge>
+                        ) : h.status.kind === "exceeded" ? (
+                          <Badge variant="destructive">{t("vramBroker.exceeded", "đã quá đáy hoãn")}</Badge>
+                        ) : null}
+                        {canRetry ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!canCommand || retryDeferred.isPending}
+                            onClick={() => retryDeferred.mutate({ owner })}
+                          >
+                            <RotateCcw className="h-3 w-3 mr-1" />
+                            {t("vramBroker.retryNow", "Thử lại ngay")}
+                          </Button>
+                        ) : null}
+                      </div>
+                      {/* ★ translateVramHostedHere — `null` KHÔNG được đọc thành `false`. */}
+                      <p className="text-muted-foreground">{translateVramHostedHere(h.hostedHere)}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ── Câu KẾT CỤC của lệnh gần nhất — LUÔN từ lớp dịch, không ghép tay ───────── */}
+            {lastOutcome === null ? null : (
+              <div className="rounded-md border bg-muted/40 p-3 text-xs" role="status">
+                {lastOutcome}
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

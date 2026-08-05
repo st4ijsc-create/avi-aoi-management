@@ -54,13 +54,15 @@
  * **chỉ để** giữ nó khỏi những đồ thị nhập nhạy cảm. Nay: nhịp làm mới đọc từ `vramEnforcement`
  * (module lá), và hai ô chẩn đoán của nền đi **cùng ô tick** (xem `baseline`, sửa (D)).
  */
-import type { BaselineOrigin, VramBaselineDistrustReason, VramPriority } from "./types";
+import type { BaselineOrigin, VramBaselineDistrustReason, VramPriority, VramReclaimerId } from "./types";
+import type { VramLedgerHolderView, VramPreemptOwnerPlan } from "./vramBroker";
 import type { HeadroomBasis } from "./vramHeadroom";
 import type { VramDegradationReason, VramRefusalCaveat } from "./vramRefusal";
 import { vramUnattributedFacts } from "./vramRefusal";
 import * as broker from "./vramBroker";
 import { readDecisionTick } from "./vramTickCell";
 import { sharedLedgerFact, sharedLedgerSelfKey } from "./vramSharedLedger";
+import type { SharedLeaseRow } from "./vramSharedLedger";
 import { reconcileIntervalMs, SHARED_LEDGER_STALE_AFTER_MS, TICK_STALE_AFTER_MS } from "./vramEnforcement";
 import { vramUnledgeredFact, vramBeginFailureState } from "./vramWiring";
 import { docTrangThaiHoanVram, vramJobDeferBudgetMs, vramRequestDeferBudgetMs } from "./vramDefer";
@@ -70,6 +72,38 @@ import { getKbSyncSchedulerStatus } from "../kbSyncScheduler";
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // KIỂU CỦA ẢNH CHỤP
 // ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * ★★★ Pha 4 Task 4 (I-3 + (D) của review Task 2) — **"LỆNH NÀO VỚI TỚI HỘ NÀY TỪ CHỖ ĐỨNG HIỆN
+ * TẠI"**, thay cho ô `reclaimable: boolean` đã **BỊ XOÁ KHỎI KIỂU**.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO ĐỔI KIỂU CHỨ KHÔNG THÊM MỘT CA TEST (ràng buộc 8)
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Ô `boolean` cũ khai `reclaimable: true` cho hộ của tiến trình **ANH EM** (nó chỉ hỏi *"chủ hộ đã
+ * khai người thi hành chưa"*), trong khi `vram.preempt` **chỉ đọc sổ CỤC BỘ** ⇒ Agent đọc *"thu hồi
+ * được"*, ra lệnh, và nhận `owner-not-in-local-ledger`. Một lượt quyết định tiêu vào hư không. Nay
+ * lời khai ấy **KHÔNG VIẾT RA ĐƯỢC**: ba nhánh, ba nghĩa, `tsc` bắt mọi người đọc phân biệt.
+ *
+ * ⚠ `no-reclaimer.why` là **CHÍNH mã từ chối của `preemptStepForOwner()`** (lấy bằng `Extract<>` từ
+ * kiểu của broker, không chép tay) ⇒ mặt ĐỌC và mặt LỆNH **không trôi khỏi nhau được**: thêm một
+ * nhánh từ chối ở broker là một lỗi `tsc` ở đây, và mọi mã ấy đã có bản dịch (`errors.reason.*`).
+ */
+export type VramAgentHolderReclaim =
+  /** `vram.preempt(owner)` **VỚI TỚI** hộ này từ tiến trình đang trả lời — `reclaimer` sẽ thi hành. */
+  | { readonly kind: "reclaimable-here"; readonly reclaimer: VramReclaimerId }
+  /**
+   * Chủ hộ (tiến trình KHÁC) **đã khai** một người thi hành và hộ đang nhàn rỗi — nhưng **CHỈ TIẾN
+   * TRÌNH ĐÓ** thu hồi được. Từ đây `vram.preempt` sẽ trả `owner-not-in-local-ledger`.
+   * ⚠ *"đã khai"* KHÔNG phải *"sẽ thành công"*: chính sách nhường chỗ (`quyenNhuong`, §5.2 — vd
+   * `production` KHÔNG BAO GIỜ) chỉ tiến trình chủ mới chạy được, ta không đánh giá thay nó.
+   */
+  | { readonly kind: "declared-by-owner-process"; readonly reclaimer: VramReclaimerId }
+  /** **KHÔNG lệnh thu hồi nào** với tới hộ này từ đây. `why` = mã từ chối THẬT của lệnh. */
+  | { readonly kind: "no-reclaimer"; readonly why: VramAgentNoReclaimWhy };
+
+/** Lấy thẳng từ kiểu của `preemptStepForOwner()` — **không** một danh sách chép tay thứ hai. */
+export type VramAgentNoReclaimWhy = Extract<VramPreemptOwnerPlan, { kind: "refused" }>["reason"];
 
 /**
  * Một hộ đang giữ chỗ **TRONG SỔ**. ⚠ Không phải "một tiến trình đang giữ GPU" — xem
@@ -84,31 +118,28 @@ export interface VramAgentHolderView {
   /** `true` ⇔ con số do một THƯỚC đẻ ra; `false` ⇔ **ƯỚC LƯỢNG**. */
   readonly measured: boolean;
   /**
-   * `true` ⇔ **chủ của hộ này ĐÃ KHAI một người thi hành** và hộ đang nhàn rỗi.
+   * ★★★ **BÀN GIAO I-3 + (D) ĐÃ TRẢ (Task 4).** Ô `reclaimable: boolean` **KHÔNG CÒN TỒN TẠI** —
+   * xem `VramAgentHolderReclaim`. Viết lại nó theo kiểu cũ là một lỗi biên dịch, không phải một
+   * dòng chú thích bị bỏ qua.
    *
-   * ══════════════════════════════════════════════════════════════════════════════════════════
-   * 🔴 BÀN GIAO CỨNG CHO TASK 4 (I-3 + (D) của review Task 2) — **MỘT hạng mục, không phải hai.**
-   * ══════════════════════════════════════════════════════════════════════════════════════════
-   * ⚠⚠ Ô `boolean` này **HỨA NHIỀU HƠN DỮ LIỆU** với hộ của ANH EM, và nay đã có mặt lệnh để đo
-   * lời hứa đó: `vram.preempt` chỉ đọc **sổ CỤC BỘ** (`vramBroker.preemptStepForOwner` →
-   * `[...ledger.values()]`), còn `vram.releaseStale` chỉ nhận hàng **đã chứng minh là MA**. ⇒ một hộ
-   * anh em **còn sống + `reclaimable: true`** **KHÔNG lệnh nào chạm được**, và Agent sẽ tiêu một
-   * lượt quyết định để nhận `owner-not-in-local-ledger`. Cùng lỗ hổng với `leaseKey` ngay dưới: nó
-   * chỉ hữu ích khi hàng đó là MA.
-   *
-   * ⇒ **Task 4 phải GIẾT `boolean` này bằng ĐỔI KIỂU**, đúng khuôn Task 1 đã dùng để xoá phạm trù
-   * `"idle"` (làm cho lời khai sai **không viết ra được**), chứ KHÔNG bằng một dòng chú thích:
-   * ```
-   * | { kind: "reclaimable-here";        reclaimer: VramReclaimerId }  // `vram.preempt` với tới
-   * | { kind: "declared-by-owner-process"; reclaimer: VramReclaimerId } // chỉ CHỦ nó thu hồi được
-   * | { kind: "no-reclaimer" }
-   * ```
-   * Cùng phép đổi kiểu đó gánh nốt nửa câu của `retryDeferred` ((D)): *"lệnh nào với tới hộ này từ
-   * CHỖ ĐỨNG hiện tại"* — để Agent không bao giờ tốn một lượt gọi vô ích.
+   * ⚠ Vị từ được HỎI THEO `owner`, đúng như lệnh: `vram.preempt` nhận `owner`, nên câu trả lời ở
+   * đây là **kết quả của chính `preemptStepForOwner(owner)`**, không phải một phép so viết lại.
    */
-  readonly reclaimable: boolean;
+  readonly reclaim: VramAgentHolderReclaim;
   /** `null` = hộ của **CHÍNH tiến trình này**; khác `null` = `${role}:${pid}:${bootMs}` của anh em. */
   readonly processKey: string | null;
+  /**
+   * ★★★ Pha 4 Task 4 — **TTL CỦA GIẤY PHÉP, VÀ NGƯỜI ĐỌC ĐẦU TIÊN CỦA NÓ.**
+   * `null` ⇔ điểm gọi không khai TTL, **hoặc** đây là hộ của anh em (sổ chung không mang ô này).
+   *
+   * ⚠⚠ **KHÔNG CÓ NGƯỜI GẶT THEO TTL trong hệ.** `VRAM_SIDECAR_TTL_MS` → `sidecarTtlMs()` →
+   * `adoptLease({ ttlMs })`, rồi **hết** — không một nhịp nào đọc lại nó. Ô này (và
+   * `ttlExpired`) là **người đọc đầu tiên**: Agent thấy một hộ mồ côi đã quá hạn thì tự ra lệnh
+   * `vram.preempt`. Đừng đọc `ttlExpired: true` thành *"hệ sắp tự dọn"* — sẽ không có ai dọn.
+   */
+  readonly ttlMs: number | null;
+  /** `null` ⇔ không có TTL để so (xem `ttlMs`). `true` ⇔ tuổi giấy phép đã vượt TTL. */
+  readonly ttlExpired: boolean | null;
   /**
    * ★ Pha 4 Task 2 — khoá hàng trong `vram_leases` (`${processKey}#${leaseId}`), tức **đầu vào của
    * lệnh `vram.releaseStale`**. `null` cho hộ CỤC BỘ, và đó KHÔNG phải một ô thiếu: sổ cục bộ là
@@ -246,7 +277,37 @@ export interface VramAgentDeferHostView {
    */
   readonly hostedHere: boolean | null;
   readonly status: VramAgentDeferStatus;
+  /**
+   * ★★★ Pha 4 Task 4 — NỬA SAU CỦA CÙNG MỘT BÀN GIAO ((D) của review Task 2): *"lệnh nào với tới
+   * hộ này từ CHỖ ĐỨNG hiện tại"*. Cùng câu hỏi mà `VramAgentHolderReclaim` trả lời cho hộ giữ
+   * chỗ — nên nó là **MỘT hạng mục**, không phải hai.
+   */
+  readonly retryReach: VramAgentDeferRetryReach;
 }
+
+/**
+ * ★★★ (D) — **`vram.retryDeferred` CÓ VỚI TỚI HỘ NÀY KHÔNG.**
+ *
+ * ⚠⚠ Ở tiến trình `api`, lệnh **luôn** trả `host-not-running-in-this-process` cho `cron:kb-sync`
+ * (cron sống ở `worker`) và `no-retry-mechanism-for-this-host` cho **cả 5 hộ còn lại** — tức
+ * **6/6 hộ vô vọng ở `api`**, và Agent tiêu một lượt gọi cho mỗi hộ để biết. Mặt ĐỌC nói trước, và
+ * nó nói bằng **cùng vị từ** (`kbSyncScheduler.coChuTriCronODay()` qua `hostedHere`) chứ không bằng
+ * một phép so viết lại — nếu không, mặt đọc và lệnh sẽ trôi khỏi nhau đúng như C-1 đã cảnh báo.
+ * ⚠ `unknown` là một phạm trù RIÊNG: ô trạng thái cron đọc không được ⇒ ta **không biết**, và
+ * `false` ở đây sẽ là một lời khẳng định không có dữ liệu đỡ.
+ */
+export type VramAgentDeferRetryReach =
+  | { readonly kind: "reachable-here" }
+  | { readonly kind: "unreachable"; readonly why: VramDeferRetryUnreachable }
+  | { readonly kind: "unknown"; readonly why: "defer-state-unreadable" };
+
+/**
+ * Hai mã DÙNG CHUNG với `VramRetryDeferredCommandReason` (`vramCommands.ts` nhập lại **chính kiểu
+ * này**) — một định nghĩa, hai mặt. Cả hai đã có bản dịch trong không gian `errors.reason.*`.
+ */
+export type VramDeferRetryUnreachable =
+  | "no-retry-mechanism-for-this-host"
+  | "host-not-running-in-this-process";
 
 /** Khối hoãn — mang **PHẠM VI** của chính nó, không để người đọc tự đoán. */
 export interface VramAgentDeferView {
@@ -590,6 +651,18 @@ function docSauHo(kb: KbSyncStatus | null): VramAgentDeferHostView[] {
       mechanism: Number.isFinite(budgetMs) && budgetMs > 0 ? "waits-and-retries" : "no-wait-degrades-in-place",
       hostedHere,
       status,
+      /**
+       * ★★★ (D) — cùng ba nhánh mà `vramRetryDeferredCommand()` đi, đọc từ **cùng** ô `hostedHere`
+       * (⇐ `coChuTriCronODay()`). Không một phép so nào được viết lại ở đây.
+       */
+      retryReach:
+        h.matches !== null
+          ? { kind: "unreachable", why: "no-retry-mechanism-for-this-host" }
+          : hostedHere === null
+            ? { kind: "unknown", why: "defer-state-unreadable" }
+            : hostedHere
+              ? { kind: "reachable-here" }
+              : { kind: "unreachable", why: "host-not-running-in-this-process" },
     };
   });
 }
@@ -699,28 +772,63 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
         }
       : { known: true, bytes: aBytes };
 
-  const ho = (
-    h: {
-      owner: string;
-      kind: string;
-      bytes: number;
-      priority: VramPriority;
-      measured: boolean;
-      reclaimable: boolean;
-      processKey: string | null;
-    },
-    /** ★ Task 2 — `null` cho hộ CỤC BỘ (xem `VramAgentHolderView.leaseKey`). */
-    leaseKey: string | null,
-  ): VramAgentHolderView => ({
-    owner: h.owner,
-    kind: h.kind,
-    bytes: h.bytes,
-    priority: h.priority,
-    measured: h.measured,
-    reclaimable: h.reclaimable,
-    processKey: h.processKey,
-    leaseKey,
-  });
+  /**
+   * ★★★ Task 4 — hộ CỤC BỘ. `reclaim` là **kết quả của chính `preemptStepForOwner(owner)`**, tức
+   * hàm mà lệnh `vram.preempt` chạy: không có bản sao thứ hai của vị từ, và hai mặt không thể trôi
+   * khỏi nhau. ⚠ Hai giấy phép cùng `owner` ⇒ **một** câu trả lời (đúng như lệnh, thứ cũng nhận
+   * `owner` chứ không nhận `leaseId`).
+   */
+  const hoCucBo = (h: VramLedgerHolderView): VramAgentHolderView => {
+    const ke = broker.preemptStepForOwner(h.owner);
+    const reclaim: VramAgentHolderReclaim =
+      ke.kind === "ready"
+        ? { kind: "reclaimable-here", reclaimer: ke.step.reclaimer }
+        : { kind: "no-reclaimer", why: ke.reason };
+    return {
+      owner: h.owner,
+      kind: h.kind,
+      bytes: h.bytes,
+      priority: h.priority,
+      measured: h.measured,
+      reclaim,
+      processKey: h.processKey,
+      leaseKey: null,
+      ttlMs: h.ttlMs,
+      /**
+       * ⚠ Tuổi tính bằng **`atMs` của CHÍNH ảnh chụp này**, không phải một `Date.now()` thứ hai —
+       * hai vế của một phép so phải đến từ cùng một lượt đọc (bài học C-1 + I-2 của review Task 2).
+       * ⚠ CHIỀU CHẶT: TTL/mốc không hữu hạn ⇒ `null` (KHÔNG BIẾT), tuyệt đối không phải `false`.
+       */
+      ttlExpired:
+        h.ttlMs === null || !Number.isFinite(h.acquiredAtMs) ? null : atMs - h.acquiredAtMs > h.ttlMs,
+    };
+  };
+
+  /**
+   * ★★★ Task 4 — hộ của **ANH EM**. `reclaim` đi qua **cùng** `nguoiThiHanhThuHoiTu()` mà
+   * `holderFactFromSharedRow()` dùng (một bản cài đặt, hai người gọi) — và kết quả `true` được gán
+   * nhãn `declared-by-owner-process`, KHÔNG phải `reclaimable-here`: lệnh của ta **không với tới**.
+   * ⚠ Sổ chung không mang `ttlMs` ⇒ hai ô TTL là `null` = **KHÔNG BIẾT**, không phải "không có TTL".
+   */
+  const hoAnhEm = (r: SharedLeaseRow): VramAgentHolderView => {
+    const f = broker.holderFactFromSharedRow(r);
+    const nguoi = broker.nguoiThiHanhThuHoiTu(r.reclaimer, r.refCount);
+    return {
+      owner: f.owner,
+      kind: f.kind,
+      bytes: f.bytes,
+      priority: f.priority,
+      measured: f.measured,
+      reclaim:
+        nguoi === null
+          ? { kind: "no-reclaimer", why: "owner-not-in-local-ledger" }
+          : { kind: "declared-by-owner-process", reclaimer: nguoi },
+      processKey: f.processKey,
+      leaseKey: r.leaseKey,
+      ttlMs: null,
+      ttlExpired: null,
+    };
+  };
 
   const foreign: VramAgentForeignLedger =
     shared === null
@@ -728,7 +836,7 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
       : {
           known: true,
           bytes: shared.foreignBytes,
-          holders: shared.foreignHolders.map((r) => ho(broker.holderFactFromSharedRow(r), r.leaseKey)),
+          holders: shared.foreignHolders.map(hoAnhEm),
           ageMs: shared.ageMs,
           // ⚠ Cùng ngưỡng mà `applyEnforcement()` dùng — không có ngưỡng thứ hai ở mặt đọc.
           stale: !Number.isFinite(shared.ageMs) || shared.ageMs > SHARED_LEDGER_STALE_AFTER_MS,
@@ -759,7 +867,7 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
     processKey: sharedLedgerSelfKey(),
     ledger: {
       localBytes: st.localLedgerBytes,
-      localHolders: broker.ledgerHolders().map((h) => ho(h, null)),
+      localHolders: broker.ledgerHolders().map(hoCucBo),
       foreign,
       totalBytes: st.ledgerTotalBytes,
       sharedRefreshIntervalMs,

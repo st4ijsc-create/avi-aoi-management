@@ -266,6 +266,42 @@ function coThiHanhThuHoi(l: VramLease): boolean {
 }
 
 /**
+ * ★★★ Pha 4 Task 4 — **HỘ CỤC BỘ + HAI Ô CHỈ SỔ SỐNG MỚI CÓ.** Mở rộng `VramHolderFact` (thêm ô,
+ * KHÔNG đổi ô nào) nên mọi người tiêu thụ cũ biên dịch y nguyên.
+ *
+ * ⚠ VÌ SAO `ttlMs` PHẢI LÊN TỚI ĐÂY: `VRAM_SIDECAR_TTL_MS` → `sidecarTtlMs()` →
+ * `adoptLease({ ttlMs })` — và tới Pha 3 **KHÔNG một dòng nào ĐỌC lại `request.ttlMs`**. Câu ở
+ * `types.VramReserveRequest.ttlMs` (*"thiếu nhịp quá hạn thì reconciler xác minh rồi thu hồi"*) là
+ * một lời hứa **chưa ai giữ**: không có người gặt theo TTL. ⇒ Ô này lên mặt đọc để **AI Agent** trở
+ * thành người gặt (đọc `ttlExpired` rồi ra lệnh `vram.preempt`), và câu chữ **không được** nói là
+ * hệ tự thu hồi. Đây là "đồng hồ" thứ sáu của bảng Pha 4, và đây là cái kim của nó.
+ */
+export interface VramLedgerHolderView extends VramHolderFact {
+  /** `request.ttlMs` NGUYÊN VĂN. `null` ⇔ điểm gọi không khai TTL (mọi hộ trừ hộ nhận nuôi). */
+  readonly ttlMs: number | null;
+  /**
+   * Mốc `acquiredAt` (ms epoch) — **một SỰ THẬT, không phải một khoảng thời gian**.
+   * ⚠ CỐ Ý không phải `ageMs`: một tuổi tính tại đây sẽ đọc `Date.now()` **lần thứ hai** so với
+   * `atMs` của ảnh chụp (`vramReadModel`), tức hai vế của một phép so đến từ hai lượt đọc — đúng
+   * lớp lỗi đã vá ba lần trong chuỗi pha này. Người tiêu thụ trừ bằng **đồng hồ của chính nó**.
+   */
+  readonly acquiredAtMs: number;
+}
+
+/**
+ * ★ MỘT phép dịch giấy phép → hộ + hai ô chỉ sổ SỐNG mới có. `ledgerHolders()` và
+ * `preemptCandidates()` **đều** đi qua đây, nên bất biến I-4b (*"hai nơi tiêu thụ khai CÙNG một sự
+ * thật cho cùng một giấy phép"* — `refusal.test.ts`) vẫn đúng **theo cấu trúc**.
+ */
+function holderViewFromLease(l: VramLease): VramLedgerHolderView {
+  return {
+    ...holderFactFromLease(l),
+    ttlMs: typeof l.request.ttlMs === "number" && Number.isFinite(l.request.ttlMs) ? l.request.ttlMs : null,
+    acquiredAtMs: l.acquiredAt.getTime(),
+  };
+}
+
+/**
  * ★ Pha 2B Task 4 — "AI ĐANG GIỮ GÌ" (§5.3, vế thứ ba của bốn).
  *
  * ⚠⚠ PHẠM VI CHÍNH XÁC, và đây là chỗ dễ nói quá nhất trong cả task: hàm này trả về **những hộ
@@ -275,8 +311,8 @@ function coThiHanhThuHoi(l: VramLease): boolean {
  *
  * `measured` khai con số là SỐ ĐO hay ƯỚC LƯỢNG — xem `holderFactFromLease()`.
  */
-export function ledgerHolders(): VramHolderFact[] {
-  return [...ledger.values()].map(holderFactFromLease);
+export function ledgerHolders(): VramLedgerHolderView[] {
+  return [...ledger.values()].map(holderViewFromLease);
 }
 
 /**
@@ -358,8 +394,9 @@ export function preemptCandidates(
    * dừng RIÊNG. Danh sách chỉ dừng khi CẢ HAI điều kiện đã đủ.
    */
   slotsNeeded = 0,
-): VramHolderFact[] {
-  return duyetTheoNhuCau(priority, deficitBytes, slotsNeeded, holderFactFromLease);
+): VramLedgerHolderView[] {
+  // ⚠ CÙNG `holderViewFromLease` mà `ledgerHolders()` dùng — không một phép dịch thứ hai (I-4).
+  return duyetTheoNhuCau(priority, deficitBytes, slotsNeeded, holderViewFromLease);
 }
 
 /**

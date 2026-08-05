@@ -146,6 +146,7 @@ describe("C-2 — cổng VÉT CẠN theo union thật: mọi literal của vramC
           reason,
           owner: "gguf-model:x",
           detail: null,
+          detailTruncated: false,
           freedBytes: 0,
         }),
     ]),
@@ -212,10 +213,10 @@ describe("C-2 — cổng VÉT CẠN theo union thật: mọi literal của vramC
   it("outcome-level: reclaimed/failed(base)/retry-armed có bản dịch riêng, không tiếng vọng", async () => {
     await i18n.changeLanguage("vi");
     expect(
-      translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: "x", detail: null, freedBytes: 100 }),
+      translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: "x", detail: null, detailTruncated: false, freedBytes: 100 }),
     ).not.toBe("reclaimed");
     expect(
-      translateVramPreemptCommand({ outcome: "failed", reason: null, owner: "x", detail: null, freedBytes: 0 }),
+      translateVramPreemptCommand({ outcome: "failed", reason: null, owner: "x", detail: null, detailTruncated: false, freedBytes: 0 }),
     ).not.toBe("failed");
     expect(
       translateVramRetryDeferredCommand({ outcome: "retry-armed", reason: null, owner: "x", host: "cron:kb-sync" }),
@@ -289,6 +290,7 @@ describe("nội dung PHẢI mang chỉ dẫn hành động, không chỉ dịch 
       reason: "owner-not-in-local-ledger",
       owner: "gguf-model:qwen3-30b",
       detail: null,
+      detailTruncated: false,
       freedBytes: 0,
     });
     expect(out).not.toBe("chủ sở hữu không có trong sổ cục bộ");
@@ -304,6 +306,7 @@ describe("nội dung PHẢI mang chỉ dẫn hành động, không chỉ dịch 
       reason: "owner-not-in-local-ledger",
       owner: "gguf-model:qwen3-30b",
       detail: null,
+      detailTruncated: false,
       freedBytes: 0,
     });
     expect(out).toContain("another process");
@@ -317,6 +320,7 @@ describe("nội dung PHẢI mang chỉ dẫn hành động, không chỉ dịch 
       reason: "production-never-preempted",
       owner: "aoi:line1",
       detail: null,
+      detailTruncated: false,
       freedBytes: 0,
     });
     expect(out).toContain("§5.2");
@@ -371,12 +375,13 @@ describe("nội dung PHẢI mang chỉ dẫn hành động, không chỉ dịch 
 
   it("★ M-3 (review vòng 1) — reclaimed: freedBytes=0 chọn khoá RIÊNG (đua cấp phát); freedBytes>0 KHÔNG dán lời cảnh báo đó", async () => {
     await i18n.changeLanguage("vi");
-    const zero = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: "gguf-model:x", detail: null, freedBytes: 0 });
+    const zero = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: "gguf-model:x", detail: null, detailTruncated: false, freedBytes: 0 });
     const nonzero = translateVramPreemptCommand({
       outcome: "reclaimed",
       reason: null,
       owner: "gguf-model:x",
       detail: null,
+      detailTruncated: false,
       freedBytes: 17_000,
     });
     // Cả hai PHẢI nêu bằng chứng thật (leaseLeftLedger), không phải freedBytes — đúng bàn giao C-1
@@ -519,13 +524,13 @@ describe("C-1 + I-1 — tích Descartes: mọi trường nullable × outcome kh�
 describe("N-2 — 4 khoá phòng thủ (M-4) PHẢI được kiểm placeholder, không chỉ khai 'tồn tại để làm lưới'", () => {
   it("preempt outcome=refused, reason=null ⇒ không placeholder thô (khoá VRAM_CMD_PREEMPT_REFUSED, chưa từng render)", async () => {
     await i18n.changeLanguage("vi");
-    const out = translateVramPreemptCommand({ outcome: "refused", reason: null, owner: "x", detail: null, freedBytes: 0 });
+    const out = translateVramPreemptCommand({ outcome: "refused", reason: null, owner: "x", detail: null, detailTruncated: false, freedBytes: 0 });
     expect(hasUnresolvedPlaceholder(out), out).toBe(false);
   });
 
   it("preempt outcome=failed, reason=null ⇒ không placeholder thô (khoá VRAM_CMD_PREEMPT_FAILED, trước chỉ kiểm .not.toBe)", async () => {
     await i18n.changeLanguage("vi");
-    const out = translateVramPreemptCommand({ outcome: "failed", reason: null, owner: "x", detail: null, freedBytes: 0 });
+    const out = translateVramPreemptCommand({ outcome: "failed", reason: null, owner: "x", detail: null, detailTruncated: false, freedBytes: 0 });
     expect(hasUnresolvedPlaceholder(out), out).toBe(false);
   });
 
@@ -584,7 +589,7 @@ describe("bề mặt bẩn thật — owner/leaseKey/host/detail không được
     it(`${name} — ở owner (preempt) ⇒ ở lại dạng CHỮ, câu vẫn dịch được`, { timeout: 5000 }, async () => {
       assertInert(raw);
       await i18n.changeLanguage("vi");
-      const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: raw, detail: null, freedBytes: 1 });
+      const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: raw, detail: null, detailTruncated: false, freedBytes: 1 });
       expect(out).not.toMatch(/[{}$]/);
       expect(hasUnresolvedPlaceholder(out)).toBe(false);
       expect(out).toContain(residue);
@@ -628,6 +633,7 @@ describe("bề mặt bẩn thật — owner/leaseKey/host/detail không được
         reason: "reclaimer-threw",
         owner: "gguf-model:x",
         detail: raw,
+        detailTruncated: false,
         freedBytes: 0,
       });
       expect(out).not.toMatch(/[{}$]/);
@@ -639,7 +645,7 @@ describe("bề mặt bẩn thật — owner/leaseKey/host/detail không được
   it("★ ràng buộc 3 — owner KHÔNG bị cắt ngắn (chỉ làm sạch {}$, không đụng độ dài)", async () => {
     await i18n.changeLanguage("vi");
     const longOwner = `gguf-model:${"x".repeat(500)}`;
-    const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: longOwner, detail: null, freedBytes: 1 });
+    const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: longOwner, detail: null, detailTruncated: false, freedBytes: 1 });
     expect(out).toContain(longOwner);
   });
 
@@ -652,6 +658,7 @@ describe("bề mặt bẩn thật — owner/leaseKey/host/detail không được
       reason: "$t(errors.generic)",
       owner: "gguf-model:x",
       detail: null,
+      detailTruncated: false,
       freedBytes: 0,
     });
     expect(out).not.toMatch(/[{}$]/);
@@ -692,7 +699,7 @@ describe("I-2 — nấc fallback của translateAppError không phát tán cú p
 
   it("(tiền đề) gỡ bundle THẬT SỰ ép translateAppError rơi về fallback — kiểm bằng một khoá KHÔNG bẩn trước", async () => {
     await withMissingViBundle(() => {
-      const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: "clean-owner", detail: null, freedBytes: 1 });
+      const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: "clean-owner", detail: null, detailTruncated: false, freedBytes: 1 });
       // Không còn bundle ⇒ câu KHÔNG THỂ là bản dịch thật (thiếu "leaseLeftLedger: true" — cụm chỉ
       // xuất hiện trong khuôn i18n đã dịch, không xuất hiện trong fallback `${outcome}: ${owner}`).
       expect(out).not.toContain("leaseLeftLedger");
@@ -703,7 +710,7 @@ describe("I-2 — nấc fallback của translateAppError không phát tán cú p
   it("owner bẩn ở nấc fallback (preempt) ⇒ vẫn ở lại dạng CHỮ, không còn [{}$]", async () => {
     await withMissingViBundle(() => {
       const dirty = "$$t(t(errors.VRAM_CMD_PREEMPT_RECLAIMED)";
-      const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: dirty, detail: null, freedBytes: 1 });
+      const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: dirty, detail: null, detailTruncated: false, freedBytes: 1 });
       expect(out).not.toMatch(/[{}$]/);
       expect(out).toContain("errors.VRAM_CMD_PREEMPT_RECLAIMED");
     });
@@ -835,5 +842,129 @@ describe("cổng (i) — không câu chữ viết tay ghép outcome + reason/row
       console.error(`[cổng (i) — không câu chữ viết tay] ${violations.length} chỗ:\n` + violations.join("\n"));
     }
     expect(violations).toEqual([]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ CỔNG (ii) (bàn giao Task 3 review vòng 2, §5 mục 2 — CÀI Ở TASK 4)
+//
+// *"Mỗi 1 trong 8 tên hàm `translateVram*` phải xuất hiện ≥ 1 lần trong kết quả (call-site THẬT,
+// không phải định nghĩa)."* — Task 3 hoãn CÓ CHỦ ĐÍCH vì nó đỏ NGAY hôm đó theo cấu trúc (chưa có
+// consumer nào); Task 4 nối `VramBrokerPanel` (⇐ `AIBrainDashboard`) và cài cổng.
+//
+// ⚠ NGUYÊN VĂN lệnh của brief (dịch sang quét tĩnh, cùng phạm vi/loại trừ, không nới một chữ nào):
+//   grep -E "translateVram(Preempt|ReleaseStale|RetryDeferred)Command|translateVram(Scope|HostedHere|HolderListIsLowerBound|EstimateUsable|NonFiniteFields)" \
+//     -r client/src --include="*.ts" --include="*.tsx" | grep -v "\.test\.ts" | grep -v "client/src/lib/errorCodes.ts"
+//
+// ⚠⚠ VÌ SAO LOẠI `errorCodes.ts`: đó là nơi ĐỊNH NGHĨA. Đếm nó là đếm chính cái đồng hồ rồi tuyên bố
+// nó có kim — đúng thứ cả Task 4 tồn tại để chặn.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("cổng (ii) — mỗi hàm `translateVram*` có ≥1 CALL-SITE SẢN PHẨM trong client/src", () => {
+  const TEST_FILE_DIR = fileURLToPath(new URL(".", import.meta.url)); // .../client/src/lib
+  const CLIENT_SRC = join(TEST_FILE_DIR, "..");
+  /** `grep -v "client/src/lib/errorCodes.ts"` — nơi ĐỊNH NGHĨA, không phải người tiêu thụ. */
+  const EXCLUDED = new Set([join(TEST_FILE_DIR, "errorCodes.ts")]);
+
+  const TAM_HAM = [
+    "translateVramPreemptCommand",
+    "translateVramReleaseStaleCommand",
+    "translateVramRetryDeferredCommand",
+    "translateVramScope",
+    "translateVramHostedHere",
+    "translateVramHolderListIsLowerBound",
+    "translateVramEstimateUsable",
+    "translateVramNonFiniteFields",
+  ] as const;
+
+  function walkClientFiles(dir: string, out: string[] = []): string[] {
+    for (const name of readdirSync(dir)) {
+      if (name === "node_modules" || name.startsWith(".")) continue;
+      const full = join(dir, name);
+      if (statSync(full).isDirectory()) {
+        walkClientFiles(full, out);
+        continue;
+      }
+      // `--include="*.ts" --include="*.tsx"` + `grep -v "\.test\.ts"` (kể cả `.test.tsx`).
+      if (/\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name) && !EXCLUDED.has(full)) out.push(full);
+    }
+    return out;
+  }
+
+  it("★★★ cả 8/8 hàm có call-site THẬT (không phải định nghĩa, không phải file test)", () => {
+    const files = walkClientFiles(CLIENT_SRC);
+    const thieu: string[] = [];
+    const thay: Record<string, string[]> = {};
+    for (const ten of TAM_HAM) {
+      // `<tên>(` = LỜI GỌI. `import { <tên> }` một mình KHÔNG tính — sự hiện diện không phải đường đi.
+      const re = new RegExp(`\\b${ten}\\s*\\(`);
+      const hits = files.filter((f) => re.test(readFileSync(f, "utf8"))).map((f) => f.replace(CLIENT_SRC, ""));
+      thay[ten] = hits;
+      if (hits.length === 0) thieu.push(ten);
+    }
+    if (thieu.length > 0) {
+      console.error(
+        `[cổng (ii)] ${thieu.length}/8 hàm dịch KHÔNG có call-site sản phẩm — chúng là đồng hồ không kim:\n` +
+          thieu.join("\n") +
+          `\n(đã tìm thấy: ${JSON.stringify(thay)})`,
+      );
+    }
+    expect(thieu).toEqual([]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ M-5 NỬA SAU — câu ghép PHẢI nói ra rằng `detail` đã bị cắt, và nó ĐỌC cờ chứ không ĐO
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("M-5 nửa sau — `detailTruncated` là ô ĐỌC, không phải một phép đo thứ hai", () => {
+  it("★★★ `detailTruncated: true` ⇒ câu NÓI RA rằng phần còn lại đã mất", async () => {
+    await i18n.changeLanguage("vi");
+    const out = translateVramPreemptCommand({
+      outcome: "failed",
+      reason: "reclaimer-threw",
+      owner: "sidecar:vision",
+      detail: "Z".repeat(400),
+      detailTruncated: true,
+      freedBytes: 0,
+    });
+    expect(out).toContain("CẮT");
+    expect(hasUnresolvedPlaceholder(out)).toBe(false);
+  });
+
+  it("★★★ CÙNG `detail` dài 400 nhưng cờ `false` ⇒ KHÔNG dán mẩu chữ đó — chứng minh câu ĐỌC cờ, không đo độ dài", async () => {
+    await i18n.changeLanguage("vi");
+    const chung = {
+      outcome: "failed",
+      reason: "reclaimer-threw",
+      owner: "sidecar:vision",
+      detail: "Z".repeat(400),
+      freedBytes: 0,
+    } as const;
+    const catRoi = translateVramPreemptCommand({ ...chung, detailTruncated: true });
+    const chuaCat = translateVramPreemptCommand({ ...chung, detailTruncated: false });
+    // Nếu ai thay ô này bằng `r.detail.length === 400` thì HAI câu này bằng nhau ⇒ ca ĐỎ.
+    expect(catRoi).not.toBe(chuaCat);
+    expect(chuaCat).not.toContain("CẮT");
+  });
+
+  it("mẩu chữ đó có bản dịch THẬT ở cả ba locale (không rơi về fallback tiếng Anh)", () => {
+    for (const locale of LOCALES) {
+      expect(
+        i18n.exists("errors.VRAM_CMD_PREEMPT_DETAIL_TRUNCATED", { lng: locale }),
+        `${locale} thiếu khoá cắt-câu`,
+      ).toBe(true);
+    }
+  });
+
+  it("★ `detail: null` ⇒ không mẩu chữ nào, kể cả khi cờ bật (không có câu thì không có gì bị cắt)", async () => {
+    await i18n.changeLanguage("vi");
+    const out = translateVramPreemptCommand({
+      outcome: "reclaimed",
+      reason: null,
+      owner: "x",
+      detail: null,
+      detailTruncated: true,
+      freedBytes: 1,
+    });
+    expect(out).not.toContain("CẮT");
   });
 });

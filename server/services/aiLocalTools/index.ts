@@ -23,6 +23,10 @@ import "./readToolsP2d";
 // file write, HITL). Safe adapters + confined workspace; no device, no DB writes.
 import "./readToolsProgramming";
 import "./writeHandlers/programmingFile";
+// Pha 4 Task 4 — VRAM broker state (READ-ONLY). Đây là NGƯỜI ĐỌC THẬT của `buildVramAgentState()`
+// cho AI Agent: Agent repo này đi qua toolRegistry, KHÔNG qua tRPC. Ba lệnh phá huỷ CỐ Ý không
+// đăng ký ở đây — xem khối đầu `vramTools.ts`.
+import "./vramTools";
 import { classifyToolIntent, classifyToolIntentLLM, type ToolContext } from "./intentClassifier";
 import { getTool, isWriteTool, isClientTool, listTools, type ClientActionDirective, type Tool, type ToolExecContext } from "./toolRegistry";
 import type { ToolResult } from "./toolRegistry";

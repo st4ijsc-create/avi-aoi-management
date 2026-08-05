@@ -17,6 +17,7 @@ import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import { ClassifierHealthBanner } from "@/components/ai/ClassifierHealthBanner";
+import { VramBrokerPanel } from "@/components/ai/VramBrokerPanel";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -79,7 +80,7 @@ const TIERS = [
   { n: 4, icon: UserCheck, label: "Tier 4 · Human / HITL", desc: "Hành động ghi, độ tin cậy thấp → người duyệt", bar: "bg-amber-500", text: "text-amber-500", bg: "bg-amber-500/10" },
 ] as const;
 
-function fmtGB(bytes?: number): string {
+function fmtGB(bytes?: number | null): string {
   if (!bytes || bytes <= 0) return "—";
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
@@ -138,15 +139,31 @@ export default function AIBrainDashboard() {
     onError: (err: any) => toast.error(t("aiBrain.killSwitch.untripError", "Không thể untrip công tắc."), { description: mapTrpcError(err) }),
   });
 
+  /**
+   * ★★★ Pha 4 Task 4 — **THẺ VRAM ĐỔI NGUỒN: `aiGguf.health.vram` → `vram.state` (qua BROKER).**
+   *
+   * ⚠⚠ Trước bản này thẻ VRAM in `getVramState()` THÔ của `node-llama-cpp` — một con số **không đi
+   * qua** trần/sổ/`computeHeadroom`/`applyEnforcement`, tức KHÔNG phải con số đang TỪ CHỐI các lượt
+   * xin. Hai đồng hồ nói hai số cho cùng một câu hỏi là lớp lỗi "hai bản sao vị từ" (review Task 1
+   * gọi tên đích danh dòng này). Nay: **một đồng hồ**, và nó là đồng hồ đang cưỡng chế.
+   * ⚠ `effectiveBytes`/`ceilingBytes` có thể `null` (không hữu hạn ⇒ bị chặn CÓ TÊN ở
+   * `nonFiniteFields`) — KHÔNG `?? 0`: một số 0 bịa ra ở đây là "còn 0 MiB", một lời khẳng định.
+   */
+  const vramState = trpc.vram.state.useQuery(undefined, { ...polling });
   const stats = router.data;
   const total = stats?.total ?? 0;
   const byTier = stats?.byTier ?? {};
   const h = health.data;
-  const vram = h?.vram ?? null;
-  const vramPct = vram && vram.total > 0 ? Math.min(100, (vram.used / vram.total) * 100) : 0;
+  const vb = vramState.data;
+  const vramCeiling = vb?.headroom.ceilingBytes ?? null;
+  const vramUsed = vb?.headroom.usedBytes ?? null;
+  const vramPct =
+    vramCeiling !== null && vramUsed !== null && vramCeiling > 0
+      ? Math.min(100, (vramUsed / vramCeiling) * 100)
+      : 0;
 
   const gw = gateway.data;
-  const refreshAll = () => { router.refetch(); health.refetch(); gateway.refetch(); if (isOpsRole) opsSessions.refetch(); killSwitch.refetch(); };
+  const refreshAll = () => { router.refetch(); health.refetch(); gateway.refetch(); vramState.refetch(); if (isOpsRole) opsSessions.refetch(); killSwitch.refetch(); };
 
   const handleTrip = () => {
     const reason = tripReason.trim();
@@ -208,12 +225,14 @@ export default function AIBrainDashboard() {
               <CardDescription className="flex items-center gap-1.5"><Gauge className="h-3.5 w-3.5" />VRAM</CardDescription>
             </CardHeader>
             <CardContent>
-              {health.isLoading ? <Skeleton className="h-6 w-24" /> : vram ? (
+              {vramState.isLoading ? <Skeleton className="h-6 w-24" /> : vb ? (
                 <>
-                  <div className="text-lg font-semibold">{fmtGB(vram.used)} <span className="text-sm text-muted-foreground font-normal">/ {fmtGB(vram.total)}</span></div>
+                  <div className="text-lg font-semibold">{fmtGB(vramUsed)} <span className="text-sm text-muted-foreground font-normal">/ {fmtGB(vramCeiling)}</span></div>
                   <div className="mt-2 h-2 w-full rounded-full bg-muted overflow-hidden">
                     <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${vramPct}%` }} />
                   </div>
+                  {/* ⚠ Con số trên là TRẦN DÙNG ĐƯỢC của broker, không phải dung lượng card — nói ra. */}
+                  <div className="text-xs text-muted-foreground mt-1">{t("aiBrain.vramBrokerSource", "theo broker (số đang cưỡng chế)")}</div>
                 </>
               ) : <div className="text-sm text-muted-foreground">{t("aiBrain.noVram", "CPU / không có VRAM")}</div>}
             </CardContent>
@@ -249,6 +268,13 @@ export default function AIBrainDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/*
+          ★★★ Pha 4 Task 4 — panel VRAM đọc từ BROKER (mặt đọc Task 1 + ba lệnh Task 2 + câu chữ
+          Task 3). Đây là người đọc thật thứ hai của `buildVramAgentState()` (thứ nhất là
+          `aiLocalTools/vramTools.ts`), và là chỗ tám hàm `translateVram*` có call-site sản phẩm.
+        */}
+        <VramBrokerPanel canCommand={isOpsRole} polling={polling} />
 
         {/* Cognitive Escalation Ladder */}
         <Card>

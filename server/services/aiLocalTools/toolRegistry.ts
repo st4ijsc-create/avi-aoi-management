@@ -61,7 +61,9 @@ export type ToolResultType =
   | "routing_steps"
   // ── doc 56 Đ6 — device-standardization persona tools (process + drift + SPC + fleet) ──
   | "device_health"
-  | "fleet_process_summary";
+  | "fleet_process_summary"
+  // ── Pha 4 Task 4 (VRAM) — ảnh chụp trạng thái bộ điều phối VRAM cho AI Agent ──
+  | "vram_state";
 
 export interface ToolResult<T = unknown> {
   type: ToolResultType;
