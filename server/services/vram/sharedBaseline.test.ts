@@ -91,11 +91,16 @@ let bang: BangDungChung;
 const DESK: Holder[] = [{ pid: 7824, name: "C:\\Windows\\explorer.exe" }];
 const ANH_EM: Holder = { pid: 4711, name: "C:\\Program Files\\nodejs\\node.exe" };
 
+const TAN_DU: Holder = { pid: 31337, name: "D:\\tools\\llama.cpp\\llama-server.exe" };
+
 function censusSach() {
   return { holders: [...DESK], ours: [], peers: [], orphans: [], thirdParty: [...DESK] };
 }
 function censusCoAnhEm() {
   return { holders: [ANH_EM, ...DESK], ours: [], peers: [ANH_EM], orphans: [], thirdParty: [...DESK] };
+}
+function censusCoTanDu() {
+  return { holders: [TAN_DU, ...DESK], ours: [], peers: [], orphans: [TAN_DU], thirdParty: [...DESK] };
 }
 
 /**
@@ -155,7 +160,7 @@ describe("B. HAI VẾ TRONG MỘT LƯỢT — nền KHÔNG nuốt byte anh em, s
     // ── Tiến trình A: giữ 17.000 MiB và CÔNG BỐ ────────────────────────────────────────────
     const a = reserve(xin("gguf:30B@A", KHOI_30B), ctxTrong());
     expect(a.lease, "A phải được cấp trên card trống").not.toBeNull();
-    commit(a.lease!.id, KHOI_30B);
+    commit(a.lease!, KHOI_30B);
     await syncSharedLedger();
 
     // ── Tiến trình B: sổ CỤC BỘ rỗng, thiết bị đang có CẢ desktop LẪN khối của A ───────────
@@ -198,7 +203,7 @@ describe("B. HAI VẾ TRONG MỘT LƯỢT — nền KHÔNG nuốt byte anh em, s
     void banSaoCuaB;
     chuyenTienTrinh("worker:1001:boot-a");
     const a = reserve(xin("gguf:30B@A", KHOI_30B), ctxTrong());
-    commit(a.lease!.id, KHOI_30B);
+    commit(a.lease!, KHOI_30B);
     await syncSharedLedger();
 
     // B quay lại: thiết bị nay 18.000 MiB, nhưng nền của B vẫn là 1.000 MiB (đúng).
@@ -228,7 +233,7 @@ describe("B. HAI VẾ TRONG MỘT LƯỢT — nền KHÔNG nuốt byte anh em, s
   it("★★ B-5 — sổ chung khai NHIỀU HƠN thiết bị (hàng MA) ⇒ HOÃN chụp nền, KHÔNG chụp một nền ÂM", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const a = reserve(xin("gguf:30B@ma", KHOI_30B), ctxTrong());
-    commit(a.lease!.id, KHOI_30B);
+    commit(a.lease!, KHOI_30B);
     await syncSharedLedger();
 
     chuyenTienTrinh("api:2002:boot-b");
@@ -262,7 +267,7 @@ describe("B. HAI VẾ TRONG MỘT LƯỢT — nền KHÔNG nuốt byte anh em, s
    */
   it("★★★ B-6 — nền đã trừ anh em mà sổ chung KHÔNG đọc được ⇒ KHÔNG so (drift `null`), KHÔNG đổ oan", async () => {
     const a = reserve(xin("gguf:30B@A", KHOI_30B), ctxTrong());
-    commit(a.lease!.id, KHOI_30B);
+    commit(a.lease!, KHOI_30B);
     await syncSharedLedger();
 
     chuyenTienTrinh("api:2002:boot-b");
@@ -361,7 +366,8 @@ describe("C. MỘT NGƯỜI CHỤP — những người khác ĐỌC", () => {
       warnSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n"),
       "phải nói rõ nền đang chụp CỤC BỘ và đã nuốt byte anh em",
     ).toMatch(/SỔ CHUNG CHƯA ĐỌC ĐƯỢC/);
-    // ★ …và cờ xác minh vẫn TẮT vì thấy vai trò anh em (cơ chế Pha 2B giữ nguyên).
+    // ★ …và cờ xác minh TẮT — nay với một cái TÊN, không còn là một khoản phạt mồ côi.
+    expect(r.baselineUnverifiedReasons).toContain("anh-em-tren-card-chua-duoc-tinh");
     expect(r.baselineVerified).toBe(false);
   });
 
@@ -381,7 +387,7 @@ describe("C. MỘT NGƯỜI CHỤP — những người khác ĐỌC", () => {
     const tam = sharedLedgerSelfKey();
     chuyenTienTrinh("worker:1001:boot-a");
     const a = reserve(xin("gguf:30B@A", KHOI_30B), ctxTrong());
-    commit(a.lease!.id, KHOI_30B);
+    commit(a.lease!, KHOI_30B);
     await syncSharedLedger();
     void tam;
 
@@ -495,6 +501,7 @@ describe("D. DUNG SAI CHO BẢN SAO CŨ, và `baselineVerified` là VỊ TỪ D�
     await captureVramBaseline();
     const tuoi = await reconcileOnce();
     expect(tuoi.baselineOrigin).toBe("adopted");
+    expect(tuoi.baselineUnverifiedReasons).toEqual([]);
     expect(tuoi.baselineVerified, "trong dung sai ⇒ giữ nguyên lời khai của người chụp").toBe(true);
 
     // (b) hàng nền cũ hơn dung sai (nhưng CHƯA quá hạn) — "thế giới ngoài" đổi.
@@ -508,6 +515,10 @@ describe("D. DUNG SAI CHO BẢN SAO CŨ, và `baselineVerified` là VỊ TỪ D�
     await captureVramBaseline();
     const cuHon = await reconcileOnce();
     expect(cuHon.baselineOrigin, "vẫn ĐỌC — chưa quá hạn").toBe("adopted");
+    expect(
+      cuHon.baselineUnverifiedReasons,
+      "cơ chế nền chung SUY GIẢM ⇒ phải có TÊN, không được là một khoản phạt mồ côi",
+    ).toEqual(["nen-nhan-nuoi-qua-cu"]);
     expect(cuHon.baselineVerified, "quá dung sai ⇒ HẠ cờ").toBe(false);
     expect(cuHon.baselineUsedBytes, "…nhưng KHÔNG hạ CON SỐ (bỏ số là NỚI dư địa)").toBe(DESKTOP);
   });
@@ -535,27 +546,169 @@ describe("D. DUNG SAI CHO BẢN SAO CŨ, và `baselineVerified` là VỊ TỪ D�
       const r = await reconcileOnce();
       const now = readSharedLedgerReplica()!.atMs;
       const headroom = computeHeadroom({
-        deviceTotalBytes: CEILING,
-        ledgerTotalBytes: r.ledgerTotalBytes,
+        ceilingBytes: CEILING,
+        // Đúng phép cộng của `vramBroker.reserve()`: sổ CỤC BỘ + sổ CHUNG.
+        ledgerTotalBytes: r.ledgerTotalBytes + (r.foreignLedgerBytes ?? 0),
         attributableBytes: r.attributableBytes,
-        tickPresent: true,
-        tickAgeMs: 0,
-        tickFailureStreak: 0,
+        safetyReserveBytes: 0,
         // ★ ĐỌC ĐÚNG Ô MÀ MÃ SẢN XUẤT GỬI ĐI — không tự đặt cờ.
         baselineVerified: r.baselineVerified,
-        safetyReserveBytes: 0,
+        tickPresent: true,
       });
-      return applyEnforcement({
+      /**
+       * ⚠⚠ BẢN ĐẦU CỦA CHÍNH CA NÀY LÀ MỘT **LƯỚI GIẢ**, và nó **lọt vào commit `b625f89d`** rồi
+       * chỉ lộ ra ở lượt QUÉT KIỂU (§ báo cáo): sáu ô đầu vào bị gọi SAI TÊN
+       * (`deviceTotalBytes`/`tickFailureStreak`/`nowMs`) ⇒ `computeHeadroom` trả `"invalid-input"`
+       * ⇒ `headroomBytes = -Infinity` ⇒ **`-Infinity === -Infinity − 1 GiB` là TRUE** ⇒ ca XANH với
+       * MỌI đột biến. `tsconfig.json` LOẠI TRỪ mọi file `*.test.ts` nên `tsc` không hề bắt.
+       * ⇒ Hai dòng dưới là hàng rào: một dư địa **không hữu hạn** KHÔNG BAO GIỜ được coi là một
+       * phép đo, và một đầu vào SAI TÊN phải đỏ ngay tại chỗ thay vì đẻ ra một ca luôn xanh.
+       */
+      expect(headroom.degradedReasons, "đầu vào phải HỢP LỆ — sai tên ô là một lưới GIẢ").not.toContain(
+        "invalid-input",
+      );
+      const eff = applyEnforcement({
         headroom,
+        tickAgeMs: 0,
+        tickConsecutiveFailures: 0,
         unledgered: { bytes: 0, unknownCount: 0 },
         sharedLedger: sharedLedgerFact(now),
-        nowMs: now,
       }).effectiveHeadroomBytes;
+      expect(Number.isFinite(eff), "dư địa hiệu lực phải là một con số HỮU HẠN").toBe(true);
+      return eff;
     }
 
     const tuoi = await duDiaHieuLuc(false);
     const cu = await duDiaHieuLuc(true);
     expect(cu, "cờ hạ ⇒ hệ CHẶT HƠN đúng một đơn vị mất-tin-cậy").toBe(tuoi - distrustUnitBytes());
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+describe("F. `baselineVerified` — THAY vế `peers`, KHÔNG bỏ cờ (quyết định của chủ dự án)", () => {
+  /**
+   * ★★★ BẰNG CHỨNG CỦA CẢ QUYẾT ĐỊNH: **cờ THÔI LÀ HẰNG SỐ `false`.**
+   *
+   * Trước Task 3, vế `peers.length === 0` khiến topo `api`+`worker` **không bao giờ** đạt
+   * `verified: true` ⇒ một cờ luôn tắt kèm **1.024 MiB phạt thường trực** = mất dư địa VÀ mất
+   * thông tin. Lý do của vế đó là *"nền đã NUỐT byte của anh em"* — và chính Task 3 xoá bỏ tình
+   * trạng đó. Ca này khoá điều kiện ĐÚNG: có anh em trên card, **byte của họ đã được tính** ⇒ nền
+   * XÁC MINH ĐƯỢC.
+   */
+  it("★★★ F-1 — anh em trên card + sổ chung KHOẺ ⇒ nền XÁC MINH ĐƯỢC (cờ thôi là hằng số)", async () => {
+    const a = reserve(xin("gguf:30B@A", KHOI_30B), ctxTrong());
+    commit(a.lease!, KHOI_30B);
+    await syncSharedLedger();
+
+    chuyenTienTrinh("api:2002:boot-b");
+    hoGiuGpu = censusCoAnhEm();
+    thietBiUsedBytes = DESKTOP + KHOI_30B;
+    await syncSharedLedger();
+    await captureVramBaseline();
+    const r = await reconcileOnce();
+
+    expect(r.baselineOrigin).toBe("captured");
+    expect(r.baselineUnverifiedReasons, "không còn lý do nào để hạ cờ").toEqual([]);
+    expect(r.baselineVerified, "★ ĐÂY là dòng chứng minh cờ THÔI là hằng số false").toBe(true);
+  });
+
+  /**
+   * ⚠ NỬA CÒN LẠI, và nó là điều kiện của quyết định: **chỉ gỡ vế `peers` KHI cơ chế nền chung
+   * THẬT SỰ ĐANG KHOẺ.** Không ai thắng bầu ⇒ nền ta chụp ĐÃ nuốt byte anh em ⇒ cờ PHẢI tắt.
+   */
+  it("★★★ F-2 — KHÔNG ai thắng bầu (chưa có sổ chung) + anh em trên card ⇒ cờ TẮT, có TÊN lý do", async () => {
+    hoGiuGpu = censusCoAnhEm();
+    thietBiUsedBytes = DESKTOP + KHOI_30B;
+    // KHÔNG một lượt sync nào ⇒ không có cuộc bầu nào.
+    await captureVramBaseline();
+    const r = await reconcileOnce();
+    expect(r.baselineOrigin).toBe("local");
+    expect(r.baselineUnverifiedReasons).toContain("anh-em-tren-card-chua-duoc-tinh");
+    expect(r.baselineVerified).toBe(false);
+  });
+
+  /**
+   * ⚠ Chế độ hỏng TINH VI NHẤT của cả cơ chế: sổ chung **đọc được** nhưng **KHÔNG một hàng nào của
+   * ai khác** trong khi anh em ĐANG ở trên card ⇒ có một tiến trình cấp phát VRAM mà **không công
+   * bố** (ràng buộc M-7 của Task 2: việc công bố bị khoá sau `startVramReconciler()`). Byte của nó
+   * vô hình với mọi phép tính ⇒ cờ PHẢI tắt. Đếm **HÀNG**, không đếm BYTE — một `gguf-backend`
+   * ước lượng **0 byte** vẫn là bằng chứng anh em đang công bố.
+   */
+  it("★★★ F-3 — sổ chung ĐỌC ĐƯỢC nhưng IM (0 hàng của ai khác) + anh em trên card ⇒ cờ TẮT", async () => {
+    chuyenTienTrinh("api:2002:boot-b");
+    hoGiuGpu = censusCoAnhEm();
+    await syncSharedLedger(); // bảng RỖNG — bản sao đọc có thật, nhưng không hàng nào của ai khác
+    expect(readSharedLedgerReplica(), "sổ chung ĐỌC ĐƯỢC").not.toBeNull();
+    expect(readSharedLedgerReplica()!.foreignLeases, "…nhưng IM").toEqual([]);
+
+    await captureVramBaseline();
+    const r = await reconcileOnce();
+    expect(r.baselineOrigin, "sổ chung đọc được ⇒ vẫn là chế độ CHUNG").toBe("captured");
+    expect(r.baselineUnverifiedReasons).toContain("anh-em-tren-card-chua-duoc-tinh");
+    expect(r.baselineVerified).toBe(false);
+  });
+
+  it("★★★ F-4 — TÀN DƯ thật ⇒ cờ TẮT kể cả khi sổ chung KHOẺ (orphan không quy trách nhiệm được)", async () => {
+    const a = reserve(xin("gguf:30B@A", KHOI_30B), ctxTrong());
+    commit(a.lease!, KHOI_30B);
+    await syncSharedLedger();
+
+    chuyenTienTrinh("api:2002:boot-b");
+    hoGiuGpu = censusCoTanDu();
+    thietBiUsedBytes = DESKTOP + KHOI_30B;
+    await syncSharedLedger();
+    await captureVramBaseline();
+    const r = await reconcileOnce();
+
+    expect(r.baselineOrigin).toBe("captured");
+    expect(r.baselineUnverifiedReasons).toContain("co-tan-du-giu-gpu");
+    expect(r.baselineVerified, "sổ chung khoẻ KHÔNG rửa được một tàn dư").toBe(false);
+  });
+
+  /**
+   * ⚠⚠ DÂN SỐ SUÝT BỊ PHẠT OAN, và bản đầu của chính bản vá này đã suýt làm thế: **cài đặt MỘT
+   * TIẾN TRÌNH** (dev, all-in-one, máy không DB) không có anh em nào và cũng không có sổ chung.
+   * Nếu `"khong-co-so-chung"` là một lý do ĐỘC LẬP thì mọi cài đặt như vậy mất 1.024 MiB **mà
+   * không có một khối byte nào chưa được tính**. ⇒ Câu hỏi "byte anh em đã được tính chưa" chỉ
+   * được HỎI khi **CÓ** anh em.
+   */
+  it("★★★ F-5 — MỘT TIẾN TRÌNH (không anh em, không sổ chung) ⇒ nền VẪN XÁC MINH ĐƯỢC", async () => {
+    hoGiuGpu = censusSach();
+    await captureVramBaseline();
+    const r = await reconcileOnce();
+    expect(r.baselineOrigin, "không có sổ chung").toBe("local");
+    expect(r.baselineUnverifiedReasons, "không có gì chưa được tính ⇒ KHÔNG phạt").toEqual([]);
+    expect(r.baselineVerified).toBe(true);
+  });
+
+  it("★★ F-6 — không QUÉT được hộ giữ GPU ⇒ cờ TẮT (không biết ≠ sạch)", async () => {
+    hoGiuGpu = null;
+    await captureVramBaseline();
+    const r = await reconcileOnce();
+    expect(r.baselineUnverifiedReasons).toEqual(["khong-quet-duoc-ho-giu-gpu"]);
+    expect(r.baselineVerified).toBe(false);
+  });
+
+  /**
+   * ⚠ Cờ KHÔNG được là một khoản phạt MỒ CÔI: bật/tắt phải luôn đi kèm danh sách lý do, và hai ô
+   * đó phải KHỚP theo cấu trúc (chúng là MỘT biến, cờ được DẪN XUẤT). Ca này khoá bất biến đó trên
+   * bốn cấu hình khác nhau — một đột biến giữ hai ô song song sẽ làm chúng trôi khỏi nhau.
+   */
+  it("★★ F-7 — `baselineVerified` ⇔ danh sách lý do RỖNG, trên MỌI cấu hình", async () => {
+    const cauHinh: Array<[string, () => void]> = [
+      ["sạch", () => { hoGiuGpu = censusSach(); }],
+      ["anh em", () => { hoGiuGpu = censusCoAnhEm(); }],
+      ["tàn dư", () => { hoGiuGpu = censusCoTanDu(); }],
+      ["không quét được", () => { hoGiuGpu = null; }],
+    ];
+    for (const [ten, dat] of cauHinh) {
+      chuyenTienTrinh("api:2002:boot-b");
+      dat();
+      await captureVramBaseline();
+      const r = await reconcileOnce();
+      expect(r.baselineVerified, `${ten}: cờ phải là hệ quả của danh sách, không phải một ô song song`)
+        .toBe(r.baselineUnverifiedReasons.length === 0);
+    }
   });
 });
 

@@ -486,12 +486,27 @@ function kheGgufConThieu(request: VramReserveRequest): number {
    * (`vramEnforcement` đã xoá `"gguf-slot-cap"` khỏi bảng phụ phí byte), **cửa BYTE KHÔNG cứu được
    * cửa ĐẾM**: 8 model nhỏ vẫn qua cửa byte và vẫn vượt trần đếm gấp đôi.
    *
-   * ⚠ **CỐ Ý CHƯA SỬA**, và lý do không phải "quên": đổi trần ĐẾM từ *mỗi-tiến-trình* sang
-   * *toàn-cụm* là đổi **CHÍNH SÁCH**, không phải vá một lỗi — nó có thể bắt đầu TỪ CHỐI những lượt
-   * nạp hôm nay đang chạy tốt, và nó cần một quyết định (trần cụm bằng bao nhiêu? chia theo vai
-   * trò?). Vật liệu đã sẵn: `SharedLedgerReplica.foreignLeases` mang `leaseKind`, nên phép đếm
-   * xuyên tiến trình là một dòng `filter`. Nơi quyết định: Pha 3 Task 5 / chủ dự án.
-   * ⚠ Cho tới lúc đó, câu đúng khi đọc mã này là: **"trần ĐẾM vẫn là trần MỖI TIẾN TRÌNH"**.
+   * ⚠⚠⚠ **ĐÃ QUYẾT (Pha 3 Task 3, chủ dự án): GIỮ TRẦN *MỖI TIẾN TRÌNH*. KHÔNG ĐỔI HÀNH VI.**
+   * Từ đây, dòng dưới KHÔNG còn là "nợ chưa xử" — nó là **chính sách đang có hiệu lực**, và con số
+   * thật phải đọc to chứ không được viết mơ hồ:
+   *
+   *     số model GGUF thường trú TỐI ĐA trên MỘT card = số_tiến_trình × GGUF_MAX_LOADED_MODELS
+   *
+   * Với topology `api` + `worker` hôm nay và `GGUF_MAX_LOADED_MODELS=4` ⇒ **8 model GGUF thường
+   * trú trên MỘT card**. Cùng câu này nằm ở `.env` cạnh chính biến đó (hai chỗ, cùng con số).
+   *
+   * ⚠⚠ **VÌ SAO CỬA BYTE KHÔNG CỨU ĐƯỢC CỬA ĐẾM** — đây là phần dễ đọc nhầm nhất, nên nói thẳng:
+   * Pha 3 Task 2 nối cửa **BYTE** thành *cục bộ + CHUNG*, và Pha 3 Task 3 nối nốt vế nền, nên về
+   * BYTE hai tiến trình **đã** thấy nhau. Nhưng **Đ4 (KHÔNG TRỘN HAI THƯỚC)** buộc trần ĐẾM phải là
+   * một cửa **ĐỘC LẬP**: nó có lý do riêng (`"gguf-slot-cap"`), và `vramEnforcement.ts` **cố ý xoá**
+   * lý do đó khỏi bảng phụ phí BYTE (xem docstring `DISTRUST_UNITS`) để một lượt từ chối vì hết KHE
+   * không bao giờ in ra một con số byte bịa. ⇒ **8 model NHỎ vẫn qua cửa byte và vẫn vượt trần đếm
+   * gấp đôi.** Hai cổng, hai thước; không cổng nào thay được cổng kia — theo THIẾT KẾ.
+   *
+   * ⚠ Ai muốn đổi sang trần TOÀN CỤM: vật liệu đã sẵn (`SharedLedgerReplica.foreignLeases` mang
+   * `leaseKind` ⇒ phép đếm xuyên tiến trình là MỘT dòng `filter`), nhưng đó là đổi **CHÍNH SÁCH** —
+   * nó bắt đầu TỪ CHỐI những lượt nạp hôm nay đang chạy tốt, và cần một quyết định mới (trần cụm
+   * bằng bao nhiêu? chia theo vai trò?). Quyết định hiện hành là **KHÔNG đổi**.
    */
   if (request.kind !== "gguf-model") return 0;
   let dangCo = 0;

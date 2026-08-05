@@ -535,6 +535,8 @@ describe("D. từ chối KHÔNG được biến mất trên đường ra", () =>
         headroomBytes: 100 * MIB, degradedReasons: [], blind: false,
         ledgerTotalBytes: 0, usedBytes: 0, holders: [], preemptable: [],
         unledgered: { bytes: 0, unknownCount: 0 },
+        // ★ Pha 3 Task 3 (lượt QUÉT KIỂU) — hai ô BẮT BUỘC thiếu từ Task 2/Task 7.
+        foreignLedgerBytes: 0, slotsNeeded: 0,
       }),
     );
     expect(err.name).toBe(VRAM_REFUSED_ERROR_NAME);

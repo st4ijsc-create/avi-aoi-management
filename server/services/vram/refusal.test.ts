@@ -111,6 +111,11 @@ function input(over: Partial<VramRefusalInput> = {}): VramRefusalInput {
     // ★ I-3 (review TOÀN NHÁNH) — trần ĐẾM là trường BẮT BUỘC của sự thật từ chối. `0` = "trần
     // ĐẾM không dính tới lượt này"; ca của `VRAM_SLOT_CAP` truyền số dương tường minh.
     slotsNeeded: 0,
+    // ★ Pha 3 Task 3 (lượt QUÉT KIỂU) — ô BẮT BUỘC từ Task 2 mà cả file này CHƯA BAO GIỜ khai.
+    // Hậu quả im lặng: `finiteOrNull(undefined)` cho `null` ⇒ câu "… do TIẾN TRÌNH KHÁC giữ" (M-6)
+    // **không bao giờ render** ở đây ⇒ câu đó KHÔNG có một lưới nào trong cả file. `tsc` không bắt
+    // vì `tsconfig.json` loại trừ mọi file `*.test.ts`.
+    foreignLedgerBytes: 0,
     ...over,
   };
 }
@@ -676,6 +681,8 @@ describe("vramBroker — nguồn của 'ai đang giữ' và 'ai có thể như�
       // (ta gọi thẳng `refusalFactsFor`), nên truyền đúng dư địa thô + lý do của headroom.
       effectiveHeadroomBytes: h.headroomBytes,
       degradedReasons: h.degradedReasons,
+      // ★ Pha 3 Task 3 (lượt QUÉT KIỂU) — ô BẮT BUỘC từ Task 2, thiếu ở đây từ lúc thêm.
+      foreignLedgerBytes: 0,
     });
     expect(f.requestedBytes).toBe(17_000 * MIB);
     expect(f.availableBytes).toBe(h.headroomBytes);

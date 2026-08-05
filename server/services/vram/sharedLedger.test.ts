@@ -515,6 +515,9 @@ describe("D. BẢN SAO ĐỌC CŨ LÀ 'PHẠM TRÙ THỨ BA' — giữ SỐ, c�
           ledgerTotalBytes: 0,
           attributableBytes: 0,
           baselineVerified: true,
+          // ★ Pha 3 Task 3 (lượt QUÉT KIỂU) — ô BẮT BUỘC thiếu ⇒ ca này vốn chạy dưới cấu hình
+          // "no-tick" mà nó KHÔNG hề định dựng (khoản trừ triệt tiêu nên phép so vẫn đúng).
+          tickPresent: true,
         }),
         tickAgeMs: 0,
         tickConsecutiveFailures: 0,
