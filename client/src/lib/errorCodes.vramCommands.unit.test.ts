@@ -569,41 +569,75 @@ describe("bề mặt bẩn thật — owner/leaseKey/host/detail không được
 // ★★★ I-2 (review vòng 1) — NẤC FALLBACK là ĐƯỜNG THỨ HAI cho cùng giá trị (`translateAppError`
 // trả `fallback` NGUYÊN VĂN khi khoá thiếu ở `activeLng` — kịch bản THẬT: bundle en/zh nạp `import()`
 // ĐỘNG và hỏng vĩnh viễn khi offline, xem lịch sử dòng đầu `errorCodes.ts`). PROBE E của reviewer đo
-// được `owner` THÔ nguyên cú pháp ở nấc này. Ép nấc fallback bằng cách đổi sang một ngôn ngữ KHÔNG
-// có bundle nào đăng ký — mọi khoá đều SENTINEL ⇒ `translateAppError` LUÔN rơi về `fallback`.
+// được `owner` THÔ nguyên cú pháp ở nấc này.
+//
+// ⚠⚠ ĐÍNH CHÍNH TỰ ĐO (khác bản đầu của khối này) — đổi `i18n.language` sang một MÃ NGÔN NGỮ không
+// nằm trong `supportedLngs` (`['vi','en','zh']`, `client/src/i18n/index.ts`) KHÔNG ép được nấc
+// fallback: cấu hình `nonExplicitSupportedLngs`/`fallbackLng: 'vi'` khiến i18next ÂM THẦM giải về
+// một ngôn ngữ khác, nên `translateAppError` vẫn tìm THẤY khoá — ca kiểm "xanh" mà KHÔNG kiểm được
+// gì (đo bằng chính đột biến của reviewer round 2: mutation bỏ `stripInterpolationSyntax` ở fallback
+// vẫn 107/107 XANH với cách dựng cũ). Cách ép ĐÚNG: gỡ TOÀN BỘ bundle của một ngôn ngữ ĐANG được hỗ
+// trợ (`i18n.removeResourceBundle`) — mọi khoá (kể cả các khoá `VRAM_CMD_*` vừa thêm) biến mất khỏi
+// ĐÚNG `activeLng` đang tra ⇒ SENTINEL ⇒ `translateAppError` LUÔN rơi về `fallback`. Khôi phục ngay
+// trong `finally` để không rò trạng thái sang ca sau (dùng lại đúng payload đã nạp ở `beforeAll`).
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 describe("I-2 — nấc fallback của translateAppError không phát tán cú pháp i18next chưa sạch", () => {
-  const NO_BUNDLE_LOCALE = "xx-no-bundle-registered";
+  const viBundle = localeJson("../i18n/locales/vi.json");
+
+  /** Chạy `fn` trong khi bundle "vi" KHÔNG tồn tại — buộc MỌI khoá về SENTINEL/fallback. Khôi phục
+   *  bundle ngay cả khi `fn` ném, để không rò trạng thái sang ca test kế tiếp. */
+  async function withMissingViBundle<T>(fn: () => T | Promise<T>): Promise<T> {
+    await i18n.changeLanguage("vi");
+    i18n.removeResourceBundle("vi", "translation");
+    try {
+      return await fn();
+    } finally {
+      i18n.addResourceBundle("vi", "translation", viBundle, true, true);
+    }
+  }
+
+  it("(tiền đề) gỡ bundle THẬT SỰ ép translateAppError rơi về fallback — kiểm bằng một khoá KHÔNG bẩn trước", async () => {
+    await withMissingViBundle(() => {
+      const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: "clean-owner", detail: null, freedBytes: 1 });
+      // Không còn bundle ⇒ câu KHÔNG THỂ là bản dịch thật (thiếu "leaseLeftLedger: true" — cụm chỉ
+      // xuất hiện trong khuôn i18n đã dịch, không xuất hiện trong fallback `${outcome}: ${owner}`).
+      expect(out).not.toContain("leaseLeftLedger");
+      expect(out).toBe("reclaimed: clean-owner");
+    });
+  });
 
   it("owner bẩn ở nấc fallback (preempt) ⇒ vẫn ở lại dạng CHỮ, không còn [{}$]", async () => {
-    await i18n.changeLanguage(NO_BUNDLE_LOCALE);
-    const dirty = "$$t(t(errors.VRAM_CMD_PREEMPT_RECLAIMED)";
-    const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: dirty, detail: null, freedBytes: 1 });
-    expect(out).not.toMatch(/[{}$]/);
-    expect(out).toContain("errors.VRAM_CMD_PREEMPT_RECLAIMED");
+    await withMissingViBundle(() => {
+      const dirty = "$$t(t(errors.VRAM_CMD_PREEMPT_RECLAIMED)";
+      const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: dirty, detail: null, freedBytes: 1 });
+      expect(out).not.toMatch(/[{}$]/);
+      expect(out).toContain("errors.VRAM_CMD_PREEMPT_RECLAIMED");
+    });
   });
 
   it("leaseKey bẩn ở nấc fallback (releaseStale) ⇒ vẫn sạch", async () => {
-    await i18n.changeLanguage(NO_BUNDLE_LOCALE);
-    const dirty = "{$t({leaseKey}}";
-    const out = translateVramReleaseStaleCommand({
-      outcome: "refused",
-      reason: "process-not-proven-dead",
-      leaseKey: dirty,
-      processKey: null,
-      rowKind: null,
-      durability: null,
+    await withMissingViBundle(() => {
+      const dirty = "{$t({leaseKey}}";
+      const out = translateVramReleaseStaleCommand({
+        outcome: "refused",
+        reason: "process-not-proven-dead",
+        leaseKey: dirty,
+        processKey: null,
+        rowKind: null,
+        durability: null,
+      });
+      expect(out).not.toMatch(/[{}$]/);
+      expect(out).toContain("leaseKey");
     });
-    expect(out).not.toMatch(/[{}$]/);
-    expect(out).toContain("leaseKey");
   });
 
   it("owner bẩn ở nấc fallback (retryDeferred) ⇒ vẫn sạch", async () => {
-    await i18n.changeLanguage(NO_BUNDLE_LOCALE);
-    const dirty = "$$t(t(errors.generic)";
-    const out = translateVramRetryDeferredCommand({ outcome: "retry-armed", reason: null, owner: dirty, host: "cron:kb-sync" });
-    expect(out).not.toMatch(/[{}$]/);
-    expect(out).toContain("errors.generic");
+    await withMissingViBundle(() => {
+      const dirty = "$$t(t(errors.generic)";
+      const out = translateVramRetryDeferredCommand({ outcome: "retry-armed", reason: null, owner: dirty, host: "cron:kb-sync" });
+      expect(out).not.toMatch(/[{}$]/);
+      expect(out).toContain("errors.generic");
+    });
   });
 });
 
