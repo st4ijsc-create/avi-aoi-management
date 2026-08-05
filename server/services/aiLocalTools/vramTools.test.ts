@@ -138,7 +138,9 @@ describe("★★★ mỗi ô của bảng Pha 4 CÓ MẶT trong `textSummary` (t
 
   it("#4 `vramBeginFailureState()` — số lượt hỏng + lý do gần nhất", async () => {
     const r = await chay();
-    expect(r.textSummary).toContain("beginVramAllocation() đã hỏng");
+    // ⚠ Nhãn CỐ Ý không có dấu `(` ngay sau tên hàm — xem khối chú thích ở `vramTools.ts` (lưới
+    // `enforcement.test.ts` quét chuỗi, không chỉ chú thích, và đã kêu oan ở đúng file này).
+    expect(r.textSummary).toContain("hàm beginVramAllocation) đã hỏng");
   });
 
   it("#5 `foreignLedgerBytes`/`foreignLeases` — hộ ANH EM + `leaseKey` (đầu vào của `vram.releaseStale`)", async () => {

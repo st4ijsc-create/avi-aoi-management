@@ -167,8 +167,16 @@ function tomTat(s: VramAgentState): string[] {
       `estimateUsable=${s.unledgered.estimateUsable}, unknownCount=${s.unledgered.unknownCount ?? "?"})` +
       (s.unledgered.estimateUsable ? "." : " ⇒ KHÔNG ĐÁNG TIN, đừng dùng để tính."),
   );
+  /**
+   * ⚠ NHÃN CỐ Ý KHÔNG VIẾT `beginVramAllocation` KÈM DẤU `(` — và đây là một bài học, không phải
+   * một sở thích: lưới *"MỌI file sản xuất gọi `beginVramAllocation` đều nhập vị từ `isVramRefusal`"*
+   * (`enforcement.test.ts`) quét bằng `git grep` + regex `\bbeginVramAllocation\s*[({]`, và nó bỏ
+   * **chú thích** chứ không bỏ **chuỗi**. Một nhãn người-đọc trông như một LỜI GỌI đã làm lưới ấy
+   * kêu oan ở đúng file này. Lưới đó tự ghi *"một lưới kêu oan bảy lần sẽ bị người sau tắt đi, lúc
+   * đó ca THẬT chết theo"* ⇒ sửa NHÃN, tuyệt đối không thêm một dòng miễn trừ.
+   */
   d.push(
-    `beginVramAllocation() đã hỏng ${s.unledgered.beginFailureCount ?? "?"} lượt` +
+    `Lượt cấp phát ngoài sổ (hàm beginVramAllocation) đã hỏng ${s.unledgered.beginFailureCount ?? "?"} lượt` +
       (s.unledgered.lastReason === null ? "." : ` · lý do gần nhất: ${s.unledgered.lastReason}`),
   );
 
