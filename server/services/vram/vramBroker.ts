@@ -503,36 +503,47 @@ export type VramPreemptOwnerPlan =
       readonly bytes: number | null;
     };
 
+/**
+ * Xét **MỘT** giấy phép: hai vị từ, một kết luận. `preemptStepForOwner()` gọi nó cho **cả** lượt
+ * tìm ứng viên **lẫn** lượt nêu lý do — nên hai câu trả lời không thể trôi khỏi nhau.
+ */
+function xetMotGiayPhep(l: VramLease, rankNguoiXin: number): VramPreemptOwnerPlan {
+  const quyen = quyenNhuong(l, rankNguoiXin);
+  if (quyen.kind === "no") {
+    return {
+      kind: "refused",
+      reason: quyen.why === "production-never-preempted" ? "production-never-preempted" : "busy-in-use",
+      bytes: leaseBytes(l),
+    };
+  }
+  const nguoi = nguoiThiHanhThuHoi(l);
+  if (nguoi === null) return { kind: "refused", reason: "no-reclaimer-declared", bytes: leaseBytes(l) };
+  return {
+    kind: "ready",
+    step: { leaseId: l.id, owner: l.request.owner, kind: l.request.kind, bytes: leaseBytes(l), reclaimer: nguoi },
+  };
+}
+
 export function preemptStepForOwner(owner: string): VramPreemptOwnerPlan {
   const rank = PRIORITY_RANK.background;
   const khop = [...ledger.values()].filter((l) => l.request.owner === owner);
-  if (khop.length === 0) return { kind: "refused", reason: "owner-not-in-local-ledger", bytes: null };
+  /**
+   * ★ M-3 (review) — **KHÔNG CÓ `?? <mặc_định>` Ở HÀM NÀY NỮA.** Bản trước kết thúc bằng
+   * `tuChoi ?? { reason: "owner-not-in-local-ledger" }`: một nhánh dự phòng **dán sai nhãn** (tới
+   * được đó nghĩa là hộ CÓ trong sổ, chỉ là không giấy phép nào thi hành được) — đúng hình dạng
+   * `?? <mặc_định>` NUỐT một câu trả lời đã có (ràng buộc 7). Nay câu *"không có hộ nào tên đó"*
+   * được trả lời **một lần, ở đúng chỗ nó đúng**, và lý do từ chối luôn đến từ một giấy phép THẬT.
+   */
+  const dau = khop[0];
+  if (dau === undefined) return { kind: "refused", reason: "owner-not-in-local-ledger", bytes: null };
 
-  let tuChoi: VramPreemptOwnerPlan | null = null;
   for (const l of khop) {
-    const quyen = quyenNhuong(l, rank);
-    if (quyen.kind === "no") {
-      tuChoi ??= {
-        kind: "refused",
-        reason: quyen.why === "production-never-preempted" ? "production-never-preempted" : "busy-in-use",
-        bytes: leaseBytes(l),
-      };
-      continue;
-    }
-    const nguoi = nguoiThiHanhThuHoi(l);
-    if (nguoi === null) {
-      tuChoi ??= { kind: "refused", reason: "no-reclaimer-declared", bytes: leaseBytes(l) };
-      continue;
-    }
-    return {
-      kind: "ready",
-      step: { leaseId: l.id, owner: l.request.owner, kind: l.request.kind, bytes: leaseBytes(l), reclaimer: nguoi },
-    };
+    const xet = xetMotGiayPhep(l, rank);
+    if (xet.kind === "ready") return xet;
   }
-  // ⚠ Nhiều giấy phép cùng tên mà KHÔNG cái nào thi hành được ⇒ nêu lý do của cái ĐẦU TIÊN gặp.
-  // `tuChoi` không thể `null` ở đây (mọi nhánh vòng lặp đều gán hoặc `return`), nhưng ta không
-  // dùng `!`: một lời khai "không tìm thấy" vẫn TRUNG THỰC hơn một lượt ném ở đường phá huỷ.
-  return tuChoi ?? { kind: "refused", reason: "owner-not-in-local-ledger", bytes: null };
+  // Nhiều giấy phép cùng tên mà KHÔNG cái nào thi hành được ⇒ lý do của cái ĐẦU TIÊN, tính bằng
+  // **cùng một** hàm (không phải một bản sao của phép phân loại).
+  return xetMotGiayPhep(dau, rank);
 }
 
 /**

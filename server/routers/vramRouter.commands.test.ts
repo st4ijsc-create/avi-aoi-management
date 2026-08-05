@@ -37,12 +37,18 @@ vi.mock("../services/llamaVisionSidecar", () => ({
   getVisionSidecarConfig: () => null,
 }));
 
-/** Bảng tiến trình — `null` = KHÔNG ĐỌC ĐƯỢC (không có bằng chứng), khác hẳn "bảng rỗng". */
+/**
+ * Bảng tiến trình — `null` = KHÔNG ĐỌC ĐƯỢC (không có bằng chứng), khác hẳn "bảng rỗng".
+ * ⚠ `readProcTableImpl` là seam cho ca I-2: nó cho một ca dựng **một sự kiện thứ hai xảy ra TRONG
+ * cửa sổ `await`** của đúng lượt I/O chậm nhất chuỗi — thứ mà mọi ca "tuần tự, một hộ" không thấy.
+ */
+type ProcRow = { pid: number; ppid: number; cmdline: string; ctime: number };
 const gpu = vi.hoisted(() => ({
   procs: null as null | { pid: number; ppid: number; cmdline: string; ctime: number }[],
+  readProcTableImpl: null as null | (() => Promise<{ pid: number; ppid: number; cmdline: string; ctime: number }[] | null>),
 }));
 vi.mock("../services/vram/vramGpuHolders", () => ({
-  readProcTable: async () => gpu.procs,
+  readProcTable: async () => (gpu.readProcTableImpl === null ? gpu.procs : gpu.readProcTableImpl()),
   readGpuHolders: async () => null,
   readComputeApps: async () => null,
 }));
@@ -80,6 +86,12 @@ function ft(unixMs: number): number {
 }
 
 const admin2fa = { id: 1, role: "admin", name: "Admin", twoFactorEnabled: true };
+/**
+ * ⚠ I-1 — engineer ĐỦ DANH TÍNH (role-floor + 2FA) nhưng **KHÔNG có bit quyền** `machine_control`.
+ * `checkPermission()` (`_core/accessControl.ts`) chỉ short-circuit cho `admin`; mọi role khác phải
+ * có một hàng `permissions` cấp tường minh, và không ca nào ở đây cấp. Đây là **chiều đắt** của bộ
+ * ca phân quyền: sàn DANH TÍNH một mình để lọt đúng người này vào thân thủ tục giết tiến trình.
+ */
 const engineer2fa = { id: 3, role: "engineer", name: "Eng", twoFactorEnabled: true };
 const engineerNo2fa = { id: 4, role: "engineer", name: "Eng2", twoFactorEnabled: false };
 const viewer = { id: 5, role: "viewer", name: "V", twoFactorEnabled: true };
@@ -155,6 +167,7 @@ beforeEach(() => {
   __resetVramDeferForTests();
   sidecar.stop = null;
   gpu.procs = null;
+  gpu.readProcTableImpl = null;
   // ⚠⚠ GHIM ĐƯỜNG PHÁ HUỶ: lệnh của Agent KHÔNG được chạm `process.kill` từ một đường viết tay.
   killSpy = vi.spyOn(process, "kill").mockImplementation(() => true as never);
 });
@@ -188,9 +201,37 @@ describe("vramRouter — PHÂN QUYỀN là BẮT BUỘC (lệnh giết được 
     await expect(caller(engineerNo2fa).retryDeferred({ owner: "cron:kb-sync" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("engineer + 2FA ⇒ QUA cổng quyền (tới được thân thủ tục)", async () => {
-    const r = await caller(engineer2fa).preempt({ owner: "khong-co-ho-nao" });
+  it("★★★ ĐỘT BIẾN GHIM (I-1): engineer + 2FA nhưng KHÔNG có bit quyền ⇒ TỪ CHỐI, không tới thân thủ tục", async () => {
+    /**
+     * Sàn DANH TÍNH (`deployProcedure`) trả lời *"anh có phải engineer không"*; nó KHÔNG trả lời
+     * *"engineer NÀY có được điều khiển máy không"*. Bỏ `requirePermission` khỏi chuỗi ⇒ engineer
+     * này đi thẳng vào được lệnh **giết tiến trình** ⇒ ca đỏ.
+     */
+    const lease = xinThat({ owner: "sidecar:vision", bytes: 7_825 * MIB, reclaimer: "vision-sidecar" });
+    let goi = 0;
+    sidecar.stop = async () => {
+      goi += 1;
+      return true;
+    };
+
+    await expect(caller(engineer2fa).preempt({ owner: "sidecar:vision" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(caller(engineer2fa).releaseStale({ leaseKey: "worker:999:1#lease-7" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(caller(engineer2fa).retryDeferred({ owner: "cron:kb-sync" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+
+    expect(goi, "người thi hành KHÔNG được chạm tới khi thẩm quyền chưa qua").toBe(0);
+    expect(broker.snapshot().leases.some((l) => l.id === lease.id)).toBe(true);
+  });
+
+  it("admin + 2FA ⇒ QUA cả sàn danh tính LẪN sàn thẩm quyền (tới được thân thủ tục)", async () => {
+    const r = await caller(admin2fa).preempt({ owner: "khong-co-ho-nao" });
     expect(r.outcome).toBe("refused");
+    expect(r.reason).toBe("owner-not-in-local-ledger");
   });
 });
 
@@ -313,6 +354,61 @@ describe("vramRouter.preempt — BẰNG CHỨNG: không khai thành công khi by
     expect(r.freedBytes).toBe(0);
   });
 
+  it("★★★ ĐỘT BIẾN GHIM (C-1): hộ KHÁC nhả trong cửa sổ `await` ⇒ TUYỆT ĐỐI không khai `reclaimed` cho hộ CỦA MÌNH", async () => {
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Đây là ca mà bộ ca vòng 1 KHÔNG có: mọi ca cũ đều **tuần tự, một hộ, một lượt**, trong khi
+     * phép đo lại đo **TỔNG** bắc qua một cửa sổ bất đồng bộ.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Kịch bản THẬT, không dựng đứng: `llamaVisionSidecar` có idleTimer và `aiGgufEngine` có TTL —
+     * cả hai nhả giấy phép **bất kỳ lúc nào**; và Agent hoàn toàn có thể bắn hai lệnh `preempt`
+     * song song. Ở đây nạn nhân KHÔNG nhả (đúng chuỗi C-2 Pha 2B) trong khi hộ 17 GB nhả xong.
+     * Đo theo TỔNG ⇒ `reclaimed` + `freedBytes 17.000 MiB` cho một giấy phép **còn nguyên trong sổ**.
+     */
+    const nanNhan = xinThat({
+      owner: "sidecar:vision",
+      bytes: 7_825 * MIB,
+      priority: "interactive",
+      reclaimer: "vision-sidecar",
+    });
+    const hoKhac = xinThat({ owner: "gguf:qwen30b", bytes: 17_000 * MIB, kind: "gguf-model", reclaimer: "gguf-idle-model" });
+    sidecar.stop = async () => {
+      broker.release(hoKhac); // ← hộ KHÁC nhả TRONG cửa sổ await
+      return true; // ← nhưng nạn nhân thì KHÔNG
+    };
+
+    const r = await caller().preempt({ owner: "sidecar:vision" });
+
+    expect(r.outcome, "giấy phép của hộ này còn nguyên ⇒ KHÔNG được khai thành công").toBe("failed");
+    expect(r.reason).toBe("no-bytes-freed");
+    expect(r.freedBytes, "không được nhận byte của hộ khác").toBe(0);
+    expect(r.leaseLeftLedger).toBe(false);
+    expect(r.reclaimed).toEqual([]);
+    // Bằng chứng thô: nạn nhân vẫn nằm trong sổ, đúng thứ lời khai phải khớp.
+    expect(broker.snapshot().leases.some((l) => l.id === nanNhan.id)).toBe(true);
+  });
+
+  it("★★ (C-1) hộ của mình nhả THẬT + hộ khác cũng nhả ⇒ `freedBytes` KẸP theo hộ, không cộng byte người khác", async () => {
+    const nanNhan = xinThat({
+      owner: "sidecar:vision",
+      bytes: 7_825 * MIB,
+      priority: "interactive",
+      reclaimer: "vision-sidecar",
+    });
+    const hoKhac = xinThat({ owner: "gguf:qwen30b", bytes: 17_000 * MIB, kind: "gguf-model", reclaimer: "gguf-idle-model" });
+    sidecar.stop = async () => {
+      broker.release(hoKhac);
+      broker.release(nanNhan);
+      return true;
+    };
+
+    const r = await caller().preempt({ owner: "sidecar:vision" });
+
+    expect(r.outcome).toBe("reclaimed");
+    expect(r.leaseLeftLedger).toBe(true);
+    expect(r.freedBytes, "tổng co 24.825 MiB nhưng hộ NÀY chỉ giữ 7.825 MiB").toBe(7_825 * MIB);
+  });
+
   it("★★★ ĐỘT BIẾN GHIM: hộ `orphan-pid` phải đi qua ĐƯỜNG ĐÃ VÁ — không `process.kill` viết tay", async () => {
     /**
      * Giấy phép mang dấu nhận nuôi nhưng tiến trình này **chưa đứng tên PID đó** (`leaseNhanNuoi`
@@ -358,6 +454,10 @@ describe("vramRouter.releaseStale — bằng chứng CHẾT là điều kiện, 
     expect(r.outcome).toBe("released");
     expect(r.reason).toBeNull();
     expect(r.freedBytes).toBe(17_000 * MIB);
+    expect(r.rowKind).toBe("sibling-lease");
+    // ★ M-2 — lệnh `delete` mới XẾP HÀNG; nói ra bằng dữ liệu thay vì để Agent tự suy.
+    expect(r.durability).toBe("queued-for-shared-ledger");
+    expect(r.unsyncedWritesAfter).toBeGreaterThan(0);
     expect(r.processKey).toBe("worker:999:1750000000000");
     // Bản sao đọc KHÔNG còn hàng đó — đúng ô mà `computeHeadroom()` đọc.
     expect(readSharedLedgerReplica()!.foreignLeases.map((x) => x.leaseKey)).not.toContain(row.leaseKey);
@@ -365,6 +465,57 @@ describe("vramRouter.releaseStale — bằng chứng CHẾT là điều kiện, 
     expect(truoc.foreignBytes - sau.foreignBytes).toBe(17_000 * MIB);
     // Lệnh xoá đi qua ĐÚNG hàng đợi mà `release()` dùng ⇒ ô "chưa gửi kịp" nhích lên.
     expect(sau.unsyncedWrites).toBeGreaterThan(truoc.unsyncedWrites);
+  });
+
+  it("★★★ ĐỘT BIẾN GHIM (I-2): một hàng KHÁC rời bản sao trong cửa sổ `readProcTable` ⇒ KHÔNG được cộng byte của nó", async () => {
+    /**
+     * `readProcTableSafe()` là lượt I/O CHẬM NHẤT của chuỗi (PowerShell/WMI — Pha 3 Task 4 đo được
+     * nó trả `null` 4 lượt liên tiếp dưới tải). Nhịp đồng bộ hoàn toàn có thể công bố một bản sao
+     * mới trong cửa sổ đó. Đo `foreignBytes` TRƯỚC/SAU ⇒ con số trộn HAI ảnh chụp.
+     * Bằng chứng đúng nằm sẵn trong tay: `ma.bytes` — byte của **chính hàng vừa được chứng minh là MA**.
+     */
+    const ma = hangAnhEm();
+    const hangKhac = hangAnhEm({
+      leaseKey: "worker:777:1750000000000#lease-9",
+      processKey: "worker:777:1750000000000",
+      pid: 777,
+      leaseId: "lease-9",
+      owner: "gguf:embed",
+      bytes: 5_000 * MIB,
+    });
+    publishSharedLedgerReplica([ma, hangKhac], Date.now(), "api:100:1750000000000");
+    gpu.procs = [];
+    // Trong ĐÚNG cửa sổ await của `readProcTable`, hàng 5.000 MiB rời bản sao vì lý do KHÔNG liên quan.
+    gpu.readProcTableImpl = async (): Promise<ProcRow[]> => {
+      publishSharedLedgerReplica([ma], Date.now(), "api:100:1750000000000");
+      return [];
+    };
+
+    const r = await caller().releaseStale({ leaseKey: ma.leaseKey });
+
+    expect(r.outcome).toBe("released");
+    expect(r.freedBytes, "byte của CHÍNH hàng này — không cộng 5.000 MiB của hàng khác").toBe(17_000 * MIB);
+  });
+
+  it("★★ (M-4) hàng NỀN dùng chung ⇒ released nhưng `freedBytes: 0`, và `rowKind` nói vì sao", async () => {
+    const nen = hangAnhEm({
+      leaseKey: "vram:baseline",
+      processKey: "worker:999:1750000000000",
+      owner: "reconciler:baseline",
+      leaseId: "smi",
+      refCount: 1,
+      reclaimer: null,
+      bytes: 2_000 * MIB,
+    });
+    publishSharedLedgerReplica([nen], Date.now(), "api:100:1750000000000");
+    gpu.procs = [];
+
+    const r = await caller().releaseStale({ leaseKey: "vram:baseline" });
+
+    expect(r.outcome).toBe("released");
+    expect(r.rowKind).toBe("shared-baseline");
+    // ⚠ `0` ở đây nghĩa "thước `foreignBytes` KHÔNG đo cái vừa xoá", không phải "không có gì xảy ra".
+    expect(r.freedBytes).toBe(0);
   });
 
   it("★★★ chủ hàng CÒN SỐNG ⇒ refused, hàng GIỮ NGUYÊN, không byte nào đổi", async () => {

@@ -57,9 +57,14 @@ function byteRaApi(n: number): number {
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
 /**
- * ⚠⚠ **`"reclaimed"` LÀ MỘT LỜI KHẲNG ĐỊNH VỀ BYTE, KHÔNG VỀ Ý ĐỊNH.** Nó chỉ phát ra khi sổ đã
- * co lại. Người thi hành khai `true` mà sổ không đổi ⇒ `"failed"` + `reason: "no-bytes-freed"` —
- * đúng chuỗi C-2 của Pha 2B (giết 7,8 GB, lượt xin **vẫn** hỏng).
+ * ⚠⚠ **`"reclaimed"` LÀ MỘT LỜI KHẲNG ĐỊNH VỀ HỘ NÀY, KHÔNG VỀ CÁI TỔNG.** Nó chỉ phát ra khi
+ * **giấy phép của chính hộ đó đã rời sổ** (`leaseLeftLedger`). Người thi hành khai `true` mà giấy
+ * phép còn nguyên ⇒ `"failed"` + `reason: "no-bytes-freed"` — đúng chuỗi C-2 của Pha 2B (giết
+ * 7,8 GB, lượt xin **vẫn** hỏng).
+ *
+ * ⚠⚠ C-1 (review) — vị từ **không được** là *"tổng sổ có co lại không"*: tổng là đại lượng dùng
+ * chung, và phép đo bắc qua `await` nên một hộ KHÁC nhả trong cửa sổ đó sẽ làm lệnh khai thành công
+ * cho một hộ **còn nguyên**, kèm byte của người khác. Xem `vramPreempt.preemptOwner()`.
  */
 export type VramPreemptCommandOutcome = "reclaimed" | "failed" | "refused";
 
@@ -84,8 +89,13 @@ export interface VramPreemptCommandResult extends VramCommandScope {
   readonly detail: string | null;
   /** `null` ⇔ lệnh dừng ở cổng quyền/khả năng, chưa có người thi hành nào được chọn. */
   readonly reclaimer: VramReclaimerId | null;
-  /** BYTE đã **RỜI SỔ**, đo bằng chênh lệch tổng sổ TRƯỚC/SAU. Không phải lời khai của kế hoạch. */
+  /**
+   * BYTE của **CHÍNH HỘ NÀY** đã rời sổ — **kẹp theo byte của hộ** nên không bao giờ mang byte của
+   * một hộ khác vừa nhả trong cùng cửa sổ (C-1). `0` khi giấy phép còn nguyên.
+   */
   readonly freedBytes: number;
+  /** ★ C-1 — BẰNG CHỨNG, phơi ra để Agent kiểm được lời khai: giấy phép của hộ này đã rời sổ chưa. */
+  readonly leaseLeftLedger: boolean;
   readonly reclaimed: readonly string[];
   readonly failed: readonly string[];
   readonly ledgerBytesBefore: number;
@@ -99,6 +109,7 @@ export async function vramPreemptCommand(owner: string): Promise<VramPreemptComm
     owner,
     reclaimer: kq.reclaimer,
     freedBytes: byteRaApi(kq.freedBytes),
+    leaseLeftLedger: kq.leaseLeftLedger,
     reclaimed: kq.reclaimed,
     failed: kq.failed,
     ledgerBytesBefore: byteRaApi(kq.ledgerBytesBefore),
@@ -131,10 +142,28 @@ export interface VramReleaseStaleCommandResult extends VramCommandScope {
   readonly reason: VramReleaseStaleCommandReason | null;
   /** Chủ của hàng. `null` ⇔ không tìm thấy hàng nào mang khoá đó. */
   readonly processKey: string | null;
-  /** BYTE ANH EM đã rời **BẢN SAO ĐỌC** — đúng con số đi vào `computeHeadroom()`, không phải `row.bytes`. */
+  /**
+   * ★ I-2 — byte của **CHÍNH HÀNG VỪA DỌN** (`HangMaCanXoa.bytes`), KHÔNG phải hiệu số
+   * `foreignBytes` trước/sau (thứ bắc qua `await readProcTableSafe()` và trộn được hai ảnh chụp).
+   * ⚠ `0` khi `rowKind === "shared-baseline"` — xem `rowKind`.
+   */
   readonly freedBytes: number;
+  /**
+   * ★ M-4 — `"shared-baseline"` ⇒ `freedBytes: 0` nghĩa *"thước này không đo cái vừa xoá"* (byte nền
+   * chưa bao giờ nằm trong `foreignBytes`), **không** phải *"không có gì xảy ra"*.
+   */
+  readonly rowKind: "sibling-lease" | "shared-baseline" | null;
+  /** BỐI CẢNH, không phải nguồn của phép trừ. */
   readonly foreignBytesBefore: number | null;
   readonly foreignBytesAfter: number | null;
+  /**
+   * ★ M-2 — **BỀN TỚI ĐÂU.** `"queued-for-shared-ledger"`: bản sao đọc đã sạch NGAY (nên
+   * `computeHeadroom()` thấy ngay), nhưng hàng chỉ rời DB ở lượt `syncSharedLedger()` kế tiếp.
+   * `null` ⇔ không có gì được xếp hàng.
+   */
+  readonly durability: "queued-for-shared-ledger" | null;
+  /** ★ M-2 — ⚠ bộ đếm **TOÀN TIẾN TRÌNH**, không quy riêng về lệnh này. `≥ 1` ⇒ còn ý định chưa gửi. */
+  readonly unsyncedWritesAfter: number | null;
 }
 
 export async function vramReleaseStaleCommand(leaseKey: string): Promise<VramReleaseStaleCommandResult> {
@@ -146,8 +175,11 @@ export async function vramReleaseStaleCommand(leaseKey: string): Promise<VramRel
     reason: kq.refusal,
     processKey: kq.processKey,
     freedBytes: byteRaApi(kq.freedBytes),
+    rowKind: kq.rowKind,
     foreignBytesBefore: kq.foreignBytesBefore === null ? null : byteRaApi(kq.foreignBytesBefore),
     foreignBytesAfter: kq.foreignBytesAfter === null ? null : byteRaApi(kq.foreignBytesAfter),
+    durability: kq.durability,
+    unsyncedWritesAfter: kq.unsyncedWritesAfter === null ? null : byteRaApi(kq.unsyncedWritesAfter),
     ...chungPhamVi(),
   };
 }

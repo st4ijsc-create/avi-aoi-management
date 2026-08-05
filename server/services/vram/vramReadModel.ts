@@ -83,7 +83,29 @@ export interface VramAgentHolderView {
   readonly priority: VramPriority;
   /** `true` ⇔ con số do một THƯỚC đẻ ra; `false` ⇔ **ƯỚC LƯỢNG**. */
   readonly measured: boolean;
-  /** `true` ⇔ **CÓ người thi hành** thu hồi được hộ này. `false` ⇒ đừng hứa lấy lại byte của nó. */
+  /**
+   * `true` ⇔ **chủ của hộ này ĐÃ KHAI một người thi hành** và hộ đang nhàn rỗi.
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * 🔴 BÀN GIAO CỨNG CHO TASK 4 (I-3 + (D) của review Task 2) — **MỘT hạng mục, không phải hai.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠ Ô `boolean` này **HỨA NHIỀU HƠN DỮ LIỆU** với hộ của ANH EM, và nay đã có mặt lệnh để đo
+   * lời hứa đó: `vram.preempt` chỉ đọc **sổ CỤC BỘ** (`vramBroker.preemptStepForOwner` →
+   * `[...ledger.values()]`), còn `vram.releaseStale` chỉ nhận hàng **đã chứng minh là MA**. ⇒ một hộ
+   * anh em **còn sống + `reclaimable: true`** **KHÔNG lệnh nào chạm được**, và Agent sẽ tiêu một
+   * lượt quyết định để nhận `owner-not-in-local-ledger`. Cùng lỗ hổng với `leaseKey` ngay dưới: nó
+   * chỉ hữu ích khi hàng đó là MA.
+   *
+   * ⇒ **Task 4 phải GIẾT `boolean` này bằng ĐỔI KIỂU**, đúng khuôn Task 1 đã dùng để xoá phạm trù
+   * `"idle"` (làm cho lời khai sai **không viết ra được**), chứ KHÔNG bằng một dòng chú thích:
+   * ```
+   * | { kind: "reclaimable-here";        reclaimer: VramReclaimerId }  // `vram.preempt` với tới
+   * | { kind: "declared-by-owner-process"; reclaimer: VramReclaimerId } // chỉ CHỦ nó thu hồi được
+   * | { kind: "no-reclaimer" }
+   * ```
+   * Cùng phép đổi kiểu đó gánh nốt nửa câu của `retryDeferred` ((D)): *"lệnh nào với tới hộ này từ
+   * CHỖ ĐỨNG hiện tại"* — để Agent không bao giờ tốn một lượt gọi vô ích.
+   */
   readonly reclaimable: boolean;
   /** `null` = hộ của **CHÍNH tiến trình này**; khác `null` = `${role}:${pid}:${bootMs}` của anh em. */
   readonly processKey: string | null;

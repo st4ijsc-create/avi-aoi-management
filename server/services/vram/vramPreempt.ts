@@ -182,8 +182,10 @@ async function thiHanhMotBuoc(
  *
  * ⚠⚠ `xong === true` **KHÔNG ĐỦ ĐỂ KHAI THÀNH CÔNG.** Pha 2B đã trả giá đúng ở đây: `stopSidecar()`
  * khai `true` vô điều kiện trong khi tiến trình mới nhận `SIGTERM` ⇒ `reclaimed` với
- * `freedBytes = 0` ⇒ lượt xin lại **hỏng lần hai**, sau khi đã giết hộ 7,8 GB. ⇒ `freedBytes === 0`
- * ⇒ `failure: "no-bytes-freed"`, và ô `reclaimed` **rỗng**.
+ * `freedBytes = 0` ⇒ lượt xin lại **hỏng lần hai**, sau khi đã giết hộ 7,8 GB.
+ * ⇒ Vị từ thành công là **`step.leaseId` đã RỜI SỔ chưa** (xem khối C-1 ở thân hàm), KHÔNG phải
+ * *"tổng sổ có co lại không"* — tổng là đại lượng dùng chung, và đo nó bắc qua một `await` là mời
+ * người khác vào kết quả của mình.
  */
 export type VramPreemptOwnerFailure = VramReclaimFailure | "no-bytes-freed";
 
@@ -192,8 +194,13 @@ export interface VramPreemptOwnerResult {
   /** `null` ⇔ chưa tới được lượt thi hành (bị từ chối ở cổng quyền/khả năng). */
   readonly reclaimer: VramReclaimerId | null;
   readonly plan: ReturnType<typeof preemptStepForOwner>;
-  /** Byte đã RỜI SỔ, đo bằng chênh lệch tổng sổ. Luôn hữu hạn, không bao giờ âm. */
+  /**
+   * Byte của **CHÍNH HỘ NÀY** đã rời sổ — `0` khi giấy phép còn nguyên. **Kẹp theo `step.bytes`**,
+   * nên nó KHÔNG BAO GIỜ mang byte của một hộ khác vừa nhả trong cùng cửa sổ (C-1).
+   */
   readonly freedBytes: number;
+  /** ★ C-1 — bằng chứng, phơi ra: giấy phép của hộ này có còn trong `snapshot().leases` không. */
+  readonly leaseLeftLedger: boolean;
   readonly reclaimed: readonly string[];
   readonly failed: readonly string[];
   /** `null` ⇔ thu hồi THÀNH CÔNG (và byte đã nhả). */
@@ -212,6 +219,8 @@ export async function preemptOwner(owner: string): Promise<VramPreemptOwnerResul
       reclaimer: null,
       plan,
       freedBytes: 0,
+      // Chưa ai bị đụng ⇒ giấy phép (nếu có) vẫn nguyên trong sổ.
+      leaseLeftLedger: false,
       reclaimed: [],
       failed: [],
       failure: null,
@@ -227,11 +236,33 @@ export async function preemptOwner(owner: string): Promise<VramPreemptOwnerResul
    * này không đến từ một lượt xin nào (xem `preemptStepForOwner`, khối "MỨC NGƯỜI XIN").
    */
   const kq = await thiHanhMotBuoc(step, "background");
-  const sau = soHuuHan(snapshot().totalReservedBytes);
-  /** ⚠ ĐO BẰNG SỔ, KHÔNG CỘNG THEO KẾ HOẠCH — cùng phép đo của `preempt()`, cùng lý do. */
-  const freedBytes = Math.max(0, truoc - sau);
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ C-1 (review Task 2) — **BẰNG CHỨNG CỦA CHÍNH HỘ ĐÓ, KHÔNG PHẢI HIỆU SỐ TỔNG.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * Bản trước quyết `reclaimed` bằng *"TỔNG SỔ có co lại không"*, và đo tổng đó **bắc qua `await`
+   * ngay trên**. Tổng là một đại lượng **DÙNG CHUNG**: bất kỳ hộ nào khác nhả trong cửa sổ ấy
+   * (idleTimer của `llamaVisionSidecar`, TTL của `aiGgufEngine`, hoặc **hai lệnh `preempt` Agent
+   * bắn song song**) đều làm lệnh khai **thành công cho một hộ CÒN NGUYÊN**, và gán byte của người
+   * khác cho mình. Reviewer đã chạy được đúng chuỗi đó: `outcome: "reclaimed"` +
+   * `freedBytes = 17.000 MiB` trong khi giấy phép nạn nhân **vẫn nằm trong `snapshot().leases`**.
+   *
+   * ⇒ Vị từ đúng nằm sẵn trong cấu trúc — **`step.leaseId`**. Đây đúng bài học Pha 3
+   * (*"một nhịp không được vứt đi bằng chứng của chính nó"*), và đúng bài học Pha 4 Task 2 đã áp ở
+   * `donHangMa()`: hỏi **hộ này**, đừng hỏi cái tổng.
+   *
+   * ⚠ MỘT lượt `snapshot()` cho cả hai vế: đọc `totalReservedBytes` rồi đọc `leases` ở một lời gọi
+   * thứ hai là lấy hai vế ở HAI thời điểm — đúng lớp lỗi đang vá, chỉ nhỏ hơn.
+   * ⚠ `Math.min(step.bytes, truoc − sau)` — chiều **CHẶT**: nếu tổng co nhiều hơn vì hộ khác cũng
+   * nhả, ta **không** nhận phần đó; nếu một lượt cấp phát chen vào làm tổng co ít hơn, ta báo con số
+   * NHỎ hơn. Không bao giờ hứa byte của người khác.
+   */
+  const sauAnh = snapshot();
+  const sau = soHuuHan(sauAnh.totalReservedBytes);
+  const roiSo = !sauAnh.leases.some((l) => l.id === step.leaseId);
+  const freedBytes = roiSo ? Math.max(0, Math.min(soHuuHan(step.bytes), truoc - sau)) : 0;
   const failure: VramPreemptOwnerFailure | null =
-    kq.failure !== null ? kq.failure : freedBytes > 0 ? null : "no-bytes-freed";
+    kq.failure !== null ? kq.failure : roiSo ? null : "no-bytes-freed";
 
   logVramEvent({
     event: "preempt",
@@ -242,6 +273,8 @@ export async function preemptOwner(owner: string): Promise<VramPreemptOwnerResul
       reason: "operator-command",
       reclaimer: step.reclaimer,
       reclaimerReportedDone: kq.xong,
+      /** ★ C-1 — bằng chứng THẬT: giấy phép của **hộ này** có còn trong sổ không. */
+      leaseLeftLedger: roiSo,
       freedBytes,
       failure,
       ...(kq.message === null ? {} : { message: kq.message }),
@@ -253,8 +286,10 @@ export async function preemptOwner(owner: string): Promise<VramPreemptOwnerResul
     reclaimer: step.reclaimer,
     plan,
     freedBytes,
-    // ⚠⚠ Ô này chỉ được mang tên hộ khi BYTE ĐÃ RỜI SỔ. Khai `reclaimed` cho một khối byte còn
-    // treo là nói dối đúng chiều OOM — và người đọc kế tiếp là một AI Agent sắp quyết định.
+    leaseLeftLedger: roiSo,
+    // ⚠⚠ Ô này chỉ được mang tên hộ khi GIẤY PHÉP CỦA CHÍNH HỘ ĐÓ đã rời sổ. Khai `reclaimed` cho
+    // một khối byte còn treo là nói dối đúng chiều OOM — và người đọc kế tiếp là một AI Agent sắp
+    // quyết định có nạp model hay không.
     reclaimed: failure === null ? [step.owner] : [],
     failed: failure === null ? [] : [step.owner],
     failure,

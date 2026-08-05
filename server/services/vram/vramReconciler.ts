@@ -14,8 +14,8 @@ import {
  * là lý do nửa ĐỒNG BỘ của sổ chung phải nằm ở một file riêng với nửa I/O.
  */
 import {
-  enqueueSharedLedgerWrite, loaiHangDaChungMinhLaMa, publishOwnSharedBaseline, readSharedBaseline,
-  readSharedLedgerReplica, sharedLedgerFact, sharedLedgerSelfKey,
+  SHARED_BASELINE_KEY, enqueueSharedLedgerWrite, loaiHangDaChungMinhLaMa, publishOwnSharedBaseline,
+  readSharedBaseline, readSharedLedgerReplica, sharedLedgerFact, sharedLedgerSelfKey,
 } from "./vramSharedLedger";
 import type { SharedBaselineRecord, SharedLeaseRow } from "./vramSharedLedger";
 /**
@@ -1549,8 +1549,18 @@ function donHangMa(danhSach: readonly HangMaCanXoa[]): void {
  * ⚠ `orphans: []` + `sidecar: null`: nửa NHẬN NUÔI của kế hoạch bị vô hiệu hoá có chủ ý — lệnh này
  * chỉ dọn, và `pidTanDuDaCoChu` (ô mà `lyDoNenKhongTin()` đọc) **không được** ghi từ đây; người ghi
  * ô đó vẫn là nhịp đối chiếu, đúng một người.
- * ⚠ `freedBytes` đo bằng **chênh lệch `foreignBytes` của bản sao đọc** — tức đúng con số đi vào
- * `computeHeadroom()`, không phải `row.bytes` do người gọi đọc được.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ I-2 (review Task 2) — **`freedBytes` LÀ BYTE CỦA CHÍNH HÀNG ĐÓ (`ma.bytes`), KHÔNG PHẢI MỘT
+ * HIỆU SỐ TỔNG.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản trước lấy `foreignBytes` TRƯỚC/SAU — hai ảnh chụp **bắc qua `await readProcTableSafe()`**,
+ * đúng lượt I/O CHẬM NHẤT của cả chuỗi (PowerShell/WMI; Pha 3 Task 4 đo được nó trả `null` **4 lượt
+ * liên tiếp** dưới tải). Một lượt `publishSharedLedgerReplica()` của nhịp đồng bộ chen vào cửa sổ đó
+ * làm con số trộn hai ảnh chụp: reviewer chạy được **22.000 MiB** báo cho một hàng **17.000 MiB**.
+ *
+ * ⇒ Đây đúng là *"vứt đi bằng chứng của chính nó"* (bài học Pha 3): con số đúng **đang nằm trong
+ * tay** — `ma.bytes`, byte của **chính hàng vừa được chứng minh là MA**. `foreignBytesBefore/After`
+ * ở lại làm **BỐI CẢNH**, không còn là nguồn của một phép trừ.
  *
  * KHÔNG BAO GIỜ ném.
  */
@@ -1565,9 +1575,25 @@ export interface VramReleaseStaleResult {
   readonly released: boolean;
   readonly refusal: VramReleaseStaleRefusal | null;
   readonly processKey: string | null;
+  /**
+   * ★ I-2 — byte của **CHÍNH HÀNG NÀY** (`HangMaCanXoa.bytes`).
+   * ⚠ M-4 — `0` cho hàng NỀN (`rowKind === "shared-baseline"`): byte nền **chưa bao giờ** nằm trong
+   * `foreignBytes`, nên ở đây `0` nghĩa *"thước này không đo cái vừa xoá"*, KHÔNG phải *"không có gì
+   * xảy ra"*. Đọc kèm `rowKind` — đó là lý do ô đó tồn tại.
+   */
   readonly freedBytes: number;
+  /** ★ M-4 — hàng vừa dọn là giấy phép của anh em hay **hàng NỀN dùng chung**. */
+  readonly rowKind: "sibling-lease" | "shared-baseline" | null;
+  /** BỐI CẢNH, không phải nguồn của phép trừ (I-2). */
   readonly foreignBytesBefore: number | null;
   readonly foreignBytesAfter: number | null;
+  /**
+   * ★ M-2 — lệnh `delete` mới chỉ **XẾP HÀNG**; nó rời DB ở lượt `syncSharedLedger()` kế tiếp.
+   * `null` ⇔ không có gì được xếp hàng (đã từ chối).
+   */
+  readonly durability: "queued-for-shared-ledger" | null;
+  /** ★ M-2 — bộ đếm "ý định chưa gửi được" NGAY SAU lệnh. ⚠ Toàn tiến trình, không riêng lệnh này. */
+  readonly unsyncedWritesAfter: number | null;
 }
 
 export async function releaseStaleSharedRow(leaseKey: string): Promise<VramReleaseStaleResult> {
@@ -1580,8 +1606,11 @@ export async function releaseStaleSharedRow(leaseKey: string): Promise<VramRelea
     released: false,
     processKey: null,
     freedBytes: 0,
+    rowKind: null,
     foreignBytesBefore: truocBytes,
     foreignBytesAfter: truocBytes,
+    durability: null,
+    unsyncedWritesAfter: truoc === null ? null : truoc.unsyncedWrites,
   } as const;
 
   if (banSao === null) {
@@ -1619,16 +1648,25 @@ export async function releaseStaleSharedRow(leaseKey: string): Promise<VramRelea
 
   const sau = sharedLedgerFact(Date.now());
   const sauBytes = sau === null ? null : sau.foreignBytes;
-  const freedBytes =
-    truocBytes === null || sauBytes === null ? 0 : Math.max(0, soHuuHanChoLenh(truocBytes) - soHuuHanChoLenh(sauBytes));
+  /**
+   * ★ M-4 — hàng NỀN **có mặt** trong `banSao.rows` (`dungBanSao` giữ nguyên `rows`), nên
+   * `releaseStale(SHARED_BASELINE_KEY)` gọi được. Nhưng nền đã bị TÁCH khỏi `foreignLeases` từ
+   * Pha 3 Task 3 ⇒ byte của nó **chưa bao giờ** nằm trong `foreignBytes`. Báo `ma.bytes` ở đó là
+   * khai một khoản dư địa vừa giành lại mà **thước này không đo** — nên `0`, kèm `rowKind` nói vì sao.
+   */
+  const rowKind = leaseKey === SHARED_BASELINE_KEY ? ("shared-baseline" as const) : ("sibling-lease" as const);
+  const freedBytes = rowKind === "sibling-lease" ? Math.max(0, soHuuHanChoLenh(ma.bytes)) : 0;
   return {
     leaseKey,
     released: true,
     refusal: null,
     processKey: hang.processKey,
     freedBytes,
+    rowKind,
     foreignBytesBefore: truocBytes,
     foreignBytesAfter: sauBytes,
+    durability: "queued-for-shared-ledger",
+    unsyncedWritesAfter: sau === null ? null : sau.unsyncedWrites,
   };
 }
 
