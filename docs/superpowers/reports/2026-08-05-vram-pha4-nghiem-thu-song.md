@@ -602,3 +602,57 @@ phải "có chứa chuỗi" — kèm **lưới-cho-lưới** chạy **sáu** hì
 |---|---|
 | (M1) `__authCtx` **bịa** trong `step.args` đi qua đường orchestrator tự trị | 4 ca (xem §13.5) |
 | (M2) gỡ `argsWithAuthCtx` ở **bất kỳ** điểm gọi `tool.handler(` nào | 2 ca kiểm đếm (xem §13.5) |
+
+### 13.5 Kết quả đột biến — **COMMIT TRƯỚC, ĐỘT BIẾN SAU**, `git checkout --` sau mỗi lượt
+
+Bản vá đã commit ở **`47969de5`** trước khi chạy đột biến; sau mỗi lượt đều `git checkout -- <file>`
+và xác nhận `git status --porcelain -- server/ client/` **RỖNG**.
+
+| đột biến | thao tác | ca ĐỎ | ghi chú |
+|---|---|---|---|
+| **M1** — gỡ cổng ở **Agent tự trị** | `aiAgentOrchestrator.ts:429` → `tool.handler(step.args ?? {})` | 🔴 **6 ĐỎ** | 4 ca hành vi (`checkPermission` nhận **999** trở lại; bước read **trả về dữ liệu** thay vì `PERMISSION_DENIED`) + **2 ca kiểm đếm** |
+| **M2** — gỡ cổng ở **`tryExecuteTool`** (điểm gọi CÒN LẠI) | `index.ts:146` → `tool.handler(decision.args)` | 🔴 **9 ĐỎ** | 7 ca N-1/N-4 + **2 ca kiểm đếm** ⇒ *"gỡ ở **BẤT KỲ** điểm gọi nào ⇒ đỏ"* được chứng minh ở **cả hai** điểm |
+| **M3** (tự thêm) — **ĐIỂM GỌI MỚI trong FILE MỚI** | tạo `services/__t5MutationProbe.ts` gọi `tool.handler(args)` | 🔴 **2 ĐỎ**, kèm **con trỏ chính xác**: `services/__t5MutationProbe.ts:5 → handler(args)` | Chứng minh lưới **liệt kê bằng AST**, không phải một danh sách chép tay: một file **chưa từng tồn tại** vẫn rơi vào lưới. Đây là bất biến mà M1/M2 **không** chứng minh được. |
+
+⚠ M3 là đột biến quan trọng nhất về mặt cấu trúc: nó là thứ phân biệt *"lưới theo ĐƯỜNG THOÁT"* với
+*"lưới theo FILE"* — đúng lớp lỗi đã tái diễn **mười một** lần trong chuỗi pha này.
+
+### 13.6 Xác nhận bằng `git show` (không tin lời khai)
+
+```
+git show 6c1de901:server/services/aiAgentOrchestrator.ts | grep -n "tool.handler("
+  411:        const result = await tool.handler(step.args ?? {});                                  ← TRƯỚC
+
+git show 47969de5:server/services/aiAgentOrchestrator.ts | grep -n "tool.handler("
+  429:        const result = await tool.handler(argsWithAuthCtx(tool, step.args ?? {}, exec));      ← SAU
+
+git show 47969de5:server/services/aiLocalTools/toolRegistry.ts | grep -n "export function argsWithAuthCtx"
+  264:export function argsWithAuthCtx(tool: Tool<any, any>, args: unknown, execCtx?: ToolExecContext): unknown {
+
+git show 47969de5:server/services/aiLocalTools/index.ts | grep -n "import { argsWithAuthCtx }\|await tool.handler("
+  51:import { argsWithAuthCtx } from "./toolRegistry";
+  146:    const result = await tool.handler(argsWithAuthCtx(tool, decision.args, execCtx));
+```
+
+### 13.7 Cổng kiểm sau bản vá + sau đột biến
+
+| lệnh | kết quả |
+|---|---|
+| `npx vitest run server/services/vram/ server/routers/vramRouter* client/src/lib/errorCodes* server/services/aiLocalTools/ server/services/aiAgentOrchestrator*` | **61 file · 945/945 XANH** |
+| …cùng lệnh **`--sequence.shuffle.tests`** | **945/945 XANH** |
+| `NODE_OPTIONS=--max-old-space-size=8192 npm run check` | **exit 0** |
+| `npm run check:tests` | **exit 0** |
+| `npm run i18n:check` | **0 lệch** |
+| `git status --porcelain -- server/ client/` | **RỖNG** |
+
+⚠ **Đính chính glob của brief (người review xác nhận): `server/services/ai/aiLocalTools*` KHÔNG khớp
+file nào** — tool nằm ở `server/services/aiLocalTools/`. Dùng nguyên văn glob đó thì bộ ca của lớp
+tool **im lặng biến mất** khỏi lượt chạy mà vẫn báo "xanh".
+
+### 13.8 Còn treo — chuyển bàn giao **review toàn nhánh**
+
+| # | mục | vì sao KHÔNG sửa ở đây |
+|---|---|---|
+| **F1** 🟠 | `VramBrokerPanel` không gửi `totpCode`, không dùng `StepUpOtpDialog` ⇒ hai nút phá huỷ **không bấm được với BẤT KỲ vai nào** khi `ACTUATION_STEPUP_2FA=true`. **Người review xác nhận độc lập** (supervisor1 qua role-floor vẫn 403 ở step-up). | Là **sửa UI**, không phải lỗ an ninh; nằm ngoài phạm vi vòng review này. |
+| **F2** 🟠 | 8/8 tool `readToolsProgramming` không với tới được (thiếu `case` trong `extractArgsForTool`) ⇒ hai ranh giới an ninh (`read_project_file`, `calc`) **chưa từng chạy**. | Là **nợ CHẶN** (§3.1) — sửa nó là mở một bề mặt mới, phải có lưới sống trước. |
+| **U19** 🟡 | Đường tự trị **end-to-end THẬT** vẫn chưa chạy (planner trả `steps: []`). | Bản vá đã đóng lỗ ở mức đơn vị; khi planner được sửa **phải đo lại §8.1 trên đường thật**. |
