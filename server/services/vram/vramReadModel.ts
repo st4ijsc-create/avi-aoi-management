@@ -532,6 +532,32 @@ export function vramBackgroundHostForOwner(owner: string): string | null {
   return null;
 }
 
+/**
+ * ★★★ M-1 (review vòng 1) — **VỊ TỪ "HỘ NÀY CÓ CƠ CHẾ ĐÁNH THỨC TỪ NGOÀI KHÔNG". MỘT BẢN.**
+ *
+ * ⚠⚠ Trước bản này có **HAI** phát biểu cho cùng một câu hỏi, và chúng **ngược khuôn nhau**:
+ * mặt ĐỌC hỏi `h.matches === null` (đọc từ bản khai dân số) còn lệnh `retryDeferred` hỏi
+ * `host !== "cron:kb-sync"` (**một chuỗi cứng**). Docstring của chính bản khai nói *"`matches: null`
+ * ⇒ hộ này KHÔNG đi qua `vramDefer` (nó có cơ chế hẹn giờ riêng)"* ⇒ chuỗi cứng là **bản sao thứ
+ * hai**: thêm một hộ có hẹn giờ riêng (hoặc đổi tên `cron:kb-sync`) là hai mặt trôi khỏi nhau ngay,
+ * và mặt đọc sẽ hứa một lệnh mà mặt lệnh từ chối — đúng lỗi mà (D) được dựng ra để đóng.
+ */
+/**
+ * ⚠ Vị từ nhận **ĐÚNG Ô** `matches` (không nhận cả hàng) và khai `matches is null`: nhờ thế `tsc`
+ * thu hẹp được ở **CẢ HAI** nhánh của `docSauHo()`. Một `boolean` trần làm mất phép thu hẹp ở nhánh
+ * `else` ⇒ người sau bị cám dỗ viết lại `h.matches === null` tại chỗ, tức dựng lại đúng bản sao thứ
+ * hai mà M-1 vừa gỡ.
+ */
+function coCoCheDanhThucNgoai(matches: ((owner: string) => boolean) | null): matches is null {
+  return matches === null;
+}
+
+/** Dạng theo TÊN HỘ của vị từ trên — `vramCommands.vramRetryDeferredCommand()` gọi ĐÚNG hàm này. */
+export function vramBackgroundHostHasExternalRetry(host: string): boolean {
+  const h = HO_BACKGROUND.find((x) => x.host === host);
+  return h !== undefined && coCoCheDanhThucNgoai(h.matches);
+}
+
 /** Hạng NGHIÊM TRỌNG — khi một hộ có nhiều `owner` đang hoãn, ô trạng thái lấy cái NẶNG nhất. */
 const HANG: Record<VramAgentDeferStatus["kind"], number> = {
   "not-observable-here": 0,
@@ -592,7 +618,8 @@ function docSauHo(kb: KbSyncStatus | null): VramAgentDeferHostView[] {
     let hostedHere: boolean | null;
     let status: VramAgentDeferStatus;
 
-    if (h.matches === null) {
+    const khop = h.matches;
+    if (coCoCheDanhThucNgoai(khop)) {
       /**
        * `cron:kb-sync` — cơ chế RIÊNG, và là hộ DUY NHẤT ta **chứng minh được** có chủ trì ở đây
        * hay không (`getKbSyncSchedulerStatus().hostedHere` ⇔ `job !== null`). Cron sống ở `worker`
@@ -627,7 +654,6 @@ function docSauHo(kb: KbSyncStatus | null): VramAgentDeferHostView[] {
        * **KHÔNG XÁC ĐỊNH ĐƯỢC**, và `status` chỉ nói về chỗ đứng này.
        */
       hostedHere = null;
-      const khop = h.matches;
       status = oDocDuoc
         ? { kind: "no-chain-in-this-process" }
         : { kind: "not-observable-here", meaning: "defer-state-unreadable" };
@@ -655,14 +681,13 @@ function docSauHo(kb: KbSyncStatus | null): VramAgentDeferHostView[] {
        * ★★★ (D) — cùng ba nhánh mà `vramRetryDeferredCommand()` đi, đọc từ **cùng** ô `hostedHere`
        * (⇐ `coChuTriCronODay()`). Không một phép so nào được viết lại ở đây.
        */
-      retryReach:
-        h.matches !== null
-          ? { kind: "unreachable", why: "no-retry-mechanism-for-this-host" }
-          : hostedHere === null
-            ? { kind: "unknown", why: "defer-state-unreadable" }
-            : hostedHere
-              ? { kind: "reachable-here" }
-              : { kind: "unreachable", why: "host-not-running-in-this-process" },
+      retryReach: !coCoCheDanhThucNgoai(h.matches)
+        ? { kind: "unreachable", why: "no-retry-mechanism-for-this-host" }
+        : hostedHere === null
+          ? { kind: "unknown", why: "defer-state-unreadable" }
+          : hostedHere
+            ? { kind: "reachable-here" }
+            : { kind: "unreachable", why: "host-not-running-in-this-process" },
     };
   });
 }

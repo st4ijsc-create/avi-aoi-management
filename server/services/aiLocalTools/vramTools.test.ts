@@ -19,6 +19,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const checkPermissionMock = vi.fn();
 vi.mock("../../_core/accessControl", () => ({
@@ -26,6 +27,13 @@ vi.mock("../../_core/accessControl", () => ({
 }));
 
 import "./vramTools";
+/**
+ * ⚠ NHẬP TĨNH, KHÔNG `await import()` TRONG THÂN CA: đồ thị nhập của `./index` (toàn bộ họ tool)
+ * tốn vài giây; nạp nó BÊN TRONG một ca làm ca đó ăn hết ngân sách 5.000 ms mặc định của vitest
+ * dưới tải song song (đo được 5.018 ms — đúng lớp flake đã ghi cho `wiring.inprocess`). Nhập tĩnh
+ * đẩy chi phí sang pha COLLECT, nơi không có trần 5 s.
+ */
+import { classifyToolIntent, tryExecuteTool } from "./index";
 import { getTool } from "./toolRegistry";
 import * as broker from "../vram/vramBroker";
 import {
@@ -114,6 +122,62 @@ describe("get_vram_state — đăng ký, chỉ-đọc, phân quyền", () => {
     const r = await chay();
     expect(r.note).toBe("PERMISSION_DENIED");
     expect((r.data as { state: unknown }).state).toBeNull();
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ C-1 (review vòng 1) — **ĐI TỪ ĐẦU ĐƯỜNG CỦA AGENT, KHÔNG TIÊM `__authCtx` BẰNG TAY**
+//
+// ⚠⚠⚠ ĐÂY LÀ CA MÀ BỘ CA VÒNG 1 KHÔNG CÓ, VÀ NÓ LÀ CA QUAN TRỌNG NHẤT CỦA FILE.
+// Mọi ca vòng 1 gọi thẳng `tool.handler({ __authCtx: AUTH, … })` — tức **tự tiêm** đúng thứ mà mã
+// sản xuất **không bao giờ tiêm**. `tryExecuteTool()` gọi `tool.handler(decision.args)` và `execCtx`
+// **không vào `args`** ⇒ tool LUÔN trả `PERMISSION_DENIED`, `buildVramAgentState()` là **MÃ CHẾT**
+// trên đường Agent. Cả họ `readToolsP2*`/`analyticsTools` chết y hệt (nợ có sẵn của repo).
+// ⇒ Ca dưới đây đi **từ câu hỏi**, qua bộ phân loại ý định THẬT, qua `tryExecuteTool()` THẬT.
+// ⚠ Lưới theo ĐƯỜNG THOÁT, không theo FILE: một ca hỏi *"file có nhập `buildVramAgentState` không"*
+// đã XANH suốt vòng 1 trong khi con số **không tới được người đọc**.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+describe("★★★ C-1 — đường AGENT ĐẦY ĐỦ: câu hỏi → classifier → tryExecuteTool → state THẬT", () => {
+  const EXEC = { user: { id: 7, role: "admin" as const, name: "Tester" }, lang: "vi" as const };
+
+  it("bộ phân loại ý định định tuyến câu hỏi VRAM về `get_vram_state`", () => {
+    expect(classifyToolIntent("còn bao nhiêu vram").tool).toBe("get_vram_state");
+  });
+
+  it("★★★ gọi TỪ ĐẦU ĐƯỜNG (KHÔNG tiêm `__authCtx` bằng tay) ⇒ state THẬT, TUYỆT ĐỐI không PERMISSION_DENIED", async () => {
+    const r = await tryExecuteTool("còn bao nhiêu vram", undefined, EXEC);
+
+    expect(r.decision.tool).toBe("get_vram_state");
+    expect(r.result, "tool phải chạy được, không nuốt lỗi").not.toBeNull();
+    // ⇐ ĐÂY là ca đỏ khi ai gỡ phép tiêm `__authCtx` ở `tryExecuteTool` (C-1).
+    expect(r.result!.note, "danh tính phiên THẬT phải tới được RBAC gate").not.toBe("PERMISSION_DENIED");
+    const data = r.result!.data as { state: { headroom: unknown } | null };
+    expect(data.state, "ảnh chụp VRAM phải THẬT SỰ tới được Agent").not.toBeNull();
+    expect(r.result!.textSummary).toContain("trusted=");
+  });
+
+  it("★★ RBAC vẫn CƯỠNG CHẾ trên đường đầy đủ: `checkPermission` từ chối ⇒ vẫn TỪ CHỐI", async () => {
+    checkPermissionMock.mockResolvedValue(false);
+    const r = await tryExecuteTool("còn bao nhiêu vram", undefined, EXEC);
+    expect(r.result!.note).toBe("PERMISSION_DENIED");
+    expect((r.result!.data as { state: unknown }).state).toBeNull();
+  });
+
+  it("★★ KHÔNG có `execCtx` (lời gọi cũ, không danh tính) ⇒ TỪ CHỐI — phép tiêm KHÔNG nới quyền cho ai", async () => {
+    const r = await tryExecuteTool("còn bao nhiêu vram", undefined, undefined);
+    expect(r.result!.note).toBe("PERMISSION_DENIED");
+  });
+
+  it("★★★ `__authCtx` do NGƯỜI GỌI bịa trong args KHÔNG thắng danh tính phiên THẬT", async () => {
+    /**
+     * Ranh giới an toàn của phép tiêm: `__authCtx` được gán SAU phép trải. Ca này chứng minh bằng
+     * ĐỐI SỐ THẬT đi tới `checkPermission`, không bằng đọc mã.
+     */
+    await tryExecuteTool("còn bao nhiêu vram", undefined, EXEC);
+    const goi = checkPermissionMock.mock.calls.at(-1)!;
+    expect(goi[0], "userId phải là của PHIÊN, không phải của args").toBe(7);
+    expect(goi[1]).toBe("admin");
+    expect(goi[2]).toBe("machine_control");
   });
 });
 
@@ -300,5 +364,32 @@ describe("cổng ra — `buildVramAgentState` có điểm gọi NGOÀI `server/r
      * danh dòng đó). Nó phải KHÔNG còn lái thẻ VRAM.
      */
     expect(dashboard).not.toMatch(/h\?\.vram/);
+  });
+
+  /**
+   * ★★★ C-3 (review vòng 1) — **PANEL PHẢI ĐƯỢC MOUNT, KHÔNG CHỈ TỒN TẠI.**
+   *
+   * Người review gỡ thẻ `<VramBrokerPanel …/>` khỏi `AIBrainDashboard` ⇒ **283/283 XANH**: người đọc
+   * phía client **không có lưới nào canh**. Một thành phần không được mount là một file đẹp mà không
+   * ai render — đúng "đồng hồ không kim" ở tầng UI.
+   *
+   * ⚠ Hỏi trên **AST** (`ts.createSourceFile`), không hỏi trên văn bản: comment KHÔNG phải node ⇒
+   * bình luận thẻ ra là nó **biến mất khỏi cây**, không lách được (cùng kỹ thuật cổng (ii) vừa đổi
+   * sang sau khi bản regex bị lách).
+   */
+  it("★★★ `<VramBrokerPanel/>` THẬT SỰ được mount trong `AIBrainDashboard` (hỏi trên AST, không hỏi văn bản)", () => {
+    const file = join(REPO_ROOT, "client", "src", "pages", "AIBrainDashboard.tsx");
+    const sf = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    let mounted = 0;
+    const tenThe = (n: ts.JsxSelfClosingElement | ts.JsxOpeningElement): string =>
+      ts.isIdentifier(n.tagName) ? n.tagName.text : n.tagName.getText(sf);
+    const di = (node: ts.Node): void => {
+      if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && tenThe(node) === "VramBrokerPanel") {
+        mounted++;
+      }
+      ts.forEachChild(node, di);
+    };
+    di(sf);
+    expect(mounted, "AIBrainDashboard phải render <VramBrokerPanel/>").toBeGreaterThanOrEqual(1);
   });
 });

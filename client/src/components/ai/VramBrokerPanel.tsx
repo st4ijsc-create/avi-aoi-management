@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import type { usePollingInterval } from "@/hooks/usePollingInterval";
 import { mapTrpcError } from "@/lib/trpcErrors";
+import { vramRetryButtonEnabled } from "@/lib/vramCommandReach";
 import {
   translateVramScope,
   translateVramHostedHere,
@@ -222,6 +223,23 @@ export function VramBrokerPanel({ canCommand, polling }: Props) {
               </div>
               {/* ★ translateVramHolderListIsLowerBound — danh sách rỗng KHÔNG nghĩa là card trống. */}
               <p className="text-xs text-muted-foreground mt-1">{translateVramHolderListIsLowerBound()}</p>
+              {/*
+                ★★★ I-3 (F, review vòng 1) — BA ô `unattributed.*` trước đó **không ai đọc**: câu
+                cảnh báo ở trên là câu TĨNH (hàm dịch không nhận tham số — đúng, vì cờ LUÔN `true`),
+                nên nó không mang được ba con số nói *"cận dưới tới mức nào"*. Thiếu chúng, người đọc
+                biết "đây là cận dưới" mà không biết nó hụt bao nhiêu.
+                ⚠ `excludesBaselineBytes` LUÔN `true` và **phải nói ra**: con số ngoài-sổ đã TRỪ toàn
+                bộ NỀN THIẾT BỊ, nên `0` KHÔNG nghĩa là cả card đã được giải thích.
+              */}
+              <p className="text-xs text-muted-foreground mt-1">
+                {t("vramBroker.coverage", "Độ phủ của sổ")}: {s.unattributed.wiredSiteCount ?? "?"}/
+                {s.unattributed.knownSiteRowCount ?? "?"} {t("vramBroker.sites", "điểm cấp phát đã nối")} ·{" "}
+                {t("vramBroker.unattributedBytes", "ngoài sổ")}{" "}
+                {fmtMiB(s.unattributed.bytes, t("vramBroker.unknown", "KHÔNG BIẾT"))}
+                {s.unattributed.excludesBaselineBytes
+                  ? ` · ${t("vramBroker.excludesBaseline", "con số này ĐÃ TRỪ toàn bộ NỀN THIẾT BỊ — 0 KHÔNG nghĩa là cả card đã được giải thích")}`
+                  : ""}
+              </p>
               <div className="flex flex-col gap-2 mt-2">
                 {[...s.ledger.localHolders, ...(s.ledger.foreign.known ? s.ledger.foreign.holders : [])].map((h) => (
                   <div
@@ -293,7 +311,13 @@ export function VramBrokerPanel({ canCommand, polling }: Props) {
                 {s.defer.hosts.map((h) => {
                   const owner =
                     h.status.kind === "deferring" || h.status.kind === "exceeded" ? h.status.owner : h.host;
-                  const canRetry = h.retryReach.kind === "reachable-here" || h.status.kind === "deferring" || h.status.kind === "exceeded";
+                  /**
+                   * ★★★ I-1 (review vòng 1) — **CHỈ** `retryReach.kind`. Bản đầu `||` thêm
+                   * *"đang hoãn"* ⇒ nút hiện cho 5/6 hộ mà lệnh LUÔN từ chối, tức mặt đọc lại hứa
+                   * nhiều hơn mặt lệnh — đúng lỗi (D). Vị từ nằm ở một module THUẦN vì repo có
+                   * **0 file `*.test.tsx`**: một vị từ trong `.tsx` là vị từ không ai kiểm được.
+                   */
+                  const canRetry = vramRetryButtonEnabled(h.retryReach.kind);
                   return (
                     <div key={h.host} className="rounded-md border p-2 text-xs flex flex-col gap-1">
                       <div className="flex flex-wrap items-center gap-2">

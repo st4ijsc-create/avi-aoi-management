@@ -26,6 +26,7 @@ import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import i18n from "i18next";
 import "../i18n";
 
@@ -890,25 +891,76 @@ describe("cổng (ii) — mỗi hàm `translateVram*` có ≥1 CALL-SITE SẢN P
     return out;
   }
 
-  it("★★★ cả 8/8 hàm có call-site THẬT (không phải định nghĩa, không phải file test)", () => {
+  /**
+   * ★★★ C-2 (review vòng 1) — **ĐẾM LỜI GỌI TRÊN CÂY CÚ PHÁP, KHÔNG ĐẾM CHUỖI.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠ Bản đầu của cổng này quét `readFileSync` + regex `translateVramX\s*\(`. Người review
+   * **biến một lời gọi thành CHÚ THÍCH** ⇒ chuỗi vẫn còn nguyên trong văn bản ⇒ **119/119 XANH**
+   * trong khi hàm ấy đã trở lại làm đồng hồ không kim. `tsc` không cứu vì `noUnusedLocals` TẮT.
+   *
+   * ⇒ Đổi **BẢN CHẤT** của phép hỏi, không vá regex: `ts.createSourceFile()` dựng AST, và **chú
+   * thích KHÔNG PHẢI node của AST** — một lời gọi bị comment ra thì **biến mất khỏi cây**, không
+   * cách nào lách. Ta đếm `CallExpression` mà `expression` là đúng định danh ấy (kể cả dạng
+   * `ns.translateVramX(...)` qua `PropertyAccessExpression`).
+   *
+   * ⚠ Cổng này trả lời *"chương trình CÓ một lời gọi"*, vẫn **chưa** trả lời *"lời gọi ấy CHẠY"*
+   * — repo có **0 file `*.test.tsx`** nên không có harness render nào. Khai thẳng giới hạn: ca
+   * chứng minh nó chạy thật là nghiệm thu SỐNG (Task 5).
+   */
+  function demLoiGoiTrongAst(file: string, ten: string): number {
+    const src = readFileSync(file, "utf8");
+    const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, /* .tsx */ ts.ScriptKind.TSX);
+    let n = 0;
+    const di = (node: ts.Node): void => {
+      if (ts.isCallExpression(node)) {
+        const e = node.expression;
+        if ((ts.isIdentifier(e) && e.text === ten) || (ts.isPropertyAccessExpression(e) && e.name.text === ten)) n++;
+      }
+      ts.forEachChild(node, di);
+    };
+    di(sf);
+    return n;
+  }
+
+  it("★★★ cả 8/8 hàm có LỜI GỌI THẬT trên AST (chú thích không phải node ⇒ không lách được)", () => {
     const files = walkClientFiles(CLIENT_SRC);
     const thieu: string[] = [];
     const thay: Record<string, string[]> = {};
     for (const ten of TAM_HAM) {
-      // `<tên>(` = LỜI GỌI. `import { <tên> }` một mình KHÔNG tính — sự hiện diện không phải đường đi.
-      const re = new RegExp(`\\b${ten}\\s*\\(`);
-      const hits = files.filter((f) => re.test(readFileSync(f, "utf8"))).map((f) => f.replace(CLIENT_SRC, ""));
+      const hits = files.filter((f) => demLoiGoiTrongAst(f, ten) > 0).map((f) => f.replace(CLIENT_SRC, ""));
       thay[ten] = hits;
       if (hits.length === 0) thieu.push(ten);
     }
     if (thieu.length > 0) {
       console.error(
-        `[cổng (ii)] ${thieu.length}/8 hàm dịch KHÔNG có call-site sản phẩm — chúng là đồng hồ không kim:\n` +
-          thieu.join("\n") +
-          `\n(đã tìm thấy: ${JSON.stringify(thay)})`,
+        `[cổng (ii)] ${thieu.length}/8 hàm dịch KHÔNG có LỜI GỌI sản phẩm — chúng là đồng hồ không kim: ` +
+          thieu.join(", ") +
+          ` (đã tìm thấy: ${JSON.stringify(thay)})`,
       );
     }
     expect(thieu).toEqual([]);
+  });
+
+  it("★★ (lưới cho chính lưới) một lời gọi BỊ COMMENT KHÔNG được tính — chứng minh cổng đọc AST, không đọc văn bản", () => {
+    // Nguồn giả lập ĐÚNG cách người review đã lách: chuỗi còn nguyên trong văn bản, lời gọi thì không.
+    const nguon = `
+      import { translateVramScope } from "@/lib/errorCodes";
+      export function X() {
+        // return translateVramScope("this-process-only");
+        /* translateVramScope("this-process-only"); */
+        return "translateVramScope(\"this-process-only\")";
+      }
+    `;
+    const sf = ts.createSourceFile("giả.tsx", nguon, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    let n = 0;
+    const di = (node: ts.Node): void => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "translateVramScope") n++;
+      ts.forEachChild(node, di);
+    };
+    di(sf);
+    expect(nguon).toContain("translateVramScope("); // văn bản CÓ — regex cũ sẽ XANH GIẢ
+    expect(n, "AST phải thấy 0 lời gọi: comment + chuỗi đều không phải CallExpression").toBe(0);
   });
 });
 

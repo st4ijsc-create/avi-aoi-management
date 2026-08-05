@@ -39,6 +39,41 @@ export type { PendingActionDTO } from "../aiCopilotActions";
 export { classifyToolIntent, classifyToolIntentLLM, listTools };
 
 /**
+ * ★★★ Pha 4 Task 4 (review vòng 1, C-1) — **TIÊM `__authCtx` VÀO ARGS CỦA READ TOOL.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ ĐÂY LÀ NỢ CÓ SẴN CỦA REPO, VÀ NÓ LÀM CHẾT **CẢ HỌ** READ TOOL CÓ RBAC
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `readToolsP2.ts` / `readToolsP2bc.ts` / `readToolsP2d.ts` / `analyticsTools.ts` đều khai
+ * `__authCtx: authCtxSchema.optional()` trong schema và **TỪ CHỐI fail-safe khi nó vắng** — nhưng
+ * `tryExecuteTool()` gọi `tool.handler(decision.args)` và **`execCtx` KHÔNG BAO GIỜ vào `args`**.
+ * ⇒ Mọi tool ấy **LUÔN** trả `PERMISSION_DENIED` trên đường Agent. Chúng có test, có đăng ký, có
+ * schema — và **không ai đọc được dữ liệu của chúng**: đúng định nghĩa "đồng hồ không kim", chỉ ở
+ * tầng khác. Người review Task 4 tìm ra bằng cách chạy probe từ **đầu đường**, không phải bằng suy
+ * luận; bộ ca cũ (gọi thẳng `handler()` kèm `__authCtx` tiêm tay) **mù đúng chỗ này**.
+ *
+ * ⚠ VÌ SAO SỬA Ở ĐÂY, KHÔNG VÁ TỪNG TOOL: một tool tự đọc danh tính từ đâu đó khác là **đường thứ
+ * hai** cho một sự thật đã có chủ (`ToolExecContext.user` — người dùng phiên THẬT, không tin từ
+ * client). Vá 20 tool là 20 bản sao.
+ *
+ * ⚠⚠ CHỈ TIÊM KHI SCHEMA CỦA TOOL **CÓ KHAI** `__authCtx` (các schema đều `.strict()`): một tool
+ * không khai mà bị nhét thêm khoá lạ sẽ **vỡ** ở bất kỳ lượt `safeParse` nào về sau. Phép tiêm này
+ * do đó **cộng thêm, không đổi gì** với tool cũ không dùng RBAC.
+ * ⚠⚠ `__authCtx` được gán **SAU** phép trải: một `__authCtx` do LLM/người dùng bịa trong `args`
+ * **KHÔNG BAO GIỜ** thắng danh tính phiên thật. Đây là ranh giới an toàn, không phải thứ tự tuỳ ý.
+ */
+function argsWithAuthCtx(tool: Tool<any, any>, args: unknown, execCtx?: ToolExecContext): unknown {
+  if (!execCtx) return args;
+  const shape = (tool.parameters as unknown as { shape?: Record<string, unknown> })?.shape;
+  if (!shape || !Object.hasOwn(shape, "__authCtx")) return args;
+  if (args === null || typeof args !== "object" || Array.isArray(args)) return args;
+  return {
+    ...(args as Record<string, unknown>),
+    __authCtx: { userId: execCtx.user.id, role: execCtx.user.role },
+  };
+}
+
+/**
  * Try to execute a tool for the given question. Returns null when no tool
  * is appropriate or when execution fails (so caller can fall back to KB).
  *
@@ -129,7 +164,9 @@ export async function tryExecuteTool(
     return { decision, result: null, error: "READ_TOOL_MISSING_HANDLER" };
   }
   try {
-    const result = await tool.handler(decision.args);
+    // ★★★ C-1 — danh tính phiên THẬT đi vào args ở ĐÂY (xem `argsWithAuthCtx`). Không có dòng này,
+    // mọi read tool có RBAC là MÃ CHẾT trên đường Agent.
+    const result = await tool.handler(argsWithAuthCtx(tool, decision.args, execCtx));
     return { decision, result };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

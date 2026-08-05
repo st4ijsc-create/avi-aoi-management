@@ -31,7 +31,7 @@ import type { VramReclaimerId } from "./types";
 import { preemptOwner } from "./vramPreempt";
 import { releaseStaleSharedRow } from "./vramReconciler";
 import { sharedLedgerSelfKey } from "./vramSharedLedger";
-import { vramBackgroundHostForOwner } from "./vramReadModel";
+import { vramBackgroundHostForOwner, vramBackgroundHostHasExternalRetry } from "./vramReadModel";
 import type { VramDeferRetryUnreachable } from "./vramReadModel";
 import { retryKbSyncDeferNow } from "../kbSyncScheduler";
 
@@ -291,7 +291,13 @@ export function vramRetryDeferredCommand(owner: string): VramRetryDeferredComman
       attempts: null,
     };
   }
-  if (host !== "cron:kb-sync") {
+  /**
+   * ★★★ M-1 (review vòng 1) — **CÙNG vị từ với mặt ĐỌC**, không phải chuỗi cứng `"cron:kb-sync"`.
+   * Bản trước viết tên hộ bằng tay ở đây trong khi mặt đọc hỏi bản khai dân số ⇒ hai phát biểu cho
+   * một câu hỏi. Thêm một hộ có hẹn giờ riêng là hai mặt trôi khỏi nhau NGAY — và mặt đọc sẽ hứa
+   * `reachable-here` cho một hộ mà hàm này từ chối, tức đúng lỗi (D) tồn tại để đóng.
+   */
+  if (!vramBackgroundHostHasExternalRetry(host)) {
     return {
       ...chung,
       // ⚠ `null`, KHÔNG `false`: 5 hộ này không có cơ chế nào trả lời "có chạy ở đây không" (Task 1 C-1).

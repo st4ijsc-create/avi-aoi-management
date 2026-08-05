@@ -562,11 +562,41 @@ describe("D. từ chối KHÔNG được biến mất trên đường ra", () =>
    * nguồn chính; cái này là lưới CHỐNG QUÊN, không phải bằng chứng đầy đủ.
    */
   it("★★★ MỌI file sản xuất gọi beginVramAllocation đều nhập vị từ `isVramRefusal`", async () => {
-    const { readFileSync } = await import("node:fs");
-    // ⚠ `execFileSync` + mảng tham số (không `execSync` + chuỗi shell): không có shell nào diễn
-    // giải ký tự đặc biệt. Ở đây đầu vào là hằng số, nhưng khuôn an toàn phải là khuôn mặc định.
-    const { execFileSync } = await import("node:child_process");
-    const ra = execFileSync("git", ["grep", "-l", "beginVramAllocation", "--", "server"], { encoding: "utf8" });
+    const { readFileSync, readdirSync, statSync } = await import("node:fs");
+    const { join, sep } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ★★★ Pha 4 Task 4 (review vòng 1, C-2 nửa sau) — **BỎ `git grep`: NÓ MÙ VỚI FILE CHƯA THEO DÕI.**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Bản trước quét bằng `execFileSync("git", ["grep", "-l", …])`. `git grep` **chỉ nhìn chỉ mục**
+     * ⇒ một file MỚI (untracked) **vô hình** với lưới này cho tới đúng lúc nó được commit. Đo được:
+     * `server/services/aiLocalTools/vramTools.ts` đi lọt **BA lượt chạy xanh** (kể cả shuffle) và
+     * chỉ hiện ra ở lượt chạy ĐẦU TIÊN **SAU** commit. Đây là **ÂM TÍNH GIẢ**, nguy hiểm hơn hẳn
+     * dương tính giả đã vá trước đó: nó nói "sạch" về một thứ nó chưa từng nhìn.
+     * ⇒ Duyệt THƯ MỤC (`readdirSync`) — thấy mọi file trên đĩa, không quan tâm git.
+     * ⚠ Bỏ luôn `node_modules`, `dist`, thư mục ẩn.
+     */
+    const HERE = fileURLToPath(new URL(".", import.meta.url)); // .../server/services/vram
+    const SERVER_ROOT = join(HERE, "..", "..");
+    const BO_QUA = new Set(["node_modules", "dist", "build", "coverage"]);
+    const duyet = (dir: string, out: string[] = []): string[] => {
+      for (const name of readdirSync(dir)) {
+        if (name.startsWith(".") || BO_QUA.has(name)) continue;
+        const full = join(dir, name);
+        if (statSync(full).isDirectory()) {
+          duyet(full, out);
+          continue;
+        }
+        if (/\.tsx?$/.test(name)) out.push(full);
+      }
+      return out;
+    };
+    // Chuẩn hoá về đường dẫn tương đối kiểu POSIX để khớp bảng miễn trừ (khuôn `git grep` cũ).
+    const ra = duyet(SERVER_ROOT)
+      .filter((f) => readFileSync(f, "utf8").includes("beginVramAllocation"))
+      .map((f) => "server" + f.slice(SERVER_ROOT.length).split(sep).join("/"))
+      .join("\n");
     /** Miễn trừ CÓ LÝ DO — mỗi dòng phải nói được vì sao nó không cần vị từ. */
     const mienTru = new Map<string, string>([
       // Nơi NÉM: không có `catch` nào ở đây để nuốt lời từ chối của chính mình.
