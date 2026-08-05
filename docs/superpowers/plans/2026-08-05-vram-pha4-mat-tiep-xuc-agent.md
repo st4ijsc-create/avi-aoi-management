@@ -110,8 +110,38 @@ Nối vào hệ mã lỗi Sprint 5 (`client/src/lib/errorCodes.ts`), **ba ngôn 
 ⚠ `VRAM_SIDECAR_TTL_MS` **chưa ai tiêu thụ** — hoặc nối, hoặc xoá.
 ⚠ `getKbSyncSchedulerStatus().defer` — **cả 6 hộ `background`**, không chỉ `kb:sync`. Nhớ: 3/6 hộ **không hoãn** (suy giảm tại chỗ) — API phải phân biệt **"đang hoãn"** với **"không có cơ chế hoãn"**, đừng gộp.
 
+⚠⚠ **BÀN GIAO BẮT BUỘC từ Task 3 (review vòng 2, §5 mục 2 — cổng (ii)).** Tám hàm dịch
+`translateVramPreemptCommand`/`translateVramReleaseStaleCommand`/`translateVramRetryDeferredCommand`/
+`translateVramScope`/`translateVramHostedHere`/`translateVramHolderListIsLowerBound`/
+`translateVramEstimateUsable`/`translateVramNonFiniteFields` (`client/src/lib/errorCodes.ts`) **CHƯA
+có consumer sản phẩm nào** — cổng (i) ("không câu chữ viết tay") đã cài ở Task 3
+(`client/src/lib/errorCodes.vramCommands.unit.test.ts`), nhưng cổng (ii) ("mỗi hàm có ≥ 1 call-site
+sản phẩm") bị hoãn có chủ đích vì nó đỏ NGAY hôm nay theo cấu trúc — **Task 4 PHẢI cài cổng đó khi
+nối UI/router tiêu thụ các hàm này**, kèm NGUYÊN VĂN assert:
+
+```
+grep -E "translateVram(Preempt|ReleaseStale|RetryDeferred)Command|translateVram(Scope|HostedHere|HolderListIsLowerBound|EstimateUsable|NonFiniteFields)" \
+  -r client/src --include="*.ts" --include="*.tsx" | grep -v "\.test\.ts" | grep -v "client/src/lib/errorCodes.ts"
+⇒ mỗi 1 trong 8 tên hàm trên phải xuất hiện ≥ 1 lần trong kết quả (call-site THẬT, không phải định nghĩa).
+```
+
+Nếu Task 4 đóng mà không cài cổng này, đó là lỗi của **vòng review Task 3 này** (đã ghi trước ở đây),
+không phải lỗi Task 4.
+
+⚠⚠ **BÀN GIAO BẮT BUỘC từ Task 3 (review vòng 2, mục 3 — M-5 nửa sau).** `detail`
+(`VramPreemptCommandResult.detail`, `server/services/vram/vramCommands.ts`) bị cắt 400 ký tự **ở
+NGUỒN** (`vramPreempt.ts`), và câu ghép ở Task 3 không nói nó đã bị cắt. **Hình dạng đúng để sửa:**
+`VramPreemptCommandResult` phơi thêm **`detailTruncated: boolean`** (đo Ở ĐÚNG chỗ cắt, nguồn duy
+nhất của sự thật "đã cắt hay chưa"); Task 3/4 chỉ nối thêm một mẩu chữ khi cờ đó bật. **KHÔNG được tự
+đoán bằng cách đo `detail.length === 400` ở phía client** — đó là bản sao thứ hai của MỘT vị từ, đúng
+lớp lỗi đã đẻ ba Critical liên tiếp trong chuỗi pha này (một bất biến, hai người viết, hai câu trả
+lời trôi khỏi nhau).
+
 - [ ] **Bước 1: Bảng kiểm** — liệt kê từng ô, trạng thái sau task, và lý do nếu xoá. Vào báo cáo.
 - [ ] **Bước 2–6:** test đỏ → cài đặt → xanh → đột biến (xoá một người đọc ⇒ ca đỏ).
+- [ ] **Bước 6b (bàn giao Task 3 review vòng 2):** cài cổng (ii) đúng nguyên văn assert ở trên KHI
+      nối consumer đầu tiên cho `translateVram*`; thêm `detailTruncated: boolean` vào
+      `VramPreemptCommandResult` đúng hình dạng ở trên (không tự đo độ dài ở client).
 - [ ] **Bước 7: Commit.**
 
 ---

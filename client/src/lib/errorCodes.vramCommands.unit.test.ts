@@ -23,7 +23,9 @@
  * nhanh nhất để xanh giả trong khi người dùng thấy khoá trần.
  */
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import i18n from "i18next";
 import "../i18n";
 
@@ -227,6 +229,55 @@ describe("C-2 — cổng VÉT CẠN theo union thật: mọi literal của vramC
     expect(Object.keys(PREEMPT_OUTCOMES_CONSIDERED)).toHaveLength(3);
     expect(Object.keys(RELEASE_OUTCOMES_CONSIDERED)).toHaveLength(2);
     expect(Object.keys(RETRY_OUTCOMES_CONSIDERED)).toHaveLength(2);
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ N-1 (review vòng 2, CHẶN) — ĐÍNH CHÍNH BẮT BUỘC: `Record<Union, …>` ở trên chứng minh một
+  // literal CÓ TÊN TRONG MỘT BẢNG TEST, KHÔNG chứng minh nó CÓ BẢN DỊCH THẬT. Đo được: thêm
+  // `"reclaimer-timed-out"` vào `VramPreemptCommandReason` làm `tsc` đỏ (đúng), nhưng PHẢN ỨNG TỰ
+  // NHIÊN với lỗi đó — khai `"reclaimer-timed-out": "failed"` VÀO BẢNG mà KHÔNG dịch — làm MỌI CỔNG
+  // XANH LẠI (115/115 · tsc 0 · i18n:check 0 · key-parity 4/4), ra câu `"…: reclaimer-timed-out"` —
+  // ĐÚNG C-2 gốc, chỉ dịch đi một bước. Đối chứng nặng hơn: xoá `errors.reason.busy-in-use` (mã
+  // ĐANG SỐNG) khỏi cả ba locale ⇒ không cổng nào biết.
+  //
+  // Vì sao ca kiểm runtime ở trên không bắt: thất bại thật là *mã NẰM TRONG khung câu*
+  // (`"...bị TỪ CHỐI: <mã>"`), không phải *câu BẰNG mã* — luôn dài hơn, luôn khác `code.toLowerCase()`.
+  //
+  // ⇒ Cổng THẬT: hỏi "có bản dịch THẬT ở cả ba ngôn ngữ không" bằng `i18n.exists()` — KHÔNG suy luận
+  // qua nội dung câu render. `fallbackLng: false` là CỐT LÕI: thiếu nó thì zh/en mượn vi rồi khai
+  // "tồn tại" dù bundle của chính ngôn ngữ đó KHÔNG có khoá — cùng cơ chế F8 mà `translateAppError`
+  // đã phải chặn (xem lịch sử đầu file `errorCodes.ts`).
+  // ═════════════════════════════════════════════════════════════════════════════════════════════
+  it("N-1 — mọi literal reason/rowKind/durability PHẢI có bản dịch THẬT ở cả ba locale (i18n.exists, không suy qua nội dung câu)", () => {
+    const reasonCodes = [
+      ...Object.keys(PREEMPT_REASON_OUTCOME),
+      ...Object.keys(RELEASE_STALE_REASONS_TRANSLATED),
+      ...Object.keys(RETRY_DEFERRED_REASONS_TRANSLATED),
+    ];
+    for (const code of reasonCodes) {
+      for (const locale of LOCALES) {
+        expect(
+          i18n.exists(`errors.reason.${code}`, { lng: locale, fallbackLng: false }),
+          `errors.reason.${code} @${locale}`,
+        ).toBe(true);
+      }
+    }
+    for (const code of Object.keys(ROW_KIND_TRANSLATED)) {
+      for (const locale of LOCALES) {
+        expect(
+          i18n.exists(`errors.vramRowKind.${code}`, { lng: locale, fallbackLng: false }),
+          `errors.vramRowKind.${code} @${locale}`,
+        ).toBe(true);
+      }
+    }
+    for (const code of Object.keys(DURABILITY_TRANSLATED)) {
+      for (const locale of LOCALES) {
+        expect(
+          i18n.exists(`errors.vramDurability.${code}`, { lng: locale, fallbackLng: false }),
+          `errors.vramDurability.${code} @${locale}`,
+        ).toBe(true);
+      }
+    }
   });
 });
 
@@ -456,6 +507,49 @@ describe("C-1 + I-1 — tích Descartes: mọi trường nullable × outcome kh�
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ N-2 (review vòng 2, Minor) — 4 khoá "gốc" (không `_WITH_REASON`, `reason: null`) tồn tại
+// theo M-4 để LÀM LƯỚI khi bất biến "reason luôn non-null khi thất bại/từ chối" vỡ trong tương lai
+// — nhưng MỘT LƯỚI KHÔNG ĐƯỢC KIỂM là lưới sẽ hỏng đúng ngày nó được cần. Đột biến của reviewer
+// (N5b: thêm `{{refusalCode}}` vào `VRAM_CMD_PREEMPT_REFUSED`) đo được **112/112 vẫn xanh** vì
+// KHÔNG ca nào trước đây gọi 3 lệnh với `outcome: "refused"/"failed", reason: null` cho CẢ 4 khoá
+// (`VRAM_CMD_PREEMPT_REFUSED`/`VRAM_CMD_RELEASE_STALE_REFUSED`/`VRAM_CMD_RETRY_DEFERRED_REFUSED`
+// không render bao giờ; `VRAM_CMD_PREEMPT_FAILED` có render nhưng chỉ `.not.toBe("failed")`, không
+// kiểm placeholder). Thêm 3 tổ hợp còn thiếu + xiết ca đã có.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("N-2 — 4 khoá phòng thủ (M-4) PHẢI được kiểm placeholder, không chỉ khai 'tồn tại để làm lưới'", () => {
+  it("preempt outcome=refused, reason=null ⇒ không placeholder thô (khoá VRAM_CMD_PREEMPT_REFUSED, chưa từng render)", async () => {
+    await i18n.changeLanguage("vi");
+    const out = translateVramPreemptCommand({ outcome: "refused", reason: null, owner: "x", detail: null, freedBytes: 0 });
+    expect(hasUnresolvedPlaceholder(out), out).toBe(false);
+  });
+
+  it("preempt outcome=failed, reason=null ⇒ không placeholder thô (khoá VRAM_CMD_PREEMPT_FAILED, trước chỉ kiểm .not.toBe)", async () => {
+    await i18n.changeLanguage("vi");
+    const out = translateVramPreemptCommand({ outcome: "failed", reason: null, owner: "x", detail: null, freedBytes: 0 });
+    expect(hasUnresolvedPlaceholder(out), out).toBe(false);
+  });
+
+  it("releaseStale outcome=refused, reason=null ⇒ không placeholder thô (khoá VRAM_CMD_RELEASE_STALE_REFUSED, chưa từng render)", async () => {
+    await i18n.changeLanguage("vi");
+    const out = translateVramReleaseStaleCommand({
+      outcome: "refused",
+      reason: null,
+      leaseKey: "worker:1:1#2",
+      processKey: null,
+      rowKind: null,
+      durability: null,
+    });
+    expect(hasUnresolvedPlaceholder(out), out).toBe(false);
+  });
+
+  it("retryDeferred outcome=refused, reason=null ⇒ không placeholder thô (khoá VRAM_CMD_RETRY_DEFERRED_REFUSED, chưa từng render)", async () => {
+    await i18n.changeLanguage("vi");
+    const out = translateVramRetryDeferredCommand({ outcome: "refused", reason: null, owner: "x", host: null });
+    expect(hasUnresolvedPlaceholder(out), out).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
 // ★★★ RÀNG BUỘC 1/2/3/6 — BỀ MẶT BẨN THẬT: `owner`/`leaseKey`/`host` (tên hộ đến từ TIẾN TRÌNH
 // KHÁC — Pha 3 sổ chung) VÀ `detail` (M-5, bàn giao CỨNG từ Task 2: "CHƯA LÀM SẠCH cho i18n").
 // KHÔNG hàm làm sạch thứ hai: mọi giá trị đi qua ĐÚNG `stripInterpolationSyntax` (params bag qua
@@ -669,5 +763,77 @@ describe("(D) skipOnVariables — CHỐT bằng ca kiểm, không dựa vào m�
     // i18next sẽ diễn giải $t(...) trong giá trị và nối nội dung khoá đó vào.
     expect(raw as string).not.toContain("CẬN DƯỚI");
     expect(raw as string).toContain("$t(errors.VRAM_FIELD_HOLDER_LIST_LOWER_BOUND)");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ Cổng (i) (review vòng 2, §5 mục 2) — "KHÔNG CÂU CHỮ VIẾT TAY" cho kết quả lệnh VRAM.
+//
+// Reviewer BÁC lời hoãn ban đầu ("canh việc chưa xảy ra") — hình dạng cổng này ĐÚNG dù XANH hôm nay
+// (chưa consumer nào gọi `translateVram*Command`): nó không canh một sự kiện QUÁ KHỨ, nó canh một
+// sự kiện SẼ XẢY RA — người sẽ vi phạm nó (Task 4/5 tự ghép `${outcome}: ${reason}` bằng tay thay vì
+// gọi lớp dịch) chính là người lẽ ra phải cài nó, nên KHÔNG dừng lại tự hỏi có nên cài không. Cùng
+// kỹ thuật quét tĩnh (`walkTsFiles`-style) mà `appErrorParamsCoverage.test.ts` đã dùng cho
+// `server/routers/**`, áp cho `client/src/**` + `server/routers/vramRouter*` — không cơ chế mới.
+//
+// Phạm vi: template literal (backtick) chứa CẢ `outcome` LẪN một trong ba trường mô tả
+// (`reason`/`rowKind`/`durability`) — chữ ký của "tự ghép một câu tóm tắt kết cục" thay vì gọi
+// `translateVram*Command()`. `client/src/lib/errorCodes.ts` là lớp dịch CHÍNH THỨC nên được LOẠI TRỪ
+// khỏi quét (đó chính là nơi phép ghép này HỢP LỆ — `${r.outcome}: ${stripInterpolationSyntax(r.owner)}`
+// ở nấc fallback, không chạm `reason`/`rowKind`/`durability`).
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("cổng (i) — không câu chữ viết tay ghép outcome + reason/rowKind/durability ngoài errorCodes.ts", () => {
+  const TEST_FILE_DIR = fileURLToPath(new URL(".", import.meta.url)); // .../client/src/lib
+  const REPO_ROOT = join(TEST_FILE_DIR, "..", "..", "..");
+  const ALLOWED_FILES = new Set([join(TEST_FILE_DIR, "errorCodes.ts")]);
+
+  function walkTsFiles(dir: string): string[] {
+    const out: string[] = [];
+    for (const name of readdirSync(dir)) {
+      if (name === "node_modules" || name.startsWith(".")) continue;
+      const full = join(dir, name);
+      const st = statSync(full);
+      if (st.isDirectory()) {
+        out.push(...walkTsFiles(full));
+        continue;
+      }
+      if (/\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name)) out.push(full);
+    }
+    return out;
+  }
+
+  /** Chỉ `vramRouter*.ts` (không phải toàn bộ `server/routers/**`) — đúng phạm vi review nêu. */
+  function vramRouterFiles(dir: string): string[] {
+    return readdirSync(dir)
+      .filter((n) => n.startsWith("vramRouter") && /\.ts$/.test(n) && !/\.test\.ts$/.test(n))
+      .map((n) => join(dir, n));
+  }
+
+  it("không template literal nào ghép outcome + (reason|rowKind|durability) thành câu ngoài errorCodes.ts", () => {
+    const candidateFiles = [
+      ...walkTsFiles(join(REPO_ROOT, "client", "src")).filter((f) => !ALLOWED_FILES.has(f)),
+      ...vramRouterFiles(join(REPO_ROOT, "server", "routers")),
+    ];
+    const violations: string[] = [];
+    for (const file of candidateFiles) {
+      const src = readFileSync(file, "utf8");
+      if (!/\boutcome\b/.test(src)) continue; // lọc nhanh trước khi tách template literal (rẻ)
+      // Tách template literal (backtick string) — đủ dùng cho mã hiện có (không có backtick lồng
+      // trong biểu thức của các file này). `(?:[^`\\]|\\.)*` bắt cả ký tự escape.
+      const templateLiteralRe = /`(?:[^`\\]|\\.)*`/g;
+      let m: RegExpExecArray | null;
+      while ((m = templateLiteralRe.exec(src))) {
+        const literal = m[0];
+        const hasOutcome = /\boutcome\b/.test(literal);
+        const hasDescriptiveField = /\b(reason|rowKind|durability)\b/.test(literal);
+        if (hasOutcome && hasDescriptiveField) {
+          violations.push(`${file.replace(REPO_ROOT, "")}: ${literal.slice(0, 160)}`);
+        }
+      }
+    }
+    if (violations.length > 0) {
+      console.error(`[cổng (i) — không câu chữ viết tay] ${violations.length} chỗ:\n` + violations.join("\n"));
+    }
+    expect(violations).toEqual([]);
   });
 });
