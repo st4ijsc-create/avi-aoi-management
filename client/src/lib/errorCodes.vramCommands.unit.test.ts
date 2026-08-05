@@ -421,6 +421,17 @@ describe("C-1 + I-1 — tích Descartes: mọi trường nullable × outcome kh�
           ...combo,
         });
         expect(hasUnresolvedPlaceholder(out), out).toBe(false);
+        // ★ Đo được từ ĐỘT BIẾN của chính người thi hành (round 2): kiểm "không {{}} thô" KHÔNG đủ
+        // — khi `paramOrUnknown()` trả `null` thay vì `"?"`, i18next hạ `{{x}}` thành RỖNG (không
+        // phải placeholder thô), qua được `hasUnresolvedPlaceholder` mà vẫn SAI quy ước. Ở khuôn
+        // `…_RELEASED` (nơi cả ba ô này thật sự được nội suy), một ô `null` PHẢI để lại "?" — nội
+        // dung, không chỉ hình dạng.
+        if (outcome === "released") {
+          const expectedQuestionMarks =
+            (combo.processKey === null ? 1 : 0) + (combo.rowKind === null ? 1 : 0) + (combo.durability === null ? 1 : 0);
+          const questionMarksFound = (out.match(/\?/g) ?? []).length;
+          expect(questionMarksFound, out).toBe(expectedQuestionMarks);
+        }
       });
     }
   }
@@ -435,6 +446,10 @@ describe("C-1 + I-1 — tích Descartes: mọi trường nullable × outcome kh�
           host,
         });
         expect(hasUnresolvedPlaceholder(out), out).toBe(false);
+        // Cùng lý do trên: `{{host}}` chỉ thật sự được nội suy ở khuôn `…_ARMED`.
+        if (outcome === "retry-armed" && host === null) {
+          expect(out, out).toContain("?");
+        }
       });
     }
   }
