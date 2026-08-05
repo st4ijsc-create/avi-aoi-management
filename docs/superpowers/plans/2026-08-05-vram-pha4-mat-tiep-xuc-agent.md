@@ -184,6 +184,11 @@ Chặn đường dẫn (`read_project_file`) và hộp cát (`calc`) **CHƯA T�
       (`readToolsProgramming`), (d) hạ tầng VRAM (`vramTools`).
 - [ ] **Mỗi lớp phải có MỘT lượt với role BỊ TỪ CHỐI** — và lượt đó phải trả `PERMISSION_DENIED`
       **kèm 0 byte dữ liệu**. Một lớp chỉ chạy lượt "được phép" là **chưa nghiệm thu**.
+- [ ] ⚠⚠ **(N-7) Lượt ĐƯỢC PHÉP phải trả DỮ LIỆU THẬT, KHÁC RỖNG** — và báo cáo phải ghi **một
+      giá trị cụ thể đọc được** từ nó (một con số, một tên, một dòng). **Nếu lượt được phép và lượt
+      bị từ chối CÙNG RỖNG thì không phân biệt được hai trạng thái**, và cả hai đều "xanh" — **đúng
+      lớp lỗi C-1**, nơi tool đã CHẾT suốt trong khi 215/215 vẫn xanh. Một lớp không nêu được giá
+      trị cụ thể ở lượt được phép ⇒ **lớp đó CHƯA nghiệm thu**, ghi thẳng là chưa đạt.
 - [ ] **`read_project_file` phải có lượt THỬ VƯỢT RÀO riêng**: đường dẫn ra ngoài workspace
       (`../`, đường dẫn tuyệt đối, symlink) ⇒ phải bị chặn, và ghi lại NGUYÊN VĂN câu từ chối.
 - [ ] **`calc` phải có lượt THỬ VƯỢT RÀO riêng**: biểu thức chạm `process`/`require`/`global`/vòng
@@ -207,6 +212,15 @@ một hàm không ai gọi, một file không ai import.
       minh "chương trình CÓ lời gọi".
 - [ ] Nếu một câu **không hiện ra** dù cổng AST xanh ⇒ đó là một **nhánh chết**, và phải ghi vào
       báo cáo là **cổng ra CHƯA ĐẠT**, không được im lặng bỏ qua.
+- [ ] ⚠ **(N-8) MỆNH ĐỀ THOÁT CÓ ĐIỀU KIỆN — ba câu KẾT CỤC LỆNH.** Ba trong tám câu
+      (`translateVramPreemptCommand` · `translateVramReleaseStaleCommand` ·
+      `translateVramRetryDeferredCommand`) chỉ hiện **SAU KHI BẤM MỘT LỆNH**, và ở tiến trình `api`
+      có thể **không dựng được cảnh** (vd `retryDeferred` luôn `host-not-running-in-this-process` vì
+      cron sống ở `worker`; `releaseStale` cần một hàng MA đã chứng minh chủ đã chết).
+      ⇒ Được phép **không** dựng được cảnh, **NHƯNG** báo cáo phải ghi **VÌ SAO** cho **TỪNG câu**
+      (nêu đích danh cơ chế chặn), và ghi **cách duy nhất** để dựng được nó (vd: chạy ở tiến trình
+      `worker`). **Im lặng bỏ qua một câu = cổng ra CHƯA ĐẠT.** Một câu bị từ chối vẫn là một câu
+      **HIỆN RA** — lượt `refused` có câu chữ riêng, nên "lệnh bị từ chối" **KHÔNG** phải lý do thoát.
 
 ⚠ Không nối ống stdio vào tiến trình con. Dọn theo **đúng PID** (`nvidia-smi --query-compute-apps=pid`), **không quét mù theo tên**. `getLlama()` **không nạp được** trong `tsx` trần — dùng sidecar thật.
 

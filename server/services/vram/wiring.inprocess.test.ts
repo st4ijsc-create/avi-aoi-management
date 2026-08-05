@@ -29,7 +29,32 @@
  * `InferenceSession.create` CỘNG vào nó đúng như một lượt cấp phát thật ⇒ test đo được rằng
  * `commit()` ghi ĐÚNG delta quanh lượt cấp phát, chứ không phải một hằng số nào đó.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+/**
+ * ★★★ Pha 4 Task 4 (re-review, N-9) — **PHÉP PHÂN BIỆT "CHẬM" VỚI "KẸT", KHÔNG PHẢI MỘT LƯỢT NỚI TAY.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Ca 12/13 của file này đỏ **`Test timed out in 5000ms`** dưới tải song song (đo được: chạy riêng
+ * file 22/22 xanh mọi lượt; 51 file đỏ ~1/2 lượt; 71 file đỏ hai lượt liên tiếp). Nhưng ở **đúng
+ * module này**, hai nguyên nhân cho **CÙNG một triệu chứng**:
+ *   • **CHẬM** — nhiều worker tranh CPU/đĩa, mọi cửa sổ đo vẫn đóng đúng lúc;
+ *   • **KẸT** — một `withMeasureWindow()` **không bao giờ nhả**, mọi lượt sau xếp hàng vô hạn.
+ * Nới `testTimeout` **một mình** sẽ biến một lỗi THẬT thành một lượt xanh chậm — đúng thứ không
+ * được làm. ⇒ Nới **KÈM** một khẳng định ở lượt dọn: khoá phải VỀ 0, hàng chờ RỖNG, không lượt
+ * bỏ-cuộc nào còn bay. Xanh + ba số 0 ⇒ **hạ tầng**. Ngược lại ⇒ **lỗi thật**, và nó lộ ra bằng
+ * **chính accessor từng bị nghi là "đồng hồ không kim"** (`measureWindowDepth`).
+ */
+vi.setConfig({ testTimeout: 30_000 });
+
+afterEach(async () => {
+  const { measureWindowDepth, __measureLockIdleFacts } = await import("./vramMeasureLock");
+  const facts = __measureLockIdleFacts();
+  // ⚠ Ba ô, KHÔNG gộp: "ai đang giữ" · "ai đang xếp hàng" · "lượt bỏ-cuộc đang bay".
+  expect(measureWindowDepth(), "N-9: cửa sổ đo phải ĐÓNG ở lượt dọn — khác 0 nghĩa là KẸT, không phải CHẬM").toBe(0);
+  expect(facts.queued, "N-9: hàng chờ khoá đo phải RỖNG").toBe(0);
+  expect(facts.unmeasuredInFlight, "N-9: không lượt bỏ-cuộc nào được còn bay").toBe(0);
+});
 
 const GiB = 1024 * 1024 * 1024;
 

@@ -375,6 +375,31 @@ describe("cổng ra — `buildVramAgentState` có điểm gọi NGOÀI `server/r
     return ts.createSourceFile(f, readFileSync(f, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   }
 
+  /**
+   * ★★★ N-6 (re-review vòng 2) — **GỐC CỦA CHUỖI TRUY CẬP, ĐỌC TRÊN AST.**
+   *
+   * Mắt cuối của lưới vòng trước là `expect(...).toContain("vb")` — một phép **so CHUỖI**. Người
+   * review viết `const vb2 = h?.vram; const vramUsed = vb2?.used;` ⇒ chuỗi `"vb"` vẫn **nằm trong**
+   * `"vb2"` ⇒ **XANH 34/34**, và số **THÔ của thiết bị quay lại**. Cùng lớp lỗi với `||`: bất biến
+   * đúng, **phép hỏi sai công cụ**.
+   *
+   * ⇒ Đi ngược chuỗi trên AST (`a?.b.c ?? d`, `(x)`, `x!`) tới **định danh trái nhất** và so **BẰNG**
+   * nó. `vb2` ≠ `vb` ⇒ ĐỎ; `h?.vram` cho gốc `h` ⇒ ĐỎ.
+   */
+  function gocCuaChuoi(n: ts.Node | undefined): string | null {
+    let cur: ts.Node | undefined = n;
+    for (;;) {
+      if (cur === undefined) return null;
+      if (ts.isIdentifier(cur)) return cur.text;
+      if (ts.isPropertyAccessExpression(cur) || ts.isElementAccessExpression(cur)) cur = cur.expression;
+      else if (ts.isNonNullExpression(cur) || ts.isParenthesizedExpression(cur)) cur = cur.expression;
+      else if (ts.isCallExpression(cur)) cur = cur.expression;
+      else if (ts.isBinaryExpression(cur)) cur = cur.left; // `x ?? null`, `x || y` → vế TRÁI
+      else if (ts.isConditionalExpression(cur)) return null; // `?:` KHÔNG có gốc duy nhất ⇒ từ chối
+      else return null;
+    }
+  }
+
   function khoiTao(sf: ts.SourceFile, ten: string): ts.Expression | undefined {
     let ra: ts.Expression | undefined;
     const di = (n: ts.Node): void => {
@@ -396,32 +421,40 @@ describe("cổng ra — `buildVramAgentState` có điểm gọi NGOÀI `server/r
     expect(ts.isCallExpression(kState!), "`vramState` phải LÀ một lời gọi query").toBe(true);
     expect((kState! as ts.CallExpression).expression.getText(sf)).toBe("trpc.vram.state.useQuery");
 
-    // (2) `vb` PHẢI đọc từ `vramState`.
-    const kVb = khoiTao(sf, "vb");
-    expect(kVb, "phải có biến ảnh chụp broker").toBeDefined();
-    expect(kVb!.getText(sf)).toContain("vramState");
+    // (2) `vb` PHẢI đọc từ `vramState` — GỐC của chuỗi truy cập, không phải "có chứa chữ".
+    expect(gocCuaChuoi(khoiTao(sf, "vb")), "`vb` phải bắt nguồn từ `vramState`").toBe("vramState");
 
-    // (3) Hai con số hiển thị PHẢI đọc từ `vb` — tức từ broker, không từ một nguồn thứ hai.
+    // (3) Hai con số hiển thị PHẢI bắt nguồn từ `vb` — tức từ broker, không từ một nguồn thứ hai.
     for (const ten of ["vramUsed", "vramCeiling"]) {
-      const k = khoiTao(sf, ten);
-      expect(k, `phải có biến ${ten}`).toBeDefined();
-      expect(k!.getText(sf), `${ten} phải đọc từ ảnh chụp broker`).toContain("vb");
+      expect(gocCuaChuoi(khoiTao(sf, ten)), `${ten} phải bắt nguồn từ ảnh chụp broker \`vb\``).toBe("vb");
     }
   });
 
-  it("★★ (lưới cho chính lưới) BA hình dạng nguồn-thô khác nhau đều bị bắt bởi CÙNG phát biểu", () => {
-    /** Lưới cũ (`not.toMatch(/h\?\.vram/)`) để lọt biến thể 2 và 3. */
+  it("★★ (lưới cho chính lưới) NĂM hình dạng nguồn-thô đều bị bắt bởi CÙNG phát biểu", () => {
+    /**
+     * Lưới đời 1 (`not.toMatch(/h\?\.vram/)`) để lọt biến thể 2·3. Lưới đời 2 (`toContain("vb")`)
+     * để lọt biến thể **`vb2`** — đúng cách người review đã lách. Lưới đời 3 (gốc-trên-AST) bắt cả năm.
+     */
     const bienThe: Record<string, string> = {
       "nguyên văn lỗi cũ": "const vramUsed = h?.vram ?? null;",
       "thêm một nấc": "const vramUsed = h?.vram?.used ?? null;",
       "qua biến trung gian": "const hh = h; const vramUsed = hh.vram.used;",
+      "tên biến CHỨA 'vb' (cách reviewer lách)": "const vb2 = h?.vram; const vramUsed = vb2?.used;",
+      "gọi hàm khác": "const vramUsed = docSoThoTuThietBi();",
     };
     for (const [ten, nguon] of Object.entries(bienThe)) {
       const sf = ts.createSourceFile("giả.tsx", nguon, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-      const k = khoiTao(sf, "vramUsed");
-      expect(k, ten).toBeDefined();
-      expect(k!.getText(sf).includes("vb"), `${ten} PHẢI bị bắt`).toBe(false);
+      expect(gocCuaChuoi(khoiTao(sf, "vramUsed")), `${ten} PHẢI bị bắt`).not.toBe("vb");
     }
+    // Hình dạng ĐÚNG vẫn lọt qua — lưới không phải một cái cấm-tất-cả.
+    const dung = ts.createSourceFile(
+      "giả.tsx",
+      "const vramUsed = vb?.headroom.usedBytes ?? null;",
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    expect(gocCuaChuoi(khoiTao(dung, "vramUsed"))).toBe("vb");
   });
 
   /**

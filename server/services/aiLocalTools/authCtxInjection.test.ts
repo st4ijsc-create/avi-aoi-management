@@ -84,6 +84,61 @@ describe("★★★ N-1 — `__authCtx` BỊA trong args KHÔNG BAO GIỜ trở 
     expect(checkPermissionMock.mock.calls.some((c) => c[0] === 999 || c[1] === "superadmin")).toBe(false);
   });
 
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ N-4 (re-review vòng 2) — **DÒNG CHẶN NON-OBJECT TỪNG LÀ MỘT LỖ DANH TÍNH.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Trong JS một **MẢNG** là `typeof "object"` nhưng bị `Array.isArray()` loại ⇒ dòng chặn đầu hàm
+   * (`return args`) trả nó **NGUYÊN VĂN**, kèm mọi thuộc tính gắn trên nó. Người review đo được
+   * `checkPermission(999, "superadmin", …)` với **tool CHẠY**.
+   * ⚠ Chính docstring của `argsWithAuthCtx` đã cảnh báo *"một `return args` chen vào TRƯỚC bước (1)
+   * là mở lại lỗ này"* — rồi **dòng đầu hàm đúng là như thế**. Một lời cảnh báo không tự thi hành;
+   * ba ca dưới đây thi hành nó.
+   */
+  it("★★★ N-4 — MẢNG mang `__authCtx`, KHÔNG `execCtx` ⇒ `checkPermission` KHÔNG ĐƯỢC GỌI", async () => {
+    const mang: unknown[] & { __authCtx?: unknown } = ["mot-doi-so"];
+    mang.__authCtx = BIA;
+    classifier.args = mang as unknown as Record<string, unknown>;
+
+    const r = await tryExecuteTool("còn bao nhiêu vram", undefined, undefined);
+
+    expect(r.result!.note).toBe("PERMISSION_DENIED");
+    expect((r.result!.data as { state: unknown }).state).toBeNull();
+    expect(checkPermissionMock, "một MẢNG cũng không được chở danh tính qua").not.toHaveBeenCalled();
+  });
+
+  it("★★★ N-4 — MẢNG mang `__authCtx` + CÓ `execCtx` ⇒ VẪN từ chối, và danh tính bịa KHÔNG tới cổng", async () => {
+    /**
+     * ⚠ Bất biến ở đây là **CHIỀU CHẶT**, và nó mạnh hơn *"phiên thắng bịa"*: một túi tham số MÉO
+     * (`args` không phải object) **không mang được gì qua**, và cũng **không được nhận** danh tính
+     * phiên — nó thành `{}`. Hợp lý: không schema `z.object().strict()` nào nhận một mảng, nên lượt
+     * đó hỏng ở đâu cũng hỏng; thà từ chối sạch còn hơn chạy tiếp với một túi nửa vời.
+     * ⚠ Kỳ vọng ĐẦU của tôi ở ca này SAI (tưởng nó sẽ chạy với danh tính phiên) — mã đúng, ca sai;
+     * ghi lại để người sau không "sửa" mã theo kỳ vọng ấy.
+     */
+    const mang: unknown[] & { __authCtx?: unknown } = [];
+    mang.__authCtx = BIA;
+    classifier.args = mang as unknown as Record<string, unknown>;
+
+    const r = await tryExecuteTool("còn bao nhiêu vram", undefined, PHIEN);
+
+    expect(r.result!.note).toBe("PERMISSION_DENIED");
+    expect(
+      checkPermissionMock.mock.calls.some((c) => c[0] === 999 || c[1] === "superadmin"),
+      "danh tính BỊA tuyệt đối không được chạm cổng RBAC",
+    ).toBe(false);
+  });
+
+  it("★★ args là CHUỖI/`null`/số cũng thành túi RỖNG ⇒ từ chối sạch — chiều CHẶT", async () => {
+    for (const bay of ["mot-chuoi", null, 42]) {
+      checkPermissionMock.mockClear();
+      classifier.args = bay as unknown as Record<string, unknown>;
+      const r = await tryExecuteTool("còn bao nhiêu vram", undefined, undefined);
+      expect(r.result!.note, `đầu vào ${String(bay)}`).toBe("PERMISSION_DENIED");
+      expect(checkPermissionMock).not.toHaveBeenCalled();
+    }
+  });
+
   it("★★ args bịa KHÔNG rò xuống handler: tool chạy được ⇒ trạng thái THẬT (không phải TỪ CHỐI vì args bẩn)", async () => {
     classifier.args = { __authCtx: BIA };
     const r = await tryExecuteTool("còn bao nhiêu vram", undefined, PHIEN);

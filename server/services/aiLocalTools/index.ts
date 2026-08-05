@@ -80,7 +80,20 @@ export { classifyToolIntent, classifyToolIntentLLM, listTools };
  * (`authCtxInjection.test.ts`) **bơm `__authCtx` BỊA** vào đúng nhánh không có `execCtx`.
  */
 function argsWithAuthCtx(tool: Tool<any, any>, args: unknown, execCtx?: ToolExecContext): unknown {
-  if (args === null || typeof args !== "object" || Array.isArray(args)) return args;
+  /**
+   * 🔴 N-4 (re-review vòng 2) — **DÒNG NÀY TỪNG LÀ `return args`, VÀ ĐÓ LÀ MỘT LỖ DANH TÍNH.**
+   *
+   * Trong JS một **MẢNG** là `typeof "object"` nhưng bị `Array.isArray()` loại ⇒ nhánh cũ trả nó
+   * **NGUYÊN VĂN**, kèm mọi thuộc tính gắn trên nó. Người review đo được: một mảng mang
+   * `__authCtx` ⇒ `checkPermission(999, "superadmin", …)` và **tool CHẠY**.
+   * ⚠⚠ Và chính docstring dưới đây đã viết *"một `return args` chen vào TRƯỚC bước (1) là mở lại
+   * đúng lỗ này"* — rồi **dòng đầu hàm đúng là như thế**. Một lời cảnh báo không tự thi hành.
+   *
+   * ⇒ `return {}`: đầu vào **không phải một túi tham số hợp lệ** thì **không mang được gì qua đây**.
+   * Chiều CHẶT — mọi schema của tool đều là `z.object().strict()`, nên args hợp lệ **không bao giờ**
+   * là mảng/chuỗi/`null`; đánh rơi một đầu vào méo an toàn hơn hẳn chở theo một danh tính bịa.
+   */
+  if (args === null || typeof args !== "object" || Array.isArray(args)) return {};
   // (1) XOÁ TRƯỚC — vô điều kiện. Đầu vào KHÔNG BAO GIỜ được là nguồn của danh tính.
   const { __authCtx: _tuDauVao, ...sach } = args as Record<string, unknown>;
   if (!execCtx) return sach;

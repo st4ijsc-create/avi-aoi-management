@@ -69,6 +69,21 @@ export interface MeasureWindowResult<T> { readonly value: T; readonly measurable
 
 export function measureWindowDepth(): number { return dangGiu ? 1 : 0; }
 
+/**
+ * ★★★ Pha 4 Task 4 (re-review, N-9) — **PHÉP PHÂN BIỆT "CHẬM" VỚI "KẸT".**
+ *
+ * Ở đúng module này, *"chậm vì tranh tài nguyên"* và *"kẹt vì một cửa sổ đo KHÔNG BAO GIỜ ĐÓNG"*
+ * cho **CÙNG một triệu chứng**: `Test timed out in 5000ms`. Hai ô dưới đây tách được chúng ra —
+ * ở lượt dọn cuối, một hệ CHẬM có **hàng chờ RỖNG** và **0 lượt bỏ-cuộc đang bay**, còn một hệ KẸT
+ * thì không.
+ *
+ * ⚠ CHỈ ĐỌC, chỉ dùng cho chẩn đoán/lưới — cùng hạng với `measureWindowDepth()`. Không một quyết
+ * định cấp phát nào đọc hai ô này.
+ */
+export function __measureLockIdleFacts(): { readonly queued: number; readonly unmeasuredInFlight: number } {
+  return { queued: hangCho.length, unmeasuredInFlight };
+}
+
 export function __resetMeasureLockForTests(): void {
   dangGiu = false;
   hangCho.length = 0;

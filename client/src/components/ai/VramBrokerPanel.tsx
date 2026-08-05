@@ -30,7 +30,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import type { usePollingInterval } from "@/hooks/usePollingInterval";
 import { mapTrpcError } from "@/lib/trpcErrors";
-import { vramRetryButtonEnabled } from "@/lib/vramCommandReach";
+import { vramRetryButtonDisabled } from "@/lib/vramCommandReach";
 import {
   translateVramScope,
   translateVramHostedHere,
@@ -296,7 +296,7 @@ export function VramBrokerPanel({ canCommand, polling }: Props) {
                         onClick={() => releaseStale.mutate({ leaseKey: h.leaseKey! })}
                       >
                         <ShieldAlert className="h-3 w-3 mr-1" />
-                        {t("vramBroker.releaseStale", "Dọn hàng ma")}
+                        {t("vramBroker.releaseStale", "Kiểm rồi dọn nếu đã chết")}
                       </Button>
                     )}
                   </div>
@@ -311,13 +311,6 @@ export function VramBrokerPanel({ canCommand, polling }: Props) {
                 {s.defer.hosts.map((h) => {
                   const owner =
                     h.status.kind === "deferring" || h.status.kind === "exceeded" ? h.status.owner : h.host;
-                  /**
-                   * ★★★ I-1 (review vòng 1) — **CHỈ** `retryReach.kind`. Bản đầu `||` thêm
-                   * *"đang hoãn"* ⇒ nút hiện cho 5/6 hộ mà lệnh LUÔN từ chối, tức mặt đọc lại hứa
-                   * nhiều hơn mặt lệnh — đúng lỗi (D). Vị từ nằm ở một module THUẦN vì repo có
-                   * **0 file `*.test.tsx`**: một vị từ trong `.tsx` là vị từ không ai kiểm được.
-                   */
-                  const canRetry = vramRetryButtonEnabled(h.retryReach.kind);
                   return (
                     <div key={h.host} className="rounded-md border p-2 text-xs flex flex-col gap-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -332,17 +325,27 @@ export function VramBrokerPanel({ canCommand, polling }: Props) {
                         ) : h.status.kind === "exceeded" ? (
                           <Badge variant="destructive">{t("vramBroker.exceeded", "đã quá đáy hoãn")}</Badge>
                         ) : null}
-                        {canRetry ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={!canCommand || retryDeferred.isPending}
-                            onClick={() => retryDeferred.mutate({ owner })}
-                          >
-                            <RotateCcw className="h-3 w-3 mr-1" />
-                            {t("vramBroker.retryNow", "Thử lại ngay")}
-                          </Button>
-                        ) : null}
+                        {/*
+                          ★★★ I-1 + N-5 — **MỘT Ô DUY NHẤT quyết định nút này bấm được hay không**,
+                          và nó là `disabled`. Bản trước bọc nút trong `{canRetry ? … : null}`: bất
+                          biến đúng nhưng **neo sai một nấc** — người review giữ nguyên khai báo
+                          `canRetry` rồi đặt `||` ở ĐIỂM DÙNG và khôi phục nguyên vẹn lỗi (D) trong
+                          khi lưới vẫn XANH. Nay `disabled` **LÀ** một lời gọi
+                          `vramRetryButtonDisabled(...)`; thêm bất kỳ `||`/`?:`/biến trung gian nào
+                          đều làm nó **thôi LÀ** lời gọi ấy ⇒ lưới ĐỎ.
+                          ⚠ Nút LUÔN render (không bọc điều kiện): nút biến mất là chiều an toàn;
+                          thứ nguy hiểm là một nút **bấm được** cho lệnh chắc chắn bị từ chối.
+                        */}
+                        <Button
+                          data-testid="vram-retry"
+                          size="sm"
+                          variant="outline"
+                          disabled={vramRetryButtonDisabled(h.retryReach.kind, canCommand, retryDeferred.isPending)}
+                          onClick={() => retryDeferred.mutate({ owner })}
+                        >
+                          <RotateCcw className="h-3 w-3 mr-1" />
+                          {t("vramBroker.retryNow", "Thử lại ngay")}
+                        </Button>
                       </div>
                       {/* ★ translateVramHostedHere — `null` KHÔNG được đọc thành `false`. */}
                       <p className="text-muted-foreground">{translateVramHostedHere(h.hostedHere)}</p>

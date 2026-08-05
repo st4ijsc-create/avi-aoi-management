@@ -48,3 +48,28 @@ const CHO_BAM: Record<VramDeferRetryReachKind, boolean> = {
 export function vramRetryButtonEnabled(retryReachKind: VramDeferRetryReachKind): boolean {
   return CHO_BAM[retryReachKind];
 }
+
+/**
+ * ★★★ N-5 (re-review vòng 2) — **TÍNH CHẤT CẦN CANH LÀ CÁI NÚT, KHÔNG PHẢI MỘT BIẾN.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Lưới vòng trước neo vào **khai báo** `canRetry` và đòi khởi tạo của nó PHẢI LÀ lời gọi
+ * `vramRetryButtonEnabled(...)`. Người review **giữ nguyên khai báo** rồi đặt `||` ở **ĐIỂM DÙNG**:
+ *     {canRetry || h.status.kind === "deferring" ? <Button …/> : null}
+ * ⇒ lỗi I-1 **khôi phục nguyên vẹn**, lưới **XANH 34/34**. Bất biến đúng, **neo sai một nấc**.
+ *
+ * ⇒ Nay chỉ có **MỘT** ô quyết định nút bấm được hay không, và nó là **`disabled` của chính nút**.
+ * Hàm này gom cả ba lý do khoá nút vào một lời gọi, để `disabled` **LÀ** một lời gọi chứ không phải
+ * một biểu thức ghép — mọi `||`/`?:`/biến trung gian thêm vào đó đều làm nó **thôi LÀ** lời gọi ấy.
+ *
+ * ⚠ Nút được **LUÔN RENDER** (không bọc điều kiện): một nút biến mất là chiều an-toàn (nó không hứa
+ * gì), còn thứ nguy hiểm là một nút **bấm được** cho một lệnh chắc chắn bị từ chối. Giữ nút hiện +
+ * khoá lại còn nói được cho người vận hành *"có việc này, nhưng không làm từ đây được"*.
+ */
+export function vramRetryButtonDisabled(
+  retryReachKind: VramDeferRetryReachKind,
+  canCommand: boolean,
+  isPending: boolean,
+): boolean {
+  return !canCommand || isPending || !vramRetryButtonEnabled(retryReachKind);
+}
