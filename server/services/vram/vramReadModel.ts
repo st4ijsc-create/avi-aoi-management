@@ -87,6 +87,13 @@ export interface VramAgentHolderView {
   readonly reclaimable: boolean;
   /** `null` = hộ của **CHÍNH tiến trình này**; khác `null` = `${role}:${pid}:${bootMs}` của anh em. */
   readonly processKey: string | null;
+  /**
+   * ★ Pha 4 Task 2 — khoá hàng trong `vram_leases` (`${processKey}#${leaseId}`), tức **đầu vào của
+   * lệnh `vram.releaseStale`**. `null` cho hộ CỤC BỘ, và đó KHÔNG phải một ô thiếu: sổ cục bộ là
+   * chủ về giấy phép của tiến trình này (`release()` đã trả lời dứt khoát), nên `releaseStale`
+   * **từ chối** mọi hàng của chính ta. Không có ô này thì lệnh có mà Agent không gọi được.
+   */
+  readonly leaseKey: string | null;
 }
 
 /**
@@ -670,15 +677,19 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
         }
       : { known: true, bytes: aBytes };
 
-  const ho = (h: {
-    owner: string;
-    kind: string;
-    bytes: number;
-    priority: VramPriority;
-    measured: boolean;
-    reclaimable: boolean;
-    processKey: string | null;
-  }): VramAgentHolderView => ({
+  const ho = (
+    h: {
+      owner: string;
+      kind: string;
+      bytes: number;
+      priority: VramPriority;
+      measured: boolean;
+      reclaimable: boolean;
+      processKey: string | null;
+    },
+    /** ★ Task 2 — `null` cho hộ CỤC BỘ (xem `VramAgentHolderView.leaseKey`). */
+    leaseKey: string | null,
+  ): VramAgentHolderView => ({
     owner: h.owner,
     kind: h.kind,
     bytes: h.bytes,
@@ -686,6 +697,7 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
     measured: h.measured,
     reclaimable: h.reclaimable,
     processKey: h.processKey,
+    leaseKey,
   });
 
   const foreign: VramAgentForeignLedger =
@@ -694,7 +706,7 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
       : {
           known: true,
           bytes: shared.foreignBytes,
-          holders: shared.foreignHolders.map((r) => ho(broker.holderFactFromSharedRow(r))),
+          holders: shared.foreignHolders.map((r) => ho(broker.holderFactFromSharedRow(r), r.leaseKey)),
           ageMs: shared.ageMs,
           // ⚠ Cùng ngưỡng mà `applyEnforcement()` dùng — không có ngưỡng thứ hai ở mặt đọc.
           stale: !Number.isFinite(shared.ageMs) || shared.ageMs > SHARED_LEDGER_STALE_AFTER_MS,
@@ -725,7 +737,7 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
     processKey: sharedLedgerSelfKey(),
     ledger: {
       localBytes: st.localLedgerBytes,
-      localHolders: broker.ledgerHolders().map(ho),
+      localHolders: broker.ledgerHolders().map((h) => ho(h, null)),
       foreign,
       totalBytes: st.ledgerTotalBytes,
       sharedRefreshIntervalMs,

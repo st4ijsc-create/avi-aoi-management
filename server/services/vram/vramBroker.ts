@@ -303,8 +303,36 @@ export function ledgerHolders(): VramHolderFact[] {
  * đồng bộ (`vramLoadOutcome.reclaim` hôm nay), sau khi đọc danh sách này.
  */
 function coTheNhuong(l: VramLease, rankNguoiXin: number): boolean {
-  if (l.request.priority === "production") return false;
-  return l.refCount === 0 || PRIORITY_RANK[l.request.priority] < rankNguoiXin;
+  return quyenNhuong(l, rankNguoiXin).kind === "yes";
+}
+
+/**
+ * ★★★ Pha 4 Task 2 — **LÕI CÓ NHÃN CỦA VỊ TỪ TRÊN.** Cùng ba câu, cùng thứ tự, **một bản cài đặt**.
+ *
+ * ⚠⚠ VÌ SAO ĐỔI KIỂU THAY VÌ THÊM MỘT PHÉP SO Ở NƠI TIÊU THỤ (ràng buộc 8): lệnh `preempt(owner)`
+ * của Agent phải trả lời *"vì sao KHÔNG"* — và `boolean` không mang được câu đó. Viết lại hai mệnh
+ * đề (`priority === "production"`, `refCount !== 0`) ở tầng lệnh là **bản sao thứ hai của một vị
+ * từ dùng chung** — đúng lớp lỗi đã đẻ ba Critical liên tiếp (*"cơ chế phòng vệ mới vô hiệu hoá cơ
+ * chế cũ qua VỊ TỪ DÙNG CHUNG"*). Nay `coTheNhuong()` **uỷ quyền** xuống đây, hệt như
+ * `chuoiHoanConSong()` uỷ quyền cho `kbSyncDeferStreakIsAlive()`.
+ *
+ * ⚠ Nhãn `"busy-and-not-lower-priority"` nói ĐÚNG mệnh đề đã hỏng, không nói quá: ở mức người xin
+ * THẤP NHẤT (`background` — mức mà lệnh thủ công dùng) nó thu về đúng nghĩa *"hộ đang bận"*.
+ */
+export type VramPreemptAuthority =
+  | { readonly kind: "yes"; readonly why: "idle" | "lower-priority-than-requester" }
+  | {
+      readonly kind: "no";
+      readonly why: "production-never-preempted" | "busy-and-not-lower-priority";
+    };
+
+export function quyenNhuong(l: VramLease, rankNguoiXin: number): VramPreemptAuthority {
+  if (l.request.priority === "production") return { kind: "no", why: "production-never-preempted" };
+  if (l.refCount === 0) return { kind: "yes", why: "idle" };
+  if (PRIORITY_RANK[l.request.priority] < rankNguoiXin) {
+    return { kind: "yes", why: "lower-priority-than-requester" };
+  }
+  return { kind: "no", why: "busy-and-not-lower-priority" };
 }
 
 /**
@@ -443,6 +471,68 @@ export function preemptPlan(
       reclaimer: nguoi,
     };
   });
+}
+
+/**
+ * ★★★ Pha 4 Task 2 — **MỘT BƯỚC THU HỒI CHO MỘT HỘ ĐÍCH DANH** (lệnh `preempt(owner)` của Agent).
+ *
+ * ⚠⚠ ĐÂY KHÔNG PHẢI MỘT ĐƯỜNG THỨ HAI. Nó dùng **đúng hai vị từ** mà `preemptPlan()` dùng —
+ * `quyenNhuong()` (quyền, §5.2) và `nguoiThiHanhThuHoi()` (khả năng) — và trả về **cùng kiểu**
+ * `VramPreemptStep`, tức cùng thứ *bằng chứng kiểu* mà `NGUOI_THI_HANH` ở `vramPreempt` nhận. Khác
+ * biệt DUY NHẤT với `preemptPlan()` là **cách chọn dân số**: ở đó là "theo NHU CẦU byte/khe", ở đây
+ * là "theo TÊN hộ mà người vận hành gọi". Không một mệnh đề nào được viết lại ở đây.
+ *
+ * ⚠⚠ MỨC NGƯỜI XIN = `background` (THẤP NHẤT), **cố ý và không đổi được bằng tham số**: một lệnh
+ * thủ công KHÔNG mang theo một lượt xin nào, nên nó không có quyền đòi ai nhường theo bậc thang ưu
+ * tiên. Ở mức này `quyenNhuong()` thu về đúng hai câu: **`production` KHÔNG BAO GIỜ**, và **chỉ hộ
+ * NHÀN RỖI**. Đó là chiều CHẶT — thà từ chối một lệnh hợp lệ còn hơn giết ngang một lượt suy luận.
+ *
+ * ⚠ `"yes"` ở mức thấp nhất ⇒ `refCount === 0` ⇒ `nguoiThiHanhThuHoi()` trả `null` **chỉ khi** điểm
+ * gọi chưa khai người thi hành. Nhãn `no-reclaimer-declared` vì thế nói đúng nguyên nhân.
+ */
+export type VramPreemptOwnerPlan =
+  | { readonly kind: "ready"; readonly step: VramPreemptStep }
+  | {
+      readonly kind: "refused";
+      readonly reason:
+        | "owner-not-in-local-ledger"
+        | "production-never-preempted"
+        | "busy-in-use"
+        | "no-reclaimer-declared";
+      /** Byte theo sổ của hộ bị từ chối — `null` ⇔ không tìm thấy hộ nào mang tên đó. */
+      readonly bytes: number | null;
+    };
+
+export function preemptStepForOwner(owner: string): VramPreemptOwnerPlan {
+  const rank = PRIORITY_RANK.background;
+  const khop = [...ledger.values()].filter((l) => l.request.owner === owner);
+  if (khop.length === 0) return { kind: "refused", reason: "owner-not-in-local-ledger", bytes: null };
+
+  let tuChoi: VramPreemptOwnerPlan | null = null;
+  for (const l of khop) {
+    const quyen = quyenNhuong(l, rank);
+    if (quyen.kind === "no") {
+      tuChoi ??= {
+        kind: "refused",
+        reason: quyen.why === "production-never-preempted" ? "production-never-preempted" : "busy-in-use",
+        bytes: leaseBytes(l),
+      };
+      continue;
+    }
+    const nguoi = nguoiThiHanhThuHoi(l);
+    if (nguoi === null) {
+      tuChoi ??= { kind: "refused", reason: "no-reclaimer-declared", bytes: leaseBytes(l) };
+      continue;
+    }
+    return {
+      kind: "ready",
+      step: { leaseId: l.id, owner: l.request.owner, kind: l.request.kind, bytes: leaseBytes(l), reclaimer: nguoi },
+    };
+  }
+  // ⚠ Nhiều giấy phép cùng tên mà KHÔNG cái nào thi hành được ⇒ nêu lý do của cái ĐẦU TIÊN gặp.
+  // `tuChoi` không thể `null` ở đây (mọi nhánh vòng lặp đều gán hoặc `return`), nhưng ta không
+  // dùng `!`: một lời khai "không tìm thấy" vẫn TRUNG THỰC hơn một lượt ném ở đường phá huỷ.
+  return tuChoi ?? { kind: "refused", reason: "owner-not-in-local-ledger", bytes: null };
 }
 
 /**

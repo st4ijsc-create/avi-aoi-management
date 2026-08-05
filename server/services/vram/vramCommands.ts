@@ -1,0 +1,238 @@
+/**
+ * ★★★ Pha 4 Task 2 — **BA LỆNH CỦA AI AGENT.** Router mỏng; **toàn bộ ngữ nghĩa nằm ở đây**, đúng
+ * khuôn mà Task 1 dựng cho mặt đọc (`vramReadModel`).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ HAI LUẬT CỦA FILE NÀY, VÀ CẢ HAI ĐỀU ĐÃ CÓ NGƯỜI TRẢ GIÁ
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 1. **KHÔNG DỰNG ĐƯỜNG THỨ HAI.** Mỗi lệnh chỉ **gọi** một cơ chế đã có và **dịch** kết quả:
+ *    `preempt` → `vramPreempt.preemptOwner()` (→ `broker.preemptStepForOwner()` → `NGUOI_THI_HANH`);
+ *    `releaseStale` → `vramReconciler.releaseStaleSharedRow()` (→ `lapKeHoachNhanNuoi()`);
+ *    `retryDeferred` → `kbSyncScheduler.retryKbSyncDeferNow()` (→ `armDeferTimer()`).
+ *    Không một `process.kill`, không một `release()`, không một phép so quyền nào viết ở file này.
+ * 2. **CÂU CHỮ KHÔNG HỨA NHIỀU HƠN DỮ LIỆU.** Agent đọc kết quả để **quyết định bước tiếp theo**:
+ *    `outcome: "reclaimed"` chỉ phát ra khi **byte đã rời SỔ** (`freedBytes > 0`); mọi lượt từ chối
+ *    mang `reason` máy-đọc-được; và mọi kết quả mang **PHẠM VI QUAN SÁT** của chính nó.
+ *
+ * ⚠ `scope` + `observedFromProcessKey` (bàn giao cứng của Task 1, C-1): ba lệnh này chạy trong bộ
+ * nhớ của **tiến trình đang trả lời**. Sổ cục bộ, ô hoãn, `leaseNhanNuoi` — tất cả đều là sự thật
+ * của **chỗ đứng này**. Một kết quả không mang theo chỗ đứng là một lời khẳng định toàn cục mà dữ
+ * liệu không đỡ nổi.
+ * ⚠ `reserve()` vẫn **ĐỒNG BỘ**: không một hàm nào ở đây được gọi từ đường quyết định.
+ */
+import type { VramReclaimerId } from "./types";
+import { preemptOwner } from "./vramPreempt";
+import { releaseStaleSharedRow } from "./vramReconciler";
+import { sharedLedgerSelfKey } from "./vramSharedLedger";
+import { vramBackgroundHostForOwner } from "./vramReadModel";
+import { retryKbSyncDeferNow } from "../kbSyncScheduler";
+
+/**
+ * ★★★ PHẠM VI QUAN SÁT — **BẮT BUỘC trên MỌI kết quả lệnh.**
+ * `durableTrace` chỉ ra vết BỀN xuyên tiến trình: ai cần sự thật của **cả cụm** thì truy bảng đó,
+ * không phải một ô trong bộ nhớ của một tiến trình.
+ */
+export interface VramCommandScope {
+  readonly scope: "this-process-only";
+  /** `${role}:${pid}:${bootMs}` của tiến trình đã THI HÀNH lệnh. */
+  readonly observedFromProcessKey: string;
+  readonly durableTrace: "vram_events(defer|defer_exceeded|preempt)";
+}
+
+function chungPhamVi(): VramCommandScope {
+  return {
+    scope: "this-process-only",
+    observedFromProcessKey: sharedLedgerSelfKey(),
+    durableTrace: "vram_events(defer|defer_exceeded|preempt)",
+  };
+}
+
+/** ⚠ Ràng buộc 4 — **không giá trị không hữu hạn nào ra API.** Chiều CHẶT: không hứa byte nào. */
+function byteRaApi(n: number): number {
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// 1. `preempt(owner)`
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * ⚠⚠ **`"reclaimed"` LÀ MỘT LỜI KHẲNG ĐỊNH VỀ BYTE, KHÔNG VỀ Ý ĐỊNH.** Nó chỉ phát ra khi sổ đã
+ * co lại. Người thi hành khai `true` mà sổ không đổi ⇒ `"failed"` + `reason: "no-bytes-freed"` —
+ * đúng chuỗi C-2 của Pha 2B (giết 7,8 GB, lượt xin **vẫn** hỏng).
+ */
+export type VramPreemptCommandOutcome = "reclaimed" | "failed" | "refused";
+
+export type VramPreemptCommandReason =
+  // — cổng QUYỀN / KHẢ NĂNG (chưa chạm tới người thi hành)
+  | "owner-not-in-local-ledger"
+  | "production-never-preempted"
+  | "busy-in-use"
+  | "no-reclaimer-declared"
+  // — đã chạm người thi hành
+  | "reclaimer-returned-false"
+  | "reclaimer-threw"
+  | "no-bytes-freed";
+
+export interface VramPreemptCommandResult extends VramCommandScope {
+  readonly command: "preempt";
+  readonly owner: string;
+  readonly outcome: VramPreemptCommandOutcome;
+  /** `null` **chỉ khi** `outcome === "reclaimed"`. */
+  readonly reason: VramPreemptCommandReason | null;
+  /** Câu thô của người thi hành (đã cắt 400 ký tự ở nguồn). ⚠ CHƯA LÀM SẠCH cho i18n — xem Task 3. */
+  readonly detail: string | null;
+  /** `null` ⇔ lệnh dừng ở cổng quyền/khả năng, chưa có người thi hành nào được chọn. */
+  readonly reclaimer: VramReclaimerId | null;
+  /** BYTE đã **RỜI SỔ**, đo bằng chênh lệch tổng sổ TRƯỚC/SAU. Không phải lời khai của kế hoạch. */
+  readonly freedBytes: number;
+  readonly reclaimed: readonly string[];
+  readonly failed: readonly string[];
+  readonly ledgerBytesBefore: number;
+  readonly ledgerBytesAfter: number;
+}
+
+export async function vramPreemptCommand(owner: string): Promise<VramPreemptCommandResult> {
+  const kq = await preemptOwner(owner);
+  const chung = {
+    command: "preempt" as const,
+    owner,
+    reclaimer: kq.reclaimer,
+    freedBytes: byteRaApi(kq.freedBytes),
+    reclaimed: kq.reclaimed,
+    failed: kq.failed,
+    ledgerBytesBefore: byteRaApi(kq.ledgerBytesBefore),
+    ledgerBytesAfter: byteRaApi(kq.ledgerBytesAfter),
+    ...chungPhamVi(),
+  };
+  if (kq.plan.kind === "refused") {
+    return { ...chung, outcome: "refused", reason: kq.plan.reason, detail: null };
+  }
+  return kq.failure === null
+    ? { ...chung, outcome: "reclaimed", reason: null, detail: null }
+    : { ...chung, outcome: "failed", reason: kq.failure, detail: kq.message };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// 2. `releaseStale(leaseKey)`
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+export type VramReleaseStaleCommandReason =
+  | "shared-ledger-never-refreshed"
+  | "row-not-in-shared-ledger-replica"
+  | "own-row-local-ledger-is-authority"
+  | "process-not-proven-dead";
+
+export interface VramReleaseStaleCommandResult extends VramCommandScope {
+  readonly command: "releaseStale";
+  /** Khoá hàng trong `vram_leases` — `${processKey}#${leaseId}`; đọc được ở `state.ledger.foreign.holders[].leaseKey`. */
+  readonly leaseKey: string;
+  readonly outcome: "released" | "refused";
+  readonly reason: VramReleaseStaleCommandReason | null;
+  /** Chủ của hàng. `null` ⇔ không tìm thấy hàng nào mang khoá đó. */
+  readonly processKey: string | null;
+  /** BYTE ANH EM đã rời **BẢN SAO ĐỌC** — đúng con số đi vào `computeHeadroom()`, không phải `row.bytes`. */
+  readonly freedBytes: number;
+  readonly foreignBytesBefore: number | null;
+  readonly foreignBytesAfter: number | null;
+}
+
+export async function vramReleaseStaleCommand(leaseKey: string): Promise<VramReleaseStaleCommandResult> {
+  const kq = await releaseStaleSharedRow(leaseKey);
+  return {
+    command: "releaseStale",
+    leaseKey,
+    outcome: kq.released ? "released" : "refused",
+    reason: kq.refusal,
+    processKey: kq.processKey,
+    freedBytes: byteRaApi(kq.freedBytes),
+    foreignBytesBefore: kq.foreignBytesBefore === null ? null : byteRaApi(kq.foreignBytesBefore),
+    foreignBytesAfter: kq.foreignBytesAfter === null ? null : byteRaApi(kq.foreignBytesAfter),
+    ...chungPhamVi(),
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// 3. `retryDeferred(owner)` — ★★★ BÀN GIAO CỨNG TỪ TASK 1 CHẢY THẲNG VÀO ĐÂY
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * ⚠⚠⚠ **LỆNH NÀY KHÔNG ĐƯỢC HÀNH ĐỘNG NHƯ THỂ NÓ BIẾT.**
+ *
+ * Task 1 vừa xoá phạm trù `"idle"` **khỏi KIỂU** vì cron `kb:sync` + hai sidecar job sống ở tiến
+ * trình **`worker`** còn API được phục vụ ở **`api`**: một câu trả lời phát ra từ `api` về trạng
+ * thái hoãn của chúng là một lời khẳng định về thứ tiến trình này **không nhìn thấy**. Lệnh thừa
+ * hưởng nguyên ràng buộc đó:
+ *   • `cron:kb-sync` — hộ **DUY NHẤT** ta chứng minh được có chủ trì ở đây hay không (`hostedHere`),
+ *     và là hộ **DUY NHẤT** có cơ chế đánh thức từ ngoài (`armDeferTimer`). Không chủ trì ⇒ **NÓI
+ *     THẲNG**, không im lặng thành công, không im lặng không làm gì.
+ *   • 5 hộ đi qua `vramDefer.xinVramCoHoan()` — vòng lặp `await ngu(delay)` nằm **trong ngăn xếp
+ *     của chính job đang chờ**. **KHÔNG có cơ chế nào** đánh thức nó từ ngoài, và `hostedHere` của
+ *     chúng là `null` = **KHÔNG XÁC ĐỊNH ĐƯỢC**. ⇒ `no-retry-mechanism-for-this-host`, và ô
+ *     `hostedHere: null` đi kèm để không ai đọc thành *"hộ này không chạy ở đây"*.
+ *
+ * ⚠ Phép phân giải `owner → host` dùng **đúng vị từ của mặt ĐỌC** (`vramBackgroundHostForOwner`),
+ * nên một hộ `background` mới khai ở `HO_BACKGROUND` là có mặt ở **cả hai** mặt cùng lúc — không
+ * có bản sao thứ hai của bản khai dân số.
+ */
+export type VramRetryDeferredCommandReason =
+  | "unknown-background-host"
+  | "no-retry-mechanism-for-this-host"
+  | "host-not-running-in-this-process"
+  | "no-defer-chain-in-this-process"
+  | "defer-budget-exceeded";
+
+export interface VramRetryDeferredCommandResult extends VramCommandScope {
+  readonly command: "retryDeferred";
+  readonly owner: string;
+  /** Hộ `background` mà `owner` thuộc về. `null` ⇔ không hộ nào nhận `owner` này. */
+  readonly host: string | null;
+  /**
+   * ★ `true`/`false` = **chứng minh được**; `null` = **KHÔNG XÁC ĐỊNH ĐƯỢC** (không cơ chế nào trả
+   * lời câu đó cho hộ này). Đừng đọc `null` thành `false`.
+   */
+  readonly hostedHere: boolean | null;
+  /** `"retry-armed"` = đã **DỜI HẠN** lượt thử lại về ngay — KHÔNG phải "lượt chạy đã xong". */
+  readonly outcome: "retry-armed" | "refused";
+  readonly reason: VramRetryDeferredCommandReason | null;
+  /** Hạn thử lại TRƯỚC lệnh. `null` ⇔ không có chuỗi hoãn nào đang sống ở tiến trình này. */
+  readonly previousNextRetryAt: string | null;
+  readonly attempts: number | null;
+}
+
+export function vramRetryDeferredCommand(owner: string): VramRetryDeferredCommandResult {
+  const host = vramBackgroundHostForOwner(owner);
+  const chung = { command: "retryDeferred" as const, owner, host, ...chungPhamVi() };
+
+  if (host === null) {
+    return {
+      ...chung,
+      hostedHere: null,
+      outcome: "refused",
+      reason: "unknown-background-host",
+      previousNextRetryAt: null,
+      attempts: null,
+    };
+  }
+  if (host !== "cron:kb-sync") {
+    return {
+      ...chung,
+      // ⚠ `null`, KHÔNG `false`: 5 hộ này không có cơ chế nào trả lời "có chạy ở đây không" (Task 1 C-1).
+      hostedHere: null,
+      outcome: "refused",
+      reason: "no-retry-mechanism-for-this-host",
+      previousNextRetryAt: null,
+      attempts: null,
+    };
+  }
+
+  const kq = retryKbSyncDeferNow();
+  return {
+    ...chung,
+    hostedHere: kq.hostedHere,
+    outcome: kq.armed ? "retry-armed" : "refused",
+    reason: kq.refusal,
+    previousNextRetryAt: kq.previousNextRetryAt,
+    attempts: kq.attempts,
+  };
+}

@@ -1911,6 +1911,80 @@ export function stopKbSyncScheduler(): void {
   }
 }
 
+/**
+ * ★★★ Pha 4 Task 1 (C-1) / Task 2 — **VỊ TỪ "TIẾN TRÌNH NÀY CÓ CHỦ TRÌ CRON KHÔNG". MỘT BẢN.**
+ *
+ * Mặt ĐỌC (`getKbSyncSchedulerStatus().hostedHere`) và lệnh `retryDeferred` phải trả lời **cùng một
+ * câu**: nếu chúng viết `job !== null` hai lần thì một lượt đổi cách đăng ký cron sẽ làm mặt đọc
+ * khai "không chủ trì" trong khi lệnh vẫn hành động (hoặc ngược lại).
+ */
+function coChuTriCronODay(): boolean {
+  return job !== null;
+}
+
+/**
+ * ★★★ Pha 4 Task 2 — **ĐẨY LƯỢT THỬ LẠI CỦA CHUỖI HOÃN VỀ NGAY BÂY GIỜ.**
+ *
+ * ⚠⚠ ĐI QUA **ĐÚNG** `armDeferTimer()` — cơ chế đã có. Gọi thẳng `runKbSyncNow()` từ router là một
+ * đường thứ hai: nó bỏ qua `ensureDeferArmed()` (lưới cho đường thoát `already_running`) và có thể
+ * chạy **song song** với một hẹn giờ đang treo. Ở đây ta chỉ **dời hạn**, và mọi kế toán chuỗi hoãn
+ * vẫn do đúng những hàm cũ làm.
+ *
+ * ⚠⚠ CHUỖI ĐÃ QUÁ ĐÁY ⇒ **KHÔNG VŨ TRANG LẠI.** Đây chính là hướng hỏng mà `kbSyncDeferStreakIsAlive`
+ * được tách ra để chặn (I-2): vũ trang lại một chuỗi đã tuyên bố `defer_exceeded` là để **cơ chế
+ * chống-hoãn-mãi tự phá chính nó**, sau khi đã kêu "NGỪNG thử lại". Ta dùng **cùng** vị từ đó,
+ * không viết lại một phép so nào.
+ *
+ * ⚠ KHÔNG hứa quá dữ liệu: hàm này trả về *"đã DỜI lượt thử lại về ngay"*, **không** phải *"lượt
+ * sync đã chạy xong"*. `armDeferTimer(0)` là bất đồng bộ và `runKbSyncNow()` có đường thoát riêng.
+ */
+export type KbSyncRetryNowRefusal =
+  | "host-not-running-in-this-process"
+  | "no-defer-chain-in-this-process"
+  | "defer-budget-exceeded";
+
+export interface KbSyncRetryNowResult {
+  readonly armed: boolean;
+  readonly refusal: KbSyncRetryNowRefusal | null;
+  readonly hostedHere: boolean;
+  /** Hạn thử lại TRƯỚC lệnh — để người đọc thấy lệnh đã dời cái gì. `null` ⇔ không có chuỗi sống. */
+  readonly previousNextRetryAt: string | null;
+  readonly attempts: number | null;
+}
+
+export function retryKbSyncDeferNow(): KbSyncRetryNowResult {
+  const hostedHere = coChuTriCronODay();
+  const truoc = publicDeferState();
+  if (!hostedHere) {
+    /**
+     * ★★★ BÀN GIAO CỨNG CỦA TASK 1: cron sống ở `worker`, lệnh này được phục vụ ở `api`. `deferStreak`
+     * ở tiến trình này KHÔNG nói gì về chuỗi hoãn của cron — nên câu trả lời phải là *"tôi không chủ
+     * trì hộ này"*, tuyệt đối không phải một lượt im lặng thành công hay im lặng không làm gì.
+     */
+    return { armed: false, refusal: "host-not-running-in-this-process", hostedHere, previousNextRetryAt: null, attempts: null };
+  }
+  if (deferStreak === null) {
+    return { armed: false, refusal: "no-defer-chain-in-this-process", hostedHere, previousNextRetryAt: null, attempts: null };
+  }
+  if (!chuoiHoanConSong(deferStreak)) {
+    return {
+      armed: false,
+      refusal: "defer-budget-exceeded",
+      hostedHere,
+      previousNextRetryAt: null,
+      attempts: deferStreak.attempts,
+    };
+  }
+  const attempts = deferStreak.attempts;
+  armDeferTimer(0);
+  console.warn(
+    `[kbSyncScheduler] LỆNH NGƯỜI VẬN HÀNH: dời lượt thử lại của chuỗi hoãn về NGAY (đã ${attempts} lượt bị ` +
+      `từ chối; hạn cũ ${truoc?.nextRetryAt ?? "?"}). Ngân sách hoãn KHÔNG được nới — chuỗi vẫn đếm từ lượt ` +
+      `từ chối ĐẦU TIÊN.`,
+  );
+  return { armed: true, refusal: null, hostedHere, previousNextRetryAt: truoc?.nextRetryAt ?? null, attempts };
+}
+
 /** Status for dashboards / health. */
 export function getKbSyncSchedulerStatus() {
   return {
@@ -1943,6 +2017,6 @@ export function getKbSyncSchedulerStatus() {
      * ⚠ `enabled` KHÔNG thay được ô này: `enabled` là **cấu hình** (`KB_AUTOSYNC_ENABLED`), giống
      * nhau ở mọi tiến trình; ô này là **sự thật của tiến trình này**.
      */
-    hostedHere: job !== null,
+    hostedHere: coChuTriCronODay(),
   };
 }

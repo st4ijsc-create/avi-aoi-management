@@ -19,7 +19,7 @@
  * ⚠ KHÔNG BAO GIỜ NÉM. Một lượt thu hồi hỏng phải trở thành **một lời từ chối trung thực** ở tầng
  * trên, không phải một ngoại lệ lạ mặt trên đường nạp model.
  */
-import { preemptPlan, snapshot, type VramPreemptStep } from "./vramBroker";
+import { preemptPlan, preemptStepForOwner, snapshot, type VramPreemptStep } from "./vramBroker";
 import { logVramEvent } from "./vramEventLog";
 import type { VramPriority, VramReclaimerId } from "./types";
 
@@ -126,6 +126,144 @@ function soHuuHan(n: number): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** ⚠ Cột chuỗi + `detail` `jsonb` — một câu dài vô hạn là một lô sự kiện mất. Cắt tại NGUỒN. */
+function catCau(err: unknown): string {
+  return String((err as { message?: unknown } | null)?.message ?? err ?? "").slice(0, 400);
+}
+
+/** Vì sao MỘT bước thi hành không thành. `null` ⇔ nó thành. */
+export type VramReclaimFailure = "reclaimer-returned-false" | "reclaimer-threw";
+
+/**
+ * ★★★ Pha 4 Task 2 — **MỘT BƯỚC THI HÀNH. MỘT BẢN CÀI ĐẶT, HAI NGƯỜI GỌI.**
+ *
+ * Trước bản này khối `try { NGUOI_THI_HANH[…] } catch { … }` nằm **trong** vòng lặp của `preempt()`.
+ * Lệnh `preempt(owner)` của Agent cần **đúng khối đó** (cùng bảng người thi hành, cùng cách nuốt
+ * ngoại lệ, cùng dòng nhật ký) — chép nó ra là dựng **đường phá huỷ thứ hai**, thứ ràng buộc 3 cấm
+ * và là lớp lỗi đã đẻ ba Critical trong chuỗi pha này.
+ *
+ * ⚠ KHÔNG BAO GIỜ NÉM: một người thi hành hỏng phải thành **một lời từ chối trung thực** ở tầng
+ * trên, không phải một ngoại lệ lạ mặt trên đường nạp model (hoặc trên một mutation tRPC).
+ */
+async function thiHanhMotBuoc(
+  step: VramPreemptStep,
+  priority: VramPriority,
+): Promise<{ readonly xong: boolean; readonly failure: VramReclaimFailure | null; readonly message: string | null }> {
+  try {
+    const xong = await NGUOI_THI_HANH[step.reclaimer](step);
+    return xong
+      ? { xong: true, failure: null, message: null }
+      : { xong: false, failure: "reclaimer-returned-false", message: null };
+  } catch (err) {
+    // KHÔNG ném, nhưng cũng KHÔNG im: một người thi hành hỏng là lý do câu từ chối kế tiếp sẽ nói
+    // "nhường được N MiB" mà mãi không nhường được.
+    const message = catCau(err);
+    logVramEvent({
+      event: "preempt",
+      owner: step.owner,
+      leaseKind: step.kind,
+      priority,
+      detail: { reason: "reclaimer-threw", reclaimer: step.reclaimer, message },
+    });
+    return { xong: false, failure: "reclaimer-threw", message };
+  }
+}
+
+/**
+ * ★★★ Pha 4 Task 2 — **THU HỒI MỘT HỘ ĐÍCH DANH, THEO LỆNH NGƯỜI VẬN HÀNH / AI AGENT.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ HÀM NÀY GIẾT ĐƯỢC TIẾN TRÌNH — VÀ NÓ KHÔNG TỰ GIẾT MỘT DÒNG NÀO
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Ba mắt xích, cả ba đã có sẵn và **không cái nào được viết lại ở đây**:
+ *   1. `preemptStepForOwner()` — quyền (`quyenNhuong`) + khả năng (`nguoiThiHanhThuHoi`);
+ *   2. `NGUOI_THI_HANH` — bảng người thi hành DUY NHẤT (`thiHanhMotBuoc`);
+ *   3. `snapshot().totalReservedBytes` TRƯỚC/SAU — **bằng chứng byte đã rời SỔ**.
+ *
+ * ⚠⚠ `xong === true` **KHÔNG ĐỦ ĐỂ KHAI THÀNH CÔNG.** Pha 2B đã trả giá đúng ở đây: `stopSidecar()`
+ * khai `true` vô điều kiện trong khi tiến trình mới nhận `SIGTERM` ⇒ `reclaimed` với
+ * `freedBytes = 0` ⇒ lượt xin lại **hỏng lần hai**, sau khi đã giết hộ 7,8 GB. ⇒ `freedBytes === 0`
+ * ⇒ `failure: "no-bytes-freed"`, và ô `reclaimed` **rỗng**.
+ */
+export type VramPreemptOwnerFailure = VramReclaimFailure | "no-bytes-freed";
+
+export interface VramPreemptOwnerResult {
+  readonly owner: string;
+  /** `null` ⇔ chưa tới được lượt thi hành (bị từ chối ở cổng quyền/khả năng). */
+  readonly reclaimer: VramReclaimerId | null;
+  readonly plan: ReturnType<typeof preemptStepForOwner>;
+  /** Byte đã RỜI SỔ, đo bằng chênh lệch tổng sổ. Luôn hữu hạn, không bao giờ âm. */
+  readonly freedBytes: number;
+  readonly reclaimed: readonly string[];
+  readonly failed: readonly string[];
+  /** `null` ⇔ thu hồi THÀNH CÔNG (và byte đã nhả). */
+  readonly failure: VramPreemptOwnerFailure | null;
+  readonly message: string | null;
+  readonly ledgerBytesBefore: number;
+  readonly ledgerBytesAfter: number;
+}
+
+export async function preemptOwner(owner: string): Promise<VramPreemptOwnerResult> {
+  const plan = preemptStepForOwner(owner);
+  const truoc = soHuuHan(snapshot().totalReservedBytes);
+  if (plan.kind === "refused") {
+    return {
+      owner,
+      reclaimer: null,
+      plan,
+      freedBytes: 0,
+      reclaimed: [],
+      failed: [],
+      failure: null,
+      message: null,
+      ledgerBytesBefore: truoc,
+      ledgerBytesAfter: truoc,
+    };
+  }
+
+  const step = plan.step;
+  /**
+   * ⚠ Mức ghi vào nhật ký là mức của **HỘ BỊ THU HỒI**, không phải một mức người xin bịa ra: lệnh
+   * này không đến từ một lượt xin nào (xem `preemptStepForOwner`, khối "MỨC NGƯỜI XIN").
+   */
+  const kq = await thiHanhMotBuoc(step, "background");
+  const sau = soHuuHan(snapshot().totalReservedBytes);
+  /** ⚠ ĐO BẰNG SỔ, KHÔNG CỘNG THEO KẾ HOẠCH — cùng phép đo của `preempt()`, cùng lý do. */
+  const freedBytes = Math.max(0, truoc - sau);
+  const failure: VramPreemptOwnerFailure | null =
+    kq.failure !== null ? kq.failure : freedBytes > 0 ? null : "no-bytes-freed";
+
+  logVramEvent({
+    event: "preempt",
+    owner: step.owner,
+    leaseKind: step.kind,
+    priority: "background",
+    detail: {
+      reason: "operator-command",
+      reclaimer: step.reclaimer,
+      reclaimerReportedDone: kq.xong,
+      freedBytes,
+      failure,
+      ...(kq.message === null ? {} : { message: kq.message }),
+    },
+  });
+
+  return {
+    owner,
+    reclaimer: step.reclaimer,
+    plan,
+    freedBytes,
+    // ⚠⚠ Ô này chỉ được mang tên hộ khi BYTE ĐÃ RỜI SỔ. Khai `reclaimed` cho một khối byte còn
+    // treo là nói dối đúng chiều OOM — và người đọc kế tiếp là một AI Agent sắp quyết định.
+    reclaimed: failure === null ? [step.owner] : [],
+    failed: failure === null ? [] : [step.owner],
+    failure,
+    message: kq.message,
+    ledgerBytesBefore: truoc,
+    ledgerBytesAfter: sau,
+  };
+}
+
 /**
  * Thi hành kế hoạch thu hồi cho MỘT lượt xin đang bị từ chối.
  *
@@ -148,27 +286,9 @@ export async function preempt(
   const failed: string[] = [];
 
   for (const step of plan) {
-    try {
-      const xong = await NGUOI_THI_HANH[step.reclaimer](step);
-      if (xong) reclaimed.push(step.owner);
-      else failed.push(step.owner);
-    } catch (err) {
-      failed.push(step.owner);
-      // KHÔNG ném: lượt xin phải kết thúc bằng một lời TỪ CHỐI TRUNG THỰC, không phải một ngoại lệ
-      // lạ mặt. Nhưng cũng KHÔNG im: một người thi hành hỏng là lý do câu từ chối kế tiếp sẽ nói
-      // "nhường được N MiB" mà mãi không nhường được.
-      logVramEvent({
-        event: "preempt",
-        owner: step.owner,
-        leaseKind: step.kind,
-        priority,
-        detail: {
-          reason: "reclaimer-threw",
-          reclaimer: step.reclaimer,
-          message: String((err as { message?: unknown })?.message ?? err),
-        },
-      });
-    }
+    const kq = await thiHanhMotBuoc(step, priority);
+    if (kq.xong) reclaimed.push(step.owner);
+    else failed.push(step.owner);
   }
 
   const sau = snapshot().totalReservedBytes;

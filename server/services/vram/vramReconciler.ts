@@ -25,6 +25,7 @@ import type { SharedBaselineRecord, SharedLeaseRow } from "./vramSharedLedger";
 import {
   hangNenChoKeHoach, lapKeHoachNhanNuoi, moTaSidecarNhanNuoi, ownerNhanNuoi,
 } from "./vramAdoption";
+import type { HangMaCanXoa } from "./vramAdoption";
 import type { ProcTableRow } from "./vramGpuHolders";
 
 /**
@@ -1458,18 +1459,7 @@ async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Pro
    * không có dòng này thì chính nhịp vừa chứng minh hàng là MA vẫn báo động cho 17.000 MiB ma đó,
    * và vẫn nhận nuôi nền của một tiến trình đã chết.
    */
-  if (ke.xoaHangMa.length > 0) loaiHangDaChungMinhLaMa(ke.xoaHangMa.map((m) => m.leaseKey));
-
-  for (const ma of ke.xoaHangMa) {
-    // ⚠ Đi qua ĐÚNG hàng đợi mà `release()` dùng — một lượt xoá thẳng vào DB ở đây sẽ bỏ qua cơ
-    // chế thử-lại + cờ `unsyncedWrites` mà Task 2 dựng, và một lượt xoá hỏng sẽ im lặng.
-    enqueueSharedLedgerWrite({ op: "delete", leaseKey: ma.leaseKey });
-    console.warn(
-      `[vram] DỌN HÀNG MA khỏi sổ chung: "${ma.leaseKey}" (${Math.round(ma.bytes / 1024 / 1024)} MiB) — tiến trình ` +
-        `"${ma.processKey}" đã CHẾT (vắng khỏi bảng tiến trình, hoặc PID đã được cấp lại: CreationDate > bootMs). ` +
-        `Hàng này đang làm MỌI tiến trình anh em trừ dư địa cho một khối byte KHÔNG TỒN TẠI.`,
-    );
-  }
+  donHangMa(ke.xoaHangMa);
 
   for (const ho of ke.nhanNuoi) {
     const row = procs === null ? undefined : procs.find((p) => p.pid === ho.pid);
@@ -1518,6 +1508,133 @@ async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Pro
       /* sổ hỏng KHÔNG được đánh hỏng nhịp đối chiếu */
     }
   }
+}
+
+/**
+ * ★★★ Pha 4 Task 2 — **DỌN HÀNG MA: MỘT BẢN CÀI ĐẶT, HAI NGƯỜI GỌI** (nhịp đối chiếu + lệnh của
+ * Agent). Hai hành động, và **thứ tự không đổi được**:
+ *   1. `loaiHangDaChungMinhLaMa()` — vứt khỏi **BẢN SAO ĐỌC ngay lập tức**, vì lệnh `delete` chỉ
+ *      được XẾP HÀNG (nó phải thế — `reserve()` đồng bộ). Không có bước này thì chính nhịp vừa
+ *      chứng minh hàng là MA vẫn đem 17.000 MiB ma đó đi tính lệch (số đo của nghiệm thu sống).
+ *   2. `enqueueSharedLedgerWrite({op:"delete"})` — đi qua **ĐÚNG hàng đợi mà `release()` dùng**;
+ *      một lượt xoá thẳng vào DB bỏ qua cơ chế thử-lại + cờ `unsyncedWrites` của Pha 3 Task 2.
+ *
+ * ⚠ Chép hai dòng này ra tầng lệnh là dựng **người ghi thứ hai** cho cùng một bất biến — đúng thứ
+ * ràng buộc "hai bản sao vị từ" cấm.
+ */
+function donHangMa(danhSach: readonly HangMaCanXoa[]): void {
+  if (danhSach.length === 0) return;
+  loaiHangDaChungMinhLaMa(danhSach.map((m) => m.leaseKey));
+  for (const ma of danhSach) {
+    enqueueSharedLedgerWrite({ op: "delete", leaseKey: ma.leaseKey });
+    console.warn(
+      `[vram] DỌN HÀNG MA khỏi sổ chung: "${ma.leaseKey}" (${Math.round(ma.bytes / 1024 / 1024)} MiB) — tiến trình ` +
+        `"${ma.processKey}" đã CHẾT (vắng khỏi bảng tiến trình, hoặc PID đã được cấp lại: CreationDate > bootMs). ` +
+        `Hàng này đang làm MỌI tiến trình anh em trừ dư địa cho một khối byte KHÔNG TỒN TẠI.`,
+    );
+  }
+}
+
+/**
+ * ★★★ Pha 4 Task 2 — **LỆNH `releaseStale(leaseKey)`: DỌN MỘT HÀNG MA ĐÃ CHỨNG MINH.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ BẰNG CHỨNG LÀ ĐIỀU KIỆN, KHÔNG PHẢI LỜI KHAI CỦA NGƯỜI GỌI
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Hàm này **không tự phán** hàng nào là ma. Nó dựng đúng đầu vào mà nhịp đối chiếu dựng, chạy
+ * **cùng** người lập kế hoạch THUẦN (`lapKeHoachNhanNuoi` → `trangThaiTienTrinh`, thứ đòi đủ
+ * `role:pid:bootMs` và đọc `CreationDate`), rồi chỉ hành động khi khoá người gọi nêu **có mặt
+ * trong `xoaHangMa`**. Bảng tiến trình không đọc được ⇒ `"khong-biet"` ⇒ **không xoá hàng của ai**.
+ *
+ * ⚠ `orphans: []` + `sidecar: null`: nửa NHẬN NUÔI của kế hoạch bị vô hiệu hoá có chủ ý — lệnh này
+ * chỉ dọn, và `pidTanDuDaCoChu` (ô mà `lyDoNenKhongTin()` đọc) **không được** ghi từ đây; người ghi
+ * ô đó vẫn là nhịp đối chiếu, đúng một người.
+ * ⚠ `freedBytes` đo bằng **chênh lệch `foreignBytes` của bản sao đọc** — tức đúng con số đi vào
+ * `computeHeadroom()`, không phải `row.bytes` do người gọi đọc được.
+ *
+ * KHÔNG BAO GIỜ ném.
+ */
+export type VramReleaseStaleRefusal =
+  | "shared-ledger-never-refreshed"
+  | "row-not-in-shared-ledger-replica"
+  | "own-row-local-ledger-is-authority"
+  | "process-not-proven-dead";
+
+export interface VramReleaseStaleResult {
+  readonly leaseKey: string;
+  readonly released: boolean;
+  readonly refusal: VramReleaseStaleRefusal | null;
+  readonly processKey: string | null;
+  readonly freedBytes: number;
+  readonly foreignBytesBefore: number | null;
+  readonly foreignBytesAfter: number | null;
+}
+
+export async function releaseStaleSharedRow(leaseKey: string): Promise<VramReleaseStaleResult> {
+  const selfKey = sharedLedgerSelfKey();
+  const banSao = readSharedLedgerReplica();
+  const truoc = sharedLedgerFact(Date.now());
+  const truocBytes = truoc === null ? null : truoc.foreignBytes;
+  const khung = {
+    leaseKey,
+    released: false,
+    processKey: null,
+    freedBytes: 0,
+    foreignBytesBefore: truocBytes,
+    foreignBytesAfter: truocBytes,
+  } as const;
+
+  if (banSao === null) {
+    // ⚠ CHƯA LÀM MỚI LẦN NÀO ≠ "không có hàng nào" — ta đang MÙ về anh em, không phải đã nhìn thấy trống.
+    return { ...khung, refusal: "shared-ledger-never-refreshed" };
+  }
+
+  const hang = banSao.rows.find((r) => r.leaseKey === leaseKey) ?? null;
+  if (hang === null) return { ...khung, refusal: "row-not-in-shared-ledger-replica" };
+  if (hang.processKey === selfKey) {
+    // Sổ CỤC BỘ là chủ về giấy phép của tiến trình này (`release()` đã trả lời dứt khoát câu đó).
+    return { ...khung, refusal: "own-row-local-ledger-is-authority", processKey: hang.processKey };
+  }
+
+  const procs = await readProcTableSafe();
+  const rows: SharedLeaseRow[] = [...banSao.foreignLeases];
+  if (banSao.baseline != null && banSao.baseline.processKey !== selfKey) {
+    rows.push(hangNenChoKeHoach(banSao.baseline.processKey, banSao.baseline.bytes));
+  }
+  const ke = lapKeHoachNhanNuoi({
+    selfKey,
+    rows,
+    procs,
+    orphans: [],
+    pidDaNhanNuoi: [...leaseNhanNuoi.keys()],
+    sidecar: null,
+  });
+
+  const ma = ke.xoaHangMa.find((m) => m.leaseKey === leaseKey) ?? null;
+  if (ma === null) {
+    return { ...khung, refusal: "process-not-proven-dead", processKey: hang.processKey };
+  }
+
+  donHangMa([ma]);
+
+  const sau = sharedLedgerFact(Date.now());
+  const sauBytes = sau === null ? null : sau.foreignBytes;
+  const freedBytes =
+    truocBytes === null || sauBytes === null ? 0 : Math.max(0, soHuuHanChoLenh(truocBytes) - soHuuHanChoLenh(sauBytes));
+  return {
+    leaseKey,
+    released: true,
+    refusal: null,
+    processKey: hang.processKey,
+    freedBytes,
+    foreignBytesBefore: truocBytes,
+    foreignBytesAfter: sauBytes,
+  };
+}
+
+/** ⚠ Ràng buộc 4 — không giá trị không hữu hạn nào vào một phép trừ rồi ra API. */
+function soHuuHanChoLenh(n: number): number {
+  return Number.isFinite(n) ? n : 0;
 }
 
 /** Chỉ dùng trong test/chẩn đoán — PID mà tiến trình này đang đứng tên. */
