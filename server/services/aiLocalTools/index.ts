@@ -39,69 +39,16 @@ export type { PendingActionDTO } from "../aiCopilotActions";
 export { classifyToolIntent, classifyToolIntentLLM, listTools };
 
 /**
- * ★★★ Pha 4 Task 4 (review vòng 1, C-1) — **TIÊM `__authCtx` VÀO ARGS CỦA READ TOOL.**
+ * ★★★ `argsWithAuthCtx` — **PHÉP LÀM SẠCH + GÁN DANH TÍNH**, nay ở `toolRegistry.ts` (module LÁ),
+ * cạnh đúng kiểu `Tool` mà nó bảo vệ. Đọc toàn bộ lý lẽ ở đó.
  *
- * ══════════════════════════════════════════════════════════════════════════════════════════════
- * ⚠⚠⚠ ĐÂY LÀ NỢ CÓ SẴN CỦA REPO, VÀ NÓ LÀM CHẾT **CẢ HỌ** READ TOOL CÓ RBAC
- * ══════════════════════════════════════════════════════════════════════════════════════════════
- * `readToolsP2.ts` / `readToolsP2bc.ts` / `readToolsP2d.ts` / `analyticsTools.ts` đều khai
- * `__authCtx: authCtxSchema.optional()` trong schema và **TỪ CHỐI fail-safe khi nó vắng** — nhưng
- * `tryExecuteTool()` gọi `tool.handler(decision.args)` và **`execCtx` KHÔNG BAO GIỜ vào `args`**.
- * ⇒ Mọi tool ấy **LUÔN** trả `PERMISSION_DENIED` trên đường Agent. Chúng có test, có đăng ký, có
- * schema — và **không ai đọc được dữ liệu của chúng**: đúng định nghĩa "đồng hồ không kim", chỉ ở
- * tầng khác. Người review Task 4 tìm ra bằng cách chạy probe từ **đầu đường**, không phải bằng suy
- * luận; bộ ca cũ (gọi thẳng `handler()` kèm `__authCtx` tiêm tay) **mù đúng chỗ này**.
- *
- * ⚠ VÌ SAO SỬA Ở ĐÂY, KHÔNG VÁ TỪNG TOOL: một tool tự đọc danh tính từ đâu đó khác là **đường thứ
- * hai** cho một sự thật đã có chủ (`ToolExecContext.user` — người dùng phiên THẬT, không tin từ
- * client). Vá 20 tool là 20 bản sao.
- *
- * ⚠⚠ CHỈ TIÊM KHI SCHEMA CỦA TOOL **CÓ KHAI** `__authCtx` (các schema đều `.strict()`): một tool
- * không khai mà bị nhét thêm khoá lạ sẽ **vỡ** ở bất kỳ lượt `safeParse` nào về sau. Phép tiêm này
- * do đó **cộng thêm, không đổi gì** với tool cũ không dùng RBAC.
- *
- * ══════════════════════════════════════════════════════════════════════════════════════════════
- * 🔴 N-1 (re-review) — **`__authCtx` ĐẾN TỪ ARGS BỊ XOÁ, LUÔN LUÔN, TRƯỚC MỌI NHÁNH.**
- * ══════════════════════════════════════════════════════════════════════════════════════════════
- * Bản trước mở bằng `if (!execCtx) return args` — **trả lại NGUYÊN VĂN** một `__authCtx` do đầu vào
- * bịa. Người review đo được thật: `checkPermission` nhận `[999, "superadmin", …]` và **tool CHẠY**.
- * Đường vào là **LLM fallback**: `classifyToolIntentLLM()` cho `tool.parameters.safeParse(args)`,
- * và vì `__authCtx` là ô **ĐÃ KHAI** trong schema nên `safeParse` **GIỮ NGUYÊN** nó. Chưa nổ hôm
- * nay (bốn điểm vào đều xác thực + truyền `execCtx`; fallback mặc định TẮT) — nhưng đây là một
- * **đường LEO THANG QUYỀN**, không phải một ô hiển thị sai.
- *
- * ⇒ Thứ tự **KHÔNG ĐẢO ĐƯỢC**: (1) **XOÁ** `__authCtx` khỏi args — nó **KHÔNG BAO GIỜ** là nguồn
- * danh tính, dù có `execCtx` hay không; (2) chỉ khi CÓ `execCtx` **và** schema có khai thì mới gán
- * lại từ `ToolExecContext.user` (người dùng phiên THẬT, máy chủ tự đọc).
- * ⚠ Một `return args` nào chen vào **trước** bước (1) là mở lại đúng lỗ này.
- *
- * ⚠⚠ VÀ ĐÂY LÀ PHẦN ĐẮT NHẤT: ca cũ *"không `execCtx` ⇒ DENY"* **xanh vì args RỖNG**, không phải vì
- * có phòng thủ — "lưới xanh vì LÝ DO SAI", lần thứ mười hai trong chuỗi pha. Ca thay thế
- * (`authCtxInjection.test.ts`) **bơm `__authCtx` BỊA** vào đúng nhánh không có `execCtx`.
+ * ⚠⚠ **NÓ TỪNG LÀ HÀM PRIVATE CỦA FILE NÀY, VÀ ĐÓ LÀ MỘT LỖ AN NINH** (Task 5, review): private ⇒
+ * chỉ che được **MỘT** đường thoát. `aiAgentOrchestrator` — người gọi `Tool.handler` **THỨ HAI**
+ * trong mã sản xuất — không với tới được nên gọi thẳng `tool.handler(step.args)` và **FAIL-OPEN**.
+ * ⇒ Đừng bao giờ chuyển nó về private lại; `authCtxInjection.test.ts` có **bản kiểm đếm MỌI điểm
+ * gọi `.handler(`** để một điểm gọi mới không lặng lẽ bỏ qua nó.
  */
-function argsWithAuthCtx(tool: Tool<any, any>, args: unknown, execCtx?: ToolExecContext): unknown {
-  /**
-   * 🔴 N-4 (re-review vòng 2) — **DÒNG NÀY TỪNG LÀ `return args`, VÀ ĐÓ LÀ MỘT LỖ DANH TÍNH.**
-   *
-   * Trong JS một **MẢNG** là `typeof "object"` nhưng bị `Array.isArray()` loại ⇒ nhánh cũ trả nó
-   * **NGUYÊN VĂN**, kèm mọi thuộc tính gắn trên nó. Người review đo được: một mảng mang
-   * `__authCtx` ⇒ `checkPermission(999, "superadmin", …)` và **tool CHẠY**.
-   * ⚠⚠ Và chính docstring dưới đây đã viết *"một `return args` chen vào TRƯỚC bước (1) là mở lại
-   * đúng lỗ này"* — rồi **dòng đầu hàm đúng là như thế**. Một lời cảnh báo không tự thi hành.
-   *
-   * ⇒ `return {}`: đầu vào **không phải một túi tham số hợp lệ** thì **không mang được gì qua đây**.
-   * Chiều CHẶT — mọi schema của tool đều là `z.object().strict()`, nên args hợp lệ **không bao giờ**
-   * là mảng/chuỗi/`null`; đánh rơi một đầu vào méo an toàn hơn hẳn chở theo một danh tính bịa.
-   */
-  if (args === null || typeof args !== "object" || Array.isArray(args)) return {};
-  // (1) XOÁ TRƯỚC — vô điều kiện. Đầu vào KHÔNG BAO GIỜ được là nguồn của danh tính.
-  const { __authCtx: _tuDauVao, ...sach } = args as Record<string, unknown>;
-  if (!execCtx) return sach;
-  const shape = (tool.parameters as unknown as { shape?: Record<string, unknown> })?.shape;
-  if (!shape || !Object.hasOwn(shape, "__authCtx")) return sach;
-  // (2) GÁN LẠI từ phiên THẬT — nguồn duy nhất.
-  return { ...sach, __authCtx: { userId: execCtx.user.id, role: execCtx.user.role } };
-}
+import { argsWithAuthCtx } from "./toolRegistry";
 
 /**
  * Try to execute a tool for the given question. Returns null when no tool

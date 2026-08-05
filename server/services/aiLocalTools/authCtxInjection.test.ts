@@ -17,6 +17,9 @@
  * `checkPermission` nhận — không đọc mã, không đọc cờ.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import ts from "typescript";
+import fs from "node:fs";
+import path from "node:path";
 
 const checkPermissionMock = vi.fn();
 vi.mock("../../_core/accessControl", () => ({
@@ -197,5 +200,183 @@ describe("★★★ N-1 — `__authCtx` BỊA trong args KHÔNG BAO GIỜ trở 
     } finally {
       t.handler = goc;
     }
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ TASK 5 (review, CRITICAL) — **BẢN KIỂM ĐẾM MỌI ĐIỂM GỌI `Tool.handler(`**
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠⚠ VÌ SAO LƯỚI NÀY TỒN TẠI: các ca ở TRÊN đi qua `tryExecuteTool()` — **một** đường thoát — nên
+// chúng **XANH TRỌN VẸN** suốt thời gian `aiAgentOrchestrator` gọi thẳng `tool.handler(step.args)`
+// và **FAIL-OPEN**. Đó là *"lưới theo FILE, không theo ĐƯỜNG THOÁT"*, lần thứ **MƯỜI MỘT**.
+//
+// ⇒ Lưới này phát biểu bất biến ở đúng mức của nó: **KHÔNG một điểm gọi `Tool.handler(` nào trong
+// mã sản xuất được nhận args mà chưa qua `argsWithAuthCtx(...)`.** Nó **liệt kê bằng AST**, không
+// bằng danh sách chép tay, nên một điểm gọi MỚI (file mới, tên biến khác, module khác) rơi vào lưới
+// ngay — kể cả khi người viết chưa từng đọc file này.
+//
+// ⚠ VÌ SAO AST CHỨ KHÔNG REGEX: `git grep ".handler("` bắt cả **chú thích** (docstring của
+// `index.ts` có đúng chuỗi `tool.handler(decision.args)`) và cả `sub.handler(msg)` của pub/sub.
+// Cây cú pháp không có chú thích, và phép phân biệt dưới đây **không dựa vào tên biến**.
+// ⚠ VÌ SAO KHÓA CẢ SỐ LƯỢNG: một điểm gọi mới ĐÃ ĐÚNG vẫn phải được người viết nhìn thấy lưới này
+// một lần — cùng kỷ luật với `vramAllocationSites.test.ts`.
+describe("★★★ MỌI điểm gọi `Tool.handler(` trong mã sản xuất đều đi qua `argsWithAuthCtx`", () => {
+  const GOC = path.resolve(__dirname, "../..");
+
+  function moiFileSanXuat(dir: string, ra: string[] = []): string[] {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (e.name === "node_modules" || e.name === "dist") continue;
+        moiFileSanXuat(p, ra);
+      } else if (e.name.endsWith(".ts") && !e.name.endsWith(".test.ts") && !e.name.endsWith(".d.ts")) {
+        ra.push(p);
+      }
+    }
+    return ra;
+  }
+
+  interface DiemGoi {
+    readonly file: string;
+    readonly dong: number;
+    /** Văn bản NGUỒN của đối số thứ nhất — `""` khi gọi không đối số. */
+    readonly doiSo1: string;
+    readonly quaCong: boolean;
+  }
+
+  /**
+   * ⚠ PHÉP PHÂN BIỆT **KHÔNG THEO TÊN BIẾN** (`tool` / `t` / `x` đều như nhau): một file chỉ có thể
+   * gọi `Tool.handler` nếu nó **thấy được kiểu `Tool`**, tức có `import` từ `aiLocalTools/**` (hoặc
+   * chính nó nằm trong thư mục đó). File không có cửa ấy thì `.handler(` của nó là thứ khác
+   * (vd `sub.handler(msg)` của pub/sub trong `streaming/inProcessAdapter.ts`).
+   */
+  function thayKieuTool(sf: ts.SourceFile, file: string): boolean {
+    if (file.split(path.sep).join("/").includes("/aiLocalTools/")) return true;
+    let thay = false;
+    for (const st of sf.statements) {
+      if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier)) {
+        if (st.moduleSpecifier.text.includes("aiLocalTools")) thay = true;
+      }
+    }
+    return thay;
+  }
+
+  function quetDiemGoi(): DiemGoi[] {
+    const ra: DiemGoi[] = [];
+    for (const file of moiFileSanXuat(GOC)) {
+      const src = fs.readFileSync(file, "utf8");
+      if (!src.includes(".handler(")) continue;
+      const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+      if (!thayKieuTool(sf, file)) continue;
+      const di = (n: ts.Node): void => {
+        if (
+          ts.isCallExpression(n) &&
+          ts.isPropertyAccessExpression(n.expression) &&
+          n.expression.name.text === "handler"
+        ) {
+          const a0 = n.arguments[0];
+          const doiSo1 = a0 ? a0.getText(sf) : "";
+          // BẤT BIẾN: đối số thứ nhất **PHẢI LÀ** một lời gọi `argsWithAuthCtx(...)`.
+          // ⚠ Phát biểu về cái nó **PHẢI LÀ**, không phải "có chứa chuỗi" — một biến trung gian,
+          // một `?:`, một `??`, một hàm khác đều làm nó **thôi LÀ** lời gọi ấy ⇒ lưới ĐỎ.
+          const quaCong =
+            !!a0 &&
+            ts.isCallExpression(a0) &&
+            ts.isIdentifier(a0.expression) &&
+            a0.expression.text === "argsWithAuthCtx";
+          ra.push({
+            file: path.relative(GOC, file).split(path.sep).join("/"),
+            dong: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1,
+            doiSo1,
+            quaCong,
+          });
+        }
+        ts.forEachChild(n, di);
+      };
+      di(sf);
+    }
+    return ra;
+  }
+
+  it("★★★ KHÔNG điểm gọi nào nhận args CHƯA qua `argsWithAuthCtx(...)`", () => {
+    const ho = quetDiemGoi().filter((d) => !d.quaCong);
+    expect(
+      ho,
+      "một điểm gọi `Tool.handler(` bỏ qua `argsWithAuthCtx` là FAIL-OPEN: nó bỏ luôn bước XOÁ " +
+        "`__authCtx` do đầu vào bịa ⇒ leo thang quyền. Sửa điểm gọi, KHÔNG nới lưới:\n" +
+        ho.map((d) => `  ${d.file}:${d.dong} → handler(${d.doiSo1})`).join("\n"),
+    ).toEqual([]);
+  });
+
+  it("★★ bản kiểm đếm khớp: đúng HAI đường thoát đã biết (tryExecuteTool + Agent tự trị)", () => {
+    const tatCa = quetDiemGoi();
+    const files = tatCa.map((d) => d.file).sort();
+    expect(files, "thêm/bớt một điểm gọi phải được người viết nhìn thấy lưới này một lần").toEqual([
+      "services/aiAgentOrchestrator.ts",
+      "services/aiLocalTools/index.ts",
+    ]);
+    expect(tatCa.every((d) => d.quaCong)).toBe(true);
+  });
+
+  it("★★ LƯỚI-CHO-LƯỚI: năm hình dạng lách đều bị bắt (biến trung gian · ?: · ?? · && · hàm khác)", () => {
+    /**
+     * ⚠ Không có ca này thì lưới trên có thể là một phép so chuỗi lỏng lẻo mà chính nó không biết.
+     * Ở đây ta dựng NĂM biến thể trên AST THẬT và khẳng định lưới **bắt cả năm** — đúng khuôn
+     * "lưới-cho-lưới" mà N-2/N-5 của Task 4 đã phải dựng sau khi người review lách được.
+     */
+    const lach = [
+      "const a = argsWithAuthCtx(tool, x, e); await tool.handler(a);",
+      "await tool.handler(ok ? argsWithAuthCtx(tool, x, e) : x);",
+      "await tool.handler(argsWithAuthCtx(tool, x, e) ?? x);",
+      "await tool.handler(ok && argsWithAuthCtx(tool, x, e));",
+      "await tool.handler(sanitize(x));",
+      "await tool.handler(x);",
+    ];
+    for (const mau of lach) {
+      const sf = ts.createSourceFile("t.ts", mau, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+      let quaCong: boolean | null = null;
+      const di = (n: ts.Node): void => {
+        if (
+          ts.isCallExpression(n) &&
+          ts.isPropertyAccessExpression(n.expression) &&
+          n.expression.name.text === "handler"
+        ) {
+          const a0 = n.arguments[0];
+          quaCong =
+            !!a0 &&
+            ts.isCallExpression(a0) &&
+            ts.isIdentifier(a0.expression) &&
+            a0.expression.text === "argsWithAuthCtx";
+        }
+        ts.forEachChild(n, di);
+      };
+      di(sf);
+      expect(quaCong, `hình dạng lách phải bị BẮT: ${mau}`).toBe(false);
+    }
+  });
+
+  it("★ chiều DƯƠNG: hình dạng ĐÚNG được lưới cho qua (không phải lưới chặn tất)", () => {
+    const sf = ts.createSourceFile(
+      "t.ts",
+      "await tool.handler(argsWithAuthCtx(tool, step.args ?? {}, exec));",
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    let quaCong: boolean | null = null;
+    const di = (n: ts.Node): void => {
+      if (
+        ts.isCallExpression(n) &&
+        ts.isPropertyAccessExpression(n.expression) &&
+        n.expression.name.text === "handler"
+      ) {
+        const a0 = n.arguments[0];
+        quaCong =
+          !!a0 && ts.isCallExpression(a0) && ts.isIdentifier(a0.expression) && a0.expression.text === "argsWithAuthCtx";
+      }
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+    expect(quaCong).toBe(true);
   });
 });

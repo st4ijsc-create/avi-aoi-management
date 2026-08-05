@@ -28,7 +28,7 @@ import type {
   AgentStepResult,
   AiAgentSession,
 } from "../../drizzle/schema";
-import { getTool, isWriteTool, isClientTool, type ToolExecContext, type ToolLang } from "./aiLocalTools/toolRegistry";
+import { getTool, isWriteTool, isClientTool, argsWithAuthCtx, type ToolExecContext, type ToolLang } from "./aiLocalTools/toolRegistry";
 import { proposeAction, confirmAction, cancelAction, type CopilotUser } from "./aiCopilotActions";
 import { planGoal, replanFromObservations, AGENT_MAX_STEPS, AGENT_MAX_REPLANS, type ReplanExecutedEntry, type ReplanResult } from "./aiAgentPlanner";
 // E2-4 (doc69 Giai đoạn 4/Wave E2) — realtime refresh nudge for the Agent Command
@@ -408,7 +408,25 @@ async function advanceImpl(
         return { ok: false, status: "paused", step: lastStep, cursor };
       }
       try {
-        const result = await tool.handler(step.args ?? {});
+        /**
+         * ★★★ Task 5 (review, CRITICAL) — **`argsWithAuthCtx` LÀ BẮT BUỘC Ở ĐÂY, VÀ NÓ FAIL-OPEN
+         * NẾU THIẾU.**
+         *
+         * Dòng này từng là `tool.handler(step.args ?? {})`. Nghe như *"quên gán danh tính ⇒ tool
+         * bị từ chối"* — **SAI CHIỀU**: `argsWithAuthCtx` **XOÁ `__authCtx` do đầu vào bịa TRƯỚC**
+         * rồi mới gán từ phiên. Bỏ nó = bỏ luôn bước XOÁ.
+         *
+         * Chuỗi khai thác có thật: `aiAgentPlanner.buildPlannerPrompt()` ghép **nguyên văn mục tiêu
+         * người dùng** vào prompt → model sinh `args` → `safeParse` **GIỮ** `__authCtx` (ô ĐÃ KHAI
+         * trong mọi schema read tool) → tới đây → `checkPermission(999, "admin", …)` →
+         * `accessControl.ts` `if (isAdmin && !scopedAdminEnabled()) return true` **không đọc DB**
+         * ⇒ **god-mode trên cả 29 read tool có RBAC**.
+         *
+         * ⚠ `exec` là danh tính phiên THẬT (`execCtxOf(ctx.user, …)`) — cùng thứ nhánh
+         * `navigate/prefill` và `write` đã dùng. Không có nguồn danh tính thứ hai ở tầng này.
+         * ⚠ Lưới: `aiAgentOrchestrator.authCtx.test.ts` đi từ ĐẦU đường tự trị với `__authCtx` BỊA.
+         */
+        const result = await tool.handler(argsWithAuthCtx(tool, step.args ?? {}, exec));
         lastStep = { index: cursor, kind: step.kind, tool: step.tool ?? null, status: "done", payload: result };
         stepResults.push(lastStep);
         cursor += 1;

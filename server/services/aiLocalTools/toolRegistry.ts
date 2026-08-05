@@ -210,6 +210,81 @@ export function assertExecutable(tool: Tool<any, any>): void {
   }
 }
 
+/**
+ * ★★★ Pha 4 Task 4 (review vòng 1, C-1) — **TIÊM `__authCtx` VÀO ARGS CỦA READ TOOL.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ ĐÂY LÀ NỢ CÓ SẴN CỦA REPO, VÀ NÓ LÀM CHẾT **CẢ HỌ** READ TOOL CÓ RBAC
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `readToolsP2.ts` / `readToolsP2bc.ts` / `readToolsP2d.ts` / `analyticsTools.ts` đều khai
+ * `__authCtx: authCtxSchema.optional()` trong schema và **TỪ CHỐI fail-safe khi nó vắng** — nhưng
+ * người gọi `tool.handler(...)` **không bao giờ** đưa `execCtx` vào `args`.
+ * ⇒ Mọi tool ấy **LUÔN** trả `PERMISSION_DENIED` trên đường Agent. Chúng có test, có đăng ký, có
+ * schema — và **không ai đọc được dữ liệu của chúng**: đúng định nghĩa "đồng hồ không kim", chỉ ở
+ * tầng khác. Người review Task 4 tìm ra bằng cách chạy probe từ **đầu đường**, không phải bằng suy
+ * luận; bộ ca cũ (gọi thẳng `handler()` kèm `__authCtx` tiêm tay) **mù đúng chỗ này**.
+ *
+ * ⚠ VÌ SAO SỬA Ở ĐÂY, KHÔNG VÁ TỪNG TOOL: một tool tự đọc danh tính từ đâu đó khác là **đường thứ
+ * hai** cho một sự thật đã có chủ (`ToolExecContext.user` — người dùng phiên THẬT, không tin từ
+ * client). Vá 20 tool là 20 bản sao.
+ *
+ * ⚠⚠ CHỈ TIÊM KHI SCHEMA CỦA TOOL **CÓ KHAI** `__authCtx` (các schema đều `.strict()`): một tool
+ * không khai mà bị nhét thêm khoá lạ sẽ **vỡ** ở bất kỳ lượt `safeParse` nào về sau. Phép tiêm này
+ * do đó **cộng thêm, không đổi gì** với tool cũ không dùng RBAC.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 N-1 (re-review Task 4) — **`__authCtx` ĐẾN TỪ ARGS BỊ XOÁ, LUÔN LUÔN, TRƯỚC MỌI NHÁNH.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản trước mở bằng `if (!execCtx) return args` — **trả lại NGUYÊN VĂN** một `__authCtx` do đầu vào
+ * bịa. Người review đo được thật: `checkPermission` nhận `[999, "superadmin", …]` và **tool CHẠY**.
+ * Đường vào là **người sản xuất args không tin được**: `classifyToolIntentLLM()` (và
+ * `aiAgentPlanner`) cho `tool.parameters.safeParse(args)`, và vì `__authCtx` là ô **ĐÃ KHAI** trong
+ * schema nên `safeParse` **GIỮ NGUYÊN** nó.
+ *
+ * ⇒ Thứ tự **KHÔNG ĐẢO ĐƯỢC**: (1) **XOÁ** `__authCtx` khỏi args — nó **KHÔNG BAO GIỜ** là nguồn
+ * danh tính, dù có `execCtx` hay không; (2) chỉ khi CÓ `execCtx` **và** schema có khai thì mới gán
+ * lại từ `ToolExecContext.user` (người dùng phiên THẬT, máy chủ tự đọc).
+ * ⚠ Một `return args` nào chen vào **trước** bước (1) là mở lại đúng lỗ này.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 TASK 5 (review) — **VÌ SAO HÀM NÀY NẰM Ở `toolRegistry.ts`, KHÔNG PHẢI `index.ts`.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản trước để nó **private trong `index.ts`**, nên nó chỉ che được **MỘT** đường thoát
+ * (`tryExecuteTool`). Repo có **HAI** người gọi `Tool.handler` trong mã sản xuất; người thứ hai —
+ * `aiAgentOrchestrator` (Agent TỰ TRỊ) — gọi thẳng `tool.handler(step.args)` và do đó **FAIL-OPEN**:
+ * bỏ qua hàm này là **bỏ luôn bước XOÁ**, nên một `__authCtx` bịa (mục tiêu người dùng → prompt của
+ * `aiAgentPlanner` → `safeParse` GIỮ ô đã khai → `step.args`) đi thẳng vào `checkPermission`, nơi
+ * `role === "admin"` được `accessControl.ts` cho qua **không đọc DB** ⇒ god-mode trên cả 29 read tool.
+ * ⚠⚠ Đây là *"lưới theo FILE, không theo ĐƯỜNG THOÁT"* — lần thứ **MƯỜI MỘT** trong chuỗi pha.
+ * ⇒ Hàm sống cạnh **kiểu `Tool`** mà nó bảo vệ, ở module LÁ (không import gì ngoài `zod`), để **mọi**
+ * người gọi `Tool.handler` đều với tới được mà không tạo vòng nhập.
+ * ⚠ Lưới canh: `aiAgentOrchestrator.authCtx.test.ts` (đi từ đầu đường tự trị) +
+ * `authCtxInjection.test.ts` (đường `tryExecuteTool` + **bản kiểm đếm MỌI điểm gọi `.handler(`**).
+ */
+export function argsWithAuthCtx(tool: Tool<any, any>, args: unknown, execCtx?: ToolExecContext): unknown {
+  /**
+   * 🔴 N-4 (re-review Task 4) — **DÒNG NÀY TỪNG LÀ `return args`, VÀ ĐÓ LÀ MỘT LỖ DANH TÍNH.**
+   *
+   * Trong JS một **MẢNG** là `typeof "object"` nhưng bị `Array.isArray()` loại ⇒ nhánh cũ trả nó
+   * **NGUYÊN VĂN**, kèm mọi thuộc tính gắn trên nó. Người review đo được: một mảng mang
+   * `__authCtx` ⇒ `checkPermission(999, "superadmin", …)` và **tool CHẠY**.
+   * ⚠⚠ Và chính docstring trên đã viết *"một `return args` chen vào TRƯỚC bước (1) là mở lại đúng
+   * lỗ này"* — rồi **dòng đầu hàm đúng là như thế**. Một lời cảnh báo không tự thi hành.
+   *
+   * ⇒ `return {}`: đầu vào **không phải một túi tham số hợp lệ** thì **không mang được gì qua đây**.
+   * Chiều CHẶT — mọi schema của tool đều là `z.object().strict()`, nên args hợp lệ **không bao giờ**
+   * là mảng/chuỗi/`null`; đánh rơi một đầu vào méo an toàn hơn hẳn chở theo một danh tính bịa.
+   */
+  if (args === null || typeof args !== "object" || Array.isArray(args)) return {};
+  // (1) XOÁ TRƯỚC — vô điều kiện. Đầu vào KHÔNG BAO GIỜ được là nguồn của danh tính.
+  const { __authCtx: _tuDauVao, ...sach } = args as Record<string, unknown>;
+  if (!execCtx) return sach;
+  const shape = (tool.parameters as unknown as { shape?: Record<string, unknown> })?.shape;
+  if (!shape || !Object.hasOwn(shape, "__authCtx")) return sach;
+  // (2) GÁN LẠI từ phiên THẬT — nguồn duy nhất.
+  return { ...sach, __authCtx: { userId: execCtx.user.id, role: execCtx.user.role } };
+}
+
 const _registry = new Map<string, Tool<any, any>>();
 
 export function registerTool<TParams, TData>(tool: Tool<TParams, TData>): void {

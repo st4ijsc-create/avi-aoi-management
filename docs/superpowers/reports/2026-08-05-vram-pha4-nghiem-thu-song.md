@@ -14,7 +14,7 @@
 |---|---|---|
 | Tiến trình ứng dụng | `npm run dev` (tsx, `server/_core/index.ts`), **PID 2128**, `http://localhost:3000` | `netstat -ano`, log khởi động |
 | `processKey` của broker | `all:2128:1785943999021` | `vram.state.processKey` |
-| DB | `postgresql://aoi@127.0.0.1:5434/aoi_management` | `.env` |
+| DB | `127.0.0.1:5434/aoi_management`, **vai kết nối `avi_app`** (không phải `aoi` — bản đầu ghi sai; đo lại bằng `select current_user` ⇒ `avi_app`) | `.env` + `current_user` |
 | GPU | RTX 5090, **32.607 MiB** tổng | `nvidia-smi` |
 | Model ĐÃ NẠP THẬT | Qwen3-30B-A3B-Instruct (deep), Qwen3-4B-Instruct (fast), Qwen3-Embedding-0.6B, bge-reranker-v2-m3 | log `[aiGgufEngine] Loading model:` |
 | `AI_TOOL_LLM_FALLBACK` | `1` (BẬT) | `.env:208` |
@@ -32,7 +32,7 @@
 | user | id | role | `machine_control` | `machine_status` (alias của `machine_monitoring`) | `settings_products` | `analytics_root_cause` |
 |---|---|---|---|---|---|---|
 | `supervisor1` | 49 | supervisor | view✓ create✓ **delete✗** | view✓ | view✓ | view✓ |
-| `engineer1` | 51 | engineer | view✓ create✓ **delete✗** | view✓ | — | — |
+| `engineer1` | 51 | engineer | view✓ create✓ **delete✗** | view✓ create✓ edit✓ delete✗ | **view✓ create✓ edit✓** (bản đầu ghi "—" là **SAI**) | **KHÔNG CÓ HÀNG** |
 | `operator1` | 48 | operator | **KHÔNG CÓ HÀNG** | view✓ | **KHÔNG CÓ HÀNG** | **KHÔNG CÓ HÀNG** |
 | `p1_audit_op` | 1545 | operator | **0 hàng quyền nào** | **0** | **0** | **0** |
 | `p1_audit_admin` | 1546 | admin | (god-mode) | (god-mode) | (god-mode) | (god-mode) |
@@ -61,7 +61,20 @@ attributable KHÔNG BIẾT (probe-blind) ⇒ headroom-upper-bound: dư địa đ
 (`basis=ledger-only`, `blind`, `probe-blind`), tức chính trạng thái mà một bản tóm tắt cẩu thả sẽ
 in "còn 25 GB" rồi để Agent đọc một **chặn trên** thành một trạng thái an toàn.
 
-**Lượt sống L2** · 22:55 · cùng ảnh chụp qua `trpc.vram.state` (panel đọc) — sau khi nhịp đo đã xong:
+**Lượt sống L2** · 22:55 · **một lượt `fetch` JSON tới `trpc.vram.state`** từ đúng phiên trình duyệt
+(`atMs 1785945331310`) — sau khi nhịp đo đã xong.
+
+> 🔴 **ĐÍNH CHÍNH (review) — BẢN ĐẦU TỰ MÂU THUẪN VỚI ẢNH CỦA CHÍNH NÓ.**
+> Bản đầu viết *"cùng ảnh chụp"* rồi để bảng dưới đứng cạnh `t5b-01`, trong khi **`t5b-01` in
+> `23.387 MiB`** còn bảng ghi **`22.383 MiB`** — lệch **1.004 MiB**, dù mọi ô khác khớp từng MiB.
+> **Truy ra rồi, và không ô nào sai — sai là LỜI KHAI về nguồn:**
+> • bảng dưới đến từ **lượt `fetch` JSON lúc 22:55** (`effectiveBytes = 23.470.170.112 B` = 22.383 MiB);
+> • ảnh **khớp** bảng là **`t5b-00-initial.png`** (in đúng **22.383 MiB**), không phải `t5b-01`;
+> • **`t5b-01`** chụp **muộn hơn ~2 phút** và in **23.387 MiB** — một **nhịp poll KHÁC**
+>   (`VramBrokerPanel` dùng `usePollingInterval(5000)`, tức panel tự làm mới **mỗi 5 giây**).
+> ⇒ Con số VRAM trên panel là **đại lượng ĐANG CHẢY**; hai ảnh chụp cách nhau 2 phút **phải** khác
+> nhau. Bài học ghi lại: một báo cáo dán bảng số cạnh một ảnh chụp **khác thời điểm** thì tự huỷ
+> giá trị làm bằng chứng của cả hai, kể cả khi cả hai đều đúng.
 
 | ô | giá trị ĐO ĐƯỢC (byte) | quy ra |
 |---|---|---|
@@ -180,6 +193,14 @@ của Pha 4; nó là nợ có sẵn của lớp GĐ1. Ghi lại vì lượt số
 ⇒ **Kết luận lớp (c): CHƯA NGHIỆM THU.** Không dựng được lượt "được phép" lẫn lượt "bị từ chối" cho
 lớp này trên đường Agent NL, vì **không lượt nào chạm tới tool của lớp**.
 
+> 🔴 **ĐÍNH CHÍNH HẠNG (review) — LỚP (c) LÀ MỘT NỢ CHẶN, KHÔNG PHẢI MỘT Ô TRỐNG.**
+> Bản đầu đóng khung nó như *"không dựng được cảnh"* — nghe ngang hàng với một mục thiếu số. Sai hạng.
+> Nội dung thật của nó: **hai ranh giới AN NINH** — chặn thoát thư mục (`read_project_file`) và hộp
+> cát biểu thức (`calc`) — **CHƯA TỪNG CHẠY MỘT LẦN NÀO** trên đường Agent, ở một lớp mà **cả 8/8
+> tool đều nằm ở sàn quyền THẤP NHẤT** (`machine_monitoring/canView`, tức gần như mọi vai đều có).
+> ⇒ Đây là **nợ CHẶN của cổng ra**, phải trả trước khi ai đó sửa `extractArgsForTool` (ngày lớp này
+> với tới được là ngày hai ranh giới ấy nhận đầu vào thật lần đầu, **chưa từng có lưới sống nào**).
+
 ### 3.2 (A2′) Lượt bù cho lớp (b) — **N-7 nay ĐẠT**
 
 Nguyên nhân A2 rỗng đã ĐO ĐƯỢC, không suy đoán: `select max("createdAt") from product_inspections`
@@ -254,10 +275,27 @@ Cửa sổ step-up 2FA được mở bằng **đúng cơ chế của repo** (m�
 ⇒ **ĐẠT.** Hai thước độc lập khớp nhau trong **21 MiB** (5.051 thiết bị vs 5.030 sổ — phần chênh là
 ngữ cảnh CUDA của model cũng được nhả cùng). Đây là *"byte thật sự nhả"* theo đúng nghĩa Bước 3.
 
-⚠ **Một quan sát đáng ghi:** `headroom.effectiveBytes` **KHÔNG đổi** (23.470.170.112 ở cả hai đầu) —
-dư địa chỉ được tính lại ở **nhịp quyết định** kế tiếp, không phải ngay khi lệnh trả về. Ai đọc
-`effectiveBytes` ngay sau một lệnh thu hồi sẽ thấy một con số **cũ**; bằng chứng đúng là
-`ledger.localBytes` + danh sách hộ (và `leaseLeftLedger` trong kết quả lệnh).
+⚠ **Một quan sát đáng ghi:** `headroom.effectiveBytes` **KHÔNG đổi** (23.470.170.112 ở cả hai đầu)
+dù 5.030 MiB đã rời sổ.
+
+> 🔴 **ĐÍNH CHÍNH (review) — BẢN ĐẦU CHẨN ĐOÁN SAI CƠ CHẾ**, và chẩn đoán sai khiến người sau sửa
+> nhầm chỗ. Bản đầu viết *"dư địa chỉ được tính lại ở nhịp quyết định kế tiếp"* — như thể con số bị
+> **cache**. **KHÔNG PHẢI.** `decisionStateFor()` (`vramBroker.ts:846`) **tính mới ở MỖI lượt đọc**.
+>
+> **Thủ phạm thật là công thức**, và nó khớp **đúng từng byte** với chính hai số tôi đã ghi:
+> ```
+> headroom_raw = ceiling − max(ledgerTotal, attributable) − safetyReserve
+> effective    = raw − staleMargin − sharedLedgerMargin
+> ```
+> • **TRƯỚC**: `max(7.471.882.240, 7.499.063.296)` = **attributable** (thiết bị thấy nhiều hơn sổ);
+> • **SAU**: `ledgerTotal` tụt xuống 2.197.463.040, nhưng **`attributable` vẫn là 7.499.063.296** —
+>   nó đến từ **phép đo thiết bị của NHỊP TRƯỚC**, chưa có nhịp mới sau lệnh ⇒ `max(...)` **y nguyên**.
+> • Kiểm số: `34.190.458.880 − 7.499.063.296 − 1.073.741.824 = 25.617.653.760` (= `rawBytes` đã ghi);
+>   `25.617.653.760 − 1.073.741.824 − 1.073.741.824 = 23.470.170.112` (= `effectiveBytes` đã ghi). ✔
+>
+> ⇒ Phát biểu ĐÚNG: **`used` bị GHIM bởi một phép đo tick CŨ**, không phải "dư địa bị cache". Hệ quả
+> thực hành không đổi — bằng chứng đúng vẫn là `leaseLeftLedger` + `ledger.localBytes` — nhưng ai
+> muốn sửa phải chạm **nhịp đo**, không phải chạm chỗ tính headroom.
 
 ---
 
@@ -336,6 +374,7 @@ Màn `/ai-brain` (`AIBrainDashboard` → `VramBrokerPanel`) render THẬT trong 
 | Quyền của `operator1`/`supervisor1`/`maint1`/`engineer1` | **KHÔNG ĐỔI** — vẫn đúng **85** hàng như trước khi đo (không cấp, không thu hồi bit quyền nào) |
 | Tiến trình anh em `api:4304` | **ĐÃ TẮT theo đúng PID** (`taskkill /F /PID 4304 /T`), cổng 3100 giải phóng, GPU 5.895 → 3.496 MiB |
 | Hàng ma của anh em trong `vram_leases` | **nhịp đối chiếu TỰ DỌN** — đo lại: 0 hàng mang `api:4304` |
+| ⚠ **Hàng của tiến trình ĐÃ CHẾT còn sót trong `vram_leases`** (bản đầu **bỏ sót**, người review bắt) | **CÓ, và nó TỰ LÀNH.** Đo lại sau khi tắt mọi tiến trình: **3 hàng** còn lại (`all:11092`, `all:16684`, `api:552`) — tất cả `owner = "cuda-backend"`, **`bytes = 0`, tổng = 0 byte**. ⇒ chúng **không trừ một byte dư địa nào** của ai. Cơ chế tự lành đã chứng minh sống ngay trong lượt đo này: hàng của `api:4304` bị **nhịp đối chiếu dọn sạch** ngay khi PID chết (`lapKeHoachNhanNuoi` → `xoaHangMa`). Lượt khởi động kế tiếp dọn nốt 3 hàng còn lại theo cùng đường. **Ghi cả hai vế**: có rác, và rác vô hại + có người dọn. |
 | Model `gguf:Qwen3-4B-Instruct` đã thu hồi | nạp lại theo nhu cầu (đường bình thường của `getOrLoadModel`) — không cần can thiệp |
 | Mã sản xuất | **KHÔNG SỬA MỘT DÒNG NÀO.** `git status --porcelain -- server/ client/` vẫn RỖNG sau khi đo |
 | Trainer · `kb:sync` · DDL/migration | **KHÔNG chạy cái nào** |
@@ -366,26 +405,59 @@ Màn `/ai-brain` (`AIBrainDashboard` → `VramBrokerPanel`) render THẬT trong 
 | U6 | `preempt` hộ `vision-sidecar` và `orphan-pid` (**hộ 7,8 GB**) | Sidecar thị giác **không sống** trong lượt đo (`nvidia-smi` không có `llama-server`), nên hai người thi hành ấy chưa chạy. Đã thu hồi hộ `gguf-idle-model` **5.030 MiB** thay thế. |
 | U7 | Locale `vi` và `zh` **trên màn thật** | Trình duyệt ở `en`; ba locale mới chỉ được `i18n:check` + test Task 3 canh. |
 | U8 | `headroom.blind = true` / `basis = "ledger-only"` **trên panel** | Chỉ bắt được ở **lượt L1** (qua tool, lúc nhịp đo đầu chưa xong), **không** chụp được trên màn. |
+| **U9** | ⚠⚠ **TOÀN BỘ MẶT SUY GIẢM** — `blind` · `trusted=false` · `degradedReasons[]` · `baseline.verified=false` · `foreign.known=false` · `foreign.stale=true` | **7/7 ảnh đều in nhãn `tin cậy`**, `degradedReasons: []`, `baseline.verified: true`. ⇒ **không một badge suy giảm nào từng render**. Đây là **nửa nguy hiểm hơn** của panel: nó chỉ xuất hiện đúng lúc hệ đang hỏng, tức đúng lúc người trực cần đọc nó. |
+| **U10** | **Nhánh CẢNH BÁO của câu 2 và câu 3** (`translateVramNonFiniteFields` khi mảng **KHÔNG rỗng**; `translateVramEstimateUsable(false, n)`) | 2/8 câu chỉ chạy **nhánh hiền**. Nhánh dữ dội — *"N ô BỊ CHẶN (fail-closed HỢP LỆ)"* và *"KHÔNG ĐÁNG TIN, đừng dùng để tính"* — **chưa từng hiện trên màn**. |
+| **U11** | Hai lệnh chạy **CÙNG LÚC** (hai người vận hành, hoặc Agent + người) | Mọi lượt đo đều **tuần tự**. Tranh chấp trên cùng một hộ / cùng cửa sổ đo chưa chạm tới. |
+| **U12** | **Sổ chung khi DB CHẬM hoặc MẤT** | Đo trong điều kiện DB khoẻ (`foreign.known: true`, `ageMs` 7–11 s). Nhánh `never-refreshed-blind-to-siblings` + `stale: true` chưa chạy trên màn lẫn trên tool. |
+| **U13** | Giá trị **`-Infinity`/`NaN`** đi tới API (đường fail-closed `nonFiniteFields`) | `nonFiniteFields: []` ở **mọi** lượt ⇒ đường chặn chưa từng kích hoạt bằng dữ liệu thật. |
+| **U14** | **Dư địa ÂM** (đã dùng vượt trần) | GPU rộng rãi suốt lượt đo (đỉnh 8,6/32,6 GB). |
+| **U15** | **Ba vai chưa từng đọc tool**: `quality_inspector`, `it_admin`, `manager` | Chỉ đo 5 danh tính (admin · supervisor · engineer · operator · maintenance). |
+| **U16** | `preempt` một hộ **ĐANG BẬN THẬT** (`refCount > 0` giữa lúc suy luận) | Chỉ gặp `busy-in-use` ở trạng thái tĩnh, chưa gặp lúc có request đang bay. |
+| **U17** | **Anh em CÒN SỐNG ra lệnh chéo** (tiến trình A `preempt` hộ của B) | Chỉ đo `declared-by-owner-process` ở **mặt đọc**; chưa bấm lệnh từ tiến trình không phải chủ. |
+| **U18** | **Tab ẩn** (`usePollingInterval` tạm dừng rồi quay lại) | Mọi lượt đo với tab đang hiện. |
+| **U19** | 🔴 **U1 "chưa đi ĐƯỢC"** — planner trả `steps: []` nên **không mục tiêu người dùng thật nào** từng chạy qua đường tự trị | ⚠ Lỗ §8.1 đã được đóng bằng **lưới ở mức đơn vị** (seam thay planner). Nhưng **đường end-to-end THẬT** — mục tiêu người dùng → planner THẬT → bước read — **vẫn chưa từng chạy**, vì planner đang hỏng. Khi planner được sửa, **phải đo lại toàn bộ §8.1 trên đường thật**. |
+| **U20** | GPU **gần đầy** (lượt xin bị TỪ CHỐI thật giữa lúc panel đang mở) | Chưa dựng được cảnh nghẽn. |
+| **U21** | **Một máy · một locale · một card** | Toàn bộ đo trên 1 máy dev, RTX 5090, trình duyệt `en`. Kết luận không mở rộng sang cấu hình khác — và Wave 2 đã có tiền lệ *"một Critical chỉ tồn tại ở cấu hình khác"*. |
 
-### 8.1 🟠 U1 — đường Agent TỰ TRỊ **không được bản vá C-1 phủ** (tĩnh: có · sống: **CHƯA**)
+### 8.1 🔴 U1 — đường Agent TỰ TRỊ **FAIL-OPEN** (bản đầu ghi **SAI CHIỀU**) — ĐÃ SỬA + ĐÃ ĐO
 
-`server/services/aiAgentOrchestrator.ts:411` — nhánh `step.kind === "read"`:
+> 🔴 **ĐÍNH CHÍNH NẶNG NHẤT CỦA CẢ BÁO CÁO.** Bản đầu xếp mục này **🟡** và mô tả nó là **fail-closed**
+> (*"vẫn `PERMISSION_DENIED` + 0 byte dữ liệu"*). **NÓ FAIL-OPEN.** Đây là một **lỗ leo thang quyền**,
+> không phải một ô hiển thị thiếu.
+>
+> **Vì sao tôi bỏ sót:** tôi đọc `argsWithAuthCtx` như một hàm **GÁN** danh tính, nên "bỏ qua nó"
+> đọc thành "không có danh tính ⇒ bị từ chối". Nhưng việc **ĐẦU TIÊN** hàm ấy làm là **XOÁ
+> `__authCtx` do đầu vào bịa** — chính bản vá **N-1/N-4** của Task 4. **Bỏ qua nó = bỏ luôn bước XOÁ.**
+
+`server/services/aiAgentOrchestrator.ts:411` (trước khi sửa) — nhánh `step.kind === "read"`:
 
 ```ts
 const result = await tool.handler(step.args ?? {});
 ```
 
-**Không** đi qua `argsWithAuthCtx()`, dù `exec` (`ToolExecContext`, danh tính phiên thật) **đang ở
-trong tầm** ngay tại đó — chính hàm này dùng `exec` ở dòng **389** (`buildClientAction`) và **505**
-(`proposeAction`). ⇒ Trên đường tự trị, **cả 29 tool "hồi sinh"** vẫn nhận `__authCtx === undefined`
-⇒ vẫn `PERMISSION_DENIED` + 0 byte dữ liệu.
+**Chuỗi khai thác**, mỗi mắt xích là mã thật:
 
-⚠ **CHƯA NGHIỆM THU SỐNG, và tôi ghi thẳng là chưa**: đã chạy **2 lượt** `aiAgent.startSession`
-(`AI_AGENTIC_ENABLED=1`, `supervisor1` ∈ `AGENTIC_ROLES`) với hai mục tiêu khác nhau
-(*"Liệt kê danh sách sản phẩm đang có"*, *"Xem trạng thái tất cả máy đang offline rồi tổng hợp lại"*);
-cả hai lượt **`plan.steps = []`** (`approvePlan` → `status:"done"`, `step:null`) nên **không bước `read`
-nào chạy**. Đây là một **quan sát TĨNH có trích dẫn dòng**, không phải một phép đo — người sau phải
-dựng được một plan có bước `read` rồi đo lại trước khi kết luận.
+| # | mắt xích | vì sao nó cho qua |
+|---|---|---|
+| 1 | `aiAgentPlanner.buildPlannerPrompt()` | ghép **NGUYÊN VĂN mục tiêu người dùng** vào prompt (`` `Mục tiêu: ${goal}` ``) |
+| 2 | `aiAgentPlanner` → `tool.parameters.safeParse(rawArgs)` | `__authCtx` là ô **ĐÃ KHAI** trong mọi schema read tool ⇒ `safeParse` **GIỮ NGUYÊN** nó |
+| 3 | `aiAgentOrchestrator.ts:411` | `tool.handler(step.args)` — **không XOÁ, không GÁN** |
+| 4 | `_core/accessControl.ts:135-137` | `if (isAdmin && !scopedAdminEnabled()) return true` — **KHÔNG ĐỌC DB** |
+
+⇒ **god-mode trên cả 29 read tool có RBAC**, chỉ bằng một mục tiêu viết khéo.
+
+⚠⚠⚠ **VÀ ĐÂY LÀ ĐIỂM ĐẮT NHẤT — "PLANNER ĐANG HỎNG" KHÔNG PHẢI MỘT CỔNG.**
+Lượt nghiệm thu đầu chạy **2 lượt** `startSession` và nhận `plan.steps = []` cả hai, nên tôi kết luận
+*"chưa nghiệm thu sống được"*. Nhưng thứ chặn là **planner đang trả kế hoạch rỗng**, **không phải một
+phép kiểm nào**. Đúng khuôn **"215/215 xanh suốt thời gian tool chết"**: planner được sửa ngày nào
+thì lỗ mở ngày đó. **Một khuyết tật bị che bởi một khuyết tật khác vẫn là một khuyết tật đang mở.**
+
+**ĐÃ SỬA + ĐÃ ĐO** (xem §13): lượt đo từ **đầu đường tự trị** với `__authCtx` bịa trong `step.args`:
+trước bản vá `checkPermission` nhận **`(999, "admin", …)`** và bước read **TRẢ VỀ DỮ LIỆU**; sau bản
+vá nó nhận **`(7, "supervisor", …)`** và trả `PERMISSION_DENIED` + `state: null`.
+
+⚠ **Lớp lỗi: "lưới theo FILE, không theo ĐƯỜNG THOÁT" — lần thứ MƯỜI MỘT.** Bản vá C-1 đi tới **một**
+đường thoát và để lại đường thứ hai. ⇒ Không vá đúng dòng 411: xem §13 (bản kiểm đếm **MỌI** điểm gọi).
 
 ---
 
@@ -406,8 +478,8 @@ dựng được một plan có bước `read` rồi đo lại trước khi kết
 |---|---|---|
 | **F1** | 🟠 | **Hai nút phá huỷ của panel VRAM không bấm được với BẤT KỲ vai nào** trên cấu hình đang chạy: `ACTUATION_STEPUP_2FA=true` nhưng `VramBrokerPanel` không gửi `totpCode` và không dùng `StepUpOtpDialog` (hook **đã có** và đang được 3 màn khác dùng đúng khuôn). ⇒ `onSuccess` — chỗ **duy nhất** gọi `translateVramPreemptCommand`/`translateVramReleaseStaleCommand` — là **nhánh không tới được** từ UI. Đúng lớp lỗi T5-B. |
 | **F2** | 🟠 | **8/8 tool `readToolsProgramming` là mã chết trên đường Agent** vì `extractArgsForTool` không có case ⇒ tham số bắt buộc không bao giờ có. Bản vá C-1 nối được **danh tính**, nhưng lớp này thiếu **tham số**. |
-| **F3** | 🟡 | **Đường Agent TỰ TRỊ (`aiAgentOrchestrator:411`) không đi qua `argsWithAuthCtx()`** dù `exec` ở ngay trong tầm (dùng ở dòng 389 và 505). Tĩnh: có. **Sống: CHƯA** (planner trả plan rỗng 2/2 lượt). |
-| **F4** | 🟡 | **`headroom.effectiveBytes` KHÔNG cập nhật ngay sau một lệnh thu hồi thành công** (23.470.170.112 ở cả hai đầu, dù 5.030 MiB đã rời sổ) — nó chỉ đổi ở nhịp quyết định kế tiếp. Agent đọc ô này ngay sau lệnh sẽ thấy số **CŨ**; bằng chứng đúng là `leaseLeftLedger` + `ledger.localBytes`. |
+| **F3** | 🔴 **CRITICAL** (bản đầu xếp 🟡 và ghi **SAI CHIỀU**) | **Đường Agent TỰ TRỊ (`aiAgentOrchestrator:411`) FAIL-OPEN**: bỏ `argsWithAuthCtx` = bỏ bước **XOÁ** `__authCtx` bịa ⇒ `checkPermission(999,"admin")` ⇒ `accessControl` `return true` **không đọc DB** ⇒ god-mode trên 29 read tool. **ĐÃ ĐO SỐNG** (999 tới cổng, dữ liệu chảy) và **ĐÃ SỬA** — §8.1 + §13. ⚠ "Planner trả plan rỗng" **không phải một cổng**. |
+| **F4** | 🟡 | **`headroom.effectiveBytes` KHÔNG đổi sau một lệnh thu hồi thành công** (23.470.170.112 ở cả hai đầu, dù 5.030 MiB đã rời sổ). ⚠ **Cơ chế ĐÃ ĐÍNH CHÍNH** (§5): **không** phải cache — `decisionStateFor()` tính mới mỗi lượt đọc; thủ phạm là `used = max(ledgerTotal, attributable)` bị **GHIM bởi `attributable` của nhịp đo CŨ**. Kiểm bằng số học từ chính hai ảnh chụp: khớp tới từng byte. Agent đọc ô này ngay sau lệnh thấy số **CŨ**; bằng chứng đúng là `leaseLeftLedger` + `ledger.localBytes`. |
 
 ⚠ **Không phát hiện nào ở trên được vá trong Task 5** — task này ĐO, không chữa (ràng buộc của brief).
 
@@ -419,7 +491,8 @@ dựng được một plan có bước `read` rồi đo lại trước khi kết
 |---|---|---|
 | 1 | Agent **truy vấn** được toàn bộ trạng thái, **mỗi trường nói đúng độ chắc chắn** | ✅ **ĐẠT** — §1 (L1 bắt được cả trạng thái `blind/ledger-only`) |
 | 2 | Agent **ra lệnh** được, **có phân quyền**, đi qua **cơ chế đã có** | ✅ **ĐẠT** — §4 (9 lượt, 3 cổng khác nhau chặn đúng chỗ) |
-| 3 | Mọi ô "đồng hồ không kim" có người đọc **hoặc** bị xoá kèm lý do | ✅ (bảng kiểm Task 4) + §1/§6 xác nhận **có người đọc THẬT** trên màn |
+| 3 | Mọi ô "đồng hồ không kim" có người đọc **hoặc** bị xoá kèm lý do | ⚠ **ĐẠT CÓ ĐIỀU KIỆN** (bản đầu chấm ✅ — **mâu thuẫn với §6.1 của chính nó**). Mặt ĐỌC: người đọc thật, render thật, không điều kiện. **Ba ô KẾT CỤC LỆNH thì không**: câu 6 chỉ hiện sau khi mở cửa sổ step-up **bằng một lượt gọi NGOÀI màn** (người vận hành không có đường làm), câu 7 chỉ hiện khi **có tiến trình anh em** (topology mặc định một tiến trình ⇒ nút không render). ⇒ trong cấu hình **mặc định đang chạy**, ba ô này **chưa có người đọc thật sự dùng được**. |
+| 3b | ⚠ **`reserve()` vẫn phải ĐỒNG BỘ** (kiểm bằng MÃ, không bằng chữ ký) | ✅ **ĐẠT** — `vramBroker.ts:920` `export function reserve(request, ctx): VramReserveOutcome` — **không `async`**, **không trả `Promise`**, và **không một `await` nào** trong thân (mọi `await`/`async` trong vùng đó nằm trong **chú thích**). Bản đầu **bỏ sót** không chấm điều kiện này. |
 | 4 | Câu chữ ba ngôn ngữ, không đường tiêm, `i18n:check` 0 lệch | ✅ — §11; và §6 chứng minh **nhánh `en` chạy thật** |
 | 5 | Lệnh phá huỷ **không bao giờ khai thành công khi byte chưa nhả** | ✅ **ĐẠT** — §4 (4 lượt) + §5 (lượt thành công có bằng chứng thiết bị) |
 | 6 | test vram xanh · `check` · `check:tests` · `i18n:check` | ✅ — §11 |
@@ -458,3 +531,74 @@ Script/cảnh tạm đặt trong scratchpad
 `*-raw.json`) — **ĐÃ XOÁ** sau khi trích hết số vào báo cáo này. Không file tạm nào nằm trong repo.
 Ảnh chụp được chuyển vào `docs/superpowers/reports/assets/2026-08-05-vram-pha4-nghiem-thu-song/`
 và commit cùng báo cáo. Thư mục `.playwright-mcp/` đã nằm trong `.gitignore` (dòng 194).
+
+---
+
+## 13. 🔴 BẢN VÁ CRITICAL — đóng đường thoát thứ hai của `__authCtx` (vòng review Task 5)
+
+⚠ Task 5 vốn **chỉ ĐO**. Ngoại lệ duy nhất này là **theo yêu cầu của vòng review**, vì thứ tìm ra
+không phải một ô hiển thị sai mà là một **đường LEO THANG QUYỀN đang mở**.
+
+### 13.1 Bản kiểm đếm MỌI điểm gọi `Tool.handler(` và cách xử từng cái
+
+`git grep -n "\.handler(" -- 'server/**/*.ts'` (đã trừ `*.test.ts`) — **4 kết quả**, xử **hết**:
+
+| # | vị trí | là `Tool.handler`? | xử |
+|---|---|---|---|
+| 1 | `services/aiLocalTools/index.ts:199` (`tryExecuteTool`) | **CÓ** | ĐÃ đúng từ Task 4 — giữ nguyên, nay nhập `argsWithAuthCtx` từ `toolRegistry` |
+| 2 | `services/aiAgentOrchestrator.ts:411` (Agent tự trị) | **CÓ** | 🔴 **ĐÃ SỬA** → `tool.handler(argsWithAuthCtx(tool, step.args ?? {}, exec))` |
+| 3 | `services/aiLocalTools/index.ts:49` | **KHÔNG** — nằm trong **chú thích** (docstring). AST không thấy chú thích. | không phải điểm gọi |
+| 4 | `services/streaming/inProcessAdapter.ts:72` (`sub.handler(msg)`) | **KHÔNG** — `sub` là bản ghi **đăng ký pub/sub**, không phải `Tool`. Phân biệt **không theo tên biến**: file này **không import gì từ `aiLocalTools`** nên không thấy được kiểu `Tool`. | không phải điểm gọi |
+
+Ngoài `server/`: `scripts/pilot-ai-persona.mjs`, `scripts/pilot-dispensing.mjs` gọi thẳng
+`tool.handler({...})` — **script dev chạy tay, không có phiên, không nhận đầu vào từ ai**; chúng
+không tiêm danh tính nên không phải đường leo thang. Ghi lại để người sau không tưởng là bỏ sót.
+
+### 13.2 Bản vá
+
+**Đổi CHỖ Ở, không chỉ thêm một lời gọi.** `argsWithAuthCtx` từng là **hàm private của `index.ts`**
+— và chính điều đó là lỗ hổng: private ⇒ **chỉ che được một đường thoát**. Nay nó nằm ở
+`aiLocalTools/toolRegistry.ts` (module **LÁ**, chỉ import `zod`), **cạnh đúng kiểu `Tool` mà nó bảo
+vệ**, nên mọi người gọi `Tool.handler` đều với tới được **mà không tạo vòng nhập** —
+`aiAgentOrchestrator` **vốn đã** import `./aiLocalTools/toolRegistry`, nên bản vá **không thêm một
+cạnh phụ thuộc nào**.
+
+```
+git show 6c1de901:server/services/aiAgentOrchestrator.ts | sed -n '411p'
+  → const result = await tool.handler(step.args ?? {});          ← TRƯỚC (fail-open)
+
+git show <HEAD>:server/services/aiAgentOrchestrator.ts
+  → const result = await tool.handler(argsWithAuthCtx(tool, step.args ?? {}, exec));   ← SAU
+```
+
+### 13.3 Lưới — theo ĐƯỜNG THOÁT, không theo FILE
+
+**A. `server/services/aiAgentOrchestrator.authCtx.test.ts` (5 ca) — đi từ ĐẦU đường tự trị.**
+Seam duy nhất là `planGoal` (đứng đúng chỗ **người sản xuất args không tin được** đứng) và
+`checkPermission` (**thứ đang được ĐO**). Registry thật, `get_vram_state` thật, `argsWithAuthCtx` thật.
+
+| ca | bất biến |
+|---|---|
+| ★★★ `__authCtx` BỊA ⇒ cổng RBAC **không bao giờ** nhận `[999,'admin']` | chống leo thang |
+| ★★★ cổng nhận **đúng** `(7,'supervisor')` | phiên là nguồn DUY NHẤT |
+| ★★★ **ô bịa không mua được một byte nào — DÙ cổng nói CÓ với nó** | ⚠ `checkPermission` được lập trình trả `true` **chỉ cho danh tính bịa** (mô phỏng đúng `accessControl.ts:135-137`). Một `mockResolvedValue(false)` phẳng sẽ xanh **vì lý do sai**. |
+| ★★ chiều NGƯỢC — phiên hợp lệ ⇒ đọc được trạng thái THẬT | chống "vá bằng cách chặn hết" |
+| ★★ args **KHÔNG** mang `__authCtx` ⇒ vẫn **GÁN** danh tính phiên | neo nửa **GÁN** (chỉ XOÁ mà quên GÁN thì tool chết trên đường tự trị) |
+
+**B. `authCtxInjection.test.ts` (+5 ca) — BẢN KIỂM ĐẾM trên AST.**
+Bất biến: *"KHÔNG một điểm gọi `Tool.handler(` nào trong mã sản xuất được nhận args chưa qua
+`argsWithAuthCtx(...)`"* — **liệt kê bằng AST, không bằng danh sách chép tay**, nên một điểm gọi MỚI
+(file mới, tên biến khác) rơi vào lưới ngay.
+⚠ Phân biệt *"có phải `Tool.handler` không"* **KHÔNG theo tên biến**: một file chỉ gọi được
+`Tool.handler` nếu nó **thấy kiểu `Tool`** (có `import` từ `aiLocalTools/**`). Đó là lý do
+`sub.handler(msg)` của pub/sub rơi ra ngoài **theo cấu trúc**, không bằng một dòng miễn trừ.
+⚠ Bất biến phát biểu về cái đối số **PHẢI LÀ** (`CallExpression` với callee `argsWithAuthCtx`), không
+phải "có chứa chuỗi" — kèm **lưới-cho-lưới** chạy **sáu** hình dạng lách (biến trung gian · `?:` ·
+`??` · `&&` · hàm khác · trần) và **một** chiều dương.
+
+### 13.4 Hai đột biến bắt buộc — kết quả
+
+| đột biến | ca ĐỎ |
+|---|---|
+| (M1) `__authCtx` **bịa** trong `step.args` đi qua đường orchestrator tự trị | 4 ca (xem §13.5) |
+| (M2) gỡ `argsWithAuthCtx` ở **bất kỳ** điểm gọi `tool.handler(` nào | 2 ca kiểm đếm (xem §13.5) |
