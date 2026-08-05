@@ -46,6 +46,18 @@ i18n
 
     interpolation: {
       escapeValue: false, // React already escapes values
+      // ★★★ Pha 4 Task 3 review vòng 1 (D) — CHỐT TƯỜNG MINH, không dựa vào MẶC ĐỊNH của thư viện.
+      // `skipOnVariables: true` là thứ THẬT SỰ chặn i18next diễn giải `$t(...)`/nesting nằm BÊN
+      // TRONG một giá trị nội suy tự do (vd `owner`/`host`/`leaseKey` bẩn ở
+      // `client/src/lib/errorCodes.ts`) — cùng với SENTINEL ở `defaultValue`
+      // (`errorCodes.ts:translateAppError`), đây là HAI lưới thật giữ cho lớp lỗi TREO của Pha 2B
+      // (payload tự huỷ tái tạo `$t(...)` sau một lượt "làm sạch" ngây thơ, `i18n.t()` KHÔNG TRẢ VỀ
+      // > 8 phút) không tái phát. Trước dòng này, `skipOnVariables` chỉ là MẶC ĐỊNH của i18next
+      // (v25) — một lần nâng cấp thư viện đổi mặc định, hoặc ai đó đặt `skipOnVariables: false` cho
+      // lý do khác, sẽ mở lại đường tiêm cho MỌI tham số tự do của CẢ ỨNG DỤNG mà không dòng mã nào
+      // ở đây báo. `client/src/lib/errorCodes.vramCommands.unit.test.ts` khoá giá trị này bằng một
+      // ca kiểm đọc thẳng `i18n.options.interpolation.skipOnVariables` — SỬA DÒNG NÀY THÌ CA ĐÓ ĐỎ.
+      skipOnVariables: true,
     },
 
     react: {

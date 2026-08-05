@@ -5,14 +5,24 @@
  * Hai hạng người đọc CÙNG một câu: người vận hành ("chuyện gì xảy ra, tôi làm gì tiếp") và AI Agent
  * ("lệnh này thi hành được không, và VÌ SAO không"). Một câu chỉ lặp lại mã bằng tiếng Việt
  * (`owner-not-in-local-ledger` → "chủ sở hữu không có trong sổ cục bộ") là THẤT BẠI — file này khoá
- * cả hai: (a) 23/23 mã có bản dịch THẬT (không phải fallback, không phải tiếng vọng của chính mã),
- * (b) mỗi bản dịch mang đúng NỘI DUNG chỉ dẫn hành động mà brief đòi (ca "vi: owner-not-in-local-
- * ledger PHẢI nói tới tiến trình khác + vram.preempt", không chỉ "không rỗng").
+ * cả hai: (a) mọi literal của 3 union `Vram*CommandReason` + `rowKind`/`durability`/`scope`/outcome
+ * có bản dịch THẬT (không phải fallback, không phải tiếng vọng của chính mã) — VÉT CẠN theo KIỂU
+ * thật, không phải một danh sách chép tay (xem §C-2), (b) mỗi bản dịch mang đúng NỘI DUNG chỉ dẫn
+ * hành động mà brief đòi.
+ *
+ * ⚠⚠⚠ ĐÍNH CHÍNH (review vòng 1, C-2) — bản đầu của file này canh "23/23" bằng một mảng
+ * `REQUIRED_OUTCOME_CODES` CHÉP TAY từ brief, không có quan hệ KIỂU nào với `vramCommands.ts`.
+ * Reviewer thêm `| "reclaimer-timed-out"` vào `VramPreemptCommandReason` mà KHÔNG dịch ⇒ MỌI CỔNG
+ * XANH (93/93, key-parity 4/4, i18n:check 0, tsc 0), câu ra `"…THẤT BẠI: reclaimer-timed-out"`.
+ * Nay: `import type` 3 union + kiểu `rowKind`/`durability`/`scope`/outcome trực tiếp từ
+ * `vramCommands.ts` (test-only), dựng `Record<Union, …>` VÉT CẠN — union mọc thêm literal mà bảng
+ * chưa khai ⇒ `tsc`/`npm run check:tests` ĐỎ TRƯỚC KHI CHẠY TEST NÀO. Đây là NGUỒN THẬT của "23 mã",
+ * không phải một mảng song song.
  *
  * Cùng cách nạp i18n THẬT như `errorCodes.vram.unit.test.ts` (KHÔNG stub i18n.t) — stub là cách
  * nhanh nhất để xanh giả trong khi người dùng thấy khoá trần.
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 import i18n from "i18next";
 import "../i18n";
@@ -29,12 +39,31 @@ import {
   stripInterpolationSyntax,
 } from "./errorCodes";
 
+// Test-only: KHÔNG import vào production `errorCodes.ts` (giữ đúng ranh giới mà chính file đó tự
+// đặt: "KHÔNG import kiểu từ server/** — file này bundle vào client"). `import type` bị xoá hoàn
+// toàn khỏi JS phát ra, nên không có coupling runtime nào — chỉ dùng để ép `tsc` vét cạn union.
+import type {
+  VramPreemptCommandReason,
+  VramPreemptCommandOutcome,
+  VramReleaseStaleCommandReason,
+  VramReleaseStaleCommandResult,
+  VramRetryDeferredCommandReason,
+  VramRetryDeferredCommandResult,
+  VramCommandScope,
+} from "../../../server/services/vram/vramCommands";
+
 const localeJson = (rel: string) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
 
 beforeAll(() => {
   i18n.addResourceBundle("vi", "translation", localeJson("../i18n/locales/vi.json"), true, true);
   i18n.addResourceBundle("en", "translation", localeJson("../i18n/locales/en.json"), true, true);
   i18n.addResourceBundle("zh", "translation", localeJson("../i18n/locales/zh.json"), true, true);
+});
+
+// ★ I-2 — nhiều ca đổi ngôn ngữ sang một locale KHÔNG có bundle (để ép nấc fallback). Luôn trả về
+// "vi" sau MỖI ca để không rò trạng thái ngôn ngữ sang ca sau.
+afterEach(async () => {
+  await i18n.changeLanguage("vi");
 });
 
 const LOCALES = ["vi", "en", "zh"] as const;
@@ -44,111 +73,161 @@ function hasUnresolvedPlaceholder(s: string): boolean {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
-// 23 MÃ KẾT CỤC — bản khai VERBATIM từ brief Task 3, dùng làm SỔ ĐỐI CHIẾU (không được rút gọn).
+// ★★★ C-2 — CỔNG VÉT CẠN THEO KIỂU THẬT (không phải danh sách chép tay)
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
-const REQUIRED_OUTCOME_CODES = [
-  "reclaimed",
-  "failed",
-  "no-bytes-freed",
-  "busy-in-use",
-  "production-never-preempted",
-  "no-reclaimer-declared",
-  "reclaimer-returned-false",
-  "reclaimer-threw",
-  "process-not-proven-dead",
-  "owner-not-in-local-ledger",
-  "own-row-local-ledger-is-authority",
-  "row-not-in-shared-ledger-replica",
-  "sibling-lease",
-  "shared-baseline",
-  "shared-ledger-never-refreshed",
-  "queued-for-shared-ledger",
-  "host-not-running-in-this-process",
-  "no-defer-chain-in-this-process",
-  "no-retry-mechanism-for-this-host",
-  "unknown-background-host",
-  "defer-budget-exceeded",
-  "retry-armed",
-  "this-process-only",
-] as const;
+type VramRowKind = NonNullable<VramReleaseStaleCommandResult["rowKind"]>;
+type VramDurability = NonNullable<VramReleaseStaleCommandResult["durability"]>;
+type VramScope = VramCommandScope["scope"];
+type VramReleaseOutcome = VramReleaseStaleCommandResult["outcome"];
+type VramRetryOutcome = VramRetryDeferredCommandResult["outcome"];
 
-/** Mỗi mã → CÁCH DỰNG câu bằng đúng hàm/đường mà `vramCommands.ts` sẽ dùng khi mã đó phát ra. */
-function renderCode(code: (typeof REQUIRED_OUTCOME_CODES)[number]): string {
-  switch (code) {
-    case "reclaimed":
-      return translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: "gguf-model:x", detail: null });
-    case "failed":
-      // outcome=failed với reason=null: KHÔNG xảy ra ở mã thật hôm nay (kq.failure luôn non-null khi
-      // outcome=failed), nhưng kiểu `reason: X | null` không ép được điều đó ở tầng biên dịch — khoá
-      // GỐC (không _WITH_REASON) phải tồn tại cho trường hợp phòng thủ này.
-      return translateVramPreemptCommand({ outcome: "failed", reason: null, owner: "gguf-model:x", detail: null });
-    case "no-bytes-freed":
-    case "reclaimer-returned-false":
-    case "reclaimer-threw":
-      return translateVramPreemptCommand({ outcome: "failed", reason: code, owner: "gguf-model:x", detail: null });
-    case "busy-in-use":
-    case "production-never-preempted":
-    case "no-reclaimer-declared":
-    case "owner-not-in-local-ledger":
-      return translateVramPreemptCommand({ outcome: "refused", reason: code, owner: "gguf-model:x", detail: null });
-    case "process-not-proven-dead":
-    case "own-row-local-ledger-is-authority":
-    case "row-not-in-shared-ledger-replica":
-    case "shared-ledger-never-refreshed":
-      return translateVramReleaseStaleCommand({
-        outcome: "refused",
-        reason: code,
-        leaseKey: "worker:123:456#7",
-        processKey: "worker:123:456",
-        rowKind: null,
-        durability: null,
-      });
-    case "sibling-lease":
-    case "shared-baseline":
-      return translateVramReleaseStaleCommand({
-        outcome: "released",
-        reason: null,
-        leaseKey: "worker:123:456#7",
-        processKey: "worker:123:456",
-        rowKind: code,
-        durability: "queued-for-shared-ledger",
-      });
-    case "queued-for-shared-ledger":
-      return translateVramReleaseStaleCommand({
-        outcome: "released",
-        reason: null,
-        leaseKey: "worker:123:456#7",
-        processKey: "worker:123:456",
-        rowKind: "sibling-lease",
-        durability: code,
-      });
-    case "host-not-running-in-this-process":
-    case "no-defer-chain-in-this-process":
-    case "no-retry-mechanism-for-this-host":
-    case "unknown-background-host":
-    case "defer-budget-exceeded":
-      return translateVramRetryDeferredCommand({ outcome: "refused", reason: code, owner: "cron:kb-sync", host: "cron:kb-sync" });
-    case "retry-armed":
-      return translateVramRetryDeferredCommand({ outcome: "retry-armed", reason: null, owner: "cron:kb-sync", host: "cron:kb-sync" });
-    case "this-process-only":
-      return translateVramScope("this-process-only");
-  }
-}
+/** Bảy lý do `preempt` VÉT CẠN, ánh xạ luôn tới outcome THẬT mà mỗi lý do đó xảy ra (khớp
+ *  `vramPreempt.ts`/`vramCommands.ts`: `no-bytes-freed`/`reclaimer-returned-false`/`reclaimer-threw`
+ *  chỉ xảy ra ở `failed`; bốn lý do còn lại chỉ xảy ra ở `refused`). Một Record trên UNION THẬT là
+ *  chính cổng vét cạn — thêm literal mới vào `VramPreemptCommandReason` mà quên khai ở đây ⇒ `tsc` đỏ. */
+const PREEMPT_REASON_OUTCOME: Record<VramPreemptCommandReason, "failed" | "refused"> = {
+  "owner-not-in-local-ledger": "refused",
+  "production-never-preempted": "refused",
+  "busy-in-use": "refused",
+  "no-reclaimer-declared": "refused",
+  "reclaimer-returned-false": "failed",
+  "reclaimer-threw": "failed",
+  "no-bytes-freed": "failed",
+};
+const RELEASE_STALE_REASONS_TRANSLATED: Record<VramReleaseStaleCommandReason, true> = {
+  "shared-ledger-never-refreshed": true,
+  "row-not-in-shared-ledger-replica": true,
+  "own-row-local-ledger-is-authority": true,
+  "process-not-proven-dead": true,
+};
+const RETRY_DEFERRED_REASONS_TRANSLATED: Record<VramRetryDeferredCommandReason, true> = {
+  "unknown-background-host": true,
+  "no-retry-mechanism-for-this-host": true,
+  "host-not-running-in-this-process": true,
+  "no-defer-chain-in-this-process": true,
+  "defer-budget-exceeded": true,
+};
+const ROW_KIND_TRANSLATED: Record<VramRowKind, true> = {
+  "sibling-lease": true,
+  "shared-baseline": true,
+};
+const DURABILITY_TRANSLATED: Record<VramDurability, true> = {
+  "queued-for-shared-ledger": true,
+};
+const SCOPE_TRANSLATED: Record<VramScope, true> = {
+  "this-process-only": true,
+};
+// Ba outcome union — VÉT CẠN cả "refused"/"released" (KHÔNG có khoá riêng, xem docstring
+// `errorCodes.ts`: câu thật nằm ở `reason`/`rowKind`+`durability`) để một outcome MỚI (vd
+// "partially-reclaimed") cũng làm `tsc` đỏ, không lọt qua trong im lặng.
+const PREEMPT_OUTCOMES_CONSIDERED: Record<VramPreemptCommandOutcome, true> = {
+  reclaimed: true,
+  failed: true,
+  refused: true,
+};
+const RELEASE_OUTCOMES_CONSIDERED: Record<VramReleaseOutcome, true> = {
+  released: true,
+  refused: true,
+};
+const RETRY_OUTCOMES_CONSIDERED: Record<VramRetryOutcome, true> = {
+  "retry-armed": true,
+  refused: true,
+};
 
-describe("23/23 mã kết cục — dịch được, không placeholder thô, không tiếng vọng của chính mã", () => {
+describe("C-2 — cổng VÉT CẠN theo union thật: mọi literal của vramCommands.ts có bản dịch THẬT", () => {
+  const cases: Array<[string, () => string]> = [
+    ...Object.entries(PREEMPT_REASON_OUTCOME).map(([reason, outcome]): [string, () => string] => [
+      `preempt reason=${reason}`,
+      () =>
+        translateVramPreemptCommand({
+          outcome,
+          reason,
+          owner: "gguf-model:x",
+          detail: null,
+          freedBytes: 0,
+        }),
+    ]),
+    ...Object.keys(RELEASE_STALE_REASONS_TRANSLATED).map((reason): [string, () => string] => [
+      `releaseStale reason=${reason}`,
+      () =>
+        translateVramReleaseStaleCommand({
+          outcome: "refused",
+          reason,
+          leaseKey: "worker:1:1#2",
+          processKey: "worker:1:1",
+          rowKind: null,
+          durability: null,
+        }),
+    ]),
+    ...Object.keys(RETRY_DEFERRED_REASONS_TRANSLATED).map((reason): [string, () => string] => [
+      `retryDeferred reason=${reason}`,
+      () => translateVramRetryDeferredCommand({ outcome: "refused", reason, owner: "cron:kb-sync", host: "cron:kb-sync" }),
+    ]),
+    ...Object.keys(ROW_KIND_TRANSLATED).map((rowKind): [string, () => string] => [
+      `rowKind=${rowKind}`,
+      () =>
+        translateVramReleaseStaleCommand({
+          outcome: "released",
+          reason: null,
+          leaseKey: "worker:1:1#2",
+          processKey: "worker:1:1",
+          rowKind: rowKind as VramRowKind,
+          durability: "queued-for-shared-ledger",
+        }),
+    ]),
+    ...Object.keys(DURABILITY_TRANSLATED).map((durability): [string, () => string] => [
+      `durability=${durability}`,
+      () =>
+        translateVramReleaseStaleCommand({
+          outcome: "released",
+          reason: null,
+          leaseKey: "worker:1:1#2",
+          processKey: "worker:1:1",
+          rowKind: "sibling-lease",
+          durability,
+        }),
+    ]),
+    ...Object.keys(SCOPE_TRANSLATED).map((scope): [string, () => string] => [
+      `scope=${scope}`,
+      () => translateVramScope(scope as VramScope),
+    ]),
+  ];
+
   for (const locale of LOCALES) {
-    for (const code of REQUIRED_OUTCOME_CODES) {
-      it(`${locale}: "${code}"`, async () => {
+    for (const [name, render] of cases) {
+      it(`${locale}: ${name} — dịch được, không placeholder thô, không tiếng vọng của chính mã`, async () => {
         await i18n.changeLanguage(locale);
-        const out = renderCode(code);
+        const out = render();
         expect(hasUnresolvedPlaceholder(out), out).toBe(false);
         expect(out).not.toMatch(/Infinity|NaN/);
-        // KHÔNG được là tiếng vọng của chính mã (câu phải THẬT SỰ được viết, không phải "code" trần).
+        const code = name.split("=")[1] ?? name;
         expect(out.toLowerCase()).not.toBe(code.toLowerCase());
         expect(out.length).toBeGreaterThan(code.length);
       });
     }
   }
+
+  it("outcome-level: reclaimed/failed(base)/retry-armed có bản dịch riêng, không tiếng vọng", async () => {
+    await i18n.changeLanguage("vi");
+    expect(
+      translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: "x", detail: null, freedBytes: 100 }),
+    ).not.toBe("reclaimed");
+    expect(
+      translateVramPreemptCommand({ outcome: "failed", reason: null, owner: "x", detail: null, freedBytes: 0 }),
+    ).not.toBe("failed");
+    expect(
+      translateVramRetryDeferredCommand({ outcome: "retry-armed", reason: null, owner: "x", host: "cron:kb-sync" }),
+    ).not.toBe("retry-armed");
+  });
+
+  // Bằng chứng BIÊN DỊCH: sự tồn tại của 3 bảng dưới đây (khai đủ MỌI literal của outcome union thật)
+  // chính là cổng — nếu ai thêm một outcome mới vào `vramCommands.ts` mà quên khai, `tsc` đỏ trước
+  // khi runner tới được dòng `expect` này.
+  it("(bằng chứng biên dịch) 3 bảng *_OUTCOMES_CONSIDERED đã vét cạn theo kiểu thật", () => {
+    expect(Object.keys(PREEMPT_OUTCOMES_CONSIDERED)).toHaveLength(3);
+    expect(Object.keys(RELEASE_OUTCOMES_CONSIDERED)).toHaveLength(2);
+    expect(Object.keys(RETRY_OUTCOMES_CONSIDERED)).toHaveLength(2);
+  });
 });
 
 describe("nội dung PHẢI mang chỉ dẫn hành động, không chỉ dịch định danh (ví dụ đích danh của brief)", () => {
@@ -159,6 +238,7 @@ describe("nội dung PHẢI mang chỉ dẫn hành động, không chỉ dịch 
       reason: "owner-not-in-local-ledger",
       owner: "gguf-model:qwen3-30b",
       detail: null,
+      freedBytes: 0,
     });
     expect(out).not.toBe("chủ sở hữu không có trong sổ cục bộ");
     expect(out).toContain("tiến trình khác");
@@ -173,6 +253,7 @@ describe("nội dung PHẢI mang chỉ dẫn hành động, không chỉ dịch 
       reason: "owner-not-in-local-ledger",
       owner: "gguf-model:qwen3-30b",
       detail: null,
+      freedBytes: 0,
     });
     expect(out).toContain("another process");
     expect(out).toContain("vram.preempt");
@@ -185,12 +266,13 @@ describe("nội dung PHẢI mang chỉ dẫn hành động, không chỉ dịch 
       reason: "production-never-preempted",
       owner: "aoi:line1",
       detail: null,
+      freedBytes: 0,
     });
     expect(out).toContain("§5.2");
     expect(out).toContain("KHÔNG BAO GIỜ");
   });
 
-  it("vi: host-not-running-in-this-process PHẢI nói ĐÚNG hai tiến trình (worker chủ trì / nơi lệnh đang chạy)", async () => {
+  it("vi: host-not-running-in-this-process nói ĐÚNG hai tiến trình, VÀ (M-2) nói KHÔNG có đường ra lệnh qua API", async () => {
     await i18n.changeLanguage("vi");
     const out = translateVramRetryDeferredCommand({
       outcome: "refused",
@@ -200,6 +282,24 @@ describe("nội dung PHẢI mang chỉ dẫn hành động, không chỉ dịch 
     });
     expect(out).toContain("worker");
     expect(out).toContain("KHÔNG NHÌN THẤY");
+    // ★ M-2 (review vòng 1) — trước đây câu "Ra lệnh này ở đúng tiến trình worker" gợi ý một hành
+    // động Agent KHÔNG thi hành được qua tRPC (không có cơ chế chọn tiến trình đích). Nay câu phải
+    // NÓI THẲNG giới hạn đó và trỏ đúng chỗ (mặt đọc `reclaimable`).
+    expect(out).toContain("KHÔNG có đường ra lệnh");
+    expect(out).toContain("reclaimable");
+  });
+
+  it("vi: own-row-local-ledger-is-authority (M-2) nói KHÔNG có lệnh nào phơi ra cho việc đó qua API", async () => {
+    await i18n.changeLanguage("vi");
+    const out = translateVramReleaseStaleCommand({
+      outcome: "refused",
+      reason: "own-row-local-ledger-is-authority",
+      leaseKey: "api:1:1#2",
+      processKey: "api:1:1",
+      rowKind: null,
+      durability: null,
+    });
+    expect(out).toContain("KHÔNG có lệnh nào");
   });
 
   it("vi: shared-baseline PHẢI giải thích freedBytes=0 là 'thước chưa từng đo', KHÔNG phải 'không có gì xảy ra'", async () => {
@@ -218,10 +318,24 @@ describe("nội dung PHẢI mang chỉ dẫn hành động, không chỉ dịch 
     expect(out).toContain("KHÔNG phải vì không có gì xảy ra");
   });
 
-  it("vi: reclaimed với freedBytes=0 (không truyền ở đây, câu tĩnh) vẫn phải nói đó là THÀNH CÔNG THẬT", async () => {
+  it("★ M-3 (review vòng 1) — reclaimed: freedBytes=0 chọn khoá RIÊNG (đua cấp phát); freedBytes>0 KHÔNG dán lời cảnh báo đó", async () => {
     await i18n.changeLanguage("vi");
-    const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: "gguf-model:x", detail: null });
-    expect(out).toContain("thành công thật");
+    const zero = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: "gguf-model:x", detail: null, freedBytes: 0 });
+    const nonzero = translateVramPreemptCommand({
+      outcome: "reclaimed",
+      reason: null,
+      owner: "gguf-model:x",
+      detail: null,
+      freedBytes: 17_000,
+    });
+    // Cả hai PHẢI nêu bằng chứng thật (leaseLeftLedger), không phải freedBytes — đúng bàn giao C-1
+    // của Task 2 (Agent kiểm được lời khai bằng ô nào).
+    expect(zero).toContain("leaseLeftLedger: true");
+    expect(nonzero).toContain("leaseLeftLedger: true");
+    // Chỉ nhánh freedBytes=0 mới nói về cơ chế đua — KHÔNG dán vào lượt bình thường.
+    expect(zero).toContain("chen vào đúng lúc");
+    expect(nonzero).not.toContain("chen vào đúng lúc");
+    expect(zero).not.toBe(nonzero);
   });
 });
 
@@ -270,6 +384,63 @@ describe("mặt ĐỌC — trường CẦN câu chữ giải thích, không ch�
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ C-1 + I-1 (review vòng 1) — MỘT LỚP: tham số đặt CÓ ĐIỀU KIỆN, khuôn câu dùng VÔ ĐIỀU KIỆN.
+// PROBE C của reviewer (`estimateUsable(false, null)`) + PROBE D (`releaseStale` released + 3 ô
+// null) đo được `{{unknownCount}}`/`{{processKey}}`/`{{rowKind}}`/`{{durability}}`/`{{host}}` THÔ.
+// Tích Descartes dưới đây — mọi trường nullable × mọi outcome hợp lệ của 3 hàm lệnh — là lưới THEO
+// HÌNH DẠNG ĐẦU VÀO, không theo payload (bài học "lưới theo ĐƯỜNG THOÁT, không theo FILE").
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("C-1 + I-1 — tích Descartes: mọi trường nullable × outcome không để lọt placeholder thô", () => {
+  it("C-1 — estimateUsable(false, null): unknownCount CHƯA HỎI (kịch bản hỏng thật của vramReadModel.ts)", async () => {
+    for (const locale of LOCALES) {
+      await i18n.changeLanguage(locale);
+      const out = translateVramEstimateUsable(false, null);
+      expect(hasUnresolvedPlaceholder(out), out).toBe(false);
+      expect(out).toContain("?");
+    }
+  });
+
+  const releaseStaleFieldCombos: Array<{
+    processKey: string | null;
+    rowKind: "sibling-lease" | "shared-baseline" | null;
+    durability: string | null;
+  }> = [
+    { processKey: null, rowKind: null, durability: null },
+    { processKey: "worker:1:1", rowKind: null, durability: null },
+    { processKey: null, rowKind: "sibling-lease", durability: null },
+    { processKey: null, rowKind: null, durability: "queued-for-shared-ledger" },
+    { processKey: "worker:1:1", rowKind: "sibling-lease", durability: "queued-for-shared-ledger" },
+  ];
+  for (const outcome of ["released", "refused"] as const) {
+    for (const combo of releaseStaleFieldCombos) {
+      it(`I-1 — releaseStale outcome=${outcome} × processKey=${combo.processKey} rowKind=${combo.rowKind} durability=${combo.durability}`, async () => {
+        const out = translateVramReleaseStaleCommand({
+          outcome,
+          reason: outcome === "refused" ? "process-not-proven-dead" : null,
+          leaseKey: "worker:1:1#2",
+          ...combo,
+        });
+        expect(hasUnresolvedPlaceholder(out), out).toBe(false);
+      });
+    }
+  }
+
+  for (const outcome of ["retry-armed", "refused"] as const) {
+    for (const host of [null, "cron:kb-sync"] as const) {
+      it(`I-1 — retryDeferred outcome=${outcome} × host=${host}`, async () => {
+        const out = translateVramRetryDeferredCommand({
+          outcome,
+          reason: outcome === "refused" ? "unknown-background-host" : null,
+          owner: "cron:kb-sync",
+          host,
+        });
+        expect(hasUnresolvedPlaceholder(out), out).toBe(false);
+      });
+    }
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
 // ★★★ RÀNG BUỘC 1/2/3/6 — BỀ MẶT BẨN THẬT: `owner`/`leaseKey`/`host` (tên hộ đến từ TIẾN TRÌNH
 // KHÁC — Pha 3 sổ chung) VÀ `detail` (M-5, bàn giao CỨNG từ Task 2: "CHƯA LÀM SẠCH cho i18n").
 // KHÔNG hàm làm sạch thứ hai: mọi giá trị đi qua ĐÚNG `stripInterpolationSyntax` (params bag qua
@@ -304,7 +475,7 @@ describe("bề mặt bẩn thật — owner/leaseKey/host/detail không được
     it(`${name} — ở owner (preempt) ⇒ ở lại dạng CHỮ, câu vẫn dịch được`, { timeout: 5000 }, async () => {
       assertInert(raw);
       await i18n.changeLanguage("vi");
-      const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: raw, detail: null });
+      const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: raw, detail: null, freedBytes: 1 });
       expect(out).not.toMatch(/[{}$]/);
       expect(hasUnresolvedPlaceholder(out)).toBe(false);
       expect(out).toContain(residue);
@@ -348,6 +519,7 @@ describe("bề mặt bẩn thật — owner/leaseKey/host/detail không được
         reason: "reclaimer-threw",
         owner: "gguf-model:x",
         detail: raw,
+        freedBytes: 0,
       });
       expect(out).not.toMatch(/[{}$]/);
       expect(hasUnresolvedPlaceholder(out)).toBe(false);
@@ -358,7 +530,7 @@ describe("bề mặt bẩn thật — owner/leaseKey/host/detail không được
   it("★ ràng buộc 3 — owner KHÔNG bị cắt ngắn (chỉ làm sạch {}$, không đụng độ dài)", async () => {
     await i18n.changeLanguage("vi");
     const longOwner = `gguf-model:${"x".repeat(500)}`;
-    const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: longOwner, detail: null });
+    const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: longOwner, detail: null, freedBytes: 1 });
     expect(out).toContain(longOwner);
   });
 
@@ -371,8 +543,82 @@ describe("bề mặt bẩn thật — owner/leaseKey/host/detail không được
       reason: "$t(errors.generic)",
       owner: "gguf-model:x",
       detail: null,
+      freedBytes: 0,
     });
     expect(out).not.toMatch(/[{}$]/);
     expect(hasUnresolvedPlaceholder(out)).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ I-2 (review vòng 1) — NẤC FALLBACK là ĐƯỜNG THỨ HAI cho cùng giá trị (`translateAppError`
+// trả `fallback` NGUYÊN VĂN khi khoá thiếu ở `activeLng` — kịch bản THẬT: bundle en/zh nạp `import()`
+// ĐỘNG và hỏng vĩnh viễn khi offline, xem lịch sử dòng đầu `errorCodes.ts`). PROBE E của reviewer đo
+// được `owner` THÔ nguyên cú pháp ở nấc này. Ép nấc fallback bằng cách đổi sang một ngôn ngữ KHÔNG
+// có bundle nào đăng ký — mọi khoá đều SENTINEL ⇒ `translateAppError` LUÔN rơi về `fallback`.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("I-2 — nấc fallback của translateAppError không phát tán cú pháp i18next chưa sạch", () => {
+  const NO_BUNDLE_LOCALE = "xx-no-bundle-registered";
+
+  it("owner bẩn ở nấc fallback (preempt) ⇒ vẫn ở lại dạng CHỮ, không còn [{}$]", async () => {
+    await i18n.changeLanguage(NO_BUNDLE_LOCALE);
+    const dirty = "$$t(t(errors.VRAM_CMD_PREEMPT_RECLAIMED)";
+    const out = translateVramPreemptCommand({ outcome: "reclaimed", reason: null, owner: dirty, detail: null, freedBytes: 1 });
+    expect(out).not.toMatch(/[{}$]/);
+    expect(out).toContain("errors.VRAM_CMD_PREEMPT_RECLAIMED");
+  });
+
+  it("leaseKey bẩn ở nấc fallback (releaseStale) ⇒ vẫn sạch", async () => {
+    await i18n.changeLanguage(NO_BUNDLE_LOCALE);
+    const dirty = "{$t({leaseKey}}";
+    const out = translateVramReleaseStaleCommand({
+      outcome: "refused",
+      reason: "process-not-proven-dead",
+      leaseKey: dirty,
+      processKey: null,
+      rowKind: null,
+      durability: null,
+    });
+    expect(out).not.toMatch(/[{}$]/);
+    expect(out).toContain("leaseKey");
+  });
+
+  it("owner bẩn ở nấc fallback (retryDeferred) ⇒ vẫn sạch", async () => {
+    await i18n.changeLanguage(NO_BUNDLE_LOCALE);
+    const dirty = "$$t(t(errors.generic)";
+    const out = translateVramRetryDeferredCommand({ outcome: "retry-armed", reason: null, owner: dirty, host: "cron:kb-sync" });
+    expect(out).not.toMatch(/[{}$]/);
+    expect(out).toContain("errors.generic");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ (D) — skipOnVariables LÀ MỘT BẤT BIẾN CỦA REPO, KHÔNG PHẢI MẶC ĐỊNH MAY MẮN CỦA THƯ VIỆN
+// (review vòng 1, §6). Mối lo #1 của bản đầu ("ghép sau khi dịch nên không thể treo") ĐÚNG KẾT LUẬN
+// nhưng chỉ là MỘT NỬA lý do — nửa còn lại (thứ thật sự giữ cửa) là SENTINEL ở `defaultValue`
+// (đã có ca kiểm) + `skipOnVariables: true` của i18next (TRƯỚC review vòng này: mặc định thư viện,
+// KHÔNG ca nào của repo giữ). `client/src/i18n/index.ts` nay đặt `skipOnVariables: true` TƯỜNG
+// MINH — ca dưới đây khoá cấu hình đó VÀ khoá hành vi THẬT của thư viện (gọi `i18n.t()` trực tiếp,
+// KHÔNG qua `stripInterpolationSyntax`, để kiểm ĐÚNG lớp thư viện độc lập với lớp làm sạch của repo).
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("(D) skipOnVariables — CHỐT bằng ca kiểm, không dựa vào mặc định của thư viện", () => {
+  it("i18n.options.interpolation.skipOnVariables === true (client/src/i18n/index.ts)", () => {
+    expect(i18n.options.interpolation?.skipOnVariables).toBe(true);
+  });
+
+  it("skipOnVariables chặn nesting từ một giá trị RAW (bỏ qua lớp làm sạch của repo, kiểm ĐÚNG lớp thư viện)", async () => {
+    await i18n.changeLanguage("vi");
+    // Gọi i18n.t() TRỰC TIẾP — KHÔNG qua stripInterpolationSyntax/translateAppError — để chứng minh
+    // thư viện TỰ nó đã chặn, độc lập với mọi lớp làm sạch repo tự viết.
+    const raw = i18n.t("errors.VRAM_CMD_PREEMPT_RECLAIMED", {
+      owner: "$t(errors.VRAM_FIELD_HOLDER_LIST_LOWER_BOUND)",
+      lng: "vi",
+      fallbackLng: false,
+    });
+    expect(typeof raw).toBe("string");
+    // Nội dung của khoá kia (chứa "CẬN DƯỚI") KHÔNG được nối vào câu — nếu skipOnVariables tắt,
+    // i18next sẽ diễn giải $t(...) trong giá trị và nối nội dung khoá đó vào.
+    expect(raw as string).not.toContain("CẬN DƯỚI");
+    expect(raw as string).toContain("$t(errors.VRAM_FIELD_HOLDER_LIST_LOWER_BOUND)");
   });
 });
