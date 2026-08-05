@@ -167,4 +167,55 @@ cây này.
 
 ## 4. NGHIỆM THU — cơ chế có BẮT ĐƯỢC đúng hình dạng lưới giả đã biết không
 
-*(ghi tiếp sau khi commit — COMMIT TRƯỚC, ĐỘT BIẾN SAU)*
+Cơ chế đã commit ở `175c4187` **trước** khi đột biến (kỷ luật *"COMMIT TRƯỚC, ĐỘT BIẾN SAU"*).
+
+Dựng `server/services/vram/_muta_luoiGia.test.ts` — tái hiện **đúng** ca mà Pha 3 tự dẫm: gọi
+`computeHeadroom()` bằng **SÁU tên ô SAI** (`ceiling` · `ledgerTotal` · `attributable` ·
+`safetyReserve` · `baselineOk` · `tick` thay cho `ceilingBytes` · `ledgerTotalBytes` ·
+`attributableBytes` · `safetyReserveBytes` · `baselineVerified` · `tickPresent`), rồi khẳng định
+`headroomBytes === headroomBytes − 1 GiB`.
+
+**Hai lượt đo, ngược chiều nhau — đó mới là nghiệm thu:**
+
+```
+(1) npx vitest run server/services/vram/_muta_luoiGia.test.ts
+      ✓ server/services/vram/_muta_luoiGia.test.ts (1 test)
+      Tests  1 passed (1)                    ← LƯỚI GIẢ XANH. Lớp lỗi CÓ THẬT.
+
+(2) npm run check:tests
+      server/services/vram/_muta_luoiGia.test.ts(13,7): error TS2353:
+        Object literal may only specify known properties, and 'ceiling'
+        does not exist in type 'HeadroomInput'.
+      EXIT = 2                               ← CỔNG MỚI BẮT ĐƯỢC.
+```
+
+Sáu ô sai ⇒ mọi trường `undefined` ⇒ `invalidInput` ⇒ `headroomBytes = -Infinity` ⇒
+`-Infinity === -Infinity − 1 GiB` là **TRUE** ⇒ ca xanh dưới **mọi** đột biến của công thức.
+Vitest không thấy gì; cổng mới đỏ ngay dòng đầu tiên.
+
+⚠ Điểm phải nói thẳng: cổng bắt được **vì file đó KHÔNG nằm trong danh sách cách ly**. Nếu hôm nay
+ai đó dán một lưới giả y hệt vào một trong 174 file đang cách ly thì **cổng vẫn mù**. Đó là giá của
+việc trả nợ dần — và là lý do danh sách phải **chỉ co lại**.
+
+**Đã xoá đột biến. Xác nhận:**
+
+```
+git status --porcelain -- server/ client/ drizzle/ shared/   →  0 dòng
+npm run check:tests                                          →  exit 0
+npx vitest run server/services/vram/                         →  699/699 (37 file)
+```
+
+---
+
+## KẾT LUẬN NỢ 1
+
+| câu hỏi | trả lời |
+|---|---|
+| bao nhiêu lỗi kiểu bị dòng loại trừ giấu đi? | **710**, ở **174/820** file test |
+| có lỗi nào ngoài file test không? | **0** ⇒ `npm run check` an toàn tuyệt đối |
+| lưới giả **thật sự** tìm được? | **13 điểm · 2 file · 8 ca**, đều là *"kiểm một hàm sản xuất không tồn tại"* |
+| cách chữa? | **config phụ + bước CI**, danh sách **CÁCH LY** (không phải cho phép) |
+| `npm run check` có chậm đi/đỏ lên không? | **không** — `tsconfig.json` không đổi một ký tự, sổ biên dịch tách riêng |
+| cơ chế có bắt được lưới giả không? | **có**, đã chứng minh bằng đột biến rồi xoá |
+
+
