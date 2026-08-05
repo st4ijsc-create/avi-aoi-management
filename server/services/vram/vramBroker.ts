@@ -781,6 +781,53 @@ function rutKhoiSoChung(lease: VramLease): void {
 }
 
 /**
+ * ★★★ Pha 3 Task 4 (§6) — **DỰNG LẠI GIẤY PHÉP CHO MỘT KHỐI BYTE ĐÃ NẰM SẴN TRÊN CARD.**
+ *
+ * ⚠⚠ VÌ SAO **KHÔNG** ĐI QUA `reserve()`, và đây là một quyết định chứ không phải một lối tắt:
+ * `reserve()` là một lượt **XIN**, và nó **TỪ CHỐI ĐƯỢC**. Nhưng nhận nuôi không xin thêm một byte
+ * nào — 7,8 GB đã ở trên thiết bị từ trước lượt khởi động lại. Từ chối một lượt nhận nuôi nghĩa là
+ * khối byte đó **ở lại VÔ HÌNH** với cả cụm, tức phản ứng với *"card đang chật"* bằng *"vậy thì
+ * coi như khối byte làm nó chật không tồn tại"* — đúng chiều SAI của ràng buộc 8 (`max(L,A) ≥ L`),
+ * và đúng lớp lỗi mà cả Pha 3 tồn tại để diệt. Ghi sổ ở đây là **KẾ TOÁN**, không phải cấp phát.
+ *
+ * ⚠ `actualBytes` được điền NGAY, kèm `measureSource: "none"` + `fallbackReason` — đúng nhóm thứ
+ * ba của `types.VramLease.actualBytes` (*"ƯỚC LƯỢNG DỰ PHÒNG, không thước nào đẻ ra nó"*). Ba hệ
+ * quả, cả ba đều CỐ Ý:
+ *   1. `holdsUncommittedBytes()` (vramReconciler) trả `false` ⇒ giấy phép này **KHÔNG** khoá lá
+ *      chắn HOÃN chụp nền — đúng, vì byte của nó CHẮC CHẮN đã ở trên thiết bị;
+ *   2. `splitLedgerByMeasureSource()` xếp nó vào nhóm KHÔNG-PHẢI-SỐ-ĐO ⇒ không ai trộn nó vào một
+ *      phép so theo thước (Đ4);
+ *   3. `measureFailed` giữ `false`: phép đo KHÔNG hề chạy và hỏng — nói ngược lại là một lời khai
+ *      sai trong nhật ký.
+ *
+ * ⚠ **KHÔNG khai `reclaimer`** (mặc định: không ai thu hồi được). Người thi hành duy nhất của hộ
+ * này là `llamaVisionSidecar.stopSidecar()`, mà nó chỉ giết được `proc` **của chính tiến trình
+ * này** — một hộ nhận nuôi không có `proc`. Khai `"vision-sidecar"` ở đây là **HỨA NGƯỢC**: câu từ
+ * chối sẽ cộng 7,8 GB vào *"tổng nhường được"* trong khi không cơ chế nào lấy lại được nó — đúng
+ * lỗi mà docstring `VramReclaimerId` (types.ts) gọi tên. Thu hồi xuyên tiến trình là **Task 5**.
+ */
+export function adoptLease(request: VramReserveRequest, actualBytes: number, reason: string): VramLease {
+  const bytes = Number.isFinite(actualBytes) && actualBytes >= 0 ? Math.trunc(actualBytes) : 0;
+  const lease: VramLease = {
+    id: `lease-${++seq}`,
+    request,
+    acquiredAt: new Date(),
+    actualBytes: bytes,
+    measureSource: "none",
+    fallbackReason: reason,
+    measureFailed: false,
+    lastHeartbeatAt: new Date(),
+    released: false,
+    // ⚠ `0`, KHÔNG phải `1`: không lượt phục vụ nào của tiến trình này đang bay qua hộ mồ côi —
+    // tiến trình từng định tuyến tới nó đã chết. Đây là điều kiện để Task 5 nhường được chỗ.
+    refCount: 0,
+  };
+  ledger.set(lease.id, lease);
+  congBoRaSoChung(lease);
+  return lease;
+}
+
+/**
  * ★★★ Pha 2B Task 5 (§5.2) — KHAI "CÓ AI ĐANG DÙNG KHỐI BYTE NÀY KHÔNG".
  *
  * Đây là **cửa duy nhất** làm một giấy phép trở thành ứng viên nhường chỗ, và nó CỐ Ý bắt điểm gọi

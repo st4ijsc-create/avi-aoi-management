@@ -13,10 +13,18 @@ import {
  * là lý do nửa ĐỒNG BỘ của sổ chung phải nằm ở một file riêng với nửa I/O.
  */
 import {
-  publishOwnSharedBaseline, readSharedBaseline, readSharedLedgerReplica, sharedLedgerFact,
-  sharedLedgerSelfKey,
+  enqueueSharedLedgerWrite, publishOwnSharedBaseline, readSharedBaseline, readSharedLedgerReplica,
+  sharedLedgerFact, sharedLedgerSelfKey,
 } from "./vramSharedLedger";
-import type { SharedBaselineRecord } from "./vramSharedLedger";
+import type { SharedBaselineRecord, SharedLeaseRow } from "./vramSharedLedger";
+/**
+ * ★★★ Pha 3 Task 4 (§6) — nhận nuôi/thu hồi. Nhập TĨNH được vì `vramAdoption` là **module LÁ**
+ * (chỉ `import type` + một hằng chuỗi từ `vramSharedLedger`, không I/O, thuần).
+ */
+import {
+  hangNenChoKeHoach, lapKeHoachNhanNuoi, moTaSidecarNhanNuoi, ownerNhanNuoi,
+} from "./vramAdoption";
+import type { ProcTableRow } from "./vramGpuHolders";
 
 /**
  * Pha 2B Task 1 — quét danh tính hộ đang giữ GPU, KHÔNG BAO GIỜ ném, KHÔNG BAO GIỜ chặn đường boot.
@@ -32,6 +40,23 @@ async function readGpuHoldersSafe(): Promise<GpuHolderCensus | null> {
   try {
     const { readGpuHolders } = await import("./vramGpuHolders");
     return await readGpuHolders([process.pid]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ★ Pha 3 Task 4 — bảng tiến trình, cùng kỷ luật `readGpuHoldersSafe()`: nhập ĐỘNG + nuốt lỗi.
+ * `null` = **KHÔNG CÓ BẰNG CHỨNG** (nền tảng khác Windows · powershell hỏng · **file test thay cả
+ * module `./vramGpuHolders` bằng bản giả không khai `readProcTable`**) ⇒ lượt nhận nuôi/thu hồi
+ * KHÔNG làm gì. Đó là chiều đúng: không có bằng chứng thì không xoá hàng của ai, và cũng không
+ * đứng tên hộ của ai.
+ */
+async function readProcTableSafe(): Promise<readonly ProcTableRow[] | null> {
+  try {
+    const mod = await import("./vramGpuHolders");
+    if (typeof mod.readProcTable !== "function") return null;
+    return await mod.readProcTable();
   } catch {
     return null;
   }
@@ -559,6 +584,13 @@ type NguonNen =
       readonly cheDoChung: boolean;
       /** Số HÀNG (không phải byte) trong sổ chung KHÔNG thuộc tiến trình này. */
       readonly soHangAnhEm: number;
+      /**
+       * ★★★ Pha 3 Task 4 — PID trong `census.orphans` mà **byte của nó ĐÃ ĐƯỢC TÍNH** (ta nhận
+       * nuôi, hoặc một tiến trình anh em CÒN SỐNG đứng tên trong sổ chung). Ô BẮT BUỘC (không
+       * `?`): thêm nó vào hợp discriminated ⇒ `tsc` bắt mọi điểm gọi quên trả lời câu hỏi này,
+       * thay vì để một `undefined` âm thầm biến thành "chưa ai đứng tên".
+       */
+      readonly tanDuDaCoChu: ReadonlySet<number>;
     }
   | {
       readonly loai: "nhan-nuoi";
@@ -591,7 +623,25 @@ function lyDoNenKhongTin(nguon: NguonNen): readonly VramBaselineDistrustReason[]
     ly.push("khong-quet-duoc-ho-giu-gpu");
     return Object.freeze(ly);
   }
-  if (nguon.census.orphans.length > 0) ly.push("co-tan-du-giu-gpu");
+  /**
+   * ★★★ Pha 3 Task 4 — **VẾ NÀY NAY HỎI CÂU THỨ HAI**, đúng khuôn Quyết định 2 đã làm cho `peers`.
+   *
+   * ⚠⚠ VÌ SAO VẾ CŨ (`orphans.length > 0` trần trụi) PHẢI ĐỔI: Quyết định 2 gỡ được hằng số
+   * `baselineVerified` cho topo `api`+`worker` **KHÔNG sidecar**, nhưng topo **CÓ sidecar** thì cờ
+   * **vẫn `false` thường trực** — vì `llama-server` của một tiến trình anh em (hoặc của chính lượt
+   * chạy trước) nằm ở `orphans`, và `orphans` hạ cờ VÔ ĐIỀU KIỆN. Một cờ luôn tắt là một cờ không
+   * còn thông tin, kèm **1.024 MiB phạt thường trực** — đúng lớp lỗi I-3 mà Task 2 đã phải sửa một
+   * lần cho `shared-ledger-unsynced`.
+   *
+   * ⚠ CÂU HỎI THỨ HAI CÓ NGUỒN, KHÔNG PHẢI ĐOÁN: một hộ mồ côi **ĐÃ CÓ CHỦ** khi (a) chính tiến
+   * trình này vừa NHẬN NUÔI nó (giấy phép có thật trong sổ cục bộ, `actualBytes` đã chốt), hoặc
+   * (b) một tiến trình anh em **CÒN SỐNG** đứng tên nó trong sổ chung (`ownerNhanNuoi()`). Cả hai
+   * đều nghĩa là khối byte đó **đã nằm trong một vế SỔ nào đó** ⇒ nền không còn nuốt nó.
+   * ⚠ Hộ mồ côi mà **KHÔNG ai đứng tên** (trainer lạc, sidecar không khớp cổng, `ollama.exe`…) vẫn
+   * hạ cờ như cũ — dân số đó KHÔNG đổi, và ca `D-5(a)`/`D-7` khoá nó.
+   */
+  const tanDuVoChu = nguon.census.orphans.filter((h) => !nguon.tanDuDaCoChu.has(h.pid));
+  if (tanDuVoChu.length > 0) ly.push("co-tan-du-giu-gpu");
   /**
    * ★★★ ĐÂY LÀ CHỖ VẾ `peers` CŨ ĐƯỢC **THAY**, KHÔNG PHẢI BỎ. Có anh em trên card thì phải hỏi
    * tiếp: *"byte của họ đã được tính chưa?"* — và chỉ khi câu trả lời là KHÔNG thì cờ mới hạ.
@@ -620,6 +670,26 @@ let lastAdoptedFrom: string | null = null;
 let warnedLocalBaseline = false;
 /** Đã kêu "nền đã trừ anh em nhưng sổ chung không đọc được ⇒ KHÔNG so được" chưa. */
 let warnedUnpairedDrift = false;
+
+/**
+ * ★★★ Pha 3 Task 4 — GIẤY PHÉP DO **TIẾN TRÌNH NÀY** NHẬN NUÔI, khoá theo PID của hộ mồ côi.
+ *
+ * ⚠⚠ `ctime` PHẢI ĐƯỢC LƯU LẠI, và đó là toàn bộ lý do ô này không phải một `Set<number>`: PID
+ * được HĐH **cấp lại**. Không có mốc tạo thì một `notepad.exe` vừa nhận đúng số PID của sidecar đã
+ * chết sẽ **kế thừa giấy phép 7,8 GB** — cùng lớp lỗi mà `bootMs` chống ở phía sổ chung, ở phía
+ * bên kia của cùng một cây cầu. Ca `D-3` khoá.
+ */
+const leaseNhanNuoi = new Map<number, { readonly lease: VramLease; readonly ctime: number }>();
+
+/**
+ * ★★★ Pha 3 Task 4 — PID trong `orphans` mà byte ĐÃ ĐƯỢC TÍNH. **MỘT biến, MỘT người ghi**
+ * (`chayLuotNhanNuoi`), MỘT người đọc (`captureVramBaseline` → `lyDoNenKhongTin`).
+ *
+ * ⚠ Rỗng = *"lượt quét gần nhất không tìm thấy ai đứng tên"*, và nó **cũng là giá trị lúc chưa
+ * quét lần nào** — hai thứ đó cho CÙNG một hành động (hạ cờ), tức chiều CHẶT. Không tách hai
+ * trạng thái ở đây là có chủ ý: một `null` thứ ba chỉ đẻ thêm một nhánh không ai đọc khác đi.
+ */
+let pidTanDuDaCoChu: ReadonlySet<number> = new Set<number>();
 
 /**
  * ★★★ VỊ TỪ DÙNG CHUNG CỦA HAI VẾ. **Đọc kỹ trước khi đụng vào một trong hai công thức.**
@@ -706,6 +776,7 @@ function nguoiChupNen(selfKey: string, nowMs: number): string {
  */
 export async function captureVramBaseline(
   priorBaseline?: { usedBytes: number; source: "native" | "smi" } | null,
+  censusSanCo?: GpuHolderCensus | null,
 ): Promise<number | null> {
   /**
    * ★★ Pha 2B Task 1, review vòng 1 (I-1) — LỐI THOÁT KHỎI MỘT NỀN ĐÃ NHIỄM.
@@ -780,7 +851,15 @@ export async function captureVramBaseline(
    * sống đã dựng). KHÔNG "sửa" bằng `__clearProbeCache()` — đó là xoá đệm DÙNG CHUNG của người
    * khác, đúng lỗi I-3 mà `vramProbe.ts` đã phải tách hàm để diệt.
    */
-  const census = await readGpuHoldersSafe();
+  /**
+   * ★ Pha 3 Task 4 — DÙNG LẠI LƯỢT QUÉT CỦA NHỊP, KHÔNG QUÉT LẦN THỨ HAI.
+   *
+   * ⚠ `__runReconcileTick()` nay quét MỘT lần rồi đưa kết quả cho cả lượt nhận nuôi lẫn lượt chụp
+   * này. Không có tham số đó thì mỗi nhịp trả **hai** lượt `nvidia-smi` + `powershell` (đo được
+   * ~380-400 ms mỗi lượt) cho đúng một câu hỏi. `undefined` (mọi lời gọi trực tiếp: test, công cụ
+   * chẩn đoán, `startVramReconciler`) giữ nguyên hành vi cũ — tự quét.
+   */
+  const census = censusSanCo !== undefined ? censusSanCo : await readGpuHoldersSafe();
   /**
    * ★★ N-1 (re-review vòng 1) — GIỮ NỀN CŨ CHO TỚI KHI THẬT SỰ CÓ NỀN MỚI.
    *
@@ -1034,6 +1113,8 @@ export async function captureVramBaseline(
     soHangAnhEm:
       (banSaoLucChup?.foreignLeases.length ?? 0) +
       (banSaoLucChup?.baseline != null && banSaoLucChup.baseline.processKey !== selfKey ? 1 : 0),
+    // ★ Pha 3 Task 4 — kết quả lượt nhận nuôi của CHÍNH nhịp này (nó chạy TRƯỚC lượt chụp).
+    tanDuDaCoChu: pidTanDuDaCoChu,
   });
 
   if (orphans.length > 0 || peers.length > 0) {
@@ -1307,6 +1388,129 @@ function nhanNenDungChung(nen: SharedBaselineRecord, tuoiMs: number): void {
 }
 
 /**
+ * ★★★ Pha 3 Task 4 (§6) — **MỘT LƯỢT NHẬN NUÔI / THU HỒI.** Chạy đúng một lần mỗi nhịp, TRƯỚC
+ * `captureVramBaseline()` (nó ghi `pidTanDuDaCoChu`, thứ lượt chụp đọc).
+ *
+ * ⚠⚠ RANH GIỚI VỚI `MocCaiChet` (Task 1) — CHỖ NGUY HIỂM NHẤT CỦA CẢ PHA, đọc trước khi sửa:
+ * hàm này là **NGƯỜI ĐỌC THỨ HAI** của vị từ *"còn sống"*, và nó lệch **543 ms** so với người đọc
+ * thứ nhất trên chính hộ 7,8 GB (Task 1 đo: mã thoát ~16 ms · `nvidia-smi` ≤33 ms · `"exit"`
+ * ~560 ms). Ranh giới được giữ bằng **CẤU TRÚC**, không bằng kỷ luật:
+ *   • giấy phép của sidecar do CHÍNH tiến trình này sinh ra mang `owner === "sidecar:vision"` ⇒
+ *     `pidTuOwnerNhanNuoi()` trả `null` ⇒ nó **không nằm trong `leaseNhanNuoi`** ⇒ hàm này không
+ *     có đường nào chạm tới nó. Nó chết theo `proc.on("exit")` như cũ.
+ *   • chỉ hộ **mồ côi thật** (không có `proc` vì tiến trình sinh ra nó đã chết) mới đi qua phép
+ *     dò PID ở đây.
+ *
+ * ⚠ `census === undefined` ⇒ nhịp này KHÔNG quét (xem cổng ở `__runReconcileTick`) ⇒ **không làm
+ * gì**, và `pidTanDuDaCoChu` GIỮ NGUYÊN: một lượt xoá nó ở đây sẽ làm cờ nền nhấp nháy theo cổng
+ * tiết kiệm chi phí, tức một cơ chế mới vô hiệu hoá một cơ chế cũ (đã tái diễn ba lần).
+ *
+ * KHÔNG BAO GIỜ ném: một lỗi kế toán không được đánh hỏng nhịp đối chiếu.
+ */
+async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Promise<void> {
+  // ⚠ `null` (quét HỎNG) KHÁC `undefined` (nhịp này CỐ Ý không quét): quét hỏng thì ta không biết
+  // hộ mồ côi nào, nhưng vẫn có thể đọc bảng tiến trình để dọn HÀNG MA — hai câu hỏi độc lập.
+  if (census === undefined) return;
+  const procs = await readProcTableSafe();
+  const selfKey = sharedLedgerSelfKey();
+
+  /**
+   * ⚠ NGƯỢC TRƯỚC, XUÔI SAU. Lượt THU HỒI chạy trước lượt NHẬN NUÔI để một PID vừa được cấp lại
+   * nhả giấy phép cũ **trong cùng nhịp** mà nó có thể được nhận nuôi lại — nếu không, `pidDaNhanNuoi`
+   * còn mang số cũ và hộ mới sẽ bị coi là "đã có chủ" đúng một nhịp.
+   */
+  for (const [pid, muc] of [...leaseNhanNuoi]) {
+    const hienTai = procs === null ? undefined : procs.find((p) => p.pid === pid);
+    // Không đọc được bảng ⇒ KHÔNG kết luận (giữ giấy phép). Đây là chiều CHẶT: giữ một khối byte
+    // đã nhả chỉ làm hệ dè dặt; nhả một khối byte còn sống là NỚI đúng 7,8 GB.
+    if (procs === null) continue;
+    const conSong = hienTai !== undefined && hienTai.ctime === muc.ctime;
+    if (conSong) continue;
+    leaseNhanNuoi.delete(pid);
+    try {
+      const { release } = await import("./vramBroker");
+      release(muc.lease);
+    } catch {
+      /* sổ hỏng KHÔNG được đánh hỏng nhịp; nhịp sau thử lại (mục đã rời `leaseNhanNuoi`) */
+    }
+    console.warn(
+      `[vram] THU HỒI giấy phép nhận nuôi của pid ${pid} (${Math.round((muc.lease.actualBytes ?? 0) / 1024 / 1024)} MiB): ` +
+        `${hienTai === undefined ? "tiến trình đã BIẾN MẤT khỏi bảng tiến trình" : "PID đã được CẤP LẠI cho một tiến trình KHÁC (CreationDate đổi)"}. ` +
+        `Byte của nó đã được HĐH thu hồi ⇒ giữ trong sổ là trừ dư địa cho một khối KHÔNG TỒN TẠI.`,
+    );
+  }
+
+  const banSao = readSharedLedgerReplica();
+  /**
+   * Hàng đưa vào kế hoạch = giấy phép của anh em **+ hàng NỀN nếu nó thuộc về ai đó khác**.
+   * ⚠ Hàng nền BẮT BUỘC có mặt: nó là dân số 2 (nợ Task 3 — hàng của tiến trình đã chết nằm lại
+   * tới 180 s), và bản sao đọc đã TÁCH nó khỏi `foreignLeases` nên không có dòng này thì nó
+   * **không có đường vào** kế hoạch.
+   */
+  const rows: SharedLeaseRow[] = banSao === null ? [] : [...banSao.foreignLeases];
+  if (banSao?.baseline != null && banSao.baseline.processKey !== selfKey) {
+    rows.push(hangNenChoKeHoach(banSao.baseline.processKey, banSao.baseline.bytes));
+  }
+
+  const ke = lapKeHoachNhanNuoi({
+    selfKey,
+    rows,
+    procs,
+    orphans: census?.orphans ?? [],
+    pidDaNhanNuoi: [...leaseNhanNuoi.keys()],
+    sidecar: moTaSidecarNhanNuoi(),
+  });
+  pidTanDuDaCoChu = ke.pidTanDuDaCoChu;
+
+  for (const ma of ke.xoaHangMa) {
+    // ⚠ Đi qua ĐÚNG hàng đợi mà `release()` dùng — một lượt xoá thẳng vào DB ở đây sẽ bỏ qua cơ
+    // chế thử-lại + cờ `unsyncedWrites` mà Task 2 dựng, và một lượt xoá hỏng sẽ im lặng.
+    enqueueSharedLedgerWrite({ op: "delete", leaseKey: ma.leaseKey });
+    console.warn(
+      `[vram] DỌN HÀNG MA khỏi sổ chung: "${ma.leaseKey}" (${Math.round(ma.bytes / 1024 / 1024)} MiB) — tiến trình ` +
+        `"${ma.processKey}" đã CHẾT (vắng khỏi bảng tiến trình, hoặc PID đã được cấp lại: CreationDate > bootMs). ` +
+        `Hàng này đang làm MỌI tiến trình anh em trừ dư địa cho một khối byte KHÔNG TỒN TẠI.`,
+    );
+  }
+
+  for (const ho of ke.nhanNuoi) {
+    const row = procs === null ? undefined : procs.find((p) => p.pid === ho.pid);
+    if (row === undefined) continue;
+    try {
+      const { adoptLease } = await import("./vramBroker");
+      const lease = adoptLease(
+        {
+          owner: ownerNhanNuoi(ho.pid),
+          kind: "external-process",
+          estimatedBytes: ho.bytes,
+          priority: "interactive",
+          estimateSource: "config-default",
+          ttlMs: Number(process.env.VRAM_SIDECAR_TTL_MS ?? 900_000),
+        },
+        ho.bytes,
+        `nhan-nuoi-mo-coi:pid=${ho.pid}`,
+      );
+      leaseNhanNuoi.set(ho.pid, { lease, ctime: row.ctime });
+      // Hộ vừa có chủ ⇒ nó thôi là "tàn dư vô chủ" NGAY trong nhịp này, không phải nhịp sau.
+      pidTanDuDaCoChu = new Set([...pidTanDuDaCoChu, ho.pid]);
+      console.warn(
+        `[vram] NHẬN NUÔI hộ mồ côi ${ho.name} (pid ${ho.pid}, ${Math.round(ho.bytes / 1024 / 1024)} MiB): tiến trình ` +
+          `sinh ra nó đã chết (server khởi động lại?) nhưng byte của nó VẪN NẰM TRÊN CARD — spec §6. ` +
+          `Giấy phép đã được DỰNG LẠI và công bố ra sổ chung để anh em thấy. ⚠ Chưa có người thi hành ` +
+          `thu hồi xuyên tiến trình (Pha 3 Task 5): muốn lấy lại 7,8 GB thì tắt ĐÚNG pid ${ho.pid}.`,
+      );
+    } catch {
+      /* sổ hỏng KHÔNG được đánh hỏng nhịp đối chiếu */
+    }
+  }
+}
+
+/** Chỉ dùng trong test/chẩn đoán — PID mà tiến trình này đang đứng tên. */
+export function __pidDangNhanNuoi(): number[] {
+  return [...leaseNhanNuoi.keys()];
+}
+
+/**
  * ★★★ Pha 2B Task 2 — Ô LƯU KẾT QUẢ NHỊP GẦN NHẤT. Đây là NGUỒN SỐ của `computeHeadroom()`
  * (`vramHeadroom.ts`, §5.6c), và lý do nó phải tồn tại là một ràng buộc CẤU TRÚC, không phải tiện lợi:
  *
@@ -1389,7 +1593,30 @@ export function readLastReconcileTick(): VramTickRecord | null {
  */
 export async function __runReconcileTick(): Promise<VramReconcileResult> {
   try {
-    await captureVramBaseline();
+    /**
+     * ★★★ Pha 3 Task 4 — **MỘT LƯỢT QUÉT CHO CẢ NHỊP**, và một CỔNG CHI PHÍ trước nó.
+     *
+     * ⚠ CHI PHÍ THẬT (đo ở Pha 2B, m-3): `nvidia-smi` **56-62 ms** + `powershell.exe`
+     * (Win32_Process) **316-341 ms** ⇒ **≈380-400 ms** mỗi lượt quét, và lượt nhận nuôi cần THÊM
+     * một bảng tiến trình (`readProcTable`, **316-341 ms**). Docstring `readGpuHolders()` hứa
+     * *"chi phí này chỉ trả cho tới khi nền được XÁC MINH"* — cổng dưới đây là thứ giữ lời hứa đó:
+     *   • nền CHƯA xác minh ⇒ đằng nào `captureVramBaseline()` cũng quét ⇒ **không thêm lượt nào**,
+     *     chỉ chuyển chủ sở hữu lượt quét (nó nhận lại qua tham số);
+     *   • ta ĐANG ĐỨNG TÊN một hộ mồ côi ⇒ **BẮT BUỘC** quét: đây là người canh cái chết duy nhất
+     *     của hộ đó (nó không có `proc`, nên không có `"exit"` nào tới);
+     *   • sổ chung có hàng của ai khác ⇒ có thể có **hàng MA** cần dọn;
+     *   • còn lại (một tiến trình, nền đã xác minh, sổ chung im) ⇒ **KHÔNG quét** — chi phí y hệt
+     *     trước Task 4.
+     */
+    const banSaoTruocNhip = readSharedLedgerReplica();
+    const canQuet =
+      !nenDaXacMinh() ||
+      leaseNhanNuoi.size > 0 ||
+      (banSaoTruocNhip !== null &&
+        (banSaoTruocNhip.foreignLeases.length > 0 || banSaoTruocNhip.baseline !== null));
+    const censusNhip = canQuet ? await readGpuHoldersSafe() : undefined;
+    await chayLuotNhanNuoi(censusNhip);
+    await captureVramBaseline(undefined, censusNhip);
     const result = await reconcileOnce();
     const atMs = Date.now();
     lastTick = { result, atMs };
@@ -1486,6 +1713,12 @@ export function __resetVramBaselineForTests(): void {
   lastAdoptedFrom = null;
   warnedLocalBaseline = false;
   warnedUnpairedDrift = false;
+  // Pha 3 Task 4 — cùng lý do, và ở đây hậu quả là một GIẤY PHÉP: ca sau thừa kế "ta đang đứng
+  // tên pid X" của ca trước ⇒ hoặc nó thu hồi một giấy phép của ca khác, hoặc nó im lặng bỏ qua
+  // đúng hộ mà ca đang kiểm. ⚠ KHÔNG `release()` ở đây — `__resetBrokerForTests()` dọn sổ, và một
+  // lượt ghi sổ chung phát ra từ hàm reset là đúng thứ làm ca sau kế thừa một lệnh xoá lạ.
+  leaseNhanNuoi.clear();
+  pidTanDuDaCoChu = new Set<number>();
   // ⚠ Ô "ta là người chụp nền" nằm ở module LÁ (`vramSharedLedger`) và có hàm reset RIÊNG
   // (`__resetSharedLedgerForTests`). KHÔNG gọi nó từ đây: file này không được kéo một lượt dọn
   // trạng thái của module khác vào, và bộ ca sổ chung đã gọi đúng hàm của nó.

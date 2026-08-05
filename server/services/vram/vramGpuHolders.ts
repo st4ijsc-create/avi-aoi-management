@@ -569,17 +569,52 @@ export async function readGpuHolders(roots: readonly number[]): Promise<GpuHolde
     return classifyHolders({ holders, procs: [], roots, ownExecutables, appRoot, commandSignatures });
   }
 
-  const json = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", PS_PROC_TABLE], PS_TIMEOUT_MS);
-  const procs = json === null ? null : parseProcTable(json);
+  const procs = await readProcTable();
   if (procs === null || procs.length === 0) {
     // ⚠ CỐ Ý trả `null` (chưa xác minh) thay vì đoán: không có bảng tiến trình thì ta không phân
     // biệt được "anh em ĐANG SỐNG" với "tàn dư lượt trước" (C-1) — và nêu tên nhầm sẽ đẩy người
     // trực đi tắt một tiến trình đang phục vụ sản xuất.
     console.warn(
-      `[vram] KHÔNG đọc được bảng tiến trình (${json === null ? "powershell lỗi/timeout" : "bảng RỖNG — bất thường"}) ` +
+      `[vram] KHÔNG đọc được bảng tiến trình (${procs === null ? "powershell lỗi/timeout" : "bảng RỖNG — bất thường"}) ` +
         "⇒ không phân loại được hộ đang giữ GPU. Ghi nhận CHƯA XÁC MINH, không kết luận.",
     );
     return null;
   }
   return classifyHolders({ holders, procs, roots, ownExecutables, appRoot, commandSignatures });
+}
+
+/**
+ * ★★★ Pha 3 Task 4 — BẢNG TIẾN TRÌNH, TÁCH RA THÀNH MỘT CỬA RIÊNG. `null` = **KHÔNG ĐỌC ĐƯỢC**
+ * (nền tảng khác Windows · `powershell.exe` lỗi/quá hạn · JSON không parse được), và người gọi
+ * PHẢI hiểu đó là *"không có bằng chứng"*, TUYỆT ĐỐI không phải *"không có tiến trình nào"*.
+ *
+ * ⚠ VÌ SAO TÁCH: `vramAdoption` cần **`CreationDate` của MỌI tiến trình** để trả lời *"tiến trình
+ * đứng tên hàng này còn sống không"* — một câu hỏi hoàn toàn độc lập với *"ai đang giữ GPU"*.
+ * Trước Task 4, bảng này chỉ tồn tại bên trong `readGpuHolders()` và **chỉ được đọc khi có hộ
+ * ngoài `roots` đang giữ GPU** (lối tắt ở trên) — tức đúng những lượt cần dọn hàng MA nhất (hộ đã
+ * chết, không còn giữ GPU) lại là những lượt không có bảng. Một cửa riêng, MỘT bản cài đặt, hai
+ * người gọi.
+ *
+ * ⚠ CHI PHÍ ĐO ĐƯỢC: `powershell.exe` (Win32_Process) **316-341 ms** mỗi lượt. Người gọi phải tự
+ * quyết định có đáng gọi không — module này KHÔNG đặt bộ đệm: một bộ đệm ở đây sẽ trả lời
+ * *"tiến trình X còn sống"* bằng dữ liệu cũ, và đó đúng là câu hỏi mà một câu trả lời cũ làm hỏng
+ * (xoá nhầm hàng của một tiến trình vừa khởi động ⇒ anh em tính THIẾU byte ⇒ NỚI dư địa).
+ *
+ * KHÔNG BAO GIỜ ném.
+ */
+export async function readProcTable(): Promise<ProcTableRow[] | null> {
+  /**
+   * ⚠⚠ CÙNG CÔNG TẮC với `readGpuHolders()`, và đây là một ĐIỀU KIỆN chứ không phải sự nhất quán
+   * cho đẹp: `vitest.setup.ts` đặt `VRAM_GPU_HOLDER_SCAN=off` cho CẢ bộ test, và không có dòng này
+   * thì **mọi** file test chạm `__runReconcileTick()` sẽ nổ một `powershell.exe` **316-341 ms**
+   * ngay giữa nhịp đối chiếu. Đo được ngay lần chạy đầu: 5/653 rồi 1/653 ĐỎ dưới
+   * `--sequence.shuffle.tests` ở `vramHeadroom.test.ts` (`vi.waitFor(readLastReconcileTick())`) —
+   * đúng lớp liên đới "thời lượng nhịp buộc vào một vòng I/O" mà Task 2 đã tốn ba bước để cắt.
+   * ⚠ HỆ QUẢ PHẢI KHAI: tắt công tắc là tắt LUÔN việc dọn hàng MA và nhận nuôi — cùng đánh đổi
+   * với việc tắt cổng nền, và cùng một biến để người vận hành chỉ phải nhớ một thứ.
+   */
+  if (scanDisabled()) return null;
+  if (process.platform !== "win32") return null;
+  const json = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", PS_PROC_TABLE], PS_TIMEOUT_MS);
+  return json === null ? null : parseProcTable(json);
 }
