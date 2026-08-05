@@ -748,6 +748,30 @@ export interface KbSyncDeferHolder {
   /** `true` ⇔ số ĐO, `false` ⇔ ƯỚC LƯỢNG. **Đ4: hai thước KHÔNG được trộn**, nên phải đi kèm. */
   readonly measured: boolean;
   readonly reclaimable: boolean;
+  /**
+   * ★★★ I-1 (review TOÀN NHÁNH) — **HỘ NÀY CỦA AI.** `null` = của TIẾN TRÌNH NÀY; một chuỗi
+   * `role:pid:boot` = của **anh em**.
+   *
+   * ⚠⚠ Ô này KHÔNG optional, và đó là điểm của nó: Task 5 (C) đưa hộ của anh em vào
+   * `VramRefusalFacts.holders` nhưng `KbSyncDeferHolder` không có chỗ chứa danh tính ⇒ hộ của anh
+   * em in **y hệt** hộ cục bộ (mất đúng cái dấu `@role:pid:boot` mà `vramRefusal.holderText()` vừa
+   * được thêm để người trực khỏi đi tìm nhầm tiến trình), **và** `reclaimable` của nó được
+   * `trienVongText()` đọc như thể ta thu hồi được — trong khi chính câu từ chối nói ngược lại
+   * (`vramRefusal.ts:558-560`).
+   */
+  readonly processKey: string | null;
+}
+
+/**
+ * ★ I-1 — MỘT bản dịch duy nhất cho ô danh tính. Cùng kỷ luật `vramRefusal.holderText()`: không
+ * phải chuỗi ⇒ `null`; chuỗi rỗng/toàn khoảng trắng ⇒ `null` (**cùng nghĩa với "của ta"**, không
+ * có nghĩa thứ ba). Thiếu bước này thì một `undefined` lọt qua ranh giới `jsonb` sẽ in nguyên
+ * chuỗi `"@undefined"` xuống ống dẫn.
+ */
+function processKeyOrNull(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  return s === "" ? null : s;
 }
 
 export interface KbSyncRefusalNote {
@@ -803,6 +827,7 @@ export function readKbSyncRefusalNote(err: unknown): KbSyncRefusalNote {
         mib: mibOrUnknown(o.bytes),
         measured: o.measured === true,
         reclaimable: o.reclaimable === true,
+        processKey: processKeyOrNull(o.processKey),
       };
     });
     const rb = (facts as { requestedBytes?: unknown }).requestedBytes;
@@ -846,6 +871,7 @@ function readKbSyncRefusalNoteFromDetail(detail: Record<string, unknown> | null)
             mib: typeof o.mib === "number" && Number.isFinite(o.mib) ? o.mib : "?",
             measured: o.measured === true,
             reclaimable: o.reclaimable === true,
+            processKey: processKeyOrNull(o.processKey),
           };
         })
       : [];
@@ -864,7 +890,17 @@ function readKbSyncRefusalNoteFromDetail(detail: Record<string, unknown> | null)
 function holderLine(h: KbSyncDeferHolder): string {
   // `=` số ĐO · `≈` ƯỚC LƯỢNG — cùng ký hiệu với `vramRefusal.holderText()`, không phát minh
   // ký hiệu thứ hai cho cùng một ý (Đ4: nói rõ con số đến từ thước nào).
-  return `${h.owner}${h.measured ? "=" : "≈"}${h.mib} MiB (${h.priority}, ${h.reclaimable ? "thu hồi được" : "CHƯA có cơ chế thu hồi"})`;
+  // ★ I-1 — `@role:pid:boot` cho hộ của ANH EM, cùng khuôn `vramRefusal.holderText()`. Và nhãn
+  // thu hồi phải nói THEO GÓC CỦA TA: một model nhàn rỗi của tiến trình khác thu hồi được **bởi
+  // tiến trình khác**, chứ không phải bởi lượt `preempt()` này.
+  const ten = h.processKey === null ? h.owner : `${h.owner}@${h.processKey}`;
+  const nhan =
+    h.processKey !== null
+      ? "TIẾN TRÌNH KHÁC giữ — preempt() của ta KHÔNG với tới"
+      : h.reclaimable
+        ? "thu hồi được"
+        : "CHƯA có cơ chế thu hồi";
+  return `${ten}${h.measured ? "=" : "≈"}${h.mib} MiB (${h.priority}, ${nhan})`;
 }
 
 /** Câu *"ai đang giữ chỗ"* cho cảnh báo. Ba hình dạng, và **không hình dạng nào nói dối**. */
@@ -905,10 +941,24 @@ function holdersText(note: KbSyncRefusalNote): string {
  */
 function trienVongText(note: KbSyncRefusalNote): string {
   if (!note.holdersKnown || note.holders.length === 0) return "";
-  if (note.holders.some((h) => h.reclaimable)) return "";
+  /**
+   * ★★★ I-1 (review TOÀN NHÁNH) — **CHỈ HỘ CỤC BỘ MỚI ĐƯỢC TẮT CÂU NÀY**, lần thứ NĂM của lớp
+   * *"cơ chế phòng vệ MỚI vô hiệu hoá cơ chế CŨ qua VỊ TỪ DÙNG CHUNG"*.
+   *
+   * Task 5 (C) đưa hộ của anh em vào `facts.holders` với `reclaimable` tính bằng CHÍNH
+   * `nguoiThiHanhThuHoiTu` — đúng cho câu hỏi *"có ai thu hồi được hộ này không"*, **SAI** cho câu
+   * hỏi mà câu dưới đây trả lời: *"lượt thử lại CỦA TA có cửa nào không"*. Một model GGUF nhàn rỗi
+   * của tiến trình anh em thu hồi được **bởi anh em**; `preempt()` của ta không với tới — chính
+   * câu từ chối nói thế (`vramRefusal.ts:558-560`).
+   *
+   * ⚠ Mọi hộ đều là của anh em ⇒ `cucBo` RỖNG ⇒ `some` false ⇒ câu VẪN NỔ, và đó là ĐÚNG: ta
+   * không thu hồi được gì cả.
+   */
+  const cucBo = note.holders.filter((h) => h.processKey === null);
+  if (cucBo.some((h) => h.reclaimable)) return "";
   return (
-    ` ⚠ KHÔNG hộ nào thu hồi được ⇒ lượt thử lại nhiều khả năng VẪN BỊ TỪ CHỐI vì đúng lý do này; ` +
-    `nó chỉ thành công nếu một hộ TỰ NHẢ. Cần người can thiệp.`
+    ` ⚠ KHÔNG hộ nào thu hồi được BỞI TIẾN TRÌNH NÀY ⇒ lượt thử lại nhiều khả năng VẪN BỊ TỪ CHỐI ` +
+    `vì đúng lý do này; nó chỉ thành công nếu một hộ TỰ NHẢ. Cần người can thiệp.`
   );
 }
 

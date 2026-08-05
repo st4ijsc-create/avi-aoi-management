@@ -1141,6 +1141,89 @@ describe("§5 — M-1 · M-2 · M-4 · M-6 (Minor của review)", () => {
   });
 
   /**
+   * ★★★ I-1 (review TOÀN NHÁNH) — **CƠ CHẾ MỚI VÔ HIỆU HOÁ CƠ CHẾ CŨ QUA VỊ TỪ DÙNG CHUNG, LẦN
+   * THỨ NĂM.**
+   *
+   * Task 5 (C) đưa hộ của **anh em** vào `VramRefusalFacts.holders` với `reclaimable` tính bằng
+   * CHÍNH vị từ dùng chung (`nguoiThiHanhThuHoiTu`). Nhưng một model GGUF nhàn rỗi **của tiến
+   * trình anh em** thu hồi được **BỞI ANH EM**, không phải bởi ta — chính câu từ chối nói thế
+   * (`vramRefusal.ts:558-560`: *"`preempt()` KHÔNG nhường được chỗ của một tiến trình anh em còn
+   * sống"*).
+   *
+   * ⚠⚠ VÀ HẬU QUẢ RƠI ĐÚNG VÀO HỘ NHẠY NHẤT: `cron:kb-sync` chạy mức `background` = THẤP NHẤT ⇒
+   * `preemptable` **RỖNG THEO ĐỊNH NGHĨA, VĨNH VIỄN** ⇒ câu M-4 là **TÍN HIỆU DUY NHẤT** nói với
+   * người trực rằng chờ thêm 6 giờ nữa cũng vô ích. Trước bản vá, một sự thật về **tiến trình
+   * khác** nuốt mất nó.
+   *
+   * ⚠ Hai ca M-4 cũ (`:1109`, `:1131`) đều dùng hộ **CỤC BỘ** (không `processKey`) nên không ca
+   * nào canh chiều này.
+   */
+  it("★★★ (I-1) hộ THU HỒI ĐƯỢC của ANH EM KHÔNG được nuốt câu 'cần người can thiệp'", async () => {
+    const canh = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.useFakeTimers();
+    gate.facts = {
+      requestedBytes: 1251 * MIB,
+      holders: [
+        // Hộ CỤC BỘ: không thu hồi được ⇒ một mình nó thì câu M-4 phải nổ.
+        { owner: "sidecar:vision", kind: "external-process", bytes: 7825 * MIB, priority: "interactive", measured: true, reclaimable: false },
+        // Hộ của ANH EM: `reclaimable: true` — nhưng thu hồi được BỞI ANH EM, không phải bởi ta.
+        { owner: "gguf:30B", kind: "gguf-model", bytes: 17_000 * MIB, priority: "interactive", measured: true, reclaimable: true, processKey: "api:900:1000" },
+      ],
+      preemptable: [],
+    };
+    gate.che_do = "tuChoi";
+
+    await runKbSyncNow();
+
+    const noi = canh.mock.calls.map((c) => c.map(String).join(" ")).join("\n");
+    expect(noi, "một sự thật về TIẾN TRÌNH KHÁC không được tắt tín hiệu DUY NHẤT của hộ này").toContain(
+      "KHÔNG hộ nào thu hồi được",
+    );
+    // Và người trực phải ĐỌC ĐƯỢC hộ đó là của ai — mất dấu `@role:pid:boot` là bắt họ đi tìm
+    // nhầm tiến trình (đúng thứ `vramRefusal.holderText()` vừa được thêm để chặn).
+    expect(noi, "hộ của anh em phải mang dấu tiến trình").toContain("gguf:30B@api:900:1000");
+    canh.mockRestore();
+  });
+
+  it("★★ (I-1) hộ CỤC BỘ thu hồi được thì vẫn KHÔNG nổ câu đó — bản vá không đảo chiều ca cũ", async () => {
+    const canh = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.useFakeTimers();
+    gate.facts = {
+      requestedBytes: 1251 * MIB,
+      holders: [
+        { owner: "sidecar:vision", kind: "external-process", bytes: 7825 * MIB, priority: "interactive", measured: true, reclaimable: false, processKey: null },
+        { owner: "gguf:fixture-17000", kind: "gguf-model", bytes: 17_000 * MIB, priority: "interactive", measured: false, reclaimable: true, processKey: null },
+      ],
+      preemptable: [],
+    };
+    gate.che_do = "tuChoi";
+
+    await runKbSyncNow();
+
+    const noi = canh.mock.calls.map((c) => c.map(String).join(" ")).join("\n");
+    expect(noi).not.toContain("KHÔNG hộ nào thu hồi được");
+    // `processKey: null` ⇒ hộ CỦA TA ⇒ KHÔNG được in một dấu `@` rỗng.
+    expect(noi).not.toContain("@null");
+    expect(noi).not.toContain("@undefined");
+    canh.mockRestore();
+  });
+
+  it("★★ (I-1) `readKbSyncRefusalNote()` mang `processKey` qua — chuỗi rỗng/rác ⇒ `null` (CỦA TA)", () => {
+    const err = new Error("x");
+    err.name = "VramRefusedError";
+    (err as unknown as { facts: unknown }).facts = {
+      holders: [
+        { owner: "a", kind: "k", bytes: MIB, priority: "background", processKey: "api:900:1000" },
+        { owner: "b", kind: "k", bytes: MIB, priority: "background", processKey: "   " },
+        { owner: "c", kind: "k", bytes: MIB, priority: "background", processKey: 42 },
+        { owner: "d", kind: "k", bytes: MIB, priority: "background" },
+      ],
+    };
+    const note = readKbSyncRefusalNote(err);
+    expect(note.holders.map((h) => h.processKey)).toEqual(["api:900:1000", null, null, null]);
+  });
+
+  /**
    * ★★ (M-6) Chốt một-lần `deferBudgetWarned` là một TÀI NGUYÊN TIÊU THỤ ĐƯỢC. Nếu một mặt sức
    * khoẻ bị poll định kỳ gọi vào đường có kêu, lượt poll đó ĂN MẤT tiếng kêu cấu hình trước khi
    * người vận hành kịp thấy.
