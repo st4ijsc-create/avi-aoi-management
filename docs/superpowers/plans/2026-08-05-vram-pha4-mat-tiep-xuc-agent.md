@@ -27,6 +27,15 @@ Bảy pha vừa rồi để lại một danh sách dài những **"đồng hồ 
 
 ⚠ **Quy tắc của pha:** mỗi ô ở trên phải **có người đọc** sau Pha 4, **hoặc** bị **xoá kèm lý do**. Không được để nguyên. Giữ một ô không ai đọc là giữ một lời hứa không ai giữ.
 
+> 🔴 **ĐÍNH CHÍNH (2026-08-05, review Task 1) — bảng trên SAI một hàng, và luật của Task 4 BỊ VÒNG TRÒN.**
+>
+> 1. **Hàng 1 sai từ Pha 3**: `getKbSyncSchedulerStatus()` **đã có** người tiêu thụ — `aiLocalKnowledgeService.ts:1486-1492`.
+> 2. ⚠⚠ **Luật *"nối vào router HOẶC xoá"* không đóng được gì**, vì *"nối vào router"* **chính là việc Task 1 vừa làm** ⇒ một ô không ai đọc chỉ **dời ra sau một endpoint không ai gọi**. Nguyên văn lời tự khai của Task 1: *"nếu dừng ở đây thì chỉ là dời đồng hồ không kim ra sau một endpoint."*
+> 3. **Và AI Agent của repo này KHÔNG tiêu thụ qua tRPC** — nó đi qua `aiLocalTools/toolRegistry.ts`. Task 1 dựng cửa cho **người**, không phải cho **Agent**.
+> 4. Đã có một **đồng hồ VRAM CÓ người đọc nói SỐ KHÁC**: `AIBrainDashboard.tsx:145` ← `trpc.aiGguf.health` — số **thô**, **không qua broker**. Hai nguồn số cho cùng một thứ là lớp lỗi "hai bản sao vị từ".
+>
+> **⇒ CỔNG RA CỦA TASK 4 ĐỔI THÀNH:** `git grep` phải cho **≥1 điểm gọi thật NGOÀI** `server/routers/**` **và ngoài** `server/services/vram/**`. Người đọc thật tối thiểu: **một `Tool` đăng ký trong `toolRegistry`** (để Agent dùng được) **và** panel `AIBrainDashboard` chuyển sang nguồn qua broker (để hai đồng hồ thôi nói hai số).
+
 ---
 
 ## Global Constraints
