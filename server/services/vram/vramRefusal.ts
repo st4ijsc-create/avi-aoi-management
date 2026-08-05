@@ -136,6 +136,20 @@ export interface VramHolderFact {
    */
   readonly measured: boolean;
   /**
+   * ★★★ Pha 3 Task 5 (C) — **AI GIỮ: TIẾN TRÌNH NÀY, HAY MỘT TIẾN TRÌNH KHÁC.**
+   * `null` = sổ CỤC BỘ (tiến trình đang dựng câu này). Khác `null` = `${role}:${pid}:${bootMs}`
+   * của **anh em**, lấy thẳng từ sổ chung.
+   *
+   * ⚠⚠ VÌ SAO LÀ MỘT Ô CHỨ KHÔNG PHẢI MỘT HẬU TỐ NHÉT VÀO `owner`: `owner` là **danh tính** — nó
+   * đi vào `wouldPreempt`, vào `KbSyncDeferHolder.owner`, và vào mọi câu truy vấn `vram_events`.
+   * Bôi thêm `@pid` vào đó là làm hai hộ CÙNG TÊN ở hai tiến trình trông như hai hộ khác nhau ở
+   * mọi phép nhóm về sau. Hai sự thật khác nhau ⇒ hai ô khác nhau (cùng kỷ luật `measureSource`
+   * ⇄ `fallbackReason`).
+   * ⚠ Ô này **KHÔNG optional**: `tsc` bắt mọi người dựng phải nói rõ hộ này của ai. Một
+   * `processKey?: string` sẽ để bản dựng cũ âm thầm khai "của ta" cho hàng của anh em.
+   */
+  readonly processKey: string | null;
+  /**
    * ★★★ Review vòng 1 (C) — CÓ CƠ CHẾ NÀO THẬT SỰ THU HỒI ĐƯỢC HỘ NÀY KHÔNG.
    *
    * `preemptCandidates()` chọn theo **quyền** (§5.2: rank + nhàn rỗi) — nó KHÔNG hỏi *"ai đi lấy
@@ -260,8 +274,12 @@ export interface VramRefusalFacts {
   readonly unattributedBytes: number | null;
   /**
    * ★ M-6 — byte do TIẾN TRÌNH KHÁC giữ (sổ chung). `null` ⇔ số không hữu hạn (không bịa).
-   * ⚠ `> 0` mà `holders` rỗng là trạng thái HỢP LỆ và thường gặp — danh sách hộ ngoài tiến trình
-   * là Pha 3 Task 5. Chính vì thế con số này phải được in ra.
+   *
+   * ⚠⚠ Pha 3 Task 5 (C) — **BẤT BIẾN ĐỔI Ở ĐÂY, ĐỌC KỸ TRƯỚC KHI DỰNG MỘT CA TEST:** từ Task 5,
+   * `> 0` mà `holders` **rỗng** KHÔNG còn là trạng thái thường gặp — hộ của anh em nay có mặt
+   * trong `holders` với `processKey !== null`. Nó vẫn HỢP LỆ ở đúng một hình dạng: bản sao đọc
+   * mang `foreignBytes > 0` nhưng `foreignHolders` rỗng (một lượt đọc méo). Con số vẫn phải in ra
+   * vì nó là **TỔNG** — thứ danh sách không thay được khi bản sao thiếu hàng.
    */
   readonly foreignLedgerBytes: number | null;
   /** ƯỚC LƯỢNG byte đã chạy ngoài sổ. `null` ⇔ CHƯA HỎI / không hữu hạn. */
@@ -297,7 +315,15 @@ function mibText(bytes: number | null): string {
 function holderText(h: VramHolderFact): string {
   // `≈` = ước lượng chưa đo. Ký hiệu được GIẢI THÍCH ngay trong câu (xem `formatVramRefusal`) —
   // một ký hiệu không ai giải thích thì cũng là một câu hứa suông.
-  return `${h.owner}${h.measured ? "=" : "≈"}${mibText(finiteOrNull(h.bytes))} MiB (${h.priority})`;
+  // ★ Pha 3 Task 5 (C) — hộ của ANH EM phải GỌI TÊN TIẾN TRÌNH: người trực đọc "reranker≈1.024 MiB"
+  // mà không biết nó nằm ở `worker` sẽ đi tìm nó trong tiến trình đang đọc log.
+  // ⚠ Vế `typeof` KHÔNG phải phòng thủ thừa: câu này đi vào `vram_events.detail` (`jsonb`) và vào
+  // `KbSyncDeferHolder`; một `undefined` lọt qua ranh giới (`?? `-less object literal ở một điểm
+  // gọi JS thuần) sẽ in nguyên chuỗi `"@undefined"` xuống ống dẫn. Chuỗi rỗng ⇒ coi như CỦA TA,
+  // cùng nghĩa với `null` — không có nghĩa thứ ba nào ở đây.
+  const key = typeof h.processKey === "string" ? h.processKey.trim() : "";
+  const o = key === "" ? h.owner : `${h.owner}@${key}`;
+  return `${o}${h.measured ? "=" : "≈"}${mibText(finiteOrNull(h.bytes))} MiB (${h.priority})`;
 }
 
 function holderListText(hs: readonly VramHolderFact[]): string {
@@ -496,8 +522,14 @@ export function formatVramRefusal(facts: VramRefusalFacts): string {
       ? ` Con số này kém tin hơn bình thường (${facts.degradedReasons.join(", ")}).`
       : "";
 
+  /**
+   * ★ Pha 3 Task 5 (C) — câu rào đón nay khai **CẢ HAI** giới hạn còn lại: bản liệt kê là cận
+   * dưới (điểm cấp phát chưa nối), và hộ của anh em đến từ một **bản sao đọc có thể cũ tới 60 s**.
+   * Trước Task 5 danh sách này chỉ có sổ CỤC BỘ, nên nó không cần nói câu thứ hai.
+   */
   const holding =
-    ` Đang giữ (chỉ các hộ ĐÃ NỐI SỔ; "≈" = ước lượng chưa đo): ${holderListText(facts.holders)}.`;
+    ` Đang giữ (chỉ các hộ ĐÃ NỐI SỔ; "≈" = ước lượng chưa đo; "@role:pid:boot" = hộ của TIẾN ` +
+    `TRÌNH KHÁC, đọc từ sổ chung và có thể cũ tới 60 s): ${holderListText(facts.holders)}.`;
 
   /**
    * ★★★ M-6 (review Pha 3 Task 2) — **GỌI TÊN PHẦN CỦA TIẾN TRÌNH ANH EM.**
@@ -513,15 +545,19 @@ export function formatVramRefusal(facts: VramRefusalFacts): string {
    * **con số dư địa SAI**, chứ không kết luận *"có một tiến trình khác"* — rồi đi tìm lỗi ở chỗ
    * không có lỗi. Đúng lớp lỗi mà cả file này tồn tại để diệt, chỉ đổi dân số.
    *
-   * ⇒ MỘT CON SỐ, không phải một danh sách và không phải một vị từ mới: `foreignLedgerBytes` đã
-   * nằm sẵn trong `VramReserveDecision`. Danh sách hộ vẫn hoãn sang Task 5 (dựng nó ở hai nơi là
-   * hai bản sao của một vị từ — ràng buộc 12).
+   * ⇒ Task 2 trả nửa đầu: MỘT CON SỐ (`foreignLedgerBytes`).
+   *
+   * ★★★ Pha 3 Task 5 (C) trả nốt NỬA SAU: **hộ của anh em nay NẰM TRONG `holders`**, dựng bằng
+   * `vramBroker.holderFactFromSharedRow()` — **một** phép dịch, dùng **cùng** vị từ `reclaimable`
+   * (`nguoiThiHanhThuHoiTu`). Câu dưới đây vì thế đổi nghĩa: nó không còn nói *"KHÔNG nằm trong
+   * danh sách trên"* (một câu nay SAI), mà nói cái vẫn còn đúng — **con số tổng** và **độ trễ của
+   * bản sao đọc**.
    */
   const anhEm =
     facts.foreignLedgerBytes !== null && facts.foreignLedgerBytes > 0
       ? ` ⚠ Trong đó ${mibText(facts.foreignLedgerBytes)} MiB do TIẾN TRÌNH KHÁC giữ (sổ chung ` +
-        `\`vram_leases\`) — KHÔNG nằm trong danh sách "Đang giữ" ở trên, và bản sao đọc có thể cũ ` +
-        `tới 60 s. Danh sách hộ ngoài tiến trình: Pha 3 Task 5.`
+        `\`vram_leases\`, các hộ có "@" ở trên) — bản sao đọc có thể cũ tới 60 s, và hôm nay ` +
+        `\`preempt()\` KHÔNG nhường được chỗ của một tiến trình anh em còn sống.`
       : "";
 
   /**

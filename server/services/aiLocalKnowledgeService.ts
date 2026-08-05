@@ -28,7 +28,8 @@ import { resolveOperationalNavigate, resolveCitationRoute } from "./aiOperationa
 // doc69 B1 (Wave 5) — last-autosync answer-eval gate result, surfaced read-only
 // in the KB health signal so ops can see "did the last KB rebuild pass its
 // answer-quality eval". Never throws (best-effort import/call, see getKbHealth).
-import { getLastAutosyncEvalGate } from "./kbSyncScheduler";
+import { getKbSyncSchedulerStatus, getLastAutosyncEvalGate } from "./kbSyncScheduler";
+import { docTrangThaiHoanVram, type VramDeferState } from "./vram/vramDefer";
 // doc69 B3 (Wave 5) — closes the KB answer-feedback loop: a bounded, flag-gated
 // (KB_FEEDBACK_RERANK_ENABLED, default OFF) re-ranking nudge derived from
 // accumulated thumbs up/down votes (server/services/aiKbFeedbackSignal.ts).
@@ -1440,6 +1441,26 @@ export interface KbHealth {
     rollbackFailed: boolean;
     at: string;
   } | null;
+  /**
+   * ★★★ Pha 3 Task 5 (D) — **TRẠNG THÁI HOÃN VÌ HẾT VRAM, NAY CÓ NGƯỜI ĐỌC.**
+   *
+   * Pha 2B Task 6 dựng `getKbSyncSchedulerStatus().defer` để *"máy đọc được"*, rồi **không nối nó
+   * vào đâu cả** — một đồng-hồ-không-kim, và đó chính là món nợ mà báo cáo Task 6 tự ghi. Task 5
+   * mở dân số ra cả sáu hộ `background`, nên nếu vẫn không ai đọc thì nay là **sáu** đồng hồ
+   * không kim.
+   *
+   * `kbSync` — chuỗi hoãn của `cron:kb-sync` (cơ chế hẹn giờ riêng của Task 6, có khôi phục sau
+   *   khởi động lại). `null` = **KHÔNG có chuỗi hoãn nào đang sống**, KHÔNG phải "không biết".
+   * `holders` — ô trạng thái của **mọi hộ khác** đi qua `vramDefer.xinVramCoHoan()` (trainer ·
+   *   finetune · cổng eval · reranker · embed-ctx). Rỗng = không hộ nào đang bị hoãn.
+   *
+   * ⚠ Đây là **NGƯỜI ĐỌC**, không phải nguồn: cả hai ô đều là ảnh chụp trong bộ nhớ của tiến trình
+   * đang phục vụ mặt sức khoẻ. Vết BỀN vẫn là `vram_events` (`defer` / `defer_exceeded`).
+   */
+  vramDefer: {
+    kbSync: ReturnType<typeof getKbSyncSchedulerStatus>["defer"];
+    holders: VramDeferState[];
+  };
 }
 
 /** Best-effort read of the last autosync eval-gate outcome. Never throws —
@@ -1450,6 +1471,23 @@ function readLastAutosyncEvalGate(): KbHealth["lastAutosyncEvalGate"] {
     return getLastAutosyncEvalGate();
   } catch {
     return null;
+  }
+}
+
+/**
+ * ★ Pha 3 Task 5 (D) — đọc trạng thái hoãn VRAM. **KHÔNG BAO GIỜ NÉM** (cùng kỷ luật với hàm
+ * trên): một mặt sức khoẻ ngã vì một ô phụ thì mất luôn cả những ô chính.
+ *
+ * ⚠ `getKbSyncSchedulerStatus()` là đường **CHỈ-ĐỌC** — nó KHÔNG được tiêu thụ chốt "kêu một lần"
+ * về cấu hình (M-6 của Task 6): một mặt sức khoẻ bị poll định kỳ sẽ ăn mất tiếng kêu trước khi
+ * người vận hành kịp thấy. Hàm đó đã tự dùng `keu = false`; đừng đổi lời gọi ở đây thành một
+ * đường quyết định.
+ */
+function readVramDefer(): KbHealth["vramDefer"] {
+  try {
+    return { kbSync: getKbSyncSchedulerStatus().defer, holders: docTrangThaiHoanVram() };
+  } catch {
+    return { kbSync: null, holders: [] };
   }
 }
 
@@ -1496,6 +1534,7 @@ export async function getKbHealth(): Promise<KbHealth> {
       chunkCount: data.chunksById.size,
       staleDays: wholeDaysSince(data.kbBuiltAt),
       lastAutosyncEvalGate: readLastAutosyncEvalGate(),
+      vramDefer: readVramDefer(),
     };
   } catch {
     return {
@@ -1510,6 +1549,7 @@ export async function getKbHealth(): Promise<KbHealth> {
       embedModel: null,
       queryEmbedModel,
       lastAutosyncEvalGate: readLastAutosyncEvalGate(),
+      vramDefer: readVramDefer(),
       embedModelMatches: true,
       kbBuiltAt: null,
       chunkCount: 0,

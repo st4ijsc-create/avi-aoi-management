@@ -1507,7 +1507,21 @@ async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Pro
           estimatedBytes: ho.bytes,
           priority: "interactive",
           estimateSource: "config-default",
-          ttlMs: Number(process.env.VRAM_SIDECAR_TTL_MS ?? 900_000),
+          ttlMs: sidecarTtlMs(),
+          /**
+           * ★★★ Pha 3 Task 5 (A) — **NỢ TRỰC TIẾP CỦA TASK 4 ĐƯỢC TRẢ Ở ĐÚNG Ô NÀY.**
+           *
+           * Task 4 để trống `reclaimer` và ghi rõ vì sao: khai `"vision-sidecar"` là **HỨA NGƯỢC**
+           * (`stopSidecar()` chỉ giết được `proc` của chính tiến trình này). Hệ quả là hộ **lớn
+           * nhất hệ** (7,8 GB) nằm trong sổ mà `coThiHanhThuHoi()` trả `false` ⇒ nó **vắng mặt**
+           * khỏi `preemptPlan()`, khỏi "tổng nhường được", và khỏi mọi lượt `preempt()`.
+           *
+           * Nay ô này khai `"orphan-pid"`, và **cùng một vị từ** (`nguoiThiHanhThuHoi`) lái cả bốn
+           * người tiêu thụ: `reclaimable` trong câu từ chối · `preemptableBytes` · `preemptPlan()`
+           * · `NGUOI_THI_HANH` ở `vramPreempt`. Người thi hành ấy TỒN TẠI và ĐƯỢC XÁC MINH BẰNG
+           * THIẾT BỊ (`thuHoiHoNhanNuoi` ngay dưới) — không còn là một cái nhãn.
+           */
+          reclaimer: "orphan-pid",
         },
         ho.bytes,
         `nhan-nuoi-mo-coi:pid=${ho.pid}`,
@@ -1518,8 +1532,9 @@ async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Pro
       console.warn(
         `[vram] NHẬN NUÔI hộ mồ côi ${ho.name} (pid ${ho.pid}, ${Math.round(ho.bytes / 1024 / 1024)} MiB): tiến trình ` +
           `sinh ra nó đã chết (server khởi động lại?) nhưng byte của nó VẪN NẰM TRÊN CARD — spec §6. ` +
-          `Giấy phép đã được DỰNG LẠI và công bố ra sổ chung để anh em thấy. ⚠ Chưa có người thi hành ` +
-          `thu hồi xuyên tiến trình (Pha 3 Task 5): muốn lấy lại 7,8 GB thì tắt ĐÚNG pid ${ho.pid}.`,
+          `Giấy phép đã được DỰNG LẠI và công bố ra sổ chung để anh em thấy. ` +
+          `Hộ này NHÀN RỖI và CÓ người thi hành thu hồi ("orphan-pid", Pha 3 Task 5): một lượt ` +
+          `preempt() sẽ tắt ĐÚNG pid ${ho.pid} và chỉ khai thành công khi nvidia-smi xác nhận byte đã nhả.`,
       );
     } catch {
       /* sổ hỏng KHÔNG được đánh hỏng nhịp đối chiếu */
@@ -1530,6 +1545,143 @@ async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Pro
 /** Chỉ dùng trong test/chẩn đoán — PID mà tiến trình này đang đứng tên. */
 export function __pidDangNhanNuoi(): number[] {
   return [...leaseNhanNuoi.keys()];
+}
+
+/**
+ * ★ Pha 3 Task 5 (D) — `VRAM_SIDECAR_TTL_MS`, **MỘT NGƯỜI ĐỌC DUY NHẤT.**
+ *
+ * ⚠ `?? 900_000` LÀ MỘT DÂY VÀ NÓ PHẢI CÓ LƯỚI (ràng buộc 11): bản Task 4 viết
+ * `Number(process.env.VRAM_SIDECAR_TTL_MS ?? 900_000)` **inline** — nghĩa là `VRAM_SIDECAR_TTL_MS=`
+ * (đặt rồi để trống) cho `Number("")` = **0** ⇒ giấy phép nhận nuôi khai TTL **0 ms**, tức tự khai
+ * là quá hạn ngay lúc sinh; và `VRAM_SIDECAR_TTL_MS=abc` cho `NaN` ⇒ một `NaN` đi thẳng vào ô
+ * `ttlMs` của giấy phép rồi vào ống dẫn sự kiện (ràng buộc 9: cột `bigint` ⇒ **mất cả lô**).
+ * Cả hai hình dạng đều KHÔNG có ca nào canh. Nay có một hàm, một lưới, hai mép.
+ */
+export function sidecarTtlMs(): number {
+  const raw = process.env.VRAM_SIDECAR_TTL_MS;
+  if (raw === undefined) return 900_000;
+  const n = Number(String(raw).trim());
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 900_000;
+}
+
+/** Cửa I/O của lượt thu hồi hộ ngoài tiến trình — tách ra để ca test đi qua ĐÚNG hàm sản xuất. */
+export interface CuaThuHoiNgoaiTienTrinh {
+  /** Gửi tín hiệu chấm dứt tới PID. Ném ⇒ coi như "không gửi được" (có thể nó đã chết). */
+  readonly giet: (pid: number) => void;
+  /** PID đang giữ GPU theo THIẾT BỊ. `null` = KHÔNG ĐỌC ĐƯỢC ⇒ không có bằng chứng. */
+  readonly docPidGiuGpu: () => Promise<readonly number[] | null>;
+  readonly nghi: (ms: number) => Promise<void>;
+  readonly now: () => number;
+}
+
+/** Hạn chờ bằng chứng "byte đã nhả". ⚠ Cùng khuôn dây-có-lưới với `sidecarTtlMs()`. */
+export function reclaimWaitMs(): number {
+  const raw = process.env.VRAM_RECLAIM_WAIT_MS;
+  if (raw === undefined) return 8_000;
+  const n = Number(String(raw).trim());
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 8_000;
+}
+
+/**
+ * ★★★ Pha 3 Task 5 (A) — **NGƯỜI THI HÀNH THU HỒI XUYÊN TIẾN TRÌNH.** Đây là thứ Task 4 khai
+ * thiếu và CỐ Ý không hứa.
+ *
+ * ⚠⚠ ĐIỀU KIỆN RA SỐ 1 CỦA PHA 3, NGUYÊN VĂN: *"chỉ khai thành công khi byte THẬT SỰ đã nhả"*.
+ * Nên thứ tự ở đây **không đổi được**:
+ *   1. hộ phải nằm trong `leaseNhanNuoi` — tức nó là một hộ **MỒ CÔI ĐÃ NHẬN NUÔI**, không phải
+ *      sidecar của chính ta (ranh giới cấu trúc của Task 4) và không phải hàng của anh em;
+ *   2. gửi tín hiệu chấm dứt tới ĐÚNG PID (không quét mù theo tên — bài học Task 1);
+ *   3. **CHỜ BẰNG CHỨNG THIẾT BỊ**: PID biến mất khỏi `nvidia-smi --query-compute-apps`. Đây là
+ *      câu trả lời TRỰC TIẾP cho *"byte đã nhả chưa"*; bảng tiến trình trả lời một câu KHÁC và
+ *      lệch 543 ms (xem `readComputeApps`);
+ *   4. **chỉ khi có bằng chứng** mới nhả giấy phép và trả `true`.
+ *
+ * ⚠⚠ HẾT HẠN CHỜ ⇒ `false` VÀ **GIỮ NGUYÊN GIẤY PHÉP**. Đó là kỷ luật C-2 của Task 1: khai
+ * `reclaimed` với `freedBytes = 0` khiến người gọi xin lại NGAY và **hỏng lần hai** — sau khi đã
+ * giết một hộ 7,8 GB. Một lời từ chối trung thực rẻ hơn nhiều.
+ * ⚠ `docPidGiuGpu()` trả `null` (tắt quét / `nvidia-smi` vắng) ⇒ **KHÔNG có bằng chứng** ⇒ `false`.
+ * Không được đọc `null` thành "danh sách rỗng ⇒ nó chết rồi" — đúng lớp lỗi cả module tồn tại để diệt.
+ *
+ * KHÔNG BAO GIỜ ném.
+ */
+/**
+ * ★ SEAM CHO NGHIỆM THU THEO **ĐƯỜNG THOÁT** (ràng buộc 10). `preempt()` gọi hàm dưới đây **không
+ * tham số** (nó chỉ có `owner` để dịch ra PID), nên nếu cửa I/O chỉ nhận được qua tham số thì
+ * chuỗi thật `preempt() → NGUOI_THI_HANH["orphan-pid"] → thuHoiHoNhanNuoi()` **không có lưới nào**
+ * và ta lại đi kiểm từng mảnh rời — đúng lớp lỗi "lưới theo FILE" đã tái diễn mười một lần.
+ */
+let cuaThuHoiCuaTest: Partial<CuaThuHoiNgoaiTienTrinh> | null = null;
+export function __setCuaThuHoiForTests(cua: Partial<CuaThuHoiNgoaiTienTrinh> | null): void {
+  cuaThuHoiCuaTest = cua;
+}
+
+export async function thuHoiHoNhanNuoi(
+  pid: number,
+  cuaVao?: Partial<CuaThuHoiNgoaiTienTrinh>,
+): Promise<boolean> {
+  const muc = leaseNhanNuoi.get(pid);
+  if (muc === undefined) return false;
+  const cua: Partial<CuaThuHoiNgoaiTienTrinh> | undefined =
+    cuaVao ?? cuaThuHoiCuaTest ?? undefined;
+
+  const giet =
+    cua?.giet ??
+    ((p: number) => {
+      process.kill(p, "SIGTERM");
+    });
+  const docPidGiuGpu =
+    cua?.docPidGiuGpu ??
+    (async () => {
+      const { readComputeApps } = await import("./vramGpuHolders");
+      const hs = await readComputeApps();
+      return hs === null ? null : hs.map((h) => h.pid);
+    });
+  const nghi = cua?.nghi ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref?.()));
+  const now = cua?.now ?? Date.now;
+
+  try {
+    giet(pid);
+  } catch {
+    // ESRCH (đã chết) hoặc EPERM (không đủ quyền) — cả hai đều KHÔNG phải bằng chứng. Đi tiếp
+    // xuống lượt hỏi thiết bị: nó là thứ DUY NHẤT được phép kết luận.
+  }
+
+  const hanChot = now() + reclaimWaitMs();
+  for (;;) {
+    let pids: readonly number[] | null;
+    try {
+      pids = await docPidGiuGpu();
+    } catch {
+      pids = null;
+    }
+    if (pids !== null && !pids.includes(pid)) {
+      // ⚠ MỘT NGƯỜI GHI cho `leaseNhanNuoi`: gỡ khỏi bảng TRƯỚC khi nhả sổ, để một nhịp đối chiếu
+      // chen vào giữa không thấy một mục trỏ tới giấy phép đã nhả.
+      leaseNhanNuoi.delete(pid);
+      const bytes = muc.lease.actualBytes ?? 0;
+      try {
+        const { release } = await import("./vramBroker");
+        release(muc.lease);
+      } catch {
+        /* sổ hỏng KHÔNG được biến một lượt thu hồi THÀNH CÔNG thành một lời khai thất bại */
+      }
+      console.warn(
+        `[vram] THU HỒI XUYÊN TIẾN TRÌNH: đã tắt pid ${pid} và nvidia-smi XÁC NHẬN nó không còn giữ ` +
+          `GPU ⇒ nhả ${Math.round(bytes / 1024 / 1024)} MiB khỏi sổ. Đây là hộ NGOÀI tiến trình này ` +
+          `(sidecar mồ côi đã nhận nuôi — Pha 3 Task 4).`,
+      );
+      return true;
+    }
+    if (now() >= hanChot) {
+      console.error(
+        `[vram] THU HỒI HỎNG: đã gửi tín hiệu tắt tới pid ${pid} nhưng ${pids === null ? "KHÔNG ĐỌC ĐƯỢC" : "vẫn thấy"} ` +
+          `nó trong danh sách compute-app sau ${reclaimWaitMs()} ms ⇒ KHÔNG có bằng chứng byte đã nhả ⇒ ` +
+          `GIỮ NGUYÊN giấy phép. Khai "đã thu hồi" ở đây là nói dối đúng chiều OOM.`,
+      );
+      return false;
+    }
+    await nghi(200);
+  }
 }
 
 /**
@@ -1741,6 +1893,8 @@ export function __resetVramBaselineForTests(): void {
   // lượt ghi sổ chung phát ra từ hàm reset là đúng thứ làm ca sau kế thừa một lệnh xoá lạ.
   leaseNhanNuoi.clear();
   pidTanDuDaCoChu = new Set<number>();
+  // Pha 3 Task 5 — seam cửa thu hồi: để sót thì ca sau "thu hồi được" bằng cửa giả của ca trước.
+  cuaThuHoiCuaTest = null;
   // ⚠ Ô "ta là người chụp nền" nằm ở module LÁ (`vramSharedLedger`) và có hàm reset RIÊNG
   // (`__resetSharedLedgerForTests`). KHÔNG gọi nó từ đây: file này không được kéo một lượt dọn
   // trạng thái của module khác vào, và bộ ca sổ chung đã gọi đúng hàm của nó.

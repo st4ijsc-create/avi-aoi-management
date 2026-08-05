@@ -393,7 +393,27 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     if (_rankBackendTicket === null) {
       try {
         const { beginVramAllocation, CUDA_BACKEND_FALLBACK_BYTES } = await import("./vram/vramWiring");
-        backendTicket = await beginVramAllocation({
+        const { xinVramCoHoan, vramRequestDeferBudgetMs } = await import("./vram/vramDefer");
+        /**
+         * ★★★ Pha 3 Task 5 (B) — HỘ `background` TRÊN **ĐƯỜNG PHỤC VỤ YÊU CẦU**.
+         *
+         * ⚠⚠ NGÂN SÁCH MẶC ĐỊNH LÀ **0**, VÀ ĐÓ LÀ CÂU TRẢ LỜI ĐÚNG CHO ĐÚNG HỘ NÀY, KHÔNG PHẢI
+         * MỘT LƯỢT BỎ SÓT: có một request RAG đang treo trên lời gọi này. Ngủ 15 phút ở đây là
+         * **CHẶN** — đúng thứ "hoãn-không-chặn" tồn tại để cấm. Hộ này **vốn đã không chặn** theo
+         * cách khác: `rerank()` bắt mọi lỗi và trả về **thứ tự cosine gốc** (suy giảm tại chỗ,
+         * người dùng vẫn có câu trả lời). Thứ nó THIẾU là **VẾT** — trước Task 5, một lượt từ chối
+         * chỉ để lại đúng một `console.warn` và không ai truy được bằng SQL.
+         * ⇒ Đi qua `xinVramCoHoan()` với ngân sách 0: **không một mili giây chờ**, nhưng có
+         * `defer_exceeded` trong `vram_events` + một ô trạng thái ở mặt sức khoẻ.
+         * Người vận hành muốn nó ĐỢI: đặt `VRAM_DEFER_REQUEST_BUDGET_MS`.
+         */
+        backendTicket = await xinVramCoHoan({
+          owner: "cuda-backend:reranker",
+          leaseKind: "gguf-backend",
+          priority: "background",
+          budgetMs: vramRequestDeferBudgetMs(),
+          xin: () =>
+            beginVramAllocation({
           owner: "cuda-backend:reranker",
           kind: "gguf-backend",
           /**
@@ -411,6 +431,7 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
           // `background` (KHÁC `production` của backend aiGgufEngine): backend này chỉ phục vụ
           // rerank — tiện ích của RAG — nên nó phải nhường chỗ trước AOI và chat/RCA.
           priority: "background",
+            }),
         });
       } catch (err) {
         // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG: nuốt ở đây là TẮT cưỡng chế tại điểm gọi
@@ -475,11 +496,21 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     // Telemetry hỏng ⇒ giấy phép rỗng; lượt nạp reranker chạy y nguyên như trước.
     try {
       const { beginVramAllocation } = await import("./vram/vramWiring");
-      localTicket = await beginVramAllocation({
+      const { xinVramCoHoan, vramRequestDeferBudgetMs } = await import("./vram/vramDefer");
+      // ★ Pha 3 Task 5 (B) — cùng lý lẽ "đường PHỤC VỤ YÊU CẦU" với lời gọi backend ở trên:
+      // ngân sách mặc định 0 (không chặn request), nhưng lời từ chối nay để lại VẾT truy được.
+      localTicket = await xinVramCoHoan({
         owner: `reranker:${modelPath}`,
-        kind: "gguf-model",
+        leaseKind: "gguf-model",
         priority: "background",
-        filePath: modelPath,
+        budgetMs: vramRequestDeferBudgetMs(),
+        xin: () =>
+          beginVramAllocation({
+            owner: `reranker:${modelPath}`,
+            kind: "gguf-model",
+            priority: "background",
+            filePath: modelPath,
+          }),
       });
       // Trả giấy phép cũ trước khi ghi đè, không để nó treo trong sổ.
       _rankVramTicket?.release();

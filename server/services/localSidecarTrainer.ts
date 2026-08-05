@@ -205,7 +205,18 @@ export async function runSidecarTraining(req: SidecarTrainingRequest): Promise<L
 
     // ── 6. Interpret outcome ──────────────────────────────────
     if (exitCode !== 0) {
-      return fail(req.jobId, startTime, `Sidecar exited with code ${exitCode}`);
+      // ★ Pha 3 Task 5 — mã thoát của lượt TỪ CHỐI phải nói ĐÚNG nguyên nhân: người trực đọc
+      // "Sidecar exited with code -3" sẽ đi tìm lỗi trong `train.py` — một tiến trình chưa bao
+      // giờ chạy. Cùng kỷ luật `describeExitCode()` của module anh em.
+      return fail(
+        req.jobId,
+        startTime,
+        exitCode === EXIT_VRAM_REFUSED
+          ? "VRAM refused for the trainer sidecar and the defer budget (VRAM_DEFER_BUDGET_HOURS) ran out — " +
+            "the sidecar was NEVER spawned. [VI] Cổng sổ VRAM từ chối và ngân sách hoãn đã hết; " +
+            "tiến trình huấn luyện CHƯA từng chạy — xem sự kiện defer/defer_exceeded trong vram_events."
+          : `Sidecar exited with code ${exitCode}`,
+      );
     }
     if (!fs.existsSync(outputModelPath)) {
       return fail(req.jobId, startTime, `Sidecar finished but produced no model at ${outputModelPath}`);
@@ -264,9 +275,18 @@ function fail(jobId: number, startTime: number, error: string): LocalTrainingRes
 }
 
 /**
+ * ★★★ Pha 3 Task 5 (B) — MÃ THOÁT KHI LƯỢT XIN VRAM BỊ TỪ CHỐI **QUÁ ĐÁY HOÃN**.
+ *
+ * ⚠ Đây KHÔNG phải một lượt nuốt lời từ chối: tiến trình con **không được sinh ra**, nên cưỡng
+ * chế vẫn có hiệu lực đúng như trước. Thứ được trả lại là hợp đồng `"Never rejects"` ghi ngay
+ * dưới đây — thứ Pha 2B làm vỡ, và cái vỡ đó biến "chưa tới lượt" thành "job HỎNG".
+ */
+const EXIT_VRAM_REFUSED = -3;
+
+/**
  * Spawn the sidecar process and poll progress.json until the process exits or
  * the timeout elapses. Resolves with the exit code (or a non-zero sentinel on
- * timeout/spawn error). Never rejects.
+ * timeout/spawn error/VRAM refusal past the defer budget). Never rejects.
  */
 async function spawnAndPoll(
   jobId: number,
@@ -277,7 +297,20 @@ async function spawnAndPoll(
   // ★ C-2 (review TOÀN NHÁNH) — HỘ TIÊU THỤ VRAM THỨ MƯỜI, xin phép NGAY TRƯỚC khi spawn.
   // TRƯỚC khi vào Promise theo dõi vì `beginTrainerVram()` là async còn executor bên dưới cố
   // tình giữ ĐỒNG BỘ (cùng khuôn `kbSyncScheduler.runKbSyncNow`).
-  const vramTicket = await beginTrainerVram();
+  // ★★★ Pha 3 Task 5 — HỢP ĐỒNG "Never rejects" ĐƯỢC TRẢ LẠI. `beginTrainerVram()` đã hoãn tới
+  // hết ngân sách rồi mới ném; tới đây thì việc đúng là **kết thúc lượt bằng một mã thoát có
+  // tên**, không phải ném xuyên qua ba tầng để `runLocalTraining()` bắt được một `Error` lạ mặt.
+  let vramTicket: import("./vram/vramWiring").VramTicket;
+  try {
+    vramTicket = await beginTrainerVram();
+  } catch (err) {
+    if (!isVramRefusal(err)) throw err;
+    console.error(
+      `[localSidecarTrainer] job ${jobId}: KHÔNG xin được VRAM sau khi đã hoãn hết ngân sách ` +
+        `(VRAM_DEFER_BUDGET_HOURS) ⇒ KHÔNG spawn tiến trình con. ${(err as Error)?.message ?? err}`,
+    );
+    return EXIT_VRAM_REFUSED;
+  }
 
   return new Promise<number>((resolve) => {
     let settled = false;
@@ -350,19 +383,34 @@ async function spawnAndPoll(
  *
  * ⚠ KHÔNG `commitMeasured()` (khác sidecar thị giác, giống `cron:kb-sync`): khi tiến trình con
  * thoát, VRAM của nó đã được OS thu hồi từ lâu — đo delta lúc đó chỉ cho ra 0 giả, tệ hơn không đo.
+ *
+ * ★★★ Pha 3 Task 5 (B) — **HOÃN, KHÔNG ĐÁNH THẤT BẠI.** Từ Pha 2B, một lời từ chối ở đây đi thẳng
+ * ra `runLocalTraining()` → `catch` → `fail()` ⇒ job huấn luyện bị ghi **THẤT BẠI** và phải chạy
+ * lại TAY, đúng lúc lý do duy nhất là *"card đang bận NGAY BÂY GIỜ"*. Và nó phá luôn hợp đồng
+ * `"Never rejects"* ghi ở docstring `spawnAndPoll()`. Nay lượt xin đi qua `xinVramCoHoan()`: lùi
+ * 15→60 phút, đáy `VRAM_DEFER_BUDGET_HOURS` (mặc định 6 giờ), mỗi lượt hoãn để lại **ba vết**.
+ * Quá đáy thì lời từ chối **vẫn tới nơi** (cưỡng chế không bị tắt) — chỉ muộn hơn.
  */
 async function beginTrainerVram(): Promise<import("./vram/vramWiring").VramTicket> {
   try {
     const { beginVramAllocation } = await import("./vram/vramWiring");
-    return await beginVramAllocation({
+    const { xinVramCoHoan, vramJobDeferBudgetMs } = await import("./vram/vramDefer");
+    return await xinVramCoHoan({
       owner: "sidecar:local-trainer",
-      kind: "external-process",
+      leaseKind: "external-process",
       priority: "background",
-      configDefaultBytes: Number(process.env.VRAM_TRAINER_ESTIMATE_MB ?? 6144) * 1024 * 1024,
-      // Trần thời lượng job thật — quá mốc này tiến trình bị SIGKILL, nên giấy phép không bao
-      // giờ sống lâu hơn khoảng tiến trình con được PHÉP sống.
-      ttlMs: sidecarTimeoutMs(),
-      releaseProof: "process-exit",
+      budgetMs: vramJobDeferBudgetMs(),
+      xin: () =>
+        beginVramAllocation({
+          owner: "sidecar:local-trainer",
+          kind: "external-process",
+          priority: "background",
+          configDefaultBytes: Number(process.env.VRAM_TRAINER_ESTIMATE_MB ?? 6144) * 1024 * 1024,
+          // Trần thời lượng job thật — quá mốc này tiến trình bị SIGKILL, nên giấy phép không bao
+          // giờ sống lâu hơn khoảng tiến trình con được PHÉP sống.
+          ttlMs: sidecarTimeoutMs(),
+          releaseProof: "process-exit",
+        }),
     });
   } catch (err) {
     // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG: nuốt ở đây là TẮT cưỡng chế tại điểm gọi này.

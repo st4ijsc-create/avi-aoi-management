@@ -87,8 +87,13 @@ function holder(
   priority: "production" | "interactive" | "background",
   measured = true,
   reclaimable = true,
+  /**
+   * ★ Pha 3 Task 5 (C) — `null` = hộ của CHÍNH tiến trình này (mặc định của mọi ca cũ, đúng ngữ
+   * nghĩa chúng vẫn có). Ca về hộ ANH EM truyền `processKey` tường minh.
+   */
+  processKey: string | null = null,
 ): VramHolderFact {
-  return { owner, kind: "gguf-model", bytes: mib * MIB, priority, measured, reclaimable };
+  return { owner, kind: "gguf-model", bytes: mib * MIB, priority, measured, reclaimable, processKey };
 }
 
 /** Fixture cỡ **17.000 MiB** (ràng buộc toàn cục 7) — không dùng cỡ 600 MiB. */
@@ -174,6 +179,56 @@ describe("§5.3 — lời từ chối mang ĐỦ BỐN thứ", () => {
     expect(s).toContain("kb-sync:embed≈1000 MiB");
     expect(s).toContain("gguf-model:qwen3-30b=17000 MiB");
     expect(s).toContain('"≈" = ước lượng chưa đo');
+  });
+
+  /**
+   * ★★★ Pha 3 Task 5 (C) — **MÓN NỢ CỦA TASK 2 ĐƯỢC TRẢ Ở ĐÂY.**
+   *
+   * Lượt quét kiểu của Task 3 phát hiện: `refusal.test.ts` **CHƯA BAO GIỜ** khai
+   * `foreignLedgerBytes`, và bản vá lúc đó đặt `0` — nghĩa là câu M-6 (*"… do TIẾN TRÌNH KHÁC
+   * giữ"*) **vẫn không bao giờ render trong cả file**, tức nó vẫn **KHÔNG CÓ MỘT LƯỚI NÀO**. Ba ca
+   * dưới đây là lưới đó: một cho con số, một cho họ tên, một cho ranh giới `0`/không-hữu-hạn.
+   */
+  /**
+   * ⚠ MẪU KHỚP PHẢI HẸP: từ Task 5, chính câu rào đón *"Đang giữ (…)"* đã chứa cụm
+   * `hộ của TIẾN TRÌNH KHÁC` để giải thích ký hiệu `@`. Một `toMatch(/TIẾN TRÌNH KHÁC/)` vì thế
+   * **luôn đúng** và không chứng minh gì — đúng lớp "ca xanh vì lý do sai". Mệnh đề M-6 được nhận
+   * ra bằng cụm **`do TIẾN TRÌNH KHÁC giữ`** (có động từ), không bằng ba chữ hoa.
+   */
+  const CAU_M6 = /do TIẾN TRÌNH KHÁC giữ/;
+
+  it("★★★ M-6 (lưới ĐẦU TIÊN) — `foreignLedgerBytes > 0` ⇒ câu từ chối NÓI RA phần của anh em", () => {
+    const s = formatVramRefusal(buildVramRefusal(input({ foreignLedgerBytes: 17_000 * MIB })));
+    expect(s, "câu phải có mệnh đề M-6").toMatch(CAU_M6);
+    expect(s, "và in ĐÚNG con số đó").toContain("17000 MiB do TIẾN TRÌNH KHÁC giữ");
+  });
+
+  it("★★★ Task 5 (C) — hộ của ANH EM được GỌI TÊN kèm `processKey`; hộ CỦA TA thì KHÔNG", () => {
+    const s = formatVramRefusal(
+      buildVramRefusal(
+        input({
+          foreignLedgerBytes: 17_000 * MIB,
+          holders: [
+            holder("gguf-model:qwen3-30b", 17_000, "production", true, true, "worker:99999:171"),
+            holder("kb-sync:embed", 1_000, "background", false),
+          ],
+        }),
+      ),
+    );
+    expect(s, "hộ của anh em ⇒ có hậu tố @processKey").toContain(
+      "gguf-model:qwen3-30b@worker:99999:171=17000 MiB",
+    );
+    expect(s, "hộ CỦA TA ⇒ KHÔNG hậu tố").toContain("kb-sync:embed≈1000 MiB");
+    expect(s).not.toContain("kb-sync:embed@");
+    expect(s, "ký hiệu @ phải được GIẢI THÍCH ngay trong câu").toMatch(/hộ của TIẾN TRÌNH KHÁC/);
+  });
+
+  it("★★★ M-6 — `0` (không anh em nào) và số KHÔNG HỮU HẠN đều KHÔNG được sinh câu đó", () => {
+    expect(formatVramRefusal(buildVramRefusal(input({ foreignLedgerBytes: 0 })))).not.toMatch(CAU_M6);
+    // ⚠ `NaN` KHÔNG được đọc thành 0 **và cũng không được in ra**: `finiteOrNull` ⇒ `null` ⇒ câm.
+    const f = buildVramRefusal(input({ foreignLedgerBytes: Number.NaN }));
+    expect(f.foreignLedgerBytes, "không bịa 0 cho một số bẩn").toBeNull();
+    expect(formatVramRefusal(f)).not.toMatch(CAU_M6);
   });
 });
 
@@ -681,8 +736,9 @@ describe("vramBroker — nguồn của 'ai đang giữ' và 'ai có thể như�
       // (ta gọi thẳng `refusalFactsFor`), nên truyền đúng dư địa thô + lý do của headroom.
       effectiveHeadroomBytes: h.headroomBytes,
       degradedReasons: h.degradedReasons,
-      // ★ Pha 3 Task 3 (lượt QUÉT KIỂU) — ô BẮT BUỘC từ Task 2, thiếu ở đây từ lúc thêm.
-      foreignLedgerBytes: 0,
+      // ★ Pha 3 Task 5 (C) — ô BẮT BUỘC nay là NGUYÊN `SharedLedgerFact` (một nguồn cho cả con số
+      // lẫn danh sách). `__freshSharedLedgerFactForTests()` = "vừa làm mới, KHÔNG có anh em nào".
+      sharedLedger: __freshSharedLedgerFactForTests(),
     });
     expect(f.requestedBytes).toBe(17_000 * MIB);
     expect(f.availableBytes).toBe(h.headroomBytes);

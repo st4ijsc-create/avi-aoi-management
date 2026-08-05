@@ -147,10 +147,77 @@ describe("Pha 3 Task 2 — ĐƯỜNG SẢN XUẤT đọc ô sổ chung THẬT", 
      * giữ: (không có)"* rồi kết luận **con số dư địa SAI** và đi tìm lỗi ở chỗ không có lỗi.
      */
     expect(err!.facts.foreignLedgerBytes, "sự thật từ chối phải MANG con số của anh em").toBe(KHOI_30B);
-    expect(err!.facts.holders, "và danh sách hộ CỤC BỘ đúng là RỖNG — đó chính là vấn đề").toEqual([]);
     const cau = formatVramRefusal(err!.facts);
     expect(cau, "câu từ chối phải NÓI RA rằng có tiến trình khác").toMatch(/TIẾN TRÌNH KHÁC/);
     expect(cau).toContain("17000 MiB");
+  });
+
+  /**
+   * ★★★ Pha 3 Task 5 (C) — **NỬA SAU CỦA M-6: HỌ TÊN, KHÔNG CHỈ CON SỐ.**
+   *
+   * Bản Task 2 khoá đúng ô `foreignLedgerBytes` và ca này **khẳng định `holders` là RỖNG** kèm
+   * chú thích *"đó chính là vấn đề"* — tức nó khoá lại đúng khuyết tật. Task 5 xoá khuyết tật đó,
+   * nên câu khẳng định phải LẬT: hộ 17.000 MiB của `worker` **có tên** trong `holders`, kèm
+   * `processKey` của nó, và câu chữ in ra `owner@role:pid:boot`.
+   *
+   * ⚠ Ca này đi qua **ĐÚNG ĐƯỜNG SẢN XUẤT** (`beginVramAllocation` → `reserve` →
+   * `refusalFactsFor` → `holderFactFromSharedRow`), không tự dựng `VramHolderFact` bằng tay —
+   * ràng buộc 10 (lưới theo ĐƯỜNG THOÁT, không theo FILE).
+   */
+  it("★★★ W-3b (Task 5 C) — câu từ chối GỌI TÊN hộ của anh em, không chỉ in một con số tổng", async () => {
+    bang.rows = [hangCuaAnhEm(KHOI_30B)];
+    await syncSharedLedger();
+
+    const err = await beginVramAllocation(xin(KHOI_30B)).then(
+      () => null,
+      (e: unknown) => e as VramRefusedError,
+    );
+    expect(err).toBeInstanceOf(VramRefusedError);
+
+    const anhEm = err!.facts.holders.filter((h) => h.processKey !== null);
+    expect(anhEm.length, "hộ của anh em PHẢI có mặt trong danh sách 'đang giữ'").toBe(1);
+    expect(anhEm[0]!.owner).toBe("gguf:qwen30b@worker");
+    expect(anhEm[0]!.processKey, "và phải nói rõ nó nằm ở TIẾN TRÌNH NÀO").toBe(ANH_EM);
+    expect(anhEm[0]!.bytes).toBe(KHOI_30B);
+    // `refCount: 1` ⇒ ĐANG DÙNG ⇒ KHÔNG thu hồi được. Cùng vị từ với giấy phép cục bộ.
+    expect(anhEm[0]!.reclaimable, "refCount=1 ⇒ không ai thu hồi được ⇒ KHÔNG hứa").toBe(false);
+
+    const cau = formatVramRefusal(err!.facts);
+    expect(cau, "người trực phải đọc được TÊN HỘ + TÊN TIẾN TRÌNH").toContain(
+      `gguf:qwen30b@worker@${ANH_EM}`,
+    );
+  });
+
+  /**
+   * ★★★ Task 5 (C) — ĐỐI CHỨNG cho `processKey`: hộ CỦA TA **không** được mang hậu tố `@…`.
+   * Không có ca này thì một bản cài đặt gắn `@` cho MỌI hộ vẫn xanh, và mọi phép nhóm theo `owner`
+   * về sau sẽ thấy hai hộ khác nhau ở chỗ đáng lẽ có một.
+   */
+  it("★★★ W-3c (Task 5 C) — HAI hộ trong MỘT câu: của ta KHÔNG có @, của anh em CÓ @", async () => {
+    bang.rows = [hangCuaAnhEm(KHOI_30B)];
+    await syncSharedLedger();
+    const ve = await beginVramAllocation(xin(5_000 * MIB));
+    // ⚠ BẮT BUỘC: `beginVramAllocation()` giữ **khoá cửa sổ đo** cho tới `commitMeasured()`/
+    // `release()`. Không đóng cửa sổ ở đây thì lượt xin thứ hai KẸT trên khoá và ca hết giờ —
+    // một lỗi của CA TEST trông y hệt một lỗi của mã sản xuất.
+    await ve.commitMeasured();
+
+    // 17.000 (anh em) + 5.000 (của ta) + 17.000 (đang xin) > trần ⇒ TỪ CHỐI, và lúc này sổ có
+    // ĐÚNG hai hộ ở hai tiến trình khác nhau — hình dạng duy nhất phân biệt được hai nhánh render.
+    const err = await beginVramAllocation(xin(KHOI_30B)).then(
+      () => null,
+      (e: unknown) => e as VramRefusedError,
+    );
+    expect(err).toBeInstanceOf(VramRefusedError);
+    const cuaTa = err!.facts.holders.filter((h) => h.owner === "gguf:coder@api");
+    expect(cuaTa.length, "hộ của CHÍNH TA phải có mặt").toBe(1);
+    expect(cuaTa[0]!.processKey, "hộ trong sổ CỤC BỘ ⇒ `null`, không phải selfKey").toBeNull();
+
+    const cau = formatVramRefusal(err!.facts);
+    expect(cau, "hộ của ta: KHÔNG hậu tố").toContain("gguf:coder@api≈5000 MiB");
+    expect(cau, "và tuyệt đối không được gắn selfKey vào nó").not.toContain("gguf:coder@api@api:1");
+    expect(cau, "hộ của anh em: CÓ hậu tố").toContain(`gguf:qwen30b@worker@${ANH_EM}`);
+    ve.release();
   });
 
   it("★★★ W-4 — giấy phép của TA đi RA sổ chung qua đúng đường sản xuất (nửa còn lại của 'một sổ')", async () => {

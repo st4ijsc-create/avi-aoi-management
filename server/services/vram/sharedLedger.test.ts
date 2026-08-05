@@ -17,8 +17,9 @@ import type { VramDecisionContext } from "./vramBroker";
 import { applyEnforcement } from "./vramEnforcement";
 import { computeHeadroom } from "./vramHeadroom";
 import {
-  __resetSharedLedgerForTests, __setSharedLedgerSelfKeyForTests, drainSharedLedgerWrites,
-  publishSharedLedgerReplica, readSharedLedgerReplica, sharedLedgerFact, sharedLedgerSelfKey,
+  __freshSharedLedgerFactForTests, __resetSharedLedgerForTests, __setSharedLedgerSelfKeyForTests,
+  drainSharedLedgerWrites, publishSharedLedgerReplica, readSharedLedgerReplica, sharedLedgerFact,
+  sharedLedgerSelfKey,
 } from "./vramSharedLedger";
 import type { SharedLeaseRow } from "./vramSharedLedger";
 import {
@@ -522,7 +523,11 @@ describe("D. BẢN SAO ĐỌC CŨ LÀ 'PHẠM TRÙ THỨ BA' — giữ SỐ, c�
         tickAgeMs: 0,
         tickConsecutiveFailures: 0,
         unledgered: { bytes: 0, unknownCount: 0 },
-        sharedLedger: { foreignBytes: 0, ageMs, unsyncedWrites: 0, consecutiveFailures: 0 },
+        // ★ Pha 3 Task 5 (lượt QUÉT KIỂU thứ hai) — `SharedLedgerFact` thêm ô `foreignHolders` và
+        // đối tượng viết TAY ở đây thiếu nó ⇒ đúng lời cảnh báo của
+        // `__freshSharedLedgerFactForTests()`: *"năm bản sao viết tay sẽ trôi khỏi nhau ngay khi
+        // kiểu thêm một ô"*. Dựng từ bản chung rồi ghi đè ĐÚNG ô đang kiểm.
+        sharedLedger: { ...__freshSharedLedgerFactForTests()!, ageMs },
       }).sharedLedgerMarginBytes;
 
     expect(bien(1), "hệ số đo được ở nghiệm thu SỐNG: ageMs=1 ⇒ 1.591.942").toBe(1_591_942);

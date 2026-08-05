@@ -47,7 +47,10 @@ vi.mock("./vramGpuHolders", () => ({
   readProcTable: async () => bangTienTrinh,
 }));
 
-import { __resetBrokerForTests, snapshot } from "./vramBroker";
+import {
+  __resetBrokerForTests, nguoiThiHanhThuHoi, preemptCandidates, preemptPlan, snapshot,
+} from "./vramBroker";
+import { preempt } from "./vramPreempt";
 import {
   SHARED_BASELINE_KEY, __resetSharedLedgerForTests, __setSharedLedgerSelfKeyForTests,
   readSharedLedgerReplica,
@@ -58,7 +61,8 @@ import {
 } from "./vramSharedLedgerStore";
 import type { SharedLedgerGateway } from "./vramSharedLedgerStore";
 import {
-  __resetVramBaselineForTests, __runReconcileTick, captureVramBaseline, reconcileOnce,
+  __pidDangNhanNuoi, __resetVramBaselineForTests, __runReconcileTick, __setCuaThuHoiForTests,
+  captureVramBaseline, reconcileOnce, sidecarTtlMs, thuHoiHoNhanNuoi,
 } from "./vramReconciler";
 import { __resetDecisionTickForTests } from "./vramTickCell";
 import {
@@ -538,5 +542,211 @@ describe("D. ĐƯỜNG THẬT — nhịp đối chiếu, sổ chung thật, gi�
     await __runReconcileTick();
     const nen = await captureVramBaseline();
     expect(nen, "nền = thiết bị − đã chốt sổ ⇒ đúng nền THẬT của máy").toBe(DESKTOP);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ Pha 3 Task 5 (A) — **NGƯỜI THI HÀNH THU HỒI XUYÊN TIẾN TRÌNH.**
+ *
+ * Task 4 đóng lại với một món nợ ghi rõ địa chỉ: *"hộ nhận nuôi CHƯA CÓ người thi hành thu hồi;
+ * `reclaimer` cố ý để trống vì khai `vision-sidecar` là HỨA NGƯỢC"*. Nhóm này trả món nợ đó, và
+ * phải trả **đúng vị từ `coThiHanhThuHoi()`** — tổng, câu chữ, nhãn và người thi hành đọc CÙNG
+ * một vị từ (bàn giao cứng của Pha 2B Task 5).
+ *
+ * ⚠⚠ ĐIỀU KIỆN RA SỐ 1 CỦA PHA 3: *"chỉ khai thành công khi byte THẬT SỰ đã nhả"*. Bằng chứng ở
+ * đây là **THIẾT BỊ** (`nvidia-smi --query-compute-apps`), KHÔNG phải bảng tiến trình — Task 1 đo
+ * được hai câu trả lời lệch nhau **543 ms** trên chính hộ 7,8 GB.
+ */
+describe("E. THU HỒI XUYÊN TIẾN TRÌNH — hộ nhận nuôi nay CÓ người thi hành", () => {
+  const SELF = "worker:1001:5000";
+  const procsCoSidecar: Proc[] = [
+    { pid: 1001, ppid: 1, cmdline: "node dist/worker.js", ctime: ft(9_000) },
+    { pid: 31337, ppid: 60001, cmdline: `${BIN} -m qwen3-vl.gguf --port ${CONG} --jinja`, ctime: ft(1_000) },
+  ];
+
+  beforeEach(() => {
+    chuyenTienTrinh(SELF);
+    hoGiuGpu = census({ orphans: [SIDECAR] });
+    bangTienTrinh = procsCoSidecar;
+    thietBiUsedBytes = DESKTOP + KHOI_17K;
+  });
+
+  afterEach(() => {
+    __setCuaThuHoiForTests(null);
+  });
+
+  /** Cửa I/O giả — MỘT chỗ dựng, để mọi ca đi qua ĐÚNG hàm sản xuất `thuHoiHoNhanNuoi()`. */
+  function cua(pidConGiuGpu: readonly number[] | null, ghi?: { giet: number[] }) {
+    let t = 0;
+    return {
+      giet: (p: number) => {
+        ghi?.giet.push(p);
+      },
+      docPidGiuGpu: async () => pidConGiuGpu,
+      nghi: async () => {},
+      // Đồng hồ nhảy 1 s mỗi lượt đọc ⇒ hạn 8.000 ms hết sau vài vòng, ca không treo.
+      now: () => (t += 1_000),
+    };
+  }
+
+  it("★★★ E-1: hộ nhận nuôi nay đi qua ĐÚNG vị từ chung ⇒ `reclaimable` = true và CÓ trong kế hoạch", async () => {
+    await __runReconcileTick();
+    const l = snapshot().leases[0]!;
+    expect(l.request.reclaimer, "Task 4 để trống ô này; Task 5 trả nợ ĐÚNG ở đây").toBe("orphan-pid");
+    expect(l.refCount, "hộ mồ côi KHÔNG có lượt phục vụ nào đang bay").toBe(0);
+    expect(nguoiThiHanhThuHoi(l), "vị từ DUY NHẤT phải nhận ra nó").toBe("orphan-pid");
+
+    // Và nó phải có mặt trong CẢ HAI danh sách mà câu từ chối + lượt thi hành đọc.
+    const ungVien = preemptCandidates("interactive", KHOI_17K);
+    expect(ungVien.map((h) => h.owner)).toEqual([ownerNhanNuoi(31337)]);
+    expect(ungVien[0]!.reclaimable, "nhãn trong câu từ chối phải đọc CÙNG vị từ").toBe(true);
+    expect(preemptPlan("interactive", KHOI_17K).map((s) => s.reclaimer)).toEqual(["orphan-pid"]);
+  });
+
+  it("★★★ E-2: thiết bị XÁC NHẬN pid không còn giữ GPU ⇒ khai thành công VÀ nhả đúng số byte", async () => {
+    await __runReconcileTick();
+    expect(snapshot().totalReservedBytes).toBe(KHOI_17K);
+    const ghi = { giet: [] as number[] };
+
+    const ok = await thuHoiHoNhanNuoi(31337, cua([7824], ghi));
+    expect(ok).toBe(true);
+    expect(ghi.giet, "tắt ĐÚNG PID, không quét mù theo tên").toEqual([31337]);
+    expect(snapshot().totalReservedBytes, "byte đã nhả ⇒ sổ phải trống").toBe(0);
+    expect(__pidDangNhanNuoi(), "và bảng pid → giấy phép phải sạch").toEqual([]);
+  });
+
+  /**
+   * ⚠⚠⚠ ĐỘT BIẾN BẮT BUỘC CỦA BRIEF: *"người thi hành khai thu hồi được một hộ ngoài tiến trình mà
+   * thực tế KHÔNG ⇒ ca đỏ"*. Đây đúng lớp lỗi C-2 của Pha 2B (`return true` vô điều kiện), chỉ đổi
+   * dân số: khai `reclaimed` với `freedBytes = 0` khiến người gọi **xin lại ngay** và hỏng lần
+   * hai — SAU KHI đã giết một hộ 7,8 GB.
+   */
+  it("★★★ E-3: thiết bị VẪN thấy pid giữ GPU ⇒ khai THẤT BẠI và GIỮ NGUYÊN giấy phép", async () => {
+    await __runReconcileTick();
+    const ok = await thuHoiHoNhanNuoi(31337, cua([7824, 31337]));
+    expect(ok, "chưa có bằng chứng byte đã nhả ⇒ KHÔNG được khai thành công").toBe(false);
+    expect(snapshot().totalReservedBytes, "và TUYỆT ĐỐI không được nhả sổ").toBe(KHOI_17K);
+    expect(__pidDangNhanNuoi()).toEqual([31337]);
+  });
+
+  it("★★ E-4: KHÔNG đọc được thiết bị (`null`) ⇒ KHÔNG bằng chứng ⇒ THẤT BẠI (không đọc null thành rỗng)", async () => {
+    await __runReconcileTick();
+    const ok = await thuHoiHoNhanNuoi(31337, cua(null));
+    expect(ok).toBe(false);
+    expect(snapshot().totalReservedBytes).toBe(KHOI_17K);
+  });
+
+  it("E-5: pid KHÔNG phải hộ nhận nuôi ⇒ từ chối ngay, không gửi tín hiệu nào", async () => {
+    await __runReconcileTick();
+    const ghi = { giet: [] as number[] };
+    expect(await thuHoiHoNhanNuoi(999_999, cua([], ghi))).toBe(false);
+    expect(ghi.giet, "không được đụng tới một PID mà ta không đứng tên").toEqual([]);
+    expect(snapshot().totalReservedBytes).toBe(KHOI_17K);
+  });
+
+  /**
+   * ★★★ ĐƯỜNG THOÁT ĐẦY ĐỦ: `preempt()` → `preemptPlan()` → `NGUOI_THI_HANH["orphan-pid"]` →
+   * `pidTuOwnerNhanNuoi()` → `thuHoiHoNhanNuoi()`. `freedBytes` đo bằng **CHÊNH LỆCH SỔ**, không
+   * cộng theo lời khai của kế hoạch.
+   */
+  it("★★★ E-6: `preempt()` thu hồi được hộ NGOÀI tiến trình và `freedBytes` đo bằng SỔ", async () => {
+    await __runReconcileTick();
+    __setCuaThuHoiForTests(cua([7824]));
+    const kq = await preempt("interactive", KHOI_17K);
+    expect(kq.planned).toBe(1);
+    expect(kq.reclaimed).toEqual([ownerNhanNuoi(31337)]);
+    expect(kq.failed).toEqual([]);
+    expect(kq.freedBytes, "ĐO BẰNG SỔ: 17.000 MiB đã ra khỏi sổ").toBe(KHOI_17K);
+  });
+
+  it("★★★ E-7: người thi hành THẤT BẠI ⇒ `preempt()` khai `failed` và `freedBytes = 0`", async () => {
+    await __runReconcileTick();
+    __setCuaThuHoiForTests(cua([7824, 31337]));
+    const kq = await preempt("interactive", KHOI_17K);
+    expect(kq.planned).toBe(1);
+    expect(kq.reclaimed).toEqual([]);
+    expect(kq.failed).toEqual([ownerNhanNuoi(31337)]);
+    expect(kq.freedBytes).toBe(0);
+    expect(snapshot().totalReservedBytes, "sổ y nguyên — không nói dối đúng chiều OOM").toBe(KHOI_17K);
+  });
+
+  it("★★ E-8: `VRAM_SIDECAR_TTL_MS` — dây có LƯỚI ở CẢ HAI mép (Task 4 để `?? 900_000` trần)", () => {
+    delete process.env.VRAM_SIDECAR_TTL_MS;
+    expect(sidecarTtlMs()).toBe(900_000);
+    process.env.VRAM_SIDECAR_TTL_MS = "60000";
+    expect(sidecarTtlMs()).toBe(60_000);
+    // ⚠ "đặt rồi để TRỐNG" ⇒ `Number("")` là 0 ⇒ giấy phép tự khai QUÁ HẠN ngay lúc sinh.
+    process.env.VRAM_SIDECAR_TTL_MS = "   ";
+    expect(sidecarTtlMs()).toBe(900_000);
+    // ⚠ rác ⇒ `NaN` đi thẳng vào `ttlMs` rồi vào ống dẫn sự kiện (cột bigint ⇒ MẤT CẢ LÔ).
+    process.env.VRAM_SIDECAR_TTL_MS = "abc";
+    expect(sidecarTtlMs()).toBe(900_000);
+    process.env.VRAM_SIDECAR_TTL_MS = "-5";
+    expect(sidecarTtlMs()).toBe(900_000);
+    delete process.env.VRAM_SIDECAR_TTL_MS;
+  });
+
+  it("★★ E-9: giấy phép nhận nuôi mang ĐÚNG `ttlMs` đã cấu hình (dây đi tới nơi, không rơi giữa đường)", async () => {
+    process.env.VRAM_SIDECAR_TTL_MS = "123456";
+    await __runReconcileTick();
+    expect(snapshot().leases[0]!.request.ttlMs).toBe(123_456);
+    delete process.env.VRAM_SIDECAR_TTL_MS;
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ Pha 3 Task 5 — **CỬA SỔ "HAI TIẾN TRÌNH CÙNG NHẬN NUÔI MỘT HỘ VÔ CHỦ".**
+ *
+ * Nợ ghi trong báo cáo Task 4 §8.7: chưa có **cuộc bầu** cho lượt nhận nuôi, nên hai tiến trình
+ * cùng thấy một hộ vô chủ sẽ **cùng nhận nuôi** trong cửa sổ trước khi bản sao đọc tới nơi (≤60 s)
+ * ⇒ khối byte bị đếm **HAI lần**. Task 4 lập luận đó là chiều **CHẶT** rồi **HỘI TỤ** — nhưng
+ * **chưa có ca test nào**, tức một lập luận không có lưới.
+ *
+ * ⇒ Task 5 chọn **thêm ca, không thêm bầu**, và nói rõ vì sao: một cuộc bầu ở đây sẽ **NỚI** —
+ * bên thua không nhận nuôi, nên khối 7,8 GB vô hình với sổ CỤC BỘ của nó cho tới khi bản sao tới
+ * nơi (cùng ≤60 s). Đổi một khoản đếm THỪA lấy một khoản đếm THIẾU là ngược ràng buộc 8.
+ */
+describe("F. CHƯA CÓ BẦU CHO LƯỢT NHẬN NUÔI — cửa sổ đếm hai lần là CHẶT rồi HỘI TỤ", () => {
+  const A = "api:900:1000";
+  const B = "worker:901:1000";
+  const procs: Proc[] = [
+    { pid: 900, ppid: 1, cmdline: "node dist/index.js", ctime: ft(900) },
+    { pid: 901, ppid: 1, cmdline: "node dist/worker.js", ctime: ft(901) },
+    { pid: 31337, ppid: 60001, cmdline: `${BIN} -m qwen3-vl.gguf --port ${CONG} --jinja`, ctime: ft(1_000) },
+  ];
+
+  it("★★★ F-1: bản sao CHƯA tới nơi ⇒ CẢ HAI cùng nhận nuôi (đếm hai lần = chiều CHẶT, không NỚI)", () => {
+    const keA = lapKeHoachNhanNuoi({
+      selfKey: A, rows: [], procs, orphans: [SIDECAR], pidDaNhanNuoi: [], sidecar: moTaSidecarNhanNuoi(),
+    });
+    const keB = lapKeHoachNhanNuoi({
+      selfKey: B, rows: [], procs, orphans: [SIDECAR], pidDaNhanNuoi: [], sidecar: moTaSidecarNhanNuoi(),
+    });
+    expect(keA.nhanNuoi.map((n) => n.pid)).toEqual([31337]);
+    expect(keB.nhanNuoi.map((n) => n.pid), "cùng nhận nuôi — đã biết, và đây là chiều AN TOÀN").toEqual([31337]);
+  });
+
+  it("★★★ F-2: bản sao tới nơi ⇒ bên thấy hàng của bên kia THÔI nhận nuôi (HỘI TỤ, không ping-pong)", () => {
+    const hangCuaA = hangGiaySo({
+      leaseKey: `${A}#lease-1`, processKey: A, pid: 900, role: "api",
+      owner: ownerNhanNuoi(31337), leaseKind: "external-process", bytes: KHOI_17K,
+    });
+    const keB = lapKeHoachNhanNuoi({
+      selfKey: B, rows: [hangCuaA], procs, orphans: [SIDECAR], pidDaNhanNuoi: [],
+      sidecar: moTaSidecarNhanNuoi(),
+    });
+    expect(keB.nhanNuoi, "A đã đứng tên ⇒ B thôi").toEqual([]);
+    expect([...keB.pidTanDuDaCoChu], "và B phải coi hộ đó là ĐÃ CÓ CHỦ").toEqual([31337]);
+
+    // ⚠ Vế đối xứng: A đọc hàng của CHÍNH NÓ thì **không** đi qua đường trên (hàng của ta bị bỏ
+    // qua ở dòng `r.processKey === selfKey`) — nó thôi nhận nuôi nhờ `pidDaNhanNuoi`. Hai đường
+    // khác nhau cho cùng một kết luận; thiếu vế này thì đột biến "bỏ `pidDaNhanNuoi`" sống.
+    const keA = lapKeHoachNhanNuoi({
+      selfKey: A, rows: [hangCuaA], procs, orphans: [SIDECAR], pidDaNhanNuoi: [31337],
+      sidecar: moTaSidecarNhanNuoi(),
+    });
+    expect(keA.nhanNuoi).toEqual([]);
   });
 });

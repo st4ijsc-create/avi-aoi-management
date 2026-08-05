@@ -181,6 +181,16 @@ export interface SharedLedgerReplica {
  */
 export type SharedLedgerFact = {
   readonly foreignBytes: number;
+  /**
+   * ★★★ Pha 3 Task 5 (C) — **HỘ CỦA ANH EM, ĐỦ CHI TIẾT ĐỂ GỌI TÊN.** Đúng những hàng đã sinh ra
+   * `foreignBytes` (cùng một lượt lọc, cùng một bản sao), nên câu từ chối không thể in ra một con
+   * số và một danh sách đến từ hai thời điểm khác nhau.
+   *
+   * ⚠ VÌ SAO Ở ĐÂY CHỨ KHÔNG PHẢI ĐỂ NGƯỜI GỌI TỰ ĐỌC `readSharedLedgerReplica()`: `reserve()`
+   * ĐỒNG BỘ và nó đã nhận `SharedLedgerFact` làm tham số — thêm một lượt đọc thứ hai là lấy hai vế
+   * của cùng một sự thật ở hai thời điểm, đúng lớp lỗi "hai bản cài đặt song song trôi khỏi nhau".
+   */
+  readonly foreignHolders: readonly SharedLeaseRow[];
   readonly ageMs: number;
   /** Số lượt ghi CỦA TA chưa lên được sổ chung. `> 0` ⇒ anh em **không thấy** ta. */
   readonly unsyncedWrites: number;
@@ -244,6 +254,9 @@ export function sharedLedgerFact(nowMs: number): SharedLedgerFact {
   const tuoi = nowMs - banSao.atMs;
   return {
     foreignBytes: banSao.foreignBytes,
+    // ★ Task 5 (C) — ĐÚNG tập hàng đã sinh ra `foreignBytes` ngay trên. Hàng NỀN đã bị tách khỏi
+    // `foreignLeases` từ Task 3 và nó KHÔNG được có mặt ở đây: nền không phải "hộ của anh em".
+    foreignHolders: banSao.foreignLeases,
     // Đồng hồ chạy lùi / số bẩn ⇒ **tuổi âm** là vô nghĩa. Trả nguyên số cho `applyEnforcement`
     // (nó lấy TRẦN biên cho tuổi không đọc được — chiều CHẶT), KHÔNG kẹp về 0 ở đây.
     ageMs: tuoi,
@@ -641,7 +654,7 @@ export function __resetSharedLedgerForTests(): void {
  * bản sao sẽ trôi khỏi nhau ngay khi `SharedLedgerFact` thêm một ô.
  */
 export function __freshSharedLedgerFactForTests(): SharedLedgerFact {
-  return { foreignBytes: 0, ageMs: 0, unsyncedWrites: 0, consecutiveFailures: 0 };
+  return { foreignBytes: 0, foreignHolders: [], ageMs: 0, unsyncedWrites: 0, consecutiveFailures: 0 };
 }
 
 /**

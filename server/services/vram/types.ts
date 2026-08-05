@@ -82,7 +82,23 @@ export type VramReclaimerId =
   /** `aiGgufEngine.unloadGgufModel()` — dispose THẬT trọng số + context, rồi mới nhả sổ. */
   | "gguf-idle-model"
   /** `llamaVisionSidecar.stopSidecar()` — SIGTERM/SIGKILL tiến trình con (`releaseProof: "process-exit"`). */
-  | "vision-sidecar";
+  | "vision-sidecar"
+  /**
+   * ★★★ Pha 3 Task 5 (A) — **HỘ NGOÀI TIẾN TRÌNH.** `vramReconciler.thuHoiHoNhanNuoi(pid)` —
+   * giết ĐÚNG PID của một sidecar **MỒ CÔI đã được nhận nuôi** (Task 4), rồi **xác minh bằng
+   * THIẾT BỊ** (`nvidia-smi --query-compute-apps` không còn liệt kê PID đó) trước khi nhả sổ.
+   *
+   * ⚠⚠ ĐÂY LÀ NGƯỜI THI HÀNH DUY NHẤT VỚI TỚI ĐƯỢC MỘT TIẾN TRÌNH **KHÔNG PHẢI CON CỦA TA**, và
+   * dân số của nó **hẹp một cách CÓ CẤU TRÚC**: chỉ giấy phép mang dấu `#nhan-nuoi-pid=N` trong
+   * `owner` (do **một** người ghi: `vramAdoption.ownerNhanNuoi()`) mới dịch ra được một PID, nên
+   * không có đường nào để nó chạm vào sidecar CỦA CHÍNH TA (`MocCaiChet` lo hộ đó — ranh giới
+   * 543 ms của Task 1) hay vào một tiến trình anh em **còn sống**.
+   *
+   * ⚠ Task 4 CỐ Ý để trống ô `reclaimer` của giấy phép nhận nuôi và ghi rõ lý do: khai
+   * `"vision-sidecar"` là **HỨA NGƯỢC** — `stopSidecar()` chỉ giết được `proc` của chính tiến
+   * trình này. Món nợ đó được trả ở ĐÂY, bằng một người thi hành THẬT, không bằng một cái nhãn.
+   */
+  | "orphan-pid";
 
 export interface VramReserveRequest {
   owner: string;

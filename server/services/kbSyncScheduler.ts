@@ -68,6 +68,19 @@ import { spawn } from "node:child_process";
 // LÁ (không import gì, không I/O): nó phải dùng được NGAY TRONG `catch` của một lượt
 // `await import()` vừa hỏng. Xem `vramRefusalSignal.ts` để biết vì sao so TÊN, không `instanceof`.
 import { isVramRefusal } from "./vram/vramRefusalSignal";
+/**
+ * ★★★ Pha 3 Task 5 (B) — CƠ CHẾ HOÃN NAY LÀ **DÙNG CHUNG** cho cả sáu hộ `background`.
+ * Ba thứ dưới đây từng sống ở CHÍNH FILE NÀY và nay chỉ còn **một bản cài đặt** ở `vramDefer`:
+ * người quyết định (`planVramDefer`), người đọc ngân sách (`docNganSachHoanMs`), và chốt "đã kêu
+ * về cấu hình". `kb:sync` giữ **biến `.env` riêng** (`KB_SYNC_MAX_DEFER_HOURS`) vì đó là một hợp
+ * đồng vận hành đã công bố ở `.env.example` — chỉ **cơ chế** dùng chung, không phải **con số**.
+ */
+import {
+  planVramDefer,
+  docNganSachHoanMs,
+  VRAM_DEFER_FIRST_DELAY_MS,
+  __resetVramDeferForTests,
+} from "./vram/vramDefer";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -277,13 +290,38 @@ interface EvalRunResult {
 async function beginEvalGateVram(): Promise<VramTicket> {
   try {
     const { beginVramAllocation } = await import("./vram/vramWiring");
-    return await beginVramAllocation({
+    const { xinVramCoHoan, vramRequestDeferBudgetMs } = await import("./vram/vramDefer");
+    /**
+     * ★★★ Pha 3 Task 5 (B) — HỘ `background` THỨ HAI ĐI QUA CƠ CHẾ HOÃN DÙNG CHUNG, **NHƯNG VỚI
+     * NGÂN SÁCH CỦA "ĐƯỜNG ĐANG CÓ NGƯỜI ĐỢI" (mặc định 0), KHÔNG PHẢI CỦA "ĐƯỜNG JOB NỀN".**
+     *
+     * ⚠⚠ ĐÂY LÀ MỘT PHÁT HIỆN CỦA BỘ TEST, KHÔNG PHẢI MỘT LỰA CHỌN KHẨU VỊ — và nó đúng lớp lỗi
+     * *"cơ chế phòng vệ MỚI vô hiệu hoá cơ chế CŨ"* đã tái diễn ba lần: cổng eval chạy **BÊN
+     * TRONG** `runKbSyncNow()`, tức **đang giữ chốt đơn-luồng `running`**. Ngủ 15-60 phút ở đây thì
+     * (a) lượt `kb:sync` đó treo hàng giờ, (b) **mọi** lượt thử lại của chuỗi hoãn `cron:kb-sync`
+     * rơi vào nhánh `already_running` — tức chính cơ chế hoãn của Task 6 bị cơ chế hoãn của Task 5
+     * vô hiệu hoá. Bộ ca `kbSyncScheduler.evalGate.test.ts` bắt được ngay: một ca hết giờ và **chín
+     * ca sau đó đổ theo** vì chốt `running` không bao giờ được trả.
+     *
+     * ⇒ Ngân sách 0 = *"đừng đợi, kêu ngay"*: hành vi y hệt trước Task 5 (`evalGate: "skipped"`,
+     * KHÔNG lùi một lượt sync đã thành công), cộng thêm **VẾT** (`defer_exceeded` + ô trạng thái).
+     * Người vận hành muốn nó đợi thì đặt `VRAM_DEFER_REQUEST_BUDGET_MS` — và phải biết mình đang
+     * đánh đổi cái chốt kia.
+     */
+    return await xinVramCoHoan({
       owner: "cron:kb-eval-gate",
-      kind: "external-process",
+      leaseKind: "external-process",
       priority: "background",
-      configDefaultBytes: Number(process.env.VRAM_KB_EVAL_ESTIMATE_MB ?? 1251) * 1024 * 1024,
-      ttlMs: evalTimeoutMs(),
-      releaseProof: "process-exit",
+      budgetMs: vramRequestDeferBudgetMs(),
+      xin: () =>
+        beginVramAllocation({
+          owner: "cron:kb-eval-gate",
+          kind: "external-process",
+          priority: "background",
+          configDefaultBytes: Number(process.env.VRAM_KB_EVAL_ESTIMATE_MB ?? 1251) * 1024 * 1024,
+          ttlMs: evalTimeoutMs(),
+          releaseProof: "process-exit",
+        }),
     });
   } catch (err) {
     // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG: nuốt ở đây là TẮT cưỡng chế tại điểm gọi này.
@@ -596,9 +634,12 @@ export async function __runKbSyncForTests(): Promise<void> {
 // nguyên** từ `VramRefusedError.facts`, giữ nguyên cờ `measured` của từng hộ, và **không có một
 // phép cộng nào**.
 
-/** §5.4 — thử lại sau **15 phút**, nhân đôi, trần **60 phút**. */
-const DEFER_FIRST_DELAY_MS = 15 * 60 * 1000;
-const DEFER_MAX_DELAY_MS = 60 * 60 * 1000;
+/**
+ * §5.4 — thử lại sau **15 phút**, nhân đôi, trần **60 phút**.
+ * ⚠ Pha 3 Task 5 — **ĐỌC LẠI TỪ `vramDefer`, KHÔNG khai một hằng số thứ hai**: bậc thang lùi nay
+ * là tài sản của cơ chế dùng chung, và một bản sao ở đây sẽ trôi khỏi nó ở lượt đổi đầu tiên.
+ */
+const DEFER_FIRST_DELAY_MS = VRAM_DEFER_FIRST_DELAY_MS;
 /** §5.4 — đáy mặc định **6 giờ** (03:00 → 09:00, vẫn trong đêm). */
 const DEFER_DEFAULT_BUDGET_HOURS = 6;
 /**
@@ -610,12 +651,14 @@ const DEFER_REARM_FLOOR_MS = 60 * 1000;
 const MS_PER_HOUR = 60 * 60 * 1000;
 const BYTES_PER_MIB = 1024 * 1024;
 
-/** Đã kêu về một `KB_SYNC_MAX_DEFER_HOURS` vô nghĩa chưa (kêu MỘT lần, không mỗi lượt). */
-let deferBudgetWarned = false;
-
 /**
  * Đáy hoãn tính bằng ms. Đọc PER-CALL (như `isEvalGateEnabled()`) — người vận hành đổi được mà
  * không phải khởi động lại, và test đặt được từng ca.
+ *
+ * ⚠⚠ Pha 3 Task 5 — THÂN HÀM ĐÃ CHUYỂN XUỐNG `vramDefer.docNganSachHoanMs()`. Bốn hình dạng đầu
+ * vào (chưa đặt · để trống · `NaN`/∞/âm · `0` tường minh) và chốt "kêu MỘT lần" nay có **một bản
+ * cài đặt duy nhất** dùng chung cho cả sáu hộ `background`. Khối lý lẽ bên dưới giữ nguyên vì nó
+ * là hợp đồng vận hành của ĐÚNG biến `KB_SYNC_MAX_DEFER_HOURS`.
  *
  * ⚠⚠ ĐÂY LÀ MỘT SỢI **DÂY** THEO ĐÚNG QUY TẮC TASK 3 (*"mỗi `?? <mặc_định>` cho một đường ra là
  * một dây, và dây thì phải có lưới"*), và nó là sợi dây NGUY HIỂM NHẤT của task này: đáy chính là
@@ -639,22 +682,12 @@ let deferBudgetWarned = false;
  * mọi đường CHỈ-ĐỌC dùng `keu = false`.
  */
 function docDayHoanMs(keu: boolean): number {
-  const raw = process.env.KB_SYNC_MAX_DEFER_HOURS;
-  if (raw === undefined) return DEFER_DEFAULT_BUDGET_HOURS * MS_PER_HOUR;
-  const trimmed = String(raw).trim();
-  const hours = trimmed === "" ? Number.NaN : Number(trimmed);
-  if (!Number.isFinite(hours) || hours < 0) {
-    if (keu && !deferBudgetWarned) {
-      deferBudgetWarned = true;
-      console.error(
-        `[kbSyncScheduler] KB_SYNC_MAX_DEFER_HOURS=${JSON.stringify(raw)} KHÔNG dùng được ` +
-          `(rỗng/không phải số/âm) ⇒ dùng đáy mặc định ${DEFER_DEFAULT_BUDGET_HOURS} giờ. ` +
-          `Một đáy không hữu hạn sẽ biến "hoãn có đáy" thành "hoãn vô hạn, im lặng".`,
-      );
-    }
-    return DEFER_DEFAULT_BUDGET_HOURS * MS_PER_HOUR;
-  }
-  return hours * MS_PER_HOUR;
+  return docNganSachHoanMs(
+    "KB_SYNC_MAX_DEFER_HOURS",
+    DEFER_DEFAULT_BUDGET_HOURS * MS_PER_HOUR,
+    "gio",
+    keu,
+  );
 }
 
 /** Đáy hoãn cho **đường QUYẾT ĐỊNH** — được phép kêu khi cấu hình vô nghĩa. */
@@ -696,24 +729,13 @@ export function planKbSyncDefer(input: {
   readonly previousDelayMs: number | null;
   readonly budgetMs: number;
 }): KbSyncDeferPlan {
-  const elapsedMs = input.now - input.firstRefusedAt;
-  const delayMs =
-    input.previousDelayMs === null
-      ? DEFER_FIRST_DELAY_MS
-      : Math.min(input.previousDelayMs * 2, DEFER_MAX_DELAY_MS);
-
-  if (!Number.isFinite(elapsedMs) || !Number.isFinite(delayMs) || !Number.isFinite(input.budgetMs)) {
-    return {
-      kind: "exceeded",
-      elapsedMs: Number.isFinite(elapsedMs) ? elapsedMs : 0,
-      wouldRetryInMs: Number.isFinite(delayMs) ? delayMs : null,
-      budgetMs: Number.isFinite(input.budgetMs) ? input.budgetMs : 0,
-    };
-  }
-  if (elapsedMs + delayMs > input.budgetMs) {
-    return { kind: "exceeded", elapsedMs, wouldRetryInMs: delayMs, budgetMs: input.budgetMs };
-  }
-  return { kind: "retry", delayMs, retryAt: input.now + delayMs, elapsedMs, budgetMs: input.budgetMs };
+  /**
+   * ⚠⚠ Pha 3 Task 5 — **KHÔNG CÒN BẢN CÀI ĐẶT THỨ HAI.** Thân hàm cũ (bốn nhánh, cùng hằng số
+   * 15/60 phút) nay sống ở `vramDefer.planVramDefer` và phục vụ **cả sáu** hộ `background`. Đây
+   * đúng ràng buộc 12: khi hai bản sao của một vị từ đứng dưới một bất biến, lời giải không phải
+   * "thêm một ca canh chúng khớp nhau" mà là **xoá bản thứ hai đi**.
+   */
+  return planVramDefer(input);
 }
 
 /** Một hộ đang giữ chỗ, chép từ `VramRefusalFacts.holders`. **Không cộng, không đổi thước.** */
@@ -1306,8 +1328,27 @@ export function planKbSyncDeferResume(input: {
   readonly now: number;
   readonly event: string | null;
   readonly detail: Record<string, unknown> | null;
+  /**
+   * ★★★ Pha 3 Task 5 (D) — **"KHÔNG ĐỌC ĐƯỢC NHẬT KÝ" ≠ "ĐỌC ĐƯỢC, KHÔNG CÓ DÒNG NÀO".**
+   *
+   * Bản Task 6 ép cả hai về `event: null` ⇒ cùng một kết cục `"khong-co-dong-hoan-nao"`, tức đúng
+   * lớp lỗi *"`null` bị đọc thành 0"* mà cả module VRAM tồn tại để diệt — chỉ khác chỗ đứng. Hậu
+   * quả cụ thể ở **cài đặt không DB** (`getDb()` trả `null`): mỗi lần khởi động lại, hệ kết luận
+   * *"đêm qua không có lượt hoãn nào"*, `firstRefusedAt` mở lại từ đầu, đáy 6 giờ **không bao giờ
+   * chạm tới**, và `defer_exceeded` **KHÔNG BAO GIỜ KÊU** — bảo đảm *"quá đáy phải CÓ TIẾNG"* bốc
+   * hơi trong im lặng, đúng thứ §5.4 tồn tại để chặn.
+   *
+   * ⚠ Task 5 **KHÔNG** vá được cái mù đó (không có kho bền thì không có gì để đọc lại — sổ chung
+   * `vram_leases` cũng nằm trên cùng cái DB ấy). Thứ Task 5 sửa là: cái mù nay **CÓ TÊN** và
+   * **CÓ TIẾNG**, thay vì đội lốt một câu trả lời khẳng định. `false` ⇒ lý do riêng + một dòng
+   * cảnh báo ở `resumeKbSyncDeferFromLog()`.
+   */
+  readonly docDuoc?: boolean;
 }): KbSyncDeferResumePlan {
   const { now, event, detail } = input;
+  if (input.docDuoc === false) {
+    return { kind: "none", reason: "khong-doc-duoc-nhat-ky-hoan" };
+  }
   if (event !== "defer" && event !== "defer_exceeded") {
     return { kind: "none", reason: "khong-co-dong-hoan-nao" };
   }
@@ -1338,12 +1379,25 @@ export function planKbSyncDeferResume(input: {
   return { ...chung, kind: "resume", nextRetryAt, reason: "con-trong-ngan-sach" };
 }
 
-/** Dòng `defer`/`defer_exceeded` gần nhất của `cron:kb-sync`. `null` = không có / không đọc được. */
-async function docDongHoanGanNhat(): Promise<{ event: string; detail: Record<string, unknown> | null } | null> {
+/**
+ * Dòng `defer`/`defer_exceeded` gần nhất của `cron:kb-sync`.
+ *
+ * ★★★ Pha 3 Task 5 (D) — **BA kết cục, không phải hai.** Bản Task 6 trả `null` cho CẢ "đọc được,
+ * không có dòng nào" LẪN "không đọc được" — xem `planKbSyncDeferResume.docDuoc` để biết vì sao
+ * gộp hai thứ đó lại làm `defer_exceeded` **không bao giờ kêu** ở cài đặt không DB.
+ */
+type LuotDocNhatKyHoan =
+  | { readonly kind: "co"; readonly event: string; readonly detail: Record<string, unknown> | null }
+  | { readonly kind: "khong-co" }
+  | { readonly kind: "khong-doc-duoc"; readonly viSao: string };
+
+async function docDongHoanGanNhat(): Promise<LuotDocNhatKyHoan> {
   try {
     const { getDb } = await import("../db/connection");
     const db = await getDb();
-    if (!db) return null; // không có DB (vd. test/cài đặt tối giản) — xem giới hạn ở báo cáo
+    // ⚠ KHÔNG CÓ DB (cài đặt tối giản / test) ⇒ **KHÔNG ĐỌC ĐƯỢC**, tuyệt đối không phải "không
+    // có dòng nào". Đây là ô mà cả cơ chế đáy 6 giờ đứng lên sau một lượt khởi động lại.
+    if (!db) return { kind: "khong-doc-duoc", viSao: "khong-co-DB" };
     const { vramEvents } = await import("../../drizzle/schema/vram");
     const { and, desc, eq, inArray } = await import("drizzle-orm");
     const rows = await db
@@ -1354,16 +1408,20 @@ async function docDongHoanGanNhat(): Promise<{ event: string; detail: Record<str
       .orderBy(desc(vramEvents.id))
       .limit(1);
     const row = Array.isArray(rows) ? rows[0] : undefined;
-    if (!row) return null;
+    if (!row) return { kind: "khong-co" };
     return {
+      kind: "co",
       event: String(row.event),
       detail: row.detail !== null && typeof row.detail === "object" ? (row.detail as Record<string, unknown>) : null,
     };
   } catch (e) {
     console.warn("[kbSyncScheduler] không đọc lại được chuỗi hoãn từ vram_events:", (e as Error)?.message ?? e);
-    return null;
+    return { kind: "khong-doc-duoc", viSao: "truy-van-hong" };
   }
 }
+
+/** Đã kêu về "không đọc lại được nhật ký hoãn" chưa — kêu MỘT lần mỗi đời tiến trình. */
+let daKeuVeNhatKyMu = false;
 
 /**
  * ★★★ Khôi phục chuỗi hoãn sau một lần khởi động lại. Gọi từ `startKbSyncScheduler()`.
@@ -1378,15 +1436,28 @@ export async function resumeKbSyncDeferFromLog(): Promise<KbSyncDeferResumePlan>
   try {
     // Trạng thái SỐNG trong bộ nhớ luôn thắng một dòng lịch sử: không đè lên chuỗi đang chạy.
     if (deferStreak !== null) return { kind: "none", reason: "da-co-chuoi-trong-bo-nho" };
-    const row = await docDongHoanGanNhat();
+    const doc = await docDongHoanGanNhat();
+    if (doc.kind === "khong-doc-duoc" && !daKeuVeNhatKyMu) {
+      daKeuVeNhatKyMu = true;
+      // ⚠ MỘT LẦN, và phải KÊU: im lặng ở đây đúng bằng việc tuyên bố "đêm qua không có lượt hoãn
+      // nào" — một câu KHẲNG ĐỊNH dựng trên chỗ không có dữ liệu.
+      console.warn(
+        `[kbSyncScheduler] KHÔNG đọc lại được nhật ký hoãn (${doc.viSao}) ⇒ ngân sách hoãn ` +
+          `(${(kbSyncDeferBudgetMs() / MS_PER_HOUR).toFixed(2)} giờ) KHÔNG sống qua được lượt khởi ` +
+          `động lại này: mỗi lần khởi động lại sẽ mở một chuỗi MỚI, nên "quá đáy" có thể KHÔNG BAO ` +
+          `GIỜ kêu trong một vòng khởi-động-lại lặp (docker restart / tsx watch). Đây là MẤT KHẢ ` +
+          `NĂNG ĐỌC, KHÔNG phải bằng chứng "đêm qua không có lượt hoãn nào".`,
+      );
+    }
     const plan = planKbSyncDeferResume({
       now: Date.now(),
-      event: row?.event ?? null,
-      detail: row?.detail ?? null,
+      event: doc.kind === "co" ? doc.event : null,
+      detail: doc.kind === "co" ? doc.detail : null,
+      docDuoc: doc.kind !== "khong-doc-duoc",
     });
     if (plan.kind === "none") return plan;
 
-    const note = readKbSyncRefusalNoteFromDetail(row?.detail ?? null);
+    const note = readKbSyncRefusalNoteFromDetail(doc.kind === "co" ? doc.detail : null);
     // ⚠ `tsc` là thứ bắt buộc hai nhánh này phải TÁCH: biến thể `"alive"` đòi `nextRetryAt` và
     // `lastDelayMs` là SỐ, nên một lượt "khôi phục quá đáy nhưng vẫn giữ nextRetryAt" — đúng hình
     // dạng đã làm bản sao thứ hai của vị từ trôi — **không viết ra được**.
@@ -1457,7 +1528,10 @@ export async function resumeKbSyncDeferFromLog(): Promise<KbSyncDeferResumePlan>
 export function __resetKbSyncDeferForTests(): void {
   clearDeferTimer();
   deferStreak = null;
-  deferBudgetWarned = false;
+  daKeuVeNhatKyMu = false;
+  // ⚠ Pha 3 Task 5 — chốt "đã kêu về cấu hình" nay nằm ở `vramDefer` (một chốt cho MỖI biến
+  // `.env`). Không gọi dòng này thì ca "giá trị vô nghĩa ⇒ mặc định + KÊU" chỉ đỏ được ở lượt đầu.
+  __resetVramDeferForTests();
 }
 
 /** Chỉ dùng trong test — có hẹn giờ hoãn nào đang sống không (canh trực tiếp, không suy đoán). */

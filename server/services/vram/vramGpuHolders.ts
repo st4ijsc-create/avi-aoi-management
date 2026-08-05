@@ -535,6 +535,37 @@ function warnAboutBareExecutableDeclarations(ownExecutables: readonly string[]):
  *
  * KHÔNG BAO GIỜ ném.
  */
+/**
+ * ★★★ Pha 3 Task 5 (A) — **BẰNG CHỨNG THIẾT BỊ, CỬA HẸP NHẤT.** `nvidia-smi
+ * --query-compute-apps=pid,process_name` và **không gì khác** (không PowerShell, không phân loại).
+ * `null` = **KHÔNG ĐỌC ĐƯỢC** — người gọi PHẢI hiểu là *"không có bằng chứng"*.
+ *
+ * ⚠⚠ VÌ SAO TÁCH RA, VÀ VÌ SAO NGƯỜI THU HỒI DÙNG ĐÚNG CỬA NÀY CHỨ KHÔNG PHẢI BẢNG TIẾN TRÌNH:
+ * Task 1 đo được **ba mốc khác nhau** trên cùng một cái chết của một tiến trình CUDA — mã thoát
+ * ~16 ms · `nvidia-smi` về nền **≤33 ms** · handle của Node báo `"exit"` ~560 ms. Câu hỏi mà
+ * `preempt()` phải trả lời là *"**BYTE** đã nhả chưa"*, KHÔNG phải *"tiến trình đã chết chưa"* —
+ * hai câu hỏi lệch nhau **543 ms** trên chính hộ 7,8 GB. Danh sách compute-app là câu trả lời
+ * TRỰC TIẾP cho câu hỏi thứ nhất: PID vắng mặt ở đây ⇔ thiết bị không còn ghi nhận nó chiếm bộ
+ * nhớ. Dùng `readProcTable()` (Win32_Process) ở đó là trả lời câu hỏi THỨ HAI — và còn đắt gấp
+ * ~7 lần (316-1.500 ms so với 56-62 ms).
+ *
+ * ⚠ CÙNG CÔNG TẮC `VRAM_GPU_HOLDER_SCAN` — tắt quét là tắt luôn khả năng chứng minh, và
+ * `thuHoiHoNhanNuoi()` sẽ khai **thất bại trung thực** thay vì đoán.
+ * ⚠ KHÔNG rào theo nền tảng (khác `readGpuHolders`): `nvidia-smi` có trên mọi nền tảng có driver
+ * NVIDIA; chỉ `Win32_Process` mới là thứ chỉ Windows có.
+ *
+ * KHÔNG BAO GIỜ ném.
+ */
+export async function readComputeApps(): Promise<GpuHolder[] | null> {
+  if (scanDisabled()) return null;
+  const csv = await run(
+    "nvidia-smi",
+    ["--query-compute-apps=pid,process_name", "--format=csv,noheader"],
+    SMI_TIMEOUT_MS,
+  );
+  return csv === null ? null : parseComputeApps(csv);
+}
+
 export async function readGpuHolders(roots: readonly number[]): Promise<GpuHolderCensus | null> {
   if (scanDisabled()) return null;
   if (process.platform !== "win32") {
@@ -544,12 +575,8 @@ export async function readGpuHolders(roots: readonly number[]): Promise<GpuHolde
     );
     return null;
   }
-  const csv = await run(
-    "nvidia-smi",
-    ["--query-compute-apps=pid,process_name", "--format=csv,noheader"],
-    SMI_TIMEOUT_MS,
-  );
-  if (csv === null) {
+  const holders = await readComputeApps();
+  if (holders === null) {
     warnOnce(
       "[vram] KHÔNG liệt kê được tiến trình đang giữ GPU (nvidia-smi vắng/lỗi) — nền sẽ được ghi " +
         "là CHƯA XÁC MINH. Đây là mất phép ĐO, không phải bằng chứng sạch.",
@@ -557,7 +584,6 @@ export async function readGpuHolders(roots: readonly number[]): Promise<GpuHolde
     return null;
   }
 
-  const holders = parseComputeApps(csv);
   const ownExecutables = ownExecutablePaths();
   const commandSignatures = ownCommandSignatures();
   const appRoot = process.cwd();

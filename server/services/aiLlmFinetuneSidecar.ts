@@ -390,21 +390,47 @@ async function buildLoraTrainingSet(corpus: string, jobDir: string): Promise<Lor
 
 // ─── Spawn (no shell, arg array — mirrors localSidecarTrainer) ──
 
+/**
+ * ★★★ Pha 3 Task 5 (B) — mã thoát khi cổng sổ TỪ CHỐI và **ngân sách hoãn đã hết**. Tiến trình
+ * con KHÔNG được sinh ra ⇒ cưỡng chế vẫn nguyên; thứ được trả lại là hợp đồng `"Never rejects"`.
+ */
+const EXIT_VRAM_REFUSED = -3;
+
 function describeExitCode(code: number): string {
   if (code === -1) return "LoRA fine-tune sidecar failed to start (spawn error / command not found).";
   if (code === -2) return `LoRA fine-tune sidecar timed out after ${finetuneTimeoutMs()}ms.`;
+  if (code === EXIT_VRAM_REFUSED) {
+    return (
+      "VRAM refused for the LoRA fine-tune sidecar and the defer budget (VRAM_DEFER_BUDGET_HOURS) " +
+      "ran out — the sidecar was NEVER spawned. [VI] Cổng sổ VRAM từ chối và ngân sách hoãn đã hết; " +
+      "tiến trình fine-tune CHƯA từng chạy — xem sự kiện defer/defer_exceeded trong vram_events."
+    );
+  }
   return `LoRA fine-tune sidecar exited with code ${code}.`;
 }
 
 /**
  * Spawn the sidecar and resolve with its exit code once it exits (or a negative sentinel on a
- * spawn error / timeout). Never rejects — mirrors localSidecarTrainer.spawnAndPoll, minus the
- * progress-polling-to-DB piece (there is no `training_jobs` row for a LoRA run in this task —
- * see module doc comment's dataset-source section for the equivalent DB-integration boundary).
+ * spawn error / timeout / VRAM refusal past the defer budget). Never rejects — mirrors
+ * localSidecarTrainer.spawnAndPoll, minus the progress-polling-to-DB piece (there is no
+ * `training_jobs` row for a LoRA run in this task — see module doc comment's dataset-source
+ * section for the equivalent DB-integration boundary).
  */
 async function spawnAndWait(jobDir: string, baseModelPath: string): Promise<number> {
   // ★ C-2 (review TOÀN NHÁNH) — HỘ TIÊU THỤ VRAM THỨ MƯỜI MỘT, xin phép NGAY TRƯỚC khi spawn.
-  const vramTicket = await beginFinetuneVram(baseModelPath);
+  // ★★★ Pha 3 Task 5 — hợp đồng "Never rejects" được trả lại: `beginFinetuneVram()` đã hoãn tới
+  // hết ngân sách rồi mới ném, và tới đây thì việc đúng là một mã thoát CÓ TÊN.
+  let vramTicket: import("./vram/vramWiring").VramTicket;
+  try {
+    vramTicket = await beginFinetuneVram(baseModelPath);
+  } catch (err) {
+    if (!isVramRefusal(err)) throw err;
+    console.error(
+      `[aiLlmFinetuneSidecar] KHÔNG xin được VRAM sau khi đã hoãn hết ngân sách ⇒ KHÔNG spawn ` +
+        `tiến trình con. ${(err as Error)?.message ?? err}`,
+    );
+    return EXIT_VRAM_REFUSED;
+  }
 
   return new Promise<number>((resolve) => {
     let settled = false;
@@ -466,15 +492,29 @@ async function spawnAndWait(jobDir: string, baseModelPath: string): Promise<numb
 async function beginFinetuneVram(baseModelPath: string): Promise<import("./vram/vramWiring").VramTicket> {
   try {
     const { beginVramAllocation } = await import("./vram/vramWiring");
+    const { xinVramCoHoan, vramJobDeferBudgetMs } = await import("./vram/vramDefer");
     const envMb = Number(process.env.VRAM_FINETUNE_ESTIMATE_MB);
-    return await beginVramAllocation({
+    /**
+     * ★★★ Pha 3 Task 5 (B) — **HOÃN, KHÔNG ĐÁNH THẤT BẠI.** Cùng lý lẽ (và cùng cơ chế dùng chung)
+     * với `localSidecarTrainer.beginTrainerVram()`: một job QLoRA bị ghi THẤT BẠI vì card đang bận
+     * trong lúc này là câu trả lời sai — việc đó không hỏng, nó chỉ chưa tới lượt. Quá đáy thì lời
+     * từ chối **vẫn tới nơi** (`spawnAndWait` đổi nó thành mã thoát có tên), cưỡng chế không tắt.
+     */
+    return await xinVramCoHoan({
       owner: "sidecar:llm-finetune",
-      kind: "external-process",
+      leaseKind: "external-process",
       priority: "background",
-      filePath: baseModelPath,
-      configDefaultBytes: Number.isFinite(envMb) && envMb > 0 ? envMb * 1024 * 1024 : undefined,
-      ttlMs: finetuneTimeoutMs(),
-      releaseProof: "process-exit",
+      budgetMs: vramJobDeferBudgetMs(),
+      xin: () =>
+        beginVramAllocation({
+          owner: "sidecar:llm-finetune",
+          kind: "external-process",
+          priority: "background",
+          filePath: baseModelPath,
+          configDefaultBytes: Number.isFinite(envMb) && envMb > 0 ? envMb * 1024 * 1024 : undefined,
+          ttlMs: finetuneTimeoutMs(),
+          releaseProof: "process-exit",
+        }),
     });
   } catch (err) {
     // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG: nuốt ở đây là TẮT cưỡng chế tại điểm gọi này.

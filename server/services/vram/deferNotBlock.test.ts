@@ -865,6 +865,54 @@ describe("§5 — I-1: chuỗi hoãn SỐNG QUA một lần khởi động lại
     expect(p.kind).toBe("overdue");
   });
 
+  /**
+   * ★★★ Pha 3 Task 5 (D) — **"KHÔNG ĐỌC ĐƯỢC" ≠ "KHÔNG CÓ DÒNG NÀO".**
+   *
+   * Bản Task 6 ép cả hai về `event: null` ⇒ cùng lý do `"khong-co-dong-hoan-nao"`. Hậu quả ở cài
+   * đặt **không DB**: mỗi lượt khởi động lại kết luận *"đêm qua không có lượt hoãn nào"* — một câu
+   * KHẲNG ĐỊNH dựng trên chỗ không có dữ liệu — nên đáy 6 giờ không bao giờ chạm tới và
+   * `defer_exceeded` **không bao giờ kêu**. Task 5 không vá được cái mù (không kho bền thì không
+   * có gì để đọc lại), nhưng bắt nó phải **CÓ TÊN**.
+   *
+   * ⚠ Cả hai vẫn cho `kind: "none"` — hành vi ĐÚNG, và đó là lý do một ca chỉ nhìn `kind` sẽ
+   * **KHÔNG BAO GIỜ ĐỎ** dưới đột biến "bỏ vế `docDuoc`". Ca này nhìn `reason`.
+   */
+  it("★★★ (Task 5 D) KHÔNG ĐỌC ĐƯỢC nhật ký ⇒ lý do RIÊNG, không đội lốt 'không có dòng nào'", () => {
+    const mu = planKbSyncDeferResume({ now: T0, event: null, detail: null, docDuoc: false });
+    const rong = planKbSyncDeferResume({ now: T0, event: null, detail: null, docDuoc: true });
+    expect(mu.kind).toBe("none");
+    expect(rong.kind).toBe("none");
+    expect(mu.reason, "phải nói ra là MẤT KHẢ NĂNG ĐỌC").toBe("khong-doc-duoc-nhat-ky-hoan");
+    expect(rong.reason).toBe("khong-co-dong-hoan-nao");
+    expect(mu.reason).not.toBe(rong.reason);
+  });
+
+  it("★★ (Task 5 D) `docDuoc: false` THẮNG cả một dòng đọc được — không khôi phục theo dữ liệu mình không đọc nổi", () => {
+    const p = planKbSyncDeferResume({
+      now: T0 + 30 * PHUT,
+      event: "defer",
+      detail: detailDefer(),
+      docDuoc: false,
+    });
+    expect(p.kind).toBe("none");
+    expect(p.reason).toBe("khong-doc-duoc-nhat-ky-hoan");
+  });
+
+  it("★★★ (Task 5 D) KHÔNG CÓ DB ⇒ `resumeKbSyncDeferFromLog()` KÊU MỘT LẦN, không im lặng", async () => {
+    const keu = vi.spyOn(console, "warn").mockImplementation(() => {});
+    kho.coDb = false;
+    kho.rows = [];
+    const p = await resumeKbSyncDeferFromLog();
+    expect(p.kind).toBe("none");
+    expect(p.reason).toBe("khong-doc-duoc-nhat-ky-hoan");
+    const dong = keu.mock.calls.map((c) => String(c[0])).filter((s) => s.includes("MẤT KHẢ NĂNG ĐỌC"));
+    expect(dong.length, "phải có ĐÚNG một tiếng kêu").toBe(1);
+    // Lượt thứ hai KHÔNG được kêu lại (chốt một-lần — cùng kỷ luật `deferBudgetWarned`).
+    await resumeKbSyncDeferFromLog();
+    expect(keu.mock.calls.map((c) => String(c[0])).filter((s) => s.includes("MẤT KHẢ NĂNG ĐỌC")).length).toBe(1);
+    keu.mockRestore();
+  });
+
   // ── vòng đời thật ───────────────────────────────────────────────────────────────────────────
   it("★★★ (I-1) khởi động lại giữa chuỗi ⇒ VŨ TRANG LẠI, và lượt thử lại NỔ THẬT", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});

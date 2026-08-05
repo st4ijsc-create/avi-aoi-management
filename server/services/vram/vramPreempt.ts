@@ -93,6 +93,33 @@ const NGUOI_THI_HANH: Record<VramReclaimerId, (step: VramPreemptStep) => Promise
     const { stopSidecar } = await import("../llamaVisionSidecar");
     return await stopSidecar();
   },
+  /**
+   * ★★★ Pha 3 Task 5 (A) — **HỘ NGOÀI TIẾN TRÌNH.** Đây là dòng làm câu mở đầu của file này thôi
+   * đúng một nửa: từ đây `preempt()` **với tới được** một tiến trình mà ta KHÔNG sinh ra.
+   *
+   * Dân số: đúng những giấy phép do `vramReconciler.chayLuotNhanNuoi()` **dựng lại** cho một
+   * sidecar mồ côi (Task 4, §6). Chúng mang dấu `#nhan-nuoi-pid=N` trong `owner`, và
+   * `pidTuOwnerNhanNuoi()` là **bản dịch DUY NHẤT** của dấu đó — nên không có đường nào để một hộ
+   * khác (sidecar CỦA TA, hàng của anh em còn sống, model GGUF) lọt vào đây.
+   *
+   * ⚠⚠ VÌ SAO KHÔNG TỰ GIẾT Ở ĐÂY MÀ GỌI SANG `vramReconciler`: `leaseNhanNuoi` (bảng
+   * pid → giấy phép) có **MỘT người ghi**, và người đó là reconciler. Một lượt `process.kill()` +
+   * `release()` viết tay ở file này là **người ghi thứ hai** cho cùng một bất biến — đúng thứ
+   * ràng buộc 12 cấm, và hậu quả cụ thể là một nhịp đối chiếu chen vào giữa sẽ thấy một mục trỏ
+   * tới giấy phép đã nhả.
+   * ⚠ `thuHoiHoNhanNuoi()` chỉ trả `true` khi **`nvidia-smi` xác nhận PID không còn giữ GPU** —
+   * hợp đồng ghi ở đầu bảng này (*"`true` chỉ khi đã THẬT SỰ giết"*) được giữ bằng **bằng chứng
+   * THIẾT BỊ**, không bằng lời khai của lệnh `kill`.
+   */
+  "orphan-pid": async (step) => {
+    const { pidTuOwnerNhanNuoi } = await import("./vramAdoption");
+    const pid = pidTuOwnerNhanNuoi(step.owner);
+    // `owner` không mang dấu nhận nuôi ⇒ giấy phép này KHÔNG phải hộ mồ côi ⇒ không ai thu hồi
+    // được nó ở đây. Trả `false` (một lời khai thất bại trung thực), TUYỆT ĐỐI không đoán một PID.
+    if (pid === null) return false;
+    const { thuHoiHoNhanNuoi } = await import("./vramReconciler");
+    return await thuHoiHoNhanNuoi(pid);
+  },
 };
 
 function soHuuHan(n: number): number {

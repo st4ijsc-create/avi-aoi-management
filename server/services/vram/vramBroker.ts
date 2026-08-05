@@ -15,7 +15,7 @@ import type { VramDecisionTick } from "./vramTickCell";
  * `vramSharedLedgerStore`, và file này **không** nhập file đó một dòng nào.
  */
 import { enqueueSharedLedgerWrite, rowFromLease, sharedLedgerSelfKey } from "./vramSharedLedger";
-import type { SharedLedgerFact } from "./vramSharedLedger";
+import type { SharedLedgerFact, SharedLeaseRow } from "./vramSharedLedger";
 
 /**
  * Trần thiết bị và dự trữ an toàn (spec §5.1). Đọc một lần, không I/O trên đường quyết định.
@@ -161,6 +161,37 @@ function holderFactFromLease(l: VramLease): VramHolderFact {
     priority: l.request.priority,
     measured: l.actualBytes !== null && l.measureSource !== undefined && l.measureSource !== "none",
     reclaimable: coThiHanhThuHoi(l),
+    // Sổ CỤC BỘ ⇒ hộ của CHÍNH tiến trình này.
+    processKey: null,
+  };
+}
+
+/**
+ * ★★★ Pha 3 Task 5 (C) — **HÀNG SỔ CHUNG → HỘ.** Nửa còn lại của `holderFactFromLease()`.
+ *
+ * ⚠⚠ VÌ SAO PHẢI CÓ HÀM NÀY, VÀ VÌ SAO NÓ NẰM Ở ĐÂY: từ Pha 3 Task 2, `ledgerTotalBytes` đã
+ * **TRỪ** phần byte của anh em, nhưng `holders` vẫn chỉ liệt kê sổ CỤC BỘ ⇒ người trực đọc được
+ * đúng câu *"còn 13.000 MiB, đang giữ: (không có)"* trong khi một `worker` đang giữ 17 GB. Bất
+ * biến ngầm *"Σ holders ≈ ledgerTotalBytes"* **VỠ**, và câu rào đón *"chỉ các hộ ĐÃ NỐI SỔ"* nói
+ * về một lỗ hổng KHÁC nên nó không cứu được.
+ *
+ * `SharedLeaseRow` mang **đủ 6/6** trường của `VramHolderFact` (Task 2 đã ghi sẵn), nên việc duy
+ * nhất còn lại là **một** phép dịch — đặt cạnh phép dịch kia, dùng **cùng** vị từ `reclaimable`.
+ * Dựng nó lần thứ hai ở `vramRefusal`/`vramReconciler` là hai bản sao của một vị từ (ràng buộc 12).
+ *
+ * ⚠ `reclaimable` đi qua `nguoiThiHanhThuHoiTu()` — **cùng hàm** mà giấy phép cục bộ đi qua. Một
+ * phép so viết tay `row.reclaimer !== null` ở đây sẽ **quên vế NHÀN RỖI** và câu từ chối lại hứa
+ * nhường được một hộ đang phục vụ.
+ */
+export function holderFactFromSharedRow(row: SharedLeaseRow): VramHolderFact {
+  return {
+    owner: row.owner,
+    kind: row.leaseKind,
+    bytes: row.bytes,
+    priority: row.priority,
+    measured: row.measured,
+    reclaimable: nguoiThiHanhThuHoiTu(row.reclaimer, row.refCount) !== null,
+    processKey: row.processKey,
   };
 }
 
@@ -204,10 +235,28 @@ function holderFactFromLease(l: VramLease): VramHolderFact {
  *     (báo cáo Task 6 §8). Thu hồi có điều phối xuyên tiến trình là **Pha 3**.
  */
 export function nguoiThiHanhThuHoi(l: VramLease): VramReclaimerId | null {
-  const nguoi = l.request.reclaimer;
-  if (nguoi === undefined) return null;
-  if (l.refCount !== 0) return null;
-  return nguoi;
+  return nguoiThiHanhThuHoiTu(l.request.reclaimer, l.refCount);
+}
+
+/**
+ * ★★★ Pha 3 Task 5 (C) — **LÕI CỦA VỊ TỪ, TRÊN HAI Ô CHỨ KHÔNG TRÊN MỘT `VramLease`.**
+ *
+ * Sổ chung không có `VramLease` — nó có `SharedLeaseRow`, và hàng đó mang đúng hai ô mà câu hỏi
+ * này cần (`reclaimer`, `refCount`). Tách lõi ra là cách DUY NHẤT để hộ của anh em đi qua **cùng
+ * một** vị từ mà không phải dựng một `VramLease` giả — và không phải viết tay
+ * `row.reclaimer !== null` (một phép so **quên vế NHÀN RỖI**, tức lại HỨA NGƯỢC).
+ *
+ * ⚠ HAI ĐIỀU KIỆN, CẢ HAI ĐỀU CẦN — xem `nguoiThiHanhThuHoi()` bên trên để biết vì sao.
+ * ⚠ `refCount` không hữu hạn (một hàng sổ chung méo) ⇒ `!== 0` ⇒ **KHÔNG thu hồi được**: chiều
+ * CHẶT (không hứa), đúng ràng buộc 8.
+ */
+export function nguoiThiHanhThuHoiTu(
+  reclaimer: VramReclaimerId | null | undefined,
+  refCount: number,
+): VramReclaimerId | null {
+  if (reclaimer === undefined || reclaimer === null) return null;
+  if (refCount !== 0) return null;
+  return reclaimer;
 }
 
 /** Dạng `boolean` của vị từ trên — **KHÔNG có bản cài đặt thứ hai**, chỉ là một phép so `!== null`. */
@@ -430,12 +479,27 @@ export function refusalFactsFor(args: {
   /** ★ Task 7 — số khe `gguf-model` phải dọn (trần ĐẾM). Đ4: KHÔNG cộng vào thiếu hụt BYTE. */
   readonly slotsNeeded?: number;
   /**
-   * ★ M-6 (Pha 3 Task 2) — phần `ledgerTotalBytes` do TIẾN TRÌNH KHÁC giữ.
-   * ⚠ BẮT BUỘC (không optional, không `?? 0`): xem `VramRefusalInput.foreignLedgerBytes`.
+   * ★★★ Pha 3 Task 5 (C) — **MỘT NGUỒN DUY NHẤT cho cả CON SỐ lẫn DANH SÁCH hộ của anh em.**
+   *
+   * Bản Task 2 nhận riêng một `foreignLedgerBytes: number`, và đó chính là chỗ đẻ ra khuyết tật:
+   * con số đã trừ phần anh em trong khi `holders` vẫn chỉ có sổ cục bộ ⇒ *"còn 13.000 MiB, đang
+   * giữ: (không có)"*. Nhận nguyên `SharedLedgerFact` thì hai vế **buộc phải** đến từ cùng một bản
+   * sao, và không có đường nào để một người gọi truyền con số của bản này với danh sách của bản kia.
+   * ⚠ BẮT BUỘC CÓ MẶT (không optional): `null` = *"CHƯA LÀM MỚI LẦN NÀO"* — một câu trả lời hợp lệ
+   * và có nghĩa riêng (`"shared-ledger-unasked"` bên `applyEnforcement`), khác hẳn "không có ai".
    */
-  readonly foreignLedgerBytes: number;
+  readonly sharedLedger: SharedLedgerFact;
 }): VramRefusalFacts {
   const { request, headroomInput, headroom, unledgered } = args;
+  /**
+   * ⚠ `?? 0` / `?? []` LÀ HAI SỢI DÂY VÀ CHÚNG DÙNG CHUNG MỘT LƯỚI (ràng buộc 11):
+   * `sharedLedger === null` ⇒ ĐANG MÙ về anh em, và lưới là lý do `"shared-ledger-unasked"` mà
+   * `applyEnforcement()` gắn vào **cùng** quyết định này (2 đơn vị mất-tin-cậy). Hai `??` này
+   * **không được** rơi vào hai nhánh khác nhau: một câu từ chối in `0 MiB` của anh em kèm một
+   * danh sách hộ anh em KHÔNG rỗng (hoặc ngược lại) là hai vế nói ngược nhau về cùng một bản sao.
+   */
+  const anhEmBytes = args.sharedLedger?.foreignBytes ?? 0;
+  const anhEmHo = args.sharedLedger?.foreignHolders ?? [];
   return buildVramRefusal({
     requestedBytes: request.estimatedBytes,
     owner: request.owner,
@@ -445,9 +509,18 @@ export function refusalFactsFor(args: {
     blind: headroom.blind,
     ledgerTotalBytes: headroomInput.ledgerTotalBytes,
     // ★ M-6 — phần của con số trên do TIẾN TRÌNH KHÁC giữ. Cùng nguồn với `decision.foreignLedgerBytes`.
-    foreignLedgerBytes: args.foreignLedgerBytes,
+    foreignLedgerBytes: anhEmBytes,
     usedBytes: headroom.usedBytes,
-    holders: ledgerHolders(),
+    /**
+     * ★★★ Task 5 (C) — **CỤC BỘ TRƯỚC, ANH EM SAU.** Đây là lượt vá bất biến ngầm
+     * *"Σ holders ≈ ledgerTotalBytes"* mà Task 2 làm vỡ.
+     * ⚠ Anh em **KHÔNG** vào `preemptable` (ngay dưới) và đó là một quyết định, không phải bỏ sót:
+     * *"ai đang giữ"* là thứ người trực cần BIẾT, còn *"ai có thể nhường"* là một lời HỨA — và hôm
+     * nay `preempt()` chỉ với tới được hộ ngoài tiến trình qua giấy phép **NHẬN NUÔI** (đã nằm
+     * trong sổ CỤC BỘ). Cho hàng của một anh em CÒN SỐNG vào "tổng nhường được" là HỨA NGƯỢC —
+     * đúng lớp lỗi mà `reclaimable` được đẻ ra để diệt.
+     */
+    holders: [...ledgerHolders(), ...anhEmHo.map(holderFactFromSharedRow)],
     preemptable: preemptCandidates(
       request.priority,
       request.estimatedBytes - args.effectiveHeadroomBytes,
@@ -710,7 +783,8 @@ export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): 
       effectiveHeadroomBytes: enf.effectiveHeadroomBytes,
       degradedReasons: reasons,
       slotsNeeded,
-      foreignLedgerBytes: decision.foreignLedgerBytes,
+      // ★ Task 5 (C) — NGUYÊN bản sao, không tách con số ra khỏi danh sách.
+      sharedLedger: ctx.sharedLedger,
     });
     return {
       lease: null,

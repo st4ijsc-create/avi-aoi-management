@@ -3009,10 +3009,22 @@ async function getEmbeddingContext(modelId: string, loaded: LoadedModel): Promis
     // Pha 1 Task 5 — CHỈ KHAI BÁO. Cùng lý do đã ghi ở ensureTextContext(): không có file
     // trên đĩa để suy ra kích thước, và CỐ Ý không bịa `configDefaultBytes` — đo rồi học.
     // Mức `background`: đường nhúng phục vụ RAG, nhường chỗ cho suy luận và cho AOI.
-    const vramTicket = await beginVram({
+    // ★ Pha 3 Task 5 (B) — hộ `background` thứ SÁU. Đây cũng là **đường PHỤC VỤ YÊU CẦU**
+    // (`generateEmbedding()` chạy dưới một lượt tìm kiếm/indexing đang đợi), nên ngân sách hoãn
+    // mặc định là **0**: không chặn ai, nhưng lời từ chối nay để lại `defer_exceeded` truy được
+    // bằng SQL + một ô trạng thái ở mặt sức khoẻ, thay vì chỉ một câu ném lên người gọi.
+    const { xinVramCoHoan, vramRequestDeferBudgetMs } = await import("./vram/vramDefer");
+    const vramTicket = await xinVramCoHoan({
       owner: `gguf-embed-ctx:${modelId}`,
-      kind: "gguf-embed-context",
+      leaseKind: "gguf-embed-context",
       priority: "background",
+      budgetMs: vramRequestDeferBudgetMs(),
+      xin: () =>
+        beginVram({
+          owner: `gguf-embed-ctx:${modelId}`,
+          kind: "gguf-embed-context",
+          priority: "background",
+        }),
     });
     try {
       const ctx = await loaded.model.createEmbeddingContext({
