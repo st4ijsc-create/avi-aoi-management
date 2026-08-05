@@ -13,6 +13,7 @@
     "start:worker": "cross-env NODE_ENV=production node dist/worker.js",
     "start:edge": "cross-env NODE_ENV=production node dist/edgeGatewayMain.js",
     "check": "tsc --noEmit",
+    "check:tests": "cross-env NODE_OPTIONS=--max-old-space-size=8192 tsc --noEmit -p tsconfig.tests.json",
     "format": "prettier --write .",
     "lint:tokens": "node scripts/lint-frontend-tokens.mjs",
     "test": "vitest run",

@@ -78,6 +78,14 @@ jobs:
       - name: Typecheck
         run: pnpm run check
 
+      # tsconfig.json LOẠI TRỪ **/*.test.ts ⇒ bước "Typecheck" ở trên không canh một
+      # dòng nào trong 820 file test. Đó là cơ chế đứng sau lớp lỗi "lưới xanh vì lý
+      # do sai" (ca gọi hàm sản xuất bằng tên ô SAI vẫn biên dịch ⇒ khẳng định đúng
+      # một cách tầm thường). Bước này canh file test qua tsconfig.tests.json, với
+      # danh sách CÁCH LY 174 file nợ cũ — mọi file test MỚI được canh ngay.
+      - name: Typecheck (file test — tsconfig.tests.json)
+        run: pnpm run check:tests
+
       - name: Contract schema BACKWARD gate (doc 44 G2.5)
         run: node scripts/contracts-compat-check.mjs
 
