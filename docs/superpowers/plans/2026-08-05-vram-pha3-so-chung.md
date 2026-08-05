@@ -132,4 +132,9 @@ Server khởi động lại trong khi sidecar còn giữ **7,8 GB** ⇒ sổ m�
 | 6 | `npx vitest run server/services/vram/` xanh kể cả `--sequence.shuffle.tests`; `tsc` sạch; `i18n:check` 0 lệch | trước push |
 
 ⚠ **Ô 100,7 % của Đợt 2 phải được giải BẰNG CƠ CHẾ**, không bằng cấu hình — đó là điều kiện ra gốc của Pha 3 trong spec §10.
+
+> 🟠 **KẾT LUẬN SAU REVIEW TOÀN NHÁNH — ghi cho đúng: *"cơ chế ĐÃ DỰNG, ô CHƯA ĐO LẠI"*, KHÔNG ghi *"đã giải"*.**
+> Cửa **BYTE** nay là cục bộ + chung (`vramBroker.ts:720`) và vế nền đã trừ anh em (`vramReconciler.ts:1081`), nên một roster 100,7 % sẽ bị **TỪ CHỐI** ở tiến trình xin sau thay vì tràn — đó đúng là "giải bằng cơ chế". Nhưng **không một báo cáo nào chạy lại bảng roster của Đợt 2 dưới Pha 3** để cho thấy ô đó lật, và hai lỗ phải nói cùng lúc: (a) cửa sổ 60 s của bản sao đọc, trong đó phụ phí tối đa **2.048 MiB** đứng trước một khả năng **17 GB**; (b) cửa **ĐẾM** giữ mỗi-tiến-trình theo quyết định chủ dự án ⇒ **8 model/card** vẫn qua được cửa byte.
+> Đây là lớp **"hứa nhiều hơn dữ liệu"** đã bắt **chín lần**; một phép đo lại bảng roster Đợt 2 là việc còn nợ, không phải một câu kết luận.
+
 ⚠ Nếu một điều kiện **không đạt**, ghi thẳng là **không đạt**. Tiền lệ: Pha 1 công bố cổng ra **chưa đạt**, và đó là kết quả **đúng**.
