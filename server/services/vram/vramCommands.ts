@@ -11,8 +11,15 @@
  *    `retryDeferred` → `kbSyncScheduler.retryKbSyncDeferNow()` (→ `armDeferTimer()`).
  *    Không một `process.kill`, không một `release()`, không một phép so quyền nào viết ở file này.
  * 2. **CÂU CHỮ KHÔNG HỨA NHIỀU HƠN DỮ LIỆU.** Agent đọc kết quả để **quyết định bước tiếp theo**:
- *    `outcome: "reclaimed"` chỉ phát ra khi **byte đã rời SỔ** (`freedBytes > 0`); mọi lượt từ chối
- *    mang `reason` máy-đọc-được; và mọi kết quả mang **PHẠM VI QUAN SÁT** của chính nó.
+ *    `outcome: "reclaimed"` chỉ phát ra khi **GIẤY PHÉP CỦA CHÍNH HỘ ĐÓ đã rời sổ**
+ *    (`leaseLeftLedger`); mọi lượt từ chối mang `reason` máy-đọc-được; và mọi kết quả mang
+ *    **PHẠM VI QUAN SÁT** của chính nó.
+ *    ⚠⚠ **KHÔNG PHẢI `freedBytes > 0`** — đó chính là vị từ mà C-1 (review) vừa gỡ bỏ: `freedBytes`
+ *    dựng từ một hiệu số **TỔNG**, mà tổng là đại lượng **dùng chung**, nên nó nhận cả byte của hộ
+ *    khác vừa nhả trong cùng cửa sổ `await`.
+ *    ⚠ Hệ quả phải đọc đúng: **`"reclaimed"` kèm `freedBytes: 0` là một kết cục HỢP LỆ và tới được
+ *    thật** — giấy phép đã rời sổ, nhưng một lượt cấp phát ≥ `step.bytes` chen vào cùng cửa sổ làm
+ *    hiệu số tổng không còn dương. Bằng chứng là `leaseLeftLedger`, KHÔNG phải con số byte.
  *
  * ⚠ `scope` + `observedFromProcessKey` (bàn giao cứng của Task 1, C-1): ba lệnh này chạy trong bộ
  * nhớ của **tiến trình đang trả lời**. Sổ cục bộ, ô hoãn, `leaseNhanNuoi` — tất cả đều là sự thật
@@ -206,6 +213,23 @@ export async function vramReleaseStaleCommand(leaseKey: string): Promise<VramRel
  * ⚠ Phép phân giải `owner → host` dùng **đúng vị từ của mặt ĐỌC** (`vramBackgroundHostForOwner`),
  * nên một hộ `background` mới khai ở `HO_BACKGROUND` là có mặt ở **cả hai** mặt cùng lúc — không
  * có bản sao thứ hai của bản khai dân số.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 BA ĐƯỜNG **KHÔNG ĐƯỢC ĐI** ĐỂ "LÀM CHO LỆNH NÀY CÓ ÍCH Ở `api`** (ghi thẳng vào mã vì Task 5
+ * sẽ gặp đúng cám dỗ này — cron sống ở `worker`, tRPC phục vụ ở `api`, nên ở `api` lệnh **luôn**
+ * trả `host-not-running-in-this-process`).
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 1. **Gọi thẳng `runKbSyncNow()`** — bỏ qua `ensureDeferArmed()` (lưới cho đường thoát
+ *    `already_running`) và có thể chạy **song song** một hẹn giờ đang treo. Đây là đường thứ hai.
+ * 2. ⚠⚠ **Ghi một hàng "lệnh đánh thức" vào DB cho `worker` nhặt** — nghe vô hại nhất, và là đường
+ *    **tệ nhất**: nó dựng một **người ghi + người đọc MỚI** cho một bất biến **đã có chủ**
+ *    (`deferStreak` + `deferTimer`, một người ghi duy nhất là `kbSyncScheduler`). Đúng lớp lỗi
+ *    *"hai bản sao vị từ dưới một bất biến"* đã đẻ ba Critical liên tiếp trong chuỗi pha này.
+ * 3. **Biến lệnh thành no-op im lặng ở `api`** cho "trông đẹp" — đó chính là *"im lặng thành công"*,
+ *    thứ ràng buộc của task này tồn tại để cấm.
+ * ⇒ Cách ĐÚNG DUY NHẤT để lệnh có ích: cho **mặt ĐỌC** trả lời trước *"lệnh nào với tới hộ này từ
+ * chỗ đứng hiện tại"* (bàn giao Task 4 ở `VramAgentHolderView.reclaimable`), để Agent không bao giờ
+ * tốn một lượt gọi vô ích. Cửa đóng **có biển** không phải một lời nói dối.
  */
 export type VramRetryDeferredCommandReason =
   | "unknown-background-host"

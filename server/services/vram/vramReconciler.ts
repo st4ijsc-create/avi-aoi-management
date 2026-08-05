@@ -1562,6 +1562,16 @@ function donHangMa(danhSach: readonly HangMaCanXoa[]): void {
  * tay** — `ma.bytes`, byte của **chính hàng vừa được chứng minh là MA**. `foreignBytesBefore/After`
  * ở lại làm **BỐI CẢNH**, không còn là nguồn của một phép trừ.
  *
+ * ⚠ **m-6 (re-review) — GIỚI HẠN CÒN LẠI, KHAI THẲNG (chưa sửa, có chủ ý).** `ma.bytes` đến từ
+ * `banSao` đọc ở **ĐẦU** hàm, tức một **ảnh chụp CŨ** so với thời điểm gỡ. Nếu **CHÍNH hàng đó**
+ * `commit()` một số đo NHỎ HƠN trong cửa sổ `await readProcTableSafe()` thì lệnh báo **quá tay**
+ * (reviewer đo được lệch **2.500 MiB**). Đây là một hướng hẹp hơn hẳn lỗi vừa vá: nó đòi hàng
+ * **của chính ta đang dọn** phải đổi byte trong đúng cửa sổ đó, và độ lệch bị chặn bởi byte của
+ * **một** hàng — không phải nhận byte của một hàng **khác** như bản trước.
+ * ⇒ **Cách siết nếu sau này cần** (một dòng, KHÔNG làm ở task này): đọc byte từ **bản sao SỐNG tại
+ * thời điểm gỡ** thay vì từ `ma` — `donHangMa()` đã chạm bản sao sống rồi, nên không phải dựng
+ * đường mới. Chưa làm vì nó đổi **hành vi**, và vòng này chỉ được đụng tài liệu.
+ *
  * KHÔNG BAO GIỜ ném.
  */
 export type VramReleaseStaleRefusal =
