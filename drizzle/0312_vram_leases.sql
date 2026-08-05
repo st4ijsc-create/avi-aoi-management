@@ -26,6 +26,25 @@
 -- trình khác nhận đúng PID đó sẽ "kế thừa" giấy phép của người đã chết và sổ
 -- chung khai một khối byte không tồn tại (cùng lớp lỗi nợ N2-2 của Pha 2A).
 --
+-- ⚠⚠⚠ RÀNG BUỘC TOPO — **MỘT DATABASE = MỘT THIẾT BỊ GPU.** (I-2, review TOÀN
+-- NHÁNH.) Bảng này CỐ Ý không có cột `host`/`device`, và hàng nền
+-- (`leaseKey = 'vram:baseline'`) là **MỘT hàng cho CẢ DB**. Hệ quả, phải đọc
+-- trước khi ai nối máy thứ hai:
+--   • mọi tiến trình ghi vào một DB đang khai rằng chúng dùng CHUNG một card;
+--     `foreignBytes` cộng thẳng byte của mọi hàng không phải của mình, không hỏi
+--     chúng nằm ở máy nào;
+--   • hai máy dùng chung một Postgres ⇒ nền của card A bị đọc làm nền của card B,
+--     và dư địa của mỗi bên bị trừ cho byte NẰM TRÊN CARD KHÁC. Không cơ chế nào
+--     trong Pha 3 phát hiện được chuyện đó — nó KHÔNG phải một lệch đo được, nó
+--     là một phép cộng sai dân số.
+-- HÔM NAY ràng buộc này ĐÚNG: `ROLE` chỉ có `api`/`worker`/all-in-one trên cùng
+-- một máy (`edge` là dịch vụ C#, sidecar là tiến trình con — cả hai KHÔNG gọi
+-- `startVramReconciler()` nên KHÔNG đọc/ghi bảng này; xem
+-- `vramSharedLedgerStore.ts` M-7).
+-- Nối site/edge thứ hai ⇒ **PHẢI** thêm chiều thiết bị TRƯỚC: cột `deviceKey`
+-- (host + UUID GPU) vào khoá chính, vào `vram:baseline`, và vào phép lọc của
+-- `dungBanSao()`. Đừng nối trước rồi vá sau.
+--
 -- ADDITIVE + IDEMPOTENT. Run by owner `aoi` (DDL convention — KHÔNG chạy bằng
 -- role `avi_app`, sẽ lỗi 42501). Áp lên CẢ DB chính LẪN DB test
 -- `aoi_management_test`.

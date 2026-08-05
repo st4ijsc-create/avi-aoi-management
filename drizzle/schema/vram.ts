@@ -76,6 +76,16 @@ export type InsertVramEvent = typeof vramEvents.$inferInsert;
  *
  * ⚠ `bytes` là `bigint` ⇒ mọi giá trị không hữu hạn phải bị chặn TRƯỚC khi tới đây (`22P02` làm
  * mất **cả lô**, đúng tiền lệ migration 0311). Hàng rào: `vramSharedLedgerStore.rowFromLease()`.
+ *
+ * ⚠⚠⚠ RÀNG BUỘC TOPO — **MỘT DATABASE = MỘT THIẾT BỊ GPU** (I-2, review TOÀN NHÁNH). Bảng này CỐ Ý
+ * không có cột `host`/`device`, và hàng nền (`leaseKey = "vram:baseline"`) là **MỘT hàng cho cả
+ * DB**. `foreignBytes` cộng thẳng byte của mọi hàng không phải của mình, **không hỏi chúng nằm
+ * trên card nào** ⇒ hai máy dùng chung một Postgres thì nền của card A bị đọc làm nền của card B,
+ * và **không cơ chế nào của Pha 3 phát hiện được** (đó không phải một lệch ĐO ĐƯỢC, đó là một phép
+ * cộng sai DÂN SỐ). Hôm nay ràng buộc đúng: chỉ tiến trình Node gọi `startVramReconciler()` mới
+ * đọc/ghi bảng này, và chúng nằm trên cùng một máy — `edge` là dịch vụ **C#**, sidecar là **tiến
+ * trình con không có broker**. Nối site/`edge` thứ hai ⇒ **PHẢI thêm `deviceKey` (host + UUID GPU)
+ * vào khoá chính, vào hàng nền và vào phép lọc của `vramSharedLedger.dungBanSao()` TRƯỚC.**
  */
 export const vramLeases = pgTable("vram_leases", {
   /**

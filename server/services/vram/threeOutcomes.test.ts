@@ -1271,7 +1271,10 @@ describe("§6 — ỐNG DẪN SỰ KIỆN: giá trị không hữu hạn KHÔNG 
     logVramEvent({ event: "commit", owner: "gguf:fixture-17000", leaseKind: "gguf-model", priority: "interactive", actualBytes: FIXTURE_BYTES });
 
     expect(await flushVramEvents(), "MẤT CẢ LÔ là hậu quả thật của một ô bigint không hữu hạn").toBe(2);
-    const rows = insert.mock.calls[0][0] as unknown as Array<Record<string, unknown>>;
+    // ⚠ m-4 — `vi.fn(async () => undefined)` không khai tham số ⇒ `calls[0]` là **tuple RỖNG** với
+    // `tsc`, và `[0]` trên nó là TS2493. Ép qua `unknown` đúng khuôn đã dùng ở ca 6 (`:1255`) —
+    // đây là dòng cuối cùng chặn việc bật một bước CI chạy `tsc` cho file test.
+    const rows = (insert.mock.calls[0] as unknown as [Array<Record<string, unknown>>])[0];
     expect(rows[0].actualBytes).toBeNull();
     expect(rows[1].actualBytes).toBe(FIXTURE_BYTES);
   });

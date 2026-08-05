@@ -418,6 +418,16 @@ export function scheduleSharedLedgerSync(delayMs = 250): void {
  * nên mọi vai trò đều bật. ⇒ Ai thêm một điểm cấp phát VRAM ở một tiến trình mới (script CLI, cron
  * riêng, worker phụ) **phải gọi `startVramReconciler()`**, nếu không tiến trình đó là một hộ tiêu
  * thụ VÔ HÌNH — đúng loại hộ mà Đợt 0 tốn cả một pha để đếm cho đủ.
+ *
+ * ⚠⚠⚠ RÀNG BUỘC THỨ HAI, CÙNG HẠNG — **MỘT DATABASE = MỘT THIẾT BỊ GPU** (I-2, review TOÀN NHÁNH).
+ * Bảng `vram_leases` **không có cột host/device** và hàng `vram:baseline` là **MỘT hàng cho cả DB**
+ * (xem đầu `drizzle/0312_vram_leases.sql`). `foreignBytes` cộng thẳng byte của mọi hàng không phải
+ * của mình, **không hỏi chúng nằm trên card nào**. ⇒ Hai máy dùng chung một Postgres thì nền của
+ * card A bị đọc làm nền của card B và dư địa mỗi bên bị trừ cho byte nằm trên card KHÁC — và
+ * **không cơ chế nào của Pha 3 phát hiện được**: đó không phải một lệch đo được, đó là một phép
+ * cộng sai DÂN SỐ. Hôm nay vô hại (một máy, `api`/`worker`/all-in-one); nối site hoặc `edge` thứ
+ * hai thì **PHẢI thêm chiều thiết bị TRƯỚC** (`deviceKey` = host + UUID GPU, vào khoá chính, vào
+ * hàng nền, và vào phép lọc của `vramSharedLedger.dungBanSao()`).
  */
 export function enableSharedLedgerSync(on: boolean): void {
   batDongBo = on;

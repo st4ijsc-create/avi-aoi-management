@@ -2,7 +2,11 @@
 
 > **Cho người thực thi bằng agent:** BẮT BUỘC DÙNG SUB-SKILL `superpowers:subagent-driven-development`. Các bước dùng cú pháp checkbox (`- [ ]`).
 
-**Mục tiêu:** Gỡ giả định cuối còn lại của cả kiến trúc — **mỗi tiến trình giữ một sổ riêng**. Sau pha này, `api` · `worker` · `edge` · sidecar · cron đọc **một sổ dùng chung**, giấy phép mồ côi được **nhận nuôi** thay vì bị nuốt vào nền, và `preempt()` với tới được hộ **ngoài tiến trình**.
+**Mục tiêu:** Gỡ giả định cuối còn lại của cả kiến trúc — **mỗi tiến trình giữ một sổ riêng**. Sau pha này, `api` · `worker` · cron đọc **một sổ dùng chung**, giấy phép mồ côi được **nhận nuôi** thay vì bị nuốt vào nền, và `preempt()` với tới được hộ **ngoài tiến trình**.
+
+> 🟠 **ĐÍNH CHÍNH (2026-08-05, review TOÀN NHÁNH — I-2): bản đầu của dòng trên kể `edge` và `sidecar` vào dân số đọc sổ chung. SAI, và mã KHÔNG hứa thế.** Chỉ **tiến trình Node gọi `startVramReconciler()`** mới công bố/đọc `vram_leases` (ràng buộc M-7, khai đúng ở `vramSharedLedgerStore.ts`). `edge` là dịch vụ **C#** (`tools/machine-simulator/src/St4i.EdgeService`) — nó không chạy broker một dòng nào; **sidecar** (`llama-server`) là **tiến trình con không có broker**, nó được đếm bằng **giấy phép do tiến trình cha giữ hộ** (và từ Task 4, bằng **nhận nuôi** khi cha đã chết). Hộ mồ côi của sidecar VÀO được sổ chung — nhưng qua người nhận nuôi, không phải do chính nó ghi.
+>
+> ⚠⚠ Kèm ràng buộc topo phải giữ: **một DB = một thiết bị GPU.** `vram_leases` không có cột host/device và `vram:baseline` là MỘT hàng cho cả DB. Xem đầu `drizzle/0312_vram_leases.sql` và docstring `drizzle/schema/vram.ts`.
 
 **Kiến trúc:** Sổ chung nằm ở **DB**, bảng `vram_leases`.
 

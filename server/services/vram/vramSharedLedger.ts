@@ -284,15 +284,18 @@ export function sharedLedgerFact(nowMs: number): SharedLedgerFact {
  *     `refCount`/`measured`: nó **không đổi một byte nào** trong phép tính dư địa của anh em.
  *
  * ⚠ ĐIỀU NÀY **KHÔNG** LÀM HỆ LỎNG ĐI Ở CHIỀU NGUY HIỂM: một giấy phép MỚI chưa công bố không có
- * hàng nào trong bản sao ⇒ `daCongBo === undefined` ⇒ **vẫn đếm**. Chỉ những ý định thật sự không
+ * mục nào trong `byteDaGui` ⇒ `cu === undefined` ⇒ **vẫn đếm**. Chỉ những ý định thật sự không
  * đổi byte mới rơi ra ngoài.
+ *
+ * ⚠⚠ m-1 (review TOÀN NHÁNH) — **PHÉP ĐẾM CHỈ ĐỌC `byteDaGui`, KHÔNG ĐỌC BẢN SAO.** Bản trước dựng
+ * một `Map` từ `banSao.foreignLeases` rồi **không bao giờ đọc nó**; người đọc sẽ tưởng byte đã công
+ * bố của **anh em** tham gia phép đếm này. Không — câu hỏi ở đây là *"TA đã gửi được con số nào"*,
+ * và bản sao **không** trả lời được nó (hàng của ta đã bị `publishSharedLedgerReplica()` lọc ra).
  * ⚠ Và `refCount` KHÔNG bị bỏ rơi: nó vẫn đi lên sổ chung ở lượt sync kế, và `vramWiring` nay hẹn
  * một lượt sync ngay sau khi đồng bộ `refCount` (nếu không, ô mà Task 5 đứng lên **cũ tới 60 s**).
  * Nó chỉ thôi **giả vờ là một sự cố đồng bộ**.
  */
 function demYDinhDoiByte(): number {
-  const daCongBo = new Map<string, number>();
-  if (banSao !== null) for (const r of banSao.foreignLeases) daCongBo.set(r.leaseKey, r.bytes);
   // ⚠ Hàng CỦA TA đã bị `publishSharedLedgerReplica()` lọc khỏi `foreignLeases`, nên bản sao KHÔNG
   // đủ để trả lời "ta đã công bố bao nhiêu". Ô riêng bên dưới giữ đúng con số ĐÃ GỬI THÀNH CÔNG.
   let n = 0;
