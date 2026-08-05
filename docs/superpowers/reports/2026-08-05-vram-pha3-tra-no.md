@@ -402,3 +402,20 @@ PID 22676**, không quét mù theo tên. **KHÔNG** chạy `kb:sync`, **KHÔNG**
 | Sửa/xoá 8 ca lưới giả ở `machineStatus.test.ts` + `sessionBackup.test.ts` | Hàm không tồn tại ⇒ "sửa" = **xoá ca**, tức đổi vùng phủ của hai module không thuộc nhánh này. Đã cách ly + ghi địa chỉ để người sở hữu quyết |
 | Đo lại 4 số hạng bằng `llama-server` | Đó là **loader KHÁC** với loader đã sinh ra 19.077/2.232/2.188/329. So hai phép tính khác nhau là vô nghĩa — brief cấm đích danh |
 | Đổi `VRAM_SAFETY_RESERVE_MB` để đóng lỗ 149 MiB | *"không nới một hằng số nào để con số đẹp lên"*. Là quyết định chính sách của chủ dự án, và phải **đo lại** roster sau khi đổi |
+
+---
+
+## QUYẾT ĐỊNH CỦA CHỦ DỰ ÁN (2026-08-05) — CHẤP NHẬN KHOẢN CẤP PHÉP VƯỢT
+
+Mối lo 1 ở trên (`VRAM_SAFETY_RESERVE_MB = 1024` **nhỏ hơn** nền desktop đo được **1.173 MiB**) được **chủ dự án chấp nhận, KHÔNG đổi hằng số**.
+
+**Rủi ro được chấp nhận, bằng số đo:**
+- Trần là tổng **THÔ** 32.607 MiB; `attributableBytes` **đã trừ** nền ⇒ cổng cho phép Σ giấy phép ≤ **31.583**, trong khi thiết bị chỉ chịu ≤ **31.434**.
+- ⇒ **Cấp phép vượt ~149 MiB khi sổ đầy.**
+- Đo trực tiếp: sau 4 giấy phép còn dư địa **267 MiB** — ai xin đúng 267 sẽ **được cấp** ⇒ **32.756 trên một card 32.607**.
+
+**Vì sao chấp nhận được (bối cảnh, không phải biện minh):** đây là hành vi **đang chạy** từ trước; lớp đỡ thật của §5.6c là `max(ledgerTotal, attributable)` — vế `attributable` đọc **mức dùng THẬT của thiết bị**, nên khi nền phình ra nó **tự siết**. Khoản vượt 149 MiB chỉ chạm được ở **sổ đầy sát trần**, và ở đó biên quyết định vốn đã chỉ **62 MiB** (mối lo 2).
+
+⚠ **Điều kiện để quyết định này còn đúng:** nếu ai đó **gỡ `max()`** hoặc làm `attributable` thành `null` thường trực, khoản vượt này **mất lớp đỡ cuối** và trở thành đường tràn thật. Xem ràng buộc toàn cục 8 của Pha 2B/3.
+
+**Cách đảo ngược, nếu sau này muốn:** đặt `VRAM_SAFETY_RESERVE_MB ≥ 1280` (trên nền đo được 1.173, có biên cho dao động desktop). Giá: mất chừng đó dư địa, có thể từ chối vài lượt nạp sát trần.
