@@ -26,14 +26,72 @@
  * ⚠ `textSummary` là thứ được nhồi vào ngữ cảnh LLM ⇒ nó phải mang **CẢ CÁC Ô ĐỘ-CHẮC-CHẮN**, không
  * chỉ con số. Một bản tóm tắt in "còn 13.000 MiB" mà nuốt `basis: "ledger-only"` là đúng thứ
  * `vramReadModel.ts` tồn tại để chặn — Agent sẽ đọc một CHẶN TRÊN thành một trạng thái an toàn.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 C-1 (review TOÀN NHÁNH Pha 4) — **MỘT CHUỖI, HAI BỀ MẶT, HAI LUẬT NGƯỢC NHAU.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản trước nội suy `h.owner` / `h.leaseKey` / `h.processKey` / `s.unledgered.lastReason` /
+ * `degradedReasons` / `unverifiedReasons` / `nonFiniteFields[]` **thô** vào `textSummary`. Người
+ * review nạp một `owner` độc hại qua `broker.reserve()` THẬT rồi chạy tool từ registry THẬT và đo
+ * được: **3.869 ký tự NGUYÊN VĂN** vào ngữ cảnh LLM, chứa `<|im_start|>` · `{{}}` · `${}` · `$t()`.
+ * Nguồn không hề giả định: `vram_leases.owner` do **TIẾN TRÌNH ANH EM** ghi (`vramBroker.ts:189`),
+ * và `gguf:${modelId}` / `reranker:${modelPath}` ⇐ id model trong DB, `.env`, tên tệp `.gguf` —
+ * **đúng ba nguồn Task 3 đã tự khai là bẩn**.
+ *
+ * ⚠⚠ VÌ SAO KHÔNG CẮT Ở NGUỒN, VÀ VÌ SAO KHÔNG NỚI CA ĐANG CANH CHIỀU NGƯỢC LẠI:
+ * `vramTools.test.ts` có ca *"`owner` KHÔNG BỊ CẮT NGẮN"* và ca đó **ĐÚNG** — cho **mặt LỆNH**:
+ * `owner` là **DANH TÍNH** mà Agent lấy từ mặt đọc rồi truyền **thẳng** vào `vram.preempt`; cắt nó
+ * ở nguồn là phá đường nối hai mặt. Nhưng **cùng chuỗi đó** trên **bề mặt PROMPT** thì luật
+ * **NGƯỢC LẠI**. ⇒ Tách **DANH TÍNH** khỏi **CÂU CHỮ**:
+ *   • `data.state` — ảnh chụp **NGUYÊN VẸN**, không sạch, không cắt. Đây là thứ Agent đọc để lấy
+ *     `owner` truyền vào lệnh. Ca "không bị cắt ngắn" nay khẳng định **ở đây**.
+ *   • `textSummary` — **mọi** giá trị chuỗi đi qua `catSach()`: làm sạch bằng **ĐÚNG hai hàm đã có**
+ *     ở `@shared/textSafety` (không hàm thứ ba), rồi cắt bằng **ĐÚNG phép cắt** mà
+ *     `vramPreempt.catCau()` dùng, và **KHAI RA** là đã cắt (không cắt im lặng).
+ * ⚠ Đây KHÔNG phải "hai bản sao vị từ": hai bề mặt có **hai bộ diễn giải khác nhau** đọc chuỗi, nên
+ * chúng có hai bất biến khác nhau. Bản sao là khi một bất biến có hai người viết.
  */
 
 import { z } from "zod";
 import { checkPermission } from "../../_core/accessControl";
 import { registerTool, type Tool, type ToolLang, type ToolResult } from "./toolRegistry";
 import { buildVramAgentState, type VramAgentState } from "../vram/vramReadModel";
+import { catChuoi, stripChatControlTokens, stripInterpolationSyntax } from "@shared/textSafety";
 
 const MIB = 1024 * 1024;
+
+/**
+ * Trần MỘT TRƯỜNG trong câu chữ. **160 không phải một con số đẹp** — nó là trần `owner` của chính
+ * `vramRouter.preempt.input` (`z.string().trim().min(1).max(160)`); `leaseKey` là 200
+ * (`releaseStale.input`). ⇒ Lấy **200** = trần lớn hơn trong hai lệnh: một danh tính dài hơn thế
+ * thì **lệnh cũng không nhận**, nên câu chữ không mất một byte nào *hành động được*. Và
+ * `data.state` vẫn giữ nguyên văn cho mọi mục đích khác.
+ */
+const O_TOI_DA = 200;
+
+/**
+ * Trần CẢ BẢN TÓM TẮT. Bản sống đo được ~8.700 ký tự với 6 hộ nền + vài hộ giữ; `foreign.holders`
+ * **không có trần dân số**, nên một tiến trình anh em ghi 500 hàng là một đường **bơm phồng ngữ
+ * cảnh** (đẩy phần KB thật ra khỏi cửa sổ) — hậu quả thứ ba mà C-1 gọi tên. Cắt theo **DÒNG**
+ * (không cắt giữa câu) và **khai ra đã bỏ bao nhiêu dòng**.
+ */
+const TOM_TAT_TOI_DA = 16_000;
+
+/**
+ * ★★★ MỘT CỬA DUY NHẤT cho mọi chuỗi đi vào câu chữ. Ghép **hai** bộ lọc (i18next + chat template)
+ * rồi **một** phép cắt — tất cả đều là hàm ĐÃ CÓ ở `@shared/textSafety`.
+ *
+ * ⚠ Thứ tự làm-sạch-trước-cắt-sau là **bắt buộc**: cắt trước thì một chuỗi bị cắt giữa `<|im_` vẫn
+ * trơ, nhưng cắt sau khi làm sạch cho ta biết độ dài THẬT của phần người đọc nhận được.
+ * ⚠ Nhãn cắt viết bằng ký tự **không nằm trong hai lớp bị xoá** (`…[đã cắt …]`) nên chính nó không
+ * tự bị làm sạch ở lượt sau, và nó **không thể** bị một payload giả mạo: payload đã sạch `<>|{}$`.
+ */
+function catSach(raw: string | null | undefined): string {
+  if (raw === null || raw === undefined) return "";
+  const sach = stripChatControlTokens(stripInterpolationSyntax(String(raw)));
+  const { cau, daCat } = catChuoi(sach, O_TOI_DA);
+  return daCat ? `${cau}…[đã cắt, còn ${O_TOI_DA}/${sach.length} ký tự — ảnh chụp data.state giữ nguyên văn]` : cau;
+}
 
 const authCtxSchema = z
   .object({
@@ -89,10 +147,10 @@ function tomTat(s: VramAgentState): string[] {
       `trần ${mib(s.headroom.ceilingBytes)} · đang dùng ${mib(s.headroom.usedBytes)}.`,
   );
   d.push(
-    `basis=${s.headroom.basis}${s.headroom.blind ? " (MÙ ⇒ con số này là CHẶN TRÊN, không phải trạng thái an toàn)" : ""} · ` +
+    `basis=${catSach(s.headroom.basis)}${s.headroom.blind ? " (MÙ ⇒ con số này là CHẶN TRÊN, không phải trạng thái an toàn)" : ""} · ` +
       `trusted=${s.headroom.trusted}` +
       (s.headroom.degradedReasons.length > 0
-        ? ` · ĐANG SUY GIẢM vì: ${s.headroom.degradedReasons.join(", ")}.`
+        ? ` · ĐANG SUY GIẢM vì: ${s.headroom.degradedReasons.map(catSach).join(", ")}.`
         : " · không lý do suy giảm nào."),
   );
 
@@ -100,24 +158,24 @@ function tomTat(s: VramAgentState): string[] {
   d.push(
     s.attributable.known
       ? `Quy trách nhiệm được (attributable): ${mib(s.attributable.bytes)}.`
-      : `attributable KHÔNG BIẾT (${s.attributable.reason}) ⇒ ${s.attributable.meaning}: dư địa đang là CHẶN TRÊN.`,
+      : `attributable KHÔNG BIẾT (${catSach(s.attributable.reason)}) ⇒ ${catSach(s.attributable.meaning)}: dư địa đang là CHẶN TRÊN.`,
   );
 
   // ── `baselineUnverifiedReasons` (đồng hồ #3 của bảng) ────────────────────────────────────────
   d.push(
-    `Nền (baseline): verified=${s.baseline.verified} · origin=${s.baseline.origin ?? "CHƯA CÓ NHỊP NÀO"} · ` +
+    `Nền (baseline): verified=${s.baseline.verified} · origin=${s.baseline.origin === null ? "CHƯA CÓ NHỊP NÀO" : catSach(s.baseline.origin)} · ` +
       (s.baseline.unverifiedReasons === null
         ? "unverifiedReasons=null (CHƯA CÓ NHỊP NÀO — khác hẳn mảng rỗng)."
         : s.baseline.unverifiedReasons.length === 0
           ? "unverifiedReasons=[] (có nhịp, không lý do nào)."
-          : `unverifiedReasons: ${s.baseline.unverifiedReasons.join(", ")}.`),
+          : `unverifiedReasons: ${s.baseline.unverifiedReasons.map(catSach).join(", ")}.`),
   );
 
   // ── SỔ: cục bộ + ANH EM (đồng hồ #5 — `foreignLedgerBytes`/`foreignLeases`) ──────────────────
   d.push(`Sổ cục bộ: ${mib(s.ledger.localBytes)} · tổng (cục bộ + anh em): ${mib(s.ledger.totalBytes)}.`);
   if (!s.ledger.foreign.known) {
     d.push(
-      `Sổ chung: ${s.ledger.foreign.meaning} — ĐANG MÙ về tiến trình anh em. TUYỆT ĐỐI không đọc thành "không ai khác giữ gì".`,
+      `Sổ chung: ${catSach(s.ledger.foreign.meaning)} — ĐANG MÙ về tiến trình anh em. TUYỆT ĐỐI không đọc thành "không ai khác giữ gì".`,
     );
   } else {
     d.push(
@@ -133,21 +191,21 @@ function tomTat(s: VramAgentState): string[] {
     d.push('Đang giữ (theo sổ): KHÔNG hộ nào — nhưng xem "CẬN DƯỚI" ngay dưới trước khi kết luận card trống.');
   }
   for (const h of hoTatCa) {
-    const noi = h.processKey === null ? "tiến trình NÀY" : `tiến trình ${h.processKey}`;
+    const noi = h.processKey === null ? "tiến trình NÀY" : `tiến trình ${catSach(h.processKey)}`;
     const lenh =
       h.reclaim.kind === "reclaimable-here"
-        ? `vram.preempt("${h.owner}") VỚI TỚI (người thi hành: ${h.reclaim.reclaimer})`
+        ? `vram.preempt("${catSach(h.owner)}") VỚI TỚI (người thi hành: ${catSach(h.reclaim.reclaimer)})`
         : h.reclaim.kind === "declared-by-owner-process"
-          ? `CHỈ tiến trình chủ thu hồi được (đã khai ${h.reclaim.reclaimer}); từ đây vram.preempt sẽ trả owner-not-in-local-ledger`
-          : `KHÔNG lệnh nào với tới (${h.reclaim.why})`;
+          ? `CHỈ tiến trình chủ thu hồi được (đã khai ${catSach(h.reclaim.reclaimer)}); từ đây vram.preempt sẽ trả owner-not-in-local-ledger`
+          : `KHÔNG lệnh nào với tới (${catSach(h.reclaim.why)})`;
     const ttl =
       h.ttlExpired === null
         ? ""
         : ` · TTL ${h.ttlMs} ms, quá hạn=${h.ttlExpired}${h.ttlExpired ? " (KHÔNG có nhịp nào tự gặt theo TTL — phải ra lệnh thu hồi)" : ""}`;
     d.push(
-      `Hộ "${h.owner}" (${h.kind}, ${h.priority}) ở ${noi}: ${mib(h.bytes)}` +
+      `Hộ "${catSach(h.owner)}" (${catSach(h.kind)}, ${catSach(h.priority)}) ở ${noi}: ${mib(h.bytes)}` +
         ` · số đo=${h.measured}` +
-        (h.leaseKey === null ? "" : ` · leaseKey=${h.leaseKey}`) +
+        (h.leaseKey === null ? "" : ` · leaseKey=${catSach(h.leaseKey)}`) +
         ttl +
         ` · ${lenh}.`,
     );
@@ -155,7 +213,7 @@ function tomTat(s: VramAgentState): string[] {
 
   // ── PHẦN KHÔNG QUY TRÁCH NHIỆM ĐƯỢC — `holderListIsLowerBound` ───────────────────────────────
   d.push(
-    `Ngoài sổ (không quy trách nhiệm được): ${mib(s.unattributed.bytes)} · caveat=${s.unattributed.caveat} · ` +
+    `Ngoài sổ (không quy trách nhiệm được): ${mib(s.unattributed.bytes)} · caveat=${catSach(s.unattributed.caveat)} · ` +
       `holderListIsLowerBound=${s.unattributed.holderListIsLowerBound} (danh sách hộ trên là CẬN DƯỚI: mới nối ` +
       `${s.unattributed.wiredSiteCount ?? "?"}/${s.unattributed.knownSiteRowCount ?? "?"} điểm cấp phát) · ` +
       `excludesBaselineBytes=${s.unattributed.excludesBaselineBytes} (mọi byte trong NỀN đã bị trừ ⇒ số 0 KHÔNG nghĩa là card đã giải thích hết).`,
@@ -163,7 +221,7 @@ function tomTat(s: VramAgentState): string[] {
 
   // ── ƯỚC LƯỢNG NGOÀI SỔ + `vramBeginFailureState()` (đồng hồ #4) ──────────────────────────────
   d.push(
-    `Ước lượng chạy ngoài sổ: ${mib(s.unledgered.estimateBytes)} (estimateKind=${s.unledgered.estimateKind}, ` +
+    `Ước lượng chạy ngoài sổ: ${mib(s.unledgered.estimateBytes)} (estimateKind=${catSach(s.unledgered.estimateKind)}, ` +
       `estimateUsable=${s.unledgered.estimateUsable}, unknownCount=${s.unledgered.unknownCount ?? "?"})` +
       (s.unledgered.estimateUsable ? "." : " ⇒ KHÔNG ĐÁNG TIN, đừng dùng để tính."),
   );
@@ -177,20 +235,20 @@ function tomTat(s: VramAgentState): string[] {
    */
   d.push(
     `Lượt cấp phát ngoài sổ (hàm beginVramAllocation) đã hỏng ${s.unledgered.beginFailureCount ?? "?"} lượt` +
-      (s.unledgered.lastReason === null ? "." : ` · lý do gần nhất: ${s.unledgered.lastReason}`),
+      (s.unledgered.lastReason === null ? "." : ` · lý do gần nhất: ${catSach(s.unledgered.lastReason)}`),
   );
 
   // ── NHỊP ─────────────────────────────────────────────────────────────────────────────────────
   d.push(
     s.tick.present
       ? `Nhịp quyết định: tuổi ${s.tick.ageMs ?? "?"} ms (ngưỡng ${s.tick.staleAfterMs} ms, stale=${s.tick.stale}) · hỏng liên tiếp=${s.tick.consecutiveFailures ?? "?"}.`
-      : `Nhịp quyết định: ${s.tick.meaning} — CHƯA CÓ NHỊP NÀO (cấu trúc, không tự lành).`,
+      : `Nhịp quyết định: ${catSach(s.tick.meaning)} — CHƯA CÓ NHỊP NÀO (cấu trúc, không tự lành).`,
   );
 
   // ── HOÃN: CẢ 6 HỘ `background` (đồng hồ #1) + retryReach ((D)) ───────────────────────────────
   d.push(
-    `Trạng thái hoãn — phạm vi ${s.defer.scope}, quan sát từ ${s.defer.observedFromProcessKey}; ` +
-      `vết BỀN xuyên tiến trình: ${s.defer.durableTrace}.`,
+    `Trạng thái hoãn — phạm vi ${catSach(s.defer.scope)}, quan sát từ ${catSach(s.defer.observedFromProcessKey)}; ` +
+      `vết BỀN xuyên tiến trình: ${catSach(s.defer.durableTrace)}.`,
   );
   for (const h of s.defer.hosts) {
     const coChe =
@@ -199,20 +257,20 @@ function tomTat(s: VramAgentState): string[] {
         : `có chờ + thử lại (đáy ${h.budgetMs} ms)`;
     const trangThai =
       h.status.kind === "deferring"
-        ? `ĐANG HOÃN (${h.status.attempts ?? "?"} lượt, hạn kế ${h.status.nextRetryAt ?? "?"})`
+        ? `ĐANG HOÃN (${h.status.attempts ?? "?"} lượt, hạn kế ${h.status.nextRetryAt === null ? "?" : catSach(h.status.nextRetryAt)})`
         : h.status.kind === "exceeded"
           ? `ĐÃ QUÁ ĐÁY HOÃN (${h.status.attempts ?? "?"} lượt)`
           : h.status.kind === "no-chain-in-this-process"
             ? "không có chuỗi hoãn nào TRONG TIẾN TRÌNH NÀY"
-            : `KHÔNG QUAN SÁT ĐƯỢC Ở ĐÂY (${h.status.meaning})`;
+            : `KHÔNG QUAN SÁT ĐƯỢC Ở ĐÂY (${catSach(h.status.meaning)})`;
     const voiToi =
       h.retryReach.kind === "reachable-here"
-        ? `vram.retryDeferred("${h.ownerPattern}") VỚI TỚI`
+        ? `vram.retryDeferred VỚI TỚI (mẫu owner: ${catSach(h.ownerPattern)})`
         : h.retryReach.kind === "unknown"
-          ? `không rõ lệnh có với tới không (${h.retryReach.why})`
-          : `vram.retryDeferred KHÔNG với tới (${h.retryReach.why}) — đừng tốn một lượt gọi`;
+          ? `không rõ lệnh có với tới không (${catSach(h.retryReach.why)})`
+          : `vram.retryDeferred KHÔNG với tới (${catSach(h.retryReach.why)}) — đừng tốn một lượt gọi`;
     d.push(
-      `Hộ nền "${h.host}" (${h.ownerPattern}): ${coChe} · chủ trì ở đây=${h.hostedHere === null ? "KHÔNG XÁC ĐỊNH ĐƯỢC" : h.hostedHere} · ${trangThai} · ${voiToi}.`,
+      `Hộ nền "${catSach(h.host)}" (${catSach(h.ownerPattern)}): ${coChe} · chủ trì ở đây=${h.hostedHere === null ? "KHÔNG XÁC ĐỊNH ĐƯỢC" : h.hostedHere} · ${trangThai} · ${voiToi}.`,
     );
   }
 
@@ -221,10 +279,43 @@ function tomTat(s: VramAgentState): string[] {
     s.nonFiniteFields.length === 0
       ? "nonFiniteFields: không ô số nào bị chặn."
       : `nonFiniteFields: ${s.nonFiniteFields.length} ô BỊ CHẶN (fail-closed HỢP LỆ, không phải dữ liệu thiếu): ` +
-          s.nonFiniteFields.map((f) => `${f.path}=${f.was}`).join(", "),
+          s.nonFiniteFields.map((f) => `${catSach(f.path)}=${catSach(f.was)}`).join(", "),
+  );
+
+  /**
+   * ★ M-6 (review TOÀN NHÁNH) — **AGENT KHÔNG THI HÀNH ĐƯỢC BA LỆNH NÀY, VÀ PHẢI NÓI RA.**
+   * Khối đầu file lập luận vì sao `preempt`/`releaseStale`/`retryDeferred` **cố ý** không được đăng
+   * ký làm write-tool. Nhưng bản tóm tắt lại gọi tên chúng như thể gọi được ⇒ Agent sẽ "gọi" một
+   * tool không tồn tại rồi im lặng. Cùng hạng với M-2 của review Task 3 (*"hai câu chỉ dẫn một hành
+   * động Agent KHÔNG THI HÀNH ĐƯỢC"*) — đã đóng ở `client/src`, mở lại ở bề mặt Agent.
+   */
+  d.push(
+    "⚠ Ba lệnh vram.preempt / vram.releaseStale / vram.retryDeferred KHÔNG được đăng ký làm tool " +
+      "(chúng phá huỷ được, nên không treo sau một bộ phân loại ý định). Agent ĐỌC ở đây rồi ĐỀ NGHỊ " +
+      "người vận hành bấm nút tương ứng trong panel VRAM của màn AI Brain; tuyệt đối không khai là đã tự chạy.",
   );
 
   return d;
+}
+
+/**
+ * ★ C-1, hậu quả thứ ba — **TRẦN NGỮ CẢNH.** Cắt theo DÒNG (không cắt giữa câu) và **khai ra** đã
+ * bỏ bao nhiêu dòng: một bản tóm tắt cụt lủn mà im lặng thì Agent đọc phần còn lại thành TOÀN BỘ.
+ */
+function ghepCoTran(dong: string[]): string {
+  const giu: string[] = [];
+  let do_ = 0;
+  for (const line of dong) {
+    if (do_ + line.length + 1 > TOM_TAT_TOI_DA) break;
+    giu.push(line);
+    do_ += line.length + 1;
+  }
+  if (giu.length === dong.length) return giu.join("\n");
+  giu.push(
+    `⚠ BẢN TÓM TẮT ĐÃ BỊ CẮT: bỏ ${dong.length - giu.length}/${dong.length} dòng vì vượt trần ` +
+      `${TOM_TAT_TOI_DA} ký tự ngữ cảnh. Ảnh chụp ĐẦY ĐỦ nằm ở data.state — đọc nó trước khi kết luận.`,
+  );
+  return giu.join("\n");
 }
 
 export const getVramState: Tool<z.infer<typeof vramStateParams>, VramStateData> = {
@@ -279,10 +370,16 @@ export const getVramState: Tool<z.infer<typeof vramStateParams>, VramStateData> 
       type: "vram_state",
       title,
       data: {
+        /**
+         * ⚠⚠ NGUYÊN VĂN, KHÔNG LÀM SẠCH, KHÔNG CẮT — và đó là **CHỦ Ý** (C-1): đây là mặt **DANH
+         * TÍNH**. `owner`/`leaseKey` ở đây là thứ Agent lấy ra rồi truyền THẲNG vào `vram.preempt` /
+         * `vram.releaseStale`; cắt hay làm sạch ở đây là phá đường nối mặt đọc ↔ mặt lệnh (ràng
+         * buộc 3). Bề mặt **CÂU CHỮ** (`textSummary`, `rows`) mới là nơi luật ngược lại.
+         */
         state,
         rows: dong.map((line, i) => ({ label: `#${i + 1}`, value: line })),
       },
-      textSummary: dong.join("\n"),
+      textSummary: ghepCoTran(dong),
     };
   },
 };

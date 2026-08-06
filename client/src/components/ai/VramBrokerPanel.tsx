@@ -22,6 +22,25 @@
  *
  * ⚠ `owner`/`leaseKey` **KHÔNG BAO GIỜ bị cắt ngắn**: chúng là DANH TÍNH mà Agent/người vận hành
  * lấy từ mặt đọc rồi truyền THẲNG vào lệnh (ràng buộc 3). Dùng `break-all`, không dùng `slice()`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🟠 F1 / I-1 (nghiệm thu sống → review TOÀN NHÁNH) — **HAI NÚT PHÁ HUỶ TỪNG KHÔNG BẤM ĐƯỢC VỚI
+ * BẤT KỲ VAI NÀO.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `.env:568` → `ACTUATION_STEPUP_2FA=true` (cấu hình ĐANG CHẠY). `vramRouter.preempt` và
+ * `releaseStale` đứng trên `deployProcedure = actuationProcedure.use(requireFreshTotp)`
+ * (`_core/trpc.ts:450`), và `requireFreshTotp` đọc `totpCode` **từ raw input**: thiếu ⇒
+ * `FORBIDDEN INVALID_VALUE{field:"twoFactorCode"}`. Panel **không gửi `totpCode`** ⇒ **lượt bấm
+ * ĐẦU TIÊN của mọi phiên luôn 403**, với mọi vai. Hệ quả kép: `onSuccess` — chỗ **duy nhất** gọi
+ * `translateVramPreemptCommand`/`translateVramReleaseStaleCommand` — là **nhánh không tới được từ
+ * UI**, nên "người đọc thật" của Task 4 chỉ là **5/8 câu**, không phải 8/8.
+ *
+ * ⚠ Bản vá dùng **ĐÚNG khuôn ba màn đang chạy** (`EngineeringWorkspace.tsx:1248,1454,1907` ·
+ * `ApprovalsInbox.tsx` · `OrchestrationStudio.tsx`): `stepUp.guard((totpCode) => m.mutate({…,
+ * totpCode}))` + render `{stepUp.dialog}` **một lần**. KHÔNG hook thứ hai, KHÔNG dialog tự viết.
+ * ⚠ `retryDeferred` đứng trên `actuationProcedure` (KHÔNG có `requireFreshTotp`) và `input` của nó
+ * **không khai** `totpCode` ⇒ bọc nó vào step-up là gửi một khoá mà `z.object().strict()` từ chối.
+ * Ba lệnh, hai sàn khác nhau — và đó là **chủ ý** (`vramRouter.ts:42-44`), không phải thiếu sót.
  */
 
 import { useState } from "react";
@@ -31,6 +50,8 @@ import { trpc } from "@/lib/trpc";
 import type { usePollingInterval } from "@/hooks/usePollingInterval";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { vramRetryButtonDisabled } from "@/lib/vramCommandReach";
+/** ★ F1 — step-up 2FA cho HAI lệnh phá huỷ. Hook ĐÃ CÓ, 3 màn khác đang dùng đúng khuôn này. */
+import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 import {
   translateVramScope,
   translateVramHostedHere,
@@ -68,6 +89,7 @@ interface Props {
 
 export function VramBrokerPanel({ canCommand, polling }: Props) {
   const { t } = useTranslation();
+  const stepUp = useStepUpOtp();
   const state = trpc.vram.state.useQuery(undefined, { ...polling });
   /** Câu KẾT CỤC gần nhất của một lệnh — LUÔN là đầu ra của một hàm `translateVram*Command`. */
   const [lastOutcome, setLastOutcome] = useState<string | null>(null);
@@ -269,7 +291,9 @@ export function VramBrokerPanel({ canCommand, polling }: Props) {
                         size="sm"
                         variant="destructive"
                         disabled={!canCommand || preempt.isPending}
-                        onClick={() => preempt.mutate({ owner: h.owner })}
+                        // ★ F1 — `deployProcedure` + `ACTUATION_STEPUP_2FA=true` ⇒ KHÔNG có
+                        // `totpCode` thì lượt bấm đầu tiên của mọi phiên luôn 403.
+                        onClick={() => stepUp.guard((totpCode) => preempt.mutate({ owner: h.owner, totpCode }))}
                       >
                         <Trash2 className="h-3 w-3 mr-1" />
                         {t("vramBroker.preempt", "Thu hồi")} ({h.reclaim.reclaimer})
@@ -293,7 +317,10 @@ export function VramBrokerPanel({ canCommand, polling }: Props) {
                         size="sm"
                         variant="outline"
                         disabled={!canCommand || releaseStale.isPending}
-                        onClick={() => releaseStale.mutate({ leaseKey: h.leaseKey! })}
+                        // ★ F1 — cùng sàn `deployProcedure` với `preempt`: phải có `totpCode`.
+                        onClick={() =>
+                          stepUp.guard((totpCode) => releaseStale.mutate({ leaseKey: h.leaseKey!, totpCode }))
+                        }
                       >
                         <ShieldAlert className="h-3 w-3 mr-1" />
                         {t("vramBroker.releaseStale", "Kiểm rồi dọn nếu đã chết")}
@@ -363,6 +390,8 @@ export function VramBrokerPanel({ canCommand, polling }: Props) {
             )}
           </>
         )}
+        {/* ★ F1 — dialog OTP render MỘT LẦN cho cả hai nút phá huỷ (khuôn của 3 màn đang chạy). */}
+        {stepUp.dialog}
       </CardContent>
     </Card>
   );

@@ -308,7 +308,19 @@ describe("★★★ mỗi ô của bảng Pha 4 CÓ MẶT trong `textSummary` (t
     expect(r.textSummary).toContain("gguf-idle-model");
   });
 
-  it("★ `owner` KHÔNG BỊ CẮT NGẮN — nó là DANH TÍNH Agent truyền thẳng vào lệnh (ràng buộc 3)", async () => {
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ C-1 (review TOÀN NHÁNH Pha 4) — **CA NÀY TỪNG KHẲNG ĐỊNH BẤT BIẾN Ở SAI BỀ MẶT.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Bản trước: `expect(r.textSummary).toContain(dai)` — tức **cưỡng chế việc KHÔNG CẮT** `owner`
+   * trên bề mặt **PROMPT**. Ý định thì đúng (owner là DANH TÍNH, cắt nó là phá đường nối mặt đọc ↔
+   * mặt lệnh), nhưng **bề mặt thì sai**: chính chỗ đó là nơi người review đo được **3.869 ký tự
+   * nguyên văn** (kèm `<|im_start|>`) đi vào ngữ cảnh LLM.
+   * ⇒ Bất biến **giữ nguyên, dời sang mặt DANH TÍNH** (`data.state`, thứ Agent thật sự lấy `owner`
+   * ra để truyền vào `vram.preempt`), và mặt CÂU CHỮ nhận luật ngược lại — canh ở
+   * `vramTools.promptSafety.test.ts`.
+   */
+  it("★★★ `owner` KHÔNG BỊ CẮT NGẮN **trong `data.state`** — đó là DANH TÍNH Agent truyền thẳng vào lệnh (ràng buộc 3)", async () => {
     const dai = `gguf:${"D:/models/rat-dai/".repeat(12)}model.gguf`;
     const r0 = broker.reserve(
       { owner: dai, kind: "gguf-model", estimatedBytes: 10 * MIB, priority: "background", reclaimer: "gguf-idle-model" },
@@ -317,7 +329,12 @@ describe("★★★ mỗi ô của bảng Pha 4 CÓ MẶT trong `textSummary` (t
     if (r0.lease === null) throw new Error("phải cấp được");
 
     const r = await chay();
-    expect(r.textSummary).toContain(dai);
+    const state = (r.data as { state: { ledger: { localHolders: { owner: string }[] } } | null }).state;
+    expect(state, "ảnh chụp phải có mặt").not.toBeNull();
+    expect(
+      state!.ledger.localHolders.map((h) => h.owner),
+      "danh tính phải NGUYÊN VẸN ở mặt đọc — cắt ở đây là phá đường nối sang mặt lệnh",
+    ).toContain(dai);
   });
 });
 

@@ -222,6 +222,41 @@ describe("★★★ N-1 — `__authCtx` BỊA trong args KHÔNG BAO GIỜ trở 
 // một lần — cùng kỷ luật với `vramAllocationSites.test.ts`.
 describe("★★★ MỌI điểm gọi `Tool.handler(` trong mã sản xuất đều đi qua `argsWithAuthCtx`", () => {
   const GOC = path.resolve(__dirname, "../..");
+  /**
+   * ★ I-3 (review TOÀN NHÁNH) — gốc quét cũ chỉ có `server/`. `shared/` và `scripts/` **không được
+   * canh**, dù cả hai đều nhập được `toolRegistry`. Ba gốc, một phép quét.
+   */
+  const GOC_QUET = [GOC, path.resolve(GOC, "../shared"), path.resolve(GOC, "../scripts")].filter((p) =>
+    fs.existsSync(p),
+  );
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ I-3 (review TOÀN NHÁNH Pha 4) — **DANH SÁCH CHO PHÉP, KHÔNG PHẢI "FILE CÓ CẠNH NHẬP".**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ VỊ TỪ CŨ SAI **LOẠI CÂU HỎI**, không phải thiếu một ca. Nó hỏi *"file này có cạnh NHẬP tới
+   * `aiLocalTools` không"* — một câu trả lời về **sự hiện diện của một import** — trong khi bất
+   * biến cần trả lời là *"lời gọi NÀY có trên một `Tool` không"*. TypeScript là **kiểu CẤU TRÚC**:
+   * một file **không import gì cả** vẫn gọi được `t.handler(args)` chỉ bằng
+   * `interface CoHandler { handler: (a: unknown) => Promise<unknown> }`. Người review dựng đúng thế
+   * và đo được **12/12 XANH** trên một điểm gọi fail-open THẬT (bỏ bước XOÁ `__authCtx` ⇒ leo thang
+   * quyền, đúng chuỗi CRITICAL mà Task 5 vừa vá).
+   *
+   * ⇒ **ĐỔI CHIỀU**: quét MỌI điểm chạm `.handler` trong mã sản xuất (chiều CHẶT), rồi **liệt kê
+   * TƯỜNG MINH** những điểm đã biết KHÔNG phải `Tool` (chiều LỎNG, có tên có lý do). Một điểm gọi
+   * mới — file mới, tên biến khác, không import gì — rơi vào lưới NGAY; muốn ra khỏi lưới thì phải
+   * **viết tên mình vào đây**, tức phải đọc khối này một lần.
+   *
+   * ⚠ Danh sách này có lưới của riêng nó (ca cuối describe): một dòng trỏ file không còn tồn tại,
+   * hoặc một dòng KHÔNG còn điểm chạm nào ⇒ ĐỎ. Danh sách chỉ được **co lại**.
+   */
+  const CHO_PHEP: ReadonlyMap<string, string> = new Map([
+    [
+      "services/streaming/inProcessAdapter.ts",
+      "`sub.handler(msg)` — `sub` là một ĐĂNG KÝ pub/sub (`{ topic, handler }`), không phải `Tool`. " +
+        "Không có `parameters`, không có `requiredPermission`, không nhận `__authCtx`.",
+    ],
+  ]);
 
   function moiFileSanXuat(dir: string, ra: string[] = []): string[] {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -239,82 +274,73 @@ describe("★★★ MỌI điểm gọi `Tool.handler(` trong mã sản xuất �
   interface DiemGoi {
     readonly file: string;
     readonly dong: number;
-    /** Văn bản NGUỒN của đối số thứ nhất — `""` khi gọi không đối số. */
+    /** Văn bản NGUỒN của đối số thứ nhất — `""` khi gọi không đối số / khi chỉ ĐỌC `.handler`. */
     readonly doiSo1: string;
+    /** `"goi"` = `x.handler(...)` / `x["handler"](...)`; `"doc"` = lấy `.handler` ra khỏi ngữ cảnh gọi. */
+    readonly hinhDang: "goi" | "doc";
     readonly quaCong: boolean;
   }
 
   /**
-   * ⚠ PHÉP PHÂN BIỆT **KHÔNG THEO TÊN BIẾN** (`tool` / `t` / `x` đều như nhau): một file chỉ có thể
-   * gọi `Tool.handler` nếu nó **thấy được kiểu `Tool`**, tức có `import` từ `aiLocalTools/**` (hoặc
-   * chính nó nằm trong thư mục đó). File không có cửa ấy thì `.handler(` của nó là thứ khác
-   * (vd `sub.handler(msg)` của pub/sub trong `streaming/inProcessAdapter.ts`).
-   *
-   * ⚠⚠ RR-2 (Task 5, vòng re-review) — **ĐIỂM MÙ ĐÃ ĐO ĐƯỢC**: bản trước chỉ duyệt
-   * `sf.statements` tìm `ts.isImportDeclaration`, tức chỉ thấy import TĨNH ở top-level. Một
-   * `await import("./aiLocalTools/toolRegistry")` là một `CallExpression` (callee
-   * `ImportKeyword`), thường nằm LỒNG trong thân hàm — không phải statement top-level, và
-   * không phải `ImportDeclaration` — nên bản trước bỏ sót nó (đo được: 12/12 xanh trên một
-   * điểm gọi `.handler(` fail-open thật). Mã sản xuất **cùng module** đã dùng đúng mẫu này:
-   * `aiAutoProposer.ts:314,671`, `aiThresholdTuneScheduler.ts:244` (hiện chưa file nào trong
-   * số đó vừa import động vừa gọi `.handler(`, nên đây là lỗ CỦA LƯỚI, chưa phải lỗ SỐNG —
-   * nhưng khoảng cách chỉ đúng MỘT dòng mã). Nay duyệt TOÀN BỘ cây (không chỉ top-level) và bắt
-   * cả hai hình dạng.
+   * Điểm CHẠM `.handler`: cả `x.handler` (PropertyAccess) lẫn `x["handler"]` (ElementAccess với
+   * chuỗi literal). ⚠ Bản trước chỉ bắt PropertyAccess ⇒ `tool["handler"](x)` vô hình.
    */
-  function thayKieuTool(sf: ts.SourceFile, file: string): boolean {
-    if (file.split(path.sep).join("/").includes("/aiLocalTools/")) return true;
-    let thay = false;
-    const di = (n: ts.Node): void => {
-      if (thay) return;
-      if (ts.isImportDeclaration(n) && ts.isStringLiteral(n.moduleSpecifier)) {
-        if (n.moduleSpecifier.text.includes("aiLocalTools")) thay = true;
-      } else if (
-        ts.isCallExpression(n) &&
-        n.expression.kind === ts.SyntaxKind.ImportKeyword &&
-        n.arguments[0] &&
-        ts.isStringLiteral(n.arguments[0])
-      ) {
-        if (n.arguments[0].text.includes("aiLocalTools")) thay = true;
-      }
-      if (!thay) ts.forEachChild(n, di);
-    };
-    di(sf);
-    return thay;
+  function tenLaHandler(n: ts.Node): n is ts.PropertyAccessExpression | ts.ElementAccessExpression {
+    if (ts.isPropertyAccessExpression(n)) return n.name.text === "handler";
+    if (ts.isElementAccessExpression(n)) {
+      const a = n.argumentExpression;
+      return (ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) && a.text === "handler";
+    }
+    return false;
+  }
+
+  /** BẤT BIẾN: đối số thứ nhất **PHẢI LÀ** một lời gọi `argsWithAuthCtx(...)` — không phải "có chứa chuỗi". */
+  function laArgsWithAuthCtx(a0: ts.Expression | undefined): boolean {
+    return !!a0 && ts.isCallExpression(a0) && ts.isIdentifier(a0.expression) && a0.expression.text === "argsWithAuthCtx";
   }
 
   function quetDiemGoi(): DiemGoi[] {
     const ra: DiemGoi[] = [];
-    for (const file of moiFileSanXuat(GOC)) {
-      const src = fs.readFileSync(file, "utf8");
-      if (!src.includes(".handler(")) continue;
-      const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-      if (!thayKieuTool(sf, file)) continue;
-      const di = (n: ts.Node): void => {
-        if (
-          ts.isCallExpression(n) &&
-          ts.isPropertyAccessExpression(n.expression) &&
-          n.expression.name.text === "handler"
-        ) {
-          const a0 = n.arguments[0];
-          const doiSo1 = a0 ? a0.getText(sf) : "";
-          // BẤT BIẾN: đối số thứ nhất **PHẢI LÀ** một lời gọi `argsWithAuthCtx(...)`.
-          // ⚠ Phát biểu về cái nó **PHẢI LÀ**, không phải "có chứa chuỗi" — một biến trung gian,
-          // một `?:`, một `??`, một hàm khác đều làm nó **thôi LÀ** lời gọi ấy ⇒ lưới ĐỎ.
-          const quaCong =
-            !!a0 &&
-            ts.isCallExpression(a0) &&
-            ts.isIdentifier(a0.expression) &&
-            a0.expression.text === "argsWithAuthCtx";
-          ra.push({
-            file: path.relative(GOC, file).split(path.sep).join("/"),
-            dong: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1,
-            doiSo1,
-            quaCong,
-          });
-        }
-        ts.forEachChild(n, di);
-      };
-      di(sf);
+    for (const goc of GOC_QUET) {
+      for (const file of moiFileSanXuat(goc)) {
+        const src = fs.readFileSync(file, "utf8");
+        /**
+         * ⚠ Lọc nhanh theo `"handler"` TRẦN, KHÔNG theo `".handler("`: bản trước bỏ file ngay khi
+         * thiếu chuỗi `".handler("` ⇒ `tool["handler"](x)`, `.handler (x)` (có khoảng trắng), và
+         * `const h = tool.handler; h(x)` đều lọt **trước khi** AST được dựng.
+         */
+        if (!src.includes("handler")) continue;
+        const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+        const rel = path.relative(GOC, file).split(path.sep).join("/");
+        if (CHO_PHEP.has(rel)) continue;
+        const di = (n: ts.Node): void => {
+          if (tenLaHandler(n)) {
+            const cha = n.parent;
+            const laCallee = cha !== undefined && ts.isCallExpression(cha) && cha.expression === n;
+            /**
+             * ⚠ `typeof x.handler !== "function"` là một **phép canh**, không phải một lượt dùng —
+             * nó không chở được args đi đâu. Hai điểm sản xuất hợp lệ dùng đúng hình dạng này
+             * (`index.ts`, `aiAgentOrchestrator.ts`). Mọi hình dạng ĐỌC khác (gán vào biến, truyền
+             * đi làm callback, `?.()`) là **đưa `handler` ra khỏi tầm lưới** ⇒ bị bắt.
+             */
+            const laTypeofGuard = cha !== undefined && ts.isTypeOfExpression(cha);
+            if (laTypeofGuard) {
+              ts.forEachChild(n, di);
+              return;
+            }
+            const a0 = laCallee ? (cha as ts.CallExpression).arguments[0] : undefined;
+            ra.push({
+              file: rel,
+              dong: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1,
+              doiSo1: a0 ? a0.getText(sf) : "",
+              hinhDang: laCallee ? "goi" : "doc",
+              quaCong: laCallee && laArgsWithAuthCtx(a0),
+            });
+          }
+          ts.forEachChild(n, di);
+        };
+        di(sf);
+      }
     }
     return ra;
   }
@@ -324,14 +350,15 @@ describe("★★★ MỌI điểm gọi `Tool.handler(` trong mã sản xuất �
     expect(
       ho,
       "một điểm gọi `Tool.handler(` bỏ qua `argsWithAuthCtx` là FAIL-OPEN: nó bỏ luôn bước XOÁ " +
-        "`__authCtx` do đầu vào bịa ⇒ leo thang quyền. Sửa điểm gọi, KHÔNG nới lưới:\n" +
-        ho.map((d) => `  ${d.file}:${d.dong} → handler(${d.doiSo1})`).join("\n"),
+        "`__authCtx` do đầu vào bịa ⇒ leo thang quyền. Sửa điểm gọi, KHÔNG nới lưới " +
+        "(nếu nó THẬT SỰ không phải `Tool`: thêm tên file + LÝ DO vào `CHO_PHEP`):\n" +
+        ho.map((d) => `  ${d.file}:${d.dong} [${d.hinhDang}] → handler(${d.doiSo1})`).join("\n"),
     ).toEqual([]);
   });
 
   it("★★ bản kiểm đếm khớp: đúng HAI đường thoát đã biết (tryExecuteTool + Agent tự trị)", () => {
     const tatCa = quetDiemGoi();
-    const files = tatCa.map((d) => d.file).sort();
+    const files = [...new Set(tatCa.map((d) => d.file))].sort();
     expect(files, "thêm/bớt một điểm gọi phải được người viết nhìn thấy lưới này một lần").toEqual([
       "services/aiAgentOrchestrator.ts",
       "services/aiLocalTools/index.ts",
@@ -339,11 +366,49 @@ describe("★★★ MỌI điểm gọi `Tool.handler(` trong mã sản xuất �
     expect(tatCa.every((d) => d.quaCong)).toBe(true);
   });
 
-  it("★★ LƯỚI-CHO-LƯỚI: năm hình dạng lách đều bị bắt (biến trung gian · ?: · ?? · && · hàm khác)", () => {
+  /**
+   * ★★ LƯỚI CHO DANH SÁCH CHO PHÉP. Một dòng miễn trừ trỏ vào hư không là một lỗ **im lặng**: nó
+   * không đỏ, không ai đọc, và nó dạy người sau rằng thêm một dòng vào đây là chuyện thường.
+   */
+  it("★★ mọi dòng trong `CHO_PHEP` đều TRỎ THẬT: file còn tồn tại VÀ vẫn có điểm chạm `.handler`", () => {
+    for (const [rel, lyDo] of CHO_PHEP) {
+      const p = path.join(GOC, rel);
+      expect(fs.existsSync(p), `miễn trừ trỏ file không tồn tại: ${rel}`).toBe(true);
+      expect(fs.readFileSync(p, "utf8"), `miễn trừ đã hết tác dụng, XOÁ dòng: ${rel}`).toMatch(/\bhandler\b/);
+      expect(lyDo.length, "một miễn trừ không lý do là một lỗ").toBeGreaterThan(40);
+    }
+  });
+
+  /**
+   * ⚠⚠ Hai ca dưới chạy **ĐÚNG hai vị từ** mà `quetDiemGoi()` chạy (`tenLaHandler` +
+   * `laArgsWithAuthCtx`), không chép lại chúng. Bản trước chép — nên khi vị từ thật đổi, "lưới cho
+   * lưới" vẫn xanh trên vị từ CŨ, đúng lớp lỗi "hai bản sao một vị từ" mà cả nhánh đang gỡ.
+   */
+  function chamTrenNguon(nguon: string): { hinhDang: "goi" | "doc"; quaCong: boolean } | null {
+    const sf = ts.createSourceFile("t.ts", nguon, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    let ra: { hinhDang: "goi" | "doc"; quaCong: boolean } | null = null;
+    const di = (n: ts.Node): void => {
+      if (ra === null && tenLaHandler(n)) {
+        const cha = n.parent;
+        const laCallee = cha !== undefined && ts.isCallExpression(cha) && cha.expression === n;
+        if (!(cha !== undefined && ts.isTypeOfExpression(cha))) {
+          const a0 = laCallee ? (cha as ts.CallExpression).arguments[0] : undefined;
+          ra = { hinhDang: laCallee ? "goi" : "doc", quaCong: laCallee && laArgsWithAuthCtx(a0) };
+        }
+      }
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+    return ra;
+  }
+
+  it("★★ LƯỚI-CHO-LƯỚI: TÁM hình dạng lách đều bị bắt (kể cả kiểu CẤU TRÚC, `[\"handler\"]`, biến trung gian)", () => {
     /**
-     * ⚠ Không có ca này thì lưới trên có thể là một phép so chuỗi lỏng lẻo mà chính nó không biết.
-     * Ở đây ta dựng NĂM biến thể trên AST THẬT và khẳng định lưới **bắt cả năm** — đúng khuôn
-     * "lưới-cho-lưới" mà N-2/N-5 của Task 4 đã phải dựng sau khi người review lách được.
+     * ⚠ Ba hình dạng CUỐI là những thứ bản trước **để lọt** và người review đã đo được (I-3):
+     * `tool["handler"](x)` · `const h = tool.handler; h(x)` · và lời gọi từ một file **không import
+     * gì** (kiểu CẤU TRÚC — không kiểm được trên một file lẻ, nên nó được kiểm bằng đột biến sản
+     * xuất: thêm một file gọi `t.handler(args)` với `interface CoHandler` ⇒ ca ĐẦU của describe này
+     * phải ĐỎ; đã chạy và ĐỎ).
      */
     const lach = [
       "const a = argsWithAuthCtx(tool, x, e); await tool.handler(a);",
@@ -352,52 +417,21 @@ describe("★★★ MỌI điểm gọi `Tool.handler(` trong mã sản xuất �
       "await tool.handler(ok && argsWithAuthCtx(tool, x, e));",
       "await tool.handler(sanitize(x));",
       "await tool.handler(x);",
+      'await tool["handler"](x);',
+      "const h = tool.handler; await h(x);",
     ];
     for (const mau of lach) {
-      const sf = ts.createSourceFile("t.ts", mau, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-      let quaCong: boolean | null = null;
-      const di = (n: ts.Node): void => {
-        if (
-          ts.isCallExpression(n) &&
-          ts.isPropertyAccessExpression(n.expression) &&
-          n.expression.name.text === "handler"
-        ) {
-          const a0 = n.arguments[0];
-          quaCong =
-            !!a0 &&
-            ts.isCallExpression(a0) &&
-            ts.isIdentifier(a0.expression) &&
-            a0.expression.text === "argsWithAuthCtx";
-        }
-        ts.forEachChild(n, di);
-      };
-      di(sf);
-      expect(quaCong, `hình dạng lách phải bị BẮT: ${mau}`).toBe(false);
+      const r = chamTrenNguon(mau);
+      expect(r, `lưới phải THẤY điểm chạm: ${mau}`).not.toBeNull();
+      expect(r!.quaCong, `hình dạng lách phải bị BẮT: ${mau}`).toBe(false);
     }
   });
 
-  it("★ chiều DƯƠNG: hình dạng ĐÚNG được lưới cho qua (không phải lưới chặn tất)", () => {
-    const sf = ts.createSourceFile(
-      "t.ts",
-      "await tool.handler(argsWithAuthCtx(tool, step.args ?? {}, exec));",
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS,
-    );
-    let quaCong: boolean | null = null;
-    const di = (n: ts.Node): void => {
-      if (
-        ts.isCallExpression(n) &&
-        ts.isPropertyAccessExpression(n.expression) &&
-        n.expression.name.text === "handler"
-      ) {
-        const a0 = n.arguments[0];
-        quaCong =
-          !!a0 && ts.isCallExpression(a0) && ts.isIdentifier(a0.expression) && a0.expression.text === "argsWithAuthCtx";
-      }
-      ts.forEachChild(n, di);
-    };
-    di(sf);
-    expect(quaCong).toBe(true);
+  it("★ chiều DƯƠNG: hình dạng ĐÚNG được lưới cho qua, và `typeof` guard KHÔNG bị bắt oan", () => {
+    const dung = chamTrenNguon("await tool.handler(argsWithAuthCtx(tool, step.args ?? {}, exec));");
+    expect(dung).not.toBeNull();
+    expect(dung!.quaCong).toBe(true);
+    // Một lưới kêu oan bảy lần sẽ bị người sau tắt đi — `typeof x.handler !== "function"` phải im.
+    expect(chamTrenNguon('if (typeof tool.handler !== "function") return null;')).toBeNull();
   });
 });

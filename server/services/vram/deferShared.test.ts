@@ -429,7 +429,20 @@ describe("§5 — MẶT SỨC KHOẺ: `getKbSyncSchedulerStatus().defer` thôi l
 
     const h = await getKbHealth();
     expect(h.vramDefer, "ô phải TỒN TẠI kể cả ở nhánh suy giảm").toBeDefined();
-    expect(h.vramDefer.kbSync, "chưa có chuỗi hoãn kb:sync nào ⇒ null").toBeNull();
+    expect(h.vramDefer.kbSync.chain, "chưa có chuỗi hoãn kb:sync nào ⇒ null").toBeNull();
+    /**
+     * ★★★ I-5 (review TOÀN NHÁNH) — **`chain === null` MỘT MÌNH KHÔNG PHẢI MỘT CÂU TRẢ LỜI.**
+     * Cron `kb:sync` sống ở `worker`, mặt sức khoẻ KB được phục vụ ở `api` ⇒ ở `api` ô ấy **LUÔN**
+     * `null`, và đọc nó thành *"không có chuỗi hoãn nào"* là một lời khẳng định SAI. Caveat phải
+     * đi CÙNG ô, không phải nằm trong đầu người đọc.
+     */
+    expect(
+      Object.hasOwn(h.vramDefer.kbSync, "hostedHere"),
+      "ô `kbSync` phải chở caveat 'tiến trình này có chủ trì cron không'",
+    ).toBe(true);
+    expect([true, false, null], "hostedHere: 'không đọc được' ≠ 'không chủ trì'").toContain(
+      h.vramDefer.kbSync.hostedHere,
+    );
     expect(h.vramDefer.holders.map((s) => s.owner)).toEqual(["sidecar:llm-finetune"]);
     expect(h.vramDefer.holders[0]!.exceeded).toBe(true);
   });

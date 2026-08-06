@@ -16654,6 +16654,9 @@
     "taskId": "Task id (optional)",
     "unassignedStation": "Unassigned"
   },
+  "vramBroker": {
+    "commandError": "The VRAM command could not run."
+  },
   "aiHealth": {
     "embedMismatch": "Embedding model mismatch",
     "embedMismatchTip": "The query embedding model differs from the one used to build the knowledge base — search results may be inaccurate.",

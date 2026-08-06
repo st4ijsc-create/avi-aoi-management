@@ -16638,6 +16638,9 @@
     "taskId": "Mã tác vụ (tùy chọn)",
     "unassignedStation": "Chưa phân công"
   },
+  "vramBroker": {
+    "commandError": "Lệnh VRAM không chạy được."
+  },
   "aiHealth": {
     "embedMismatch": "Lệch model embedding",
     "embedMismatchTip": "Model embedding truy vấn khác model đã build kho tri thức — kết quả tìm kiếm có thể không chính xác.",

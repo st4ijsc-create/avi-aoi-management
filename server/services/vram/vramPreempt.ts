@@ -22,6 +22,8 @@
 import { preemptPlan, preemptStepForOwner, snapshot, type VramPreemptStep } from "./vramBroker";
 import { logVramEvent } from "./vramEventLog";
 import type { VramPriority, VramReclaimerId } from "./types";
+/** ★ C-1 (review TOÀN NHÁNH Pha 4) — **MỘT** phép cắt-và-khai cho cả repo. Xem `catCau()` bên dưới. */
+import { catChuoi, type CatChuoiKetQua } from "@shared/textSafety";
 
 /** Kết quả thi hành. ⚠ Mọi số ở đây HỮU HẠN (xem `soHuuHan`). */
 export interface VramPreemptResult {
@@ -135,12 +137,17 @@ function soHuuHan(n: number): number {
  * người viết, hai câu trả lời trôi khỏi nhau) — đúng lớp lỗi đã đẻ ba Critical liên tiếp trong chuỗi
  * pha này. Và bản sao ấy còn **SAI**: một câu **đúng 400 ký tự** không hề bị cắt, nhưng phép so ở
  * client sẽ khai là đã cắt.
+ *
+ * ★★★ C-1 (review TOÀN NHÁNH Pha 4) — **PHÉP CẮT ĐÃ DỜI XUỐNG `shared/textSafety.ts`.**
+ * `vramTools.tomTat()` cần **đúng khuôn này** cho bề mặt prompt LLM (trần khác, cùng phép cắt).
+ * Chép nó sang đó là bản sao thứ hai của một vị từ; nên phép cắt ở `shared/`, hàm này giữ nguyên
+ * **trần riêng** (`CAU_TOI_DA` — cột chuỗi + `detail` `jsonb` của `vram_events`) và phép rút câu
+ * riêng từ một `unknown` bắt được ở `catch`.
  */
 const CAU_TOI_DA = 400;
 
-function catCau(err: unknown): { readonly cau: string; readonly daCat: boolean } {
-  const tho = String((err as { message?: unknown } | null)?.message ?? err ?? "");
-  return { cau: tho.slice(0, CAU_TOI_DA), daCat: tho.length > CAU_TOI_DA };
+function catCau(err: unknown): CatChuoiKetQua {
+  return catChuoi(String((err as { message?: unknown } | null)?.message ?? err ?? ""), CAU_TOI_DA);
 }
 
 /** Vì sao MỘT bước thi hành không thành. `null` ⇔ nó thành. */

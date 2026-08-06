@@ -16970,6 +16970,9 @@
     "taskId": "任务 ID（可选）",
     "unassignedStation": "未分配"
   },
+  "vramBroker": {
+    "commandError": "VRAM 指令无法执行。"
+  },
   "aiHealth": {
     "embedMismatch": "嵌入模型不匹配",
     "embedMismatchTip": "查询嵌入模型与构建知识库时所用的不同 — 搜索结果可能不准确。",

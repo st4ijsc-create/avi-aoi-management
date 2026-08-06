@@ -15,8 +15,6 @@
  * dưới một ống cấp phát đã hỏng.
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import fs from "node:fs";
-import path from "node:path";
 
 import { vramRouter } from "./vramRouter";
 import * as broker from "../services/vram/vramBroker";
@@ -32,7 +30,6 @@ import { __resetVramDeferForTests, xinVramCoHoan } from "../services/vram/vramDe
 import { __resetVramBeginFailureState } from "../services/vram/vramWiring";
 import { buildVramRefusal, VramRefusedError } from "../services/vram/vramRefusal";
 import type { VramAgentState } from "../services/vram/vramReadModel";
-import { VRAM_BACKGROUND_HOST_IDS, vramBackgroundHostForOwner } from "../services/vram/vramReadModel";
 
 const MIB = 1024 * 1024;
 
@@ -370,56 +367,14 @@ describe("vramRouter.state — trạng thái hoãn của CẢ SÁU hộ `backgro
 });
 
 /**
- * ★★★ (E) — DÂN SỐ SÁU HỘ CÓ **MÁY QUÉT**, không phải một bản khai tay được miễn lưới.
- * Cùng khuôn `vramAllocationSites.test.ts` (thứ đã canh `WIRED_ALLOCATION_SITE_COUNT` bằng máy).
+ * ★★★ (E) — DÂN SỐ SÁU HỘ CÓ MÁY QUÉT. **BA CA ẤY ĐÃ DỜI SANG
+ * `server/services/vram/vramReadModel.roster.test.ts`** (vá I-4, review TOÀN NHÁNH Pha 4).
+ *
+ * ⚠ VÌ SAO DỜI CHỨ KHÔNG CHÉP: `vramReadModel.ts:508-517` khẳng định đích danh *"lưới nằm ở
+ * `vramReadModel.roster.test.ts`"* — một file khi đó **không tồn tại**. Cơ chế thì có thật, nhưng ở
+ * một cái tên khác, nên người mở `server/services/vram/` ra sửa `HO_BACKGROUND` không tìm thấy nó.
+ * Giữ lại một bản ở đây là dựng **bản sao thứ hai của một vị từ** — đúng lớp lỗi cả nhánh đang gỡ.
  */
-describe("vramReadModel — bảng sáu hộ khớp ĐÚNG các điểm gọi `xinVramCoHoan` trong mã sản xuất", () => {
-  /** Quét `server/services/**` (bỏ file test) tìm `xinVramCoHoan({ owner: "…" })`. */
-  function quetOwnerXinVramCoHoan(): string[] {
-    const goc = path.resolve(__dirname, "..", "services");
-    const ra: string[] = [];
-    const di = (d: string) => {
-      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-        const p = path.join(d, e.name);
-        if (e.isDirectory()) {
-          di(p);
-          continue;
-        }
-        if (!e.name.endsWith(".ts") || e.name.includes(".test.")) continue;
-        const src = fs.readFileSync(p, "utf8");
-        const re = /xinVramCoHoan\(\{\s*owner:\s*[`"']([^`"'$]*)/g;
-        let m: RegExpExecArray | null;
-        while ((m = re.exec(src)) !== null) ra.push(m[1]!);
-      }
-    };
-    di(goc);
-    return ra;
-  }
-
-  it("★★★ MỌI `owner` quét được đều khớp MỘT hàng trong bảng — một hộ MỚI mà quên khai ⇒ ĐỎ", () => {
-    const owners = quetOwnerXinVramCoHoan();
-    // Lưới của lưới: mẫu quét phải THẬT SỰ thấy các điểm gọi, không phải im lặng trả rỗng.
-    expect(owners.length, "máy quét không thấy điểm gọi nào ⇒ chính lưới này đã mù").toBeGreaterThanOrEqual(6);
-    for (const o of owners) {
-      expect(vramBackgroundHostForOwner(o), `owner "${o}" KHÔNG có hàng nào trong HO_BACKGROUND`).not.toBeNull();
-    }
-  });
-
-  it("★★ và NGƯỢC LẠI — mọi hàng trong bảng đều được ít nhất một điểm gọi chạm tới (không có hàng CHẾT)", () => {
-    const owners = quetOwnerXinVramCoHoan();
-    // `cron:kb-sync` có cơ chế hẹn giờ RIÊNG (không qua `xinVramCoHoan`) ⇒ nó tự khớp bằng tên hộ.
-    const chamToi = new Set<string>(["cron:kb-sync"]);
-    for (const o of owners) {
-      const h = vramBackgroundHostForOwner(o);
-      if (h !== null) chamToi.add(h);
-    }
-    expect([...chamToi].sort()).toEqual([...VRAM_BACKGROUND_HOST_IDS].sort());
-  });
-
-  it("máy quét thấy ĐÚNG sáu điểm gọi `xinVramCoHoan` (số này đổi ⇒ đọc lại bảng, đừng sửa ca cho xanh)", () => {
-    expect(quetOwnerXinVramCoHoan().length).toBe(6);
-  });
-});
 
 describe("vramRouter.state — KHÔNG một giá trị KHÔNG HỮU HẠN nào rời khỏi API", () => {
   it("★★★ `attributableBytes` không hữu hạn ⇒ payload sạch + `nonFiniteFields` GỌI TÊN từng ô", async () => {

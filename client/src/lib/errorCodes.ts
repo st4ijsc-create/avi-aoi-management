@@ -6,6 +6,9 @@
  * mã vừa thêm mà chưa kịp dịch, đều không bao giờ tệ hơn hôm nay.
  */
 import i18n from "i18next";
+/** ★ C-1 (review TOÀN NHÁNH Pha 4) — thân hàm làm sạch ở `shared/` để CẢ `server/` với tới được.
+ *  Xem khối docstring dài ở chỗ tái xuất bên dưới. */
+import { stripInterpolationSyntax } from "@shared/textSafety";
 
 /** Sprint 5 §4.3 fix round 2 — mỗi tham số tự-do (không phải token kỹ thuật kiểu
  *  {{ext}}/{{url}}/{{limitMb}}) phải đi qua từ điển riêng của nó trước khi nội
@@ -96,10 +99,22 @@ const PARAM_DICTIONARY_SPACE: Record<string, string> = {
  * (chuỗi đã sạch ba ký tự) **TRƯỚC KHI** render. Một vòng lặp/đệ quy ĐỒNG BỘ trong
  * `i18n.t()` thì `timeout` của vitest **không cắt được** — nó chỉ treo runner. Kiểm hàm
  * thuần trước, render sau, là cách duy nhất chạy được biến thể đó mà không treo.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ C-1 (review TOÀN NHÁNH Pha 4) — **THÂN HÀM ĐÃ DỜI XUỐNG `shared/textSafety.ts`.**
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * Luật *"mọi giá trị đi vào câu chữ phải qua CÙNG hàm này"* được phát biểu cho CẢ REPO,
+ * nhưng cổng canh nó **chỉ quét `client/src`** — nên khi Task 4 dựng một bề mặt câu chữ
+ * mới ở `server/services/aiLocalTools/vramTools.ts` (nối `owner` của tiến trình ANH EM
+ * thẳng vào **prompt LLM**), hàm này **không với tới được** từ đó: `server/` mà nhập
+ * `errorCodes.ts` là kéo cả `i18next` sang. Một bất biến XUYÊN NGANG thì **đóng gói là
+ * công cụ sai**. ⇒ Thân hàm ở `@shared/textSafety`; dòng dưới **TÁI XUẤT** nó nên mọi
+ * lời gọi/ca kiểm nhập từ `./errorCodes` không đổi một chữ. **KHÔNG viết lại thân hàm ở
+ * đây** — đó là bản sao thứ hai, đúng thứ khối trên tồn tại để cấm.
+ * ⚠ `import` + `export {}` (KHÔNG phải `export … from`): file này còn **tự dùng** hàm ở
+ * `sanitizeAllParams()` và ở tám hàm `translateVram*`, nên nó phải nằm trong phạm vi cục bộ.
  */
-export function stripInterpolationSyntax(value: string): string {
-  return value.replace(/[{}$]/g, "");
-}
+export { stripInterpolationSyntax };
 
 /** Review round 1 (M-2) — reviewer dựng harness i18next THẬT tái hiện: khi một
  *  giá trị TỰ DO (không phải 1 trong 7 khoá từ điển ở trên — vd `lineName`,

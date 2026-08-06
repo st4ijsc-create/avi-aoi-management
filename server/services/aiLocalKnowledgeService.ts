@@ -1449,16 +1449,39 @@ export interface KbHealth {
    * mở dân số ra cả sáu hộ `background`, nên nếu vẫn không ai đọc thì nay là **sáu** đồng hồ
    * không kim.
    *
-   * `kbSync` — chuỗi hoãn của `cron:kb-sync` (cơ chế hẹn giờ riêng của Task 6, có khôi phục sau
-   *   khởi động lại). `null` = **KHÔNG có chuỗi hoãn nào đang sống**, KHÔNG phải "không biết".
-   * `holders` — ô trạng thái của **mọi hộ khác** đi qua `vramDefer.xinVramCoHoan()` (trainer ·
-   *   finetune · cổng eval · reranker · embed-ctx). Rỗng = không hộ nào đang bị hoãn.
+   * `kbSync.chain` — chuỗi hoãn của `cron:kb-sync` (cơ chế hẹn giờ riêng của Task 6, có khôi phục
+   *   sau khởi động lại). `holders` — ô trạng thái của **mọi hộ khác** đi qua
+   *   `vramDefer.xinVramCoHoan()` (trainer · finetune · cổng eval · reranker · embed-ctx).
    *
    * ⚠ Đây là **NGƯỜI ĐỌC**, không phải nguồn: cả hai ô đều là ảnh chụp trong bộ nhớ của tiến trình
    * đang phục vụ mặt sức khoẻ. Vết BỀN vẫn là `vram_events` (`defer` / `defer_exceeded`).
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ I-5 (review TOÀN NHÁNH Pha 4) — **MỘT Ô, HAI NGƯỜI ĐỌC, TRƯỚC ĐÂY CHỈ MỘT MANG CAVEAT.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * Task 1 (C-1) xoá `"idle"` khỏi KIỂU của mặt đọc VRAM và bổ sung `hostedHere` cho
+   * `getKbSyncSchedulerStatus()`, **đúng vì** `defer === null` không phân biệt được *"không có
+   * chuỗi hoãn"* với *"tiến trình này không nhìn thấy hộ đó"*. Nhưng nó **để nguyên người đọc
+   * CŨ** — chính ô này. Và đây là chỗ hậu quả nặng nhất: cron sống ở `worker`, mặt sức khoẻ KB
+   * được phục vụ ở `api` ⇒ ở `api` giá trị **LUÔN `null`**, và `null` ở đó đọc thành *"không có
+   * chuỗi hoãn nào"* là một **lời khẳng định sai**. Bản khai trước là `defer | null` **trần** nên
+   * `tsc` **không thể** bắt.
+   *
+   * ⇒ **ĐỔI KIỂU, KHÔNG THÊM CA** (ràng buộc 8): `kbSync` nay là một object BẮT BUỘC mang
+   * `hostedHere` cạnh `chain`. Mọi người đọc cũ (`h.vramDefer.kbSync === null`) **gãy `tsc`** và
+   * phải đọc lại caveat một lần — đó là cơ chế, không phải hình thức.
    */
   vramDefer: {
-    kbSync: ReturnType<typeof getKbSyncSchedulerStatus>["defer"];
+    kbSync: {
+      /** `null` ⇔ không có chuỗi hoãn nào **TRONG TIẾN TRÌNH NÀY** — đọc kèm `hostedHere`. */
+      chain: ReturnType<typeof getKbSyncSchedulerStatus>["defer"];
+      /**
+       * `true` = tiến trình này CHỦ TRÌ cron `kb:sync` ⇒ `chain === null` có nghĩa *"không có chuỗi
+       * hoãn"*. `false` = hộ chạy ở tiến trình khác ⇒ `chain === null` **KHÔNG nói gì cả**.
+       * `null` = không xác định được (đọc trạng thái scheduler hỏng).
+       */
+      hostedHere: boolean | null;
+    };
     holders: VramDeferState[];
   };
 }
@@ -1485,9 +1508,14 @@ function readLastAutosyncEvalGate(): KbHealth["lastAutosyncEvalGate"] {
  */
 function readVramDefer(): KbHealth["vramDefer"] {
   try {
-    return { kbSync: getKbSyncSchedulerStatus().defer, holders: docTrangThaiHoanVram() };
+    // ★ I-5 — MỘT lượt đọc cho CẢ hai ô (cùng kỷ luật M-2 của `vramReadModel.docSauHo()`): đọc hai
+    // lần là hai ảnh chụp ở hai thời điểm cho một sự thật.
+    const s = getKbSyncSchedulerStatus();
+    return { kbSync: { chain: s.defer, hostedHere: s.hostedHere }, holders: docTrangThaiHoanVram() };
   } catch {
-    return { kbSync: null, holders: [] };
+    // ⚠ Nhánh SUY GIẢM: `hostedHere: null` — "không đọc được" ≠ "không chủ trì". Trước bản vá I-5,
+    // nhánh này trả `kbSync: null` TRẦN, tức phát ra đúng lời khẳng định sai mà C-1 cấm.
+    return { kbSync: { chain: null, hostedHere: null }, holders: [] };
   }
 }
 
