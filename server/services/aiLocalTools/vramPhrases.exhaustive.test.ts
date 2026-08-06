@@ -46,7 +46,13 @@ vi.mock("../../_core/accessControl", () => ({
 }));
 
 import "./vramTools";
-import { getTool, type ToolLang } from "./toolRegistry";
+/**
+ * ⚠ NHẬP TĨNH, KHÔNG `await import()` trong thân ca — đồ thị nhập của `./index` (toàn bộ họ tool)
+ * tốn vài giây và sẽ ăn hết ngân sách 5.000 ms của một ca dưới tải song song (đúng lớp flake đã
+ * ghi hồ sơ cho `wiring.inprocess`). Nhập tĩnh đẩy chi phí sang pha COLLECT.
+ */
+import { tryExecuteTool } from "./index";
+import { argsWithAuthCtx, getTool, type ToolExecContext, type ToolLang } from "./toolRegistry";
 import { CAU, VRAM_PHRASE_KEYS, type Cum, type Tham } from "./vramPhrases";
 import * as broker from "../vram/vramBroker";
 import {
@@ -356,5 +362,66 @@ describe("★★★ §C đường thoát thật — cùng MỘT trạng thái, b
     const [vi, en] = await Promise.all([chay("vi"), chay("en")]);
     expect(vi.textSummary).toMatch(/\d\.\d{3} MiB/);
     expect(en.textSummary).toMatch(/\d,\d{3} MiB/);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// §D — NGÔN NGỮ PHIÊN CÓ TỚI ĐƯỢC TOOL KHÔNG? (đi từ CÂU HỎI, không tự tiêm `lang`)
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ⚠⚠⚠ VÌ SAO §D TỒN TẠI, VÀ VÌ SAO §C KHÔNG THAY ĐƯỢC NÓ.
+ * Mọi ca §A/§B/§C **tự đặt `lang`** vào tham số — tức tự tiêm đúng thứ mà **mã sản xuất có thể
+ * không bao giờ đặt**. Đó chính xác là lớp lỗi đã để `buildVramAgentState()` thành **mã chết** trên
+ * đường Agent ở Pha 4 (`vramTools.test.ts` ghi hồ sơ: mọi ca vòng 1 tự tiêm `__authCtx`).
+ * ⇒ Ca dưới đi **từ câu hỏi**, qua `tryExecuteTool()` THẬT, và chỉ đưa `lang` qua **`execCtx`** —
+ * đúng chỗ `aiChatRouter` đặt nó. Gỡ phép chuyển tiếp `lang` ở `argsWithAuthCtx` ⇒ ĐỎ.
+ */
+describe("★★★ §D `execCtx.lang` PHẢI tới được read tool — nếu không, 51 khoá × 3 bản là MÃ CHẾT", () => {
+  const phien = (lang: ToolLang): ToolExecContext => ({
+    user: { id: 7, role: "admin", name: "Tester" },
+    lang,
+  });
+
+  it("★★★ hỏi với phiên `zh` ⇒ bản tóm tắt là TIẾNG TRUNG (không rớt về vi)", async () => {
+    dungCanh();
+    const r = await tryExecuteTool("còn bao nhiêu vram", undefined, phien("zh"));
+    expect(r.result, "bộ phân loại ý định phải chọn get_vram_state cho câu này").not.toBeNull();
+    expect(coHanTu(r.result!.textSummary), "phiên zh nhưng tool trả về không một Hán tự nào").toBe(true);
+    const viet = [...r.result!.textSummary].filter((c) => /\p{Script=Latin}/u.test(c) && !/[A-Za-z]/.test(c));
+    expect([...new Set(viet)].join(""), "phiên zh vẫn nhận dấu tiếng Việt ⇒ lang không tới được tool").toBe("");
+  });
+
+  it("★★★ hỏi với phiên `en` ⇒ KHÔNG một chữ cái phi-ASCII nào", async () => {
+    dungCanh();
+    const r = await tryExecuteTool("còn bao nhiêu vram", undefined, phien("en"));
+    expect(r.result).not.toBeNull();
+    expect(chiChuCaiAscii(r.result!.textSummary)).toBe(true);
+  });
+
+  it("★★ phiên `vi` vẫn ra tiếng Việt — đối chứng DƯƠNG (không phải một phép 'đổi hết sang en')", async () => {
+    dungCanh();
+    const r = await tryExecuteTool("còn bao nhiêu vram", undefined, phien("vi"));
+    expect(r.result).not.toBeNull();
+    expect(coLatinPhiAscii(r.result!.textSummary)).toBe(true);
+    expect(coHanTu(r.result!.textSummary)).toBe(false);
+  });
+
+  it("★★ `lang` HỢP LỆ do người sản xuất args nêu được GIỮ; `lang` rác bị phiên ghi đè", () => {
+    /**
+     * ⚠ Khác `__authCtx` một cách CÓ CHỦ ĐÍCH — ngôn ngữ không phải một biên an ninh. Ca này khoá
+     * đúng sự khác biệt ấy để không ai "đồng bộ hoá" hai luật rồi làm mất một trong hai.
+     */
+    const t = getTool("get_vram_state")!;
+    expect((argsWithAuthCtx(t, { lang: "en" }, phien("zh")) as { lang?: string }).lang).toBe("en");
+    expect((argsWithAuthCtx(t, { lang: "klingon" }, phien("zh")) as { lang?: string }).lang).toBe("zh");
+    expect((argsWithAuthCtx(t, {}, phien("zh")) as { lang?: string }).lang).toBe("zh");
+    // Chiều NGƯỢC LẠI của `__authCtx`: đầu vào KHÔNG BAO GIỜ là nguồn danh tính.
+    const bia = argsWithAuthCtx(t, { __authCtx: { userId: 999, role: "superadmin" } }, phien("vi"));
+    expect((bia as { __authCtx: { userId: number } }).__authCtx.userId).toBe(7);
+  });
+
+  it("★★ tool KHÔNG khai `lang` trong schema thì KHÔNG bị nhét thêm khoá lạ (mọi schema đều `.strict()`)", () => {
+    const gia = { name: "x", parameters: { shape: { foo: {} } } } as unknown as Parameters<typeof argsWithAuthCtx>[0];
+    expect(argsWithAuthCtx(gia, { foo: 1 }, phien("zh"))).toEqual({ foo: 1 });
   });
 });
