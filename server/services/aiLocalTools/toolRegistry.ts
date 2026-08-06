@@ -280,9 +280,32 @@ export function argsWithAuthCtx(tool: Tool<any, any>, args: unknown, execCtx?: T
   const { __authCtx: _tuDauVao, ...sach } = args as Record<string, unknown>;
   if (!execCtx) return sach;
   const shape = (tool.parameters as unknown as { shape?: Record<string, unknown> })?.shape;
-  if (!shape || !Object.hasOwn(shape, "__authCtx")) return sach;
+  if (!shape) return sach;
+  let ra: Record<string, unknown> = sach;
+  /**
+   * ★★★ Pha 5 Task 4 (N10) — **NGÔN NGỮ PHIÊN CŨNG PHẢI ĐI QUA ĐÂY, NẾU KHÔNG BẢN DỊCH LÀ MÃ CHẾT.**
+   *
+   * `ToolExecContext.lang` được `aiChatRouter.ts:243-247` tính từ **chữ viết của chính câu hỏi**
+   * (`zh` nếu có Hán tự · `vi` nếu có dấu · ngược lại lấy `input.language`), và **write tool** đọc
+   * nó qua `ctx.lang`. Nhưng **read tool** chỉ nhận `decision.args` — mà **không bộ phân loại ý định
+   * nào đặt `lang`** (`git grep "lang" server/services/aiLocalTools/intentClassifier.ts` ⇒ rỗng).
+   * ⇒ Trước dòng này, **29 read tool khai `lang: z.enum(["vi","en","zh"]).optional()` đều rơi về
+   * `vi` VĨNH VIỄN** trên đường Agent: một người dùng hỏi bằng tiếng Trung nhận lại câu tiếng Việt,
+   * và mọi bản dịch của các tool ấy là **mã chết**.
+   *
+   * ⚠ Cùng lớp lỗi với `__authCtx` (một sự thật của **phiên** không tới được tool), nên vá ở **cùng
+   * một chỗ** — vá từng tool là 29 bản sao (xem lý lẽ "VÌ SAO SỬA Ở ĐÂY" phía trên).
+   * ⚠ Khác `__authCtx` ở **một** điểm có chủ đích: ngôn ngữ **không phải một biên an ninh**, nên
+   * một `lang` HỢP LỆ do người sản xuất args nêu ra (model có thể suy ra "trả lời tôi bằng tiếng
+   * Anh") được **GIỮ**; `execCtx.lang` chỉ điền vào chỗ TRỐNG hoặc chỗ **không hợp lệ**. Với
+   * `__authCtx` thì ngược lại — nó bị **XOÁ vô điều kiện** rồi gán lại, vì nó **là** biên an ninh.
+   */
+  if (Object.hasOwn(shape, "lang") && ra.lang !== "vi" && ra.lang !== "en" && ra.lang !== "zh") {
+    ra = { ...ra, lang: execCtx.lang };
+  }
+  if (!Object.hasOwn(shape, "__authCtx")) return ra;
   // (2) GÁN LẠI từ phiên THẬT — nguồn duy nhất.
-  return { ...sach, __authCtx: { userId: execCtx.user.id, role: execCtx.user.role } };
+  return { ...ra, __authCtx: { userId: execCtx.user.id, role: execCtx.user.role } };
 }
 
 const _registry = new Map<string, Tool<any, any>>();

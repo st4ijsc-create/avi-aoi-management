@@ -57,6 +57,7 @@ import { checkPermission } from "../../_core/accessControl";
 import { registerTool, type Tool, type ToolLang, type ToolResult } from "./toolRegistry";
 import { buildVramAgentState, type VramAgentState } from "../vram/vramReadModel";
 import { catChuoi, stripChatControlTokens, stripInterpolationSyntax } from "@shared/textSafety";
+import { cum, noi, type Dong } from "./vramPhrases";
 
 const MIB = 1024 * 1024;
 
@@ -86,11 +87,11 @@ const TOM_TAT_TOI_DA = 16_000;
  * ⚠ Nhãn cắt viết bằng ký tự **không nằm trong hai lớp bị xoá** (`…[đã cắt …]`) nên chính nó không
  * tự bị làm sạch ở lượt sau, và nó **không thể** bị một payload giả mạo: payload đã sạch `<>|{}$`.
  */
-function catSach(raw: string | null | undefined): string {
+function catSach(raw: string | null | undefined, lang: ToolLang): string {
   if (raw === null || raw === undefined) return "";
   const sach = stripChatControlTokens(stripInterpolationSyntax(String(raw)));
   const { cau, daCat } = catChuoi(sach, O_TOI_DA);
-  return daCat ? `${cau}…[đã cắt, còn ${O_TOI_DA}/${sach.length} ký tự — ảnh chụp data.state giữ nguyên văn]` : cau;
+  return daCat ? `${cau}${cum(lang, "truncatedField", { keep: O_TOI_DA, total: sach.length })}` : cau;
 }
 
 const authCtxSchema = z
@@ -118,17 +119,16 @@ interface VramStateData {
   rows: RenderRow[];
 }
 
-/** MiB chỉ ở CÂU CHỮ (Đ4 — đơn vị nội bộ luôn là byte). `null` giữ nguyên là `null`. */
-function mib(bytes: number | null | undefined): string {
-  if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return "KHÔNG BIẾT";
-  return `${Math.round(bytes / MIB).toLocaleString("vi-VN")} MiB`;
+/**
+ * MiB chỉ ở CÂU CHỮ (Đ4 — đơn vị nội bộ luôn là byte). `null` giữ nguyên là `null`.
+ * ⚠ Dấu nhóm chữ số cũng theo ngôn ngữ: `13.000` (vi) ≠ `13,000` (en/zh). Một Agent trả lời tiếng
+ * Anh mà in `13.000 MiB` là nói **mười ba** MiB với người đọc `en-US`.
+ */
+function mib(bytes: number | null | undefined, lang: ToolLang): string {
+  if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return cum(lang, "unknownNumber", {});
+  const locale = lang === "vi" ? "vi-VN" : lang === "zh" ? "zh-CN" : "en-US";
+  return `${Math.round(bytes / MIB).toLocaleString(locale)} MiB`;
 }
-
-const DENY: Record<ToolLang, string> = {
-  vi: 'Bạn không có quyền xem trạng thái bộ điều phối VRAM ("machine_control"). Liên hệ quản trị viên.',
-  en: 'You do not have permission to view VRAM broker state ("machine_control"). Contact an administrator.',
-  zh: "您无权查看 VRAM 调度器状态（machine_control）。请联系管理员。",
-};
 
 function empty(): VramStateData {
   return { state: null, rows: [] };
@@ -138,92 +138,140 @@ function empty(): VramStateData {
  * ★★★ BẢN TÓM TẮT — **MỖI DÒNG LÀ MỘT CÁI KIM.** Bảng "đồng hồ không kim" của kế hoạch Pha 4 nằm
  * trọn ở đây; xoá một dòng là trả một ô về trạng thái không ai đọc (và `vramTools.test.ts` đỏ).
  */
-function tomTat(s: VramAgentState): string[] {
-  const d: string[] = [];
+function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
+  const d: Dong[] = [];
+  /** Rút gọn cục bộ — **không** phải một cửa thứ hai: cả hai chỉ chuyển tiếp `lang` xuống. */
+  const M = (b: number | null | undefined): string => mib(b, lang);
+  const C = (x: string | null | undefined): string => catSach(x, lang);
 
   // ── DƯ ĐỊA + `trusted`/`degradedReasons` (đồng hồ #2 của bảng) ───────────────────────────────
   d.push(
-    `Dư địa hiệu lực: ${mib(s.headroom.effectiveBytes)} (thô ${mib(s.headroom.rawBytes)}) · ` +
-      `trần ${mib(s.headroom.ceilingBytes)} · đang dùng ${mib(s.headroom.usedBytes)}.`,
+    noi(lang, "headroom", {
+      eff: M(s.headroom.effectiveBytes),
+      raw: M(s.headroom.rawBytes),
+      ceiling: M(s.headroom.ceilingBytes),
+      used: M(s.headroom.usedBytes),
+    }),
   );
   d.push(
-    `basis=${catSach(s.headroom.basis)}${s.headroom.blind ? " (MÙ ⇒ con số này là CHẶN TRÊN, không phải trạng thái an toàn)" : ""} · ` +
-      `trusted=${s.headroom.trusted}` +
-      (s.headroom.degradedReasons.length > 0
-        ? ` · ĐANG SUY GIẢM vì: ${s.headroom.degradedReasons.map(catSach).join(", ")}.`
-        : " · không lý do suy giảm nào."),
+    noi(lang, "basis", {
+      basis: C(s.headroom.basis),
+      blind: s.headroom.blind ? cum(lang, "basisBlind", {}) : "",
+      trusted: String(s.headroom.trusted),
+      degraded:
+        s.headroom.degradedReasons.length > 0
+          ? cum(lang, "degradedYes", { reasons: s.headroom.degradedReasons.map((r) => C(r)).join(", ") })
+          : cum(lang, "degradedNo", {}),
+    }),
   );
 
   // ── `attributable` — CHẶN TRÊN có nhãn ──────────────────────────────────────────────────────
   d.push(
     s.attributable.known
-      ? `Quy trách nhiệm được (attributable): ${mib(s.attributable.bytes)}.`
-      : `attributable KHÔNG BIẾT (${catSach(s.attributable.reason)}) ⇒ ${catSach(s.attributable.meaning)}: dư địa đang là CHẶN TRÊN.`,
+      ? noi(lang, "attributableKnown", { bytes: M(s.attributable.bytes) })
+      : noi(lang, "attributableUnknown", {
+          reason: C(s.attributable.reason),
+          meaning: C(s.attributable.meaning),
+        }),
   );
 
   // ── `baselineUnverifiedReasons` (đồng hồ #3 của bảng) ────────────────────────────────────────
   d.push(
-    `Nền (baseline): verified=${s.baseline.verified} · origin=${s.baseline.origin === null ? "CHƯA CÓ NHỊP NÀO" : catSach(s.baseline.origin)} · ` +
-      (s.baseline.unverifiedReasons === null
-        ? "unverifiedReasons=null (CHƯA CÓ NHỊP NÀO — khác hẳn mảng rỗng)."
-        : s.baseline.unverifiedReasons.length === 0
-          ? "unverifiedReasons=[] (có nhịp, không lý do nào)."
-          : `unverifiedReasons: ${s.baseline.unverifiedReasons.map(catSach).join(", ")}.`),
+    noi(lang, "baseline", {
+      verified: String(s.baseline.verified),
+      origin: s.baseline.origin === null ? cum(lang, "baselineOriginNone", {}) : C(s.baseline.origin),
+      unverified:
+        s.baseline.unverifiedReasons === null
+          ? cum(lang, "baselineUnverifiedNull", {})
+          : s.baseline.unverifiedReasons.length === 0
+            ? cum(lang, "baselineUnverifiedEmpty", {})
+            : cum(lang, "baselineUnverifiedList", {
+                reasons: s.baseline.unverifiedReasons.map((r) => C(r)).join(", "),
+              }),
+    }),
   );
 
   // ── SỔ: cục bộ + ANH EM (đồng hồ #5 — `foreignLedgerBytes`/`foreignLeases`) ──────────────────
-  d.push(`Sổ cục bộ: ${mib(s.ledger.localBytes)} · tổng (cục bộ + anh em): ${mib(s.ledger.totalBytes)}.`);
+  d.push(noi(lang, "ledgerLocal", { local: M(s.ledger.localBytes), total: M(s.ledger.totalBytes) }));
   if (!s.ledger.foreign.known) {
-    d.push(
-      `Sổ chung: ${catSach(s.ledger.foreign.meaning)} — ĐANG MÙ về tiến trình anh em. TUYỆT ĐỐI không đọc thành "không ai khác giữ gì".`,
-    );
+    d.push(noi(lang, "foreignBlind", { meaning: C(s.ledger.foreign.meaning) }));
   } else {
     d.push(
-      `Sổ chung (anh em): ${mib(s.ledger.foreign.bytes)} · ${s.ledger.foreign.holders.length} hộ · ` +
-        `tuổi bản sao ${s.ledger.foreign.ageMs ?? "?"} ms (stale=${s.ledger.foreign.stale}) · ` +
-        `ghi chưa đồng bộ=${s.ledger.foreign.unsyncedWrites ?? "?"} · hỏng liên tiếp=${s.ledger.foreign.consecutiveFailures ?? "?"}.`,
+      noi(lang, "foreignKnown", {
+        bytes: M(s.ledger.foreign.bytes),
+        count: s.ledger.foreign.holders.length,
+        ageMs: String(s.ledger.foreign.ageMs ?? "?"),
+        stale: String(s.ledger.foreign.stale),
+        unsynced: String(s.ledger.foreign.unsyncedWrites ?? "?"),
+        fails: String(s.ledger.foreign.consecutiveFailures ?? "?"),
+      }),
     );
   }
 
   // ── HỘ + `reclaim` (bàn giao I-3: lệnh nào VỚI TỚI hộ này) + TTL (đồng hồ #6) ────────────────
   const hoTatCa = [...s.ledger.localHolders, ...(s.ledger.foreign.known ? s.ledger.foreign.holders : [])];
   if (hoTatCa.length === 0) {
-    d.push('Đang giữ (theo sổ): KHÔNG hộ nào — nhưng xem "CẬN DƯỚI" ngay dưới trước khi kết luận card trống.');
+    d.push(noi(lang, "noHolders", {}));
   }
   for (const h of hoTatCa) {
-    const noi = h.processKey === null ? "tiến trình NÀY" : `tiến trình ${catSach(h.processKey)}`;
+    const oDau =
+      h.processKey === null
+        ? cum(lang, "atThisProcess", {})
+        : cum(lang, "atProcess", { processKey: C(h.processKey) });
     const lenh =
       h.reclaim.kind === "reclaimable-here"
-        ? `vram.preempt("${catSach(h.owner)}") VỚI TỚI (người thi hành: ${catSach(h.reclaim.reclaimer)})`
+        ? cum(lang, "reclaimHere", { owner: C(h.owner), reclaimer: C(h.reclaim.reclaimer) })
         : h.reclaim.kind === "declared-by-owner-process"
-          ? `CHỈ tiến trình chủ thu hồi được (đã khai ${catSach(h.reclaim.reclaimer)}); từ đây vram.preempt sẽ trả owner-not-in-local-ledger`
-          : `KHÔNG lệnh nào với tới (${catSach(h.reclaim.why)})`;
+          ? cum(lang, "reclaimOwnerProcess", { reclaimer: C(h.reclaim.reclaimer) })
+          : cum(lang, "reclaimNone", { why: C(h.reclaim.why) });
     const ttl =
       h.ttlExpired === null
         ? ""
-        : ` · TTL ${h.ttlMs} ms, quá hạn=${h.ttlExpired}${h.ttlExpired ? " (KHÔNG có nhịp nào tự gặt theo TTL — phải ra lệnh thu hồi)" : ""}`;
+        : cum(lang, "ttl", {
+            ttlMs: String(h.ttlMs),
+            expired: String(h.ttlExpired),
+            note: h.ttlExpired ? cum(lang, "ttlExpiredNote", {}) : "",
+          });
     d.push(
-      `Hộ "${catSach(h.owner)}" (${catSach(h.kind)}, ${catSach(h.priority)}) ở ${noi}: ${mib(h.bytes)}` +
-        ` · số đo=${h.measured}` +
-        (h.leaseKey === null ? "" : ` · leaseKey=${catSach(h.leaseKey)}`) +
-        ttl +
-        ` · ${lenh}.`,
+      noi(lang, "holderLine", {
+        owner: C(h.owner),
+        kind: C(h.kind),
+        priority: C(h.priority),
+        where: oDau,
+        bytes: M(h.bytes),
+        measured: String(h.measured),
+        // ⚠ `leaseKey=` là TÊN TRƯỜNG máy đọc — dữ liệu, không phải văn xuôi ⇒ ghép ở đây, không
+        // vào bảng câu (xem luật "văn xuôi ⇒ khoá · định danh ⇒ tham số" ở `vramPhrases.ts`).
+        leaseKeyPart: h.leaseKey === null ? "" : ` · leaseKey=${C(h.leaseKey)}`,
+        ttlPart: ttl,
+        command: lenh,
+      }),
     );
   }
 
   // ── PHẦN KHÔNG QUY TRÁCH NHIỆM ĐƯỢC — `holderListIsLowerBound` ───────────────────────────────
   d.push(
-    `Ngoài sổ (không quy trách nhiệm được): ${mib(s.unattributed.bytes)} · caveat=${catSach(s.unattributed.caveat)} · ` +
-      `holderListIsLowerBound=${s.unattributed.holderListIsLowerBound} (danh sách hộ trên là CẬN DƯỚI: mới nối ` +
-      `${s.unattributed.wiredSiteCount ?? "?"}/${s.unattributed.knownSiteRowCount ?? "?"} điểm cấp phát) · ` +
-      `excludesBaselineBytes=${s.unattributed.excludesBaselineBytes} (mọi byte trong NỀN đã bị trừ ⇒ số 0 KHÔNG nghĩa là card đã giải thích hết).`,
+    noi(lang, "unattributed", {
+      bytes: M(s.unattributed.bytes),
+      caveat: C(s.unattributed.caveat),
+      lowerBound: String(s.unattributed.holderListIsLowerBound),
+      wired: String(s.unattributed.wiredSiteCount ?? "?"),
+      known: String(s.unattributed.knownSiteRowCount ?? "?"),
+      excludes: String(s.unattributed.excludesBaselineBytes),
+    }),
   );
 
   // ── ƯỚC LƯỢNG NGOÀI SỔ + `vramBeginFailureState()` (đồng hồ #4) ──────────────────────────────
+  const thamUocLuong = {
+    bytes: M(s.unledgered.estimateBytes),
+    kind: C(s.unledgered.estimateKind),
+    usable: String(s.unledgered.estimateUsable),
+    unknownCount: String(s.unledgered.unknownCount ?? "?"),
+  };
   d.push(
-    `Ước lượng chạy ngoài sổ: ${mib(s.unledgered.estimateBytes)} (estimateKind=${catSach(s.unledgered.estimateKind)}, ` +
-      `estimateUsable=${s.unledgered.estimateUsable}, unknownCount=${s.unledgered.unknownCount ?? "?"})` +
-      (s.unledgered.estimateUsable ? "." : " ⇒ KHÔNG ĐÁNG TIN, đừng dùng để tính."),
+    s.unledgered.estimateUsable
+      ? noi(lang, "unledgeredEstimateUsable", thamUocLuong)
+      : noi(lang, "unledgeredEstimateUnusable", thamUocLuong),
   );
   /**
    * ⚠ NHÃN CỐ Ý KHÔNG VIẾT `beginVramAllocation` KÈM DẤU `(` — và đây là một bài học, không phải
@@ -234,52 +282,76 @@ function tomTat(s: VramAgentState): string[] {
    * đó ca THẬT chết theo"* ⇒ sửa NHÃN, tuyệt đối không thêm một dòng miễn trừ.
    */
   d.push(
-    `Lượt cấp phát ngoài sổ (hàm beginVramAllocation) đã hỏng ${s.unledgered.beginFailureCount ?? "?"} lượt` +
-      (s.unledgered.lastReason === null ? "." : ` · lý do gần nhất: ${catSach(s.unledgered.lastReason)}`),
+    s.unledgered.lastReason === null
+      ? noi(lang, "beginFailuresNoReason", { count: String(s.unledgered.beginFailureCount ?? "?") })
+      : noi(lang, "beginFailuresWithReason", {
+          count: String(s.unledgered.beginFailureCount ?? "?"),
+          reason: C(s.unledgered.lastReason),
+        }),
   );
 
   // ── NHỊP ─────────────────────────────────────────────────────────────────────────────────────
   d.push(
     s.tick.present
-      ? `Nhịp quyết định: tuổi ${s.tick.ageMs ?? "?"} ms (ngưỡng ${s.tick.staleAfterMs} ms, stale=${s.tick.stale}) · hỏng liên tiếp=${s.tick.consecutiveFailures ?? "?"}.`
-      : `Nhịp quyết định: ${catSach(s.tick.meaning)} — CHƯA CÓ NHỊP NÀO (cấu trúc, không tự lành).`,
+      ? noi(lang, "tickPresent", {
+          ageMs: String(s.tick.ageMs ?? "?"),
+          staleAfterMs: String(s.tick.staleAfterMs),
+          stale: String(s.tick.stale),
+          fails: String(s.tick.consecutiveFailures ?? "?"),
+        })
+      : noi(lang, "tickAbsent", { meaning: C(s.tick.meaning) }),
   );
 
   // ── HOÃN: CẢ 6 HỘ `background` (đồng hồ #1) + retryReach ((D)) ───────────────────────────────
   d.push(
-    `Trạng thái hoãn — phạm vi ${catSach(s.defer.scope)}, quan sát từ ${catSach(s.defer.observedFromProcessKey)}; ` +
-      `vết BỀN xuyên tiến trình: ${catSach(s.defer.durableTrace)}.`,
+    noi(lang, "deferScope", {
+      scope: C(s.defer.scope),
+      observedFrom: C(s.defer.observedFromProcessKey),
+      durableTrace: C(s.defer.durableTrace),
+    }),
   );
   for (const h of s.defer.hosts) {
     const coChe =
       h.mechanism === "no-wait-degrades-in-place"
-        ? "KHÔNG CÓ CƠ CHẾ CHỜ (suy giảm tại chỗ, ngân sách 0)"
-        : `có chờ + thử lại (đáy ${h.budgetMs} ms)`;
+        ? cum(lang, "mechNoWait", {})
+        : cum(lang, "mechWaitRetry", { budgetMs: String(h.budgetMs) });
     const trangThai =
       h.status.kind === "deferring"
-        ? `ĐANG HOÃN (${h.status.attempts ?? "?"} lượt, hạn kế ${h.status.nextRetryAt === null ? "?" : catSach(h.status.nextRetryAt)})`
+        ? cum(lang, "statusDeferring", {
+            attempts: String(h.status.attempts ?? "?"),
+            nextRetryAt: h.status.nextRetryAt === null ? "?" : C(h.status.nextRetryAt),
+          })
         : h.status.kind === "exceeded"
-          ? `ĐÃ QUÁ ĐÁY HOÃN (${h.status.attempts ?? "?"} lượt)`
+          ? cum(lang, "statusExceeded", { attempts: String(h.status.attempts ?? "?") })
           : h.status.kind === "no-chain-in-this-process"
-            ? "không có chuỗi hoãn nào TRONG TIẾN TRÌNH NÀY"
-            : `KHÔNG QUAN SÁT ĐƯỢC Ở ĐÂY (${catSach(h.status.meaning)})`;
+            ? cum(lang, "statusNoChain", {})
+            : cum(lang, "statusUnobservable", { meaning: C(h.status.meaning) });
     const voiToi =
       h.retryReach.kind === "reachable-here"
-        ? `vram.retryDeferred VỚI TỚI (mẫu owner: ${catSach(h.ownerPattern)})`
+        ? cum(lang, "retryReachable", { ownerPattern: C(h.ownerPattern) })
         : h.retryReach.kind === "unknown"
-          ? `không rõ lệnh có với tới không (${catSach(h.retryReach.why)})`
-          : `vram.retryDeferred KHÔNG với tới (${catSach(h.retryReach.why)}) — đừng tốn một lượt gọi`;
+          ? cum(lang, "retryUnknown", { why: C(h.retryReach.why) })
+          : cum(lang, "retryUnreachable", { why: C(h.retryReach.why) });
     d.push(
-      `Hộ nền "${catSach(h.host)}" (${catSach(h.ownerPattern)}): ${coChe} · chủ trì ở đây=${h.hostedHere === null ? "KHÔNG XÁC ĐỊNH ĐƯỢC" : h.hostedHere} · ${trangThai} · ${voiToi}.`,
+      noi(lang, "deferHostLine", {
+        host: C(h.host),
+        ownerPattern: C(h.ownerPattern),
+        mechanism: coChe,
+        hostedHere: h.hostedHere === null ? cum(lang, "hostedHereUnknown", {}) : String(h.hostedHere),
+        status: trangThai,
+        reach: voiToi,
+      }),
     );
   }
 
   // ── Ô BỊ CHẶN VÌ KHÔNG HỮU HẠN ──────────────────────────────────────────────────────────────
   d.push(
     s.nonFiniteFields.length === 0
-      ? "nonFiniteFields: không ô số nào bị chặn."
-      : `nonFiniteFields: ${s.nonFiniteFields.length} ô BỊ CHẶN (fail-closed HỢP LỆ, không phải dữ liệu thiếu): ` +
-          s.nonFiniteFields.map((f) => `${catSach(f.path)}=${catSach(f.was)}`).join(", "),
+      ? noi(lang, "nonFiniteNone", {})
+      : noi(lang, "nonFiniteSome", {
+          count: s.nonFiniteFields.length,
+          fields: s.nonFiniteFields.map((f) => `${C(f.path)}=${C(f.was)}`).join(", "),
+        }),
   );
 
   /**
@@ -289,11 +361,7 @@ function tomTat(s: VramAgentState): string[] {
    * tool không tồn tại rồi im lặng. Cùng hạng với M-2 của review Task 3 (*"hai câu chỉ dẫn một hành
    * động Agent KHÔNG THI HÀNH ĐƯỢC"*) — đã đóng ở `client/src`, mở lại ở bề mặt Agent.
    */
-  d.push(
-    "⚠ Ba lệnh vram.preempt / vram.releaseStale / vram.retryDeferred KHÔNG được đăng ký làm tool " +
-      "(chúng phá huỷ được, nên không treo sau một bộ phân loại ý định). Agent ĐỌC ở đây rồi ĐỀ NGHỊ " +
-      "người vận hành bấm nút tương ứng trong panel VRAM của màn AI Brain; tuyệt đối không khai là đã tự chạy.",
-  );
+  d.push(noi(lang, "commandsNotTools", {}));
 
   return d;
 }
@@ -302,18 +370,29 @@ function tomTat(s: VramAgentState): string[] {
  * ★ C-1, hậu quả thứ ba — **TRẦN NGỮ CẢNH.** Cắt theo DÒNG (không cắt giữa câu) và **khai ra** đã
  * bỏ bao nhiêu dòng: một bản tóm tắt cụt lủn mà im lặng thì Agent đọc phần còn lại thành TOÀN BỘ.
  */
-function ghepCoTran(dong: string[]): string {
-  const giu: string[] = [];
+function ghepCoTran(dong: Dong[], lang: ToolLang): string {
   let do_ = 0;
+  let giuBaoNhieu = 0;
   for (const line of dong) {
     if (do_ + line.length + 1 > TOM_TAT_TOI_DA) break;
-    giu.push(line);
+    giuBaoNhieu += 1;
     do_ += line.length + 1;
   }
-  if (giu.length === dong.length) return giu.join("\n");
+  if (giuBaoNhieu === dong.length) return dong.join("\n");
+  /**
+   * ⚠ `slice` chứ **không** `push(line)` trong vòng lặp — và đó là một quyết định của lưới, không
+   * phải khẩu vị: cổng §B của `vramPhrases.exhaustive.test.ts` đòi **mọi** đối số `.push(` trong
+   * file này là một lời gọi `noi(`. Một lượt `push` **chuyển tiếp** (đẩy lại một dòng đã dịch) làm
+   * cổng ấy phải nới thành *"hoặc là một định danh"* — và cái nới ấy là đúng cửa cho một chuỗi trần
+   * đi vào qua một biến trung gian.
+   */
+  const giu: Dong[] = dong.slice(0, giuBaoNhieu);
   giu.push(
-    `⚠ BẢN TÓM TẮT ĐÃ BỊ CẮT: bỏ ${dong.length - giu.length}/${dong.length} dòng vì vượt trần ` +
-      `${TOM_TAT_TOI_DA} ký tự ngữ cảnh. Ảnh chụp ĐẦY ĐỦ nằm ở data.state — đọc nó trước khi kết luận.`,
+    noi(lang, "summaryTruncated", {
+      dropped: dong.length - giu.length,
+      total: dong.length,
+      cap: TOM_TAT_TOI_DA,
+    }),
   );
   return giu.join("\n");
 }
@@ -342,7 +421,7 @@ export const getVramState: Tool<z.infer<typeof vramStateParams>, VramStateData> 
   requiredPermission: { module: "machine_control", action: "canView" },
   handler: async (params): Promise<ToolResult<VramStateData>> => {
     const lang: ToolLang = params.lang === "en" || params.lang === "zh" ? params.lang : "vi";
-    const title = "Trạng thái bộ điều phối VRAM";
+    const title = cum(lang, "title", {});
 
     // ⚠ FAIL-SAFE giống mọi read tool P2: `__authCtx` thiếu/hỏng ⇒ TỪ CHỐI, không rò dữ liệu.
     const parsed = authCtxSchema.safeParse((params as { __authCtx?: unknown }).__authCtx);
@@ -355,7 +434,13 @@ export const getVramState: Tool<z.infer<typeof vramStateParams>, VramStateData> 
       }
     }
     if (!allowed) {
-      return { type: "vram_state", title, data: empty(), textSummary: DENY[lang], note: "PERMISSION_DENIED" };
+      return {
+        type: "vram_state",
+        title,
+        data: empty(),
+        textSummary: cum(lang, "deny", {}),
+        note: "PERMISSION_DENIED",
+      };
     }
 
     /**
@@ -364,7 +449,7 @@ export const getVramState: Tool<z.infer<typeof vramStateParams>, VramStateData> 
      * đồng hồ THỨ HAI nói số khác, đúng lỗi mà `AIBrainDashboard` vừa được gỡ.
      */
     const state = await buildVramAgentState();
-    const dong = tomTat(state);
+    const dong = tomTat(state, lang);
 
     return {
       type: "vram_state",
@@ -379,7 +464,7 @@ export const getVramState: Tool<z.infer<typeof vramStateParams>, VramStateData> 
         state,
         rows: dong.map((line, i) => ({ label: `#${i + 1}`, value: line })),
       },
-      textSummary: ghepCoTran(dong),
+      textSummary: ghepCoTran(dong, lang),
     };
   },
 };
