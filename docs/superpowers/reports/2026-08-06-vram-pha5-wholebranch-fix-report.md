@@ -305,7 +305,7 @@ ca *"KHÔNG BẮT NHẦM — ĐỔI TÊN BIẾN … ⇒ VẪN XANH"* ở `vramPa
 
 | kiểm | kết quả |
 |---|---|
-| commit | `fd48307f` (bản vá chính) + `<follow-up>` (vá "bắt nhầm" của lưới-cho-lưới) |
+| commit | `fd48307f` (bản vá chính) + `da66c04d` (vá "bắt nhầm" của lưới-cho-lưới) |
 | `git status --porcelain -- server/ client/ shared/` sau khôi phục | **0 mục** ✅ |
 | mã sản xuất bị đột biến | **`server/routers/vramRouter.ts`** — khôi phục bằng `git checkout HEAD -- <file>` sau **mỗi** lượt ✅ |
 | 243 mục bẩn của việc khác | **không đụng, không stage** ✅ |
