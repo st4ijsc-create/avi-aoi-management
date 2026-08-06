@@ -10,8 +10,9 @@
  * `broker.preemptStepForOwner()` → `NGUOI_THI_HANH` · `lapKeHoachNhanNuoi()` · `armDeferTimer()`.
  * ⚠ `reserve()` vẫn **ĐỒNG BỘ** — không một hàm nào ở đây nằm trên đường quyết định.
  *
- * PHÂN QUYỀN: `state` ở `protectedProcedure` (chỉ ĐỌC), cùng mức với các mặt trạng thái AI đã có
- * (`aiGgufRouter.status` / `listModels`, vốn cũng trả đường dẫn model). Ba lệnh: xem khối I-1 dưới.
+ * PHÂN QUYỀN: `state` ở `protectedProcedure` **+ `requirePermission("machine_control","canView")`**
+ * — **cùng mức với tool `get_vram_state`** (Pha 5 Task 2 / N8; xem khối ngay trên `vramReadProcedure`).
+ * Ba lệnh: xem khối I-1 dưới.
  */
 import { z } from "zod";
 import { router, protectedProcedure, actuationProcedure, deployProcedure } from "../_core/trpc";
@@ -39,7 +40,7 @@ import {
  *
  * | thủ tục | sàn | vì sao |
  * |---|---|---|
- * | `state` | `protectedProcedure` | chỉ ĐỌC (Task 1). |
+ * | `state` | `protectedProcedure` + `requirePermission("machine_control","canView")` | chỉ ĐỌC, nhưng đọc **thông tin hạ tầng** (`processKey`/`owner`/`leaseKey`) ⇒ **bằng mức tool `get_vram_state`** (N8). |
  * | `preempt` · `releaseStale` | `deployProcedure` + `requirePermission("machine_control","canDelete")` | **PHÁ HUỶ**: `preempt` giết được một tiến trình; `releaseStale` xoá một hàng khỏi sổ mà **mọi tiến trình anh em** đọc để tính dư địa. `canDelete` (không phải `canCreate`) vì hành vi là **phá huỷ**. |
  * | `retryDeferred` | `actuationProcedure` + `requirePermission("machine_control","canCreate")` | KHÔNG phá huỷ gì — chỉ **dời hạn** một lượt thử lại đã lên lịch. Nhưng nó tiêu VRAM và chạm đường cron ⇒ vẫn ở sàn actuation. |
  *
@@ -69,6 +70,30 @@ const vramDestructiveProcedure = deployProcedure.use(requirePermission("machine_
 /** Sàn của một lệnh **KHÔNG phá huỷ** nhưng vẫn là actuation. */
 const vramActuationProcedure = actuationProcedure.use(requirePermission("machine_control", "canCreate"));
 
+/**
+ * ★★★ Pha 5 Task 2 (N8) — **SÀN CỦA MẶT ĐỌC.**
+ *
+ * Nợ Pha 4 để lại: **hai mặt đọc trả lời KHÁC NHAU cho cùng một câu hỏi.** Tool Agent
+ * `get_vram_state` (`services/aiLocalTools/vramTools.ts:340`) đòi
+ * `requiredPermission: { module: "machine_control", action: "canView" }`, trong khi `state` ở đây
+ * là `protectedProcedure` **trần** — mà `protectedProcedure` (`_core/trpc.ts:171`) chỉ đòi có
+ * `ctx.user` ⇒ **mọi user đăng nhập** đọc được. Cùng một `buildVramAgentState()`, hai mức quyền.
+ *
+ * ⚠ Quyết định của chủ dự án (2026-08-06): **SIẾT ROUTER LÊN BẰNG TOOL**, không hạ tool xuống.
+ * Lý do là **nội dung của payload**, không phải khẩu vị: mặt đọc phơi `processKey` (định danh
+ * tiến trình của HỆ), `owner` (tên hộ tiêu thụ, gồm tên model đang nạp) và `leaseKey` — tức
+ * **thông tin hạ tầng**. Và từ Pha 3 (sổ chung xuyên tiến trình) `owner` có thể do **một tiến
+ * trình khác** ghi vào, nên nó không còn là dữ liệu của riêng tiến trình đang trả lời.
+ *
+ * ⚠ Khuôn: `_core/trpc.ts:394-402` — role-floor *"composes **ON TOP of (never replaces)**"*
+ * `requirePermission`. Ở đây **không có role-floor để cộng lên** (`state` chỉ ĐỌC, không phải
+ * actuation ⇒ không kéo `require2FA`/`ACTUATION_ROLES` vào một truy vấn), nên phép cộng là
+ * `protectedProcedure` (danh tính) **+** `requirePermission` (thẩm quyền) — đúng chữ ký mà
+ * `accessControl.ts:169` nêu làm ví dụ chuẩn.
+ * ⚠ Vị từ đã có sẵn đúng nghĩa ⇒ **không đẻ vị từ quyền mới**.
+ */
+const vramReadProcedure = protectedProcedure.use(requirePermission("machine_control", "canView"));
+
 export const vramRouter = router({
   /**
    * Ảnh chụp trạng thái VRAM. **Mỗi trường nói đúng độ chắc chắn của nó** — đọc docstring của
@@ -77,7 +102,7 @@ export const vramRouter = router({
    *  • `ledger.foreign.known === false` nghĩa **ĐANG MÙ về tiến trình anh em**, KHÔNG phải "không ai giữ";
    *  • `unledgered.estimateBytes` là **ƯỚC LƯỢNG**, và `unknownCount > 0` làm nó **mất tin cậy**.
    */
-  state: protectedProcedure.query(async () => buildVramAgentState()),
+  state: vramReadProcedure.query(async () => buildVramAgentState()),
 
   /**
    * ★★★ **THU HỒI MỘT HỘ ĐÍCH DANH.** Đi qua `broker.preemptStepForOwner()` → bảng `NGUOI_THI_HANH`

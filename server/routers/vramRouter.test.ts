@@ -17,6 +17,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 
 import { vramRouter } from "./vramRouter";
+import { readAppErrorMeta } from "../_core/appError";
 import * as broker from "../services/vram/vramBroker";
 import { __resetDecisionTickForTests, publishDecisionTick, __tickFieldsForTests } from "../services/vram/vramTickCell";
 import {
@@ -33,9 +34,23 @@ import type { VramAgentState } from "../services/vram/vramReadModel";
 
 const MIB = 1024 * 1024;
 
-function caller() {
-  return vramRouter.createCaller({ user: { id: 1, role: "admin", name: "Tester" } } as never);
+function caller(user: unknown = { id: 1, role: "admin", name: "Tester" }) {
+  return vramRouter.createCaller({ user } as never);
 }
+
+/**
+ * ★★★ Pha 5 Task 2 (N8) — **VAI ĐĂNG NHẬP MÀ KHÔNG CÓ MỘT BIT `machine_control` NÀO.**
+ *
+ * Cả hai qua được `protectedProcedure` (`_core/trpc.ts:171` chỉ đòi có `ctx.user`) — đó chính là
+ * lỗ: mặt đọc phơi `processKey` / `owner` / tên model đang nạp, tức **thông tin hạ tầng**, và từ
+ * Pha 3 thì `owner` có thể do **một tiến trình khác** ghi vào sổ chung.
+ *
+ * ⚠ `checkPermission()` (`_core/accessControl.ts:129`) chỉ short-circuit cho `admin`; mọi role
+ * khác phải có một hàng `permissions` cấp tường minh — và không ca nào ở đây cấp. Hai id dưới đây
+ * dùng đúng hai id mà `vramRouter.commands.test.ts:95,98` đã dùng cho cùng chiều từ chối.
+ */
+const engineerKhongQuyen = { id: 3, role: "engineer", name: "Eng", twoFactorEnabled: true };
+const operatorKhongQuyen = { id: 6, role: "operator", name: "Op", twoFactorEnabled: true };
 
 /** Sổ chung: một hàng của **TIẾN TRÌNH KHÁC**. Hình dạng đúng bằng bảng `vram_leases`. */
 function hangAnhEm(over: Partial<SharedLeaseRow> = {}): SharedLeaseRow {
@@ -74,6 +89,55 @@ function xinThat(owner: string, bytes: number, priority: "background" | "product
     { tick: null, unledgered: null, sharedLedger: null, nowMs: Date.now() },
   );
 }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ Pha 5 Task 2 (N8) — HAI MẶT ĐỌC PHẢI TRẢ LỜI CÙNG MỘT MỨC QUYỀN
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+describe("vramRouter.state — mặt đọc tRPC đòi ĐÚNG mức quyền của tool `get_vram_state`", () => {
+  /**
+   * ⚠⚠ **MỘT CA, HAI CHIỀU, CÙNG MỘT TRẠNG THÁI ĐÃ DỰNG.** Tách đôi thì lượt **bị từ chối** và
+   * lượt **được phép** có thể **cùng rỗng** mà ca vẫn xanh — đúng lớp lỗi đã để `215/215` xanh
+   * suốt thời gian một tool chết. Ở đây chiều cho phép phải khai **con số cụ thể** dựng từ đúng
+   * những ô mã sản xuất ghi vào (`reserve()` + `publishSharedLedgerReplica()`), nên "cùng rỗng"
+   * **không viết ra được**.
+   */
+  it("★★★ vai KHÔNG có `machine_control/canView` ⇒ TỪ CHỐI; vai CÓ quyền ⇒ dữ liệu THẬT khác rỗng", async () => {
+    __setSharedLedgerSelfKeyForTests("api:100:1");
+    xinThat("gguf:local-model", 1_000 * MIB);
+    publishSharedLedgerReplica([hangAnhEm()], Date.now(), "api:100:1");
+
+    // ── CHIỀU TỪ CHỐI ──────────────────────────────────────────────────────────────────────
+    // `engineer` là vai ĐANG TỚI ĐƯỢC màn `/ai-brain` (`client/src/lib/navigation.tsx:1381`
+    // requiredRole: ['admin','engineer']) ⇒ đây là chiều đắt nhất, không phải một vai giả định.
+    await expect(caller(engineerKhongQuyen).state()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller(operatorKhongQuyen).state()).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    // ⚠ Từ chối phải đến từ ĐÚNG cái cổng này, không phải một FORBIDDEN bất kỳ: mã máy-đọc-được
+    // phải gọi tên đúng `canView` — nếu không, một cổng khác chặn nhầm cũng làm ca xanh.
+    const err = await caller(engineerKhongQuyen)
+      .state()
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(err, "phải NÉM, không được trả dữ liệu").not.toBeNull();
+    expect(readAppErrorMeta(err)).toMatchObject({ appCode: "PERMISSION_DENIED", appParams: { action: "canView" } });
+
+    // ── CHIỀU CHO PHÉP (ĐỐI CHỨNG DƯƠNG CÓ RĂNG) ───────────────────────────────────────────
+    // CÙNG trạng thái vừa dựng ⇒ vai đủ quyền phải nhận **đúng những con số này**.
+    const s: VramAgentState = await caller().state();
+    expect(s.ledger.totalBytes).toBe(1_000 * MIB + 17_000 * MIB);
+    expect(s.ledger.localHolders.map((h) => h.owner)).toContain("gguf:local-model");
+    expect(s.ledger.foreign.known).toBe(true);
+    if (!s.ledger.foreign.known) throw new Error("bản sao đã công bố ⇒ phải known");
+    expect(s.ledger.foreign.bytes).toBe(17_000 * MIB);
+    expect(s.ledger.foreign.holders.map((h) => h.owner)).toEqual(["gguf:qwen30b"]);
+    // ⚠ Đúng ba trường mà quyết định siết dựa vào: `processKey`, `owner`, tên model đang nạp.
+    expect(s.ledger.foreign.holders[0]!.processKey).toBe("worker:999:1");
+    expect(s.ledger.foreign.holders[0]!.leaseKey).toBe("worker:999:1#lease-7");
+    expect(s.defer.hosts).toHaveLength(6);
+  });
+});
 
 describe("vramRouter.state — sổ chung: hộ CỤC BỘ và hộ của ANH EM phải PHÂN BIỆT ĐƯỢC", () => {
   it("hộ cục bộ có `processKey === null`; hộ anh em mang ĐÚNG `processKey` của tiến trình kia", async () => {
