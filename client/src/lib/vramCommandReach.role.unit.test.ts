@@ -689,6 +689,108 @@ function soiOThuHai(sf: ts.SourceFile, ten = "commandReach"): { viPham: ViPham[]
 // TẦNG 3 — CỔNG AST TRÊN MÃ SẢN PHẨM
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
+/**
+ * ★★★ TẦNG 3c (Task 3b · I-2) — **NGƯỜI ĐỌC QUYỀN PHẢI LÀ NGƯỜI ĐỌC THẬT.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ Nối `hasPermission` vào rồi vẫn còn **một cửa**: `vramCommandReach(user?.role, () => true)`
+ * biên dịch sạch, TẦNG 3b vẫn XANH (prop **vẫn LÀ** một lời gọi), và nút quay về **chỉ theo vai** —
+ * tức I-2 khôi phục nguyên vẹn dưới một hình dạng khác. Đây đúng lớp lỗi *"đồng hồ không kim"*.
+ *
+ * ⇒ Bất biến, phát biểu theo **cái nó PHẢI LÀ** (không liệt kê hình dạng giả nào):
+ *   ***đối số thứ hai của mọi `vramCommandReach(...)` trong mã sản phẩm PHẢI LÀ một ĐỊNH DANH, và
+ *   định danh ấy phải được rút ra từ một lời gọi `usePermissions()` trong cùng file.***
+ * Một arrow, một `true`, một hằng, một hàm tự chế, một import từ nơi khác — **cả năm** đều thất bại
+ * cùng một phép thử, mà lưới không cần biết chúng là gì.
+ */
+const NGUOI_DOC_QUYEN = "usePermissions";
+
+function soiNguoiDocQuyen(sf: ts.SourceFile): { viPham: ViPham[]; soi: number } {
+  const viPham: ViPham[] = [];
+  let soi = 0;
+
+  // Định danh nào trong file này được rút ra từ `usePermissions()`? (`const { hasPermission } = …`)
+  const tuNguoiDoc = new Set<string>();
+  const gom = (n: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(n) &&
+      n.initializer !== undefined &&
+      laLoiGoi(n.initializer, NGUOI_DOC_QUYEN)
+    ) {
+      if (ts.isObjectBindingPattern(n.name)) {
+        for (const el of n.name.elements) if (ts.isIdentifier(el.name)) tuNguoiDoc.add(el.name.text);
+      } else if (ts.isIdentifier(n.name)) {
+        tuNguoiDoc.add(n.name.text); // `const perms = usePermissions()` ⇒ `perms.hasPermission`
+      }
+    }
+    ts.forEachChild(n, gom);
+  };
+  gom(sf);
+
+  const di = (n: ts.Node): void => {
+    if (laLoiGoi(n, VI_TU_NUOI)) {
+      soi++;
+      const { line } = sf.getLineAndCharacterOfPosition(n.getStart(sf));
+      const arg = (n as ts.CallExpression).arguments[1];
+      const goc = arg === undefined ? null : gocCuaChuoi(arg);
+      if (arg === undefined) {
+        viPham.push({ file: sf.fileName, dong: line + 1, noi: "thiếu người đọc quyền (đối số thứ hai)" });
+      } else if (goc === null || !tuNguoiDoc.has(goc)) {
+        viPham.push({
+          file: sf.fileName,
+          dong: line + 1,
+          noi: `người đọc quyền KHÔNG đến từ \`${NGUOI_DOC_QUYEN}()\` — thấy: ${arg.getText(sf).slice(0, 70)}`,
+        });
+      }
+    }
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  return { viPham, soi };
+}
+
+describe("Task 3b (I-2, AST) — người đọc quyền của nút VRAM phải đến từ `usePermissions()`", () => {
+  it("★★★ toàn `client/src/**/*.tsx`: 0 vi phạm, và lưới phải THẤY ≥1 lời gọi (cầu chì)", () => {
+    const viPham: ViPham[] = [];
+    let soi = 0;
+    for (const f of moiFileTsx(CLIENT_SRC)) {
+      const r = soiNguoiDocQuyen(ast(f));
+      viPham.push(...r.viPham);
+      soi += r.soi;
+    }
+    expect(viPham.map((v) => `${v.file}:${v.dong} — ${v.noi}`).join("\n")).toBe("");
+    expect(soi, "không thấy lời gọi `vramCommandReach` nào trong mã sản phẩm — lưới mù?").toBeGreaterThanOrEqual(1);
+  });
+
+  it("★★★ NĂM hình dạng người-đọc-giả đều ĐỎ (arrow · hằng true · hàm tự chế · import nơi khác · thiếu hẳn)", () => {
+    const gia: Record<string, string> = {
+      "arrow tại chỗ": `const { hasPermission } = usePermissions(); const r = ${VI_TU_NUOI}(u, () => true);`,
+      "hằng `true`": `const { hasPermission } = usePermissions(); const r = ${VI_TU_NUOI}(u, true as never);`,
+      "hàm tự chế": `const { hasPermission } = usePermissions(); const cho = () => true; const r = ${VI_TU_NUOI}(u, cho);`,
+      "import từ nơi khác": `import { hasPermission } from "./gia"; const r = ${VI_TU_NUOI}(u, hasPermission);`,
+      "thiếu hẳn": `const { hasPermission } = usePermissions(); const r = ${VI_TU_NUOI}(u);`,
+    };
+    for (const [ten, nguon] of Object.entries(gia)) {
+      const r = soiNguoiDocQuyen(ast("t.tsx", `function P(){ ${nguon} return null; }`));
+      expect(r.viPham.length, `hình dạng "${ten}" phải bị bắt`).toBeGreaterThan(0);
+    }
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — destructure, hoặc giữ cả object rồi `.hasPermission`", () => {
+    const ok = [
+      `function P(){ const { hasPermission } = usePermissions(); return ${VI_TU_NUOI}(u?.role, hasPermission); }`,
+      `function Q(){ const perms = usePermissions(); return ${VI_TU_NUOI}(u?.role, perms.hasPermission); }`,
+    ];
+    for (const nguon of ok) {
+      const r = soiNguoiDocQuyen(ast("t.tsx", nguon));
+      expect(r.viPham.map((v) => v.noi).join(" · ")).toBe("");
+      expect(r.soi).toBe(1);
+    }
+    // File không dính dáng ⇒ 0 soi, 0 vi phạm.
+    expect(soiNguoiDocQuyen(ast("t.tsx", "export const a = 1;"))).toEqual({ viPham: [], soi: 0 });
+  });
+});
+
 describe("N9 (AST) — `disabled` của TỪNG nút lệnh, và CÁI NUÔI nó, đều PHẢI LÀ một lời gọi", () => {
   /** Quét **toàn bộ** `client/src/**.tsx`, lọc trước bằng văn bản thô cho nhanh. */
   const FILE_TSX = moiFileTsx(CLIENT_SRC);
