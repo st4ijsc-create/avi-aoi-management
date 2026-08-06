@@ -16971,7 +16971,9 @@
     "unassignedStation": "未分配"
   },
   "vramBroker": {
-    "commandError": "VRAM 指令无法执行。"
+    "commandError": "VRAM 指令无法执行。",
+    "readDenied": "无权查看 VRAM 状态 — 需要「机台控制」模块 (machine_control) 的查看权限。",
+    "readUnreadable": "当前无法读取 VRAM 状态。"
   },
   "aiHealth": {
     "embedMismatch": "嵌入模型不匹配",

@@ -50,6 +50,17 @@ import { trpc } from "@/lib/trpc";
 import type { usePollingInterval } from "@/hooks/usePollingInterval";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { vramRetryButtonDisabled } from "@/lib/vramCommandReach";
+/**
+ * ★ Pha 5 Task 2 (C-1) — mặt đọc có thể TỪ CHỐI, và trước bản này file không biết điều đó tồn tại
+ * (tập truy cập thuộc tính trên `state` đúng bằng `["data","isLoading","refetch"]` ⇒ FORBIDDEN cho
+ * khung xương QUAY MÃI MÃI). Quyết định "đọc không được thì nói gì" ở **một** chỗ, dùng chung với
+ * thẻ KPI của `AIBrainDashboard` — không hai bản sao.
+ */
+import {
+  vramReadSurfaceKind,
+  vramReadSurfaceErrorCode,
+  VRAM_READ_SURFACE_NOTICE,
+} from "@/lib/vramReadSurface";
 /** ★ F1 — step-up 2FA cho HAI lệnh phá huỷ. Hook ĐÃ CÓ, 3 màn khác đang dùng đúng khuôn này. */
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 import {
@@ -150,6 +161,16 @@ export function VramBrokerPanel({ canCommand, polling }: Props) {
   });
 
   const s = state.data;
+  /**
+   * ⚠ Đọc `isError` + mã lỗi **trước** mọi thứ khác: một lượt TỪ CHỐI QUYỀN không được đi tiếp vào
+   * nhánh "chưa có số". `kind` là ô DUY NHẤT quyết định phần thân dưới đây.
+   */
+  const kind = vramReadSurfaceKind({
+    isLoading: state.isLoading,
+    isError: state.isError,
+    errorCode: vramReadSurfaceErrorCode(state.error),
+    hasData: s !== undefined,
+  });
 
   return (
     <Card>
@@ -166,11 +187,29 @@ export function VramBrokerPanel({ canCommand, polling }: Props) {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {state.isLoading || !s ? (
+        {kind === "loading" ? (
           <>
             <Skeleton className="h-6 w-56" />
             <Skeleton className="h-20 w-full" />
           </>
+        ) : kind !== "ready" || s === undefined ? (
+          /**
+           * ⚠⚠ MỘT LƯỢT TỪ CHỐI QUYỀN NÓI ĐÚNG LÀ MỘT LƯỢT TỪ CHỐI QUYỀN. Không khung xương vĩnh
+           * viễn, không một chữ nào về phần cứng. `s === undefined` đứng cùng vế chỉ để `tsc` thu
+           * hẹp kiểu — nó **không** thêm một đường quyết định thứ hai.
+           */
+          <div
+            className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12.5px] text-destructive"
+            role="status"
+          >
+            <ShieldAlert className="size-4 shrink-0 mt-0.5" />
+            <span>
+              {t(
+                VRAM_READ_SURFACE_NOTICE[kind === "denied" ? "denied" : "unreadable"].key,
+                VRAM_READ_SURFACE_NOTICE[kind === "denied" ? "denied" : "unreadable"].fallback,
+              )}
+            </span>
+          </div>
         ) : (
           <>
             {/* ── Dư địa + độ chắc chắn ─────────────────────────────────────────────────── */}

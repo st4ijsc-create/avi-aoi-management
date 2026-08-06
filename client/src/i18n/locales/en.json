@@ -16655,7 +16655,9 @@
     "unassignedStation": "Unassigned"
   },
   "vramBroker": {
-    "commandError": "The VRAM command could not run."
+    "commandError": "The VRAM command could not run.",
+    "readDenied": "You do not have permission to view VRAM state — the VIEW permission of the Machine Control module (machine_control) is required.",
+    "readUnreadable": "VRAM state could not be read right now."
   },
   "aiHealth": {
     "embedMismatch": "Embedding model mismatch",

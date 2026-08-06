@@ -18,6 +18,12 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import { ClassifierHealthBanner } from "@/components/ai/ClassifierHealthBanner";
 import { VramBrokerPanel } from "@/components/ai/VramBrokerPanel";
+/** ★ Pha 5 Task 2 (C-1) — cùng MỘT vị từ với `VramBrokerPanel`; xem `@/lib/vramReadSurface`. */
+import {
+  vramReadSurfaceKind,
+  vramReadSurfaceErrorCode,
+  VRAM_READ_SURFACE_NOTICE,
+} from "@/lib/vramReadSurface";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -150,6 +156,23 @@ export default function AIBrainDashboard() {
    * `nonFiniteFields`) — KHÔNG `?? 0`: một số 0 bịa ra ở đây là "còn 0 MiB", một lời khẳng định.
    */
   const vramState = trpc.vram.state.useQuery(undefined, { ...polling });
+  /**
+   * ★★★ Pha 5 Task 2 (C-1) — **TỪ CHỐI QUYỀN ≠ KHÔNG CÓ PHẦN CỨNG.**
+   *
+   * Task 2 siết `vram.state` lên `machine_control/canView`. Trước lượt siết ấy nhánh `FORBIDDEN`
+   * là **bất khả đạt** (`machine_control` chưa seed cho vai nào; `admin` qua được chỉ nhờ
+   * short-circuit) — nên nhánh `:` cuối của thẻ dưới, vốn in `t("aiBrain.noVram")`, **chưa ai
+   * thấy bao giờ**. Sau lượt siết, **mọi vai không phải `admin`** rơi vào đó **mỗi lần**, và thẻ
+   * sẽ khẳng định *"CPU / không có VRAM"* — một lời khẳng định về **PHẦN CỨNG** dựng từ một lượt
+   * **từ chối QUYỀN**. Đúng lớp lỗi mà docstring ngay dưới cấm `?? 0` để tránh.
+   * ⇒ `kind` là ô DUY NHẤT quyết định thẻ, và nó dùng chung vị từ với `VramBrokerPanel`.
+   */
+  const vramKind = vramReadSurfaceKind({
+    isLoading: vramState.isLoading,
+    isError: vramState.isError,
+    errorCode: vramReadSurfaceErrorCode(vramState.error),
+    hasData: vramState.data !== undefined,
+  });
   const stats = router.data;
   const total = stats?.total ?? 0;
   const byTier = stats?.byTier ?? {};
@@ -225,7 +248,7 @@ export default function AIBrainDashboard() {
               <CardDescription className="flex items-center gap-1.5"><Gauge className="h-3.5 w-3.5" />VRAM</CardDescription>
             </CardHeader>
             <CardContent>
-              {vramState.isLoading ? <Skeleton className="h-6 w-24" /> : vb ? (
+              {vramKind === "loading" ? <Skeleton className="h-6 w-24" /> : vramKind === "ready" && vb ? (
                 <>
                   <div className="text-lg font-semibold">{fmtGB(vramUsed)} <span className="text-sm text-muted-foreground font-normal">/ {fmtGB(vramCeiling)}</span></div>
                   <div className="mt-2 h-2 w-full rounded-full bg-muted overflow-hidden">
@@ -234,7 +257,18 @@ export default function AIBrainDashboard() {
                   {/* ⚠ Con số trên là TRẦN DÙNG ĐƯỢC của broker, không phải dung lượng card — nói ra. */}
                   <div className="text-xs text-muted-foreground mt-1">{t("aiBrain.vramBrokerSource", "theo broker (số đang cưỡng chế)")}</div>
                 </>
-              ) : <div className="text-sm text-muted-foreground">{t("aiBrain.noVram", "CPU / không có VRAM")}</div>}
+              ) : (
+                /* ⚠ KHÔNG một chữ nào về phần cứng ở đây: thiếu dữ liệu KHÔNG chứng minh thiếu VRAM. */
+                <div className="flex items-start gap-1.5 text-sm text-destructive">
+                  <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>
+                    {t(
+                      VRAM_READ_SURFACE_NOTICE[vramKind === "denied" ? "denied" : "unreadable"].key,
+                      VRAM_READ_SURFACE_NOTICE[vramKind === "denied" ? "denied" : "unreadable"].fallback,
+                    )}
+                  </span>
+                </div>
+              )}
             </CardContent>
           </Card>
 

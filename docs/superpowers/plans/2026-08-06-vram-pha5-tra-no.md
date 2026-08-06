@@ -104,6 +104,33 @@ Cộng một lượt `--sequence.shuffle.tests`.
 
 ⚠ Đây **đúng lớp lỗi "mặt đọc hứa nhiều hơn mặt lệnh"** đã đóng ở tầng kiểu (`reclaimable`) rồi **hở lại ở tầng UI** (`canRetry` với một dấu `||`).
 
+---
+
+#### 🔴 CHẶN TRƯỚC KHI TASK 3 CHẠY — I-2 (phát hiện ở review Task 2, ghi vào đây vì `.superpowers/` bị **gitignore** ⇒ không có địa chỉ bền)
+
+**`supervisor` KHÔNG MỞ ĐƯỢC MÀN, VÀ KHÔNG ĐỌC ĐƯỢC MỘT SỐ NÀO.** Bật hai nút phá huỷ cho một vai
+không vào được màn là dựng một cái nút **không ai bấm được** — và tệ hơn, là **khai rằng đã trao
+quyền** trong khi chưa.
+
+Ba lớp phải chốt **MỘT LƯỢT**, không lớp nào một mình đủ:
+
+1. **nav-role** — `client/src/lib/navigation.tsx:1374-1383`: `/ai-brain` khai
+   `requiredRole: ['admin','engineer']` ⇒ **`supervisor` không thấy, không vào được**.
+   Đối chứng đã có: `client/src/lib/navigation.unit.test.ts:54,61`.
+2. **grant** — sau Task 2, `vram.state` đòi `machine_control/canView`. Module `machine_control`
+   **chưa từng được seed cho bất kỳ vai nào** (`scripts/seed-all-modules.ts:158-185`); `admin` qua
+   được **chỉ nhờ short-circuit** (`server/_core/accessControl.ts:135-137`). ⇒ `supervisor` (và
+   `engineer`) **đọc không được một số nào** trên chính panel chứa hai nút đó.
+3. **`vramCommandReach`** — vị từ UI của Task 3.
+
+⚠ Và mặt LỆNH cũng chưa mở: `preempt`/`releaseStale` đứng trên `deployProcedure` +
+`requirePermission("machine_control","canDelete")` (`server/routers/vramRouter.ts:67`) —
+`supervisor` **có** trong `ACTUATION_ROLES` nhưng **không có bit `canDelete`** ⇒ vẫn 403.
+
+⇒ **Trước khi Task 3 chạy, chủ dự án phải chốt cả ba** (nav-role + grant `machine_control` cho
+những vai được chọn + vị từ UI). Làm mỗi lớp 3 là lặp lại đúng lỗi mà chính Task 3 được dựng ra để
+đóng: **mặt đọc/nút hứa nhiều hơn mặt lệnh**.
+
 **Files:**
 - Create: một module vị từ thuần (đặt cạnh `client/src/lib/vramPanelStepUp.unit.test.ts` — theo đúng khuôn `vramRetryButtonEnabled()` đã có)
 - Modify: `client/src/components/ai/AIBrainDashboard.tsx` · `client/src/components/ai/VramBrokerPanel.tsx`

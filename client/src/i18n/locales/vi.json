@@ -16639,7 +16639,9 @@
     "unassignedStation": "Chưa phân công"
   },
   "vramBroker": {
-    "commandError": "Lệnh VRAM không chạy được."
+    "commandError": "Lệnh VRAM không chạy được.",
+    "readDenied": "Không đủ quyền xem trạng thái VRAM — cần quyền XEM của module Điều khiển máy (machine_control).",
+    "readUnreadable": "Chưa đọc được trạng thái VRAM lúc này."
   },
   "aiHealth": {
     "embedMismatch": "Lệch model embedding",
