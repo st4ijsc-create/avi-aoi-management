@@ -374,7 +374,7 @@ Màn `/ai-brain` (`AIBrainDashboard` → `VramBrokerPanel`) render THẬT trong 
 | Quyền của `operator1`/`supervisor1`/`maint1`/`engineer1` | **KHÔNG ĐỔI** — vẫn đúng **85** hàng như trước khi đo (không cấp, không thu hồi bit quyền nào) |
 | Tiến trình anh em `api:4304` | **ĐÃ TẮT theo đúng PID** (`taskkill /F /PID 4304 /T`), cổng 3100 giải phóng, GPU 5.895 → 3.496 MiB |
 | Hàng ma của anh em trong `vram_leases` | **nhịp đối chiếu TỰ DỌN** — đo lại: 0 hàng mang `api:4304` |
-| ⚠ **Hàng của tiến trình ĐÃ CHẾT còn sót trong `vram_leases`** (bản đầu **bỏ sót**, người review bắt) | **CÓ, và nó TỰ LÀNH.** Đo lại sau khi tắt mọi tiến trình: **3 hàng** còn lại (`all:11092`, `all:16684`, `api:552`) — tất cả `owner = "cuda-backend"`, **`bytes = 0`, tổng = 0 byte**. ⇒ chúng **không trừ một byte dư địa nào** của ai. Cơ chế tự lành đã chứng minh sống ngay trong lượt đo này: hàng của `api:4304` bị **nhịp đối chiếu dọn sạch** ngay khi PID chết (`lapKeHoachNhanNuoi` → `xoaHangMa`). Lượt khởi động kế tiếp dọn nốt 3 hàng còn lại theo cùng đường. **Ghi cả hai vế**: có rác, và rác vô hại + có người dọn. |
+| ⚠ **Hàng của tiến trình ĐÃ CHẾT còn sót trong `vram_leases`** (bản đầu **bỏ sót**, người review bắt) | **CÓ, và nó TỰ LÀNH** — vế này ĐÚNG và BỀN, người review Task 5 xác nhận độc lập bằng lượt đo sống riêng (hàng của tiến trình chết biến mất sạch ngay khi một tiến trình mới lên). 🔴 **ĐÍNH CHÍNH (RR-3, vòng re-review) — BỎ vế "tổng = 0 byte ⇒ vô hại", nó KHÔNG PHẢI một tính chất bền.** `cuda-backend` ước lượng bằng 0 khi khởi động **không có căn cứ đo** (đúng log khởi động: *"KHÔNG CÓ CĂN CỨ NÀO để ước lượng … Ước lượng = 0"*) — nên "0 byte" là **một ảnh chụp may mắn tại một thời điểm**, không phải hằng số. Người review đo lại **ngay lúc review** và thấy **3 hàng / 13.309.882.369 B** (khác 0), với **cả hai tiến trình đứng tên còn SỐNG** (PID 2728 giữ :3000, PID 39328 giữ :3100) ⇒ đó là **giấy phép đang hiệu lực, không phải rác**. Tự đo lại lần nữa **ngay tại lượt sửa này** (`2026-08-05T17:55:45Z`, SELECT trực tiếp DB, không qua ứng dụng): **3 hàng / 3.646.205.953 B**, mang `processKey` `all:31772` (cổng 3000) và `api:13404` (cổng 3100) — tại thời điểm đo, cả hai tiến trình cũng đang SỐNG (xác nhận bằng `netstat` + `Get-CimInstance Win32_Process`, dòng lệnh khớp `server/_core/index.ts`); hai server này sau đó **đã bị tắt theo PID** — xem RR-4 (§14.4). ⇒ **Phát biểu ĐÚNG duy nhất**: hàng của một **tiến trình đã chết** bị nhịp đối chiếu dọn sạch ở lượt khởi động kế tiếp (`lapKeHoachNhanNuoi` → `xoaHangMa`) — điều này **không** kéo theo "tổng byte luôn bằng 0"; tổng byte là hàm của **bao nhiêu tiến trình đang sống và họ đang giữ bao nhiêu**, không phải một hằng số quan sát được một lần rồi coi là quy luật. |
 | Model `gguf:Qwen3-4B-Instruct` đã thu hồi | nạp lại theo nhu cầu (đường bình thường của `getOrLoadModel`) — không cần can thiệp |
 | Mã sản xuất | **KHÔNG SỬA MỘT DÒNG NÀO.** `git status --porcelain -- server/ client/` vẫn RỖNG sau khi đo |
 | Trainer · `kb:sync` · DDL/migration | **KHÔNG chạy cái nào** |
@@ -556,12 +556,27 @@ không tiêm danh tính nên không phải đường leo thang. Ghi lại để 
 
 ### 13.2 Bản vá
 
-**Đổi CHỖ Ở, không chỉ thêm một lời gọi.** `argsWithAuthCtx` từng là **hàm private của `index.ts`**
-— và chính điều đó là lỗ hổng: private ⇒ **chỉ che được một đường thoát**. Nay nó nằm ở
+**Đổi CHỖ Ở, không chỉ thêm một lời gọi.** `argsWithAuthCtx` từng là **hàm private của `index.ts`**.
+
+> 🔴 **ĐÍNH CHÍNH (re-review) — câu dưới đây bị bản đầu phát biểu QUÁ MẠNH.** Bản đầu viết
+> *"private CHÍNH LÀ lỗ hổng"*, đọc như thể private khiến đường thoát thứ hai **không viết ra được**
+> bản đúng. **Sai theo nghĩa đen**: tác giả `aiAgentOrchestrator.ts` hoàn toàn **viết được** bản đúng
+> — export hàm ra (đúng việc bản vá này vừa làm), gọi qua `tryExecuteTool()`, hoặc tự viết phép làm
+> sạch riêng. Private **không chặn** ai cả.
+> ⇒ **Phát biểu đúng:** với một bất biến **XUYÊN NGANG** (mọi người gọi `Tool.handler` đều phải qua),
+> đóng gói (private) là **công cụ SAI**, không phải "lỗ hổng" theo nghĩa nó ngăn cản viết đúng. Nó sai
+> vì nó khiến lựa chọn **ĐÚNG** đòi **sửa một module khác** (import hàm private ra ngoài được thì đã
+> không còn private), còn lựa chọn **RẺ NHẤT tại chỗ** — gọi thẳng `tool.handler(step.args)` — không
+> đòi gì cả. Một bất biến an ninh mà con đường rẻ nhất lại là con đường fail-open thì sớm muộn cũng bị
+> chọn. Private không "gây" ra lỗ; nó làm cho **mặc định trở thành fail-open**.
+
+Nay hàm nằm ở
 `aiLocalTools/toolRegistry.ts` (module **LÁ**, chỉ import `zod`), **cạnh đúng kiểu `Tool` mà nó bảo
 vệ**, nên mọi người gọi `Tool.handler` đều với tới được **mà không tạo vòng nhập** —
 `aiAgentOrchestrator` **vốn đã** import `./aiLocalTools/toolRegistry`, nên bản vá **không thêm một
-cạnh phụ thuộc nào**.
+cạnh phụ thuộc nào**. Đây là chỗ đặt bất biến **cùng module với kiểu nó bảo vệ**, biến "dễ viết đúng
+hơn" thành "khó viết sai mà không bị lưới AST bắt" (§13.3 xác nhận bằng đột biến M3 — file mới, chưa
+ai import, vẫn rơi vào lưới).
 
 ```
 git show 6c1de901:server/services/aiAgentOrchestrator.ts | sed -n '411p'
@@ -636,18 +651,32 @@ git show 47969de5:server/services/aiLocalTools/index.ts | grep -n "import { args
 
 ### 13.7 Cổng kiểm sau bản vá + sau đột biến
 
-| lệnh | kết quả |
+> 🔴 **ĐÍNH CHÍNH (RR-1, vòng re-review) — DÒNG "61 file · 945/945 XANH" DƯỚI ĐÂY LÀ SAI, VÀ SAI
+> ĐÚNG LỚP LỖI MÀ MỤC NÀY TỒN TẠI ĐỂ ĐÓNG.** Lệnh được gõ trong một shell không tự giãn `*`
+> (native executable, không phải cmdlet) ⇒ token `server/services/aiAgentOrchestrator*` được vitest
+> nhận **NGUYÊN VĂN làm bộ lọc chuỗi**, không khớp file nào (ký tự `*` theo nghĩa đen không có trong
+> tên file thật) ⇒ **cả hai file test vừa sửa (`aiAgentOrchestrator.test.ts`,
+> `aiAgentOrchestrator.replan.test.ts`) bị loại KHỎI lượt chạy một cách IM LẶNG**, và bộ 61 file/945 ca
+> còn lại (đúng bằng hai glob của báo cáo GỐC: 39 + 22) vẫn báo "xanh" bình thường. Kết quả: bản vá
+> **thật sự đẻ ra 18 ca đỏ** ở hai file đó (đo được ở vòng review: TRƯỚC vá 1 đỏ/41 xanh → SAU vá
+> 19 đỏ/23 xanh), mà dòng cổng kiểm này không hề thấy — **sửa file A, chạy lưới theo glob của file B**,
+> đúng lớp lỗi "lưới theo FILE, không theo ĐƯỜNG THOÁT" đã tái diễn ở đây **lần thứ MƯỜI MỘT, nay ở
+> TẦNG QUY TRÌNH** (không phải ở mã lưới). Đã đóng ở **§14** (vòng sửa cuối) — xem đó để có con số
+> ĐÚNG, đo bằng đường dẫn tường minh (không dùng `*`), cả bình thường lẫn xáo trộn thứ tự ca.
+
+| lệnh (nguyên văn lúc ghi — GIỮ LẠI để làm bằng chứng của chính lỗi này) | kết quả đã khai (SAI, xem đính chính trên) |
 |---|---|
-| `npx vitest run server/services/vram/ server/routers/vramRouter* client/src/lib/errorCodes* server/services/aiLocalTools/ server/services/aiAgentOrchestrator*` | **61 file · 945/945 XANH** |
-| …cùng lệnh **`--sequence.shuffle.tests`** | **945/945 XANH** |
-| `NODE_OPTIONS=--max-old-space-size=8192 npm run check` | **exit 0** |
-| `npm run check:tests` | **exit 0** |
-| `npm run i18n:check` | **0 lệch** |
-| `git status --porcelain -- server/ client/` | **RỖNG** |
+| `npx vitest run server/services/vram/ server/routers/vramRouter* client/src/lib/errorCodes* server/services/aiLocalTools/ server/services/aiAgentOrchestrator*` | ~~61 file · 945/945 XANH~~ — **glob `aiAgentOrchestrator*` khớp 0 file, âm thầm** |
+| …cùng lệnh **`--sequence.shuffle.tests`** | ~~945/945 XANH~~ (cùng lỗ hổng glob) |
+| `NODE_OPTIONS=--max-old-space-size=8192 npm run check` | **exit 0** (mục này không phụ thuộc glob, vẫn đúng) |
+| `npm run check:tests` | **exit 0** (như trên) |
+| `npm run i18n:check` | **0 lệch** (như trên) |
+| `git status --porcelain -- server/ client/` | **RỖNG** (như trên) |
 
 ⚠ **Đính chính glob của brief (người review xác nhận): `server/services/ai/aiLocalTools*` KHÔNG khớp
 file nào** — tool nằm ở `server/services/aiLocalTools/`. Dùng nguyên văn glob đó thì bộ ca của lớp
-tool **im lặng biến mất** khỏi lượt chạy mà vẫn báo "xanh".
+tool **im lặng biến mất** khỏi lượt chạy mà vẫn báo "xanh". (Cùng bài học: đường dẫn/glob sai khớp
+"0 file" không phải "0 lỗi" — phải luôn đối chiếu SỐ FILE, không chỉ SỐ CA xanh.)
 
 ### 13.8 Còn treo — chuyển bàn giao **review toàn nhánh**
 
@@ -656,3 +685,183 @@ tool **im lặng biến mất** khỏi lượt chạy mà vẫn báo "xanh".
 | **F1** 🟠 | `VramBrokerPanel` không gửi `totpCode`, không dùng `StepUpOtpDialog` ⇒ hai nút phá huỷ **không bấm được với BẤT KỲ vai nào** khi `ACTUATION_STEPUP_2FA=true`. **Người review xác nhận độc lập** (supervisor1 qua role-floor vẫn 403 ở step-up). | Là **sửa UI**, không phải lỗ an ninh; nằm ngoài phạm vi vòng review này. |
 | **F2** 🟠 | 8/8 tool `readToolsProgramming` không với tới được (thiếu `case` trong `extractArgsForTool`) ⇒ hai ranh giới an ninh (`read_project_file`, `calc`) **chưa từng chạy**. | Là **nợ CHẶN** (§3.1) — sửa nó là mở một bề mặt mới, phải có lưới sống trước. |
 | **U19** 🟡 | Đường tự trị **end-to-end THẬT** vẫn chưa chạy (planner trả `steps: []`). | Bản vá đã đóng lỗ ở mức đơn vị; khi planner được sửa **phải đo lại §8.1 trên đường thật**. |
+
+---
+
+## 14. Vòng sửa CUỐI (re-review có phạm vi `6c1de901..a3ae3d2a`) — đóng RR-1..RR-4
+
+> Review vòng 2 kết luận **KHÔNG DUYỆT** vì đúng **một** mục vượt Minor: bản vá §13 đẻ ra **18 ca đỏ**
+> ở hai file test có sẵn mà không ai chạy (RR-1, 🟠 CHẶN), cộng ba mục 🟡 Minor (RR-2/RR-3/RR-4).
+> Mục này đóng cả bốn, tại HEAD hiện tại — **không sửa gì khác** ngoài phạm vi được giao.
+
+### 14.1 RR-1 (CHẶN) — đóng: `1 đỏ → 19 đỏ` ⇒ về lại `1 đỏ` (nợ có sẵn, không thuộc lượt vá)
+
+**Gốc rễ đã xác nhận đúng như review chỉ ra:** `server/services/aiAgentOrchestrator.test.ts:112` và
+`server/services/aiAgentOrchestrator.replan.test.ts:120` giả `./aiLocalTools/toolRegistry` bằng một
+factory phẳng khai `getTool/isWriteTool/isClientTool` — **thiếu `argsWithAuthCtx`**. Sau bản vá §13
+(dòng 429 gọi `tool.handler(argsWithAuthCtx(tool, step.args ?? {}, exec))`), `argsWithAuthCtx` trong
+hai file này là `undefined` ⇒ gọi nó **ném `TypeError`** ⇒ mọi bước `read` `failed` ⇒ phiên `paused`
+thay vì trạng thái mong đợi.
+
+**Bản vá (mỗi file một chỗ, giữ nguyên phần còn lại của mock):**
+
+```ts
+// TRƯỚC (thiếu argsWithAuthCtx):
+vi.mock("./aiLocalTools/toolRegistry", () => ({
+  getTool: (name: string) => tools[name],
+  isWriteTool: (t: any) => !!t && t.kind === "write",
+  isClientTool: (t: any) => !!t && t.kind === "client",
+}));
+
+// SAU (importOriginal — giữ `argsWithAuthCtx` THẬT, chỉ override 3 export còn lại):
+vi.mock("./aiLocalTools/toolRegistry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./aiLocalTools/toolRegistry")>();
+  return {
+    ...actual,
+    getTool: (name: string) => tools[name],
+    isWriteTool: (t: any) => !!t && t.kind === "write",
+    isClientTool: (t: any) => !!t && t.kind === "client",
+  };
+});
+```
+
+Chọn nhánh **"tốt hơn"** mà review gợi ý (`importOriginal()` + ghi đè có chọn lọc), không phải stub
+`(_t, a) => a`: `toolRegistry.ts` là module **LÁ THẬT** (chỉ `import { z } from "zod"`, đã xác nhận ở
+§13.1), nên `importOriginal()` không kéo theo side-effect hay vòng nhập nào; và giữ hàm THẬT nghĩa là
+phép làm sạch `__authCtx` **thật sự chạy** trong cả hai bộ ca này, không chỉ được giả lập bằng identity.
+(Với các tool cục bộ trong hai file này — `parameters: {}`, không có `.shape` — hành vi quan sát được
+**giống hệt** identity, vì `argsWithAuthCtx` không tìm thấy khoá `__authCtx` trong schema để gán lại;
+nhưng dùng bản thật vẫn đúng nguyên tắc hơn một stub.)
+
+**Đo lại — hai chiều, cùng cặp file, đúng cách review đã đo:**
+
+| bản | lệnh | kết quả |
+|---|---|---|
+| SAU vá (bản này) | `npx vitest run server/services/aiAgentOrchestrator.test.ts server/services/aiAgentOrchestrator.replan.test.ts` | **1 đỏ / 41 xanh** |
+
+Ca đỏ duy nhất còn lại: `agentic gate (server role) > manager is allowed; worker/engineer are not`
+(`aiAgentOrchestrator.test.ts:157`, `expect(canUseAgentic({role:"engineer"})).toBe(false)` nhận
+`true`) — **nợ có sẵn**, không thuộc lượt vá này. Xác nhận `AGENTIC_ROLES` **giống hệt** ở `6c1de901`
+(TRƯỚC vá C-1) và HEAD hiện tại:
+```
+git show 6c1de901:server/services/aiAgentOrchestrator.ts | grep -n AGENTIC_ROLES
+  81:const AGENTIC_ROLES = new Set(["manager", "it_admin", "admin", "supervisor", "maintenance", "engineer"]);
+(HEAD hiện tại: cùng một dòng, cùng danh sách) → "engineer" ĐÃ nằm trong tập từ trước bản vá này.
+```
+⇒ **KHÔNG nhận, KHÔNG sửa** ca này — đúng ràng buộc của vòng sửa.
+
+### 14.2 RR-2 (Minor) — đóng bằng SỬA LƯỚI (không chỉ ghi docstring)
+
+`thayKieuTool()` (trong `authCtxInjection.test.ts`) trước đây chỉ duyệt `sf.statements` (top-level)
+tìm `ts.isImportDeclaration` — mù với `await import(...)` vì đó là một `CallExpression` (callee
+`ImportKeyword`), và trong mã sản xuất mẫu này luôn nằm **lồng trong thân hàm**, không phải statement
+top-level (`aiAutoProposer.ts:314,671`, `aiThresholdTuneScheduler.ts:244`).
+
+**Bản vá:** đổi từ duyệt `sf.statements` (nông) sang duyệt **toàn bộ cây** (đệ quy `ts.forEachChild`),
+bắt cả hai hình dạng: `ImportDeclaration` tĩnh **và** `CallExpression` với `expression.kind ===
+ts.SyntaxKind.ImportKeyword` mà đối số đầu là chuỗi chứa `"aiLocalTools"`.
+
+**Xác nhận bằng đột biến độc lập (cùng khuôn M3 của review, KHÔNG dùng lại file của họ):** dựng tạm
+`server/routers/__rr2ProbeDyn.ts` —
+
+```ts
+export async function probeDyn(soLieu: Record<string, unknown>): Promise<unknown> {
+  const reg = await import("../services/aiLocalTools/toolRegistry");
+  const x = reg.getTool("get_vram_state");
+  if (!x || typeof x.handler !== "function") return null;
+  return await x.handler(soLieu); // KHÔNG qua argsWithAuthCtx
+}
+```
+
+| lượt | kết quả |
+|---|---|
+| **TRƯỚC vá lưới** (giả định — không chạy lại, review đã đo: 12/12 xanh, lưới KHÔNG bắt) | mù, đúng RR-2 |
+| **SAU vá lưới**, có probe | 🔴 **2 ĐỎ**, kèm con trỏ chính xác: `routers/__rr2ProbeDyn.ts:6 → handler(soLieu)` |
+| **SAU vá lưới**, đã xoá probe | ✅ **12/12 XANH** (về lại đúng số ca cũ, không có ca nào bị thêm/bớt ngoài ý muốn) |
+
+File probe **đã xoá** ngay sau khi xác nhận (`server/routers/__rr2ProbeDyn.ts` không còn trong cây —
+`git status --porcelain -- server/` rỗng). ⇒ RR-2 đóng bằng **sửa lưới thật**, không chỉ thu hẹp lời
+khai trong docstring — ba điểm gọi import-động hiện có trong mã sản xuất
+(`aiAutoProposer.ts:314,671`, `aiThresholdTuneScheduler.ts:244`) **vẫn chưa gọi `.handler(` nào** (đã
+kiểm lại), nên chưa có lỗ sống thứ ba — nhưng nay nếu ai đó thêm một lời gọi `.handler(` cạnh một
+`await import("...aiLocalTools...")`, lưới **thấy được**.
+
+### 14.3 RR-3 (Minor) — đóng: sửa câu, giữ vế ĐÚNG, bỏ vế KHÔNG BỀN
+
+Xem bản sửa trực tiếp trong §7 (dòng "Hàng của tiến trình ĐÃ CHẾT còn sót…"): đã bỏ *"tổng 0 byte ⇒
+vô hại"*, giữ *"tự lành"*, và tự đo lại **ngay tại lượt sửa này** (`postgres` npm package, SELECT trực
+tiếp, không qua ứng dụng, `2026-08-05T17:55:45Z`): **3 hàng / 3.646.205.953 B**, `processKey`
+`all:31772` + `api:13404` — cả hai còn sống tại thời điểm đo (xác nhận PID bằng
+`Get-CimInstance Win32_Process`, dòng lệnh khớp `server/_core/index.ts`). Không phải rác — đây chính
+là hai server dev mà RR-4 xử lý ngay dưới đây.
+
+### 14.4 RR-4 (Minor) — đóng: hai server dev đã TẮT theo PID
+
+**Xác nhận hai server dev đang chạy, khớp mô tả của RR-4** (cổng 3000 + 3100, cùng lệnh
+`server/_core/index.ts` qua `tsx`; PID khác con số review ghi vì máy đã khởi động lại giữa hai vòng
+review — cùng CHỨC NĂNG, không phải cùng tiến trình):
+
+```
+netstat -ano | grep -E ":3000 |:3100 "
+  TCP 0.0.0.0:3000 LISTENING 31772
+  TCP 0.0.0.0:3100 LISTENING 13404
+Get-CimInstance Win32_Process -Filter 'ProcessId=31772 or ProcessId=13404'
+  → cả hai: node.exe --require tsx/preflight.cjs ... server/_core/index.ts
+```
+
+**Đo TRƯỚC khi tắt** (`2026-08-05T17:59:56Z`): `nvidia-smi` **2.128 MiB**.
+
+**Tắt theo đúng PID** (không quét theo tên, không giết bừa):
+```
+taskkill /F /PID 31772 /T   → SUCCESS (2 tiến trình: 31772 + con 18992)
+taskkill /F /PID 13404 /T   → SUCCESS (2 tiến trình: 13404 + con 39400)
+```
+
+**Đo SAU khi tắt** (`2026-08-05T18:00:16Z`, sau khi đợi driver giải phóng bộ nhớ): `nvidia-smi`
+**1.277 MiB** — **−851 MiB** đúng chiều (hai tiến trình dev ăn VRAM đã rời khỏi thiết bị). Cổng 3000 +
+3100 hết `LISTENING` — chỉ còn vài dòng `SYN_SENT` của client cũ đang thử kết nối lại rồi tự hết hạn,
+không phải tiến trình máy chủ.
+
+⚠ **Ghi lại phát hiện `vram:baseline` "nền BẨN" mà RR-4 nêu** (đo bởi người review lúc trước, không
+tái lập lại vì trạng thái máy đã đổi giữa hai vòng): lúc review đo, `vram:baseline` trong
+`vram_leases` = **12.404.695.041 B (11.830 MiB)** trong khi thiết bị lúc đó chỉ dùng **2.017 MiB** —
+lệch hơn 5 lần, đúng dấu hiệu **baseline chụp lúc một model đang nạp giữa chừng** (nền bẩn), hợp với
+đường **U9** (hai tiến trình chạy đồng thời) mà báo cáo đã ghi là **CHƯA ĐI** ở mức "hai lệnh cùng
+lúc" — nay ghi thêm biến thể "hai TIẾN TRÌNH cùng lúc làm bẩn baseline của nhau" như một hệ quả cụ thể
+đã quan sát được. Không sửa cơ chế `baseline` ở lượt này (ngoài phạm vi bốn mục RR).
+
+### 14.5 Ghi chú vận hành cho người sau (theo yêu cầu của review)
+
+⚠ **`git checkout <commit> -- <file>` GHI VÀO INDEX, không chỉ working tree.** Nếu dùng nó để xem/áp
+tạm nội dung một commit cũ lên một file (ví dụ để chạy đột biến thủ công), thao tác khôi phục đúng
+là **`git checkout HEAD -- <file>`** (nạp lại từ HEAD, bỏ qua index) — dùng `git checkout -- <file>`
+đơn thuần sau đó sẽ khôi phục **từ index**, tức vẫn giữ nguyên bản commit cũ vừa nạp, KHÔNG quay lại
+bản trên HEAD. Người review vòng 1 đã tự vấp lỗi này và ghi lại; không ai trong vòng sửa cuối cần
+dùng `git checkout <commit> -- <file>`, nên không có gì để khôi phục ở đây — ghi lại thuần tuý để bàn
+giao cho lượt sau (đặc biệt nếu ai đó tái chạy đột biến M1/M2/M3 của §13.4).
+
+### 14.6 Cổng kiểm CUỐI CÙNG — đường dẫn tường minh, không dùng ký tự `*` chưa được shell giãn
+
+> Bài học rút từ chính đính chính ở §13.7: chạy lại với **đường dẫn liệt kê rõ**, không glob, để
+> không lặp lại đúng lỗi vừa đóng.
+
+| lệnh | kết quả |
+|---|---|
+| `npx vitest run server/services/vram/ server/services/aiLocalTools/ server/routers/vramRouter client/src/lib/errorCodes server/services/aiAgentOrchestrator` | **72/73 file · 1256/1257 ca** — **1 đỏ DUY NHẤT** là `canUseAgentic` (nợ có sẵn, §14.1), mọi ca khác XANH kể cả 18 ca RR-1 vừa đóng |
+| …cùng lệnh **`--sequence.shuffle.tests`** | **cùng kết quả**: 72/73 file · 1256/1257 ca, cùng một ca đỏ |
+| `NODE_OPTIONS=--max-old-space-size=8192 npm run check` | **exit 0** |
+| `npm run check:tests` | **exit 0** |
+| `npm run i18n:check` | **0 key(s) with placeholder mismatch across en/vi/zh** |
+| `git status --porcelain -- server/ client/` | Chỉ 3 file test bị đổi (RR-1 × 2 + RR-2 × 1) — **KHÔNG một dòng mã sản xuất nào** |
+
+### 14.7 Trạng thái hệ sau vòng sửa cuối
+
+| việc | trạng thái |
+|---|---|
+| Hai server dev :3000 (PID 31772) + :3100 (PID 13404) | **ĐÃ TẮT theo PID** (§14.4); GPU 2.128 → 1.277 MiB |
+| `vram_leases` sau khi tắt | 3 hàng còn lại mang `processKey` của hai tiến trình vừa tắt — **CHƯA tự dọn** (đúng cơ chế đã ghi: chỉ tiến trình SỐNG kế tiếp mới đối chiếu và xoá hàng của tiến trình chết; không có tiến trình nào đang chạy ⇒ chưa ai chạy nhịp đối chiếu). Sẽ tự dọn ở lần `npm run dev` kế tiếp. |
+| Mã sản xuất | **KHÔNG SỬA MỘT DÒNG NÀO** — chỉ 3 file `*.test.ts` bị đổi (RR-1: 2 file, RR-2: 1 file) + báo cáo này |
+| File tạm | `server/routers/__rr2ProbeDyn.ts` (RR-2) và hai script SELECT (`__rr_leases_check*.cjs`, RR-3) **đã xoá**, không nằm trong repo |
+| Trainer · `kb:sync` · DDL/migration | **KHÔNG chạy cái nào** |
+| 243 mục bẩn có sẵn của việc khác | **KHÔNG đụng, KHÔNG dọn, KHÔNG stage** |
+| Sub-agent | **KHÔNG sinh** |

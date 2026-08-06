@@ -109,11 +109,22 @@ const tools: Record<string, any> = {
     summarize: () => "w", preview: async () => ({}), execute: vi.fn(async () => ({})),
   },
 };
-vi.mock("./aiLocalTools/toolRegistry", () => ({
-  getTool: (name: string) => tools[name],
-  isWriteTool: (t: any) => !!t && t.kind === "write",
-  isClientTool: (t: any) => !!t && t.kind === "client",
-}));
+// RR-1 (Task 5, re-review round) — MUST keep the REAL `argsWithAuthCtx` alive here.
+// A flat `() => ({...})` factory (no such export) makes it `undefined` post-patch,
+// so `tool.handler(argsWithAuthCtx(...))` at aiAgentOrchestrator.ts:429 THROWS on
+// every read step ⇒ paused, turning 18 passing cases red for a reason unrelated to
+// what each case actually asserts. `importOriginal()` keeps the real cleaning
+// function wired (a leaf module — only imports `zod` — so this is cheap and safe)
+// while still overriding getTool/isWriteTool/isClientTool with the local test doubles.
+vi.mock("./aiLocalTools/toolRegistry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./aiLocalTools/toolRegistry")>();
+  return {
+    ...actual,
+    getTool: (name: string) => tools[name],
+    isWriteTool: (t: any) => !!t && t.kind === "write",
+    isClientTool: (t: any) => !!t && t.kind === "client",
+  };
+});
 
 import {
   startSession,

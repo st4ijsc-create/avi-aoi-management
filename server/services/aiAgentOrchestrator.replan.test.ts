@@ -117,11 +117,19 @@ const tools: Record<string, any> = {
     execute: vi.fn(async () => ({})),
   },
 };
-vi.mock("./aiLocalTools/toolRegistry", () => ({
-  getTool: (name: string) => tools[name],
-  isWriteTool: (t: any) => !!t && t.kind === "write",
-  isClientTool: (t: any) => !!t && t.kind === "client",
-}));
+// RR-1 (Task 5, re-review round) — see aiAgentOrchestrator.test.ts for the full
+// explanation: keep the REAL `argsWithAuthCtx` alive via `importOriginal()` (leaf
+// module, only imports `zod`) so `tool.handler(argsWithAuthCtx(...))` doesn't throw
+// on `undefined` for every read step; only override getTool/isWriteTool/isClientTool.
+vi.mock("./aiLocalTools/toolRegistry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./aiLocalTools/toolRegistry")>();
+  return {
+    ...actual,
+    getTool: (name: string) => tools[name],
+    isWriteTool: (t: any) => !!t && t.kind === "write",
+    isClientTool: (t: any) => !!t && t.kind === "client",
+  };
+});
 
 import { startSession, approvePlan, confirmStep } from "./aiAgentOrchestrator";
 

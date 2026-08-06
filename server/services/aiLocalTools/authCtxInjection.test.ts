@@ -249,15 +249,36 @@ describe("★★★ MỌI điểm gọi `Tool.handler(` trong mã sản xuất �
    * gọi `Tool.handler` nếu nó **thấy được kiểu `Tool`**, tức có `import` từ `aiLocalTools/**` (hoặc
    * chính nó nằm trong thư mục đó). File không có cửa ấy thì `.handler(` của nó là thứ khác
    * (vd `sub.handler(msg)` của pub/sub trong `streaming/inProcessAdapter.ts`).
+   *
+   * ⚠⚠ RR-2 (Task 5, vòng re-review) — **ĐIỂM MÙ ĐÃ ĐO ĐƯỢC**: bản trước chỉ duyệt
+   * `sf.statements` tìm `ts.isImportDeclaration`, tức chỉ thấy import TĨNH ở top-level. Một
+   * `await import("./aiLocalTools/toolRegistry")` là một `CallExpression` (callee
+   * `ImportKeyword`), thường nằm LỒNG trong thân hàm — không phải statement top-level, và
+   * không phải `ImportDeclaration` — nên bản trước bỏ sót nó (đo được: 12/12 xanh trên một
+   * điểm gọi `.handler(` fail-open thật). Mã sản xuất **cùng module** đã dùng đúng mẫu này:
+   * `aiAutoProposer.ts:314,671`, `aiThresholdTuneScheduler.ts:244` (hiện chưa file nào trong
+   * số đó vừa import động vừa gọi `.handler(`, nên đây là lỗ CỦA LƯỚI, chưa phải lỗ SỐNG —
+   * nhưng khoảng cách chỉ đúng MỘT dòng mã). Nay duyệt TOÀN BỘ cây (không chỉ top-level) và bắt
+   * cả hai hình dạng.
    */
   function thayKieuTool(sf: ts.SourceFile, file: string): boolean {
     if (file.split(path.sep).join("/").includes("/aiLocalTools/")) return true;
     let thay = false;
-    for (const st of sf.statements) {
-      if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier)) {
-        if (st.moduleSpecifier.text.includes("aiLocalTools")) thay = true;
+    const di = (n: ts.Node): void => {
+      if (thay) return;
+      if (ts.isImportDeclaration(n) && ts.isStringLiteral(n.moduleSpecifier)) {
+        if (n.moduleSpecifier.text.includes("aiLocalTools")) thay = true;
+      } else if (
+        ts.isCallExpression(n) &&
+        n.expression.kind === ts.SyntaxKind.ImportKeyword &&
+        n.arguments[0] &&
+        ts.isStringLiteral(n.arguments[0])
+      ) {
+        if (n.arguments[0].text.includes("aiLocalTools")) thay = true;
       }
-    }
+      if (!thay) ts.forEachChild(n, di);
+    };
+    di(sf);
     return thay;
   }
 
