@@ -197,6 +197,112 @@ describe("C-1 (AST) — cả HAI người đọc phải HỎI trạng thái lỗ
     });
   }
 
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ NEO ĐÚNG NẤC — LƯỚI VÒNG ĐẦU CỦA CHÍNH TÔI ĐÃ BỊ LÁCH
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Ba ca trên hỏi *"có gọi `vramReadSurfaceKind` không"* và *"có đọc `isError` không"* — tức neo
+   * vào **BIẾN**. Đột biến **C1-M2** giữ nguyên cả hai rồi trả **điều kiện của nhánh render** về
+   * `state.isLoading || !s ? <Skeleton/>` ⇒ khung xương **quay mãi mãi trở lại**, lưới **XANH
+   * 16/16**. Đúng bài học `vramCommandReach` đã trả giá ở Pha 4: *"tính chất cần canh là **CÁI
+   * NÚT**, không phải một biến"* — ở đây là **CÁI NHÁNH**, không phải lời gọi.
+   *
+   * Hai bất biến dưới đây phát biểu **CÁI NÓ PHẢI LÀ**, không liệt kê toán tử bị cấm.
+   */
+  const O_TRANG_THAI = ["isLoading", "isError", "error", "isPending", "isFetching", "isSuccess", "status"];
+
+  for (const { ten, duong } of NGUOI_DOC) {
+    it(`★★★ ${ten}: ô TRẠNG THÁI của query CHỈ được đọc trong đối số của \`vramReadSurfaceKind(...)\``, () => {
+      const sf = ast(duong);
+      const bien = tenBienQuery(sf)!;
+      // Cây con hợp lệ duy nhất: đối số của lời gọi vị từ.
+      const trongVIT = new Set<ts.Node>();
+      for (const n of moiNut(sf)) {
+        if (!ts.isCallExpression(n) || n.expression.getText(sf) !== "vramReadSurfaceKind") continue;
+        for (const arg of n.arguments) {
+          const di = (x: ts.Node) => {
+            trongVIT.add(x);
+            x.forEachChild(di);
+          };
+          di(arg);
+        }
+      }
+      const viPham: string[] = [];
+      for (const n of moiNut(sf)) {
+        if (!ts.isPropertyAccessExpression(n)) continue;
+        if (!ts.isIdentifier(n.expression) || n.expression.text !== bien) continue;
+        if (!O_TRANG_THAI.includes(n.name.text)) continue; // `data`/`refetch` là dữ liệu/hành động
+        if (trongVIT.has(n)) continue;
+        const { line } = sf.getLineAndCharacterOfPosition(n.getStart(sf));
+        viPham.push(`dòng ${line + 1}: ${bien}.${n.name.text}`);
+      }
+      expect(
+        viPham,
+        `${ten}: ĐƯỜNG QUYẾT ĐỊNH THỨ HAI — ô trạng thái đọc ngoài vị từ chung:\n  ${viPham.join("\n  ")}`,
+      ).toEqual([]);
+    });
+
+    it(`★★★ ${ten}: mọi nhánh render \`<Skeleton>\` của mặt đọc VRAM phải do \`kind\` quyết định`, () => {
+      const sf = ast(duong);
+      const bienQuery = tenBienQuery(sf)!;
+      // Biến nhận đầu ra của vị từ — tìm trên CÂY, không đoán theo tên.
+      let bienKind: string | null = null;
+      for (const n of moiNut(sf)) {
+        if (!ts.isVariableDeclaration(n) || n.initializer === undefined) continue;
+        if (!ts.isCallExpression(n.initializer)) continue;
+        if (n.initializer.expression.getText(sf) !== "vramReadSurfaceKind") continue;
+        if (ts.isIdentifier(n.name)) bienKind = n.name.text;
+      }
+      expect(bienKind, `${ten}: không tìm thấy biến nhận vramReadSurfaceKind(...)`).not.toBeNull();
+
+      /**
+       * ⚠⚠ **BÍ DANH LÀ MỘT ĐƯỜNG LÁCH THẬT, ĐO ĐƯỢC.** Đột biến **C1-M3** đổi điều kiện thành
+       * `!s ? <Skeleton/>` — `s` là `const s = state.data`. Nó không nhắc `state`, không nhắc
+       * `kind`, nên bản lưới trước xếp khung xương ấy vào *"của query KHÁC"* rồi **BỎ QUA** ⇒ XANH
+       * 20/20 trong khi khung xương lại quay mãi mãi.
+       * ⇒ Tập "thuộc về mặt đọc VRAM" phải đóng **BẮC CẦU** dưới phép gán: bất kỳ biến nào khởi tạo
+       * từ một biến đã thuộc tập thì cũng thuộc tập.
+       */
+      const thuocVram = new Set<string>([bienQuery, bienKind!]);
+      for (let vong = 0; vong < 10; vong++) {
+        const truoc = thuocVram.size;
+        for (const n of moiNut(sf)) {
+          if (!ts.isVariableDeclaration(n) || n.initializer === undefined) continue;
+          if (!ts.isIdentifier(n.name) || thuocVram.has(n.name.text)) continue;
+          const initText = n.initializer.getText(sf);
+          if ([...thuocVram].some((v) => new RegExp(`\\b${v}\\b`).test(initText))) thuocVram.add(n.name.text);
+        }
+        if (thuocVram.size === truoc) break;
+      }
+
+      /** Mọi `<Skeleton …/>` trong file. */
+      const skeleton = moiNut(sf).filter(
+        (n) =>
+          (ts.isJsxSelfClosingElement(n) || ts.isJsxOpeningElement(n)) && n.tagName.getText(sf) === "Skeleton",
+      );
+      const viPham: string[] = [];
+      for (const sk of skeleton) {
+        // Điều kiện của MỌI `?:` bao quanh nó.
+        const dieuKien: string[] = [];
+        let cur: ts.Node | undefined = sk.parent;
+        while (cur !== undefined) {
+          if (ts.isConditionalExpression(cur)) dieuKien.push(cur.condition.getText(sf));
+          cur = cur.parent;
+        }
+        const cuaVram = dieuKien.some((d) => [...thuocVram].some((v) => new RegExp(`\\b${v}\\b`).test(d)));
+        if (!cuaVram) continue; // khung xương của một query KHÁC — không thuộc phạm vi
+        if (!dieuKien.some((d) => new RegExp(`\\b${bienKind!}\\b`).test(d))) {
+          const { line } = sf.getLineAndCharacterOfPosition(sk.getStart(sf));
+          viPham.push(`dòng ${line + 1}: điều kiện [${dieuKien.join(" | ")}] KHÔNG hỏi \`${bienKind!}\``);
+        }
+      }
+      expect(
+        viPham,
+        `${ten}: khung xương VRAM không do \`kind\` quyết định ⇒ FORBIDDEN sẽ quay mãi:\n  ${viPham.join("\n  ")}`,
+      ).toEqual([]);
+    });
+  }
+
   it("★★ HAI màn dùng CHUNG một vị từ — không ai tự viết bản sao thứ hai của quyết định này", () => {
     for (const { ten, duong } of NGUOI_DOC) {
       const sf = ast(duong);
