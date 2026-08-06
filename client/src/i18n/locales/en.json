@@ -3586,6 +3586,7 @@
     "VRAM_FIELD_HOSTED_HERE_FALSE": "The responding process CONFIRMS it does NOT host this holder — any defer status observed here (if present) says nothing about that holder.",
     "VRAM_FIELD_HOSTED_HERE_UNKNOWN": "It is UNDETERMINED whether this process hosts the holder — no mechanism can answer that for this holder. Don't read this as \"not hosted\".",
     "VRAM_FIELD_HOLDER_LIST_LOWER_BOUND": "This \"holders\" list only covers holders that have been WIRED into the ledger — it declares itself a LOWER BOUND, not a complete list. Reading an empty list as \"nobody holds anything\" is WRONG.",
+    "VRAM_FIELD_TEXT_TRUNCATED_AT_SOURCE": "… [TRUNCATED AT THE SOURCE — {{kept}}/{{total}} characters kept. The full value is NOT anywhere in this payload; read the process log if you need it verbatim.]",
     "VRAM_FIELD_ESTIMATE_USABLE": "This figure is an ESTIMATE, not a measurement — but every off-ledger allocation could be estimated, so it is safe to use in calculations.",
     "VRAM_FIELD_ESTIMATE_UNUSABLE": "This figure is an ESTIMATE, not a measurement — and {{unknownCount}} off-ledger allocation(s) could NOT be estimated, so this estimate is UNRELIABLE. Don't use it in calculations.",
     "VRAM_FIELD_NON_FINITE_NONE": "No numeric field was blocked for being non-finite in this snapshot.",

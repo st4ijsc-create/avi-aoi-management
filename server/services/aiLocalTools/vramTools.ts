@@ -43,8 +43,16 @@
  * `owner` là **DANH TÍNH** mà Agent lấy từ mặt đọc rồi truyền **thẳng** vào `vram.preempt`; cắt nó
  * ở nguồn là phá đường nối hai mặt. Nhưng **cùng chuỗi đó** trên **bề mặt PROMPT** thì luật
  * **NGƯỢC LẠI**. ⇒ Tách **DANH TÍNH** khỏi **CÂU CHỮ**:
- *   • `data.state` — ảnh chụp **NGUYÊN VẸN**, không sạch, không cắt. Đây là thứ Agent đọc để lấy
- *     `owner` truyền vào lệnh. Ca "không bị cắt ngắn" nay khẳng định **ở đây**.
+ *   • `data.state` — mọi ô **DANH TÍNH** (`owner`, `leaseKey`, `processKey`, `retryReach.owner`)
+ *     **NGUYÊN VẸN**, không sạch, không cắt. Đây là thứ Agent đọc để lấy `owner` truyền vào lệnh.
+ *     Ca "không bị cắt ngắn" nay khẳng định **ở đây**.
+ *     ⚠ **ĐÍNH CHÍNH (Pha 5 Task 5, N11):** câu cũ viết *"ảnh chụp NGUYÊN VẸN"* cho **cả** ảnh
+ *     chụp — nay **sai**. Các ô **CÂU CHỮ** (`unledgered.lastReason`,
+ *     `defer.hosts[].status.lastRefusalMessage`) đã bị **cắt TẠI NGUỒN** ở `vramReadModel` (trần
+ *     400) vì chúng là chuỗi lỗi **không trần** và có người đọc render thẳng vào DOM. Chúng mang
+ *     kiểu `VramAgentDisplayText` (`{text, truncated, rawLength}`) ⇒ `tsc` bắt mọi người đọc thấy
+ *     cờ, và `catSach(..., nguon)` khai bằng câu **`truncatedFieldAtSource`** — câu **không** hứa
+ *     rằng `data.state` còn nguyên văn.
  *   • `textSummary` — **mọi** giá trị chuỗi đi qua `catSach()`: làm sạch bằng **ĐÚNG hai hàm đã có**
  *     ở `@shared/textSafety` (không hàm thứ ba), rồi cắt bằng **ĐÚNG phép cắt** mà
  *     `vramPreempt.catCau()` dùng, và **KHAI RA** là đã cắt (không cắt im lặng).
@@ -55,7 +63,7 @@
 import { z } from "zod";
 import { checkPermission } from "../../_core/accessControl";
 import { registerTool, type Tool, type ToolLang, type ToolResult } from "./toolRegistry";
-import { buildVramAgentState, type VramAgentState } from "../vram/vramReadModel";
+import { buildVramAgentState, type VramAgentState, type VramAgentDisplayText } from "../vram/vramReadModel";
 import { catChuoi, stripChatControlTokens, stripInterpolationSyntax } from "@shared/textSafety";
 import { cum, noi, type Dong } from "./vramPhrases";
 
@@ -87,10 +95,20 @@ const TOM_TAT_TOI_DA = 16_000;
  * ⚠ Nhãn cắt viết bằng ký tự **không nằm trong hai lớp bị xoá** (`…[đã cắt …]`) nên chính nó không
  * tự bị làm sạch ở lượt sau, và nó **không thể** bị một payload giả mạo: payload đã sạch `<>|{}$`.
  */
-function catSach(raw: string | null | undefined, lang: ToolLang): string {
+function catSach(raw: string | null | undefined, lang: ToolLang, nguon?: VramAgentDisplayText): string {
   if (raw === null || raw === undefined) return "";
   const sach = stripChatControlTokens(stripInterpolationSyntax(String(raw)));
   const { cau, daCat } = catChuoi(sach, O_TOI_DA);
+  /**
+   * ★★★ Pha 5 Task 5 (N11) — **MỘT Ô ĐÃ BỊ CẮT Ở NGUỒN THÌ KHAI BẰNG CÂU KHÁC.**
+   * `truncatedField` hứa *"data.state giữ nguyên văn"*; với một ô HIỂN THỊ thì **mặt đọc đã cắt
+   * trước cả tool** (trần 400 ở `vramReadModel`), nên lời hứa ấy thành **sai**. Và tổng phải là độ
+   * dài **GỐC** (`rawLength`), không phải độ dài của mảnh đã tới đây — nếu không, câu khai tự nó
+   * cũng bị cắt một lần nữa mà không ai biết.
+   */
+  if (nguon !== undefined && nguon.truncated) {
+    return `${cau}${cum(lang, "truncatedFieldAtSource", { keep: cau.length, total: nguon.rawLength })}`;
+  }
   return daCat ? `${cau}${cum(lang, "truncatedField", { keep: O_TOI_DA, total: sach.length })}` : cau;
 }
 
@@ -143,6 +161,12 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
   /** Rút gọn cục bộ — **không** phải một cửa thứ hai: cả hai chỉ chuyển tiếp `lang` xuống. */
   const M = (b: number | null | undefined): string => mib(b, lang);
   const C = (x: string | null | undefined): string => catSach(x, lang);
+  /**
+   * ★ N11 — ô **HIỂN THỊ** (đã cắt ở nguồn, có cờ đi kèm). Không phải cửa thứ hai: nó gọi **đúng**
+   * `catSach()`, chỉ chuyển tiếp thêm cờ + độ dài GỐC để câu khai nói đúng sự thật.
+   */
+  const H = (x: VramAgentDisplayText | null | undefined): string =>
+    x === null || x === undefined ? "" : catSach(x.text, lang, x);
 
   // ── DƯ ĐỊA + `trusted`/`degradedReasons` (đồng hồ #2 của bảng) ───────────────────────────────
   d.push(
@@ -286,7 +310,7 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
       ? noi(lang, "beginFailuresNoReason", { count: String(s.unledgered.beginFailureCount ?? "?") })
       : noi(lang, "beginFailuresWithReason", {
           count: String(s.unledgered.beginFailureCount ?? "?"),
-          reason: C(s.unledgered.lastReason),
+          reason: H(s.unledgered.lastReason),
         }),
   );
 
@@ -328,14 +352,14 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
             : cum(lang, "statusUnobservable", { meaning: C(h.status.meaning) });
     const voiToi =
       h.retryReach.kind === "reachable-here"
-        ? cum(lang, "retryReachable", { ownerPattern: C(h.ownerPattern) })
+        ? cum(lang, "retryReachable", { owner: C(h.retryReach.owner) })
         : h.retryReach.kind === "unknown"
           ? cum(lang, "retryUnknown", { why: C(h.retryReach.why) })
           : cum(lang, "retryUnreachable", { why: C(h.retryReach.why) });
     d.push(
       noi(lang, "deferHostLine", {
         host: C(h.host),
-        ownerPattern: C(h.ownerPattern),
+        ownerPattern: C(h.ownerPattern.patternText),
         mechanism: coChe,
         hostedHere: h.hostedHere === null ? cum(lang, "hostedHereUnknown", {}) : String(h.hostedHere),
         status: trangThai,

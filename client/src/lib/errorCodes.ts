@@ -430,6 +430,29 @@ export function translateVramEstimateUsable(estimateUsable: boolean, unknownCoun
   );
 }
 
+/**
+ * ★★★ Pha 5 Task 5 (N11) — **CÂU KHAI "ĐÃ CẮT TẠI NGUỒN" CHO MỘT Ô HIỂN THỊ.**
+ *
+ * Mặt đọc (`server/services/vram/vramReadModel.ts`) cắt các ô **CÂU CHỮ** (`unledgered.lastReason`,
+ * `defer.hosts[].status.lastRefusalMessage`) ở trần 400 và mang cờ đi cùng câu. Người đọc **phải**
+ * nói ra điều đó: một câu lỗi bị cắt mà trông như trọn vẹn sẽ dẫn người trực đi chẩn đoán sai.
+ *
+ * ⚠ Trả về `""` khi **không có gì để khai** (`null`, hoặc chưa bị cắt) — chuỗi rỗng ở đây là câu
+ * trả lời ĐÚNG, không phải một ô thiếu.
+ * ⚠ Hàm này **KHÔNG** render `text`: `text` là **dữ liệu**, panel render thẳng (React tự escape);
+ * đây chỉ là **câu chữ**, và câu chữ thì luôn đi qua lớp dịch (kỷ luật của `VramBrokerPanel`).
+ */
+export function translateVramTruncatedNotice(
+  x: { readonly text: string; readonly truncated: boolean; readonly rawLength: number } | null | undefined,
+): string {
+  if (x === null || x === undefined || !x.truncated) return "";
+  return translateAppError(
+    "VRAM_FIELD_TEXT_TRUNCATED_AT_SOURCE",
+    { kept: x.text.length, total: x.rawLength },
+    `… [truncated at the source, kept ${x.text.length}/${x.rawLength}]`,
+  );
+}
+
 /** `nonFiniteFields` — mảng RỖNG là một câu trả lời thật ("không ô nào bị chặn"), không phải im
  *  lặng; mảng có phần tử là câu fail-closed HỢP LỆ (xem docstring `vramReadModel.ts`), không phải
  *  dữ liệu thiếu. `path`/`was` đi qua `params` ⇒ tự động sạch qua `sanitizeAllParams`. */

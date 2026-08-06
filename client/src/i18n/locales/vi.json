@@ -3587,6 +3587,7 @@
     "VRAM_FIELD_HOSTED_HERE_FALSE": "Tiến trình đang trả lời XÁC NHẬN nó KHÔNG chủ trì hộ này — trạng thái hoãn quan sát được ở đây (nếu có) không nói lên điều gì về hộ đó.",
     "VRAM_FIELD_HOSTED_HERE_UNKNOWN": "KHÔNG XÁC ĐỊNH ĐƯỢC tiến trình này có chủ trì hộ hay không — không có cơ chế nào trả lời câu đó cho hộ này. Đừng đọc thành \"không chủ trì\".",
     "VRAM_FIELD_HOLDER_LIST_LOWER_BOUND": "Danh sách \"đang giữ\" này chỉ phủ những hộ ĐÃ NỐI vào sổ — nó TỰ KHAI là CẬN DƯỚI, không phải danh sách đầy đủ. Đọc danh sách rỗng thành \"không ai giữ gì\" là SAI.",
+    "VRAM_FIELD_TEXT_TRUNCATED_AT_SOURCE": "… [ĐÃ CẮT TẠI NGUỒN — còn {{kept}}/{{total}} ký tự. Bản đầy đủ KHÔNG có ở đâu trong dữ liệu này; xem log của tiến trình nếu cần nguyên văn.]",
     "VRAM_FIELD_ESTIMATE_USABLE": "Con số này là ƯỚC LƯỢNG, không phải số đo — nhưng mọi lượt ngoài sổ đều ước được byte, nên có thể dùng để tính.",
     "VRAM_FIELD_ESTIMATE_UNUSABLE": "Con số này là ƯỚC LƯỢNG, không phải số đo — và {{unknownCount}} lượt ngoài sổ KHÔNG ước được byte, nên ước lượng này KHÔNG ĐÁNG TIN. Đừng dùng nó để tính.",
     "VRAM_FIELD_NON_FINITE_NONE": "Không ô số nào bị chặn vì không hữu hạn ở ảnh chụp này.",

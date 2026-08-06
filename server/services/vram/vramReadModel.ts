@@ -68,10 +68,63 @@ import { vramUnledgeredFact, vramBeginFailureState } from "./vramWiring";
 import { docTrangThaiHoanVram, vramJobDeferBudgetMs, vramRequestDeferBudgetMs } from "./vramDefer";
 import type { VramDeferState } from "./vramDefer";
 import { getKbSyncSchedulerStatus } from "../kbSyncScheduler";
+/** ★ N11 — **PHÉP CẮT DUY NHẤT của repo** (`shared/textSafety.ts`). Không hàm thứ hai ở đây. */
+import { catChuoi } from "@shared/textSafety";
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // KIỂU CỦA ẢNH CHỤP
 // ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * ★★★ Pha 5 Task 5 (N11) — **HAI BỀ MẶT, HAI LUẬT — VÀ ĐÂY LÀ BỀ MẶT *HIỂN THỊ*.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO KHÔNG CẮT MỌI CHUỖI: CẮT MỘT **DANH TÍNH** LÀ PHÁ ĐƯỜNG NỐI HAI MẶT
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `owner` · `leaseKey` · `processKey` · `status.owner` · `retryReach.owner` là những chuỗi mà Agent
+ * (và người trực) lấy từ **mặt đọc** rồi truyền **THẲNG** vào `vram.preempt` / `vram.releaseStale` /
+ * `vram.retryDeferred`. Cắt chúng "cho an toàn" là biến một mặt đọc đúng thành một mặt đọc **không
+ * ra lệnh được** — và hỏng theo chiều IM LẶNG (lệnh trả `owner-not-in-local-ledger`, không ai biết
+ * vì sao). ⇒ **Chỉ** những ô *câu chữ cho người đọc* mới đi qua kiểu này.
+ *
+ * ⚠⚠ VÌ SAO LÀ MỘT **KIỂU** CHỨ KHÔNG PHẢI MỘT `string` + MỘT CỜ HÀNG XÓM: một cờ hàng xóm **tách
+ * ra được** khỏi câu (người sau render `text` mà quên `truncated`), và tệ hơn, người đọc bị cám dỗ
+ * **đo lại** `text.length === TRẦN` — một **bản sao thứ hai của vị từ**, và bản sao ấy còn SAI (câu
+ * dài đúng bằng trần thì **không** bị cắt). `shared/textSafety.ts` đã viết đúng bài học đó. Ở đây cờ
+ * **nằm trong cùng một giá trị** với câu, và cả hai sinh ra ở **đúng chỗ cắt**.
+ *
+ * ⚠ `rawLength` là độ dài **trước khi cắt**, đo tại chỗ cắt — để người đọc biết đã mất bao nhiêu
+ * chứ không phải đoán. `truncated === false ⇒ rawLength === text.length`.
+ */
+export interface VramAgentDisplayText {
+  readonly text: string;
+  /** ★ **KHAI ĐÃ CẮT.** `true` ⇔ `text` **KHÔNG** phải toàn bộ câu. */
+  readonly truncated: boolean;
+  readonly rawLength: number;
+}
+
+/**
+ * Trần MỘT ô câu chữ trên mặt đọc. **400 không phải một con số đẹp** — nó là **đúng trần
+ * `CAU_TOI_DA` mà `vramPreempt.catCau()` / `vramDefer.catCau()` đã dùng** cho cùng loại câu (câu từ
+ * chối). Lấy một con số khác là dựng **hai trần cho một bất biến**.
+ *
+ * ⚠ KHAI THẲNG MỘT SEAM: với `status.lastRefusalMessage` đi qua `vramDefer` thì upstream **đã** cắt
+ * ở đúng 400 ⇒ lượt cắt ở đây là **vô hiệu** (`truncated: false`) và đó là **đúng**: mỗi bề mặt khai
+ * lượt cắt **của chính nó**. Hai nguồn còn lại **không có trần** (`vramWiring.lyDoBeginHongCuoi` =
+ * `err.message` thô; `kbSyncScheduler` `note.message`) — và chúng chính là lý do ô này tồn tại.
+ */
+const CAU_HIEN_THI_TOI_DA = 400;
+
+/**
+ * **CỬA DUY NHẤT** dựng một ô hiển thị. Gọi `catChuoi()` của `@shared/textSafety` — không một phép
+ * `slice()` thứ hai nào trong file này.
+ * ⚠ `null` vào ⇒ `null` ra: *"không có câu"* là một phạm trù RIÊNG, không phải một câu rỗng.
+ */
+function cauHienThi(tho: string | null | undefined): VramAgentDisplayText | null {
+  if (tho === null || tho === undefined) return null;
+  const { cau, daCat } = catChuoi(tho, CAU_HIEN_THI_TOI_DA);
+  return { text: cau, truncated: daCat, rawLength: tho.length };
+}
 
 /**
  * ★★★ Pha 4 Task 4 (I-3 + (D) của review Task 2) — **"LỆNH NÀO VỚI TỚI HỘ NÀY TỪ CHỖ ĐỨNG HIỆN
@@ -231,20 +284,23 @@ export type VramAgentDeferStatus =
     }
   | {
       readonly kind: "deferring";
+      /** ★ **DANH TÍNH** (owner THẬT của chuỗi đang sống) — **KHÔNG BAO GIỜ bị cắt**. */
       readonly owner: string;
       readonly attempts: number | null;
       readonly firstRefusedAt: string | null;
       readonly nextRetryAt: string | null;
-      readonly lastRefusalMessage: string | null;
+      /** ★ N11 — **CÂU CHỮ**, không phải danh tính ⇒ cắt **và khai đã cắt**. */
+      readonly lastRefusalMessage: VramAgentDisplayText | null;
       /** ★ M-7 — ngân sách **CHỐT LÚC BỊ TỪ CHỐI**, thứ điều khiển hạn chót đang chạy. */
       readonly chainBudgetMs: number | null;
     }
   | {
       readonly kind: "exceeded";
+      /** ★ **DANH TÍNH** — xem nhánh `deferring`. */
       readonly owner: string;
       readonly attempts: number | null;
       readonly firstRefusedAt: string | null;
-      readonly lastRefusalMessage: string | null;
+      readonly lastRefusalMessage: VramAgentDisplayText | null;
       readonly chainBudgetMs: number | null;
     };
 
@@ -259,10 +315,34 @@ export type VramAgentDeferStatus =
  * VRAM"* — nó nghĩa *"không có chuỗi hoãn, vì hộ này không bao giờ hoãn"*. Gộp ba ô lại là **nói
  * dối bằng cách im lặng**.
  */
+/**
+ * ★★★ Pha 5 Task 5 (N12) — **MỘT MẪU KHÔNG PHẢI MỘT DANH TÍNH, VÀ NAY NÓ KHÔNG CÒN *GIẢ VỜ* LÀ MỘT
+ * CHUỖI ĐỂ AI ĐÓ TRUYỀN NHẦM VÀO LỆNH.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO ĐỔI KIỂU CHỨ KHÔNG THÊM MỘT CA TEST (ràng buộc 8)
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `ownerPattern` là **câu chữ mô tả khuôn** (`"gguf-embed-ctx:<modelId>"`,
+ * `"cuda-backend:reranker | reranker:<modelPath>"`). Khi nó là `string`, câu **SAI**
+ * `retryDeferred.mutate({ owner: h.ownerPattern })` biên dịch **sạch** và chỉ hỏng lúc chạy
+ * (`unknown-background-host`). Nay nó là một **OBJECT** ⇒ mọi chỗ đòi một `owner: string` **từ chối
+ * nó lúc BIÊN DỊCH**, ở **mọi** điểm gọi, không chỉ ở điểm gọi mà một lưới nghĩ ra được.
+ * ⚠ Đây là *"phát biểu cái nó PHẢI LÀ"*: danh tính nằm ở `retryReach.owner` (xem dưới) và **chỉ**
+ * lấy được ở nhánh mà lệnh **thật sự với tới** — không có đường nào để đọc một danh tính từ một hộ
+ * mà lệnh từ chối.
+ */
+export interface VramAgentOwnerPattern {
+  /** Câu chữ **cho người đọc**. Không lệnh nào nhận nó. */
+  readonly patternText: string;
+}
+
 export interface VramAgentDeferHostView {
   readonly host: string;
-  /** Khuôn `owner` mà hộ này sinh ra (một số hộ có `owner` ĐỘNG: đường dẫn model / id model). */
-  readonly ownerPattern: string;
+  /**
+   * Khuôn `owner` mà hộ này sinh ra (một số hộ có `owner` ĐỘNG: đường dẫn model / id model).
+   * ⚠ **MẪU, KHÔNG PHẢI DANH TÍNH** — xem `VramAgentOwnerPattern`.
+   */
+  readonly ownerPattern: VramAgentOwnerPattern;
   /**
    * Đáy hoãn (ms) theo **cấu hình HIỆN TẠI**, đọc từ đúng hàm ngân sách của điểm gọi. `0` = "đừng
    * đợi, kêu ngay". ⚠ M-7 — đây là ngân sách mà một chuỗi **MỚI** sẽ nhận, KHÔNG phải ngân sách
@@ -297,7 +377,21 @@ export interface VramAgentDeferHostView {
  * `false` ở đây sẽ là một lời khẳng định không có dữ liệu đỡ.
  */
 export type VramAgentDeferRetryReach =
-  | { readonly kind: "reachable-here" }
+  | {
+      readonly kind: "reachable-here";
+      /**
+       * ★★★ Pha 5 Task 5 (N12) — **DANH TÍNH THẬT ĐỂ RA LỆNH**, chốt cùng lời hứa *"với tới được"*.
+       *
+       * ⚠⚠ Trước bản này mặt đọc **không phát ra danh tính nào**, nên người gọi tự nặn lấy một cái:
+       * `VramBrokerPanel.tsx` gửi `h.host` (TÊN HỘ). Đo được: `vramBackgroundHostForOwner(h.host)`
+       * trả `null` cho **2/6** hộ (`reranker`, `gguf-embed-ctx` — hai hộ có `owner` ĐỘNG, tên hộ
+       * **không tồn tại** như một owner) ⇒ lệnh trả `unknown-background-host`.
+       * ⇒ Ô này là **chính chuỗi** mà `vram.retryDeferred` nhận, và bất biến *"nó phân giải NGƯỢC
+       * về đúng hộ này"* có lưới (`vramReadModel.surface.test.ts`). Lời hứa và đầu vào của lời hứa
+       * **đi cùng một nhánh**: không có cách nào đọc được một danh tính từ một hộ không với tới.
+       */
+      readonly owner: string;
+    }
   | { readonly kind: "unreachable"; readonly why: VramDeferRetryUnreachable }
   | { readonly kind: "unknown"; readonly why: "defer-state-unreadable" };
 
@@ -436,8 +530,14 @@ export interface VramAgentState {
      * `.gguf`. Task 3 (câu chữ i18n) **KHÔNG được giả định** router đã làm sạch: mọi giá trị đi
      * vào `i18n.t()` phải qua **cùng** hàm làm sạch bất động đã có. Cùng cảnh báo cho
      * `defer.hosts[].status.lastRefusalMessage` và mọi `owner` (chứa đường dẫn model tuyệt đối).
+     *
+     * ★★★ N11 — **NAY CÓ TRẦN, VÀ TRẦN ẤY TỰ KHAI.** Nguồn (`vramWiring.ts:1628`) là
+     * `(err as Error)?.message` **không cắt một ký tự nào**, và ô này có **hai** người đọc thô:
+     * `VramBrokerPanel.tsx` render thẳng vào DOM, `vramTools.ts` nhồi vào prompt LLM. Làm sạch là
+     * việc của **bề mặt câu chữ** (hai bộ diễn giải, `@shared/textSafety`); **trần** thì phải ở
+     * **nguồn**, nếu không mỗi người đọc lại tự nghĩ ra một trần.
      */
-    readonly lastReason: string | null;
+    readonly lastReason: VramAgentDisplayText | null;
   };
 
   readonly defer: VramAgentDeferView;
@@ -461,35 +561,62 @@ export interface VramAgentState {
  * *đường JOB NỀN* (ngân sách 6 giờ), nhưng `kbSyncScheduler.ts` truyền `vramRequestDeferBudgetMs()`
  * (mặc định **0**). Bảng này khai theo **MÃ ĐANG CHẠY**, vì đó là thứ Agent sẽ gặp.
  */
-const HO_BACKGROUND: readonly {
+interface HoChung {
   readonly host: string;
+  /** ⚠ CÂU CHỮ mô tả khuôn — **KHÔNG** phải một danh tính (xem `VramAgentOwnerPattern`). */
   readonly ownerPattern: string;
   readonly budget: (kb: KbSyncStatus | null) => number;
-  /** `null` ⇒ hộ này KHÔNG đi qua `vramDefer` (nó có cơ chế hẹn giờ riêng — xem `cron:kb-sync`). */
-  readonly matches: ((owner: string) => boolean) | null;
-}[] = [
+}
+
+/**
+ * ★★★ N12 — HỘ CÓ **HẸN GIỜ RIÊNG** (`matches: null` ⇒ `vramBackgroundHostHasExternalRetry`).
+ *
+ * ⚠⚠ `ownerStatic` ở đây là `string`, **KHÔNG** `string | null` — và đó là một ràng buộc, không phải
+ * một sự tiện tay: hộ này là hộ **DUY NHẤT** mà `retryReach` phát ra `reachable-here`, tức mặt đọc
+ * **hứa** rằng có một lệnh chạy được. Một lời hứa như thế mà **không kèm danh tính để gọi** là đúng
+ * lớp lỗi *"mặt đọc hứa nhiều hơn mặt lệnh"*. Nay `tsc` không cho khai một hàng như vậy.
+ */
+interface HoTuHenGio extends HoChung {
+  readonly matches: null;
+  /** ⚠ PHẢI phân giải NGƯỢC về chính hàng này (`vramBackgroundHostForOwner`) — có lưới. */
+  readonly ownerStatic: string;
+}
+
+/** Hộ đi qua `vramDefer.xinVramCoHoan()`. `ownerStatic: null` ⇔ `owner` ĐỘNG (chỉ có MẪU). */
+interface HoQuaVramDefer extends HoChung {
+  readonly matches: (owner: string) => boolean;
+  readonly ownerStatic: string | null;
+}
+
+type HoBackground = HoTuHenGio | HoQuaVramDefer;
+
+const HO_BACKGROUND: readonly HoBackground[] = [
   {
     // Cơ chế hoãn RIÊNG của Pha 2B Task 6 (có khôi phục sau khởi động lại) — KHÔNG qua `vramDefer`.
     host: "cron:kb-sync",
     ownerPattern: "cron:kb-sync",
+    ownerStatic: "cron:kb-sync",
     budget: (kb) => (kb === null ? Number.NaN : kb.deferBudgetMs),
     matches: null,
   },
   {
     host: "cron:kb-eval-gate",
     ownerPattern: "cron:kb-eval-gate",
+    ownerStatic: "cron:kb-eval-gate",
     budget: () => vramRequestDeferBudgetMs(false),
     matches: (o) => o === "cron:kb-eval-gate",
   },
   {
     host: "sidecar:local-trainer",
     ownerPattern: "sidecar:local-trainer",
+    ownerStatic: "sidecar:local-trainer",
     budget: () => vramJobDeferBudgetMs(false),
     matches: (o) => o === "sidecar:local-trainer",
   },
   {
     host: "sidecar:llm-finetune",
     ownerPattern: "sidecar:llm-finetune",
+    ownerStatic: "sidecar:llm-finetune",
     budget: () => vramJobDeferBudgetMs(false),
     matches: (o) => o === "sidecar:llm-finetune",
   },
@@ -497,12 +624,16 @@ const HO_BACKGROUND: readonly {
     // HAI `owner` (backend CUDA + model), MỘT hộ: cùng đường phục vụ yêu cầu, cùng cách suy giảm.
     host: "reranker",
     ownerPattern: "cuda-backend:reranker | reranker:<modelPath>",
+    // ⚠ HAI owner, một trong hai là ĐỘNG ⇒ **KHÔNG có một danh tính tĩnh** cho hộ này. `null` ở đây
+    //   là câu trả lời THẬT, không phải một ô bỏ trống: tên hộ `"reranker"` **không** là owner nào.
+    ownerStatic: null,
     budget: () => vramRequestDeferBudgetMs(false),
     matches: (o) => o === "cuda-backend:reranker" || o.startsWith("reranker:"),
   },
   {
     host: "gguf-embed-ctx",
     ownerPattern: "gguf-embed-ctx:<modelId>",
+    ownerStatic: null,
     budget: () => vramRequestDeferBudgetMs(false),
     matches: (o) => o.startsWith("gguf-embed-ctx:"),
   },
@@ -518,6 +649,16 @@ const HO_BACKGROUND: readonly {
  * thì **nhận lưới**, không phải được miễn. Một hộ `background` MỚI mà quên khai ở đây ⇒ ca **ĐỎ**.
  */
 export const VRAM_BACKGROUND_HOST_IDS: readonly string[] = HO_BACKGROUND.map((h) => h.host);
+
+/**
+ * ★★★ N12 — **DANH TÍNH TĨNH ĐÃ KHAI**, phơi ra cho lưới đối chiếu (`vramReadModel.surface.test.ts`
+ * hỏi: *"mỗi danh tính có phân giải NGƯỢC về đúng hộ của nó không"*). `null` ⇔ hộ có `owner` ĐỘNG.
+ * ⚠ Đây **không** phải một bản sao của bảng: nó là một **phép chiếu** của chính `HO_BACKGROUND`.
+ */
+export const VRAM_BACKGROUND_STATIC_OWNERS: readonly {
+  readonly host: string;
+  readonly ownerStatic: string | null;
+}[] = HO_BACKGROUND.map((h) => ({ host: h.host, ownerStatic: h.ownerStatic }));
 
 /**
  * Chỉ dùng cho lưới (E) — **cùng vị từ `matches` mà ảnh chụp dùng**, không phải một bản sao thứ
@@ -552,6 +693,15 @@ function coCoCheDanhThucNgoai(matches: ((owner: string) => boolean) | null): mat
   return matches === null;
 }
 
+/**
+ * ★ N12 — **DẠNG THEO HÀNG** của đúng vị từ trên. **KHÔNG** một phép so thứ hai: thân hàm là một
+ * lời gọi `coCoCheDanhThucNgoai()`. Cần dạng này vì `tsc` chỉ thu hẹp được **hàng** (⇒ `ownerStatic`
+ * là `string`, không phải `string | null`) qua một vị từ nhận **cả hàng**.
+ */
+function laHoTuHenGio(h: HoBackground): h is HoTuHenGio {
+  return coCoCheDanhThucNgoai(h.matches);
+}
+
 /** Dạng theo TÊN HỘ của vị từ trên — `vramCommands.vramRetryDeferredCommand()` gọi ĐÚNG hàm này. */
 export function vramBackgroundHostHasExternalRetry(host: string): boolean {
   const h = HO_BACKGROUND.find((x) => x.host === host);
@@ -571,7 +721,9 @@ function trangThaiTuOVramDefer(s: VramDeferState): VramAgentDeferStatus {
     owner: s.owner,
     attempts: s.attempts,
     firstRefusedAt: s.firstRefusedAt,
-    lastRefusalMessage: s.lastRefusalMessage,
+    // ★ N11 — CÂU CHỮ ⇒ đi qua cửa cắt-và-khai. (`vramDefer` đã cắt ở 400 ⇒ ở đây thường vô hiệu;
+    //   nguồn kia — `kbSyncScheduler` `note.message` — thì KHÔNG có trần, và đó là lý do có cửa này.)
+    lastRefusalMessage: cauHienThi(s.lastRefusalMessage),
     // ★ M-7 — ngân sách CHỐT LÚC BỊ TỪ CHỐI, thứ điều khiển hạn chót đang chạy.
     chainBudgetMs: s.budgetMs,
   } as const;
@@ -617,9 +769,13 @@ function docSauHo(kb: KbSyncStatus | null): VramAgentDeferHostView[] {
 
     let hostedHere: boolean | null;
     let status: VramAgentDeferStatus;
+    /**
+     * ★★★ N12 — **LỆNH NÀO VỚI TỚI, VÀ GỌI BẰNG DANH TÍNH NÀO** — dựng ở **CÙNG** nhánh với
+     * `hostedHere`/`status`, để lời hứa và đầu vào của lời hứa không thể trôi khỏi nhau.
+     */
+    let retryReach: VramAgentDeferRetryReach;
 
-    const khop = h.matches;
-    if (coCoCheDanhThucNgoai(khop)) {
+    if (laHoTuHenGio(h)) {
       /**
        * `cron:kb-sync` — cơ chế RIÊNG, và là hộ DUY NHẤT ta **chứng minh được** có chủ trì ở đây
        * hay không (`getKbSyncSchedulerStatus().hostedHere` ⇔ `job !== null`). Cron sống ở `worker`
@@ -632,10 +788,13 @@ function docSauHo(kb: KbSyncStatus | null): VramAgentDeferHostView[] {
       } else if (kb.defer !== null) {
         const d = kb.defer;
         const chung = {
-          owner: "cron:kb-sync",
+          // ⚠ N12 — DANH TÍNH đọc từ **bản khai của hàng**, không phải một chuỗi cứng thứ hai:
+          //   một lượt đổi tên ở bảng phải đi tới đây, nếu không hai chỗ trôi khỏi nhau.
+          owner: h.ownerStatic,
           attempts: d.attempts,
           firstRefusedAt: d.firstRefusedAt,
-          lastRefusalMessage: d.lastRefusalMessage,
+          // ★ N11 — `kbSyncScheduler` `note.message` KHÔNG có trần ⇒ đây là chỗ trần được áp.
+          lastRefusalMessage: cauHienThi(d.lastRefusalMessage),
           chainBudgetMs: d.budgetMs,
         } as const;
         status = d.exceeded
@@ -647,6 +806,23 @@ function docSauHo(kb: KbSyncStatus | null): VramAgentDeferHostView[] {
         // ⚠ ĐÂY LÀ DÒNG C-1 SINH RA ĐỂ VIẾT: cron không chạy ở tiến trình này ⇒ ta KHÔNG BIẾT.
         status = { kind: "not-observable-here", meaning: "host-not-running-in-this-process" };
       }
+      /**
+       * ★★★ (D) + N12 — cùng ba nhánh mà `vramRetryDeferredCommand()` đi, đọc từ **cùng** ô
+       * `hostedHere` (⇐ `coChuTriCronODay()`). Không một phép so nào được viết lại ở đây.
+       *
+       * ⚠ DANH TÍNH kèm theo lời hứa: **owner của chuỗi ĐANG SỐNG** nếu có (đó là chuỗi thật mà
+       * lệnh sẽ đánh thức), nếu không thì **danh tính TĨNH đã khai của hàng**. Tuyệt đối **không**
+       * phải `host` — tên hộ chỉ tình cờ trùng owner ở 4/6 hàng, và trùng thì càng nguy hiểm vì nó
+       * làm phát biểu sai **chạy đúng** ở những hàng người ta thử trước.
+       */
+      const danhTinh =
+        status.kind === "deferring" || status.kind === "exceeded" ? status.owner : h.ownerStatic;
+      retryReach =
+        hostedHere === null
+          ? { kind: "unknown", why: "defer-state-unreadable" }
+          : hostedHere
+            ? { kind: "reachable-here", owner: danhTinh }
+            : { kind: "unreachable", why: "host-not-running-in-this-process" };
     } else {
       /**
        * Năm hộ đi qua `vramDefer`: **KHÔNG có cơ chế nào** trả lời *"hộ này có chạy ở tiến trình
@@ -658,15 +834,22 @@ function docSauHo(kb: KbSyncStatus | null): VramAgentDeferHostView[] {
         ? { kind: "no-chain-in-this-process" }
         : { kind: "not-observable-here", meaning: "defer-state-unreadable" };
       for (const s of oVramDefer) {
-        if (!khop(s.owner)) continue;
+        if (!h.matches(s.owner)) continue;
         const ung = trangThaiTuOVramDefer(s);
         if (HANG[ung.kind] > HANG[status.kind]) status = ung;
       }
+      /**
+       * ⚠ **KHÔNG CÓ DANH TÍNH NÀO ĐI KÈM**, và đó là chủ đích: lệnh **không** với tới hộ này từ
+       * đâu cả (vòng chờ nằm trong ngăn xếp của chính job). Phát ra một `owner` ở đây là mời người
+       * đọc tiêu một lượt gọi chắc chắn bị từ chối.
+       */
+      retryReach = { kind: "unreachable", why: "no-retry-mechanism-for-this-host" };
     }
 
     return {
       host: h.host,
-      ownerPattern: h.ownerPattern,
+      // ★ N12 — MẪU đi trong một vỏ RIÊNG: nó không còn là một `string` để lọt vào chỗ đòi danh tính.
+      ownerPattern: { patternText: h.ownerPattern },
       budgetMs,
       /**
        * ⚠⚠ Ô NÀY LÀ THỨ PHÂN BIỆT *"đang hoãn"* VỚI *"KHÔNG CÓ CƠ CHẾ HOÃN"*. Ngân sách `0` nghĩa
@@ -677,17 +860,7 @@ function docSauHo(kb: KbSyncStatus | null): VramAgentDeferHostView[] {
       mechanism: Number.isFinite(budgetMs) && budgetMs > 0 ? "waits-and-retries" : "no-wait-degrades-in-place",
       hostedHere,
       status,
-      /**
-       * ★★★ (D) — cùng ba nhánh mà `vramRetryDeferredCommand()` đi, đọc từ **cùng** ô `hostedHere`
-       * (⇐ `coChuTriCronODay()`). Không một phép so nào được viết lại ở đây.
-       */
-      retryReach: !coCoCheDanhThucNgoai(h.matches)
-        ? { kind: "unreachable", why: "no-retry-mechanism-for-this-host" }
-        : hostedHere === null
-          ? { kind: "unknown", why: "defer-state-unreadable" }
-          : hostedHere
-            ? { kind: "reachable-here" }
-            : { kind: "unreachable", why: "host-not-running-in-this-process" },
+      retryReach,
     };
   });
 }
@@ -958,7 +1131,15 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
       unknownCount: kqn.unknownCount,
       estimateUsable: kqn.unknownCount !== null && kqn.unknownCount === 0 && kqn.unledgeredEstimateBytes !== null,
       beginFailureCount: beginFailure.count,
-      lastReason: beginFailure.lastReason,
+      /**
+       * ★★★ N11 — **CẮT TẠI NGUỒN.** `vramWiring.lyDoBeginHongCuoi` là `err.message` **thô, không
+       * trần**; hai người đọc render nó **thẳng** (DOM của panel · prompt LLM). Trần đặt ở đây —
+       * một chỗ — và nó **tự khai** (`truncated`), nên không người đọc nào phải đoán, và không ai
+       * đẻ ra một trần thứ hai.
+       * ⚠ **Làm sạch thì KHÔNG ở đây**: hai bộ diễn giải (i18next / chat template) là chuyện của
+       * bề mặt câu chữ (`vramTools.catSach`). Cắt ≠ làm sạch; gộp hai việc là dựng đường thứ hai.
+       */
+      lastReason: cauHienThi(beginFailure.lastReason),
     },
     /**
      * ★★★ C-1 — khối hoãn **MANG PHẠM VI CỦA CHÍNH NÓ**. Cả hai nguồn (`vramDefer.oTrangThai`,

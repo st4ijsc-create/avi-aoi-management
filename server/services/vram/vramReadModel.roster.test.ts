@@ -32,7 +32,11 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
-import { VRAM_BACKGROUND_HOST_IDS, vramBackgroundHostForOwner } from "./vramReadModel";
+import {
+  VRAM_BACKGROUND_HOST_IDS,
+  VRAM_BACKGROUND_STATIC_OWNERS,
+  vramBackgroundHostForOwner,
+} from "./vramReadModel";
 
 /**
  * ★★★ (E) — DÂN SỐ SÁU HỘ CÓ **MÁY QUÉT**, không phải một bản khai tay được miễn lưới.
@@ -84,6 +88,86 @@ describe("vramReadModel — bảng sáu hộ khớp ĐÚNG các điểm gọi `x
 
   it("máy quét thấy ĐÚNG sáu điểm gọi `xinVramCoHoan` (số này đổi ⇒ đọc lại bảng, đừng sửa ca cho xanh)", () => {
     expect(quetOwnerXinVramCoHoan().length).toBe(6);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ Pha 5 Task 5 (N14) — **LƯỚI CANH *TÊN*, KHÔNG CHỈ CANH *DÂN SỐ*.**
+  //
+  // ⚠⚠⚠ ĐO ĐƯỢC Ở PHA 4: đột biến **đổi TÊN** một hộ ⇒ **4/4 ca trên vẫn XANH.** Vì sao: cả hai
+  // vế của mọi phép so đều suy ra từ **CÙNG MỘT BẢNG** (`VRAM_BACKGROUND_HOST_IDS` là
+  // `HO_BACKGROUND.map(h => h.host)`, còn `vramBackgroundHostForOwner()` **trả về** `h.host`) —
+  // đúng lớp *"hai bản sao của một vị từ trùng nhau dưới một bất biến"*. Đổi tên thì **cả hai vế
+  // đổi theo**, và phép so vẫn đúng. **Thêm ca không giải được lớp này.**
+  //
+  // ⇒ Vế đối chiếu phải đến từ **một NGUỒN ĐỘC LẬP**: chính **mã sản xuất**. Luật được phát biểu ở
+  // chiều **PHẢI-LÀ** (không liệt kê cái bị cấm):
+  //
+  //     **TÊN của mỗi hộ PHẢI LÀ một `owner` có thật trong mã sản xuất** — hoặc **chính** owner đó
+  //     (`owner === host`, hộ có owner TĨNH), hoặc **tiền tố tĩnh** của một owner ĐỘNG
+  //     (`owner === host + ":"`, tức điểm gọi viết `` `${host}:${…}` ``).
+  //
+  // ⚠ Vì sao **không** chấp nhận `owner.startsWith(host + ":")` chung chung: nó cho một cái tên bị
+  // **cắt cụt** đi lọt (`"sidecar:local-trainer"` → đổi tên thành `"sidecar"` vẫn xanh). Điều kiện
+  // đúng là owner literal **kết thúc ngay tại ranh giới**, tức nó **bằng** `host + ":"`.
+  // ⚠ Máy quét **BỎ chính `vramReadModel.ts`** — quét cả nó là quay lại đúng "một bảng, hai vế".
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+
+  /** Quét MỌI `owner: "…"` / `owner: \`…\`` trong `server/services/**` — **trừ** bảng đang bị canh. */
+  function quetOwnerSanXuat(): string[] {
+    const goc = path.resolve(__dirname, "..");
+    const ra: string[] = [];
+    const di = (d: string) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) {
+          di(p);
+          continue;
+        }
+        if (!e.name.endsWith(".ts") || e.name.includes(".test.")) continue;
+        // ⚠ ĐỘC LẬP: nguồn đối chiếu KHÔNG được là chính file khai bảng.
+        if (e.name === "vramReadModel.ts") continue;
+        const src = fs.readFileSync(p, "utf8");
+        const re = /\bowner:\s*[`"']([^`"'$]*)/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(src)) !== null) ra.push(m[1]!);
+      }
+    };
+    di(goc);
+    return ra;
+  }
+
+  it("★★★ N14 — TÊN mỗi hộ PHẢI LÀ một `owner` có thật trong mã sản xuất (đổi tên một hộ ⇒ ĐỎ)", () => {
+    const owners = quetOwnerSanXuat();
+    // Lưới của lưới: máy quét mù thì mọi khẳng định dưới đây vô nghĩa.
+    expect(owners.length, "máy quét không thấy `owner:` nào ⇒ chính lưới này đã mù").toBeGreaterThanOrEqual(10);
+
+    for (const host of VRAM_BACKGROUND_HOST_IDS) {
+      /** Những `owner` sản xuất mà **chính hàng này** nhận (dùng đúng vị từ của mặt đọc). */
+      const cuaHo = owners.filter((o) => vramBackgroundHostForOwner(o) === host);
+      const chungThuc = cuaHo.filter((o) => o === host || o === `${host}:`);
+      expect(
+        chungThuc.length,
+        `hộ "${host}" KHÔNG có owner nào trong mã sản xuất chứng thực cái tên đó ` +
+          `(owner mà hộ nhận: ${JSON.stringify(cuaHo)}). Đổi tên một hộ mà mã sản xuất không đổi ` +
+          `theo là mặt đọc/lệnh/UI nói về một hộ KHÔNG TỒN TẠI.`,
+      ).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("★★ N14 — chiều KHÔNG BẮT NHẦM: máy quét thấy đủ SÁU tên hộ, không phải xanh vì quét rỗng", () => {
+    const owners = new Set(quetOwnerSanXuat());
+    const thay = VRAM_BACKGROUND_HOST_IDS.filter((h) => owners.has(h) || owners.has(`${h}:`));
+    expect(thay.sort()).toEqual([...VRAM_BACKGROUND_HOST_IDS].sort());
+  });
+
+  it("★★ N12/N14 — DANH TÍNH TĨNH đã khai phải phân giải NGƯỢC về đúng hàng của nó", () => {
+    expect(VRAM_BACKGROUND_STATIC_OWNERS.map((x) => x.host).sort()).toEqual([...VRAM_BACKGROUND_HOST_IDS].sort());
+    for (const x of VRAM_BACKGROUND_STATIC_OWNERS) {
+      if (x.ownerStatic === null) continue;
+      expect(vramBackgroundHostForOwner(x.ownerStatic), `danh tính "${x.ownerStatic}" của hộ "${x.host}"`).toBe(
+        x.host,
+      );
+    }
   });
 
   /**

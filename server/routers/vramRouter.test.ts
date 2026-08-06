@@ -422,7 +422,11 @@ describe("vramRouter.state — trạng thái hoãn của CẢ SÁU hộ `backgro
     expect(ho.status.kind).toBe("exceeded");
     if (ho.status.kind !== "exceeded") throw new Error("đã quá đáy");
     expect(ho.status.attempts).toBe(1);
-    expect(ho.status.lastRefusalMessage).toContain("cuda-backend:reranker");
+    // ★ N11 — ô CÂU CHỮ nay là `VramAgentDisplayText` (cắt tại nguồn + KHAI đã cắt), không phải
+    //   một `string` trần. Câu vẫn phải mang DANH TÍNH của hộ bị từ chối — đó là thứ người trực đọc.
+    expect(ho.status.lastRefusalMessage?.text).toContain("cuda-backend:reranker");
+    // ⚠ và nó KHÔNG bị khai nhầm là đã cắt (câu này ngắn hơn trần 400 rất nhiều).
+    expect(ho.status.lastRefusalMessage?.truncated).toBe(false);
     // ★ M-7 — ngân sách CHỐT LÚC BỊ TỪ CHỐI, không phải cấu hình hiện tại.
     expect(ho.status.chainBudgetMs).toBe(0);
     // ⚠ Và `mechanism` vẫn nói đúng bản chất của hộ — hai ô KHÔNG gộp.

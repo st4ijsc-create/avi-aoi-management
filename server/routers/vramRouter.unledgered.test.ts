@@ -70,7 +70,9 @@ describe("vramRouter.state — ống 'chạy NGOÀI SỔ' phơi ra ĐÚNG độ 
 
     const s = await caller().state();
     expect(s.unledgered.beginFailureCount).toBe(1);
-    expect(s.unledgered.lastReason).toMatch(/ước lượng hỏng/);
+    // ★ N11 — ô CÂU CHỮ: `{text, truncated, rawLength}`; câu ngắn ⇒ KHÔNG bị cắt.
+    expect(s.unledgered.lastReason?.text).toMatch(/ước lượng hỏng/);
+    expect(s.unledgered.lastReason?.truncated).toBe(false);
     expect(s.unledgered.estimateBytes).toBe(FILE_BYTES_30B);
     expect(s.unledgered.unknownCount).toBe(0);
     expect(s.unledgered.estimateUsable).toBe(true);

@@ -489,12 +489,18 @@ export const CAU = {
     (p) => `NOT OBSERVABLE FROM HERE (${p.meaning}) — answer "unknown", never "not deferring"`,
     (p) => `在这里无法观察（${p.meaning}）——请回答“未知”，绝不能说“没有在延迟”`,
   ),
-  retryReachable: ba<{ ownerPattern: string }>(
-    (p) => `vram.retryDeferred VỚI TỚI (mẫu owner: ${p.ownerPattern})`,
+  /**
+   * ★★★ Pha 5 Task 5 (N12) — **THAM SỐ LÀ `owner` (DANH TÍNH), KHÔNG CÒN LÀ `ownerPattern` (MẪU).**
+   * Câu cũ đưa cho Agent một **mẫu** (`gguf-embed-ctx:<modelId>`) ngay trong câu bảo *"gọi được"* —
+   * tức mời nó truyền một mẫu vào chỗ đòi một danh tính. Nay câu này mang **đúng chuỗi** mà
+   * `vram.retryDeferred` nhận (`retryReach.owner`).
+   */
+  retryReachable: ba<{ owner: string }>(
+    (p) => `vram.retryDeferred VỚI TỚI — gọi với owner="${p.owner}"`,
     (p) =>
-      `vram.retryDeferred CAN reach it (owner pattern: ${p.ownerPattern}) — ` +
-      `ask the operator to press Retry deferred on the VRAM panel`,
-    (p) => `vram.retryDeferred 可以触达（owner 模式：${p.ownerPattern}）——请让操作员在 VRAM 面板点击“重试延迟项”`,
+      `vram.retryDeferred CAN reach it — call it with owner="${p.owner}", ` +
+      `or ask the operator to press Retry deferred on the VRAM panel`,
+    (p) => `vram.retryDeferred 可以触达——请以 owner="${p.owner}" 调用，或让操作员在 VRAM 面板点击“重试延迟项”`,
   ),
   retryUnknown: ba<{ why: string }>(
     (p) => `không rõ lệnh có với tới không (${p.why})`,
@@ -572,6 +578,23 @@ export const CAU = {
     (p) => `…[đã cắt, còn ${p.keep}/${p.total} ký tự — ảnh chụp data.state giữ nguyên văn]`,
     (p) => `…[truncated, kept ${p.keep}/${p.total} chars — the data.state snapshot keeps the value verbatim]`,
     (p) => `…[已截断，保留 ${p.keep}/${p.total} 个字符——data.state 快照保留原文]`,
+  ),
+  /**
+   * ★★★ Pha 5 Task 5 (N11) — **KHÁC NGHĨA VỚI `truncatedField`, KHÔNG PHẢI MỘT BẢN SAO CỦA NÓ.**
+   * `truncatedField` hứa *"data.state còn nguyên văn"* — đúng cho một ô **DANH TÍNH/thô**. Ô
+   * **HIỂN THỊ** thì mặt đọc đã cắt **TẠI NGUỒN**, nên bản đầy đủ **không còn ở đâu trong payload**;
+   * dùng lại câu kia ở đây là chỉ người đọc đi tìm một thứ không tồn tại.
+   */
+  truncatedFieldAtSource: ba<{ keep: number; total: number }>(
+    (p) =>
+      `…[đã cắt TẠI NGUỒN, còn ${p.keep}/${p.total} ký tự — bản đầy đủ KHÔNG có ở data.state; ` +
+      `xem log của tiến trình nếu cần nguyên văn]`,
+    (p) =>
+      `…[truncated AT THE SOURCE, kept ${p.keep}/${p.total} chars — the full value is NOT in ` +
+      `data.state either; read the process log if you need it verbatim]`,
+    (p) =>
+      `…[已在源头截断，保留 ${p.keep}/${p.total} 个字符——完整内容也不在 data.state 中；` +
+      `如需原文请查看进程日志]`,
   ),
   summaryTruncated: ba<{ dropped: number; total: number; cap: number }>(
     (p) =>

@@ -3578,6 +3578,7 @@
     "VRAM_FIELD_HOSTED_HERE_FALSE": "应答进程确认它并未承载此持有者——此处观察到的延迟状态（如有）与该持有者无关。",
     "VRAM_FIELD_HOSTED_HERE_UNKNOWN": "无法确定此进程是否承载该持有者——没有任何机制能回答这个问题。请勿将其解读为“未承载”。",
     "VRAM_FIELD_HOLDER_LIST_LOWER_BOUND": "此“持有者”列表仅覆盖已接入台账的持有者——它自称为下限，而非完整列表。将空列表解读为“无人占用”是错误的。",
+    "VRAM_FIELD_TEXT_TRUNCATED_AT_SOURCE": "… [已在源头截断——保留 {{kept}}/{{total}} 个字符。完整内容不在本数据中；如需原文请查看进程日志。]",
     "VRAM_FIELD_ESTIMATE_USABLE": "此数值为估算值，并非实测值——但所有台账外分配均可估算字节数，因此可用于计算。",
     "VRAM_FIELD_ESTIMATE_UNUSABLE": "此数值为估算值，并非实测值——且有 {{unknownCount}} 笔台账外分配无法估算字节数，因此该估算不可信，请勿用于计算。",
     "VRAM_FIELD_NON_FINITE_NONE": "此快照中没有任何数字字段因非有限值而被拦截。",

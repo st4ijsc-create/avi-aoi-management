@@ -76,6 +76,7 @@ import {
   translateVramPreemptCommand,
   translateVramReleaseStaleCommand,
   translateVramRetryDeferredCommand,
+  translateVramTruncatedNotice,
 } from "@/lib/errorCodes";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -280,7 +281,15 @@ export function VramBrokerPanel({ commandReach, polling }: Props) {
               <p className="text-xs text-muted-foreground mt-1">
                 {t("vramBroker.beginFailures", "Lượt beginVramAllocation() đã hỏng")}:{" "}
                 {s.unledgered.beginFailureCount ?? "?"}
-                {s.unledgered.lastReason === null ? "" : ` · ${s.unledgered.lastReason}`}
+                {/*
+                  ★★★ Pha 5 Task 5 (N11) — `lastReason` là một ô **HIỂN THỊ đã cắt TẠI NGUỒN**
+                  (`VramAgentDisplayText`). `text` là **dữ liệu** ⇒ render thẳng (React escape);
+                  câu *"đã cắt"* là **câu chữ** ⇒ đi qua lớp dịch, không viết tay ở đây.
+                  ⚠ Trước bản này ô này render **chuỗi thô không trần** (`err.message` của
+                  `beginVramAllocation`) thẳng vào DOM.
+                */}
+                {s.unledgered.lastReason === null ? "" : ` · ${s.unledgered.lastReason.text}`}
+                {translateVramTruncatedNotice(s.unledgered.lastReason)}
               </p>
             </div>
 
@@ -395,8 +404,16 @@ export function VramBrokerPanel({ commandReach, polling }: Props) {
               <div className="text-sm font-medium">{t("vramBroker.deferHosts", "Hộ nền (background)")}</div>
               <div className="flex flex-col gap-2 mt-2">
                 {s.defer.hosts.map((h) => {
-                  const owner =
-                    h.status.kind === "deferring" || h.status.kind === "exceeded" ? h.status.owner : h.host;
+                  /**
+                   * ★★★ Pha 5 Task 5 (N12) — **DANH TÍNH KHÔNG CÒN ĐƯỢC NẶN Ở ĐÂY.**
+                   *
+                   * Bản trước viết `owner = … : h.host` — `h.host` là **TÊN HỘ**, không phải một
+                   * `owner`. Đo được: `vramBackgroundHostForOwner(h.host)` trả `null` cho **2/6**
+                   * hộ (`reranker`, `gguf-embed-ctx` — hai hộ có `owner` ĐỘNG) ⇒ lệnh trả
+                   * `unknown-background-host`. Nay danh tính do **mặt đọc** phát ra, và **chỉ** ở
+                   * nhánh `reachable-here` — tức chính nhánh mà lệnh với tới được. Truyền một
+                   * **MẪU** (`h.ownerPattern`) vào đây nay là lỗi `tsc`, không phải một lỗi lúc chạy.
+                   */
                   return (
                     <div key={h.host} className="rounded-md border p-2 text-xs flex flex-col gap-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -427,7 +444,17 @@ export function VramBrokerPanel({ commandReach, polling }: Props) {
                           size="sm"
                           variant="outline"
                           disabled={vramRetryButtonDisabled(h.retryReach.kind, commandReach, retryDeferred.isPending)}
-                          onClick={() => retryDeferred.mutate({ owner })}
+                          /*
+                            ⚠ Ô `owner` **chỉ tồn tại** ở nhánh `reachable-here` ⇒ phép thu hẹp này
+                            KHÔNG phải một lượt kiểm phòng thủ, nó là cách **duy nhất** đọc được
+                            danh tính. Nút đã bị `disabled` khoá ở mọi nhánh khác (cùng ô
+                            `retryReach.kind`), nên nhánh `return` này không bao giờ chạy từ UI —
+                            nó tồn tại để **kiểu** cưỡng chế được lời hứa.
+                          */
+                          onClick={() => {
+                            if (h.retryReach.kind !== "reachable-here") return;
+                            retryDeferred.mutate({ owner: h.retryReach.owner });
+                          }}
                         >
                           <RotateCcw className="h-3 w-3 mr-1" />
                           {t("vramBroker.retryNow", "Thử lại ngay")}
