@@ -36,6 +36,7 @@ vi.mock("../../_core/accessControl", () => ({
 
 import "./index"; // đăng ký TOÀN BỘ tool (side-effect) — nguồn của `listTools()`
 import { listTools, type Tool } from "./toolRegistry";
+import { confineTarget, readConfined, writeConfined } from "./readToolsProgramming";
 
 /** Canary: một chuỗi không thể xuất hiện tình cờ. */
 const CANARY = "N13-CANARY-9f3a7c21";
@@ -186,5 +187,133 @@ describe("★★★ I-3 — KHÔNG byte nào của một inode nlink>1 rời kh�
     expect(JSON.stringify(pv)).not.toContain(CANARY);
     expect(JSON.stringify(pv)).not.toContain("SECRET_TOKEN");
     expect(pv.warnings.join(" ")).toMatch(/liên kết cứng|hard link/i);
+  });
+});
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ TẦNG fd (review vòng 2, **X4**) — **HÀNG RÀO KHÔNG AI CANH SẼ BIẾN MẤT LẶNG LẼ.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÒNG TRƯỚC TÔI TỪ CHỐI VIẾT BỘ CA NÀY, và lý lẽ ấy SAI hai lần:
+ *   1. Tôi khai *"cuộc đua không dựng lại được tất định"*. **Sai.** Không cần đua thật: gọi
+ *      `confineTarget()` trên một file thường, **thay file bằng hard link ĐỒNG BỘ**, rồi gọi cửa.
+ *      Hai lượt **tuần tự**, không `setTimeout`, không flake — đúng cửa sổ TOCTOU mà tầng fd sinh
+ *      ra để bịt.
+ *   2. Tôi khai *"ai gỡ nó cũng không thấy ca nào đỏ"* rồi coi đó là **lý do không canh**. Đó
+ *      **chính là lý do PHẢI canh**. Người review đo được: gỡ riêng tầng fd ⇒ `{ok:true,bytes:14}`
+ *      và **file ngoài workspace ĐÃ ĐỔI** — tức **C-2 quay lại NGUYÊN VẸN** mà 23/23 vẫn xanh.
+ *
+ * ⚠ Bộ ca này gọi **thẳng cửa** (`confineTarget`/`readConfined`/`writeConfined`) chứ không qua tool:
+ * cửa sổ cần dựng nằm **GIỮA** hai lượt gọi ấy, nên không bề mặt tool nào chạm tới được.
+ */
+describe("★★★ X4 — tầng fd bắt được lượt TRÁO GIỮA `confineTarget()` và lúc mở file", () => {
+  const thuong = "swap-me.st";
+  const abs = () => path.join(ws, thuong);
+
+  /** Dựng lại cảnh: `swap-me.st` là file thường (nlink=1), đã qua cửa. */
+  function canhSach() {
+    try {
+      fs.rmSync(abs(), { force: true });
+    } catch {
+      /* ignore */
+    }
+    fs.writeFileSync(abs(), "HARMLESS-ORIGINAL");
+  }
+
+  /** TRÁO đồng bộ: xoá file thường, thay bằng hard link tới bí mật ngoài workspace. */
+  function traoThanhHardLink() {
+    fs.rmSync(abs(), { force: true });
+    fs.linkSync(path.join(ngoai, "prod.env"), abs());
+  }
+
+  it("★★★ ĐỌC — tráo sau khi qua cửa ⇒ `readConfined` TỪ CHỐI trên fd, không rò một byte", () => {
+    canhSach();
+    const c = confineTarget(thuong);
+    expect(c.ok, "lúc này nó ĐANG là file thường ⇒ cửa phải cho qua").toBe(true);
+    if (!c.ok) return;
+
+    traoThanhHardLink(); // ⇐ cửa sổ TOCTOU, dựng ĐỒNG BỘ
+
+    const rd = readConfined(c.target, 256 * 1024);
+    expect(rd.ok, "fd trỏ vào một inode có nhiều liên kết cứng ⇒ phải TỪ CHỐI").toBe(false);
+    if (rd.ok) return;
+    expect(rd.kind).toBe("PATH_REJECTED");
+    expect(rd.kind === "PATH_REJECTED" ? rd.reason : null).toBe("HARD_LINK");
+    expect(JSON.stringify(rd)).not.toContain(CANARY);
+    expect(JSON.stringify(rd)).not.toContain("SECRET_TOKEN");
+  });
+
+  it("★★★ GHI — tráo sau khi qua cửa ⇒ `writeConfined` TỪ CHỐI, file ngoài NGUYÊN VẸN từng byte", () => {
+    canhSach();
+    const c = confineTarget(thuong);
+    expect(c.ok).toBe(true);
+    if (!c.ok) return;
+
+    traoThanhHardLink();
+    const ngoaiFile = path.join(ngoai, "prod.env");
+    const truoc = fs.readFileSync(ngoaiFile, "utf8");
+    const mtimeTruoc = fs.statSync(ngoaiFile).mtimeMs;
+
+    const wr = writeConfined(c.target, "PWNED-VIA-RACE");
+
+    expect(wr.ok, "phải TỪ CHỐI, không được khai thành công").toBe(false);
+    if (wr.ok) return;
+    expect(wr.kind).toBe("PATH_REJECTED");
+    expect(wr.kind === "PATH_REJECTED" ? wr.reason : null).toBe("HARD_LINK");
+    // ⚠ Hai vế: nội dung NGUYÊN VẸN **và** `mtime` không đổi ⇒ phân biệt "chặn" với
+    // "chặn SAU KHI đã cắt" (mở `O_RDWR|O_CREAT`, KHÔNG `O_TRUNC`, kiểm trước khi ftruncate).
+    expect(fs.readFileSync(ngoaiFile, "utf8"), "file ngoài workspace phải NGUYÊN VẸN").toBe(truoc);
+    expect(truoc).toContain(CANARY);
+    expect(fs.statSync(ngoaiFile).mtimeMs, "mtime không đổi ⇒ chưa hề bị cắt/chạm").toBe(mtimeTruoc);
+  });
+
+  it("★★★ ĐỐI CHỨNG DƯƠNG — KHÔNG tráo ⇒ cả hai cửa vẫn chạy bình thường", () => {
+    /**
+     * ⚠⚠ Không có ca này thì một bản vá "`readConfined`/`writeConfined` từ chối mọi thứ" cũng
+     * xanh ở hai ca trên. Ca khoá **giá trị cụ thể** ở cả hai chiều.
+     */
+    canhSach();
+    const c1 = confineTarget(thuong);
+    expect(c1.ok).toBe(true);
+    if (!c1.ok) return;
+    const rd = readConfined(c1.target, 256 * 1024);
+    expect(rd.ok).toBe(true);
+    expect(rd.ok ? rd.content : null).toBe("HARMLESS-ORIGINAL");
+
+    const c2 = confineTarget(thuong);
+    expect(c2.ok).toBe(true);
+    if (!c2.ok) return;
+    const wr = writeConfined(c2.target, "REWRITTEN-OK");
+    expect(wr.ok).toBe(true);
+    expect(wr.ok ? wr.bytes : -1).toBe("REWRITTEN-OK".length);
+    expect(fs.readFileSync(abs(), "utf8")).toBe("REWRITTEN-OK");
+  });
+});
+
+/**
+ * ★ (4b) — **RỦI RO NGƯỢC của I-2: cửa có chặn OAN không?**
+ * Người review bổ sung phép đo này và nó đáng giữ: siết realpath-của-TARGET có thể vô tình chặn một
+ * junction trỏ **VÀO TRONG** workspace — hoàn toàn hợp lệ. Một hàng rào kêu oan sẽ bị người sau tắt.
+ */
+describe("★ (4b) — junction trỏ VÀO TRONG workspace KHÔNG bị chặn oan", () => {
+  it("★★ đọc được file qua junction nội bộ ⇒ cửa không siết quá tay", () => {
+    const that = path.join(ws, "that-dir");
+    fs.mkdirSync(that, { recursive: true });
+    fs.writeFileSync(path.join(that, "inside.txt"), "INSIDE-OK-42");
+
+    let dungDuocJunction = true;
+    try {
+      fs.symlinkSync(that, path.join(ws, "alias-dir"), "junction");
+    } catch {
+      dungDuocJunction = false;
+    }
+    if (!dungDuocJunction) return; // môi trường không dựng được ⇒ ca không áp dụng
+
+    const c = confineTarget("alias-dir/inside.txt");
+    expect(c.ok, "junction trỏ VÀO TRONG workspace là hợp lệ — không được chặn").toBe(true);
+    if (!c.ok) return;
+    const rd = readConfined(c.target, 4096);
+    expect(rd.ok).toBe(true);
+    expect(rd.ok ? rd.content : null).toBe("INSIDE-OK-42");
   });
 });

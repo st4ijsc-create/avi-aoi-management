@@ -23,13 +23,16 @@
  *     (programmingAdapter.ts header) — a build/sim NEVER deploys or runs on hardware.
  *   - `calc` parses a whitelisted arithmetic grammar by hand — there is NO `eval`,
  *     `Function`, or dynamic code execution anywhere in this file.
- *   - `read_project_file` is confined to PROG_WORKSPACE_DIR: absolute paths, `..`
- *     traversal, and any path that resolves outside the root are rejected BEFORE any
- *     disk read (see resolveWorkspacePath — reused by the write tool for symmetry).
- *     Post-existence it ALSO rejects (a) targets whose realpath leaves the root
- *     (symlink / NTFS directory junction) and (b) files with `nlink > 1` — an NTFS
- *     HARD LINK keeps its realpath INSIDE the root, so no path check can see it
- *     (Pha 5 N13; measured leak of 57 bytes before the fix).
+ *   - `read_project_file` is confined to PROG_WORKSPACE_DIR by the SINGLE shared door
+ *     below — `confineTarget()` + `readConfined()` / `writeConfined()`. The write tool
+ *     (writeHandlers/programmingFile.ts) goes through that SAME door; it has no disk
+ *     access of its own (it imports neither `node:fs` nor `node:path`).
+ *     The door rejects, in order: bad path SHAPE (absolute / `..` / NUL / escaping the
+ *     root) BEFORE any disk I/O; then a target whose realpath leaves the root (symlink /
+ *     NTFS directory junction); then a directory; then `nlink > 1` — an NTFS HARD LINK
+ *     keeps its realpath INSIDE the root, so no path check can see it (Pha 5 N13;
+ *     measured leak of 57 bytes before the fix). `isFile`/`nlink`/`size` are re-checked
+ *     on the OPEN fd, so a stat-then-open swap cannot slip past.
  *
  * Self-registers on import (see index.ts → `import "./readToolsProgramming"`).
  * ════════════════════════════════════════════════════════════════════════════
@@ -146,8 +149,15 @@ function languageForKind(kind: ProgrammingKind): string {
 // Workspace-path confinement (also consumed by writeHandlers/programmingFile.ts)
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Absolute root of the programming workspace (env PROG_WORKSPACE_DIR, read at call-time). */
-export function programmingWorkspaceRoot(): string {
+/**
+ * Absolute root of the programming workspace (env PROG_WORKSPACE_DIR, read at call-time).
+ *
+ * ⚠⚠⚠ **KHÔNG export** (review, N-2). Nó từng export cùng `resolveWorkspacePath`, và **ghép hai cái
+ * lại là dựng được một đường dẫn tuyệt đối CHƯA CHỨNG MINH** — đúng thứ mà "đổi kiểu" vừa dựng rào
+ * để cấm. Tệ hơn: cặp ấy nằm **ngoài tầm cả hai lưới** (census chỉ quét `aiLocalTools/`, canary chỉ
+ * thấy tool). Một cửa hậu không ai canh, mở sẵn, **0 người dùng**.
+ */
+function programmingWorkspaceRoot(): string {
   const raw = (process.env.PROG_WORKSPACE_DIR || "programming-workspace").trim() || "programming-workspace";
   return path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(process.cwd(), raw);
 }
@@ -165,18 +175,20 @@ export type WorkspaceRejectReason = "EMPTY" | "NUL" | "ABSOLUTE" | "TRAVERSAL" |
  */
 export type ConfinementRejectReason = WorkspaceRejectReason | "HARD_LINK";
 
-export interface WorkspacePathResolution {
+/** Nội bộ, KHÔNG export — kết quả kiểm HÌNH DẠNG đường dẫn. Xem `confineTarget`. */
+interface InternalResolution {
   ok: boolean;
+  absPath?: string;
   /** POSIX-style path relative to the workspace root (present only when ok). */
   relPath?: string;
   reason?: WorkspaceRejectReason;
 }
 
-/** Nội bộ: bản đầy đủ (có `absPath`). KHÔNG export — xem `confineTarget`. */
-interface InternalResolution extends WorkspacePathResolution {
-  absPath?: string;
-}
-
+/**
+ * Kiểm HÌNH DẠNG đường dẫn (rỗng / NUL / tuyệt đối / `..` / thoát root) — **trước mọi I/O đĩa**.
+ * Đây là **tầng 1** của `confineTarget()`, không phải một cửa dùng được một mình: nó chỉ nói đường
+ * dẫn *trông* hợp lệ, **chưa** nói gì về realpath hay `nlink`.
+ */
 function resolveInternal(inputPath: unknown): InternalResolution {
   if (typeof inputPath !== "string") return { ok: false, reason: "EMPTY" };
   const raw = inputPath.trim();
@@ -193,21 +205,6 @@ function resolveInternal(inputPath: unknown): InternalResolution {
   const rel = path.relative(root, candidate);
   if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) return { ok: false, reason: "ESCAPE" };
   return { ok: true, absPath: candidate, relPath: rel.replace(/\\/g, "/") };
-}
-
-/**
- * Kiểm HÌNH DẠNG đường dẫn (rỗng / NUL / tuyệt đối / `..` / thoát root) — **trước mọi I/O đĩa**.
- *
- * ⚠⚠⚠ **KHÔNG CÒN TRẢ `absPath`** (review, điều kiện DUYỆT #2). Trước đây nó trả một `absPath` trần
- * và **mỗi người gọi tự bịa nốt phần còn lại**: bên đọc thêm realpath-của-target + `nlink`, bên ghi
- * chỉ thêm realpath-của-THƯ-MỤC-CHA và **không gì nữa** ⇒ hai bản sao của một vị từ, và giá đã trả
- * là **hai lỗ CÒN SỐNG** (đọc xuyên `preview()`, ghi đè xuyên `execute()`).
- * ⇒ Muốn chạm đĩa thì **bắt buộc** đi qua `confineTarget()`. Không có đường nào khác lấy được đường
- * dẫn tuyệt đối ra khỏi module này.
- */
-export function resolveWorkspacePath(inputPath: unknown): WorkspacePathResolution {
-  const r = resolveInternal(inputPath);
-  return r.ok ? { ok: true, relPath: r.relPath } : { ok: false, reason: r.reason };
 }
 
 /**
