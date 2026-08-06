@@ -75,9 +75,18 @@ function moiNut(sf: ts.SourceFile): ts.Node[] {
   return out;
 }
 
+/**
+ * ⚠ m2-1 — **CHUẨN HOÁ DẤU GẠCH TRƯỚC KHI RÚT GỌN.** `path.join()` trả `\` trên Windows còn
+ * `sf.fileName` của TypeScript luôn là `/` ⇒ phép `replace` không khớp và con trỏ in ra nguyên
+ * đường dẫn tuyệt đối. Con trỏ vẫn đúng, nhưng một con trỏ khó đọc là một con trỏ ít được đọc.
+ */
+function chuanHoa(p: string): string {
+  return p.replace(/\\/g, "/");
+}
+
 function viTri(sf: ts.SourceFile, n: ts.Node): string {
   const { line } = sf.getLineAndCharacterOfPosition(n.getStart(sf));
-  return `${sf.fileName.replace(SERVER_ROOT, "server")}:${line + 1}`;
+  return `${chuanHoa(sf.fileName).replace(chuanHoa(SERVER_ROOT), "server")}:${line + 1}`;
 }
 
 /** Tên CỤC BỘ mà file này gán cho `buildVramAgentState` (theo dõi cả `as` alias). */

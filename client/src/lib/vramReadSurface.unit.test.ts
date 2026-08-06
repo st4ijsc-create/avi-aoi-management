@@ -242,10 +242,34 @@ describe("C-1 (AST) — cả HAI người đọc phải HỎI trạng thái lỗ
       ).toEqual([]);
     });
 
-    it(`★★★ ${ten}: mọi nhánh render \`<Skeleton>\` của mặt đọc VRAM phải do \`kind\` quyết định`, () => {
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ★★★ I2-1 — ĐẢO LƯỢNG TỪ. LƯỚI TRƯỚC KHAI "CANH CÁI NHÁNH" NHƯNG **TÌM NHÁNH BẰNG MỘT TÊN THẺ**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Bản trước liệt kê mọi `<Skeleton>` rồi đi **ngược lên** tìm `?:`. Đột biến **R2-M1** dọn khung
+     * xương sang **một component con cùng file**:
+     *
+     *     function VramSkeletonBlock() { return (<><Skeleton …/><Skeleton …/></>); }
+     *     {s === undefined ? (<VramSkeletonBlock />) : kind !== "ready" ? (…)
+     *
+     * ⇒ không còn `<Skeleton>` nào nằm dưới một ternary ⇒ **bị bỏ qua** ⇒ **XANH 20/20, `tsc` sạch,
+     * ship được**, và khung xương **quay mãi mãi trở lại**. Đúng lỗi Global Constraints gọi tên:
+     * lưới **liệt kê cái nó CHỨA** thay vì **khẳng định cái nó PHẢI LÀ**.
+     *
+     * ⇒ Đảo lượng từ, và bỏ hẳn khái niệm "thẻ nào":
+     *
+     *     MỌI `ConditionalExpression` **SINH RA JSX** mà điều kiện nhắc tới một thành viên của mặt
+     *     đọc VRAM thì **PHẢI** do `kind` thống trị — tự nó hỏi `kind`, hoặc nằm trong một nhánh
+     *     đã do `kind` quyết định.
+     *
+     * ⚠ Vế "**SINH RA JSX**" là thứ giữ `vramPct` (`… ? Math.min(…) : 0`) ngoài phạm vi — nó là
+     * phép TÍNH, không phải phép RENDER.
+     * ⚠ Vế "**thống trị**" là thứ giữ mọi `?:` nhỏ **bên trong** nhánh `ready` ngoài phạm vi
+     * (`{s.headroom.blind ? <Badge/> : null}` …): đã qua cổng `kind` rồi thì không phải qua lần nữa.
+     */
+    it(`★★★ ${ten}: MỌI \`?:\` sinh JSX chạm mặt đọc VRAM phải do \`kind\` THỐNG TRỊ`, () => {
       const sf = ast(duong);
       const bienQuery = tenBienQuery(sf)!;
-      // Biến nhận đầu ra của vị từ — tìm trên CÂY, không đoán theo tên.
       let bienKind: string | null = null;
       for (const n of moiNut(sf)) {
         if (!ts.isVariableDeclaration(n) || n.initializer === undefined) continue;
@@ -256,50 +280,107 @@ describe("C-1 (AST) — cả HAI người đọc phải HỎI trạng thái lỗ
       expect(bienKind, `${ten}: không tìm thấy biến nhận vramReadSurfaceKind(...)`).not.toBeNull();
 
       /**
-       * ⚠⚠ **BÍ DANH LÀ MỘT ĐƯỜNG LÁCH THẬT, ĐO ĐƯỢC.** Đột biến **C1-M3** đổi điều kiện thành
-       * `!s ? <Skeleton/>` — `s` là `const s = state.data`. Nó không nhắc `state`, không nhắc
-       * `kind`, nên bản lưới trước xếp khung xương ấy vào *"của query KHÁC"* rồi **BỎ QUA** ⇒ XANH
-       * 20/20 trong khi khung xương lại quay mãi mãi.
-       * ⇒ Tập "thuộc về mặt đọc VRAM" phải đóng **BẮC CẦU** dưới phép gán: bất kỳ biến nào khởi tạo
-       * từ một biến đã thuộc tập thì cũng thuộc tập.
+       * Tập "thuộc mặt ĐỌC VRAM", đóng **BẮC CẦU** dưới phép gán (đột biến **C1-M3** dùng bí danh
+       * `const s = state.data` để thoát khỏi phạm vi).
+       *
+       * ⚠⚠ m2-2 — **PHÉP ĐÓNG PHẢI DỪNG Ở MẶT ĐỌC.** Bản trước bắc cầu qua **mọi** khởi tạo có
+       * nhắc tên, nên nuốt luôn `refreshAll` (arrow gọi `vramState.refetch()`) và
+       * `preempt`/`releaseStale`/`retryDeferred` (`useMutation` có `state.refetch()` trong
+       * `onSuccess`). Hệ quả: mai một spinner **CỦA LỆNH** — `{preempt.isPending ? … : …}` — sẽ bị
+       * đòi hỏi `kind`, tức lưới **chỉ đường tới bản vá SAI**. Hai hình dạng bị loại là **HÀNH
+       * ĐỘNG**, không phải **GIÁ TRỊ ĐỌC**: hàm, và lời gọi `useMutation`.
        */
+      const laHanhDong = (init: ts.Expression): boolean =>
+        ts.isArrowFunction(init) ||
+        ts.isFunctionExpression(init) ||
+        (ts.isCallExpression(init) && /(^|\.)useMutation$/.test(init.expression.getText(sf)));
+
       const thuocVram = new Set<string>([bienQuery, bienKind!]);
       for (let vong = 0; vong < 10; vong++) {
         const truoc = thuocVram.size;
         for (const n of moiNut(sf)) {
           if (!ts.isVariableDeclaration(n) || n.initializer === undefined) continue;
           if (!ts.isIdentifier(n.name) || thuocVram.has(n.name.text)) continue;
+          if (laHanhDong(n.initializer)) continue;
           const initText = n.initializer.getText(sf);
           if ([...thuocVram].some((v) => new RegExp(`\\b${v}\\b`).test(initText))) thuocVram.add(n.name.text);
         }
         if (thuocVram.size === truoc) break;
       }
 
-      /** Mọi `<Skeleton …/>` trong file. */
-      const skeleton = moiNut(sf).filter(
-        (n) =>
-          (ts.isJsxSelfClosingElement(n) || ts.isJsxOpeningElement(n)) && n.tagName.getText(sf) === "Skeleton",
+      const nhac = (text: string, ten: string) => new RegExp(`\\b${ten}\\b`).test(text);
+      const coJsx = (n: ts.Node): boolean => {
+        let thay = false;
+        const di = (x: ts.Node) => {
+          if (thay) return;
+          if (ts.isJsxElement(x) || ts.isJsxSelfClosingElement(x) || ts.isJsxFragment(x)) {
+            thay = true;
+            return;
+          }
+          x.forEachChild(di);
+        };
+        di(n);
+        return thay;
+      };
+
+      const ungVien = moiNut(sf).filter(
+        (n): n is ts.ConditionalExpression =>
+          ts.isConditionalExpression(n) && (coJsx(n.whenTrue) || coJsx(n.whenFalse)),
       );
+      const chamVram = ungVien.filter((c) =>
+        [...thuocVram].some((v) => nhac(c.condition.getText(sf), v)),
+      );
+
+      // ⚠ CẦU CHÌ chống lưới-mù: không tìm thấy ứng viên nào ⇒ mọi khẳng định dưới là chân lý rỗng.
+      expect(
+        chamVram.length,
+        `${ten}: KHÔNG thấy nhánh render nào chạm mặt đọc VRAM ⇒ LƯỚI ĐANG MÙ`,
+      ).toBeGreaterThan(0);
+
       const viPham: string[] = [];
-      for (const sk of skeleton) {
-        // Điều kiện của MỌI `?:` bao quanh nó.
-        const dieuKien: string[] = [];
-        let cur: ts.Node | undefined = sk.parent;
+      for (const c of chamVram) {
+        if (nhac(c.condition.getText(sf), bienKind!)) continue; // tự nó hỏi `kind`
+        // Hoặc: nằm trong một nhánh đã do `kind` quyết định (bị `kind` THỐNG TRỊ).
+        let thongTri = false;
+        let cur: ts.Node | undefined = c.parent;
+        let con: ts.Node = c;
         while (cur !== undefined) {
-          if (ts.isConditionalExpression(cur)) dieuKien.push(cur.condition.getText(sf));
+          if (
+            ts.isConditionalExpression(cur) &&
+            (con === cur.whenTrue || con === cur.whenFalse) &&
+            nhac(cur.condition.getText(sf), bienKind!)
+          ) {
+            thongTri = true;
+            break;
+          }
+          con = cur;
           cur = cur.parent;
         }
-        const cuaVram = dieuKien.some((d) => [...thuocVram].some((v) => new RegExp(`\\b${v}\\b`).test(d)));
-        if (!cuaVram) continue; // khung xương của một query KHÁC — không thuộc phạm vi
-        if (!dieuKien.some((d) => new RegExp(`\\b${bienKind!}\\b`).test(d))) {
-          const { line } = sf.getLineAndCharacterOfPosition(sk.getStart(sf));
-          viPham.push(`dòng ${line + 1}: điều kiện [${dieuKien.join(" | ")}] KHÔNG hỏi \`${bienKind!}\``);
-        }
+        if (thongTri) continue;
+        const { line } = sf.getLineAndCharacterOfPosition(c.getStart(sf));
+        viPham.push(`dòng ${line + 1}: điều kiện [${c.condition.getText(sf)}] KHÔNG do \`${bienKind!}\` thống trị`);
       }
       expect(
         viPham,
-        `${ten}: khung xương VRAM không do \`kind\` quyết định ⇒ FORBIDDEN sẽ quay mãi:\n  ${viPham.join("\n  ")}`,
+        `${ten}: nhánh render VRAM không do \`kind\` quyết định ⇒ FORBIDDEN sẽ hiện sai:\n  ${viPham.join("\n  ")}`,
       ).toEqual([]);
+    });
+
+    it(`★★ ${ten}: phép đóng bắc cầu KHÔNG nuốt mặt LỆNH (spinner của lệnh không bị đòi \`kind\`)`, () => {
+      // ⚠ m2-2 — lưới quá rộng là lưới chỉ đường tới bản vá SAI. `useMutation`/hàm là HÀNH ĐỘNG.
+      const sf = ast(duong);
+      const bienQuery = tenBienQuery(sf)!;
+      const lenh = moiNut(sf).filter(
+        (n): n is ts.VariableDeclaration =>
+          ts.isVariableDeclaration(n) &&
+          n.initializer !== undefined &&
+          ((ts.isCallExpression(n.initializer) &&
+            /(^|\.)useMutation$/.test(n.initializer.expression.getText(sf))) ||
+            ts.isArrowFunction(n.initializer)),
+      );
+      // Mọi khai báo LỆNH có nhắc tới query đọc đều phải nằm NGOÀI tập mặt-đọc.
+      const chamQuery = lenh.filter((d) => new RegExp(`\\b${bienQuery}\\b`).test(d.initializer!.getText(sf)));
+      expect(chamQuery.length, `${ten}: không có khai báo LỆNH nào chạm query đọc ⇒ ca này chưa đo gì`).toBeGreaterThan(0);
     });
   }
 

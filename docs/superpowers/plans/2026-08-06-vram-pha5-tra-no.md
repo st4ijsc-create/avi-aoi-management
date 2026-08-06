@@ -112,24 +112,42 @@ Cộng một lượt `--sequence.shuffle.tests`.
 không vào được màn là dựng một cái nút **không ai bấm được** — và tệ hơn, là **khai rằng đã trao
 quyền** trong khi chưa.
 
-Ba lớp phải chốt **MỘT LƯỢT**, không lớp nào một mình đủ:
+**NĂM lớp** phải chốt **MỘT LƯỢT**, không lớp nào một mình đủ. (Bản đầu của khối này đếm **bốn** —
+lớp 3 do re-review tìm thêm, và nó là lớp **âm thầm nhất**.)
 
 1. **nav-role** — `client/src/lib/navigation.tsx:1374-1383`: `/ai-brain` khai
    `requiredRole: ['admin','engineer']` ⇒ **`supervisor` không thấy, không vào được**.
    Đối chứng đã có: `client/src/lib/navigation.unit.test.ts:54,61`.
-2. **grant** — sau Task 2, `vram.state` đòi `machine_control/canView`. Module `machine_control`
+2. **grant ĐỌC** — sau Task 2, `vram.state` đòi `machine_control/canView`. Module `machine_control`
    **chưa từng được seed cho bất kỳ vai nào** (`scripts/seed-all-modules.ts:158-185`); `admin` qua
    được **chỉ nhờ short-circuit** (`server/_core/accessControl.ts:135-137`). ⇒ `supervisor` (và
    `engineer`) **đọc không được một số nào** trên chính panel chứa hai nút đó.
-3. **`vramCommandReach`** — vị từ UI của Task 3.
+3. ⚠⚠ **`isOpsRole` — LỚP THỨ NĂM, và nó vô hiệu hoá Task 3 một cách hoàn toàn im lặng.**
+   `client/src/pages/AIBrainDashboard.tsx:114` `const isOpsRole = user?.role === "admin" || user?.role === "engineer"`
+   → `:311` `<VramBrokerPanel canCommand={isOpsRole} …>` → nuôi **CẢ BA nút**
+   (`VramBrokerPanel.tsx:332`, `:358`, `:409`).
+   ⇒ Task 3 có viết `vramCommandReach` hoàn hảo đến đâu thì **`supervisor` vẫn KHÔNG BAO GIỜ nhận
+   `canCommand === true`** — vị từ mới sẽ được gọi với một tham số đã bị một biểu thức **ở màn cha**
+   khoá chết. Đây đúng lớp lỗi *"neo sai một nấc"*: sửa vị từ mà không sửa **cái nuôi nó**.
+4. **`vramCommandReach`** — vị từ UI của Task 3.
+5. **grant LỆNH** — `preempt`/`releaseStale` đứng trên `deployProcedure` +
+   `requirePermission("machine_control","canDelete")` (`server/routers/vramRouter.ts:67`).
+   `supervisor` **có** trong `ACTUATION_ROLES` nhưng **không có bit `canDelete`** ⇒ vẫn 403.
 
-⚠ Và mặt LỆNH cũng chưa mở: `preempt`/`releaseStale` đứng trên `deployProcedure` +
-`requirePermission("machine_control","canDelete")` (`server/routers/vramRouter.ts:67`) —
-`supervisor` **có** trong `ACTUATION_ROLES` nhưng **không có bit `canDelete`** ⇒ vẫn 403.
+#### QUYẾT ĐỊNH CỦA CHỦ DỰ ÁN (2026-08-06)
 
-⇒ **Trước khi Task 3 chạy, chủ dự án phải chốt cả ba** (nav-role + grant `machine_control` cho
-những vai được chọn + vị từ UI). Làm mỗi lớp 3 là lặp lại đúng lỗi mà chính Task 3 được dựng ra để
-đóng: **mặt đọc/nút hứa nhiều hơn mặt lệnh**.
+1. **Làm CẢ NĂM lớp** — `supervisor` phải **dùng được thật**, không chỉ "thấy nút":
+   mở nav `/ai-brain` · cấp `machine_control/canView` · sửa `isOpsRole` · `vramCommandReach` ·
+   cấp `machine_control/canDelete`.
+2. **Cấp `machine_control/canView` cho `engineer`** (⇒ đọc được trạng thái VRAM), **KHÔNG** cấp
+   `canDelete` (⇒ engineer **không** ra lệnh phá huỷ). Điều này đồng thời đóng hồi quy mà Task 2
+   tạo ra ở tầng trải nghiệm: sau khi siết `vram.state`, engineer đang thấy câu
+   *"Không đủ quyền xem trạng thái VRAM"* trên `/ai-brain`.
+
+⚠⚠ **HAI MỤC QUYỀN LÀ *DỮ LIỆU*, KHÔNG PHẢI MÃ** — chúng là hàng trong bảng `permissions` (hoặc một
+lượt sửa seed). **Task 3 KHÔNG được tự chạy DDL/migration/seed.** Chúng cần **một lượt RIÊNG có chủ
+dự án duyệt**, và lượt ấy phải chạy **trước** khi nghiệm thu sống Task 3 — nếu không, nút bật lên
+rồi vẫn 403, tức lại **hứa nhiều hơn làm được**.
 
 **Files:**
 - Create: một module vị từ thuần (đặt cạnh `client/src/lib/vramPanelStepUp.unit.test.ts` — theo đúng khuôn `vramRetryButtonEnabled()` đã có)
