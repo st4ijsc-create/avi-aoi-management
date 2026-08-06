@@ -26,6 +26,10 @@
  *   - `read_project_file` is confined to PROG_WORKSPACE_DIR: absolute paths, `..`
  *     traversal, and any path that resolves outside the root are rejected BEFORE any
  *     disk read (see resolveWorkspacePath — reused by the write tool for symmetry).
+ *     Post-existence it ALSO rejects (a) targets whose realpath leaves the root
+ *     (symlink / NTFS directory junction) and (b) files with `nlink > 1` — an NTFS
+ *     HARD LINK keeps its realpath INSIDE the root, so no path check can see it
+ *     (Pha 5 N13; measured leak of 57 bytes before the fix).
  *
  * Self-registers on import (see index.ts → `import "./readToolsProgramming"`).
  * ════════════════════════════════════════════════════════════════════════════
@@ -199,6 +203,26 @@ function realpathStillContained(absPath: string): boolean {
   } catch {
     return true; // cannot resolve (not created yet) → the resolve-based check already applied
   }
+}
+
+/**
+ * ★★★ Pha 5 Task 1 (N13) — **CÂU TỪ CHỐI CHO HARD LINK.**
+ *
+ * ⚠ VÌ SAO KHÔNG MƯỢN CÂU `ESCAPE`: câu ấy nói *"đường dẫn thoát khỏi thư mục làm việc"* — **SAI SỰ
+ * THẬT** ở đây. Đường dẫn **KHÔNG** thoát; `realpath` của hard link nằm gọn trong workspace (đo được:
+ * `path.relative(realRoot, realTarget) === "innocent.st"`). Người vận hành đọc câu ESCAPE sẽ đi soi
+ * đường dẫn và **không thấy gì sai** — tức lưới **chỉ đường tới bản vá sai**.
+ * ⚠ Mã từ chối vẫn là `PATH_REJECTED` **y như cũ** — không đẻ mã mới; chỉ **câu chữ** nói đúng lý do.
+ */
+function hardLinkRejectMsg(lang: Lang): string {
+  return w(
+    lang,
+    "File có nhiều liên kết cứng (hard link) nên nội dung của nó có thể nằm ngoài thư mục làm việc — bị từ chối. " +
+      "Hãy chép nội dung thành một file thường trong thư mục làm việc rồi đọc lại.",
+    "This file has multiple hard links, so its content may live outside the workspace — rejected. " +
+      "Copy it into the workspace as a regular file and read that instead.",
+    "该文件存在多个硬链接，其内容可能位于工作区之外——已拒绝。请先将其复制为工作区内的普通文件再读取。",
+  );
 }
 
 function rejectReasonMsg(reason: WorkspaceRejectReason, lang: Lang): string {
@@ -837,8 +861,9 @@ const readFileParams = z
 const readProjectFile: Tool<z.infer<typeof readFileParams>, FileReadData> = {
   name: "read_project_file",
   description:
-    "Đọc một file NẰM TRONG thư mục làm việc lập trình (PROG_WORKSPACE_DIR). Từ chối đường dẫn tuyệt đối/'..'/thoát thư mục. " +
-    "Read a file confined to the programming workspace root. READ-ONLY, RBAC machine_monitoring/canView.",
+    "Đọc một file NẰM TRONG thư mục làm việc lập trình (PROG_WORKSPACE_DIR). Từ chối đường dẫn tuyệt đối/'..'/thoát thư mục, " +
+    "và từ chối cả file có liên kết cứng (hard link) vì nội dung của nó có thể nằm ngoài thư mục làm việc. " +
+    "Read a file confined to the programming workspace root; hard-linked files are refused too. READ-ONLY, RBAC machine_monitoring/canView.",
   parameters: readFileParams,
   triggers: [
     "đọc file", "mở file", "xem file", "read file", "open file", "nội dung file", "读取文件", "打开文件",
@@ -863,6 +888,32 @@ const readProjectFile: Tool<z.infer<typeof readFileParams>, FileReadData> = {
       }
       if (!realpathStillContained(resolved.absPath)) {
         return { type: RESULT_TYPE, title, data: empty, textSummary: rejectReasonMsg("ESCAPE", lang), note: "PATH_REJECTED" };
+      }
+      /**
+       * ★★★ Pha 5 Task 1 (N13) — **NTFS HARD LINK: TỪ CHỐI `nlink > 1`.**
+       *
+       * ⚠⚠⚠ ĐÂY LÀ MỘT LỖ **ĐÃ ĐO ĐƯỢC**, không phải phòng xa. Nghiệm thu sống Pha 4 dựng
+       * `fs.linkSync(<file NGOÀI workspace>, <trong workspace>)` — **thành công, không cần đặc quyền
+       * nào** — rồi đọc thật được **57 byte**: `DATABASE_URL=postgres://aoi:SUPERSECRET@…`.
+       *
+       * ⚠⚠ VÌ SAO HAI TẦNG TRÊN KHÔNG BẮT ĐƯỢC — và vì sao đừng "siết chúng chặt hơn": junction
+       * THƯ MỤC bị chặn đúng vì nó **ĐỔI `realpath`**. Hard link **KHÔNG đổi `realpath`** — cùng
+       * inode, đường dẫn tự phân giải về **chính nó**, vẫn nằm dưới root ⇒ `realpathStillContained()`
+       * trả `true` **hoàn toàn đúng đắn**. Cả `resolveWorkspacePath` lẫn `realpathStillContained`
+       * đều hỏi về **ĐƯỜNG DẪN**; lớp này chỉ trả lời được bằng một câu hỏi khác — **số liên kết
+       * cứng của inode**.
+       *
+       * **Quyết định của chủ dự án (2026-08-06, đã chốt):** đây là tool **ĐỌC MÃ NGUỒN**; file nguồn
+       * hầu như không bao giờ có hard link ⇒ tỉ lệ chặn nhầm rất thấp, và chặn nhầm thì hỏng theo
+       * chiều **AN TOÀN**.
+       *
+       * ⚠ KHÔNG tốn thêm syscall: `stat` ở trên **đã có sẵn** `nlink`.
+       * ⚠ `nlink` vắng/`0` (hệ tệp lạ) ⇒ **không** chặn: chỉ từ chối khi **chứng minh được** > 1.
+       * ⚠ Lưới: `readProjectFile.hardlink.test.ts` — đi từ `tryExecuteTool()`, có **đối chứng DƯƠNG**
+       * khoá giá trị cụ thể, nên một bản vá "chặn hết mọi file" **không** xanh được.
+       */
+      if (stat.nlink > 1) {
+        return { type: RESULT_TYPE, title, data: empty, textSummary: hardLinkRejectMsg(lang), note: "PATH_REJECTED" };
       }
       const fd = fs.openSync(resolved.absPath, "r");
       try {
