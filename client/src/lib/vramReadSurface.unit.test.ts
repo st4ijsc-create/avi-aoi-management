@@ -323,12 +323,46 @@ describe("C-1 (AST) — cả HAI người đọc phải HỎI trạng thái lỗ
         return thay;
       };
 
-      const ungVien = moiNut(sf).filter(
-        (n): n is ts.ConditionalExpression =>
-          ts.isConditionalExpression(n) && (coJsx(n.whenTrue) || coJsx(n.whenFalse)),
-      );
+      /**
+       * ⚠⚠ **R2-M2 (hình dạng thứ NĂM, tự nghĩ ra và nó LÁCH ĐƯỢC bản trước) — `?:` KHÔNG PHẢI
+       * HÌNH DẠNG DUY NHẤT CỦA MỘT PHÉP RẼ NHÁNH.** Bản trước chỉ nhận `ConditionalExpression`,
+       * nên một lượt **TRẢ VỀ SỚM** đi thẳng qua:
+       *
+       *     if (s === undefined) { return (<Card><Skeleton …/></Card>); }
+       *
+       * ⇒ **XANH 22/22**, khung xương quay mãi mãi trở lại, `tsc` sạch, ship được. Cùng một bài học
+       * lần thứ ba trong task này: lưới **liệt kê hình dạng** thì hình dạng thứ N+1 luôn tồn tại.
+       * ⇒ Bất biến nói **PHÉP RẼ NHÁNH**, và liệt kê **BA hình dạng cú pháp mà TypeScript có**:
+       * `?:` · `if` · toán tử ngắn mạch (`&&`/`||`/`??`).
+       */
+      interface DiemRe {
+        readonly nut: ts.Node;
+        readonly dieuKien: ts.Node;
+        readonly nhanh: readonly ts.Node[];
+      }
+      const diemRe: DiemRe[] = [];
+      for (const n of moiNut(sf)) {
+        if (ts.isConditionalExpression(n)) {
+          diemRe.push({ nut: n, dieuKien: n.condition, nhanh: [n.whenTrue, n.whenFalse] });
+        } else if (ts.isIfStatement(n)) {
+          diemRe.push({
+            nut: n,
+            dieuKien: n.expression,
+            nhanh: n.elseStatement ? [n.thenStatement, n.elseStatement] : [n.thenStatement],
+          });
+        } else if (
+          ts.isBinaryExpression(n) &&
+          [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(
+            n.operatorToken.kind,
+          )
+        ) {
+          diemRe.push({ nut: n, dieuKien: n.left, nhanh: [n.right] });
+        }
+      }
+
+      const ungVien = diemRe.filter((d) => d.nhanh.some((b) => coJsx(b)));
       const chamVram = ungVien.filter((c) =>
-        [...thuocVram].some((v) => nhac(c.condition.getText(sf), v)),
+        [...thuocVram].some((v) => nhac(c.dieuKien.getText(sf), v)),
       );
 
       // ⚠ CẦU CHÌ chống lưới-mù: không tìm thấy ứng viên nào ⇒ mọi khẳng định dưới là chân lý rỗng.
@@ -337,19 +371,21 @@ describe("C-1 (AST) — cả HAI người đọc phải HỎI trạng thái lỗ
         `${ten}: KHÔNG thấy nhánh render nào chạm mặt đọc VRAM ⇒ LƯỚI ĐANG MÙ`,
       ).toBeGreaterThan(0);
 
+      /** Điểm rẽ nào (bất kỳ hình dạng nào) có nút `x` nằm trong một NHÁNH của nó. */
+      const reBaoQuanh = new Map<ts.Node, DiemRe>();
+      for (const d of diemRe) for (const b of d.nhanh) reBaoQuanh.set(b, d);
+
       const viPham: string[] = [];
       for (const c of chamVram) {
-        if (nhac(c.condition.getText(sf), bienKind!)) continue; // tự nó hỏi `kind`
-        // Hoặc: nằm trong một nhánh đã do `kind` quyết định (bị `kind` THỐNG TRỊ).
+        if (nhac(c.dieuKien.getText(sf), bienKind!)) continue; // tự nó hỏi `kind`
+        // Hoặc: nằm trong một NHÁNH đã do `kind` quyết định (bị `kind` THỐNG TRỊ).
+        // ⚠ Chỉ nhánh mới thống trị — nằm trong ĐIỀU KIỆN của một điểm rẽ thì KHÔNG.
         let thongTri = false;
-        let cur: ts.Node | undefined = c.parent;
-        let con: ts.Node = c;
+        let con: ts.Node = c.nut;
+        let cur: ts.Node | undefined = c.nut.parent;
         while (cur !== undefined) {
-          if (
-            ts.isConditionalExpression(cur) &&
-            (con === cur.whenTrue || con === cur.whenFalse) &&
-            nhac(cur.condition.getText(sf), bienKind!)
-          ) {
+          const bao = reBaoQuanh.get(con);
+          if (bao !== undefined && nhac(bao.dieuKien.getText(sf), bienKind!)) {
             thongTri = true;
             break;
           }
@@ -357,8 +393,10 @@ describe("C-1 (AST) — cả HAI người đọc phải HỎI trạng thái lỗ
           cur = cur.parent;
         }
         if (thongTri) continue;
-        const { line } = sf.getLineAndCharacterOfPosition(c.getStart(sf));
-        viPham.push(`dòng ${line + 1}: điều kiện [${c.condition.getText(sf)}] KHÔNG do \`${bienKind!}\` thống trị`);
+        const { line } = sf.getLineAndCharacterOfPosition(c.nut.getStart(sf));
+        viPham.push(
+          `dòng ${line + 1}: điều kiện [${c.dieuKien.getText(sf)}] KHÔNG do \`${bienKind!}\` thống trị`,
+        );
       }
       expect(
         viPham,
