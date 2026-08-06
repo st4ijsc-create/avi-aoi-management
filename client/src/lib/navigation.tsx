@@ -1378,7 +1378,17 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiBrainDashboardDesc",
         // doc69 Wave 0-C — engineer (kỹ thuật) does agent-ops daily work; backend
         // (opsAgentCenterProcedure / equivalent role gates) already allows engineer.
-        requiredRole: ['admin', 'engineer'],
+        //
+        // ★★★ Pha 5 Task 3 (N9) — 'supervisor' THÊM VÀO, và đây là LỚP 1 của năm lớp.
+        // Màn này là nhà DUY NHẤT của `VramBrokerPanel` (mặt lệnh VRAM). Chủ dự án chốt
+        // `supervisor` được ra lệnh phá huỷ VRAM (`ACTUATION_ROLES` đã có nó —
+        // `server/_core/trpc.ts:434`). Bật nút cho một vai KHÔNG VÀO ĐƯỢC MÀN là dựng một
+        // cái nút không ai bấm được, và khai đã trao quyền trong khi chưa.
+        // ⚠ `/ai-command-center` và các màn agent-ops khác KHÔNG mở: `supervisor` không có
+        // sàn `aiAgent.listAgentSessionsForOps` (admin|engineer) — mở nav ở đó sẽ là đúng
+        // cùng lỗi, chỉ đổi bề mặt. Trên /ai-brain phần Agent Ops tự khai "cần quyền admin
+        // hoặc kỹ thuật" qua `isOpsRole`, KHÔNG bịa dữ liệu.
+        requiredRole: ['admin', 'engineer', 'supervisor'],
         permissionCategory: "admin",
         section: "agentOps",
       },

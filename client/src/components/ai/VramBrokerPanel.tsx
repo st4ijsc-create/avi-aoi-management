@@ -49,7 +49,11 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import type { usePollingInterval } from "@/hooks/usePollingInterval";
 import { mapTrpcError } from "@/lib/trpcErrors";
-import { vramRetryButtonDisabled } from "@/lib/vramCommandReach";
+import {
+  vramRetryButtonDisabled,
+  vramDestructiveButtonDisabled,
+  type VramCommandReach,
+} from "@/lib/vramCommandReach";
 /**
  * ★ Pha 5 Task 2 (C-1) — mặt đọc có thể TỪ CHỐI, và trước bản này file không biết điều đó tồn tại
  * (tập truy cập thuộc tính trên `state` đúng bằng `["data","isLoading","refetch"]` ⇒ FORBIDDEN cho
@@ -88,8 +92,16 @@ function fmtMiB(bytes: number | null | undefined, unknown: string): string {
 }
 
 interface Props {
-  /** Chỉ admin/engineer mới thấy nút lệnh. ⚠ Máy chủ vẫn cưỡng chế độc lập (deploy/actuation + RBAC). */
-  canCommand: boolean;
+  /**
+   * ★★★ Pha 5 Task 3 (N9) — tầm với của vai đang đăng nhập trên mặt lệnh VRAM.
+   *
+   * ⚠⚠ Trước bản này ô này là một `boolean` tên `canCommand`, và màn cha đổ thẳng `isOpsRole`
+   * (`admin || engineer`) vào ⇒ `supervisor` **không bao giờ** bấm được, còn `engineer` thấy hai nút
+   * **chắc chắn 403** (`canDelete` không có). Nay là một **KIỂU** chỉ `vramCommandReach(...)` tạo ra
+   * được, mang **hai** ô đúng bằng **hai** sàn quyền của máy chủ.
+   * ⚠ Máy chủ vẫn cưỡng chế **độc lập** (role-floor + 2FA + step-up + `requirePermission`).
+   */
+  commandReach: VramCommandReach;
   /**
    * Nhịp poll dùng chung với dashboard (`usePollingInterval` — đã tạm dừng khi tab ẩn).
    * ⚠ Kiểu lấy THẲNG từ hook, không khai lại bằng tay: bản đầu viết
@@ -98,7 +110,7 @@ interface Props {
   polling: ReturnType<typeof usePollingInterval>;
 }
 
-export function VramBrokerPanel({ canCommand, polling }: Props) {
+export function VramBrokerPanel({ commandReach, polling }: Props) {
   const { t } = useTranslation();
   const stepUp = useStepUpOtp();
   const state = trpc.vram.state.useQuery(undefined, { ...polling });
@@ -327,9 +339,15 @@ export function VramBrokerPanel({ canCommand, polling }: Props) {
                     ) : null}
                     {h.reclaim.kind === "reclaimable-here" ? (
                       <Button
+                        data-testid="vram-preempt"
                         size="sm"
                         variant="destructive"
-                        disabled={!canCommand || preempt.isPending}
+                        /*
+                          ★★★ N9 — MỘT Ô DUY NHẤT, và nó là một LỜI GỌI. `commandReach.destructive`
+                          KHÔNG được đọc ở bất kỳ đâu khác trong file này (lưới canh việc đó): mọi
+                          `||`/`?:`/`&&`/biến trung gian/điều kiện bọc render đều là một ô THỨ HAI.
+                        */
+                        disabled={vramDestructiveButtonDisabled(commandReach, preempt.isPending)}
                         // ★ F1 — `deployProcedure` + `ACTUATION_STEPUP_2FA=true` ⇒ KHÔNG có
                         // `totpCode` thì lượt bấm đầu tiên của mọi phiên luôn 403.
                         onClick={() => stepUp.guard((totpCode) => preempt.mutate({ owner: h.owner, totpCode }))}
@@ -353,9 +371,11 @@ export function VramBrokerPanel({ canCommand, polling }: Props) {
                     )}
                     {h.leaseKey === null ? null : (
                       <Button
+                        data-testid="vram-release-stale"
                         size="sm"
                         variant="outline"
-                        disabled={!canCommand || releaseStale.isPending}
+                        /* ★★★ N9 — cùng sàn `canDelete` với `preempt` ⇒ cùng MỘT lời gọi. */
+                        disabled={vramDestructiveButtonDisabled(commandReach, releaseStale.isPending)}
                         // ★ F1 — cùng sàn `deployProcedure` với `preempt`: phải có `totpCode`.
                         onClick={() =>
                           stepUp.guard((totpCode) => releaseStale.mutate({ leaseKey: h.leaseKey!, totpCode }))
@@ -406,7 +426,7 @@ export function VramBrokerPanel({ canCommand, polling }: Props) {
                           data-testid="vram-retry"
                           size="sm"
                           variant="outline"
-                          disabled={vramRetryButtonDisabled(h.retryReach.kind, canCommand, retryDeferred.isPending)}
+                          disabled={vramRetryButtonDisabled(h.retryReach.kind, commandReach, retryDeferred.isPending)}
                           onClick={() => retryDeferred.mutate({ owner })}
                         >
                           <RotateCcw className="h-3 w-3 mr-1" />

@@ -24,6 +24,8 @@ import {
   vramReadSurfaceErrorCode,
   VRAM_READ_SURFACE_NOTICE,
 } from "@/lib/vramReadSurface";
+/** ★ Pha 5 Task 3 (N9) — tầm với mặt LỆNH VRAM của vai; xem `@/lib/vramCommandReach`. */
+import { vramCommandReach } from "@/lib/vramCommandReach";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -308,7 +310,14 @@ export default function AIBrainDashboard() {
           Task 3). Đây là người đọc thật thứ hai của `buildVramAgentState()` (thứ nhất là
           `aiLocalTools/vramTools.ts`), và là chỗ tám hàm `translateVram*` có call-site sản phẩm.
         */}
-        <VramBrokerPanel canCommand={isOpsRole} polling={polling} />
+        {/*
+          ★★★ Pha 5 Task 3 (N9) — **CÁI NUÔI NÚT, KHÔNG PHẢI CÁI NÚT.**
+          Bản trước đổ `isOpsRole` (`admin || engineer` — cổng của **Agent Ops**, không phải một câu
+          về VRAM) vào đây ⇒ `supervisor` không bao giờ bấm được dù vị từ nút có đúng đến đâu, còn
+          `engineer` thấy hai nút phá huỷ **chắc chắn 403**. Nay ô này **LÀ** một lời gọi
+          `vramCommandReach(...)`, và kiểu trả về là thứ duy nhất panel nhận được.
+        */}
+        <VramBrokerPanel commandReach={vramCommandReach(user?.role)} polling={polling} />
 
         {/* Cognitive Escalation Ladder */}
         <Card>

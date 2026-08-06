@@ -62,3 +62,34 @@ describe("navigation.tsx — engineer AI nav widening (doc69 Wave 0-C)", () => {
     expect(hasAccessToItem("/ai-datasets", "operator", allowAllPerms)).toBe(false);
   });
 });
+
+/**
+ * ★★★ Pha 5 Task 3 (N9) — **LỚP 1/5: `supervisor` PHẢI VÀO ĐƯỢC `/ai-brain`.**
+ *
+ * `/ai-brain` là nhà DUY NHẤT của `VramBrokerPanel`. Chủ dự án chốt `supervisor` được ra lệnh phá
+ * huỷ VRAM (`ACTUATION_ROLES` — `server/_core/trpc.ts:434` — đã có nó). Bật nút cho một vai **không
+ * mở được màn** là dựng một cái nút không ai bấm được, và tệ hơn: **khai rằng đã trao quyền** trong
+ * khi chưa. `RouteGuard` (`components/RouteGuard.tsx:113`) gọi **đúng** `hasAccessToItem` cho
+ * `navHref`, nên ca dưới đo cả nav LẪN cổng route.
+ */
+describe("Pha 5 N9 — nav `/ai-brain` mở cho supervisor (lớp 1 của năm lớp)", () => {
+  it("★★★ supervisor VÀO ĐƯỢC /ai-brain (nếu không, bốn lớp còn lại là vô nghĩa)", () => {
+    expect(hasAccessToItem("/ai-brain", "supervisor", allowAllPerms)).toBe(true);
+  });
+
+  it("★★ nới đúng MỘT màn: supervisor VẪN bị từ chối ở các màn agent-ops khác", () => {
+    // ⚠ `supervisor` không có sàn `aiAgent.listAgentSessionsForOps` (admin|engineer). Mở nav ở đây
+    // sẽ là đúng cùng lỗi "màn hứa nhiều hơn máy chủ", chỉ đổi bề mặt.
+    expect(hasAccessToItem("/ai-command-center", "supervisor", allowAllPerms)).toBe(false);
+    expect(hasAccessToItem("/ai-monitoring", "supervisor", allowAllPerms)).toBe(false);
+    expect(hasAccessToItem("/ai-datasets", "supervisor", allowAllPerms)).toBe(false);
+  });
+
+  it("★★ chiều NGƯỢC — /ai-brain vẫn KHÔNG mở cho các vai ngoài bộ ba", () => {
+    for (const role of ["operator", "viewer", "quality_inspector", "maintenance", "user"]) {
+      expect(hasAccessToItem("/ai-brain", role, allowAllPerms), role).toBe(false);
+    }
+    // Không vai nào ⇒ không vào.
+    expect(hasAccessToItem("/ai-brain", undefined, allowAllPerms)).toBe(false);
+  });
+});

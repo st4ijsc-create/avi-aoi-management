@@ -1,0 +1,695 @@
+/**
+ * ★★★ Pha 5 Task 3 (N9) — **VAI NÀO VỚI TỚI MẶT LỆNH VRAM, VÀ AI NUÔI CÁI NÚT.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO LƯỚI NÀY TỒN TẠI: VỊ TỪ NÚT ĐÚNG ĐẾN MẤY CŨNG VÔ NGHĨA NẾU **CÁI NUÔI NÓ** SAI
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `pages/AIBrainDashboard.tsx:114` khai `isOpsRole = role === "admin" || role === "engineer"` rồi
+ * đổ **thẳng** vào prop nuôi **cả ba** nút lệnh của `VramBrokerPanel`. Hệ quả đo được:
+ *  • `supervisor` — vai chủ dự án chọn cho mặt lệnh VRAM, và **đã có** trong `ACTUATION_ROLES`
+ *    (`server/_core/trpc.ts:434`) — **KHÔNG BAO GIỜ** nhận `true`. Task 3 có viết vị từ hoàn hảo
+ *    đến đâu thì tham số của nó vẫn bị một biểu thức **ở màn cha** khoá chết ⇒ *"neo sai một nấc"*.
+ *  • `isOpsRole` **không phải** một câu về VRAM: nó là cổng của Agent Ops
+ *    (`aiAgent.listAgentSessionsForOps`, sàn `admin|engineer`). Một ô trả lời **hai** câu hỏi khác
+ *    nhau — bản sao dùng chung, lớp lỗi ngược của "hai bản sao một vị từ".
+ *
+ * ⚠⚠ **BA NÚT, HAI SÀN QUYỀN** (`server/routers/vramRouter.ts:66-70`): `preempt`/`releaseStale`
+ * đứng trên `machine_control/canDelete`; `retryDeferred` đứng trên `canCreate`. `engineer` **có**
+ * `canCreate`, **không có** `canDelete` (`server/routers/permissionsRouter.ts:288`). ⇒ Một boolean
+ * cho cả ba nói dối theo **cả hai chiều**. Hai grant, mỗi nút khớp **đúng** sàn của nó.
+ *
+ * ⚠ Lưới ở đây có BỐN tầng, tầng nào cũng cần:
+ *   1. ca **thuần** khoá QUYẾT ĐỊNH (bảng vai);
+ *   2. ca **đối chiếu NGUỒN ĐỘC LẬP** (danh sách vai của máy chủ) — bảng khai không tự chứng minh
+ *      được là nó **đủ**;
+ *   3. cổng **AST** khoá `disabled` của **từng** nút LÀ một lời gọi, và khoá **cái nuôi** nó ở màn
+ *      cha cũng LÀ một lời gọi;
+ *   4. cổng **AST** khoá *"không có ô THỨ HAI"* — grant chỉ được đọc **trong** đối số của vị từ.
+ *      ⚠ Tầng 4 phát biểu theo **NƠI XUẤT HIỆN của grant**, không liệt kê hình dạng rẽ nhánh: đó là
+ *      bài học đã trả giá **ba lần** ở Task 2 (`?:` → trả về sớm → ngắn mạch `&&`) — liệt kê hình
+ *      dạng thì hình dạng thứ N+1 **luôn** tồn tại.
+ */
+import { describe, it, expect } from "vitest";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import ts from "typescript";
+
+import {
+  vramCommandReach,
+  vramDestructiveButtonDisabled,
+  vramRetryButtonDisabled,
+  type VramCommandRole,
+  type VramDeferRetryReachKind,
+} from "./vramCommandReach";
+
+const TEST_DIR = fileURLToPath(new URL(".", import.meta.url)); // .../client/src/lib
+const GOC = join(TEST_DIR, "..", "..", ".."); // gốc repo
+const CLIENT_SRC = join(GOC, "client", "src");
+const PANEL = join(CLIENT_SRC, "components", "ai", "VramBrokerPanel.tsx");
+const MAN_CHA = join(CLIENT_SRC, "pages", "AIBrainDashboard.tsx");
+const AUTH_MAY_CHU = join(GOC, "server", "db", "auth.ts");
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// TẦNG 1 — QUYẾT ĐỊNH (vị từ thuần)
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * ⚠ VÉT CẠN theo KIỂU: thêm một vai vào `VramCommandRole` mà quên khai ở đây ⇒ **`tsc` ĐỎ**, không
+ * phải một nút hiện sai âm thầm. Hai cột = hai sàn quyền của máy chủ.
+ */
+const MONG_DOI: Record<VramCommandRole, { destructive: boolean; actuation: boolean }> = {
+  admin: { destructive: true, actuation: true },
+  supervisor: { destructive: true, actuation: true },
+  engineer: { destructive: false, actuation: true },
+  quality_inspector: { destructive: false, actuation: false },
+  operator: { destructive: false, actuation: false },
+  maintenance: { destructive: false, actuation: false },
+  viewer: { destructive: false, actuation: false },
+  user: { destructive: false, actuation: false },
+};
+
+describe("N9 — `vramCommandReach`: vai nào với tới mặt lệnh VRAM", () => {
+  for (const [vai, mong] of Object.entries(MONG_DOI) as [VramCommandRole, { destructive: boolean; actuation: boolean }][]) {
+    it(`${vai} ⇒ phá huỷ ${mong.destructive ? "ĐƯỢC" : "KHÔNG"} · actuation ${mong.actuation ? "ĐƯỢC" : "KHÔNG"}`, () => {
+      const r = vramCommandReach(vai);
+      expect(Boolean(r.destructive)).toBe(mong.destructive);
+      expect(Boolean(r.actuation)).toBe(mong.actuation);
+    });
+  }
+
+  it("★★★ QUYẾT ĐỊNH CỦA CHỦ DỰ ÁN — `supervisor` ⇒ hai nút PHÁ HUỶ BẬT (đây là cả lý do Task 3 tồn tại)", () => {
+    expect(vramDestructiveButtonDisabled(vramCommandReach("supervisor"), false)).toBe(false);
+  });
+
+  it("★★★ `engineer` ⇒ hai nút PHÁ HUỶ TẮT — máy chủ chặn ĐỘC LẬP (`canDelete` không có; C3: OTP tươi vẫn 403)", () => {
+    expect(vramDestructiveButtonDisabled(vramCommandReach("engineer"), false)).toBe(true);
+  });
+
+  it("★★★ `operator` ⇒ TẮT · `admin` ⇒ BẬT", () => {
+    expect(vramDestructiveButtonDisabled(vramCommandReach("operator"), false)).toBe(true);
+    expect(vramDestructiveButtonDisabled(vramCommandReach("admin"), false)).toBe(false);
+  });
+
+  it("★★ ĐÚNG HAI vai với tới lệnh PHÁ HUỶ — thêm một vai nữa là nới quyền, phải cố ý", () => {
+    const cho = (Object.keys(MONG_DOI) as VramCommandRole[]).filter((v) => vramCommandReach(v).destructive);
+    expect(cho.sort()).toEqual(["admin", "supervisor"]);
+  });
+
+  it("★★ BA vai với tới lệnh KHÔNG phá huỷ (`retryDeferred` = `canCreate`) — `engineer` NẰM TRONG", () => {
+    // ⚠ Chiều NGƯỢC của lời nói dối: cắt nút này khỏi `engineer` là "hứa ÍT hơn máy chủ cho phép".
+    const cho = (Object.keys(MONG_DOI) as VramCommandRole[]).filter((v) => vramCommandReach(v).actuation);
+    expect(cho.sort()).toEqual(["admin", "engineer", "supervisor"]);
+  });
+
+  it("★★★ `unknown ⇒ false` chiều CHẶT — mọi đầu vào lạ đều KHÔNG mở nút", () => {
+    const la: unknown[] = [
+      undefined,
+      null,
+      "",
+      "Admin",
+      "ADMIN",
+      "supervisor ",
+      "sup",
+      0,
+      1,
+      true,
+      {},
+      [],
+      ["admin"],
+      { role: "admin" },
+      // ⚠ Khoá của `Object.prototype` — một bảng tra bằng `[key]` trần sẽ trả về HÀM (truthy).
+      "toString",
+      "constructor",
+      "__proto__",
+      "hasOwnProperty",
+    ];
+    for (const x of la) {
+      const r = vramCommandReach(x);
+      expect(Boolean(r.destructive), `destructive cho ${String(x)}`).toBe(false);
+      expect(Boolean(r.actuation), `actuation cho ${String(x)}`).toBe(false);
+    }
+  });
+
+  it("★★ `isPending` khoá nút kể cả với vai ĐỦ quyền (chống bấm đúp một lệnh phá huỷ)", () => {
+    expect(vramDestructiveButtonDisabled(vramCommandReach("admin"), true)).toBe(true);
+    expect(vramDestructiveButtonDisabled(vramCommandReach("supervisor"), true)).toBe(true);
+  });
+
+  it("★★ nút *Thử lại ngay* nhân BA điều kiện: tầm với vai × `retryReach` × `isPending`", () => {
+    const KIND: VramDeferRetryReachKind[] = ["reachable-here", "unreachable", "unknown"];
+    for (const vai of Object.keys(MONG_DOI) as VramCommandRole[]) {
+      for (const k of KIND) {
+        for (const pending of [true, false]) {
+          const mong = !MONG_DOI[vai].actuation || pending || k !== "reachable-here";
+          expect(
+            vramRetryButtonDisabled(k, vramCommandReach(vai), pending),
+            `${vai}/${k}/pending=${String(pending)}`,
+          ).toBe(mong);
+        }
+      }
+    }
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// TẦNG 2 — ĐỐI CHIẾU NGUỒN ĐỘC LẬP
+//
+// ⚠⚠ Bảng vai ở `vramCommandReach.ts` là **bản sao thứ hai** của danh sách vai (client không import
+// được module máy chủ). Một bảng khai **không tự chứng minh được là nó ĐỦ**: thêm một vai ở
+// `server/db/auth.ts` mà quên ở đây thì `tsc` im lặng và vai mới **rơi vào nhánh `unknown`** — đúng
+// chiều an toàn, nhưng **âm thầm**, và lần sau người ta sẽ tưởng đã cân nhắc rồi. Vế đối chiếu phải
+// đến từ nguồn ĐỘC LẬP (chính file máy chủ), không từ chính bảng khai.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+describe("N9 — bảng vai phải PHỦ ĐÚNG danh sách vai của máy chủ (nguồn độc lập)", () => {
+  it("★★★ `VramCommandRole` ≡ `UserRole` của `server/db/auth.ts` — không thiếu, không thừa", () => {
+    const sf = ts.createSourceFile(
+      AUTH_MAY_CHU,
+      readFileSync(AUTH_MAY_CHU, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    let vaiMayChu: string[] | null = null;
+    const di = (n: ts.Node): void => {
+      if (ts.isTypeAliasDeclaration(n) && n.name.text === "UserRole" && ts.isUnionTypeNode(n.type)) {
+        vaiMayChu = n.type.types
+          .filter((t): t is ts.LiteralTypeNode => ts.isLiteralTypeNode(t) && ts.isStringLiteral(t.literal))
+          .map((t) => (t.literal as ts.StringLiteral).text);
+      }
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+    expect(vaiMayChu, "không đọc được `UserRole` ở server/db/auth.ts — file đã đổi hình dạng?").not.toBeNull();
+    expect([...(vaiMayChu as unknown as string[])].sort()).toEqual(Object.keys(MONG_DOI).sort());
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// BỘ MÁY AST DÙNG CHUNG CHO TẦNG 3 + 4
+//
+// ⚠⚠ Quét theo **ĐƯỜNG THOÁT, không theo FILE**: mọi `.tsx` dưới `client/src` đều bị hỏi, nên dựng
+// một điểm gọi MỚI trong một FILE MỚI (đột biến M3 của Global Constraints) vẫn bị bắt.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Ba nút LỆNH và vị từ mà `disabled` của mỗi nút **PHẢI LÀ** một lời gọi tới. */
+const NUT_LENH: Readonly<Record<string, string>> = {
+  "vram-preempt": "vramDestructiveButtonDisabled",
+  "vram-release-stale": "vramDestructiveButtonDisabled",
+  "vram-retry": "vramRetryButtonDisabled",
+};
+/** Tên component mang ba nút ấy — ô `commandReach` của nó là **cái NUÔI** cả ba. */
+const PANEL_TAG = "VramBrokerPanel";
+/** Vị từ duy nhất được phép sinh ra một `VramCommandReach`. */
+const VI_TU_NUOI = "vramCommandReach";
+
+function moiFileTsx(goc: string): string[] {
+  const ra: string[] = [];
+  const di = (d: string): void => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+      const p = join(d, e.name);
+      if (e.isDirectory()) di(p);
+      else if (e.name.endsWith(".tsx")) ra.push(p);
+    }
+  };
+  di(goc);
+  return ra;
+}
+
+function ast(duong: string, nguon?: string): ts.SourceFile {
+  return ts.createSourceFile(
+    duong,
+    nguon ?? readFileSync(duong, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+}
+
+function moiNut(sf: ts.SourceFile): ts.Node[] {
+  const out: ts.Node[] = [];
+  const di = (n: ts.Node) => {
+    out.push(n);
+    n.forEachChild(di);
+  };
+  sf.forEachChild(di);
+  return out;
+}
+
+type ThePhanTu = ts.JsxOpeningElement | ts.JsxSelfClosingElement;
+
+/** MỌI phần tử JSX mang `data-testid="<marker>"` — **không** dừng ở cái đầu tiên (xem M-7 dưới). */
+function moiPhanTuCoMarker(sf: ts.SourceFile, marker: string): ThePhanTu[] {
+  return moiNut(sf).filter(
+    (n): n is ThePhanTu =>
+      (ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) &&
+      n.attributes.properties.some(
+        (a) =>
+          ts.isJsxAttribute(a) &&
+          a.name.getText(sf) === "data-testid" &&
+          a.initializer !== undefined &&
+          ts.isStringLiteral(a.initializer) &&
+          a.initializer.text === marker,
+      ),
+  );
+}
+
+/** MỌI phần tử JSX có tên thẻ `<Ten …>`. */
+function moiPhanTuTheoThe(sf: ts.SourceFile, ten: string): ThePhanTu[] {
+  return moiNut(sf).filter(
+    (n): n is ThePhanTu =>
+      (ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) && n.tagName.getText(sf) === ten,
+  );
+}
+
+/** Biểu thức của thuộc tính `ten` trên một phần tử. `null` ⇔ **không có** thuộc tính ấy. */
+function bieuThucThuocTinh(el: ThePhanTu, sf: ts.SourceFile, ten: string): ts.Node | null {
+  for (const a of el.attributes.properties) {
+    if (!ts.isJsxAttribute(a) || a.name.getText(sf) !== ten || !a.initializer) continue;
+    return ts.isJsxExpression(a.initializer) ? (a.initializer.expression ?? a.initializer) : a.initializer;
+  }
+  return null;
+}
+
+/** Nút này **LÀ** một lời gọi `ten(...)` — không phải một biểu thức ghép, không phải một biến. */
+function laLoiGoi(n: ts.Node | null | undefined, ten: string): boolean {
+  return !!n && ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === ten;
+}
+
+interface ViPham {
+  readonly file: string;
+  readonly dong: number;
+  readonly noi: string;
+}
+
+/**
+ * TẦNG 3 — với MỌI phần tử mang marker trong một file: `disabled` của nó **PHẢI LÀ** lời gọi vị từ.
+ * Trả về danh sách vi phạm **và** số phần tử đã soi (để dựng cầu chì chống lưới-mù).
+ */
+function soiNutLenh(sf: ts.SourceFile, nhan: string): { viPham: ViPham[]; soi: number } {
+  const viPham: ViPham[] = [];
+  let soi = 0;
+  const viTu = NUT_LENH[nhan];
+  for (const el of moiPhanTuCoMarker(sf, nhan)) {
+    soi++;
+    const d = bieuThucThuocTinh(el, sf, "disabled");
+    if (!laLoiGoi(d, viTu)) {
+      const { line } = sf.getLineAndCharacterOfPosition(el.getStart(sf));
+      viPham.push({
+        file: sf.fileName,
+        dong: line + 1,
+        noi: `\`disabled\` của [${nhan}] KHÔNG LÀ \`${viTu}(...)\` — thấy: ${d === null ? "(không có thuộc tính)" : d.getText(sf).slice(0, 90)}`,
+      });
+    }
+  }
+  return { viPham, soi };
+}
+
+/** TẦNG 3b — `commandReach` truyền vào panel **PHẢI LÀ** lời gọi `vramCommandReach(...)`. */
+function soiCaiNuoi(sf: ts.SourceFile): { viPham: ViPham[]; soi: number } {
+  const viPham: ViPham[] = [];
+  let soi = 0;
+  for (const el of moiPhanTuTheoThe(sf, PANEL_TAG)) {
+    soi++;
+    const v = bieuThucThuocTinh(el, sf, "commandReach");
+    if (!laLoiGoi(v, VI_TU_NUOI)) {
+      const { line } = sf.getLineAndCharacterOfPosition(el.getStart(sf));
+      viPham.push({
+        file: sf.fileName,
+        dong: line + 1,
+        noi: `\`commandReach\` KHÔNG LÀ \`${VI_TU_NUOI}(...)\` — thấy: ${v === null ? "(không có thuộc tính)" : v.getText(sf).slice(0, 90)}`,
+      });
+    }
+  }
+  return { viPham, soi };
+}
+
+/**
+ * TẦNG 4 — **KHÔNG CÓ Ô THỨ HAI.**
+ *
+ * ⚠⚠⚠ Bài học trả giá BA LẦN ở Task 2: lưới liệt kê **hình dạng rẽ nhánh** (`?:` → trả về sớm →
+ * ngắn mạch) thì hình dạng thứ N+1 luôn tồn tại. ⇒ Đảo lượng từ: hỏi về **NƠI XUẤT HIỆN của
+ * GRANT**, không về hình dạng của phép rẽ. Mọi tham chiếu tới `commandReach` **phải** nằm trong
+ * đối số của một vị từ nút. Một `{commandReach.destructive && <Button …/>}`, một
+ * `const c = commandReach; …`, một `<Row grant={commandReach}/>` (component con), một
+ * `if (!commandReach.destructive) return null;` (trả về sớm) — **cả bốn** đều là một tham chiếu
+ * NGOÀI vị từ ⇒ ĐỎ, không cần lưới biết chúng là hình dạng gì.
+ *
+ * ⚠ Vị trí **KHAI BÁO** (ô của interface, tham số destructure, TÊN thuộc tính JSX) không phải một
+ * tham chiếu — bỏ qua, nếu không lưới sẽ tự bắt chính khai báo của mình.
+ */
+const VI_TU_NUT: readonly string[] = ["vramDestructiveButtonDisabled", "vramRetryButtonDisabled"];
+
+function soiOThuHai(sf: ts.SourceFile, ten = "commandReach"): { viPham: ViPham[]; hopLe: number } {
+  const trongViTu = new Set<ts.Node>();
+  for (const n of moiNut(sf)) {
+    if (!ts.isCallExpression(n) || !ts.isIdentifier(n.expression)) continue;
+    if (!VI_TU_NUT.includes(n.expression.text)) continue;
+    for (const arg of n.arguments) {
+      const di = (x: ts.Node) => {
+        trongViTu.add(x);
+        x.forEachChild(di);
+      };
+      di(arg);
+    }
+  }
+
+  const laKhaiBao = (n: ts.Identifier): boolean => {
+    const p = n.parent;
+    if (p === undefined) return false;
+    if (ts.isImportSpecifier(p) || ts.isImportClause(p) || ts.isNamespaceImport(p)) return true;
+    if (ts.isPropertySignature(p) && p.name === n) return true;
+    if (ts.isBindingElement(p) && (p.name === n || p.propertyName === n)) return true;
+    if (ts.isParameter(p) && p.name === n) return true;
+    if (ts.isVariableDeclaration(p) && p.name === n) return true;
+    if (ts.isPropertyAssignment(p) && p.name === n) return true;
+    if (ts.isJsxAttribute(p) && p.name === n) return true; // TÊN thuộc tính, không phải giá trị
+    if (ts.isPropertyAccessExpression(p) && p.name === n) return true; // `x.commandReach`
+    return false;
+  };
+
+  const viPham: ViPham[] = [];
+  let hopLe = 0;
+  for (const n of moiNut(sf)) {
+    if (!ts.isIdentifier(n) || n.text !== ten) continue;
+    if (laKhaiBao(n)) continue;
+    if (trongViTu.has(n)) {
+      hopLe++;
+      continue;
+    }
+    const { line } = sf.getLineAndCharacterOfPosition(n.getStart(sf));
+    viPham.push({
+      file: sf.fileName,
+      dong: line + 1,
+      noi: `Ô THỨ HAI — \`${ten}\` đọc NGOÀI đối số của vị từ nút: ${n.parent?.getText(sf).slice(0, 90) ?? ""}`,
+    });
+  }
+  return { viPham, hopLe };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// TẦNG 3 — CỔNG AST TRÊN MÃ SẢN PHẨM
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+describe("N9 (AST) — `disabled` của TỪNG nút lệnh, và CÁI NUÔI nó, đều PHẢI LÀ một lời gọi", () => {
+  /** Quét **toàn bộ** `client/src/**.tsx`, lọc trước bằng văn bản thô cho nhanh. */
+  const FILE_TSX = moiFileTsx(CLIENT_SRC);
+  const NGUON = new Map<string, string>(FILE_TSX.map((f) => [f, readFileSync(f, "utf8")]));
+
+  it("★ cầu chì — quét thấy đủ nhiều file `.tsx` (một glob rỗng làm mọi khẳng định dưới thành chân lý rỗng)", () => {
+    expect(FILE_TSX.length).toBeGreaterThan(50);
+    expect(FILE_TSX).toContain(PANEL);
+    expect(FILE_TSX).toContain(MAN_CHA);
+  });
+
+  for (const nhan of Object.keys(NUT_LENH)) {
+    it(`★★★ MỌI nút [${nhan}] trong client/src: \`disabled\` LÀ \`${NUT_LENH[nhan]}(...)\``, () => {
+      const viPham: ViPham[] = [];
+      let soi = 0;
+      for (const [f, src] of NGUON) {
+        if (!src.includes(nhan)) continue;
+        const r = soiNutLenh(ast(f, src), nhan);
+        viPham.push(...r.viPham);
+        soi += r.soi;
+      }
+      // ⚠ Cầu chì: nút biến mất khỏi mã ⇒ lưới sẽ "xanh" một cách rỗng.
+      expect(soi, `KHÔNG thấy nút [${nhan}] ở đâu trong client/src ⇒ LƯỚI ĐANG MÙ`).toBeGreaterThan(0);
+      expect(viPham.map((v) => `${v.file}:${v.dong} ${v.noi}`)).toEqual([]);
+    });
+  }
+
+  it(`★★★ MỌI \`<${PANEL_TAG} …>\` trong client/src: \`commandReach\` LÀ \`${VI_TU_NUOI}(...)\` (LỚP 3 — cái NUÔI nút)`, () => {
+    const viPham: ViPham[] = [];
+    let soi = 0;
+    for (const [f, src] of NGUON) {
+      if (!src.includes(PANEL_TAG)) continue;
+      const r = soiCaiNuoi(ast(f, src));
+      viPham.push(...r.viPham);
+      soi += r.soi;
+    }
+    expect(soi, `KHÔNG thấy điểm dựng <${PANEL_TAG}> nào ⇒ LƯỚI ĐANG MÙ`).toBeGreaterThan(0);
+    expect(viPham.map((v) => `${v.file}:${v.dong} ${v.noi}`)).toEqual([]);
+  });
+
+  it("★★★ KHÔNG CÓ Ô THỨ HAI — `commandReach` chỉ được đọc TRONG đối số của vị từ nút", () => {
+    const viPham: ViPham[] = [];
+    let hopLe = 0;
+    for (const [f, src] of NGUON) {
+      if (!src.includes("commandReach")) continue;
+      const r = soiOThuHai(ast(f, src));
+      viPham.push(...r.viPham);
+      hopLe += r.hopLe;
+    }
+    expect(hopLe, "không thấy tham chiếu HỢP LỆ nào ⇒ LƯỚI ĐANG MÙ").toBeGreaterThanOrEqual(3);
+    expect(viPham.map((v) => `${v.file}:${v.dong} ${v.noi}`)).toEqual([]);
+  });
+
+  it("★★ `isOpsRole` (cổng Agent Ops) KHÔNG còn chạm mặt lệnh VRAM ở màn cha", () => {
+    /**
+     * ⚠ Ca này neo vào **hai câu hỏi khác nhau không được dùng chung một ô**. `isOpsRole` vẫn phải
+     * TỒN TẠI (nó là cổng đúng của `aiAgent.listAgentSessionsForOps`), nhưng nó không được xuất
+     * hiện trong bất kỳ thuộc tính nào của `<VramBrokerPanel>`.
+     */
+    const sf = ast(MAN_CHA);
+    const els = moiPhanTuTheoThe(sf, PANEL_TAG);
+    expect(els.length, "màn cha phải dựng panel").toBeGreaterThan(0);
+    for (const el of els) {
+      expect(el.attributes.getText(sf)).not.toMatch(/\bisOpsRole\b|\bisAdmin\b/);
+    }
+    // Chiều DƯƠNG: `isOpsRole` vẫn còn dùng cho Agent Ops — bản vá không được xoá nhầm nó.
+    expect(readFileSync(MAN_CHA, "utf8")).toMatch(/\bisOpsRole\b/);
+  });
+
+  it("★★ panel KHÔNG bị bọc trong một điều kiện suy ra từ VAI — ẩn panel là lặng lẽ đảo ngược lớp 3", () => {
+    /**
+     * Nếu ai viết `{isOpsRole && <VramBrokerPanel commandReach={vramCommandReach(user?.role)} …/>}`
+     * thì ba cổng trên vẫn XANH, `tsc` sạch, và `supervisor` **không thấy gì cả** — quyết định của
+     * chủ dự án bị đảo ngược mà không một lưới nào đỏ.
+     *
+     * ⇒ Tập "suy ra từ VAI" đóng **BẮC CẦU** dưới phép gán (`isOpsRole`/`isAdmin` đều sinh từ
+     * `user?.role`), đúng bộ máy `vramReadSurface.unit.test.ts` đã dùng; **HÀNH ĐỘNG** (arrow /
+     * `useMutation`) bị loại để lưới không nuốt `refreshAll` rồi chỉ đường tới bản vá SAI.
+     */
+    const sf = ast(MAN_CHA);
+    const laHanhDong = (init: ts.Expression): boolean =>
+      ts.isArrowFunction(init) ||
+      ts.isFunctionExpression(init) ||
+      (ts.isCallExpression(init) && /(^|\.)useMutation$/.test(init.expression.getText(sf)));
+
+    const thuocVai = new Set<string>(["user"]);
+    for (let vong = 0; vong < 10; vong++) {
+      const truoc = thuocVai.size;
+      for (const n of moiNut(sf)) {
+        if (!ts.isVariableDeclaration(n) || n.initializer === undefined) continue;
+        if (!ts.isIdentifier(n.name) || thuocVai.has(n.name.text)) continue;
+        if (laHanhDong(n.initializer)) continue;
+        const txt = n.initializer.getText(sf);
+        if ([...thuocVai].some((v) => new RegExp(`\\b${v}\\b`).test(txt))) thuocVai.add(n.name.text);
+      }
+      if (thuocVai.size === truoc) break;
+    }
+    expect([...thuocVai], "cầu chì: phải bắt được ít nhất `isOpsRole` là dẫn xuất của `user`").toContain("isOpsRole");
+
+    // Điểm rẽ: BA hình dạng cú pháp mà TypeScript có (`?:` · `if` · ngắn mạch) — không thiếu cái nào.
+    interface DiemRe {
+      readonly dieuKien: ts.Node;
+      readonly nhanh: readonly ts.Node[];
+    }
+    const reBaoQuanh = new Map<ts.Node, DiemRe>();
+    for (const n of moiNut(sf)) {
+      let d: DiemRe | null = null;
+      if (ts.isConditionalExpression(n)) d = { dieuKien: n.condition, nhanh: [n.whenTrue, n.whenFalse] };
+      else if (ts.isIfStatement(n)) {
+        d = { dieuKien: n.expression, nhanh: n.elseStatement ? [n.thenStatement, n.elseStatement] : [n.thenStatement] };
+      } else if (
+        ts.isBinaryExpression(n) &&
+        [
+          ts.SyntaxKind.AmpersandAmpersandToken,
+          ts.SyntaxKind.BarBarToken,
+          ts.SyntaxKind.QuestionQuestionToken,
+        ].includes(n.operatorToken.kind)
+      ) {
+        d = { dieuKien: n.left, nhanh: [n.right] };
+      }
+      if (d !== null) for (const b of d.nhanh) reBaoQuanh.set(b, d);
+    }
+
+    const viPham: string[] = [];
+    for (const el of moiPhanTuTheoThe(sf, PANEL_TAG)) {
+      let con: ts.Node = el;
+      let cur: ts.Node | undefined = el.parent;
+      while (cur !== undefined) {
+        const bao = reBaoQuanh.get(con);
+        if (bao !== undefined) {
+          const dk = bao.dieuKien.getText(sf);
+          if ([...thuocVai].some((v) => new RegExp(`\\b${v}\\b`).test(dk))) {
+            viPham.push(`panel bị bọc bởi điều kiện suy-ra-từ-VAI: [${dk.slice(0, 90)}]`);
+          }
+        }
+        con = cur;
+        cur = cur.parent;
+      }
+    }
+    expect(viPham, viPham.join("\n  ")).toEqual([]);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ LƯỚI CHO CHÍNH LƯỚI — CHÍN HÌNH DẠNG LÁCH, VÀ HAI CA "KHÔNG BẮT NHẦM"
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+describe("N9 — lưới-cho-lưới: mọi hình dạng lách đều ĐỎ", () => {
+  const NUT = (than: string) => `function C(){ return (<div>${than}</div>); }`;
+
+  /** Sáu hình dạng brief gọi tên + ba hình dạng thêm (component con · trả về sớm · **trùng marker**). */
+  const LACH: Record<string, string> = {
+    "biến trung gian": NUT('const d = !commandReach.destructive; <Button data-testid="vram-preempt" disabled={d} />'),
+    "toán tử ?:": NUT('<Button data-testid="vram-preempt" disabled={commandReach.destructive ? false : true} />'),
+    "ngắn mạch &&": NUT('<Button data-testid="vram-preempt" disabled={p.isPending && !commandReach.destructive} />'),
+    "ngắn mạch ??": NUT('<Button data-testid="vram-preempt" disabled={x ?? vramDestructiveButtonDisabled(commandReach, p)} />'),
+    "hằng số": NUT('<Button data-testid="vram-preempt" disabled={false} />'),
+    "hàm KHÁC": NUT('<Button data-testid="vram-preempt" disabled={motHamKhac(commandReach, p)} />'),
+    "`||` ở ĐIỂM DÙNG (đúng cách lưới đời 2 bị lách)": NUT(
+      'const dis = vramDestructiveButtonDisabled(commandReach, p); <Button data-testid="vram-preempt" disabled={dis || false} />',
+    ),
+    "★ hình dạng của TÔI #1 — TRẢI túi props (`disabled` biến mất khỏi cây thuộc tính)": NUT(
+      '<Button data-testid="vram-preempt" {...{ disabled: false }} />',
+    ),
+    "★ hình dạng của TÔI #2 — đổi tên khi nhập (`as f`) rồi gọi `f(...)`": NUT(
+      '<Button data-testid="vram-preempt" disabled={f(commandReach, p)} />',
+    ),
+  };
+
+  for (const [ten, nguon] of Object.entries(LACH)) {
+    it(`bị BẮT: ${ten}`, () => {
+      const r = soiNutLenh(ast("t.tsx", nguon), "vram-preempt");
+      expect(r.soi, "lưới phải THẤY cái nút").toBeGreaterThan(0);
+      expect(r.viPham.length, `hình dạng lách phải bị bắt: ${nguon}`).toBeGreaterThan(0);
+    });
+  }
+
+  it("chiều DƯƠNG — hình dạng ĐÚNG lọt qua (lưới không phải một cái cấm-tất-cả)", () => {
+    const r = soiNutLenh(
+      ast("t.tsx", NUT('<Button data-testid="vram-preempt" disabled={vramDestructiveButtonDisabled(commandReach, p.isPending)} />')),
+      "vram-preempt",
+    );
+    expect(r.soi).toBe(1);
+    expect(r.viPham).toEqual([]);
+  });
+
+  /**
+   * ★★★ HÌNH DẠNG CỦA TÔI #3 — **NÚT THỨ HAI MANG CÙNG MỘT MARKER.**
+   *
+   * ⚠⚠ Đây là một lỗ **THẬT trong bộ máy đang có ở HEAD**: `thuocTinh()` của
+   * `vramCommandReach.unit.test.ts` dùng `ra ??=` ⇒ **dừng ở phần tử ĐẦU TIÊN**. Giữ nguyên nút
+   * đúng rồi **thêm** một nút thứ hai cùng `data-testid` với `disabled={false}` thì lưới đời trước
+   * **XANH**, `tsc` sạch, ship được — và người vận hành có một nút bấm được cho một lệnh chắc chắn
+   * bị từ chối. ⇒ Lưới ở file này lượng-từ-hoá bằng **MỌI**, không phải **CÓ MỘT**.
+   */
+  it("★★★ bị BẮT: nút THỨ HAI cùng marker (lỗ `ra ??=` của bộ máy đời trước — chứng minh bằng đối chứng)", () => {
+    const nguon = NUT(
+      '<Button data-testid="vram-preempt" disabled={vramDestructiveButtonDisabled(commandReach, p)} />' +
+        '<Button data-testid="vram-preempt" disabled={false} />',
+    );
+    const sf = ast("t.tsx", nguon);
+
+    // Bộ máy ĐỜI TRƯỚC (first-match) — XANH, tức lách được.
+    const doiTruoc = (marker: string, ten: string): ts.Node | null => {
+      let ra: ts.Node | null = null;
+      for (const el of moiPhanTuCoMarker(sf, marker)) {
+        if (ra === null) ra = bieuThucThuocTinh(el, sf, ten);
+      }
+      return ra;
+    };
+    expect(
+      laLoiGoi(doiTruoc("vram-preempt", "disabled"), "vramDestructiveButtonDisabled"),
+      "đối chứng: bộ máy first-match KHÔNG thấy nút thứ hai",
+    ).toBe(true);
+
+    // Bộ máy của file này — ĐỎ.
+    const r = soiNutLenh(sf, "vram-preempt");
+    expect(r.soi).toBe(2);
+    expect(r.viPham.length, "nút thứ hai PHẢI bị bắt").toBe(1);
+  });
+
+  it("★★★ bị BẮT: cái NUÔI bị lách — `commandReach={...}` thôi LÀ một lời gọi", () => {
+    const LACH_NUOI: Record<string, string> = {
+      "biến trung gian": `const r = vramCommandReach(user?.role); <${PANEL_TAG} commandReach={r} polling={p} />`,
+      "`||` ghép thêm": `<${PANEL_TAG} commandReach={vramCommandReach(user?.role) || fallback} polling={p} />`,
+      "?:": `<${PANEL_TAG} commandReach={isOpsRole ? A : B} polling={p} />`,
+      "hàm KHÁC": `<${PANEL_TAG} commandReach={motHamKhac(user?.role)} polling={p} />`,
+      "thiếu hẳn thuộc tính": `<${PANEL_TAG} polling={p} />`,
+      "★ điểm dựng THỨ HAI ở FILE KHÁC (đột biến M3)": `<${PANEL_TAG} commandReach={vramCommandReach(u)} polling={p} /><${PANEL_TAG} commandReach={boss} polling={p} />`,
+    };
+    for (const [ten, than] of Object.entries(LACH_NUOI)) {
+      const r = soiCaiNuoi(ast("t.tsx", NUT(than)));
+      expect(r.soi, `${ten}: lưới phải THẤY panel`).toBeGreaterThan(0);
+      expect(r.viPham.length, `${ten} PHẢI bị bắt`).toBeGreaterThan(0);
+    }
+  });
+
+  it("★★★ bị BẮT: Ô THỨ HAI dưới MỌI hình dạng rẽ nhánh (lưới hỏi NƠI XUẤT HIỆN, không hỏi hình dạng)", () => {
+    // ⚠ Nguồn ĐẦY ĐỦ, không phải một mảnh JSX: một câu lệnh nhét vào giữa `<div>…</div>` sẽ được
+    //   phân tích thành **văn bản JSX** (không có node định danh nào) và ca sẽ xanh vì lý do sai.
+    const O_THU_HAI: Record<string, string> = {
+      "ngắn mạch && bọc render": NUT(
+        '{commandReach.destructive && <Button data-testid="vram-preempt" disabled={vramDestructiveButtonDisabled(commandReach, p)} />}',
+      ),
+      "?: bọc render": NUT(
+        '{commandReach.destructive ? <Button data-testid="vram-preempt" disabled={vramDestructiveButtonDisabled(commandReach, p)} /> : null}',
+      ),
+      "component CON nhận grant": NUT("<Row grant={commandReach} />"),
+      "biến trung gian": "function C(){ const g = commandReach; return g.destructive ? null : null; }",
+      "gán vào một ô của object khác": "const cfg = { grant: commandReach };",
+      "so sánh trực tiếp trong JSX": NUT("{String(commandReach.actuation)}"),
+    };
+    for (const [ten, nguon] of Object.entries(O_THU_HAI)) {
+      const r = soiOThuHai(ast("t.tsx", nguon));
+      expect(r.viPham.length, `${ten} PHẢI bị bắt`).toBeGreaterThan(0);
+    }
+  });
+
+  it("★★★ bị BẮT: TRẢ VỀ SỚM (hình dạng đã lách lưới Task 2 ở vòng thứ ba)", () => {
+    const nguon = `function C(){ if (!commandReach.destructive) { return null; } return (<Button data-testid="vram-preempt" disabled={vramDestructiveButtonDisabled(commandReach, p)} />); }`;
+    expect(soiOThuHai(ast("t.tsx", nguon)).viPham.length).toBeGreaterThan(0);
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────────────────────
+  // KHÔNG BẮT NHẦM — một lưới quá rộng chỉ đường tới bản vá SAI (bài học m2-2).
+  // ────────────────────────────────────────────────────────────────────────────────────────────
+
+  it("★★ KHÔNG BẮT NHẦM — nút/spinner của các query & lệnh KHÁC nằm ngoài phạm vi", () => {
+    const nguon = NUT(
+      '<Button disabled={tripMut.isPending || reason.length < 3} />' +
+        "{preempt.isPending ? <Spinner /> : null}" +
+        "{state.isLoading ? <Skeleton /> : null}" +
+        '<Button data-testid="khac" disabled={x || y} />' +
+        '<Button data-testid="vram-preempt" disabled={vramDestructiveButtonDisabled(commandReach, preempt.isPending)} />',
+    );
+    const sf = ast("t.tsx", nguon);
+    expect(soiNutLenh(sf, "vram-preempt").viPham).toEqual([]);
+    expect(soiOThuHai(sf).viPham).toEqual([]);
+    // Cầu chì: nguồn thật sự CÓ những `disabled` không phải lời gọi vị từ — nếu không, ca này rỗng.
+    expect(nguon).toMatch(/disabled=\{tripMut\.isPending/);
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — khai báo (`interface` · destructure · TÊN thuộc tính JSX) không phải tham chiếu", () => {
+    const nguon =
+      "interface Props { commandReach: VramCommandReach } " +
+      "function P({ commandReach, polling }: Props){ return (<Button data-testid=\"vram-preempt\" disabled={vramDestructiveButtonDisabled(commandReach, p)} />); } " +
+      `function Q(){ return (<${PANEL_TAG} commandReach={vramCommandReach(user?.role)} polling={p} />); }`;
+    const r = soiOThuHai(ast("t.tsx", nguon));
+    expect(r.viPham, r.viPham.map((v) => v.noi).join("\n")).toEqual([]);
+    expect(r.hopLe, "phải đếm được tham chiếu HỢP LỆ").toBeGreaterThan(0);
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — file `.tsx` không dính dáng gì tới VRAM cho 0 vi phạm", () => {
+    const nguon = NUT('<Button disabled={a || b} onClick={() => m.mutate({})} />');
+    const sf = ast("t.tsx", nguon);
+    expect(soiNutLenh(sf, "vram-preempt").soi).toBe(0);
+    expect(soiCaiNuoi(sf).soi).toBe(0);
+    expect(soiOThuHai(sf).viPham).toEqual([]);
+  });
+});
