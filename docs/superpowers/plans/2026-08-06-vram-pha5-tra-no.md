@@ -223,3 +223,26 @@ Ba mục **cùng đụng `server/services/vram/vramReadModel.ts`**, nên đi chu
 - **Review TOÀN NHÁNH** trên model mạnh nhất. ⚠ **Bảy pha liên tiếp, lượt này bắt được thứ review-theo-task KHÔNG THỂ bắt** — đừng bỏ.
 - Lăng kính cho lượt đó: **"an toàn là HỆ QUẢ của một thứ khác đang hỏng"** (đã xuất hiện **ba** lần ở Pha 4 — tìm lần thứ tư) · **"lưới xanh vì lý do sai"** (12 lần) · **"mặt đọc hứa nhiều hơn mặt lệnh"**.
 - Push · ghi memory · đối chiếu lại danh sách nợ: mục nào **đóng**, mục nào **còn**, mục nào **mới sinh ra từ chính lượt trả nợ này**.
+
+---
+
+### Task 3b: TÁCH BIT QUYỀN RIÊNG CHO VRAM (quyết định chủ dự án 2026-08-06)
+
+**Vì sao có task này.** Review Task 3 **đếm được**: `machine_control/canDelete` là bit **DÙNG CHUNG cho 10 thủ tục ở 8 router**, và **8/10 KHÔNG có 2FA/role-floor** (`protectedProcedure` trần). Hai nút VRAM lại là **hai cái CHẶT NHẤT** (`deployProcedure` = role-floor + 2FA + OTP tươi).
+
+⚠ **Nguy hiểm nhất, đích danh:** `programming.deleteProject` (`server/routers/programmingRouter.ts:261`) — xoá **cascade** `programSimRuns → programBuilds → programArtifacts (mã nguồn có phiên bản) → programSymbols → programProjects`, **không chốt an toàn, không OTP**. Cộng **5 bề mặt UI** sẽ hiện nút xoá **ngay khi cấp**.
+
+⇒ Cấp bit dùng chung cho `supervisor` để mở **hai nút VRAM** sẽ mở **chín thủ tục khác** — trong đó có xoá mã nguồn. **Chủ dự án chốt: TÁCH BIT RIÊNG.**
+
+**Cổng ra:** `supervisor` thu hồi được VRAM **mà KHÔNG** với tới `programming.deleteProject` hay 8 thủ tục còn lại.
+
+- [ ] **Bước 1: đếm lại và ghi bảng.** `git grep` mọi thủ tục đứng trên `machine_control/canDelete` — **ghi đủ 10**, mỗi dòng: router, thủ tục, có 2FA không, hậu quả nếu vai sai chạm tới. ⚠ **Đừng tin con số trong tài liệu này** — tự đếm.
+- [ ] **Bước 2: chọn hình dạng bit mới và VIẾT LÝ DO.** Hai đường: (a) một `action` mới trong `machine_control`; (b) một module quyền riêng. ⚠ Đọc `server/_core/trpc.ts` + `permissionsRouter.ts` **trước khi chọn** — khuôn hiện có quyết định đường nào rẻ hơn. Nêu đường **không chọn** và vì sao.
+- [ ] **Bước 3: ca ĐỎ trước.** `supervisor` **có** bit VRAM mới ⇒ `preempt`/`releaseStale` **QUA cổng quyền**; **cùng** `supervisor` đó ⇒ `programming.deleteProject` **VẪN BỊ TỪ CHỐI**. ⚠ Ca thứ hai là **cổng ra thật sự** của task — không có nó thì "tách bit" chưa chứng minh được gì.
+- [ ] **Bước 4: cài bit mới**, đổi `vramRouter.ts:66-70` sang nó. ⚠ **Giữ nguyên** `deployProcedure` + step-up 2FA — task này **thu hẹp** quyền, **không nới** cái gì.
+- [ ] **Bước 5: `vramCommandReach` đọc bit MỚI**, không đọc `canDelete` nữa. Lưới của Task 3 phải **vẫn xanh**.
+- [ ] **Bước 6: đột biến.** Trả `vramRouter` về `canDelete` ⇒ ca đỏ · cấp bit VRAM rồi thử `programming.deleteProject` ⇒ **phải TỪ CHỐI**, ca đỏ nếu qua · gỡ step-up ⇒ ca đỏ.
+- [ ] **Bước 7:** khai **chính xác** hàng quyền cần cấp (per-user, **không** đổi khuôn — bảng `permissions` là per-USER nên đổi khuôn cũng không tự mở quyền). **KHÔNG chạy DDL/seed trong task.**
+- [ ] **Bước 8: commit.**
+
+⚠ **THỨ TỰ PHÁT HÀNH (I-2):** lượt **cấp quyền chạy TRƯỚC**, **client deploy SAU**. Ngược lại thì supervisor thấy hai nút **chắc chắn 403** — đúng lớp lỗi *"mặt đọc hứa nhiều hơn mặt lệnh"* mà cả Pha 5 đang đóng.
