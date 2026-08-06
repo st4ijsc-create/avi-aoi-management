@@ -107,11 +107,6 @@ export interface VramAgentDisplayText {
  * Trần MỘT ô câu chữ trên mặt đọc. **400 không phải một con số đẹp** — nó là **đúng trần
  * `CAU_TOI_DA` mà `vramPreempt.catCau()` / `vramDefer.catCau()` đã dùng** cho cùng loại câu (câu từ
  * chối). Lấy một con số khác là dựng **hai trần cho một bất biến**.
- *
- * ⚠ KHAI THẲNG MỘT SEAM: với `status.lastRefusalMessage` đi qua `vramDefer` thì upstream **đã** cắt
- * ở đúng 400 ⇒ lượt cắt ở đây là **vô hiệu** (`truncated: false`) và đó là **đúng**: mỗi bề mặt khai
- * lượt cắt **của chính nó**. Hai nguồn còn lại **không có trần** (`vramWiring.lyDoBeginHongCuoi` =
- * `err.message` thô; `kbSyncScheduler` `note.message`) — và chúng chính là lý do ô này tồn tại.
  */
 const CAU_HIEN_THI_TOI_DA = 400;
 
@@ -119,11 +114,33 @@ const CAU_HIEN_THI_TOI_DA = 400;
  * **CỬA DUY NHẤT** dựng một ô hiển thị. Gọi `catChuoi()` của `@shared/textSafety` — không một phép
  * `slice()` thứ hai nào trong file này.
  * ⚠ `null` vào ⇒ `null` ra: *"không có câu"* là một phạm trù RIÊNG, không phải một câu rỗng.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ I-3 (review) — **CÁI ĐÃ MẤT Ở TẦNG DƯỚI VẪN LÀ CÁI ĐÃ MẤT.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản đầu chỉ khai **lượt cắt của chính nó**, và một khối chú thích ở đây **ban phước** cho điều
+ * đó (*"vô hiệu… và đó là ĐÚNG"*). Đo được: `vramDefer` cắt ở **đúng 400** ⇒ với **5/6 hộ**,
+ * `catChuoi(≤400, 400).daCat` **luôn** `false`, trong khi một câu từ chối THẬT **không nối thêm gì**
+ * đã **548** ký tự. ⇒ Hợp đồng ở `VramAgentDisplayText` (*"`true` ⇔ `text` KHÔNG phải toàn bộ
+ * câu"*) **bị chính lời biện hộ ấy phản bội**, và ô `truncated` thành một **hằng số `false`** —
+ * đồng hồ không kim đúng chỗ nó vừa được lắp vào.
+ * ⇒ `nguon` là **sự thật của chỗ cắt ở tầng dưới** (`vramDefer.VramDeferRefusalText`). Hai lượt
+ * cắt **cộng lại** thành một lời khai: `truncated` là **HOẶC** của hai, `rawLength` là độ dài
+ * **NGUYÊN BẢN** — không phải độ dài của mảnh vừa tới tay.
+ * ⚠ Không có `nguon` ⇒ chuỗi đến đây là **nguyên bản** (đường `vramWiring.lastReason`,
+ * `kbSyncScheduler.note.message` — cả hai **không có trần**), và khi ấy `tho.length` **là** độ dài gốc.
  */
-function cauHienThi(tho: string | null | undefined): VramAgentDisplayText | null {
+function cauHienThi(
+  tho: string | null | undefined,
+  nguon?: { readonly daCat: boolean; readonly doDaiGoc: number },
+): VramAgentDisplayText | null {
   if (tho === null || tho === undefined) return null;
   const { cau, daCat } = catChuoi(tho, CAU_HIEN_THI_TOI_DA);
-  return { text: cau, truncated: daCat, rawLength: tho.length };
+  return {
+    text: cau,
+    truncated: daCat || (nguon?.daCat ?? false),
+    rawLength: nguon?.doDaiGoc ?? tho.length,
+  };
 }
 
 /**
@@ -388,7 +405,16 @@ export type VramAgentDeferRetryReach =
        * **không tồn tại** như một owner) ⇒ lệnh trả `unknown-background-host`.
        * ⇒ Ô này là **chính chuỗi** mà `vram.retryDeferred` nhận, và bất biến *"nó phân giải NGƯỢC
        * về đúng hộ này"* có lưới (`vramReadModel.surface.test.ts`). Lời hứa và đầu vào của lời hứa
-       * **đi cùng một nhánh**: không có cách nào đọc được một danh tính từ một hộ không với tới.
+       * **đi cùng một nhánh**: ô `owner` **chỉ tồn tại** ở nhánh `reachable-here`.
+       *
+       * ⚠⚠ **ĐÍNH CHÍNH (I-1, review) — ĐỪNG ĐỌC CÂU TRÊN THÀNH MỘT ĐIỀU MẠNH HƠN SỰ THẬT.** Bản
+       * đầu của khối này viết *"không có cách nào đọc được một danh tính từ một hộ không với tới"*
+       * — **SAI**. Trên **cùng một đối tượng** còn `h.host` (một `string` trần, có ở **mọi** nhánh)
+       * và `h.ownerPattern.patternText`; `input` của lệnh là `z.string()` nên **cả hai đều biên
+       * dịch sạch**. Kiểu chỉ chặn được việc truyền **giá trị `ownerPattern`**. Thứ chặn hai đường
+       * còn lại là một **LƯỚI AST** trên chính điểm gọi của panel
+       * (`client/src/lib/vramCommandReach.unit.test.ts` — *"`owner` PHẢI LÀ `….retryReach.owner`"*),
+       * **không** phải hệ kiểu. Chặn bằng kiểu đòi brand `input` của lệnh — nợ đã khai.
        */
       readonly owner: string;
     }
@@ -721,9 +747,12 @@ function trangThaiTuOVramDefer(s: VramDeferState): VramAgentDeferStatus {
     owner: s.owner,
     attempts: s.attempts,
     firstRefusedAt: s.firstRefusedAt,
-    // ★ N11 — CÂU CHỮ ⇒ đi qua cửa cắt-và-khai. (`vramDefer` đã cắt ở 400 ⇒ ở đây thường vô hiệu;
-    //   nguồn kia — `kbSyncScheduler` `note.message` — thì KHÔNG có trần, và đó là lý do có cửa này.)
-    lastRefusalMessage: cauHienThi(s.lastRefusalMessage),
+    /**
+     * ★★★ N11 + I-3 — CÂU CHỮ ⇒ cửa cắt-và-khai, **CỘNG sự thật của lượt cắt ở tầng dưới**.
+     * `vramDefer` cắt ở đúng 400 và **mang cờ theo**; không cộng nó vào thì `truncated` ở đây là
+     * một hằng số `false` cho **cả 5 hộ** đi qua `vramDefer` (I-3).
+     */
+    lastRefusalMessage: cauHienThi(s.lastRefusal.cau, s.lastRefusal),
     // ★ M-7 — ngân sách CHỐT LÚC BỊ TỪ CHỐI, thứ điều khiển hạn chót đang chạy.
     chainBudgetMs: s.budgetMs,
   } as const;
@@ -814,6 +843,15 @@ function docSauHo(kb: KbSyncStatus | null): VramAgentDeferHostView[] {
        * lệnh sẽ đánh thức), nếu không thì **danh tính TĨNH đã khai của hàng**. Tuyệt đối **không**
        * phải `host` — tên hộ chỉ tình cờ trùng owner ở 4/6 hàng, và trùng thì càng nguy hiểm vì nó
        * làm phát biểu sai **chạy đúng** ở những hàng người ta thử trước.
+       *
+       * ⚠⚠ **M-2 (review) — HAI NHÁNH DƯỚI ĐÂY CHỨNG MINH ĐƯỢC LÀ BẰNG NHAU HÔM NAY; ĐỪNG ĐỌC
+       * `status.owner` NHƯ MỘT NGUỒN ĐỘC LẬP.** Chuỗi lập luận: phép phân giải cho một hàng
+       * `matches === null` **là** `h.host === owner` ⇒ tập chuỗi phân giải ngược về hàng ấy là
+       * **một điểm** `{h.host}`; ca *"DANH TÍNH TĨNH phân giải NGƯỢC"* ép `ownerStatic` nằm trong
+       * tập ấy ⇒ **`ownerStatic ≡ host`**; và `status.owner` của nhánh `cron:kb-sync` được dựng
+       * **từ chính** `h.ownerStatic` ngay dưới đây. ⇒ Ba biểu thức bằng nhau, **bị lưới cưỡng chế**,
+       * không phải một trùng hợp. Nhánh `status.owner` là **dự phòng cho hàng TƯƠNG LAI** có
+       * `owner` động + hẹn giờ riêng — nói ra để người sau không tưởng nó đang đo một thứ khác.
        */
       const danhTinh =
         status.kind === "deferring" || status.kind === "exceeded" ? status.owner : h.ownerStatic;

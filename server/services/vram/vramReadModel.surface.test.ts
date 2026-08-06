@@ -62,10 +62,19 @@ vi.mock("../kbSyncScheduler", () => ({
   getKbSyncSchedulerStatus: () => O.kb,
 }));
 
-import { buildVramAgentState, vramBackgroundHostForOwner, VRAM_BACKGROUND_STATIC_OWNERS } from "./vramReadModel";
+import {
+  buildVramAgentState,
+  vramBackgroundHostForOwner,
+  VRAM_BACKGROUND_STATIC_OWNERS,
+  type VramAgentDisplayText,
+} from "./vramReadModel";
 import * as broker from "./vramBroker";
 import { __resetDecisionTickForTests } from "./vramTickCell";
-import { __resetSharedLedgerForTests } from "./vramSharedLedger";
+import {
+  __resetSharedLedgerForTests,
+  __setSharedLedgerSelfKeyForTests,
+  publishSharedLedgerReplica,
+} from "./vramSharedLedger";
 import { __resetVramDeferForTests, xinVramCoHoan } from "./vramDefer";
 import { beginVramAllocation, __resetVramBeginFailureState } from "./vramWiring";
 import { buildVramRefusal, VramRefusedError } from "./vramRefusal";
@@ -90,8 +99,12 @@ function reserveThat(owner: string) {
   );
 }
 
-/** Một lượt hoãn THẬT qua mã sản xuất (ngân sách 0 ⇒ quá đáy ngay lượt từ chối đầu tiên). */
-async function hoanThat(owner: string, cauTuChoi: string) {
+/**
+ * Một lượt hoãn THẬT qua mã sản xuất (ngân sách 0 ⇒ quá đáy ngay lượt từ chối đầu tiên).
+ * Trả về **độ dài THÔ** của câu từ chối — để ca dưới so với `rawLength` mà mặt đọc khai, thay vì
+ * ghim một con số chép tay (con số ấy đổi theo câu chữ của `buildVramRefusal`).
+ */
+async function hoanThat(owner: string, cauTuChoi = "") {
   const facts = buildVramRefusal({
     requestedBytes: 1_000 * MIB,
     owner,
@@ -107,6 +120,7 @@ async function hoanThat(owner: string, cauTuChoi: string) {
     unledgered: { bytes: 0, unknownCount: 0 },
     slotsNeeded: 0,
   });
+  let doDaiTho = -1;
   await expect(
     xinVramCoHoan({
       owner,
@@ -115,12 +129,15 @@ async function hoanThat(owner: string, cauTuChoi: string) {
       budgetMs: 0,
       xin: async () => {
         const e = new VramRefusedError(facts);
-        // ⚠ Câu từ chối THẬT do người dựng của sản xuất sinh ra; chỉ NỐI thêm phần dài để đo phép cắt.
+        // ⚠ Câu từ chối THẬT do người dựng của sản xuất sinh ra; phần nối thêm (nếu có) chỉ để
+        //   đẩy độ dài lên — ca I-3 dưới đây chạy với `cauTuChoi = ""`, tức câu THẬT không thêm gì.
         e.message = `${e.message}${cauTuChoi}`;
+        doDaiTho = e.message.length;
         throw e;
       },
     }),
   ).rejects.toThrow();
+  return doDaiTho;
 }
 
 /** Một lượt `beginVramAllocation()` HỎNG THẬT ⇒ ghi `unledgered.lastReason` (không trần ở nguồn). */
@@ -236,6 +253,168 @@ describe("★★ N11 — chiều KHÔNG BẮT NHẦM: câu ngắn ra nguyên vă
   it("★ KHÔNG có câu nào ⇒ `null` (một phạm trù RIÊNG, không phải một câu rỗng đã cắt)", async () => {
     const s = await buildVramAgentState();
     expect(s.unledgered.lastReason).toBeNull();
+  });
+
+  /**
+   * ★★★ I-3 (review) — **CA THỨ TƯ, VÀ NÓ ĐI TRÊN NGUỒN *CÓ TRẦN Ở TẦNG DƯỚI*.**
+   *
+   * Ba ca trên đều đi `unledgered.lastReason` — nguồn **KHÔNG** có trần. Đường **mặc định của 5/6
+   * hộ** thì ngược lại: `vramDefer.catCau()` cắt ở **đúng 400** = **đúng trần của mặt đọc** ⇒ nếu
+   * mặt đọc chỉ khai lượt cắt **của chính nó** thì `truncated` là một **HẰNG SỐ `false`** — không
+   * đầu vào nào bật được. Ca này chạy với một câu từ chối **THẬT, KHÔNG nối thêm một ký tự nào**.
+   */
+  it("★★★ I-3 — nguồn CÓ TRẦN Ở TẦNG DƯỚI: câu THẬT (không nối gì) vượt trần ⇒ `truncated === true`", async () => {
+    const doDaiTho = await hoanThat("cuda-backend:reranker");
+    expect(doDaiTho, "câu từ chối THẬT phải dài hơn trần — nếu không, ca này không đo gì").toBeGreaterThan(TRAN);
+
+    const s = await buildVramAgentState();
+    const ho = s.defer.hosts.find((h) => h.host === "reranker")!;
+    if (ho.status.kind !== "exceeded") throw new Error("phải là exceeded");
+    const cau = ho.status.lastRefusalMessage!;
+    expect(cau.text.length).toBe(TRAN);
+    expect(cau.truncated, "148 ký tự đã mất ở vramDefer ⇒ khai `false` là NÓI DỐI").toBe(true);
+    // ⚠ Độ dài GỐC = độ dài trước **lượt cắt ĐẦU TIÊN**, không phải độ dài mảnh vừa tới tay.
+    expect(cau.rawLength).toBe(doDaiTho);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// §D — LƯỢNG TỪ: hai luật "VỚI MỌI", vì năm ca trên đều là khẳng định TRÊN MỘT THỂ HIỆN
+//
+// ⚠⚠⚠ (A) của review: *"không tồn tại luật 'với mọi ô VramAgentDisplayText trong ảnh chụp'"* — và
+// đó chính là kẽ mà ca thứ tư (nguồn có trần ở tầng dưới) chui qua: payload hỏng **nằm sẵn trong
+// fixture §A** mà không ca nào nhìn tới. Hai luật dưới đây phát biểu ở chiều **PHẢI-LÀ** và quét
+// **toàn bộ** ảnh chụp, nên một ô hiển thị **thứ N+1** thêm vào sáu tháng nữa cũng bị hỏi.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Mọi chuỗi trong payload, kèm ĐƯỜNG DẪN — cùng khuôn đường dẫn mà `locHuuHan()` dựng. */
+function quetChuoi(v: unknown, duong: string, ra: { duong: string; gia: string }[]): void {
+  if (typeof v === "string") {
+    ra.push({ duong, gia: v });
+    return;
+  }
+  if (Array.isArray(v)) {
+    v.forEach((x, i) => quetChuoi(x, `${duong}[${i}]`, ra));
+    return;
+  }
+  if (v !== null && typeof v === "object") {
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+      quetChuoi(x, duong === "" ? k : `${duong}.${k}`, ra);
+    }
+  }
+}
+
+/** Mọi ô `VramAgentDisplayText` trong payload (nhận theo HÌNH DẠNG, không theo một danh sách tên). */
+function quetODisplay(v: unknown, duong: string, ra: { duong: string; o: VramAgentDisplayText }[]): void {
+  if (Array.isArray(v)) {
+    v.forEach((x, i) => quetODisplay(x, `${duong}[${i}]`, ra));
+    return;
+  }
+  if (v !== null && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if (typeof o.text === "string" && typeof o.truncated === "boolean" && typeof o.rawLength === "number") {
+      ra.push({ duong, o: o as unknown as VramAgentDisplayText });
+    }
+    for (const [k, x] of Object.entries(o)) quetODisplay(x, duong === "" ? k : `${duong}.${k}`, ra);
+  }
+}
+
+/**
+ * ★★★ TẬP ĐƯỜNG DẪN **DANH TÍNH** — bản khai DUY NHẤT, và nó **hỏng theo chiều ĐỎ**: một ô mới
+ * mang chuỗi dài mà không nằm trong danh sách này ⇒ ca đỏ ⇒ có người phải phân loại nó là DANH
+ * TÍNH (thêm vào đây) hay HIỂN THỊ (bọc `VramAgentDisplayText`). Đó là chỗ *"phần tử thứ N+1"*
+ * được ép phải khai, thay vì lọt im lặng.
+ */
+const DUONG_DANH_TINH: readonly RegExp[] = [
+  /^processKey$/,
+  /^ledger\.localHolders\[\d+\]\.(owner|processKey|leaseKey)$/,
+  /^ledger\.foreign\.holders\[\d+\]\.(owner|processKey|leaseKey)$/,
+  /^defer\.observedFromProcessKey$/,
+  /^defer\.hosts\[\d+\]\.status\.owner$/,
+  /^defer\.hosts\[\d+\]\.retryReach\.owner$/,
+];
+
+describe("★★★ §D — HAI LUẬT 'VỚI MỌI' trên toàn ảnh chụp (không phải khẳng định trên một thể hiện)", () => {
+  /** Ảnh chụp GIÀU: cả năm ô danh tính đều DÀI HƠN TRẦN, và cả hai nguồn câu chữ đều có mặt. */
+  async function anhChupGiau() {
+    __setSharedLedgerSelfKeyForTests(`api:${"7".repeat(500)}:1`);
+    O.lyDoUocLuong = `ước lượng hỏng: ${"chi tiết rất dài — ".repeat(60)}hết`;
+    reserveThat(OWNER_DAI);
+    publishSharedLedgerReplica(
+      [
+        {
+          leaseKey: `worker:9:1#${"L".repeat(500)}`,
+          processKey: `worker:${"9".repeat(500)}:1`,
+          pid: 9,
+          role: "worker",
+          leaseId: "L".repeat(500),
+          owner: `gguf:${"M".repeat(500)}`,
+          leaseKind: "gguf-model",
+          priority: "background",
+          bytes: 17_000 * MIB,
+          measured: true,
+          refCount: 0,
+          reclaimer: "gguf-idle-model",
+          acquiredAtMs: 1,
+          updatedAtMs: 1,
+        },
+      ],
+      Date.now(),
+      `api:${"7".repeat(500)}:1`,
+    );
+    // Câu từ chối THẬT (đã bị `vramDefer` cắt ở 400) + một `owner` ĐỘNG dài hơn trần.
+    await hoanThat(OWNER_HOAN_DAI);
+    await beginHongThat();
+    return buildVramAgentState();
+  }
+
+  it("★★★ VỚI MỌI ô hiển thị: cắt đúng trần, và cờ NÓI ĐÚNG (`truncated ⇔ rawLength > text.length`)", async () => {
+    const s = await anhChupGiau();
+    const o: { duong: string; o: VramAgentDisplayText }[] = [];
+    quetODisplay(s, "", o);
+    // Lưới của lưới: quét rỗng thì mọi khẳng định dưới đây vô nghĩa.
+    expect(o.length, "không thấy ô hiển thị nào ⇒ chính lưới này đã mù").toBeGreaterThanOrEqual(2);
+    for (const { duong, o: x } of o) {
+      expect(x.text.length, `${duong}: vượt trần`).toBeLessThanOrEqual(TRAN);
+      expect(x.rawLength, `${duong}: rawLength < text.length là vô nghĩa`).toBeGreaterThanOrEqual(x.text.length);
+      expect(x.truncated, `${duong}: cờ PHẢI khớp sự thật (mất chữ ⇔ khai đã cắt)`).toBe(
+        x.rawLength > x.text.length,
+      );
+    }
+    // ⚠ Và ít nhất MỘT ô phải thật sự bị cắt — nếu không, luật trên xanh vì không có gì để cắt.
+    expect(o.some((x) => x.o.truncated), "fixture phải chứa ít nhất một ô ĐÃ CẮT").toBe(true);
+  });
+
+  it("★★★ VỚI MỌI chuỗi dài hơn trần: đường dẫn của nó PHẢI nằm trong tập DANH TÍNH đã khai", async () => {
+    const s = await anhChupGiau();
+    const ch: { duong: string; gia: string }[] = [];
+    quetChuoi(s, "", ch);
+    const dai = ch.filter((x) => x.gia.length > TRAN);
+    /**
+     * ⚠ Lưới của lưới, và nó đóng luôn **M-6**: fixture phải chạm **cả năm** ô danh tính
+     * (`owner` · `status.owner` · `retryReach`-family · `processKey` · `leaseKey`), nếu không thì
+     * luật "chuỗi dài chỉ được là danh tính" xanh vì **không có chuỗi dài nào**.
+     */
+    expect(dai.length, "không có chuỗi dài nào ⇒ lưới mù").toBeGreaterThanOrEqual(5);
+    const laDanhTinh = (d: string) => DUONG_DANH_TINH.some((re) => re.test(d));
+    const viPham = dai.filter((x) => !laDanhTinh(x.duong)).map((x) => `${x.duong} (${x.gia.length} ký tự)`);
+    expect(
+      viPham,
+      "một chuỗi KHÔNG TRẦN ở một đường dẫn không phải DANH TÍNH = một ô hiển thị chưa qua cửa cắt",
+    ).toEqual([]);
+    // Đối chứng DƯƠNG: đúng những ô danh tính ta chờ đợi thật sự có mặt và thật sự dài.
+    const cham = new Set(dai.map((x) => x.duong.replace(/\[\d+\]/g, "[]")));
+    expect([...cham].sort()).toEqual(
+      [
+        "defer.hosts[].status.owner",
+        "ledger.foreign.holders[].leaseKey",
+        "ledger.foreign.holders[].owner",
+        "ledger.foreign.holders[].processKey",
+        "ledger.localHolders[].owner",
+        "processKey",
+        "defer.observedFromProcessKey",
+      ].sort(),
+    );
   });
 });
 

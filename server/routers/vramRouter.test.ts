@@ -425,8 +425,16 @@ describe("vramRouter.state — trạng thái hoãn của CẢ SÁU hộ `backgro
     // ★ N11 — ô CÂU CHỮ nay là `VramAgentDisplayText` (cắt tại nguồn + KHAI đã cắt), không phải
     //   một `string` trần. Câu vẫn phải mang DANH TÍNH của hộ bị từ chối — đó là thứ người trực đọc.
     expect(ho.status.lastRefusalMessage?.text).toContain("cuda-backend:reranker");
-    // ⚠ và nó KHÔNG bị khai nhầm là đã cắt (câu này ngắn hơn trần 400 rất nhiều).
-    expect(ho.status.lastRefusalMessage?.truncated).toBe(false);
+    /**
+     * ★★★ I-3 (review Task 5) — **CÂU TỪ CHỐI THẬT, KHÔNG NỐI THÊM MỘT KÝ TỰ NÀO, ĐÃ VƯỢT TRẦN.**
+     * `buildVramRefusal()` sinh ~548 ký tự ⇒ `vramDefer.catCau` cắt còn 400. Bản trước của ca này
+     * khẳng định `truncated === false` — và nó **XANH**, vì mặt đọc khai lượt cắt của **riêng nó**
+     * trong khi 148 ký tự đã mất ở tầng dưới. Đây là **đường mặc định của 5/6 hộ**, không phải góc
+     * hiếm: ô `truncated` khi ấy là một **hằng số `false`**.
+     */
+    expect(ho.status.lastRefusalMessage?.truncated, "câu THẬT dài 548 > trần 400 ⇒ PHẢI khai là đã cắt").toBe(true);
+    expect(ho.status.lastRefusalMessage?.text.length).toBe(400);
+    expect(ho.status.lastRefusalMessage!.rawLength, "độ dài GỐC, không phải độ dài mảnh còn lại").toBeGreaterThan(400);
     // ★ M-7 — ngân sách CHỐT LÚC BỊ TỪ CHỐI, không phải cấu hình hiện tại.
     expect(ho.status.chainBudgetMs).toBe(0);
     // ⚠ Và `mechanism` vẫn nói đúng bản chất của hộ — hai ô KHÔNG gộp.

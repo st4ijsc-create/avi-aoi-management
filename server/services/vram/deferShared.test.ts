@@ -318,7 +318,9 @@ describe("§3 — VÒNG ĐỜI MỘT LƯỢT HOÃN (`xinVramCoHoan`)", () => {
     ).rejects.toBe(dai);
     const d = suKien[0]!.detail as Record<string, unknown>;
     expect(String(d.refusalMessage).length).toBe(400);
-    expect(docTrangThaiHoanVram()[0]!.lastRefusalMessage.length).toBe(400);
+    // I-3 (review Task 5): cau da cat nay MANG CO cua chinh no ⇒ khong ai phai do lai bang `length`.
+    expect(docTrangThaiHoanVram()[0]!.lastRefusal.cau.length).toBe(400);
+    expect(docTrangThaiHoanVram()[0]!.lastRefusal.daCat).toBe(true);
   });
 });
 

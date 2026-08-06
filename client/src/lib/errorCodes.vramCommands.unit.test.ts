@@ -866,16 +866,34 @@ describe("cổng (ii) — mỗi hàm `translateVram*` có ≥1 CALL-SITE SẢN P
   /** `grep -v "client/src/lib/errorCodes.ts"` — nơi ĐỊNH NGHĨA, không phải người tiêu thụ. */
   const EXCLUDED = new Set([join(TEST_FILE_DIR, "errorCodes.ts")]);
 
-  const TAM_HAM = [
-    "translateVramPreemptCommand",
-    "translateVramReleaseStaleCommand",
-    "translateVramRetryDeferredCommand",
-    "translateVramScope",
-    "translateVramHostedHere",
-    "translateVramHolderListIsLowerBound",
-    "translateVramEstimateUsable",
-    "translateVramNonFiniteFields",
-  ] as const;
+  /**
+   * ★★★ I-4 (review Task 5) — **TẬP HÀM PHẢI ĐƯỢC SUY RA, KHÔNG ĐƯỢC LIỆT KÊ.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ Bản trước là một mảng **CỨNG TÁM TÊN** (`TAM_HAM`). Task 5 thêm hàm dịch **thứ CHÍN**
+   * (`translateVramTruncatedNotice` — câu khai *"đã cắt tại nguồn"*) và **không** cập nhật mảng ⇒
+   * hàm mới nằm **NGOÀI** cổng. Đo được ở review: chú-thích-hoá lời gọi **duy nhất** của nó
+   * (`VramBrokerPanel.tsx:292`) ⇒ **120/120 XANH**, `tsc` cũng xanh (`noUnusedLocals` tắt), và
+   * `VramBrokerPanel.tsx` **không có file test nào**.
+   * ⇒ *"Cái gì LIỆT KÊ thì luôn có phần tử thứ N+1"* — ở đây phần tử ấy do **chính lượt vá** đẻ ra.
+   *
+   * ⇒ Nay tập hàm **suy từ export THẬT** của `errorCodes.ts` bằng AST: thêm một
+   * `export function translateVram…` là **tự động** vào cổng, không ai phải nhớ.
+   * ⚠ Đọc `sf.statements` (khai báo TOP-LEVEL) + cờ `Export` — không regex trên văn bản, để một
+   * khai báo bị comment ra **không** được tính là "đã có hàm".
+   */
+  function hamTranslateVram(): string[] {
+    const file = join(TEST_FILE_DIR, "errorCodes.ts");
+    const sf = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const ra: string[] = [];
+    for (const st of sf.statements) {
+      if (!ts.isFunctionDeclaration(st) || st.name === undefined) continue;
+      const xuat = (ts.getCombinedModifierFlags(st) & ts.ModifierFlags.Export) !== 0;
+      if (xuat && /^translateVram/.test(st.name.text)) ra.push(st.name.text);
+    }
+    return ra.sort();
+  }
+  const CAC_HAM = hamTranslateVram();
 
   function walkClientFiles(dir: string, out: string[] = []): string[] {
     for (const name of readdirSync(dir)) {
@@ -923,18 +941,25 @@ describe("cổng (ii) — mỗi hàm `translateVram*` có ≥1 CALL-SITE SẢN P
     return n;
   }
 
-  it("★★★ cả 8/8 hàm có LỜI GỌI THẬT trên AST (chú thích không phải node ⇒ không lách được)", () => {
+  it("★★ (lưới cho chính lưới) tập hàm SUY RA phải không rỗng và phải chứa hàm dịch MỚI NHẤT", () => {
+    // Rỗng ⇒ ca dưới xanh mà không kiểm gì. Và ghim rằng phép suy THẬT SỰ thấy hàm thứ chín.
+    expect(CAC_HAM.length).toBeGreaterThanOrEqual(9);
+    expect(CAC_HAM).toContain("translateVramTruncatedNotice");
+  });
+
+  it("★★★ MỌI hàm `translateVram*` (suy từ export THẬT) có LỜI GỌI sản phẩm trên AST — I-4", () => {
     const files = walkClientFiles(CLIENT_SRC);
     const thieu: string[] = [];
     const thay: Record<string, string[]> = {};
-    for (const ten of TAM_HAM) {
+    for (const ten of CAC_HAM) {
       const hits = files.filter((f) => demLoiGoiTrongAst(f, ten) > 0).map((f) => f.replace(CLIENT_SRC, ""));
       thay[ten] = hits;
       if (hits.length === 0) thieu.push(ten);
     }
     if (thieu.length > 0) {
       console.error(
-        `[cổng (ii)] ${thieu.length}/8 hàm dịch KHÔNG có LỜI GỌI sản phẩm — chúng là đồng hồ không kim: ` +
+        `[cổng (ii)] ${thieu.length}/${CAC_HAM.length} hàm dịch KHÔNG có LỜI GỌI sản phẩm — ` +
+          `chúng là đồng hồ không kim: ` +
           thieu.join(", ") +
           ` (đã tìm thấy: ${JSON.stringify(thay)})`,
       );

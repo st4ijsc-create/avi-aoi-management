@@ -208,3 +208,96 @@ describe("N-5 — `disabled` của NÚT thử lại PHẢI LÀ lời gọi `vram
   });
 });
 
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ I-1 (review Task 5) — **ĐỐI SỐ `owner` CỦA `retryDeferred.mutate` PHẢI LÀ MỘT DANH TÍNH DO
+// MẶT ĐỌC PHÁT RA, KHÔNG PHẢI MỘT CHUỖI NÀO ĐÓ TRÊN CÙNG ĐỐI TƯỢNG.**
+//
+// ⚠⚠⚠ VÌ SAO KHÔNG ĐÓNG ĐƯỢC BẰNG KIỂU (đo được ở review):
+//   `mutate({ owner: h.ownerPattern })`            ⇒ tsc TS2322  ✅ (đổi kiểu Task 5 chặn)
+//   `mutate({ owner: h.ownerPattern.patternText })` ⇒ tsc 0 lỗi  ❌
+//   `mutate({ owner: h.host })`                     ⇒ tsc 0 lỗi  ❌  ← **ĐÚNG ĐƯỜNG ĐÃ ĐI THẬT**
+// `input` của `vram.retryDeferred` là `z.string()` ⇒ **mọi** `string` lọt. Đổi kiểu chặn được cái
+// chưa ai viết, KHÔNG chặn được cái người ta **đã** viết. Chặn đầu vào bằng brand (`z.custom<…>`)
+// thì đổi kiểu `input` ở **hàng chục** điểm gọi (gồm bộ test của ba router) — nợ đã khai.
+//
+// ⇒ Ở đây dùng **đúng bộ máy AST của lưới `disabled`** (cùng file, ngay trên): neo vào **CÁI NÚT**,
+// và phát biểu ở chiều **PHẢI-LÀ** — *"`owner` PHẢI LÀ `….retryReach.owner`"* — chứ không liệt kê
+// những thứ bị cấm. Mọi hình dạng khác (`h.host`, `patternText`, hằng, biến trung gian) **đều** rơi.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+describe("★★★ I-1 — `owner` gửi cho `vram.retryDeferred` PHẢI LÀ `retryReach.owner` (neo AST)", () => {
+  const HERE = fileURLToPath(new URL(".", import.meta.url));
+  const PANEL = join(HERE, "..", "components", "ai", "VramBrokerPanel.tsx");
+
+  function ast(nguon?: string): ts.SourceFile {
+    return ts.createSourceFile(PANEL, nguon ?? readFileSync(PANEL, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  }
+
+  /** Mọi biểu thức được truyền làm `owner` cho một lời gọi `<gì đó>.retryDeferred.mutate(...)`. */
+  function doiSoOwner(sf: ts.SourceFile): ts.Expression[] {
+    const ra: ts.Expression[] = [];
+    /** `retryDeferred.mutate(...)` — đúng cái tên hook mà panel đặt cho mutation của lệnh này. */
+    const laMutateCuaRetryDeferred = (e: ts.Expression): boolean =>
+      ts.isPropertyAccessExpression(e) &&
+      e.name.text === "mutate" &&
+      ts.isIdentifier(e.expression) &&
+      e.expression.text === "retryDeferred";
+    const di = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && laMutateCuaRetryDeferred(n.expression)) {
+        for (const a of n.arguments) {
+          if (!ts.isObjectLiteralExpression(a)) continue;
+          for (const p of a.properties) {
+            if (ts.isPropertyAssignment(p) && !ts.isComputedPropertyName(p.name) && p.name.getText(sf) === "owner") {
+              ra.push(p.initializer);
+            }
+          }
+        }
+      }
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+    return ra;
+  }
+
+  /** PHẢI-LÀ: `<bất kỳ>.retryReach.owner`. Không liệt kê cái bị cấm — hỏi cái nó phải là. */
+  function laDanhTinhCuaMatDoc(e: ts.Expression): boolean {
+    return (
+      ts.isPropertyAccessExpression(e) &&
+      e.name.text === "owner" &&
+      ts.isPropertyAccessExpression(e.expression) &&
+      e.expression.name.text === "retryReach"
+    );
+  }
+
+  it("★★★ panel THẬT: có ít nhất một lời gọi, và MỌI `owner` gửi đi đều là `retryReach.owner`", () => {
+    const sf = ast();
+    const args = doiSoOwner(sf);
+    // Lưới của lưới: không tìm thấy lời gọi nào ⇒ ca dưới xanh vì rỗng.
+    expect(args.length, "không thấy `retryDeferred.mutate({ owner })` nào — lưới đang mù").toBeGreaterThanOrEqual(1);
+    for (const a of args) {
+      expect(
+        laDanhTinhCuaMatDoc(a),
+        `\`owner\` PHẢI LÀ \`….retryReach.owner\` (danh tính DO MẶT ĐỌC phát ra ở đúng nhánh ` +
+          `lệnh với tới được), không phải \`${a.getText(sf).slice(0, 60)}\``,
+      ).toBe(true);
+    }
+  });
+
+  it("★★★ (lưới cho chính lưới) BỐN hình dạng — kể cả `h.host`, ĐƯỜNG ĐÃ ĐI THẬT — đều bị bắt", () => {
+    const bienThe: Record<string, string> = {
+      "`h.host` (đường đã đi thật, tsc XANH)": "retryDeferred.mutate({ owner: h.host });",
+      "bóc vỏ `patternText` (tsc XANH)": "retryDeferred.mutate({ owner: h.ownerPattern.patternText });",
+      "hằng chuỗi": 'retryDeferred.mutate({ owner: "cron:kb-sync" });',
+      "biến trung gian": "const o = h.host; retryDeferred.mutate({ owner: o });",
+    };
+    for (const [ten, nguon] of Object.entries(bienThe)) {
+      const sf = ast(nguon);
+      const args = doiSoOwner(sf);
+      expect(args.length, `${ten}: phải tìm thấy lời gọi`).toBe(1);
+      expect(laDanhTinhCuaMatDoc(args[0]!), `${ten} PHẢI bị bắt`).toBe(false);
+    }
+    // Hình dạng ĐÚNG lọt qua — đối chứng DƯƠNG (không phải một lưới "cấm tất").
+    const dung = ast("retryDeferred.mutate({ owner: h.retryReach.owner });");
+    expect(laDanhTinhCuaMatDoc(doiSoOwner(dung)[0]!)).toBe(true);
+  });
+});

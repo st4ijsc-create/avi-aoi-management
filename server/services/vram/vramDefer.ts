@@ -61,6 +61,8 @@
  */
 import { isVramRefusal } from "./vramRefusalSignal";
 import type { VramLeaseKind, VramPriority } from "./types";
+/** ★ I-3 — **phép cắt DUY NHẤT của repo**; đừng viết `.slice()` thứ hai ở file này. */
+import { catChuoi } from "@shared/textSafety";
 
 /** §5.4 — thử lại sau **15 phút**, nhân đôi, trần **60 phút**. Cùng con số với `kbSyncScheduler`. */
 export const VRAM_DEFER_FIRST_DELAY_MS = 15 * 60 * 1000;
@@ -200,8 +202,23 @@ export interface VramDeferState {
   readonly nextRetryAt: string | null;
   readonly exceeded: boolean;
   readonly budgetMs: number;
-  /** Câu từ chối gần nhất — CẮT còn 400 ký tự (cột chuỗi + `jsonb`, ràng buộc 9/M-1). */
-  readonly lastRefusalMessage: string;
+  /**
+   * ★★★ Pha 5 Task 5 (I-3, review) — **CÂU ĐÃ CẮT, VÀ CỜ ĐI CÙNG CÂU.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ VÌ SAO KHÔNG CÒN LÀ MỘT `string`
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * Bản trước là `lastRefusalMessage: string`, cắt bằng `.slice(0, 400)` **thô** rồi **vứt cờ**.
+   * Hậu quả đo được ở review: một câu từ chối **THẬT, không nối thêm một ký tự nào**, đã **548**
+   * ký tự ⇒ mặt đọc (`vramReadModel`) khai `{text: 400, truncated: false, rawLength: 400}` —
+   * **HAI phát biểu sai** trên **đường mặc định của 5/6 hộ**. Và vì `catCau` cắt đúng bằng trần
+   * của mặt đọc, ô `truncated` ở đó là một **HẰNG SỐ `false`**: một cờ **không đầu vào nào bật
+   * được** là một **đồng hồ không kim**.
+   * ⇒ Người **duy nhất** biết câu có bị cắt hay không là **chỗ cắt**. Nên cờ (và độ dài GỐC) sinh
+   * ra **tại đây** và đi **trong cùng một giá trị** với câu — không tách rời được, và không ai
+   * phải đo lại bằng `length === 400` (bản sao vị từ, và bản sao ấy **SAI** ở biên).
+   */
+  readonly lastRefusal: VramDeferRefusalText;
 }
 
 /**
@@ -242,9 +259,30 @@ function isoOrNull(ms: number): string | null {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
 }
 
+/**
+ * ★ I-3 — CÂU TỪ CHỐI ĐÃ CẮT + **CỜ** + **ĐỘ DÀI GỐC**, cả ba sinh ở **một chỗ**: chỗ cắt.
+ * ⚠ Đây KHÔNG phải một kiểu "cho đẹp": nó là điều kiện để mặt đọc khai đúng
+ * (`vramReadModel.cauHienThi`), vì sau lượt cắt thì **không ai** dựng lại được sự thật ấy nữa.
+ */
+export interface VramDeferRefusalText {
+  readonly cau: string;
+  /** `true` ⇔ `cau` **KHÔNG** phải toàn bộ câu. */
+  readonly daCat: boolean;
+  /** Độ dài **trước** khi cắt. `daCat === false ⇒ doDaiGoc === cau.length`. */
+  readonly doDaiGoc: number;
+}
+
 /** ⚠ Cột chuỗi + `detail` `jsonb`: một câu dài vô hạn là một lô sự kiện mất. Cắt tại nguồn. */
-function catCau(v: unknown): string {
-  return String((v as { message?: unknown } | null)?.message ?? v ?? "").slice(0, 400);
+const CAU_TOI_DA = 400;
+
+/**
+ * ⚠ **MỘT phép cắt duy nhất của repo** (`catChuoi` ở `@shared/textSafety`) — bản trước dùng
+ * `.slice()` tay ở đây, tức một bản cài thứ hai **không mang cờ**.
+ */
+function catCau(v: unknown): VramDeferRefusalText {
+  const tho = String((v as { message?: unknown } | null)?.message ?? v ?? "");
+  const { cau, daCat } = catChuoi(tho, CAU_TOI_DA);
+  return { cau, daCat, doDaiGoc: tho.length };
 }
 
 /** ⚠ Ràng buộc 9 — không giá trị không hữu hạn nào vào ống dẫn sự kiện. */
@@ -335,7 +373,7 @@ export async function xinVramCoHoan<T>(opts: XinVramCoHoanTuyChon<T>): Promise<T
         budgetMs: soHuuHan(ke.budgetMs),
         firstRefusedAt: isoOrNull(batDau),
         deadlineAt: isoOrNull(batDau + budgetMs),
-        refusalMessage: catCau(err),
+        refusalMessage: catCau(err).cau,
       };
 
       if (ke.kind === "exceeded") {
@@ -346,7 +384,7 @@ export async function xinVramCoHoan<T>(opts: XinVramCoHoanTuyChon<T>): Promise<T
           nextRetryAt: null,
           exceeded: true,
           budgetMs: soHuuHan(budgetMs),
-          lastRefusalMessage: catCau(err),
+          lastRefusal: catCau(err),
         });
         catBotOTrangThai();
         await ghiSuKienHoan("defer_exceeded", owner, leaseKind, priority, {
@@ -357,7 +395,7 @@ export async function xinVramCoHoan<T>(opts: XinVramCoHoanTuyChon<T>): Promise<T
           `[vramDefer] ★ QUÁ ĐÁY HOÃN cho "${owner}" (mức ${priority}) — đã hoãn ${luot} lượt trong ` +
             `${Math.round(soHuuHan(ke.elapsedMs) / 1000)} s, ngân sách ${Math.round(soHuuHan(budgetMs) / 1000)} s. ` +
             `Lời từ chối được NÉM LẠI cho người gọi (cưỡng chế KHÔNG bị tắt ở đây). ` +
-            `Câu từ chối gần nhất: ${catCau(err)}`,
+            `Câu từ chối gần nhất: ${catCau(err).cau}`,
         );
         throw err;
       }
@@ -370,7 +408,7 @@ export async function xinVramCoHoan<T>(opts: XinVramCoHoanTuyChon<T>): Promise<T
         nextRetryAt: isoOrNull(ke.retryAt),
         exceeded: false,
         budgetMs: soHuuHan(budgetMs),
-        lastRefusalMessage: catCau(err),
+        lastRefusal: catCau(err),
       });
       catBotOTrangThai();
       await ghiSuKienHoan("defer", owner, leaseKind, priority, {
@@ -381,7 +419,7 @@ export async function xinVramCoHoan<T>(opts: XinVramCoHoanTuyChon<T>): Promise<T
       console.warn(
         `[vramDefer] HOÃN "${owner}" (mức ${priority}) lượt ${luot}: cổng sổ từ chối, thử lại sau ` +
           `${Math.round(ke.delayMs / 1000)} s (đáy ${Math.round(soHuuHan(budgetMs) / 1000)} s). ` +
-          `Việc này KHÔNG hỏng — nó chỉ chưa tới lượt. ${catCau(err)}`,
+          `Việc này KHÔNG hỏng — nó chỉ chưa tới lượt. ${catCau(err).cau}`,
       );
       await ngu(ke.delayMs);
     }

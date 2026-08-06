@@ -352,7 +352,17 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
             : cum(lang, "statusUnobservable", { meaning: C(h.status.meaning) });
     const voiToi =
       h.retryReach.kind === "reachable-here"
-        ? cum(lang, "retryReachable", { owner: C(h.retryReach.owner) })
+        ? /**
+           * ⚠⚠ **M-4 (review Task 5) — ĐÂY LÀ MỘT MỆNH LỆNH, DỰNG TỪ MỘT BẢN SAO ĐÃ LÀM SẠCH + CẮT.**
+           * Câu `retryReachable` nay bảo Agent *"gọi với owner=…"*, còn `C()` là
+           * `stripChatControlTokens ∘ stripInterpolationSyntax` + cắt ở `O_TOI_DA = 200`. Vô hại
+           * **hôm nay** chỉ vì một bất biến ở nơi khác: `reachable-here ⇒ owner ≡ host` (ngắn,
+           * sạch — xem `vramReadModel.HoTuHenGio`). Nếu một hộ hẹn-giờ-riêng tương lai có `owner`
+           * dài/bẩn thì phép cắt **tự khai** (`truncatedField` nói rõ `data.state` giữ nguyên văn),
+           * nên Agent không nhận một danh tính hỏng **mà không biết** — nhưng nó vẫn phải đọc
+           * `data.state` để lấy bản đúng. Đừng bỏ lời khai ấy đi.
+           */
+          cum(lang, "retryReachable", { owner: C(h.retryReach.owner) })
         : h.retryReach.kind === "unknown"
           ? cum(lang, "retryUnknown", { why: C(h.retryReach.why) })
           : cum(lang, "retryUnreachable", { why: C(h.retryReach.why) });
@@ -480,10 +490,17 @@ export const getVramState: Tool<z.infer<typeof vramStateParams>, VramStateData> 
       title,
       data: {
         /**
-         * ⚠⚠ NGUYÊN VĂN, KHÔNG LÀM SẠCH, KHÔNG CẮT — và đó là **CHỦ Ý** (C-1): đây là mặt **DANH
-         * TÍNH**. `owner`/`leaseKey` ở đây là thứ Agent lấy ra rồi truyền THẲNG vào `vram.preempt` /
-         * `vram.releaseStale`; cắt hay làm sạch ở đây là phá đường nối mặt đọc ↔ mặt lệnh (ràng
-         * buộc 3). Bề mặt **CÂU CHỮ** (`textSummary`, `rows`) mới là nơi luật ngược lại.
+         * ⚠⚠ Mọi ô **DANH TÍNH** ở đây là NGUYÊN VĂN, KHÔNG LÀM SẠCH, KHÔNG CẮT — và đó là **CHỦ Ý**
+         * (C-1): `owner`/`leaseKey`/`processKey`/`retryReach.owner` là thứ Agent lấy ra rồi truyền
+         * THẲNG vào `vram.preempt` / `vram.releaseStale` / `vram.retryDeferred`; cắt hay làm sạch ở
+         * đây là phá đường nối mặt đọc ↔ mặt lệnh (ràng buộc 3). Bề mặt **CÂU CHỮ** (`textSummary`,
+         * `rows`) mới là nơi luật ngược lại.
+         *
+         * ⚠⚠ **M-3 (review Task 5) — CÂU TRÊN KHÔNG CÒN ĐÚNG CHO CẢ ẢNH CHỤP.** Hai ô **CÂU CHỮ**
+         * (`unledgered.lastReason`, `defer.hosts[].status.lastRefusalMessage`) đã bị **cắt TẠI
+         * NGUỒN** ở `vramReadModel` (trần 400) vì chúng là chuỗi lỗi **không trần** và có người đọc
+         * render thẳng. Chúng mang kiểu `VramAgentDisplayText` (`{text, truncated, rawLength}`) —
+         * `truncated: true` nghĩa **bản đầy đủ KHÔNG có ở đây**, đừng hứa với Agent là có.
          */
         state,
         rows: dong.map((line, i) => ({ label: `#${i + 1}`, value: line })),
