@@ -229,6 +229,36 @@ describe("Task 3b — bit VRAM riêng: mở ĐÚNG hai nút VRAM, KHÔNG mở g�
     expect(readAppErrorMeta(e)).toMatchObject({ appCode: "PERMISSION_DENIED", appParams: { action: "canDelete" } });
   });
 
+  /**
+   * ★★★ **TASK 3B THU HẸP — TUYỆT ĐỐI KHÔNG NỚI.** Đổi vế THẨM QUYỀN mà vô tình hạ vế DANH TÍNH thì
+   * bit riêng chỉ là một lượt đánh đổi tồi: `supervisor` với bit VRAM sẽ giết được tiến trình
+   * **không cần OTP tươi**. Trước Task 3b **không lưới nào ở máy chủ** canh mặt này (`git grep
+   * ACTUATION_STEPUP_2FA` trên mọi file test dưới `server/` ⇒ **0 kết quả**) ⇒ đột biến *"gỡ
+   * step-up"* sẽ xanh. Ca này đóng đúng chỗ đó: hạ `deployProcedure` → `actuationProcedure` ⇒ **ĐỎ**.
+   *
+   * ⚠ Cờ bật ⇒ `requireFreshTotp` đòi OTP 6 số **đọc từ raw input**, trước cả zod. Không OTP ⇒
+   * `INVALID_VALUE{field:"twoFactorCode"}` — không chạm DB, tất định.
+   */
+  it("★★★ step-up 2FA CÒN NGUYÊN: supervisor CÓ bit VRAM nhưng KHÔNG có OTP tươi ⇒ hai lệnh phá huỷ vẫn bị chặn", async () => {
+    capQuyen(SUP_ID, [{ module: VRAM_CONTROL_MODULE, canDelete: true, canCreate: true }]);
+    const truoc = process.env.ACTUATION_STEPUP_2FA;
+    process.env.ACTUATION_STEPUP_2FA = "true";
+    try {
+      const e1 = await loiCua(vram().preempt({ owner: "sidecar:vision" }));
+      expect(readAppErrorMeta(e1)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
+      const e2 = await loiCua(vram().releaseStale({ leaseKey: "worker:999:1#lease-7" }));
+      expect(readAppErrorMeta(e2)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
+
+      // ⚠ ĐỐI CHỨNG CHIỀU NGƯỢC: `retryDeferred` KHÔNG phá huỷ ⇒ đứng ở `actuationProcedure`,
+      // **không** đòi OTP tươi. Thiếu ô này thì "chặn hết" cũng là xanh.
+      const rd = await vram().retryDeferred({ owner: "khong-phai-mot-ho-nao" });
+      expect(rd.outcome).toBe("refused");
+    } finally {
+      if (truoc === undefined) delete process.env.ACTUATION_STEPUP_2FA;
+      else process.env.ACTUATION_STEPUP_2FA = truoc;
+    }
+  });
+
   it("`releaseStale` + `retryDeferred` với bit VRAM ⇒ QUA cổng quyền (trả DỮ LIỆU có `reason`, KHÔNG ném)", async () => {
     capQuyen(SUP_ID, [{ module: VRAM_CONTROL_MODULE, canDelete: true, canCreate: true }]);
 
