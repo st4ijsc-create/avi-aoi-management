@@ -38,7 +38,9 @@ Mọi task đều chịu các ràng buộc sau. Vi phạm bất kỳ điều nà
 ```
 npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/routers/vramRouter.test.ts server/routers/vramRouter.commands.test.ts \
-  server/routers/vramRouter.retryDeferred.test.ts client/src/lib/
+  server/routers/vramRouter.retryDeferred.test.ts \
+  server/routers/vramRouter.unledgered.test.ts server/routers/vramRouter.kbSyncDefer.test.ts \
+  server/routers/permissions.machineControl.test.ts client/src/lib/
 NODE_OPTIONS=--max-old-space-size=8192 npm run check
 npm run check:tests
 npm run i18n:check
