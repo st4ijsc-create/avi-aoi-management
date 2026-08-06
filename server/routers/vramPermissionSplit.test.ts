@@ -433,7 +433,14 @@ describe("Task 3b — bit VRAM là bit RIÊNG (bất biến cấu trúc trên to
     expect(noiXuatHien).toEqual(["server/routers/vramRouter.ts"]);
   });
 
-  it("★★★ `vramRouter.ts` KHAI ĐỦ và KHAI ĐÚNG ba cổng của nó — không còn bám `machine_control/canDelete`", () => {
+  /**
+   * ⚠⚠ C-1 (review TOÀN NHÁNH) — **TÊN CŨ CỦA CA NÀY TỰ XƯNG "KHAI ĐÚNG" TRONG KHI NÓ CHỈ KIỂM
+   * "KHAI ĐỦ".** Nó phát biểu trên một **TẬP** chuỗi `module/action`, nên một lượt **hoán vị**
+   * `canDelete` ↔ `canCreate` giữa hai thủ tục giữ nguyên tập ⇒ **XANH**. Ca vẫn giữ lại (nó khoá
+   * đúng thứ nó khoá: không còn bám `machine_control/canDelete`), nhưng trục **ánh xạ** nay có chủ
+   * ở **khối D** — đừng đọc ca này như một lời hứa về cặp (thủ tục → cổng).
+   */
+  it("★★★ `vramRouter.ts` KHAI ĐỦ ba cổng của nó — không còn bám `machine_control/canDelete` (TẬP; ánh xạ xem khối D)", () => {
     const cua = diem
       .filter((d) => d.file === "server/routers/vramRouter.ts")
       .map((d) => `${d.module}/${d.action}`)
@@ -490,6 +497,18 @@ const CONG_DA_RAO = "server/routers/vramRouter.ts";
 
 type ViPhamLenh = { noi: string; vi: string };
 
+/** Gốc TRÁI NHẤT của một chuỗi `a.b(...).c(...)` — tức cái thủ tục được dựng lên từ đó. */
+function gocChuoi(n: ts.Node): string | null {
+  let cur: ts.Node = n;
+  for (;;) {
+    if (ts.isIdentifier(cur)) return cur.text;
+    if (ts.isCallExpression(cur) || ts.isPropertyAccessExpression(cur)) cur = cur.expression;
+    else if (ts.isAsExpression(cur) || ts.isParenthesizedExpression(cur) || ts.isSatisfiesExpression(cur))
+      cur = cur.expression;
+    else return null;
+  }
+}
+
 /**
  * Với MỘT file: mọi tham chiếu tới một hàm lệnh có đứng sau bit `vram_control` không.
  *
@@ -530,18 +549,6 @@ function soiDuongToiLenh(ten: string, ma: string): ViPhamLenh[] {
       if (cua !== null) congCua.set(d.name.text, cua);
     }
   }
-
-  /** Gốc TRÁI NHẤT của một chuỗi `a.b(...).c(...)` — tức cái thủ tục được dựng lên từ đó. */
-  const gocChuoi = (n: ts.Node): string | null => {
-    let cur: ts.Node = n;
-    for (;;) {
-      if (ts.isIdentifier(cur)) return cur.text;
-      if (ts.isCallExpression(cur) || ts.isPropertyAccessExpression(cur)) cur = cur.expression;
-      else if (ts.isAsExpression(cur) || ts.isParenthesizedExpression(cur) || ts.isSatisfiesExpression(cur))
-        cur = cur.expression;
-      else return null;
-    }
-  };
 
   const di = (n: ts.Node): void => {
     if (ts.isIdentifier(n) && (HAM_LENH as readonly string[]).includes(n.text)) {
@@ -658,5 +665,294 @@ describe("Task 3b (I-3) — MỌI đường tới ba HÀM LỆNH đều đứng 
   it("★★ KHÔNG BẮT NHẦM — nhập khẩu trong chính cổng đã rào không bị tính là đường chạy", () => {
     const ma = ['import { vramPreemptCommand } from "../services/vram/vramCommands";', "export const a = 1;"].join("\n");
     expect(soiDuongToiLenh(CONG_DA_RAO, ma)).toEqual([]);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// D. ★★★ C-1 (review TOÀN NHÁNH 2026-08-06) — CANH **ÁNH XẠ**, KHÔNG CANH **TẬP**.
+//
+// ⚠⚠⚠ VÌ SAO KHỐI NÀY TỒN TẠI: MỘT LƯỢT **HOÁN VỊ** HAI BIT LÀ MỘT BẢN VÁ **SHIP ĐƯỢC**.
+// Reviewer dựng đột biến **W1**: đổi `canDelete` ↔ `canCreate` **giữa hai thủ tục**
+// (`vramDestructiveProcedure` ↔ `vramActuationProcedure`). Đo được:
+//   • cổng của kế hoạch (9 đường)         ⇒ **99 file / 1675 ca XANH TOÀN BỘ**
+//   • ca AST "KHAI ĐỦ và KHAI ĐÚNG…" (:436) ⇒ **XANH**
+//   • gương client `vramCommandReach.role.unit.test.ts` ("nguồn ĐỘC LẬP") ⇒ **XANH 100%**
+// Chỉ **hai ca RUNTIME** trong chính file này đỏ — bắt **tình cờ**, không phải vì ai phát biểu
+// bất biến ấy.
+//
+// Lý do cả hai cổng AST cùng mù: chúng rút ra một **TẬP chuỗi `module/action`** rồi so tập.
+// Hoán vị **giữ nguyên tập** ⇒ hai vế bất biến không đổi. Đây đúng lớp lỗi *"luật 'tồn tại' ở chỗ
+// cần 'với mọi'"*: luật đang nói *"∃ một điểm gọi mang cặp này"*, chỗ cần là
+// ***"∀ thủ tục p: (sàn, cổng) của p = cặp kỳ vọng của p"***.
+//
+// ⚠ Hậu quả nếu lọt: `engineer` — vai chủ dự án duyệt cấp `vram_control/canCreate` — có **thẩm
+// quyền máy chủ** chạy `vram.preempt` (giết tiến trình) và `vram.releaseStale` (xoá hàng khỏi sổ
+// chung), trong khi gương client vẫn **xám hai nút** ⇒ **không dấu hiệu nào trên UI**.
+//
+// ⚠ Lượng từ ở đây neo vào **KHOÁ CỦA ROUTER** (`preempt`/`releaseStale`/`retryDeferred`/`state`),
+// KHÔNG vào tên biến thủ tục: đổi tên biến là một lượt dọn dẹp hợp lệ, còn đổi **cái mà `preempt`
+// đứng trên** là một quyết định an ninh. Neo vào tên biến sẽ bắt nhầm lượt đầu và bỏ lọt lượt sau.
+// ⚠ Không phân giải được ⇒ **ĐỎ**, không "bỏ qua im lặng" — và lưới **KHÔNG ép người sau đặt tên**
+// cho sàn: chain thẳng `preempt: deployProcedure.use(requirePermission(…))` vẫn phân giải được
+// (có ca khoá điều đó, để lưới không "chỉ đường tới bản vá sai").
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Hình dạng của MỘT thủ tục: **sàn danh tính** (role-floor/2FA) + **cổng thẩm quyền** (RBAC). */
+type HinhDangThuTuc = { san: string; cong: string };
+
+/**
+ * ★★★ Cặp kỳ vọng cho **từng khoá** của `vramRouter`. Đây là bảng phải đọc khi ai đó hỏi
+ * *"lệnh này đứng trên bit nào"* — và nó là bảng mà `toEqual` cưỡng chế **cả hai chiều**:
+ * thêm một thủ tục mà quên khai ⇒ ĐỎ; đổi cổng của một thủ tục ⇒ ĐỎ; hoán vị hai thủ tục ⇒ ĐỎ.
+ */
+const HINH_DANG_MONG_DOI: Readonly<Record<string, HinhDangThuTuc>> = {
+  // Mặt ĐỌC — **cố ý** ở lại `machine_control/canView` để bằng mức tool `get_vram_state` (N8).
+  state: { san: "protectedProcedure", cong: "machine_control/canView" },
+  // Hai lệnh PHÁ HUỶ — sàn chặt nhất của hệ (`deployProcedure` = role-floor + 2FA + step-up OTP).
+  preempt: { san: "deployProcedure", cong: `${VRAM_CONTROL_MODULE}/canDelete` },
+  releaseStale: { san: "deployProcedure", cong: `${VRAM_CONTROL_MODULE}/canDelete` },
+  // KHÔNG phá huỷ ⇒ actuation, bit `canCreate`. ⚠ Nâng nó lên `deployProcedure` là một hồi quy:
+  // `input` của nó không khai `totpCode` và panel không bọc step-up ⇒ nút bấm mãi không chạy (I-3).
+  retryDeferred: { san: "actuationProcedure", cong: `${VRAM_CONTROL_MODULE}/canCreate` },
+};
+
+/**
+ * Đọc `vramRouter.ts` (hoặc một nguồn tổng hợp) ra **ánh xạ khoá-router → (sàn, cổng)**.
+ *
+ * Tách khỏi đĩa (nhận `ten` + `ma`) để bộ ca tự dựng được đột biến — nếu không thì mọi ca "lưới có
+ * bắt không" đều phải sửa file thật, tức không chạy được trong một lượt `vitest`.
+ */
+function anhXaThuTuc(ten: string, ma: string): { anhXa: Record<string, HinhDangThuTuc>; mu: string[] } {
+  const sf = ts.createSourceFile(ten, ma, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const hang = hangKemNhap(sf, join(GOC, ten));
+
+  const val = (x: ts.Node | undefined): string | null => {
+    if (x === undefined) return null;
+    const v = ts.isExpression(x) ? boVo(x) : x;
+    if (ts.isStringLiteral(v)) return v.text;
+    if (ts.isIdentifier(v)) return hang.get(v.text) ?? null;
+    return null;
+  };
+
+  /** MỌI `requirePermission(M, A)` nằm trong một biểu thức. Nhiều hơn một ⇒ mơ hồ ⇒ ĐỎ. */
+  const congTrong = (n: ts.Node): string[] => {
+    const ra: string[] = [];
+    const di = (x: ts.Node): void => {
+      if (ts.isCallExpression(x) && ts.isIdentifier(x.expression) && x.expression.text === "requirePermission") {
+        ra.push(`${val(x.arguments[0]) ?? "?"}/${val(x.arguments[1]) ?? "?"}`);
+      }
+      ts.forEachChild(x, di);
+    };
+    di(n);
+    return ra;
+  };
+
+  /** Mọi khai báo ở tầng module: tên ⇒ (cổng khai TẠI CHỖ, gốc chuỗi mà nó dựng lên từ đó). */
+  const bien = new Map<string, { cong: string[]; goc: string | null }>();
+  for (const stmt of sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue;
+    for (const d of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(d.name) || !d.initializer) continue;
+      bien.set(d.name.text, { cong: congTrong(d.initializer), goc: gocChuoi(d.initializer) });
+    }
+  }
+
+  /**
+   * Leo ngược chuỗi biến: gom **mọi** cổng gặp trên đường, và dừng ở định danh **không phải** một
+   * khai báo của file này — đó chính là **SÀN** (`deployProcedure` / `actuationProcedure` /
+   * `protectedProcedure`, đều nhập từ `_core/trpc`).
+   * ⚠ Một alias (`const A = B;`) **không** giấu được cổng của `B` — đó là hình dạng lách hiển nhiên
+   * nhất của một lưới canh-ánh-xạ, và nó bị đóng ngay tại đây.
+   */
+  const phanGiai = (bd: string | null): { cong: string[]; san: string | null } => {
+    const cong: string[] = [];
+    let cur = bd;
+    for (let i = 0; i < 16 && cur !== null; i++) {
+      const b = bien.get(cur);
+      if (b === undefined) return { cong, san: cur };
+      cong.push(...b.cong);
+      cur = b.goc;
+    }
+    return { cong, san: null }; // vòng lặp / không leo tới đâu ⇒ mù ⇒ ĐỎ
+  };
+
+  const anhXa: Record<string, HinhDangThuTuc> = {};
+  const mu: string[] = [];
+  const di = (n: ts.Node): void => {
+    const arg0 = ts.isCallExpression(n) ? n.arguments[0] : undefined;
+    if (
+      ts.isCallExpression(n) &&
+      ts.isIdentifier(n.expression) &&
+      n.expression.text === "router" &&
+      arg0 !== undefined &&
+      ts.isObjectLiteralExpression(arg0)
+    ) {
+      for (const p of arg0.properties) {
+        const dong = sf.getLineAndCharacterOfPosition(p.getStart(sf)).line + 1;
+        if (!ts.isPropertyAssignment(p) || !ts.isIdentifier(p.name)) {
+          mu.push(`${ten}:${dong} — ô của router KHÔNG phải \`tên: <chuỗi thủ tục>\``);
+          continue;
+        }
+        const khoa = p.name.text;
+        const tuGoc = phanGiai(gocChuoi(p.initializer));
+        // ⚠ Cổng viết THẲNG trong chuỗi của ô (không qua biến) cũng phải được tính — nếu không,
+        // lưới sẽ ép người sau đặt tên cho sàn, và một `preempt: deployProcedure.use(...)` inline
+        // sẽ **im lặng lọt**.
+        const tatCa = [...new Set([...congTrong(p.initializer), ...tuGoc.cong])].sort();
+        if (tuGoc.san === null || tatCa.length !== 1 || tatCa[0]?.includes("?") === true) {
+          mu.push(
+            `${ten}:${dong} \`${khoa}\` — sàn: ${tuGoc.san ?? "KHÔNG phân giải được"} · cổng: [${tatCa.join(", ")}]`,
+          );
+          continue;
+        }
+        anhXa[khoa] = { san: tuGoc.san, cong: tatCa[0] as string };
+      }
+    }
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  return { anhXa, mu };
+}
+
+/** Nguồn tổng hợp tối thiểu, đúng hình dạng thật của `vramRouter.ts` — nền cho mọi đột biến dưới. */
+function nguonRouter(than: string, dau = ""): string {
+  return [
+    'import { router, protectedProcedure, actuationProcedure, deployProcedure } from "../_core/trpc";',
+    'import { requirePermission } from "../_core/accessControl";',
+    'import { VRAM_CONTROL_MODULE } from "@shared/permissions";',
+    'const vramDestructiveProcedure = deployProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canDelete"));',
+    'const vramActuationProcedure = actuationProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canCreate"));',
+    'const vramReadProcedure = protectedProcedure.use(requirePermission("machine_control", "canView"));',
+    dau,
+    "export const vramRouter = router({",
+    than,
+    "});",
+  ].join("\n");
+}
+
+const THAN_DUNG = [
+  "  state: vramReadProcedure.query(async () => buildVramAgentState()),",
+  "  preempt: vramDestructiveProcedure.input(z.object({})).mutation(async ({ input }) => f(input)),",
+  "  releaseStale: vramDestructiveProcedure.input(z.object({})).mutation(async ({ input }) => f(input)),",
+  "  retryDeferred: vramActuationProcedure.input(z.object({})).mutation(({ input }) => f(input)),",
+].join("\n");
+
+describe("★★★ C-1 — ÁNH XẠ `thủ tục → (sàn, cổng)` của `vramRouter` (canh CẶP, không canh TẬP)", () => {
+  const DUONG = "server/routers/vramRouter.ts";
+
+  it("★★★ mã SẢN XUẤT ở HEAD: từng khoá đứng ĐÚNG cặp của nó — và 0 ô mù", () => {
+    const { anhXa, mu } = anhXaThuTuc(DUONG, readFileSync(join(GOC, DUONG), "utf8"));
+    expect(mu.join("\n"), "một ô không phân giải được là một ô KHÔNG AI CANH").toBe("");
+    expect(anhXa).toEqual(HINH_DANG_MONG_DOI);
+  });
+
+  it("★★★ W1 — **HOÁN VỊ** `canDelete` ↔ `canCreate` giữa hai thủ tục ⇒ ĐỎ (dù TẬP không đổi)", () => {
+    const ma = nguonRouter(THAN_DUNG)
+      .replace('deployProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canDelete"))', "@D@")
+      .replace('actuationProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canCreate"))', "@A@")
+      .replace("@D@", 'deployProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canCreate"))')
+      .replace("@A@", 'actuationProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canDelete"))');
+    const { anhXa, mu } = anhXaThuTuc(DUONG, ma);
+    expect(mu.join("\n")).toBe("");
+
+    // ⚠ ĐỐI CHỨNG — lưới đời trước (**TẬP** cổng) vẫn XANH dưới đúng đột biến này. Không có ô này
+    // thì ca trên chỉ chứng minh "có một lưới đỏ", không chứng minh **lưới MỚI mới bắt được**.
+    const tapCong = [...new Set(Object.values(anhXa).map((h) => h.cong))].sort();
+    expect(tapCong, "TẬP cổng KHÔNG đổi — đó là toàn bộ lý do C-1 lọt").toEqual(
+      [`${VRAM_CONTROL_MODULE}/canCreate`, `${VRAM_CONTROL_MODULE}/canDelete`, "machine_control/canView"].sort(),
+    );
+
+    expect(anhXa).not.toEqual(HINH_DANG_MONG_DOI);
+    expect(anhXa.preempt?.cong, "hoán vị ⇒ lệnh PHÁ HUỶ tụt xuống bit RỘNG HƠN").toBe(
+      `${VRAM_CONTROL_MODULE}/canCreate`,
+    );
+    expect(anhXa.retryDeferred?.cong).toBe(`${VRAM_CONTROL_MODULE}/canDelete`);
+  });
+
+  it("★★★ W3 — nâng `retryDeferred` lên `deployProcedure` ⇒ ĐỎ ở trục SÀN (cổng không đổi)", () => {
+    const ma = nguonRouter(THAN_DUNG).replace(
+      'const vramActuationProcedure = actuationProcedure.use(',
+      'const vramActuationProcedure = deployProcedure.use(',
+    );
+    const { anhXa, mu } = anhXaThuTuc(DUONG, ma);
+    expect(mu.join("\n")).toBe("");
+    expect(anhXa.retryDeferred).toEqual({ san: "deployProcedure", cong: `${VRAM_CONTROL_MODULE}/canCreate` });
+    expect(anhXa).not.toEqual(HINH_DANG_MONG_DOI);
+  });
+
+  it("★★★ HÌNH DẠNG CỦA TÔI — **ALIAS** một thủ tục sang thủ tục kia (tên biến giữ nguyên, TẬP giữ nguyên) ⇒ ĐỎ", () => {
+    /**
+     * ⚠ Đây là C-1 dưới một hình dạng KHÁC HẲN W1: không đụng một chuỗi `canDelete`/`canCreate` nào,
+     * không đụng thứ tự đối số. Chỉ thêm **một dòng gán**:
+     *     const congPhaHuy = vramActuationProcedure;
+     * rồi cho `preempt` đứng trên nó. Tên biến `vramDestructiveProcedure` **vẫn còn nguyên** trong
+     * file (một lưới neo vào TÊN BIẾN sẽ xanh), tập cổng **vẫn đủ ba** (lưới đời trước xanh), và
+     * `preempt` **thật sự** chạy dưới `canCreate` + sàn `actuationProcedure` — mất luôn step-up 2FA.
+     */
+    const ma = nguonRouter(
+      THAN_DUNG.replace("preempt: vramDestructiveProcedure", "preempt: congPhaHuy"),
+      "const congPhaHuy = vramActuationProcedure;",
+    );
+    const { anhXa, mu } = anhXaThuTuc(DUONG, ma);
+    expect(mu.join("\n")).toBe("");
+    expect(ma, "đối chứng: tên biến cũ vẫn còn trong file").toContain("vramDestructiveProcedure");
+    expect(anhXa.preempt).toEqual({ san: "actuationProcedure", cong: `${VRAM_CONTROL_MODULE}/canCreate` });
+    expect(anhXa).not.toEqual(HINH_DANG_MONG_DOI);
+  });
+
+  it("★★★ cổng THỨ HAI chồng lên một ô ⇒ MÙ (ĐỎ), không im lặng chọn cái đầu tiên", () => {
+    const ma = nguonRouter(
+      THAN_DUNG.replace(
+        "preempt: vramDestructiveProcedure.input(",
+        'preempt: vramDestructiveProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canCreate")).input(',
+      ),
+    );
+    const { mu } = anhXaThuTuc(DUONG, ma);
+    expect(mu.join("\n")).toContain("`preempt`");
+  });
+
+  it("★★★ thủ tục KHÔNG có cổng nào (thẳng `deployProcedure`) ⇒ MÙ (ĐỎ) — sàn danh tính ≠ sàn thẩm quyền", () => {
+    const ma = nguonRouter(THAN_DUNG.replace("preempt: vramDestructiveProcedure", "preempt: deployProcedure"));
+    const { anhXa, mu } = anhXaThuTuc(DUONG, ma);
+    expect(mu.join("\n")).toContain("`preempt`");
+    expect(anhXa.preempt, "ô mù KHÔNG được lọt vào ánh xạ như một cặp hợp lệ").toBeUndefined();
+  });
+
+  it("★★★ thủ tục MỚI thêm vào router mà không khai ⇒ ĐỎ (danh sách không có phần tử thứ N+1 im lặng)", () => {
+    const ma = nguonRouter(
+      `${THAN_DUNG}\n  killAll: vramDestructiveProcedure.input(z.object({})).mutation(async () => 1),`,
+    );
+    const { anhXa, mu } = anhXaThuTuc(DUONG, ma);
+    expect(mu.join("\n")).toBe("");
+    expect(anhXa).not.toEqual(HINH_DANG_MONG_DOI);
+    expect(Object.keys(anhXa)).toContain("killAll");
+  });
+
+  it("★★ KHÔNG ÉP ĐẶT TÊN — chain INLINE `deployProcedure.use(requirePermission(…))` vẫn phân giải ĐÚNG", () => {
+    /**
+     * ⚠ *"Lưới DẪN người ta tới đâu?"* — nếu chain inline rơi vào nhánh mù thì phản ứng tự nhiên là
+     * **đặt một cái tên cho có**, tức lưới dạy một thói quen chứ không canh một tính chất. Ở đây
+     * inline vẫn ĐÚNG; chỉ **thiếu cổng** hoặc **hai cổng** mới là mù.
+     */
+    const ma = nguonRouter(
+      THAN_DUNG.replace(
+        "preempt: vramDestructiveProcedure.input(",
+        'preempt: deployProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canDelete")).input(',
+      ),
+    );
+    const { anhXa, mu } = anhXaThuTuc(DUONG, ma);
+    expect(mu.join("\n")).toBe("");
+    expect(anhXa).toEqual(HINH_DANG_MONG_DOI);
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — đổi TÊN BIẾN thủ tục (một lượt dọn dẹp hợp lệ) ⇒ VẪN XANH", () => {
+    const ma = nguonRouter(THAN_DUNG).split("vramDestructiveProcedure").join("congPhaHuyVram");
+    const { anhXa, mu } = anhXaThuTuc(DUONG, ma);
+    expect(mu.join("\n")).toBe("");
+    expect(anhXa).toEqual(HINH_DANG_MONG_DOI);
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — file không có `router({…})` cho ánh xạ RỖNG, 0 ô mù", () => {
+    expect(anhXaThuTuc("server/routers/x.ts", "export const a = 1;")).toEqual({ anhXa: {}, mu: [] });
   });
 });

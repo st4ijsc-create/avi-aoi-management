@@ -40,12 +40,25 @@ npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/routers/vramRouter.test.ts server/routers/vramRouter.commands.test.ts \
   server/routers/vramRouter.retryDeferred.test.ts \
   server/routers/vramRouter.unledgered.test.ts server/routers/vramRouter.kbSyncDefer.test.ts \
-  server/routers/permissions.machineControl.test.ts client/src/lib/
+  server/routers/permissions.machineControl.test.ts \
+  server/routers/vramPermissionSplit.test.ts \
+  server/services/aiCopilotActions.hardlinkSink.test.ts client/src/lib/
 NODE_OPTIONS=--max-old-space-size=8192 npm run check
 npm run check:tests
 npm run i18n:check
 ```
 Cộng một lượt `--sequence.shuffle.tests`.
+
+⚠⚠⚠ **I-1 (review TOÀN NHÁNH 2026-08-06) — HAI ĐƯỜNG VỪA ĐƯỢC THÊM, VÀ ĐÓ KHÔNG PHẢI BẢN VÁ.**
+Bản trước liệt kê **9 đường** và bỏ sót `vramPermissionSplit.test.ts` (**662 dòng — toàn bộ phép
+cưỡng chế của Task 3b**) ⇒ **2/3 đột biến của reviewer SHIP ĐƯỢC** với cổng xanh 100%, `tsc` sạch,
+`i18n:check` sạch. Commit `13116471` tên là *"cổng thiếu 3 file test"* và **vẫn** sót cái nặng nhất.
+Lượt rà lại tìm thêm `aiCopilotActions.hardlinkSink.test.ts` (lưới **Task 1 / C-1**).
+⇒ **Danh sách nào cũng có phần tử thứ N+1.** Nên bản vá thật là **`server/services/vram/vramPha5Gate.test.ts`**:
+nó đọc **chính khối lệnh trên** ra khỏi file này, rồi cưỡng chế
+***"MỌI `*.test.ts` tự khai `Pha 5` phải được một đường của cổng phủ"***, **ghim SỐ file**, và bắt
+mọi đường không tồn tại trên đĩa. Thêm một lưới Pha 5 mới ở bất kỳ đâu ⇒ ca ấy **ĐỎ** cho tới khi
+cổng được sửa. ⚠ Vẫn **KHÔNG dùng glob để CHẠY** — glob rỗng làm vitest im lặng khai XANH.
 
 ---
 
@@ -220,9 +233,40 @@ Ba mục **cùng đụng `server/services/vram/vramReadModel.ts`**, nên đi chu
 
 ---
 
-## 🔴 THỨ TỰ PHÁT HÀNH — RÀNG BUỘC CỦA TASK 3 (N9), KHÔNG PHẢI MỘT LỜI KHUYÊN
+## 🔴 THỨ TỰ PHÁT HÀNH — **BA NHỊP**, RÀNG BUỘC CỦA TASK 3 (N9) + TASK 3b, KHÔNG PHẢI MỘT LỜI KHUYÊN
 
-**LƯỢT CẤP QUYỀN CHẠY TRƯỚC · CLIENT DEPLOY SAU.** (I-2, review Task 3, 2026-08-06.)
+> ⚠⚠⚠ **I-5 (review TOÀN NHÁNH 2026-08-06) — CÂU LỆNH HAI NHỊP DƯỚI ĐÂY ĐÃ LỖI THỜI TỪ TASK 3b.**
+> Nó được viết ở review Task 2/Task 3, khi bit còn là `machine_control` — một module **đã có sẵn**
+> trong danh mục. **Task 3b đổi tiền đề** mà không ai sửa lại câu lệnh:
+> 1. `vram_control` chỉ xuất hiện trong danh mục quyền qua **một hàng MÃ MÁY CHỦ**
+>    (`server/routers/permissionsRouter.ts:825`), trả về bởi `permissions.getAvailableModules`.
+> 2. `client/src/components/PermissionsManagement.tsx:123` lấy danh sách module **CHỈ** từ thủ tục ấy.
+> ⇒ **Chưa deploy máy chủ thì màn Phân quyền KHÔNG hiện `vram_control`, và admin KHÔNG CẤP ĐƯỢC**
+> (trừ khi gọi tay `permissions.upsertPermission` — nó nhận `moduleName` là chuỗi tự do, `:574`).
+
+### ⇒ THỨ TỰ ĐÚNG LÀ **BA NHỊP**: **deploy MÁY CHỦ → CẤP QUYỀN → deploy CLIENT.**
+
+| nhịp | việc | kiểm ĐO ĐƯỢC trước khi sang nhịp sau |
+|---|---|---|
+| **1** | **Deploy MÁY CHỦ** (chưa deploy client) | `permissions.getAvailableModules` trả về một hàng `moduleName='vram_control'` |
+| **2** | **Cấp quyền per-USER** (xem bảng dưới) | `SELECT * FROM permissions WHERE "moduleName"='vram_control'` ⇒ đúng số hàng đã duyệt |
+| **3** | **Deploy CLIENT** | `supervisor` vào `/ai-brain` thấy SỐ THẬT, hai nút bấm được, lệnh chạy |
+
+⚠⚠⚠ **BA ĐƯỜNG XOÁ SẠCH GRANT — `vram_control` CỐ Ý KHÔNG VÀO KHUÔN VAI nên KHÔNG đường nào tự
+dựng lại nó:**
+1. `permissions.applyRolePermissions` / nút **"Áp dụng quyền mặc định"** (đã ghi ở sổ nợ Task 3b);
+2. `permissions.applyBuiltInRoleToUser`;
+3. ⚠ **MỚI (I-5) — nút *Lưu* của chính màn Phân quyền.** `PermissionsManagement.tsx:126` gọi
+   `permissions.batchUpdateUserPermissions`, và thủ tục đó **`DELETE` TOÀN BỘ hàng quyền của user**
+   rồi chèn lại đúng những gì màn hình đang giữ (`permissionsRouter.ts:663-686`). ⇒ **Bất kỳ lượt
+   lưu nào từ một màn không liệt kê `vram_control`** — một tab mở từ TRƯỚC nhịp 1, hoặc một phiên
+   admin cũ — sẽ **âm thầm gỡ** grant vừa cấp, **không một cảnh báo nào**.
+⇒ Sau **mỗi lượt bảo trì vai / mỗi lượt lưu ở màn Phân quyền**, chạy lại câu kiểm của nhịp 2.
+
+---
+
+**(nguyên văn ràng buộc cũ, giữ lại vì phần dưới vẫn đúng)** — **LƯỢT CẤP QUYỀN CHẠY TRƯỚC ·
+CLIENT DEPLOY SAU.** (I-2, review Task 3, 2026-08-06.)
 
 Task 3 (commit `d4083386`+) làm **ba** lớp ở tầng mã — nav `/ai-brain` · `vramCommandReach` · nối
 vào ba nút — nhưng **hai** lớp còn lại là **DỮ LIỆU** và **chưa cấp**:
@@ -243,6 +287,23 @@ per-user** (`permissions.applyBuiltInRoleToUser` hoặc INSERT có duyệt). N�
 `supervisor` vào `/ai-brain` và thấy **hai nút phá huỷ bấm được mà lệnh chắc chắn 403** — tức
 **chính lớp lỗi "mặt đọc hứa nhiều hơn mặt lệnh" mà cả Pha 5 đang đóng**, do chính bản vá đóng nó
 tạo ra. Cửa sổ ấy phải bằng **không**.
+
+🔴 ⚠⚠⚠ **I-4 (review TOÀN NHÁNH 2026-08-06) — CHẶN NHỊP 2: NỬA "BIT ĐỌC" CỦA LƯỢT CẤP QUYỀN CHƯA
+AI ĐẾM, VÀ NÓ MỞ 30 THỦ TỤC NGOÀI VRAM.**
+Task 3b đếm bit **GHI** rất kỹ (`machine_control/canDelete` = 10 thủ tục / 8 router ⇒ tách bit) và
+**không đếm bit ĐỌC**, dù mặt đọc là **nửa còn lại của cùng một lượt cấp quyền**. Đếm lại bằng AST:
+`machine_control/canView` = **31 thủ tục / 9 router**, **31/31 đứng trên `protectedProcedure` trần**
+(không role-floor, không 2FA). VRAM chiếm **1**; **30 cái còn lại** là công thức máy, trạng thái
+robot, **nhật ký lệnh máy**, cấu hình device adapter, ánh xạ UNS, điều phối AI.
+⇒ **KHÔNG TỰ QUYẾT.** Bảng đầy đủ 31 dòng (router · thủ tục · sàn · hậu quả) ở
+`docs/superpowers/reports/2026-08-06-vram-pha5-wholebranch-fix-report.md` §I-4 — **phải tới tay chủ
+dự án TRƯỚC nhịp 2**. Câu biện hộ của N8 (*"`canView` là bit chỉ đọc, bề mặt dùng chung của nó không
+có thủ tục phá huỷ nào"*) **đúng về `canDelete`** nhưng **không trả lời** câu mà chính Task 2 dùng để
+siết `vram.state`: *"mặt đọc phơi thông tin hạ tầng"* — `commandLogRouter` phơi **nhật ký lệnh máy**.
+⚠ Nếu chủ dự án chọn **tách nốt bit đọc** thì phải đổi **CÙNG LÚC** `requiredPermission` của tool
+`get_vram_state` (`server/services/aiLocalTools/vramTools.ts:455`), nếu không **khe N8 mở lại**.
+Lưới `server/services/vram/vramReadModel.guard.test.ts:223` sẽ **ĐỎ đúng lúc** nếu chỉ đổi một bên —
+lưới ấy **có răng** và **nằm trong** cổng.
 
 ⚠ **Trước khi bấm nút cấp `canDelete`, đọc §2 của `task-3-review.md`:** `machine_control/canDelete`
 là bit **DÙNG CHUNG** — có **10 thủ tục ở 8 router** đứng trên nó (nguy hiểm nhất:

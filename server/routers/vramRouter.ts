@@ -21,6 +21,16 @@ import { requirePermission } from "../_core/accessControl";
 // `PERMISSION_MODULES` là nguồn duy nhất). Viết lại chuỗi ở đây là đẻ bản sao thứ hai.
 import { VRAM_CONTROL_MODULE } from "@shared/permissions";
 import { buildVramAgentState } from "../services/vram/vramReadModel";
+/**
+ * ★★★ I-2 / M-5 (review TOÀN NHÁNH 2026-08-06) — **BỀ RỘNG Ô DANH TÍNH ĐỌC TỪ MỘT CHỦ DUY NHẤT.**
+ *
+ * Trước bản này trần `160` là **hai con số chép tay ở hai file** (`vramSharedLedger.cat(…, 160)` và
+ * `.max(160)` ở đây), nên **không ca nào** ràng buộc chúng với nhau: đột biến `.max(64)` làm **cổng
+ * đầy đủ 100 file / 1692 ca XANH TOÀN BỘ**. `owner` sản xuất là chuỗi ĐỘNG lấy từ **đường dẫn tuyệt
+ * đối** (`ocrService.ts:384` `onnx-ocr:${modelPath}`) ⇒ khoảng 65–160 ký tự là vùng mù **có thể
+ * chạm tới bằng một lượt đổi thư mục model**. Xem `services/vram/vramColumnLimits.ts`.
+ */
+import { VRAM_OWNER_MAX, VRAM_LEASE_KEY_MAX } from "../services/vram/vramColumnLimits";
 import {
   vramPreemptCommand,
   vramReleaseStaleCommand,
@@ -59,7 +69,11 @@ import {
  *  • `machine_control/canCreate` còn **RỘNG HƠN**: ~90 điểm gọi ở 17 router (`fleetRouter` 19 ·
  *    `safetyRouter` 18 …) — tức start/stop máy và fleet actuation.
  * ⇒ Cấp bit dùng chung cho `supervisor` để mở **hai nút VRAM** (hai thủ tục **CHẶT NHẤT** trong tập,
- * có step-up OTP tươi) sẽ mở luôn **chín thủ tục khác**, phần lớn **không** có OTP.
+ * có step-up) sẽ mở luôn **chín thủ tục khác**, phần lớn **không** có OTP.
+ * ⚠ **M-4 (review TOÀN NHÁNH) — "OTP TƯƠI" LÀ NÓI QUÁ, sửa LỜI không sửa mã:** `stepUpVerifiedUntil`
+ * (`_core/trpc.ts:279-283`) là cache **10 phút theo `sessionToken`**, **dùng chung cho MỌI
+ * `deployProcedure`** ⇒ vừa step-up cho `programming.deployBuild` thì `vram.preempt` chạy trong 10
+ * phút **không hỏi OTP lần nào**. Luận cứ tách bit vẫn đúng tương đối; câu chữ thì không.
  * **Chủ dự án chốt (2026-08-06): TÁCH BIT RIÊNG** ⇒ `VRAM_CONTROL_MODULE` (`@shared/permissions`).
  *
  * ⚠⚠ Task 3b **THU HẸP, KHÔNG NỚI**: `deployProcedure`/`actuationProcedure` + step-up 2FA giữ
@@ -143,7 +157,7 @@ export const vramRouter = router({
    * **vẫn** hỏng). `"refused"` ⇒ **chưa ai bị đụng**.
    */
   preempt: vramDestructiveProcedure
-    .input(z.object({ owner: z.string().trim().min(1).max(160), ...totp }))
+    .input(z.object({ owner: z.string().trim().min(1).max(VRAM_OWNER_MAX), ...totp }))
     .mutation(async ({ input }) => vramPreemptCommand(input.owner)),
 
   /**
@@ -153,7 +167,7 @@ export const vramRouter = router({
    * ⚠ `leaseKey` đọc ở `state.ledger.foreign.holders[].leaseKey`.
    */
   releaseStale: vramDestructiveProcedure
-    .input(z.object({ leaseKey: z.string().trim().min(1).max(200), ...totp }))
+    .input(z.object({ leaseKey: z.string().trim().min(1).max(VRAM_LEASE_KEY_MAX), ...totp }))
     .mutation(async ({ input }) => vramReleaseStaleCommand(input.leaseKey)),
 
   /**
@@ -164,6 +178,6 @@ export const vramRouter = router({
    * làm gì**, thay vì im lặng thành công. Xem `vramCommands.ts`.
    */
   retryDeferred: vramActuationProcedure
-    .input(z.object({ owner: z.string().trim().min(1).max(160) }))
+    .input(z.object({ owner: z.string().trim().min(1).max(VRAM_OWNER_MAX) }))
     .mutation(({ input }) => vramRetryDeferredCommand(input.owner)),
 });

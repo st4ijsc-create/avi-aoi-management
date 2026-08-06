@@ -61,6 +61,8 @@
  *   3. **LÁ CHẮN ĐỒNG BỘ** — không có gì để `await` thì không ai `await` nhầm.
  */
 import type { VramLease, VramLeaseKind, VramPriority, VramReclaimerId } from "./types";
+// ★ I-2 / M-5 (review TOÀN NHÁNH) — bề rộng ô danh tính có MỘT chủ; `vramRouter` đọc **cùng** hằng.
+import { VRAM_OWNER_MAX, VRAM_LEASE_KEY_MAX, VRAM_PROCESS_KEY_MAX } from "./vramColumnLimits";
 
 /**
  * MỘT HÀNG của sổ chung — hình dạng đúng bằng bảng `vram_leases` (migration 0312).
@@ -450,7 +452,7 @@ export function rowFromBaseline(rec: SharedBaselineRecord): SharedLeaseRow {
   const [role = "all"] = rec.processKey.split(":");
   return {
     leaseKey: SHARED_BASELINE_KEY,
-    processKey: cat(rec.processKey, 96),
+    processKey: cat(rec.processKey, VRAM_PROCESS_KEY_MAX),
     pid: soHuuHan(rec.pid, 0),
     role: cat(role, 32),
     leaseId: rec.source,
@@ -582,12 +584,12 @@ export function rowFromLease(
 ): SharedLeaseRow {
   const [role = "all", pidText = "0"] = selfKey.split(":");
   return {
-    leaseKey: cat(`${selfKey}#${lease.id}`, 200),
-    processKey: cat(selfKey, 96),
+    leaseKey: cat(`${selfKey}#${lease.id}`, VRAM_LEASE_KEY_MAX),
+    processKey: cat(selfKey, VRAM_PROCESS_KEY_MAX),
     pid: soHuuHan(Number(pidText), 0),
     role: cat(role, 32),
     leaseId: cat(lease.id, 64),
-    owner: cat(lease.request.owner, 160),
+    owner: cat(lease.request.owner, VRAM_OWNER_MAX),
     leaseKind: lease.request.kind,
     priority: lease.request.priority,
     bytes: soHuuHan(bytes, 0),

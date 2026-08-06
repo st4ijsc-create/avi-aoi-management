@@ -69,10 +69,13 @@ import {
   __setSharedLedgerSelfKeyForTests,
   publishSharedLedgerReplica,
   readSharedLedgerReplica,
+  rowFromLease,
   sharedLedgerFact,
   sharedLedgerSelfKey,
   type SharedLeaseRow,
 } from "../services/vram/vramSharedLedger";
+// ★ I-2 / M-5 — bề rộng ô danh tính có MỘT chủ; ca dưới đọc CHÍNH hằng mà cả hai vế dùng.
+import { VRAM_OWNER_MAX, VRAM_LEASE_KEY_MAX } from "../services/vram/vramColumnLimits";
 import { __resetDecisionTickForTests } from "../services/vram/vramTickCell";
 import { __resetVramDeferForTests } from "../services/vram/vramDefer";
 import { ownerNhanNuoi } from "../services/vram/vramAdoption";
@@ -607,5 +610,79 @@ describe("vramRouter.retryDeferred — phạm vi QUAN SÁT phải NÓI RA, khôn
     expect(r.outcome).toBe("refused");
     expect(r.reason).toBe("unknown-background-host");
     expect(r.host).toBeNull();
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ I-2 (review TOÀN NHÁNH 2026-08-06) — **"DANH TÍNH ĐI THẲNG VÀO LỆNH" LÀ HỢP ĐỒNG HAI ĐẦU.**
+//
+// ⚠⚠⚠ VÌ SAO KHỐI NÀY TỒN TẠI: BỀ RỘNG `owner` HOÀN TOÀN KHÔNG CÓ LƯỚI.
+// Đột biến **W2b** của reviewer — `owner.max(160)` → `.max(64)` — làm **cổng ĐẦY ĐỦ (100 file /
+// 1692 ca) XANH TOÀN BỘ**. Khoảng 65–160 ký tự là **vùng mù tuyệt đối**: không một ca nào trong
+// toàn nhánh ràng buộc bề rộng ô `owner` của **lệnh** với bề rộng mà **sổ chung** có thể phát ra.
+// (Reviewer đo thêm: `.max(16)` mới đỏ — và đỏ vì **fixture tình cờ dài hơn 16**, không vì một luật.)
+//
+// ⚠ Kịch bản hỏng, không giả định: `owner` sản xuất dựng từ **đường dẫn tuyệt đối**
+// (`ocrService.ts:384` `onnx-ocr:${modelPath}`). Khi nó vượt trần: mặt đọc phát ra danh tính
+// **nguyên vẹn** (đúng N11) ⇒ nút *Thu hồi* **BẬT** (`vramDestructiveButtonDisabled` chỉ hỏi quyền
+// + `isPending`, **không** hỏi độ dài); bấm ⇒ zod ném `BAD_REQUEST` **xác thực đầu vào** — không
+// phải một `reason` nghiệp vụ, đúng thứ `vramRouter` vừa tuyên bố là không bao giờ xảy ra.
+//
+// ⇒ Bất biến: ***bề rộng mà LỆNH nhận PHẢI BẰNG bề rộng mà SỔ CHUNG ghi được*** — cả hai đọc
+// `VRAM_OWNER_MAX` (`services/vram/vramColumnLimits.ts`), và ca dưới đi qua **đúng schema thật**
+// của router bằng `createCaller()`, không dựng lại một zod thứ hai.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+describe("★★★ I-2 — bề rộng ô DANH TÍNH: lệnh nhận đúng bằng cái sổ chung ghi được", () => {
+  /** Lỗi của một lượt gọi, hoặc `null` nếu nó **không** ném. */
+  const loi = (p: Promise<unknown>): Promise<unknown> => p.then(() => null, (e: unknown) => e);
+
+  it("★★★ `owner` DÀI ĐÚNG BẰNG trần sổ chung ⇒ lệnh KHÔNG ném; nó trả DỮ LIỆU có `reason`", async () => {
+    const owner = `onnx-ocr:${"d".repeat(VRAM_OWNER_MAX - "onnx-ocr:".length)}`;
+    expect(owner.length).toBe(VRAM_OWNER_MAX);
+
+    // ⚠ Đối chứng bên SỔ: đúng chuỗi ấy đi qua `rowFromLease()` mà **KHÔNG bị cắt** ⇒ nó là một
+    //   danh tính mà mặt đọc THẬT SỰ có thể phát ra, không phải một chuỗi bịa cho vừa ca test.
+    const lease = xinThat({ owner, bytes: 8 * MIB });
+    const hang = rowFromLease(lease, 8 * MIB, "role:1", Date.now());
+    expect(hang.owner, "sổ chung phải ghi được danh tính này NGUYÊN VẸN").toBe(owner);
+
+    const r = await caller().preempt({ owner });
+    expect(r.outcome, "một danh tính hợp lệ KHÔNG được biến thành lỗi xác thực").not.toBeUndefined();
+    expect(r.reason, "từ chối NGHIỆP VỤ có lý do đọc được — đó là bằng chứng đã vào thân thủ tục").not.toBeUndefined();
+
+    // Cùng trần cho lệnh KHÔNG phá huỷ — nó cũng nhận `owner` từ chính mặt đọc.
+    const rd = await caller().retryDeferred({ owner });
+    expect(rd.outcome).toBe("refused");
+  });
+
+  it("★★★ `owner` DÀI HƠN trần MỘT ký tự ⇒ TỪ CHỐI (trần của lệnh không được RỘNG hơn cột DB)", async () => {
+    /**
+     * ⚠ Chiều này cũng bắt buộc: nới router mà **không** nới cột chỉ **dời chỗ nói dối** — sổ chung
+     * sẽ cắt âm thầm, hoặc Postgres ném `22001` và `requeueSharedLedgerWrites()` ném lại đúng hàng
+     * độc ⇒ hỏng **VĨNH VIỄN**.
+     */
+    const qua = "x".repeat(VRAM_OWNER_MAX + 1);
+    expect(await loi(caller().preempt({ owner: qua })), "vượt trần cột DB phải bị chặn ở cửa").not.toBeNull();
+    expect(await loi(caller().retryDeferred({ owner: qua }))).not.toBeNull();
+  });
+
+  it("★★★ HAI VẾ ĐỌC CÙNG MỘT HẰNG — sổ chung cắt ở ĐÚNG chỗ lệnh từ chối (không hai con số chép tay)", () => {
+    const owner = "y".repeat(VRAM_OWNER_MAX + 40);
+    const hang = rowFromLease(xinThat({ owner, bytes: 4 * MIB }), 4 * MIB, "role:1", Date.now());
+    expect(hang.owner.length, "sổ chung cắt ĐÚNG tại trần").toBe(VRAM_OWNER_MAX);
+    // Và chuỗi ĐÃ CẮT ấy phải đi ngược qua được LỆNH — nếu không, một hộ của tiến trình anh em sẽ
+    // hiện trên mặt đọc với một danh tính mà **không lệnh nào nhận**.
+    // ⚠ Đây là ô làm đột biến `.max(64)` ĐỎ: chuỗi dài 160 phải qua được cửa.
+    return caller()
+      .preempt({ owner: hang.owner })
+      .then((r) => {
+        expect(r.outcome, "danh tính ĐÃ CẮT của sổ chung phải qua được cửa của lệnh").not.toBeUndefined();
+      });
+  });
+
+  it("★★ `leaseKey` cũng có đối chứng ở tầng sổ (M-5: `.max(200)` trước đây không có vế nào)", () => {
+    const dai = `${"p".repeat(300)}#lease-1`;
+    const hang = rowFromLease(xinThat({ owner: "sidecar:vision", bytes: MIB }), MIB, dai, Date.now());
+    expect(hang.leaseKey.length).toBe(VRAM_LEASE_KEY_MAX);
   });
 });

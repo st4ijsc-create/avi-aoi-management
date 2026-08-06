@@ -217,8 +217,16 @@ export type CoBitQuyen = (
  *      `CHO_RA_LENH` trên;
  *   2. **bit PER-USER** (`requirePermission(VRAM_CONTROL_MODULE, …)`) → `coBitQuyen`, đọc **đúng
  *      cặp `(module, action)`** khai ở `VRAM_LENH_GATE`.
- * `usePermissions.hasPermission` tự short-circuit cho `admin` (`:53`), đúng như `checkPermission`
- * máy chủ (`accessControl.ts:136`) ⇒ hai phía trả lời cùng một câu.
+ * `usePermissions.hasPermission` tự short-circuit cho `admin` (`:53`), như `checkPermission` máy chủ
+ * (`accessControl.ts:136`).
+ * ⚠⚠ **M-3 (review TOÀN NHÁNH 2026-08-06) — CÂU "HAI PHÍA TRẢ LỜI CÙNG MỘT CÂU" CHỈ ĐÚNG KHI
+ * `RBAC_SCOPED_ADMIN` TẮT.** Khi cờ ấy bật, máy chủ **TỪ CHỐI** một admin có hàng `vram_control`
+ * với `canDelete:false` (`accessControl.ts:163`), còn client trả `true` **vô điều kiện**
+ * (`usePermissions.ts:53`) ⇒ gương thành **RỘNG HƠN** máy chủ, vi phạm chính luật file này tự đặt ở
+ * `:151` (*"phải hẹp hơn hoặc bằng máy chủ, không bao giờ rộng hơn"*).
+ * Cờ **không có trong `.env`** hôm nay (mặc định OFF) ⇒ **chưa sống**. Ai bật nó phải sửa
+ * `usePermissions.hasPermission` **trước** — đó là một bất biến của **TOÀN hệ**, không riêng VRAM,
+ * nên nó **không** được vá lén ở đây.
  *
  * ⚠⚠ **CHIỀU CHẶT ở MỌI đầu vào lạ.** `role` có thể `undefined` (chưa nạp), là một chuỗi hệ chưa
  * biết, hoặc một khoá `Object.prototype` (`"toString"`, `"__proto__"`). `coBitQuyen` có thể thiếu

@@ -14,8 +14,19 @@
  * đây là "permission ma".
  *
  * File này:
- *   1. Liệt kê `PERMISSION_MODULES` — mọi `moduleName` THẬT đã seed (tham chiếu +
- *      test CI "mọi requiredPermission phải tồn tại").
+ *   1. Liệt kê `PERMISSION_MODULES` — mọi `moduleName` THẬT đã seed.
+ *      ⚠⚠ **M-1 (review TOÀN NHÁNH 2026-08-06) — ĐÍNH CHÍNH.** Bản trước viết danh sách này được
+ *      canh bởi *"test CI 'mọi requiredPermission phải tồn tại'"*. **Test ấy CHƯA BAO GIỜ tồn
+ *      tại.** `git grep PERMISSION_MODULES` / `isValidPermissionModule` ⇒ **0 người dùng** ngoài
+ *      chính file này ⇒ `isValidPermissionModule` hôm nay là **MÃ CHẾT**, và thêm một tên vào
+ *      danh sách chỉ để `satisfies` biên dịch là **trang trí**.
+ *      ⚠ Và lượt vá này **cố ý KHÔNG dựng cái lưới ấy**, vì đã đo trước: quét AST mọi
+ *      `requirePermission(<module>, …)` trên `server/**` cho **33** tên module, trong đó **6 tên
+ *      KHÔNG có trong danh sách dưới** — `masterdata` · `dashboard_export` · `settings_workshop` ·
+ *      `settings_production_line` · `settings_station` · `settings_workstation`. Tức lưới ấy sẽ
+ *      **ĐỎ ngay lần chạy đầu**, và đóng nó là một **quyết định RBAC ngoài phạm vi VRAM** (mỗi tên
+ *      hoặc là một "permission ma" phải seed, hoặc là một alias phải khai). Ghi vào sổ nợ, không
+ *      vá lén ở đây.
  *   2. `PERMISSION_MODULE_ALIASES` — ánh xạ tên-category-dùng-nhầm-làm-module về
  *      module thật (machine_monitoring → machine_status). Đây là lưới an toàn TRUNG
  *      TÂM: cả server (accessControl) lẫn client (usePermissions) resolve qua đây,
@@ -27,8 +38,17 @@
  */
 
 /**
- * Toàn bộ `moduleName` hợp lệ (đã được seed ở ≥1 role trong
- * `permissionsRouter.DEFAULT_ROLE_PERMISSIONS`). Giữ đồng bộ với seed đó.
+ * Toàn bộ `moduleName` hợp lệ.
+ *
+ * ⚠⚠ **M-2 (review TOÀN NHÁNH 2026-08-06) — ĐÍNH CHÍNH LUẬT MÀ CHÍNH DANH SÁCH NÀY PHÁT BIỂU.**
+ * Bản trước khai đây là *"mọi `moduleName` đã seed ở ≥1 role trong `DEFAULT_ROLE_PERMISSIONS`; giữ
+ * đồng bộ với seed đó"*. **`vram_control` CỐ Ý VI PHẠM luật ấy** — nó **không bao giờ** vào khuôn
+ * vai; đó là **toàn bộ điểm** của Task 3b (bit per-USER, chủ dự án duyệt từng người; xem
+ * `VRAM_CONTROL_MODULE` dưới). Nên luật đúng là:
+ *
+ *   > Danh sách này là **tập tên module hợp lệ của hệ RBAC**. Phần lớn được seed ở ≥1 role trong
+ *   > `DEFAULT_ROLE_PERMISSIONS`; một số **cố ý KHÔNG** (chỉ cấp per-USER) và mỗi ngoại lệ ấy phải
+ *   > **nói ra lý do ngay tại dòng của nó**.
  */
 export const PERMISSION_MODULES = [
   // Dashboard
@@ -146,7 +166,13 @@ export type PermissionModule = (typeof PERMISSION_MODULES)[number];
  * `programming.deleteProject` (`server/routers/programmingRouter.ts:261`) **xoá CASCADE cả cây mã
  * nguồn CÓ PHIÊN BẢN** (`programArtifacts`), không chốt an toàn, không OTP; cộng **5 bề mặt UI**
  * hiện nút xoá ngay khi cấp. Hai nút VRAM lại là **hai thủ tục CHẶT NHẤT** trong tập ấy
- * (`deployProcedure` = role-floor + 2FA + step-up OTP tươi).
+ * (`deployProcedure` = role-floor + 2FA + step-up).
+ * ⚠⚠ **M-4 (review TOÀN NHÁNH 2026-08-06) — SỬA LỜI, KHÔNG SỬA MÃ: "OTP TƯƠI" LÀ NÓI QUÁ.**
+ * `stepUpVerifiedUntil` (`server/_core/trpc.ts:279-283`) là một **cache 10 PHÚT theo
+ * `sessionToken`**, **DÙNG CHUNG cho MỌI `deployProcedure` của hệ**. ⇒ một supervisor vừa step-up
+ * cho `programming.deployBuild` thì `vram.preempt` chạy trong 10 phút **không hỏi OTP lần nào**.
+ * Luận cứ tách bit vẫn đúng **tương đối** (8/10 thủ tục kia không có gì cả), nhưng đừng đọc câu
+ * "chặt nhất" thành "mỗi lệnh một mã".
  * ⇒ Cấp bit dùng chung để mở **hai** cái chặt nhất sẽ mở luôn **tám** cái lỏng nhất.
  * **Chủ dự án chốt (2026-08-06): TÁCH BIT RIÊNG.**
  *

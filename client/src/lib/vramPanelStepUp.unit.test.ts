@@ -33,14 +33,143 @@ import ts from "typescript";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url)); // .../client/src/lib
 const PANEL = join(TEST_DIR, "..", "components", "ai", "VramBrokerPanel.tsx");
+const VRAM_ROUTER = join(TEST_DIR, "..", "..", "..", "server", "routers", "vramRouter.ts");
 
-/** HAI lệnh đứng trên `deployProcedure` (⇒ `requireFreshTotp`). Đọc từ `vramRouter.ts:92,102`. */
-const PHA_HUY = ["preempt", "releaseStale"] as const;
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ I-3 (review TOÀN NHÁNH 2026-08-06) — **HAI NỬA CỦA BẤT BIẾN NAY ĐƯỢC GHÉP, LẦN ĐẦU.**
+//
+// ⚠⚠⚠ "AN TOÀN LÀ HỆ QUẢ CỦA MỘT THỨ KHÁC", LẦN THỨ TƯ.
+// Bản trước của file này **chép tay** hai danh sách: `PHA_HUY = ["preempt","releaseStale"]` và
+// `KHONG_STEP_UP = "retryDeferred"`, kèm một chú thích trỏ tới số dòng của `vramRouter.ts`. Tức
+// nửa MÁY CHỦ của bất biến (*"thủ tục nào đứng sau `requireFreshTotp`"*) **chưa từng được ai đọc
+// bằng máy** — nó là một câu văn xuôi.
+// Đo được (đột biến **W3** của reviewer): nâng `retryDeferred` lên `deployProcedure` — một thay
+// đổi trông giống *"siết cho chặt hơn"*, đúng chiều cả Pha 5 đang đi — làm nút *Thử lại ngay*
+// **hiện và bấm được**, lượt bấm đầu tiên của mọi phiên trả **403**, và **không hộp thoại OTP nào
+// bật lên** (panel cố ý không bọc step-up cho nút này vì `input` của nó không khai `totpCode`).
+// Cổng của kế hoạch: **XANH**. Cổng đầy đủ: đúng **một** ca đỏ, và nó đỏ **như một tác dụng phụ**
+// — câu lỗi của nó chỉ đường tới `preempt`, không tới `retryDeferred`.
+//
+// ⇒ Hai danh sách nay **SUY RA TỪ MÁY CHỦ**, và bất biến được phát biểu đủ **hai vế**:
+//   ***∀ thủ tục p đứng sau `requireFreshTotp`: `input` của p PHẢI khai `totpCode`, VÀ mọi điểm gọi
+//   `p.mutate(` ở panel PHẢI nằm trong `stepUp.guard(...)` và gửi `totpCode`. ∀ p KHÔNG đứng sau
+//   nó: cả hai điều trên PHẢI SAI.***
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Sàn danh tính chain `requireFreshTotp` (`server/_core/trpc.ts`) — tên thủ tục dựng sẵn của hệ. */
+const SAN_CO_STEP_UP = "deployProcedure";
+
+/** Hình dạng máy chủ của MỘT mutation: sàn danh tính + `input` có khai `totpCode` không. */
+interface HinhDangMayChu {
+  readonly san: string;
+  readonly khaiTotp: boolean;
+}
+
 /**
- * `retryDeferred` đứng trên `actuationProcedure` — **KHÔNG** `requireFreshTotp` — và `input` của nó
- * KHÔNG khai `totpCode` (`z.object().strict()`). Bọc nó vào step-up là gửi một khoá bị từ chối.
+ * Đọc `vramRouter.ts`: khoá-router ⇒ (sàn, `input` khai `totpCode`?). **Chỉ mutation** — `query`
+ * không có `.mutate(` nào ở panel nên nó nằm ngoài bất biến này.
+ *
+ * ⚠ Ô nào không leo được tới một sàn ⇒ vào `mu` (**ĐỎ**), không bỏ qua im lặng.
  */
-const KHONG_STEP_UP = "retryDeferred";
+function mutationCuaMayChu(nguon?: string): { anhXa: Record<string, HinhDangMayChu>; mu: string[] } {
+  const ma = nguon ?? readFileSync(VRAM_ROUTER, "utf8");
+  const sf = ts.createSourceFile(VRAM_ROUTER, ma, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+
+  const objectCuaBien = new Map<string, ts.ObjectLiteralExpression>();
+  const bien = new Map<string, string | null>(); // biến ⇒ gốc chuỗi của nó
+
+  /** Tên các ô của một object literal, **mở** cả `...spread` trỏ tới một object khai ở tầng module. */
+  const oCuaObject = (n: ts.Node, sau = 0): string[] => {
+    if (sau > 4 || !ts.isObjectLiteralExpression(n)) return [];
+    const ra: string[] = [];
+    for (const p of n.properties) {
+      if (ts.isSpreadAssignment(p)) {
+        const g = ts.isIdentifier(p.expression) ? objectCuaBien.get(p.expression.text) : undefined;
+        if (g !== undefined) ra.push(...oCuaObject(g, sau + 1));
+        continue;
+      }
+      if (p.name !== undefined) ra.push(p.name.getText(sf).replace(/["']/g, ""));
+    }
+    return ra;
+  };
+
+  for (const stmt of sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue;
+    for (const d of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(d.name) || d.initializer === undefined) continue;
+      if (ts.isObjectLiteralExpression(d.initializer)) objectCuaBien.set(d.name.text, d.initializer);
+      bien.set(d.name.text, gocCuaChuoi(d.initializer));
+    }
+  }
+  /** Leo ngược chuỗi biến tới định danh KHÔNG phải khai báo của file ⇒ đó là SÀN. */
+  const san = (bd: string | null): string | null => {
+    let cur = bd;
+    for (let i = 0; i < 16 && cur !== null; i++) {
+      if (!bien.has(cur)) return cur;
+      cur = bien.get(cur) ?? null;
+    }
+    return null;
+  };
+
+  const anhXa: Record<string, HinhDangMayChu> = {};
+  const mu: string[] = [];
+  const di = (n: ts.Node): void => {
+    const arg0 = ts.isCallExpression(n) ? n.arguments[0] : undefined;
+    if (
+      ts.isCallExpression(n) &&
+      ts.isIdentifier(n.expression) &&
+      n.expression.text === "router" &&
+      arg0 !== undefined &&
+      ts.isObjectLiteralExpression(arg0)
+    ) {
+      for (const p of arg0.properties) {
+        const dong = sf.getLineAndCharacterOfPosition(p.getStart(sf)).line + 1;
+        if (!ts.isPropertyAssignment(p) || !ts.isIdentifier(p.name)) {
+          mu.push(`vramRouter.ts:${dong} — ô của router KHÔNG phải \`tên: <chuỗi thủ tục>\``);
+          continue;
+        }
+        // Đi dọc chuỗi `X.input(...).mutation(...)`: tìm `.mutation(` và túi `input`.
+        let laMutation = false;
+        let khaiTotp = false;
+        const doc = (x: ts.Node): void => {
+          if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression)) {
+            const ten = x.expression.name.text;
+            if (ten === "mutation") laMutation = true;
+            const a0 = x.arguments[0];
+            // `.input(z.object({ … }))` — mở một nấc lời gọi để tới object literal.
+            if (ten === "input" && a0 !== undefined) {
+              const di2 = (y: ts.Node): void => {
+                if (oCuaObject(y).includes("totpCode")) khaiTotp = true;
+                ts.forEachChild(y, di2);
+              };
+              di2(a0);
+            }
+          }
+          ts.forEachChild(x, doc);
+        };
+        doc(p.initializer);
+        if (!laMutation) continue; // `query` — ngoài phạm vi step-up
+        const s = san(gocCuaChuoi(p.initializer));
+        if (s === null) {
+          mu.push(`vramRouter.ts:${dong} \`${p.name.text}\` — KHÔNG leo được tới một sàn thủ tục`);
+          continue;
+        }
+        anhXa[p.name.text] = { san: s, khaiTotp };
+      }
+    }
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  return { anhXa, mu };
+}
+
+const MAY_CHU = mutationCuaMayChu();
+/** Mọi mutation đứng sau `requireFreshTotp` — **suy ra từ máy chủ**, không chép tay. */
+const PHA_HUY: readonly string[] = Object.keys(MAY_CHU.anhXa).filter((k) => MAY_CHU.anhXa[k]?.san === SAN_CO_STEP_UP);
+/** Mọi mutation **không** đứng sau nó: bọc step-up ở đây là gửi một khoá `.strict()` từ chối. */
+const KHONG_STEP_UP: readonly string[] = Object.keys(MAY_CHU.anhXa).filter(
+  (k) => MAY_CHU.anhXa[k]?.san !== SAN_CO_STEP_UP,
+);
 
 function ast(): ts.SourceFile {
   return ts.createSourceFile(PANEL, readFileSync(PANEL, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -95,6 +224,35 @@ function quetMutate(sf: ts.SourceFile): LoiGoiMutate[] {
   return ra;
 }
 
+describe("★★★ I-3 — NỬA MÁY CHỦ của bất biến step-up (suy ra từ `vramRouter.ts`, không chép tay)", () => {
+  it("★★★ cầu chì — đọc được cả ba mutation và 0 ô mù (một danh sách rỗng làm mọi ca dưới thành chân lý rỗng)", () => {
+    expect(MAY_CHU.mu.join("\n"), "một ô không leo được tới sàn là một ô KHÔNG AI CANH").toBe("");
+    expect(Object.keys(MAY_CHU.anhXa).sort()).toEqual(["preempt", "releaseStale", "retryDeferred"]);
+    expect(PHA_HUY.length, "phải có ít nhất hai lệnh đứng sau `requireFreshTotp`").toBeGreaterThanOrEqual(2);
+    expect(KHONG_STEP_UP.length, "phải có ít nhất một lệnh KHÔNG đứng sau nó — nếu không, ca chiều-ngược là rỗng").toBeGreaterThanOrEqual(1);
+  });
+
+  it("★★★ ∀ thủ tục đứng sau `requireFreshTotp`: `input` của nó PHẢI khai `totpCode`", () => {
+    /**
+     * ⚠ Đây là **nửa bị bỏ quên** của I-3. Nâng sàn của một thủ tục lên `deployProcedure` mà không
+     * thêm `totpCode` vào `input` ⇒ `requireFreshTotp` đọc raw input, không thấy mã, trả 403 —
+     * **mãi mãi**, cho mọi vai, và panel không có đường nào gửi mã ấy lên.
+     */
+    const thieu = PHA_HUY.filter((k) => MAY_CHU.anhXa[k]?.khaiTotp !== true);
+    expect(
+      thieu.join(" · "),
+      `thủ tục đứng trên \`${SAN_CO_STEP_UP}\` mà \`input\` KHÔNG khai \`totpCode\` ⇒ mọi lượt bấm 403 và KHÔNG hộp thoại OTP nào bật lên`,
+    ).toBe("");
+  });
+
+  it("★★★ chiều NGƯỢC — ∀ thủ tục KHÔNG đứng sau `requireFreshTotp`: `input` KHÔNG được khai `totpCode`", () => {
+    // ⚠ `z.object()` mặc định **strip**, nhưng một `input` khai `totpCode` ở sàn không đòi OTP là
+    //   một lời hứa sai với người viết client: nó nói *"chỗ này có step-up"* trong khi không có.
+    const thua = KHONG_STEP_UP.filter((k) => MAY_CHU.anhXa[k]?.khaiTotp === true);
+    expect(thua.join(" · "), "`input` khai `totpCode` ở một sàn KHÔNG chain `requireFreshTotp`").toBe("");
+  });
+});
+
 describe("★★★ F1 — hai nút PHÁ HUỶ của VramBrokerPanel phải đi qua step-up 2FA", () => {
   it("★★★ panel dùng ĐÚNG hook đã có (`useStepUpOtp`), không dựng dialog thứ hai", () => {
     const src = readFileSync(PANEL, "utf8");
@@ -144,17 +302,73 @@ describe("★★★ F1 — hai nút PHÁ HUỶ của VramBrokerPanel phải đi 
     expect(render, "render `{stepUp.dialog}` đúng MỘT lần (khuôn của 3 màn đang chạy)").toBe(1);
   });
 
-  it("★★ chiều NGƯỢC — `retryDeferred` KHÔNG được bọc step-up (sàn khác, `input` KHÔNG khai `totpCode`)", () => {
+  it("★★ chiều NGƯỢC — thủ tục KHÔNG đứng sau `requireFreshTotp` KHÔNG được bọc step-up", () => {
     /**
-     * ⚠ Không có ca này thì bản vá dễ trượt sang "bọc hết cho chắc", và `z.object().strict()` của
-     * `retryDeferred` sẽ **từ chối** khoá lạ ⇒ đổi một nút hỏng lấy một nút hỏng khác.
+     * ⚠ Không có ca này thì bản vá dễ trượt sang "bọc hết cho chắc", và một `input` không khai
+     * `totpCode` sẽ nhận một khoá lạ ⇒ đổi một nút hỏng lấy một nút hỏng khác.
      */
-    const cua = quetMutate(ast()).filter((g) => g.ten === KHONG_STEP_UP);
-    expect(cua.length, "phải có lời gọi `retryDeferred.mutate(`").toBeGreaterThan(0);
-    for (const g of cua) {
-      expect(g.coTotpCode, "`retryDeferred.input` KHÔNG khai `totpCode` — gửi nó là vỡ `.strict()`").toBe(false);
-      expect(g.trongStepUpGuard, "`actuationProcedure` KHÔNG chain `requireFreshTotp`").toBe(false);
+    for (const ten of KHONG_STEP_UP) {
+      const cua = quetMutate(ast()).filter((g) => g.ten === ten);
+      expect(cua.length, `phải có lời gọi \`${ten}.mutate(\``).toBeGreaterThan(0);
+      for (const g of cua) {
+        expect(g.coTotpCode, `\`${ten}.input\` KHÔNG khai \`totpCode\` — gửi nó là gửi một khoá thừa`).toBe(false);
+        expect(g.trongStepUpGuard, `sàn của \`${ten}\` KHÔNG chain \`requireFreshTotp\``).toBe(false);
+      }
     }
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// ★★ LƯỚI-CHO-LƯỚI CỦA NỬA MÁY CHỦ — I-3 phải ĐỎ dưới chính đột biến W3 của reviewer.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+describe("★★★ I-3 lưới-cho-lưới — đột biến W3 và họ hàng của nó", () => {
+  const GOC = readFileSync(VRAM_ROUTER, "utf8");
+
+  it("★★★ W3 — nâng `retryDeferred` lên `deployProcedure` ⇒ nó vào PHA_HUY và THIẾU `totpCode` ⇒ ĐỎ", () => {
+    const ma = GOC.replace(
+      "const vramActuationProcedure = actuationProcedure.use(",
+      "const vramActuationProcedure = deployProcedure.use(",
+    );
+    expect(ma, "đột biến phải thật sự đổi được nguồn").not.toBe(GOC);
+    const { anhXa, mu } = mutationCuaMayChu(ma);
+    expect(mu.join("\n")).toBe("");
+    expect(anhXa.retryDeferred).toEqual({ san: SAN_CO_STEP_UP, khaiTotp: false });
+
+    const phaHuy = Object.keys(anhXa).filter((k) => anhXa[k]?.san === SAN_CO_STEP_UP);
+    expect(phaHuy, "W3 kéo `retryDeferred` vào tập đòi OTP").toContain("retryDeferred");
+    // ⚠ Câu lỗi phải chỉ ĐÍCH DANH `retryDeferred` — bản trước đỏ ở một ca chỉ đường tới `preempt`.
+    expect(phaHuy.filter((k) => anhXa[k]?.khaiTotp !== true)).toEqual(["retryDeferred"]);
+  });
+
+  it("★★★ chiều còn lại — HẠ `preempt` xuống `actuationProcedure` (bỏ step-up) ⇒ ĐỎ ở chiều ngược", () => {
+    const ma = GOC.replace(
+      "const vramDestructiveProcedure = deployProcedure.use(",
+      "const vramDestructiveProcedure = actuationProcedure.use(",
+    );
+    expect(ma).not.toBe(GOC);
+    const { anhXa } = mutationCuaMayChu(ma);
+    expect(anhXa.preempt?.san).toBe("actuationProcedure");
+    const khongStepUp = Object.keys(anhXa).filter((k) => anhXa[k]?.san !== SAN_CO_STEP_UP);
+    // `preempt` rơi khỏi tập step-up, nhưng `input` vẫn khai `totpCode` ⇒ chiều ngược ĐỎ.
+    expect(khongStepUp.filter((k) => anhXa[k]?.khaiTotp === true)).toContain("preempt");
+  });
+
+  it("★★ bị BẮT: gỡ `totpCode` khỏi `input` của một lệnh phá huỷ (giữ nguyên sàn) ⇒ ĐỎ", () => {
+    const ma = GOC.replace("const totp = { totpCode: z.string().max(16).optional() };", "const totp = {};");
+    expect(ma).not.toBe(GOC);
+    const { anhXa } = mutationCuaMayChu(ma);
+    expect(anhXa.preempt).toEqual({ san: SAN_CO_STEP_UP, khaiTotp: false });
+    expect(anhXa.releaseStale?.khaiTotp).toBe(false);
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — `query` (mặt đọc) nằm NGOÀI bất biến step-up", () => {
+    expect(Object.keys(MAY_CHU.anhXa), "`state` là `query` ⇒ không có `.mutate(` nào ở panel").not.toContain("state");
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — mã sản xuất ở HEAD cho đúng hai tập, không giao nhau", () => {
+    expect([...PHA_HUY].sort()).toEqual(["preempt", "releaseStale"]);
+    expect([...KHONG_STEP_UP].sort()).toEqual(["retryDeferred"]);
+    expect(PHA_HUY.filter((k) => KHONG_STEP_UP.includes(k))).toEqual([]);
   });
 });
 

@@ -293,44 +293,202 @@ describe("N9 — bảng vai phải PHỦ ĐÚNG danh sách vai của máy chủ 
 
 const VRAM_ROUTER = join(GOC, "server", "routers", "vramRouter.ts");
 
-describe("Task 3b — cổng quyền client KHAI phải trùng cổng máy chủ ĐỨNG TRÊN (nguồn độc lập)", () => {
-  /**
-   * Đọc **mọi** cặp `(module, action)` mà `vramRouter.ts` chain qua `requirePermission(...)`, phân
-   * giải cả chuỗi trực tiếp lẫn hằng nhập từ `@shared/permissions`.
-   */
-  function cuaMayChu(): string[] {
-    const ma = readFileSync(VRAM_ROUTER, "utf8");
-    const sf = ts.createSourceFile(VRAM_ROUTER, ma, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-    const hang = new Map<string, string>([["VRAM_CONTROL_MODULE", VRAM_CONTROL_MODULE]]);
-    const val = (n: ts.Node): string | null =>
-      ts.isStringLiteral(n) ? n.text : ts.isIdentifier(n) ? (hang.get(n.text) ?? null) : null;
-    const ra: string[] = [];
-    const di = (n: ts.Node): void => {
-      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "requirePermission") {
-        const m = n.arguments[0] === undefined ? null : val(n.arguments[0]);
-        const a = n.arguments[1] === undefined ? null : val(n.arguments[1]);
-        ra.push(`${m}/${a}`);
-      }
-      ts.forEachChild(n, di);
-    };
-    di(sf);
-    return ra;
-  }
+/** Khoá router của **mặt ĐỌC** — cố ý ở lại `machine_control/canView` (N8), không có nút nào. */
+const MAT_DOC = "state";
 
-  it("★★★ hai cổng lệnh mà client khai (`VRAM_LENH_GATE`) đúng bằng hai cổng lệnh của `vramRouter`", () => {
-    const may = cuaMayChu();
-    expect(may.length, "không đọc được điểm gọi nào — vramRouter đã đổi hình dạng?").toBeGreaterThan(0);
+/**
+ * ★★★ C-1 (review TOÀN NHÁNH) — nửa còn lại của ÁNH XẠ. `VI_TU_THEO_THU_TUC` (dưới) nói *"nút của
+ * thủ tục nào dùng vị từ nào"*; bảng này nói *"vị từ ấy hỏi bit nào"*. Ghép hai bảng lại thì
+ * **thủ tục máy chủ → bit mà client thật sự hỏi** trở thành một hàm tính được, và so được với
+ * **thủ tục máy chủ → bit máy chủ đứng trên**.
+ */
+const CONG_CUA_VI_TU: Readonly<Record<string, { readonly module: string; readonly action: string }>> = {
+  vramDestructiveButtonDisabled: VRAM_LENH_GATE.destructive,
+  vramRetryButtonDisabled: VRAM_LENH_GATE.actuation,
+};
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠⚠ C-1 — VÌ SAO BỘ QUÉT NÀY **CỐ Ý** KHÔNG DÙNG LẠI BỘ QUÉT CỦA `vramPermissionSplit.test.ts`
+//
+// Cả pha này dựng hai cổng và gọi chúng là *"nguồn ĐỘC LẬP"*. Review toàn nhánh đo được rằng độc
+// lập về **mã** mà **trùng về LƯỢNG TỪ** thì cả hai cùng mù: cả hai rút ra một **TẬP** chuỗi
+// `module/action` rồi so tập, nên **hoán vị** `canDelete` ↔ `canCreate` giữa hai thủ tục giữ
+// nguyên tập ⇒ **cả hai XANH**, và bản vá ấy **ship được**.
+// ⇒ Sửa **lượng từ** (nay là ÁNH XẠ theo khoá router), **giữ** sự độc lập của mã: gộp hai bộ quét
+// thành một hàm dùng chung sẽ làm client và máy chủ **đồng ý theo cấu tạo**, tức xoá sạch cái duy
+// nhất khiến câu *"gương khớp máy chủ"* có nghĩa.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Đọc `vramRouter.ts` ra **ánh xạ khoá-router → cổng `module/action`**, phân giải qua biến, qua
+ * alias, và qua chuỗi viết inline.
+ *
+ * ⚠ Không phân giải được ⇒ vào `mu` (ĐỎ), **không** bỏ qua im lặng.
+ */
+function congTheoThuTuc(nguon?: string): { anhXa: Record<string, string>; mu: string[] } {
+  const ma = nguon ?? readFileSync(VRAM_ROUTER, "utf8");
+  const sf = ts.createSourceFile(VRAM_ROUTER, ma, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const hang = new Map<string, string>([["VRAM_CONTROL_MODULE", VRAM_CONTROL_MODULE]]);
+  const val = (n: ts.Node | undefined): string | null =>
+    n === undefined ? null : ts.isStringLiteral(n) ? n.text : ts.isIdentifier(n) ? (hang.get(n.text) ?? null) : null;
+
+  /** MỌI `requirePermission(M, A)` nằm trong một biểu thức. */
+  const congTrong = (n: ts.Node): string[] => {
+    const ra: string[] = [];
+    const di = (x: ts.Node): void => {
+      if (ts.isCallExpression(x) && ts.isIdentifier(x.expression) && x.expression.text === "requirePermission") {
+        ra.push(`${val(x.arguments[0]) ?? "?"}/${val(x.arguments[1]) ?? "?"}`);
+      }
+      ts.forEachChild(x, di);
+    };
+    di(n);
+    return ra;
+  };
+
+  const bien = new Map<string, { cong: string[]; goc: string | null }>();
+  for (const stmt of sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue;
+    for (const d of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(d.name) || d.initializer === undefined) continue;
+      bien.set(d.name.text, { cong: congTrong(d.initializer), goc: gocCuaChuoi(d.initializer) });
+    }
+  }
+  /** Leo ngược chuỗi biến, gom mọi cổng gặp trên đường (alias không giấu được cổng của gốc). */
+  const leo = (bd: string | null): string[] => {
+    const ra: string[] = [];
+    let cur = bd;
+    for (let i = 0; i < 16 && cur !== null; i++) {
+      const b = bien.get(cur);
+      if (b === undefined) return ra;
+      ra.push(...b.cong);
+      cur = b.goc;
+    }
+    return ra;
+  };
+
+  const anhXa: Record<string, string> = {};
+  const mu: string[] = [];
+  const di = (n: ts.Node): void => {
+    const arg0 = ts.isCallExpression(n) ? n.arguments[0] : undefined;
+    if (
+      ts.isCallExpression(n) &&
+      ts.isIdentifier(n.expression) &&
+      n.expression.text === "router" &&
+      arg0 !== undefined &&
+      ts.isObjectLiteralExpression(arg0)
+    ) {
+      for (const p of arg0.properties) {
+        const dong = sf.getLineAndCharacterOfPosition(p.getStart(sf)).line + 1;
+        if (!ts.isPropertyAssignment(p) || !ts.isIdentifier(p.name)) {
+          mu.push(`vramRouter.ts:${dong} — ô của router KHÔNG phải \`tên: <chuỗi thủ tục>\``);
+          continue;
+        }
+        const tatCa = [...new Set([...congTrong(p.initializer), ...leo(gocCuaChuoi(p.initializer))])].sort();
+        if (tatCa.length !== 1 || tatCa[0]?.includes("?") === true) {
+          mu.push(`vramRouter.ts:${dong} \`${p.name.text}\` — cổng: [${tatCa.join(", ")}]`);
+          continue;
+        }
+        anhXa[p.name.text] = tatCa[0] as string;
+      }
+    }
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  return { anhXa, mu };
+}
+
+describe("Task 3b + C-1 — cổng quyền client KHAI phải trùng cổng máy chủ ĐỨNG TRÊN, THEO TỪNG THỦ TỤC", () => {
+  it("★★★ C-1 — ÁNH XẠ `thủ tục → bit` khớp TỪNG CẶP giữa `vramRouter` và vị từ nút mà client chọn", () => {
+    /**
+     * ⚠⚠ Bất biến **CHỦ** của gương. Bản trước hỏi *"tập cổng máy chủ có chứa hai cổng client khai
+     * không"* — một câu về **TẬP**, nên hoán vị hai bit giữa hai thủ tục là vô hình. Nay với **mỗi**
+     * thủ tục lệnh của máy chủ, ta tính ra bit mà client **thật sự** hỏi cho nút của nó
+     * (`VI_TU_THEO_THU_TUC` → `CONG_CUA_VI_TU`) và đòi nó bằng bit máy chủ đứng trên.
+     */
+    const { anhXa, mu } = congTheoThuTuc();
+    expect(mu.join("\n"), "một ô không phân giải được là một ô KHÔNG AI CANH").toBe("");
+    expect(Object.keys(anhXa).length, "không đọc được thủ tục nào — vramRouter đã đổi hình dạng?").toBeGreaterThan(0);
+
+    // Mặt ĐỌC cố ý ở lại `machine_control/canView` — loại ra TƯỜNG MINH, không im lặng.
+    expect(anhXa[MAT_DOC], "mặt đọc phải vẫn là quyết định N8").toBe("machine_control/canView");
+    const lenh = Object.fromEntries(Object.entries(anhXa).filter(([k]) => k !== MAT_DOC));
+
+    // Chiều ĐỦ: mọi thủ tục LỆNH của máy chủ đều có một nút được khai ở client, và ngược lại.
+    expect(Object.keys(lenh).sort(), "client và máy chủ phải nói về ĐÚNG cùng tập thủ tục lệnh").toEqual(
+      Object.keys(VI_TU_THEO_THU_TUC).sort(),
+    );
+
+    // Chiều ĐÚNG: từng cặp.
+    const lech: string[] = [];
+    for (const [thuTuc, congMay] of Object.entries(lenh)) {
+      const viTu = VI_TU_THEO_THU_TUC[thuTuc];
+      const cong = viTu === undefined ? undefined : CONG_CUA_VI_TU[viTu];
+      const congClient = cong === undefined ? "(không khai)" : `${cong.module}/${cong.action}`;
+      if (congClient !== congMay) {
+        lech.push(`${thuTuc}: máy chủ đứng trên \`${congMay}\` nhưng nút client hỏi \`${congClient}\` (vị từ ${viTu ?? "?"})`);
+      }
+    }
+    expect(lech.join("\n")).toBe("");
+  });
+
+  it("★★★ W1 — HOÁN VỊ `canDelete` ↔ `canCreate` giữa hai thủ tục máy chủ ⇒ ĐỎ (dù TẬP không đổi)", () => {
+    const goc = readFileSync(VRAM_ROUTER, "utf8");
+    const ma = goc
+      .replace('deployProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canDelete"))', "@D@")
+      .replace('actuationProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canCreate"))', "@A@")
+      .replace("@D@", 'deployProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canCreate"))')
+      .replace("@A@", 'actuationProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canDelete"))');
+    expect(ma, "đột biến phải thật sự đổi được nguồn").not.toBe(goc);
+
+    const { anhXa, mu } = congTheoThuTuc(ma);
+    expect(mu.join("\n")).toBe("");
+
+    // ⚠ ĐỐI CHỨNG — lưới đời trước (**TẬP**) vẫn XANH dưới đúng đột biến này.
     const khai = [
       `${VRAM_LENH_GATE.destructive.module}/${VRAM_LENH_GATE.destructive.action}`,
       `${VRAM_LENH_GATE.actuation.module}/${VRAM_LENH_GATE.actuation.action}`,
     ];
-    for (const k of khai) {
-      expect(may, `client khai cổng \`${k}\` nhưng vramRouter KHÔNG đứng trên nó (máy chủ: ${may.join(", ")})`).toContain(k);
-    }
-    // ⚠ Chiều ngược: máy chủ **không được** còn một cổng LỆNH nào ngoài hai cái đã khai. Mặt ĐỌC
-    // (`machine_control/canView`) cố ý ở lại — loại nó ra tường minh, không im lặng.
-    const conLai = may.filter((c) => !khai.includes(c) && c !== "machine_control/canView");
-    expect(conLai.join(" · "), "vramRouter còn đứng trên một cổng mà client KHÔNG khai").toBe("");
+    const tap = Object.values(anhXa);
+    for (const k of khai) expect(tap, "TẬP vẫn chứa đủ hai cổng — đó là toàn bộ lý do C-1 lọt").toContain(k);
+    expect(tap.filter((c) => !khai.includes(c) && c !== "machine_control/canView").join(" · ")).toBe("");
+
+    // Lưới MỚI: từng cặp lệch.
+    expect(anhXa.preempt).toBe(`${VRAM_CONTROL_MODULE}/canCreate`);
+    const viTu = VI_TU_THEO_THU_TUC.preempt as string;
+    const cong = CONG_CUA_VI_TU[viTu] as { module: string; action: string };
+    expect(`${cong.module}/${cong.action}`, "nút phá huỷ của client vẫn hỏi `canDelete` ⇒ LỆCH").not.toBe(anhXa.preempt);
+  });
+
+  it("★★★ HÌNH DẠNG CỦA TÔI — ALIAS thủ tục (`const c = vramActuationProcedure`) ⇒ ĐỎ", () => {
+    const ma = readFileSync(VRAM_ROUTER, "utf8")
+      .replace(
+        "export const vramRouter = router({",
+        "const congPhaHuy = vramActuationProcedure;\nexport const vramRouter = router({",
+      )
+      .replace("preempt: vramDestructiveProcedure", "preempt: congPhaHuy");
+    const { anhXa, mu } = congTheoThuTuc(ma);
+    expect(mu.join("\n")).toBe("");
+    expect(ma, "đối chứng: tên biến cũ vẫn còn trong file").toContain("vramDestructiveProcedure");
+    expect(anhXa.preempt, "alias KHÔNG giấu được cổng của gốc").toBe(`${VRAM_CONTROL_MODULE}/canCreate`);
+  });
+
+  it("★★★ thủ tục MỚI ở máy chủ mà client chưa khai nút ⇒ ĐỎ (không có phần tử thứ N+1 im lặng)", () => {
+    const ma = readFileSync(VRAM_ROUTER, "utf8").replace(
+      "export const vramRouter = router({",
+      "export const vramRouter = router({\n  killAll: vramDestructiveProcedure.mutation(async () => 1),",
+    );
+    const { anhXa } = congTheoThuTuc(ma);
+    const lenh = Object.keys(anhXa).filter((k) => k !== MAT_DOC);
+    expect(lenh.sort()).not.toEqual(Object.keys(VI_TU_THEO_THU_TUC).sort());
+    expect(lenh).toContain("killAll");
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — đổi TÊN BIẾN thủ tục ở máy chủ (dọn dẹp hợp lệ) ⇒ VẪN XANH", () => {
+    const ma = readFileSync(VRAM_ROUTER, "utf8").split("vramDestructiveProcedure").join("congPhaHuyVram");
+    const { anhXa, mu } = congTheoThuTuc(ma);
+    expect(mu.join("\n")).toBe("");
+    expect(anhXa.preempt).toBe(`${VRAM_CONTROL_MODULE}/canDelete`);
+    expect(anhXa.releaseStale).toBe(`${VRAM_CONTROL_MODULE}/canDelete`);
   });
 
   it("★★★ module VRAM là bit RIÊNG — client TUYỆT ĐỐI không còn khai `machine_control` cho hai nút lệnh", () => {
@@ -374,10 +532,11 @@ describe("Task 3b — cổng quyền client KHAI phải trùng cổng máy chủ
  * đổi tên biến (`const p = trpc.vram.preempt.useMutation(...)`) không thoát được.
  */
 const VI_TU_THEO_THU_TUC: Readonly<Record<string, string>> = {
-  // `deployProcedure` + `machine_control/canDelete` — PHÁ HUỶ.
+  // `deployProcedure` + `vram_control/canDelete` — PHÁ HUỶ. (Bit đã tách ở Task 3b; bảng này
+  // **chịu tải** từ C-1: ca "ÁNH XẠ" trên ghép nó với `CONG_CUA_VI_TU` rồi so với `vramRouter`.)
   preempt: "vramDestructiveButtonDisabled",
   releaseStale: "vramDestructiveButtonDisabled",
-  // `actuationProcedure` + `machine_control/canCreate`.
+  // `actuationProcedure` + `vram_control/canCreate`.
   retryDeferred: "vramRetryButtonDisabled",
 };
 /** Tên component mang ba nút ấy — ô `commandReach` của nó là **cái NUÔI** cả ba. */
