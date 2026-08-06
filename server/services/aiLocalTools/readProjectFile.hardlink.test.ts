@@ -155,7 +155,12 @@ describe("★★★ N13 — read_project_file: NTFS hard link KHÔNG được đ
       `KHÔNG dựng được hard link ⇒ ca chính dưới đây KHÔNG chứng minh gì. Lý do: ${dungDuoc.hardlink.loi}. ` +
         "Không được bỏ qua im lặng — sửa môi trường (cùng ổ đĩa, NTFS) rồi chạy lại.",
     ).toBe(true);
-    expect(dungDuoc.hardlink.nlink, "hard link phải làm nlink ≥ 2, nếu không thì phép chặn vô nghĩa").toBe(2);
+    /**
+     * ⚠ M-3 (review): bản trước khoá `toBe(2)` — **khoá theo chữ ký của cảnh dựng**, không theo
+     * luật. Người review dựng HAI hard link tới cùng inode ⇒ `nlink = 3` và một ca kiểu ấy đỏ vì
+     * lý do **không liên quan tới sản phẩm**. Luật muốn nói *"nó PHẢI LÀ nhiều hơn một liên kết"*.
+     */
+    expect(dungDuoc.hardlink.nlink, "hard link phải làm nlink > 1, nếu không thì phép chặn vô nghĩa").toBeGreaterThan(1);
     expect(
       dungDuoc.junction.ok,
       `KHÔNG dựng được junction ⇒ không canh được phòng thủ ĐANG ĐÚNG. Lý do: ${dungDuoc.junction.loi}`,
