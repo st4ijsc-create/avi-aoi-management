@@ -261,6 +261,47 @@ export function assertExecutable(tool: Tool<any, any>): void {
  * ⚠ Lưới canh: `aiAgentOrchestrator.authCtx.test.ts` (đi từ đầu đường tự trị) +
  * `authCtxInjection.test.ts` (đường `tryExecuteTool` + **bản kiểm đếm MỌI điểm gọi `.handler(`**).
  */
+/**
+ * ★★★ 🔴 C-1 (review Task 4) — **"CÓ TÊN `lang`" KHÔNG CÓ NGHĨA LÀ "LÀ NGÔN NGỮ HIỂN THỊ".**
+ *
+ * Bản vá vòng trước tiêm `execCtx.lang` vào **mọi** ô tên `lang`. Đo lúc chạy: **30/77** tool có ô
+ * ấy — nhưng **hai** trong số đó (`retrieve_programming_kb`, `lookup_error_code`,
+ * `readToolsProgramming.ts:455/:504`) khai `z.string().min(1).max(16)` và dùng nó làm **BỘ LỌC
+ * NGÔN NGỮ CỦA KHO TÀI LIỆU** (`aiProgrammingKnowledgeService.chunkMatchesFilters`). Người review
+ * đo trên kho thật (91.678 chunk: en 91.392 · vi 237 · zh 49): một câu hỏi **tiếng Việt** về mã
+ * lỗi servo bị ép `lang="vi"` ⇒ RAG chỉ quét **237/91.678 chunk (0,26%)** và trả **sai tài liệu**,
+ * im lặng. `programmingTools.test.ts` **28/28 vẫn xanh**.
+ *
+ * ⇒ Đây là lớp lỗi **"neo theo TÊN, không theo NGHĨA"**. Và **chính KIỂU đã nói ra sự khác biệt
+ * trước khi có phép đo nào**: `z.string().max(16)` **không phải** `z.enum(["vi","en","zh"])` — hai
+ * ô trùng tên mà khác kiểu là **hai khái niệm khác nhau**.
+ *
+ * ⇒ Vị từ dưới đây phát biểu **cái ô ấy PHẢI LÀ**: *một enum nhận **đúng** tập ba ngôn ngữ hiển
+ * thị*. Không liệt kê tool nào được/không được tiêm, không dò tên tool, không thử "ô này có từ
+ * chối `ja` không" (một `z.string().length(2)` cũng từ chối `ja`, và vẫn không phải ngôn ngữ hiển
+ * thị). Ô nào **không** chứng minh được mình là enum ba giá trị thì **không được đụng tới** —
+ * hỏng theo chiều **AN TOÀN**.
+ *
+ * ⚠ Bóc vỏ qua `_def.innerType` để đi xuyên `.optional()`/`.default()`/`.nullable()` (zod v4 để
+ * `_def.type = "optional"`, v3 để `_def.typeName = "ZodOptional"` — đọc `innerType` đúng ở cả hai).
+ * `.options` là bề mặt công khai của `ZodEnum` ở cả hai đời.
+ */
+const NGON_NGU_HIEN_THI = ["en", "vi", "zh"] as const;
+
+export function laOEnumNgonNguHienThi(o: unknown): boolean {
+  let n: unknown = o;
+  // Trần 8 lớp: đủ cho mọi chồng vỏ thực tế, và chặn vòng lặp vô hạn nếu schema tự tham chiếu.
+  for (let i = 0; i < 8 && n !== null && n !== undefined; i++) {
+    const opts = (n as { options?: unknown }).options;
+    if (Array.isArray(opts)) {
+      const co = [...new Set(opts.map((v) => String(v)))].sort();
+      return co.length === NGON_NGU_HIEN_THI.length && co.every((v, k) => v === NGON_NGU_HIEN_THI[k]);
+    }
+    n = (n as { _def?: { innerType?: unknown } })._def?.innerType;
+  }
+  return false;
+}
+
 export function argsWithAuthCtx(tool: Tool<any, any>, args: unknown, execCtx?: ToolExecContext): unknown {
   /**
    * 🔴 N-4 (re-review Task 4) — **DÒNG NÀY TỪNG LÀ `return args`, VÀ ĐÓ LÀ MỘT LỖ DANH TÍNH.**
@@ -299,9 +340,12 @@ export function argsWithAuthCtx(tool: Tool<any, any>, args: unknown, execCtx?: T
    * một `lang` HỢP LỆ do người sản xuất args nêu ra (model có thể suy ra "trả lời tôi bằng tiếng
    * Anh") được **GIỮ**; `execCtx.lang` chỉ điền vào chỗ TRỐNG hoặc chỗ **không hợp lệ**. Với
    * `__authCtx` thì ngược lại — nó bị **XOÁ vô điều kiện** rồi gán lại, vì nó **là** biên an ninh.
+   *
+   * ⚠⚠ 🔴 C-1: điều kiện là `laOEnumNgonNguHienThi(shape.lang)` — **KHÔNG** phải `hasOwn(shape,
+   * "lang")`. Xem khối lý lẽ ở vị từ ấy: một ô trùng tên có thể là **bộ lọc kho tài liệu**.
    */
-  if (Object.hasOwn(shape, "lang") && ra.lang !== "vi" && ra.lang !== "en" && ra.lang !== "zh") {
-    ra = { ...ra, lang: execCtx.lang };
+  if (Object.hasOwn(shape, "lang") && laOEnumNgonNguHienThi(shape.lang)) {
+    if (ra.lang !== "vi" && ra.lang !== "en" && ra.lang !== "zh") ra = { ...ra, lang: execCtx.lang };
   }
   if (!Object.hasOwn(shape, "__authCtx")) return ra;
   // (2) GÁN LẠI từ phiên THẬT — nguồn duy nhất.

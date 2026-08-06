@@ -14,9 +14,13 @@
  *   • `git grep "i18n/locales" -- server/ shared/` ⇒ chỉ **một** kết quả và nó là **file TEST**
  *     (`server/services/vram/refusal.test.ts:65`, đọc bằng `readFileSync` để **đối chiếu**, không
  *     phải để **render**).
- *   • Đường dịch THẬT của máy chủ là hàm `w(lang, vi, en, zh)` — có sẵn ở **ba** file
- *     `server/services/aiLocalTools/writeHandlers/{engineering,maintenance,programmingFile}.ts`
- *     (mỗi file một bản sao), cộng `DENY: Record<ToolLang, string>` **ngay trong `vramTools.ts`**.
+ *   • Đường dịch THẬT của máy chủ là hàm `w(lang, vi, en, zh)`. ⚠ **TÁM bản sao**, không phải ba
+ *     (`git grep -n "function w(" -- server/`): `readToolsProgramming.ts:72` +
+ *     `writeHandlers/{engineering,interlock,machineControl,maintenance,programmingFile,
+ *     qualityAdvisory,visionControl}.ts`. Cộng `DENY: Record<ToolLang, string>` **ngay trong
+ *     `vramTools.ts`**. ⚠⚠ Một trong tám nằm ở một **READ tool** (`readToolsProgramming.ts`) —
+ *     con số "ba writeHandler" ở bản trước **che mất đúng sự thật ấy**, và chính file đó là nơi
+ *     C-1 nổ (một ô tên `lang` **không phải** ngôn ngữ hiển thị). Xem `toolRegistry.ts`.
  *
  * ⇒ Đổ câu vào `locales/*.json` **bắt buộc phải đẻ một người đọc MỚI ở máy chủ** (nạp 3 file JSON
  * ~2,4 MB của client vào tiến trình server, dựng một instance i18next thứ hai) — **đúng thứ ràng
@@ -38,6 +42,25 @@
  * người đọc** đều là một khoá ở bảng dưới. Nhờ luật này, **mọi** khoá đều có văn xuôi ở cả ba
  * ngôn ngữ, nên ba luật PHẢI-LÀ của cổng vét cạn áp được cho **toàn bảng**, không cần một miễn
  * trừ nào (miễn trừ là chỗ phần tử thứ N+1 chui vào).
+ *
+ * ⚠⚠ M-3 (review) — **GẶP CỔNG §A THÌ CÓ HAI LỐI ĐÚNG, VÀ MỘT LỐI SAI RẺ HƠN CẢ HAI.**
+ * Cổng đòi `vi` phải có dấu / `zh` phải có Hán tự. Một khuôn **thuần kỹ thuật** sẽ đỏ. Hai lối
+ * ĐÚNG: (1) **viết văn xuôi thật** — nói hành động tiếp theo, thứ khuôn ấy đang thiếu; (2) **đẩy
+ * phần kỹ thuật xuống THAM SỐ**, để khoá chỉ còn giữ văn xuôi.
+ * Lối SAI: **nhét một chữ có dấu cho qua cổng** — cổng xanh mà không trả lại điều cổng đang đòi,
+ * và một lưới NỘI DUNG bị hạ cấp thành một lưới CHÍNH TẢ. Hai khoá `basis` /
+ * `baselineUnverifiedList` đi lối (1); đọc chú thích tại chỗ.
+ *
+ * ⚠⚠ I-3 (review) — **THÂN MỖI HÀM KHUÔN PHẢI LÀ MỘT BIỂU THỨC CHUỖI, KHÔNG RẼ NHÁNH.**
+ * Người review dựng đột biến **RV-2**: rẽ nhánh **theo GIÁ TRỊ THAM SỐ** ngay trong ô `en`
+ * (`p.stale === "true" ? <tiếng Việt> : <tiếng Anh>`) ⇒ **106/106 xanh, `tsc` sạch**, và nhánh ấy
+ * **tới được thật** (bản sao sổ chung cũ 10 phút ⇒ một dòng tiếng Việt ở phiên `en`). Gốc: §A
+ * render mỗi khuôn **đúng MỘT lần** ⇒ chỉ quan sát được **một** nhánh, trong khi tập giá trị tham
+ * số là **vô hạn** — *"cái gì LIỆT KÊ thì luôn có phần tử thứ N+1"* ở một nấc mới: thứ bị liệt kê
+ * lần này là **điểm dữ liệu render**.
+ * ⇒ Mọi rẽ nhánh phải nằm ở `vramTools.ts` và chọn giữa **HAI KHOÁ** (`degradedYes`/`degradedNo`,
+ * `unledgeredEstimateUsable`/`Unusable`, `beginFailures*` đã đúng khuôn ấy). Cưỡng chế bằng ca AST
+ * §A-AST ở `vramPhrases.exhaustive.test.ts`.
  *
  * ⚠⚠ **CÂU ĐÚNG MÀ VÔ DỤNG VẪN LÀ HỎNG.** Đây là bề mặt cho **Agent**: mỗi câu phải nói **hành
  * động tiếp theo**. Ví dụ hỏng mà brief nêu đích danh — dịch `owner-not-in-local-ledger` thành
@@ -370,10 +393,18 @@ export const CAU = {
       `estimateUsable=${p.usable}，unknownCount=${p.unknownCount}）` +
       ` ⇒ 不可信，请勿用于计算；把账本外占用如实报告为未知。`,
   ),
+  /** ★ I-1 — bản sinh đôi `beginFailuresWithReason` có hành động; bản này trước đó không. */
   beginFailuresNoReason: ba<{ count: string }>(
-    (p) => `Lượt cấp phát ngoài sổ (hàm beginVramAllocation) đã hỏng ${p.count} lượt.`,
-    (p) => `Off-ledger allocation attempts (function beginVramAllocation) have failed ${p.count} time(s).`,
-    (p) => `账本外分配尝试（函数 beginVramAllocation）已失败 ${p.count} 次。`,
+    (p) =>
+      `Lượt cấp phát ngoài sổ (hàm beginVramAllocation) đã hỏng ${p.count} lượt, và KHÔNG lý do nào được ghi lại ` +
+      `— số khác 0 ở đây nghĩa là có đường cấp phát đang hỏng mà không ai chẩn đoán được từ bản tóm tắt này.`,
+    (p) =>
+      `Off-ledger allocation attempts (function beginVramAllocation) have failed ${p.count} time(s), ` +
+      `and NO reason was recorded — a non-zero count here means an allocation path is failing that this summary ` +
+      `cannot diagnose; send the operator to the VRAM event log rather than guessing.`,
+    (p) =>
+      `账本外分配尝试（函数 beginVramAllocation）已失败 ${p.count} 次，且没有记录任何原因` +
+      `——此处非零意味着有分配路径正在失败，而本摘要无法诊断；请让操作员去查 VRAM 事件日志，不要猜测。`,
   ),
   beginFailuresWithReason: ba<{ count: string; reason: string }>(
     (p) => `Lượt cấp phát ngoài sổ (hàm beginVramAllocation) đã hỏng ${p.count} lượt · lý do gần nhất: ${p.reason}`,
@@ -386,16 +417,26 @@ export const CAU = {
   ),
 
   // ── NHỊP ───────────────────────────────────────────────────────────────────────────────────
+  /**
+   * ★ I-1 (review) — **KHOÁ NGUY HIỂM NHẤT LẠI LÀ KHOÁ IM NHẤT.** Bản trước chỉ dịch ĐỊNH DANH.
+   * `stale` ở đây dùng **đúng `TICK_STALE_AFTER_MS`** mà `applyEnforcement()` dùng
+   * (`vramEnforcement.ts:122`) ⇒ `stale=true` nghĩa là **mọi quyết định cấp/TỪ CHỐI đang chạy trên
+   * dữ liệu quá hạn**, chứ không phải "một con số hơi cũ". Khoá anh em `tickAbsent` có hành động,
+   * khoá này thì không — đúng chỗ cần nói nhất lại im.
+   */
   tickPresent: ba<{ ageMs: string; staleAfterMs: string; stale: string; fails: string }>(
     (p) =>
       `Nhịp quyết định: tuổi ${p.ageMs} ms (ngưỡng ${p.staleAfterMs} ms, stale=${p.stale}) · ` +
-      `hỏng liên tiếp=${p.fails}.`,
+      `hỏng liên tiếp=${p.fails}. Nếu stale=true thì phép cưỡng chế đang quyết trên dữ liệu quá hạn: ` +
+      `nêu mọi con số dưới đây kèm chữ "quá hạn", đừng nói như một sự thật hiện thời.`,
     (p) =>
       `Decision tick: age ${p.ageMs} ms (threshold ${p.staleAfterMs} ms, stale=${p.stale}) · ` +
-      `consecutive failures=${p.fails}.`,
+      `consecutive failures=${p.fails}. If stale is true, enforcement is deciding on expired data: ` +
+      `label every number below as stale and do not state it as the present truth.`,
     (p) =>
       `决策节拍：年龄 ${p.ageMs} ms（阈值 ${p.staleAfterMs} ms，stale=${p.stale}）· ` +
-      `连续失败=${p.fails}。`,
+      `连续失败=${p.fails}。若 stale 为真，说明强制判定正基于过期数据：` +
+      `请把下面每个数字都标注为“已过期”，不要当作当前事实陈述。`,
   ),
   tickAbsent: ba<{ meaning: string }>(
     (p) => `Nhịp quyết định: ${p.meaning} — CHƯA CÓ NHỊP NÀO (cấu trúc, không tự lành).`,
@@ -425,10 +466,13 @@ export const CAU = {
     (p) => `waits and retries (floor ${p.budgetMs} ms)`,
     (p) => `有等待并重试（下限 ${p.budgetMs} ms）`,
   ),
+  /** ★ I-1 — khoá anh em `statusExceeded` có hành động; khoá này trước đó chỉ dịch định danh. */
   statusDeferring: ba<{ attempts: string; nextRetryAt: string }>(
-    (p) => `ĐANG HOÃN (${p.attempts} lượt, hạn kế ${p.nextRetryAt})`,
-    (p) => `DEFERRING (${p.attempts} attempt(s), next deadline ${p.nextRetryAt})`,
-    (p) => `正在延迟（已 ${p.attempts} 次，下次期限 ${p.nextRetryAt}）`,
+    (p) => `ĐANG HOÃN (${p.attempts} lượt, hạn kế ${p.nextRetryAt}) — chờ tới hạn đó, đừng đề nghị nạp thêm gì lúc này`,
+    (p) =>
+      `DEFERRING (${p.attempts} attempt(s), next deadline ${p.nextRetryAt}) — ` +
+      `wait for that deadline; do not advise loading anything else in the meantime`,
+    (p) => `正在延迟（已 ${p.attempts} 次，下次期限 ${p.nextRetryAt}）——请等到该期限，在此期间不要建议再加载任何东西`,
   ),
   statusExceeded: ba<{ attempts: string }>(
     (p) => `ĐÃ QUÁ ĐÁY HOÃN (${p.attempts} lượt)`,

@@ -36,8 +36,9 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import ts from "typescript";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { z } from "zod";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const checkPermissionMock = vi.fn();
@@ -52,7 +53,14 @@ import "./vramTools";
  * ghi hồ sơ cho `wiring.inprocess`). Nhập tĩnh đẩy chi phí sang pha COLLECT.
  */
 import { tryExecuteTool } from "./index";
-import { argsWithAuthCtx, getTool, type ToolExecContext, type ToolLang } from "./toolRegistry";
+import {
+  argsWithAuthCtx,
+  getTool,
+  laOEnumNgonNguHienThi,
+  listTools,
+  type ToolExecContext,
+  type ToolLang,
+} from "./toolRegistry";
 import { CAU, VRAM_PHRASE_KEYS, type Cum, type Tham } from "./vramPhrases";
 import * as broker from "../vram/vramBroker";
 import {
@@ -70,7 +78,9 @@ const AUTH = { userId: 7, role: "admin" } as const;
 const NGON_NGU: ToolLang[] = ["vi", "en", "zh"];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const NGUON_TOOLS = join(HERE, "vramTools.ts");
+const NGUON_PHRASES = join(HERE, "vramPhrases.ts");
+/** Gốc `server/` — §B đi tìm **người dùng bảng câu**, không tìm một file đã biết tên. */
+const GOC_SERVER = join(HERE, "..", "..");
 
 // ── Ba vị từ PHẢI-LÀ, phát biểu trên LỚP KÝ TỰ (không trên mẫu, không trên danh sách cấm) ───────
 /** Một chữ cái Latin **không** thuộc ASCII ⇒ dấu tiếng Việt (`ế`, `Ô`, `đ`, …). */
@@ -90,9 +100,17 @@ const chuCaiHopLeChoZh = (s: string): boolean =>
  */
 const NHAN = (k: string) => `«p:${k}»`;
 const thamGia = new Proxy({} as Tham, { get: (_t, k) => NHAN(String(k)) }) as Tham;
+/**
+ * ★ M-4 (review) — điểm render THỨ HAI: **mọi tham số RỖNG**. Nhiều ô thật sự là `""` khi chạy
+ * (`blind`, `degraded`, `note`, `leaseKeyPart`, `ttlPart`), nên một khuôn mà **toàn bộ văn xuôi
+ * nằm trong một mảnh tuỳ chọn** sẽ rỗng THẬT lúc chạy trong khi lượt render bằng nhãn vẫn xanh.
+ * ⚠ Đây là phòng ngừa, không phải vá một lỗi đang có: người review đã đo toàn bảng ở hình dạng
+ * này ⇒ 0/51 hỏng. Giữ nó để cửa ấy **đóng vĩnh viễn**, không chỉ tình cờ đóng.
+ */
+const thamRong = new Proxy({} as Tham, { get: () => "" }) as Tham;
 const boNhan = (s: string): string => s.replace(/«p:[^»]*»/g, "");
 
-function render(key: string, lang: ToolLang): string {
+function render(key: string, lang: ToolLang, tham: Tham = thamGia): string {
   const cum = (CAU as unknown as Record<string, Cum<Tham>>)[key];
   expect(typeof cum, `khoá "${key}" không có mục nào trong bảng CAU`).toBe("object");
   const khuon = cum[lang];
@@ -100,7 +118,7 @@ function render(key: string, lang: ToolLang): string {
     typeof khuon,
     `khoá "${key}" THIẾU bản "${lang}" — thêm nó vào \`ba(vi, en, zh)\` ở vramPhrases.ts`,
   ).toBe("function");
-  return khuon(thamGia);
+  return khuon(tham);
 }
 
 beforeEach(() => {
@@ -155,50 +173,89 @@ describe("★★★ §A bảng câu — mỗi khoá PHẢI có ba bản THẬT (
       );
       expect(coHanTu(vi), `"${key}".vi lẫn Hán tự`).toBe(false);
     });
+
+    it(`khoá "${key}" — M-4: cùng ba luật ấy khi MỌI THAM SỐ RỖNG (ô tuỳ chọn thật sự hay rỗng)`, () => {
+      const vi = render(key, "vi", thamRong);
+      const en = render(key, "en", thamRong);
+      const zh = render(key, "zh", thamRong);
+      for (const [l, s] of [
+        ["vi", vi],
+        ["en", en],
+        ["zh", zh],
+      ] as const) {
+        expect(s.trim().length, `"${key}".${l} RỖNG khi tham số rỗng — văn xuôi đang nằm trong ô tuỳ chọn`).toBeGreaterThan(
+          0,
+        );
+        expect(s, `"${key}".${l} không còn chữ cái nào khi tham số rỗng`).toMatch(/\p{L}/u);
+      }
+      expect(chiChuCaiAscii(en), `"${key}".en còn chữ cái phi-ASCII khi tham số rỗng`).toBe(true);
+      expect(coHanTu(zh), `"${key}".zh mất hết Hán tự khi tham số rỗng`).toBe(true);
+      expect(coLatinPhiAscii(vi), `"${key}".vi mất hết dấu khi tham số rỗng`).toBe(true);
+    });
   }
 });
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // §B — VÉT CẠN THEO NGUỒN ĐỘC LẬP: AST của `vramTools.ts` (mã sản xuất), không phải bảng khai
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-const nguon = readFileSync(NGUON_TOOLS, "utf8");
-const cay = ts.createSourceFile(NGUON_TOOLS, nguon, ts.ScriptTarget.Latest, true);
+/**
+ * ★★★ I-2 (review) — **§B TỪNG NEO VÀO MỘT FILE (`join(HERE,"vramTools.ts")`), VÀ ĐÓ LÀ LỚP LỖI
+ * "LƯỚI THEO FILE, KHÔNG THEO ĐƯỜNG THOÁT" (đã tái diễn 12 lần trong chuỗi pha).**
+ * Tách một phần `tomTat()` sang `vramTomTatPhu.ts` là làm cả bốn ca §B **mù**.
+ * ⇒ Tập file được quét nay **SUY RA từ chính đồ thị nhập**: mọi file `.ts` không-test dưới
+ * `server/` **nhập `vramPhrases`** đều là người dùng bảng câu, và đều bị soi. Không glob, không
+ * danh sách tên — thêm một người dùng mới là **tự động** bị canh.
+ */
+function moiFileTs(goc: string, ra: string[] = []): string[] {
+  for (const m of readdirSync(goc)) {
+    if (m === "node_modules" || m === "dist" || m.startsWith(".")) continue;
+    const p = join(goc, m);
+    if (statSync(p).isDirectory()) moiFileTs(p, ra);
+    else if (m.endsWith(".ts") && !m.endsWith(".d.ts")) ra.push(p);
+  }
+  return ra;
+}
+
+const NHAP_BANG_CAU = /from\s+["'][^"']*\/vramPhrases["']/;
+const NGUOI_DUNG_BANG_CAU: string[] = moiFileTs(GOC_SERVER).filter(
+  (p) => !p.endsWith(".test.ts") && NHAP_BANG_CAU.test(readFileSync(p, "utf8")),
+);
+
+function cayCua(p: string): ts.SourceFile {
+  return ts.createSourceFile(p, readFileSync(p, "utf8"), ts.ScriptTarget.Latest, true);
+}
 
 interface LoiGoiCau {
   ten: "noi" | "cum";
   key: string | null;
-  dong: number;
+  o: string;
 }
 
-function quetLoiGoi(): { goi: LoiGoiCau[]; push: ts.CallExpression[]; ep: ts.Node[] } {
+function quetLoiGoi(): { goi: LoiGoiCau[]; push: { n: ts.CallExpression; cay: ts.SourceFile; o: string }[]; ep: string[] } {
   const goi: LoiGoiCau[] = [];
-  const push: ts.CallExpression[] = [];
-  const ep: ts.Node[] = [];
-  const di = (n: ts.Node): void => {
-    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
-      const ten = n.expression.text;
-      if (ten === "noi" || ten === "cum") {
-        const a = n.arguments[1];
-        goi.push({
-          ten,
-          key: a !== undefined && ts.isStringLiteralLike(a) ? a.text : null,
-          dong: cay.getLineAndCharacterOfPosition(n.getStart()).line + 1,
-        });
+  const push: { n: ts.CallExpression; cay: ts.SourceFile; o: string }[] = [];
+  const ep: string[] = [];
+  for (const p of NGUOI_DUNG_BANG_CAU) {
+    const cay = cayCua(p);
+    const nhan = (n: ts.Node) => `${relative(GOC_SERVER, p)}:L${cay.getLineAndCharacterOfPosition(n.getStart()).line + 1}`;
+    const di = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
+        const ten = n.expression.text;
+        if (ten === "noi" || ten === "cum") {
+          const a = n.arguments[1];
+          goi.push({ ten, key: a !== undefined && ts.isStringLiteralLike(a) ? a.text : null, o: nhan(n) });
+        }
       }
-    }
-    if (
-      ts.isCallExpression(n) &&
-      ts.isPropertyAccessExpression(n.expression) &&
-      n.expression.name.text === "push"
-    ) {
-      push.push(n);
-    }
-    if ((ts.isAsExpression(n) || ts.isTypeAssertionExpression(n)) && /\bDong\b/.test(n.type.getText())) {
-      ep.push(n);
-    }
-    ts.forEachChild(n, di);
-  };
-  di(cay);
+      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === "push") {
+        push.push({ n, cay, o: nhan(n) });
+      }
+      if ((ts.isAsExpression(n) || ts.isTypeAssertionExpression(n)) && /\bDong\b/.test(n.type.getText())) {
+        ep.push(`${nhan(n)}: ${n.getText().slice(0, 60)}`);
+      }
+      ts.forEachChild(n, di);
+    };
+    di(cay);
+  }
   return { goi, push, ep };
 }
 
@@ -212,6 +269,21 @@ function laMotDongDich(e: ts.Expression): boolean {
 describe("★★★ §B vét cạn — bảng khai đối chiếu với NGUỒN ĐỘC LẬP (AST mã sản xuất)", () => {
   const { goi, push, ep } = quetLoiGoi();
 
+  it("★★★ I-2: tập file được soi SUY RA từ đồ thị nhập, không từ một tên file đã biết", () => {
+    /**
+     * ⚠ Ca này canh **chính cổng**: nếu phép tìm người-dùng-bảng-câu hỏng (đổi đường nhập, đổi tên
+     * module) thì bốn ca dưới **im lặng xanh trên tập rỗng** — đúng lớp "glob rỗng ⇒ vitest im
+     * lặng ⇒ cổng khai XANH" đã che 18 ca đỏ trong chuỗi pha này.
+     */
+    const ten = NGUOI_DUNG_BANG_CAU.map((p) => relative(GOC_SERVER, p));
+    expect(ten.length, "không tìm thấy người dùng `vramPhrases` nào — cổng đang quét trên tập RỖNG").toBeGreaterThan(
+      0,
+    );
+    expect(ten, "`vramTools.ts` phải nằm trong tập được soi").toContain(
+      relative(GOC_SERVER, join(HERE, "vramTools.ts")),
+    );
+  });
+
   it("★ mọi lời gọi `noi(`/`cum(` phải nêu khoá bằng CHUỖI NGUYÊN VĂN (nếu không, cổng dưới mù)", () => {
     /**
      * ⚠ Đây là mắt canh cho **chính cổng vét cạn**: nêu khoá bằng một BIẾN là đường lách hiển
@@ -219,7 +291,7 @@ describe("★★★ §B vét cạn — bảng khai đối chiếu với NGUỒN 
      */
     expect(goi.length, "không tìm thấy lời gọi `noi(`/`cum(` nào — cổng đang quét nhầm file").toBeGreaterThan(20);
     const bien = goi.filter((g) => g.key === null);
-    expect(bien.map((g) => `${g.ten}@L${g.dong}`), "khoá phải là chuỗi nguyên văn").toEqual([]);
+    expect(bien.map((g) => `${g.ten}@${g.o}`), "khoá phải là chuỗi nguyên văn").toEqual([]);
   });
 
   it("★★★ TẬP KHOÁ DÙNG === TẬP KHOÁ KHAI (hai chiều: thiếu ⇒ đỏ, thừa ⇒ đỏ)", () => {
@@ -235,17 +307,105 @@ describe("★★★ §B vét cạn — bảng khai đối chiếu với NGUỒN 
     expect(push.length, "không thấy `.push(` nào — cổng đang quét nhầm file").toBeGreaterThan(10);
     const hong: string[] = [];
     for (const p of push) {
-      for (const a of p.arguments) {
-        if (!laMotDongDich(a)) {
-          hong.push(`L${cay.getLineAndCharacterOfPosition(a.getStart()).line + 1}: ${a.getText().slice(0, 70)}`);
-        }
+      for (const a of p.n.arguments) {
+        if (!laMotDongDich(a)) hong.push(`${p.o}: ${a.getText().slice(0, 70)}`);
       }
     }
     expect(hong, "một dòng của bề mặt Agent không đi qua bảng câu ⇒ nó chỉ có MỘT ngôn ngữ").toEqual([]);
   });
 
-  it("★★ `vramTools.ts` KHÔNG được ép kiểu sang `Dong` — đó là đường lách nhãn kiểu", () => {
-    expect(ep.map((n) => n.getText().slice(0, 80))).toEqual([]);
+  it("★★ người dùng bảng câu KHÔNG được ép kiểu sang `Dong` — đó là đường lách nhãn kiểu", () => {
+    expect(ep).toEqual([]);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// §A-AST — I-3: THÂN MỖI HÀM KHUÔN **PHẢI LÀ** MỘT BIỂU THỨC CHUỖI. KHÔNG RẼ NHÁNH.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ Vá cho **RV-2** — đột biến của người review: rẽ nhánh **theo GIÁ TRỊ THAM SỐ** ngay trong ô
+ * `en` (`p.stale === "true" ? <tiếng Việt> : <tiếng Anh>`) ⇒ **106/106 xanh, `tsc` sạch**, và
+ * nhánh ấy **tới được thật** trên trạng thái thường gặp (bản sao sổ chung cũ).
+ *
+ * ⚠⚠ Vì sao §A **không thể** đóng nó bằng cách thêm ca: §A render mỗi khuôn tại **một điểm dữ
+ * liệu**; tập giá trị tham số là **VÔ HẠN**. Thêm điểm render là **liệt kê**, và *"cái gì liệt kê
+ * thì luôn có phần tử thứ N+1"* — bài học đã trả giá năm lần ở Pha 5, lần này ở nấc **điểm dữ
+ * liệu**, không phải nấc khoá.
+ * ⇒ Đảo lượng từ: phát biểu **cái thân hàm PHẢI LÀ** — một biểu thức chuỗi thuần (chuỗi · template
+ * · nối `+` · đọc thuộc tính tham số). Mọi rẽ nhánh **phải** leo lên `vramTools.ts` và chọn giữa
+ * **hai KHOÁ**, nơi §A soi được từng khoá một.
+ * ⚠ "Lưới DẪN người ta tới đâu?" — đỏ ở đây dẫn thẳng tới khuôn `degradedYes`/`degradedNo`,
+ * `unledgeredEstimateUsable`/`Unusable`, `beginFailures*`: tách thành hai khoá. Đó là bản vá ĐÚNG.
+ */
+const KIND_CHO_PHEP = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.StringLiteral,
+  ts.SyntaxKind.NoSubstitutionTemplateLiteral,
+  ts.SyntaxKind.TemplateExpression,
+  ts.SyntaxKind.TemplateHead,
+  ts.SyntaxKind.TemplateMiddle,
+  ts.SyntaxKind.TemplateTail,
+  ts.SyntaxKind.TemplateSpan,
+  ts.SyntaxKind.PropertyAccessExpression,
+  ts.SyntaxKind.Identifier,
+  ts.SyntaxKind.ParenthesizedExpression,
+]);
+
+describe("★★★ §A-AST (I-3) — thân hàm khuôn PHẢI LÀ một biểu thức chuỗi thuần, KHÔNG rẽ nhánh", () => {
+  const cayCau = cayCua(NGUON_PHRASES);
+
+  /** Mọi lời gọi `ba(...)` — nguồn duy nhất sinh ra một cụm ba ngôn ngữ. */
+  function moiKhuon(): { arrow: ts.ArrowFunction; o: string }[] {
+    const ra: { arrow: ts.ArrowFunction; o: string }[] = [];
+    const di = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "ba") {
+        for (const a of n.arguments) {
+          if (ts.isArrowFunction(a)) {
+            ra.push({ arrow: a, o: `L${cayCau.getLineAndCharacterOfPosition(a.getStart()).line + 1}` });
+          }
+        }
+      }
+      ts.forEachChild(n, di);
+    };
+    di(cayCau);
+    return ra;
+  }
+
+  const khuon = moiKhuon();
+
+  it("★ tìm được đủ khuôn để soi (nếu 0 thì mọi ca dưới xanh vì lý do sai)", () => {
+    expect(khuon.length, "không thấy lời gọi `ba(` nào — cổng đang quét nhầm file").toBe(VRAM_PHRASE_KEYS.length * 3);
+  });
+
+  it("★★★ KHÔNG một khuôn nào rẽ nhánh (`? :` · `if` · `&&` · `||` · `??` · lời gọi hàm)", () => {
+    const hong: string[] = [];
+    for (const { arrow, o } of khuon) {
+      if (ts.isBlock(arrow.body)) {
+        hong.push(`${o}: thân là một KHỐI lệnh — phải là một biểu thức chuỗi`);
+        continue;
+      }
+      const di = (n: ts.Node): void => {
+        if (ts.isBinaryExpression(n)) {
+          // ⚠ Chỉ đi vào HAI VẾ — `operatorToken` là một node con, và duyệt nó sẽ tự báo "PlusToken
+          // không nằm trong tập cho phép", tức lưới kêu oan trên chính hình dạng nó cho phép.
+          if (n.operatorToken.kind !== ts.SyntaxKind.PlusToken) {
+            hong.push(`${o}: toán tử ${ts.tokenToString(n.operatorToken.kind)} — chỉ được nối chuỗi bằng '+'`);
+          }
+          di(n.left);
+          di(n.right);
+          return;
+        }
+        if (!KIND_CHO_PHEP.has(n.kind)) {
+          hong.push(`${o}: ${ts.SyntaxKind[n.kind]} — ${n.getText().slice(0, 50)}`);
+          return;
+        }
+        ts.forEachChild(n, di);
+      };
+      di(arrow.body);
+    }
+    expect(
+      hong,
+      "một khuôn rẽ nhánh theo GIÁ TRỊ THAM SỐ ⇒ §A chỉ thấy MỘT nhánh; tách thành HAI KHOÁ ở vramTools.ts",
+    ).toEqual([]);
   });
 });
 
@@ -357,6 +517,43 @@ describe("★★★ §C đường thoát thật — cùng MỘT trạng thái, b
     expect(coHanTu(zh.textSummary)).toBe(true);
   });
 
+  it("★★★ M-5: ĐƯỜNG CẮT phải KHAI ở CẢ BA ngôn ngữ (en/zh dài hơn vi ⇒ điểm cắt KHÁC NHAU)", async () => {
+    /**
+     * ⚠ Vì `en`/`zh` mang thêm mệnh đề hành động nên chúng **dài hơn `vi`** ⇒ với cùng một trạng
+     * thái, người đọc `en` bị cắt **sớm hơn**. Trước ca này chỉ `vi` được nghiệm thu đường cắt
+     * (`promptSafety.test.ts`) — tức một **lệch NỘI DUNG theo ngôn ngữ** không ai canh: người đọc
+     * `en` nhận ít dòng hơn cho **cùng một sự thật**. Bất biến bắt buộc: cắt thì **phải KHAI**, ở
+     * mọi ngôn ngữ — im lặng là thứ biến "phần còn lại" thành "toàn bộ".
+     */
+    __setSharedLedgerSelfKeyForTests("api:100:1");
+    publishSharedLedgerReplica(
+      Array.from({ length: 400 }, (_, i) =>
+        hangAnhEm({ leaseKey: `worker:999:1#lease-${i}`, leaseId: `lease-${i}`, owner: `gguf:model-${i}` }),
+      ),
+      Date.now(),
+      "api:100:1",
+    );
+    /** Lời khai đã cắt = mở bằng ⚠ **và** chỉ đường tới ảnh chụp đầy đủ. Ở cả ba ngôn ngữ. */
+    const laLoiKhaiCat = (dong: string): boolean => dong.startsWith("⚠") && dong.includes("data.state");
+    const soDong: Record<string, number> = {};
+    for (const l of NGON_NGU) {
+      const r = await chay(l);
+      const dong = r.textSummary.split("\n");
+      soDong[l] = dong.length;
+      expect(r.textSummary.length, `${l}: vượt trần ngữ cảnh`).toBeLessThanOrEqual(16_400);
+      expect(laLoiKhaiCat(dong[dong.length - 1]), `${l}: bị cắt mà KHÔNG khai — Agent đọc phần còn lại thành TOÀN BỘ`).toBe(
+        true,
+      );
+    }
+    // Đối chứng ÂM: trạng thái nhỏ ⇒ KHÔNG được khai là đã cắt (nếu không, "khai luôn" cũng xanh).
+    __resetSharedLedgerForTests();
+    for (const l of NGON_NGU) {
+      const dong = (await chay(l)).textSummary.split("\n");
+      expect(laLoiKhaiCat(dong[dong.length - 1]), `${l}: khai đã cắt trong khi KHÔNG cắt gì`).toBe(false);
+    }
+    expect(Object.keys(soDong).length).toBe(3);
+  });
+
   it("★★ số MiB theo ĐÚNG dấu nhóm của ngôn ngữ (13.000 ≠ 13,000 — một con số đọc sai là một câu sai)", async () => {
     dungCanh();
     const [vi, en] = await Promise.all([chay("vi"), chay("en")]);
@@ -423,5 +620,91 @@ describe("★★★ §D `execCtx.lang` PHẢI tới được read tool — nếu
   it("★★ tool KHÔNG khai `lang` trong schema thì KHÔNG bị nhét thêm khoá lạ (mọi schema đều `.strict()`)", () => {
     const gia = { name: "x", parameters: { shape: { foo: {} } } } as unknown as Parameters<typeof argsWithAuthCtx>[0];
     expect(argsWithAuthCtx(gia, { foo: 1 }, phien("zh"))).toEqual({ foo: 1 });
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// §E — 🔴 C-1: BÁN KÍNH CỦA PHÉP TIÊM `lang`, ĐO TRÊN **REGISTRY LÚC CHẠY**
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ VÌ SAO §E TỒN TẠI — **MỘT HỒI QUY ĐÃ XẢY RA, KHÔNG PHẢI MỘT RỦI RO LÝ THUYẾT.**
+ * Vòng trước, vị từ tiêm là `Object.hasOwn(shape, "lang")` — **neo theo TÊN**. Hai tool
+ * (`retrieve_programming_kb`, `lookup_error_code`, `readToolsProgramming.ts:455/:504`) có một ô
+ * **trùng tên** nhưng khai `z.string().min(1).max(16)`, và nó là **BỘ LỌC KHO TÀI LIỆU**. Người
+ * review đo trên kho thật: một câu hỏi tiếng Việt về mã lỗi servo ⇒ RAG tụt **91.678 → 237 chunk
+ * (0,26%)** và trả **sai tài liệu**, trong khi `programmingTools.test.ts` **28/28 vẫn xanh**.
+ *
+ * ⚠⚠ Ca chính dưới đây là một **TƯƠNG ĐƯƠNG (⟺)** trên **toàn bộ registry lúc chạy** — không đếm
+ * bằng `grep` (chính `grep z.enum` đã **bỏ sót đúng hai tool gây hại**), không liệt kê tên tool.
+ * Hai ca sau nêu **đích danh** hai tool ấy: một lưới không gọi tên nạn nhân thì lần sau người đọc
+ * log không biết mình vừa làm hỏng cái gì.
+ */
+describe("★★★ §E (C-1) — `lang` chỉ được tiêm vào ô **LÀ ENUM BA NGÔN NGỮ HIỂN THỊ**", () => {
+  const phien = (lang: ToolLang): ToolExecContext => ({ user: { id: 7, role: "admin", name: "T" }, lang });
+  const shapeCua = (t: { parameters?: unknown }): Record<string, unknown> =>
+    ((t.parameters as { shape?: Record<string, unknown> })?.shape ?? {}) as Record<string, unknown>;
+
+  it("★★★ TƯƠNG ĐƯƠNG trên MỌI tool đã đăng ký: được tiêm ⟺ ô `lang` là enum ba giá trị", () => {
+    const tools = listTools();
+    expect(tools.length, "registry rỗng — cổng đang chạy trước khi tool kịp đăng ký").toBeGreaterThan(20);
+    const lech: string[] = [];
+    let soDuocTiem = 0;
+    let soCoOLang = 0;
+    for (const t of tools) {
+      const shape = shapeCua(t);
+      if (!Object.hasOwn(shape, "lang")) continue;
+      soCoOLang += 1;
+      const phaiTiem = laOEnumNgonNguHienThi(shape.lang);
+      const ra = argsWithAuthCtx(t, {}, phien("zh")) as { lang?: unknown };
+      const daTiem = Object.hasOwn(ra, "lang");
+      if (daTiem !== phaiTiem) lech.push(`${t.name}: phảiTiêm=${phaiTiem} nhưng đãTiêm=${daTiem}`);
+      if (daTiem) soDuocTiem += 1;
+    }
+    expect(lech, "một ô `lang` bị đối xử theo TÊN thay vì theo NGHĨA").toEqual([]);
+    // Đối chứng DƯƠNG hai chiều: cổng không được xanh vì "không tiêm gì cả", cũng không vì "tiêm hết".
+    expect(soCoOLang, "không tool nào có ô `lang` — cổng xanh vì lý do sai").toBeGreaterThan(20);
+    expect(soDuocTiem, "không tool nào được tiêm ⇒ bản dịch lại thành mã chết").toBeGreaterThan(20);
+    expect(soDuocTiem, "MỌI ô `lang` đều bị tiêm ⇒ vị từ vẫn đang neo theo TÊN").toBeLessThan(soCoOLang);
+  });
+
+  it("★★★ ĐÍCH DANH `readToolsProgramming` — hai tool KB KHÔNG được nhận `lang` (ô ấy LỌC KHO, không phải ngôn ngữ)", () => {
+    for (const ten of ["retrieve_programming_kb", "lookup_error_code"]) {
+      const t = getTool(ten);
+      expect(t, `${ten} chưa đăng ký`).toBeTruthy();
+      expect(
+        laOEnumNgonNguHienThi(shapeCua(t!).lang),
+        `${ten}.lang là z.string() (bộ lọc kho), KHÔNG phải enum ngôn ngữ hiển thị`,
+      ).toBe(false);
+      for (const l of NGON_NGU) {
+        const ra = argsWithAuthCtx(t!, { query: "servo alarm", code: "AL.32" }, phien(l)) as { lang?: unknown };
+        expect(
+          Object.hasOwn(ra, "lang"),
+          `${ten} bị tiêm lang="${l}" ⇒ RAG tụt từ 91.678 xuống ${l === "vi" ? "237" : "49"} chunk và trả SAI tài liệu`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("★★★ KHÔNG BẮT NHẦM — `get_vram_state` VẪN nhận `zh`/`en` (lợi ích của Task 4 còn nguyên)", () => {
+    const t = getTool("get_vram_state")!;
+    for (const l of NGON_NGU) {
+      expect((argsWithAuthCtx(t, {}, phien(l)) as { lang?: string }).lang).toBe(l);
+    }
+  });
+
+  it("★★ vị từ nói cái ô ấy PHẢI LÀ — không phải 'ô nào từ chối một giá trị lạ'", () => {
+    /**
+     * ⚠ Một vị từ kiểu *"ô này có từ chối `ja` không"* cũng loại được hai tool KB hôm nay, nhưng
+     * `z.string().length(2)` **chấp nhận** `ja` mà vẫn không phải ngôn ngữ hiển thị, và
+     * `z.enum(["vi","en"])` **từ chối** `ja` mà cũng không phải. Ca này khoá đúng chỗ ấy.
+     */
+    expect(laOEnumNgonNguHienThi(z.enum(["vi", "en", "zh"]))).toBe(true);
+    expect(laOEnumNgonNguHienThi(z.enum(["vi", "en", "zh"]).optional())).toBe(true);
+    expect(laOEnumNgonNguHienThi(z.enum(["zh", "en", "vi"]).optional().default("vi"))).toBe(true);
+    expect(laOEnumNgonNguHienThi(z.enum(["vi", "en"]).optional())).toBe(false);
+    expect(laOEnumNgonNguHienThi(z.enum(["vi", "en", "zh", "ja"]).optional())).toBe(false);
+    expect(laOEnumNgonNguHienThi(z.string().min(1).max(16).optional())).toBe(false);
+    expect(laOEnumNgonNguHienThi(z.string().length(2).optional())).toBe(false);
+    expect(laOEnumNgonNguHienThi(undefined)).toBe(false);
   });
 });
