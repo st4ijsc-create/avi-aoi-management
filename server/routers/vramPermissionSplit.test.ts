@@ -339,6 +339,36 @@ function hangChuoiCuaDuong(duong: string): Map<string, string> {
   return ra;
 }
 
+/**
+ * Hằng chuỗi của một file **cộng** hằng chuỗi **NHẬP TỪ FILE KHÁC**
+ * (`import { VRAM_CONTROL_MODULE } from "@shared/permissions"`).
+ *
+ * ⚠⚠ Không có nhánh nhập thì mọi điểm gọi dùng hằng dùng-chung sẽ "không phân giải được" ⇒ lưới
+ * buộc người ta viết chuỗi trực tiếp, tức **đẻ bản sao thứ hai** của một tên đã có chủ. Phân giải
+ * **TỔNG QUÁT** (đi theo đường dẫn), **không** liệt kê tên hằng nào cả.
+ */
+function hangKemNhap(sf: ts.SourceFile, duong: string): Map<string, string> {
+  const hang = hangChuoiCuaFile(sf);
+  for (const stmt of sf.statements) {
+    if (!ts.isImportDeclaration(stmt) || !ts.isStringLiteral(stmt.moduleSpecifier)) continue;
+    const spec = stmt.moduleSpecifier.text;
+    const goc = spec.startsWith("@shared/")
+      ? join(GOC, "shared", `${spec.slice("@shared/".length)}.ts`)
+      : spec.startsWith(".")
+        ? join(duong, "..", `${spec}.ts`)
+        : null;
+    if (goc === null) continue;
+    const b = stmt.importClause?.namedBindings;
+    if (b === undefined || !ts.isNamedImports(b)) continue;
+    const cuaHo = hangChuoiCuaDuong(goc);
+    for (const el of b.elements) {
+      const v = cuaHo.get((el.propertyName ?? el.name).text);
+      if (v !== undefined) hang.set(el.name.text, v);
+    }
+  }
+  return hang;
+}
+
 /** Mọi lời gọi `requirePermission(...)` trên `server/**`, kèm đối số đã PHÂN GIẢI. */
 function quetDiemGoi(): { diem: DiemGoi[]; khongPhanGiaiDuoc: string[] } {
   const diem: DiemGoi[] = [];
@@ -350,31 +380,7 @@ function quetDiemGoi(): { diem: DiemGoi[]; khongPhanGiaiDuoc: string[] } {
     const sf = ts.createSourceFile(duong, ma, ts.ScriptTarget.Latest, true);
     const ten = relative(GOC, duong).split(sep).join("/");
 
-    // Hằng chuỗi khai ở tầng module (`const MODULE = "mes_bom"`).
-    const hang = hangChuoiCuaFile(sf);
-
-    // ⚠⚠ …VÀ hằng chuỗi **NHẬP TỪ FILE KHÁC** (`import { VRAM_CONTROL_MODULE } from "@shared/…"`).
-    // Không có nhánh này thì mọi điểm gọi dùng hằng dùng-chung sẽ "không phân giải được" ⇒ lưới
-    // buộc người ta viết chuỗi trực tiếp, tức **đẻ bản sao thứ hai** của một tên đã có chủ. Phân
-    // giải TỔNG QUÁT (đi theo đường dẫn), **không** liệt kê tên hằng nào cả.
-    for (const stmt of sf.statements) {
-      if (!ts.isImportDeclaration(stmt) || !ts.isStringLiteral(stmt.moduleSpecifier)) continue;
-      const spec = stmt.moduleSpecifier.text;
-      const goc = spec.startsWith("@shared/")
-        ? join(GOC, "shared", `${spec.slice("@shared/".length)}.ts`)
-        : spec.startsWith(".")
-          ? join(duong, "..", `${spec}.ts`)
-          : null;
-      if (goc === null) continue;
-      const b = stmt.importClause?.namedBindings;
-      if (b === undefined || !ts.isNamedImports(b)) continue;
-      const cuaHo = hangChuoiCuaDuong(goc);
-      for (const el of b.elements) {
-        const tenGoc = (el.propertyName ?? el.name).text;
-        const v = cuaHo.get(tenGoc);
-        if (v !== undefined) hang.set(el.name.text, v);
-      }
-    }
+    const hang = hangKemNhap(sf, duong);
 
     const doiSo = (n: ts.Node): string | null => {
       const v = ts.isExpression(n) ? boVo(n) : n;
@@ -451,5 +457,206 @@ describe("Task 3b — bit VRAM là bit RIÊNG (bất biến cấu trúc trên to
         "server/routers/unsMappingRouter.ts",
       ].sort(),
     );
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// C. TRỤC CƯỠNG CHẾ THỨ HAI — NEO VÀO **HÀM LỆNH**, KHÔNG VÀO **MIDDLEWARE**
+//
+// ⚠⚠⚠ I-3 (review Task 3b) — HAI BẤT BIẾN Ở KHỐI B **CÙNG MÙ** TRƯỚC MỘT ĐỘT BIẾN ĐO ĐƯỢC.
+// Reviewer dựng **M-R2**: một **write-tool của Agent** trong `services/aiLocalTools/vramTools.ts`,
+// đứng trên bit **CŨ** `machine_control/canDelete` (qua `checkPermission` gọi tay, **không** qua
+// `requirePermission`), gọi **thẳng** `vramPreemptCommand(owner)`. Kết quả đo:
+// **95 file / 1517 ca XANH y hệt baseline — 0 đỏ.** Cả cổng AST lẫn cổng runtime cùng không thấy.
+// Lý do: cả hai bất biến của khối B phát biểu trên **tập lời gọi `requirePermission(`**; một cổng
+// quyền đi bằng trục khác nằm **NGOÀI LƯỢNG TỪ**. Và đây không phải giả thuyết — `vramTools.ts`
+// **đã là** một bề mặt quyền thật, Task 4 sẽ mở lại đúng file đó, còn thứ duy nhất ngăn ba lệnh
+// thành write-tool hôm nay là **một đoạn văn xuôi trong docstring**.
+//
+// ⇒ Đảo lượng từ **một nấc nữa**: không hỏi *"ai gọi `requirePermission`"* mà hỏi
+//   ***"MỌI đường chạm tới ba HÀM LỆNH có đứng sau bit `vram_control` không"***.
+//   Ba hàm ấy là **cửa hẹp**: chúng là chỗ duy nhất trong hệ dựng ra ba lệnh VRAM cho một bề mặt
+//   bên ngoài ⇒ canh cửa hẹp thì mọi bề mặt tương lai — tool Agent, REST, cron, WebSocket — đều
+//   **tự khai**, không cần lưới biết trước hình dạng của chúng.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Ba **hàm lệnh**. Chạm được một trong ba là chạm được đường phá huỷ VRAM. */
+const HAM_LENH = ["vramPreemptCommand", "vramReleaseStaleCommand", "vramRetryDeferredCommand"] as const;
+
+/** File **định nghĩa** ba hàm ấy — nơi duy nhất được nhắc tên chúng ngoài cổng đã rào. */
+const NHA_CUA_LENH = "server/services/vram/vramCommands.ts";
+/** Cổng đã rào: router VRAM. Mọi tham chiếu ở đây phải nằm trong một thủ tục có bit `vram_control`. */
+const CONG_DA_RAO = "server/routers/vramRouter.ts";
+
+type ViPhamLenh = { noi: string; vi: string };
+
+/**
+ * Với MỘT file: mọi tham chiếu tới một hàm lệnh có đứng sau bit `vram_control` không.
+ *
+ * Tách khỏi đĩa (nhận `ten` + `ma`) để bộ ca **tự dựng được nguồn tổng hợp** — nếu không thì ca
+ * *"lưới có bắt không"* và ca *"lưới có bắt NHẦM không"* đều phải sửa file thật, tức không chạy
+ * được trong một lượt `vitest`.
+ */
+function soiDuongToiLenh(ten: string, ma: string): ViPhamLenh[] {
+  const viPham: ViPhamLenh[] = [];
+  if (ten === NHA_CUA_LENH) return viPham; // chính nó khai ra ba hàm
+  if (!HAM_LENH.some((h) => ma.includes(h))) return viPham;
+
+  const sf = ts.createSourceFile(ten, ma, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const hang = hangKemNhap(sf, join(GOC, ten));
+
+  /** `const X = <chuỗi>.use(requirePermission(M, A))` ⇒ X ↦ "M/A". */
+  const congCua = new Map<string, string>();
+  for (const stmt of sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue;
+    for (const d of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(d.name) || !d.initializer) continue;
+      let cua: string | null = null;
+      const tim = (n: ts.Node): void => {
+        if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "requirePermission") {
+          const g = (x: ts.Node | undefined): string | null =>
+            x === undefined
+              ? null
+              : ts.isStringLiteral(x)
+                ? x.text
+                : ts.isIdentifier(x)
+                  ? (hang.get(x.text) ?? null)
+                  : null;
+          cua = `${g(n.arguments[0])}/${g(n.arguments[1])}`;
+        }
+        ts.forEachChild(n, tim);
+      };
+      tim(d.initializer);
+      if (cua !== null) congCua.set(d.name.text, cua);
+    }
+  }
+
+  /** Gốc TRÁI NHẤT của một chuỗi `a.b(...).c(...)` — tức cái thủ tục được dựng lên từ đó. */
+  const gocChuoi = (n: ts.Node): string | null => {
+    let cur: ts.Node = n;
+    for (;;) {
+      if (ts.isIdentifier(cur)) return cur.text;
+      if (ts.isCallExpression(cur) || ts.isPropertyAccessExpression(cur)) cur = cur.expression;
+      else if (ts.isAsExpression(cur) || ts.isParenthesizedExpression(cur) || ts.isSatisfiesExpression(cur))
+        cur = cur.expression;
+      else return null;
+    }
+  };
+
+  const di = (n: ts.Node): void => {
+    if (ts.isIdentifier(n) && (HAM_LENH as readonly string[]).includes(n.text)) {
+      const { line } = sf.getLineAndCharacterOfPosition(n.getStart(sf));
+      const noi = `${ten}:${line + 1} (${n.text})`;
+      // Nhập khẩu KHÔNG phải một đường chạy — nó chỉ mang cái tên vào file. Đường chạy là chỗ DÙNG.
+      const nhap = n.parent !== undefined && (ts.isImportSpecifier(n.parent) || ts.isImportClause(n.parent));
+      if (!nhap) {
+        if (ten !== CONG_DA_RAO) {
+          viPham.push({ noi, vi: `đường tới hàm lệnh VRAM nằm NGOÀI cổng đã rào (${CONG_DA_RAO})` });
+        } else {
+          // Trong router: leo lên tới ô `<tên>: <chuỗi thủ tục>` rồi hỏi gốc chuỗi đứng trên bit nào.
+          let p: ts.Node | undefined = n.parent;
+          while (p !== undefined && !ts.isPropertyAssignment(p)) p = p.parent;
+          const goc = p === undefined ? null : gocChuoi(p.initializer);
+          const cua = goc === null ? null : (congCua.get(goc) ?? null);
+          if (cua === null) {
+            viPham.push({ noi, vi: `không leo được tới một thủ tục có requirePermission (gốc: ${goc ?? "?"})` });
+          } else if (!cua.startsWith(`${VRAM_CONTROL_MODULE}/`)) {
+            viPham.push({ noi, vi: `đứng trên ${cua} — PHẢI là ${VRAM_CONTROL_MODULE}/…` });
+          }
+        }
+      }
+    }
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  return viPham;
+}
+
+describe("Task 3b (I-3) — MỌI đường tới ba HÀM LỆNH đều đứng sau bit `vram_control`", () => {
+  it("★★★ trên toàn `server/**`: 0 vi phạm — và lưới phải THẤY ba hàm ấy (cầu chì chống lưới mù)", () => {
+    const viPham: ViPhamLenh[] = [];
+    let soFileChamLenh = 0;
+    for (const duong of motFile(SERVER)) {
+      const ten = relative(GOC, duong).split(sep).join("/");
+      const ma = readFileSync(duong, "utf8");
+      if (HAM_LENH.some((h) => ma.includes(h))) soFileChamLenh++;
+      viPham.push(...soiDuongToiLenh(ten, ma));
+    }
+    expect(viPham.map((v) => `${v.noi}: ${v.vi}`).join("\n")).toBe("");
+    // ⚠ Cầu chì: nếu bộ quét đọc 0 file có nhắc tên hàm lệnh thì "0 vi phạm" là vô nghĩa.
+    expect(soFileChamLenh, "lưới không chạm file nào nhắc tới hàm lệnh — bộ quét đã hỏng?").toBeGreaterThanOrEqual(2);
+  });
+
+  it("★★★ M-R2 — write-tool Agent đứng trên bit CŨ, gọi THẲNG `vramPreemptCommand` ⇒ ĐỎ, kèm CON TRỎ đích danh", () => {
+    const ma = [
+      'import { checkPermission } from "../../_core/accessControl";',
+      'import { vramPreemptCommand } from "../vram/vramCommands";',
+      "export const reclaimVram = {",
+      '  name: "reclaim_vram", kind: "write",',
+      '  requiredPermission: { module: "machine_control", action: "canDelete" },',
+      "  handler: async (p: { owner: string; userId: number; role: string }) => {",
+      '    const ok = await checkPermission(p.userId, p.role, "machine_control", "canDelete");',
+      "    if (!ok) return null;",
+      "    return vramPreemptCommand(p.owner);",
+      "  },",
+      "};",
+    ].join("\n");
+    const v = soiDuongToiLenh("server/services/aiLocalTools/vramTools.ts", ma);
+    expect(v.length, "M-R2 phải bị bắt").toBeGreaterThan(0);
+    // ⚠ "Lưới DẪN người ta tới đâu?" — câu đỏ phải chỉ ĐÍCH DANH file:dòng và tên hàm lệnh.
+    const cau = v.map((x) => `${x.noi}: ${x.vi}`).join("\n");
+    expect(cau).toContain("server/services/aiLocalTools/vramTools.ts:9");
+    expect(cau).toContain("vramPreemptCommand");
+    expect(cau).toContain("NGOÀI cổng đã rào");
+  });
+
+  it("★★★ một đường thứ hai tới hàm lệnh ở MỘT FILE MỚI bất kỳ (cron · REST · cầu nối) ⇒ ĐỎ", () => {
+    for (const ten of [
+      "server/services/vram/vramCron.ts",
+      "server/routes/vramRest.ts",
+      "server/services/field/vramFieldBridge.ts",
+    ]) {
+      const v = soiDuongToiLenh(
+        ten,
+        'import { vramReleaseStaleCommand } from "x";\nexport const go = () => vramReleaseStaleCommand("k");',
+      );
+      expect(v.map((x) => x.noi).join(" · "), ten).toContain(`${ten}:2`);
+    }
+  });
+
+  it("★★★ ĐỘT BIẾN TRONG chính cổng đã rào: thủ tục tụt về bit CŨ ⇒ ĐỎ (canh CỔNG, không chỉ canh FILE)", () => {
+    const ma = [
+      'import { requirePermission } from "../_core/accessControl";',
+      'import { vramPreemptCommand } from "../services/vram/vramCommands";',
+      'const congCu = deployProcedure.use(requirePermission("machine_control", "canDelete"));',
+      "export const r = router({",
+      "  preempt: congCu.input(z.object({})).mutation(async ({ input }) => vramPreemptCommand(input.owner)),",
+      "});",
+    ].join("\n");
+    const v = soiDuongToiLenh(CONG_DA_RAO, ma);
+    expect(v.map((x) => x.vi).join(" · ")).toContain("machine_control/canDelete");
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — file không nhắc hàm lệnh · chỉ nhắc trong CHÚ THÍCH · tên GẦN GIỐNG", () => {
+    expect(soiDuongToiLenh("server/services/x.ts", "export const a = 1;")).toEqual([]);
+    // Chú thích không phải node AST ⇒ không phải một đường chạy.
+    expect(
+      soiDuongToiLenh(
+        "server/services/vram/vramReadModel.ts",
+        "// `vramCommands.vramRetryDeferredCommand()` gọi ĐÚNG hàm này.\nexport const a = 1;",
+      ),
+    ).toEqual([]);
+    // Định danh KHÁC, chỉ trùng tiền tố ⇒ không phải hàm lệnh.
+    expect(
+      soiDuongToiLenh(
+        "server/services/y.ts",
+        "type VramPreemptCommandResult = { a: 1 };\nexport const b: VramPreemptCommandResult = { a: 1 };",
+      ),
+    ).toEqual([]);
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — nhập khẩu trong chính cổng đã rào không bị tính là đường chạy", () => {
+    const ma = ['import { vramPreemptCommand } from "../services/vram/vramCommands";', "export const a = 1;"].join("\n");
+    expect(soiDuongToiLenh(CONG_DA_RAO, ma)).toEqual([]);
   });
 });

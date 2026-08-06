@@ -15,6 +15,10 @@ import { trpc } from "@/lib/trpc";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { useAuth } from "@/_core/hooks/useAuth";
+// ★ Pha 5 Task 3b (I-2) — thẩm quyền VRAM là bit PER-USER (`vram_control`), KHÔNG suy được từ vai:
+// module ấy cố ý không nằm trong `DEFAULT_ROLE_PERMISSIONS`. Đây là người đọc quyền ĐÃ CÓ CHỦ của
+// repo (5 trang khác dùng đúng kiểu này) — không đẻ người đọc thứ hai.
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import { ClassifierHealthBanner } from "@/components/ai/ClassifierHealthBanner";
 import { VramBrokerPanel } from "@/components/ai/VramBrokerPanel";
@@ -103,6 +107,9 @@ function fmtNum(n?: number): string {
 export default function AIBrainDashboard() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  // ★ I-2 — vế thứ HAI của quyết định nút VRAM (vế thứ nhất là sàn VAI). `hasPermission` tự
+  // short-circuit cho admin, và trả `false` trong lúc `getMyPermissions` còn nạp ⇒ chiều an toàn.
+  const { hasPermission } = usePermissions();
   // Poll hygiene (doc 27 B12): pause the 3×5s pollers when the tab is hidden,
   // refetch immediately on return — see usePollingInterval.
   const polling = usePollingInterval(5000);
@@ -316,8 +323,13 @@ export default function AIBrainDashboard() {
           về VRAM) vào đây ⇒ `supervisor` không bao giờ bấm được dù vị từ nút có đúng đến đâu, còn
           `engineer` thấy hai nút phá huỷ **chắc chắn 403**. Nay ô này **LÀ** một lời gọi
           `vramCommandReach(...)`, và kiểu trả về là thứ duy nhất panel nhận được.
+
+          ★ Task 3b (I-2) — ô này nay nhận **CẢ HAI** vế mà máy chủ có: sàn VAI **và** bit PER-USER
+          `vram_control` (`hasPermission`). Chỉ theo vai là **sai vĩnh viễn** sau 3b, vì module mới
+          cố ý không bao giờ vào khuôn vai ⇒ một `supervisor` chưa được cấp tay sẽ thấy nút bấm
+          được cho một lệnh chắc chắn 403.
         */}
-        <VramBrokerPanel commandReach={vramCommandReach(user?.role)} polling={polling} />
+        <VramBrokerPanel commandReach={vramCommandReach(user?.role, hasPermission)} polling={polling} />
 
         {/* Cognitive Escalation Ladder */}
         <Card>

@@ -40,6 +40,7 @@ import {
   vramDestructiveButtonDisabled,
   vramRetryButtonDisabled,
   VRAM_LENH_GATE,
+  type CoBitQuyen,
   type VramCommandRole,
   type VramDeferRetryReachKind,
 } from "./vramCommandReach";
@@ -71,36 +72,43 @@ const MONG_DOI: Record<VramCommandRole, { destructive: boolean; actuation: boole
   user: { destructive: false, actuation: false },
 };
 
+/**
+ * ★ Task 3b (I-2) — người đọc bit quyền **CẤP ĐỦ MỌI THỨ**. Dùng cho mọi ca của TẦNG 1: nó cô lập
+ * đúng **vế VAI**, để những khẳng định N9 vốn có giữ nguyên nghĩa. Vế **BIT** có bộ ca riêng ngay
+ * dưới — trộn hai vế vào một ca thì không ca nào còn nói được về vế nào.
+ */
+const CO_DU_BIT: CoBitQuyen = () => true;
+
 describe("N9 — `vramCommandReach`: vai nào với tới mặt lệnh VRAM", () => {
   for (const [vai, mong] of Object.entries(MONG_DOI) as [VramCommandRole, { destructive: boolean; actuation: boolean }][]) {
     it(`${vai} ⇒ phá huỷ ${mong.destructive ? "ĐƯỢC" : "KHÔNG"} · actuation ${mong.actuation ? "ĐƯỢC" : "KHÔNG"}`, () => {
-      const r = vramCommandReach(vai);
+      const r = vramCommandReach(vai, CO_DU_BIT);
       expect(Boolean(r.destructive)).toBe(mong.destructive);
       expect(Boolean(r.actuation)).toBe(mong.actuation);
     });
   }
 
   it("★★★ QUYẾT ĐỊNH CỦA CHỦ DỰ ÁN — `supervisor` ⇒ hai nút PHÁ HUỶ BẬT (đây là cả lý do Task 3 tồn tại)", () => {
-    expect(vramDestructiveButtonDisabled(vramCommandReach("supervisor"), false)).toBe(false);
+    expect(vramDestructiveButtonDisabled(vramCommandReach("supervisor", CO_DU_BIT), false)).toBe(false);
   });
 
   it("★★★ `engineer` ⇒ hai nút PHÁ HUỶ TẮT — máy chủ chặn ĐỘC LẬP (`canDelete` không có; C3: OTP tươi vẫn 403)", () => {
-    expect(vramDestructiveButtonDisabled(vramCommandReach("engineer"), false)).toBe(true);
+    expect(vramDestructiveButtonDisabled(vramCommandReach("engineer", CO_DU_BIT), false)).toBe(true);
   });
 
   it("★★★ `operator` ⇒ TẮT · `admin` ⇒ BẬT", () => {
-    expect(vramDestructiveButtonDisabled(vramCommandReach("operator"), false)).toBe(true);
-    expect(vramDestructiveButtonDisabled(vramCommandReach("admin"), false)).toBe(false);
+    expect(vramDestructiveButtonDisabled(vramCommandReach("operator", CO_DU_BIT), false)).toBe(true);
+    expect(vramDestructiveButtonDisabled(vramCommandReach("admin", CO_DU_BIT), false)).toBe(false);
   });
 
   it("★★ ĐÚNG HAI vai với tới lệnh PHÁ HUỶ — thêm một vai nữa là nới quyền, phải cố ý", () => {
-    const cho = (Object.keys(MONG_DOI) as VramCommandRole[]).filter((v) => vramCommandReach(v).destructive);
+    const cho = (Object.keys(MONG_DOI) as VramCommandRole[]).filter((v) => vramCommandReach(v, CO_DU_BIT).destructive);
     expect(cho.sort()).toEqual(["admin", "supervisor"]);
   });
 
   it("★★ BA vai với tới lệnh KHÔNG phá huỷ (`retryDeferred` = `canCreate`) — `engineer` NẰM TRONG", () => {
     // ⚠ Chiều NGƯỢC của lời nói dối: cắt nút này khỏi `engineer` là "hứa ÍT hơn máy chủ cho phép".
-    const cho = (Object.keys(MONG_DOI) as VramCommandRole[]).filter((v) => vramCommandReach(v).actuation);
+    const cho = (Object.keys(MONG_DOI) as VramCommandRole[]).filter((v) => vramCommandReach(v, CO_DU_BIT).actuation);
     expect(cho.sort()).toEqual(["admin", "engineer", "supervisor"]);
   });
 
@@ -127,15 +135,15 @@ describe("N9 — `vramCommandReach`: vai nào với tới mặt lệnh VRAM", ()
       "hasOwnProperty",
     ];
     for (const x of la) {
-      const r = vramCommandReach(x);
+      const r = vramCommandReach(x, CO_DU_BIT);
       expect(Boolean(r.destructive), `destructive cho ${String(x)}`).toBe(false);
       expect(Boolean(r.actuation), `actuation cho ${String(x)}`).toBe(false);
     }
   });
 
   it("★★ `isPending` khoá nút kể cả với vai ĐỦ quyền (chống bấm đúp một lệnh phá huỷ)", () => {
-    expect(vramDestructiveButtonDisabled(vramCommandReach("admin"), true)).toBe(true);
-    expect(vramDestructiveButtonDisabled(vramCommandReach("supervisor"), true)).toBe(true);
+    expect(vramDestructiveButtonDisabled(vramCommandReach("admin", CO_DU_BIT), true)).toBe(true);
+    expect(vramDestructiveButtonDisabled(vramCommandReach("supervisor", CO_DU_BIT), true)).toBe(true);
   });
 
   it("★★ nút *Thử lại ngay* nhân BA điều kiện: tầm với vai × `retryReach` × `isPending`", () => {
@@ -145,12 +153,95 @@ describe("N9 — `vramCommandReach`: vai nào với tới mặt lệnh VRAM", ()
         for (const pending of [true, false]) {
           const mong = !MONG_DOI[vai].actuation || pending || k !== "reachable-here";
           expect(
-            vramRetryButtonDisabled(k, vramCommandReach(vai), pending),
+            vramRetryButtonDisabled(k, vramCommandReach(vai, CO_DU_BIT), pending),
             `${vai}/${k}/pending=${String(pending)}`,
           ).toBe(mong);
         }
       }
     }
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// TẦNG 1b (Task 3b · I-2) — **VẾ THỨ HAI: BIT PER-USER.**
+//
+// ⚠⚠ Vai KHÔNG phải thẩm quyền. Trước 3b bit là `machine_control` — module ấy **có** trong
+// `DEFAULT_ROLE_PERMISSIONS`, nên "supervisor ⇒ bấm được" gần đúng. Sau 3b bit là `vram_control`,
+// module **cố ý không bao giờ vào khuôn vai** ⇒ nếu quyết định vẫn chỉ theo vai thì
+// `supervisor` **chưa được cấp tay** vẫn thấy nút bấm được cho một lệnh chắc chắn 403 —
+// **sai VĨNH VIỄN**, đúng lớp lỗi "mặt đọc hứa nhiều hơn mặt lệnh" mà Pha 5 đang đóng.
+// ⇒ Quyết định phải là **phép HỘI** của đúng hai cổng máy chủ có, và bộ ca dưới khoá cả hai chiều.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+describe("Task 3b (I-2) — nút VRAM đòi ĐỦ HAI vế: sàn VAI **và** bit PER-USER `vram_control`", () => {
+  /** Người đọc quyền chỉ cấp đúng những cặp được liệt kê; mọi cặp khác ⇒ `false`. */
+  function chiCap(...cap: { module: string; action: string }[]): CoBitQuyen {
+    return (m, a) => cap.some((c) => c.module === m && c.action === a);
+  }
+
+  it("★★★ supervisor CÓ vai nhưng CHƯA được cấp bit ⇒ **cả hai nút TẮT** (không hứa quá mặt lệnh)", () => {
+    const r = vramCommandReach("supervisor", () => false);
+    expect(Boolean(r.destructive)).toBe(false);
+    expect(Boolean(r.actuation)).toBe(false);
+    expect(vramDestructiveButtonDisabled(r, false), "nút phá huỷ PHẢI khoá").toBe(true);
+  });
+
+  it("★★★ supervisor được cấp ĐÚNG `vram_control/canDelete` ⇒ nút phá huỷ BẬT; chỉ `canCreate` ⇒ TẮT", () => {
+    const chiXoa = vramCommandReach("supervisor", chiCap(VRAM_LENH_GATE.destructive));
+    expect(Boolean(chiXoa.destructive)).toBe(true);
+    expect(Boolean(chiXoa.actuation), "không có canCreate ⇒ *Thử lại ngay* phải tắt").toBe(false);
+
+    const chiTao = vramCommandReach("supervisor", chiCap(VRAM_LENH_GATE.actuation));
+    expect(Boolean(chiTao.destructive), "không có canDelete ⇒ hai nút phá huỷ phải tắt").toBe(false);
+    expect(Boolean(chiTao.actuation)).toBe(true);
+  });
+
+  it("★★★ bit được hỏi phải ĐÚNG cặp `(vram_control, canDelete|canCreate)` — không phải `machine_control`", () => {
+    const hoi: string[] = [];
+    vramCommandReach("supervisor", (m, a) => {
+      hoi.push(`${m}/${a}`);
+      return true;
+    });
+    expect([...new Set(hoi)].sort()).toEqual(["vram_control/canCreate", "vram_control/canDelete"]);
+  });
+
+  it("★★★ CÓ ĐỦ BIT nhưng vai KHÔNG trong sàn actuation ⇒ vẫn TẮT (bit không mua được sàn vai)", () => {
+    for (const vai of ["operator", "viewer", "maintenance", "quality_inspector", "user"] as VramCommandRole[]) {
+      const r = vramCommandReach(vai, CO_DU_BIT);
+      expect(Boolean(r.destructive), `${vai} destructive`).toBe(false);
+      expect(Boolean(r.actuation), `${vai} actuation`).toBe(false);
+    }
+  });
+
+  it("★★★ người đọc quyền HỎNG ⇒ chiều CHẶT: thiếu · không phải hàm · ném · trả thứ không phải `true`", () => {
+    const hong: unknown[] = [
+      undefined,
+      null,
+      "khong-phai-ham",
+      () => {
+        throw new Error("người đọc quyền vỡ");
+      },
+      () => 1,
+      () => "true",
+      () => ({}),
+    ];
+    for (const h of hong) {
+      const r = vramCommandReach("supervisor", h as CoBitQuyen);
+      expect(Boolean(r.destructive), `destructive với ${String(h)}`).toBe(false);
+      expect(Boolean(r.actuation), `actuation với ${String(h)}`).toBe(false);
+    }
+  });
+
+  it("★★ `VRAM_LENH_GATE` có NGƯỜI ĐỌC SẢN PHẨM — không phải đồng hồ không kim", () => {
+    // ⚠ Cầu chì cho chính lưới này: nếu vị từ thôi đọc `VRAM_LENH_GATE` thì đổi module ở đó sẽ
+    // KHÔNG đổi cặp được hỏi ⇒ ca dưới ĐỎ. (Luật Task 4 Pha 4: có người đọc thật, hoặc bị xoá.)
+    const hoi: string[] = [];
+    vramCommandReach("admin", (m, a) => {
+      hoi.push(`${m}/${a}`);
+      return true;
+    });
+    expect(hoi).toContain(`${VRAM_LENH_GATE.destructive.module}/${VRAM_LENH_GATE.destructive.action}`);
+    expect(hoi).toContain(`${VRAM_LENH_GATE.actuation.module}/${VRAM_LENH_GATE.actuation.action}`);
   });
 });
 

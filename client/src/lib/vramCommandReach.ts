@@ -190,19 +190,65 @@ export interface VramCommandReach {
 }
 
 /**
- * ★★★ *"Vai này với tới mặt lệnh VRAM đến đâu"* — **MỘT** quyết định, **MỘT** chỗ ở.
- *
- * ⚠⚠ `unknown ⇒ false` theo chiều **CHẶT**: `user` có thể chưa nạp xong (`undefined`), vai có thể là
- * một chuỗi hệ này chưa biết, hoặc một khoá của `Object.prototype` (`"toString"`, `"__proto__"`).
- * Không biết **không** được đọc thành "được": một nút bấm được là một lời hứa.
+ * Vị từ *"người dùng HIỆN TẠI có bit này không"* — **đúng chữ ký** `usePermissions().hasPermission`
+ * (`client/src/_core/hooks/usePermissions.ts:52`), để panel truyền thẳng hàm đã có, **không** đẻ
+ * người đọc thứ hai cho một bất biến đã có chủ.
  */
-export function vramCommandReach(role: unknown): VramCommandReach {
-  const o =
+export type CoBitQuyen = (
+  moduleName: string,
+  action: "canView" | "canCreate" | "canEdit" | "canDelete" | "canExport",
+) => boolean;
+
+/**
+ * ★★★ *"NGƯỜI này với tới mặt lệnh VRAM đến đâu"* — **MỘT** quyết định, **MỘT** chỗ ở.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ I-2 (review Task 3b) — **VAI KHÔNG PHẢI THẨM QUYỀN, VÀ SAU 3B SAI LỆCH ẤY LÀ VĨNH VIỄN**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản Task 3 quyết định **chỉ theo VAI**. Khi bit còn là `machine_control` thì sai lệch ấy còn nhỏ
+ * — module đó **có** trong `DEFAULT_ROLE_PERMISSIONS` nên một `supervisor` áp khuôn là có bit thật.
+ * Task 3b đổi sang `vram_control`, một module **CỐ Ý không bao giờ vào khuôn vai** (per-USER, chủ
+ * dự án duyệt từng người) ⇒ `vramCommandReach("supervisor").destructive === true` sẽ **SAI VĨNH
+ * VIỄN** cho mọi supervisor chưa được cấp tay, kể cả một supervisor **vừa tạo**. Đó đúng lớp lỗi
+ * *"mặt đọc hứa nhiều hơn mặt lệnh"* mà cả Pha 5 đang đóng, do chính bản vá đóng nó tạo ra.
+ *
+ * ⇒ Nay quyết định là **PHÉP HỘI của ĐÚNG HAI cổng mà máy chủ có**, không hơn không kém:
+ *   1. **sàn VAI** (`roleProcedure(...ACTUATION_ROLES)` — `server/_core/trpc.ts:434`) → bảng
+ *      `CHO_RA_LENH` trên;
+ *   2. **bit PER-USER** (`requirePermission(VRAM_CONTROL_MODULE, …)`) → `coBitQuyen`, đọc **đúng
+ *      cặp `(module, action)`** khai ở `VRAM_LENH_GATE`.
+ * `usePermissions.hasPermission` tự short-circuit cho `admin` (`:53`), đúng như `checkPermission`
+ * máy chủ (`accessControl.ts:136`) ⇒ hai phía trả lời cùng một câu.
+ *
+ * ⚠⚠ **CHIỀU CHẶT ở MỌI đầu vào lạ.** `role` có thể `undefined` (chưa nạp), là một chuỗi hệ chưa
+ * biết, hoặc một khoá `Object.prototype` (`"toString"`, `"__proto__"`). `coBitQuyen` có thể thiếu
+ * (gọi từ JS), không phải hàm, ném, hoặc trả một thứ không phải `true`. **Không biết ⇒ KHÔNG** —
+ * một nút bấm được là một lời hứa.
+ * ⚠ Trong lúc `getMyPermissions` còn đang nạp, `hasPermission` trả `false` ⇒ nút **tắt rồi bật**
+ * khi dữ liệu về. Đó là chiều an toàn: không bao giờ có cửa sổ "bấm được mà chắc chắn 403".
+ */
+export function vramCommandReach(role: unknown, coBitQuyen: CoBitQuyen): VramCommandReach {
+  const sanVai =
     typeof role === "string" && Object.prototype.hasOwnProperty.call(CHO_RA_LENH, role)
       ? CHO_RA_LENH[role as VramCommandRole]
       : { destructive: false, actuation: false };
-  return { destructive: o.destructive as VramGrant, actuation: o.actuation as VramGrant };
+
+  const coBit = (cong: { module: string; action: CoBitQuyenAction }): boolean => {
+    if (typeof coBitQuyen !== "function") return false;
+    try {
+      return coBitQuyen(cong.module, cong.action) === true;
+    } catch {
+      return false; // một người đọc quyền ném ra lỗi KHÔNG được đọc thành "có quyền"
+    }
+  };
+
+  return {
+    destructive: (sanVai.destructive && coBit(VRAM_LENH_GATE.destructive)) as VramGrant,
+    actuation: (sanVai.actuation && coBit(VRAM_LENH_GATE.actuation)) as VramGrant,
+  };
 }
+
+type CoBitQuyenAction = Parameters<CoBitQuyen>[1];
 
 /**
  * ★★★ N9 — **MỘT Ô DUY NHẤT quyết định hai nút PHÁ HUỶ, và nó là một LỜI GỌI.**
