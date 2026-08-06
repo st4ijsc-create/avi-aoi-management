@@ -284,7 +284,21 @@ export function assertExecutable(tool: Tool<any, any>): void {
  *
  * ⚠ Bóc vỏ qua `_def.innerType` để đi xuyên `.optional()`/`.default()`/`.nullable()` (zod v4 để
  * `_def.type = "optional"`, v3 để `_def.typeName = "ZodOptional"` — đọc `innerType` đúng ở cả hai).
- * `.options` là bề mặt công khai của `ZodEnum` ở cả hai đời.
+ * `.options` là bề mặt công khai của `ZodEnum` ở cả hai đời (nên `z.nativeEnum({vi,en,zh})` — cùng
+ * **khái niệm**, khác cách viết — cũng được nhận đúng).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ QUY ƯỚC CÓ TÊN — **"Ô NGÔN NGỮ HIỂN THỊ PHẢI VIẾT BẰNG `z.enum` (hoặc `z.nativeEnum`)."**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * N-2 (re-review): vị từ này có **hai âm tính giả** đã biết — `z.union([z.literal("vi"), …])` và
+ * `z.preprocess(…, z.enum([…]))` đều trả **`false`** dù về nghĩa là cùng một ô. Hậu quả rơi theo
+ * chiều **AN TOÀN** (tool ấy **không được tiêm** ⇒ rơi về `vi`, không phải lọc nhầm kho như C-1),
+ * và **hôm nay 0 tool nào viết như vậy**.
+ * ⇒ Không nới vị từ để đuổi theo mọi cách viết tương đương — **đó là liệt kê, và luôn có cách viết
+ * thứ N+1**. Thay vào đó quy ước trên được **cưỡng chế bằng hành vi**: `vramPhrases.exhaustive
+ * .test.ts` §E có ca *"KHÔNG có ÂM TÍNH GIẢ trong registry"* — nó thử **hành vi `safeParse`** của
+ * từng ô `lang` đã đăng ký, và **đỏ** nếu một ô **xử sự đúng như** enum ba ngôn ngữ mà vị từ lại
+ * nói `false`. Viết bằng `z.union` thì ca ấy đỏ và chỉ thẳng về quy ước này.
  */
 const NGON_NGU_HIEN_THI = ["en", "vi", "zh"] as const;
 

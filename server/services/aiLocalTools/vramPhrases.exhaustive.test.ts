@@ -208,17 +208,28 @@ describe("★★★ §A bảng câu — mỗi khoá PHẢI có ba bản THẬT (
  */
 function moiFileTs(goc: string, ra: string[] = []): string[] {
   for (const m of readdirSync(goc)) {
-    if (m === "node_modules" || m === "dist" || m.startsWith(".")) continue;
+    if (m === "node_modules" || m === "dist" || m === "build" || m.startsWith(".")) continue;
     const p = join(goc, m);
     if (statSync(p).isDirectory()) moiFileTs(p, ra);
-    else if (m.endsWith(".ts") && !m.endsWith(".d.ts")) ra.push(p);
+    // N-4: `.js`/`.mjs`/`.cjs`/`.tsx` cũng nhập được — bỏ chúng là để hở đúng một cửa.
+    else if (/\.(ts|tsx|js|mjs|cjs)$/.test(m) && !m.endsWith(".d.ts")) ra.push(p);
   }
   return ra;
 }
 
-const NHAP_BANG_CAU = /from\s+["'][^"']*\/vramPhrases["']/;
-const NGUOI_DUNG_BANG_CAU: string[] = moiFileTs(GOC_SERVER).filter(
-  (p) => !p.endsWith(".test.ts") && NHAP_BANG_CAU.test(readFileSync(p, "utf8")),
+/**
+ * ★ N-4 (re-review) — nhận diện **mọi hình thức nhập** bảng câu, không chỉ `from "…"`:
+ * `import … from`, `export … from` (**tái xuất**), `import("…")` động, `require("…")`.
+ * ⚠ **Giới hạn CÒN LẠI, khai ra chứ không giấu:** một **chuỗi tái xuất gián tiếp** (file A tái xuất
+ * `noi`/`cum` dưới tên khác, file B nhập từ A) vẫn vô hình — muốn đóng thì phải dựng đồ thị module
+ * thật (`ts.Program`), đắt hơn nhiều lần giá trị nó mua ở phạm vi hôm nay. Ca *"tập file được soi
+ * SUY RA từ đồ thị nhập"* ngay dưới là **cầu chì**: nó nổ nếu phép nhận diện này hỏng.
+ */
+const NHAP_BANG_CAU = /(?:from|import|require)\s*\(?\s*["'][^"']*\/vramPhrases(?:\.[a-z]+)?["']/;
+/** N-4: người dùng có thể nằm ngoài `server/` — quét cả `shared/` và `scripts/`. */
+const GOC_QUET = [GOC_SERVER, join(GOC_SERVER, "..", "shared"), join(GOC_SERVER, "..", "scripts")];
+const NGUOI_DUNG_BANG_CAU: string[] = GOC_QUET.flatMap((g) => moiFileTs(g)).filter(
+  (p) => !/\.(test|spec)\.[tj]sx?$/.test(p) && NHAP_BANG_CAU.test(readFileSync(p, "utf8")),
 );
 
 function cayCua(p: string): ts.SourceFile {
@@ -228,6 +239,18 @@ function cayCua(p: string): ts.SourceFile {
 interface LoiGoiCau {
   ten: "noi" | "cum";
   key: string | null;
+  /**
+   * ★★★ N-1 (re-review) — **ĐỐI SỐ THỨ NHẤT: NGÔN NGỮ.** Bản trước §B **không bao giờ đọc
+   * `arguments[0]`** — nó canh **KHOÁ**, không canh **NGÔN NGỮ** — nên `cum("en", "atProcess", …)`
+   * đi lọt **3 file / 165 ca xanh, `tsc` 0 lỗi**, và sinh ra một mảnh tiếng Anh **nằm trong bản
+   * `vi` và bản `zh`**.
+   * ⚠ §C cũng mù, vì ba luật của nó là **TỒN TẠI trên toàn bản tóm tắt** (`zh` chỉ cần **một** Hán
+   * tự, `vi` chỉ cần **một** dấu) ⇒ một mảnh **ASCII tiếng Anh** không vi phạm luật nào.
+   * ⚠⚠ **Bất đối xứng đáng nhớ:** ghim `"vi"` thì `chiChuCaiAscii(en)` bắt được; ghim `"en"` thì
+   * **mù** — lưới chặt một chiều, hở **đúng chiều dễ xảy ra hơn**. Ca dưới đóng **cả hai chiều**
+   * bằng một luật PHẢI-LÀ, **không** dựa vào phép may ấy.
+   */
+  lang: string | null;
   o: string;
 }
 
@@ -242,8 +265,15 @@ function quetLoiGoi(): { goi: LoiGoiCau[]; push: { n: ts.CallExpression; cay: ts
       if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
         const ten = n.expression.text;
         if (ten === "noi" || ten === "cum") {
+          const l = n.arguments[0];
           const a = n.arguments[1];
-          goi.push({ ten, key: a !== undefined && ts.isStringLiteralLike(a) ? a.text : null, o: nhan(n) });
+          goi.push({
+            ten,
+            // `null` = **KHÔNG PHẢI** một định danh trần ⇒ ca §B "đối số ngôn ngữ" đỏ.
+            lang: l !== undefined && ts.isIdentifier(l) ? l.text : null,
+            key: a !== undefined && ts.isStringLiteralLike(a) ? a.text : null,
+            o: nhan(n),
+          });
         }
       }
       if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === "push") {
@@ -282,6 +312,21 @@ describe("★★★ §B vét cạn — bảng khai đối chiếu với NGUỒN 
     expect(ten, "`vramTools.ts` phải nằm trong tập được soi").toContain(
       relative(GOC_SERVER, join(HERE, "vramTools.ts")),
     );
+  });
+
+  it("★★★ N-1: ĐỐI SỐ NGÔN NGỮ của mọi `noi(`/`cum(` PHẢI LÀ định danh `lang` — không ghim hằng", () => {
+    /**
+     * ⚠ Luật phát biểu **cái nó PHẢI LÀ** (`lang`), **không** liệt kê cái bị cấm (`"en"`, `"vi"`,
+     * `"zh"`, một hằng, một hàm trả ngôn ngữ…). Nhờ thế nó đóng **cả hai chiều** ghim và mọi hình
+     * dạng chưa ai nghĩ ra — đúng phép đảo lượng từ đã phải trả giá **sáu lần** trong Pha 5.
+     * ⚠ "Lưới DẪN người ta tới đâu?" — đỏ ở đây chỉ có **một** bản vá đúng: chuyền `lang` xuống.
+     * Không có cách "khai cho qua".
+     */
+    const ghim = goi.filter((g) => g.lang !== "lang");
+    expect(
+      ghim.map((g) => `${g.ten}(${g.lang ?? "<không phải định danh>"}, "${g.key}") @${g.o}`),
+      "một mảnh câu bị ghim cứng ngôn ngữ ⇒ nó xuất hiện NGUYÊN VĂN trong cả ba bản dịch",
+    ).toEqual([]);
   });
 
   it("★ mọi lời gọi `noi(`/`cum(` phải nêu khoá bằng CHUỖI NGUYÊN VĂN (nếu không, cổng dưới mù)", () => {
@@ -644,7 +689,16 @@ describe("★★★ §E (C-1) — `lang` chỉ được tiêm vào ô **LÀ ENUM
   const shapeCua = (t: { parameters?: unknown }): Record<string, unknown> =>
     ((t.parameters as { shape?: Record<string, unknown> })?.shape ?? {}) as Record<string, unknown>;
 
-  it("★★★ TƯƠNG ĐƯƠNG trên MỌI tool đã đăng ký: được tiêm ⟺ ô `lang` là enum ba giá trị", () => {
+  /**
+   * ⚠ N-3 (re-review) — **TÊN CA NÀY TỪNG NÓI QUÁ.** Nó gọi `laOEnumNgonNguHienThi` ở **cả hai
+   * vế** (vế "phải tiêm" và vế mã sản xuất dùng), nên nó **KHÔNG kiểm được ĐỊNH NGHĨA** của vị từ:
+   * một định nghĩa sai vẫn cho hai vế khớp nhau. Thứ nó **thật sự** khoá — và khoá đúng — là
+   * **PHÉP NỐI**: `argsWithAuthCtx` phải quyết định bằng **chính vị từ ấy**, không bằng tên ô.
+   * Nó **vẫn bắt đúng hồi quy C-1** (đột biến N1 nới về `hasOwn` ⇒ ca này đỏ).
+   * ⇒ Thứ canh **định nghĩa** là ba ca dưới: hai ca ĐÍCH DANH/KHÔNG-BẮT-NHẦM (đối chứng ngoài) và
+   * ca *"vị từ nói cái ô ấy PHẢI LÀ"* (17 hình dạng, hằng số viết tay).
+   */
+  it("★★★ PHÉP NỐI: `argsWithAuthCtx` quyết định bằng chính vị từ, không bằng TÊN ô (mọi tool đã đăng ký)", () => {
     const tools = listTools();
     expect(tools.length, "registry rỗng — cổng đang chạy trước khi tool kịp đăng ký").toBeGreaterThan(20);
     const lech: string[] = [];
@@ -692,6 +746,37 @@ describe("★★★ §E (C-1) — `lang` chỉ được tiêm vào ô **LÀ ENUM
     }
   });
 
+  it("★★★ N-2: KHÔNG có ÂM TÍNH GIẢ trong registry — ô nào XỬ SỰ như enum ba ngôn ngữ thì vị từ phải nói `true`", () => {
+    /**
+     * ⚠ Vị từ nhận diện theo **CẤU TRÚC** (`z.enum`/`z.nativeEnum`), nên `z.union([literal×3])` và
+     * `z.preprocess(…, enum3)` là **âm tính giả** — cùng khái niệm, khác cách viết. Nới vị từ để
+     * đuổi theo mọi cách viết là **liệt kê**, và luôn có cách viết thứ N+1.
+     * ⇒ Ca này canh **HÀNH VI** thay vì cấu trúc: một ô nhận đúng `vi`/`en`/`zh` và từ chối mọi
+     * thứ khác **PHẢI** được vị từ công nhận. Hôm nay 0 tool lệch; ngày ai đó viết `z.union`, ca
+     * này đỏ và chỉ thẳng tới quy ước có tên ở `toolRegistry.ts`.
+     * ⚠ Chiều hỏng là chiều **AN TOÀN** (không tiêm ⇒ rơi về `vi`), nên đây là **Minor được cưỡng
+     * chế**, không phải một lỗ đang chảy.
+     */
+    const nhanBa = (o: unknown): boolean => {
+      const s = o as { safeParse?: (v: unknown) => { success: boolean } };
+      if (typeof s?.safeParse !== "function") return false;
+      const nhan = ["vi", "en", "zh"].every((v) => s.safeParse!(v).success);
+      const tuChoi = ["ja", "VI", "vi-VN", "x", "", "en_US"].every((v) => !s.safeParse!(v).success);
+      return nhan && tuChoi;
+    };
+    const amTinhGia: string[] = [];
+    for (const t of listTools()) {
+      const shape = shapeCua(t);
+      if (!Object.hasOwn(shape, "lang")) continue;
+      if (nhanBa(shape.lang) && !laOEnumNgonNguHienThi(shape.lang)) amTinhGia.push(t.name);
+    }
+    expect(
+      amTinhGia,
+      'ô này XỬ SỰ như enum ba ngôn ngữ nhưng không được nhận ⇒ tool âm thầm rơi về "vi". ' +
+        "Viết ô ngôn ngữ hiển thị bằng `z.enum`/`z.nativeEnum` (quy ước có tên ở toolRegistry.ts)",
+    ).toEqual([]);
+  });
+
   it("★★ vị từ nói cái ô ấy PHẢI LÀ — không phải 'ô nào từ chối một giá trị lạ'", () => {
     /**
      * ⚠ Một vị từ kiểu *"ô này có từ chối `ja` không"* cũng loại được hai tool KB hôm nay, nhưng
@@ -706,5 +791,14 @@ describe("★★★ §E (C-1) — `lang` chỉ được tiêm vào ô **LÀ ENUM
     expect(laOEnumNgonNguHienThi(z.string().min(1).max(16).optional())).toBe(false);
     expect(laOEnumNgonNguHienThi(z.string().length(2).optional())).toBe(false);
     expect(laOEnumNgonNguHienThi(undefined)).toBe(false);
+    // `z.nativeEnum` = CÙNG KHÁI NIỆM, khác cách viết ⇒ phải được nhận.
+    expect(laOEnumNgonNguHienThi(z.nativeEnum({ vi: "vi", en: "en", zh: "zh" } as const))).toBe(true);
+    /**
+     * ⚠ N-2 — **HAI ÂM TÍNH GIẢ ĐƯỢC GHIM CÓ CHỦ Ý**, không phải bị bỏ quên. Chiều hỏng là chiều
+     * AN TOÀN (không tiêm ⇒ rơi về `vi`). Ca *"KHÔNG có ÂM TÍNH GIẢ trong registry"* ở trên là thứ
+     * cưỡng chế quy ước; hai dòng này chỉ **ghi lại sự thật** để lần sau ai đổi vị từ thì thấy ngay
+     * mình đang đổi cái gì.
+     */
+    expect(laOEnumNgonNguHienThi(z.union([z.literal("vi"), z.literal("en"), z.literal("zh")]))).toBe(false);
   });
 });
