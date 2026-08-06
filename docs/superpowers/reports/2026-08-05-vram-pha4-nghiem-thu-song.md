@@ -683,8 +683,8 @@ tool **im lặng biến mất** khỏi lượt chạy mà vẫn báo "xanh". (C�
 | # | mục | vì sao KHÔNG sửa ở đây |
 |---|---|---|
 | **F1** 🟠 | `VramBrokerPanel` không gửi `totpCode`, không dùng `StepUpOtpDialog` ⇒ hai nút phá huỷ **không bấm được với BẤT KỲ vai nào** khi `ACTUATION_STEPUP_2FA=true`. **Người review xác nhận độc lập** (supervisor1 qua role-floor vẫn 403 ở step-up). | Là **sửa UI**, không phải lỗ an ninh; nằm ngoài phạm vi vòng review này. |
-| **F2** 🟠 | 8/8 tool `readToolsProgramming` không với tới được (thiếu `case` trong `extractArgsForTool`) ⇒ hai ranh giới an ninh (`read_project_file`, `calc`) **chưa từng chạy**. | Là **nợ CHẶN** (§3.1) — sửa nó là mở một bề mặt mới, phải có lưới sống trước. |
-| **U19** 🟡 | Đường tự trị **end-to-end THẬT** vẫn chưa chạy (planner trả `steps: []`). | Bản vá đã đóng lỗ ở mức đơn vị; khi planner được sửa **phải đo lại §8.1 trên đường thật**. |
+| **F2** 🟠 | 8/8 tool `readToolsProgramming` không với tới được (thiếu `case` trong `extractArgsForTool`) ⇒ hai ranh giới an ninh (`read_project_file`, `calc`) **chưa từng chạy**. | ~~Là **nợ CHẶN** (§3.1) — sửa nó là mở một bề mặt mới, phải có lưới sống trước.~~ 🔴 **ĐÍNH CHÍNH — CÂU NÀY SAI CHIỀU.** Xem §15. |
+| **U19** 🟡 | Đường tự trị **end-to-end THẬT** vẫn chưa chạy (planner trả `steps: []`). | ~~Bản vá đã đóng lỗ ở mức đơn vị; khi planner được sửa **phải đo lại §8.1 trên đường thật**.~~ 🔴 **ĐÍNH CHÍNH — LỜI HOÃN ĐÃ HẾT HIỆU LỰC.** Xem §15. |
 
 ---
 
@@ -865,3 +865,70 @@ giao cho lượt sau (đặc biệt nếu ai đó tái chạy đột biến M1/M
 | Trainer · `kb:sync` · DDL/migration | **KHÔNG chạy cái nào** |
 | 243 mục bẩn có sẵn của việc khác | **KHÔNG đụng, KHÔNG dọn, KHÔNG stage** |
 | Sub-agent | **KHÔNG sinh** |
+
+---
+
+## 15. 🔴 ĐÍNH CHÍNH F2 + U19 (2026-08-06, sau review TOÀN NHÁNH) — **ĐÃ ĐO, KHÔNG CÒN LÀ NỢ**
+
+### 15.1 F2 — câu *"nợ CHẶN, phải có lưới sống trước"* **SAI CHIỀU**
+
+Người review bác chẩn đoán §3.1 và **đo được**: `classifyToolIntentLLM` (`AI_TOOL_LLM_FALLBACK=1`,
+BẬT trên hệ đang chạy) **KHÔNG gọi `extractArgsForTool` một lần nào** — nó liệt kê MỌI tool bằng
+`listTools()`, để model sinh `args`, rồi `tool.parameters.safeParse(parsed.args)`. ⇒ *"mã chết"*
+không phải một tính chất **cấu trúc**; nó là quan sát về **hành vi của một model phân loại nhỏ
+dưới ~5 câu hỏi**. **Bề mặt đã mở sẵn từ trước.**
+
+⇒ Việc đúng **không phải hoãn** — mà là **nghiệm thu nó ngay**. Người review đã chạy cả 8 tool
+bằng bộ phân loại **stub** (không nạp model, không tốn một byte VRAM) và ghi được **nguyên văn** hai
+câu từ chối mà báo cáo này khai là *"không ghi được vì chưa lượt nào tới được hàm"*. Cả **6 payload
+T5-A gọi tên đều bị chặn** (`PATH_REJECTED` · `INVALID_EXPRESSION`), đối chứng dương `calc 2+3*4 = 14`,
+lượt bị từ chối `PERMISSION_DENIED` + **0 byte dữ liệu**. Bảng đầy đủ: §4.2 của báo cáo review toàn nhánh.
+
+**T5-A lớp (c) ⇒ 🔴 CHƯA ĐẠT → ✅ ĐẠT** (còn payload symlink, đóng ở §15.2).
+
+### 15.2 N7 — payload **symlink** (mảnh cuối của T5-A) — **ĐO ĐƯỢC 2026-08-06**
+
+Harness: `PROG_WORKSPACE_DIR` trỏ một thư mục tạm, file bí mật đặt **NGOÀI** nó; đi qua
+`tryExecuteTool()` với bộ phân loại stub (`reason: LLM_MATCH`, handler **CHẠY**), danh tính phiên THẬT.
+
+| biến thể | dựng được? | kết quả **ĐO ĐƯỢC** |
+|---|---|---|
+| **symlink FILE** (`fs.symlinkSync(..., "file")`) | ❌ **KHÔNG** — `EPERM: operation not permitted` (Windows đòi `SeCreateSymbolicLinkPrivilege`/Developer Mode) | lượt đọc trả `NOT_FOUND` · `bytes=null` · `content=null` (không có link để đi) |
+| **junction THƯ MỤC** ra ngoài workspace — **thoát mạnh hơn** (thoát cả một cây, không chỉ một file) | ✅ **CÓ** | 🟢 **BỊ CHẶN**: `note: PATH_REJECTED` · *"Đường dẫn thoát khỏi thư mục làm việc bị từ chối."* · `bytes=null` · `content=null`. Chặn bởi `realpathStillContained()` (`readToolsProgramming.ts:193`). |
+| **ĐỐI CHỨNG DƯƠNG** `ok.txt` trong workspace | ✅ | `Đọc "ok.txt" (19 byte)` — **giá trị cụ thể**, phân biệt được với hai lượt trên |
+
+⇒ **Ranh giới symlink ĐỨNG VỮNG** ở biến thể dựng được, và biến thể ấy **mạnh hơn** biến thể không
+dựng được. **T5-A ⇒ ✅ ĐẠT ĐỦ.**
+
+> 🟠 **PHÁT HIỆN MỚI của lượt đo này — `realpathStillContained()` KHÔNG chặn được NTFS HARD LINK.**
+> `fs.linkSync(<file ngoài>, <trong workspace>)` dựng **THÀNH CÔNG** (không cần đặc quyền nào), và
+> lượt đọc **THÀNH CÔNG**: `bytes = 57`, `content = "DATABASE_URL=postgres://aoi:SUPERSECRET@…"` —
+> **nội dung bí mật ngoài workspace về tới Agent**. Cơ chế: hard link **không đổi `realpath`** (cùng
+> inode, đường dẫn tự phân giải về chính nó) nên vị từ ấy trả `true`.
+> **Hạng:** thấp hơn lớp payload-chuỗi vì đòi kẻ tấn công **đã ghi được** vào `PROG_WORKSPACE_DIR`
+> trên **cùng ổ đĩa** — nhưng lời khai *"confined to the programming workspace root"* ở docstring
+> `read_project_file` **rộng hơn sự thật**. ⇒ Nợ Pha 5 (N13).
+
+### 15.3 U19 / §8.1 — **ĐÃ ĐO LẠI TRÊN BỀ MẶT ĐANG SỐNG, KHÔNG CHỜ PLANNER**
+
+Lời hoãn *"khi planner được sửa mới đo lại"* hết hiệu lực: `aiAgentOrchestrator.ts:429` lấy
+`step.args` **thẳng** và `tryExecuteTool` + LLM fallback **đang sống** — cùng một lớp *"an toàn là
+HỆ QUẢ của một thứ khác đang hỏng"*, lần thứ BA trong Pha 4.
+
+Đo trên đường SỐNG (`classifyToolIntentLLM` stub sinh args mang `__authCtx` **BỊA**
+`{userId: 999, role: "admin"}`, phiên THẬT là `supervisor` id 7, `checkPermission` chỉ trả `true`
+cho `(999, "admin")`):
+
+| # | đo | kết quả **ĐO ĐƯỢC** |
+|---|---|---|
+| 1 | đối số THẬT `checkPermission` nhận | **`[7, "supervisor", "machine_monitoring", "canView"]`** — danh tính PHIÊN. `999`/`admin` **KHÔNG BAO GIỜ** chạm cổng. |
+| 2 | kết cục | `note: PERMISSION_DENIED` · *"Bạn không có quyền dùng công cụ lập trình (machine_monitoring)…"* · `bytes = null` · `content = null` ⇒ **0 byte** |
+| 3 | `argsWithAuthCtx()` trả gì (⇐ **CÙNG hàm** mà `aiAgentOrchestrator:429` gọi) | `{"path":"ok.txt","__authCtx":{"userId":7,"role":"supervisor"}}` — `__authCtx` bịa **BỊ XOÁ**, gán lại từ phiên |
+| 4 | cùng payload, **KHÔNG** `execCtx` (lời gọi cũ) | `checkPermission` **KHÔNG được gọi lần nào** (`[]`) · `PERMISSION_DENIED` · 0 byte |
+
+⇒ **§8.1 nay FAIL-CLOSED, đo được trên bề mặt đang sống** — không phụ thuộc planner. **U19 ĐÓNG.**
+⚠ Điều **chưa** đo được và vẫn treo: lượt **planner THẬT sinh `plan.steps` khác rỗng** (cần model
+thật). Nhưng bất biến mà §8.1 canh **không đi qua planner** — nó đi qua `argsWithAuthCtx`, và hàm ấy
+vừa được đo trực tiếp. Nợ còn lại là *"planner có hoạt động không"*, **không phải** *"lỗ có mở không"*.
+
+---
