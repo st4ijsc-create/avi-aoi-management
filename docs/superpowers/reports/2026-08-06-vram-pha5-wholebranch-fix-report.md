@@ -273,4 +273,44 @@ Ca mới: `vramPermissionSplit` 17→**27** · `vramCommandReach.role` 56→**62
 
 ## 10. Đột biến — **COMMIT TRƯỚC, ĐỘT BIẾN SAU**
 
-*(ghi sau khi commit — xem §11)*
+Commit `fd48307f` ⇒ **rồi mới** đột biến. Sau **mỗi** lượt: `git checkout HEAD -- server/routers/vramRouter.ts`,
+`git status --porcelain -- server/ client/ shared/` ⇒ **0 mục**, và chạy lại **TOÀN BỘ**.
+
+| # | đột biến (chạm **duy nhất** `server/routers/vramRouter.ts`) | kết quả cổng ĐẦY ĐỦ | ca ĐỎ đích danh |
+|---|---|---|---|
+| **W1** | hoán vị `canDelete` ↔ `canCreate` giữa hai thủ tục | **7 ca đỏ / 2 file** | **CỔNG AST MÁY CHỦ:** `★★★ C-1 — ÁNH XẠ thủ tục → (sàn, cổng) … > ★★★ mã SẢN XUẤT ở HEAD: từng khoá đứng ĐÚNG cặp của nó — và 0 ô mù`<br>**CỔNG AST CLIENT:** `Task 3b + C-1 … > ★★★ C-1 — ÁNH XẠ thủ tục → bit khớp TỪNG CẶP giữa vramRouter và vị từ nút mà client chọn`<br>+ 3 ca meta client (`W1`, `HÌNH DẠNG CỦA TÔI`, `KHÔNG BẮT NHẦM`) dựng mutant **trên nguồn đã bị hoán vị**<br>+ 2 ca runtime cũ ở `vramPermissionSplit` |
+| **W2b** | `owner .max(VRAM_OWNER_MAX)` → `.max(64)` | **2 ca đỏ / 1 file** | `★★★ I-2 — bề rộng ô DANH TÍNH … > ★★★ owner DÀI ĐÚNG BẰNG trần sổ chung ⇒ lệnh KHÔNG ném; nó trả DỮ LIỆU có reason`<br>`★★★ I-2 … > ★★★ HAI VẾ ĐỌC CÙNG MỘT HẰNG — sổ chung cắt ở ĐÚNG chỗ lệnh từ chối` |
+| **W3** | `retryDeferred` sàn `actuationProcedure` → `deployProcedure` | **10 ca đỏ / 3 file** | **CỔNG AST MÁY CHỦ:** `★★★ C-1 — ÁNH XẠ … > ★★★ mã SẢN XUẤT ở HEAD …` (trục **SÀN**)<br>`★★★ I-3 — NỬA MÁY CHỦ … > ★★★ ∀ thủ tục đứng sau requireFreshTotp: input của nó PHẢI khai totpCode` ← **chỉ ĐÍCH DANH `retryDeferred`**<br>`★★★ I-3 — NỬA MÁY CHỦ … > ★★★ cầu chì — đọc được cả ba mutation và 0 ô mù`<br>`★★★ F1 … > ★★★ CẢ HAI lệnh phá huỷ: .mutate( nằm TRONG stepUp.guard(...) VÀ gửi totpCode`<br>+ 4 ca meta I-3 + `★★★ step-up 2FA CÒN NGUYÊN …` |
+| **MINE** | ★ **ALIAS** — thêm `const congPhaHuy = <thủ tục actuation>;` rồi `preempt: congPhaHuy`. **Không đụng một chuỗi `canDelete`/`canCreate` nào**, **không** đổi thứ tự đối số, **tên biến cũ vẫn còn nguyên trong file**, và **TẬP cổng không đổi** ⇒ lưới đời trước xanh 100%. | **14 ca đỏ / 3 file** | **CỔNG AST MÁY CHỦ:** `★★★ C-1 — ÁNH XẠ … > ★★★ mã SẢN XUẤT ở HEAD …`<br>**CỔNG AST CLIENT:** `Task 3b + C-1 … > ★★★ C-1 — ÁNH XẠ thủ tục → bit khớp TỪNG CẶP …`<br>+ `Task 3b (I-3) … > ★★★ trên toàn server/**: 0 vi phạm` (mất step-up ⇒ hàm lệnh tụt sàn)<br>+ 4 ca I-3 step-up + 3 ca runtime |
+
+### ⚠ Kiểm **KHÔNG BẮT NHẦM** — và nó **BẮT ĐƯỢC MỘT LỖI THẬT CỦA CHÍNH LƯỚI NÀY**
+
+Phép thử: **đổi tên biến thủ tục** ở mã sản xuất (`vramDestructiveProcedure` → `congPhaHuyVram`) —
+một lượt **dọn dẹp hợp lệ**, không đổi một tính chất nào của bất biến. Lượt đo **ĐẦU TIÊN**:
+**3 ca đỏ** ở hai file — **không** phải ca bất biến, mà **ba ca lưới-cho-lưới** dựng mutant bằng cách
+**thay chuỗi neo vào TÊN BIẾN**: khi tên đổi, phép thay thành **no-op** ⇒ mutant **bằng** bản gốc ⇒
+ca *"phải ĐỎ"* đỏ **vì lý do sai**, và câu lỗi **không** nói *"bạn vừa đổi tên biến"*. Đúng lớp lỗi
+*"lưới nặn theo CHỮ KÝ"* + *"lưới chỉ đường tới bản vá SAI"*.
+
+**Đã vá:** mẫu đột biến nay neo vào **cái mà CÂY nói** — `bienThuTuc(khoa, nguon)` đọc gốc chuỗi của
+khoá router (client), và `doiSan(tu, sang)` neo vào **tên SÀN** do `_core/trpc.ts` sở hữu (stepUp);
+tên mới của ca "đổi tên" **dẫn xuất từ tên cũ** nên phép đổi **luôn** là một thay đổi thật. Thêm một
+ca *"KHÔNG BẮT NHẦM — ĐỔI TÊN BIẾN … ⇒ VẪN XANH"* ở `vramPanelStepUp` để khoá tính chất ấy.
+
+**Sau khi vá:** đổi tên biến ⇒ **118/118 XANH** trên 4 file; cả bốn đột biến vẫn **ĐỎ** đúng ca.
+
+---
+
+## 11. Trạng thái cây cuối
+
+| kiểm | kết quả |
+|---|---|
+| commit | `fd48307f` (bản vá chính) + `<follow-up>` (vá "bắt nhầm" của lưới-cho-lưới) |
+| `git status --porcelain -- server/ client/ shared/` sau khôi phục | **0 mục** ✅ |
+| mã sản xuất bị đột biến | **`server/routers/vramRouter.ts`** — khôi phục bằng `git checkout HEAD -- <file>` sau **mỗi** lượt ✅ |
+| 243 mục bẩn của việc khác | **không đụng, không stage** ✅ |
+| DDL / migration / seed / trainer / `kb:sync` / sub-agent | **KHÔNG chạy cái nào** ✅ |
+| file tạm | scratchpad `msg.txt` — **đã xoá**; **0** file tạm trong repo ✅ |
+
+**Cổng chạy lại lần cuối (cây sạch):** **102 file / 1730 ca PASS** · shuffle **102/1730 PASS** ·
+`npm run check` **exit 0** · `npm run check:tests` **exit 0** · `npm run i18n:check` **0 lệch**.

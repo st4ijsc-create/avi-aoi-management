@@ -324,11 +324,19 @@ describe("★★★ F1 — hai nút PHÁ HUỶ của VramBrokerPanel phải đi 
 describe("★★★ I-3 lưới-cho-lưới — đột biến W3 và họ hàng của nó", () => {
   const GOC = readFileSync(VRAM_ROUTER, "utf8");
 
+  /**
+   * ⚠⚠ Mẫu đột biến neo vào **TÊN SÀN** (`actuationProcedure`/`deployProcedure` — do `_core/trpc.ts`
+   * sở hữu), **KHÔNG** vào tên biến thủ tục của `vramRouter`. Phép thử đã bắt được lỗi ngược lại:
+   * neo vào tên biến thì một lượt **đổi tên hợp lệ** biến phép thay thành no-op ⇒ mutant **bằng**
+   * bản gốc ⇒ ca *"phải ĐỎ"* đỏ **vì lý do sai**, và câu lỗi không nói *"bạn vừa đổi tên biến"*.
+   */
+  const doiSan = (tu: string, sang: string): string => {
+    expect(GOC.split(`= ${tu}.use(`).length - 1, `\`= ${tu}.use(\` phải xuất hiện ĐÚNG một lần`).toBe(1);
+    return GOC.replace(`= ${tu}.use(`, `= ${sang}.use(`);
+  };
+
   it("★★★ W3 — nâng `retryDeferred` lên `deployProcedure` ⇒ nó vào PHA_HUY và THIẾU `totpCode` ⇒ ĐỎ", () => {
-    const ma = GOC.replace(
-      "const vramActuationProcedure = actuationProcedure.use(",
-      "const vramActuationProcedure = deployProcedure.use(",
-    );
+    const ma = doiSan("actuationProcedure", "deployProcedure");
     expect(ma, "đột biến phải thật sự đổi được nguồn").not.toBe(GOC);
     const { anhXa, mu } = mutationCuaMayChu(ma);
     expect(mu.join("\n")).toBe("");
@@ -341,10 +349,7 @@ describe("★★★ I-3 lưới-cho-lưới — đột biến W3 và họ hàng 
   });
 
   it("★★★ chiều còn lại — HẠ `preempt` xuống `actuationProcedure` (bỏ step-up) ⇒ ĐỎ ở chiều ngược", () => {
-    const ma = GOC.replace(
-      "const vramDestructiveProcedure = deployProcedure.use(",
-      "const vramDestructiveProcedure = actuationProcedure.use(",
-    );
+    const ma = doiSan("deployProcedure", "actuationProcedure");
     expect(ma).not.toBe(GOC);
     const { anhXa } = mutationCuaMayChu(ma);
     expect(anhXa.preempt?.san).toBe("actuationProcedure");
@@ -363,6 +368,24 @@ describe("★★★ I-3 lưới-cho-lưới — đột biến W3 và họ hàng 
 
   it("★★ KHÔNG BẮT NHẦM — `query` (mặt đọc) nằm NGOÀI bất biến step-up", () => {
     expect(Object.keys(MAY_CHU.anhXa), "`state` là `query` ⇒ không có `.mutate(` nào ở panel").not.toContain("state");
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — ĐỔI TÊN BIẾN thủ tục ở máy chủ (dọn dẹp hợp lệ) ⇒ VẪN XANH", () => {
+    /**
+     * ⚠ Ca này được thêm vì một lượt đo **bắt được chính lưới này bắt nhầm**: khi mẫu đột biến neo
+     * vào tên biến, một lượt đổi tên hợp lệ làm ba ca meta đỏ **vì lý do sai**. Bất biến thật chỉ
+     * nói về **sàn** và **`input`**, nên đổi tên phải hoàn toàn vô hình.
+     */
+    const ten = /const\s+(\w+)\s*=\s*deployProcedure\.use\(/.exec(GOC)?.[1];
+    expect(ten, "không đọc được tên biến thủ tục phá huỷ — vramRouter đổi hình dạng?").toBeDefined();
+    // ⚠ Tên mới DẪN XUẤT từ tên cũ ⇒ phép đổi LUÔN là một thay đổi thật (xem ghi chú ở ca sinh đôi
+    //   bên `vramCommandReach.role.unit.test.ts`).
+    const ma = GOC.split(ten as string).join(`${ten as string}Doi`);
+    expect(ma, "phép đổi tên phải là một thay đổi THẬT").not.toBe(GOC);
+    const { anhXa, mu } = mutationCuaMayChu(ma);
+    expect(mu.join("\n")).toBe("");
+    expect(anhXa.preempt).toEqual({ san: SAN_CO_STEP_UP, khaiTotp: true });
+    expect(anhXa.retryDeferred).toEqual({ san: "actuationProcedure", khaiTotp: false });
   });
 
   it("★★ KHÔNG BẮT NHẦM — mã sản xuất ở HEAD cho đúng hai tập, không giao nhau", () => {

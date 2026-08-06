@@ -397,6 +397,40 @@ function congTheoThuTuc(nguon?: string): { anhXa: Record<string, string>; mu: st
   return { anhXa, mu };
 }
 
+/**
+ * Tên BIẾN thủ tục mà một khoá router đứng trên — đọc từ **CÂY**, không chép tay.
+ *
+ * ⚠⚠ Ô này tồn tại vì một phép thử **đã bắt được chính lưới này bắt nhầm**: các ca lưới-cho-lưới
+ * dưới đây dựng đột biến bằng cách **thay chuỗi** trên nguồn thật, nên khi ai đó **đổi tên biến**
+ * (một lượt dọn dẹp **hợp lệ**) thì phép thay thành no-op ⇒ mutant **bằng** bản gốc ⇒ ca *"phải ĐỎ"*
+ * xanh-hoá thành đỏ **vì lý do sai**, và câu lỗi **không** nói *"bạn vừa đổi tên biến"*.
+ * ⇒ Neo mẫu đột biến vào **cái mà cây nói**, không vào một chuỗi ai đó sở hữu.
+ */
+function bienThuTuc(khoa: string, nguon: string): string {
+  const sf = ts.createSourceFile(VRAM_ROUTER, nguon, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  let ra: string | null = null;
+  const di = (n: ts.Node): void => {
+    const arg0 = ts.isCallExpression(n) ? n.arguments[0] : undefined;
+    if (
+      ts.isCallExpression(n) &&
+      ts.isIdentifier(n.expression) &&
+      n.expression.text === "router" &&
+      arg0 !== undefined &&
+      ts.isObjectLiteralExpression(arg0)
+    ) {
+      for (const p of arg0.properties) {
+        if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === khoa) {
+          ra = gocCuaChuoi(p.initializer);
+        }
+      }
+    }
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  if (ra === null) throw new Error(`không đọc được biến thủ tục của \`${khoa}\` — vramRouter đổi hình dạng?`);
+  return ra;
+}
+
 describe("Task 3b + C-1 — cổng quyền client KHAI phải trùng cổng máy chủ ĐỨNG TRÊN, THEO TỪNG THỦ TỤC", () => {
   it("★★★ C-1 — ÁNH XẠ `thủ tục → bit` khớp TỪNG CẶP giữa `vramRouter` và vị từ nút mà client chọn", () => {
     /**
@@ -459,24 +493,28 @@ describe("Task 3b + C-1 — cổng quyền client KHAI phải trùng cổng máy
     expect(`${cong.module}/${cong.action}`, "nút phá huỷ của client vẫn hỏi `canDelete` ⇒ LỆCH").not.toBe(anhXa.preempt);
   });
 
-  it("★★★ HÌNH DẠNG CỦA TÔI — ALIAS thủ tục (`const c = vramActuationProcedure`) ⇒ ĐỎ", () => {
-    const ma = readFileSync(VRAM_ROUTER, "utf8")
-      .replace(
-        "export const vramRouter = router({",
-        "const congPhaHuy = vramActuationProcedure;\nexport const vramRouter = router({",
-      )
-      .replace("preempt: vramDestructiveProcedure", "preempt: congPhaHuy");
+  it("★★★ HÌNH DẠNG CỦA TÔI — ALIAS thủ tục (`const c = <thủ tục actuation>`) ⇒ ĐỎ", () => {
+    const goc = readFileSync(VRAM_ROUTER, "utf8");
+    const tenPhaHuy = bienThuTuc("preempt", goc);
+    const tenActuation = bienThuTuc("retryDeferred", goc);
+    const ma = goc
+      .replace("export const vramRouter = router({", `const congPhaHuy = ${tenActuation};\nexport const vramRouter = router({`)
+      .replace(`preempt: ${tenPhaHuy}`, "preempt: congPhaHuy");
+    expect(ma, "đột biến phải thật sự đổi được nguồn").not.toBe(goc);
+
     const { anhXa, mu } = congTheoThuTuc(ma);
     expect(mu.join("\n")).toBe("");
-    expect(ma, "đối chứng: tên biến cũ vẫn còn trong file").toContain("vramDestructiveProcedure");
+    expect(ma, "đối chứng: tên biến cũ vẫn còn trong file").toContain(tenPhaHuy);
     expect(anhXa.preempt, "alias KHÔNG giấu được cổng của gốc").toBe(`${VRAM_CONTROL_MODULE}/canCreate`);
   });
 
   it("★★★ thủ tục MỚI ở máy chủ mà client chưa khai nút ⇒ ĐỎ (không có phần tử thứ N+1 im lặng)", () => {
-    const ma = readFileSync(VRAM_ROUTER, "utf8").replace(
+    const goc = readFileSync(VRAM_ROUTER, "utf8");
+    const ma = goc.replace(
       "export const vramRouter = router({",
-      "export const vramRouter = router({\n  killAll: vramDestructiveProcedure.mutation(async () => 1),",
+      `export const vramRouter = router({\n  killAll: ${bienThuTuc("preempt", goc)}.mutation(async () => 1),`,
     );
+    expect(ma, "đột biến phải thật sự đổi được nguồn").not.toBe(goc);
     const { anhXa } = congTheoThuTuc(ma);
     const lenh = Object.keys(anhXa).filter((k) => k !== MAT_DOC);
     expect(lenh.sort()).not.toEqual(Object.keys(VI_TU_THEO_THU_TUC).sort());
@@ -484,7 +522,11 @@ describe("Task 3b + C-1 — cổng quyền client KHAI phải trùng cổng máy
   });
 
   it("★★ KHÔNG BẮT NHẦM — đổi TÊN BIẾN thủ tục ở máy chủ (dọn dẹp hợp lệ) ⇒ VẪN XANH", () => {
-    const ma = readFileSync(VRAM_ROUTER, "utf8").split("vramDestructiveProcedure").join("congPhaHuyVram");
+    const goc = readFileSync(VRAM_ROUTER, "utf8");
+    // ⚠ Tên mới DẪN XUẤT từ tên cũ ⇒ phép đổi LUÔN là một thay đổi thật, kể cả khi ai đó vừa đổi
+    //   tên biến ở sản xuất thành đúng cái tên mà ca này bịa ra (đã xảy ra trong lượt đo).
+    const ma = goc.split(bienThuTuc("preempt", goc)).join(`${bienThuTuc("preempt", goc)}Doi`);
+    expect(ma, "phép đổi tên phải là một thay đổi THẬT").not.toBe(goc);
     const { anhXa, mu } = congTheoThuTuc(ma);
     expect(mu.join("\n")).toBe("");
     expect(anhXa.preempt).toBe(`${VRAM_CONTROL_MODULE}/canDelete`);
