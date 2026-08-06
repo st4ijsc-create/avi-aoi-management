@@ -88,17 +88,43 @@ export function vramRetryButtonDisabled(
 //    (`aiAgent.listAgentSessionsForOps` — sàn `admin|engineer`). Một ô trả lời hai câu hỏi khác nhau
 //    là đúng lớp lỗi "hai bản sao của một vị từ", chỉ khác chiều: **một bản sao dùng cho hai bất biến**.
 //
-// ⚠⚠ **BA NÚT ĐỨNG TRÊN HAI SÀN QUYỀN KHÁC NHAU** (`server/routers/vramRouter.ts:66-70`) — nên MỘT
+// ⚠⚠ **BA NÚT ĐỨNG TRÊN HAI SÀN QUYỀN KHÁC NHAU** (`server/routers/vramRouter.ts`) — nên MỘT
 // boolean cho cả ba là một lời nói dối theo **cả hai chiều**:
-//   | nút | thủ tục | bit |
+//   | nút | thủ tục | bit (**sau Task 3b**) |
 //   |---|---|---|
-//   | Thu hồi (`preempt`) · Dọn lease (`releaseStale`) | `deployProcedure` | `machine_control/canDelete` |
-//   | Thử lại ngay (`retryDeferred`) | `actuationProcedure` | `machine_control/canCreate` |
-// `engineer` có `canCreate` **nhưng không có** `canDelete` (khuôn vai:
-// `server/routers/permissionsRouter.ts:288`) ⇒ gộp hai sàn vào một ô thì hoặc engineer thấy hai nút
-// **chắc chắn 403** (hứa NHIỀU hơn), hoặc mất nút *"Thử lại ngay"* mà máy chủ **cho phép** engineer
-// chạy (hứa ÍT hơn). ⇒ **HAI** grant, mỗi nút khớp **đúng** sàn của nó.
+//   | Thu hồi (`preempt`) · Dọn lease (`releaseStale`) | `deployProcedure` | `vram_control/canDelete` |
+//   | Thử lại ngay (`retryDeferred`) | `actuationProcedure` | `vram_control/canCreate` |
+// Gộp hai sàn vào một ô thì hoặc một vai chỉ có `canCreate` thấy hai nút **chắc chắn 403** (hứa
+// NHIỀU hơn), hoặc mất nút *"Thử lại ngay"* mà máy chủ **cho phép** chạy (hứa ÍT hơn).
+// ⇒ **HAI** grant, mỗi nút khớp **đúng** sàn của nó.
+//
 // ════════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ Pha 5 Task 3b — **BIT ĐÃ TÁCH RA KHỎI `machine_control`, VÀ FILE NÀY PHẢI ĐỌC BIT MỚI.**
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// `machine_control/canDelete` là sàn dùng chung của **10 thủ tục ở 8 router**, **8/10 KHÔNG có 2FA**
+// — gồm `programming.deleteProject` (**xoá CASCADE cây mã nguồn có phiên bản**, không chốt an toàn,
+// không OTP) — nên cấp nó cho `supervisor` để mở hai nút VRAM sẽ mở luôn **chín** thủ tục khác.
+// Chủ dự án chốt: **TÁCH BIT RIÊNG** ⇒ `VRAM_CONTROL_MODULE`.
+// ⚠ Bảng vai dưới đây là **gương của máy chủ**, nên khi máy chủ đổi cổng thì gương phải đổi theo —
+// `VRAM_LENH_GATE` khai **đúng cặp (module, action)** mà `vramRouter` đang đứng trên, và một ca
+// **đối chiếu NGUỒN ĐỘC LẬP** (đọc thẳng `server/routers/vramRouter.ts` bằng AST) ở
+// `vramCommandReach.role.unit.test.ts` bắt mọi lượt lệch: trả router về `machine_control` ⇒ **ĐỎ**.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+
+import { VRAM_CONTROL_MODULE } from "@shared/permissions";
+
+/**
+ * ★★★ **CỔNG QUYỀN THẬT của từng nút** — khai ở ĐÂY để câu *"nút này đứng trên bit nào"* có **một**
+ * chỗ trả lời, và để lưới đối chiếu được với máy chủ bằng máy chứ không bằng mắt người.
+ *
+ * ⚠ Đây **KHÔNG** phải nơi cưỡng chế (máy chủ cưỡng chế, độc lập). Nó là **bản khai** để lưới so.
+ */
+export const VRAM_LENH_GATE = {
+  /** `preempt` · `releaseStale` — PHÁ HUỶ. */
+  destructive: { module: VRAM_CONTROL_MODULE, action: "canDelete" },
+  /** `retryDeferred` — không phá huỷ. */
+  actuation: { module: VRAM_CONTROL_MODULE, action: "canCreate" },
+} as const;
 
 /**
  * Mọi vai của hệ. **Vét cạn theo KIỂU**: thêm một vai mà quên khai ở bảng dưới là **lỗi `tsc`**.
@@ -125,13 +151,15 @@ export type VramCommandRole =
  * nó phải **hẹp hơn hoặc bằng** máy chủ, không bao giờ rộng hơn.
  */
 const CHO_RA_LENH: Record<VramCommandRole, { readonly destructive: boolean; readonly actuation: boolean }> = {
-  // `canDelete` + `canCreate` (khuôn vai `:108`), và là vai duy nhất short-circuit `checkPermission`.
+  // Vai DUY NHẤT short-circuit `checkPermission` (`server/_core/accessControl.ts:136`) ⇒ qua mọi
+  // module, kể cả `vram_control`, không cần một hàng quyền nào.
   admin: { destructive: true, actuation: true },
   // ★ N9 — QUYẾT ĐỊNH CỦA CHỦ DỰ ÁN: `supervisor` phải **dùng được thật**. Có trong `ACTUATION_ROLES`;
-  //   `canDelete` là hàng quyền chủ dự án duyệt ở lượt DỮ LIỆU riêng (xem báo cáo Task 3).
+  //   `vram_control/canDelete` + `canCreate` là hàng quyền chủ dự án duyệt ở lượt DỮ LIỆU riêng
+  //   (xem báo cáo Task 3b — per-USER, **không** đổi khuôn vai).
   supervisor: { destructive: true, actuation: true },
-  // ★ `engineer`: `canCreate` CÓ (⇒ "Thử lại ngay" bật), `canDelete` KHÔNG (⇒ hai nút phá huỷ tắt).
-  //   Nghiệm thu sống lượt C3: engineer **có OTP tươi** vẫn 403 trên `preempt`.
+  // ★ `engineer`: `vram_control/canCreate` CÓ (⇒ "Thử lại ngay" bật), `canDelete` KHÔNG (⇒ hai nút
+  //   phá huỷ tắt). Nghiệm thu sống lượt C3: engineer **có OTP tươi** vẫn 403 trên `preempt`.
   engineer: { destructive: false, actuation: true },
   // Bốn vai dưới KHÔNG có trong `ACTUATION_ROLES` ⇒ mọi lệnh 403 ở role-floor, trước cả RBAC.
   quality_inspector: { destructive: false, actuation: false },
@@ -155,9 +183,9 @@ type VramGrant = boolean & { readonly [NHAN_GRANT]: "vram-command-reach" };
 
 /** Tầm với của MỘT vai trên mặt lệnh VRAM. Hai ô = hai sàn quyền của máy chủ, không gộp. */
 export interface VramCommandReach {
-  /** `preempt` · `releaseStale` — `deployProcedure` + `machine_control/canDelete`. **PHÁ HUỶ**. */
+  /** `preempt` · `releaseStale` — `deployProcedure` + `vram_control/canDelete`. **PHÁ HUỶ**. */
   readonly destructive: VramGrant;
-  /** `retryDeferred` — `actuationProcedure` + `machine_control/canCreate`. Không phá huỷ. */
+  /** `retryDeferred` — `actuationProcedure` + `vram_control/canCreate`. Không phá huỷ. */
   readonly actuation: VramGrant;
 }
 

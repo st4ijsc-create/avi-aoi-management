@@ -817,6 +817,12 @@ export const permissionsRouter = router({
 
         // ======================== MACHINE CONTROL (Sprint F4a — OT HITL) ========================
         { category: 'machine_control', moduleName: 'machine_control', displayName: 'Điều khiển Máy (OT)', description: 'Gửi lệnh điều khiển máy qua HITL: start/stop/recipe (canCreate), đặt tham số/ack (canEdit), xem preview/log (canView). MỌI lệnh phải qua xác nhận của người dùng + audit.' },
+        // ★★★ Pha 5 Task 3b — BIT RIÊNG cho mặt LỆNH của bộ điều phối VRAM. Tách khỏi `machine_control`
+        // vì `machine_control/canDelete` là sàn dùng chung của 10 thủ tục ở 8 router (8/10 KHÔNG có 2FA,
+        // gồm `programming.deleteProject` xoá CASCADE cây mã nguồn) — cấp nó để mở 2 nút VRAM sẽ mở
+        // luôn 9 thủ tục khác. `category` dùng lại `machine_control` (chỉ để gom nhóm trong UI; cưỡng
+        // chế đọc `moduleName`). Đây là DÒNG CATALOG — nó KHÔNG cấp quyền cho ai.
+        { category: 'machine_control', moduleName: 'vram_control', displayName: 'Điều phối VRAM (thu hồi)', displayNameEn: 'VRAM Broker (reclaim)', displayNameZh: '显存调度（回收）', description: 'Ra lệnh cho bộ điều phối VRAM: thu hồi VRAM của một hộ + dọn giấy phép ma (canDelete — PHÁ HUỶ, kèm role-floor + 2FA + OTP tươi), thử lại một lượt nạp đã hoãn (canCreate). KHÔNG bao gồm quyền XEM trạng thái VRAM — mặt đọc đứng trên machine_control/canView.' },
 
         // ======================== ANDON + INTERLOCK (Sprint F5a — ALERT-ONLY) ========================
         { category: 'andon', moduleName: 'andon', displayName: 'Andon (Cảnh báo)', displayNameEn: 'Andon', displayNameZh: 'Andon 安灯', description: 'Tín hiệu Andon: raise (canCreate), ack/resolve (canEdit), xem danh sách/metrics (canView). Andon CHỈ là tín hiệu — KHÔNG ghi lệnh máy.' },

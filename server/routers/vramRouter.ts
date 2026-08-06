@@ -17,6 +17,9 @@
 import { z } from "zod";
 import { router, protectedProcedure, actuationProcedure, deployProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+// ★ Pha 5 Task 3b — tên module quyền của VRAM có MỘT chủ: `shared/permissions.ts` (nơi
+// `PERMISSION_MODULES` là nguồn duy nhất). Viết lại chuỗi ở đây là đẻ bản sao thứ hai.
+import { VRAM_CONTROL_MODULE } from "@shared/permissions";
 import { buildVramAgentState } from "../services/vram/vramReadModel";
 import {
   vramPreemptCommand,
@@ -41,8 +44,30 @@ import {
  * | thủ tục | sàn | vì sao |
  * |---|---|---|
  * | `state` | `protectedProcedure` + `requirePermission("machine_control","canView")` | chỉ ĐỌC, nhưng đọc **thông tin hạ tầng** (`processKey`/`owner`/`leaseKey`) ⇒ **bằng mức tool `get_vram_state`** (N8). |
- * | `preempt` · `releaseStale` | `deployProcedure` + `requirePermission("machine_control","canDelete")` | **PHÁ HUỶ**: `preempt` giết được một tiến trình; `releaseStale` xoá một hàng khỏi sổ mà **mọi tiến trình anh em** đọc để tính dư địa. `canDelete` (không phải `canCreate`) vì hành vi là **phá huỷ**. |
- * | `retryDeferred` | `actuationProcedure` + `requirePermission("machine_control","canCreate")` | KHÔNG phá huỷ gì — chỉ **dời hạn** một lượt thử lại đã lên lịch. Nhưng nó tiêu VRAM và chạm đường cron ⇒ vẫn ở sàn actuation. |
+ * | `preempt` · `releaseStale` | `deployProcedure` + `requirePermission(VRAM_CONTROL_MODULE,"canDelete")` | **PHÁ HUỶ**: `preempt` giết được một tiến trình; `releaseStale` xoá một hàng khỏi sổ mà **mọi tiến trình anh em** đọc để tính dư địa. `canDelete` (không phải `canCreate`) vì hành vi là **phá huỷ**. |
+ * | `retryDeferred` | `actuationProcedure` + `requirePermission(VRAM_CONTROL_MODULE,"canCreate")` | KHÔNG phá huỷ gì — chỉ **dời hạn** một lượt thử lại đã lên lịch. Nhưng nó tiêu VRAM và chạm đường cron ⇒ vẫn ở sàn actuation. |
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ Pha 5 Task 3b — **BIT QUYỀN CỦA BA LỆNH ĐÃ TÁCH RA KHỎI `machine_control`.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Pha 4 dựng ba lệnh trên `machine_control/canDelete|canCreate` vì đó là bit **đã có** đúng nghĩa
+ * *"điều khiển máy"*. Đo lại ở Pha 5 cho thấy giá của việc dùng chung:
+ *  • `machine_control/canDelete` = sàn của **10 thủ tục ở 8 router**, **8/10** là `protectedProcedure`
+ *    **TRẦN** (không role-floor, không 2FA). Nguy hiểm nhất: `programming.deleteProject`
+ *    (`programmingRouter.ts:261`) **xoá CASCADE cây mã nguồn có phiên bản**, không chốt an toàn,
+ *    không OTP — cộng **5 bề mặt UI** hiện nút xoá ngay khi cấp.
+ *  • `machine_control/canCreate` còn **RỘNG HƠN**: ~90 điểm gọi ở 17 router (`fleetRouter` 19 ·
+ *    `safetyRouter` 18 …) — tức start/stop máy và fleet actuation.
+ * ⇒ Cấp bit dùng chung cho `supervisor` để mở **hai nút VRAM** (hai thủ tục **CHẶT NHẤT** trong tập,
+ * có step-up OTP tươi) sẽ mở luôn **chín thủ tục khác**, phần lớn **không** có OTP.
+ * **Chủ dự án chốt (2026-08-06): TÁCH BIT RIÊNG** ⇒ `VRAM_CONTROL_MODULE` (`@shared/permissions`).
+ *
+ * ⚠⚠ Task 3b **THU HẸP, KHÔNG NỚI**: `deployProcedure`/`actuationProcedure` + step-up 2FA giữ
+ * **nguyên từng ký tự**; chỉ **vế thẩm quyền** đổi chủ. Sau lượt này một user có
+ * `machine_control/canDelete` **KHÔNG** còn với tới `preempt`/`releaseStale`.
+ * ⚠ Mặt ĐỌC `state` **cố ý ở lại** `machine_control/canView`: đó là quyết định N8 của chủ dự án
+ * (*"siết ROUTER lên bằng TOOL"*) — đổi nó mà không đổi `get_vram_state` sẽ **mở lại đúng khe hở
+ * vừa đóng**, và `canView` là bit **chỉ đọc**, bề mặt dùng chung của nó không có thủ tục phá huỷ nào.
  *
  * ⚠⚠ **KHÔNG có `moduleGate(...)` — M-1 BỊ TỪ CHỐI, và lý do là một PHÉP ĐO, không phải khẩu vị.**
  * Đề xuất dựa trên giả định *"`moduleGate` mặc định pass-through ⇒ thêm vào là không rủi ro"*.
@@ -64,11 +89,14 @@ import {
  */
 const totp = { totpCode: z.string().max(16).optional() };
 
-/** Sàn của một lệnh **PHÁ HUỶ**: danh tính (role-floor + 2FA + step-up) **VÀ** thẩm quyền. */
-const vramDestructiveProcedure = deployProcedure.use(requirePermission("machine_control", "canDelete"));
+/**
+ * Sàn của một lệnh **PHÁ HUỶ**: danh tính (role-floor + 2FA + step-up) **VÀ** thẩm quyền.
+ * ⚠ Task 3b: vế thẩm quyền là **bit RIÊNG của VRAM**, không còn `machine_control/canDelete`.
+ */
+const vramDestructiveProcedure = deployProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canDelete"));
 
-/** Sàn của một lệnh **KHÔNG phá huỷ** nhưng vẫn là actuation. */
-const vramActuationProcedure = actuationProcedure.use(requirePermission("machine_control", "canCreate"));
+/** Sàn của một lệnh **KHÔNG phá huỷ** nhưng vẫn là actuation. Cùng bit riêng, action `canCreate`. */
+const vramActuationProcedure = actuationProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canCreate"));
 
 /**
  * ★★★ Pha 5 Task 2 (N8) — **SÀN CỦA MẶT ĐỌC.**

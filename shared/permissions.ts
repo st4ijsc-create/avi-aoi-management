@@ -118,6 +118,8 @@ export const PERMISSION_MODULES = [
   "machine_downtime",
   // Machine control (OT HITL)
   "machine_control",
+  // ★★★ Pha 5 Task 3b — BIT RIÊNG CHO MẶT LỆNH VRAM. Xem `VRAM_CONTROL_MODULE` bên dưới.
+  "vram_control",
   // Andon / Interlock / MES-BOM / Energy
   "andon",
   "interlock",
@@ -132,6 +134,35 @@ export const PERMISSION_MODULES = [
 ] as const;
 
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
+
+/**
+ * ★★★ Pha 5 Task 3b — **MODULE QUYỀN CỦA MẶT LỆNH VRAM. MỘT chuỗi, MỘT chủ.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO NÓ KHÔNG ĐƯỢC LÀ `machine_control/canDelete`
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Đếm được (Task 3b bước 1): `machine_control/canDelete` là sàn của **10 thủ tục ở 8 router**, và
+ * **8/10 là `protectedProcedure` TRẦN** — không role-floor, không 2FA. Nguy hiểm nhất đích danh:
+ * `programming.deleteProject` (`server/routers/programmingRouter.ts:261`) **xoá CASCADE cả cây mã
+ * nguồn CÓ PHIÊN BẢN** (`programArtifacts`), không chốt an toàn, không OTP; cộng **5 bề mặt UI**
+ * hiện nút xoá ngay khi cấp. Hai nút VRAM lại là **hai thủ tục CHẶT NHẤT** trong tập ấy
+ * (`deployProcedure` = role-floor + 2FA + step-up OTP tươi).
+ * ⇒ Cấp bit dùng chung để mở **hai** cái chặt nhất sẽ mở luôn **tám** cái lỏng nhất.
+ * **Chủ dự án chốt (2026-08-06): TÁCH BIT RIÊNG.**
+ *
+ * ⚠ Hình dạng đã chọn là **một `moduleName` mới**, KHÔNG phải một `action` mới: bảng `permissions`
+ * có đúng **5 cột boolean cố định** (`drizzle/schema/auth.ts:62-67`) nên action thứ sáu là **DDL**,
+ * còn `moduleName` là `varchar(100)` tự do ⇒ bit mới = **một HÀNG**, không migration. `category`
+ * dùng lại giá trị `machine_control` đã có trong pgEnum ⇒ cũng không đụng enum.
+ *
+ * ⚠⚠ **KHÔNG có alias nào trỏ vào/ra khỏi tên này** (`PERMISSION_MODULE_ALIASES` dưới) — nếu thêm
+ * một alias thì `checkPermission` sẽ resolve nó sang module khác và **phá đúng phép tách này**.
+ *
+ * Hai action đang dùng: `canDelete` (`vram.preempt` · `vram.releaseStale` — PHÁ HUỶ) và
+ * `canCreate` (`vram.retryDeferred` — không phá huỷ). Mặt ĐỌC `vram.state` **cố ý** ở lại
+ * `machine_control/canView` để bằng mức tool `get_vram_state` (quyết định N8 của chủ dự án).
+ */
+export const VRAM_CONTROL_MODULE = "vram_control" satisfies PermissionModule;
 
 const PERMISSION_MODULE_SET: ReadonlySet<string> = new Set(PERMISSION_MODULES);
 

@@ -39,9 +39,11 @@ import {
   vramCommandReach,
   vramDestructiveButtonDisabled,
   vramRetryButtonDisabled,
+  VRAM_LENH_GATE,
   type VramCommandRole,
   type VramDeferRetryReachKind,
 } from "./vramCommandReach";
+import { VRAM_CONTROL_MODULE } from "@shared/permissions";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url)); // .../client/src/lib
 const GOC = join(TEST_DIR, "..", "..", ".."); // gốc repo
@@ -183,6 +185,67 @@ describe("N9 — bảng vai phải PHỦ ĐÚNG danh sách vai của máy chủ 
     di(sf);
     expect(vaiMayChu, "không đọc được `UserRole` ở server/db/auth.ts — file đã đổi hình dạng?").not.toBeNull();
     expect([...(vaiMayChu as unknown as string[])].sort()).toEqual(Object.keys(MONG_DOI).sort());
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// TẦNG 2b (Pha 5 Task 3b) — **CỔNG QUYỀN MÀ FILE NÀY KHAI PHẢI LÀ CỔNG MÀ MÁY CHỦ ĐANG ĐỨNG TRÊN.**
+//
+// ⚠⚠ Task 3b tách bit VRAM ra khỏi `machine_control` vì bit ấy dùng chung cho **10 thủ tục ở 8
+// router**, **8/10 KHÔNG có 2FA** (nguy hiểm nhất: `programming.deleteProject` xoá CASCADE cây mã
+// nguồn). `vramCommandReach.ts` phải **đọc bit MỚI** — nhưng "đọc bit nào" ở một bảng theo VAI là
+// một câu **chỉ nằm trong lời văn**, tức không ai kiểm được. Ca dưới biến nó thành đếm được: vế đối
+// chiếu đến từ **nguồn ĐỘC LẬP** — chính `server/routers/vramRouter.ts`, đọc bằng AST.
+// ⇒ Đột biến *"trả `vramRouter` về `machine_control/canDelete`"* ⇒ **ĐỎ Ở ĐÂY**, kể cả khi bảng vai
+// và mọi cổng AST khác vẫn xanh.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+const VRAM_ROUTER = join(GOC, "server", "routers", "vramRouter.ts");
+
+describe("Task 3b — cổng quyền client KHAI phải trùng cổng máy chủ ĐỨNG TRÊN (nguồn độc lập)", () => {
+  /**
+   * Đọc **mọi** cặp `(module, action)` mà `vramRouter.ts` chain qua `requirePermission(...)`, phân
+   * giải cả chuỗi trực tiếp lẫn hằng nhập từ `@shared/permissions`.
+   */
+  function cuaMayChu(): string[] {
+    const ma = readFileSync(VRAM_ROUTER, "utf8");
+    const sf = ts.createSourceFile(VRAM_ROUTER, ma, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const hang = new Map<string, string>([["VRAM_CONTROL_MODULE", VRAM_CONTROL_MODULE]]);
+    const val = (n: ts.Node): string | null =>
+      ts.isStringLiteral(n) ? n.text : ts.isIdentifier(n) ? (hang.get(n.text) ?? null) : null;
+    const ra: string[] = [];
+    const di = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "requirePermission") {
+        const m = n.arguments[0] === undefined ? null : val(n.arguments[0]);
+        const a = n.arguments[1] === undefined ? null : val(n.arguments[1]);
+        ra.push(`${m}/${a}`);
+      }
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+    return ra;
+  }
+
+  it("★★★ hai cổng lệnh mà client khai (`VRAM_LENH_GATE`) đúng bằng hai cổng lệnh của `vramRouter`", () => {
+    const may = cuaMayChu();
+    expect(may.length, "không đọc được điểm gọi nào — vramRouter đã đổi hình dạng?").toBeGreaterThan(0);
+    const khai = [
+      `${VRAM_LENH_GATE.destructive.module}/${VRAM_LENH_GATE.destructive.action}`,
+      `${VRAM_LENH_GATE.actuation.module}/${VRAM_LENH_GATE.actuation.action}`,
+    ];
+    for (const k of khai) {
+      expect(may, `client khai cổng \`${k}\` nhưng vramRouter KHÔNG đứng trên nó (máy chủ: ${may.join(", ")})`).toContain(k);
+    }
+    // ⚠ Chiều ngược: máy chủ **không được** còn một cổng LỆNH nào ngoài hai cái đã khai. Mặt ĐỌC
+    // (`machine_control/canView`) cố ý ở lại — loại nó ra tường minh, không im lặng.
+    const conLai = may.filter((c) => !khai.includes(c) && c !== "machine_control/canView");
+    expect(conLai.join(" · "), "vramRouter còn đứng trên một cổng mà client KHÔNG khai").toBe("");
+  });
+
+  it("★★★ module VRAM là bit RIÊNG — client TUYỆT ĐỐI không còn khai `machine_control` cho hai nút lệnh", () => {
+    expect(VRAM_LENH_GATE.destructive.module).toBe(VRAM_CONTROL_MODULE);
+    expect(VRAM_LENH_GATE.actuation.module).toBe(VRAM_CONTROL_MODULE);
+    expect(VRAM_CONTROL_MODULE).not.toBe("machine_control");
   });
 });
 
