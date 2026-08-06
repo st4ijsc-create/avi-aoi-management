@@ -218,6 +218,37 @@ Ba mục **cùng đụng `server/services/vram/vramReadModel.ts`**, nên đi chu
 
 ---
 
+## 🔴 THỨ TỰ PHÁT HÀNH — RÀNG BUỘC CỦA TASK 3 (N9), KHÔNG PHẢI MỘT LỜI KHUYÊN
+
+**LƯỢT CẤP QUYỀN CHẠY TRƯỚC · CLIENT DEPLOY SAU.** (I-2, review Task 3, 2026-08-06.)
+
+Task 3 (commit `d4083386`+) làm **ba** lớp ở tầng mã — nav `/ai-brain` · `vramCommandReach` · nối
+vào ba nút — nhưng **hai** lớp còn lại là **DỮ LIỆU** và **chưa cấp**:
+
+| lớp | hàng cần vật chất hoá | tình trạng |
+|---|---|---|
+| 2 — đọc | `machine_control.canView` cho **user** vai `supervisor` **và** `engineer` | ❌ chưa |
+| 5 — lệnh | `machine_control.canDelete` cho **user** vai `supervisor` | ❌ chưa |
+
+⚠⚠ **`DEFAULT_ROLE_PERMISSIONS` (`server/routers/permissionsRouter.ts`) chỉ là KHUÔN ĐỂ ÁP — sửa nó
+KHÔNG tự mở quyền cho ai.** Cưỡng chế đọc bảng `permissions`, và bảng ấy là **per-USER**
+(`accessControl.checkPermission` khớp `permissions.userId` + `moduleName`). ⇒ Đường đúng là **cấp
+per-user** (`permissions.applyBuiltInRoleToUser` hoặc INSERT có duyệt). Nếu đổi **khuôn** thì phải
+đổi cả lưới khoá `server/routers/permissions.machineControl.test.ts:32`
+(`supervisor → canDelete:false`) — đó là một **quyết định RBAC toàn hệ**, không riêng VRAM.
+
+**Vì sao thứ tự này là bắt buộc, không phải khẩu vị:** deploy client trước lượt cấp quyền thì
+`supervisor` vào `/ai-brain` và thấy **hai nút phá huỷ bấm được mà lệnh chắc chắn 403** — tức
+**chính lớp lỗi "mặt đọc hứa nhiều hơn mặt lệnh" mà cả Pha 5 đang đóng**, do chính bản vá đóng nó
+tạo ra. Cửa sổ ấy phải bằng **không**.
+
+⚠ **Trước khi bấm nút cấp `canDelete`, đọc §2 của `task-3-review.md`:** `machine_control/canDelete`
+là bit **DÙNG CHUNG** — có **10 thủ tục ở 8 router** đứng trên nó (nguy hiểm nhất:
+`programming.deleteProject`). Cấp cho `supervisor` để thu hồi VRAM **cũng** mở cả tập ấy. Đây là một
+quyết định phải nói ra, không phải một hệ quả tình cờ.
+
+---
+
 ## Sau khi xong 5 task
 
 - **Review TOÀN NHÁNH** trên model mạnh nhất. ⚠ **Bảy pha liên tiếp, lượt này bắt được thứ review-theo-task KHÔNG THỂ bắt** — đừng bỏ.

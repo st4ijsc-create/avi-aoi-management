@@ -1389,8 +1389,19 @@ export const navGroups: NavGroup[] = [
         // cùng lỗi, chỉ đổi bề mặt. Trên /ai-brain phần Agent Ops tự khai "cần quyền admin
         // hoặc kỹ thuật" qua `isOpsRole`, KHÔNG bịa dữ liệu.
         requiredRole: ['admin', 'engineer', 'supervisor'],
+        // ⚠ m-2 — Ô CHẾT, giữ vì nợ có trước: `isItemAccessible` (:2334) chỉ đọc
+        // `requiredPermission`; `permissionCategory` chỉ có tác dụng ở CẤP GROUP
+        // (`applyRbacFilter`). Đừng đọc dòng này thành "còn một cổng quyền nữa".
         permissionCategory: "admin",
         section: "agentOps",
+        // ★★★ Pha 5 Task 3 review (I-1) — LỚP THỨ SÁU, và nó đóng ĐÚNG với `supervisor`.
+        // `defaultNavModeForRole('supervisor') === 'simple'` (:2119 `ADVANCED_DEFAULT_ROLES`
+        // không có supervisor) và group `ai` khai `tier:"advanced"` ⇒ `filterNavGroupsByMode`
+        // ở chế độ `simple` giữ **CHỈ** item khai TƯỜNG MINH `tier:'simple'`. Không có dòng
+        // này thì supervisor mở thanh bên và **không thấy dòng nào** — đúng câu "anh bảo cấp
+        // quyền rồi mà tôi không thấy màn đâu". Vô hình tới giờ vì `engineer` mặc định
+        // `advanced`; nó chỉ lộ khi thêm một vai KHÔNG kỹ thuật, tức đúng lúc này.
+        tier: "simple",
       },
       {
         // doc69 GĐ4/E2-3 — Agent Command Center (roster + savings + task feed + drill-in).

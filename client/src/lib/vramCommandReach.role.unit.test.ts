@@ -193,11 +193,38 @@ describe("N9 — bảng vai phải PHỦ ĐÚNG danh sách vai của máy chủ 
 // một điểm gọi MỚI trong một FILE MỚI (đột biến M3 của Global Constraints) vẫn bị bắt.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-/** Ba nút LỆNH và vị từ mà `disabled` của mỗi nút **PHẢI LÀ** một lời gọi tới. */
-const NUT_LENH: Readonly<Record<string, string>> = {
-  "vram-preempt": "vramDestructiveButtonDisabled",
-  "vram-release-stale": "vramDestructiveButtonDisabled",
-  "vram-retry": "vramRetryButtonDisabled",
+/**
+ * ★★★ I-3 (review) — **NEO VÀO ĐƯỜNG THOÁT (`.mutate`), KHÔNG VÀO CÁI NHÃN.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ BẢN ĐẦU CỦA LƯỚI NÀY LỌT, VÀ LỌT ĐÚNG LỚP LỖI TASK 2, DỊCH LÊN MỘT NẤC
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản đầu neo vào một **DANH SÁCH TRẮNG BA TÊN MARKER** (`vram-preempt` · `vram-release-stale` ·
+ * `vram-retry`). Người review thêm một nút phá huỷ **THỨ TƯ không mang `data-testid`**, đi qua
+ * step-up 2FA **đúng khuôn** (nên lưới F1 vẫn xanh), gọi `preempt.mutate(...)` và
+ * `disabled={false}` ⇒ **một nút giết tiến trình mở cho MỌI vai đăng nhập**, mà:
+ *   `…role.unit.test.ts` **42/42 XANH** · `client/src/lib/` **451 XANH** · `tsc` **0 lỗi** ⇒ ship được.
+ *
+ * Task 2 học *"đừng liệt kê HÌNH DẠNG"*; đây là *"liệt kê **DANH TÍNH**"* — cùng bệnh, khác trục, và
+ * cái tên ấy do **chính người viết nút mới** quyết định. ⇒ Bất biến phải nói về **CÁI NÚT LÀM GÌ**:
+ *
+ *   > MỌI phần tử JSX mà thuộc tính của nó **dẫn tới** `.mutate(` của một mutation `trpc.vram.*`
+ *   > thì `disabled` của nó **PHẢI LÀ** lời gọi vị từ ứng với **SÀN QUYỀN của thủ tục ấy**.
+ *
+ * ⚠ Khuôn này **ĐÃ CÓ SẴN trong repo** — `vramPanelStepUp.unit.test.ts` neo theo `.mutate(` và
+ * **bắt được** biến thể "nút thứ tư thiếu step-up". Đây là mượn lại đúng bộ máy đó, không dựng cái
+ * thứ hai: repo bắt được *"nút mới thiếu 2FA"* nhưng trước bản này **không** bắt được *"nút mới
+ * thiếu gác QUYỀN"*.
+ *
+ * ⚠ Tập thủ tục được suy ra từ **`trpc.vram.<thủ tục>.useMutation`** trên CÂY, không từ tên biến:
+ * đổi tên biến (`const p = trpc.vram.preempt.useMutation(...)`) không thoát được.
+ */
+const VI_TU_THEO_THU_TUC: Readonly<Record<string, string>> = {
+  // `deployProcedure` + `machine_control/canDelete` — PHÁ HUỶ.
+  preempt: "vramDestructiveButtonDisabled",
+  releaseStale: "vramDestructiveButtonDisabled",
+  // `actuationProcedure` + `machine_control/canCreate`.
+  retryDeferred: "vramRetryButtonDisabled",
 };
 /** Tên component mang ba nút ấy — ô `commandReach` của nó là **cái NUÔI** cả ba. */
 const PANEL_TAG = "VramBrokerPanel";
@@ -284,24 +311,139 @@ interface ViPham {
   readonly noi: string;
 }
 
+/** Định danh TRÁI NHẤT của một chuỗi truy cập (`preempt.mutate` → `preempt`). Khuôn F1 Task 2. */
+function gocCuaChuoi(n: ts.Node | undefined): string | null {
+  let cur: ts.Node | undefined = n;
+  for (;;) {
+    if (cur === undefined) return null;
+    if (ts.isIdentifier(cur)) return cur.text;
+    if (ts.isPropertyAccessExpression(cur) || ts.isElementAccessExpression(cur)) cur = cur.expression;
+    else if (ts.isNonNullExpression(cur) || ts.isParenthesizedExpression(cur)) cur = cur.expression;
+    else if (ts.isCallExpression(cur)) cur = cur.expression;
+    else return null;
+  }
+}
+
+/** `biến ⇒ tên thủ tục` cho mọi `const x = trpc.vram.<thủ tục>.useMutation(...)` — hỏi trên CÂY. */
+function bienMutationVram(sf: ts.SourceFile): Map<string, string> {
+  const ra = new Map<string, string>();
+  for (const n of moiNut(sf)) {
+    if (!ts.isVariableDeclaration(n) || n.initializer === undefined || !ts.isIdentifier(n.name)) continue;
+    if (!ts.isCallExpression(n.initializer)) continue;
+    const m = /^trpc\.vram\.([A-Za-z0-9_]+)\.useMutation$/.exec(n.initializer.expression.getText(sf));
+    if (m !== null) ra.set(n.name.text, m[1]);
+  }
+  return ra;
+}
+
 /**
- * TẦNG 3 — với MỌI phần tử mang marker trong một file: `disabled` của nó **PHẢI LÀ** lời gọi vị từ.
- * Trả về danh sách vi phạm **và** số phần tử đã soi (để dựng cầu chì chống lưới-mù).
+ * Tập định danh **DẪN TỚI** một lệnh VRAM: bản thân biến mutation, **cộng** mọi hàm/biến mà thân nó
+ * gọi tới (đóng BẮC CẦU).
+ *
+ * ⚠ Không có phép đóng này thì `onClick={handlePreempt}` (lệnh nằm trong một hàm khai bên trên) là
+ * một lỗ y hệt cái vừa vá — chỉ dời thân lệnh ra khỏi thuộc tính.
  */
-function soiNutLenh(sf: ts.SourceFile, nhan: string): { viPham: ViPham[]; soi: number } {
+function datToiLenh(sf: ts.SourceFile): Map<string, Set<string>> {
+  const goc = bienMutationVram(sf);
+  const ra = new Map<string, Set<string>>();
+  for (const [bien, thuTuc] of goc) ra.set(bien, new Set([thuTuc]));
+
+  const goiTrong = (than: ts.Node): Set<string> => {
+    const thay = new Set<string>();
+    const di = (x: ts.Node) => {
+      if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) && x.expression.name.text === "mutate") {
+        const g = gocCuaChuoi(x.expression.expression);
+        const tt = g === null ? undefined : goc.get(g);
+        if (tt !== undefined) thay.add(tt);
+      }
+      if (ts.isIdentifier(x)) for (const tt of ra.get(x.text) ?? []) thay.add(tt);
+      x.forEachChild(di);
+    };
+    di(than);
+    return thay;
+  };
+
+  for (let vong = 0; vong < 10; vong++) {
+    let doi = false;
+    for (const n of moiNut(sf)) {
+      let ten: string | null = null;
+      let than: ts.Node | null = null;
+      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer !== undefined) {
+        if (goc.has(n.name.text)) continue;
+        ten = n.name.text;
+        than = n.initializer;
+      } else if (ts.isFunctionDeclaration(n) && n.name !== undefined && n.body !== undefined) {
+        ten = n.name.text;
+        than = n.body;
+      }
+      if (ten === null || than === null) continue;
+      const thay = goiTrong(than);
+      if (thay.size === 0) continue;
+      const cu = ra.get(ten) ?? new Set<string>();
+      const truoc = cu.size;
+      for (const t of thay) cu.add(t);
+      if (cu.size !== truoc) doi = true;
+      ra.set(ten, cu);
+    }
+    if (!doi) break;
+  }
+  return ra;
+}
+
+/**
+ * ★★★ TẦNG 3 — **NEO THEO ĐƯỜNG THOÁT.** Mọi phần tử JSX mà **thuộc tính** của nó dẫn tới một lệnh
+ * `trpc.vram.*` đều là một **nút lệnh**, dù nó có nhãn hay không, dù nó tên gì.
+ *
+ * Trả về vi phạm + số nút đã soi (cầu chì chống lưới-mù).
+ */
+function soiNutTheoDuongThoat(sf: ts.SourceFile): { viPham: ViPham[]; soi: number } {
+  const datToi = datToiLenh(sf);
+  const goc = bienMutationVram(sf);
   const viPham: ViPham[] = [];
   let soi = 0;
-  const viTu = NUT_LENH[nhan];
-  for (const el of moiPhanTuCoMarker(sf, nhan)) {
+
+  for (const n of moiNut(sf)) {
+    if (!ts.isJsxOpeningElement(n) && !ts.isJsxSelfClosingElement(n)) continue;
+    const el = n as ThePhanTu;
+    // Thủ tục nào đạt tới được TỪ THUỘC TÍNH của phần tử này.
+    const thuTuc = new Set<string>();
+    const di = (x: ts.Node) => {
+      if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) && x.expression.name.text === "mutate") {
+        const g = gocCuaChuoi(x.expression.expression);
+        const tt = g === null ? undefined : goc.get(g);
+        if (tt !== undefined) thuTuc.add(tt);
+      }
+      if (ts.isIdentifier(x)) for (const tt of datToi.get(x.text) ?? []) thuTuc.add(tt);
+      x.forEachChild(di);
+    };
+    di(el.attributes);
+    if (thuTuc.size === 0) continue;
+
     soi++;
-    const d = bieuThucThuocTinh(el, sf, "disabled");
-    if (!laLoiGoi(d, viTu)) {
-      const { line } = sf.getLineAndCharacterOfPosition(el.getStart(sf));
+    const { line } = sf.getLineAndCharacterOfPosition(el.getStart(sf));
+    const viTu = new Set([...thuTuc].map((t) => VI_TU_THEO_THU_TUC[t]).filter((v) => v !== undefined));
+    if (viTu.size !== 1) {
       viPham.push({
         file: sf.fileName,
         dong: line + 1,
-        noi: `\`disabled\` của [${nhan}] KHÔNG LÀ \`${viTu}(...)\` — thấy: ${d === null ? "(không có thuộc tính)" : d.getText(sf).slice(0, 90)}`,
+        noi: `một nút ra ${thuTuc.size} lệnh KHÁC SÀN QUYỀN (${[...thuTuc].join(", ")}) — không vị từ nào nói đúng cho cả hai`,
       });
+      continue;
+    }
+    const can = [...viTu][0];
+    const d = bieuThucThuocTinh(el, sf, "disabled");
+    if (!laLoiGoi(d, can)) {
+      viPham.push({
+        file: sf.fileName,
+        dong: line + 1,
+        noi: `nút ra lệnh [${[...thuTuc].join(",")}] mà \`disabled\` KHÔNG LÀ \`${can}(...)\` — thấy: ${d === null ? "(KHÔNG CÓ thuộc tính `disabled`)" : d.getText(sf).slice(0, 90)}`,
+      });
+      continue;
+    }
+    // ⚠ Truy vết: một nút lệnh KHÔNG nhãn là một nút không ai chỉ mặt được trong e2e/log.
+    const nhan = bieuThucThuocTinh(el, sf, "data-testid");
+    if (nhan === null || !ts.isStringLiteral(nhan)) {
+      viPham.push({ file: sf.fileName, dong: line + 1, noi: "nút ra lệnh VRAM mà KHÔNG mang `data-testid` chuỗi" });
     }
   }
   return { viPham, soi };
@@ -404,21 +546,34 @@ describe("N9 (AST) — `disabled` của TỪNG nút lệnh, và CÁI NUÔI nó, 
     expect(FILE_TSX).toContain(MAN_CHA);
   });
 
-  for (const nhan of Object.keys(NUT_LENH)) {
-    it(`★★★ MỌI nút [${nhan}] trong client/src: \`disabled\` LÀ \`${NUT_LENH[nhan]}(...)\``, () => {
-      const viPham: ViPham[] = [];
-      let soi = 0;
-      for (const [f, src] of NGUON) {
-        if (!src.includes(nhan)) continue;
-        const r = soiNutLenh(ast(f, src), nhan);
-        viPham.push(...r.viPham);
-        soi += r.soi;
-      }
-      // ⚠ Cầu chì: nút biến mất khỏi mã ⇒ lưới sẽ "xanh" một cách rỗng.
-      expect(soi, `KHÔNG thấy nút [${nhan}] ở đâu trong client/src ⇒ LƯỚI ĐANG MÙ`).toBeGreaterThan(0);
-      expect(viPham.map((v) => `${v.file}:${v.dong} ${v.noi}`)).toEqual([]);
-    });
-  }
+  it("★★★ I-3 — MỌI phần tử JSX RA LỆNH `trpc.vram.*` (có nhãn hay không) phải có `disabled` LÀ vị từ của ĐÚNG sàn nó", () => {
+    /**
+     * ⚠⚠ Đây là bất biến **CHỦ** của nút lệnh. Bản trước neo vào ba tên marker và một nút phá huỷ
+     * **thứ tư không nhãn** đi qua trọn vẹn. Nay tập phần tử được chọn bằng **đường thoát**
+     * (`trpc.vram.<thủ tục>.useMutation` → `.mutate(` đạt tới từ thuộc tính, đóng bắc cầu qua hàm),
+     * nên **kẻ viết nút mới không còn sở hữu cái tên mà lưới dựa vào**.
+     */
+    const viPham: ViPham[] = [];
+    let soi = 0;
+    for (const [f, src] of NGUON) {
+      if (!src.includes("trpc.vram.")) continue;
+      const r = soiNutTheoDuongThoat(ast(f, src));
+      viPham.push(...r.viPham);
+      soi += r.soi;
+    }
+    // ⚠ Cầu chì: BA nút lệnh phải đếm được — 0 nút thì mọi khẳng định trên là chân lý rỗng.
+    expect(soi, "KHÔNG thấy nút RA LỆNH VRAM nào trong client/src ⇒ LƯỚI ĐANG MÙ").toBeGreaterThanOrEqual(3);
+    expect(viPham.map((v) => `${v.file}:${v.dong} ${v.noi}`)).toEqual([]);
+  });
+
+  it("★★ cầu chì phụ — cả BA thủ tục lệnh đều có nút thật (một thủ tục không nút = một nửa bất biến không ai canh)", () => {
+    const thay = new Set<string>();
+    for (const [f, src] of NGUON) {
+      if (!src.includes("trpc.vram.")) continue;
+      for (const [, tt] of bienMutationVram(ast(f, src))) thay.add(tt);
+    }
+    expect([...thay].sort()).toEqual(Object.keys(VI_TU_THEO_THU_TUC).sort());
+  });
 
   it(`★★★ MỌI \`<${PANEL_TAG} …>\` trong client/src: \`commandReach\` LÀ \`${VI_TU_NUOI}(...)\` (LỚP 3 — cái NUÔI nút)`, () => {
     const viPham: ViPham[] = [];
@@ -542,56 +697,95 @@ describe("N9 (AST) — `disabled` của TỪNG nút lệnh, và CÁI NUÔI nó, 
 
 describe("N9 — lưới-cho-lưới: mọi hình dạng lách đều ĐỎ", () => {
   const NUT = (than: string) => `function C(){ return (<div>${than}</div>); }`;
+  /** Đường thoát THẬT của một nút phá huỷ (đúng khuôn step-up 2FA đang chạy ở panel). */
+  const RA_LENH = "onClick={() => stepUp.guard((totpCode) => preempt.mutate({ owner: h.owner, totpCode }))}";
+  /** Khung nguồn có **khai** mutation ⇒ lưới nhận ra `preempt` là `trpc.vram.preempt`. */
+  const KHUNG = (than: string, truoc = "") =>
+    `const preempt = trpc.vram.preempt.useMutation({});\n${truoc}\n${NUT(than)}`;
 
-  /** Sáu hình dạng brief gọi tên + ba hình dạng thêm (component con · trả về sớm · **trùng marker**). */
+  /**
+   * Sáu hình dạng brief gọi tên + `||` ở điểm dùng + hai của tôi + **ba hình dạng I-3** (nút thứ tư
+   * KHÔNG nhãn · marker đặt tên khác · lệnh dời vào một HÀM khai bên trên).
+   * ⚠ Mọi mẫu đều mang `onClick` RA LỆNH THẬT — đó là thứ lưới dùng để nhận ra nó là nút lệnh.
+   */
   const LACH: Record<string, string> = {
-    "biến trung gian": NUT('const d = !commandReach.destructive; <Button data-testid="vram-preempt" disabled={d} />'),
-    "toán tử ?:": NUT('<Button data-testid="vram-preempt" disabled={commandReach.destructive ? false : true} />'),
-    "ngắn mạch &&": NUT('<Button data-testid="vram-preempt" disabled={p.isPending && !commandReach.destructive} />'),
-    "ngắn mạch ??": NUT('<Button data-testid="vram-preempt" disabled={x ?? vramDestructiveButtonDisabled(commandReach, p)} />'),
-    "hằng số": NUT('<Button data-testid="vram-preempt" disabled={false} />'),
-    "hàm KHÁC": NUT('<Button data-testid="vram-preempt" disabled={motHamKhac(commandReach, p)} />'),
-    "`||` ở ĐIỂM DÙNG (đúng cách lưới đời 2 bị lách)": NUT(
-      'const dis = vramDestructiveButtonDisabled(commandReach, p); <Button data-testid="vram-preempt" disabled={dis || false} />',
+    "biến trung gian": KHUNG(
+      `<Button data-testid="vram-preempt" ${RA_LENH} disabled={d} />`,
+      "const d = !commandReach.destructive;",
     ),
-    "★ hình dạng của TÔI #1 — TRẢI túi props (`disabled` biến mất khỏi cây thuộc tính)": NUT(
-      '<Button data-testid="vram-preempt" {...{ disabled: false }} />',
+    "toán tử ?:": KHUNG(`<Button data-testid="vram-preempt" ${RA_LENH} disabled={commandReach.destructive ? false : true} />`),
+    "ngắn mạch &&": KHUNG(`<Button data-testid="vram-preempt" ${RA_LENH} disabled={p.isPending && !commandReach.destructive} />`),
+    "ngắn mạch ??": KHUNG(`<Button data-testid="vram-preempt" ${RA_LENH} disabled={x ?? vramDestructiveButtonDisabled(commandReach, p)} />`),
+    "hằng số": KHUNG(`<Button data-testid="vram-preempt" ${RA_LENH} disabled={false} />`),
+    "hàm KHÁC": KHUNG(`<Button data-testid="vram-preempt" ${RA_LENH} disabled={motHamKhac(commandReach, p)} />`),
+    "`||` ở ĐIỂM DÙNG (đúng cách lưới đời 2 bị lách)": KHUNG(
+      `<Button data-testid="vram-preempt" ${RA_LENH} disabled={dis || false} />`,
+      "const dis = vramDestructiveButtonDisabled(commandReach, p);",
     ),
-    "★ hình dạng của TÔI #2 — đổi tên khi nhập (`as f`) rồi gọi `f(...)`": NUT(
-      '<Button data-testid="vram-preempt" disabled={f(commandReach, p)} />',
+    "★ của TÔI #1 — TRẢI túi props (`disabled` biến mất khỏi cây thuộc tính)": KHUNG(
+      `<Button data-testid="vram-preempt" ${RA_LENH} {...{ disabled: false }} />`,
+    ),
+    "★ của TÔI #2 — đổi tên khi nhập (`as f`) rồi gọi `f(...)`": KHUNG(
+      `<Button data-testid="vram-preempt" ${RA_LENH} disabled={f(commandReach, p)} />`,
+    ),
+    "★★★ I-3/R-1b — nút phá huỷ THỨ TƯ **KHÔNG `data-testid`**, `disabled={false}`": KHUNG(
+      `<Button size="sm" variant="destructive" ${RA_LENH} disabled={false}>RV-1</Button>`,
+    ),
+    "★★★ I-3 — nút phá huỷ mang **marker TÊN KHÁC** (danh sách trắng vô dụng)": KHUNG(
+      `<Button data-testid="nut-khac" ${RA_LENH} disabled={false} />`,
+    ),
+    "★★★ I-3 — nút ĐÚNG vị từ nhưng **KHÔNG NHÃN** (truy vết)": KHUNG(
+      `<Button ${RA_LENH} disabled={vramDestructiveButtonDisabled(commandReach, p)} />`,
+    ),
+    "★★★ I-3 — lệnh dời vào một HÀM khai bên trên (`onClick={handlePreempt}`)": KHUNG(
+      '<Button data-testid="vram-preempt" onClick={handlePreempt} disabled={false} />',
+      "const handlePreempt = () => stepUp.guard((totpCode) => preempt.mutate({ owner, totpCode }));",
     ),
   };
 
   for (const [ten, nguon] of Object.entries(LACH)) {
     it(`bị BẮT: ${ten}`, () => {
-      const r = soiNutLenh(ast("t.tsx", nguon), "vram-preempt");
-      expect(r.soi, "lưới phải THẤY cái nút").toBeGreaterThan(0);
+      const r = soiNutTheoDuongThoat(ast("t.tsx", nguon));
+      expect(r.soi, "lưới phải THẤY cái nút (nếu 0 thì nó mù, không phải nó sạch)").toBeGreaterThan(0);
       expect(r.viPham.length, `hình dạng lách phải bị bắt: ${nguon}`).toBeGreaterThan(0);
     });
   }
 
   it("chiều DƯƠNG — hình dạng ĐÚNG lọt qua (lưới không phải một cái cấm-tất-cả)", () => {
-    const r = soiNutLenh(
-      ast("t.tsx", NUT('<Button data-testid="vram-preempt" disabled={vramDestructiveButtonDisabled(commandReach, p.isPending)} />')),
-      "vram-preempt",
+    const r = soiNutTheoDuongThoat(
+      ast("t.tsx", KHUNG(`<Button data-testid="vram-preempt" ${RA_LENH} disabled={vramDestructiveButtonDisabled(commandReach, preempt.isPending)} />`)),
     );
     expect(r.soi).toBe(1);
     expect(r.viPham).toEqual([]);
   });
 
+  it("★★ bị BẮT: MỘT nút ra HAI lệnh khác sàn quyền — không vị từ nào nói đúng cho cả hai", () => {
+    const nguon =
+      "const preempt = trpc.vram.preempt.useMutation({});\nconst retryDeferred = trpc.vram.retryDeferred.useMutation({});\n" +
+      NUT('<Button data-testid="vram-preempt" onClick={() => { preempt.mutate({}); retryDeferred.mutate({}); }} disabled={vramDestructiveButtonDisabled(commandReach, p)} />');
+    expect(soiNutTheoDuongThoat(ast("t.tsx", nguon)).viPham.length).toBeGreaterThan(0);
+  });
+
+  it("★★ đổi TÊN BIẾN mutation không thoát được (lưới đọc `trpc.vram.*.useMutation` trên CÂY)", () => {
+    const nguon =
+      "const zz = trpc.vram.preempt.useMutation({});\n" +
+      NUT('<Button data-testid="vram-preempt" onClick={() => zz.mutate({})} disabled={false} />');
+    expect(soiNutTheoDuongThoat(ast("t.tsx", nguon)).viPham.length).toBeGreaterThan(0);
+  });
+
   /**
    * ★★★ HÌNH DẠNG CỦA TÔI #3 — **NÚT THỨ HAI MANG CÙNG MỘT MARKER.**
    *
-   * ⚠⚠ Đây là một lỗ **THẬT trong bộ máy đang có ở HEAD**: `thuocTinh()` của
-   * `vramCommandReach.unit.test.ts` dùng `ra ??=` ⇒ **dừng ở phần tử ĐẦU TIÊN**. Giữ nguyên nút
-   * đúng rồi **thêm** một nút thứ hai cùng `data-testid` với `disabled={false}` thì lưới đời trước
-   * **XANH**, `tsc` sạch, ship được — và người vận hành có một nút bấm được cho một lệnh chắc chắn
-   * bị từ chối. ⇒ Lưới ở file này lượng-từ-hoá bằng **MỌI**, không phải **CÓ MỘT**.
+   * ⚠⚠ Lỗ **THẬT trong bộ máy đang có ở HEAD**: `thuocTinh()` của `vramCommandReach.unit.test.ts`
+   * dùng `ra ??=` ⇒ **dừng ở phần tử ĐẦU TIÊN**. Giữ nguyên nút đúng rồi **thêm** một nút thứ hai
+   * cùng `data-testid` với `disabled={false}` thì lưới đời trước **XANH**, `tsc` sạch, ship được.
+   * ⇒ Lưới ở file này lượng-từ-hoá bằng **MỌI**, không phải **CÓ MỘT** — và từ I-3, tập phần tử
+   * còn được chọn theo **ĐƯỜNG THOÁT**, nên nút thứ hai không cần mang marker cũng bị bắt.
    */
   it("★★★ bị BẮT: nút THỨ HAI cùng marker (lỗ `ra ??=` của bộ máy đời trước — chứng minh bằng đối chứng)", () => {
-    const nguon = NUT(
-      '<Button data-testid="vram-preempt" disabled={vramDestructiveButtonDisabled(commandReach, p)} />' +
-        '<Button data-testid="vram-preempt" disabled={false} />',
+    const nguon = KHUNG(
+      `<Button data-testid="vram-preempt" ${RA_LENH} disabled={vramDestructiveButtonDisabled(commandReach, p)} />` +
+        `<Button data-testid="vram-preempt" ${RA_LENH} disabled={false} />`,
     );
     const sf = ast("t.tsx", nguon);
 
@@ -609,7 +803,7 @@ describe("N9 — lưới-cho-lưới: mọi hình dạng lách đều ĐỎ", ()
     ).toBe(true);
 
     // Bộ máy của file này — ĐỎ.
-    const r = soiNutLenh(sf, "vram-preempt");
+    const r = soiNutTheoDuongThoat(sf);
     expect(r.soi).toBe(2);
     expect(r.viPham.length, "nút thứ hai PHẢI bị bắt").toBe(1);
   });
@@ -661,18 +855,30 @@ describe("N9 — lưới-cho-lưới: mọi hình dạng lách đều ĐỎ", ()
   // ────────────────────────────────────────────────────────────────────────────────────────────
 
   it("★★ KHÔNG BẮT NHẦM — nút/spinner của các query & lệnh KHÁC nằm ngoài phạm vi", () => {
-    const nguon = NUT(
-      '<Button disabled={tripMut.isPending || reason.length < 3} />' +
-        "{preempt.isPending ? <Spinner /> : null}" +
-        "{state.isLoading ? <Skeleton /> : null}" +
-        '<Button data-testid="khac" disabled={x || y} />' +
-        '<Button data-testid="vram-preempt" disabled={vramDestructiveButtonDisabled(commandReach, preempt.isPending)} />',
-    );
+    /**
+     * ⚠⚠ Sau I-3 lưới rộng hơn (mọi phần tử ra lệnh, không chỉ ba marker) ⇒ ca này QUAN TRỌNG HƠN
+     * TRƯỚC: một lệnh **KHÁC** (`tripMut` = `trpc.aiAgent.tripKillSwitch`) có `.mutate(` y hệt về
+     * hình dạng. Lưới chỉ được nhận nó là nút lệnh khi mutation ấy là `trpc.vram.*`.
+     */
+    const nguon =
+      "const preempt = trpc.vram.preempt.useMutation({});\nconst tripMut = trpc.aiAgent.tripKillSwitch.useMutation({});\nconst cancelMut = trpc.aiAgent.cancelSession.useMutation({});\n" +
+      NUT(
+        "<Button disabled={tripMut.isPending || reason.length < 3} onClick={() => tripMut.mutate({ reason })} />" +
+          "<Button onClick={() => cancelMut.mutate({ id })} />" +
+          "{preempt.isPending ? <Spinner /> : null}" +
+          "{state.isLoading ? <Skeleton /> : null}" +
+          '<Button data-testid="khac" disabled={x || y} />' +
+          `<Button data-testid="vram-preempt" ${RA_LENH} disabled={vramDestructiveButtonDisabled(commandReach, preempt.isPending)} />`,
+      );
     const sf = ast("t.tsx", nguon);
-    expect(soiNutLenh(sf, "vram-preempt").viPham).toEqual([]);
+    const r = soiNutTheoDuongThoat(sf);
+    expect(r.viPham, r.viPham.map((v) => v.noi).join("\n")).toEqual([]);
+    // ⚠ Cầu chì HAI chiều: lưới phải thấy ĐÚNG MỘT nút — không 0 (mù), không 3 (bắt nhầm hai lệnh kia).
+    expect(r.soi, "chỉ nút VRAM mới trong phạm vi; hai nút aiAgent phải ở NGOÀI").toBe(1);
     expect(soiOThuHai(sf).viPham).toEqual([]);
-    // Cầu chì: nguồn thật sự CÓ những `disabled` không phải lời gọi vị từ — nếu không, ca này rỗng.
+    // Cầu chì: nguồn thật sự CÓ những `.mutate(` và `disabled` không phải lời gọi vị từ.
     expect(nguon).toMatch(/disabled=\{tripMut\.isPending/);
+    expect(nguon).toMatch(/tripMut\.mutate\(/);
   });
 
   it("★★ KHÔNG BẮT NHẦM — khai báo (`interface` · destructure · TÊN thuộc tính JSX) không phải tham chiếu", () => {
@@ -688,7 +894,7 @@ describe("N9 — lưới-cho-lưới: mọi hình dạng lách đều ĐỎ", ()
   it("★★ KHÔNG BẮT NHẦM — file `.tsx` không dính dáng gì tới VRAM cho 0 vi phạm", () => {
     const nguon = NUT('<Button disabled={a || b} onClick={() => m.mutate({})} />');
     const sf = ast("t.tsx", nguon);
-    expect(soiNutLenh(sf, "vram-preempt").soi).toBe(0);
+    expect(soiNutTheoDuongThoat(sf).soi).toBe(0);
     expect(soiCaiNuoi(sf).soi).toBe(0);
     expect(soiOThuHai(sf).viPham).toEqual([]);
   });

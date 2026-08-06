@@ -17,7 +17,13 @@
  *    `requiredRole`), including the still-admin-only `/ai-datasets`.
  */
 import { describe, it, expect } from "vitest";
-import { hasAccessToItem } from "./navigation";
+import {
+  hasAccessToItem,
+  getFilteredNavGroups,
+  filterNavGroupsByMode,
+  defaultNavModeForRole,
+  type NavGroup,
+} from "./navigation";
 
 // Permission checker that always allows — isolates the test to the ROLE gate
 // (isItemAccessible's requiredRole branch), not the separate permission gate.
@@ -83,6 +89,54 @@ describe("Pha 5 N9 — nav `/ai-brain` mở cho supervisor (lớp 1 của năm l
     expect(hasAccessToItem("/ai-command-center", "supervisor", allowAllPerms)).toBe(false);
     expect(hasAccessToItem("/ai-monitoring", "supervisor", allowAllPerms)).toBe(false);
     expect(hasAccessToItem("/ai-datasets", "supervisor", allowAllPerms)).toBe(false);
+  });
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ I-1 (review Task 3) — **LỚP THỨ SÁU: VÀO ĐƯỢC ≠ THẤY ĐƯỜNG VÀO.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * `hasAccessToItem` trả lời *"vai này có QUYỀN vào không"*. Nó **không** và **không thể** trả
+   * lời *"thanh bên có HIỆN dòng ấy không"* — đó là một cổng thứ hai, hoàn toàn khác:
+   * `defaultNavModeForRole('supervisor') === 'simple'` (supervisor không nằm trong
+   * `ADVANCED_DEFAULT_ROLES`), group `ai` khai `tier:'advanced'`, và `filterNavGroupsByMode` ở
+   * chế độ `simple` giữ **CHỈ** những item khai **TƯỜNG MINH** `tier:'simple'` bên trong một
+   * group advanced. Đo được trước bản vá: **FALSE** — dòng menu **biến mất**.
+   *
+   * ⚠ Vì sao lớp này vô hình suốt: `engineer` mặc định `advanced` nên dòng ấy **luôn** hiện với
+   * vai cũ. Cổng chỉ lộ khi thêm một vai **KHÔNG kỹ thuật** — tức đúng lúc N9 làm việc đó.
+   * ⚠ Không có ca dưới đây thì lớp sáu sẽ **tái sinh y hệt lớp năm**: một cổng đúng, một quyết
+   * định đã duyệt, và một người dùng không tìm thấy màn.
+   */
+  const allowAllCat = () => true;
+  const coHref = (groups: NavGroup[], href: string): boolean =>
+    groups.some((g) => g.items.some((i) => i.href === href));
+
+  it("★★★ supervisor THẤY dòng /ai-brain ở chế độ MẶC ĐỊNH của chính vai đó (không phải chỉ 'có quyền')", () => {
+    const mode = defaultNavModeForRole("supervisor");
+    expect(mode, "supervisor mặc định Simple — đây là tiền đề của cả ca này").toBe("simple");
+    const thay = getFilteredNavGroups("supervisor", allowAllPerms, allowAllCat);
+    expect(coHref(thay, "/ai-brain"), "cầu chì: RBAC phải cho qua trước đã").toBe(true);
+    expect(
+      coHref(filterNavGroupsByMode(thay, mode), "/ai-brain"),
+      "supervisor mở thanh bên ở chế độ mặc định mà KHÔNG thấy dòng /ai-brain ⇒ 'cấp quyền rồi mà không thấy màn đâu'",
+    ).toBe(true);
+  });
+
+  it("★★ vá đúng MỘT dòng: các màn agent-ops khác VẪN bị Simple ẩn (không nới cả group)", () => {
+    const simple = filterNavGroupsByMode(
+      getFilteredNavGroups("admin", allowAllPerms, allowAllCat),
+      "simple",
+    );
+    expect(coHref(simple, "/ai-brain"), "dòng vừa vá phải sống sót ở Simple").toBe(true);
+    for (const href of ["/ai-command-center", "/ai-monitoring", "/ai-datasets"]) {
+      expect(coHref(simple, href), `${href} KHÔNG được nới theo`).toBe(false);
+    }
+  });
+
+  it("★★ chế độ Advanced không đổi gì — vai cũ (engineer) vẫn thấy đúng như trước", () => {
+    const g = getFilteredNavGroups("engineer", allowAllPerms, allowAllCat);
+    expect(defaultNavModeForRole("engineer")).toBe("advanced");
+    expect(coHref(filterNavGroupsByMode(g, "advanced"), "/ai-brain")).toBe(true);
   });
 
   it("★★ chiều NGƯỢC — /ai-brain vẫn KHÔNG mở cho các vai ngoài bộ ba", () => {

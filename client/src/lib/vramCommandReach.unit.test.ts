@@ -70,6 +70,22 @@ describe("I-1 — nút `vram.retryDeferred` CHỈ hiện khi lệnh thật sự 
 //    **LÀ** một lời gọi `vramRetryButtonDisabled(...)`. Cộng thêm một ca cấm bọc nút trong điều
 //    kiện render, để **KHÔNG CÒN ô thứ hai** nào quyết định việc bấm được.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ⚠⚠ m-1 (review Pha 5 Task 3) — **BẤT BIẾN DƯỚI ĐÂY ĐÃ CÓ CHỦ MỚI, MẠNH HƠN.**
+ *
+ * Khối này là **đời 3** và nó **YẾU** ở hai chỗ, cả hai đã được đo:
+ *  • `thuocTinh()` dùng `ra ??=` ⇒ **dừng ở phần tử ĐẦU TIÊN**: thêm một nút thứ hai cùng
+ *    `data-testid` với `disabled={false}` thì khối này **XANH** (đối chứng chạy được ở
+ *    `vramCommandReach.role.unit.test.ts`).
+ *  • Nó neo vào **MARKER** (`data-testid="vram-retry"`) — một cái tên mà **người viết nút mới sở
+ *    hữu**: một nút lệnh **không nhãn** đi qua trọn vẹn (I-3, đo được: 42/42 xanh, `tsc` 0).
+ *
+ * ⇒ Chủ hiện tại của bất biến *"nút lệnh VRAM phải được gác quyền"* là
+ * **`vramCommandReach.role.unit.test.ts` — ca `★★★ I-3`**, neo theo **ĐƯỜNG THOÁT**
+ * (`trpc.vram.*.useMutation` → `.mutate(`), lượng-từ-hoá bằng **MỌI**. Khối dưới giữ lại như một
+ * **hồ sơ lịch sử ba đời lưới** (mỗi đời một bài học khác nhau) và một ca hồi quy rẻ tiền cho nút
+ * thử lại — **đừng** sửa nó rồi tưởng đã đóng bất biến chính.
+ */
 describe("N-5 — `disabled` của NÚT thử lại PHẢI LÀ lời gọi `vramRetryButtonDisabled` (neo vào CÁI NÚT)", () => {
   const HERE = fileURLToPath(new URL(".", import.meta.url)); // .../client/src/lib
   const PANEL = join(HERE, "..", "components", "ai", "VramBrokerPanel.tsx");
