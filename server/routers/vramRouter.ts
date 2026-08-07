@@ -106,13 +106,16 @@ import {
  * lấy mất khả năng thu hồi đúng lúc không quản được — ngược chiều an toàn. Ai muốn gate bề mặt này
  * phải chọn một mã SKU nói đúng *"hạ tầng suy luận"*, và đó là một quyết định về SKU, không phải
  * một dòng `.use()`.
- * ⚠ `totpCode` optional ở input hai lệnh phá huỷ — đúng tiền lệ `programmingRouter.deployBuild`:
- * `requireFreshTotp` đọc nó từ **raw input** và chỉ đòi khi cờ `ACTUATION_STEPUP_2FA` bật.
+ * ⚠ `totpCode` **BẮT BUỘC** ở input hai lệnh phá huỷ — đúng tiền lệ `programmingRouter.deployBuild`.
+ * Middleware đọc nó từ **raw input** (trước zod) và chỉ đòi khi cờ `ACTUATION_STEPUP_2FA` bật, nên
+ * zod ở đây **không** là cổng an ninh; nó là cổng **hợp đồng**. ★★★ I-4 (review Task 1b): bản
+ * trước để `.optional()` và chính điều đó khiến `tsc` **ban phước** cho một lượt gỡ `totpCode` khỏi
+ * điểm gọi client (đột biến R2 ⇒ 108 file/1837 ca XANH, tsc SẠCH). Bắt buộc ⇒ lỗi biên dịch.
  * ⚠ Mọi lượt TỪ CHỐI NGHIỆP VỤ (hộ không thu hồi được, hàng chưa chứng minh là ma, hộ không chủ trì
  * ở đây) trả về **DỮ LIỆU có `reason`**, KHÔNG ném: Agent cần đọc lý do để chọn bước tiếp theo, và
  * một ngoại lệ chỉ còn lại một câu chữ. Ném là dành cho **thiếu quyền** — việc của middleware.
  */
-const totp = { totpCode: z.string().max(16).optional() };
+const totp = { totpCode: z.string().max(16) };
 
 /**
  * Sàn của một lệnh **PHÁ HUỶ**: danh tính (role-floor + 2FA + step-up) **VÀ** thẩm quyền.

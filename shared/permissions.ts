@@ -171,7 +171,16 @@ export type PermissionModule = (typeof PERMISSION_MODULES)[number];
  * `stepUpVerifiedUntil` (`server/_core/trpc.ts`) là **cache 10 PHÚT theo `sessionToken`, DÙNG
  * CHUNG cho MỌI `deployProcedure`**; nghiệm thu sống đo được `vram.preempt` **không `totpCode`**
  * vẫn qua. Nay hai lệnh phá huỷ VRAM chain thêm `requirePerCallFreshTotp` ⇒ **mỗi lệnh một mã**,
- * đúng như câu này nói. Năm `deployProcedure` khác của hệ **vẫn** dùng cache phiên.
+ * đúng như câu này nói.
+ * ⚠ **Cập nhật Pha 6 Task 1b (`a9f155f9`) — câu ở đây từng nói *"Năm `deployProcedure` khác của hệ
+ * VẪN dùng cache phiên"*, và nó đã SAI SỰ THẬT kể từ commit ấy** (bắt ở review Task 1b, I-5): phép
+ * siết được đưa vào **GỐC** `server/_core/trpc.ts:549`
+ * (`actuationProcedure.use(requireFreshTotp).use(requirePerCallFreshTotp)`), nên **CẢ BẢY** thủ
+ * tục đứng trên `deployProcedure` — không riêng hai lệnh VRAM — đều đòi OTP **mỗi lượt gọi**.
+ * ⚠⚠ Điều đó **KHÔNG** làm phép tách bit dưới đây thừa: lý lẽ của nó là **so sánh** giữa hai lệnh
+ * VRAM và **tám thủ tục `protectedProcedure` TRẦN** cùng đeo `machine_control/canDelete` (8/10 —
+ * không role-floor, không 2FA, không step-up). Tám cái ấy **không** đứng trên `deployProcedure` và
+ * **không** được lượt siết trên chạm tới; khoảng cách vì thế **rộng ra**, không hẹp lại.
  * ⇒ Cấp bit dùng chung để mở **hai** cái chặt nhất sẽ mở luôn **tám** cái lỏng nhất.
  * **Chủ dự án chốt (2026-08-06): TÁCH BIT RIÊNG.**
  *

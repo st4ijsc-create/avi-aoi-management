@@ -46,12 +46,21 @@
  * cổng OTP — phép siết chỉ thu hẹp đúng nhánh `deployProcedure`.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import speakeasy from "speakeasy";
 import { z } from "zod";
+import {
+  quetThuTucDeploy,
+  moiFileDuoi,
+  phanGiaiToi,
+  gocChuoi,
+  TEN_PHEP_SIET,
+  TEN_SAN_DEPLOY,
+  type ThuTucDeploy,
+} from "./deployProcedureScan";
 
 // Middleware kiểm toán ghi DB fire-and-forget cho MỌI mutation — tắt trước khi `trpc.ts` nạp.
 // `LICENSE_MODULE_GATE_ENABLED=false`: cổng license chạy SAU cổng OTP nhưng TRƯỚC `requirePermission`;
@@ -136,8 +145,10 @@ const ctxCua = (phien: string, user: unknown = supervisor) =>
  * nó **tự** được che.
  */
 const routerMoi = router({
+  // ⚠ I-4: `totpCode` **BẮT BUỘC**, y hệt hình dạng sản xuất sau lượt vá — một phép thử M3 khai
+  //   lỏng hơn cái nó mô phỏng thì nó thôi mô phỏng cái ấy.
   deployMoi: deployProcedure
-    .input(z.object({ totpCode: z.string().max(16).optional() }))
+    .input(z.object({ totpCode: z.string().max(16) }))
     .mutation(() => ({ ok: true as const })),
   /**
    * KHÔNG BẮT NHẦM — cùng file, cùng sàn quyền, nhưng đứng trên `actuationProcedure` (**không**
@@ -149,6 +160,16 @@ const routerMoi = router({
 });
 
 const moi = (phien: string) => routerMoi.createCaller(ctxCua(phien));
+
+/**
+ * Payload **thiếu `totpCode`** — hình dạng của một người gọi **TỪ DÂY** (HTTP/JSON), thứ `tsc`
+ * không ràng buộc được. ⚠ I-4 (review Task 1b) làm `totpCode` **bắt buộc** ở **hợp đồng** zod, và
+ * đó là chỗ `tsc` bắt được lượt gỡ mã khỏi một điểm gọi client. Nhưng cổng an ninh thật phải đứng
+ * vững trước một payload **thô** — nên các ca dưới đây cố ý đi vòng qua kiểu, thay vì nới zod lại.
+ */
+function tuDay<T>(v: T): T & { totpCode: string } {
+  return v as T & { totpCode: string };
+}
 
 /** Lỗi của một lượt gọi, hoặc `null` nếu nó **không** ném. */
 async function loiCua(p: Promise<unknown>): Promise<unknown> {
@@ -167,118 +188,36 @@ function chanBoiCongOtp(e: unknown): boolean {
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // TẬP BỊ CANH — SUY RA TỪ MÃ NGUỒN, KHÔNG CHÉP TAY
 //
-// ***∀ thủ tục trong `server/routers/**` mà chuỗi của nó bắt nguồn (trực tiếp hay qua biến trung
-//   gian) từ `deployProcedure` nhập từ `_core/trpc`.***
+// ***∀ thủ tục trong `server/**` (ĐỆ QUY) mà chuỗi của nó bắt nguồn (trực tiếp hay qua bao nhiêu
+//   biến trung gian cũng được) từ `deployProcedure` của `server/_core/trpc.ts`.***
 //
 // ⚠ Bộ suy này **không** hỏi thủ tục có chain `requirePerCallFreshTotp` hay không — hỏi thế là
 //   quay lại canh một danh sách. Nó chỉ hỏi *"có bắt nguồn từ `deployProcedure` không"*, rồi phần
 //   hành vi bên dưới **gọi thật** từng cái để chứng minh cổng OTP đóng.
+//
+// ⚠⚠ I-2 (review Task 1b) — **BẢN ĐẦU CHẶN TRONG MỘT DANH SÁCH FILE.** Nó quét
+// `readdirSync(server/routers)` (**không** đệ quy) và nhận module bằng regex `/_core\/trpc$/`.
+// Đột biến **R1b**: cùng thủ tục ấy đặt ở `server/_core/systemRouter.ts` (ngoài `server/routers/`,
+// nhập bằng `"./trpc"`) ⇒ **68/68 XANH HẾT**. Bộ suy nay ở `deployProcedureScan.ts`: duyệt **đệ
+// quy** toàn `server/**` và hỏi module bằng **phép phân giải đường dẫn**, không bằng chính tả.
+//
+// ⚠ Lượt đệ quy ấy bắt thêm **hai** thủ tục mà bản cũ mù: `deployMoi` (ngay file này) và
+//   `deployKhac` (`vramStepUpFreshness.test.ts`) — **phép thử M3 của chính hai lưới**, không phải
+//   bề mặt sản phẩm. Bộ suy **tách hai tập** (`thuTuc` ↔ `thuTucTest`) thay vì bỏ im lặng, và cầu
+//   chì (3) của nó giữ cho phép tách ấy đúng **theo cấu tạo**: một file sản xuất nhập được một
+//   `*.test.ts` ⇒ ô mù ⇒ ĐỎ. Xem docstring §PHÂN ĐÔI của `deployProcedureScan.ts`.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url)); // .../server/routers
-const CORE_TRPC = join(TEST_DIR, "..", "_core", "trpc.ts");
-/** Tên phép siết per-call (`_core/trpc.ts`) — thứ mà **gốc** `deployProcedure` phải chain. */
-const TEN_PHEP_SIET = "requirePerCallFreshTotp";
-/** Tên thủ tục gốc mà `_core/trpc.ts` export. */
-const TEN_SAN_DEPLOY = "deployProcedure";
+const GOC_REPO = join(TEST_DIR, "..", "..");
+const CORE_TRPC = join(GOC_REPO, "server", "_core", "trpc.ts");
 
-/** Định danh TRÁI NHẤT của một chuỗi truy cập (`a.use(x).input(y)` → `a`). */
-function gocChuoi(n: ts.Node | undefined): string | null {
-  let cur: ts.Node | undefined = n;
-  for (;;) {
-    if (cur === undefined) return null;
-    if (ts.isIdentifier(cur)) return cur.text;
-    if (ts.isPropertyAccessExpression(cur) || ts.isElementAccessExpression(cur)) cur = cur.expression;
-    else if (ts.isNonNullExpression(cur) || ts.isParenthesizedExpression(cur)) cur = cur.expression;
-    else if (ts.isCallExpression(cur)) cur = cur.expression;
-    else return null;
-  }
-}
-
-interface ThuTucDeploy {
-  /** Tên file router (vd `programmingRouter.ts`). */
-  readonly file: string;
-  /** Tên thủ tục trong `router({ … })`. */
-  readonly ten: string;
-}
-
-/**
- * Quét MỘT file router: trả các thủ tục có chuỗi bắt nguồn từ `deployProcedure` của `_core/trpc`.
- * ⚠ Bí danh nhập (`deployProcedure as deployBase`) được theo dõi bằng **tên cục bộ**, nên đổi tên
- * khi nhập không làm thủ tục rơi khỏi lượng từ.
- */
-function thuTucDeployCuaFile(ten: string, ma: string): { ra: ThuTucDeploy[]; mu: string[] } {
-  const sf = ts.createSourceFile(ten, ma, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const mu: string[] = [];
-
-  /** Tên CỤC BỘ đang trỏ tới `deployProcedure` của `_core/trpc` (kể cả bí danh). */
-  const goc = new Set<string>();
-  for (const st of sf.statements) {
-    if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
-    if (!/_core\/trpc$/.test(st.moduleSpecifier.text)) continue;
-    const nb = st.importClause?.namedBindings;
-    if (nb === undefined || !ts.isNamedImports(nb)) continue;
-    for (const el of nb.elements) {
-      const tenXuat = el.propertyName?.text ?? el.name.text;
-      if (tenXuat === TEN_SAN_DEPLOY) goc.add(el.name.text);
-    }
-  }
-  if (goc.size === 0) return { ra: [], mu };
-
-  /** `const X = <expr>` ở cấp file → gốc chuỗi của `<expr>`. */
-  const bien = new Map<string, string | null>();
-  for (const st of sf.statements) {
-    if (!ts.isVariableStatement(st)) continue;
-    for (const d of st.declarationList.declarations) {
-      if (!ts.isIdentifier(d.name) || d.initializer === undefined) continue;
-      bien.set(d.name.text, gocChuoi(d.initializer));
-    }
-  }
-
-  /** Leo ngược chuỗi biến cho tới khi chạm một tên trong `goc`, hoặc hết đường. */
-  const batNguonTuDeploy = (bd: string | null): boolean => {
-    let cur = bd;
-    for (let i = 0; i < 16 && cur !== null; i++) {
-      if (goc.has(cur)) return true;
-      if (!bien.has(cur)) return false;
-      cur = bien.get(cur) ?? null;
-    }
-    return false;
-  };
-
-  const ra: ThuTucDeploy[] = [];
-  const di = (n: ts.Node): void => {
-    const arg0 = ts.isCallExpression(n) ? n.arguments[0] : undefined;
-    if (
-      ts.isCallExpression(n) &&
-      ts.isIdentifier(n.expression) &&
-      n.expression.text === "router" &&
-      arg0 !== undefined &&
-      ts.isObjectLiteralExpression(arg0)
-    ) {
-      for (const p of arg0.properties) {
-        const dong = sf.getLineAndCharacterOfPosition(p.getStart(sf)).line + 1;
-        if (!ts.isPropertyAssignment(p) || !ts.isIdentifier(p.name)) {
-          mu.push(`${ten}:${dong} — ô của router KHÔNG phải \`tên: <chuỗi thủ tục>\``);
-          continue;
-        }
-        if (batNguonTuDeploy(gocChuoi(p.initializer))) ra.push({ file: ten, ten: p.name.text });
-      }
-    }
-    ts.forEachChild(n, di);
-  };
-  di(sf);
-  return { ra, mu };
-}
-
-/** MỌI file router sản xuất (không phải test, không phải helper `__*`). */
-const FILE_ROUTER = readdirSync(TEST_DIR)
-  .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && !f.startsWith("__"))
-  .sort();
-
-const QUET = FILE_ROUTER.map((f) => thuTucDeployCuaFile(f, readFileSync(join(TEST_DIR, f), "utf8")));
-const O_MU = QUET.flatMap((q) => q.mu);
-const DEPLOY_THU_TUC: readonly ThuTucDeploy[] = QUET.flatMap((q) => q.ra);
+const QUET = quetThuTucDeploy(GOC_REPO);
+const O_MU: readonly string[] = QUET.mu;
+/** Bề mặt **sản phẩm** — thủ tục deploy khai trong file KHÔNG phải `*.test.ts`. */
+const DEPLOY_THU_TUC: readonly ThuTucDeploy[] = QUET.thuTuc;
+/** Thủ tục deploy khai **trong một lưới** — phép thử M3; cầu chì, không phải bề mặt. */
+const DEPLOY_TRONG_LUOI: readonly ThuTucDeploy[] = QUET.thuTucTest;
 
 /**
  * Router mà lưới này **nạp được** và gọi thật. ⚠ Đây là một sự thật của **bộ đồ nghề test** (file
@@ -286,9 +225,9 @@ const DEPLOY_THU_TUC: readonly ThuTucDeploy[] = QUET.flatMap((q) => q.ra);
  * này thì nó **tự** vào lượng từ hành vi bên dưới.
  */
 const CALLER: Record<string, (phien: string) => Record<string, (i: unknown) => Promise<unknown>>> = {
-  "programmingRouter.ts": (phien) =>
+  "server/routers/programmingRouter.ts": (phien) =>
     programmingRouter.createCaller(ctxCua(phien)) as unknown as Record<string, (i: unknown) => Promise<unknown>>,
-  "orchestrationRouter.ts": (phien) =>
+  "server/routers/orchestrationRouter.ts": (phien) =>
     orchestrationRouter.createCaller(ctxCua(phien)) as unknown as Record<string, (i: unknown) => Promise<unknown>>,
 };
 
@@ -298,7 +237,7 @@ const CALLER: Record<string, (phien: string) => Record<string, (i: unknown) => P
  * lưới ấy **tồn tại trên đĩa** và **gọi đích danh** từng thủ tục.
  */
 const PHU_O_LUOI_KHAC: Record<string, string> = {
-  "vramRouter.ts": "vramStepUpFreshness.test.ts",
+  "server/routers/vramRouter.ts": "server/routers/vramStepUpFreshness.test.ts",
 };
 
 /** Các thủ tục deploy mà lưới NÀY gọi thật. */
@@ -326,9 +265,18 @@ beforeEach(() => {
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
 describe("★★★ Pha 6 Task 1b — cầu chì của lượng từ", () => {
-  it("★★★ bộ suy đọc được mọi router: 0 ô mù, và tập thủ tục deploy KHÔNG rỗng", () => {
+  it("★★★ bộ suy đọc được TOÀN `server/**`: 0 ô mù, và tập thủ tục deploy KHÔNG rỗng", () => {
     expect(O_MU.join("\n"), "một ô không phân giải được là một ô KHÔNG AI CANH").toBe("");
-    expect(FILE_ROUTER.length, "không đọc được file router nào — bộ quét hỏng").toBeGreaterThanOrEqual(20);
+    // ⚠ I-2/R1b — cầu chì VỊ TRÍ: bộ quét phải **đệ quy toàn `server/**`**, không dừng ở
+    //   `server/routers/`. Con số này ĐỎ ngay lượt ai đó thu phạm vi quét về một thư mục.
+    expect(QUET.soFileDuyet, "bộ quét chỉ thấy vài file — nó đã thôi đệ quy?").toBeGreaterThanOrEqual(1000);
+    expect(QUET.ungVien.length, "0 file ứng viên ⇒ mọi khẳng định dưới là chân lý rỗng").toBeGreaterThanOrEqual(3);
+    // ⚠ …và nó phải **thật sự** với tới ngoài `server/routers/`: `_core/trpc.ts` là điểm neo, nó
+    //   nằm ở `server/_core/`. Nếu ứng viên chỉ toàn `server/routers/**` thì phạm vi đã co lại.
+    expect(
+      QUET.ungVien.some((f) => !f.startsWith("server/routers/")),
+      "không ứng viên nào ngoài `server/routers/` ⇒ bộ quét đã thôi đệ quy (đúng lỗ R1b)",
+    ).toBe(true);
     // ⚠ GHIM SỐ: 5 (programming ×4 + orchestration ×1) + 2 (vram) = 7. Một thủ tục deploy thứ 8
     //   **được che tự động** (phép siết ở gốc), nhưng con số này ĐỎ ⇒ nó là một **quyết định phải
     //   nói ra**, không phải một lượt trôi im lặng.
@@ -337,16 +285,44 @@ describe("★★★ Pha 6 Task 1b — cầu chì của lượng từ", () => {
       "danh sách thủ tục đứng trên `deployProcedure` đã đổi",
     ).toBe(
       [
-        "orchestrationRouter.ts#deployWorkflow",
-        "programmingRouter.ts#approveDeployment",
-        "programmingRouter.ts#deployBuild",
-        "programmingRouter.ts#deployToFleet",
-        "programmingRouter.ts#rollbackDeployment",
-        "vramRouter.ts#preempt",
-        "vramRouter.ts#releaseStale",
+        "server/routers/orchestrationRouter.ts#deployWorkflow",
+        "server/routers/programmingRouter.ts#approveDeployment",
+        "server/routers/programmingRouter.ts#deployBuild",
+        "server/routers/programmingRouter.ts#deployToFleet",
+        "server/routers/programmingRouter.ts#rollbackDeployment",
+        "server/routers/vramRouter.ts#preempt",
+        "server/routers/vramRouter.ts#releaseStale",
       ].join(" · "),
     );
     expect(GOI_DUOC.length, "lưới này phải gọi THẬT được 5 thủ tục — 0 ⇒ mọi ca ∀ là chân lý rỗng").toBe(5);
+  });
+
+  it("★★★ cầu chì của PHÉP PHÂN ĐÔI — phép thử M3 của cả hai lưới còn SỐNG, và 0 lưới nào bị nhập vào sản xuất", () => {
+    /**
+     * ⚠⚠ Bộ suy **bỏ** các thủ tục khai trong `*.test.ts` khỏi con số ghim nói về sản phẩm. Phép bỏ
+     * ấy chỉ lành khi **hai** điều cùng đúng, và cả hai được ĐO ở đây chứ không được giả định:
+     *   (a) chúng vẫn **tồn tại** — nếu ai xoá `deployMoi` đi thì phép thử M3 biến mất, và không ô
+     *       nào khác trong file này nói ra điều đó (`deployMoi` chỉ được gọi, không được đếm);
+     *   (b) chúng **không với tới được từ dây** — cầu chì (3) của bộ suy (`mu`) canh điều này, và
+     *       ô `O_MU` ở ca trên đã ép nó về rỗng.
+     */
+    expect(
+      DEPLOY_TRONG_LUOI.map((t) => `${t.file}#${t.ten}`).sort(),
+      "phép thử M3 khai trong lưới đã biến mất ⇒ 'thủ tục deploy MỚI được che tự động' thôi được chứng minh",
+    ).toEqual([
+      "server/routers/deployStepUpFreshness.test.ts#deployMoi",
+      "server/routers/vramStepUpFreshness.test.ts#deployKhac",
+    ]);
+    // ⚠ Hai tập phải **rời nhau theo cấu tạo** — một thủ tục vừa là sản phẩm vừa là phép thử là
+    //   dấu hiệu phép phân đôi đã hỏng.
+    expect(DEPLOY_THU_TUC.filter((t) => DEPLOY_TRONG_LUOI.some((u) => u.file === t.file && u.ten === t.ten))).toEqual([]);
+    // ⚠ I-4 — phép thử M3 phải **mô phỏng đúng hình dạng sản xuất**: `totpCode` khai và BẮT BUỘC.
+    //   Một fixture khai lỏng hơn cái nó mô phỏng thì nó thôi mô phỏng cái ấy, và ca M3 sẽ chứng
+    //   minh một bất biến của một thủ tục **không tồn tại**.
+    expect(
+      DEPLOY_TRONG_LUOI.filter((t) => !(t.khaiTotp && t.totpBatBuoc)).map((t) => `${t.file}#${t.ten}`).join(" · "),
+      "fixture M3 khai `totpCode` LỎNG hơn mã sản xuất ⇒ nó thôi mô phỏng mã sản xuất",
+    ).toBe("");
   });
 
   it("★★★ mọi file có thủ tục deploy đều được MỘT lưới nào đó phủ về HÀNH VI", () => {
@@ -354,7 +330,7 @@ describe("★★★ Pha 6 Task 1b — cầu chì của lượng từ", () => {
       const luoiKhac = PHU_O_LUOI_KHAC[t.file];
       if (t.file in CALLER) continue;
       expect(luoiKhac, `\`${t.file}#${t.ten}\` không được lưới nào gọi thật`).toBeDefined();
-      const p = join(TEST_DIR, luoiKhac as string);
+      const p = join(GOC_REPO, luoiKhac as string);
       expect(existsSync(p), `lưới phủ \`${t.file}\` phải TỒN TẠI: ${luoiKhac}`).toBe(true);
       // …và nó phải gọi ĐÍCH DANH thủ tục ấy, không chỉ tồn tại.
       expect(readFileSync(p, "utf8"), `${luoiKhac} phải nhắc đích danh \`${t.ten}\``).toContain(t.ten);
@@ -363,7 +339,7 @@ describe("★★★ Pha 6 Task 1b — cầu chì của lượng từ", () => {
 
   it("★★★ cầu chì — cờ `ACTUATION_STEPUP_2FA` ĐANG BẬT và OTP thật verify được qua ĐƯỜNG THẬT", async () => {
     await expect(moi(phienMoi()).deployMoi({ totpCode: otp() })).resolves.toEqual({ ok: true });
-    const e = await loiCua(moi(phienMoi()).deployMoi({}));
+    const e = await loiCua(moi(phienMoi()).deployMoi(tuDay({})));
     expect(chanBoiCongOtp(e), "phiên nguội + không OTP ⇒ phải bị chặn ở cổng OTP").toBe(true);
   });
 });
@@ -396,7 +372,7 @@ describe("★★★ Task 1b — cache phiên ĐÃ ẤM ⇒ thủ tục deploy KH
   it("★★★ hai lượt deploy liên tiếp: OTP của lượt THỨ NHẤT không mở cửa cho lượt THỨ HAI", async () => {
     const phien = phienMoi();
     await expect(moi(phien).deployMoi({ totpCode: otp() })).resolves.toEqual({ ok: true });
-    const e = await loiCua(moi(phien).deployMoi({}));
+    const e = await loiCua(moi(phien).deployMoi(tuDay({})));
     expect(chanBoiCongOtp(e)).toBe(true);
   });
 });
@@ -438,7 +414,7 @@ describe("★★★ M3 — thủ tục MỚI chain `deployProcedure` trong FILE 
      */
     const phien = phienMoi();
     await expect(moi(phien).deployMoi({ totpCode: otp() })).resolves.toEqual({ ok: true });
-    expect(chanBoiCongOtp(await loiCua(moi(phien).deployMoi({}))), "thủ tục deploy MỚI phải tự được che").toBe(true);
+    expect(chanBoiCongOtp(await loiCua(moi(phien).deployMoi(tuDay({})))), "thủ tục deploy MỚI phải tự được che").toBe(true);
   });
 
   it("★★★ BẤT BIẾN CẤU TRÚC — `deployProcedure` ở `_core/trpc.ts` PHẢI chain `requirePerCallFreshTotp`", () => {
@@ -465,6 +441,136 @@ describe("★★★ M3 — thủ tục MỚI chain `deployProcedure` trong FILE 
   });
 });
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ I-1 (review Task 1b) — `requireFreshTotp` LÀ MỘT HÀNG RÀO KHÔNG AI CANH
+//
+// ⚠⚠⚠ *"AI GỠ NÓ CŨNG KHÔNG THẤY CA NÀO ĐỎ"* **KHÔNG** LÀ LÝ DO ĐỂ KHÔNG CANH — NÓ **CHÍNH LÀ**
+// LÝ DO PHẢI CANH. (Pha 5 gặp lớp này hai lần, Pha 6 thêm hai.)
+//
+// Sau Task 1b, `requireFreshTotp` (cache 10 phút theo `sessionToken`) vẫn **GHI cache mỗi lượt
+// deploy thành công**, nhưng cache ấy **không mở được cửa cho ai** — vì điểm dùng **duy nhất** của
+// nó là `deployProcedure`, và `deployProcedure` luôn chain `requirePerCallFreshTotp` **ngay sau**.
+//
+// ⚠ **Kịch bản hỏng, 0 ca đỏ:** ai đó dựng một sàn MỚI
+// `adminActuationProcedure = xxx.use(requireFreshTotp)` (một lượt sửa trông hoàn toàn hợp lý — nó
+// đang **thêm** một cổng OTP). Sàn ấy thừa hưởng một cache **đã được hâm nóng bởi MỌI lượt deploy
+// của phiên** ⇒ **M-4 tái sinh nguyên vẹn ở một chỗ mới**. Docstring `_core/trpc.ts:407-410` cảnh
+// báo đúng điều đó bằng **văn xuôi**; không một ca nào đọc câu ấy bằng máy.
+//
+// ⇒ Bất biến được phát biểu bằng **lượng từ trên TOÀN `server/**`**, không bằng một danh sách file:
+//   ***∀ lời gọi `.use(x)` trong `server/**` mà `x` phân giải tới export `requireFreshTotp` của
+//   `server/_core/trpc.ts`: CHỈ CÓ ĐÚNG MỘT, và nó nằm trong khai báo `deployProcedure`.***
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+interface DiemDung {
+  /** Đường tương đối gốc repo. */
+  readonly file: string;
+  readonly dong: number;
+  /** Tên khai báo `const` cấp file bao quanh lời gọi `.use(...)`, hoặc `null`. */
+  readonly trong: string | null;
+}
+
+/**
+ * MỌI `.use(x)` trong `server/**` với `x` **là** `requireFreshTotp` của `_core/trpc.ts`.
+ * ⚠ Hỏi trên **AST** + **phép phân giải đường dẫn**: một lượt nhập bí danh
+ * (`import { requireFreshTotp as rft }`) hay một đường nhập viết khác chính tả (`"./trpc"` vs
+ * `"../_core/trpc"`) đều **không** lách được; ngược lại một chuỗi trong **comment** không đếm.
+ */
+function diemDungCuaCache(goc: string): { diem: DiemDung[]; soFileDoc: number } {
+  const CORE = join(goc, "server", "_core", "trpc.ts");
+  const diem: DiemDung[] = [];
+  const moi = moiFileDuoi(goc, "server", [".ts"]);
+  let soFileDoc = 0;
+
+  for (const { duong, that } of moi) {
+    const ma = readFileSync(that, "utf8");
+    if (!ma.includes("requireFreshTotp")) continue;
+    soFileDoc++;
+    const sf = ts.createSourceFile(duong, ma, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+
+    /** Tên CỤC BỘ trỏ tới export `requireFreshTotp` (kể cả bí danh nhập). */
+    const ten = new Set<string>();
+    if (that === CORE) ten.add("requireFreshTotp");
+    for (const st of sf.statements) {
+      if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
+      if (!phanGiaiToi(that, st.moduleSpecifier.text, CORE)) continue;
+      const nb = st.importClause?.namedBindings;
+      if (nb === undefined || !ts.isNamedImports(nb)) continue;
+      for (const el of nb.elements) {
+        if ((el.propertyName?.text ?? el.name.text) === "requireFreshTotp") ten.add(el.name.text);
+      }
+    }
+    if (ten.size === 0) continue;
+
+    /** Khai báo `const X = …` cấp file nào bao quanh nút này? */
+    const bao = (n: ts.Node): string | null => {
+      let cur: ts.Node | undefined = n;
+      while (cur !== undefined) {
+        if (ts.isVariableDeclaration(cur) && ts.isIdentifier(cur.name)) return cur.name.text;
+        cur = cur.parent;
+      }
+      return null;
+    };
+
+    const di = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === "use") {
+        const a0 = n.arguments[0];
+        if (a0 !== undefined && ts.isIdentifier(a0) && ten.has(a0.text)) {
+          diem.push({ file: duong, dong: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1, trong: bao(n) });
+        }
+      }
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+  }
+  return { diem, soFileDoc };
+}
+
+describe("★★★ I-1 — `requireFreshTotp` (cache phiên) có ĐÚNG MỘT điểm dùng, và đó là `deployProcedure`", () => {
+  const DUNG = diemDungCuaCache(GOC_REPO);
+
+  it("★★★ cầu chì — bộ suy thật sự ĐỌC được nhiều file (0 file ⇒ 'đúng một điểm dùng' là chân lý rỗng)", () => {
+    expect(DUNG.soFileDoc, "không file nào nhắc `requireFreshTotp` ⇒ bộ suy đã mù, không phải mã đã sạch").toBeGreaterThanOrEqual(5);
+    expect(DUNG.diem.length, "không thấy lời gọi `.use(requireFreshTotp)` nào — hàng rào đã BIẾN MẤT?").toBeGreaterThan(0);
+  });
+
+  it("★★★ ĐÚNG MỘT `.use(requireFreshTotp)` trong toàn `server/**`, và nó nằm trong `deployProcedure`", () => {
+    expect(
+      DUNG.diem.map((d) => `${d.file}:${d.dong} trong \`${d.trong ?? "?"}\``).join(" · "),
+      "một sàn thủ tục THỨ HAI đứng trên cache phiên ⇒ nó thừa hưởng cache đã hâm bởi MỌI lượt deploy ⇒ M-4 tái sinh",
+    ).toBe(
+      `server/_core/trpc.ts:${DUNG.diem[0]?.dong ?? 0} trong \`${TEN_SAN_DEPLOY}\``,
+    );
+    expect(DUNG.diem.length, "≠1 điểm dùng").toBe(1);
+    expect(DUNG.diem[0]?.trong, "điểm dùng duy nhất phải là khai báo `deployProcedure`").toBe(TEN_SAN_DEPLOY);
+  });
+
+  it("★★★ …và chuỗi ấy phải kết thúc bằng `requirePerCallFreshTotp` — thứ tự, không chỉ sự hiện diện", () => {
+    /**
+     * ⚠ *"Có mặt cả hai"* **chưa đủ**: `actuationProcedure.use(requirePerCallFreshTotp).use(
+     * requireFreshTotp)` cũng chứa cả hai tên, nhưng lúc ấy middleware CUỐI là cái **có cache** —
+     * và một chuỗi middleware là **giao** của các cổng, nên thứ tự không đổi hành vi ở đây. Cái ca
+     * này canh là **hình dạng người sau đọc thấy**: nấc ngoài cùng phải là nấc CHẶT NHẤT, để không
+     * ai suy ra "sàn này dùng cache" từ nét chữ.
+     */
+    const ma = readFileSync(CORE_TRPC, "utf8");
+    const sf = ts.createSourceFile("trpc.ts", ma, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    let cuoi: string | null = null;
+    for (const st of sf.statements) {
+      if (!ts.isVariableStatement(st)) continue;
+      for (const d of st.declarationList.declarations) {
+        if (!ts.isIdentifier(d.name) || d.name.text !== TEN_SAN_DEPLOY || d.initializer === undefined) continue;
+        const init = d.initializer;
+        if (ts.isCallExpression(init) && ts.isPropertyAccessExpression(init.expression)) {
+          const a0 = init.arguments[0];
+          cuoi = a0 !== undefined ? (gocChuoi(a0) ?? null) : null;
+        }
+      }
+    }
+    expect(cuoi, `nấc \`.use()\` NGOÀI CÙNG của \`${TEN_SAN_DEPLOY}\` phải là \`${TEN_PHEP_SIET}\``).toBe(TEN_PHEP_SIET);
+  });
+});
+
 describe("★★★ KHÔNG BẮT NHẦM — phép siết chỉ chạm nhánh `deployProcedure`", () => {
   it("★★★ `actuationProcedure` (KHÔNG phải deploy) giữ NGUYÊN hành vi: không đòi OTP", async () => {
     await expect(moi(phienMoi()).actuationKhac({}), "actuation không phải deploy ⇒ không cổng OTP").resolves.toEqual({
@@ -476,7 +582,9 @@ describe("★★★ KHÔNG BẮT NHẦM — phép siết chỉ chạm nhánh `de
     const truoc = process.env.ACTUATION_STEPUP_2FA;
     process.env.ACTUATION_STEPUP_2FA = "false";
     try {
-      await expect(moi(phienMoi()).deployMoi({})).resolves.toEqual({ ok: true });
+      // ⚠ I-4: `totpCode` bắt buộc ở zod ⇒ phải gửi **một** chuỗi; gửi một mã **SAI** làm ca này
+      //   MẠNH HƠN bản cũ: cờ TẮT thì cả mã sai cũng lọt, tức middleware thật sự pass-through.
+      await expect(moi(phienMoi()).deployMoi({ totpCode: "000000" })).resolves.toEqual({ ok: true });
     } finally {
       if (truoc === undefined) delete process.env.ACTUATION_STEPUP_2FA;
       else process.env.ACTUATION_STEPUP_2FA = truoc;

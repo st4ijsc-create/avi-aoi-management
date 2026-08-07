@@ -30,9 +30,15 @@ const protectedProcedure = moduleProcedure("MOD_ENGINEERING");
 // (sau cờ ACTUATION_STEPUP_2FA — mặc định OFF → hệt actuationProcedure cũ), cùng license gate
 // MOD_ENGINEERING. Client mang `totpCode` (OTP 6 số tươi) trong input khi cờ bật.
 // ★★★ Pha 6 Task 1b — `deployProcedure` (gốc, `_core/trpc.ts`) nay chain `requirePerCallFreshTotp`:
-// khi cờ BẬT, `totpCode` là **BẮT BUỘC MỖI LƯỢT GỌI**, không còn cache phiên 10 phút. `.optional()`
-// ở zod bên dưới **không** nới điều đó — middleware đọc raw input TRƯỚC zod và fail-closed.
-// Lưới: `server/routers/deployStepUpFreshness.test.ts`.
+// khi cờ BẬT, `totpCode` là **BẮT BUỘC MỖI LƯỢT GỌI**, không còn cache phiên 10 phút.
+// ★★★ I-4 (review Task 1b) — `.optional()` ĐÃ ĐƯỢC GỠ khỏi zod bên dưới. Lý do cũ (*"bắt buộc sẽ
+// gãy mọi lượt gọi khi cờ TẮT"*) **không đứng vững khi kiểm**: `useStepUpOtp.guard` KHÔNG đọc cờ
+// client nên UI gửi mã ở **cả hai** trạng thái cờ, và **0** người gọi tRPC nội bộ. Cái `.optional()`
+// ấy **không phải mỹ quan** — nó là **CƠ CHẾ** khiến `tsc` **ban phước** cho đột biến R2 (gỡ
+// `stepUp.guard` + `totpCode` khỏi một điểm gọi client ⇒ 108 file/1837 ca XANH, tsc SẠCH).
+// Bắt buộc ở zod ⇒ lượt gỡ ấy nay là một **lỗi biên dịch**. ⚠ CHỈ THU HẸP: middleware vẫn đọc raw
+// input TRƯỚC zod và fail-closed, nên zod không phải cổng an ninh — nó là cổng **hợp đồng**.
+// Lưới: `server/routers/deployStepUpFreshness.test.ts` · `client/src/lib/vramPanelStepUp.unit.test.ts`.
 const deployProcedure = deployBase.use(moduleGate("MOD_ENGINEERING"));
 // Doc 54 Wave B — authoring/compile writes (createArtifact/buildArtifact/upsertSymbol)
 // get a write floor (blocks read-only roles viewer/user) so a stray machine_control
@@ -444,7 +450,7 @@ export const programmingRouter = router({
         /** W2-9 — lý do duyệt (bắt buộc ở UI cho deploy production); lưu vào detailJson. */
         reason: z.string().max(2000).optional(),
         /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
-        totpCode: z.string().max(16).optional(),
+        totpCode: z.string().max(16),
       })
         // Doc 38 Đợt Q — four-eyes enforced AT THE SCHEMA for the sensitive path: a
         // PRODUCTION deploy must name a confirming approver (staging may self-sign).
@@ -599,7 +605,7 @@ export const programmingRouter = router({
         deploymentId: z.number().int().positive(),
         reason: z.string().max(2000).optional(),
         /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
-        totpCode: z.string().max(16).optional(),
+        totpCode: z.string().max(16),
       }),
     )
     .mutation(async ({ input, ctx }) =>
@@ -651,7 +657,7 @@ export const programmingRouter = router({
         actionId: z.string().min(1).max(128),
         confirmedBy: z.number().int().positive().optional(),
         /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
-        totpCode: z.string().max(16).optional(),
+        totpCode: z.string().max(16),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -687,7 +693,7 @@ export const programmingRouter = router({
         confirmedBy: z.number().int().positive().optional(),
         reason: z.string().max(2000).optional(),
         /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
-        totpCode: z.string().max(16).optional(),
+        totpCode: z.string().max(16),
       })
         // Four-eyes AT THE SCHEMA cho đường nhạy cảm: rollout production phải có approver.
         .refine((v) => v.stage !== "production" || v.confirmedBy != null, {

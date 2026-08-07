@@ -33,9 +33,15 @@ const actuationProcedure = actuationBase.use(moduleGate("MOD_ENGINEERING"));
 // doc 40 CTL-07 — deploy path thêm lớp step-up 2FA SAU cờ ACTUATION_STEPUP_2FA (mặc định OFF →
 // pass-through). Vẫn giữ role-floor + require2FA + MOD_ENGINEERING như actuation.
 // ★★★ Pha 6 Task 1b — `deployProcedure` (gốc, `_core/trpc.ts`) nay chain `requirePerCallFreshTotp`:
-// khi cờ BẬT, `totpCode` là **BẮT BUỘC MỖI LƯỢT GỌI**, không còn cache phiên 10 phút. `.optional()`
-// ở zod bên dưới **không** nới điều đó — middleware đọc raw input TRƯỚC zod và fail-closed.
-// Lưới: `server/routers/deployStepUpFreshness.test.ts`.
+// khi cờ BẬT, `totpCode` là **BẮT BUỘC MỖI LƯỢT GỌI**, không còn cache phiên 10 phút.
+// ★★★ I-4 (review Task 1b) — `.optional()` ĐÃ ĐƯỢC GỠ khỏi zod bên dưới. Lý do cũ (*"bắt buộc sẽ
+// gãy mọi lượt gọi khi cờ TẮT"*) **không đứng vững khi kiểm**: `useStepUpOtp.guard` KHÔNG đọc cờ
+// client nên UI gửi mã ở **cả hai** trạng thái cờ, và **0** người gọi tRPC nội bộ. Cái `.optional()`
+// ấy **không phải mỹ quan** — nó là **CƠ CHẾ** khiến `tsc` **ban phước** cho đột biến R2 (gỡ
+// `stepUp.guard` + `totpCode` khỏi một điểm gọi client ⇒ 108 file/1837 ca XANH, tsc SẠCH).
+// Bắt buộc ở zod ⇒ lượt gỡ ấy nay là một **lỗi biên dịch**. ⚠ CHỈ THU HẸP: middleware vẫn đọc raw
+// input TRƯỚC zod và fail-closed, nên zod không phải cổng an ninh — nó là cổng **hợp đồng**.
+// Lưới: `server/routers/deployStepUpFreshness.test.ts` · `client/src/lib/vramPanelStepUp.unit.test.ts`.
 const deployProcedure = deployBase.use(moduleGate("MOD_ENGINEERING"));
 import { orchestrationWorkflows, orchestrationWorkflowVersions, orchestrationRuns, orchestrationRunSteps, machines } from "../../drizzle/schema";
 import {
@@ -114,7 +120,7 @@ export const orchestrationRouter = router({
         definition: z.record(z.string(), z.unknown()),
         simToken: z.string().max(256).optional(),
         overrideReason: z.string().max(1000).optional(),
-        totpCode: z.string().max(16).optional(),
+        totpCode: z.string().max(16),
       }),
     )
     .mutation(async ({ input, ctx }) => {

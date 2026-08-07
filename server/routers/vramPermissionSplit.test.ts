@@ -130,6 +130,16 @@ async function loiCua(p: Promise<unknown>): Promise<unknown> {
   );
 }
 
+/**
+ * Payload **thiếu `totpCode`** — hình dạng của một người gọi **TỪ DÂY** (HTTP/JSON), thứ `tsc`
+ * không ràng buộc được. ⚠ I-4 (review Task 1b) làm `totpCode` **bắt buộc** ở **hợp đồng** zod, và
+ * đó là chỗ `tsc` bắt được lượt gỡ mã khỏi một điểm gọi client. Nhưng cổng an ninh thật phải đứng
+ * vững trước một payload **thô** — nên các ca dưới đây cố ý đi vòng qua kiểu, thay vì nới zod lại.
+ */
+function tuDay<T>(v: T): T & { totpCode: string } {
+  return v as T & { totpCode: string };
+}
+
 /** Một dự án chương trình máy CÓ THẬT trong kho — để đo "còn nguyên hay đã bốc hơi". */
 function dungMotDuAn() {
   fake.seed(programProjects, [{ id: 7, name: "PLC line-1", deviceId: 1, defaultBranch: "main" }]);
@@ -181,7 +191,9 @@ describe("Task 3b — bit VRAM riêng: mở ĐÚNG hai nút VRAM, KHÔNG mở g�
       broker.release(lease); // đúng việc `proc.on("exit")` làm ở sản xuất
       return true;
     };
-    const r = await vram().preempt({ owner: "sidecar:vision" });
+    // ⚠ I-4: `totpCode` BẮT BUỘC ở zod; cờ step-up TẮT ở ca này ⇒ mã không được verify, nó chỉ
+    //   thoả hợp đồng. Bất biến của ca này là **cổng QUYỀN**, không phải cổng OTP.
+    const r = await vram().preempt({ owner: "sidecar:vision", totpCode: "000000" });
     expect(r.outcome, "supervisor có bit VRAM ⇒ lệnh phải QUA cổng quyền và CHẠY").toBe("reclaimed");
     expect(r.freedBytes).toBe(7_825 * MIB);
     expect(broker.snapshot().leases.some((l) => l.id === lease.id)).toBe(false);
@@ -213,9 +225,9 @@ describe("Task 3b — bit VRAM riêng: mở ĐÚNG hai nút VRAM, KHÔNG mở g�
     xinThat("sidecar:vision", 7_825 * MIB);
     const truoc = broker.snapshot().totalReservedBytes;
 
-    const e1 = await loiCua(vram().preempt({ owner: "sidecar:vision" }));
+    const e1 = await loiCua(vram().preempt(tuDay({ owner: "sidecar:vision" })));
     expect(readAppErrorMeta(e1)).toMatchObject({ appCode: "PERMISSION_DENIED", appParams: { action: "canDelete" } });
-    const e2 = await loiCua(vram().releaseStale({ leaseKey: "worker:999:1#lease-7" }));
+    const e2 = await loiCua(vram().releaseStale(tuDay({ leaseKey: "worker:999:1#lease-7" })));
     expect(readAppErrorMeta(e2)).toMatchObject({ appCode: "PERMISSION_DENIED", appParams: { action: "canDelete" } });
     const e3 = await loiCua(vram().retryDeferred({ owner: "cron:kb-sync" }));
     expect(readAppErrorMeta(e3)).toMatchObject({ appCode: "PERMISSION_DENIED", appParams: { action: "canCreate" } });
@@ -225,7 +237,7 @@ describe("Task 3b — bit VRAM riêng: mở ĐÚNG hai nút VRAM, KHÔNG mở g�
 
   it("supervisor KHÔNG một hàng quyền nào ⇒ TỪ CHỐI (cổng vẫn sống, không phải fail-open)", async () => {
     capQuyen(SUP_ID, []);
-    const e = await loiCua(vram().preempt({ owner: "sidecar:vision" }));
+    const e = await loiCua(vram().preempt(tuDay({ owner: "sidecar:vision" })));
     expect(readAppErrorMeta(e)).toMatchObject({ appCode: "PERMISSION_DENIED", appParams: { action: "canDelete" } });
   });
 
@@ -244,9 +256,9 @@ describe("Task 3b — bit VRAM riêng: mở ĐÚNG hai nút VRAM, KHÔNG mở g�
     const truoc = process.env.ACTUATION_STEPUP_2FA;
     process.env.ACTUATION_STEPUP_2FA = "true";
     try {
-      const e1 = await loiCua(vram().preempt({ owner: "sidecar:vision" }));
+      const e1 = await loiCua(vram().preempt(tuDay({ owner: "sidecar:vision" })));
       expect(readAppErrorMeta(e1)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
-      const e2 = await loiCua(vram().releaseStale({ leaseKey: "worker:999:1#lease-7" }));
+      const e2 = await loiCua(vram().releaseStale(tuDay({ leaseKey: "worker:999:1#lease-7" })));
       expect(readAppErrorMeta(e2)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
 
       // ⚠ ĐỐI CHỨNG CHIỀU NGƯỢC: `retryDeferred` KHÔNG phá huỷ ⇒ đứng ở `actuationProcedure`,
@@ -262,7 +274,8 @@ describe("Task 3b — bit VRAM riêng: mở ĐÚNG hai nút VRAM, KHÔNG mở g�
   it("`releaseStale` + `retryDeferred` với bit VRAM ⇒ QUA cổng quyền (trả DỮ LIỆU có `reason`, KHÔNG ném)", async () => {
     capQuyen(SUP_ID, [{ module: VRAM_CONTROL_MODULE, canDelete: true, canCreate: true }]);
 
-    const rs = await vram().releaseStale({ leaseKey: "worker:999:1#lease-7" });
+    // ⚠ I-4: xem ghi chú `totpCode` ở ca cổng-ra bên trên.
+    const rs = await vram().releaseStale({ leaseKey: "worker:999:1#lease-7", totpCode: "000000" });
     expect(rs.outcome).toBe("refused");
     expect(rs.reason, "từ chối NGHIỆP VỤ phải có lý do đọc được — đó là bằng chứng đã vào thân thủ tục").not.toBeNull();
 

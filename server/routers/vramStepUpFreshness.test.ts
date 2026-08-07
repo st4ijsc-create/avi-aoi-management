@@ -158,10 +158,22 @@ const ctxCua = (phien: string, user: unknown = supervisor) =>
  * phép siết nằm ở **GỐC** chứ không ở `vramRouter` (Task 1b — mục 3).
  */
 const routerKhac = router({
+  // ⚠ I-4: `totpCode` **BẮT BUỘC**, y hệt hình dạng sản xuất — một phép thử M3 khai lỏng hơn cái
+  //   nó mô phỏng thì nó thôi mô phỏng cái ấy.
   deployKhac: deployProcedure
-    .input(z.object({ totpCode: z.string().max(16).optional() }))
+    .input(z.object({ totpCode: z.string().max(16) }))
     .mutation(() => ({ ok: true as const })),
 });
+
+/**
+ * Payload **thiếu `totpCode`** — hình dạng của một người gọi **TỪ DÂY** (HTTP/JSON), thứ `tsc`
+ * không ràng buộc được. ⚠ I-4 (review Task 1b) làm `totpCode` **bắt buộc** ở **hợp đồng** zod, và
+ * đó là chỗ `tsc` bắt được lượt gỡ mã khỏi một điểm gọi client. Nhưng cổng an ninh thật phải đứng
+ * vững trước một payload **thô** — nên các ca dưới đây cố ý đi vòng qua kiểu, thay vì nới zod lại.
+ */
+function tuDay<T>(v: T): T & { totpCode: string } {
+  return v as T & { totpCode: string };
+}
 
 const vram = (phien: string, user: unknown = supervisor) => vramRouter.createCaller(ctxCua(phien, user));
 const khac = (phien: string, user: unknown = supervisor) => routerKhac.createCaller(ctxCua(phien, user));
@@ -453,7 +465,7 @@ describe("★★★ Pha 6 M-4 — cầu chì của lượng từ", () => {
   });
 
   it("★★★ cầu chì — cờ `ACTUATION_STEPUP_2FA` ĐANG BẬT và middleware ĐANG chạy (phiên nguội ⇒ chặn)", async () => {
-    const e = await loiCua(khac(phienMoi()).deployKhac({}));
+    const e = await loiCua(khac(phienMoi()).deployKhac(tuDay({})));
     expect(readAppErrorMeta(e)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
   });
 });
@@ -475,7 +487,7 @@ describe("★★★ M-4 — OTP của một lượt KHÁC không được mở c
       return true;
     };
     const truoc = broker.snapshot().totalReservedBytes;
-    const e = await loiCua(vram(phien).preempt({ owner: "sidecar:vision" }));
+    const e = await loiCua(vram(phien).preempt(tuDay({ owner: "sidecar:vision" })));
 
     expect(e, "lượt phá huỷ không mang OTP của CHÍNH nó PHẢI bị từ chối").not.toBeNull();
     expect(readAppErrorMeta(e)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
@@ -503,7 +515,7 @@ describe("★★★ M-4 — OTP của một lượt KHÁC không được mở c
     expect((e1 as { code?: string })?.code, "lượt CÓ OTP phải đi qua middleware và dừng ở zod").toBe("BAD_REQUEST");
 
     // Lượt 2 — cùng phiên, không OTP ⇒ vẫn phải bị chặn ở cổng OTP.
-    const e2 = await loiCua(vram(phien).preempt({ owner: "sidecar:vision" }));
+    const e2 = await loiCua(vram(phien).preempt(tuDay({ owner: "sidecar:vision" })));
     expect(readAppErrorMeta(e2)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
   });
 });
@@ -568,7 +580,7 @@ describe("★★★ KHÔNG BẮT NHẦM — phép siết chỉ chạm nhánh `de
     const phien = phienMoi();
     await expect(khac(phien).deployKhac({ totpCode: otp() })).resolves.toEqual({ ok: true });
     // Cùng phiên, cache ĐÃ ấm, không OTP ⇒ nay BỊ CHẶN ở đúng cổng OTP.
-    const e = await loiCua(khac(phien).deployKhac({}));
+    const e = await loiCua(khac(phien).deployKhac(tuDay({})));
     expect(readAppErrorMeta(e)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
     // …và ĐỐI CHỨNG DƯƠNG: OTP của chính lượt ấy thì vẫn qua.
     await expect(khac(phien).deployKhac({ totpCode: otp() })).resolves.toEqual({ ok: true });
@@ -605,7 +617,10 @@ describe("★★★ KHÔNG BẮT NHẦM — phép siết chỉ chạm nhánh `de
         broker.release(lease);
         return true;
       };
-      const r = await vram(phien).preempt({ owner: "sidecar:vision" });
+      // ⚠ I-4: `totpCode` nay BẮT BUỘC ở zod. Cờ TẮT ⇒ middleware pass-through nên mã này
+      //   **không được verify** — nó chỉ thoả hợp đồng. Đúng cái ca này đo: cờ TẮT thì một mã
+      //   SAI cũng đi lọt, tức phép siết KHÔNG tự bật step-up ở deployment chưa bật cờ.
+      const r = await vram(phien).preempt({ owner: "sidecar:vision", totpCode: "000000" });
       expect(r.outcome, "cờ TẮT ⇒ không thủ tục nào đòi OTP").toBe("reclaimed");
     } finally {
       if (truoc === undefined) delete process.env.ACTUATION_STEPUP_2FA;

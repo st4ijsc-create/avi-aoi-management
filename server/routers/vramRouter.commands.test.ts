@@ -100,6 +100,16 @@ const engineerNo2fa = { id: 4, role: "engineer", name: "Eng2", twoFactorEnabled:
 const viewer = { id: 5, role: "viewer", name: "V", twoFactorEnabled: true };
 const operator = { id: 6, role: "operator", name: "Op", twoFactorEnabled: true };
 
+/**
+ * ★★★ I-4 (review Task 1b) — `totpCode` nay **BẮT BUỘC** ở `input` của `preempt`/`releaseStale`
+ * (`vramRouter.ts`), vì chính `.optional()` là thứ khiến `tsc` **ban phước** cho một lượt gỡ
+ * `totpCode` khỏi điểm gọi client (đột biến R2). Lưới này chạy với cờ `ACTUATION_STEPUP_2FA`
+ * **TẮT**, nên middleware step-up **pass-through** và mã dưới đây **không bao giờ được verify** —
+ * nó chỉ thoả **hợp đồng zod**. ⚠ Đừng đọc nó thành *"các ca dưới có đi qua step-up"*: phép cưỡng
+ * chế step-up nằm ở `vramStepUpFreshness.test.ts` và `deployStepUpFreshness.test.ts`.
+ */
+const OTP_HD = { totpCode: "000000" } as const;
+
 function caller(user: unknown = admin2fa) {
   return vramRouter.createCaller({
     user,
@@ -187,8 +197,8 @@ describe("vramRouter — PHÂN QUYỀN là BẮT BUỘC (lệnh giết được 
     const lease = xinThat({ owner: "sidecar:vision", bytes: 7_825 * MIB, reclaimer: "vision-sidecar" });
     const truoc = broker.snapshot().totalReservedBytes;
 
-    await expect(caller(viewer).preempt({ owner: "sidecar:vision" })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(caller(viewer).releaseStale({ leaseKey: "worker:999:1#lease-7" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller(viewer).preempt({ ...OTP_HD, owner: "sidecar:vision" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller(viewer).releaseStale({ ...OTP_HD, leaseKey: "worker:999:1#lease-7" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller(viewer).retryDeferred({ owner: "cron:kb-sync" })).rejects.toMatchObject({ code: "FORBIDDEN" });
 
     expect(broker.snapshot().totalReservedBytes).toBe(truoc);
@@ -196,11 +206,11 @@ describe("vramRouter — PHÂN QUYỀN là BẮT BUỘC (lệnh giết được 
   });
 
   it("★★ operator (không nằm trong ACTUATION_ROLES) ⇒ TỪ CHỐI lệnh phá huỷ", async () => {
-    await expect(caller(operator).preempt({ owner: "sidecar:vision" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller(operator).preempt({ ...OTP_HD, owner: "sidecar:vision" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("★★ engineer CHƯA bật 2FA ⇒ TỪ CHỐI (sàn 2FA của actuation)", async () => {
-    await expect(caller(engineerNo2fa).preempt({ owner: "sidecar:vision" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller(engineerNo2fa).preempt({ ...OTP_HD, owner: "sidecar:vision" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller(engineerNo2fa).retryDeferred({ owner: "cron:kb-sync" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
@@ -217,10 +227,10 @@ describe("vramRouter — PHÂN QUYỀN là BẮT BUỘC (lệnh giết được 
       return true;
     };
 
-    await expect(caller(engineer2fa).preempt({ owner: "sidecar:vision" })).rejects.toMatchObject({
+    await expect(caller(engineer2fa).preempt({ ...OTP_HD, owner: "sidecar:vision" })).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
-    await expect(caller(engineer2fa).releaseStale({ leaseKey: "worker:999:1#lease-7" })).rejects.toMatchObject({
+    await expect(caller(engineer2fa).releaseStale({ ...OTP_HD, leaseKey: "worker:999:1#lease-7" })).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
     await expect(caller(engineer2fa).retryDeferred({ owner: "cron:kb-sync" })).rejects.toMatchObject({
@@ -232,7 +242,7 @@ describe("vramRouter — PHÂN QUYỀN là BẮT BUỘC (lệnh giết được 
   });
 
   it("admin + 2FA ⇒ QUA cả sàn danh tính LẪN sàn thẩm quyền (tới được thân thủ tục)", async () => {
-    const r = await caller(admin2fa).preempt({ owner: "khong-co-ho-nao" });
+    const r = await caller(admin2fa).preempt({ ...OTP_HD, owner: "khong-co-ho-nao" });
     expect(r.outcome).toBe("refused");
     expect(r.reason).toBe("owner-not-in-local-ledger");
   });
@@ -244,7 +254,7 @@ describe("vramRouter — PHÂN QUYỀN là BẮT BUỘC (lệnh giết được 
 
 describe("vramRouter.preempt — từ chối phải CÓ LÝ DO, không 'im lặng thành công'", () => {
   it("hộ KHÔNG có trong sổ cục bộ ⇒ refused + lý do, `freedBytes === 0`", async () => {
-    const r = await caller().preempt({ owner: "gguf:khong-ton-tai" });
+    const r = await caller().preempt({ ...OTP_HD, owner: "gguf:khong-ton-tai" });
     expect(r.outcome).toBe("refused");
     expect(r.reason).toBe("owner-not-in-local-ledger");
     expect(r.freedBytes).toBe(0);
@@ -255,7 +265,7 @@ describe("vramRouter.preempt — từ chối phải CÓ LÝ DO, không 'im lặn
     xinThat({ owner: "onnx:aoi-classifier", bytes: 2_000 * MIB, priority: "production", reclaimer: "gguf-idle-model" });
     const truoc = broker.snapshot().totalReservedBytes;
 
-    const r = await caller().preempt({ owner: "onnx:aoi-classifier" });
+    const r = await caller().preempt({ ...OTP_HD, owner: "onnx:aoi-classifier" });
 
     expect(r.outcome).toBe("refused");
     expect(r.reason).toBe("production-never-preempted");
@@ -280,7 +290,7 @@ describe("vramRouter.preempt — từ chối phải CÓ LÝ DO, không 'im lặn
     };
     const truoc = broker.snapshot().totalReservedBytes;
 
-    const r = await caller().preempt({ owner: "sidecar:vision" });
+    const r = await caller().preempt({ ...OTP_HD, owner: "sidecar:vision" });
 
     expect(r.outcome).toBe("refused");
     expect(r.reason).toBe("busy-in-use");
@@ -290,7 +300,7 @@ describe("vramRouter.preempt — từ chối phải CÓ LÝ DO, không 'im lặn
 
   it("hộ KHÔNG khai người thi hành ⇒ refused `no-reclaimer-declared` (đừng hứa lấy lại byte của nó)", async () => {
     xinThat({ owner: "gguf-backend:cuda", bytes: 500 * MIB });
-    const r = await caller().preempt({ owner: "gguf-backend:cuda" });
+    const r = await caller().preempt({ ...OTP_HD, owner: "gguf-backend:cuda" });
     expect(r.outcome).toBe("refused");
     expect(r.reason).toBe("no-reclaimer-declared");
     expect(r.freedBytes).toBe(0);
@@ -305,7 +315,7 @@ describe("vramRouter.preempt — BẰNG CHỨNG: không khai thành công khi by
       return true;
     };
 
-    const r = await caller().preempt({ owner: "sidecar:vision" });
+    const r = await caller().preempt({ ...OTP_HD, owner: "sidecar:vision" });
 
     expect(r.outcome).toBe("reclaimed");
     expect(r.reason).toBeNull();
@@ -322,7 +332,7 @@ describe("vramRouter.preempt — BẰNG CHỨNG: không khai thành công khi by
     xinThat({ owner: "sidecar:vision", bytes: 7_825 * MIB, priority: "interactive", reclaimer: "vision-sidecar" });
     sidecar.stop = async () => true; // KHÔNG nhả sổ
 
-    const r = await caller().preempt({ owner: "sidecar:vision" });
+    const r = await caller().preempt({ ...OTP_HD, owner: "sidecar:vision" });
 
     expect(r.outcome).toBe("failed");
     expect(r.reason).toBe("no-bytes-freed");
@@ -334,7 +344,7 @@ describe("vramRouter.preempt — BẰNG CHỨNG: không khai thành công khi by
     const lease = xinThat({ owner: "sidecar:vision", bytes: 7_825 * MIB, priority: "interactive", reclaimer: "vision-sidecar" });
     sidecar.stop = async () => false;
 
-    const r = await caller().preempt({ owner: "sidecar:vision" });
+    const r = await caller().preempt({ ...OTP_HD, owner: "sidecar:vision" });
 
     expect(r.outcome).toBe("failed");
     expect(r.reason).toBe("reclaimer-returned-false");
@@ -349,7 +359,7 @@ describe("vramRouter.preempt — BẰNG CHỨNG: không khai thành công khi by
       throw new Error("cong 8081 khong phan hoi");
     };
 
-    const r = await caller().preempt({ owner: "sidecar:vision" });
+    const r = await caller().preempt({ ...OTP_HD, owner: "sidecar:vision" });
 
     expect(r.outcome).toBe("failed");
     expect(r.reason).toBe("reclaimer-threw");
@@ -380,7 +390,7 @@ describe("vramRouter.preempt — BẰNG CHỨNG: không khai thành công khi by
       return true; // ← nhưng nạn nhân thì KHÔNG
     };
 
-    const r = await caller().preempt({ owner: "sidecar:vision" });
+    const r = await caller().preempt({ ...OTP_HD, owner: "sidecar:vision" });
 
     expect(r.outcome, "giấy phép của hộ này còn nguyên ⇒ KHÔNG được khai thành công").toBe("failed");
     expect(r.reason).toBe("no-bytes-freed");
@@ -405,7 +415,7 @@ describe("vramRouter.preempt — BẰNG CHỨNG: không khai thành công khi by
       return true;
     };
 
-    const r = await caller().preempt({ owner: "sidecar:vision" });
+    const r = await caller().preempt({ ...OTP_HD, owner: "sidecar:vision" });
 
     expect(r.outcome).toBe("reclaimed");
     expect(r.leaseLeftLedger).toBe(true);
@@ -427,7 +437,7 @@ describe("vramRouter.preempt — BẰNG CHỨNG: không khai thành công khi by
     });
     const truoc = broker.snapshot().totalReservedBytes;
 
-    const r = await caller().preempt({ owner: ownerNhanNuoi(31337) });
+    const r = await caller().preempt({ ...OTP_HD, owner: ownerNhanNuoi(31337) });
 
     expect(r.outcome).toBe("failed");
     expect(r.freedBytes).toBe(0);
@@ -452,7 +462,7 @@ describe("vramRouter.releaseStale — bằng chứng CHẾT là điều kiện, 
     gpu.procs = []; // bảng đọc ĐƯỢC, và pid 999 KHÔNG có trong đó ⇒ chết
     const truoc = sharedLedgerFact(Date.now())!;
 
-    const r = await caller().releaseStale({ leaseKey: row.leaseKey });
+    const r = await caller().releaseStale({ ...OTP_HD, leaseKey: row.leaseKey });
 
     expect(r.outcome).toBe("released");
     expect(r.reason).toBeNull();
@@ -494,7 +504,7 @@ describe("vramRouter.releaseStale — bằng chứng CHẾT là điều kiện, 
       return [];
     };
 
-    const r = await caller().releaseStale({ leaseKey: ma.leaseKey });
+    const r = await caller().releaseStale({ ...OTP_HD, leaseKey: ma.leaseKey });
 
     expect(r.outcome).toBe("released");
     expect(r.freedBytes, "byte của CHÍNH hàng này — không cộng 5.000 MiB của hàng khác").toBe(17_000 * MIB);
@@ -513,7 +523,7 @@ describe("vramRouter.releaseStale — bằng chứng CHẾT là điều kiện, 
     publishSharedLedgerReplica([nen], Date.now(), "api:100:1750000000000");
     gpu.procs = [];
 
-    const r = await caller().releaseStale({ leaseKey: "vram:baseline" });
+    const r = await caller().releaseStale({ ...OTP_HD, leaseKey: "vram:baseline" });
 
     expect(r.outcome).toBe("released");
     expect(r.rowKind).toBe("shared-baseline");
@@ -526,7 +536,7 @@ describe("vramRouter.releaseStale — bằng chứng CHẾT là điều kiện, 
     publishSharedLedgerReplica([row], Date.now(), "api:100:1750000000000");
     gpu.procs = [{ pid: 999, ppid: 1, cmdline: "node worker.js", ctime: ft(1_749_999_999_000) }];
 
-    const r = await caller().releaseStale({ leaseKey: row.leaseKey });
+    const r = await caller().releaseStale({ ...OTP_HD, leaseKey: row.leaseKey });
 
     expect(r.outcome).toBe("refused");
     expect(r.reason).toBe("process-not-proven-dead");
@@ -539,7 +549,7 @@ describe("vramRouter.releaseStale — bằng chứng CHẾT là điều kiện, 
     publishSharedLedgerReplica([row], Date.now(), "api:100:1750000000000");
     gpu.procs = null;
 
-    const r = await caller().releaseStale({ leaseKey: row.leaseKey });
+    const r = await caller().releaseStale({ ...OTP_HD, leaseKey: row.leaseKey });
 
     expect(r.outcome).toBe("refused");
     expect(r.reason).toBe("process-not-proven-dead");
@@ -551,7 +561,7 @@ describe("vramRouter.releaseStale — bằng chứng CHẾT là điều kiện, 
     publishSharedLedgerReplica([row], Date.now(), "api:100:1750000000000");
     gpu.procs = [];
 
-    const r = await caller().releaseStale({ leaseKey: row.leaseKey });
+    const r = await caller().releaseStale({ ...OTP_HD, leaseKey: row.leaseKey });
 
     expect(r.outcome).toBe("refused");
     expect(r.reason).toBe("own-row-local-ledger-is-authority");
@@ -560,14 +570,14 @@ describe("vramRouter.releaseStale — bằng chứng CHẾT là điều kiện, 
   it("khoá KHÔNG có trong bản sao ⇒ refused, nói rõ là không tìm thấy", async () => {
     publishSharedLedgerReplica([hangAnhEm()], Date.now(), "api:100:1750000000000");
     gpu.procs = [];
-    const r = await caller().releaseStale({ leaseKey: "worker:1:1#khong-co" });
+    const r = await caller().releaseStale({ ...OTP_HD, leaseKey: "worker:1:1#khong-co" });
     expect(r.outcome).toBe("refused");
     expect(r.reason).toBe("row-not-in-shared-ledger-replica");
   });
 
   it("CHƯA làm mới bản sao lần nào ⇒ refused `shared-ledger-never-refreshed` (≠ 'không có hàng nào')", async () => {
     gpu.procs = [];
-    const r = await caller().releaseStale({ leaseKey: "worker:999:1#lease-7" });
+    const r = await caller().releaseStale({ ...OTP_HD, leaseKey: "worker:999:1#lease-7" });
     expect(r.outcome).toBe("refused");
     expect(r.reason).toBe("shared-ledger-never-refreshed");
   });
@@ -646,7 +656,7 @@ describe("★★★ I-2 — bề rộng ô DANH TÍNH: lệnh nhận đúng bằ
     const hang = rowFromLease(lease, 8 * MIB, "role:1", Date.now());
     expect(hang.owner, "sổ chung phải ghi được danh tính này NGUYÊN VẸN").toBe(owner);
 
-    const r = await caller().preempt({ owner });
+    const r = await caller().preempt({ ...OTP_HD, owner });
     expect(r.outcome, "một danh tính hợp lệ KHÔNG được biến thành lỗi xác thực").not.toBeUndefined();
     expect(r.reason, "từ chối NGHIỆP VỤ có lý do đọc được — đó là bằng chứng đã vào thân thủ tục").not.toBeUndefined();
 
@@ -662,7 +672,7 @@ describe("★★★ I-2 — bề rộng ô DANH TÍNH: lệnh nhận đúng bằ
      * độc ⇒ hỏng **VĨNH VIỄN**.
      */
     const qua = "x".repeat(VRAM_OWNER_MAX + 1);
-    expect(await loi(caller().preempt({ owner: qua })), "vượt trần cột DB phải bị chặn ở cửa").not.toBeNull();
+    expect(await loi(caller().preempt({ ...OTP_HD, owner: qua })), "vượt trần cột DB phải bị chặn ở cửa").not.toBeNull();
     expect(await loi(caller().retryDeferred({ owner: qua }))).not.toBeNull();
   });
 
@@ -674,7 +684,7 @@ describe("★★★ I-2 — bề rộng ô DANH TÍNH: lệnh nhận đúng bằ
     // hiện trên mặt đọc với một danh tính mà **không lệnh nào nhận**.
     // ⚠ Đây là ô làm đột biến `.max(64)` ĐỎ: chuỗi dài 160 phải qua được cửa.
     return caller()
-      .preempt({ owner: hang.owner })
+      .preempt({ ...OTP_HD, owner: hang.owner })
       .then((r) => {
         expect(r.outcome, "danh tính ĐÃ CẮT của sổ chung phải qua được cửa của lệnh").not.toBeUndefined();
       });

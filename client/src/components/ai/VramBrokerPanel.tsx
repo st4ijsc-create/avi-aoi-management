@@ -28,8 +28,8 @@
  * BẤT KỲ VAI NÀO.**
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * `.env:568` → `ACTUATION_STEPUP_2FA=true` (cấu hình ĐANG CHẠY). `vramRouter.preempt` và
- * `releaseStale` đứng trên `deployProcedure = actuationProcedure.use(requireFreshTotp)`
- * (`_core/trpc.ts:511`), và `requireFreshTotp` đọc `totpCode` **từ raw input**: thiếu ⇒
+ * `releaseStale` đứng trên `deployProcedure` (`_core/trpc.ts:549`), và middleware step-up đọc
+ * `totpCode` **từ raw input**: thiếu ⇒
  * `FORBIDDEN INVALID_VALUE{field:"twoFactorCode"}`. Panel **không gửi `totpCode`** ⇒ **lượt bấm
  * ĐẦU TIÊN của mọi phiên luôn 403**, với mọi vai. Hệ quả kép: `onSuccess` — chỗ **duy nhất** gọi
  * `translateVramPreemptCommand`/`translateVramReleaseStaleCommand` — là **nhánh không tới được từ
@@ -38,9 +38,15 @@
  * ⚠ Bản vá dùng **ĐÚNG khuôn ba màn đang chạy** (`EngineeringWorkspace.tsx:1248,1454,1907` ·
  * `ApprovalsInbox.tsx` · `OrchestrationStudio.tsx`): `stepUp.guard((totpCode) => m.mutate({…,
  * totpCode}))` + render `{stepUp.dialog}` **một lần**. KHÔNG hook thứ hai, KHÔNG dialog tự viết.
- * ⚠ `retryDeferred` đứng trên `actuationProcedure` (KHÔNG có `requireFreshTotp`) và `input` của nó
+ * ⚠ `retryDeferred` đứng trên `actuationProcedure` (KHÔNG có step-up) và `input` của nó
  * **không khai** `totpCode` ⇒ bọc nó vào step-up là gửi một khoá mà `z.object().strict()` từ chối.
  * Ba lệnh, hai sàn khác nhau — và đó là **chủ ý** (`vramRouter.ts:42-44`), không phải thiếu sót.
+ *
+ * ⚠⚠ **Cập nhật Pha 6 Task 1b:** chuỗi của `deployProcedure` nay là
+ * `actuationProcedure.use(requireFreshTotp).use(requirePerCallFreshTotp)` — cache phiên 10 phút
+ * **không còn mở cửa cho lượt nào**, nên `totpCode` là **bắt buộc MỖI lượt bấm**, không chỉ lượt
+ * đầu của phiên. Vì thế `stepUp.guard(...)` ở đây **không phải** một lượt trang trí: bỏ nó đi là
+ * **403 mỗi lượt, mọi vai** (xem I-3 ở `client/src/lib/vramPanelStepUp.unit.test.ts`).
  */
 
 import { useState } from "react";
