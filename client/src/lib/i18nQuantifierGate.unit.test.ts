@@ -172,10 +172,16 @@ describe("★★★ Pha 7 §4.1 — bộ cưỡng chế mặt NGƯỜI phải đ
     /**
      * Bản cũ có `if (present.length < 2) continue` ⇒ dịch cho **đúng một** ngôn ngữ vẫn XANH.
      * Nay phải nói bằng câu đúng: thiếu ở **hai** locale còn lại, gọi tên cả hai.
+     *
+     * ⚠⚠ **VÌ SAO GIÁ TRỊ NÀY CÓ `{{x}}`** — đây là một lựa chọn để **CHẨN ĐOÁN ĐƯỢC**, không phải
+     * trang trí. Đo bằng đột biến: nếu giá trị **không** có placeholder thì ca này cũng đỏ khi
+     * hoàn nguyên **LỖ 3** (chỉ so placeholder) ⇒ ba lỗ cho ba chữ ký **lồng nhau** `{1}⊂{1,2}⊂{1,2,3}`
+     * và ca "LỖ 2" không còn nói riêng về lỗ 2 nữa. Có placeholder ⇒ nó **sống sót** qua LỖ 3, và
+     * chữ ký thành **PHÂN BIỆT ĐƯỢC**: LỖ1→`{1}` · LỖ2→`{1,2}` · LỖ3→`{1,3}`.
      */
     const cd = nenXanh();
     cd.ma.push("fixt.chiCoEn");
-    (cd.ban.en as Record<string, string>)["fixt.chiCoEn"] = "only-en";
+    (cd.ban.en as Record<string, string>)["fixt.chiCoEn"] = "only-en {{x}}";
     const r = chay(dungGoc(cd));
     expect(r.ma, `phải ĐỎ, nhưng:\n${r.ra}`).toBe(1);
     expect(r.ra).toContain("MISSING IN vi/zh");
