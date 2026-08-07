@@ -43,7 +43,8 @@ internal sealed record SmtpScript(
     string MailFromReply = "250 OK",
     Func<string, string>? RcptToReply = null,
     string DataReply = "250 2.0.0 OK queued",
-    string? AuthCommandReply = null);
+    string? AuthCommandReply = null,
+    bool ResetAfterEhlo = false);
 
 /// <summary>
 /// 🔴 Task C-4 — a REAL in-process SMTP relay for the e-mail tests, on a raw <see cref="TcpListener"/>.
@@ -188,6 +189,39 @@ internal sealed class SmtpLoopbackServer : IAsyncDisposable
                 }
 
                 await writer.WriteLineAsync(script.Greeting).ConfigureAwait(false);
+
+                // 🔴 A relay that GREETS, reads the client's first command, and then RSTs. Distinct from
+                // `Greeting: null` (accept and go silent) and from any scripted 4xx/5xx: a conversation
+                // demonstrably took place and the RELAY is what ended it, which is the one shape that proves
+                // "a transport failure" is not a single situation.
+                //
+                // 🔴 WHAT IT PRODUCES CLIENT-SIDE, MEASURED 3/3 — and read this before modelling it, because
+                // the obvious model is wrong and an earlier version of this very comment asserted it:
+                //
+                //     SmtpException{StatusCode: GeneralFailure}
+                //       -> IOException("Unable to read data from the transport connection: The connection
+                //                       was closed.")
+                //          -> (no inner exception at all)
+                //
+                // There is NO SocketException in that chain and therefore NO SocketError.ConnectionReset:
+                // .NET's read path surfaces the RST as a plain closed-stream error and does not preserve the
+                // socket cause. So the thing that tells this apart from a REFUSED port — which does carry
+                // SocketException(ConnectionRefused) — is the ABSENCE of a socket error, not its value. See
+                // SmtpNotificationChannel.LocusOfTransportFailure, whose fallback is what classifies this
+                // case; its ConnectionReset arm is never reached from here, and a mutation of that arm
+                // survives for exactly this reason.
+                //
+                // LingerState(true, 0) is what makes Close() send an RST instead of a FIN: a graceful close
+                // would look to the client like an orderly end of stream, which is a different failure and
+                // would not reproduce this at all.
+                if (script.ResetAfterEhlo)
+                {
+                    _ = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+                    client.Client.LingerState = new LingerOption(true, 0);
+                    client.Close();
+                    return;
+                }
+
                 await ConverseAsync(reader, writer, script, ct).ConfigureAwait(false);
             }
         }

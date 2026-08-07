@@ -730,7 +730,29 @@ EXPECT_CONFORMANCE=22
 #          coordinator's ruling, through ONE shared implementation with a per-transport key list so the two
 #          cannot diverge; plus 1 fact pinning that the unknown-key refusal runs LAST and never pre-empts a
 #          more specific one ('portName' on a gateway bus must still be answered by the cross-transport rule).
-EXPECT_EDGECORE=1071
+# 🔴 THE CARRIED-FINDINGS REVIEW FIX ROUND raises this 1071 -> 1072 (+1), counted from the runner. ONE test,
+# and it guards a FINDING rather than a behaviour — which is why it is here and not deferred with the finding.
+#
+#     + 1  ModbusTcpDriverConformanceTests.ThisRigsPollIntervalIsWhatKeepsTheCarriedDisposeFindingReproducible
+#          A carried finding says Check_DisposeAsync_IsIdempotent_AfterCancellation passes on the Modbus TCP
+#          rig because of its TOKEN, not because DisposeAsync ends the read loop: mutating the shared check so
+#          the cancellation is never issued leaves five rigs green (correctly — Dispose is the mechanism that
+#          check enforces, cancellation is only scene-setting) and fails that one at ~5.25 s.
+#
+#          🔴 The MECHANISM is a boundary condition, and the first write-up of it was WRONG in a way that
+#          would have sent the next round hunting a disposed semaphore. It is NOT HotFolderAoiDriver's scar —
+#          nothing is stranded permanently. DisposeAsync tears the connection down and the read loop observes
+#          its flag at the top of the NEXT iteration, having parked in Task.Delay(PollIntervalMs). The whole
+#          question is whether that one tick fits inside CancellationBudget — and
+#          ModbusLoopbackHarness.BuildWritableMap's default pollIntervalMs (5 000 ms) is EXACTLY EQUAL to
+#          CancellationBudget (5 000 ms), from two unrelated files, while the RTU rigs pass 50.
+#
+#          So: lower that harness default and the TCP rig silently becomes a sixth rig on which the mutation
+#          survives, the carried finding stops being reproducible, and NOT ONE TEST GOES RED. That is the
+#          "nothing detects deletion of the override" lesson in different clothes, so it gets the same
+#          treatment — an assertion rather than a sentence in a report. Asserted as >= rather than == 5000
+#          deliberately: the claim is the relationship, not either number.
+EXPECT_EDGECORE=1072
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
@@ -1152,7 +1174,75 @@ EXPECT_EDGESERVICE=28
 #            ROSTER arm hands out no incumbent and keeps its advice — nothing removes a machine from the
 #            roster, so "use a different machine code" is true whatever wrote it. A sentence true without the
 #            field beats a fork that cannot be built.
-EXPECT_ENGINEAPI=1276
+#
+# 🔴 CARRIED FINDINGS (fix/carried-findings, task 1) raises this 1276 -> 1280 (+4). Counted from the runner
+# (`dotnet test --list-tests`), not by hand. ONE file, four new tests; nothing rewritten, split or deleted.
+# This line is the ONLY executable line the task changes in this script, per the standing rule.
+#
+#     + 4  NotificationEndpointsTests
+#          + 1  TheWebhookSendTest_TellsARefusedDestinationFromASilentOne_AtTheProductionBound — the PAIR, both
+#                 arms at the 5 s bound Program.cs actually constructs, because "distinguishable" is a claim
+#                 about a pair and two arms at two configurations would not be one. Assert.NotEqual is the
+#                 discriminator; the two Contains stop it passing on any two strings that merely differ.
+#          + 1  TheWebhookSendTest_AtABoundBelowTheConnectPath_ReportsTheCauseAsUndetermined_NotAsABlackHole —
+#                 the carried Important itself. A REFUSED destination at a 1 s bound lands in the TIMEOUT arm,
+#                 and that arm no longer names the black-holing peer as the cause. Its lower bound on elapsed
+#                 time is what makes it non-vacuous: it proves the two producing paths genuinely collapsed
+#                 before asserting on the message the collapsed case produces.
+#          + 1  TheEmailSendTest_NeverTellsAnOperatorARelayRefusedAMessageThatNeverReachedOne — the SWEEP's own
+#                 find, in the sibling channel. SmtpNotificationChannel.Classify returns descriptions covering
+#                 both "a relay decided something" and "nothing was ever reached", and BOTH callers wrapped
+#                 every one of them in a sentence asserting the relay had acted. No grep could have found it:
+#                 the distinguishing fact did not exist as a field anywhere to grep for. Classify now returns
+#                 it.
+#          + 1  TheEmailDispatch_ReportsAMessageThatNeverLeftThisMachine_AsNeverSENT_NotAsARelayRejection — the
+#                 same find on the DISPATCH half, which an operator meets without pressing anything. Reachable
+#                 and ordinary: SaveSmtpAsync requires a From address to be non-blank and not to PARSE, so a
+#                 mistyped one throws FormatException out of Compose before a socket is opened — permanent,
+#                 with no relay involved, and reported as a relay REJECTION until now.
+#
+# 🔴 THIS PARAGRAPH WAS TRUE WHEN WRITTEN AND STALE ONE COMMIT LATER, in the one file this project treats
+# as the record. It said EXPECT_EDGECORE was "deliberately UNCHANGED ... staying 1071", and the fix round
+# that followed added the harness-default pin above, taking it to 1072. The claim below is still true of
+# the conformance work it describes — no test was added or removed BY THAT WORK — but a reader checking it
+# against the constant finds 1072 and has no way to tell which half is wrong. Corrected rather than
+# deleted, because the reasoning it carries is the evidence that the conformance fix cost nothing.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_EDGESERVICE are deliberately UNCHANGED, and
+# EXPECT_EDGECORE moved by exactly +1 — the pin at :750, nothing else. That the CONFORMANCE half of this
+# task moved it by ZERO is the check rather than a coincidence: the other half of this task fixes
+# a conformance check that could not fail on the Modbus TCP and OPC-UA rigs, and it does so exactly as D-6 did
+# for RTU — a `base`-CALLING override that raises ONLY that one check's own target bound, with an assertion
+# that it genuinely strengthened before delegating. No shared-suite change, no test added or removed, four
+# drivers' other checks untouched. Proven by re-running the mutation that removes `cts.Cancel()` from
+# DeviceDriverConformanceSuite.cs so cancellation is never issued at all: it used to kill 2 of the 4 writable
+# rigs and now kills 4 of 4.
+#
+# 🔴 THE REVIEW FIX ROUND raises this 1280 -> 1282 (+2), counted from the runner. ONE file; nothing is
+# rewritten, split or deleted. Both close CRITICALS that are finding 1's own defect class reproduced INSIDE
+# the fix for finding 1's class — which is blueprint §8.1 principle 3 landing on this task exactly as it
+# landed on three people in Đợt D.
+#
+#     + 1  TheEmailSendTest_TellsARelayThatBrokeTheConversation_FromAHostThatNeverAnswered — C-2. The fix's
+#            first shape answered "no relay was reached" for EVERY transport failure. A relay that greets,
+#            reads EHLO and then RSTs is a transport failure in which a conversation demonstrably took place
+#            and the RELAY ended it. MEASURED, and the measurement corrected this test's own first doc
+#            comment: the refused port carries SocketException(ConnectionRefused), while the reset relay
+#            carries a bare IOException with NO SocketException at all — so the pair is separated by the
+#            classifier's no-socket-error FALLBACK, not by its socket-code switch. Mutation found that: the
+#            switch could be mutated with this test still green.
+#     + 1  TheEmailSendTest_TellsAMessageThatNeverLeftThisMachine_FromOneNoRelayAnswered — the Minor beneath
+#            C-2. "Nothing was reached" and "nothing was SENT" are different facts wanting different advice: a
+#            mistyped From address never opens a socket, so "check the host, the port and this machine's
+#            route to it" is advice written for the other producing path. Three situations need three
+#            sentences and a bool carries two, which is why the flag is now an enum.
+#
+# C-1 adds NO test and that is the check rather than an omission: it is closed by an assertion added to the
+# EXISTING pair test (the credentials hint must not ride along on a "no SMTP conversation took place"
+# sentence). One assertion of the same shape was written on the dispatch test and DELETED after mutation
+# proved it could not fail — that path's exception yields no hint code, so it would have read as coverage of
+# the composition defect while being incapable of detecting it.
+EXPECT_ENGINEAPI=1282
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -1283,7 +1373,48 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # environment-dependent count was refused so one number would mean the same thing everywhere; here,
 # an environment-dependent number is asserted. If this bites someone, the fix is a global.json, not
 # a looser check. Recorded rather than left for them to discover.
-EXPECT_WARNINGS=115
+# 🔴 CARRIED FINDINGS (fix/carried-findings, task 1) raises this 115 -> 116 (+1), and the +1 is ONE xUnit1013
+# in St4i.EdgeCore.Tests, on the two `base`-calling Check_Write_Cancellation_… overrides this task adds:
+#   "Public method '…' on test class 'DeviceDriverConformanceSuite' should be marked as a Fact.
+#    Reduce the visibility of the method, or add a Fact attribute to the method."
+# BOTH remedies it offers are impossible, and its premise is false. The method overrides a `public virtual`, so
+# visibility cannot be reduced; marking it [Fact] would run the check TWICE, because the [Fact] wrapper right
+# above it already calls it. Its premise — that a public non-[Fact] method on a test class never runs — is
+# exactly wrong here.
+#
+# D-6's identical RTU override does NOT emit it, and the difference is the whole reason this drifted: that one
+# sits on an ABSTRACT base (ModbusRtuConformanceTestsBase), which the analyzer skips. These two rigs are SEALED
+# concrete classes. Reproducing the abstract-base structure on two more rigs, purely to dodge an analyzer,
+# would split each rig across two types and is a worse trade than one documented warning.
+#
+# 🔴 A THIRD impossible remedy, and it is the one a future author will actually reach for (found by review,
+# not by me): put the [Fact] on the OVERRIDE and delete the wrapper. That is blocked by the census's own
+# convention — EveryCheckIsWiredOrAcknowledged requires a [Fact] on the CONCRETE SUBCLASS named identically
+# MINUS the "Check_" prefix (src/St4i.Connector.Conformance/DeviceDriverConformanceSuite.cs:36-43). A [Fact]
+# named Check_Write_Cancellation_... does not satisfy it, so that rig would fail the census instead.
+#
+# 🔴 IT IS NOT SUPPRESSED, and that was tried first and REPORTED here rather than quietly dropped: the
+# diagnostic is emitted as `CSC :` with NO source location (it names the symbol's original definition, which
+# lives in a referenced assembly), so a #pragma in either rig cannot reach it — measured, the count stayed at
+# 116 with both pragmas in place. The mechanisms that WOULD reach it are assembly-wide (<NoWarn> or a
+# GlobalSuppressions entry), and blinding St4i.EdgeCore.Tests to every future xUnit1013 to hide one known-good
+# instance is a strictly larger loss than +1. A number that is justified still fails on the NEXT drift; a
+# suppressed analyzer does not.
+#
+# 🔴 HOW THIS NUMBER GROWS, MEASURED by the review — and it is better than either of us assumed, which is
+# exactly why it is written down instead of left for the next reader to guess (they would guess "+1 per rig"
+# and be wrong):
+#
+#     tree                                                     warnings   distinct xUnit1013
+#     two rigs override the SAME check (this commit)              102              1
+#     + a third rig overrides a DIFFERENT check                   103              2
+#     + a second rig overrides that same different check          103              2
+#
+# It grows per DISTINCT Check_* METHOD that any sealed rig overrides, NOT per rig — because the diagnostic
+# carries no source location and names the BASE symbol, so every override of one method collapses into one
+# warning. **A new driver rig applying this proven remedy costs 0.** The bad half stands: +1 the first time
+# anyone applies it to a NEW check.
+EXPECT_WARNINGS=116
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
   echo "  A warning count is an expected quantity, not a readout. If this move is intended,"
@@ -1302,8 +1433,46 @@ fi
 # all five suites. Report what the suites are actually running underneath, so the next person
 # reading a machine-wide failure has the number instead of a hypothesis.
 dotnet build-server shutdown >/dev/null 2>&1 || true
+# 🔴 TRAP 7 AGAIN, IN A NEW COSTUME — a checker that cries wolf, found by the first task that ran
+# under it. This counted processes BY NAME (`Get-Process dotnet`), and VS Code's C# Dev Kit language
+# server is also `dotnet.exe`. So the assertion below failed whenever the repository was merely OPEN
+# IN AN EDITOR: a run reported "3 build-server processes" of which TWO were
+# Microsoft.CodeAnalysis.LanguageServer, untouched by `dotnet build-server shutdown` and no business
+# of this gate's.
+#   (Reproducing that needs the language server hosted UNDER `dotnet.exe`. On csdevkit-3.20.199 /
+#   csharp-2.140.9 it ships its own apphost `Microsoft.CodeAnalysis.LanguageServer.exe`, so today
+#   the OLD matcher would also return 0 for Dev Kit -- the review measured that. The .dll ships too
+#   and `vscode-dotnet-runtime` is installed, which is how it lands under `dotnet.exe`. Version
+#   named so the next person re-testing does not conclude this comment is false and reach for the
+#   ceiling instead. What is NOT version-dependent is Dev Kit's build host, measured live:
+#   `Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.dll` passes the name filter and fails the
+#   regex, because it never contains the literal `MSBuild.dll`.)
+# That is trap 7's exact inversion — a healthy positive read as a failure — and it
+# costs the same, because a verification tool that fires on innocent states gets its output ignored,
+# which is precisely how the number this assertion protects went unwatched for eight tasks.
+#
+# So match on what the process IS, not what it is called: an MSBuild worker node, the Roslyn
+# compiler server, or the Razor server. Those three are exactly what `dotnet build-server shutdown`
+# targets -- it names all three in its own output -- which is the only population this check is
+# entitled to have an opinion about.
+#
+# 🔴 AND THE FIRST REWRITE INTRODUCED TWO FALSE NEGATIVES, i.e. it could newly read HEALTHY while
+# the defect was present -- the one direction this whole rewrite exists to avoid. Both found by the
+# review pressing "does the new matcher miss anything", which is the question the fix did not ask
+# itself:
+#   (a) `rzc.dll`, the Razor server, was dropped. Measured: a live one scores False on the old
+#       regex, and `dotnet build-server shutdown` reports "Shutting down Razor build server
+#       (process N)... shut down successfully" and kills it. Unreachable in this repo today (no
+#       .razor/.cshtml anywhere), reachable the day someone adds one -- a check that silently stops
+#       covering a case when the repo grows into it is worse than one that never covered it.
+#   (b) A NULL CommandLine matched nothing, so it FAILED OPEN. Measured non-elevated: 182 of 419
+#       processes report a null command line, because a process owned by another account or an
+#       elevated shell does not surrender it. `Get-Process` still sees them. So an MSBuild node
+#       started elevated was counted by the old name-based matcher and skipped silently by the new
+#       one. Null now counts as a hit: this check may cry wolf on an unreadable process, and must
+#       never wave one through.
 BUILD_NODES=$(powershell -NoProfile -NonInteractive -Command \
-  "(Get-Process dotnet,VBCSCompiler -ErrorAction SilentlyContinue | Measure-Object).Count" \
+  "(Get-CimInstance Win32_Process -Filter \"Name='dotnet.exe' OR Name='VBCSCompiler.exe'\" | Where-Object { \$null -eq \$_.CommandLine -or \$_.CommandLine -match 'MSBuild\.dll|VBCSCompiler|rzc\.dll' } | Measure-Object).Count" \
   2>/dev/null | tr -d '\r' | head -1)
 note "build servers still resident entering the test phase: ${BUILD_NODES:-unknown}"
 

@@ -146,6 +146,16 @@ public sealed class WebhookNotificationChannel : IDisposable
     /// three times" into "try it twice", which is the sort of thing that is true in the code and false in
     /// production.</para>
     ///
+    /// <para>🔴 <b>The consequence of that measured two seconds ONE BRANCH OVER, which this block recorded the
+    /// number for and never asked about.</b> Below roughly a 2 s attempt bound a refused connection can never
+    /// reach the <see cref="HttpRequestException"/> arm at all — the attempt token fires first — so it lands in
+    /// the <see cref="OperationCanceledException"/> arm beside it. That arm used to name the black-holing peer
+    /// as the cause. It no longer does, and the reason it is not fixed by moving a number is written at the arm
+    /// itself: an unroutable/FILTERED destination costs 21 s at the OS connect timeout (measured in this
+    /// repository, on the sibling SMTP channel), which no bound inside this budget can outlast. The fact was
+    /// known, written down here, and its consequence one branch over was never asked — recorded so the next
+    /// number in this block gets the second question too.</para>
+    ///
     /// <para>Anything longer starts to matter for the one bulk case this channel has —
     /// <see cref="AlarmEdgeKind.Restored"/> at startup emits one job per standing alarm — and anything much
     /// shorter would give up on a receiver that is merely slow. Shutdown does not wait for it either way:
@@ -384,11 +394,31 @@ public sealed class WebhookNotificationChannel : IDisposable
             // The same refusal DispatchAsync makes, and for the identical reason: sending unsigned would
             // silently stop this machine proving its identity, and a test that quietly downgraded would
             // report a green result for a configuration that does not do what it says.
+            // 🔴 The cause is NOT narrowed further here, deliberately, and the question was asked rather than
+            // skipped. NotificationConfigStore.GetSecretAsync returns null for THREE situations — no row, a
+            // blob that will not decrypt, and a store read that FAILED (its own catch logs and returns null).
+            // `hasSigningSecret` rules out the first; nothing at this return separates the other two, so this
+            // says BOTH, which is true of both, rather than naming the likelier one and being wrong the rest
+            // of the time. Blueprint §8.1: a sentence true WITHOUT the field beats a branch that cannot be
+            // built, provided the asking is on record — which is what this comment is for.
+            //
+            // 🔴 AND THE COST OF NARROWING IT IS NOT WHAT THIS COMMENT FIRST CLAIMED. It said "a tri-state on
+            // a member four channels call, which is not this fix's to do". Review found a cheaper route that
+            // needs no signature change at all: GetSecretAsync's catch calls
+            // ReportFailure(isRead: true, "read-secret", …), which surfaces as
+            // NotificationConfigStoreHealth.LastFailureOperation/LastFailureUtc — a PROPERTY READ AWAY, on a
+            // store this channel already holds. The remedy below is unchanged and is still the sanctioned
+            // one, and the advice it gives now lands on a readout that genuinely exists; what was wrong was
+            // the estimate. Corrected HERE and not only in the task report, because blueprint §10's own rule
+            // is that a report is not a source record and the next author reads this line, not that one.
             return new NotificationTestOutcome(false,
-                $"The webhook {identity} has a signing secret stored, but it could not be read (the " +
-                "encrypted key is unreadable on this machine). Nothing was sent: posting UNSIGNED would " +
-                "silently stop this machine proving its identity. Re-save the signing secret to repair it, " +
-                "or remove it to send unsigned deliberately.");
+                $"The webhook {identity} has a signing secret stored, but it could not be read — either the " +
+                "encrypted key will not decrypt on this machine (typically a notifications.db copied from " +
+                "another host), or the configuration store could not be read at all; these are not " +
+                "distinguishable from here, so check the configuration-store health beside the channel " +
+                "statistics before assuming the key. Nothing was sent: posting UNSIGNED would silently stop " +
+                "this machine proving its identity. If the store is healthy, re-save the signing secret to " +
+                "repair it, or remove it to send unsigned deliberately.");
         }
 
         string? authToken = null;
@@ -449,11 +479,44 @@ public sealed class WebhookNotificationChannel : IDisposable
             // A genuine shutdown or an aborted request. Never a result about the webhook.
             throw;
         }
+        // 🔴 THE CAUSE IS UNDETERMINED HERE, AND SAYING SO IS THE WHOLE POINT OF THIS ARM.
+        //
+        // What this arm knows is exactly one fact: the attempt hit its own bound. It does NOT know whether a
+        // connection was ever established — not because the connect always failed to report, but because
+        // NOTHING CARRIES THAT REPORT TO THIS CATCH. (An earlier wording said "before the connection attempt
+        // reported an outcome", which is false for the black-holing case below, where the connect SUCCEEDED
+        // and the request was sent — and that case is the one this channel's own pair test drives into this
+        // arm. The shape under repair, in the string doing the repairing.)
+        // THREE different situations arrive here identically:
+        //   * a destination that accepted the connection and then said nothing — the true black hole;
+        //   * a destination whose packets are silently DROPPED (a firewall rule, the commonest cause of an
+        //     unreachable webhook on a plant network). Measured, and by this repository: see
+        //     SmtpNotificationChannel.SendMessageAsync's own doc block — "against an unroutable address a
+        //     token cancelled at 500 ms did not return for 21.0 SECONDS, the OS connect timeout". No attempt
+        //     bound that fits inside DefaultTotalBudget can outlast that, so this case reaches this arm at
+        //     EVERY bound this class can be configured with, INCLUDING the 5 s production default;
+        //   * a destination that is actively REFUSING, when the attempt bound is shorter than the roughly
+        //     two seconds this class's own DefaultTotalBudget remarks measured for a refused connection to
+        //     surface HttpRequestException on Windows.
+        //
+        // 🔴 This message used to assert the first of the three ("nothing is holding the connection open
+        // without responding"), which sent an operator hunting a black-holing peer for a destination that
+        // was refusing or filtered. RAISING THE ATTEMPT TIMEOUT DOES NOT FIX THAT and was rejected as the
+        // remedy: it only shrinks the window for the refusal case and does nothing at all for the dropped
+        // one, i.e. it makes a false statement rarer instead of making it true — the move blueprint §8
+        // forbids in those words. The claim is what was wrong, so the claim is what changed. The shape is
+        // the one two returns above already use ("either deleted in the last instant, or its configuration
+        // store could not be read"): name the causes that cannot be told apart, and give advice correct for
+        // all of them, rather than picking one and being right a third of the time.
         catch (OperationCanceledException)
         {
             return new NotificationTestOutcome(false,
-                $"The webhook {identity} did not answer within {_attemptTimeout.TotalSeconds:0.#}s. Check " +
-                "that the destination is reachable from this machine and that nothing is holding the " +
+                $"The webhook {identity} did not answer within {_attemptTimeout.TotalSeconds:0.#}s, and this " +
+                "test cannot tell you WHY: the attempt was abandoned on its own bound, and this channel " +
+                "cannot see how far it had got. A destination that accepted the connection and then went " +
+                "silent, one whose packets are being dropped by a firewall, and one that is actively " +
+                "REFUSING the connection all arrive here identically. Check that the destination is " +
+                "reachable from this machine, that nothing is filtering it, and that nothing is holding the " +
                 "connection open without responding.");
         }
         catch (HttpRequestException ex)
