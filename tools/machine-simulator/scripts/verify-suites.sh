@@ -1201,8 +1201,16 @@ EXPECT_EDGESERVICE=28
 #                 mistyped one throws FormatException out of Compose before a socket is opened — permanent,
 #                 with no relay involved, and reported as a relay REJECTION until now.
 #
-# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGESERVICE and EXPECT_EDGECORE are deliberately UNCHANGED,
-# and EXPECT_EDGECORE staying 1071 is the check rather than a coincidence: the other half of this task fixes
+# 🔴 THIS PARAGRAPH WAS TRUE WHEN WRITTEN AND STALE ONE COMMIT LATER, in the one file this project treats
+# as the record. It said EXPECT_EDGECORE was "deliberately UNCHANGED ... staying 1071", and the fix round
+# that followed added the harness-default pin above, taking it to 1072. The claim below is still true of
+# the conformance work it describes — no test was added or removed BY THAT WORK — but a reader checking it
+# against the constant finds 1072 and has no way to tell which half is wrong. Corrected rather than
+# deleted, because the reasoning it carries is the evidence that the conformance fix cost nothing.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_EDGESERVICE are deliberately UNCHANGED, and
+# EXPECT_EDGECORE moved by exactly +1 — the pin at :750, nothing else. That the CONFORMANCE half of this
+# task moved it by ZERO is the check rather than a coincidence: the other half of this task fixes
 # a conformance check that could not fail on the Modbus TCP and OPC-UA rigs, and it does so exactly as D-6 did
 # for RTU — a `base`-CALLING override that raises ONLY that one check's own target bound, with an assertion
 # that it genuinely strengthened before delegating. No shared-suite change, no test added or removed, four
