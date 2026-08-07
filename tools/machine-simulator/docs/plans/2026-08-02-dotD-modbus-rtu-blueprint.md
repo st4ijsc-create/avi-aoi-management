@@ -146,6 +146,15 @@ D-1: *phân tích khả-năng-với-tới là một câu hỏi về tính hợp 
 **Đột biến và truy-hệ-quả là hai dụng cụ khác nhau.**
 Đột biến tìm ra **những bài test không thể đỏ**. Truy-hệ-quả tìm ra **đoạn mã không bao giờ bị hỏi tới**. Không đột biến nào với tới được một nhánh mà không gì chạy qua — reviewer D-1 tìm ra I-A **bằng cách đọc**, và nói thẳng như vậy.
 
+🔴 **Hệ quả, thêm sau đợt đóng các phát hiện mang sang: nói rõ dụng cụ nào tạo ra TỪNG KHẲNG ĐỊNH, không phải từng phát hiện.**
+Sự tồn tại của một lỗi và **cơ chế của bản sửa được đề xuất** là hai khẳng định khác nhau, và thường do hai dụng cụ khác nhau tạo ra — đó chính là cách ca này lọt qua.
+
+Reviewer **đo** được lỗi: nó dựng một relay chào rồi RST, đọc ra câu văn sai. Rồi nó **đọc** cơ chế khắc phục khỏi bề mặt API — *"`SocketErrorCode` phân tách hai trường hợp, cách đó đúng một property, ngay bên trong `Classify`"* — và **trình bày cả hai bằng một giọng**. Cụm "reviewer đã kiểm" mang thẩm quyền của phép đo sang cho lần soi.
+
+Cơ chế ấy **sai**. Trên runtime này, greet-then-RST cho ra `SmtpException(GeneralFailure) → IOException` **không có `SocketException` nào trong cả chuỗi**; hai trường hợp được phân tách bởi nhánh dự phòng không-có-mã-socket, không phải bởi cái switch được ghi công. Nó lọt vào **phán quyết của reviewer, phần hiện thực của implementer, và cả lần reviewer tự kiểm chứng lại** — ba bên, hai vòng đọc kỹ. Thứ giết nó là **một đột biến mất hai phút**.
+
+→ ***"Chỉ cách một property"* là phát biểu về SỰ CÓ SẴN, và không nói gì về KHẢ NĂNG VỚI TỚI — mà bản sửa phụ thuộc vào cái thứ hai.** Phép soi tốn gần như không gì, sống sót qua ba người đọc cẩn thận, và **tới được hai artifact trước khi có bất cứ thứ gì bắt nó tự chứng minh**. Đó là lý do quy tắc này gắn vào từng khẳng định chịu lực, không gắn vào cả phát hiện.
+
 **Sửa một trường hợp của một lớp lỗi không cho miễn nhiễm với lớp lỗi đó, và có thể còn làm yếu đi.**
 D-2 tái tạo đúng lỗi I-5 **trong chính commit sửa I-5**, cách mười hai file. D-2 cũng tìm đúng cơ chế rò cổng rồi **khẳng định phạm vi thay vì đi grep**, và hai chỗ bỏ sót **tệ hơn** chỗ đã sửa. → **Biện pháp đối kháng là một đợt quét, không phải sự cẩn thận. Mọi bản sửa kèm một lệnh grep tìm anh em của nó.**
 
