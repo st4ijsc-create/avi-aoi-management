@@ -568,6 +568,16 @@ public sealed class FleetHostMachineDriverResolutionTests
             Assert.Equal(WriteOutcome.Indeterminate, result!.Outcome);
             Assert.Null(result.RejectionReason);
             Assert.NotNull(result.Detail);
+
+            // 🔴 Task E-2 (blueprint §9.5, §9.6(d)) — THE REDACTION WITNESS, and it is red under exactly one
+            // mutation: replacing `ex.GetType().Name` with `ex.Message` in FleetCore.TryWriteSetpointAsync.
+            // E-1 §4.5 established that mutation survives the whole 2555-test gate, so this property — "a
+            // driver's raw exception text never reaches an operator-visible response body" — was carried
+            // across the E-2 cut with no witness at all. `Detail` must name the exception's TYPE and must not
+            // echo one character of its MESSAGE.
+            Assert.Contains(nameof(ObjectDisposedException), result.Detail!, StringComparison.Ordinal);
+            Assert.DoesNotContain("hunter2", result.Detail!, StringComparison.Ordinal);
+            Assert.DoesNotContain(FakeWritableDriver.SecretBearingFaultMessage, result.Detail!, StringComparison.Ordinal);
         }
         finally
         {
@@ -726,6 +736,14 @@ public sealed class FleetHostMachineDriverResolutionTests
             Assert.Equal(WriteOutcome.Indeterminate, result!.Outcome);
             Assert.Null(result.RejectionReason);
             Assert.NotNull(result.Detail);
+
+            // 🔴 Task E-2 — the command-path half of the redaction witness. Deliberately a SECOND assertion
+            // rather than a shared helper: FleetCore keeps these two methods genuinely separate (B-1's
+            // decision that setpoint and command are never conflated), and a single witness would have left
+            // whichever path it did not cover exactly as unproved as both were before E-2.
+            Assert.Contains(nameof(ObjectDisposedException), result.Detail!, StringComparison.Ordinal);
+            Assert.DoesNotContain("hunter2", result.Detail!, StringComparison.Ordinal);
+            Assert.DoesNotContain(FakeWritableDriver.SecretBearingFaultMessage, result.Detail!, StringComparison.Ordinal);
         }
         finally
         {
@@ -794,6 +812,20 @@ public sealed class FleetHostMachineDriverResolutionTests
         /// whichever operation a given test exercises.</summary>
         public bool ThrowIfDisposedWhenReleased { get; init; }
 
+        /// <summary>🔴 Task E-2 (blueprint §9.5/§9.6(d)) — the message this driver throws when it observes a
+        /// concurrent teardown, deliberately shaped like a leaked credential.
+        ///
+        /// <para><c>FleetCore.TryWriteSetpointAsync</c>/<c>TryInvokeCommandAsync</c> emit
+        /// <c>ex.GetType().Name</c> and NEVER <c>ex.Message</c> into the operator-visible <c>Detail</c>,
+        /// because an arbitrary driver exception is not a channel FleetCore controls the contents of — a
+        /// map/connector config can carry credentials. E-1 §4.5 found that property had NO test: changing both
+        /// sites to <c>ex.Message</c> left the entire 2555-test gate green. Two assertions in the two tests
+        /// below now witness it, and this string is what makes a failure legible rather than a diff of two
+        /// sentences — if it ever appears in an HTTP response body, the assertion message says why that
+        /// matters.</para></summary>
+        internal const string SecretBearingFaultMessage =
+            "connect failed: Server=plc-01;Password=hunter2-DO-NOT-LEAK (test double)";
+
         public bool WriteStarted => _writeStarted.Task.IsCompleted;
 
         public bool CommandStarted => _commandStarted.Task.IsCompleted;
@@ -858,7 +890,7 @@ public sealed class FleetHostMachineDriverResolutionTests
             if (_disposed)
             {
                 return ThrowIfDisposedWhenReleased
-                    ? throw new ObjectDisposedException(nameof(FakeWritableDriver), "simulated concurrent teardown (test double)")
+                    ? throw new ObjectDisposedException(nameof(FakeWritableDriver), SecretBearingFaultMessage)
                     : new SetpointWriteResult(request.Point, WriteOutcome.Indeterminate, Detail: "observed concurrent dispose (test double, contract-compliant)");
             }
 
@@ -879,7 +911,7 @@ public sealed class FleetHostMachineDriverResolutionTests
             if (_disposed)
             {
                 return ThrowIfDisposedWhenReleased
-                    ? throw new ObjectDisposedException(nameof(FakeWritableDriver), "simulated concurrent teardown (test double)")
+                    ? throw new ObjectDisposedException(nameof(FakeWritableDriver), SecretBearingFaultMessage)
                     : new CommandResult(request.Command, WriteOutcome.Indeterminate, Detail: "observed concurrent dispose (test double, contract-compliant)");
             }
 

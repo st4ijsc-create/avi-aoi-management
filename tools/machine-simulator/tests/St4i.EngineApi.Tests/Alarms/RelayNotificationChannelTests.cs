@@ -233,7 +233,31 @@ public sealed class RelayNotificationChannelTests : IDisposable
 
         // ── HALT engaged ────────────────────────────────────────────────────────────────────────────────
         host.Estop();
-        Assert.True(host.GetSafetyStatus().EstopEngaged);
+        var haltedSafety = host.GetSafetyStatus();
+        Assert.True(haltedSafety.EstopEngaged);
+
+        // 🔴 Task E-2 (blueprint §9.3b) — THE WITNESS FOR SafetySnapshot.IsRunning, and it is here rather
+        // than in a file of its own because this is already the batch's headline safety test: the same
+        // channel, the same driver, the same alarm, exercised once with the latch engaged and once with it
+        // clear. Adding the missing field to that existing before/after pair is strictly stronger than a
+        // standalone assertion would be.
+        //
+        // WHAT IT KILLS, and why it did not exist. §9.3b ran two mutations against the pre-E-2 tree.
+        // Splitting GetSafetyStatus's single lock acquisition into two reads SURVIVED 1282/1282 — and so did
+        // replacing IsRunning in the snapshot with a HARDCODED `true`, which is not a torn read at all but
+        // total breakage. That second result is the finding: the field had no witness of any kind, so E-2
+        // would have carried a completely dead value across the cut with the gate still green. Estop() tears
+        // every pipeline down before it latches, so IsRunning is genuinely false here — a hardcoded `true`
+        // fails this line, and a hardcoded `false` fails its twin after the restart below.
+        //
+        // 🔴 WHAT IT DOES *NOT* GUARD, stated because §9.3's original mechanism was wrong and the correction
+        // matters more than the fix: this is NOT a witness for the cut. EstopGuardRule.cs:47 reads
+        // request.Safety.EstopEngaged and nothing else, so IsRunning has no consumer on the safety path at
+        // all — its only reader is GET /v1/safety (SafetyEndpoints.cs:34), a SCREEN. GetSafetyStatus still
+        // moves with _gate as one piece, on the corrected grounds: a paired read split across two lock
+        // acquisitions is a latent hazard from the moment anyone reads both fields, which SafetyEndpoints
+        // already does.
+        Assert.False(haltedSafety.IsRunning);
 
         await channel.DispatchAsync(Job(AlarmEdgeKind.Raised, "alarm-a"));
 
@@ -262,6 +286,11 @@ public sealed class RelayNotificationChannelTests : IDisposable
         host.ResetEstop();
         Assert.False(host.GetSafetyStatus().EstopEngaged);
         await RestartWritableAsync(host);   // Estop tore the pipelines down — see that helper.
+
+        // The other half of the IsRunning witness — see the block above. A snapshot that hardcodes EITHER
+        // literal now fails one of these two lines, so the field is pinned in both directions rather than
+        // merely observed once.
+        Assert.True(host.GetSafetyStatus().IsRunning);
 
         await channel.DispatchAsync(Job(AlarmEdgeKind.Raised, "alarm-b"));
 

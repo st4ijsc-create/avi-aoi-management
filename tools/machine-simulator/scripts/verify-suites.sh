@@ -1242,7 +1242,43 @@ EXPECT_EDGESERVICE=28
 # sentence). One assertion of the same shape was written on the dispatch test and DELETED after mutation
 # proved it could not fail — that path's exception yields no hint code, so it would have read as coverage of
 # the composition defect while being incapable of detecting it.
-EXPECT_ENGINEAPI=1282
+# 🔴 Task E-2 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md) raises this 1282 -> 1283, and
+# the SIZE of that delta is the point of the number rather than an inconvenience to it.
+#
+# E-2 extracted the N-driver lifecycle core out of St4i.EngineApi.Fleet.FleetHost into
+# St4i.EdgeCore.Fleet.FleetCore — ~2 400 lines relocated, ConnectorRegistry/MachineState/SafetySnapshot
+# moved with it, MachineState.cs and Dtos.cs split, 14 ILogger call sites re-expressed as EdgeCore callbacks,
+# and FleetHost rewritten as a shell. Its brief made the gate the CHECK on that: "this is a move, not an
+# addition — if a number moves, stop and report the reason before changing it."
+#
+#     THE MOVE ITSELF MOVED NOTHING. It was committed and run first, on its own, at exactly
+#     151/22/1072/28/1282 = 2555, 0 errors, 116 warnings, 0 build nodes. That run is the evidence, and it is
+#     why this constant could be left alone through the entire relocation.
+#
+# The +1 is the one test the SAME brief separately required, and it is irreducible to zero:
+#
+#     + 1  Safety/EstopLatchVisibilityRaceTests.Estop_RacedAgainstAContinuousWriteLoop_… — blueprint §9.3b's
+#            racing test. Nothing in 2555 tests had ever raced Estop() against anything; every latch test was
+#            sequential, so a latch write moved off FleetCore._gate was invisible. It guards a REAL,
+#            PRE-EXISTING, previously-untested safety property (every guard evaluation beginning after
+#            Estop() returns denies) and it says in its own header that it does NOT guard the cut — §9.3b
+#            proved with two mutations that no racing test can, because EstopGuardRule reads EstopEngaged
+#            alone. A new behaviour under test is a new [Fact]; folding it into an existing test to protect
+#            this constant would have been the constant lying.
+#
+# The brief's other two mandated witnesses cost ZERO, deliberately, and that is not an accounting trick —
+# §9.3b's own words are "any test that kills the hardcoded `true` is enough":
+#
+#     + 0  SafetySnapshot.IsRunning now has a witness: two assertions inside the EXISTING
+#            RelayNotificationChannelTests.HaltLatched_TheBeaconDoesNotLight_… — already the batch's headline
+#            safety test, with a latched/cleared pair to hang them on. §9.3b measured that a hardcoded `true`
+#            in that field survived all 1282; it now fails.
+#     + 0  The redaction property (FleetCore's write path emits ex.GetType().Name and NEVER ex.Message) now
+#            has a witness: assertions inside the two EXISTING disposal-race tests in
+#            FleetHostMachineDriverResolutionTests, plus a secret-shaped message on the test double so a leak
+#            is legible. E-1 §4.5 measured that the ex.Message mutation left all 2555 green; it now fails on
+#            both the setpoint and the command path.
+EXPECT_ENGINEAPI=1283
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
