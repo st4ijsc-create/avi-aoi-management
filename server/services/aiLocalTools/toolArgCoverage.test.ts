@@ -171,6 +171,44 @@ describe("★★★ F2 — luật: MỌI tool chọn được theo trigger phả
     }
   });
 
+  it("★★★ I-1b — KHOÁ **GIÁ TRỊ** của `code`: `safeParse` xanh KHÔNG có nghĩa là mã ĐÚNG", () => {
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ⚠⚠⚠ CA NÀY SINH RA TỪ MỘT ĐỘT BIẾN **KHÔNG BỊ BẮT** (N4), VÀ ĐÓ LÀ BÀI HỌC CỦA NÓ.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Luật I-1 hỏi *"đường lấy tham số có sinh ra object THOẢ schema không"*. Nhưng
+     * `code: z.string().min(1)` **thoả** với **bất kỳ** chuỗi không rỗng — kể cả một đoạn mã **đã
+     * bị cắt mất dòng đầu**. Đột biến trả `CODE_FENCE_LABELED` về dạng xuống-dòng-tuỳ-chọn (đúng
+     * con bug thật đã có trong bản đầu của Task 3) ⇒ ```` ```G01 X1 Y2``` ```` giao cho bộ biên
+     * dịch `X1 Y2` — **mất lệnh `G01`** — và **26/26 ca vẫn XANH**.
+     * ⇒ *"`safeParse` xanh"* là một khẳng định về **hình dạng**, không phải về **nội dung**. Ô nào
+     *   chở **mã nguồn của người dùng** thì phải có một ca khoá **giá trị**.
+     *
+     * ⚠ Đối tượng suy ra từ **schema** (`kind` + `code` cùng bắt buộc), không liệt kê tên tool.
+     */
+    const KIND_CODE = NHOM.filter((t) => {
+      const o = oBatBuoc(t);
+      return o.includes("kind") && o.includes("code");
+    });
+    expect(KIND_CODE.length, "không tool nào nhận `kind`+`code` — bộ lọc theo schema đã hỏng?").toBeGreaterThanOrEqual(3);
+
+    for (const t of KIND_CODE) {
+      // (a) khối VIẾT LIỀN — KHÔNG có nhãn ⇒ **toàn bộ thân là mã**, không mất chữ nào.
+      const lien = extractArgsForTool(t.name, "kiểm tra cú pháp gcode này: ```G01 X10 Y20 F100```");
+      expect(lien.code, `${t.name}: khối viết liền bị CỤT — nhãn nuốt mất dòng lệnh đầu`).toBe("G01 X10 Y20 F100");
+      expect(lien.kind, `${t.name}: kind lấy từ câu chữ`).toBe("gcode");
+
+      // (b) khối CÓ NHÃN trên dòng riêng ⇒ nhãn ra `kind`, thân ra `code` (không dính nhãn).
+      const conhan = extractArgsForTool(t.name, "kiểm tra chương trình này:\n```gcode\nG01 X10\nG02 Y20\n```");
+      expect(conhan.code, `${t.name}: khối có nhãn phải giữ NGUYÊN thân`).toBe("G01 X10\nG02 Y20");
+      expect(conhan.kind).toBe("gcode");
+
+      // (c) nhãn KHÔNG phải ngôn ngữ (một từ của mã) vẫn không được nuốt mất dòng đầu.
+      const stLien = extractArgsForTool(t.name, "biên dịch chương trình st sau: ```VAR x : BOOL; END_VAR```");
+      expect(stLien.code, `${t.name}: 'VAR' là MÃ, không phải nhãn ngôn ngữ`).toBe("VAR x : BOOL; END_VAR");
+    }
+  });
+
   it("★★ KHÔNG nhãn `case` nào trỏ tới một tool KHÔNG TỒN TẠI (nhánh chết = một lượt đổi tên bị bỏ quên)", () => {
     /**
      * ⚠ Ca này hỏi **NGUỒN THỨ HAI**: nhãn `case` đọc thẳng từ mã nguồn, đối chiếu với (a) sổ đăng
