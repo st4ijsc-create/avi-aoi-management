@@ -104,8 +104,10 @@ thay đổi thì bằng chứng cũ nói về một cây khác.
   đọc đường hạnh phúc. `SetpointWriteRequest`/`CommandRequest` **không mang mã máy**.
 - **`EstopGuardRule` phủ mọi hành động ghi và lệnh.** **HALT không bao giờ là đường an toàn** —
   ISO 13849 Cat 3/4: E-stop thật là nối cứng, phần mềm không bao giờ là đường an toàn.
-- **Không gì được dispose hay I/O trong lúc giữ `FleetHost._gate`.** Cả 20 khối `lock` đã được quét
-  một lần; sau khi tách phải quét lại **ở cả hai bên đường cắt**.
+- **Không gì được dispose hay I/O trong lúc giữ `FleetHost._gate`.** Cả **21** khối `lock` (không phải 20 —
+  review E-1 đếm lại và con số 21 đã đúng từ commit merge Đợt D) đã được quét một lần; sau khi tách phải
+  kiểm lại **ở cả hai bên đường cắt**, **bằng một cuộc đi bộ theo khả năng với tới, không bằng phép quét
+  từ vựng** — chính phép quét từ vựng đã báo cáo bất biến này còn nguyên trong khi nó đã hỏng ba đường.
   🔴 **E-1: bất biến này ĐÃ BỊ VI PHẠM trên cây hiện tại, ba đường, và số khối là 21 chứ không phải 20.**
   Bằng chứng cũ mô tả *thân* các khối `lock`; cả ba vi phạm nằm cách đó một tới ba lời gọi. Xem §9.2 —
   và đừng dùng lại phép quét từ vựng để chứng minh lại nó.
@@ -177,11 +179,32 @@ config connector nữa (`ConnectorsConfig` 274, `ConnectorsJsonRegistration` 286
    repo ghim (Microsoft.Data.Sqlite 10.0.10): `SqliteConnection.OpenAsync`/`SqliteCommand.ExecuteNonQueryAsync`
    đều là shim đồng bộ của lớp cơ sở, `IsCompleted == true` ngay, và một `open + insert` viết y hệt
    `UpsertAsync` chạy trọn vẹn trên thread gọi. Tức là **cả một giao dịch SQLite chạy trong lúc giữ `_gate`**.
-   Không test nào bắt được: `_assetRegistry` mặc định `null` và **mọi** test dựng `FleetHost` đều để nó null.
+   Không test nào bắt được.
+   🔴 **Đính chính (review E-1): câu bằng chứng ở trên SAI, kết luận thì đúng.** *Hai* test **có** truyền
+   `IAssetRegistry` — `FleetHostModbusRosterTests.cs:165` và `FleetHostOpcUaRosterTests.cs:164`, qua một
+   `FakeAssetRegistry`. Phát biểu đúng là: **không test nào truyền một `AssetRegistryStore` THẬT.** Cái fake
+   là một `ConcurrentDictionary` đồng bộ trả `Task.CompletedTask`; nó không chạm SQLite và không phân biệt
+   nổi đồng bộ với bất đồng bộ — tài liệu của chính nó nói vậy. Một khoảng trống được khẳng định mà chưa
+   kiếm được, đúng lớp lỗi mục này đang mô tả.
+   🔴 **Và có chỗ thứ TƯ mà E-1 bỏ sót:** `FleetHost.cs:455`, trong vòng gieo roster của hàm dựng. **Không**
+   phải vi phạm `_gate` (hàm dựng không lấy khoá) — nhưng là N giao dịch SQLite đồng bộ **bên trong hàm dựng
+   của một DI singleton**, cùng cơ chế, cùng phép đo.
+
+**Đo được, không phải suy ra** (reviewer chạy trên `AssetRegistryStore` **thật**, không phải trên một kiểu
+cùng hình dạng): `MappingProfileResolver.Build` giữ `_gate` **2,39 ms** với 50 máy có mapping file trên SSD
+cục bộ; `RegisterMachine` ×100 tốn **0,1 ms** khi registry null và **7,1 ms** khi có store thật; và một
+thread chỉ đọc `host.EstopEngaged` — **cùng cái khoá `Estop()` lấy** — bị chặn tới **12,35 ms**, tức ~300×.
 
 **Cả ba đều có TRƯỚC Đợt E.** Khuyến nghị: xếp thành một hạng mục riêng, **không** gộp vào E-2 — gộp vào sẽ
 làm hợp đồng "hành vi không đổi, gate là phép kiểm" của E-2 thành không đúng, và đó đúng là hình dạng
 "bản sửa và phép quét cảm giác như một hành động nhưng là hai" của Đợt D §8.1.
+
+🔴 **Hai điều kiện review đặt lên E-2, không hoãn được:**
+1. **E-2 không được làm nó tệ hơn.** Hạng mục nghiệm thu: đường cắt **không được tăng** số thao tác I/O hoặc
+   `Dispose` với tới được khi đang giữ `_gate`.
+2. **Phép kiểm lại phải là một cuộc đi bộ theo khả năng với tới, ba chặng, ở CẢ HAI bên đường cắt — không
+   bao giờ là một phép quét từ vựng thân khối `lock`.** Một phép quét từ vựng đã cho ra câu trả lời sai
+   đúng một lần rồi: nó là thứ đã báo cáo bất biến này còn nguyên.
 
 ### 9.3 Đường cắt tạo ra một thứ tự khoá mới, và nó nằm trên đường an toàn
 `_gate` là `Monitor` (tái nhập). `IsRunning` — bản thân nó là một getter `lock (_gate)` — được gọi **bên
@@ -192,10 +215,48 @@ trong** tám vùng đang giữ `_gate` (`:549`, `:919`, `:921`, `:965`, `:967`, 
 HALT đang gài. Tách thành **hai** lần đọc thì cặp ấy hết nguyên tử: `_estopEngaged` lấy trước một `Estop()`
 đồng thời, `IsRunning` lấy sau — latch báo *đã nhả* đúng khoảnh khắc nó vừa gài, và lệnh ghi lọt qua.
 → **`GetSafetyStatus` phải đi CÙNG `_gate`, và `SafetySnapshot` phải đi cùng nó.**
-→ Và đây là điều phải làm **trước** khi dời: hôm nay đột biến "tách thành hai lần đọc" **SỐNG SÓT** cả 2555
-test. Bất biến quan trọng nhất của §5 hiện **không có phép kiểm nào**. E-2 phải viết bài test đua
-(`Estop()` một thread, vòng lặp ghi thread kia, khẳng định **không** lệnh ghi nào đáp sau khi latch gài),
-xác nhận nó giết được đột biến ấy, rồi mới dời.
+
+### 🔴 9.3b Đính chính §9.3 (review E-1) — kết luận ĐÚNG, cơ chế SAI, và cơ chế mới là thứ E-2 đọc
+
+Đoạn trên đúng ở kết luận và **sai ở lý do**. Reviewer dựng phản ví dụ **trên một trục khác** thay vì suy lại:
+
+| Đột biến | Kết quả |
+|---|---|
+| tách một lần khoá thành **hai lần đọc** | **SỐNG SÓT** 1282/1282 |
+| thay `IsRunning` trong snapshot bằng **`true` cứng** (hỏng hoàn toàn, không phải đọc rách) | **SỐNG SÓT** 1282/1282 |
+
+Phép liệt kê giải thích vì sao. Toàn bộ nơi đọc bất kỳ thành viên nào của `SafetySnapshot` trong `src/`:
+- `Policy/Rules/EstopGuardRule.cs:47` — **chỉ** `request.Safety.EstopEngaged`.
+- `Safety/SafetyEndpoints.cs:34` — cả hai trường, nhưng để **chiếu ra `GET /v1/safety`**, tức hiển thị.
+
+**`SafetySnapshot.IsRunning` không có người tiêu thụ nào trên đường an toàn**, và `EstopGuardRule` là rule
+duy nhất đọc `Safety`. Nên tách lần lấy khoá **không** làm `_estopEngaged` cũ đi — nó chỉ làm `IsRunning`
+đến từ một khoảnh khắc muộn hơn. Câu *"latch báo đã nhả đúng lúc nó vừa gài và lệnh ghi lọt qua"* mô tả một
+**TOCTOU giữa lúc `GetSafetyStatus()` trả về và lúc lệnh ghi đáp** — thứ **đã tồn tại hôm nay**, với một lần
+lấy khoá, không đổi. Vết rách duy nhất quan sát được là `(true, true)` thoáng qua, một trạng thái không bao
+giờ thực sự tồn tại, và nó làm sai một **màn hình**, không làm lọt một lệnh ghi.
+
+**Giá phải trả nếu không đính chính:** §9.3 bảo E-2 *"viết bài test đua, xác nhận nó giết được đột biến ấy,
+rồi mới dời"*. **Không làm được.** Bài test đua không thể giết đột biến hai-lần-đọc, vì đột biến ấy không
+đổi thứ mà guard nhìn thấy. E-2 làm theo đúng chữ sẽ viết một bài test đúng và có giá trị, thấy nó xanh dưới
+đột biến, rồi phải đoán xem test rỗng hay đột biến vô hại.
+
+**Cái sống sót thì mạnh hơn cái đổ.** *"Bất biến quan trọng nhất của §5 không có phép kiểm nào"* là **đúng, và
+đột biến thứ hai làm nó mạnh hơn E-1 tuyên bố**: `SafetySnapshot.IsRunning` không phải "chưa được kiểm tính
+nguyên tử" — nó **hoàn toàn không có nhân chứng nào**. Bài test đua E-1 đề xuất vẫn là bài test đúng cho
+**TOCTOU** — một tính chất an toàn có thật, có sẵn, chưa được kiểm. Nó chỉ không phải bài test canh đường cắt.
+
+→ **E-2 vẫn dời `GetSafetyStatus` + `SafetySnapshot` cùng `_gate`** — nhưng trên lý do đúng: *một phép đọc
+cặp qua hai lần lấy khoá là mối nguy tiềm ẩn kể từ khoảnh khắc có bất kỳ ai đọc cả hai trường*, chứ không
+phải vì hôm nay có lệnh ghi lọt qua.
+
+→ **Và hai bài test phải viết, không phải một:** (a) một nhân chứng cho `SafetySnapshot.IsRunning` — bất cứ
+thứ gì giết được `true` cứng; (b) bài test đua cho TOCTOU, ghi rõ nó canh cái gì và **không** canh đường cắt.
+
+**Hình dạng của cái sai này đáng giữ hơn bản thân nó.** E-1 phát biểu §9.3 *bằng giọng của một phép liệt kê*,
+nhưng nó được sinh ra từ việc **soi hình dạng một phương thức mà không liệt kê những người tiêu thụ bản ghi
+phương thức ấy trả về** — đúng quy tắc *"bắt đầu từ tập các thành viên, không phải từ một tên kiểu"* mà chính
+E-1 áp dụng xuất sắc ở §3.3 và §6.1, nhưng không áp lên chính mình. Hai đột biến và năm phút grep lật được nó.
 
 ### 9.4 Hai thứ hỏng lúc chạy mà không hỏng lúc biên dịch — loại đáng sợ
 1. **`AppContext.BaseDirectory` lặng lẽ trỏ chỗ khác.** `ResolveFleetPath:2389` tìm `fleet.json` cạnh exe;
@@ -219,13 +280,52 @@ xác nhận nó giết được đột biến ấy, rồi mới dời.
   **đã tham chiếu sẵn** — không cạnh tham chiếu mới, không rủi ro restore. §4 đã ngụ ý đích đến này mà
   chưa bao giờ phát biểu nó thành quyết định; **E-2 nên phát biểu.**
 - **`St4i.EdgeCore` không có một tham chiếu `ILogger` nào** (quy ước của nó là `Action<string>? logWarning` /
-  `Action<Exception,string>? logError`). Nên tám lời gọi `_logger?.` của lõi phải đổi sang callback — **đúng
-  hình dạng cú pháp của lỗi Critical D-7a**, và hai trong tám nằm ngay cạnh trạng thái cơ chế
+  `Action<Exception,string>? logError`). Nên các lời gọi `_logger?.` của lõi phải đổi sang callback — **đúng
+  hình dạng cú pháp của lỗi Critical D-7a**, và hai trong số đó nằm ngay cạnh trạng thái cơ chế
   (`_connectorStartIssues` ở `:1504`/`:1516`, `LastError` ở `:1600`/`:1619`). Sau khi port, chạy đột biến:
   đưa lệnh gán vào **trong đối số** của lời gọi log rồi dựng lõi **không** kèm callback —
   `FleetHostConnectorVisibilityTests` phải ĐỎ.
+  🔴 **Đính chính (review E-1): là MƯỜI BỐN chỗ, không phải tám** — `FleetHost.cs:799, 835, 1371, 1372, 1504,
+  1573, 1600, 1697, 1751, 1763, 2347, 2352, 2365, 2369` — và theo đúng danh sách cắt của chính E-1, **cả mười
+  bốn** nằm trong các thành viên đi cùng lõi. Con số tám hụt **75%** bề mặt mà hình dạng `?.` đoản mạch của
+  D-7a có thể tái diễn. Đếm sai một bề mặt rủi ro theo hướng thấp hơn là cách một phép quét trở thành nghi lễ.
+  (Chữ nghĩa: EdgeCore có 8 chỗ nhắc `ILogger` **trong chú thích**, và `Microsoft.Extensions.Logging` có mặt
+  bắc cầu qua `OPCFoundation…Opc.Ua.Client`. Ý thì đúng: không `using`, không dùng kiểu, không
+  `PackageReference` trực tiếp.)
 - **Hai chỗ khử bí mật của `FleetHost` không có test nào.** `TryWriteSetpointAsync:803` và
   `TryInvokeCommandAsync:839` cố ý phát `ex.GetType().Name` chứ không bao giờ `ex.Message`; đổi thành
   `ex.Message` thì **toàn bộ 2555 test vẫn xanh** (grep `"did not complete cleanly"` trong `tests/`: rỗng).
 - **Bảng §1**: `ConnectorsJsonRegistration` là **286** dòng (không phải 302), `ModbusMultidropRegistration`
   là **344** (không phải 318). Năm số còn lại đúng.
+
+### 🔴 9.6 Review E-1 — bốn đính chính nữa, và ba trong số đó nói rằng "cái lá" không phải lá
+
+**a) Ba trong sáu chỗ níu KHÔNG phải nút lá, và §9.1 không nói điều đó.** `ConfigSyncCoordinator` kéo theo
+`SwitchableConfigSyncBackend`/`SimulatedEcosystem`/`LiveConfigSyncBackend`/`IConfigSyncBackend`;
+`IAssetRegistry` kéo `AssetRecord`/`AssetLifecycleState`; và nặng nhất: **`MachineState.cs` với `Dtos.cs`
+móc vào nhau HAI CHIỀU** — `MachineState` trả `FleetTileDto`/`MachineDetailDto`, còn `Dtos.cs` tiêu thụ
+`CycleLogEntry`/`TelemetrySeriesDto`/`SpcSummaryDto`/`BoardPointDto` **khai báo bên trong `MachineState.cs`**.
+Thêm nữa **`Dtos.cs` không tự chứa**: `:252,253,256,280,281` tham chiếu bốn kiểu trong `ConnectorConfigStore.cs`
+(1 064 dòng).
+→ **Quyết định "để DTO ở lại" của §4 chỉ đứng vững nếu `Dtos.cs` được TÁCH ĐÔI, không phải để nguyên.**
+Đó là công việc E-2 phải tính, không phải phát hiện lúc đang cắt.
+
+**b) `ConnectorRegistry` được lõi đọc ở BỐN chỗ, không phải hai** — thêm `StartLocked:1337`
+(`SnapshotBindings`, bộ lọc loại trừ sim) và `ResolveSlotLabelFor:1128` (`RegisteredIds`). Câu *"một lõi
+không thấy nó không phải lõi vòng đời"* nếu có gì thì là **nói nhẹ đi**.
+
+**c) Ba dòng điều tra sai, và hai trong số đó nói ngược lại chính chú thích của E-1.**
+`CurrentProductFor:2204` **có** caller sản xuất — truyền dạng method group tại `StartLocked:1340`.
+`ResolveFleet:2343` được gọi từ `LoadFleet:2316` **mỗi lần khởi động**. `DefaultLanguage:156` **không chết** —
+nó được dùng ngay trong `FleetHost` tại `:401`. Chỉ `GetMachineDriverAvailability` và `SetCurrentProduct` là
+thật sự không có caller sản xuất.
+→ Và về `GetMachineDriverAvailability`, sự thật sắc hơn: sản xuất **có** dùng enum `MachineDriverAvailability`
+(`MachineWriteEndpoints.cs:223,293`, `RelayNotificationChannel.cs:881,891`) — nhưng qua
+`TryWriteSetpointAsync`/`TryInvokeCommandAsync`, vốn đọc hàm **private** `ResolveWritableDriver:633`. Enum và
+hàm private chịu lực; **cái wrapper public là một quyết định, không phải một điều kiện cho sẵn.**
+
+**d) Hạng mục nghiệm thu bắt buộc, trước khi dời hai thành viên ghi:** viết khẳng định khử bí mật ở §9.5
+**trước** khi `TryWriteSetpointAsync`/`TryInvokeCommandAsync` rời chỗ. Đột biến ấy **đỏ hôm nay** và bản sửa
+rẻ; dời một thành viên không có nhân chứng là cách một tính chất biến mất mà không ai thấy.
+
+**e) Số dòng hạ tầng config connector là 2 723, không phải ~2 900.** Sáu con số thành phần đều đúng.
