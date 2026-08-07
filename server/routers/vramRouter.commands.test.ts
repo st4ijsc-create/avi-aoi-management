@@ -653,8 +653,11 @@ describe("★★★ I-2 — bề rộng ô DANH TÍNH: lệnh nhận đúng bằ
     // ⚠ Đối chứng bên SỔ: đúng chuỗi ấy đi qua `rowFromLease()` mà **KHÔNG bị cắt** ⇒ nó là một
     //   danh tính mà mặt đọc THẬT SỰ có thể phát ra, không phải một chuỗi bịa cho vừa ca test.
     const lease = xinThat({ owner, bytes: 8 * MIB });
-    const hang = rowFromLease(lease, 8 * MIB, "role:1", Date.now());
+    // ★ Pha 6 Task 5 — `rowFromLease()` trả **hàng VÀ lời khai**. Ô BIÊN: dài ĐÚNG BẰNG trần ⇒
+    //   `daCat` phải RỖNG (một chuỗi vừa khít **không** bị cắt).
+    const { row: hang, daCat } = rowFromLease(lease, 8 * MIB, "role:1", Date.now());
     expect(hang.owner, "sổ chung phải ghi được danh tính này NGUYÊN VẸN").toBe(owner);
+    expect(daCat, "dài ĐÚNG BẰNG trần ⇒ KHÔNG được khai là đã cắt").toEqual([]);
 
     const r = await caller().preempt({ ...OTP_HD, owner });
     expect(r.outcome, "một danh tính hợp lệ KHÔNG được biến thành lỗi xác thực").not.toBeUndefined();
@@ -678,8 +681,10 @@ describe("★★★ I-2 — bề rộng ô DANH TÍNH: lệnh nhận đúng bằ
 
   it("★★★ HAI VẾ ĐỌC CÙNG MỘT HẰNG — sổ chung cắt ở ĐÚNG chỗ lệnh từ chối (không hai con số chép tay)", () => {
     const owner = "y".repeat(VRAM_OWNER_MAX + 40);
-    const hang = rowFromLease(xinThat({ owner, bytes: 4 * MIB }), 4 * MIB, "role:1", Date.now());
+    const { row: hang, daCat } = rowFromLease(xinThat({ owner, bytes: 4 * MIB }), 4 * MIB, "role:1", Date.now());
     expect(hang.owner.length, "sổ chung cắt ĐÚNG tại trần").toBe(VRAM_OWNER_MAX);
+    // ★ Pha 6 Task 5 — và lượt cắt ấy **được KHAI**, không im lặng như trước.
+    expect(daCat, "vượt trần ⇒ phải gọi tên ĐÚNG ô bị cắt").toEqual(["owner"]);
     // Và chuỗi ĐÃ CẮT ấy phải đi ngược qua được LỆNH — nếu không, một hộ của tiến trình anh em sẽ
     // hiện trên mặt đọc với một danh tính mà **không lệnh nào nhận**.
     // ⚠ Đây là ô làm đột biến `.max(64)` ĐỎ: chuỗi dài 160 phải qua được cửa.
@@ -692,7 +697,9 @@ describe("★★★ I-2 — bề rộng ô DANH TÍNH: lệnh nhận đúng bằ
 
   it("★★ `leaseKey` cũng có đối chứng ở tầng sổ (M-5: `.max(200)` trước đây không có vế nào)", () => {
     const dai = `${"p".repeat(300)}#lease-1`;
-    const hang = rowFromLease(xinThat({ owner: "sidecar:vision", bytes: MIB }), MIB, dai, Date.now());
+    const { row: hang, daCat } = rowFromLease(xinThat({ owner: "sidecar:vision", bytes: MIB }), MIB, dai, Date.now());
     expect(hang.leaseKey.length).toBe(VRAM_LEASE_KEY_MAX);
+    // ★ Pha 6 Task 5 — `selfKey` 300 ký tự cắt CẢ BA ô, và cả ba đều phải được gọi tên.
+    expect([...daCat].sort(), "MỌI ô bị cắt phải có tên trong lời khai").toEqual(["leaseKey", "processKey", "role"]);
   });
 });

@@ -175,11 +175,9 @@ async function chayMotLuot(): Promise<void> {
    */
   const nen = ownSharedBaseline();
   if (nen !== null) {
-    writes.push({
-      op: "upsert",
-      leaseKey: SHARED_BASELINE_KEY,
-      row: rowFromBaseline({ ...nen, atMs: nowMs }),
-    });
+    // ★ Pha 6 Task 5 — hàng NỀN cũng đi qua cửa cắt-có-khai (`processKey` 96 · `role` 32).
+    const { row, daCat } = rowFromBaseline({ ...nen, atMs: nowMs });
+    writes.push({ op: "upsert", leaseKey: SHARED_BASELINE_KEY, row, daCat });
   }
 
   let ghiHong = false;
@@ -242,7 +240,10 @@ async function dungLaiTuSoCucBo(
     const key = `${selfKey}#${l.id}`;
     // Một lượt `delete` VỪA XẾP HÀNG thắng: giấy phép đó đang trên đường rời sổ.
     if (daXoa.has(key)) continue;
-    out.push({ op: "upsert", leaseKey: key, row: rowFromLease(l, leaseBytes(l), selfKey, nowMs) });
+    // ★ Pha 6 Task 5 — điểm gọi THỨ HAI của `rowFromLease()`, và là điểm chạy **mỗi nhịp 60 s**:
+    //   không mang `daCat` theo thì lời khai chết ngay ở đường đi thường xuyên nhất.
+    const { row, daCat } = rowFromLease(l, leaseBytes(l), selfKey, nowMs);
+    out.push({ op: "upsert", leaseKey: key, row, daCat });
   }
   return out;
 }

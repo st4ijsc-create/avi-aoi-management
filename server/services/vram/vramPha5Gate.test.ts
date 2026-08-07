@@ -229,7 +229,12 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   diện thứ ba**: tên không bắt đầu bằng `vram`, không nằm dưới thư mục `vram`, không chứa
     //   chuỗi `Pha 5`. Nếu ai đó gỡ đường của nó khỏi §Cổng kiểm chung thì `CONG.length` ĐỎ **và**
     //   con số này ĐỎ — hai trục, cùng một lượt gỡ.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(70);
+    // ⚠ Pha 6 Task 5: 70 → 71. **Đúng MỘT** file mới —
+    //   `server/services/vram/sharedLedgerIdentityCut.test.ts` (lưới I-2 đầu THỨ BA: sổ chung thôi
+    //   cắt `owner` âm thầm). Nó vào tập bị canh qua bộ nhận diện **VỊ TRÍ** (nằm dưới thư mục
+    //   `vram`) và đã được đường `server/services/vram/` của §Cổng kiểm chung phủ ⇒ `CONG.length`
+    //   giữ nguyên **14**, chỉ con số này đổi.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(71);
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

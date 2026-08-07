@@ -1018,8 +1018,10 @@ export function reserve(request: VramReserveRequest, ctx: VramDecisionContext): 
 function congBoRaSoChung(lease: VramLease): void {
   try {
     const selfKey = sharedLedgerSelfKey();
-    const row = rowFromLease(lease, leaseBytes(lease), selfKey, Date.now());
-    enqueueSharedLedgerWrite({ op: "upsert", leaseKey: row.leaseKey, row });
+    // ★ Pha 6 Task 5 (I-2, đầu THỨ BA) — `daCat` **đi kèm** ý định ghi. Trước lượt này, một lượt
+    //   cắt `owner` ở đây **không có chỗ nào để hiện ra**; nay `tsc` không cho xếp hàng mà im lặng.
+    const { row, daCat } = rowFromLease(lease, leaseBytes(lease), selfKey, Date.now());
+    enqueueSharedLedgerWrite({ op: "upsert", leaseKey: row.leaseKey, row, daCat });
   } catch {
     /* sổ chung hỏng KHÔNG được làm hỏng lượt xin — hệ lùi về hành vi Pha 2B */
   }

@@ -62,7 +62,13 @@
  */
 import type { VramLease, VramLeaseKind, VramPriority, VramReclaimerId } from "./types";
 // ★ I-2 / M-5 (review TOÀN NHÁNH) — bề rộng ô danh tính có MỘT chủ; `vramRouter` đọc **cùng** hằng.
-import { VRAM_OWNER_MAX, VRAM_LEASE_KEY_MAX, VRAM_PROCESS_KEY_MAX } from "./vramColumnLimits";
+import { VRAM_LEASE_COLUMN_MAX, type VramLeaseColumn } from "./vramColumnLimits";
+/**
+ * ★ Pha 6 Task 5 — **PHÉP CẮT DUY NHẤT của repo**. `@shared/textSafety` là một module LÁ **không
+ * phụ thuộc gì** (cùng hạng với `./vramColumnLimits`), nên nó KHÔNG phá kỷ luật "module lá" ở đầu
+ * file — và nó là thứ duy nhất sinh ra cờ `daCat` **tại đúng chỗ cắt**.
+ */
+import { catChuoi } from "@shared/textSafety";
 
 /**
  * MỘT HÀNG của sổ chung — hình dạng đúng bằng bảng `vram_leases` (migration 0312).
@@ -95,14 +101,53 @@ export interface SharedLeaseRow {
 }
 
 /**
+ * ★★★ Pha 6 Task 5 (I-2, đầu THỨ BA) — **KẾT QUẢ MỘT LƯỢT DỰNG HÀNG: HÀNG **VÀ** LỜI KHAI.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO ĐỔI KIỂU CHỨ KHÔNG THÊM MỘT CA TEST
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Pha 5 đóng đầu **ĐỌC** của I-2 (mặt hiển thị cắt-**có-khai**) và đầu **LỆNH** (`owner` là danh
+ * tính ⇒ **không cắt**). Đầu **GHI** vẫn cắt **âm thầm**: `rowFromLease()` trả về một
+ * `SharedLeaseRow` **trông y hệt** một hàng nguyên vẹn, nên **không một người gọi nào** — kể cả
+ * người viết ra nó — có chỗ để biết danh tính hộ **anh em** vừa mất chữ.
+ *
+ * Một ca test không giải được lớp này: ca chỉ chứng minh **đường ta vừa đi** có khai; đường thứ ba
+ * mà ai đó thêm vào ngày mai vẫn im lặng. Đổi KIỂU thì **phát biểu sai không viết ra được**: muốn
+ * một `SharedLeaseRow` thì phải đi qua ô này, và muốn xếp một ý định `upsert` thì `tsc` đòi
+ * `daCat`. (Kỷ luật đã dùng thành công 5 lần trong chuỗi pha — xem §Global Constraints Pha 5.)
+ *
+ * ⚠ `daCat` là **TÊN Ô**, không phải giá trị: một lời khai in ra chuỗi bị cắt là một lời khai **rò
+ *   chính thứ vừa bị cắt** ra nhật ký/prompt (C-1 của Pha 5: `preview()` rò bí mật tới BA đích).
+ * ⚠ Rỗng ⇔ **không ô nào bị cắt**. Ô dài **ĐÚNG BẰNG** trần **KHÔNG** có mặt ở đây.
+ */
+export interface SharedLeaseRowKetQua {
+  readonly row: SharedLeaseRow;
+  readonly daCat: readonly VramLeaseColumn[];
+}
+
+/**
  * Một Ý ĐỊNH GHI. Xếp hàng ĐỒNG BỘ trên đường quyết định, thi hành BẤT ĐỒNG BỘ sau đó.
  * ⚠ Hai biến thể, phân biệt bằng `op` — KHÔNG phải một object có `row?` optional: một
  * `{ op: "delete", row: undefined }` viết nhầm sẽ **không** bị `tsc` bắt, và một lượt xoá im lặng
  * là đúng thứ khối docstring "bằng chứng đã nhả" bên trên cấm.
  */
 export type SharedLedgerWrite =
-  | { readonly op: "upsert"; readonly leaseKey: string; readonly row: SharedLeaseRow }
-  | { readonly op: "delete"; readonly leaseKey: string; readonly row?: undefined };
+  | {
+      readonly op: "upsert";
+      readonly leaseKey: string;
+      readonly row: SharedLeaseRow;
+      /**
+       * ★★★ Pha 6 Task 5 (I-2, đầu THỨ BA) — **LỜI KHAI ĐI KÈM Ý ĐỊNH GHI, KHÔNG PHẢI TUỲ CHỌN.**
+       *
+       * ⚠⚠ Ô này **bắt buộc** chính là bản vá: trước lượt này, người dựng hàng cắt `owner` rồi trả
+       * về một `SharedLeaseRow` **trông y hệt một hàng không bị cắt** ⇒ hai điểm gọi xếp hàng ghi
+       * mà **không có chỗ nào để biết**. Nay `tsc` không cho dựng một ý định `upsert` mà không nói
+       * ra lượt cắt: khai `[]` cho một hàng bị cắt là một **lời nói dối viết ra được và ĐỌC ĐƯỢC**,
+       * còn im lặng thì trước đây **không đọc được ở đâu cả**.
+       */
+      readonly daCat: readonly VramLeaseColumn[];
+    }
+  | { readonly op: "delete"; readonly leaseKey: string; readonly row?: undefined; readonly daCat?: undefined };
 
 /**
  * ★★★ Pha 3 Task 3 (N-WB-1) — KHOÁ CỦA **HÀNG DÀNH RIÊNG** MANG NỀN DÙNG CHUNG.
@@ -198,6 +243,20 @@ export type SharedLedgerFact = {
   readonly unsyncedWrites: number;
   /** Số lượt đồng bộ HỎNG LIÊN TIẾP. `≥ 1` ⇒ tuổi sẽ KHÔNG tự trẻ lại. */
   readonly consecutiveFailures: number;
+  /**
+   * ★★★ Pha 6 Task 5 — Số hàng **CỦA TA** đang công bố dưới một **DANH TÍNH CỤT**.
+   *
+   * ⚠⚠ Đây là **chỗ lời khai tới được một người đọc**, và nó phải là một Ô TRẠNG THÁI chứ không
+   * phải một dòng log: lượt cắt xảy ra **mỗi nhịp đồng bộ** (60 s) cho **cùng** một giấy phép, nên
+   * một dòng log là một dòng lặp vô hạn rồi cuộn mất, còn một con số thì **đứng yên và đọc được**.
+   * ⚠ KHÁC `unsyncedWrites` và **không được gộp**: `unsyncedWrites > 0` = *"anh em CHƯA THẤY ta"*;
+   * ô này = *"anh em ĐANG THẤY ta, dưới một cái tên KHÔNG PHẢI tên ta"*. Hai sự cố khác nhau, hai
+   * cách chữa khác nhau (đợi đồng bộ ↔ đổi thư mục model / nới cột).
+   * ⚠ **KHÔNG** đi vào `applyEnforcement()`: một danh tính cụt **không làm sai một byte nào** của
+   *   phép tính dư địa. Siết dư địa vì nó là bịa ra chính sách — đúng lớp lỗi *"an toàn là HỆ QUẢ
+   *   của một thứ khác đang hỏng"*.
+   */
+  readonly truncatedIdentityWrites: number;
 } | null;
 
 /**
@@ -264,8 +323,38 @@ export function sharedLedgerFact(nowMs: number): SharedLedgerFact {
     ageMs: tuoi,
     unsyncedWrites: soLuotGhiHong + demYDinhDoiByte(),
     consecutiveFailures: soLuotDongBoHongLienTiep,
+    truncatedIdentityWrites: demDanhTinhBiCat(),
   };
 }
+
+/**
+ * ★★★ Pha 6 Task 5 — **ĐẾM HÀNG, KHÔNG ĐẾM LƯỢT.**
+ *
+ * ⚠⚠ VÌ SAO KHÔNG PHẢI MỘT BỘ ĐẾM TĂNG DẦN, và đây là bài học **I-3 nguyên văn** chứ không phải lo
+ * xa: `dungLaiTuSoCucBo()` dựng lại ý định `upsert` cho **MỌI** giấy phép còn sống ở **MỌI** lượt
+ * đồng bộ (60 s). Một bộ đếm tăng dần sẽ leo mãi cho **cùng một** giấy phép ⇒ *"một cờ luôn bật là
+ * một cờ không còn thông tin"*. Câu hỏi đúng là **"BAO NHIÊU HÀNG đang mang tên cụt"**, và câu trả
+ * lời ấy tự về 0 khi giấy phép được nhả hoặc khi đường dẫn model ngắn lại.
+ *
+ * ⚠ Cùng khuôn `demYDinhDoiByte()`: **trạng thái ĐÃ GỬI** (`hangDaCat`) **hợp** với **ý định ĐANG
+ * CHỜ** (`hangCho`), vì một lượt cắt vừa xếp hàng thì anh em chưa thấy nhưng ta **đã biết**, và
+ * giấu nó tới nhịp sau là đúng thứ task này sinh ra để diệt.
+ */
+function demDanhTinhBiCat(): number {
+  const bo = new Set(hangDaCat);
+  for (const w of hangCho) {
+    if (w.op === "delete" || w.daCat.length === 0) bo.delete(w.leaseKey);
+    else bo.add(w.leaseKey);
+  }
+  return bo.size;
+}
+
+/**
+ * Khoá của những hàng **ĐÃ LÊN sổ chung** với ít nhất một ô danh tính bị CẮT.
+ * ⚠ Chỉ `noteSharedLedgerWritesApplied()` ghi — cùng kỷ luật `byteDaGui`: ghi trước lượt `apply()`
+ * trót lọt là khai "anh em đang thấy" cho một hàng còn nằm trong hàng đợi.
+ */
+const hangDaCat = new Set<string>();
 
 /**
  * ★★★ I-3 (review vòng 1) — **CHỈ ĐẾM Ý ĐỊNH LÀM ĐỔI SỐ BYTE MÀ ANH EM ĐỌC.**
@@ -321,8 +410,18 @@ const byteDaGui = new Map<string, number>();
 /** Xác nhận một lô ý định đã LÊN được sổ chung. Chỉ `vramSharedLedgerStore` gọi. */
 export function noteSharedLedgerWritesApplied(writes: readonly SharedLedgerWrite[]): void {
   for (const w of writes) {
-    if (w.op === "delete") byteDaGui.delete(w.leaseKey);
-    else byteDaGui.set(w.leaseKey, w.row.bytes);
+    if (w.op === "delete") {
+      byteDaGui.delete(w.leaseKey);
+      // ★ Task 5 — hàng đã rời sổ thì nó thôi mang tên cụt; giữ lại là khai một sự cố đã hết.
+      hangDaCat.delete(w.leaseKey);
+      continue;
+    }
+    byteDaGui.set(w.leaseKey, w.row.bytes);
+    // ★ Task 5 — LƯỢNG TỪ hai chiều: `daCat` rỗng phải **XOÁ** dấu, không chỉ "không thêm". Một
+    //   giấy phép từng bị cắt rồi được công bố lại với danh tính đủ (đổi thư mục model) mà vẫn bị
+    //   đếm là một cờ **không bao giờ tắt** — đúng lớp nhiễu I-3.
+    if (w.daCat.length > 0) hangDaCat.add(w.leaseKey);
+    else hangDaCat.delete(w.leaseKey);
   }
 }
 
@@ -448,24 +547,30 @@ export function ownSharedBaseline(): SharedBaselineRecord | null {
  * `"external-process"`/`"background"` là cặp trung tính nhất (không hộ nào thu hồi được hàng này —
  * `reclaimer: null`).
  */
-export function rowFromBaseline(rec: SharedBaselineRecord): SharedLeaseRow {
+export function rowFromBaseline(rec: SharedBaselineRecord): SharedLeaseRowKetQua {
   const [role = "all"] = rec.processKey.split(":");
+  // ★ Task 5 — hàng NỀN cũng là một đường CẮT (`processKey` 96 · `role` 32) ⇒ nó cũng phải khai.
+  //   Lượng từ là *"MỌI đường dựng hàng"*, không phải *"đường dựng GIẤY PHÉP"*.
+  const daCat: VramLeaseColumn[] = [];
   return {
-    leaseKey: SHARED_BASELINE_KEY,
-    processKey: cat(rec.processKey, VRAM_PROCESS_KEY_MAX),
-    pid: soHuuHan(rec.pid, 0),
-    role: cat(role, 32),
-    leaseId: rec.source,
-    owner: "reconciler:baseline",
-    leaseKind: "external-process",
-    priority: "background",
-    // ⚠ Nền ÂM là vô nghĩa; `0` là giá trị dự phòng duy nhất KHÔNG BỊA (cùng kỷ luật `rowFromLease`).
-    bytes: Math.max(0, soHuuHan(rec.bytes, 0)),
-    measured: rec.verified,
-    refCount: 1,
-    reclaimer: null,
-    acquiredAtMs: soHuuHan(rec.atMs, 0),
-    updatedAtMs: soHuuHan(rec.atMs, 0),
+    daCat,
+    row: {
+      leaseKey: SHARED_BASELINE_KEY,
+      processKey: catO("processKey", rec.processKey, daCat),
+      pid: soHuuHan(rec.pid, 0),
+      role: catO("role", role, daCat),
+      leaseId: rec.source,
+      owner: "reconciler:baseline",
+      leaseKind: "external-process",
+      priority: "background",
+      // ⚠ Nền ÂM là vô nghĩa; `0` là giá trị dự phòng duy nhất KHÔNG BỊA (cùng kỷ luật `rowFromLease`).
+      bytes: Math.max(0, soHuuHan(rec.bytes, 0)),
+      measured: rec.verified,
+      refCount: 1,
+      reclaimer: null,
+      acquiredAtMs: soHuuHan(rec.atMs, 0),
+      updatedAtMs: soHuuHan(rec.atMs, 0),
+    },
   };
 }
 
@@ -581,26 +686,30 @@ export function rowFromLease(
   bytes: number,
   selfKey: string,
   nowMs: number,
-): SharedLeaseRow {
+): SharedLeaseRowKetQua {
   const [role = "all", pidText = "0"] = selfKey.split(":");
+  const daCat: VramLeaseColumn[] = [];
   return {
-    leaseKey: cat(`${selfKey}#${lease.id}`, VRAM_LEASE_KEY_MAX),
-    processKey: cat(selfKey, VRAM_PROCESS_KEY_MAX),
-    pid: soHuuHan(Number(pidText), 0),
-    role: cat(role, 32),
-    leaseId: cat(lease.id, 64),
-    owner: cat(lease.request.owner, VRAM_OWNER_MAX),
-    leaseKind: lease.request.kind,
-    priority: lease.request.priority,
-    bytes: soHuuHan(bytes, 0),
-    // Xem `types.VramLease.actualBytes` — BA nhóm, đọc bằng HAI trường. `measureSource === "none"`
-    // là ƯỚC LƯỢNG DỰ PHÒNG, KHÔNG phải số đo, nên nó cũng cho `false`.
-    measured:
-      lease.actualBytes !== null && lease.measureSource !== undefined && lease.measureSource !== "none",
-    refCount: soHuuHan(lease.refCount, 1),
-    reclaimer: lease.request.reclaimer ?? null,
-    acquiredAtMs: soHuuHan(lease.acquiredAt.getTime(), nowMs),
-    updatedAtMs: soHuuHan(nowMs, 0),
+    daCat,
+    row: {
+      leaseKey: catO("leaseKey", `${selfKey}#${lease.id}`, daCat),
+      processKey: catO("processKey", selfKey, daCat),
+      pid: soHuuHan(Number(pidText), 0),
+      role: catO("role", role, daCat),
+      leaseId: catO("leaseId", lease.id, daCat),
+      owner: catO("owner", lease.request.owner, daCat),
+      leaseKind: lease.request.kind,
+      priority: lease.request.priority,
+      bytes: soHuuHan(bytes, 0),
+      // Xem `types.VramLease.actualBytes` — BA nhóm, đọc bằng HAI trường. `measureSource === "none"`
+      // là ƯỚC LƯỢNG DỰ PHÒNG, KHÔNG phải số đo, nên nó cũng cho `false`.
+      measured:
+        lease.actualBytes !== null && lease.measureSource !== undefined && lease.measureSource !== "none",
+      refCount: soHuuHan(lease.refCount, 1),
+      reclaimer: lease.request.reclaimer ?? null,
+      acquiredAtMs: soHuuHan(lease.acquiredAt.getTime(), nowMs),
+      updatedAtMs: soHuuHan(nowMs, 0),
+    },
   };
 }
 
@@ -611,10 +720,18 @@ function soHuuHan(v: number, mac: number): number {
 /**
  * ★★★ M-1 (review vòng 1) — **CẮT ĐỘ RỘNG `varchar`. Bản trước chỉ lọc SỐ, và tiền lệ mà chính
  * docstring này viện dẫn (migration 0311) là một lỗi CHUỖI.**
+ * ★★★ Pha 6 Task 5 (I-2, đầu THỨ BA) — **VÀ NAY NÓ KHAI RA LƯỢT CẮT.**
  *
- * `owner` là chuỗi **ĐỘNG lấy từ ĐƯỜNG DẪN TUYỆT ĐỐI**: `ocrService` dựng `onnx-ocr:${modelPath}`,
- * `aiReranker` dựng `reranker:${modelPath}`. Với `GGUF_MODELS_DIR=D:/SOURCES/16.AI` hôm nay là ~54
- * ký tự — **vừa**. Một lượt đổi thư mục model là đủ vượt `varchar(160)`.
+ * `owner` là chuỗi **ĐỘNG lấy từ ĐƯỜNG DẪN TUYỆT ĐỐI**: `ocrService.ts:384` dựng
+ * `onnx-ocr:${modelPath}`, `aiReranker.ts:503` dựng `reranker:${modelPath}`.
+ *
+ * ⚠⚠ **SỐ ĐO 2026-08-07, KHÔNG PHẢI SUY ĐOÁN** (Bước 1 của Task 5):
+ *   • `max(length(owner))` **hiện tại** — `vram_leases` **54** / `vram_events` **54**, trần **160**;
+ *   • `owner` sản xuất **dài nhất có thể** — **≥ 365**: một `modelPath` tuyệt đối **356 ký tự** đã
+ *     được dựng THẬT trên máy này (12 nấc thư mục), và `LongPathsEnabled=1` ⇒ trần đường dẫn là
+ *     **32.767**, không phải `MAX_PATH` 260. **365 / 160 = 2,28×.**
+ * ⇒ Trần cột **không bao giờ** đuổi kịp trần đường dẫn. Nới cột chỉ **dời chỗ nói dối**; thứ đóng
+ *   được lớp lỗi là **nói ra lượt cắt**.
  *
  * ⚠ VÀ HẬU QUẢ Ở ĐÂY NẶNG HƠN Ở `vram_events`: `22001` làm **mất cả lô**, rồi
  * `requeueSharedLedgerWrites()` **ném lại đúng hàng độc** ⇒ hỏng **VĨNH VIỄN**, `unsyncedWrites`
@@ -622,11 +739,22 @@ function soHuuHan(v: number, mac: number): number {
  * cơ chế thử-lại — thứ được dựng để chống mất dữ liệu — **biến một lỗi tạm thành một lỗi chết**.
  *
  * ⚠ CẮT chứ không VỨT: cùng kỷ luật `sanitizeVramEvent()` — *"vứt dòng đi là đổi một lỗi im lặng
- * lấy một lỗi im lặng khác"*. Ai đổi độ rộng cột ở `drizzle/0312_vram_leases.sql` phải đổi các con
- * số ở đây (ca `M-1` khoá hai bảng khớp nhau).
+ * lấy một lỗi im lặng khác"*. Và `sanitizeVramEvent()` cũng là **tiền lệ về hình dạng lời khai**:
+ * nó đã ghi `detail.truncatedFields` từ trước; `vramSharedLedger` là chỗ **cuối cùng** còn im lặng.
+ *
+ * ⚠ **MỘT phép cắt duy nhất của repo** — `catChuoi()` ở `@shared/textSafety`. Hàm `cat()` cũ ở đây
+ * là **bản sao thứ hai** và nó **không có cờ**; xoá nó là một phần của bản vá, không phải dọn dẹp.
+ * Ai đổi độ rộng cột ở `drizzle/0312_vram_leases.sql` phải đổi `VRAM_LEASE_COLUMN_MAX` — và ca
+ * `sharedLedgerIdentityCut.test.ts` khoá hai bên khớp nhau **theo lượng từ ∀ cột**, không theo một
+ * danh sách viết tay.
  */
-function cat(s: string, max: number): string {
-  return s.length <= max ? s : s.slice(0, max);
+function catO(o: VramLeaseColumn, s: string, ra: VramLeaseColumn[]): string {
+  const { cau, daCat } = catChuoi(s, VRAM_LEASE_COLUMN_MAX[o]);
+  // ⚠ BIÊN: `catChuoi` khai `daCat` ⇔ `s.length > trần`. Một chuỗi dài **ĐÚNG BẰNG** trần
+  //   **KHÔNG** bị cắt và **KHÔNG** được khai — phép so `cau.length === trần` ở đầu kia là bản sao
+  //   thứ hai của vị từ, và bản sao ấy SAI đúng ở ô biên này (M-5).
+  if (daCat) ra.push(o);
+  return cau;
 }
 
 /** Chỉ dùng trong test. */
@@ -640,6 +768,8 @@ export function __resetSharedLedgerForTests(): void {
   // I-3 — không xoá thì ca sau KẾ THỪA "đã gửi bao nhiêu byte" của ca trước, và một ý định ĐỔI BYTE
   // thật sẽ bị đếm nhầm là "lặp lại con số cũ" ⇒ cờ chưa-đồng-bộ tự mù.
   byteDaGui.clear();
+  // Task 5 (Pha 6) — cùng lý do: ca sau thừa kế "ta đang công bố một danh tính CỤT" của ca trước.
+  hangDaCat.clear();
   // Task 3 — cùng lý do, và hậu quả nặng hơn: ca sau thừa kế "ta là NGƯỜI CHỤP NỀN" của ca trước ⇒
   // hai tiến trình cùng chụp, đúng lỗi task này sinh ra để diệt, ở một file test chẳng liên quan.
   nenCuaTa = null;
@@ -659,7 +789,14 @@ export function __resetSharedLedgerForTests(): void {
  * bản sao sẽ trôi khỏi nhau ngay khi `SharedLedgerFact` thêm một ô.
  */
 export function __freshSharedLedgerFactForTests(): SharedLedgerFact {
-  return { foreignBytes: 0, foreignHolders: [], ageMs: 0, unsyncedWrites: 0, consecutiveFailures: 0 };
+  return {
+    foreignBytes: 0,
+    foreignHolders: [],
+    ageMs: 0,
+    unsyncedWrites: 0,
+    consecutiveFailures: 0,
+    truncatedIdentityWrites: 0,
+  };
 }
 
 /**

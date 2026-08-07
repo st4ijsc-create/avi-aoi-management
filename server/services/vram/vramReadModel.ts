@@ -251,6 +251,20 @@ export type VramAgentForeignLedger =
       readonly unsyncedWrites: number | null;
       /** Lượt đồng bộ HỎNG LIÊN TIẾP. `≥ 1` ⇒ tuổi sẽ KHÔNG tự trẻ lại. */
       readonly consecutiveFailures: number | null;
+      /**
+       * ★★★ Pha 6 Task 5 (I-2, đầu THỨ BA) — Số hàng **CỦA TA** đang công bố dưới một **DANH TÍNH
+       * CỤT** (`owner`/`leaseKey`/`processKey`/`role`/`leaseId` vượt bề rộng cột ⇒ bị cắt).
+       *
+       * ⚠⚠ **KHÔNG PHẢI `unsyncedWrites`**, và gộp hai ô là gộp hai sự cố có hai cách chữa khác
+       * nhau: `unsyncedWrites > 0` = *"anh em CHƯA THẤY ta"* (đợi một nhịp đồng bộ là hết);
+       * ô này = *"anh em ĐANG THẤY ta, dưới một cái tên KHÔNG PHẢI tên ta"* (không tự hết — phải
+       * đổi thư mục model hoặc nới cột, và nới cột là một lượt DDL cần chủ dự án duyệt).
+       * ⚠ Hệ quả đọc được của một danh tính cụt: nút *Thu hồi* gửi `preempt({owner})` với chuỗi
+       *   **của mặt đọc**, còn sổ giữ chuỗi **đã cắt** ⇒ hai chuỗi không khớp nhau.
+       * ⚠ `> 0` mà `holders[].owner` trông vẫn bình thường là **hành vi ĐÚNG**: đây là hàng của
+       *   **TA**, còn `holders` là hàng của **ANH EM** — hai tập rời nhau (`dungBanSao()` lọc).
+       */
+      readonly truncatedIdentityWrites: number | null;
     }
   | {
       readonly known: false;
@@ -1254,6 +1268,9 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
           stale: !Number.isFinite(shared.ageMs) || shared.ageMs > SHARED_LEDGER_STALE_AFTER_MS,
           unsyncedWrites: shared.unsyncedWrites,
           consecutiveFailures: shared.consecutiveFailures,
+          // ★ Pha 6 Task 5 — lời khai của đầu GHI tới được một người đọc. Không có ô này thì `daCat`
+          //   chỉ tồn tại trong kiểu, và một lượt cắt vẫn **không ai thấy**.
+          truncatedIdentityWrites: shared.truncatedIdentityWrites,
         };
 
   const tickView: VramAgentTick =

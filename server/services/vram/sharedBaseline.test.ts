@@ -745,10 +745,12 @@ describe("E. HÀNG NỀN KHÔNG PHẢI MỘT GIẤY PHÉP", () => {
       processKey: "worker:9:boot-x", pid: 9, bytes: DESKTOP,
       source: "native" as const, verified: true, atMs: 1_700_000_000_000,
     };
-    expect(baselineFromRow(rowFromBaseline(goc))).toEqual(goc);
-    const thuocLa = { ...rowFromBaseline(goc), leaseId: "guess" };
+    // ★ Pha 6 Task 5 — `rowFromBaseline()` nay trả **hàng VÀ lời khai**; `.row` là hàng.
+    expect(baselineFromRow(rowFromBaseline(goc).row)).toEqual(goc);
+    expect(rowFromBaseline(goc).daCat, "chuỗi ngắn ⇒ KHÔNG khai cắt").toEqual([]);
+    const thuocLa = { ...rowFromBaseline(goc).row, leaseId: "guess" };
     expect(baselineFromRow(thuocLa), "thước lạ ⇒ KHÔNG có nền dùng chung, KHÔNG đoán 'smi'").toBeNull();
-    const byteHong = { ...rowFromBaseline(goc), bytes: Number.NaN };
+    const byteHong = { ...rowFromBaseline(goc).row, bytes: Number.NaN };
     expect(baselineFromRow(byteHong)).toBeNull();
   });
 

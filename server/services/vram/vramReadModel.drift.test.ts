@@ -389,6 +389,9 @@ const KHONG_DOI_THEO_DONG_HO: readonly string[] = [
   "ledger.foreign.bytes",
   "ledger.foreign.unsyncedWrites",
   "ledger.foreign.consecutiveFailures",
+  // ★ Pha 6 Task 5 — số HÀNG mang danh tính cụt. Đứng yên theo đồng hồ: nó đếm **trạng thái đang
+  //   công bố**, không đếm **lượt**, đúng để tránh lớp nhiễu I-3 ("một cờ luôn bật là cờ vô nghĩa").
+  "ledger.foreign.truncatedIdentityWrites",
   "ledger.foreign.holders[].owner",
   "ledger.foreign.holders[].kind",
   "ledger.foreign.holders[].bytes",
