@@ -245,7 +245,23 @@ public sealed class FleetHost
     public string ActivePresetName => _core.ActivePresetName;
 
     /// <summary>Read-only snapshot of the currently-active scenario — unlike <see cref="ApplyScenario"/>,
-    /// this never mutates anything (no restart, no transport swap), so it's safe for a <c>GET</c>.</summary>
+    /// this never mutates anything (no restart, no transport swap), so it's safe for a <c>GET</c>.
+    ///
+    /// <para>🔴 <b>THE ONE LABELLED EXCEPTION to this class's own rule above, and it is labelled because an
+    /// unlabelled one gets copied.</b> This member does read two things from the core and combine them —
+    /// exactly the shape the banner forbids — and the E-2 review found it thirty-four lines below the
+    /// sentence forbidding it. It is exempt for a measured reason, not a convenient one:
+    /// <c>_scenario</c> and <c>_activePresetName</c> are <see langword="volatile"/> fields that
+    /// <see cref="FleetHost"/> read as two unsynchronised reads BEFORE the cut as well, so nothing about
+    /// the extraction changed what a caller can observe here.
+    ///
+    /// <para>What keeps it exempt rather than merely grandfathered: the pair is written together under
+    /// <c>FleetCore</c>'s gate, so a torn read is possible — and its only consequence is a
+    /// <c>GET /v1/scenario</c> response naming a preset one apply behind its config. No guard, no write
+    /// path and no latch reads either field. If that ever stops being true — if anything on the write or
+    /// safety path starts reading this pair — this exemption dies and the pair must be resolved inside
+    /// <see cref="FleetCore"/> and returned as one record, like every other pair on this seam.</para></para>
+    /// </summary>
     public ScenarioDto CurrentScenarioDto() => ScenarioDto.From(_core.CurrentScenario, _core.ActivePresetName);
 
     /// <summary>Starts the read pipeline. See <see cref="FleetCore.Start"/> — including why the NBIRTH

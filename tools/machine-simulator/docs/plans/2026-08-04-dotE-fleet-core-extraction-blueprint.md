@@ -357,6 +357,21 @@ giải cặp ấy bên trong `FleetCore` và trả về một record.
 **Ba thứ §4 xếp "Ở LẠI" nhưng không thể ở lại** (E-1 §1.4 đúng): `ApplyScenario`, `Burst`,
 `RunHotFolderAoiDemoAsync`. Cả ba đổi trạng thái lõi dưới khoá của lõi; chỉ vỏ DTO của chúng ở lại.
 
+🔴 **Và đây là điều quan trọng nhất E-3 thừa kế, nói thẳng: LUẬT TRÊN ĐƯỢC BẢO VỆ BẰNG MỘT CHÚ THÍCH, KHÔNG
+BẰNG MỘT PHÉP KIỂM.** Review E-2 chạy lại đột biến tách `GetSafetyStatus` thành hai lần lấy khoá ở HEAD:
+**SỐNG SÓT 1283/1283**, tức là sống sót qua cả ba nhân chứng mới E-2 vừa viết. §9.3b đã chứng minh **không
+bài test đua nào bắt được nó qua guard** — nên đây không phải thiếu sót của E-2. Nhưng mục này đọc lên như
+thể hình dạng đã được khoá lại; **nó được khoá bằng văn xuôi.** Một nhân chứng *có thể* dựng được — nhắm vào
+cặp trên màn hình `GET /v1/safety` chứ không nhắm vào guard — và đó là một hạng mục, không phải một cái chặn.
+
+🔴 **Ngoại lệ duy nhất của luật này đã được dán nhãn, tại `FleetHost.CurrentScenarioDto()`.** Review E-2 tìm
+thấy nó **cách câu cấm ba mươi tư dòng**: nó đọc hai thứ từ lõi rồi ghép. Nó **bảo toàn hành vi** —
+`_scenario`/`_activePresetName` là `volatile` và trước cuộc cắt cũng đã là hai lần đọc rời — nhưng cặp ấy
+được **ghi cùng nhau dưới khoá của lõi**, nên vẫn là hình dạng cặp-có-thể-rách. Đã dán nhãn tại chỗ kèm điều
+kiện huỷ ngoại lệ: **nếu có bất cứ thứ gì trên đường ghi hoặc đường an toàn bắt đầu đọc cặp này, ngoại lệ
+chết** và cặp phải được phân giải trong `FleetCore`. *Một luật có ngoại lệ không dán nhãn sẽ bị chính nhiệm
+vụ thừa kế nó phá vỡ.*
+
 ### 10.2 🔴 Số khối `lock (_gate)` là **20**, không còn là 21 — và chỗ mất đi là chỗ nào
 
 §9.2 ghi 21. Sau cuộc cắt là **20**, xác định bằng một bộ đếm khớp ngoặc chạy trên cả hai cây (không phải bằng
@@ -394,6 +409,34 @@ và `EventLogLogger` ghi **đồng bộ**. Tức là **một dòng log có thể
 **Dụng cụ: [READ] trên `Program.cs` cộng [READ] trên hành vi framework — CHƯA ĐO.** Phép đo mà ai đó xếp lịch
 cho hạng mục sửa `_gate` phải bao gồm cả đường này, không chỉ ba đường của §9.2.
 
+🔴 **Đính chính của review E-2 — bốn chỗ sai ở đúng mục này, ba trong số đó nghiêng về phía trấn an.**
+
+**(a) Là BỐN lời gọi log dưới khoá, không phải ba** — và câu văn trên tự liệt kê bốn thứ rồi đếm thành ba.
+Reviewer đi bộ lại và xác nhận: `FleetCore.cs:1476`, `:1477`, `:1609`, `:1800`. Điểm log thứ năm trong bảng
+(`:1703`) mới là điểm **không** nằm dưới khoá — nó ở trong lambda `Task.Run` của `StartSlot`. Câu văn đã trừ
+đúng món khỏi sai tổng. **Đếm hụt một bề mặt rủi ro theo hướng trấn an chính là bài học §9.5 đã ghi** (vụ
+8-so-với-14) — lặp lại ngay ở mục viết ra để cảnh báo về nó.
+
+**(b) Không phải "một dòng log có thể chặn `Estop()`" mà là "TỚI N DÒNG LOG, MỖI MÁY MỘT DÒNG".** Hai callback
+của `MappingProfileResolver` được gọi **bên trong `ResolveOne`, mỗi máy trong roster một lần**
+(`MappingProfileResolver.cs:76` và `:87`) — cùng vòng lặp với `File.Exists`/`File.ReadAllText` của vi phạm #1,
+trên đúng roster 50 máy mà §9.2 đo được 2,39 ms giữ khoá. Điều đó **đổi hình dạng của hạng mục sửa**, không
+chỉ đổi con số.
+
+**(c) Dụng cụ dùng để nghiệm thu đếm một đại lượng KHÁC với đại lượng tiêu chí nêu tên.** Tiêu chí là
+*"số thao tác **I/O hoặc `Dispose`** với tới được dưới `_gate` không được tăng"*; bảng sáu dòng ở trên đếm
+*"số điểm mà mã do host cung cấp với tới được dưới `_gate`"* — và **không có một dòng `Dispose` hay `Cancel`
+nào**, kể cả `slot.Cts.Cancel()` (`FleetCore.cs:1794`), vốn **chính là vi phạm #2 của §9.2**. Kết luận
+"không tăng" vẫn đúng — reviewer tái lập bằng một cuộc đi bộ 13-điểm độc lập, một-đối-một — nhưng **E-3 sẽ
+chạy lại phép kiểm này theo đúng câu chữ ở đây**, nên câu chữ phải nói đúng đại lượng.
+
+**(d) Có `Cancel` THỨ NĂM dưới `_gate` mà cả §9.2 lẫn mục này đều không liệt kê:** `FleetCore.Burst()` tại
+`FleetCore.cs:2141` (`previousCts?.Cancel()`), trùng từng byte với `FleetHost.cs:2056` ở BASE. Có sẵn, không
+đổi, **cùng lớp với vi phạm #2**. Nó thuộc danh sách của hạng mục mang sang.
+
+→ **Hạng mục sửa `_gate` là BỐN đường, không phải ba**, và danh sách `Cancel` của nó có **hai** mục, không
+phải một.
+
 ### 10.4 Mười bốn lời gọi log đã port — và một sự trôi mức nghiêm trọng, có chủ đích
 
 Mười bốn chỗ `_logger?.` (§9.5, con số đã đính chính) chuyển sang quy ước của EdgeCore. **Vỏ truyền `null` cho
@@ -409,6 +452,21 @@ Không hành vi sản phẩm, không test, không endpoint nào quan sát điề
 giờ hiện ra ở mức Error**, và một người vận hành đọc log sẽ thấy khác. Nếu muốn khôi phục độ mịn, cách rẻ nhất
 là một callback thứ ba (`WalFlushPump` đã có tiền lệ với `logInfo`); E-2 không làm, vì thêm kênh log trong một
 cuộc dời đúng là thứ scope creep brief cấm.
+
+🔴 **Đính chính review E-2: kế toán đúng, nhưng cái giá cho người vận hành bị nói nhẹ đi — và theo một hướng
+cụ thể.** `St4i.EngineApi` **không ship `appsettings.json` nào**, nên mức tối thiểu mặc định của framework áp
+dụng và **`LogDebug` trước đây không phát ra gì cả**. Ba dòng dọn dẹp — `FleetCore.cs:1676` (lỗi dispose driver
+connector mồ côi), `:1853` (chờ tháo slot cũ hỏng), `:1865` (lỗi dispose driver slot cũ) — **không đi từ Debug
+lên Error trong mắt người vận hành. Chúng đi từ IM LẶNG lên Error** — và dưới `AddWindowsService`, từ im lặng
+thành **một mục Windows Event Log ghi đồng bộ**. Mỗi lần khởi động lại đội máy mà vấp một pha tháo chậm giờ ghi
+lỗi vào Event Log trên một đường trước đây không ghi gì.
+
+Một điều tích cực cần nói cho cân: **sự trôi này KHÔNG làm tăng chi phí dưới `_gate`** — cả ba chỗ trôi đều nằm
+ngoài khoá theo cuộc đi bộ của reviewer, và chỗ trôi duy nhất *nằm trong* khoá (`:1477`) không đổi việc có ghi
+Event Log hay không, vì bộ lọc mặc định của `AddEventLog` vốn đã nhận mức Warning.
+
+→ **Xếp lịch callback thứ ba, đừng để nó ở dạng "tôi sẽ nhận một follow-up".** *Ba đường tháo dỡ ghi lỗi vào
+Event Log là cách một người vận hành học được thói quen thôi đọc Event Log.*
 
 ### 10.5 `InternalsVisibleTo`, và vì sao nó KHÔNG mâu thuẫn với ghi chú cũ trong `AssemblyInfo.cs`
 
