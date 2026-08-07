@@ -69,6 +69,7 @@ import {
 import {
   vramReadSurfaceKind,
   vramReadSurfaceErrorCode,
+  vramStateShapeUsable,
   VRAM_READ_SURFACE_NOTICE,
 } from "@/lib/vramReadSurface";
 /** ★ F1 — step-up 2FA cho HAI lệnh phá huỷ. Hook ĐÃ CÓ, 3 màn khác đang dùng đúng khuôn này. */
@@ -189,6 +190,13 @@ export function VramBrokerPanel({ commandReach, polling }: Props) {
     isError: state.isError,
     errorCode: vramReadSurfaceErrorCode(state.error),
     hasData: s !== undefined,
+    /**
+     * ★★★ C-1 — **KHÔNG viết `true` ở đây.** Phần thân dưới truy cập SÂU (`s.headroom.effective
+     * .bytesAtReadMs`); một payload của bản máy chủ **cũ** làm nó ném `TypeError`, và vì panel này
+     * **không** có boundary riêng ở `AIBrainDashboard` nên throw leo lên boundary cấp trang ⇒ cả
+     * `/ai-brain` trắng. Lưới AST canh chính dòng này.
+     */
+    shapeUsable: vramStateShapeUsable(s),
   });
 
   return (

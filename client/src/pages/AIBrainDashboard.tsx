@@ -26,6 +26,7 @@ import { VramBrokerPanel } from "@/components/ai/VramBrokerPanel";
 import {
   vramReadSurfaceKind,
   vramReadSurfaceErrorCode,
+  vramStateShapeUsable,
   VRAM_READ_SURFACE_NOTICE,
 } from "@/lib/vramReadSurface";
 /** ★ Pha 5 Task 3 (N9) — tầm với mặt LỆNH VRAM của vai; xem `@/lib/vramCommandReach`. */
@@ -181,6 +182,12 @@ export default function AIBrainDashboard() {
     isError: vramState.isError,
     errorCode: vramReadSurfaceErrorCode(vramState.error),
     hasData: vramState.data !== undefined,
+    /**
+     * ★★★ C-1 — thẻ KPI dưới đây đọc `vb?.headroom.ceilingBytes`: dấu `?.` chỉ che **một** nấc
+     * (`vb`), không che `headroom`. Payload của một bản máy chủ cũ ⇒ `TypeError` ngay trong thân
+     * trang. Cùng MỘT vị từ với panel — không hai bản sao.
+     */
+    shapeUsable: vramStateShapeUsable(vramState.data),
   });
   const stats = router.data;
   const total = stats?.total ?? 0;

@@ -27,7 +27,11 @@ import ts from "typescript";
 import {
   vramReadSurfaceKind,
   vramReadSurfaceErrorCode,
+  vramStateShapeProblems,
+  vramStateShapeUsable,
   VRAM_READ_SURFACE_NOTICE,
+  VRAM_STATE_REQUIRED_PATHS,
+  VRAM_STATE_GUARDED_PATHS,
   type VramReadSurfaceKind,
 } from "./vramReadSurface";
 
@@ -46,7 +50,7 @@ const NGUOI_DOC = [
 describe("C-1 — `vramReadSurfaceKind`: bốn phạm trù, và KHÔNG phạm trù nào nói về phần cứng", () => {
   it("★★★ FORBIDDEN ⇒ `denied` — KHÔNG phải `unreadable`, và tuyệt đối KHÔNG phải một câu về phần cứng", () => {
     expect(
-      vramReadSurfaceKind({ isLoading: false, isError: true, errorCode: "FORBIDDEN", hasData: false }),
+      vramReadSurfaceKind({ isLoading: false, isError: true, errorCode: "FORBIDDEN", hasData: false, shapeUsable: false }),
     ).toBe("denied");
   });
 
@@ -54,25 +58,29 @@ describe("C-1 — `vramReadSurfaceKind`: bốn phạm trù, và KHÔNG phạm tr
     // ⚠ Chiều đắt: react-query giữ `data` của lượt trước khi lượt sau hỏng. Đọc `hasData` trước
     // `isError` ⇒ màn tiếp tục in số CŨ như thể vẫn còn quyền. Số cũ là một lời khẳng định.
     expect(
-      vramReadSurfaceKind({ isLoading: false, isError: true, errorCode: "FORBIDDEN", hasData: true }),
+      vramReadSurfaceKind({ isLoading: false, isError: true, errorCode: "FORBIDDEN", hasData: true, shapeUsable: true }),
     ).toBe("denied");
   });
 
   it("★★ lỗi KHÁC (mã lạ / mạng / `null`) ⇒ `unreadable` — KHÔNG bịa ra chẩn đoán 'thiếu quyền'", () => {
     for (const code of ["INTERNAL_SERVER_ERROR", "TIMEOUT", "", null]) {
       expect(
-        vramReadSurfaceKind({ isLoading: false, isError: true, errorCode: code, hasData: false }),
+        vramReadSurfaceKind({ isLoading: false, isError: true, errorCode: code, hasData: false, shapeUsable: false }),
         `mã ${String(code)}`,
       ).toBe("unreadable");
     }
   });
 
   it("có dữ liệu, không lỗi ⇒ `ready`", () => {
-    expect(vramReadSurfaceKind({ isLoading: false, isError: false, errorCode: null, hasData: true })).toBe("ready");
+    expect(vramReadSurfaceKind({ isLoading: false, isError: false, errorCode: null, hasData: true, shapeUsable: true })).toBe(
+      "ready",
+    );
   });
 
   it("đang tải thật ⇒ `loading`", () => {
-    expect(vramReadSurfaceKind({ isLoading: true, isError: false, errorCode: null, hasData: false })).toBe("loading");
+    expect(vramReadSurfaceKind({ isLoading: true, isError: false, errorCode: null, hasData: false, shapeUsable: false })).toBe(
+      "loading",
+    );
   });
 
   /**
@@ -81,22 +89,28 @@ describe("C-1 — `vramReadSurfaceKind`: bốn phạm trù, và KHÔNG phạm tr
    * `state.isLoading || !s ? <Skeleton/>` nên vế thứ hai giữ khung xương **vĩnh viễn**.
    */
   it("★★★ hết tải, KHÔNG lỗi, VẪN không dữ liệu ⇒ `unreadable` — TUYỆT ĐỐI không `loading`", () => {
-    expect(vramReadSurfaceKind({ isLoading: false, isError: false, errorCode: null, hasData: false })).toBe(
-      "unreadable",
-    );
+    expect(
+      vramReadSurfaceKind({ isLoading: false, isError: false, errorCode: null, hasData: false, shapeUsable: false }),
+    ).toBe("unreadable");
   });
 
-  it("★★ VÉT CẠN: mọi tổ hợp của bốn ô đều ra một trong ĐÚNG bốn phạm trù, không `undefined` nào lọt", () => {
+  it("★★ VÉT CẠN: mọi tổ hợp của NĂM ô đều ra một trong ĐÚNG bốn phạm trù, không `undefined` nào lọt", () => {
     const HOP_LE: readonly VramReadSurfaceKind[] = ["ready", "loading", "denied", "unreadable"];
     const thay = new Set<string>();
     for (const isLoading of [true, false])
       for (const isError of [true, false])
         for (const errorCode of ["FORBIDDEN", "INTERNAL_SERVER_ERROR", null])
-          for (const hasData of [true, false]) {
-            const k = vramReadSurfaceKind({ isLoading, isError, errorCode, hasData });
-            expect(HOP_LE, `${String(isLoading)}/${String(isError)}/${String(errorCode)}/${String(hasData)}`).toContain(k);
-            thay.add(k);
-          }
+          for (const hasData of [true, false])
+            for (const shapeUsable of [true, false]) {
+              // ★★★ C-1 — ô thứ NĂM: `shapeUsable`. Vét cạn phải chạy trên nó, nếu không phạm trù
+              //   "có dữ liệu nhưng KHÔNG đọc được hình dạng" là một ô chưa ai đi qua.
+              const k = vramReadSurfaceKind({ isLoading, isError, errorCode, hasData, shapeUsable });
+              expect(
+                HOP_LE,
+                `${String(isLoading)}/${String(isError)}/${String(errorCode)}/${String(hasData)}/${String(shapeUsable)}`,
+              ).toContain(k);
+              thay.add(k);
+            }
     // Cả bốn phạm trù đều ĐẠT TỚI ĐƯỢC — một phạm trù không bao giờ xảy ra là mã chết.
     expect([...thay].sort()).toEqual(["denied", "loading", "ready", "unreadable"]);
   });
@@ -431,4 +445,242 @@ describe("C-1 (AST) — cả HAI người đọc phải HỎI trạng thái lỗ
       expect(nhap.length, `${ten} phải nhập vị từ CHUNG`).toBe(1);
     }
   });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// TẦNG 3 — ★★★ C-1 (review TOÀN NHÁNH Pha 6): **HÌNH DẠNG PAYLOAD.**
+//
+// ⚠⚠⚠ VÌ SAO TẦNG NÀY TỒN TẠI: `tsc` BIÊN DỊCH CẢ HAI ĐẦU CÙNG LÚC; SẢN XUẤT THÌ KHÔNG.
+// Task 2 đổi `headroom.effectiveBytes` → `headroom.effective.{…}`. Cả **bốn** đột biến của Task 2
+// chạy **trong hệ kiểu**; không cái nào hỏi *"một người tiêu thụ **đã biên dịch TRƯỚC** đọc payload
+// này thì sao"* — mà đó là **định nghĩa** của một thay đổi phá vỡ. Hậu quả đo được trên máy này:
+// `s.headroom.effective === undefined` ⇒ `TypeError` ⇒ vì `VramBrokerPanel` **không** có boundary
+// riêng ở `AIBrainDashboard`, throw leo lên boundary CẤP TRANG ⇒ **cả `/ai-brain` trắng**.
+//
+// Hai vế được canh ở đây:
+//   (a) payload sai hình dạng ⇒ rơi vào **từ vựng đã có** (`unreadable`), KHÔNG thành `"ready"`;
+//   (b) **lượng từ ∀ trên chính mã render**: mọi đường truy cập TRUNG GIAN của mọi người tiêu thụ
+//       phải có mặt ở `VRAM_STATE_REQUIRED_PATHS` **hoặc** `VRAM_STATE_GUARDED_PATHS`. Một
+//       `s.x.y.z` mới mà quên khai ⇒ ĐỎ, không im lặng thành `TypeError` trên bản đang phục vụ.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Ảnh chụp **ĐỦ HÌNH DẠNG** của bản HÔM NAY — nền của mọi ca dưới. Chỉ các NÚT là load-bearing. */
+function anhChupDu(): Record<string, unknown> {
+  return {
+    atMs: 1,
+    processKey: "p#1",
+    headroom: {
+      rawBytes: 1,
+      effective: { bytesAtReadMs: 1, readMark: "p#1", readAtMs: 1, notAnInvariant: true },
+      basis: "measured",
+      blind: false,
+      trusted: true,
+      degradedReasons: [],
+      usedBytes: 1,
+      ceilingBytes: 2,
+    },
+    ledger: { localBytes: 0, localHolders: [], foreign: { known: false, meaning: "x" }, totalBytes: 0 },
+    unledgered: { estimateBytes: 0, estimateUsable: true, unknownCount: 0, beginFailureCount: 0, lastReason: null },
+    unattributed: { bytes: 0, excludesBaselineBytes: true, knownSiteRowCount: 1, wiredSiteCount: 1 },
+    baseline: { verified: true, unverifiedReasons: null, origin: null },
+    defer: { scope: "this-process", hosts: [] },
+    nonFiniteFields: [],
+  };
+}
+
+/** Payload của bản máy chủ **TRƯỚC Task 2** — đúng thứ đang phát trên máy này khi review đo. */
+function anhChupCu(): Record<string, unknown> {
+  const s = anhChupDu();
+  const h = { ...(s.headroom as Record<string, unknown>) };
+  delete h.effective;
+  h.effectiveBytes = 12345; // ← ô CŨ
+  s.headroom = h;
+  return s;
+}
+
+describe("★★★ C-1 — payload SAI HÌNH DẠNG không được làm trắng trang", () => {
+  it("★★★ ĐỘT BIẾN HÌNH DẠNG: payload CŨ (thiếu ô `effective`) ⇒ `unreadable`, TUYỆT ĐỐI không `ready`", () => {
+    const loi = vramStateShapeProblems(anhChupCu());
+    expect(loi, "payload thiếu `headroom.effective` phải bị NÊU ĐÍCH DANH").toContain("headroom.effective");
+    const k = vramReadSurfaceKind({
+      isLoading: false,
+      isError: false,
+      errorCode: null,
+      hasData: true,
+      shapeUsable: vramStateShapeUsable(anhChupCu()),
+    });
+    // ⚠ `"ready"` ở đây **CHÍNH LÀ** lỗi: nó là giấy phép cho phần thân truy cập sâu ⇒ `TypeError`
+    //   ⇒ boundary CẤP TRANG ⇒ trang trắng. Ca này đỏ đúng lúc trang sẽ trắng.
+    expect(k, "có dữ liệu mà KHÔNG đọc được hình dạng ⇒ phải nói 'chưa đọc được', không được render").toBe(
+      "unreadable",
+    );
+  });
+
+  it("★★★ ĐỐI CHỨNG DƯƠNG — ảnh chụp ĐỦ hình dạng ⇒ 0 lỗi và `ready` (bản vá KHÔNG chặn hết)", () => {
+    expect(vramStateShapeProblems(anhChupDu())).toEqual([]);
+    expect(
+      vramReadSurfaceKind({
+        isLoading: false,
+        isError: false,
+        errorCode: null,
+        hasData: true,
+        shapeUsable: vramStateShapeUsable(anhChupDu()),
+      }),
+    ).toBe("ready");
+  });
+
+  it("★★★ KHÔNG BẮT NHẦM — ô `null`/vắng HỢP LỆ (đã khai ở `VRAM_STATE_GUARDED_PATHS`) vẫn `ready`", () => {
+    /**
+     * ⚠ Không có ca này thì một bản vá **chặn hết** cũng xanh, và `/ai-brain` sẽ nói *"chưa đọc
+     * được"* **mãi mãi** ở đúng cấu hình bình thường: `foreign.known === false` là trạng thái
+     * THẬT (chưa làm mới sổ chung lần nào) và `lastReason`/`unverifiedReasons` `null` là mặc định.
+     */
+    const s = anhChupDu();
+    (s.ledger as Record<string, unknown>).foreign = { known: false, meaning: "never-refreshed-blind-to-siblings" };
+    (s.unledgered as Record<string, unknown>).lastReason = null;
+    (s.baseline as Record<string, unknown>).unverifiedReasons = null;
+    expect(vramStateShapeProblems(s), "ba ô này CÓ QUYỀN vắng/null — panel tự canh").toEqual([]);
+  });
+
+  it("★★ đầu vào rác (`null`/số/chuỗi/bool/`undefined`) ⇒ nêu lỗi, KHÔNG ném", () => {
+    for (const x of [null, undefined, 0, "x", true]) {
+      expect(vramStateShapeProblems(x).length, `đầu vào ${String(x)}`).toBeGreaterThan(0);
+      expect(vramStateShapeUsable(x), `đầu vào ${String(x)}`).toBe(false);
+    }
+  });
+
+  it("★★ cầu chì — hai bảng đường KHÔNG rỗng và KHÔNG giao nhau", () => {
+    expect(VRAM_STATE_REQUIRED_PATHS.length).toBeGreaterThanOrEqual(8);
+    const canh = Object.keys(VRAM_STATE_GUARDED_PATHS);
+    expect(canh.length).toBeGreaterThanOrEqual(1);
+    expect(
+      VRAM_STATE_REQUIRED_PATHS.filter((d) => canh.includes(d)),
+      "một đường không thể vừa BẮT BUỘC vừa CÓ CANH RIÊNG",
+    ).toEqual([]);
+    // ⚠ Mỗi đường CÓ-CANH-RIÊNG phải kèm **lý do có chữ** — một cửa miễn trừ không lý do là một cửa.
+    for (const [d, ly] of Object.entries(VRAM_STATE_GUARDED_PATHS)) {
+      expect(ly.trim().length, `${d} phải nêu LÝ DO nó được canh riêng`).toBeGreaterThan(15);
+    }
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ C-1 (b) — LƯỢNG TỪ ∀ TRÊN CHÍNH MÃ RENDER
+//
+// ⚠⚠ Một bảng đường viết tay là một danh sách, và *"cái gì LIỆT KÊ thì luôn có phần tử thứ N+1"*.
+// Cầu chì dưới đây **suy tập ra khỏi mã**: mọi chuỗi truy cập bắt nguồn từ biến giữ payload
+// (`const s = state.data` · `const vb = vramState.data`, tìm trên CÂY chứ không đoán theo tên), và
+// mọi **tiền tố TRUNG GIAN** của chúng — nút bị truy cập tiếp, hoặc bị spread — phải có mặt ở một
+// trong hai bảng. Thêm `s.foo.bar` mới mà quên khai ⇒ **ĐỎ**.
+//
+// ⚠ Phạm vi được nói thẳng: cầu chì này canh chuỗi bắt nguồn từ **gốc payload**. Chuỗi bắt nguồn
+//   từ một phần tử mảng trong `.map((h) => h.reclaim.kind)` **KHÔNG** thuộc phạm vi — `h` không
+//   phải gốc payload. Đó là một ô còn mở, không phải một ô được coi là đã đóng.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Định danh của biến giữ **payload** (`const s = <bienQuery>.data`). Tìm trên CÂY. */
+function tenBienPayload(sf: ts.SourceFile, bienQuery: string): string[] {
+  const ra: string[] = [];
+  for (const n of moiNut(sf)) {
+    if (!ts.isVariableDeclaration(n) || n.initializer === undefined || !ts.isIdentifier(n.name)) continue;
+    const kt = n.initializer;
+    if (!ts.isPropertyAccessExpression(kt) || kt.name.text !== "data") continue;
+    const goc = ts.isNonNullExpression(kt.expression) ? kt.expression.expression : kt.expression;
+    if (ts.isIdentifier(goc) && goc.text === bienQuery) ra.push(n.name.text);
+  }
+  return ra;
+}
+
+/** Chuỗi `a.b.c` (bỏ `?.`, bỏ `!`) bắt nguồn từ `goc` → `"b.c"`; `null` nếu không phải chuỗi ấy. */
+function duongTuGoc(n: ts.PropertyAccessExpression, goc: string): string | null {
+  const doan: string[] = [];
+  let cur: ts.Node = n;
+  for (;;) {
+    if (ts.isPropertyAccessExpression(cur)) {
+      doan.unshift(cur.name.text);
+      cur = cur.expression;
+    } else if (ts.isNonNullExpression(cur) || ts.isParenthesizedExpression(cur)) {
+      cur = cur.expression;
+    } else break;
+  }
+  return ts.isIdentifier(cur) && cur.text === goc ? doan.join(".") : null;
+}
+
+describe("★★★ C-1 (b) — ∀ đường truy cập TRUNG GIAN trên payload VRAM phải được KHAI", () => {
+  for (const { ten, duong } of NGUOI_DOC) {
+    it(`★★★ ${ten}: mọi nút bị truy cập sâu / bị spread phải có ở BẮT BUỘC hoặc CÓ-CANH-RIÊNG`, () => {
+      const sf = ast(duong);
+      const bienQuery = tenBienQuery(sf);
+      expect(bienQuery, `${ten}: không tìm thấy lời gọi trpc.vram.state.useQuery`).not.toBeNull();
+      const goc = tenBienPayload(sf, bienQuery!);
+      expect(
+        goc.length,
+        `${ten}: không tìm thấy biến giữ payload (\`const x = ${bienQuery!}.data\`)`,
+      ).toBeGreaterThan(0);
+
+      /** Mọi đường đầy đủ mà file này đọc, gộp cả hai (hoặc nhiều) biến payload. */
+      const duongDay = new Set<string>();
+      /** Nút bị spread — `[...s.ledger.localHolders]` ném `TypeError` nếu ô ấy vắng. */
+      const biTrai = new Set<string>();
+      for (const n of moiNut(sf)) {
+        if (ts.isPropertyAccessExpression(n)) {
+          for (const g of goc) {
+            const d = duongTuGoc(n, g);
+            if (d !== null && d !== "") duongDay.add(d);
+          }
+          continue;
+        }
+        if (ts.isSpreadElement(n) && ts.isPropertyAccessExpression(n.expression)) {
+          for (const g of goc) {
+            const d = duongTuGoc(n.expression, g);
+            if (d !== null && d !== "") biTrai.add(d);
+          }
+        }
+      }
+      expect(duongDay.size, `${ten}: 0 đường truy cập ⇒ ca này là chân lý rỗng`).toBeGreaterThan(1);
+
+      /** TRUNG GIAN = tiền tố THẬT SỰ của một đường dài hơn, hoặc bị spread. */
+      const trungGian = new Set<string>(biTrai);
+      for (const d of duongDay) {
+        const doan = d.split(".");
+        for (let i = 1; i < doan.length; i++) trungGian.add(doan.slice(0, i).join("."));
+      }
+
+      const khai = new Set<string>([...VRAM_STATE_REQUIRED_PATHS, ...Object.keys(VRAM_STATE_GUARDED_PATHS)]);
+      /**
+       * ⚠ Bỏ đoạn cuối là **tên phương thức** (`.map`/`.join`/`.length`/…): `headroom.degradedReasons
+       * .map` cho tiền tố `headroom.degradedReasons` — đó mới là nút. Bản thân `….map` là một HÀM,
+       * không phải một nút dữ liệu.
+       */
+      const PHUONG_THUC =
+        /\.(map|filter|join|length|some|every|slice|includes|find|sort|flatMap|toFixed|toLocaleString)$/;
+      const thieu = [...trungGian].filter((d) => !khai.has(d) && !PHUONG_THUC.test(d)).sort();
+      expect(
+        thieu.join(" · "),
+        `${ten}: đường TRUNG GIAN chưa khai ⇒ một payload thiếu ô ấy sẽ ném TypeError và làm TRẮNG cả trang. Khai ở VRAM_STATE_REQUIRED_PATHS (kiểm ở runtime) hoặc VRAM_STATE_GUARDED_PATHS (kèm lý do)`,
+      ).toBe("");
+    });
+
+    it(`★★★ ${ten}: ô \`shapeUsable\` PHẢI đến từ \`vramStateShapeUsable(...)\`, không phải một hằng`, () => {
+      /**
+       * ⚠ `tsc` đã ép **có** ô ấy (kiểu bắt buộc), nhưng `shapeUsable: true` cũng biên dịch được và
+       * nó **khôi phục nguyên vẹn** lỗi C-1. Cổng này neo vào **GIÁ TRỊ**, không vào sự có mặt.
+       */
+      const sf = ast(duong);
+      const goi = moiNut(sf).filter(
+        (n): n is ts.CallExpression => ts.isCallExpression(n) && n.expression.getText(sf) === "vramReadSurfaceKind",
+      );
+      expect(goi.length, `${ten}: phải gọi vramReadSurfaceKind đúng 1 lần`).toBe(1);
+      const arg = goi[0]!.arguments[0];
+      expect(arg !== undefined && ts.isObjectLiteralExpression(arg), `${ten}: đối số phải là object literal`).toBe(true);
+      const o = (arg as ts.ObjectLiteralExpression).properties.find(
+        (p) => ts.isPropertyAssignment(p) && p.name.getText(sf) === "shapeUsable",
+      );
+      expect(o !== undefined, `${ten}: thiếu ô shapeUsable`).toBe(true);
+      expect(
+        (o as ts.PropertyAssignment).initializer.getText(sf),
+        `${ten}: shapeUsable phải là một PHÉP ĐO trên payload, không phải một hằng`,
+      ).toContain("vramStateShapeUsable(");
+    });
+  }
 });
