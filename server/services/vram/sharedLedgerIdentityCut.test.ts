@@ -183,7 +183,10 @@ describe("★★★ Task 5 / ∀-A — bề rộng cột: bảng hằng phải K
      */
     const { vramLeases } = await import("../../../drizzle/schema/vram");
     const tuDrizzle = new Map<string, number>();
-    for (const [ten, cot] of Object.entries(vramLeases as Record<string, unknown>)) {
+    // ⚠ `as unknown as` chứ không `as`: `PgTableWithColumns` KHÔNG có index signature nên `tsc`
+    //   (chỉ `tsconfig.tests.json` mới soi file này — `npm run check` LOẠI TRỪ `*.test.ts`) từ chối
+    //   phép ép một bước. Đây là lý do cổng phải chạy CẢ `check:tests`, không chỉ `check`.
+    for (const [ten, cot] of Object.entries(vramLeases as unknown as Record<string, unknown>)) {
       const c = cot as { columnType?: string; length?: number };
       if (c?.columnType === "PgVarchar" && typeof c.length === "number") tuDrizzle.set(ten, c.length);
     }
