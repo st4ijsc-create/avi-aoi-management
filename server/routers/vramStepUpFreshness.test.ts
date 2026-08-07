@@ -34,9 +34,11 @@
  *
  * ⚠ **ĐỐI CHỨNG DƯƠNG là điều kiện tồn tại của lưới này**: không có nó thì một bản vá **chặn hết**
  * cũng xanh — lớp lỗi đã để `215/215` xanh suốt thời gian một tool luôn `PERMISSION_DENIED`.
- * ⚠ **KHÔNG BẮT NHẦM**: một thủ tục `deployProcedure` **khác** (nền của
- * `programming.deployBuild` / `orchestration.deployWorkflow`) phải **KHÔNG** bị phép siết chạm tới
- * — cache phiên của nó còn nguyên. Đó là quyết định phạm vi, xem `task-1-report.md` Bước 2/3.
+ * ⚠ **KHÔNG BẮT NHẦM** (đã ĐỔI ở Task 1b): trục này **không còn** là *"thủ tục `deployProcedure`
+ * khác giữ nguyên cache phiên"* — chủ dự án đã chốt **siết nốt** cả 5 thủ tục deploy, nên phép siết
+ * nay nằm ở **GỐC** `deployProcedure` (`_core/trpc.ts`) và chạm **cả 7**. Cái không được chạm là
+ * `actuationProcedure` (sàn KHÔNG phải deploy) — xem mục 3. Lưới hành vi của 5 thủ tục thật:
+ * `server/routers/deployStepUpFreshness.test.ts`; lý lẽ ở `task-1b-report.md`.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
@@ -151,7 +153,9 @@ const ctxCua = (phien: string, user: unknown = supervisor) =>
  * **MỘT thủ tục `deployProcedure` KHÁC** — đại diện của `programming.deployBuild` /
  * `orchestration.deployWorkflow` trong lưới này. Nó dùng **chính** `deployProcedure` export từ
  * `_core/trpc.ts`, nên nó chia sẻ **đúng** middleware và **đúng** `Map` cache của mã sản xuất.
- * ⚠ Vì thế nó vừa là **cái bơm** hâm nóng cache, vừa là ô **KHÔNG BẮT NHẦM**.
+ * ⚠ Vì thế nó vừa là **cái bơm** hâm nóng cache (`requireFreshTotp` vẫn đọc/ghi cache phiên —
+ * Task 1b **không gỡ** nó, chỉ chain thêm phép siết per-call **sau** nó), vừa là ô chứng minh
+ * phép siết nằm ở **GỐC** chứ không ở `vramRouter` (Task 1b — mục 3).
  */
 const routerKhac = router({
   deployKhac: deployProcedure
@@ -540,20 +544,34 @@ describe("★★★ ĐỐI CHỨNG DƯƠNG — lượt CÓ OTP hợp lệ VẪN 
 });
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-// 3. KHÔNG BẮT NHẦM — phép siết KHÔNG được lan sang thủ tục `deployProcedure` khác
+// 3. KHÔNG BẮT NHẦM — phép siết KHÔNG được lan ra ngoài nhánh `deployProcedure`
 //
-// ⚠⚠ Đây là ô **phạm vi**. Kế hoạch Pha 6 xếp *"step-up hở ở `orchestration.deployWorkflow` +
-//    `programming.deployBuild`"* vào §"KHÔNG làm ở Pha 6 — cần chủ dự án quyết". Ca dưới đây
-//    **ghi lại hiện trạng ấy như một sự thật đo được**, để một lượt siết toàn hệ về sau là một
-//    **quyết định nói ra**, không phải một tác dụng phụ của task này.
+// ⚠⚠⚠ Ô **PHẠM VI**, VÀ NÓ ĐÃ ĐỔI Ở TASK 1b — CA DƯỚI ĐÂY TỪNG KHẲNG ĐỊNH ĐIỀU NGƯỢC LẠI.
+// Bản Task 1 ghi *"một thủ tục `deployProcedure` KHÁC giữ NGUYÊN cache phiên 10 phút"* như một
+// sự thật đo được, vì kế hoạch Pha 6 xếp *"step-up hở ở `orchestration.deployWorkflow` +
+// `programming.deployBuild`"* vào §"KHÔNG làm — cần chủ dự án quyết". Chủ dự án **đã quyết**
+// (2026-08-06): **SIẾT NỐT**. `deployProcedure` nay chain `requirePerCallFreshTotp` ngay tại
+// GỐC (`_core/trpc.ts`), nên câu cũ **sai sự thật** và ca này đã ĐỎ đúng lúc bản vá vào.
+// ⇒ Trục "không bắt nhầm" **dịch xuống một tầng**: cái không được chạm nay là
+//   `actuationProcedure` (sàn KHÔNG phải deploy) — xem ca kế tiếp, suy từ HÀNH VI.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-describe("★★★ KHÔNG BẮT NHẦM — phép siết chỉ chạm lệnh PHÁ HUỶ của VRAM", () => {
-  it("★★★ một thủ tục `deployProcedure` KHÁC giữ NGUYÊN cache phiên 10 phút (hiện trạng, cố ý ngoài phạm vi Pha 6)", async () => {
+describe("★★★ KHÔNG BẮT NHẦM — phép siết chỉ chạm nhánh `deployProcedure`", () => {
+  it("★★★ Task 1b — một thủ tục `deployProcedure` KHÁC nay CŨNG bị siết (cache phiên thôi mở được cửa)", async () => {
+    /**
+     * ⚠ Đây là **nửa VRAM** của cổng ra Task 1b, đo từ phía lưới VRAM: `deployKhac` đứng trên
+     * **chính** `deployProcedure` export của `_core/trpc.ts` (đại diện `programming.deployBuild` /
+     * `orchestration.deployWorkflow`), nên nó chứng minh phép siết nằm ở **GỐC**, không phải ở
+     * `vramRouter`. Lưới hành vi đầy đủ cho 5 thủ tục thật:
+     * `server/routers/deployStepUpFreshness.test.ts`.
+     */
     const phien = phienMoi();
     await expect(khac(phien).deployKhac({ totpCode: otp() })).resolves.toEqual({ ok: true });
-    // Không OTP, cùng phiên ⇒ vẫn QUA. Đây là hành vi **trước** task này, và task này không đổi nó.
-    await expect(khac(phien).deployKhac({})).resolves.toEqual({ ok: true });
+    // Cùng phiên, cache ĐÃ ấm, không OTP ⇒ nay BỊ CHẶN ở đúng cổng OTP.
+    const e = await loiCua(khac(phien).deployKhac({}));
+    expect(readAppErrorMeta(e)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
+    // …và ĐỐI CHỨNG DƯƠNG: OTP của chính lượt ấy thì vẫn qua.
+    await expect(khac(phien).deployKhac({ totpCode: otp() })).resolves.toEqual({ ok: true });
   });
 
   it("★★★ mutation KHÔNG PHÁ HUỶ (theo HÀNH VI) không bị kéo vào cổng OTP", async () => {

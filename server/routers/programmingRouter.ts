@@ -27,8 +27,12 @@ import { getDb } from "../db/connection";
 const protectedProcedure = moduleProcedure("MOD_ENGINEERING");
 // Doc 54 P3.2 (doc 40 CTL-07) — DEPLOY/rollback/fleet-rollout của một chương trình ra thiết bị là
 // đường ACTUATION MẠNH NHẤT: role-floor (admin/supervisor/engineer) + 2FA + STEP-UP OTP TƯƠI
-// (requireFreshTotp, sau cờ ACTUATION_STEPUP_2FA — mặc định OFF → hệt actuationProcedure cũ), cùng
-// license gate MOD_ENGINEERING. Client mang `totpCode` (OTP 6 số tươi) trong input khi cờ bật.
+// (sau cờ ACTUATION_STEPUP_2FA — mặc định OFF → hệt actuationProcedure cũ), cùng license gate
+// MOD_ENGINEERING. Client mang `totpCode` (OTP 6 số tươi) trong input khi cờ bật.
+// ★★★ Pha 6 Task 1b — `deployProcedure` (gốc, `_core/trpc.ts`) nay chain `requirePerCallFreshTotp`:
+// khi cờ BẬT, `totpCode` là **BẮT BUỘC MỖI LƯỢT GỌI**, không còn cache phiên 10 phút. `.optional()`
+// ở zod bên dưới **không** nới điều đó — middleware đọc raw input TRƯỚC zod và fail-closed.
+// Lưới: `server/routers/deployStepUpFreshness.test.ts`.
 const deployProcedure = deployBase.use(moduleGate("MOD_ENGINEERING"));
 // Doc 54 Wave B — authoring/compile writes (createArtifact/buildArtifact/upsertSymbol)
 // get a write floor (blocks read-only roles viewer/user) so a stray machine_control

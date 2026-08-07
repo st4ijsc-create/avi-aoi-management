@@ -28,18 +28,19 @@ import { Button } from "@/components/ui/button";
  *   ...
  *   {stepUp.dialog}   // render once in the page
  *
- * The server caches a successful step-up for ~10 min per session, but the client can't
- * see that cache, so we always prompt for a deploy action (rare + privileged → acceptable).
+ * The client always prompts for a deploy action (rare + privileged → acceptable).
  *
- * ⚠ Pha 6 Task 1 (M-4) — the last sentence of this block USED to read "the `totpCode` is ignored
- * server-side when the session is still within the step-up window". That is **no longer true for
- * every caller**, and leaving it would make this file lie about the server:
- *   • the five deploy mutations listed above still go through `requireFreshTotp` (session cache) —
- *     for them the sentence holds;
- *   • `vram.preempt` / `vram.releaseStale` additionally chain `requirePerCallFreshTotp`, which
- *     reads **no cache**: every single call must carry a `totpCode` that verifies **at that
- *     moment**. Sending the code is therefore mandatory, never redundant, for those two.
- * Always sending it (what `guard()` does) is correct for both groups.
+ * ⚠ Pha 6 Task 1 (M-4) — this block USED to read "the `totpCode` is ignored server-side when the
+ * session is still within the step-up window", because a successful step-up was cached ~10 min per
+ * session. Task 1 broke that for the two VRAM commands; **Task 1b (2026-08-06, owner decision)
+ * closed it for everyone**: `deployProcedure` itself now chains `requirePerCallFreshTotp`
+ * (`server/_core/trpc.ts`), so **every** mutation listed above — all five deploy ones and both VRAM
+ * ones — must carry a `totpCode` that verifies **at that moment**. Sending the code is therefore
+ * **mandatory, never redundant**, for every caller of this hook. Omitting it ⇒ FORBIDDEN
+ * `INVALID_VALUE{field:"twoFactorCode"}`.
+ *
+ * ⚠ Consequence for anyone adding a new deploy mutation: `guard()` is not optional decoration —
+ * a call site that skips it can never succeed while `ACTUATION_STEPUP_2FA` is on.
  */
 export function useStepUpOtp() {
   const { t } = useTranslation();

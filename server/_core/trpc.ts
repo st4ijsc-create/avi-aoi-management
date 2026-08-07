@@ -280,10 +280,19 @@ export const require2FA = t.middleware(async opts => {
 // "mặt đọc hứa nhiều hơn mặt lệnh": ai đọc mã UI sẽ TƯỞNG đã đóng, và không triệu chứng
 // nào xuất hiện).
 //
-//   • `requireFreshTotp`      — DÙNG cache phiên. Hành vi CŨ, giữ **nguyên từng ký tự**
-//                               cho `deployProcedure` và cả 7 thủ tục đang đứng trên nó.
+//   • `requireFreshTotp`      — DÙNG cache phiên (hành vi doc 40 CTL-07 nguyên bản).
 //   • `requirePerCallFreshTotp` — KHÔNG đọc và KHÔNG ghi cache. Mỗi lượt gọi phải mang
-//                               `totpCode` của **CHÍNH lượt ấy**. Dành cho lệnh PHÁ HUỶ.
+//                               `totpCode` của **CHÍNH lượt ấy**.
+//
+// ★★★ Pha 6 Task 1b (2026-08-06, quyết định chủ dự án) — `deployProcedure` chain **CẢ HAI**:
+//   `actuationProcedure.use(requireFreshTotp).use(requirePerCallFreshTotp)`. Vì thế **cả 7**
+//   thủ tục đứng trên nó (5 deploy + 2 lệnh phá huỷ VRAM) nay đòi OTP **mỗi lượt**. Bản đầu
+//   của Task 1 hoãn 5 thủ tục kia bằng một luận cứ **SAI SỰ THẬT** (*"deployToFleet chạy 200
+//   máy ⇒ siết toàn cục sẽ gãy giữa chừng"*): vòng lặp fleet nằm TRONG MÁY CHỦ, trong MỘT
+//   request tRPC (`fleetRollout.ts` → `programmingService` — lời gọi hàm, không qua
+//   middleware); client gọi **đúng một lần** và 5/5 điểm gọi đã bọc `stepUp.guard` + đã gửi
+//   `totpCode`. ⇒ Rào cản KHÔNG TỒN TẠI, và mối lo #1 của Task 1 (một lượt VRAM có OTP hâm
+//   nóng cache dùng chung cho `deployBuild`) nay đóng.
 //
 // ⚠ PHÁT BIỂU ĐÚNG LƯỢNG TỪ — và nó là **∀**, không phải **∃**:
 //     ***∀ lượt gọi một thủ tục đứng sau `requirePerCallFreshTotp`: raw input PHẢI mang
@@ -394,24 +403,28 @@ function stepUpTotpMiddleware(dungCachePhien: boolean) {
  * actuation/deploy. Khi cờ OFF hoặc không phải mutation → pass-through. `totpCode` đọc từ raw input
  * (không phá schema) — hỗ trợ cả bao bì superjson (`{ json: { totpCode } }`).
  * ⚠ Cache là **theo PHIÊN**, không theo thủ tục: một lượt step-up ở bất kỳ thủ tục nào đứng sau
- * middleware này đều mở cửa cho **mọi** thủ tục còn lại trong 10 phút. Với lệnh **phá huỷ**, dùng
- * `requirePerCallFreshTotp` bên dưới thay vì cái này.
+ * middleware này đều mở cửa cho **mọi** thủ tục còn lại trong 10 phút.
+ * ⚠⚠ Pha 6 Task 1b — **một mình nó KHÔNG đủ để canh một đường deploy.** `deployProcedure` chain
+ * thêm `requirePerCallFreshTotp` **ngay sau** nó, nên một cache-hit chỉ cho qua middleware này,
+ * không cho qua cổng. Dùng riêng cái này cho một sàn thủ tục mới ⇒ sàn ấy **hở đúng lỗ M-4**.
  */
 export const requireFreshTotp = stepUpTotpMiddleware(true);
 
 /**
  * ★★★ Pha 6 Task 1 (M-4) — step-up 2FA **KHÔNG cache**: mỗi lượt gọi phải mang `totpCode` của
- * **CHÍNH lượt ấy**. Chain **THÊM** sau `deployProcedure` cho các lệnh **PHÁ HUỶ** (xem
- * `vramRouter.ts`) — không thay thế, không hạ tầng nào.
+ * **CHÍNH lượt ấy**. Chain **THÊM** vào `deployProcedure` (Task 1b) — không thay thế, không hạ
+ * tầng nào.
  *
  * Vì sao không cache **theo thủ tục** (đường đã cân nhắc và **không chọn**): cache theo thủ tục vẫn
- * để lượt gọi phá huỷ **thứ hai** đi qua bằng OTP của lượt **thứ nhất** trong 10 phút — vẫn là
- * *"OTP của một lượt khác"*, tức vẫn không đạt cổng ra. Và nó đổi ngữ nghĩa cho **cả 7** thủ tục
- * đang đứng trên `deployProcedure`, trong khi bản vá này chỉ được phép chạm hai lệnh phá huỷ VRAM.
+ * để lượt gọi **thứ hai** của cùng thủ tục đi qua bằng OTP của lượt **thứ nhất** trong 10 phút —
+ * vẫn là *"OTP của một lượt khác"*, tức vẫn không đạt cổng ra.
  *
  * ⚠ Lượt gọi đi qua **cả hai** middleware (cái có cache chạy trước, trong `deployProcedure`), nên
  * khi cache nguội thì OTP được verify **hai lần**. Cùng một mã, cùng cửa sổ ⇒ cả hai cùng kết quả;
  * chi phí là một truy vấn `users` nữa, và nó chỉ xảy ra trên đường **cache-miss**.
+ * ⚠ `vramRouter` chain nó **một lần nữa** sau `requirePermission` (Task 1). Dư thừa về hành vi,
+ * **cố ý** giữ: lưới cấu trúc của `vramStepUpFreshness.test.ts` phân giải chuỗi **trong phạm vi
+ * `vramRouter.ts`**, nên gỡ chỗ ấy đi là gỡ mất phép canh riêng của hai lệnh phá huỷ.
  */
 export const requirePerCallFreshTotp = stepUpTotpMiddleware(false);
 
@@ -504,8 +517,33 @@ export const actuationProcedure = roleProcedure(...ACTUATION_ROLES).use(require2
 
 /**
  * `deployProcedure` — deploy of a program / workflow / recipe / fleet-task shares the
- * same role-floor + 2FA as actuation, PLUS doc 40 CTL-07 step-up 2FA (requireFreshTotp,
- * gated by ACTUATION_STEPUP_2FA — default OFF → identical to actuationProcedure). Call-sites
- * that adopt it may accept an optional `totpCode` in their input for the fresh-OTP challenge.
+ * same role-floor + 2FA as actuation, PLUS doc 40 CTL-07 step-up 2FA (gated by
+ * ACTUATION_STEPUP_2FA — default OFF → identical to actuationProcedure). Call-sites that
+ * adopt it MUST accept a `totpCode` in their input for the fresh-OTP challenge.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ Pha 6 Task 1b — PHÉP SIẾT PER-CALL NẰM Ở **GỐC NÀY**, KHÔNG Ở BẢY CHỖ CHAIN TAY.
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * Task 1 chain `requirePerCallFreshTotp` cho **hai** lệnh phá huỷ VRAM và hoãn **năm** thủ
+ * tục deploy còn lại. Chủ dự án đã chốt **siết nốt** (2026-08-06), nên bất biến đúng nay là
+ *
+ *   ***∀ thủ tục có chuỗi bắt nguồn từ `deployProcedure`: MỌI lượt gọi phải mang một
+ *   `totpCode` verify được TẠI THỜI ĐIỂM ẤY.***
+ *
+ * Câu ấy là một **∀**, nên phép siết phải nằm ở **một** chỗ mà mọi thủ tục **buộc** đi qua —
+ * chính khai báo này. Chain tay ở bảy điểm gọi sẽ biến nó thành một **DANH SÁCH**, và lớp lỗi
+ * *"danh sách nào cũng có phần tử thứ N+1"* đã tái diễn 13 lần trong dự án. Ở đây, một thủ tục
+ * deploy **thứ tám** sinh ra ở một file **chưa tồn tại** cũng được che **theo cấu tạo**.
+ * Lưới: `server/routers/deployStepUpFreshness.test.ts` (phép thử M3 + 5 ca hành vi + 5 đối
+ * chứng dương). Xem `task-1b-report.md`.
+ *
+ * ⚠ **CHỈ THU HẸP**: `requireFreshTotp` giữ nguyên **phía trước** — không gỡ, không hạ tầng
+ *   nào. Nó vẫn đọc/ghi cache phiên, nhưng một cache-hit chỉ cho qua **middleware thứ nhất**;
+ *   middleware thứ hai vẫn đòi OTP của chính lượt ấy. Giữ nó có hai tác dụng đo được:
+ *   (a) các ca đỏ của lưới vẫn **dựng được** cảnh *"OTP của một lượt khác"* — bỏ nó đi thì
+ *       cache biến mất và ca đỏ ấy thành **chân lý rỗng**, không còn chứng minh gì;
+ *   (b) hỏng-theo-chiều-an-toàn: gỡ nhầm một trong hai vẫn còn cái kia.
+ *   Giá phải trả: trên đường **cache-miss**, OTP được verify **hai lần** (2 truy vấn `users`).
+ *   Lệnh deploy là hiếm + đặc quyền ⇒ chấp nhận được.
  */
-export const deployProcedure = actuationProcedure.use(requireFreshTotp);
+export const deployProcedure = actuationProcedure.use(requireFreshTotp).use(requirePerCallFreshTotp);

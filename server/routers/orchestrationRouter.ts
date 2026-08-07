@@ -30,8 +30,12 @@ const protectedProcedure = moduleProcedure("MOD_ENGINEERING");
 // (device-actuation) path, PLUS the same MOD_ENGINEERING license gate. Per-action
 // requirePermission("machine_control", …) still composes on top.
 const actuationProcedure = actuationBase.use(moduleGate("MOD_ENGINEERING"));
-// doc 40 CTL-07 — deploy path thêm lớp step-up 2FA (requireFreshTotp) SAU cờ ACTUATION_STEPUP_2FA
-// (mặc định OFF → pass-through). Vẫn giữ role-floor + require2FA + MOD_ENGINEERING như actuation.
+// doc 40 CTL-07 — deploy path thêm lớp step-up 2FA SAU cờ ACTUATION_STEPUP_2FA (mặc định OFF →
+// pass-through). Vẫn giữ role-floor + require2FA + MOD_ENGINEERING như actuation.
+// ★★★ Pha 6 Task 1b — `deployProcedure` (gốc, `_core/trpc.ts`) nay chain `requirePerCallFreshTotp`:
+// khi cờ BẬT, `totpCode` là **BẮT BUỘC MỖI LƯỢT GỌI**, không còn cache phiên 10 phút. `.optional()`
+// ở zod bên dưới **không** nới điều đó — middleware đọc raw input TRƯỚC zod và fail-closed.
+// Lưới: `server/routers/deployStepUpFreshness.test.ts`.
 const deployProcedure = deployBase.use(moduleGate("MOD_ENGINEERING"));
 import { orchestrationWorkflows, orchestrationWorkflowVersions, orchestrationRuns, orchestrationRunSteps, machines } from "../../drizzle/schema";
 import {

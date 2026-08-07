@@ -74,15 +74,17 @@ import {
  * rằng `stepUpVerifiedUntil` (`_core/trpc.ts`) là cache **10 phút theo `sessionToken`** dùng chung
  * cho **mọi** `deployProcedure` — nghiệm thu sống sau đó **đo được** `engineer1` gọi `vram.preempt`
  * **không `totpCode`** vẫn QUA. Nay hai lệnh phá huỷ chain thêm `requirePerCallFreshTotp`: **mỗi
- * lượt phải mang OTP của CHÍNH nó**. Năm thủ tục `deployProcedure` khác (`programming.deployBuild`
- * · `approveDeployment` · `rollbackDeployment` · `deployToFleet` · `orchestration.deployWorkflow`)
- * **giữ nguyên** cache phiên — siết chúng là **quyết định của chủ dự án** (§"KHÔNG làm ở Pha 6"),
- * ⚠ **KHÔNG** vì một rào cản kỹ thuật: bản đầu của báo cáo task này biện hộ bằng *"`deployToFleet`
- * chạy tuần tự nhiều máy ⇒ siết toàn cục sẽ gãy giữa chừng khi mã hết hạn"* — **SAI SỰ THẬT**, và
- * I-1 của review đã bác. Vòng lặp ấy nằm **TRONG MÁY CHỦ, trong MỘT request tRPC**
- * (`services/programming/fleetRollout.ts` → `programmingService` — lời gọi hàm, **không** qua
- * middleware); client gọi **đúng một lần**. Và **5/5** thủ tục kia đều đã bọc `stepUp.guard(...)`
- * và **đã gửi `totpCode`**. Đừng trích lý do sai ấy để biện hộ cho việc không đóng nốt.
+ * lượt phải mang OTP của CHÍNH nó**.
+ * ★★★ **TASK 1b ĐÃ ĐÓNG NỐT (2026-08-06, chủ dự án chốt):** năm thủ tục `deployProcedure` còn lại
+ * (`programming.deployBuild` · `approveDeployment` · `rollbackDeployment` · `deployToFleet` ·
+ * `orchestration.deployWorkflow`) **KHÔNG còn** cache phiên — phép siết nay nằm ở **GỐC**
+ * `deployProcedure` (`_core/trpc.ts`), nên **cả 7** thủ tục đòi OTP mỗi lượt.
+ * ⚠ Lý do hoãn ở bản đầu là **SAI SỰ THẬT** và I-1 của review đã bác: *"`deployToFleet` chạy tuần
+ * tự nhiều máy ⇒ siết toàn cục sẽ gãy giữa chừng khi mã hết hạn"* — vòng lặp ấy nằm **TRONG MÁY
+ * CHỦ, trong MỘT request tRPC** (`services/programming/fleetRollout.ts` → `programmingService` —
+ * lời gọi hàm, **không** qua middleware); client gọi **đúng một lần**, và **5/5** thủ tục kia đều
+ * đã bọc `stepUp.guard(...)` + đã gửi `totpCode`. Đừng trích lý do sai ấy để biện hộ cho việc
+ * không đóng một lỗ step-up nào khác.
  * **Chủ dự án chốt (2026-08-06): TÁCH BIT RIÊNG** ⇒ `VRAM_CONTROL_MODULE` (`@shared/permissions`).
  *
  * ⚠⚠ Task 3b **THU HẸP, KHÔNG NỚI**: `deployProcedure`/`actuationProcedure` + step-up 2FA giữ
@@ -117,8 +119,12 @@ const totp = { totpCode: z.string().max(16).optional() };
  * ⚠ Task 3b: vế thẩm quyền là **bit RIÊNG của VRAM**, không còn `machine_control/canDelete`.
  * ⚠ Pha 6 Task 1 (M-4): **`requirePerCallFreshTotp` chain THÊM ở cuối** — mỗi lượt gọi phải mang
  * `totpCode` của **CHÍNH lượt ấy**, không lượt nào qua bằng cache phiên của một lượt khác. Nó
- * **chỉ THU HẸP**: `deployProcedure` (role-floor + 2FA + step-up có cache) giữ nguyên bên dưới.
- * Lưới: `server/routers/vramStepUpFreshness.test.ts`.
+ * **chỉ THU HẸP**: `deployProcedure` (role-floor + 2FA + step-up) giữ nguyên bên dưới.
+ * ⚠ Task 1b chain phép siết ấy vào **chính `deployProcedure`**, nên lượt `.use()` ở đây **dư thừa
+ * về hành vi** — **cố ý giữ**: lưới cấu trúc của `vramStepUpFreshness.test.ts` phân giải chuỗi
+ * **trong phạm vi file này**, nên gỡ nó đi là gỡ mất phép canh riêng của hai lệnh phá huỷ (và
+ * hai lượt verify chỉ xảy ra trên đường cache-miss của một lệnh hiếm + đặc quyền).
+ * Lưới: `server/routers/vramStepUpFreshness.test.ts` · `server/routers/deployStepUpFreshness.test.ts`.
  */
 const vramDestructiveProcedure = deployProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canDelete")).use(requirePerCallFreshTotp);
 

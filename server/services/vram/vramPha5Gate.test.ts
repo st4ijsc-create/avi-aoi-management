@@ -186,7 +186,12 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   THỨ HAI** (Agent tự trị, `argsWithAuthCtx` FAIL-OPEN ⇒ god-mode 29 tool) — tức **đúng bề
     //   mặt mà Task 3 vừa mở rộng** khi cho 8 tool lập trình với tới được từ đường Agent. Chi phí
     //   đo được: **5/5 xanh, 862 ms**.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(13);
+    // ⚠ Pha 6 Task 1b: 13 → 14, thêm `server/routers/deployStepUpFreshness.test.ts` — lưới HÀNH VI
+    //   của **cả 5 thủ tục deploy** sau khi `requirePerCallFreshTotp` được gộp vào **GỐC**
+    //   `deployProcedure`. Nó nằm NGOÀI module VRAM và **không** chứa chuỗi `Pha 5`, nên hai bộ
+    //   nhận diện đầu **MÙ** với nó; chỉ bộ thứ ba (`DAU_KHAI_PHA` ∧ `duocPhu`) thấy, và **chỉ khi**
+    //   đường này có mặt ở §Cổng kiểm chung. Đó đúng là cơ chế mà (E) được dựng ra để làm.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(14);
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -219,7 +224,12 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //       ⚠⚠ Chính là file người review dùng để chứng minh lỗ **VẪN MỞ** sau lượt vá đầu: mẫu
     //       `/\bPha\s+\d+\b/` **mù với `Pha 2B`** nên xoá file này đi mà cổng vẫn XANH. Nay ĐỎ.
     //   +1 đường cổng mới (`aiAgentOrchestrator.authCtx.test.ts`) cũng tự vào tập bị canh.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(69);
+    // ⚠ Pha 6 Task 1b: 69 → 70. **Đúng MỘT** file mới —
+    //   `server/routers/deployStepUpFreshness.test.ts` — và nó vào tập bị canh **chỉ nhờ bộ nhận
+    //   diện thứ ba**: tên không bắt đầu bằng `vram`, không nằm dưới thư mục `vram`, không chứa
+    //   chuỗi `Pha 5`. Nếu ai đó gỡ đường của nó khỏi §Cổng kiểm chung thì `CONG.length` ĐỎ **và**
+    //   con số này ĐỎ — hai trục, cùng một lượt gỡ.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(70);
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {
