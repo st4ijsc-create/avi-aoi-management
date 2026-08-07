@@ -708,6 +708,22 @@ public sealed class SmtpNotificationChannel
         {
             var failure = Classify(ex, credential is not null);
             var hint = PermanentHint(ex, failure.Locus);
+
+            // 🔴 The Undetermined arm below tells the operator to read the host log, so this WRITES one —
+            // the sibling webhook channel's generic arm has always done both, in this order, and only the
+            // second half had been copied here. It is the one locus whose Description carries nothing but a
+            // type name (`an unexpected failure (X)`), so without this the exception that produced it is
+            // lost entirely and the advice points at an empty page. Deliberately not extended to the other
+            // three: each of those is CLASSIFIED, its description already says what happened, and logging a
+            // fully-reported send-test outcome would be new noise on a path that returns everything it knows
+            // to its caller.
+            if (failure.Locus == FailureLocus.Undetermined)
+            {
+                ReportError(ex, $"Alarm e-mail {identity}: the test message failed in a way this channel " +
+                                "does not classify, so it could not tell the operator whether a relay was " +
+                                "reached.");
+            }
+
             return new NotificationTestOutcome(false, failure.Locus switch
             {
                 FailureLocus.RelayReached =>
@@ -1170,24 +1186,36 @@ public sealed class SmtpNotificationChannel
     /// <item><description><b>A transport failure is not one situation.</b> The first version answered "no
     /// relay" for every <see cref="SocketException"/>/<see cref="IOException"/>. Measured: a relay that sends
     /// its <c>220</c> banner, reads the <c>EHLO</c> and then RSTs produces exactly that shape — and a
-    /// conversation demonstrably took place, with the relay ending it. The distinguishing fact was again ONE
-    /// PROPERTY AWAY and again inside this method: <see cref="SocketException.SocketErrorCode"/> separates
-    /// <see cref="SocketError.ConnectionRefused"/>/<see cref="SocketError.TimedOut"/> (nothing answered) from
-    /// <see cref="SocketError.ConnectionReset"/>/<see cref="SocketError.ConnectionAborted"/> (something did,
-    /// then broke). <b>"Not in scope" was not available, and claiming it would have been the same error the
-    /// bool was added to fix.</b></description></item>
+    /// conversation demonstrably took place, with the relay ending it. The distinguishing fact was in scope
+    /// here, inside this method, where the exception already is; <b>"not in scope" was not available, and
+    /// claiming it would have been the same error the bool was added to fix.</b>
+    /// <b>🔴 But it is NOT <see cref="SocketException.SocketErrorCode"/>, which is what both the fix and the
+    /// review that demanded it first assumed — see <see cref="LocusOfTransportFailure"/> for the measurement
+    /// that killed that model and for what actually separates the two.</b> The rule survived; the mechanism
+    /// credited for it did not, and only a mutation could tell the
+    /// difference.</description></item>
     /// <item><description><b>"Nothing was reached" and "nothing was SENT" are different facts and want
     /// different advice.</b> A mistyped From address never leaves this machine, so <i>"check the host, the
     /// port and this machine's route to it"</i> is advice written for the other producing path. Three
     /// situations needed three sentences, and a bool can carry two.</description></item>
     /// </list>
     ///
-    /// <para><b>The one remaining INFERENCE, stated rather than papered over</b> — and after the correction
-    /// above it genuinely is the only one: a bare <c>GeneralFailure</c> with no inner cause at all reports
+    /// <para><b>TWO remaining INFERENCES, stated rather than papered over</b> — and the count is two rather
+    /// than the "only one" an earlier revision of this paragraph claimed, which was this same overstatement
+    /// one notch smaller:</para>
+    /// <list type="number">
+    /// <item><description>A bare <c>GeneralFailure</c> with no inner cause at all reports
     /// <see cref="FailureLocus.RelayReached"/>. The conversation broke after the client had something to break
-    /// with, which is evidence but not an observation. It is reported that way so the locus agrees with the
-    /// description that row has always carried (<i>"the relay refused the conversation"</i>) rather than
-    /// having a sentence contradict its own description.</para>
+    /// with — evidence, not an observation. It is reported that way so the locus agrees with the description
+    /// that row has always carried (<i>"the relay refused the conversation"</i>) rather than having a sentence
+    /// contradict its own description.</description></item>
+    /// <item><description><see cref="LocusOfTransportFailure"/>'s own fallback — <i>"a stream failed, so a
+    /// stream existed"</i> — is also an inference, and it is the one that carries the reset case in practice.
+    /// It is sound and it is the best available reading of a transport failure that preserves no socket
+    /// cause, but it is reasoning about the shape of the chain rather than reading a fact out of
+    /// it.</description></item>
+    /// </list>
+    /// <para>Neither is dressed up as an observation, which is the whole point of counting them.</para>
     /// </remarks>
     private readonly record struct ClassifiedFailure(FailureKind Kind, string Description, FailureLocus Locus);
 

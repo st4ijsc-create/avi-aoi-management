@@ -397,11 +397,20 @@ public sealed class WebhookNotificationChannel : IDisposable
             // 🔴 The cause is NOT narrowed further here, deliberately, and the question was asked rather than
             // skipped. NotificationConfigStore.GetSecretAsync returns null for THREE situations — no row, a
             // blob that will not decrypt, and a store read that FAILED (its own catch logs and returns null).
-            // `hasSigningSecret` rules out the first; nothing at this return can separate the other two, and
-            // the store does not report which. Bringing it into scope means a tri-state on a member four
-            // channels call, which is not this fix's to do — so this says both, which is true of both, rather
-            // than naming the likelier one and being wrong the rest of the time. (Blueprint §8.1: a sentence
-            // true WITHOUT the field beats a branch that cannot be built, provided the asking is on record.)
+            // `hasSigningSecret` rules out the first; nothing at this return separates the other two, so this
+            // says BOTH, which is true of both, rather than naming the likelier one and being wrong the rest
+            // of the time. Blueprint §8.1: a sentence true WITHOUT the field beats a branch that cannot be
+            // built, provided the asking is on record — which is what this comment is for.
+            //
+            // 🔴 AND THE COST OF NARROWING IT IS NOT WHAT THIS COMMENT FIRST CLAIMED. It said "a tri-state on
+            // a member four channels call, which is not this fix's to do". Review found a cheaper route that
+            // needs no signature change at all: GetSecretAsync's catch calls
+            // ReportFailure(isRead: true, "read-secret", …), which surfaces as
+            // NotificationConfigStoreHealth.LastFailureOperation/LastFailureUtc — a PROPERTY READ AWAY, on a
+            // store this channel already holds. The remedy below is unchanged and is still the sanctioned
+            // one, and the advice it gives now lands on a readout that genuinely exists; what was wrong was
+            // the estimate. Corrected HERE and not only in the task report, because blueprint §10's own rule
+            // is that a report is not a source record and the next author reads this line, not that one.
             return new NotificationTestOutcome(false,
                 $"The webhook {identity} has a signing secret stored, but it could not be read — either the " +
                 "encrypted key will not decrypt on this machine (typically a notifications.db copied from " +
