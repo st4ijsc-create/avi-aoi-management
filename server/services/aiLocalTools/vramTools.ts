@@ -180,7 +180,15 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
       processKey: C(s.processKey),
       atMs: String(s.atMs),
       readMark: C(s.headroom.effective.readMark),
-      readAtMs: String(s.headroom.effective.readAtMs),
+      /**
+       * ★ M-3 (review) — `readAtMs` được đọc bằng một **PHÉP SO**, không in lại thành một con
+       * số thứ hai: nó **bằng `atMs` theo cấu tạo**, nên in cả hai là nói một điều hai lần.
+       * Rẽ nhánh nằm **ở đây** và chọn giữa **HAI KHOÁ** (§A-AST: thân khuôn không được rẽ nhánh).
+       */
+      mocDau:
+        s.headroom.effective.readAtMs === s.atMs
+          ? cum(lang, "markSameAsSnapshot", {})
+          : cum(lang, "markDiffersFromSnapshot", { readAtMs: String(s.headroom.effective.readAtMs) }),
     }),
   );
 
@@ -309,47 +317,6 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
     }
   }
 
-  // ── HỘ + `reclaim` (bàn giao I-3: lệnh nào VỚI TỚI hộ này) + TTL (đồng hồ #6) ────────────────
-  const hoTatCa = [...s.ledger.localHolders, ...(s.ledger.foreign.known ? s.ledger.foreign.holders : [])];
-  if (hoTatCa.length === 0) {
-    d.push(noi(lang, "noHolders", {}));
-  }
-  for (const h of hoTatCa) {
-    const oDau =
-      h.processKey === null
-        ? cum(lang, "atThisProcess", {})
-        : cum(lang, "atProcess", { processKey: C(h.processKey) });
-    const lenh =
-      h.reclaim.kind === "reclaimable-here"
-        ? cum(lang, "reclaimHere", { owner: C(h.owner), reclaimer: C(h.reclaim.reclaimer) })
-        : h.reclaim.kind === "declared-by-owner-process"
-          ? cum(lang, "reclaimOwnerProcess", { reclaimer: C(h.reclaim.reclaimer) })
-          : cum(lang, "reclaimNone", { why: C(h.reclaim.why) });
-    const ttl =
-      h.ttlExpired === null
-        ? ""
-        : cum(lang, "ttl", {
-            ttlMs: String(h.ttlMs),
-            expired: String(h.ttlExpired),
-            note: h.ttlExpired ? cum(lang, "ttlExpiredNote", {}) : "",
-          });
-    d.push(
-      noi(lang, "holderLine", {
-        owner: C(h.owner),
-        kind: C(h.kind),
-        priority: C(h.priority),
-        where: oDau,
-        bytes: M(h.bytes),
-        measured: String(h.measured),
-        // ⚠ `leaseKey=` là TÊN TRƯỜNG máy đọc — dữ liệu, không phải văn xuôi ⇒ ghép ở đây, không
-        // vào bảng câu (xem luật "văn xuôi ⇒ khoá · định danh ⇒ tham số" ở `vramPhrases.ts`).
-        leaseKeyPart: h.leaseKey === null ? "" : ` · leaseKey=${C(h.leaseKey)}`,
-        ttlPart: ttl,
-        command: lenh,
-      }),
-    );
-  }
-
   // ── PHẦN KHÔNG QUY TRÁCH NHIỆM ĐƯỢC — `holderListIsLowerBound` ───────────────────────────────
   d.push(
     noi(lang, "unattributed", {
@@ -432,7 +399,7 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
             owner: C(h.status.owner),
             firstRefusedAt: h.status.firstRefusedAt === null ? "?" : C(h.status.firstRefusedAt),
             chainBudgetMs: String(h.status.chainBudgetMs ?? "?"),
-            lastRefusal: H(h.status.lastRefusalMessage),
+            lastRefusal: h.status.lastRefusalMessage === null ? "?" : H(h.status.lastRefusalMessage),
           })
         : h.status.kind === "exceeded"
           ? cum(lang, "statusExceeded", {
@@ -440,7 +407,7 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
               owner: C(h.status.owner),
               firstRefusedAt: h.status.firstRefusedAt === null ? "?" : C(h.status.firstRefusedAt),
               chainBudgetMs: String(h.status.chainBudgetMs ?? "?"),
-              lastRefusal: H(h.status.lastRefusalMessage),
+              lastRefusal: h.status.lastRefusalMessage === null ? "?" : H(h.status.lastRefusalMessage),
             })
           : h.status.kind === "no-chain-in-this-process"
             ? cum(lang, "statusNoChain", {})
@@ -491,6 +458,64 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
    * động Agent KHÔNG THI HÀNH ĐƯỢC"*) — đã đóng ở `client/src`, mở lại ở bề mặt Agent.
    */
   d.push(noi(lang, "commandsNotTools", {}));
+
+  /**
+   * ★★★ Pha 7 Task 2 · **I-2 của review — DANH SÁCH KHÔNG CÓ TRẦN DÂN SỐ PHẢI ĐỨNG CUỐI.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ VÌ SAO KHỐI NÀY BỊ DỜI XUỐNG CUỐI (đo được, không phải khẩu vị)
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * `ghepCoTran()` **`break` ở dòng đầu tiên vượt trần** ⇒ **mọi dòng SAU nó bị BỎ**. Khối này là
+   * chỗ **DUY NHẤT** không có trần dân số (`foreign.holders` do TIẾN TRÌNH ANH EM ghi — nợ C-1
+   * vẫn treo), nên khi nó đứng GIỮA thì nó **đẩy mọi dòng sau nó ra khỏi ngữ cảnh LLM**.
+   * Đo được ở `lang=en` TRƯỚC lượt dời: **31 hộ anh em** là đủ để **cả khối HOÃN biến mất** —
+   * gồm `defer.hosts[].status.owner`, ô mà chính báo cáo Task này gọi là *nặng nhất*.
+   * ⇒ Thứ tự nay là một **luật**: *cái gì KHÔNG có trần thì đứng SAU cái gì có trần.* Lượt cắt
+   *   khi ấy chỉ ăn vào một danh sách **tự khai là CẬN DƯỚI** (`holderListIsLowerBound`, dòng
+   *   `unattributed` ở TRÊN), và người đọc vẫn nhận đủ mọi dòng CÓ trần + câu khai đã cắt.
+   * ⚠ Có lưới canh **CHÍNH PHÉP CẮT** (`vramReadModel.readers.test.ts` §5), không chỉ canh
+   *   `tomTat()` — một lưới AST thuần trên `tomTat()` **mù hoàn toàn** với `ghepCoTran()`.
+   */
+  // ── HỘ + `reclaim` (bàn giao I-3: lệnh nào VỚI TỚI hộ này) + TTL (đồng hồ #6) ────────────────
+  const hoTatCa = [...s.ledger.localHolders, ...(s.ledger.foreign.known ? s.ledger.foreign.holders : [])];
+  if (hoTatCa.length === 0) {
+    d.push(noi(lang, "noHolders", {}));
+  }
+  for (const h of hoTatCa) {
+    const oDau =
+      h.processKey === null
+        ? cum(lang, "atThisProcess", {})
+        : cum(lang, "atProcess", { processKey: C(h.processKey) });
+    const lenh =
+      h.reclaim.kind === "reclaimable-here"
+        ? cum(lang, "reclaimHere", { owner: C(h.owner), reclaimer: C(h.reclaim.reclaimer) })
+        : h.reclaim.kind === "declared-by-owner-process"
+          ? cum(lang, "reclaimOwnerProcess", { reclaimer: C(h.reclaim.reclaimer) })
+          : cum(lang, "reclaimNone", { why: C(h.reclaim.why) });
+    const ttl =
+      h.ttlExpired === null
+        ? ""
+        : cum(lang, "ttl", {
+            ttlMs: String(h.ttlMs),
+            expired: String(h.ttlExpired),
+            note: h.ttlExpired ? cum(lang, "ttlExpiredNote", {}) : "",
+          });
+    d.push(
+      noi(lang, "holderLine", {
+        owner: C(h.owner),
+        kind: C(h.kind),
+        priority: C(h.priority),
+        where: oDau,
+        bytes: M(h.bytes),
+        measured: String(h.measured),
+        // ⚠ `leaseKey=` là TÊN TRƯỜNG máy đọc — dữ liệu, không phải văn xuôi ⇒ ghép ở đây, không
+        // vào bảng câu (xem luật "văn xuôi ⇒ khoá · định danh ⇒ tham số" ở `vramPhrases.ts`).
+        leaseKeyPart: h.leaseKey === null ? "" : ` · leaseKey=${C(h.leaseKey)}`,
+        ttlPart: ttl,
+        command: lenh,
+      }),
+    );
+  }
 
   return d;
 }

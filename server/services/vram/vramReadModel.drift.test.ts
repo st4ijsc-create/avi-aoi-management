@@ -824,7 +824,7 @@ describe("★★★ §4 — `variesWith` / `beforeAfterEvidence` bị PHÉP ĐO 
     //     ⚠ Pha 7 Task 2 — nhãn nay là **ASCII** (xem `VRAM_BEFORE_AFTER_EVIDENCE`): chỉ khi ASCII
     //     thì ô này mới **tới được** `textSummary` của `lang=en`/`lang=zh`, tức mới có NGƯỜI ĐỌC.
     expect(cau).toContain("CLOCK-INVARIANT");
-    expect(cau).toContain("THE WHOLE SET");
+    expect(cau, "nhãn phải nói CẢ TẬP, không phải vài ô được chọn").toContain("(ALL)");
     // ⚠ Và chính tính ASCII ấy là một bất biến: một chữ có dấu quay lại ⇒ ô này rơi khỏi mặt Agent.
     expect(/^[\x20-\x7E]+$/.test(cau), "câu khai phải ASCII — nếu không nó KHÔNG vào được textSummary en/zh").toBe(true);
 

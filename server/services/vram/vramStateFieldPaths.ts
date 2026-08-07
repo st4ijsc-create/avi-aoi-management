@@ -44,71 +44,100 @@ function docKhaiBao(nguon: string): Map<string, ts.InterfaceDeclaration | ts.Typ
   return ra;
 }
 
+/** Đường tương đối → tập **HẰNG CHUỖI** mà kiểu cho phép ở lá ấy (rỗng ⇔ không phải hợp hằng). */
+type BanDo = Map<string, Set<string>>;
+
+function gop(vao: BanDo, tu: BanDo): void {
+  for (const [k, v] of tu) {
+    const co = vao.get(k);
+    if (co === undefined) vao.set(k, new Set(v));
+    else for (const x of v) co.add(x);
+  }
+}
+function motLa(hang: Iterable<string> = []): BanDo {
+  return new Map([["", new Set(hang)]]);
+}
+
 /** Đường TƯƠNG ĐỐI dưới một nút kiểu. `""` ⇔ chính nút này là một **LÁ**. */
 function duongTuongDoi(
   khaiBao: ReadonlyMap<string, ts.InterfaceDeclaration | ts.TypeAliasDeclaration>,
   node: ts.TypeNode | undefined,
   dangDi: ReadonlySet<string>,
-): Set<string> {
-  const ra = new Set<string>();
-  if (node === undefined) return ra.add(""), ra;
+): BanDo {
+  if (node === undefined) return motLa();
   if (ts.isParenthesizedTypeNode(node)) return duongTuongDoi(khaiBao, node.type, dangDi);
   if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
     return duongTuongDoi(khaiBao, node.type, dangDi);
   }
+  /**
+   * ★ **HẰNG CHUỖI CỦA MỘT HỢP KIỂU** — thu ở đây, và đây là một **ràng buộc chứ không phải tiện
+   * tay**: `vramReadModel.readers.test.ts` đo *"đổi ô này thì `textSummary` có đổi không"*, và với
+   * một ô kiểu `"a" | "b"` mà người đọc dùng làm **VỊ TỪ** (`x === "a" ? … : …`), một probe bịa
+   * (`"a~M~"`) rơi vào **cùng nhánh** ⇒ phép đo khai oan *"không ai đọc"*. Giá trị lật nhánh phải
+   * đến từ **CHÍNH KIỂU**, không từ một danh sách chép tay ở lưới.
+   */
+  if (ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal)) return motLa([node.literal.text]);
   // ⚠ HỢP KIỂU: vét cạn **MỌI** nhánh — lỗ mà đột biến R1 chui qua.
   if (ts.isUnionTypeNode(node)) {
-    for (const m of node.types) for (const p of duongTuongDoi(khaiBao, m, dangDi)) ra.add(p);
+    const ra: BanDo = new Map();
+    for (const m of node.types) gop(ra, duongTuongDoi(khaiBao, m, dangDi));
     return ra;
   }
   if (ts.isArrayTypeNode(node)) {
     const con = duongTuongDoi(khaiBao, node.elementType, dangDi);
     // Mảng nguyên thuỷ ⇒ MỘT lá (đúng quy ước của người liệt kê lúc chạy).
-    if (con.size === 1 && con.has("")) return ra.add(""), ra;
-    for (const p of con) ra.add(p === "" ? "[]" : `[].${p}`);
+    if (con.size === 1 && con.has("")) return motLa();
+    const ra: BanDo = new Map();
+    for (const [p, h] of con) ra.set(p === "" ? "[]" : `[].${p}`, h);
     return ra;
   }
   // Tuple (vd `variesWith`) — mảng hằng của chuỗi ⇒ một lá.
-  if (ts.isTupleTypeNode(node)) return ra.add(""), ra;
-  if (ts.isTypeLiteralNode(node)) return thuThapThanhVien(khaiBao, node.members, ra, dangDi), ra;
+  if (ts.isTupleTypeNode(node)) return motLa();
+  if (ts.isTypeLiteralNode(node)) return thuThapThanhVien(khaiBao, node.members, dangDi);
   if (ts.isTypeReferenceNode(node)) {
     const ten = node.typeName.getText();
     const d = khaiBao.get(ten);
     // Kiểu NHẬP KHẨU (hoặc đệ quy) ⇒ LÁ. Chúng là hợp của chuỗi/số, không mở ra ô con nào.
-    if (d === undefined || dangDi.has(ten)) return ra.add(""), ra;
+    if (d === undefined || dangDi.has(ten)) return motLa();
     const di = new Set(dangDi).add(ten);
-    if (ts.isInterfaceDeclaration(d)) return thuThapThanhVien(khaiBao, d.members, ra, di), ra;
+    if (ts.isInterfaceDeclaration(d)) return thuThapThanhVien(khaiBao, d.members, di);
     return duongTuongDoi(khaiBao, d.type, di);
   }
-  return ra.add(""), ra;
+  return motLa();
 }
 
 function thuThapThanhVien(
   khaiBao: ReadonlyMap<string, ts.InterfaceDeclaration | ts.TypeAliasDeclaration>,
   ms: ts.NodeArray<ts.TypeElement>,
-  ra: Set<string>,
   dangDi: ReadonlySet<string>,
-): void {
+): BanDo {
+  const ra: BanDo = new Map();
   for (const m of ms) {
     if (!ts.isPropertySignature(m)) continue;
     const ten = m.name.getText().replace(/^["']|["']$/g, "");
-    for (const p of duongTuongDoi(khaiBao, m.type, dangDi)) {
-      ra.add(p === "" ? ten : p.startsWith("[") ? `${ten}${p}` : `${ten}.${p}`);
+    for (const [p, h] of duongTuongDoi(khaiBao, m.type, dangDi)) {
+      const duong = p === "" ? ten : p.startsWith("[") ? `${ten}${p}` : `${ten}.${p}`;
+      gop(ra, new Map([[duong, h]]));
     }
   }
+  return ra;
 }
 
 /**
- * ★★★ **MỌI Ô LÁ của `VramAgentState`, suy từ KIỂU.** Đây là **lượng từ** dùng chung cho hai luật:
+ * ★★★ **MỌI Ô LÁ của `VramAgentState`, suy từ KIỂU — kèm HẰNG CHUỖI mà kiểu cho phép.**
+ * Đây là **lượng từ** dùng chung cho hai luật:
  *   • *"mỗi ô phải tự khai ĐỔI/KHÔNG-ĐỔI theo đồng hồ"* (`vramReadModel.drift.test.ts`);
  *   • *"mỗi ô phải có NGƯỜI ĐỌC THẬT"* (`vramReadModel.readers.test.ts`).
  * Một ô mới sinh ra ở **bất kỳ nhánh nào** của **bất kỳ hợp kiểu nào** tự đưa mình vào **cả hai**.
  */
-export function vramStateLeafPaths(nguon: string = VRAM_READ_MODEL_SOURCE): Set<string> {
+export function vramStateLeafInfo(nguon: string = VRAM_READ_MODEL_SOURCE): ReadonlyMap<string, ReadonlySet<string>> {
   const khaiBao = docKhaiBao(nguon);
   const goc = khaiBao.get("VramAgentState");
-  const ra = new Set<string>();
-  if (goc === undefined || !ts.isInterfaceDeclaration(goc)) return ra;
-  thuThapThanhVien(khaiBao, goc.members, ra, new Set(["VramAgentState"]));
-  return ra;
+  if (goc === undefined || !ts.isInterfaceDeclaration(goc)) return new Map();
+  return thuThapThanhVien(khaiBao, goc.members, new Set(["VramAgentState"]));
+}
+
+/** Đường lá — **cùng một nguồn** với `vramStateLeafInfo()`, chỉ bỏ phần hằng. */
+export function vramStateLeafPaths(nguon: string = VRAM_READ_MODEL_SOURCE): Set<string> {
+  return new Set(vramStateLeafInfo(nguon).keys());
 }

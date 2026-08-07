@@ -624,11 +624,18 @@ export const VRAM_EFFECTIVE_VARIES_WITH = [
  * — những ô ASCII mà cả ba ngôn ngữ đã in **nguyên văn** từ Pha 4. Nội dung LUẬT không đổi một ly:
  * ba cái răng của nó (`RR-A`, `vramReadModel.drift.test.ts` §4) vẫn nguyên — **con trỏ tới bản
  * phân loại**, **bằng chứng NGOÀI payload** (`nvidia-smi`), và **CẢ TẬP chứ không vài ô được chọn**.
+ *
+ * ⚠⚠ **ĐÍNH CHÍNH (M-5 của review) — BẢN ĐẦU CỦA LƯỢT ASCII HOÁ LÀ *VĂN XUÔI TIẾNG ANH*, KHÔNG
+ * PHẢI MỘT NHÃN.** Phép so với `basis`/`caveat`/`estimateKind` khi ấy **không chặt**: những ô đó là
+ * **định danh enum** (`ledger-only`, `estimate`), còn hằng này là một **câu** — và nó được in
+ * **nguyên văn giữa bản tóm tắt `vi`**. ⇒ Nay nó là một **token máy đọc thật sự**
+ * (`CLOCK-INVARIANT-FIELDS(ALL)+nvidia-smi(memory.used)@<đường tới bản phân loại>`), còn phần
+ * **văn xuôi** đã có chỗ đúng của nó: khoá `effectiveFlowing` ở `vramPhrases.ts`, **ba bản thật**.
+ * Đó là khuôn có sẵn của repo: *token ASCII ngắn cho phần máy đọc · `ba<>()` cho phần người đọc.*
  */
 export const VRAM_BEFORE_AFTER_EVIDENCE =
-  "EVERY field declared CLOCK-INVARIANT (measured classification in " +
-  "server/services/vram/vramReadModel.drift.test.ts) + nvidia-smi(memory.used) " +
-  "- THE WHOLE SET, NOT A CHOSEN FEW";
+  "CLOCK-INVARIANT-FIELDS(ALL)+nvidia-smi(memory.used)" +
+  "@server/services/vram/vramReadModel.drift.test.ts";
 
 export interface VramAgentState {
   readonly atMs: number;

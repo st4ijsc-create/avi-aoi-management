@@ -143,21 +143,25 @@ export const CAU = {
    * ⇒ Câu cảnh báo nay nằm **trong chính dòng mang con số**, không phải trong một ô payload.
    * ⚠ Giá đã được Task 2 tính đúng: **3 chuỗi khuôn, 0 khoá i18n mới**.
    */
+  /**
+   * ⚠⚠⚠ **ĐÍNH CHÍNH Pha 7 Task 2 (M-1 của review) — BẢN CHÉP TAY ĐÃ ĐƯỢC GỠ KHỎI ĐÂY.**
+   * Bản trước nối thêm một câu *"con số ĐANG CHẢY…"* **viết tay**, và Pha 7 thêm khoá
+   * `effectiveFlowing` in **chính ba ô payload** nói cùng điều đó ⇒ **hai dòng liền nhau nói MỘT
+   * sự thật**, phồng ngữ cảnh (xem I-2: bản tóm tắt có TRẦN) và để nguyên **nguồn trôi** (bản chép
+   * tay lệch khỏi `variesWith` mà không ai thấy). ⇒ Câu cảnh báo nay sống **đúng một chỗ**: khoá
+   * `effectiveFlowing`, nơi nó đi **cùng dữ liệu đẻ ra nó**.
+   * ⚠ Câu *"lấy EFFECTIVE, đừng lấy raw"* **ở lại** đây — nó nói về **hai ô của chính dòng này**.
+   */
   headroom: ba<{ eff: string; raw: string; ceiling: string; used: string }>(
     (p) =>
       `Dư địa hiệu lực: ${p.eff} (thô ${p.raw}) · trần ${p.ceiling} · đang dùng ${p.used}. ` +
-      `Con số hiệu lực ĐANG CHẢY — nó đổi theo tuổi bản sao sổ chung kể cả khi KHÔNG byte nào đổi; ` +
-      `đừng so hai lượt hỏi rồi kết luận "vừa nhả" hay "vừa chiếm".`,
+      `Tính mọi lượt nạp mới theo con số HIỆU LỰC, không bao giờ theo con số thô.`,
     (p) =>
       `Effective headroom: ${p.eff} (raw ${p.raw}) · ceiling ${p.ceiling} · in use ${p.used}. ` +
-      `Size any new model load against the EFFECTIVE number, never the raw one. ` +
-      `The effective figure is a FLOWING quantity: it moves with the age of the shared-ledger replica ` +
-      `even when not a single byte changed, so never diff two answers and call it "freed" or "taken".`,
+      `Size any new model load against the EFFECTIVE number, never the raw one.`,
     (p) =>
       `有效余量：${p.eff}（原始 ${p.raw}）· 上限 ${p.ceiling} · 已用 ${p.used}。` +
-      `规划新模型加载时一律以“有效余量”为准，不要用原始值。` +
-      `有效余量是流动量：即使一个字节都没变，它也会随共享账本副本的年龄而变化；` +
-      `切勿比较两次回答就断定“刚释放”或“刚占用”。`,
+      `规划新模型加载时一律以“有效余量”为准，不要用原始值。`,
   ),
   /**
    * ⚠ Bản `vi` **có thêm một câu so với Pha 4**, và đó là cổng §A của
@@ -207,20 +211,20 @@ export const CAU = {
    */
   effectiveFlowing: ba<{ notAnInvariant: string; varies: string; evidence: string }>(
     (p) =>
-      `Con số hiệu lực TỰ KHAI không phải một bất biến (notAnInvariant=${p.notAnInvariant}); ` +
-      `nó đổi theo các ô: ${p.varies}. ` +
-      `Bằng chứng trước/sau DUY NHẤT chấp nhận được: ${p.evidence}. ` +
-      `Đừng lấy hai lần hỏi ô này làm bằng chứng đã nhả hay đã chiếm.`,
+      `Con số hiệu lực là một đại lượng ĐANG CHẢY, và nó TỰ KHAI điều đó ` +
+      `(notAnInvariant=${p.notAnInvariant}); nó đổi theo các ô: ${p.varies}, ` +
+      `kể cả khi KHÔNG một byte nào đổi. Bằng chứng trước/sau DUY NHẤT chấp nhận được: ${p.evidence}. ` +
+      `Đừng so hai lượt hỏi rồi kết luận "vừa nhả" hay "vừa chiếm".`,
     (p) =>
-      `The effective figure DECLARES itself not an invariant (notAnInvariant=${p.notAnInvariant}); ` +
-      `it moves with these fields: ${p.varies}. ` +
-      `The only acceptable before/after evidence is: ${p.evidence}. ` +
-      `Never quote two readings of this cell as proof that VRAM was freed or taken.`,
+      `The effective figure is a FLOWING quantity and it DECLARES that itself ` +
+      `(notAnInvariant=${p.notAnInvariant}); it moves with these fields: ${p.varies}, ` +
+      `even when not a single byte changed. The only acceptable before/after evidence is: ${p.evidence}. ` +
+      `Never diff two answers and call it "freed" or "taken".`,
     (p) =>
-      `有效余量自我声明它不是不变量（notAnInvariant=${p.notAnInvariant}）；` +
-      `它会随这些字段变化：${p.varies}。` +
+      `有效余量是流动量，并且它自我声明了这一点（notAnInvariant=${p.notAnInvariant}）；` +
+      `它会随这些字段变化：${p.varies}，即使一个字节都没变也会变。` +
       `唯一可接受的前后对比证据是：${p.evidence}。` +
-      `切勿把这一项的两次读数当作显存已释放或已占用的证据。`,
+      `切勿比较两次回答就断定“刚释放”或“刚占用”。`,
   ),
 
   /**
@@ -234,19 +238,44 @@ export const CAU = {
    * ⚠ Dòng này in **cả hai mốc** một cách CỐ Ý: mốc tường để trả lời *"bao giờ"*, dấu đọc để trả
    * lời *"có phải cùng một lượt đọc không"* — và câu nói thẳng rằng chỉ cái thứ hai làm được việc ấy.
    */
-  snapshotMark: ba<{ processKey: string; atMs: string; readMark: string; readAtMs: string }>(
+  /**
+   * ⚠⚠ **M-3 của review — `readAtMs` KHÔNG CÒN ĐƯỢC IN NHƯ MỘT CON SỐ THỨ HAI.**
+   * `readAtMs ≡ atMs` **theo cấu tạo** (`vramReadModel.ts` gán cùng một hằng) ⇒ bản trước in
+   * **cùng một số hai lần trong một câu** — một người đọc dựng cho LƯỚI, không cho người đọc, tức
+   * đúng hình dạng nhỏ của chính lớp lỗi Task này đóng. Nay ô ấy được đọc bằng một **PHÉP SO**, và
+   * câu chỉ nêu con số khi phép so **LỆCH** — lúc đó nó mới là thông tin (một bất biến vừa vỡ).
+   */
+  snapshotMark: ba<{ processKey: string; atMs: string; readMark: string; mocDau: string }>(
     (p) =>
       `Ảnh chụp của tiến trình ${p.processKey} lúc ${p.atMs} ms · dấu đọc=${p.readMark} ` +
-      `(mốc tường của dấu=${p.readAtMs} ms). Hai lượt hỏi TRÙNG mốc tường được, nên muốn biết ` +
-      `hai bản tóm tắt có phải cùng một lượt đọc hay không thì so DẤU ĐỌC, đừng so mốc tường.`,
+      `(${p.mocDau}). Hai lượt hỏi TRÙNG mốc tường được, nên muốn biết hai bản tóm tắt có phải ` +
+      `cùng một lượt đọc hay không thì so DẤU ĐỌC, đừng so mốc tường.`,
     (p) =>
       `Snapshot from process ${p.processKey} at ${p.atMs} ms · read mark=${p.readMark} ` +
-      `(wall clock of that mark=${p.readAtMs} ms). Two answers CAN share the same wall-clock ` +
-      `millisecond, so compare the READ MARK, never the wall clock, to tell two reads apart.`,
+      `(${p.mocDau}). Two answers CAN share the same wall-clock millisecond, so compare the ` +
+      `READ MARK, never the wall clock, to tell two reads apart.`,
     (p) =>
       `来自进程 ${p.processKey} 的快照，时刻 ${p.atMs} ms · 读取标记=${p.readMark}` +
-      `（该标记的墙上时钟=${p.readAtMs} ms）。两次回答可能落在同一毫秒，` +
+      `（${p.mocDau}）。两次回答可能落在同一毫秒，` +
       `因此要区分两次读取请比较读取标记，不要比较墙上时钟。`,
+  ),
+  /** Mốc tường của dấu đọc **KHỚP** mốc ảnh chụp — trạng thái ĐÚNG theo cấu tạo. */
+  markSameAsSnapshot: ba<KhongTham>(
+    () => "mốc tường của dấu KHỚP mốc ảnh chụp",
+    () => "the wall clock of that mark equals the snapshot time",
+    () => "该标记的墙上时钟与快照时刻一致",
+  ),
+  /** ⚠ Mốc **LỆCH** — một bất biến của mặt đọc vừa vỡ; nêu SỐ vì lúc này nó mới là thông tin. */
+  markDiffersFromSnapshot: ba<{ readAtMs: string }>(
+    (p) =>
+      `⚠ mốc tường của dấu LỆCH mốc ảnh chụp (${p.readAtMs} ms) — một bất biến của mặt đọc vừa vỡ, ` +
+      `báo cho người vận hành thay vì tự chọn một trong hai mốc`,
+    (p) =>
+      `WARNING: the wall clock of that mark DIFFERS from the snapshot time (${p.readAtMs} ms) — ` +
+      `an invariant of the read surface just broke; report it instead of picking one of the two marks`,
+    (p) =>
+      `⚠ 该标记的墙上时钟与快照时刻不一致（${p.readAtMs} ms）——读取面的一个不变量刚被破坏；` +
+      `请上报，不要自行在两个时刻中挑一个`,
   ),
 
   /**
