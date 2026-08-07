@@ -14,10 +14,9 @@
 // wrong tool here, so no new InternalsVisibleTo entry was added for it (or for the three test projects
 // that also now construct DemoModeGate directly through the same public ctor).
 //
-// 🔴 Task E-2 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md) — the two entries below are
-// the first InternalsVisibleTo this assembly has carried since the note above was written, and one of them
-// IS to a peer production assembly. Stating the reasoning rather than quietly contradicting the paragraph
-// above:
+// 🔴 Task E-2 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md) — the entry below is the first
+// InternalsVisibleTo this assembly has carried since the note above was written, and it IS to a peer
+// production assembly. Stating the reasoning rather than quietly contradicting the paragraph above:
 //
 //   WHAT NEEDS THEM. FleetCore carries three seams that were `internal` on FleetHost before the move and
 //   must stay reachable: DriverDecoratorForTests, AdditionalPipelinesForTests (60 references across 11 test
@@ -35,11 +34,12 @@
 //   right. Here there is no public API to reach for, and creating one would widen access rather than
 //   narrow it.
 //
-//   WHY St4i.EngineApi AND NOT ONLY THE TEST ASSEMBLY. FleetHost forwards the three seams (it is a shell
-//   over FleetCore), so the shell itself has to see them; the tests then reach them through FleetHost
-//   exactly as before, which is what keeps ~330 test declarations untouched. Both halves of one component
-//   that now spans two assemblies — not a shortcut between two components.
+//   WHY St4i.EngineApi AND WHY THAT IS THE WHOLE LIST. FleetHost forwards the three seams (it is a shell
+//   over FleetCore), so the shell itself has to see them; the tests then reach them through FleetHost's own
+//   `internal` forwarders exactly as before, covered by St4i.EngineApi's own existing
+//   InternalsVisibleTo("St4i.EngineApi.Tests"). So ONE entry is sufficient and a second one to the test
+//   assembly was written here, found to be reachable by nothing, and deleted — an unused IVT is the same
+//   speculative widening this file argues against, just harder to notice.
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("St4i.EngineApi")]
-[assembly: InternalsVisibleTo("St4i.EngineApi.Tests")]

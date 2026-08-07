@@ -329,3 +329,176 @@ hàm private chịu lực; **cái wrapper public là một quyết định, khô
 rẻ; dời một thành viên không có nhân chứng là cách một tính chất biến mất mà không ai thấy.
 
 **e) Số dòng hạ tầng config connector là 2 723, không phải ~2 900.** Sáu con số thành phần đều đúng.
+
+## 10. 🔴 E-2 ghi lại — cái gì đã dời, và những gì E-3 phải thừa kế
+
+Toàn văn ở `.superpowers/sdd/2026-08-04-dotE-fleet-core-extraction/task-2-report.md`. Mục này tồn tại vì
+`.superpowers/sdd/` bị gitignore và **một báo cáo không phải bản ghi nguồn** — mọi điều dưới đây phải sống sót
+đến E-3 kể cả khi không ai đọc báo cáo.
+
+**Commit:** `1a47dca8` (cuộc dời) và `8ecb2f47` (ba nhân chứng), nhánh `feat/fleet-core-extraction`.
+
+### 10.1 Hình dạng đã dựng — và cái nó khoá lại cho E-3
+
+`St4i.EdgeCore.Fleet.FleetCore` giữ toàn bộ thân cũ của `FleetHost`: vòng đời N-driver, roster, phân giải slot,
+đường ghi, health/KPI, **cơ chế** kịch bản, các trường settings, và **`_gate`**. Cùng xuống: `ConnectorRegistry`
++ `ConnectorBinding`, `MachineState`, `SafetySnapshot`, `DriverHealthSnapshot`, `MachineDriverAvailability`.
+Ở lại `St4i.EngineApi`: mọi DTO và phép chiếu, **danh mục preset** kịch bản, `ResilienceProbe`, `IAssetRegistry`,
+`ConfigSyncCoordinator`, `ILogger`, toàn bộ `Endpoints/`.
+
+🔴 **`FleetHost` KHÔNG GIỮ KHOÁ NÀO, và đó là điều chịu lực.** §3.2 của E-1 liệt kê hai hình dạng cho đường cắt
+và kết luận cả hai đều tệ. **Có hình dạng thứ ba, và đây là nó: một khoá duy nhất, và không còn một phép đọc
+cặp nào ở phía bên kia đường cắt.** Mọi thành viên từng đọc hai trường được `_gate` bảo vệ trong MỘT lần lấy
+khoá đã xuống nguyên khối — `GetSafetyStatus`, `Snapshot`→`ReadSnapshot`, `GetSettings`, phép so `wasRunning`
+của `Start`/`Stop`, `RegisterMachine`, `ApplyScenario`. **Luật cho E-3: đừng bao giờ thêm vào `FleetHost` một
+thành viên đọc HAI thứ từ lõi rồi ghép lại** — đó chính là hình dạng xấu thứ nhất của E-1, dựng lại. Hãy phân
+giải cặp ấy bên trong `FleetCore` và trả về một record.
+
+**Ba thứ §4 xếp "Ở LẠI" nhưng không thể ở lại** (E-1 §1.4 đúng): `ApplyScenario`, `Burst`,
+`RunHotFolderAoiDemoAsync`. Cả ba đổi trạng thái lõi dưới khoá của lõi; chỉ vỏ DTO của chúng ở lại.
+
+### 10.2 🔴 Số khối `lock (_gate)` là **20**, không còn là 21 — và chỗ mất đi là chỗ nào
+
+§9.2 ghi 21. Sau cuộc cắt là **20**, xác định bằng một bộ đếm khớp ngoặc chạy trên cả hai cây (không phải bằng
+grep): khối duy nhất biến mất là của **`MachineDetail`**, mà thân nó đúng một lệnh — `isRunning = IsRunning;` —
+tức một phép đọc của một getter *đã* `lock (_gate)`. `MachineDetail` là thành viên SPLIT (E-1 §1.4 mục 5): nửa
+vòng đời là "đọc `IsRunning`", nửa chiếu ra là `state.ToDetail(isRunning)`. Tách ra thì nửa vòng đời đúng bằng
+`_core.IsRunning`. Bọc thêm một `lock` ở phía vỏ chính là **thêm một khoá cho vỏ** — điều §10.1 cấm. Một lần
+lấy khoá tái nhập dư thừa bị bỏ; giá trị không đổi, hành vi không đổi.
+
+### 10.3 Ba vi phạm `_gate` của §9.2 **VẪN CÒN NGUYÊN**, và cuộc đi bộ ba chặng nói gì
+
+Đi bộ theo khả năng với tới, ba chặng, **ở cả hai bên**, bắt đầu từ *tập các lệnh chạy dưới khoá* (kể cả bốn
+helper giả định caller giữ khoá: `StartLocked`/`StopLocked`/`StartSlot`/`ApplyNetworkOutageLocked`), **không
+phải** từ thân các khối `lock`. Cả ba vi phạm còn nguyên, ở đúng chỗ cũ, cùng số lượng:
+
+1. `StartLocked` → `MappingProfileResolver.Build` → `File.Exists`/`File.ReadAllText` mỗi máy.
+2. `StopLocked` → `slot.Cts.Cancel()` → callback `ct.Register` của driver chạy `Dispose` **đồng bộ**.
+3. `RegisterMachine` → `_onMachineSeeded?.Invoke` → (vỏ) `_ = assetRegistry.UpsertAsync(d)` → giao dịch SQLite
+   đồng bộ. Chỗ thứ tư trong hàm dựng (§9.2 note 4) cũng còn nguyên, cũng không phải vi phạm khoá.
+
+**Số thao tác không tăng, đo bằng dụng cụ chứ không bằng đọc:** một bộ phân tích khớp ngoặc đếm những điểm mà mã
+**do host cung cấp** với tới được khi đang giữ `_gate`, chạy trên cả cây trước (`5f2b8883`) và cây sau —
+**6 điểm trước, 6 điểm sau, tương ứng 1-1**: `1371→1476`, `1372→1477` (callback của `MappingProfileResolver`),
+`1504→1609` (cảnh báo connector không khởi động), `1600→1703` (slot faulted, nằm trong lambda `Task.Run` của
+`StartSlot` — bộ phân tích *cố tình* đánh giá thừa ở đây, và đánh giá thừa **y hệt** ở cả hai bên),
+`1697→1800` (callback huỷ ném), `1963→2057` (upsert roster). Không thêm một thao tác nào.
+
+🔴 **Nhưng cuộc đi bộ tìm ra một đường I/O THỨ TƯ mà §9.2 không liệt kê, và nó CÓ TRƯỚC Đợt E.** Ba trong sáu
+điểm trên là **lời gọi ghi log chạy khi đang giữ `_gate`** (hai callback của `MappingProfileResolver`, cảnh báo
+connector trong `StartLocked`, và callback-ném trong `StopLocked`). Trước cuộc cắt đó là
+`_logger?.LogWarning/LogError` ở **đúng những điểm ấy** — nên đây không phải cái E-2 tạo ra, và nó không tăng.
+Nhưng ghi log **có thể là I/O đồng bộ**, và ở đúng cấu hình sản phẩm thì gần như chắc chắn là: `Program.cs:61`
+gọi `AddWindowsService(...)`, thứ đăng ký `EventLogLoggerProvider` khi tiến trình chạy như một Windows Service,
+và `EventLogLogger` ghi **đồng bộ**. Tức là **một dòng log có thể chặn `Estop()`**.
+**Dụng cụ: [READ] trên `Program.cs` cộng [READ] trên hành vi framework — CHƯA ĐO.** Phép đo mà ai đó xếp lịch
+cho hạng mục sửa `_gate` phải bao gồm cả đường này, không chỉ ba đường của §9.2.
+
+### 10.4 Mười bốn lời gọi log đã port — và một sự trôi mức nghiêm trọng, có chủ đích
+
+Mười bốn chỗ `_logger?.` (§9.5, con số đã đính chính) chuyển sang quy ước của EdgeCore. **Vỏ truyền `null` cho
+cả hai callback khi nó không có `ILogger`**, chứ không truyền một lambda ôm lấy một logger null — nếu không, lỗi
+Critical D-7a sẽ thành **không thể kiểm được**, vì sẽ không còn cách nào dựng lõi mà không kèm callback. Đột
+biến D-7a (đưa `_connectorStartIssues[id] = err` vào **trong đối số** của lời gọi log) đã chạy: **GIẾT 2/3
+`FleetHostConnectorVisibilityTests`.**
+
+🔴 **Trôi mức nghiêm trọng, ghi ra vì nó là thay đổi quan sát được duy nhất của cuộc dời.** Quy ước EdgeCore chỉ
+có HAI kênh. Bốn chỗ chỉ-có-thông-điệp đều là `LogWarning` và vẫn là `LogWarning`. Mười chỗ mang exception
+trước đây là **5 `LogWarning` + 2 `LogError` + 3 `LogDebug`**; cả mười giờ tới nơi dưới dạng **`LogError`**.
+Không hành vi sản phẩm, không test, không endpoint nào quan sát điều này — nhưng **ba dòng dọn dẹp tốt-nhất-nỗ-lực
+giờ hiện ra ở mức Error**, và một người vận hành đọc log sẽ thấy khác. Nếu muốn khôi phục độ mịn, cách rẻ nhất
+là một callback thứ ba (`WalFlushPump` đã có tiền lệ với `logInfo`); E-2 không làm, vì thêm kênh log trong một
+cuộc dời đúng là thứ scope creep brief cấm.
+
+### 10.5 `InternalsVisibleTo`, và vì sao nó KHÔNG mâu thuẫn với ghi chú cũ trong `AssemblyInfo.cs`
+
+`St4i.EdgeCore/AssemblyInfo.cs` giờ mang **đúng một** entry: `InternalsVisibleTo("St4i.EngineApi")` — lần
+đầu kể từ ghi chú SM-1b, và nó là tới một **assembly sản phẩm ngang hàng**. (Một entry thứ hai tới
+`St4i.EngineApi.Tests` đã được viết ra, kiểm lại thấy **không gì với tới nó** — test chạm ba seam qua các
+forwarder `internal` của chính `FleetHost`, vốn đã được `InternalsVisibleTo` sẵn có của `St4i.EngineApi` phủ —
+nên nó bị xoá. Một IVT không ai dùng đúng là kiểu nới rộng đầu cơ mà file ấy phản đối, chỉ khó thấy hơn.) Lý do đầy đủ nằm trong chính file đó. Tóm tắt: ba seam
+(`DriverDecoratorForTests`, `AdditionalPipelinesForTests`, `ResolveFleet`) là **cách bất biến "`AmbiguousDriver`
+không với tới được" của §5 được CHỨNG MINH**; phương án thay thế — cho chúng `public` trên EdgeCore — **rộng hơn
+hẳn**, vì nó phơi ba seam chỉ-dành-cho-test ra cho `St4i.EdgeService` (đúng cái host E-3 dựng, và là host tuyệt
+đối không được có đường tiêm slot), cho WPF, và cho mọi host tương lai. Ca `DemoModeGate` khác thật: ở đó **đã
+có sẵn** một ctor `public` phục vụ một caller sản xuất thật, nên IVT sẽ là lối tắt vòng qua một API vốn đã đúng.
+
+🔴 **E-3 phải giữ điều này:** đừng nới ba seam ấy thành `public` cho tiện. Nếu `EdgeWorker` cần tiêm driver, nó
+cần một seam **của riêng nó**, thiết kế cho một host sản xuất — không phải cái cửa mà test dùng.
+
+### 10.6 Những gì E-3 vẫn phải đối mặt, chưa hề nhẹ đi
+
+- **§9.4(1) `AppContext.BaseDirectory`.** `St4i.EdgeService.csproj` **vẫn không ship** `fleet.json`,
+  `connectors.json` hay `mapping/*.json`. Cùng mã, cùng assembly, chạy trong EdgeService thì roster **rỗng** và
+  mọi máy rơi về `MappingProfile.ForClass`, **không ngoại lệ, không cảnh báo nêu đúng nguyên nhân**. E-2 không
+  đổi gì ở đây — nó chỉ làm cho mã ấy với tới được từ EdgeService, tức làm cái bẫy **chạm tới được**.
+- **§9.4(1) hai bộ đọc `--fleet`.** `EdgeWorker.LoadFleet` (8 máy mặc định) và `FleetCore.LoadFleet` (10 máy)
+  đọc cùng một cờ từ cùng `Environment.GetCommandLineArgs()`. Sau E-3 cả hai ở chung một tiến trình. **Chưa
+  chạm tới.**
+- **§9.4(2) hai tiến trình, một bộ file dữ liệu toàn máy.** `AssetRegistryStore`/`CredentialStore`/
+  `FleetSettingsStore` vẫn `%ProgramData%\ST4I\sim\…`, không khoá theo tiến trình. `FleetCore.UpdateSettings`
+  vẫn ghi đè một bộ ba duy nhất → **ai ghi sau thắng**. **Chưa chạm tới, và E-2 làm nó gần hơn một bước.**
+- **§3 chiều ghi.** `TryWriteSetpointAsync`/`TryInvokeCommandAsync` giờ nằm trên một **thư viện** mà bất kỳ host
+  nào cũng tham chiếu được, và **không có gì bên trong chúng hỏi chốt HALT** — guard nằm trọn ở hai caller
+  (E-1 §5.4). 🔴 **E-3 không được để lộ hai thành viên này ra từ EdgeService.** Hình dạng "máy do tác nhân biên
+  cầm là chỉ đọc" của §3 vì thế là **ràng buộc cấu trúc**, không phải một giới hạn tài liệu.
+- **§9.1 ~2 723 dòng hạ tầng config connector** (`ConnectorsConfig`, `ConnectorsJsonRegistration`,
+  `ModbusMultidropRegistration`, `ConnectorConfigStore`, `ConnectorConfigValidation`, `RtuBusConfiguration`)
+  **vẫn ở `St4i.EngineApi`**. E-2 chỉ dời `ConnectorRegistry` — cái mà lõi *đọc*. Nếu E-3 muốn EdgeService tự
+  chủ trì connector từ `connectors.json`, đó là khối lượng còn lại, và §6 chưa tính nó.
+- **E-1 §2.3, bản sao `MinCycleSeconds`.** Ba bản của `0.05` giờ nằm trong **cùng một assembly**, và lý do được
+  ghi cho việc nhân bản ("mirrored, not shared — EdgeCore doesn't reference EngineApi") đã **sai**. E-2 sửa cả
+  ba chú thích và **cố ý không gộp**: `FleetCore.MinCycleSeconds` chặn `CycleSeconds` của một descriptor roster
+  trong lúc `StartLocked` nhân nó với scenario multiplier, còn `MinCycleSecondsFloor` của sim chặn một cadence
+  mà sim tự tính từ config sống và **bỏ qua descriptor ấy hoàn toàn**. Gộp một symbol sẽ buộc hai phép chặn độc
+  lập vào nhau và đọc như một sự ràng buộc không tồn tại.
+
+### 10.7 Con số duy nhất đã dịch, và bằng chứng rằng cuộc dời không dịch gì
+
+**Cuộc dời tự nó dịch 0.** Nó được commit và chạy cổng RIÊNG, ở đúng `151/22/1072/28/1282 = 2555`, 0 lỗi,
+**116 cảnh báo**, 0 build node (`1a47dca8`). Đó là phép kiểm brief yêu cầu, và nó chỉ đọc được vì hai bài test
+được commit tách ra.
+
+Sau đó `EXPECT_ENGINEAPI` 1282 → **1283**, tổng 2555 → **2556**, do **đúng một** `[Fact]` mới:
+`Safety/EstopLatchVisibilityRaceTests` (§9.3b). Hai nhân chứng bắt buộc còn lại tốn **0**: nhân chứng
+`SafetySnapshot.IsRunning` là hai khẳng định trong `RelayNotificationChannelTests.HaltLatched_…` đã có sẵn, và
+khẳng định khử bí mật là các khẳng định trong hai bài test đua-huỷ đã có sẵn ở
+`FleetHostMachineDriverResolutionTests`. §9.3b nói rõ *"bất cứ test nào giết được `true` cứng là đủ"*, nên đó là
+mức tối thiểu thật, không phải một mẹo kế toán.
+
+### 10.9 🔴 Phát hiện mang sang: một bài test mTLS có cuộc đua tắt máy, và nó cho ĐỎ GIẢ
+
+`St4i.EdgeCore.Tests/Identity/DeviceIdentityStoreTests.Certificate_LoadedFromStore_CanCompleteARealMutualTlsHandshake`
+đỏ **một lần** trong các lần chạy cổng của E-2, tại `Assert.True(serverError is null, …)`, với
+`IOException → SocketException(10054)`. **Không phải của E-2**: đợt này không chạm một file nào dưới `Identity/`,
+không chạm TLS, không chạm socket (grep toàn dải `5f2b8883..HEAD`: 0 file khớp), và phần **được biên dịch** thay
+đổi giữa lần cổng xanh gần nhất và lần đỏ chỉ gồm ba sửa chú thích, một attribute không ai dùng bị xoá, và một
+property `internal` không ai dùng bị xoá. Chạy riêng ngay sau đó: **17/17, sáu lần liên tiếp**.
+
+🔴 **Nhưng "chập chờn" là triệu chứng, không phải chẩn đoán.** Cơ chế **[READ — CHƯA ĐO]**: client làm
+`AuthenticateAsClientAsync` → `WriteAsync(1 byte)` → rơi ra khỏi các khối `using`, dispose `SslStream` +
+`TcpClient`; server làm `AuthenticateAsServerAsync` → `ReadAsync(1 byte)`. **Không gì bắt việc client dispose
+phải xảy ra SAU khi server đọc xong.** Nếu socket client đóng đột ngột trong lúc server còn trong `ReadAsync`,
+server thấy RST (10054) chứ không phải EOF sạch, `serverError` khác null, và khẳng định đổ. Tức là
+`serverError is null` **không phải tính chất bài test này bảo đảm** — cùng hình dạng với §10.8. Lịch sử git của
+chính nó đã mang một bản sửa cho vấn đề kề bên (`f40a6bcb`), nên đây là lần thứ hai thứ tự tắt máy của bài test
+này sinh ra một lần đỏ giả. **Cách sửa là một tín hiệu bắt tay-đã-xong (hoặc close có linger) để client dispose
+sau khi server đọc — không phải retry, không phải nới khẳng định.**
+
+### 10.8 🔴 Đính chính của E-2 cho §9.3b: bài test đua *không thể* khẳng định "không lệnh ghi nào lọt sau chốt"
+
+§9.3 (và E-1 §4.3) mô tả bài test đua là *"khẳng định **không** lệnh ghi nào tiếp đất sau khi chốt gài"*. **Tính
+chất đó SAI trên cây này**, và một bài test khẳng định nó sẽ đỏ vì lý do đúng đắn: TOCTOU dư (§9.3b tự nêu)
+nghĩa là một lệnh ghi có quyết định guard lấy **trước** khoảnh khắc chốt gài vẫn có thể tiếp đất **sau** đó.
+Không cách sắp xếp khoá nào bên trong `FleetCore` đóng được — chỉ một đường ghi kiểm lại chốt **nguyên tử tại
+ranh giới thiết bị** mới đóng được, và đó là một thay đổi thiết kế.
+
+Tính chất **đúng, có thật và chưa từng được kiểm** là: **mọi lần đánh giá guard BẮT ĐẦU sau khi `Estop()` trả về
+đều thấy chốt và từ chối.** Đó là cái bài test khẳng định.
+
+Và hình dạng của cái sai đáng giữ: **bản nháp đầu của chính bài test này đã ĐỎ**, ở khẳng định gương ngây thơ
+*"mọi lần đánh giá trước chốt đều được cho qua"*. Nó sai — `Estop()` gài `_estopEngaged` **bên trong** `_gate`
+rồi mới tháo dỡ pipeline và trả về, nên một reader đồng thời thấy chốt **sớm hơn nhiều** so với lúc `Estop()`
+quay lại chỗ gọi. Từ chối sớm là chiều an toàn. **Cách xử lý là sửa khẳng định gương thành dạng nhân quả (không
+có lần từ chối nào mà không có chốt), không phải nới lỏng tính chất chính** — nới lỏng ở đây chính là cách bài
+test biến thành thứ nó sinh ra để bắt.

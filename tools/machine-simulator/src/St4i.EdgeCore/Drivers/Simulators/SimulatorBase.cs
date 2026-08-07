@@ -31,8 +31,10 @@ public abstract class SimulatorBase : IMachineSimulator
     /// into the DESCRIPTOR's <c>CycleSeconds</c> for every non-config-aware sim (<c>StartLocked</c>
     /// pre-scales <c>effectiveFleet</c> before calling <c>SimulatorFactory.Create</c> — safe to fix at
     /// construction time because a multiplier change always restarts the whole pipeline, see
-    /// <c>FleetHost.ApplyScenario</c>'s <c>multiplierChanged</c> check; EdgeCore doesn't reference
-    /// EngineApi, same reason <c>MinCycleSecondsFloor</c> below is mirrored rather than shared). A
+    /// <c>FleetCore.ApplyScenario</c>'s <c>multiplierChanged</c> check. 🔴 Task E-2: this parenthetical
+    /// used to end "EdgeCore doesn't reference EngineApi, same reason <c>MinCycleSecondsFloor</c> below is
+    /// mirrored rather than shared" — <c>FleetCore</c> now lives in this assembly, so that reason is gone;
+    /// see <see cref="IotSensorSim"/>'s <c>MinCycleSecondsFloor</c> for the reason that replaced it). A
     /// config-aware simulator's OWN
     /// <see cref="CycleSecondsOverride"/> bypasses that descriptor entirely, which is exactly what let a
     /// scenario multiplier silently do nothing for SCREWDRIVE/IOT before this fix — see

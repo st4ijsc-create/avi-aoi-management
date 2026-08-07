@@ -3269,7 +3269,14 @@ thức nào ép buộc.)*
 
 ### 19.4 `ConnectorRegistry`, `IConnectorFactory` + web visibility / `ConnectorRegistry`, `IConnectorFactory` + hiển thị trên web (GP-4, GP-5, GP-7)
 
-**EN** — `St4i.EngineApi.Fleet.ConnectorRegistry` replaced `FleetHost`'s old per-driver-kind hardcoding
+> 🔴 **Task E-2 (Đợt E)** — this type is now `St4i.EdgeCore.Fleet.ConnectorRegistry`, not
+> `St4i.EngineApi.Fleet.ConnectorRegistry`. It moved down with the N-driver lifecycle core (`FleetHost`'s body
+> became `St4i.EdgeCore.Fleet.FleetCore`) because `StartLocked` builds one pipeline slot per registered
+> instance from it and `ResolveWritableDriver` routes every write off its bindings — a lifecycle core that
+> cannot see it is not a lifecycle core. Nothing about the CONTRACT below changed; only the assembly did. The
+> rest of §19.4 stands, including the note further down that this section's `Id` wording predates Task D-1.
+
+**EN** — `ConnectorRegistry` replaced `FleetHost`'s old per-driver-kind hardcoding
 (one dedicated constructor parameter + one copy-pasted `StartLocked` block, PER kind — Modbus and
 OPC-UA each had their own). Now: one optional `ConnectorRegistry`, one `foreach` over
 `RegisteredIds`. `IConnectorFactory` (`St4i.Connector.Abstractions`) is the two-member seam a connector
@@ -3329,7 +3336,7 @@ so an unusually long message cannot break the page layout.
 > `AssetRegistry.tsx` and every test asserting on `Id`/`SlotLabel`. What changed is not the wire format —
 > it is what the value in that field MEANS.
 
-*(VI: `St4i.EngineApi.Fleet.ConnectorRegistry` thay thế việc hard-code từng loại driver trong `FleetHost`
+*(VI: `ConnectorRegistry` thay thế việc hard-code từng loại driver trong `FleetHost`
 (trước đây mỗi loại Modbus/OPC-UA có RIÊNG một tham số constructor + một khối `StartLocked` copy-paste).
 Giờ: một `ConnectorRegistry` tuỳ chọn, một vòng `foreach` trên `RegisteredIds`. `IConnectorFactory` là
 hợp đồng 2 thành viên để một connector có thể được xây dựng theo id — `Kind` và

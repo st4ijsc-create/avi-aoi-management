@@ -152,12 +152,6 @@ public sealed class FleetHost
             demoModeGate: demoModeGate);
     }
 
-    /// <summary>The extracted lifecycle core this shell wraps. <c>internal</c>, not public: production code
-    /// reaches the fleet through the members below, exactly as it did before E-2, and nothing in
-    /// <c>Endpoints/</c> should learn that a second host exists. Exposed at all so
-    /// <c>St4i.EngineApi.Tests</c> can address the core directly where a test genuinely means to.</summary>
-    internal FleetCore Core => _core;
-
     // ─────────────────────────────────────────────────────────────────────
     // LIFECYCLE / ROSTER / SAFETY — straight delegation, no projection.
     // ─────────────────────────────────────────────────────────────────────

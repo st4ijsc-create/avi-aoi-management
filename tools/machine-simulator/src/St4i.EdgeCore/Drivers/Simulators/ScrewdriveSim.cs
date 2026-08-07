@@ -48,9 +48,12 @@ public sealed class ScrewdriveSim : SimulatorBase
     /// <summary>Fixed pick/place/tool-positioning overhead the cadence model adds regardless of config.</summary>
     private const double HandlingOverheadSeconds = 0.2;
 
-    /// <summary>Same floor value EngineApi's own <c>FleetHost.MinCycleSeconds</c> uses (mirrored, not
-    /// shared, since EdgeCore doesn't reference EngineApi) — a cadence must never reach zero/negative
-    /// even at extreme config values.</summary>
+    /// <summary>Same floor value the fleet lifecycle's own <c>FleetCore.MinCycleSeconds</c> uses — a
+    /// cadence must never reach zero/negative even at extreme config values. 🔴 Task E-2: the old text here
+    /// said "mirrored, not shared, since EdgeCore doesn't reference EngineApi", and that reason no longer
+    /// holds — <c>FleetCore</c> now lives in this assembly. Kept separate on purpose; see
+    /// <see cref="IotSensorSim"/>'s own <c>MinCycleSecondsFloor</c> for the full reasoning (two independent
+    /// clamps on two different quantities, agreeing at 0.05 by intention rather than derivation).</summary>
     private const double MinCycleSecondsFloor = 0.05;
 
     /// <summary>WS3-T1 — fixed number of physical fastening positions this cycle's plan visits: a
