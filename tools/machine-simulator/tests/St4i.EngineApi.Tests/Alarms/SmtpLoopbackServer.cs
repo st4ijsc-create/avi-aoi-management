@@ -43,7 +43,8 @@ internal sealed record SmtpScript(
     string MailFromReply = "250 OK",
     Func<string, string>? RcptToReply = null,
     string DataReply = "250 2.0.0 OK queued",
-    string? AuthCommandReply = null);
+    string? AuthCommandReply = null,
+    bool ResetAfterEhlo = false);
 
 /// <summary>
 /// 🔴 Task C-4 — a REAL in-process SMTP relay for the e-mail tests, on a raw <see cref="TcpListener"/>.
@@ -188,6 +189,24 @@ internal sealed class SmtpLoopbackServer : IAsyncDisposable
                 }
 
                 await writer.WriteLineAsync(script.Greeting).ConfigureAwait(false);
+
+                // 🔴 A relay that GREETS, reads the client's first command, and then RSTs. Distinct from
+                // `Greeting: null` (accept and go silent) and from any scripted 4xx/5xx: a conversation
+                // demonstrably took place and the RELAY is what ended it, which is the one shape that proves
+                // "a transport failure" is not a single situation. Produces, client-side,
+                // SmtpException → IOException → SocketException(ConnectionReset).
+                //
+                // LingerState(true, 0) is what makes Close() send an RST instead of a FIN: a graceful close
+                // would look to the client like an orderly end of stream, which is a different failure and
+                // would not reproduce this at all.
+                if (script.ResetAfterEhlo)
+                {
+                    _ = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+                    client.Client.LingerState = new LingerOption(true, 0);
+                    client.Close();
+                    return;
+                }
+
                 await ConverseAsync(reader, writer, script, ct).ConfigureAwait(false);
             }
         }

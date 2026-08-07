@@ -730,7 +730,29 @@ EXPECT_CONFORMANCE=22
 #          coordinator's ruling, through ONE shared implementation with a per-transport key list so the two
 #          cannot diverge; plus 1 fact pinning that the unknown-key refusal runs LAST and never pre-empts a
 #          more specific one ('portName' on a gateway bus must still be answered by the cross-transport rule).
-EXPECT_EDGECORE=1071
+# 🔴 THE CARRIED-FINDINGS REVIEW FIX ROUND raises this 1071 -> 1072 (+1), counted from the runner. ONE test,
+# and it guards a FINDING rather than a behaviour — which is why it is here and not deferred with the finding.
+#
+#     + 1  ModbusTcpDriverConformanceTests.ThisRigsPollIntervalIsWhatKeepsTheCarriedDisposeFindingReproducible
+#          A carried finding says Check_DisposeAsync_IsIdempotent_AfterCancellation passes on the Modbus TCP
+#          rig because of its TOKEN, not because DisposeAsync ends the read loop: mutating the shared check so
+#          the cancellation is never issued leaves five rigs green (correctly — Dispose is the mechanism that
+#          check enforces, cancellation is only scene-setting) and fails that one at ~5.25 s.
+#
+#          🔴 The MECHANISM is a boundary condition, and the first write-up of it was WRONG in a way that
+#          would have sent the next round hunting a disposed semaphore. It is NOT HotFolderAoiDriver's scar —
+#          nothing is stranded permanently. DisposeAsync tears the connection down and the read loop observes
+#          its flag at the top of the NEXT iteration, having parked in Task.Delay(PollIntervalMs). The whole
+#          question is whether that one tick fits inside CancellationBudget — and
+#          ModbusLoopbackHarness.BuildWritableMap's default pollIntervalMs (5 000 ms) is EXACTLY EQUAL to
+#          CancellationBudget (5 000 ms), from two unrelated files, while the RTU rigs pass 50.
+#
+#          So: lower that harness default and the TCP rig silently becomes a sixth rig on which the mutation
+#          survives, the carried finding stops being reproducible, and NOT ONE TEST GOES RED. That is the
+#          "nothing detects deletion of the override" lesson in different clothes, so it gets the same
+#          treatment — an assertion rather than a sentence in a report. Asserted as >= rather than == 5000
+#          deliberately: the claim is the relationship, not either number.
+EXPECT_EDGECORE=1072
 EXPECT_EDGESERVICE=28
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
@@ -1187,7 +1209,32 @@ EXPECT_EDGESERVICE=28
 # drivers' other checks untouched. Proven by re-running the mutation that removes `cts.Cancel()` from
 # DeviceDriverConformanceSuite.cs so cancellation is never issued at all: it used to kill 2 of the 4 writable
 # rigs and now kills 4 of 4.
-EXPECT_ENGINEAPI=1280
+#
+# 🔴 THE REVIEW FIX ROUND raises this 1280 -> 1282 (+2), counted from the runner. ONE file; nothing is
+# rewritten, split or deleted. Both close CRITICALS that are finding 1's own defect class reproduced INSIDE
+# the fix for finding 1's class — which is blueprint §8.1 principle 3 landing on this task exactly as it
+# landed on three people in Đợt D.
+#
+#     + 1  TheEmailSendTest_TellsARelayThatBrokeTheConversation_FromAHostThatNeverAnswered — C-2. The fix's
+#            first shape answered "no relay was reached" for EVERY transport failure. A relay that greets,
+#            reads EHLO and then RSTs is a transport failure in which a conversation demonstrably took place
+#            and the RELAY ended it. MEASURED, and the measurement corrected this test's own first doc
+#            comment: the refused port carries SocketException(ConnectionRefused), while the reset relay
+#            carries a bare IOException with NO SocketException at all — so the pair is separated by the
+#            classifier's no-socket-error FALLBACK, not by its socket-code switch. Mutation found that: the
+#            switch could be mutated with this test still green.
+#     + 1  TheEmailSendTest_TellsAMessageThatNeverLeftThisMachine_FromOneNoRelayAnswered — the Minor beneath
+#            C-2. "Nothing was reached" and "nothing was SENT" are different facts wanting different advice: a
+#            mistyped From address never opens a socket, so "check the host, the port and this machine's
+#            route to it" is advice written for the other producing path. Three situations need three
+#            sentences and a bool carries two, which is why the flag is now an enum.
+#
+# C-1 adds NO test and that is the check rather than an omission: it is closed by an assertion added to the
+# EXISTING pair test (the credentials hint must not ride along on a "no SMTP conversation took place"
+# sentence). One assertion of the same shape was written on the dispatch test and DELETED after mutation
+# proved it could not fail — that path's exception yields no hint code, so it would have read as coverage of
+# the composition defect while being incapable of detecting it.
+EXPECT_ENGINEAPI=1282
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -1332,6 +1379,12 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # concrete classes. Reproducing the abstract-base structure on two more rigs, purely to dodge an analyzer,
 # would split each rig across two types and is a worse trade than one documented warning.
 #
+# 🔴 A THIRD impossible remedy, and it is the one a future author will actually reach for (found by review,
+# not by me): put the [Fact] on the OVERRIDE and delete the wrapper. That is blocked by the census's own
+# convention — EveryCheckIsWiredOrAcknowledged requires a [Fact] on the CONCRETE SUBCLASS named identically
+# MINUS the "Check_" prefix (src/St4i.Connector.Conformance/DeviceDriverConformanceSuite.cs:36-43). A [Fact]
+# named Check_Write_Cancellation_... does not satisfy it, so that rig would fail the census instead.
+#
 # 🔴 IT IS NOT SUPPRESSED, and that was tried first and REPORTED here rather than quietly dropped: the
 # diagnostic is emitted as `CSC :` with NO source location (it names the symbol's original definition, which
 # lives in a referenced assembly), so a #pragma in either rig cannot reach it — measured, the count stayed at
@@ -1339,6 +1392,20 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # GlobalSuppressions entry), and blinding St4i.EdgeCore.Tests to every future xUnit1013 to hide one known-good
 # instance is a strictly larger loss than +1. A number that is justified still fails on the NEXT drift; a
 # suppressed analyzer does not.
+#
+# 🔴 HOW THIS NUMBER GROWS, MEASURED by the review — and it is better than either of us assumed, which is
+# exactly why it is written down instead of left for the next reader to guess (they would guess "+1 per rig"
+# and be wrong):
+#
+#     tree                                                     warnings   distinct xUnit1013
+#     two rigs override the SAME check (this commit)              102              1
+#     + a third rig overrides a DIFFERENT check                   103              2
+#     + a second rig overrides that same different check          103              2
+#
+# It grows per DISTINCT Check_* METHOD that any sealed rig overrides, NOT per rig — because the diagnostic
+# carries no source location and names the BASE symbol, so every override of one method collapses into one
+# warning. **A new driver rig applying this proven remedy costs 0.** The bad half stands: +1 the first time
+# anyone applies it to a NEW check.
 EXPECT_WARNINGS=116
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."

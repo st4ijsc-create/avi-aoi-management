@@ -324,6 +324,59 @@ public sealed class ModbusTcpDriverConformanceTests : DeviceDriverConformanceSui
     public Task Write_RoundTripsLosslesslyThroughConnectorJson() => Check_Write_RoundTripsLosslesslyThroughConnectorJson();
 
     /// <summary>
+    /// 🔴 <b>Pins the coincidence a CARRIED FINDING rests on, because the finding evaporates silently
+    /// without it and nothing else in the tree would go red.</b>
+    ///
+    /// <para><b>The finding.</b> Mutating the shared suite's
+    /// <see cref="DeviceDriverConformanceSuite.Check_DisposeAsync_IsIdempotent_AfterCancellation"/> so the
+    /// token is never cancelled leaves five rigs GREEN — correctly, because the mechanism that check exists to
+    /// enforce is <c>DisposeAsync</c> ending the read loop, and cancellation is only scene-setting — and makes
+    /// THIS rig fail at ~5.25 s. So on this rig that check passes because of the TOKEN, and its own message
+    /// (<i>"DisposeAsync must end an in-flight ReadAsync, not strand it"</i>) is not established for
+    /// <see cref="ModbusTcpDriver"/>.</para>
+    ///
+    /// <para><b>The mechanism, stated precisely because the first write-up of it was wrong and would have sent
+    /// the next round hunting a disposed semaphore.</b> Nothing is stranded permanently here and this is NOT
+    /// <c>HotFolderAoiDriver</c>'s scar: <c>DisposeAsync</c> sets its flag and tears the connection down, and
+    /// the read loop observes that flag at the TOP OF ITS NEXT ITERATION — after parking in
+    /// <c>Task.Delay(PollIntervalMs, ct)</c>. The loop therefore ends one poll tick later, and the whole
+    /// question is whether that tick fits inside
+    /// <see cref="DeviceDriverConformanceSuite.CancellationBudget"/>. The shared check's own "usual cause"
+    /// text also misdescribes this rig — it drives a CLOSED port, so nothing is in flight, and this driver's
+    /// I/O lock is deliberately never disposed.</para>
+    ///
+    /// <para><b>So it is a boundary condition, and the boundary is an equality nobody chose.</b>
+    /// <see cref="ModbusLoopbackHarness.BuildWritableMap"/>'s default <c>pollIntervalMs</c> is 5 000 ms and
+    /// <see cref="DeviceDriverConformanceSuite.CancellationBudget"/> is 5 000 ms — EXACTLY equal, from two
+    /// unrelated files. The RTU rigs pass <c>pollIntervalMs: 50</c> and so never sit on it. <b>Lower the
+    /// harness default and this rig silently becomes a sixth rig on which that mutation survives, the carried
+    /// finding stops being reproducible, and not one test in this tree goes red.</b> That is the
+    /// "nothing detects deletion of the override" lesson wearing different clothes, so it gets the same
+    /// treatment: an assertion, not a sentence in a report.</para>
+    ///
+    /// <para>Deliberately asserted as <c>&gt;=</c> rather than <c>== 5000</c>: the claim is the RELATIONSHIP
+    /// that makes the finding reproducible, not either number, and pinning a literal would fail for a change
+    /// that preserves the property.</para>
+    /// </summary>
+    [Fact]
+    public void ThisRigsPollIntervalIsWhatKeepsTheCarriedDisposeFindingReproducible()
+    {
+        var pollIntervalMs = ModbusLoopbackHarness.BuildWritableMap("PLC-CONFORMANCE-NODEVICE").PollIntervalMs;
+
+        Assert.True(
+            pollIntervalMs >= CancellationBudget.TotalMilliseconds,
+            $"ModbusLoopbackHarness.BuildWritableMap's default pollIntervalMs is now {pollIntervalMs} ms, which " +
+            $"is BELOW the {CancellationBudget.TotalMilliseconds} ms CancellationBudget. That is not a failure " +
+            "of this driver — it silently retires a CARRIED FINDING. Check_DisposeAsync_IsIdempotent_" +
+            "AfterCancellation passes on this rig because its token is cancelled, not because DisposeAsync " +
+            "ends the read loop; the mutation that shows this (never issue the cancellation) fails here and " +
+            "survives on the other five rigs ONLY while one poll tick cannot fit inside the budget. Below the " +
+            "budget it survives here too, this rig joins the other five, and nothing else in this tree goes " +
+            "red. If lowering the default is intended, close the finding on its merits and delete this test " +
+            "deliberately — do not let a harness default close it by accident.");
+    }
+
+    /// <summary>
     /// GP-6b (task-6b-report.md) — the PRIMARY acceptance criterion for this defect, more important than
     /// cancellation promptness alone: task-6-report.md's real production concern was that a device which
     /// HAD been talking (<see cref="IDeviceDriver.Health"/> = <see cref="DriverHealthState.Connected"/>) and

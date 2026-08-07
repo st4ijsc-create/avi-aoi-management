@@ -698,20 +698,36 @@ public sealed class SmtpNotificationChannel
                 $"The relay {identity} did not answer within {_attemptTimeout.TotalSeconds:0.#}s " +
                 $"({ex.GetType().Name}). Check the host, the port, and whether this machine can reach it.");
         }
-        // 🔴 The sentence BRANCHES on whether a relay answered at all, and that is not a nicety.
-        // Classify's descriptions cover both "a relay decided something" and "nothing was ever reached", and
-        // one sentence over both said the relay had refused the message — which for `the connection failed
-        // (SocketException)` sends an operator to check relay policy and credentials for a host that never
-        // answered on that port. See Classify's own remarks for the sweep that found this.
+        // 🔴 The sentence BRANCHES on WHERE the failure happened, and that is not a nicety. Classify's
+        // descriptions cover "a relay decided something", "nothing ever answered" and "nothing left this
+        // machine", and one sentence over all three said the relay had refused the message — which for
+        // `the connection failed (SocketException)` sends an operator to check relay policy and credentials
+        // for a host that never answered on that port. See Classify's own remarks, including the two ways a
+        // BOOL here still got it wrong. PermanentHint is gated on the same fact, inside itself.
         catch (Exception ex)
         {
             var failure = Classify(ex, credential is not null);
-            return new NotificationTestOutcome(false,
-                failure.RelayAnswered
-                    ? $"The relay {identity} refused the test message — {failure.Description}." + PermanentHint(ex)
-                    : $"The test message never reached the relay {identity} — {failure.Description}. Nothing " +
-                      "was refused, because no SMTP conversation took place: check the host, the port and " +
-                      "this machine's route to it before looking at anything the relay does." + PermanentHint(ex));
+            var hint = PermanentHint(ex, failure.Locus);
+            return new NotificationTestOutcome(false, failure.Locus switch
+            {
+                FailureLocus.RelayReached =>
+                    $"The relay {identity} refused the test message — {failure.Description}." + hint,
+
+                FailureLocus.NoRelayReached =>
+                    $"The test message never reached the relay {identity} — {failure.Description}. Nothing " +
+                    "was refused, because no SMTP conversation took place: check the host, the port and " +
+                    "this machine's route to it before looking at anything the relay does." + hint,
+
+                FailureLocus.BeforeTheWire =>
+                    $"The test message was never SENT to the relay {identity} — {failure.Description}. " +
+                    "Nothing left this machine, so neither the relay nor the route to it is implicated: this " +
+                    "is a fault in the stored configuration (typically the From address or a recipient)." + hint,
+
+                _ =>
+                    $"The test of the relay {identity} failed — {failure.Description}. This channel cannot " +
+                    "tell whether a relay was reached at all, so check the host log before concluding " +
+                    "anything about the relay or about the route to it." + hint,
+            });
         }
     }
 
@@ -859,24 +875,43 @@ public sealed class SmtpNotificationChannel
                 }
                 catch (Exception ex)
                 {
-                    var (kind, description, relayAnswered) = Classify(ex, credential is not null);
+                    var (kind, description, locus) = Classify(ex, credential is not null);
                     if (kind == FailureKind.Permanent)
                     {
                         // "Stop, you are wrong." Retrying would replay an identical conversation against a
                         // relay that has already made a considered decision about it, at the cost of
                         // drain-loop time every other notification is waiting on.
                         //
-                        // 🔴 The same branch, for the same reason, as SendTestAsync's — see Classify's own
-                        // remarks. The PERMANENT + no-relay-answered corner is real and ordinary: a malformed
-                        // From or recipient address throws out of BuildMessage, nothing leaves this machine,
-                        // and this line used to report it to an operator as a relay REJECTION.
-                        var message = relayAnswered
-                            ? $"Alarm e-mail {identity} was REJECTED — {description}. This is permanent, so " +
-                              $"it was not retried. The notification {job.Edge} '{job.Alarm.Key}' is lost." +
-                              PermanentHint(ex)
-                            : $"Alarm e-mail {identity} was never SENT — {description}. No relay was reached, " +
-                              "so nothing was rejected; this is permanent, so it was not retried. The " +
-                              $"notification {job.Edge} '{job.Alarm.Key}' is lost." + PermanentHint(ex);
+                        // 🔴 The same fork, for the same reason, as SendTestAsync's — see Classify's own
+                        // remarks. The PERMANENT + nothing-left-this-machine corner is real and ordinary: a
+                        // malformed From or recipient address throws out of BuildMessage, nothing leaves this
+                        // machine, and this line used to report it to an operator as a relay REJECTION.
+                        // (NoRelayReached is Retryable by construction, so it does not reach here; it is
+                        // handled anyway rather than folded into a default that would be wrong if that ever
+                        // changes.)
+                        var lost = $"The notification {job.Edge} '{job.Alarm.Key}' is lost.";
+                        var hint = PermanentHint(ex, locus);
+                        var message = locus switch
+                        {
+                            FailureLocus.RelayReached =>
+                                $"Alarm e-mail {identity} was REJECTED — {description}. This is permanent, " +
+                                $"so it was not retried. {lost}" + hint,
+
+                            FailureLocus.BeforeTheWire =>
+                                $"Alarm e-mail {identity} was never SENT — {description}. Nothing left this " +
+                                "machine, so neither the relay nor the route to it is implicated; this is " +
+                                $"permanent, so it was not retried. {lost}" + hint,
+
+                            FailureLocus.NoRelayReached =>
+                                $"Alarm e-mail {identity} could not be DELIVERED — {description}. No relay " +
+                                "was reached, so nothing was rejected; this is permanent, so it was not " +
+                                $"retried. {lost}" + hint,
+
+                            _ =>
+                                $"Alarm e-mail {identity} FAILED — {description}. This channel cannot tell " +
+                                "whether a relay was reached at all; this is permanent, so it was not " +
+                                $"retried. {lost}" + hint,
+                        };
                         if (ex is SmtpException or SmtpFailedRecipientException) ReportWarning(message);
                         else ReportError(ex, message);
                         return DeliveryOutcome.Lost;
@@ -1119,31 +1154,121 @@ public sealed class SmtpNotificationChannel
     /// That errs toward not retrying, which is the safe direction here.</para>
     /// </summary>
     /// <remarks>
-    /// 🔴 <b><see cref="ClassifiedFailure.RelayAnswered"/> exists because the two callers of this method used
-    /// to assert an act nobody had observed.</b> Both wrapped <see cref="ClassifiedFailure.Description"/> in a
+    /// 🔴 <b><see cref="ClassifiedFailure.Locus"/> exists because the two callers of this method used to
+    /// assert an act nobody had observed.</b> Both wrapped <see cref="ClassifiedFailure.Description"/> in a
     /// sentence that said the relay had DECIDED something — <i>"was REJECTED — …"</i>,
-    /// <i>"refused the test message — …"</i> — and roughly half the descriptions this method can return
-    /// describe a failure in which <b>no relay was ever reached</b>: <c>"the connection failed
-    /// (SocketException)"</c>, <c>"the message could not be built or sent (FormatException)"</c>. An operator
-    /// told <i>"the relay refused the test message — the connection failed"</i> goes hunting a relay policy or
-    /// a credential for a host that never answered on that port.
+    /// <i>"refused the test message — …"</i> — and many of the descriptions this method returns describe a
+    /// failure in which <b>no relay was ever reached</b>, or in which <b>nothing left this machine at all</b>.
+    /// An operator told <i>"the relay refused the test message — the connection failed"</i> goes hunting a
+    /// relay policy or a credential for a host that never answered on that port. Blueprint §8.1: <i>"not in
+    /// scope" is the dangerous answer</i> — the fact was in scope HERE, where the exception is, and had never
+    /// been returned to the places that needed it.
     ///
-    /// <para>That is Đợt D's most-repeated defect class — one operator-facing string covering two producing
-    /// paths, true of only one — and it was found by SWEEPING the set of operator-facing returns rather than by
-    /// grepping a token. <b>It could not have been found by grepping</b>: the distinguishing fact was not a
-    /// field that existed anywhere to grep for. It was in scope HERE, where the exception is, and had never
-    /// been returned to the two places that needed it. Blueprint §8.1: <i>"not in scope" is the dangerous
-    /// answer, not the safe one</i> — so the remedy is to put it in scope rather than to soften the
-    /// sentence.</para>
+    /// <para>🔴 <b>It was a <c>bool</c> first, and review found the bool reproduced the very defect it was
+    /// added to close — twice.</b> Recorded because the correction is the more useful half:</para>
+    /// <list type="number">
+    /// <item><description><b>A transport failure is not one situation.</b> The first version answered "no
+    /// relay" for every <see cref="SocketException"/>/<see cref="IOException"/>. Measured: a relay that sends
+    /// its <c>220</c> banner, reads the <c>EHLO</c> and then RSTs produces exactly that shape — and a
+    /// conversation demonstrably took place, with the relay ending it. The distinguishing fact was again ONE
+    /// PROPERTY AWAY and again inside this method: <see cref="SocketException.SocketErrorCode"/> separates
+    /// <see cref="SocketError.ConnectionRefused"/>/<see cref="SocketError.TimedOut"/> (nothing answered) from
+    /// <see cref="SocketError.ConnectionReset"/>/<see cref="SocketError.ConnectionAborted"/> (something did,
+    /// then broke). <b>"Not in scope" was not available, and claiming it would have been the same error the
+    /// bool was added to fix.</b></description></item>
+    /// <item><description><b>"Nothing was reached" and "nothing was SENT" are different facts and want
+    /// different advice.</b> A mistyped From address never leaves this machine, so <i>"check the host, the
+    /// port and this machine's route to it"</i> is advice written for the other producing path. Three
+    /// situations needed three sentences, and a bool can carry two.</description></item>
+    /// </list>
     ///
-    /// <para><b>One residual, stated rather than papered over:</b> a bare <c>GeneralFailure</c> with no inner
-    /// socket cause reports <see langword="true"/>. That is an INFERENCE — the conversation broke after the
-    /// client had something to break with — not an observation, and it is the only row here where the two
-    /// differ. It is reported as answered so this flag agrees with the description that row has always
-    /// carried (<i>"the relay refused the conversation"</i>) rather than having the sentence and its own
-    /// description contradict each other, which is the defect this exists to close.</para>
+    /// <para><b>The one remaining INFERENCE, stated rather than papered over</b> — and after the correction
+    /// above it genuinely is the only one: a bare <c>GeneralFailure</c> with no inner cause at all reports
+    /// <see cref="FailureLocus.RelayReached"/>. The conversation broke after the client had something to break
+    /// with, which is evidence but not an observation. It is reported that way so the locus agrees with the
+    /// description that row has always carried (<i>"the relay refused the conversation"</i>) rather than
+    /// having a sentence contradict its own description.</para>
     /// </remarks>
-    private readonly record struct ClassifiedFailure(FailureKind Kind, string Description, bool RelayAnswered);
+    private readonly record struct ClassifiedFailure(FailureKind Kind, string Description, FailureLocus Locus);
+
+    /// <summary>🔴 WHERE a failure happened, which is what decides the sentence an operator reads. Not
+    /// derivable from <see cref="FailureKind"/>: <c>Retryable</c> covers both "nothing answered on that port"
+    /// and "the relay said 4xx", and those two send an operator to opposite ends of the building.</summary>
+    private enum FailureLocus
+    {
+        /// <summary>Nothing left this machine — the message could not even be built. Neither the relay nor
+        /// the network is implicated; the configuration is.</summary>
+        BeforeTheWire,
+
+        /// <summary>It left, and nothing ever answered: refused, timed out, or unresolvable.</summary>
+        NoRelayReached,
+
+        /// <summary>A relay was in conversation with this machine — it answered, rejected, or ended the
+        /// conversation itself.</summary>
+        RelayReached,
+
+        /// <summary>Not established. Assert nothing about where it happened.</summary>
+        Undetermined,
+    }
+
+    /// <summary>
+    /// 🔴 Where a transport failure happened — decided from what the exception chain actually CARRIES, not
+    /// inferred from its outermost type.
+    ///
+    /// <para>🔴 <b>MEASURED on this runtime, because the first version of this method was written from a
+    /// plausible model of the chain and the model was wrong. Mutation caught it: the arm the comment credited
+    /// was never executed by any test, so mutating it changed nothing.</b> Both shapes below are
+    /// <c>SmtpException{StatusCode: GeneralFailure}</c> on the outside and are told apart INSIDE:</para>
+    /// <list type="bullet">
+    /// <item><description><b>Refused port</b> → <c>SmtpException → SocketException(ConnectionRefused)</c>.
+    /// Decided by the socket-error switch.</description></item>
+    /// <item><description><b>Relay greets, reads EHLO, then RSTs</b> → <c>SmtpException → IOException</c>,
+    /// with <b>NO SocketException anywhere in the chain</b>. Decided by the fallback at the bottom — a
+    /// transport failure carrying no socket error at all means a STREAM existed to fail on, and a stream
+    /// exists only after the connection was established.</description></item>
+    /// </list>
+    /// <para>So the two cases this method exists to separate are separated by two DIFFERENT mechanisms, and
+    /// the fallback is not a tidy-up — it is what carries the reset case. Each is pinned by its own
+    /// mutation.</para>
+    ///
+    /// <para><b>One arm is defensive and untested, recorded rather than dressed up:</b> on this runtime a
+    /// mid-conversation reset never reaches the <c>ConnectionReset</c>/<c>ConnectionAborted</c> arm, because
+    /// no <see cref="SocketException"/> survives into the chain. That arm is kept for the bare-socket form
+    /// (<c>SocketException</c> raised without an <c>SmtpException</c> wrapper) and for a runtime that
+    /// preserves the cause — a mutation of it SURVIVES today, and that is a reachability gap, not a missing
+    /// test.</para>
+    /// </summary>
+    private static FailureLocus LocusOfTransportFailure(Exception transport)
+    {
+        for (var e = transport; e is not null; e = e.InnerException)
+        {
+            if (e is SocketException socket)
+            {
+                return socket.SocketErrorCode switch
+                {
+                    // The peer, or the path to it, never produced a conversation.
+                    SocketError.ConnectionRefused or SocketError.TimedOut or SocketError.HostNotFound or
+                    SocketError.HostUnreachable or SocketError.NetworkUnreachable or SocketError.NetworkDown or
+                    SocketError.TryAgain or SocketError.NoData or SocketError.AddressNotAvailable =>
+                        FailureLocus.NoRelayReached,
+
+                    // A connection existed and was broken. Something was there. (Defensive — see the remarks.)
+                    SocketError.ConnectionReset or SocketError.ConnectionAborted or
+                    SocketError.Shutdown or SocketError.NotConnected => FailureLocus.RelayReached,
+
+                    // 🔴 Anything else is genuinely unclassified, and this arm exists so that a socket error
+                    // nobody listed above produces a sentence that asserts NOTHING rather than falling into
+                    // whichever branch happened to be the default. That default is how this class of defect
+                    // gets back in.
+                    _ => FailureLocus.Undetermined,
+                };
+            }
+        }
+
+        // No socket error anywhere: a stream failed, so a stream existed. This is the live path for a relay
+        // that broke the conversation — see the remarks.
+        return FailureLocus.RelayReached;
+    }
 
     private static ClassifiedFailure Classify(Exception ex, bool authenticated) => ex switch
     {
@@ -1156,10 +1281,11 @@ public sealed class SmtpNotificationChannel
             (int)recipient.StatusCode,
             $"the relay rejected every recipient (SMTP {(int)recipient.StatusCode})"),
 
-        // No relay was reached: the socket never produced a conversation to reject anything.
+        // 🔴 A transport failure, and WHICH one is read off the socket error rather than assumed — see
+        // LocusOfTransportFailure. A refused port and a relay that RSTs mid-conversation land here alike.
         SmtpException { InnerException: SocketException or IOException } transport =>
             new(FailureKind.Retryable, $"the connection failed ({transport.InnerException!.GetType().Name})",
-                RelayAnswered: false),
+                LocusOfTransportFailure(transport)),
 
         // 🔴 A bare GeneralFailure: a protocol breakdown with no socket cause. See the method doc — this is
         // NOT where a rejected password lands (SmtpClient carries on past a rejected AUTH and the relay's
@@ -1169,25 +1295,27 @@ public sealed class SmtpNotificationChannel
             new(FailureKind.Permanent, authenticated
                 ? "the relay refused the conversation; if this persists, check the stored username and password"
                 : "the relay refused the conversation",
-                // INFERRED, not observed — see this method's remarks for why it is reported this way anyway.
-                RelayAnswered: true),
+                // INFERRED, not observed — the one remaining inference; see this method's remarks.
+                FailureLocus.RelayReached),
 
         SmtpException smtp => ClassifyStatus(
             (int)smtp.StatusCode, $"the relay answered SMTP {(int)smtp.StatusCode} ({smtp.StatusCode})"),
 
-        // No relay was reached — same as the SmtpException-wrapped form above, raised bare.
+        // The same transport failure, raised bare rather than wrapped.
         SocketException or IOException =>
-            new(FailureKind.Retryable, $"the connection failed ({ex.GetType().Name})", RelayAnswered: false),
+            new(FailureKind.Retryable, $"the connection failed ({ex.GetType().Name})",
+                LocusOfTransportFailure(ex)),
 
         // A malformed From address, a malformed recipient, or a subject the mail stack refused: the same
-        // configuration would fail identically next time. NOTHING LEFT THIS MACHINE, so no relay decided
-        // anything — this row is why the dispatch path's own "was REJECTED" sentence was false.
+        // configuration would fail identically next time. NOTHING LEFT THIS MACHINE — a distinct fact from
+        // "nothing answered", and it is why this is not folded in with the transport rows.
         FormatException or ArgumentException or InvalidOperationException or ObjectDisposedException =>
             new(FailureKind.Permanent, $"the message could not be built or sent ({ex.GetType().Name})",
-                RelayAnswered: false),
+                FailureLocus.BeforeTheWire),
 
-        // Unknown by definition, so nothing about a relay may be asserted from it.
-        _ => new(FailureKind.Permanent, $"an unexpected failure ({ex.GetType().Name})", RelayAnswered: false),
+        // Unknown by definition, so nothing about WHERE it happened may be asserted from it either.
+        _ => new(FailureKind.Permanent, $"an unexpected failure ({ex.GetType().Name})",
+                FailureLocus.Undetermined),
     };
 
     private static ClassifiedFailure ClassifyRecipients(SmtpFailedRecipientsException ex)
@@ -1201,19 +1329,38 @@ public sealed class SmtpNotificationChannel
             $"the relay rejected all {ex.InnerExceptions.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)} " +
             $"recipient(s) (SMTP {string.Join("/", codes.Distinct())})",
             // Per-recipient SMTP codes exist only because a relay produced them.
-            RelayAnswered: true);
+            FailureLocus.RelayReached);
     }
 
-    /// <summary>Both callers reach this only with a real SMTP status code in hand, so a relay answered by
+    /// <summary>Both callers reach this only with a real SMTP status code in hand, so a relay was reached by
     /// construction.</summary>
     private static ClassifiedFailure ClassifyStatus(int code, string description) =>
         new(code is >= 400 and < 500 ? FailureKind.Retryable : FailureKind.Permanent, description,
-            RelayAnswered: true);
+            FailureLocus.RelayReached);
 
-    /// <summary>Extra guidance for the permanent failures whose cause an operator can act on — the
-    /// difference between "the e-mail is broken" and a support call.</summary>
-    private static string PermanentHint(Exception ex)
+    /// <summary>
+    /// Extra guidance for the permanent failures whose cause an operator can act on — the difference between
+    /// "the e-mail is broken" and a support call.
+    ///
+    /// <para>🔴 <b>It takes the locus, and that parameter is the fix for a defect this method's CALLERS
+    /// created without touching it.</b> Every arm below is advice about a relay's decision — credentials,
+    /// recipient addresses, relay access. When the caller has just told the operator that <b>no relay was
+    /// reached</b>, appending one of them produces a single self-contradicting sentence:</para>
+    /// <para><i>"…no SMTP conversation took place: check the host, the port and this machine's route to it
+    /// before looking at anything the relay does. Check the username and the stored password for this
+    /// channel…"</i></para>
+    /// <para>Measured against a closed port, where <c>SmtpException.StatusCode</c> is <c>GeneralFailure</c>
+    /// (-1) and the first arm fires. <b>The defect was in the COMPOSITION of two strings each defensible
+    /// alone</b>, which is why it survived assertions written against the half that changed — and it is the
+    /// same class as the finding this whole change exists to close, reproduced by the fix for it.</para>
+    /// <para>Gated HERE rather than at the call sites deliberately: a third caller must not be able to
+    /// reintroduce it by forgetting, and there is no arm of this method that is ever true when a relay was
+    /// not in conversation with us.</para>
+    /// </summary>
+    private static string PermanentHint(Exception ex, FailureLocus locus)
     {
+        if (locus != FailureLocus.RelayReached) return "";
+
         var code = ex switch
         {
             SmtpFailedRecipientsException many when many.InnerExceptions.Length > 0 =>

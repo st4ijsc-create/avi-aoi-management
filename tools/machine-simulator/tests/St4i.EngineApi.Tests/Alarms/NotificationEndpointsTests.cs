@@ -1162,6 +1162,14 @@ public sealed class NotificationEndpointsTests : IDisposable
         Assert.NotEqual(refused.Detail, silent.Detail);
         Assert.Contains("could not be reached", refused.Detail, StringComparison.Ordinal);
         Assert.Contains("did not answer within", silent.Detail, StringComparison.Ordinal);
+
+        // 🔴 The silent arm is a destination that ACCEPTED the connection and then went quiet, so the message
+        // it produces must not claim the connection attempt never reported an outcome — it did, it succeeded,
+        // and the request was sent. An earlier wording said exactly that, and it was the defect class under
+        // repair appearing inside the string doing the repairing. This assertion is what makes that clause
+        // load-bearing rather than prose.
+        Assert.Contains("cannot see how far it had got", silent.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("before the connection attempt reported an outcome", silent.Detail, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -1261,6 +1269,93 @@ public sealed class NotificationEndpointsTests : IDisposable
         // CONTRADICTED — nothing was refused, and the message says so.
         Assert.DoesNotContain("refused the test message", unreachable.Detail, StringComparison.Ordinal);
         Assert.Contains("refused the test message", refused.Detail, StringComparison.Ordinal);
+
+        // 🔴 THE ASSERTION THE FIRST VERSION OF THIS TEST COULD NOT MAKE, and the reason it could not is the
+        // lesson. A closed port yields SmtpException.StatusCode == GeneralFailure (-1), which fires
+        // PermanentHint's credentials arm — so the operator used to receive, in ONE sentence, "no SMTP
+        // conversation took place: … before looking at anything the relay does. Check the username and the
+        // stored password for this channel." The two assertions above BOTH pass while that is true: the
+        // defect lived in the COMPOSITION of two strings each defensible alone, and they were written against
+        // the half that changed. PermanentHint is now gated on the locus, inside itself.
+        Assert.DoesNotContain("Check the username", unreachable.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("stored password", unreachable.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 🔴 <b>"A transport failure" is not one situation, and a <c>bool</c> could not say so.</b> A relay that
+    /// sends its <c>220</c> banner, reads the <c>EHLO</c> and then RSTs produces the same
+    /// <c>SmtpException</c> + socket/IO shape as a refused port — and a conversation demonstrably took place,
+    /// with the relay ending it. Telling that operator "no SMTP conversation took place, look at the host and
+    /// the route before anything the relay does" points them away from the only thing that is misbehaving.
+    ///
+    /// <para>🔴 <b>MEASURED, after mutation caught this test's first doc comment asserting the wrong
+    /// mechanism.</b> Both arms are <c>SmtpException{GeneralFailure}</c> outside and differ inside: the
+    /// refused port carries <c>SocketException(ConnectionRefused)</c>, while the reset relay carries a bare
+    /// <c>IOException</c> with <b>no SocketException at all</b>. So this pair is separated by the classifier's
+    /// no-socket-error FALLBACK, not by its socket-code switch — which is why mutating the switch left this
+    /// test green and mutating the fallback kills it. The lesson is the batch's own: a test that passes is not
+    /// evidence that it passes for the reason its comment gives.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheEmailSendTest_TellsARelayThatBrokeTheConversation_FromAHostThatNeverAnswered()
+    {
+        await using var server = SmtpLoopbackServer.Start(new SmtpScript(ResetAfterEhlo: true));
+        var brokeStore = NewStore();
+        await brokeStore.SaveSmtpAsync(
+            true, AlarmPriority.High, SmtpLoopbackServer.Host, server.Port, SmtpTlsMode.None,
+            "alarms@example.test", new[] { "ops@example.test" }, null);
+        var broke = await NewSmtpChannel(brokeStore).SendTestAsync(NotificationConfigStore.DefaultInstance);
+
+        var silentStore = NewStore();
+        await silentStore.SaveSmtpAsync(
+            true, AlarmPriority.High, SmtpLoopbackServer.Host, ClosedPort(), SmtpTlsMode.None,
+            "alarms@example.test", new[] { "ops@example.test" }, null);
+        var never = await NewSmtpChannel(silentStore).SendTestAsync(NotificationConfigStore.DefaultInstance);
+
+        Assert.False(broke.Ok);
+        Assert.False(never.Ok);
+
+        Assert.NotEqual(broke.Detail, never.Detail);
+        // A relay WAS reached. The old bool answered "no" here, on the strength of the exception type alone.
+        Assert.DoesNotContain("never reached the relay", broke.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("no SMTP conversation took place", broke.Detail, StringComparison.Ordinal);
+        Assert.Contains("never reached the relay", never.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 🔴 <b>"Nothing was reached" and "nothing was SENT" are different facts and want different advice.</b> A
+    /// mistyped From address throws out of <c>Compose</c> before a socket is opened, so answering it with
+    /// <i>"check the host, the port and this machine's route to it"</i> is advice written for the other
+    /// producing path — the same defect one notch finer, and the reason the locus is an enum rather than the
+    /// boolean this fix first shipped.
+    /// </summary>
+    [Fact]
+    public async Task TheEmailSendTest_TellsAMessageThatNeverLeftThisMachine_FromOneNoRelayAnswered()
+    {
+        var unsendableStore = NewStore();
+        await unsendableStore.SaveSmtpAsync(
+            true, AlarmPriority.High, SmtpLoopbackServer.Host, ClosedPort(), SmtpTlsMode.None,
+            // Stored happily by C-2's validation, which only requires it to be non-blank.
+            "not a mail address", new[] { "ops@example.test" }, null);
+        var unsendable = await NewSmtpChannel(unsendableStore).SendTestAsync(NotificationConfigStore.DefaultInstance);
+
+        var unreachableStore = NewStore();
+        await unreachableStore.SaveSmtpAsync(
+            true, AlarmPriority.High, SmtpLoopbackServer.Host, ClosedPort(), SmtpTlsMode.None,
+            "alarms@example.test", new[] { "ops@example.test" }, null);
+        var unreachable = await NewSmtpChannel(unreachableStore).SendTestAsync(NotificationConfigStore.DefaultInstance);
+
+        Assert.False(unsendable.Ok);
+        Assert.False(unreachable.Ok);
+
+        Assert.NotEqual(unsendable.Detail, unreachable.Detail);
+        Assert.Contains("never SENT", unsendable.Detail, StringComparison.Ordinal);
+        Assert.Contains("Nothing left this machine", unsendable.Detail, StringComparison.Ordinal);
+        // The load-bearing one: the network advice belongs to the OTHER path and must not appear on this one.
+        // Both configurations point at the same closed port, so a message that mentioned the route would be
+        // indistinguishable between them — which is exactly what the boolean produced.
+        Assert.DoesNotContain("check the host, the port", unsendable.Detail, StringComparison.Ordinal);
+        Assert.Contains("check the host, the port", unreachable.Detail, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -1295,11 +1390,19 @@ public sealed class NotificationEndpointsTests : IDisposable
         Assert.Equal(1, channel.Stats.Lost);
         var line = Assert.Single(reported, m => m.Contains("Alarm e-mail", StringComparison.Ordinal));
         Assert.Contains("was never SENT", line, StringComparison.Ordinal);
-        Assert.Contains("No relay was reached", line, StringComparison.Ordinal);
+        Assert.Contains("Nothing left this machine", line, StringComparison.Ordinal);
         Assert.DoesNotContain("was REJECTED", line, StringComparison.Ordinal);
         // Non-vacuity: it really is the un-buildable message, not some transport failure that happened to
         // take the same branch.
         Assert.Contains("could not be built or sent", line, StringComparison.Ordinal);
+
+        // 🔴 There is deliberately NO DoesNotContain("Check the username") here, and the reason is worth more
+        // than the assertion would have been. One was written, and mutation proved it could not fail: this
+        // path's exception is a FormatException, so PermanentHint's own code lookup yields 0 and returns ""
+        // whether or not it is gated on the locus. It would have read as coverage of the composition defect
+        // while being incapable of detecting it. The send test's equivalent assertion IS load-bearing — a
+        // closed port yields GeneralFailure, which fires the credentials arm — so the guard lives there,
+        // where it can fail.
     }
 
     [Fact]

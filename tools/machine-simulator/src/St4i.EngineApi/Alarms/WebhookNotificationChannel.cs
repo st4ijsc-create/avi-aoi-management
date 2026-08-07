@@ -473,8 +473,12 @@ public sealed class WebhookNotificationChannel : IDisposable
         // 🔴 THE CAUSE IS UNDETERMINED HERE, AND SAYING SO IS THE WHOLE POINT OF THIS ARM.
         //
         // What this arm knows is exactly one fact: the attempt hit its own bound. It does NOT know whether a
-        // connection was ever established, because it abandoned the request before the connect path could
-        // report an outcome. THREE different situations arrive here identically:
+        // connection was ever established — not because the connect always failed to report, but because
+        // NOTHING CARRIES THAT REPORT TO THIS CATCH. (An earlier wording said "before the connection attempt
+        // reported an outcome", which is false for the black-holing case below, where the connect SUCCEEDED
+        // and the request was sent — and that case is the one this channel's own pair test drives into this
+        // arm. The shape under repair, in the string doing the repairing.)
+        // THREE different situations arrive here identically:
         //   * a destination that accepted the connection and then said nothing — the true black hole;
         //   * a destination whose packets are silently DROPPED (a firewall rule, the commonest cause of an
         //     unreachable webhook on a plant network). Measured, and by this repository: see
@@ -499,8 +503,8 @@ public sealed class WebhookNotificationChannel : IDisposable
         {
             return new NotificationTestOutcome(false,
                 $"The webhook {identity} did not answer within {_attemptTimeout.TotalSeconds:0.#}s, and this " +
-                "test cannot tell you WHY: the attempt was abandoned on its own bound before the connection " +
-                "attempt reported an outcome, so a destination that accepted the connection and then went " +
+                "test cannot tell you WHY: the attempt was abandoned on its own bound, and this channel " +
+                "cannot see how far it had got. A destination that accepted the connection and then went " +
                 "silent, one whose packets are being dropped by a firewall, and one that is actively " +
                 "REFUSING the connection all arrive here identically. Check that the destination is " +
                 "reachable from this machine, that nothing is filtering it, and that nothing is holding the " +
