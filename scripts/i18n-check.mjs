@@ -39,6 +39,11 @@ const root = argv.find((a) => !a.startsWith('--')) || process.cwd();
 const localeDir = path.join(root, 'client/src/i18n/locales');
 const locales = ['en', 'vi', 'zh'];
 const BASELINE = path.join(root, 'scripts/i18n-missing-baseline.json');
+/**
+ * ★★★ Pha 7 §4.2 — **TRẦN của nền.** File này `--update-baseline` **KHÔNG BAO GIỜ ghi**; đó là
+ * toàn bộ lý do nó tồn tại như một file RIÊNG. Xem khối lý lẽ ở cuối, mục "hai cửa thoát".
+ */
+const TRAN = path.join(root, 'scripts/i18n-baseline-tran.json');
 
 const raw = Object.fromEntries(
   locales.map((l) => [l, readFileSync(path.join(localeDir, `${l}.json`), 'utf8')]),
@@ -186,23 +191,117 @@ const nen = existsSync(BASELINE)
   : { missingInAllLocales: [], missingInSomeLocales: [] };
 
 if (UPDATE) {
+  const dsAll = missingAll.map((m) => m.key).sort();
+  const dsSome = missingSome.map((m) => m.key).sort();
   const out = {
     _note:
       'NỢ i18n CÓ TRƯỚC, ĐÃ ĐÓNG BĂNG. Mỗi mục là một khoá được MÃ tham chiếu mà bản dịch còn thiếu. ' +
       'Danh sách này chỉ được THU HẸP: thêm một khoá vào đây là thêm một màn nói sai ngôn ngữ. ' +
       'Sinh lại bằng `node scripts/i18n-check.mjs --update-baseline` — và đó là một quyết định phải nói ra trong review.',
-    missingInAllLocales: missingAll.map((m) => m.key).sort(),
-    missingInSomeLocales: missingSome.map((m) => m.key).sort(),
+    /**
+     * ★★★ Pha 7 §4.2 — con số ghim, do **CHÍNH CÔNG CỤ** viết. Mọi lượt chạy đối chiếu nó với
+     * độ dài mảng thật ⇒ một lượt **sửa TAY** file JSON (thêm/bớt tên mà không sinh lại) là **ĐỎ**.
+     */
+    _ghim: { missingInAllLocales: dsAll.length, missingInSomeLocales: dsSome.length },
+    missingInAllLocales: dsAll,
+    missingInSomeLocales: dsSome,
   };
   writeFileSync(BASELINE, `${JSON.stringify(out, null, 2)}\n`, 'utf8');
   console.log(
     `BASELINE WRITTEN: ${out.missingInAllLocales.length} missing-in-all · ${out.missingInSomeLocales.length} missing-in-some`,
   );
+  // ⚠ `--update-baseline` KHÔNG ghi file trần. Nếu lượt sinh lại này làm nền VƯỢT trần thì lượt
+  //   chạy kiểm tiếp theo sẽ ĐỎ, và người ta phải nâng trần BẰNG TAY — đúng chỗ ta muốn có ma sát.
+  const tranNow = existsSync(TRAN) ? JSON.parse(readFileSync(TRAN, 'utf8')) : null;
+  if (
+    tranNow &&
+    (out.missingInAllLocales.length > tranNow.missingInAllLocales ||
+      out.missingInSomeLocales.length > tranNow.missingInSomeLocales)
+  ) {
+    console.log(
+      `⚠ NỀN VỪA PHÌNH QUÁ TRẦN (${tranNow.missingInAllLocales}/${tranNow.missingInSomeLocales}). ` +
+        `Lượt kiểm tới sẽ ĐỎ. Nâng trần ở ${path.basename(TRAN)} là một QUYẾT ĐỊNH PHẢI NÓI RA.`,
+    );
+  }
   process.exit(0);
 }
 
 const nenAll = new Set(nen.missingInAllLocales ?? []);
 const nenSome = new Set(nen.missingInSomeLocales ?? []);
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ Pha 7 §4.2 — *"NỀN CHỈ ĐƯỢC THU HẸP"* THÔI LÀ MỘT LỜI HỨA, THÀNH MỘT LƯỢNG TỪ MÁY
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// **Đo được (probe M6):** thêm **bằng tay** một tên khoá vào `missingInAllLocales`, **không dịch
+// gì** ⇒ công cụ `exit 0`, **XANH**. Luật docstring nói *"∀ lượt thay đổi, |nền| không tăng"*;
+// máy chỉ kiểm *"∃ mục trong nền ⇒ tha"* — **lượng từ sai**, đúng lớp lỗi mà chính file này tồn
+// tại để diệt. Một luật không ai cưỡng chế thì nó **không phải luật**, nó là một dòng chú thích.
+//
+// **HAI CỬA THOÁT, nên HAI phép canh** — chúng độc lập vì hỏng theo hai kiểu khác nhau:
+//
+//  (G1) **sửa TAY file nền.** `_ghim` do **chính công cụ** viết ở lượt `--update-baseline`; mọi
+//       lượt chạy đối chiếu nó với **độ dài mảng thật**. Thêm/bớt một tên bằng tay ⇒ lệch ⇒ **ĐỎ**.
+//       ⚠ Cửa này là cửa **âm thầm nhất**: một dòng thêm vào giữa 817 tên thì không ai thấy trong
+//         review, còn con số thì thấy ngay.
+//
+//  (G2) **chạy `--update-baseline` để "làm cổng xanh".** Đây là cửa **hay bị đi nhất trong thực
+//       tế**: ai đó thêm một màn chưa dịch, cổng đỏ, và lượt sửa RẺ NHẤT là sinh lại nền. `_ghim`
+//       **không** chặn được — nó do chính lượt sinh lại ấy viết ra. Nên trần nằm ở một file
+//       **RIÊNG** (`i18n-baseline-tran.json`) mà công cụ **không bao giờ ghi**: nền vượt trần ⇒
+//       **ĐỎ** cho tới khi có người sửa **hai con số** trong một file chỉ có hai con số.
+//       ⚠ Đây là bảo đảm về **KHẢ NĂNG REVIEW**, không phải bảo đảm mật mã: nó không ngăn được
+//         người cố ý, nó ngăn được **lượt trôi im lặng** — đúng thứ đã xảy ra.
+//
+// ⚠ **KHÔNG BẮT NHẦM (điều kiện thiết kế, không phải hệ quả may mắn):** một lượt **HẠ nền hợp lệ**
+//   (dịch xong rồi `--update-baseline`) ⇒ `_ghim` được viết lại **khớp**, và `size < trần` ⇒
+//   **XANH**. Trần là **≤**, cố ý **không** phải `===`: bắt trần đúng bằng nền sẽ biến mọi lượt trả
+//   nợ thành ĐỎ, tức là phạt đúng cái hành vi ta muốn khuyến khích.
+// ⚠ **Vì sao KHÔNG so với nền ở `git show HEAD:…`** (đường đã cân nhắc và LOẠI): nó chỉ bắt được
+//   lượt phình **CHƯA COMMIT** — commit xong thì `HEAD` **chứa** nền đã phình, và mọi lượt chạy sau
+//   đó **xanh vĩnh viễn**. Một cổng chỉ đỏ trước lúc commit là cổng bỏ sót đúng thứ nó phải canh.
+//   Cộng thêm: nó buộc cổng phụ thuộc **git** (hỏng trong tarball/checkout nông/CI cạn lịch sử).
+const viPhamNen = [];
+const soAll = (nen.missingInAllLocales ?? []).length;
+const soSome = (nen.missingInSomeLocales ?? []).length;
+const ghim = nen._ghim;
+if (!ghim || typeof ghim.missingInAllLocales !== 'number' || typeof ghim.missingInSomeLocales !== 'number') {
+  viPhamNen.push(
+    `NỀN THIẾU CON SỐ GHIM — ${path.basename(BASELINE)} không có ô \`_ghim\` hợp lệ; ` +
+      'sinh lại bằng `node scripts/i18n-check.mjs --update-baseline`',
+  );
+} else {
+  if (ghim.missingInAllLocales !== soAll) {
+    viPhamNen.push(
+      `NỀN BỊ SỬA TAY  missingInAllLocales: đếm được ${soAll} tên, con số ghim nói ${ghim.missingInAllLocales} — ` +
+        'nền chỉ được đổi qua `--update-baseline`, không được sửa tay',
+    );
+  }
+  if (ghim.missingInSomeLocales !== soSome) {
+    viPhamNen.push(
+      `NỀN BỊ SỬA TAY  missingInSomeLocales: đếm được ${soSome} tên, con số ghim nói ${ghim.missingInSomeLocales} — ` +
+        'nền chỉ được đổi qua `--update-baseline`, không được sửa tay',
+    );
+  }
+}
+const tran = existsSync(TRAN) ? JSON.parse(readFileSync(TRAN, 'utf8')) : null;
+if (!tran || typeof tran.missingInAllLocales !== 'number' || typeof tran.missingInSomeLocales !== 'number') {
+  // ⚠ CẦU CHÌ: thiếu file trần ⇒ ĐỎ, **không** im lặng bỏ qua. Một phép canh vắng mặt mà cổng vẫn
+  //   xanh chính là lớp lỗi đang được đóng ở đây.
+  viPhamNen.push(`THIẾU TRẦN NỀN — không đọc được ${path.basename(TRAN)}; phép canh "nền không phình" đang KHÔNG chạy`);
+} else {
+  if (soAll > tran.missingInAllLocales) {
+    viPhamNen.push(
+      `NỀN PHÌNH  missingInAllLocales: ${soAll} > trần ${tran.missingInAllLocales} — ` +
+        `nâng trần ở ${path.basename(TRAN)} là một QUYẾT ĐỊNH PHẢI NÓI RA trong review`,
+    );
+  }
+  if (soSome > tran.missingInSomeLocales) {
+    viPhamNen.push(
+      `NỀN PHÌNH  missingInSomeLocales: ${soSome} > trần ${tran.missingInSomeLocales} — ` +
+        `nâng trần ở ${path.basename(TRAN)} là một QUYẾT ĐỊNH PHẢI NÓI RA trong review`,
+    );
+  }
+}
 
 /** MỚI thiếu — không có trong nền ⇒ đây là nợ do lượt thay đổi này đẻ ra. */
 const moiThieuAll = missingAll.filter((m) => !nenAll.has(m.key));
@@ -231,13 +330,17 @@ for (const m of moiThieuSome.sort((a, b) => a.key.localeCompare(b.key))) {
 for (const k of nenCu) {
   console.log(`BASELINE STALE   ${k} — đã dịch xong (hoặc đã gỡ khỏi mã); xoá nó khỏi ${path.basename(BASELINE)}`);
 }
+for (const v of viPhamNen) {
+  console.log(v);
+}
 
-const tong = mismatches.length + moiThieuAll.length + moiThieuSome.length + nenCu.length;
+const tong = mismatches.length + moiThieuAll.length + moiThieuSome.length + nenCu.length + viPhamNen.length;
 console.log(
   `\n${mismatches.length} key(s) with placeholder mismatch across ${locales.join('/')}` +
     ` · ${moiThieuAll.length} NEW key(s) missing in all 3` +
     ` · ${moiThieuSome.length} NEW key(s) missing in some` +
     ` · ${nenCu.length} stale baseline entr(y|ies)` +
+    ` · ${viPhamNen.length} baseline-integrity violation(s)` +
     ` · [đã đóng băng: ${nenAll.size} missing-in-all + ${nenSome.size} missing-in-some, nợ CÓ TRƯỚC]`,
 );
 process.exit(tong > 0 ? 1 : 0);

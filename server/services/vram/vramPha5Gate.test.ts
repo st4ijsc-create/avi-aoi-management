@@ -244,7 +244,17 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   `server/routers/totpReplayScan.test.ts` (chống phát lại mã OTP). Cả hai vào tập bị canh qua
     //   bộ nhận diện **NỘI DUNG** (tự khai `Pha 5`, có chủ ý — xem docstring của chúng), và cả hai
     //   phải có đường riêng ở §Cổng kiểm chung ⇒ `CONG.length` 14 → **16** cùng lượt.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(73);
+    // ⚠ Pha 7 §4.1: 73 → 74. **Đúng MỘT** file mới —
+    //   `client/src/lib/i18nQuantifierGate.unit.test.ts` (lưới canh **CHÍNH BỘ CƯỠNG CHẾ mặt
+    //   NGƯỜI**: nó THỰC THI `scripts/i18n-check.mjs` trên bộ đầu vào dựng sẵn). Đo được trước khi
+    //   có nó: hoàn nguyên PASS B + xoá `vramBroker.preempt` khỏi cả ba locale ⇒ `i18n:check`
+    //   **exit 0** và cổng này **1902/1902 XANH** — lưới giả ở tầng CÔNG CỤ.
+    //   Nó vào tập bị canh qua bộ nhận diện **THỨ BA** (`DAU_KHAI_PHA` ∧ `duocPhu`): tên không bắt
+    //   đầu bằng `vram`, không nằm dưới thư mục `vram`. Vì `client/src/lib/` **đã** là một đường
+    //   của §Cổng kiểm chung nên `CONG.length` giữ nguyên **16**; chỉ con số này đổi.
+    //   ⚠ Đuôi `.unit.test.ts` là bắt buộc: `vitest.config.ts` gom client bằng `*.unit.test.ts`,
+    //     nên đặt tên `.test.ts` thì vitest **lặng lẽ bỏ qua** trong khi cổng vẫn khai XANH.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(74);
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

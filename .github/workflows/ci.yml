@@ -89,6 +89,16 @@ jobs:
       - name: Contract schema BACKWARD gate (doc 44 G2.5)
         run: node scripts/contracts-compat-check.mjs
 
+      # Pha 7 §4.1 — BỀ MẶT NGƯỜI được canh NGANG BỀ MẶT AGENT.
+      # Mặt Agent bị cưỡng chế ba bản thật bằng vitest (chạy ở bước dưới); mặt NGƯỜI
+      # trước đây có 0 phép canh trong CI — `grep -rn "i18n" .github/workflows/` trả
+      # về 0 kết quả trên cả 7 workflow, trong khi 841/13.859 khoá được mã tham chiếu
+      # thiếu ở CẢ BA locale và cổng vẫn khai XANH. Bước này hỏi đúng câu "MỌI khoá mã
+      # tham chiếu có mặt ở cả ba locale không", cộng hai phép canh nền (sửa tay ⇒ đỏ,
+      # phình quá trần ⇒ đỏ). Nợ CÓ TRƯỚC được đóng băng ở scripts/i18n-missing-baseline.json.
+      - name: i18n gate (∀ khoá mã tham chiếu có ở cả ba locale + nền chỉ được thu hẹp)
+        run: pnpm run i18n:check
+
       - name: Unit tests (vitest)
         run: pnpm test
 

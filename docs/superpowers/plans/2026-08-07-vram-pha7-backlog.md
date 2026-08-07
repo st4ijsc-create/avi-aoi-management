@@ -12,7 +12,7 @@
 
 | # | Mục | Vì sao hạng này |
 |---|---|---|
-| 1 | **Mặt NGƯỜI bị bỏ rơi** | **841 khoá thiếu ở CẢ BA locale** / 13.859 khoá mã tham chiếu. Mặt **Agent** bị cưỡng chế **ba bản thật**; mặt **người** có **0** phép canh. Bất đối xứng đo được. |
+| 1 | ~~**Mặt NGƯỜI bị bỏ rơi**~~ → **hàng rào canh CÁI HÀNG RÀO** | ⚠ **ĐÍNH CHÍNH:** mục gốc **đã đóng** ở `1ada0526` (nền nay **817+20**, `vramBroker.*` **0/36** thiếu). Nợ **còn lại**: chính `i18n:check` **không ai canh** — vitest ❌ · 16 đường cổng ❌ · CI ❌ (0/7 workflow); và *"nền chỉ được thu hẹp"* **không có lượng từ máy** (probe M6: phình tay ⇒ **XANH**). |
 | 2 | **Chặng cuối chưa ai nhận** | Khuôn chung của Pha 6: Task 1·2·5 **đều dừng ở BIÊN PAYLOAD**. `truncatedIdentityWrites` **0 người đọc**; `notAnInvariant`/`variesWith`/`beforeAfterEvidence` **424 B/lượt, ≈298 KiB/giờ/panel, 0 lượt đọc**. |
 | 3 | **`VARCHAR_LIMITS` viết tay** | `vramEventLog.ts:157` chưa neo vào drizzle. Task 5 đóng lượng từ cho `vram_leases`, **không** cho `vram_events`. |
 | 4 | **3 file tự khai pha NGOÀI cổng** | `appErrorParamsCoverage` · `aiGgufEngine` · `kbSyncScheduler.evalGate` — **theo cấu tạo không bao giờ được canh**. |
@@ -48,19 +48,41 @@ Kế thừa **toàn bộ** §Global Constraints của `2026-08-06-vram-pha6-back
 
 ### Task 1: Mặt NGƯỜI được cưỡng chế NGANG mặt Agent
 
-**Nợ đo được:** **841 khoá** mã tham chiếu **thiếu ở CẢ BA locale** / 13.859. Riêng `vramBroker.*`: **30/33**. Mà `i18n:check` **XANH** — nó có **BA lỗ lượng từ**: quét khoá **trong file dịch** thay vì khoá **mã tham chiếu** · `present.length < 2 ⇒ continue` · chỉ so **placeholder**, không so **sự có mặt**.
+> ## ⚠⚠⚠ ĐÍNH CHÍNH (2026-08-07) — **BẢN TASK 1 GỐC MÔ TẢ TRẠNG THÁI ĐÃ KHÔNG CÒN ĐÚNG**
+>
+> Task 1 như soạn ban đầu **đã được thực thi trọn vẹn** ở commit **`1ada0526`**
+> (*"fix(vram/pha6): I-1 — `i18n:check` thôi mù THEO CẤU TẠO, + 33 nhãn `vramBroker.*` × 3 bản"*),
+> **tổ tiên của HEAD**. Kế hoạch này được soạn từ **báo cáo review Pha 6**, **không** từ **mã đã
+> vá** — nên nó mô tả trạng thái **trước** bản vá. Con số `841 / 13.859 / 30-of-33` là ảnh chụp
+> **trước** `1ada0526`.
+>
+> **Phép đếm ĐỘC LẬP tại HEAD (Pha 7 Bước 1):** **13.919** khoá mã tham chiếu · **817** thiếu cả ba
+> · **20** thiếu một phần · `vramBroker.*` **0/36** thiếu (đủ ba bản). Khớp chính xác nền đã ghim.
+> **Sáu đột biến** xác nhận cổng ra của Task 1 gốc **ĐẠT** (thiếu cả ba ⇒ đỏ · thiếu một ⇒ đỏ ·
+> bậc thang **hai chiều** ⇒ đỏ · khoá cố ý rỗng **không bị bắt nhầm**).
+>
+> ⇒ **Phạm vi Task 1 chuyển sang §4.1 + §4.2 dưới đây** — hai nợ mà bản gốc **không** phủ, cùng
+> một lớp lỗi *"hàng rào không ai canh"* nhưng ở **một tầng cao hơn: hàng rào canh CÁI HÀNG RÀO**.
 
-⚠⚠ **Bất đối xứng là phần đáng nhớ:** bề mặt **Agent** bị cưỡng chế **ba bản thật** (Pha 5 Task 4); bề mặt **người** có **0** phép canh. Cùng một hệ, hai chuẩn.
+**Trớ trêu đo được:** Pha 6 dựng `i18n:check` để cân **mặt người** với **mặt Agent** — rồi **chính bộ cưỡng chế mới** lại **không ai canh**: vitest ❌ · trong 16 đường cổng ❌ · trong CI ❌ (`grep -rn "i18n" .github/workflows/` = **0/7 workflow**) · có test canh chính nó ❌. **Hoàn nguyên PASS B thì MỌI cổng vẫn XANH** — lưới giả, ở tầng **công cụ**.
 
-- [ ] **Bước 1: ĐO trước.** Chạy phép đếm hiện tại; ghi **841 / 13.859** có còn đúng không. ⚠ **Tự đếm, đừng tin con số này.**
-- [ ] **Bước 2: ca ĐỎ.** Một khoá `vramBroker.*` **vắng ở cả ba** ⇒ `i18n:check` phải **ĐỎ**. Hôm nay nó **xanh**.
-- [ ] **Bước 3: vá ba lỗ lượng từ.** ⚠ **Đảo lượng từ**: hỏi *"MỌI khoá mã tham chiếu có mặt ở cả ba không"*, **không** hỏi *"các khoá trong file dịch có lệch nhau không"*.
-- [ ] **Bước 4: BASELINE có bậc thang.** 841 khoá là **nợ toàn repo ~25 màn** — không đóng trong một task. ⇒ Ghim **con số hiện tại**, và luật là ***"số chỉ được GIẢM"***. ⚠ Thêm khoá thiếu mới ⇒ **ĐỎ**; dịch một khoá đã ghim mà **không hạ số** ⇒ **ĐỎ** (bậc thang đóng **cả hai chiều**).
-- [ ] **Bước 5: dịch đủ `vramBroker.*`** (30/33) — đây là bề mặt Pha 4–6 vừa dựng.
-- [ ] **Bước 6: đột biến.** Xoá một khoá khỏi **cả ba** ⇒ đỏ · khỏi **một** ⇒ đỏ · dịch một khoá đã ghim mà không hạ số ⇒ đỏ · và **không bắt nhầm**.
-- [ ] **Bước 7: commit.**
+#### §4.1 — bộ cưỡng chế mặt NGƯỜI phải được canh NGANG mặt Agent
 
-**Cổng ra:** khoá vắng ở cả ba ⇒ **đỏ**; bậc thang đóng **hai chiều**; `vramBroker.*` đủ ba ngôn ngữ.
+- [x] **Bước 1: ĐO trước.** Hoàn nguyên PASS B (`git show 1ada0526^:…`) **+** xoá `vramBroker.preempt` khỏi cả ba ⇒ `i18n:check` **exit 0** và cổng **1902/1902 XANH (111 file)**.
+- [x] **Bước 2: chọn hình dạng, VIẾT LÝ DO.** Chọn **CẢ HAI** — vitest **và** CI: chúng canh **hai lúc khác nhau** (lượt chạy cục bộ vs lượt đẩy), và cái đắt nhất là lượt **đẩy** vì đó là lúc không ai ngồi xem.
+- [x] **Bước 3: cài.** `client/src/lib/i18nQuantifierGate.unit.test.ts` (**thực thi script thật** trên bộ đầu vào dựng sẵn) + bước `i18n:check` trong `.github/workflows/ci.yml`. `FILE_CANH` 73 → **74**, `CONG` giữ **16**.
+- [x] **Bước 4: đột biến** — hoàn nguyên **từng lỗ** trong ba lỗ ⇒ **mỗi lỗ một ca đỏ riêng**.
+
+#### §4.2 — *"nền chỉ được THU HẸP"* phải có lượng từ MÁY cưỡng chế
+
+**Probe M6:** thêm tay một tên vào `missingInAllLocales`, **không dịch gì** ⇒ **exit 0, XANH**. Luật nói *"∀ lượt thay đổi, |nền| không tăng"*; máy chỉ kiểm *"∃ mục trong nền ⇒ tha"*.
+
+- [x] **Bước 5: ca ĐỎ** — thêm mục vào nền mà không dịch ⇒ **ĐỎ**.
+- [x] **Bước 6: cài.** **Hai** phép canh cho **hai cửa thoát**: `_ghim` (con số do chính công cụ viết ⇒ **sửa tay** ⇒ đỏ) + `scripts/i18n-baseline-tran.json` (**trần** ở file riêng mà `--update-baseline` **không bao giờ ghi** ⇒ phình qua cửa sinh-lại ⇒ đỏ). ⚠ Đường **so với `git show HEAD:…`** đã **LOẠI**: nó chỉ bắt lượt phình **chưa commit**; commit xong thì `HEAD` **chứa** nền đã phình ⇒ xanh vĩnh viễn, và cổng phải phụ thuộc git.
+- [x] **Bước 7: đột biến** cả hai chiều + **không bắt nhầm** (hạ nền hợp lệ ⇒ xanh).
+- [x] **Bước 8: commit.**
+
+**Cổng ra:** hoàn nguyên **bất kỳ** lỗ nào trong ba lỗ ⇒ **có cổng đỏ**; thêm mục vào nền mà không dịch ⇒ **đỏ**; hạ nền hợp lệ ⇒ **xanh**.
 
 ---
 

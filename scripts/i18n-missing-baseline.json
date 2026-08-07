@@ -1,5 +1,9 @@
 {
   "_note": "NỢ i18n CÓ TRƯỚC, ĐÃ ĐÓNG BĂNG. Mỗi mục là một khoá được MÃ tham chiếu mà bản dịch còn thiếu. Danh sách này chỉ được THU HẸP: thêm một khoá vào đây là thêm một màn nói sai ngôn ngữ. Sinh lại bằng `node scripts/i18n-check.mjs --update-baseline` — và đó là một quyết định phải nói ra trong review.",
+  "_ghim": {
+    "missingInAllLocales": 817,
+    "missingInSomeLocales": 20
+  },
   "missingInAllLocales": [
     "aboutPage.stack.items",
     "aboutPage.system.highlights",
