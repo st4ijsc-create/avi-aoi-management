@@ -637,11 +637,18 @@ public sealed class SmtpNotificationChannel
                     .ConfigureAwait(false);
                 if (string.IsNullOrEmpty(password))
                 {
+                    // 🔴 Same two indistinguishable causes as the webhook channel's own signing-secret
+                    // refusal, and the same disposition — see the comment there. GetSecretAsync returns null
+                    // for a blob that will not decrypt AND for a store read that failed, and this return
+                    // cannot tell them apart, so it names both instead of picking one.
                     return new NotificationTestOutcome(false,
                         $"The alarm e-mail channel {identity} has a password stored for " +
-                        $"'{config.Username}', but it could not be read (the encrypted value is unreadable " +
-                        "on this machine — typically a notifications.db copied from another host). Nothing " +
-                        "was sent. Re-save the password to repair it.");
+                        $"'{config.Username}', but it could not be read — either the encrypted value will " +
+                        "not decrypt on this machine (typically a notifications.db copied from another " +
+                        "host), or the configuration store could not be read at all; these are not " +
+                        "distinguishable from here, so check the configuration-store health beside the " +
+                        "channel statistics before assuming the password. Nothing was sent. If the store is " +
+                        "healthy, re-save the password to repair it.");
                 }
                 credential = new NetworkCredential(config.Username, password);
                 break;
@@ -691,11 +698,20 @@ public sealed class SmtpNotificationChannel
                 $"The relay {identity} did not answer within {_attemptTimeout.TotalSeconds:0.#}s " +
                 $"({ex.GetType().Name}). Check the host, the port, and whether this machine can reach it.");
         }
+        // 🔴 The sentence BRANCHES on whether a relay answered at all, and that is not a nicety.
+        // Classify's descriptions cover both "a relay decided something" and "nothing was ever reached", and
+        // one sentence over both said the relay had refused the message — which for `the connection failed
+        // (SocketException)` sends an operator to check relay policy and credentials for a host that never
+        // answered on that port. See Classify's own remarks for the sweep that found this.
         catch (Exception ex)
         {
-            var (_, description) = Classify(ex, credential is not null);
+            var failure = Classify(ex, credential is not null);
             return new NotificationTestOutcome(false,
-                $"The relay {identity} refused the test message — {description}." + PermanentHint(ex));
+                failure.RelayAnswered
+                    ? $"The relay {identity} refused the test message — {failure.Description}." + PermanentHint(ex)
+                    : $"The test message never reached the relay {identity} — {failure.Description}. Nothing " +
+                      "was refused, because no SMTP conversation took place: check the host, the port and " +
+                      "this machine's route to it before looking at anything the relay does." + PermanentHint(ex));
         }
     }
 
@@ -843,16 +859,24 @@ public sealed class SmtpNotificationChannel
                 }
                 catch (Exception ex)
                 {
-                    var (kind, description) = Classify(ex, credential is not null);
+                    var (kind, description, relayAnswered) = Classify(ex, credential is not null);
                     if (kind == FailureKind.Permanent)
                     {
                         // "Stop, you are wrong." Retrying would replay an identical conversation against a
                         // relay that has already made a considered decision about it, at the cost of
                         // drain-loop time every other notification is waiting on.
-                        var message =
-                            $"Alarm e-mail {identity} was REJECTED — {description}. This is permanent, so " +
-                            $"it was not retried. The notification {job.Edge} '{job.Alarm.Key}' is lost." +
-                            PermanentHint(ex);
+                        //
+                        // 🔴 The same branch, for the same reason, as SendTestAsync's — see Classify's own
+                        // remarks. The PERMANENT + no-relay-answered corner is real and ordinary: a malformed
+                        // From or recipient address throws out of BuildMessage, nothing leaves this machine,
+                        // and this line used to report it to an operator as a relay REJECTION.
+                        var message = relayAnswered
+                            ? $"Alarm e-mail {identity} was REJECTED — {description}. This is permanent, so " +
+                              $"it was not retried. The notification {job.Edge} '{job.Alarm.Key}' is lost." +
+                              PermanentHint(ex)
+                            : $"Alarm e-mail {identity} was never SENT — {description}. No relay was reached, " +
+                              "so nothing was rejected; this is permanent, so it was not retried. The " +
+                              $"notification {job.Edge} '{job.Alarm.Key}' is lost." + PermanentHint(ex);
                         if (ex is SmtpException or SmtpFailedRecipientException) ReportWarning(message);
                         else ReportError(ex, message);
                         return DeliveryOutcome.Lost;
@@ -1094,7 +1118,34 @@ public sealed class SmtpNotificationChannel
     /// with a socket/IO cause, and a bare <c>GeneralFailure</c> with no such cause is treated as permanent.
     /// That errs toward not retrying, which is the safe direction here.</para>
     /// </summary>
-    private static (FailureKind Kind, string Description) Classify(Exception ex, bool authenticated) => ex switch
+    /// <remarks>
+    /// 🔴 <b><see cref="ClassifiedFailure.RelayAnswered"/> exists because the two callers of this method used
+    /// to assert an act nobody had observed.</b> Both wrapped <see cref="ClassifiedFailure.Description"/> in a
+    /// sentence that said the relay had DECIDED something — <i>"was REJECTED — …"</i>,
+    /// <i>"refused the test message — …"</i> — and roughly half the descriptions this method can return
+    /// describe a failure in which <b>no relay was ever reached</b>: <c>"the connection failed
+    /// (SocketException)"</c>, <c>"the message could not be built or sent (FormatException)"</c>. An operator
+    /// told <i>"the relay refused the test message — the connection failed"</i> goes hunting a relay policy or
+    /// a credential for a host that never answered on that port.
+    ///
+    /// <para>That is Đợt D's most-repeated defect class — one operator-facing string covering two producing
+    /// paths, true of only one — and it was found by SWEEPING the set of operator-facing returns rather than by
+    /// grepping a token. <b>It could not have been found by grepping</b>: the distinguishing fact was not a
+    /// field that existed anywhere to grep for. It was in scope HERE, where the exception is, and had never
+    /// been returned to the two places that needed it. Blueprint §8.1: <i>"not in scope" is the dangerous
+    /// answer, not the safe one</i> — so the remedy is to put it in scope rather than to soften the
+    /// sentence.</para>
+    ///
+    /// <para><b>One residual, stated rather than papered over:</b> a bare <c>GeneralFailure</c> with no inner
+    /// socket cause reports <see langword="true"/>. That is an INFERENCE — the conversation broke after the
+    /// client had something to break with — not an observation, and it is the only row here where the two
+    /// differ. It is reported as answered so this flag agrees with the description that row has always
+    /// carried (<i>"the relay refused the conversation"</i>) rather than having the sentence and its own
+    /// description contradict each other, which is the defect this exists to close.</para>
+    /// </remarks>
+    private readonly record struct ClassifiedFailure(FailureKind Kind, string Description, bool RelayAnswered);
+
+    private static ClassifiedFailure Classify(Exception ex, bool authenticated) => ex switch
     {
         // Must precede SmtpFailedRecipientException/SmtpException — it derives from both. Reaching here
         // means EVERY recipient was rejected (a partial rejection is handled in SendOnceAsync), so the
@@ -1105,45 +1156,59 @@ public sealed class SmtpNotificationChannel
             (int)recipient.StatusCode,
             $"the relay rejected every recipient (SMTP {(int)recipient.StatusCode})"),
 
+        // No relay was reached: the socket never produced a conversation to reject anything.
         SmtpException { InnerException: SocketException or IOException } transport =>
-            (FailureKind.Retryable, $"the connection failed ({transport.InnerException!.GetType().Name})"),
+            new(FailureKind.Retryable, $"the connection failed ({transport.InnerException!.GetType().Name})",
+                RelayAnswered: false),
 
         // 🔴 A bare GeneralFailure: a protocol breakdown with no socket cause. See the method doc — this is
         // NOT where a rejected password lands (SmtpClient carries on past a rejected AUTH and the relay's
         // NEXT reply is what fails, as a clean 5xx). Permanent because the same conversation would break
         // the same way, and the drain loop is paying for every retry.
         SmtpException { StatusCode: SmtpStatusCode.GeneralFailure } =>
-            (FailureKind.Permanent, authenticated
+            new(FailureKind.Permanent, authenticated
                 ? "the relay refused the conversation; if this persists, check the stored username and password"
-                : "the relay refused the conversation"),
+                : "the relay refused the conversation",
+                // INFERRED, not observed — see this method's remarks for why it is reported this way anyway.
+                RelayAnswered: true),
 
         SmtpException smtp => ClassifyStatus(
             (int)smtp.StatusCode, $"the relay answered SMTP {(int)smtp.StatusCode} ({smtp.StatusCode})"),
 
-        SocketException or IOException => (FailureKind.Retryable, $"the connection failed ({ex.GetType().Name})"),
+        // No relay was reached — same as the SmtpException-wrapped form above, raised bare.
+        SocketException or IOException =>
+            new(FailureKind.Retryable, $"the connection failed ({ex.GetType().Name})", RelayAnswered: false),
 
         // A malformed From address, a malformed recipient, or a subject the mail stack refused: the same
-        // configuration would fail identically next time.
+        // configuration would fail identically next time. NOTHING LEFT THIS MACHINE, so no relay decided
+        // anything — this row is why the dispatch path's own "was REJECTED" sentence was false.
         FormatException or ArgumentException or InvalidOperationException or ObjectDisposedException =>
-            (FailureKind.Permanent, $"the message could not be built or sent ({ex.GetType().Name})"),
+            new(FailureKind.Permanent, $"the message could not be built or sent ({ex.GetType().Name})",
+                RelayAnswered: false),
 
-        _ => (FailureKind.Permanent, $"an unexpected failure ({ex.GetType().Name})"),
+        // Unknown by definition, so nothing about a relay may be asserted from it.
+        _ => new(FailureKind.Permanent, $"an unexpected failure ({ex.GetType().Name})", RelayAnswered: false),
     };
 
-    private static (FailureKind, string) ClassifyRecipients(SmtpFailedRecipientsException ex)
+    private static ClassifiedFailure ClassifyRecipients(SmtpFailedRecipientsException ex)
     {
         // Permanent if ANY recipient failed permanently: the transient ones would be retried into a
         // conversation that is going to fail on the permanent ones anyway, and every recipient failed here
         // by construction, so nothing was delivered to protect from a duplicate.
         var codes = ex.InnerExceptions.Select(inner => (int)inner.StatusCode).ToArray();
         var permanent = codes.Any(code => code is >= 500 and < 600);
-        return (permanent ? FailureKind.Permanent : FailureKind.Retryable,
+        return new(permanent ? FailureKind.Permanent : FailureKind.Retryable,
             $"the relay rejected all {ex.InnerExceptions.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)} " +
-            $"recipient(s) (SMTP {string.Join("/", codes.Distinct())})");
+            $"recipient(s) (SMTP {string.Join("/", codes.Distinct())})",
+            // Per-recipient SMTP codes exist only because a relay produced them.
+            RelayAnswered: true);
     }
 
-    private static (FailureKind, string) ClassifyStatus(int code, string description) =>
-        (code is >= 400 and < 500 ? FailureKind.Retryable : FailureKind.Permanent, description);
+    /// <summary>Both callers reach this only with a real SMTP status code in hand, so a relay answered by
+    /// construction.</summary>
+    private static ClassifiedFailure ClassifyStatus(int code, string description) =>
+        new(code is >= 400 and < 500 ? FailureKind.Retryable : FailureKind.Permanent, description,
+            RelayAnswered: true);
 
     /// <summary>Extra guidance for the permanent failures whose cause an operator can act on — the
     /// difference between "the e-mail is broken" and a support call.</summary>

@@ -1152,7 +1152,42 @@ EXPECT_EDGESERVICE=28
 #            ROSTER arm hands out no incumbent and keeps its advice — nothing removes a machine from the
 #            roster, so "use a different machine code" is true whatever wrote it. A sentence true without the
 #            field beats a fork that cannot be built.
-EXPECT_ENGINEAPI=1276
+#
+# 🔴 CARRIED FINDINGS (fix/carried-findings, task 1) raises this 1276 -> 1280 (+4). Counted from the runner
+# (`dotnet test --list-tests`), not by hand. ONE file, four new tests; nothing rewritten, split or deleted.
+# This line is the ONLY executable line the task changes in this script, per the standing rule.
+#
+#     + 4  NotificationEndpointsTests
+#          + 1  TheWebhookSendTest_TellsARefusedDestinationFromASilentOne_AtTheProductionBound — the PAIR, both
+#                 arms at the 5 s bound Program.cs actually constructs, because "distinguishable" is a claim
+#                 about a pair and two arms at two configurations would not be one. Assert.NotEqual is the
+#                 discriminator; the two Contains stop it passing on any two strings that merely differ.
+#          + 1  TheWebhookSendTest_AtABoundBelowTheConnectPath_ReportsTheCauseAsUndetermined_NotAsABlackHole —
+#                 the carried Important itself. A REFUSED destination at a 1 s bound lands in the TIMEOUT arm,
+#                 and that arm no longer names the black-holing peer as the cause. Its lower bound on elapsed
+#                 time is what makes it non-vacuous: it proves the two producing paths genuinely collapsed
+#                 before asserting on the message the collapsed case produces.
+#          + 1  TheEmailSendTest_NeverTellsAnOperatorARelayRefusedAMessageThatNeverReachedOne — the SWEEP's own
+#                 find, in the sibling channel. SmtpNotificationChannel.Classify returns descriptions covering
+#                 both "a relay decided something" and "nothing was ever reached", and BOTH callers wrapped
+#                 every one of them in a sentence asserting the relay had acted. No grep could have found it:
+#                 the distinguishing fact did not exist as a field anywhere to grep for. Classify now returns
+#                 it.
+#          + 1  TheEmailDispatch_ReportsAMessageThatNeverLeftThisMachine_AsNeverSENT_NotAsARelayRejection — the
+#                 same find on the DISPATCH half, which an operator meets without pressing anything. Reachable
+#                 and ordinary: SaveSmtpAsync requires a From address to be non-blank and not to PARSE, so a
+#                 mistyped one throws FormatException out of Compose before a socket is opened — permanent,
+#                 with no relay involved, and reported as a relay REJECTION until now.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGESERVICE and EXPECT_EDGECORE are deliberately UNCHANGED,
+# and EXPECT_EDGECORE staying 1071 is the check rather than a coincidence: the other half of this task fixes
+# a conformance check that could not fail on the Modbus TCP and OPC-UA rigs, and it does so exactly as D-6 did
+# for RTU — a `base`-CALLING override that raises ONLY that one check's own target bound, with an assertion
+# that it genuinely strengthened before delegating. No shared-suite change, no test added or removed, four
+# drivers' other checks untouched. Proven by re-running the mutation that removes `cts.Cancel()` from
+# DeviceDriverConformanceSuite.cs so cancellation is never issued at all: it used to kill 2 of the 4 writable
+# rigs and now kills 4 of 4.
+EXPECT_ENGINEAPI=1280
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -1283,7 +1318,28 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # environment-dependent count was refused so one number would mean the same thing everywhere; here,
 # an environment-dependent number is asserted. If this bites someone, the fix is a global.json, not
 # a looser check. Recorded rather than left for them to discover.
-EXPECT_WARNINGS=115
+# 🔴 CARRIED FINDINGS (fix/carried-findings, task 1) raises this 115 -> 116 (+1), and the +1 is ONE xUnit1013
+# in St4i.EdgeCore.Tests, on the two `base`-calling Check_Write_Cancellation_… overrides this task adds:
+#   "Public method '…' on test class 'DeviceDriverConformanceSuite' should be marked as a Fact.
+#    Reduce the visibility of the method, or add a Fact attribute to the method."
+# BOTH remedies it offers are impossible, and its premise is false. The method overrides a `public virtual`, so
+# visibility cannot be reduced; marking it [Fact] would run the check TWICE, because the [Fact] wrapper right
+# above it already calls it. Its premise — that a public non-[Fact] method on a test class never runs — is
+# exactly wrong here.
+#
+# D-6's identical RTU override does NOT emit it, and the difference is the whole reason this drifted: that one
+# sits on an ABSTRACT base (ModbusRtuConformanceTestsBase), which the analyzer skips. These two rigs are SEALED
+# concrete classes. Reproducing the abstract-base structure on two more rigs, purely to dodge an analyzer,
+# would split each rig across two types and is a worse trade than one documented warning.
+#
+# 🔴 IT IS NOT SUPPRESSED, and that was tried first and REPORTED here rather than quietly dropped: the
+# diagnostic is emitted as `CSC :` with NO source location (it names the symbol's original definition, which
+# lives in a referenced assembly), so a #pragma in either rig cannot reach it — measured, the count stayed at
+# 116 with both pragmas in place. The mechanisms that WOULD reach it are assembly-wide (<NoWarn> or a
+# GlobalSuppressions entry), and blinding St4i.EdgeCore.Tests to every future xUnit1013 to hide one known-good
+# instance is a strictly larger loss than +1. A number that is justified still fails on the NEXT drift; a
+# suppressed analyzer does not.
+EXPECT_WARNINGS=116
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
   echo "  A warning count is an expected quantity, not a readout. If this move is intended,"

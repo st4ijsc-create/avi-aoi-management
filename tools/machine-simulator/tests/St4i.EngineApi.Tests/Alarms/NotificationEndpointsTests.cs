@@ -105,12 +105,21 @@ public sealed class NotificationEndpointsTests : IDisposable
     /// vacuous</b>: they still fail an attempt issued with no bound applied at all, and they still fail a
     /// DNS failure, which surfaces in milliseconds.</para>
     ///
-    /// <para>🟠 The real finding underneath this is about the CHANNEL, not this test, and is recorded for
-    /// the whole-branch review: below ~2 s of attempt timeout a refused endpoint is reported to an operator
-    /// as <i>"nothing is holding the connection open without responding"</i> — sending them to hunt a
-    /// black-holing peer when the endpoint is actively refusing — because the branch that would say so is
-    /// unreachable at that bound. That is D-5's I-1 defect class (one operator-facing string covering two
-    /// producing paths, true of only one), and it predates this change.</para>
+    /// <para>✅ <b>The finding this note used to carry is CLOSED, and closing it did not close the narrowing
+    /// above.</b> The channel no longer reports a refused endpoint as a black-holing one: the timeout arm
+    /// states that the cause is undetermined and names the causes it cannot tell apart, which is pinned by
+    /// <see cref="TheWebhookSendTest_AtABoundBelowTheConnectPath_ReportsTheCauseAsUndetermined_NotAsABlackHole"/>
+    /// and paired against a genuine refusal by
+    /// <see cref="TheWebhookSendTest_TellsARefusedDestinationFromASilentOne_AtTheProductionBound"/>.</para>
+    ///
+    /// <para><b>What is LEFT, stated rather than implied to have gone away.</b> The two lower bounds are still
+    /// NARROWED for exactly the platform reason above, and no wording change could have altered that — a
+    /// refusal still costs ~1013 ms at a 1 s bound, so these two assertions still cannot separate it from the
+    /// silence they are named after. Their MESSAGES remain true (an early return really did mean something
+    /// other than the receiver's silence); what they do not do is catch every such something. The remedy for
+    /// the case they miss is a different test rather than a wider slack — the one named above uses this same
+    /// lower bound where it IS decisive, to prove the two paths genuinely collapsed before asserting on the
+    /// message the collapsed case produces.</para>
     /// </summary>
     private static readonly TimeSpan TimerQuantumSlack = TimeSpan.FromMilliseconds(50);
 
@@ -1105,6 +1114,192 @@ public sealed class NotificationEndpointsTests : IDisposable
             elapsed.Elapsed >= attemptTimeout - TimerQuantumSlack,
             $"The e-mail send test returned in {elapsed.ElapsedMilliseconds} ms, before its attempt timeout " +
             "could have elapsed — it failed for a reason other than the relay's silence.");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 The carried Important: a REFUSED endpoint reported as a BLACK-HOLING one.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>The pair.</b> A destination that actively REFUSES and one that accepts the connection and then
+    /// says nothing must not arrive at the operator as the same sentence — that is the whole of the defect
+    /// class this batch found six times. Both arms run at the SAME bound (the 5 s production default, which is
+    /// what <c>Program.cs</c> constructs the channel with), because "distinguishable" is a claim about a PAIR
+    /// and two arms at two different configurations would not be one.
+    ///
+    /// <para><see cref="Assert.NotEqual{T}(T,T)"/> is the discriminating assertion; the two
+    /// <see cref="Assert.Contains(string,string,StringComparison)"/> calls stop it passing on any two strings
+    /// that merely differ. Same construction as D-5's own I-1 fix.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheWebhookSendTest_TellsARefusedDestinationFromASilentOne_AtTheProductionBound()
+    {
+        // The 5 s production default — above the roughly two seconds Windows takes to surface
+        // HttpRequestException for a plainly refused TCP connection, so the refusal arm is reachable.
+        var attemptTimeout = WebhookNotificationChannel.DefaultAttemptTimeout;
+
+        var refusedStore = NewStore();
+        await refusedStore.SaveWebhookAsync(true, AlarmPriority.High, $"http://127.0.0.1:{ClosedPort()}/hook");
+        using var refusedChannel = new WebhookNotificationChannel(
+            refusedStore, sourceHost: "TEST-ENGINE", attemptTimeout: attemptTimeout,
+            totalBudget: TimeSpan.FromSeconds(30), baseBackoff: TimeSpan.FromMilliseconds(10), maxAttempts: 1);
+        var refused = await refusedChannel.SendTestAsync(NotificationConfigStore.DefaultInstance);
+
+        // null from the responder means "accept the request, capture it, and then never answer" — the true
+        // black hole.
+        await using var silentServer = WebhookLoopbackServer.Start(_ => null);
+        var silentStore = NewStore();
+        await silentStore.SaveWebhookAsync(true, AlarmPriority.High, silentServer.Url());
+        using var silentChannel = new WebhookNotificationChannel(
+            silentStore, sourceHost: "TEST-ENGINE", attemptTimeout: attemptTimeout,
+            totalBudget: TimeSpan.FromSeconds(30), baseBackoff: TimeSpan.FromMilliseconds(10), maxAttempts: 1);
+        var silent = await silentChannel.SendTestAsync(NotificationConfigStore.DefaultInstance);
+
+        Assert.False(refused.Ok);
+        Assert.False(silent.Ok);
+
+        // The claim: these two situations do not read the same to whoever is holding the pager.
+        Assert.NotEqual(refused.Detail, silent.Detail);
+        Assert.Contains("could not be reached", refused.Detail, StringComparison.Ordinal);
+        Assert.Contains("did not answer within", silent.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 🔴 <b>The carried Important itself, and the reason its first proposed remedy was rejected.</b> Below
+    /// roughly 2 s of attempt bound a refused destination can never reach the <c>HttpRequestException</c> arm
+    /// — the attempt token fires first — so it lands in the timeout arm beside it. That arm used to say
+    /// <i>"nothing is holding the connection open without responding"</i>, sending an operator to hunt a
+    /// black-holing peer for an endpoint that was actively refusing.
+    ///
+    /// <para><b>Why the remedy was not "raise the bound".</b> That only shrinks the window for THIS case and
+    /// does nothing at all for a FILTERED destination, which this repository has already measured at
+    /// <b>21 seconds</b> of OS connect timeout (<c>SmtpNotificationChannel.SendMessageAsync</c>'s own doc
+    /// block) — longer than any attempt bound that fits inside the channel's 10 s delivery budget. So the
+    /// timeout arm is reachable by a non-black-hole cause at EVERY bound, including the 5 s production
+    /// default the test above runs at. A timing change cannot make a claim true; only dropping the claim
+    /// can.</para>
+    ///
+    /// <para><b>What this test pins</b> is therefore not a timing but a WORDING: the message names the causes
+    /// it cannot tell apart and asserts none of them. The lower bound below is what makes that non-vacuous —
+    /// it proves the attempt really did wait out its own bound against the refused destination rather than
+    /// failing early through some other path, i.e. that the collapse being asserted about actually
+    /// happened.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheWebhookSendTest_AtABoundBelowTheConnectPath_ReportsTheCauseAsUndetermined_NotAsABlackHole()
+    {
+        var attemptTimeout = TimeSpan.FromSeconds(1);
+        var store = NewStore();
+        await store.SaveWebhookAsync(true, AlarmPriority.High, $"http://127.0.0.1:{ClosedPort()}/hook");
+        using var channel = new WebhookNotificationChannel(
+            store, sourceHost: "TEST-ENGINE", attemptTimeout: attemptTimeout,
+            totalBudget: TimeSpan.FromSeconds(30), baseBackoff: TimeSpan.FromMilliseconds(10), maxAttempts: 1);
+
+        var elapsed = Stopwatch.StartNew();
+        var outcome = await channel.SendTestAsync(NotificationConfigStore.DefaultInstance);
+        elapsed.Stop();
+
+        Assert.False(outcome.Ok);
+
+        // Non-vacuity, and the reproduction of the finding in one assertion: the REFUSED destination really
+        // did land in the timeout arm. See TimerQuantumSlack for the slack.
+        Assert.True(
+            elapsed.Elapsed >= attemptTimeout - TimerQuantumSlack,
+            $"the send test against a REFUSED destination returned in {elapsed.ElapsedMilliseconds} ms, before " +
+            $"the {attemptTimeout.TotalSeconds:0.#}s attempt bound could have elapsed — so the refusal surfaced " +
+            "on its own and the two producing paths this test is about no longer collapse on this platform. " +
+            "Re-derive the finding before weakening anything: the assertions below are about the message the " +
+            "COLLAPSED case produces.");
+        Assert.Contains("did not answer within", outcome.Detail, StringComparison.Ordinal);
+
+        // 🔴 The claim. The message must state that the cause is undetermined and must name REFUSING among the
+        // possibilities — the old one named only the black hole, so this is what a revert fails on.
+        Assert.Contains("cannot tell you WHY", outcome.Detail, StringComparison.Ordinal);
+        Assert.Contains("REFUSING", outcome.Detail, StringComparison.Ordinal);
+        Assert.Contains("dropped by a firewall", outcome.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 🔴 <b>The SWEEP's own find, in the sibling channel — and it is the reason the sweep started from the
+    /// SET OF OPERATOR-FACING RETURNS rather than from a token.</b> <c>SmtpNotificationChannel.Classify</c>
+    /// returns descriptions covering BOTH "a relay decided something" and "nothing was ever reached", and the
+    /// send test wrapped every one of them in <i>"The relay … refused the test message — …"</i>. An operator
+    /// whose host is simply unreachable on that port was told the relay had refused their message, and went
+    /// looking at relay policy and credentials.
+    ///
+    /// <para><b>No grep could have found it.</b> The distinguishing fact — did a relay answer at all — did not
+    /// exist as a field anywhere to grep for. It was in scope inside <c>Classify</c>, where the exception is,
+    /// and had never been returned to the two places that needed it. Blueprint §8.1: <i>"not in scope" is the
+    /// dangerous answer, not the safe one</i>.</para>
+    ///
+    /// <para>Same PAIR construction as the webhook test above, for the same reason.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheEmailSendTest_NeverTellsAnOperatorARelayRefusedAMessageThatNeverReachedOne()
+    {
+        var unreachableStore = NewStore();
+        await unreachableStore.SaveSmtpAsync(
+            true, AlarmPriority.High, SmtpLoopbackServer.Host, ClosedPort(), SmtpTlsMode.None,
+            "alarms@example.test", new[] { "ops@example.test" }, null);
+        var unreachable = await NewSmtpChannel(unreachableStore).SendTestAsync(NotificationConfigStore.DefaultInstance);
+
+        // A relay that is genuinely there and genuinely says no.
+        await using var server = SmtpLoopbackServer.Start(new SmtpScript(
+            MailFromReply: "554 5.7.1 Relay access denied"));
+        var refusingStore = NewStore();
+        await refusingStore.SaveSmtpAsync(
+            true, AlarmPriority.High, SmtpLoopbackServer.Host, server.Port, SmtpTlsMode.None,
+            "alarms@example.test", new[] { "ops@example.test" }, null);
+        var refused = await NewSmtpChannel(refusingStore).SendTestAsync(NotificationConfigStore.DefaultInstance);
+
+        Assert.False(unreachable.Ok);
+        Assert.False(refused.Ok);
+
+        Assert.NotEqual(unreachable.Detail, refused.Detail);
+        Assert.Contains("never reached the relay", unreachable.Detail, StringComparison.Ordinal);
+        // The load-bearing one: the old wording is not merely absent from a different sentence, it is
+        // CONTRADICTED — nothing was refused, and the message says so.
+        Assert.DoesNotContain("refused the test message", unreachable.Detail, StringComparison.Ordinal);
+        Assert.Contains("refused the test message", refused.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 🔴 <b>The same sweep find on the DISPATCH path, which is the half an operator meets without pressing
+    /// anything.</b> <c>SaveSmtpAsync</c> checks that a From address is non-empty and not that it parses, so a
+    /// mistyped one is storable — and then <c>MailAddress</c> throws <see cref="FormatException"/> out of
+    /// <c>Compose</c>, before a socket is opened. That is <c>FailureKind.Permanent</c> with NO relay involved,
+    /// and the log line used to call it a relay REJECTION: the operator goes to the mail team about a message
+    /// that never left this machine.
+    ///
+    /// <para>Driven against a relay that ACCEPTS everything, so nothing here can be a transport failure — the
+    /// only way to reach the branch is the one being asserted.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheEmailDispatch_ReportsAMessageThatNeverLeftThisMachine_AsNeverSENT_NotAsARelayRejection()
+    {
+        await using var server = SmtpLoopbackServer.Start();
+        var store = NewStore();
+        await store.SaveSmtpAsync(
+            true, AlarmPriority.High, SmtpLoopbackServer.Host, server.Port, SmtpTlsMode.None,
+            // Stored happily by C-2's validation, which only requires it to be non-blank.
+            "not a mail address", new[] { "ops@example.test" }, null);
+
+        var reported = new List<string>();
+        var channel = new SmtpNotificationChannel(
+            store, logError: (_, msg) => reported.Add(msg), logWarning: reported.Add,
+            sourceHost: "TEST-ENGINE", attemptTimeout: TimeSpan.FromSeconds(4),
+            totalBudget: TimeSpan.FromSeconds(8), baseBackoff: TimeSpan.FromMilliseconds(10), maxAttempts: 1);
+
+        await channel.DispatchAsync(Job(), default);
+
+        Assert.Equal(1, channel.Stats.Lost);
+        var line = Assert.Single(reported, m => m.Contains("Alarm e-mail", StringComparison.Ordinal));
+        Assert.Contains("was never SENT", line, StringComparison.Ordinal);
+        Assert.Contains("No relay was reached", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("was REJECTED", line, StringComparison.Ordinal);
+        // Non-vacuity: it really is the un-buildable message, not some transport failure that happened to
+        // take the same branch.
+        Assert.Contains("could not be built or sent", line, StringComparison.Ordinal);
     }
 
     [Fact]
