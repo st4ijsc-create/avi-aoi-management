@@ -684,3 +684,72 @@ describe("★★★ C-1 (b) — ∀ đường truy cập TRUNG GIAN trên payloa
     });
   }
 });
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// TẦNG 4 — ★★★ I-2 + I-3: **CHẶNG CUỐI, NỬA MÀN HÌNH.**
+//
+// ⚠⚠⚠ KHUÔN CHUNG mà review TOÀN NHÁNH gọi tên: *"Task 1, 2 và 5 ĐỀU dừng lời khai ở BIÊN PAYLOAD
+// và đều gọi đó là 'tới được người đọc'. Chặng cuối — payload RA MÀN HÌNH — không task nào nhận."*
+// Đo được: `truncatedIdentityWrites` có **0** điểm đọc ở `client/**`; ba ô `notAnInvariant` /
+// `variesWith` / `beforeAfterEvidence` có **0** lượt đọc ở `client/src` trong khi chúng chiếm
+// **424 byte/lượt · ≈298 KiB/giờ/panel**.
+//
+// ⇒ Hai ca dưới neo vào **BỀ MẶT NGƯỜI THẬT NHÌN** (`VramBrokerPanel`), không vào một ô payload.
+// ⚠ Phạm vi được nói thẳng: chúng chứng minh *"có một điểm đọc SẢN PHẨM trong mã render"*. Repo có
+//   **0** file `*.test.tsx` (không harness render), nên *"pixel ấy đã lên màn"* nằm ngoài tầm mọi
+//   lưới hôm nay — đó là một ô còn mở, không phải một ô được coi là đã đóng.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+describe("★★★ I-2 + I-3 — lời khai phải tới BỀ MẶT NGƯỜI ĐỌC, không dừng ở biên payload", () => {
+  const PANEL = NGUOI_DOC.find((x) => x.ten === "VramBrokerPanel")!;
+
+  it("★★★ I-2: `truncatedIdentityWrites` có ĐIỂM ĐỌC SẢN PHẨM trong mã render của panel", () => {
+    const sf = ast(PANEL.duong);
+    const doc = moiNut(sf).filter(
+      (n) => ts.isPropertyAccessExpression(n) && n.name.text === "truncatedIdentityWrites",
+    );
+    expect(
+      doc.length,
+      "0 điểm đọc ⇒ con số 'sổ chung đã CẮT danh tính' lại nằm im trong JSON, và hộ mang danh tính cụt vẫn KHÔNG thu hồi được mà không ai biết",
+    ).toBeGreaterThan(0);
+  });
+
+  it("★★★ I-3: câu 'dư địa hiệu lực ĐANG CHẢY' có mặt trong mã render, và đi QUA lớp dịch", () => {
+    const sf = ast(PANEL.duong);
+    const goi = moiNut(sf).filter(
+      (n) =>
+        ts.isCallExpression(n) &&
+        ts.isIdentifier(n.expression) &&
+        n.expression.text === "t" &&
+        n.arguments[0] !== undefined &&
+        ts.isStringLiteral(n.arguments[0]!) &&
+        (n.arguments[0] as ts.StringLiteral).text === "vramBroker.effectiveIsFlowing",
+    );
+    expect(
+      goi.length,
+      "panel in một con số MiB trần: người đứng trước màn hình vẫn so được hai ảnh chụp — đúng thứ Task 2 đổi KIỂU để chặn",
+    ).toBe(1);
+  });
+
+  it("★★ hai câu ấy KHÔNG được viết tay — chúng phải là KHOÁ dịch (có ba bản thật ở ba locale)", () => {
+    /**
+     * ⚠ Một chuỗi tiếng Việt ghim cứng trong `.tsx` là **cùng trục** với I-1: bảng mà người vận
+     * hành thật sự nhìn thì không dịch. Ca này chỉ hỏi *"nó là một khoá"*; việc **ba bản thật**
+     * do `npm run i18n:check` cưỡng chế (PASS B — sự CÓ MẶT, không chỉ placeholder).
+     */
+    const sf = ast(PANEL.duong);
+    const khoa = new Set<string>();
+    for (const n of moiNut(sf)) {
+      if (!ts.isCallExpression(n) || !ts.isIdentifier(n.expression) || n.expression.text !== "t") continue;
+      const a0 = n.arguments[0];
+      if (a0 !== undefined && ts.isStringLiteral(a0)) khoa.add(a0.text);
+    }
+    for (const k of [
+      "vramBroker.effectiveIsFlowing",
+      "vramBroker.truncatedIdentityWrites",
+      "vramBroker.truncatedIdentityWarning",
+    ]) {
+      expect(khoa, `${k} phải là một KHOÁ dịch, không phải một câu viết tay`).toContain(k);
+    }
+  });
+});

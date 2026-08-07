@@ -244,8 +244,17 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
         stale: String(s.ledger.foreign.stale),
         unsynced: String(s.ledger.foreign.unsyncedWrites ?? "?"),
         fails: String(s.ledger.foreign.consecutiveFailures ?? "?"),
+        // ★★★ I-2 — lời khai của Task 5 nay đi trong CHỮ, chỗ Agent thật sự đọc.
+        truncated: String(s.ledger.foreign.truncatedIdentityWrites ?? "?"),
       }),
     );
+    /**
+     * ★★★ I-2 — dòng HÀNH ĐỘNG, chỉ khi con số khác 0. Rẽ nhánh nằm **ở đây**, không trong khuôn
+     * câu (§A-AST: thân khuôn phải là một biểu thức chuỗi THUẦN, không rẽ nhánh).
+     */
+    if ((s.ledger.foreign.truncatedIdentityWrites ?? 0) > 0) {
+      d.push(noi(lang, "foreignTruncatedIdentity", { count: String(s.ledger.foreign.truncatedIdentityWrites) }));
+    }
   }
 
   // ── HỘ + `reclaim` (bàn giao I-3: lệnh nào VỚI TỚI hộ này) + TTL (đồng hồ #6) ────────────────

@@ -283,6 +283,21 @@ export function VramBrokerPanel({ commandReach, polling }: Props) {
                   </Badge>
                 )}
               </div>
+              {/*
+                ★★★ I-3 (review TOÀN NHÁNH Pha 6) — **CHẶNG CUỐI: TỪ PAYLOAD RA MẮT NGƯỜI ĐỌC.**
+                `effective.notAnInvariant` + `variesWith` + `beforeAfterEvidence` đi trong MỌI lượt
+                `vram.state` (**424 byte/lượt · ≈298 KiB/giờ/panel**) và **0 lượt đọc** — Task 2 đổi
+                KIỂU để không ai dùng con số này làm bằng chứng trước/sau, rồi lời cảnh báo ấy dừng
+                ở **biên payload**. Người đứng trước màn hình vẫn thấy một con số MiB trần và vẫn so
+                được hai ảnh chụp. Câu dưới là chặng còn thiếu.
+                ⚠ Câu đi qua lớp dịch (`vramBroker.effectiveIsFlowing`, ba bản thật) — không viết tay.
+              */}
+              <p className="text-xs text-muted-foreground mt-2">
+                {t(
+                  "vramBroker.effectiveIsFlowing",
+                  "Dư địa hiệu lực là đại lượng ĐANG CHẢY — nó đổi theo tuổi bản sao sổ chung kể cả khi không byte nào đổi. ĐỪNG dùng hai ảnh chụp ô này làm bằng chứng trước/sau.",
+                )}
+              </p>
               {/* ★ translateVramScope — phạm vi quan sát của MỌI ô hoãn ở dưới. */}
               <p className="text-xs text-muted-foreground mt-2">{translateVramScope(s.defer.scope)}</p>
               {/* ★ translateVramNonFiniteFields — mảng rỗng CŨNG là một câu trả lời. */}
@@ -326,6 +341,24 @@ export function VramBrokerPanel({ commandReach, polling }: Props) {
               </div>
               {/* ★ translateVramHolderListIsLowerBound — danh sách rỗng KHÔNG nghĩa là card trống. */}
               <p className="text-xs text-muted-foreground mt-1">{translateVramHolderListIsLowerBound()}</p>
+              {/*
+                ★★★ I-2 (review TOÀN NHÁNH Pha 6) — **LỜI KHAI CỦA TASK 5 NAY CÓ NGƯỜI ĐỌC.**
+                `ledger.foreign.truncatedIdentityWrites` từng có **0** điểm đọc ở `client/**` và **0**
+                ở `vramTools.ts`; ca canh nó tự đặt tên *"tới được người đọc"* nhưng chỉ chứng minh
+                *"tới được một ô"*. Hậu quả thật của một danh tính bị cắt: `preempt({owner})` gửi
+                chuỗi của **mặt đọc**, sổ giữ chuỗi **đã cắt** ⇒ hai chuỗi không khớp ⇒ hộ ấy
+                **không thu hồi được**, và con số cảnh báo nằm im trong JSON.
+              */}
+              {s.ledger.foreign.known && (s.ledger.foreign.truncatedIdentityWrites ?? 0) > 0 ? (
+                <p className="text-xs text-destructive mt-1">
+                  {t("vramBroker.truncatedIdentityWrites", "lượt ghi sổ chung bị CẮT danh tính")}:{" "}
+                  {s.ledger.foreign.truncatedIdentityWrites} ·{" "}
+                  {t(
+                    "vramBroker.truncatedIdentityWarning",
+                    "danh tính đã cắt ⇒ hộ ấy có thể KHÔNG thu hồi được: chuỗi của mặt đọc không khớp chuỗi trong sổ",
+                  )}
+                </p>
+              ) : null}
               {/*
                 ★★★ I-3 (F, review vòng 1) — BA ô `unattributed.*` trước đó **không ai đọc**: câu
                 cảnh báo ở trên là câu TĨNH (hàm dịch không nhận tham số — đúng, vì cờ LUÔN `true`),

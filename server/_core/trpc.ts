@@ -419,12 +419,31 @@ export const requireFreshTotp = stepUpTotpMiddleware(true);
  * để lượt gọi **thứ hai** của cùng thủ tục đi qua bằng OTP của lượt **thứ nhất** trong 10 phút —
  * vẫn là *"OTP của một lượt khác"*, tức vẫn không đạt cổng ra.
  *
- * ⚠ Lượt gọi đi qua **cả hai** middleware (cái có cache chạy trước, trong `deployProcedure`), nên
- * khi cache nguội thì OTP được verify **hai lần**. Cùng một mã, cùng cửa sổ ⇒ cả hai cùng kết quả;
- * chi phí là một truy vấn `users` nữa, và nó chỉ xảy ra trên đường **cache-miss**.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ I-4 (review TOÀN NHÁNH Pha 6) — **BẢNG CHI PHÍ CŨ SAI Ở CẢ HAI CON SỐ.** Bản trước viết
+ * *"khi cache nguội thì OTP được verify **hai lần** … và nó **chỉ xảy ra trên đường cache-miss**"*.
+ * Đếm lại trên chuỗi THẬT của `vram.preempt`/`releaseStale`:
+ *   `requireFreshTotp` → `requirePerCallFreshTotp` (GỐC, Task 1b) → `requirePermission` →
+ *   `requirePerCallFreshTotp` (**lần hai**, `vramRouter.ts`, Task 1 — cố ý giữ).
+ * `stepUpTotpMiddleware(false)` **không có** đường thoát sớm (`until` luôn `undefined`), và mỗi
+ * `verifyFreshTotp` là **1 `SELECT` trên `users` + 1 `speakeasy.totp.verify`**. ⇒
+ *   • **cache-miss = 3 lượt verify** (KHÔNG phải 2);
+ *   • **cache-hit  = 2 lượt verify** (KHÔNG phải 0) — tức lượt verify thừa xảy ra ở **MỌI lượt
+ *     gọi**, đúng **ngược** với câu *"chỉ trên đường cache-miss"*.
+ * Cùng một mã, cùng cửa sổ ⇒ mọi lượt cùng kết quả; **không phải lỗi an ninh** (thừa theo chiều
+ * CHẶT), và `getRawInput()` an toàn khi gọi 3 lần (tRPC 11.18.0 bọc `memo()`). Nhưng ai đọc con số
+ * cũ để quyết *"có nên chain per-call ở một sàn thứ ba không"* sẽ tính thiếu ~50 %, và một lượt
+ * điều tra hiệu năng thấy 3 `SELECT users` cho **một** lượt bấm nút sẽ không tìm ra lời giải thích
+ * đúng trong mã. Với hai thủ tục hiếm + đặc quyền thì cái giá ấy vẫn chấp nhận được — nhưng nó
+ * phải được **ghi đúng**.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠ `vramRouter` chain nó **một lần nữa** sau `requirePermission` (Task 1). Dư thừa về hành vi,
  * **cố ý** giữ: lưới cấu trúc của `vramStepUpFreshness.test.ts` phân giải chuỗi **trong phạm vi
  * `vramRouter.ts`**, nên gỡ chỗ ấy đi là gỡ mất phép canh riêng của hai lệnh phá huỷ.
+ * ⚠⚠ Lượng từ ∀ của C-2 (`quetLenhPhaHuyVram`, `server/routers/deployProcedureScan.ts`) nay chấp
+ * nhận **cả hai** đường siết (tại chỗ **hoặc** qua GỐC), nên lượt `.use()` ở `vramRouter` **không
+ * còn** là điều kiện tồn tại của phép canh — nếu chủ dự án muốn thu lại 1 lượt verify/lượt gọi thì
+ * gỡ nó đi là an toàn về mặt lưới. Đó là một quyết định về chi phí, không phải về an ninh.
  */
 export const requirePerCallFreshTotp = stepUpTotpMiddleware(false);
 
@@ -543,7 +562,11 @@ export const actuationProcedure = roleProcedure(...ACTUATION_ROLES).use(require2
  *   (a) các ca đỏ của lưới vẫn **dựng được** cảnh *"OTP của một lượt khác"* — bỏ nó đi thì
  *       cache biến mất và ca đỏ ấy thành **chân lý rỗng**, không còn chứng minh gì;
  *   (b) hỏng-theo-chiều-an-toàn: gỡ nhầm một trong hai vẫn còn cái kia.
- *   Giá phải trả: trên đường **cache-miss**, OTP được verify **hai lần** (2 truy vấn `users`).
- *   Lệnh deploy là hiếm + đặc quyền ⇒ chấp nhận được.
+ *   Giá phải trả (★ I-4 — **con số cũ SAI**, đã đếm lại trên chuỗi thật): **2 lượt verify ở MỌI
+ *   lượt gọi** (`requireFreshTotp` cache-hit + per-call ở gốc), và **3** khi cache nguội. Riêng
+ *   `vram.preempt`/`releaseStale` chain per-call **một lần nữa** ở `vramRouter.ts` ⇒ **3 / 4**.
+ *   Mỗi lượt verify = 1 `SELECT users` + 1 `speakeasy.totp.verify`. Lệnh deploy là hiếm + đặc
+ *   quyền ⇒ chấp nhận được; nhưng câu cũ (*"hai lần, và chỉ trên đường cache-miss"*) sai **cả hai
+ *   con số** và sai **cả điều kiện** — đừng trích lại nó.
  */
 export const deployProcedure = actuationProcedure.use(requireFreshTotp).use(requirePerCallFreshTotp);

@@ -131,14 +131,33 @@ export function cum<K extends keyof typeof CAU>(lang: ToolLang, key: K, tham: Th
  */
 export const CAU = {
   // ── DƯ ĐỊA ─────────────────────────────────────────────────────────────────────────────────
+  /**
+   * ★★★ I-3 (review TOÀN NHÁNH Pha 6) — **CÂU "NÓ ĐANG CHẢY" NAY ĐI CÙNG CON SỐ.**
+   *
+   * ⚠⚠ Task 2 đổi KIỂU của `effectiveBytes` để **không ai dùng được nó làm bằng chứng trước/sau**
+   * (`notAnInvariant` · `variesWith` · `beforeAfterEvidence`). Đo lại ở review: ba ô ấy là **424
+   * byte/lượt · ≈298 KiB/giờ/panel · 0 lượt đọc** — và với **Agent** thì lượt đổi kiểu ấy **VÔ
+   * HÌNH**, vì Agent **chỉ nhận `textSummary`** (`aiLocalKnowledgeService.ts:2351` đường stream ·
+   * `:2070`/`:2396` đường không stream — `data.state` **không bao giờ** tới LLM). Tức: cơ chế dựng
+   * ra để chặn *"vừa nhả 426 MiB"* không tới được **đúng người** nó bảo vệ.
+   * ⇒ Câu cảnh báo nay nằm **trong chính dòng mang con số**, không phải trong một ô payload.
+   * ⚠ Giá đã được Task 2 tính đúng: **3 chuỗi khuôn, 0 khoá i18n mới**.
+   */
   headroom: ba<{ eff: string; raw: string; ceiling: string; used: string }>(
-    (p) => `Dư địa hiệu lực: ${p.eff} (thô ${p.raw}) · trần ${p.ceiling} · đang dùng ${p.used}.`,
+    (p) =>
+      `Dư địa hiệu lực: ${p.eff} (thô ${p.raw}) · trần ${p.ceiling} · đang dùng ${p.used}. ` +
+      `Con số hiệu lực ĐANG CHẢY — nó đổi theo tuổi bản sao sổ chung kể cả khi KHÔNG byte nào đổi; ` +
+      `đừng so hai lượt hỏi rồi kết luận "vừa nhả" hay "vừa chiếm".`,
     (p) =>
       `Effective headroom: ${p.eff} (raw ${p.raw}) · ceiling ${p.ceiling} · in use ${p.used}. ` +
-      `Size any new model load against the EFFECTIVE number, never the raw one.`,
+      `Size any new model load against the EFFECTIVE number, never the raw one. ` +
+      `The effective figure is a FLOWING quantity: it moves with the age of the shared-ledger replica ` +
+      `even when not a single byte changed, so never diff two answers and call it "freed" or "taken".`,
     (p) =>
       `有效余量：${p.eff}（原始 ${p.raw}）· 上限 ${p.ceiling} · 已用 ${p.used}。` +
-      `规划新模型加载时一律以“有效余量”为准，不要用原始值。`,
+      `规划新模型加载时一律以“有效余量”为准，不要用原始值。` +
+      `有效余量是流动量：即使一个字节都没变，它也会随共享账本副本的年龄而变化；` +
+      `切勿比较两次回答就断定“刚释放”或“刚占用”。`,
   ),
   /**
    * ⚠ Bản `vi` **có thêm một câu so với Pha 4**, và đó là cổng §A của
@@ -242,6 +261,15 @@ export const CAU = {
       `共享账本：${p.meaning}——对兄弟进程处于盲态。` +
       `绝不可理解为“没有别人占用”：请把兄弟进程的占用如实报告为未知，不要承诺显存可用。`,
   ),
+  /**
+   * ★★★ I-2 (review TOÀN NHÁNH Pha 6) — **`truncatedIdentityWrites` NAY CÓ NGƯỜI ĐỌC.**
+   *
+   * ⚠⚠ Task 5 đưa lời khai *"sổ chung đã CẮT danh tính"* vào `ledger.foreign.truncatedIdentityWrites`
+   * và đặt tên ca canh nó là *"lời khai phải TỚI ĐƯỢC NGƯỜI ĐỌC"* — nhưng đo lại: **0** điểm đọc ở
+   * `client/**`, **0** ở `vramTools.ts`. Ô ấy chỉ **tới được một ô**, không tới được một người đọc.
+   * Và **chính nhánh này** đã chứng minh nó không thể tới Agent: Task 2 đo và ghi rằng Agent **chỉ
+   * nhận `textSummary`**. ⇒ Con số nay đi trong **dòng chữ**, chỗ Agent thật sự đọc.
+   */
   foreignKnown: ba<{
     bytes: string;
     count: number;
@@ -249,16 +277,34 @@ export const CAU = {
     stale: string;
     unsynced: string;
     fails: string;
+    truncated: string;
   }>(
     (p) =>
       `Sổ chung (anh em): ${p.bytes} · ${p.count} hộ · tuổi bản sao ${p.ageMs} ms (stale=${p.stale}) · ` +
-      `ghi chưa đồng bộ=${p.unsynced} · hỏng liên tiếp=${p.fails}.`,
+      `ghi chưa đồng bộ=${p.unsynced} · hỏng liên tiếp=${p.fails} · lượt ghi bị CẮT danh tính=${p.truncated}.`,
     (p) =>
       `Shared ledger (siblings): ${p.bytes} · ${p.count} holder(s) · replica age ${p.ageMs} ms (stale=${p.stale}) · ` +
-      `unsynced writes=${p.unsynced} · consecutive failures=${p.fails}. If stale is true, re-read before you act on it.`,
+      `unsynced writes=${p.unsynced} · consecutive failures=${p.fails} · writes with a TRUNCATED identity=${p.truncated}. ` +
+      `If stale is true, re-read before you act on it.`,
     (p) =>
       `共享账本（兄弟进程）：${p.bytes} · ${p.count} 个占用者 · 副本年龄 ${p.ageMs} ms（stale=${p.stale}）· ` +
-      `未同步写入=${p.unsynced} · 连续失败=${p.fails}。若 stale 为真，请先重新读取再据此行动。`,
+      `未同步写入=${p.unsynced} · 连续失败=${p.fails} · 身份被截断的写入=${p.truncated}。若 stale 为真，请先重新读取再据此行动。`,
+  ),
+  /**
+   * ★★★ I-2 — dòng **HÀNH ĐỘNG** khi con số trên khác 0. Một con số trần không nói được hậu quả:
+   * hộ mang danh tính cụt **không thu hồi được** vì `preempt({owner})` gửi chuỗi của **mặt đọc**
+   * còn sổ giữ chuỗi **đã cắt** ⇒ hai chuỗi không khớp.
+   */
+  foreignTruncatedIdentity: ba<{ count: string }>(
+    (p) =>
+      `⚠ ${p.count} hàng trong sổ chung mang DANH TÍNH ĐÃ CẮT ⇒ những hộ ấy có thể KHÔNG thu hồi được: ` +
+      `chuỗi \`owner\` của mặt đọc sẽ không khớp chuỗi đã cắt trong sổ. Đừng hứa thu hồi được chúng.`,
+    (p) =>
+      `WARNING: ${p.count} shared-ledger row(s) carry a TRUNCATED identity, so those holders may NOT be reclaimable: ` +
+      `the owner string on the read surface will not match the truncated string in the ledger. Do not promise to reclaim them.`,
+    (p) =>
+      `⚠ 共享账本中有 ${p.count} 行的身份已被截断，这些占用方可能无法回收：` +
+      `读取面的 owner 字符串与账本中被截断的字符串不一致。不要承诺能回收它们。`,
   ),
   noHolders: ba<KhongTham>(
     () => 'Đang giữ (theo sổ): KHÔNG hộ nào — nhưng xem "CẬN DƯỚI" ngay dưới trước khi kết luận card trống.',

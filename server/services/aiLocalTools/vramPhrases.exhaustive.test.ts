@@ -518,6 +518,39 @@ describe("★★★ §C đường thoát thật — cùng MỘT trạng thái, b
     expect(dong(vi.textSummary)).toBeGreaterThan(12);
   });
 
+  /**
+   * ★★★ I-2 + I-3 (review TOÀN NHÁNH Pha 6) — **CHẶNG CUỐI, VÀ CA NÀY CHỈ HỨA ĐÚNG CÁI NÓ CHỨNG
+   * MINH.**
+   *
+   * ⚠⚠ Khuôn chung mà review tìm ra: *"Task 1, 2 và 5 ĐỀU dừng lời khai ở **BIÊN PAYLOAD** và đều
+   * gọi đó là 'tới được người đọc'"*. Với **Agent**, biên payload **không phải** người đọc — Task 2
+   * đã đo và ghi rằng Agent **chỉ nhận `textSummary`** (`aiLocalKnowledgeService.ts:2351` đường
+   * stream · `:2070`/`:2396` đường không stream; `data.state` **không bao giờ** tới LLM).
+   * ⇒ Ca này chạy **đúng đường thoát ấy** (registry → handler → `textSummary`) và khẳng định hai
+   *   lời khai có mặt **trong chuỗi được nhồi vào ngữ cảnh LLM**, không phải trong một ô JSON.
+   * ⚠ Phạm vi được nói thẳng: nó chứng minh *"tới được `textSummary`"* — chặng LLM **đọc** chuỗi ấy
+   *   nằm ngoài tầm mọi lưới; đừng đặt tên ca này rộng hơn cái nó đo.
+   */
+  it("★★★ I-3 — con số dư địa hiệu lực ĐI KÈM câu 'nó đang chảy', ở CẢ BA ngôn ngữ", async () => {
+    dungCanh();
+    const [vi, en, zh] = await Promise.all([chay("vi"), chay("en"), chay("zh")]);
+    expect(vi.textSummary, "vi: con số hiệu lực đi một mình ⇒ Agent so hai lượt hỏi và bịa ra 'vừa nhả'").toContain(
+      "ĐANG CHẢY",
+    );
+    expect(en.textSummary).toContain("FLOWING quantity");
+    expect(zh.textSummary).toContain("流动量");
+  });
+
+  it("★★★ I-2 — lời khai `truncatedIdentityWrites` của Task 5 CÓ MẶT trong `textSummary` (0 điểm đọc trước bản này)", async () => {
+    dungCanh();
+    const [vi, en, zh] = await Promise.all([chay("vi"), chay("en"), chay("zh")]);
+    expect(vi.textSummary, "vi: lời khai 'sổ chung đã CẮT danh tính' chưa tới đường Agent").toContain(
+      "bị CẮT danh tính=",
+    );
+    expect(en.textSummary).toContain("TRUNCATED identity=");
+    expect(zh.textSummary).toContain("身份被截断的写入=");
+  });
+
   it("★★★ `lang=en` ⇒ KHÔNG một chữ cái phi-ASCII nào trong toàn bản tóm tắt (không rớt về vi)", async () => {
     dungCanh();
     const r = await chay("en");

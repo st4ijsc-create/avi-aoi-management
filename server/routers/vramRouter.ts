@@ -124,9 +124,20 @@ const totp = { totpCode: z.string().max(16) };
  * `totpCode` của **CHÍNH lượt ấy**, không lượt nào qua bằng cache phiên của một lượt khác. Nó
  * **chỉ THU HẸP**: `deployProcedure` (role-floor + 2FA + step-up) giữ nguyên bên dưới.
  * ⚠ Task 1b chain phép siết ấy vào **chính `deployProcedure`**, nên lượt `.use()` ở đây **dư thừa
- * về hành vi** — **cố ý giữ**: lưới cấu trúc của `vramStepUpFreshness.test.ts` phân giải chuỗi
- * **trong phạm vi file này**, nên gỡ nó đi là gỡ mất phép canh riêng của hai lệnh phá huỷ (và
- * hai lượt verify chỉ xảy ra trên đường cache-miss của một lệnh hiếm + đặc quyền).
+ * về hành vi** — **cố ý giữ** ở bản Task 1b vì lưới cấu trúc của `vramStepUpFreshness.test.ts` khi
+ * đó phân giải chuỗi **trong phạm vi file này**.
+ * ★★★ **I-4 (review TOÀN NHÁNH) — HAI ĐÍNH CHÍNH, ĐỪNG TRÍCH LẠI CÂU CŨ:**
+ *  1. **Chi phí ghi SAI cả hai con số.** Câu cũ nói *"hai lượt verify, và chỉ trên đường
+ *     cache-miss"*. Chuỗi thật là `requireFreshTotp` → `requirePerCallFreshTotp` (GỐC) →
+ *     `requirePermission` → `requirePerCallFreshTotp` (**đây**), và `stepUpTotpMiddleware(false)`
+ *     **không có** đường thoát sớm ⇒ **cache-miss = 3** lượt verify · **cache-hit = 2** — tức lượt
+ *     verify thừa xảy ra ở **MỌI lượt gọi**, đúng NGƯỢC với câu cũ. Mỗi lượt = 1 `SELECT users` +
+ *     1 `speakeasy.totp.verify`. Không phải lỗi an ninh (thừa theo chiều CHẶT).
+ *  2. **Lý do "gỡ nó là gỡ mất phép canh" KHÔNG CÒN ĐÚNG.** Bản vá C-2 dựng
+ *     `quetLenhPhaHuyVram()` (`server/routers/deployProcedureScan.ts`) — lượng từ chạy trên
+ *     **`server/**` đệ quy** và chấp nhận phép siết đến **tại chỗ HOẶC qua GỐC `deployProcedure`**.
+ *     Nên hôm nay lượt `.use()` này là một quyết định thuần về **chi phí**, và chủ dự án gỡ nó đi
+ *     thì **không lưới nào mất răng**.
  * Lưới: `server/routers/vramStepUpFreshness.test.ts` · `server/routers/deployStepUpFreshness.test.ts`.
  */
 const vramDestructiveProcedure = deployProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canDelete")).use(requirePerCallFreshTotp);
