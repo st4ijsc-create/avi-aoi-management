@@ -18,6 +18,10 @@
  */
 
 import { listTools, getTool, type Tool } from "./toolRegistry";
+// ⚠ CHỈ nhập KIỂU (bị xoá lúc biên dịch) — không tạo cạnh nhập lúc chạy, không kéo theo lượt
+//   tự đăng ký tool của `readToolsProgramming.ts`. Nhờ nó, một `ProgrammingKind` gõ sai trong
+//   bảng gợi ý dưới đây là **lỗi biên dịch**, không phải một lượt `safeParse` hỏng lúc chạy.
+import type { ProgrammingKind } from "../programming/programmingAdapter";
 
 // C3a — optional page selection used to pre-fill tool args when the question
 // omits a concrete identifier (e.g. "máy này sao rồi?" on the machine page).
@@ -191,18 +195,142 @@ const USL_REGEX = /\busl\b\s*[:=]?\s*(-?\d+(?:\.\d+)?)/i;
 const LSL_REGEX = /\blsl\b\s*[:=]?\s*(-?\d+(?:\.\d+)?)/i;
 const TARGET_REGEX = /\b(?:target|nominal|mục\s*tiêu|danh\s*định)\b\s*[:=]?\s*(-?\d+(?:\.\d+)?)/i;
 
+// ════════════════════════════════════════════════════════════════════════════
+// ★★★ Pha 6 Task 3 (F2) — nhóm tool LẬP TRÌNH (`readToolsProgramming.ts`)
+// ════════════════════════════════════════════════════════════════════════════
+/**
+ * ⚠⚠⚠ **NGUYÊN TẮC BẤT DI DỊCH CỦA MỌI BỘ TRÍCH DƯỚI ĐÂY: KHÔNG LÀM SẠCH ĐẦU VÀO.**
+ *
+ * Nhóm này có **hai ranh giới an ninh** — cửa `confineTarget()` (chặn `..` / đường tuyệt đối /
+ * symlink / **hard link**) và hộp cát `evaluateArithmetic()` (văn phạm số học whitelist, không
+ * `eval`). Cả hai nằm **trong handler**. Nếu bộ trích ở đây tự lọc `..` hay tự loại một biểu thức
+ * lạ thì hai ranh giới ấy **vẫn không chạy** — cái mù chỉ đổi chỗ, và một lượt nới cửa về sau sẽ
+ * **không ai thấy**.
+ * ⇒ Bộ trích chỉ trả lời một câu: *"chuỗi người dùng định đưa cho tham số này là chuỗi nào?"*.
+ * Việc **PHÁN XÉT** chuỗi ấy là của handler. Lưới `programmingTools.agentPath.test.ts` khoá đúng
+ * điều này (`decision.args` phải mang **nguyên văn** chuỗi thù địch).
+ *
+ * ⚠⚠ **KHÔNG bộ trích nào được đặt ô `lang`.** Ngôn ngữ phiên có **một người chủ duy nhất** —
+ * `argsWithAuthCtx()` ở `toolRegistry.ts`, và nó chỉ tiêm vào ô nào **chứng minh được** mình là
+ * `z.enum(["vi","en","zh"])`. Hai tool KB ở đây (`retrieve_programming_kb`, `lookup_error_code`)
+ * có một ô **trùng tên** `lang: z.string().max(16)` mà thực chất là **BỘ LỌC KHO TÀI LIỆU** — điền
+ * bừa nó là tái diễn C-1 của Pha 4 (RAG rơi từ 91.678 xuống 237 chunk, **im lặng**).
+ */
+
+/** Khối mã trong câu hỏi: ```<nhãn>\n<mã>```. Nhãn (nếu có) là một gợi ý `kind`. */
+const CODE_FENCE_REGEX = /```[ \t]*([A-Za-z0-9_+#-]*)[ \t]*\r?\n?([\s\S]*?)```/;
+
+/**
+ * Gợi ý `ProgrammingKind` theo từ khoá. ⚠ Thứ tự có nghĩa: mục **cụ thể hơn đứng trước**
+ * (`iec61131-pou` / `-ld` trước `-st`, `robot-tm` trước `gcode`).
+ * ⚠ Kiểu `ProgrammingKind` cưỡng chế: thêm một biến thể gõ sai ⇒ `tsc` ĐỎ.
+ */
+const KIND_HINTS: ReadonlyArray<readonly [RegExp, ProgrammingKind]> = [
+  [/\bir[\s-]?flow\b/i, "ir-flow"],
+  [/\bpou\b/i, "iec61131-pou"],
+  [/\b(?:ladder|ld|bậc\s*thang)\b/i, "iec61131-ld"],
+  [/\b(?:structured\s*text|iec\s*?61131|61131|st)\b/i, "iec61131-st"],
+  [/\b(?:robot\s*tm|techman|tm\s*script|tmscript)\b/i, "robot-tm"],
+  [/\bzmotion\b/i, "zmotion-basic"],
+  [/\bmitsubishi\b/i, "mitsubishi-engineering"],
+  [/\b(?:g[\s-]?code|cnc|phay\s*cnc)\b/i, "gcode"],
+];
+
+/** Gợi ý `kind`: ưu tiên **nhãn của khối mã** (người dùng nói thẳng), rồi tới từ khoá trong câu. */
+function guessProgrammingKind(question: string): ProgrammingKind | undefined {
+  const nhan = question.match(CODE_FENCE_REGEX)?.[1];
+  if (nhan) {
+    for (const [re, kind] of KIND_HINTS) if (re.test(nhan)) return kind;
+  }
+  for (const [re, kind] of KIND_HINTS) if (re.test(question)) return kind;
+  return undefined;
+}
+
+/** Mã nguồn người dùng dán vào câu hỏi (khối ```…```). Trả `undefined` khi không có. */
+function extractFencedCode(question: string): string | undefined {
+  const m = question.match(CODE_FENCE_REGEX);
+  const code = m?.[2]?.trim();
+  return code ? code : undefined;
+}
+
+/**
+ * Mã lỗi/cảnh báo. Hai tầng: (1) token **sau một từ khoá** và **có chữ số** (`mã lỗi AL.E6`,
+ * `error code F0301`); (2) dự phòng — một token **có hình dạng mã báo động** ở bất kỳ đâu.
+ * ⚠ Đòi có chữ số để "lỗi servo" không biến chữ `servo` thành mã.
+ */
+const ERROR_CODE_KEYED_REGEX =
+  /(?:mã\s*lỗi|mã\s*cảnh\s*báo|mã\s*báo\s*động|error\s*code|alarm\s*code|fault\s*code|错误代码|报警代码|故障代码|error|alarm|fault|code|lỗi)\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9._-]{0,63})/i;
+const ERROR_CODE_SHAPE_REGEX = /\b([A-Za-z]{1,4}[._-]?[A-Za-z]?\d{1,6}[A-Za-z0-9]{0,8})\b/;
+
+function extractErrorCode(question: string): string | undefined {
+  const keyed = question.match(ERROR_CODE_KEYED_REGEX)?.[1];
+  if (keyed && /\d/.test(keyed)) return keyed;
+  return question.match(ERROR_CODE_SHAPE_REGEX)?.[1];
+}
+
+/**
+ * Đường dẫn file người dùng nêu. ⚠ Trả **NGUYÊN VĂN** — `..`, đường tuyệt đối, dấu `\` đều đi
+ * qua để **cửa** `confineTarget()` là cái từ chối (xem nguyên tắc ở đầu khối).
+ */
+const FILE_PATH_REGEX =
+  /(?:đọc|mở|xem|read|open|nội\s*dung|cat)?\s*(?:file|tệp|tập\s*tin)\s*[:：]?\s*["'`]?([^\s"'`]{1,1024})/i;
+const FILE_PATH_CJK_REGEX = /(?:读取|打开|查看)?\s*文件\s*[:：]?\s*["'`]?([^\s"'`]{1,1024})/;
+
+function extractProjectPath(question: string): string | undefined {
+  return question.match(FILE_PATH_REGEX)?.[1] ?? question.match(FILE_PATH_CJK_REGEX)?.[1];
+}
+
+/**
+ * Biểu thức số học. Cắt phần mở đầu (từ khoá + vài từ đệm lịch sự) và phần đuôi hỏi han, rồi
+ * **giao nguyên phần còn lại** cho hộp cát.
+ *
+ * ⚠ **Tiền điều kiện là HÌNH DẠNG, không phải AN TOÀN**: phần còn lại phải có **một chữ số** và
+ * **một toán tử hoặc ngoặc mở**. Nó tồn tại để `calc` không nuốt mọi câu bắt đầu bằng "tính"
+ * (*"tính tỉ lệ NG hôm nay"*), **không** để lọc nội dung thù địch — một biểu thức thoát hộp cát
+ * như `2 * constructor(3)` **thoả** tiền điều kiện và **phải** tới được hộp cát để bị từ chối ở đó.
+ */
+const CALC_TRIGGER_REGEX = /^[\s\S]*?(?:tính\s*toán|tính|calculate|calc|compute|计算)\s*[:：]?\s*/i;
+const CALC_FILLER_REGEX =
+  /^(?:\s*(?:giúp|giùm|dùm|hộ|cho|tôi|mình|em|anh|chị|với|xem|thử|nhanh|nhé|please|me|for|the|this)\b)+/i;
+const CALC_TAIL_REGEX =
+  /\s*(?:bằng\s*bao\s*nhiêu|là\s*bao\s*nhiêu|ra\s*bao\s*nhiêu|bao\s*nhiêu|được\s*bao\s*nhiêu|等于多少|是多少)\s*$/i;
+
+function extractExpression(question: string): string | undefined {
+  let s = question;
+  const m = CALC_TRIGGER_REGEX.exec(s);
+  if (m) s = s.slice(m[0].length);
+  s = s.replace(CALC_FILLER_REGEX, "");
+  s = s.replace(CALC_TAIL_REGEX, "");
+  s = s.replace(/[\s?？!！。;；]+$/u, "").trim();
+  if (s.length === 0 || s.length > 400) return undefined;
+  if (!/\d/.test(s)) return undefined;
+  if (!/[+\-*/%^(]/.test(s)) return undefined;
+  return s;
+}
+
 function normalizeText(s: string): string {
   return s.toLowerCase().trim();
+}
+
+/**
+ * ★★★ Pha 6 Task 3 (F2) — vị từ **DUY NHẤT** trả lời *"tool này có thể được chọn bằng chấm điểm
+ * trigger không?"*. `findToolByTriggers` dùng chính nó; lưới `toolArgCoverage.test.ts` cũng dùng
+ * chính nó để dựng lượng từ.
+ * ⚠ **Đừng chép một bản sao thứ hai của vị từ này ở đâu khác** — hai bản sao trùng nhau hôm nay
+ * sẽ lệch nhau ngày mai, và lượng từ sẽ canh một tập khác với tập thật (lớp lỗi đã trả giá).
+ */
+export function chonDuocTheoTrigger(tool: Tool): boolean {
+  // Write/client tools are only matched via dedicated shortcuts or the LLM
+  // router (which enforce required args / route whitelist) — never via generic
+  // trigger scoring.
+  return tool.kind !== "write" && tool.kind !== "client";
 }
 
 function findToolByTriggers(question: string): Tool | null {
   const norm = normalizeText(question);
   let best: { tool: Tool; score: number } | null = null;
   for (const tool of listTools()) {
-    // Write/client tools are only matched via dedicated shortcuts or the LLM
-    // router (which enforce required args / route whitelist) — never via generic
-    // trigger scoring.
-    if (tool.kind === "write" || tool.kind === "client") continue;
+    if (!chonDuocTheoTrigger(tool)) continue;
     let score = 0;
     for (const trigger of tool.triggers) {
       if (norm.includes(trigger.toLowerCase())) {
@@ -217,11 +345,27 @@ function findToolByTriggers(question: string): Tool | null {
   return best?.tool ?? null;
 }
 
-function extractArgsForTool(
+/**
+ * ★★★ Pha 6 Task 3 (F2) — **NHÁNH `default` PHẢI PHÂN BIỆT ĐƯỢC VỚI "một tool không cần tham số".**
+ *
+ * ⚠⚠⚠ Bản trước viết `case "get_today_stats": default: return {};` — nghĩa là *"tool này không cần
+ * tham số"* và *"tôi KHÔNG BIẾT tool này"* trả **cùng một giá trị**. Hậu quả đo được: **8 tool**
+ * (`readToolsProgramming`) rơi vào `default`, nhận `{}`, `safeParse` hỏng ⇒ `INVALID_ARGS` ⇒
+ * `tool: null` — chúng **chết trên đường Agent ngôn ngữ tự nhiên** qua **hai pha**, và **không lưới
+ * nào đỏ**, vì không ai **hỏi được** câu *"tool này có đường lấy tham số không?"*.
+ *
+ * ⇒ Nhánh `default` nay trả `KHONG_CO_DUONG`. `extractArgsForTool()` quy nó về `{}` nên **hành vi
+ * của 41 nhánh cũ không đổi một byte**; nhưng câu hỏi kia **giờ hỏi được** —
+ * `hasArgExtractionPath()` — và lượng từ *"MỌI tool chọn được theo trigger PHẢI có đường lấy tham
+ * số HOẶC nhận `{}`"* mới phát biểu được (`toolArgCoverage.test.ts`).
+ */
+const KHONG_CO_DUONG = Symbol("khong-co-duong-lay-tham-so");
+
+function extractArgsRaw(
   toolName: string,
   question: string,
   context?: ToolContext,
-): Record<string, unknown> {
+): Record<string, unknown> | typeof KHONG_CO_DUONG {
   switch (toolName) {
     case "get_lot_status": {
       const m =
@@ -530,10 +674,74 @@ function extractArgsForTool(
       if (!lineCode && prod) args.productCode = prod;
       return args;
     }
+    // ─── Doc 34 P2 / Pha 6 Task 3 (F2) — nhóm tool LẬP TRÌNH ──────────────────
+    // ⚠ Không nhánh nào dưới đây đặt ô `lang` (xem nguyên tắc ở khối `KIND_HINTS`), và không
+    //   nhánh nào làm sạch chuỗi người dùng — handler mới là nơi phán xét.
+    case "retrieve_programming_kb": {
+      // Cả câu hỏi LÀ truy vấn RAG. ⚠ KHÔNG đoán `vendor`: đoán sai là **lọc mất** kho đúng, im
+      //   lặng — cùng lớp lỗi với ô `lang` (C-1 của Pha 4).
+      const query = question.trim().slice(0, 500);
+      return query ? { query } : {};
+    }
+    case "lookup_error_code": {
+      const code = extractErrorCode(question);
+      return code ? { code } : {};
+    }
+    case "syntax_check_program":
+    case "compile_program":
+    case "simulate_program": {
+      const args: Record<string, unknown> = {};
+      const kind = guessProgrammingKind(question);
+      const code = extractFencedCode(question);
+      if (kind) args.kind = kind;
+      if (code) args.code = code;
+      return args;
+    }
+    case "generate_program": {
+      const args: Record<string, unknown> = { request: question.trim().slice(0, 4000) };
+      const kind = guessProgrammingKind(question);
+      if (kind) args.kind = kind;
+      return args;
+    }
+    case "calc": {
+      const expression = extractExpression(question);
+      return expression ? { expression } : {};
+    }
+    case "read_project_file": {
+      const p = extractProjectPath(question);
+      return p ? { path: p } : {};
+    }
     case "get_today_stats":
-    default:
+      // Tool KHÔNG có tham số nào — `{}` ở đây là một câu trả lời ĐẦY ĐỦ, khác hẳn nhánh dưới.
       return {};
+    default:
+      // ⚠ KHÔNG trả `{}` ở đây. Xem khối lý lẽ trên `KHONG_CO_DUONG`.
+      return KHONG_CO_DUONG;
   }
+}
+
+/**
+ * Đối số cho một lượt gọi tool, suy ra từ câu hỏi. Tool **không có** nhánh riêng nhận `{}` —
+ * **hành vi y hệt bản trước bản vá F2**.
+ */
+export function extractArgsForTool(
+  toolName: string,
+  question: string,
+  context?: ToolContext,
+): Record<string, unknown> {
+  const r = extractArgsRaw(toolName, question, context);
+  return r === KHONG_CO_DUONG ? {} : r;
+}
+
+/**
+ * ★★★ Pha 6 Task 3 (F2) — *"tool này có một đường lấy tham số riêng không?"*.
+ *
+ * ⚠ Câu trả lời **suy ra từ chính bộ điều phối** (`extractArgsRaw` chạy thật), **không** từ một
+ * danh sách tên chép lại — danh sách nào cũng có phần tử thứ N+1. Ai "vá" bằng cách trả `{}` ở
+ * nhánh `default` sẽ làm ca cầu chì *"một tên không tồn tại phải trả `false`"* ĐỎ.
+ */
+export function hasArgExtractionPath(toolName: string): boolean {
+  return extractArgsRaw(toolName, "", undefined) !== KHONG_CO_DUONG;
 }
 
 /**

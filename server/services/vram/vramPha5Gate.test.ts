@@ -62,6 +62,27 @@ const KE_HOACH = join(GOC, "docs", "superpowers", "plans", "2026-08-06-vram-pha5
 const DAU_KHAI = "Pha 5";
 
 /**
+ * ★★★ Pha 6 Task 3 (F2) — **BỘ NHẬN DIỆN THỨ BA: "tự khai thuộc MỘT pha" ∧ "đã nằm trong cổng".**
+ *
+ * ⚠⚠ VÌ SAO CẦN: hai bộ trên nhận diện được (a) lưới **module VRAM** (vị trí/tên) và (b) lưới
+ * **tự khai chuỗi `Pha 5`**. Lưới của **Pha 6 nằm NGOÀI module VRAM** không rơi vào bộ nào —
+ * `toolArgCoverage.test.ts` (luật F2, `server/services/aiLocalTools/`) **được cổng CHẠY** nhưng
+ * **không được con số ghim canh**: ai xoá nó đi cũng **không ca nào đỏ**. Bài học Pha 5 nói thẳng:
+ * *"ai gỡ nó cũng không thấy ca nào đỏ"* **KHÔNG** phải lý do không canh — nó **CHÍNH LÀ** lý do
+ * phải canh.
+ *
+ * ⚠ VÌ SAO **KHÔNG** chỉ nới `DAU_KHAI` thành `/Pha \d+/`: đo được — 68 file `*.test.ts` tự khai
+ * một pha nào đó, và **4** trong số đó (`appErrorParamsCoverage` · `aiAgentOrchestrator.authCtx` ·
+ * `aiGgufEngine` · `kbSyncScheduler.evalGate`) nằm **NGOÀI** mọi đường của §Cổng kiểm chung ⇒ ca
+ * *"KHÔNG file nào bị canh mà nằm NGOÀI cổng"* sẽ ĐỎ, và bản vá cho nó là **thêm 4 đường vào cổng
+ * dùng chung của cả năm task** — một quyết định vượt tầm một task, kèm rủi ro đỏ có sẵn.
+ * ⇒ Bộ thứ ba **giao** điều kiện tự-khai với **chính vị từ `duocPhu`**: nó **không bao giờ** thêm
+ * một file nằm ngoài cổng (bất biến ấy đúng **theo cấu tạo**), nên nó chỉ làm **con số ghim** phủ
+ * rộng hơn — đúng thứ đang thiếu — mà không đụng tới danh sách đường chạy.
+ */
+const DAU_KHAI_PHA = /\bPha\s+\d+\b/;
+
+/**
  * File test này có thuộc **module VRAM** không — hỏi bằng **VỊ TRÍ** (nằm dưới một thư mục tên
  * `vram`) hoặc **TÊN FILE** (`vram*`, không phân biệt hoa thường). Phủ đúng ba vị trí mà reviewer
  * nêu (`server/routers/vram*` · `server/services/vram/**` · `client/src/lib/vram*`) **và rộng hơn**
@@ -128,8 +149,17 @@ const FILE_PHA5 = MOI_FILE.filter((f) => readFileSync(f.that, "utf8").includes(D
 const FILE_VRAM = MOI_FILE.filter((f) => laLuoiVram(f.duong))
   .map((f) => f.duong)
   .sort();
-/** ⚠ **HỢP**, không phải thay thế: hai vị từ chỉ nới rộng đối tượng bị canh. */
-const FILE_CANH = [...new Set([...FILE_PHA5, ...FILE_VRAM])].sort();
+/**
+ * Lưới **tự khai thuộc một pha** ∧ **đã được cổng phủ** (Pha 6 Task 3). Xem lý lẽ ở `DAU_KHAI_PHA`.
+ * ⚠ Bất biến theo cấu tạo: tập này **không bao giờ** đẩy thêm file ra ngoài cổng.
+ */
+const FILE_PHA_TRONG_CONG = MOI_FILE.filter(
+  (f) => DAU_KHAI_PHA.test(readFileSync(f.that, "utf8")) && duocPhu(f.duong, CONG),
+)
+  .map((f) => f.duong)
+  .sort();
+/** ⚠ **HỢP**, không phải thay thế: ba vị từ chỉ nới rộng đối tượng bị canh. */
+const FILE_CANH = [...new Set([...FILE_PHA5, ...FILE_VRAM, ...FILE_PHA_TRONG_CONG])].sort();
 
 describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lưới bị canh (đảo lượng từ, ghim SỐ)", () => {
   it("★★★ cầu chì — đọc được cổng từ file kế hoạch, và nó không rỗng", () => {
@@ -158,7 +188,35 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     // ⚠ Pha 6 Task 2: +1 lưới — `server/services/vram/vramReadModel.drift.test.ts` (bẫy đo lường
     //   `effective`). Nó nằm **trong** vùng `server/services/vram/` mà cổng đã chạy, nên chỉ con số
     //   ghim này phải đổi: 62 → 63.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(63);
+    // ⚠ Pha 6 Task 3 (F2): 63 → 67, gồm **BỐN** file và chỉ **HAI** trong số đó là mã mới:
+    //   +2 lưới MỚI trong `server/services/aiLocalTools/` (đã nằm trong cổng):
+    //     · `programmingTools.agentPath.test.ts` — hai ranh giới an ninh trên đường Agent NL;
+    //     · `toolArgCoverage.test.ts` — luật "MỌI tool chọn được theo trigger phải có đường lấy
+    //       tham số".
+    //   +2 lưới CŨ nay **mới** bị canh nhờ bộ nhận diện thứ ba (`DAU_KHAI_PHA` ∧ `duocPhu`):
+    //     · `server/services/aiLocalTools/authCtxInjection.test.ts` (tự khai `Pha 4`);
+    //     · `client/src/lib/errorCodes.vramCommands.unit.test.ts` (tên KHÔNG bắt đầu bằng `vram`
+    //       nên `laLuoiVram` mù, và nó không chứa chuỗi `Pha 5`).
+    //   ⇒ Hai file cuối là **bằng chứng đo được** rằng lỗ "hàng rào không ai canh" có thật và rộng
+    //     hơn một file.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(67);
+  });
+
+  it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {
+    /**
+     * ⚠ Hai khẳng định, hai chiều:
+     *  • **CÓ TÁC DỤNG**: nó phải tóm ít nhất một file mà hai bộ kia mù (nếu không, nó là trang trí
+     *    và ô "lưới Pha 6 ngoài module VRAM" vẫn không ai canh — đúng lỗ vừa đóng);
+     *  • **KHÔNG TÁC HẠI**: theo cấu tạo nó giao với `duocPhu`, nên tập này **luôn** nằm trong cổng.
+     *    Ca dưới đo lại điều đó thay vì tin vào cách viết.
+     */
+    const themMoi = FILE_PHA_TRONG_CONG.filter((f) => !FILE_PHA5.includes(f) && !FILE_VRAM.includes(f));
+    expect(
+      themMoi.length,
+      "bộ nhận diện thứ ba không bắt thêm file nào ⇒ lưới Pha 6 ngoài module VRAM vẫn KHÔNG AI CANH",
+    ).toBeGreaterThanOrEqual(1);
+    const ngoai = FILE_PHA_TRONG_CONG.filter((f) => !duocPhu(f, CONG));
+    expect(ngoai.join(" · "), "bộ thứ ba KHÔNG được đẩy file nằm ngoài cổng vào tập bị canh").toBe("");
   });
 
   it("★★★ KHÔNG file nào bị canh mà nằm NGOÀI cổng — ô mà I-1 đã lọt, và ô mà R3 đã lọt", () => {
