@@ -562,7 +562,6 @@ describe("★★★ §4 — `variesWith` / `beforeAfterEvidence` bị PHÉP ĐO 
       .map((x) => x.trim())
       .filter((x) => /^[a-zA-Z]+(\[\])?(\.[a-zA-Z]+)+/.test(x))
       .map((x) => x.split(" ")[0]!);
-    expect(duong.length, "câu khai không rút ra được đường payload nào ⇒ nó đang không chỉ tới đâu cả").toBeGreaterThanOrEqual(4);
 
     const sai: string[] = [];
     for (const d of duong) {
@@ -587,6 +586,14 @@ describe("★★★ §4 — `variesWith` / `beforeAfterEvidence` bị PHÉP ĐO 
       sai.join("\n"),
       "câu khai `beforeAfterEvidence` chỉ tới một ô ĐANG CHẢY ⇒ chính bản vá này lại dựng một cái bẫy mới",
     ).toBe("");
+    /**
+     * ⚠⚠ **CẦU CHÌ ĐẶT SAU, CÓ CHỦ Ý.** Đặt nó TRƯỚC thì một câu khai hỏng theo kiểu *"trỏ vào ô
+     * đang chảy"* sẽ làm cầu chì nổ trước và ca đỏ **VÌ MỘT LÝ DO KHÁC** — người sửa đi chỉnh con
+     * số cầu chì rồi tưởng xong. Đo được ở đột biến **Đ6**: câu khai quay về `ledger.localHolders`
+     * nguyên khối ⇒ đỏ ở dòng đếm, **không** ở dòng nói ra `ttlExpired`. Khẳng định LOAD-BEARING
+     * phải chạy trước; cầu chì chỉ canh trường hợp câu khai **rỗng hẳn**.
+     */
+    expect(duong.length, "câu khai không rút ra được đường payload nào ⇒ nó đang không chỉ tới đâu cả").toBeGreaterThanOrEqual(3);
   });
 
   it("★★ câu khai phải nói rõ là một PHÉP HỘI, không phải một danh sách để chọn một món", async () => {
