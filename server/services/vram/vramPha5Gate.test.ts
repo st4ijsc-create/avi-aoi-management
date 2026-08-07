@@ -71,16 +71,30 @@ const DAU_KHAI = "Pha 5";
  * *"ai gỡ nó cũng không thấy ca nào đỏ"* **KHÔNG** phải lý do không canh — nó **CHÍNH LÀ** lý do
  * phải canh.
  *
- * ⚠ VÌ SAO **KHÔNG** chỉ nới `DAU_KHAI` thành `/Pha \d+/`: đo được — 68 file `*.test.ts` tự khai
- * một pha nào đó, và **4** trong số đó (`appErrorParamsCoverage` · `aiAgentOrchestrator.authCtx` ·
- * `aiGgufEngine` · `kbSyncScheduler.evalGate`) nằm **NGOÀI** mọi đường của §Cổng kiểm chung ⇒ ca
- * *"KHÔNG file nào bị canh mà nằm NGOÀI cổng"* sẽ ĐỎ, và bản vá cho nó là **thêm 4 đường vào cổng
- * dùng chung của cả năm task** — một quyết định vượt tầm một task, kèm rủi ro đỏ có sẵn.
- * ⇒ Bộ thứ ba **giao** điều kiện tự-khai với **chính vị từ `duocPhu`**: nó **không bao giờ** thêm
+ * ⚠ Bộ thứ ba **giao** điều kiện tự-khai với **chính vị từ `duocPhu`**: nó **không bao giờ** thêm
  * một file nằm ngoài cổng (bất biến ấy đúng **theo cấu tạo**), nên nó chỉ làm **con số ghim** phủ
  * rộng hơn — đúng thứ đang thiếu — mà không đụng tới danh sách đường chạy.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ I-4 (review Task 3) — **MẪU `/\bPha\s+\d+\b/` MÙ VỚI `Pha 2B`, VÀ LỖ VẪN MỞ THẬT.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `\d+\b` đòi một ranh giới từ **ngay sau chữ số**; `Pha 2B` có `B` là ký tự từ ⇒ **không khớp**.
+ * Người review đo: xoá `client/src/lib/errorCodes.vram.unit.test.ts` (**121 ca**, lưới VRAM, **nằm
+ * trong cổng**, tự khai `Pha 2B`) ⇒ **cổng vẫn XANH**. Đối chứng: xoá `toolArgCoverage.test.ts`
+ * ⇒ ĐỎ. ⇒ Bộ nhận diện **chưa** làm đúng việc nó được dựng ra để làm.
+ *
+ * Đếm cách viết **thật** trong repo (`grep -hoiE "\bPha\s+[0-9][0-9A-Za-z.]*"` trên `*.test.ts`):
+ * `Pha 2B` **53** · `Pha 5` 44 · `Pha 4` 39 · `Pha 2A` 36 · `Pha 3` 35 · `Pha 6` 25 ·
+ * **`Pha 1.5` 23** · `Pha 1` 22 · `Pha 2` 5 · và các biến thể VIẾT HOA (`PHA 2A`, `PHA 5`…).
+ * ⇒ Mẫu phải nhận **hậu tố chữ** (`2A`/`2B`) và **số thập phân** (`1.5`), **không phân biệt hoa
+ *   thường**. `\b` mở đầu vẫn giữ để `alpha 2` không bị nhận.
+ *
+ * ⚠⚠ BÀI HỌC ĐO LƯỜNG (I-3): con số nền của bản trước ("68 file / 4 ngoài cổng") đo bằng
+ * `grep -E "Pha [0-9]"` — **một công cụ KHÁC** với mẫu đã ship. Số đúng của mẫu đã ship là
+ * **55 file / 1 ngoài cổng**. *Một con số đo bằng công cụ khác công cụ đang chạy thì không mô tả
+ * hệ thống.* Nên bộ đếm dưới đây là **thứ duy nhất** được trích dẫn từ nay.
  */
-const DAU_KHAI_PHA = /\bPha\s+\d+\b/;
+const DAU_KHAI_PHA = /\bPha\s+\d+(?:\.\d+)?[A-Za-z]?\b/i;
 
 /**
  * File test này có thuộc **module VRAM** không — hỏi bằng **VỊ TRÍ** (nằm dưới một thư mục tên
@@ -167,7 +181,12 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     // ⚠ Pha 6 Task 1 (M-4): +1 đường — `server/routers/vramStepUpFreshness.test.ts`. Cổng của Pha 6
     //   là **cùng khối lệnh này**, nên một lưới mới ở bất kỳ pha nào cũng phải vào đây, không được
     //   sống ngoài cổng. 11 → 12.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(12);
+    // ⚠ Pha 6 Task 3 / I-4: 12 → 13, thêm `server/services/aiAgentOrchestrator.authCtx.test.ts`.
+    //   Lý do KHÔNG phải "cho đủ": nó canh **Critical của Pha 4** trên **người gọi `Tool.handler`
+    //   THỨ HAI** (Agent tự trị, `argsWithAuthCtx` FAIL-OPEN ⇒ god-mode 29 tool) — tức **đúng bề
+    //   mặt mà Task 3 vừa mở rộng** khi cho 8 tool lập trình với tới được từ đường Agent. Chi phí
+    //   đo được: **5/5 xanh, 862 ms**.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(13);
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -188,18 +207,19 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     // ⚠ Pha 6 Task 2: +1 lưới — `server/services/vram/vramReadModel.drift.test.ts` (bẫy đo lường
     //   `effective`). Nó nằm **trong** vùng `server/services/vram/` mà cổng đã chạy, nên chỉ con số
     //   ghim này phải đổi: 62 → 63.
-    // ⚠ Pha 6 Task 3 (F2): 63 → 67, gồm **BỐN** file và chỉ **HAI** trong số đó là mã mới:
+    // ⚠ Pha 6 Task 3 (F2 + I-4): 63 → 69. Chỉ **HAI** file là mã mới; **BA** file còn lại là lưới
+    //   CŨ mà **trước Task 3 KHÔNG CON SỐ NÀO CANH** — đó là số đo của lỗ, không phải suy đoán.
     //   +2 lưới MỚI trong `server/services/aiLocalTools/` (đã nằm trong cổng):
     //     · `programmingTools.agentPath.test.ts` — hai ranh giới an ninh trên đường Agent NL;
-    //     · `toolArgCoverage.test.ts` — luật "MỌI tool chọn được theo trigger phải có đường lấy
-    //       tham số".
-    //   +2 lưới CŨ nay **mới** bị canh nhờ bộ nhận diện thứ ba (`DAU_KHAI_PHA` ∧ `duocPhu`):
+    //     · `toolArgCoverage.test.ts` — luật ∀ "có đường lấy tham số" + "đường ấy SINH RA args hợp lệ".
+    //   +3 lưới CŨ nay mới bị canh nhờ bộ nhận diện thứ ba (`DAU_KHAI_PHA` ∧ `duocPhu`):
     //     · `server/services/aiLocalTools/authCtxInjection.test.ts` (tự khai `Pha 4`);
-    //     · `client/src/lib/errorCodes.vramCommands.unit.test.ts` (tên KHÔNG bắt đầu bằng `vram`
-    //       nên `laLuoiVram` mù, và nó không chứa chuỗi `Pha 5`).
-    //   ⇒ Hai file cuối là **bằng chứng đo được** rằng lỗ "hàng rào không ai canh" có thật và rộng
-    //     hơn một file.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(67);
+    //     · `client/src/lib/errorCodes.vramCommands.unit.test.ts` (tên không bắt đầu bằng `vram`);
+    //     · `client/src/lib/errorCodes.vram.unit.test.ts` — **121 ca**, tự khai `Pha 2B`.
+    //       ⚠⚠ Chính là file người review dùng để chứng minh lỗ **VẪN MỞ** sau lượt vá đầu: mẫu
+    //       `/\bPha\s+\d+\b/` **mù với `Pha 2B`** nên xoá file này đi mà cổng vẫn XANH. Nay ĐỎ.
+    //   +1 đường cổng mới (`aiAgentOrchestrator.authCtx.test.ts`) cũng tự vào tập bị canh.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(69);
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {
@@ -217,6 +237,26 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     ).toBeGreaterThanOrEqual(1);
     const ngoai = FILE_PHA_TRONG_CONG.filter((f) => !duocPhu(f, CONG));
     expect(ngoai.join(" · "), "bộ thứ ba KHÔNG được đẩy file nằm ngoài cổng vào tập bị canh").toBe("");
+  });
+
+  it("★★★ I-4 — mẫu tự-khai phải nhận `Pha 2B` / `Pha 1.5` / VIẾT HOA (mẫu `\\d+\\b` cũ MÙ ở đây)", () => {
+    /**
+     * ⚠⚠⚠ Đây là ca **neo vào cơ chế**, không vào một cái tên file: mẫu cũ `/\bPha\s+\d+\b/` đòi
+     * ranh giới từ **ngay sau chữ số**, nên `Pha 2B` (53 lượt trong repo) và `Pha 1.5` (23 lượt)
+     * **lọt sạch**. Hậu quả đo được: xoá `client/src/lib/errorCodes.vram.unit.test.ts` (121 ca)
+     * ⇒ cổng vẫn XANH. Ca này ĐỎ ngay lượt ai đó thu mẫu về dạng cũ.
+     */
+    for (const s of ["Pha 2B", "Pha 2A", "Pha 1.5", "PHA 5", "pha 3", "Pha 4.", "★ Pha 6 Task 3"]) {
+      expect(DAU_KHAI_PHA.test(s), `mẫu phải nhận ${JSON.stringify(s)}`).toBe(true);
+    }
+    // KHÔNG BẮT NHẦM: `\b` mở đầu phải chặn một từ chỉ *chứa* "pha".
+    for (const s of ["alpha 2", "sapha 1", "Phase 2", "Pha X"]) {
+      expect(DAU_KHAI_PHA.test(s), `mẫu KHÔNG được nhận ${JSON.stringify(s)}`).toBe(false);
+    }
+    // …và file đích danh mà người review dùng làm bằng chứng phải nằm trong tập bị canh.
+    const bc = "client/src/lib/errorCodes.vram.unit.test.ts";
+    expect(existsSync(join(GOC, bc)), `${bc} phải tồn tại`).toBe(true);
+    expect(FILE_CANH, `${bc} phải bị canh — xoá nó đi thì cổng PHẢI đỏ`).toContain(bc);
   });
 
   it("★★★ KHÔNG file nào bị canh mà nằm NGOÀI cổng — ô mà I-1 đã lọt, và ô mà R3 đã lọt", () => {

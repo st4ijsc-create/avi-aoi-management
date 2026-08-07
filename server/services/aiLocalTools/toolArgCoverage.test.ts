@@ -52,6 +52,37 @@ const MOI_TOOL = listTools();
 const CHON_DUOC = MOI_TOOL.filter(chonDuocTheoTrigger);
 const KHONG_CHON_DUOC = MOI_TOOL.filter((t) => !chonDuocTheoTrigger(t));
 
+/**
+ * ★★★ I-1 — tool **CẦN THAM SỐ**: `safeParse({})` hỏng ⇔ *"tool này CHẾT nếu không ai điền"*.
+ * Tập này **suy ra từ schema**, không liệt kê tên; nó là đối tượng của luật mạnh bên dưới.
+ */
+const CAN_THAM_SO = CHON_DUOC.filter((t) => !t.parameters.safeParse({}).success);
+
+/**
+ * Một câu hỏi NGƯỜI DÙNG THẬT có thể gõ, **mang đủ dữ liệu** cho từng tool cần tham số.
+ * ⚠ Bảng này bị ca *"PHỦ HẾT"* cưỡng chế **theo cả hai chiều** — thiếu một tool là ĐỎ, thừa một
+ * mục cũng ĐỎ. Nó là **đầu vào** của luật, không phải định nghĩa của lượng từ.
+ */
+const CAU_HOI_THAM_SO: Record<string, string> = {
+  analytics_pdm_forecast: "dự báo hỏng máy AOI-01",
+  analyze_line_bottleneck: "dự báo nút thắt chuyền L01 trong 7 ngày",
+  calc: "tính 2+3*4 bằng bao nhiêu",
+  compile_program: "biên dịch chương trình st sau: ```VAR x : BOOL; END_VAR```",
+  correlate_process_quality: "tương quan torque với NG ở công đoạn function",
+  generate_program: "viết chương trình gcode cắt một hình vuông 10mm",
+  get_device_health: "sức khỏe máy AOI-01 trong 7 ngày",
+  get_line_balance: "cân bằng chuyền L01 hôm nay",
+  get_lot_status: "lô L20260505-001 thế nào",
+  get_machine_process_result: "kết quả công đoạn của máy AOI-01 hôm nay",
+  get_ot_telemetry_latest: "đọc tag máy AOI-01",
+  get_process_metric_trend: "xu hướng torque máy SCR-01 7 ngày",
+  lookup_error_code: "mã lỗi AL.E6 của servo là gì",
+  read_project_file: "đọc file main.st",
+  retrieve_programming_kb: "tra cứu tài liệu hãng về lệnh MOVJ của robot",
+  simulate_program: "mô phỏng chương trình gcode: ```G01 X1 Y2```",
+  syntax_check_program: "kiểm tra cú pháp gcode này: ```G01 X10 Y20 F100```",
+};
+
 describe("★★★ F2 — luật: MỌI tool chọn được theo trigger phải với tới được (đảo lượng từ)", () => {
   it("★★★ cầu chì — sổ đăng ký không rỗng và phép lọc không nuốt cả sổ", () => {
     // 0 tool ⇒ mọi khẳng định dưới là chân lý rỗng. Ba con số này chỉ là SÀN, không phải ghim:
@@ -96,6 +127,48 @@ describe("★★★ F2 — luật: MỌI tool chọn được theo trigger phả
     const nhoVe2 = CHON_DUOC.filter((t) => !hasArgExtractionPath(t.name) && nhanRong(t));
     expect(nhoVe1.length, "không tool nào cần vế 'có nhánh riêng' ⇒ vế ấy là trang trí").toBeGreaterThanOrEqual(5);
     expect(nhoVe2.length, "không tool nào cần vế 'nhận {}' ⇒ vế ấy là trang trí").toBeGreaterThanOrEqual(1);
+  });
+
+  it("★★★ I-1 — PHỦ HẾT: MỌI tool CẦN THAM SỐ phải có một câu hỏi trong bảng (bảng do SCHEMA quyết)", () => {
+    /**
+     * ⚠ Tập đối tượng **suy ra từ schema**: `!safeParse({}).success` ⇔ *"tool này chết nếu không ai
+     * điền tham số"*. Không liệt kê tên, không liệt kê ô. Một tool mới cần tham số ⇒ bảng thiếu một
+     * mục ⇒ ĐỎ; một tool nới schema thành không-bắt-buộc ⇒ bảng thừa một mục ⇒ ĐỎ.
+     */
+    expect(CAN_THAM_SO.length, "không tool nào cần tham số — bộ lọc theo schema đã hỏng?").toBeGreaterThanOrEqual(15);
+    const thieu = CAN_THAM_SO.map((t) => t.name).filter((n) => !CAU_HOI_THAM_SO[n]);
+    expect(thieu.join(", "), "tool CẦN THAM SỐ mà KHÔNG có câu hỏi chứng minh nó lấy được tham số").toBe("");
+    const du = Object.keys(CAU_HOI_THAM_SO).filter((n) => !CAN_THAM_SO.some((t) => t.name === n));
+    expect(du.join(", "), "bảng có mục không còn ứng với tool CẦN THAM SỐ nào").toBe("");
+  });
+
+  it("★★★ I-1 — LUẬT MẠNH: đường lấy tham số phải SINH RA object THOẢ `safeParse` của chính schema nó", () => {
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ⚠⚠⚠ VÌ SAO LUẬT NÀY PHẢI CÓ: LUẬT TRƯỚC CHỈ HỎI *"CÓ `case` KHÔNG"*, KHÔNG HỎI *"`case`
+     * LÀM GÌ"* — VÀ NGƯỜI REVIEW TÌM RA MỘT LỖ **CÒN SỐNG** ĐÚNG Ở ĐÓ.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Đột biến của họ: **giữ nguyên** `case "get_device_health"` nhưng **thôi điền ô bắt buộc**
+     * `machineCode`. Tool chết **đúng lớp lỗi F2** (mọi câu NL ⇒ `INVALID_ARGS`), mà **toàn bộ cổng
+     * 12 đường vẫn 106 file / 1802 ca XANH**. Phạm vi ≥6 tool.
+     * ⚠ Cầu chì `default: return {}` **không** bắt được lớp này: nó canh **đường mặc định**, còn
+     * đây là một `case` **RỖNG RUỘT** — có mặt, chạy, và trả về thứ vô dụng.
+     * ⇒ Luật phải hỏi **KẾT QUẢ**, và trọng tài là **chính schema của tool** (`safeParse`), không
+     * phải một danh sách ô do tay người viết ra.
+     */
+    for (const t of CAN_THAM_SO) {
+      const q = CAU_HOI_THAM_SO[t.name]!;
+      const args = extractArgsForTool(t.name, q);
+      const r = t.parameters.safeParse(args);
+      expect(
+        r.success,
+        `${t.name}: đường lấy tham số sinh ra ${JSON.stringify(args)} — KHÔNG qua nổi schema của chính nó` +
+          (r.success ? "" : ` (thiếu/sai: ${r.error.issues.map((i) => i.path.join(".") || "<root>").join(", ")})`) +
+          `\n  câu hỏi: ${JSON.stringify(q)}`,
+      ).toBe(true);
+      // …và nó phải điền THẬT, không phải qua được nhờ schema rỗng.
+      expect(Object.keys(args).length, `${t.name}: sinh ra object RỖNG mà vẫn qua schema?`).toBeGreaterThan(0);
+    }
   });
 
   it("★★ KHÔNG nhãn `case` nào trỏ tới một tool KHÔNG TỒN TẠI (nhánh chết = một lượt đổi tên bị bỏ quên)", () => {
@@ -196,6 +269,66 @@ describe("★★★ F2 — 8 tool `readToolsProgramming` với tới được t�
         const args = extractArgsForTool(t.name, q);
         expect(Object.hasOwn(args, "lang"), `${t.name} đặt ô \`lang\` cho câu hỏi ${JSON.stringify(q)}`).toBe(false);
       }
+    }
+  });
+
+  it("★★★ I-2 — ∀ trigger của MỌI tool khác: một câu nghiệp vụ dựng từ nó KHÔNG được rơi vào `calc`", () => {
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ⚠⚠⚠ VÌ SAO ĐẢO LƯỢNG TỪ Ở ĐÂY: BẢN ĐẦU LÀ MỘT **LIỆT KÊ 12 CÂU MỐC**, VÀ NÓ ĐÃ BỎ SÓT.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Người review đo **9/14** câu nghiệp vụ bị `calc` cướp; tôi đo lại bằng bộ của mình: **6/24**.
+     * Cả hai bộ đều là **danh sách**, và lớp *"danh sách nào cũng có phần tử thứ N+1"* đã tái diễn
+     * **mười ba** lần. ⇒ Nguồn câu hỏi phải là **một nguồn có đo**: **chính bảng `triggers`** mà
+     * mọi tool tự khai trong sổ đăng ký. Thêm một tool ⇒ trigger của nó tự vào lượng từ.
+     *
+     * Mỗi trigger sinh ra bốn câu mang **đúng hình dạng đã làm vỡ bản đầu**: mã máy `AOI-01`, mã lô
+     * `L20260505-001`, mã chuyền `L-01`, đơn vị `mm/s` — tất cả đều chứa `-` hoặc `/`.
+     * ⚠ Trigger của **chính `calc`** bị loại: chúng là của nó, không phải "câu nghiệp vụ".
+     */
+    const CALC = getTool("calc");
+    expect(CALC, "phải có tool `calc` thì ca này mới có nghĩa").toBeTruthy();
+    const cuaCalc = new Set(CALC!.triggers.map((t) => t.toLowerCase()));
+    const khuon = (g: string) => [
+      `tính ${g} máy AOI-01`,
+      `${g} của lô L20260505-001 bằng bao nhiêu`,
+      `tính ${g} chuyền L-01 trong 7 ngày`,
+      `tính ${g} 5 mm/s`,
+    ];
+    const cuop: string[] = [];
+    let soCau = 0;
+    for (const t of CHON_DUOC) {
+      if (t.name === "calc") continue;
+      for (const g of t.triggers) {
+        if (cuaCalc.has(g.toLowerCase())) continue;
+        for (const q of khuon(g)) {
+          soCau++;
+          if (classifyToolIntent(q).tool === "calc") cuop.push(`${t.name} :: ${q}`);
+        }
+      }
+    }
+    // Cầu chì: 0 câu ⇒ mọi khẳng định trên là chân lý rỗng.
+    expect(soCau, "không dựng được câu nào từ trigger — sổ đăng ký/ triggers đã hỏng?").toBeGreaterThanOrEqual(800);
+    expect(
+      cuop.slice(0, 20).join("\n"),
+      `${cuop.length}/${soCau} câu nghiệp vụ bị \`calc\` CƯỚP — người dùng nhận thẻ báo lỗi thay vì câu trả lời`,
+    ).toBe("");
+  });
+
+  it("★★ ĐỐI CHỨNG DƯƠNG cho I-2 — biểu thức số học THẬT vẫn vào `calc` (siết không được siết chết)", () => {
+    /** ⚠ Thiếu ca này thì "chặn hết mọi thứ vào calc" cũng xanh ở ca trên. */
+    for (const [q, bt] of [
+      ["tính 2+3*4 bằng bao nhiêu", "2+3*4"],
+      ["tính (2+3)*4", "(2+3)*4"],
+      ["tính giúp tôi sqrt(16)", "sqrt(16)"],
+      ["tính 100/7", "100/7"],
+      ["tính 12.5 * 8", "12.5 * 8"],
+      ["tính 2 * pi", "2 * pi"],
+      ["tính max(3, 7) + 1", "max(3, 7) + 1"],
+    ] as const) {
+      const d = classifyToolIntent(q);
+      expect(d.tool, `"${q}" phải vào calc`).toBe("calc");
+      expect(d.args).toMatchObject({ expression: bt });
     }
   });
 

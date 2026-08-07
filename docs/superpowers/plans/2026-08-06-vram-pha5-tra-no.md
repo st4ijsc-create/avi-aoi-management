@@ -43,7 +43,8 @@ npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/routers/permissions.machineControl.test.ts \
   server/routers/vramPermissionSplit.test.ts \
   server/routers/vramStepUpFreshness.test.ts \
-  server/services/aiCopilotActions.hardlinkSink.test.ts client/src/lib/
+  server/services/aiCopilotActions.hardlinkSink.test.ts \
+  server/services/aiAgentOrchestrator.authCtx.test.ts client/src/lib/
 NODE_OPTIONS=--max-old-space-size=8192 npm run check
 npm run check:tests
 npm run i18n:check

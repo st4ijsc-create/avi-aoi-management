@@ -217,8 +217,20 @@ const TARGET_REGEX = /\b(?:target|nominal|mục\s*tiêu|danh\s*định)\b\s*[:=]
  * bừa nó là tái diễn C-1 của Pha 4 (RAG rơi từ 91.678 xuống 237 chunk, **im lặng**).
  */
 
-/** Khối mã trong câu hỏi: ```<nhãn>\n<mã>```. Nhãn (nếu có) là một gợi ý `kind`. */
-const CODE_FENCE_REGEX = /```[ \t]*([A-Za-z0-9_+#-]*)[ \t]*\r?\n?([\s\S]*?)```/;
+/**
+ * Khối mã trong câu hỏi. **HAI dạng, và thứ tự có nghĩa:**
+ *  • CÓ NHÃN — nhãn nằm trên **dòng riêng**: ```` ```gcode\nG01 X10``` ````;
+ *  • KHÔNG NHÃN — cả khối là mã: ```` ```G01 X10``` ````.
+ *
+ * ⚠⚠ Bản đầu dùng **một** regex với `\r?\n?` (xuống dòng **tuỳ chọn**) ⇒ với khối viết liền
+ * ```` ```VAR x : BOOL; END_VAR``` ```` nó nuốt `VAR` làm **nhãn ngôn ngữ** và giao cho bộ biên
+ * dịch đoạn mã **ĐÃ CỤT ĐẦU** (`x : BOOL; END_VAR`), tương tự ```` ```G01 X1 Y2``` ```` thành
+ * `X1 Y2` — **mất lệnh `G01`**. Đo được ở lượt rà I-1: hai trong ba tool `kind+code` nhận mã sai
+ * mà mọi ca vẫn xanh, vì không ca nào khoá **giá trị** của `code`.
+ * ⇒ Nhãn chỉ là nhãn khi **có xuống dòng ngay sau nó**; không có thì **toàn bộ thân là mã**.
+ */
+const CODE_FENCE_LABELED = /```[ \t]*([A-Za-z0-9_+#-]*)[ \t]*\r?\n([\s\S]*?)```/;
+const CODE_FENCE_PLAIN = /```([\s\S]*?)```/;
 
 /**
  * Gợi ý `ProgrammingKind` theo từ khoá. ⚠ Thứ tự có nghĩa: mục **cụ thể hơn đứng trước**
@@ -238,7 +250,7 @@ const KIND_HINTS: ReadonlyArray<readonly [RegExp, ProgrammingKind]> = [
 
 /** Gợi ý `kind`: ưu tiên **nhãn của khối mã** (người dùng nói thẳng), rồi tới từ khoá trong câu. */
 function guessProgrammingKind(question: string): ProgrammingKind | undefined {
-  const nhan = question.match(CODE_FENCE_REGEX)?.[1];
+  const nhan = question.match(CODE_FENCE_LABELED)?.[1];
   if (nhan) {
     for (const [re, kind] of KIND_HINTS) if (re.test(nhan)) return kind;
   }
@@ -248,8 +260,7 @@ function guessProgrammingKind(question: string): ProgrammingKind | undefined {
 
 /** Mã nguồn người dùng dán vào câu hỏi (khối ```…```). Trả `undefined` khi không có. */
 function extractFencedCode(question: string): string | undefined {
-  const m = question.match(CODE_FENCE_REGEX);
-  const code = m?.[2]?.trim();
+  const code = (question.match(CODE_FENCE_LABELED)?.[2] ?? question.match(CODE_FENCE_PLAIN)?.[1])?.trim();
   return code ? code : undefined;
 }
 
@@ -260,7 +271,12 @@ function extractFencedCode(question: string): string | undefined {
  */
 const ERROR_CODE_KEYED_REGEX =
   /(?:mã\s*lỗi|mã\s*cảnh\s*báo|mã\s*báo\s*động|error\s*code|alarm\s*code|fault\s*code|错误代码|报警代码|故障代码|error|alarm|fault|code|lỗi)\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9._-]{0,63})/i;
-const ERROR_CODE_SHAPE_REGEX = /\b([A-Za-z]{1,4}[._-]?[A-Za-z]?\d{1,6}[A-Za-z0-9]{0,8})\b/;
+/**
+ * ⚠ Lookahead `(?![A-Za-z0-9._-])` bắt token phải **TRỌN VẸN**. Không có nó, `L20260505-001`
+ * (một **mã lô**) bị **cắt** thành `L20260505` và đi vào RAG như một mã lỗi — im lặng, và sai
+ * theo kiểu khó thấy nhất: một chuỗi *trông giống* mã lỗi.
+ */
+const ERROR_CODE_SHAPE_REGEX = /\b([A-Za-z]{1,4}[._-]?[A-Za-z]?\d{1,6}[A-Za-z0-9]{0,8})(?![A-Za-z0-9._-])/;
 
 function extractErrorCode(question: string): string | undefined {
   const keyed = question.match(ERROR_CODE_KEYED_REGEX)?.[1];
@@ -284,11 +300,37 @@ function extractProjectPath(question: string): string | undefined {
  * Biểu thức số học. Cắt phần mở đầu (từ khoá + vài từ đệm lịch sự) và phần đuôi hỏi han, rồi
  * **giao nguyên phần còn lại** cho hộp cát.
  *
- * ⚠ **Tiền điều kiện là HÌNH DẠNG, không phải AN TOÀN**: phần còn lại phải có **một chữ số** và
- * **một toán tử hoặc ngoặc mở**. Nó tồn tại để `calc` không nuốt mọi câu bắt đầu bằng "tính"
- * (*"tính tỉ lệ NG hôm nay"*), **không** để lọc nội dung thù địch — một biểu thức thoát hộp cát
- * như `2 * constructor(3)` **thoả** tiền điều kiện và **phải** tới được hộp cát để bị từ chối ở đó.
+ * ⚠ **Tiền điều kiện là HÌNH DẠNG, không phải AN TOÀN.** Nó tồn tại để `calc` không cướp câu
+ * NGHIỆP VỤ, **không** để lọc nội dung thù địch — mọi biểu thức thoát hộp cát (`2 * constructor(3)`
+ * · `1 + toString(2)` · `0 + __proto__(1)` · `2 * ("3")` · `2 * 3 & 4` · `9^9^9`) **thoả** tiền
+ * điều kiện và **phải** tới được hộp cát để bị từ chối **ở đó**.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ I-2 (review) — **BẢN ĐẦU LÀ MỘT HỒI QUY SẢN PHẨM DO CHÍNH TASK NÀY TẠO RA.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Tiền điều kiện cũ chỉ đòi *"có chữ số VÀ có một trong `+-*​/%^(`"*. Nhưng **mã máy / mã lô / mã
+ * chuyền của hệ LUÔN có `-`** (`AOI-01`, `L20260505-001`, `L-01`) và đơn vị thường có `/` (`mm/s`)
+ * ⇒ **đo được 6/24** câu nghiệp vụ đổi từ *"về KB"* sang *"thẻ `calc` báo lỗi"*. Người review đo
+ * **9/14** trên bộ câu của họ. Đây là **hồi quy thật**, không phải mối lo lý thuyết.
+ *
+ * Ba điều kiện thay thế, **không cái nào phán xét nội dung**:
+ *  1. **HÌNH DẠNG SỐ HỌC** — một toán tử **nhị phân** giữa hai toán hạng, **hoặc** một lượt **gọi
+ *     hàm** `ident(`. `AOI-01` không thoả (dấu `-` đứng sau một CHỮ CÁI, không phải toán hạng).
+ *  2. **KHÔNG PHẢI VĂN XUÔI** — không có từ ASCII ≥3 chữ đứng **rời** (không ngay trước `(`).
+ *     `constructor(`/`toString(`/`__proto__(` **được giữ**; `tinh ti le loi cua lo` bị loại.
+ *     ⚠ Đánh đổi đã biết: hằng `tau` (3 chữ, đứng rời) không gọi được từ NL; `pi`/`e` thì được.
+ *  3. **THUẦN ASCII** — mọi ký tự ngoài ASCII (tiếng Việt có dấu, Hán tự) làm bộ tách từ của hộp
+ *     cát ném `illegal character` **chắc chắn**; định tuyến một câu như vậy vào `calc` chỉ đổi một
+ *     câu trả lời KB lấy một thẻ báo lỗi. ⚠ Đây **KHÔNG** phải bản sao bảng chữ của bộ tách từ:
+ *     nó **hẹp hơn hẳn** — `"`, `&`, `$`, `#` đều là ASCII và **vẫn đi qua** để hộp cát từ chối.
  */
+/** Toán tử NHỊ PHÂN giữa hai toán hạng: `2+3` · `(1+2)*3` · `9^9` · `2 * (` · `1 + sqrt`. */
+const CALC_SHAPE_BINARY = /(?:\d|\))\s*[+\-*/%^]\s*(?:[\d(.]|[A-Za-z_])/;
+/** Một lượt GỌI HÀM: `sqrt(` · `constructor(` · `__proto__(`. */
+const CALC_SHAPE_CALL = /[A-Za-z_][A-Za-z0-9_]*\s*\(/;
+/** ⚠ `\b` BẮT BUỘC: không có nó, quay lui làm `constructor(` khớp qua tiền tố `onstructo`. */
+const CALC_PROSE_WORD = /[A-Za-z_][A-Za-z0-9_]{2,}\b(?!\s*\()/;
+const CALC_NON_ASCII = /[^\x00-\x7F]/;
 const CALC_TRIGGER_REGEX = /^[\s\S]*?(?:tính\s*toán|tính|calculate|calc|compute|计算)\s*[:：]?\s*/i;
 const CALC_FILLER_REGEX =
   /^(?:\s*(?:giúp|giùm|dùm|hộ|cho|tôi|mình|em|anh|chị|với|xem|thử|nhanh|nhé|please|me|for|the|this)\b)+/i;
@@ -304,7 +346,9 @@ function extractExpression(question: string): string | undefined {
   s = s.replace(/[\s?？!！。;；]+$/u, "").trim();
   if (s.length === 0 || s.length > 400) return undefined;
   if (!/\d/.test(s)) return undefined;
-  if (!/[+\-*/%^(]/.test(s)) return undefined;
+  if (CALC_NON_ASCII.test(s)) return undefined;
+  if (CALC_PROSE_WORD.test(s)) return undefined;
+  if (!CALC_SHAPE_BINARY.test(s) && !CALC_SHAPE_CALL.test(s)) return undefined;
   return s;
 }
 

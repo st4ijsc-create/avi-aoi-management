@@ -197,6 +197,19 @@ describe("★★★ F2 — ranh giới HỘP CÁT SỐ HỌC chạy thật trên
     expect(r.result!.textSummary).toBe("2+3*4 = 14");
   });
 
+  it("★★★ ĐỐI CHỨNG DƯƠNG — NGOẶC ĐỔI KẾT QUẢ: `(2+3)*4` ⇒ ĐÚNG 20 (không phải 14)", async () => {
+    /**
+     * ⚠ Cặp `2+3*4 = 14` / `(2+3)*4 = 20` khoá **bộ phân tích cú pháp** chứ không chỉ "có ra số":
+     * một bản vá trả bừa một hằng số, hoặc bỏ ngoặc, làm đúng một trong hai ca ĐỎ.
+     */
+    const r = await hoi("tính (2+3)*4");
+    expect(r.decision.tool).toBe("calc");
+    expect(r.decision.args).toMatchObject({ expression: "(2+3)*4" });
+    expect(r.result!.note).toBeUndefined();
+    expect((r.result!.data as { value: number | null }).value).toBe(20);
+    expect(r.result!.textSummary).toBe("(2+3)*4 = 20");
+  });
+
   it("★★ ĐỐI CHỨNG DƯƠNG (hàm được whitelist) — `sqrt(16)` ⇒ 4", async () => {
     const r = await hoi("tính giúp tôi sqrt(16)");
     expect(r.decision.tool).toBe("calc");
@@ -232,11 +245,24 @@ describe("★★★ F2 — ranh giới HỘP CÁT SỐ HỌC chạy thật trên
     }
   });
 
-  it("★★ THOÁT HỘP CÁT — ký tự ngoài văn phạm (nháy kép, dấu chấm) bị TỪ CHỐI ngay ở bộ tách từ", async () => {
-    const r = await hoi('tính 2 * constructor("return 1")()');
-    expect(r.decision.tool).toBe("calc");
-    expect(r.result!.note).toBe("INVALID_EXPRESSION");
-    expect((r.result!.data as { error: string | null }).error ?? "").toMatch(/illegal character/);
+  it("★★ THOÁT HỘP CÁT — ký tự ngoài văn phạm bị TỪ CHỐI ngay ở bộ tách từ (và bộ trích KHÔNG chặn hộ)", async () => {
+    /**
+     * ⚠ Ba ký tự ASCII **không** nằm trong văn phạm số học. Chúng qua được tiền điều kiện của bộ
+     * trích (tiền điều kiện là HÌNH DẠNG, không phải bảng chữ của bộ tách từ) ⇒ hộp cát mới là cái
+     * từ chối. Đây là bằng chứng tiền điều kiện I-2 **không** biến thành một bản sao thứ hai của
+     * `calcTokenize`.
+     */
+    for (const [cauHoi, bieuThuc] of [
+      ['tính 2 * ("3")', '2 * ("3")'],
+      ["tính 2 * 3 & 4", "2 * 3 & 4"],
+      ["tính 2 + 3 $ 4", "2 + 3 $ 4"],
+    ] as const) {
+      const r = await hoi(cauHoi);
+      expect(r.decision.tool, `phải tới được hộp cát: ${cauHoi}`).toBe("calc");
+      expect((r.decision.args as { expression?: unknown }).expression).toBe(bieuThuc);
+      expect(r.result!.note, `hộp cát phải từ chối: ${cauHoi}`).toBe("INVALID_EXPRESSION");
+      expect((r.result!.data as { error: string | null }).error ?? "").toMatch(/illegal character/);
+    }
   });
 
   it("★★ kết quả KHÔNG HỮU HẠN bị từ chối (không trả `Infinity` ra cho Agent)", async () => {
@@ -246,12 +272,25 @@ describe("★★★ F2 — ranh giới HỘP CÁT SỐ HỌC chạy thật trên
     expect((r.result!.data as { error: string | null }).error ?? "").toMatch(/finite/);
   });
 
-  it("★★ KHÔNG BẮT NHẦM — câu hỏi nghiệp vụ có chữ 'tính' KHÔNG bị `calc` cướp", async () => {
+  it("★★★ I-2 — câu nghiệp vụ chứa MÃ CÓ DẤU `-` / ĐƠN VỊ CÓ `/` KHÔNG bị `calc` cướp", async () => {
     /**
-     * ⚠ Bộ trích chỉ nhận một biểu thức khi phần đuôi có **chữ số** VÀ một **toán tử/ngoặc**.
-     * Không có tiền điều kiện ấy thì `calc` sẽ nuốt mọi câu bắt đầu bằng "tính".
+     * ⚠⚠ Sáu câu đầu là **chính sáu câu đã đo được là BỊ CƯỚP** bởi bản đầu của Task 3 — mã máy /
+     * mã lô / mã chuyền của hệ **luôn** có `-`, và đơn vị thường có `/`, nên tiền điều kiện cũ
+     * (*"có chữ số VÀ có một trong `+-*​/%^(`"*) thoả **hết**. Đây là hồi quy sản phẩm do chính
+     * task này tạo ra, nên nó phải có ca **đích danh** ở đây, ngoài lượng từ ∀ ở
+     * `toolArgCoverage.test.ts`.
      */
-    for (const q of ["tính tỉ lệ NG hôm nay", "tính OEE máy AOI-01 7 ngày", "tính sản lượng hôm nay"]) {
+    for (const q of [
+      "tính hiệu suất chuyền L-01",
+      "tính tồn kho sản phẩm SP-1024",
+      "sản lượng máy AOI-01 bằng bao nhiêu",
+      "tỉ lệ lỗi của lô L20260505-001 bằng bao nhiêu",
+      "đổi đơn vị 5 mm/s sang m/s",
+      "tính công suất tiêu thụ máy AOI-01 30 ngày",
+      "tính tỉ lệ NG hôm nay",
+      "tính OEE máy AOI-01 7 ngày",
+      "tính sản lượng hôm nay",
+    ]) {
       const r = await hoi(q);
       expect(r.decision.tool, `"${q}" KHÔNG được rơi vào calc`).not.toBe("calc");
     }
