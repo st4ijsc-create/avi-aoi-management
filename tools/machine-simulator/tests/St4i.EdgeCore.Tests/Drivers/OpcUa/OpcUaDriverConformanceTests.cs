@@ -162,8 +162,8 @@ public sealed class OpcUaDriverConformanceTests : DeviceDriverConformanceSuite
     /// "ping" returns immediately regardless.</summary>
     protected override async Task<UnresponsiveWritableDeviceSession> CreateUnresponsiveWritableDeviceAsync()
     {
-        const int operationTimeoutMs = 500;
-        const int methodDelayMs = 2000; // safely > operationTimeoutMs, so the CLIENT always gives up first.
+        var operationTimeoutMs = EffectiveUnresponsiveWriteOperationTimeoutMs;
+        var methodDelayMs = EffectiveUnresponsiveWriteMethodDelayMs; // > operationTimeoutMs, so the CLIENT always gives up first.
 
         var pkiRoot = NewPkiRoot("write-unresponsive");
         var testServer = await OpcUaLoopbackHarness.StartWritableServerAsync(pkiRoot).ConfigureAwait(false);
@@ -212,4 +212,112 @@ public sealed class OpcUaDriverConformanceTests : DeviceDriverConformanceSuite
 
     [Fact]
     public Task Write_RoundTripsLosslesslyThroughConnectorJson() => Check_Write_RoundTripsLosslesslyThroughConnectorJson();
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 The ONE check whose target this rig has to strengthen.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>The client-side bound the unresponsive write target gives up on — the "SHORT internal write
+    /// timeout" <see cref="DeviceDriverConformanceSuite.CreateUnresponsiveWritableDeviceAsync"/>'s own doc
+    /// comment asks for.
+    ///
+    /// <para>🔴 <b>It is right for the four checks that issue an UNCANCELLED write and wrong for the one that
+    /// does not</b>, which is why
+    /// <see cref="Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice"/> is overridden
+    /// below. Proven by mutation rather than by reading: removing <c>cts.Cancel()</c> from the shared check, so
+    /// cancellation is NEVER ISSUED AT ALL, left this rig GREEN — at 500 ms the client's own bound resolved the
+    /// call long before that check's <see cref="DeviceDriverConformanceSuite.CancellationBudget"/> (5 s), so it
+    /// could not tell an honoured cancellation from an ordinary timeout. <b>Nobody had looked at this rig</b>:
+    /// the finding that reached the whole-branch review named only the Modbus TCP one, and this was found only
+    /// because the reviewer ran the mutation across all four rigs instead of the one it had been told
+    /// about.</para></summary>
+    private const int UnresponsiveWriteOperationTimeoutMs = 500;
+
+    /// <summary>How long the server-side "Speed" write / "StartCycle" handler holds a call open. Safely greater
+    /// than <see cref="UnresponsiveWriteOperationTimeoutMs"/>, so the CLIENT always gives up first.</summary>
+    private const int UnresponsiveWriteMethodDelayMs = 2_000;
+
+    /// <summary>🔴 The client-side bound for the ONE check that supplies its own token. <b>Deliberately longer
+    /// than <see cref="DeviceDriverConformanceSuite.CancellationBudget"/></b> (5 s) — the same 8 000 ms and the
+    /// same reasoning as the two Modbus RTU rigs and the Modbus TCP one: if the target's own bound can expire
+    /// inside the budget, a driver that ignored its token entirely still passes, and the check measures the
+    /// configuration instead of the mechanism.</summary>
+    private const int CancellableWriteOperationTimeoutMs = 8_000;
+
+    /// <summary>🔴 <b>Raised WITH the client bound, and that is the whole point of asserting on the MINIMUM of
+    /// the two below.</b> This rig has two bounds where the Modbus rigs have one, and the call is bounded by
+    /// whichever is smaller. Raising only <see cref="CancellableWriteOperationTimeoutMs"/> would leave the
+    /// server answering at 2 000 ms — well inside the budget — and an assertion naming the 8 000 ms would then
+    /// be true of a number that does not govern the call. Kept above the client bound so the documented
+    /// "the CLIENT always gives up first" shape is unchanged.</summary>
+    private const int CancellableWriteMethodDelayMs = 10_000;
+
+    /// <summary>Set for the duration of ONE check by
+    /// <see cref="Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice"/> and false
+    /// otherwise. A plain field is safe: xunit constructs a fresh test-class instance per test and runs a
+    /// class's tests sequentially, and the override restores it in a <c>finally</c> regardless.</summary>
+    private bool _strengthenUnresponsiveWriteBounds;
+
+    private int EffectiveUnresponsiveWriteOperationTimeoutMs =>
+        _strengthenUnresponsiveWriteBounds ? CancellableWriteOperationTimeoutMs : UnresponsiveWriteOperationTimeoutMs;
+
+    private int EffectiveUnresponsiveWriteMethodDelayMs =>
+        _strengthenUnresponsiveWriteBounds ? CancellableWriteMethodDelayMs : UnresponsiveWriteMethodDelayMs;
+
+    /// <summary>
+    /// 🔴 <b>Runs the shared write-side cancellation check against a target whose own bounds cannot expire
+    /// inside <see cref="DeviceDriverConformanceSuite.CancellationBudget"/> — so that passing it proves the
+    /// driver honoured its token, not that a timeout got there first.</b> Same shape as
+    /// <c>ModbusRtuDriverConformanceTests</c>' and <c>ModbusTcpDriverConformanceTests</c>' own overrides,
+    /// deliberately: the defect is the shared suite's, the remedy has to be per-rig, and three rigs solving one
+    /// problem three different ways is how the next author learns the wrong lesson.
+    ///
+    /// <para><b>Legitimate here and nowhere else on the write path:</b> this is the only <c>Check_Write_*</c>
+    /// that supplies its own <see cref="CancellationToken"/> rather than
+    /// <see cref="CancellationToken.None"/>, so raising its target's bounds cannot make any call unbounded —
+    /// the token bounds it. The four uncancelled checks keep
+    /// <see cref="UnresponsiveWriteOperationTimeoutMs"/>.</para>
+    ///
+    /// <para><b>Why the assertion is on the MINIMUM.</b> Two bounds can end this call without anybody
+    /// cancelling — the client's own <c>operationTimeoutMs</c> and the server-side handler finally answering
+    /// after <see cref="WritableServerControls.MethodDelayMs"/>. The smaller one governs, so the smaller one is
+    /// what has to clear the budget. Asserting on the client bound alone would have passed while the server
+    /// answered at 2 000 ms.</para>
+    ///
+    /// <para>
+    /// 🔴 <b>THE CAVEAT, because this is a mechanism nothing polices.</b>
+    /// <see cref="DeviceDriverConformanceSuite.EveryCheckIsWiredOrAcknowledged"/> proves every check is WIRED;
+    /// nothing proves a driver's own subclass has not overridden a <c>Check_*</c> body and weakened it — an
+    /// override is invisible to that census, and would be the quietest possible way to make a conformance suite
+    /// lie. <b>So an override of a <c>Check_*</c> in a driver's subclass must be a <c>base</c>-CALLING WRAPPER,
+    /// never a re-implementation</b>, and the strengthening is ASSERTED below rather than promised in prose.
+    /// <b>And nothing detects DELETION of this override</b> — the base check would silently resume being blind,
+    /// exactly as it was here until now. The only instrument that finds that is the mutation in
+    /// <see cref="UnresponsiveWriteOperationTimeoutMs"/>' own doc block, re-run.</para>
+    /// </summary>
+    public override async Task Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice()
+    {
+        _strengthenUnresponsiveWriteBounds = true;
+        try
+        {
+            var strengthened = Math.Min(
+                EffectiveUnresponsiveWriteOperationTimeoutMs, EffectiveUnresponsiveWriteMethodDelayMs);
+            Assert.True(
+                strengthened > CancellationBudget.TotalMilliseconds,
+                $"this wrapper exists to STRENGTHEN the check, and it has stopped doing so: the unresponsive " +
+                $"write target's own smallest bound is {strengthened} ms (the lesser of a " +
+                $"{EffectiveUnresponsiveWriteOperationTimeoutMs} ms client operation timeout and a " +
+                $"{EffectiveUnresponsiveWriteMethodDelayMs} ms server-side handler delay) against a " +
+                $"{CancellationBudget.TotalMilliseconds} ms CancellationBudget, so an ordinary timeout could " +
+                "satisfy the check and a driver that ignored its token entirely would still pass. Raise the " +
+                "bound rather than deleting this assertion.");
+
+            await base.Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice()
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _strengthenUnresponsiveWriteBounds = false;
+        }
+    }
 }

@@ -37,6 +37,48 @@ public sealed class ModbusTcpDriverConformanceTests : DeviceDriverConformanceSui
     /// without listening removes it rather than making it rarer.</para></summary>
     private static int ClosedPort => Drivers.ClosedLoopbackPort.Port;
 
+    /// <summary>The bound the unresponsive WRITE target waits before giving up — the "SHORT internal write
+    /// timeout" <see cref="DeviceDriverConformanceSuite.CreateUnresponsiveWritableDeviceAsync"/>'s own doc
+    /// comment asks for, and the same 300 ms <c>ModbusRtuConformanceTestsBase.UnresponsiveWriteTimeoutMs</c>
+    /// carries so the two transports' write checks are timed the same.
+    ///
+    /// <para>🔴 <b>It is right for the four checks that issue an UNCANCELLED write and it is wrong for the one
+    /// that does not</b> — which is why
+    /// <see cref="Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice"/> is overridden
+    /// below to raise it. Proven by mutation rather than by reading: removing <c>cts.Cancel()</c> from the
+    /// shared check, so cancellation is NEVER ISSUED AT ALL, left this rig GREEN — at 300 ms the driver's own
+    /// timeout resolves the call long before that check's
+    /// <see cref="DeviceDriverConformanceSuite.CancellationBudget"/> (5 s) expires, so it could not tell an
+    /// honoured cancellation from an ordinary timeout. <b>This rig has been green and blind since B-7.</b> The
+    /// same mutation killed the check on both RTU rigs, which is what makes those the positive control for
+    /// this one.</para></summary>
+    private const int UnresponsiveWriteTimeoutMs = 300;
+
+    /// <summary>How long the unresponsive write target waits for the ONE check that supplies its own token.
+    /// <b>Deliberately longer than <see cref="DeviceDriverConformanceSuite.CancellationBudget"/></b> (5 s), for
+    /// exactly the reason <c>ModbusRtuConformanceTestsBase.SilentPeerReadTimeoutMs</c> carries the same 8 000 ms
+    /// on the read side: if the target's own bound can expire inside the budget, a driver that ignored its token
+    /// entirely still passes, and the check measures the map instead of the mechanism.</summary>
+    private const int CancellableWriteTimeoutMs = 8_000;
+
+    /// <summary>Set for the duration of ONE check by
+    /// <see cref="Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice"/> and zero
+    /// otherwise. A plain field is safe: xunit constructs a fresh test-class instance per test and runs a
+    /// class's tests sequentially, and the override restores it in a <c>finally</c> regardless.</summary>
+    private int _unresponsiveWriteTimeoutOverrideMs;
+
+    /// <summary>The bound <see cref="BuildUnresponsiveWriteMap"/> must actually apply — see
+    /// <see cref="UnresponsiveWriteTimeoutMs"/> for why exactly one check needs a different one.</summary>
+    private int EffectiveUnresponsiveWriteTimeoutMs =>
+        _unresponsiveWriteTimeoutOverrideMs > 0 ? _unresponsiveWriteTimeoutOverrideMs : UnresponsiveWriteTimeoutMs;
+
+    /// <summary>The map <see cref="CreateUnresponsiveWritableDeviceAsync"/> hands the driver, built through
+    /// ONE member so the strengthening assertion in the override below reads the very same map the session
+    /// will be built from rather than a second copy of the arithmetic.</summary>
+    private ModbusRegisterMap BuildUnresponsiveWriteMap() =>
+        ModbusLoopbackHarness.BuildWritableMap(
+            "PLC-CONFORMANCE-WRITE-UNRESPONSIVE", readTimeoutMs: EffectiveUnresponsiveWriteTimeoutMs);
+
     /// <summary>Task B-7 — switched from <see cref="ModbusLoopbackHarness.BuildMap"/> to
     /// <see cref="ModbusLoopbackHarness.BuildWritableMap"/>: the write-contract checks (e.g.
     /// <see cref="Check_Write_SetpointAndCommandNamespaces_AreDistinct"/>) need at least one real declared
@@ -189,9 +231,9 @@ public sealed class ModbusTcpDriverConformanceTests : DeviceDriverConformanceSui
 
         // A SHORT internal write timeout — see CreateUnresponsiveWritableDeviceAsync's own doc comment for
         // why: the write-contract checks deliberately issue an UNCANCELLED call and wait for this bound to
-        // elapse on its own.
-        var driver = new ModbusTcpDriver(
-            "127.0.0.1", port, ModbusLoopbackHarness.BuildWritableMap("PLC-CONFORMANCE-WRITE-UNRESPONSIVE", readTimeoutMs: 300));
+        // elapse on its own. The ONE check that supplies its own token needs the opposite and raises it —
+        // see UnresponsiveWriteTimeoutMs and the override below.
+        var driver = new ModbusTcpDriver("127.0.0.1", port, BuildUnresponsiveWriteMap());
 
         async Task ForceUnstickAsync()
         {
@@ -230,6 +272,53 @@ public sealed class ModbusTcpDriverConformanceTests : DeviceDriverConformanceSui
 
     [Fact]
     public Task Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice() => Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice();
+
+    /// <summary>
+    /// 🔴 <b>Runs the shared write-side cancellation check against a target whose own bound cannot expire
+    /// inside <see cref="DeviceDriverConformanceSuite.CancellationBudget"/> — so that passing it proves the
+    /// driver honoured its token, not that a timeout got there first.</b> Same reasoning and the same 8 000 ms
+    /// as <c>ModbusRtuDriverConformanceTests</c>' own override, which this is deliberately a copy of in shape:
+    /// the defect is the shared suite's, the remedy has to be per-rig, and two rigs solving it two different
+    /// ways is how the next author learns the wrong lesson.
+    ///
+    /// <para><b>Legitimate here and nowhere else on the write path:</b> this is the only <c>Check_Write_*</c>
+    /// that supplies its own <see cref="CancellationToken"/> rather than
+    /// <see cref="CancellationToken.None"/>, so raising its target's bound cannot make any call unbounded —
+    /// the token bounds it. The four uncancelled checks keep <see cref="UnresponsiveWriteTimeoutMs"/>.</para>
+    ///
+    /// <para>
+    /// 🔴 <b>THE CAVEAT, because this is a mechanism nothing polices.</b>
+    /// <see cref="DeviceDriverConformanceSuite.EveryCheckIsWiredOrAcknowledged"/> proves every check is WIRED;
+    /// nothing proves a driver's own subclass has not overridden a <c>Check_*</c> body and weakened it — an
+    /// override is invisible to that census, and would be the quietest possible way to make a conformance suite
+    /// lie. <b>So an override of a <c>Check_*</c> in a driver's subclass must be a <c>base</c>-CALLING WRAPPER,
+    /// never a re-implementation</b>, and the strengthening is ASSERTED below rather than promised in prose:
+    /// the target's own bound must be strictly greater than the budget the check measures against, or this
+    /// wrapper fails before it delegates. <b>And nothing detects DELETION of this override</b> — the base check
+    /// would silently resume being blind, exactly as it was here from B-7 until now. The only instrument that
+    /// finds that is the mutation in <see cref="UnresponsiveWriteTimeoutMs"/>' own doc block, re-run.</para>
+    /// </summary>
+    public override async Task Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice()
+    {
+        _unresponsiveWriteTimeoutOverrideMs = CancellableWriteTimeoutMs;
+        try
+        {
+            var strengthened = BuildUnresponsiveWriteMap().EffectiveReadTimeoutMs;
+            Assert.True(
+                strengthened > CancellationBudget.TotalMilliseconds,
+                $"this wrapper exists to STRENGTHEN the check, and it has stopped doing so: the unresponsive " +
+                $"write target's own bound is {strengthened} ms against a {CancellationBudget.TotalMilliseconds} ms " +
+                "CancellationBudget, so an ordinary timeout could satisfy the check and a driver that ignored " +
+                "its token entirely would still pass. Raise the bound rather than deleting this assertion.");
+
+            await base.Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice()
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _unresponsiveWriteTimeoutOverrideMs = 0;
+        }
+    }
 
     [Fact]
     public Task Write_RoundTripsLosslesslyThroughConnectorJson() => Check_Write_RoundTripsLosslesslyThroughConnectorJson();
