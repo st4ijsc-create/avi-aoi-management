@@ -332,6 +332,16 @@ const DUONG_DANH_TINH: readonly RegExp[] = [
   /^defer\.observedFromProcessKey$/,
   /^defer\.hosts\[\d+\]\.status\.owner$/,
   /^defer\.hosts\[\d+\]\.retryReach\.owner$/,
+  /**
+   * ★★★ Pha 6 Task 2 — **DẤU ĐỌC LÀ DANH TÍNH, KHÔNG PHẢI CÂU CHỮ.** Lưới này bắt được nó ngay
+   * lượt đầu (`headroom.effective.readMark (508 ký tự)`) và **bắt ĐÚNG**: nó là một chuỗi không
+   * trần, dựng từ `processKey` (thứ có thể dài — xem `anhChupGiau`).
+   * ⚠⚠ Nó **KHÔNG được cắt**, và lý do mạnh hơn "cho tiện": cắt một dấu là **cho phép hai dấu
+   * TRÙNG NHAU**, mà toàn bộ lý do dấu này tồn tại là *"hai lượt đọc không bao giờ bằng nhau"*
+   * (`VramAgentEffectiveHeadroom`). Một ô hiển thị bị cắt thì mất chữ; một DẤU bị cắt thì mất
+   * **tính duy nhất** — đúng luật "hai bề mặt, hai luật" của N11.
+   */
+  /^headroom\.effective\.readMark$/,
 ];
 
 describe("★★★ §D — HAI LUẬT 'VỚI MỌI' trên toàn ảnh chụp (không phải khẳng định trên một thể hiện)", () => {
@@ -413,6 +423,8 @@ describe("★★★ §D — HAI LUẬT 'VỚI MỌI' trên toàn ảnh chụp (k
         "ledger.localHolders[].owner",
         "processKey",
         "defer.observedFromProcessKey",
+        // ★ Pha 6 Task 2 — DẤU ĐỌC dựng từ `processKey`, nên nó dài đúng khi `processKey` dài.
+        "headroom.effective.readMark",
       ].sort(),
     );
   });

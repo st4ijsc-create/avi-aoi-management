@@ -469,10 +469,22 @@ export interface VramAgentDeferView {
  *
  * ⇒ Một ô hỏng ở **cả hai chiều** thì thêm bao nhiêu ca test cũng không cứu: người sau vẫn viết
  * `expect(sau.headroom.effectiveBytes).toBe(truoc.headroom.effectiveBytes)` và **vẫn xanh khi may**.
- * Nên con số **đi cùng MỐC ĐỌC của nó, trong CÙNG MỘT GIÁ TRỊ**: hai lượt đọc cho hai giá trị
- * **KHÁC NHAU về cấu trúc, LUÔN LUÔN** — kể cả khi số byte tình cờ trùng. Câu *"nó không đổi"*
- * không còn phát biểu được, đúng khuôn đã dùng bốn lần trong chuỗi pha này (`reclaimable` →
+ * Nên con số **đi cùng DẤU ĐỌC của nó, trong CÙNG MỘT GIÁ TRỊ**: hai lượt đọc cho hai giá trị
+ * **KHÁC NHAU về cấu trúc** — kể cả khi số byte tình cờ trùng. Câu *"nó không đổi"* không còn phát
+ * biểu được, đúng khuôn đã dùng bốn lần trong chuỗi pha này (`reclaimable` →
  * `VramAgentHolderReclaim`, `ownerPattern` → `VramAgentOwnerPattern`, …).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ #1 (review) — **BẢN ĐẦU DÙNG `Date.now()` LÀM MỐC, VÀ NÓ TRÙNG ĐƯỢC.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Đo được: trên đồng hồ THẬT, **18/20** cặp lượt đọc liên tiếp có **cùng một mili giây** ⇒ hai ảnh
+ * chụp `effective` **BẰNG NHAU TUYỆT ĐỐI** — và ca *"sổ không đổi"* xanh **dù 5,27 GB vừa rời sổ**.
+ * Tức cổng ra **không đạt ở dạng mạnh**, và khối docstring cũ (*"KHÔNG BAO GIỜ bằng nhau"*) **BAN
+ * PHƯỚC cho đúng cái lỗ ấy** — lớp lỗi *"docstring mâu thuẫn hợp đồng"* mà Pha 5 gặp **ba** lần.
+ * ⇒ Mốc **không được là đồng hồ tường**. `readMark` là `${processKey}#${sốĐếmĐƠNĐIỆU}` — một dấu
+ * **KHÔNG TRÙNG ĐƯỢC**: đơn điệu tăng trong một tiến trình, và `processKey` (`role:pid:bootMs`)
+ * tách hai tiến trình. `readAtMs` **ở lại** vì nó trả lời *"bao giờ"*, nhưng nó **KHÔNG** còn là
+ * thứ bảo đảm hai lượt đọc khác nhau.
  *
  * ⚠ **ĐƯỜNG KHÔNG CHỌN, VÀ VÌ SAO:** *gắn nhãn (brand) cho con số* (`number & {…}`) làm `tsc` đỏ ở
  * **mọi** điểm tiêu thụ — kể cả những phép so **HỢP LỆ CÙNG THỜI ĐIỂM** (`vramRouter.test.ts` so ô
@@ -494,10 +506,21 @@ export interface VramAgentEffectiveHeadroom {
    */
   readonly bytesAtReadMs: number | null;
   /**
-   * ★★★ MỐC của con số ngay trên — **thứ làm cho hai lượt đọc KHÔNG BAO GIỜ bằng nhau.**
-   * ⚠ Luôn **đúng bằng** `atMs` của chính ảnh chụp (cùng một hằng, một chỗ gán — không phải một
-   * lượt đọc đồng hồ thứ hai; có ca khoá). Nó ở **trong** giá trị chứ không nằm cạnh vì một ô
-   * hàng xóm **tách ra được**, còn cái này thì không — đúng bài học của `VramAgentDisplayText`.
+   * ★★★ **DẤU ĐỌC — THỨ LÀM HAI LƯỢT ĐỌC KHÔNG BAO GIỜ BẰNG NHAU.** `${processKey}#${seq}`.
+   *
+   * ⚠⚠ **VÌ SAO KHÔNG PHẢI ĐỒNG HỒ** (#1 của review, đo được): hai lượt đọc liên tiếp rơi vào
+   * **cùng một mili giây** ở **18/20** cặp trên đồng hồ thật ⇒ một mốc `Date.now()` **trùng
+   * được**, và khi nó trùng thì `toEqual(truoc, sau)` **xanh dù 5,27 GB vừa rời sổ**. `seq` là một
+   * bộ đếm **ĐƠN ĐIỆU TĂNG** của tiến trình (không đọc đồng hồ, không phụ thuộc tải), còn
+   * `processKey` = `role:pid:bootMs` tách hai tiến trình — **không có hai lượt đọc nào cùng dấu**.
+   * ⚠ Nó ở **trong** giá trị chứ không nằm cạnh vì một ô hàng xóm **tách ra được**, còn cái này
+   * thì không — đúng bài học của `VramAgentDisplayText`.
+   */
+  readonly readMark: string;
+  /**
+   * *"Bao giờ"* — mốc tường của lượt đọc. Luôn **đúng bằng** `atMs` của chính ảnh chụp (cùng một
+   * hằng, một chỗ gán; có ca khoá).
+   * ⚠⚠ **KHÔNG** phải thứ bảo đảm hai lượt đọc khác nhau — nó **TRÙNG ĐƯỢC** (xem `readMark`).
    */
   readonly readAtMs: number;
   /** ★ LUÔN `true`. Đọc thẳng: **ô này KHÔNG dùng được làm bất biến so-sánh-trước-sau.** */
@@ -507,13 +530,7 @@ export interface VramAgentEffectiveHeadroom {
    * *"đừng dựng người ghi thứ hai cho một bất biến đã có chủ"*). Mỗi đường ở đây bị lưới chấm
    * bằng **phép đo**: nó phải thật sự đổi khi **chỉ đồng hồ** nhích.
    */
-  readonly variesWith: readonly [
-    "tick.ageMs",
-    "ledger.foreign.ageMs",
-    "headroom.charges.staleMarginBytes",
-    "headroom.charges.sharedLedgerMarginBytes",
-    "headroom.charges.distrustChargeBytes",
-  ];
+  readonly variesWith: typeof VRAM_EFFECTIVE_VARIES_WITH;
   /**
    * ★★★ **BẤT BIẾN ĐÚNG cho một phép so TRƯỚC/SAU — và nó là một PHÉP HỘI, không phải một danh
    * sách để chọn một món.**
@@ -529,9 +546,42 @@ export interface VramAgentEffectiveHeadroom {
    * `localHolders[].ttlExpired` lật `false → true` mà **không một byte nào đổi**. ⇒ vế thứ ba của
    * bằng chứng là **`owner` + `bytes` của hộ**, không phải cả đối tượng hộ. Một danh sách "bất
    * biến đúng" cũng có phần tử thứ N+1 của nó.
+   *
+   * ⚠⚠⚠ **VÀ NÓ CÓ PHẦN TỬ THỨ N+2** (#2 của review, đo được): bản trước chỉ nói về **SỔ CỤC BỘ**
+   * ⇒ **1.572.864.000 B rời SỔ CHUNG** làm **cả bốn vế đứng yên tuyệt đối** (`rawBytes`
+   * `23.679.991.808` ở cả hai đầu — nó bị `attributable` ghim; `localBytes` và hộ cục bộ **không
+   * liên quan**). Hai ô duy nhất nói ra sự thật — `ledger.totalBytes` và `ledger.foreign.bytes` —
+   * **đã nằm sẵn ở vế KHÔNG-ĐỔI** của phép phân loại mà chẳng ai mời vào bằng chứng.
+   * ⇒ Vế **anh em** nay có mặt, **đối xứng** với vế cục bộ (byte + danh tính hộ). Và vì mọi danh
+   * sách đều có phần tử tiếp theo, `vramReadModel.drift.test.ts` §7 canh bằng **lượng từ trên
+   * LƯỢT ĐỔI**, không trên ô: ***MỌI lượt đổi THẬT dựng được PHẢI làm ÍT NHẤT MỘT vế ở đây nhúc
+   * nhích*** — một lượt đổi vô hình là một ca ĐỎ **có tên**.
    */
-  readonly beforeAfterEvidence: "headroom.rawBytes + ledger.localBytes + ledger.localHolders[].owner + ledger.localHolders[].bytes + nvidia-smi(memory.used) — CẢ BỐN NGUỒN CÙNG LÚC";
+  readonly beforeAfterEvidence: typeof VRAM_BEFORE_AFTER_EVIDENCE;
 }
+
+/**
+ * ★★★ **MỘT BẢN DUY NHẤT** của hai câu khai trên — kiểu suy TỪ hằng, không viết hai lần.
+ *
+ * ⚠⚠ VÌ SAO: bản đầu chép chuỗi ở **hai chỗ** (khai trong `interface` và giá trị trong người dựng),
+ * và trong chính lượt vá này chúng **ĐÃ TRÔI KHỎI NHAU** — sửa một chỗ, quên chỗ kia, `tsc` bắt
+ * được nhưng **lưới chạy trước `tsc`** nên bộ ca đỏ với một lý do khó đọc. Đây đúng ràng buộc
+ * *"đừng dựng bản sao thứ hai của một sự thật"*. Nay `typeof` ⇒ **không thể** lệch.
+ */
+export const VRAM_EFFECTIVE_VARIES_WITH = [
+  "tick.ageMs",
+  "ledger.foreign.ageMs",
+  "headroom.charges.staleMarginBytes",
+  "headroom.charges.sharedLedgerMarginBytes",
+  "headroom.charges.distrustChargeBytes",
+] as const;
+
+/** Xem `VramAgentEffectiveHeadroom.beforeAfterEvidence`. **CHÍN vế, và là một PHÉP HỘI.** */
+export const VRAM_BEFORE_AFTER_EVIDENCE =
+  "headroom.rawBytes + ledger.localBytes + ledger.totalBytes + ledger.foreign.bytes + " +
+  "ledger.localHolders[].owner + ledger.localHolders[].bytes + " +
+  "ledger.foreign.holders[].owner + ledger.foreign.holders[].bytes + " +
+  "nvidia-smi(memory.used) — CẢ CHÍN VẾ CÙNG LÚC";
 
 export interface VramAgentState {
   readonly atMs: number;
@@ -1043,8 +1093,20 @@ function locHuuHan(v: unknown, duong: string, ra: { path: string; was: string }[
  * ⚠ `async` chỉ để đứng đúng chỗ trong một thủ tục tRPC; **không một `await` nào** ở đây chạm vào
  * đường quyết định. `reserve()` vẫn ĐỒNG BỘ.
  */
+/**
+ * ★★★ #1 (review) — **BỘ ĐẾM LƯỢT ĐỌC. KHÔNG ĐỌC ĐỒNG HỒ, NÊN KHÔNG TRÙNG ĐƯỢC.**
+ *
+ * ⚠⚠ Đồng hồ tường **trùng**: 18/20 cặp lượt đọc liên tiếp rơi vào cùng một mili giây trên máy
+ * này. Một mốc trùng biến `toEqual(truoc, sau)` thành **XANH** cho hai ảnh chụp ở hai trạng thái
+ * sổ **khác hẳn nhau** — đúng cái bẫy mà `VramAgentEffectiveHeadroom` tồn tại để đóng.
+ * ⚠ Không reset trong test: bộ đếm **chỉ tăng**, và một lượt reset là một lượt cho phép trùng.
+ * Ai cần biết *"bao giờ"* thì đọc `readAtMs` — hai câu hỏi khác nhau, hai ô khác nhau.
+ */
+let soLuotDoc = 0;
+
 export async function buildVramAgentState(): Promise<VramAgentState> {
   const atMs = Date.now();
+  soLuotDoc += 1;
 
   // ── ĐỌC MỘT LƯỢT, DÙNG CHUNG CHO MỌI VẾ ────────────────────────────────────────────────────
   // ⚠ Hai vế của một phép so phải đến từ **cùng một lượt đọc**; đọc lại giữa chừng là lấy hai vế
@@ -1215,17 +1277,13 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
        */
       effective: {
         bytesAtReadMs: st.enforcement.effectiveHeadroomBytes,
+        // ⚠ #1 — DẤU không trùng được. `processKey` tách tiến trình, `soLuotDoc` tách lượt đọc.
+        readMark: `${sharedLedgerSelfKey()}#${soLuotDoc}`,
         readAtMs: atMs,
         notAnInvariant: true as const,
-        variesWith: [
-          "tick.ageMs",
-          "ledger.foreign.ageMs",
-          "headroom.charges.staleMarginBytes",
-          "headroom.charges.sharedLedgerMarginBytes",
-          "headroom.charges.distrustChargeBytes",
-        ] as const,
-        beforeAfterEvidence:
-          "headroom.rawBytes + ledger.localBytes + ledger.localHolders[].owner + ledger.localHolders[].bytes + nvidia-smi(memory.used) — CẢ BỐN NGUỒN CÙNG LÚC" as const,
+        // ⚠ MỘT bản duy nhất — kiểu suy từ chính hai hằng này (chúng từng trôi khỏi nhau).
+        variesWith: VRAM_EFFECTIVE_VARIES_WITH,
+        beforeAfterEvidence: VRAM_BEFORE_AFTER_EVIDENCE,
       },
       basis: st.headroom.basis,
       blind: st.headroom.blind,

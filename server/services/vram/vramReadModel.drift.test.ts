@@ -43,6 +43,13 @@
  * còn lại là mã sản xuất: `broker.reserve()`, `applyEnforcement()`, `buildVramAgentState()`.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import ts from "typescript";
+
+/** `server/services/vram` — neo theo vị trí file test, không theo `process.cwd()`. */
+const TEST_DIR = fileURLToPath(new URL(".", import.meta.url));
 
 vi.mock("./vramEventLog", () => ({
   logVramEvent: () => {},
@@ -100,12 +107,18 @@ const HO_THAT = [
 
 /** `attributable` ĐÈ được sổ (`max(L,A) = A`) — đúng hình dạng đã sinh ra F4 ở nghiệm thu Pha 4. */
 const ATTRIBUTABLE = 9_000 * MIB;
-const HO_ANH_EM_BYTES = 100 * MIB;
+/**
+ * ★ Byte của **một hộ ANH EM**. Con số lấy đúng của review (#2): **1.572.864.000 B** rời sổ chung
+ * ⇒ **cả bốn** vế bằng chứng của bản đầu đứng yên tuyệt đối. Xem §7.
+ * ⚠ Vẫn phải giữ `localBytes + foreign < ATTRIBUTABLE` để `used` bị `attributable` GHIM — đó là
+ * điều kiện của **cả** F4 (§5) **lẫn** phép đo mù sổ chung (§7).
+ */
+const HO_ANH_EM_BYTES = 1_572_864_000;
 
 /** Ba bước nhích — trong chu kỳ · vượt `*_STALE_AFTER_MS` (120 s) · một giờ. */
 const BUOC_NHICH = [5_000, 121_000, 3_600_000] as const;
 
-function hangAnhEm(): SharedLeaseRow {
+function hangAnhEm(over: Partial<SharedLeaseRow> = {}): SharedLeaseRow {
   return {
     leaseKey: "worker:999:1#lease-7",
     processKey: "worker:999:1",
@@ -121,6 +134,7 @@ function hangAnhEm(): SharedLeaseRow {
     reclaimer: "gguf-idle-model",
     acquiredAtMs: 1,
     updatedAtMs: 1,
+    ...over,
   };
 }
 
@@ -203,6 +217,135 @@ function laCua(s: VramAgentState): Map<string, string> {
 function gopChiSo(duong: string): string {
   return duong.replace(/\[\d+\]/g, "[]");
 }
+
+/**
+ * ★★★ **MỘT BẢN CÀI ĐẶT DUY NHẤT của phép khớp "đường khai → lá thật"** — `[]` nghĩa **MỌI phần tử**.
+ *
+ * ⚠⚠ VÌ SAO PHẢI LÀ MỘT BẢN: bản đầu có **HAI** bản (một ở §4, một ở §7) và bản thứ hai **mất một
+ * lớp dấu `\`** khi được ghi vào file ⇒ mẫu thành `^ledger.localHolders[d+].owner$` (lớp ký tự
+ * `[d+]`, không phải chỉ số) ⇒ nó khớp **KHÔNG lá nào**. Và lỗi ấy **BỊ CHE**: ca *"một hàng sổ
+ * chung biến mất"* vẫn xanh nhờ một vế **KHÁC** (`ledger.foreign.bytes`) đổi, nên chỉ ca *"đổi
+ * DANH TÍNH, giữ nguyên byte"* mới lòi ra. Đúng lớp *"xanh vì lý do sai"*.
+ * ⇒ Một bản cài đặt + **cầu chì "đường khai nào cũng phải khớp ≥ 1 lá"** (dưới) đóng cả hai.
+ */
+function laKhop(khai: string, cacLa: Iterable<string>): string[] {
+  const la = [...cacLa];
+  if (!khai.includes("[]")) {
+    return la.filter((k) => k === khai || k.startsWith(`${khai}.`) || k.startsWith(`${khai}[`));
+  }
+  // Thoát TOÀN BỘ trước, rồi mới mở lại đúng `[]` thành "một chỉ số bất kỳ" — không tự tay đếm `\`.
+  const mau = khai.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\[\\\]/g, "\\[\\d+\\]");
+  const re = new RegExp(`^${mau}$`);
+  const khop = la.filter((k) => re.test(k));
+  if (khop.length > 0) return khop;
+  /**
+   * ⚠⚠ **MẢNG RỖNG KHÔNG PHẢI PHÉP KHỚP HỎNG** — và phân biệt được hai thứ đó là điều kiện để cầu
+   * chì ở §7 giữ được răng. Khi danh sách hộ **rỗng**, người liệt kê lá phát ra **chính đường mảng**
+   * (`ledger.foreign.holders = "[]"`), nên `…[].owner` khớp 0 phần tử một cách **hợp lệ**. Trả về
+   * đường mảng ấy ⇒ *"hộ cuối cùng biến mất"* hiện ra như **một lượt đổi giá trị**, đúng như nó là.
+   * ⇒ Cầu chì chỉ còn kêu khi **cả hai** đều vắng, tức phép khớp thật sự hỏng.
+   */
+  const duongMang = khai.slice(0, khai.indexOf("[]"));
+  return la.filter((k) => k === duongMang);
+}
+
+/**
+ * Rút những đường **payload** ra khỏi một câu khai (phần `nvidia-smi` là bằng chứng **NGOÀI**
+ * payload — sổ không nhìn thấy byte ngoài sổ, xem `unattributed.excludesBaselineBytes`).
+ * ⚠ MỘT bản cài đặt, dùng chung §4 và §7 — cùng lý do với `laKhop`.
+ */
+function duongCuaCauKhai(cau: string): string[] {
+  return cau
+    .split("+")
+    .map((x) => x.trim())
+    .filter((x) => /^[a-zA-Z]+(\[\])?(\.[a-zA-Z]+)+/.test(x))
+    .map((x) => x.split(" ")[0]!);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// LIỆT KÊ Ô **TỪ KIỂU** (AST) — vì "MỌI ô" suy từ MỘT CẢNH thì chỉ là "mọi ô của cảnh ấy"
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ #4 (review) — **LƯỢNG TỪ KHÔNG ĐƯỢC NEO VÀO MỘT CẢNH DỰNG.**
+ *
+ * ⚠⚠ Đột biến **R1** đo được: thêm một ô **ĐANG CHẢY** vào một **nhánh hợp kiểu mà cảnh này không
+ * hiện thực hoá** (vd nhánh `known: false` của `VramAgentForeignLedger`) ⇒ **45 file / 790 ca
+ * XANH**. Tức câu *"MỌI ô của ảnh chụp"* thật ra là *"mọi ô của MỘT cảnh"* — một lượng từ **hẹp
+ * hơn nó tự khai**, đúng lớp lỗi mà cả file này tồn tại để diệt.
+ *
+ * ⇒ Tập ô được suy từ **KIỂU `VramAgentState`**, đọc bằng **AST** (không so chuỗi), **vét cạn MỌI
+ * nhánh của MỌI hợp kiểu**. Cảnh dựng chỉ còn một vai: **CHẤM** những ô nó hiện thực hoá được.
+ * Ô nào kiểu có mà cảnh không dựng nổi thì phải nằm ở danh sách **thứ ba**, có **lý do** —
+ * và nếu một ngày cảnh dựng được nó, ca sẽ ĐỎ cho tới khi nó được **chấm** thật.
+ *
+ * ⚠ Quy ước khớp với người liệt kê lá lúc CHẠY: mảng của **giá trị nguyên thuỷ** là **một lá**
+ * (không `[]`); mảng của **đối tượng** đi vào từng phần tử (`[]`).
+ */
+const NGUON_KIEU = join(TEST_DIR, "vramReadModel.ts");
+const SF = ts.createSourceFile(NGUON_KIEU, readFileSync(NGUON_KIEU, "utf8"), ts.ScriptTarget.Latest, true);
+
+const KHAI_BAO = new Map<string, ts.InterfaceDeclaration | ts.TypeAliasDeclaration>();
+SF.forEachChild((n) => {
+  if (ts.isInterfaceDeclaration(n)) KHAI_BAO.set(n.name.text, n);
+  else if (ts.isTypeAliasDeclaration(n)) KHAI_BAO.set(n.name.text, n);
+});
+
+/** Đường TƯƠNG ĐỐI dưới một nút kiểu. `""` ⇔ chính nút này là một **LÁ**. */
+function duongTuongDoi(node: ts.TypeNode | undefined, dangDi: ReadonlySet<string>): Set<string> {
+  const ra = new Set<string>();
+  if (node === undefined) return ra.add(""), ra;
+  if (ts.isParenthesizedTypeNode(node)) return duongTuongDoi(node.type, dangDi);
+  if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
+    return duongTuongDoi(node.type, dangDi);
+  }
+  // ⚠ HỢP KIỂU: vét cạn **MỌI** nhánh — đây chính là lỗ mà R1 chui qua.
+  if (ts.isUnionTypeNode(node)) {
+    for (const m of node.types) for (const p of duongTuongDoi(m, dangDi)) ra.add(p);
+    return ra;
+  }
+  if (ts.isArrayTypeNode(node)) {
+    const con = duongTuongDoi(node.elementType, dangDi);
+    // Mảng nguyên thuỷ ⇒ MỘT lá (đúng quy ước của `la()` lúc chạy).
+    if (con.size === 1 && con.has("")) return ra.add(""), ra;
+    for (const p of con) ra.add(p === "" ? "[]" : `[].${p}`);
+    return ra;
+  }
+  // Tuple (vd `variesWith`) — mảng hằng của chuỗi ⇒ một lá.
+  if (ts.isTupleTypeNode(node)) return ra.add(""), ra;
+  if (ts.isTypeLiteralNode(node)) return thuThapThanhVien(node.members, ra, dangDi), ra;
+  if (ts.isTypeReferenceNode(node)) {
+    const ten = node.typeName.getText();
+    const d = KHAI_BAO.get(ten);
+    // Kiểu NHẬP KHẨU (hoặc đệ quy) ⇒ LÁ. Chúng là hợp của chuỗi/số, không mở ra ô con nào.
+    if (d === undefined || dangDi.has(ten)) return ra.add(""), ra;
+    const di = new Set(dangDi).add(ten);
+    if (ts.isInterfaceDeclaration(d)) return thuThapThanhVien(d.members, ra, di), ra;
+    return duongTuongDoi(d.type, di);
+  }
+  return ra.add(""), ra;
+}
+
+function thuThapThanhVien(ms: ts.NodeArray<ts.TypeElement>, ra: Set<string>, dangDi: ReadonlySet<string>): void {
+  for (const m of ms) {
+    if (!ts.isPropertySignature(m)) continue;
+    const ten = m.name.getText().replace(/^["']|["']$/g, "");
+    for (const p of duongTuongDoi(m.type, dangDi)) {
+      // ⚠ `[]` nối THẲNG, không có dấu chấm — nếu không thì `nonFiniteFields.[].path`, và đường ấy
+      //   **không khớp** với đường mà người liệt kê lúc CHẠY sinh ra ⇒ hai nguồn nói hai thứ tiếng.
+      ra.add(p === "" ? ten : p.startsWith("[") ? `${ten}${p}` : `${ten}.${p}`);
+    }
+  }
+}
+
+function duongTuKieu(): Set<string> {
+  const goc = KHAI_BAO.get("VramAgentState");
+  if (goc === undefined || !ts.isInterfaceDeclaration(goc)) return new Set();
+  const ra = new Set<string>();
+  thuThapThanhVien(goc.members, ra, new Set(["VramAgentState"]));
+  return ra;
+}
+
+const DUONG_KIEU = duongTuKieu();
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // BẢN KHAI — mỗi đường của ảnh chụp đứng ở ĐÚNG MỘT vế. Phép đo chấm bản khai này.
@@ -298,9 +441,14 @@ const KHONG_DOI_THEO_DONG_HO: readonly string[] = [
  */
 const DOI_THEO_DONG_HO: readonly string[] = [
   "atMs",
-  // ★★★ Ô của Task 2 — và mốc đọc đi kèm nó.
+  // ★★★ Ô của Task 2 — và hai dấu đi kèm nó.
   "headroom.effective.bytesAtReadMs",
   "headroom.effective.readAtMs",
+  /**
+   * ⚠ #1 — **DẤU ĐỌC**: đổi ở **MỌI** lượt đọc, kể cả hai lượt **cùng một mili giây**. Nó là một
+   * ô "đổi mạnh hơn theo-đồng-hồ", nên đương nhiên thuộc vế bị **LOẠI TƯ CÁCH** làm bằng chứng.
+   */
+  "headroom.effective.readMark",
   // Hai biên theo tuổi + phụ phí mất-tin-cậy: ba khoản TRỪ đang chảy.
   "headroom.charges.staleMarginBytes",
   "headroom.charges.sharedLedgerMarginBytes",
@@ -319,6 +467,39 @@ const DOI_THEO_DONG_HO: readonly string[] = [
    * của bằng chứng phải là **`owner` + `bytes`**, không phải cả đối tượng hộ.
    */
   "ledger.localHolders[].ttlExpired",
+];
+
+/**
+ * ★★★ #4 — **DANH SÁCH THỨ BA: ô KIỂU CÓ mà CẢNH NÀY KHÔNG DỰNG NỔI.**
+ *
+ * ⚠⚠ Đây **không** phải một sọt rác miễn trừ, và có hai hàng rào giữ nó khỏi thành sọt rác:
+ *   1. một đường ở đây mà **cảnh dựng hiện thực hoá được** ⇒ ca **ĐỎ** (nó phải được **CHẤM**,
+ *      không được đứng đây);
+ *   2. mỗi đường phải có **LÝ DO** — và lý do là *"nhánh nào của hợp kiểu"*, thứ đọc lại được.
+ * Một ô MỚI ở một nhánh chưa dựng vẫn **buộc người thêm nó phải khai** — đó là toàn bộ mục đích.
+ */
+const CANH_NAY_KHONG_DUNG_NOI: readonly { readonly duong: string; readonly viSao: string }[] = [
+  { duong: "nonFiniteFields[].path", viSao: "cảnh này KHÔNG có số không hữu hạn ⇒ mảng RỖNG (một lá `nonFiniteFields`)" },
+  { duong: "nonFiniteFields[].was", viSao: "cảnh này KHÔNG có số không hữu hạn ⇒ mảng RỖNG (một lá `nonFiniteFields`)" },
+  { duong: "ledger.foreign.meaning", viSao: "nhánh `known:false` — cảnh này ĐÃ làm mới sổ chung" },
+  { duong: "attributable.meaning", viSao: "nhánh `known:false` — cảnh này có `attributable` hữu hạn" },
+  { duong: "attributable.reason", viSao: "nhánh `known:false` — cảnh này có `attributable` hữu hạn" },
+  { duong: "tick.meaning", viSao: "nhánh `present:false` — cảnh này ĐÃ xuất bản một nhịp" },
+  { duong: "ledger.localHolders[].reclaim.reclaimer", viSao: "nhánh `reclaimable-here`/`declared-by-owner-process` — 4 hộ cục bộ của cảnh đều `no-reclaimer`" },
+  { duong: "ledger.foreign.holders[].reclaim.why", viSao: "nhánh `no-reclaimer` — hộ anh em của cảnh CÓ người thi hành đã khai" },
+  { duong: "defer.hosts[].status.owner", viSao: "nhánh `deferring`/`exceeded` — cảnh này KHÔNG có chuỗi hoãn nào" },
+  { duong: "defer.hosts[].status.attempts", viSao: "nhánh `deferring`/`exceeded` — cảnh này KHÔNG có chuỗi hoãn nào" },
+  { duong: "defer.hosts[].status.firstRefusedAt", viSao: "nhánh `deferring`/`exceeded` — cảnh này KHÔNG có chuỗi hoãn nào" },
+  { duong: "defer.hosts[].status.nextRetryAt", viSao: "nhánh `deferring` — cảnh này KHÔNG có chuỗi hoãn nào" },
+  { duong: "defer.hosts[].status.chainBudgetMs", viSao: "nhánh `deferring`/`exceeded` — cảnh này KHÔNG có chuỗi hoãn nào" },
+  { duong: "defer.hosts[].status.lastRefusalMessage", viSao: "nhánh `deferring`/`exceeded` — cảnh này KHÔNG có chuỗi hoãn nào" },
+  { duong: "defer.hosts[].status.lastRefusalMessage.text", viSao: "nhánh `deferring`/`exceeded` — cảnh này KHÔNG có chuỗi hoãn nào" },
+  { duong: "defer.hosts[].status.lastRefusalMessage.truncated", viSao: "nhánh `deferring`/`exceeded` — cảnh này KHÔNG có chuỗi hoãn nào" },
+  { duong: "defer.hosts[].status.lastRefusalMessage.rawLength", viSao: "nhánh `deferring`/`exceeded` — cảnh này KHÔNG có chuỗi hoãn nào" },
+  { duong: "defer.hosts[].retryReach.owner", viSao: "nhánh `reachable-here` — cron KHÔNG chủ trì ở tiến trình test" },
+  { duong: "unledgered.lastReason.text", viSao: "cảnh này KHÔNG có lượt `beginVramAllocation()` hỏng ⇒ `null`" },
+  { duong: "unledgered.lastReason.truncated", viSao: "cảnh này KHÔNG có lượt `beginVramAllocation()` hỏng ⇒ `null`" },
+  { duong: "unledgered.lastReason.rawLength", viSao: "cảnh này KHÔNG có lượt `beginVramAllocation()` hỏng ⇒ `null`" },
 ];
 
 beforeEach(() => {
@@ -391,7 +572,48 @@ describe("★★★ §1 — TÁI LẬP: chỉ ĐỒNG HỒ nhích, `effective` t
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // §2 — ĐỔI KIỂU: CÂU "NÓ KHÔNG ĐỔI" KHÔNG PHÁT BIỂU ĐƯỢC NỮA — **KỂ CẢ KHI MAY**
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-describe("★★★ §2 — `effective` mang MỐC ĐỌC ⇒ hai lượt đọc KHÔNG BAO GIỜ bằng nhau", () => {
+describe("★★★ §2 — `effective` mang DẤU ĐỌC ⇒ hai lượt đọc KHÔNG BAO GIỜ bằng nhau", () => {
+  /**
+   * ★★★ **#1 — CA CỦA CỔNG RA, DẠNG MẠNH.** Đây là ca mà bản đầu **KHÔNG ĐẠT**: mốc là
+   * `Date.now()` nên hai lượt đọc **cùng một mili giây** cho hai giá trị `effective` **BẰNG NHAU
+   * TUYỆT ĐỐI**, và câu *"sổ không đổi"* xanh **dù 5,27 GB vừa rời sổ**. Đo được trên đồng hồ
+   * THẬT: **18/20** cặp lượt đọc liên tiếp trùng mili giây.
+   */
+  it("★★★ #1 — CÙNG MỘT MILI GIÂY, và 5,27 GB VỪA RỜI SỔ ⇒ hai giá trị `effective` vẫn PHẢI khác", async () => {
+    dungCanh();
+    // ⚠ Đồng hồ ĐỨNG YÊN tuyệt đối giữa hai lượt đọc — không nhích một mili giây nào.
+    const truoc = await chupTai(0);
+    broker.release(giayPhep.get("gguf:Qwen3-4B-Instruct-2507-UD-Q4_K_XL")!);
+    drainSharedLedgerWrites();
+    const sau = await chupTai(0);
+
+    // Tiền đề của ca: mốc TƯỜNG thật sự TRÙNG (nếu không, ca này không đo cái nó nói).
+    expect(sau.headroom.effective.readAtMs).toBe(truoc.headroom.effective.readAtMs);
+    expect(sau.atMs).toBe(truoc.atMs);
+    // …và 5,27 GB thật sự đã rời sổ.
+    expect(truoc.ledger.localBytes! - sau.ledger.localBytes!).toBe(5_274_419_200);
+    // ⇒ DẤU ĐỌC là thứ DUY NHẤT phân biệt được hai ảnh chụp ở đây.
+    expect(sau.headroom.effective.readMark).not.toBe(truoc.headroom.effective.readMark);
+    expect(sau.headroom.effective).not.toEqual(truoc.headroom.effective);
+  });
+
+  it("★★★ #1 — DẤU ĐỌC KHÔNG TRÙNG ĐƯỢC: 50 lượt đọc trong CÙNG một mili giây ⇒ 50 dấu KHÁC NHAU", async () => {
+    dungCanh();
+    const dau = new Set<string>();
+    for (let i = 0; i < 50; i += 1) dau.add((await chupTai(0)).headroom.effective.readMark);
+    expect(dau.size, "hai lượt đọc trùng dấu ⇒ `toEqual` xanh cho hai trạng thái khác nhau").toBe(50);
+    // ⚠ Và dấu phải mang DANH TÍNH TIẾN TRÌNH — nếu không, hai tiến trình sinh ra dấu trùng.
+    const s = await chupTai(0);
+    expect(s.headroom.effective.readMark.startsWith(`${s.processKey}#`)).toBe(true);
+  });
+
+  it("★★ đối chứng NGƯỢC — mốc TƯỜNG thì TRÙNG ĐƯỢC (vì sao `readAtMs` một mình không đủ)", async () => {
+    dungCanh();
+    const a = await chupTai(0);
+    const b = await chupTai(0);
+    expect(b.headroom.effective.readAtMs).toBe(a.headroom.effective.readAtMs);
+  });
+
   it("★★★ hai lượt đọc cách 35 GIÂY — số byte TRÙNG KHÍT — mà giá trị vẫn KHÁC (đây là ca của cái MAY)", async () => {
     dungCanh();
     /**
@@ -427,6 +649,7 @@ describe("★★★ §2 — `effective` mang MỐC ĐỌC ⇒ hai lượt đọc
     expect(duong).not.toContain("headroom.effectiveBytes");
     expect(duong).toContain("headroom.effective.bytesAtReadMs");
     expect(duong).toContain("headroom.effective.readAtMs");
+    expect(duong).toContain("headroom.effective.readMark");
   });
 });
 
@@ -449,70 +672,119 @@ describe("★★★ §3 — MỌI ô của ảnh chụp phải tự khai, và ph
     /** ĐO: đường (đã gộp) có đổi ở **một** phần tử nào, dưới **một** bước nhích nào không. */
     const doiThat = (g: string): boolean =>
       (nhom.get(g) ?? []).some((k) => BUOC_NHICH.some((b) => sau.get(b)!.get(k) !== goc.get(k)));
-    /** Mọi vi phạm của lời khẳng định MẠNH (mọi phần tử × mọi bước nhích). */
-    const viPham = (g: string): string[] =>
-      (nhom.get(g) ?? []).flatMap((k) =>
-        BUOC_NHICH.filter((b) => sau.get(b)!.get(k) !== goc.get(k)).map(
-          (b) => `${k} @+${b}ms: ${goc.get(k)} → ${sau.get(b)!.get(k)}`,
+    /**
+     * ★★★ **HAI PHÉP CHẤM, TÁCH RA THÀNH HÀM THUẦN** — để ca "HOÁN VỊ" chấm được một bản khai
+     * **KHÁC** bản khai thật, thay vì lặp lại chính phép đo (#6 của review: ca cũ là một
+     * **TAUTOLOGY** — `find(d => !doiThat(d))` rồi `expect(doiThat(d)).toBe(false)` — nên nó XANH
+     * dưới **cả** Đ3 lẫn R2, tức cái tên "HOÁN VỊ" hứa nhiều hơn ca làm được).
+     */
+    const chamMANH = (ds: readonly string[]): string[] =>
+      ds.flatMap((g) =>
+        (nhom.get(g) ?? []).flatMap((k) =>
+          BUOC_NHICH.filter((b) => sau.get(b)!.get(k) !== goc.get(k)).map(
+            (b) => `${k} @+${b}ms: ${goc.get(k)} → ${sau.get(b)!.get(k)}`,
+          ),
         ),
       );
-    return { goc, sau, nhom, doiThat, viPham };
+    const chamLOAI = (ds: readonly string[]): string[] => ds.filter((g) => !doiThat(g));
+    return { goc, sau, nhom, doiThat, chamMANH, chamLOAI };
   }
 
-  it("★★★ cầu chì — ảnh chụp có đủ nhiều ô (0 ô ⇒ mọi khẳng định dưới là chân lý rỗng)", async () => {
+  it("★★★ cầu chì — cả hai nguồn ô đều KHÔNG rỗng (0 ô ⇒ mọi khẳng định dưới là chân lý rỗng)", async () => {
     const { goc, nhom } = await doBonAnh();
-    expect(goc.size, "lá thô").toBeGreaterThanOrEqual(120);
-    expect(nhom.size, "đường đã gộp chỉ số").toBeGreaterThanOrEqual(80);
+    expect(goc.size, "lá thô của CẢNH").toBeGreaterThanOrEqual(120);
+    expect(nhom.size, "đường đã gộp chỉ số của CẢNH").toBeGreaterThanOrEqual(80);
+    // ⚠ #4 — nguồn thứ hai, và là nguồn ĐỊNH NGHĨA lượng từ: KIỂU.
+    expect(DUONG_KIEU.size, "bộ đọc AST không rút được ô nào từ `VramAgentState` — nó đã hỏng?").toBeGreaterThanOrEqual(90);
+    // ⚠ Kiểu phải RỘNG HƠN cảnh — nếu không, danh sách thứ ba là thừa và #4 chưa đóng.
+    expect([...DUONG_KIEU].filter((d) => !nhom.has(d)).length).toBeGreaterThanOrEqual(10);
   });
 
-  it("★★★ VÉT CẠN — mọi đường của ảnh chụp nằm ở ĐÚNG MỘT vế, và không vế nào có đường đã chết", async () => {
+  it("★★★ #4 VÉT CẠN THEO **KIỂU** — mọi ô của `VramAgentState` nằm ở ĐÚNG MỘT trong BA vế", async () => {
     const { nhom, doiThat } = await doBonAnh();
-    const khai = new Set([...KHONG_DOI_THEO_DONG_HO, ...DOI_THEO_DONG_HO]);
+    const chamDuoc = new Set([...KHONG_DOI_THEO_DONG_HO, ...DOI_THEO_DONG_HO]);
+    const khongDungNoi = new Set(CANH_NAY_KHONG_DUNG_NOI.map((x) => x.duong));
+    const khai = new Set([...chamDuoc, ...khongDungNoi]);
 
-    const chuaKhai = [...nhom.keys()].filter((d) => !khai.has(d));
+    /** ⚠ HỢP của hai nguồn: KIỂU (lượng từ) và CẢNH (phép chấm). Thiếu vế nào cũng lọt. */
+    const moiO = new Set([...DUONG_KIEU, ...nhom.keys()]);
+
+    const chuaKhai = [...moiO].filter((d) => !khai.has(d));
     expect(
-      chuaKhai.map((d) => `${doiThat(d) ? "DOI" : "KHONG_DOI"}  ${d}`).join("\n"),
-      "ô của ảnh chụp CHƯA được phân loại ⇒ một đại lượng đang chảy có thể lọt vào một phép so trước/sau mà không ai thấy",
+      chuaKhai.map((d) => `${nhom.has(d) ? (doiThat(d) ? "DOI" : "KHONG_DOI") : "CANH_KHONG_DUNG_NOI"}  ${d}`).join("\n"),
+      "ô của `VramAgentState` CHƯA được phân loại ⇒ một đại lượng đang chảy có thể lọt vào một phép so trước/sau mà không ai thấy",
     ).toBe("");
 
-    const daChet = [...khai].filter((d) => !nhom.has(d));
-    expect(daChet.join("\n"), "bản khai giữ một đường KHÔNG CÒN trong payload ⇒ nó đang canh một thứ không tồn tại").toBe("");
+    const daChet = [...khai].filter((d) => !moiO.has(d));
+    expect(daChet.join("\n"), "bản khai giữ một đường KHÔNG CÒN trong kiểu lẫn cảnh ⇒ nó đang canh một thứ không tồn tại").toBe("");
 
-    // ⚠ Hai vế phải RỜI NHAU: một đường ở cả hai bên là một bản khai tự mâu thuẫn.
+    // ⚠ BA vế phải RỜI NHAU ĐÔI MỘT — một đường ở hai vế là một bản khai tự mâu thuẫn.
     const caHai = KHONG_DOI_THEO_DONG_HO.filter((d) => DOI_THEO_DONG_HO.includes(d));
-    expect(caHai.join(" · ")).toBe("");
+    expect(caHai.join(" · "), "một đường vừa KHÔNG-ĐỔI vừa ĐỔI").toBe("");
+    const chongLan = [...chamDuoc].filter((d) => khongDungNoi.has(d));
+    expect(chongLan.join(" · "), "một đường vừa được CHẤM vừa khai là cảnh không dựng nổi").toBe("");
+  });
+
+  it("★★★ #4 — danh sách THỨ BA không được thành SỌT RÁC: đường nào cảnh DỰNG NỔI thì phải bị CHẤM", async () => {
+    const { nhom } = await doBonAnh();
+    const parked = CANH_NAY_KHONG_DUNG_NOI.filter((x) => nhom.has(x.duong));
+    expect(
+      parked.map((x) => `${x.duong} — cảnh DỰNG ĐƯỢC ô này, nó phải nằm ở vế được CHẤM`).join("\n"),
+    ).toBe("");
+    // ⚠ Và mỗi đường phải có LÝ DO đọc được — một danh sách không lý do là một danh sách miễn trừ.
+    const khongLyDo = CANH_NAY_KHONG_DUNG_NOI.filter((x) => x.viSao.trim().length < 10);
+    expect(khongLyDo.map((x) => x.duong).join("\n")).toBe("");
   });
 
   it("★★★ KHÔNG-ĐỔI là lời khẳng định MẠNH — phải đúng với **MỌI** bước nhích và **MỌI** phần tử", async () => {
-    const { viPham } = await doBonAnh();
-    const pham = KHONG_DOI_THEO_DONG_HO.flatMap((d) => viPham(d));
-    expect(pham.join("\n"), "ô khai KHÔNG-ĐỔI mà đổi khi CHỈ đồng hồ nhích ⇒ nó là một bẫy đo lường chưa bị gọi tên").toBe("");
+    const { chamMANH } = await doBonAnh();
+    expect(
+      chamMANH(KHONG_DOI_THEO_DONG_HO).join("\n"),
+      "ô khai KHÔNG-ĐỔI mà đổi khi CHỈ đồng hồ nhích ⇒ nó là một bẫy đo lường chưa bị gọi tên",
+    ).toBe("");
   });
 
   it("★★★ ĐỔI là lời LOẠI TƯ CÁCH — MỘT bước nhích ở MỘT phần tử là đủ (và phải có ít nhất một)", async () => {
-    const { doiThat } = await doBonAnh();
-    const khongDoiNoi = DOI_THEO_DONG_HO.filter((d) => !doiThat(d));
+    const { chamLOAI } = await doBonAnh();
     expect(
-      khongDoiNoi.join("\n"),
+      chamLOAI(DOI_THEO_DONG_HO).join("\n"),
       "ô khai ĐỔI-THEO-ĐỒNG-HỒ mà KHÔNG bước nhích nào làm nó đổi ⇒ bản khai đang loại oan một ô so được (BẮT NHẦM)",
     ).toBe("");
   });
 
-  it("★★★ HOÁN VỊ — đổi chỗ hai đường giữa hai vế phải bị bắt (canh ÁNH XẠ, không canh TẬP)", async () => {
-    const { doiThat } = await doBonAnh();
-    /**
-     * ⚠⚠ Bài học Pha 5: hai cổng "độc lập" cùng canh **TẬP** ⇒ hoán vị hai giá trị giữ nguyên tập
-     * và cả hai đều xanh. Ca này chứng minh phép chấm ở trên là một **ÁNH XẠ**: lấy một đường của
-     * mỗi vế, tráo chỗ, và khẳng định **cả hai** phép chấm đều nói sai.
-     */
-    const motKhongDoi = KHONG_DOI_THEO_DONG_HO.find((d) => !doiThat(d))!;
-    const motDoi = DOI_THEO_DONG_HO.find((d) => doiThat(d))!;
-    expect(motKhongDoi, "cần ít nhất một đường KHÔNG-ĐỔI có thật để ca này đo được gì").toBeDefined();
-    expect(motDoi, "cần ít nhất một đường ĐỔI có thật để ca này đo được gì").toBeDefined();
-    // Sau khi tráo: đường "KHÔNG-ĐỔI" (nay là `motDoi`) đổi thật ⇒ phép chấm MẠNH bắt được.
-    expect(doiThat(motDoi)).toBe(true);
-    // …và đường "ĐỔI" (nay là `motKhongDoi`) không đổi nổi ⇒ phép chấm LOẠI-TƯ-CÁCH bắt được.
-    expect(doiThat(motKhongDoi)).toBe(false);
+  /**
+   * ★★★ **#6 — CA NÀY NAY CHẤM MỘT BẢN KHAI KHÁC, KHÔNG LẶP LẠI PHÉP ĐO.**
+   *
+   * ⚠⚠ Bài học Pha 5: hai cổng "độc lập" cùng canh **TẬP** ⇒ hoán vị hai giá trị giữ nguyên tập và
+   * cả hai đều xanh. Ca này **dựng ra bản khai đã hoán vị** rồi chạy **đúng hai phép chấm** mà §3
+   * dùng, và đòi **cả hai** phải kêu. Bản cũ chỉ hỏi lại `doiThat()` về hai đường có sẵn — một
+   * **tautology** xanh dưới mọi đột biến.
+   */
+  it("★★★ #6 HOÁN VỊ — bản khai TRÁO CHỖ phải làm **CẢ HAI** phép chấm kêu (ÁNH XẠ, không phải TẬP)", async () => {
+    const { chamMANH, chamLOAI } = await doBonAnh();
+
+    const A = "headroom.rawBytes"; // khai KHÔNG-ĐỔI, và đo được là KHÔNG đổi
+    const B = "ledger.localHolders[].ttlExpired"; // khai ĐỔI, và đo được là CÓ đổi
+    expect(KHONG_DOI_THEO_DONG_HO).toContain(A);
+    expect(DOI_THEO_DONG_HO).toContain(B);
+
+    // Bản khai HOÁN VỊ — **TẬP HỢP hai vế không đổi một phần tử nào**.
+    const khongDoiTrao = KHONG_DOI_THEO_DONG_HO.map((d) => (d === A ? B : d));
+    const doiTrao = DOI_THEO_DONG_HO.map((d) => (d === B ? A : d));
+    expect(new Set([...khongDoiTrao, ...doiTrao]).size).toBe(
+      new Set([...KHONG_DOI_THEO_DONG_HO, ...DOI_THEO_DONG_HO]).size,
+    );
+
+    // ⇒ Một cổng canh TẬP sẽ XANH ở đây. Hai phép chấm theo ÁNH XẠ thì KHÔNG.
+    expect(chamMANH(khongDoiTrao).join("\n"), "phép chấm MẠNH phải kêu khi một ô ĐANG CHẢY bị khai là KHÔNG-ĐỔI").not.toBe("");
+    expect(chamLOAI(doiTrao).join("\n"), "phép chấm LOẠI-TƯ-CÁCH phải kêu khi một ô so-được bị khai là ĐỔI").not.toBe("");
+    // …và phải kêu ĐÚNG TÊN, không phải kêu bừa.
+    expect(chamMANH(khongDoiTrao).join("\n")).toContain(B.replace("[]", "[3]"));
+    expect(chamLOAI(doiTrao)).toContain(A);
+
+    // ⚠ ĐỐI CHỨNG DƯƠNG: bản khai THẬT thì **cả hai** phép chấm im lặng.
+    expect(chamMANH(KHONG_DOI_THEO_DONG_HO)).toEqual([]);
+    expect(chamLOAI(DOI_THEO_DONG_HO)).toEqual([]);
   });
 });
 
@@ -553,25 +825,11 @@ describe("★★★ §4 — `variesWith` / `beforeAfterEvidence` bị PHÉP ĐO 
   it("★★★ MỌI đường payload trong `beforeAfterEvidence` phải TỒN TẠI và phải KHÔNG đổi với MỌI bước nhích", async () => {
     const { goc, sau, s } = await doBonAnh();
 
-    /**
-     * Rút những đường **payload** ra khỏi câu khai (phần `nvidia-smi` là bằng chứng NGOÀI payload).
-     * ⚠ `[]` nghĩa **MỌI phần tử** — `ledger.localHolders[].owner` chấm `…[0].owner`, `…[1].owner`, …
-     */
-    const duong = s.headroom.effective.beforeAfterEvidence
-      .split("+")
-      .map((x) => x.trim())
-      .filter((x) => /^[a-zA-Z]+(\[\])?(\.[a-zA-Z]+)+/.test(x))
-      .map((x) => x.split(" ")[0]!);
+    const duong = duongCuaCauKhai(s.headroom.effective.beforeAfterEvidence);
 
     const sai: string[] = [];
     for (const d of duong) {
-      // Đường có thể mang `[]` (mọi phần tử) hoặc là một NHÁNH ⇒ chấm mọi lá khớp.
-      const khop = d.includes("[]")
-        ? new RegExp(`^${d.replace(/\[\]/g, "\\[\\d+\\]").replace(/\./g, "\\.")}$`)
-        : null;
-      const laCon = [...goc.keys()].filter((k) =>
-        khop !== null ? khop.test(k) : k === d || k.startsWith(`${d}[`) || k.startsWith(`${d}.`),
-      );
+      const laCon = laKhop(d, goc.keys());
       if (laCon.length === 0) {
         sai.push(`${d}: KHÔNG TỒN TẠI trong payload (con trỏ chết)`);
         continue;
@@ -593,13 +851,20 @@ describe("★★★ §4 — `variesWith` / `beforeAfterEvidence` bị PHÉP ĐO 
      * nguyên khối ⇒ đỏ ở dòng đếm, **không** ở dòng nói ra `ttlExpired`. Khẳng định LOAD-BEARING
      * phải chạy trước; cầu chì chỉ canh trường hợp câu khai **rỗng hẳn**.
      */
-    expect(duong.length, "câu khai không rút ra được đường payload nào ⇒ nó đang không chỉ tới đâu cả").toBeGreaterThanOrEqual(3);
+    /**
+     * ⚠⚠⚠ **#3 (review) — GHIM SỐ, KHÔNG PHẢI `>=`.** Bản `ff1789ac` hạ cầu chì `4 → 3` cho một lý
+     * do đúng (nó che mất khẳng định load-bearing), nhưng `>=` để lọt một đột biến **đo được**: bỏ
+     * hẳn vế `ledger.localBytes` khỏi câu khai **SHIP ĐƯỢC** với **72 file / 1.184 ca XANH**, trong
+     * khi câu khai vẫn tự xưng là đủ vế. ⇒ Một con số **CHÍNH XÁC**: bớt một vế là một **quyết định
+     * phải nói ra**, không phải một lượt trôi im lặng.
+     */
+    expect(duong.length, `số vế PAYLOAD của câu khai đã đổi:\n${duong.join("\n")}`).toBe(8);
   });
 
   it("★★ câu khai phải nói rõ là một PHÉP HỘI, không phải một danh sách để chọn một món", async () => {
     dungCanh();
     const s = await chupTai(0);
-    expect(s.headroom.effective.beforeAfterEvidence).toContain("CẢ BỐN NGUỒN CÙNG LÚC");
+    expect(s.headroom.effective.beforeAfterEvidence).toContain("CẢ CHÍN VẾ CÙNG LÚC");
     // ⚠ Và nó phải nêu bằng chứng NGOÀI payload — sổ không nhìn thấy byte ngoài sổ (§5 của
     //   `vramReadModel`: `unattributed` LOẠI TRỪ toàn bộ nền thiết bị).
     expect(s.headroom.effective.beforeAfterEvidence).toContain("nvidia-smi");
@@ -682,3 +947,121 @@ describe("★★ §6 — chiều KHÔNG BẮT NHẦM", () => {
     expect(x! + 0).toBe(x);
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// §7 — #2: LƯỢNG TỪ TRÊN **LƯỢT ĐỔI**, KHÔNG TRÊN Ô
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ **MỌI DANH SÁCH Ô ĐỀU CÓ PHẦN TỬ THỨ N+1 — KỂ CẢ DANH SÁCH BẰNG CHỨNG.**
+ *
+ * ⚠⚠⚠ Đo được ở review (#2): bản đầu của `beforeAfterEvidence` nêu **bốn** vế, tất cả nói về **SỔ
+ * CỤC BỘ** ⇒ **1.572.864.000 B rời SỔ CHUNG** làm **cả bốn** đứng yên tuyệt đối (`rawBytes` bị
+ * `attributable` ghim; `localBytes`/hộ cục bộ **không liên quan**). Một lượt đổi **1,5 GB** hoàn
+ * toàn **VÔ HÌNH** với chính bản khai vừa dựng ra để chống chuyện đó.
+ *
+ * ⇒ Thêm hai vế thì lại là một danh sách, và danh sách sau cũng có phần tử N+1. Nên luật ở đây
+ * **ĐẢO LƯỢNG TỪ SANG TRỤC KHÁC** — không lượng từ trên **Ô**, mà trên **LƯỢT ĐỔI**:
+ *
+ *   ***MỌI lượt đổi THẬT dựng được PHẢI làm ÍT NHẤT MỘT vế của `beforeAfterEvidence` nhúc nhích.***
+ *
+ * Một lượt đổi vô hình là một ca **ĐỎ có tên**, và nó chỉ đường tới **vế còn thiếu** chứ không bắt
+ * ai đoán. Danh mục lượt đổi ở dưới **tự nó** vẫn là một danh sách — nói thẳng ra thay vì giấu —
+ * nhưng mỗi mục là một lượt đổi **ĐƯỢC THI HÀNH THẬT**, không phải một cái tên trong bảng.
+ */
+describe("★★★ §7 — MỌI lượt đổi THẬT phải làm ít nhất một vế bằng chứng nhúc nhích", () => {
+  /** Rút giá trị của **đúng những vế** mà `beforeAfterEvidence` nêu, từ một ảnh chụp. */
+  function veBangChung(s: VramAgentState): Map<string, string> {
+    const la = laCua(s);
+    const ra = new Map<string, string>();
+    for (const d of duongCuaCauKhai(s.headroom.effective.beforeAfterEvidence)) {
+      const con = laKhop(d, la.keys());
+      /**
+       * ⚠⚠ CẦU CHÌ: một đường khai khớp **0 lá** nghĩa là phép khớp đã hỏng, và một phép khớp hỏng
+       * thì **im lặng** — nó chỉ làm bằng chứng mù đi. Đúng lỗi đã xảy ra thật (xem `laKhop`).
+       */
+      if (con.length === 0) throw new Error(`vế bằng chứng "${d}" khớp KHÔNG lá nào — phép khớp hỏng`);
+      for (const k of con) ra.set(k, la.get(k)!);
+    }
+    return ra;
+  }
+
+  /** Có vế nào khác nhau giữa hai ảnh chụp không (KHUYẾT một khoá cũng là một lượt đổi). */
+  function veDaDoi(a: Map<string, string>, b: Map<string, string>): string[] {
+    const moi = new Set([...a.keys(), ...b.keys()]);
+    return [...moi].filter((k) => a.get(k) !== b.get(k));
+  }
+
+  /**
+   * Danh mục **LƯỢT ĐỔI THẬT**, mỗi mục thi hành bằng mã sản xuất, **đồng hồ ĐỨNG YÊN** (để không
+   * một vế nào nhúc nhích vì lý do thời gian — thứ đang đo là *"bằng chứng có THẤY không"*).
+   */
+  const LUOT_DOI: readonly { readonly ten: string; readonly lam: () => void }[] = [
+    {
+      ten: "nhả một hộ CỤC BỘ (5.274.419.200 B)",
+      lam: () => {
+        broker.release(giayPhep.get("gguf:Qwen3-4B-Instruct-2507-UD-Q4_K_XL")!);
+        drainSharedLedgerWrites();
+      },
+    },
+    {
+      ten: "một hàng SỔ CHUNG biến mất (1.572.864.000 B của tiến trình ANH EM)",
+      lam: () => publishSharedLedgerReplica([], T0, sharedLedgerSelfKey()),
+    },
+    {
+      ten: "hộ ANH EM ĐỔI DANH TÍNH, GIỮ NGUYÊN byte",
+      lam: () => publishSharedLedgerReplica([hangAnhEm({ owner: "gguf:mot-model-khac" })], T0, sharedLedgerSelfKey()),
+    },
+    {
+      ten: "hộ ANH EM đổi BYTE, giữ nguyên danh tính",
+      lam: () => publishSharedLedgerReplica([hangAnhEm({ bytes: 1 })], T0, sharedLedgerSelfKey()),
+    },
+  ];
+
+  for (const lo of LUOT_DOI) {
+    it(`★★★ ${lo.ten} ⇒ ÍT NHẤT MỘT vế bằng chứng phải đổi`, async () => {
+      dungCanh();
+      const truoc = veBangChung(await chupTai(0));
+      lo.lam();
+      const sau = veBangChung(await chupTai(0));
+      const doi = veDaDoi(truoc, sau);
+      expect(
+        doi.join(" · ") || "(KHÔNG VẾ NÀO ĐỔI)",
+        `lượt đổi "${lo.ten}" VÔ HÌNH với mọi vế của \`beforeAfterEvidence\` ⇒ bản khai còn thiếu vế`,
+      ).not.toBe("(KHÔNG VẾ NÀO ĐỔI)");
+    });
+  }
+
+  it("★★★ #2 — TÁI LẬP nguyên văn: BỐN vế của bản ĐẦU mù trước một lượt rời SỔ CHUNG 1,5 GB", async () => {
+    /**
+     * ⚠⚠ Ca này giữ **bản khai CŨ** (bốn vế cục bộ) làm một **hằng số lịch sử** và chứng minh nó
+     * mù — nếu không, con số 1.572.864.000 chỉ là một câu trong báo cáo. Nó cũng là lưới chống
+     * **thụt lùi**: ai rút hai vế anh em ra khỏi câu khai sẽ làm ca §7 ở trên đỏ, và ca này giải
+     * thích **vì sao** chúng có mặt.
+     */
+    const BAN_DAU = ["headroom.rawBytes", "ledger.localBytes", "ledger.localHolders[].owner", "ledger.localHolders[].bytes"];
+    const rut = (s: VramAgentState) => {
+      const la = laCua(s);
+      const ra = new Map<string, string>();
+      for (const d of BAN_DAU) for (const k of laKhop(d, la.keys())) ra.set(k, la.get(k)!);
+      return ra;
+    };
+
+    dungCanh();
+    const truoc = await chupTai(0);
+    const truocRut = rut(truoc);
+    publishSharedLedgerReplica([], T0, sharedLedgerSelfKey());
+    const sau = await chupTai(0);
+
+    // 1,5 GB THẬT SỰ rời sổ chung…
+    expect(truoc.ledger.foreign.known && truoc.ledger.foreign.bytes).toBe(1_572_864_000);
+    expect(sau.ledger.foreign.known && sau.ledger.foreign.bytes).toBe(0);
+    expect(truoc.ledger.totalBytes! - sau.ledger.totalBytes!).toBe(1_572_864_000);
+    // …mà BỐN vế của bản đầu KHÔNG một vế nào nhúc nhích.
+    expect(veDaDoi(truocRut, rut(sau)), "nếu ca này đỏ thì tiền đề của #2 đã đổi — điều tra, đừng sửa số").toEqual([]);
+    // …kể cả `rawBytes`, vì `used` bị `attributable` GHIM.
+    expect(sau.headroom.rawBytes).toBe(truoc.headroom.rawBytes);
+    // ⇒ và bản khai HÔM NAY thì THẤY.
+    expect(veDaDoi(veBangChung(truoc), veBangChung(sau)).length).toBeGreaterThan(0);
+  });
+});
+
