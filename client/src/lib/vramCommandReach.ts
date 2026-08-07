@@ -82,7 +82,7 @@ export function vramRetryButtonDisabled(
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // `pages/AIBrainDashboard.tsx:114` viết `isOpsRole = role === "admin" || role === "engineer"` rồi
 // đổ **thẳng** vào `canCommand` của panel này (`:311`) ⇒ nuôi **cả ba** nút lệnh. Hệ quả kép:
-//  • `supervisor` — vai **CÓ** trong `ACTUATION_ROLES` (`server/_core/trpc.ts:434`) và là vai được
+//  • `supervisor` — vai **CÓ** trong `ACTUATION_ROLES` (`server/_core/trpc.ts:495`) và là vai được
 //    chủ dự án chọn cho mặt lệnh VRAM — **KHÔNG BAO GIỜ** nhận `true`, dù vị từ nút có đúng đến đâu.
 //  • `isOpsRole` **không phải** một câu về VRAM: nó là cổng của **Agent Ops**
 //    (`aiAgent.listAgentSessionsForOps` — sàn `admin|engineer`). Một ô trả lời hai câu hỏi khác nhau
@@ -213,7 +213,7 @@ export type CoBitQuyen = (
  * *"mặt đọc hứa nhiều hơn mặt lệnh"* mà cả Pha 5 đang đóng, do chính bản vá đóng nó tạo ra.
  *
  * ⇒ Nay quyết định là **PHÉP HỘI của ĐÚNG HAI cổng mà máy chủ có**, không hơn không kém:
- *   1. **sàn VAI** (`roleProcedure(...ACTUATION_ROLES)` — `server/_core/trpc.ts:434`) → bảng
+ *   1. **sàn VAI** (`roleProcedure(...ACTUATION_ROLES)` — `server/_core/trpc.ts:495`) → bảng
  *      `CHO_RA_LENH` trên;
  *   2. **bit PER-USER** (`requirePermission(VRAM_CONTROL_MODULE, …)`) → `coBitQuyen`, đọc **đúng
  *      cặp `(module, action)`** khai ở `VRAM_LENH_GATE`.

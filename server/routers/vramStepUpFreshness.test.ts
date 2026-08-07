@@ -93,6 +93,7 @@ import { __resetSharedLedgerForTests } from "../services/vram/vramSharedLedger";
 import { __resetDecisionTickForTests } from "../services/vram/vramTickCell";
 import { __resetVramDeferForTests } from "../services/vram/vramDefer";
 import { VRAM_CONTROL_MODULE } from "@shared/permissions";
+import { VRAM_COMMAND_DESTRUCTIVE, vramCommandIsDestructive } from "../services/vram/vramCommands";
 
 const MIB = 1024 * 1024;
 const SUP_ID = 42;
@@ -189,15 +190,38 @@ function xinThat(owner: string, bytes: number) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-// TẬP "LỆNH PHÁ HUỶ" — SUY RA TỪ `vramRouter.ts`, KHÔNG CHÉP TAY
+// TẬP "LỆNH PHÁ HUỶ" — NEO VÀO **HÀNH VI**, KHÔNG VÀO CHỮ KÝ THẨM QUYỀN
 //
-// ⚠ Định nghĩa lấy từ chính docstring của router: *phá huỷ* = đứng sau
-//   `requirePermission(VRAM_CONTROL_MODULE, "canDelete")`. Neo vào **cổng thẩm quyền**, không vào
-//   tên biến sàn: đổi tên biến là dọn dẹp hợp lệ, đổi cổng là một quyết định an ninh.
+// ⚠⚠⚠ I-2 (review) — BẢN ĐẦU CỦA LƯỚI NÀY NEO SAI TRỤC, VÀ NÓ BỎ LỌT MỘT LỆNH GIẾT TIẾN TRÌNH.
+// Bản đầu định nghĩa *phá huỷ* = đứng sau `requirePermission(VRAM_CONTROL_MODULE, "canDelete")`.
+// Đột biến **R2b** của reviewer: đặt một lệnh **giết tiến trình** (gọi `vramPreemptCommand`) sau
+// cổng **`canCreate`** ⇒ ba lưới có trước đỏ, **nhưng lưới này XANH 16/16** — và tệ hơn im lặng,
+// ca "KHÔNG BẮT NHẦM" còn **KHẲNG ĐỊNH** rằng đường ấy *"không được đòi OTP tươi"*. Ba lưới kia là
+// **danh-sách-ghim**, nên người thêm thủ tục sẽ *"cập nhật cho khớp"*, và **đúng lúc đó lỗ ship
+// được**.
+//
+// ⇒ **ĐẢO LƯỢNG TỪ.** *"Phá huỷ"* là sự thật của **HÀM LỆNH**, không phải của bit quyền ai đó gắn
+//   cho nó ở router. Chủ của sự thật ấy là `services/vram/vramCommands.ts`
+//   (`VRAM_COMMAND_DESTRUCTIVE`) — **file thi hành hành vi**. Lưới này chỉ **đọc** phân loại đó rồi
+//   phát biểu:
+//
+//     ***∀ mutation của `vramRouter` mà thân nó THAM CHIẾU một hàm lệnh được phân loại PHÁ HUỶ:
+//     chuỗi thủ tục PHẢI chain `requirePerCallFreshTotp`, VÀ lượt gọi không mang OTP PHẢI bị chặn.***
+//
+// ⚠ Cộng một ca đóng vòng: ***∀ hàm `vram*Command` export từ `vramCommands.ts` PHẢI có một mục
+//   trong `VRAM_COMMAND_DESTRUCTIVE`*** — thêm hàm lệnh mới mà quên phân loại ⇒ ĐỎ, không im lặng
+//   rơi vào nhóm "không phá huỷ". (`vramCommandIsDestructive` cũng fail-closed: chưa phân loại ⇒
+//   coi như PHÁ HUỶ.)
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url)); // .../server/routers
 const VRAM_ROUTER = join(TEST_DIR, "vramRouter.ts");
+const VRAM_COMMANDS = join(TEST_DIR, "..", "services", "vram", "vramCommands.ts");
+
+/** Tên phép siết per-call (`_core/trpc.ts`) — thứ mà MỌI thủ tục phá huỷ phải chain. */
+const TEN_PHEP_SIET = "requirePerCallFreshTotp";
+/** Hình dạng tên của một **hàm lệnh** VRAM (`vramCommands.ts`). */
+const LA_HAM_LENH = /^vram\w*Command$/;
 
 /** Định danh TRÁI NHẤT của một chuỗi truy cập (`a.use(x).input(y)` → `a`). */
 function gocChuoi(n: ts.Node | undefined): string | null {
@@ -213,10 +237,14 @@ function gocChuoi(n: ts.Node | undefined): string | null {
 }
 
 interface HinhDangLenh {
-  /** `true` khi chuỗi của thủ tục chứa `requirePermission(VRAM_CONTROL_MODULE, "canDelete")`. */
+  /** `true` khi thân thủ tục **tham chiếu một hàm lệnh PHÁ HUỶ** (phân loại ở `vramCommands.ts`). */
   readonly phaHuy: boolean;
   /** `true` khi chuỗi có `.mutation(` — `query` nằm ngoài bất biến step-up. */
   readonly laMutation: boolean;
+  /** `true` khi chuỗi thủ tục chain `requirePerCallFreshTotp` (bất biến CẤU TRÚC của phép siết). */
+  readonly siet: boolean;
+  /** Tên các hàm lệnh mà thân thủ tục tham chiếu — để câu lỗi gọi ĐÍCH DANH. */
+  readonly hamLenh: readonly string[];
 }
 
 function lenhCuaRouter(nguon?: string): { anhXa: Record<string, HinhDangLenh>; mu: string[] } {
@@ -246,25 +274,42 @@ function lenhCuaRouter(nguon?: string): { anhXa: Record<string, HinhDangLenh>; m
     return ra;
   };
 
-  const bien = new Map<string, { cong: string[]; goc: string | null }>();
+  /** MỌI định danh xuất hiện trong một biểu thức — nền của cả "hàm lệnh" lẫn "có chain phép siết". */
+  const dinhDanhTrong = (n: ts.Node): Set<string> => {
+    const ra = new Set<string>();
+    const di = (x: ts.Node): void => {
+      if (ts.isIdentifier(x)) ra.add(x.text);
+      ts.forEachChild(x, di);
+    };
+    di(n);
+    return ra;
+  };
+
+  const bien = new Map<string, { cong: string[]; siet: boolean; goc: string | null }>();
   for (const stmt of sf.statements) {
     if (!ts.isVariableStatement(stmt)) continue;
     for (const d of stmt.declarationList.declarations) {
       if (!ts.isIdentifier(d.name) || d.initializer === undefined) continue;
-      bien.set(d.name.text, { cong: congTrong(d.initializer), goc: gocChuoi(d.initializer) });
+      bien.set(d.name.text, {
+        cong: congTrong(d.initializer),
+        siet: dinhDanhTrong(d.initializer).has(TEN_PHEP_SIET),
+        goc: gocChuoi(d.initializer),
+      });
     }
   }
-  /** Leo ngược chuỗi biến, gom MỌI cổng gặp trên đường; dừng ở định danh không phải khai báo file. */
-  const phanGiai = (bd: string | null): { cong: string[]; san: string | null } => {
+  /** Leo ngược chuỗi biến, gom MỌI cổng + phép siết gặp trên đường; dừng ở định danh ngoài file. */
+  const phanGiai = (bd: string | null): { cong: string[]; siet: boolean; san: string | null } => {
     const cong: string[] = [];
+    let siet = false;
     let cur = bd;
     for (let i = 0; i < 16 && cur !== null; i++) {
       const b = bien.get(cur);
-      if (b === undefined) return { cong, san: cur };
+      if (b === undefined) return { cong, siet, san: cur };
       cong.push(...b.cong);
+      if (b.siet) siet = true;
       cur = b.goc;
     }
-    return { cong, san: null };
+    return { cong, siet, san: null };
   };
 
   const anhXa: Record<string, HinhDangLenh> = {};
@@ -302,7 +347,15 @@ function lenhCuaRouter(nguon?: string): { anhXa: Record<string, HinhDangLenh>; m
           mu.push(`vramRouter.ts:${dong} \`${p.name.text}\` — cổng KHÔNG đọc được: [${cong.join(", ")}]`);
           continue;
         }
-        anhXa[p.name.text] = { phaHuy: cong.includes(`${VRAM_CONTROL_MODULE}/canDelete`), laMutation };
+        // ★ I-2 — PHÁ HUỶ suy từ **hàm lệnh mà thân thủ tục gọi**, không từ bit quyền của nó.
+        const dinhDanh = dinhDanhTrong(p.initializer);
+        const hamLenh = [...dinhDanh].filter((x) => LA_HAM_LENH.test(x)).sort();
+        anhXa[p.name.text] = {
+          phaHuy: hamLenh.some((h) => vramCommandIsDestructive(h)),
+          laMutation,
+          siet: dinhDanh.has(TEN_PHEP_SIET) || tuGoc.siet,
+          hamLenh,
+        };
       }
     }
     ts.forEachChild(n, di);
@@ -347,6 +400,47 @@ describe("★★★ Pha 6 M-4 — cầu chì của lượng từ", () => {
     expect(PHA_HUY.length, "0 lệnh phá huỷ ⇒ mọi ca ∀ dưới đây là chân lý rỗng").toBeGreaterThanOrEqual(2);
     expect(KHONG_PHA_HUY.length, "0 lệnh không-phá-huỷ ⇒ ca 'không bắt nhầm' là chân lý rỗng").toBeGreaterThanOrEqual(1);
     expect(PHA_HUY.filter((k) => KHONG_PHA_HUY.includes(k)), "hai tập không được giao nhau").toEqual([]);
+    // ⚠ Cầu chì của trục MỚI: mọi mutation phải THẤY được hàm lệnh của nó. Một ô không tham chiếu
+    //   hàm lệnh nào thì lượng từ theo HÀNH VI không nói gì về nó ⇒ đó là một ô KHÔNG AI CANH.
+    const khongHam = Object.keys(LENH.anhXa).filter(
+      (k) => LENH.anhXa[k]?.laMutation === true && (LENH.anhXa[k]?.hamLenh.length ?? 0) === 0,
+    );
+    expect(khongHam.join(" · "), "mutation không tham chiếu hàm lệnh nào ⇒ ngoài tầm lượng từ HÀNH VI").toBe("");
+  });
+
+  it("★★★ I-2 ĐÓNG VÒNG — ∀ hàm `vram*Command` export từ `vramCommands.ts` PHẢI được phân loại", () => {
+    /**
+     * ⚠ Không có ca này thì `VRAM_COMMAND_DESTRUCTIVE` là một **danh sách có phần tử thứ N+1**: ai
+     * thêm `vramNukeCommand` mà quên phân loại sẽ rơi vào `true` (fail-closed) — đúng chiều, nhưng
+     * **im lặng**. Ca này biến lượt quên ấy thành một **quyết định phải nói ra**.
+     */
+    const ma = readFileSync(VRAM_COMMANDS, "utf8");
+    const sf = ts.createSourceFile("vramCommands.ts", ma, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const xuat: string[] = [];
+    for (const st of sf.statements) {
+      if (!ts.isFunctionDeclaration(st) || st.name === undefined) continue;
+      const co = ts.getModifiers(st)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) === true;
+      if (co && LA_HAM_LENH.test(st.name.text)) xuat.push(st.name.text);
+    }
+    expect(xuat.length, "không thấy hàm lệnh nào — bộ quét hỏng ⇒ ca này thành chân lý rỗng").toBeGreaterThanOrEqual(3);
+    const chuaPhanLoai = xuat.filter((h) => !(h in VRAM_COMMAND_DESTRUCTIVE));
+    expect(
+      chuaPhanLoai.join(" · "),
+      "hàm lệnh CHƯA được phân loại phá-huỷ/không — phải khai ở `VRAM_COMMAND_DESTRUCTIVE`",
+    ).toBe("");
+  });
+
+  it("★★★ I-2 BẤT BIẾN CẤU TRÚC — ∀ mutation PHÁ HUỶ: chuỗi thủ tục PHẢI chain `requirePerCallFreshTotp`", () => {
+    /**
+     * ⚠⚠ Đây là ô mà đột biến **R2b** đi qua được ở bản đầu. Nó neo vào **HÀNH VI** (hàm lệnh mà
+     * thân thủ tục gọi), nên đặt một lệnh giết tiến trình sau **bất kỳ** bit quyền nào cũng không
+     * thoát: hễ nó gọi `vramPreemptCommand` thì nó **phải** đứng sau phép siết.
+     */
+    const thieu = PHA_HUY.filter((k) => LENH.anhXa[k]?.siet !== true);
+    expect(
+      thieu.map((k) => `${k} (gọi ${LENH.anhXa[k]?.hamLenh.join(", ")})`).join(" · "),
+      `mutation gọi một hàm lệnh PHÁ HUỶ mà KHÔNG chain ${TEN_PHEP_SIET} ⇒ OTP của một lượt khác mở được cửa`,
+    ).toBe("");
   });
 
   it("★★★ cầu chì — OTP thật verify được qua ĐƯỜNG THẬT (`deployProcedure` + `speakeasy` + bảng `users`)", async () => {
@@ -462,12 +556,23 @@ describe("★★★ KHÔNG BẮT NHẦM — phép siết chỉ chạm lệnh PH�
     await expect(khac(phien).deployKhac({})).resolves.toEqual({ ok: true });
   });
 
-  it("★★★ mutation KHÔNG phá huỷ của VRAM không bị kéo vào cổng OTP", async () => {
+  it("★★★ mutation KHÔNG PHÁ HUỶ (theo HÀNH VI) không bị kéo vào cổng OTP", async () => {
+    /**
+     * ⚠⚠ I-2 — **CÂU KHẲNG ĐỊNH NÀY TỪNG SAI SỰ THẬT.** Bản đầu lấy `KHONG_PHA_HUY` từ **chữ ký
+     * thẩm quyền**, nên dưới đột biến R2b (lệnh **giết tiến trình** đặt sau cổng `canCreate`) nó
+     * **khẳng định** rằng một đường giết tiến trình *"không được đòi OTP tươi"* — tệ hơn im lặng.
+     * Nay tập này suy từ **hàm lệnh mà thân thủ tục gọi**: một lệnh giết tiến trình **không thể**
+     * rơi vào đây dù ai gắn bit gì cho nó.
+     */
     for (const ten of KHONG_PHA_HUY) {
+      expect(
+        LENH.anhXa[ten]?.hamLenh.filter((h) => vramCommandIsDestructive(h)),
+        `\`${ten}\` gọi một hàm lệnh PHÁ HUỶ ⇒ nó KHÔNG được nằm trong tập "không phá huỷ"`,
+      ).toEqual([]);
       const e = await loiCua(goiTheoTen(phienMoi(), ten, KHONG_THAM_SO));
       expect(
         readAppErrorMeta(e),
-        `\`${ten}\` KHÔNG đứng sau cổng phá huỷ ⇒ không được đòi OTP tươi`,
+        `\`${ten}\` không phá huỷ gì ⇒ không được đòi OTP tươi`,
       ).not.toMatchObject({ appParams: { field: "twoFactorCode" } });
     }
   });
@@ -503,13 +608,13 @@ describe("★★★ KHÔNG BẮT NHẦM — phép siết chỉ chạm lệnh PH�
 describe("★★ lưới-cho-lưới — tập PHÁ HUỶ suy ra từ AST có RĂNG", () => {
   const GOC = readFileSync(VRAM_ROUTER, "utf8");
 
+  /** Chèn một ô mới vào thân `vramRouter` — nền của mọi đột biến "đường thoát mới". */
+  const themO = (dong: string): string =>
+    GOC.replace("export const vramRouter = router({", ["export const vramRouter = router({", dong].join("\n"));
+
   it("★★★ một lệnh phá huỷ THỨ BA sinh ra ⇒ nó TỰ vào lượng từ (không cần ai nhớ cập nhật danh sách)", () => {
-    const ma = GOC.replace(
-      "export const vramRouter = router({",
-      [
-        "export const vramRouter = router({",
-        "  huyThemMot: vramDestructiveProcedure.input(z.object({})).mutation(async () => ({ ok: true })),",
-      ].join("\n"),
+    const ma = themO(
+      "  huyThemMot: vramDestructiveProcedure.input(z.object({})).mutation(async ({ input }) => vramPreemptCommand(input.owner)),",
     );
     expect(ma, "đột biến phải thật sự đổi được nguồn").not.toBe(GOC);
     const { anhXa, mu } = lenhCuaRouter(ma);
@@ -517,14 +622,44 @@ describe("★★ lưới-cho-lưới — tập PHÁ HUỶ suy ra từ AST có R�
     expect(Object.keys(anhXa).filter((k) => anhXa[k]?.phaHuy === true)).toContain("huyThemMot");
   });
 
-  it("★★ hạ cổng của `preempt` xuống `canCreate` ⇒ nó RỜI tập phá huỷ (bộ suy đọc CỔNG, không đọc tên)", () => {
+  it("★★★ R2b NGUYÊN VĂN — lệnh GIẾT TIẾN TRÌNH đặt sau cổng `canCreate` VẪN là PHÁ HUỶ và VẪN bị đòi phép siết", () => {
+    /**
+     * ⚠⚠⚠ **ĐÂY LÀ CA MÀ BẢN ĐẦU CỦA LƯỚI NÀY BỎ LỌT.** Đột biến đặt `vramPreemptCommand` (giết
+     * tiến trình) sau `vramActuationProcedure` (cổng `canCreate`, **không** có phép siết). Neo vào
+     * chữ ký thẩm quyền ⇒ nó rơi khỏi tập phá huỷ và lưới XANH. Neo vào **HÀNH VI** ⇒ nó **ở lại**
+     * tập phá huỷ, và bất biến cấu trúc bắt được vì chuỗi của nó KHÔNG chain phép siết.
+     */
+    const ma = themO(
+      "  preemptQuaCanCreate: vramActuationProcedure.input(z.object({})).mutation(async ({ input }) => vramPreemptCommand(input.owner)),",
+    );
+    expect(ma).not.toBe(GOC);
+    const { anhXa, mu } = lenhCuaRouter(ma);
+    expect(mu.join("\n")).toBe("");
+    // (i) HÀNH VI thắng chữ ký: bit là `canCreate`, nhưng nó vẫn PHÁ HUỶ.
+    expect(anhXa.preemptQuaCanCreate?.phaHuy, "gọi `vramPreemptCommand` ⇒ PHÁ HUỶ, bất kể bit quyền").toBe(true);
+    // (ii) …và nó KHÔNG chain phép siết ⇒ bất biến cấu trúc phải bắt được.
+    expect(anhXa.preemptQuaCanCreate?.siet).toBe(false);
+    const thieu = Object.keys(anhXa).filter((k) => anhXa[k]?.phaHuy === true && anhXa[k]?.siet !== true);
+    expect(thieu, "R2b phải bị bắt ĐÍCH DANH").toEqual(["preemptQuaCanCreate"]);
+  });
+
+  it("★★ ĐỔI BIT QUYỀN không đổi phân loại HÀNH VI (bộ suy đã RỜI khỏi trục chữ ký)", () => {
     const ma = GOC.replace(
       'deployProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canDelete"))',
       'deployProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canCreate"))',
     );
     expect(ma).not.toBe(GOC);
     const { anhXa } = lenhCuaRouter(ma);
-    expect(anhXa.preempt?.phaHuy).toBe(false);
+    expect(anhXa.preempt?.phaHuy, "`preempt` vẫn gọi `vramPreemptCommand` ⇒ vẫn PHÁ HUỶ").toBe(true);
+  });
+
+  it("★★ gỡ `requirePerCallFreshTotp` khỏi sàn phá huỷ ⇒ bất biến CẤU TRÚC bắt được (không cần chạy thời gian thực)", () => {
+    const ma = GOC.replace('.use(requirePermission(VRAM_CONTROL_MODULE, "canDelete")).use(requirePerCallFreshTotp)',
+      '.use(requirePermission(VRAM_CONTROL_MODULE, "canDelete"))');
+    expect(ma).not.toBe(GOC);
+    const { anhXa } = lenhCuaRouter(ma);
+    const thieu = Object.keys(anhXa).filter((k) => anhXa[k]?.phaHuy === true && anhXa[k]?.siet !== true).sort();
+    expect(thieu).toEqual([...PHA_HUY].sort());
   });
 
   it("★★ KHÔNG BẮT NHẦM — đổi TÊN biến sàn (dọn dẹp hợp lệ) ⇒ tập PHÁ HUỶ không đổi", () => {

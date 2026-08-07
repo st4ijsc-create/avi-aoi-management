@@ -73,7 +73,7 @@ describe("navigation.tsx — engineer AI nav widening (doc69 Wave 0-C)", () => {
  * ★★★ Pha 5 Task 3 (N9) — **LỚP 1/5: `supervisor` PHẢI VÀO ĐƯỢC `/ai-brain`.**
  *
  * `/ai-brain` là nhà DUY NHẤT của `VramBrokerPanel`. Chủ dự án chốt `supervisor` được ra lệnh phá
- * huỷ VRAM (`ACTUATION_ROLES` — `server/_core/trpc.ts:434` — đã có nó). Bật nút cho một vai **không
+ * huỷ VRAM (`ACTUATION_ROLES` — `server/_core/trpc.ts:495` — đã có nó). Bật nút cho một vai **không
  * mở được màn** là dựng một cái nút không ai bấm được, và tệ hơn: **khai rằng đã trao quyền** trong
  * khi chưa. `RouteGuard` (`components/RouteGuard.tsx:113`) gọi **đúng** `hasAccessToItem` cho
  * `navHref`, nên ca dưới đo cả nav LẪN cổng route.

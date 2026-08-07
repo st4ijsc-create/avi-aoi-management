@@ -29,7 +29,7 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * `.env:568` → `ACTUATION_STEPUP_2FA=true` (cấu hình ĐANG CHẠY). `vramRouter.preempt` và
  * `releaseStale` đứng trên `deployProcedure = actuationProcedure.use(requireFreshTotp)`
- * (`_core/trpc.ts:450`), và `requireFreshTotp` đọc `totpCode` **từ raw input**: thiếu ⇒
+ * (`_core/trpc.ts:511`), và `requireFreshTotp` đọc `totpCode` **từ raw input**: thiếu ⇒
  * `FORBIDDEN INVALID_VALUE{field:"twoFactorCode"}`. Panel **không gửi `totpCode`** ⇒ **lượt bấm
  * ĐẦU TIÊN của mọi phiên luôn 403**, với mọi vai. Hệ quả kép: `onSuccess` — chỗ **duy nhất** gọi
  * `translateVramPreemptCommand`/`translateVramReleaseStaleCommand` — là **nhánh không tới được từ

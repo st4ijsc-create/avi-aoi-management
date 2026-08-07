@@ -36,6 +36,47 @@ import type { VramDeferRetryUnreachable } from "./vramReadModel";
 import { retryKbSyncDeferNow } from "../kbSyncScheduler";
 
 /**
+ * ★★★ Pha 6 Task 1 / I-2 (review) — **PHÂN LOẠI HÀNH VI SỐNG Ở FILE SỞ HỮU HÀNH VI.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO Ô NÀY TỒN TẠI: LƯỢNG TỪ NEO VÀO CHỮ KÝ THẨM QUYỀN **BỎ LỌT** MỘT LỆNH GIẾT TIẾN TRÌNH
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản đầu của `vramStepUpFreshness.test.ts` định nghĩa *"lệnh phá huỷ"* = **đứng sau
+ * `requirePermission(VRAM_CONTROL_MODULE, "canDelete")`** — tức neo vào **chữ ký THẨM QUYỀN**.
+ * Đột biến **R2b** của reviewer: đặt một lệnh **giết tiến trình** (gọi `vramPreemptCommand`) sau
+ * cổng **`canCreate`** ⇒ ba lưới có trước đỏ, **nhưng lưới M-4 XANH 16/16** — và tệ hơn im lặng, nó
+ * còn **KHẲNG ĐỊNH** rằng đường ấy *"không được đòi OTP tươi"*. Ba lưới kia là **danh-sách-ghim**,
+ * nên người thêm thủ tục sẽ *"cập nhật cho khớp"*, và **đúng lúc đó lỗ ship được**.
+ *
+ * ⇒ **ĐẢO LƯỢNG TỪ, và neo vào HÀNH VI:** *"phá huỷ"* là một sự thật của **hàm lệnh**, không phải
+ * của bit quyền mà ai đó gắn cho nó ở router. Bảng dưới đây là **chủ duy nhất** của sự thật ấy, và
+ * nó nằm ở **đúng file thi hành hành vi** — không phải ở một lưới, không phải ở router.
+ *
+ * ⚠ Bảng này được cưỡng chế **ĐẦY ĐỦ** bởi ca *"∀ hàm `vram*Command` export từ file này PHẢI có một
+ * mục ở đây"* (`server/routers/vramStepUpFreshness.test.ts`): thêm một hàm lệnh mới mà quên phân
+ * loại ⇒ **ĐỎ**, không im lặng rơi vào nhóm "không phá huỷ".
+ */
+export const VRAM_COMMAND_DESTRUCTIVE = {
+  /** **GIẾT một tiến trình** qua `preemptOwner()` → `broker.preemptStepForOwner()` → `NGUOI_THI_HANH`. */
+  vramPreemptCommand: true,
+  /** **XOÁ một hàng khỏi sổ CHUNG** mà mọi tiến trình anh em đọc để tính dư địa. */
+  vramReleaseStaleCommand: true,
+  /** Chỉ **dời hạn** một lượt thử lại đã lên lịch — không phá huỷ gì, không giết ai. */
+  vramRetryDeferredCommand: false,
+} as const satisfies Readonly<Record<string, boolean>>;
+
+/** Tên một hàm lệnh của module VRAM. */
+export type VramCommandName = keyof typeof VRAM_COMMAND_DESTRUCTIVE;
+
+/**
+ * Hàm lệnh này có **PHÁ HUỶ** không? Một tên **chưa được phân loại** trả `true` — **fail-closed**:
+ * hỏng theo chiều đòi thêm OTP, không theo chiều mở cửa.
+ */
+export function vramCommandIsDestructive(ten: string): boolean {
+  return (VRAM_COMMAND_DESTRUCTIVE as Readonly<Record<string, boolean>>)[ten] !== false;
+}
+
+/**
  * ★★★ PHẠM VI QUAN SÁT — **BẮT BUỘC trên MỌI kết quả lệnh.**
  * `durableTrace` chỉ ra vết BỀN xuyên tiến trình: ai cần sự thật của **cả cụm** thì truy bảng đó,
  * không phải một ô trong bộ nhớ của một tiến trình.

@@ -76,7 +76,13 @@ import {
  * **không `totpCode`** vẫn QUA. Nay hai lệnh phá huỷ chain thêm `requirePerCallFreshTotp`: **mỗi
  * lượt phải mang OTP của CHÍNH nó**. Năm thủ tục `deployProcedure` khác (`programming.deployBuild`
  * · `approveDeployment` · `rollbackDeployment` · `deployToFleet` · `orchestration.deployWorkflow`)
- * **giữ nguyên** cache phiên — siết chúng là quyết định của chủ dự án, xem §"KHÔNG làm ở Pha 6".
+ * **giữ nguyên** cache phiên — siết chúng là **quyết định của chủ dự án** (§"KHÔNG làm ở Pha 6"),
+ * ⚠ **KHÔNG** vì một rào cản kỹ thuật: bản đầu của báo cáo task này biện hộ bằng *"`deployToFleet`
+ * chạy tuần tự nhiều máy ⇒ siết toàn cục sẽ gãy giữa chừng khi mã hết hạn"* — **SAI SỰ THẬT**, và
+ * I-1 của review đã bác. Vòng lặp ấy nằm **TRONG MÁY CHỦ, trong MỘT request tRPC**
+ * (`services/programming/fleetRollout.ts` → `programmingService` — lời gọi hàm, **không** qua
+ * middleware); client gọi **đúng một lần**. Và **5/5** thủ tục kia đều đã bọc `stepUp.guard(...)`
+ * và **đã gửi `totpCode`**. Đừng trích lý do sai ấy để biện hộ cho việc không đóng nốt.
  * **Chủ dự án chốt (2026-08-06): TÁCH BIT RIÊNG** ⇒ `VRAM_CONTROL_MODULE` (`@shared/permissions`).
  *
  * ⚠⚠ Task 3b **THU HẸP, KHÔNG NỚI**: `deployProcedure`/`actuationProcedure` + step-up 2FA giữ
@@ -134,7 +140,7 @@ const vramActuationProcedure = actuationProcedure.use(requirePermission(VRAM_CON
  * **thông tin hạ tầng**. Và từ Pha 3 (sổ chung xuyên tiến trình) `owner` có thể do **một tiến
  * trình khác** ghi vào, nên nó không còn là dữ liệu của riêng tiến trình đang trả lời.
  *
- * ⚠ Khuôn: `_core/trpc.ts:394-402` — role-floor *"composes **ON TOP of (never replaces)**"*
+ * ⚠ Khuôn: `_core/trpc.ts:456-464` — role-floor *"composes **ON TOP of (never replaces)**"*
  * `requirePermission`. Ở đây **không có role-floor để cộng lên** (`state` chỉ ĐỌC, không phải
  * actuation ⇒ không kéo `require2FA`/`ACTUATION_ROLES` vào một truy vấn), nên phép cộng là
  * `protectedProcedure` (danh tính) **+** `requirePermission` (thẩm quyền) — đúng chữ ký mà

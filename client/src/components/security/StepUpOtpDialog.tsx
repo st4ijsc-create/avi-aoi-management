@@ -30,7 +30,16 @@ import { Button } from "@/components/ui/button";
  *
  * The server caches a successful step-up for ~10 min per session, but the client can't
  * see that cache, so we always prompt for a deploy action (rare + privileged → acceptable).
- * The `totpCode` is ignored server-side when the session is still within the step-up window.
+ *
+ * ⚠ Pha 6 Task 1 (M-4) — the last sentence of this block USED to read "the `totpCode` is ignored
+ * server-side when the session is still within the step-up window". That is **no longer true for
+ * every caller**, and leaving it would make this file lie about the server:
+ *   • the five deploy mutations listed above still go through `requireFreshTotp` (session cache) —
+ *     for them the sentence holds;
+ *   • `vram.preempt` / `vram.releaseStale` additionally chain `requirePerCallFreshTotp`, which
+ *     reads **no cache**: every single call must carry a `totpCode` that verifies **at that
+ *     moment**. Sending the code is therefore mandatory, never redundant, for those two.
+ * Always sending it (what `guard()` does) is correct for both groups.
  */
 export function useStepUpOtp() {
   const { t } = useTranslation();

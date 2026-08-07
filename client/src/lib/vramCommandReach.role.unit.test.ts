@@ -7,7 +7,7 @@
  * `pages/AIBrainDashboard.tsx:114` khai `isOpsRole = role === "admin" || role === "engineer"` rồi
  * đổ **thẳng** vào prop nuôi **cả ba** nút lệnh của `VramBrokerPanel`. Hệ quả đo được:
  *  • `supervisor` — vai chủ dự án chọn cho mặt lệnh VRAM, và **đã có** trong `ACTUATION_ROLES`
- *    (`server/_core/trpc.ts:434`) — **KHÔNG BAO GIỜ** nhận `true`. Task 3 có viết vị từ hoàn hảo
+ *    (`server/_core/trpc.ts:495`) — **KHÔNG BAO GIỜ** nhận `true`. Task 3 có viết vị từ hoàn hảo
  *    đến đâu thì tham số của nó vẫn bị một biểu thức **ở màn cha** khoá chết ⇒ *"neo sai một nấc"*.
  *  • `isOpsRole` **không phải** một câu về VRAM: nó là cổng của Agent Ops
  *    (`aiAgent.listAgentSessionsForOps`, sàn `admin|engineer`). Một ô trả lời **hai** câu hỏi khác

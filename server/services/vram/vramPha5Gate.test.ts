@@ -40,8 +40,38 @@ const TEST_DIR = fileURLToPath(new URL(".", import.meta.url)); // .../server/ser
 const GOC = join(TEST_DIR, "..", "..", ".."); // gốc repo
 const KE_HOACH = join(GOC, "docs", "superpowers", "plans", "2026-08-06-vram-pha5-tra-no.md");
 
-/** Chuỗi mà một file test dùng để **tự khai** nó là lưới của pha này. */
+/**
+ * ★★★ Pha 6 Task 1 / (E) — **NHẬN DIỆN BẰNG VỊ TRÍ, KHÔNG BẰNG CHÍNH TẢ.**
+ *
+ * ⚠⚠⚠ VÌ SAO LUẬT ĐỔI: bản trước nhận diện đối tượng bằng **nội dung** — file có chứa chuỗi
+ * `"Pha 5"` hay không. Hai lượt đo bắt nó ngay trong Pha 6:
+ *  • lưới `vramStepUpFreshness.test.ts` bản đầu chỉ viết `PHA 5` **viết HOA** ⇒ **lọt khỏi lượng
+ *    từ** trong khi cổng vẫn xanh 100%;
+ *  • đột biến **R3** của reviewer: một file test **mới**, **không chứa** `Pha 5`, có ca **cố tình
+ *    đỏ** ⇒ **cổng khai XANH 103/103**.
+ * Và Task 2–5 của Pha 6 sẽ sinh **≥4 lưới nữa**, **không lưới nào** có lý do viết `Pha 5`.
+ * ⇒ Nhận diện phải là một sự thật **KHÔNG SỬA ĐƯỢC BẰNG CÁCH VIẾT KHÁC ĐI**: **vị trí trên đĩa**
+ *   và **tên file**. Một lưới của module VRAM **ở đâu** thì nó **là** lưới của module VRAM.
+ *
+ * ⚠ Luật content cũ **KHÔNG bị bỏ** — nó được **HỢP** vào, vì có lưới Pha 5 nằm ngoài module VRAM
+ *   (`aiCopilotActions.hardlinkSink.test.ts`, `permissions.machineControl.test.ts`). Hợp hai vị từ
+ *   chỉ **nới rộng** đối tượng bị canh, không bao giờ thu hẹp.
+ * ⚠ Tên file này giữ nguyên vì lý do lịch sử (được trích dẫn ở hai kế hoạch + một báo cáo đã chốt);
+ *   **luật bên trong** mới là bất biến, không phải cái tên.
+ */
 const DAU_KHAI = "Pha 5";
+
+/**
+ * File test này có thuộc **module VRAM** không — hỏi bằng **VỊ TRÍ** (nằm dưới một thư mục tên
+ * `vram`) hoặc **TÊN FILE** (`vram*`, không phân biệt hoa thường). Phủ đúng ba vị trí mà reviewer
+ * nêu (`server/routers/vram*` · `server/services/vram/**` · `client/src/lib/vram*`) **và rộng hơn**
+ * — một lưới VRAM sinh ra ở thư mục thứ tư cũng tự vào lượng từ.
+ */
+function laLuoiVram(duongTuongDoi: string): boolean {
+  const doan = duongTuongDoi.split("/");
+  const ten = doan[doan.length - 1] ?? "";
+  return doan.slice(0, -1).includes("vram") || /^vram/i.test(ten);
+}
 
 /** Thư mục được quét — cả ba nhánh mà Pha 5 chạm tới. */
 const NHANH = ["server", join("client", "src"), "shared"];
@@ -88,12 +118,20 @@ function duocPhu(file: string, cong: string[]): boolean {
 }
 
 const CONG = duongCuaCong();
-const FILE_PHA5 = NHANH.flatMap((n) => moiFileTest(join(GOC, n)))
-  .filter((p) => readFileSync(p, "utf8").includes(DAU_KHAI))
-  .map(duong)
-  .sort();
+const MOI_FILE = NHANH.flatMap((n) => moiFileTest(join(GOC, n))).map((p) => ({ duong: duong(p), that: p }));
 
-describe("★★★ I-1 — §Cổng kiểm chung phải PHỦ mọi lưới của Pha 5 (đảo lượng từ, ghim SỐ)", () => {
+/** Lưới nhận diện bằng **NỘI DUNG** (luật cũ) — vẫn giữ, vì có lưới Pha 5 ngoài module VRAM. */
+const FILE_PHA5 = MOI_FILE.filter((f) => readFileSync(f.that, "utf8").includes(DAU_KHAI))
+  .map((f) => f.duong)
+  .sort();
+/** Lưới nhận diện bằng **VỊ TRÍ / TÊN** (luật mới) — không sửa được bằng cách viết khác đi. */
+const FILE_VRAM = MOI_FILE.filter((f) => laLuoiVram(f.duong))
+  .map((f) => f.duong)
+  .sort();
+/** ⚠ **HỢP**, không phải thay thế: hai vị từ chỉ nới rộng đối tượng bị canh. */
+const FILE_CANH = [...new Set([...FILE_PHA5, ...FILE_VRAM])].sort();
+
+describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lưới bị canh (đảo lượng từ, ghim SỐ)", () => {
   it("★★★ cầu chì — đọc được cổng từ file kế hoạch, và nó không rỗng", () => {
     expect(existsSync(KE_HOACH), `không thấy file kế hoạch: ${duong(KE_HOACH)}`).toBe(true);
     // ⚠ Pha 6 Task 1 (M-4): +1 đường — `server/routers/vramStepUpFreshness.test.ts`. Cổng của Pha 6
@@ -107,32 +145,65 @@ describe("★★★ I-1 — §Cổng kiểm chung phải PHỦ mọi lưới c�
     expect(thieu.join(" · "), "đường của cổng không tồn tại ⇒ cổng khai XANH cho một tập rỗng").toBe("");
   });
 
-  it("★★★ cầu chì — quét thấy đủ nhiều lưới tự khai `Pha 5` (0 file ⇒ mọi khẳng định dưới là chân lý rỗng)", () => {
-    expect(FILE_PHA5.length, "bộ quét không thấy file nào mang dấu khai `Pha 5` — nó đã hỏng?").toBeGreaterThanOrEqual(10);
-    // ⚠ GHIM SỐ: một lưới Pha 5 mới sinh ra, hoặc một lưới cũ bị xoá, đều phải là một **quyết định
-    //   nói ra**, không phải một lượt trôi im lặng.
-    // ⚠ Pha 6 Task 1 (M-4): 16 → 17 (`server/routers/vramStepUpFreshness.test.ts`). Lưới ấy **cố ý**
-    //   viết chuỗi `Pha 5` thường: bản đầu chỉ có `PHA 5` viết HOA nên nó **lọt khỏi lượng từ** mà
-    //   vẫn xanh — đúng hình dạng "hàng rào không ai canh" mà file này được dựng ra để đóng.
-    expect(FILE_PHA5.length, `danh sách lưới Pha 5 đã đổi:\n${FILE_PHA5.join("\n")}`).toBe(17);
+  it("★★★ cầu chì — cả HAI bộ nhận diện đều thấy đủ nhiều file (0 file ⇒ mọi khẳng định dưới là chân lý rỗng)", () => {
+    expect(FILE_PHA5.length, "bộ quét NỘI DUNG không thấy file nào — nó đã hỏng?").toBeGreaterThanOrEqual(10);
+    expect(FILE_VRAM.length, "bộ quét VỊ TRÍ/TÊN không thấy file nào — nó đã hỏng?").toBeGreaterThanOrEqual(40);
+    // ⚠ Bộ VỊ TRÍ phải RỘNG HƠN HẲN bộ NỘI DUNG — nếu không, luật mới không thêm được gì.
+    expect(
+      FILE_VRAM.filter((f) => !FILE_PHA5.includes(f)).length,
+      "luật VỊ TRÍ không bắt thêm file nào so với luật NỘI DUNG ⇒ (E) chưa đóng",
+    ).toBeGreaterThanOrEqual(20);
+    // ⚠ GHIM SỐ: một lưới mới sinh ra, hoặc một lưới cũ bị xoá, đều phải là một **quyết định nói
+    //   ra**, không phải một lượt trôi im lặng.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(62);
   });
 
-  it("★★★ KHÔNG file nào tự khai `Pha 5` mà nằm NGOÀI cổng — đây là ô mà I-1 đã lọt", () => {
-    const ngoai = FILE_PHA5.filter((f) => !duocPhu(f, CONG));
+  it("★★★ KHÔNG file nào bị canh mà nằm NGOÀI cổng — ô mà I-1 đã lọt, và ô mà R3 đã lọt", () => {
+    const ngoai = FILE_CANH.filter((f) => !duocPhu(f, CONG));
     expect(
       ngoai.join("\n"),
-      "lưới của Pha 5 KHÔNG nằm trong cổng ⇒ một đột biến trong đúng file ấy SHIP ĐƯỢC với cổng xanh 100%",
+      "lưới bị canh KHÔNG nằm trong cổng ⇒ một đột biến trong đúng file ấy SHIP ĐƯỢC với cổng xanh 100%",
     ).toBe("");
   });
 
-  it("★★★ hai file mà lượt rà này tìm ra phải nằm trong cổng (đối chứng ĐÍCH DANH)", () => {
+  it("★★★ R3 — một lưới VRAM MỚI **không chứa** chuỗi `Pha 5` vẫn bị lượng từ tóm (luật cũ MÙ ở đây)", () => {
+    /**
+     * ⚠⚠⚠ Đột biến R3 nguyên văn: file test mới, **không** chứa `Pha 5`, có ca cố tình đỏ ⇒ cổng
+     * khai XANH 103/103. Ca này chứng minh luật MỚI thấy nó, và luật CŨ thì không.
+     */
+    const moi = ["server/routers/vramR3Moi.test.ts", "server/services/vram/r3Moi.test.ts", "client/src/lib/vramR3Moi.test.ts"];
+    for (const f of moi) {
+      expect(laLuoiVram(f), `${f} phải bị luật VỊ TRÍ/TÊN nhận là lưới VRAM`).toBe(true);
+    }
+    // Đối chứng: hai file này CHƯA tồn tại trên đĩa ⇒ chúng không nằm trong `FILE_CANH` hôm nay,
+    // nhưng ngay khi ai đó tạo ra chúng, chúng vào lượng từ **mà không cần chứa chữ nào**.
+    expect(moi.every((f) => !existsSync(join(GOC, f))), "ca này giả định ba đường ấy chưa tồn tại").toBe(true);
+    // ⚠ `server/routers/vramR3Moi.test.ts` KHÔNG được cổng phủ ⇒ nếu nó ra đời, cổng ĐỎ cho tới khi
+    //   có người thêm đường. Đó chính là hành vi mà (E) đòi.
+    expect(duocPhu("server/routers/vramR3Moi.test.ts", CONG), "một lưới router VRAM mới phải BUỘC cập nhật cổng").toBe(false);
+  });
+
+  it("★★★ ba file đích danh phải nằm trong cổng (đối chứng cho `duocPhu`)", () => {
     // ⚠ Không phải một danh sách trắng mới — đây là **đối chứng** cho ca trên: nếu vị từ `duocPhu`
     //   hỏng theo chiều "phủ hết", ca trên vẫn xanh còn ca này vẫn bắt được.
-    for (const f of ["server/routers/vramPermissionSplit.test.ts", "server/services/aiCopilotActions.hardlinkSink.test.ts"]) {
+    for (const f of [
+      "server/routers/vramPermissionSplit.test.ts",
+      "server/routers/vramStepUpFreshness.test.ts",
+      "server/services/aiCopilotActions.hardlinkSink.test.ts",
+    ]) {
       expect(existsSync(join(GOC, f)), `${f} phải tồn tại`).toBe(true);
-      expect(FILE_PHA5, `${f} phải tự khai là lưới Pha 5`).toContain(f);
+      expect(FILE_CANH, `${f} phải nằm trong tập bị canh`).toContain(f);
       expect(duocPhu(f, CONG), `${f} phải được §Cổng kiểm chung phủ`).toBe(true);
     }
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — `laLuoiVram` không tóm file ngoài module VRAM", () => {
+    expect(laLuoiVram("server/routers/permissions.machineControl.test.ts")).toBe(false);
+    expect(laLuoiVram("server/services/aiCopilotActions.hardlinkSink.test.ts")).toBe(false);
+    // ⚠ Một thư mục tên `vramOther` KHÔNG phải thư mục `vram`.
+    expect(laLuoiVram("server/services/vramOther/x.test.ts")).toBe(false);
+    // ⚠ …nhưng một FILE tên `vram*` ở bất kỳ đâu thì có.
+    expect(laLuoiVram("server/services/aiLocalTools/vramTools.test.ts")).toBe(true);
   });
 
   it("★★ KHÔNG BẮT NHẦM — `duocPhu` chỉ nhận khớp-đúng hoặc thư-mục-cha, không nhận tiền tố cụt", () => {
