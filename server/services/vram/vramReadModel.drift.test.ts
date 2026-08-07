@@ -592,9 +592,18 @@ describe("★★★ §2 — `effective` mang DẤU ĐỌC ⇒ hai lượt đọc
     expect(sau.atMs).toBe(truoc.atMs);
     // …và 5,27 GB thật sự đã rời sổ.
     expect(truoc.ledger.localBytes! - sau.ledger.localBytes!).toBe(5_274_419_200);
-    // ⇒ DẤU ĐỌC là thứ DUY NHẤT phân biệt được hai ảnh chụp ở đây.
+    /**
+     * ⇒ **KHẲNG ĐỊNH LOAD-BEARING ĐỨNG TRƯỚC** (bài học của chính đột biến Đ6): nếu để dòng
+     * `readMark` lên trên, một bản vá gỡ dấu đọc sẽ làm ca đỏ với câu *"expected undefined not to
+     * be undefined"* — người sửa đi tìm một ô `undefined`, chứ không thấy điều thật sự hỏng là
+     * **hai ảnh chụp BẰNG NHAU trong khi 5,27 GB đã rời sổ**.
+     */
+    expect(
+      sau.headroom.effective,
+      "hai lượt đọc ở hai trạng thái SỔ khác hẳn nhau mà cho cùng một giá trị ⇒ cổng ra KHÔNG đạt",
+    ).not.toEqual(truoc.headroom.effective);
+    // …và đây là ô DUY NHẤT phân biệt được chúng (bằng chứng cho câu trên, không thay nó).
     expect(sau.headroom.effective.readMark).not.toBe(truoc.headroom.effective.readMark);
-    expect(sau.headroom.effective).not.toEqual(truoc.headroom.effective);
   });
 
   it("★★★ #1 — DẤU ĐỌC KHÔNG TRÙNG ĐƯỢC: 50 lượt đọc trong CÙNG một mili giây ⇒ 50 dấu KHÁC NHAU", async () => {
