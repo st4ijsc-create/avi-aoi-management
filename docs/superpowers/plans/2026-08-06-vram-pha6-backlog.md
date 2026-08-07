@@ -133,3 +133,28 @@ Kế thừa **toàn bộ** §Global Constraints của `2026-08-06-vram-pha5-tra-
 - Step-up **hở** ở `orchestration.deployWorkflow` + `programming.deployBuild`.
 - **6 tên module** dùng qua `requirePermission` **không có** trong `PERMISSION_MODULES`.
 - **brand `input`** của lệnh (thứ duy nhất bảo vệ người gọi **chưa tồn tại**) · **harness render `.tsx`** (repo **0** file `*.test.tsx`).
+
+---
+
+### Task 1b: SIẾT NỐT 5 thủ tục `deployProcedure` còn lại (quyết định chủ dự án 2026-08-06)
+
+**Vì sao có task này.** Task 1 siết `requirePerCallFreshTotp` cho **hai** lệnh phá huỷ VRAM, và **hoãn** 5 thủ tục còn lại với lý do *"`deployToFleet` chạy 200 máy, `deployBuild` gọi tuần tự từng máy ⇒ siết toàn cục sẽ gãy giữa chừng"*.
+
+⚠⚠ **Review Task 1 chứng minh lý do ấy SAI SỰ THẬT:** vòng lặp fleet nằm **TRONG MÁY CHỦ, trong MỘT request tRPC** (`fleetRollout.ts:229,266` → `programmingService.ts:818` — lời gọi hàm, **không qua middleware**). Client gọi **đúng một lần**, và **5/5** điểm gọi client **đã bọc `stepUp.guard` và đã gửi `totpCode`**.
+⇒ **Không còn rào cản kỹ thuật nào.** Chủ dự án chốt: **SIẾT NỐT.**
+
+**Năm thủ tục:** `orchestration.deployWorkflow` · `programming.deployBuild` · `programming.approveDeployment` · `programming.rollbackDeployment` · `programming.deployToFleet`.
+
+**Đóng luôn mối lo #1 của Task 1:** hôm nay một lượt VRAM có OTP **hâm nóng cache dùng chung** ⇒ sau `preempt`, `deployBuild` chạy **10 phút không hỏi mã**. Siết nốt là hết.
+
+- [ ] **Bước 1: ĐO trước, từng thủ tục.** Với **mỗi** cái trong 5: dựng lượt gọi **không `totpCode`** sau một lượt step-up khác trong 10 phút ⇒ ghi lại nó **qua được**. **Năm ca ĐỎ**, không phải một.
+- [ ] **Bước 2: xác minh lại tiền đề** (đừng tin tài liệu này): `git grep` từng điểm gọi client của 5 thủ tục ⇒ **có bọc `stepUp.guard`** và **có gửi `totpCode`** không? ⚠ Nếu **một** cái không ⇒ **DỪNG VÀ HỎI**, đừng siết mù.
+- [ ] **Bước 3: cài.** Dùng **đúng** `requirePerCallFreshTotp` của Task 1 — **đừng viết vị từ thứ hai**.
+- [ ] **Bước 4: ĐỐI CHỨNG DƯƠNG cho từng thủ tục** — lượt **có** `totpCode` hợp lệ ⇒ **vẫn qua**. ⚠ Không có nó thì bản vá **chặn hết** cũng xanh.
+- [ ] **Bước 5: đột biến.** Gỡ phép siết ở **mỗi** thủ tục ⇒ ca đỏ đích danh · một thủ tục **KHÔNG** thuộc 5+2 ⇒ **không bị bắt nhầm** · **thủ tục MỚI** chain `deployProcedure` trong **file mới** ⇒ ca đỏ (**phép thử M3**).
+- [ ] **Bước 6:** ⚠ **Đảo lượng từ** — sau task này, bất biến đúng là ***"MỌI thủ tục chain `deployProcedure` PHẢI chain `requirePerCallFreshTotp`"***, tức **gộp vào chính `deployProcedure`** thay vì chain tay 7 chỗ. Cân nhắc và **viết lý do** nếu không chọn.
+- [ ] **Bước 7: commit.**
+
+**Cổng ra:** cả **7** thủ tục (2 VRAM + 5 này) **không** qua được bằng OTP của một lượt khác; **7/7** lượt có OTP đúng **vẫn qua**; thủ tục ngoài tập **giữ nguyên** cache phiên.
+
+⚠ **Còn mở sau task này** (khai, không vá): **không chống phát lại** — cùng một mã dùng lại được **~90 s** (`speakeasy window:1`). Đóng nó cần **cơ chế MỚI** (sổ mã đã dùng) ⇒ mục riêng, cần chủ dự án duyệt.
