@@ -171,9 +171,22 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
   // ── DƯ ĐỊA + `trusted`/`degradedReasons` (đồng hồ #2 của bảng) ───────────────────────────────
   d.push(
     noi(lang, "headroom", {
-      // ★ Pha 6 Task 2 — con số ĐANG CHẢY, lấy **tại mốc đọc của chính ảnh chụp**. Câu chữ giữ
-      //   nguyên từng byte (bản `vi` bị `vramTools.test.ts` + `vramPhrases.exhaustive.test.ts`
-      //   ghim); thứ đổi là **đường lấy số**, không phải lời nói.
+      /**
+       * ★ Pha 6 Task 2 — con số ĐANG CHẢY, lấy **tại mốc đọc của chính ảnh chụp**. Lượt ấy chỉ
+       * đổi **đường lấy số**, không đổi lời nói.
+       *
+       * ⚠⚠ **NỢ CÒN MỞ, VÀ ĐÂY LÀ LÝ DO ĐÚNG** (đính chính RR-D — lý do khai lần đầu **SAI**):
+       * dòng này in một con số **KHÔNG kèm câu "nó đang chảy"**, trong khi mặt đọc đã mang sẵn
+       * `effective.notAnInvariant` + `beforeAfterEvidence`. Và Agent **chỉ nhận `textSummary`**
+       * (`aiLocalKnowledgeService.ts:2351` đường stream · `:2070`/`:2396` đường không stream —
+       * `data.state` **không bao giờ** tới LLM) ⇒ với Agent, lượt đổi kiểu của Task 2 là **vô
+       * hình**.
+       * ⚠ Lý do hoãn **KHÔNG PHẢI** *"câu `vi` bị ghim từng byte"*: `git grep "Dư địa hiệu lực"`
+       * ngoài `vramPhrases.ts` = **0**, và `vramPhrases.exhaustive.test.ts` cưỡng chế **luật hình
+       * dạng** (ba bản thật · `en` chỉ ASCII · `zh` có Hán tự · khuôn không rẽ nhánh · tập khoá
+       * dùng ≡ tập khoá khai), **không ghim nội dung**. Chi phí thật để trả nợ này là **3 chuỗi
+       * khuôn (vi/en/zh) trong `CAU.headroom`, 0 khoá i18n mới**.
+       */
       eff: M(s.headroom.effective.bytesAtReadMs),
       raw: M(s.headroom.rawBytes),
       ceiling: M(s.headroom.ceilingBytes),

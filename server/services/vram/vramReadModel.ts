@@ -547,15 +547,29 @@ export interface VramAgentEffectiveHeadroom {
    * bằng chứng là **`owner` + `bytes` của hộ**, không phải cả đối tượng hộ. Một danh sách "bất
    * biến đúng" cũng có phần tử thứ N+1 của nó.
    *
-   * ⚠⚠⚠ **VÀ NÓ CÓ PHẦN TỬ THỨ N+2** (#2 của review, đo được): bản trước chỉ nói về **SỔ CỤC BỘ**
-   * ⇒ **1.572.864.000 B rời SỔ CHUNG** làm **cả bốn vế đứng yên tuyệt đối** (`rawBytes`
-   * `23.679.991.808` ở cả hai đầu — nó bị `attributable` ghim; `localBytes` và hộ cục bộ **không
-   * liên quan**). Hai ô duy nhất nói ra sự thật — `ledger.totalBytes` và `ledger.foreign.bytes` —
-   * **đã nằm sẵn ở vế KHÔNG-ĐỔI** của phép phân loại mà chẳng ai mời vào bằng chứng.
-   * ⇒ Vế **anh em** nay có mặt, **đối xứng** với vế cục bộ (byte + danh tính hộ). Và vì mọi danh
-   * sách đều có phần tử tiếp theo, `vramReadModel.drift.test.ts` §7 canh bằng **lượng từ trên
-   * LƯỢT ĐỔI**, không trên ô: ***MỌI lượt đổi THẬT dựng được PHẢI làm ÍT NHẤT MỘT vế ở đây nhúc
-   * nhích*** — một lượt đổi vô hình là một ca ĐỎ **có tên**.
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ RR-A — **BA LƯỢT LIỆT KÊ LIÊN TIẾP, BA LẦN THIẾU MỘT VẾ KHÁC. THÔI LIỆT KÊ.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * Lịch sử của **chính ô này**, cả ba đều **ĐO ĐƯỢC**, không phải lo xa:
+   *   • bản của **kế hoạch** (4 vế, sổ CỤC BỘ) ⇒ **1.572.864.000 B rời SỔ CHUNG** hoàn toàn vô
+   *     hình (`rawBytes` `23.679.991.808` ở cả hai đầu — bị `attributable` ghim);
+   *   • bản **9 vế** (thêm sổ chung) ⇒ vẫn mù **BA** lượt đổi thật: một hộ cục bộ đổi `priority`
+   *     `background→production` **và** `ttlMs` `60.000→null` mà **giữ nguyên `owner`+`bytes`**
+   *     (⇒ hộ vừa chuyển từ **thu hồi được** sang **KHÔNG**, và **0 byte rời card** nên
+   *     `nvidia-smi` cũng mù); một hộ anh em **sang tiến trình khác**; một nhịp đo mới hạ
+   *     `attributable` **1 GiB** trong khi **sổ đè** nên `usedBytes`/`rawBytes` không nhúc nhích.
+   *   • Và **mỗi lần**, ô nói ra sự thật **ĐÃ NẰM SẴN** ở vế **KHÔNG-ĐỔI-THEO-ĐỒNG-HỒ** của phép
+   *     phân loại — chỉ là bản khai không mời nó.
+   *
+   * ⇒ Lời giải **không phải vế thứ 10**, mà là **thôi liệt kê**: bằng chứng là **CẢ TẬP** ô đã
+   * được **PHÉP ĐO** chứng minh là bất biến theo đồng hồ. Đó cũng đúng khuôn đã dùng cho #4 (vét
+   * cạn theo **KIỂU**, không theo một cảnh dựng): **SUY RA, ĐỪNG LIỆT KÊ.**
+   *
+   * ⚠ Hệ quả phải biết: một ô **ĐỔI-THEO-ĐỒNG-HỒ** **không bao giờ** là bằng chứng được (nó nhúc
+   * nhích khi chẳng có gì xảy ra), nên một lượt đổi chỉ chạm những ô ấy là **KHÔNG chứng minh
+   * được bằng payload** — phải đo bằng `nvidia-smi` hoặc `vram_events`. Khai ra, không hứa quá.
+   * ⚠ `vramReadModel.drift.test.ts` §7 giữ lượng từ trên **LƯỢT ĐỔI**: ***MỌI lượt đổi THẬT dựng
+   * được PHẢI làm ÍT NHẤT MỘT ô của tập ấy nhúc nhích*** — một lượt đổi vô hình là ca ĐỎ **có tên**.
    */
   readonly beforeAfterEvidence: typeof VRAM_BEFORE_AFTER_EVIDENCE;
 }
@@ -576,12 +590,15 @@ export const VRAM_EFFECTIVE_VARIES_WITH = [
   "headroom.charges.distrustChargeBytes",
 ] as const;
 
-/** Xem `VramAgentEffectiveHeadroom.beforeAfterEvidence`. **CHÍN vế, và là một PHÉP HỘI.** */
+/**
+ * Xem `VramAgentEffectiveHeadroom.beforeAfterEvidence`. **MỘT LUẬT, KHÔNG PHẢI MỘT DANH SÁCH** —
+ * và vì thế **không có con số "bao nhiêu vế"** ở đâu cả: số vế **suy ra** từ chính bản phân loại,
+ * tại chỗ chấm. Ba lượt liệt kê trước đây, ba lần thiếu một vế khác (xem khối docstring ở kiểu).
+ */
 export const VRAM_BEFORE_AFTER_EVIDENCE =
-  "headroom.rawBytes + ledger.localBytes + ledger.totalBytes + ledger.foreign.bytes + " +
-  "ledger.localHolders[].owner + ledger.localHolders[].bytes + " +
-  "ledger.foreign.holders[].owner + ledger.foreign.holders[].bytes + " +
-  "nvidia-smi(memory.used) — CẢ CHÍN VẾ CÙNG LÚC";
+  "MỌI ô khai KHÔNG-ĐỔI-THEO-ĐỒNG-HỒ (bản phân loại có ĐO ở " +
+  "server/services/vram/vramReadModel.drift.test.ts) + nvidia-smi(memory.used) " +
+  "— CẢ TẬP, KHÔNG PHẢI VÀI Ô ĐƯỢC CHỌN";
 
 export interface VramAgentState {
   readonly atMs: number;

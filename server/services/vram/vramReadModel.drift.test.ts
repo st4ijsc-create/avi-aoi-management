@@ -43,13 +43,15 @@
  * còn lại là mã sản xuất: `broker.reserve()`, `applyEnforcement()`, `buildVramAgentState()`.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 /** `server/services/vram` — neo theo vị trí file test, không theo `process.cwd()`. */
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url));
+/** Gốc repo — để kiểm một con trỏ trong payload có **SỐNG** không. */
+const GOC_REPO = join(TEST_DIR, "..", "..", "..");
 
 vi.mock("./vramEventLog", () => ({
   logVramEvent: () => {},
@@ -114,6 +116,16 @@ const ATTRIBUTABLE = 9_000 * MIB;
  * điều kiện của **cả** F4 (§5) **lẫn** phép đo mù sổ chung (§7).
  */
 const HO_ANH_EM_BYTES = 1_572_864_000;
+
+/** Hộ CỤC BỘ mang TTL — hộ mà §5/§7 thao tác. MỘT tên, không phải một chuỗi chép ở bốn chỗ. */
+const HO_TTL = "gguf:Qwen3-4B-Instruct-2507-UD-Q4_K_XL";
+
+/**
+ * ★ **(B) của review** — một `attributable` **DƯỚI SỔ**: `ledgerTotal` = 7.471.882.240 +
+ * 1.572.864.000 = **9.044.746.240**. Ở mức này `max(L, A) = L`, nên hạ `attributable` thêm 1 GiB
+ * **không** làm `usedBytes`/`rawBytes`/`effective` nhúc nhích — đúng cảnh mà (B) đòi.
+ */
+const ATTRIBUTABLE_DUOI_SO = 8_000 * MIB;
 
 /** Ba bước nhích — trong chu kỳ · vượt `*_STALE_AFTER_MS` (120 s) · một giờ. */
 const BUOC_NHICH = [5_000, 121_000, 3_600_000] as const;
@@ -831,52 +843,42 @@ describe("★★★ §4 — `variesWith` / `beforeAfterEvidence` bị PHÉP ĐO 
     }
   });
 
-  it("★★★ MỌI đường payload trong `beforeAfterEvidence` phải TỒN TẠI và phải KHÔNG đổi với MỌI bước nhích", async () => {
-    const { goc, sau, s } = await doBonAnh();
-
-    const duong = duongCuaCauKhai(s.headroom.effective.beforeAfterEvidence);
-
-    const sai: string[] = [];
-    for (const d of duong) {
-      const laCon = laKhop(d, goc.keys());
-      if (laCon.length === 0) {
-        sai.push(`${d}: KHÔNG TỒN TẠI trong payload (con trỏ chết)`);
-        continue;
-      }
-      for (const k of laCon) {
-        for (const b of BUOC_NHICH) {
-          if (sau.get(b)!.get(k) !== goc.get(k)) sai.push(`${k} @+${b}ms: ${goc.get(k)} → ${sau.get(b)!.get(k)}`);
-        }
-      }
-    }
-    expect(
-      sai.join("\n"),
-      "câu khai `beforeAfterEvidence` chỉ tới một ô ĐANG CHẢY ⇒ chính bản vá này lại dựng một cái bẫy mới",
-    ).toBe("");
-    /**
-     * ⚠⚠ **CẦU CHÌ ĐẶT SAU, CÓ CHỦ Ý.** Đặt nó TRƯỚC thì một câu khai hỏng theo kiểu *"trỏ vào ô
-     * đang chảy"* sẽ làm cầu chì nổ trước và ca đỏ **VÌ MỘT LÝ DO KHÁC** — người sửa đi chỉnh con
-     * số cầu chì rồi tưởng xong. Đo được ở đột biến **Đ6**: câu khai quay về `ledger.localHolders`
-     * nguyên khối ⇒ đỏ ở dòng đếm, **không** ở dòng nói ra `ttlExpired`. Khẳng định LOAD-BEARING
-     * phải chạy trước; cầu chì chỉ canh trường hợp câu khai **rỗng hẳn**.
-     */
-    /**
-     * ⚠⚠⚠ **#3 (review) — GHIM SỐ, KHÔNG PHẢI `>=`.** Bản `ff1789ac` hạ cầu chì `4 → 3` cho một lý
-     * do đúng (nó che mất khẳng định load-bearing), nhưng `>=` để lọt một đột biến **đo được**: bỏ
-     * hẳn vế `ledger.localBytes` khỏi câu khai **SHIP ĐƯỢC** với **72 file / 1.184 ca XANH**, trong
-     * khi câu khai vẫn tự xưng là đủ vế. ⇒ Một con số **CHÍNH XÁC**: bớt một vế là một **quyết định
-     * phải nói ra**, không phải một lượt trôi im lặng.
-     */
-    expect(duong.length, `số vế PAYLOAD của câu khai đã đổi:\n${duong.join("\n")}`).toBe(8);
-  });
-
-  it("★★ câu khai phải nói rõ là một PHÉP HỘI, không phải một danh sách để chọn một món", async () => {
+  /**
+   * ★★★ **RR-A — CÂU KHAI NAY LÀ MỘT LUẬT, NÊN NÓ ĐƯỢC CHẤM NHƯ MỘT LUẬT.**
+   *
+   * ⚠⚠ Bản trước nêu **9 đường** và ca này chấm từng đường. Nhưng **đo được**: bản 9 đường vẫn mù
+   * trước **BA** lượt đổi thật (xem §7 — (B)(C)(D) của review). Ba lượt liệt kê liên tiếp, ba lần
+   * thiếu một vế **khác**. ⇒ Câu khai **thôi liệt kê**; ba điều phải đúng thay vào đó:
+   *   1. nó **trỏ tới bản phân loại**, và con trỏ ấy phải **TỒN TẠI trên đĩa** (một đường gõ sai là
+   *      một con trỏ chết — bài học của `vramPha5Gate`);
+   *   2. nó nêu bằng chứng **NGOÀI payload** (`nvidia-smi`) — sổ không thấy byte ngoài sổ;
+   *   3. tập ô nó chỉ tới **KHÔNG chứa một ô ĐANG CHẢY nào** (giao với vế ĐỔI = ∅).
+   *
+   * ⚠⚠ **VÀ VÌ THẾ KHÔNG CÒN CON SỐ "BAO NHIÊU VẾ" Ở ĐÂU CẢ.** Cổng `toBe(8)` cũ chỉ là một cổng
+   * **KHAI BÁO**: bỏ một vế **và** sửa một chữ số ⇒ **26/26 XANH**. Thứ thay nó là **CẤU TRÚC**: tập
+   * bằng chứng **suy ra** từ `KHONG_DOI_THEO_DONG_HO`, mà tập ấy **không co lại im lặng được** —
+   * bỏ một đường khỏi nó thì hoặc ô ấy **chưa phân loại** (§3 VÉT CẠN ĐỎ), hoặc bị đẩy sang vế ĐỔI
+   * (§3 LOẠI-TƯ-CÁCH ĐỎ vì nó không nhúc nhích theo đồng hồ).
+   */
+  it("★★★ RR-A — câu khai là một LUẬT: con trỏ SỐNG · bằng chứng NGOÀI payload · tập ô KHÔNG chứa ô đang chảy", async () => {
     dungCanh();
     const s = await chupTai(0);
-    expect(s.headroom.effective.beforeAfterEvidence).toContain("CẢ CHÍN VẾ CÙNG LÚC");
-    // ⚠ Và nó phải nêu bằng chứng NGOÀI payload — sổ không nhìn thấy byte ngoài sổ (§5 của
-    //   `vramReadModel`: `unattributed` LOẠI TRỪ toàn bộ nền thiết bị).
-    expect(s.headroom.effective.beforeAfterEvidence).toContain("nvidia-smi");
+    const cau = s.headroom.effective.beforeAfterEvidence;
+
+    // (1) con trỏ tới bản phân loại phải TỒN TẠI trên đĩa.
+    const conTro = cau.match(/[\w./-]+\.test\.ts/)?.[0];
+    expect(conTro, "câu khai KHÔNG trỏ tới bản phân loại nào ⇒ nó không cưỡng chế được gì").toBeDefined();
+    expect(existsSync(join(GOC_REPO, conTro!)), `con trỏ CHẾT: ${conTro}`).toBe(true);
+
+    // (2) bằng chứng NGOÀI payload — `unattributed` LOẠI TRỪ toàn bộ nền thiết bị.
+    expect(cau).toContain("nvidia-smi");
+    // (3) một LUẬT, không phải một danh sách để chọn một món.
+    expect(cau).toContain("KHÔNG-ĐỔI-THEO-ĐỒNG-HỒ");
+    expect(cau).toContain("CẢ TẬP");
+
+    // (4) SOUNDNESS: tập bằng chứng không được mời một ô ĐANG CHẢY vào.
+    const giao = KHONG_DOI_THEO_DONG_HO.filter((d) => DOI_THEO_DONG_HO.includes(d));
+    expect(giao.join(" · "), "bằng chứng đang mời một ô ĐANG CHẢY vào làm bất biến").toBe("");
   });
 });
 
@@ -958,119 +960,215 @@ describe("★★ §6 — chiều KHÔNG BẮT NHẦM", () => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-// §7 — #2: LƯỢNG TỪ TRÊN **LƯỢT ĐỔI**, KHÔNG TRÊN Ô
+// §7 — RR-A: LƯỢNG TỪ TRÊN **LƯỢT ĐỔI**, VÀ TẬP BẰNG CHỨNG THÌ **SUY RA**
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 /**
- * ★★★ **MỌI DANH SÁCH Ô ĐỀU CÓ PHẦN TỬ THỨ N+1 — KỂ CẢ DANH SÁCH BẰNG CHỨNG.**
+ * ★★★ **BA LƯỢT LIỆT KÊ, BA LẦN THIẾU MỘT VẾ KHÁC — NÊN THÔI LIỆT KÊ.**
  *
- * ⚠⚠⚠ Đo được ở review (#2): bản đầu của `beforeAfterEvidence` nêu **bốn** vế, tất cả nói về **SỔ
- * CỤC BỘ** ⇒ **1.572.864.000 B rời SỔ CHUNG** làm **cả bốn** đứng yên tuyệt đối (`rawBytes` bị
- * `attributable` ghim; `localBytes`/hộ cục bộ **không liên quan**). Một lượt đổi **1,5 GB** hoàn
- * toàn **VÔ HÌNH** với chính bản khai vừa dựng ra để chống chuyện đó.
+ * | bản khai | vế | lượt đổi THẬT nó KHÔNG thấy |
+ * |---|---|---|
+ * | kế hoạch | 4 (chỉ sổ CỤC BỘ) | 1.572.864.000 B rời **SỔ CHUNG** |
+ * | lượt vá trước | 9 (+ sổ chung) | (B) `attributable` −1 GiB khi **sổ đè** · (C) hộ cục bộ đổi `priority`+`ttlMs` giữ `owner`+`bytes` · (D) hộ anh em **sang tiến trình khác** |
+ * | **nay** | **SUY RA** = cả tập KHÔNG-ĐỔI-THEO-ĐỒNG-HỒ | *(lượng từ không còn chỗ cho phần tử N+1 nào ở trục Ô)* |
  *
- * ⇒ Thêm hai vế thì lại là một danh sách, và danh sách sau cũng có phần tử N+1. Nên luật ở đây
- * **ĐẢO LƯỢNG TỪ SANG TRỤC KHÁC** — không lượng từ trên **Ô**, mà trên **LƯỢT ĐỔI**:
+ * ⚠⚠⚠ Và **mỗi lần**, ô nói ra sự thật **ĐÃ NẰM SẴN** ở vế KHÔNG-ĐỔI của §3 — bản khai chỉ là
+ * không mời nó. ⇒ Bằng chứng nay **KHÔNG được viết tay**: nó **là** tập ô mà **PHÉP ĐO** của §3 đã
+ * chứng minh là bất biến theo đồng hồ. Cùng lời giải đã dùng cho #4 (vét cạn theo **KIỂU**).
  *
- *   ***MỌI lượt đổi THẬT dựng được PHẢI làm ÍT NHẤT MỘT vế của `beforeAfterEvidence` nhúc nhích.***
+ * ⚠ Tập ấy **không thể co lại im lặng**: bỏ một đường khỏi `KHONG_DOI_THEO_DONG_HO` thì hoặc nó
+ * thành **chưa phân loại** (§3 VÉT CẠN ĐỎ), hoặc bị đẩy sang vế ĐỔI (§3 LOẠI-TƯ-CÁCH ĐỎ vì nó
+ * không nhúc nhích theo đồng hồ). Đó là thứ thay cho con số `toBe(8)` cũ — **cấu trúc, không phải
+ * một cái ghim**.
  *
- * Một lượt đổi vô hình là một ca **ĐỎ có tên**, và nó chỉ đường tới **vế còn thiếu** chứ không bắt
- * ai đoán. Danh mục lượt đổi ở dưới **tự nó** vẫn là một danh sách — nói thẳng ra thay vì giấu —
- * nhưng mỗi mục là một lượt đổi **ĐƯỢC THI HÀNH THẬT**, không phải một cái tên trong bảng.
+ * ⚠ **GIỚI HẠN, KHAI THẲNG:** một lượt đổi chỉ chạm những ô **ĐỔI-THEO-ĐỒNG-HỒ** thì payload
+ * **không chứng minh được** — phải đo bằng `nvidia-smi` hoặc bảng `vram_events`. Đó là lý do vế
+ * ngoài-payload nằm trong chính câu khai.
  */
-describe("★★★ §7 — MỌI lượt đổi THẬT phải làm ít nhất một vế bằng chứng nhúc nhích", () => {
-  /** Rút giá trị của **đúng những vế** mà `beforeAfterEvidence` nêu, từ một ảnh chụp. */
+describe("★★★ §7 — MỌI lượt đổi THẬT phải làm ít nhất MỘT ô của tập bằng chứng nhúc nhích", () => {
+  /**
+   * Tập bằng chứng — **SUY RA** từ bản phân loại có đo, không phải một danh sách viết tay.
+   * (Đường đã gộp chỉ số ∈ `KHONG_DOI_THEO_DONG_HO` ⇒ mọi lá cụ thể của nó đều là bằng chứng.)
+   */
   function veBangChung(s: VramAgentState): Map<string, string> {
     const la = laCua(s);
     const ra = new Map<string, string>();
-    for (const d of duongCuaCauKhai(s.headroom.effective.beforeAfterEvidence)) {
-      const con = laKhop(d, la.keys());
-      /**
-       * ⚠⚠ CẦU CHÌ: một đường khai khớp **0 lá** nghĩa là phép khớp đã hỏng, và một phép khớp hỏng
-       * thì **im lặng** — nó chỉ làm bằng chứng mù đi. Đúng lỗi đã xảy ra thật (xem `laKhop`).
-       */
-      if (con.length === 0) throw new Error(`vế bằng chứng "${d}" khớp KHÔNG lá nào — phép khớp hỏng`);
-      for (const k of con) ra.set(k, la.get(k)!);
-    }
+    for (const [k, v] of la) if (KHONG_DOI_THEO_DONG_HO.includes(gopChiSo(k))) ra.set(k, v);
     return ra;
   }
 
-  /** Có vế nào khác nhau giữa hai ảnh chụp không (KHUYẾT một khoá cũng là một lượt đổi). */
-  function veDaDoi(a: Map<string, string>, b: Map<string, string>): string[] {
+  /** Có ô nào khác nhau giữa hai ảnh chụp không (KHUYẾT một khoá cũng là một lượt đổi). */
+  function daDoi(a: Map<string, string>, b: Map<string, string>): string[] {
     const moi = new Set([...a.keys(), ...b.keys()]);
     return [...moi].filter((k) => a.get(k) !== b.get(k));
   }
 
+  /** Rút đúng những lá khớp một BẢN KHAI LIỆT KÊ (dùng cho hai ca "hằng số lịch sử" ở cuối). */
+  function rutTheoDanhSach(s: VramAgentState, ds: readonly string[]): Map<string, string> {
+    const la = laCua(s);
+    const ra = new Map<string, string>();
+    for (const d of ds) for (const k of laKhop(d, la.keys())) ra.set(k, la.get(k)!);
+    return ra;
+  }
+
   /**
-   * Danh mục **LƯỢT ĐỔI THẬT**, mỗi mục thi hành bằng mã sản xuất, **đồng hồ ĐỨNG YÊN** (để không
-   * một vế nào nhúc nhích vì lý do thời gian — thứ đang đo là *"bằng chứng có THẤY không"*).
+   * Danh mục **LƯỢT ĐỔI THẬT**, mỗi mục **thi hành bằng mã sản xuất**, **đồng hồ ĐỨNG YÊN** (thứ
+   * đang đo là *"bằng chứng có THẤY không"*, không phải thời gian).
+   * ⚠ Danh mục này vẫn là một danh sách — **nói thẳng ra**. Nhưng nó lượng từ trên **TRỤC KHÁC**
+   * (lượt đổi), nên một phần tử N+1 ở đây là *"thêm một phép thử"*, không phải *"một lỗ trong bằng
+   * chứng"*. Ba mục (B)(C)(D) đến từ review — **đo được**, không phải nghĩ ra.
    */
-  const LUOT_DOI: readonly { readonly ten: string; readonly lam: () => void }[] = [
+  const LUOT_DOI: readonly {
+    readonly ten: string;
+    readonly dungThem?: () => void;
+    readonly lam: () => void;
+  }[] = [
     {
       ten: "nhả một hộ CỤC BỘ (5.274.419.200 B)",
       lam: () => {
-        broker.release(giayPhep.get("gguf:Qwen3-4B-Instruct-2507-UD-Q4_K_XL")!);
+        broker.release(giayPhep.get(HO_TTL)!);
         drainSharedLedgerWrites();
       },
     },
     {
-      ten: "một hàng SỔ CHUNG biến mất (1.572.864.000 B của tiến trình ANH EM)",
-      lam: () => publishSharedLedgerReplica([], T0, sharedLedgerSelfKey()),
+      ten: "hộ CỤC BỘ đổi DANH TÍNH, giữ nguyên byte (RR-B)",
+      lam: () => {
+        broker.release(giayPhep.get(HO_TTL)!);
+        broker.reserve(
+          { owner: "gguf:mot-model-cuc-bo-khac", kind: "gguf-model", estimatedBytes: 5_274_419_200, priority: "background", ttlMs: 60_000, reclaimer: "gguf-idle-model" },
+          { tick: null, unledgered: null, sharedLedger: null, nowMs: T0 },
+        );
+        drainSharedLedgerWrites();
+      },
     },
     {
-      ten: "hộ ANH EM ĐỔI DANH TÍNH, GIỮ NGUYÊN byte",
-      lam: () => publishSharedLedgerReplica([hangAnhEm({ owner: "gguf:mot-model-khac" })], T0, sharedLedgerSelfKey()),
+      /**
+       * ★★★ **(C) của review — LƯỢT ĐỔI MÀ CẢ CHÍN VẾ CŨ ĐỀU MÙ, KỂ CẢ `nvidia-smi`.**
+       * Hộ vừa chuyển từ **thu hồi được** sang **KHÔNG** (`background` → `production`) và mất TTL,
+       * mà `owner`+`bytes` **không đổi một ký tự nào** và **0 byte rời card**.
+       */
+      ten: "(C) hộ CỤC BỘ đổi `priority` background→production + `ttlMs` 60.000→null, GIỮ owner+bytes",
+      lam: () => {
+        broker.release(giayPhep.get(HO_TTL)!);
+        broker.reserve(
+          { owner: HO_TTL, kind: "gguf-model", estimatedBytes: 5_274_419_200, priority: "production" },
+          { tick: null, unledgered: null, sharedLedger: null, nowMs: T0 },
+        );
+        drainSharedLedgerWrites();
+      },
     },
     {
-      ten: "hộ ANH EM đổi BYTE, giữ nguyên danh tính",
-      lam: () => publishSharedLedgerReplica([hangAnhEm({ bytes: 1 })], T0, sharedLedgerSelfKey()),
+      /** ★★★ **(D) của review** — hộ anh em **sang tiến trình khác**, giữ `owner`+`bytes`. */
+      ten: "(D) hộ ANH EM sang TIẾN TRÌNH KHÁC (worker:999:1 → worker:1234:9), giữ owner+bytes",
+      lam: () =>
+        publishSharedLedgerReplica(
+          [hangAnhEm({ processKey: "worker:1234:9", pid: 1234, leaseKey: "worker:1234:9#lease-7" })],
+          T0,
+          sharedLedgerSelfKey(),
+        ),
+    },
+    {
+      /**
+       * ★★★ **(B) của review** — nhịp đo mới hạ `attributable` **1 GiB THẬT**, nhưng **SỔ ĐÈ**
+       * (`max(L,A) = L` ở **cả hai** đầu) nên `usedBytes`/`rawBytes`/`effective` **không nhúc
+       * nhích**. Ô duy nhất nói ra sự thật là `attributable.bytes` — và nó **đã ở vế KHÔNG-ĐỔI**.
+       */
+      ten: "(B) nhịp đo mới hạ `attributable` 1 GiB trong khi SỔ ĐÈ (`used` không đổi)",
+      dungThem: () => publishDecisionTick(__tickFieldsForTests(ATTRIBUTABLE_DUOI_SO, true), T0),
+      lam: () => publishDecisionTick(__tickFieldsForTests(ATTRIBUTABLE_DUOI_SO - 1024 * MIB, true), T0),
     },
   ];
 
   for (const lo of LUOT_DOI) {
-    it(`★★★ ${lo.ten} ⇒ ÍT NHẤT MỘT vế bằng chứng phải đổi`, async () => {
+    it(`★★★ ${lo.ten} ⇒ ÍT NHẤT MỘT ô bằng chứng phải đổi`, async () => {
       dungCanh();
+      lo.dungThem?.();
       const truoc = veBangChung(await chupTai(0));
       lo.lam();
       const sau = veBangChung(await chupTai(0));
-      const doi = veDaDoi(truoc, sau);
+      const doi = daDoi(truoc, sau);
       expect(
-        doi.join(" · ") || "(KHÔNG VẾ NÀO ĐỔI)",
-        `lượt đổi "${lo.ten}" VÔ HÌNH với mọi vế của \`beforeAfterEvidence\` ⇒ bản khai còn thiếu vế`,
-      ).not.toBe("(KHÔNG VẾ NÀO ĐỔI)");
+        doi.join(" · ") || "(KHÔNG Ô NÀO ĐỔI)",
+        `lượt đổi "${lo.ten}" VÔ HÌNH với TOÀN BỘ tập bằng chứng ⇒ payload không chứng minh được nó`,
+      ).not.toBe("(KHÔNG Ô NÀO ĐỔI)");
     });
   }
 
-  it("★★★ #2 — TÁI LẬP nguyên văn: BỐN vế của bản ĐẦU mù trước một lượt rời SỔ CHUNG 1,5 GB", async () => {
-    /**
-     * ⚠⚠ Ca này giữ **bản khai CŨ** (bốn vế cục bộ) làm một **hằng số lịch sử** và chứng minh nó
-     * mù — nếu không, con số 1.572.864.000 chỉ là một câu trong báo cáo. Nó cũng là lưới chống
-     * **thụt lùi**: ai rút hai vế anh em ra khỏi câu khai sẽ làm ca §7 ở trên đỏ, và ca này giải
-     * thích **vì sao** chúng có mặt.
-     */
-    const BAN_DAU = ["headroom.rawBytes", "ledger.localBytes", "ledger.localHolders[].owner", "ledger.localHolders[].bytes"];
-    const rut = (s: VramAgentState) => {
-      const la = laCua(s);
-      const ra = new Map<string, string>();
-      for (const d of BAN_DAU) for (const k of laKhop(d, la.keys())) ra.set(k, la.get(k)!);
-      return ra;
-    };
+  it("★★ cầu chì — tập bằng chứng SUY RA phải KHÔNG rỗng và KHÔNG chứa một ô ĐANG CHẢY nào", async () => {
+    dungCanh();
+    const ve = veBangChung(await chupTai(0));
+    expect(ve.size, "tập bằng chứng rỗng ⇒ mọi ca §7 là chân lý rỗng").toBeGreaterThanOrEqual(60);
+    const bay = [...ve.keys()].filter((k) => DOI_THEO_DONG_HO.includes(gopChiSo(k)));
+    expect(bay.join(" · "), "một ô ĐANG CHẢY lọt vào tập bằng chứng").toBe("");
+  });
 
+  /**
+   * ★★★ **HAI HẰNG SỐ LỊCH SỬ** — giữ nguyên hai bản khai LIỆT KÊ đã bị bác bỏ, và chứng minh lại
+   * **bằng số** rằng chúng mù. Không có hai ca này thì các con số 1.572.864.000 / (C) chỉ là một
+   * câu trong báo cáo, và người sau sẽ bị cám dỗ *"quay lại liệt kê cho gọn"*.
+   */
+  const BAN_KE_HOACH_4_VE = [
+    "headroom.rawBytes",
+    "ledger.localBytes",
+    "ledger.localHolders[].owner",
+    "ledger.localHolders[].bytes",
+  ];
+  const BAN_9_VE = [
+    ...BAN_KE_HOACH_4_VE,
+    "ledger.totalBytes",
+    "ledger.foreign.bytes",
+    "ledger.foreign.holders[].owner",
+    "ledger.foreign.holders[].bytes",
+  ];
+
+  it("★★★ HẰNG SỐ LỊCH SỬ 1 — bản KẾ HOẠCH (4 vế) mù trước 1.572.864.000 B rời SỔ CHUNG", async () => {
     dungCanh();
     const truoc = await chupTai(0);
-    const truocRut = rut(truoc);
+    const truocRut = rutTheoDanhSach(truoc, BAN_KE_HOACH_4_VE);
     publishSharedLedgerReplica([], T0, sharedLedgerSelfKey());
     const sau = await chupTai(0);
 
-    // 1,5 GB THẬT SỰ rời sổ chung…
     expect(truoc.ledger.foreign.known && truoc.ledger.foreign.bytes).toBe(1_572_864_000);
-    expect(sau.ledger.foreign.known && sau.ledger.foreign.bytes).toBe(0);
     expect(truoc.ledger.totalBytes! - sau.ledger.totalBytes!).toBe(1_572_864_000);
-    // …mà BỐN vế của bản đầu KHÔNG một vế nào nhúc nhích.
-    expect(veDaDoi(truocRut, rut(sau)), "nếu ca này đỏ thì tiền đề của #2 đã đổi — điều tra, đừng sửa số").toEqual([]);
-    // …kể cả `rawBytes`, vì `used` bị `attributable` GHIM.
-    expect(sau.headroom.rawBytes).toBe(truoc.headroom.rawBytes);
-    // ⇒ và bản khai HÔM NAY thì THẤY.
-    expect(veDaDoi(veBangChung(truoc), veBangChung(sau)).length).toBeGreaterThan(0);
+    expect(
+      daDoi(truocRut, rutTheoDanhSach(sau, BAN_KE_HOACH_4_VE)),
+      "nếu ca này đỏ thì tiền đề đã đổi — ĐIỀU TRA, đừng sửa số",
+    ).toEqual([]);
+    // …và tập SUY RA thì THẤY.
+    expect(daDoi(veBangChung(truoc), veBangChung(sau)).length).toBeGreaterThan(0);
+  });
+
+  it("★★★ HẰNG SỐ LỊCH SỬ 2 — bản 9 VẾ mù trước (C), kể cả `nvidia-smi` (0 byte rời card)", async () => {
+    dungCanh();
+    const truoc = await chupTai(0);
+    const truocRut = rutTheoDanhSach(truoc, BAN_9_VE);
+    // (C) nguyên văn: đổi priority + bỏ TTL, GIỮ owner + bytes.
+    broker.release(giayPhep.get(HO_TTL)!);
+    broker.reserve(
+      { owner: HO_TTL, kind: "gguf-model", estimatedBytes: 5_274_419_200, priority: "production" },
+      { tick: null, unledgered: null, sharedLedger: null, nowMs: T0 },
+    );
+    drainSharedLedgerWrites();
+    const sau = await chupTai(0);
+
+    // Tiền đề: `owner`+`bytes` THẬT SỰ không đổi, và hộ THẬT SỰ đổi tư cách thu hồi.
+    expect(sau.ledger.localHolders.map((h) => `${h.owner}=${h.bytes}`)).toEqual(
+      truoc.ledger.localHolders.map((h) => `${h.owner}=${h.bytes}`),
+    );
+    expect(sau.ledger.localBytes).toBe(truoc.ledger.localBytes);
+    const ho = (x: VramAgentState) => x.ledger.localHolders.find((h) => h.owner === HO_TTL)!;
+    expect(ho(truoc).priority).toBe("background");
+    expect(ho(sau).priority).toBe("production");
+    expect(ho(truoc).ttlMs).toBe(60_000);
+    expect(ho(sau).ttlMs).toBeNull();
+
+    // ⇒ CHÍN vế mù hoàn toàn…
+    expect(
+      daDoi(truocRut, rutTheoDanhSach(sau, BAN_9_VE)),
+      "nếu ca này đỏ thì tiền đề của RR-A đã đổi — ĐIỀU TRA, đừng sửa số",
+    ).toEqual([]);
+    // …và tập SUY RA thì THẤY, đích danh những ô nào.
+    const thay = daDoi(veBangChung(truoc), veBangChung(sau));
+    expect(thay.length).toBeGreaterThan(0);
+    expect(thay.some((k) => k.endsWith(".priority") || k.endsWith(".ttlMs"))).toBe(true);
   });
 });
-
