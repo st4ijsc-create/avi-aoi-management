@@ -158,3 +158,42 @@ Kế thừa **toàn bộ** §Global Constraints của `2026-08-06-vram-pha5-tra-
 **Cổng ra:** cả **7** thủ tục (2 VRAM + 5 này) **không** qua được bằng OTP của một lượt khác; **7/7** lượt có OTP đúng **vẫn qua**; thủ tục ngoài tập **giữ nguyên** cache phiên.
 
 ⚠ **Còn mở sau task này** (khai, không vá): **không chống phát lại** — cùng một mã dùng lại được **~90 s** (`speakeasy window:1`). Đóng nó cần **cơ chế MỚI** (sổ mã đã dùng) ⇒ mục riêng, cần chủ dự án duyệt.
+
+---
+
+## QUYẾT ĐỊNH CHỦ DỰ ÁN 2026-08-07 (sau review toàn nhánh Pha 6)
+
+**1. Redeploy — ĐÃ LÀM.** PID 30108 (bản `ebfec4a5`) đã tắt theo PID; build lại; PID mới **35216**, health **200**. Server và client nay **cùng một bản** ⇒ C-1 (`/ai-brain` trắng trang) hết hiệu lực trên hệ đang chạy.
+
+**2. BA tuyến REST deploy — GHI NHẬN, KHÔNG SIẾT.**
+`POST /api/v1/equipment/:id/commands` · `/api/v1/orchestration/workflows` · `/api/v1/orchestration/runs` **deploy được chỉ bằng API key**, **không** step-up 2FA, **không** role-floor; bản ghi để lại `createdBy: null`. Probe thật: **201 + 2 lượt INSERT**.
+
+⚠⚠ **ĐÂY LÀ TRẠNG THÁI CÓ CHỦ Ý, KHÔNG PHẢI LỖ HỔNG BỎ QUÊN.** Lý do: REST là bề mặt **máy-gọi-máy** (SDK, tích hợp ngoài, edge); siết nó sẽ **gãy hợp đồng API** với mọi máy đang gọi. Nợ **CÓ TRƯỚC** module VRAM (`59948375`, 2026-06-28).
+
+⇒ **Bất biến ĐÚNG, phải viết đúng ở mọi chỗ nhắc tới:**
+> *"Lệnh deploy qua **tRPC** đòi OTP mỗi lượt. Qua **REST** thì **KHÔNG** — cổng duy nhất là API key."*
+
+⚠ **Câu SAI phải xoá nếu gặp:** *"deploy workflow luôn cần OTP"* — nó đúng cho **một** cửa vào, sai cho cửa kia. Đúng lớp *"lưới theo FILE, không theo ĐƯỜNG THOÁT"*, ở tầng **giao thức**.
+
+**3. Chống phát lại — LÀM. Xem Task 6.**
+
+---
+
+### Task 6: CHỐNG PHÁT LẠI mã OTP (quyết định chủ dự án 2026-08-07)
+
+**Nợ:** cùng một mã OTP **dùng lại được ~90 giây** (`speakeasy` `window:1` — chấp nhận mã của nhịp trước để bù lệch đồng hồ). Pha 6 đã siết cửa sổ **10 phút → ~90 s** (**6,7×**), nhưng **không** đóng được phát lại: đó cần **một cơ chế MỚI**.
+
+**Kịch bản hỏng:** ai đọc trộm được mã (nhìn màn hình · log · chụp gói tin) có **~90 giây** để dùng lại nó trên **một lệnh khác**.
+
+**Cổng ra:** một mã OTP tiêu được **ĐÚNG MỘT LẦN**; lượt thứ hai với **cùng mã** ⇒ **từ chối**, kể cả trong cửa sổ hợp lệ.
+
+- [ ] **Bước 1: ĐO trước.** Dựng hai lượt gọi liên tiếp với **cùng một mã** trong ~90 s ⇒ ghi lại lượt thứ hai **qua được**. Đây là ca ĐỎ.
+- [ ] **Bước 2: đếm bề mặt.** `git grep` mọi chỗ xác minh TOTP. ⚠ Bài học đã lật quyết định **bốn lần**: **đếm trước khi đổi một cơ chế dùng chung**.
+- [ ] **Bước 3: chọn hình dạng, VIẾT LÝ DO.** Sổ mã đã dùng: trong bộ nhớ (mất khi restart) · trong DB (**cần DDL — HỎI TRƯỚC**) · trong bảng phiên đã có. Nêu đường **không chọn** và vì sao. ⚠ Nhớ topo **nhiều tiến trình** — sổ trong bộ nhớ **không** chặn được lượt phát lại đi vào tiến trình khác.
+- [ ] **Bước 4: cài.** ⚠ **Chỉ THU HẸP.** Giữ nguyên mọi tầng đang có.
+- [ ] **Bước 5: ĐỐI CHỨNG DƯƠNG bắt buộc** — mã **mới, hợp lệ** ⇒ **vẫn qua**. Không có nó thì bản vá **chặn hết** cũng xanh.
+- [ ] **Bước 6: đột biến.** Bỏ sổ ⇒ ca đỏ · cùng mã **ở tiến trình khác** ⇒ ca đỏ · mã mới ⇒ **vẫn qua** · một thủ tục **ngoài** tập ⇒ **không bắt nhầm**.
+- [ ] **Bước 7:** ⚠ **Đảo lượng từ** — luật phải là ***"MỌI lượt xác minh TOTP đều đi qua sổ"***, suy từ bộ suy đã có (`deployProcedureScan.ts`), **không liệt kê**.
+- [ ] **Bước 8: commit.**
+
+⚠ **Sổ phải TỰ DỌN** — nếu không nó phình vô hạn. Và **KHÔNG được** dựng người ghi/người đọc **mới** cho một bất biến đã có chủ.
