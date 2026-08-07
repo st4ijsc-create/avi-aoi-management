@@ -218,19 +218,32 @@ const TARGET_REGEX = /\b(?:target|nominal|mục\s*tiêu|danh\s*định)\b\s*[:=]
  */
 
 /**
- * Khối mã trong câu hỏi. **HAI dạng, và thứ tự có nghĩa:**
- *  • CÓ NHÃN — nhãn nằm trên **dòng riêng**: ```` ```gcode\nG01 X10``` ````;
- *  • KHÔNG NHÃN — cả khối là mã: ```` ```G01 X10``` ````.
+ * ★★★ Khối mã trong câu hỏi — **MỘT LUẬT DUY NHẤT, KHÔNG PHỤ THUỘC XUỐNG DÒNG.**
  *
- * ⚠⚠ Bản đầu dùng **một** regex với `\r?\n?` (xuống dòng **tuỳ chọn**) ⇒ với khối viết liền
- * ```` ```VAR x : BOOL; END_VAR``` ```` nó nuốt `VAR` làm **nhãn ngôn ngữ** và giao cho bộ biên
- * dịch đoạn mã **ĐÃ CỤT ĐẦU** (`x : BOOL; END_VAR`), tương tự ```` ```G01 X1 Y2``` ```` thành
- * `X1 Y2` — **mất lệnh `G01`**. Đo được ở lượt rà I-1: hai trong ba tool `kind+code` nhận mã sai
- * mà mọi ca vẫn xanh, vì không ca nào khoá **giá trị** của `code`.
- * ⇒ Nhãn chỉ là nhãn khi **có xuống dòng ngay sau nó**; không có thì **toàn bộ thân là mã**.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ HAI BẢN TRƯỚC ĐỀU SAI, VÀ BẢN THỨ HAI SAI VÌ NÓ NEO VÀO **XUỐNG DÒNG** — MỘT DẤU HIỆU
+ *     KHÔNG NÓI GÌ VỀ VIỆC TOKEN ĐẦU LÀ NHÃN HAY LÀ MÃ.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * • Bản 1 (`\r?\n?` — xuống dòng **tuỳ chọn**): ```` ```G01 X1 Y2``` ```` ⇒ `X1 Y2`, **mất `G01`**.
+ * • Bản 2 (xuống dòng **bắt buộc** mới là nhãn): vá được hai hình dạng viết liền, nhưng **đẻ ra
+ *   hồi quy mới** — ```` ```gcode G01 X10``` ```` ⇒ `code = "gcode G01 X10"` (nhãn **lọt vào mã**),
+ *   và ```` ```VAR⏎ x : BOOL;⏎END_VAR``` ```` **VẪN CỤT** (`VAR` đứng một mình dòng đầu là cách
+ *   viết **CHUẨN IEC 61131-3 ST**, không phải ca hiếm).
+ *   ⚠⚠ Và lưới của bản 2 khoá **đúng ba hình dạng bản vá làm đúng** ⇒ bốn hình dạng còn lại
+ *   **cổng XANH 100%**. Đó là *"lưới khoá đúng cái vừa sửa"*: nó xác nhận bản vá, **không** canh
+ *   một bất biến.
+ *
+ * ⇒ Luật đúng **không hỏi có xuống dòng hay không**, nó hỏi **token đầu LÀ GÌ**:
+ *
+ *   ***Token đầu của thân khối chỉ là NHÃN khi `kindFromLabel()` NHẬN RA nó là một ngôn ngữ lập
+ *   trình. Ngược lại, TOÀN BỘ thân là MÃ.***
+ *
+ * Một luật, đóng cả sáu hình dạng, và **suy ra từ một nguồn đã có** (`KIND_HINTS`) chứ không từ
+ * một bảng hình dạng fence — bảng nào cũng có hình dạng thứ N+1.
  */
-const CODE_FENCE_LABELED = /```[ \t]*([A-Za-z0-9_+#-]*)[ \t]*\r?\n([\s\S]*?)```/;
-const CODE_FENCE_PLAIN = /```([\s\S]*?)```/;
+const CODE_FENCE_BODY = /```([\s\S]*?)```/;
+/** Token đầu của thân khối (bỏ qua khoảng trắng/xuống dòng đứng trước). */
+const FENCE_FIRST_TOKEN = /^[ \t\r\n]*([A-Za-z0-9_+#-]+)/;
 
 /**
  * Gợi ý `ProgrammingKind` theo từ khoá. ⚠ Thứ tự có nghĩa: mục **cụ thể hơn đứng trước**
@@ -248,20 +261,46 @@ const KIND_HINTS: ReadonlyArray<readonly [RegExp, ProgrammingKind]> = [
   [/\b(?:g[\s-]?code|cnc|phay\s*cnc)\b/i, "gcode"],
 ];
 
+/**
+ * ★★★ **NGUỒN DUY NHẤT** trả lời *"chuỗi này có phải TÊN MỘT NGÔN NGỮ không?"*.
+ *
+ * ⚠ Export để lưới `toolArgCoverage.test.ts` **dựng lượng từ từ chính nó** thay vì liệt kê hình
+ * dạng fence: ca ở đó hỏi hàm này *"token đầu có phải nhãn không"* rồi mới khẳng định hệ quả.
+ * Đổi `KIND_HINTS` ⇒ cả sản phẩm lẫn lưới đổi **cùng lúc**, không có bản sao thứ hai để lệch.
+ */
+export function kindFromLabel(token: string): ProgrammingKind | undefined {
+  for (const [re, kind] of KIND_HINTS) if (re.test(token)) return kind;
+  return undefined;
+}
+
+/** Thân khối mã tách thành (nhãn ngôn ngữ nếu có) + (mã). Xem luật ở `CODE_FENCE_BODY`. */
+function splitFence(question: string): { label?: ProgrammingKind; code: string } | undefined {
+  const body = question.match(CODE_FENCE_BODY)?.[1];
+  if (body === undefined) return undefined;
+  const dau = body.match(FENCE_FIRST_TOKEN);
+  if (dau) {
+    const kind = kindFromLabel(dau[1]!);
+    if (kind !== undefined) {
+      const conLai = body.slice(dau[0].length).trim();
+      // ⚠ Nhãn mà **không còn gì phía sau** thì nó chính là mã — đừng trả về khối rỗng.
+      if (conLai) return { label: kind, code: conLai };
+    }
+  }
+  const code = body.trim();
+  return code ? { code } : undefined;
+}
+
 /** Gợi ý `kind`: ưu tiên **nhãn của khối mã** (người dùng nói thẳng), rồi tới từ khoá trong câu. */
 function guessProgrammingKind(question: string): ProgrammingKind | undefined {
-  const nhan = question.match(CODE_FENCE_LABELED)?.[1];
-  if (nhan) {
-    for (const [re, kind] of KIND_HINTS) if (re.test(nhan)) return kind;
-  }
+  const nhan = splitFence(question)?.label;
+  if (nhan) return nhan;
   for (const [re, kind] of KIND_HINTS) if (re.test(question)) return kind;
   return undefined;
 }
 
 /** Mã nguồn người dùng dán vào câu hỏi (khối ```…```). Trả `undefined` khi không có. */
 function extractFencedCode(question: string): string | undefined {
-  const code = (question.match(CODE_FENCE_LABELED)?.[2] ?? question.match(CODE_FENCE_PLAIN)?.[1])?.trim();
-  return code ? code : undefined;
+  return splitFence(question)?.code;
 }
 
 /**
@@ -276,12 +315,30 @@ const ERROR_CODE_KEYED_REGEX =
  * (một **mã lô**) bị **cắt** thành `L20260505` và đi vào RAG như một mã lỗi — im lặng, và sai
  * theo kiểu khó thấy nhất: một chuỗi *trông giống* mã lỗi.
  */
-const ERROR_CODE_SHAPE_REGEX = /\b([A-Za-z]{1,4}[._-]?[A-Za-z]?\d{1,6}[A-Za-z0-9]{0,8})(?![A-Za-z0-9._-])/;
+const ERROR_CODE_SHAPE_REGEX = /\b([A-Za-z]{1,4}[._-]?[A-Za-z]?\d{1,6}[A-Za-z0-9]{0,8})(?![A-Za-z0-9._-])/g;
 
+/**
+ * ★★★ RR-4 — nhánh **dự phòng** không được nuốt **MÃ MÁY**.
+ *
+ * ⚠ *"mã lỗi của máy AOI-01"* ⇒ nhánh có-từ-khoá trượt (token `của` không có chữ số) ⇒ nhánh hình
+ * dạng vớ luôn `AOI-01` và đi tra tài liệu hãng cho một **mã máy** — sai im lặng.
+ * ⇒ Phép loại dùng **`MACHINE_CODE_REGEX` đã có sẵn trong chính file này** (chủ của khái niệm "mã
+ * máy"), **không** đẻ một danh sách thứ hai. Điều kiện là khớp **TRỌN TOKEN**: `AL.E6`/`F0301`
+ * không phải mã máy nên vẫn qua.
+ * ⚠ Quét **toàn chuỗi** (`/g`) rồi bỏ qua token bị loại — nếu chỉ lấy khớp ĐẦU TIÊN thì một mã máy
+ * đứng trước sẽ che mất mã lỗi thật đứng sau.
+ * ⚠ Nhánh **có từ khoá** KHÔNG đổi: người dùng viết thẳng *"mã lỗi ER-12"* thì `ER-12` là ý họ.
+ */
 function extractErrorCode(question: string): string | undefined {
   const keyed = question.match(ERROR_CODE_KEYED_REGEX)?.[1];
   if (keyed && /\d/.test(keyed)) return keyed;
-  return question.match(ERROR_CODE_SHAPE_REGEX)?.[1];
+  for (const m of question.matchAll(ERROR_CODE_SHAPE_REGEX)) {
+    const token = m[1]!;
+    const may = token.match(MACHINE_CODE_REGEX);
+    if (may && may[1] === token) continue; // là MÃ MÁY, không phải mã lỗi
+    return token;
+  }
+  return undefined;
 }
 
 /**
@@ -318,13 +375,21 @@ function extractProjectPath(question: string): string | undefined {
  *     hàm** `ident(`. `AOI-01` không thoả (dấu `-` đứng sau một CHỮ CÁI, không phải toán hạng).
  *  2. **KHÔNG PHẢI VĂN XUÔI** — không có từ ASCII ≥3 chữ đứng **rời** (không ngay trước `(`).
  *     `constructor(`/`toString(`/`__proto__(` **được giữ**; `tinh ti le loi cua lo` bị loại.
- *     ⚠ Đánh đổi đã biết: hằng `tau` (3 chữ, đứng rời) không gọi được từ NL; `pi`/`e` thì được.
  *  3. **THUẦN ASCII** — mọi ký tự ngoài ASCII (tiếng Việt có dấu, Hán tự) làm bộ tách từ của hộp
  *     cát ném `illegal character` **chắc chắn**; định tuyến một câu như vậy vào `calc` chỉ đổi một
  *     câu trả lời KB lấy một thẻ báo lỗi. ⚠ Đây **KHÔNG** phải bản sao bảng chữ của bộ tách từ:
  *     nó **hẹp hơn hẳn** — `"`, `&`, `$`, `#` đều là ASCII và **vẫn đi qua** để hộp cát từ chối.
  */
-/** Toán tử NHỊ PHÂN giữa hai toán hạng: `2+3` · `(1+2)*3` · `9^9` · `2 * (` · `1 + sqrt`. */
+/**
+ * Toán tử NHỊ PHÂN giữa hai toán hạng: `2+3` · `(1+2)*3` · `9^9` · `2 * (` · `1 + sqrt`.
+ *
+ * ⚠⚠ **RR-3 — ĐÁNH ĐỔI THẬT, ghi cho đúng**: toán hạng **TRÁI** phải là **chữ số** hoặc `)`. Nên
+ * **mọi** biểu thức mở đầu bằng một **hằng đứng rời** đều **không** với tới được từ NL:
+ * `pi * 2` · `e * 3` · `tau / 2` đều trả `null`. Viết `2 * pi` / `3 * e` thì được.
+ * ⚠ Vì sao **không** nới toán hạng trái sang `[A-Za-z_]`: làm thế thì `AOI-01` khớp lại
+ * (`I` `-` `0`) và **hồi quy I-2 sống dậy** — đúng thứ vừa mất một vòng để đóng.
+ * (Ca `★★ ĐỐI CHỨNG DƯƠNG cho I-2` khoá cả hai chiều của đánh đổi này.)
+ */
 const CALC_SHAPE_BINARY = /(?:\d|\))\s*[+\-*/%^]\s*(?:[\d(.]|[A-Za-z_])/;
 /** Một lượt GỌI HÀM: `sqrt(` · `constructor(` · `__proto__(`. */
 const CALC_SHAPE_CALL = /[A-Za-z_][A-Za-z0-9_]*\s*\(/;

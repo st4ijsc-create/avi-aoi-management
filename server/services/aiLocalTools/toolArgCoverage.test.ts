@@ -35,7 +35,7 @@ import { fileURLToPath } from "node:url";
 import "./index"; // side-effect: đăng ký toàn bộ tool (đây là nguồn đo)
 import * as progMod from "./readToolsProgramming";
 import { listTools, getTool, type Tool } from "./toolRegistry";
-import { chonDuocTheoTrigger, classifyToolIntent, extractArgsForTool, hasArgExtractionPath } from "./intentClassifier";
+import { chonDuocTheoTrigger, classifyToolIntent, extractArgsForTool, hasArgExtractionPath, kindFromLabel } from "./intentClassifier";
 
 /** Ô bắt buộc của một tool — hỏi **chính schema**, không chép tay. */
 function oBatBuoc(tool: Tool<any, any>): string[] {
@@ -169,6 +169,122 @@ describe("★★★ F2 — luật: MỌI tool chọn được theo trigger phả
       // …và nó phải điền THẬT, không phải qua được nhờ schema rỗng.
       expect(Object.keys(args).length, `${t.name}: sinh ra object RỖNG mà vẫn qua schema?`).toBeGreaterThan(0);
     }
+  });
+
+  it("★★★ RR-1 — LUẬT KHỐI MÃ: token đầu là NHÃN ⇔ `kindFromLabel` nhận ra nó (∀ token × ∀ dấu tách)", () => {
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ⚠⚠⚠ CA NÀY THAY MỘT LƯỚI ĐÃ **KHOÁ ĐÚNG CÁI VỪA SỬA** — LỚP LỖI, KHÔNG PHẢI MỘT CON BUG.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Bản I-1b liệt kê **ba hình dạng fence** — đúng ba hình dạng bản vá làm đúng. Người review
+     * dựng **sáu**, và **bốn** trong đó sai với **cổng XANH 100%**:
+     *   ```` ```gcode G01 X10``` ````   ⇒ `code = "gcode G01 X10"`  (nhãn LỌT VÀO MÃ)
+     *   ```` ```st VAR x : BOOL;``` ```` ⇒ `code = "st VAR x : BOOL;"`
+     *   ```` ```VAR⏎ x : BOOL;``` ````   ⇒ **VẪN CỤT** (`VAR` một mình dòng đầu = **chuẩn ST**)
+     *   ```` ```G01⏎X10 Y20``` ````      ⇒ **VẪN CỤT**
+     * ⇒ Lưới liệt kê hình dạng **xác nhận bản vá**, không canh bất biến. Bảng nào cũng có hình
+     *   dạng thứ N+1 (lớp lỗi đã tái diễn **mười ba** lần).
+     *
+     * Nên ca này **không liệt kê hình dạng**. Nó lấy một **kho token đầu** rồi hỏi **CHÍNH
+     * `kindFromLabel()` của sản phẩm** token ấy có phải nhãn không, và chỉ khẳng định **HỆ QUẢ**:
+     *
+     *   nhãn  ⇒ `code` = thân **BỎ token đầu**, và `kind` = **đúng cái `kindFromLabel` trả**;
+     *   không ⇒ `code` = **TOÀN BỘ** thân, **không mất chữ nào**.
+     *
+     * Đổi `KIND_HINTS` ⇒ sản phẩm và lưới đổi **cùng lúc**; không có bản sao thứ hai để lệch.
+     */
+    const KIND_CODE_TOOLS = NHOM.filter((t) => {
+      const o = oBatBuoc(t);
+      return o.includes("kind") && o.includes("code");
+    });
+    expect(KIND_CODE_TOOLS.length, "không tool nào nhận `kind`+`code` — bộ lọc theo schema đã hỏng?").toBeGreaterThanOrEqual(3);
+
+    /** Kho token đầu: nửa là **tên ngôn ngữ**, nửa là **dòng lệnh thật**. Ai là nhãn thì hỏi sản phẩm. */
+    const TOKEN = ["gcode", "st", "ld", "pou", "zmotion", "mitsubishi", "tmscript", "G01", "VAR", "N10", "PROGRAM", "MOVJ", "M30", "FUNCTION_BLOCK", "X10"];
+    /** Dấu tách giữa token đầu và phần còn lại — **cả hai** phải cho cùng một kết quả. */
+    const TACH = [" ", "\n", "\r\n", "  ", " \n"];
+    const PHAN_CON_LAI = "X10 Y20 F100";
+
+    let nhan = 0;
+    let khongNhan = 0;
+    for (const t of KIND_CODE_TOOLS) {
+      for (const tok of TOKEN) {
+        const laNhan = kindFromLabel(tok); // ← NGUỒN DUY NHẤT, hỏi chính sản phẩm
+        for (const sep of TACH) {
+          const q = `kiểm tra chương trình này: \`\`\`${tok}${sep}${PHAN_CON_LAI}\`\`\``;
+          const args = extractArgsForTool(t.name, q);
+          if (laNhan) {
+            nhan++;
+            expect(args.code, `${t.name} [${JSON.stringify(tok + sep)}]: NHÃN phải bị bóc khỏi mã`).toBe(PHAN_CON_LAI);
+            expect(args.kind, `${t.name} [${tok}]: kind phải đúng cái \`kindFromLabel\` trả`).toBe(laNhan);
+          } else {
+            khongNhan++;
+            expect(
+              args.code,
+              `${t.name} [${JSON.stringify(tok + sep)}]: KHÔNG phải nhãn ⇒ mã phải NGUYÊN VẸN, không mất token đầu`,
+            ).toBe(`${tok}${sep}${PHAN_CON_LAI}`.trim());
+          }
+        }
+      }
+    }
+    // Cầu chì: cả hai nhánh phải có mẫu thật, nếu không luật chỉ đúng một nửa mà vẫn xanh.
+    expect(nhan, "không token nào được nhận là nhãn ⇒ nhánh 'nhãn' là chân lý rỗng").toBeGreaterThanOrEqual(30);
+    expect(khongNhan, "không token nào bị coi là mã ⇒ nhánh 'không nhãn' là chân lý rỗng").toBeGreaterThanOrEqual(30);
+  });
+
+  it("★★★ RR-2 — MỌI giá trị CHUỖI bộ trích sinh ra phải TRUY được về câu hỏi (không hằng số)", () => {
+    /**
+     * ⚠⚠ Đột biến của người review gán **hằng** cho `retrieve_programming_kb.query`,
+     * `lookup_error_code.code` và `generate_program.request` ⇒ **toàn cổng 1814/1814 XANH**. Gốc:
+     * docstring I-1b tự phát biểu luật **quá hẹp** (*"ô nào chở mã nguồn"*) nên ba ô **chở câu
+     * hỏi** rơi ra ngoài lượng từ.
+     * ⇒ Luật rộng ra và neo vào một sự thật **kiểm được**: mọi ô chuỗi **tự do** (không phải
+     *   `z.enum`) phải mang một chuỗi **có mặt trong câu hỏi**. Một hằng số bịa không có mặt ⇒ ĐỎ.
+     * ⚠ Ô `z.enum` (như `kind`) được loại **bằng cách hỏi schema**, không bằng cách đọc tên ô.
+     */
+    const laEnum = (o: unknown): boolean => {
+      let n: unknown = o;
+      for (let i = 0; i < 8 && n !== null && n !== undefined; i++) {
+        if (Array.isArray((n as { options?: unknown }).options)) return true;
+        n = (n as { _def?: { innerType?: unknown } })._def?.innerType;
+      }
+      return false;
+    };
+    let daKiem = 0;
+    for (const t of NHOM) {
+      const q = CAU_HOI_THAM_SO[t.name];
+      if (!q) continue;
+      const shape = (t.parameters as unknown as { shape?: Record<string, unknown> }).shape ?? {};
+      const args = extractArgsForTool(t.name, q);
+      for (const [o, v] of Object.entries(args)) {
+        if (typeof v !== "string" || v.length < 2) continue;
+        if (laEnum(shape[o])) continue; // ô enum: giá trị là TỪ VỰNG của schema, không phải của câu hỏi
+        daKiem++;
+        expect(
+          q.includes(v),
+          `${t.name}.${o} = ${JSON.stringify(v.slice(0, 60))} KHÔNG có trong câu hỏi ⇒ nó là một HẰNG SỐ bịa, ` +
+            `không phải thứ người dùng nói`,
+        ).toBe(true);
+      }
+    }
+    expect(daKiem, "không ô chuỗi tự do nào được kiểm ⇒ luật là chân lý rỗng").toBeGreaterThanOrEqual(6);
+  });
+
+  it("★★ RR-4 — `lookup_error_code` KHÔNG nuốt MÃ MÁY (và vẫn lấy đúng mã lỗi thật)", () => {
+    /** ⚠ Cả hai chiều: loại đúng thứ phải loại, **và** không loại nhầm mã lỗi thật. */
+    for (const q of ["mã lỗi của máy AOI-01", "báo lỗi ở máy SCR-01", "alarm máy AVI-12"]) {
+      expect(extractArgsForTool("lookup_error_code", q).code, `"${q}": mã MÁY không phải mã lỗi`).toBeUndefined();
+    }
+    for (const [q, code] of [
+      ["mã lỗi AL.E6 của servo là gì", "AL.E6"],
+      ["tra error code F0301", "F0301"],
+      ["mã lỗi ER-12 trên drive", "ER-12"],
+      ["báo lỗi ở máy AOI-01, mã E7", "E7"],
+    ] as const) {
+      expect(extractArgsForTool("lookup_error_code", q).code, `"${q}"`).toBe(code);
+    }
+    // …và mã LÔ vẫn không bị cắt thành mã lỗi (vá của lượt trước không bị phá).
+    expect(extractArgsForTool("lookup_error_code", "báo lỗi lô L20260505-001").code).toBeUndefined();
   });
 
   it("★★★ I-1b — KHOÁ **GIÁ TRỊ** của `code`: `safeParse` xanh KHÔNG có nghĩa là mã ĐÚNG", () => {
