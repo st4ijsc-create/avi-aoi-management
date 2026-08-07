@@ -273,6 +273,31 @@ describe("★★★ Task 6 — một mã OTP tiêu được ĐÚNG MỘT LẦN",
     await expect(khac(phienMoi(), supervisor2).deployKhac({ totpCode: maB })).resolves.toEqual({ ok: true });
   });
 
+  it("★★★ KHÓA SỔ PHẢI CHỨA `userId` — CÙNG một chuỗi mã, HAI người dùng ⇒ cả hai QUA", () => {
+    /**
+     * ⚠⚠⚠ **CA NÀY TỒN TẠI VÌ MỘT ĐỘT BIẾN ĐÃ SỐNG SÓT.** Ô "không bắt nhầm người" ở trên dùng hai
+     * secret KHÁC nhau, nên hai người sinh ra hai chuỗi 6 số khác nhau và khoá sổ **có hay không
+     * có `userId` cũng xanh như nhau** — nó bắt trúng chỉ **nhờ may**. Đo được: gỡ `userId` khỏi
+     * khoá ⇒ **78/78 vẫn XANH**. Đúng lớp *"hàng rào không ai canh"*.
+     *
+     * ⇒ Ô này ép **đúng cái điều kiện** ấy: **CÙNG một chuỗi mã** (dùng chung một secret cho hai
+     * `userId`) — thứ có thể xảy ra ngoài đời khi hai secret khác nhau tình cờ sinh cùng 6 số.
+     * Khoá có `userId` ⇒ hai mục riêng ⇒ cả hai QUA. Khoá thiếu `userId` ⇒ người thứ hai bị
+     * **chặn oan**, và ca này ĐỎ.
+     */
+    const t = Math.floor(Date.now() / 1000);
+    const ma = otpLuc(t);
+    const a = verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: ma, nowMs: t * 1000 });
+    expect(a.hopLe, "người thứ nhất tiêu mã của mình").toBe(true);
+    const b = verifyTotpOnce({ userId: SUP2_ID, secret: SECRET_2FA, token: ma, nowMs: t * 1000 });
+    expect(b.hopLe, "người thứ HAI dùng CÙNG chuỗi mã ⇒ vẫn phải QUA (khoá sổ thiếu `userId`)").toBe(true);
+    expect(b.phatLai, "và tuyệt đối không được bị khai là PHÁT LẠI").toBe(false);
+    // …còn CÙNG người + CÙNG mã thì vẫn là phát lại (đối chứng ngược, để ô này không xanh vì bản
+    // vá đã bỏ sổ hoàn toàn).
+    const lai = verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: ma, nowMs: t * 1000 });
+    expect(lai.phatLai, "cùng người + cùng mã vẫn PHẢI là phát lại").toBe(true);
+  });
+
   it("★★★ KHÔNG BẮT NHẦM ĐƯỜNG — mã SAI vẫn hỏng vì SAI, và KHÔNG chiếm chỗ trong sổ", async () => {
     const truoc = __soTotpSize();
     const e = await loiCua(khac(phienMoi()).deployKhac({ totpCode: "000000" }));
