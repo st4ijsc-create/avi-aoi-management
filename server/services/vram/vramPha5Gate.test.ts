@@ -191,7 +191,13 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   `deployProcedure`. Nó nằm NGOÀI module VRAM và **không** chứa chuỗi `Pha 5`, nên hai bộ
     //   nhận diện đầu **MÙ** với nó; chỉ bộ thứ ba (`DAU_KHAI_PHA` ∧ `duocPhu`) thấy, và **chỉ khi**
     //   đường này có mặt ở §Cổng kiểm chung. Đó đúng là cơ chế mà (E) được dựng ra để làm.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(14);
+    // ⚠ Pha 6 Task 6: 14 → 16, thêm `server/routers/totpReplay.test.ts` (lưới HÀNH VI của phép
+    //   chống phát lại — một mã tiêu ĐÚNG MỘT LẦN, kèm ba đối chứng dương) và
+    //   `server/routers/totpReplayScan.test.ts` (lưới ∀ *"MỌI lượt xác minh TOTP đi qua sổ"*, quét
+    //   AST toàn `server/**`). Cả hai nằm NGOÀI module VRAM ⇒ bộ nhận diện theo vị trí MÙ với
+    //   chúng; chúng tự khai `Pha 5` nên bộ theo nội dung thấy, và **chính vì thế** thiếu đường ở
+    //   đây là ĐỎ ngay — đúng cơ chế I-1 được dựng ra để làm.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(16);
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -234,7 +240,11 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   cắt `owner` âm thầm). Nó vào tập bị canh qua bộ nhận diện **VỊ TRÍ** (nằm dưới thư mục
     //   `vram`) và đã được đường `server/services/vram/` của §Cổng kiểm chung phủ ⇒ `CONG.length`
     //   giữ nguyên **14**, chỉ con số này đổi.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(71);
+    // ⚠ Pha 6 Task 6: 71 → 73. **Đúng HAI** file mới — `server/routers/totpReplay.test.ts` và
+    //   `server/routers/totpReplayScan.test.ts` (chống phát lại mã OTP). Cả hai vào tập bị canh qua
+    //   bộ nhận diện **NỘI DUNG** (tự khai `Pha 5`, có chủ ý — xem docstring của chúng), và cả hai
+    //   phải có đường riêng ở §Cổng kiểm chung ⇒ `CONG.length` 14 → **16** cùng lượt.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(73);
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

@@ -94,6 +94,8 @@ import * as broker from "../services/vram/vramBroker";
 import { __resetSharedLedgerForTests } from "../services/vram/vramSharedLedger";
 import { __resetDecisionTickForTests } from "../services/vram/vramTickCell";
 import { __resetVramDeferForTests } from "../services/vram/vramDefer";
+// ★★★ Pha 6 Task 6 — sổ mã OTP đã tiêu; xem lý lẽ ở `beforeEach`.
+import { __resetSoTotpChoTest } from "../_core/totpOnce";
 import { VRAM_CONTROL_MODULE } from "@shared/permissions";
 import { VRAM_COMMAND_DESTRUCTIVE, vramCommandIsDestructive } from "../services/vram/vramCommands";
 /**
@@ -111,6 +113,20 @@ const supervisor = { id: SUP_ID, role: "supervisor", name: "Sup", twoFactorEnabl
 const SECRET_2FA = "K52U24CYJRNTQSKMG47FKUSHKFKUQW2D";
 /** OTP **của lượt gọi này**. Sinh mới mỗi lần để không có ô nào phụ thuộc một chuỗi cứng. */
 const otp = (): string => speakeasy.totp({ secret: SECRET_2FA, encoding: "base32" });
+
+/**
+ * ★★★ Pha 6 Task 6 — OTP cho một **KỊCH BẢN ĐỘC LẬP** bên trong cùng một ca.
+ *
+ * ⚠ `speakeasy.totp()` trả **CÙNG một chuỗi 6 số** suốt một nhịp 30 s, còn sổ chống phát lại
+ * (`_core/totpOnce.ts`) tiêu mỗi mã **ĐÚNG MỘT LẦN**. Nên hai kịch bản độc lập chạy trong cùng một
+ * ca sẽ đụng nhau và ca đỏ vì một **bất biến KHÁC** với cái nó đang canh. Ở đời thật người vận
+ * hành **chờ mã kế tiếp**; ở đây ta dọn sổ — hợp lệ vì các ca này canh **step-up**, còn phát lại
+ * có lưới riêng (`server/routers/totpReplay.test.ts`) và ở đó sổ **KHÔNG** bị dọn giữa chừng.
+ */
+const otpKichBanMoi = (): string => {
+  __resetSoTotpChoTest();
+  return otp();
+};
 
 /**
  * ⚠ `FakeDb.select(projection)` **bỏ qua** projection và trả **hàng thô**, nên hàng phải mang CẢ
@@ -407,6 +423,14 @@ beforeEach(() => {
   __resetSharedLedgerForTests();
   __resetDecisionTickForTests();
   __resetVramDeferForTests();
+  /**
+   * ★★★ Pha 6 Task 6 — **CÁCH LY SỔ MÃ ĐÃ TIÊU.** `speakeasy.totp()` trả **CÙNG một chuỗi 6 số**
+   * suốt một nhịp 30 s, nên nhiều ca của file này dùng **đúng một mã**. Sổ chống phát lại
+   * (`_core/totpOnce.ts`) là một `Map` cấp module ⇒ không dọn thì ca thứ hai bị từ chối vì **ca
+   * thứ nhất đã tiêu mã** — tức đỏ vì một **kịch bản khác**, không vì cái nó đang canh. Cùng lý do
+   * với `sessionToken` riêng cho mỗi ca ở trên.
+   */
+  __resetSoTotpChoTest();
   seedNguoiDung2FA();
   capQuyen(SUP_ID, [{ module: VRAM_CONTROL_MODULE, canDelete: true, canCreate: true }]);
   process.env.ACTUATION_STEPUP_2FA = "true";
@@ -588,7 +612,8 @@ describe("★★★ M-4 — OTP của một lượt KHÁC không được mở c
   it("★★★ ∀ lệnh PHÁ HUỶ (suy ra từ AST): cache đã ấm ⇒ lượt KHÔNG mang OTP vẫn bị chặn ở ĐÚNG cổng OTP", async () => {
     for (const ten of PHA_HUY) {
       const phien = phienMoi();
-      await expect(khac(phien).deployKhac({ totpCode: otp() })).resolves.toEqual({ ok: true });
+      // ⚠ Mỗi vòng lặp là một KỊCH BẢN ĐỘC LẬP ⇒ một mã chưa ai tiêu (Pha 6 Task 6).
+      await expect(khac(phien).deployKhac({ totpCode: otpKichBanMoi() })).resolves.toEqual({ ok: true });
       const e = await loiCua(goiTheoTen(phien, ten, KHONG_THAM_SO));
       expect(
         readAppErrorMeta(e),
@@ -629,7 +654,8 @@ describe("★★★ ĐỐI CHỨNG DƯƠNG — lượt CÓ OTP hợp lệ VẪN 
 
   it("★★★ ∀ lệnh PHÁ HUỶ: lượt CÓ OTP hợp lệ đi QUA mọi middleware (dừng ở zod, KHÔNG ở cổng OTP)", async () => {
     for (const ten of PHA_HUY) {
-      const e = await loiCua(goiTheoTen(phienMoi(), ten, { totpCode: otp() }));
+      // ⚠ Mỗi vòng lặp là một KỊCH BẢN ĐỘC LẬP ⇒ một mã chưa ai tiêu (Pha 6 Task 6).
+      const e = await loiCua(goiTheoTen(phienMoi(), ten, { totpCode: otpKichBanMoi() }));
       expect((e as { code?: string })?.code, `\`${ten}\` với OTP hợp lệ phải qua được step-up`).toBe("BAD_REQUEST");
       expect(
         readAppErrorMeta(e),
@@ -672,7 +698,8 @@ describe("★★★ KHÔNG BẮT NHẦM — phép siết chỉ chạm nhánh `de
     const e = await loiCua(khac(phien).deployKhac(tuDay({})));
     expect(readAppErrorMeta(e)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
     // …và ĐỐI CHỨNG DƯƠNG: OTP của chính lượt ấy thì vẫn qua.
-    await expect(khac(phien).deployKhac({ totpCode: otp() })).resolves.toEqual({ ok: true });
+    // ⚠ Một mã CHƯA AI TIÊU (Pha 6 Task 6) — dùng lại mã của nhịp đầu là một kịch bản KHÁC.
+    await expect(khac(phien).deployKhac({ totpCode: otpKichBanMoi() })).resolves.toEqual({ ok: true });
   });
 
   it("★★★ mutation KHÔNG PHÁ HUỶ (theo HÀNH VI) không bị kéo vào cổng OTP", async () => {

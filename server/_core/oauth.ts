@@ -400,14 +400,16 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
       
-      // Verify OTP token using speakeasy
-      const speakeasy = await import('speakeasy');
-      const verified = speakeasy.default.totp.verify({
+      // Verify OTP token — và TIÊU MÃ (★★★ Pha 6 Task 6, chống phát lại).
+      // ⚠ Đây là cửa vào **REST**, không qua tRPC: một mã trộm được tiêu lại ở đây đổi thẳng ra
+      //   MỘT PHIÊN ĐĂNG NHẬP (`establishSession` bên dưới). Nó phải đứng trên cùng cuốn sổ với
+      //   đường step-up, nếu không thì bịt một cửa và để mở cửa kia.
+      const { verifyTotpOnce } = await import('./totpOnce');
+      const verified = verifyTotpOnce({
+        userId: user.id,
         secret: twoFAStatus.twoFactorSecret,
-        encoding: 'base32',
         token: token,
-        window: 1, // Allow 1 step before/after for clock drift
-      });
+      }).hopLe;
       
       if (!verified) {
         // Try backup code if TOTP fails

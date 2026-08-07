@@ -52,6 +52,8 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import speakeasy from "speakeasy";
 import { z } from "zod";
+// ★★★ Pha 6 Task 6 — sổ mã OTP đã tiêu; xem lý lẽ ở `beforeEach`.
+import { __resetSoTotpChoTest } from "../_core/totpOnce";
 import {
   quetThuTucDeploy,
   moiFileDuoi,
@@ -255,6 +257,13 @@ function goi(phien: string, t: ThuTucDeploy, input: unknown): Promise<unknown> {
 beforeEach(() => {
   fake.store.clear();
   resetSeq();
+  /**
+   * ★★★ Pha 6 Task 6 — **CÁCH LY SỔ MÃ ĐÃ TIÊU.** `speakeasy.totp()` trả **CÙNG một chuỗi 6 số**
+   * suốt một nhịp 30 s, nên nhiều ca của file này dùng **đúng một mã**. Sổ chống phát lại
+   * (`_core/totpOnce.ts`) là một `Map` cấp module ⇒ không dọn thì ca thứ hai bị từ chối vì **ca
+   * thứ nhất đã tiêu mã** — tức đỏ vì một **kịch bản khác**, không vì cái nó đang canh.
+   */
+  __resetSoTotpChoTest();
   seedNguoiDung2FA();
   capQuyen();
   process.env.ACTUATION_STEPUP_2FA = "true";
@@ -311,6 +320,10 @@ describe("★★★ Pha 6 Task 1b — cầu chì của lượng từ", () => {
       "phép thử M3 khai trong lưới đã biến mất ⇒ 'thủ tục deploy MỚI được che tự động' thôi được chứng minh",
     ).toEqual([
       "server/routers/deployStepUpFreshness.test.ts#deployMoi",
+      // ⚠ Pha 6 Task 6 — phép thử M3 **thứ ba**, trong lưới chống phát lại. Nó dùng đúng
+      //   `deployProcedure` export của `_core/trpc.ts`, nên nó chia sẻ đúng middleware của mã sản
+      //   xuất; và nó phải **NÓI RA** ở đây thay vì lặng lẽ nở con số ghim.
+      "server/routers/totpReplay.test.ts#deployKhac",
       "server/routers/vramStepUpFreshness.test.ts#deployKhac",
     ]);
     // ⚠ Hai tập phải **rời nhau theo cấu tạo** — một thủ tục vừa là sản phẩm vừa là phép thử là

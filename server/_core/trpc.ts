@@ -2,8 +2,10 @@ import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from '@shared/const';
 import { initTRPC } from "@trpc/server";
 import type { TRPCDefaultErrorShape, TRPCErrorFormatter } from "@trpc/server";
 import superjson from "superjson";
-import speakeasy from "speakeasy";
 import type { TrpcContext } from "./context";
+// ★★★ Pha 6 Task 6 — CHỦ DUY NHẤT của phép xác minh TOTP (verify + tiêu mã). File này **không
+// còn** nhập `speakeasy`: `totpReplayScan.test.ts` cưỡng chế ∀ trên toàn `server/**`.
+import { verifyTotpOnce, dauLuotGoiMoi } from "./totpOnce";
 // Doc 37 P0-3 — server-side per-module license gate (flag-gated pass-through).
 import { moduleGate } from "./moduleGate";
 import { appError, readAppErrorMeta } from "./appError";
@@ -315,8 +317,19 @@ const STEPUP_TTL_MS = 10 * 60_000; // 10 phút
 /** sessionKey → thời điểm hết hạn (epoch ms) của lần step-up gần nhất. */
 const stepUpVerifiedUntil = new Map<string, number>();
 
-/** Verify một OTP TƯƠI trên secret 2FA của user (speakeasy — cùng cơ chế đăng ký 2FA). Fail-closed. */
-async function verifyFreshTotp(userId: number, code: string): Promise<boolean> {
+/**
+ * Verify một OTP TƯƠI trên secret 2FA của user, **và tiêu mã** (Pha 6 Task 6). Fail-closed.
+ *
+ * ⚠ Lượt verify đi qua `verifyTotpOnce` — chủ DUY NHẤT của `speakeasy.totp.verify` trong
+ * `server/**`. `luot` là dấu của **lượt gọi tRPC hiện tại**: chuỗi `deployProcedure` gọi hàm này
+ * **2–3 lần cho MỘT lượt bấm nút** (khối I-4 bên dưới), nên không có `luot` thì sổ mã đã tiêu sẽ
+ * **tự chặn mình** ngay ở lượt verify thứ hai và giết 100 % lệnh VRAM/deploy.
+ */
+async function verifyFreshTotp(
+  userId: number,
+  code: string,
+  luot: string,
+): Promise<{ hopLe: boolean; phatLai: boolean }> {
   try {
     const [{ getDb }, { users }, { eq }] = await Promise.all([
       import("../db/connection"),
@@ -324,16 +337,16 @@ async function verifyFreshTotp(userId: number, code: string): Promise<boolean> {
       import("drizzle-orm"),
     ]);
     const db = await getDb();
-    if (!db) return false;
+    if (!db) return { hopLe: false, phatLai: false };
     const [u] = await db
       .select({ secret: users.twoFactorSecret, enabled: users.twoFactorEnabled })
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);
-    if (!u || !u.enabled || !u.secret) return false;
-    return speakeasy.totp.verify({ secret: u.secret, encoding: "base32", token: code, window: 1 });
+    if (!u || !u.enabled || !u.secret) return { hopLe: false, phatLai: false };
+    return verifyTotpOnce({ userId, secret: u.secret, token: code, luot });
   } catch {
-    return false; // fail-closed — lỗi tra cứu/verify ⇒ coi như KHÔNG hợp lệ
+    return { hopLe: false, phatLai: false }; // fail-closed — lỗi tra cứu/verify ⇒ coi như KHÔNG hợp lệ
   }
 }
 
@@ -382,9 +395,25 @@ function stepUpTotpMiddleware(dungCachePhien: boolean) {
     );
   }
 
-  const ok = await verifyFreshTotp(ctx.user.id, totpCode);
-  if (!ok) {
-    throw appError("FORBIDDEN", "INVALID_VALUE", { field: "twoFactorCode" }, "Mã xác thực 2 bước không hợp lệ.");
+  /**
+   * ★★★ Pha 6 Task 6 — **DẤU CỦA LƯỢT GỌI.** Middleware đầu tiên trong chuỗi thật sự verify sẽ
+   * đúc dấu; các middleware sau **nhận lại đúng dấu ấy qua `ctx`** nên sổ mã đã tiêu biết chúng là
+   * cùng MỘT lượt gọi. Ngữ cảnh tRPC chỉ chảy **xuôi trong chính lượt gọi ấy** — hai lượt gọi đi
+   * chung một request HTTP gộp lô vẫn có hai chuỗi middleware riêng, mỗi chuỗi bắt đầu từ ngữ
+   * cảnh gốc ⇒ dấu **không** rò sang lượt khác.
+   */
+  const luot = (ctx as { __luotXacMinhTotp?: string }).__luotXacMinhTotp ?? dauLuotGoiMoi();
+
+  const kq = await verifyFreshTotp(ctx.user.id, totpCode, luot);
+  if (!kq.hopLe) {
+    throw appError(
+      "FORBIDDEN",
+      "INVALID_VALUE",
+      { field: "twoFactorCode" },
+      kq.phatLai
+        ? "Mã xác thực 2 bước này đã được dùng rồi. Hãy chờ mã mới trên ứng dụng xác thực."
+        : "Mã xác thực 2 bước không hợp lệ.",
+    );
   }
 
   if (dungCachePhien) {
@@ -394,7 +423,11 @@ function stepUpTotpMiddleware(dungCachePhien: boolean) {
       for (const [k, v] of stepUpVerifiedUntil) if (v <= now) stepUpVerifiedUntil.delete(k);
     }
   }
-  return next();
+  // ★★★ Task 6 — truyền dấu lượt gọi XUỐNG DƯỚI. Chỉ ở nhánh này: đường thoát sớm (cờ OFF · không
+  // phải mutation · cache-hit) **không** verify mã nào nên **không** được đúc dấu — nếu không, một
+  // cache-hit sẽ phát cho middleware sau một tấm vé "mã này đã được lượt ta xác minh" mà chẳng có
+  // mã nào từng được xác minh.
+  return next({ ctx: { ...ctx, __luotXacMinhTotp: luot } });
   });
 }
 

@@ -3,6 +3,9 @@ import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import speakeasy from "speakeasy";
+// ★★★ Pha 6 Task 6 — MỌI lượt xác minh TOTP đi qua sổ mã đã tiêu (chống phát lại). `speakeasy`
+// ở file này nay **chỉ** còn dùng để **SINH** secret (`generateSecret`), không để verify.
+import { verifyTotpOnce } from "../_core/totpOnce";
 import QRCode from "qrcode";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
@@ -142,13 +145,12 @@ export const twoFactorRouter = router({
         throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "enableTwoFactor" }, "Please generate a secret first");
       }
 
-      // Verify the TOTP code
-      const verified = speakeasy.totp.verify({
+      // Verify the TOTP code — MỘT LẦN (Pha 6 Task 6: mã tiêu rồi thì không dùng lại được).
+      const verified = verifyTotpOnce({
+        userId: ctx.user.id,
         secret: user[0].twoFactorSecret,
-        encoding: "base32",
         token: input.code,
-        window: 1, // Allow 1 step before/after for clock drift
-      });
+      }).hopLe;
 
       if (!verified) {
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "twoFactorCode" }, "Invalid verification code. Please try again.");
@@ -215,15 +217,16 @@ export const twoFactorRouter = router({
         throw appError("BAD_REQUEST", "TWO_FACTOR_NOT_SET_UP", undefined, "2FA is not enabled");
       }
 
-      // Try to verify as TOTP first
+      // Try to verify as TOTP first — MỘT LẦN (Pha 6 Task 6).
+      // ⚠ Phát lại rơi xuống nhánh mã dự phòng bên dưới và **hỏng ở đó** (mã 6 số không khớp một
+      //   backup code nào) ⇒ fail-closed, đúng chiều.
       let verified = false;
       if (input.code.length === 6 && /^\d+$/.test(input.code)) {
-        verified = speakeasy.totp.verify({
+        verified = verifyTotpOnce({
+          userId: ctx.user.id,
           secret: user[0].twoFactorSecret || "",
-          encoding: "base32",
           token: input.code,
-          window: 1,
-        });
+        }).hopLe;
       }
 
       // If not TOTP, try backup code
@@ -303,15 +306,14 @@ export const twoFactorRouter = router({
         throw appError("BAD_REQUEST", "TWO_FACTOR_NOT_SET_UP", { reason: "setUpInSecuritySettings" }, "2FA is not enabled for this account");
       }
 
-      // Try TOTP first
+      // Try TOTP first — MỘT LẦN (Pha 6 Task 6).
       let verified = false;
       if (input.code.length === 6 && /^\d+$/.test(input.code)) {
-        verified = speakeasy.totp.verify({
+        verified = verifyTotpOnce({
+          userId: ctx.user.id,
           secret: user[0].twoFactorSecret,
-          encoding: "base32",
           token: input.code,
-          window: 1,
-        });
+        }).hopLe;
       }
 
       // Try backup code
@@ -377,13 +379,13 @@ export const twoFactorRouter = router({
         throw appError("BAD_REQUEST", "TWO_FACTOR_NOT_SET_UP", { reason: "setUpInSecuritySettings" }, "2FA is not enabled");
       }
 
-      // Verify TOTP
-      const verified = speakeasy.totp.verify({
+      // Verify TOTP — MỘT LẦN (Pha 6 Task 6). Đường này sinh lại **10 mã dự phòng**: một mã OTP
+      // trộm được mà tiêu lại được ở đây là một cửa hậu vĩnh viễn.
+      const verified = verifyTotpOnce({
+        userId: ctx.user.id,
         secret: user[0].twoFactorSecret,
-        encoding: "base32",
         token: input.code,
-        window: 1,
-      });
+      }).hopLe;
 
       if (!verified) {
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "twoFactorCode" }, "Invalid verification code");

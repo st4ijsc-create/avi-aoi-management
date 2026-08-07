@@ -250,7 +250,8 @@ export const userRouter = router({
       token: z.string().length(6),
     }))
     .mutation(async ({ ctx, input }) => {
-      const speakeasy = (await import('speakeasy')).default;
+      // ★★★ Pha 6 Task 6 — MỌI lượt xác minh TOTP đi qua sổ mã đã tiêu (chống phát lại).
+      const { verifyTotpOnce } = await import('../_core/totpOnce');
 
       // Get user's 2FA secret
       const status = await db.get2FAStatus(ctx.user.id);
@@ -261,13 +262,12 @@ export const userRouter = router({
         throw appError('BAD_REQUEST', 'TWO_FACTOR_NOT_SET_UP', { reason: 'setUpInSecuritySettings' }, 'Chưa thiết lập 2FA. Vui lòng thiết lập trước.');
       }
 
-      // Verify token (base32 encoding, ±1 step for clock drift)
-      const valid = speakeasy.totp.verify({
+      // Verify token (base32 encoding, ±1 step for clock drift) — và TIÊU MÃ (Pha 6 Task 6).
+      const valid = verifyTotpOnce({
+        userId: ctx.user.id,
         secret: status.twoFactorSecret,
-        encoding: 'base32',
         token: input.token,
-        window: 1,
-      });
+      }).hopLe;
 
       if (!valid) {
         throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'twoFactorCode' }, 'Mã xác thực không hợp lệ');
@@ -286,7 +286,8 @@ export const userRouter = router({
       password: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const speakeasy = (await import('speakeasy')).default;
+      // ★★★ Pha 6 Task 6 — MỌI lượt xác minh TOTP đi qua sổ mã đã tiêu (chống phát lại).
+      const { verifyTotpOnce } = await import('../_core/totpOnce');
       const bcrypt = await import('bcryptjs');
 
       // Get user
@@ -309,13 +310,12 @@ export const userRouter = router({
         throw appError('BAD_REQUEST', 'TWO_FACTOR_NOT_SET_UP', undefined, '2FA chưa được bật');
       }
 
-      // Verify token
-      const valid = speakeasy.totp.verify({
+      // Verify token — và TIÊU MÃ (Pha 6 Task 6).
+      const valid = verifyTotpOnce({
+        userId: ctx.user.id,
         secret: status.twoFactorSecret,
-        encoding: 'base32',
         token: input.token,
-        window: 1,
-      });
+      }).hopLe;
 
       if (!valid) {
         throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'twoFactorCode' }, 'Mã xác thực không hợp lệ');
