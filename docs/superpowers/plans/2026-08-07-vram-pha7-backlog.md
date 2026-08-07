@@ -132,3 +132,29 @@ Hai hệ quả đo được: `truncatedIdentityWrites` (Task 5) **0 điểm đ�
 - **Review TOÀN NHÁNH** trên model mạnh nhất. ⚠ **CHÍN pha liên tiếp** lượt này bắt được thứ review-theo-task **KHÔNG THỂ** bắt. **Đừng bỏ.**
 - Lăng kính: **"an toàn là HỆ QUẢ của thứ khác đang hỏng"** (đã **sáu** lần) · **"hàng rào không ai canh"** · **"lượng từ sai"** · **"độc lập về nguồn ≠ độc lập về sai lầm"** · **"lưới khoá đúng cái vừa sửa"** · **"trả nợ đẻ nợ nặng hơn"** (đã **ba** lần).
 - Push · memory · đối chiếu backlog: mục nào **đóng**, mục nào **còn**, mục nào **MỚI SINH RA từ chính lượt trả nợ này**.
+
+---
+
+### Task 5: HAI MỤC CẦN DDL (chủ dự án duyệt 2026-08-08)
+
+⚠⚠⚠ **TASK NÀY SOẠN SQL, KHÔNG CHẠY SQL.** Chủ dự án đã duyệt **hướng**, nhưng còn phải duyệt **nội dung migration** trước khi áp. **Không `db:push`, không `drizzle-kit migrate`, không `psql` ghi.**
+
+**A · Sổ mã OTP phải SỐNG SÓT qua restart và DÙNG CHUNG giữa tiến trình**
+Task 6 Pha 6 dựng sổ **trong bộ nhớ** ⇒ hai lỗ: **restart ⇒ sổ rỗng lại**, mã dùng lại được trong **120 s** còn hiệu lực; **hai bản sao `ROLE=api` ⇒ hai sổ riêng**, mã tiêu ở A vẫn dùng được ở B.
+⚠ Hôm nay **chưa nguy hiểm** — đã đo: `.env` **không đặt `ROLE`** ⇒ **một** tiến trình. Lỗ thứ hai chỉ mở khi **nhân bản để chịu tải**.
+
+**B · Cờ "đã cắt danh tính" phải đi CÙNG DỮ LIỆU**
+`owner` dựng từ **đường dẫn tuyệt đối** ⇒ **≥365 ký tự** / cột **160**. Task 5 Pha 6 khai đúng khi cắt, nhưng cờ **không nằm trong DB** ⇒ tiến trình **anh em** đọc lại hàng ấy **không biết** nó đã mất chữ.
+⚠ **KHÔNG nới cột** — Task 5 đã đo và bác: trần đường dẫn Windows là **32.767**, *"không bề rộng nào đuổi kịp — nới cột chỉ **DỜI CHỖ NÓI DỐI**"*. Đường đúng là **thêm một cột cờ**.
+
+- [ ] **Bước 1: ĐO trước.** (A) dựng lượt phát lại **qua restart** ⇒ ghi lại nó **qua được**. (B) tiến trình anh em đọc hàng đã cắt ⇒ ghi lại nó **không thấy cờ**. **Hai ca ĐỎ.**
+- [ ] **Bước 2: đếm bề mặt.** ⚠ **Đếm trước khi đổi một cơ chế dùng chung** đã lật quyết định **BỐN lần**. (A) `git grep` mọi chỗ đọc/ghi sổ OTP; (B) mọi chỗ đọc `owner` từ sổ chung.
+- [ ] **Bước 3: SOẠN SQL, DỪNG, TRÌNH CHỦ DỰ ÁN.** Một migration **duy nhất** cho cả A và B. Ghi vào báo cáo **nguyên văn SQL** + **lượt hoàn tác**. ⚠ **DỪNG Ở ĐÂY.**
+- [ ] **Bước 4:** (sau khi duyệt) áp migration lên **cả** `aoi_management` **và** `aoi_management_test`, owner **`aoi`** (GOTCHA đã trả giá: DDL bằng `avi_app` ⇒ **42501**).
+- [ ] **Bước 5: cài mã**, dùng lại vị từ/bộ suy đã có — **đừng viết cái thứ N+1**.
+- [ ] **Bước 6: ĐỐI CHỨNG DƯƠNG** — (A) mã **mới** vẫn qua; (B) `owner` **ngắn** ⇒ cờ **false**, và **ô BIÊN** (dài **đúng bằng** trần) ⇒ **không** khai là đã cắt.
+- [ ] **Bước 7: đột biến.** (A) restart ⇒ mã cũ **vẫn bị chặn**; hai tiến trình ⇒ mã tiêu ở A **bị chặn** ở B. (B) gỡ cờ ⇒ ca đỏ; anh em đọc ⇒ **thấy** cờ. Cộng **KHÔNG bắt nhầm**.
+- [ ] **Bước 8: sổ phải TỰ DỌN** — nếu không nó phình vô hạn. Ca đo được, không chỉ khai.
+- [ ] **Bước 9: commit.**
+
+**Cổng ra:** (A) mã tiêu rồi ⇒ **chặn qua restart VÀ qua tiến trình khác**; mã mới ⇒ **vẫn qua**. (B) hàng bị cắt ⇒ **mọi** người đọc **thấy cờ**, kể cả tiến trình anh em.
