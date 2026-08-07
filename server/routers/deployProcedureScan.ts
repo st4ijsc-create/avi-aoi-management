@@ -369,6 +369,332 @@ export function quetThuTucDeploy(goc: string): KetQuaQuet {
   };
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ C-2 (review TOÀN NHÁNH Pha 6) — **NỬA KIA CỦA CÙNG MỘT CÂU, NAY DÙNG CHUNG BỘ SUY NÀY.**
+//
+// ⚠⚠⚠ VÌ SAO PHẦN NÀY NẰM Ở ĐÂY, KHÔNG PHẢI TRONG MỘT FILE THỨ BA:
+// Câu load-bearing của Pha 6 — *"lệnh phá huỷ VRAM phải đòi OTP MỖI LƯỢT"* — được canh bởi **HAI**
+// bộ suy AST **độc lập hoàn toàn**, và chúng canh **hai phạm vi khác nhau**:
+//
+//   | | nửa `deployProcedure` (Task 1b) | nửa "lệnh phá huỷ VRAM" (Task 1) |
+//   |---|---|---|
+//   | phạm vi quét | `server/**` **đệ quy** | **một file** `vramRouter.ts` |
+//   | nhận diện module | phép **nối đường dẫn** | đường dẫn **ghim cứng** |
+//
+// Đột biến **W3** của người review đo được hậu quả: cùng một hàm **giết tiến trình**, gắn làm
+// mutation ở **`server/routers/aiModelRouter.ts`** (đã nối `appRouter`) trên sàn
+// `roleProcedure(...).use(require2FA)` — **không step-up nào** — ⇒ **cổng XANH 109 file/1.861 ca,
+// `tsc` sạch**. *Độc lập về NGUỒN không đảm bảo độc lập về SAI LẦM: cái YẾU HƠN canh nửa NGUY
+// HIỂM HƠN.*
+//
+// ⇒ Bản vá **không** là "thêm một file nữa vào danh sách của bộ suy yếu". Nó là: **nửa VRAM dùng
+//   lại đúng bộ suy đã trả giá để học bài R1b** — cùng phép duyệt đệ quy, cùng `phanGiaiToi()`,
+//   cùng `gocChuoi()`, cùng kỷ luật "ô không phân giải được ⇒ ĐỎ".
+//
+// ⚠⚠ **TẬP "CƠ CHẾ PHÁ HUỶ" ĐƯỢC SUY RA, KHÔNG LIỆT KÊ.** Một bảng tên hàm chép tay ở đây sẽ có
+//   phần tử thứ N+1 đúng như mọi bảng trước. Thay vào đó:
+//     • **hạt giống** = ∀ hàm lệnh mà `VRAM_COMMAND_DESTRUCTIVE` phân loại PHÁ HUỶ → mọi định
+//       danh trong **thân** nó được **NHẬP từ một module KHÁC dưới `server/services/vram/**`**.
+//       Hôm nay cho đúng `preemptOwner` + `releaseStaleSharedRow`; `byteRaApi`/`chungPhamVi` là
+//       hàm **cục bộ** của `vramCommands.ts` nên không lọt vào (đã đo).
+//     • **tập phá huỷ** = **bao đóng NGƯỢC** của hạt giống trên `server/**`: *ai gọi tới được cơ
+//       chế ấy*. Bao đóng NGƯỢC (không phải xuôi) là điều kiện để tập không nở ra vô nghĩa —
+//       bao đóng xuôi từ `vramPreemptCommand` sẽ nuốt cả `vramSharedLedgerStore` mà mọi lượt
+//       đọc đều đi qua.
+//   ⇒ `huyHoTieuThu` của W3 — hàm **MỚI**, **tên không khớp mẫu nào**, đặt trong `vramPreempt.ts`,
+//     gọi `preemptOwner()` — **tự đưa mình vào tập** mà không ai phải nhớ khai gì.
+//
+// ⚠ Ba cầu chì (đảo lượng từ thay vì im lặng bỏ sót): hạt giống rỗng · một hàm lệnh PHÁ HUỶ không
+//   đóng góp cơ chế nào · một `export *` / tái xuất bí danh làm bao đóng một-nấc-tên không còn đủ.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Thư mục **chủ** của hành vi phá huỷ VRAM. Mọi cơ chế đều được suy ra từ trong đây. */
+export const THU_MUC_VRAM = "server/services/vram";
+/** File giữ bảng phân loại `VRAM_COMMAND_DESTRUCTIVE`. */
+export const FILE_LENH_VRAM = `${THU_MUC_VRAM}/vramCommands.ts`;
+
+/** Một mutation dưới `server/**` với tới được một cơ chế phá huỷ VRAM. */
+export interface MutationPhaHuy {
+  /** Đường dẫn tương đối gốc repo (dấu `/`). */
+  readonly file: string;
+  /** Tên ô trong `router({ … })`. */
+  readonly ten: string;
+  /** Dòng khai (để câu lỗi chỉ đúng chỗ). */
+  readonly dong: number;
+  /** Chuỗi thủ tục có chain `requirePerCallFreshTotp` — trực tiếp, hoặc qua GỐC `deployProcedure`. */
+  readonly siet: boolean;
+  /** `true` khi phép siết đến từ **GỐC** `deployProcedure` chứ không từ một `.use()` tại chỗ. */
+  readonly sietTuGoc: boolean;
+  /** Tên các nút phá huỷ mà ô này với tới — để câu lỗi gọi ĐÍCH DANH. */
+  readonly quaNut: readonly string[];
+}
+
+export interface KetQuaQuetPhaHuy {
+  /** Cơ chế gốc, suy từ thân các hàm lệnh PHÁ HUỶ (`file#tên`). */
+  readonly coChe: readonly string[];
+  /** Bao đóng NGƯỢC: mọi `file#tên` dưới `server/**` với tới được một cơ chế. */
+  readonly nutPhaHuy: readonly string[];
+  /** Mọi mutation (mọi router, mọi file) chạm vào bao đóng ấy. */
+  readonly mutation: readonly MutationPhaHuy[];
+  /** Ô KHÔNG phân giải được — mỗi mục là một ô KHÔNG AI CANH ⇒ lưới phải ĐỎ. */
+  readonly mu: readonly string[];
+  /** Tổng số file `.ts` đã duyệt — cầu chì chống "quét trúng 0 file". */
+  readonly soFileDuyet: number;
+}
+
+/**
+ * Mọi định danh **CÓ THỂ LÀ MỘT RÀNG BUỘC CẤP MODULE** trong một cây con.
+ *
+ * ⚠ Bỏ hai hình dạng **không bao giờ** là ràng buộc, vì chúng đẻ ra cạnh giả trong đồ thị gọi:
+ *  • **tên ô** của object literal — `{ vramPreemptCommand: true }` trong `VRAM_COMMAND_DESTRUCTIVE`
+ *    làm chính **bảng phân loại** trở thành "nút phá huỷ" nếu không lọc;
+ *  • **tên thuộc tính** của `a.b` — `broker.preemptStepForOwner` không phải một ràng buộc tên `preemptStepForOwner`.
+ */
+function dinhDanhTrong(n: ts.Node): Set<string> {
+  const ra = new Set<string>();
+  const di = (x: ts.Node): void => {
+    if (ts.isPropertyAccessExpression(x)) {
+      di(x.expression);
+      return;
+    }
+    if ((ts.isPropertyAssignment(x) || ts.isPropertySignature(x)) && x.name !== undefined) {
+      if (ts.isPropertyAssignment(x)) di(x.initializer);
+      return;
+    }
+    if (ts.isIdentifier(x)) ra.add(x.text);
+    ts.forEachChild(x, di);
+  };
+  di(n);
+  return ra;
+}
+
+/** Chuỗi biểu thức này có một lời gọi `.mutation(` không? */
+function coMutation(n: ts.Node): boolean {
+  let ra = false;
+  const di = (x: ts.Node): void => {
+    if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) && x.expression.name.text === "mutation") {
+      ra = true;
+    }
+    ts.forEachChild(x, di);
+  };
+  di(n);
+  return ra;
+}
+
+/**
+ * ★★★ *"Ai với tới được cơ chế phá huỷ VRAM, và mutation nào đứng trên họ?"* — lượng từ chạy trên
+ * **`server/**` đệ quy**, đúng phạm vi mà bài học R1b đã mua được cho nửa `deployProcedure`.
+ *
+ * @param goc thư mục gốc repo.
+ * @param phanLoai bảng `VRAM_COMMAND_DESTRUCTIVE` (tên hàm lệnh → có phá huỷ không). **Truyền vào**
+ *   chứ không nhập: file này cố ý chỉ phụ thuộc `fs`/`path`/`typescript`, và người gọi phải cầm
+ *   **chính** bảng đang chạy trong sản xuất, không phải một bản chép.
+ */
+export function quetLenhPhaHuyVram(goc: string, phanLoai: Readonly<Record<string, boolean>>): KetQuaQuetPhaHuy {
+  const THU_MUC_SERVER = join(goc, "server");
+  const CORE_TRPC = join(THU_MUC_SERVER, "_core", "trpc.ts");
+  const FILE_LENH = join(goc, ...FILE_LENH_VRAM.split("/"));
+  const DIR_VRAM = join(goc, ...THU_MUC_VRAM.split("/"));
+  const mu: string[] = [];
+
+  const tatCa = moiFileTs(THU_MUC_SERVER);
+  const noiDung = new Map<string, string>();
+  for (const f of tatCa) noiDung.set(f, readFileSync(f, "utf8"));
+  const duongCua = (f: string): string => duongTuongDoi(goc, f);
+
+  if (!existsSync(FILE_LENH)) mu.push(`không thấy ${FILE_LENH_VRAM} — bộ suy mất chủ của phân loại`);
+
+  /** `file thật` → cây đã parse (parse **theo yêu cầu**, không parse cả 1.7k file). */
+  const cayCua = new Map<string, ts.SourceFile>();
+  const cay = (f: string): ts.SourceFile => {
+    const co = cayCua.get(f);
+    if (co !== undefined) return co;
+    const sf = ts.createSourceFile(duongCua(f), noiDung.get(f) ?? "", ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    cayCua.set(f, sf);
+    return sf;
+  };
+
+  /** Ràng buộc nhập của một file: tên CỤC BỘ → `fileThật#tênGốc`. */
+  const nhapCua = (f: string): Map<string, string> => {
+    const ra = new Map<string, string>();
+    for (const st of cay(f).statements) {
+      if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
+      const spec = st.moduleSpecifier.text;
+      if (!spec.startsWith(".")) continue;
+      const p = resolve(dirname(f), spec);
+      const dich = [p, `${p}.ts`, join(p, "index.ts")].find((c) => existsSync(c) && c.endsWith(".ts"));
+      if (dich === undefined) continue;
+      const nb = st.importClause?.namedBindings;
+      if (nb === undefined || !ts.isNamedImports(nb)) continue;
+      for (const el of nb.elements) ra.set(el.name.text, `${duongCua(dich)}#${el.propertyName?.text ?? el.name.text}`);
+    }
+    return ra;
+  };
+
+  /** Khai báo cấp file: tên → cây con của thân/khởi tạo. Dùng cho cả bao đóng ngược lẫn chuỗi sàn. */
+  const khaiCua = (f: string): Map<string, ts.Node> => {
+    const ra = new Map<string, ts.Node>();
+    for (const st of cay(f).statements) {
+      if (ts.isFunctionDeclaration(st) && st.name !== undefined && st.body !== undefined) ra.set(st.name.text, st.body);
+      else if (ts.isVariableStatement(st)) {
+        for (const d of st.declarationList.declarations) {
+          if (ts.isIdentifier(d.name) && d.initializer !== undefined) ra.set(d.name.text, d.initializer);
+        }
+      }
+    }
+    return ra;
+  };
+
+  // ── (1) HẠT GIỐNG — cơ chế phá huỷ, suy từ THÂN các hàm lệnh được phân loại PHÁ HUỶ ──────────
+  const coChe = new Set<string>();
+  const lenhKhongCoChe: string[] = [];
+  if (existsSync(FILE_LENH)) {
+    const nhap = nhapCua(FILE_LENH);
+    const khai = khaiCua(FILE_LENH);
+    for (const [ten, phaHuy] of Object.entries(phanLoai)) {
+      if (!phaHuy) continue;
+      const than = khai.get(ten);
+      if (than === undefined) {
+        mu.push(`${FILE_LENH_VRAM} — không thấy thân của hàm lệnh \`${ten}\` đã phân loại PHÁ HUỶ`);
+        continue;
+      }
+      let them = 0;
+      for (const id of dinhDanhTrong(than)) {
+        const dich = nhap.get(id);
+        if (dich === undefined) continue;
+        // Chỉ nhận cơ chế nằm **trong module VRAM** — một `z`/`sql`/tiện ích chung không phải cơ chế.
+        if (!dich.startsWith(`${THU_MUC_VRAM}/`)) continue;
+        coChe.add(dich);
+        them++;
+      }
+      if (them === 0) lenhKhongCoChe.push(ten);
+    }
+  }
+  if (lenhKhongCoChe.length > 0) {
+    mu.push(
+      `hàm lệnh PHÁ HUỶ không gọi cơ chế nào dưới ${THU_MUC_VRAM}/ ⇒ bộ suy KHÔNG thấy đường phá huỷ của nó: ${lenhKhongCoChe.join(" · ")}`,
+    );
+  }
+
+  // ── CẦU CHÌ — `export *` / tái xuất bí danh làm bao đóng theo TÊN không còn đủ ────────────────
+  for (const f of tatCa) {
+    const ma = noiDung.get(f) ?? "";
+    if (!ma.includes("export *")) continue;
+    for (const m of ma.matchAll(/export\s+\*\s+(?:as\s+\w+\s+)?from\s+["']([^"']+)["']/g)) {
+      const spec = m[1];
+      if (spec === undefined || !spec.startsWith(".")) continue;
+      const p = resolve(dirname(f), spec);
+      const dich = [`${p}.ts`, join(p, "index.ts")].find((c) => existsSync(c));
+      if (dich !== undefined && (dich === FILE_LENH || dich.startsWith(DIR_VRAM + sep))) {
+        mu.push(`${duongCua(f)} — \`export * from "${spec}"\` tái xuất module VRAM ⇒ bao đóng theo TÊN không còn đủ`);
+      }
+    }
+  }
+
+  // ── (2) BAO ĐÓNG NGƯỢC — ai gọi tới được một cơ chế, trên TOÀN `server/**` ────────────────────
+  const nutPhaHuy = new Set<string>(coChe);
+  for (let vong = 0; vong < 12; vong++) {
+    /** Tên **trần** của mọi nút hiện có — dùng để lọc file bằng VĂN BẢN trước khi parse. */
+    const tenTran = new Set([...nutPhaHuy].map((n) => n.split("#")[1] ?? ""));
+    let them = 0;
+    for (const f of tatCa) {
+      const ma = noiDung.get(f) ?? "";
+      if (![...tenTran].some((t) => t !== "" && ma.includes(t))) continue;
+      const nhap = nhapCua(f);
+      const khai = khaiCua(f);
+      const rel = duongCua(f);
+      for (const [ten, than] of khai) {
+        const nut = `${rel}#${ten}`;
+        if (nutPhaHuy.has(nut)) continue;
+        for (const id of dinhDanhTrong(than)) {
+          const dich = nhap.get(id) ?? `${rel}#${id}`;
+          if (nutPhaHuy.has(dich)) {
+            nutPhaHuy.add(nut);
+            them++;
+            break;
+          }
+        }
+      }
+    }
+    if (them === 0) break;
+  }
+
+  // ── (3) MUTATION — ∀ `router({…})` dưới `server/**` chạm vào bao đóng ────────────────────────
+  const mutation: MutationPhaHuy[] = [];
+  const tenTranCuoi = new Set([...nutPhaHuy].map((n) => n.split("#")[1] ?? ""));
+  for (const f of tatCa) {
+    const ma = noiDung.get(f) ?? "";
+    if (!ma.includes("router(")) continue;
+    if (![...tenTranCuoi].some((t) => t !== "" && ma.includes(t))) continue;
+    const rel = duongCua(f);
+    const sf = cay(f);
+    const nhap = nhapCua(f);
+    const khai = khaiCua(f);
+
+    /** Tên CỤC BỘ trỏ tới GỐC `deployProcedure` của `_core/trpc.ts` (kể cả bí danh nhập). */
+    const gocDeploy = new Set<string>();
+    if (f === CORE_TRPC) gocDeploy.add(TEN_SAN_DEPLOY);
+    for (const [cucBo, dich] of nhap) {
+      if (dich === `${duongCua(CORE_TRPC)}#${TEN_SAN_DEPLOY}`) gocDeploy.add(cucBo);
+    }
+
+    /** Leo ngược chuỗi `const`: gom phép siết tại chỗ + tên sàn ngoài cùng. */
+    const leo = (bd: string | null): { siet: boolean; san: string | null } => {
+      let siet = false;
+      let cur = bd;
+      for (let i = 0; i < 16 && cur !== null; i++) {
+        if (gocDeploy.has(cur)) return { siet, san: cur };
+        const kh = khai.get(cur);
+        if (kh === undefined) return { siet, san: cur };
+        if (dinhDanhTrong(kh).has(TEN_PHEP_SIET)) siet = true;
+        cur = gocChuoi(kh);
+      }
+      return { siet, san: null };
+    };
+
+    const di = (n: ts.Node): void => {
+      const arg0 = ts.isCallExpression(n) ? n.arguments[0] : undefined;
+      if (
+        ts.isCallExpression(n) &&
+        ts.isIdentifier(n.expression) &&
+        n.expression.text === "router" &&
+        arg0 !== undefined &&
+        ts.isObjectLiteralExpression(arg0)
+      ) {
+        for (const p of arg0.properties) {
+          if (!ts.isPropertyAssignment(p) || !ts.isIdentifier(p.name)) continue;
+          if (!coMutation(p.initializer)) continue;
+          const ids = dinhDanhTrong(p.initializer);
+          const quaNut = [...ids]
+            .filter((id) => nutPhaHuy.has(nhap.get(id) ?? `${rel}#${id}`))
+            .sort();
+          if (quaNut.length === 0) continue;
+          const l = leo(gocChuoi(p.initializer));
+          const sietTuGoc = l.san !== null && gocDeploy.has(l.san);
+          mutation.push({
+            file: rel,
+            ten: p.name.text,
+            dong: sf.getLineAndCharacterOfPosition(p.getStart(sf)).line + 1,
+            siet: l.siet || ids.has(TEN_PHEP_SIET) || sietTuGoc,
+            sietTuGoc,
+            quaNut,
+          });
+        }
+      }
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+  }
+
+  return {
+    coChe: [...coChe].sort(),
+    nutPhaHuy: [...nutPhaHuy].sort(),
+    mutation: mutation.sort((a, b) => `${a.file}#${a.ten}`.localeCompare(`${b.file}#${b.ten}`)),
+    mu,
+    soFileDuyet: tatCa.length,
+  };
+}
+
 /**
  * `server/routers.ts` gắn router con vào **không gian tên** mà client gọi (`trpc.<ns>.<thủ tục>`).
  * Trả `ns` → đường dẫn file của router con, để lưới client kiểm được rằng nó bắt **đúng** thủ tục

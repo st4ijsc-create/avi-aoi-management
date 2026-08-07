@@ -96,6 +96,12 @@ import { __resetDecisionTickForTests } from "../services/vram/vramTickCell";
 import { __resetVramDeferForTests } from "../services/vram/vramDefer";
 import { VRAM_CONTROL_MODULE } from "@shared/permissions";
 import { VRAM_COMMAND_DESTRUCTIVE, vramCommandIsDestructive } from "../services/vram/vramCommands";
+/**
+ * ★★★ C-2 — **DÙNG LẠI bộ suy của Task 1b, không viết bộ thứ ba.** `deployProcedureScan.ts` là
+ * hạ tầng đã trả giá để học bài R1b (quét đệ quy `server/**` + nhận diện module bằng phép nối
+ * đường dẫn). Nửa VRAM của **cùng một câu** nay đứng trên chính nó.
+ */
+import { quetLenhPhaHuyVram } from "./deployProcedureScan";
 
 const MIB = 1024 * 1024;
 const SUP_ID = 42;
@@ -467,6 +473,89 @@ describe("★★★ Pha 6 M-4 — cầu chì của lượng từ", () => {
   it("★★★ cầu chì — cờ `ACTUATION_STEPUP_2FA` ĐANG BẬT và middleware ĐANG chạy (phiên nguội ⇒ chặn)", async () => {
     const e = await loiCua(khac(phienMoi()).deployKhac(tuDay({})));
     expect(readAppErrorMeta(e)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// 0b. ★★★ C-2 (review TOÀN NHÁNH) — **CÙNG CÂU ẤY, NHƯNG TRÊN `server/**`, KHÔNG PHẢI MỘT FILE.**
+//
+// ⚠⚠⚠ ĐỘT BIẾN **W3** SỐNG SÓT VÌ ĐÚNG MỘT LÝ DO: bộ suy ở §0 đọc **một file** (`vramRouter.ts`).
+// Người review gắn **cùng một hàm giết tiến trình** vào `server/routers/aiModelRouter.ts` (đã nối
+// `appRouter`) trên sàn `roleProcedure(...).use(require2FA)` — **không step-up nào** — và cổng
+// khai **XANH 109 file / 1.861 ca**, `tsc` sạch.
+//
+// ⚠⚠ Và lời giải **đã có sẵn, đã export, trong cùng nhánh**: Task 1b trả giá cho đúng bài học ấy ở
+// đột biến **R1b** và dựng `deployProcedureScan.ts` — duyệt **đệ quy `server/**`**, nhận diện
+// module bằng **phép nối đường dẫn**. Hai nửa của **một** câu, hai phạm vi; nửa yếu canh nửa nguy
+// hiểm hơn. ⇒ Khối này **DÙNG LẠI** bộ suy ấy (`quetLenhPhaHuyVram`), **không** viết bộ thứ ba.
+//
+// Bất biến phát biểu ở dạng tổng quát:
+//
+//   ***∀ mutation của BẤT KỲ `router({…})` nào dưới `server/**` mà với tới được một CƠ CHẾ PHÁ
+//   HUỶ VRAM (bao đóng NGƯỢC từ cơ chế mà `VRAM_COMMAND_DESTRUCTIVE` chỉ ra): chuỗi thủ tục PHẢI
+//   chain `requirePerCallFreshTotp` — tại chỗ, hoặc qua GỐC `deployProcedure`.***
+//
+// ⚠ Tập cơ chế **SUY RA**, không liệt kê: thân mỗi hàm lệnh PHÁ HUỶ → định danh **nhập từ module
+//   khác dưới `server/services/vram/**`**. `huyHoTieuThu` của W3 (tên mới, file khác, không khớp
+//   mẫu nào) **tự vào tập** vì nó gọi `preemptOwner()`.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+const GOC_REPO = join(TEST_DIR, "..", "..");
+const QUET_PHA_HUY = quetLenhPhaHuyVram(GOC_REPO, VRAM_COMMAND_DESTRUCTIVE);
+
+describe("★★★ C-2 — lượng từ 'lệnh phá huỷ VRAM' chạy trên `server/**`, không trên một file", () => {
+  it("★★★ cầu chì — bộ suy đọc được: 0 ô mù, cơ chế không rỗng, bao đóng không rỗng, quét >0 file", () => {
+    expect(QUET_PHA_HUY.mu.join("\n"), "một ô không phân giải được là một ô KHÔNG AI CANH").toBe("");
+    expect(QUET_PHA_HUY.soFileDuyet, "quét trúng 0 file ⇒ mọi ca dưới là chân lý rỗng").toBeGreaterThan(200);
+    expect(
+      QUET_PHA_HUY.coChe.length,
+      "0 cơ chế phá huỷ ⇒ bao đóng rỗng ⇒ mọi ca dưới là chân lý rỗng",
+    ).toBeGreaterThanOrEqual(2);
+    // ⚠ Bao đóng phải **rộng hơn** hạt giống: nếu bằng, nghĩa là phép leo ngược không chạy.
+    expect(
+      QUET_PHA_HUY.nutPhaHuy.length,
+      `bao đóng NGƯỢC không rộng hơn hạt giống ⇒ phép leo không chạy:\n${QUET_PHA_HUY.nutPhaHuy.join("\n")}`,
+    ).toBeGreaterThan(QUET_PHA_HUY.coChe.length);
+    expect(
+      QUET_PHA_HUY.mutation.length,
+      "0 mutation chạm bao đóng ⇒ bất biến chính dưới đây là chân lý rỗng",
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("★★★ cầu chì — bao đóng phải CHỨA đúng hai hàm lệnh của `vramCommands.ts` (đối chứng dương)", () => {
+    for (const ten of Object.keys(VRAM_COMMAND_DESTRUCTIVE).filter(
+      (k) => (VRAM_COMMAND_DESTRUCTIVE as Readonly<Record<string, boolean>>)[k] === true,
+    )) {
+      expect(
+        QUET_PHA_HUY.nutPhaHuy,
+        `\`${ten}\` được phân loại PHÁ HUỶ mà KHÔNG nằm trong bao đóng ⇒ bộ suy mù với chính chủ`,
+      ).toContain(`server/services/vram/vramCommands.ts#${ten}`);
+    }
+  });
+
+  it("★★★ BẤT BIẾN C-2 — ∀ mutation dưới `server/**` với tới cơ chế phá huỷ PHẢI chain `requirePerCallFreshTotp`", () => {
+    /**
+     * ⚠⚠ Đây là ô mà đột biến **W3** đi qua được. Nó **không** hỏi *"mutation này ở file nào"* —
+     * nó hỏi *"nó với tới được cái gì"*. Một lệnh giết tiến trình đặt ở `aiModelRouter.ts`,
+     * `systemRouter.ts`, hay một file **chưa tồn tại** đều rơi vào cùng một lượng từ.
+     */
+    const thieu = QUET_PHA_HUY.mutation.filter((m) => !m.siet);
+    expect(
+      thieu.map((m) => `${m.file}:${m.dong} \`${m.ten}\` (qua ${m.quaNut.join(", ")})`).join(" · "),
+      "mutation với tới được cơ chế phá huỷ VRAM mà KHÔNG chain `requirePerCallFreshTotp` ⇒ OTP của một lượt khác (hoặc KHÔNG OTP nào) mở được cửa giết tiến trình",
+    ).toBe("");
+  });
+
+  it("★★★ KHÔNG BẮT NHẦM — `retryDeferred` (không phá huỷ) KHÔNG bị bộ suy này kéo vào", () => {
+    /**
+     * ⚠ Không có ca này thì một bản vá **chặn hết** (coi mọi mutation là phá huỷ) cũng xanh — đúng
+     * lớp lỗi đã để `215/215` xanh suốt thời gian một tool luôn `PERMISSION_DENIED`.
+     */
+    const bat = QUET_PHA_HUY.mutation.map((m) => `${m.file}#${m.ten}`);
+    expect(bat, "`retryDeferred` chỉ dời hạn một lượt thử lại — nó KHÔNG được vào tập phá huỷ").not.toContain(
+      "server/routers/vramRouter.ts#retryDeferred",
+    );
+    expect(bat, "`state` là query, không phải mutation").not.toContain("server/routers/vramRouter.ts#state");
   });
 });
 
