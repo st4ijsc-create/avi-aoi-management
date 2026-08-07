@@ -42,6 +42,7 @@ npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/routers/vramRouter.unledgered.test.ts server/routers/vramRouter.kbSyncDefer.test.ts \
   server/routers/permissions.machineControl.test.ts \
   server/routers/vramPermissionSplit.test.ts \
+  server/routers/vramStepUpFreshness.test.ts \
   server/services/aiCopilotActions.hardlinkSink.test.ts client/src/lib/
 NODE_OPTIONS=--max-old-space-size=8192 npm run check
 npm run check:tests

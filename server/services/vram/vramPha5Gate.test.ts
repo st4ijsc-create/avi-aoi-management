@@ -96,7 +96,10 @@ const FILE_PHA5 = NHANH.flatMap((n) => moiFileTest(join(GOC, n)))
 describe("★★★ I-1 — §Cổng kiểm chung phải PHỦ mọi lưới của Pha 5 (đảo lượng từ, ghim SỐ)", () => {
   it("★★★ cầu chì — đọc được cổng từ file kế hoạch, và nó không rỗng", () => {
     expect(existsSync(KE_HOACH), `không thấy file kế hoạch: ${duong(KE_HOACH)}`).toBe(true);
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(11);
+    // ⚠ Pha 6 Task 1 (M-4): +1 đường — `server/routers/vramStepUpFreshness.test.ts`. Cổng của Pha 6
+    //   là **cùng khối lệnh này**, nên một lưới mới ở bất kỳ pha nào cũng phải vào đây, không được
+    //   sống ngoài cổng. 11 → 12.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(12);
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -108,7 +111,10 @@ describe("★★★ I-1 — §Cổng kiểm chung phải PHỦ mọi lưới c�
     expect(FILE_PHA5.length, "bộ quét không thấy file nào mang dấu khai `Pha 5` — nó đã hỏng?").toBeGreaterThanOrEqual(10);
     // ⚠ GHIM SỐ: một lưới Pha 5 mới sinh ra, hoặc một lưới cũ bị xoá, đều phải là một **quyết định
     //   nói ra**, không phải một lượt trôi im lặng.
-    expect(FILE_PHA5.length, `danh sách lưới Pha 5 đã đổi:\n${FILE_PHA5.join("\n")}`).toBe(16);
+    // ⚠ Pha 6 Task 1 (M-4): 16 → 17 (`server/routers/vramStepUpFreshness.test.ts`). Lưới ấy **cố ý**
+    //   viết chuỗi `Pha 5` thường: bản đầu chỉ có `PHA 5` viết HOA nên nó **lọt khỏi lượng từ** mà
+    //   vẫn xanh — đúng hình dạng "hàng rào không ai canh" mà file này được dựng ra để đóng.
+    expect(FILE_PHA5.length, `danh sách lưới Pha 5 đã đổi:\n${FILE_PHA5.join("\n")}`).toBe(17);
   });
 
   it("★★★ KHÔNG file nào tự khai `Pha 5` mà nằm NGOÀI cổng — đây là ô mà I-1 đã lọt", () => {

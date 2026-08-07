@@ -167,12 +167,11 @@ export type PermissionModule = (typeof PERMISSION_MODULES)[number];
  * nguồn CÓ PHIÊN BẢN** (`programArtifacts`), không chốt an toàn, không OTP; cộng **5 bề mặt UI**
  * hiện nút xoá ngay khi cấp. Hai nút VRAM lại là **hai thủ tục CHẶT NHẤT** trong tập ấy
  * (`deployProcedure` = role-floor + 2FA + step-up).
- * ⚠⚠ **M-4 (review TOÀN NHÁNH 2026-08-06) — SỬA LỜI, KHÔNG SỬA MÃ: "OTP TƯƠI" LÀ NÓI QUÁ.**
- * `stepUpVerifiedUntil` (`server/_core/trpc.ts:279-283`) là một **cache 10 PHÚT theo
- * `sessionToken`**, **DÙNG CHUNG cho MỌI `deployProcedure` của hệ**. ⇒ một supervisor vừa step-up
- * cho `programming.deployBuild` thì `vram.preempt` chạy trong 10 phút **không hỏi OTP lần nào**.
- * Luận cứ tách bit vẫn đúng **tương đối** (8/10 thủ tục kia không có gì cả), nhưng đừng đọc câu
- * "chặt nhất" thành "mỗi lệnh một mã".
+ * ⚠⚠ **M-4 — ĐÃ VÁ Ở PHA 6 TASK 1 (SỬA MÃ, không chỉ sửa lời).** Pha 5 ghi nhận
+ * `stepUpVerifiedUntil` (`server/_core/trpc.ts`) là **cache 10 PHÚT theo `sessionToken`, DÙNG
+ * CHUNG cho MỌI `deployProcedure`**; nghiệm thu sống đo được `vram.preempt` **không `totpCode`**
+ * vẫn qua. Nay hai lệnh phá huỷ VRAM chain thêm `requirePerCallFreshTotp` ⇒ **mỗi lệnh một mã**,
+ * đúng như câu này nói. Năm `deployProcedure` khác của hệ **vẫn** dùng cache phiên.
  * ⇒ Cấp bit dùng chung để mở **hai** cái chặt nhất sẽ mở luôn **tám** cái lỏng nhất.
  * **Chủ dự án chốt (2026-08-06): TÁCH BIT RIÊNG.**
  *

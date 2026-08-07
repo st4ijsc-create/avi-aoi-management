@@ -268,6 +268,33 @@ export const require2FA = t.middleware(async opts => {
 // secret 2FA của user; xác minh thành công được cache 10 phút theo sessionToken để không
 // phải nhập lại OTP cho từng lệnh trong phiên làm việc. Fail-closed: cache-miss + thiếu/
 // sai OTP ⇒ FORBIDDEN. KHÔNG nới lỏng bất kỳ gate nào — chỉ THÊM một lớp.
+//
+// ══════════════════════════════════════════════════════════════════════════════════════
+// ★★★ Pha 6 Task 1 (M-4) — HAI BIẾN THỂ, VÀ SỰ KHÁC NHAU LÀ MỘT QUYẾT ĐỊNH AN NINH.
+// ══════════════════════════════════════════════════════════════════════════════════════
+// Nghiệm thu sống Pha 5 đo được: `engineer1` gọi `vram.preempt` **KHÔNG có `totpCode`**
+// vẫn **QUA**, vì cache trên là cache **theo PHIÊN**, **dùng chung cho MỌI thủ tục đứng
+// sau middleware này** — vừa step-up cho `programming.deployBuild` thì `vram.preempt`
+// chạy 10 phút không hỏi OTP lần nào. Trong khi `VramBrokerPanel` bọc `stepUp.guard(...)`
+// và hỏi OTP **mỗi lần bấm** ⇒ **UI che, máy chủ không đóng** (chiều NGƯỢC của lớp lỗi
+// "mặt đọc hứa nhiều hơn mặt lệnh": ai đọc mã UI sẽ TƯỞNG đã đóng, và không triệu chứng
+// nào xuất hiện).
+//
+//   • `requireFreshTotp`      — DÙNG cache phiên. Hành vi CŨ, giữ **nguyên từng ký tự**
+//                               cho `deployProcedure` và cả 7 thủ tục đang đứng trên nó.
+//   • `requirePerCallFreshTotp` — KHÔNG đọc và KHÔNG ghi cache. Mỗi lượt gọi phải mang
+//                               `totpCode` của **CHÍNH lượt ấy**. Dành cho lệnh PHÁ HUỶ.
+//
+// ⚠ PHÁT BIỂU ĐÚNG LƯỢNG TỪ — và nó là **∀**, không phải **∃**:
+//     ***∀ lượt gọi một thủ tục đứng sau `requirePerCallFreshTotp`: raw input PHẢI mang
+//     một `totpCode` verify được TẠI THỜI ĐIỂM ẤY. KHÔNG lượt nào qua được bằng trạng
+//     thái mà một lượt KHÁC để lại.***
+// ⚠ Đây **KHÔNG** phải chống phát lại (replay). `speakeasy` verify với `window: 1` ⇒
+//   **cùng một mã** dùng lại được trong ~90 s. Cái được đóng là *"qua cửa mà KHÔNG gửi mã
+//   nào"* — đúng lỗ đã đo trên hệ sống. Chống phát lại là một cơ chế KHÁC (sổ mã đã dùng),
+//   hệ này chưa có, và nó không thuộc phạm vi bản vá này.
+// ⚠ `requirePerCallFreshTotp` CHỈ THU HẸP: nó chain **thêm** sau `deployProcedure`, không
+//   thay thế và không hạ một tầng nào. Thủ tục nào không chain nó thì hành vi **y hệt** cũ.
 // ════════════════════════════════════════════════════════════════════════════
 
 /** doc 40 CTL-07 — cờ bật step-up 2FA cho actuation/deploy (mặc định OFF). */
@@ -302,18 +329,23 @@ async function verifyFreshTotp(userId: number, code: string): Promise<boolean> {
 }
 
 /**
- * Middleware step-up 2FA. Export để router áp dần cho các mutation actuation/deploy. Khi cờ OFF
- * hoặc không phải mutation → pass-through. `totpCode` đọc từ raw input (không phá schema) — hỗ trợ
- * cả bao bì superjson (`{ json: { totpCode } }`).
+ * Lõi step-up 2FA — **MỘT bản cài, hai chính sách cache**. Viết bản thứ hai là đẻ ra hai vị từ
+ * trùng nhau dưới một bất biến, và lớp lỗi ấy đã tốn nhiều pha; ở đây khác biệt duy nhất được
+ * nêu **thành một tham số có tên**, nên đọc một chỗ là biết cả hai.
+ *
+ * @param dungCachePhien `true` ⇒ một lượt step-up thành công mở cửa cho **mọi** thủ tục khác cùng
+ *   phiên trong 10 phút (hành vi doc 40 CTL-07). `false` ⇒ **không đọc, không ghi** cache: mỗi lượt
+ *   gọi phải mang `totpCode` của chính nó.
  */
-export const requireFreshTotp = t.middleware(async (opts) => {
+function stepUpTotpMiddleware(dungCachePhien: boolean) {
+  return t.middleware(async (opts) => {
   const { ctx, next, type } = opts;
   if (!actuationStepUp2faEnabled() || type !== "mutation") return next();
   if (!ctx.user) throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
 
   const sessionKey = ctx.sessionToken || `user:${ctx.user.id}`;
   const now = Date.now();
-  const until = stepUpVerifiedUntil.get(sessionKey);
+  const until = dungCachePhien ? stepUpVerifiedUntil.get(sessionKey) : undefined;
   if (until && until > now) return next(); // đã step-up gần đây → khỏi nhập lại
 
   // Lấy OTP tươi từ raw input (middleware chạy trước khi zod parse).
@@ -346,13 +378,42 @@ export const requireFreshTotp = t.middleware(async (opts) => {
     throw appError("FORBIDDEN", "INVALID_VALUE", { field: "twoFactorCode" }, "Mã xác thực 2 bước không hợp lệ.");
   }
 
-  stepUpVerifiedUntil.set(sessionKey, now + STEPUP_TTL_MS);
-  // Dọn bộ nhớ (bounded): xoá các mục đã hết hạn khi map phình to.
-  if (stepUpVerifiedUntil.size > 5000) {
-    for (const [k, v] of stepUpVerifiedUntil) if (v <= now) stepUpVerifiedUntil.delete(k);
+  if (dungCachePhien) {
+    stepUpVerifiedUntil.set(sessionKey, now + STEPUP_TTL_MS);
+    // Dọn bộ nhớ (bounded): xoá các mục đã hết hạn khi map phình to.
+    if (stepUpVerifiedUntil.size > 5000) {
+      for (const [k, v] of stepUpVerifiedUntil) if (v <= now) stepUpVerifiedUntil.delete(k);
+    }
   }
   return next();
-});
+  });
+}
+
+/**
+ * Middleware step-up 2FA **có cache phiên 10 phút**. Export để router áp dần cho các mutation
+ * actuation/deploy. Khi cờ OFF hoặc không phải mutation → pass-through. `totpCode` đọc từ raw input
+ * (không phá schema) — hỗ trợ cả bao bì superjson (`{ json: { totpCode } }`).
+ * ⚠ Cache là **theo PHIÊN**, không theo thủ tục: một lượt step-up ở bất kỳ thủ tục nào đứng sau
+ * middleware này đều mở cửa cho **mọi** thủ tục còn lại trong 10 phút. Với lệnh **phá huỷ**, dùng
+ * `requirePerCallFreshTotp` bên dưới thay vì cái này.
+ */
+export const requireFreshTotp = stepUpTotpMiddleware(true);
+
+/**
+ * ★★★ Pha 6 Task 1 (M-4) — step-up 2FA **KHÔNG cache**: mỗi lượt gọi phải mang `totpCode` của
+ * **CHÍNH lượt ấy**. Chain **THÊM** sau `deployProcedure` cho các lệnh **PHÁ HUỶ** (xem
+ * `vramRouter.ts`) — không thay thế, không hạ tầng nào.
+ *
+ * Vì sao không cache **theo thủ tục** (đường đã cân nhắc và **không chọn**): cache theo thủ tục vẫn
+ * để lượt gọi phá huỷ **thứ hai** đi qua bằng OTP của lượt **thứ nhất** trong 10 phút — vẫn là
+ * *"OTP của một lượt khác"*, tức vẫn không đạt cổng ra. Và nó đổi ngữ nghĩa cho **cả 7** thủ tục
+ * đang đứng trên `deployProcedure`, trong khi bản vá này chỉ được phép chạm hai lệnh phá huỷ VRAM.
+ *
+ * ⚠ Lượt gọi đi qua **cả hai** middleware (cái có cache chạy trước, trong `deployProcedure`), nên
+ * khi cache nguội thì OTP được verify **hai lần**. Cùng một mã, cùng cửa sổ ⇒ cả hai cùng kết quả;
+ * chi phí là một truy vấn `users` nữa, và nó chỉ xảy ra trên đường **cache-miss**.
+ */
+export const requirePerCallFreshTotp = stepUpTotpMiddleware(false);
 
 export function roleProcedure(...allowedRoles: UserRole[]) {
   return t.procedure.use(

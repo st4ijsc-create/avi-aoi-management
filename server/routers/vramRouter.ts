@@ -15,7 +15,7 @@
  * Ba lệnh: xem khối I-1 dưới.
  */
 import { z } from "zod";
-import { router, protectedProcedure, actuationProcedure, deployProcedure } from "../_core/trpc";
+import { router, protectedProcedure, actuationProcedure, deployProcedure, requirePerCallFreshTotp } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 // ★ Pha 5 Task 3b — tên module quyền của VRAM có MỘT chủ: `shared/permissions.ts` (nơi
 // `PERMISSION_MODULES` là nguồn duy nhất). Viết lại chuỗi ở đây là đẻ bản sao thứ hai.
@@ -70,10 +70,13 @@ import {
  *    `safetyRouter` 18 …) — tức start/stop máy và fleet actuation.
  * ⇒ Cấp bit dùng chung cho `supervisor` để mở **hai nút VRAM** (hai thủ tục **CHẶT NHẤT** trong tập,
  * có step-up) sẽ mở luôn **chín thủ tục khác**, phần lớn **không** có OTP.
- * ⚠ **M-4 (review TOÀN NHÁNH) — "OTP TƯƠI" LÀ NÓI QUÁ, sửa LỜI không sửa mã:** `stepUpVerifiedUntil`
- * (`_core/trpc.ts:279-283`) là cache **10 phút theo `sessionToken`**, **dùng chung cho MỌI
- * `deployProcedure`** ⇒ vừa step-up cho `programming.deployBuild` thì `vram.preempt` chạy trong 10
- * phút **không hỏi OTP lần nào**. Luận cứ tách bit vẫn đúng tương đối; câu chữ thì không.
+ * ⚠ **M-4 — ĐÃ VÁ Ở PHA 6 TASK 1, VÀ LẦN NÀY SỬA MÃ, KHÔNG CHỈ SỬA LỜI.** Pha 5 chỉ **ghi nhận**
+ * rằng `stepUpVerifiedUntil` (`_core/trpc.ts`) là cache **10 phút theo `sessionToken`** dùng chung
+ * cho **mọi** `deployProcedure` — nghiệm thu sống sau đó **đo được** `engineer1` gọi `vram.preempt`
+ * **không `totpCode`** vẫn QUA. Nay hai lệnh phá huỷ chain thêm `requirePerCallFreshTotp`: **mỗi
+ * lượt phải mang OTP của CHÍNH nó**. Năm thủ tục `deployProcedure` khác (`programming.deployBuild`
+ * · `approveDeployment` · `rollbackDeployment` · `deployToFleet` · `orchestration.deployWorkflow`)
+ * **giữ nguyên** cache phiên — siết chúng là quyết định của chủ dự án, xem §"KHÔNG làm ở Pha 6".
  * **Chủ dự án chốt (2026-08-06): TÁCH BIT RIÊNG** ⇒ `VRAM_CONTROL_MODULE` (`@shared/permissions`).
  *
  * ⚠⚠ Task 3b **THU HẸP, KHÔNG NỚI**: `deployProcedure`/`actuationProcedure` + step-up 2FA giữ
@@ -106,8 +109,12 @@ const totp = { totpCode: z.string().max(16).optional() };
 /**
  * Sàn của một lệnh **PHÁ HUỶ**: danh tính (role-floor + 2FA + step-up) **VÀ** thẩm quyền.
  * ⚠ Task 3b: vế thẩm quyền là **bit RIÊNG của VRAM**, không còn `machine_control/canDelete`.
+ * ⚠ Pha 6 Task 1 (M-4): **`requirePerCallFreshTotp` chain THÊM ở cuối** — mỗi lượt gọi phải mang
+ * `totpCode` của **CHÍNH lượt ấy**, không lượt nào qua bằng cache phiên của một lượt khác. Nó
+ * **chỉ THU HẸP**: `deployProcedure` (role-floor + 2FA + step-up có cache) giữ nguyên bên dưới.
+ * Lưới: `server/routers/vramStepUpFreshness.test.ts`.
  */
-const vramDestructiveProcedure = deployProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canDelete"));
+const vramDestructiveProcedure = deployProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canDelete")).use(requirePerCallFreshTotp);
 
 /** Sàn của một lệnh **KHÔNG phá huỷ** nhưng vẫn là actuation. Cùng bit riêng, action `canCreate`. */
 const vramActuationProcedure = actuationProcedure.use(requirePermission(VRAM_CONTROL_MODULE, "canCreate"));
