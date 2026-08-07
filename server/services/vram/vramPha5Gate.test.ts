@@ -152,6 +152,49 @@ function duocPhu(file: string, cong: string[]): boolean {
   return cong.some((c) => file === c || (c.endsWith("/") && file.startsWith(c)));
 }
 
+/**
+ * ★★★ Pha 7 / I-1 — **CỔNG CANH SỰ TỒN TẠI CỦA ĐƯỜNG DẪN, KHÔNG CANH SỐ CA THẬT SỰ CHẠY.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ ĐO ĐƯỢC: **XOÁ** một lưới thì ĐỎ, **ĐỔI TÊN** nó thì KHÔNG.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Đổi `client/src/lib/i18nQuantifierGate.unit.test.ts` → `.test.ts`:
+ * `client/src/lib/` **25 file / 517 ca → 24 / 505**, mà lưới này vẫn **10/10 XANH** và
+ * `FILE_CANH` vẫn **74** — vì `moiFileTest` gom mọi `*.test.ts`, còn **vitest** chỉ gom
+ * `client/src/**` qua `*.unit.test.ts`. **12 ca biến mất, không con số nào nhúc nhích.**
+ *
+ * ⇒ Ba bộ nhận diện trên trả lời *"file này CÓ BỊ CANH không"*; **không** bộ nào hỏi
+ *   ***"vitest có THẬT SỰ GOM nó không"***. Đây là **glob rỗng** ở dạng nguy hiểm nhất: không phải
+ *   đường dẫn gõ sai (ca `existsSync` đã canh), mà là **file có thật, đường có thật, mà runner
+ *   không bao giờ nạp**.
+ *
+ * ⚠ Vị từ đọc `include` **từ chính `vitest.config.ts`**, không chép lại vào đây — giữ một bản sao
+ *   thứ hai thì chỉ chứng minh bản sao ấy đúng (cùng lý lẽ với `duongCuaCong()`).
+ */
+const VITEST_CONFIG = join(GOC, "vitest.config.ts");
+
+/** Rút mảng `include: [...]` khỏi `vitest.config.ts`. */
+function mauCuaVitest(): string[] {
+  const src = readFileSync(VITEST_CONFIG, "utf8");
+  const i = src.indexOf("include:");
+  if (i === -1) return [];
+  const mo = src.indexOf("[", i);
+  const dong = src.indexOf("]", mo);
+  if (mo === -1 || dong === -1) return [];
+  return [...src.slice(mo, dong).matchAll(/["'`]([^"'`]+)["'`]/g)].map((m) => m[1] as string);
+}
+
+/** Glob của vitest → RegExp. Chỉ cần phủ `**\/` và `*`, đúng hình dạng mà cấu hình này dùng. */
+function globSangRegex(g: string): RegExp {
+  const than = g
+    .split("**/")
+    .map((s) => s.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*"))
+    .join("(?:.*/)?");
+  return new RegExp(`^${than}$`);
+}
+
+const MAU_VITEST = mauCuaVitest();
+
 const CONG = duongCuaCong();
 const MOI_FILE = NHANH.flatMap((n) => moiFileTest(join(GOC, n))).map((p) => ({ duong: duong(p), that: p }));
 
@@ -292,6 +335,33 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     const bc = "client/src/lib/errorCodes.vram.unit.test.ts";
     expect(existsSync(join(GOC, bc)), `${bc} phải tồn tại`).toBe(true);
     expect(FILE_CANH, `${bc} phải bị canh — xoá nó đi thì cổng PHẢI đỏ`).toContain(bc);
+  });
+
+  it("★★★ Pha 7 / I-1 — MỌI lưới bị canh phải được **VITEST THẬT SỰ GOM** (xoá thì đỏ, ĐỔI TÊN cũng phải đỏ)", () => {
+    expect(existsSync(VITEST_CONFIG), `không thấy ${duong(VITEST_CONFIG)}`).toBe(true);
+    // Cầu chì: rút được mẫu, và mẫu không rỗng — mẫu rỗng ⇒ khẳng định dưới là chân lý rỗng.
+    expect(MAU_VITEST.length, "không rút được `include` khỏi vitest.config.ts — nó đã đổi hình dạng?").toBeGreaterThanOrEqual(3);
+    const re = MAU_VITEST.map(globSangRegex);
+    const khongGom = FILE_CANH.filter((f) => !re.some((r) => r.test(f)));
+    expect(
+      khongGom.join("\n"),
+      "lưới bị canh mà VITEST KHÔNG GOM ⇒ file có thật, đường có thật, mà runner không bao giờ nạp:\n" +
+        `mẫu include hiện tại: ${MAU_VITEST.join(" · ")}`,
+    ).toBe("");
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — `globSangRegex` dịch đúng `**/` và `*`, không nhận bừa", () => {
+    const r = globSangRegex("client/src/**/*.unit.test.ts");
+    expect(r.test("client/src/lib/i18nQuantifierGate.unit.test.ts")).toBe(true);
+    expect(r.test("client/src/a/b/c/x.unit.test.ts")).toBe(true);
+    // ⚠ ĐÚNG cái đột biến đổi-tên phải bị bắt:
+    expect(r.test("client/src/lib/i18nQuantifierGate.test.ts")).toBe(false);
+    // ⚠ `*` KHÔNG được vượt qua dấu `/`.
+    expect(globSangRegex("server/*.test.ts").test("server/a/b.test.ts")).toBe(false);
+    expect(globSangRegex("server/**/*.test.ts").test("server/a/b.test.ts")).toBe(true);
+    // ⚠ Không nhận tiền tố/hậu tố thừa.
+    expect(r.test("other/client/src/lib/x.unit.test.ts")).toBe(false);
+    expect(r.test("client/src/lib/x.unit.test.ts.bak")).toBe(false);
   });
 
   it("★★★ KHÔNG file nào bị canh mà nằm NGOÀI cổng — ô mà I-1 đã lọt, và ô mà R3 đã lọt", () => {

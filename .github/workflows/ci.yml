@@ -96,6 +96,13 @@ jobs:
       # thiếu ở CẢ BA locale và cổng vẫn khai XANH. Bước này hỏi đúng câu "MỌI khoá mã
       # tham chiếu có mặt ở cả ba locale không", cộng hai phép canh nền (sửa tay ⇒ đỏ,
       # phình quá trần ⇒ đỏ). Nợ CÓ TRƯỚC được đóng băng ở scripts/i18n-missing-baseline.json.
+      #
+      # ⚠⚠ GIỚI HẠN PHẢI NÓI THẲNG (Pha 7 / M-5): workflow này chỉ chạy ở `push` vào
+      # [main, VPMS] và `pull_request` vào [main, VPMS] — xem khối `on:` ở đầu file. Một
+      # lượt ĐẨY NHÁNH TÍNH NĂNG (feat/*) KHÔNG kích hoạt bước này. Nên bước CI là lưới
+      # cho chặng MERGE, không phải cho chặng đẩy hằng ngày; chặng ấy do §Cổng kiểm chung
+      # (chạy cục bộ) và lưới vitest client/src/lib/i18nQuantifierGate.unit.test.ts gánh.
+      # Đừng đọc màu xanh của nhánh feat/* thành "i18n đã được canh ở CI".
       - name: i18n gate (∀ khoá mã tham chiếu có ở cả ba locale + nền chỉ được thu hẹp)
         run: pnpm run i18n:check
 

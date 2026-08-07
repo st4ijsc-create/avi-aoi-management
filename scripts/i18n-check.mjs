@@ -158,9 +158,15 @@ function keysReferencedByCode() {
 
 const used = keysReferencedByCode();
 
-// ── PASS A: placeholder (luật cũ, đã bỏ lỗ (2)) ──────────────────────────────────────────────
-// ⚠ `present.length < 2 ⇒ continue` ĐÃ BỎ: một khoá chỉ có ở MỘT locale nay được PASS B nói tới
-//   bằng câu đúng ("thiếu ở 2 locale"), thay vì bị bỏ qua im lặng.
+// ── PASS A: placeholder (luật GỐC của công cụ) ───────────────────────────────────────────────
+// ⚠⚠ ĐÍNH CHÍNH (Pha 7 / M-2) — **DÒNG `present.length === 0` NGAY DƯỚI ĐÂY KHÔNG GÁNH GÌ CẢ.**
+// Bản chú thích trước ghi rằng lỗ (2) được đóng **tại đây** (đổi `< 2` thành `=== 0`). Phép đo bác
+// bỏ: hoàn nguyên dòng này về `< 2` ⇒ **0 ca đỏ**, vì với `present.length === 1` thì `union` chính
+// là placeholder của locale duy nhất ấy ⇒ `bad` luôn rỗng ⇒ PASS A **không bao giờ** nói gì. Nói
+// cách khác dòng này chỉ là một lối tắt, **không** phải một phép canh.
+// ⇒ Lỗ (2) thật sự đóng ở **PASS B** (`else if (present.length < locales.length)`), nơi khoá có ở
+//   đúng MỘT locale được gọi tên bằng câu `MISSING IN vi/zh`.
+// ⚠ Giữ `=== 0` vì nó đúng nghĩa hơn (`present` rỗng thì không có gì để so), **không** vì nó canh.
 const allKeys = new Set([...locales.flatMap((l) => Object.keys(flat[l])), ...used.keys()]);
 const mismatches = [];
 for (const key of allKeys) {

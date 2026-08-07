@@ -64,8 +64,15 @@ interface Tran {
 interface CaiDat {
   /** Khoá mà **MÃ** tham chiếu (sinh ra lời gọi `t("…")` trong một file `.tsx` giả). */
   ma: string[];
+  /**
+   * ★ I-3 — hình dạng **THỨ HAI** mà công cụ nhận: `key: "a.b"` trong một **bảng hằng**
+   * (ví dụ thật: `VRAM_READ_SURFACE_NOTICE` giữ khoá ở đó chứ không ở lời gọi `t(`).
+   */
+  keyBang?: string[];
   /** Bảng dịch **phẳng** cho từng locale. Vắng mặt ở đây = khoá thiếu ở locale đó. */
   ban: Partial<Record<Locale, Record<string, string>>>;
+  /** ★ I-2 — văn bản JSON **THÔ** cho một locale (để dựng được ca **KHOÁ TRÙNG**, thứ `JSON.stringify` không tạo ra được). */
+  tho?: Partial<Record<Locale, string>>;
   nen?: Nen | null;
   tran?: Tran | null;
 }
@@ -101,14 +108,16 @@ function dungGoc(cd: CaiDat): string {
   for (const l of LOCALES) {
     writeFileSync(
       join(goc, "client", "src", "i18n", "locales", `${l}.json`),
-      `${JSON.stringify(longVao(cd.ban[l] ?? {}), null, 2)}\n`,
+      cd.tho?.[l] ?? `${JSON.stringify(longVao(cd.ban[l] ?? {}), null, 2)}\n`,
       "utf8",
     );
   }
   const than = cd.ma.map((k) => `  const _${k.replace(/[^\w]/g, "_")} = t(${JSON.stringify(k)});`).join("\n");
+  const bang = (cd.keyBang ?? []).map((k) => `  { key: ${JSON.stringify(k)} },`).join("\n");
   writeFileSync(
     join(goc, "client", "src", "pages", "Fixture.tsx"),
-    `export function Fixture(t: (k: string) => string) {\n${than}\n  return null;\n}\n`,
+    `export const BANG = [\n${bang}\n];\n` +
+      `export function Fixture(t: (k: string) => string) {\n${than}\n  return null;\n}\n`,
     "utf8",
   );
   if (cd.nen !== null) {
@@ -216,6 +225,62 @@ describe("★★★ Pha 7 §4.1 — bộ cưỡng chế mặt NGƯỜI phải đ
     for (const l of LOCALES) (cd.ban[l] as Record<string, string>)["fixt.rongCaBa"] = "";
     const r = chay(dungGoc(cd));
     expect(r.ma, `chuỗi rỗng phải HỢP LỆ, nhưng:\n${r.ra}`).toBe(0);
+  });
+
+  it("★★★ I-3 — hình dạng **THỨ HAI** `key: \"a.b\"` (bảng hằng) cũng nằm trong lượng từ, và KHÔNG bắt nhầm", () => {
+    /**
+     * ⚠⚠ Trước lượt vá này, **không ca nào** canh hình dạng `key: "a.b"` — bộ suy có hai nhánh mà
+     * lưới chỉ canh **một**. Trên repo thật nó chỉ đỏ **gián tiếp** (qua `BASELINE STALE`), tức là
+     * đỏ vì **nền lệch**, không phải vì **khoá thiếu** — một chẩn đoán sai địa chỉ.
+     *
+     * Hai chiều trong **một** bộ đầu vào:
+     *  • `fixt.tuBang` — `fixt` là không-gian cấp một **CÓ THẬT** ⇒ **phải** vào lượng từ ⇒ ĐỎ;
+     *  • `khongPhaiNs.abc` — không-gian **KHÔNG có thật** ⇒ đây là `key:` của mã **không-dịch**
+     *    (id, tên cột…) ⇒ **KHÔNG được** bắt nhầm.
+     */
+    const cd = nenXanh();
+    cd.keyBang = ["fixt.tuBang", "khongPhaiNs.abc"];
+    const r = chay(dungGoc(cd));
+    expect(r.ma, `phải ĐỎ, nhưng:\n${r.ra}`).toBe(1);
+    expect(r.ra).toContain("MISSING IN ALL 3");
+    expect(r.ra).toContain("fixt.tuBang");
+    expect(r.ra, "KHÔNG được bắt nhầm `key:` của mã không-dịch (không-gian không có thật)").not.toContain(
+      "khongPhaiNs.abc",
+    );
+  });
+
+  it("★★★ I-2 — PASS A (**chức năng GỐC**: lệch placeholder) vẫn được canh", () => {
+    /**
+     * ⚠⚠⚠ Lớp lỗi *"lưới khoá đúng CÁI VỪA SỬA, không canh BẤT BIẾN"*: lưới bản đầu chỉ canh PASS B
+     * (thứ Pha 6 vừa thêm) ⇒ **vô hiệu hoá PASS A vẫn 12/12 XANH và `i18n:check` exit 0**. Công cụ
+     * tên là `i18n:check`, không phải `i18n:presence-check` — cái nó **vốn phải làm** cũng phải bị canh.
+     */
+    const cd = nenXanh();
+    cd.ma.push("fixt.bienLech");
+    (cd.ban.en as Record<string, string>)["fixt.bienLech"] = "Hello {{name}}";
+    (cd.ban.vi as Record<string, string>)["fixt.bienLech"] = "Xin chào"; // ← thiếu {{name}}
+    (cd.ban.zh as Record<string, string>)["fixt.bienLech"] = "你好 {{name}}";
+    const r = chay(dungGoc(cd));
+    expect(r.ma, `phải ĐỎ, nhưng:\n${r.ra}`).toBe(1);
+    expect(r.ra).toContain("fixt.bienLech");
+    expect(r.ra).toContain("expected vars");
+  });
+
+  it("★★★ I-2 — CẦU CHÌ KHOÁ TRÙNG (doc 46 FE-W4) vẫn được canh", () => {
+    /**
+     * `JSON.parse` giữ **cái SAU** của hai khoá cùng tên trong một object ⇒ phép quét trên object
+     * đã parse **không thể** thấy (đó là cách lớp bug `signOff`/`signoff` ẩn mình). Cầu chì quét
+     * **văn bản thô**. Vô hiệu nó ⇒ trước lượt vá này **không ca nào đỏ**.
+     * ⚠ Vì `JSON.stringify` **không tạo được** khoá trùng, ca này phải ghi **văn bản THÔ**.
+     */
+    const cd = nenXanh();
+    cd.tho = {
+      en: '{\n  "fixt": {\n    "dayDu": "du-en",\n    "dayDu": "du-en-lan-hai",\n    "coDauRong": ""\n  }\n}\n',
+    };
+    const r = chay(dungGoc(cd));
+    expect(r.ma, `phải ĐỎ, nhưng:\n${r.ra}`).toBe(1);
+    expect(r.ra).toContain("DUPLICATE KEYS");
+    expect(r.ra).toContain("dayDu");
   });
 
   it("★★★ §4.1 — CI phải THẬT SỰ chạy bộ cưỡng chế mặt người (nếu không, nó lại thành hàng rào không ai canh)", () => {
@@ -352,5 +417,25 @@ describe("★★★ Pha 7 §4.2 — *“nền chỉ được THU HẸP”* thôi
     expect(nen.missingInSomeLocales.length, "nền thật VƯỢT TRẦN (missing-in-some)").toBeLessThanOrEqual(
       tran.missingInSomeLocales,
     );
+  });
+
+  it("★★★ I-4 — **TRẦN tự nó bị GHIM**: bánh cóc KHÔNG reset được bằng một diff MỘT DÒNG", () => {
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ⚠⚠⚠ ĐO ĐƯỢC (review Task 1): chuỗi ba bước dưới đây **reset sạch bánh cóc** và cổng vẫn XANH
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     *   thêm màn thật chưa dịch ⇒ ĐỎ ✅ → `--update-baseline` ⇒ `NỀN PHÌNH` ✅ →
+     *   **nâng trần tay 817 → 818** ⇒ `exit 0`, **22/22 XANH**.
+     *
+     * ⇒ Trần canh nền, nhưng **không ai canh TRẦN**. Đúng lớp *"hàng rào không ai canh"* — lần này
+     *   ở tầng thứ **BA**, và nó cho thấy lượng từ "∀ lượt chạy: |nền| ≤ trần" **chưa đủ**: nó nói
+     *   về **nền**, không nói gì về **trần**.
+     * ⚠⚠ Tôi **đã khai** giới hạn này bằng lời trong `i18n-baseline-tran.json` (*"hai con số này chỉ
+     *   được HẠ"*) — nhưng **KHAI một lỗ KHÔNG PHẢI LÀ CANH nó**. Đây là phép canh.
+     * ⚠ Ghim là `≤` chứ không `===`: **HẠ** trần (trả nợ thật) phải XANH; chỉ **NÂNG** mới ĐỎ.
+     */
+    const tran = JSON.parse(readFileSync(TRAN_THAT, "utf8")) as Tran;
+    expect(tran.missingInAllLocales, "TRẦN bị NÂNG — bánh cóc chỉ được siết, không được nới").toBeLessThanOrEqual(817);
+    expect(tran.missingInSomeLocales, "TRẦN bị NÂNG — bánh cóc chỉ được siết, không được nới").toBeLessThanOrEqual(20);
   });
 });
