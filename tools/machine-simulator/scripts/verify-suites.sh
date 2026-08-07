@@ -1358,8 +1358,20 @@ fi
 # all five suites. Report what the suites are actually running underneath, so the next person
 # reading a machine-wide failure has the number instead of a hypothesis.
 dotnet build-server shutdown >/dev/null 2>&1 || true
+# 🔴 TRAP 7 AGAIN, IN A NEW COSTUME — a checker that cries wolf, found by the first task that ran
+# under it. This counted processes BY NAME (`Get-Process dotnet`), and VS Code's C# Dev Kit language
+# server is also `dotnet.exe`. So the assertion below failed whenever the repository was merely OPEN
+# IN AN EDITOR: a run reported "3 build-server processes" of which TWO were
+# Microsoft.CodeAnalysis.LanguageServer, untouched by `dotnet build-server shutdown` and no business
+# of this gate's. That is trap 7's exact inversion — a healthy positive read as a failure — and it
+# costs the same, because a verification tool that fires on innocent states gets its output ignored,
+# which is precisely how the number this assertion protects went unwatched for eight tasks.
+#
+# So match on what the process IS, not what it is called: an MSBuild worker node or the Roslyn
+# compiler server. Both are what `dotnet build-server shutdown` targets, which is the only
+# population this check is entitled to have an opinion about.
 BUILD_NODES=$(powershell -NoProfile -NonInteractive -Command \
-  "(Get-Process dotnet,VBCSCompiler -ErrorAction SilentlyContinue | Measure-Object).Count" \
+  "(Get-CimInstance Win32_Process -Filter \"Name='dotnet.exe' OR Name='VBCSCompiler.exe'\" | Where-Object { \$_.CommandLine -match 'MSBuild\.dll|VBCSCompiler' } | Measure-Object).Count" \
   2>/dev/null | tr -d '\r' | head -1)
 note "build servers still resident entering the test phase: ${BUILD_NODES:-unknown}"
 
