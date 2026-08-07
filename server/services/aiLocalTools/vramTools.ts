@@ -171,7 +171,10 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
   // ── DƯ ĐỊA + `trusted`/`degradedReasons` (đồng hồ #2 của bảng) ───────────────────────────────
   d.push(
     noi(lang, "headroom", {
-      eff: M(s.headroom.effectiveBytes),
+      // ★ Pha 6 Task 2 — con số ĐANG CHẢY, lấy **tại mốc đọc của chính ảnh chụp**. Câu chữ giữ
+      //   nguyên từng byte (bản `vi` bị `vramTools.test.ts` + `vramPhrases.exhaustive.test.ts`
+      //   ghim); thứ đổi là **đường lấy số**, không phải lời nói.
+      eff: M(s.headroom.effective.bytesAtReadMs),
       raw: M(s.headroom.rawBytes),
       ceiling: M(s.headroom.ceilingBytes),
       used: M(s.headroom.usedBytes),

@@ -228,7 +228,14 @@ export function VramBrokerPanel({ commandReach, polling }: Props) {
             {/* ── Dư địa + độ chắc chắn ─────────────────────────────────────────────────── */}
             <div>
               <div className="text-lg font-semibold">
-                {fmtMiB(s.headroom.effectiveBytes, t("vramBroker.unknown", "KHÔNG BIẾT"))}
+                {/**
+                 * ★ Pha 6 Task 2 — **ĐẠI LƯỢNG ĐANG CHẢY.** Panel poll mỗi 5 giây, và con số này
+                 * đổi theo tuổi bản sao đọc sổ chung **kể cả khi không một byte nào đổi** (đo
+                 * được: 426.640.456 B giữa hai lượt đọc). Nó vẫn là con số ĐANG CƯỠNG CHẾ tại mốc
+                 * đọc, nên vẫn in ra — nhưng **đừng** ai dùng hai ảnh chụp màn hình của ô này làm
+                 * bằng chứng trước/sau (xem `effective.beforeAfterEvidence`).
+                 */}
+                {fmtMiB(s.headroom.effective.bytesAtReadMs, t("vramBroker.unknown", "KHÔNG BIẾT"))}
                 <span className="text-sm text-muted-foreground font-normal">
                   {" / "}
                   {fmtMiB(s.headroom.ceilingBytes, t("vramBroker.unknown", "KHÔNG BIẾT"))}

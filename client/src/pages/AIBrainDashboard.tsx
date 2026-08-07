@@ -161,7 +161,7 @@ export default function AIBrainDashboard() {
    * qua** trần/sổ/`computeHeadroom`/`applyEnforcement`, tức KHÔNG phải con số đang TỪ CHỐI các lượt
    * xin. Hai đồng hồ nói hai số cho cùng một câu hỏi là lớp lỗi "hai bản sao vị từ" (review Task 1
    * gọi tên đích danh dòng này). Nay: **một đồng hồ**, và nó là đồng hồ đang cưỡng chế.
-   * ⚠ `effectiveBytes`/`ceilingBytes` có thể `null` (không hữu hạn ⇒ bị chặn CÓ TÊN ở
+   * ⚠ `effective.bytesAtReadMs`/`ceilingBytes` có thể `null` (không hữu hạn ⇒ bị chặn CÓ TÊN ở
    * `nonFiniteFields`) — KHÔNG `?? 0`: một số 0 bịa ra ở đây là "còn 0 MiB", một lời khẳng định.
    */
   const vramState = trpc.vram.state.useQuery(undefined, { ...polling });

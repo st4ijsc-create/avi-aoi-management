@@ -6,7 +6,7 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * Agent đọc API này để **QUYẾT ĐỊNH**. Một trường nói quá không dừng ở *"tài liệu sai"* — nó
  * thành **một hành động sai**. Lớp lỗi "hứa nhiều hơn dữ liệu" đã bị bắt **CHÍN lần** trong
- * chuỗi pha này. Ba chỗ dễ nói quá nhất, cả ba đều có SỐ, và cả ba được xử bằng **KIỂU**:
+ * chuỗi pha này. **BỐN** chỗ dễ nói quá nhất, cả bốn đều có SỐ, và cả bốn được xử bằng **KIỂU**:
  *
  *   1. **`unledgeredBytes` là ƯỚC LƯỢNG, không phải số đo.** GGUF 30B `fileBytes`
  *      **17.690.497.440 B** vs `actualBytes` đo được **17.511.354.368 B** ⇒ file **CAO HƠN
@@ -24,6 +24,12 @@
  *      mới nối 15/159. ⇒ ô này là một **HỢP KIỂU CÓ NHÃN** (`known: false` +
  *      `meaning: "headroom-upper-bound"`), không phải một `number | null` để ai đó đọc thành
  *      "trạng thái an toàn".
+ *   4. **`headroom.effective` là một ĐẠI LƯỢNG ĐANG CHẢY, không phải một bất biến.** Đo được ở
+ *      nghiệm thu sống Pha 5: **trôi 426.640.456 B giữa hai lượt đọc cách nhau vài giây**, thuần
+ *      theo tuổi bản sao đọc sổ chung (`foreign.ageMs`); chín lượt đọc trong 40 s, **không một
+ *      lệnh nào** ở giữa, cho **hai** con số. ⇒ ô cũ `effectiveBytes: number | null` **KHÔNG CÒN
+ *      TỒN TẠI**: con số nay đi **cùng mốc đọc của nó** trong `VramAgentEffectiveHeadroom`, nên
+ *      câu *"số này không đổi giữa hai lượt đọc"* **không viết ra được nữa** (xem khối ở kiểu ấy).
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠⚠ KHÔNG DỰNG ĐƯỜNG THỨ HAI (ràng buộc 2)
@@ -443,6 +449,90 @@ export interface VramAgentDeferView {
   readonly hosts: readonly VramAgentDeferHostView[];
 }
 
+/**
+ * ★★★ Pha 6 Task 2 — **DƯ ĐỊA HIỆU LỰC: MỘT ĐẠI LƯỢNG ĐANG CHẢY, VÀ NAY NÓ THÔI GIẢ VỜ LÀ MỘT CON
+ * SỐ ĐỂ AI ĐÓ SO TRƯỚC/SAU.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO ĐỔI KIỂU CHỨ KHÔNG THÊM MỘT DÒNG CẢNH BÁO (ràng buộc 8)
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * **Pha 4 dùng chính ô này làm bằng chứng *"sổ không đổi"* — và TRÚNG NHỜ MAY.** Pha 5 đo được cả
+ * hai chiều hỏng của nó, trên **cùng một ô**:
+ *
+ *   • **DƯƠNG TÍNH GIẢ** (nghiệm thu sống Pha 5, §5): `−426.640.456 B` giữa hai lượt đọc cách nhau
+ *     vài giây **trong khi không một byte nào đổi** — `ledger.localBytes`, danh sách hộ và
+ *     `nvidia-smi` giống hệt. Chứng cứ đối chứng: 9 lượt đọc/40 s, **không lệnh nào**, hai con số
+ *     (`30.725.037.092` → `28.771.770.368`), thuần theo `foreign.ageMs` leo `59 → 5.088 ms`.
+ *   • **ÂM TÍNH GIẢ** (nghiệm thu sống Pha 4, F4): **KHÔNG đổi một byte** (`23.470.170.112` ở cả
+ *     hai đầu) sau một lượt thu hồi **THÀNH CÔNG 5.030 MiB** — vì `used = max(sổ, attributable)`
+ *     bị **GHIM** bởi phép đo thiết bị của nhịp CŨ.
+ *
+ * ⇒ Một ô hỏng ở **cả hai chiều** thì thêm bao nhiêu ca test cũng không cứu: người sau vẫn viết
+ * `expect(sau.headroom.effectiveBytes).toBe(truoc.headroom.effectiveBytes)` và **vẫn xanh khi may**.
+ * Nên con số **đi cùng MỐC ĐỌC của nó, trong CÙNG MỘT GIÁ TRỊ**: hai lượt đọc cho hai giá trị
+ * **KHÁC NHAU về cấu trúc, LUÔN LUÔN** — kể cả khi số byte tình cờ trùng. Câu *"nó không đổi"*
+ * không còn phát biểu được, đúng khuôn đã dùng bốn lần trong chuỗi pha này (`reclaimable` →
+ * `VramAgentHolderReclaim`, `ownerPattern` → `VramAgentOwnerPattern`, …).
+ *
+ * ⚠ **ĐƯỜNG KHÔNG CHỌN, VÀ VÌ SAO:** *gắn nhãn (brand) cho con số* (`number & {…}`) làm `tsc` đỏ ở
+ * **mọi** điểm tiêu thụ — kể cả những phép so **HỢP LỆ CÙNG THỜI ĐIỂM** (`vramRouter.test.ts` so ô
+ * này với `reserve().decision.effectiveHeadroomBytes` của **cùng một mốc**, một lưới có răng). Đó
+ * là **BẮT NHẦM**, và chiều bắt nhầm bị bỏ qua thường xuyên hơn chiều bắt. Nên `bytesAtReadMs` vẫn
+ * là một `number | null` trần: so **cùng mốc** vẫn viết được, so **khác mốc** thì phải tự tay bóc
+ * con số ra khỏi mốc của nó — một hành động **nhìn thấy được** và bị lưới
+ * `vramReadModel.drift.test.ts` cưỡng chế phân loại.
+ *
+ * ⚠ **HỆ KIỂU KHÔNG CẤM ĐƯỢC `a === b` GIỮA HAI SỐ** — khai thẳng giới hạn thay vì hứa quá (đúng
+ * lỗi mà cả file này tồn tại để diệt). Thứ đóng phần còn lại là **PHÉP PHÂN LOẠI CÓ ĐO** ở
+ * `vramReadModel.drift.test.ts`: *mọi* ô của ảnh chụp phải tự khai **ĐỔI-THEO-ĐỒNG-HỒ** hay
+ * **KHÔNG-ĐỔI-THEO-ĐỒNG-HỒ**, và bản khai ấy bị **phép đo** chấm — không phải bị một docstring.
+ */
+export interface VramAgentEffectiveHeadroom {
+  /**
+   * Con số cưỡng chế **TẠI `readAtMs`, KHÔNG PHẢI MỘT LÚC NÀO KHÁC.** `null` ⇔ không hữu hạn (bị
+   * chặn CÓ TÊN — xem `nonFiniteFields`, đường `headroom.effective.bytesAtReadMs`).
+   */
+  readonly bytesAtReadMs: number | null;
+  /**
+   * ★★★ MỐC của con số ngay trên — **thứ làm cho hai lượt đọc KHÔNG BAO GIỜ bằng nhau.**
+   * ⚠ Luôn **đúng bằng** `atMs` của chính ảnh chụp (cùng một hằng, một chỗ gán — không phải một
+   * lượt đọc đồng hồ thứ hai; có ca khoá). Nó ở **trong** giá trị chứ không nằm cạnh vì một ô
+   * hàng xóm **tách ra được**, còn cái này thì không — đúng bài học của `VramAgentDisplayText`.
+   */
+  readonly readAtMs: number;
+  /** ★ LUÔN `true`. Đọc thẳng: **ô này KHÔNG dùng được làm bất biến so-sánh-trước-sau.** */
+  readonly notAnInvariant: true;
+  /**
+   * Những ô **ĐANG CHẢY** đã sinh ra con số trên — **con trỏ, KHÔNG phải bản sao** (ràng buộc
+   * *"đừng dựng người ghi thứ hai cho một bất biến đã có chủ"*). Mỗi đường ở đây bị lưới chấm
+   * bằng **phép đo**: nó phải thật sự đổi khi **chỉ đồng hồ** nhích.
+   */
+  readonly variesWith: readonly [
+    "tick.ageMs",
+    "ledger.foreign.ageMs",
+    "headroom.charges.staleMarginBytes",
+    "headroom.charges.sharedLedgerMarginBytes",
+    "headroom.charges.distrustChargeBytes",
+  ];
+  /**
+   * ★★★ **BẤT BIẾN ĐÚNG cho một phép so TRƯỚC/SAU — và nó là một PHÉP HỘI, không phải một danh
+   * sách để chọn một món.**
+   *
+   * ⚠⚠ `headroom.rawBytes` **MỘT MÌNH KHÔNG ĐỦ**, và đây là số đo chứ không phải lo xa: ở ca F4 nó
+   * **cũng đứng yên** khi 5.030 MiB rời sổ thật, vì `used = max(sổ, attributable)` bị ghim bởi
+   * nhịp đo cũ. Thứ mang bằng chứng của một lượt đổi SỔ là `ledger.localBytes` + danh tính/byte của
+   * hộ; thứ mang bằng chứng của một lượt đổi **THIẾT BỊ** là `nvidia-smi`. Bỏ một vế là mở lại đúng
+   * cái bẫy vừa đóng.
+   *
+   * ⚠⚠⚠ **VÀ ĐÂY LÀ ĐÍNH CHÍNH CHO CHÍNH BẢN KHAI ẤY** (đo được ở `vramReadModel.drift.test.ts`
+   * §5): *"danh sách hộ"* đọc **nguyên khối** thì **KHÔNG** bất biến theo đồng hồ —
+   * `localHolders[].ttlExpired` lật `false → true` mà **không một byte nào đổi**. ⇒ vế thứ ba của
+   * bằng chứng là **`owner` + `bytes` của hộ**, không phải cả đối tượng hộ. Một danh sách "bất
+   * biến đúng" cũng có phần tử thứ N+1 của nó.
+   */
+  readonly beforeAfterEvidence: "headroom.rawBytes + ledger.localBytes + ledger.localHolders[].owner + ledger.localHolders[].bytes + nvidia-smi(memory.used) — CẢ BỐN NGUỒN CÙNG LÚC";
+}
+
 export interface VramAgentState {
   readonly atMs: number;
   /** Danh tính của tiến trình đang trả lời — `${role}:${pid}:${bootMs}`. */
@@ -474,10 +564,17 @@ export interface VramAgentState {
   };
 
   readonly headroom: {
-    /** `computeHeadroom()` thô. `null` ⇔ không hữu hạn (xem `nonFiniteFields` + `degradedReasons`). */
+    /**
+     * `computeHeadroom()` thô. `null` ⇔ không hữu hạn (xem `nonFiniteFields` + `degradedReasons`).
+     * ⚠ **KHÔNG ĐỔI THEO ĐỒNG HỒ** (có lưới đo) ⇒ so được trước/sau — nhưng **chỉ CÙNG với**
+     * `ledger.localBytes` + `localHolders` + `nvidia-smi`: xem `beforeAfterEvidence`.
+     */
     readonly rawBytes: number | null;
-    /** Sau chính sách suy giảm — **con số THẬT SỰ được so với một lượt xin**. */
-    readonly effectiveBytes: number | null;
+    /**
+     * Sau chính sách suy giảm — **con số THẬT SỰ được so với một lượt xin**, và là một **ĐẠI LƯỢNG
+     * ĐANG CHẢY**: nó đi cùng mốc đọc của nó. Xem `VramAgentEffectiveHeadroom`.
+     */
+    readonly effective: VramAgentEffectiveHeadroom;
     /** Vế nào thắng `max(L, A)`. `"ledger-only"` ⇔ MÙ ⇒ CHẶN TRÊN. */
     readonly basis: HeadroomBasis;
     readonly blind: boolean;
@@ -1111,7 +1208,25 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
     },
     headroom: {
       rawBytes: st.headroom.headroomBytes,
-      effectiveBytes: st.enforcement.effectiveHeadroomBytes,
+      /**
+       * ★★★ Pha 6 Task 2 — con số **KHÔNG RỜI KHỎI MỐC CỦA NÓ.** `readAtMs` lấy **chính** hằng
+       * `atMs` ở đầu hàm (một lượt đọc đồng hồ cho cả ảnh chụp — không phải một `Date.now()` thứ
+       * hai, đúng kỷ luật "hai vế của một phép so đến từ cùng một lượt đọc").
+       */
+      effective: {
+        bytesAtReadMs: st.enforcement.effectiveHeadroomBytes,
+        readAtMs: atMs,
+        notAnInvariant: true as const,
+        variesWith: [
+          "tick.ageMs",
+          "ledger.foreign.ageMs",
+          "headroom.charges.staleMarginBytes",
+          "headroom.charges.sharedLedgerMarginBytes",
+          "headroom.charges.distrustChargeBytes",
+        ] as const,
+        beforeAfterEvidence:
+          "headroom.rawBytes + ledger.localBytes + ledger.localHolders[].owner + ledger.localHolders[].bytes + nvidia-smi(memory.used) — CẢ BỐN NGUỒN CÙNG LÚC" as const,
+      },
       basis: st.headroom.basis,
       blind: st.headroom.blind,
       trusted: st.enforcement.trusted,

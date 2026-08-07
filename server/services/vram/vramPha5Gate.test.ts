@@ -155,7 +155,10 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     ).toBeGreaterThanOrEqual(20);
     // ⚠ GHIM SỐ: một lưới mới sinh ra, hoặc một lưới cũ bị xoá, đều phải là một **quyết định nói
     //   ra**, không phải một lượt trôi im lặng.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(62);
+    // ⚠ Pha 6 Task 2: +1 lưới — `server/services/vram/vramReadModel.drift.test.ts` (bẫy đo lường
+    //   `effective`). Nó nằm **trong** vùng `server/services/vram/` mà cổng đã chạy, nên chỉ con số
+    //   ghim này phải đổi: 62 → 63.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(63);
   });
 
   it("★★★ KHÔNG file nào bị canh mà nằm NGOÀI cổng — ô mà I-1 đã lọt, và ô mà R3 đã lọt", () => {

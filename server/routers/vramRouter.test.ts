@@ -464,10 +464,14 @@ describe("vramRouter.state — KHÔNG một giá trị KHÔNG HỮU HẠN nào r
     expect(s.nonFiniteFields.length).toBeGreaterThan(0);
     const duong = s.nonFiniteFields.map((f) => f.path);
     expect(duong).toContain("headroom.rawBytes");
-    expect(duong).toContain("headroom.effectiveBytes");
+    // ★ Pha 6 Task 2 — con số đi CÙNG MỐC ĐỌC ⇒ đường của nó cũng nói ra điều đó.
+    expect(duong).toContain("headroom.effective.bytesAtReadMs");
     for (const f of s.nonFiniteFields) expect(["Infinity", "-Infinity", "NaN"]).toContain(f.was);
     expect(s.headroom.rawBytes).toBeNull();
-    expect(s.headroom.effectiveBytes).toBeNull();
+    expect(s.headroom.effective.bytesAtReadMs).toBeNull();
+    // ⚠ Mốc đọc **không** bị chặn theo: nó luôn hữu hạn, và không có nó thì con số `null` kia lại
+    //   thành một ô trần để ai đó so trước/sau.
+    expect(s.headroom.effective.readAtMs).toBe(s.atMs);
     expect(s.headroom.degradedReasons).toContain("invalid-input");
   });
 
@@ -482,7 +486,14 @@ describe("vramRouter.state — KHÔNG một giá trị KHÔNG HỮU HẠN nào r
 });
 
 describe("vramRouter.state — con số phơi ra PHẢI là con số đang cưỡng chế", () => {
-  it("★★ `headroom.effectiveBytes` khớp ĐÚNG `decision.effectiveHeadroomBytes` của một lượt `reserve()` cùng ngữ cảnh", async () => {
+  /**
+   * ⚠⚠ Pha 6 Task 2 — **CA NÀY LÀ CHIỀU "KHÔNG BẮT NHẦM" CỦA LƯỢT ĐỔI KIỂU.** Phép so ở đây là
+   * **CÙNG MỘT MỐC** (mặt đọc ↔ quyết định cưỡng chế), tức đúng thứ vẫn **PHẢI viết ra được** sau
+   * khi `effectiveBytes` bị gói cùng mốc đọc. Nếu một bản vá tương lai làm ca này không viết nổi
+   * nữa thì bản vá ấy đã bắt nhầm — xem `VramAgentEffectiveHeadroom` (đường "brand" đã bị loại
+   * đúng vì nó làm ca này đỏ).
+   */
+  it("★★ `headroom.effective.bytesAtReadMs` khớp ĐÚNG `decision.effectiveHeadroomBytes` của một lượt `reserve()` cùng ngữ cảnh", async () => {
     publishDecisionTick(__tickFieldsForTests(3_000 * MIB, true), Date.now());
     publishSharedLedgerReplica([hangAnhEm({ bytes: 2_000 * MIB })], Date.now(), sharedLedgerSelfKey());
     xinThat("gguf:local-model", 1_000 * MIB);
@@ -497,8 +508,8 @@ describe("vramRouter.state — con số phơi ra PHẢI là con số đang cư�
       { tick: readDecisionTick(), unledgered: { bytes: 0, unknownCount: 0 }, sharedLedger: sharedLedgerFact(nowMs), nowMs },
     );
     // Biên theo tuổi đổi theo mili giây ⇒ so trong một dung sai nhỏ, nhưng CÙNG một bậc.
-    expect(s.headroom.effectiveBytes).not.toBeNull();
-    expect(Math.abs(s.headroom.effectiveBytes! - out.decision.effectiveHeadroomBytes)).toBeLessThan(50 * MIB);
+    expect(s.headroom.effective.bytesAtReadMs).not.toBeNull();
+    expect(Math.abs(s.headroom.effective.bytesAtReadMs! - out.decision.effectiveHeadroomBytes)).toBeLessThan(50 * MIB);
     expect(s.headroom.usedBytes).toBe(out.decision.usedBytes);
     expect(s.ledger.totalBytes).toBe(out.decision.ledgerTotalBytes);
     expect(s.headroom.ceilingBytes).toBe(out.decision.ceilingBytes);
