@@ -1363,15 +1363,41 @@ dotnet build-server shutdown >/dev/null 2>&1 || true
 # server is also `dotnet.exe`. So the assertion below failed whenever the repository was merely OPEN
 # IN AN EDITOR: a run reported "3 build-server processes" of which TWO were
 # Microsoft.CodeAnalysis.LanguageServer, untouched by `dotnet build-server shutdown` and no business
-# of this gate's. That is trap 7's exact inversion — a healthy positive read as a failure — and it
+# of this gate's.
+#   (Reproducing that needs the language server hosted UNDER `dotnet.exe`. On csdevkit-3.20.199 /
+#   csharp-2.140.9 it ships its own apphost `Microsoft.CodeAnalysis.LanguageServer.exe`, so today
+#   the OLD matcher would also return 0 for Dev Kit -- the review measured that. The .dll ships too
+#   and `vscode-dotnet-runtime` is installed, which is how it lands under `dotnet.exe`. Version
+#   named so the next person re-testing does not conclude this comment is false and reach for the
+#   ceiling instead. What is NOT version-dependent is Dev Kit's build host, measured live:
+#   `Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.dll` passes the name filter and fails the
+#   regex, because it never contains the literal `MSBuild.dll`.)
+# That is trap 7's exact inversion — a healthy positive read as a failure — and it
 # costs the same, because a verification tool that fires on innocent states gets its output ignored,
 # which is precisely how the number this assertion protects went unwatched for eight tasks.
 #
-# So match on what the process IS, not what it is called: an MSBuild worker node or the Roslyn
-# compiler server. Both are what `dotnet build-server shutdown` targets, which is the only
-# population this check is entitled to have an opinion about.
+# So match on what the process IS, not what it is called: an MSBuild worker node, the Roslyn
+# compiler server, or the Razor server. Those three are exactly what `dotnet build-server shutdown`
+# targets -- it names all three in its own output -- which is the only population this check is
+# entitled to have an opinion about.
+#
+# 🔴 AND THE FIRST REWRITE INTRODUCED TWO FALSE NEGATIVES, i.e. it could newly read HEALTHY while
+# the defect was present -- the one direction this whole rewrite exists to avoid. Both found by the
+# review pressing "does the new matcher miss anything", which is the question the fix did not ask
+# itself:
+#   (a) `rzc.dll`, the Razor server, was dropped. Measured: a live one scores False on the old
+#       regex, and `dotnet build-server shutdown` reports "Shutting down Razor build server
+#       (process N)... shut down successfully" and kills it. Unreachable in this repo today (no
+#       .razor/.cshtml anywhere), reachable the day someone adds one -- a check that silently stops
+#       covering a case when the repo grows into it is worse than one that never covered it.
+#   (b) A NULL CommandLine matched nothing, so it FAILED OPEN. Measured non-elevated: 182 of 419
+#       processes report a null command line, because a process owned by another account or an
+#       elevated shell does not surrender it. `Get-Process` still sees them. So an MSBuild node
+#       started elevated was counted by the old name-based matcher and skipped silently by the new
+#       one. Null now counts as a hit: this check may cry wolf on an unreadable process, and must
+#       never wave one through.
 BUILD_NODES=$(powershell -NoProfile -NonInteractive -Command \
-  "(Get-CimInstance Win32_Process -Filter \"Name='dotnet.exe' OR Name='VBCSCompiler.exe'\" | Where-Object { \$_.CommandLine -match 'MSBuild\.dll|VBCSCompiler' } | Measure-Object).Count" \
+  "(Get-CimInstance Win32_Process -Filter \"Name='dotnet.exe' OR Name='VBCSCompiler.exe'\" | Where-Object { \$null -eq \$_.CommandLine -or \$_.CommandLine -match 'MSBuild\.dll|VBCSCompiler|rzc\.dll' } | Measure-Object).Count" \
   2>/dev/null | tr -d '\r' | head -1)
 note "build servers still resident entering the test phase: ${BUILD_NODES:-unknown}"
 
