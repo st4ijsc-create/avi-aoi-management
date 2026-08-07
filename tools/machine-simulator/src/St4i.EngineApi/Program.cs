@@ -1250,7 +1250,11 @@ builder.Services.AddSingleton<St4i.EdgeCore.Drivers.Modbus.ModbusBusRegistry>();
 
 builder.Services.AddSingleton(sp =>
 {
-    var registry = new St4i.EngineApi.Fleet.ConnectorRegistry();
+    // 🔴 E-2 — ConnectorRegistry moved to St4i.EdgeCore.Fleet (blueprint §9.1: FleetCore.StartLocked builds
+    // one slot per registered instance from it and ResolveWritableDriver routes every write off its
+    // bindings, so a lifecycle core that cannot see it is not a lifecycle core). Only this one fully
+    // qualified name had to change; every other reference in this project resolves by simple name.
+    var registry = new St4i.EdgeCore.Fleet.ConnectorRegistry();
 
     if (modbusMapJson is not null)
     {
