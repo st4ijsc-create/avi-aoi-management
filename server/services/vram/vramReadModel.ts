@@ -609,10 +609,26 @@ export const VRAM_EFFECTIVE_VARIES_WITH = [
  * và vì thế **không có con số "bao nhiêu vế"** ở đâu cả: số vế **suy ra** từ chính bản phân loại,
  * tại chỗ chấm. Ba lượt liệt kê trước đây, ba lần thiếu một vế khác (xem khối docstring ở kiểu).
  */
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ Pha 7 Task 2 — **VÌ SAO CÂU NÀY NAY LÀ ASCII, VÀ ĐÓ KHÔNG PHẢI MỘT LƯỢT DỌN CHO GỌN.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản trước là một câu **tiếng Việt**. Đo được ở Pha 7: ô này có **0 người đọc** — và nó **KHÔNG
+ * THỂ** có một người đọc thật chừng nào còn là tiếng Việt:
+ *   • mặt **Agent** (`textSummary`) bị `vramPhrases.exhaustive.test.ts` §C cưỡng chế
+ *     *"`lang=en` ⇒ KHÔNG một chữ cái phi-ASCII nào"* và *"`lang=zh` ⇒ KHÔNG một dấu tiếng Việt
+ *     nào"* ⇒ in nguyên văn câu cũ vào bản tóm tắt là **hai ca ĐỎ**;
+ *   • mặt **NGƯỜI** (panel) đi qua lớp dịch ba locale (Pha 7 Task 1) ⇒ render thẳng một câu tiếng
+ *     Việt của máy chủ là **mở lại đúng lỗ i18n** mà Task 1 vừa đóng.
+ * ⇒ Đây là một **NHÃN MÁY ĐỌC**, cùng hạng với `basis` / `caveat` / `estimateKind` / `durableTrace`
+ * — những ô ASCII mà cả ba ngôn ngữ đã in **nguyên văn** từ Pha 4. Nội dung LUẬT không đổi một ly:
+ * ba cái răng của nó (`RR-A`, `vramReadModel.drift.test.ts` §4) vẫn nguyên — **con trỏ tới bản
+ * phân loại**, **bằng chứng NGOÀI payload** (`nvidia-smi`), và **CẢ TẬP chứ không vài ô được chọn**.
+ */
 export const VRAM_BEFORE_AFTER_EVIDENCE =
-  "MỌI ô khai KHÔNG-ĐỔI-THEO-ĐỒNG-HỒ (bản phân loại có ĐO ở " +
+  "EVERY field declared CLOCK-INVARIANT (measured classification in " +
   "server/services/vram/vramReadModel.drift.test.ts) + nvidia-smi(memory.used) " +
-  "— CẢ TẬP, KHÔNG PHẢI VÀI Ô ĐƯỢC CHỌN";
+  "- THE WHOLE SET, NOT A CHOSEN FEW";
 
 export interface VramAgentState {
   readonly atMs: number;

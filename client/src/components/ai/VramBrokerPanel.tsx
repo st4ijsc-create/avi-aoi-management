@@ -291,13 +291,24 @@ export function VramBrokerPanel({ commandReach, polling }: Props) {
                 ở **biên payload**. Người đứng trước màn hình vẫn thấy một con số MiB trần và vẫn so
                 được hai ảnh chụp. Câu dưới là chặng còn thiếu.
                 ⚠ Câu đi qua lớp dịch (`vramBroker.effectiveIsFlowing`, ba bản thật) — không viết tay.
+
+                ★★★ Pha 7 Task 2 — **CÂU NÀY NAY ĐỌC Ô ĐÃ KHAI NÓ, KHÔNG TỰ KHẲNG ĐỊNH.**
+                Bản trước in câu **vô điều kiện** ⇒ payload mang `effective.notAnInvariant` mà
+                **không ai đọc**, và màn hình khẳng định một điều payload không hề nói: hai bản của
+                MỘT sự thật, tách rời được. Nay câu chỉ hiện khi chính ảnh chụp khai điều đó — đúng
+                khuôn `s.unattributed.excludesBaselineBytes` ngay dưới, không cơ chế mới.
+                ⚠ Nội dung máy đọc (`variesWith` / `beforeAfterEvidence`) KHÔNG render ở đây: chúng
+                là chuỗi máy chủ **không qua lớp dịch**, và bề mặt NGƯỜI của repo này phải dịch được
+                (Pha 7 Task 1). Người đọc thật của hai ô ấy là `textSummary` (mặt Agent).
               */}
-              <p className="text-xs text-muted-foreground mt-2">
-                {t(
-                  "vramBroker.effectiveIsFlowing",
-                  "Dư địa hiệu lực là đại lượng ĐANG CHẢY — nó đổi theo tuổi bản sao sổ chung kể cả khi không byte nào đổi. ĐỪNG dùng hai ảnh chụp ô này làm bằng chứng trước/sau.",
-                )}
-              </p>
+              {s.headroom.effective.notAnInvariant ? (
+                <p className="text-xs text-muted-foreground mt-2">
+                  {t(
+                    "vramBroker.effectiveIsFlowing",
+                    "Dư địa hiệu lực là đại lượng ĐANG CHẢY — nó đổi theo tuổi bản sao sổ chung kể cả khi không byte nào đổi. ĐỪNG dùng hai ảnh chụp ô này làm bằng chứng trước/sau.",
+                  )}
+                </p>
+              ) : null}
               {/* ★ translateVramScope — phạm vi quan sát của MỌI ô hoãn ở dưới. */}
               <p className="text-xs text-muted-foreground mt-2">{translateVramScope(s.defer.scope)}</p>
               {/* ★ translateVramNonFiniteFields — mảng rỗng CŨNG là một câu trả lời. */}

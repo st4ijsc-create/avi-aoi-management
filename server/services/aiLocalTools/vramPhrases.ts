@@ -193,6 +193,104 @@ export const CAU = {
     () => " · 没有任何降级原因。",
   ),
 
+  /**
+   * ★★★ Pha 7 Task 2 — **CHẶNG CUỐI: BA Ô CỦA PHA 6 TASK 2 NAY TỚI ĐÚNG NGƯỜI CHÚNG BẢO VỆ.**
+   *
+   * ⚠⚠ Khoá `headroom` ở trên đã mang **câu** *"nó đang chảy"* — nhưng câu ấy là một **BẢN SAO VIẾT
+   * TAY** của một sự thật mà payload đã mang sẵn ở `effective.notAnInvariant` / `variesWith` /
+   * `beforeAfterEvidence`. Đo được ở Pha 7 Bước 1: ba ô ấy có **0 người đọc** (424 B/lượt ·
+   * ≈298 KiB/giờ/panel), tức hai bản của **một** sự thật, và bản **có số liệu** thì không ai thấy.
+   * ⇒ Dòng này in **chính ba ô ấy**: câu chữ nói *ý nghĩa*, tham số mang *nội dung máy đọc*.
+   * ⚠ `p.varies` là danh sách **ĐƯỜNG DẪN** và `p.evidence` là một **NHÃN ASCII** (xem
+   * `VRAM_BEFORE_AFTER_EVIDENCE`) — cả hai là **dữ liệu**, giống nhau ở ba ngôn ngữ, đúng luật
+   * *"văn xuôi ⇒ khoá · định danh/dữ liệu ⇒ tham số"*.
+   */
+  effectiveFlowing: ba<{ notAnInvariant: string; varies: string; evidence: string }>(
+    (p) =>
+      `Con số hiệu lực TỰ KHAI không phải một bất biến (notAnInvariant=${p.notAnInvariant}); ` +
+      `nó đổi theo các ô: ${p.varies}. ` +
+      `Bằng chứng trước/sau DUY NHẤT chấp nhận được: ${p.evidence}. ` +
+      `Đừng lấy hai lần hỏi ô này làm bằng chứng đã nhả hay đã chiếm.`,
+    (p) =>
+      `The effective figure DECLARES itself not an invariant (notAnInvariant=${p.notAnInvariant}); ` +
+      `it moves with these fields: ${p.varies}. ` +
+      `The only acceptable before/after evidence is: ${p.evidence}. ` +
+      `Never quote two readings of this cell as proof that VRAM was freed or taken.`,
+    (p) =>
+      `有效余量自我声明它不是不变量（notAnInvariant=${p.notAnInvariant}）；` +
+      `它会随这些字段变化：${p.varies}。` +
+      `唯一可接受的前后对比证据是：${p.evidence}。` +
+      `切勿把这一项的两次读数当作显存已释放或已占用的证据。`,
+  ),
+
+  /**
+   * ★★★ Pha 7 Task 2 — **DẤU ĐỌC: thứ làm hai lượt đọc KHÔNG BAO GIỜ bằng nhau, nay Agent thấy.**
+   *
+   * ⚠⚠ Đo được ở Pha 6 (#1): **18/20** cặp lượt đọc liên tiếp rơi vào **cùng một mili giây** ⇒ mốc
+   * tường **TRÙNG ĐƯỢC**, và khi nó trùng thì một phép so *"y hệt nhau"* xanh **dù 5,27 GB vừa rời
+   * sổ**. `readMark` (`${processKey}#${sốĐếmĐơnĐiệu}`) là thứ không trùng được. Với Agent —
+   * người **chỉ nhận `textSummary`** — cả `readMark` lẫn `atMs`/`processKey` trước bản này đều
+   * **vô hình**, nên nó không có cách nào phân biệt hai bản tóm tắt của hai lượt hỏi.
+   * ⚠ Dòng này in **cả hai mốc** một cách CỐ Ý: mốc tường để trả lời *"bao giờ"*, dấu đọc để trả
+   * lời *"có phải cùng một lượt đọc không"* — và câu nói thẳng rằng chỉ cái thứ hai làm được việc ấy.
+   */
+  snapshotMark: ba<{ processKey: string; atMs: string; readMark: string; readAtMs: string }>(
+    (p) =>
+      `Ảnh chụp của tiến trình ${p.processKey} lúc ${p.atMs} ms · dấu đọc=${p.readMark} ` +
+      `(mốc tường của dấu=${p.readAtMs} ms). Hai lượt hỏi TRÙNG mốc tường được, nên muốn biết ` +
+      `hai bản tóm tắt có phải cùng một lượt đọc hay không thì so DẤU ĐỌC, đừng so mốc tường.`,
+    (p) =>
+      `Snapshot from process ${p.processKey} at ${p.atMs} ms · read mark=${p.readMark} ` +
+      `(wall clock of that mark=${p.readAtMs} ms). Two answers CAN share the same wall-clock ` +
+      `millisecond, so compare the READ MARK, never the wall clock, to tell two reads apart.`,
+    (p) =>
+      `来自进程 ${p.processKey} 的快照，时刻 ${p.atMs} ms · 读取标记=${p.readMark}` +
+      `（该标记的墙上时钟=${p.readAtMs} ms）。两次回答可能落在同一毫秒，` +
+      `因此要区分两次读取请比较读取标记，不要比较墙上时钟。`,
+  ),
+
+  /**
+   * ★★★ Pha 7 Task 2 — **NĂM KHOẢN TRỪ: dựng lại được phép tính, không phải tin một con số vô danh.**
+   *
+   * ⚠ `headroom.charges.*` + `safetyReserveBytes` có **0 người đọc** trước bản này, trong khi ba
+   * trong bốn khoản trừ nằm ngay ở `effective.variesWith` — tức chính chúng làm con số dư địa nhúc
+   * nhích, và Agent không có cách nào biết **khoản nào** đang ăn dư địa.
+   */
+  charges: ba<{ stale: string; sharedLedger: string; unledgered: string; distrust: string; reserve: string }>(
+    (p) =>
+      `Các khoản TRỪ khỏi dư địa: biên quá hạn ${p.stale} · biên sổ chung ${p.sharedLedger} · ` +
+      `phụ phí ngoài sổ ${p.unledgered} · phụ phí mất tin cậy ${p.distrust} · dự trữ an toàn ${p.reserve}. ` +
+      `Khoản nào lớn bất thường thì chữa NGUYÊN NHÂN của nó, đừng đề nghị nới trần.`,
+    (p) =>
+      `Deductions applied to headroom: stale margin ${p.stale} · shared-ledger margin ${p.sharedLedger} · ` +
+      `off-ledger charge ${p.unledgered} · distrust charge ${p.distrust} · safety reserve ${p.reserve}. ` +
+      `If one of them is unusually large, fix its CAUSE instead of advising a higher ceiling.`,
+    (p) =>
+      `从余量中扣除的项目：过期余量 ${p.stale} · 共享账本余量 ${p.sharedLedger} · ` +
+      `账本外附加 ${p.unledgered} · 失信附加 ${p.distrust} · 安全预留 ${p.reserve}。` +
+      `若某一项异常偏大，请去解决它的成因，而不是建议调高上限。`,
+  ),
+
+  /**
+   * ★★★ Pha 7 Task 2 — **CỬA SỔ MÙ XUYÊN TIẾN TRÌNH, viết bằng SỐ.**
+   * `ledger.sharedRefreshIntervalMs` / `sharedStaleAfterMs` có **0 người đọc** trước bản này, dù
+   * docstring của chúng đã nói đúng hậu quả: một giấy phép 17 GB vừa mở ở tiến trình anh em có thể
+   * mất **trọn một chu kỳ** mới hiện ra ở đây, và trong cửa sổ đó **hai bên cùng tưởng card còn trống**.
+   */
+  sharedWindow: ba<{ refreshMs: string; staleAfterMs: string }>(
+    (p) =>
+      `Độ trễ cưỡng chế xuyên tiến trình: bản sao sổ chung làm mới mỗi ${p.refreshMs} ms, ` +
+      `coi là quá hạn sau ${p.staleAfterMs} ms. Một giấy phép vừa mở ở tiến trình anh em có thể mất ` +
+      `trọn một chu kỳ mới hiện ra ở đây — đừng khẳng định card còn trống trong cửa sổ đó.`,
+    (p) =>
+      `Cross-process enforcement lag: the shared-ledger replica refreshes every ${p.refreshMs} ms and ` +
+      `is treated as stale after ${p.staleAfterMs} ms. A lease just opened in a sibling process may take ` +
+      `a full cycle to appear here — do not assert the card is free inside that window.`,
+    (p) =>
+      `跨进程强制判定延迟：共享账本副本每 ${p.refreshMs} ms 刷新一次，超过 ${p.staleAfterMs} ms 视为过期。` +
+      `兄弟进程刚开出的租约可能要等一整个周期才会出现在这里——在该窗口内不要断言显卡是空闲的。`,
+  ),
+
   // ── QUY TRÁCH NHIỆM ────────────────────────────────────────────────────────────────────────
   attributableKnown: ba<{ bytes: string }>(
     (p) => `Quy trách nhiệm được (attributable): ${p.bytes}.`,
@@ -512,18 +610,66 @@ export const CAU = {
     (p) => `waits and retries (floor ${p.budgetMs} ms)`,
     (p) => `有等待并重试（下限 ${p.budgetMs} ms）`,
   ),
-  /** ★ I-1 — khoá anh em `statusExceeded` có hành động; khoá này trước đó chỉ dịch định danh. */
-  statusDeferring: ba<{ attempts: string; nextRetryAt: string }>(
-    (p) => `ĐANG HOÃN (${p.attempts} lượt, hạn kế ${p.nextRetryAt}) — chờ tới hạn đó, đừng đề nghị nạp thêm gì lúc này`,
+  /**
+   * ★ I-1 — khoá anh em `statusExceeded` có hành động; khoá này trước đó chỉ dịch định danh.
+   *
+   * ★★★ Pha 7 Task 2 — **BỐN Ô CỦA MỘT CHUỖI HOÃN ĐANG SỐNG NAY ĐI CÙNG NÓ.**
+   * `status.owner` / `firstRefusedAt` / `chainBudgetMs` / `lastRefusalMessage` có **0 người đọc**
+   * trước bản này. `owner` là ô nặng nhất: với **5/6 hộ**, `retryReach.owner` **không tồn tại**
+   * (nhánh `unreachable` cố ý không mang danh tính), nên `status.owner` là chuỗi **DUY NHẤT** trên
+   * cả mặt đọc nói được *"chuỗi hoãn này là của ai"* — thiếu nó, Agent tả một sự cố mà không gọi
+   * được tên thủ phạm. `chainBudgetMs` cũng **không** thay được bằng `budgetMs` của dòng hộ: một
+   * cái là ngân sách **CHỐT LÚC BỊ TỪ CHỐI** (điều khiển hạn chót đang chạy), cái kia là **đáy cấu
+   * hình HIỆN TẠI** — M-7 đã tách hai ô đúng vì lý do đó.
+   */
+  statusDeferring: ba<{
+    attempts: string;
+    nextRetryAt: string;
+    owner: string;
+    firstRefusedAt: string;
+    chainBudgetMs: string;
+    lastRefusal: string;
+  }>(
+    (p) =>
+      `ĐANG HOÃN (${p.attempts} lượt, hạn kế ${p.nextRetryAt}) — chờ tới hạn đó, đừng đề nghị nạp thêm gì lúc này` +
+      ` · chuỗi của owner="${p.owner}", bị từ chối lần đầu lúc ${p.firstRefusedAt}, ` +
+      `ngân sách CHỐT LÚC BỊ TỪ CHỐI=${p.chainBudgetMs} ms (không phải đáy cấu hình hiện tại)` +
+      ` · lý do từ chối gần nhất: ${p.lastRefusal}`,
     (p) =>
       `DEFERRING (${p.attempts} attempt(s), next deadline ${p.nextRetryAt}) — ` +
-      `wait for that deadline; do not advise loading anything else in the meantime`,
-    (p) => `正在延迟（已 ${p.attempts} 次，下次期限 ${p.nextRetryAt}）——请等到该期限，在此期间不要建议再加载任何东西`,
+      `wait for that deadline; do not advise loading anything else in the meantime` +
+      ` · chain owner="${p.owner}", first refused at ${p.firstRefusedAt}, ` +
+      `budget FROZEN AT REFUSAL TIME=${p.chainBudgetMs} ms (not the currently configured floor)` +
+      ` · latest refusal reason: ${p.lastRefusal}`,
+    (p) =>
+      `正在延迟（已 ${p.attempts} 次，下次期限 ${p.nextRetryAt}）——请等到该期限，在此期间不要建议再加载任何东西` +
+      ` · 该链的 owner="${p.owner}"，首次被拒时间 ${p.firstRefusedAt}，` +
+      `拒绝时冻结的预算=${p.chainBudgetMs} ms（不是当前配置的下限）` +
+      ` · 最近一次拒绝原因：${p.lastRefusal}`,
   ),
-  statusExceeded: ba<{ attempts: string }>(
-    (p) => `ĐÃ QUÁ ĐÁY HOÃN (${p.attempts} lượt)`,
-    (p) => `PAST THE DEFERRAL FLOOR (${p.attempts} attempt(s)) — more waiting will not help, free VRAM instead`,
-    (p) => `已超出延迟下限（已 ${p.attempts} 次）——继续等待没有用，请改为释放显存`,
+  /** ★★★ Pha 7 Task 2 — cùng bốn ô với `statusDeferring` (xem khối ở khoá ấy). */
+  statusExceeded: ba<{
+    attempts: string;
+    owner: string;
+    firstRefusedAt: string;
+    chainBudgetMs: string;
+    lastRefusal: string;
+  }>(
+    (p) =>
+      `ĐÃ QUÁ ĐÁY HOÃN (${p.attempts} lượt)` +
+      ` · chuỗi của owner="${p.owner}", bị từ chối lần đầu lúc ${p.firstRefusedAt}, ` +
+      `ngân sách CHỐT LÚC BỊ TỪ CHỐI=${p.chainBudgetMs} ms` +
+      ` · lý do từ chối gần nhất: ${p.lastRefusal}`,
+    (p) =>
+      `PAST THE DEFERRAL FLOOR (${p.attempts} attempt(s)) — more waiting will not help, free VRAM instead` +
+      ` · chain owner="${p.owner}", first refused at ${p.firstRefusedAt}, ` +
+      `budget FROZEN AT REFUSAL TIME=${p.chainBudgetMs} ms` +
+      ` · latest refusal reason: ${p.lastRefusal}`,
+    (p) =>
+      `已超出延迟下限（已 ${p.attempts} 次）——继续等待没有用，请改为释放显存` +
+      ` · 该链的 owner="${p.owner}"，首次被拒时间 ${p.firstRefusedAt}，` +
+      `拒绝时冻结的预算=${p.chainBudgetMs} ms` +
+      ` · 最近一次拒绝原因：${p.lastRefusal}`,
   ),
   statusNoChain: ba<KhongTham>(
     () => "không có chuỗi hoãn nào TRONG TIẾN TRÌNH NÀY",

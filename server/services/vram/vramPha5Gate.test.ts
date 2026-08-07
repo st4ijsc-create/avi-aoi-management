@@ -297,7 +297,15 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   của §Cổng kiểm chung nên `CONG.length` giữ nguyên **16**; chỉ con số này đổi.
     //   ⚠ Đuôi `.unit.test.ts` là bắt buộc: `vitest.config.ts` gom client bằng `*.unit.test.ts`,
     //     nên đặt tên `.test.ts` thì vitest **lặng lẽ bỏ qua** trong khi cổng vẫn khai XANH.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(74);
+    // ⚠ Pha 7 Task 2: 74 → 75. **Đúng MỘT** file mới —
+    //   `server/services/vram/vramReadModel.readers.test.ts` (luật *"MỌI ô của mặt đọc VRAM phải có
+    //   NGƯỜI ĐỌC THẬT — hoặc bị XOÁ"*, đảo lượng từ thay cho lối vá theo TỪNG Ô của Pha 6).
+    //   Nó vào tập bị canh qua bộ nhận diện **VỊ TRÍ** (dưới thư mục `vram`) **và** **TÊN**
+    //   (`vram*`), và đường `server/services/vram/` của §Cổng kiểm chung đã phủ nó ⇒ `CONG.length`
+    //   giữ nguyên **16**; chỉ con số này đổi.
+    //   ⚠ File **không phải test** đi kèm (`vramStateFieldPaths.ts` — bộ suy "ô TỪ KIỂU", nay có
+    //     MỘT chỗ ở cho cả hai lưới) **không** vào con số này: `moiFileTest` chỉ gom `*.test.ts`.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(75);
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

@@ -168,6 +168,22 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
   const H = (x: VramAgentDisplayText | null | undefined): string =>
     x === null || x === undefined ? "" : catSach(x.text, lang, x);
 
+  /**
+   * ★★★ Pha 7 Task 2 — **DÒNG ĐẦU: DANH TÍNH CỦA ẢNH CHỤP.**
+   * `atMs` · `processKey` · `effective.readMark` · `effective.readAtMs` có **0 người đọc** trước
+   * bản này. Agent **chỉ nhận `textSummary`**, nên không có bốn ô này thì hai bản tóm tắt của hai
+   * lượt hỏi **không phân biệt được** — và cả cơ chế `readMark` (dựng ra đúng để phân biệt) là mã
+   * chết đối với người nó phục vụ.
+   */
+  d.push(
+    noi(lang, "snapshotMark", {
+      processKey: C(s.processKey),
+      atMs: String(s.atMs),
+      readMark: C(s.headroom.effective.readMark),
+      readAtMs: String(s.headroom.effective.readAtMs),
+    }),
+  );
+
   // ── DƯ ĐỊA + `trusted`/`degradedReasons` (đồng hồ #2 của bảng) ───────────────────────────────
   d.push(
     noi(lang, "headroom", {
@@ -191,6 +207,31 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
       raw: M(s.headroom.rawBytes),
       ceiling: M(s.headroom.ceilingBytes),
       used: M(s.headroom.usedBytes),
+    }),
+  );
+  /**
+   * ★★★ Pha 7 Task 2 — **NỢ CỦA KHỐI NGAY TRÊN, NAY TRẢ.** Khối chú thích ở `noi(lang,"headroom")`
+   * tự khai: dòng ấy in một con số **KHÔNG kèm** lời khai của chính payload, và với Agent thì lượt
+   * đổi KIỂU của Pha 6 Task 2 là **vô hình**. Nay ba ô ấy đi trong chữ, **nguyên văn giá trị của
+   * chúng** — không phải một bản sao viết tay của cùng ý.
+   * ⚠ `beforeAfterEvidence` là **ASCII** (Pha 7 Task 2 đổi) — điều kiện để nó qua được cổng
+   *   *"`lang=en` không một chữ phi-ASCII"* / *"`lang=zh` không một dấu tiếng Việt"*.
+   */
+  d.push(
+    noi(lang, "effectiveFlowing", {
+      notAnInvariant: String(s.headroom.effective.notAnInvariant),
+      varies: s.headroom.effective.variesWith.map((x) => C(x)).join(", "),
+      evidence: C(s.headroom.effective.beforeAfterEvidence),
+    }),
+  );
+  /** ★★★ Pha 7 Task 2 — năm khoản TRỪ; ba trong số đó chính là thứ làm con số trên nhúc nhích. */
+  d.push(
+    noi(lang, "charges", {
+      stale: M(s.headroom.charges.staleMarginBytes),
+      sharedLedger: M(s.headroom.charges.sharedLedgerMarginBytes),
+      unledgered: M(s.headroom.charges.unledgeredChargeBytes),
+      distrust: M(s.headroom.charges.distrustChargeBytes),
+      reserve: M(s.headroom.safetyReserveBytes),
     }),
   );
   d.push(
@@ -233,6 +274,17 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
 
   // ── SỔ: cục bộ + ANH EM (đồng hồ #5 — `foreignLedgerBytes`/`foreignLeases`) ──────────────────
   d.push(noi(lang, "ledgerLocal", { local: M(s.ledger.localBytes), total: M(s.ledger.totalBytes) }));
+  /**
+   * ★★★ Pha 7 Task 2 — **CỬA SỔ MÙ XUYÊN TIẾN TRÌNH.** Hai ô này có **0 người đọc** trước bản này
+   * dù chúng đo đúng khoảng thời gian mà **hai tiến trình cùng tưởng card còn trống**. Dòng nằm
+   * NGOÀI nhánh `foreign.known` cố ý: lúc đang MÙ mới là lúc con số ấy cần được nói ra nhất.
+   */
+  d.push(
+    noi(lang, "sharedWindow", {
+      refreshMs: String(s.ledger.sharedRefreshIntervalMs ?? "?"),
+      staleAfterMs: String(s.ledger.sharedStaleAfterMs ?? "?"),
+    }),
+  );
   if (!s.ledger.foreign.known) {
     d.push(noi(lang, "foreignBlind", { meaning: C(s.ledger.foreign.meaning) }));
   } else {
@@ -364,14 +416,32 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
       h.mechanism === "no-wait-degrades-in-place"
         ? cum(lang, "mechNoWait", {})
         : cum(lang, "mechWaitRetry", { budgetMs: String(h.budgetMs) });
+    /**
+     * ★★★ Pha 7 Task 2 — bốn ô của một chuỗi hoãn ĐANG SỐNG (`owner` · `firstRefusedAt` ·
+     * `chainBudgetMs` · `lastRefusalMessage`) trước bản này có **0 người đọc**. `owner` nặng nhất:
+     * `retryReach.owner` **chỉ tồn tại** ở nhánh `reachable-here` (1/6 hộ), nên với 5 hộ còn lại
+     * đây là **chuỗi duy nhất** nói được chuỗi hoãn ấy là của ai.
+     * ⚠ `H()` — không phải một cửa cắt thứ hai: `lastRefusalMessage` là ô **HIỂN THỊ đã cắt TẠI
+     *   NGUỒN**, và `H` chuyển tiếp cờ + độ dài GỐC để câu khai nói đúng sự thật.
+     */
     const trangThai =
       h.status.kind === "deferring"
         ? cum(lang, "statusDeferring", {
             attempts: String(h.status.attempts ?? "?"),
             nextRetryAt: h.status.nextRetryAt === null ? "?" : C(h.status.nextRetryAt),
+            owner: C(h.status.owner),
+            firstRefusedAt: h.status.firstRefusedAt === null ? "?" : C(h.status.firstRefusedAt),
+            chainBudgetMs: String(h.status.chainBudgetMs ?? "?"),
+            lastRefusal: H(h.status.lastRefusalMessage),
           })
         : h.status.kind === "exceeded"
-          ? cum(lang, "statusExceeded", { attempts: String(h.status.attempts ?? "?") })
+          ? cum(lang, "statusExceeded", {
+              attempts: String(h.status.attempts ?? "?"),
+              owner: C(h.status.owner),
+              firstRefusedAt: h.status.firstRefusedAt === null ? "?" : C(h.status.firstRefusedAt),
+              chainBudgetMs: String(h.status.chainBudgetMs ?? "?"),
+              lastRefusal: H(h.status.lastRefusalMessage),
+            })
           : h.status.kind === "no-chain-in-this-process"
             ? cum(lang, "statusNoChain", {})
             : cum(lang, "statusUnobservable", { meaning: C(h.status.meaning) });

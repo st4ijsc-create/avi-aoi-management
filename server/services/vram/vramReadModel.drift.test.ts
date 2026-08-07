@@ -43,10 +43,15 @@
  * còn lại là mã sản xuất: `broker.reserve()`, `applyEnforcement()`, `buildVramAgentState()`.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+/**
+ * ★★★ Pha 7 Task 2 — bộ suy "ô TỪ KIỂU" đã **RỜI KHỎI FILE NÀY** và có **MỘT** chỗ ở.
+ * Lý do đầy đủ ở `vramStateFieldPaths.ts`; tóm tắt: Pha 7 cần **đúng lượng từ này** cho luật
+ * *"mọi ô phải có NGƯỜI ĐỌC"*, và Global Constraints cấm dựng **bộ suy thứ N+1** cho cùng một tập.
+ */
+import { vramStateLeafPaths } from "./vramStateFieldPaths";
 
 /** `server/services/vram` — neo theo vị trí file test, không theo `process.cwd()`. */
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url));
@@ -293,71 +298,11 @@ function duongCuaCauKhai(cau: string): string[] {
  * ⚠ Quy ước khớp với người liệt kê lá lúc CHẠY: mảng của **giá trị nguyên thuỷ** là **một lá**
  * (không `[]`); mảng của **đối tượng** đi vào từng phần tử (`[]`).
  */
-const NGUON_KIEU = join(TEST_DIR, "vramReadModel.ts");
-const SF = ts.createSourceFile(NGUON_KIEU, readFileSync(NGUON_KIEU, "utf8"), ts.ScriptTarget.Latest, true);
-
-const KHAI_BAO = new Map<string, ts.InterfaceDeclaration | ts.TypeAliasDeclaration>();
-SF.forEachChild((n) => {
-  if (ts.isInterfaceDeclaration(n)) KHAI_BAO.set(n.name.text, n);
-  else if (ts.isTypeAliasDeclaration(n)) KHAI_BAO.set(n.name.text, n);
-});
-
-/** Đường TƯƠNG ĐỐI dưới một nút kiểu. `""` ⇔ chính nút này là một **LÁ**. */
-function duongTuongDoi(node: ts.TypeNode | undefined, dangDi: ReadonlySet<string>): Set<string> {
-  const ra = new Set<string>();
-  if (node === undefined) return ra.add(""), ra;
-  if (ts.isParenthesizedTypeNode(node)) return duongTuongDoi(node.type, dangDi);
-  if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
-    return duongTuongDoi(node.type, dangDi);
-  }
-  // ⚠ HỢP KIỂU: vét cạn **MỌI** nhánh — đây chính là lỗ mà R1 chui qua.
-  if (ts.isUnionTypeNode(node)) {
-    for (const m of node.types) for (const p of duongTuongDoi(m, dangDi)) ra.add(p);
-    return ra;
-  }
-  if (ts.isArrayTypeNode(node)) {
-    const con = duongTuongDoi(node.elementType, dangDi);
-    // Mảng nguyên thuỷ ⇒ MỘT lá (đúng quy ước của `la()` lúc chạy).
-    if (con.size === 1 && con.has("")) return ra.add(""), ra;
-    for (const p of con) ra.add(p === "" ? "[]" : `[].${p}`);
-    return ra;
-  }
-  // Tuple (vd `variesWith`) — mảng hằng của chuỗi ⇒ một lá.
-  if (ts.isTupleTypeNode(node)) return ra.add(""), ra;
-  if (ts.isTypeLiteralNode(node)) return thuThapThanhVien(node.members, ra, dangDi), ra;
-  if (ts.isTypeReferenceNode(node)) {
-    const ten = node.typeName.getText();
-    const d = KHAI_BAO.get(ten);
-    // Kiểu NHẬP KHẨU (hoặc đệ quy) ⇒ LÁ. Chúng là hợp của chuỗi/số, không mở ra ô con nào.
-    if (d === undefined || dangDi.has(ten)) return ra.add(""), ra;
-    const di = new Set(dangDi).add(ten);
-    if (ts.isInterfaceDeclaration(d)) return thuThapThanhVien(d.members, ra, di), ra;
-    return duongTuongDoi(d.type, di);
-  }
-  return ra.add(""), ra;
-}
-
-function thuThapThanhVien(ms: ts.NodeArray<ts.TypeElement>, ra: Set<string>, dangDi: ReadonlySet<string>): void {
-  for (const m of ms) {
-    if (!ts.isPropertySignature(m)) continue;
-    const ten = m.name.getText().replace(/^["']|["']$/g, "");
-    for (const p of duongTuongDoi(m.type, dangDi)) {
-      // ⚠ `[]` nối THẲNG, không có dấu chấm — nếu không thì `nonFiniteFields.[].path`, và đường ấy
-      //   **không khớp** với đường mà người liệt kê lúc CHẠY sinh ra ⇒ hai nguồn nói hai thứ tiếng.
-      ra.add(p === "" ? ten : p.startsWith("[") ? `${ten}${p}` : `${ten}.${p}`);
-    }
-  }
-}
-
-function duongTuKieu(): Set<string> {
-  const goc = KHAI_BAO.get("VramAgentState");
-  if (goc === undefined || !ts.isInterfaceDeclaration(goc)) return new Set();
-  const ra = new Set<string>();
-  thuThapThanhVien(goc.members, ra, new Set(["VramAgentState"]));
-  return ra;
-}
-
-const DUONG_KIEU = duongTuKieu();
+/**
+ * ⚠ Bộ suy **KHÔNG** nằm ở đây nữa (Pha 7 Task 2) — xem `vramStateFieldPaths.ts`. Lượng từ giữ
+ * nguyên từng chữ; thứ đổi là **số bản cài đặt**: 1, không phải 2.
+ */
+const DUONG_KIEU = vramStateLeafPaths();
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // BẢN KHAI — mỗi đường của ảnh chụp đứng ở ĐÚNG MỘT vế. Phép đo chấm bản khai này.
@@ -876,8 +821,12 @@ describe("★★★ §4 — `variesWith` / `beforeAfterEvidence` bị PHÉP ĐO 
     // (2) bằng chứng NGOÀI payload — `unattributed` LOẠI TRỪ toàn bộ nền thiết bị.
     expect(cau).toContain("nvidia-smi");
     // (3) một LUẬT, không phải một danh sách để chọn một món.
-    expect(cau).toContain("KHÔNG-ĐỔI-THEO-ĐỒNG-HỒ");
-    expect(cau).toContain("CẢ TẬP");
+    //     ⚠ Pha 7 Task 2 — nhãn nay là **ASCII** (xem `VRAM_BEFORE_AFTER_EVIDENCE`): chỉ khi ASCII
+    //     thì ô này mới **tới được** `textSummary` của `lang=en`/`lang=zh`, tức mới có NGƯỜI ĐỌC.
+    expect(cau).toContain("CLOCK-INVARIANT");
+    expect(cau).toContain("THE WHOLE SET");
+    // ⚠ Và chính tính ASCII ấy là một bất biến: một chữ có dấu quay lại ⇒ ô này rơi khỏi mặt Agent.
+    expect(/^[\x20-\x7E]+$/.test(cau), "câu khai phải ASCII — nếu không nó KHÔNG vào được textSummary en/zh").toBe(true);
 
     // (4) SOUNDNESS: tập bằng chứng không được mời một ô ĐANG CHẢY vào.
     const giao = KHONG_DOI_THEO_DONG_HO.filter((d) => DOI_THEO_DONG_HO.includes(d));
