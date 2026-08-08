@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import * as db from "../db";
 import { establishSession, LoginError, verifyCredentials } from "./authService";
 import { getSessionCookieOptions } from "./cookies";
+import { capVe2FA, ghiNhanOtpSai, kiemVe2FA, tieuVe2FA } from "./pendingTwoFactor";
 import {
   getConfiguredProvider,
   listEnabledSsoMethods,
@@ -351,6 +352,10 @@ export function registerOAuthRoutes(app: Express) {
       // Check if 2FA is enabled — defer session until the 2FA step.
       const twoFAStatus = await db.get2FAStatus(user.id);
       if (twoFAStatus?.twoFactorEnabled) {
+        // ★★★ Pha 7 Task 6 — bước mật khẩu VỪA QUA: cấp vé một-lần, hạn ngắn, đi bằng cookie
+        // HttpOnly. `verify-2fa` ĐÒI vé này. Hình dạng response GIỮ NGUYÊN 100 % (vé không nằm
+        // trong body) ⇒ mọi client hiện có không phải sửa gì.
+        capVe2FA(user.id, req, res);
         res.json({
           requires2FA: true,
           userId: user.id,
@@ -385,7 +390,30 @@ export function registerOAuthRoutes(app: Express) {
         res.status(400).json({ error: "User ID và mã xác thực là bắt buộc" });
         return;
       }
-      
+
+      // ★★★ Pha 7 Task 6 — **CỔNG BƯỚC MẬT KHẨU.** Đứng TRƯỚC mọi lượt đọc DB và TRƯỚC lượt
+      // xác minh OTP, vì ba lý do đều đo được:
+      //   1. không có vé thì không có gì để cấp ⇒ đọc DB là lãng phí;
+      //   2. `getUserById` trả 404 còn `get2FAStatus` trả 400 ⇒ hai mã trạng thái ấy là một
+      //      **máy dò tài khoản** cho người chưa qua mật khẩu; sau cổng này chúng không với tới;
+      //   3. không để một kẻ chưa qua mật khẩu **đốt** mã OTP trong sổ `totp_consumed`.
+      // ⚠ Vé KHÔNG tiêu ở đây — chỉ tiêu khi OTP đúng (xem docstring `pendingTwoFactor.ts`).
+      const ve = kiemVe2FA(req, Number(userId));
+      if (!ve.hopLe) {
+        await db.createAuditLog({
+          userId: Number(userId) || null,
+          userName: null,
+          action: 'login_2fa',
+          entityType: 'auth',
+          status: 'failure',
+          details: { reason: `no_password_step:${ve.lyDo}` },
+          ipAddress: req.ip ?? req.socket.remoteAddress,
+          userAgent: req.headers['user-agent'],
+        }).catch(() => {});
+        res.status(401).json({ error: "Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại." });
+        return;
+      }
+
       // Get user
       const user = await db.getUserById(userId);
       if (!user) {
@@ -415,12 +443,19 @@ export function registerOAuthRoutes(app: Express) {
         // Try backup code if TOTP fails
         const isBackupCode = await db.verifyBackupCode(userId, token);
         if (!isBackupCode) {
+          // ★ Pha 7 Task 6 — một lượt OTP sai TRỪ ngân sách của vé; hết ngân sách thì vé chết và
+          //   người dùng quay lại bước mật khẩu. Không có dòng này, MỘT vé = vô hạn lượt đoán.
+          ghiNhanOtpSai(req);
           await db.createAuditLog({ userId: user.id, userName: user.name, action: 'login_2fa', entityType: 'auth', status: 'failure', ipAddress: req.ip ?? req.socket.remoteAddress, userAgent: req.headers['user-agent'] }).catch(() => {});
           res.status(401).json({ error: "Mã xác thực không hợp lệ" });
           return;
         }
       }
-      
+
+      // ★ Pha 7 Task 6 — OTP đúng ⇒ TIÊU vé (một-lần) rồi mới cấp phiên. Lượt thứ hai với CÙNG vé
+      //   ấy rơi vào `ve-la` ⇒ 401.
+      tieuVe2FA(req, res);
+
       // 2FA passed → create session (cookie + user_sessions row) and audit the
       // successful login via the shared service.
       await establishSession(user, req, res, { method: "2fa" });

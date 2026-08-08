@@ -47,6 +47,8 @@ npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/routers/totpReplay.test.ts \
   server/routers/totpLedgerDurable.test.ts \
   server/routers/totpReplayScan.test.ts \
+  server/routers/verify2faPasswordStep.test.ts \
+  server/routers/sessionGrantScan.test.ts \
   server/services/aiCopilotActions.hardlinkSink.test.ts \
   server/services/aiAgentOrchestrator.authCtx.test.ts client/src/lib/
 NODE_OPTIONS=--max-old-space-size=8192 npm run check

@@ -1879,6 +1879,18 @@ async function startServer() {
         await updateUserLoginAttempts(user.id, 0, null);
       }
 
+      // ★★★ @KHONG-CONG-2FA — **VÙNG MÙ ĐƯỢC KHAI, KHÔNG PHẢI VÙNG MÙ IM LẶNG.** (Pha 7 Task 6,
+      // phép đếm Bước 2.) Đường này xác minh MẬT KHẨU nhưng **không bao giờ hỏi `get2FAStatus`**
+      // ⇒ một tài khoản đã BẬT 2FA (đo được: `supervisor1`, id 49) vẫn lấy được thẻ 30 ngày
+      // **chỉ bằng mật khẩu**. Và thẻ ấy KHÔNG chỉ dùng được cho `/api/external/**`: nó do
+      // `sdk.createSessionToken` đúc ra — **cửa đúc JWT duy nhất** — nên dán thẳng vào cookie
+      // `app_session_id` là có phiên đầy đủ (ĐÃ ĐO trên hệ thật: `auth.me` ⇒ 200, role
+      // `supervisor`). ⇒ 2FA bị **bỏ qua hoàn toàn** qua đường này.
+      // ⚠ KHÔNG vá ở Task 6: đổi hành vi đường này là đổi một **API hướng ra ngoài đã tài liệu
+      //   hoá** (`docs/API_REFERENCE.md` + OpenAPI) có **client thật trong repo**
+      //   (`FactoryAlertSystem/src/services/authService.ts`) ⇒ **CHỦ DỰ ÁN QUYẾT**.
+      // ⚠ Dấu `@KHONG-CONG-2FA` bị ĐẾM bởi `server/routers/sessionGrantScan.test.ts` §3: một vùng
+      //   mù THỨ HAI ở bất kỳ đâu làm lưới ấy ĐỎ ngay.
       // Create JWT token (same format as session cookie, but returned as Bearer token)
       const { sdk } = await import("./sdk");
       const token = await sdk.createSessionToken(user.openId, {

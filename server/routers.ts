@@ -1,6 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { establishSession, LOCKOUT_MINUTES, LoginError, verifyCredentials } from "./_core/authService";
+import { capVe2FA } from "./_core/pendingTwoFactor";
 import { systemRouter } from "./_core/systemRouter";
 import { listEnabledSsoMethods } from "./_core/oauthProviders";
 import { publicProcedure, router } from "./_core/trpc";
@@ -292,6 +293,11 @@ export const appRouter = router({
         if (twoFAStatus?.twoFactorEnabled) {
           // Password verified + lockout reset; defer session creation until the
           // 2FA step completes (POST /api/auth/verify-2fa).
+          // ★★★ Pha 7 Task 6 — và ĐÂY là chỗ duy nhất chứng minh được *"bước mật khẩu đã qua"*
+          // cho đường tRPC: cấp vé một-lần, hạn ngắn, cookie HttpOnly. `verify-2fa` ĐÒI nó.
+          // ⚠ Cả HAI đường `login` phải cấp vé; bỏ sót một đường ⇒ luồng đúng của đường ấy vỡ
+          //   (fail-closed, nhưng vẫn là vỡ) — nên lưới `sessionGrantScan.test.ts` đếm chúng.
+          capVe2FA(user.id, ctx.req, ctx.res);
           return {
             requires2FA: true,
             userId: user.id,
