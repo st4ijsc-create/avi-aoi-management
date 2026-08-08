@@ -186,3 +186,24 @@ POST /api/auth/verify-2fa  (ngay sau đó)   ⇒ 200 + set-cookie
 - [ ] **Bước 8: commit.**
 
 ⚠ **Chưa nghiệm thu sống thì chưa xong** — cổng ra này nằm trên đường **đăng nhập toàn hệ**; lưới xanh **không** chứng minh hệ đúng (bài học `215/215` xanh suốt thời gian một tool chết).
+
+---
+
+### Task 7: 🔴 `auth.me` trả `passwordHash` + `twoFactorSecret` RA CLIENT
+
+**Đo được ở Task 6** (probe2). ⚠⚠⚠ **Mục này VÔ HIỆU HOÁ chính Task 6 vừa vá**: `twoFactorSecret` là **hạt giống** sinh mọi mã OTP — ai đọc được nó thì **tự sinh mã hợp lệ mãi mãi**, nên vé một-lần, sổ chống phát lại, step-up mỗi lượt **đều thành trang trí**.
+
+⚠ Và nó **rộng hơn VRAM**: mọi thứ đứng sau 2FA của **toàn hệ** (deploy · xoá dự án · tắt 2FA · đẻ mã dự phòng) đều đứng sau một bí mật **đang được phát cho trình duyệt**.
+
+**Cổng ra:** **KHÔNG** bề mặt nào trả `passwordHash`, `twoFactorSecret`, hay mã dự phòng ra ngoài máy chủ — và **lượng từ** phải bắt được ô **thứ N+1**, không liệt kê ba tên này.
+
+- [ ] **Bước 1: ĐO trước.** Gọi `auth.me` **thật**, dán nguyên văn ô rò. **Ca ĐỎ.** ⚠ Không tái lập được ⇒ **điều tra, đừng đi tiếp** (Pha 7 đã **hai lần** brief mô tả trạng thái đã không còn đúng).
+- [ ] **Bước 2: ĐẾM bề mặt.** ⚠ **Đếm trước khi đổi** đã **lật quyết định NĂM lần**, và **hai lần** thứ nguy nhất **không phải** cái đang vá. `git grep` **MỌI** đường trả đối tượng người dùng ra ngoài (tRPC · REST · WebSocket · log · audit · sự kiện). **Bảng: đường · ai gọi · có lọc không.**
+- [ ] **Bước 3: chọn hình dạng, VIẾT LÝ DO.** ⚠ **Đảo lượng từ**: **danh sách CHO PHÉP** (chỉ ô nào được ra), **không** danh sách cấm — cấm là **liệt kê**, và lớp *"phần tử thứ N+1"* đã tái diễn **MƯỜI SÁU** lần. ⚠ Cân nhắc **ĐỔI KIỂU** để ô bí mật **không viết ra được** ở tầng trả về (đã dùng thành công 5 lần). Nêu đường **không chọn** và vì sao.
+- [ ] **Bước 4: cài.** **CHỈ THU HẸP.** ⚠ Nếu cần DDL ⇒ **DỪNG VÀ HỎI**.
+- [ ] **Bước 5: ĐỐI CHỨNG DƯƠNG** — client **vẫn nhận đủ** thứ nó cần (`id`, `username`, `name`, `role`, `twoFactorEnabled`…). Không có nó thì bản vá **cắt hết** cũng "đạt".
+- [ ] **Bước 6: đột biến.** Thêm **một ô bí mật MỚI** vào bảng `users` ⇒ **ca đỏ** (đây là phép thử của lượng từ, không phải của danh sách) · gỡ bộ lọc ở **một** đường ⇒ đỏ · đường **MỚI trong FILE MỚI** ⇒ đỏ (**phép thử M3**) · và **KHÔNG bắt nhầm**.
+- [ ] **Bước 7: NGHIỆM THU SỐNG** — gọi `auth.me` thật sau khi vá, khẳng định **không** ô bí mật nào; và đăng nhập vẫn chạy.
+- [ ] **Bước 8: commit.**
+
+⚠ **Bí mật đã bị phát ra thì coi như đã lộ.** Sau khi vá, ghi vào báo cáo khuyến nghị **xoay `twoFactorSecret`** cho mọi tài khoản — nhưng **KHÔNG tự xoay** (làm thế là khoá mọi người ra khỏi 2FA): **chủ dự án quyết**.
