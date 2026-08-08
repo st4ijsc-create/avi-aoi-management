@@ -811,3 +811,182 @@ connector nào), nên không có gì để rẽ nhánh. Keying theo id cũng là
   nút ghi.
 - **Transport serial vẫn chưa tải một khung tin nào trên phần cứng thật.** Đúng sau Đợt D, đúng sau E-2, vẫn
   đúng sau E-3.
+
+## 12. 🔴 E-4 ghi lại — cái gì đã sửa, và những gì REVIEW TOÀN NHÁNH phải thừa kế
+
+Toàn văn ở `.superpowers/sdd/2026-08-04-dotE-fleet-core-extraction/task-4-report.md`. Mục này tồn tại vì
+`.superpowers/sdd/` bị gitignore và **một báo cáo không phải bản ghi nguồn**. Đây là nhiệm vụ cuối của Đợt E;
+sau nó là review toàn nhánh rồi merge.
+
+**Cổng:** `151/22/1080/46/1289 = 2588`, 0 lỗi, **116 cảnh báo**, 0 build node.
+
+### 12.1 🔴 Tiền đề của brief ĐÚNG về lớp lỗi, SAI về cơ chế — và cái sai lớn hơn cái đúng
+
+Brief đoán: một máy do tác nhân biên cầm sẽ cho `NoLiveDriver`, và chuỗi "không có driver cho máy này" phủ
+**hai** đường sinh. **Lớp lỗi thì đúng. Cơ chế thì sai theo một hướng nặng hơn**, và nó lật một câu của
+chính blueprint này:
+
+🔴 **§2 viết *"nó đọc máy tại chỗ rồi ĐẨY LÊN EngineApi"*. Điều đó KHÔNG ĐÚNG.** `EdgeWorker` →
+`LiveTransport` → `St4iDeviceClient` đẩy tới `POST {ST4I_SERVER_URL}/api/v1/ingest/…` (`Normalizer.cs:14–16`),
+mặc định `http://localhost:5000` — **nền tảng ST4I**, không phải EngineApi. `St4i.EngineApi` lắng nghe ở
+**`:5199`** (`Program.cs:70`) và **không map một route `api/v1` nào cả** (grep toàn project: rỗng). Nó cũng là
+một *client* của cùng nền tảng đó (`Program.cs:290` dựng `LiveTransport.ForMachine(FleetHost.DefaultServerUrl …)`).
+**Hai host không chung roster, không chung sổ chiếm mã máy, không chung một kênh nào.**
+
+Hệ quả trực tiếp cho việc E-4 được giao:
+
+- **Máy do tác nhân biên cầm KHÔNG xuất hiện trong roster của EngineApi.** Nên thứ người vận hành gặp trước
+  tiên là **`404`**, không phải `409 NO_LIVE_DRIVER`. Chỉ khi người vận hành **tự tay khai lại cùng mã máy**
+  trong `fleet.json` của EngineApi thì mới tới được 409 — không cơ chế nào tạo hay đối chiếu bản sao ấy.
+- **EngineApi không có SỰ KIỆN nào để biết một tác nhân biên tồn tại.** Không phải "chưa lộ ra ở API"; là
+  **không có kênh**. Nên câu trả lời trung thực đúng là cái brief để ngỏ: *không phân biệt được*, và đây là
+  giá để phân biệt (§12.4).
+- §2 vẫn đúng ở **kết luận** ("EngineApi là nơi duy nhất sở hữu roster/yêu sách/UI") và ở **phép đo hai
+  tiến trình một thiết bị**. Chỉ **cơ chế** sai. Cùng hình dạng §9.3b: kết luận đúng, lý do sai, và lý do là
+  thứ nhiệm vụ sau đọc.
+
+### 12.2 🔴 Phép liệt kê tìm ra **BA** chuỗi sai và **HAI** bề mặt, không phải một chuỗi và hai đường
+
+Bắt đầu từ *tập những chỗ biến một `MachineDriverAvailability` thành văn xuôi cho người vận hành*, chứ không
+từ nút ghi. Kết quả: **hai** bề mặt, mỗi bề mặt một bản sao độc lập của cùng danh sách nguyên nhân, đã trôi
+khỏi nhau — `MachineWriteEndpoints.NotAvailableResult` (thân HTTP mà web UI hiện **nguyên văn**:
+`web/src/lib/api.ts` `MachineWriteApiError` → `MachineControlPanel.tsx:203,333`) và
+`RelayNotificationChannel.UnavailableAsync` (**cảnh báo người vận hành đọc khi ĐÈN BÁO KHÔNG SÁNG**).
+
+**Cả sáu chuỗi đều mặc định rằng MỘT CONNECTOR TỒN TẠI**, và ba trong bốn ca vì thế sai:
+
+| Ca | Chuỗi cũ | Vì sao sai |
+|---|---|---|
+| `404` | *machine "X" not found* | Nêu lỗi gõ / chưa onboard. Máy do tác nhân biên cầm là máy thật, đang chạy, cấu hình đúng **ở nơi khác** — và đây là ca người vận hành gặp trước tiên (§12.1). |
+| `409 NO_LIVE_DRIVER` | *fleet may be stopped, HALT latch may be engaged, or this machine's connector failed to start this run … then retry* | Cả ba nguyên nhân đều giả định có connector. Máy **không có connector nào ở đây** không khớp cái nào — **và đó chính là trạng thái mà bài test của chính ca này dựng ra** (`Setpoint_MachineKnownButFleetNeverStarted_409_NoLiveDriver`). |
+| `409 READ_ONLY` | *this connector declares no writable points or commands* | Nguồn sinh phổ biến nhất là máy do **nhóm mô phỏng có sẵn** lái — không có connector nào. **Cũng đúng trạng thái bài test của ca này dựng ra.** |
+| `409 AMBIGUOUS_DRIVER` | (không đổi về nội dung) | Một đường sinh, chuỗi đúng. |
+
+🔴 **Và "rồi thử lại" không chỉ vô dụng — nó nguy hiểm.** Nước đi hiển nhiên nó gợi ra là *cấu hình một
+connector ở đây*, tức đặt **một tiến trình thứ hai lên một thiết bị đã có tiến trình khác lái**. Bảng của §2
+đã đo: qua **gateway TCP** cả hai kết nối bình thường và **không ai chặn**. Chuỗi mới nói thẳng điều đó.
+
+**Vì sao không có tests nào bắt được:** mọi bài test của bốn ca này khẳng định **status + reason code**, và
+chỗ gần nội dung nhất là `Assert.False(string.IsNullOrWhiteSpace(body.Error))` — đúng với mọi chuỗi, kể cả
+chuỗi sai. *Một khẳng định không-rỗng trên một chuỗi hướng-người-vận-hành là một khẳng định rỗng.*
+
+### 12.3 Bản sửa: MỘT phát biểu, HAI cách trình bày — và vì sao KHÔNG đụng lõi
+
+`MachineWriteGate.ExplainUnavailable(availability, machineCode)` (EngineApi, đúng chỗ C-6 đã đặt
+`SetpointAction`/`AnyCriticalAlarmActiveAsync` và **vì đúng lý do đó**: bản sao riêng thứ hai là cách một
+phát biểu lặng lẽ thành hai). Cả hai bề mặt gọi nó; `MachineWriteEndpoints` giữ **status + reason code**,
+`RelayNotificationChannel` giữ **RelayOutcome**.
+
+🔴 **Không thêm thành viên nào vào `FleetHost`, không đọc thêm thứ gì từ lõi, và điều đó BỊ ÉP chứ không phải
+được chọn.** Thu hẹp `NO_LIVE_DRIVER` xuống "connector có cấu hình nhưng không khởi động được" *đối lại*
+"không có connector nào" là việc EngineApi **làm được** (registry + `GetConfiguredConnectorIssues` + `IsRunning`
+đều có) — nhưng làm ở vỏ nghĩa là **đọc hai thứ từ lõi rồi ghép**, đúng cái §10.1 cấm, và ngoại lệ duy nhất
+đã dán nhãn là `FleetHost.CurrentScenarioDto()`. Làm trong lõi thì phải thêm một giá trị enum
+`MachineDriverAvailability` — **đã cân nhắc và bỏ**, xem §12.5. Và với đường sinh mà đợt này quan tâm — máy do
+tác nhân biên cầm — **sự kiện để thu hẹp không tồn tại ở bất cứ đâu** (§12.1), nên "nêu tên cả hai đường"
+không phải một sự thoả hiệp: nó là phát biểu đúng.
+
+**Nhân chứng:** `MachineWriteUnavailableMessageTests.cs` (6 `[Fact]`, file mới) khẳng định nội dung theo từng
+đường sinh; **một trong sáu là nhân chứng-gộp** (bốn chuỗi phải đôi một khác nhau, nên một chuỗi chung chung
+"không khả dụng" không thể làm xanh năm cái kia). Bốn khẳng định **join** — thân HTTP và cảnh báo relay phải
+BẰNG/CHỨA đúng `ExplainUnavailable(...)` — nằm trong các bài test **đã có sẵn** và **tốn 0 test**: chúng thay
+những khẳng định rỗng, và việc con số không dịch chính là bằng chứng rằng trạng thái đã được phủ, chỉ có khẳng
+định là trống.
+
+### 12.4 Cần gì để thật sự phân biệt "chưa cấu hình" với "do tác nhân biên cầm"
+
+Hỏi và trả lời hẳn, vì brief yêu cầu *"đây là thứ cần có"* chứ không phải một lời hứa:
+
+Tác nhân biên phải **ĐĂNG KÝ** với EngineApi ⇒ cần một **yêu sách mã máy XUYÊN TIẾN TRÌNH**. Hôm nay yêu sách
+ấy là một `ConcurrentDictionary` **trong một tiến trình** (§2, đã grep lại: `Fleet/` và `Drivers/Modbus/` không
+có mutex/lockfile/named primitive nào), và bảo vệ duy nhất giữa các tiến trình là hệ điều hành từ chối lần mở
+thứ hai của một **cổng COM** — qua **gateway TCP** không có gì cả. **Nên cho engine biết điều đó = xây luôn
+yêu sách xuyên tiến trình.** Đó là một đợt việc có lập luận an toàn riêng, không phải một trường trong DTO,
+và nó đứng **trước** phương án (2) của §3 (endpoint kéo lệnh) chứ không phải sau: một đường xuống tới một tác
+nhân biên mà engine không biết là ai thì không định tuyến được.
+
+### 12.5 Ba thứ đã cân nhắc và CỐ Ý không làm — ghi ra để review khỏi phải hỏi
+
+1. **Thêm giá trị `MachineDriverAvailability` mới** (ví dụ `NoConnectorConfigured`) để lõi tự phân biệt.
+   Bỏ vì: đây là nhiệm vụ **cuối** của đợt, việc đó đổi một enum `public` của EdgeCore, chạm
+   `RelayNotificationChannel`, `MachineWriteEndpoints`, `web/src/lib/api.ts` và có khả năng lật giá trị kỳ
+   vọng của nhiều test sẵn có — tức là **một bản sửa và một phép quét bị gộp làm một**, đúng cái §8.1 cấm.
+   Nó **không** đóng được đường sinh tác nhân biên (sự kiện không tồn tại), nên giá trị nó mua là "chưa cấu
+   hình" *đối lại* "cấu hình mà chết", một phân biệt mà chuỗi mới đã **nêu tên** cả hai. Hạng mục cho đợt sau.
+2. **Sửa `web/`.** Không cần: UI hiện `serverMessage` **nguyên văn**
+   (`MachineControlPanel.tsx:203,333`), và bài Playwright `web/tests/25-machine-write.spec.ts:168` dùng thân
+   phản hồi **giả lập** chứ không phải chuỗi thật của server. **E-4 không chạm `web/`, nên Playwright không
+   phải chạy và không được đứng làm bằng chứng cho bất cứ điều gì.**
+3. **Dịch các chuỗi ấy sang tiếng Việt.** Toàn bộ bề mặt lỗi HTTP của sản phẩm này là tiếng Anh; thêm i18n
+   cho đúng bốn chuỗi là một quyết định sản phẩm, không phải một bản sửa.
+
+### 12.6 🔴 Census: bốn khẳng định README đã chết, và MỘT trong số đó chưa bao giờ đúng
+
+Quét **theo quy tắc** (*"Đợt E đổi gì về việc host nào chủ trì được connector nào, trên transport nào"*), không
+theo danh sách. §23.6 là nơi tập trung, nhưng §20.5 **nhắc lại** một trong các khẳng định ở một mục nhan đề
+"Honest limitations" — đúng hình dạng Đợt D dạy: *chỗ bị sót là chỗ được **xếp** ở nơi khác*. Cả hai chỗ đã
+sửa, cả hai khối ngôn ngữ, và **sửa tại chỗ chứ không viết đè**, theo đúng quy ước README đã dùng cho D-7b.
+
+| Khẳng định README | Trạng thái | Ai làm nó sai |
+|---|---|---|
+| *"`ConnectorRegistry`, `ConnectorsConfig`, `ConnectorsJsonRegistration` … không với tới được"* | **SAI** cho hai cái đầu | E-2 (registry) và E-3 (config) dời chúng xuống EdgeCore. Chỉ `ConnectorsJsonRegistration` còn của riêng EngineApi. |
+| *"`EdgeWorker` gộp cả đội hình vào một `SimulatedDriver` chạy một pipeline"* | **SAI** | E-3 |
+| *"Thứ cản đường là lõi 2 406 dòng của `FleetHost`, thứ cả ba host sẽ phải dùng chung"* | **SAI** | §1.1(a) — tác nhân biên không dùng lõi và về cấu trúc không thể |
+| *"**Chỉ `St4i.EngineApi` mở được cổng COM**"* (§23.6 **và** §20.5) | 🔴 **CHƯA BAO GIỜ ĐÚNG** nếu hiểu là **khả năng** | **Không phải Đợt E.** Sai kể từ chính D-7c — cái ruling cho cả ba host tham chiếu `St4i.EdgeCore.Serial`. |
+
+🔴 **Khẳng định thứ tư đáng đọc kỹ, vì nó là §11.1 lặp lại ở một trục khác.** `SerialPortBusLink.OpenAsync` và
+`SerialLineSettings` đều `public` trên `St4i.EdgeCore.Serial`; cả ba host `ProjectReference` nó. **Đo bằng hai
+dụng cụ, không đọc:** (a) một file probe biên dịch vào **chính assembly sản phẩm `St4i.EdgeService`** gọi
+`SerialPortBusLink.OpenAsync(new SerialLineSettings("COM3"), default)` build ra **0 lỗi, 0 cảnh báo** (đối
+chứng: cùng chỗ đó, chỉ nhắc tên `FleetCore` cho `CS0122` — §11.1); (b) `EdgeServiceSerialReachabilityTests`
+(mới, `St4i.EdgeService.Tests`, project **chỉ** tham chiếu `St4i.EdgeService`) thực sự mở một cổng và bị **hệ
+điều hành** từ chối, không phải trình biên dịch. **Câu đúng là về CẤU HÌNH**: chỉ `St4i.EngineApi` có một
+đường đã cấu hình từ `connectors.json` tới một lệnh mở serial. **E-3 nói đúng chuyện này trong chú thích
+csproj của chính nó** (*"still for a scoping reason rather than a capability one"*) — README thì không, và
+README mới là thứ được phát hành.
+
+**Vì sao phân biệt này chịu lực chứ không phải bắt bẻ chữ:** bảo vệ duy nhất của §2 cho một cổng cắm thẳng
+**CHÍNH LÀ** việc hệ điều hành từ chối lần mở thứ hai. Người đọc tin rằng `St4i.EdgeService` *không thể* mở
+cổng sẽ không bao giờ hỏi tiến trình nào đang giữ COM3 — và trên **gateway** thì không có bảo vệ nào để mà
+hỏi.
+
+**README mới có §24** (EN + VI đầy đủ), nói: lõi đã dời và tác nhân biên **không** chạy nó; EdgeService chủ
+trì connector — **Modbus TCP và chỉ Modbus TCP trên dây**, RTU và OPC-UA **từ chối theo tên**, cả hai có test
+ghim; **RS-485 ở biên là E-5**, kèm số đo; máy do tác nhân biên cầm là **chỉ đọc** và engine **không nhìn thấy
+được** điều đó; và §24.5 nói lại khẳng định cổng COM cho đúng.
+
+### 12.7 Những gì review toàn nhánh vẫn phải đối mặt — CHƯA hề nhẹ đi
+
+Danh sách của §11.6, cộng những gì E-4 thêm. **E-4 không đóng cái nào trong số này**, và không cái nào là của
+E-4 để đóng:
+
+- **§10.3 hạng mục sửa `_gate`: BỐN đường I/O + HAI `Cancel`** — chưa làm, **không tăng**. E-4 không chạm
+  `FleetCore.cs` một dòng nào (`git diff` trên file đó: rỗng), nên tập lệnh chạy dưới `_gate` **giống hệt từng
+  byte** với sau E-3. Phép đo của §11.3 vẫn đứng nguyên và không cần chạy lại.
+- **§10.4 kênh log thứ ba** (khôi phục độ mịn `LogDebug` bị E-2 nâng lên `LogError`, ba đường tháo dỡ giờ ghi
+  Event Log đồng bộ) — **chưa làm**.
+- **§10.9 bài test mTLS có cuộc đua tắt máy** — **chưa sửa**, không đỏ lần nào trong các lần chạy cổng của
+  E-4.
+- **§9.4(2) hai tiến trình, một bộ file dữ liệu toàn máy** — **chưa chạm**, và quyết định gốc-dữ-liệu-theo-host
+  vẫn là của chủ sở hữu. Nó vẫn **đang chặn OPC-UA ở biên**.
+- **§11.1 phép tra cứu `machineCode → driver` là `public` trên `ConnectorRegistry`** và EdgeService giữ một
+  registry đã nạp — **chưa đóng**, và E-4 khẳng định lại: hạng mục là `ConnectorRegistry`, không phải
+  `FleetCore`. Không câu nào trong README §24 hay trong mã E-4 viết nói định tuyến ấy không với tới được.
+- **E-5 (§6.1)** — RS-485 ở tác nhân biên. Giờ đã có mặt trong README §24.3 kèm số đo, nên nó là một hạng mục
+  công khai chứ không phải một ghi chú nội bộ.
+- **Transport serial vẫn chưa tải một khung tin nào trên phần cứng thật.** Đúng sau Đợt D, sau E-2, E-3, và
+  sau E-4.
+
+### 12.8 🔴 Ba điều review toàn nhánh nên KIỂM LẠI, không phải đọc lại
+
+1. **§2 của blueprint** — sửa cơ chế theo §12.1, hoặc phán quyết ngược lại tôi. Câu *"đẩy lên EngineApi"* vẫn
+   nằm đó và mọi lập luận về "một nguồn sự thật" đọc lên khác hẳn khi biết hai host chỉ là hai client của
+   cùng một nền tảng.
+2. **Con số "bảy lần"** trong README §24.4 và trong mục này (*lớp lỗi một-chuỗi-nhiều-đường-sinh*) là **do tôi
+   đếm từ brief** (brief nói "sáu lần" trước E-4, cộng ca này) — **tôi không tự liệt kê lại sáu ca kia.** Nếu
+   review cần con số ấy chịu lực thì phải đếm, không nên tin nó.
+3. **`ExplainUnavailable` ném cho `Writable`.** Ở `RelayNotificationChannel` đường đó không với tới được (cả
+   hai bên gọi chỉ vào khi kết quả là `null`), và nếu có ai làm nó với tới được thì
+   `ApplyAndCountAsync`'s catch-all biến nó thành `RelayOutcome.Lost` **có báo lỗi** — to hơn cái mặc định
+   vỗ-về cũ, nhưng vẫn là một hành vi mới trên một đường trước đây câm. Đã cân nhắc, chọn ném; review có thể
+   không đồng ý.
