@@ -753,7 +753,7 @@ EXPECT_CONFORMANCE=22
 #          treatment — an assertion rather than a sentence in a report. Asserted as >= rather than == 5000
 #          deliberately: the claim is the relationship, not either number.
 # 🔴 Task E-3 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §11) raises EXPECT_EDGECORE
-# 1072 -> 1080 (+8) and EXPECT_EDGESERVICE 28 -> 43 (+15). Grand total 2556 -> 2579. Per file, and nothing
+# 1072 -> 1080 (+8) and EXPECT_EDGESERVICE 28 -> 45 (+17). Grand total 2556 -> 2581. Per file, and nothing
 # is rewritten, split or deleted:
 #
 #   +8  tests/St4i.EdgeCore.Tests/Engine/EdgeAgentPipelinesTests.cs  (NEW FILE) — the N-driver lifecycle an
@@ -762,12 +762,18 @@ EXPECT_CONFORMANCE=22
 #       refusing factory named in StartIssues, the all-faulted rethrow, orphan-driver disposal, driver
 #       disposal at end of run, and the nothing-to-poll case that must not reach SimulatedDriver's ctor guard.
 #
-#   +5  tests/St4i.EdgeService.Tests/EdgeAgentWriteSurfaceTests.cs   (NEW FILE) — blueprint §3's read-only
+#   +7  tests/St4i.EdgeService.Tests/EdgeAgentWriteSurfaceTests.cs   (NEW FILE) — blueprint §3's read-only
 #       limit as a STRUCTURAL fact. Runs from St4i.EdgeService.Tests, which has no InternalsVisibleTo from
 #       St4i.EdgeCore, so "not exported" here means exactly what it means for the production host. Two of the
-#       five are positive controls (the assembly really is St4i.EdgeCore and really does export things; the
-#       driver-shape walker really can see a driver — ConnectorRegistry.TryCreateDriver), without which every
-#       absence assertion could pass vacuously.
+#       seven are positive controls (the assembly really is St4i.EdgeCore and really does export things; the
+#       driver-shape walker really can see a driver — ConnectorRegistry.TryCreateDriver; MachineState really
+#       is an exported mutable type), without which every absence assertion could pass vacuously.
+#       🔴 E-3 REVIEW ROUND, +2 in this file. The review found the member census was EIGHT when the real
+#       number is THIRTEEN plus one indirect, and that the two missing names were `Start` — the member that
+#       builds every driver and opens every port — and `Stop`. One test now CHECKS the census against
+#       FleetCore's real public surface (so the count is a measurement, not prose), and one closes the
+#       fourteenth, indirect path by asserting nothing exported hands out a MachineState. Nothing was
+#       unprotected before: the type-level assertion always guarded all fourteen.
 #
 #  +10  tests/St4i.EdgeService.Tests/EdgeWorkerConnectorsTests.cs    (NEW FILE) — the connectors.json read
 #       path, and the task's most important regression: a deployment with no connectors.json (and one with a
@@ -779,6 +785,12 @@ EXPECT_CONFORMANCE=22
 #       that joins the task's two halves: it asserts EdgeWorker actually hands the registry it built to the
 #       agent it runs, which nothing else did — a mutation passing `connectors: null` there left every other
 #       test in the task green.
+#       🔴 E-3 REVIEW ROUND, +0 tests in this file but one assertion strengthened, recorded here because the
+#       run got ~2 s slower and that is visible: the headline regression was a MEMBERSHIP check over ~3
+#       observed commits, and the reviewer's R2 mutation (collapse all eight simulators onto machine #1)
+#       SURVIVED 45/45 with seven of eight machines gone from the run. It is now a SET-EQUALITY check with
+#       smoke raised to 60 so full coverage is reachable at all; R2 re-run against it dies in both regression
+#       tests.
 #
 # EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_ENGINEAPI are deliberately UNCHANGED, and that is the
 # evidence for two of E-3's claims rather than a convenience. EXPECT_ENGINEAPI staying 1283 is what says the
@@ -787,7 +799,7 @@ EXPECT_CONFORMANCE=22
 # is the only file outside St4i.EdgeCore that names the type), the second is a namespace move carried by three
 # added `using` lines. EXPECT_CONFORMANCE in particular stays 22: E-3 adds no driver and no connector kind.
 EXPECT_EDGECORE=1080
-EXPECT_EDGESERVICE=43
+EXPECT_EDGESERVICE=45
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
 #     +24  NotificationEndpointsTests    (new file — the eleven notification routes)

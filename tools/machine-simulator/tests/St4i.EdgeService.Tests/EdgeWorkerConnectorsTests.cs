@@ -23,7 +23,16 @@ namespace St4i.EdgeService.Tests;
 /// </summary>
 public sealed class EdgeWorkerConnectorsTests
 {
-    private static readonly TimeSpan NoHangTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan NoHangTimeout = TimeSpan.FromSeconds(60);
+
+    /// <summary>Enough commits that every one of the eight default-roster machines has certainly cycled at
+    /// least once, so <see cref="AssertEveryRosterMachineRan"/> can be a COVERAGE check rather than a
+    /// membership one. Derived, not guessed: the slowest machine in that roster cycles at 0.5 s, the demo
+    /// transport serialises one pipeline's sends at its default 40 ms, so the run commits ~25/s and 60
+    /// commits is ~2.4 s — roughly four full cycles of the slowest machine. Deliberately a large margin: the
+    /// cost is ~2 s of test time and the alternative is a coverage assertion that is flaky by
+    /// construction.</summary>
+    private const int SmokeForFullCoverage = 60;
 
     private static string ModbusSettings(string machineCode) => $$"""
         {
@@ -69,6 +78,30 @@ public sealed class EdgeWorkerConnectorsTests
         public CancellationToken ApplicationStopping => CancellationToken.None;
         public CancellationToken ApplicationStopped => CancellationToken.None;
         public void StopApplication() => StopApplicationCallCount++;
+    }
+
+    /// <summary>🔴 <b>SET EQUALITY, not membership, and the difference is a mutation the E-3 review found.</b>
+    /// The first cut asserted <c>Assert.All(commits, c =&gt; Assert.Contains(c, roster))</c> with
+    /// <c>smoke: 3</c> — pure membership over ~3 observations. The reviewer collapsed all eight simulators
+    /// onto machine #1 (<c>SimulatorFactory.Create(fleet[0], …)</c>), <b>seven of eight machines vanished from
+    /// the run</b>, and the test stayed green: a run producing one machine code satisfied membership exactly
+    /// as happily as one producing eight.
+    ///
+    /// <para>So the old assertion was sensitive to WHERE THE ROSTER COMES FROM and blind to WHAT IT PRODUCES
+    /// — and E-3's own stated limit for that ("blind to the data being read") understated it: it was blind to
+    /// which machines ran at all, which is a change an operator notices immediately. Set equality in both
+    /// directions closes it: no machine may go missing, and no machine may appear that the roster does not
+    /// name.</para>
+    ///
+    /// <para><see cref="SmokeForFullCoverage"/> is what makes the "no machine missing" half reachable — with
+    /// three commits it is unsatisfiable no matter how correct the code is, and an unsatisfiable assertion is
+    /// how a test becomes the thing it exists to catch.</para></summary>
+    private static void AssertEveryRosterMachineRan(IReadOnlyList<string> commits)
+    {
+        var roster = EdgeWorker.BuildDefaultFleet().Select(d => d.Code).OrderBy(c => c, StringComparer.Ordinal).ToArray();
+        var observed = commits.Distinct(StringComparer.Ordinal).OrderBy(c => c, StringComparer.Ordinal).ToArray();
+
+        Assert.Equal(roster, observed);
     }
 
     private static IReadOnlyList<string> CommittedMachineCodes(CapturingLogger<EdgeWorker> logger) =>
@@ -126,15 +159,11 @@ public sealed class EdgeWorkerConnectorsTests
     {
         var absent = Path.Combine(Path.GetTempPath(), "st4i-e3-absent-" + Guid.NewGuid().ToString("N"), "connectors.json");
 
-        var (commits, log) = await RunSmoke(smoke: 3, connectorsPath: absent);
+        var (commits, log) = await RunSmoke(smoke: SmokeForFullCoverage, connectorsPath: absent);
 
-        Assert.True(commits.Count >= 3, $"expected at least the 3 smoke commits, got {commits.Count}");
+        Assert.True(commits.Count >= SmokeForFullCoverage / 2, $"expected the smoke run to commit, got {commits.Count}");
 
-        // Every reading came from EdgeWorker's OWN in-code roster — the 8-machine BuildDefaultFleet — and
-        // from nothing else. This is the assertion that would break if the connectors path had quietly
-        // changed the fleet source, or if FleetCore's own 10-machine resolver had joined the process.
-        var roster = EdgeWorker.BuildDefaultFleet().Select(d => d.Code).ToHashSet(StringComparer.Ordinal);
-        Assert.All(commits, c => Assert.Contains(c, roster));
+        AssertEveryRosterMachineRan(commits);
 
         // And it says WHERE it looked — blueprint §9.4's "no exception, no warning naming the cause" is the
         // defect class this line exists to close.
@@ -146,11 +175,10 @@ public sealed class EdgeWorkerConnectorsTests
     {
         var path = TempFile("connectors.json", "{ this is not valid json");
 
-        var (commits, log) = await RunSmoke(smoke: 3, connectorsPath: path);
+        var (commits, log) = await RunSmoke(smoke: SmokeForFullCoverage, connectorsPath: path);
 
-        Assert.True(commits.Count >= 3, $"a malformed connectors.json took the simulated run down: {commits.Count} commits");
-        var roster = EdgeWorker.BuildDefaultFleet().Select(d => d.Code).ToHashSet(StringComparer.Ordinal);
-        Assert.All(commits, c => Assert.Contains(c, roster));
+        Assert.True(commits.Count >= SmokeForFullCoverage / 2, $"a malformed connectors.json took the simulated run down: {commits.Count} commits");
+        AssertEveryRosterMachineRan(commits);
         Assert.Contains(log.Lines, l => l.Contains("could not be read", StringComparison.Ordinal));
     }
 
@@ -171,7 +199,7 @@ public sealed class EdgeWorkerConnectorsTests
             """;
         var path = TempFile("connectors.json", json);
 
-        var (commits, log) = await RunSmoke(smoke: 3, connectorsPath: path);
+        var (commits, log) = await RunSmoke(smoke: SmokeForFullCoverage, connectorsPath: path);
 
         Assert.True(commits.Count >= 3, "the simulated group stopped running once a connector joined it.");
         var line = Assert.Single(log.Lines, l => l.StartsWith("EdgeWorker running ", StringComparison.Ordinal));

@@ -274,12 +274,19 @@ public sealed class EdgeWorker : BackgroundService
     /// and no simulators — logs an empty list and returns immediately rather than spinning.
     ///
     /// <para>Deliberately NOT an event on the agent: a "pipelines started" callback would be a second
-    /// observation channel for a fact already exposed as a property, and this host is the only reader.</para></summary>
+    /// observation channel for a fact already exposed as a property, and this host is the only reader.</para>
+    ///
+    /// <para>🔴 <b>The wait is a bounded poll, not a <c>Task.Yield()</c> spin, and the first cut was the
+    /// spin.</b> The E-3 review flagged it: <c>StartedLabels</c> allocates an array per call, and while the
+    /// common path takes zero iterations, the agent DOES <c>await</c> before publishing — it disposes any
+    /// orphan driver a rejecting factory handed back — so a slow <c>DisposeAsync</c> made this a hot loop
+    /// allocating an array per turn on a background service's own thread. A 10 ms poll costs at most 10 ms of
+    /// latency on ONE log line and cannot spin.</para></summary>
     private async Task LogStartedPipelinesAsync(EdgeAgentPipelines agent, Task run)
     {
         while (agent.StartedLabels.Count == 0 && !run.IsCompleted)
         {
-            await Task.Yield();
+            await Task.WhenAny(run, Task.Delay(10)).ConfigureAwait(false);
         }
 
         var labels = agent.StartedLabels;

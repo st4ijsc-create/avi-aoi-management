@@ -574,10 +574,26 @@ Toàn văn ở `.superpowers/sdd/2026-08-04-dotE-fleet-core-extraction/task-3-re
 `St4i.EdgeCore.Fleet.FleetCore` giờ là **`internal`**. Brief nêu hai hướng (facade chỉ-đọc, hoặc `internal`
 cho hai thành viên ghi); hướng đã lấy là **`internal` cho CẢ KIỂU**, cộng một kiểu mới hẹp hơn cho tác nhân biên.
 
-**Vì sao cả kiểu, không phải hai thành viên.** Bắt đầu từ *tập các thành viên*, không từ hai cái brief nêu tên:
-ngoài `TryWriteSetpointAsync`/`TryInvokeCommandAsync` còn `Estop`, `ResetEstop`, `RegisterMachine`,
-`UpdateSettings` (ghi `FleetSettingsStore` khi có store), `ApplyScenario`, `Burst`,
-`RunHotFolderAoiDemoAsync` (ghi file), `SetCurrentProduct`. Bịt hai cái là để ngỏ tám cái còn lại.
+**Vì sao cả kiểu, không phải hai thành viên.** Bắt đầu từ *tập các thành viên*, không từ hai cái brief nêu tên.
+🔴 **Con số là MƯỜI BA, cộng một đường gián tiếp — bản đầu của mục này ghi TÁM, và review E-3 đã đính chính:**
+`TryWriteSetpointAsync`, `TryInvokeCommandAsync`, `GetMachineDriverAvailability`, `Estop`, `ResetEstop`,
+**`Start` (`:1058`)**, **`Stop` (`:1101`)**, `RegisterMachine`, `UpdateSettings` (ghi `FleetSettingsStore` khi
+có store), `ApplyScenario`, `Burst`, `RunHotFolderAoiDemoAsync` (ghi file), `SetCurrentProduct` — cộng đường
+thứ mười bốn gián tiếp qua `TryGetMachineState` (`:1034`), trả một `MachineState` mang
+`ApplyReading`/`ApplyConfigSync`/`ApplyConfigSyncError` public.
+
+**`Start` là thành viên dựng MỌI driver và mở MỌI cổng**, và nó vắng mặt khỏi cả danh sách tám lẫn mảng
+`ForbiddenMemberNames` của bản đầu. Ghi thẳng ra thay vì lặng lẽ sửa con số: lập luận phương pháp trung tâm của
+E-3 là *"tôi bắt đầu từ TẬP CÁC THÀNH VIÊN, nên mới thấy hai cái brief nêu tên là sai đơn vị"* — **và chính cái
+tập ấy hụt đúng hai mục nặng nhất.** *Liệt kê không phải một kết quả; nó là một bước có thể làm dở.*
+
+Không có gì từng không được bảo vệ: một từ khoá đóng cả mười bốn, và phép kiểm ở mức KIỂU (chứ không ở mức tên)
+là thứ đang giữ. Danh sách tên là phòng thủ theo chiều sâu, và **giờ chính con số 13 cũng được KIỂM** — đối
+chiếu với bề mặt public thật của `FleetCore` bằng reflection, nên một tên rơi khỏi danh sách là một test đỏ chứ
+không phải một câu văn trôi dần thành hư cấu. Đường gián tiếp thứ mười bốn cũng có nhân chứng riêng: **không
+kiểu export nào của EdgeCore trao ra một `MachineState`.**
+
+Bịt hai cái brief nêu tên là để ngỏ mười một cái còn lại.
 
 **Giá phải trả: bằng không.** Ngoài `St4i.EdgeCore`, tên `FleetCore` xuất hiện trong **đúng một file mã chạy
 được** — `St4i.EngineApi/Fleet/FleetHost.cs`. Mọi chỗ nhắc khác trong `src/` và `tests/` là chú thích.
@@ -589,18 +605,46 @@ gọi tên được** từ `St4i.EdgeService`. Nên **hai bộ đọc roster kh�
 trình EdgeService là `EdgeWorker.LoadFleet` (8 máy). Cùng lý do đó, cái bẫy `AppContext.BaseDirectory`/
 `mapping/` của §9.4(1) **không còn với tới được từ EdgeService** — không phải được cảnh báo, mà là không tồn tại.
 
-**Giới hạn của khẳng định này, nói thẳng để không ai đọc quá:** nó **không** chứng minh EdgeService không thể
-ghi vào một thiết bị. Không thể chứng minh: driver mà host này dựng từ `connectors.json` **chính là**
-`IWritableDeviceDriver` (một `ModbusTcpDriver` là), vì driver là thứ giữ cổng. Cái được chứng minh hẹp hơn và
-đúng là cái quan trọng: **đường phân giải mã-máy → driver-ghi-sống, cùng hai thành viên ghi không hỏi chốt HALT
-dựng trên nó, hoàn toàn không với tới được từ tiến trình này**, và `EdgeAgentPipelines` không bao giờ trả một
-driver ra cho caller. Muốn ghi thì phải **thêm mã dựng driver** — một hành vi thấy được khi review — chứ không
-phải ép kiểu một tham chiếu sẵn có.
+🔴 **GIỚI HẠN CỦA KHẲNG ĐỊNH NÀY — bản đầu của mục này nói QUÁ, và review E-3 đã đính chính. Đọc đoạn này
+trước khi trích dẫn bất cứ câu nào ở trên.**
 
-**Nhân chứng:** `tests/St4i.EdgeService.Tests/EdgeAgentWriteSurfaceTests.cs` (5 `[Fact]`), chạy **từ
+Bản đầu viết: *"đường phân giải mã-máy → driver-ghi-sống … hoàn toàn không với tới được từ tiến trình này"*.
+**SAI. Đường phân giải ấy DI CHUYỂN, nó không biến mất.** `ConnectorRegistry.TryGetInstanceIdForMachine` là
+`public` trên `St4i.EdgeCore` — chú thích của chính nó gọi đó là *"the ONE lookup that makes per-machine write
+routing possible"* — và `ConnectorRegistry.TryCreateDriver` cũng public ngay cạnh. E-2 làm cả hai public ở
+EdgeCore; **E-3 đưa cho host này một registry đã được nạp** (`EdgeConnectors.Build` → `EdgeWorker`). Nên đoạn
+sau **biên dịch được ngay hôm nay bên trong `St4i.EdgeService`, chỉ dùng bề mặt public**:
+
+```csharp
+registry.TryGetInstanceIdForMachine(machineCode, out var instanceId);
+registry.TryCreateDriver(instanceId, out var driver, out _);
+if (driver is IWritableDeviceDriver w) await w.WriteSetpointAsync(req, ct);
+```
+
+**Câu ĐÚNG, và nó hẹp hơn:** *hai thành viên ghi không hỏi chốt HALT của `FleetCore`, cùng **bảng slot sống**
+của nó — thứ ánh xạ một máy tới đúng driver mà một pipeline đang chạy — không với tới được từ host nào ngoài
+`St4i.EngineApi`. Còn **phép tra cứu** mã-máy → driver thì public trên `ConnectorRegistry`, và host này đang
+giữ một cái.*
+
+Hai điều giữ cho nó ở mức Important chứ không phải chí mạng, và chúng **không** đồng nghĩa với "không với tới
+được": driver mà một đoạn như trên lấy được là một driver **MỚI**, không phải driver sống mà pipeline đang
+cầm — nó không cướp được một pipeline đang chạy; và dựng nó là **thêm mã dựng driver**, một hành vi thấy được
+khi review, chứ không phải ép kiểu một tham chiếu sẵn có.
+
+Và giới hạn phẳng: driver mà host này dựng từ `connectors.json` **chính là** `IWritableDeviceDriver` (một
+`ModbusTcpDriver` là), vì driver là thứ giữ cổng — không phép đổi visibility nào sửa được điều đó.
+
+→ **E-4:** nếu muốn đóng nốt phần còn lại, hạng mục là `ConnectorRegistry`, không phải `FleetCore`.
+
+**Nhân chứng:** `tests/St4i.EdgeService.Tests/EdgeAgentWriteSurfaceTests.cs` (7 `[Fact]`), chạy **từ
 `St4i.EdgeService.Tests`** — assembly không có `InternalsVisibleTo` từ EdgeCore, nên "không export" ở đó nghĩa
 đúng như với host sản phẩm. Phép kiểm là **liệt kê** (mọi kiểu export, mọi thành viên public, so với cả tập
-cấm), không phải tra tên hai thành viên rồi thấy vắng. Hai trong năm `[Fact]` là **đối chứng dương**.
+cấm), không phải tra tên hai thành viên rồi thấy vắng. Ba trong bảy `[Fact]` là **đối chứng dương**.
+
+🔴 **Và review E-3 chứng minh nó ở mức MẠNH HƠN reflection — ở mức TRÌNH BIÊN DỊCH:** một file probe thêm vào
+chính assembly sản phẩm `St4i.EdgeService`, chỉ nhắc tên `FleetCore`, cho
+`error CS0122: 'FleetCore' is inaccessible due to its protection level`. Reflection nói về bề mặt export; câu
+này nói về thứ trình biên dịch chịu chấp nhận, và đó mới đúng là điều cần khẳng định.
 
 🔴 **Một chỗ danh sách cấm ban đầu SAI, và cách sửa đáng giữ:** `ApplyMode` nằm trong danh sách ở bản đầu, và
 phép liệt kê lập tức bắt được `St4i.EdgeCore.Transport.TransportCoordinator.ApplyMode` — **không phải thành
@@ -655,7 +699,15 @@ app-instance của nó vào `OpcUaPkiPaths.ResolveRoot` — `%ProgramData%\ST4I\
 khoá theo tiến trình**. Dispatch nó ở đây sẽ biến `St4i.EdgeService` thành **một người ghi mới vào một store
 toàn máy**. Một entry OPC-UA bị bỏ qua kèm cảnh báo nêu đúng lý do, và có test ghim
 (`AnOpcUaEntry_IsRefusedByName_…`) để nó là một quyết định chứ không phải một chỗ sót ai đó "sửa" bằng cách
-thêm một nhánh `switch`. **Bật nó lên là một nhánh `switch`, ngay khi quyết định gốc-dữ-liệu-theo-host có.**
+thêm một nhánh `switch`.
+
+🔴 **Đính chính của review E-3 — bản đầu viết "bật nó lên là một nhánh `switch`", và câu đó nói NHẸ đi cái đã
+có sẵn.** Gốc PKI **đã được tham số hoá rồi**: `OpcUaConnectorFactory(map, pkiDir, …)` nhận nó làm đối số hàm
+dựng, và `OpcUaPkiPaths.ResolveRoot` tôn trọng biến môi trường `ST4I_OPCUA_PKI_DIR`. Nghĩa là **cơ chế để cho
+tác nhân biên một gốc PKI riêng đã tồn tại**; thứ còn thiếu là **quyết định** gốc dữ liệu theo host — nơi nó
+nằm, ai đặt biến, và điều gì xảy ra với các cài đặt đã có. Từ chối vẫn là đúng dưới phán quyết không-thêm-người-ghi
+của brief (E-3 không được tự chọn một gốc mới), nhưng bản ghi phải nói đúng: **cái chặn là một quyết định, không
+phải một hạ tầng còn thiếu.**
 
 ### 11.5 Đường đọc `connectors.json`: một bộ phân tích, hai bộ dispatch — và vì sao
 

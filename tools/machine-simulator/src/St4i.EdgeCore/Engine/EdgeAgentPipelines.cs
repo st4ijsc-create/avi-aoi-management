@@ -51,14 +51,28 @@ namespace St4i.EdgeCore.Engine;
 /// supplies <see cref="IMachineSimulator"/>s and a <see cref="ConnectorRegistry"/>; every driver is built,
 /// owned and disposed HERE. So an edge host's own code holds no driver reference to cast to
 /// <see cref="IWritableDeviceDriver"/>.</item>
-/// <item>Nothing here resolves a machine code to a driver. That routing — the unguarded half of the write
-/// path — exists only on <c>FleetCore</c>, which this class does not use and this assembly does not
-/// export.</item>
-/// <item><b>The limit, stated so nobody over-reads it:</b> the drivers this class builds ARE writable
-/// objects (a <c>ModbusRtuDriver</c> implements <see cref="IWritableDeviceDriver"/>), and no visibility
-/// change can alter that — the driver IS the thing that owns the port. What is structural is that reaching
-/// one requires ADDING code that builds a driver, which is a visible, reviewable act, rather than casting a
-/// reference the host already holds.</item>
+/// <item>Nothing here resolves a machine code to a driver.</item>
+/// <item>🔴 <b>What is NOT true, corrected by the E-3 review, because the first draft of this list said it
+/// and it is the sentence a reader meets first.</b> The first draft claimed the machine-code→driver routing
+/// "exists only on <c>FleetCore</c>". <b>It does not. The routing MOVED, it did not become unreachable.</b>
+/// <see cref="ConnectorRegistry.TryGetInstanceIdForMachine"/> is <c>public</c> on this assembly — its own doc
+/// comment calls it "the ONE lookup that makes per-machine write routing possible" — and
+/// <see cref="ConnectorRegistry.TryCreateDriver"/> is public beside it. E-2 made both public here; E-3 hands
+/// an edge host a POPULATED registry. So this compiles inside <c>St4i.EdgeService</c> today, on public
+/// surface alone: <c>registry.TryGetInstanceIdForMachine(code, out var id)</c> →
+/// <c>registry.TryCreateDriver(id, out var d, out _)</c> → <c>d is IWritableDeviceDriver w</c> →
+/// <c>w.WriteSetpointAsync(…)</c>.</item>
+/// <item><b>So the true statement, and it is narrower:</b> <c>FleetCore</c>'s unguarded write helpers
+/// (<c>TryWriteSetpointAsync</c>/<c>TryInvokeCommandAsync</c>) and its LIVE-SLOT table — the thing that maps
+/// a machine to the driver a pipeline is actually running — are unreachable from any host but
+/// <c>St4i.EngineApi</c>. The machine-code→driver LOOKUP is public on <see cref="ConnectorRegistry"/>, and
+/// this host holds one. Two things keep that Important rather than fatal, and they are not the same thing as
+/// "unreachable": the driver such a probe obtains is a <b>NEW</b> driver, not the live one this class owns
+/// and polls, so it cannot hijack a running pipeline; and building it is ADDING code that constructs a
+/// driver, which is a visible, reviewable act rather than a cast of a reference already in hand.</item>
+/// <item><b>And the flat limit:</b> the drivers this class builds ARE writable objects (a
+/// <c>ModbusRtuDriver</c> implements <see cref="IWritableDeviceDriver"/>), and no visibility change can alter
+/// that — the driver IS the thing that owns the port.</item>
 /// </list></para>
 ///
 /// <para><b>Fault isolation, and the one case where it must behave exactly like the single pipeline it
