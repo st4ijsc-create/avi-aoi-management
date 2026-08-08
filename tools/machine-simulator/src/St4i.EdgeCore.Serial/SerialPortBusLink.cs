@@ -280,12 +280,25 @@ public sealed class SerialPortBusLink : IModbusBusLink
     /// deterministically from their own exception, and the wiring is asserted once through the absent
     /// arm.</para>
     ///
-    /// <para><b>🔴 The held arm names TWO holders, and the second is the one this product can create.</b>
-    /// <see cref="CreateBusKey"/> folds every line parameter into the key, so two connector entries naming one
-    /// port with different framing are TWO buses and TWO opens of one port — the second of which lands here.
-    /// Telling that operator to go looking for another application would send them hunting a process that does
-    /// not exist, while their own configuration file holds the answer. Both are named, in the order they are
-    /// worth checking.</para>
+    /// <para><b>🔴 The held arm names THREE holders, in the order they are worth checking, and two of the
+    /// three are states this product itself can create.</b> <see cref="CreateBusKey"/> folds every line
+    /// parameter into the key, so two connector entries naming one port with different framing are TWO buses
+    /// and TWO opens of one port — the third case, and the second of those opens lands here. Since E-5 the
+    /// FIRST case exists too: both hosts have a configured path from their own <c>connectors.json</c> to a
+    /// serial open, so the holder is very often the sibling host. Telling that operator to go looking for
+    /// another application would send them hunting a process that does not exist while their own
+    /// configuration files hold the answer.
+    /// <b>🔴 This paragraph read "TWO holders … Both are named" until F-1, while the string it describes had
+    /// named three since E-5.</b> The arm was extended and the doc comment beside it was not; E-5's own census
+    /// did not reach it because that census ran the rule "which host has a configured path to a COM port" and
+    /// this sentence states a COUNT rather than that rule.</para>
+    ///
+    /// <para><b>🔴 F-1 — and the arm now says WHOSE refusal this is.</b> Everything above describes the
+    /// operating system's exclusive open. A reader who takes it for arbitration this product performs will
+    /// never ask the question the gateway transport needs asked, because on a gateway there is no refusal to
+    /// observe at all: both hosts connect, nothing errors, and the one-host-per-segment rule is stated there
+    /// at registration time instead, by <c>ModbusRtuBusSettings.DescribeSegmentOwnership</c>. The rule holds
+    /// on BOTH transports; only one of them has an accident that happens to enforce it.</para>
     ///
     /// <para><b>The absent arm enumerates the ports this machine does have.</b> That is the operator's very next
     /// question, and answering it distinguishes "the adapter is unplugged" from "COM3 versus COM13" without a
@@ -328,7 +341,10 @@ public sealed class SerialPortBusLink : IModbusBusLink
                 "program, a vendor tool, an earlier instance of either host. (3) THIS process opening the " +
                 "same port twice, because two connector entries name it with DIFFERENT line parameters — " +
                 "those are two buses by design, and the second one cannot open; check that every connector " +
-                "on this segment declares the same baudRate/parity/dataBits/stopBits.",
+                "on this segment declares the same baudRate/parity/dataBits/stopBits. This refusal came from " +
+                "the OPERATING SYSTEM's exclusive open, not from any arbitration this product performs: the " +
+                "rule is ONE HOST PER SEGMENT, it is a deployment constraint rather than something enforced " +
+                "here, and on an RTU GATEWAY nothing raises this error at all — both hosts simply connect.",
 
             ArgumentException =>
                 $"{prefix} The name '{settings.PortName}' does NOT resolve to a serial port on this machine — " +

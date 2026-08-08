@@ -835,7 +835,59 @@ EXPECT_CONFORMANCE=22
 # here, one ILogger->callback signature change at the call sites. A behavioural change in EngineApi would show
 # up as a moved number. EXPECT_CONFORMANCE in particular stays 22: E-5 adds no driver and no connector kind —
 # ModbusRtuDriver has shipped since D-5 and its conformance wiring since D-6.
-EXPECT_EDGECORE=1082
+# 🔴 TASK F-1 (.superpowers/sdd/per-host-roots/task-1-brief.md) raises EXPECT_EDGECORE 1082 -> 1088 (+6),
+# COUNTED FROM THE RUNNER (`dotnet test --list-tests`), not by hand. Two NEW files; nothing is rewritten,
+# split or deleted, and no existing test in this suite gains or loses a case.
+#
+#   +3  tests/St4i.EdgeCore.Tests/PerHostDataRootIsolationTests.cs (NEW FILE) — the load-bearing half of
+#       F-1 Part 1: TWO HOSTS, TWO ROOTS, and neither observes the other's data. Not a ResolveRoot test —
+#       every assertion is an observation made THROUGH the store, because a resolver can be correct while
+#       the store ignores it (which is the defect CredentialStoreTests' own redirect test exists for).
+#         + 1  CredentialStore, the static one whose only seam is the env var, driven with ONE machine code
+#              on both sides deliberately: two codes would be separated by the FILENAME even inside one
+#              shared directory, so such a test passes on a build where the redirect does nothing. Both
+#              directions, because "B cannot read A" and "B did not overwrite A" are different failures.
+#         + 1  FleetSettingsStore, via its explicit-directory seam and no env var at all — the store that
+#              holds exactly one (ServerUrl, MachineCode, VerifyTls) triple, so sharing its root is a
+#              last-writer-wins overwrite rather than a merge.
+#         + 1  the WAL, which is the only machine-wide store St4i.EdgeService has ever WRITTEN (blueprint
+#              §11.4) and therefore the collision a two-host deployment hits first. Its CONTROL arm is what
+#              makes it say anything: the queue file is <dir>\<machineCode>.jsonl, a pure function of two
+#              inputs, so the test first asserts that one shared root plus one shared machine code IS one
+#              file. Without that arm, "two roots give two paths" is a fact about Path.Combine.
+#       🔴 MUTATION, and it is the one that discriminates: memoise CredentialStore.CredsDir() into a static
+#       field (`_cache ??= ResolveRoot()`) — a first-resolution-wins shape nobody would flag on review. The
+#       new credential test is KILLED deterministically; the pre-existing redirect test's verdict is
+#       ORDER-DEPENDENT, because it only ever resolves one root. All five verbs of mutate-guard.sh, clean
+#       first, with a positive control reported KILLED in the same session.
+#
+#   +3  tests/St4i.EdgeCore.Tests/Drivers/Modbus/RtuSegmentOwnershipTests.cs (NEW FILE) — F-1 Part 2: the
+#       one-host-per-segment DEPLOYMENT CONSTRAINT, stated on BOTH transports and stated as a constraint
+#       rather than a guarantee. The two transports are asserted in one file on purpose: the claim is a
+#       PAIR (each transport carries the rule exactly once, where its operator can meet it), and E-5 is the
+#       evidence that two tests each looking at one half do not establish it — E-5 rewrote the serial
+#       message and left the gateway with nothing, invisibly.
+#         + 1  the plan's two arms together: a gateway plan carries SegmentOwnershipNotice and no
+#              LimitNotice; a serial plan carries LimitNotice and no SegmentOwnershipNotice. Either arm
+#              alone passes on a build that put the same string on both — the specific mistake available
+#              here, since the RULE is true of both transports and only its DELIVERY differs.
+#         + 1  the wording, because the wording IS the deliverable: names the segment, says NOTHING
+#              enforces it, says CONSTRAINT-not-guarantee, and keeps the write consequence labelled
+#              NOBODY HAS MEASURED. The DoesNotContain arms ("prevents", "blocks") are the discriminating
+#              ones — a notice that reads as a promise stops the operator checking the other host's
+#              connectors.json, which is the only thing that settles it.
+#         + 1  the serial half: DescribeOpenFailure's held arm now attributes the refusal to the OPERATING
+#              SYSTEM and points at the gateway, so the two halves of the rule cannot be learned
+#              separately. E-5's own assertions ("already held", "THE OTHER ST4I HOST") are re-asserted
+#              here so this task cannot be read as having weakened them.
+#
+# No behaviour in this assembly changed. ModbusRtuBusPlan gains a seventh positional member and
+# ModbusRtuBusSettings gains one pure string method; every pre-existing RTU test passes unchanged, which is
+# the check that the record change is additive rather than a rewrite. CredentialStoreTests gains a
+# [Collection] attribute (it and PerHostDataRootIsolationTests both flip the PROCESS-WIDE ST4I_CREDS_DIR, and
+# two classes doing that in parallel is a real race) — an attribute moves no count, and a moved count there
+# would mean the attribute did more than serialize.
+EXPECT_EDGECORE=1088
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -879,7 +931,23 @@ EXPECT_EDGECORE=1082
 # same text. Those two files are the join: the new file proves the text is right, and these prove the two
 # surfaces that render it actually use it. A count that did not move is the evidence that the states were
 # already covered and only the assertion was empty.
-EXPECT_EDGESERVICE=49
+# 🔴 TASK F-1 raises EXPECT_EDGESERVICE 49 -> 50 (+1), counted from the runner. ONE file, ONE test; nothing
+# rewritten, split or deleted.
+#
+#   +1  EdgeWorkerConnectorsTests.AGatewayBus_WarnsThatNothingEnforcesOneHostPerSegment_AndASerialBusDoesNot
+#       — the one-host-per-segment constraint emitted by THIS host. It is not a copy of EngineApi's for
+#       tidiness: this host is the one an operator adds SECOND, and a gateway accepts its connection whether
+#       or not the other host is already on the segment — no error, no log line on either side. Stated only
+#       by EngineApi, the constraint would be stated only to the host that was already there. The serial arm
+#       in the same file is the discriminator (a COM line must NOT get this notice; its operator meets the
+#       rule at the OS's refusal instead). No socket is opened: TryCreate performs no I/O and the link is
+#       dialled lazily inside the first transaction, so gw.example is never resolved.
+#
+# The OPC-UA refusal message in EdgeConnectors.cs is REWORDED by F-1 (the blocking condition — an unmade
+# per-host data-root decision — is now made; the refusal stands because what remains is engineering) and
+# AnOpcUaEntry_IsRefusedByName_… is unchanged and still green: it asserts the refusal and the word
+# "opcua-pki", both of which survive deliberately. A moved count here would mean the reword changed behaviour.
+EXPECT_EDGESERVICE=50
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
 #     +24  NotificationEndpointsTests    (new file — the eleven notification routes)
@@ -1422,7 +1490,40 @@ EXPECT_EDGESERVICE=49
 #       (host.IsRunning true, EstopEngaged false, GetConfiguredConnectorIssues empty) and then asserting
 #       the body. Modbus-kind specifically because ResolveSlotLabelFor excludes Modbus/OPC-UA from the
 #       simulated group unconditionally; a simulated-kind machine would report ReadOnly, the other case.
-EXPECT_ENGINEAPI=1290
+# 🔴 TASK F-1 raises EXPECT_ENGINEAPI 1290 -> 1293 (+3), counted from the runner. Two files; nothing
+# rewritten, split or deleted.
+#
+#   +2  tests/St4i.EngineApi.Tests/PerHostDataRootsTests.cs (NEW FILE) — it lives in THIS suite, not in
+#       EdgeCore's, because it is the THIRD scan-derived census test of the same set and the other two are
+#       already here (NotificationDocumentationTests' decommissioning scan, TestHarnessIsolationTests'
+#       Playwright scan). It also has to see EngineApi's own five stores, which St4i.EdgeCore.Tests cannot.
+#         + 1  EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName — 🔴 THE FIFTH-STORE GUARD,
+#              and the reason F-1 enumerated instead of trusting its brief. The brief named FOUR stores;
+#              the enumeration found THIRTEEN. All thirteen were already relocatable, so this test is not
+#              a fix — it is the thing that makes a FOURTEENTH impossible to add without a variable, which
+#              is where this defect would actually have lived. Derives BOTH sets from src/ and requires the
+#              variable NAME to be derivable from the directory name (ST4I_<NAME>_DIR), because that is the
+#              rule README §15.9 tells an operator; requiring only "thirteen of each exist" would pass
+#              while a directory and its variable named different things. Non-vacuity floors on both sets
+#              plus five named controls, the same shape both siblings carry.
+#         + 1  TheReadme_TellsAnOperatorThatRelocatingARootDoesNotMigrateTheOldData — §8.1's fourth census
+#              tier: a rule stated to an OPERATOR is a different population of text from one stated to a
+#              programmer. Relocating a root on a running deployment silently orphans that store's data,
+#              and a host that cannot read its own saved credential looks exactly like one that was never
+#              onboarded. Pins the three FACTS (the section exists, EN+VI both say nothing is migrated, the
+#              credential consequence is named) and deliberately not the prose.
+#
+#   +1  ConnectorsJsonRegistrationTests.TheOneHostPerSegmentConstraint_IsLoggedOncePerGatewayBus_AndNever-
+#       ForASerialOrADeadBus — the exact mirror of the file's own DE-limit test, and the mirroring is the
+#       argument. Once per SEGMENT (three devices, one notice), never for a serial bus, never for a bus that
+#       registered nothing. It also asserts the two load-bearing phrases reach the log ("NOTHING enforces
+#       it", "NOBODY HAS MEASURED"), because a notice an operator reads as a promise is worse than none.
+#
+# The startup persisted-bus path (Program.cs) and the POST /v1/connectors save response also carry the new
+# notice, and neither gains a test: both were already covered for LimitNotice by tests that assert the
+# notice-carrying branch, and the new statement rides the identical branch. Recorded as a KNOWN GAP rather
+# than claimed as covered — see task-1-report.md.
+EXPECT_ENGINEAPI=1293
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

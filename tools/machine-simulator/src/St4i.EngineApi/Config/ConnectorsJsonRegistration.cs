@@ -310,6 +310,18 @@ public static class ConnectorsJsonRegistration
                 entry.Id, plan.LimitNotice);
         }
 
+        // 🔴 Task F-1 — the one-host-per-segment DEPLOYMENT CONSTRAINT, on the transport where nothing
+        // enforces it. Same placement rule and the same guard as the DE limit above, for the same reason:
+        // it is a property of the SEGMENT, and a bus that registered nothing is a line this host will never
+        // drive. It is a WARNING on the identical argument — the violation is SILENT. A second host on the
+        // same gateway raises no error on either side; what it produces is writes landing on Indeterminate,
+        // and an operator who was never told to check for it will read that as a device fault.
+        if (plan.SegmentOwnershipNotice is not null && registered > 0)
+        {
+            logger.LogWarning("connectors.json entry '{ConnectorId}': {ModbusRtuSegmentOwnership}",
+                entry.Id, plan.SegmentOwnershipNotice);
+        }
+
         return registered;
     }
 }

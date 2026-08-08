@@ -6,6 +6,10 @@ using System.Security.Principal;
 using St4i.EdgeCore.Infrastructure;
 using Xunit;
 
+// 🔴 Task F-1 — three tests below flip the PROCESS-WIDE ST4I_CREDS_DIR. So does
+// PerHostDataRootIsolationTests. Sharing one collection is what keeps them from interleaving; see
+// MachineWideStoreEnvCollection for what that guarantee is and is not.
+[Collection("St4i.EdgeCore.Tests.MachineWideStoreEnv")]
 public class CredentialStoreTests
 {
     [Fact]

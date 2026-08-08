@@ -352,4 +352,45 @@ public sealed record ModbusRtuBusSettings(string Transport, string Host, int Por
     /// <see cref="St4i.Connector.Abstractions.IConnectorFactory.TryCreate"/>'s "no I/O" contract true all the
     /// way down.</summary>
     public Func<CancellationToken, Task<IModbusBusLink>> Opener() => GatewayTcpBusLink.Opener(Host, Port);
+
+    /// <summary>
+    /// 🔴 <b>Task F-1 — the operator-facing statement of the ONE-HOST-PER-SEGMENT deployment constraint, for
+    /// the transport on which nothing whatsoever enforces it.</b> Logged once per gateway bus by every
+    /// composition root that registers one, exactly like <c>ModbusRtuSerialBusSettings.DescribeLimit</c> is
+    /// for the serial transport's hardware limit.
+    ///
+    /// <para><b>Why this exists on the GATEWAY arm and not on the serial one.</b> On a directly attached COM
+    /// line a second holder is refused by the operating system and meets
+    /// <c>SerialPortBusLink.DescribeOpenFailure</c>'s held-port arm, which names the sibling host first. A
+    /// gateway produces <b>no error at all</b>: two hosts dial the same device server, both connects succeed,
+    /// and neither learns of the other — so there is no failure path on which to say this, and the only moment
+    /// an operator can be told is the moment the bus is registered. E-5 gave the serial transport its sentence
+    /// and left this transport with none, which is the gap this closes.</para>
+    ///
+    /// <para><b>It states a CONSTRAINT, never a guarantee, and the wording is load-bearing.</b> This product
+    /// arbitrates nothing on either transport: machine-code claims are a <c>ConcurrentDictionary</c> inside one
+    /// process, and <see cref="ModbusBusRegistry"/>'s shared-link bookkeeping is per-process too. The serial
+    /// refusal is the OS's exclusive open — accidental safety, not a design — and here there is not even that.
+    /// A sentence that let a reader believe the product enforces one host per wire would be worse than
+    /// silence, because it would stop them checking the one thing that actually decides it.</para>
+    ///
+    /// <para><b>The consequence is labelled UNMEASURED, deliberately.</b> Two uncoordinated frame sources on
+    /// one segment do not corrupt data: NModbus validates the slave address and the function code, so a stray
+    /// frame becomes a REJECTED transaction rather than a plausible wrong number. What it does produce is
+    /// writes landing on <c>Indeterminate</c> — the outcome this product is most careful about — at a rate
+    /// nobody has measured, because there is no RS-485 hardware on any machine here and no such measurement
+    /// has ever been run. Stated as a proposition, not inherited as a fact.</para>
+    /// </summary>
+    public string DescribeSegmentOwnership() =>
+        $"Modbus RTU over a gateway at {Host}:{Port}: this product's deployment rule is ONE HOST PER SEGMENT, " +
+        "and on this transport NOTHING enforces it. St4i.EngineApi and St4i.EdgeService can each be pointed " +
+        "at this same gateway from their own connectors.json; both connections succeed, neither host can see " +
+        "the other, and no error is raised on either side. That is a CONSTRAINT ON THE DEPLOYMENT, not a " +
+        "guarantee this build provides — on a directly attached COM line the operating system happens to " +
+        "refuse the second open, and a gateway has no equivalent. If a second master is on this segment its " +
+        "frames interleave with this one's: the slave-address and function-code checks turn a stray frame " +
+        "into a REJECTED transaction rather than a wrong value, so the effect is degradation and not " +
+        "corrupted data — but write commands land on Indeterminate at a rate NOBODY HAS MEASURED. Confirm " +
+        "that exactly one host names this gateway before treating slow or indeterminate writes as a device " +
+        "fault.";
 }

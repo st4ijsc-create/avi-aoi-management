@@ -786,6 +786,59 @@ public sealed class ConnectorsJsonRegistrationTests
     }
 
     /// <summary>
+    /// 🔴 <b>Task F-1 — the ONE-HOST-PER-SEGMENT deployment constraint, said where an operator configuring a
+    /// GATEWAY will see it. The exact mirror of the test above, and the mirroring is the argument.</b>
+    ///
+    /// <para>E-5 gave the serial transport its statement of this rule — <c>DescribeOpenFailure</c>'s held-port
+    /// arm, which names the sibling host first — and left the gateway transport with nothing, because on a
+    /// gateway there is no failure to hang a message on: two hosts dial the same device server and BOTH
+    /// connections succeed. Registration is therefore the only moment at which this can be said, which is why
+    /// it lands beside the hardware limit rather than beside an exception.</para>
+    ///
+    /// <para>The three negative halves are the discriminating ones, and they are the reverse of the DE limit's:
+    /// it must NOT fire for a SERIAL bus (whose operator meets the rule at the OS's refusal instead), must NOT
+    /// fire for a gateway bus that registered nothing, and must fire exactly ONCE for a bus of three devices,
+    /// because a segment is not a device.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheOneHostPerSegmentConstraint_IsLoggedOncePerGatewayBus_AndNeverForASerialOrADeadBus()
+    {
+        var registry = new ConnectorRegistry();
+        await using var buses = new ModbusBusRegistry();
+        var logger = new CapturingLogger();
+
+        ConnectorsJsonRegistration.RegisterAll(
+            new[]
+            {
+                new ConnectorConfigEntry("gw-line1", DriverKinds.Modbus,
+                    RtuBusSettings("gw.example", 4001, ("CJ-SEG-A", 1), ("CJ-SEG-B", 2), ("CJ-SEG-C", 3))),
+                new ConnectorConfigEntry("rs485-line1", DriverKinds.Modbus,
+                    SerialBusSettings(""" "portName":"COM7", """, ("CJ-SEG-SER", 1))),
+                // A gateway bus that registers NOTHING: its one device claims a machine the first bus already
+                // has, so the fan-out registers 0 and this host never puts a frame on that segment.
+                new ConnectorConfigEntry("gw-doomed", DriverKinds.Modbus,
+                    RtuBusSettings("other-gw.example", 4002, ("CJ-SEG-A", 1))),
+            },
+            Modbus, OpcUa, registry, logger, buses);
+
+        var notices = logger.Messages
+            .Where(m => m.Contains("ONE HOST PER SEGMENT", StringComparison.Ordinal)).ToList();
+
+        var only = Assert.Single(notices);
+        Assert.Contains("gw.example:4001", only, StringComparison.Ordinal);
+        Assert.Contains("gw-line1", only, StringComparison.Ordinal);
+        Assert.DoesNotContain("other-gw.example", only, StringComparison.Ordinal);
+        Assert.DoesNotContain("COM7", only, StringComparison.Ordinal);
+
+        // 🔴 And the load-bearing half of the wording, asserted here rather than only at the string's own
+        // unit test: what reaches this log must say that nothing enforces the rule. A notice an operator
+        // reads as "the product handles this" is worse than no notice, because it stops them checking the
+        // one thing that actually decides it.
+        Assert.Contains("NOTHING enforces it", only, StringComparison.Ordinal);
+        Assert.Contains("NOBODY HAS MEASURED", only, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// 🔴 <b>The half of the "all three hosts" ruling that <c>SerialDependencyScopingTests</c> cannot make: the
     /// ENGINE's own IL references the serial assembly.</b>
     ///

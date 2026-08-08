@@ -372,6 +372,45 @@ public sealed class EdgeWorkerConnectorsTests
     }
 
     /// <summary>
+    /// 🔴 <b>Task F-1 — the ONE-HOST-PER-SEGMENT constraint, emitted by THIS host, on the transport where
+    /// nothing enforces it.</b>
+    ///
+    /// <para>This host is the one an operator adds SECOND: <c>St4i.EngineApi</c> has driven connectors since
+    /// long before Đợt E, and a gateway accepts this host's connection whether or not the other one is already
+    /// on the segment — no error, no log line on either side. If the constraint were stated only by EngineApi
+    /// it would be stated only to the host that was already there.</para>
+    ///
+    /// <para>The serial arm is the discriminator: it must NOT fire for a COM line, whose operator meets this
+    /// rule at the operating system's refusal instead (<c>SerialPortBusLink.DescribeOpenFailure</c>). A notice
+    /// on both transports would be the "same string in two places" shape that hides which one is load-bearing.
+    /// No socket is opened — <c>ModbusRtuConnectorFactory.TryCreate</c> performs no I/O and the link is dialled
+    /// lazily inside the first transaction, so <c>gw.example</c> is never resolved.</para>
+    /// </summary>
+    [Fact]
+    public void AGatewayBus_WarnsThatNothingEnforcesOneHostPerSegment_AndASerialBusDoesNot()
+    {
+        var json = $$"""
+            [ { "id": "gw1", "kind": "Modbus", "settings": { "transport": "rtu-gateway", "host": "gw.example",
+                "port": 4001, "devices": [ {{RtuDeviceJson("EDGE-SEG-A", 1)}}, {{RtuDeviceJson("EDGE-SEG-B", 2)}} ] } },
+              { "id": "line9", "kind": "Modbus", "settings": { "transport": "rtu-serial", "portName": "COM3",
+                "devices": [ {{RtuDeviceJson("EDGE-SEG-C", 3)}} ] } } ]
+            """;
+        var log = new CapturingLogger<EdgeWorker>();
+
+        Assert.NotNull(EdgeConnectors.Build(TempFile("connectors.json", json), log, new ModbusBusRegistry()));
+
+        // Once per SEGMENT — two devices on the gateway, one notice — and the gateway is named.
+        var notice = Assert.Single(log.Lines, l => l.Contains("ONE HOST PER SEGMENT", StringComparison.Ordinal));
+        Assert.Contains("gw.example:4001", notice, StringComparison.Ordinal);
+        Assert.Contains("gw1", notice, StringComparison.Ordinal);
+        Assert.DoesNotContain("COM3", notice, StringComparison.Ordinal);
+
+        // Constraint, not guarantee. This host CANNOT detect the sibling and must not read as though it can.
+        Assert.Contains("NOTHING enforces it", notice, StringComparison.Ordinal);
+        Assert.Contains("NOBODY HAS MEASURED", notice, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// A run composed without a bus registry offers no RTU transport at all, and says so by name rather than
     /// dispatching into a path that cannot work. The same arm <c>ConnectorsJsonRegistration</c> has had since
     /// D-7a, and the reason <c>Build</c>'s parameter is optional: the physical line's lifetime is the
