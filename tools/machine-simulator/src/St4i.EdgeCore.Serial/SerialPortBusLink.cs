@@ -310,14 +310,25 @@ public sealed class SerialPortBusLink : IModbusBusLink
                 "refusal: the bus keeps retrying on the driver's own poll cadence, so plugging the adapter " +
                 "back in recovers it with no restart.",
 
+            // 🔴 Task E-5 review, F1 — THREE producing paths, not two, and the one added here is now the
+            // most likely of the three on a machine running the whole product. Until E-5 only St4i.EngineApi
+            // had a configured path from connectors.json to a serial open, so "the sibling host has it" was
+            // not a state this product could reach; St4i.EdgeService now has one too, and the two share no
+            // channel through which either could learn the other is holding the line. Naming only the old
+            // two sends that operator hunting a terminal program that does not exist and auditing line
+            // parameters that are correct — D-5's I-1 class (a true sentence that reads as a lie), in a live
+            // operator-facing string.
             UnauthorizedAccessException =>
                 $"{prefix} The port {settings.PortName} EXISTS but is already held — a serial port opens " +
-                "EXCLUSIVELY, so exactly one holder can have it. Two things produce this: another application " +
-                "on this machine (a terminal program, a vendor tool, an earlier instance of this service), or " +
-                "THIS process opening the same port twice because two connector entries name it with " +
-                "DIFFERENT line parameters — those are two buses by design, and the second one cannot open. " +
-                "Check the running processes first, then check that every connector on this segment declares " +
-                "the same baudRate/parity/dataBits/stopBits.",
+                "EXCLUSIVELY, so exactly one holder can have it. THREE things produce this. (1) THE OTHER " +
+                "ST4I HOST: St4i.EngineApi and St4i.EdgeService can each be configured onto this segment " +
+                "from their OWN connectors.json, they do not coordinate, and whichever started first holds " +
+                "the port — check that first, because it is the only one of the three that leaves both " +
+                "configurations looking correct. (2) ANOTHER APPLICATION on this machine — a terminal " +
+                "program, a vendor tool, an earlier instance of either host. (3) THIS process opening the " +
+                "same port twice, because two connector entries name it with DIFFERENT line parameters — " +
+                "those are two buses by design, and the second one cannot open; check that every connector " +
+                "on this segment declares the same baudRate/parity/dataBits/stopBits.",
 
             ArgumentException =>
                 $"{prefix} The name '{settings.PortName}' does NOT resolve to a serial port on this machine — " +

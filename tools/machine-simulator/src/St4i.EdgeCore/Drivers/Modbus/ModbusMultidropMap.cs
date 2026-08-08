@@ -1,4 +1,5 @@
 using System.Text.Json;
+using St4i.Connector.Abstractions.Models;
 
 namespace St4i.EdgeCore.Drivers.Modbus;
 
@@ -476,7 +477,8 @@ public static class ModbusMultidropMap
     /// <see cref="ValidateBusInstanceId"/> reserves only an all-<b>digit</b> suffix, so <c>line1:unitA</c> is a
     /// legal bus name and <c>line1:unitA:unit3</c> is its device, derived by <c>line1:unitA</c> and by nothing
     /// else. A namespace test written as "starts with, ends in digits" therefore hands one bus another's
-    /// devices; see <c>RtuBusConfiguration.IsInBusNamespace</c> for the test that does not.</para></summary>
+    /// devices; see <see cref="IsInBusNamespace"/> for the test that does not. (🔴 Task E-5 moved that
+    /// predicate here from <c>RtuBusConfiguration</c>; it is still stated exactly once.)</para></summary>
     public static string DeviceInstanceId(string busInstanceId, byte unitId) => $"{busInstanceId}{DeviceIdSuffixPrefix}{unitId}";
 
     /// <summary>The literal that separates a bus id from a device's unit id in
@@ -540,6 +542,84 @@ public static class ModbusMultidropMap
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// 🔴 Fix round 1 (D-7b I-2/I-3), corrected in fix round 2 (N-2/N-3), <b>moved here by Task E-5</b> —
+    /// <b>whether an instance id is one that bus <paramref name="busInstanceId"/> could itself have
+    /// derived</b>: the bus id (the degenerate single-device form) or <c>{bus}:unit{n}</c> for a decimal
+    /// <c>n</c>.
+    ///
+    /// <para><b>Stated ONCE because THREE callers must agree exactly:</b>
+    /// <c>RtuBusConfiguration.TryFindBlockedDevice</c> exempts this set from its collision check,
+    /// <c>RtuBusConfiguration.ReleaseOwnNamespace</c> removes it, and
+    /// <c>ModbusMultidropRegistration.SweepGhosts</c> — the <c>connectors.json</c> path — sweeps it. Fix round
+    /// 1 said "two callers" and left <c>SweepGhosts</c>'s inline copy in place, on the very fix that cited it
+    /// as sharing the rule; principle 3's own point, missed on the fix that quoted it. A drift between them is
+    /// either a refused edit the register pass was about to make work, or a claim let through to a refusal
+    /// after the store has been written, or one bus deleting another's registration.</para>
+    ///
+    /// <para>🔴 <b>Why it lives HERE and not on <c>RtuBusConfiguration</c>, where D-7b put it — Task E-5.</b>
+    /// <c>RtuBusConfiguration</c> is <c>St4i.EngineApi</c>'s, and <c>St4i.EdgeService</c> cannot reference that
+    /// assembly (blueprint §1: <c>NU1605</c> plus EngineApi's ASP.NET publish surface). That single reference
+    /// is what made <c>ModbusMultidropRegistration</c> a non-leaf and kept RS-485 out of the edge agent for the
+    /// whole of Đợt E — blueprint §9.6(a)'s shape exactly. It is NOT copied and there is no second version to
+    /// drift: the rule moved, and the three callers above all reach this one method. The move is downhill in
+    /// the reference graph, so nothing that could call it before has lost the ability.</para>
+    ///
+    /// <para>🔴 <b>Why it belongs here — and the E-5 REVIEW corrected this paragraph, which was a false
+    /// universal wrong at BOTH ends.</b> It read: <i>"every fact it reasons about — the separator
+    /// <see cref="DeviceIdSuffixPrefix"/>, the derived shape <see cref="LooksLikeADeviceInstanceId"/>, the
+    /// minting rule <see cref="DeviceInstanceId"/> — is declared in this type."</i> Enumerate the method
+    /// instead of reading it: it depends on <b>three</b> project symbols, and
+    /// <see cref="DriverKinds.Normalize"/> — called TWICE, and first — is declared in
+    /// <c>St4i.Connector.Abstractions</c>, not here. Meanwhile <see cref="DeviceInstanceId"/>, which that list
+    /// named, <b>is not called at all</b>. Over-inclusive and under-inclusive in one sentence.</para>
+    ///
+    /// <para><b>The accurate statement is narrower and still sufficient.</b> The two symbols that encode the
+    /// <c>{bus}:unit{n}</c> FORMAT this predicate decodes — <see cref="DeviceIdSuffixPrefix"/> and
+    /// <see cref="LooksLikeADeviceInstanceId"/> — are declared here, beside <see cref="DeviceInstanceId"/>,
+    /// which MINTS that same format. A predicate about a format belongs with the format. What made the move
+    /// <i>safe</i> is a different fact and must not be confused with it: the third symbol lives in the
+    /// contract assembly at the bottom of the reference graph, which every project in this solution already
+    /// references — so nothing that could call this before has lost the ability.</para>
+    ///
+    /// <para>🔴 <b>Fix round 2, N-2 — the earlier version was OVER-BROAD, and the doc that described it called
+    /// the property "a guarantee rather than a hope". It was neither.</b> It asked only that the id START with
+    /// <c>{bus}:unit</c> and END in digits, so bus <c>line1</c> claimed <c>line1:unitA:unit3</c> — which is a
+    /// legitimate device of the DIFFERENT bus <c>line1:unitA</c>, a legal bus name because
+    /// <see cref="ValidateBusInstanceId"/> reserves only an all-DIGIT suffix. Saving <c>line1</c> released that
+    /// device's machine claim while its driver kept polling and its store row stayed, with nothing said until a
+    /// restart.</para>
+    ///
+    /// <para><b>What the predicate actually promises now, stated as the arithmetic instead of as a
+    /// guarantee:</b> the separator must be the LAST <see cref="DeviceIdSuffixPrefix"/> in the string AND must
+    /// sit exactly where this bus's name ends, so an id can belong to at most one bus — the longest name that
+    /// can precede its final <c>:unit</c>. That is a property of this function, checkable by reading it, rather
+    /// than a property of a naming rule elsewhere that happens not to cover the case. The old wording rested on
+    /// <see cref="ValidateBusInstanceId"/> making <c>line1:unit3</c> underivable by anything but <c>line1</c>,
+    /// which is true, and then generalised it to a shape the rule never covered.</para>
+    ///
+    /// <para><b>Inherited, not invented:</b> the over-broad form was byte-identical to D-7a's
+    /// <c>SweepGhosts</c>, which is why N-3's redirection was part of that fix — closing it in one place and
+    /// leaving the original is the exact half-sweep principle 3 exists to refuse.</para>
+    /// </summary>
+    public static bool IsInBusNamespace(string busInstanceId, string instanceId)
+    {
+        var normalizedBus = DriverKinds.Normalize(busInstanceId);
+        var normalized = DriverKinds.Normalize(instanceId);
+
+        if (string.Equals(normalized, normalizedBus, StringComparison.Ordinal)) return true;
+
+        // The derived shape at all (a non-empty, all-decimal suffix after the LAST ":unit").
+        if (!LooksLikeADeviceInstanceId(normalized)) return false;
+
+        // 🔴 N-2 — and the separator must be THIS bus's, not any earlier one. `LastIndexOf` rather than
+        // `IndexOf`: DeviceInstanceId appends, so the separator a device's own bus contributed is always the
+        // last one. StartsWith stays because position alone does not prove the prefix matches (bus "abcde" and
+        // id "xyzab:unit3" agree on length and on nothing else).
+        return normalized.LastIndexOf(DeviceIdSuffixPrefix, StringComparison.Ordinal) == normalizedBus.Length
+               && normalized.StartsWith(normalizedBus, StringComparison.Ordinal);
     }
 
     /// <summary>

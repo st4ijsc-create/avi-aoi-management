@@ -86,8 +86,14 @@ namespace St4i.EdgeCore.Tests.Drivers.Modbus;
 ///
 /// <para><b>What this class does NOT do:</b> it never constructs a <c>ConnectorRegistry</c> or a
 /// <c>FleetHost</c>, so it cannot disturb the per-instance identity D-1 landed or the routing that makes
-/// <c>MachineDriverAvailability.AmbiguousDriver</c> unreachable — those live in <c>St4i.EngineApi</c> and are
-/// proved by <c>ModbusMultidropRegistrationTests</c> there. What it DOES check, from the driver side and for
+/// <c>MachineDriverAvailability.AmbiguousDriver</c> unreachable. 🔴 <b>E-5 census — "those live in
+/// St4i.EngineApi" was already false and is now false twice over:</b> <c>ConnectorRegistry</c> moved to
+/// <c>St4i.EdgeCore</c> in E-2, <c>FleetHost</c> became a thin shell over the <c>internal</c>
+/// <c>FleetCore</c> there, and E-5 moved the fan-out itself (<c>ModbusMultidropRegistration</c>) into
+/// <c>St4i.EdgeCore.Config</c>. What is accurate is where the PROOFS are, and that has not moved:
+/// <c>ModbusMultidropRegistrationTests</c> in <c>St4i.EngineApi.Tests</c> (which is where a real
+/// <c>FleetHost</c> can be stood up) and, for the edge agent, <c>ModbusMultidropAgentTests</c> in this
+/// assembly. What it DOES check, from the driver side and for
 /// the first time from an external harness, is the invariant that guard depends on: two drivers on one bus have
 /// distinct <see cref="IDeviceDriver.Id"/>s and each speaks for exactly one machine code — see
 /// <see cref="TwoDriversOnOneBusHaveDistinctIds_AndAReadingCarriesExactlyItsOwnMachineCode"/>.</para>

@@ -335,15 +335,26 @@ public sealed class SerialPortBusLinkTests
         Assert.DoesNotContain("already held", absent, StringComparison.Ordinal);
         Assert.DoesNotContain("does NOT resolve", absent, StringComparison.Ordinal);
 
-        // ── HELD: the port exists and someone has it. 🔴 It names BOTH holders, and the second one is the one
-        // this product can create itself: two connector entries naming one port with DIFFERENT line parameters
-        // are two bus keys by design (CreateBusKey folds every parameter in), so the second open lands here.
-        // Telling that operator to hunt "another application" would send them after a process that does not
-        // exist while their own configuration file holds the answer.
+        // ── HELD: the port exists and someone has it. 🔴 It names ALL THREE holders, and two of the three are
+        // states this product creates itself: two connector entries naming one port with DIFFERENT line
+        // parameters are two bus keys by design (CreateBusKey folds every parameter in), so the second open
+        // lands here — and, since Task E-5, THE OTHER ST4I HOST, because St4i.EdgeService gained its own
+        // configured path from connectors.json to a serial open and the two hosts do not coordinate.
+        //
+        // 🔴 E-5 review F1 — the third clause is asserted here rather than left to the string, because it is
+        // the one an operator cannot deduce: the other two leave a visible wrong thing (a stray process, a
+        // mismatched parameter), while "the sibling host started first" leaves BOTH configuration files
+        // looking correct. Telling that operator to hunt "another application" sends them after a process
+        // that does not exist. This assertion is also what stops the clause being dropped by someone
+        // shortening the message — it was two clauses for two batches and the third is the newest and least
+        // obvious.
         Assert.Contains("already held", held, StringComparison.Ordinal);
         Assert.Contains("EXCLUSIVELY", held, StringComparison.Ordinal);
-        Assert.Contains("another application", held, StringComparison.Ordinal);
+        Assert.Contains("ANOTHER APPLICATION", held, StringComparison.Ordinal);
         Assert.Contains("DIFFERENT line parameters", held, StringComparison.Ordinal);
+        Assert.Contains("St4i.EdgeService", held, StringComparison.Ordinal);
+        Assert.Contains("St4i.EngineApi", held, StringComparison.Ordinal);
+        Assert.Contains("do not coordinate", held, StringComparison.Ordinal);
         Assert.DoesNotContain("NOT PRESENT", held, StringComparison.Ordinal);
         Assert.DoesNotContain("does NOT resolve", held, StringComparison.Ordinal);
 

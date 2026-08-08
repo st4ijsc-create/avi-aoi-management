@@ -2,6 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Drivers;
+using St4i.EdgeCore.Drivers.Modbus;
 using St4i.Connector.Abstractions;
 using St4i.EdgeCore.Drivers.Simulators;
 using St4i.EdgeCore.Engine;
@@ -205,9 +206,18 @@ public sealed class EdgeWorker : BackgroundService
         var eventBus = new EventBus();
         var transport = BuildLiveOrDemoTransport();
 
+        // 🔴 Task E-5 — the shared, reference-counted RS-485 bus registry: N devices on one line hold N
+        // leases on ONE open port, and the LAST lease released closes it. Owned HERE, by the host, and never
+        // constructed inside the dispatch — the same rule EngineApi follows with its DI singleton, and for
+        // the same reason: a physical line's lifetime is the process's, not one registration pass's.
+        // `await using` so a bus still holding a port at shutdown is torn down rather than left to the
+        // finalizer; a lease released after that is a documented no-op.
+        await using var modbusBuses = new ModbusBusRegistry();
+
         // 🔴 Task E-3 — the connectors.json read path. Null (absent file / empty array / every entry skipped)
         // is the pre-E-3 world, and it is the SAME null the simulated-only run has always effectively passed.
-        var connectors = EdgeConnectors.Build(EdgeConnectors.ResolvePath(_options.ConnectorsPath), _logger);
+        var connectors = EdgeConnectors.Build(
+            EdgeConnectors.ResolvePath(_options.ConnectorsPath), _logger, modbusBuses);
 
         // 🔴 Task E-3 — one driver and one pipeline became N. See EdgeAgentPipelines for why an edge agent
         // gets THIS type and not FleetCore (which is `internal` precisely so this host cannot reach the

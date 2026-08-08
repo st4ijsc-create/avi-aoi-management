@@ -275,7 +275,7 @@ public static class RtuBusConfiguration
                 // device DROPPED at unit 5 whose machine moves to unit 1 is not in the new set, but its
                 // registration is about to be released), and exempting a wider one would let a genuine outside
                 // claim through to a refusal after the store had been written.
-                if (IsInBusNamespace(bus.BusInstanceId, binding.InstanceId)) continue;
+                if (ModbusMultidropMap.IsInBusNamespace(bus.BusInstanceId, binding.InstanceId)) continue;
 
                 incumbentInstanceId = binding.InstanceId;
                 reason =
@@ -290,7 +290,7 @@ public static class RtuBusConfiguration
             // the claim check: re-saving a bus finds its own machines in the roster, every time, and that is
             // the ordinary update path rather than a collision. `RegisterMachine` will simply answer false for
             // them, which is the documented "already present" outcome and not a failure.
-            if (bindings.Any(b => IsInBusNamespace(bus.BusInstanceId, b.InstanceId)
+            if (bindings.Any(b => ModbusMultidropMap.IsInBusNamespace(bus.BusInstanceId, b.InstanceId)
                                   && string.Equals(b.MachineCode, device.MachineCode, StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
@@ -319,57 +319,21 @@ public static class RtuBusConfiguration
         return false;
     }
 
-    /// <summary>
-    /// 🔴 Fix round 1 (I-2/I-3), corrected in fix round 2 (N-2/N-3) — <b>whether an instance id is one that
-    /// bus <paramref name="busInstanceId"/> could itself have derived</b>: the bus id (the degenerate
-    /// single-device form) or <c>{bus}:unit{n}</c> for a decimal <c>n</c>.
-    ///
-    /// <para><b>Stated ONCE because THREE callers must agree exactly:</b> <see cref="TryFindBlockedDevice"/>
-    /// exempts this set from its collision check, <see cref="ReleaseOwnNamespace"/> removes it, and
-    /// <c>ModbusMultidropRegistration.SweepGhosts</c> — the <c>connectors.json</c> path — sweeps it. Fix round
-    /// 1 said "two callers" and left <c>SweepGhosts</c>'s inline copy in place, on the very fix that cited it
-    /// as sharing the rule; principle 3's own point, missed on the fix that quoted it. All three now call
-    /// here. A drift between them is either a refused edit the register pass was about to make work, or a
-    /// claim let through to a refusal after the store has been written, or one bus deleting another's
-    /// registration.</para>
-    ///
-    /// <para>🔴 <b>Fix round 2, N-2 — the earlier version was OVER-BROAD, and the doc that described it called
-    /// the property "a guarantee rather than a hope". It was neither.</b> It asked only that the id START with
-    /// <c>{bus}:unit</c> and END in digits, so bus <c>line1</c> claimed <c>line1:unitA:unit3</c> — which is a
-    /// legitimate device of the DIFFERENT bus <c>line1:unitA</c>, a legal bus name because
-    /// <see cref="ModbusMultidropMap.ValidateBusInstanceId"/> reserves only an all-DIGIT suffix. Saving
-    /// <c>line1</c> released that device's machine claim while its driver kept polling and its store row
-    /// stayed, with nothing said until a restart.</para>
-    ///
-    /// <para><b>What the predicate actually promises now, stated as the arithmetic instead of as a
-    /// guarantee:</b> the separator must be the LAST <c>:unit</c> in the string AND must sit exactly where
-    /// this bus's name ends, so an id can belong to at most one bus — the longest name that can precede its
-    /// final <c>:unit</c>. That is a property of this function, checkable by reading it, rather than a
-    /// property of a naming rule elsewhere that happens not to cover the case. The old wording rested on
-    /// <c>ValidateBusInstanceId</c> making <c>line1:unit3</c> underivable by anything but <c>line1</c>, which
-    /// is true, and then generalised it to a shape the rule never covered.</para>
-    ///
-    /// <para><b>Inherited, not invented:</b> the over-broad form was byte-identical to D-7a's
-    /// <c>SweepGhosts</c>, which is why N-3's redirection is part of this fix — closing it in one place and
-    /// leaving the original is the exact half-sweep principle 3 exists to refuse.</para>
-    /// </summary>
-    public static bool IsInBusNamespace(string busInstanceId, string instanceId)
-    {
-        var normalizedBus = DriverKinds.Normalize(busInstanceId);
-        var normalized = DriverKinds.Normalize(instanceId);
-
-        if (string.Equals(normalized, normalizedBus, StringComparison.Ordinal)) return true;
-
-        // The derived shape at all (a non-empty, all-decimal suffix after the LAST ":unit").
-        if (!ModbusMultidropMap.LooksLikeADeviceInstanceId(normalized)) return false;
-
-        // 🔴 N-2 — and the separator must be THIS bus's, not any earlier one. `LastIndexOf` rather than
-        // `IndexOf`: `ModbusMultidropMap.DeviceInstanceId` appends, so the separator a device's own bus
-        // contributed is always the last one. StartsWith stays because position alone does not prove the
-        // prefix matches (bus "abcde" and id "xyzab:unit3" agree on length and on nothing else).
-        return normalized.LastIndexOf(ModbusMultidropMap.DeviceIdSuffixPrefix, StringComparison.Ordinal) == normalizedBus.Length
-               && normalized.StartsWith(normalizedBus, StringComparison.Ordinal);
-    }
+    // 🔴 Task E-5 — `IsInBusNamespace` MOVED to St4i.EdgeCore's ModbusMultidropMap. This note stands where
+    // the definition used to; the three call sites in this file now name the new home directly.
+    //
+    // It was the single reference that made ModbusMultidropRegistration a non-leaf, and therefore the single
+    // reference that kept RS-485 out of St4i.EdgeService for the whole of Đợt E: that host cannot reference
+    // St4i.EngineApi (NU1605 + the ASP.NET publish surface), and the fan-out's ghost sweep asks this
+    // predicate.
+    //
+    // It is NOT duplicated — still stated exactly once, for the same three callers. Its new home declares the
+    // {bus}:unit{n} FORMAT it decodes (DeviceIdSuffixPrefix, LooksLikeADeviceInstanceId); its third
+    // dependency, DriverKinds.Normalize, is St4i.Connector.Abstractions'. An earlier version of this note
+    // claimed the new home declared EVERY fact the predicate reasons about, and listed DeviceInstanceId,
+    // which it never calls — corrected by the E-5 review.
+    //
+    // See ModbusMultidropMap.IsInBusNamespace for the arithmetic and for what it does and does not promise.
 
     /// <summary>
     /// 🔴 <b>Fix round 1, review I-2 — releases every registration in this bus's own namespace, immediately
@@ -386,8 +350,8 @@ public static class RtuBusConfiguration
     /// from the map has its store row deleted by <see cref="ConnectorConfigStore.SaveBusAsync"/> but used to
     /// keep its registry claim until the process restarted, so the machine could be served by nothing.
     /// <c>ModbusMultidropRegistration.SweepGhosts</c> already did this for the <c>connectors.json</c> path;
-    /// this is the same rule for the endpoint path, sharing <see cref="IsInBusNamespace"/> rather than
-    /// restating it.</para>
+    /// this is the same rule for the endpoint path, sharing
+    /// <see cref="ModbusMultidropMap.IsInBusNamespace"/> rather than restating it.</para>
     ///
     /// <para><b>Cost, stated:</b> a save that later fails cannot put these entries back — the store is
     /// authoritative and the registry is rebuilt from it at the next start. That was already true of every
@@ -405,7 +369,7 @@ public static class RtuBusConfiguration
         var released = 0;
         foreach (var binding in registry.SnapshotBindings())
         {
-            if (!IsInBusNamespace(busInstanceId, binding.InstanceId)) continue;
+            if (!ModbusMultidropMap.IsInBusNamespace(busInstanceId, binding.InstanceId)) continue;
             if (registry.Unregister(binding.InstanceId)) released++;
         }
 

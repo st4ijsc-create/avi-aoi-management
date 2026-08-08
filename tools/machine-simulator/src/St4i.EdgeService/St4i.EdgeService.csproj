@@ -30,11 +30,30 @@
            - "ConnectorRegistry and FleetHost are St4i.EngineApi types" — ConnectorRegistry moved in E-2.
              FleetHost is still EngineApi's, and FleetCore — the lifecycle it shells — is now `internal` on
              St4i.EdgeCore precisely so THIS host cannot reach its unguarded write path (blueprint §3).
-           - "no code path here can open a COM port today" — STILL TRUE, and still for a scoping reason
-             rather than a capability one: an RTU entry in connectors.json is refused BY NAME here, because
-             the multidrop fan-out (ModbusMultidropRegistration → RtuBusConfiguration) has not moved and is
-             not a leaf. See EdgeConnectors' own remarks and blueprint §11. So this reference still only
-             makes the serial transport AVAILABLE.
+           - "no code path here can open a COM port today" — STILL TRUE AFTER E-3, and still for a scoping
+             reason rather than a capability one: an RTU entry in connectors.json was refused BY NAME here,
+             because the multidrop fan-out (ModbusMultidropRegistration → RtuBusConfiguration) had not moved
+             and was not a leaf.
+
+         🔴 TASK E-5 CLOSED THAT LAST LINE, AND WITH IT THE REASON ĐỢT E EXISTED. This host now has a
+         CONFIGURED path from connectors.json to a serial open: an entry declaring `"transport":
+         "rtu-serial"` resolves through ModbusRtuBusPlan (moved to St4i.EdgeCore.Serial), fans out through
+         ModbusMultidropRegistration (moved to St4i.EdgeCore.Config), and hands N ModbusRtuDrivers one
+         SerialPortBusLink over one COM port. The single reference that made the fan-out un-moveable was
+         RtuBusConfiguration.IsInBusNamespace, which moved to ModbusMultidropMap — moved, not copied; the
+         rule is still stated exactly once. So this ProjectReference is no longer "availability only": it is
+         the transport this host actually opens.
+
+         WHAT THAT COSTS, said here because it is the operational consequence and not a feature: a COM port
+         admits ONE process. If St4i.EdgeService holds COM3, St4i.EngineApi cannot open it, and neither can
+         write to those machines through it — blueprint §2's table and §3's write-direction limit, now
+         reachable by configuration rather than only in principle. Two connectors.json files on one machine
+         naming one port is an operator decision this product does not arbitrate.
+
+         AND WHAT IT DOES NOT CHANGE: the serial transport has still never carried a frame against real
+         hardware. Every RTU test in this repository runs on D-2's in-memory paired link or a loopback
+         socket; there is no adapter on any build machine, and only auto-direction (auto-DE) RS-485 adapters
+         are supported at all (blueprint §9).
 
          Stated here, and asserted in the honest form by
          SerialDependencyScopingTests.EdgeServiceDeployment_CarriesSystemIoPorts_…, so that the shipped

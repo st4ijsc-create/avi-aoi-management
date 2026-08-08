@@ -30,13 +30,22 @@ namespace St4i.EdgeService.Tests;
 /// — see task-4-report.md. It compiles. There is no <c>CS0122</c> to be had here, which is the entire
 /// difference between this claim and that one.)</para>
 ///
-/// <para>🔴 <b>The TRUE statement, which README §24 now carries instead:</b> all three hosts can reach the
-/// serial open; what differs is that only <c>St4i.EngineApi</c> has a configured path from
-/// <c>connectors.json</c> to it. <c>St4i.EdgeService</c> refuses an RTU entry BY NAME — a decision, pinned
-/// by <c>EdgeWorkerConnectorsTests.AnRtuBusEntry_IsRefusedByName_RatherThanSilentlyBuildingASecondFanOut</c>
-/// — and the WPF shell has no connector registry at all. That is a statement about CONFIGURATION, and it has
-/// a different remedy and a different risk profile from a statement about capability: "cannot" needs no
-/// guard, "is not configured to" needs the refusal to stay.</para>
+/// <para>🔴 <b>The TRUE statement, which README §24 carries:</b> all three hosts can reach the serial open;
+/// what differs is which of them has a CONFIGURED path from <c>connectors.json</c> to it.</para>
+///
+/// <para>🔴 <b>Task E-5 changed that answer, and it is worth reading the change rather than the old
+/// sentence.</b> Until E-5 only <c>St4i.EngineApi</c> had such a path and this host refused an RTU entry by
+/// name. It no longer does: <c>EdgeConnectors</c> resolves the bus through <c>ModbusRtuBusPlan</c> and fans
+/// it out through the same <c>ModbusMultidropRegistration</c> EngineApi calls, so <b>two of the three hosts
+/// now have a configured path to a COM port</b>, and the WPF shell — which has no connector registry at all
+/// — is the only one that does not. The test below is unchanged and still measures the same thing, because
+/// it always asserted CAPABILITY and never configuration; that is exactly why it did not go red when the
+/// prose around it stopped being true (whole-branch review §12.9's lesson, and this class is where it was
+/// learnt).</para>
+///
+/// <para>What survives untouched is why the distinction matters: "cannot" needs no guard, "is not configured
+/// to" needs the configuration to stay honest — and now that BOTH server-side hosts can be configured onto
+/// one wire, the question "which process holds COM3" has a real answer for the first time.</para>
 ///
 /// <para><b>Why this matters beyond tidiness.</b> Blueprint §2's whole shape rests on the OS refusing a
 /// second open of a COM port — "the second process cannot open the port, by accident of the operating
