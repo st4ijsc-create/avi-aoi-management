@@ -231,6 +231,12 @@ Bốn khẳng định cũ **nằm gọn trong ngữ liệu vừa được thêm 
 
 **(a) Có thứ mục ruỗng vì THIẾU MỘT PHÉP KIỂM, không vì thiếu một lượt quét.** Bốn `cref` xuyên assembly trỏ tới `FleetHost` nằm trong file EdgeCore — **chúng chưa bao giờ phân giải được, ở bất kỳ đợt nào**. Chúng sống sót vì **không project nào bật `GenerateDocumentationFile`**, nên `cref` không bao giờ được trình biên dịch kiểm. *Liệt kê thêm quy tắc sẽ không bắt được lớp này; bật sinh tài liệu cho các assembly hợp đồng thì có.* **Trước khi thêm một quy tắc quét, hỏi xem thứ đang mục có đáng lẽ phải do một phép kiểm bắt hay không.**
 
+🔴 **ĐÃ ĐO, 2026-08-08 — và con số lớn hơn bốn.** Bật `GenerateDocumentationFile` kèm `NoWarn CS1591` trên **riêng `St4i.Connector.Abstractions`** làm lộ **32 cảnh báo `CS1574`** ở **16 chỗ** (`DeviceReading`, `DisposeAsync`, `DriverKind`, `Genealogy`, `Load`, `TelemetryNumeric`, `TryGet`, `Value`). **Đó là assembly hợp đồng — thứ tác giả driver bên thứ ba đọc trước tiên** — và chưa từng có gì kiểm nó, ở bất kỳ đợt nào.
+
+Thí nghiệm đã hoàn nguyên, không commit: 32 cảnh báo ấy là **32 lỗi thật cần sửa, không phải nhiễu cần tắt**, nên bật cờ mà không sửa sẽ đẩy `EXPECT_WARNINGS` từ 116 lên 148 và biến một phép kiểm mới thành một khoản nợ mới. **Việc đúng là một hạng mục riêng: bật cờ cho các assembly hợp đồng, SỬA cả 16 chỗ, và cảnh báo quay về 116** — lúc đó con số vẫn mang đúng một nghĩa và lớp lỗi này có người canh vĩnh viễn.
+
+*Bản thân phép đo này là ví dụ cho chính quy tắc: một lượt quét theo quy tắc sẽ không bao giờ tìm ra 16 chỗ đó, vì chúng không sai theo một chủ đề nào — chúng chỉ đơn giản là **không phân giải được**, và chỉ một trình biên dịch mới biết điều đó.*
+
 **(b) 🔴 Artifact ít được quét nhất trong một thay đổi là LỜI BIỆN MINH CỦA CHÍNH TÁC GIẢ.** Ba lần trong hai đợt, một bản sửa ship kèm **đúng hình dạng nó đang sửa** — và cả ba lần lỗi nằm trong **phần văn xuôi giải thích gắn vào bản sửa**, không nằm trong logic của nó:
 - một lời tổng quát hoá sai phủ năm artifact, viết bằng giọng của một phép đo;
 - một chú thích sai **về chính bài test nó đứng cạnh**;
