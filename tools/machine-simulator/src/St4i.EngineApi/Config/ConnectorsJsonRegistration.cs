@@ -210,7 +210,7 @@ public static class ConnectorsJsonRegistration
     /// and the configuration actually running" one thing rather than two.</para>
     ///
     /// <para><b>A bus that will not parse disables THAT BUS and nothing else</b>, logged with the reason —
-    /// the same posture <see cref="ModbusMultidropRegistration.RegisterAll(string,string,IConnectorFactory,ConnectorRegistry,ILogger)"/>
+    /// the same posture <see cref="ModbusMultidropRegistration"/>
     /// takes for a map that will not fan out, and the same posture every other startup config path in this
     /// product takes. A second RTU bus in the same file, and every TCP/OPC-UA connector, is unaffected.</para>
     ///

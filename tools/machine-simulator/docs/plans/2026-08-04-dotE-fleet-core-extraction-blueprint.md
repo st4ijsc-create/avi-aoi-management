@@ -1327,3 +1327,44 @@ E-5 biến thành bên-gọi-không-ai-xem khi bỏ `NullTestLogger.Instance` �
 - **Census E-5 chạy như một hành động riêng, sau khi cổng xanh** (§8.1), theo hai quy tắc: *"host nào có đường
   đã cấu hình tới một cổng COM"* và *"assembly nào sở hữu `ModbusMultidropRegistration` / `ModbusRtuBusPlan` /
   `IsInBusNamespace`"*, trên `src/` + `tests/` + `*.md`. Kết quả ở §14.7.
+
+### 14.7 🔴 Census chạy SAU khi cổng xanh — bốn chỗ, và ba trong bốn không do E-5 làm sai
+
+Chạy như **một hành động riêng**, sau commit `c0fd84b8`, trên `src/` + `tests/` + `*.md` + `*.csproj`, theo
+**hai** quy tắc (§8.1's "liệt kê CÁC QUY TẮC"):
+
+- **R1** — *"host nào có ĐƯỜNG ĐÃ CẤU HÌNH tới một cổng COM"*.
+- **R2** — *"assembly nào sở hữu `ModbusMultidropRegistration` / `ModbusRtuBusPlan` / `IsInBusNamespace`"*.
+
+R1 tìm ra bốn chỗ **trong lúc đang sửa** (đã nằm trong commit): README §20.5/§23.6/§24.2/§24.3/§24.5 (EN+VI),
+`St4i.EdgeService.csproj`, `EdgeServiceSerialReachabilityTests`, và **một chuỗi thông điệp khẳng định SỐNG**
+trong `SerialDependencyScopingTests` (*"an RTU entry is refused by name, so no configured path here reaches a
+COM port"*) — đúng bài học §13.5 mục 2: **chuỗi thông điệp là mã, không phải chú thích**.
+
+R2, chạy sau commit, tìm ra bốn chỗ nữa:
+
+| # | Chỗ | Ai làm nó sai |
+|---|---|---|
+| 1 | `ConnectorsJsonRegistration.cs:213` — `cref` mang **chữ ký cũ** (`…,ConnectorRegistry,ILogger)`) | **E-5.** Không phân giải được, và **không phép kiểm nào bắt** vì `GenerateDocumentationFile` vẫn tắt — §13.2's M6 nguyên văn. |
+| 2 | `ModbusMultidropRegistration.cs` — chú thích sweep trỏ *"See RtuBusConfiguration.IsInBusNamespace"* | **E-5.** Con trỏ tới một thành viên chính E-5 vừa xoá; nó **đi cùng file trong cuộc dời** — §13.5 mục 1 ở dạng "dời" chứ "tách". |
+| 3 | `RtuBusConfiguration.cs` — E-5 viết *"this is the ONLY trace it leaves here"*, trong khi ba call site cùng file cũng nhắc tên mới | **E-5.** Một khẳng định phổ quát, sai, **nằm trong chính lời biện minh của bản sửa** — §8.1(b) nguyên văn, bắt được bằng cách liệt kê thay vì đọc lại. |
+| 4 | `ModbusRtuMultidropConformanceTests.cs:89` — *"`ConnectorRegistry`/`FleetHost` … those live in `St4i.EngineApi`"* | **KHÔNG PHẢI E-5.** Sai từ **E-2** (registry dời xuống EdgeCore) và giờ sai lần nữa vì fan-out cũng đã dời. Nằm trong ngữ liệu §12.9 vừa thêm và trong 25 file của §13.2 — **và vẫn thoát cả hai lượt**, vì quy tắc của E-4 là "host nào chủ trì connector nào" và quy tắc của review là "kiểu nào sở hữu cái khoá". Chỗ này ở trên trục thứ ba: *"assembly nào sở hữu kiểu này"* nói về **kiểu không phải khoá**. |
+
+🔴 **Ba trong bốn là của E-5, và cả ba nằm trong VĂN XUÔI GIẢI THÍCH gắn vào bản sửa, không nằm trong logic
+của nó** — đúng lớp lỗi §8.1(b) mô tả, lần thứ tư trong ba đợt. Khác biệt lần này: **tác giả bắt được, không
+phải reviewer**, và thứ bắt được là **phép quét chạy như một hành động riêng sau khi cổng xanh**, không phải
+sự cẩn thận.
+
+🔴 **Và một khẳng định phổ quát nữa đã bị phủ định TRƯỚC khi commit, ghi ra vì nó là ca sạch nhất:** bản đầu
+của `ModbusMultidropAgentTests.TheGhostSweep_RunsWithNoLogCallbacksAtAll_…` viết *"fold the Unregister call
+into the warning's argument list and this test goes red while every other test of the sweep — all of which
+supply a logger — stays green"*. **Sai.** Đột biến ấy giết **ba** test, vì chính E-5 đã biến hai bên gọi
+EngineApi thành không-ai-xem khi bỏ `NullTestLogger.Instance`; **một** test sống sót, và đó mới là cái có
+callback. Câu văn sai **theo hướng tâng bốc bài test của chính mình**; phép liệt kê tốn hai phút.
+
+🔴 **Cái phép quét cơ học BỎ SÓT, báo cáo theo yêu cầu:** mục #4 chỉ ra được vì R2 nêu tên **ba kiểu cụ thể**;
+một `grep` theo *từ ngữ* của R1 (`refus`, `COM port`, `only Modbus TCP`) **không tìm ra nó** — câu ấy không
+dùng từ nào trong số đó. Ngược lại, R1 là quy tắc duy nhất tìm ra chuỗi thông điệp sống trong
+`SerialDependencyScopingTests`, mà R2 sẽ bỏ qua vì nó không nêu tên kiểu nào trong ba kiểu. **Hai quy tắc,
+hai tập kết quả gần như rời nhau** — bằng chứng trực tiếp cho phần thêm của §8.1: *liệt kê CÁC quy tắc, không
+chạy MỘT quy tắc.*

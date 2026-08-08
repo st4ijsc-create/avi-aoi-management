@@ -319,8 +319,8 @@ public static class RtuBusConfiguration
         return false;
     }
 
-    // 🔴 Task E-5 — `IsInBusNamespace` MOVED to St4i.EdgeCore's ModbusMultidropMap, and this is the only
-    // trace it leaves here. It was the single reference that made ModbusMultidropRegistration a non-leaf, so
+    // 🔴 Task E-5 — `IsInBusNamespace` MOVED to St4i.EdgeCore's ModbusMultidropMap. This note stands where
+    // the definition used to; the three call sites in this file now name the new home directly. It was the single reference that made ModbusMultidropRegistration a non-leaf, so
     // it was the single reference that kept RS-485 out of St4i.EdgeService for the whole of Đợt E: that host
     // cannot reference St4i.EngineApi (NU1605 + the ASP.NET publish surface), and the fan-out's ghost sweep
     // asks this predicate. It is NOT duplicated — the rule is still stated exactly once, now on the type that

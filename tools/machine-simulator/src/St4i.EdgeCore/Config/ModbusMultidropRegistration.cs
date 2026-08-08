@@ -316,7 +316,9 @@ public static class ModbusMultidropRegistration
             // also OVER-BROAD in the same way: they asked only that an id start with "{bus}:unit" and end in
             // digits, so bus `line1` swept `line1:unitA:unit3` — a device of the different, legally-named bus
             // `line1:unitA`. Redirected here rather than fixed twice, so the correction reaches the path it
-            // was inherited from. See RtuBusConfiguration.IsInBusNamespace for the arithmetic and for what it
+            // was inherited from. (Task E-5 moved the rule again, off RtuBusConfiguration and onto
+            // ModbusMultidropMap, so this file could leave St4i.EngineApi at all; still one statement, still
+            // three callers.) See ModbusMultidropMap.IsInBusNamespace for the arithmetic and for what it
             // does and does not promise.
             if (!ModbusMultidropMap.IsInBusNamespace(busInstanceId, binding.InstanceId)) continue;
 
