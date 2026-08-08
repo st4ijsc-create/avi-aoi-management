@@ -70,6 +70,8 @@ function hangCuaAnhEm(bytes: number): SharedLeaseRow {
     reclaimer: null,
     acquiredAtMs: Date.now() - 1000,
     updatedAtMs: Date.now() - 1000,
+  /** ★ Pha 7 Task 5 (B) — hàng GIẢ do lưới dựng ⇒ BIẾT là không cắt gì. */
+    identityTruncated: [],
   };
 }
 

@@ -310,6 +310,15 @@ async function layGateway(): Promise<SharedLedgerGateway | null> {
               reclaimer: r.reclaimer,
               acquiredAt: new Date(r.acquiredAtMs),
               updatedAt: new Date(r.updatedAtMs),
+              /**
+               * ★ Pha 7 Task 5 (B) — lời khai cắt danh tính **đi cùng hàng xuống DB**.
+               * ⚠ `?? []` chứ **KHÔNG** `?? null`: hàng do **tiến trình NÀY** dựng luôn đi qua
+               *   `rowFromLease`/`rowFromBaseline`, tức nó **luôn biết** — nên một `null` ở đây là
+               *   không thể, và ghi `null` sẽ là tự khai "ta không biết" về chính lời khai của ta.
+               *   `NULL` chỉ được sinh ra bởi một tiến trình **CŨ** (chưa có cột), và đó đúng là
+               *   thứ `unknownIdentityRows` phải nhìn thấy.
+               */
+              identityTruncated: r.identityTruncated ?? [],
             })),
           )
           .onConflictDoUpdate({
@@ -336,6 +345,13 @@ async function layGateway(): Promise<SharedLedgerGateway | null> {
               refCount: sqlExcluded("refCount"),
               reclaimer: sqlExcluded("reclaimer"),
               updatedAt: sqlExcluded("updatedAt"),
+              /**
+               * ★ Pha 7 Task 5 (B) — **PHẢI có trong danh sách ghi đè.** Thiếu nó thì một hàng
+               * từng bị cắt (đường dẫn model dài) rồi sau đó **hết bị cắt** (đổi sang thư mục
+               * ngắn) vẫn mang lời khai CŨ vĩnh viễn — một cờ **luôn bật là một cờ không còn
+               * thông tin**, đúng lớp nhiễu I-3 mà `demDanhTinhBiCat()` được viết ra để tránh.
+               */
+              identityTruncated: sqlExcluded("identityTruncated"),
             },
           });
       }
@@ -357,6 +373,16 @@ async function layGateway(): Promise<SharedLedgerGateway | null> {
         reclaimer: (r.reclaimer ?? null) as SharedLeaseRow["reclaimer"],
         acquiredAtMs: r.acquiredAt.getTime(),
         updatedAtMs: r.updatedAt.getTime(),
+        /**
+         * ★★★ Pha 7 Task 5 (B) — **BA GIÁ TRỊ ĐI QUA ĐÂY NGUYÊN VẸN, KHÔNG ÉP VỀ HAI.**
+         * ⚠⚠ `?? null` **KHÔNG** phải `?? []`: cột `NULL` nghĩa là *"người ghi hàng này chưa biết
+         *   cột ấy"* — ép nó thành `[]` là khai **"đã kiểm, không cắt gì"** thay cho một tiến trình
+         *   chưa từng nói câu đó. Đó đúng bằng việc đặt `DEFAULT '[]'` ở DDL, thứ chủ dự án đã
+         *   duyệt là **KHÔNG làm**, chỉ dời chỗ nói dối từ DB lên đây.
+         * ⚠ Lọc phần tử không phải chuỗi: cột là `jsonb` nên một hàng do tay người sửa có thể mang
+         *   `{"a":1}` hay `[1,2]`. Giá trị lạ ⇒ **`null` (KHÔNG BIẾT)**, không phải `[]`.
+         */
+        identityTruncated: docCoCat(r.identityTruncated),
       }));
     },
   };
@@ -368,6 +394,21 @@ async function layGateway(): Promise<SharedLedgerGateway | null> {
  * `console.warn` mỗi phút cho tới hết đời tiến trình, và một cảnh báo lặp vô hạn là một cảnh báo
  * bị lọc bỏ. Cờ được đặt lại ở lượt đồng bộ THÀNH CÔNG tiếp theo.
  */
+/**
+ * ★★★ Pha 7 Task 5 (B) — **BẢN DỊCH DUY NHẤT: cột `jsonb` → lời khai BA GIÁ TRỊ.**
+ *
+ * ⚠⚠ `null` ra `null` (**KHÔNG BIẾT**), mảng chuỗi ra mảng chuỗi (**đã khai**), **mọi thứ khác
+ * cũng ra `null`** — không phải `[]`. Vì `[]` là một **LỜI KHẲNG ĐỊNH** (*"tôi đã kiểm, không cắt
+ * gì"*), và ta không được nói câu ấy thay cho một hàng mà ta không đọc nổi.
+ * ⚠ Đây là chỗ **DUY NHẤT** dịch cột này; đừng viết bản thứ hai ở người gọi.
+ */
+function docCoCat(v: unknown): readonly string[] | null {
+  if (v === null || v === undefined) return null;
+  if (!Array.isArray(v)) return null;
+  if (!v.every((x) => typeof x === "string")) return null;
+  return Object.freeze([...(v as string[])]);
+}
+
 function keuMotLan(err: unknown): void {
   if (daKeuHong) return;
   daKeuHong = true;

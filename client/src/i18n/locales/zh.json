@@ -16986,6 +16986,8 @@
     "excludesBaseline": "该数字已扣除整个设备基线——0 并不表示显卡已被完全解释",
     "foreign": "兄弟进程",
     "holders": "账本记录的占用",
+    "identityTruncated": "发布到共享账本时名称被截断——这不是完整名称",
+    "identityUnknown": "未知该名称是否被截断——该行由旧版本进程写入",
     "local": "本地",
     "noCommandReaches": "没有指令能触及",
     "noTickYet": "尚无任何节拍",
@@ -17005,6 +17007,7 @@
     "ttlExpired": "已超过 TTL——没有任何节拍会自动回收，必须下达指令",
     "unattributedBytes": "账本之外",
     "unknown": "未知",
+    "unknownIdentityRows": "无法确定身份是否被截断的行（写入方为旧版本）",
     "unledgered": "账本之外运行（估算）",
     "untrusted": "正在劣化",
     "waits": "有等待与重试"

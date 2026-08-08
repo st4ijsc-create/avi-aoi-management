@@ -315,6 +315,16 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
     if ((s.ledger.foreign.truncatedIdentityWrites ?? 0) > 0) {
       d.push(noi(lang, "foreignTruncatedIdentity", { count: String(s.ledger.foreign.truncatedIdentityWrites) }));
     }
+    /**
+     * ★★★ Pha 7 Task 5 (B) — **VẾ THỨ BA, và nó phải có DÒNG RIÊNG.** `unknownIdentityRows > 0`
+     * nghĩa là còn một tiến trình bản **CŨ** đang ghi vào sổ chung ⇒ với những hàng ấy ta **không
+     * có bằng chứng** tên đủ hay cụt. Im lặng ở đây = Agent đọc `truncatedIdentityWrites = 0` rồi
+     * kết luận *"mọi danh tính đều thật"* — đúng fail-open mà cột `identityTruncated` sinh ra để
+     * đóng, chỉ dời lên một tầng.
+     */
+    if ((s.ledger.foreign.unknownIdentityRows ?? 0) > 0) {
+      d.push(noi(lang, "foreignUnknownIdentity", { count: String(s.ledger.foreign.unknownIdentityRows) }));
+    }
   }
 
   // ── PHẦN KHÔNG QUY TRÁCH NHIỆM ĐƯỢC — `holderListIsLowerBound` ───────────────────────────────
@@ -512,6 +522,21 @@ function tomTat(s: VramAgentState, lang: ToolLang): Dong[] {
         // vào bảng câu (xem luật "văn xuôi ⇒ khoá · định danh ⇒ tham số" ở `vramPhrases.ts`).
         leaseKeyPart: h.leaseKey === null ? "" : ` · leaseKey=${C(h.leaseKey)}`,
         ttlPart: ttl,
+        /**
+         * ★★★ Pha 7 Task 5 (B) — **BA GIÁ TRỊ RA TỚI AGENT, KHÔNG ÉP VỀ HAI.**
+         * `[]` ⇒ chuỗi rỗng (tên **thật**, không cần nói gì) · `[…]` ⇒ **cảnh báo đã cắt** ·
+         * `null` ⇒ **"không biết"**. Bỏ nhánh `null` là khai *"tên thật"* cho một hàng ta không
+         * có bằng chứng gì — đúng fail-open mà cột `identityTruncated` sinh ra để đóng.
+         * ⚠ Đây là **người đọc THẬT** của ô ấy trên mặt Agent (luật Task 4 Pha 4: một ô có người
+         *   ghi mà không ai đọc thì phải bị xoá) — và *"người đọc thật"* nghĩa là **vào
+         *   `textSummary`**, không phải "có mặt trong `data.state`".
+         */
+        identityPart:
+          h.identityTruncated === null
+            ? cum(lang, "identityUnknown", {})
+            : h.identityTruncated.length === 0
+              ? ""
+              : cum(lang, "identityTruncated", { fields: C(h.identityTruncated.join(", ")) }),
         command: lenh,
       }),
     );

@@ -240,7 +240,7 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   AST toàn `server/**`). Cả hai nằm NGOÀI module VRAM ⇒ bộ nhận diện theo vị trí MÙ với
     //   chúng; chúng tự khai `Pha 5` nên bộ theo nội dung thấy, và **chính vì thế** thiếu đường ở
     //   đây là ĐỎ ngay — đúng cơ chế I-1 được dựng ra để làm.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(16);
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(17); // Pha 7 Task 5: +`totpLedgerDurable.test.ts` (lưới quyết định của mục A)
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -305,7 +305,7 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   giữ nguyên **16**; chỉ con số này đổi.
     //   ⚠ File **không phải test** đi kèm (`vramStateFieldPaths.ts` — bộ suy "ô TỪ KIỂU", nay có
     //     MỘT chỗ ở cho cả hai lưới) **không** vào con số này: `moiFileTest` chỉ gom `*.test.ts`.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(75);
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(77); // Pha 7 Task 5: +`totpLedgerDurable` (A) +`sharedLedgerIdentityCrossProcess` (B)
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

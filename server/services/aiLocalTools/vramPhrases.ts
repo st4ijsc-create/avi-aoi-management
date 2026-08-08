@@ -433,6 +433,26 @@ export const CAU = {
       `⚠ 共享账本中有 ${p.count} 行的身份已被截断，这些占用方可能无法回收：` +
       `读取面的 owner 字符串与账本中被截断的字符串不一致。不要承诺能回收它们。`,
   ),
+  /**
+   * ★★★ Pha 7 Task 5 (B) — **VẾ THỨ BA của cùng một sự thật.** `identityTruncated` là `NULL` ⇒
+   * người ghi hàng ấy **chưa biết cột này tồn tại** (một tiến trình bản CŨ còn sống).
+   * ⚠ Câu này **KHÔNG** được gộp vào `foreignTruncatedIdentity`: *"đã cắt"* là một sự thật,
+   *   *"không biết"* là **sự vắng mặt** của sự thật ấy — và cách xử lý cũng khác (một bên là đổi
+   *   thư mục model, một bên là **nâng cấp nốt tiến trình còn lại**).
+   */
+  foreignUnknownIdentity: ba<{ count: string }>(
+    (p) =>
+      `⚠ ${p.count} hàng trong sổ chung do một tiến trình bản CŨ ghi ⇒ KHÔNG BIẾT danh tính của ` +
+      `chúng có bị cắt hay không. Hãy coi \`owner\` của những hàng ấy là KHÔNG ĐÁNG TIN cho tới khi ` +
+      `mọi tiến trình lên bản mới; đừng dùng chúng làm tham số lệnh.`,
+    (p) =>
+      `WARNING: ${p.count} shared-ledger row(s) were written by an OLD process, so it is UNKNOWN ` +
+      `whether their identities were truncated. Treat those owner strings as UNTRUSTED until every ` +
+      `process is upgraded; do not use them as command arguments.`,
+    (p) =>
+      `⚠ 共享账本中有 ${p.count} 行由旧版本进程写入，因此无法确定其身份是否被截断。` +
+      `在所有进程升级前，请将这些 owner 字符串视为不可信；不要将它们用作命令参数。`,
+  ),
   noHolders: ba<KhongTham>(
     () => 'Đang giữ (theo sổ): KHÔNG hộ nào — nhưng xem "CẬN DƯỚI" ngay dưới trước khi kết luận card trống.',
     () =>
@@ -502,16 +522,61 @@ export const CAU = {
     leaseKeyPart: string;
     ttlPart: string;
     command: string;
+    identityPart: string;
   }>(
     (p) =>
       `Hộ "${p.owner}" (${p.kind}, ${p.priority}) ở ${p.where}: ${p.bytes} · số đo=${p.measured}` +
-      `${p.leaseKeyPart}${p.ttlPart} · ${p.command}.`,
+      `${p.leaseKeyPart}${p.ttlPart}${p.identityPart} · ${p.command}.`,
     (p) =>
       `Holder "${p.owner}" (${p.kind}, ${p.priority}) on ${p.where}: ${p.bytes} · measured=${p.measured}` +
-      `${p.leaseKeyPart}${p.ttlPart} · ${p.command}.`,
+      `${p.leaseKeyPart}${p.ttlPart}${p.identityPart} · ${p.command}.`,
     (p) =>
       `占用者 "${p.owner}"（${p.kind}，${p.priority}）在 ${p.where}：${p.bytes} · 已测量=${p.measured}` +
-      `${p.leaseKeyPart}${p.ttlPart} · ${p.command}。`,
+      `${p.leaseKeyPart}${p.ttlPart}${p.identityPart} · ${p.command}。`,
+  ),
+
+  /**
+   * ★★★ Pha 7 Task 5 (B) — **DANH TÍNH NÀY ĐÃ MẤT CHỮ. ĐỪNG DÙNG NÓ LÀM THAM SỐ LỆNH.**
+   *
+   * ⚠⚠⚠ VÌ SAO CÂU NÀY PHẢI CÓ MẶT — và đây là đường **THẬT SỰ ĐANG MỞ**, đã đo lại ở Bước 5:
+   * `vramTools.tomTat()` gộp `localHolders` với `foreign.holders` rồi đưa `owner` của **cả hai**
+   * vào `textSummary`; docstring của chính `vramTools` nói *"`owner` là DANH TÍNH mà Agent lấy từ
+   * mặt đọc rồi truyền THẲNG vào `vram.preempt`"*. Với hộ **anh em**, chuỗi ấy **đã bị cắt tại DB**
+   * ⇒ Agent gọi một lệnh phá huỷ bằng **một cái tên không phải tên của ai cả**, và lệnh ấy **im
+   * lặng không khớp hộ nào**.
+   *
+   * ⚠⚠ **ĐÍNH CHÍNH MỘT CÂU TÔI ĐÃ VIẾT SAI Ở BƯỚC 2** (báo cáo §2.3(i)): mặt **NGƯỜI** KHÔNG đi
+   * đường này. Nút *Thu hồi* chỉ render khi `reclaim.kind === "reclaimable-here"`, và `hoAnhEm()`
+   * **không bao giờ** sinh ra nhãn ấy (nó chỉ cho `declared-by-owner-process` hoặc `no-reclaimer`)
+   * ⇒ nút **không thể** gửi một danh tính cụt. Hai mặt, **hai mức phơi nhiễm khác nhau** — và phải
+   * nói đúng từng mặt thay vì gộp cho câu chuyện gọn hơn.
+   */
+  identityTruncated: ba<{ fields: string }>(
+    (p) =>
+      ` · ⚠ DANH TÍNH ĐÃ BỊ CẮT khi lên sổ chung (ô: ${p.fields}) — chuỗi trên đây KHÔNG phải tên` +
+      ` đầy đủ, ĐỪNG dùng nó làm tham số cho vram.preempt/vram.retryDeferred`,
+    (p) =>
+      ` · ⚠ IDENTITY WAS TRUNCATED when published to the shared ledger (fields: ${p.fields}) — the` +
+      ` string above is NOT the full name, do NOT use it as an argument to vram.preempt/vram.retryDeferred`,
+    (p) =>
+      ` · ⚠ 发布到共享账本时身份被截断（字段：${p.fields}）——上面的字符串不是完整名称，` +
+      `请勿将其用作 vram.preempt/vram.retryDeferred 的参数`,
+  ),
+
+  /**
+   * ★★★ Pha 7 Task 5 (B) — **VẾ THỨ BA: KHÔNG BIẾT.** Hàng do một tiến trình **chưa biết cột
+   * `identityTruncated`** ghi ⇒ ta **không có bằng chứng** tên này đủ hay cụt.
+   * ⚠ Tách khỏi câu trên vì hai câu trả lời khác nhau: *"đã cắt"* là một **sự thật**, *"không
+   *   biết"* là **sự vắng mặt của một sự thật**. Gộp chúng là bịa theo một trong hai chiều.
+   */
+  identityUnknown: ba<Record<string, never>>(
+    () =>
+      ` · ⚠ KHÔNG BIẾT danh tính này có bị cắt không (hàng do một tiến trình bản CŨ ghi) — hãy coi` +
+      ` nó là KHÔNG ĐÁNG TIN cho tới khi mọi tiến trình lên bản mới`,
+    () =>
+      ` · ⚠ UNKNOWN whether this identity was truncated (row written by an OLD process) — treat it` +
+      ` as UNTRUSTED until every process is upgraded`,
+    () => ` · ⚠ 未知该身份是否被截断（该行由旧版本进程写入）——在所有进程升级前请视为不可信`,
   ),
 
   // ── NGOÀI SỔ ───────────────────────────────────────────────────────────────────────────────

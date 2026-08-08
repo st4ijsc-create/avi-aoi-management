@@ -16670,6 +16670,8 @@
     "excludesBaseline": "this figure ALREADY excludes the whole DEVICE BASELINE — 0 does NOT mean the card is fully accounted for",
     "foreign": "siblings",
     "holders": "Held per ledger",
+    "identityTruncated": "NAME WAS TRUNCATED when published to the shared ledger — this is NOT the full name",
+    "identityUnknown": "UNKNOWN whether this name was truncated — row written by an OLD process",
     "local": "local",
     "noCommandReaches": "no command reaches it",
     "noTickYet": "no tick yet",
@@ -16689,6 +16691,7 @@
     "ttlExpired": "past TTL — NO tick reaps this, you must issue a command",
     "unattributedBytes": "off ledger",
     "unknown": "UNKNOWN",
+    "unknownIdentityRows": "rows where it is UNKNOWN whether the identity was truncated (writer is an OLD build)",
     "unledgered": "Running OFF the ledger (estimate)",
     "untrusted": "DEGRADING",
     "waits": "waits + retries"

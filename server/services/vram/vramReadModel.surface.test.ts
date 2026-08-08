@@ -367,6 +367,8 @@ describe("★★★ §D — HAI LUẬT 'VỚI MỌI' trên toàn ảnh chụp (k
           reclaimer: "gguf-idle-model",
           acquiredAtMs: 1,
           updatedAtMs: 1,
+          // ★ Pha 7 Task 5 (B) — ca này lái MỌI ô chuỗi vượt trần; lời khai phải đi cùng.
+          identityTruncated: ["leaseKey", "processKey", "leaseId", "owner"],
         },
       ],
       Date.now(),

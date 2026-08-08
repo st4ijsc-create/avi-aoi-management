@@ -283,5 +283,13 @@ export function hangNenChoKeHoach(processKey: string, bytes: number): SharedLeas
     reclaimer: null,
     acquiredAtMs: 0,
     updatedAtMs: 0,
+    /**
+     * ★ Pha 7 Task 5 (B) — `[]`, **KHÔNG** `null`, và đây là một lời khẳng định chứ không phải một
+     * ô cho đủ kiểu: hàng này **dựng tại chỗ** từ `processKey` + `bytes` do người gọi đưa, nó
+     * **không đi qua `catO()`** và mọi ô chuỗi của nó là **hằng ngắn** (`"reconciler:baseline"`,
+     * `"external-process"`, `"all"`, `"smi"`) ⇒ **không thể** bị cắt. `null` ở đây sẽ là tự khai
+     * *"không biết"* về một hàng mà ta biết rõ.
+     */
+    identityTruncated: [],
   };
 }

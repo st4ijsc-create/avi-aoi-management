@@ -98,6 +98,31 @@ export interface SharedLeaseRow {
   readonly reclaimer: VramReclaimerId | null;
   readonly acquiredAtMs: number;
   readonly updatedAtMs: number;
+  /**
+   * ★★★ Pha 7 Task 5 (B) — **CỜ "ĐÃ CẮT DANH TÍNH" ĐI CÙNG HÀNG, XUYÊN TIẾN TRÌNH.**
+   *
+   * ⚠⚠⚠ **BA GIÁ TRỊ** (cùng kỷ luật `TrangThaiTienTrinh`):
+   *   • `null`         = **KHÔNG BIẾT** — người ghi hàng này chưa biết cột `identityTruncated`
+   *                      (tiến trình cũ trong cửa sổ triển khai). **KHÔNG được đọc thành "sạch".**
+   *   • `[]`           = người ghi **khai**: không cắt ô nào.
+   *   • `["owner", …]` = đúng những ô đã bị cắt.
+   *
+   * ⚠⚠ VÌ SAO Ô NÀY PHẢI TỒN TẠI, đo được ở Pha 7 Bước 1: trước nó, lời khai `daCat` chỉ sống
+   * trong `hangDaCat` — một `Set` **trong bộ nhớ NGƯỜI GHI**. Tiến trình **anh em** đọc đúng hàng
+   * ấy thấy `owner` dài 160 và **không một ô nào** nói nó mất chữ (ca **B1**).
+   * ⚠⚠ Và **KHÔNG suy ra được từ độ dài** (ca **B2**): một chuỗi dài **đúng bằng** trần thì
+   * **không** bị cắt, một chuỗi dài hơn bị cắt **thành** trần ⇒ hai sự thật, **một** độ dài. Một
+   * phép so `owner.length === 160` ở đầu đọc là **bản sao thứ hai của một vị từ**, và bản sao ấy
+   * **SAI đúng ở ô biên** — cùng lỗi M-5 mà `catO()` đã ghi thành cảnh báo.
+   *
+   * ⚠⚠ KIỂU LÀ `string[]`, **KHÔNG PHẢI `VramLeaseColumn[]`** — và đó là một quyết định, không phải
+   * một lượt buông lỏng: hàng này do **MỘT TIẾN TRÌNH KHÁC** ghi, có thể là **một phiên bản khác**
+   * của chính mã này. Khai kiểu hẹp ở đây là **hứa hộ người khác** rằng họ chỉ ghi tên cột mà
+   * *phiên bản CỦA TA* biết — một lời hứa ta không cưỡng chế được, và nó sẽ vỡ **im lặng** đúng
+   * ngày ai đó thêm cột thứ chín. Đầu **GHI** (`rowFromLease`) vẫn hẹp: `VramLeaseColumn[]` gán
+   * được vào `string[]`, nên chiều ta kiểm soát được thì vẫn được kiểm soát.
+   */
+  readonly identityTruncated: readonly string[] | null;
 }
 
 /**
@@ -257,6 +282,20 @@ export type SharedLedgerFact = {
    *   của một thứ khác đang hỏng"*.
    */
   readonly truncatedIdentityWrites: number;
+  /**
+   * ★★★ Pha 7 Task 5 (B) — Số hàng trong sổ chung mà **KHÔNG AI BIẾT** danh tính có bị cắt hay
+   * không: cột `identityTruncated` là `NULL`, tức **người ghi hàng ấy chưa biết cột này tồn tại**.
+   *
+   * ⚠⚠ VÌ SAO NÓ PHẢI LÀ MỘT Ô RIÊNG chứ không gộp vào ô trên, và cũng không im lặng: gộp vào
+   * `truncatedIdentityWrites` là khai *"đã cắt"* cho một hàng ta **không biết**; bỏ qua nó là khai
+   * *"sạch"* cho cùng hàng ấy. **Cả hai đều là bịa.** Đây đúng vế thứ ba của kỷ luật
+   * `TrangThaiTienTrinh` (`"song" | "chet" | "khong-biet"`), và bỏ vế ấy là mở lại đúng cửa
+   * fail-open mà cả lượt này sinh ra để đóng.
+   * ⚠ `> 0` là **BÌNH THƯỜNG và TẠM THỜI** trong cửa sổ triển khai (migration đã áp, một tiến trình
+   *   cũ còn sống). Nó phải về 0 sau khi mọi tiến trình đã lên bản mới. Đứng lì `> 0` ⇒ còn một
+   *   tiến trình cũ đang ghi vào sổ chung.
+   */
+  readonly unknownIdentityRows: number;
 } | null;
 
 /**
@@ -323,8 +362,30 @@ export function sharedLedgerFact(nowMs: number): SharedLedgerFact {
     ageMs: tuoi,
     unsyncedWrites: soLuotGhiHong + demYDinhDoiByte(),
     consecutiveFailures: soLuotDongBoHongLienTiep,
-    truncatedIdentityWrites: demDanhTinhBiCat(),
+    truncatedIdentityWrites: demDanhTinhBiCat() + demAnhEmBiCat(banSao),
+    unknownIdentityRows: demAnhEmKhongBiet(banSao),
   };
+}
+
+/**
+ * ★★★ Pha 7 Task 5 (B) — **HÀNG CỦA ANH EM ĐANG MANG MỘT DANH TÍNH CỤT.**
+ *
+ * ⚠⚠ VÌ SAO CỘNG VÀO CÙNG MỘT Ô với `demDanhTinhBiCat()` (hàng CỦA TA): câu hỏi mà người đọc — cả
+ * người lẫn Agent — thật sự hỏi là ***"có bao nhiêu hàng trong sổ chung đang mang một cái tên
+ * KHÔNG PHẢI tên thật"***, chứ không phải *"ai là người đã cắt"*. Trước Pha 7 ô này chỉ đếm hàng
+ * của ta **vì đó là tất cả những gì tiến trình này BIẾT** — nay nó biết cả hàng anh em, nên phạm vi
+ * của ô đi theo **sự thật**, không theo giới hạn cũ của phép đo.
+ * ⚠ **KHÔNG đếm hai lần**: `publishSharedLedgerReplica()` đã lọc hàng của TA ra khỏi
+ *   `foreignLeases`, nên hai tập **rời nhau** theo cấu tạo.
+ * ⚠ `null` (KHÔNG BIẾT) **KHÔNG** được tính ở đây — nó đi vào `unknownIdentityRows`.
+ */
+function demAnhEmBiCat(bs: SharedLedgerReplica): number {
+  return bs.foreignLeases.filter((r) => r.identityTruncated !== null && r.identityTruncated.length > 0).length;
+}
+
+/** Hàng anh em mà **người ghi chưa khai** (cột `NULL`) ⇒ **KHÔNG BIẾT**. Xem `unknownIdentityRows`. */
+function demAnhEmKhongBiet(bs: SharedLedgerReplica): number {
+  return bs.foreignLeases.filter((r) => r.identityTruncated === null).length;
 }
 
 /**
@@ -570,6 +631,8 @@ export function rowFromBaseline(rec: SharedBaselineRecord): SharedLeaseRowKetQua
       reclaimer: null,
       acquiredAtMs: soHuuHan(rec.atMs, 0),
       updatedAtMs: soHuuHan(rec.atMs, 0),
+      /** ★ Pha 7 Task 5 (B) — hàng NỀN cũng khai, cùng lý do và cùng vị trí (xem `rowFromLease`). */
+      identityTruncated: Object.freeze([...daCat]),
     },
   };
 }
@@ -709,6 +772,13 @@ export function rowFromLease(
       reclaimer: lease.request.reclaimer ?? null,
       acquiredAtMs: soHuuHan(lease.acquiredAt.getTime(), nowMs),
       updatedAtMs: soHuuHan(nowMs, 0),
+      /**
+       * ★ Pha 7 Task 5 (B) — lời khai đi **CÙNG HÀNG**, không chỉ đi cùng kiểu.
+       * ⚠ ĐẶT **CUỐI CÙNG** có chủ ý: mọi lượt `catO()` ở trên phải chạy xong thì `daCat` mới đủ.
+       * ⚠ **BẢN SAO ĐÔNG CỨNG**, không phải chính `daCat`: một tham chiếu chung sẽ để người gọi sửa
+       *   lời khai của hàng qua mảng kia (và ngược lại) — hai người ghi cho **một** sự thật.
+       */
+      identityTruncated: Object.freeze([...daCat]),
     },
   };
 }
@@ -796,6 +866,7 @@ export function __freshSharedLedgerFactForTests(): SharedLedgerFact {
     unsyncedWrites: 0,
     consecutiveFailures: 0,
     truncatedIdentityWrites: 0,
+    unknownIdentityRows: 0,
   };
 }
 

@@ -16654,6 +16654,8 @@
     "excludesBaseline": "con số này ĐÃ TRỪ toàn bộ NỀN THIẾT BỊ — 0 KHÔNG nghĩa là cả card đã được giải thích",
     "foreign": "anh em",
     "holders": "Đang giữ theo sổ",
+    "identityTruncated": "TÊN ĐÃ BỊ CẮT khi lên sổ chung — đây KHÔNG phải tên đầy đủ",
+    "identityUnknown": "KHÔNG BIẾT tên này có bị cắt không — hàng do một tiến trình bản CŨ ghi",
     "local": "cục bộ",
     "noCommandReaches": "không lệnh nào với tới",
     "noTickYet": "chưa có nhịp nào",
@@ -16673,6 +16675,7 @@
     "ttlExpired": "quá TTL — KHÔNG có nhịp nào tự gặt, phải ra lệnh",
     "unattributedBytes": "ngoài sổ",
     "unknown": "KHÔNG BIẾT",
+    "unknownIdentityRows": "hàng KHÔNG BIẾT danh tính có bị cắt (người ghi là bản CŨ)",
     "unledgered": "Chạy NGOÀI sổ (ước lượng)",
     "untrusted": "ĐANG SUY GIẢM",
     "waits": "có chờ + thử lại"

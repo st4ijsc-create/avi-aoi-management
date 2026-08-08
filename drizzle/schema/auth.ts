@@ -1,6 +1,15 @@
 // Schema domain: Auth tables
-import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, boolean, json, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, boolean, json, index, uniqueIndex, customType, primaryKey } from "drizzle-orm/pg-core";
 import { roleEnum } from "./enums";
+
+/**
+ * `bytea` — drizzle-orm không có builder sẵn cho kiểu này.
+ * ⚠ `fromDriver`/`toDriver` KHÔNG khai: gói `postgres` (v3) đã trả `Uint8Array`/nhận `Buffer`
+ *   đúng chiều rồi. Một phép chuyển thứ hai ở đây là một bản sao vị từ sẽ trôi.
+ */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => "bytea",
+});
 
 /**
  * Core user table backing auth flow.
@@ -178,3 +187,57 @@ export const userFactoryAssignments = pgTable("user_factory_assignments", {
 
 export type UserFactoryAssignment = typeof userFactoryAssignments.$inferSelect;
 export type InsertUserFactoryAssignment = typeof userFactoryAssignments.$inferInsert;
+
+/**
+ * ★★★ Pha 7 Task 5 (A) — **SỔ MÃ OTP ĐÃ TIÊU, XUYÊN TIẾN TRÌNH.** Migration `0313`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO BẢNG NÀY TỒN TẠI — HAI CA ĐỎ ĐO ĐƯỢC, KHÔNG PHẢI LO XA
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Pha 6 Task 6 dựng sổ trong **bộ nhớ tiến trình**. Bước 1 của Pha 7 đo được hai lỗ:
+ *   • **A2** — sau một lượt **restart**, sổ về rỗng và **CÙNG một mã** verify lại được
+ *     (`hopLe = true`) trong khi nó **vẫn trong cửa sổ ~90 s** của `speakeasy`. Tức mọi lượt
+ *     redeploy mở lại cửa phát lại trong **120 s**.
+ *   • **A3** — hai bản sao `ROLE=api` có **HAI cuốn sổ** ⇒ mã tiêu ở A vẫn dùng được ở B.
+ * ⇒ Sổ phải sống ở chỗ **DUY NHẤT mà mọi tiến trình cùng thấy**, và sống lâu hơn tiến trình.
+ *
+ * ⚠⚠ `tokenHash` là **sha-256**, KHÔNG phải mã 6 số nguyên văn — và lý do thứ nhất là một **tính
+ * chất CẤU TRÚC**, không phải khẩu vị: bề rộng của nó là **32 byte cố định theo cấu tạo**, nên
+ * `22001` ("value too long") là điều **KHÔNG THỂ XẢY RA**. So với `varchar(N)`, nơi ta luôn phải
+ * *"chọn đủ rộng"* rồi một ngày phát hiện là chưa đủ — đúng bài học migration 0311 và của
+ * `vram_leases.owner`. Lý do thứ hai: không đưa một mã OTP **còn hiệu lực** vào bảng và vào log
+ * truy vấn.
+ * ⚠ Đây **KHÔNG** phải phép chống một kẻ **đã đọc được DB** — secret 2FA nằm ngay
+ *   `users.two_factor_secret` cùng DB. Nó chỉ bỏ plaintext ở nơi không cần plaintext.
+ *
+ * ⚠ **KHOÁ CHÍNH GỒM `userId`**: hai người dùng khác secret có thể tình cờ sinh **cùng 6 số**, và
+ *   chặn nhầm người thứ hai là một lỗi **có thật**, không phải giả thuyết.
+ *
+ * ⚠⚠ `luot` — **DẤU CỦA LƯỢT GỌI**, và nó là thứ giữ cho sổ **không tự chặn mình**: chuỗi thật của
+ *   `vram.preempt` chạy `verifyTotpOnce` **2-3 lần cho MỘT lượt bấm nút** (`_core/trpc.ts` khối
+ *   I-4). Cùng `luot` ⇒ vẫn là lượt gọi ấy ⇒ cho qua. Khác `luot` ⇒ **PHÁT LẠI**.
+ *
+ * ⚠ **KHÔNG có khoá ngoại tới `users`** — cố ý: một lượt xoá người dùng không được phép làm hỏng
+ *   đường xác minh, và hàng ở đây **tự chết sau ≤120 s** nên không có rác tồn đọng để tham chiếu.
+ *
+ * ⚠ **TỰ DỌN: chính lượt xác minh chạy, KHÔNG cron.** Xem `server/_core/totpOnce.ts`. Đặt phép dọn
+ *   vào một cron ở `ROLE=worker` là làm sức khoẻ của sổ thành **hệ quả của một tiến trình KHÁC còn
+ *   sống** — đúng lăng kính *"an toàn là HỆ QUẢ của một thứ khác đang hỏng"* (đã sáu lần).
+ */
+export const totpConsumed = pgTable("totp_consumed", {
+  /** Chủ của mã. `users.id` là `integer` (đã kiểm `information_schema`). */
+  userId: integer("userId").notNull(),
+  /** `sha256(\`${userId}:${token}\`)` — 32 byte, bề rộng CỐ ĐỊNH theo cấu tạo. */
+  tokenHash: bytea("tokenHash").notNull(),
+  /** Dấu của LƯỢT GỌI (`randomUUID()` = 36 ký tự). ⚠ KHÔNG dùng kiểu `uuid`: API nhận
+   *  `luot?: string` từ người gọi ⇒ một chuỗi lạ sẽ là `22P02` LÚC CHẠY, không phải lỗi kiểu. */
+  luot: varchar("luot", { length: 64 }).notNull(),
+  /** `nowMs + TOTP_HAN_SO_MS` (120 s). Giá trị do **ứng dụng** cấp ⇒ giữ được đường tiêm `nowMs`. */
+  expiresAt: timestamp("expiresAt").notNull(),
+}, (table) => [
+  primaryKey({ name: "totp_consumed_pkey", columns: [table.userId, table.tokenHash] }),
+  index("totp_consumed_expires_idx").on(table.expiresAt),
+]);
+
+export type TotpConsumedRow = typeof totpConsumed.$inferSelect;
+export type InsertTotpConsumedRow = typeof totpConsumed.$inferInsert;

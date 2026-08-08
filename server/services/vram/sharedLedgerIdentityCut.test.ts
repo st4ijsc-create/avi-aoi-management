@@ -204,6 +204,77 @@ describe("★★★ Task 5 / ∀-A — bề rộng cột: bảng hằng phải K
       "bề rộng cột và hằng đã TRÔI khỏi nhau ⇒ sổ chung cắt ở một chỗ, Postgres ném ở chỗ khác",
     ).toBe("");
   });
+
+  /**
+   * ★★★ Pha 7 Task 5 — **NỢ DO CHÍNH LƯỢT TRẢ NỢ TRƯỚC ĐẺ RA, ĐÓNG NGAY TẠI ĐÂY.**
+   *
+   * ⚠⚠⚠ Ca `∀-A` bên trên lọc `columnType === "PgVarchar"`. Nó **đúng** cho câu hỏi *"bề rộng"* —
+   * và **mù theo CẤU TẠO** với mọi cột **không phải `varchar`**. Pha 7 thêm
+   * `vram_leases.identityTruncated` kiểu **`jsonb`** ⇒ nó **rơi thẳng ra ngoài** phép canh ấy: quên
+   * nó ở tầng ứng dụng thì **không cổng nào kêu**. Đúng lớp *"hàng rào không ai canh"*, và lần này
+   * hàng rào bị chính bản vá trước dựng ra.
+   *
+   * ⇒ Lượng từ **ĐẢO LẠI**: thay vì *"mọi cột `varchar` phải có bề rộng"*, ca này nói
+   *   ***MỌI cột của `vram_leases` — bất kể kiểu — phải có ĐÚNG một ô tương ứng trong
+   *   `SharedLeaseRow`***, tức trong **hình dạng mà mọi tiến trình đọc/ghi**. Một cột thứ mười lăm
+   *   thuộc **kiểu bất kỳ** sinh ra mà không ai đọc ⇒ **ĐỎ**.
+   */
+  it("★★★ ∀ cột (MỌI KIỂU, không chỉ `varchar`) của `vram_leases` có ĐÚNG một ô ở `SharedLeaseRow`", async () => {
+    const { vramLeases } = await import("../../../drizzle/schema/vram");
+    const cotDb = new Set<string>();
+    for (const [ten, cot] of Object.entries(vramLeases as unknown as Record<string, unknown>)) {
+      if ((cot as { columnType?: string })?.columnType !== undefined) cotDb.add(ten);
+    }
+    expect(cotDb.size, "bộ đọc drizzle không thấy cột nào — nó đã hỏng?").toBeGreaterThanOrEqual(15);
+
+    /**
+     * Ô của `SharedLeaseRow` **suy ra từ một hàng THẬT do `rowFromLease()` đẻ ra** — không phải một
+     * danh sách chép tay ở đây (danh sách chép tay là đúng thứ lớp lỗi N+1 mà ca này đóng).
+     */
+    const oHang = new Set(Object.keys(rowFromLease(giayPhep(), MIB, "api:1:b", NOW).row));
+
+    /**
+     * Ánh xạ tên cột DB → tên ô của hàng, cho những chỗ **cố ý khác tên**. ⚠ Đây là một danh sách,
+     * nên nó phải **NHỎ và có lý do từng dòng**; mọi tên khác phải TRÙNG khít.
+     */
+    const doiTen: Readonly<Record<string, string>> = {
+      // `Date` ở cột ↔ epoch ms ở hàng (hàng là thuần dữ liệu, không mang `Date`).
+      acquiredAt: "acquiredAtMs",
+      updatedAt: "updatedAtMs",
+    };
+
+    const thieuOHang = [...cotDb].filter((c) => !oHang.has(doiTen[c] ?? c));
+    expect(
+      thieuOHang.join(" · "),
+      "cột `vram_leases` KHÔNG có ô tương ứng trong `SharedLeaseRow` ⇒ mọi tiến trình đọc sổ chung " +
+        "sẽ KHÔNG BAO GIỜ thấy nó (đúng lớp lỗi mà `identityTruncated` sinh ra để đóng)",
+    ).toBe("");
+
+    const thuaOHang = [...oHang].filter((o) => {
+      const nguoc = Object.entries(doiTen).find(([, v]) => v === o)?.[0];
+      return !cotDb.has(o) && (nguoc === undefined || !cotDb.has(nguoc));
+    });
+    expect(
+      thuaOHang.join(" · "),
+      "`SharedLeaseRow` khai một ô KHÔNG CÓ cột thật ⇒ nó sẽ biến mất im lặng ở lượt ghi/đọc",
+    ).toBe("");
+  });
+
+  /**
+   * ⚠ **KHÔNG BẮT NHẦM** cho ca trên: nó phải **đỏ vì thiếu ánh xạ**, không phải đỏ vì mọi thứ.
+   * Ca này khoá rằng cột `identityTruncated` **đang thật sự** nằm trong cả hai vế.
+   */
+  it("★★ ĐỐI CHỨNG DƯƠNG — `identityTruncated` có mặt ở CẢ cột DB LẪN ô hàng", async () => {
+    const { vramLeases } = await import("../../../drizzle/schema/vram");
+    expect(
+      Object.keys(vramLeases as unknown as Record<string, unknown>),
+      "cột `jsonb` mới phải có trong đối tượng drizzle (nếu không, lượt ghi sẽ KHÔNG mang nó)",
+    ).toContain("identityTruncated");
+    expect(
+      Object.keys(rowFromLease(giayPhep(), MIB, "api:1:b", NOW).row),
+      "hàng sổ chung phải mang lời khai — đây là toàn bộ điểm của Pha 7 Task 5 (B)",
+    ).toContain("identityTruncated");
+  });
 });
 
 describe("★★★ Task 5 / ∀-B — MỌI ô được PHÂN LOẠI: cắt-được hoặc union-đóng-có-lý-do", () => {
@@ -338,16 +409,25 @@ describe("★★★ Task 5 / ∀-D — hàng phát ra KHÔNG BAO GIỜ vượt b
 });
 
 describe("★★★ Task 5 / ĐƯỜNG THOÁT — lời khai phải tới được người đọc, không chỉ tới `tsc`", () => {
-  /** `owner` đúng hình dạng sản xuất, dài **365** — con số đo được ở Bước 1. */
-  const OWNER_365 = `reranker:${"C:\\Users\\Admin\\models\\".repeat(14)}bge-reranker-v2-m3-Q8_0.gguf`;
+  /**
+   * `owner` đúng **hình dạng sản xuất** (`reranker:` + một đường dẫn tuyệt đối), dài **345**.
+   *
+   * ⚠ **TÊN CŨ `OWNER_365` ĐÃ ĐỔI (Pha 7 Task 5) VÌ NÓ NÓI SAI:** chuỗi này dài `9 + 22×14 + 28 =`
+   * **345**, không phải 365. Con số **365** là một số đo **KHÁC** — `"reranker:"` (9) cộng một
+   * `modelPath` **356 ký tự có thật trên máy này** — và nó vẫn đúng ở docstring đầu file. Một cái
+   * tên mang một con số mà fixture **không mang** là đúng lớp *"một bản sao của một con số sẽ trôi
+   * khỏi bản gốc"*; nay tên nói **tính chất** (*"quá trần"*), thứ luôn đúng, thay vì một con số.
+   * ⚠ Điều ca cần là **> 160**, và nó được `expect` ngay dưới — không phải một con số cụ thể.
+   */
+  const OWNER_QUA_TRAN = `reranker:${"C:\\Users\\Admin\\models\\".repeat(14)}bge-reranker-v2-m3-Q8_0.gguf`;
 
   it("★★★ `reserve()` + `syncSharedLedger()` THẬT ⇒ `truncatedIdentityWrites > 0` (trước đây: 0, im lặng)", async () => {
-    expect(OWNER_365.length, "fixture phải vượt trần THẬT, không phải một chuỗi bịa cho vừa ca").toBeGreaterThan(
+    expect(OWNER_QUA_TRAN.length, "fixture phải vượt trần THẬT, không phải một chuỗi bịa cho vừa ca").toBeGreaterThan(
       VRAM_LEASE_COLUMN_MAX.owner,
     );
     __setSharedLedgerSelfKeyForTests("api:1:boot-a");
     const r = reserve(
-      { owner: OWNER_365, kind: "gguf-model", estimatedBytes: 64 * MIB, priority: "background" },
+      { owner: OWNER_QUA_TRAN, kind: "gguf-model", estimatedBytes: 64 * MIB, priority: "background" },
       ctx(),
     );
     expect(r.lease, "ca này cần một giấy phép ĐƯỢC CẤP").not.toBeNull();
@@ -364,8 +444,8 @@ describe("★★★ Task 5 / ĐƯỜNG THOÁT — lời khai phải tới đư�
 
     // ⚠ KHÔNG BẮT NHẦM (N11): sổ CỤC BỘ — thứ mặt LỆNH và mặt ĐỌC dùng — giữ danh tính NGUYÊN VẸN.
     const cucBo = snapshot().leases.find((l) => l.id === r.lease!.id);
-    expect(cucBo!.request.owner, "danh tính trên mặt LỆNH phải NGUYÊN VẸN — chỉ bản CÔNG BỐ mới cắt").toBe(OWNER_365);
-    expect(cucBo!.request.owner.length).toBe(OWNER_365.length);
+    expect(cucBo!.request.owner, "danh tính trên mặt LỆNH phải NGUYÊN VẸN — chỉ bản CÔNG BỐ mới cắt").toBe(OWNER_QUA_TRAN);
+    expect(cucBo!.request.owner.length).toBe(OWNER_QUA_TRAN.length);
   });
 
   it("★★★ ĐỐI CHỨNG DƯƠNG — `owner` sản xuất HÔM NAY (54 ký tự) ⇒ `truncatedIdentityWrites === 0`", async () => {
@@ -380,7 +460,7 @@ describe("★★★ Task 5 / ĐƯỜNG THOÁT — lời khai phải tới đư�
 
   it("★★★ TỰ TẮT — giấy phép được NHẢ ⇒ ô về 0 (đếm HÀNG đang công bố, không đếm LƯỢT)", async () => {
     __setSharedLedgerSelfKeyForTests("api:1:boot-a");
-    const r = reserve({ owner: OWNER_365, kind: "gguf-model", estimatedBytes: 64 * MIB, priority: "background" }, ctx());
+    const r = reserve({ owner: OWNER_QUA_TRAN, kind: "gguf-model", estimatedBytes: 64 * MIB, priority: "background" }, ctx());
     await syncSharedLedger();
     expect(sharedLedgerFact(bayGio())!.truncatedIdentityWrites).toBe(1);
 
@@ -400,7 +480,7 @@ describe("★★★ Task 5 / ĐƯỜNG THOÁT — lời khai phải tới đư�
 
   it("★★ mặt ĐỌC phát ra ô ấy — lời khai đi hết đường tới `ledger.foreign`", async () => {
     __setSharedLedgerSelfKeyForTests("api:1:boot-a");
-    reserve({ owner: OWNER_365, kind: "gguf-model", estimatedBytes: 64 * MIB, priority: "background" }, ctx());
+    reserve({ owner: OWNER_QUA_TRAN, kind: "gguf-model", estimatedBytes: 64 * MIB, priority: "background" }, ctx());
     await syncSharedLedger();
 
     const { buildVramAgentState } = await import("./vramReadModel");

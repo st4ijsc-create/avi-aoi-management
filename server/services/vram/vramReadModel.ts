@@ -217,6 +217,20 @@ export interface VramAgentHolderView {
   /** `null` ⇔ không có TTL để so (xem `ttlMs`). `true` ⇔ tuổi giấy phép đã vượt TTL. */
   readonly ttlExpired: boolean | null;
   /**
+   * ★★★ Pha 7 Task 5 (B) — **DANH TÍNH NÀY CÓ PHẢI TÊN THẬT KHÔNG.** BA giá trị:
+   *   • `[]`           = **tên thật**, không ô nào bị cắt;
+   *   • `["owner", …]` = `owner` (hoặc ô khác) **đã mất chữ** khi lên sổ chung;
+   *   • `null`         = **KHÔNG BIẾT** — hàng do một tiến trình chưa biết cột này ghi.
+   *
+   * ⚠⚠⚠ **ĐÂY LÀ Ô CHẶN MỘT LỖ ĐANG MỞ, không phải một ô trang trí.** `VramBrokerPanel` **GỘP**
+   * hộ cục bộ với hộ **anh em** vào **một** danh sách rồi bơm `owner` thẳng vào `preempt.mutate`
+   * — một **LỆNH PHÁ HUỶ**. Với hộ anh em, chuỗi ấy **đã bị cắt tại DB**, nên trước ô này lệnh
+   * nhận một danh tính **không phải danh tính của ai cả**, và **không người nào phân biệt được**.
+   * ⚠ Hộ **CỤC BỘ** luôn là `[]`: sổ cục bộ giữ `owner` **nguyên vẹn** (N11) — phép cắt chỉ xảy ra
+   *   ở **bản CÔNG BỐ**. Đây là một lời khẳng định có ca khoá, không phải một giá trị mặc định.
+   */
+  readonly identityTruncated: readonly string[] | null;
+  /**
    * ★ Pha 4 Task 2 — khoá hàng trong `vram_leases` (`${processKey}#${leaseId}`), tức **đầu vào của
    * lệnh `vram.releaseStale`**. `null` cho hộ CỤC BỘ, và đó KHÔNG phải một ô thiếu: sổ cục bộ là
    * chủ về giấy phép của tiến trình này (`release()` đã trả lời dứt khoát), nên `releaseStale`
@@ -265,6 +279,17 @@ export type VramAgentForeignLedger =
        *   **TA**, còn `holders` là hàng của **ANH EM** — hai tập rời nhau (`dungBanSao()` lọc).
        */
       readonly truncatedIdentityWrites: number | null;
+      /**
+       * ★★★ Pha 7 Task 5 (B) — Số hàng anh em mà **KHÔNG AI BIẾT** danh tính có bị cắt hay không
+       * (cột `identityTruncated` là `NULL` ⇒ người ghi hàng ấy **chưa biết cột này tồn tại**).
+       *
+       * ⚠⚠ **KHÔNG gộp vào `truncatedIdentityWrites`**: gộp là khai *"đã cắt"* cho một hàng ta
+       * không biết; **bỏ qua** là khai *"sạch"* cho cùng hàng ấy. **Cả hai đều là bịa.** Đây là vế
+       * thứ ba của kỷ luật `TrangThaiTienTrinh`, và bỏ nó là mở lại đúng cửa fail-open vừa vá.
+       * ⚠ `> 0` là **bình thường và TẠM THỜI** trong cửa sổ triển khai (migration đã áp, một tiến
+       *   trình cũ còn sống). Đứng lì `> 0` ⇒ còn một tiến trình cũ đang ghi vào sổ chung.
+       */
+      readonly unknownIdentityRows: number | null;
     }
   | {
       readonly known: false;
@@ -1250,6 +1275,13 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
        */
       ttlExpired:
         h.ttlMs === null || !Number.isFinite(h.acquiredAtMs) ? null : atMs - h.acquiredAtMs > h.ttlMs,
+      /**
+       * ★ Pha 7 Task 5 (B) — hộ **CỤC BỘ** đọc từ **sổ cục bộ**, nơi `owner` **nguyên vẹn** (N11:
+       * *"`owner` là DANH TÍNH trên mặt LỆNH, KHÔNG được cắt ngắn ở đó"*). Phép cắt chỉ xảy ra ở
+       * **bản CÔNG BỐ** (`rowFromLease`). ⇒ `[]` ở đây là một **lời khẳng định có ca khoá**, không
+       * phải một giá trị mặc định cho đủ kiểu.
+       */
+      identityTruncated: [],
     };
   };
 
@@ -1276,6 +1308,13 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
       leaseKey: r.leaseKey,
       ttlMs: null,
       ttlExpired: null,
+      /**
+       * ★★★ Pha 7 Task 5 (B) — **lời khai của NGƯỜI GHI, đi thẳng qua, không diễn giải lại.**
+       * ⚠ Tuyệt đối **không** suy từ `f.owner.length === 160`: đó là bản sao thứ hai của một vị từ,
+       *   và bản sao ấy **SAI ở ô BIÊN** (một chuỗi dài **đúng bằng** trần thì **không** bị cắt —
+       *   ca B2 đã đo). Chỉ người ghi mới biết, nên chỉ người ghi mới được khai.
+       */
+      identityTruncated: r.identityTruncated,
     };
   };
 
@@ -1294,6 +1333,9 @@ export async function buildVramAgentState(): Promise<VramAgentState> {
           // ★ Pha 6 Task 5 — lời khai của đầu GHI tới được một người đọc. Không có ô này thì `daCat`
           //   chỉ tồn tại trong kiểu, và một lượt cắt vẫn **không ai thấy**.
           truncatedIdentityWrites: shared.truncatedIdentityWrites,
+          // ★ Pha 7 Task 5 (B) — vế THỨ BA. Không có ô này thì một hàng "KHÔNG BIẾT" bị đọc thành
+          //   "sạch", tức fail-open ở đúng chỗ vừa vá.
+          unknownIdentityRows: shared.unknownIdentityRows,
         };
 
   const tickView: VramAgentTick =

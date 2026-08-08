@@ -84,7 +84,24 @@ vi.mock("drizzle-orm", async (orig) => {
   const actual = await orig<typeof import("drizzle-orm")>();
   return { ...actual, eq: makeEq, and: makeAnd, desc: makeDesc };
 });
-vi.mock("../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
+/**
+ * ★★★ Pha 7 Task 5 (A) — sổ mã đã tiêu đi xuống **DB THẬT** (`totp_consumed`); mọi bảng
+ * khác giữ `FakeDb`. Xem `./__totpDbHybrid` để biết vì sao KHÔNG dạy `FakeDb` làm bảng ấy.
+ */
+vi.mock("../db/connection", () => ({
+  /**
+   * ⚠⚠ **MỌI THỨ LÀM LƯỜI, KHÔNG LÀM Ở THÂN FACTORY.** `vi.mock` được HOIST lên đầu file; một
+   * lượt `await orig()` **ngay trong factory** kéo `../db/connection` thật vào **trước khi**
+   * `const fake = new FakeDb()` kịp chạy ⇒ `ReferenceError: Cannot access '__vi_import_N__'
+   * before initialization`. Đẩy hết vào thân `getDb` (chỉ chạy khi có người gọi) là đúng khuôn
+   * bản gốc, và là thứ giữ cho thứ tự nạp không thành một điều kiện ngầm.
+   */
+  getDb: vi.fn(async () => {
+    const { soHonHop } = await import("./__totpDbHybrid");
+    const that = await vi.importActual<typeof import("../db/connection")>("../db/connection");
+    return soHonHop(fake, await that.getDb());
+  }),
+}));
 
 import { vramRouter } from "./vramRouter";
 import { router, deployProcedure } from "../_core/trpc";
@@ -123,8 +140,8 @@ const otp = (): string => speakeasy.totp({ secret: SECRET_2FA, encoding: "base32
  * hành **chờ mã kế tiếp**; ở đây ta dọn sổ — hợp lệ vì các ca này canh **step-up**, còn phát lại
  * có lưới riêng (`server/routers/totpReplay.test.ts`) và ở đó sổ **KHÔNG** bị dọn giữa chừng.
  */
-const otpKichBanMoi = (): string => {
-  __resetSoTotpChoTest();
+const otpKichBanMoi = async (): Promise<string> => {
+  await __resetSoTotpChoTest([SUP_ID]);
   return otp();
 };
 
@@ -415,7 +432,7 @@ const KHONG_PHA_HUY: readonly string[] = Object.keys(LENH.anhXa).filter(
 /** Tham số tối thiểu để lượt gọi **đi hết middleware** rồi mới chạm zod. */
 const KHONG_THAM_SO: Record<string, unknown> = {};
 
-beforeEach(() => {
+beforeEach(async () => {
   fake.store.clear();
   resetSeq();
   sidecar.stop = null;
@@ -430,7 +447,7 @@ beforeEach(() => {
    * thứ nhất đã tiêu mã** — tức đỏ vì một **kịch bản khác**, không vì cái nó đang canh. Cùng lý do
    * với `sessionToken` riêng cho mỗi ca ở trên.
    */
-  __resetSoTotpChoTest();
+  await __resetSoTotpChoTest([SUP_ID]);
   seedNguoiDung2FA();
   capQuyen(SUP_ID, [{ module: VRAM_CONTROL_MODULE, canDelete: true, canCreate: true }]);
   process.env.ACTUATION_STEPUP_2FA = "true";
@@ -440,7 +457,7 @@ beforeEach(() => {
 // 0. CẦU CHÌ — một tập rỗng làm MỌI khẳng định dưới thành chân lý rỗng
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-describe("★★★ Pha 6 M-4 — cầu chì của lượng từ", () => {
+describe("★★★ Pha 6 M-4 — cầu chì của lượng từ", async () => {
   it("★★★ đọc được `vramRouter.ts`: 0 ô mù, tập PHÁ HUỶ không rỗng, tập KHÔNG-phá-huỷ không rỗng", () => {
     expect(LENH.mu.join("\n"), "một ô không phân giải được là một ô KHÔNG AI CANH").toBe("");
     expect(PHA_HUY.length, "0 lệnh phá huỷ ⇒ mọi ca ∀ dưới đây là chân lý rỗng").toBeGreaterThanOrEqual(2);
@@ -587,7 +604,7 @@ describe("★★★ C-2 — lượng từ 'lệnh phá huỷ VRAM' chạy trên 
 // 1. BẤT BIẾN CHÍNH — ∀ lệnh PHÁ HUỶ: OTP của một lượt KHÁC KHÔNG mở được cửa
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-describe("★★★ M-4 — OTP của một lượt KHÁC không được mở cửa cho lệnh phá huỷ VRAM", () => {
+describe("★★★ M-4 — OTP của một lượt KHÁC không được mở cửa cho lệnh phá huỷ VRAM", async () => {
   it("★★★ CA ĐO ĐƯỢC Ở NGHIỆM THU SỐNG: step-up cho một `deployProcedure` khác ⇒ `preempt` KHÔNG `totpCode` phải BỊ CHẶN, và KHÔNG một byte nào rời sổ", async () => {
     const phien = phienMoi();
     // Nhịp 1 — một lượt step-up HỢP LỆ ở một thủ tục KHÁC (đúng `programming.deployBuild` ở hệ thật).
@@ -613,7 +630,7 @@ describe("★★★ M-4 — OTP của một lượt KHÁC không được mở c
     for (const ten of PHA_HUY) {
       const phien = phienMoi();
       // ⚠ Mỗi vòng lặp là một KỊCH BẢN ĐỘC LẬP ⇒ một mã chưa ai tiêu (Pha 6 Task 6).
-      await expect(khac(phien).deployKhac({ totpCode: otpKichBanMoi() })).resolves.toEqual({ ok: true });
+      await expect(khac(phien).deployKhac({ totpCode: await otpKichBanMoi() })).resolves.toEqual({ ok: true });
       const e = await loiCua(goiTheoTen(phien, ten, KHONG_THAM_SO));
       expect(
         readAppErrorMeta(e),
@@ -638,7 +655,7 @@ describe("★★★ M-4 — OTP của một lượt KHÁC không được mở c
 // 2. ĐỐI CHỨNG DƯƠNG — "chặn hết" cũng là xanh nếu không có mục này
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-describe("★★★ ĐỐI CHỨNG DƯƠNG — lượt CÓ OTP hợp lệ VẪN QUA, và byte rời sổ THẬT", () => {
+describe("★★★ ĐỐI CHỨNG DƯƠNG — lượt CÓ OTP hợp lệ VẪN QUA, và byte rời sổ THẬT", async () => {
   it("★★★ `preempt` + OTP tươi của CHÍNH lượt ấy ⇒ thu hồi THẬT (7.825 MiB rời sổ)", async () => {
     const phien = phienMoi();
     const lease = xinThat("sidecar:vision", 7_825 * MIB);
@@ -655,7 +672,7 @@ describe("★★★ ĐỐI CHỨNG DƯƠNG — lượt CÓ OTP hợp lệ VẪN 
   it("★★★ ∀ lệnh PHÁ HUỶ: lượt CÓ OTP hợp lệ đi QUA mọi middleware (dừng ở zod, KHÔNG ở cổng OTP)", async () => {
     for (const ten of PHA_HUY) {
       // ⚠ Mỗi vòng lặp là một KỊCH BẢN ĐỘC LẬP ⇒ một mã chưa ai tiêu (Pha 6 Task 6).
-      const e = await loiCua(goiTheoTen(phienMoi(), ten, { totpCode: otpKichBanMoi() }));
+      const e = await loiCua(goiTheoTen(phienMoi(), ten, { totpCode: await otpKichBanMoi() }));
       expect((e as { code?: string })?.code, `\`${ten}\` với OTP hợp lệ phải qua được step-up`).toBe("BAD_REQUEST");
       expect(
         readAppErrorMeta(e),
@@ -683,7 +700,7 @@ describe("★★★ ĐỐI CHỨNG DƯƠNG — lượt CÓ OTP hợp lệ VẪN 
 //   `actuationProcedure` (sàn KHÔNG phải deploy) — xem ca kế tiếp, suy từ HÀNH VI.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-describe("★★★ KHÔNG BẮT NHẦM — phép siết chỉ chạm nhánh `deployProcedure`", () => {
+describe("★★★ KHÔNG BẮT NHẦM — phép siết chỉ chạm nhánh `deployProcedure`", async () => {
   it("★★★ Task 1b — một thủ tục `deployProcedure` KHÁC nay CŨNG bị siết (cache phiên thôi mở được cửa)", async () => {
     /**
      * ⚠ Đây là **nửa VRAM** của cổng ra Task 1b, đo từ phía lưới VRAM: `deployKhac` đứng trên
@@ -699,7 +716,7 @@ describe("★★★ KHÔNG BẮT NHẦM — phép siết chỉ chạm nhánh `de
     expect(readAppErrorMeta(e)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
     // …và ĐỐI CHỨNG DƯƠNG: OTP của chính lượt ấy thì vẫn qua.
     // ⚠ Một mã CHƯA AI TIÊU (Pha 6 Task 6) — dùng lại mã của nhịp đầu là một kịch bản KHÁC.
-    await expect(khac(phien).deployKhac({ totpCode: otpKichBanMoi() })).resolves.toEqual({ ok: true });
+    await expect(khac(phien).deployKhac({ totpCode: await otpKichBanMoi() })).resolves.toEqual({ ok: true });
   });
 
   it("★★★ mutation KHÔNG PHÁ HUỶ (theo HÀNH VI) không bị kéo vào cổng OTP", async () => {

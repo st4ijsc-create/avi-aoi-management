@@ -344,7 +344,7 @@ async function verifyFreshTotp(
       .where(eq(users.id, userId))
       .limit(1);
     if (!u || !u.enabled || !u.secret) return { hopLe: false, phatLai: false };
-    return verifyTotpOnce({ userId, secret: u.secret, token: code, luot });
+    return await verifyTotpOnce({ userId, secret: u.secret, token: code, luot });
   } catch {
     return { hopLe: false, phatLai: false }; // fail-closed — lỗi tra cứu/verify ⇒ coi như KHÔNG hợp lệ
   }

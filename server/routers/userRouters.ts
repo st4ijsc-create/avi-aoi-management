@@ -263,11 +263,11 @@ export const userRouter = router({
       }
 
       // Verify token (base32 encoding, ±1 step for clock drift) — và TIÊU MÃ (Pha 6 Task 6).
-      const valid = verifyTotpOnce({
+      const valid = (await verifyTotpOnce({
         userId: ctx.user.id,
         secret: status.twoFactorSecret,
         token: input.token,
-      }).hopLe;
+      })).hopLe;
 
       if (!valid) {
         throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'twoFactorCode' }, 'Mã xác thực không hợp lệ');
@@ -311,11 +311,11 @@ export const userRouter = router({
       }
 
       // Verify token — và TIÊU MÃ (Pha 6 Task 6).
-      const valid = verifyTotpOnce({
+      const valid = (await verifyTotpOnce({
         userId: ctx.user.id,
         secret: status.twoFactorSecret,
         token: input.token,
-      }).hopLe;
+      })).hopLe;
 
       if (!valid) {
         throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'twoFactorCode' }, 'Mã xác thực không hợp lệ');

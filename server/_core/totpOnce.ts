@@ -84,7 +84,8 @@
  * task-6-report.md` §"Hình dạng đã chọn".
  */
 import speakeasy from "speakeasy";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
+import { sql } from "drizzle-orm";
 
 /**
  * Cửa sổ `speakeasy` — **1 nhịp trước/sau** để bù lệch đồng hồ. Giữ **nguyên** giá trị cũ của cả 8
@@ -114,28 +115,114 @@ export interface KetQuaTotp {
   readonly phatLai: boolean;
 }
 
-interface MucSo {
-  /** Thời điểm mục này hết ý nghĩa (epoch ms). */
-  readonly hetHan: number;
-  /** Dấu của LƯỢT GỌI đã tiêu mã. Cùng dấu ⇒ vẫn là lượt gọi ấy. */
-  readonly luot: string;
+/**
+ * ★★★ Pha 7 Task 5 — **KHOÁ CỦA MỘT MỤC SỔ.** `sha256(\`${userId}:${token}\`)`.
+ *
+ * ⚠⚠ VÌ SAO BĂM chứ không lưu mã 6 số: lý do thứ nhất là một **tính chất CẤU TRÚC** — bề rộng của
+ * một digest là **32 byte cố định theo cấu tạo**, nên `22001` ("value too long") là điều **KHÔNG
+ * THỂ**, khác hẳn một `varchar(N)` mà ta phải *"chọn đủ rộng"* rồi một ngày phát hiện chưa đủ (đúng
+ * bài học migration 0311 và `vram_leases.owner`). Lý do thứ hai: không đưa một mã OTP **còn hiệu
+ * lực** vào bảng và vào log truy vấn.
+ * ⚠ `userId` nằm **TRONG** chuỗi được băm, nên hai người dùng tình cờ sinh cùng 6 số cho **hai**
+ * digest khác nhau — và nó **cũng** là một cột của khoá chính. Hai lớp, cùng một lý do.
+ */
+function bam(userId: number, token: string): Buffer {
+  return createHash("sha256").update(`${userId}:${token}`).digest();
 }
 
-/** `${userId}:${token}` → mục sổ. **Khoá có `userId`**: hai người dùng khác secret có thể tình cờ
- *  sinh cùng 6 số, và chặn nhầm người thứ hai là một lỗi có thật, không phải giả thuyết. */
-const so = new Map<string, MucSo>();
+/**
+ * ★★★ **CỬA DUY NHẤT XUỐNG SỔ.** Trả `null` ⇔ **không hỏi được DB** — người gọi phải đọc là
+ * *"KHÔNG BIẾT"*, tuyệt đối không phải *"mã này chưa ai tiêu"*.
+ *
+ * ⚠⚠⚠ **MỘT CÂU, KHÔNG PHẢI HAI.** Một cặp `SELECT` rồi `INSERT` là một **TOCTOU** — đúng cái cửa
+ * mà hai tiến trình `ROLE=api` đi lọt, tức đúng lỗ **A3** mà cả lượt này sinh ra để đóng.
+ * `ON CONFLICT DO UPDATE` **khoá hàng**, nên hai lượt đồng thời **xếp hàng** và kẻ thua đọc được
+ * `luot` của kẻ thắng.
+ *
+ * Phán quyết là **một phép so duy nhất**, và nó khớp một-một với bản trong bộ nhớ trước đây:
+ *   • trả về **= `luot` của ta** ⇒ ta vừa **chèn mới**, hoặc vừa **thu lại** một mục **quá hạn**,
+ *     hoặc đây là **lượt verify thứ N của CÙNG lượt gọi** ⇒ cho qua;
+ *   • trả về **≠ `luot` của ta** ⇒ một **lượt gọi KHÁC** đang giữ mã và mục **còn sống** ⇒ PHÁT LẠI.
+ */
+async function tieuMaTrongSo(
+  userId: number,
+  tokenHash: Buffer,
+  luot: string,
+  nowMs: number,
+): Promise<string | null> {
+  const db = await layDb();
+  if (db === null) return null;
+  const { totpConsumed } = await import("../../drizzle/schema/auth");
+  const rows = await db
+    .insert(totpConsumed)
+    .values({ userId, tokenHash, luot, expiresAt: new Date(nowMs + TOTP_HAN_SO_MS) })
+    .onConflictDoUpdate({
+      target: [totpConsumed.userId, totpConsumed.tokenHash],
+      set: {
+        // ⚠ `totpConsumed.<cot>` trong nhánh `DO UPDATE` render thành `"totp_consumed"."<cot>"` —
+        //   tức **hàng ĐANG CÓ**; `excluded."<cot>"` là hàng ta vừa định chèn. Đúng hai vế cần.
+        luot: sql`CASE WHEN ${totpConsumed.expiresAt} <= ${mocUtc(nowMs)} THEN excluded."luot" ELSE ${totpConsumed.luot} END`,
+        expiresAt: sql`CASE WHEN ${totpConsumed.expiresAt} <= ${mocUtc(nowMs)} THEN excluded."expiresAt" ELSE ${totpConsumed.expiresAt} END`,
+      },
+    })
+    .returning({ luot: totpConsumed.luot });
+  return rows[0]?.luot ?? null;
+}
 
 /**
- * ⚠⚠ **SỔ TỰ DỌN — VÀ NÓ KHÔNG PHỤ THUỘC MỘT NHỊP HẸN GIỜ NÀO.**
- * Mỗi lượt ghi quét sạch mục quá hạn ⇒ **sổ không thể lớn lên nếu không có lượt ghi**, và mỗi lượt
- * ghi trả nó về đúng tập mục còn sống. Cận trên tự nhiên: một người dùng chỉ có **3** mã verify
- * được tại một thời điểm (`window: 1`), nên `|so| ≤ 3 × số người xác minh trong 120 s`.
- * ⚠ Quét theo `O(|so|)` mỗi lượt ghi là **cố ý**: `|so|` nhỏ theo cấu tạo, còn một ngưỡng
- * *"chỉ quét khi lớn hơn N"* sẽ để lại tới N mục chết nằm lì sau khi lưu lượng dừng — bị chặn thì
- * có bị chặn, nhưng nó biến một tính chất **chứng minh được** thành một hằng số phải tin.
+ * Mốc thời gian cho một **mảnh `sql` thô**.
+ *
+ * ⚠⚠ **KHÔNG truyền thẳng một `Date` vào `sql\`…\``** — đã trả giá ở Bước 5: drizzle chỉ biết kiểu
+ * cột trong `.values()`, còn tham số của một mảnh `sql` thô đi **thẳng** xuống gói `postgres` (v3)
+ * và ném `ERR_INVALID_ARG_TYPE: … Received an instance of Date`. Truyền **số giây** rồi để Postgres
+ * tự dựng mốc là đường duy nhất không phụ thuộc vào việc driver có đoán đúng kiểu hay không.
+ * ⚠ `AT TIME ZONE 'UTC'` là **bắt buộc**: `to_timestamp()` trả `timestamptz`, còn cột là `timestamp`
+ *   **không** múi giờ (drizzle ghi Date bằng UTC). Thiếu nó, phép so lệch đúng bằng offset của máy
+ *   chủ — một lỗi **im lặng** chỉ hiện ra ngoài UTC.
  */
-function donSo(nowMs: number): void {
-  for (const [k, v] of so) if (v.hetHan <= nowMs) so.delete(k);
+function mocUtc(nowMs: number) {
+  return sql`to_timestamp(${nowMs / 1000}) AT TIME ZONE 'UTC'`;
+}
+
+/**
+ * ⚠⚠ **SỔ TỰ DỌN — VÀ NÓ VẪN KHÔNG PHỤ THUỘC MỘT NHỊP HẸN GIỜ NÀO.**
+ *
+ * Đây là **bản dịch một-một** của `donSo()` cũ (bản trong bộ nhớ quét `Map` sau mỗi `so.set()`).
+ * Tính chất được giữ **nguyên vẹn và vẫn chứng minh được**: ***bảng không thể lớn lên nếu không có
+ * một lượt ghi, và mỗi lượt ghi trả nó về đúng tập mục còn sống.*** Cận trên vẫn là
+ * `3 × (số người xác minh trong 120 s)` vì một người chỉ có 3 mã verify được cùng lúc (`window: 1`).
+ *
+ * ⚠ **AI CHẠY: chính lượt xác minh.** BAO LÂU MỘT LẦN: **mỗi lượt được CHẤP NHẬN** — tức đúng lúc
+ *   bảng **có thể to thêm**. Lượt bị chặn (phát lại) **không** dọn: nó không thêm hàng nào.
+ * ⚠⚠ **KHÔNG CRON, và đây là một quyết định có lý do đo được:** một cron sống ở `ROLE=worker`. Đặt
+ *   phép dọn ở đó là làm **sức khoẻ của sổ** thành **hệ quả của một tiến trình KHÁC còn sống** —
+ *   đúng lăng kính *"an toàn là HỆ QUẢ của một thứ khác đang hỏng"*, thứ đã bắt được lỗi **sáu**
+ *   lần trong chuỗi pha này. Cộng: worker **không phục vụ HTTP** nên nó không bao giờ biết sổ đang
+ *   bận hay rảnh.
+ * ⚠ **KHÔNG ngưỡng "chỉ dọn khi > N"**: nó để lại tới N mục chết nằm lì sau khi lưu lượng dừng, và
+ *   biến một tính chất **chứng minh được** thành một hằng số phải tin.
+ * ⚠ Lượt dọn hỏng **KHÔNG** làm hỏng lượt xác minh: mã đã được phán quyết xong trước đó. Nuốt lỗi
+ *   ở đây là đúng — nhưng **kêu**, để một sổ đang phình không im lặng.
+ */
+async function donSo(nowMs: number): Promise<void> {
+  try {
+    const db = await layDb();
+    if (db === null) return;
+    const { totpConsumed } = await import("../../drizzle/schema/auth");
+    const { lte } = await import("drizzle-orm");
+    await db.delete(totpConsumed).where(lte(totpConsumed.expiresAt, sql`${mocUtc(nowMs)}`));
+  } catch (e) {
+    console.warn(
+      `[TotpOnce] Lượt TỰ DỌN sổ mã đã tiêu HỎNG (${(e as Error)?.message ?? String(e)}). ` +
+        `Phép xác minh KHÔNG bị ảnh hưởng, nhưng bảng \`totp_consumed\` sẽ phình nếu chuyện này lặp lại.`,
+    );
+  }
+}
+
+/** Kết nối DB, hoặc `null` nếu chưa có. ⚠ **KHÔNG nhớ `null`**: DB có thể lên sau. */
+async function layDb() {
+  const { getDb } = await import("../db/connection");
+  return await getDb();
 }
 
 /**
@@ -143,6 +230,19 @@ function donSo(nowMs: number): void {
  * trước mọi thiết lập express; `server/worker.ts` không dựng express) ⇒ nó **không thể** nhận một
  * lượt xác minh TOTP nào. Mọi giá trị khác (`api`, rỗng/all-in-one, hoặc một chuỗi lạ mà
  * `index.ts` xử lý như all-in-one) ⇒ CÓ.
+ *
+ * ⚠⚠⚠ **LÝ DO CỦA HÀNG RÀO NÀY ĐÃ ĐỔI Ở PHA 7 — ĐỌC KỸ, ĐỪNG XOÁ NHẦM.**
+ * Trước Pha 7 nó đứng đây vì *"sổ nằm trong bộ nhớ MỖI tiến trình"* — một lý do mà lượt này **đã
+ * làm cho SAI**: sổ nay ở DB, dùng chung, nên một lượt verify ở worker **cũng** an toàn về mặt
+ * phát lại. Giữ một hàng rào với một lý do đã chết là đúng lớp *"hàng rào không ai canh"*, nên lý
+ * do được **viết lại**, không phải giữ nguyên:
+ *   ***Một lượt xác minh TOTP chạy ở tiến trình không phục vụ HTTP là một LỖI LẬP TRÌNH*** —
+ *   worker không mount tRPC, không mount `/api/auth/verify-2fa`, nên **không request nào routing
+ *   tới đó được**. Một lượt gọi tới đây nghĩa là ai đó vừa nối một đường xác minh vào một chỗ
+ *   không có người dùng ở đầu kia (một cron, một dịch vụ nền) — và đó là chuyện phải **kêu to**,
+ *   không phải chuyện âm thầm cho qua.
+ * ⚠ Nó bổ sung cho `totpReplayScan.test.ts` (*"∀ file gọi `verifyTotpOnce` phải là một BỀ MẶT
+ *   REQUEST"*) — một canh **lúc chạy**, một canh **theo cấu trúc**.
  */
 function laTienTrinhPhucVuHttp(): boolean {
   return (process.env.ROLE ?? "").trim().toLowerCase() !== "worker";
@@ -164,30 +264,25 @@ let daKeuSaiTienTrinh = false;
  * @param nowMs   **chỉ dùng trong lưới** — điều khiển cả đồng hồ của `speakeasy` lẫn hạn của sổ,
  *                để các ca về hạn không phải `sleep` 120 giây thật.
  */
-export function verifyTotpOnce(args: {
+export async function verifyTotpOnce(args: {
   userId: number;
   secret: string;
   token: string;
   luot?: string;
   nowMs?: number;
-}): KetQuaTotp {
+}): Promise<KetQuaTotp> {
   const { userId, secret, token, luot } = args;
   const nowMs = args.nowMs ?? Date.now();
 
-  /**
-   * ⚠⚠ **ĐIỀU KIỆN MÀ SỔ TRONG BỘ NHỚ ĐỨNG TRÊN, VIẾT THÀNH MÃ CHẠY ĐƯỢC.** Sổ này chỉ đóng được
-   * cổng ra khi **đúng MỘT** tiến trình xác minh TOTP. Hôm nay đúng vậy vì chỉ tiến trình phục vụ
-   * HTTP mới nhận được một lượt xác minh. Nếu một ngày một đường xác minh chạy được ở tiến trình
-   * worker thì **sẽ có hai cuốn sổ**, và phát lại mở lại — âm thầm. ⇒ fail-closed + KÊU TO, để
-   * lượt hỏng ấy là một sự cố **nhìn thấy được**, không phải một lỗ hổng vô hình.
-   */
+  /** ⚠ Xem docstring `laTienTrinhPhucVuHttp()` — LÝ DO đã đổi ở Pha 7, hàng rào thì giữ. */
   if (!laTienTrinhPhucVuHttp()) {
     if (!daKeuSaiTienTrinh) {
       daKeuSaiTienTrinh = true;
       console.error(
         "[TotpOnce] Một lượt xác minh TOTP chạy ở tiến trình KHÔNG phục vụ HTTP (ROLE=worker). " +
-          "Sổ mã đã tiêu nằm trong bộ nhớ MỖI tiến trình ⇒ topo này làm mất phép chống phát lại. " +
-          "Từ chối (fail-closed). Lời giải đúng: chuyển sổ xuống DB (cần DDL — hỏi chủ dự án).",
+          "Tiến trình này không mount tRPC và không mount `/api/auth/verify-2fa` ⇒ không request " +
+          "nào routing tới đây được ⇒ đây là một LỖI LẬP TRÌNH (một cron/dịch vụ nền vừa được nối " +
+          "vào một đường xác minh). Từ chối (fail-closed).",
       );
     }
     return { hopLe: false, phatLai: false };
@@ -204,15 +299,44 @@ export function verifyTotpOnce(args: {
   //   cần biết secret ⇒ sổ tự biến thành một bề mặt DoS.
   if (!hopLeTheoMa) return { hopLe: false, phatLai: false };
 
-  const khoa = `${userId}:${token}`;
-  const cu = so.get(khoa);
-  if (cu !== undefined && cu.hetHan > nowMs) {
-    if (luot !== undefined && cu.luot === luot) return { hopLe: true, phatLai: false };
-    return { hopLe: false, phatLai: true };
+  /**
+   * ⚠ `luot ?? randomUUID()` — **đúc dấu TRƯỚC lượt ghi**, giữ nguyên ngữ nghĩa bản cũ: người gọi
+   * không khai `luot` thì mỗi lượt gọi là một lượt riêng, nên lượt thứ hai với cùng mã là PHÁT LẠI.
+   */
+  const cuaTa = luot ?? randomUUID();
+
+  let giuBoi: string | null;
+  try {
+    giuBoi = await tieuMaTrongSo(userId, bam(userId, token), cuaTa, nowMs);
+  } catch (e) {
+    /**
+     * ⚠⚠⚠ **FAIL-CLOSED, VÀ ĐÂY LÀ MỘT QUYẾT ĐỊNH CÓ CHỦ Ý — KHÔNG PHẢI MỘT `catch` CHO ĐỦ.**
+     * Sổ không đọc được mà vẫn **cho qua** là **fail-open**: đúng lúc ta mất khả năng phát hiện
+     * phát lại thì ta lại nới cửa. Cái giá phải trả và phải nói ra: một sự cố DB kéo theo **không
+     * ai đăng nhập 2FA được và không lệnh deploy/VRAM nào chạy được**. Đó là đánh đổi ĐÚNG cho một
+     * cơ chế chống phát lại, nhưng nó phải **kêu đúng tên**, không nấp sau một câu "mã không hợp lệ".
+     */
+    console.error(
+      `[TotpOnce] SỔ MÃ ĐÃ TIÊU KHÔNG HỎI ĐƯỢC (${(e as Error)?.message ?? String(e)}). ` +
+        `TỪ CHỐI mọi lượt xác minh TOTP (fail-closed) — vì cho qua lúc này là mở lại cửa PHÁT LẠI. ` +
+        `Kiểm bảng \`totp_consumed\` (migration 0313) và kết nối DB.`,
+    );
+    return { hopLe: false, phatLai: false };
   }
 
-  so.set(khoa, { hetHan: nowMs + TOTP_HAN_SO_MS, luot: luot ?? randomUUID() });
-  donSo(nowMs);
+  // `null` = không có DB ⇒ **KHÔNG BIẾT**, và "không biết" ở một cơ chế chống phát lại là TỪ CHỐI.
+  if (giuBoi === null) {
+    console.error(
+      "[TotpOnce] Không có kết nối DB ⇒ sổ mã đã tiêu KHÔNG hỏi được ⇒ TỪ CHỐI (fail-closed).",
+    );
+    return { hopLe: false, phatLai: false };
+  }
+
+  // Một lượt gọi KHÁC đang giữ mã và mục còn sống ⇒ PHÁT LẠI.
+  if (giuBoi !== cuaTa) return { hopLe: false, phatLai: true };
+
+  // Ta vừa chèn mới / thu lại một mục quá hạn ⇒ đúng lúc bảng CÓ THỂ to thêm ⇒ dọn.
+  await donSo(nowMs);
   return { hopLe: true, phatLai: false };
 }
 
@@ -222,11 +346,35 @@ export function dauLuotGoiMoi(): string {
 }
 
 /** Chỉ dùng trong lưới — số mục đang nằm trong sổ (bằng chứng của phép tự dọn). */
-export function __soTotpSize(): number {
-  return so.size;
+export async function __soTotpSize(): Promise<number> {
+  const db = await layDb();
+  if (db === null) return 0;
+  const { totpConsumed } = await import("../../drizzle/schema/auth");
+  const rows = await db.select({ luot: totpConsumed.luot }).from(totpConsumed);
+  return rows.length;
 }
 
-/** Chỉ dùng trong lưới — trả sổ về rỗng để mỗi ca độc lập. */
-export function __resetSoTotpChoTest(): void {
-  so.clear();
+/**
+ * Chỉ dùng trong lưới — trả sổ về rỗng để mỗi ca độc lập.
+ *
+ * ⚠⚠⚠ **`userIds` KHÔNG PHẢI MỘT TIỆN NGHI — NÓ CHỐNG MỘT LỖI CHÉO GIỮA CÁC FILE TEST.** Từ Pha 7
+ * sổ là một **BẢNG DÙNG CHUNG**, không còn là một `Map` cấp module. Vitest chạy **các file test
+ * song song**, nên một lượt `DELETE` toàn bảng ở file A có thể rơi **vào giữa** một ca của file B —
+ * xoá đúng mục mà B vừa ghi, và biến một lượt phát lại **đáng bị chặn** thành một lượt **được cho
+ * qua**. Đó là một ca **XANH SAI**, thứ tệ hơn một ca đỏ.
+ * ⇒ Mọi người gọi **phải khai người dùng của mình**. Bỏ trống là xoá cả bảng — giữ lại chỉ cho
+ *   những lượt dọn toàn cục có chủ đích, và **không** nên dùng trong một file test.
+ */
+export async function __resetSoTotpChoTest(userIds?: readonly number[]): Promise<void> {
+  const db = await layDb();
+  if (db === null) return;
+  const { totpConsumed } = await import("../../drizzle/schema/auth");
+  const { inArray } = await import("drizzle-orm");
+  if (userIds === undefined || userIds.length === 0) {
+    await db.delete(totpConsumed);
+    return;
+  }
+  // ⚠ `inArray()`, KHÔNG `sql\`col = ANY(${jsArray})\`` — cái sau cho 500 `42809`
+  //   (GOTCHA đã trả giá ở 10 điểm gọi, memory `drizzle-any-array-antipattern`).
+  await db.delete(totpConsumed).where(inArray(totpConsumed.userId, [...userIds]));
 }

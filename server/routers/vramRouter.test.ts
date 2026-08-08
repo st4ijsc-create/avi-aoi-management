@@ -69,6 +69,9 @@ function hangAnhEm(over: Partial<SharedLeaseRow> = {}): SharedLeaseRow {
     reclaimer: "gguf-idle-model",
     acquiredAtMs: 1,
     updatedAtMs: 1,
+    /** ★ Pha 7 Task 5 (B) — hàng GIẢ do lưới dựng ⇒ nó BIẾT là không cắt gì. `null` ở đây sẽ
+     *  là tự khai "không biết", và các ca dưới sẽ đo một vế khác với vế chúng định đo. */
+    identityTruncated: [],
     ...over,
   };
 }

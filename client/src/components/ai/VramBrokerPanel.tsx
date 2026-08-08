@@ -360,6 +360,18 @@ export function VramBrokerPanel({ commandReach, polling }: Props) {
                 chuỗi của **mặt đọc**, sổ giữ chuỗi **đã cắt** ⇒ hai chuỗi không khớp ⇒ hộ ấy
                 **không thu hồi được**, và con số cảnh báo nằm im trong JSON.
               */}
+              {/*
+                ★★★ Pha 7 Task 5 (B) — VẾ THỨ BA. `unknownIdentityRows > 0` ⇒ còn một tiến trình
+                bản CŨ đang ghi vào sổ chung. Không hiện nó ra thì người đọc thấy
+                `truncatedIdentityWrites = 0` và kết luận "mọi danh tính đều thật" — fail-open,
+                chỉ dời lên một tầng.
+              */}
+              {s.ledger.foreign.known && (s.ledger.foreign.unknownIdentityRows ?? 0) > 0 ? (
+                <p className="text-xs text-amber-600 mt-1" data-testid="vram-unknown-identity-rows">
+                  {t("vramBroker.unknownIdentityRows", "hàng KHÔNG BIẾT danh tính có bị cắt (người ghi là bản CŨ)")}:{" "}
+                  {s.ledger.foreign.unknownIdentityRows}
+                </p>
+              ) : null}
               {s.ledger.foreign.known && (s.ledger.foreign.truncatedIdentityWrites ?? 0) > 0 ? (
                 <p className="text-xs text-destructive mt-1">
                   {t("vramBroker.truncatedIdentityWrites", "lượt ghi sổ chung bị CẮT danh tính")}:{" "}
@@ -393,8 +405,33 @@ export function VramBrokerPanel({ commandReach, polling }: Props) {
                     key={`${h.processKey ?? "self"}#${h.leaseKey ?? h.owner}`}
                     className="flex flex-wrap items-center gap-2 rounded-md border p-2 text-xs"
                   >
-                    {/* ⚠ owner KHÔNG cắt ngắn — danh tính đi thẳng vào lệnh. */}
+                    {/* ⚠ owner KHÔNG cắt ngắn Ở ĐÂY — danh tính đi thẳng vào lệnh.
+                        ⚠⚠ NHƯNG với hộ **ANH EM** chuỗi này CÓ THỂ đã bị cắt **TẠI DB** trước khi
+                        tới đây, và không phép so độ dài nào phát hiện được (một chuỗi dài ĐÚNG
+                        BẰNG trần thì KHÔNG bị cắt). Lời khai duy nhất đáng tin là của NGƯỜI GHI,
+                        và nó đi kèm hàng ở `identityTruncated` — hiện ngay dưới đây. */}
                     <span className="font-mono break-all">{h.owner}</span>
+                    {/*
+                      ★★★ Pha 7 Task 5 (B) — BA GIÁ TRỊ, BA CÁCH HIỆN. `[]` ⇒ không hiện gì (tên
+                      thật). Bỏ nhánh `null` là khai "tên thật" cho một hàng ta KHÔNG có bằng
+                      chứng gì — đúng fail-open mà cột này sinh ra để đóng.
+                    */}
+                    {h.identityTruncated === null ? (
+                      <Badge variant="secondary" data-testid="vram-identity-unknown">
+                        {t(
+                          "vramBroker.identityUnknown",
+                          "KHÔNG BIẾT tên này có bị cắt không — hàng do một tiến trình bản CŨ ghi",
+                        )}
+                      </Badge>
+                    ) : h.identityTruncated.length > 0 ? (
+                      <Badge variant="destructive" data-testid="vram-identity-truncated">
+                        {t(
+                          "vramBroker.identityTruncated",
+                          "TÊN ĐÃ BỊ CẮT khi lên sổ chung — đây KHÔNG phải tên đầy đủ",
+                        )}{" "}
+                        ({h.identityTruncated.join(", ")})
+                      </Badge>
+                    ) : null}
                     <Badge variant="outline">{h.kind}</Badge>
                     <Badge variant="outline">{h.priority}</Badge>
                     <span className="text-muted-foreground">{fmtMiB(h.bytes, "?")}</span>

@@ -52,8 +52,6 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import speakeasy from "speakeasy";
 import { z } from "zod";
-// ★★★ Pha 6 Task 6 — sổ mã OTP đã tiêu; xem lý lẽ ở `beforeEach`.
-import { __resetSoTotpChoTest } from "../_core/totpOnce";
 import {
   quetThuTucDeploy,
   moiFileDuoi,
@@ -79,8 +77,34 @@ vi.mock("drizzle-orm", async (orig) => {
   const actual = await orig<typeof import("drizzle-orm")>();
   return { ...actual, eq: makeEq, and: makeAnd, desc: makeDesc };
 });
-vi.mock("../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
+/**
+ * ★★★ Pha 7 Task 5 (A) — sổ mã đã tiêu đi xuống **DB THẬT** (`totp_consumed`); mọi bảng
+ * khác giữ `FakeDb`. Xem `./__totpDbHybrid` để biết vì sao KHÔNG dạy `FakeDb` làm bảng ấy.
+ */
+vi.mock("../db/connection", () => ({
+  /**
+   * ⚠⚠ **MỌI THỨ LÀM LƯỜI, KHÔNG LÀM Ở THÂN FACTORY.** `vi.mock` được HOIST lên đầu file; một
+   * lượt `await orig()` **ngay trong factory** kéo `../db/connection` thật vào **trước khi**
+   * `const fake = new FakeDb()` kịp chạy ⇒ `ReferenceError: Cannot access '__vi_import_N__'
+   * before initialization`. Đẩy hết vào thân `getDb` (chỉ chạy khi có người gọi) là đúng khuôn
+   * bản gốc, và là thứ giữ cho thứ tự nạp không thành một điều kiện ngầm.
+   */
+  getDb: vi.fn(async () => {
+    const { soHonHop } = await import("./__totpDbHybrid");
+    const that = await vi.importActual<typeof import("../db/connection")>("../db/connection");
+    return soHonHop(fake, await that.getDb());
+  }),
+}));
 
+/**
+ * ★★★ Pha 6 Task 6 — sổ mã OTP đã tiêu; xem lý lẽ ở `beforeEach`.
+ *
+ * ⚠⚠ **NHẬP SAU KHỐI `vi.mock`, KHÔNG TRƯỚC.** Từ Pha 7, `_core/totpOnce` chạm
+ * `../db/connection`; nhập nó ở **ĐẦU file** làm mock của `../db/connection` được dựng **trước
+ * khi** `const fake = new FakeDb()` kịp chạy ⇒ `ReferenceError: Cannot access '__vi_import_N__'
+ * before initialization`. Thứ tự nhập ở đây là một **ĐIỀU KIỆN**, không phải thẩm mỹ.
+ */
+import { __resetSoTotpChoTest } from "../_core/totpOnce";
 import { router, deployProcedure, actuationProcedure } from "../_core/trpc";
 import { programmingRouter } from "./programmingRouter";
 import { orchestrationRouter } from "./orchestrationRouter";
@@ -254,7 +278,7 @@ function goi(phien: string, t: ThuTucDeploy, input: unknown): Promise<unknown> {
   return f(input);
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   fake.store.clear();
   resetSeq();
   /**
@@ -263,7 +287,7 @@ beforeEach(() => {
    * (`_core/totpOnce.ts`) là một `Map` cấp module ⇒ không dọn thì ca thứ hai bị từ chối vì **ca
    * thứ nhất đã tiêu mã** — tức đỏ vì một **kịch bản khác**, không vì cái nó đang canh.
    */
-  __resetSoTotpChoTest();
+  await __resetSoTotpChoTest([SUP_ID]);
   seedNguoiDung2FA();
   capQuyen();
   process.env.ACTUATION_STEPUP_2FA = "true";
@@ -273,7 +297,7 @@ beforeEach(() => {
 // 0. CẦU CHÌ — một tập rỗng làm MỌI khẳng định dưới thành chân lý rỗng
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-describe("★★★ Pha 6 Task 1b — cầu chì của lượng từ", () => {
+describe("★★★ Pha 6 Task 1b — cầu chì của lượng từ", async () => {
   it("★★★ bộ suy đọc được TOÀN `server/**`: 0 ô mù, và tập thủ tục deploy KHÔNG rỗng", () => {
     expect(O_MU.join("\n"), "một ô không phân giải được là một ô KHÔNG AI CANH").toBe("");
     // ⚠ I-2/R1b — cầu chì VỊ TRÍ: bộ quét phải **đệ quy toàn `server/**`**, không dừng ở
@@ -364,7 +388,7 @@ describe("★★★ Pha 6 Task 1b — cầu chì của lượng từ", () => {
 //   ca gộp `for` sẽ dừng ở cái đầu tiên đỏ và bốn cái sau không ai biết trạng thái.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-describe("★★★ Task 1b — cache phiên ĐÃ ẤM ⇒ thủ tục deploy KHÔNG OTP vẫn phải BỊ CHẶN", () => {
+describe("★★★ Task 1b — cache phiên ĐÃ ẤM ⇒ thủ tục deploy KHÔNG OTP vẫn phải BỊ CHẶN", async () => {
   it.each(GOI_DUOC.map((t) => [`${t.file}#${t.ten}`, t] as const))(
     "★★★ %s — step-up ở một thủ tục `deployProcedure` KHÁC ⇒ lượt này KHÔNG `totpCode` phải bị chặn ở cổng OTP",
     async (_nhan, t) => {
@@ -394,7 +418,7 @@ describe("★★★ Task 1b — cache phiên ĐÃ ẤM ⇒ thủ tục deploy KH
 // 2. ĐỐI CHỨNG DƯƠNG — "chặn hết" cũng là xanh nếu không có mục này
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-describe("★★★ ĐỐI CHỨNG DƯƠNG — lượt CÓ OTP hợp lệ VẪN QUA cổng OTP", () => {
+describe("★★★ ĐỐI CHỨNG DƯƠNG — lượt CÓ OTP hợp lệ VẪN QUA cổng OTP", async () => {
   it.each(GOI_DUOC.map((t) => [`${t.file}#${t.ten}`, t] as const))(
     "★★★ %s — OTP tươi của CHÍNH lượt ấy ⇒ đi QUA cổng OTP (dừng ở zod, KHÔNG ở `twoFactorCode`)",
     async (_nhan, t) => {
@@ -418,7 +442,7 @@ describe("★★★ ĐỐI CHỨNG DƯƠNG — lượt CÓ OTP hợp lệ VẪN 
 // 3. PHÉP THỬ M3 + KHÔNG BẮT NHẦM
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-describe("★★★ M3 — thủ tục MỚI chain `deployProcedure` trong FILE MỚI: được che TỰ ĐỘNG", () => {
+describe("★★★ M3 — thủ tục MỚI chain `deployProcedure` trong FILE MỚI: được che TỰ ĐỘNG", async () => {
   it("★★★ `deployMoi` (khai ngay trong file test này, 0 dòng cấu hình) — cache ấm ⇒ vẫn bị chặn", async () => {
     /**
      * ⚠⚠⚠ Đây là ô mà **chain tay 7 chỗ** sẽ trượt: một thủ tục deploy mới ở file thứ tám không có
@@ -584,7 +608,7 @@ describe("★★★ I-1 — `requireFreshTotp` (cache phiên) có ĐÚNG MỘT �
   });
 });
 
-describe("★★★ KHÔNG BẮT NHẦM — phép siết chỉ chạm nhánh `deployProcedure`", () => {
+describe("★★★ KHÔNG BẮT NHẦM — phép siết chỉ chạm nhánh `deployProcedure`", async () => {
   it("★★★ `actuationProcedure` (KHÔNG phải deploy) giữ NGUYÊN hành vi: không đòi OTP", async () => {
     await expect(moi(phienMoi()).actuationKhac({}), "actuation không phải deploy ⇒ không cổng OTP").resolves.toEqual({
       ok: true,

@@ -405,11 +405,11 @@ export function registerOAuthRoutes(app: Express) {
       //   MỘT PHIÊN ĐĂNG NHẬP (`establishSession` bên dưới). Nó phải đứng trên cùng cuốn sổ với
       //   đường step-up, nếu không thì bịt một cửa và để mở cửa kia.
       const { verifyTotpOnce } = await import('./totpOnce');
-      const verified = verifyTotpOnce({
+      const verified = (await verifyTotpOnce({
         userId: user.id,
         secret: twoFAStatus.twoFactorSecret,
         token: token,
-      }).hopLe;
+      })).hopLe;
       
       if (!verified) {
         // Try backup code if TOTP fails

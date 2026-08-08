@@ -146,11 +146,11 @@ export const twoFactorRouter = router({
       }
 
       // Verify the TOTP code — MỘT LẦN (Pha 6 Task 6: mã tiêu rồi thì không dùng lại được).
-      const verified = verifyTotpOnce({
+      const verified = (await verifyTotpOnce({
         userId: ctx.user.id,
         secret: user[0].twoFactorSecret,
         token: input.code,
-      }).hopLe;
+      })).hopLe;
 
       if (!verified) {
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "twoFactorCode" }, "Invalid verification code. Please try again.");
@@ -222,11 +222,11 @@ export const twoFactorRouter = router({
       //   backup code nào) ⇒ fail-closed, đúng chiều.
       let verified = false;
       if (input.code.length === 6 && /^\d+$/.test(input.code)) {
-        verified = verifyTotpOnce({
+        verified = (await verifyTotpOnce({
           userId: ctx.user.id,
           secret: user[0].twoFactorSecret || "",
           token: input.code,
-        }).hopLe;
+        })).hopLe;
       }
 
       // If not TOTP, try backup code
@@ -309,11 +309,11 @@ export const twoFactorRouter = router({
       // Try TOTP first — MỘT LẦN (Pha 6 Task 6).
       let verified = false;
       if (input.code.length === 6 && /^\d+$/.test(input.code)) {
-        verified = verifyTotpOnce({
+        verified = (await verifyTotpOnce({
           userId: ctx.user.id,
           secret: user[0].twoFactorSecret,
           token: input.code,
-        }).hopLe;
+        })).hopLe;
       }
 
       // Try backup code
@@ -381,11 +381,11 @@ export const twoFactorRouter = router({
 
       // Verify TOTP — MỘT LẦN (Pha 6 Task 6). Đường này sinh lại **10 mã dự phòng**: một mã OTP
       // trộm được mà tiêu lại được ở đây là một cửa hậu vĩnh viễn.
-      const verified = verifyTotpOnce({
+      const verified = (await verifyTotpOnce({
         userId: ctx.user.id,
         secret: user[0].twoFactorSecret,
         token: input.code,
-      }).hopLe;
+      })).hopLe;
 
       if (!verified) {
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "twoFactorCode" }, "Invalid verification code");

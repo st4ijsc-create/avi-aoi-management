@@ -45,6 +45,7 @@ npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/routers/vramStepUpFreshness.test.ts \
   server/routers/deployStepUpFreshness.test.ts \
   server/routers/totpReplay.test.ts \
+  server/routers/totpLedgerDurable.test.ts \
   server/routers/totpReplayScan.test.ts \
   server/services/aiCopilotActions.hardlinkSink.test.ts \
   server/services/aiAgentOrchestrator.authCtx.test.ts client/src/lib/

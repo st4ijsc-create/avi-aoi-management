@@ -151,6 +151,9 @@ function hangAnhEm(over: Partial<SharedLeaseRow> = {}): SharedLeaseRow {
     reclaimer: "gguf-idle-model",
     acquiredAtMs: 1,
     updatedAtMs: 1,
+    /** ★ Pha 7 Task 5 (B) — hàng GIẢ do lưới dựng ⇒ nó BIẾT là không cắt gì. `null` ở đây sẽ
+     *  là tự khai "không biết", và các ca dưới sẽ đo một vế khác với vế chúng định đo. */
+    identityTruncated: [],
     ...over,
   };
 }
@@ -330,6 +333,9 @@ const KHONG_DOI_THEO_DONG_HO: readonly string[] = [
   "ledger.localHolders[].processKey",
   "ledger.localHolders[].leaseKey",
   "ledger.localHolders[].ttlMs",
+  // ★ Pha 7 Task 5 (B) — lời khai "danh tính này có phải tên thật không". ĐỨNG YÊN theo đồng hồ:
+  //   nó là tính chất của CHUỖI đã ghi, không của thời điểm đọc. Hộ CỤC BỘ luôn `[]` (N11).
+  "ledger.localHolders[].identityTruncated",
   "ledger.foreign.known",
   "ledger.foreign.bytes",
   "ledger.foreign.unsyncedWrites",
@@ -337,7 +343,12 @@ const KHONG_DOI_THEO_DONG_HO: readonly string[] = [
   // ★ Pha 6 Task 5 — số HÀNG mang danh tính cụt. Đứng yên theo đồng hồ: nó đếm **trạng thái đang
   //   công bố**, không đếm **lượt**, đúng để tránh lớp nhiễu I-3 ("một cờ luôn bật là cờ vô nghĩa").
   "ledger.foreign.truncatedIdentityWrites",
+  // ★ Pha 7 Task 5 (B) — VẾ THỨ BA: số hàng ta KHÔNG BIẾT (người ghi là bản CŨ). Cùng lý lẽ đứng
+  //   yên với ô ngay trên: nó đếm TRẠNG THÁI đang công bố, không đếm LƯỢT.
+  "ledger.foreign.unknownIdentityRows",
   "ledger.foreign.holders[].owner",
+  // ★ Pha 7 Task 5 (B) — lời khai của NGƯỜI GHI đi kèm hàng anh em; đứng yên theo đồng hồ.
+  "ledger.foreign.holders[].identityTruncated",
   "ledger.foreign.holders[].kind",
   "ledger.foreign.holders[].bytes",
   "ledger.foreign.holders[].priority",

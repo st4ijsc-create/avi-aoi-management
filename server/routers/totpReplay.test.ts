@@ -66,7 +66,24 @@ vi.mock("drizzle-orm", async (orig) => {
   const actual = await orig<typeof import("drizzle-orm")>();
   return { ...actual, eq: makeEq, and: makeAnd, desc: makeDesc };
 });
-vi.mock("../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
+/**
+ * ★★★ Pha 7 Task 5 (A) — sổ mã đã tiêu đi xuống **DB THẬT**; phần còn lại giữ `FakeDb`.
+ * Phép định tuyến sống ở `./__totpDbHybrid` (một bản, ba file dùng) — xem docstring ở đó.
+ */
+vi.mock("../db/connection", () => ({
+  /**
+   * ⚠⚠ **MỌI THỨ LÀM LƯỜI, KHÔNG LÀM Ở THÂN FACTORY.** `vi.mock` được HOIST lên đầu file; một
+   * lượt `await orig()` **ngay trong factory** kéo `../db/connection` thật vào **trước khi**
+   * `const fake = new FakeDb()` kịp chạy ⇒ `ReferenceError: Cannot access '__vi_import_N__'
+   * before initialization`. Đẩy hết vào thân `getDb` (chỉ chạy khi có người gọi) là đúng khuôn
+   * bản gốc, và là thứ giữ cho thứ tự nạp không thành một điều kiện ngầm.
+   */
+  getDb: vi.fn(async () => {
+    const { soHonHop } = await import("./__totpDbHybrid");
+    const that = await vi.importActual<typeof import("../db/connection")>("../db/connection");
+    return soHonHop(fake, await that.getDb());
+  }),
+}));
 
 import { vramRouter } from "./vramRouter";
 import { router, deployProcedure } from "../_core/trpc";
@@ -181,7 +198,7 @@ function xinThat(owner: string, bytes: number) {
   return out.lease;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   fake.store.clear();
   resetSeq();
   sidecar.stop = null;
@@ -189,7 +206,7 @@ beforeEach(() => {
   __resetSharedLedgerForTests();
   __resetDecisionTickForTests();
   __resetVramDeferForTests();
-  __resetSoTotpChoTest();
+  await __resetSoTotpChoTest([SUP_ID, SUP2_ID]);
   seedNguoiDung2FA();
   capQuyen([
     { userId: SUP_ID, module: VRAM_CONTROL_MODULE, canDelete: true, canCreate: true },
@@ -202,7 +219,7 @@ beforeEach(() => {
 // 0. CẦU CHÌ — đường thật phải ĐANG chạy, nếu không mọi ca dưới là chân lý rỗng
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-describe("★★★ Pha 6 Task 6 — cầu chì", () => {
+describe("★★★ Pha 6 Task 6 — cầu chì", async () => {
   it("★★★ cờ `ACTUATION_STEPUP_2FA` BẬT và middleware ĐANG chạy (phiên nguội, không mã ⇒ chặn)", async () => {
     const e = await loiCua(khac(phienMoi()).deployKhac(tuDay({})));
     expect(readAppErrorMeta(e)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
@@ -219,7 +236,7 @@ describe("★★★ Pha 6 Task 6 — cầu chì", () => {
 // ⚠ Đây là **CA ĐO** của Bước 1: trước bản vá, cả hai lượt đều QUA (`window: 1` ⇒ ~90 s).
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-describe("★★★ Task 6 — một mã OTP tiêu được ĐÚNG MỘT LẦN", () => {
+describe("★★★ Task 6 — một mã OTP tiêu được ĐÚNG MỘT LẦN", async () => {
   it("★★★ CA ĐO (Bước 1): cùng một mã, hai lượt gọi liên tiếp trong cửa sổ hợp lệ ⇒ lượt THỨ HAI bị từ chối", async () => {
     const ma = otp();
     // Nhịp 1 — mã mới ⇒ QUA.
@@ -273,7 +290,7 @@ describe("★★★ Task 6 — một mã OTP tiêu được ĐÚNG MỘT LẦN",
     await expect(khac(phienMoi(), supervisor2).deployKhac({ totpCode: maB })).resolves.toEqual({ ok: true });
   });
 
-  it("★★★ KHÓA SỔ PHẢI CHỨA `userId` — CÙNG một chuỗi mã, HAI người dùng ⇒ cả hai QUA", () => {
+  it("★★★ KHÓA SỔ PHẢI CHỨA `userId` — CÙNG một chuỗi mã, HAI người dùng ⇒ cả hai QUA", async () => {
     /**
      * ⚠⚠⚠ **CA NÀY TỒN TẠI VÌ MỘT ĐỘT BIẾN ĐÃ SỐNG SÓT.** Ô "không bắt nhầm người" ở trên dùng hai
      * secret KHÁC nhau, nên hai người sinh ra hai chuỗi 6 số khác nhau và khoá sổ **có hay không
@@ -287,22 +304,22 @@ describe("★★★ Task 6 — một mã OTP tiêu được ĐÚNG MỘT LẦN",
      */
     const t = Math.floor(Date.now() / 1000);
     const ma = otpLuc(t);
-    const a = verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: ma, nowMs: t * 1000 });
+    const a = await verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: ma, nowMs: t * 1000 });
     expect(a.hopLe, "người thứ nhất tiêu mã của mình").toBe(true);
-    const b = verifyTotpOnce({ userId: SUP2_ID, secret: SECRET_2FA, token: ma, nowMs: t * 1000 });
+    const b = await verifyTotpOnce({ userId: SUP2_ID, secret: SECRET_2FA, token: ma, nowMs: t * 1000 });
     expect(b.hopLe, "người thứ HAI dùng CÙNG chuỗi mã ⇒ vẫn phải QUA (khoá sổ thiếu `userId`)").toBe(true);
     expect(b.phatLai, "và tuyệt đối không được bị khai là PHÁT LẠI").toBe(false);
     // …còn CÙNG người + CÙNG mã thì vẫn là phát lại (đối chứng ngược, để ô này không xanh vì bản
     // vá đã bỏ sổ hoàn toàn).
-    const lai = verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: ma, nowMs: t * 1000 });
+    const lai = await verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: ma, nowMs: t * 1000 });
     expect(lai.phatLai, "cùng người + cùng mã vẫn PHẢI là phát lại").toBe(true);
   });
 
   it("★★★ KHÔNG BẮT NHẦM ĐƯỜNG — mã SAI vẫn hỏng vì SAI, và KHÔNG chiếm chỗ trong sổ", async () => {
-    const truoc = __soTotpSize();
+    const truoc = await __soTotpSize();
     const e = await loiCua(khac(phienMoi()).deployKhac({ totpCode: "000000" }));
     expect(readAppErrorMeta(e)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
-    expect(__soTotpSize(), "mã KHÔNG verify được thì KHÔNG được ghi vào sổ (nếu không, sổ thành bề mặt DoS)").toBe(truoc);
+    expect(await __soTotpSize(), "mã KHÔNG verify được thì KHÔNG được ghi vào sổ (nếu không, sổ thành bề mặt DoS)").toBe(truoc);
   });
 });
 
@@ -310,31 +327,31 @@ describe("★★★ Task 6 — một mã OTP tiêu được ĐÚNG MỘT LẦN",
 // 2. ★★★ SỔ PHẢI TỰ DỌN — nếu không nó phình vô hạn
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-describe("★★★ Task 6 — sổ mã đã tiêu TỰ DỌN", () => {
-  it("★★★ mục quá hạn bị xoá ở lượt ghi kế tiếp ⇒ số mục KHÔNG tăng theo thời gian", () => {
+describe("★★★ Task 6 — sổ mã đã tiêu TỰ DỌN", async () => {
+  it("★★★ mục quá hạn bị xoá ở lượt ghi kế tiếp ⇒ số mục KHÔNG tăng theo thời gian", async () => {
     const t0 = Math.floor(Date.now() / 1000);
-    expect(__soTotpSize()).toBe(0);
+    expect(await __soTotpSize()).toBe(0);
     for (let i = 0; i < 5; i++) {
       const giay = t0 + i * 30;
-      const kq = verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: otpLuc(giay), nowMs: giay * 1000 });
+      const kq = await verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: otpLuc(giay), nowMs: giay * 1000 });
       expect(kq.hopLe, `mã của nhịp ${i} phải verify được`).toBe(true);
     }
-    const dinh = __soTotpSize();
+    const dinh = await __soTotpSize();
     expect(dinh, "5 mã liên tiếp ⇒ sổ phải có mục").toBeGreaterThan(0);
 
     // Nhảy qua HẠN của sổ rồi ghi thêm MỘT mục ⇒ mọi mục cũ phải biến mất.
     const sau = t0 + Math.ceil(TOTP_HAN_SO_MS / 1000) + 300;
-    const kq = verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: otpLuc(sau), nowMs: sau * 1000 });
+    const kq = await verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: otpLuc(sau), nowMs: sau * 1000 });
     expect(kq.hopLe, "đối chứng dương: mã mới ở thời điểm mới vẫn phải QUA").toBe(true);
-    expect(__soTotpSize(), `sổ phải tự dọn: còn ĐÚNG 1 mục (đỉnh trước đó ${dinh})`).toBe(1);
+    expect(await __soTotpSize(), `sổ phải tự dọn: còn ĐÚNG 1 mục (đỉnh trước đó ${dinh})`).toBe(1);
   });
 
-  it("★★★ ĐỐI CHỨNG — hết hạn KHÔNG có nghĩa là mở lại cửa cho mã cũ (mã cũ cũng hết hiệu lực)", () => {
+  it("★★★ ĐỐI CHỨNG — hết hạn KHÔNG có nghĩa là mở lại cửa cho mã cũ (mã cũ cũng hết hiệu lực)", async () => {
     const t0 = Math.floor(Date.now() / 1000);
     const ma = otpLuc(t0);
-    expect(verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: ma, nowMs: t0 * 1000 }).hopLe).toBe(true);
+    expect((await verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: ma, nowMs: t0 * 1000 })).hopLe).toBe(true);
     const sau = t0 + Math.ceil(TOTP_HAN_SO_MS / 1000) + 300;
-    const kq = verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: ma, nowMs: sau * 1000 });
+    const kq = await verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: ma, nowMs: sau * 1000 });
     expect(kq.hopLe, "mục sổ hết hạn rồi, nhưng CHÍNH MÃ cũng đã ra ngoài cửa sổ TOTP ⇒ vẫn từ chối").toBe(false);
     expect(kq.phatLai, "từ chối này là do MÃ HẾT HẠN, không phải do sổ").toBe(false);
   });
@@ -347,7 +364,7 @@ describe("★★★ Task 6 — sổ mã đã tiêu TỰ DỌN", () => {
 // VRAM/deploy** và không ca nào ở §1 phát hiện được — mọi ca §1 chỉ khẳng định chuyện BỊ CHẶN.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-describe("★★★ Task 6 — sổ KHÔNG được tự chặn mình trong CÙNG một lượt gọi", () => {
+describe("★★★ Task 6 — sổ KHÔNG được tự chặn mình trong CÙNG một lượt gọi", async () => {
   it("★★★ `vram.preempt` (chuỗi 3 lượt verify cùng mã) với mã MỚI ⇒ VẪN QUA và byte RỜI SỔ THẬT", async () => {
     const lease = xinThat("sidecar:vision", 7_825 * MIB);
     let daGoi = false;
@@ -362,7 +379,7 @@ describe("★★★ Task 6 — sổ KHÔNG được tự chặn mình trong CÙN
     expect(broker.snapshot().totalReservedBytes, "byte phải rời sổ thật").toBeLessThan(truoc);
   });
 
-  it("★★★ cầu chì của ô trên — chuỗi ấy THẬT SỰ verify nhiều hơn MỘT lần cho một lượt gọi", () => {
+  it("★★★ cầu chì của ô trên — chuỗi ấy THẬT SỰ verify nhiều hơn MỘT lần cho một lượt gọi", async () => {
     /**
      * ⚠ Nếu chuỗi chỉ verify **một** lần thì ô trên là chân lý rỗng và ràng buộc "cùng lượt gọi"
      * không được canh bởi bất cứ gì. Con số dưới đây suy từ **cùng một lượt claim**: ba lượt gọi
@@ -371,10 +388,10 @@ describe("★★★ Task 6 — sổ KHÔNG được tự chặn mình trong CÙN
     const t = Math.floor(Date.now() / 1000);
     const ma = otpLuc(t);
     const chung = { userId: SUP_ID, secret: SECRET_2FA, token: ma, nowMs: t * 1000 };
-    expect(verifyTotpOnce({ ...chung, luot: "L1" }).hopLe, "lượt verify #1 của lượt gọi L1").toBe(true);
-    expect(verifyTotpOnce({ ...chung, luot: "L1" }).hopLe, "lượt verify #2 của CÙNG lượt gọi L1").toBe(true);
-    expect(verifyTotpOnce({ ...chung, luot: "L1" }).hopLe, "lượt verify #3 của CÙNG lượt gọi L1").toBe(true);
-    const khacLuot = verifyTotpOnce({ ...chung, luot: "L2" });
+    expect((await verifyTotpOnce({ ...chung, luot: "L1" })).hopLe, "lượt verify #1 của lượt gọi L1").toBe(true);
+    expect((await verifyTotpOnce({ ...chung, luot: "L1" })).hopLe, "lượt verify #2 của CÙNG lượt gọi L1").toBe(true);
+    expect((await verifyTotpOnce({ ...chung, luot: "L1" })).hopLe, "lượt verify #3 của CÙNG lượt gọi L1").toBe(true);
+    const khacLuot = await verifyTotpOnce({ ...chung, luot: "L2" });
     expect(khacLuot.hopLe, "một lượt gọi KHÁC với cùng mã ⇒ PHÁT LẠI").toBe(false);
     expect(khacLuot.phatLai, "và nó phải tự khai là phát lại, không im lặng").toBe(true);
   });

@@ -121,6 +121,13 @@ function canhDay(soHoAnhEm = 2): VramAgentState {
     ttlMs: i === 1 ? 45_000 : null,
     ttlExpired: i === 1 ? true : null,
     leaseKey: `worker:${900 + i}:1#lease-${i}`,
+    /**
+     * ★★★ Pha 7 Task 5 (B) — **CẢNH PHẢI DỰNG ĐỦ BA GIÁ TRỊ, cùng lý lẽ với hai ô TTL ngay trên.**
+     * Luật của file này nói về **NGƯỜI ĐỌC**, nên cảnh phải mang **mọi hình dạng kiểu cho phép**:
+     * `[]` (tên thật) · `[…]` (đã cắt) · `null` (**KHÔNG BIẾT** — hàng do một tiến trình bản CŨ ghi).
+     * Để cả ba đều `[]` là đo hụt đúng hai nhánh mà bản vá này sinh ra để làm cho nhìn thấy được.
+     */
+    identityTruncated: i === 0 ? ["owner"] : i === 1 ? null : [],
   }));
   return {
     atMs: 1_700_000_000_123,
@@ -140,6 +147,8 @@ function canhDay(soHoAnhEm = 2): VramAgentState {
           ttlMs: 60_000,
           ttlExpired: false,
           leaseKey: null,
+          /** ★ Pha 7 Task 5 (B) — hộ CỤC BỘ giữ `owner` nguyên vẹn ⇒ khai RỖNG. */
+          identityTruncated: [],
         },
         {
           owner: "onnx:aoi-seg",
@@ -152,6 +161,8 @@ function canhDay(soHoAnhEm = 2): VramAgentState {
           ttlMs: null,
           ttlExpired: null,
           leaseKey: null,
+          /** ★ Pha 7 Task 5 (B) — hộ CỤC BỘ giữ `owner` nguyên vẹn ⇒ khai RỖNG. */
+          identityTruncated: [],
         },
       ],
       foreign: {
@@ -163,6 +174,8 @@ function canhDay(soHoAnhEm = 2): VramAgentState {
         unsyncedWrites: 0,
         consecutiveFailures: 0,
         truncatedIdentityWrites: 3,
+        /** ★ Pha 7 Task 5 (B) — vế THỨ BA: 0 hàng "không biết" (mọi người ghi đã lên bản mới). */
+        unknownIdentityRows: 0,
       },
       totalBytes: 9_044_746_240,
       sharedRefreshIntervalMs: 60_123,

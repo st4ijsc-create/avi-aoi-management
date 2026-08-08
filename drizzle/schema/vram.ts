@@ -115,6 +115,35 @@ export const vramLeases = pgTable("vram_leases", {
   reclaimer: varchar("reclaimer", { length: 32 }),
   acquiredAt: timestamp("acquiredAt").notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  /**
+   * ★★★ Pha 7 Task 5 (B) — **CỜ "ĐÃ CẮT DANH TÍNH", ĐI CÙNG DỮ LIỆU.** Migration `0313`.
+   *
+   * ⚠⚠⚠ **BA GIÁ TRỊ, KHÔNG PHẢI HAI** — cùng kỷ luật `TrangThaiTienTrinh` (`vramAdoption.ts`:
+   * `"song" | "chet" | "khong-biet"`):
+   *   • `null`              = **KHÔNG BIẾT** — người ghi hàng này **chưa biết cột này tồn tại**
+   *                           (một tiến trình cũ trong cửa sổ triển khai). Người đọc **TUYỆT ĐỐI
+   *                           KHÔNG** được đọc thành *"sạch"*.
+   *   • `[]`                = người ghi **khai**: không cắt ô nào.
+   *   • `["owner", …]`      = đúng những ô đã bị cắt (khoá của `VRAM_LEASE_COLUMN_MAX`).
+   *
+   * ⚠⚠ **KHÔNG CÓ `DEFAULT '[]'`**, và đó là một quyết định chứ không phải một thiếu sót: một
+   * `DEFAULT '[]'` biến *"người ghi chưa biết cột này"* thành *"người ghi khai không cắt gì"* —
+   * tức **tự tay dựng lại đúng lời nói dối mà cột này sinh ra để diệt**.
+   *
+   * ⚠⚠ VÌ SAO PHẢI NẰM Ở DB CHỨ KHÔNG PHẢI TRONG BỘ NHỚ NGƯỜI GHI: đo được ở Pha 7 Bước 1 (ca
+   * **B1** và **B3**) — tiến trình **anh em** đọc đúng hàng đã bị cắt và **không một ô nào** nói
+   * nó mất chữ. Và **độ dài KHÔNG suy ra được** (ca **B2**): một chuỗi dài **đúng bằng** 160 thì
+   * **không** bị cắt, một chuỗi 161 bị cắt **thành** 160 ⇒ hai sự thật, **một** độ dài.
+   *
+   * ⚠⚠⚠ HẬU QUẢ ĐANG MỞ mà cột này đóng: `VramBrokerPanel.tsx` **GỘP** hộ cục bộ với hộ **anh em**
+   * rồi bơm `h.owner` thẳng vào `preempt.mutate` — một **LỆNH PHÁ HUỶ**. Với hàng anh em, chuỗi ấy
+   * **đã bị cắt tại DB**, và trước cột này **không ai phân biệt được**.
+   *
+   * ⚠ `jsonb` chứ không `text[]`: `vram_events.detail.truncatedFields` đã là một **mảng chuỗi
+   *   jsonb** từ Pha 2A ⇒ **một hình dạng lời khai** cho cả hai bảng VRAM. Và `text[]` kéo theo
+   *   GOTCHA `col = ANY(${jsArray})` ⇒ 500 `42809`.
+   */
+  identityTruncated: jsonb("identityTruncated").$type<readonly string[]>(),
 }, (table) => [
   index("vram_leases_process_idx").on(table.processKey),
   index("vram_leases_updated_idx").on(table.updatedAt),
