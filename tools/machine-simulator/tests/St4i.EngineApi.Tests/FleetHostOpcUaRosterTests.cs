@@ -15,7 +15,7 @@ namespace St4i.EngineApi.Tests;
 /// GĐ3 sub-3 OU-2 PART B (docs/plans/2026-07-27-giaidoan3-opcua-driver-blueprint.md task 2) — proves a
 /// configured OPC-UA (OU-1) machine becomes a first-class, UI-visible roster member instead of an
 /// invisible telemetry stream, mirroring <see cref="FleetHostModbusRosterTests"/>'s P2-3 contract exactly:
-/// (1) <see cref="FleetHost.StartLocked"/> must NOT build a simulator for a <see cref="DriverKinds.OpcUa"/>
+/// (1) <c>FleetCore.StartLocked</c> must NOT build a simulator for a <see cref="DriverKinds.OpcUa"/>
 /// roster entry (else it's driven TWICE — once by a simulator, once by the real OPC-UA pipeline slot) —
 /// proven here by registering an OPC-UA descriptor with NO OPC-UA connector registered and confirming it
 /// stays idle/0-cycles forever, never picked up by <c>SimulatorFactory</c>'s <c>DeviceClass.Automation</c>

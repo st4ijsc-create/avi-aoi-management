@@ -22,7 +22,12 @@ namespace St4i.EngineApi.Fleet;
 /// <para>🔴 <b>Task E-2 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md) — this class is now
 /// a THIN SHELL over <see cref="FleetCore"/>, which lives in <c>St4i.EdgeCore</c>.</b> Đợt D made RS-485
 /// work, but only inside this process; the process that actually owns the serial port on a machine is
-/// <c>St4i.EdgeService</c>, whose <c>EdgeWorker</c> knows only one driver and one pipeline. A direct
+/// <c>St4i.EdgeService</c>, whose <c>EdgeWorker</c> knew only one driver and one pipeline. (🔴 <b>Past tense
+/// since E-3</b>, corrected by the whole-branch review as I1: it now runs N drivers on N pipelines from its
+/// own <c>connectors.json</c>, through <c>EdgeAgentPipelines</c> — never through <see cref="FleetCore"/>,
+/// which is <c>internal</c> exactly so that host cannot reach its unguarded write path. This is the SAME
+/// sentence E-4's post-commit sweep corrected at <c>FleetCore.cs:123</c>; E-2 split these two files out of
+/// one, so the prose was duplicated, and only one copy was swept. README §24.) A direct
 /// <c>EdgeService → St4i.EngineApi</c> reference is not available (NU1605 at restore, plus this project's
 /// ASP.NET Core / web-UI publish surface), so the N-driver lifecycle had to come DOWN to the assembly both
 /// hosts already reference. That relocation is E-2; teaching <c>EdgeWorker</c> to use it is E-3.</para>
@@ -298,8 +303,14 @@ public sealed class FleetHost
 
     // ─────────────────────────────────────────────────────────────────────
     // PROJECTIONS — the only work this class does that is not delegation.
-    // Each one takes ONE record the core already resolved atomically and reshapes it. None of them reads
-    // two things from the core: see this class's own doc comment for why that rule is not negotiable.
+    // Each one takes ONE record the core already resolved atomically and reshapes it.
+    // 🔴 TWO of them read two things from the core, and BOTH ARE LABELLED at their own declaration:
+    // CurrentScenarioDto() (found by the E-2 review) and MachineDetail() (found by the whole-branch review,
+    // I2). This banner said "none of them" for three tasks while two counterexamples sat under it — and E-2
+    // had LOOKED at MachineDetail, since §10.2 is about removing its lock block, and still wrote the
+    // universal. Neither is a regression (both pairs were two reads at BASE too); what was wrong was the
+    // banner. See this class's own doc comment for why the rule is not negotiable, and each member's own
+    // label for what keeps it exempt and what kills the exemption.
     // ─────────────────────────────────────────────────────────────────────
 
     /// <summary><c>GET /v1/fleet</c>. <see cref="FleetCore.ReadSnapshot"/> resolves running/estop under one
@@ -319,7 +330,27 @@ public sealed class FleetHost
     /// stopped fleet forces the reported <c>StatusText</c> to idle regardless of the last real verdict, so
     /// this endpoint can never disagree with <c>GET /v1/fleet</c> about whether a stopped machine is "OK"
     /// (the live-reproduced bug: a stopped machine kept rendering a green "ĐẠT" badge because this DTO alone
-    /// was never gated).</summary>
+    /// was never gated).
+    ///
+    /// <para>🔴 <b>THE SECOND LABELLED EXCEPTION to this class's no-paired-read rule</b> (whole-branch review,
+    /// I2 — labelled for the same reason <see cref="CurrentScenarioDto"/> is: an unlabelled exception gets
+    /// copied). It reads <see cref="FleetCore.IsRunning"/> — one <c>_gate</c> acquisition — and then
+    /// <see cref="FleetCore.TryGetMachineState"/>, which takes no gate at all, and combines them via
+    /// <c>state.ToDetail(isRunning)</c>. Exactly the shape the banner above forbids.</para>
+    ///
+    /// <para><b>Why it is exempt rather than a defect:</b> byte-identical to BASE. Before the cut this member
+    /// read <c>IsRunning</c> — itself a <c>lock (_gate)</c> getter — and then the machine state, as two
+    /// separate reads; E-2 removed only a redundant re-entrant acquisition around the first (blueprint §10.2),
+    /// so nothing a caller can observe changed. <b>And the exemption is narrower than the scenario one:</b>
+    /// what a torn read costs here is precisely the I-9 bug the paragraph above exists to prevent, briefly —
+    /// a machine that has just been stopped can render one green "ĐẠT" badge before the next poll. A screen,
+    /// not a write and not a latch; no guard and no write path reads this pair.</para>
+    ///
+    /// <para><b>What kills the exemption</b> (same condition as <see cref="CurrentScenarioDto"/>'s): if
+    /// anything on the write path or the safety path starts reading this pair, or if the I-9 gating is ever
+    /// asked to be exact rather than eventually-consistent, it must be resolved inside
+    /// <see cref="FleetCore"/> and returned as ONE record — a <c>TryGetMachineDetail</c> that takes
+    /// <c>_gate</c> once. That is a real, cheap follow-up, and it is an item rather than a blocker.</para></summary>
     public MachineDetailDto? MachineDetail(string code)
     {
         var isRunning = _core.IsRunning;

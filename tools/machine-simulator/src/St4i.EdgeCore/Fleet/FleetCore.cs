@@ -52,8 +52,19 @@ public enum MachineDriverAvailability
     NoLiveDriver,
 
     /// <summary>A live driver exists for this machine right now, but it does not implement
-    /// <see cref="IWritableDeviceDriver"/> — every built-in driver other than <c>ModbusTcpDriver</c> (B-4) and
-    /// <c>OpcUaDriver</c> (B-5), which now both implement it: the simulated fleet, HotFolderAoi, Mqtt.</summary>
+    /// <see cref="IWritableDeviceDriver"/> — every built-in driver other than <c>ModbusTcpDriver</c> (B-4),
+    /// <c>OpcUaDriver</c> (B-5) and <c>ModbusRtuDriver</c> (D-5), which all three implement it: the simulated
+    /// fleet, HotFolderAoi, Mqtt. (Whole-branch review M5 — the RTU driver was missing from this list.)
+    ///
+    /// <para>🔴 <b>Whole-branch review I3 — which of those can actually REACH this value, because the
+    /// operator-facing string derived from it named a producer that cannot exist in this build.</b> Every
+    /// <see cref="St4i.Connector.Abstractions.IConnectorFactory"/> here (<c>ModbusConnectorFactory</c>,
+    /// <c>ModbusRtuConnectorFactory</c>, <c>OpcUaConnectorFactory</c>) produces a driver that DOES implement
+    /// <see cref="IWritableDeviceDriver"/>, and there is no plugin loader — so a connector-backed slot never
+    /// lands here. A writable driver whose map declares no matching point resolves as <see cref="Writable"/>
+    /// and the write returns <c>Rejected</c> instead. What actually reaches this value is the simulated group
+    /// (via <c>ScenarioAwareDriver</c>) and the hot-folder demo pipeline — drivers built outside the connector
+    /// path — plus <c>AdditionalPipelinesForTests</c>. See <c>MachineWriteGate.ExplainUnavailable</c>.</para></summary>
     ReadOnly,
 
     /// <summary>A live driver implementing <see cref="IWritableDeviceDriver"/> exists for this machine right
@@ -217,7 +228,12 @@ internal sealed class FleetCore
     public const string DefaultMachineCode = "ENGINE-API-01";
     public const string DefaultLanguage = "vi";
 
-    /// <summary>🔴 E-2 — THE lock, and after the cut it is the ONLY lock in the FleetHost/FleetCore pair.
+    /// <summary>🔴 E-2 — THE fleet-state lock: after the cut it is the only lock ACROSS the cut, i.e. the
+    /// only one <c>FleetHost</c> could have ended up needing. 🔴 <b>Whole-branch review M3 — it is not the only
+    /// lock in this class.</b> <see cref="_kpiGate"/> is declared 29 lines below and guards the KPI counters;
+    /// the reviewer walked both and confirmed there is <b>no nesting hazard</b> (nothing takes one while
+    /// holding the other), so the sentence was wrong, not the locking — but it is this class's lock-discipline
+    /// banner, and a banner that overstates is how the next reader stops checking.
     /// <c>FleetHost</c> takes no lock of its own and never re-derives a pair of gate-protected fields from
     /// two calls; every member that used to read two such fields in ONE acquisition
     /// (<see cref="GetSafetyStatus"/>, <see cref="ReadSnapshot"/>, <see cref="GetSettings"/>,
@@ -225,13 +241,23 @@ internal sealed class FleetCore
     /// <see cref="ApplyScenario"/>) moved DOWN here whole. E-1 §3.2 enumerated two possible shapes for the
     /// cut and judged both bad — core-owns-the-gate with the shell reading through it twice (the pair stops
     /// being atomic), or a lock on each side (a real ordering, and a deadlock the moment the core ever calls
-    /// back out under its own lock). The shape used here is the third one: <b>one lock, and no paired read
-    /// left on the far side of the cut.</b> That is not a refinement of E-1's finding — it is what
+    /// back out under its own lock). The shape used here is the third one: <b>one lock, and — 🔴 corrected by
+    /// the whole-branch review (I2) — exactly TWO paired reads left on the far side of the cut, both
+    /// LABELLED at their own declaration</b> (<c>FleetHost.CurrentScenarioDto</c>, found by the E-2 review;
+    /// <c>FleetHost.MachineDetail</c>, found by the whole-branch review). This banner claimed there were
+    /// none. Neither is a regression — both pairs were two unsynchronised reads before the cut as well — but
+    /// a banner that says "none" is what stops the next reader counting. That is not a refinement of E-1's
+    /// finding — it is what
     /// "GetSafetyStatus must move WITH _gate" means once the same test is applied to every OTHER paired read.
     ///
     /// <para><b>The invariant this lock carries, and its honest state.</b> Blueprint §5 says nothing may
-    /// dispose or perform I/O while holding it. §9.2 records that this was ALREADY FALSE before Đợt E, three
-    /// ways, all measured, and all three are still here on purpose: <see cref="StartLocked"/> →
+    /// dispose or perform I/O while holding it. §9.2 records that this was ALREADY FALSE before Đợt E, and
+    /// 🔴 <b>whole-branch review M4 corrected the count this comment carried: the backlog item is FOUR I/O
+    /// paths plus TWO <c>Cancel</c>s, not "three ways".</b> §10.3(a) found a fourth — <b>log calls made while
+    /// holding this lock</b>, at <c>:1476</c>, <c>:1477</c>, <c>:1609</c> and <c>:1800</c>, up to one per
+    /// machine, and under <c>AddWindowsService</c> a log call can be a SYNCHRONOUS Event Log write. §10.3(d)
+    /// found a second <c>Cancel</c>, in <see cref="Burst"/>. The three §9.2 measured are still here on
+    /// purpose, and are: <see cref="StartLocked"/> →
     /// <c>MappingProfileResolver.Build</c> → <c>File.Exists</c>/<c>File.ReadAllText</c> per machine (2.39 ms
     /// held, 50 machines); <see cref="StopLocked"/> → <c>slot.Cts.Cancel()</c> → a driver's own
     /// <c>ct.Register</c> callback running a <c>Dispose</c> SYNCHRONOUSLY on this thread; and

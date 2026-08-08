@@ -503,7 +503,7 @@ public sealed class ModbusBus : IAsyncDisposable
     /// <summary>
     /// <b>Deliberately does NOT acquire the arbitration lock</b>, for the same reason
     /// <see cref="ModbusTcpDriver.DisposeAsync"/> does not acquire its <c>_ioLock</c>: a driver's disposal can
-    /// run while <c>FleetHost</c> holds its own gate, and waiting here — even boundedly — recreates the hazard
+    /// run while <c>FleetCore</c> holds its own gate, and waiting here — even boundedly — recreates the hazard
     /// that design closes. The link is torn down out from under whichever transaction currently owns it; that
     /// transaction's read fails with an <see cref="ObjectDisposedException"/>/<see cref="System.IO.IOException"/>,
     /// which <see cref="ModbusRtuDriver"/>'s poll catch already treats as an ordinary degrade, and its scope's

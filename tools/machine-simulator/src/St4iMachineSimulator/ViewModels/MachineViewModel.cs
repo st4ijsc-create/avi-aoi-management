@@ -373,7 +373,8 @@ public sealed partial class MachineViewModel : ObservableObject
         // successfully queued for later replay, not actually failed. "queued" = server-side
         // store-forward accepted the write (Success:true/Queued:true); "buffered" = this machine's own
         // local WAL took it because the send itself failed (Success:false/Queued:true). Keep byte-for-
-        // byte identical to MachineState.cs's BuildSummary (EngineApi) — see that file's own remarks.
+        // byte identical to MachineState.cs's BuildSummary (St4i.EdgeCore.Fleet since E-2) — see that
+        // file's own remarks.
         var ackLabel = ack.Queued ? (ack.Success ? "queued" : "buffered")
                      : !ack.Success ? "ERR"
                      : ack.Duplicate ? "dup"

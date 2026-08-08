@@ -245,7 +245,7 @@ public sealed class FleetHostHealthAndRegistrationTests
     /// after the bounded wait already gave up and let <see cref="FleetHost.RegisterMachine"/> start a
     /// fresh pipeline, the old task's catch handler is guaranteed to run AFTER <c>_cts</c>/
     /// <c>_currentPipeline</c> have already been replaced — precisely the race the identity guard in
-    /// <c>FleetHost.StartLocked</c>'s catch has to survive. Before the fix this test reproducibly failed
+    /// <c>FleetCore.StartLocked</c>'s catch has to survive. Before the fix this test reproducibly failed
     /// (<c>IsRunning</c> flipped back to <see langword="false"/> and <c>LastError</c> got set); after the
     /// fix it stays green because the guard's <c>ReferenceEquals(_cts, cts)</c>/
     /// <c>ReferenceEquals(_currentPipeline, pipeline)</c> checks fail for the stale task and it no-ops.</summary>

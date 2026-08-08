@@ -46,7 +46,7 @@ public sealed class ModbusBusTransaction : IAsyncDisposable
         Master = master;
 
         // Cancellation mechanism #2 — see ModbusBus's own doc comment. This callback runs SYNCHRONOUSLY on the
-        // cancelling thread, possibly while FleetHost holds its state lock (IDeviceDriver.ReadAsync spells out
+        // cancelling thread, possibly while FleetCore holds its state lock (IDeviceDriver.ReadAsync spells out
         // that contract), so it must be prompt and must not throw: AbortPendingRead only raises a flag.
         // Contrast Đợt B's ct.Register(DisposeConnection), which performs real teardown from that same
         // position — tolerable at 1:1, unacceptable on a shared bus.
@@ -138,7 +138,7 @@ public sealed class ModbusBusTransaction : IAsyncDisposable
     /// <summary>
     /// Releases the bus. <b>Deliberately does not wait for an in-flight operation</b> — the same rule
     /// <see cref="ModbusBus.DisposeAsync"/> and <see cref="ModbusTcpDriver.DisposeAsync"/> both follow, for
-    /// the same reason (a driver's disposal can run while <c>FleetHost</c> holds its own gate, so waiting here
+    /// the same reason (a driver's disposal can run while <c>FleetCore</c> holds its own gate, so waiting here
     /// even boundedly recreates the hazard that design closes).
     ///
     /// <para>D-2 review (m-5) — <b>what happens when it is disposed with an operation still in flight,</b>

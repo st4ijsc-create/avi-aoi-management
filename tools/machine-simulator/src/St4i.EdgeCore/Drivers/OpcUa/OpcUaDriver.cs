@@ -595,7 +595,7 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
             MachineCode = _map.MachineCode,
             Kind = ReadingKind.Telemetry,
             // Telemetry has no pass/fail concept (the Modbus KPI-inflation lesson, G2-6) — Verdict MUST be
-            // Skip, not the enum default (Pass). FleetHost.OnPipelineCommitted increments the fleet-wide
+            // Skip, not the enum default (Pass). FleetCore.OnPipelineCommitted increments the fleet-wide
             // FPY/judged/pass KPIs for any reading whose Verdict != Skip, so a defaulted Pass here would
             // silently inflate the operator FPY toward 100% on every OPC-UA poll.
             Verdict = Verdict.Skip,
@@ -1049,7 +1049,7 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
     /// <para><b>This method deliberately does NOT acquire <see cref="_sessionLock"/> before mutating
     /// <see cref="_session"/> (via <see cref="DisposeSessionAsync"/>).</b> Mirrors B-2/B-4's own signed-off
     /// "disposal never waits on in-flight work, not even boundedly" design (a driver <c>DisposeAsync</c> can
-    /// run while <c>FleetHost._gate</c>/<c>FleetHost.Estop</c> is involved, and this class has no way to know
+    /// run while <c>FleetCore._gate</c>/<c>FleetCore.Estop</c> is involved, and this class has no way to know
     /// that). The PRE-EXISTING GP-6b race this preserves: <see cref="EnsureSessionAsync"/>'s own late
     /// <c>if (_disposed)</c> check before assigning <c>_session = newSession</c> is not airtight — a narrow
     /// window between that check and the assignment is not covered by any lock, so <see cref="DisposeAsync"/>

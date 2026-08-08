@@ -5,8 +5,8 @@ namespace St4i.Connector.Abstractions.Models;
 /// shared helper every numeric-telemetry aggregation site in this app now goes through, replacing the
 /// THREE independently-hand-rolled <c>value is IConvertible c ? ... : continue</c> patterns that used to
 /// live in <c>St4i.EdgeCore.Historian.HistorianResultRecord.From</c>,
-/// <c>St4i.EngineApi.Fleet.MachineState.ApplyReading</c>'s per-metric telemetry series, and
-/// <c>St4i.EngineApi.Fleet.MachineState.SparkValue</c>'s spark-value pick.
+/// <c>St4i.EdgeCore.Fleet.MachineState.ApplyReading</c>'s per-metric telemetry series, and
+/// <c>St4i.EdgeCore.Fleet.MachineState.SparkValue</c>'s spark-value pick.
 ///
 /// <para><b>Why this exists (the OU-1 review's REQUIRED gate):</b> a configured OPC-UA machine can emit a
 /// non-numeric string telemetry tag (e.g. a "status" node → <c>"RUNNING"</c> — see
@@ -15,10 +15,10 @@ namespace St4i.Connector.Abstractions.Models;
 /// then unconditionally call <c>.ToDouble(null)</c> — but <see cref="string"/> genuinely IS
 /// <see cref="IConvertible"/>, so <c>Convert.ToDouble("RUNNING")</c> throws a
 /// <see cref="FormatException"/> straight out of the caller. For <c>MachineState</c>'s two sites in
-/// particular, that call happens synchronously inside <c>FleetHost.OnPipelineCommitted</c> (an inline
+/// particular, that call happens synchronously inside <c>FleetCore.OnPipelineCommitted</c> (an inline
 /// <c>EdgePipeline.Committed</c> event handler invoked from the pipeline's own run-task) — an unhandled
 /// exception there propagates up through <c>EdgePipeline.RunAsync</c> and is caught by
-/// <c>FleetHost.StartSlot</c>'s PER-SLOT fault catch, which removes (kills) that entire pipeline slot.
+/// <c>FleetCore.StartSlot</c>'s PER-SLOT fault catch, which removes (kills) that entire pipeline slot.
 /// I.e. before this helper existed, a single string OPC-UA tag would silently kill the whole OPC-UA slot
 /// on its very first poll, the moment that machine had a <c>MachineState</c> (which OU-2's roster wiring
 /// is what actually creates).</para>

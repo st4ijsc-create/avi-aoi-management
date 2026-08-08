@@ -407,7 +407,7 @@ public sealed class FleetHostConnectorRegistryTests
         // Batch review, fix 1 — CancellationTokenSource.Cancel() runs every registered callback
         // SYNCHRONOUSLY on the calling thread and rethrows any exception one of them throws.
         // ModbusTcpDriver.PollOnceAsync registers exactly this shape of ct.Register(...) callback (the
-        // repo's first) on the very token FleetHost.StopLocked cancels with _gate held — a third-party
+        // repo's first) on the very token FleetCore.StopLocked cancels with _gate held — a third-party
         // driver mirroring that pattern with a MISBEHAVING (throwing) callback must never be able to abort
         // Estop() before it latches EstopEngaged or before it cancels every OTHER slot.
         // ThrowsFromCancellationRegistrationDriver below reproduces that exact shape. Before fix 1, this
@@ -452,7 +452,7 @@ public sealed class FleetHostConnectorRegistryTests
     /// <summary>Test double for fix 1 (batch review) — mirrors <c>ModbusTcpDriver.PollOnceAsync</c>'s
     /// <c>ct.Register(DisposeConnection)</c> pattern exactly, except this registration deliberately THROWS:
     /// the misbehaving-third-party-driver shape <see cref="FleetHostConnectorRegistryTests.Estop_OneSlotsCancellationRegistrationThrows_LatchesAnyway_AndCancelsOtherSlotsToo"/>
-    /// proves <see cref="FleetHost"/> survives. <see cref="FleetHost.StopLocked"/> calls
+    /// proves <see cref="FleetHost"/> survives. <c>FleetCore.StopLocked</c> calls
     /// <c>slot.Cts.Cancel()</c> with <c>_gate</c> held, which runs this registration SYNCHRONOUSLY and would
     /// (pre-fix) propagate straight out of <see cref="FleetHost.Estop"/>.</summary>
     private sealed class ThrowsFromCancellationRegistrationDriver : IDeviceDriver
@@ -539,7 +539,7 @@ public sealed class FleetHostConnectorRegistryTests
 
     /// <summary>Test double for the review's leak finding (fix round 1) — reports <see langword="false"/>
     /// (a rejected configuration) while STILL handing back a non-null driver, the exact contract violation
-    /// <see cref="FleetHost.StartLocked"/>'s defensive dispose now guards against.</summary>
+    /// <c>FleetCore.StartLocked</c>'s defensive dispose now guards against.</summary>
     private sealed class RejectsButReturnsDriverFactory : IConnectorFactory
     {
         private readonly IDeviceDriver _driver;

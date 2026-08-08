@@ -44,8 +44,11 @@ namespace St4i.EdgeCore.Tests.Drivers.Modbus;
 /// directory of every project that transitively restores it, <b>whether or not that project's own IL
 /// references a single type from it</b>. That mechanism used to be the hazard; after the ruling it is the
 /// delivery mechanism, and it is precisely why two of the three assertions below are worth having: the two
-/// hosts with no connector plumbing carry the DLL without their own IL naming a single type from it, so
-/// nothing but a look at the output directory can tell whether the reference is still there.</para>
+/// hosts with no CONFIGURED path to a COM port carry the DLL without their own IL naming a single type from
+/// it, so nothing but a look at the output directory can tell whether the reference is still there.
+/// (🔴 Whole-branch review I6 — this said "the two hosts with no connector plumbing". Since E-3
+/// <c>St4i.EdgeService</c> HAS connector plumbing; what it does not have is a dispatch arm that reaches a
+/// serial open. Only the WPF shell still has no registry at all.)</para>
 ///
 /// <para>🔴 <b>Why the deployment assertions name only the executables, never <c>St4i.EdgeCore</c> itself.</b>
 /// Measured on this tree: a LIBRARY project's <c>bin/</c> contains only its own and its project references'
@@ -158,8 +161,9 @@ public sealed class SerialDependencyScopingTests
     public void EngineApiDeployment_CarriesSystemIoPorts_BecauseItCanOpenAComPortDirectly()
         => AssertSerialDependencyIsShippedWith(
             Path.Combine("src", "St4i.EngineApi"), "St4i.EngineApi.dll",
-            "the engine — the only host with a connector registry, and the one that opens a directly-attached " +
-            "RS-485 line from a connectors.json 'rtu-serial' entry");
+            "the engine — the only host with a CONFIGURED path from a connectors.json 'rtu-serial' entry to a " +
+            "directly-attached RS-485 line. (Not the only host with a connector registry: St4i.EdgeService has " +
+            "had one since E-3 and refuses RTU entries by name — README §24.2/§24.5.)");
 
     /// <summary>The WPF exhibition shell. Same careful remark as
     /// <see cref="EdgeServiceDeployment_CarriesSystemIoPorts_ByTheAllThreeHostsRuling"/>: measured,

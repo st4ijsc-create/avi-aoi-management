@@ -51,7 +51,7 @@ namespace St4i.EngineApi.Endpoints;
 /// is wrong instead of finding out only after Start. <see cref="St4i.Connector.Abstractions.IConnectorFactory.TryCreate"/>'s
 /// own "MUST NOT perform I/O" contract is upheld: the ONLY I/O this endpoint performs is
 /// <see cref="St4i.Connector.Abstractions.IDeviceDriver.ReadAsync"/>, called directly by THIS handler on a
-/// driver instance nothing else references — never inside <see cref="FleetHost.StartLocked"/>/
+/// driver instance nothing else references — never inside <c>FleetCore.StartLocked</c>/
 /// <see cref="ConnectorRegistry.TryCreateDriver"/>, so it can never block <see cref="FleetHost.Estop"/> or
 /// any other <c>_gate</c>-holding call.</description></item>
 /// </list>
@@ -458,7 +458,9 @@ public static class ConnectorEndpoints
     /// <para><b>Two costs, stated rather than discovered.</b> (1) <see cref="FleetHost.RegisterMachine"/>
     /// restarts a running pipeline per NEW machine, so a bus of eight new machines restarts it eight times.
     /// Batching that needs a plural roster API, and roster surgery is explicitly not this task's
-    /// (<c>FleetHost</c> is 2 406 lines and its removal path is a named future batch). (2) A re-save of an
+    /// (the N-driver lifecycle is <c>St4i.EdgeCore.Fleet.FleetCore</c>, ~2 400 lines, and its removal path is
+    /// a named future batch; <c>FleetHost</c> itself is now a ~410-line shell over it — whole-branch review
+    /// M1 corrected the figure, which had been left attached to the wrong type by E-2's move). (2) A re-save of an
     /// existing bus that then fails restores the STORE exactly but cannot restore the registry entries it had
     /// already released — <see cref="RtuBusConfiguration.ReleaseOwnNamespace"/> runs before the register pass
     /// (fix round 1, I-2: without it, re-addressing two devices on a line was a permanent dead end), and
@@ -862,7 +864,7 @@ public static class ConnectorEndpoints
     /// <para><b>What is still true, and is still said in the response:</b> a driver already RUNNING under this
     /// id keeps running until the fleet is next started. Unregistering is a registry mutation — it disposes
     /// nothing and performs no I/O, deliberately (see <see cref="ConnectorRegistry.Unregister"/>), because
-    /// disposal belongs to <see cref="FleetHost"/>, which does it outside its own <c>_gate</c> under a bounded
+    /// disposal belongs to <see cref="FleetCore"/>, which does it outside its own <c>_gate</c> under a bounded
     /// budget. So a write for that machine in the window between this call and the next start resolves to
     /// whatever NEW connector claimed it, finds no live slot for it, and is refused with
     /// <see cref="MachineDriverAvailability.NoLiveDriver"/>. It is never handed to the orphaned driver, which
@@ -987,7 +989,8 @@ public static class ConnectorEndpoints
 
         // A FRESH TryCreate call, deliberately not reusing anything TryValidate built: this driver is
         // THROWAWAY (never registered into ConnectorRegistry, never seen by FleetHost) — see this class' own
-        // doc comment for why that is what keeps this endpoint from ever touching FleetHost._gate.
+        // doc comment for why that is what keeps this endpoint from ever touching FleetCore._gate (the lock
+        // moved with the lifecycle in E-2; FleetHost has none).
         if (!validated.Factory.TryCreate(body.MapJson, out var driver, out var factoryError))
         {
             return Results.Ok(new ConnectorTestResultDto(false, factoryError ?? "The connector factory rejected this configuration."));

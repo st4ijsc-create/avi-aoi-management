@@ -110,7 +110,7 @@ public sealed class MachineConfigDrivesFleetTests
     /// accelerating IOT_SENSOR) had ZERO effect once this test's own IOT machine had a config override in
     /// play. This is the "already-running fleet" proof <see cref="MachineConfigDrivesSimulationTests"/>
     /// (EdgeCore, no <see cref="FleetHost"/> in the loop) can't reach on its own — SCENARIO ×
-    /// CONFIG-OVERRIDE together, through the real <c>FleetHost.StartLocked</c> → <c>SimulatorFactory.Create</c>
+    /// CONFIG-OVERRIDE together, through the real <c>FleetCore.StartLocked</c> → <c>SimulatorFactory.Create</c>
     /// wiring, which <see cref="SetAdjustment_on_an_already_running_fleet_shifts_torque_output_with_no_restart"/>
     /// above never exercises (it never sets a scenario).</summary>
     [Fact]

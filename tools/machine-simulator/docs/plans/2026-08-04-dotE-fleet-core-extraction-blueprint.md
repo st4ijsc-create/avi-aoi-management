@@ -453,7 +453,15 @@ bài test đua nào bắt được nó qua guard** — nên đây không phải 
 thể hình dạng đã được khoá lại; **nó được khoá bằng văn xuôi.** Một nhân chứng *có thể* dựng được — nhắm vào
 cặp trên màn hình `GET /v1/safety` chứ không nhắm vào guard — và đó là một hạng mục, không phải một cái chặn.
 
-🔴 **Ngoại lệ duy nhất của luật này đã được dán nhãn, tại `FleetHost.CurrentScenarioDto()`.** Review E-2 tìm
+🔴 **ĐÍNH CHÍNH (review toàn nhánh, I2): có HAI ngoại lệ, không phải một, và cả hai giờ đều đã dán nhãn** —
+`FleetHost.CurrentScenarioDto()` (dưới đây) và **`FleetHost.MachineDetail()`** (`FleetHost.cs:323-327`: đọc
+`_core.IsRunning`, một lần lấy `_gate`, rồi `_core.TryGetMachineState`, không khoá, và ghép). Hành vi của cái
+thứ hai **trùng từng byte với BASE** — cặp ấy đã là hai lần đọc trước cuộc cắt — nên không có gì thụt lùi;
+cái sai là **lời khẳng định phổ quát**, và nó đứng ở BA chỗ (`FleetHost.cs`, `FleetCore.cs`, và mục này).
+Điều đáng giữ: **E-2 đã nhìn thẳng vào chính thành viên ấy** — §10.2 nói về việc bỏ khối `lock` của nó — **và
+vẫn viết ra chữ "duy nhất".** *Một biểu ngữ nói "không cái nào" là thứ làm người đọc sau thôi đếm.*
+
+🔴 **Ngoại lệ thứ nhất đã được dán nhãn, tại `FleetHost.CurrentScenarioDto()`.** Review E-2 tìm
 thấy nó **cách câu cấm ba mươi tư dòng**: nó đọc hai thứ từ lõi rồi ghép. Nó **bảo toàn hành vi** —
 `_scenario`/`_activePresetName` là `volatile` và trước cuộc cắt cũng đã là hai lần đọc rời — nhưng cặp ấy
 được **ghi cùng nhau dưới khoá của lõi**, nên vẫn là hình dạng cặp-có-thể-rách. Đã dán nhãn tại chỗ kèm điều
@@ -520,7 +528,9 @@ nào**, kể cả `slot.Cts.Cancel()` (`FleetCore.cs:1794`), vốn **chính là 
 chạy lại phép kiểm này theo đúng câu chữ ở đây**, nên câu chữ phải nói đúng đại lượng.
 
 **(d) Có `Cancel` THỨ NĂM dưới `_gate` mà cả §9.2 lẫn mục này đều không liệt kê:** `FleetCore.Burst()` tại
-`FleetCore.cs:2141` (`previousCts?.Cancel()`), trùng từng byte với `FleetHost.cs:2056` ở BASE. Có sẵn, không
+**`FleetCore.Burst()`** (`previousCts?.Cancel()`), trùng từng byte với `FleetHost.Burst()` ở BASE. (🔴 Review
+toàn nhánh M4: mục này ghi `FleetCore.cs:2141`, và số dòng thật lúc review là **2185** — nên **nêu TÊN thành
+viên, không nêu số dòng**: một số dòng trong bản ghi bền là một khẳng định tự mục nát theo từng lần sửa.) Có sẵn, không
 đổi, **cùng lớp với vi phạm #2**. Nó thuộc danh sách của hạng mục mang sang.
 
 → **Hạng mục sửa `_gate` là BỐN đường, không phải ba**, và danh sách `Cancel` của nó có **hai** mục, không
@@ -840,7 +850,11 @@ connector nào), nên không có gì để rẽ nhánh. Keying theo id cũng là
   `AssetRegistryStore`/`FleetSettingsStore` vẫn không bị EdgeWorker chạm; WAL vẫn là người ghi có sẵn duy nhất.
   Quyết định gốc-dữ-liệu-theo-host vẫn là của chủ sở hữu, và **nó đang chặn OPC-UA ở tác nhân biên**.
 - **§10.4 kênh log thứ ba** (khôi phục độ mịn `LogDebug` bị E-2 nâng lên `LogError`) — **chưa làm.**
-- **§10.9 bài test mTLS có cuộc đua tắt máy** — **chưa sửa**, không đỏ lần nào trong các lần chạy cổng của E-3.
+- ~~**§10.9 bài test mTLS có cuộc đua tắt máy** — **chưa sửa**~~ 🔴 **SAI — ĐÃ SỬA, ở `487f4cf5`, HAI COMMIT
+  TRƯỚC E-3** (review toàn nhánh, I7). Bản sửa nêu đúng cơ chế (TLS 1.3 NewSessionTicket không được rút,
+  `SslStream.Dispose` không gửi `close_notify`, Windows gửi RST thay vì FIN). **Và §11.3 lấy CHÍNH
+  `487f4cf5` làm mốc diff**, nên dòng này mâu thuẫn với một mục cách nó ba mục. Danh sách thừa kế đã được
+  **chép tới** chứ không được **kiểm**.
 - **§10.3 hạng mục sửa `_gate` bốn đường + hai `Cancel`** — **chưa làm**, không tăng.
 - **Chiều ghi (§3) vẫn không có đường xuống.** Máy do tác nhân biên cầm là **chỉ đọc**, và bây giờ điều đó là
   một lỗi biên dịch chứ không phải một câu. Việc của E-4 là cho **người vận hành** thấy điều đó ở nơi họ gặp
@@ -1002,8 +1016,10 @@ E-4 để đóng:
   với sau E-3, đúng dạng bằng chứng §11.3 đã dùng. Phép đo của §11.3 vẫn đứng nguyên và không cần chạy lại.
 - **§10.4 kênh log thứ ba** (khôi phục độ mịn `LogDebug` bị E-2 nâng lên `LogError`, ba đường tháo dỡ giờ ghi
   Event Log đồng bộ) — **chưa làm**.
-- **§10.9 bài test mTLS có cuộc đua tắt máy** — **chưa sửa**, không đỏ lần nào trong các lần chạy cổng của
-  E-4.
+- ~~**§10.9 bài test mTLS có cuộc đua tắt máy** — **chưa sửa**~~ 🔴 **SAI, và đây là bản sao thứ hai của
+  cùng một dòng sai** (review toàn nhánh, I7): **đã sửa ở `487f4cf5`**, hai commit trước E-3. Tôi chép mục
+  này từ §11.6 mà không kiểm nó — đúng cơ chế mà cả bản ghi này tồn tại để ngăn, và nó đi qua tôi ở đúng
+  nhiệm vụ viết ra mục "cái gì review toàn nhánh phải thừa kế".
 - **§9.4(2) hai tiến trình, một bộ file dữ liệu toàn máy** — **chưa chạm**, và quyết định gốc-dữ-liệu-theo-host
   vẫn là của chủ sở hữu. Nó vẫn **đang chặn OPC-UA ở biên**.
 - **§11.1 phép tra cứu `machineCode → driver` là `public` trên `ConnectorRegistry`** và EdgeService giữ một
@@ -1063,3 +1079,109 @@ nằm trong một khối `>` đính chính của một đợt TRƯỚC. Còn hai
 chỉ khi phép grep được tổ chức theo *quy tắc* ("host nào chủ trì được connector nào") và **chạy trên `src/` và
 `tests/` chứ không chỉ trên `*.md`** — census của E-4 lúc đang sửa chỉ quét tài liệu, đúng như brief phát biểu
 nó, và đó là chỗ nó hụt.
+
+## 13. 🔴 Vòng sửa của REVIEW TOÀN NHÁNH — cái gì đã sửa, và cái gì merge mang theo
+
+Toàn văn phát hiện ở `.superpowers/sdd/2026-08-04-dotE-fleet-core-extraction/branch-review-findings.md`.
+Verdict: **MERGE SAU KHI SỬA, không Critical.** Không đường nào cho một lệnh ghi tới sai máy, vượt chốt, rò
+bí mật, hay chặn HALT lâu hơn trước khi cắt.
+
+**Cổng sau vòng sửa:** `151/22/1080/46/1290 = 2589`, 0 lỗi, **116 cảnh báo**, 0 build node. Chỉ nhóm 3 chạm
+một khẳng định chạy được; ba nhóm còn lại không đổi một lệnh nào.
+
+### 13.1 I2 — ngoại lệ THỨ HAI, và ba biểu ngữ nói là không có
+
+`FleetHost.MachineDetail()` đọc `_core.IsRunning` (một lần lấy `_gate`) **và** `_core.TryGetMachineState`
+(không khoá) rồi ghép. Đã dán nhãn tại chỗ đúng như `CurrentScenarioDto` được dán, kèm **điều kiện huỷ ngoại
+lệ** riêng của nó, và cả ba chỗ khẳng định "không cái nào" (`FleetHost.cs`, `FleetCore.cs`, §10.1) đổi thành
+**"hai cái, cả hai đều dán nhãn"**.
+
+Hành vi trùng từng byte với BASE — nên **không có gì thụt lùi**; cái sai là lời khẳng định. Điều đáng giữ:
+**E-2 đã nhìn thẳng vào chính thành viên này** (§10.2 nói về việc bỏ khối `lock` của nó) **và vẫn viết chữ
+"duy nhất"**. Nhân chứng cho cặp trên màn hình `GET /v1/safety` vẫn là hạng mục sau, không chặn merge.
+
+### 13.2 🔴 I4 — một TRỤC census chưa ai quét, và nó rộng hơn con số review đưa ra
+
+Quy tắc: ***"kiểu nào sở hữu cái khoá, assembly nào sở hữu kiểu này"*** — chạy như một hành động riêng, trên
+`src/` **và** `tests/`, **kể cả chuỗi thông điệp khẳng định**.
+
+Review liệt kê ~18 phát biểu. **Phép quét cơ học theo đúng quy tắc ấy tìm ra 32 chỗ trong 25 file**, vì tập
+thành viên đã dời rộng hơn danh sách chịu lực: `StartLocked`, `StopLocked`, `StartSlot`,
+`ResolveWritableDriver`, `OnPipelineCommitted`, `_totalCycles`, `_gate`, cộng `RestartTeardownTimeout`,
+`ResolveFleetPath`, `WaitAndDisposeOldPipeline`. Hai chỗ chịu lực nhất, đúng như review nói:
+
+- **`IWritableDeviceDriver.cs:17`** — **hợp đồng mà tác giả driver bên thứ ba được bảo phải tuân theo.** Nó
+  bảo họ đừng gọi khi đang giữ `FleetHost._gate`; **`FleetHost` không có `_gate`**. Ai grep tên ấy không thấy
+  gì và có thể đọc quy tắc thành đã lỗi thời. Giờ nêu `FleetCore._gate` và nói rõ vỏ không giữ khoá nào.
+- **`DeviceDriverConformanceSuite.cs:485`** — **một chuỗi lỗi SỐNG, hiện trong CI**, không phải chú thích.
+
+**Bốn chỗ nằm trong file EdgeCore vốn không nhìn thấy `FleetHost`** — tức chúng chưa bao giờ biên dịch được
+như một `cref`; chúng sống sót vì project này **không bật `GenerateDocumentationFile`**, nên `cref` không
+được kiểm bao giờ. Đó là cơ chế, không phải sự bất cẩn, và nó là lý do M6 tồn tại được.
+
+### 13.3 🔴 I3 — bản sửa của E-4 cho lớp lỗi "chuỗi phủ đường sinh nó không có" đã ship kèm đúng lỗi ấy
+
+Chuỗi `READ_ONLY` mới nói *"hoặc nó có một connector mà driver không khai điểm ghi nào"*. **Đường ấy không
+sinh ra được giá trị ấy trong build này:** `ResolveWritableDriver` trả `ReadOnly` **chỉ khi** driver của slot
+không phải `IWritableDeviceDriver`, và **cả ba `IConnectorFactory`** ở đây (`ModbusConnectorFactory`,
+`ModbusRtuConnectorFactory`, `OpcUaConnectorFactory`) đều sinh driver **có** implement nó; không có plugin
+loader. Một driver ghi được mà map không khai điểm ấy phân giải thành `Writable`, được thử, và trả
+`Rejected`.
+
+**Và `MachineWriteUnavailableMessageTests` đang GHIM mệnh đề sai ấy.** Khẳng định giờ **đảo chiều** — mệnh đề
+phải VẮNG MẶT — cộng hai khẳng định cho hai nguồn sinh thật (nhóm mô phỏng, pipeline hot-folder) và một cho
+việc chuỗi phải nói trạng thái kia thực sự làm gì (`rejected`). Doc của chính enum `ReadOnly` cũng ghi lại
+phép liệt kê ấy, để hai chỗ không trôi khỏi nhau.
+
+*Ghi thẳng: đây là lớp lỗi của đợt này, xuất hiện bên trong bản sửa cho lớp lỗi đó, có test bảo vệ. Lần thứ
+ba trong hai đợt mà một bản sửa mang theo đúng hình dạng nó đang sửa.*
+
+### 13.4 I7 và bảy mục Minor
+
+- **I7** — §11.6 và §12.7 đều ghi bài test mTLS là *"chưa sửa"*. **Đã sửa ở `487f4cf5`, hai commit trước
+  E-3**, và **§11.3 lấy chính commit ấy làm mốc diff**. Hai danh sách thừa kế **được chép, không được kiểm** —
+  và nó đi qua tôi ở đúng nhiệm vụ viết ra mục "cái gì review toàn nhánh phải thừa kế". Cả hai đã đóng.
+- **M1** `FleetHost` là **410** dòng, không phải 2 406 — con số cũ bám vào sai kiểu sau cuộc dời, và nó đang
+  được dùng làm **lý do hoãn** phẫu thuật roster ở mã sản xuất.
+- **M2** *"~730 ký tự"* là một **phỏng đoán nói bằng giọng đo đạc**, hụt ~12%. Đã đo: **526 / 827 / 661 /
+  269** ký tự với mã máy 13 ký tự, và **nêu tên đầu vào** vì con số phụ thuộc vào nó. Đúng lỗi dụng cụ đã làm
+  con số "bảy lần" bị gỡ một vòng trước.
+- **M3** biểu ngữ kỷ luật khoá nói `_gate` là khoá **duy nhất** của cặp; `_kpiGate` khai báo 29 dòng dưới.
+  Reviewer đã đi bộ: **không có nguy cơ lồng khoá** — câu sai, không phải khoá sai.
+- **M4** bản kiểm kê `_gate` **trong mã** vẫn là bản đã bị §10.3 thay thế ("ba đường" thay vì **bốn đường I/O
+  + hai `Cancel`**). Bản ghi bền của một hạng mục tồn đọng đang là bản cũ. Và §10.3(d) giờ **nêu tên thành
+  viên thay vì số dòng**.
+- **M5** doc của `ReadOnly` thiếu `ModbusRtuDriver` khỏi danh sách driver ghi được (từ D-5).
+- **M6** bảy `cref` xuyên assembly trỏ tới kiểu đã dời, cộng `ModbusRtuBusPlan` **107** dòng chứ không phải
+  108.
+
+### 13.5 🔴 Điều merge phải mang theo — census có vấn đề về ĐỘ PHỦ QUY TẮC, không phải NGỮ LIỆU
+
+§12.9 vừa thêm **ngữ liệu** vào §8.1 (`src/` + `tests/`, không chỉ `*.md`). **I1, I4, I5, I6 đều nằm trong
+ngữ liệu ấy và vẫn bị bỏ sót**, vì mỗi lượt quét chạy **một quy tắc** — và quy tắc của E-4 ("host nào chủ trì
+connector nào trên transport nào") **trực giao** với trục I4. Chủ sở hữu đang viết phần thêm cho §8.1 về việc
+**liệt kê các QUY TẮC**, đúng cách §11.1 đã học liệt kê các THÀNH VIÊN. Bốn dữ kiện nó nên mang theo:
+
+1. **Cùng một câu sống sót ba lượt, ở hai file** (I1). `FleetCore.cs:123` được §12.9 sửa; `FleetHost.cs:25`
+   thì không. **Hai file ấy do E-2 tách ra từ MỘT file** — nên **văn xuôi bị nhân đôi là dư lượng ĐƯỢC MONG
+   ĐỢI của chính đợt này**, và không quy tắc nào của ai đi tìm nó. *Sau một lần tách file, "tìm bản sao của
+   câu vừa sửa" phải là một bước.*
+2. **Một lượt sửa dừng ở khối doc** (I6) — cách chỗ ghi bài học ấy **hai mươi lăm dòng**, trong **cùng một
+   file**, để lại một **chuỗi thông điệp khẳng định** nói ngược lại. *Chuỗi thông điệp là mã, không phải chú
+   thích.*
+3. **Danh sách thừa kế được chép, không được kiểm** (I7).
+4. **Một khẳng định phổ quát có hai phản ví dụ, ở ba chỗ** (I2) — và hai trong ba là **biểu ngữ chịu lực của
+   hai nửa đường cắt**.
+
+### 13.6 Vẫn còn mở sau merge — không cái nào là chặn
+
+- **§10.3 hạng mục `_gate`: bốn đường I/O + hai `Cancel`** — chưa làm, không tăng. Bản kiểm kê trong mã giờ
+  đã đúng.
+- **§10.4 kênh log thứ ba** — chưa làm.
+- **§9.4(2) hai tiến trình, một bộ file dữ liệu toàn máy** — chưa chạm; vẫn chặn OPC-UA ở biên.
+- **§11.1 tra cứu `machineCode → driver` public trên `ConnectorRegistry`** — chưa đóng; hạng mục là
+  `ConnectorRegistry`, không phải `FleetCore`.
+- **E-5** — RS-485 ở tác nhân biên (README §24.3, có số đo).
+- **Nhân chứng cho cặp `GET /v1/safety`**, và **`TryGetMachineDetail` một-lần-khoá** để giết ngoại lệ I2.
+- **Độ dài + i18n của bốn chuỗi** (§12.5).
+- **Transport serial vẫn chưa tải một khung tin nào trên phần cứng thật.**

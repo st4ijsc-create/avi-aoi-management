@@ -189,7 +189,7 @@ public sealed class ConnectorRegistryTests
     public void TryCreateDriver_CalledMultipleTimes_InvokesTheFactoryFreshEveryTime()
     {
         // A driver instance is never cached/reused by the registry — TryCreate is called anew on every
-        // request, so a host asking for a fresh driver on every restart (FleetHost.StartLocked) gets
+        // request, so a host asking for a fresh driver on every restart (FleetCore.StartLocked) gets
         // exactly that.
         var factory = new FakeFactory("vendor.acme.widget", _ => (true, new FakeDriver(), null));
         var registry = new ConnectorRegistry();
@@ -517,7 +517,7 @@ public sealed class ConnectorRegistryTests
     /// 🔴 <b>The whole point of the removal path: a machine code is FREE afterwards.</b>
     ///
     /// <para><see cref="ConnectorRegistry.Register"/> refuses a second claim on a machine code, and that
-    /// refusal is the structural gate <c>FleetHost.ResolveWritableDriver</c> rests on. With no removal, a
+    /// refusal is the structural gate <c>FleetCore.ResolveWritableDriver</c> rests on. With no removal, a
     /// deleted connector's claim survived until the process restarted — the machine could then be served by
     /// nothing at all. The assertion below is deliberately NOT "Unregister returned true": that is a claim
     /// about a method. The claim that matters is about the CLAIM, and the only way to prove a claim was

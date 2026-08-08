@@ -13,8 +13,9 @@ namespace St4i.EngineApi.Policy;
 /// currently active anywhere in the fleet, per <see cref="St4i.EngineApi.Alarms.IAlarmStore.ListActiveAsync"/>
 /// (the SAME signal <see cref="St4i.EngineApi.Line.LineController"/> already uses to redirect <c>line.start</c>
 /// to Held and reject <c>line.unhold</c>). It is NOT part of <see cref="SafetySnapshot"/> deliberately —
-/// <see cref="SafetySnapshot"/> is a pure, synchronous read off <see cref="St4i.EngineApi.Fleet.FleetHost"/>'s
-/// own <c>_gate</c>-protected state (no I/O), whereas an alarm's priority is a fact from a completely
+/// <see cref="SafetySnapshot"/> is a pure, synchronous read off <c>St4i.EdgeCore.Fleet.FleetCore</c>'s own
+/// <c>_gate</c>-protected state (no I/O) — resolved there in ONE acquisition and surfaced through the engine's
+/// <c>FleetHost</c> shell, which holds no lock of its own — whereas an alarm's priority is a fact from a completely
 /// different subsystem (<c>IAlarmStore</c>, a SQLite-backed store) that requires an async round trip to
 /// answer — a caller resolves it ONCE, before ever calling <see cref="PolicyEngine.Evaluate"/> (mirroring
 /// exactly how <c>LineEndpoints.AnyCriticalAlarmActiveAsync</c> is resolved before <c>LineController.Execute</c>

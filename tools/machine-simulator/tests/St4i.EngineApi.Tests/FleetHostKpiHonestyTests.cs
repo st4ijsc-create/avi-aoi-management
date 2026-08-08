@@ -13,7 +13,7 @@ namespace St4i.EngineApi.Tests;
 /// <summary>
 /// SM-2 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-2-brief.md) — the live
 /// half of "fabricated data must never silently blend into a number a customer reads": today
-/// <c>FleetHost.OnPipelineCommitted</c> increments <c>_totalCycles</c>/<c>_totalJudged</c>/<c>_totalPass</c>
+/// <c>FleetCore.OnPipelineCommitted</c> increments <c>_totalCycles</c>/<c>_totalJudged</c>/<c>_totalPass</c>
 /// for every reading from every slot, with no driver-kind filter. This file proves the three roster shapes
 /// the brief's own "Tests" section calls out, with EXACT numeric assertions (never "some data exists"):
 ///

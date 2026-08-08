@@ -61,7 +61,7 @@ public sealed class FleetHostUnsLifecycleTests
             await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "fleet online after Start");
             await WaitUntilAsync(() => publisher.NodeBirthCount == 1, "exactly one node birth published on Start");
 
-            // FleetHost calls PublishNodeBirth synchronously, in-line, still inside its own _gate (review
+            // FleetCore calls PublishNodeBirth synchronously, in-line, still inside its own _gate (review
             // fix) — so by the time this second Start() returns, the fake's counter already reflects
             // whether it fired again. No wait needed to prove "no second birth": assert directly.
             host.Start(); // already running — StartLocked no-ops, so no second birth

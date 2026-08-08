@@ -35,7 +35,7 @@ public interface IConnectorFactory
     /// <para><b>MUST return promptly and MUST NOT perform I/O</b> — no network probe, no filesystem read
     /// beyond what <paramref name="config"/> already handed you, no blocking wait of any kind. Review
     /// finding (fix round 1): a host's connector registry is looked up from inside the SAME lock its
-    /// halt path acquires (<c>FleetHost.StartLocked</c>/<c>Estop</c> both take <c>_gate</c>), so a
+    /// halt path acquires (<c>FleetCore.StartLocked</c>/<c>Estop</c> both take <c>_gate</c>), so a
     /// slow <see cref="TryCreate"/> call holds that lock for its full duration — <b>blocking the host's
     /// <c>Estop()</c> call from returning</b> for as long as this call takes. This is the ONE place
     /// third-party code runs while that lock is held. Any

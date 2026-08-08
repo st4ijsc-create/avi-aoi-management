@@ -4994,7 +4994,7 @@ batch existed. The batch's four numbered tasks were each correct and each necess
 ever scheduled to move the RTU registration** — a decomposition error, found only when E-3 hit the wall and
 **measured** the remaining work instead of assuming it. The measurement, so E-5 starts from a number:
 
-- `ModbusRtuBusPlan` — 108 lines, **a genuine leaf** (depends only on `EdgeCore.Drivers.Modbus` +
+- `ModbusRtuBusPlan` — 107 lines, **a genuine leaf** (depends only on `EdgeCore.Drivers.Modbus` +
   `EdgeCore.Serial`); moving it to `St4i.EdgeCore.Serial` is clean.
 - `ModbusMultidropRegistration` — 344 lines, **not a leaf**: it reaches `RtuBusConfiguration.IsInBusNamespace`.
 - `ConnectorConfigValidation` — 254 lines, appears to be a leaf.
@@ -5034,8 +5034,9 @@ surfaces that render this and they had already drifted apart: the HTTP body the 
 the warning an operator reads when the **annunciator did not light** (`RelayNotificationChannel`).
 
 🔴 **Two things about the replacements that are NOT finished, said here rather than discovered:** they are
-**long** (the `NO_LIVE_DRIVER` one is ~730 characters, rendered unwrapped in the control tab's
-not-available banner) and they are **English-only**, like this product's entire HTTP error surface.
+**long** — measured with a 13-character machine code: 526 / **827** / 661 / 269 characters for
+`MACHINE_NOT_FOUND` / `NO_LIVE_DRIVER` / `READ_ONLY` / `AMBIGUOUS_DRIVER`, rendered unwrapped in the control
+tab's not-available banner — and they are **English-only**, like this product's entire HTTP error surface.
 Correctness was chosen over brevity deliberately — a short string is what produced the defect — but "true,
 and hard to read where you meet it" is not done. Shortening means either dropping a producing path (no) or
 giving the banner progressive disclosure (a UI change); translating means an i18n decision this product has
@@ -5132,7 +5133,7 @@ driver" phải loại trừ. Hai quy tắc hội tụ miễn phí đúng ngày `
 E để lại, và nó chính là năng lực mà §1 của bản thiết kế nêu làm lý do tồn tại của cả đợt. Bốn nhiệm vụ đánh
 số của đợt đều đúng và đều cần, và **không cái nào từng được xếp lịch để dời phần đăng ký RTU** — một lỗi
 phân rã, chỉ lộ ra khi E-3 va vào bức tường và **ĐO** khối lượng còn lại thay vì giả định. Số đo, để E-5 bắt
-đầu từ một con số: `ModbusRtuBusPlan` 108 dòng, **là nút lá thật** (chỉ phụ thuộc `EdgeCore.Drivers.Modbus` +
+đầu từ một con số: `ModbusRtuBusPlan` 107 dòng, **là nút lá thật** (chỉ phụ thuộc `EdgeCore.Drivers.Modbus` +
 `EdgeCore.Serial`), dời sang `St4i.EdgeCore.Serial` là sạch; `ModbusMultidropRegistration` 344 dòng, **không
 phải lá** — nó với tới `RtuBusConfiguration.IsInBusNamespace`; `ConnectorConfigValidation` 254 dòng, có vẻ là
 lá; `RtuBusConfiguration` **không dời nguyên khối được**: nó còn ôm `TryFindBlockedDevice`/
@@ -5171,8 +5172,9 @@ thay thế nằm ở **MỘT** chỗ,
 `MachineWriteGate.ExplainUnavailable`, vì có **HAI** bề mặt cùng hiển thị chuyện này và chúng đã trôi khỏi
 nhau: thân phản hồi HTTP mà web UI hiện nguyên văn, và cảnh báo người vận hành đọc khi **đèn báo không sáng**
 (`RelayNotificationChannel`). 🔴 **Hai điều CHƯA xong về bản thay thế, nói ra thay vì để người khác phát
-hiện:** chúng **dài** (chuỗi `NO_LIVE_DRIVER` khoảng 730 ký tự, hiện không xuống dòng trong banner của tab
-điều khiển) và **chỉ có tiếng Anh**, giống toàn bộ bề mặt lỗi HTTP của sản phẩm này. Đúng đắn được ưu tiên hơn
+hiện:** chúng **dài** — đo với một mã máy 13 ký tự: 526 / **827** / 661 / 269 ký tự cho
+`MACHINE_NOT_FOUND` / `NO_LIVE_DRIVER` / `READ_ONLY` / `AMBIGUOUS_DRIVER`, và hiện không xuống dòng trong
+banner của tab điều khiển — và **chỉ có tiếng Anh**, giống toàn bộ bề mặt lỗi HTTP của sản phẩm này. Đúng đắn được ưu tiên hơn
 ngắn gọn một cách có chủ ý — chính một chuỗi ngắn đã sinh ra khiếm khuyết này — nhưng "đúng, mà khó đọc ngay
 chỗ gặp nó" thì chưa phải là xong. Rút ngắn nghĩa là hoặc bỏ một đường sinh (không), hoặc cho banner một cơ
 chế mở rộng dần (một thay đổi UI); dịch nghĩa là một quyết định i18n mà sản phẩm này chưa từng ra cho lỗi API.

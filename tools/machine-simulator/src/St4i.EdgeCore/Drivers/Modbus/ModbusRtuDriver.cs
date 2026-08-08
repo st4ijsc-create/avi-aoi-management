@@ -557,7 +557,7 @@ public sealed class ModbusRtuDriver : IWritableDeviceDriver
             MachineCode = _map.MachineCode,
             Kind = ReadingKind.Telemetry,
             // Telemetry has no pass/fail concept. Verdict MUST be Skip, not the enum default (Pass):
-            // FleetHost.OnPipelineCommitted counts any reading whose Verdict != Skip toward the fleet-wide
+            // FleetCore.OnPipelineCommitted counts any reading whose Verdict != Skip toward the fleet-wide
             // FPY/judged/pass KPIs, so a defaulted Pass would silently inflate operator FPY on every poll.
             // Same reasoning, and the same defect already found once, as ModbusTcpDriver.PollOnceAsync.
             Verdict = Verdict.Skip,

@@ -147,7 +147,7 @@ public static class ModbusMultidropRegistration
         }
 
         // 🔴 ONE snapshot for the whole pass, taken BEFORE anything mutates — D-1 review m3's rule, applied for
-        // the same reason FleetHost.ResolveWritableDriver takes one: the sweep and the collision check are two
+        // the same reason FleetCore.ResolveWritableDriver takes one: the sweep and the collision check are two
         // questions about the same moment, and asking them separately would let a registration land between
         // them. Stale is fine and is the point; internally inconsistent is not.
         var before = registry.SnapshotBindings();

@@ -178,7 +178,7 @@ public sealed record ConnectorWriteCapability(
 /// hand-editing a file.
 ///
 /// <para><b>Why SQLite, not a JSON file (the brief's own required decision):</b> <c>connectors.json</c> is
-/// explicitly documented (<see cref="St4i.EngineApi.Config.ConnectorsConfig"/>) as the HAND-EDITED,
+/// explicitly documented (<see cref="St4i.EdgeCore.Config.ConnectorsConfig"/>) as the HAND-EDITED,
 /// read-at-startup-only config source — its whole design point is "a loose file next to the exe an operator
 /// can hand-edit," which is precisely the deployment-script experience this task exists to replace. A
 /// second hand-editable JSON file would just be a second connectors.json with extra steps. This class

@@ -11,7 +11,7 @@ namespace St4i.EngineApi.Tests;
 
 /// <summary>
 /// G2-1 (Giai đoạn 2 first pass, docs/plans/2026-07-27-giaidoan2-synapse-connect-blueprint.md task 1) —
-/// end-to-end proof that <see cref="FleetHost.StartLocked"/> actually wires each machine's OWN
+/// end-to-end proof that <c>FleetCore.StartLocked</c> actually wires each machine's OWN
 /// <c>mapping/&lt;name&gt;.json</c> profile (resolved off the SHIPPED preset files copied next to this
 /// test binary — same "next to the exe" packaging <c>PackagingFleetJsonTests</c> already proves for
 /// <c>fleet.json</c> itself) into the pipeline, rather than the single hardcoded

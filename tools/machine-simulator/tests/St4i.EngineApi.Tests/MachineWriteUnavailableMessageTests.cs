@@ -149,14 +149,37 @@ public sealed class MachineWriteUnavailableMessageTests
     /// <c>simulated</c> roster machine, or a third-party-kind machine with no connector registered for its
     /// kind, both of which <c>FleetCore.ResolveSlotLabelFor</c> sends to the simulated group — has no
     /// connector at all, so "this connector declares no writable points" described something that does not
-    /// exist.</summary>
+    /// exist.
+    ///
+    /// <para>🔴 <b>Whole-branch review I3 — and the correction is sharper than the original finding, which is
+    /// why this test changed rather than merely gaining an assertion.</b> The replacement string kept a
+    /// second clause, "or it has a connector whose driver declares no writable points or commands", and
+    /// <b>this test asserted it</b>. That clause names a producer that <b>cannot exist in this build</b>:
+    /// <c>ResolveWritableDriver</c> returns <see cref="MachineDriverAvailability.ReadOnly"/> only when the
+    /// slot's driver is not an <see cref="St4i.Connector.Abstractions.Models.IWritableDeviceDriver"/>, and
+    /// every <c>IConnectorFactory</c> here produces one that is (there is no plugin loader). A writable
+    /// driver with no matching point resolves as <c>Writable</c> and the write returns <c>Rejected</c>.
+    /// <b>So the fix for "a string names producing paths it does not have" shipped with a string naming a
+    /// producing path it does not have, and a test pinning it.</b> The assertion is now inverted: the clause
+    /// must be ABSENT.</para></summary>
     [Fact]
-    public void ReadOnly_NamesTheSimulatedGroupPath_NotOnlyAConnectorWithNoWritablePoints()
+    public void ReadOnly_NamesOnlyProducersThatExist_AndNotTheConnectorWithNoWritablePointsThatCannot()
     {
         var text = MachineWriteGate.ExplainUnavailable(MachineDriverAvailability.ReadOnly, Code);
 
+        // The producers that genuinely reach this value: drivers built outside the connector path.
         Assert.Contains("built-in simulated group", text, StringComparison.Ordinal);
-        Assert.Contains("declares no writable points or commands", text, StringComparison.Ordinal);
+        Assert.Contains("hot-folder AOI demo pipeline", text, StringComparison.Ordinal);
+
+        // 🔴 The inverted assertion. A connector with no writable points does NOT produce ReadOnly, and the
+        // string must not offer it as an explanation — it would send an operator to edit a map that is not
+        // the problem. Restoring the old clause turns this red.
+        Assert.DoesNotContain(
+            "or it has a connector whose driver declares no writable points",
+            text, StringComparison.Ordinal);
+
+        // And it must say what that state DOES do, since that is the operator's obvious next question.
+        Assert.Contains("rejected", text, StringComparison.Ordinal);
     }
 
     /// <summary>🔴 <see cref="MachineDriverAvailability.Writable"/> means a write MAY be attempted, so there

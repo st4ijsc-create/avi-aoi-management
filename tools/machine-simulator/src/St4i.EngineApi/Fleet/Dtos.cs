@@ -174,7 +174,7 @@ public sealed record ConnectorStatusDto(string Id, string Error);
 /// <param name="InstanceId">Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md)
 /// — this connector INSTANCE's own id, and the segment <c>DELETE /v1/connectors/&#123;instanceId&#125;</c>
 /// takes. Optional: omitted/blank means "use <paramref name="Kind"/>", which is the id every pre-D-1 row
-/// already has and the id <see cref="St4i.EngineApi.Fleet.ConnectorRegistry.Register"/> defaults to — so a
+/// already has and the id <see cref="St4i.EdgeCore.Fleet.ConnectorRegistry.Register"/> defaults to — so a
 /// client that has never heard of instance ids keeps configuring exactly the one Modbus / one OPC-UA
 /// connector it always did, at the same URLs. Supply a distinct id to run a SECOND connector of the same
 /// kind (two RS-485 devices on one bus, two Modbus TCP PLCs): that is what this field exists for, and it is

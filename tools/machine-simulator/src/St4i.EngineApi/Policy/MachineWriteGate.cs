@@ -181,9 +181,13 @@ public static class MachineWriteGate
     /// error report — a real, pre-existing sharp edge on that channel, named here because "unreachable" was
     /// about to be recorded as if it were structural.</para>
     ///
-    /// <para><b>Known, routed, not fixed: these strings are LONG and English-only.</b> The
-    /// <see cref="MachineDriverAvailability.NoLiveDriver"/> one is ~730 characters and the web UI renders it
-    /// unwrapped in its not-available banner. Correctness came first deliberately — a short string is what
+    /// <para><b>Known, routed, not fixed: these strings are LONG and English-only.</b> Measured on the
+    /// arms below with a 13-character machine code — <c>MachineNotFound</c> 526, <b><c>NoLiveDriver</c>
+    /// 827</b>, <c>ReadOnly</c> 661, <c>AmbiguousDriver</c> 269 characters — and the web UI renders them
+    /// unwrapped in its not-available banner. (🔴 Whole-branch review M2: this said "~730", which was a
+    /// GUESS stated in the voice of a measurement and low by ~12%, the same instrument error that got the
+    /// "seven times" count removed one round earlier. The figures above are counted from these literals; they
+    /// move with the machine code's own length, which is why the input is named.) Correctness came first deliberately — a short string is what
     /// produced the defect — but "true, and hard to read at the point of use" is not finished. Shortening it
     /// means either dropping a producing path (no) or giving the banner progressive disclosure (a UI change,
     /// and this task touched no file under <c>web/</c>); translating it means an i18n decision this product's
@@ -217,11 +221,14 @@ public static class MachineWriteGate
                 "port the second one simply cannot open it.",
 
             MachineDriverAvailability.ReadOnly =>
-                $"The live driver for machine '{machineCode}' is not a writable one. Two different " +
-                "situations produce this: the machine is driven by the built-in simulated group — where a " +
+                $"The live driver for machine '{machineCode}' is not a writable one, so nothing can be " +
+                "written to it right now. In this build that means the machine is driven by something this " +
+                "product builds OUTSIDE the connector path — the built-in simulated group (where a " +
                 "'simulated' roster machine, or a third-party-kind machine with no connector registered for " +
-                "its kind, ends up, and which has no write path at all — or it has a connector whose driver " +
-                "declares no writable points or commands. Neither can be written to right now.",
+                "its kind, ends up) or the hot-folder AOI demo pipeline. Neither has a write path at all. " +
+                "Note this is NOT what a connector with no writable points reports: every connector factory " +
+                "in this build produces a writable driver, so such a machine resolves as writable and the " +
+                "write comes back rejected, naming the point.",
 
             MachineDriverAvailability.AmbiguousDriver =>
                 $"More than one machine in this engine's roster resolves to the same live connector as " +

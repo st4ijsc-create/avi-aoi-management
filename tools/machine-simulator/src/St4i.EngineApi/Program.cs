@@ -733,7 +733,7 @@ builder.Services.AddHostedService<St4i.EngineApi.Alarms.AlarmEvaluatorService>()
 
 // G2-2 (docs/plans/2026-07-27-giaidoan2-synapse-connect-blueprint.md task 2) — the local UNS spine: an
 // always-on loopback MQTTnet broker (UnsBroker) plus the dual-topic (Sparkplug + retained semantic-mirror)
-// publisher (UnsPublisher) FleetHost threads into every EdgePipeline it builds (see FleetHost.StartLocked).
+// publisher (UnsPublisher) FleetHost threads into every EdgePipeline it builds (see FleetCore.StartLocked).
 // Both are registered ONLY when UnsOptions.Enabled (default true, gated off via ST4I_UNS_ENABLED=false) —
 // when disabled, neither type is registered at all, so FleetHost's optional `unsPublisher` ctor param
 // resolves to its own `null` default exactly like HistorianWriter/MachineConfigStore/... already do for
@@ -1229,7 +1229,7 @@ var persistedConnectorSeeds = new List<St4i.EdgeCore.Models.MachineDescriptor>()
 // registrations above (a bare `Func<IDeviceDriver>` for Modbus, `OpcUaDriverFactory` itself for OPC-UA).
 // Lazily built (same "needs `ILoggerFactory` from `sp`, so it can't be a plain pre-`Build()` local" reason
 // the old registrations were lambdas too) — populated with whichever of Modbus/OPC-UA actually finished
-// loading their config above; either, both, or neither may be present, and `FleetHost.StartLocked` asks
+// loading their config above; either, both, or neither may be present, and `FleetCore.StartLocked` asks
 // this registry fresh, on every call, for the current full set. `ConnectorRegistry` requires no ASP.NET
 // Core service itself, so this factory only reaches into `sp` for the per-connector `ILogger`.
 // 🔴 Task D-7a (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-7a-brief.md) — the ONE

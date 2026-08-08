@@ -88,7 +88,7 @@ public sealed class OpcUaDriverLoopbackTests
             Assert.Equal("PLC-OPCUA-LOOPBACK", firstReading!.MachineCode);
             Assert.Equal(ReadingKind.Telemetry, firstReading.Kind);
             // Telemetry carries no pass/fail — Verdict MUST be Skip so it can never inflate the fleet-wide
-            // FPY/pass KPIs in FleetHost.OnPipelineCommitted (the Modbus KPI-inflation lesson, G2-6).
+            // FPY/pass KPIs in FleetCore.OnPipelineCommitted (the Modbus KPI-inflation lesson, G2-6).
             Assert.Equal(Verdict.Skip, firstReading.Verdict);
             Assert.Equal(2, firstReading.Telemetry.Count);
 

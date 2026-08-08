@@ -18,7 +18,7 @@ namespace St4i.EdgeCore.Fleet;
 /// "leave the DTOs behind" decision only stands once that cycle is cut. It is cut here: the four
 /// projection records left with the DTOs, the two <c>To*</c> methods became
 /// <see cref="SnapshotTile"/>/<see cref="SnapshotDetail"/> returning the DOMAIN records in
-/// <c>FleetSnapshots.cs</c>, and <c>St4i.EngineApi.Fleet.MachineStateProjections</c> (extension methods,
+/// <c>FleetSnapshots.cs</c>, and <c>St4i.EngineApi.Fleet.FleetProjections</c> (extension methods,
 /// so every existing <c>state.ToTile()</c>/<c>state.ToDetail()</c> call site compiles unchanged) maps
 /// those onto the wire DTOs. This assembly now names no web shape at all; the edge is one-way.</para>
 /// </summary>
@@ -108,7 +108,7 @@ public sealed class MachineState
             // Final-review I-1: a speed-slider/scenario-preset change restarts the fleet's driver, which
             // resets the RAW per-machine cycle counter back toward 1 — without this, the DISPLAYED
             // Cycles (and every tile's spark/summary derived from it) would visibly rewind on the
-            // dashboard even though the fleet-wide KPI total (FleetHost._totalCycles, Interlocked and
+            // dashboard even though the fleet-wide KPI total (FleetCore._totalCycles, Interlocked and
             // never reset by Stop/Start) keeps climbing. Detect the restart purely from the raw counter
             // going backwards and fold the pre-restart high-water mark into a running offset, so the
             // number a visitor is watching only ever climbs.
@@ -153,7 +153,7 @@ public sealed class MachineState
                 // `is not IConvertible ... ToDouble(null)` pattern crashed on a non-numeric string tag
                 // (e.g. an OPC-UA "status" node → "RUNNING" — string IS IConvertible, so
                 // Convert.ToDouble("RUNNING") threw a FormatException straight out of
-                // FleetHost.OnPipelineCommitted, killing that machine's whole pipeline slot). The shared
+                // FleetCore.OnPipelineCommitted, killing that machine's whole pipeline slot). The shared
                 // TelemetryNumeric helper never throws: a genuinely-numeric value (or a numeric string
                 // like "42.5") is kept exactly as before; a non-numeric string/anything else is skipped.
                 if (!TelemetryNumeric.TryGet(sample.Value, out var numeric)) continue;
@@ -216,7 +216,7 @@ public sealed class MachineState
     /// <para>E-2: was <c>ToTile(bool)</c> returning <c>FleetTileDto</c>. Same lock, same fields, same
     /// order — only the return SHAPE changed, from the wire DTO to the domain record. The DTO overloads
     /// (<c>ToTile()</c>/<c>ToTile(bool)</c>) live on as extension methods in
-    /// <c>St4i.EngineApi.Fleet.MachineStateProjections</c>.</para></summary>
+    /// <c>St4i.EngineApi.Fleet.FleetProjections</c>.</para></summary>
     public MachineTileSnapshot SnapshotTile(bool fleetRunning)
     {
         lock (_gate)

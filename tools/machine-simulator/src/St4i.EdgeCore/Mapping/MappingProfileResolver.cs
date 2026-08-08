@@ -11,7 +11,7 @@ namespace St4i.EdgeCore.Mapping;
 /// shared <c>MappingProfile { Name = "fleet-mixed" }</c> regardless of what <c>fleet.json</c>'s own
 /// per-entry <see cref="MachineDescriptor.MappingProfile"/> field named.
 ///
-/// Builds, once per fleet (re)composition (see <c>FleetHost.StartLocked</c>), a
+/// Builds, once per fleet (re)composition (see <c>FleetCore.StartLocked</c>), a
 /// machineCode → <see cref="MappingProfile"/> map: a descriptor naming a real
 /// <c>mapping/&lt;name&gt;.json</c> file resolves to THAT file's <see cref="MappingProfile.FromJson"/>;
 /// a descriptor with no name, or naming a file that is missing/unreadable/malformed, falls back to
@@ -31,7 +31,7 @@ public sealed class MappingProfileResolver
 
     /// <summary>Builds the resolver from the CURRENT fleet roster. <paramref name="mappingDir"/> is the
     /// directory <c>mapping/*.json</c> presets live in — production callers resolve this the same
-    /// "next to the exe" way <c>FleetHost.ResolveFleetPath</c> already resolves <c>fleet.json</c> itself
+    /// "next to the exe" way <c>FleetCore.ResolveFleetPath</c> already resolves <c>fleet.json</c> itself
     /// (<c>AppContext.BaseDirectory</c>/"mapping"). Safe to call with a non-existent directory — every
     /// entry simply falls back to <see cref="MappingProfile.ForClass"/>.</summary>
     /// <param name="logWarning">Optional (defaults to a no-op) — invoked once per descriptor that names a

@@ -232,7 +232,7 @@ public sealed class ModbusMultidropRegistrationTests
         Assert.Equal(4, bindings.Select(b => b.InstanceId).Distinct(StringComparer.Ordinal).Count());
 
         // And each code resolves BACK to exactly the instance whose unit id declared it — the lookup
-        // FleetHost.ResolveWritableDriver routes on.
+        // FleetCore.ResolveWritableDriver routes on.
         for (var i = 0; i < codes.Length; i++)
         {
             Assert.True(registry.TryGetInstanceIdForMachine(codes[i], out var instanceId));
