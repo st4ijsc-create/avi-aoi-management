@@ -119,14 +119,31 @@ public static class MachineWriteGate
     /// <see cref="AnyCriticalAlarmActiveAsync"/> living here: a second private copy is how one statement
     /// quietly becomes two.</para>
     ///
-    /// <para>🔴 <b>What was wrong, and it is this batch's own defect class on the write button.</b> Every
-    /// one of the old strings PRESUPPOSED THAT A CONNECTOR EXISTS. <c>NO_LIVE_DRIVER</c> named three causes
-    /// ("the fleet may be stopped, the HALT latch may be engaged, or this machine's connector failed to
-    /// start this run") and a machine with no connector configured here at all satisfies NONE of them;
-    /// <c>READ_ONLY</c> said "this connector declares no writable points", and its most common producer is a
-    /// machine driven by the built-in simulated group, which has no connector at all; the <c>404</c> named a
-    /// typo or a never-onboarded machine. Each string covered several producing paths and was true of only
-    /// some — the shape two batches of review have now found seven times, this time on the write button.</para>
+    /// <para>🔴 <b>What was wrong — stated per string, because the unifying sentence this comment first
+    /// carried was itself a false universal.</b> It read *"every one of the old strings presupposed that a
+    /// connector exists"*, and the E-4 review checked all eight pre-E-4 copies and found that is true of
+    /// <b>two</b> of them. Restating it correctly rather than tidying it away, because a sentence covering
+    /// several strings and true of only some IS the defect this method exists to fix:
+    /// <list type="bullet">
+    /// <item><b><c>READ_ONLY</c> (both copies) — genuinely presupposed a connector.</b> "this connector
+    /// declares no writable points or commands", when its commonest producer is a machine driven by the
+    /// built-in simulated group, which has no connector at all.</item>
+    /// <item><b><c>NO_LIVE_DRIVER</c> (both copies) — a DISJUNCTION, and only its third disjunct presupposed
+    /// a connector.</b> The defect is that the disjunction was not exhaustive: no branch of "the fleet may be
+    /// stopped, the HALT latch may be engaged, or this machine's connector failed to start this run" covers a
+    /// machine with no connector configured here at all. Its <i>advice</i> was the sharper fault — see the
+    /// paragraph below.</item>
+    /// <item><b>The <c>404</c> at the endpoint — literally TRUE, and uninformative.</b> "machine X not found"
+    /// presupposes nothing; it simply names none of the paths an operator needs, and an edge-held machine is
+    /// real, running and correctly configured somewhere else. The relay's <c>MachineNotFound</c> copy is the
+    /// one with a defect, and again it is the ADVICE: "check the code, or onboard the machine" — onboarding
+    /// an edge-held machine here creates exactly the duplicate roster entry that makes the engine's picture
+    /// of the plant wrong.</item>
+    /// <item><b><c>AMBIGUOUS_DRIVER</c> — correct.</b> One producing path, one true string. Kept, reworded
+    /// only for "this engine's roster".</item>
+    /// </list>
+    /// The class is the one the brief named: <b>an operator-facing string covering several producing paths
+    /// and true of only some.</b> It is not one property all four shared.</para>
     ///
     /// <para>🔴 <b>The edge-agent path, and the honest limit.</b> A machine driven by a
     /// <c>St4i.EdgeService</c> edge agent is <b>read-only from this engine</b> (blueprint §3 —
@@ -150,6 +167,28 @@ public static class MachineWriteGate
     /// MAY be attempted, so there is nothing to explain; it throws rather than returning a soothing default,
     /// and a future enum member with no arm here is a build-visible <c>switch</c> warning plus a red test
     /// (<c>MachineWriteUnavailableMessageTests</c>) rather than a silent generic string.</para>
+    ///
+    /// <para>🔴 <b>E-4 review — the <paramref name="machineCode"/> guard is unreachable because of guards
+    /// ELSEWHERE, not by construction, and the difference is worth writing down.</b> Two call sites, two
+    /// different reasons: the HTTP one cannot bind a blank <c>{code}</c> route segment at all; the alarm
+    /// relay's is unreachable because <c>FleetCore.TryWriteSetpointAsync</c>/<c>TryInvokeCommandAsync</c>
+    /// carry their OWN <c>ArgumentException.ThrowIfNullOrEmpty(machineCode)</c> and run BEFORE
+    /// <c>UnavailableAsync</c> is ever entered — so a relay row with a blank machine code throws at the
+    /// resolve call, two batches older than this method. <c>NotificationEndpoints.SaveRelayAsync</c>'s
+    /// save-time "A machine code is required" is a third layer, not the load-bearing one. What all three
+    /// share is that a hand-edited SQLite relay row still degrades an honest
+    /// <see cref="MachineDriverAvailability.MachineNotFound"/> warning into <c>RelayOutcome.Lost</c> plus an
+    /// error report — a real, pre-existing sharp edge on that channel, named here because "unreachable" was
+    /// about to be recorded as if it were structural.</para>
+    ///
+    /// <para><b>Known, routed, not fixed: these strings are LONG and English-only.</b> The
+    /// <see cref="MachineDriverAvailability.NoLiveDriver"/> one is ~730 characters and the web UI renders it
+    /// unwrapped in its not-available banner. Correctness came first deliberately — a short string is what
+    /// produced the defect — but "true, and hard to read at the point of use" is not finished. Shortening it
+    /// means either dropping a producing path (no) or giving the banner progressive disclosure (a UI change,
+    /// and this task touched no file under <c>web/</c>); translating it means an i18n decision this product's
+    /// entirely-English HTTP error surface has never taken. Both are recorded in blueprint §12 as items, not
+    /// as follow-ups somebody will remember.</para>
     /// </summary>
     public static string ExplainUnavailable(MachineDriverAvailability availability, string machineCode)
     {

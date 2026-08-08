@@ -4124,8 +4124,9 @@ Stated plainly, verified against the source below, not softened:
   agent pushes **northbound to the platform** and never calls this engine, which serves no ingest route, so
   nothing here ever learns an edge agent exists. **The write-button messages therefore NAME that path rather
   than claiming to detect it** — see `MachineWriteGate.ExplainUnavailable`, whose four strings were each
-  rewritten in E-4 because every one of them presupposed a connector exists and was therefore false for a
-  machine that has none.
+  rewritten in E-4 because each named fewer producing paths than it covered (`READ_ONLY` presupposed a
+  connector that need not exist; `NO_LIVE_DRIVER` offered a non-exhaustive list of causes plus advice that
+  cannot work for an edge-held device; the `404` was true but named none of the paths an operator needs).
 
 *(VI: Ghi rõ, đã đối chiếu mã nguồn, không mềm hoá: **Chỉ Modbus và OPC-UA ghi được — Modbus TCP, và
 (từ Đợt D) Modbus RTU trên RS-485** — S7, EtherNet/IP, SECS/GEM chưa có driver (§20.5); `MqttDriver` tồn
@@ -5017,19 +5018,28 @@ Two facts, and conflating them is what made the write button's messages wrong fo
    channel. **Nothing here ever learns that an edge agent exists**, let alone which machines it holds.
 
 **So the operator-facing messages NAME that path rather than claiming to detect it**, and that is the honest
-form. E-4 rewrote all four, because every one of them presupposed that a connector exists and was therefore
-false for a machine that has none — the same "one string, several producing paths, true of only some" defect
-this project has now found seven times:
+form. E-4 rewrote all four. The defect they shared is the one this project keeps finding — **an
+operator-facing string covering several producing paths and true of only some** — but it is worth stating
+per string rather than as one property they all had, because they did not all have the same one:
 
 | The operator sees | It used to say | Why that was wrong |
 |---|---|---|
-| `404` on the write button | *machine "X" not found* | Named a typo or a never-onboarded machine. An edge-held machine is real, running and correctly configured **somewhere else** — and, because it never appears in this roster, this 404 is the FIRST thing such an operator meets. |
-| `409 NO_LIVE_DRIVER` | *the fleet may be stopped, the HALT latch may be engaged, or this machine's connector failed to start this run … then retry* | All three causes assume a connector exists. A machine with **no connector configured here at all** satisfies none of them — and "then retry" is advice that can never work, whose obvious next move (configure a connector here) puts a **second process on a device another one already drives**. |
-| `409 READ_ONLY` | *this connector declares no writable points or commands* | Its most common producer is a machine driven by the **built-in simulated group**, which has no connector at all. |
+| `404` on the write button | *machine "X" not found* | **Literally true, and uninformative.** It names a typo or a never-onboarded machine. An edge-held machine is real, running and correctly configured **somewhere else** — and, because it never appears in this roster, this 404 is the FIRST thing such an operator meets. (The alarm relay's own version of this case is the one with a real fault, and it is the ADVICE: *"check the code, or onboard the machine"* — onboarding an edge-held machine here creates exactly the duplicate roster entry that makes this engine's picture of the plant wrong.) |
+| `409 NO_LIVE_DRIVER` | *the fleet may be stopped, the HALT latch may be engaged, or this machine's connector failed to start this run … then retry* | **A disjunction that is not exhaustive** — only its third branch assumes a connector, and no branch at all covers a machine with **no connector configured here**. The sharper fault is the advice: "then retry" can never work for an edge-held device, and the obvious next move it invites (configure a connector here) puts a **second process on a device another one already drives**. |
+| `409 READ_ONLY` | *this connector declares no writable points or commands* | **The one that genuinely presupposed a connector.** Its most common producer is a machine driven by the **built-in simulated group**, which has no connector at all. |
+| `409 AMBIGUOUS_DRIVER` | (unchanged in substance) | Correct: one producing path, one true string. |
 
 The replacements live in **one** place, `MachineWriteGate.ExplainUnavailable`, because there are **two**
 surfaces that render this and they had already drifted apart: the HTTP body the web UI shows verbatim, and
 the warning an operator reads when the **annunciator did not light** (`RelayNotificationChannel`).
+
+🔴 **Two things about the replacements that are NOT finished, said here rather than discovered:** they are
+**long** (the `NO_LIVE_DRIVER` one is ~730 characters, rendered unwrapped in the control tab's
+not-available banner) and they are **English-only**, like this product's entire HTTP error surface.
+Correctness was chosen over brevity deliberately — a short string is what produced the defect — but "true,
+and hard to read where you meet it" is not done. Shortening means either dropping a producing path (no) or
+giving the banner progressive disclosure (a UI change); translating means an i18n decision this product has
+never taken for API errors. Both are open items, not oversights.
 
 **What it would take to actually distinguish "no connector configured" from "held by an edge agent"** — asked
 and answered rather than left as a wish: an edge agent would have to REGISTER with this engine, which means a
@@ -5141,20 +5151,32 @@ liệu. (2) **Engine này không PHÁT HIỆN được tình huống đó.** Tá
 `:5199` và **không phục vụ route ingest nào cả**. Hai host không chung roster, không chung sổ chiếm mã máy,
 không chung kênh nào. **Ở đây không bao giờ có gì học được rằng một tác nhân biên tồn tại**, chứ chưa nói tới
 việc nó cầm những máy nào. **Vì thế thông điệp cho người vận hành NÊU TÊN đường sinh ấy thay vì tuyên bố phát
-hiện được nó** — và đó mới là dạng trung thực. E-4 viết lại **cả bốn**, vì mỗi chuỗi đều mặc định rằng một
-connector tồn tại và do đó đều sai với một cỗ máy không có connector nào — đúng lớp lỗi "một chuỗi, nhiều
-đường sinh, chỉ đúng với vài đường" mà dự án này nay đã tìm thấy bảy lần: **`404`** trước viết *machine "X"
-not found*, chỉ nêu lỗi gõ hoặc máy chưa onboard, trong khi một máy do tác nhân biên cầm là máy THẬT, đang
-chạy, và đã được cấu hình đúng **ở nơi khác** — và vì nó không bao giờ xuất hiện trong roster này, chính cái
-404 ấy mới là thứ ĐẦU TIÊN người vận hành gặp; **`409 NO_LIVE_DRIVER`** trước nêu ba nguyên nhân đều mặc định
-có connector, nên một cỗ máy **không có connector nào ở đây** không khớp nguyên nhân nào, và lời khuyên "rồi
+hiện được nó** — và đó mới là dạng trung thực. E-4 viết lại **cả bốn**. Lớp lỗi chung là thứ dự án này liên
+tục gặp — **một chuỗi hướng-người-vận-hành phủ nhiều đường sinh và chỉ đúng với vài đường** — nhưng phải nói
+**theo từng chuỗi** chứ không phải như một tính chất cả bốn cùng có, vì chúng không cùng mắc một lỗi:
+**`404`** trước viết *machine "X" not found* — **đúng theo nghĩa đen, và vô ích**: nó nêu lỗi gõ hoặc máy chưa
+onboard, trong khi một máy do tác nhân biên cầm là máy THẬT, đang chạy, và đã được cấu hình đúng **ở nơi
+khác** — và vì nó không bao giờ xuất hiện trong roster này, chính cái 404 ấy mới là thứ ĐẦU TIÊN người vận
+hành gặp. (Bản của relay cho cùng ca này mới là bản có lỗi thật, và lỗi nằm ở **LỜI KHUYÊN**: *"kiểm tra lại
+mã, hoặc onboard cỗ máy"* — onboard một cỗ máy tác nhân biên đang lái sẽ tạo ra đúng bản sao roster làm cho
+bức tranh nhà máy của engine này thành sai.) **`409 NO_LIVE_DRIVER`** trước là **một phép tuyển KHÔNG vét
+cạn** — chỉ nhánh thứ ba mặc định có connector, và **không nhánh nào** phủ trường hợp máy **không có connector
+nào ở đây**; lỗi sắc hơn nằm ở lời khuyên "rồi
 thử lại" không bao giờ đúng được — nước đi hiển nhiên mà nó gợi ra (cấu hình một connector ở đây) đặt **một
-tiến trình thứ hai lên một thiết bị đã có tiến trình khác lái**; **`409 READ_ONLY`** trước viết *connector này
-không khai điểm ghi được nào*, trong khi nguồn sinh phổ biến nhất của nó là một cỗ máy do **nhóm mô phỏng có
-sẵn** lái, thứ không có connector nào cả. Bản thay thế nằm ở **MỘT** chỗ,
+tiến trình thứ hai lên một thiết bị đã có tiến trình khác lái**; **`409 READ_ONLY`** — **cái DUY NHẤT thật sự
+mặc định rằng có connector** — trước viết *connector này không khai điểm ghi được nào*, trong khi nguồn sinh
+phổ biến nhất của nó là một cỗ máy do **nhóm mô phỏng có sẵn** lái, thứ không có connector nào cả; còn
+**`409 AMBIGUOUS_DRIVER`** thì **đúng** (một đường sinh, một chuỗi đúng) và chỉ được viết lại về câu chữ. Bản
+thay thế nằm ở **MỘT** chỗ,
 `MachineWriteGate.ExplainUnavailable`, vì có **HAI** bề mặt cùng hiển thị chuyện này và chúng đã trôi khỏi
 nhau: thân phản hồi HTTP mà web UI hiện nguyên văn, và cảnh báo người vận hành đọc khi **đèn báo không sáng**
-(`RelayNotificationChannel`). **Cần gì để thật sự phân biệt "chưa cấu hình connector" với "do tác nhân biên
+(`RelayNotificationChannel`). 🔴 **Hai điều CHƯA xong về bản thay thế, nói ra thay vì để người khác phát
+hiện:** chúng **dài** (chuỗi `NO_LIVE_DRIVER` khoảng 730 ký tự, hiện không xuống dòng trong banner của tab
+điều khiển) và **chỉ có tiếng Anh**, giống toàn bộ bề mặt lỗi HTTP của sản phẩm này. Đúng đắn được ưu tiên hơn
+ngắn gọn một cách có chủ ý — chính một chuỗi ngắn đã sinh ra khiếm khuyết này — nhưng "đúng, mà khó đọc ngay
+chỗ gặp nó" thì chưa phải là xong. Rút ngắn nghĩa là hoặc bỏ một đường sinh (không), hoặc cho banner một cơ
+chế mở rộng dần (một thay đổi UI); dịch nghĩa là một quyết định i18n mà sản phẩm này chưa từng ra cho lỗi API.
+Cả hai là hạng mục còn mở, không phải chỗ sót. **Cần gì để thật sự phân biệt "chưa cấu hình connector" với "do tác nhân biên
 cầm"** — hỏi và trả lời hẳn thay vì để lửng: tác nhân biên sẽ phải ĐĂNG KÝ với engine này, tức là cần một
 quyền chiếm mã máy XUYÊN TIẾN TRÌNH. Hôm nay quyền chiếm ấy là một `ConcurrentDictionary` **trong một tiến
 trình** — không mutex, không lockfile, không primitive có tên — và bảo vệ duy nhất tồn tại giữa các tiến trình

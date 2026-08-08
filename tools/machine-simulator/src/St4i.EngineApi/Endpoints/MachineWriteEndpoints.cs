@@ -325,11 +325,15 @@ public static class MachineWriteEndpoints
     /// <para>🔴 <b>Task E-4 — the four MESSAGES moved to <see cref="MachineWriteGate.ExplainUnavailable"/>;
     /// the four STATUS CODES and reason codes stay here.</b> They had to move because this was not the only
     /// place rendering a <see cref="MachineDriverAvailability"/> into operator prose — the alarm relay does
-    /// it too, from its own drifted copy — and because every one of the four strings presupposed that a
-    /// connector exists, which is false on the producing path this batch exists to make visible (a machine
-    /// held by a <c>St4i.EdgeService</c> edge agent, and equally a machine with no connector configured
-    /// here at all). See that method's own doc comment for the full accounting, including why this engine
-    /// cannot DETECT the edge-agent case and therefore names it rather than claiming to distinguish it.</para></summary>
+    /// it too, from its own drifted copy — and because each string named fewer producing paths than it
+    /// covered. <b>Per string, not as a universal</b> (the first draft of this paragraph claimed all four
+    /// presupposed a connector; the E-4 review measured that as true of <c>READ_ONLY</c> only):
+    /// <c>READ_ONLY</c> presupposed a connector that need not exist; <c>NO_LIVE_DRIVER</c> offered a
+    /// non-exhaustive disjunction of causes plus advice that cannot work for an edge-held device; the
+    /// <c>404</c> was true but named none of the paths an operator needs. See
+    /// <see cref="MachineWriteGate.ExplainUnavailable"/>'s own doc comment for the full accounting, including
+    /// why this engine cannot DETECT the edge-agent case and therefore names it rather than claiming to
+    /// distinguish it.</para></summary>
     private static IResult NotAvailableResult(string code, MachineDriverAvailability availability) => availability switch
     {
         MachineDriverAvailability.MachineNotFound =>

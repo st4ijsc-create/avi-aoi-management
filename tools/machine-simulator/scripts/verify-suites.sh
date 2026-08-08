@@ -1370,7 +1370,22 @@ EXPECT_EDGESERVICE=46
 # 🔴 Task E-4 raises this 1283 -> 1289 (+6). The whole justification is in the block above
 # EXPECT_EDGESERVICE — one new file, MachineWriteUnavailableMessageTests.cs, and the four assertions that
 # actually carry the fix cost 0 because they replaced vacuous ones inside tests that already existed.
-EXPECT_ENGINEAPI=1289
+#
+# 🔴 E-4 REVIEW ROUND raises it once more, 1289 -> 1290 (+1), in ONE existing file. It is the only total
+# that moves in that round; every other correction the review asked for is a comment or a doc sentence.
+#
+#   +1  tests/St4i.EngineApi.Tests/MachineWriteEndpointsTests.cs
+#         Setpoint_FleetRunning_NoConnectorEverConfigured_409_NoLiveDriver_WithAllThreeOldCausesFalse
+#       Review finding C3: the comment on the EXISTING NoLiveDriver test claimed that test's own scenario
+#       "satisfies none of" the old string's three named causes. It does not — that test never calls
+#       host.Start(), so "the fleet may be stopped" is exactly true of it. The claim was right about the
+#       product and wrong about its witness, which is the same defect class one layer up, so it gets a
+#       witness instead of a rewording: a Modbus-kind roster machine on a RUNNING fleet with no connector
+#       ever configured, asserting all three old causes false AT the moment the 409 is produced
+#       (host.IsRunning true, EstopEngaged false, GetConfiguredConnectorIssues empty) and then asserting
+#       the body. Modbus-kind specifically because ResolveSlotLabelFor excludes Modbus/OPC-UA from the
+#       simulated group unconditionally; a simulated-kind machine would report ReadOnly, the other case.
+EXPECT_ENGINEAPI=1290
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

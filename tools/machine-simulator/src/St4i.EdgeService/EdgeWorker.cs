@@ -70,9 +70,31 @@ public sealed class EdgeWorker : BackgroundService
     internal const string MachineCodeEnvVar = "ST4I_MACHINE_CODE";
     internal const string VerifyTlsEnvVar = "ST4I_VERIFY_TLS";
 
-    /// <summary>Same placeholder server URL as St4iMachineSimulator's <c>App.xaml.cs</c> and
-    /// St4i.EngineApi's <c>FleetHost.DefaultServerUrl</c> — a local engine listening on its default port,
-    /// overridable via <see cref="ServerUrlEnvVar"/> once a real deployment target is known.</summary>
+    /// <summary>🔴 <b>Task E-4 review, C1 — this remark said "Same placeholder server URL as
+    /// St4iMachineSimulator's <c>App.xaml.cs</c> and St4i.EngineApi's <c>FleetHost.DefaultServerUrl</c> — a
+    /// local engine listening on its default port". BOTH HALVES WERE FALSE, and this sentence is where the
+    /// blueprint's own §2 error came from</b>, so it is corrected here rather than only in the record —
+    /// otherwise the next reader re-derives §2 from the code.
+    ///
+    /// <para><b>(a) Not the same as <c>FleetHost.DefaultServerUrl</c>.</b> That constant has been the EMPTY
+    /// STRING since SM-3, and <c>FleetCore</c>'s own remarks on it record why this exact value was removed
+    /// there: <c>"http://localhost:5000"</c> LOOKED like configuration but was guaranteed to fail on every
+    /// install that never overrode it, because a real ST4I ecosystem server is never running on an edge box's
+    /// own loopback by default. The only host still carrying this literal besides this one is the WPF shell's
+    /// <c>PlaceholderServerUrl</c>. It is kept here — this host's Live transport binds one machine to one
+    /// server and an empty URL would just move the failure — but it is a PLACEHOLDER awaiting a real
+    /// deployment target, not a value anything is expected to work against.</para>
+    ///
+    /// <para><b>(b) It is not "a local engine listening on its default port", and nothing about this URL
+    /// points at <c>St4i.EngineApi</c> at all.</b> EngineApi's default port is <b>5199</b>
+    /// (<c>Program.cs</c>'s <c>UseUrls</c>) and it maps <b>no ingest route</b>. What this URL names is the
+    /// <b>ST4I platform</b>: <see cref="LiveTransport"/> hands it to the vendored <c>St4iDeviceClient</c>,
+    /// which appends its own hardcoded <c>/api/v1/ingest/…</c> paths. So an edge agent pushes NORTHBOUND to
+    /// the platform and never calls the engine — the two hosts share no roster, no machine-code claim and no
+    /// channel, which is exactly why the engine cannot tell an edge-held machine from an unconfigured one.
+    /// See blueprint §2.1 / §12.1 and README §24.4.</para>
+    ///
+    /// Overridable via <see cref="ServerUrlEnvVar"/>.</summary>
     internal const string DefaultServerUrl = "http://localhost:5000";
 
     /// <summary>EdgeService did not previously have a default machine identity (it always ran the

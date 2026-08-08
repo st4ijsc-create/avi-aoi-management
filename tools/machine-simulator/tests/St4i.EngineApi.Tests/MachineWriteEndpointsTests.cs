@@ -480,14 +480,80 @@ public sealed class MachineWriteEndpointsTests
             var body = await write.Content.ReadFromJsonAsync<MachineWriteUnavailableDto>(JsonOptions);
             Assert.NotNull(body);
             Assert.Equal("NO_LIVE_DRIVER", body!.Reason);
-            // 🔴 Task E-4 — was `Assert.False(string.IsNullOrWhiteSpace(body.Error))`, which is true of
-            // every string and therefore of the wrong one too: the message this replaced named three causes
-            // ("the fleet may be stopped, the HALT latch may be engaged, or this machine's connector failed
-            // to start this run") and THIS test's own scenario — a roster machine with no connector at all —
-            // satisfies none of them. See MachineWriteGate.ExplainUnavailable.
+            // 🔴 Task E-4 — was `Assert.False(string.IsNullOrWhiteSpace(body.Error))`, which is true of every
+            // string and therefore of the wrong one too.
+            //
+            // 🔴 E-4 REVIEW, C3 — and the first version of THIS comment was itself false about its own test.
+            // It claimed this scenario "satisfies none of" the old string's three causes. It does not: this
+            // test deliberately never calls host.Start(), so "the fleet may be stopped" is exactly true of
+            // it. The scenario that falsifies all three lives next door, in
+            // FleetRunning_NoConnectorEverConfigured_… — written for this review round precisely because the
+            // claim needed a witness rather than a sentence. Worth leaving the correction visible: a comment
+            // that overstates what its own test constructs is the same defect class as the string it is
+            // describing, one layer up.
             Assert.Equal(
                 MachineWriteGate.ExplainUnavailable(MachineDriverAvailability.NoLiveDriver, code),
                 body.Error);
+        }
+    }
+
+    /// <summary>
+    /// 🔴 <b>Task E-4 review, C3 — the scenario in which every one of the OLD <c>NO_LIVE_DRIVER</c> string's
+    /// three named causes is FALSE, constructed rather than asserted in prose.</b>
+    ///
+    /// <para>The old message read <i>"the fleet may be stopped, the HALT latch may be engaged, or this
+    /// machine's connector failed to start this run … then retry"</i>. The review's finding was that
+    /// <see cref="Setpoint_MachineKnownButFleetNeverStarted_409_NoLiveDriver"/> — the test whose comment
+    /// claimed to demonstrate the defect — does not: it never starts the fleet, so the first cause is exactly
+    /// true of it. This test closes that gap by asserting each of the three is false <b>at the moment the
+    /// 409 is produced</b>: the fleet IS running, the HALT latch is NOT engaged, and NO connector failed to
+    /// start because none was ever configured. What remains is the producing path the old string had no
+    /// branch for — and the one an edge-held machine shares with it.</para>
+    ///
+    /// <para><b>Why a Modbus-kind roster machine specifically:</b> <c>FleetCore.ResolveSlotLabelFor</c>
+    /// excludes Modbus/OPC-UA from the simulated group UNCONDITIONALLY, so this machine resolves to a
+    /// <c>"modbus"</c> slot that does not exist — <see cref="MachineDriverAvailability.NoLiveDriver"/> — with
+    /// the fleet genuinely running. A simulated-kind machine would fall back to the simulated group and
+    /// report <see cref="MachineDriverAvailability.ReadOnly"/> instead, which is the OTHER case.</para>
+    /// </summary>
+    [Fact]
+    public async Task Setpoint_FleetRunning_NoConnectorEverConfigured_409_NoLiveDriver_WithAllThreeOldCausesFalse()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, engineer, _) = await SetUpAllRolesAsync(factory, "nocondriver");
+        using (admin) using (engineer)
+        {
+            var host = factory.Services.GetRequiredService<FleetHost>();
+            const string code = "MW-NOCONN-01";
+            Assert.True(host.RegisterMachine(NewModbusStyleMachine(code)));
+
+            host.Start();
+            try
+            {
+                await WaitUntilAsync(
+                    () => host.GetMachineDriverAvailability(code) == MachineDriverAvailability.NoLiveDriver && host.IsRunning,
+                    "the fleet to be running with this machine still undriven");
+
+                // The three causes the OLD string named, each measured false right here.
+                Assert.True(host.IsRunning);                                   // (1a) the fleet is NOT stopped
+                Assert.False(host.GetSafetyStatus().EstopEngaged);             // (1b) HALT is NOT engaged
+                Assert.Empty(host.GetConfiguredConnectorIssues());             // (2)  nothing FAILED to start
+
+                using var write = await engineer.PostAsJsonAsync(
+                    $"/v1/machines/{code}/setpoint", new { point = "speed", value = 1.0 }, JsonOptions);
+
+                Assert.Equal(HttpStatusCode.Conflict, write.StatusCode);
+                var body = await write.Content.ReadFromJsonAsync<MachineWriteUnavailableDto>(JsonOptions);
+                Assert.NotNull(body);
+                Assert.Equal("NO_LIVE_DRIVER", body!.Reason);
+                Assert.Equal(
+                    MachineWriteGate.ExplainUnavailable(MachineDriverAvailability.NoLiveDriver, code),
+                    body.Error);
+            }
+            finally
+            {
+                host.Stop();
+            }
         }
     }
 

@@ -990,10 +990,16 @@ public sealed class RelayNotificationChannel
     /// <see cref="RelayOutcome"/> values are decided here.</b> This method held a SECOND, independently
     /// worded copy of the same cause list as <c>MachineWriteEndpoints.NotAvailableResult</c> — found by
     /// enumerating everything that renders a <see cref="MachineDriverAvailability"/> into operator prose
-    /// rather than by looking at the write endpoint — and both copies were wrong in the same way: each
-    /// presupposed a connector exists ("its connector failed to start this run", "this connector declares
-    /// no writable points"), so neither was true for a machine with no connector configured here, nor for a
-    /// machine a <c>St4i.EdgeService</c> edge agent holds. This surface matters at least as much as the
+    /// rather than by looking at the write endpoint.
+    ///
+    /// <para>🔴 <b>Both copies were defective, but NOT in the same way — the first draft of this comment
+    /// said they were, and the E-4 review measured otherwise.</b> This channel's <c>ReadOnly</c> string did
+    /// presuppose a connector ("this connector declares no writable points"); its <c>NoLiveDriver</c> string
+    /// was a disjunction that simply did not cover "no connector configured here at all". <b>And this
+    /// channel's own worst string was its <c>MachineNotFound</c> one, whose fault is the ADVICE:</b> "check
+    /// the code, or onboard the machine" — onboarding a machine a <c>St4i.EdgeService</c> edge agent already
+    /// drives creates exactly the duplicate roster entry that makes this engine's picture of the plant
+    /// wrong, on a surface with no human in the loop to notice. This surface matters at least as much as the
     /// button: it is what an operator reads when the ANNUNCIATOR did not light.</para></summary>
     private async Task<RelayOutcome> UnavailableAsync(
         MachineDriverAvailability availability, RelayChannelConfig config, NotificationJob job,
