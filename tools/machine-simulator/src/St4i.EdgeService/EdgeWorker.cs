@@ -232,7 +232,20 @@ public sealed class EdgeWorker : BackgroundService
         agent.Committed += OnCommitted;
         try
         {
-            await agent.RunAsync(sims, connectors, localCts.Token).ConfigureAwait(false);
+            var run = agent.RunAsync(sims, connectors, localCts.Token);
+
+            // 🔴 E-3 — say WHICH pipelines this run actually started, once they are known. Two reasons, and
+            // the second is why it is a log line and not a comment: (1) an operator whose connectors.json
+            // entry silently produced nothing needs to see the difference between "configured" and "running",
+            // which is the same "visible, never silent" posture GetConfiguredConnectorIssues exists for;
+            // (2) it is the ONLY observable that joins the two halves of this task's headline claim — "the
+            // file parsed into N instances" is asserted in EdgeWorkerConnectorsTests and "N instances run N
+            // drivers that reach the transport" in EdgeAgentPipelinesTests, and without this line nothing
+            // asserted that THIS method hands the registry it built to the agent it runs. A mutation that
+            // passed `connectors: null` here left every other test in the task green.
+            await LogStartedPipelinesAsync(agent, run).ConfigureAwait(false);
+
+            await run.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -253,6 +266,33 @@ public sealed class EdgeWorker : BackgroundService
         }
 
         _logger.LogInformation("EdgeWorker stopped after {Count} commit(s)", Volatile.Read(ref commitCount));
+    }
+
+    /// <summary>🔴 E-3 — waits until <see cref="EdgeAgentPipelines.StartedLabels"/> is populated (the agent
+    /// fills it once, synchronously, before it starts any pipeline task) and logs it, then returns. Bounded
+    /// by <paramref name="run"/> itself completing, so a run that starts nothing at all — an empty registry
+    /// and no simulators — logs an empty list and returns immediately rather than spinning.
+    ///
+    /// <para>Deliberately NOT an event on the agent: a "pipelines started" callback would be a second
+    /// observation channel for a fact already exposed as a property, and this host is the only reader.</para></summary>
+    private async Task LogStartedPipelinesAsync(EdgeAgentPipelines agent, Task run)
+    {
+        while (agent.StartedLabels.Count == 0 && !run.IsCompleted)
+        {
+            await Task.Yield();
+        }
+
+        var labels = agent.StartedLabels;
+        _logger.LogInformation(
+            "EdgeWorker running {PipelineCount} pipeline(s): {PipelineLabels}",
+            labels.Count, labels.Count == 0 ? "(none)" : string.Join(", ", labels));
+
+        foreach (var issue in agent.StartIssues)
+        {
+            _logger.LogWarning(
+                "connector instance '{ConnectorId}' is configured but not running: {ConnectorError}",
+                issue.Id, issue.Error);
+        }
     }
 
     /// <summary>Resolves this run's Live-path connection settings from the process environment and

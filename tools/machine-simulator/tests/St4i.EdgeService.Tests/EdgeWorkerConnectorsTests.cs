@@ -154,6 +154,31 @@ public sealed class EdgeWorkerConnectorsTests
         Assert.Contains(log.Lines, l => l.Contains("could not be read", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task AConnectorsJsonEntry_ActuallyBecomesARunningPipelineInsideEdgeWorker()
+    {
+        // 🔴 The seam that joins this task's two halves. EdgeWorkerConnectorsTests proves the file parses
+        // into N registered instances; EdgeAgentPipelinesTests proves N instances run N drivers that reach
+        // the transport. Neither one proves that THIS method hands the registry it built to the agent it
+        // runs — a mutation passing `connectors: null` there left every other test in the task green.
+        //
+        // The Modbus entry points at a port nothing is listening on, deliberately: what is asserted is that
+        // a PIPELINE WAS STARTED for it alongside the simulated group, not that a device answered. Standing
+        // up a live slave here would be measuring NModbus, and the driver's own read behaviour is covered in
+        // St4i.EdgeCore.Tests.
+        var json = $$"""
+            [ { "id": "gw:unit9", "kind": "Modbus", "settings": {{ModbusSettings("EDGE-WIRED")}} } ]
+            """;
+        var path = TempFile("connectors.json", json);
+
+        var (commits, log) = await RunSmoke(smoke: 3, connectorsPath: path);
+
+        Assert.True(commits.Count >= 3, "the simulated group stopped running once a connector joined it.");
+        var line = Assert.Single(log.Lines, l => l.StartsWith("EdgeWorker running ", StringComparison.Ordinal));
+        Assert.Contains("gw:unit9", line, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("simulated", line, StringComparison.Ordinal);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // THE READ PATH: resolution, parse, dispatch.
     // ─────────────────────────────────────────────────────────────────────
