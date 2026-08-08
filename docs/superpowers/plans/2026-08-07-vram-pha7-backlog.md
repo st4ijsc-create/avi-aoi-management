@@ -158,3 +158,31 @@ Task 6 Pha 6 dựng sổ **trong bộ nhớ** ⇒ hai lỗ: **restart ⇒ sổ r
 - [ ] **Bước 9: commit.**
 
 **Cổng ra:** (A) mã tiêu rồi ⇒ **chặn qua restart VÀ qua tiến trình khác**; mã mới ⇒ **vẫn qua**. (B) hàng bị cắt ⇒ **mọi** người đọc **thấy cờ**, kể cả tiến trình anh em.
+
+---
+
+### Task 6: 🔴 `/api/auth/verify-2fa` cấp phiên KHÔNG cần bước mật khẩu (chủ dự án duyệt 2026-08-08)
+
+**ĐO ĐƯỢC ở nghiệm thu sống Task 5**, hai lượt liên tiếp trên hệ thật:
+```
+POST /api/auth/login       (SAI mật khẩu)  ⇒ 401
+POST /api/auth/verify-2fa  (ngay sau đó)   ⇒ 200 + set-cookie
+```
+`server/_core/oauth.ts:380-408` đọc `userId` **thẳng từ body**, **không kiểm** bước mật khẩu đã qua chưa.
+
+⚠⚠⚠ **Nghĩa là 2FA KHÔNG phải yếu tố THỨ HAI — nó là yếu tố DUY NHẤT.** Ai có mã OTP (nhìn màn hình · ứng dụng bị chiếm · nội gián) thì **vào được, KHÔNG cần mật khẩu**. Và mã ấy mở **mọi** vai, kể cả `admin`.
+⚠ **Nợ CÓ TRƯỚC**, không do Task 5 gây ra — Task 5 chỉ khiến nó **lộ ra**, vì để thử phát lại thì phải gọi thẳng endpoint ấy.
+
+**Cổng ra:** `verify-2fa` **chỉ** cấp phiên khi **bước mật khẩu của CHÍNH `userId` ấy đã qua**, trong một cửa sổ ngắn. Mọi lượt khác ⇒ **401**, và **không** set-cookie.
+
+- [ ] **Bước 1: ĐO trước.** Tái lập **nguyên văn** hai lượt trên ⇒ ghi lại `200 + set-cookie`. **Ca ĐỎ.** ⚠ Nếu **không tái lập được** ⇒ **điều tra, đừng đi tiếp** (Pha 7 đã **hai lần** brief mô tả trạng thái đã không còn đúng).
+- [ ] **Bước 2: ĐẾM bề mặt.** ⚠ **Đếm trước khi đổi một cơ chế dùng chung** đã **lật quyết định NĂM lần**. `git grep` **mọi** đường cấp phiên (`set-cookie` / `sessionToken` / `createSession`) — không chỉ `verify-2fa`. **Lập bảng: đường · ai gọi · có đòi mật khẩu không.**
+  ⚠ Nếu tìm ra đường **thứ hai** cùng lớp ⇒ **báo ngay trong báo cáo**, đừng vá lặng lẽ.
+- [ ] **Bước 3: chọn hình dạng, VIẾT LÝ DO.** Ví dụ: vé một-lần do `login` cấp khi **mật khẩu đúng nhưng thiếu 2FA**, hạn ngắn, `verify-2fa` **đòi** vé ấy. Nêu đường **không chọn** và vì sao. ⚠ **Đừng dựng người ghi/người đọc MỚI cho một bất biến ĐÃ CÓ CHỦ** — xem `totp_consumed`/`user_sessions` đã có gì.
+- [ ] **Bước 4: cài.** ⚠ **CHỈ THU HẸP.** Giữ nguyên mọi tầng đang đúng. ⚠ Nếu cần **DDL** ⇒ **DỪNG VÀ HỎI** (migration 0313 vừa áp, biết khuôn rồi).
+- [ ] **Bước 5: ĐỐI CHỨNG DƯƠNG bắt buộc** — luồng **đúng** (mật khẩu đúng → 2FA đúng) ⇒ **vẫn cấp phiên**. Không có nó thì bản vá **chặn hết** cũng "đạt".
+- [ ] **Bước 6: đột biến.** Bỏ phép kiểm ⇒ ca đỏ · vé **của người khác** ⇒ ca đỏ · vé **quá hạn** ⇒ ca đỏ · vé **dùng lại** ⇒ ca đỏ · và **KHÔNG bắt nhầm** (luồng đúng vẫn qua).
+- [ ] **Bước 7: đảo lượng từ** — luật là ***"MỌI đường cấp phiên đều đòi bước mật khẩu"***, **suy ra** từ bộ đếm ở Bước 2, **đừng liệt kê**.
+- [ ] **Bước 8: commit.**
+
+⚠ **Chưa nghiệm thu sống thì chưa xong** — cổng ra này nằm trên đường **đăng nhập toàn hệ**; lưới xanh **không** chứng minh hệ đúng (bài học `215/215` xanh suốt thời gian một tool chết).
