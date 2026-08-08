@@ -329,7 +329,12 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     // ⚠ Pha 7 Task 8a: 81 → 82. **Đúng MỘT** file mới — `server/_core/backupCodeWriteScan.test.ts`.
     //   Nó vào tập bị canh qua bộ nhận diện **NỘI DUNG** (tự khai `Pha 5`, có chủ ý), và phải có
     //   đường riêng ở §Cổng kiểm chung ⇒ `CONG.length` 21 → **22** cùng lượt.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(82); // Pha 7 Task 8a: +`backupCodeWriteScan`
+    // ⚠ Pha 7 Task 8b: 82 → 83. **Đúng MỘT** file mới —
+    //   `client/src/lib/localStorageUserScan.unit.test.ts` (luật *"KHÔNG khoá kho-trên-đĩa nào mang
+    //   ĐỐI TƯỢNG người dùng"*, suy từ `auth.me` chứ không từ tên khoá). Vì `client/src/lib/`
+    //   **đã** là một đường của §Cổng kiểm chung nên `CONG.length` giữ nguyên **22**.
+    //   ⚠ Đuôi `.unit.test.ts` là bắt buộc — `vitest.config.ts` gom client bằng `*.unit.test.ts`.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(83); // Pha 7 Task 8b: +`localStorageUserScan`
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

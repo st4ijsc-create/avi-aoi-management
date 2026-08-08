@@ -7,6 +7,7 @@ import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
 import { initRum } from "./lib/rum";
+import { donKhoNguoiDungLucKhoiDong } from "./lib/donKhoaNguoiDung";
 import "./index.css";
 import { i18nReady } from "./i18n"; // Initialize i18n (vi fetch song song — doc64 S5-OPT V4)
 
@@ -90,6 +91,11 @@ const trpcClient = trpc.createClient({
     }),
   ],
 });
+
+// ★★★ Pha 7 Task 8b — DỌN dữ liệu người dùng ĐÃ nằm sẵn trên đĩa trình duyệt.
+// Gỡ lượt ghi chỉ chặn lượt ghi TIẾP THEO; bản ghi cũ (nguyên đối tượng `auth.me`) vẫn ở trong
+// `localStorage` của mọi người đã từng đăng nhập. Chạy TRƯỚC render, đồng bộ, không bao giờ ném.
+donKhoNguoiDungLucKhoiDong();
 
 // doc64 S5-OPT V4: chờ vi.json (fetch song song, bắt đầu từ lúc module ./i18n eval)
 // rồi mới render — không bao giờ flash key thô. loadVi tự nuốt lỗi nên .then luôn chạy.
