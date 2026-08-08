@@ -436,6 +436,12 @@ public sealed class MachineWriteEndpointsTests
     // Every not-available case, distinguished — never one generic error.
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>🔴 Task E-4 — the status was all this asserted, and the BODY is what an operator reads
+    /// (<c>web/src/lib/api.ts</c>'s <c>MachineWriteApiError</c> surfaces it verbatim). Asserted against
+    /// <see cref="MachineWriteGate.ExplainUnavailable"/> rather than against a literal, so this is the JOIN
+    /// between "the explanation is correct on every producing path" (asserted in
+    /// <c>MachineWriteUnavailableMessageTests</c>) and "this endpoint is what says it" — a mutation that
+    /// re-inlines a literal here leaves the other file's tests green and turns this one red.</summary>
     [Fact]
     public async Task Setpoint_UnknownMachine_404()
     {
@@ -446,6 +452,12 @@ public sealed class MachineWriteEndpointsTests
             using var write = await engineer.PostAsJsonAsync(
                 "/v1/machines/NO-SUCH-MACHINE/setpoint", new { point = "speed", value = 1.0 }, JsonOptions);
             Assert.Equal(HttpStatusCode.NotFound, write.StatusCode);
+
+            var body = await write.Content.ReadFromJsonAsync<ApiErrorDto>(JsonOptions);
+            Assert.NotNull(body);
+            Assert.Equal(
+                MachineWriteGate.ExplainUnavailable(MachineDriverAvailability.MachineNotFound, "NO-SUCH-MACHINE"),
+                body!.Error);
         }
     }
 
@@ -468,7 +480,14 @@ public sealed class MachineWriteEndpointsTests
             var body = await write.Content.ReadFromJsonAsync<MachineWriteUnavailableDto>(JsonOptions);
             Assert.NotNull(body);
             Assert.Equal("NO_LIVE_DRIVER", body!.Reason);
-            Assert.False(string.IsNullOrWhiteSpace(body.Error));
+            // 🔴 Task E-4 — was `Assert.False(string.IsNullOrWhiteSpace(body.Error))`, which is true of
+            // every string and therefore of the wrong one too: the message this replaced named three causes
+            // ("the fleet may be stopped, the HALT latch may be engaged, or this machine's connector failed
+            // to start this run") and THIS test's own scenario — a roster machine with no connector at all —
+            // satisfies none of them. See MachineWriteGate.ExplainUnavailable.
+            Assert.Equal(
+                MachineWriteGate.ExplainUnavailable(MachineDriverAvailability.NoLiveDriver, code),
+                body.Error);
         }
     }
 
@@ -506,6 +525,12 @@ public sealed class MachineWriteEndpointsTests
                 var body = await write.Content.ReadFromJsonAsync<MachineWriteUnavailableDto>(JsonOptions);
                 Assert.NotNull(body);
                 Assert.Equal("READ_ONLY", body!.Reason);
+                // 🔴 Task E-4 — this scenario is the READ_ONLY message's most common producer and the old
+                // message was false for it: it said "this connector declares no writable points", and this
+                // machine has NO connector at all — it is driven by the built-in simulated group.
+                Assert.Equal(
+                    MachineWriteGate.ExplainUnavailable(MachineDriverAvailability.ReadOnly, code),
+                    body.Error);
             }
             finally
             {
@@ -546,6 +571,9 @@ public sealed class MachineWriteEndpointsTests
                 var body = await write.Content.ReadFromJsonAsync<MachineWriteUnavailableDto>(JsonOptions);
                 Assert.NotNull(body);
                 Assert.Equal("AMBIGUOUS_DRIVER", body!.Reason);
+                Assert.Equal(
+                    MachineWriteGate.ExplainUnavailable(MachineDriverAvailability.AmbiguousDriver, codeA),
+                    body.Error);
                 Assert.Equal(0, fakeDriver.WriteCallCount); // never reached the driver — the wrong-machine hazard.
             }
             finally

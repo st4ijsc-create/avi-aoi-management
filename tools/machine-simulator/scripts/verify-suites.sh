@@ -799,7 +799,50 @@ EXPECT_CONFORMANCE=22
 # is the only file outside St4i.EdgeCore that names the type), the second is a namespace move carried by three
 # added `using` lines. EXPECT_CONFORMANCE in particular stays 22: E-3 adds no driver and no connector kind.
 EXPECT_EDGECORE=1080
-EXPECT_EDGESERVICE=45
+# 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
+# 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
+# rewritten, split or deleted:
+#
+#   +1  tests/St4i.EdgeService.Tests/EdgeServiceSerialReachabilityTests.cs   (NEW FILE) — the census rule
+#       "every claim of the form 'only X can do Y' gets a test", applied to README §23.6's "Only
+#       St4i.EngineApi can open a COM port." That sentence is false as a CAPABILITY claim and has been since
+#       D-7c itself, which is what gave all three hosts the ProjectReference: SerialPortBusLink.OpenAsync and
+#       SerialLineSettings are public on St4i.EdgeCore.Serial. This test performs a real open from
+#       St4i.EdgeService.Tests — whose ONLY ProjectReference is St4i.EdgeService, so naming the type compiles
+#       solely because it is reachable through THAT host's reference graph — and the open is refused by the
+#       OPERATING SYSTEM (SerialPortUnavailableException, "NOT PRESENT" wording, non-null InnerException),
+#       not by the compiler. Deterministic on a machine with no RS-485 hardware: the port name is DERIVED
+#       from SerialPort.GetPortNames() the same way SerialPortBusLinkTests derives its own, never hardcoded.
+#       The TRUE statement — only St4i.EngineApi has a CONFIGURED path from connectors.json to a serial open
+#       — is README §24.5, and its other half is already pinned by E-3's
+#       EdgeWorkerConnectorsTests.AnRtuBusEntry_IsRefusedByName_…, so no test is added for it here.
+#
+#   +6  tests/St4i.EngineApi.Tests/MachineWriteUnavailableMessageTests.cs   (NEW FILE) — the four
+#       operator-facing "this write was never attempted" explanations, asserted BY CONTENT on every path
+#       that produces them. They had never been asserted at all: every existing test checked the STATUS and
+#       the REASON CODE, and the closest any came to the message was
+#       Assert.False(string.IsNullOrWhiteSpace(body.Error)), which is true of the wrong string too. Three of
+#       the four had drifted into stating something false — each presupposed a connector exists, so none was
+#       true for a machine with no connector configured, nor for a machine a St4i.EdgeService edge agent
+#       holds (blueprint §12 / README §24.4). One of the six is the COLLAPSE witness (pairwise-distinct, so
+#       a single generic "not available" string cannot satisfy the other five individually); one is the
+#       throwing default for MachineDriverAvailability.Writable, which is also what makes a future enum
+#       member with no arm a red test rather than a soothing sentence.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_EDGECORE are deliberately UNCHANGED. E-4 touches three
+# production files, all in St4i.EngineApi (MachineWriteGate, MachineWriteEndpoints, RelayNotificationChannel)
+# — a movement in any of the other three suites would mean this task reached somewhere it had no business
+# reaching. EXPECT_CONFORMANCE in particular stays 22: E-4 adds no driver and no connector kind.
+#
+# 🔴 And the four assertions that carry E-4's fix are DELIBERATELY NOT new tests — they replace vacuous
+# assertions inside tests that already reached the right states, so they move NO count: the four
+# not-available cases in MachineWriteEndpointsTests now assert the HTTP body equals
+# MachineWriteGate.ExplainUnavailable(...), and RelayNotificationChannelTests'
+# TheFourUnavailableCases_AreDistinguished_AndNoneIsCollapsed now asserts the operator WARNING carries the
+# same text. Those two files are the join: the new file proves the text is right, and these prove the two
+# surfaces that render it actually use it. A count that did not move is the evidence that the states were
+# already covered and only the assertion was empty.
+EXPECT_EDGESERVICE=46
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
 #     +24  NotificationEndpointsTests    (new file — the eleven notification routes)
@@ -1324,7 +1367,10 @@ EXPECT_EDGESERVICE=45
 #            FleetHostMachineDriverResolutionTests, plus a secret-shaped message on the test double so a leak
 #            is legible. E-1 §4.5 measured that the ex.Message mutation left all 2555 green; it now fails on
 #            both the setpoint and the command path.
-EXPECT_ENGINEAPI=1283
+# 🔴 Task E-4 raises this 1283 -> 1289 (+6). The whole justification is in the block above
+# EXPECT_EDGESERVICE — one new file, MachineWriteUnavailableMessageTests.cs, and the four assertions that
+# actually carry the fix cost 0 because they replaced vacuous ones inside tests that already existed.
+EXPECT_ENGINEAPI=1289
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
