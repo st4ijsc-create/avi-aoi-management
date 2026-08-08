@@ -204,8 +204,86 @@ giả định.
 thích của chính nó nói **phải tồn tại đúng một lần cho ba bên gọi**; `ConnectorConfigValidation` 254 dòng.
 Đó là hình dạng §9.6(a): *"cái lá" hoá ra không phải lá.*
 
+### 🔴 6.2 Đính chính (2026-08-08, sau E-5) — hai dự đoán dưới đây SAI, và tôi lặp lại chúng ba nơi
+
+**(a) "Hai quy tắc khoá hội tụ miễn phí" — KHÔNG.** Tôi viết nó ở §6.1(1), §11.5 và README §24.2, rồi nhắc
+lại cho E-5 như một sự kiện đã chốt. E-5 liệt kê **theo lớp đầu vào** thay vì suy từ cơ chế, và kết quả ngược
+lại: hai quy tắc **vốn đã đồng ý về một bus RTU** (E-5 biến nửa đó thành mã dùng chung qua
+`ConnectorsConfig.IsRtuBus`); chúng **chỉ khác nhau ở TCP/OPC-UA**, thứ mà cuộc dời **không hề chạm tới**.
+
+Và **không chiều nào khả dụng**: EngineApi→`id` chính là cuộc di trú alarm `TargetId` mà nó **đã từ chối hai
+lần, có test ghim**; EdgeService→`kind` sẽ **gộp N entry Modbus TCP** (N socket, N máy) **thành một** — và
+một bus RTU không thay thế được điều đó.
+
+**Dự đoán ấy suy từ một CƠ CHẾ mà không liệt kê CÁC LỚP ĐẦU VÀO.**
+
+🔴 **Đính chính của review E-5 cho chính câu trên — tôi dán nhãn đúng họ nhưng sai cơ chế, và cái nhãn sai
+trỏ tới sai cách chữa.** §9.3b và §2.1 là những ca mà **cơ chế SAI** (một switch mã socket không bao giờ chạy;
+một giá trị mặc định đọc thành một đích đến). Ở đây **cơ chế ĐÚNG**: RTU fan-out thật sự là hình dạng duy nhất
+sinh ra N trong EngineApi — reviewer kiểm và xác nhận.
+
+Thứ hỏng là **một phép đổi miền lượng hoá giữa tiền đề và kết luận**: từ *"hình dạng duy nhất sinh ra N"* sang
+*"lý do duy nhất khiến hai quy tắc khác nhau"*. **Hai câu ấy lượng hoá trên hai tập khác nhau** — các hình dạng
+fan-out, so với các lớp đầu vào mà hai hàm khoá bất đồng.
+
+**Và phân biệt ấy không phải chẻ chữ, vì cách chữa khác nhau.** Cách chữa của §9.3b là *đo cái cơ chế* — mà đo
+ở đây sẽ **xác nhận** cơ chế, rồi **dùng nó xác nhận luôn một kết luận sai**. Thứ bắt được ca này chính là thứ
+E-5 đã làm: **liệt kê cái miền mà KẾT LUẬN lượng hoá trên đó, không phải cái miền tiền đề lượng hoá trên đó.**
+
+**Và ba chỗ tôi nêu cũng sai một chỗ:** §11.5 **không chứa dự đoán hội tụ nào**, ở cả BASE lẫn HEAD. Chỗ thứ
+ba thật là **nửa TIẾNG VIỆT của README §24.2**. E-5 sửa đúng cả hai nửa; chỉ bản kê chỗ của tôi là sai — **và
+sai theo đúng hướng giấu đi cặp gương EN/VI**, đúng lớp dư lượng §13.5(1) tồn tại để gọi tên. Reviewer nói
+thẳng, và nó đúng: *một đính chính có chủ đề là "hãy liệt kê thay vì suy từ cơ chế" thì không được khẳng định
+ba vị trí mà không liệt kê chúng.*
+
+**(b) "`IsInBusNamespace` không phải nút lá" — sai về đối tượng.** Nó phụ thuộc đúng **ba ký hiệu**:
+`DriverKinds.Normalize` (ở **`St4i.Connector.Abstractions`**, không phải EdgeCore), `LooksLikeADeviceInstanceId`
+và `DeviceIdSuffixPrefix` (cả hai ở `ModbusMultidropMap`). **Bản thân nó LÀ một nút lá; thứ không phải lá là
+cái KIỂU bao quanh nó.** Nên nó **dời được nguyên vẹn** sang `ModbusMultidropMap`, bị xoá khỏi
+`RtuBusConfiguration` không cần forwarder, và **vẫn được phát biểu đúng một lần cho ba bên gọi** (bốn điểm
+gọi). Không tách, không có gì phải giữ cho khỏi trôi.
+
+🔴 **Bản nháp đầu của chính đoạn này viết *"cả ba đã ở EdgeCore"* và *"nơi khai báo mọi sự kiện nó lập luận"* —
+tức là ca THỨ TÁM của đúng cái universal sai mà đoạn này tồn tại để sửa, nằm trong bản ghi bền, ở chỗ người
+thừa kế đọc trước tiên.** E-5 phát hiện và **cố ý không tự sửa** vì tôi dặn đừng chạm; nó báo lại. Ghi ở đây
+thay vì lặng lẽ vá, vì con số "tám" là dữ kiện: **lớp lỗi này không bị chặn bởi việc biết về nó.**
+
+→ **Và đây là chiều ngược của một quy tắc §8.1 đã có:** *"X không phải nút lá"* là một khẳng định về một
+**KIỂU**; câu hỏi đắt tiền thì về một **THÀNH VIÊN**.
+
+🔴 **Review E-5 sửa cả gốc lẫn cái giá tôi nêu, và cả hai đều đúng.**
+
+**Gốc không phải "chiều".** Nó là **đơn vị của câu hỏi phải khớp đơn vị của câu trả lời**. Phép grep `Source`
+của D-7b hỏi ở đơn vị *một tên trường đang trong tầm nhìn*, còn tính chất sống trên *một lệnh trả về*; §11.6
+hỏi ở đơn vị *một kiểu*, còn tính chất sống trên *một thành viên*. *"Làm lỗ hổng trông như không có"* so với
+*"làm công việc trông khó"* là **hệ quả, không phải gốc** — và phát biểu nó thành một luật hai chiều sẽ mời
+người đọc sau đi tìm **một chiều** thay vì **một độ hạt**.
+
+**Và câu chốt cũ của tôi — "một ước lượng quá cao cũng là một ước lượng sai" — đúng mà yếu.** Cái giá thật đã
+nằm sẵn cách đó hai mục, ở §1.1: **một phép đếm ở tầng kiểu không chỉ thổi phồng một ước lượng, nó làm công
+việc trông KHÔNG XẾP LỊCH NỔI — và bốn nhiệm vụ đúng đã ship mà không có năng lực cả đợt tồn tại để giao.**
+Đó mới là thứ làm nó cùng một lỗi, chứ không phải một sự đối xứng thú vị.
+
+→ 🔴 **Và quy tắc hành động được mà cả tôi lẫn E-5 đều không phát biểu:** khi ghi *"X không phải nút lá"*,
+**hãy ghi TẬP KÝ HIỆU mà thành viên gây vướng phụ thuộc vào, không phải TÊN của tham chiếu gây vướng.** §11.6
+viết *"không phải lá: nó với tới `RtuBusConfiguration.IsInBusNamespace`"* — **toàn bộ câu trả lời nằm cách câu
+ấy đúng một lần giải tham chiếu.**
+
+**Và một sự kiện bất tiện đi kèm, do reviewer chỉ ra:** bản đính chính này liệt kê tập phụ thuộc của thành
+viên ấy **hai lần trong cùng một thay đổi, và hai bản liệt kê bất đồng ở hai trên ba mục** — `DriverKinds`
+nằm ở `St4i.Connector.Abstractions`, **không phải EdgeCore**. Đó vừa là bằng chứng mạnh nhất cho quy tắc trên,
+vừa là ca §8.1(b) thứ năm, **do một lượt census chạy riêng cho đúng lớp lỗi ấy bỏ sót**.
+
+→ **Và hai đính chính §6.2(a) và §6.2(b) có CHUNG một gốc** — đơn vị của câu hỏi không khớp đơn vị của câu trả
+lời — dù đang được xếp dưới hai hình dạng § khác nhau.
+
+**(c) `ConnectorConfigValidation` (254 dòng) là thừa trong ước lượng §11.6.** Nó tồn tại để học mã máy mà một
+blob TCP mờ khai báo; một bus **không cần** nó, vì `FanOut` đã phân giải từng thiết bị. Ước lượng liệt kê
+*những gì `ConnectorsJsonRegistration` gọi* thay vì *những gì đường RTU cần*.
+
 **Hai thứ E-5 phải mang theo, không được phát hiện lúc đang làm:**
-1. **Quy tắc khoá đăng ký sẽ hội tụ.** E-3 phải cho EdgeService khoá theo `entry.Id` vì khoá của EngineApi cho
+1. **~~Quy tắc khoá đăng ký sẽ hội tụ.~~** ← **SAI, xem §6.2(a).** Giữ nguyên câu gốc bên dưới để thấy dự đoán
+   đã được phát biểu thế nào. E-3 phải cho EdgeService khoá theo `entry.Id` vì khoá của EngineApi cho
    một entry TCP là **`Kind`**, nên N entry Modbus **gộp lại thành một**. Hai quy tắc trong hai host là hình
    dạng §7.1 của Đợt D ở tầng cấu hình — review E-3 phán đó là **ca chấp nhận được** (khác nhau vì một lý do
    phát biểu được và kiểm được, mỗi cái có test riêng) và **chúng hội tụ miễn phí đúng lúc
