@@ -103,14 +103,17 @@ describe("★★★ Task 7 §2 — phép CHIẾU: mặc định ĐÓNG", () => {
   it("★★★ MẶC ĐỊNH ĐÓNG — một cột LẠ (chưa phân loại) KHÔNG ra được qua phép chiếu", () => {
     // ⚠ Đây là phần khiến bản vá không phụ thuộc vào việc ai đó nhớ cập nhật danh sách:
     //   giữa lúc cột mới xuất hiện và lúc nó được phân loại, nó vẫn KHÔNG rời máy chủ.
+    // ⚠ Tên cột ở đây CỐ Ý mang tiền tố `__ĐỘTBIẾN_` — một tên "nghe hợp lý" như `avatarUrl` sẽ
+    //   làm ô này ĐỎ NHẦM vào ngày ai đó thêm thật cột ấy và phân loại nó là `"public"` (đã đo:
+    //   đột biến M7 lần đầu đỏ đúng vì lý do này, và đó là lỗi của LƯỚI, không của luật).
     const co: Record<string, unknown> = {
       ...hangDay(),
-      recoveryTokenSecret: "bí-mật-thứ-BA",
-      avatarUrl: "/a.png",
+      __DOTBIEN_recoveryTokenSecret: "bí-mật-thứ-BA",
+      __DOTBIEN_avatarUrl: "/a.png",
     };
     const ra = toPublicUser(co) as Record<string, unknown>;
-    expect("recoveryTokenSecret" in ra, "cột lạ LỌT ra ⇒ đây là danh sách cấm, không phải cho phép").toBe(false);
-    expect("avatarUrl" in ra).toBe(false);
+    expect("__DOTBIEN_recoveryTokenSecret" in ra, "cột lạ LỌT ra ⇒ đây là danh sách cấm, không phải cho phép").toBe(false);
+    expect("__DOTBIEN_avatarUrl" in ra).toBe(false);
   });
 
   it("★ toPublicUsers() giữ đúng thứ tự và số lượng", () => {
