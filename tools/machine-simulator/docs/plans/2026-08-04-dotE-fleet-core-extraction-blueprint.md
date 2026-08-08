@@ -960,9 +960,10 @@ ghim; **RS-485 ở biên là E-5**, kèm số đo; máy do tác nhân biên cầ
 Danh sách của §11.6, cộng những gì E-4 thêm. **E-4 không đóng cái nào trong số này**, và không cái nào là của
 E-4 để đóng:
 
-- **§10.3 hạng mục sửa `_gate`: BỐN đường I/O + HAI `Cancel`** — chưa làm, **không tăng**. E-4 không chạm
-  `FleetCore.cs` một dòng nào (`git diff` trên file đó: rỗng), nên tập lệnh chạy dưới `_gate` **giống hệt từng
-  byte** với sau E-3. Phép đo của §11.3 vẫn đứng nguyên và không cần chạy lại.
+- **§10.3 hạng mục sửa `_gate`: BỐN đường I/O + HAI `Cancel`** — chưa làm, **không tăng**. E-4 chạm
+  `FleetCore.cs` đúng **một chú thích XML** (phép quét sau-commit ở §12.9 bắt được một câu E-3 làm sai còn
+  nằm trong đó); **không một lệnh chạy được nào đổi**, nên tập lệnh chạy dưới `_gate` **giống hệt từng byte**
+  với sau E-3, đúng dạng bằng chứng §11.3 đã dùng. Phép đo của §11.3 vẫn đứng nguyên và không cần chạy lại.
 - **§10.4 kênh log thứ ba** (khôi phục độ mịn `LogDebug` bị E-2 nâng lên `LogError`, ba đường tháo dỡ giờ ghi
   Event Log đồng bộ) — **chưa làm**.
 - **§10.9 bài test mTLS có cuộc đua tắt máy** — **chưa sửa**, không đỏ lần nào trong các lần chạy cổng của
@@ -990,3 +991,36 @@ E-4 để đóng:
    `ApplyAndCountAsync`'s catch-all biến nó thành `RelayOutcome.Lost` **có báo lỗi** — to hơn cái mặc định
    vỗ-về cũ, nhưng vẫn là một hành vi mới trên một đường trước đây câm. Đã cân nhắc, chọn ném; review có thể
    không đồng ý.
+
+### 12.9 🔴 Phép quét SAU khi commit xanh — và nó bắt được hai chỗ nữa
+
+**Bản sửa và phép quét là hai hành động** (§8.1). Phép quét chạy **sau** khi hai commit đã xanh, và nó tìm
+thấy hai khẳng định nữa mà cả census lúc đang sửa lẫn census của E-3 đều bỏ sót — **cả hai nằm trong mã, không
+nằm trong README**, tức đúng chỗ mà một census "quét tài liệu" không nhìn tới:
+
+1. **`src/St4i.EdgeCore/Fleet/FleetCore.cs:123`** (mã sản phẩm) — *"`St4i.EdgeService`, whose `EdgeWorker`
+   collapses the whole fleet into one `SimulatedDriver` on one `EdgePipeline`"*. **E-3 làm câu này sai và
+   không sửa nó.** Đã chuyển sang thì quá khứ kèm đính chính tại chỗ. Chỉ là chú thích XML — **không một lệnh
+   chạy được nào đổi**, nên §11.3 vẫn đứng.
+
+2. **`tests/St4i.EdgeCore.Tests/Drivers/Modbus/SerialDependencyScopingTests.cs:96–113`** — đoạn chú thích của
+   `EdgeServiceDeployment_CarriesSystemIoPorts_ByTheAllThreeHostsRuling` có **bốn** câu sai: *"this host can
+   open a COM port today, which it cannot"* (chưa bao giờ đúng), *"no `ConnectorRegistry`, no
+   `IConnectorFactory`, no `connectors.json` reader"* và *"builds one `SimulatedDriver`"* (sai từ E-3), *"
+   `ConnectorRegistry` … are `St4i.EngineApi` types"* (sai từ E-2). Chuỗi mô tả trong chính lời gọi assertion
+   cũng nói *"it has no connector registry to open a port from today"*. Đã sửa cả năm.
+
+🔴 **Điều đáng giữ hơn hai chỗ ấy: `AssertSerialDependencyIsShippedWith` KHÔNG hỏng.** Nó khẳng định
+*"DLL có được ship cùng deployment này không"* — một sự thật kiểm được — chứ không khẳng định *"host này mở
+được cổng không"*. Chính lựa chọn đó là thứ cho phép **ba câu quanh nó** trôi thành sai mà **không bài test
+nào đỏ**. Đó vừa là lời khen cho tác giả bài test, vừa là hình dạng của rủi ro còn lại: *một khẳng định hẹp,
+đúng và bền có thể sống nhiều đợt bên trong một đoạn văn đã sai hết.* Không phép kiểm nào bắt được cái đó; chỉ
+một phép quét theo quy tắc, chạy như một hành động riêng, mới bắt được.
+
+**Và cái phép quét cơ học BỎ SÓT, báo cáo theo yêu cầu:** grep tổ chức theo *từ ngữ* (`only … can open`,
+`EdgeService`, `ConnectorRegistry`, `COM port`) tìm ra §23.6 và §9 ngay lập tức, nhưng **§20.5 phải đọc mới
+thấy** — nó xếp dưới nhan đề "Honest limitations", dùng chữ *"can open one"* chứ không phải *"COM port"*, và
+nằm trong một khối `>` đính chính của một đợt TRƯỚC. Còn hai chỗ ở §12.9 này thì **grep tìm ra được**, nhưng
+chỉ khi phép grep được tổ chức theo *quy tắc* ("host nào chủ trì được connector nào") và **chạy trên `src/` và
+`tests/` chứ không chỉ trên `*.md`** — census của E-4 lúc đang sửa chỉ quét tài liệu, đúng như brief phát biểu
+nó, và đó là chỗ nó hụt.

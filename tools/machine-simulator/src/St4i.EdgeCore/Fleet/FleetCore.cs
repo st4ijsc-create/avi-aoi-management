@@ -120,8 +120,12 @@ public enum MachineDriverAvailability
 /// <para>🔴 <b>Task E-2 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md) — this class WAS
 /// <c>St4i.EngineApi.Fleet.FleetHost</c>, and it moved here so a SECOND host can drive N drivers.</b> Đợt D
 /// made RS-485 work only inside <c>St4i.EngineApi</c>, but the process that owns the serial port is
-/// <c>St4i.EdgeService</c>, whose <c>EdgeWorker</c> collapses the whole fleet into one
-/// <see cref="SimulatedDriver"/> on one <see cref="EdgePipeline"/>. Referencing <c>St4i.EngineApi</c>
+/// <c>St4i.EdgeService</c>, whose <c>EdgeWorker</c> collapsed the whole fleet into one
+/// <see cref="SimulatedDriver"/> on one <see cref="EdgePipeline"/>. (🔴 <b>Past tense since E-3</b>, and
+/// corrected here by E-4's census rather than left to read as current: <c>EdgeWorker</c> now runs N drivers
+/// on N pipelines from its own <c>connectors.json</c>, through <c>EdgeAgentPipelines</c> — <b>not</b> through
+/// this class, which is <c>internal</c> exactly so that host cannot reach its unguarded write path. README
+/// §24.) Referencing <c>St4i.EngineApi</c>
 /// straight from <c>St4i.EdgeService</c> is not available (NU1605 on restore, plus EngineApi's ASP.NET
 /// Core/web-UI publish surface), so the lifecycle had to come DOWN to the assembly both hosts already
 /// reference. <c>FleetHost</c> is now a thin shell over this class: it owns the roster's WEB projection
