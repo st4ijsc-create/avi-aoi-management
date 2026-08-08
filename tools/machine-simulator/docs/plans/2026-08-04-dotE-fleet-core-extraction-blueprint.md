@@ -560,3 +560,149 @@ rồi mới tháo dỡ pipeline và trả về, nên một reader đồng thời
 quay lại chỗ gọi. Từ chối sớm là chiều an toàn. **Cách xử lý là sửa khẳng định gương thành dạng nhân quả (không
 có lần từ chối nào mà không có chốt), không phải nới lỏng tính chất chính** — nới lỏng ở đây chính là cách bài
 test biến thành thứ nó sinh ra để bắt.
+
+## 11. 🔴 E-3 ghi lại — cái gì đã dựng, và những gì E-4 phải thừa kế
+
+Toàn văn ở `.superpowers/sdd/2026-08-04-dotE-fleet-core-extraction/task-3-report.md`. Mục này tồn tại vì
+`.superpowers/sdd/` bị gitignore và **một báo cáo không phải bản ghi nguồn**.
+
+**Commit:** `bf5bb66f` (cuộc dựng) và `ed975c05` (bịt khoảng trống giữa hai nửa), nhánh `feat/fleet-core-extraction`.
+**Cổng:** `151/22/1080/43/1283 = 2579`, 0 lỗi, **116 cảnh báo**, 0 build node.
+
+### 11.1 🔴 Giới hạn chỉ-đọc đã thành CẤU TRÚC, và cách chọn là hướng thứ ba
+
+`St4i.EdgeCore.Fleet.FleetCore` giờ là **`internal`**. Brief nêu hai hướng (facade chỉ-đọc, hoặc `internal`
+cho hai thành viên ghi); hướng đã lấy là **`internal` cho CẢ KIỂU**, cộng một kiểu mới hẹp hơn cho tác nhân biên.
+
+**Vì sao cả kiểu, không phải hai thành viên.** Bắt đầu từ *tập các thành viên*, không từ hai cái brief nêu tên:
+ngoài `TryWriteSetpointAsync`/`TryInvokeCommandAsync` còn `Estop`, `ResetEstop`, `RegisterMachine`,
+`UpdateSettings` (ghi `FleetSettingsStore` khi có store), `ApplyScenario`, `Burst`,
+`RunHotFolderAoiDemoAsync` (ghi file), `SetCurrentProduct`. Bịt hai cái là để ngỏ tám cái còn lại.
+
+**Giá phải trả: bằng không.** Ngoài `St4i.EdgeCore`, tên `FleetCore` xuất hiện trong **đúng một file mã chạy
+được** — `St4i.EngineApi/Fleet/FleetHost.cs`. Mọi chỗ nhắc khác trong `src/` và `tests/` là chú thích.
+`InternalsVisibleTo("St4i.EngineApi")` mà E-2 đã thêm (§10.5) phủ nó. Không một call site nào phải đổi.
+
+🔴 **Hệ quả kèm theo, và nó đóng luôn §9.4(1) bằng cấu trúc:** bộ đọc `--fleet` thứ hai
+(`FleetCore.ResolveFleetPath`, roster mặc định 10 máy) là một phương thức private trên một kiểu **không thể
+gọi tên được** từ `St4i.EdgeService`. Nên **hai bộ đọc roster không thể gặp nhau**; bộ đọc duy nhất trong tiến
+trình EdgeService là `EdgeWorker.LoadFleet` (8 máy). Cùng lý do đó, cái bẫy `AppContext.BaseDirectory`/
+`mapping/` của §9.4(1) **không còn với tới được từ EdgeService** — không phải được cảnh báo, mà là không tồn tại.
+
+**Giới hạn của khẳng định này, nói thẳng để không ai đọc quá:** nó **không** chứng minh EdgeService không thể
+ghi vào một thiết bị. Không thể chứng minh: driver mà host này dựng từ `connectors.json` **chính là**
+`IWritableDeviceDriver` (một `ModbusTcpDriver` là), vì driver là thứ giữ cổng. Cái được chứng minh hẹp hơn và
+đúng là cái quan trọng: **đường phân giải mã-máy → driver-ghi-sống, cùng hai thành viên ghi không hỏi chốt HALT
+dựng trên nó, hoàn toàn không với tới được từ tiến trình này**, và `EdgeAgentPipelines` không bao giờ trả một
+driver ra cho caller. Muốn ghi thì phải **thêm mã dựng driver** — một hành vi thấy được khi review — chứ không
+phải ép kiểu một tham chiếu sẵn có.
+
+**Nhân chứng:** `tests/St4i.EdgeService.Tests/EdgeAgentWriteSurfaceTests.cs` (5 `[Fact]`), chạy **từ
+`St4i.EdgeService.Tests`** — assembly không có `InternalsVisibleTo` từ EdgeCore, nên "không export" ở đó nghĩa
+đúng như với host sản phẩm. Phép kiểm là **liệt kê** (mọi kiểu export, mọi thành viên public, so với cả tập
+cấm), không phải tra tên hai thành viên rồi thấy vắng. Hai trong năm `[Fact]` là **đối chứng dương**.
+
+🔴 **Một chỗ danh sách cấm ban đầu SAI, và cách sửa đáng giữ:** `ApplyMode` nằm trong danh sách ở bản đầu, và
+phép liệt kê lập tức bắt được `St4i.EdgeCore.Transport.TransportCoordinator.ApplyMode` — **không phải thành
+viên fleet**. `FleetCore.ApplyMode` chỉ chuyển tiếp một dòng tới đúng API transport công khai có sẵn ấy. Sửa
+bằng cách **bỏ tên khỏi tập**, không bằng cách miễn trừ `TransportCoordinator` — một danh sách miễn trừ là một
+cái lỗ trong một phép liệt kê.
+
+### 11.2 `EdgeAgentPipelines` — vì sao KHÔNG phải facade trên `FleetCore`
+
+`St4i.EdgeCore.Engine.EdgeAgentPipelines` (public): N driver, N `EdgePipeline`, một transport, cô lập lỗi theo
+từng pipeline, tự dựng/sở hữu/dispose driver, **không thành viên nào nhận, trả hay phơi một `IDeviceDriver`**.
+
+**Facade trên `FleetCore` bị loại vì một cản trở cứng, không phải vì sở thích:** ctor của `FleetCore` đòi
+`SwitchableTransport` **và** `TransportCoordinator`, mà `TransportCoordinator` lại đòi một cặp `LiveTransport` +
+`AutoTransport` sống. `EdgeWorker` phân giải **một** `ITransport` (Demo hoặc Live, gắn một mã máy). Dựng cả
+tầng điều phối transport của EngineApi bên trong tác nhân biên — cho một vòng đời không bao giờ đổi mode — là
+thêm nhiều máy móc hơn phần tái sử dụng được, và kéo theo roster resolver, scenario, KPI, `MachineState`,
+`UpdateSettings`.
+
+🔴 **Một khoá MỚI đã được dựng rồi gỡ, ghi lại vì hình dạng đáng giữ.** Bản đầu phát `Committed` **dưới một
+khoá** để giữ cho bộ đếm `++` không nguyên tử của `EdgeWorker` đúng khi có N pipeline. Đó là dựng lại đúng hình
+dạng §10.3 cảnh báo — subscriber của `EdgeWorker` **ghi log và huỷ một token**. Đã đổi: sự kiện phát **không
+giữ khoá nào**, subscriber dùng `Interlocked.Increment`, và `_stateGate` chỉ còn giữ hai `List<>`.
+**Đi bộ theo khả năng với tới trên khoá mới: ba vùng `lock`, cả ba chỉ là thao tác list — không I/O, không
+`Dispose`, không callback do host cung cấp.**
+
+### 11.3 Bốn đường `_gate` của §10.3: KHÔNG TĂNG, và dụng cụ là một cái diff
+
+Tiêu chí §10.3(c) nêu đúng đại lượng: *số thao tác **I/O hoặc `Dispose`** với tới được dưới `_gate`*.
+`git diff 487f4cf5..HEAD -- src/St4i.EdgeCore/Fleet/FleetCore.cs`, bỏ mọi dòng `///`, cho ra **đúng một cặp
+dòng**: `public sealed class FleetCore` → `internal sealed class FleetCore`. Không một lệnh chạy được nào
+trong file đổi, nên tập lệnh chạy dưới `_gate` **giống hệt từng byte** với BASE và số thao tác I/O-hoặc-Dispose
+với tới được **không đổi, cộng 0**. Một diff chỉ đổi chú thích cộng một từ khoá là bằng chứng **kết luận** về
+cây mã (§8.1 của Đợt D). Bốn đường của §10.3 + hai `Cancel` của §10.3(d) vẫn còn nguyên, không sửa.
+
+### 11.4 Store toàn máy `EdgeWorker` chạm sau E-3 — liệt kê đầy đủ, KHÔNG người ghi mới
+
+| Store / gốc dữ liệu | Đọc hay ghi | Có sẵn hay E-3 thêm |
+|---|---|---|
+| `CredentialStore` (`%ProgramData%\ST4I\sim\creds`) | **ĐỌC** (chỉ khi Live) | có sẵn |
+| WAL queue (`WalOptions.EnsureDir` + `ResolveQueueFile`) | **GHI** | **có sẵn** — `BuildTransport` đã làm từ WS-C |
+| `connectors.json` (cạnh exe, hoặc `--connectors`) | **ĐỌC** | E-3 thêm, **chỉ đọc** |
+| `fleet.json` / `--fleet` | **ĐỌC** | có sẵn |
+| Biến môi trường `ST4I_*` (`ModbusOptions.FromEnvironment`, `WalOptions`, `DemoModeGate`, server URL / machine code / TLS) | **ĐỌC** | `ModbusOptions` là E-3, chỉ đọc |
+| `AssetRegistryStore` | **KHÔNG CHẠM** | — |
+| `FleetSettingsStore` | **KHÔNG CHẠM** | — |
+| `%ProgramData%\ST4I\sim\opcua-pki` | **KHÔNG CHẠM — và đó là một quyết định** | xem dưới |
+
+🔴 **OPC-UA bị TỪ CHỐI ở EdgeService vì đúng phán quyết của brief, không phải vì thiếu kiểu.**
+`OpcUaConnectorFactory` nằm sẵn trong EdgeCore và sẽ biên dịch được. Cái chặn nó là `OpcUaDriver` ghi chứng chỉ
+app-instance của nó vào `OpcUaPkiPaths.ResolveRoot` — `%ProgramData%\ST4I\sim\opcua-pki`, **toàn máy, không
+khoá theo tiến trình**. Dispatch nó ở đây sẽ biến `St4i.EdgeService` thành **một người ghi mới vào một store
+toàn máy**. Một entry OPC-UA bị bỏ qua kèm cảnh báo nêu đúng lý do, và có test ghim
+(`AnOpcUaEntry_IsRefusedByName_…`) để nó là một quyết định chứ không phải một chỗ sót ai đó "sửa" bằng cách
+thêm một nhánh `switch`. **Bật nó lên là một nhánh `switch`, ngay khi quyết định gốc-dữ-liệu-theo-host có.**
+
+### 11.5 Đường đọc `connectors.json`: một bộ phân tích, hai bộ dispatch — và vì sao
+
+**`ConnectorsConfig` đã dời** `St4i.EngineApi.Config` → **`St4i.EdgeCore.Config`** (274 dòng, là nút lá thật:
+chỉ phụ thuộc `System.Text.Json` + `DriverKinds`). Cả hai host giờ đọc file, áp dụng dung sai theo từng entry,
+và giải quyết precedence qua **một** bản cài đặt.
+
+**`ConnectorsJsonRegistration` (dispatch) KHÔNG dời, và đây là lý do đo được:** nó cần `ILogger`,
+`ConnectorConfigValidation`, `ModbusRtuBusPlan` và `ModbusMultidropRegistration`; cái cuối gọi
+`RtuBusConfiguration.IsInBusNamespace`, một luật mà **chính chú thích của nó nói phải phát biểu đúng MỘT lần vì
+ba caller phải khớp nhau**. **Nó không phải nút lá** — đúng hình dạng §9.6(a). Dời nó là việc thật với rủi ro
+thật, và gộp vào một nhiệm vụ vòng đời là cái bẫy "bản sửa và phép quét cảm giác như một hành động nhưng là hai".
+
+Nên EdgeService có **composition root của riêng nó** (`EdgeConnectors.cs`), hẹp hơn có chủ đích:
+- **Modbus TCP — CÓ.**
+- **Modbus RTU (entry khai báo `transport`) — KHÔNG**, bỏ qua kèm cảnh báo nêu tên. Fan-out multidrop + ghost
+  sweep là cái không-phải-lá ở trên; viết một fan-out thứ hai ở đây là **hai câu trả lời cho câu hỏi "đăng ký
+  nào sở hữu thiết bị này"**.
+- **OPC-UA — KHÔNG**, §11.4.
+- **Kind khác — KHÔNG**, giống EngineApi: build này không có plugin loader.
+
+🔴 **MỘT CHỖ LỆCH CÓ CHỦ ĐÍCH SO VỚI EngineApi, ghi ra vì một chỗ lệch im lặng là một khiếm khuyết: mỗi entry
+đăng ký dưới `id` CỦA CHÍNH NÓ, không dưới kind.** `ConnectorsJsonRegistration.RegistrationKeyOf` trả "kind"
+cho entry TCP/OPC-UA, và chú thích của chính nó nói vì sao: lấy id của operator ở đó sẽ dời nhãn slot — và do
+đó `TargetId` của alarm — của một cài đặt đang chạy. **Host này không có di sản đó** (nó chưa từng chủ trì một
+connector nào), nên không có gì để rẽ nhánh. Keying theo id cũng là thứ làm cho "N entry nghĩa là N driver" nói
+được ở đây; keying theo kind gộp mọi entry Modbus thành một.
+
+### 11.6 🔴 Những gì E-4 vẫn phải đối mặt
+
+- **RS-485 CHƯA chạy được trong `St4i.EdgeService`.** Đây là giới hạn lớn nhất E-3 để lại. Reference tới
+  `St4i.EdgeCore.Serial` vẫn chỉ làm transport *sẵn có*. Khối lượng còn thiếu, đã đo: `ModbusRtuBusPlan`
+  (108 dòng, **là nút lá** — chỉ phụ thuộc `EdgeCore.Drivers.Modbus` + `EdgeCore.Serial`, dời sang
+  `St4i.EdgeCore.Serial` là sạch), `ModbusMultidropRegistration` (344 dòng, ILogger → cặp callback, **không
+  phải lá**: kéo `RtuBusConfiguration.IsInBusNamespace`), `ConnectorConfigValidation` (254 dòng, phụ thuộc chỉ
+  EdgeCore + Abstractions, có vẻ là lá). Không dời được `RtuBusConfiguration` nguyên khối: nó cũng ôm
+  `TryFindBlockedDevice`/`ReleaseOwnNamespace` và bám vào roster + store của EngineApi.
+- **Hai bộ dispatch `connectors.json`.** Đã quyết định, đã ghi, có test — nhưng vẫn là hai. Chúng hợp nhất
+  được đúng khi `ModbusMultidropRegistration` xuống được EdgeCore, không sớm hơn.
+- **§9.4(2) hai tiến trình, một bộ file dữ liệu toàn máy — CHƯA CHẠM, và E-3 không làm nó gần hơn.**
+  `AssetRegistryStore`/`FleetSettingsStore` vẫn không bị EdgeWorker chạm; WAL vẫn là người ghi có sẵn duy nhất.
+  Quyết định gốc-dữ-liệu-theo-host vẫn là của chủ sở hữu, và **nó đang chặn OPC-UA ở tác nhân biên**.
+- **§10.4 kênh log thứ ba** (khôi phục độ mịn `LogDebug` bị E-2 nâng lên `LogError`) — **chưa làm.**
+- **§10.9 bài test mTLS có cuộc đua tắt máy** — **chưa sửa**, không đỏ lần nào trong các lần chạy cổng của E-3.
+- **§10.3 hạng mục sửa `_gate` bốn đường + hai `Cancel`** — **chưa làm**, không tăng.
+- **Chiều ghi (§3) vẫn không có đường xuống.** Máy do tác nhân biên cầm là **chỉ đọc**, và bây giờ điều đó là
+  một lỗi biên dịch chứ không phải một câu. Việc của E-4 là cho **người vận hành** thấy điều đó ở nơi họ gặp
+  nút ghi.
+- **Transport serial vẫn chưa tải một khung tin nào trên phần cứng thật.** Đúng sau Đợt D, đúng sau E-2, vẫn
+  đúng sau E-3.
