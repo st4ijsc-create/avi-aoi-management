@@ -8,4 +8,9 @@ namespace St4i.EdgeService;
 /// <param name="FleetPath">From <c>--fleet &lt;path&gt;</c> — if set and the file exists,
 /// <see cref="EdgeWorker"/> loads the fleet via <see cref="St4i.EdgeCore.Infrastructure.FleetConfig.Load"/>
 /// instead of its in-code default roster.</param>
-public sealed record EdgeServiceOptions(int? SmokeCount, string? FleetPath);
+/// <param name="ConnectorsPath">🔴 Task E-3 — from <c>--connectors &lt;path&gt;</c>. <see langword="null"/>
+/// (the default, and every pre-existing call site) means <c>connectors.json</c> beside the exe — see
+/// <see cref="EdgeConnectors.ResolvePath"/>. Deliberately its OWN flag rather than a second meaning for
+/// <c>--fleet</c>: blueprint §9.4(1) is a record of what one flag with two readers costs, and this is the
+/// same shape one layer down.</param>
+public sealed record EdgeServiceOptions(int? SmokeCount, string? FleetPath, string? ConnectorsPath = null);

@@ -22,6 +22,24 @@ namespace St4i.EdgeService;
 /// can also run unattended as a Windows service. This project deliberately does NOT reference the WPF
 /// project or any WPF assembly.
 ///
+/// <para>🔴 <b>Task E-3 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md) — ONE driver on ONE
+/// pipeline became N.</b> This worker now reads <c>connectors.json</c> (<see cref="EdgeConnectors"/>) and
+/// runs every configured connector instance alongside the simulated group, through
+/// <see cref="St4i.EdgeCore.Engine.EdgeAgentPipelines"/>.
+///
+/// <para><b>A deployment with no <c>connectors.json</c> behaves exactly as it did before E-3, and that is a
+/// property of ONE code path rather than of a branch:</b> the connectors registry is simply <c>null</c>, so
+/// the agent builds exactly one pipeline over exactly the <see cref="SimulatedDriver"/> these same
+/// simulators always produced, on the same profile, transport and event bus. Pinned by
+/// <c>EdgeWorkerConnectorsTests.NoConnectorsJson_IsExactlyTheSimulatedRunThisHostAlwaysDid</c>.</para>
+///
+/// <para><b>What this worker deliberately CANNOT do, structurally:</b> write to a machine.
+/// <c>FleetCore</c> — the lifecycle that owns the machine-code→writable-driver routing, with no HALT-latch
+/// check anywhere inside it — is <c>internal</c> on <c>St4i.EdgeCore</c> and is not nameable from this
+/// assembly. <see cref="St4i.EdgeCore.Engine.EdgeAgentPipelines"/> is what this host gets instead, and it
+/// never hands its caller a driver. See blueprint §3 and
+/// <c>EdgeAgentWriteSurfaceTests</c>.</para></para>
+///
 /// Fleet source: <c>--fleet &lt;path&gt;</c> via <see cref="FleetConfig.Load"/> if
 /// <see cref="EdgeServiceOptions.FleetPath"/> is given AND the file exists AND parses with entries — see
 /// <see cref="LoadFleet"/>. Falling back to the small fixed in-code default (<see cref="BuildDefaultFleet"/>,
@@ -161,11 +179,28 @@ public sealed class EdgeWorker : BackgroundService
         }
 
         var sims = fleet.Select((d, i) => SimulatorFactory.Create(d, seed: 2000 + i)).ToList();
-        IDeviceDriver driver = new SimulatedDriver(sims);
         var profile = new MappingProfile { Name = "edge-service-fleet", DeviceClass = "Mixed" };
         var eventBus = new EventBus();
         var transport = BuildLiveOrDemoTransport();
-        var pipeline = new EdgePipeline(driver, profile, transport, eventBus);
+
+        // 🔴 Task E-3 — the connectors.json read path. Null (absent file / empty array / every entry skipped)
+        // is the pre-E-3 world, and it is the SAME null the simulated-only run has always effectively passed.
+        var connectors = EdgeConnectors.Build(EdgeConnectors.ResolvePath(_options.ConnectorsPath), _logger);
+
+        // 🔴 Task E-3 — one driver and one pipeline became N. See EdgeAgentPipelines for why an edge agent
+        // gets THIS type and not FleetCore (which is `internal` precisely so this host cannot reach the
+        // unguarded write path), and for the exact sense in which it is read-only.
+        //
+        // WITH NO connectors.json this builds exactly one pipeline, over exactly the SimulatedDriver these
+        // same `sims` produced before, on the same `profile`, the same `transport` and the same `eventBus` —
+        // which is what makes "a deployment with no connectors.json behaves as it does today" a property of
+        // ONE code path with an empty registry rather than of a branch nobody exercises.
+        var agent = new EdgeAgentPipelines(
+            transport,
+            eventBus,
+            profile,
+            logWarning: msg => _logger.LogWarning("{EdgeAgentMessage}", msg),
+            logError: (ex, msg) => _logger.LogError(ex, "{EdgeAgentMessage}", msg));
 
         // Linked (not just stoppingToken) so a reached --smoke count can unwind RunAsync immediately
         // instead of waiting on the host's own (slower, externally-driven) shutdown sequence.
@@ -174,12 +209,19 @@ public sealed class EdgeWorker : BackgroundService
 
         void OnCommitted(DeviceReading reading, TransportAck ack)
         {
-            commitCount++;
+            // 🔴 E-3 — Interlocked, not `++`. EdgeAgentPipelines raises Committed from N pipeline tasks with
+            // NO lock held, deliberately: serialising the raise there would have put a log call and a token
+            // cancellation under a lock, which is the exact shape blueprint §10.3 exists to warn about. The
+            // cost of that decision is paid HERE, in one word, by the one subscriber that needs it. The
+            // smoke branch below can now run on more than one thread — CancellationTokenSource.Cancel and
+            // IHostApplicationLifetime.StopApplication are both safe to call more than once, and `count`
+            // being the value THIS increment produced is what stops two threads reporting the same number.
+            var count = Interlocked.Increment(ref commitCount);
             _logger.LogInformation(
                 "commit #{Count} machine={MachineCode} kind={Kind} verdict={Verdict} ack.success={Success} ack.id={AckId} ack.status={AckStatus}",
-                commitCount, reading.MachineCode, reading.Kind, reading.Verdict, ack.Success, ack.Id, ack.HttpStatus);
+                count, reading.MachineCode, reading.Kind, reading.Verdict, ack.Success, ack.Id, ack.HttpStatus);
 
-            if (_options.SmokeCount is int smokeTarget && commitCount >= smokeTarget)
+            if (_options.SmokeCount is int smokeTarget && count >= smokeTarget)
             {
                 _logger.LogInformation("smoke target of {N} commit(s) reached — stopping host", smokeTarget);
                 localCts.Cancel();
@@ -187,10 +229,10 @@ public sealed class EdgeWorker : BackgroundService
             }
         }
 
-        pipeline.Committed += OnCommitted;
+        agent.Committed += OnCommitted;
         try
         {
-            await pipeline.RunAsync(localCts.Token).ConfigureAwait(false);
+            await agent.RunAsync(sims, connectors, localCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -199,7 +241,7 @@ public sealed class EdgeWorker : BackgroundService
         }
         finally
         {
-            pipeline.Committed -= OnCommitted;
+            agent.Committed -= OnCommitted;
         }
 
         // WS-C precedent (LiveTransport.Dispose's own remarks: it owns an HttpClient) — a Live-mode
@@ -210,7 +252,7 @@ public sealed class EdgeWorker : BackgroundService
             disposableTransport.Dispose();
         }
 
-        _logger.LogInformation("EdgeWorker stopped after {Count} commit(s)", commitCount);
+        _logger.LogInformation("EdgeWorker stopped after {Count} commit(s)", Volatile.Read(ref commitCount));
     }
 
     /// <summary>Resolves this run's Live-path connection settings from the process environment and

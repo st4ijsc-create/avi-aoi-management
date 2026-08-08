@@ -138,8 +138,48 @@ public enum MachineDriverAvailability
 /// same <c>Action&lt;string&gt;? logWarning</c> / <c>Action&lt;Exception,string&gt;? logError</c>
 /// convention as every other type here. See <see cref="_logWarning"/> for the D-7a trap that shape
 /// carries and the rule this class holds because of it.</para>
+///
+/// <para>🔴 <b>Task E-3 — THIS TYPE IS <c>internal</c>, AND THAT IS THE WHOLE OF BLUEPRINT §3's "an edge
+/// agent's machines are read-only", EXPRESSED AS A COMPILE ERROR RATHER THAN AS A SENTENCE.</b>
+///
+/// <para>The hazard, stated exactly. <see cref="TryWriteSetpointAsync"/> and
+/// <see cref="TryInvokeCommandAsync"/> route a machine code to a live <c>IWritableDeviceDriver</c> and
+/// perform I/O against it, and <b>nothing inside either of them consults the HALT latch</b> — the guard is
+/// <c>St4i.EngineApi.Policy.Rules.EstopGuardRule</c>, which sits ABOVE them, in the only assembly that has
+/// RBAC, an audit trail and Đợt B's <c>Indeterminate</c> contract. E-2 left this class <c>public</c> on an
+/// assembly <c>St4i.EdgeService.csproj</c> already references, so the moment E-3 gave <c>EdgeWorker</c> a
+/// lifecycle owner, an unguarded write path became one <c>new FleetCore(...)</c> away — reachable by
+/// accident, in a host with no guard to reach for.</para>
+///
+/// <para><b>Why the whole type and not just the two write members.</b> The rule of this batch is to start
+/// from the SET OF MEMBERS, not from a type name. Doing that: <see cref="Estop"/>/<see cref="ResetEstop"/>
+/// move the supervisory latch; <see cref="RegisterMachine"/> mutates the live roster; <see cref="UpdateSettings"/>
+/// rewrites the process-wide connection identity and, when a <see cref="FleetSettingsStore"/> is wired,
+/// writes a machine-wide file; <see cref="ApplyScenario"/>/<see cref="Burst"/>/<see cref="RunHotFolderAoiDemoAsync"/>
+/// mutate core state and the last one writes files; <see cref="ApplyMode"/> swaps the transport underneath a
+/// running fleet. Sealing only the two write members would have left every one of those open to a host that
+/// must not have them. One accessibility modifier closes all of it, for this host and for every future one.</para>
+///
+/// <para><b>What it costs: nothing measurable.</b> Outside this assembly the name <c>FleetCore</c> appears in
+/// exactly one file of executable code — <c>St4i.EngineApi/Fleet/FleetHost.cs</c> — and
+/// <c>St4i.EdgeCore/AssemblyInfo.cs</c> already grants <c>St4i.EngineApi</c>
+/// <c>InternalsVisibleTo</c> (E-2, for the three test seams). Every other mention in <c>src/</c> and
+/// <c>tests/</c> is a doc comment. So this is a one-word change that no production or test call site had to
+/// follow.</para>
+///
+/// <para><b>And it closes blueprint §9.4(1) by construction rather than by warning.</b> That defect is "the
+/// same code, run inside EdgeService, silently resolves an EMPTY roster and a missing <c>mapping/</c>
+/// directory, with no exception and no warning naming the cause". Its precondition was that this class could
+/// run inside <c>St4i.EdgeService</c>. It cannot. The second reader of <c>--fleet</c> that §9.4(1) warns
+/// about — <see cref="ResolveFleetPath"/> — is likewise unreachable from that process, so the two roster
+/// readers can never meet: see <c>EdgeAgentPipelines</c> and <c>EdgeWorker.LoadFleet</c>.</para>
+///
+/// <para><b>What a second host gets instead:</b> <see cref="St4i.EdgeCore.Engine.EdgeAgentPipelines"/> — a
+/// narrower lifecycle owner whose entire member set is read-only, that owns the drivers it builds and never
+/// hands one out. It does not wrap this class; see its own remarks for why re-using this one was rejected on
+/// evidence rather than on taste.</para></para>
 /// </summary>
-public sealed class FleetCore
+internal sealed class FleetCore
 {
     private const double BurstMultiplier = 6.0;
     private static readonly TimeSpan BurstDuration = TimeSpan.FromSeconds(4);

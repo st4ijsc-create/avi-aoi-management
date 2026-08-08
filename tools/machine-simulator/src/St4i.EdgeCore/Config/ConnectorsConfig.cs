@@ -1,7 +1,7 @@
 using System.Text.Json;
 using St4i.Connector.Abstractions.Models;
 
-namespace St4i.EngineApi.Config;
+namespace St4i.EdgeCore.Config;
 
 /// <summary>Thrown by <see cref="ConnectorsConfig.Load"/> when <c>connectors.json</c> exists but isn't
 /// valid JSON, or doesn't match the expected shape (root isn't an array) — reserved for the file genuinely
@@ -25,7 +25,7 @@ public sealed class ConnectorsConfigException : Exception
 /// ST4I_MODBUS_ENABLED/ST4I_OPCUA_ENABLED construct").</summary>
 /// <param name="Id">The connector's own label — used ONLY for the per-entry warning naming (see
 /// <see cref="ConnectorsConfig.Load"/>'s remarks) and defaulted to <paramref name="Kind"/> when the entry
-/// doesn't specify one of its own. Has no other effect: <see cref="St4i.EngineApi.Fleet.ConnectorRegistry.Register"/>
+/// doesn't specify one of its own. Has no other effect: <see cref="St4i.EdgeCore.Fleet.ConnectorRegistry.Register"/>
 /// keys on the constructed <see cref="St4i.Connector.Abstractions.IConnectorFactory.Kind"/> (a built-in
 /// factory's own <c>Kind</c> getter is a fixed constant, e.g. <see cref="DriverKinds.Modbus"/>), never on
 /// this field.</param>

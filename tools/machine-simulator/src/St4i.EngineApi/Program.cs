@@ -1101,18 +1101,18 @@ if (opcUaOptions.Enabled)
 // entries" (Console.Error, same posture as every other startup-time config failure above) rather than
 // crashing startup — absent file ⇒ empty list ⇒ byte-identical to today, by construction.
 var connectorsConfigPath = Path.Combine(AppContext.BaseDirectory, "connectors.json");
-IReadOnlyList<St4i.EngineApi.Config.ConnectorConfigEntry> connectorConfigEntries;
+IReadOnlyList<St4i.EdgeCore.Config.ConnectorConfigEntry> connectorConfigEntries;
 try
 {
-    connectorConfigEntries = St4i.EngineApi.Config.ConnectorsConfig.Load(
+    connectorConfigEntries = St4i.EdgeCore.Config.ConnectorsConfig.Load(
         connectorsConfigPath,
         logWarning: msg => Console.Error.WriteLine($"[startup] {msg}"));
 }
-catch (St4i.EngineApi.Config.ConnectorsConfigException ex)
+catch (St4i.EdgeCore.Config.ConnectorsConfigException ex)
 {
     Console.Error.WriteLine(
         $"[startup] Malformed connectors.json at '{connectorsConfigPath}' — no connectors.json entries will be configured for this run: {ex.Message}");
-    connectorConfigEntries = Array.Empty<St4i.EngineApi.Config.ConnectorConfigEntry>();
+    connectorConfigEntries = Array.Empty<St4i.EdgeCore.Config.ConnectorConfigEntry>();
 }
 
 // SM-5 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-5-brief.md) — the
@@ -1168,7 +1168,7 @@ var persistedConnectorSeeds = new List<St4i.EdgeCore.Models.MachineDescriptor>()
     if (modbusMapJson is not null) alreadyConfiguredKindsForSeeding.Add(St4i.Connector.Abstractions.Models.DriverKinds.Modbus);
     if (opcUaMapJson is not null) alreadyConfiguredKindsForSeeding.Add(St4i.Connector.Abstractions.Models.DriverKinds.OpcUa);
 
-    var resolvedConnectorEntriesForSeeding = St4i.EngineApi.Config.ConnectorsConfig.ResolveEntries(
+    var resolvedConnectorEntriesForSeeding = St4i.EdgeCore.Config.ConnectorsConfig.ResolveEntries(
         connectorConfigEntries, alreadyConfiguredKindsForSeeding, logWarning: null,
         // 🔴 Task D-7a — the SAME registration-key rule the real resolution below uses. A recomputation that
         // resolved differently from the thing it is recomputing would seed visibility rows for a set of
@@ -1314,7 +1314,7 @@ builder.Services.AddSingleton(sp =>
     if (modbusMapJson is not null) alreadyConfiguredKinds.Add(St4i.Connector.Abstractions.Models.DriverKinds.Modbus);
     if (opcUaMapJson is not null) alreadyConfiguredKinds.Add(St4i.Connector.Abstractions.Models.DriverKinds.OpcUa);
 
-    var resolvedConnectorEntries = St4i.EngineApi.Config.ConnectorsConfig.ResolveEntries(
+    var resolvedConnectorEntries = St4i.EdgeCore.Config.ConnectorsConfig.ResolveEntries(
         connectorConfigEntries,
         alreadyConfiguredKinds,
         logWarning: msg => connectorsLogger.LogWarning("{ConnectorsConfigMsg}", msg),

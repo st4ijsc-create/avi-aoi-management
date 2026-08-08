@@ -21,6 +21,21 @@
          and nothing more: no code path here can open a COM port today, and giving it one means giving this
          host a connector registry first, which is a separate piece of work nobody has scoped.
 
+         🔴 TASK E-3 DID THAT PIECE OF WORK, PARTLY, AND THE PARAGRAPH ABOVE IS NOW HALF FALSE. Corrected
+         rather than deleted, because it is the record of what the ruling was based on:
+           - "no ConnectorRegistry, no IConnectorFactory, no connectors.json reader" — NO LONGER TRUE.
+             EdgeConnectors.cs reads connectors.json (through the parser E-3 moved down to
+             St4i.EdgeCore.Config so both hosts share ONE reader) and populates a ConnectorRegistry, which
+             E-2 moved down to St4i.EdgeCore. EdgeWorker runs N drivers off it via EdgeAgentPipelines.
+           - "ConnectorRegistry and FleetHost are St4i.EngineApi types" — ConnectorRegistry moved in E-2.
+             FleetHost is still EngineApi's, and FleetCore — the lifecycle it shells — is now `internal` on
+             St4i.EdgeCore precisely so THIS host cannot reach its unguarded write path (blueprint §3).
+           - "no code path here can open a COM port today" — STILL TRUE, and still for a scoping reason
+             rather than a capability one: an RTU entry in connectors.json is refused BY NAME here, because
+             the multidrop fan-out (ModbusMultidropRegistration → RtuBusConfiguration) has not moved and is
+             not a leaf. See EdgeConnectors' own remarks and blueprint §11. So this reference still only
+             makes the serial transport AVAILABLE.
+
          Stated here, and asserted in the honest form by
          SerialDependencyScopingTests.EdgeServiceDeployment_CarriesSystemIoPorts_…, so that the shipped
          artifact and the record of why it ships agree. -->

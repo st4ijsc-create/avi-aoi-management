@@ -752,8 +752,39 @@ EXPECT_CONFORMANCE=22
 #          "nothing detects deletion of the override" lesson in different clothes, so it gets the same
 #          treatment — an assertion rather than a sentence in a report. Asserted as >= rather than == 5000
 #          deliberately: the claim is the relationship, not either number.
-EXPECT_EDGECORE=1072
-EXPECT_EDGESERVICE=28
+# 🔴 Task E-3 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §11) raises EXPECT_EDGECORE
+# 1072 -> 1080 (+8) and EXPECT_EDGESERVICE 28 -> 42 (+14). Grand total 2556 -> 2578. Per file, and nothing
+# is rewritten, split or deleted:
+#
+#   +8  tests/St4i.EdgeCore.Tests/Engine/EdgeAgentPipelinesTests.cs  (NEW FILE) — the N-driver lifecycle an
+#       edge agent gets. The headline one measures at the TRANSPORT that N registered device instances
+#       produce N drivers each pushing readings, not that N slots exist; the rest are fault isolation, a
+#       refusing factory named in StartIssues, the all-faulted rethrow, orphan-driver disposal, driver
+#       disposal at end of run, and the nothing-to-poll case that must not reach SimulatedDriver's ctor guard.
+#
+#   +5  tests/St4i.EdgeService.Tests/EdgeAgentWriteSurfaceTests.cs   (NEW FILE) — blueprint §3's read-only
+#       limit as a STRUCTURAL fact. Runs from St4i.EdgeService.Tests, which has no InternalsVisibleTo from
+#       St4i.EdgeCore, so "not exported" here means exactly what it means for the production host. Two of the
+#       five are positive controls (the assembly really is St4i.EdgeCore and really does export things; the
+#       driver-shape walker really can see a driver — ConnectorRegistry.TryCreateDriver), without which every
+#       absence assertion could pass vacuously.
+#
+#   +9  tests/St4i.EdgeService.Tests/EdgeWorkerConnectorsTests.cs    (NEW FILE) — the connectors.json read
+#       path, and the task's most important regression: a deployment with no connectors.json (and one with a
+#       malformed one) still runs exactly the simulated fleet it always did, with every commit coming from
+#       EdgeWorker's own 8-machine roster. Also pins the two decisions E-4 inherits: entries key on their own
+#       id here (not on kind, as in EngineApi), and OPC-UA/RTU entries are refused BY NAME rather than
+#       dispatched — OPC-UA because dispatching it would make this host a new writer to the machine-wide
+#       %ProgramData%\ST4I\sim\opcua-pki root, which E-3's brief forbids outright.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_ENGINEAPI are deliberately UNCHANGED, and that is the
+# evidence for two of E-3's claims rather than a convenience. EXPECT_ENGINEAPI staying 1283 is what says the
+# two things E-3 did to EngineApi's own tree — making FleetCore `internal`, and moving ConnectorsConfig down
+# to St4i.EdgeCore.Config — changed no behaviour there: the first touched one word and no call site (FleetHost
+# is the only file outside St4i.EdgeCore that names the type), the second is a namespace move carried by three
+# added `using` lines. EXPECT_CONFORMANCE in particular stays 22: E-3 adds no driver and no connector kind.
+EXPECT_EDGECORE=1080
+EXPECT_EDGESERVICE=42
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
 #     +24  NotificationEndpointsTests    (new file — the eleven notification routes)
