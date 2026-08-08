@@ -104,16 +104,29 @@ function chuoiChamBang(n: ts.Expression): boolean {
   return false;
 }
 
-/** Tập định danh đã được gán từ `await bamMaDuPhong(...)` trong file này. */
+/**
+ * Tập định danh mà **MỌI** lượt khai báo trong file này đều gán từ `await bamMaDuPhong(...)`.
+ *
+ * ⚠⚠⚠ **LƯỢNG TỪ — ∀, KHÔNG PHẢI ∃.** Bản đầu của lưới này hỏi *"có TỒN TẠI một lượt gán từ
+ * `bamMaDuPhong` cho tên ấy không"*, và **đột biến đo được đã lọt**: đổi `const hashedCode = await
+ * bamMaDuPhong(code)` ở đường `enable` thành `const hashedCode = code` ⇒ `tsc` ĐỎ nhưng **lưới này
+ * XANH**, vì đường `regenerateBackupCodes` trong **cùng file** vẫn còn một lượt gán hợp lệ cho
+ * **cùng cái tên**. Bộ quét không theo phạm vi (scope), nên vị từ phải là *"MỌI khai báo của tên
+ * này đều băm"* — đúng lớp lỗi **LƯỢNG TỪ SAI** đã có tên trong dự án.
+ */
 function bienDaBam(sf: ts.SourceFile): Set<string> {
-  const ra = new Set<string>();
+  const moiLuot = new Map<string, boolean[]>();
   const di = (n: ts.Node): void => {
     if (ts.isVariableDeclaration(n) && n.initializer && ts.isIdentifier(n.name)) {
-      if (laLoiGoiBam(n.initializer)) ra.add(n.name.text);
+      const ds = moiLuot.get(n.name.text) ?? [];
+      ds.push(laLoiGoiBam(n.initializer));
+      moiLuot.set(n.name.text, ds);
     }
     ts.forEachChild(n, di);
   };
   ts.forEachChild(sf, di);
+  const ra = new Set<string>();
+  for (const [ten, ds] of moiLuot) if (ds.length > 0 && ds.every(Boolean)) ra.add(ten);
   return ra;
 }
 
@@ -247,6 +260,23 @@ describe("★★★ Pha 5/7 Task 8a — ∀ điểm ghi `backup_codes.code` ph�
       const vp = viPhamTrongNguon("server/x/moi.ts", `async function f(db: any, codes: string[], userId: number, raw: string, duLieuTuNoiKhac: any) { ${than} }`);
       expect(vp.length, `biến thể "${ten}" phải bị bắt`).toBeGreaterThanOrEqual(1);
     }
+  });
+
+  it("★★★ LƯỢNG TỪ ∀ — cùng MỘT TÊN, một lượt gán băm + một lượt gán thô ⇒ vẫn ĐỎ (∃ thì lọt)", () => {
+    // ⚠⚠ Đột biến đo được, đã lọt qua bản đầu của lưới này: đổi ĐÚNG MỘT trong hai lượt
+    //    `const hashedCode = await bamMaDuPhong(code)` của `twoFactorRouter.ts` thành `= code`
+    //    ⇒ `tsc` ĐỎ nhưng lưới XANH, vì lượt còn lại "chứng nhận" hộ cái tên.
+    const hai = `
+      async function f(db: any, code: string, userId: number) {
+        const hashedCode = code;                       // đường A — THÔ
+        await db.insert(backupCodes).values({ userId, code: hashedCode, isUsed: false });
+      }
+      async function g(db: any, code: string, userId: number) {
+        const hashedCode = await bamMaDuPhong(code);   // đường B — băm
+        await db.insert(backupCodes).values({ userId, code: hashedCode, isUsed: false });
+      }`;
+    const vp = viPhamTrongNguon("server/x/hai.ts", hai);
+    expect(vp.length, "một tên có lượt gán THÔ ở đâu đó trong file ⇒ mọi điểm ghi dùng tên ấy phải ĐỎ").toBeGreaterThanOrEqual(2);
   });
 
   it("★★ KHÔNG BẮT NHẦM — đường ghi ĐÚNG (qua `bamMaDuPhong`) không bị bắt, và bảng khác không bị đụng", () => {
