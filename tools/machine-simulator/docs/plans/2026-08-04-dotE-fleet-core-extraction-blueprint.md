@@ -55,7 +55,43 @@ web-UI của EngineApi (`EdgeWorker.cs`, chú thích `ResolveGate`). **Tách lõ
 **EdgeService là TÁC NHÂN BIÊN, không phải engine thứ hai.** `ST4I_SERVER_URL` mặc định
 `http://localhost:5000`; nó đọc máy tại chỗ rồi **đẩy lên** EngineApi.
 
-→ **EngineApi vẫn là nơi DUY NHẤT sở hữu roster, yêu sách mã máy và UI.** Một nguồn sự thật.
+### 🔴 2.1 Đính chính (2026-08-08, sau E-4) — cơ chế trên SAI. Kết luận sống, lý do thì không.
+
+**EdgeService không đẩy lên EngineApi.** Nó `POST` tới `{ST4I_SERVER_URL}/api/v1/ingest/…` — nền tảng ST4I ở
+`:5000`. **EngineApi lắng nghe ở `:5199` (`Program.cs:69`) và không map một route `api/v1` nào cả** (đã grep,
+rỗng); bản thân nó cũng là một **client** của cùng nền tảng ấy. **Hai host không chia sẻ roster, không chia sẻ
+sổ yêu sách, không chia sẻ một kênh nào.**
+
+Tôi rút ra "đẩy lên EngineApi" từ **một giá trị mặc định** — `localhost:5000` — và cho rằng nó nghĩa là
+EngineApi. Đó là §9.3b lần nữa: **một khẳng định phát biểu bằng giọng của phép liệt kê, sinh ra từ việc đọc
+một hằng số.**
+
+**Cái sống nguyên vẹn:** EngineApi vẫn là nơi **duy nhất** sở hữu roster, yêu sách mã máy và UI — vì đó là
+roster **của chính nó**, không phải vì có ai báo cáo về cho nó. Phép đo hai-tiến-trình-một-thiết-bị ở bảng
+dưới cũng sống nguyên.
+
+**Và cái đổi theo hướng xấu hơn:** tôi từng viết hình dạng tác nhân biên tránh được mối nguy **bằng cấu trúc**
+vì có một nguồn sự thật. Sự thật là **hai host không được điều phối bởi bất cứ thứ gì — kể cả một đường dữ
+liệu**. Thứ ngăn hai tiến trình cùng lái một thiết bị **không phải kiến trúc**; trên đường serial nó là hệ
+điều hành từ chối lần mở thứ hai, còn trên gateway TCP thì **không có gì cả** — đúng như bảng dưới đã ghi, chỉ
+là giờ không còn một "nguồn sự thật" nào làm nền cho nó.
+
+→ **EngineApi vẫn là nơi DUY NHẤT sở hữu roster, yêu sách mã máy và UI** — nhưng vì phạm vi, không vì báo cáo.
+
+🔴 **Và review E-4 đẩy điều đó đi xa hơn tôi đã viết, đúng:** *"sở hữu vì phạm vi, không vì báo cáo"* giờ là
+**một điều hiển nhiên, không phải một bất biến kiến trúc** — EngineApi sở hữu roster của nó vì **không tồn tại
+roster nào khác có thể báo cáo về cho nó**. Một điều hiển nhiên **không gánh nổi trọng lượng trong một lập
+luận an toàn tương lai** theo cách một bất biến gánh được.
+
+→ **"Một nguồn sự thật" được RÚT KHỎI danh sách tiền đề.** Đừng dựa vào nó ở E-5 hay ở bất cứ đợt nào sau.
+Thứ còn lại là bảng đo ở trên, và nó nói: trên serial, hệ điều hành từ chối lần mở thứ hai; trên gateway TCP,
+**không có gì cả**.
+
+**Dụng cụ, và đây là chỗ chính §2.1 suýt lặp lại lỗi nó đang chẩn đoán:** đích POST thật nằm trong SDK nhúng
+(`examples/device-client/csharp/St4iDeviceClient.cs:387/426/450`, ghép ở `:658`), **không phải** ở các hằng
+`Normalizer.cs:14-16` — những hằng ấy chỉ **khai báo**, không quay số, và test của chính chúng nói vậy
+(`StoreAndForwardRestartSurvivalTests.cs:379`: *đột biến `Normalizer.ProcessResultPath` để test này xanh*).
+Cùng một giá trị, sai dụng cụ. **Một cơ chế đọc từ một hằng số đã khai báo** — đúng thứ §2 mắc phải.
 
 **Vì sao điều đó quan trọng hơn tiện lợi:** yêu sách mã máy là một `ConcurrentDictionary` **trong một
 tiến trình** — không mutex, không lockfile, không primitive có tên (đã grep `Fleet/` và
@@ -983,9 +1019,12 @@ E-4 để đóng:
 1. **§2 của blueprint** — sửa cơ chế theo §12.1, hoặc phán quyết ngược lại tôi. Câu *"đẩy lên EngineApi"* vẫn
    nằm đó và mọi lập luận về "một nguồn sự thật" đọc lên khác hẳn khi biết hai host chỉ là hai client của
    cùng một nền tảng.
-2. **Con số "bảy lần"** trong README §24.4 và trong mục này (*lớp lỗi một-chuỗi-nhiều-đường-sinh*) là **do tôi
-   đếm từ brief** (brief nói "sáu lần" trước E-4, cộng ca này) — **tôi không tự liệt kê lại sáu ca kia.** Nếu
-   review cần con số ấy chịu lực thì phải đếm, không nên tin nó.
+2. ~~**Con số "bảy lần"**~~ — 🔴 **ĐÃ ĐÓNG bởi review E-4 (C4), bằng cách BỎ con số.** Nó từng đứng trong ba
+   sản phẩm phát hành (`MachineWriteGate.cs` — một chú thích XML sản phẩm — cộng README §24.4 hai chỗ) **với
+   giọng của một phép đo**, trong khi chính tôi ở đây từ chối bảo chứng cho nó. Review nói đúng: *một con số
+   chưa đo, phát biểu bằng giọng của một phép đo, chính là lỗi dụng cụ mà đoạn kết của tôi nêu tên.* Cả ba
+   chỗ giờ phát biểu lớp lỗi **định tính** ("một chuỗi phủ nhiều đường sinh và chỉ đúng với vài đường") và
+   không mang con số nào. Nếu ai muốn con số ấy, nó phải được **liệt kê**, không được kế thừa.
 3. **`ExplainUnavailable` ném cho `Writable`.** Ở `RelayNotificationChannel` đường đó không với tới được (cả
    hai bên gọi chỉ vào khi kết quả là `null`), và nếu có ai làm nó với tới được thì
    `ApplyAndCountAsync`'s catch-all biến nó thành `RelayOutcome.Lost` **có báo lỗi** — to hơn cái mặc định

@@ -209,6 +209,18 @@ Thứ được bảo vệ là **một cổng COM không bị giữ tới hết �
 
 Công cụ bắt buộc từ D-3: `scripts/mutate-guard.sh` (so dấu thời gian + đối chứng dương mỗi phiên). Lý do đầy đủ nằm trong header của nó.
 
+🔴 **PHÉP CENSUS — ngữ liệu của nó là một phần của phương pháp, không phải của từng brief (thêm sau Đợt E, E-4).**
+
+Đợt D đã ghi *cách* quét: **một lần đọc được tổ chức theo chỗ một chủ đề được XẾP VÀO; một phép grep được tổ chức theo những TỪ mà một khẳng định dùng** — nên mọi chỗ bị sót đều là chỗ **xếp ở nơi khác**.
+
+Đợt E thêm nửa còn thiếu: **QUÉT `src/` VÀ `tests/`, KHÔNG CHỈ `*.md`.**
+
+Ba khẳng định cũ được tìm thấy trong **mã**, không phải trong tài liệu, ở E-4 — và cả ba đều thoát vì cùng một lý do: **khẳng định cũ nằm cạnh một phép kiểm vẫn xanh.** Trường hợp rõ nhất là `SerialDependencyScopingTests`: phép khẳng định của nó ghim *"DLL có được ship không"*, **không** ghim *"host này mở được cổng không"* — nên bốn câu quanh nó mục ruỗng hoàn toàn mà **không gì đỏ**. Một phép khẳng định đúng, hẹp, bền **không bảo vệ được đoạn văn quanh nó**, và không phép khẳng định nào làm được điều đó.
+
+E-4 quy lỗi cho cách brief phát biểu (*"census tài liệu"*). **Đó không phải nguyên nhân**, và bằng chứng là chính phép quét sau-commit của E-4: chạy dưới **cùng quy tắc ấy** trên `src/`+`tests/`, nó tìm ra ngay. Nguyên nhân là **ngữ liệu không nằm trong quy tắc**, nên nó phải được suy ra từ câu chữ mỗi lần — và một lần nào đó sẽ suy sai.
+
+→ **Phép quét là một hành động riêng, chạy sau khi commit đã xanh, trên `src/` + `tests/` + `*.md`.** Và cái nó đi tìm không phải câu sai — mà là **câu đúng đã trở thành sai vì thứ nó mô tả đã đổi**, đặc biệt ở nơi một phép kiểm gần đó vẫn xanh.
+
 ## 9. Giới hạn phải nói thẳng khi xong
 
 - **RS-485: chỉ hỗ trợ adapter có điều khiển hướng TỰ ĐỘNG.** `System.IO.Ports.SerialPort` không có sự kiện "đã phát xong", không có `RTS_CONTROL_TOGGLE`, và `BaseStream.Flush()` chỉ xả bộ đệm ghi của driver chứ **không** xả thanh ghi dịch của UART — nên nó không phải tín hiệu phát-xong. Đảo chiều RTS bằng phần mềm vì thế **chỉ có thể là một phép đoán thời gian**, và trên bus RS-485 một phép đoán sai làm hỏng khung tin của thiết bị khác. Ai dùng adapter phải bật/tắt DE thủ công thì sản phẩm này **không hỗ trợ** — nói thẳng, đừng để khách phát hiện trên bàn thí nghiệm.
