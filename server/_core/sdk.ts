@@ -10,6 +10,8 @@ import {
   getCachedAuthUser,
   setCachedAuthUser,
 } from "../services/authSessionCache";
+// ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
+import { redactServerOnlyUserFields } from "./publicUser";
 import { ENV } from "./env";
 import type {
   ExchangeTokenRequest,
@@ -383,7 +385,17 @@ class SDKServer {
     // TTL window per session instead of once per request.
     await setCachedAuthUser(sessionCookie!, user);
 
-    return user;
+    // ★★★ Pha 7 Task 7 — **BIÊN XÁC THỰC LÀ CHỖ HẸP NHẤT.** Mọi `ctx.user`, mọi
+    // `socket.data.user`, mọi `req.externalUser`, và cả `localStorage["manus-runtime-user-info"]`
+    // của trình duyệt đều bắt nguồn từ đúng một giá trị này. Làm rỗng bí mật **ở đây** đóng cùng
+    // lúc bốn bề mặt, thay vì vá bốn chỗ (và bỏ sót cái thứ năm).
+    // ⚠ ĐO TRƯỚC KHI ĐỔI: `git grep` mọi điểm đọc `passwordHash`/`twoFactorSecret` ⇒ **6 điểm,
+    //   KHÔNG điểm nào** đọc từ `authenticateRequest`; cả 6 đọc từ một lượt `db.getUserById` /
+    //   `getUserByUsername` MỚI ⇒ phép làm rỗng này **không chạm** đăng nhập / đổi mật khẩu / 2FA.
+    // ⚠ Nó cũng xoá tính **NGẮT QUÃNG** của lượt rò: nhánh cache-hit ở trên đã trả hàng đã che, còn
+    //   nhánh này thì chưa ⇒ đo được **1/6 lượt rò, 5/6 lượt sạch**, tức một lượt nghiệm thu "nhìn
+    //   một phát" sẽ báo SẠCH NHẦM. Nay hai nhánh giống hệt nhau.
+    return redactServerOnlyUserFields(user);
   }
 }
 

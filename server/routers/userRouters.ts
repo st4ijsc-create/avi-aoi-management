@@ -4,6 +4,13 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import * as db from "../db";
+// ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
+// ⚠ Bốn thủ tục dưới đây từng là **thứ nguy hơn `auth.me`**: `list` và
+//   `userAssignment.getAllUserAssignments` trả hàng thô của **MỌI** người dùng ⇒ một tài khoản
+//   admin bị chiếm lấy được **hạt giống 2FA của tất cả**, kể cả các admin khác. `getById`/`search`
+//   dùng **danh sách CẤM một phần tử** (`const { passwordHash, ...safeUser }`) nên
+//   **`twoFactorSecret` vẫn ra** — đúng lớp *"phần tử thứ N+1"*.
+import { toPublicUser, toPublicUsers } from "../_core/publicUser";
 
 // ============ USER ROUTER ============
 export const userRouter = router({
@@ -11,7 +18,7 @@ export const userRouter = router({
     if (ctx.user.role !== 'admin') {
       throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'listUsers' }, 'Admin only');
     }
-    return db.getAllUsers();
+    return toPublicUsers(await db.getAllUsers());
   }),
 
   getById: adminProcedure
@@ -21,19 +28,14 @@ export const userRouter = router({
       if (!user) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'Không tìm thấy người dùng');
       }
-      // Don't return passwordHash
-      const { passwordHash, ...safeUser } = user;
-      return safeUser;
+      return toPublicUser(user);
     }),
 
   search: adminProcedure
     .input(z.object({ query: z.string() }))
     .query(async ({ input }) => {
       const users = await db.searchUsers(input.query);
-      return users.map(u => {
-        const { passwordHash, ...safeUser } = u;
-        return safeUser;
-      });
+      return toPublicUsers(users);
     }),
 
   create: adminProcedure
@@ -413,7 +415,7 @@ export const userAssignmentRouter = router({
       for (const user of users) {
         const corporates = await db.getUserCorporateAssignments(user.id);
         const factories = await db.getUserFactoryAssignments(user.id);
-        result.push({ user, corporates, factories });
+        result.push({ user: toPublicUser(user), corporates, factories });
       }
       return result;
     }),

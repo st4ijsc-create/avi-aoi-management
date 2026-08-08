@@ -240,7 +240,17 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   AST toàn `server/**`). Cả hai nằm NGOÀI module VRAM ⇒ bộ nhận diện theo vị trí MÙ với
     //   chúng; chúng tự khai `Pha 5` nên bộ theo nội dung thấy, và **chính vì thế** thiếu đường ở
     //   đây là ĐỎ ngay — đúng cơ chế I-1 được dựng ra để làm.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(19); // Pha 7 Task 6: +`verify2faPasswordStep.test.ts` (hành vi cổng bước mật khẩu) +`sessionGrantScan.test.ts` (∀ mọi đường cấp phiên)
+    // ⚠ Pha 7 Task 7: 19 → 21. Hai lưới của bản vá *"`auth.me` trả `passwordHash` +
+    //   `twoFactorSecret` ra client"*, canh **HAI TRỤC KHÁC NHAU** của cùng một bất biến:
+    //     · `server/_core/publicUser.test.ts` — **∀ CỘT**: mọi cột của `users` phải được phân loại
+    //       (hai chiều với `getTableColumns`) ⇒ một cột bí mật **MỚI** làm nó ĐỎ. Đây là phép thử
+    //       của **LUẬT**; một danh sách ba tên không bao giờ vượt qua được.
+    //     · `server/routers/userExposureScan.test.ts` — **∀ BỀ MẶT**: quét AST toàn `server/**`,
+    //       tập người-đọc-thô **SUY RA** từ chính `server/db/auth.ts` ⇒ một route MỚI trong FILE
+    //       MỚI nằm trong lượng từ theo cấu tạo (phép thử M3).
+    //   ⚠ `server/_core/` và `server/routers/*.test.ts` **không** có đường bao trong cổng, nên cả
+    //     hai phải có đường RIÊNG — nếu không, chúng "theo cấu tạo không bao giờ được canh".
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(21); // Pha 7 Task 7: +`userExposureScan.test.ts` (∀ bề mặt) +`publicUser.test.ts` (∀ cột)
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -305,7 +315,12 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   giữ nguyên **16**; chỉ con số này đổi.
     //   ⚠ File **không phải test** đi kèm (`vramStateFieldPaths.ts` — bộ suy "ô TỪ KIỂU", nay có
     //     MỘT chỗ ở cho cả hai lưới) **không** vào con số này: `moiFileTest` chỉ gom `*.test.ts`.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(79); // Pha 7 Task 6: +`verify2faPasswordStep` +`sessionGrantScan`
+    // ⚠ Pha 7 Task 7: 79 → 81. **Đúng HAI** file mới — `server/_core/publicUser.test.ts` và
+    //   `server/routers/userExposureScan.test.ts`. Cả hai vào tập bị canh qua bộ nhận diện **NỘI
+    //   DUNG** (tự khai `Pha 5`, có chủ ý — xem docstring của chúng), và cả hai phải có đường riêng
+    //   ở §Cổng kiểm chung ⇒ `CONG.length` 19 → **21** cùng lượt. Gỡ một trong hai khỏi cổng ⇒
+    //   **hai** ô đỏ trên **hai** trục, không phải một.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(81); // Pha 7 Task 7: +`publicUser` +`userExposureScan`
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

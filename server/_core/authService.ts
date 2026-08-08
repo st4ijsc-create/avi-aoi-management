@@ -4,6 +4,8 @@ import type { Request, Response } from "express";
 import * as db from "../db";
 import type { User } from "../../drizzle/schema";
 import { getSessionCookieOptions } from "./cookies";
+// ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
+import { redactServerOnlyUserFields } from "./publicUser";
 import { sdk } from "./sdk";
 
 /**
@@ -250,7 +252,14 @@ export async function verifyCredentials(
     await db.updateUserLoginAttempts(user.id, 0, null);
   }
 
-  return user;
+  // ★★★ Pha 7 Task 7 — bí mật **KHÔNG ĐI XA HƠN CHỖ CẦN NÓ.** `user.passwordHash` đã được dùng
+  // xong ngay phía trên (`comparePasswordConstantTime`); từ đây trở đi mọi người gọi chỉ cần
+  // `id`/`openId`/`name`/`email`/`role` (đã đo: `db.get2FAStatus` nhận `user.id` · lượt cấp vé 2FA
+  // nhận `user.id` · `establishSession` · `res.json({user:{id,name,email,role}})`).
+  // ⚠ Chú thích này CỐ Ý không viết tên hàm cấp vé kèm dấu `(`: `sessionGrantScan.test.ts` §"∀
+  //   đường `login` cấp vé" đếm chuỗi ấy bằng `src.includes(…)` trên **toàn văn file**, nên một
+  //   lượt nhắc trong chú thích cũng bị tính là một NGƯỜI CẤP VÉ thứ tư (đã đo: ô ấy ĐỎ).
+  return redactServerOnlyUserFields(user);
 }
 
 /**

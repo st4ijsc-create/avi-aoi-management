@@ -5,6 +5,8 @@ import { capVe2FA } from "./_core/pendingTwoFactor";
 import { systemRouter } from "./_core/systemRouter";
 import { listEnabledSsoMethods } from "./_core/oauthProviders";
 import { publicProcedure, router } from "./_core/trpc";
+// ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
+import { toPublicUser, type PublicUser } from "./_core/publicUser";
 import { appError } from "./_core/appError";
 import { invalidateAuthSession } from "./services/authSessionCache";
 import { z } from "zod";
@@ -219,7 +221,19 @@ export const appRouter = router({
   // doc 44 G5.9: client RUM web-vitals ingest (public; đo được cả trước login)
   rum: rumRouter,
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    /**
+     * ★★★ Pha 7 Task 7 — **CHIẾU THEO DANH SÁCH CHO PHÉP.** Trước bản vá đây là
+     * `opts.ctx.user` — **nguyên hàng `users`** — và đo được trên hệ thật (Bước 1):
+     * `passwordHash: "$2b$10$xY5z…"` · `twoFactorSecret: "IA2DCZK5LBKTSOTYGMUXCM2UHZ2G4ULQ"`.
+     * `twoFactorSecret` là **hạt giống sinh mọi mã OTP** ⇒ vé một-lần (Task 6), sổ chống phát lại
+     * (Task 5), step-up mỗi lượt (Pha 6) **đều thành trang trí**.
+     * ⚠ Hai tầng cưỡng chế, cố ý: **GIÁ TRỊ** đã sạch từ `sdk.authenticateRequest`
+     * (`redactServerOnlyUserFields`), và **KIỂU** trả về ở đây là `PublicUser` — nhét một ô bí mật
+     * trở lại là **lỗi biên dịch**, không phải một lượt review bỏ sót.
+     */
+    me: publicProcedure.query((opts): PublicUser | null =>
+      opts.ctx.user ? toPublicUser(opts.ctx.user) : null,
+    ),
     checkSetupRequired: publicProcedure.query(async () => {
       const existingAdmins = await db.getUsersByRole('admin');
       return {
