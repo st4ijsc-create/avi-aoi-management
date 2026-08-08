@@ -31,7 +31,7 @@ import {
 } from "./vramSharedLedger";
 import type { SharedLeaseRow } from "./vramSharedLedger";
 import {
-  __resetSharedLedgerStoreForTests, __setSharedLedgerGatewayForTests, syncSharedLedger,
+  __resetSharedLedgerStoreForTests, __setSharedLedgerGatewayForTests, syncSharedLedger, docCoCat,
 } from "./vramSharedLedgerStore";
 import type { SharedLedgerGateway } from "./vramSharedLedgerStore";
 import { __resetDecisionTickForTests, publishDecisionTick, __tickFieldsForTests } from "./vramTickCell";
@@ -349,5 +349,40 @@ describe("★★★ (B) MẶT NGƯỜI — nút phá huỷ KHÔNG gửi được
     expect(cucBo, "hộ cục bộ phải có mặt").toBeTruthy();
     expect(cucBo!.owner, "mặt LỆNH giữ danh tính NGUYÊN VẸN — chỉ bản CÔNG BỐ mới cắt").toBe(OWNER_QUA_TRAN);
     expect(cucBo!.identityTruncated, "…nên hộ cục bộ khai RỖNG").toEqual([]);
+  });
+});
+
+describe("★★★ (B) `docCoCat()` — BẢN DỊCH DUY NHẤT cột `jsonb` → lời khai BA GIÁ TRỊ", () => {
+  /**
+   * ⚠⚠⚠ **CA NÀY SINH RA TỪ MỘT ĐỘT BIẾN SỐNG SÓT (M2, Bước 7).** Đổi `return null` thành
+   * `return []` trong `docCoCat()` — tức ép vế *"KHÔNG BIẾT"* thành *"khai không cắt gì"*, đúng
+   * fail-open mà cả lượt này sinh ra để đóng — mà **TOÀN BỘ lưới vẫn XANH**. Vì mọi ca khác dùng
+   * một gateway GIẢ trả thẳng `SharedLeaseRow` nên **không ca nào đi qua hàm này**, còn bản drizzle
+   * thật thì `return null` ngay khi `process.env.VITEST`.
+   * ⇒ Đây đúng lớp *"lưới đi theo FILE, không theo ĐƯỜNG THOÁT"*: mắt xích DUY NHẤT giữa cột DB và
+   *   mọi người đọc **không ai canh**. Bốn ô dưới đây là phép canh ấy.
+   */
+  it("★★★ `null`/`undefined` ⇒ `null` (KHÔNG BIẾT) — TUYỆT ĐỐI không phải `[]`", () => {
+    expect(docCoCat(null), "cột NULL = người ghi CHƯA BIẾT cột này ⇒ không được khai hộ họ").toBeNull();
+    expect(docCoCat(undefined), "cột vắng mặt cũng là KHÔNG BIẾT").toBeNull();
+  });
+
+  it("★★★ mảng chuỗi ⇒ chính nó (`[]` = khai KHÔNG cắt · `[…]` = khai đúng ô)", () => {
+    expect(docCoCat([]), "`[]` là một LỜI KHẲNG ĐỊNH: đã kiểm, không cắt gì").toEqual([]);
+    expect(docCoCat(["owner"])).toEqual(["owner"]);
+    expect(docCoCat(["owner", "leaseKey"])).toEqual(["owner", "leaseKey"]);
+  });
+
+  it("★★★ giá trị LẠ ⇒ `null` (KHÔNG BIẾT), không phải `[]`", () => {
+    /** Cột là `jsonb` ⇒ một hàng do tay người sửa có thể mang bất cứ thứ gì. Không đọc nổi thì
+     *  câu trả lời đúng là *"không biết"*, chứ không phải *"tôi đã kiểm và nó sạch"*. */
+    for (const rac of [{ a: 1 }, [1, 2], "owner", 7, true, [null], ["ok", 3]]) {
+      expect(docCoCat(rac), `giá trị lạ ${JSON.stringify(rac)} phải cho KHÔNG BIẾT`).toBeNull();
+    }
+  });
+
+  it("★★ trả về BẢN ĐÔNG CỨNG — người đọc không sửa được lời khai của người ghi", () => {
+    const r = docCoCat(["owner"])!;
+    expect(Object.isFrozen(r)).toBe(true);
   });
 });

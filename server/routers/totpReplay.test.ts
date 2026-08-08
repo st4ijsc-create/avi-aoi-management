@@ -316,10 +316,10 @@ describe("★★★ Task 6 — một mã OTP tiêu được ĐÚNG MỘT LẦN",
   });
 
   it("★★★ KHÔNG BẮT NHẦM ĐƯỜNG — mã SAI vẫn hỏng vì SAI, và KHÔNG chiếm chỗ trong sổ", async () => {
-    const truoc = await __soTotpSize();
+    const truoc = await __soTotpSize([SUP_ID, SUP2_ID]);
     const e = await loiCua(khac(phienMoi()).deployKhac({ totpCode: "000000" }));
     expect(readAppErrorMeta(e)).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "twoFactorCode" } });
-    expect(await __soTotpSize(), "mã KHÔNG verify được thì KHÔNG được ghi vào sổ (nếu không, sổ thành bề mặt DoS)").toBe(truoc);
+    expect(await __soTotpSize([SUP_ID, SUP2_ID]), "mã KHÔNG verify được thì KHÔNG được ghi vào sổ (nếu không, sổ thành bề mặt DoS)").toBe(truoc);
   });
 });
 
@@ -330,20 +330,20 @@ describe("★★★ Task 6 — một mã OTP tiêu được ĐÚNG MỘT LẦN",
 describe("★★★ Task 6 — sổ mã đã tiêu TỰ DỌN", async () => {
   it("★★★ mục quá hạn bị xoá ở lượt ghi kế tiếp ⇒ số mục KHÔNG tăng theo thời gian", async () => {
     const t0 = Math.floor(Date.now() / 1000);
-    expect(await __soTotpSize()).toBe(0);
+    expect(await __soTotpSize([SUP_ID, SUP2_ID])).toBe(0);
     for (let i = 0; i < 5; i++) {
       const giay = t0 + i * 30;
       const kq = await verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: otpLuc(giay), nowMs: giay * 1000 });
       expect(kq.hopLe, `mã của nhịp ${i} phải verify được`).toBe(true);
     }
-    const dinh = await __soTotpSize();
+    const dinh = await __soTotpSize([SUP_ID, SUP2_ID]);
     expect(dinh, "5 mã liên tiếp ⇒ sổ phải có mục").toBeGreaterThan(0);
 
     // Nhảy qua HẠN của sổ rồi ghi thêm MỘT mục ⇒ mọi mục cũ phải biến mất.
     const sau = t0 + Math.ceil(TOTP_HAN_SO_MS / 1000) + 300;
     const kq = await verifyTotpOnce({ userId: SUP_ID, secret: SECRET_2FA, token: otpLuc(sau), nowMs: sau * 1000 });
     expect(kq.hopLe, "đối chứng dương: mã mới ở thời điểm mới vẫn phải QUA").toBe(true);
-    expect(await __soTotpSize(), `sổ phải tự dọn: còn ĐÚNG 1 mục (đỉnh trước đó ${dinh})`).toBe(1);
+    expect(await __soTotpSize([SUP_ID, SUP2_ID]), `sổ phải tự dọn: còn ĐÚNG 1 mục (đỉnh trước đó ${dinh})`).toBe(1);
   });
 
   it("★★★ ĐỐI CHỨNG — hết hạn KHÔNG có nghĩa là mở lại cửa cho mã cũ (mã cũ cũng hết hiệu lực)", async () => {

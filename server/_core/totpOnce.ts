@@ -345,12 +345,24 @@ export function dauLuotGoiMoi(): string {
   return randomUUID();
 }
 
-/** Chỉ dùng trong lưới — số mục đang nằm trong sổ (bằng chứng của phép tự dọn). */
-export async function __soTotpSize(): Promise<number> {
+/**
+ * Chỉ dùng trong lưới — số mục đang nằm trong sổ (bằng chứng của phép tự dọn).
+ *
+ * ⚠⚠⚠ **`userIds` LÀ BẮT BUỘC VỀ TINH THẦN, CÙNG LÝ DO VỚI `__resetSoTotpChoTest`.** Từ Pha 7 sổ là
+ * một **BẢNG DÙNG CHUNG** và vitest chạy **các file test SONG SONG**, nên một phép đếm **toàn bảng**
+ * đang đo cả hàng của **file khác**. Đo được ở Bước 7: `totpReplay` đòi *"còn ĐÚNG 1 mục"* và thấy
+ * **2** vì `totpLedgerDurable` đang chạy cùng lúc. ⇒ Người gọi phải khai người dùng của mình.
+ */
+export async function __soTotpSize(userIds?: readonly number[]): Promise<number> {
   const db = await layDb();
   if (db === null) return 0;
   const { totpConsumed } = await import("../../drizzle/schema/auth");
-  const rows = await db.select({ luot: totpConsumed.luot }).from(totpConsumed);
+  const { inArray } = await import("drizzle-orm");
+  const q = db.select({ luot: totpConsumed.luot }).from(totpConsumed);
+  const rows =
+    userIds === undefined || userIds.length === 0
+      ? await q
+      : await q.where(inArray(totpConsumed.userId, [...userIds]));
   return rows.length;
 }
 

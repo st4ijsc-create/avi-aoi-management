@@ -31,7 +31,16 @@ import { sql } from "drizzle-orm";
 /** Secret 2FA THẬT — đường verify chạy `speakeasy.totp.verify` nguyên bản trên nó. */
 const SECRET = "K52U24CYJRNTQSKMG47FKUSHKFKUQW2D";
 const SECRET_KHAC = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
-const NOW = 1_700_000_000_000;
+/**
+ * ⚠⚠⚠ **MỐC PHẢI BÁM THEO ĐỒNG HỒ THẬT — MỘT HẰNG 2023 LÀ MỘT FLAKE, ĐO ĐƯỢC Ở BƯỚC 7.**
+ * Sổ nay là một **BẢNG DÙNG CHUNG** và vitest chạy các file test **SONG SONG**. Phép tự dọn của
+ * `verifyTotpOnce` xoá **mọi** hàng `expiresAt <= now`, và các file khác gọi nó với `Date.now()`
+ * THẬT (2026) ⇒ chúng **quét sạch** hàng mang mốc 2023 của file này **giữa hai lời khẳng định**,
+ * và ca A2/A3 đỏ với một lý do **không liên quan gì** tới cái nó đang canh.
+ * ⇒ Lấy mốc **tương lai gần** so với đồng hồ thật: hàng của ta có `expiresAt` ở tương lai nên
+ *   không lượt dọn nào của ai chạm tới, còn mọi phép so trong file vẫn thuần tất định.
+ */
+const NOW = Date.now() + 3_600_000;
 const USER = 90_001;
 const USER_KHAC = 90_002;
 

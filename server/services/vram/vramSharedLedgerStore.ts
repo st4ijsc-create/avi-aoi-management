@@ -401,8 +401,15 @@ async function layGateway(): Promise<SharedLedgerGateway | null> {
  * cũng ra `null`** — không phải `[]`. Vì `[]` là một **LỜI KHẲNG ĐỊNH** (*"tôi đã kiểm, không cắt
  * gì"*), và ta không được nói câu ấy thay cho một hàng mà ta không đọc nổi.
  * ⚠ Đây là chỗ **DUY NHẤT** dịch cột này; đừng viết bản thứ hai ở người gọi.
+ *
+ * ⚠⚠⚠ **XUẤT RA CÓ LÝ DO ĐO ĐƯỢC, KHÔNG PHẢI ĐỂ TIỆN.** Đột biến **M2** của Bước 7 (đổi
+ * `return null` thành `return []` — ép vế *"KHÔNG BIẾT"* thành *"khai không cắt"*, đúng cái
+ * fail-open mà cả lượt này sinh ra để đóng) **SỐNG SÓT toàn bộ lưới**. Lý do: mọi ca dùng một
+ * gateway GIẢ trả thẳng `SharedLeaseRow` nên **không ca nào đi qua hàm này**, còn bản cài đặt
+ * drizzle thật thì `return null` ngay khi `process.env.VITEST`. ⇒ Vị từ này phải **gọi được từ
+ * lưới**, nếu không nó là một mắt xích **không ai canh** nằm giữa DB và mọi người đọc.
  */
-function docCoCat(v: unknown): readonly string[] | null {
+export function docCoCat(v: unknown): readonly string[] | null {
   if (v === null || v === undefined) return null;
   if (!Array.isArray(v)) return null;
   if (!v.every((x) => typeof x === "string")) return null;
