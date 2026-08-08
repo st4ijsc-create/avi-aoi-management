@@ -20,6 +20,32 @@ Gate nền: 151/22/1072/28/1282 = **2555**, 0 lỗi, 116 cảnh báo (đã khẳ
 `EdgeWorker` **không có khái niệm nhiều driver**: nó gom cả đội máy thành một `SimulatedDriver`
 (`EdgeWorker.cs:164`) chạy một `EdgePipeline`.
 
+### 🔴 1.1 Đính chính (2026-08-08, sau E-3) — hai điều mục này nói không đúng, và cả hai là lỗi của tôi
+
+**(a) "Tách lõi để tác nhân biên chạy được nó" — tác nhân biên KHÔNG chạy cái lõi.** `FleetCore`'s ctor đòi
+`SwitchableTransport` + `TransportCoordinator`, thứ lại đòi bốn transport không-null
+(`TransportCoordinator.cs:46`), trong khi `EdgeWorker.BuildLiveOrDemoTransport()` phân giải **một**
+`ITransport` (`EdgeWorker.cs:302`). Sau E-3, **không có bên gọi `FleetCore` nào trong `St4i.EdgeService`**, và
+sau khi lõi thành `internal` thì **không thể có**. Cái tác nhân biên chạy là `EdgeAgentPipelines`, một kiểu
+310 dòng viết riêng.
+
+**E-2 vẫn là bước mở đường, chỉ là vì một lý do khác lý do tôi viết:** thứ nó thật sự mua được là
+`ConnectorRegistry` + `ConnectorBinding` **với tới được từ EdgeCore**. Đó là một biện minh thật và đủ — nó
+chỉ không phải cái đã được ghi. *Để nguyên câu cũ thì người đọc sau mất một giờ đi tìm một bên gọi không thể
+tồn tại.*
+
+**(b) 🔴 Đợt này KHÔNG giao RS-485 cho tác nhân biên, và §6 chưa bao giờ có nhiệm vụ nào định giao.**
+Sau E-3, **`St4i.EdgeService` chạy Modbus TCP và không gì khác trên dây.** Một entry RTU bị **từ chối theo
+tên** vì `ModbusMultidropRegistration` với tới `RtuBusConfiguration.IsInBusNamespace` — nằm ở
+`St4i.EngineApi`, và EdgeService không tham chiếu được EngineApi (§1, `NU1605`). OPC-UA cũng bị từ chối, vì
+`OpcUaDriver` ghi chứng chỉ app-instance vào gốc toàn máy `%ProgramData%\ST4I\sim\opcua-pki` và phán quyết
+không-thêm-người-ghi cấm điều đó. **Cả hai từ chối đều được ghim bằng đột biến**, mỗi cái chết bởi một test
+khẳng định **lý do được nêu tên** — nên chúng ở lại như quyết định, không trôi thành tai nạn.
+
+**Đây là lỗi phân rã, không phải lỗi thực thi.** E-1 lập bản đồ, E-2 tách, E-3 dựng vòng đời, E-4 lo hiển thị
+và tài liệu. **Không nhiệm vụ đánh số nào từng định dời phần đăng ký RTU.** E-3 giao trọn phạm vi của nó rồi
+**đo khối lượng còn thiếu lần đầu tiên** (§11.6). Vì thế §6 có thêm **E-5**.
+
 **Và đường tắt đã có người thử và ghi lại là bất khả thi**: tham chiếu thẳng EdgeService →
 `St4i.EngineApi` cho `NU1605` package downgrade lúc restore, cộng bề mặt ASP.NET Core / cổng publish
 web-UI của EngineApi (`EdgeWorker.cs`, chú thích `ResolveGate`). **Tách lõi là bắt buộc.**
@@ -125,6 +151,33 @@ thay đổi thì bằng chứng cũ nói về một cây khác.
 
 **E-1 không di chuyển một dòng nào, và đó là điểm chính.** Đợt D dạy rằng thứ tốn kém nhất là một
 khẳng định về phạm vi được đưa ra mà chưa liệt kê.
+
+### 🔴 6.1 Bổ sung (2026-08-08, sau E-3) — **E-5**, và vì sao nó phải tồn tại
+
+| # | Nội dung |
+|---|---|
+| **E-5** | Dời phần đăng ký RTU xuống EdgeCore, để **RS-485 chạy được trong `St4i.EdgeService`** — tức là lý do §1 nêu ra cho cả đợt này. |
+
+**Bảng §6 gốc là một danh sách bốn nhiệm vụ không cái nào giao được thứ §1 nói đợt này tồn tại để giao.** Bốn
+nhiệm vụ ấy đều đúng và đều cần; chúng chỉ không cộng lại thành mục tiêu. Không ai phát hiện ra cho tới khi
+E-3 va vào bức tường và **đo** nó — đó là lần đầu khối lượng còn thiếu được nêu bằng con số chứ không bằng
+giả định.
+
+**Khối lượng, đã đo (§11.6):** `ModbusRtuBusPlan` 108 dòng và **là một nút lá**; `ModbusMultidropRegistration`
+344 dòng và **không phải nút lá** — nó với tới `RtuBusConfiguration.IsInBusNamespace`, một quy tắc mà chú
+thích của chính nó nói **phải tồn tại đúng một lần cho ba bên gọi**; `ConnectorConfigValidation` 254 dòng.
+Đó là hình dạng §9.6(a): *"cái lá" hoá ra không phải lá.*
+
+**Hai thứ E-5 phải mang theo, không được phát hiện lúc đang làm:**
+1. **Quy tắc khoá đăng ký sẽ hội tụ.** E-3 phải cho EdgeService khoá theo `entry.Id` vì khoá của EngineApi cho
+   một entry TCP là **`Kind`**, nên N entry Modbus **gộp lại thành một**. Hai quy tắc trong hai host là hình
+   dạng §7.1 của Đợt D ở tầng cấu hình — review E-3 phán đó là **ca chấp nhận được** (khác nhau vì một lý do
+   phát biểu được và kiểm được, mỗi cái có test riêng) và **chúng hội tụ miễn phí đúng lúc
+   `ModbusMultidropRegistration` xuống tới EdgeCore.** E-5 là lúc đó.
+2. **Quyết định về gốc dữ liệu theo host vẫn chưa ra**, và nó chặn cả OPC-UA lẫn bất cứ thứ gì muốn ghi vào
+   `%ProgramData%` từ hai tiến trình. `OpcUaConnectorFactory` **đã** nhận `pkiDir` làm tham số hàm dựng và
+   `OpcUaPkiPaths.ResolveRoot` **đã** đọc `ST4I_OPCUA_PKI_DIR` — nên đường thoát tồn tại sẵn; thứ thiếu là
+   một **quyết định**, không phải một cơ chế.
 
 ## 7. Phương pháp — mang nguyên §8.1 của blueprint Đợt D
 

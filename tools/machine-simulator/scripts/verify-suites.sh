@@ -1383,6 +1383,17 @@ testhost_cpu_seconds() {
 # ── Gate 1: the build. Nothing below is trustworthy until this passes. ───────────
 # Trap 1 and 4. Read the LOG, not the exit code: a locked file can leave a project
 # unrelinked while the overall invocation still reports success.
+# 🔴 TRAP 1, RESTATED AFTER SOMEONE RAN INTO IT FROM THE OTHER SIDE (E-3, Đợt E). The kill below is why
+# THIS SCRIPT IS NOT RE-ENTRANT: launch a second run while a first is still going and the second's cleanup
+# kills the first's live test host mid-suite. E-3 did exactly that and got
+# `St4i.Connector.Conformance.Tests: ABORTED (host crash)` — trap 1, self-inflicted, on a healthy tree.
+#
+# The half worth writing down is not the FAIL. It is what the implementer said about the other run:
+# **a PASS from a raced run is exactly as worthless as the FAIL.** Both runs were racing, so neither
+# number describes the tree. The instinct on seeing the red is to re-read the passing one and move on —
+# and that instinct is what turns a self-inflicted abort into a recorded fact about the code.
+#
+# One gate at a time. If two are running, discard both and start one.
 echo "[1/3] Killing stray test hosts, then rebuilding..."
 taskkill //F //IM testhost.exe //T >/dev/null 2>&1 || true
 taskkill //F //IM vstest.console.exe //T >/dev/null 2>&1 || true
