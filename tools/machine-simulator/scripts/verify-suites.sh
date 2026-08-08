@@ -798,7 +798,44 @@ EXPECT_CONFORMANCE=22
 # to St4i.EdgeCore.Config — changed no behaviour there: the first touched one word and no call site (FleetHost
 # is the only file outside St4i.EdgeCore that names the type), the second is a namespace move carried by three
 # added `using` lines. EXPECT_CONFORMANCE in particular stays 22: E-3 adds no driver and no connector kind.
-EXPECT_EDGECORE=1080
+#
+# 🔴 Task E-5 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §14) raises EXPECT_EDGECORE
+# 1080 -> 1082 (+2) and EXPECT_EDGESERVICE 46 -> 49 (+3). Grand total 2589 -> 2594. Per file:
+#
+#   +2  tests/St4i.EdgeCore.Tests/Config/ModbusMultidropAgentTests.cs   (NEW FILE) — the second half of the
+#       split E-3 set: "N instances run N drivers that actually reach the transport", for RTU. The headline
+#       one drives ONE RS-485 bus document through the fan-out E-5 moved here, then through
+#       EdgeAgentPipelines, over D-2's in-memory paired link (a real in-process NModbus slave network), and
+#       asserts three separate claims — three instances keyed {bus}:unit{n}; each machine's readings carry
+#       that DEVICE's own register value, read out of the canonical payload at the transport (attribution,
+#       which is the thing a shared wire gets wrong); and the link was opened EXACTLY ONCE for three
+#       drivers, counted at the opener rather than read off ModbusBusRegistry's own ledger (D-7c's rule:
+#       read the thing being protected). The second is the D-7a witness: the ghost sweep runs with BOTH log
+#       callbacks absent, which is the composition under which a mechanism computed inside a `?.` argument
+#       list silently stops existing. E-5 is what made those callbacks nullable, so E-5 owns that witness.
+#
+#   +3  tests/St4i.EdgeService.Tests/EdgeWorkerConnectorsTests.cs — 10 -> 13. The RTU refusal test E-3
+#       shipped (AnRtuBusEntry_IsRefusedByName_…) is REPLACED, not deleted and not left to go red: it pinned
+#       a DECISION, and E-5 reverses that decision in the open, so its successor
+#       (AnRtuBusEntry_FansOutIntoOneInstancePerDevice_EachClaimingItsOwnMachine) asserts the derived id SET
+#       plus each device's machine claim — a set, because a fan-out registering N instances under one id, or
+#       one instance for N machines, satisfies a count. That is +0. The three that move the number are: the
+#       auto-DE hardware limit now being logged where the operator plugging the adapter in will meet it
+#       (blueprint §9's limit is SILENT when violated, and this is the host on that machine); the
+#       no-bus-registry arm, which is why Build's parameter is optional at all; and the SEAM — that
+#       EdgeWorker hands a REAL ModbusBusRegistry to the dispatch, which nothing else asserts and whose
+#       mutation (pass null) leaves every other test in this task green while every RS-485 bus in production
+#       is silently skipped. That is E-3's own `connectors: null` finding, one layer down.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_ENGINEAPI are deliberately UNCHANGED, and EXPECT_ENGINEAPI
+# staying 1290 is evidence rather than convenience: E-5 moves ModbusMultidropRegistration and ModbusRtuBusPlan
+# OUT of St4i.EngineApi and moves RtuBusConfiguration.IsInBusNamespace to ModbusMultidropMap, and every test
+# of all three stayed where it was and kept passing — the E-3 precedent (ConnectorsConfigTests stayed put when
+# ConnectorsConfig moved down), and the same argument: a namespace move carried by added `using` lines plus,
+# here, one ILogger->callback signature change at the call sites. A behavioural change in EngineApi would show
+# up as a moved number. EXPECT_CONFORMANCE in particular stays 22: E-5 adds no driver and no connector kind —
+# ModbusRtuDriver has shipped since D-5 and its conformance wiring since D-6.
+EXPECT_EDGECORE=1082
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -842,7 +879,7 @@ EXPECT_EDGECORE=1080
 # same text. Those two files are the join: the new file proves the text is right, and these prove the two
 # surfaces that render it actually use it. A count that did not move is the evidence that the states were
 # already covered and only the assertion was empty.
-EXPECT_EDGESERVICE=46
+EXPECT_EDGESERVICE=49
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
 #     +24  NotificationEndpointsTests    (new file — the eleven notification routes)

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Config;
+using St4i.EdgeCore.Drivers.Modbus;
 using Xunit;
 
 namespace St4i.EdgeService.Tests;
@@ -284,20 +285,134 @@ public sealed class EdgeWorkerConnectorsTests
         Assert.Contains(log.Lines, l => l.Contains("opcua-pki", StringComparison.Ordinal));
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 TASK E-5 — RS-485. The refusal these three replace is named in each of them, deliberately: E-3's
+    // AnRtuBusEntry_IsRefusedByName_RatherThanSilentlyBuildingASecondFanOut pinned a DECISION, and a decision
+    // that is reversed has to be reversed in the open rather than by a test quietly going red and being
+    // "fixed". What it refused — a second fan-out written here — is still refused; what changed is that the
+    // ONE fan-out moved down to St4i.EdgeCore, so this host calls it instead of re-implementing it.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>One device element of a bus document, spelled here rather than shared with EngineApi's tests
+    /// on purpose: this file's subject is what THIS host does with the operator's file.</summary>
+    private static string RtuDeviceJson(string machineCode, int unitId) => $$"""
+        {"machineCode":"{{machineCode}}","unitId":{{unitId}},"pollIntervalMs":1000,"registers":[{"address":0,"type":"Holding","dataType":"UInt16","scale":1.0,"metric":"speed","unit":"rpm"}]}
+        """;
+
+    private static string RtuSerialBusEntry(string id, params string[] devices) => $$"""
+        [ { "id": "{{id}}", "kind": "Modbus", "settings": { "transport": "rtu-serial", "portName": "COM3",
+            "devices": [ {{string.Join(",", devices)}} ] } } ]
+        """;
+
+    /// <summary>
+    /// 🔴 <b>THE DELIVERABLE OF TASK E-5, AND OF ĐỢT E: an RS-485 bus declared in THIS host's
+    /// <c>connectors.json</c> becomes N connector instances, one per device, each claiming exactly one
+    /// machine.</b>
+    ///
+    /// <para>No hardware and no COM port is touched: <c>ModbusRtuConnectorFactory.TryCreate</c> performs no
+    /// I/O and the link is opened lazily inside the first transaction, so a bus whose adapter is absent
+    /// registers here and degrades honestly at poll time — the same property
+    /// <c>ModbusConnectorFactory</c> has for an unplugged TCP device, and the reason
+    /// <c>"COM3"</c> is a safe literal in a test on a machine that has no COM3.</para>
+    ///
+    /// <para>The assertion is the derived id SET, not a count: a fan-out that registered N instances under
+    /// one id, or one instance for N machines — blueprint §7.1's unsafe shape — satisfies a count and fails
+    /// this. The machine-code claims are asserted separately because the id set alone does not say which
+    /// device serves which machine.</para>
+    /// </summary>
     [Fact]
-    public void AnRtuBusEntry_IsRefusedByName_RatherThanSilentlyBuildingASecondFanOut()
+    public void AnRtuBusEntry_FansOutIntoOneInstancePerDevice_EachClaimingItsOwnMachine()
     {
-        var json = """
-            [
-              { "id": "line1", "kind": "Modbus", "settings": { "transport": "rtu-serial", "portName": "COM3", "devices": [] } }
-            ]
-            """;
+        var json = RtuSerialBusEntry(
+            "line1", RtuDeviceJson("EDGE-RS-A", 1), RtuDeviceJson("EDGE-RS-B", 2), RtuDeviceJson("EDGE-RS-C", 3));
         var log = new CapturingLogger<EdgeWorker>();
 
-        var registry = EdgeConnectors.Build(TempFile("connectors.json", json), log);
+        var registry = EdgeConnectors.Build(
+            TempFile("connectors.json", json), log, new ModbusBusRegistry());
 
-        Assert.Null(registry);
-        Assert.Contains(log.Lines, l => l.Contains("Modbus RTU transport", StringComparison.Ordinal));
+        Assert.NotNull(registry);
+        Assert.Equal(
+            new[] { "line1:unit1", "line1:unit2", "line1:unit3" },
+            registry!.RegisteredIds.Select(DriverKinds.Normalize).OrderBy(x => x, StringComparer.Ordinal).ToArray());
+
+        foreach (var (machine, instance) in new[]
+                 {
+                     ("EDGE-RS-A", "line1:unit1"), ("EDGE-RS-B", "line1:unit2"), ("EDGE-RS-C", "line1:unit3"),
+                 })
+        {
+            Assert.True(registry.TryGetInstanceIdForMachine(machine, out var id), $"{machine} claimed nothing");
+            Assert.Equal(instance, id);
+        }
+
+        // One entry, three devices — so the summary must count DEVICES. A line saying "1 connector instance"
+        // would be a true statement about entries and a false one about what is running.
+        Assert.Contains(log.Lines, l => l.Contains("3 connector instance(s) registered", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 🔴 <b>Blueprint §9's automatic-direction-control limit, said where the operator plugging the adapter
+    /// in will meet it — and this host is the one running on that machine.</b>
+    ///
+    /// <para>It is a WARNING and not information because the failure it describes is SILENT: an RS-485
+    /// adapter that needs its transmit-enable line toggled by software does not throw, it simply never
+    /// transmits, and that is indistinguishable at every layer above from a wiring fault or a wrong unit id.
+    /// EngineApi has said this since D-7c; until E-5 this host had no path that could.</para>
+    /// </summary>
+    [Fact]
+    public void ASerialBus_WarnsAboutTheAutomaticDirectionControlLimit_OnceForTheSegment()
+    {
+        var json = RtuSerialBusEntry("line1", RtuDeviceJson("EDGE-DE-A", 1), RtuDeviceJson("EDGE-DE-B", 2));
+        var log = new CapturingLogger<EdgeWorker>();
+
+        Assert.NotNull(EdgeConnectors.Build(TempFile("connectors.json", json), log, new ModbusBusRegistry()));
+
+        // Once per SEGMENT, not once per device — the limit is a property of the wire.
+        Assert.Single(log.Lines, l => l.Contains("automatic", StringComparison.OrdinalIgnoreCase)
+                                      && l.Contains("COM3", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A run composed without a bus registry offers no RTU transport at all, and says so by name rather than
+    /// dispatching into a path that cannot work. The same arm <c>ConnectorsJsonRegistration</c> has had since
+    /// D-7a, and the reason <c>Build</c>'s parameter is optional: the physical line's lifetime is the
+    /// process's, so the host owns the registry and this method never constructs one.
+    /// </summary>
+    [Fact]
+    public void AnRtuBusEntry_IsSkippedByName_WhenTheRunOffersNoRtuTransport()
+    {
+        var json = RtuSerialBusEntry("line1", RtuDeviceJson("EDGE-NOBUS", 1));
+        var log = new CapturingLogger<EdgeWorker>();
+
+        Assert.Null(EdgeConnectors.Build(TempFile("connectors.json", json), log));
+        Assert.Contains(log.Lines, l => l.Contains("composed without a Modbus bus registry", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 🔴 <b>The seam, and E-3's own lesson applied to E-5: nothing else asserts that
+    /// <see cref="EdgeWorker"/> hands a REAL bus registry to the dispatch.</b> A mutation passing
+    /// <see langword="null"/> there leaves every other test in this task green — the dispatch tests build
+    /// their own registry, and the EdgeCore tests never see <c>EdgeWorker</c> — while every RS-485 bus in
+    /// production is silently skipped. E-3 found exactly this shape with <c>connectors: null</c>.
+    ///
+    /// <para>The bus is a GATEWAY here, not a COM port: it points at a loopback port nothing is listening on,
+    /// so the drivers construct, the pipelines start, and the reads fail honestly. What is asserted is the
+    /// pipeline LABELS, which is the observable that says the registry reached the agent.</para>
+    /// </summary>
+    [Fact]
+    public async Task AnRtuBusInConnectorsJson_ActuallyBecomesNRunningPipelinesInsideEdgeWorker()
+    {
+        var json = $$"""
+            [ { "id": "line1", "kind": "Modbus", "settings": { "transport": "rtu-gateway",
+                "host": "127.0.0.1", "port": 1,
+                "devices": [ {{RtuDeviceJson("EDGE-GW-A", 1)}}, {{RtuDeviceJson("EDGE-GW-B", 2)}} ] } } ]
+            """;
+
+        var (_, log) = await RunSmoke(smoke: SmokeForFullCoverage, connectorsPath: TempFile("connectors.json", json));
+
+        var line = Assert.Single(log.Lines, l => l.StartsWith("EdgeWorker running ", StringComparison.Ordinal));
+        Assert.Contains("line1:unit1", line, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("line1:unit2", line, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("simulated", line, StringComparison.Ordinal);
     }
 
     [Fact]

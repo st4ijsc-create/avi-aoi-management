@@ -1,5 +1,6 @@
 using System.Text.Json;
 using St4i.Connector.Abstractions.Models;
+using St4i.EdgeCore.Drivers.Modbus;
 
 namespace St4i.EdgeCore.Config;
 
@@ -288,5 +289,28 @@ public static class ConnectorsConfig
         }
 
         return resolved;
+    }
+
+    /// <summary>
+    /// 🔴 Task E-5 — <b>whether this entry is an RS-485 BUS rather than a single connector.</b> One statement,
+    /// because after E-5 there are FOUR places that have to answer it identically and they sit in two
+    /// assemblies that cannot see each other's private helpers.
+    ///
+    /// <para>The four: <c>ConnectorsJsonRegistration.RegisterAll</c>'s dispatch and its
+    /// <c>RegistrationKeyOf</c> (St4i.EngineApi), and <c>EdgeConnectors.Build</c>'s dispatch and its
+    /// <c>RegistrationKeyOf</c> (St4i.EdgeService). Two of them decide WHICH CODE RUNS and two decide WHAT KEY
+    /// THE ENTRY OCCUPIES, and a drift between a host's own pair is the worst kind: an entry dispatched as a
+    /// bus while its de-duplication key says "one Modbus connector" collapses a second bus in the same file
+    /// into the first, silently.</para>
+    ///
+    /// <para><b>Why the predicate is "declares a transport" and not a sixth <see cref="DriverKinds"/> value</b>
+    /// is <see cref="ModbusRtuBusSettings.DeclaresATransport"/>'s own subject; this method exists only so the
+    /// four sites ask it through one name rather than re-spelling the conjunction.</para>
+    /// </summary>
+    public static bool IsRtuBus(ConnectorConfigEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        return entry.Kind == DriverKinds.Modbus && ModbusRtuBusSettings.DeclaresATransport(entry.SettingsJson);
     }
 }

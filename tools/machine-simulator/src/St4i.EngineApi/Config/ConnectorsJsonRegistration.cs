@@ -4,10 +4,16 @@ using St4i.Connector.Abstractions.Models;
 // 🔴 Task E-3 — ConnectorsConfig/ConnectorConfigEntry moved to St4i.EdgeCore.Config so BOTH hosts read
 // connectors.json through ONE parser and ONE precedence rule. St4i.EdgeService cannot reference
 // St4i.EngineApi (NU1605 + the ASP.NET publish surface), so the alternative was a second reader of the same
-// file — the config-layer twin of the two-readers-of-`--fleet` hazard blueprint §9.4(1) records. The DISPATCH
-// (this file) deliberately did NOT move: it needs ILogger, ConnectorConfigValidation, ModbusRtuBusPlan and
-// ModbusMultidropRegistration, and that last one pulls RtuBusConfiguration — i.e. it is not a leaf, exactly
-// the shape blueprint §9.6(a) names. See blueprint §11.
+// file — the config-layer twin of the two-readers-of-`--fleet` hazard blueprint §9.4(1) records.
+//
+// 🔴 Task E-5 — the DISPATCH (this file) still does not move, but its two RTU dependencies DID, and that is
+// what put RS-485 in the edge agent. E-3 recorded the blocker as "ModbusMultidropRegistration pulls
+// RtuBusConfiguration — i.e. it is not a leaf, exactly the shape blueprint §9.6(a) names". The whole of that
+// pull was ONE static predicate, IsInBusNamespace, which now lives on ModbusMultidropMap in St4i.EdgeCore
+// where every fact it reasons about is declared. ModbusMultidropRegistration is now St4i.EdgeCore.Config's
+// and ModbusRtuBusPlan is St4i.EdgeCore.Serial's; both hosts call the same fan-out and the same transport
+// switch. What keeps THIS file in St4i.EngineApi is the rest of its arm set: ConnectorConfigValidation (the
+// machine-code binding for a TCP entry), OpcUaOptions, and the ILogger this host composes with.
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Drivers.Modbus;
 using St4i.EdgeCore.Drivers.OpcUa;
@@ -90,7 +96,7 @@ public static class ConnectorsJsonRegistration
             // TCP/OPC-UA path below is byte-for-byte what it was, and the ONE thing that routes an entry here
             // is its settings declaring a transport (see ModbusRtuBusSettings for why an optional field rather
             // than a sixth DriverKinds value).
-            if (entry.Kind == DriverKinds.Modbus && ModbusRtuBusSettings.DeclaresATransport(entry.SettingsJson))
+            if (ConnectorsConfig.IsRtuBus(entry))
             {
                 registered += RegisterRtuBus(entry, registry, logger, modbusBusRegistry);
                 continue;
@@ -184,7 +190,11 @@ public static class ConnectorsJsonRegistration
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        return entry.Kind == DriverKinds.Modbus && ModbusRtuBusSettings.DeclaresATransport(entry.SettingsJson)
+        // 🔴 Task E-5 — the "is this a bus" half is ConnectorsConfig.IsRtuBus, shared with the dispatch above
+        // and with BOTH of St4i.EdgeService's own two sites, so a host's dispatch and its de-duplication key
+        // cannot disagree about what an entry is. The "then what key" half is what still differs between the
+        // two hosts, deliberately — see the remarks above and EdgeConnectors' own.
+        return ConnectorsConfig.IsRtuBus(entry)
             ? DriverKinds.Normalize(entry.Id.Trim())
             : entry.Kind;
     }
@@ -272,7 +282,13 @@ public static class ConnectorsJsonRegistration
                 logWarning: msg => logger.LogWarning("{ModbusRtuMsg}", msg),
                 logError: (ex, msg) => logger.LogError(ex, "{ModbusRtuMsg}", msg)),
             registry,
-            logger);
+            // 🔴 Task E-5 — the fan-out moved to St4i.EdgeCore, which takes no logging-framework dependency,
+            // so its two channels arrive as callbacks. This host's levels are preserved arm for arm except
+            // one: the fan-out's message-only "no factory could be built" is a warning now rather than an
+            // error. That branch is unreachable from here — the lambda above always constructs a factory —
+            // and the drift is stated at its own site.
+            logWarning: msg => logger.LogWarning("{ModbusMultidropMsg}", msg),
+            logError: (ex, msg) => logger.LogError(ex, "{ModbusMultidropMsg}", msg));
 
         // 🔴 Task D-7c — blueprint §9's hardware limit, said WHERE AN OPERATOR CONFIGURING A PORT WILL SEE IT
         // rather than only in a plan document nobody deploying this reads. It is a WARNING and not information

@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using St4i.Connector.Abstractions;
 using St4i.Connector.Abstractions.Models;
+using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Drivers.Modbus;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Mapping;
@@ -102,7 +103,7 @@ public sealed class ModbusMultidropRegistrationTests
 
         var registered = ModbusMultidropRegistration.RegisterAll(
             BusJson(DeviceJson(codeA, 1), DeviceJson(codeB, 2), DeviceJson(codeC, 3)),
-            BusId, factory, registry, NullTestLogger.Instance);
+            BusId, factory, registry);
 
         Assert.Equal(3, registered);
         Assert.Equal(3, registry.RegisteredIds.Count);
@@ -182,7 +183,7 @@ public sealed class ModbusMultidropRegistrationTests
 
         Assert.Equal(2, ModbusMultidropRegistration.RegisterAll(
             BusJson(DeviceJson(codeA, 1), DeviceJson(codeB, 2)),
-            BusId, factory, registry, NullTestLogger.Instance));
+            BusId, factory, registry));
 
         // Force the registry to hand each stored config back to the factory, which is the only way this layer
         // ever sees it.
@@ -222,7 +223,7 @@ public sealed class ModbusMultidropRegistrationTests
 
         Assert.Equal(4, ModbusMultidropRegistration.RegisterAll(
             BusJson(codes.Select((c, i) => DeviceJson(c, i + 1)).ToArray()),
-            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+            BusId, new MapReadingFakeFactory(), registry));
 
         var bindings = registry.SnapshotBindings();
 
@@ -261,11 +262,11 @@ public sealed class ModbusMultidropRegistrationTests
         var log = new CapturingLogger();
 
         Assert.Equal(1, ModbusMultidropRegistration.RegisterAll(
-            DeviceJson(shared, 5), "bus-one", new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+            DeviceJson(shared, 5), "bus-one", new MapReadingFakeFactory(), registry));
 
         var registered = ModbusMultidropRegistration.RegisterAll(
             BusJson(DeviceJson("D4-FINE-A", 1), DeviceJson(shared, 2), DeviceJson("D4-FINE-B", 3)),
-            "bus-two", new MapReadingFakeFactory(), registry, log);
+            "bus-two", new MapReadingFakeFactory(), registry, log.Warn, log.Error);
 
         // Two of three: the contested device is dropped, its bus-mates are not.
         Assert.Equal(2, registered);
@@ -302,7 +303,7 @@ public sealed class ModbusMultidropRegistrationTests
 
         var registered = ModbusMultidropRegistration.RegisterAll(
             BusJson(DeviceJson("D4-BAD-A", 1), DeviceJson("D4-BAD-B", 1)),   // duplicate slave address
-            BusId, new MapReadingFakeFactory(), registry, log);
+            BusId, new MapReadingFakeFactory(), registry, log.Warn, log.Error);
 
         Assert.Equal(0, registered);
         Assert.Empty(registry.RegisteredIds);
@@ -321,8 +322,7 @@ public sealed class ModbusMultidropRegistrationTests
         var registry = new ConnectorRegistry();
 
         Assert.Equal(1, ModbusMultidropRegistration.RegisterAll(
-            DeviceJson("D4-LEGACY", 3), DriverKinds.Modbus, new MapReadingFakeFactory(), registry,
-            NullTestLogger.Instance));
+            DeviceJson("D4-LEGACY", 3), DriverKinds.Modbus, new MapReadingFakeFactory(), registry));
 
         Assert.Equal(new[] { DriverKinds.Modbus }, registry.RegisteredIds);
         Assert.True(registry.TryGetInstanceIdForMachine("D4-LEGACY", out var instanceId));
@@ -355,7 +355,7 @@ public sealed class ModbusMultidropRegistrationTests
 
         Assert.Equal(3, ModbusMultidropRegistration.RegisterAll(
             BusJson(DeviceJson("D7-GHOST-A", 1), DeviceJson("D7-GHOST-B", 2), DeviceJson("D7-GHOST-C", 3)),
-            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+            BusId, new MapReadingFakeFactory(), registry));
 
         Assert.Equal(3, registry.RegisteredIds.Count);
         Assert.True(registry.TryGetInstanceIdForMachine("D7-GHOST-B", out _));
@@ -363,7 +363,7 @@ public sealed class ModbusMultidropRegistrationTests
         // The operator edits their file: unit 2 is gone. Same bus, same id, one fewer device.
         Assert.Equal(2, ModbusMultidropRegistration.RegisterAll(
             BusJson(DeviceJson("D7-GHOST-A", 1), DeviceJson("D7-GHOST-C", 3)),
-            BusId, new MapReadingFakeFactory(), registry, log));
+            BusId, new MapReadingFakeFactory(), registry, log.Warn, log.Error));
 
         // The entry is gone, not merely stale.
         Assert.Equal(2, registry.RegisteredIds.Count);
@@ -399,11 +399,11 @@ public sealed class ModbusMultidropRegistrationTests
 
         Assert.Equal(2, ModbusMultidropRegistration.RegisterAll(
             BusJson(DeviceJson("D7-MOVE-A", 1), DeviceJson("D7-MOVE-B", 2)),
-            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+            BusId, new MapReadingFakeFactory(), registry));
 
         Assert.Equal(2, ModbusMultidropRegistration.RegisterAll(
             BusJson(DeviceJson("D7-MOVE-A", 1), DeviceJson("D7-MOVE-B", 4)),
-            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+            BusId, new MapReadingFakeFactory(), registry));
 
         Assert.Equal(2, registry.RegisteredIds.Count);
         Assert.True(registry.TryGetInstanceIdForMachine("D7-MOVE-B", out var whereIsB));
@@ -433,7 +433,7 @@ public sealed class ModbusMultidropRegistrationTests
 
         var registered = ModbusMultidropRegistration.RegisterAll(
             BusJson(DeviceJson("D7-M5-A", 1), DeviceJson("D7-M5-C", 3)),
-            BusId, new MapReadingFakeFactory(), registry, log);
+            BusId, new MapReadingFakeFactory(), registry, log.Warn, log.Error);
 
         // One device registered, one refused — and the refusal is COUNTED as a refusal, which is the half D-4's
         // review found broken ("RegisterAll still counts it as registered").
@@ -458,11 +458,11 @@ public sealed class ModbusMultidropRegistrationTests
 
         Assert.Equal(2, ModbusMultidropRegistration.RegisterAll(
             BusJson(DeviceJson("D7-SAME-A", 1), DeviceJson("D7-SAME-B", 2)),
-            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+            BusId, new MapReadingFakeFactory(), registry));
 
         Assert.Equal(2, ModbusMultidropRegistration.RegisterAll(
             BusJson(DeviceJson("D7-SAME-A", 1), DeviceJson("D7-SAME-B", 2)),
-            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+            BusId, new MapReadingFakeFactory(), registry));
 
         Assert.Equal(2, registry.RegisteredIds.Count);
     }
@@ -486,8 +486,7 @@ public sealed class ModbusMultidropRegistrationTests
                 DeviceJsonWithTimeout("D7-BUDGET-C", 3, readTimeoutMs: 900)),
             BusId,
             budget => { budgets.Add(budget); return new MapReadingFakeFactory(); },
-            registry,
-            NullTestLogger.Instance);
+            registry);
 
         Assert.Equal(3, registered);
         Assert.Equal(new long[] { 12_000 }, budgets);
@@ -505,8 +504,7 @@ public sealed class ModbusMultidropRegistrationTests
             BusJson(DeviceJson("D7-NOFACTORY-A", 1), DeviceJson("D7-NOFACTORY-B", 1)),  // duplicate slave address
             BusId,
             _ => { built++; return new MapReadingFakeFactory(); },
-            registry,
-            NullTestLogger.Instance);
+            registry);
 
         Assert.Equal(0, registered);
         Assert.Equal(0, built);
@@ -524,12 +522,12 @@ public sealed class ModbusMultidropRegistrationTests
 
         Assert.Equal(2, ModbusMultidropRegistration.RegisterAll(
             BusJson(DeviceJson("D7-SWEEP-A", 1), DeviceJson("D7-SWEEP-B", 2)),
-            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+            BusId, new MapReadingFakeFactory(), registry));
 
         // A second bus whose id SHARES A PREFIX with the first — the greedy-prefix trap, spelled out.
         Assert.Equal(1, ModbusMultidropRegistration.RegisterAll(
             BusJson(DeviceJson("D7-SWEEP-OTHER", 1)),
-            BusId + "-annexe", new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+            BusId + "-annexe", new MapReadingFakeFactory(), registry));
 
         Assert.True(registry.Register(
             new MapReadingFakeFactory(), DeviceJson("D7-SWEEP-PLAIN", 1),
@@ -538,7 +536,7 @@ public sealed class ModbusMultidropRegistrationTests
         // Now shrink the FIRST bus to nothing but its unit 1.
         Assert.Equal(1, ModbusMultidropRegistration.RegisterAll(
             BusJson(DeviceJson("D7-SWEEP-A", 1)),
-            BusId, new MapReadingFakeFactory(), registry, NullTestLogger.Instance));
+            BusId, new MapReadingFakeFactory(), registry));
 
         Assert.Equal(3, registry.RegisteredIds.Count);
         Assert.Contains(ModbusMultidropMap.DeviceInstanceId(BusId, 1), registry.RegisteredIds);
@@ -650,13 +648,27 @@ public sealed class ModbusMultidropRegistrationTests
     }
 
     /// <summary>Collects formatted log messages so a test can assert on what an operator is actually told —
-    /// used only where the MESSAGE is the deliverable (naming the incumbent that holds a contested
-    /// machine).</summary>
+    /// used only where the MESSAGE is the deliverable (naming the incumbent that holds a contested machine).
+    ///
+    /// <para>🔴 Task E-5 — <see cref="ModbusMultidropRegistration"/> moved to <c>St4i.EdgeCore</c>, which takes
+    /// no logging-framework dependency, so it now takes the <c>Action</c> pair EdgeCore uses everywhere.
+    /// <see cref="Warn"/>/<see cref="Error"/> below are that pair, funnelled into the SAME list this class
+    /// already collected, so every existing message assertion keeps asserting on the same strings. The
+    /// <see cref="ILogger"/> implementation stays because this file's OTHER subjects still take one.</para>
+    ///
+    /// <para>The tests that do not care about the message now pass NOTHING at all rather than a null logger,
+    /// and that is stronger than it looks: both callbacks are optional, so those runs exercise the
+    /// nobody-is-watching composition — the one under which D-7a's mechanism-inside-a-log-argument defect
+    /// exists — instead of a composition where a logger is always present.</para></summary>
     private sealed class CapturingLogger : ILogger
     {
         private readonly List<string> _messages = new();
 
         public IReadOnlyList<string> Messages { get { lock (_messages) { return _messages.ToList(); } } }
+
+        public Action<string> Warn => msg => { lock (_messages) { _messages.Add(msg); } };
+
+        public Action<Exception, string> Error => (ex, msg) => { lock (_messages) { _messages.Add(msg); } };
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
@@ -671,21 +683,5 @@ public sealed class ModbusMultidropRegistrationTests
                 _messages.Add(formatter(state, exception));
             }
         }
-    }
-
-    /// <summary>A logger that discards everything — for the tests whose deliverable is the registry's state,
-    /// not the message.</summary>
-    private sealed class NullTestLogger : ILogger
-    {
-        public static readonly NullTestLogger Instance = new();
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => false;
-
-        public void Log<TState>(
-            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter)
-        { }
     }
 }

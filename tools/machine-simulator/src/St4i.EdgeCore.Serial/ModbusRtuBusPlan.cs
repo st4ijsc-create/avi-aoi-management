@@ -1,14 +1,21 @@
-using St4i.EdgeCore.Drivers.Modbus;
-
-namespace St4i.EngineApi.Config;
+namespace St4i.EdgeCore.Drivers.Modbus;
 
 /// <summary>
 /// 🔴 Task D-7b (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-7b-brief.md) — <b>one RTU bus
 /// document, resolved into the two things every caller of it needs: the TRANSPORT to open, and the LINE
 /// IDENTITY to show an operator.</b>
 ///
+/// <para>🔴 <b>Task E-5 moved this type from <c>St4i.EngineApi.Config</c> to <c>St4i.EdgeCore.Serial</c>
+/// (namespace <c>St4i.EdgeCore.Drivers.Modbus</c>, beside <see cref="ModbusRtuSerialBusSettings"/>), so
+/// <c>St4i.EdgeService</c> — the host that owns the machine with the RS-485 port — can resolve a bus document
+/// too. It is a genuine leaf: the two arms below are the only reason it cannot live in <c>St4i.EdgeCore</c>
+/// itself (the serial arm names <see cref="ModbusRtuSerialBusSettings"/>, which cannot compile there — see
+/// <c>ConnectorsJsonRegistration.RegisterRtuBus</c>'s own remarks on the circular reference), and this
+/// assembly is the one place that can see both transports. No behaviour changed: the file is byte-identical
+/// below the namespace line.</b></para>
+///
 /// <para><b>Why this type exists, stated as the defect it prevents.</b> Before D-7b there was exactly one
-/// consumer of an RTU document — <see cref="ConnectorsJsonRegistration"/>'s own <c>RegisterRtuBus</c> — and
+/// consumer of an RTU document — <c>ConnectorsJsonRegistration</c>'s own <c>RegisterRtuBus</c> — and
 /// its transport switch was written inline. D-7b adds three more: <c>POST /v1/connectors</c>, the
 /// <c>GET /v1/connectors/configured</c> visibility seeder, and the startup path that re-registers a bus from
 /// persisted rows. Four copies of a two-arm switch is four chances for one of them to answer

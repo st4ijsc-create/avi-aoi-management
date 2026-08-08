@@ -120,11 +120,20 @@ public sealed class RtuBusRegistrationTests
     }
 
     /// <summary>
-    /// The namespace rule <see cref="RtuBusConfiguration.TryFindBlockedDevice"/> exempts,
+    /// 🔴 <b>Task E-5 moved the predicate to <see cref="ModbusMultidropMap.IsInBusNamespace"/></b> — off
+    /// <c>RtuBusConfiguration</c> (St4i.EngineApi) and onto the St4i.EdgeCore type that declares every fact it
+    /// reasons about. That one reference was the whole of what made the multidrop fan-out un-moveable, and
+    /// therefore the whole of what kept RS-485 out of <c>St4i.EdgeService</c>. This theory is deliberately
+    /// left HERE rather than moved with it: the three callers it guards are still two of
+    /// <c>RtuBusConfiguration</c>'s and one of the fan-out's, and this file is where the endpoint path that
+    /// uses two of them is tested. It is also the E-3 precedent — <c>ConnectorsConfigTests</c> stayed put when
+    /// <c>ConnectorsConfig</c> moved down.
+    ///
+    /// <para>The namespace rule <see cref="RtuBusConfiguration.TryFindBlockedDevice"/> exempts,
     /// <see cref="RtuBusConfiguration.ReleaseOwnNamespace"/> removes and
     /// <c>ModbusMultidropRegistration.SweepGhosts</c> sweeps — stated as a table so those three cannot drift
     /// apart silently. The FALSE rows are the load-bearing ones: a rule answering <see langword="true"/> for
-    /// any of them lets one bus delete a neighbour's registration.
+    /// any of them lets one bus delete a neighbour's registration.</para>
     ///
     /// <para>🔴 <b>Fix round 2, review N-2 — the two <c>:unitA:unit3</c> rows are the ones this theory was
     /// missing, and their absence is why it could be named <c>…AndNothingElse</c> while being false.</b>
@@ -150,7 +159,7 @@ public sealed class RtuBusRegistrationTests
     // prefix check.
     [InlineData("abcde", "xyzab:unit3", false)]
     public void TheBusNamespaceRule_CoversItsOwnDerivedIdsAndNothingElse(string bus, string candidate, bool expected)
-        => Assert.Equal(expected, RtuBusConfiguration.IsInBusNamespace(bus, candidate));
+        => Assert.Equal(expected, ModbusMultidropMap.IsInBusNamespace(bus, candidate));
 
     /// <summary>
     /// 🔴 <b>Fix round 4 (branch review) — the bus-save refusal names the incumbent and states the

@@ -239,11 +239,13 @@ dotnet run --project src/St4i.EdgeService
 dotnet run --project src/St4i.EdgeService -- --fleet fleet.json --smoke 20
 ```
 
-> 🔴 **Since Đợt E (E-3/E-4) this host also HOSTS CONNECTORS — Modbus TCP, and only Modbus TCP on the
-> wire.** It reads its own `connectors.json` and runs one driver and one pipeline per entry alongside the
-> simulated group. An RTU entry and an OPC-UA entry are each **refused by name**, both are pinned decisions
-> rather than gaps, RS-485 at the edge is **E-5**, and a machine this host drives is **read-only from
-> `St4i.EngineApi`**. **§24 is the whole statement** — read it before wiring this host to a real device.
+> 🔴 **Since Đợt E this host also HOSTS CONNECTORS — Modbus TCP and, since E-5, Modbus RTU on the wire.**
+> It reads its own `connectors.json` and runs one driver and one pipeline per entry alongside the simulated
+> group; one RTU **bus** entry becomes N instances, one per device on the line. An OPC-UA entry is still
+> **refused by name** — a pinned decision, not a gap, waiting on the per-host data-root question. A machine
+> this host drives is **read-only from `St4i.EngineApi`**, and a COM port this host holds is a port
+> `St4i.EngineApi` cannot open. **§24 is the whole statement** — read it before wiring this host to a real
+> device.
 
 - `--fleet <path>` — load the roster from a `fleet.json`-shaped file via `FleetConfig.Load`. A file that
   parses successfully (with entries, or validly empty — an operator's explicit empty declaration) is
@@ -3890,6 +3892,13 @@ KHÔNG PHẢI cảnh báo** — và luôn thu gọn; widget chỉ tự mở khi 
   > there because this bullet is filed under "honest limitations", not under "connectors", and a reader
   > checking what this product can drive lands here — a claim only corrected where it is *filed* is a claim
   > still shipping wherever it was *repeated*.
+  >
+  > 🔴 **AND A THIRD TIME (Đợt E, E-5) — the CONFIGURATION half has now changed too.** `St4i.EdgeService`
+  > has its own configured path from an `rtu-serial` entry in its `connectors.json` to a COM port, so **two
+  > of the three hosts** can be configured onto a real RS-485 line and the question "which process holds
+  > COM3" now has a real answer (§24.3). **The first half is STILL the part that survives: no Modbus frame
+  > has yet crossed a real serial port** — E-5 made the port reachable by configuration and did not touch
+  > that. Every RTU test in this repository runs on D-2's in-memory paired link or a loopback socket.
 - **Re-saving an existing connector's settings while the fleet runs does not apply live; a fresh add
   does.** See §20.2's own explanation — `FleetHost.RegisterMachine` only ever adds, never updates an
   already-running slot in place.
@@ -3934,7 +3943,7 @@ S7, EtherNet/IP, SECS/GEM chưa có driver. 🔴 **ĐÍNH CHÍNH (Đợt D, D-7b
 đây xếp cả **Serial/RS-485** vào nhóm "chưa có driver". Điều đó SAI: `ModbusRtuDriver` đã ship, trên cả hai
 đường truyền (`rtu-gateway` và cổng COM cắm thẳng `rtu-serial`), và `St4i.EngineApi` có đăng ký nó — xem
 §23. Phần VẪN ĐÚNG và đáng giữ: **chưa có khung Modbus nào đi qua một cổng serial thật** (§23.5), và **chỉ
-`St4i.EngineApi` mở được cổng đó** (§23.6). "Đã có driver nhưng còn thiếu bước nghiệm thu trên bàn" là một
+`St4i.EngineApi` mở được cổng đó** (§23.6 — cả hai vế sau đều đã được đính chính, xem ngay dưới). "Đã có driver nhưng còn thiếu bước nghiệm thu trên bàn" là một
 câu khác hẳn "chưa có driver", và cách xử lý cũng khác. 🔴 **ĐÍNH CHÍNH LẦN HAI (Đợt E, E-4) — chính nửa
 "phần VẪN ĐÚNG" ấy lại không đúng.** "Chỉ `St4i.EngineApi` mở được cổng đó" là một khẳng định về **CẤU
 HÌNH**, không phải về khả năng: lệnh mở cổng serial là `public` trên một project cả ba host đều tham chiếu,
@@ -3942,7 +3951,13 @@ và `St4i.EdgeService` thực sự mở một cổng trong `EdgeServiceSerialRea
 — **chưa có khung Modbus nào đi qua một cổng serial thật**. Xem khối đính chính của §23.6 và §24.5. Ghi cả ở
 đây lẫn ở đó vì dòng này xếp dưới "giới hạn trung thực" chứ không phải dưới "connector", và người đọc đi tìm
 "sản phẩm này điều khiển được gì" sẽ rơi vào đây — một khẳng định chỉ được sửa ở nơi nó được *xếp vào* là một
-khẳng định vẫn đang phát hành ở mọi nơi nó được *nhắc lại*. **Lưu lại cấu hình một connector ĐÃ CÓ trong
+khẳng định vẫn đang phát hành ở mọi nơi nó được *nhắc lại*. 🔴 **VÀ LẦN THỨ BA (Đợt E, E-5) — nửa CẤU HÌNH
+giờ cũng đã đổi:** `St4i.EdgeService` có đường đã cấu hình của riêng nó từ một entry `rtu-serial` trong
+`connectors.json` tới một cổng COM, nên **hai trong ba host** cấu hình được lên một đường RS-485 thật, và câu
+hỏi "tiến trình nào đang giữ COM3" giờ mới có câu trả lời thật (§24.3). **Nửa đầu VẪN là phần sống sót: chưa
+có khung Modbus nào đi qua một cổng serial thật** — E-5 làm cổng ấy với tới được bằng cấu hình chứ không chạm
+vào sự thật đó; mọi test RTU trong kho mã này chạy trên giàn in-memory của D-2 hoặc trên một socket loopback.
+**Lưu lại cấu hình một connector ĐÃ CÓ trong
 khi đội hình đang chạy KHÔNG áp dụng sống; thêm máy MỚI thì có** — xem §20.2. **Sửa một connector đòi
 dán/tải JSON map; CHƯA có bộ dựng trực quan** — ô nhập duy nhất của `/connectors` là một `<textarea>`
 thường. **Phát UNS/Sparkplug hướng lên KHÔNG có bộ lọc nguồn gốc.** Khác với các mặt
@@ -4776,6 +4791,8 @@ at a badge, because "backed off" and "not answering" have different remedies.
 
 `St4i.EngineApi`, `St4i.EdgeService` and `St4iMachineSimulator` all `ProjectReference`
 `St4i.EdgeCore.Serial` and all ship `System.IO.Ports.dll`. **Only `St4i.EngineApi` can open a COM port.**
+> *(🔴 That sentence is corrected twice below — it was never true as a capability claim, and since E-5 it is
+> not true as a configuration claim either. §24.3/§24.5 carry the current statement.)*
 
 The other two have no connector-hosting layer at all: `ConnectorRegistry`, `ConnectorsConfig` and
 `ConnectorsJsonRegistration` are EngineApi-only and are **not even reachable** from those projects (neither
@@ -4803,14 +4820,18 @@ engine that can) and it must not be flattened.
 >   which gives `CS0122` from that same assembly — §24.1), and
 >   `EdgeServiceSerialReachabilityTests` actually performs the open from that host's own reference graph and
 >   is refused by the **operating system**, not by the compiler. The TRUE statement is about
->   **configuration**: only `St4i.EngineApi` has a configured path from `connectors.json` to a serial open.
+>   **configuration**: only `St4i.EngineApi` had a configured path from `connectors.json` to a serial open —
+>   🔴 **and since E-5 so does `St4i.EdgeService`; two of the three hosts do, and only the WPF shell does
+>   not (§24.3/§24.5).**
 >   That distinction is not pedantic — §2's protection for a directly-attached port IS the OS refusing a
 >   second open, and a reader who believes this host *cannot* open a port will never ask which process holds
 >   COM3.
 > - **"`ConnectorRegistry`, `ConnectorsConfig` … not even reachable"** — false since E-2/E-3. Both moved
 >   DOWN to `St4i.EdgeCore`, which all three hosts already reference, so the test "does its csproj reference
 >   `St4i.EngineApi`?" no longer answers the question it was standing in for. Only
->   `ConnectorsJsonRegistration` (the dispatch) is still EngineApi-only, and §24.2 says why.
+>   `ConnectorsJsonRegistration` (the dispatch) is still EngineApi-only, and §24.2 says why. 🔴 **E-5
+>   narrowed that further: `ModbusMultidropRegistration` and `ModbusRtuBusPlan` moved down too, so what is
+>   still EngineApi-only is the dispatch's TCP/OPC-UA arms and their `ConnectorConfigValidation` binding.**
 > - **"`EdgeWorker` collapses the whole fleet into one `SimulatedDriver` driving one pipeline"** — false
 >   since E-3. It runs **N** drivers on **N** pipelines from `connectors.json` (§24.2).
 > - **"What stands in the way is `FleetHost`'s 2 406-line N-driver lifecycle core, which all three hosts
@@ -4894,6 +4915,8 @@ con số đó khi điều này xảy ra.
 **23.6 — 🔴 Ba host KHÔNG ngang hàng nhau ở thời điểm này; đừng suy ra sự ngang hàng từ ba dòng csproj
 giống nhau.** `St4i.EngineApi`, `St4i.EdgeService` và `St4iMachineSimulator` đều `ProjectReference`
 `St4i.EdgeCore.Serial` và đều mang theo `System.IO.Ports.dll`. **Chỉ `St4i.EngineApi` mở được cổng COM.**
+*(🔴 Câu ấy được đính chính hai lần ở dưới — chưa bao giờ đúng nếu hiểu là KHẢ NĂNG, và kể từ E-5 thì cũng
+không còn đúng nếu hiểu là CẤU HÌNH nữa. §24.3/§24.5 mang phát biểu hiện hành.)*
 Hai host còn lại không có lớp chứa connector nào cả: `ConnectorRegistry`, `ConnectorsConfig`,
 `ConnectorsJsonRegistration` chỉ có trong EngineApi và **thậm chí không với tới được** từ hai project kia
 (không csproj nào tham chiếu `St4i.EngineApi`), còn `EdgeWorker` gộp cả đội hình vào **một**
@@ -4917,12 +4940,15 @@ một file probe biên dịch thẳng vào assembly sản phẩm `St4i.EdgeServi
 `FleetCore` cho `CS0122` từ chính assembly đó — §24.1), và `EdgeServiceSerialReachabilityTests` thực sự mở
 cổng từ đồ thị tham chiếu của host ấy và bị **hệ điều hành** từ chối, không phải trình biên dịch. Câu ĐÚNG
 nói về **CẤU HÌNH**: chỉ `St4i.EngineApi` có một đường đã cấu hình từ `connectors.json` tới một lệnh mở cổng
-serial. Phân biệt này không phải bắt bẻ chữ nghĩa — bảo vệ duy nhất cho một cổng cắm thẳng (§2) CHÍNH LÀ việc
+serial — 🔴 **và kể từ E-5 thì `St4i.EdgeService` cũng có; HAI trong ba host có, chỉ vỏ WPF là không
+(§24.3/§24.5).** Phân biệt này không phải bắt bẻ chữ nghĩa — bảo vệ duy nhất cho một cổng cắm thẳng (§2) CHÍNH LÀ việc
 hệ điều hành từ chối lần mở thứ hai, và người đọc tin rằng host này "không thể" mở cổng sẽ không bao giờ hỏi
 tiến trình nào đang giữ COM3. (b) **"`ConnectorRegistry`, `ConnectorsConfig` … không với tới được"** — sai kể
 từ E-2/E-3: cả hai đã dời XUỐNG `St4i.EdgeCore`, thứ cả ba host vốn đã tham chiếu, nên phép thử "csproj có
 tham chiếu `St4i.EngineApi` không?" không còn trả lời được câu hỏi nó đứng thay. Chỉ còn
-`ConnectorsJsonRegistration` (phần dispatch) là của riêng EngineApi — §24.2 nói vì sao. (c) **"`EdgeWorker`
+`ConnectorsJsonRegistration` (phần dispatch) là của riêng EngineApi — §24.2 nói vì sao. 🔴 **E-5 thu hẹp
+thêm: `ModbusMultidropRegistration` và `ModbusRtuBusPlan` cũng đã dời xuống, nên thứ còn của riêng EngineApi
+là hai nhánh TCP/OPC-UA của phần dispatch cùng phép ràng buộc `ConnectorConfigValidation` của chúng.** (c) **"`EdgeWorker`
 gộp cả đội hình vào một `SimulatedDriver` chạy một pipeline"** — sai kể từ E-3: nó chạy **N** driver trên
 **N** pipeline từ `connectors.json` (§24.2). (d) **"Thứ cản đường là lõi vòng đời N-driver 2 406 dòng của
 `FleetHost`, thứ cả ba host sẽ phải dùng chung"** — sai, và đó chính là giả định nền của cả đợt cho tới khi
@@ -4931,13 +4957,14 @@ E-3 đo nó: tác nhân biên **không** dùng cái lõi ấy và về cấu tr�
 
 ---
 
-## 24. Đợt E (E-1…E-4) — the fleet core moved, and the edge agent can host connectors / Lõi đội hình đã tách, và tác nhân biên chủ trì được connector
+## 24. Đợt E (E-1…E-5) — the fleet core moved, and RS-485 runs at the edge / Lõi đội hình đã tách, và RS-485 chạy ở tác nhân biên
 
 **EN** — Đợt D left one sentence standing: `St4i.EdgeService` runs on the machine with the RS-485 port and
-could not host a connector at all. Đợt E moved the N-driver lifecycle core out of `St4i.EngineApi` and gave
-the edge agent a connector-hosting layer of its own. This section says what that host can now do, **what it
-still cannot**, and which of the two the difference is a decision rather than a gap. Read §24.4 before
-pointing an operator at a write button on a machine an edge agent drives.
+could not host a connector at all. Đợt E moved the N-driver lifecycle core out of `St4i.EngineApi`, gave the
+edge agent a connector-hosting layer of its own, and — in **E-5** — moved the multidrop registration down so
+the port on that machine is finally usable from the process running on it. This section says what that host
+can now do, **what it still cannot**, and which of the two the difference is a decision rather than a gap.
+Read §24.4 before pointing an operator at a write button on a machine an edge agent drives.
 
 ### 24.1 What moved, and the one thing the edge agent deliberately did NOT get
 
@@ -4962,7 +4989,7 @@ unreachable is narrower and is the part that matters: the two write members that
 and the **live slot table** that maps a machine to the driver a running pipeline is actually holding.
 Closing the rest is a `ConnectorRegistry` question, not a `FleetCore` one.
 
-### 24.2 `St4i.EdgeService` hosts connectors now — Modbus TCP, and **only** Modbus TCP on the wire
+### 24.2 `St4i.EdgeService` hosts connectors now — Modbus TCP **and Modbus RTU** on the wire
 
 It reads its own `connectors.json` (`--connectors <path>`, else beside the exe) through the **same parser**
 both hosts share (`ConnectorsConfig`, moved to `St4i.EdgeCore.Config` in E-3 — one file, one reader), and
@@ -4973,36 +5000,52 @@ registers **one instance per entry**, so N entries mean N drivers on N pipelines
 | Entry | This host | Why, and where it is pinned |
 |---|---|---|
 | **Modbus TCP** | **runs it** | `ModbusConnectorFactory` is in `St4i.EdgeCore`; a `ModbusTcpDriver` owns a socket and no machine-wide file. |
-| **Modbus RTU** (an entry declaring a `transport`) | **refused by name** | An RTU entry is a **bus** that fans out into N devices, and the fan-out plus its ghost sweep (`ModbusMultidropRegistration`) reaches `RtuBusConfiguration.IsInBusNamespace` — a rule its own comment says must be stated exactly ONCE because three callers must agree. A second fan-out written here would be a second answer to "which registration owns this device". Pinned by `EdgeWorkerConnectorsTests.AnRtuBusEntry_IsRefusedByName_…`. |
+| **Modbus RTU** (an entry declaring a `transport`) | 🔴 **runs it, since E-5** — one entry becomes **N** instances, one per device, each claiming one machine | An RTU entry is a **bus**. Until E-5 this host refused it, because the fan-out reached `RtuBusConfiguration.IsInBusNamespace` in `St4i.EngineApi` — an assembly this host cannot reference. E-5 **moved** that rule (to `ModbusMultidropMap`) and the fan-out (to `St4i.EdgeCore.Config`), so there is still exactly **one** fan-out and one answer to "which registration owns this device"; both hosts call it. Both transports run: a COM line and an RTU-over-TCP gateway. Pinned by `EdgeWorkerConnectorsTests.AnRtuBusEntry_FansOutIntoOneInstancePerDevice_…` and, end to end at the transport, by `St4i.EdgeCore.Tests…ModbusMultidropAgentTests`. |
 | **OPC-UA** | **refused by name** | Not a missing type — `OpcUaConnectorFactory` is right there and would compile. An `OpcUaDriver` writes its app-instance certificate into `%ProgramData%\ST4I\sim\opcua-pki`, **machine-wide, no per-process key**, and dispatching it here would make this host a NEW writer to a machine-wide store. The mechanism to avoid that already exists (`OpcUaConnectorFactory` takes `pkiDir`; `OpcUaPkiPaths.ResolveRoot` honours `ST4I_OPCUA_PKI_DIR`) — **what is missing is a per-host data-root decision, not infrastructure.** Pinned by `AnOpcUaEntry_IsRefusedByName_…`. |
 | **Any other kind** | refused | Same as EngineApi: this build has no plugin loader. |
 
-**Both refusals are decisions with a test each, not omissions** — that is the difference between a refusal
-that survives review and one that somebody "fixes" next month by adding a `switch` arm.
+**The OPC-UA refusal is a decision with a test, not an omission** — that is the difference between a refusal
+that survives review and one that somebody "fixes" next month by adding a `switch` arm. The RTU refusal was
+the same kind of decision and E-5 reversed it **in the open**: its pinning test was rewritten deliberately,
+not left to go red and be patched green.
 
 🔴 **One deliberate divergence from EngineApi, stated because a silent one would be a defect:** here every
 entry registers under its **own `id`**, not under its kind. EngineApi keys a TCP/OPC-UA entry by kind because
 adopting the operator's id would move an existing install's pipeline slot label and therefore its alarm
 `TargetId`. **This host has no such legacy** — it has never hosted a connector — and kind-keying would
-collapse every Modbus entry into one, which is precisely what "N entries mean N drivers" has to rule out. The
-two rules converge for free the day `ModbusMultidropRegistration` reaches EdgeCore.
+collapse every Modbus entry into one, which is precisely what "N entries mean N drivers" has to rule out.
 
-### 24.3 🔴 RS-485 does **not** run at the edge yet, and that is **E-5** — not a forgotten item
+🔴 **E-4 wrote here that "the two rules converge for free the day `ModbusMultidropRegistration` reaches
+EdgeCore". That day was E-5 and they did not converge — the prediction was wrong, and enumerating the inputs
+settles it.** The two rules already AGREED on an RTU bus (both key it on the operator's id), and E-5 made that
+half shared code rather than two agreeing copies (`ConnectorsConfig.IsRtuBus`). They differ on exactly one
+input class — a **TCP or OPC-UA** entry — which the fan-out move does not touch. Neither direction of
+convergence is available: EngineApi adopting id-keying is the `TargetId` migration it has refused twice with a
+test pinning the refusal, and this host adopting kind-keying would collapse N Modbus **TCP** entries (N
+sockets, N machines) into one — a capability an RTU bus does not replace, because a bus is N devices on **one**
+wire, not N sockets. So it stays a stated, tested divergence.
 
-This is the largest limit Đợt E leaves, and it is the same capability the plan's §1 named as the reason the
-batch existed. The batch's four numbered tasks were each correct and each necessary, and **none of them was
-ever scheduled to move the RTU registration** — a decomposition error, found only when E-3 hit the wall and
-**measured** the remaining work instead of assuming it. The measurement, so E-5 starts from a number:
+### 24.3 🔴 RS-485 runs at the edge — **E-5**, and what it actually moved
 
-- `ModbusRtuBusPlan` — 107 lines, **a genuine leaf** (depends only on `EdgeCore.Drivers.Modbus` +
-  `EdgeCore.Serial`); moving it to `St4i.EdgeCore.Serial` is clean.
-- `ModbusMultidropRegistration` — 344 lines, **not a leaf**: it reaches `RtuBusConfiguration.IsInBusNamespace`.
-- `ConnectorConfigValidation` — 254 lines, appears to be a leaf.
-- `RtuBusConfiguration` **cannot move whole**: it also carries `TryFindBlockedDevice`/`ReleaseOwnNamespace`
-  and is bound to EngineApi's roster and store.
+This was the largest limit E-1…E-4 left, and it was the same capability the plan's §1 named as the reason the
+batch existed. Those four numbered tasks were each correct and each necessary, and **none of them was ever
+scheduled to move the RTU registration** — a decomposition error, found only when E-3 hit the wall and
+**measured** the remaining work instead of assuming it. E-5 is that work. What moved, and what did not:
 
-Until then, an RS-485 line is driven by `St4i.EngineApi` and by nothing else, and the RTU entry an operator
-puts in the edge agent's `connectors.json` is skipped with a warning naming the entry and the reason.
+| Piece | Before | After E-5 |
+|---|---|---|
+| `ModbusMultidropMap.IsInBusNamespace` | `RtuBusConfiguration` (`St4i.EngineApi`) — the **one** reference that made the fan-out un-moveable | `ModbusMultidropMap` (`St4i.EdgeCore`). **Moved, not copied**: still stated exactly once, and all three callers reach it. It belongs there on its own merits — every fact it reasons about (`DeviceIdSuffixPrefix`, `LooksLikeADeviceInstanceId`, `DeviceInstanceId`) is declared on that type. |
+| `ModbusMultidropRegistration` (344 lines) | `St4i.EngineApi.Config` | `St4i.EdgeCore.Config`, on EdgeCore's two-callback logging convention. |
+| `ModbusRtuBusPlan` (107 lines) | `St4i.EngineApi.Config` | `St4i.EdgeCore.Serial` — the only assembly that can see **both** transports. |
+| `ConnectorConfigValidation` (254 lines) | `St4i.EngineApi.Fleet` | **did not move, and is not needed**: it exists to learn the machine code a TCP entry's opaque blob declares, and a bus does not need it — the fan-out parses each device and hands its machine code out directly. E-3's estimate listed it; the enumeration removed it. |
+| `RtuBusConfiguration` | `St4i.EngineApi.Fleet` | **did not move**, as measured: it also carries `TryFindBlockedDevice`/`ReleaseOwnNamespace` and is bound to EngineApi's roster and store. Only the predicate left it. |
+
+🔴 **What this costs, said as an operational fact rather than a feature.** A COM port admits **one** process.
+If `St4i.EdgeService` holds COM3, `St4i.EngineApi` cannot open it — so the machines on that line become
+read-only from the engine (§24.4), and the two hosts share no channel through which either could know
+(§24.4's second half). Two `connectors.json` files on one machine naming one port is an operator decision this
+product does not arbitrate; on an RTU **gateway** there is not even the OS's refusal to arbitrate it (§2 of
+the plan, and §24.5 below).
 
 ### 24.4 🔴 A machine an edge agent drives is READ-ONLY from this engine — and this engine cannot see that it is
 
@@ -5063,24 +5106,37 @@ by the **operating system**. What differs between the hosts is **configuration**
 configured path from `connectors.json` to a serial open; `St4i.EdgeService` refuses an RTU entry by name
 (§24.2) and the WPF shell has no connector registry at all.
 
+🔴 **E-5 changed the configuration half, and the sentence above is corrected rather than deleted because it
+is the record of what was true through E-4.** Since E-5 **two** of the three hosts have a configured path from
+`connectors.json` to a serial open — `St4i.EngineApi` and `St4i.EdgeService`; only the WPF shell does not.
+The capability half was never the differentiator and still is not.
+
 The distinction is load-bearing, not pedantry: §2's protection for a directly-attached line **is** the OS
 refusing a second open, so a reader who believes this host *cannot* open a port will never ask which process
 holds COM3 — and on a **gateway** there is no such protection to reason about at all.
 
 ### 24.6 Still true after Đợt E, unchanged
 
-- **No Modbus frame has yet crossed a real serial port.** True after Đợt D, true after E-2, true after E-3,
-  true now. A bench acceptance step with real hardware remains outstanding — a step, not a formality.
+- **No Modbus frame has yet crossed a real serial port.** True after Đợt D, true after E-2, E-3 and E-4, and
+  **still true after E-5** — which made the port reachable by configuration and did not touch that fact. Every
+  RTU test in this repository runs on D-2's in-memory paired link (a real in-process NModbus slave network:
+  real CRC, real t3.5 framing, real dispatch by slave address, real arbitration over one shared link — but no
+  copper) or on a loopback socket. There is no RS-485 adapter on any build machine, and only adapters with
+  **automatic** direction control are supported at all. A bench acceptance step with real hardware remains
+  outstanding — a step, not a formality.
 - **Two processes still share one set of machine-wide data files.** `AssetRegistryStore`/`CredentialStore`/
   `FleetSettingsStore` all live under `%ProgramData%\ST4I\sim\…` with no per-process key. The edge agent
   touches neither the asset registry nor the settings store today (its only pre-existing writer is the WAL
-  queue), so nothing regressed — but the per-host data-root decision is still open, and it is what is
-  blocking OPC-UA at the edge (§24.2).
+  queue), so nothing regressed — **and E-5 did not change that either: an RS-485 bus opens a COM port and a
+  gateway bus opens a socket; neither is a store, and the shared-open bookkeeping is an in-process dictionary
+  the host owns.** The per-host data-root decision is still open, and it is what is still blocking OPC-UA at
+  the edge (§24.2).
 - **A deleted connector's machine stays in the roster until restart** (§23.5), unchanged.
 
 *(VI — **Đợt D để lại đúng một câu:** `St4i.EdgeService` chạy trên chính cái máy có cổng RS-485 mà không chủ
-trì nổi một connector nào. Đợt E tách lõi vòng đời N-driver ra khỏi `St4i.EngineApi` và cho tác nhân biên một
-lớp chủ trì connector của riêng nó. Mục này nói host ấy giờ làm được gì, **cái gì vẫn chưa làm được**, và
+trì nổi một connector nào. Đợt E tách lõi vòng đời N-driver ra khỏi `St4i.EngineApi`, cho tác nhân biên một
+lớp chủ trì connector của riêng nó, và — ở **E-5** — dời phần đăng ký multidrop xuống để cái cổng trên chính
+cỗ máy ấy cuối cùng dùng được từ tiến trình đang chạy trên nó. Mục này nói host ấy giờ làm được gì, **cái gì vẫn chưa làm được**, và
 trong hai loại đó cái nào là một QUYẾT ĐỊNH chứ không phải một khoảng trống. Đọc §24.4 trước khi chỉ cho
 người vận hành một nút ghi trên cỗ máy do tác nhân biên lái.
 
@@ -5103,43 +5159,64 @@ Thứ không với tới được hẹp hơn, và đó mới là phần quan tr�
 **bảng slot sống** ánh xạ một cỗ máy tới đúng driver mà một pipeline đang cầm. Đóng nốt phần còn lại là câu
 chuyện của `ConnectorRegistry`, không phải của `FleetCore`.
 
-**24.2 — `St4i.EdgeService` giờ chủ trì connector — Modbus TCP, và CHỈ Modbus TCP trên dây.** Nó đọc
+**24.2 — `St4i.EdgeService` giờ chủ trì connector — Modbus TCP **và Modbus RTU** trên dây.** Nó đọc
 `connectors.json` của chính nó (`--connectors <đường dẫn>`, mặc định là file cạnh exe) qua **cùng một bộ phân
 tích** mà cả hai host dùng chung (`ConnectorsConfig`, đã dời sang `St4i.EdgeCore.Config` ở E-3 — một file, một
 bộ đọc), và đăng ký **mỗi entry một thể hiện**, nên N entry nghĩa là N driver trên N pipeline. Một bản triển
 khai không có `connectors.json` hành xử y hệt trước E-3 — cùng nhóm mô phỏng, cùng transport, cùng event bus —
 và đó là tính chất của **MỘT đường mã với registry rỗng**, không phải của một nhánh không ai chạy. **Modbus
 TCP — CÓ** (`ModbusConnectorFactory` nằm sẵn ở `St4i.EdgeCore`; một `ModbusTcpDriver` giữ một socket, không
-giữ file toàn máy nào). **Modbus RTU (entry có khai `transport`) — TỪ CHỐI THEO TÊN**: một entry RTU là một
-**TUYẾN** toả ra N thiết bị, và phép toả cộng phép quét ma (`ModbusMultidropRegistration`) với tới
-`RtuBusConfiguration.IsInBusNamespace` — một luật mà chú thích của chính nó nói phải phát biểu đúng MỘT lần vì
-ba bên gọi phải khớp nhau; viết một phép toả thứ hai ở đây là **hai câu trả lời cho câu hỏi "đăng ký nào sở
-hữu thiết bị này"**. Ghim bởi `EdgeWorkerConnectorsTests.AnRtuBusEntry_IsRefusedByName_…`. **OPC-UA — TỪ CHỐI
+giữ file toàn máy nào). 🔴 **Modbus RTU (entry có khai `transport`) — CHẠY ĐƯỢC, KỂ TỪ E-5**: một entry RTU là một
+**TUYẾN**, và nó toả thành **N** thể hiện, mỗi thể hiện phục vụ đúng một máy. Trước E-5 host này từ chối nó,
+vì phép toả với tới `RtuBusConfiguration.IsInBusNamespace` nằm ở `St4i.EngineApi` — assembly mà host này
+không tham chiếu được. E-5 **DỜI** luật ấy (sang `ModbusMultidropMap`) và dời phép toả (sang
+`St4i.EdgeCore.Config`), nên vẫn chỉ có **MỘT** phép toả và **một** câu trả lời cho câu hỏi "đăng ký nào sở
+hữu thiết bị này"; cả hai host cùng gọi nó. Cả hai transport đều chạy: một đường COM và một gateway
+RTU-trên-TCP. Ghim bởi `EdgeWorkerConnectorsTests.AnRtuBusEntry_FansOutIntoOneInstancePerDevice_…`, và ghim
+đầu-cuối tại transport bởi `St4i.EdgeCore.Tests…ModbusMultidropAgentTests`. **OPC-UA — TỪ CHỐI
 THEO TÊN**, và **không phải vì thiếu kiểu**: `OpcUaConnectorFactory` nằm ngay đó và biên dịch được. Cái chặn
 là `OpcUaDriver` ghi chứng chỉ app-instance vào `%ProgramData%\ST4I\sim\opcua-pki` — **toàn máy, không khoá
 theo tiến trình** — nên dispatch nó ở đây sẽ biến host này thành **một người ghi MỚI vào một store toàn máy**.
 Cơ chế để tránh điều đó **đã có sẵn** (`OpcUaConnectorFactory` nhận `pkiDir`; `OpcUaPkiPaths.ResolveRoot` tôn
 trọng `ST4I_OPCUA_PKI_DIR`) — **thứ còn thiếu là một QUYẾT ĐỊNH về gốc dữ liệu theo host, không phải một hạ
 tầng.** Ghim bởi `AnOpcUaEntry_IsRefusedByName_…`. **Kind khác — TỪ CHỐI**, giống EngineApi: build này không
-có plugin loader. **Cả hai lời từ chối đều là QUYẾT ĐỊNH có test đi kèm, không phải chỗ sót** — đó là khác
+có plugin loader. **Lời từ chối OPC-UA là một QUYẾT ĐỊNH có test đi kèm, không phải chỗ sót** — đó là khác
 biệt giữa một lời từ chối sống sót qua review và một lời từ chối bị ai đó "sửa" tháng sau bằng cách thêm một
-nhánh `switch`. 🔴 **Một chỗ lệch CÓ CHỦ ĐÍCH so với EngineApi, nói ra vì một chỗ lệch im lặng là một khiếm
+nhánh `switch`. Lời từ chối RTU trước đây cũng đúng loại ấy, và **E-5 lật nó CÔNG KHAI**: bài test ghim nó
+được viết lại có chủ đích, không phải để nó lặng lẽ đỏ rồi sửa cho xanh. 🔴 **Một chỗ lệch CÓ CHỦ ĐÍCH so với EngineApi, nói ra vì một chỗ lệch im lặng là một khiếm
 khuyết:** ở đây mỗi entry đăng ký dưới **`id` của chính nó**, không dưới kind. EngineApi key theo kind vì lấy
 id của operator sẽ dời nhãn slot — và do đó `TargetId` của cảnh báo — của một cài đặt đang chạy. **Host này
 không có di sản đó**, và keying theo kind sẽ gộp mọi entry Modbus thành một, đúng thứ mà "N entry nghĩa là N
-driver" phải loại trừ. Hai quy tắc hội tụ miễn phí đúng ngày `ModbusMultidropRegistration` xuống tới EdgeCore.
+driver" phải loại trừ. 🔴 **E-4 viết ở đây rằng "hai quy tắc hội tụ miễn phí đúng ngày
+`ModbusMultidropRegistration` xuống tới EdgeCore". Ngày đó là E-5, và chúng KHÔNG hội tụ — lời đoán ấy sai, và
+phép liệt kê các lớp đầu vào giải quyết dứt điểm.** Hai quy tắc vốn ĐÃ khớp nhau với một tuyến RTU (cả hai key
+theo id của operator), và E-5 biến nửa đó thành mã dùng chung chứ không còn là hai bản trùng nhau
+(`ConnectorsConfig.IsRtuBus`). Chúng khác nhau ở đúng một lớp đầu vào — entry **TCP hoặc OPC-UA** — mà cuộc
+dời phép toả không chạm tới. Và không chiều hội tụ nào khả dụng: EngineApi lấy id là đúng cuộc migration
+`TargetId` mà nó đã từ chối hai lần và có test ghim; còn host này lấy kind sẽ gộp N entry Modbus **TCP** (N
+socket, N máy) thành một — một năng lực mà tuyến RTU không thay thế được, vì một tuyến là N thiết bị trên
+**MỘT** sợi dây, không phải N socket. Nên nó ở lại là một chỗ lệch có phát biểu và có test.
 
-**24.3 — 🔴 RS-485 CHƯA chạy ở biên, và đó là E-5, không phải một điều bị quên.** Đây là giới hạn lớn nhất Đợt
-E để lại, và nó chính là năng lực mà §1 của bản thiết kế nêu làm lý do tồn tại của cả đợt. Bốn nhiệm vụ đánh
-số của đợt đều đúng và đều cần, và **không cái nào từng được xếp lịch để dời phần đăng ký RTU** — một lỗi
-phân rã, chỉ lộ ra khi E-3 va vào bức tường và **ĐO** khối lượng còn lại thay vì giả định. Số đo, để E-5 bắt
-đầu từ một con số: `ModbusRtuBusPlan` 107 dòng, **là nút lá thật** (chỉ phụ thuộc `EdgeCore.Drivers.Modbus` +
-`EdgeCore.Serial`), dời sang `St4i.EdgeCore.Serial` là sạch; `ModbusMultidropRegistration` 344 dòng, **không
-phải lá** — nó với tới `RtuBusConfiguration.IsInBusNamespace`; `ConnectorConfigValidation` 254 dòng, có vẻ là
-lá; `RtuBusConfiguration` **không dời nguyên khối được**: nó còn ôm `TryFindBlockedDevice`/
-`ReleaseOwnNamespace` và bám vào roster + store của EngineApi. Cho tới lúc đó, một đường RS-485 do
-`St4i.EngineApi` lái và không do gì khác, còn entry RTU mà người vận hành đặt vào `connectors.json` của tác
-nhân biên bị bỏ qua kèm một cảnh báo nêu tên entry và lý do.
+**24.3 — 🔴 RS-485 CHẠY ĐƯỢC Ở BIÊN — E-5, và nó thật sự dời những gì.** Đây từng là giới hạn lớn nhất mà
+E-1…E-4 để lại, và nó chính là năng lực mà §1 của bản thiết kế nêu làm lý do tồn tại của cả đợt. Bốn nhiệm vụ
+đánh số ấy đều đúng và đều cần, và **không cái nào từng được xếp lịch để dời phần đăng ký RTU** — một lỗi phân
+rã, chỉ lộ ra khi E-3 va vào bức tường và **ĐO** khối lượng còn lại thay vì giả định. E-5 là phần việc đó.
+**`ModbusMultidropMap.IsInBusNamespace`** — luật ấy rời `RtuBusConfiguration` (`St4i.EngineApi`) sang
+`ModbusMultidropMap` (`St4i.EdgeCore`): **DỜI, KHÔNG NHÂN ĐÔI**, vẫn phát biểu đúng một lần và cả ba bên gọi
+đều với tới; nó thuộc về đó theo đúng bản chất, vì mọi dữ kiện nó lập luận trên (`DeviceIdSuffixPrefix`,
+`LooksLikeADeviceInstanceId`, `DeviceInstanceId`) đều khai báo trên chính kiểu ấy. **`ModbusMultidropRegistration`**
+(344 dòng) sang `St4i.EdgeCore.Config`, dùng quy ước hai callback của EdgeCore. **`ModbusRtuBusPlan`**
+(107 dòng) sang `St4i.EdgeCore.Serial` — assembly duy nhất nhìn thấy **cả hai** transport.
+**`ConnectorConfigValidation`** (254 dòng) **KHÔNG dời, và không cần**: nó tồn tại để học mã máy mà blob cấu
+hình mờ đục của một entry TCP khai báo, còn một tuyến thì không cần — phép toả đã phân tích từng thiết bị và
+trả mã máy ra trực tiếp; ước lượng của E-3 có liệt kê nó, phép liệt kê thì loại nó ra.
+**`RtuBusConfiguration`** **KHÔNG dời**, đúng như đã đo: nó còn ôm `TryFindBlockedDevice`/`ReleaseOwnNamespace`
+và bám vào roster + store của EngineApi; chỉ có mỗi cái predicate rời đi. 🔴 **Cái giá, nói như một sự thật
+vận hành chứ không phải một tính năng:** một cổng COM chỉ nhận **một** tiến trình. Nếu `St4i.EdgeService` giữ
+COM3 thì `St4i.EngineApi` không mở được nó — các máy trên đường dây ấy thành chỉ-đọc từ phía engine (§24.4),
+và hai host không có kênh nào để bên nào biết điều đó. Hai file `connectors.json` trên một máy cùng gọi tên
+một cổng là một quyết định của người vận hành mà sản phẩm này không phân xử; còn trên **gateway** RTU thì đến
+cả sự từ chối của hệ điều hành cũng không có để mà phân xử.
 
 **24.4 — 🔴 Máy do tác nhân biên lái là CHỈ ĐỌC từ engine này — và engine này KHÔNG nhìn thấy được điều đó.**
 Hai sự thật, và việc gộp chúng làm một chính là thứ khiến các thông điệp của nút ghi sai suốt hai đợt. (1)
@@ -5195,16 +5272,25 @@ một probe biên dịch vào assembly sản phẩm `St4i.EdgeService` build ra 
 `EdgeServiceSerialReachabilityTests` thực sự mở một cổng từ đồ thị tham chiếu của chính host ấy rồi bị **hệ
 điều hành** từ chối. Thứ khác nhau giữa ba host là **CẤU HÌNH**: chỉ `St4i.EngineApi` có một đường đã cấu hình
 từ `connectors.json` tới một lệnh mở serial; `St4i.EdgeService` từ chối entry RTU theo tên (§24.2), còn vỏ WPF
-không có registry connector nào cả. Phân biệt này chịu lực chứ không phải bắt bẻ: bảo vệ của §2 cho một đường
+không có registry connector nào cả. 🔴 **E-5 đã đổi nửa CẤU HÌNH, và câu trên được sửa chứ không xoá vì nó là
+bản ghi của những gì đúng cho tới E-4:** kể từ E-5, **HAI** trong ba host có đường đã cấu hình từ
+`connectors.json` tới một lệnh mở serial — `St4i.EngineApi` và `St4i.EdgeService`; chỉ vỏ WPF là không. Nửa
+KHẢ NĂNG chưa bao giờ là thứ phân biệt và giờ vẫn không. Phân biệt này chịu lực chứ không phải bắt bẻ: bảo vệ của §2 cho một đường
 cắm thẳng **CHÍNH LÀ** việc hệ điều hành từ chối lần mở thứ hai, nên người đọc tin rằng host này "không thể"
 mở cổng sẽ không bao giờ hỏi tiến trình nào đang giữ COM3 — và trên một **gateway** thì không có bảo vệ nào
 như thế để mà lý luận.
 
 **24.6 — Vẫn đúng sau Đợt E, không đổi.** **Chưa có khung Modbus nào đi qua một cổng serial thật** — đúng sau
-Đợt D, đúng sau E-2, đúng sau E-3, đúng bây giờ; bước nghiệm thu trên bàn với phần cứng thật vẫn còn đó, và đó
-là một BƯỚC chứ không phải thủ tục. **Hai tiến trình vẫn dùng chung một bộ file dữ liệu toàn máy** —
+Đợt D, đúng sau E-2, E-3, E-4, và **vẫn đúng sau E-5**, thứ chỉ làm cái cổng ấy với tới được bằng cấu hình chứ
+không chạm vào sự thật này. Mọi test RTU trong kho mã này chạy trên giàn in-memory ghép đôi của D-2 (một mạng
+slave NModbus thật trong tiến trình: CRC thật, khung t3.5 thật, phân phát theo địa chỉ slave thật, phân xử
+thật trên một link dùng chung — nhưng không có đồng) hoặc trên một socket loopback. Không có adapter RS-485
+nào trên bất kỳ máy build nào, và chỉ adapter điều khiển hướng **tự động** mới được hỗ trợ. Bước nghiệm thu
+trên bàn với phần cứng thật vẫn còn đó, và đó là một BƯỚC chứ không phải thủ tục. **Hai tiến trình vẫn dùng chung một bộ file dữ liệu toàn máy** —
 `AssetRegistryStore`/`CredentialStore`/`FleetSettingsStore` đều nằm dưới `%ProgramData%\ST4I\sim\…`, không
 khoá theo tiến trình; tác nhân biên hôm nay không chạm sổ tài sản lẫn store cài đặt (người ghi có sẵn duy nhất
-của nó là hàng đợi WAL), nên không có gì thụt lùi — nhưng quyết định gốc-dữ-liệu-theo-host vẫn còn để ngỏ, và
-chính nó đang chặn OPC-UA ở biên (§24.2). **Máy của một connector đã xoá vẫn nằm trong roster tới khi khởi
+của nó là hàng đợi WAL), nên không có gì thụt lùi — **và E-5 cũng không đổi điều đó: một tuyến RS-485 mở một
+cổng COM còn một tuyến gateway mở một socket; không cái nào là store, và sổ sách chia sẻ lần mở là một
+dictionary trong tiến trình do host sở hữu.** Quyết định gốc-dữ-liệu-theo-host vẫn còn để ngỏ, và chính nó vẫn
+đang chặn OPC-UA ở biên (§24.2). **Máy của một connector đã xoá vẫn nằm trong roster tới khi khởi
 động lại** (§23.5), không đổi.)*

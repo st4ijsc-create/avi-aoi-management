@@ -130,18 +130,31 @@ public sealed class SerialDependencyScopingTests
     /// change: it pins that the DLL is SHIPPED with this deployment. That was deliberately chosen over a
     /// capability claim, and the choice is what let three of the sentences around it go stale without the
     /// assertion ever becoming wrong.</para>
+    ///
+    /// <para>🔴 <b>Task E-5 — and the correction E-4 made above has itself gone stale in exactly one place,
+    /// which is the point of writing it down.</b> E-4 corrected the paragraph to "only <c>St4i.EngineApi</c>
+    /// has a CONFIGURED path from <c>connectors.json</c> to a serial open". <b>That is no longer true:</b>
+    /// E-5 moved the multidrop fan-out and the transport switch into <c>St4i.EdgeCore</c>/
+    /// <c>St4i.EdgeCore.Serial</c>, so <c>St4i.EdgeService</c> dispatches an RTU bus and opens the port. This
+    /// deployment now ships the dependency AND uses it. <b>The assertion is still right and still needed no
+    /// change</b> — a third batch in a row in which the narrow, checkable claim survived a rewrite of every
+    /// sentence around it. That is the argument for narrow assertions and, equally, the argument that no
+    /// assertion protects its own prose.</para>
     /// </summary>
     [Fact]
     public void EdgeServiceDeployment_CarriesSystemIoPorts_ByTheAllThreeHostsRuling()
         => AssertSerialDependencyIsShippedWith(
             Path.Combine("src", "St4i.EdgeService"), "St4i.EdgeService.dll",
-            "the Windows Service host — ruled in by the owner; since E-3 it does host connectors, but only " +
-            "Modbus TCP is dispatched and an RTU entry is refused by name, so no configured path here " +
-            "reaches a COM port (README §24.2/§24.5)");
+            "the Windows Service host — ruled in by the owner, and since E-5 it USES what it ships: an RTU " +
+            "entry in this host's connectors.json fans out into N drivers over one COM port (README §24)");
 
     /// <summary>
-    /// 🔴 <b>The engine — the one deployment where "carries it" and "can open a COM port" are the same
-    /// statement</b>, and the difference is asserted rather than asserted-about. This class cannot make that
+    /// 🔴 <b>The engine — a deployment where "carries it" and "can open a COM port" are the same
+    /// statement.</b> (It said "the one" until Task E-5, and E-5 made that false: <c>St4i.EdgeService</c> now
+    /// has its own configured path from an <c>rtu-serial</c> entry to a port. The obligation below is
+    /// unchanged and still names only this host's companion, because that companion asserts a fact about
+    /// <c>St4i.EngineApi</c>'s IL specifically.) The difference is asserted rather than asserted-about. This
+    /// class cannot make that
     /// second half: it would need to load <c>St4i.EngineApi</c>, which <c>St4i.EdgeCore.Tests</c> does not
     /// reference. The companion assertion lives where the assembly IS loadable —
     /// <c>St4i.EngineApi.Tests.Config.ConnectorsJsonRegistrationTests.TheEngineApisOwnIl_ReferencesTheSerialAssembly_…</c>
@@ -161,9 +174,9 @@ public sealed class SerialDependencyScopingTests
     public void EngineApiDeployment_CarriesSystemIoPorts_BecauseItCanOpenAComPortDirectly()
         => AssertSerialDependencyIsShippedWith(
             Path.Combine("src", "St4i.EngineApi"), "St4i.EngineApi.dll",
-            "the engine — the only host with a CONFIGURED path from a connectors.json 'rtu-serial' entry to a " +
-            "directly-attached RS-485 line. (Not the only host with a connector registry: St4i.EdgeService has " +
-            "had one since E-3 and refuses RTU entries by name — README §24.2/§24.5.)");
+            "the engine — one of the two hosts with a CONFIGURED path from a connectors.json 'rtu-serial' " +
+            "entry to a directly-attached RS-485 line. (St4i.EdgeService is the other, since E-5; the WPF " +
+            "shell has no connector registry at all — README §24.)");
 
     /// <summary>The WPF exhibition shell. Same careful remark as
     /// <see cref="EdgeServiceDeployment_CarriesSystemIoPorts_ByTheAllThreeHostsRuling"/>: measured,
