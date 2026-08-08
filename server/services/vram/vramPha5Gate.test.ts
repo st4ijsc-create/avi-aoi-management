@@ -250,7 +250,13 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //       MỚI nằm trong lượng từ theo cấu tạo (phép thử M3).
     //   ⚠ `server/_core/` và `server/routers/*.test.ts` **không** có đường bao trong cổng, nên cả
     //     hai phải có đường RIÊNG — nếu không, chúng "theo cấu tạo không bao giờ được canh".
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(21); // Pha 7 Task 7: +`userExposureScan.test.ts` (∀ bề mặt) +`publicUser.test.ts` (∀ cột)
+    // ⚠ Pha 7 Task 8a: 21 → 22. `server/_core/backupCodeWriteScan.test.ts` — lượng từ trên trục
+    //   **NGƯỜI GHI** (*"∀ điểm ghi `backup_codes.code` phải ra từ `bamMaDuPhong()`"*). Nó canh ba
+    //   lỗ mà tầng KIỂU (`.$type<MaDuPhongDaBam>()`) **không** thấy: gỡ nhãn · ép kiểu vòng qua ·
+    //   đối số `.values()` không phân tích được. `server/_core/` **không** có đường bao trong cổng
+    //   (chỉ `publicUser.test.ts` có đường riêng) ⇒ thiếu dòng này thì lưới ấy *"theo cấu tạo không
+    //   bao giờ được canh"*.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(22); // Pha 7 Task 8a: +`backupCodeWriteScan.test.ts` (∀ người ghi)
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -320,7 +326,10 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   DUNG** (tự khai `Pha 5`, có chủ ý — xem docstring của chúng), và cả hai phải có đường riêng
     //   ở §Cổng kiểm chung ⇒ `CONG.length` 19 → **21** cùng lượt. Gỡ một trong hai khỏi cổng ⇒
     //   **hai** ô đỏ trên **hai** trục, không phải một.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(81); // Pha 7 Task 7: +`publicUser` +`userExposureScan`
+    // ⚠ Pha 7 Task 8a: 81 → 82. **Đúng MỘT** file mới — `server/_core/backupCodeWriteScan.test.ts`.
+    //   Nó vào tập bị canh qua bộ nhận diện **NỘI DUNG** (tự khai `Pha 5`, có chủ ý), và phải có
+    //   đường riêng ở §Cổng kiểm chung ⇒ `CONG.length` 21 → **22** cùng lượt.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(82); // Pha 7 Task 8a: +`backupCodeWriteScan`
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

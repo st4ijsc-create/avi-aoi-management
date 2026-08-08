@@ -1,6 +1,9 @@
 // Schema domain: Auth tables
 import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, boolean, json, index, uniqueIndex, customType, primaryKey } from "drizzle-orm/pg-core";
 import { roleEnum } from "./enums";
+// ⚠ `import type` — bị XOÁ SẠCH lúc biên dịch, nên schema **không** kéo `bcryptjs` vào bất kỳ bao
+//   đóng nào (kể cả drizzle-kit hay bundle client). Chỉ cái NHÃN đi vào kiểu của cột.
+import type { MaDuPhongDaBam } from "../../server/_core/backupCodeSecret";
 
 /**
  * `bytea` — drizzle-orm không có builder sẵn cho kiểu này.
@@ -114,7 +117,10 @@ export type InsertUserRole = typeof userRoles.$inferInsert;
 export const backupCodes = pgTable("backup_codes", {
   id: serial("id").primaryKey(),
   userId: integer("userId").notNull(),
-  code: varchar("code", { length: 20 }).notNull(), // Hashed backup code
+  // ★★★ Pha 7 Task 8a — nhãn danh nghĩa: ô này CHỈ nhận giá trị do `bamMaDuPhong()` trả về.
+  // Ghi một chuỗi thô vào đây là LỖI BIÊN DỊCH, ở bất kỳ file nào, kể cả file chưa tồn tại.
+  // Chủ duy nhất: `server/_core/backupCodeSecret.ts`.
+  code: varchar("code", { length: 20 }).$type<MaDuPhongDaBam>().notNull(),
   isUsed: boolean("isUsed").default(false).notNull(),
   usedAt: timestamp("usedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

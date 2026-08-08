@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { mapTrpcError } from "@/lib/trpcErrors";
-import { User, Mail, Phone, Building, Briefcase, Shield, Calendar, Clock, ShieldCheck, ShieldOff, QrCode, Copy, CheckCircle2, AlertTriangle, KeyRound, Download, Monitor } from "lucide-react";
+import { User, Mail, Phone, Building, Briefcase, Shield, Calendar, Clock, ShieldCheck, ShieldOff, QrCode, Copy, CheckCircle2, AlertTriangle, KeyRound, Monitor } from "lucide-react";
 import SessionManagement from "@/components/SessionManagement";
 import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
@@ -36,26 +36,14 @@ export default function Profile() {
   const [setupData, setSetupData] = useState<{ secret: string; qrCode: string } | null>(null);
   const [secretCopied, setSecretCopied] = useState(false);
   
-  // Backup Codes States
-  const [showBackupCodes, setShowBackupCodes] = useState(false);
-  const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  // ★★★ Pha 7 Task 8a — trang này KHÔNG còn đẻ mã dự phòng.
+  // `user.generateBackupCodes` ghi PLAINTEXT (mã đẻ ra không xác minh được) và không đòi TOTP;
+  // đường đẻ mã duy nhất nay ở màn Bảo mật / 2FA (`TwoFactorSetup`), đòi mã TOTP.
+  // Ở đây chỉ còn **hiển thị số mã còn lại**.
 
   // Queries
   const { data: twoFAStatus, refetch: refetch2FAStatus } = trpc.user.get2FAStatus.useQuery();
-  const { data: backupCodesStatus, refetch: refetchBackupCodes } = trpc.user.getBackupCodesStatus.useQuery();
-  
-  // Backup Codes Mutation
-  const generateBackupCodesMutation = trpc.user.generateBackupCodes.useMutation({
-    onSuccess: (data) => {
-      setBackupCodes(data.codes);
-      setShowBackupCodes(true);
-      refetchBackupCodes();
-      toast.success(t('profile.backupCodesGenerated'));
-    },
-    onError: (error: any) => {
-      toast.error(mapTrpcError(error));
-    },
-  });
+  const { data: backupCodesStatus } = trpc.user.getBackupCodesStatus.useQuery();
 
   // Mutations
   const updateMutation = trpc.user.updateProfile.useMutation({
@@ -405,15 +393,6 @@ export default function Profile() {
                 </Badge>
               </div>
 
-              <Button 
-                onClick={() => generateBackupCodesMutation.mutate()}
-                className="w-full"
-                disabled={generateBackupCodesMutation.isPending}
-              >
-                <KeyRound className="h-4 w-4 mr-2" />
-                {generateBackupCodesMutation.isPending ? t('common.generating') : t('profile.generateNewBackupCodes')}
-              </Button>
-
               <Alert>
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription>
@@ -586,71 +565,8 @@ export default function Profile() {
         </DialogContent>
       </Dialog>
 
-      {/* Backup Codes Dialog */}
-      <Dialog open={showBackupCodes} onOpenChange={setShowBackupCodes}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <KeyRound className="h-5 w-5" />
-              {t('profile.yourBackupCodes')}
-            </DialogTitle>
-            <DialogDescription>
-              {t('profile.backupCodesSaveMessage')}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2 p-4 bg-muted rounded-lg font-mono text-sm">
-              {backupCodes.map((code, index) => (
-                <div key={index} className="p-2 bg-background rounded text-center">
-                  {code}
-                </div>
-              ))}
-            </div>
-
-            <Alert>
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                <strong>{t('profile.important')}:</strong> {t('profile.backupCodesOnlyOnce')}
-              </AlertDescription>
-            </Alert>
-          </div>
-
-          <DialogFooter className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                const text = backupCodes.join('\n');
-                navigator.clipboard.writeText(text);
-                toast.success(t('profile.backupCodesCopied'));
-              }}
-            >
-              <Copy className="h-4 w-4 mr-2" />
-              {t('common.copy')}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const text = `${t('profile.backupCodesFileTitle', 'SYNAPSE backup codes')}\n\n${backupCodes.join('\n')}\n\n${t('profile.backupCodesFileGeneratedAt', 'Generated at')}: ${new Date().toLocaleString('vi-VN')}`;
-                const blob = new Blob([text], { type: 'text/plain' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'backup-codes.txt';
-                a.click();
-                URL.revokeObjectURL(url);
-                toast.success(t('profile.backupCodesDownloaded'));
-              }}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              {t('common.download')}
-            </Button>
-            <Button onClick={() => setShowBackupCodes(false)}>
-              {t('profile.saved')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ★★★ Pha 7 Task 8a — hộp thoại "mã dự phòng của bạn" đã bị xoá cùng đường đẻ mã plaintext.
+          Mã dự phòng chỉ hiện MỘT LẦN ở màn 2FA (`TwoFactorSetup`), ngay sau khi bật / tạo lại. */}
     </DashboardLayout>
   );
 }

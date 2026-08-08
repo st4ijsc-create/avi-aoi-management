@@ -7,26 +7,12 @@ import speakeasy from "speakeasy";
 // ở file này nay **chỉ** còn dùng để **SINH** secret (`generateSecret`), không để verify.
 import { verifyTotpOnce } from "../_core/totpOnce";
 import QRCode from "qrcode";
-import crypto from "crypto";
-import bcrypt from "bcryptjs";
 import { getDb } from "../db";
 import { users, backupCodes } from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
-
-// Generate a random backup code
-function generateBackupCode(): string {
-  return crypto.randomBytes(4).toString("hex").toUpperCase();
-}
-
-// Hash a backup code for storage
-async function hashBackupCode(code: string): Promise<string> {
-  return bcrypt.hash(code, 10);
-}
-
-// Verify a backup code
-async function verifyBackupCode(code: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(code, hash);
-}
+// ★★★ Pha 7 Task 8a — sinh/băm/đối chiếu mã dự phòng có **MỘT chủ**. Ba hàm cục bộ ở đây trước
+// bản vá là ba bản sao của ba vị từ đã có chủ; bản sao thứ hai của một vị từ là chỗ luật trôi đi.
+import { sinhMaDuPhong, bamMaDuPhong, khopMaDuPhong } from "../_core/backupCodeSecret";
 
 export const twoFactorRouter = router({
   // Get 2FA status for current user
@@ -159,7 +145,7 @@ export const twoFactorRouter = router({
       // Generate backup codes
       const plainBackupCodes: string[] = [];
       for (let i = 0; i < 10; i++) {
-        plainBackupCodes.push(generateBackupCode());
+        plainBackupCodes.push(sinhMaDuPhong());
       }
 
       // Delete any existing backup codes
@@ -169,7 +155,7 @@ export const twoFactorRouter = router({
 
       // Store hashed backup codes
       for (const code of plainBackupCodes) {
-        const hashedCode = await hashBackupCode(code);
+        const hashedCode = await bamMaDuPhong(code);
         await db.insert(backupCodes).values({
           userId: ctx.user.id,
           code: hashedCode,
@@ -242,7 +228,7 @@ export const twoFactorRouter = router({
           );
 
         for (const backupCode of codes) {
-          if (await verifyBackupCode(input.code.toUpperCase(), backupCode.code)) {
+          if (await khopMaDuPhong(input.code.toUpperCase(), backupCode.code)) {
             verified = true;
             // Mark backup code as used
             await db
@@ -329,7 +315,7 @@ export const twoFactorRouter = router({
           );
 
         for (const backupCode of codes) {
-          if (await verifyBackupCode(input.code.toUpperCase(), backupCode.code)) {
+          if (await khopMaDuPhong(input.code.toUpperCase(), backupCode.code)) {
             verified = true;
             // Mark backup code as used
             await db
@@ -394,7 +380,7 @@ export const twoFactorRouter = router({
       // Generate new backup codes
       const plainBackupCodes: string[] = [];
       for (let i = 0; i < 10; i++) {
-        plainBackupCodes.push(generateBackupCode());
+        plainBackupCodes.push(sinhMaDuPhong());
       }
 
       // Delete existing backup codes
@@ -404,7 +390,7 @@ export const twoFactorRouter = router({
 
       // Store new hashed backup codes
       for (const code of plainBackupCodes) {
-        const hashedCode = await hashBackupCode(code);
+        const hashedCode = await bamMaDuPhong(code);
         await db.insert(backupCodes).values({
           userId: ctx.user.id,
           code: hashedCode,

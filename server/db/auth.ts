@@ -2,12 +2,14 @@ import { eq, and, desc, like, sql, or, not, lte } from "drizzle-orm";
 import { getDb } from "./connection";
 import {
   InsertUser, users,
-  backupCodes, InsertBackupCode,
+  backupCodes,
   userSessions, InsertUserSession,
   userCorporateAssignments, InsertUserCorporateAssignment,
   userFactoryAssignments, InsertUserFactoryAssignment,
 } from "../../drizzle/schema";
 import { ENV } from '../_core/env';
+// ★★★ Pha 7 Task 8a — chủ duy nhất của mã dự phòng 2FA (sinh · băm · đối chiếu).
+import { khopMaDuPhong } from '../_core/backupCodeSecret';
 // W4-B (doc 27 B4): the auth layer caches session→user for AUTH_CACHE_TTL_S.
 // Every mutation below that changes what authenticateRequest returns (role,
 // isActive/ban, password, 2FA, session revocation) MUST explicitly evict the
@@ -298,38 +300,23 @@ export async function get2FAStatus(userId: number) {
 }
 
 // ============ BACKUP CODES ============
-export async function generateBackupCodes(userId: number, codes: string[]) {
-  const db = await getDb();
-  if (!db) return codes;
-  
-  // Delete existing backup codes for user
-  await db.delete(backupCodes).where(eq(backupCodes.userId, userId));
-  
-  // Insert new backup codes
-  const insertData = codes.map(code => ({
-    userId,
-    code,
-    isUsed: false,
-  }));
-  
-  await db.insert(backupCodes).values(insertData);
-  return codes;
-}
-
-export async function getBackupCodes(userId: number) {
-  const db = await getDb();
-  if (!db) return [];
-  
-  return db.select()
-    .from(backupCodes)
-    .where(eq(backupCodes.userId, userId))
-    .orderBy(backupCodes.id);
-}
-
+/**
+ * ★★★ Pha 7 Task 8a — **`generateBackupCodes()` và `getBackupCodes()` ĐÃ BỊ XOÁ.**
+ *
+ *  · `generateBackupCodes(userId, codes)` ghi mã **PLAINTEXT** vào `backup_codes.code`, trong khi
+ *    **cả hai** người đọc (`verifyBackupCode` dưới đây và `twoFactorRouter`) đối chiếu bằng
+ *    `bcrypt.compare`. ⇒ Mã nó đẻ ra **không bao giờ xác minh được**, mà nó lại `DELETE` sạch bộ mã
+ *    băm đang dùng được trước khi ghi: **bấm là mất mã thật, đổi lấy mã vô dụng** — vừa rò vừa hỏng.
+ *  · `getBackupCodes(userId)` có **0 người gọi** và trả nguyên cột `code`.
+ *
+ * Đường ghi **duy nhất** còn lại: `twoFactorRouter` (`enable` · `regenerateBackupCodes`), cả hai
+ * **đòi TOTP** và băm qua `server/_core/backupCodeSecret.ts`. Xoá hàm là chưa đủ — hàm mới mọc lại
+ * ở file thứ N+1 — nên bất biến nằm ở **KIỂU** của cột (xem docstring của module ấy).
+ */
 export async function verifyBackupCode(userId: number, code: string) {
   const db = await getDb();
   if (!db) return false;
-  
+
   // Get all unused backup codes for user
   const codes = await db.select()
     .from(backupCodes)
@@ -339,11 +326,10 @@ export async function verifyBackupCode(userId: number, code: string) {
         eq(backupCodes.isUsed, false)
       )
     );
-  
-  // Check each code with bcrypt compare (codes are hashed)
-  const bcrypt = await import('bcryptjs');
+
+  // Đối chiếu qua chủ duy nhất (chuẩn hoá HOA + bcrypt.compare) — không giữ bản sao vị từ ở đây.
   for (const backupCode of codes) {
-    const isMatch = await bcrypt.compare(code.toUpperCase(), backupCode.code);
+    const isMatch = await khopMaDuPhong(code, backupCode.code);
     if (isMatch) {
       // Mark as used
       await db.update(backupCodes)

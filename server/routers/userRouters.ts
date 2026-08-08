@@ -339,22 +339,10 @@ export const userRouter = router({
       };
     }),
 
-  // Generate backup codes
-  generateBackupCodes: protectedProcedure
-    .mutation(async ({ ctx }) => {
-      const crypto = await import('crypto');
-      
-      // Generate 10 backup codes
-      const codes: string[] = [];
-      for (let i = 0; i < 10; i++) {
-        const code = crypto.randomBytes(4).toString('hex').toUpperCase();
-        codes.push(code);
-      }
-      
-      await db.generateBackupCodes(ctx.user.id, codes);
-      
-      return { codes };
-    }),
+  // ★★★ Pha 7 Task 8a — `user.generateBackupCodes` ĐÃ BỊ XOÁ (đường ghi PLAINTEXT, và **không**
+  // đòi TOTP, nên nó còn là đường vòng qua phép step-up của `twoFactor.regenerateBackupCodes`).
+  // Đường ghi mã dự phòng **duy nhất** nay là `twoFactor.enable` / `twoFactor.regenerateBackupCodes`.
+  // Client: `client/src/components/TwoFactorSetup.tsx`.
 
   // Get backup codes status
   getBackupCodesStatus: protectedProcedure
