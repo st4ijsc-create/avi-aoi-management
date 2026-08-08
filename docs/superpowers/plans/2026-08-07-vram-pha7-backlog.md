@@ -207,3 +207,54 @@ POST /api/auth/verify-2fa  (ngay sau đó)   ⇒ 200 + set-cookie
 - [ ] **Bước 8: commit.**
 
 ⚠ **Bí mật đã bị phát ra thì coi như đã lộ.** Sau khi vá, ghi vào báo cáo khuyến nghị **xoay `twoFactorSecret`** cho mọi tài khoản — nhưng **KHÔNG tự xoay** (làm thế là khoá mọi người ra khỏi 2FA): **chủ dự án quyết**.
+
+---
+
+## QUYẾT ĐỊNH CHỦ DỰ ÁN 2026-08-09 (sau Task 7)
+
+| # | Mục | Quyết định |
+|---|---|---|
+| 1 | Xoay `twoFactorSecret` toàn hệ + buộc đổi mật khẩu | **ĐỒNG Ý** → Task 8 |
+| 2 | `POST /api/external/auth/login` không có cổng 2FA | **BỎ QUA** — chấp nhận có chủ ý. ⚠ Bất biến ĐÚNG phải viết: *"đăng nhập qua **tRPC/web** đòi mật khẩu **VÀ** 2FA; qua **REST external** chỉ đòi **mật khẩu**"*. **Câu SAI phải xoá nếu gặp:** *"hệ đòi 2FA"*. |
+| 3 | Mã dự phòng: plaintext ↔ băm | **CHỈ ĐỂ LẠI MỘT ĐƯỜNG** → Task 8 |
+| 4 | `useAuth.ts:44` ghi `auth.me` vào `localStorage` | **XOÁ** → Task 8 |
+| 5 | Tách bảng `user_secrets` (**DDL**) | **ĐỒNG Ý** → Task 9 |
+
+---
+
+### Task 8: Ba mục vệ sinh bí mật (không DDL)
+
+**8a · MỘT đường duy nhất cho mã dự phòng.** `db.generateBackupCodes` lưu **plaintext**; `twoFactorRouter` **băm**. Hai người ghi, một bảng, hai luật ⇒ đúng lớp *"hai bản sao của một vị từ"* (đã phải **đổi kiểu 5 lần** để diệt; thêm ca test **không giải được**).
+⇒ **Giữ đường BĂM, xoá đường plaintext.** Lý do: mã dự phòng lưu plaintext **tự nó đã là rò** — đúng thứ Task 7 vừa đóng.
+- [ ] **ĐO trước**: đường nào đang được gọi, ai gọi, và **có hàng plaintext nào trong DB không** (`SELECT`, đừng đoán).
+- [ ] **ĐỔI KIỂU** để "ghi mã chưa băm" **không viết ra được**, đừng chỉ xoá hàm.
+- [ ] **Đột biến**: dựng đường ghi plaintext **thứ hai ở FILE MỚI** ⇒ ca đỏ (**phép thử M3**). Đối chứng dương: luồng băm **vẫn chạy**.
+- [ ] ⚠ **Hàng plaintext ĐÃ CÓ trong DB**: **khai số lượng**, đề xuất cách xử — **KHÔNG tự xoá dữ liệu**.
+
+**8b · Xoá `localStorage["manus-runtime-user-info"]`** (`client/src/hooks/useAuth.ts:44`) — ghi nguyên `auth.me` xuống đĩa, **0 người đọc** (Task 7 đã đếm).
+- [ ] **ĐO trước**: `git grep` xác nhận **0 người đọc**. ⚠ Nếu **có** người đọc ⇒ **DỪNG VÀ HỎI**.
+- [ ] Xoá **cả lượt ghi lẫn dữ liệu cũ** trên trình duyệt (dọn khoá khi khởi động).
+- [ ] **Đột biến**: dựng lại lượt ghi ⇒ ca đỏ. ⚠ **Lượng từ**: *"KHÔNG khoá `localStorage` nào chứa đối tượng người dùng"*, **suy ra** — đừng liệt kê một tên khoá.
+
+**8c · Xoay bí mật + buộc đổi mật khẩu — SOẠN CÔNG CỤ, KHÔNG TỰ CHẠY.**
+⚠⚠ **Xoay là thao tác KHOÁ NGƯỜI RA KHỎI 2FA.** Task này **soạn kịch bản + trình chủ dự án**, **không tự chạy trên DB thật**.
+- [ ] Soạn script: xoay `twoFactorSecret`, vô hiệu mã dự phòng cũ, đặt cờ buộc đổi mật khẩu.
+- [ ] **Ghi rõ**: ai bị ảnh hưởng (số tài khoản), họ phải làm gì để vào lại, và **lượt hoàn tác**.
+- [ ] **DỪNG, trình chủ dự án.** Không chạy.
+
+**Cổng ra:** một đường ghi mã dự phòng · 0 khoá `localStorage` mang người dùng · script xoay **đã soạn, chưa chạy**.
+
+---
+
+### Task 9: Tách bảng `user_secrets` (**CẦN DDL — chủ dự án đã duyệt HƯỚNG**)
+
+⚠⚠⚠ **SOẠN SQL RỒI DỪNG.** Duyệt **hướng** ≠ duyệt **nội dung migration**. Theo đúng khuôn Task 5 (mig 0313): soạn → trình → áp bằng owner **`aoi`** lên **cả hai** DB.
+
+**Vì sao:** Task 7 đóng bằng **phân loại + đổi kiểu ở tầng trả về** — đúng và đủ cho hôm nay, nhưng bí mật **vẫn nằm cùng bảng** với dữ liệu công khai, nên **mọi** `SELECT *` mới đều là một lỗ tiềm năng. Tách bảng làm rò **không viết ra được ở tầng DB**.
+
+- [ ] **Bước 1: ĐẾM** mọi điểm đọc/ghi ba cột bí mật. ⚠ **Đếm trước khi đổi** đã lật quyết định **SÁU lần**.
+- [ ] **Bước 2: SOẠN SQL** — bảng mới, chuyển dữ liệu, **thứ tự áp** (⚠ GOTCHA Wave 3: drizzle liệt kê **toàn bộ** cột ⇒ thêm/bớt cột chưa migrate thì **cả `INSERT` cũng vỡ**). Kèm **lượt hoàn tác** và **rủi ro nếu áp nhầm thứ tự**.
+- [ ] **Bước 3: DỪNG, trình chủ dự án.**
+- [ ] (sau duyệt) áp → cài mã → đối chứng dương → đột biến → **nghiệm thu sống**.
+
+**Cổng ra:** ba cột bí mật **không còn** trên `users`; đăng nhập + 2FA **vẫn chạy** (nghiệm thu sống).
