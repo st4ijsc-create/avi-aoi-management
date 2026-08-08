@@ -3,7 +3,7 @@ using St4i.Connector.Abstractions;
 namespace St4i.EdgeCore.Drivers.Modbus;
 
 /// <summary>
-/// G2-6 (WS-H) — builds a fresh <see cref="ModbusTcpDriver"/> per <c>FleetHost.StartLocked</c> call: a
+/// G2-6 (WS-H) — builds a fresh <see cref="ModbusTcpDriver"/> per <c>FleetCore.StartLocked</c> call: a
 /// driver owns a live TCP connection torn down (best-effort) whenever its pipeline slot stops/restarts, so
 /// each pipeline (re)start needs a BRAND NEW instance, never a reused one (same reasoning
 /// <c>SimulatorFactory.Create</c> already applies to the simulated fleet's own drivers). Program.cs

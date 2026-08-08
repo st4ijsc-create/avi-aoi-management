@@ -59,8 +59,8 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// slow/stuck poll if it gives up first.</para>
 ///
 /// <para><b><see cref="DisposeAsync"/> deliberately does NOT acquire <see cref="_ioLock"/>.</b> Mirrors
-/// <c>FleetHost</c>'s own signed-off B-2 design ("disposal never waits on an in-flight write, not even
-/// boundedly" — a driver dispose can run while <c>FleetHost._gate</c>/<c>FleetHost.Estop</c> is involved,
+/// <c>FleetCore</c>'s own signed-off B-2 design ("disposal never waits on an in-flight write, not even
+/// boundedly" — a driver dispose can run while <c>FleetCore._gate</c>/<c>FleetCore.Estop</c> is involved,
 /// and this class has no way to know that, so waiting here even briefly would recreate the exact hazard
 /// that design closes). It tears the connection down UNCONDITIONALLY, out from under whichever operation
 /// (a poll or a write) currently owns it — which is safe for the SAME reason <c>ct.Register(DisposeConnection)</c>
@@ -313,7 +313,7 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
 
         // GP-6b (Fix round 1, task-6b-report.md) — tcp.ConnectAsync above already takes `ct`, but
         // DisposeAsync could still have run to completion WHILE it was in flight
-        // (FleetHost.WaitDisposeOldPipeline cancels the token, waits a BOUNDED 3s for the run task, then
+        // (FleetCore.WaitDisposeOldPipeline cancels the token, waits a BOUNDED 3s for the run task, then
         // calls DisposeAsync regardless of whether that wait succeeded — there is no lock spanning both),
         // landing a live TcpClient/IModbusMaster on an already-disposed driver that would otherwise never be
         // explicitly closed again. Dispose it here instead of leaking it — same shape as
@@ -379,7 +379,7 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
             MachineCode = _map.MachineCode,
             Kind = ReadingKind.Telemetry,
             // Telemetry has no pass/fail concept (same rationale as IotSensorSim's telemetry path) — Verdict
-            // MUST be Skip, not the enum default (Pass). FleetHost.OnPipelineCommitted increments the
+            // MUST be Skip, not the enum default (Pass). FleetCore.OnPipelineCommitted increments the
             // fleet-wide FPY/judged/pass KPIs for any reading whose Verdict != Skip, so a defaulted Pass here
             // would silently inflate the operator FPY toward 100% on every Modbus poll (whole-branch review).
             Verdict = Verdict.Skip,

@@ -233,7 +233,31 @@ public sealed class RelayNotificationChannelTests : IDisposable
 
         // ── HALT engaged ────────────────────────────────────────────────────────────────────────────────
         host.Estop();
-        Assert.True(host.GetSafetyStatus().EstopEngaged);
+        var haltedSafety = host.GetSafetyStatus();
+        Assert.True(haltedSafety.EstopEngaged);
+
+        // 🔴 Task E-2 (blueprint §9.3b) — THE WITNESS FOR SafetySnapshot.IsRunning, and it is here rather
+        // than in a file of its own because this is already the batch's headline safety test: the same
+        // channel, the same driver, the same alarm, exercised once with the latch engaged and once with it
+        // clear. Adding the missing field to that existing before/after pair is strictly stronger than a
+        // standalone assertion would be.
+        //
+        // WHAT IT KILLS, and why it did not exist. §9.3b ran two mutations against the pre-E-2 tree.
+        // Splitting GetSafetyStatus's single lock acquisition into two reads SURVIVED 1282/1282 — and so did
+        // replacing IsRunning in the snapshot with a HARDCODED `true`, which is not a torn read at all but
+        // total breakage. That second result is the finding: the field had no witness of any kind, so E-2
+        // would have carried a completely dead value across the cut with the gate still green. Estop() tears
+        // every pipeline down before it latches, so IsRunning is genuinely false here — a hardcoded `true`
+        // fails this line, and a hardcoded `false` fails its twin after the restart below.
+        //
+        // 🔴 WHAT IT DOES *NOT* GUARD, stated because §9.3's original mechanism was wrong and the correction
+        // matters more than the fix: this is NOT a witness for the cut. EstopGuardRule.cs:47 reads
+        // request.Safety.EstopEngaged and nothing else, so IsRunning has no consumer on the safety path at
+        // all — its only reader is GET /v1/safety (SafetyEndpoints.cs:34), a SCREEN. GetSafetyStatus still
+        // moves with _gate as one piece, on the corrected grounds: a paired read split across two lock
+        // acquisitions is a latent hazard from the moment anyone reads both fields, which SafetyEndpoints
+        // already does.
+        Assert.False(haltedSafety.IsRunning);
 
         await channel.DispatchAsync(Job(AlarmEdgeKind.Raised, "alarm-a"));
 
@@ -262,6 +286,11 @@ public sealed class RelayNotificationChannelTests : IDisposable
         host.ResetEstop();
         Assert.False(host.GetSafetyStatus().EstopEngaged);
         await RestartWritableAsync(host);   // Estop tore the pipelines down — see that helper.
+
+        // The other half of the IsRunning witness — see the block above. A snapshot that hardcodes EITHER
+        // literal now fails one of these two lines, so the field is pinned in both directions rather than
+        // merely observed once.
+        Assert.True(host.GetSafetyStatus().IsRunning);
 
         await channel.DispatchAsync(Job(AlarmEdgeKind.Raised, "alarm-b"));
 
@@ -980,6 +1009,15 @@ public sealed class RelayNotificationChannelTests : IDisposable
     /// them — an operator needs a different explanation for a mistyped code than for a stopped fleet than for
     /// a read-only connector. Each case is reached through the real <see cref="FleetHost"/> resolution path
     /// and each moves its OWN counter; the theory would pass vacuously if they shared one.
+    ///
+    /// <para>🔴 <b>Task E-4 — the COUNTER was all this asserted, and the counter is not what an operator
+    /// reads.</b> Each case now also asserts the operator-visible warning carries
+    /// <see cref="MachineWriteGate.ExplainUnavailable"/>'s text for that case. This channel used to hold its
+    /// OWN, independently worded copy of the cause list, drifted from the write endpoint's — and both copies
+    /// presupposed that a connector exists, which is false for a machine with no connector configured here
+    /// and for a machine a <c>St4i.EdgeService</c> edge agent holds. Case (3) below is the proof by example:
+    /// its machine is driven by the simulated group and has no connector at all, while the old text told the
+    /// operator "this connector declares no writable points or commands."</para>
     /// </summary>
     [Fact]
     public async Task TheFourUnavailableCases_AreDistinguished_AndNoneIsCollapsed()
@@ -992,10 +1030,13 @@ public sealed class RelayNotificationChannelTests : IDisposable
             Assert.True(await SavePointRelayAsync(store, machineCode: "NOT-IN-ANY-ROSTER"));
             var host = CreateHost();
             host.Start();
-            var channel = NewChannel(store, host, audit);
+            var warnings = new List<string>();
+            var channel = NewChannel(store, host, audit, warnings: warnings);
             await channel.DispatchAsync(Job(AlarmEdgeKind.Raised, "a"));
             Assert.Equal(1, channel.Stats.MachineNotFound);
             Assert.Equal(0, channel.Stats.NoLiveDriver + channel.Stats.ReadOnly + channel.Stats.AmbiguousDriver);
+            AssertWarningCarriesTheSharedExplanation(
+                warnings, MachineDriverAvailability.MachineNotFound, "NOT-IN-ANY-ROSTER");
             host.Stop();
         }
 
@@ -1004,10 +1045,13 @@ public sealed class RelayNotificationChannelTests : IDisposable
             var store = new NotificationConfigStore(NewTempDir());
             Assert.True(await SavePointRelayAsync(store, machineCode: "SCRW-01"));
             var host = CreateHost();                     // never started
-            var channel = NewChannel(store, host, audit);
+            var warnings = new List<string>();
+            var channel = NewChannel(store, host, audit, warnings: warnings);
             await channel.DispatchAsync(Job(AlarmEdgeKind.Raised, "a"));
             Assert.Equal(1, channel.Stats.NoLiveDriver);
             Assert.Equal(0, channel.Stats.MachineNotFound + channel.Stats.ReadOnly + channel.Stats.AmbiguousDriver);
+            AssertWarningCarriesTheSharedExplanation(
+                warnings, MachineDriverAvailability.NoLiveDriver, "SCRW-01");
         }
 
         // (3) ReadOnly — a live driver that cannot write at all (the simulated fleet).
@@ -1024,10 +1068,13 @@ public sealed class RelayNotificationChannelTests : IDisposable
             }
 
             Assert.Equal(MachineDriverAvailability.ReadOnly, host.GetMachineDriverAvailability("SCRW-01"));
-            var channel = NewChannel(store, host, audit);
+            var warnings = new List<string>();
+            var channel = NewChannel(store, host, audit, warnings: warnings);
             await channel.DispatchAsync(Job(AlarmEdgeKind.Raised, "a"));
             Assert.Equal(1, channel.Stats.ReadOnly);
             Assert.Equal(0, channel.Stats.MachineNotFound + channel.Stats.NoLiveDriver + channel.Stats.AmbiguousDriver);
+            AssertWarningCarriesTheSharedExplanation(
+                warnings, MachineDriverAvailability.ReadOnly, "SCRW-01");
             host.Stop();
         }
 
@@ -1052,13 +1099,29 @@ public sealed class RelayNotificationChannelTests : IDisposable
             }
 
             Assert.Equal(MachineDriverAvailability.AmbiguousDriver, host.GetMachineDriverAvailability(MachineCode));
-            var channel = NewChannel(store, host, audit);
+            var warnings = new List<string>();
+            var channel = NewChannel(store, host, audit, warnings: warnings);
             await channel.DispatchAsync(Job(AlarmEdgeKind.Raised, "a"));
             Assert.Equal(1, channel.Stats.AmbiguousDriver);
             Assert.Equal(0, driver.WriteCallCount);       // no I/O was ever attempted
+            AssertWarningCarriesTheSharedExplanation(
+                warnings, MachineDriverAvailability.AmbiguousDriver, MachineCode);
             host.AdditionalPipelinesForTests = null;
             host.Stop();
         }
+    }
+
+    /// <summary>🔴 Task E-4 — the join between "the four explanations are correct on every producing path"
+    /// (<c>MachineWriteUnavailableMessageTests</c>, which never runs this channel) and "this channel is what
+    /// says them". Asserted against <see cref="MachineWriteGate.ExplainUnavailable"/> rather than a literal:
+    /// a mutation that re-inlines this channel's own wording leaves the other file green and turns these
+    /// four red, which is the direction that matters — the previous private copy is exactly how the two
+    /// surfaces drifted apart in the first place.</summary>
+    private static void AssertWarningCarriesTheSharedExplanation(
+        List<string> warnings, MachineDriverAvailability availability, string machineCode)
+    {
+        var expected = MachineWriteGate.ExplainUnavailable(availability, machineCode);
+        Assert.Contains(warnings, w => w.Contains(expected, StringComparison.Ordinal));
     }
 
     // ─────────────────────────────────────────────────────────────────────

@@ -17,6 +17,12 @@ using St4i.EdgeService;
 //                    EdgeWorker.ResolveGate); in product mode (the default) that same situation yields
 //                    an EMPTY roster instead — see EdgeWorker.LoadFleet (SM-1b,
 //                    .superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-1b-brief.md).
+//   --connectors <path>
+//                   🔴 Task E-3 — the connectors.json this host runs. Unset means "connectors.json beside
+//                    the exe" (EdgeConnectors.ResolvePath). An absent file, an empty array, or a file whose
+//                    every entry this host cannot dispatch all mean the same thing: no connectors, and a run
+//                    byte-for-byte identical to the pre-E-3 simulated one. A DIFFERENT flag from --fleet on
+//                    purpose — blueprint §9.4(1) is the record of what one flag with two readers costs.
 var options = ParseArgs(args);
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -51,9 +57,24 @@ static EdgeServiceOptions ParseArgs(string[] args)
 {
     int? smoke = null;
     string? fleet = null;
+    string? connectors = null;
 
     for (var i = 0; i < args.Length; i++)
     {
+        // 🔴 Task E-3 — `--connectors <path>`: this host's connectors.json, a DIFFERENT file from --fleet's.
+        // Unset means "connectors.json beside the exe" (EdgeConnectors.ResolvePath), and an absent file means
+        // this deployment simply has no connectors — byte-for-byte the pre-E-3 run.
+        if (string.Equals(args[i], "--connectors", StringComparison.OrdinalIgnoreCase))
+        {
+            if (i + 1 < args.Length)
+            {
+                connectors = args[i + 1];
+                i++;
+            }
+
+            continue;
+        }
+
         if (string.Equals(args[i], "--smoke", StringComparison.OrdinalIgnoreCase))
         {
             if (i + 1 < args.Length && int.TryParse(args[i + 1], out var n) && n > 0)
@@ -72,5 +93,5 @@ static EdgeServiceOptions ParseArgs(string[] args)
         }
     }
 
-    return new EdgeServiceOptions(smoke, fleet);
+    return new EdgeServiceOptions(smoke, fleet, connectors);
 }

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using St4i.Connector.Abstractions.Models;
 
-namespace St4i.EngineApi.Config;
+namespace St4i.EdgeCore.Config;
 
 /// <summary>Thrown by <see cref="ConnectorsConfig.Load"/> when <c>connectors.json</c> exists but isn't
 /// valid JSON, or doesn't match the expected shape (root isn't an array) — reserved for the file genuinely
@@ -21,14 +21,32 @@ public sealed class ConnectorsConfigException : Exception
 
 /// <summary>One parsed <c>connectors.json</c> entry, already validated (non-blank <see cref="Kind"/>, a
 /// present <c>settings</c> value) but not yet dispatched to any specific connector-kind constructor — that
-/// dispatch is Program.cs's job (mirroring exactly how it already owns "which built-in factory type does
-/// ST4I_MODBUS_ENABLED/ST4I_OPCUA_ENABLED construct").</summary>
-/// <param name="Id">The connector's own label — used ONLY for the per-entry warning naming (see
-/// <see cref="ConnectorsConfig.Load"/>'s remarks) and defaulted to <paramref name="Kind"/> when the entry
-/// doesn't specify one of its own. Has no other effect: <see cref="St4i.EngineApi.Fleet.ConnectorRegistry.Register"/>
-/// keys on the constructed <see cref="St4i.Connector.Abstractions.IConnectorFactory.Kind"/> (a built-in
-/// factory's own <c>Kind</c> getter is a fixed constant, e.g. <see cref="DriverKinds.Modbus"/>), never on
-/// this field.</param>
+/// dispatch belongs to whichever HOST is reading the file (E-3: <c>St4i.EngineApi</c>'s
+/// <c>ConnectorsJsonRegistration</c>, or <c>St4i.EdgeService</c>'s <c>EdgeConnectors</c>).</summary>
+/// <param name="Id">The connector's own label, defaulted to <paramref name="Kind"/> when the entry doesn't
+/// specify one of its own.
+///
+/// <para>🔴 <b>WHAT THIS FIELD DOES IS NOW HOST-DEPENDENT, and this paragraph used to deny that.</b> It said
+/// the id is "used ONLY for the per-entry warning naming … has no other effect:
+/// <see cref="St4i.EdgeCore.Fleet.ConnectorRegistry.Register"/> keys on the constructed
+/// <see cref="St4i.Connector.Abstractions.IConnectorFactory.Kind"/> … never on this field." <b>That was true
+/// of the one host that existed when it was written and is false of the host E-3 added.</b>
+/// <list type="bullet">
+/// <item><b><c>St4i.EngineApi</c></b> — still true for a TCP/OPC-UA entry: it registers under the KIND
+/// (<c>ConnectorsJsonRegistration.RegistrationKeyOf</c>), deliberately, because adopting the operator's id
+/// there would move a running install's pipeline slot label and therefore its alarm <c>TargetId</c>. An RTU
+/// bus entry is already the exception — it registers under this id.</item>
+/// <item><b><c>St4i.EdgeService</c></b> — <b>THE ID IS THE REGISTRATION KEY</b>
+/// (<c>EdgeConnectors.RegistrationKeyOf</c>). That host has no legacy slot labels to move, and keying on the
+/// kind would collapse every Modbus entry in a file into one instance, which is exactly what "N devices"
+/// must not mean.</item>
+/// </list>
+/// Corrected by the E-3 review. Worth naming the mechanism as well as the instance: this is the second stale
+/// doc-comment claim found in THIS file in THIS task — the first was a <c>cref</c> E-2's move had falsified,
+/// repaired two lines from here — and neither was caught by the build, because XML doc generation is off and
+/// nothing checks prose. A doc comment carrying a load-bearing invariant needs the invariant asserted
+/// somewhere that can go red; this one now is, by
+/// <c>EdgeWorkerConnectorsTests.NEntries_YieldNRegisteredInstances_EachKeyedByItsOwnId</c>.</para></param>
 /// <param name="Kind">Which connector kind's factory to construct — normalized the same way every other
 /// connector id in this codebase is (<see cref="DriverKinds.Normalize"/>), so <c>"modbus"</c>/<c>"Modbus"</c>/
 /// <c>"MODBUS"</c> all resolve identically.</param>

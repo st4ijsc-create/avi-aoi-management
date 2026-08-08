@@ -23,7 +23,8 @@ public sealed class PersistedFleetSettings
 /// survives a process restart. Before this task, WS-F1 only seeded these three fields from the
 /// <c>ST4I_SERVER_URL</c>/<c>ST4I_MACHINE_CODE</c>/<c>ST4I_VERIFY_TLS</c> env vars at startup — real, but
 /// a genuine operator edit made through the Settings UI/API afterward was still purely in-memory
-/// (<c>FleetHost</c>'s <c>_serverUrl</c>/<c>_machineCode</c>/<c>_verifyTls</c> fields) and reverted to
+/// (<c>FleetCore</c>'s <c>_serverUrl</c>/<c>_machineCode</c>/<c>_verifyTls</c> fields, behind the
+/// <c>FleetHost</c> shell) and reverted to
 /// whatever the env vars (or <c>FleetHost.DefaultServerUrl</c>/<c>DefaultMachineCode</c>, absent even
 /// those) said on the very next restart.
 ///

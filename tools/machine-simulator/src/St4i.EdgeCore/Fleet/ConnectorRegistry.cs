@@ -3,33 +3,33 @@ using System.Diagnostics.CodeAnalysis;
 using St4i.Connector.Abstractions;
 using St4i.Connector.Abstractions.Models;
 
-namespace St4i.EngineApi.Fleet;
+namespace St4i.EdgeCore.Fleet;
 
 /// <summary>
 /// GP-4 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-4-brief.md) — the
-/// connector-id-keyed registry that replaces <see cref="FleetHost"/>'s old per-driver-kind hardcoding: one
+/// connector-id-keyed registry that replaces <c>FleetHost</c>'s old per-driver-kind hardcoding: one
 /// dedicated optional constructor parameter (<c>Func&lt;IDeviceDriver&gt;? modbusDriverFactory</c>,
-/// <c>OpcUaDriverFactory? opcUaDriverFactory</c>) and one copy-pasted <see cref="FleetHost.StartLocked"/>
+/// <c>OpcUaDriverFactory? opcUaDriverFactory</c>) and one copy-pasted <c>FleetCore.StartLocked</c>
 /// block per driver kind. Onboarding a new connector kind used to mean editing three files (FleetHost's
 /// ctor, StartLocked, and Program.cs's wiring); with this registry it means calling <see cref="Register"/>
-/// once, with no <see cref="FleetHost"/> change at all — <see cref="FleetHost"/> only ever asks this
+/// once, with no <c>FleetHost</c> change at all — <c>FleetHost</c> only ever asks this
 /// registry "what connector ids are configured" and "build me a driver for this one."
 ///
-/// <para><b>Why this lives in St4i.EngineApi, not St4i.EdgeCore:</b> <see cref="FleetHost"/> is this
-/// registry's ONLY consumer today (verified: neither <c>St4i.EdgeService</c>'s <c>EdgeWorker</c> nor the
-/// WPF <c>St4iMachineSimulator</c>'s <c>FleetService</c> ever touch Modbus/OPC-UA or any driver-factory
-/// concept — both only ever drive the plain simulated fleet). <c>St4i.EdgeCore</c> is the right home for
-/// REUSABLE driver logic consumed by any host (<c>ModbusDriverFactory</c>, <c>OpcUaDriverFactory</c>, and
-/// this task's new <c>ModbusConnectorFactory</c>/<c>OpcUaConnectorFactory</c> adapters all stay there,
-/// exactly where the driver types they wrap already live) — but THIS registry is a host COMPOSITION-ROOT
-/// concept, not driver logic: it is how one specific host (<c>Program.cs</c>) answers "which connectors
-/// did I configure" for its own <see cref="FleetHost"/>. Adding it to <c>St4i.EdgeCore</c> (a
-/// <c>net10.0-windows</c> assembly with a much heavier dependency surface — DPAPI, the vendored device
-/// client SDK) for a type with exactly one real consumer would be speculative generality, not reuse.
-/// Should a future host (GP-5's <c>connectors.json</c>, or beyond) need the same registry shape, moving it
-/// is a one-file relocation with no design change — this class has zero dependency on anything
-/// EngineApi-specific (no ASP.NET Core, no <see cref="FleetHost"/> type reference) precisely so that move
-/// stays cheap if it's ever warranted.</para>
+/// <para>🔴 <b>Task E-2 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §9.1) — this file
+/// MOVED from <c>St4i.EngineApi/Fleet/</c> to <c>St4i.EdgeCore/Fleet/</c>, and the paragraph that used to
+/// stand here (<i>"Why this lives in St4i.EngineApi, not St4i.EdgeCore"</i>) is reversed rather than
+/// deleted, because its own closing sentence is what made the move cheap.</b> That paragraph argued the
+/// registry was a host COMPOSITION-ROOT concept with exactly one real consumer (<c>FleetHost</c>), so
+/// putting it in EdgeCore would be speculative generality — and then wrote: <i>"Should a future host need
+/// the same registry shape, moving it is a one-file relocation with no design change — this class has zero
+/// dependency on anything EngineApi-specific precisely so that move stays cheap."</i> Đợt E is that future:
+/// <c>St4i.EdgeService</c> is the process that owns the RS-485 port, the N-driver lifecycle core
+/// (<see cref="FleetCore"/>) moved down to be reachable from it, and <see cref="FleetCore.StartLocked"/>
+/// builds one pipeline slot per registered instance from this registry while
+/// <see cref="FleetCore.ResolveWritableDriver"/> routes every write off its bindings. A lifecycle core that
+/// cannot see this type is not a lifecycle core (blueprint §9.1/§9.6(b): it is read at FOUR sites, not two).
+/// The relocation was indeed one file, zero design change, and zero new dependencies — this class still
+/// references only <c>St4i.Connector.Abstractions</c>.</para>
 ///
 /// <para><b>Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md) — this registry
 /// is keyed by CONNECTOR INSTANCE, not by protocol kind.</b> Until D-1 the key WAS
@@ -54,12 +54,12 @@ namespace St4i.EngineApi.Fleet;
 /// does (they all start from a parsed register/node map, which carries <c>machineCode</c> as a required
 /// field — see <see cref="ConnectorConfigValidation"/>). A registration whose machine code is ALREADY
 /// claimed by a DIFFERENT instance is REFUSED (<see cref="Register"/> returns <see langword="false"/> and
-/// mutates nothing) — that refusal is the structural uniqueness gate <see cref="FleetHost.ResolveWritableDriver"/>
+/// mutates nothing) — that refusal is the structural uniqueness gate <c>FleetCore.ResolveWritableDriver</c>
 /// relies on: because at most one instance can ever claim a given machine code, a machine that IS claimed
 /// resolves to exactly one identifiable driver, and a write can never be handed to a sibling's device.
 /// An UNBOUND instance (<c>machineCode</c> null — only reachable from test code and from a third-party
 /// registration path that has no parsed map to read a code from) claims nothing and leaves
-/// <see cref="FleetHost"/>'s pre-D-1, kind-based resolution rule in force for every machine, including its
+/// <c>FleetHost</c>'s pre-D-1, kind-based resolution rule in force for every machine, including its
 /// <see cref="MachineDriverAvailability.AmbiguousDriver"/> guard.</para>
 ///
 /// <para><b>Why one machine code per instance, and why that does not preclude multidrop.</b> D-4's multidrop
@@ -88,7 +88,7 @@ namespace St4i.EngineApi.Fleet;
 /// descriptive <c>error</c> for an id nothing was ever <see cref="Register"/>ed under — never throws, and
 /// never silently no-ops without a way for the caller to notice. This is deliberately the SAME shape as a
 /// registered connector whose own <see cref="IConnectorFactory.TryCreate"/> rejects its configuration —
-/// from <see cref="FleetHost"/>'s point of view "no factory for this id" (an operator typo, or a plugin
+/// from <c>FleetHost</c>'s point of view "no factory for this id" (an operator typo, or a plugin
 /// that failed to load) and "a factory rejected its own config" are the same class of problem: this
 /// connector cannot start right now, log it, and do not let it stop any sibling connector or the
 /// simulated fleet from starting.</para>
@@ -150,7 +150,7 @@ public sealed class ConnectorRegistry
     /// other id in this codebase, which is also what keeps an operator-chosen id of <c>"modbus"</c> from
     /// becoming a SECOND entry alongside the built-in <c>"Modbus"</c>.</param>
     /// <param name="machineCode">Task D-1 — the machine code this instance serves, if it knows it. This is
-    /// the binding <see cref="FleetHost"/> routes a write on; see the class doc comment for why a claim that
+    /// the binding <c>FleetHost</c> routes a write on; see the class doc comment for why a claim that
     /// another instance already holds is REFUSED rather than allowed to overwrite. <see langword="null"/>
     /// (the default) means "this instance declares no machine binding" — every pre-existing call site, so
     /// their behaviour is unchanged.</param>
@@ -205,7 +205,7 @@ public sealed class ConnectorRegistry
                     // is exactly the state MachineDriverAvailability.AmbiguousDriver was built to refuse a
                     // write in; refusing the second REGISTRATION means that state can never be constructed
                     // through this registry in the first place. Ordinal-ignore-case because every machine-code
-                    // comparison in this codebase is (FleetHost.RegisterMachine's own duplicate guard,
+                    // comparison in this codebase is (FleetCore.RegisterMachine's own duplicate guard,
                     // ResolveWritableDriver's roster lookup, ConnectorEndpoints' collision checks) — a claim
                     // that differed only by casing would slip past this and reintroduce the ambiguity.
                     return false;
@@ -225,7 +225,7 @@ public sealed class ConnectorRegistry
     ///
     /// <para><b>Why this had to exist before multidrop could ship.</b> <see cref="Register"/> refuses a second
     /// claim on a machine code — that refusal is the structural gate
-    /// <see cref="FleetHost.ResolveWritableDriver"/> rests on. With no removal, a device deleted from a bus map
+    /// <c>FleetCore.ResolveWritableDriver</c> rests on. With no removal, a device deleted from a bus map
     /// (or a connector deleted through <c>DELETE /v1/connectors/{instanceId}</c>) left a GHOST entry still
     /// holding that machine's claim until the process restarted: the machine could not be re-served by
     /// anything, and the refusal named an instance the operator had already deleted from their file.
@@ -235,12 +235,12 @@ public sealed class ConnectorRegistry
     /// <para><b>🔴 This method performs NO I/O and disposes NOTHING, and that is the design, not an
     /// omission.</b> This registry holds <see cref="IConnectorFactory"/> objects and opaque configuration
     /// strings — it has never held a driver. The live <see cref="IDeviceDriver"/> built from an entry belongs
-    /// to a <see cref="FleetHost"/> pipeline slot, and <see cref="FleetHost"/> already disposes slots
+    /// to a <c>FleetHost</c> pipeline slot, and <c>FleetHost</c> already disposes slots
     /// <b>outside</b> its <c>_gate</c>, under a bounded per-driver budget
     /// (<c>WaitAndDisposeOldPipeline</c>/<c>DisposeOrphanedConnectorDrivers</c>, both invoked only after the
     /// lock block closes — that constraint predates this batch and is absolute). So removal here is a pure
     /// dictionary mutation that cannot block a caller holding any lock, and the driver it orphans is reclaimed
-    /// by the pipeline restart that <see cref="FleetHost"/> already owns. <b>An in-flight read is therefore
+    /// by the pipeline restart that <c>FleetHost</c> already owns. <b>An in-flight read is therefore
     /// completely unaffected by this call</b> — it keeps its lease, keeps the shared RTU bus, and finishes
     /// normally; what it loses is only its right to be rebuilt on the next start.</para>
     ///
@@ -285,7 +285,7 @@ public sealed class ConnectorRegistry
     /// returned id that is already gone by the time it is used, and that is exactly the shape
     /// <see cref="TryCreateDriver"/> was already built for: it answers an unknown id with
     /// <see langword="false"/> plus a descriptive error, the same way it answers a factory that rejected its
-    /// own configuration. <c>FleetHost.StartLocked</c> reports that as a per-connector start issue and starts
+    /// own configuration. <c>FleetCore.StartLocked</c> reports that as a per-connector start issue and starts
     /// every sibling — which is the correct behaviour for "this connector was removed while the fleet was
     /// starting", not a defect to guard against.</para></summary>
     public IReadOnlyList<string> RegisteredIds => _entries.Keys.ToList();
@@ -304,12 +304,12 @@ public sealed class ConnectorRegistry
     ///
     /// <para>At most ONE instance can ever claim a given code — <see cref="Register"/> refuses a second
     /// claim outright (see its own remarks) — so this is genuinely a lookup, not a "pick the first of
-    /// several". That is the property <see cref="FleetHost.ResolveWritableDriver"/> depends on to report
+    /// several". That is the property <c>FleetCore.ResolveWritableDriver</c> depends on to report
     /// <see cref="MachineDriverAvailability.Writable"/> without needing Đợt B's roster-sharing count: a
     /// claimed machine resolves to exactly one identifiable driver by construction.</para>
     ///
     /// <para>Case-insensitive on <paramref name="machineCode"/>, matching every other machine-code
-    /// comparison in this codebase (<see cref="FleetHost.RegisterMachine"/>'s duplicate guard,
+    /// comparison in this codebase (<c>FleetCore.RegisterMachine</c>'s duplicate guard,
     /// <c>ConnectorEndpoints</c>' collision checks). Never throws; a null/blank code simply matches
     /// nothing.</para>
     /// </summary>
@@ -341,7 +341,7 @@ public sealed class ConnectorRegistry
     /// remarks. This overload is for single, standalone queries.</para>
     ///
     /// <para><b>Census (D-1 re-review, m-B): this member has NO production caller.</b>
-    /// <see cref="FleetHost"/> used it until m3 replaced its three independent registry reads with one
+    /// <c>FleetHost</c> used it until m3 replaced its three independent registry reads with one
     /// <see cref="SnapshotBindings"/> call, and nothing else in <c>src/</c> asks the question. It is kept
     /// rather than deleted for one reason, stated so the next census does not have to re-derive it: it is
     /// the readable way for a TEST to assert that a registration is bound (the alternative,
@@ -360,10 +360,10 @@ public sealed class ConnectorRegistry
     /// <summary>
     /// 🔴 D-1 review, m3 — ONE consistent point-in-time view of every registered instance's binding.
     ///
-    /// <para><see cref="FleetHost.ResolveWritableDriver"/> asks three separate questions per resolution
+    /// <para><c>FleetCore.ResolveWritableDriver</c> asks three separate questions per resolution
     /// ("who claims this machine", "does a bound instance own this slot label", and the same first question
     /// again for every roster member while counting slot-sharers). Asked as three independent reads they are
-    /// three independent points in time: <see cref="FleetHost"/> holds its own <c>_gate</c> during
+    /// three independent points in time: <c>FleetCore</c> holds its own <c>_gate</c> during
     /// resolution, but <see cref="Register"/> takes <see cref="_registerGate"/> and nothing else, so a
     /// concurrent registration CAN land between them. No interleaving produces a wrong-machine write today —
     /// but only because every path that can register without a machine binding also fails to build a driver,
@@ -389,7 +389,7 @@ public sealed class ConnectorRegistry
 
     /// <summary>
     /// Attempts to build a fresh <see cref="IDeviceDriver"/> for <paramref name="id"/> — called anew every
-    /// time <see cref="FleetHost.StartLocked"/> needs one (never cached/reused; see
+    /// time <c>FleetCore.StartLocked</c> needs one (never cached/reused; see
     /// <see cref="IConnectorFactory.TryCreate"/>'s own remarks on why a fresh instance every restart is
     /// required). Never throws: an id nothing was <see cref="Register"/>ed under is reported the same way a
     /// registered factory rejecting its own configuration is (see the class doc comment's "Unknown-id
@@ -400,8 +400,8 @@ public sealed class ConnectorRegistry
     /// has to also guard against — <see cref="IConnectorFactory.TryCreate"/>'s own contract says a factory
     /// must not throw, but this method's doc comment promises the same thing unconditionally, so a
     /// misbehaving factory's exception is caught right here rather than relying on
-    /// <see cref="FleetHost.StartLocked"/>'s OWN defensive catch to be the only thing standing between a
-    /// rogue factory and a propagated exception. <see cref="FleetHost"/> still keeps its own catch around
+    /// <c>FleetCore.StartLocked</c>'s OWN defensive catch to be the only thing standing between a
+    /// rogue factory and a propagated exception. <c>FleetHost</c> still keeps its own catch around
     /// this call too — deliberate, doubled defense in depth for the one place third-party code runs while
     /// <c>_gate</c> is held, not redundancy to be trimmed.</para>
     ///
@@ -410,7 +410,7 @@ public sealed class ConnectorRegistry
     /// that assignment visible through the reference — an <see langword="out"/> parameter is pass-by-
     /// reference, so the write survives the throw. The catch below therefore does NOT reset the built
     /// driver to <see langword="null"/> — it forwards whatever was assigned (a real instance, or
-    /// <see langword="null"/> if the factory never got that far) unchanged, so <see cref="FleetHost"/> can
+    /// <see langword="null"/> if the factory never got that far) unchanged, so <c>FleetHost</c> can
     /// still see and dispose an orphaned driver rather than the reference silently vanishing here.</para>
     /// </summary>
     public bool TryCreateDriver(string id, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)

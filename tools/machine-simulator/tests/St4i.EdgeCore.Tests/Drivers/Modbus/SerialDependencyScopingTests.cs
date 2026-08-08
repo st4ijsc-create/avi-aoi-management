@@ -44,8 +44,11 @@ namespace St4i.EdgeCore.Tests.Drivers.Modbus;
 /// directory of every project that transitively restores it, <b>whether or not that project's own IL
 /// references a single type from it</b>. That mechanism used to be the hazard; after the ruling it is the
 /// delivery mechanism, and it is precisely why two of the three assertions below are worth having: the two
-/// hosts with no connector plumbing carry the DLL without their own IL naming a single type from it, so
-/// nothing but a look at the output directory can tell whether the reference is still there.</para>
+/// hosts with no CONFIGURED path to a COM port carry the DLL without their own IL naming a single type from
+/// it, so nothing but a look at the output directory can tell whether the reference is still there.
+/// (🔴 Whole-branch review I6 — this said "the two hosts with no connector plumbing". Since E-3
+/// <c>St4i.EdgeService</c> HAS connector plumbing; what it does not have is a dispatch arm that reaches a
+/// serial open. Only the WPF shell still has no registry at all.)</para>
 ///
 /// <para>🔴 <b>Why the deployment assertions name only the executables, never <c>St4i.EdgeCore</c> itself.</b>
 /// Measured on this tree: a LIBRARY project's <c>bin/</c> contains only its own and its project references'
@@ -104,13 +107,37 @@ public sealed class SerialDependencyScopingTests
     /// nothing under <c>src/</c> outside that project names either. So what this assertion pins is that the
     /// dependency the owner ruled for is still SHIPPED here — a real, checkable fact — and the remark says
     /// exactly that rather than borrowing a capability claim from the host next door.</para>
+    ///
+    /// <para>🔴 <b>Task E-4 census — EVERY FACTUAL SENTENCE IN THE PARAGRAPH ABOVE IS NOW FALSE, and the
+    /// first one was never true.</b> Corrected in place rather than rewritten away, because what it records
+    /// is the basis the D-7c ruling was argued on.
+    /// <list type="bullet">
+    /// <item><b>"not because this host can open a COM port today, which it cannot"</b> — never true as a
+    /// CAPABILITY claim, and not because of Đợt E: <c>SerialPortBusLink.OpenAsync</c> and
+    /// <c>SerialLineSettings</c> are <c>public</c> on the very assembly D-7c told all three hosts to
+    /// reference. <c>St4i.EdgeService.Tests.EdgeServiceSerialReachabilityTests</c> performs the open from
+    /// that host's own reference graph and is refused by the OPERATING SYSTEM, not the compiler. The true
+    /// statement is about CONFIGURATION — only <c>St4i.EngineApi</c> has a configured path from
+    /// <c>connectors.json</c> to a serial open — and it is README §24.5.</item>
+    /// <item><b>"no <c>ConnectorRegistry</c>, no <c>IConnectorFactory</c>, no <c>connectors.json</c>
+    /// reader"</b> and <b>"builds one <c>SimulatedDriver</c>"</b> — false since E-3:
+    /// <c>EdgeConnectors.Build</c> reads the file and populates a <c>ConnectorRegistry</c>, and
+    /// <c>EdgeAgentPipelines</c> runs N drivers on N pipelines off it.</item>
+    /// <item><b>"<c>ConnectorRegistry</c> and <c>FleetHost</c> are <c>St4i.EngineApi</c> types"</b> — false
+    /// for <c>ConnectorRegistry</c> since E-2, which moved it to <c>St4i.EdgeCore</c>.</item>
+    /// </list>
+    /// <b>What this test asserts is untouched by all of that</b>, which is why the assertion needed no
+    /// change: it pins that the DLL is SHIPPED with this deployment. That was deliberately chosen over a
+    /// capability claim, and the choice is what let three of the sentences around it go stale without the
+    /// assertion ever becoming wrong.</para>
     /// </summary>
     [Fact]
     public void EdgeServiceDeployment_CarriesSystemIoPorts_ByTheAllThreeHostsRuling()
         => AssertSerialDependencyIsShippedWith(
             Path.Combine("src", "St4i.EdgeService"), "St4i.EdgeService.dll",
-            "the Windows Service host — ruled in by the owner, though it has no connector registry to open a " +
-            "port from today");
+            "the Windows Service host — ruled in by the owner; since E-3 it does host connectors, but only " +
+            "Modbus TCP is dispatched and an RTU entry is refused by name, so no configured path here " +
+            "reaches a COM port (README §24.2/§24.5)");
 
     /// <summary>
     /// 🔴 <b>The engine — the one deployment where "carries it" and "can open a COM port" are the same
@@ -134,8 +161,9 @@ public sealed class SerialDependencyScopingTests
     public void EngineApiDeployment_CarriesSystemIoPorts_BecauseItCanOpenAComPortDirectly()
         => AssertSerialDependencyIsShippedWith(
             Path.Combine("src", "St4i.EngineApi"), "St4i.EngineApi.dll",
-            "the engine — the only host with a connector registry, and the one that opens a directly-attached " +
-            "RS-485 line from a connectors.json 'rtu-serial' entry");
+            "the engine — the only host with a CONFIGURED path from a connectors.json 'rtu-serial' entry to a " +
+            "directly-attached RS-485 line. (Not the only host with a connector registry: St4i.EdgeService has " +
+            "had one since E-3 and refuses RTU entries by name — README §24.2/§24.5.)");
 
     /// <summary>The WPF exhibition shell. Same careful remark as
     /// <see cref="EdgeServiceDeployment_CarriesSystemIoPorts_ByTheAllThreeHostsRuling"/>: measured,

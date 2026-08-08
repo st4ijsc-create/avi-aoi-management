@@ -22,6 +22,24 @@ namespace St4i.EdgeService;
 /// can also run unattended as a Windows service. This project deliberately does NOT reference the WPF
 /// project or any WPF assembly.
 ///
+/// <para>🔴 <b>Task E-3 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md) — ONE driver on ONE
+/// pipeline became N.</b> This worker now reads <c>connectors.json</c> (<see cref="EdgeConnectors"/>) and
+/// runs every configured connector instance alongside the simulated group, through
+/// <see cref="St4i.EdgeCore.Engine.EdgeAgentPipelines"/>.
+///
+/// <para><b>A deployment with no <c>connectors.json</c> behaves exactly as it did before E-3, and that is a
+/// property of ONE code path rather than of a branch:</b> the connectors registry is simply <c>null</c>, so
+/// the agent builds exactly one pipeline over exactly the <see cref="SimulatedDriver"/> these same
+/// simulators always produced, on the same profile, transport and event bus. Pinned by
+/// <c>EdgeWorkerConnectorsTests.NoConnectorsJson_IsExactlyTheSimulatedRunThisHostAlwaysDid</c>.</para>
+///
+/// <para><b>What this worker deliberately CANNOT do, structurally:</b> write to a machine.
+/// <c>FleetCore</c> — the lifecycle that owns the machine-code→writable-driver routing, with no HALT-latch
+/// check anywhere inside it — is <c>internal</c> on <c>St4i.EdgeCore</c> and is not nameable from this
+/// assembly. <see cref="St4i.EdgeCore.Engine.EdgeAgentPipelines"/> is what this host gets instead, and it
+/// never hands its caller a driver. See blueprint §3 and
+/// <c>EdgeAgentWriteSurfaceTests</c>.</para></para>
+///
 /// Fleet source: <c>--fleet &lt;path&gt;</c> via <see cref="FleetConfig.Load"/> if
 /// <see cref="EdgeServiceOptions.FleetPath"/> is given AND the file exists AND parses with entries — see
 /// <see cref="LoadFleet"/>. Falling back to the small fixed in-code default (<see cref="BuildDefaultFleet"/>,
@@ -52,9 +70,31 @@ public sealed class EdgeWorker : BackgroundService
     internal const string MachineCodeEnvVar = "ST4I_MACHINE_CODE";
     internal const string VerifyTlsEnvVar = "ST4I_VERIFY_TLS";
 
-    /// <summary>Same placeholder server URL as St4iMachineSimulator's <c>App.xaml.cs</c> and
-    /// St4i.EngineApi's <c>FleetHost.DefaultServerUrl</c> — a local engine listening on its default port,
-    /// overridable via <see cref="ServerUrlEnvVar"/> once a real deployment target is known.</summary>
+    /// <summary>🔴 <b>Task E-4 review, C1 — this remark said "Same placeholder server URL as
+    /// St4iMachineSimulator's <c>App.xaml.cs</c> and St4i.EngineApi's <c>FleetHost.DefaultServerUrl</c> — a
+    /// local engine listening on its default port". BOTH HALVES WERE FALSE, and this sentence is where the
+    /// blueprint's own §2 error came from</b>, so it is corrected here rather than only in the record —
+    /// otherwise the next reader re-derives §2 from the code.
+    ///
+    /// <para><b>(a) Not the same as <c>FleetHost.DefaultServerUrl</c>.</b> That constant has been the EMPTY
+    /// STRING since SM-3, and <c>FleetCore</c>'s own remarks on it record why this exact value was removed
+    /// there: <c>"http://localhost:5000"</c> LOOKED like configuration but was guaranteed to fail on every
+    /// install that never overrode it, because a real ST4I ecosystem server is never running on an edge box's
+    /// own loopback by default. The only host still carrying this literal besides this one is the WPF shell's
+    /// <c>PlaceholderServerUrl</c>. It is kept here — this host's Live transport binds one machine to one
+    /// server and an empty URL would just move the failure — but it is a PLACEHOLDER awaiting a real
+    /// deployment target, not a value anything is expected to work against.</para>
+    ///
+    /// <para><b>(b) It is not "a local engine listening on its default port", and nothing about this URL
+    /// points at <c>St4i.EngineApi</c> at all.</b> EngineApi's default port is <b>5199</b>
+    /// (<c>Program.cs</c>'s <c>UseUrls</c>) and it maps <b>no ingest route</b>. What this URL names is the
+    /// <b>ST4I platform</b>: <see cref="LiveTransport"/> hands it to the vendored <c>St4iDeviceClient</c>,
+    /// which appends its own hardcoded <c>/api/v1/ingest/…</c> paths. So an edge agent pushes NORTHBOUND to
+    /// the platform and never calls the engine — the two hosts share no roster, no machine-code claim and no
+    /// channel, which is exactly why the engine cannot tell an edge-held machine from an unconfigured one.
+    /// See blueprint §2.1 / §12.1 and README §24.4.</para>
+    ///
+    /// Overridable via <see cref="ServerUrlEnvVar"/>.</summary>
     internal const string DefaultServerUrl = "http://localhost:5000";
 
     /// <summary>EdgeService did not previously have a default machine identity (it always ran the
@@ -161,11 +201,28 @@ public sealed class EdgeWorker : BackgroundService
         }
 
         var sims = fleet.Select((d, i) => SimulatorFactory.Create(d, seed: 2000 + i)).ToList();
-        IDeviceDriver driver = new SimulatedDriver(sims);
         var profile = new MappingProfile { Name = "edge-service-fleet", DeviceClass = "Mixed" };
         var eventBus = new EventBus();
         var transport = BuildLiveOrDemoTransport();
-        var pipeline = new EdgePipeline(driver, profile, transport, eventBus);
+
+        // 🔴 Task E-3 — the connectors.json read path. Null (absent file / empty array / every entry skipped)
+        // is the pre-E-3 world, and it is the SAME null the simulated-only run has always effectively passed.
+        var connectors = EdgeConnectors.Build(EdgeConnectors.ResolvePath(_options.ConnectorsPath), _logger);
+
+        // 🔴 Task E-3 — one driver and one pipeline became N. See EdgeAgentPipelines for why an edge agent
+        // gets THIS type and not FleetCore (which is `internal` precisely so this host cannot reach the
+        // unguarded write path), and for the exact sense in which it is read-only.
+        //
+        // WITH NO connectors.json this builds exactly one pipeline, over exactly the SimulatedDriver these
+        // same `sims` produced before, on the same `profile`, the same `transport` and the same `eventBus` —
+        // which is what makes "a deployment with no connectors.json behaves as it does today" a property of
+        // ONE code path with an empty registry rather than of a branch nobody exercises.
+        var agent = new EdgeAgentPipelines(
+            transport,
+            eventBus,
+            profile,
+            logWarning: msg => _logger.LogWarning("{EdgeAgentMessage}", msg),
+            logError: (ex, msg) => _logger.LogError(ex, "{EdgeAgentMessage}", msg));
 
         // Linked (not just stoppingToken) so a reached --smoke count can unwind RunAsync immediately
         // instead of waiting on the host's own (slower, externally-driven) shutdown sequence.
@@ -174,12 +231,19 @@ public sealed class EdgeWorker : BackgroundService
 
         void OnCommitted(DeviceReading reading, TransportAck ack)
         {
-            commitCount++;
+            // 🔴 E-3 — Interlocked, not `++`. EdgeAgentPipelines raises Committed from N pipeline tasks with
+            // NO lock held, deliberately: serialising the raise there would have put a log call and a token
+            // cancellation under a lock, which is the exact shape blueprint §10.3 exists to warn about. The
+            // cost of that decision is paid HERE, in one word, by the one subscriber that needs it. The
+            // smoke branch below can now run on more than one thread — CancellationTokenSource.Cancel and
+            // IHostApplicationLifetime.StopApplication are both safe to call more than once, and `count`
+            // being the value THIS increment produced is what stops two threads reporting the same number.
+            var count = Interlocked.Increment(ref commitCount);
             _logger.LogInformation(
                 "commit #{Count} machine={MachineCode} kind={Kind} verdict={Verdict} ack.success={Success} ack.id={AckId} ack.status={AckStatus}",
-                commitCount, reading.MachineCode, reading.Kind, reading.Verdict, ack.Success, ack.Id, ack.HttpStatus);
+                count, reading.MachineCode, reading.Kind, reading.Verdict, ack.Success, ack.Id, ack.HttpStatus);
 
-            if (_options.SmokeCount is int smokeTarget && commitCount >= smokeTarget)
+            if (_options.SmokeCount is int smokeTarget && count >= smokeTarget)
             {
                 _logger.LogInformation("smoke target of {N} commit(s) reached — stopping host", smokeTarget);
                 localCts.Cancel();
@@ -187,10 +251,23 @@ public sealed class EdgeWorker : BackgroundService
             }
         }
 
-        pipeline.Committed += OnCommitted;
+        agent.Committed += OnCommitted;
         try
         {
-            await pipeline.RunAsync(localCts.Token).ConfigureAwait(false);
+            var run = agent.RunAsync(sims, connectors, localCts.Token);
+
+            // 🔴 E-3 — say WHICH pipelines this run actually started, once they are known. Two reasons, and
+            // the second is why it is a log line and not a comment: (1) an operator whose connectors.json
+            // entry silently produced nothing needs to see the difference between "configured" and "running",
+            // which is the same "visible, never silent" posture GetConfiguredConnectorIssues exists for;
+            // (2) it is the ONLY observable that joins the two halves of this task's headline claim — "the
+            // file parsed into N instances" is asserted in EdgeWorkerConnectorsTests and "N instances run N
+            // drivers that reach the transport" in EdgeAgentPipelinesTests, and without this line nothing
+            // asserted that THIS method hands the registry it built to the agent it runs. A mutation that
+            // passed `connectors: null` here left every other test in the task green.
+            await LogStartedPipelinesAsync(agent, run).ConfigureAwait(false);
+
+            await run.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -199,7 +276,7 @@ public sealed class EdgeWorker : BackgroundService
         }
         finally
         {
-            pipeline.Committed -= OnCommitted;
+            agent.Committed -= OnCommitted;
         }
 
         // WS-C precedent (LiveTransport.Dispose's own remarks: it owns an HttpClient) — a Live-mode
@@ -210,7 +287,41 @@ public sealed class EdgeWorker : BackgroundService
             disposableTransport.Dispose();
         }
 
-        _logger.LogInformation("EdgeWorker stopped after {Count} commit(s)", commitCount);
+        _logger.LogInformation("EdgeWorker stopped after {Count} commit(s)", Volatile.Read(ref commitCount));
+    }
+
+    /// <summary>🔴 E-3 — waits until <see cref="EdgeAgentPipelines.StartedLabels"/> is populated (the agent
+    /// fills it once, synchronously, before it starts any pipeline task) and logs it, then returns. Bounded
+    /// by <paramref name="run"/> itself completing, so a run that starts nothing at all — an empty registry
+    /// and no simulators — logs an empty list and returns immediately rather than spinning.
+    ///
+    /// <para>Deliberately NOT an event on the agent: a "pipelines started" callback would be a second
+    /// observation channel for a fact already exposed as a property, and this host is the only reader.</para>
+    ///
+    /// <para>🔴 <b>The wait is a bounded poll, not a <c>Task.Yield()</c> spin, and the first cut was the
+    /// spin.</b> The E-3 review flagged it: <c>StartedLabels</c> allocates an array per call, and while the
+    /// common path takes zero iterations, the agent DOES <c>await</c> before publishing — it disposes any
+    /// orphan driver a rejecting factory handed back — so a slow <c>DisposeAsync</c> made this a hot loop
+    /// allocating an array per turn on a background service's own thread. A 10 ms poll costs at most 10 ms of
+    /// latency on ONE log line and cannot spin.</para></summary>
+    private async Task LogStartedPipelinesAsync(EdgeAgentPipelines agent, Task run)
+    {
+        while (agent.StartedLabels.Count == 0 && !run.IsCompleted)
+        {
+            await Task.WhenAny(run, Task.Delay(10)).ConfigureAwait(false);
+        }
+
+        var labels = agent.StartedLabels;
+        _logger.LogInformation(
+            "EdgeWorker running {PipelineCount} pipeline(s): {PipelineLabels}",
+            labels.Count, labels.Count == 0 ? "(none)" : string.Join(", ", labels));
+
+        foreach (var issue in agent.StartIssues)
+        {
+            _logger.LogWarning(
+                "connector instance '{ConnectorId}' is configured but not running: {ConnectorError}",
+                issue.Id, issue.Error);
+        }
     }
 
     /// <summary>Resolves this run's Live-path connection settings from the process environment and

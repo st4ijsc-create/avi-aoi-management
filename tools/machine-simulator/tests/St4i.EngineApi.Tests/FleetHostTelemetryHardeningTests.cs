@@ -17,9 +17,9 @@ namespace St4i.EngineApi.Tests;
 /// telemetry series, <c>MachineState.SparkValue</c>) tested only <c>value is IConvertible</c> then
 /// unconditionally called <c>ToDouble(null)</c> — but <see cref="string"/> IS <see cref="IConvertible"/>,
 /// so <c>Convert.ToDouble("RUNNING")</c> throws a <see cref="FormatException"/> straight out of
-/// <see cref="FleetHost.OnPipelineCommitted"/>, which (being wired to <c>EdgePipeline.Committed</c>, an
+/// <c>FleetCore.OnPipelineCommitted</c>, which (being wired to <c>EdgePipeline.Committed</c>, an
 /// inline, synchronous event invoked from inside the pipeline's own run-task) would propagate up through
-/// <c>EdgePipeline.RunAsync</c> and be caught by <c>FleetHost.StartSlot</c>'s per-slot fault catch — i.e.
+/// <c>EdgePipeline.RunAsync</c> and be caught by <c>FleetCore.StartSlot</c>'s per-slot fault catch — i.e.
 /// a string OPC-UA/telemetry tag would silently KILL the whole slot on its very first poll.
 ///
 /// This test reproduces exactly that shape — a Verdict.Skip <see cref="DeviceReading"/> carrying BOTH a
@@ -48,7 +48,7 @@ public sealed class FleetHostTelemetryHardeningTests
         return new FleetHost(switchable, coordinator, eventBus);
     }
 
-    /// <summary>DriverKinds.Modbus — already excluded from <c>FleetHost.StartLocked</c>'s simulated group
+    /// <summary>DriverKinds.Modbus — already excluded from <c>FleetCore.StartLocked</c>'s simulated group
     /// pre-existing this task (P2-3) — so registering this descriptor never double-drives it with a
     /// simulator; the ONLY driver that ever produces a reading for it is the fake one wired below via
     /// <see cref="FleetHost.AdditionalPipelinesForTests"/>.</summary>

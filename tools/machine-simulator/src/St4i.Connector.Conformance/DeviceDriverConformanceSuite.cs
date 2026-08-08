@@ -64,7 +64,7 @@ public abstract class DeviceDriverConformanceSuite
 
     /// <summary>How long <see cref="Check_ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable"/> waits,
     /// after cancelling, before concluding cancellation was NOT honoured. Comfortably above
-    /// <c>FleetHost.RestartTeardownTimeout</c> (3s, the real budget a live host actually gives a driver to
+    /// <c>FleetCore.RestartTeardownTimeout</c> (3s, the real budget a live host actually gives a driver to
     /// stop) to absorb CI/test-harness overhead, while staying far tighter than the multi-second-to-unbounded
     /// stalls this task's own findings measured against a real (but unresponsive) protocol driver.</summary>
     protected virtual TimeSpan CancellationBudget => TimeSpan.FromSeconds(5);
@@ -142,7 +142,7 @@ public abstract class DeviceDriverConformanceSuite
     /// performs no I/O" rule) pass silently instead of being caught by the timing assertion it would
     /// otherwise still have to clear on every run. See that test class's own doc comment for the full
     /// writeup of this known, un-acknowledged gap (deliberately not fixed here — the driver itself is a
-    /// separate decision, and it is only ever constructed off <c>FleetHost</c>'s <c>_gate</c> today).</para>
+    /// separate decision, and it is only ever constructed off <c>FleetCore</c>'s <c>_gate</c> today).</para>
     /// </summary>
     protected virtual bool ModelsExternalDeviceConnection => true;
 
@@ -453,7 +453,7 @@ public abstract class DeviceDriverConformanceSuite
     /// <summary>Enforces: "Construction is non-blocking and does not connect" — every real driver's own
     /// class doc comment documents this (e.g. <c>ModbusTcpDriver</c>/<c>OpcUaDriver</c>: "ctor never
     /// connects — non-blocking, like every other driver's ctor"). A slow constructor would stall
-    /// <c>FleetHost.StartLocked</c>, which runs under the SAME lock <c>Estop()</c> takes.
+    /// <c>FleetCore.StartLocked</c>, which runs under the SAME lock <c>Estop()</c> takes.
     ///
     /// <para>Two INDEPENDENT assertions, not one — task-6-report.md "Fix round 1" (the reviewer's own cheap
     /// fold): elapsed-time alone only proves the constructor is FAST, not that it performed no I/O — a
@@ -482,10 +482,10 @@ public abstract class DeviceDriverConformanceSuite
                 sw.Elapsed < ConstructionBudget,
                 $"constructing the driver took {sw.Elapsed}, exceeding the {ConstructionBudget} non-blocking " +
                 "budget. IDeviceDriver's contract documents construction as non-blocking with no I/O — " +
-                "FleetHost.StartLocked constructs drivers under the same _gate lock Estop() takes, so a slow " +
+                "FleetCore.StartLocked constructs drivers under the same _gate lock Estop() takes, so a slow " +
                 "constructor blocks Estop() itself from returning for as long as it takes. (Estop() is a " +
                 "supervisory software halt of this codebase's own read pipeline, not a machine safety " +
-                "function — see FleetHost.Estop's own doc comment — so this rule protects THAT call's " +
+                "function — see FleetCore.Estop's own doc comment — so this rule protects THAT call's " +
                 "latency, nothing more.)");
 
             if (ModelsExternalDeviceConnection)

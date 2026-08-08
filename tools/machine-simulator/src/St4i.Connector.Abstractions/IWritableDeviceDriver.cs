@@ -14,7 +14,9 @@ namespace St4i.Connector.Abstractions;
 /// cannot write, and never by requiring it.
 ///
 /// <para><b>Never call <see cref="WriteSetpointAsync"/> or <see cref="InvokeCommandAsync"/> while holding
-/// <c>FleetHost._gate</c>.</b> That is the SAME lock <c>FleetHost.Estop()</c> takes; a write call that blocks
+/// the host's fleet-state lock — <c>St4i.EdgeCore.Fleet.FleetCore._gate</c> in this product.</b> That is the
+/// SAME lock the halt path takes (<c>FleetCore.Estop()</c>, reached through the engine's <c>FleetHost</c>
+/// shell, which since Đợt E holds no lock of its own); a write call that blocks
 /// while holding it blocks the halt path behind it, for as long as the write takes to complete — this
 /// project already had a Critical of exactly this shape (disposing a driver under <c>_gate</c> blocked HALT
 /// for up to 3 seconds). This is the mirror image of <see cref="IConnectorFactory.TryCreate"/>'s "MUST NOT

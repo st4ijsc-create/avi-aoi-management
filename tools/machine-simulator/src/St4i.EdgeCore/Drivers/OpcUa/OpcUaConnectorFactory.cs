@@ -7,8 +7,8 @@ namespace St4i.EdgeCore.Drivers.OpcUa;
 /// <summary>
 /// GP-4 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-4-brief.md) — the
 /// <see cref="IConnectorFactory"/> adapter that lets OPC-UA register itself into a host's
-/// <c>St4i.EngineApi.Fleet.ConnectorRegistry</c> instead of needing its own dedicated
-/// <see cref="FleetHost"/> constructor parameter. Mirrors <see cref="Modbus.ModbusConnectorFactory"/>
+/// <see cref="St4i.EdgeCore.Fleet.ConnectorRegistry"/> instead of needing its own dedicated
+/// <c>FleetHost</c> constructor parameter. Mirrors <see cref="Modbus.ModbusConnectorFactory"/>
 /// exactly: turns the opaque configuration string a registry hands it into a validated
 /// <see cref="OpcUaNodeMap"/> without throwing, then delegates actual driver construction to a
 /// freshly-built <see cref="OpcUaDriverFactory"/>, reusing its existing <see cref="OpcUaDriverFactory.Create"/>

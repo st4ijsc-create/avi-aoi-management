@@ -320,37 +320,38 @@ public static class MachineWriteEndpoints
     /// return a <see langword="null"/> result for — no I/O was ever attempted, so a caller retrying is always
     /// safe, unlike the four attempted-write outcomes (see this class's own doc comment for why those all
     /// stay <c>200</c>). Each case gets its OWN reason code and an actionable message — never one generic
-    /// "not available" error, per the brief's explicit requirement.</summary>
+    /// "not available" error, per the brief's explicit requirement.
+    ///
+    /// <para>🔴 <b>Task E-4 — the four MESSAGES moved to <see cref="MachineWriteGate.ExplainUnavailable"/>;
+    /// the four STATUS CODES and reason codes stay here.</b> They had to move because this was not the only
+    /// place rendering a <see cref="MachineDriverAvailability"/> into operator prose — the alarm relay does
+    /// it too, from its own drifted copy — and because each string named fewer producing paths than it
+    /// covered. <b>Per string, not as a universal</b> (the first draft of this paragraph claimed all four
+    /// presupposed a connector; the E-4 review measured that as true of <c>READ_ONLY</c> only):
+    /// <c>READ_ONLY</c> presupposed a connector that need not exist; <c>NO_LIVE_DRIVER</c> offered a
+    /// non-exhaustive disjunction of causes plus advice that cannot work for an edge-held device; the
+    /// <c>404</c> was true but named none of the paths an operator needs. See
+    /// <see cref="MachineWriteGate.ExplainUnavailable"/>'s own doc comment for the full accounting, including
+    /// why this engine cannot DETECT the edge-agent case and therefore names it rather than claiming to
+    /// distinguish it.</para></summary>
     private static IResult NotAvailableResult(string code, MachineDriverAvailability availability) => availability switch
     {
         MachineDriverAvailability.MachineNotFound =>
-            Results.NotFound(new ApiErrorDto($"machine \"{code}\" not found")),
+            Results.NotFound(new ApiErrorDto(MachineWriteGate.ExplainUnavailable(availability, code))),
 
         MachineDriverAvailability.NoLiveDriver =>
             Results.Json(
-                new MachineWriteUnavailableDto(
-                    $"No live driver is currently running for machine '{code}' — the fleet may be stopped, the " +
-                    "HALT latch may be engaged, or this machine's connector failed to start this run. Check " +
-                    "GET /v1/fleet, GET /v1/safety, and GET /v1/connectors, then retry.",
-                    "NO_LIVE_DRIVER"),
+                new MachineWriteUnavailableDto(MachineWriteGate.ExplainUnavailable(availability, code), "NO_LIVE_DRIVER"),
                 statusCode: StatusCodes.Status409Conflict),
 
         MachineDriverAvailability.ReadOnly =>
             Results.Json(
-                new MachineWriteUnavailableDto(
-                    $"The live driver for machine '{code}' does not support writing — this connector declares no " +
-                    "writable points or commands (or predates write support entirely). This machine cannot be " +
-                    "written to right now.",
-                    "READ_ONLY"),
+                new MachineWriteUnavailableDto(MachineWriteGate.ExplainUnavailable(availability, code), "READ_ONLY"),
                 statusCode: StatusCodes.Status409Conflict),
 
         MachineDriverAvailability.AmbiguousDriver =>
             Results.Json(
-                new MachineWriteUnavailableDto(
-                    $"More than one machine in the fleet roster resolves to the same live connector as '{code}' — " +
-                    "refusing to write, to avoid the risk of delivering it to the wrong physical device. Give " +
-                    "this machine its own connector, or remove the other roster member sharing it.",
-                    "AMBIGUOUS_DRIVER"),
+                new MachineWriteUnavailableDto(MachineWriteGate.ExplainUnavailable(availability, code), "AMBIGUOUS_DRIVER"),
                 statusCode: StatusCodes.Status409Conflict),
 
         // MachineDriverAvailability.Writable never reaches here — TryWriteSetpointAsync/TryInvokeCommandAsync

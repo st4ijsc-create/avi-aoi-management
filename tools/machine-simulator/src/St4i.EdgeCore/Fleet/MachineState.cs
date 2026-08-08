@@ -1,28 +1,26 @@
 using St4i.EdgeCore.Models;
 using St4i.Connector.Abstractions.Models;
 
-namespace St4i.EngineApi.Fleet;
-
-/// <summary>One row of a machine's cycle log — mirrors the WPF app's <c>CycleLogRow</c> record.</summary>
-public sealed record CycleLogEntry(DateTimeOffset Time, string Serial, string Verdict, string KeyMetric);
-
-/// <summary>One named telemetry series (a metric name plus its recent values) — the wire shape for
-/// <c>GET /v1/machines/{code}</c>'s <c>telemetry</c> array.</summary>
-public sealed record TelemetrySeriesDto(string Metric, IReadOnlyList<double> Values);
-
-/// <summary>I-MR-style SPC summary for <c>GET /v1/machines/{code}</c>'s <c>spc</c> object: the raw
-/// recent values plus mean/UCL/LCL computed over that same window (mean ± 3·sample-stdev — the same
-/// simplified individuals-chart control limit the WPF app's <c>MachineViewModel</c> uses).</summary>
-public sealed record SpcSummaryDto(IReadOnlyList<double> Values, double Mean, double Ucl, double Lcl);
-
-public sealed record BoardPointDto(string PointCode, string Result, Bbox? Bbox, string? DefectCode);
+namespace St4i.EdgeCore.Fleet;
 
 /// <summary>
 /// Thread-safe, per-machine live state accumulated from every <see cref="EdgePipeline.Committed"/>
 /// reading — the headless-host analogue of the WPF app's <c>MachineViewModel</c> (Task 16), just
 /// without any WPF/ObservableCollection/dispatcher dependency: every mutation happens under
-/// <see cref="_gate"/>, and every read-out method (<see cref="ToTile"/>/<see cref="ToDetail"/>) takes a
-/// short-lived snapshot under the same lock so a concurrent HTTP GET never observes a torn state.
+/// <see cref="_gate"/>, and every read-out method (<see cref="SnapshotTile"/>/<see cref="SnapshotDetail"/>)
+/// takes a short-lived snapshot under the same lock so a concurrent HTTP GET never observes a torn state.
+///
+/// <para>🔴 <b>Task E-2 (blueprint §9.6(a)) — this file MOVED from <c>St4i.EngineApi/Fleet/</c> and was
+/// SPLIT in the process, because <c>MachineState.cs</c> and <c>Dtos.cs</c> hooked into each other in BOTH
+/// directions:</b> this class returned <c>FleetTileDto</c>/<c>MachineDetailDto</c> (declared in
+/// <c>Dtos.cs</c>) while <c>Dtos.cs</c>'s <c>MachineDetailDto</c> consumed <c>CycleLogEntry</c>/
+/// <c>TelemetrySeriesDto</c>/<c>SpcSummaryDto</c>/<c>BoardPointDto</c> (declared in THIS file). §4's
+/// "leave the DTOs behind" decision only stands once that cycle is cut. It is cut here: the four
+/// projection records left with the DTOs, the two <c>To*</c> methods became
+/// <see cref="SnapshotTile"/>/<see cref="SnapshotDetail"/> returning the DOMAIN records in
+/// <c>FleetSnapshots.cs</c>, and <c>St4i.EngineApi.Fleet.FleetProjections</c> (extension methods,
+/// so every existing <c>state.ToTile()</c>/<c>state.ToDetail()</c> call site compiles unchanged) maps
+/// those onto the wire DTOs. This assembly now names no web shape at all; the edge is one-way.</para>
 /// </summary>
 public sealed class MachineState
 {
@@ -47,7 +45,7 @@ public sealed class MachineState
     private readonly List<double> _spcValues = new();
     private readonly Dictionary<string, List<double>> _telemetry = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<MeasurementResult> _boardPoints = Array.Empty<MeasurementResult>();
-    private readonly List<CycleLogEntry> _cycleLog = new();
+    private readonly List<MachineCycleRecord> _cycleLog = new();
 
     /// <summary>WS3-T1 — the latest reading's cycle plan (or null for a machine type this task doesn't
     /// wire a plan for), surfaced on <c>GET /v1/machines/{code}</c> — the SAME per-machine polled surface
@@ -110,7 +108,7 @@ public sealed class MachineState
             // Final-review I-1: a speed-slider/scenario-preset change restarts the fleet's driver, which
             // resets the RAW per-machine cycle counter back toward 1 — without this, the DISPLAYED
             // Cycles (and every tile's spark/summary derived from it) would visibly rewind on the
-            // dashboard even though the fleet-wide KPI total (FleetHost._totalCycles, Interlocked and
+            // dashboard even though the fleet-wide KPI total (FleetCore._totalCycles, Interlocked and
             // never reset by Stop/Start) keeps climbing. Detect the restart purely from the raw counter
             // going backwards and fold the pre-restart high-water mark into a running offset, so the
             // number a visitor is watching only ever climbs.
@@ -155,7 +153,7 @@ public sealed class MachineState
                 // `is not IConvertible ... ToDouble(null)` pattern crashed on a non-numeric string tag
                 // (e.g. an OPC-UA "status" node → "RUNNING" — string IS IConvertible, so
                 // Convert.ToDouble("RUNNING") threw a FormatException straight out of
-                // FleetHost.OnPipelineCommitted, killing that machine's whole pipeline slot). The shared
+                // FleetCore.OnPipelineCommitted, killing that machine's whole pipeline slot). The shared
                 // TelemetryNumeric helper never throws: a genuinely-numeric value (or a numeric string
                 // like "42.5") is kept exactly as before; a non-numeric string/anything else is skipped.
                 if (!TelemetryNumeric.TryGet(sample.Value, out var numeric)) continue;
@@ -183,7 +181,7 @@ public sealed class MachineState
             // that rather than keep showing a stale plan from several cycles ago.
             _currentPlan = reading.Plan;
 
-            _cycleLog.Add(new CycleLogEntry(reading.Timestamp, reading.SerialNumber, reading.Verdict.ToString(), FormatKeyMetric(reading)));
+            _cycleLog.Add(new MachineCycleRecord(reading.Timestamp, reading.SerialNumber, reading.Verdict.ToString(), FormatKeyMetric(reading)));
             TrimFront(_cycleLog, MaxCycleLogRows);
         }
     }
@@ -207,23 +205,23 @@ public sealed class MachineState
         }
     }
 
-    /// <summary>Snapshot for one <c>GET /v1/fleet</c> row, reporting the machine's real last-observed
-    /// status. Equivalent to <see cref="ToTile(bool)"/> with <c>fleetRunning: true</c> — kept for
-    /// existing callers/tests that don't care about the running/stopped distinction.</summary>
-    public FleetTileDto ToTile() => ToTile(fleetRunning: true);
-
     /// <summary>Snapshot for one <c>GET /v1/fleet</c> row. E1 (health-truth): when the fleet pipeline is
     /// NOT running, <paramref name="fleetRunning"/> is false and the reported status is forced to
     /// <see cref="IdleStatusText"/> regardless of the last real verdict — otherwise a stopped fleet keeps
     /// showing every tile as whatever it last was (e.g. "OK"/green), which is exactly the "always
     /// healthy after Stop" bug this exists to fix. <see cref="Cycles"/>/<see cref="PassRate"/>/
     /// <see cref="LastCycleSummary"/>/the spark line are left untouched either way: a machine that ran
-    /// then stopped should still show its last-known counters, just flagged idle instead of live.</summary>
-    public FleetTileDto ToTile(bool fleetRunning)
+    /// then stopped should still show its last-known counters, just flagged idle instead of live.
+    ///
+    /// <para>E-2: was <c>ToTile(bool)</c> returning <c>FleetTileDto</c>. Same lock, same fields, same
+    /// order — only the return SHAPE changed, from the wire DTO to the domain record. The DTO overloads
+    /// (<c>ToTile()</c>/<c>ToTile(bool)</c>) live on as extension methods in
+    /// <c>St4i.EngineApi.Fleet.FleetProjections</c>.</para></summary>
+    public MachineTileSnapshot SnapshotTile(bool fleetRunning)
     {
         lock (_gate)
         {
-            return new FleetTileDto(
+            return new MachineTileSnapshot(
                 Code,
                 Descriptor.DeviceClass,
                 Descriptor.DriverKind,
@@ -235,34 +233,31 @@ public sealed class MachineState
         }
     }
 
-    /// <summary>Snapshot for <c>GET /v1/machines/{code}</c>, reporting the machine's real
-    /// last-observed status unconditionally. Equivalent to <see cref="ToDetail(bool)"/> with
-    /// <c>fleetRunning: true</c> — kept for existing callers/tests that don't care about the
-    /// running/stopped distinction (mirrors <see cref="ToTile()"/>'s own back-compat overload).</summary>
-    public MachineDetailDto ToDetail() => ToDetail(fleetRunning: true);
-
     /// <summary>Snapshot for <c>GET /v1/machines/{code}</c>. Branch-review I-9: when the fleet pipeline
     /// is NOT running, <paramref name="fleetRunning"/> is false and the reported <c>StatusText</c> is
     /// forced to <see cref="IdleStatusText"/> regardless of the last real verdict — the exact same gate
-    /// <see cref="ToTile(bool)"/> already applies. Before this, <c>ToDetail()</c> was the one snapshot
-    /// that skipped the gate, so a stopped machine kept reporting its last real verdict (e.g. "OK") to
-    /// this endpoint even while <c>GET /v1/fleet</c> correctly reported it idle — reproduced live as a
-    /// stopped machine's detail page/HMI panel rendering a green "ĐẠT" pass badge. Every other field
-    /// (Cycles/PassRate/board points/cycle log/telemetry/SPC) is left untouched either way, same as
-    /// <see cref="ToTile(bool)"/>'s own contract.</summary>
-    public MachineDetailDto ToDetail(bool fleetRunning)
+    /// <see cref="SnapshotTile(bool)"/> already applies. Before this, <c>ToDetail()</c> was the one
+    /// snapshot that skipped the gate, so a stopped machine kept reporting its last real verdict (e.g.
+    /// "OK") to this endpoint even while <c>GET /v1/fleet</c> correctly reported it idle — reproduced
+    /// live as a stopped machine's detail page/HMI panel rendering a green "ĐẠT" pass badge. Every other
+    /// field (Cycles/PassRate/board points/cycle log/telemetry/SPC) is left untouched either way, same as
+    /// <see cref="SnapshotTile(bool)"/>'s own contract.
+    ///
+    /// <para>E-2: board points are handed back as the raw <see cref="MeasurementResult"/>s this class
+    /// already stores — the shell's own projection is what narrows them to a <c>BoardPointDto</c>. That
+    /// is deliberate: inventing a domain twin of a four-field DTO here would have been a second shape to
+    /// keep in step, and the reading's own measurement type is already a shared abstraction.</para></summary>
+    public MachineDetailSnapshot SnapshotDetail(bool fleetRunning)
     {
         lock (_gate)
         {
             var spc = BuildSpcSummary(_spcValues);
             var telemetry = _telemetry.Count == 0
-                ? Array.Empty<TelemetrySeriesDto>()
-                : _telemetry.Select(kv => new TelemetrySeriesDto(kv.Key, kv.Value.ToArray())).ToArray();
-            var boardPoints = _boardPoints
-                .Select(m => new BoardPointDto(m.PointCode, m.Result, m.Bbox, m.DefectCatalogCode))
-                .ToArray();
+                ? Array.Empty<MachineTelemetrySeries>()
+                : _telemetry.Select(kv => new MachineTelemetrySeries(kv.Key, kv.Value.ToArray())).ToArray();
+            var boardPoints = _boardPoints.ToArray();
 
-            return new MachineDetailDto(
+            return new MachineDetailSnapshot(
                 Code,
                 Descriptor.DeviceClass,
                 Descriptor.DriverKind,
@@ -280,15 +275,15 @@ public sealed class MachineState
         }
     }
 
-    private static SpcSummaryDto BuildSpcSummary(List<double> values)
+    private static MachineSpcSummary BuildSpcSummary(List<double> values)
     {
-        if (values.Count == 0) return new SpcSummaryDto(Array.Empty<double>(), 0.0, 0.0, 0.0);
+        if (values.Count == 0) return new MachineSpcSummary(Array.Empty<double>(), 0.0, 0.0, 0.0);
 
         var mean = values.Average();
         var stdDev = values.Count > 1
             ? Math.Sqrt(values.Sum(v => (v - mean) * (v - mean)) / (values.Count - 1))
             : 0.0;
-        return new SpcSummaryDto(values.ToArray(), mean, mean + 3 * stdDev, mean - 3 * stdDev);
+        return new MachineSpcSummary(values.ToArray(), mean, mean + 3 * stdDev, mean - 3 * stdDev);
     }
 
     private static void TrimFront<T>(List<T> list, int max)

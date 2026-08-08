@@ -733,7 +733,7 @@ builder.Services.AddHostedService<St4i.EngineApi.Alarms.AlarmEvaluatorService>()
 
 // G2-2 (docs/plans/2026-07-27-giaidoan2-synapse-connect-blueprint.md task 2) — the local UNS spine: an
 // always-on loopback MQTTnet broker (UnsBroker) plus the dual-topic (Sparkplug + retained semantic-mirror)
-// publisher (UnsPublisher) FleetHost threads into every EdgePipeline it builds (see FleetHost.StartLocked).
+// publisher (UnsPublisher) FleetHost threads into every EdgePipeline it builds (see FleetCore.StartLocked).
 // Both are registered ONLY when UnsOptions.Enabled (default true, gated off via ST4I_UNS_ENABLED=false) —
 // when disabled, neither type is registered at all, so FleetHost's optional `unsPublisher` ctor param
 // resolves to its own `null` default exactly like HistorianWriter/MachineConfigStore/... already do for
@@ -1101,18 +1101,18 @@ if (opcUaOptions.Enabled)
 // entries" (Console.Error, same posture as every other startup-time config failure above) rather than
 // crashing startup — absent file ⇒ empty list ⇒ byte-identical to today, by construction.
 var connectorsConfigPath = Path.Combine(AppContext.BaseDirectory, "connectors.json");
-IReadOnlyList<St4i.EngineApi.Config.ConnectorConfigEntry> connectorConfigEntries;
+IReadOnlyList<St4i.EdgeCore.Config.ConnectorConfigEntry> connectorConfigEntries;
 try
 {
-    connectorConfigEntries = St4i.EngineApi.Config.ConnectorsConfig.Load(
+    connectorConfigEntries = St4i.EdgeCore.Config.ConnectorsConfig.Load(
         connectorsConfigPath,
         logWarning: msg => Console.Error.WriteLine($"[startup] {msg}"));
 }
-catch (St4i.EngineApi.Config.ConnectorsConfigException ex)
+catch (St4i.EdgeCore.Config.ConnectorsConfigException ex)
 {
     Console.Error.WriteLine(
         $"[startup] Malformed connectors.json at '{connectorsConfigPath}' — no connectors.json entries will be configured for this run: {ex.Message}");
-    connectorConfigEntries = Array.Empty<St4i.EngineApi.Config.ConnectorConfigEntry>();
+    connectorConfigEntries = Array.Empty<St4i.EdgeCore.Config.ConnectorConfigEntry>();
 }
 
 // SM-5 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-5-brief.md) — the
@@ -1168,7 +1168,7 @@ var persistedConnectorSeeds = new List<St4i.EdgeCore.Models.MachineDescriptor>()
     if (modbusMapJson is not null) alreadyConfiguredKindsForSeeding.Add(St4i.Connector.Abstractions.Models.DriverKinds.Modbus);
     if (opcUaMapJson is not null) alreadyConfiguredKindsForSeeding.Add(St4i.Connector.Abstractions.Models.DriverKinds.OpcUa);
 
-    var resolvedConnectorEntriesForSeeding = St4i.EngineApi.Config.ConnectorsConfig.ResolveEntries(
+    var resolvedConnectorEntriesForSeeding = St4i.EdgeCore.Config.ConnectorsConfig.ResolveEntries(
         connectorConfigEntries, alreadyConfiguredKindsForSeeding, logWarning: null,
         // 🔴 Task D-7a — the SAME registration-key rule the real resolution below uses. A recomputation that
         // resolved differently from the thing it is recomputing would seed visibility rows for a set of
@@ -1229,7 +1229,7 @@ var persistedConnectorSeeds = new List<St4i.EdgeCore.Models.MachineDescriptor>()
 // registrations above (a bare `Func<IDeviceDriver>` for Modbus, `OpcUaDriverFactory` itself for OPC-UA).
 // Lazily built (same "needs `ILoggerFactory` from `sp`, so it can't be a plain pre-`Build()` local" reason
 // the old registrations were lambdas too) — populated with whichever of Modbus/OPC-UA actually finished
-// loading their config above; either, both, or neither may be present, and `FleetHost.StartLocked` asks
+// loading their config above; either, both, or neither may be present, and `FleetCore.StartLocked` asks
 // this registry fresh, on every call, for the current full set. `ConnectorRegistry` requires no ASP.NET
 // Core service itself, so this factory only reaches into `sp` for the per-connector `ILogger`.
 // 🔴 Task D-7a (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-7a-brief.md) — the ONE
@@ -1250,7 +1250,11 @@ builder.Services.AddSingleton<St4i.EdgeCore.Drivers.Modbus.ModbusBusRegistry>();
 
 builder.Services.AddSingleton(sp =>
 {
-    var registry = new St4i.EngineApi.Fleet.ConnectorRegistry();
+    // 🔴 E-2 — ConnectorRegistry moved to St4i.EdgeCore.Fleet (blueprint §9.1: FleetCore.StartLocked builds
+    // one slot per registered instance from it and ResolveWritableDriver routes every write off its
+    // bindings, so a lifecycle core that cannot see it is not a lifecycle core). Only this one fully
+    // qualified name had to change; every other reference in this project resolves by simple name.
+    var registry = new St4i.EdgeCore.Fleet.ConnectorRegistry();
 
     if (modbusMapJson is not null)
     {
@@ -1310,7 +1314,7 @@ builder.Services.AddSingleton(sp =>
     if (modbusMapJson is not null) alreadyConfiguredKinds.Add(St4i.Connector.Abstractions.Models.DriverKinds.Modbus);
     if (opcUaMapJson is not null) alreadyConfiguredKinds.Add(St4i.Connector.Abstractions.Models.DriverKinds.OpcUa);
 
-    var resolvedConnectorEntries = St4i.EngineApi.Config.ConnectorsConfig.ResolveEntries(
+    var resolvedConnectorEntries = St4i.EdgeCore.Config.ConnectorsConfig.ResolveEntries(
         connectorConfigEntries,
         alreadyConfiguredKinds,
         logWarning: msg => connectorsLogger.LogWarning("{ConnectorsConfigMsg}", msg),

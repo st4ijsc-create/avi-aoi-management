@@ -10,6 +10,7 @@ using St4i.EngineApi.Endpoints;
 using St4i.EngineApi.Fleet;
 using St4i.EngineApi.Tests.Auth;
 using Xunit;
+using St4i.EdgeCore.Config;  // E-3: ConnectorsConfig/ConnectorConfigEntry moved down (one parser, both hosts).
 
 namespace St4i.EngineApi.Tests;
 

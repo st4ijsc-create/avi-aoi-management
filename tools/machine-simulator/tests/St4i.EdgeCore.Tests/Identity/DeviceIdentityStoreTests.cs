@@ -273,6 +273,28 @@ public sealed class DeviceIdentityStoreTests : IDisposable
                 };
                 await ssl.AuthenticateAsClientAsync(options, ct);
                 await ssl.WriteAsync(new byte[] { 42 }, ct);
+
+                // 🔴 THIRD SIGHTING, AND THE ONE WHERE THE MECHANISM WAS NAMED. This test produced a false
+                // red three times across three batches — `server-side handshake threw: SocketException
+                // (10054)`, on the SERVER's ReadAsync — and each time the tree was innocent: `f40a6bcb`
+                // once, Đợt E's carried-findings round once, and the run that added this line once.
+                //
+                // It is not a flake, and "it passes on a re-run" was never a diagnosis. The chain:
+                //   * this client authenticates, writes its one byte, and falls out of `using var ssl` /
+                //     `using var tcp` without ever reading;
+                //   * under TLS 1.3 the SERVER sends NewSessionTicket records immediately after the
+                //     handshake, so those land in THIS socket's receive buffer and are never drained;
+                //   * `SslStream.Dispose` does NOT send close_notify — only ShutdownAsync does;
+                //   * Windows sends RST rather than FIN when a socket is closed with unread data in its
+                //     receive buffer. The server's ReadAsync then observes 10054.
+                // So the red was TIMING-DEPENDENT — it needed the ticket to arrive before this `using`
+                // unwound — which is exactly why it looked like a flake and why a re-run "fixed" it.
+                //
+                // ShutdownAsync sends close_notify and drains, which is what an orderly TLS close is
+                // supposed to do and what this test always meant to do. It is swallowed deliberately: a
+                // failure to close cleanly is not what this test is about, and letting it reach
+                // `clientError` would re-create the false red one layer down.
+                try { await ssl.ShutdownAsync(); } catch { /* orderly close is best-effort; see above */ }
             }
             catch (Exception ex)
             {

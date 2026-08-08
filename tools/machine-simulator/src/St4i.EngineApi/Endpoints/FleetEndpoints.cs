@@ -13,7 +13,7 @@ public static class FleetEndpoints
     {
         // E1: Ok used to be hardcoded true — a client had no way to tell a genuinely faulted engine
         // (StartLocked's pipeline task threw, LastError set, IsRunning flipped back to false — see
-        // FleetHost.StartLocked's catch) from a healthy one. LastError is null both before the fleet has
+        // FleetCore.StartLocked's catch) from a healthy one. LastError is null both before the fleet has
         // ever been started and after a clean Stop(), so this stays true in both of those ordinary
         // states too — it only goes false once something has actually gone wrong.
         // WS-D-D1 — anonymous: St4i.DesktopShell's readiness probe (and any external health check) must

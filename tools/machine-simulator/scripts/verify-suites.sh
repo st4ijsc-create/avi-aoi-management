@@ -752,8 +752,97 @@ EXPECT_CONFORMANCE=22
 #          "nothing detects deletion of the override" lesson in different clothes, so it gets the same
 #          treatment — an assertion rather than a sentence in a report. Asserted as >= rather than == 5000
 #          deliberately: the claim is the relationship, not either number.
-EXPECT_EDGECORE=1072
-EXPECT_EDGESERVICE=28
+# 🔴 Task E-3 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §11) raises EXPECT_EDGECORE
+# 1072 -> 1080 (+8) and EXPECT_EDGESERVICE 28 -> 45 (+17). Grand total 2556 -> 2581. Per file, and nothing
+# is rewritten, split or deleted:
+#
+#   +8  tests/St4i.EdgeCore.Tests/Engine/EdgeAgentPipelinesTests.cs  (NEW FILE) — the N-driver lifecycle an
+#       edge agent gets. The headline one measures at the TRANSPORT that N registered device instances
+#       produce N drivers each pushing readings, not that N slots exist; the rest are fault isolation, a
+#       refusing factory named in StartIssues, the all-faulted rethrow, orphan-driver disposal, driver
+#       disposal at end of run, and the nothing-to-poll case that must not reach SimulatedDriver's ctor guard.
+#
+#   +7  tests/St4i.EdgeService.Tests/EdgeAgentWriteSurfaceTests.cs   (NEW FILE) — blueprint §3's read-only
+#       limit as a STRUCTURAL fact. Runs from St4i.EdgeService.Tests, which has no InternalsVisibleTo from
+#       St4i.EdgeCore, so "not exported" here means exactly what it means for the production host. Two of the
+#       seven are positive controls (the assembly really is St4i.EdgeCore and really does export things; the
+#       driver-shape walker really can see a driver — ConnectorRegistry.TryCreateDriver; MachineState really
+#       is an exported mutable type), without which every absence assertion could pass vacuously.
+#       🔴 E-3 REVIEW ROUND, +2 in this file. The review found the member census was EIGHT when the real
+#       number is THIRTEEN plus one indirect, and that the two missing names were `Start` — the member that
+#       builds every driver and opens every port — and `Stop`. One test now CHECKS the census against
+#       FleetCore's real public surface (so the count is a measurement, not prose), and one closes the
+#       fourteenth, indirect path by asserting nothing exported hands out a MachineState. Nothing was
+#       unprotected before: the type-level assertion always guarded all fourteen.
+#
+#  +10  tests/St4i.EdgeService.Tests/EdgeWorkerConnectorsTests.cs    (NEW FILE) — the connectors.json read
+#       path, and the task's most important regression: a deployment with no connectors.json (and one with a
+#       malformed one) still runs exactly the simulated fleet it always did, with every commit coming from
+#       EdgeWorker's own 8-machine roster. Also pins the two decisions E-4 inherits: entries key on their own
+#       id here (not on kind, as in EngineApi), and OPC-UA/RTU entries are refused BY NAME rather than
+#       dispatched — OPC-UA because dispatching it would make this host a new writer to the machine-wide
+#       %ProgramData%\ST4I\sim\opcua-pki root, which E-3's brief forbids outright. The tenth is the seam
+#       that joins the task's two halves: it asserts EdgeWorker actually hands the registry it built to the
+#       agent it runs, which nothing else did — a mutation passing `connectors: null` there left every other
+#       test in the task green.
+#       🔴 E-3 REVIEW ROUND, +0 tests in this file but one assertion strengthened, recorded here because the
+#       run got ~2 s slower and that is visible: the headline regression was a MEMBERSHIP check over ~3
+#       observed commits, and the reviewer's R2 mutation (collapse all eight simulators onto machine #1)
+#       SURVIVED 45/45 with seven of eight machines gone from the run. It is now a SET-EQUALITY check with
+#       smoke raised to 60 so full coverage is reachable at all; R2 re-run against it dies in both regression
+#       tests.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_ENGINEAPI are deliberately UNCHANGED, and that is the
+# evidence for two of E-3's claims rather than a convenience. EXPECT_ENGINEAPI staying 1283 is what says the
+# two things E-3 did to EngineApi's own tree — making FleetCore `internal`, and moving ConnectorsConfig down
+# to St4i.EdgeCore.Config — changed no behaviour there: the first touched one word and no call site (FleetHost
+# is the only file outside St4i.EdgeCore that names the type), the second is a namespace move carried by three
+# added `using` lines. EXPECT_CONFORMANCE in particular stays 22: E-3 adds no driver and no connector kind.
+EXPECT_EDGECORE=1080
+# 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
+# 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
+# rewritten, split or deleted:
+#
+#   +1  tests/St4i.EdgeService.Tests/EdgeServiceSerialReachabilityTests.cs   (NEW FILE) — the census rule
+#       "every claim of the form 'only X can do Y' gets a test", applied to README §23.6's "Only
+#       St4i.EngineApi can open a COM port." That sentence is false as a CAPABILITY claim and has been since
+#       D-7c itself, which is what gave all three hosts the ProjectReference: SerialPortBusLink.OpenAsync and
+#       SerialLineSettings are public on St4i.EdgeCore.Serial. This test performs a real open from
+#       St4i.EdgeService.Tests — whose ONLY ProjectReference is St4i.EdgeService, so naming the type compiles
+#       solely because it is reachable through THAT host's reference graph — and the open is refused by the
+#       OPERATING SYSTEM (SerialPortUnavailableException, "NOT PRESENT" wording, non-null InnerException),
+#       not by the compiler. Deterministic on a machine with no RS-485 hardware: the port name is DERIVED
+#       from SerialPort.GetPortNames() the same way SerialPortBusLinkTests derives its own, never hardcoded.
+#       The TRUE statement — only St4i.EngineApi has a CONFIGURED path from connectors.json to a serial open
+#       — is README §24.5, and its other half is already pinned by E-3's
+#       EdgeWorkerConnectorsTests.AnRtuBusEntry_IsRefusedByName_…, so no test is added for it here.
+#
+#   +6  tests/St4i.EngineApi.Tests/MachineWriteUnavailableMessageTests.cs   (NEW FILE) — the four
+#       operator-facing "this write was never attempted" explanations, asserted BY CONTENT on every path
+#       that produces them. They had never been asserted at all: every existing test checked the STATUS and
+#       the REASON CODE, and the closest any came to the message was
+#       Assert.False(string.IsNullOrWhiteSpace(body.Error)), which is true of the wrong string too. Three of
+#       the four had drifted into stating something false — each presupposed a connector exists, so none was
+#       true for a machine with no connector configured, nor for a machine a St4i.EdgeService edge agent
+#       holds (blueprint §12 / README §24.4). One of the six is the COLLAPSE witness (pairwise-distinct, so
+#       a single generic "not available" string cannot satisfy the other five individually); one is the
+#       throwing default for MachineDriverAvailability.Writable, which is also what makes a future enum
+#       member with no arm a red test rather than a soothing sentence.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_EDGECORE are deliberately UNCHANGED. E-4 touches three
+# production files, all in St4i.EngineApi (MachineWriteGate, MachineWriteEndpoints, RelayNotificationChannel)
+# — a movement in any of the other three suites would mean this task reached somewhere it had no business
+# reaching. EXPECT_CONFORMANCE in particular stays 22: E-4 adds no driver and no connector kind.
+#
+# 🔴 And the four assertions that carry E-4's fix are DELIBERATELY NOT new tests — they replace vacuous
+# assertions inside tests that already reached the right states, so they move NO count: the four
+# not-available cases in MachineWriteEndpointsTests now assert the HTTP body equals
+# MachineWriteGate.ExplainUnavailable(...), and RelayNotificationChannelTests'
+# TheFourUnavailableCases_AreDistinguished_AndNoneIsCollapsed now asserts the operator WARNING carries the
+# same text. Those two files are the join: the new file proves the text is right, and these prove the two
+# surfaces that render it actually use it. A count that did not move is the evidence that the states were
+# already covered and only the assertion was empty.
+EXPECT_EDGESERVICE=46
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
 #     +24  NotificationEndpointsTests    (new file — the eleven notification routes)
@@ -1242,7 +1331,61 @@ EXPECT_EDGESERVICE=28
 # sentence). One assertion of the same shape was written on the dispatch test and DELETED after mutation
 # proved it could not fail — that path's exception yields no hint code, so it would have read as coverage of
 # the composition defect while being incapable of detecting it.
-EXPECT_ENGINEAPI=1282
+# 🔴 Task E-2 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md) raises this 1282 -> 1283, and
+# the SIZE of that delta is the point of the number rather than an inconvenience to it.
+#
+# E-2 extracted the N-driver lifecycle core out of St4i.EngineApi.Fleet.FleetHost into
+# St4i.EdgeCore.Fleet.FleetCore — ~2 400 lines relocated, ConnectorRegistry/MachineState/SafetySnapshot
+# moved with it, MachineState.cs and Dtos.cs split, 14 ILogger call sites re-expressed as EdgeCore callbacks,
+# and FleetHost rewritten as a shell. Its brief made the gate the CHECK on that: "this is a move, not an
+# addition — if a number moves, stop and report the reason before changing it."
+#
+#     THE MOVE ITSELF MOVED NOTHING. It was committed and run first, on its own, at exactly
+#     151/22/1072/28/1282 = 2555, 0 errors, 116 warnings, 0 build nodes. That run is the evidence, and it is
+#     why this constant could be left alone through the entire relocation.
+#
+# The +1 is the one test the SAME brief separately required, and it is irreducible to zero:
+#
+#     + 1  Safety/EstopLatchVisibilityRaceTests.Estop_RacedAgainstAContinuousWriteLoop_… — blueprint §9.3b's
+#            racing test. Nothing in 2555 tests had ever raced Estop() against anything; every latch test was
+#            sequential, so a latch write moved off FleetCore._gate was invisible. It guards a REAL,
+#            PRE-EXISTING, previously-untested safety property (every guard evaluation beginning after
+#            Estop() returns denies) and it says in its own header that it does NOT guard the cut — §9.3b
+#            proved with two mutations that no racing test can, because EstopGuardRule reads EstopEngaged
+#            alone. A new behaviour under test is a new [Fact]; folding it into an existing test to protect
+#            this constant would have been the constant lying.
+#
+# The brief's other two mandated witnesses cost ZERO, deliberately, and that is not an accounting trick —
+# §9.3b's own words are "any test that kills the hardcoded `true` is enough":
+#
+#     + 0  SafetySnapshot.IsRunning now has a witness: two assertions inside the EXISTING
+#            RelayNotificationChannelTests.HaltLatched_TheBeaconDoesNotLight_… — already the batch's headline
+#            safety test, with a latched/cleared pair to hang them on. §9.3b measured that a hardcoded `true`
+#            in that field survived all 1282; it now fails.
+#     + 0  The redaction property (FleetCore's write path emits ex.GetType().Name and NEVER ex.Message) now
+#            has a witness: assertions inside the two EXISTING disposal-race tests in
+#            FleetHostMachineDriverResolutionTests, plus a secret-shaped message on the test double so a leak
+#            is legible. E-1 §4.5 measured that the ex.Message mutation left all 2555 green; it now fails on
+#            both the setpoint and the command path.
+# 🔴 Task E-4 raises this 1283 -> 1289 (+6). The whole justification is in the block above
+# EXPECT_EDGESERVICE — one new file, MachineWriteUnavailableMessageTests.cs, and the four assertions that
+# actually carry the fix cost 0 because they replaced vacuous ones inside tests that already existed.
+#
+# 🔴 E-4 REVIEW ROUND raises it once more, 1289 -> 1290 (+1), in ONE existing file. It is the only total
+# that moves in that round; every other correction the review asked for is a comment or a doc sentence.
+#
+#   +1  tests/St4i.EngineApi.Tests/MachineWriteEndpointsTests.cs
+#         Setpoint_FleetRunning_NoConnectorEverConfigured_409_NoLiveDriver_WithAllThreeOldCausesFalse
+#       Review finding C3: the comment on the EXISTING NoLiveDriver test claimed that test's own scenario
+#       "satisfies none of" the old string's three named causes. It does not — that test never calls
+#       host.Start(), so "the fleet may be stopped" is exactly true of it. The claim was right about the
+#       product and wrong about its witness, which is the same defect class one layer up, so it gets a
+#       witness instead of a rewording: a Modbus-kind roster machine on a RUNNING fleet with no connector
+#       ever configured, asserting all three old causes false AT the moment the 409 is produced
+#       (host.IsRunning true, EstopEngaged false, GetConfiguredConnectorIssues empty) and then asserting
+#       the body. Modbus-kind specifically because ResolveSlotLabelFor excludes Modbus/OPC-UA from the
+#       simulated group unconditionally; a simulated-kind machine would report ReadOnly, the other case.
+EXPECT_ENGINEAPI=1290
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -1301,6 +1444,17 @@ testhost_cpu_seconds() {
 # ── Gate 1: the build. Nothing below is trustworthy until this passes. ───────────
 # Trap 1 and 4. Read the LOG, not the exit code: a locked file can leave a project
 # unrelinked while the overall invocation still reports success.
+# 🔴 TRAP 1, RESTATED AFTER SOMEONE RAN INTO IT FROM THE OTHER SIDE (E-3, Đợt E). The kill below is why
+# THIS SCRIPT IS NOT RE-ENTRANT: launch a second run while a first is still going and the second's cleanup
+# kills the first's live test host mid-suite. E-3 did exactly that and got
+# `St4i.Connector.Conformance.Tests: ABORTED (host crash)` — trap 1, self-inflicted, on a healthy tree.
+#
+# The half worth writing down is not the FAIL. It is what the implementer said about the other run:
+# **a PASS from a raced run is exactly as worthless as the FAIL.** Both runs were racing, so neither
+# number describes the tree. The instinct on seeing the red is to re-read the passing one and move on —
+# and that instinct is what turns a self-inflicted abort into a recorded fact about the code.
+#
+# One gate at a time. If two are running, discard both and start one.
 echo "[1/3] Killing stray test hosts, then rebuilding..."
 taskkill //F //IM testhost.exe //T >/dev/null 2>&1 || true
 taskkill //F //IM vstest.console.exe //T >/dev/null 2>&1 || true

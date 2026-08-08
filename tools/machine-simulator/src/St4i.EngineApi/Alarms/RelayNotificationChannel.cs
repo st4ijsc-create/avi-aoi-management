@@ -983,7 +983,24 @@ public sealed class RelayNotificationChannel
     }
 
     /// <summary>The four Đợt B resolution failures, each kept distinct and each audited. No I/O was
-    /// attempted, so the channel's belief about the coil is untouched.</summary>
+    /// attempted, so the channel's belief about the coil is untouched.
+    ///
+    /// <para>🔴 <b>Task E-4 (blueprint §12) — the four EXPLANATIONS now come from
+    /// <see cref="MachineWriteGate.ExplainUnavailable"/>; only the four
+    /// <see cref="RelayOutcome"/> values are decided here.</b> This method held a SECOND, independently
+    /// worded copy of the same cause list as <c>MachineWriteEndpoints.NotAvailableResult</c> — found by
+    /// enumerating everything that renders a <see cref="MachineDriverAvailability"/> into operator prose
+    /// rather than by looking at the write endpoint.
+    ///
+    /// <para>🔴 <b>Both copies were defective, but NOT in the same way — the first draft of this comment
+    /// said they were, and the E-4 review measured otherwise.</b> This channel's <c>ReadOnly</c> string did
+    /// presuppose a connector ("this connector declares no writable points"); its <c>NoLiveDriver</c> string
+    /// was a disjunction that simply did not cover "no connector configured here at all". <b>And this
+    /// channel's own worst string was its <c>MachineNotFound</c> one, whose fault is the ADVICE:</b> "check
+    /// the code, or onboard the machine" — onboarding a machine a <c>St4i.EdgeService</c> edge agent already
+    /// drives creates exactly the duplicate roster entry that makes this engine's picture of the plant
+    /// wrong, on a surface with no human in the loop to notice. This surface matters at least as much as the
+    /// button: it is what an operator reads when the ANNUNCIATOR did not light.</para></summary>
     private async Task<RelayOutcome> UnavailableAsync(
         MachineDriverAvailability availability, RelayChannelConfig config, NotificationJob job,
         bool desired, object? value, string role)
@@ -993,28 +1010,18 @@ public sealed class RelayNotificationChannel
             action, config, job, desired, value, role,
             new { attempted = false, availability = availability.ToString() }).ConfigureAwait(false);
 
-        var (outcome, explanation) = availability switch
+        var outcome = availability switch
         {
-            MachineDriverAvailability.MachineNotFound => (
-                RelayOutcome.MachineNotFound,
-                "no roster member carries that machine code — check the code, or onboard the machine."),
-            MachineDriverAvailability.NoLiveDriver => (
-                RelayOutcome.NoLiveDriver,
-                "the roster knows the machine but nothing is driving it right now — the fleet may be stopped, " +
-                "or its connector failed to start this run."),
-            MachineDriverAvailability.ReadOnly => (
-                RelayOutcome.ReadOnly,
-                "the live driver for that machine cannot write at all — this connector declares no writable " +
-                "points or commands."),
-            _ => (
-                RelayOutcome.AmbiguousDriver,
-                "more than one roster member resolves to the same live connector, so Đợt B refuses to write " +
-                "rather than risk reaching the wrong physical machine."),
+            MachineDriverAvailability.MachineNotFound => RelayOutcome.MachineNotFound,
+            MachineDriverAvailability.NoLiveDriver => RelayOutcome.NoLiveDriver,
+            MachineDriverAvailability.ReadOnly => RelayOutcome.ReadOnly,
+            _ => RelayOutcome.AmbiguousDriver,
         };
 
         ReportWarning(
             $"Alarm relay '{config.Instance}': cannot {(desired ? "energise" : "de-energise")} " +
-            $"'{config.TargetName}' on machine '{config.MachineCode}' — {explanation} No device was touched.");
+            $"'{config.TargetName}' on machine '{config.MachineCode}' — " +
+            $"{MachineWriteGate.ExplainUnavailable(availability, config.MachineCode)} No device was touched.");
 
         return outcome;
     }

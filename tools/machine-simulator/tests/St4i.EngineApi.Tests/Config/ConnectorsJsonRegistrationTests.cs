@@ -8,6 +8,7 @@ using St4i.EdgeCore.Drivers.OpcUa;
 using St4i.EngineApi.Config;
 using St4i.EngineApi.Fleet;
 using Xunit;
+using St4i.EdgeCore.Config;  // E-3: ConnectorsConfig/ConnectorConfigEntry moved down (one parser, both hosts).
 
 namespace St4i.EngineApi.Tests.Config;
 

@@ -11,66 +11,15 @@ namespace St4i.EngineApi.Fleet;
 public sealed record HealthDto(bool Ok, TransportMode Mode);
 
 // ─────────────────────────────────────────────────────────────────────────
-// GET /v1/fleet
+// GET /v1/fleet, GET /v1/machines/{code} — 🔴 E-2 (blueprint §9.6(a)): FleetTileDto, FleetKpisDto,
+// FleetSnapshotDto and MachineDetailDto MOVED to FleetProjections.cs, together with the four records
+// MachineState.cs used to declare (CycleLogEntry/TelemetrySeriesDto/SpcSummaryDto/BoardPointDto) and the
+// projection functions that build all of them from St4i.EdgeCore.Fleet's read-out records. That file's
+// header explains why the split was a precondition of §4's "the DTOs stay in EngineApi" decision rather
+// than a tidy-up: this file and MachineState.cs pointed at each other, and MachineState went down.
 // ─────────────────────────────────────────────────────────────────────────
-public sealed record FleetTileDto(
-    string Code,
-    DeviceClass DeviceClass,
-    string DriverKind,
-    string StatusText,
-    double PassRate,
-    long Cycles,
-    string LastCycleSummary,
-    IReadOnlyList<double> Spark);
-
-/// <param name="HasMixedProvenance">SM-2 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/
-/// task-2-brief.md) — true exactly when the CURRENT roster contains at least one fabricated (Simulated)
-/// machine AND at least one real (non-Simulated) machine at the same time — "demo fleet plus a real
-/// machine," the scenario the brief calls out. Whenever this is true, <see cref="TotalCycles"/>/
-/// <see cref="Fpy"/> above already reflect ONLY the real machine(s) (see <see cref="FleetHost.Snapshot"/>'s
-/// own remarks) — the fabricated machines' cycles are deliberately excluded, never blended — even though
-/// <see cref="FleetSnapshotDto.Machines"/> still lists every one of them with their own per-tile
-/// Cycles/PassRate untouched. This is the "the UI must not lie" signal: without it, an operator watching a
-/// tile list that includes fabricated machines has no way to know the fleet-wide rollup above silently
-/// excludes some of what's on screen. False in a pure-demo roster (nothing real to blend with — the
-/// numbers ARE the fabricated fleet's own, exactly as before this task) and in a pure-product roster
-/// (nothing fabricated to blend with).</param>
-public sealed record FleetKpisDto(int Online, long TotalCycles, double Fpy, bool HasMixedProvenance);
-
-/// <summary><c>IsRunning</c> added for final-review M-3: before this, whether the fleet is actively
-/// running was only ever reported back by the start/stop POST responses, so a client that reloaded the
-/// page while a fleet was genuinely running had no way to recover that fact from a plain GET and its
-/// Stop button stayed disabled (self-healing only once Start was clicked, a no-op server-side). Mirrors
-/// <see cref="FleetHost.IsRunning"/> directly.
-///
-/// <c>EstopEngaged</c> added for branch-review C-2: the HALT latch used to be component-local React
-/// state on the HMI panel, so a second panel/tab/reload silently forgot an active halt. It now
-/// lives here — mirrors <see cref="FleetHost.EstopEngaged"/> — so every observer of this same polled
-/// snapshot (every HMI panel, every tab) agrees on the latch and a reload recovers it.</summary>
-public sealed record FleetSnapshotDto(IReadOnlyList<FleetTileDto> Machines, FleetKpisDto Kpis, bool IsRunning, bool EstopEngaged);
 
 public sealed record FleetActionResultDto(bool Running, string Mode);
-
-// ─────────────────────────────────────────────────────────────────────────
-// GET /v1/machines/{code}
-// ─────────────────────────────────────────────────────────────────────────
-/// <param name="Plan">WS3-T1 (docs/PRODUCTION_UI_DESIGN.md §3.2) — the latest cycle's ordered per-step
-/// plan (point sequence + per-step results + timing) for a "living twin" web animation, or null when the
-/// fleet isn't running ("idle machine = no active plan") or this machine's simulator doesn't wire a plan.
-/// Purely additive — every other field above is unchanged by this task.</param>
-public sealed record MachineDetailDto(
-    string Code,
-    DeviceClass Class,
-    string DriverKind,
-    string StatusText,
-    double PassRate,
-    long Cycles,
-    SpcSummaryDto Spc,
-    IReadOnlyList<TelemetrySeriesDto> Telemetry,
-    IReadOnlyList<BoardPointDto> BoardPoints,
-    IReadOnlyList<CycleLogEntry> CycleLog,
-    string DriftState,
-    CyclePlan? Plan = null);
 
 // ─────────────────────────────────────────────────────────────────────────
 // GET/PUT /v1/mode
@@ -225,7 +174,7 @@ public sealed record ConnectorStatusDto(string Id, string Error);
 /// <param name="InstanceId">Task D-1 (.superpowers/sdd/2026-08-02-dotD-modbus-rtu-blueprint/task-1-brief.md)
 /// — this connector INSTANCE's own id, and the segment <c>DELETE /v1/connectors/&#123;instanceId&#125;</c>
 /// takes. Optional: omitted/blank means "use <paramref name="Kind"/>", which is the id every pre-D-1 row
-/// already has and the id <see cref="St4i.EngineApi.Fleet.ConnectorRegistry.Register"/> defaults to — so a
+/// already has and the id <see cref="St4i.EdgeCore.Fleet.ConnectorRegistry.Register"/> defaults to — so a
 /// client that has never heard of instance ids keeps configuring exactly the one Modbus / one OPC-UA
 /// connector it always did, at the same URLs. Supply a distinct id to run a SECOND connector of the same
 /// kind (two RS-485 devices on one bus, two Modbus TCP PLCs): that is what this field exists for, and it is

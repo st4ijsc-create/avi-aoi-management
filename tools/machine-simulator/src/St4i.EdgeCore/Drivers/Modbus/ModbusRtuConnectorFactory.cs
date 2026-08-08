@@ -131,7 +131,7 @@ public sealed class ModbusRtuConnectorFactory : IConnectorFactory
     /// <para>🔴 <b>Review I-1 — that sentence used to be FALSE, and it was false on HEAD with no mutant
     /// applied.</b> <see cref="ModbusBusRegistry.Acquire"/> throws <see cref="ObjectDisposedException"/> for a
     /// registry that has already been torn down (a host shutdown racing a fleet start, which
-    /// <c>FleetHost.StartLocked</c> can genuinely produce), and the call sat <b>outside</b> the guard. The
+    /// <c>FleetCore.StartLocked</c> can genuinely produce), and the call sat <b>outside</b> the guard. The
     /// runtime blast radius was contained — <c>ConnectorRegistry.TryCreateDriver</c> has its own catch and
     /// forwards <c>ex.Message</c> — but the operator's start issue then read <i>"Cannot access a disposed
     /// object"</i> instead of anything they could act on, and a doc comment claiming a contract the method

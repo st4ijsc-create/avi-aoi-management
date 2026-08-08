@@ -72,7 +72,7 @@ namespace St4i.EngineApi.Policy.Rules;
 /// <item><description>Scoped fleet-wide, not per-machine, deliberately: today's <c>Alarm.TargetId</c> values
 /// (a slot LABEL for DriverHealth, the literal <c>"fleet"</c> for NgRate, <c>"device"</c> for Identity) do not
 /// reliably identify a single MACHINE CODE — a slot can serve more than one roster member (the same fact
-/// <see cref="St4i.EngineApi.Fleet.MachineDriverAvailability.AmbiguousDriver"/> exists to guard). Filtering to
+/// <see cref="St4i.EdgeCore.Fleet.MachineDriverAvailability.AmbiguousDriver"/> exists to guard). Filtering to
 /// "only THIS machine's own Critical alarms" would require a per-machine alarm-targeting scheme that does not
 /// exist yet and would risk under-blocking (missing a Critical alarm that IS about this machine's shared
 /// connector but is labeled by slot, not code). This rule uses the SAME coarse, already-proven-safe signal

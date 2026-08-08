@@ -3,7 +3,7 @@ using St4i.Connector.Abstractions;
 namespace St4i.EdgeCore.Drivers.OpcUa;
 
 /// <summary>
-/// GĐ3 sub-3 OU-1 — builds a fresh <see cref="OpcUaDriver"/> per <c>FleetHost.StartLocked</c> call: a
+/// GĐ3 sub-3 OU-1 — builds a fresh <see cref="OpcUaDriver"/> per <c>FleetCore.StartLocked</c> call: a
 /// driver owns a live OPC-UA session torn down (best-effort) whenever its pipeline slot stops/restarts, so
 /// each pipeline (re)start needs a BRAND NEW instance, never a reused one — same reasoning
 /// <see cref="Modbus.ModbusDriverFactory"/> already documents for itself.

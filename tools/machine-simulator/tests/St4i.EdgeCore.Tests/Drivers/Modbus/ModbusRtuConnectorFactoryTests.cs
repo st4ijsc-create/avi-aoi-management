@@ -107,7 +107,7 @@ public sealed class ModbusRtuConnectorFactoryTests
         Assert.Equal(3, registry.LeaseCount(factory.BusKey));
 
         // Nothing has been opened at all yet — TryCreate performs no I/O, which is IConnectorFactory's own
-        // contract and is what lets FleetHost.StartLocked call it while holding its gate.
+        // contract and is what lets FleetCore.StartLocked call it while holding its gate.
         Assert.Equal(0, opens);
 
         // Three distinct drivers with three distinct ids — the id carries the unit precisely so a multidrop
@@ -172,7 +172,7 @@ public sealed class ModbusRtuConnectorFactoryTests
     /// about the LEASE. The observable property is at the public seam and is about the OPERATOR: <b>a device
     /// that cannot produce a driver must be refused by its own map's error, and must never touch the bus
     /// registry at all.</b> Give the factory a disposed registry — a host shutdown racing a fleet start, which
-    /// <c>FleetHost.StartLocked</c> can genuinely produce — and the two orderings diverge on what the operator
+    /// <c>FleetCore.StartLocked</c> can genuinely produce — and the two orderings diverge on what the operator
     /// is told about their own configuration.</para>
     ///
     /// <para><b>Why this survives the I-1 fix, which is the reason it is worth keeping rather than a one-round

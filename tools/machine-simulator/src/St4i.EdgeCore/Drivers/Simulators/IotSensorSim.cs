@@ -29,8 +29,18 @@ public sealed class IotSensorSim : SimulatorBase
     private const long DriftEveryCycles = 200; // a slow calibration-drift "event" every N cycles
     private const double DriftMagnitudeC = 1.5;
 
-    /// <summary>Same floor value EngineApi's own <c>FleetHost.MinCycleSeconds</c> uses (mirrored, not
-    /// shared — EdgeCore doesn't reference EngineApi).</summary>
+    /// <summary>Same floor value the fleet lifecycle's own <c>FleetCore.MinCycleSeconds</c> uses.
+    ///
+    /// <para>🔴 <b>Task E-2 — the STATED REASON for the duplication was "mirrored, not shared: EdgeCore
+    /// doesn't reference EngineApi", and that reason is now FALSE:</b> <c>FleetCore</c> moved into THIS
+    /// assembly, so both constants sit side by side (E-1 §2.3 predicted exactly this and required E-2 to
+    /// either collapse them or record why not). <b>Recorded, deliberately not collapsed</b>, and not merely
+    /// because a move must not smuggle in a fix: the two clamps are applied at DIFFERENT points to DIFFERENT
+    /// quantities. <c>FleetCore.MinCycleSeconds</c> floors a roster descriptor's <c>CycleSeconds</c> as
+    /// <c>StartLocked</c> pre-scales it by the active scenario multiplier; this one floors a cadence THIS
+    /// simulator computes from its own live config, which bypasses that descriptor entirely. Sharing one
+    /// symbol would tie two independent clamps together and read as a coupling that does not exist. They
+    /// agree at 0.05 today by intention, not by derivation.</para></summary>
     private const double MinCycleSecondsFloor = 0.05;
 
     public IotSensorSim(MachineDescriptor d, int seed, MachineConfigStore? configStore = null, Func<string?>? productCodeProvider = null, double cycleRateMultiplier = 1.0)

@@ -14,7 +14,7 @@ namespace St4i.EngineApi.Tests;
 /// <summary>
 /// P2-1 pass-2 task P2-3 (docs/plans .../giaidoan2-pass2-blueprint task 3) — proves a configured Modbus
 /// (G2-6) machine becomes a first-class, UI-visible roster member instead of an invisible telemetry
-/// stream: (1) <see cref="FleetHost.StartLocked"/> must NOT build a simulator for a
+/// stream: (1) <c>FleetCore.StartLocked</c> must NOT build a simulator for a
 /// <see cref="DriverKinds.Modbus"/> roster entry (else it's driven TWICE — once by a simulator, once by the
 /// real Modbus pipeline slot) — proven here by registering a Modbus descriptor with NO modbus connector
 /// registered and confirming it stays idle/0-cycles forever, never picked up by <c>SimulatorFactory</c>'s

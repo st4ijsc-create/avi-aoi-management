@@ -209,6 +209,35 @@ Thứ được bảo vệ là **một cổng COM không bị giữ tới hết �
 
 Công cụ bắt buộc từ D-3: `scripts/mutate-guard.sh` (so dấu thời gian + đối chứng dương mỗi phiên). Lý do đầy đủ nằm trong header của nó.
 
+🔴 **PHÉP CENSUS — ngữ liệu của nó là một phần của phương pháp, không phải của từng brief (thêm sau Đợt E, E-4).**
+
+Đợt D đã ghi *cách* quét: **một lần đọc được tổ chức theo chỗ một chủ đề được XẾP VÀO; một phép grep được tổ chức theo những TỪ mà một khẳng định dùng** — nên mọi chỗ bị sót đều là chỗ **xếp ở nơi khác**.
+
+Đợt E thêm nửa còn thiếu: **QUÉT `src/` VÀ `tests/`, KHÔNG CHỈ `*.md`.**
+
+Ba khẳng định cũ được tìm thấy trong **mã**, không phải trong tài liệu, ở E-4 — và cả ba đều thoát vì cùng một lý do: **khẳng định cũ nằm cạnh một phép kiểm vẫn xanh.** Trường hợp rõ nhất là `SerialDependencyScopingTests`: phép khẳng định của nó ghim *"DLL có được ship không"*, **không** ghim *"host này mở được cổng không"* — nên bốn câu quanh nó mục ruỗng hoàn toàn mà **không gì đỏ**. Một phép khẳng định đúng, hẹp, bền **không bảo vệ được đoạn văn quanh nó**, và không phép khẳng định nào làm được điều đó.
+
+E-4 quy lỗi cho cách brief phát biểu (*"census tài liệu"*). **Đó không phải nguyên nhân**, và bằng chứng là chính phép quét sau-commit của E-4: chạy dưới **cùng quy tắc ấy** trên `src/`+`tests/`, nó tìm ra ngay. Nguyên nhân là **ngữ liệu không nằm trong quy tắc**, nên nó phải được suy ra từ câu chữ mỗi lần — và một lần nào đó sẽ suy sai.
+
+→ **Phép quét là một hành động riêng, chạy sau khi commit đã xanh, trên `src/` + `tests/` + `*.md`.** Và cái nó đi tìm không phải câu sai — mà là **câu đúng đã trở thành sai vì thứ nó mô tả đã đổi**, đặc biệt ở nơi một phép kiểm gần đó vẫn xanh.
+
+🔴 **VÀ NGAY LẦN ĐẦU QUY TẮC TRÊN ĐƯỢC ÁP, NÓ VẪN SÓT — vì ngữ liệu đúng không cứu được một quy tắc thiếu (review toàn nhánh Đợt E).**
+
+Bốn khẳng định cũ **nằm gọn trong ngữ liệu vừa được thêm vào** và vẫn thoát. Lý do: **mỗi lượt quét chạy MỘT quy tắc.** Quy tắc của E-4 là *"host nào chủ trì connector nào trên transport nào"* — và có **cả một trục trực giao với nó** mà không nhiệm vụ nào chạm: *"kiểu nào sở hữu cái khoá, assembly nào sở hữu kiểu này."* Trên trục ấy có **32 chỗ trong 25 file**, trong đó hai chỗ vượt khỏi phạm vi tài liệu: **hợp đồng mà tác giả driver bên thứ ba được bảo phải tuân theo**, và **một chuỗi lỗi sống hiện trong CI**.
+
+→ **Liệt kê CÁC QUY TẮC, đúng cách đã học liệt kê CÁC THÀNH VIÊN.** Ba tầng, cùng một bài học, mỗi tầng phải trả giá riêng: *thành viên thay vì kiểu* → *ngữ liệu thay vì chỉ tài liệu* → **quy tắc thay vì một quy tắc**.
+
+🔴 **Hai điều bổ sung, và cái thứ nhất là thứ không phép quét nào với tới.**
+
+**(a) Có thứ mục ruỗng vì THIẾU MỘT PHÉP KIỂM, không vì thiếu một lượt quét.** Bốn `cref` xuyên assembly trỏ tới `FleetHost` nằm trong file EdgeCore — **chúng chưa bao giờ phân giải được, ở bất kỳ đợt nào**. Chúng sống sót vì **không project nào bật `GenerateDocumentationFile`**, nên `cref` không bao giờ được trình biên dịch kiểm. *Liệt kê thêm quy tắc sẽ không bắt được lớp này; bật sinh tài liệu cho các assembly hợp đồng thì có.* **Trước khi thêm một quy tắc quét, hỏi xem thứ đang mục có đáng lẽ phải do một phép kiểm bắt hay không.**
+
+**(b) 🔴 Artifact ít được quét nhất trong một thay đổi là LỜI BIỆN MINH CỦA CHÍNH TÁC GIẢ.** Ba lần trong hai đợt, một bản sửa ship kèm **đúng hình dạng nó đang sửa** — và cả ba lần lỗi nằm trong **phần văn xuôi giải thích gắn vào bản sửa**, không nằm trong logic của nó:
+- một lời tổng quát hoá sai phủ năm artifact, viết bằng giọng của một phép đo;
+- một chú thích sai **về chính bài test nó đứng cạnh**;
+- một chuỗi hướng-người-vận-hành nêu một đường sinh **không thể sinh ra nó** — **và một test ghim chuỗi ấy lại**.
+
+**Cả ba đều do reviewer bắt, không lần nào do tác giả.** Khi ta vừa hiểu ra một cơ chế, phần giải thích ta viết ra *cảm giác* như đã được kiểm bởi chính sự hiểu ấy. Nó không. **Câu văn biện minh cho một bản sửa phải chịu đúng phép kiểm mà bản sửa phải chịu** — và nếu nó khẳng định một điều phổ quát ("mọi chuỗi cũ đều…", "không thành viên nào…"), thì **liệt kê để phủ định nó trước khi commit**, vì đó chính là dạng câu mà lớp lỗi này thích trú.
+
 ## 9. Giới hạn phải nói thẳng khi xong
 
 - **RS-485: chỉ hỗ trợ adapter có điều khiển hướng TỰ ĐỘNG.** `System.IO.Ports.SerialPort` không có sự kiện "đã phát xong", không có `RTS_CONTROL_TOGGLE`, và `BaseStream.Flush()` chỉ xả bộ đệm ghi của driver chứ **không** xả thanh ghi dịch của UART — nên nó không phải tín hiệu phát-xong. Đảo chiều RTS bằng phần mềm vì thế **chỉ có thể là một phép đoán thời gian**, và trên bus RS-485 một phép đoán sai làm hỏng khung tin của thiết bị khác. Ai dùng adapter phải bật/tắt DE thủ công thì sản phẩm này **không hỗ trợ** — nói thẳng, đừng để khách phát hiện trên bàn thí nghiệm.

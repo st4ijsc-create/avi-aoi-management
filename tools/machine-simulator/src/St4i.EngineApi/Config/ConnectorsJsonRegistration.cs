@@ -1,6 +1,14 @@
 using Microsoft.Extensions.Logging;
 using St4i.Connector.Abstractions;
 using St4i.Connector.Abstractions.Models;
+// 🔴 Task E-3 — ConnectorsConfig/ConnectorConfigEntry moved to St4i.EdgeCore.Config so BOTH hosts read
+// connectors.json through ONE parser and ONE precedence rule. St4i.EdgeService cannot reference
+// St4i.EngineApi (NU1605 + the ASP.NET publish surface), so the alternative was a second reader of the same
+// file — the config-layer twin of the two-readers-of-`--fleet` hazard blueprint §9.4(1) records. The DISPATCH
+// (this file) deliberately did NOT move: it needs ILogger, ConnectorConfigValidation, ModbusRtuBusPlan and
+// ModbusMultidropRegistration, and that last one pulls RtuBusConfiguration — i.e. it is not a leaf, exactly
+// the shape blueprint §9.6(a) names. See blueprint §11.
+using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Drivers.Modbus;
 using St4i.EdgeCore.Drivers.OpcUa;
 using St4i.EngineApi.Fleet;

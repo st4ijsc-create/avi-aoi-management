@@ -29,8 +29,8 @@ public sealed class LiveTransport : ITransport, IDisposable
     /// linked into this project verbatim and never edited) throws <c>St4iConfigException</c> on a
     /// null/empty <c>serverUrl</c> ("serverUrl là bắt buộc") — a correct guard for the SDK's own
     /// contract, but SM-3 makes "no ecosystem configured" a genuine, first-class, EMPTY
-    /// <see cref="St4i.EngineApi.Fleet.FleetHost"/>-facing <c>serverUrl</c> (see that class's own
-    /// <c>DefaultServerUrl</c>, now <c>""</c> instead of the old dishonest <c>http://localhost:5000</c>
+    /// <c>FleetHost</c>-facing <c>serverUrl</c> (see <see cref="St4i.EdgeCore.Fleet.FleetCore.DefaultServerUrl"/>,
+    /// which the shell re-exports and which is now <c>""</c> instead of the old dishonest <c>http://localhost:5000</c>
     /// placeholder) — and that empty value flows straight into THIS method, unfiltered, from both
     /// <c>TransportCoordinator.RebuildLive</c> (every Settings-driven rebuild) and every eager DI
     /// registration in <c>Program.cs</c> that seeds the initial, unconfigured Live transport at process

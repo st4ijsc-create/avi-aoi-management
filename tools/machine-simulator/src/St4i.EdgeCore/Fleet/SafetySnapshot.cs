@@ -1,4 +1,4 @@
-namespace St4i.EngineApi.Safety;
+namespace St4i.EdgeCore.Fleet;
 
 /// <summary>XC-R40 — a read-only snapshot of the SUPERVISORY software halt state. <see cref="EstopEngaged"/>
 /// (also referred to as the HALT latch in operator-facing text — SM-4) is a software latch, NOT an

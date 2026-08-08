@@ -7,8 +7,8 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// <summary>
 /// GP-4 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-4-brief.md) — the
 /// <see cref="IConnectorFactory"/> adapter that lets Modbus register itself into a host's
-/// <c>St4i.EngineApi.Fleet.ConnectorRegistry</c> instead of needing its own dedicated
-/// <see cref="FleetHost"/> constructor parameter. Deliberately a thin wrapper, NOT a replacement, for
+/// <see cref="St4i.EdgeCore.Fleet.ConnectorRegistry"/> instead of needing its own dedicated
+/// <c>FleetHost</c> constructor parameter. Deliberately a thin wrapper, NOT a replacement, for
 /// <see cref="ModbusDriverFactory"/>: this class owns exactly one job — turn the OPAQUE configuration
 /// string a registry hands it into a validated <see cref="ModbusRegisterMap"/> without throwing — and then
 /// delegates the actual driver construction to a freshly-built <see cref="ModbusDriverFactory"/>, reusing
