@@ -87,6 +87,25 @@ public static class ModbusMultidropRegistration
     /// when someone is watching cannot be caught if there is no way to build one with nobody watching.</param>
     /// <param name="logError">The exception-carrying channel. Exactly one call site: a map that would not
     /// parse.</param>
+    /// <remarks>
+    /// 🔴 <b>E-5 review, M1 — the conversion also drops the STRUCTURED PLACEHOLDERS, and that is a real loss
+    /// nobody recorded when the same conversion happened at §10.4.</b> These messages were
+    /// <c>logger.LogWarning("… '{BusInstanceId}' … unit {UnitId} …", busInstanceId, unitId)</c>, so a
+    /// structured sink could query on <c>BusInstanceId</c>. They are interpolated strings now, and each host
+    /// wraps the whole thing in ONE placeholder (<c>"{ModbusMultidropMsg}"</c>), so the fields are gone as
+    /// fields and survive only inside the text.
+    ///
+    /// <para>Stated rather than fixed, because fixing it is a design decision this task does not own: an
+    /// <c>Action&lt;string&gt;</c> pair cannot carry structure at all, so restoring it means a THIRD shape for
+    /// EdgeCore's logging convention, and that convention is deliberately minimal
+    /// (blueprint §9.5). E-2 made the identical trade for fourteen call sites and recorded only the LEVEL
+    /// drift; this is the half of that trade that went unwritten, and it is now written at the site rather
+    /// than in a report.</para>
+    ///
+    /// <para><b>What it costs in practice, honestly:</b> nothing today — this product ships no structured
+    /// sink and <c>St4i.EngineApi</c> ships no <c>appsettings.json</c>, so the console/Event Log rendering is
+    /// identical. It costs the day someone adds one.</para>
+    /// </remarks>
     /// <returns>How many devices were actually registered. Returned rather than inferred from the registry's
     /// contents so a caller — and a test — can tell "registered" from "silently skipped" without
     /// reconstructing it; <b>0 for a document that would not parse at all</b>, which is logged as an error and
@@ -181,7 +200,8 @@ public static class ModbusMultidropRegistration
             // (whole-branch M-1: that is all it does — it reserves an all-DIGIT suffix, so `line1:unitA` is a
             // legal bus name; the claim that it made another bus's ownership "impossible" was falsified by
             // D-7b's N-2 and is not restated here). A connector registered from another path entirely
-            // (POST /v1/connectors naming an instance "line1:unit3") can hold this id regardless. Register is last-write-wins on the id, so without this the fan-out
+            // (POST /v1/connectors naming an instance "line1:unit3") can hold this id regardless. Register
+            // is last-write-wins on the id, so without this the fan-out
             // would silently drop that connector's machine claim while still counting this device registered —
             // which is exactly the shape D-4's review named.
             if (OwnedBySomethingElse(before, device, out var incumbentMachine))

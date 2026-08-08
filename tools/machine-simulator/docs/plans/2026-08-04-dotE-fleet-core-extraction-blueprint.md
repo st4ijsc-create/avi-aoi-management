@@ -1180,7 +1180,9 @@ connector nào trên transport nào") **trực giao** với trục I4. Chủ s�
 - **§10.4 kênh log thứ ba** — chưa làm.
 - **§9.4(2) hai tiến trình, một bộ file dữ liệu toàn máy** — chưa chạm; vẫn chặn OPC-UA ở biên.
 - **§11.1 tra cứu `machineCode → driver` public trên `ConnectorRegistry`** — chưa đóng; hạng mục là
-  `ConnectorRegistry`, không phải `FleetCore`.
+  `ConnectorRegistry`, không phải `FleetCore`. 🔴 **Và E-5 làm nó RỘNG RA, không giữ nguyên** (review E-5,
+  M3): driver mà một đoạn dùng bề mặt public ấy dựng được giờ có thể là một `ModbusRtuDriver` trên một cổng
+  COM thật ở tác nhân biên, không chỉ một `ModbusTcpDriver` — xem §14.5.
 - **E-5** — RS-485 ở tác nhân biên (README §24.3, có số đo).
 - **Nhân chứng cho cặp `GET /v1/safety`**, và **`TryGetMachineDetail` một-lần-khoá** để giết ngoại lệ I2.
 - **Độ dài + i18n của bốn chuỗi** (§12.5).
@@ -1202,21 +1204,49 @@ toàn nhánh Đợt E; ghi đè vào đó sẽ trộn hai bản ghi khác nhau. 
 ### 14.1 Điểm chặn hoá ra là **một dòng**, và đó là điều đáng giữ nhất
 
 `ModbusMultidropRegistration` "không phải nút lá" (§9.6(a), §11.5, §11.6) **vì đúng một tham chiếu**:
-`RtuBusConfiguration.IsInBusNamespace`. Không phải một cụm phụ thuộc — một hàm static thuần, phụ thuộc đúng ba
-thứ (`DriverKinds.Normalize`, `ModbusMultidropMap.LooksLikeADeviceInstanceId`,
-`ModbusMultidropMap.DeviceIdSuffixPrefix`) mà **cả ba đều đã ở EdgeCore**. Nó tự nó là một nút lá; thứ không
-phải lá là **kiểu chứa nó**.
+`RtuBusConfiguration.IsInBusNamespace`. Không phải một cụm phụ thuộc — một hàm static thuần, phụ thuộc đúng
+**ba ký hiệu**:
 
-→ **Nó được DỜI, không nhân đôi.** Đích là `ModbusMultidropMap` — kiểu khai báo mọi dữ kiện nó lập luận trên.
-`RtuBusConfiguration.IsInBusNamespace` bị **xoá hẳn** (không để lại forwarder), hai bên gọi của chính
-`RtuBusConfiguration` và `SweepGhosts` đều trỏ tới nhà mới. Vẫn **đúng một** phát biểu cho **ba** bên gọi.
-Không có bản thứ hai để mà trôi. Ghim bởi `RtuBusRegistrationTests.TheBusNamespaceRule_…` (theory 10 hàng, để
-nguyên chỗ cũ theo tiền lệ E-3: `ConnectorsConfigTests` cũng ở lại khi `ConnectorsConfig` dời xuống).
+| Ký hiệu | Khai báo ở | Ghi chú |
+|---|---|---|
+| `DriverKinds.Normalize` | **`St4i.Connector.Abstractions`** | gọi **hai lần, ngay đầu hàm** |
+| `ModbusMultidropMap.LooksLikeADeviceInstanceId` | `St4i.EdgeCore` | |
+| `ModbusMultidropMap.DeviceIdSuffixPrefix` | `St4i.EdgeCore` | |
+
+🔴 **Bản đầu của mục này viết "cả ba đều đã ở EdgeCore" và liệt kê `DeviceInstanceId` thay cho
+`DriverKinds.Normalize`. SAI ở cả hai đầu** — review E-5 bắt được: `DriverKinds` ở assembly hợp đồng, không ở
+EdgeCore; còn `DeviceInstanceId` **không hề được gọi**. Cùng một thay đổi chứa **hai bản liệt kê** tập phụ
+thuộc của **một** hàm và chúng **bất đồng ở hai trên ba mục** (§14.1 so với §14.2/báo cáo). Đó là ca §8.1(b)
+**thứ năm**, lớn nhất tính theo số chỗ, và **một lượt census chạy riêng cho đúng lớp lỗi ấy đã bỏ sót nó**.
+
+**Cái sống nguyên vẹn sau khi sửa dữ kiện:** nó tự nó **vẫn là một nút lá** — cả ba ký hiệu đều với tới được
+từ EdgeCore, vì `St4i.Connector.Abstractions` là assembly hợp đồng nằm dưới đáy đồ thị tham chiếu mà mọi
+project ở đây đều đã tham chiếu. Thứ không phải lá là **kiểu chứa nó**.
+
+→ **Nó được DỜI, không nhân đôi.** Đích là `ModbusMultidropMap` — **kiểu khai báo ĐỊNH DẠNG `{bus}:unit{n}`
+mà predicate giải mã** (`DeviceIdSuffixPrefix`, `LooksLikeADeviceInstanceId`), ngay cạnh `DeviceInstanceId`
+thứ đúc ra định dạng ấy. Một predicate về một định dạng thì thuộc về nơi giữ định dạng — đó là lý do **nhà
+mới**; còn lý do **cuộc dời an toàn** là một sự kiện khác và không được lẫn: ký hiệu thứ ba nằm ở assembly
+hợp đồng. `RtuBusConfiguration.IsInBusNamespace` bị **xoá hẳn** (không để lại forwarder), hai bên gọi của
+chính `RtuBusConfiguration` và `SweepGhosts` đều trỏ tới nhà mới. Vẫn **đúng một** phát biểu cho **ba** bên
+gọi. Không có bản thứ hai để mà trôi. Ghim bởi `RtuBusRegistrationTests.TheBusNamespaceRule_…` (theory 10
+hàng, để nguyên chỗ cũ theo tiền lệ E-3: `ConnectorsConfigTests` cũng ở lại khi `ConnectorsConfig` dời xuống).
 
 *Bài học tổng quát hơn ca này: "X không phải nút lá" là một khẳng định về **kiểu**, và câu hỏi đắt tiền là về
 **thành viên**. §11.5/§11.6 phát biểu đúng và vẫn dẫn tới một ước lượng cao hơn công việc thật, vì phép đếm
-chạy trên kiểu. Cùng gốc với "bắt đầu từ TẬP CÁC THÀNH VIÊN, không phải một tên kiểu" (§8.1), ở phía đối diện:
-ở đây phép đếm theo kiểu làm việc trông **khó hơn** thực tế, không phải dễ hơn.*
+chạy trên kiểu.*
+
+🔴 **Đính chính của chủ sở hữu + review, và nó thay cả gốc lẫn cái giá tôi nêu — xem §6.2(b), đây chỉ là con
+trỏ:** gốc **không phải "chiều"**. Nó là **đơn vị của câu hỏi phải khớp đơn vị của câu trả lời**; phát biểu
+thành một luật hai chiều sẽ mời người đọc sau đi tìm một **chiều** thay vì một **độ hạt**. Và cái giá không
+phải "một ước lượng quá cao cũng là một ước lượng sai" — nó là §1.1: **một phép đếm ở tầng kiểu làm công việc
+trông KHÔNG XẾP LỊCH NỔI**, và bốn nhiệm vụ đúng đã ship mà không có năng lực cả đợt tồn tại để giao.
+
+→ 🔴 **Quy tắc hành động được, và ca này là bằng chứng cho chính nó:** khi ghi *"X không phải nút lá"*, ghi
+**TẬP KÝ HIỆU** mà thành viên gây vướng phụ thuộc vào, **không phải TÊN** của tham chiếu gây vướng. §11.6 viết
+*"nó với tới `RtuBusConfiguration.IsInBusNamespace`"* — toàn bộ câu trả lời nằm cách câu ấy **đúng một lần
+giải tham chiếu**. Và bảng ba dòng ở trên là thứ đáng lẽ phải có ở §11.6; khi cuối cùng nó được viết ra ở bản
+đầu của mục này, nó vẫn sai hai trên ba — nên quy tắc là *ghi tập ký hiệu **và liệt kê nó, đừng nhớ nó***.
 
 ### 14.2 Cái gì đã dời, cái gì KHÔNG — và một mục trong ước lượng của §11.6 là thừa
 
@@ -1266,8 +1296,18 @@ sáu lời gọi log của `ModbusMultidropRegistration`: bốn đã là `LogWar
 (→ `logError`), và **một** là `LogError` **không có exception** — "no connector factory could be built" — nay
 là `logWarning`. Nhánh ấy **không với tới được từ cả hai bên gọi sản xuất** (overload `IConnectorFactory` từ
 chối null; cả hai composition root truyền lambda luôn dựng được factory). Và dưới `AddWindowsService`, bộ lọc
-mặc định của `AddEventLog` vốn đã nhận mức Warning, nên nó vẫn tới cùng một Event Log. **Đây là toàn bộ độ
-trôi** — khác §10.4 (10 chỗ) về quy mô, cùng loại.
+mặc định của `AddEventLog` vốn đã nhận mức Warning, nên nó vẫn tới cùng một Event Log. **Đây là toàn bộ độ trôi VỀ MỨC.**
+
+🔴 **Nhưng có một nửa thứ hai của cùng cuộc đổi mà cả E-2 lẫn bản đầu của mục này đều không ghi (review E-5,
+M1): CÁC PLACEHOLDER CÓ CẤU TRÚC BIẾN MẤT.** Trước đây là
+`logger.LogWarning("… '{BusInstanceId}' … unit {UnitId} …", busInstanceId, unitId)`, tức một sink có cấu trúc
+truy vấn được theo `BusInstanceId`. Giờ là chuỗi nội suy, và mỗi host bọc toàn bộ vào **một** placeholder
+(`"{ModbusMultidropMsg}"`), nên các trường ấy còn tồn tại **trong văn bản** chứ không còn là trường. Ghi ra
+chứ không sửa: một cặp `Action<string>` **không thể** mang cấu trúc, nên khôi phục nghĩa là một hình dạng
+THỨ BA cho quy ước log của EdgeCore — một quyết định thiết kế, không phải một bản sửa. Hôm nay giá bằng
+không (sản phẩm không ship sink có cấu trúc nào, `St4i.EngineApi` không ship `appsettings.json`); nó tốn vào
+đúng ngày ai đó thêm một cái. §10.4 đã đổi y hệt cho **mười bốn** chỗ và **chỉ ghi độ trôi MỨC** — nửa còn
+lại đi qua hai đợt mà không ai viết ra.
 
 **D-7a đã KIỂM, không chỉ đọc:** không lệnh nào trong file tính trạng thái cơ chế bên trong đối số của một lời
 gọi log. Đột biến đưa `registry.Unregister(...)` **vào trong** đối số của cảnh báo sweep: **GIẾT** ba test —
@@ -1280,25 +1320,50 @@ E-5 biến thành bên-gọi-không-ai-xem khi bỏ `NullTestLogger.Instance` �
 - **Transport serial VẪN chưa tải một khung tin nào trên phần cứng thật.** Đúng sau Đợt D, sau E-1…E-4, và
   **vẫn đúng sau E-5.** Cái được thực thi là **giàn in-memory ghép đôi của D-2** (`InMemoryBusLinkPair`): một
   mạng slave NModbus **thật** trong tiến trình — CRC thật, khung t3.5 thật, phân phát theo địa chỉ slave thật,
-  phân xử thật trên một link dùng chung — cộng một socket loopback cho nhánh gateway. Cái **không** được thực
-  thi: đồng. Không va chạm bán song công, không nhiễu, không khung bị xé bởi khoảng lặng t3.5, không tốc độ
-  baud, **và không một dòng `System.IO.Ports` nào chạy trong bất kỳ test nào của E-5**. Nhánh `rtu-serial` chỉ
-  được chạy tới chỗ `ModbusRtuBusPlan.Resolve` quyết định dựng nó. Không có adapter trên máy này, và chỉ
-  adapter điều khiển hướng TỰ ĐỘNG mới được hỗ trợ.
+  phân xử thật trên một link dùng chung — cộng, cho nhánh gateway, một cổng loopback **ĐÓNG** mà lệnh connect
+  **bị từ chối**: không socket nào được thiết lập và không khung nào đi qua nó (review E-5, M2 — bản đầu viết
+  *"một socket loopback"*, thứ tuyên bố một transport đang hoạt động mà test không hề có). Cái **không** được
+  thực thi: đồng. Không va chạm bán song công, không nhiễu, không khung bị xé bởi khoảng lặng t3.5, không tốc độ
+  baud, **và không một dòng `System.IO.Ports` nào chạy trong bất kỳ test nào E-5 THÊM VÀO**. Nhánh
+  `rtu-serial` chỉ được chạy tới chỗ `ModbusRtuBusPlan.Resolve` quyết định dựng nó. Không có adapter trên máy
+  này, và chỉ adapter điều khiển hướng TỰ ĐỘNG mới được hỗ trợ.
+  🔴 **Chính xác hoá của review E-5, và nó là về CỔNG chứ không về test của tôi:** một test **trong bộ
+  EdgeService** *có* mở một cổng thật — `EdgeServiceSerialReachabilityTests`, từ E-4 — và nó bị **hệ điều
+  hành** từ chối chứ không phải trình biên dịch. Nên câu đúng là *"không test nào E-5 thêm vào chạm một lệnh
+  mở serial"*, **không phải** *"không có `System.IO.Ports` ở đâu trong cổng"*. Reviewer đo bằng cách bắt
+  `SerialPortBusLink.OpenAsync` ném vô điều kiện (có đối chứng dương) và thấy cả hai test EdgeCore mới của
+  E-5 cộng 48/49 test EdgeService vẫn xanh. Một khẳng định phổ quát nữa, hẹp lại bằng phép đo.
 - 🔴 **HỆ QUẢ MỚI, và nó là của E-5:** một cổng COM chỉ nhận **một** tiến trình. Trước E-5 chỉ EngineApi có
   đường đã cấu hình tới một lệnh mở serial, nên bảng §2 (*"tiến trình thứ hai không mở nổi cổng"*) là một khả
   năng lý thuyết. **Giờ hai host đều cấu hình được lên cùng một sợi dây**, và nếu EdgeService giữ COM3 thì
   EngineApi không mở được — các máy trên dây ấy thành chỉ-đọc từ engine, và **hai host không có kênh nào để
   bên nào biết** (§12.1). Trên **gateway** RTU thì cả hai kết nối bình thường và **không ai chặn** — §2 nguyên
   văn, giờ có thể xảy ra bằng cấu hình chứ không chỉ trên nguyên tắc.
+- 🔴 **Và trên một GATEWAY dùng chung, hệ quả rơi thẳng vào CHIỀU GHI (review E-5, I3).** Hai nguồn khung tin
+  không phối hợp trên một segment: phép kiểm địa chỉ slave và mã hàm của NModbus biến một khung tin lạc thành
+  một **lần TỪ CHỐI**, không phải một xác nhận sai — nên đây là **suy giảm, không phải hỏng dữ liệu**. Nhưng
+  hệ quả thực tế là **lệnh ghi của EngineApi rơi vào `Indeterminate` ở một tần suất chưa ai đo**, và
+  `Indeterminate` trên một lệnh ghi đúng là kết quả mà sản phẩm này cẩn thận nhất (Đợt D §10 mục 1 và 3). Ghi
+  ra như một mệnh đề, không phải một phép đo: không có phần cứng và không có phép đo nào chạy.
 - **Không người ghi mới nào vào store toàn máy.** Liệt kê, không suy: đường RTU chạm `SerialPortBusLink` (mở
   một cổng COM), `GatewayTcpBusLink` (mở một socket), `ModbusBusRegistry` (dictionary trong tiến trình).
   `grep` `File.` / `Directory.` / `ProgramData` / `GetFolderPath` trên `src/St4i.EdgeCore.Serial/` và
   `src/St4i.EdgeCore/Drivers/Modbus/`: **hai kết quả, cả hai nằm trong chú thích**. Bảng §11.4 không đổi một
   dòng.
-- **Máy do tác nhân biên cầm vẫn chỉ-đọc.** `FleetCore` vẫn `internal`, và E-5 **không chạm `FleetCore.cs`** —
-  `git diff` trên file ấy **rỗng** — nên bốn đường I/O + hai `Cancel` dưới `_gate` (§10.3 / §11.3) **không
-  tăng, cộng 0**, bằng đúng dụng cụ §11.3 dùng: một diff rỗng là bằng chứng **kết luận** về cây mã.
+- **Máy do tác nhân biên cầm vẫn chỉ-đọc.** `FleetCore` vẫn `internal`, và bốn đường I/O + hai `Cancel` dưới
+  `_gate` (§10.3 / §11.3) **không tăng, cộng 0**.
+  🔴 **Nhưng DỤNG CỤ phải nói đúng, và §11.3 lẫn bản đầu của mục này đều nói quá (review E-5, I4).** Một
+  `git diff` **rỗng** trên `FleetCore.cs` là bằng chứng kết luận **về một FILE**; tiêu chí §10.3(c) là một
+  **cuộc đi bộ theo khả năng với tới**, và cuộc đi bộ ấy phụ thuộc cả vào **callee**. Nên phép kiểm đúng là
+  **diff rỗng CỘNG một phép kiểm callee**, và E-5 chạy cả hai: tập ký hiệu E-5 sửa là
+  `ModbusMultidropMap` (thêm **một** static mới, không sửa thành viên nào có sẵn), `ConnectorsConfig` (thêm
+  một static mới), `ModbusMultidropRegistration` + `ModbusRtuBusPlan` (dời; `FleetCore` không gọi cái nào),
+  `RtuBusConfiguration` (ở `St4i.EngineApi` — `FleetCore` **không thể** gọi, sai chiều tham chiếu), và
+  `EdgeConnectors` / `EdgeWorker` (chỉ `St4i.EdgeService`). **Không callee nào của một vùng đang giữ `_gate`
+  đổi hành vi.**
+  → **E-3 và E-5 đã HAI LẦN thay cuộc đi bộ bằng cái diff**, và nhiệm vụ thứ ba thừa kế câu chữ ấy sẽ không
+  biết đó là một phép thay. Câu chữ để lại cho người sau: *"diff rỗng trên file giữ khoá, CỘNG một phép liệt
+  kê callee"* — hoặc chạy lại cuộc đi bộ ba chặng.
 - 🔴 **Và ĐỪNG viết rằng định tuyến `machineCode → driver` không với tới được** (đính chính §11.1). Nó
   `public` trên `ConnectorRegistry`, host này giữ một cái đã nạp, và **E-5 làm bề mặt ấy RỘNG hơn**: driver mà
   một đoạn như thế dựng được giờ có thể là một `ModbusRtuDriver` trên một cổng COM thật, không chỉ một
@@ -1368,3 +1433,56 @@ dùng từ nào trong số đó. Ngược lại, R1 là quy tắc duy nhất tì
 `SerialDependencyScopingTests`, mà R2 sẽ bỏ qua vì nó không nêu tên kiểu nào trong ba kiểu. **Hai quy tắc,
 hai tập kết quả gần như rời nhau** — bằng chứng trực tiếp cho phần thêm của §8.1: *liệt kê CÁC quy tắc, không
 chạy MỘT quy tắc.*
+
+### 14.8 🔴 Vòng sửa của REVIEW E-5 — bảy điều kiện, không điều nào chạm hành vi
+
+Phán quyết: **MERGE sau khi sửa.** Reviewer chạy lại cổng (2594/116/0), chứng minh `FleetCore` không với tới
+được **ở mức trình biên dịch trong chính assembly sản phẩm EdgeService**, và **ĐO giới hạn phần cứng thay vì
+đọc nó** — bắt `SerialPortBusLink.OpenAsync` ném vô điều kiện kèm đối chứng dương, rồi xác nhận cả hai test
+EdgeCore mới của E-5 và 48/49 test EdgeService vẫn xanh. **Cổng sau vòng sửa: `151/22/1082/49/1290 = 2594`,
+0 lỗi, 116 cảnh báo, 0 build node** — không đổi, vì không điều kiện nào chạm hành vi.
+
+**F1 (chặn) — thông điệp "cổng đang bị giữ" nêu HAI đường sinh, và E-5 tạo ra đường thứ BA, giờ là đường khả
+dĩ nhất.** `SerialPortBusLink.DescribeOpenFailure`'s `UnauthorizedAccessException` arm nói *"another
+application … or THIS process opening the same port twice"*, và liệt kê *"an earlier instance of this
+service"* — tức **cùng một service, không phải host anh em**. Sau E-5, trên một máy chạy cả hai, câu trả lời
+thường là *"tác nhân biên đang giữ COM3"*, và người vận hành bị đẩy đi săn một terminal program không tồn tại
+rồi đi soát lại các tham số đường truyền vốn đúng. **Đây là lớp I-1 của D-5 nguyên văn, trong một chuỗi
+SỐNG.** Đã sửa: ba đường sinh, đường host-anh-em đứng **thứ nhất** kèm lý do nó phải đứng đầu (nó là đường duy
+nhất để **cả hai** file cấu hình trông vẫn đúng), cộng ba khẳng định mới ở `SerialPortBusLinkTests`.
+
+🔴 **Và điều đáng giữ hơn bản sửa: chỗ ấy nằm ĐÚNG TRONG ngữ liệu mà quy tắc R1 của chính §14.7 nhắm vào.**
+R1 là *"host nào có đường đã cấu hình tới một cổng COM"*; nó tìm ra bốn chỗ và **bỏ sót đúng chỗ mà câu trả
+lời được NÓI CHO MỘT CON NGƯỜI**. Sắc hơn nữa: đoạn E-5 mới thêm vào `EdgeServiceSerialReachabilityTests` nói
+*"câu hỏi 'tiến trình nào đang giữ COM3' giờ mới có câu trả lời thật"* — và **chuỗi trả lời đúng câu hỏi ấy
+thì không được đụng tới**. → **Bổ sung cho §8.1: một lượt quét theo quy tắc phải liệt kê cả những chỗ quy tắc
+ấy được NÓI RA CHO NGƯỜI VẬN HÀNH, không chỉ những chỗ nó được ghi cho lập trình viên.**
+
+**F2/F3 — một khẳng định phổ quát sai ở TÁM chỗ, và nó là lời biện minh mà cả nhiệm vụ dựa lên.** Xem §14.1
+(đã sửa) và §6.2(b). Ca §8.1(b) **thứ năm**, lớn nhất theo số chỗ, và **bị bỏ sót bởi một lượt census chạy
+riêng cho đúng lớp lỗi ấy**. Đã sửa ở bảy chỗ: `ModbusMultidropMap`, `EdgeConnectors`,
+`ConnectorsJsonRegistration`, `RtuBusConfiguration`, `RtuBusRegistrationTests`, README §24.3 (EN + VI), và
+§14.1. **Chỗ thứ tám nằm trong §6.2 của chủ sở hữu, đang chưa commit trong cây — E-5 không đụng theo chỉ thị**;
+bản thân §6.2 đã mang sẵn phần đính chính dữ kiện ở đoạn sau, nên hai nửa của nó cần được hoà giải bởi người
+viết nó.
+
+**I1 — `ConnectorsConfig.IsRtuBus` khai BỐN bên gọi; thật ra là BA.** `EdgeConnectors.RegistrationKeyOf`
+không hỏi nó bao giờ — nó trả `Normalize(entry.Id)` vô điều kiện. **Và hành vi thật MẠNH hơn cái doc mô tả:**
+cặp của EdgeService **không thể trôi khỏi nhau về mặt cấu trúc**, vì phía key không có nhánh nào để bất đồng
+với phía dispatch. Đã thay lời cảnh báo "giữ bốn thứ đồng bộ" bằng phát biểu mạnh hơn ấy — cảnh báo cũ **mời
+người sau thêm nhánh còn thiếu cho cân đối, và như thế là TẠO RA** mối nguy.
+
+**I3 — một mệnh đề về CHIỀU GHI sau một gateway dùng chung**, đã thêm vào §14.5.
+
+**I4 — dụng cụ `_gate` +0 nói quá, dù kết luận đúng.** Một `git diff` rỗng kết luận về một **file**; tiêu chí
+§10.3(c) là một **cuộc đi bộ**, phụ thuộc cả callee. Đã sửa câu chữ và **chạy phép kiểm callee**, xem §14.5.
+🔴 **E-3 và E-5 đã HAI LẦN thay cuộc đi bộ bằng cái diff**, và nhiệm vụ thứ ba thừa kế câu chữ sẽ không biết
+đó là một phép thay — đó mới là thứ vòng sửa này ghi lại.
+
+**Minor:** M1 (mất placeholder có cấu trúc — §14.4, và §10.4 đã đổi y hệt cho 14 chỗ mà không ghi);
+M2 (*"một socket loopback"* → một connect **bị từ chối**, không có socket nào); M3 (§13.6: hạng mục
+`ConnectorRegistry` **rộng ra**); M4 (dòng dài).
+
+**Một chính xác hoá của reviewer mà E-5 nhận:** *"không `System.IO.Ports` trong bất kỳ test nào của E-5"*
+đúng với **các test E-5 thêm vào**, không đúng với **cổng** — `EdgeServiceSerialReachabilityTests` (E-4) có mở
+một cổng thật và bị **hệ điều hành** từ chối. Đã hẹp lại ở §14.5, README §24.6 và báo cáo.

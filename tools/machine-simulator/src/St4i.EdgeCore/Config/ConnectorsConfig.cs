@@ -293,15 +293,23 @@ public static class ConnectorsConfig
 
     /// <summary>
     /// 🔴 Task E-5 — <b>whether this entry is an RS-485 BUS rather than a single connector.</b> One statement,
-    /// because after E-5 there are FOUR places that have to answer it identically and they sit in two
-    /// assemblies that cannot see each other's private helpers.
+    /// because it is asked from two assemblies that cannot see each other's private helpers.
     ///
-    /// <para>The four: <c>ConnectorsJsonRegistration.RegisterAll</c>'s dispatch and its
-    /// <c>RegistrationKeyOf</c> (St4i.EngineApi), and <c>EdgeConnectors.Build</c>'s dispatch and its
-    /// <c>RegistrationKeyOf</c> (St4i.EdgeService). Two of them decide WHICH CODE RUNS and two decide WHAT KEY
-    /// THE ENTRY OCCUPIES, and a drift between a host's own pair is the worst kind: an entry dispatched as a
-    /// bus while its de-duplication key says "one Modbus connector" collapses a second bus in the same file
-    /// into the first, silently.</para>
+    /// <para>🔴 <b>THREE call sites, not four — the E-5 review counted them and the first version of this
+    /// paragraph did not.</b> <c>ConnectorsJsonRegistration.RegisterAll</c>'s dispatch and its
+    /// <c>RegistrationKeyOf</c> (St4i.EngineApi), and <c>EdgeConnectors.Build</c>'s dispatch
+    /// (St4i.EdgeService). <c>EdgeConnectors.RegistrationKeyOf</c> — the fourth this used to claim —
+    /// <b>never asks</b>: it answers <c>DriverKinds.Normalize(entry.Id)</c> unconditionally, for every kind
+    /// and every entry.</para>
+    ///
+    /// <para><b>And the real shape is STRONGER than the warning it replaces.</b> The hazard is a drift
+    /// between a host's own pair — an entry dispatched as a bus while its de-duplication key says "one Modbus
+    /// connector", which silently collapses a second bus in the same file into the first. EngineApi has that
+    /// pair and both halves now ask THIS method, so they cannot disagree. <b>St4i.EdgeService cannot have the
+    /// drift at all</b>: its key function does not branch, so there is no branch to disagree with its
+    /// dispatch. That is a structural absence, not a synchronised pair, and it is worth stating as such —
+    /// "keep four things in sync" invites someone to add the missing branch for symmetry and thereby
+    /// CREATE the hazard.</para>
     ///
     /// <para><b>Why the predicate is "declares a transport" and not a sixth <see cref="DriverKinds"/> value</b>
     /// is <see cref="ModbusRtuBusSettings.DeclaresATransport"/>'s own subject; this method exists only so the

@@ -121,8 +121,11 @@ public sealed class RtuBusRegistrationTests
 
     /// <summary>
     /// 🔴 <b>Task E-5 moved the predicate to <see cref="ModbusMultidropMap.IsInBusNamespace"/></b> — off
-    /// <c>RtuBusConfiguration</c> (St4i.EngineApi) and onto the St4i.EdgeCore type that declares every fact it
-    /// reasons about. That one reference was the whole of what made the multidrop fan-out un-moveable, and
+    /// <c>RtuBusConfiguration</c> (St4i.EngineApi) and onto the St4i.EdgeCore type that declares the
+    /// <c>{bus}:unit{n}</c> format it decodes. (Not "every fact it reasons about": its third dependency,
+    /// <c>DriverKinds.Normalize</c>, is <c>St4i.Connector.Abstractions</c>' — the E-5 review's correction, and
+    /// this theory is the thing that would go red if the arithmetic ever moved with the prose.) That one
+    /// reference was the whole of what made the multidrop fan-out un-moveable, and
     /// therefore the whole of what kept RS-485 out of <c>St4i.EdgeService</c>. This theory is deliberately
     /// left HERE rather than moved with it: the three callers it guards are still two of
     /// <c>RtuBusConfiguration</c>'s and one of the fan-out's, and this file is where the endpoint path that

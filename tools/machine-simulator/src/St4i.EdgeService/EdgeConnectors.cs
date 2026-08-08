@@ -37,7 +37,11 @@ namespace St4i.EdgeService;
 /// machine the port is plugged into.
 /// <list type="bullet">
 /// <item><c>ModbusMultidropMap.IsInBusNamespace</c> — the rule, <b>moved, not copied</b>, onto the type that
-/// declares every fact it reasons about. Still exactly one statement; all three callers reach it.</item>
+/// declares the <c>{bus}:unit{n}</c> FORMAT it decodes (<c>DeviceIdSuffixPrefix</c>,
+/// <c>LooksLikeADeviceInstanceId</c>). Its third dependency, <c>DriverKinds.Normalize</c>, is
+/// <c>St4i.Connector.Abstractions</c>' — see that method's own remarks, where an earlier "every fact it
+/// reasons about is declared in this type" was corrected. Still exactly one statement; all three callers
+/// reach it.</item>
 /// <item><c>St4i.EdgeCore.Config.ModbusMultidropRegistration</c> — the fan-out and its ghost sweep, on
 /// EdgeCore's callback logging convention.</item>
 /// <item><c>ModbusRtuBusPlan</c> (now <c>St4i.EdgeCore.Serial</c>) — the transport switch, the one place in
@@ -82,9 +86,11 @@ namespace St4i.EdgeService;
 ///
 /// <para>🔴 <b>E-5 was told these two rules "converge for free" once the fan-out landed here. THEY DO NOT,
 /// and the enumeration is short enough to settle it.</b> The two rules already AGREE on an RTU bus — both
-/// hosts key it on the operator's id, and after E-5 both ask the same predicate
+/// hosts key it on the operator's id, and after E-5 both DISPATCHES ask the same predicate
 /// (<see cref="ConnectorsConfig.IsRtuBus"/>) to decide that it is one, so that half is now shared code rather
-/// than two agreeing copies. They differ on exactly one input class: a <b>TCP or OPC-UA</b> entry, which
+/// than two agreeing copies. (This host's <see cref="RegistrationKeyOf"/> does not ask it and does not need
+/// to — see its own remarks; the E-5 review corrected a count of four call sites to three.) They differ on
+/// exactly one input class: a <b>TCP or OPC-UA</b> entry, which
 /// EngineApi keys on kind and this host keys on id. Moving the fan-out changes nothing about that input
 /// class. And neither direction of convergence is available:
 /// <list type="bullet">
@@ -117,8 +123,17 @@ internal static class EdgeConnectors
             ? Path.Combine(AppContext.BaseDirectory, ConnectorsFileName)
             : explicitPath;
 
-    /// <summary>The key an entry will actually be registered under here — see the class remarks. A blank id
-    /// cannot happen (<see cref="ConnectorsConfig.Load"/> defaults it to the kind), but normalising through
+    /// <summary>The key an entry will actually be registered under here — see the class remarks.
+    ///
+    /// <para>🔴 <b>It does NOT ask <see cref="ConnectorsConfig.IsRtuBus"/>, and that absence is stronger than
+    /// asking would be (E-5 review, I1).</b> EngineApi's counterpart must branch — kind for TCP/OPC-UA, id for
+    /// a bus — so its dispatch and its key function have to agree about what an entry IS, and both ask the one
+    /// shared predicate. Here there is no branch: every entry keys on its own id, so there is nothing that
+    /// could disagree with the dispatch. Adding the branch "for symmetry" would create the hazard the shared
+    /// predicate exists to close.</para>
+    ///
+    /// <para>A blank id cannot happen (<see cref="ConnectorsConfig.Load"/> defaults it to the kind), but
+    /// normalising through
     /// <see cref="DriverKinds.Normalize"/> is what makes this comparable to
     /// <see cref="ConnectorRegistry"/>'s own keys, which are normalised on the way in.</summary>
     internal static string RegistrationKeyOf(ConnectorConfigEntry entry)

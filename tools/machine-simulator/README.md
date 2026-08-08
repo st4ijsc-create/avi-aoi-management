@@ -3898,7 +3898,8 @@ KHÔNG PHẢI cảnh báo** — và luôn thu gọn; widget chỉ tự mở khi 
   > of the three hosts** can be configured onto a real RS-485 line and the question "which process holds
   > COM3" now has a real answer (§24.3). **The first half is STILL the part that survives: no Modbus frame
   > has yet crossed a real serial port** — E-5 made the port reachable by configuration and did not touch
-  > that. Every RTU test in this repository runs on D-2's in-memory paired link or a loopback socket.
+  > that. Every RTU test in this repository runs on D-2's in-memory paired link, or against a CLOSED
+  > loopback port whose connect is refused — not a working socket, and never a frame on copper.
 - **Re-saving an existing connector's settings while the fleet runs does not apply live; a fresh add
   does.** See §20.2's own explanation — `FleetHost.RegisterMachine` only ever adds, never updates an
   already-running slot in place.
@@ -3956,7 +3957,8 @@ giờ cũng đã đổi:** `St4i.EdgeService` có đường đã cấu hình c�
 `connectors.json` tới một cổng COM, nên **hai trong ba host** cấu hình được lên một đường RS-485 thật, và câu
 hỏi "tiến trình nào đang giữ COM3" giờ mới có câu trả lời thật (§24.3). **Nửa đầu VẪN là phần sống sót: chưa
 có khung Modbus nào đi qua một cổng serial thật** — E-5 làm cổng ấy với tới được bằng cấu hình chứ không chạm
-vào sự thật đó; mọi test RTU trong kho mã này chạy trên giàn in-memory của D-2 hoặc trên một socket loopback.
+vào sự thật đó; mọi test RTU trong kho mã này chạy trên giàn in-memory của D-2, hoặc nhắm vào một cổng
+loopback ĐÓNG mà lệnh connect bị từ chối — không phải một socket đang hoạt động, và không khung nào trên đồng.
 **Lưu lại cấu hình một connector ĐÃ CÓ trong
 khi đội hình đang chạy KHÔNG áp dụng sống; thêm máy MỚI thì có** — xem §20.2. **Sửa một connector đòi
 dán/tải JSON map; CHƯA có bộ dựng trực quan** — ô nhập duy nhất của `/connectors` là một `<textarea>`
@@ -5034,7 +5036,7 @@ scheduled to move the RTU registration** — a decomposition error, found only w
 
 | Piece | Before | After E-5 |
 |---|---|---|
-| `ModbusMultidropMap.IsInBusNamespace` | `RtuBusConfiguration` (`St4i.EngineApi`) — the **one** reference that made the fan-out un-moveable | `ModbusMultidropMap` (`St4i.EdgeCore`). **Moved, not copied**: still stated exactly once, and all three callers reach it. It belongs there on its own merits — every fact it reasons about (`DeviceIdSuffixPrefix`, `LooksLikeADeviceInstanceId`, `DeviceInstanceId`) is declared on that type. |
+| `ModbusMultidropMap.IsInBusNamespace` | `RtuBusConfiguration` (`St4i.EngineApi`) — the **one** reference that made the fan-out un-moveable | `ModbusMultidropMap` (`St4i.EdgeCore`). **Moved, not copied**: still stated exactly once, and all three callers reach it. It belongs there because the two symbols encoding the `{bus}:unit{n}` FORMAT it decodes (`DeviceIdSuffixPrefix`, `LooksLikeADeviceInstanceId`) are declared on that type, beside the `DeviceInstanceId` that mints it. 🔴 **The E-5 review corrected an earlier universal here** — *"every fact it reasons about … is declared on that type"* — which was wrong at both ends: the predicate's third dependency, `DriverKinds.Normalize`, is `St4i.Connector.Abstractions`', and `DeviceInstanceId`, which the old list named, is never called. What made the MOVE safe is the separate fact that the third symbol sits in the contract assembly every project already references. |
 | `ModbusMultidropRegistration` (344 lines) | `St4i.EngineApi.Config` | `St4i.EdgeCore.Config`, on EdgeCore's two-callback logging convention. |
 | `ModbusRtuBusPlan` (107 lines) | `St4i.EngineApi.Config` | `St4i.EdgeCore.Serial` — the only assembly that can see **both** transports. |
 | `ConnectorConfigValidation` (254 lines) | `St4i.EngineApi.Fleet` | **did not move, and is not needed**: it exists to learn the machine code a TCP entry's opaque blob declares, and a bus does not need it — the fan-out parses each device and hands its machine code out directly. E-3's estimate listed it; the enumeration removed it. |
@@ -5121,7 +5123,8 @@ holds COM3 — and on a **gateway** there is no such protection to reason about 
   **still true after E-5** — which made the port reachable by configuration and did not touch that fact. Every
   RTU test in this repository runs on D-2's in-memory paired link (a real in-process NModbus slave network:
   real CRC, real t3.5 framing, real dispatch by slave address, real arbitration over one shared link — but no
-  copper) or on a loopback socket. There is no RS-485 adapter on any build machine, and only adapters with
+  copper), or against a CLOSED loopback port whose connect is refused — a refused connect is not a socket.
+  There is no RS-485 adapter on any build machine, and only adapters with
   **automatic** direction control are supported at all. A bench acceptance step with real hardware remains
   outstanding — a step, not a formality.
 - **Two processes still share one set of machine-wide data files.** `AssetRegistryStore`/`CredentialStore`/
@@ -5203,8 +5206,13 @@ E-1…E-4 để lại, và nó chính là năng lực mà §1 của bản thiế
 rã, chỉ lộ ra khi E-3 va vào bức tường và **ĐO** khối lượng còn lại thay vì giả định. E-5 là phần việc đó.
 **`ModbusMultidropMap.IsInBusNamespace`** — luật ấy rời `RtuBusConfiguration` (`St4i.EngineApi`) sang
 `ModbusMultidropMap` (`St4i.EdgeCore`): **DỜI, KHÔNG NHÂN ĐÔI**, vẫn phát biểu đúng một lần và cả ba bên gọi
-đều với tới; nó thuộc về đó theo đúng bản chất, vì mọi dữ kiện nó lập luận trên (`DeviceIdSuffixPrefix`,
-`LooksLikeADeviceInstanceId`, `DeviceInstanceId`) đều khai báo trên chính kiểu ấy. **`ModbusMultidropRegistration`**
+đều với tới; nó thuộc về đó vì hai ký hiệu mã hoá ĐỊNH DẠNG `{bus}:unit{n}` mà nó giải mã
+(`DeviceIdSuffixPrefix`, `LooksLikeADeviceInstanceId`) khai báo trên chính kiểu ấy, ngay cạnh
+`DeviceInstanceId` — thứ đúc ra định dạng đó. 🔴 **Review E-5 đã sửa một khẳng định phổ quát ở đây** —
+*"mọi dữ kiện nó lập luận trên đều khai báo trên chính kiểu ấy"* — sai ở cả hai đầu: phụ thuộc thứ ba của
+predicate, `DriverKinds.Normalize`, là của `St4i.Connector.Abstractions`, còn `DeviceInstanceId` mà danh
+sách cũ nêu tên thì **không hề được gọi**. Thứ làm cho CUỘC DỜI an toàn là một sự kiện khác: ký hiệu thứ ba
+nằm trong assembly hợp đồng mà mọi project ở đây vốn đã tham chiếu. **`ModbusMultidropRegistration`**
 (344 dòng) sang `St4i.EdgeCore.Config`, dùng quy ước hai callback của EdgeCore. **`ModbusRtuBusPlan`**
 (107 dòng) sang `St4i.EdgeCore.Serial` — assembly duy nhất nhìn thấy **cả hai** transport.
 **`ConnectorConfigValidation`** (254 dòng) **KHÔNG dời, và không cần**: nó tồn tại để học mã máy mà blob cấu
@@ -5284,7 +5292,8 @@ như thế để mà lý luận.
 Đợt D, đúng sau E-2, E-3, E-4, và **vẫn đúng sau E-5**, thứ chỉ làm cái cổng ấy với tới được bằng cấu hình chứ
 không chạm vào sự thật này. Mọi test RTU trong kho mã này chạy trên giàn in-memory ghép đôi của D-2 (một mạng
 slave NModbus thật trong tiến trình: CRC thật, khung t3.5 thật, phân phát theo địa chỉ slave thật, phân xử
-thật trên một link dùng chung — nhưng không có đồng) hoặc trên một socket loopback. Không có adapter RS-485
+thật trên một link dùng chung — nhưng không có đồng), hoặc nhắm vào một cổng loopback ĐÓNG mà lệnh connect
+bị từ chối — một connect bị từ chối không phải là một socket. Không có adapter RS-485
 nào trên bất kỳ máy build nào, và chỉ adapter điều khiển hướng **tự động** mới được hỗ trợ. Bước nghiệm thu
 trên bàn với phần cứng thật vẫn còn đó, và đó là một BƯỚC chứ không phải thủ tục. **Hai tiến trình vẫn dùng chung một bộ file dữ liệu toàn máy** —
 `AssetRegistryStore`/`CredentialStore`/`FleetSettingsStore` đều nằm dưới `%ProgramData%\ST4I\sim\…`, không

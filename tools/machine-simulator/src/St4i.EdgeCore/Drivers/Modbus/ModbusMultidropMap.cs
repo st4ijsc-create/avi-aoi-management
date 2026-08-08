@@ -567,11 +567,22 @@ public static class ModbusMultidropMap
     /// drift: the rule moved, and the three callers above all reach this one method. The move is downhill in
     /// the reference graph, so nothing that could call it before has lost the ability.</para>
     ///
-    /// <para><b>And it belongs here on its own merits, not only for reachability:</b> every fact it reasons
-    /// about — the separator <see cref="DeviceIdSuffixPrefix"/>, the derived shape
-    /// <see cref="LooksLikeADeviceInstanceId"/>, the minting rule <see cref="DeviceInstanceId"/> — is declared
-    /// in this type. On <c>RtuBusConfiguration</c> it was the only member that reached back into this class for
-    /// all three.</para>
+    /// <para>🔴 <b>Why it belongs here — and the E-5 REVIEW corrected this paragraph, which was a false
+    /// universal wrong at BOTH ends.</b> It read: <i>"every fact it reasons about — the separator
+    /// <see cref="DeviceIdSuffixPrefix"/>, the derived shape <see cref="LooksLikeADeviceInstanceId"/>, the
+    /// minting rule <see cref="DeviceInstanceId"/> — is declared in this type."</i> Enumerate the method
+    /// instead of reading it: it depends on <b>three</b> project symbols, and
+    /// <see cref="DriverKinds.Normalize"/> — called TWICE, and first — is declared in
+    /// <c>St4i.Connector.Abstractions</c>, not here. Meanwhile <see cref="DeviceInstanceId"/>, which that list
+    /// named, <b>is not called at all</b>. Over-inclusive and under-inclusive in one sentence.</para>
+    ///
+    /// <para><b>The accurate statement is narrower and still sufficient.</b> The two symbols that encode the
+    /// <c>{bus}:unit{n}</c> FORMAT this predicate decodes — <see cref="DeviceIdSuffixPrefix"/> and
+    /// <see cref="LooksLikeADeviceInstanceId"/> — are declared here, beside <see cref="DeviceInstanceId"/>,
+    /// which MINTS that same format. A predicate about a format belongs with the format. What made the move
+    /// <i>safe</i> is a different fact and must not be confused with it: the third symbol lives in the
+    /// contract assembly at the bottom of the reference graph, which every project in this solution already
+    /// references — so nothing that could call this before has lost the ability.</para>
     ///
     /// <para>🔴 <b>Fix round 2, N-2 — the earlier version was OVER-BROAD, and the doc that described it called
     /// the property "a guarantee rather than a hope". It was neither.</b> It asked only that the id START with

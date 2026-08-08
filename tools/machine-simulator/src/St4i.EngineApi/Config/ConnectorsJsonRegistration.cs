@@ -9,8 +9,10 @@ using St4i.Connector.Abstractions.Models;
 // 🔴 Task E-5 — the DISPATCH (this file) still does not move, but its two RTU dependencies DID, and that is
 // what put RS-485 in the edge agent. E-3 recorded the blocker as "ModbusMultidropRegistration pulls
 // RtuBusConfiguration — i.e. it is not a leaf, exactly the shape blueprint §9.6(a) names". The whole of that
-// pull was ONE static predicate, IsInBusNamespace, which now lives on ModbusMultidropMap in St4i.EdgeCore
-// where every fact it reasons about is declared. ModbusMultidropRegistration is now St4i.EdgeCore.Config's
+// pull was ONE static predicate, IsInBusNamespace, which now lives on ModbusMultidropMap in St4i.EdgeCore —
+// the type declaring the {bus}:unit{n} format it decodes. (Its third dependency, DriverKinds.Normalize, is
+// St4i.Connector.Abstractions'; an earlier version of this note said all of them were EdgeCore's and the E-5
+// review corrected it.) ModbusMultidropRegistration is now St4i.EdgeCore.Config's
 // and ModbusRtuBusPlan is St4i.EdgeCore.Serial's; both hosts call the same fan-out and the same transport
 // switch. What keeps THIS file in St4i.EngineApi is the rest of its arm set: ConnectorConfigValidation (the
 // machine-code binding for a TCP entry), OpcUaOptions, and the ILogger this host composes with.
@@ -191,8 +193,11 @@ public static class ConnectorsJsonRegistration
         ArgumentNullException.ThrowIfNull(entry);
 
         // 🔴 Task E-5 — the "is this a bus" half is ConnectorsConfig.IsRtuBus, shared with the dispatch above
-        // and with BOTH of St4i.EdgeService's own two sites, so a host's dispatch and its de-duplication key
-        // cannot disagree about what an entry is. The "then what key" half is what still differs between the
+        // and with St4i.EdgeService's dispatch, so THIS host's dispatch and its de-duplication key cannot
+        // disagree about what an entry is. (E-5 review, I1: EdgeService's own RegistrationKeyOf does NOT ask
+        // it — it answers the entry's id unconditionally — so that host has no second branch to keep in step.
+        // Three call sites, not four; the earlier count was wrong and in the direction that reads as a
+        // synchronisation obligation nobody owes.) The "then what key" half is what still differs between the
         // two hosts, deliberately — see the remarks above and EdgeConnectors' own.
         return ConnectorsConfig.IsRtuBus(entry)
             ? DriverKinds.Normalize(entry.Id.Trim())

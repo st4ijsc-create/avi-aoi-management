@@ -320,12 +320,19 @@ public static class RtuBusConfiguration
     }
 
     // 🔴 Task E-5 — `IsInBusNamespace` MOVED to St4i.EdgeCore's ModbusMultidropMap. This note stands where
-    // the definition used to; the three call sites in this file now name the new home directly. It was the single reference that made ModbusMultidropRegistration a non-leaf, so
-    // it was the single reference that kept RS-485 out of St4i.EdgeService for the whole of Đợt E: that host
-    // cannot reference St4i.EngineApi (NU1605 + the ASP.NET publish surface), and the fan-out's ghost sweep
-    // asks this predicate. It is NOT duplicated — the rule is still stated exactly once, now on the type that
-    // declares every fact it reasons about (DeviceIdSuffixPrefix, LooksLikeADeviceInstanceId,
-    // DeviceInstanceId), and the two callers below reach it there along with the sweep's.
+    // the definition used to; the three call sites in this file now name the new home directly.
+    //
+    // It was the single reference that made ModbusMultidropRegistration a non-leaf, and therefore the single
+    // reference that kept RS-485 out of St4i.EdgeService for the whole of Đợt E: that host cannot reference
+    // St4i.EngineApi (NU1605 + the ASP.NET publish surface), and the fan-out's ghost sweep asks this
+    // predicate.
+    //
+    // It is NOT duplicated — still stated exactly once, for the same three callers. Its new home declares the
+    // {bus}:unit{n} FORMAT it decodes (DeviceIdSuffixPrefix, LooksLikeADeviceInstanceId); its third
+    // dependency, DriverKinds.Normalize, is St4i.Connector.Abstractions'. An earlier version of this note
+    // claimed the new home declared EVERY fact the predicate reasons about, and listed DeviceInstanceId,
+    // which it never calls — corrected by the E-5 review.
+    //
     // See ModbusMultidropMap.IsInBusNamespace for the arithmetic and for what it does and does not promise.
 
     /// <summary>
@@ -343,8 +350,8 @@ public static class RtuBusConfiguration
     /// from the map has its store row deleted by <see cref="ConnectorConfigStore.SaveBusAsync"/> but used to
     /// keep its registry claim until the process restarted, so the machine could be served by nothing.
     /// <c>ModbusMultidropRegistration.SweepGhosts</c> already did this for the <c>connectors.json</c> path;
-    /// this is the same rule for the endpoint path, sharing <see cref="ModbusMultidropMap.IsInBusNamespace"/> rather than
-    /// restating it.</para>
+    /// this is the same rule for the endpoint path, sharing
+    /// <see cref="ModbusMultidropMap.IsInBusNamespace"/> rather than restating it.</para>
     ///
     /// <para><b>Cost, stated:</b> a save that later fails cannot put these entries back — the store is
     /// authoritative and the registry is rebuilt from it at the next start. That was already true of every

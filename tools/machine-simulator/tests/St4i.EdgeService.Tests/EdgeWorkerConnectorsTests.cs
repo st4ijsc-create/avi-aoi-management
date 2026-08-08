@@ -394,9 +394,13 @@ public sealed class EdgeWorkerConnectorsTests
     /// their own registry, and the EdgeCore tests never see <c>EdgeWorker</c> — while every RS-485 bus in
     /// production is silently skipped. E-3 found exactly this shape with <c>connectors: null</c>.
     ///
-    /// <para>The bus is a GATEWAY here, not a COM port: it points at a loopback port nothing is listening on,
-    /// so the drivers construct, the pipelines start, and the reads fail honestly. What is asserted is the
-    /// pipeline LABELS, which is the observable that says the registry reached the agent.</para>
+    /// <para>The bus is a GATEWAY here, not a COM port: it points at a CLOSED loopback port, so the connect
+    /// is refused, <b>no socket is ever established</b>, the drivers still construct (a
+    /// <c>ModbusRtuConnectorFactory</c> performs no I/O and the link opens lazily inside the first
+    /// transaction), the pipelines start, and the reads fail honestly. What is asserted is the pipeline
+    /// LABELS, which is the observable that says the registry reached the agent — not that anything answered.
+    /// 🔴 The E-5 review corrected "a loopback socket" to this: a refused connect is not a socket, and
+    /// describing it as one claims a working transport the test does not have.</para>
     /// </summary>
     [Fact]
     public async Task AnRtuBusInConnectorsJson_ActuallyBecomesNRunningPipelinesInsideEdgeWorker()

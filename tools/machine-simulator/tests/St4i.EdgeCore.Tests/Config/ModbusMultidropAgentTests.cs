@@ -37,6 +37,12 @@ namespace St4i.EdgeCore.Tests.Config;
 /// <c>rtu-serial</c> arm that would open a COM port is exercised only as far as
 /// <c>ModbusRtuBusPlan.Resolve</c> deciding to build it (<c>EdgeWorkerConnectorsTests</c>); nothing in this
 /// repository opens a real RS-485 segment.</para>
+///
+/// <para>🔴 <b>And a precision the E-5 review insisted on, because the first draft said "a loopback socket":</b>
+/// the gateway-arm seam test points at a CLOSED loopback port, so the connect is <b>refused</b> — no socket
+/// is ever established and no RTU frame crosses it. What that test observes is that the pipelines were
+/// STARTED, which is the property it names. Saying "runs on a loopback socket" would claim a working
+/// transport that does not exist.</para>
 /// </summary>
 public sealed class ModbusMultidropAgentTests
 {
@@ -98,7 +104,8 @@ public sealed class ModbusMultidropAgentTests
         public Task<HeartbeatResult> HeartbeatAsync(string machineCode, CancellationToken ct) =>
             Task.FromResult(new HeartbeatResult(true, 1, "active", 365));
 
-        public Task<ConfigSyncResult> SyncConfigAsync(string machineCode, string configKind, string? cachedVersion, CancellationToken ct) =>
+        public Task<ConfigSyncResult> SyncConfigAsync(
+            string machineCode, string configKind, string? cachedVersion, CancellationToken ct) =>
             Task.FromResult(new ConfigSyncResult(false, null, null));
     }
 
