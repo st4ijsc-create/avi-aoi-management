@@ -1,8 +1,13 @@
 # Pha 7 · Task 5 — HAI MỤC CẦN DDL: **ĐỀ XUẤT MIGRATION** (soạn, chưa áp)
 
-> **Trạng thái:** ⏸ **DỪNG SAU BƯỚC 3 theo brief.** Bước 1–3 xong. Bước 4–9 **CHƯA LÀM** và
+> **Trạng thái (cập nhật 2026-08-08, sau khi chủ dự án DUYỆT):** ✅ **BƯỚC 1–9 XONG.**
+> Migration `0313` **ĐÃ ÁP** bằng owner `aoi` lên **cả hai** DB. Xem §5–§8 ở cuối báo cáo.
+> ⚠⚠ §2.3(i) bên dưới có **MỘT CÂU SAI**, đã đính chính ở §6.1 — giữ nguyên văn bản gốc để
+> lượt sau đọc được cả chẩn đoán lẫn phép bác bỏ.
+> 
+> ~~**Trạng thái:** ⏸ **DỪNG SAU BƯỚC 3 theo brief.** Bước 1–3 xong. Bước 4–9 **CHƯA LÀM** và
 > **KHÔNG ĐƯỢC LÀM** trước khi chủ dự án duyệt **nội dung** migration dưới đây.
-> **KHÔNG một câu DDL nào đã chạy** trong lượt này — kể cả trên `aoi_management_test`.
+> **KHÔNG một câu DDL nào đã chạy** trong lượt này — kể cả trên `aoi_management_test`.~~
 
 - **Nhánh:** `feat/hmi-dep` · **HEAD lúc bắt đầu:** `6c677a46`
 - **Kế hoạch:** `docs/superpowers/plans/2026-08-07-vram-pha7-backlog.md` §"Task 5: HAI MỤC CẦN DDL"
@@ -535,3 +540,209 @@ Máy chủ **PID 35216** không bị đụng tới. Hai file dò tạm đã **xo
    ⇒ Bước 5 phải **mở rộng ∀-A sang mọi cột**, không chỉ `varchar`.
 5. Repo dùng gói **`postgres`** (v3), **không** phải `pg`; script ngoài repo **không resolve được**
    `node_modules` — đặt script tạm **trong** repo rồi xoá.
+
+---
+
+# PHẦN HAI — THỰC THI (Bước 4–9), sau khi chủ dự án duyệt
+
+## 5 · BƯỚC 4 — MIGRATION ĐÃ ÁP, **owner `aoi`**, **cả hai DB**
+
+File: `drizzle/0313_totp_consumed_and_identity_truncated.sql` (nguyên văn = §3.1, cộng một khối
+`GRANT` được thêm sau khi **đo lại**, xem dưới).
+
+**Xác nhận sau khi áp — đọc thẳng từ hai DB:**
+
+| | `aoi_management` | `aoi_management_test` |
+|---|---|---|
+| `current_user` lúc chạy DDL | **`aoi`** ✅ | **`aoi`** ✅ |
+| `to_regclass('public.totp_consumed')` | `totp_consumed` (**≠ NULL**) | `totp_consumed` (**≠ NULL**) |
+| `vram_leases.identityTruncated` | `jsonb` · `is_nullable = YES` · **`column_default = null`** | idem |
+| cột `totp_consumed` | `userId int` · `tokenHash bytea` · `luot varchar(64)` · `expiresAt timestamp` | idem |
+| chỉ mục | `totp_consumed_pkey`, `totp_consumed_expires_idx` | idem |
+| quyền `avi_app` | `SELECT, INSERT, UPDATE, DELETE` | idem |
+
+⚠ **`column_default = null` là điều PHẢI kiểm, không phải điều hiển nhiên**: đó chính là *"KHÔNG
+`DEFAULT '[]'`"* mà chủ dự án duyệt. Một `DEFAULT` lọt vào sẽ biến *"chưa biết"* thành *"khai không
+cắt"* — và **không lưới nào bắt được**, vì nó nằm ở DB chứ không ở mã.
+
+**Một câu tôi suýt viết sai, phép đo đã sửa:** header migration ban đầu định khai `GRANT` là *"không
+có dòng này thì `42501`"*. Đo `pg_default_acl` trước khi viết: DB **có** default ACL
+`{avi_app=arwd/aoi}` cho mọi bảng do `aoi` tạo ⇒ `GRANT` là dòng **làm rõ**, **không** cứu mạng. Giữ
+lại (một vai khác `aoi` chạy lượt này sẽ tạo ra một bảng `avi_app` không đọc nổi), nhưng lý do được
+viết **đúng**.
+
+Tên cột bảng theo dõi migration — **đã kiểm, không đoán**: `__applied_migrations.filename`.
+
+---
+
+## 6 · BƯỚC 5 — MÃ
+
+### 6.1 · ⚠⚠⚠ ĐÍNH CHÍNH — §2.3(i) của tôi **SAI**
+
+Tôi đã khai ở Bước 2:
+
+> *"(i) ĐANG MỞ — `VramBrokerPanel.tsx:392` GỘP hộ cục bộ với hộ anh em rồi `:427` bơm `h.owner`
+> thẳng vào `preempt.mutate`."*
+
+**Phép đọc lại ở Bước 5 bác bỏ câu ấy.** Nút *Thu hồi* chỉ render trong nhánh
+`h.reclaim.kind === "reclaimable-here"`, và `hoAnhEm()` (`vramReadModel.ts`) **theo cấu tạo** chỉ
+sinh ra `declared-by-owner-process` hoặc `no-reclaimer` — **không bao giờ** `reclaimable-here`.
+⇒ **Mặt NGƯỜI không thể gửi một danh tính cụt đi.** Phép gộp là có thật; kết luận rút ra từ nó thì
+không.
+
+**Đường THẬT SỰ phơi nhiễm — và nó nặng hơn:** mặt **AGENT**. `vramTools.tomTat()` (dòng ~480) gộp
+`localHolders` với `foreign.holders` rồi đưa `owner` của **cả hai** vào `textSummary`; docstring của
+chính `vramTools` viết: *"`owner` là **DANH TÍNH** mà Agent lấy từ mặt đọc rồi truyền **thẳng** vào
+`vram.preempt`"*. Với hộ anh em chuỗi ấy **đã bị cắt tại DB** ⇒ Agent gọi một lệnh phá huỷ bằng một
+cái tên **không phải tên của ai cả**.
+
+⇒ Bài học ghi lại: **hai mặt, hai mức phơi nhiễm — đừng gộp cho câu chuyện gọn hơn.** Cả hai nay có
+ca riêng: một ca khoá tính chất cấu trúc của mặt người, một ca khoá `textSummary` của Agent.
+
+### 6.2 · Những gì đã cài
+
+| mục | nơi | điều đã đổi |
+|---|---|---|
+| **A** | `drizzle/schema/auth.ts` | bảng `totpConsumed` + kiểu `bytea` tuỳ biến |
+| **A** | `server/_core/totpOnce.ts` | `verifyTotpOnce` → **`async`**; sổ xuống DB; tự dọn; fail-closed |
+| **A** | 8 điểm gọi / 4 file | thêm `await` — **không** đổi ngữ nghĩa một điểm nào |
+| **B** | `drizzle/schema/vram.ts` | `identityTruncated: jsonb` (nullable, **không** DEFAULT) |
+| **B** | `vramSharedLedger.ts` | `SharedLeaseRow.identityTruncated`; `rowFromLease`/`rowFromBaseline` khai; `truncatedIdentityWrites` **cộng thêm hàng anh em**; **`unknownIdentityRows`** mới |
+| **B** | `vramSharedLedgerStore.ts` | ghi/đọc cột; `docCoCat()` — **bản dịch DUY NHẤT** ba giá trị |
+| **B** | `vramReadModel.ts` | `VramAgentHolderView.identityTruncated` (per-hàng) + `unknownIdentityRows` |
+| **B** | `vramPhrases.ts` · `vramTools.ts` | hai câu × **3 ngôn ngữ**, vào **`textSummary`** |
+| **B** | `VramBrokerPanel.tsx` + 3 locale | badge per-hàng + dòng tổng; 3 khoá i18n × 3 bản |
+
+### 6.3 · Nợ **tôi tự khai ở Bước 3** — đã đóng
+
+∀-A cũ lọc `columnType === "PgVarchar"` ⇒ cột `jsonb` mới **rơi ra ngoài theo cấu tạo**. Thêm lượng
+từ đảo lại: ***∀ cột của `vram_leases` — MỌI KIỂU — phải có đúng một ô ở `SharedLeaseRow`***.
+Đột biến **M7c** (thêm một cột `jsonb` thứ 16) chứng minh giá trị: **chỉ luật MỚI bắt được**.
+
+### 6.4 · Hai cái bẫy đã trả giá — ghi lại nguyên văn
+
+1. **`*/` trong docstring.** Chuỗi `**B1**/**B3**` chứa `*` `*` `/` ⇒ **đóng block comment** giữa
+   chừng; `tsc` nôn ra 40 lỗi cú pháp trỏ vào những dòng **hoàn toàn không liên quan**. Xảy ra
+   **hai** lần (`drizzle/schema/vram.ts`, `totpLedgerDurable.test.ts` với `**Pha 5**/Pha 6`).
+   ⇒ Đã quét **toàn bộ** file đã sửa; chỉ còn `*/}` của JSX (hợp lệ).
+2. **`await f({…}).hopLe` phân tích thành `await (f.hopLe)`.** Một lượt chèn `await` bằng văn bản
+   thuần đẻ ra **7** điểm sai kiểu ở mã sản xuất + **4** ở test. `tsc` bắt hết — nhưng chỉ vì có
+   `tsc`; một lượt "thêm await cho nhanh" **không có** phép kiểm kiểu là một lượt hỏng im lặng.
+
+---
+
+## 7 · BƯỚC 6–8 — ĐỐI CHỨNG DƯƠNG · ĐỘT BIẾN · TỰ DỌN
+
+### 7.1 · Hai ca ĐỎ của Bước 1 nay **XANH** (cùng khuôn đo, câu trả lời ngược lại)
+
+| ca | Bước 1 | Bước 7 |
+|---|---|---|
+| **A2** mã đã tiêu, qua **restart** | ❌ `hopLe = true` | ✅ `hopLe = false`, `phatLai = true` |
+| **A3** hai bản sao `ROLE=api` | ❌ `hopLe = true` | ✅ `hopLe = false`, `phatLai = true` |
+| **B1** hàng anh em mang cờ | ❌ `[]` (không ô nào) | ✅ `identityTruncated = ["owner"]` |
+| **B3** mặt đọc anh em | ❌ `0` | ✅ `truncatedIdentityWrites = 1` |
+
+⚠ **A2 chạy trên DB THẬT** (`aoi_management_test`), không phải một sổ giả — vì câu cần chứng minh
+là *"trạng thái sống LÂU HƠN tiến trình"*, và một bảng giả trong bộ nhớ **chính là thứ vừa bị bác bỏ**.
+
+### 7.2 · Đối chứng dương (Bước 6) — cái ĐÚNG vẫn đi qua
+
+mã **mới** vẫn qua (kể cả sau restart) · **3 lượt verify cùng `luot`** đều qua (chuỗi thật của
+`vram.preempt`) · hai người dùng cùng một mã 6 số **không chặn nhầm nhau** · mã sai **không ghi sổ**
+· `owner` 54 ký tự ⇒ cờ `[]` · **ô BIÊN** dài **đúng bằng** 160 ⇒ **không** khai là đã cắt · hộ CỤC
+BỘ giữ `owner` **nguyên vẹn** và khai `[]`.
+
+### 7.3 · Bảng ĐỘT BIẾN (10 lượt)
+
+| # | đột biến | kết quả | ca đỏ |
+|---|---|---|---|
+| **M1** | `rowFromLease` luôn khai `[]` (gỡ cờ lúc GHI) | ✅ **5 đỏ** | B1 · B3 · đường thoát mặt đọc · đường thoát Agent · ô BIÊN |
+| **M2** | `docCoCat`: `null` → `[]` (gộp vế thứ ba) | ⚠ **SỐNG SÓT** → đã vá → **1 đỏ** | `docCoCat` — `null` ⇒ KHÔNG BIẾT |
+| **M3** | `tieuMaTrongSo` luôn trả `luot` của ta | ✅ **10 đỏ** | A2 · A3 · phát lại cùng tiến trình · … |
+| **M4** | bỏ `await donSo(nowMs)` | ✅ **1 đỏ** | *"đỉnh nhiều mục ⇒ kéo về ĐÚNG 1"* |
+| **M5** | `hoAnhEm` luôn `identityTruncated: []` | ✅ **7 đỏ** | B1 · B3 · hai đường thoát · vế thứ ba |
+| **M6** | `unknownIdentityRows` ghim `0` | ✅ **6 đỏ** | vế thứ ba + đường thoát của nó |
+| **M7** | gỡ ô khỏi `SharedLeaseRow` | vitest XANH · **`tsc` ĐỎ (4 lỗi)** | cổng vẫn bắt (cổng gồm `npm run check`) |
+| **M7b** | thêm cột `varchar` thứ 15 vào drizzle | ✅ **2 đỏ** | ∀-A cũ **và** luật mới |
+| **M7c** | thêm cột **`jsonb`** thứ 16 | ✅ **1 đỏ — CHỈ luật MỚI** | ∀-A cũ **mù theo cấu tạo** |
+| **M8** | khai `["owner"]` cho **mọi** hàng | ✅ **6 đỏ** | **không bắt nhầm** |
+
+### 7.4 · ★★★ M2 — ĐỘT BIẾN SỐNG SÓT, và nó là **đúng cái lỗ vừa vá**
+
+Đổi `docCoCat()` từ `return null` sang `return []` — tức **ép vế "KHÔNG BIẾT" thành "khai không cắt
+gì"**, chính xác cái fail-open mà cả lượt này sinh ra để đóng — và **15/15 ca vẫn XANH**.
+
+**Vì sao:** mọi ca dùng một gateway **GIẢ** trả thẳng `SharedLeaseRow`, nên **không ca nào đi qua
+hàm ấy**; còn bản cài đặt drizzle thật thì `return null` ngay ở dòng `if (process.env.VITEST)`.
+⇒ Mắt xích **DUY NHẤT** dịch cột DB → lời khai ba giá trị là một mắt xích **KHÔNG AI CANH**. Đúng
+lớp *"lưới đi theo FILE, không theo ĐƯỜNG THOÁT"*, lần thứ N.
+**Đã vá:** xuất `docCoCat` + **4 ca** (null/undefined ⇒ `null` · mảng chuỗi ⇒ chính nó · **giá trị
+lạ** ⇒ `null` chứ không `[]` · trả bản **đông cứng**). Chạy lại M2 ⇒ **ĐỎ**.
+
+### 7.5 · Bước 8 — sổ TỰ DỌN, **đo được**
+
+| ô | phát biểu | kết quả |
+|---|---|---|
+| đỉnh → 1 | bơm 6 mã ở 6 nhịp ⇒ đỉnh > 1; nhảy qua hạn + **một** lượt ghi ⇒ `count(*) = 1` | ✅ |
+| tính chất | 10 lượt **KHÔNG-ghi** (5 phát lại + 5 mã sai) ⇒ bảng **không lớn thêm một hàng** | ✅ |
+| hình dạng | `totpOnce.ts` **không chứa** `setInterval(` · `setTimeout(` · `node-cron` · `cron.schedule` | ✅ |
+
+⚠ Ô cuối **từng được viết sai**: bản đầu `spyOn(setTimeout)` và đòi *"không lần gọi nào"* — nó **đỏ
+vì một lý do sai**, chính **driver `postgres`** dựng hẹn giờ cho lượt kết nối và `idle_timeout`
+(**3** lượt gọi đo được). Phép canh ấy đo **thư viện**, không đo **luật của ta** ⇒ chuyển sang canh
+**văn bản nguồn**, đúng chỗ luật sống.
+
+### 7.6 · ★★★ LỚP LỖI **MỚI SINH RA TỪ CHÍNH LƯỢT TRẢ NỢ NÀY**
+
+Sổ thôi là `Map` cấp module và thành **BẢNG DÙNG CHUNG**; vitest chạy các file test **SONG SONG**.
+Cổng đầy đủ cho **6 ca đỏ mà chạy lẻ thì xanh** — hai cơ chế, cả hai đo được:
+
+1. Phép **tự dọn** xoá **mọi** hàng `expiresAt <= now`. File khác gọi `verifyTotpOnce` với
+   `Date.now()` **thật** (2026) ⇒ **quét sạch** hàng mang mốc hằng **2023** của `totpLedgerDurable`
+   **giữa hai lời khẳng định** ⇒ A2/A3 đỏ vì một lý do **không liên quan gì**.
+   ⇒ Mốc của file ấy nay **bám đồng hồ thật** (`Date.now() + 1h`).
+2. `__soTotpSize()` đếm **toàn bảng** ⇒ `totpReplay` đòi *"còn ĐÚNG 1"* và thấy **2**.
+   ⇒ `__soTotpSize(userIds)` **và** `__resetSoTotpChoTest(userIds)` đều **phải khai người dùng của
+   mình**; bỏ trống là xoá/đếm cả bảng.
+
+> ★ *"Trả nợ đẻ ra nợ"* — **lần thứ tư đo được**. Lần này nợ mới **không phải một lỗ an ninh** mà là
+> một **lớp flake theo cấu tạo**: mọi trạng thái dời từ bộ nhớ tiến trình xuống một bảng dùng chung
+> **đều** thừa hưởng nó. Ai dời cái tiếp theo phải đọc mục này trước.
+
+### 7.7 · ★★ `vramPha5Gate` bắt được một lỗ THẬT ngay trong lượt này
+
+`totpLedgerDurable.test.ts` — **lưới quyết định nhất của mục A** — nằm ở `server/routers/` và
+**không đường nào của §Cổng kiểm chung phủ nó** ⇒ nó sẽ **không bao giờ chạy ở cổng**. Cổng bắt được
+bằng **phép ghim SỐ** (`FILE_CANH` 75 → 76 ≠ 75 ⇒ đỏ).
+⇒ Thêm đường vào §Cổng kiểm chung + file **tự khai `Pha 5`**. `CONG` **16 → 17**, `FILE_CANH`
+**75 → 77**.
+
+---
+
+## 8 · CỔNG RA
+
+| phép kiểm | kết quả |
+|---|---|
+| Cổng kiểm chung **17 đường** | **115/115 file · 1984/1984 ca XANH** |
+| `npm run check` | sạch |
+| `npm run check:tests` | sạch |
+| `npm run i18n:check` | sạch (0 thiếu mới; nền 817+20 giữ nguyên) |
+| `vramPha5Gate` | 12/12 (`CONG`=17, `FILE_CANH`=77) |
+
+**Cổng ra của Task 5, đối chiếu nguyên văn kế hoạch:**
+- (A) *"mã tiêu rồi ⇒ chặn qua restart **VÀ** qua tiến trình khác; mã mới ⇒ vẫn qua"* → **ĐẠT**
+  (A2 · A3 · đối chứng dương, trên **DB thật**).
+- (B) *"hàng bị cắt ⇒ **mọi** người đọc thấy cờ, kể cả tiến trình anh em"* → **ĐẠT** (B1 · B3 ·
+  mặt đọc · mặt người · `textSummary` của Agent · vế thứ ba `null`).
+
+**Commit:** `e55cb22a` (Bước 4–8) · `44af3aca` (vá đột biến sống sót + lớp flake mới).
+
+### Còn nợ, khai rõ
+
+- **Chưa nghiệm thu sống.** Mọi bằng chứng ở đây là DB test + lưới; **chưa** có một lượt đăng nhập
+  2FA hay một lệnh `vram.preempt` thật nào chạy qua sổ mới trên máy chủ đang chạy (PID 35216 **không
+  bị đụng tới**, chưa redeploy).
+- **`aiLocalKnowledgeService`** — chưa kiểm lại rằng câu cảnh báo mới **không** bị cắt bởi trần độ
+  dài của `textSummary` khi có nhiều hộ.
+- Nợ **CÓ TRƯỚC**, không đụng: flake `visionControl.tools` · `wiring.inprocess` · 16 file đỏ
+  `server/routers/**` · 10 ca `server/services/ai/**` (`42501`).
