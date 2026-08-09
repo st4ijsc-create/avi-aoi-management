@@ -48,6 +48,7 @@ npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/routers/totpLedgerDurable.test.ts \
   server/routers/totpReplayScan.test.ts \
   server/routers/totpSeedWriteScan.test.ts \
+  server/routers/hoTuyenSongSong.test.ts \
   server/routers/verify2faPasswordStep.test.ts \
   server/routers/sessionGrantScan.test.ts \
   server/routers/userExposureScan.test.ts \
