@@ -5455,8 +5455,13 @@ with register 0's stale value, silently, with no exception. An RTU response fram
 so there is nothing left to check; and `IsDesynchronised` cannot rescue it either, because that flag is raised
 when a transaction FAILS to consume a complete validated response and this one consumes a response it believes.
 
-**Two masters on one segment are precisely that case, not an exotic corner of it** — they poll the same
-devices with the same function codes. So a shared gateway can commit a **wrong register value as a real
+**Two masters on one segment reach that case whenever they address the same devices** — the ordinary
+situation, since both hosts are configured for the same line; their frames then share the slave address and
+the function code. 🔴 **It is not the only arrangement**, and an earlier version of this paragraph said it
+was: two hosts splitting a segment by **disjoint unit ids** (host A on units 1-3, host B on unit 7) differ on
+slave address, so for them the probe's *caught* branch applies and a stray frame really is refused. The
+notice is unchanged because the remedy is the same for both — but on that split it over-warns, and that is
+worth knowing rather than discovering. So a shared gateway **can** commit a **wrong register value as a real
 reading**, which is what §20.3's entire data-provenance argument exists to prevent, and it can land **write
 commands on `Indeterminate`** (§21.3).
 
@@ -5677,7 +5682,13 @@ thì KHÔNG bị bắt và được trả về cho bên gọi NHƯ THỂ LÀ CÂ
 nhận về giá trị cũ của thanh ghi 0, lặng lẽ, không ngoại lệ nào. Khung RTU không mang transaction id nên không
 còn gì để kiểm; và `IsDesynchronised` cũng không cứu được, vì cờ ấy chỉ bật khi một giao dịch **KHÔNG** tiêu
 thụ nổi một phản hồi hợp lệ trọn vẹn, còn ở đây giao dịch tiêu thụ một phản hồi mà nó tin. **Hai master trên
-một segment CHÍNH LÀ trường hợp đó, không phải một góc hiếm** — chúng hỏi cùng thiết bị bằng cùng mã hàm. Nên
+một segment rơi vào trường hợp đó **mỗi khi chúng cùng nhắm một thiết bị** — tình huống thông thường, vì cả
+hai host đều được cấu hình cho cùng một đường dây; khi ấy khung tin của chúng trùng địa chỉ slave và trùng mã
+hàm. 🔴 **Đó không phải cách bố trí DUY NHẤT**, và bản trước của đoạn này nói như thể vậy: hai host chia
+segment theo **unit id RỜI NHAU** (host A giữ unit 1-3, host B giữ unit 7) thì **khác** địa chỉ slave, nên với
+chúng nhánh BỊ BẮT của phép đo mới đúng và khung lạc thật sự bị từ chối. Thông điệp giữ nguyên vì cách xử lý
+là một cho cả hai — nhưng trên kiểu chia ấy nó **cảnh báo quá tay**, và biết trước điều đó tốt hơn là tự phát
+hiện ra. Nên
 một gateway dùng chung có thể ghi nhận **một GIÁ TRỊ THANH GHI SAI như một số đo thật** — đúng thứ toàn bộ lập
 luận nguồn-gốc-dữ-liệu ở §20.3 tồn tại để ngăn — và làm **lệnh ghi rơi vào `Indeterminate`** (§21.3). **Cả hai
 tần suất đều CHƯA ĐO và vẫn để nguyên như vậy:** không ai đo tần suất hai master sinh ra một khung cũ trùng

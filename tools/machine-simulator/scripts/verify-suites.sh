@@ -1606,20 +1606,42 @@ EXPECT_EDGESERVICE=50
 # file, ONE test; nothing rewritten, split or deleted.
 #
 #   +1  PerHostDataRootsTests.TheNumberOfMachineWideDirectories_IsDerivedFromSource_AndAgreesWithEvery-
-#       PlaceThatSpellsIt — every census in this repository floors at `>= 13`, so a FOURTEENTH store that
-#       arrives WITH a variable passes all three of them while the word "thirteen" rots in six artefacts.
-#       It derives the count from src/ and compares it against the number spelled in the two sentences
-#       that state it as a rule: README §15.9's "There are **N** of them today" and remove-data.ps1's
+#       PlaceThatSpellsIt — the three guards in that file floor at `>= 13`, so a fourteenth store that
+#       arrives WITH a variable passes all three while the word "thirteen" rots in six artefacts. It
+#       derives the count from src/ and compares it against the number spelled in the two sentences that
+#       state it as a rule: README §15.9's "There are **N** of them today" and remove-data.ps1's
 #       .DESCRIPTION. Those two are each the authoritative sentence of their own artefact; the rest of the
 #       prose repeats them.
-#       🔴 THIS IS THE MECHANICAL CHECK THE LEDGER'S §G.6 TRIGGER ASKED FOR, and it is deliberately this
-#       one rather than a grep for "every"/"all"/"no arm". A universal-quantifier grep cannot distinguish
-#       a TRUE universal from a false one, so it would answer a narrower question than the criterion —
-#       which is the exact instrument failure this branch has now been caught by four times (F-8 most
-#       recently). Building it would be committing the class while claiming to police it. A count is
-#       mechanically decidable and HAS been wrong: web/playwright.config.ts said FOURTEEN in three places
-#       and this file said FOURTEEN in one, about the same thirteen-member set, and one of those files is
-#       in the corpus a counts census declared it had swept. This test would have caught all four.
+#       🔴 MEASURED, not asserted (branch re-review, N-4). TWO mutations, because the first was not
+#       discriminating and the report said it was: a BARE fourteenth store (variable declared and read,
+#       but no playwright env entry and no remove-data.ps1 purge entry) is killed by THREE tests — this
+#       one plus the two SET-MEMBERSHIP censuses, TestHarnessIsolationTests and
+#       NotificationDocumentationTests. A FULLY INTEGRATED fourteenth store (variable + playwright entry +
+#       purge entry + parameter, with only the spelled count left alone) is killed by THIS TEST ALONE:
+#       1 failed, 12 passed, both set-membership censuses green. That second shape is the gap F-15 named,
+#       and it is the one that justifies the test existing.
+#       🔴 WHAT THIS TEST REACHES, stated because the first version of this block overstated it (branch
+#       re-review, N-2). It opens exactly two files besides src/: README.md and packaging/remove-data.ps1.
+#       It never opens web/playwright.config.ts or this file. So it would NOT have caught the four
+#       FOURTEENs the Dot F branch review found — at 709df245 the derived count was 13, README said
+#       "thirteen" and remove-data.ps1 said "THIRTEEN", all three compared values agreed, and this test
+#       would have been GREEN with every one of those defects in the tree. What it does do: it fires the
+#       moment src/ and those two rule sentences diverge, and its failure message then names the other
+#       artefacts by hand for a human to walk. The overstatement is recorded rather than deleted because
+#       it was a claim in the VOICE OF A MEASUREMENT about the reach of the instrument built to end that
+#       class, sitting in the binding per-file justification.
+#       🔴 THIS IS THE MECHANICAL CHECK THE LEDGER'S §G.6 TRIGGER ASKED FOR, and the grep for
+#       "every"/"all"/"no arm" was declined — but NOT for the reason first written here. That reason was
+#       "a quantifier grep cannot decide whether a universal is true, so it answers a narrower question
+#       than the criterion". It is wrong, and it would disqualify this count check too: a count does not
+#       decide whether "thirteen" is TRUE either, it decides whether three artefacts AGREE. An instrument
+#       answering a narrower question is a defect only when it is REPORTED as answering the criterion,
+#       which is what F-8 was. The real reason to decline is RECALL: the grep keys on quantifier WORDS,
+#       and this branch's worst false universal used none — "two uncoordinated frame sources on one
+#       segment do not corrupt data" is a universal by generic plural, and so was its replacement. The
+#       grep would have flagged neither, only the historical "every assertion …" / "no arm computes …"
+#       pair that the prose trigger already covers. Bounded recall on a sub-class already covered, versus
+#       a count check whose class has produced four real defects in one branch.
 EXPECT_ENGINEAPI=1295
 
 SUITES=(

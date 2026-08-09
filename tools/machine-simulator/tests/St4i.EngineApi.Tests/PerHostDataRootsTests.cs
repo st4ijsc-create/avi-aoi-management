@@ -324,18 +324,33 @@ public sealed class PerHostDataRootsTests
 
     /// <summary>
     /// 🔴 <b>Branch review F-15 — the COUNT is now derived and compared, because every census in this
-    /// repository floors at <c>&gt;= 13</c> and therefore lets a fourteenth store arrive silently while the
-    /// word "thirteen" rots in six places.</b>
+    /// three guards in THIS FILE floor at <c>&gt;= 13</c> and therefore let a fourteenth store arrive
+    /// silently while the word "thirteen" rots in six places.</b>
     ///
-    /// <para><b>This is the mechanical check the ledger's §G.6 trigger asked for, and it is deliberately
-    /// this one rather than a grep for "every"/"all"/"no arm".</b> Both were on the table. A universal-quantifier
-    /// grep cannot tell a TRUE universal from a false one, so it would answer a narrower question than the
-    /// criterion — which is the exact instrument failure this branch has now been caught by four times, and
-    /// building it would be committing the class while claiming to police it. A count, by contrast, is
-    /// mechanically decidable and has actually been wrong: <c>web/playwright.config.ts</c> said FOURTEEN in
-    /// three places and <c>scripts/verify-suites.sh</c> said FOURTEEN in one, about this same thirteen-member
-    /// set, and one of those files is in the corpus a counts census declared it had swept. This test would
-    /// have caught all four.</para>
+    /// <para>🔴 <b>WHAT THIS TEST REACHES — said because the first version of this paragraph overstated it
+    /// (branch re-review, N-2).</b> It claimed "this test would have caught all four" of the FOURTEEN
+    /// defects the branch review found. It would not. It opens exactly two files besides <c>src/</c>:
+    /// <c>README.md</c> and <c>packaging/remove-data.ps1</c>, and never <c>web/playwright.config.ts</c> or
+    /// <c>scripts/verify-suites.sh</c> — where those four lived. At the commit where all four were present
+    /// the derived count was 13, both rule sentences said thirteen, every compared value agreed, and this
+    /// test would have been <b>green with all four defects in the tree</b>. What it actually does: it fires
+    /// the moment <c>src/</c> and those two rule sentences diverge, and its failure message then names the
+    /// remaining artefacts for a human to walk. The overstatement is recorded rather than quietly deleted,
+    /// because it was a claim in the VOICE OF A MEASUREMENT about the reach of the instrument built to end
+    /// exactly that class.</para>
+    ///
+    /// <para><b>Why this check and not a grep for "every"/"all"/"no arm" — and the first answer given here
+    /// was the wrong one.</b> That answer was: a quantifier grep cannot decide whether a universal is TRUE,
+    /// so it answers a narrower question than the criterion. <b>That reasoning disqualifies this test too</b>
+    /// — a count does not decide whether "thirteen" is true either, only whether three artefacts AGREE. An
+    /// instrument that answers a narrower question is a defect only when it is REPORTED as answering the
+    /// criterion, which is what F-8 was; the remedy this branch adopted everywhere else is to state the
+    /// narrow quantity, not to refuse to measure. <b>The real reason is RECALL.</b> The grep keys on
+    /// quantifier WORDS, and this branch's worst false universal used none: "two uncoordinated frame sources
+    /// on one segment do not corrupt data" is a universal by generic plural, and so was its replacement. It
+    /// would have flagged only the historical "every assertion …"/"no arm computes …" pair, a sub-class the
+    /// prose trigger in <c>PerHostDataRootIsolationTests</c> already covers — bounded yield, against a count
+    /// check whose class has produced four real defects in one branch.</para>
     ///
     /// <para><b>What it compares:</b> the number derived from <c>src/</c> against the number SPELLED in the
     /// two sentences that state it as a rule — README §15.9's "There are **N** of them today" and

@@ -395,11 +395,20 @@ public sealed record ModbusRtuBusSettings(string Transport, string Host, int Por
     /// check. And <c>IsDesynchronised</c> cannot rescue it: that flag is set when a transaction FAILS to
     /// consume a complete validated response, and this transaction consumes one and believes it.</para>
     ///
-    /// <para><b>Two masters on one segment are the case that defeats it, not an exotic one</b> — they poll
-    /// the same devices with the same function codes, which is exactly the same-address/same-function/
-    /// same-byte-count shape the probe found uncatchable. So the honest statement is that a shared segment
-    /// can commit a WRONG REGISTER VALUE as a real reading, and this product's whole data-provenance
-    /// argument (README §20.3) is that fabricated numbers never blend into customer-facing ones.</para>
+    /// <para><b>Two masters on one segment reach that case whenever they address the SAME devices</b> — then
+    /// their frames share the slave address and the function code, which is exactly the
+    /// same-address/same-function/same-byte-count shape the probe found uncatchable. That is the usual
+    /// shape, because both hosts are configured for the same line. <b>🔴 It is not the only shape, and the
+    /// first version of this paragraph said it was</b> (branch re-review, N-1): two hosts splitting a
+    /// segment by DISJOINT unit ids — host A driving units 1-3, host B driving unit 7 — is a real and
+    /// arguably deliberate deployment, and there the slave addresses differ, so the probe's CAUGHT branch
+    /// applies and a stray frame really is refused. The correction replaced a universal that was false one
+    /// way with a universal that was false the other, over the same population. The remedy is unchanged for
+    /// both sub-cases and the notice therefore stays as it is — but it over-warns on the disjoint split, and
+    /// saying so is cheaper than letting the next reader discover the sentence is too strong and discount
+    /// the whole paragraph. So the honest statement is that a shared segment CAN commit a WRONG REGISTER
+    /// VALUE as a real reading, and this product's whole data-provenance argument (README §20.3) is that
+    /// fabricated numbers never blend into customer-facing ones.</para>
     ///
     /// <para><b>The RATE stays labelled UNMEASURED — for both outcomes, and that is the point of the fix
     /// rather than an afterthought.</b> Nobody has measured how often two masters produce a matching stale
@@ -422,8 +431,10 @@ public sealed record ModbusRtuBusSettings(string Transport, string Host, int Por
         "answer to whatever was asked, with no exception and no resynchronisation, because an RTU response " +
         "frame carries no transaction id and there is nothing left to check (probed against NModbus in this " +
         "product: a request for register 99 returned register 0's stale value, silently). Two masters poll " +
-        "the SAME devices with the SAME function codes, so that is the ORDINARY shape of the collision here, " +
-        "not the exotic one. So a shared segment can commit a WRONG REGISTER VALUE as a real reading, and " +
+        "the SAME devices — the ordinary case, since both are configured for the same line — their frames " +
+        "then share the slave address and the function code, and that is the shape above. (Two hosts that " +
+        "split this segment by DISJOINT unit ids differ on slave address, so for them the stray frame IS " +
+        "refused.) So a shared segment can commit a WRONG REGISTER VALUE as a real reading, and " +
         "write commands land on Indeterminate. NOBODY HAS MEASURED how often either happens. Before " +
         "treating an implausible reading, or a slow or indeterminate write, as a device fault, confirm that " +
         "exactly one host owns this gateway: check BOTH hosts' connectors.json AND the engine's saved " +
