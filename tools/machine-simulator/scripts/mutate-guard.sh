@@ -25,9 +25,57 @@
 # checks that the tree you are about to restore is one you can afford to lose, and the
 # restore path everyone reaches for is `git checkout -- <file>` — which reverts the
 # WHOLE file to HEAD, not just the mutation. G-1's implementer lost an entire task's
-# uncommitted work to exactly that, twice in one session, the second time on the census
-# pass that followed the first recovery. The mutation round is cheap to repeat; the work
-# it is measuring is not. Commit first, then mutate, then `git checkout --` freely.
+# uncommitted work to exactly that, THREE times in one session — the third time AFTER
+# writing the warning line above. The mutation round is cheap to repeat; the work it is
+# measuring is not.
+#
+# 🔴 SO USE `restore` INSTEAD OF `git checkout --`. A written rule is not a trigger; that
+# is the whole lesson of the third loss. The verb below takes its own snapshot first and
+# then does the checkout, so the recovery point exists whether or not anyone remembered
+# to commit.
+#
+# FOUR THINGS IT DOES DIFFERENTLY FROM THE OBVIOUS VERSION, each because the obvious one
+# was measured and found wanting:
+#
+#   1. IT GUARDS THE RESTORE, NOT `fresh`/`applied`. The first proposal was "refuse to run
+#      fresh/applied when `git status --porcelain` is non-empty". Re-measured against the
+#      three actual losses, that blocks ONE of three. All three happened at the checkout.
+#      Guard the destroying verb.
+#
+#   2. IT SNAPSHOTS RATHER THAN REFUSES. A refusal forbids the edit → test → mutate →
+#      commit loop that this very round used, and the way people adapt to a refusal is a
+#      reflex `--force`. A snapshot also covers a case no structural refusal can: a file
+#      edited WHILE the round is running. And the snapshot is UNCONDITIONAL — the
+#      dirty/clean check below only decides how loud the message is, so a check that is
+#      wrong costs a log line rather than the work.
+#
+#   3. IT USES `git diff --quiet -- <file>` AND COMPARES NO PATHS BY HAND. The hazard is
+#      real and it is worth stating what it actually is, because the version of it I was
+#      handed does not survive being run. Porcelain prints paths relative to the REPO
+#      ROOT while this script runs from tools/machine-simulator. MEASURED, from this cwd,
+#      against a dirty src/St4i.EdgeCore/Fleet/FleetCore.cs:
+#        - `git status --porcelain | grep -q "$p"`            -> FIRES (substring hit:
+#          the printed path CONTAINS the argument)
+#        - `git status --porcelain | awk '{print $2}' | grep -qx "$p"` -> SILENT
+#        - `git status --porcelain -- "$p"`                    -> FIRES (git resolved the
+#          pathspec itself)
+#      So "porcelain never matches" is too strong, and "porcelain is the wrong command"
+#      is wrong outright — the third form works. The defect is COMPARING ITS OUTPUT: the
+#      exact comparison, which is the natural one to write, is the one that goes silent,
+#      and it goes silent in the SAFE-LOOKING direction. `git diff --quiet` has no output
+#      to compare, which is why it is used here — not because porcelain normalises line
+#      endings differently, which it does not; both go through the same index comparison
+#      and the same clean filters.
+#      And because the snapshot at point 2 is unconditional, this comparison only decides
+#      how loud the message is. A latch whose check is wrong still cannot cost you work.
+#
+#   4. AN UNTRACKED FILE GETS ITS OWN MESSAGE AND IS NEVER TOUCHED. `git checkout --`
+#      cannot restore one — there is nothing in the object store to restore it from — so
+#      "I ran the safe restore" must not read as "it was recoverable".
+#
+# IT ONLY EVER TOUCHES THE PATHS YOU NAME. The report, the inventory and the scratch files
+# are allowed to be dirty for the whole round; they are not arguments to this verb, so
+# nothing here can refuse, revert or complain about them.
 #
 # WHY NOT JUST BAN --no-build
 # ---------------------------
@@ -48,13 +96,16 @@
 # "the pattern didn't match". It caught that only because five-for-five is implausible —
 # "which is a judgement call, not a check."
 #
-# USAGE — all five verbs. Run them in this order around a mutation round.
+# USAGE — all six verbs. Run them in this order around a mutation round.
 #   scripts/mutate-guard.sh clean   <path...>                          # BEFORE anything, esp. after an
 #                                                                      #   interrupted run: refuses if a
 #                                                                      #   mutant or .bak is still live
 #   scripts/mutate-guard.sh control <"KILLED"|"SURVIVED">              # record the session's control
 #   scripts/mutate-guard.sh applied <source.cs> <marker>               # PER MUTATION: is it really there?
 #   scripts/mutate-guard.sh fresh   <assembly.dll> <mutated-source.cs> # did the build see it?
+#   scripts/mutate-guard.sh restore <mutated-source.cs...>             # PUT THE FILE BACK — snapshot first,
+#                                                                      #   then checkout, then touch. Use
+#                                                                      #   this, not `git checkout --`.
 #   scripts/mutate-guard.sh check                                      # may I believe a SURVIVED?
 #
 # `applied` turned out to catch a DIFFERENT and more common failure than the one it was
@@ -159,6 +210,58 @@ case "${1:-}" in
       exit 3
     fi
     echo "clean: no mutant markers, no .bak/.orig/.mutant files"
+    ;;
+
+  restore)
+    # 🔴 THE LATCH ON THE DESTROYING VERB. See the "COMMIT BEFORE YOU MUTATE" block in the
+    # header for why this exists, why it snapshots instead of refusing, why it uses
+    # `git diff` instead of `git status --porcelain`, and why an untracked file is a
+    # different message rather than a louder one.
+    shift
+    [[ $# -gt 0 ]] || { echo "NO-VERDICT: restore needs at least one path"; exit 3; }
+
+    # Outside the tree on purpose: a recovery point inside it would itself be mutation
+    # residue, and `clean` above would then refuse the next round because of it.
+    recovery="${TMPDIR:-/tmp}/st4i-mutate-recovery-${ST4I_MUTATE_SESSION:-$_tree_key}/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    failed=0
+
+    for p in "$@"; do
+      if [[ ! -e "$p" ]]; then
+        echo "NO-VERDICT: nothing at $p to restore"; failed=1; continue
+      fi
+
+      if ! git ls-files --error-unmatch -- "$p" >/dev/null 2>&1; then
+        # Point 4. Say the true thing: there is no restore for this, at all.
+        echo "UNTRACKED: $p is not in git — \`git checkout --\` CANNOT restore it, and neither can this."
+        echo "  Left exactly as it is. If it holds a mutation, undo it by hand; if it holds work, commit it."
+        failed=1
+        continue
+      fi
+
+      # Point 2: snapshot UNCONDITIONALLY, before anything is destroyed. The comparison
+      # below only chooses the wording.
+      dest="$recovery/$p"
+      mkdir -p "$(dirname "$dest")"
+      cp -p -- "$p" "$dest"
+
+      # Point 3: `git diff --quiet -- <path>` — git resolves the pathspec relative to the
+      # CWD (this script runs from tools/machine-simulator; porcelain would print
+      # repo-root-relative paths and never match), and normalises line endings the same
+      # way the index does.
+      if git diff --quiet -- "$p" && git diff --quiet --cached -- "$p"; then
+        echo "restore: $p was identical to HEAD; snapshot kept anyway at $dest"
+      else
+        echo "🔴 restore: $p had UNCOMMITTED CHANGES, which the checkout below discards."
+        echo "  Recovery point: $dest"
+      fi
+
+      git checkout -- "$p" || { echo "NO-VERDICT: checkout failed for $p"; failed=1; continue; }
+      # The `clean` verb already tells people to do this by hand; doing it here removes
+      # the step rather than the reminder.
+      touch -- "$p"
+    done
+
+    [[ $failed -eq 0 ]] || exit 3
     ;;
 
   check)
