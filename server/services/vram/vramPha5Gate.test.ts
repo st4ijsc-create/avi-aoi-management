@@ -339,7 +339,13 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   còn `isActive`"*). Nó tự khai `Pha 5` **và** `Pha 8` ⇒ bộ nhận diện THỨ NHẤT (nội dung) kéo
     //   nó vào tập bị canh ⇒ nó phải có đường riêng ở §Cổng kiểm chung. Gỡ đường ấy ⇒ **hai** ô đỏ
     //   trên **hai** trục.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(42); // Pha 8 Task 2: +1
+    // ⚠ Pha 8 Task 4a: 42 → **43**. Một lưới MỚI (`server/_core/hangRaoKhongAiCanh.test.ts` — luật
+    //   **KHAI BẮT BUỘC**: *"∀ thủ tục tRPC đọc `user_secrets` phải khai `KhongMangBiMat`"*). Nó
+    //   đóng nửa mà cổng KIỂU C-2 để hở: C-2 chỉ chặn **nơi được khai**, và câu cưỡng chế lời khai
+    //   trước đó là một **∃** trên đúng MỘT tên (`get2FAStatus`) ⇒ 8/9 thủ tục hở, cổng vẫn xanh.
+    //   Nó tự khai `Pha 5` ⇒ bộ nhận diện THỨ NHẤT (nội dung) kéo nó vào tập bị canh ⇒ phải có
+    //   đường riêng ở §Cổng kiểm chung. Gỡ đường ấy ⇒ **hai** ô đỏ trên **hai** trục.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(43); // Pha 8 Task 4a: +1
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -461,7 +467,8 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     // ⚠ Pha 8 Task 3: 102 → **103**. Đúng MỘT lưới mới (xem khối lý do ở ô `CONG.length`).
     // ⚠ Pha 8 Task 1: 103 → **104**. Đúng MỘT lưới mới (xem khối lý do ở ô `CONG.length`).
     // ⚠ Pha 8 Task 2: 104 → **105**. Đúng MỘT lưới mới (xem khối lý do ở ô `CONG.length`).
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(105); // Pha 8 Task 2: +1
+    // ⚠ Pha 8 Task 4a: 105 → **106**. Đúng MỘT lưới mới (xem khối lý do ở ô `CONG.length`).
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(106); // Pha 8 Task 4a: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

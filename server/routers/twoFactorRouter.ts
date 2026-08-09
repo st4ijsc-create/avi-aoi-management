@@ -17,6 +17,7 @@ import { eq, and } from "drizzle-orm";
 // ★★★ Pha 7 Task 8a — sinh/băm/đối chiếu mã dự phòng có **MỘT chủ**. Ba hàm cục bộ ở đây trước
 // bản vá là ba bản sao của ba vị từ đã có chủ; bản sao thứ hai của một vị từ là chỗ luật trôi đi.
 import { sinhMaDuPhong, bamMaDuPhong, khopMaDuPhong } from "../_core/backupCodeSecret";
+import type { KhongMangBiMat } from "../_core/publicUser";
 
 export const twoFactorRouter = router({
   // Get 2FA status for current user
@@ -104,7 +105,7 @@ export const twoFactorRouter = router({
   // Verify TOTP code and enable 2FA
   enable: protectedProcedure
     .input(z.object({ code: z.string().length(6) }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean; backupCodes: string[]; message: string }>> => {
       const db = await getDb();
       if (!db) {
         throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
@@ -173,7 +174,7 @@ export const twoFactorRouter = router({
   // Disable 2FA
   disable: protectedProcedure
     .input(z.object({ code: z.string() })) // Can be TOTP or backup code
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean; message: string }>> => {
       const db = await getDb();
       if (!db) {
         throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
@@ -248,7 +249,7 @@ export const twoFactorRouter = router({
   // Verify TOTP code (for login)
   verify: protectedProcedure
     .input(z.object({ code: z.string() }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean; message: string }>> => {
       const db = await getDb();
       if (!db) {
         throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
@@ -315,7 +316,7 @@ export const twoFactorRouter = router({
   // Regenerate backup codes
   regenerateBackupCodes: protectedProcedure
     .input(z.object({ code: z.string().length(6) })) // Require TOTP to regenerate
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean; backupCodes: string[]; message: string }>> => {
       const db = await getDb();
       if (!db) {
         throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");

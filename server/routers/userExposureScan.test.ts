@@ -45,7 +45,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { moiFileDuoi, laFileTest } from "./deployProcedureScan";
+import { moiFileDuoi, laFileTest, nguoiDocBiMatCuaUserSecrets } from "./deployProcedureScan";
 import { moiCotBiMatCuaUserSecrets } from "../_core/publicUser";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url)); // .../server/routers
@@ -161,52 +161,14 @@ function nguoiDocTho(): string[] {
  *   **CHẠM một cột bí mật của `user_secrets`** — dù là `.select({ x: userSecrets.<cột> })`, hay
  *   một khoá chiếu **mang đúng tên cột** (đủ phủ cả `leftJoin`). Tập cột bí mật **SUY RA** từ
  *   `USER_SECRETS_FIELD_VISIBILITY`, nên một cột bí mật **thứ BA** ngày mai tự vào lượng từ.
+ *
+ * ⚠⚠ Pha 8 Task 4a — **thân của vị từ đã chuyển về `deployProcedureScan.ts`** vì nó có **người
+ *    tiêu thụ thứ hai** (`server/_core/hangRaoKhongAiCanh.test.ts`, luật KHAI BẮT BUỘC). Giữ hai
+ *    bản sao là đúng lớp "N+1 bộ suy": bản yếu hơn sẽ quyết định lưới nào đỏ. Ô `cầu chì` dưới đây
+ *    **không đổi** — nó vẫn neo vào hai hàm đo được, nên một lượt chuyển nhà làm trượt bộ suy vẫn ĐỎ.
  */
 function nguoiDocBiMat(): string[] {
-  const sf = nguon(DB_AUTH);
-  const ra = new Set<string>();
-  const di = (n: ts.Node): void => {
-    if (ts.isCallExpression(n) && tenLoiGoi(n) === "select" && n.arguments.length === 1) {
-      const chieu = n.arguments[0]!;
-      if (ts.isObjectLiteralExpression(chieu)) {
-        const chamBiMat = chieu.properties.some((p) => {
-          const ten = p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? p.name.text : null;
-          if (ten !== null && COT_BI_MAT.includes(ten)) return true;
-          // `{ x: userSecrets.twoFactorSecret }` — đọc theo GIÁ TRỊ, không theo tên khoá.
-          if (ts.isPropertyAssignment(p) && ts.isPropertyAccessExpression(p.initializer)) {
-            return (
-              ts.isIdentifier(p.initializer.expression) &&
-              p.initializer.expression.text === "userSecrets" &&
-              COT_BI_MAT.includes(p.initializer.name.text)
-            );
-          }
-          if (ts.isShorthandPropertyAssignment(p)) return COT_BI_MAT.includes(p.name.text);
-          return false;
-        });
-        if (chamBiMat) {
-          const h = hamBao(n);
-          if (h && ts.isFunctionDeclaration(h) && h.name) ra.add(h.name.text);
-        }
-      }
-    }
-    // …và một lượt `.from(userSecrets)` **thô** (không phép chiếu) là người đọc bí mật theo định nghĩa.
-    if (ts.isCallExpression(n) && tenLoiGoi(n) === "from" && n.arguments.length === 1) {
-      const dich = n.arguments[0]!;
-      if (ts.isIdentifier(dich) && dich.text === "userSecrets") {
-        const truoc = n.expression;
-        if (ts.isPropertyAccessExpression(truoc) && ts.isCallExpression(truoc.expression)) {
-          const sel = truoc.expression;
-          if (tenLoiGoi(sel) === "select" && sel.arguments.length === 0) {
-            const h = hamBao(n);
-            if (h && ts.isFunctionDeclaration(h) && h.name) ra.add(h.name.text);
-          }
-        }
-      }
-    }
-    ts.forEachChild(n, di);
-  };
-  di(sf);
-  return [...ra].sort();
+  return nguoiDocBiMatCuaUserSecrets(GOC_REPO, COT_BI_MAT);
 }
 
 const DOC_BI_MAT = nguoiDocBiMat();

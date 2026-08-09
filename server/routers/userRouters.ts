@@ -190,7 +190,7 @@ export const userRouter = router({
       currentPassword: z.string().min(1),
       newPassword: z.string().min(6).max(100),
     }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean }>> => {
       const user = await db.getUserById(ctx.user.id);
       if (!user) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'Không tìm thấy người dùng');
@@ -291,7 +291,7 @@ export const userRouter = router({
     .input(z.object({
       token: z.string().length(6),
     }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean }>> => {
       // ★★★ Pha 6 Task 6 — MỌI lượt xác minh TOTP đi qua sổ mã đã tiêu (chống phát lại).
       const { verifyTotpOnce } = await import('../_core/totpOnce');
 
@@ -327,7 +327,7 @@ export const userRouter = router({
       token: z.string().length(6),
       password: z.string().min(1),
     }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean }>> => {
       // ★★★ Pha 6 Task 6 — MỌI lượt xác minh TOTP đi qua sổ mã đã tiêu (chống phát lại).
       const { verifyTotpOnce } = await import('../_core/totpOnce');
       const bcrypt = await import('bcryptjs');

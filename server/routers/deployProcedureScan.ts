@@ -745,3 +745,147 @@ export function anhXaKhongGianTen(goc: string): { anhXa: Record<string, string>;
   if (Object.keys(anhXa).length === 0) mu.push("server/routers.ts không cho ánh xạ nào — đã đổi hình dạng?");
   return { anhXa, mu };
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ Pha 8 Task 4a — **NGƯỜI ĐỌC BÍ MẬT của `user_secrets`: MỘT CHỦ, HAI LƯỚI.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Vị từ này sinh ra ở `userExposureScan.test.ts` (C-2) và nay có **người tiêu thụ thứ hai**
+ * (`server/_core/hangRaoKhongAiCanh.test.ts` — luật KHAI BẮT BUỘC). Chép nó sang file thứ hai là
+ * đúng lớp lỗi **"N+1 bộ suy"** mà §Global Constraints cấm: hai bản sao lệch nhau thì **cái yếu
+ * hơn** quyết định lưới nào đỏ, và không ai biết bản nào đang chạy.
+ * ⇒ Chuyển về đây, **một** chủ; cả hai lưới gọi cùng một hàm.
+ *
+ * Một hàm xuất khẩu của `server/db/auth.ts` là **người đọc bí mật** khi:
+ *   · phép chiếu `.select({…})` của nó **CHẠM một cột bí mật** — theo **tên khoá**, theo **giá trị**
+ *     (`{ x: userSecrets.twoFactorSecret }`, đủ phủ cả `leftJoin`), hoặc theo **rút gọn**; **hoặc**
+ *   · nó `.select()` **không phép chiếu** rồi `.from(userSecrets)` — thô, tức đọc mọi cột.
+ * @param cotBiMat tập cột bí mật, **SUY RA** từ `USER_SECRETS_FIELD_VISIBILITY` (đừng viết tay).
+ */
+export function nguoiDocBiMatCuaUserSecrets(goc: string, cotBiMat: readonly string[]): string[] {
+  const duong = join(goc, "server", "db", "auth.ts");
+  if (!existsSync(duong)) return [];
+  const sf = ts.createSourceFile(duong, readFileSync(duong, "utf8"), ts.ScriptTarget.Latest, true);
+  const ra = new Set<string>();
+
+  const ten = (n: ts.CallExpression): string => {
+    const e = n.expression;
+    if (ts.isIdentifier(e)) return e.text;
+    if (ts.isPropertyAccessExpression(e)) return e.name.text;
+    return "";
+  };
+  const laHam = (n: ts.Node): boolean =>
+    ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isArrowFunction(n) || ts.isMethodDeclaration(n);
+  const hamBao = (n: ts.Node): ts.Node | undefined => {
+    let cur: ts.Node | undefined = n.parent;
+    while (cur && !laHam(cur)) cur = cur.parent;
+    return cur;
+  };
+  const ghi = (n: ts.Node): void => {
+    const h = hamBao(n);
+    if (h && ts.isFunctionDeclaration(h) && h.name) ra.add(h.name.text);
+  };
+
+  const di = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ten(n) === "select" && n.arguments.length === 1) {
+      const chieu = n.arguments[0]!;
+      if (ts.isObjectLiteralExpression(chieu)) {
+        const cham = chieu.properties.some((p) => {
+          const k = p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? p.name.text : null;
+          if (k !== null && cotBiMat.includes(k)) return true;
+          if (ts.isPropertyAssignment(p) && ts.isPropertyAccessExpression(p.initializer)) {
+            return (
+              ts.isIdentifier(p.initializer.expression) &&
+              p.initializer.expression.text === "userSecrets" &&
+              cotBiMat.includes(p.initializer.name.text)
+            );
+          }
+          if (ts.isShorthandPropertyAssignment(p)) return cotBiMat.includes(p.name.text);
+          return false;
+        });
+        if (cham) ghi(n);
+      }
+    }
+    if (ts.isCallExpression(n) && ten(n) === "from" && n.arguments.length === 1) {
+      const dich = n.arguments[0]!;
+      if (ts.isIdentifier(dich) && dich.text === "userSecrets") {
+        const truoc = n.expression;
+        if (ts.isPropertyAccessExpression(truoc) && ts.isCallExpression(truoc.expression)) {
+          const sel = truoc.expression;
+          if (ten(sel) === "select" && sel.arguments.length === 0) ghi(n);
+        }
+      }
+    }
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  return [...ra].sort();
+}
+
+/**
+ * ★★★ Pha 8 Task 4a — **MỌI THỦ TỤC tRPC trong `server/**` gọi một trong `nguoiDoc`.**
+ *
+ * Một "thủ tục" là một ô `ten: <chuỗi>.query|mutation|subscription(<handler>)` trong một
+ * `router({…})`. Trả kèm **kiểu trả về được KHAI** của handler (chuỗi rỗng ⇒ **không khai**), để
+ * lưới hỏi được câu *"thủ tục này có mang cổng KIỂU không"* mà không cần đọc lại cây lần hai.
+ *
+ * ⚠ Phạm vi quét dùng `moiFileDuoi` + `laFileTest` — **cùng** bộ với mọi lưới khác, nên một thủ
+ *   tục **MỚI trong FILE MỚI** nằm trong lượng từ **theo cấu tạo** (phép thử M3).
+ */
+export interface ThuTucDocBiMat {
+  readonly file: string;
+  readonly dong: number;
+  readonly ten: string;
+  /** Tên người-đọc-bí-mật mà thân thủ tục gọi. */
+  readonly nguoiDoc: string;
+  /** Kiểu trả về **được khai** của handler; `""` khi không khai. */
+  readonly kieuKhai: string;
+}
+
+export function quetThuTucDocBiMat(goc: string, nguoiDoc: readonly string[]): ThuTucDocBiMat[] {
+  const ra: ThuTucDocBiMat[] = [];
+  if (nguoiDoc.length === 0) return ra;
+
+  const ten = (n: ts.CallExpression): string => {
+    const e = n.expression;
+    if (ts.isIdentifier(e)) return e.text;
+    if (ts.isPropertyAccessExpression(e)) return e.name.text;
+    return "";
+  };
+
+  for (const f of moiFileDuoi(goc, "server", [".ts"]).filter((x) => !laFileTest(x.duong))) {
+    const ma = readFileSync(f.that, "utf8");
+    if (!nguoiDoc.some((d) => ma.includes(d))) continue;
+    const sf = ts.createSourceFile(f.that, ma, ts.ScriptTarget.Latest, true);
+
+    const di = (n: ts.Node): void => {
+      if (ts.isPropertyAssignment(n) && n.name && ts.isCallExpression(n.initializer)) {
+        const goi = n.initializer;
+        if (["query", "mutation", "subscription"].includes(ten(goi)) && goi.arguments.length === 1) {
+          const handler = goi.arguments[0]!;
+          let doc: string | null = null;
+          const q = (x: ts.Node): void => {
+            if (ts.isCallExpression(x) && nguoiDoc.includes(ten(x))) doc = ten(x);
+            ts.forEachChild(x, q);
+          };
+          q(handler);
+          if (doc !== null) {
+            const kieu =
+              (ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) && handler.type
+                ? handler.type.getText(sf)
+                : "";
+            ra.push({
+              file: f.duong,
+              dong: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1,
+              ten: ts.isIdentifier(n.name) || ts.isStringLiteral(n.name) ? n.name.text : "<?>",
+              nguoiDoc: doc,
+              kieuKhai: kieu,
+            });
+          }
+        }
+      }
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+  }
+  return ra.sort((a, b) => `${a.file}#${a.ten}`.localeCompare(`${b.file}#${b.ten}`));
+}

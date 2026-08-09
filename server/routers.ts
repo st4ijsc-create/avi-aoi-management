@@ -6,7 +6,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { listEnabledSsoMethods } from "./_core/oauthProviders";
 import { publicProcedure, router } from "./_core/trpc";
 // ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
-import { toPublicUser, type MeUser } from "./_core/publicUser";
+import { toPublicUser, type MeUser, type KhongMangBiMat } from "./_core/publicUser";
 import { appError } from "./_core/appError";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -289,7 +289,7 @@ export const appRouter = router({
         username: z.string().min(1),
         password: z.string().min(1),
       }))
-      .mutation(async ({ input, ctx }) => {
+      .mutation(async ({ input, ctx }): Promise<KhongMangBiMat<{ requires2FA: boolean; userId: number; message: string } | { success: boolean; user: { id: number; name: string | null; email: string | null; role: string } }>> => {
         // Single source of truth for brute-force lockout + login audit logging
         // (audit A bug #1). verifyCredentials throws LoginError with the right
         // semantics; we map it to the matching tRPC error code.
