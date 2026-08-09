@@ -80,23 +80,52 @@ const BANG_CHUNG = [
 const HAM_UY_QUYEN = "establishSession";
 
 /**
- * ★★★ **HÀM UỶ QUYỀN được SUY RA, không liệt kê.** Một điểm đúc nằm bên trong một hàm mà **chính
- * nó** là một hình dạng đúc (hoặc là hàm uỷ quyền) thì đó là lượt đúc **HỘ**, không phải một
- * đường cấp phiên mới — nghĩa vụ chứng minh chuyển sang **người gọi**.
+ * ★★★★ Pha 7 / review TOÀN NHÁNH **I-1** — **MIỄN TRỪ LÀ MỘT ÁNH XẠ `đường:hàm`, KHÔNG PHẢI MỘT
+ * TẬP TÊN.**
  *
- * ⚠ Ô này do **lượt chạy đầu tiên của chính lưới này BẮT ĐƯỢC**, không do tôi đoán trước:
- *   `sdk.ts:175` — `createSessionToken` gọi `signSession` — bị báo là *"đường cấp phiên không có
- *   bằng chứng"*. Nó **không** phải một đường; nó là tầng dưới của cùng một cửa đúc. Đúng lớp
- *   *"lưới khoá đúng cái vừa sửa"*: nếu tôi đặc cách riêng `sdk.ts` thì tầng uỷ quyền **thứ ba**
- *   sẽ lại lọt. Nên luật nói về **vai trò**, không về tên file.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO ĐỔI: **PHÉP THỬ M3 CỦA CHÍNH FILE NÀY ĐÃ THẤT BẠI, ĐO ĐƯỢC.**
+ * Bản trước hỏi *"tên hàm bao ∈ {establishSession, createSessionToken, signSession}"* — **chỉ
+ * TÊN**. Người review dựng `server/routers/__reviewProbeSession.ts`:
+ *
+ *     const establishSession = async (req, res) => {
+ *       const token = await sdk.createSessionToken(String(req.query.openId ?? ""), { name: "" });
+ *       res.cookie(COOKIE_NAME, token, getSessionCookieOptions(req));
+ *       res.json({ ok: true });
+ *     };
+ *     export function dangKyCuaHau(app) { app.post("/api/backdoor", establishSession); }
+ *
+ * ⇒ Một tuyến **cấp phiên đầy đủ cho BẤT KỲ AI** — không mật khẩu, không vé, không IdP — trong một
+ *   **FILE MỚI**, và lưới khai **XANH 9/9**. Vì tên trùng ⇒ nó được xếp vào *"đúc HỘ"* và **rơi
+ *   khỏi** lượng từ; và ô ghim dưới đây so **TẬP đã dedup** nên tập cũng **không đổi**.
+ * Đúng docstring của chính file này (dòng 23-24): *"Một endpoint cấp phiên **thứ tám** sinh ra ở
+ * bất kỳ đâu — file mới, thư mục mới, tên khác — tự đưa mình vào lượng từ và làm ô này **ĐỎ**"*.
+ * Nó đã **không** làm thế.
+ *
+ * ⇒ Miễn trừ nay ghim **CẢ ĐƯỜNG LẪN TÊN**. Một hàm **cùng tên** ở một **file khác** KHÔNG được
+ *   miễn hộ — nó là một đường cấp phiên mới và phải chứng minh bằng chứng như mọi đường khác.
+ * ⚠ Lý lẽ cũ vẫn đúng và vẫn giữ: `sdk.createSessionToken` gọi `signSession` là **tầng dưới của
+ *   cùng một cửa đúc**, không phải một đường mới (lượt chạy đầu của lưới này đã bắt nhầm nó).
+ *   Khác biệt là nay *"cùng một cửa đúc"* được ghim bằng **vị trí trên đĩa**, thứ không sửa được
+ *   bằng cách đặt trùng tên — đúng bài học `vramPha5Gate` (*"NHẬN DIỆN BẰNG VỊ TRÍ, KHÔNG BẰNG
+ *   CHÍNH TẢ"*).
  */
-const LA_HAM_UY_QUYEN = (ten: string): boolean =>
-  ten === HAM_UY_QUYEN || (HINH_DANG_DUC as readonly string[]).includes(ten);
+const ANH_XA_UY_QUYEN: readonly (readonly [duong: string, ham: string])[] = [
+  ["server/_core/authService.ts", "establishSession"],
+  ["server/_core/sdk.ts", "createSessionToken"],
+];
+
+const LA_HAM_UY_QUYEN = (duong: string, ten: string): boolean =>
+  ANH_XA_UY_QUYEN.some(([d, h]) => d === duong && h === ten);
 
 /**
- * ★★★ SỐ hàm uỷ quyền được phép tồn tại. **GHIM = 2** (`establishSession` · `createSessionToken`).
- * Một hàm uỷ quyền thứ ba là một cửa đúc phiên mà mọi lượng từ dưới đây sẽ đi vòng qua ⇒ phải
- * NÓI RA, không trôi qua im lặng.
+ * ★★★ SỐ **CẶP `đường:hàm`** uỷ quyền được phép tồn tại. **GHIM = 2** — và con số này là một **phép
+ * đếm ĐỘC LẬP**, không phải con số tôi định trước: lượt ghim đầu tiên viết **3** (thêm
+ * `server/_core/sdk.ts:signSession`) và ca dưới **ĐỎ ngay**, vì `signSession` **không bao giờ là
+ * hàm BAO của một điểm đúc** — nó *là* một hình dạng đúc, được gọi **bên trong**
+ * `createSessionToken`. Ghi lại để lượt sau không "sửa" ô này bằng cách thêm cặp thứ ba.
+ * ⚠ Trước I-1 con số này đếm trên **TẬP TÊN đã dedup**, nên hai hàm cùng tên ở hai file làm nó
+ *   **không nhúc nhích** — chính là cửa mà đột biến của reviewer đi qua.
  */
 const SO_HAM_UY_QUYEN = 2;
 
@@ -108,7 +137,43 @@ const SO_VUNG_MU_2FA = 1;
 // ── quét ────────────────────────────────────────────────────────────────────────────────────
 const SAN_XUAT = moiFileDuoi(GOC_REPO, "server", [".ts"]).filter((f) => !laFileTest(f.duong));
 
-type DiemDuc = { duong: string; dong: number; ham: string; than: string; loai: string };
+type DiemDuc = {
+  duong: string;
+  dong: number;
+  ham: string;
+  than: string;
+  loai: string;
+  /**
+   * ★★★★ **I-2** — node AST của hàm bao. Bằng chứng phải đọc **trên CÂY**; `than` (văn bản) chỉ
+   * còn dùng cho những thứ **thật sự là văn bản** (dấu khai `@KHONG-CONG-2FA` là một chú thích).
+   */
+  bao?: ts.Node;
+};
+
+/**
+ * ★★★★ Pha 7 / review TOÀN NHÁNH **I-2** — **BẰNG CHỨNG ĐỌC TRÊN CÂY, KHÔNG TRÊN VĂN BẢN.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO ĐỔI: bản trước hỏi `d.than.includes(\`${b}(\`)` ⇒ **một CHÚ THÍCH tính là bằng chứng**.
+ * Đo được: đột biến ở `server/_core/oauth.ts` **gỡ hẳn** lời gọi thật `kiemVe2FA(req, …)` (thay
+ * bằng `{ hopLe: true }`) và gỡ `tieuVe2FA(req, res)`, **giữ nguyên tên trong chú thích** ⇒ lưới
+ * này vẫn **9/9 XANH** (trong khi lưới HÀNH VI `verify2faPasswordStep.test.ts` ĐỎ **9 ca** — tức
+ * bản vá Critical của Task 6 đã bị gỡ thật).
+ * Repo **đã biết** tính chất này theo chiều ngược: `server/_core/authService.ts:265-267` phải **cố
+ * ý không viết** `capVe2FA(` trong một chú thích vì *"ô ấy ĐỎ"*. Một lưới bắt buộc người ta phải
+ * né cách viết chú thích là một lưới đang canh **CHÍNH TẢ**, không canh **SỰ THẬT**.
+ */
+function goiTrong(n: ts.Node | undefined, ten: readonly string[]): boolean {
+  if (!n) return false;
+  let co = false;
+  const di = (x: ts.Node): void => {
+    if (co) return;
+    if (ts.isCallExpression(x) && ten.includes(tenLoiGoi(x))) { co = true; return; }
+    ts.forEachChild(x, di);
+  };
+  di(n);
+  return co;
+}
 
 function laHamBao(n: ts.Node): boolean {
   return (
@@ -170,9 +235,11 @@ function quet(): { duc: DiemDuc[]; uyQuyen: DiemDuc[]; goiUyQuyen: DiemDuc[] } {
             ham: bao ? tenHam(bao) : "<đỉnh file>",
             than: bao ? bao.getText() : src,
             loai: laCookiePhien ? "res.cookie(COOKIE_NAME)" : ten,
+            bao: bao ?? sf,
           };
           // Điểm đúc NẰM TRONG chính một hàm uỷ quyền ⇒ lượt đúc HỘ, không phải một đường mới.
-          if (laDuc && LA_HAM_UY_QUYEN(muc.ham)) uyQuyen.push(muc);
+          // ⚠ I-1: miễn trừ theo **ĐƯỜNG:HÀM** — cùng tên ở file khác KHÔNG được miễn hộ.
+          if (laDuc && LA_HAM_UY_QUYEN(muc.duong, muc.ham)) uyQuyen.push(muc);
           else if (laGoiUyQuyen) goiUyQuyen.push(muc);
           else if (laDuc) duc.push(muc);
         }
@@ -186,7 +253,8 @@ function quet(): { duc: DiemDuc[]; uyQuyen: DiemDuc[]; goiUyQuyen: DiemDuc[] } {
 
 const { duc, uyQuyen, goiUyQuyen } = quet();
 const MOI_DUONG = [...duc, ...goiUyQuyen];
-const coBangChung = (d: DiemDuc) => BANG_CHUNG.some((b) => d.than.includes(`${b}(`));
+/** ★★★★ I-2 — bằng chứng là một **LỜI GỌI THẬT** trên cây, không phải một chuỗi trong văn bản. */
+const coBangChung = (d: DiemDuc) => goiTrong(d.bao, BANG_CHUNG);
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 describe("★★★ Task 6 §1 — cầu chì của lượng từ (không có nó thì ∀ thoả RỖNG)", () => {
@@ -200,13 +268,60 @@ describe("★★★ Task 6 §1 — cầu chì của lượng từ (không có n�
     expect(file.length, "bề mặt phải trải trên nhiều file — 1 file nghĩa là bộ suy hỏng").toBeGreaterThanOrEqual(3);
   });
 
-  it(`★★★ ĐÚNG ${SO_HAM_UY_QUYEN} hàm uỷ quyền đúc phiên — một cái thứ ba đi vòng qua MỌI lượng từ dưới`, () => {
-    const ten = [...new Set(uyQuyen.map((d) => d.ham))].sort();
+  it(`★★★★ I-1 — ĐÚNG ${SO_HAM_UY_QUYEN} CẶP \`đường:hàm\` uỷ quyền (một cặp thứ tư đi vòng qua MỌI lượng từ dưới)`, () => {
+    // ⚠⚠ So trên **CẶP**, không trên tập TÊN đã dedup: hai hàm cùng tên ở hai file làm tập không
+    //    đổi ⇒ đúng cửa mà đột biến `__reviewProbeSession.ts` của reviewer đi qua (9/9 XANH).
+    const cap = [...new Set(uyQuyen.map((d) => `${d.duong}:${d.ham}`))].sort();
     expect(
-      ten.join(" · "),
-      `hàm uỷ quyền đúc phiên đã đổi:\n${[...new Set(uyQuyen.map((d) => `${d.duong}:${d.dong} ${d.ham}`))].join("\n")}`,
-    ).toBe("createSessionToken · establishSession");
-    expect(ten.length).toBe(SO_HAM_UY_QUYEN);
+      cap.join("\n"),
+      `cặp \`đường:hàm\` uỷ quyền đúc phiên đã đổi:\n${[...new Set(uyQuyen.map((d) => `${d.duong}:${d.dong} ${d.ham}`))].join("\n")}`,
+    ).toBe(
+      [...ANH_XA_UY_QUYEN].map(([d, h]) => `${d}:${h}`).sort().join("\n"),
+    );
+    expect(cap.length).toBe(SO_HAM_UY_QUYEN);
+  });
+
+  it("★★★★ I-1 / M3 — một `establishSession` **CÙNG TÊN ở FILE KHÁC** KHÔNG được miễn hộ", () => {
+    /**
+     * ⚠⚠⚠ Ca neo vào **cơ chế**, dựng lại nguyên văn đột biến của reviewer. Trước I-1 vị từ miễn
+     * trừ chỉ hỏi TÊN ⇒ hàm này được xếp *"đúc HỘ"* và **rơi khỏi lượng từ**, cổng khai XANH 9/9
+     * cho một tuyến cấp phiên **đầy đủ cho bất kỳ ai**.
+     */
+    for (const d of ["server/routers/__cuaHau.ts", "server/services/x/establish.ts", "server/_core/oauth.ts"]) {
+      expect(
+        LA_HAM_UY_QUYEN(d, "establishSession"),
+        `${d}:establishSession KHÔNG được miễn — chỉ \`server/_core/authService.ts\` mới là chủ`,
+      ).toBe(false);
+      expect(LA_HAM_UY_QUYEN(d, "createSessionToken"), `${d}:createSessionToken KHÔNG được miễn`).toBe(false);
+    }
+    // ĐỐI CHỨNG DƯƠNG: ba cặp THẬT vẫn được miễn (nếu không, lưới bắt nhầm chính cửa đúc dùng chung).
+    for (const [d, h] of ANH_XA_UY_QUYEN) expect(LA_HAM_UY_QUYEN(d, h), `${d}:${h} phải được miễn`).toBe(true);
+  });
+
+  it("★★★★ I-2 — bằng chứng đọc trên CÂY: một CHÚ THÍCH mang đúng tên KHÔNG phải bằng chứng", () => {
+    /**
+     * ⚠⚠⚠ Đột biến đo được: gỡ **lời gọi thật** `kiemVe2FA(req, Number(userId))` khỏi
+     * `server/_core/oauth.ts` (thay bằng `{ hopLe: true }`), **giữ tên trong chú thích** ⇒ lưới này
+     * vẫn 9/9 XANH, trong khi `verify2faPasswordStep.test.ts` ĐỎ 9 ca.
+     */
+    const chiChuThich = `
+      async function capPhien(req: any, res: any) {
+        // đã kiemVe2FA(req, id) và tieuVe2FA(req, res) ở tầng trên
+        /** verifyCredentials( — comparePasswordConstantTime( */
+        const token = await sdk.createSessionToken(req.query.openId, { name: "" });
+        res.cookie(COOKIE_NAME, token, {});
+      }`;
+    const sf = ts.createSourceFile("server/x/chuThich.ts", chiChuThich, ts.ScriptTarget.Latest, true);
+    expect(
+      goiTrong(sf, BANG_CHUNG),
+      "một CHÚ THÍCH mang đúng tên được nhận làm bằng chứng ⇒ lưới đang canh CHÍNH TẢ, không canh sự thật",
+    ).toBe(false);
+    // ĐỐI CHỨNG DƯƠNG: một lời gọi THẬT thì phải thấy.
+    const goiThat = `async function f(req: any) { const v = await kiemVe2FA(req, 1); return v; }`;
+    expect(
+      goiTrong(ts.createSourceFile("server/x/that.ts", goiThat, ts.ScriptTarget.Latest, true), BANG_CHUNG),
+      "một lời gọi THẬT phải được nhận là bằng chứng",
+    ).toBe(true);
   });
 });
 
@@ -224,16 +339,33 @@ describe("★★★ Task 6 §2 — ∀ đường cấp phiên: PHẢI có một 
     ).toBe("");
   });
 
-  it("★★★ ĐỐI CHỨNG DƯƠNG — `verify-2fa` phải dùng ĐÚNG bằng chứng `kiemVe2FA`, không phải một cái khác", () => {
-    const v2 = goiUyQuyen.find((d) => d.duong === "server/_core/oauth.ts" && d.than.includes("verify-2fa"));
-    // Handler `verify-2fa` là một arrow function; hàm bao của lượt `establishSession` chính là nó.
-    const ma = readFileSync(join(GOC_REPO, "server", "_core", "oauth.ts"), "utf8");
-    const i = ma.indexOf('"/api/auth/verify-2fa"');
-    expect(i, "không thấy tuyến `/api/auth/verify-2fa`").toBeGreaterThan(0);
-    const than = ma.slice(i, ma.indexOf("app.get(", i) === -1 ? undefined : ma.indexOf("app.get(", i));
-    expect(than, "`verify-2fa` mất phép kiểm vé ⇒ lỗ gốc mở lại").toContain("kiemVe2FA(");
-    expect(than, "`verify-2fa` phải TIÊU vé (một-lần)").toContain("tieuVe2FA(");
-    expect(v2 ?? than, "handler `verify-2fa` vẫn phải cấp phiên qua đường dùng chung").toBeTruthy();
+  it("★★★★ I-2 — ĐỐI CHỨNG DƯƠNG `verify-2fa`: kiểm vé + tiêu vé là LỜI GỌI THẬT trên CÂY", () => {
+    /**
+     * ⚠⚠⚠ Bản trước cắt một **LÁT VĂN BẢN** của `oauth.ts` rồi `toContain("kiemVe2FA(")` ⇒ chú
+     * thích thoả ô này. Nay: tìm **đúng lời gọi `app.post("/api/auth/verify-2fa", handler)`** trên
+     * cây, rồi hỏi thân handler có `CallExpression` tới `kiemVe2FA`/`tieuVe2FA` hay không.
+     */
+    const duong = join(GOC_REPO, "server", "_core", "oauth.ts");
+    const sf = ts.createSourceFile(duong, readFileSync(duong, "utf8"), ts.ScriptTarget.Latest, true);
+    let handler: ts.Node | undefined;
+    const di = (n: ts.Node): void => {
+      if (
+        ts.isCallExpression(n) &&
+        ["post", "get", "put", "all"].includes(tenLoiGoi(n)) &&
+        n.arguments.length >= 2 &&
+        ts.isStringLiteralLike(n.arguments[0]!) &&
+        n.arguments[0]!.getText(sf).includes("/api/auth/verify-2fa")
+      ) {
+        handler = n.arguments[n.arguments.length - 1];
+      }
+      ts.forEachChild(n, di);
+    };
+    ts.forEachChild(sf, di);
+    expect(handler, "không thấy tuyến `/api/auth/verify-2fa` trên CÂY — nó đã đổi hình dạng?").toBeTruthy();
+    expect(goiTrong(handler, ["kiemVe2FA"]), "`verify-2fa` mất LỜI GỌI kiểm vé ⇒ lỗ gốc Task 6 mở lại").toBe(true);
+    expect(goiTrong(handler, ["tieuVe2FA"]), "`verify-2fa` mất LỜI GỌI tiêu vé ⇒ vé thôi là MỘT-LẦN").toBe(true);
+    // …và nó vẫn phải cấp phiên qua đường dùng chung, không tự đúc.
+    expect(goiTrong(handler, [HAM_UY_QUYEN]), "handler `verify-2fa` phải cấp phiên qua `establishSession`").toBe(true);
   });
 
   it("★★★ ∀ đường `login` cấp vé: CẢ HAI đường (tRPC và express) — bỏ sót một đường ⇒ luồng đúng của đường ấy vỡ", () => {
@@ -247,9 +379,13 @@ describe("★★★ Task 6 §2 — ∀ đường cấp phiên: PHẢI có một 
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 describe("★★★ Task 6 §3 — nửa THỨ HAI: đường mật khẩu cục bộ phải hỏi 2FA, hoặc KHAI vùng mù", () => {
-  /** Đường cấp phiên bằng **mật khẩu cục bộ** = có bằng chứng mật khẩu trong hàm bao. */
+  /**
+   * Đường cấp phiên bằng **mật khẩu cục bộ** = có bằng chứng mật khẩu trong hàm bao.
+   * ⚠ I-2: hỏi trên **CÂY** — một chú thích nhắc `verifyCredentials(` không được kéo một đường vào
+   *   (hay đẩy một đường ra khỏi) lượng từ này.
+   */
   const duongMatKhau = MOI_DUONG.filter((d) =>
-    ["verifyCredentials", "comparePasswordConstantTime"].some((b) => d.than.includes(`${b}(`)),
+    goiTrong(d.bao, ["verifyCredentials", "comparePasswordConstantTime"]),
   );
 
   it("★★★ cầu chì — phải có ít nhất hai đường mật khẩu cục bộ", () => {
@@ -257,8 +393,10 @@ describe("★★★ Task 6 §3 — nửa THỨ HAI: đường mật khẩu cục
   });
 
   it("★★★ ∀ đường mật khẩu cục bộ: hỏi `get2FAStatus`, HOẶC khai vùng mù bằng dấu tại chỗ", () => {
+    // ⚠ I-2: *"có hỏi 2FA không"* đọc trên **CÂY** (một lời gọi thật); còn dấu khai vùng mù thì
+    //   **đúng là** một chú thích, nên nó — và chỉ nó — vẫn hỏi trên văn bản.
     const im = duongMatKhau
-      .filter((d) => !d.than.includes("get2FAStatus(") && !d.than.includes(DAU_KHONG_CONG_2FA))
+      .filter((d) => !goiTrong(d.bao, ["get2FAStatus"]) && !d.than.includes(DAU_KHONG_CONG_2FA))
       .map((d) => `${d.duong}:${d.dong} trong \`${d.ham}\``);
     expect(
       im.join("\n"),
