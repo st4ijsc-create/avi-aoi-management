@@ -332,6 +332,23 @@ async function ctxCua(): Promise<TrpcContext> {
   };
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ Pha 8 Task 4b (#9) — **GỠ PHỤ THUỘC THỨ TỰ.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ Ba ô dưới đây từng dùng chung **một** hàng `users` **và** trạng thái `twoFactorEnabled` của
+ * nó, mỗi ô **thừa hưởng** tiền đề từ ô chạy trước. Đo được (`--sequence.shuffle.tests`, hạt giống
+ * tất định): **2/6 hạt cho ĐỎ** — `seed=2` ⇒ 2 ô đỏ, `seed=3` ⇒ 1 ô đỏ, bốn hạt còn lại xanh.
+ * Cơ chế, đã truy tới tận cùng chứ không đoán:
+ *   · ô *"2FA ĐANG BẬT"* chạy **trước** ô *"chưa bật"* ⇒ chưa có hạt giống nào ⇒ cầu chì
+ *     `truoc` **null**; và nó đã kịp `enable2FA` ⇒ ô *"chưa bật"* sau đó bị TỪ CHỐI ⇒ đỏ **thứ hai**.
+ * ⇒ Đây là **ca đỏ GIẢ**: sản phẩm đúng, tiền đề của phép đo sai. Và ca đỏ giả bào mòn lòng tin vào
+ *   cổng — dự án này đã **ba pha liên tiếp** chẩn đoán sai vì nhiễu kiểu ấy.
+ *
+ * ⇒ Bản vá: **mỗi ô TỰ DỰNG tiền đề của mình**, không thừa hưởng của ai. Tiền đề nay **đọc được
+ *   ngay trong ô** thay vì nằm ẩn ở vị trí sắp xếp — một ô test không được phụ thuộc vào việc ai
+ *   chạy trước nó. Cổng ra: chạy một mình + shuffle, **5/5 xanh** (xem báo cáo Task 4).
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
 describe("★★★ C-1 §3 — HÀNH VI: 2FA đang bật ⇒ `user.setup2FA` TỪ CHỐI, hạt giống KHÔNG đổi", () => {
   beforeAll(async () => {
     const r = await db.createLocalUser({
@@ -347,8 +364,30 @@ describe("★★★ C-1 §3 — HÀNH VI: 2FA đang bật ⇒ `user.setup2FA` T�
     if (uid) await db.deleteUser(uid); // FK ON DELETE CASCADE dọn hàng `user_secrets` hộ
   });
 
+  /**
+   * Tiền đề *"tài khoản đang TẮT 2FA"* — dựng tường minh, không thừa hưởng.
+   * ⚠ `disable2FA` **xoá** hạt giống, nên gọi nó là đủ để về trạng thái đầu.
+   */
+  async function tatHai2Fa(): Promise<void> {
+    await db.disable2FA(uid);
+  }
+
+  /**
+   * Tiền đề *"tài khoản đang BẬT 2FA **và** có một hạt giống ĐANG DÙNG"* — dựng tường minh qua
+   * **tầng DB**, không qua router (router chính là thứ đang được đo; dùng nó để dựng tiền đề thì
+   * ô test đo chính nó).
+   */
+  async function bat2FaCoHatGiong(): Promise<string> {
+    await db.disable2FA(uid);
+    const hat = "JBSWY3DPEHPK3PXP";
+    await db.setup2FA(uid, hat);
+    await db.enable2FA(uid);
+    return hat;
+  }
+
   it("★★★ ĐỐI CHỨNG DƯƠNG — người CHƯA bật 2FA VẪN đăng ký được (bản vá là THU HẸP, không phải KHOÁ)", async () => {
     expect(uid).toBeGreaterThan(0);
+    await tatHai2Fa(); // ★ Task 4b — tiền đề TỰ DỰNG, không thừa hưởng ô chạy trước
     const ra = await appRouter.createCaller(await ctxCua()).user.setup2FA();
     expect(ra.secret, "người chưa bật 2FA phải nhận được hạt giống mới").toMatch(/^[A-Z2-7]{16,}$/);
     expect(ra.qrCode.startsWith("data:image/"), "QR phải sinh được").toBe(true);
@@ -357,9 +396,12 @@ describe("★★★ C-1 §3 — HÀNH VI: 2FA đang bật ⇒ `user.setup2FA` T�
   }, 20_000);
 
   it("★★★★ 2FA ĐANG BẬT ⇒ TỪ CHỐI, và hạt giống ĐANG DÙNG **KHÔNG ĐỔI**", async () => {
-    await db.enable2FA(uid);
+    // ★ Task 4b — tiền đề TỰ DỰNG: trước đây ô này mượn hạt giống do ô "chưa bật" ghi hộ, nên chạy
+    //   trước ô ấy là cầu chì `truoc` null ⇒ ĐỎ GIẢ.
+    const hat = await bat2FaCoHatGiong();
     const truoc = (await db.get2FAStatus(uid))!.twoFactorSecret;
     expect(truoc, "cầu chì: phải có một hạt giống ĐANG DÙNG để mà bảo vệ").toBeTruthy();
+    expect(truoc, "cầu chì: hạt giống đang dùng phải đúng cái vừa dựng").toBe(hat);
 
     await expect(
       appRouter.createCaller(await ctxCua()).user.setup2FA(),
@@ -372,6 +414,9 @@ describe("★★★ C-1 §3 — HÀNH VI: 2FA đang bật ⇒ `user.setup2FA` T�
   }, 20_000);
 
   it("★★★ ĐỐI CHỨNG DƯƠNG — tắt 2FA rồi thì thiết lập lại được (đường hợp lệ KHÔNG bị chặn)", async () => {
+    // ★ Task 4b — tiền đề TỰ DỰNG: ô này phải thật sự đi qua lượt **BẬT → TẮT**, chứ không ăn may
+    //   một tài khoản vốn đã tắt sẵn do thứ tự sắp xếp.
+    await bat2FaCoHatGiong();
     await db.disable2FA(uid);
     const ra = await appRouter.createCaller(await ctxCua()).user.setup2FA();
     expect(ra.secret, "sau khi tắt 2FA, người dùng phải thiết lập lại được").toMatch(/^[A-Z2-7]{16,}$/);
