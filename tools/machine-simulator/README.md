@@ -1528,10 +1528,13 @@ reads.
 
 *(🔴 What those two pins do **not** measure, said here rather than left to be discovered. They prove a
 variable is **declared and read at a resolution site**. They do not execute any store, so they cannot prove the
-resolved value is then **honoured** all the way to a file; that last step is covered store by store —
-`CredentialStoreTests`, `PerHostDataRootIsolationTests`, `FleetSettingsStoreTests`, `WalOptionsTests`,
-`SecurityEnvVarTests`, and the `ST4I_HISTORIAN_DIR` harnesses — and not by any single sweep. `historian` is
-also the one variable read at a composition root (`St4i.EngineApi/Program.cs`) rather than on its store, so a
+resolved value is then **honoured** all the way to a file. Where that last step actually is, counted rather
+than recalled: **four** directories have a test written for their own variable — `creds`
+(`CredentialStoreTests`), `settings` (`FleetSettingsStoreTests`), `wal` (`WalOptionsTests`), `bridge-spool`
+(`BridgeSpoolTests`) — plus `PerHostDataRootIsolationTests` for the two-root case; **eight** more are
+redirected incidentally by host harnesses that would read or pollute the real `%ProgramData%` if the redirect
+were ignored; and **`opcua-pki` has neither**, which makes it the one directory whose honoured-to-file
+behaviour nothing here measures. `historian` is also the one variable read at a composition root (`St4i.EngineApi/Program.cs`) rather than on its store, so a
 host that ever constructed a historian store without going through that root would get the machine-wide default
 with no env-var step. None does today.)*
 
@@ -1631,9 +1634,12 @@ bằng cách quét `src/` (store thứ mười bốn làm test đỏ cho tới k
 `Environment.GetEnvironmentVariable` thật, chứ không chỉ tồn tại như một chuỗi ở đâu đó.
 *(🔴 Cái hai phép ghim ấy **KHÔNG** đo: chúng chứng minh biến **được khai báo và được ĐỌC ở một điểm phân
 giải**; chúng không chạy store, nên không chứng minh giá trị đã phân giải rồi **được tôn trọng** tới tận file.
-Bước cuối ấy được phủ theo từng store — `CredentialStoreTests`, `PerHostDataRootIsolationTests`,
-`FleetSettingsStoreTests`, `WalOptionsTests`, `SecurityEnvVarTests`, và các harness `ST4I_HISTORIAN_DIR` — chứ
-không phải bằng một lượt quét nào.)*
+Bước cuối ấy nằm ở đâu, **đếm chứ không nhớ**: **bốn** thư mục có test viết riêng cho biến của chúng —
+`creds` (`CredentialStoreTests`), `settings` (`FleetSettingsStoreTests`), `wal` (`WalOptionsTests`),
+`bridge-spool` (`BridgeSpoolTests`) — cộng `PerHostDataRootIsolationTests` cho trường hợp hai gốc; **tám** thư
+mục nữa được chuyển hướng **gián tiếp** bởi các harness dựng host thật, thứ sẽ đọc hoặc làm bẩn
+`%ProgramData%` thật nếu redirect không được tôn trọng; và **`opcua-pki` không có cả hai** — đó là thư mục duy
+nhất mà hành vi "tôn trọng tới tận file" không được gì ở đây đo cả.)*
 
 🔴 **Đọc cột GHI/ĐỌC trước khi dời bất cứ gốc nào.** Dời một gốc mà host **GHI** cho host ấy bản sao
 riêng của thứ chính nó tạo ra — đó là *cô lập*, và đó là mục đích của mục này. Dời một gốc mà host chỉ **ĐỌC**

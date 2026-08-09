@@ -25,17 +25,39 @@ using Xunit;
 ///
 /// <para>🔴 <b>Reading <c>ResolveRoot</c> is NOT what is asserted here, deliberately.</b> A resolver can be
 /// perfectly correct while the store it belongs to ignores it — <c>CredentialStoreTests</c>' own
-/// <c>Save_WritesToTheRedirectedDirectory_…</c> exists because exactly that was possible. Every assertion
-/// below is on an OBSERVATION MADE THROUGH THE PRODUCTION WRITE/READ PATH: nothing here computes a file name,
-/// and nothing here asserts on a path string. Each arm gives a ROOT to the code that owns it, lets that code
-/// decide the rest, and then asks the other host whether it can see the result. Both directions are asserted,
-/// because "B cannot see A" and "B did not overwrite A" are two different failures and a one-directional test
-/// sees only the first.
-/// <b>🔴 That sentence was FALSE of the WAL arm until fix round 1</b> (review I-1): that arm resolved the
-/// queue path itself and wrote it with <see cref="File.WriteAllText(string,string)"/>, which made it a claim
-/// about <see cref="Path.Combine(string,string)"/> while this paragraph claimed otherwise for all three. The
-/// arm was rewritten onto <see cref="TransportCoordinator"/> rather than the sentence narrowed, so the charter
-/// is now true of the file it heads — see that arm's own remarks.</para>
+/// <c>Save_WritesToTheRedirectedDirectory_…</c> exists because exactly that was possible.</para>
+///
+/// <para>🔴 <b>What carries each arm, ARM BY ARM — this is an enumeration and not a summary, and the reason
+/// for that is written below it.</b>
+/// <list type="number">
+/// <item><b>Credential arm.</b> Subject: <c>CredentialStore.Load</c> and <c>ListMachineCodes</c>, called after
+/// nothing but an environment variable was changed. Both directions: B cannot read what A sealed, and A's
+/// value survives B writing the same machine code. It ALSO corroborates on disk, and that half DOES compute
+/// the production file name (<c>&lt;machineCode&gt;.bin</c>) under three roots — host A's, host B's, and
+/// <c>CredentialStore.DefaultRoot()</c>. Named rather than hidden: the third is a negative control (the real
+/// <c>%ProgramData%</c> root was not written) and earns its duplication of the naming rule; the first two sit
+/// on top of the <c>Load</c> assertions above them rather than carrying them.</item>
+/// <item><b>Settings arm.</b> Subject: <c>FleetSettingsStore.Load</c> on each instance — B reads
+/// <see langword="null"/>, and A still reads A's triple after B has saved its own. It also asserts the two
+/// roots differ, which is a PRECONDITION on values this test itself chose: it can fail only if
+/// <c>CreateTempSubdirectory</c> returned the same path twice.</item>
+/// <item><b>WAL arm.</b> Subject: a glob over each root after a real offline <c>SendAsync</c> — A's root holds
+/// A's key and B's root is empty, then B's root holds B's key and A's is unchanged. It computes no file name
+/// and asserts on no path. It does encode ONE detail the SDK chooses — that a queue file ends in
+/// <c>.jsonl</c> — as the pattern it enumerates with; that is the smallest coupling that lets the observation
+/// be "what appeared under this root" instead of "what appeared at this path".</item>
+/// </list></para>
+///
+/// <para>🔴 <b>Why that is a list instead of one sentence, and it is the most useful thing in this file.</b>
+/// This paragraph has been wrong TWICE, both times as a universal quantified over the arms. Fix round 1
+/// replaced <i>"every assertion is an observation made through the store"</i> — false of the WAL arm, which
+/// then resolved its own path and wrote it with <see cref="File.WriteAllText(string,string)"/> — and the
+/// replacement was <i>"nothing here computes a file name, and nothing here asserts on a path string"</i>,
+/// which was false of the credential arm on the very same day, in the same two surfaces. Ninth instance of
+/// the class in four batches; third time inside the correction written for it. A third attempt at a sentence
+/// beginning "every arm" or "no arm" would be the same move again, so there is no such sentence here.
+/// <b>If you edit this file and reach for "every", "all" or "no arm", that is the trigger to enumerate the
+/// three arms against the claim — not a summary you have earned.</b></para>
 ///
 /// <para><b>Why the credential test flips an environment variable instead of passing a directory.</b>
 /// <c>CredentialStore</c> is <see langword="static"/> — <c>Save</c>/<c>Load</c>/<c>ListMachineCodes</c> take

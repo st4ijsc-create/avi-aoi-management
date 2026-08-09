@@ -840,11 +840,29 @@ EXPECT_CONFORMANCE=22
 # split or deleted, and no existing test in this suite gains or loses a case.
 #
 #   +3  tests/St4i.EdgeCore.Tests/PerHostDataRootIsolationTests.cs (NEW FILE) — the load-bearing half of
-#       F-1 Part 1: TWO HOSTS, TWO ROOTS, and neither observes the other's data. Not a ResolveRoot test —
-#       every assertion is an observation made through the PRODUCTION write/read path, because a resolver
-#       can be correct while the store ignores it (the defect CredentialStoreTests' own redirect test
-#       exists for). No arm computes a file name or asserts on a path string: each gives a ROOT to the code
-#       that owns it and then asks the other host what it can see.
+#       F-1 Part 1: TWO HOSTS, TWO ROOTS, and neither observes the other's data. Not a ResolveRoot test: a
+#       resolver can be correct while the store ignores it, which is the defect CredentialStoreTests' own
+#       redirect test exists for.
+#       🔴 WHAT CARRIES EACH ARM, ENUMERATED — fix round 2, review NEW-1. This block has stated a false
+#       UNIVERSAL twice. Round 1 said "every assertion is an observation made through the store", which was
+#       false of the WAL arm; its replacement said "no arm computes a file name or asserts on a path
+#       string", which was false of the CREDENTIAL arm the same day. Ninth instance of that class in four
+#       batches, third inside the correction written for it — so this is a list, and a third universal is
+#       not the fix:
+#         * credential arm — SUBJECT is CredentialStore.Load/ListMachineCodes after only an env var moved.
+#           It ALSO corroborates on disk, and that half DOES compute <machineCode>.bin, under three roots
+#           (host A, host B, CredentialStore.DefaultRoot()). The third is a negative control on the real
+#           %ProgramData% root and earns its duplication of the naming rule; the first two sit on top of
+#           the Load assertions rather than carrying them.
+#         * settings arm — SUBJECT is FleetSettingsStore.Load per instance. Its one path assertion is a
+#           PRECONDITION on two roots this test chose, and can fail only if CreateTempSubdirectory
+#           returned the same path twice.
+#         * WAL arm — SUBJECT is a glob over each root after a real offline SendAsync. Computes no file
+#           name and asserts on no path. It does encode ONE detail the SDK chooses — that a queue file ends
+#           in .jsonl — as the pattern it enumerates with, which is the smallest coupling that keeps the
+#           observation "what appeared under this root" rather than "what appeared at this path".
+#       Anyone editing this block who reaches for "every arm" or "no arm" should enumerate the three
+#       against the claim instead.
 #         + 1  CredentialStore, the static one whose only seam is the env var, driven with ONE machine code
 #              on both sides deliberately: two codes would be separated by the FILENAME even inside one
 #              shared directory, so such a test passes on a build where the redirect does nothing. Both
@@ -1556,9 +1574,19 @@ EXPECT_EDGESERVICE=50
 #       "declared and read at a resolution site" is not "the resolved value is honoured to a file". Nothing
 #       here executes a store. A sweep that did would have to set thirteen process-wide variables inside a
 #       suite whose other classes boot real hosts that read them — trading a documented narrowness for an
-#       undocumented race — so that half stays covered store by store (CredentialStoreTests,
-#       PerHostDataRootIsolationTests, FleetSettingsStoreTests, WalOptionsTests, SecurityEnvVarTests, the
-#       ST4I_HISTORIAN_DIR harnesses).
+#       undocumented race.
+#       🔴 WHERE THAT HALF ACTUALLY IS, MEASURED — fix round 2, review NEW-2, and the correction runs in
+#       BOTH directions. Round 1 wrote "covered store by store" and listed five or six names, which
+#       under-claimed the breadth AND over-claimed one of the names: SecurityEnvVarTests carries NO TEST —
+#       it is a [CollectionDefinition] marker class whose only member is a collection name. The measured
+#       picture: FOUR directories have a dedicated env-var witness (creds -> CredentialStoreTests,
+#       settings -> FleetSettingsStoreTests, wal -> WalOptionsTests, bridge-spool -> BridgeSpoolTests);
+#       EIGHT more are redirected incidentally by host harnesses that would read or pollute the real
+#       %ProgramData% if the redirect were not honoured; and ONE has neither — ST4I_OPCUA_PKI_DIR occurs
+#       in exactly one file under tests/, and that file is PerHostDataRootsTests itself, where it is data
+#       being scanned rather than a redirect being exercised. opcua-pki is therefore the one directory
+#       whose honoured-to-file behaviour nothing measures. Instrument: a per-variable file count over
+#       tests/, run rather than recalled.
 #
 # TheReadme_TellsAnOperator... does NOT move a count and its assertions changed: it used to require the
 # phrase "not onboarded", and review C-2 showed the sentence beside it prescribed a remedy ("until it claims

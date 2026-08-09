@@ -169,22 +169,35 @@ public sealed class PerHostDataRootsTests
     ///
     /// <para><b>How a read is recognised, and why it is not a bare <c>grep</c>.</b> Every store reads its
     /// variable through the CONSTANT, not the literal — <c>GetEnvironmentVariable(EnvVarDir)</c> — so a text
-    /// search for the literal at a call site finds nothing. This binds constants to literals per FILE and then
-    /// resolves each call's argument: a string literal counts directly; a bare identifier counts only against
-    /// a constant declared in the SAME file (so that thirteen stores all naming their constant
-    /// <c>EnvVarDir</c> cannot vouch for each other); a qualified <c>Type.Member</c> counts against the
-    /// constant declared in <c>Type.cs</c>. Measured against the tree, that recognises all thirteen: eleven at
+    /// search for the literal at a call site finds nothing. This binds constants to literals per FILE NAME and
+    /// then resolves each call's argument: a string literal counts directly; a bare identifier counts only
+    /// against a constant declared in a file of the SAME NAME (so that thirteen stores all naming their
+    /// constant <c>EnvVarDir</c> cannot vouch for each other); a qualified <c>Type.Member</c> counts against
+    /// the constant declared in <c>Type.cs</c>.
+    /// <b>🔴 Fix round 2 (review NEW-3): "per file NAME", not "per file" — the bucket key is
+    /// <see cref="Path.GetFileNameWithoutExtension(string)"/>, so two files sharing a base name share one
+    /// bucket, and this tree has three <c>Program.cs</c>.</b> No store type collides today, and none can
+    /// without also colliding the file/type naming convention the <c>Type.Member</c> arm already depends on —
+    /// but the mechanism is coarser than "per file" and the comment now says which. Measured against the tree, that recognises all thirteen: eleven at
     /// their own store, <c>ST4I_HISTORIAN_DIR</c> as a bare literal in <c>St4i.EngineApi/Program.cs</c>, and
     /// <c>ST4I_OPCUA_PKI_DIR</c> through both a same-file and a qualified form.</para>
     ///
     /// <para>🔴 <b>What this still does NOT measure, stated because the first version of this file did not
     /// state it.</b> "Declared and read at a resolution site" is not "the resolved value is honoured all the
-    /// way to a file". Nothing here executes a store. That last step is covered store by store —
-    /// <c>CredentialStoreTests</c>, <c>PerHostDataRootIsolationTests</c>, <c>FleetSettingsStoreTests</c>,
-    /// <c>WalOptionsTests</c>, <c>SecurityEnvVarTests</c>, and the <c>ST4I_HISTORIAN_DIR</c> harnesses — and
-    /// deliberately not by a sweep: a sweep would have to set thirteen process-wide variables inside a suite
-    /// whose other classes boot real hosts that read them, which trades a documented narrowness for an
-    /// undocumented race. README §15.9 carries this same caveat where the operator reads it.</para>
+    /// way to a file". Nothing here executes a store, and a sweep that did would have to set thirteen
+    /// process-wide variables inside a suite whose other classes boot real hosts that read them — trading a
+    /// documented narrowness for an undocumented race. README §15.9 carries this same caveat where the
+    /// operator reads it.
+    /// <b>🔴 Fix round 2 (review NEW-2) — where that last step actually is, COUNTED.</b> The first
+    /// version of this paragraph said "covered store by store" and listed five or six names, which
+    /// under-claimed the breadth and over-claimed one name: <c>SecurityEnvVarTests</c> carries NO TEST — it is
+    /// a <c>[CollectionDefinition]</c> marker whose only member is a collection name, so citing it as a
+    /// witness was wrong. Measured by counting the files under <c>tests/</c> that name each variable: FOUR
+    /// directories have a dedicated witness (<c>creds</c> to <c>CredentialStoreTests</c>, <c>settings</c> to
+    /// <c>FleetSettingsStoreTests</c>, <c>wal</c> to <c>WalOptionsTests</c>, <c>bridge-spool</c> to
+    /// <c>BridgeSpoolTests</c>), EIGHT are redirected incidentally by host harnesses, and <c>opcua-pki</c> has
+    /// neither — <c>ST4I_OPCUA_PKI_DIR</c> occurs in exactly ONE file under <c>tests/</c>, and that file is
+    /// this one, where it is data being scanned rather than a redirect being exercised.</para>
     /// </summary>
     [Fact]
     public void EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared()
