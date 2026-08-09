@@ -303,6 +303,17 @@ public sealed class StartupSettingsReplayHardeningTests
             Assert.Contains(log, e =>
                 e.Level == LogLevel.Warning &&
                 e.Message.Contains("STARTUP SETTINGS SEED DISCARDED", StringComparison.Ordinal));
+
+            // 🔴 Branch re-review Minor 6, pinned rather than merely fixed — the mutation that collapsed
+            // the per-arm remedy back into one message SURVIVED every other assertion in this file. On
+            // THIS arm the host deletes the settings file on the next statement, so the failure line must
+            // not send an operator to edit it. Its opposite number is asserted in
+            // AnUnactivatablePersistedTriple_…, which REQUIRES that same advice on the restore arm: two
+            // assertions that fail in opposite directions, so neither arm's wording can drift into the
+            // other's.
+            Assert.DoesNotContain(log, e =>
+                e.Message.Contains(ReplayFailureMarker, StringComparison.Ordinal) &&
+                e.Message.Contains("edit/delete fleet-settings.json", StringComparison.Ordinal));
         }
     }
 
