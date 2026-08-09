@@ -334,7 +334,12 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   lượng từ *"∀ điểm xác thực HTTP/socket trong `server/**`, cờ buộc-đổi-mật-khẩu phải được
     //   kiểm"*). Nó tự khai `Pha 8` ⇒ bộ nhận diện THỨ BA (`DAU_KHAI_PHA`) kéo nó vào tập bị canh
     //   ⇒ nó phải có đường riêng ở §Cổng kiểm chung. Gỡ đường ấy ⇒ **hai** ô đỏ trên **hai** trục.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(41); // Pha 8 Task 1: +1
+    // ⚠ Pha 8 Task 2: 41 → **42**. Một lưới MỚI (`server/auth.logoutThuHoi.test.ts` — bất biến
+    //   HAI VẾ *"sau `auth.logout`, phiên ấy không dùng được nữa **VÀ** hàng `user_sessions` không
+    //   còn `isActive`"*). Nó tự khai `Pha 5` **và** `Pha 8` ⇒ bộ nhận diện THỨ NHẤT (nội dung) kéo
+    //   nó vào tập bị canh ⇒ nó phải có đường riêng ở §Cổng kiểm chung. Gỡ đường ấy ⇒ **hai** ô đỏ
+    //   trên **hai** trục.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(42); // Pha 8 Task 2: +1
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -455,7 +460,8 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   trên **hai** trục.
     // ⚠ Pha 8 Task 3: 102 → **103**. Đúng MỘT lưới mới (xem khối lý do ở ô `CONG.length`).
     // ⚠ Pha 8 Task 1: 103 → **104**. Đúng MỘT lưới mới (xem khối lý do ở ô `CONG.length`).
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(104); // Pha 8 Task 1: +1
+    // ⚠ Pha 8 Task 2: 104 → **105**. Đúng MỘT lưới mới (xem khối lý do ở ô `CONG.length`).
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(105); // Pha 8 Task 2: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

@@ -8,7 +8,6 @@ import { publicProcedure, router } from "./_core/trpc";
 // ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
 import { toPublicUser, type MeUser } from "./_core/publicUser";
 import { appError } from "./_core/appError";
-import { invalidateAuthSession } from "./services/authSessionCache";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
@@ -257,13 +256,31 @@ export const appRouter = router({
       };
     }),
     oauthProviders: publicProcedure.query(() => listEnabledSsoMethods()),
+    /**
+     * ★★★ Pha 8 Task 2 — **ĐĂNG XUẤT THÔI LÀ LỜI HỨA SUÔNG.**
+     *
+     * Bản trước làm **hai** việc: xoá cookie ở trình duyệt, và dọn cache phiên (W4-B / doc 27 B4).
+     * Thiếu đúng việc **thứ ba**, và đó là việc duy nhất kẻ tấn công không đi vòng được: **lật ô
+     * `isActive` của hàng `user_sessions`**. Cookie là JWT **phi trạng thái** — xoá bản sao trong
+     * trình duyệt không đụng gì tới bản sao kẻ khác đã bắt được.
+     *
+     * Đo được trên máy chủ sống (`engineer1` #51, trước bản vá):
+     *   `auth.logout` ⇒ **200** · **cùng cookie** ⇒ `auth.me` trả **đủ hồ sơ** · hàng phiên `isActive`=**t**.
+     * Đối chứng cùng lượt: `session.revoke` trên **chính** phiên ấy ⇒ `auth.me` = `null`. Nghĩa là
+     * cơ chế thu hồi **có sẵn và chạy được**; chỉ riêng đường đăng xuất không gọi nó.
+     *
+     * ⚠ Hệ quả vượt ra ngoài một người dùng: nó làm **nhẹ đi mọi cơ chế thu hồi phiên khác** — kể
+     *   cả lượt thu hồi **236 phiên** ở Pha 7 Task 8 — vì ai cũng có thể tin *"tôi đã đăng xuất"*.
+     *
+     * ⚠⚠ Cả hai nửa (**sổ DB** + **cache**) nằm trong `db.thuHoiPhienTheoToken` — **một chủ cho
+     *    một bất biến**. Đừng thêm lượt dọn cache thứ hai ở đây: bản sao thứ hai chỉ chứng minh
+     *    được chính bản sao ấy đúng, và nó làm đột biến trên bản gốc **im lặng**.
+     */
     logout: publicProcedure.mutation(async ({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      // W4-B (doc 27 B4): evict the short-TTL auth cache entry for this
-      // session so a captured cookie cannot ride the cache after logout.
       if (ctx.sessionToken) {
-        await invalidateAuthSession(ctx.sessionToken);
+        await db.thuHoiPhienTheoToken(ctx.sessionToken);
       }
       return { success: true } as const;
     }),

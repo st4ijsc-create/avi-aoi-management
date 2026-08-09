@@ -67,6 +67,7 @@ npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/_core/authService.test.ts \
   server/api.test.ts \
   server/auth.sessionCacheLogout.test.ts \
+  server/auth.logoutThuHoi.test.ts \
   server/auth.setupAdmin.test.ts \
   server/db/authCacheHooks.test.ts \
   server/sdk.authCache.test.ts \

@@ -19,7 +19,7 @@ import { khopMaDuPhong } from '../_core/backupCodeSecret';
 // affected user's cached sessions so the change takes effect immediately on
 // this instance (cross-instance propagation: Redis broadcast when available,
 // otherwise bounded by the ≤TTL staleness window).
-import { invalidateAuthUser } from '../services/authSessionCache';
+import { invalidateAuthSession, invalidateAuthUser } from '../services/authSessionCache';
 
 export type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'maintenance' | 'engineer' | 'viewer' | 'user';
 
@@ -541,10 +541,53 @@ export async function updateSessionActivity(sessionId: number) {
     .where(eq(userSessions.id, sessionId));
 }
 
+/**
+ * ★★★ Pha 8 Task 2 — **THU HỒI ĐÚNG MỘT PHIÊN, THEO CHÍNH TOKEN CỦA NÓ.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO HÀM NÀY PHẢI TỒN TẠI (đo được trên máy chủ sống, PID 25952, trước bản vá)
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `auth.logout` chỉ **xoá cookie ở trình duyệt** + dọn cache. Nhưng cookie là **JWT phi trạng
+ * thái**: kẻ đã bắt được nó không cần trình duyệt hợp tác. Đo trên `engineer1` (#51):
+ *
+ *     auth.logout ⇒ 200 · CÙNG cookie ⇒ auth.me trả **ĐỦ HỒ SƠ** · `user_sessions.isActive` = **t**
+ *
+ * Thứ duy nhất cưỡng chế được lượt thu hồi là hàng `user_sessions` — `sdk.xacThucTho` đọc nó mỗi
+ * lượt (`getSessionByToken` ⇒ `isActive === false` ⇒ `ForbiddenError`). Không lật ô ấy thì
+ * *"đăng xuất"* là **lời hứa suông** cho tới `expiresAt` (đo được: **2027-08-09**).
+ *
+ * ⚠⚠ **KHÔNG dùng `revokeSession(id, userId)` cho đường này**, dù trông giống: `auth.logout` là
+ *    thủ tục **`public`** — `ctx.user` có thể `null` (phiên đã hết hạn phía trên, hoặc cờ buộc đổi
+ *    mật khẩu đang chặn) trong khi `ctx.sessionToken` vẫn có. Đòi `userId` ở đây là tự dựng một
+ *    nhánh im lặng **không thu hồi gì cả** đúng vào lúc cần thu hồi nhất.
+ *
+ * ⚠ Lượt dọn cache nằm **TRONG** hàm này, đúng như `revokeSession` / `revokeAllSessions` ở dưới:
+ *   một bất biến (*"phiên bị thu hồi ⇒ cache của nó biến mất"*) có **ĐÚNG MỘT CHỦ**. Để người gọi
+ *   tự nhớ gọi thêm là dựng người ghi **thứ hai** dưới cùng một bất biến — lớp lỗi đã đẻ **ba**
+ *   Critical trong chuỗi pha này.
+ * ⚠ Và nó **KHÔNG** phụ thuộc lượt ghi sổ có khớp hàng nào không: phiên cũ (đăng nhập trước khi
+ *   `user_sessions` ra đời) không có hàng, nhưng **vẫn có thể đang nằm trong cache**.
+ *
+ * @returns số hàng thật sự bị lật — người gọi **không** cần dùng; có để phép đo không phải suy ra.
+ */
+export async function thuHoiPhienTheoToken(sessionToken: string): Promise<number> {
+  let daThuHoi = 0;
+  const db = await getDb();
+  if (db) {
+    const hang = await db.update(userSessions)
+      .set({ isActive: false })
+      .where(eq(userSessions.sessionToken, sessionToken))
+      .returning({ id: userSessions.id });
+    daThuHoi = hang.length;
+  }
+  await invalidateAuthSession(sessionToken);
+  return daThuHoi;
+}
+
 export async function revokeSession(sessionId: number, userId: number) {
   const db = await getDb();
   if (!db) return;
-  
+
   await db.update(userSessions)
     .set({ isActive: false })
     .where(
