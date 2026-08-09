@@ -170,11 +170,33 @@ public sealed class FleetHostSeedNotificationOffGateTests
     /// provide, and the one thing record-then-drain could break that the in-lock invocation could not.
     /// Before this test it rested on reading, which is the distinction the whole method section is built on.
     ///
-    /// <para>The sharp assertion is <b>MaxConcurrentCallbacks == 1</b>, not the delivered order. Order is
-    /// checked too, but order is a probabilistic witness — two drainers might happen to interleave
-    /// harmlessly — whereas "two callbacks were in flight at once" is the mutual exclusion itself, and a
-    /// deliberate sleep inside the callback makes it near-certain to be observed if the lock is
-    /// removed.</para></summary>
+    /// <para>🔴 <b>Which assertion is load-bearing was MEASURED, after a round of this report got it wrong
+    /// in both directions.</b> The mutation is <c>lock (_seedNotifyGate)</c> removed from
+    /// <c>DrainSeedNotifications</c>; the result, six runs out of six, is
+    /// <c>Assert.Equal(1, MaxConcurrentCallbacks)</c> failing with <b>Expected: 1, Actual: 8</b> — all eight
+    /// callbacks in flight simultaneously. The overlap assertion is what kills, and it kills deterministically
+    /// on this harness. (The prior report claimed the mutant "failed on the ordering assertion"; that was
+    /// written from a run whose captured output never named an assertion, and it was wrong. Review then
+    /// reasoned CORRECTLY from that wrong premise to the conclusion that overlap must be the weak witness.
+    /// One re-run settled it. Neither of us could have got there by reading.)</para>
+    ///
+    /// <para><b>Both assertions stay, and neither is redundant — they catch different schedules.</b> Review's
+    /// mechanism argument is real even though its conclusion was not: with the lock gone, two drainers can
+    /// interleave <i>at the dequeue point</i> — T1 dequeues A and is preempted before entering the callback,
+    /// T2 dequeues B and completes, then T1 runs A's — which mis-orders delivery with <b>zero</b> overlap.
+    /// That schedule is invisible to the high-water mark and visible only to the order assertion. It is not
+    /// the schedule this harness produces (the dwell below makes all eight overlap instead), but it is a
+    /// schedule the production code permits. So: overlap is what fires here; order covers the case overlap
+    /// structurally cannot see. <b>Do not trim either one.</b></para>
+    ///
+    /// <para>🔴 <b>And a PASSIVE contention witness, because all three assertions above are satisfied by a run
+    /// in which the property was never exercised.</b> If the eight threads happen to serialise — each
+    /// finishing its drain before the next reaches one — then the high-water mark is legitimately 1, order is
+    /// trivially right, and the test is green having tested nothing. The witness only OBSERVES (it records
+    /// which thread ran each callback); it does not force a schedule. Refusing a <i>synchronising</i> hook is
+    /// right — a barrier inside the callback would make this assert an interleaving production never
+    /// guarantees — but refusing an observation was not, and it is what let the test degrade
+    /// silently.</para></summary>
     [Fact]
     public void ConcurrentRegistrations_NeverRunTwoSeedCallbacksAtOnce_AndDeliverInRosterOrder()
     {
@@ -188,6 +210,9 @@ public sealed class FleetHostSeedNotificationOffGateTests
         using var go = new ManualResetEventSlim(false);
         var faults = new ConcurrentBag<Exception>();
 
+        // Each worker thread is NAMED for the machine it registers, which is the whole of the contention
+        // witness below: a callback running on a thread whose name is not its own descriptor's code was
+        // delivered by some OTHER registrant's drain, i.e. the two registrations genuinely overlapped.
         var workers = Enumerable.Range(0, threads).Select(i => RunOnItsOwnThread(
             () =>
             {
@@ -199,25 +224,39 @@ public sealed class FleetHostSeedNotificationOffGateTests
                 }
                 catch (Exception ex) { faults.Add(ex); }
             },
-            $"g1-race-{i:D2}")).ToList();
+            $"G1-RACE-{i:D2}")).ToList();
 
         Assert.True(readyToGo.Wait(TimeSpan.FromSeconds(10)), "every registering thread should have reached the start line");
         go.Set();
         foreach (var w in workers) Assert.True(w.Join(TimeSpan.FromSeconds(60)), "every registering thread should finish");
         Assert.Empty(faults);
 
-        // (a) MUTUAL EXCLUSION — the lock's whole job. Two host callbacks in flight at once would mean a
-        //     drainer entered while another was mid-callback, which is exactly what re-orders delivery.
+        var deliveries = registry.Deliveries.Skip(seededByCtor).ToList();
+        var delivered = deliveries.Select(d => d.Code).ToList();
+
+        // (a) THE RUN WAS ACTUALLY CONTENDED — checked FIRST, because every assertion after it is satisfied
+        //     by a serialised run in which nothing was ever concurrent. Passive: it reads which thread
+        //     happened to run each callback and forces nothing.
+        var crossThread = deliveries.Count(d => !string.Equals(d.ThreadName, d.Code, StringComparison.Ordinal));
+        Assert.True(
+            crossThread > 0,
+            $"no contention was observed: all {deliveries.Count} callbacks ran on their own registrant's " +
+            $"thread, so the drain never had to serialise anything and (b)-(d) below prove nothing on this " +
+            $"run. Distinct delivering threads: {deliveries.Select(d => d.ThreadName).Distinct(StringComparer.Ordinal).Count()}.");
+
+        // (b) MUTUAL EXCLUSION — measured to be the assertion that kills the lock-removed mutant
+        //     (Expected: 1, Actual: 8, six runs of six). Two host callbacks in flight at once means a
+        //     drainer entered while another was mid-callback.
         Assert.Equal(1, registry.MaxConcurrentCallbacks);
 
-        // (b) EXACTLY ONCE — no descriptor delivered twice, none dropped.
-        var delivered = registry.Order.Skip(seededByCtor).ToList();
+        // (c) EXACTLY ONCE — no descriptor delivered twice, none dropped.
         Assert.Equal(threads, delivered.Count);
         Assert.Equal(threads, delivered.Distinct(StringComparer.OrdinalIgnoreCase).Count());
 
-        // (c) ROSTER ORDER — the enqueue happens under _gate, so the queue's FIFO order IS the order the
+        // (d) ROSTER ORDER — the enqueue happens under _gate, so the queue's FIFO order IS the order the
         //     machines entered _fleet. Asserted against the roster the host itself ended up with, so it
-        //     holds whichever way the threads raced.
+        //     holds whichever way the threads raced. This is the one that catches an interleave at the
+        //     DEQUEUE point, which produces zero overlap and is therefore invisible to (b).
         Assert.Equal(host.Fleet.Select(d => d.Code).Skip(seededByCtor).ToList(), delivered);
     }
 
@@ -348,9 +387,15 @@ public sealed class FleetHostSeedNotificationOffGateTests
     /// <summary>Records the ORDER and MULTIPLICITY of seed notifications, and — through
     /// <see cref="RosterProbe"/> — whether the roster already contained each machine at the moment it was
     /// announced.</summary>
+    /// <summary>One delivered notification: which machine, and which thread actually ran the callback.
+    /// <see cref="ThreadName"/> is the passive contention witness — the worker threads are named for the
+    /// machines they register, so <c>ThreadName != Code</c> means this descriptor was drained by a DIFFERENT
+    /// registrant, which can only happen if the two registrations overlapped.</summary>
+    private readonly record struct SeedDelivery(string Code, string? ThreadName);
+
     private sealed class OrderRecordingAssetRegistry : IAssetRegistry
     {
-        private readonly List<string> _order = new();
+        private readonly List<SeedDelivery> _deliveries = new();
         private readonly object _gate = new();
         private int _inCallback;
         private int _maxInCallback;
@@ -371,9 +416,16 @@ public sealed class FleetHostSeedNotificationOffGateTests
 
         public List<string> NotifiedBeforeRegistered { get; } = new();
 
+        /// <summary>Every delivery in order, with the thread that ran it. <see cref="Order"/> is the codes
+        /// alone, kept because most callers only care about those.</summary>
+        public IReadOnlyList<SeedDelivery> Deliveries
+        {
+            get { lock (_gate) return _deliveries.ToList(); }
+        }
+
         public IReadOnlyList<string> Order
         {
-            get { lock (_gate) return _order.ToList(); }
+            get { lock (_gate) return _deliveries.Select(d => d.Code).ToList(); }
         }
 
         public Task UpsertAsync(MachineDescriptor descriptor, CancellationToken ct = default)
@@ -395,7 +447,7 @@ public sealed class FleetHostSeedNotificationOffGateTests
 
                 lock (_gate)
                 {
-                    _order.Add(descriptor.Code);
+                    _deliveries.Add(new SeedDelivery(descriptor.Code, Thread.CurrentThread.Name));
                     if (!registered) NotifiedBeforeRegistered.Add(descriptor.Code);
                 }
 

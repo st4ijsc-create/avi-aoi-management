@@ -2511,9 +2511,25 @@ internal sealed class FleetCore
         // machine" to "at most one, eventually".
         //
         // The finally does NOT swallow anything: the restart exception still propagates to the caller
-        // exactly as before, and a callback that itself throws still surfaces (it would replace the
-        // in-flight exception, which is the ordinary .NET behaviour for a throwing finally and is not made
-        // worse here — nothing downstream depends on which of the two the caller sees).
+        // exactly as before, and a callback that itself throws still surfaces.
+        //
+        // 🔴 What it CAN do, stated because the first version of this comment waved it away (review N-2):
+        // if BOTH throw, the drain's exception REPLACES the restart's — ordinary .NET behaviour for a
+        // throwing finally, but the two are not interchangeable here. The exception being replaced is the
+        // one that says THE PIPELINE IS DOWN (StartLocked threw, so the fleet is left stopped with zero
+        // slots and no rollback); the one replacing it says the asset-registry callback failed. Losing the
+        // first is strictly worse than losing the second.
+        //
+        // Left as-is rather than aggregated, and the reason is checkable rather than universal: the original
+        // wording claimed "nothing downstream depends on which of the two the caller sees", which is an
+        // unverified claim about ALL callers. The narrow, checked version is — enumerated, not assumed —
+        // that RegisterMachine has four call sites in this tree (ConnectorEndpoints' single-machine and
+        // RTU-bus paths, OnboardingFleetJoin, and Program.cs's three seed registrations) and NONE of them
+        // wraps it in try/catch at all: every one consumes the bool return and lets any exception propagate.
+        // So no caller branches on the exception type TODAY. That is a property of the current call sites,
+        // not of this method — so if a caller ever does branch, capture-and-aggregate (hold the restart
+        // fault, run the drain, throw an AggregateException when both fired) is the fix, and it is
+        // deliberately not done here because it would be a behaviour change with no test behind it.
         try
         {
             if (restarting)
