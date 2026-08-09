@@ -440,6 +440,25 @@ export async function get2FAStatus(userId: number) {
  * **đòi TOTP** và băm qua `server/_core/backupCodeSecret.ts`. Xoá hàm là chưa đủ — hàm mới mọc lại
  * ở file thứ N+1 — nên bất biến nằm ở **KIỂU** của cột (xem docstring của module ấy).
  */
+/**
+ * ★★★ Pha 8 Task 5 — **NGƯỜI DỌN DUY NHẤT của `backup_codes`.**
+ *
+ * ⚠⚠⚠ Vì sao phải là một hàm chứ không phải hai `db.delete(backupCodes)` viết tại chỗ: hai tuyến
+ * SONG SONG tắt 2FA đã **bất đồng** đúng ở lượt dọn này —
+ *   · `twoFactor.disable`  → `disable2FA()` **+ DELETE backup_codes`  ✅
+ *   · `user.disable2FA`    → `disable2FA()` **và thôi**               ❌ 10 mã dự phòng SỐNG SÓT
+ * Mã dự phòng là **vật liệu xác minh độc lập với hạt giống TOTP**: sau lượt tắt 2FA ở tuyến thứ
+ * hai, chúng vẫn tiêu được ở `twoFactor.verify` và ở `POST /api/auth/verify-2fa` — tức một tờ giấy
+ * mã dự phòng bị lộ **vẫn còn giá trị** dù người dùng tưởng đã tắt 2FA, và còn sống qua cả lượt
+ * BẬT LẠI bằng một **hạt giống MỚI**.
+ * ⇒ Một chủ, một luật. Bản sao thứ hai của một lượt dọn là chỗ luật trôi đi (bài học Pha 7 Task 8a).
+ */
+export async function xoaMoiMaDuPhong(userId: number, tx?: any) {
+  const db = tx ?? (await getDb());
+  if (!db) throw new Error("Database not available");
+  await db.delete(backupCodes).where(eq(backupCodes.userId, userId));
+}
+
 export async function verifyBackupCode(userId: number, code: string) {
   const db = await getDb();
   if (!db) return false;

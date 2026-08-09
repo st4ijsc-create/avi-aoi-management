@@ -372,6 +372,21 @@ export const userRouter = router({
       // Disable 2FA
       await db.disable2FA(ctx.user.id);
 
+      /**
+       * ★★★ Pha 8 Task 5 — **LƯỢT DỌN BỊ THIẾU Ở ĐÚNG BÊN NÀY CỦA CẶP SONG SONG.**
+       *
+       * ⚠⚠⚠ Trước bản vá, tuyến này tắt 2FA rồi **DỪNG**, trong khi tuyến SONG SONG
+       * `twoFactor.disable` (`server/routers/twoFactorRouter.ts:238-241`) còn `DELETE backup_codes`.
+       * Hệ quả đo được: **10 mã dự phòng vẫn SỐNG** sau khi người dùng "đã tắt 2FA" — và mã dự
+       * phòng là **vật liệu xác minh ĐỘC LẬP với hạt giống TOTP**, nên chúng vẫn tiêu được ở
+       * `twoFactor.verify` và ở `POST /api/auth/verify-2fa`, **kể cả sau khi người dùng bật lại 2FA
+       * bằng một hạt giống HOÀN TOÀN MỚI**. Một tờ giấy mã dự phòng bị lộ không có cách nào thu hồi
+       * qua đường này.
+       * ⚠ `disable2FA()` **KHÔNG** làm hộ: nó chỉ chạm `users.two_factor_enabled` và
+       *   `user_secrets.twoFactorSecret` (xem `server/db/auth.ts`).
+       */
+      await db.xoaMoiMaDuPhong(ctx.user.id);
+
       return { success: true };
     }),
 

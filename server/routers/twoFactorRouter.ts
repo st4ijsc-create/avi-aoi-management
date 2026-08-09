@@ -7,7 +7,7 @@ import speakeasy from "speakeasy";
 // ở file này nay **chỉ** còn dùng để **SINH** secret (`generateSecret`), không để verify.
 import { verifyTotpOnce } from "../_core/totpOnce";
 import QRCode from "qrcode";
-import { getDb, get2FAStatus, setup2FA, disable2FA } from "../db";
+import { getDb, get2FAStatus, setup2FA, disable2FA, xoaMoiMaDuPhong } from "../db";
 import { users, backupCodes } from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 // ★★★ Pha 7 Task 9 (9c) — hạt giống TOTP đã rời `users` sang `user_secrets`. Router này KHÔNG
@@ -235,10 +235,9 @@ export const twoFactorRouter = router({
       // Disable 2FA and clear secret — MỘT giao dịch, hai bảng (Pha 7 Task 9).
       await disable2FA(ctx.user.id);
 
-      // Delete all backup codes
-      await db
-        .delete(backupCodes)
-        .where(eq(backupCodes.userId, ctx.user.id));
+      // Delete all backup codes — ★ Pha 8 Task 5: qua NGƯỜI DỌN DUY NHẤT, để tuyến song song
+      // `user.disable2FA` và tuyến này không còn hai bản sao của cùng một lượt dọn.
+      await xoaMoiMaDuPhong(ctx.user.id);
 
       return {
         success: true,
