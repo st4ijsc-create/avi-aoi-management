@@ -326,7 +326,11 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   cơ chế đã đẻ ra phần tử thứ N+1 mười bảy lần. Lưới mới đọc `pg_get_functiondef` **từ DB
     //   đang chạy** rồi neo HAI CHIỀU vào hằng TS. `server/_core/` không có đường bao trong cổng ⇒
     //   thiếu dòng này thì nó *"theo cấu tạo không bao giờ được canh"*.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(39); // mig 0316: +1
+    // ⚠ Pha 8 Task 3: 39 → **40**. Một lưới MỚI (`server/_core/xoaHangKhongGioiHanTrongTest.test.ts`
+    //   — lượng từ *"∀ file test: xoá hàng `users` phải giới hạn theo hàng chính nó tạo"*). Nó tự
+    //   khai `Pha 8` nên bộ nhận diện THỨ BA (`DAU_KHAI_PHA`) kéo nó vào tập bị canh ⇒ nó phải có
+    //   đường riêng ở §Cổng kiểm chung. Gỡ đường ấy ⇒ **hai** ô đỏ trên **hai** trục.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(40); // Pha 8 Task 3: +1
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -445,7 +449,8 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   nên vào tập bị canh qua bộ nhận diện **THỨ NHẤT** (nội dung), và nó phải có đường riêng ở
     //   §Cổng kiểm chung ⇒ `CONG.length` 38 → **39** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ
     //   trên **hai** trục.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(102); // mig 0316: +1
+    // ⚠ Pha 8 Task 3: 102 → **103**. Đúng MỘT lưới mới (xem khối lý do ở ô `CONG.length`).
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(103); // Pha 8 Task 3: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {
