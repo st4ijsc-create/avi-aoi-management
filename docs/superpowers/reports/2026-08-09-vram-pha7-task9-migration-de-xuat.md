@@ -1562,3 +1562,26 @@ của một hồi quy do bỏ cột. Cả ba file nằm trong danh sách **Nợ 
 3. **Byte cũ chưa được lấy lại.** `DROP COLUMN` sửa **catalog**, không viết lại **heap** (§15).
    Muốn thu hồi thật thì cần một lượt `VACUUM FULL "users"` (khoá bảng độc quyền — 8 hàng nên rất
    nhanh, nhưng vẫn là một quyết định vận hành). **KHÔNG chạy ở lượt này.**
+
+### 19.4 · Commit của nhịp CO
+
+**`c7bbd58b`** — `feat(vram/pha7): Task 9 nhịp CO — mig 0315 bỏ 2 cột bí mật CHẾT khỏi `users`, cả hai DB`
+· 8 file · +507 / −12 · file mới **`drizzle/0315_users_drop_secret_columns.sql`**.
+
+Xác nhận bằng `git show`, **không bằng trí nhớ** (Global Constraint: *"'ĐÃ SỬA' chỉ đúng khi
+`git show <commit>:<file>` xác nhận"*):
+
+```
+$ git show c7bbd58b:drizzle/schema/auth.ts | grep -nE 'passwordHash:|twoFactorSecret:|two_factor_secret'
+ 23: * `passwordHash` và `two_factor_secret` nay sống ở **`user_secrets`** …   ← chú thích
+112:  passwordHash: varchar("passwordHash", { length: 255 }),                  ← trong userSecrets (:103)
+114:  twoFactorSecret: varchar("twoFactorSecret", { length: 255 }),            ← trong userSecrets
+300: * … `users.two_factor_secret` cùng DB …                                   ← chú thích mig 0313
+⇒ pgTable("users") (dòng 34–71) KHÔNG khai một cột nào trong hai cột ấy.
+
+$ git show c7bbd58b:drizzle/0315_users_drop_secret_columns.sql  (bỏ chú thích)
+DO $$ … RAISE EXCEPTION khi thieu>0 … RAISE NOTICE lech … END $$;
+ALTER TABLE "users" DROP COLUMN IF EXISTS "passwordHash";
+ALTER TABLE "users" DROP COLUMN IF EXISTS "two_factor_secret";
+⇒ ĐÚNG 3 câu, khớp nguyên văn §3.2.
+```
