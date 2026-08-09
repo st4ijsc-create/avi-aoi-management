@@ -25,6 +25,8 @@ const AILocalChatBubble = React.lazy(() =>
 );
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { RouteGuard } from "./components/RouteGuard";
+// ★★★ Pha 7 / I-4 — cổng buộc đổi mật khẩu (bọc CHÍNH `<Router/>`, xem điểm dùng ở cuối file).
+import { CongDoiMatKhau } from "./components/CongDoiMatKhau";
 import DashboardLayout from "./components/DashboardLayout";
 import { isPersistentShellEnabled, isChromelessShellRoute } from "./lib/appLauncherFlag";
 import { useKioskMode } from "./hooks/useKioskMode";
@@ -669,7 +671,16 @@ function App() {
                   and only the page content area shows the fallback during lazy loads. */}
               <AppShell>
                 <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
-                  <Router />
+                  {/* ★★★★ Pha 7 / I-4 — CỔNG BUỘC ĐỔI MẬT KHẨU. Nó bọc CHÍNH `<Router/>`: khi khoá,
+                      TOÀN BỘ bảng route không được render, nên không có "route lách được" — kể cả
+                      các route KHÔNG có <RouteGuard> (`/`, `/login`, `/setup`, `/api-docs`,
+                      `/component-showcase`) và kể cả `<Route>` thứ 201 thêm vào ngày mai.
+                      ⚠ Đừng hạ nó xuống trong cây (vào RouteGuard hay từng Route): làm thế là biến
+                        một lượng từ ∀ thành một DANH SÁCH, đúng lớp lỗi "phần tử thứ N+1". Lưới
+                        cấu trúc canh đúng vị trí này: client/src/lib/congDoiMatKhau.unit.test.ts §3. */}
+                  <CongDoiMatKhau>
+                    <Router />
+                  </CongDoiMatKhau>
                 </Suspense>
               </AppShell>
               {/* C3a — global copilot bubble: mounted ONCE here (inside the tRPC

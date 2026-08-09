@@ -1984,6 +1984,8 @@
     "logoutFromDeviceDescription": "Đăng xuất phiên làm việc trên thiết bị này",
     "logoutAllDevicesDescription": "Thu hồi toàn bộ phiên đăng nhập trên mọi thiết bị",
     "changePasswordDescription": "Đổi mật khẩu đăng nhập của tài khoản",
+    "mustChangePasswordTitle": "Bắt buộc đổi mật khẩu",
+    "mustChangePasswordBanner": "Mật khẩu hiện tại của bạn đã bị thu hồi vì lý do an ninh. Hãy đặt mật khẩu mới để tiếp tục sử dụng hệ thống.",
     "twoFADisabledDescription": "Xác thực hai bước đang tắt cho tài khoản này",
     "twoFactorAuthDescription": "Tăng cường bảo mật tài khoản bằng xác thực hai yếu tố",
     "verificationFailedRetry": "Xác minh thất bại, vui lòng thử lại",

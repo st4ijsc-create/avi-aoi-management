@@ -16,6 +16,7 @@ import { useLocation } from "wouter";
 export default function ChangePassword() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const utils = trpc.useUtils();
   const [, setLocation] = useLocation();
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -27,9 +28,23 @@ export default function ChangePassword() {
   });
 
   const changePasswordMutation = trpc.user.changePassword.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success(t('auth.changePasswordSuccess'));
       setFormData({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      /**
+       * ★★★★ Pha 7 / I-4 — **ĐỌC LẠI `auth.me` TRƯỚC KHI RỜI MÀN NÀY.**
+       *
+       * ⚠⚠⚠ Không có dòng này, cổng buộc-đổi-mật-khẩu (`components/CongDoiMatKhau.tsx`) trở thành
+       * một **NHÀ TÙ**: máy chủ đã hạ cờ (`updateUserPassword` ghi `passwordChangedAt` trong cùng
+       * giao dịch) nhưng client vẫn giữ bản `auth.me` **CŨ** trong cache — `staleTime` 30 s và
+       * `refetchOnWindowFocus: false` (`main.tsx`) ⇒ cổng đọc `mustChangePassword: true`, đẩy
+       * người dùng **ngược lại** đúng màn này, và họ đổi mật khẩu bao nhiêu lần cũng không thoát ra
+       * cho tới khi cache tự hết hạn. Hỏng **im lặng**: không lỗi, không cảnh báo, chỉ là một vòng
+       * lặp.
+       * ⚠ `await` là bắt buộc — điều hướng trước khi cache mới về sẽ dựng lại đúng vòng lặp ấy
+       *   trong khoảnh khắc render kế tiếp.
+       */
+      await utils.auth.me.invalidate();
       setLocation("/profile");
     },
     onError: (error: any) => {

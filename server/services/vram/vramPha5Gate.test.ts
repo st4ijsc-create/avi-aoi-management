@@ -416,7 +416,13 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   `server/_core/buocDoiMatKhau.test.ts`. Nó vào tập bị canh qua bộ nhận diện **NỘI DUNG**
     //   (tự khai `Pha 5`, có chủ ý — xem docstring của nó), và phải có đường riêng ở §Cổng kiểm
     //   chung ⇒ `CONG.length` 36 → **37** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(99); // I-4: +1
+    // ⚠ Pha 7 / I-4 (nửa CLIENT): 99 → 100. **Đúng MỘT** file mới —
+    //   `client/src/lib/congDoiMatKhau.unit.test.ts` (vị từ khoá điều hướng + ca ghim **miễn trừ
+    //   CỐ Ý** phía client + lưới CẤU TRÚC *"cổng bọc CHÍNH `<Router/>`"*). Nó vào tập bị canh qua
+    //   bộ nhận diện **NỘI DUNG** (tự khai `Pha 5`, có chủ ý). Vì `client/src/lib/` **đã** là một
+    //   đường của §Cổng kiểm chung nên `CONG.length` giữ nguyên **37**; chỉ con số này đổi.
+    //   ⚠ Đuôi `.unit.test.ts` là bắt buộc — `vitest.config.ts` gom client bằng `*.unit.test.ts`.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(100); // I-4 client: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

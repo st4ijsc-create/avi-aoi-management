@@ -2090,6 +2090,8 @@
     "confirmAndEnable2FA": "Confirm and enable 2 f a",
     "changePasswordSuccess": "Change password success",
     "changePasswordDescription": "Change password description",
+    "mustChangePasswordTitle": "Password change required",
+    "mustChangePasswordBanner": "Your current password has been revoked for security reasons. Set a new password to continue using the system.",
     "changePassword": "Change Password",
     "cannotChangePassword": "Cannot change password",
     "backupCodesViewOnce": "Backup codes view once",

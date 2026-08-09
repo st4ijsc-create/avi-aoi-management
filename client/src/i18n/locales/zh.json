@@ -2089,6 +2089,8 @@
     "confirmAndEnable2FA": "确认和启用2fa",
     "changePasswordSuccess": "更改密码成功",
     "changePasswordDescription": "更改密码描述",
+    "mustChangePasswordTitle": "必须修改密码",
+    "mustChangePasswordBanner": "出于安全原因，您当前的密码已被吊销。请设置新密码以继续使用系统。",
     "changePassword": "修改密码",
     "cannotChangePassword": "无法更改密码",
     "backupCodesViewOnce": "备份codes查看once",
