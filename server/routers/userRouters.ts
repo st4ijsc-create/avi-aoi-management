@@ -11,6 +11,8 @@ import * as db from "../db";
 //   dùng **danh sách CẤM một phần tử** (`const { passwordHash, ...safeUser }`) nên
 //   **`twoFactorSecret` vẫn ra** — đúng lớp *"phần tử thứ N+1"*.
 import { toPublicUser, toPublicUsers, type KhongMangBiMat } from "../_core/publicUser";
+// ★★★ Pha 8 Task 5 — chủ DUY NHẤT của "cột nào của `user_sessions` được rời máy chủ".
+import { toPublicSessions, type PublicSession } from "../_core/publicSession";
 // ★★★ Pha 7 / vá NHÀ TÙ I-4 — chủ DUY NHẤT của khái niệm "tài khoản xác thực nội bộ".
 // ⚠ Ba điểm gọi dưới đây từng mỗi chỗ tự so `loginMethod !== 'local'`, trong khi dữ liệu THẬT mang
 //   `'password'` ⇒ 4/4 tài khoản không-admin đang hoạt động bị khoá ra ngoài. Xem `shared/xacThucNoiBo.ts`.
@@ -407,10 +409,28 @@ export const userRouter = router({
       return { unusedCount: count };
     }),
 
-  // Get user sessions
+  /**
+   * ★★★ Pha 8 Task 5 — **CẶP SONG SONG THỨ TƯ, và bên này là bên HỞ.**
+   *
+   * ⚠⚠⚠ Trước bản vá, thân thủ tục là `return db.getUserSessions(ctx.user.id);` — một `db.select()`
+   * **không phép chiếu** ⇒ **NGUYÊN HÀNG** `user_sessions` rời máy chủ, **kể cả `sessionToken`**.
+   * Cột ấy là **khoá phiên**: `db.getSessionByToken` tra bằng nó, `_core/sdk.ts` đọc cookie ra nó để
+   * dựng danh tính. Ai đọc được response này **là** người dùng ấy, **trên mọi thiết bị** — không
+   * chỉ thiết bị đang mở. Và thủ tục đang được client gọi thật
+   * (`client/src/pages/SessionManagement.tsx:63`).
+   *
+   * ⚠ Tuyến **SONG SONG** `session.list` (`server/routers/sessionRouter.ts:22`) chiếu **tường minh**
+   *   và **không** trả token — tức luật đã đúng ở một bên và sai ở bên kia, **không ai canh**. Đây
+   *   chính là hình dạng mà lượng từ §4 của `server/routers/hoTuyenSongSong.test.ts` sinh ra để bắt:
+   *   ***∀ đơn vị xử lý trả kết quả một phép đọc THÔ trên bảng tài nguyên xác thực ⇒ VI PHẠM.***
+   *
+   * ⚠⚠ Bản vá đi qua **chủ duy nhất** `_core/publicSession.ts` (allow-list + cổng KIỂU), không phải
+   *    một `delete row.sessionToken` tại chỗ: một cột nhạy cảm **thứ hai** thêm vào bảng ngày mai
+   *    phải **không ra được**, chứ không phải chờ ai đó nhớ xoá nó.
+   */
   getSessions: protectedProcedure
-    .query(async ({ ctx }) => {
-      return db.getUserSessions(ctx.user.id);
+    .query(async ({ ctx }): Promise<PublicSession[]> => {
+      return toPublicSessions(await db.getUserSessions(ctx.user.id), ctx.sessionToken);
     }),
 
   // Revoke a session
