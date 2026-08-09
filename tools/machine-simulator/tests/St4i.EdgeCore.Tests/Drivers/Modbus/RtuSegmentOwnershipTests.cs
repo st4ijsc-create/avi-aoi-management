@@ -127,6 +127,16 @@ public sealed class RtuSegmentOwnershipTests
         Assert.DoesNotContain("not corrupted data", notice, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("degradation", notice, StringComparison.OrdinalIgnoreCase);
 
+        // 🔴 Branch re-review, N-1 — THE QUALIFIER MUST NOT BE DELETED EITHER, and the arms above are blind
+        // to its deletion. The F-1 correction installed a new universal in the SAFE direction ("two masters
+        // ... poll the same devices with the same function codes"), false of a segment split by disjoint unit
+        // ids: there the slave addresses differ, the probe's CAUGHT branch applies, and a stray frame really
+        // is refused. N-1 added the qualifying clause naming that case. Nothing pinned it — `IS refused`
+        // occurs EARLIER in the string as well, so deleting the whole disjoint-unit-id parenthetical leaves
+        // every assertion above green. That is deletion-instead-of-correction, the exact failure the F-1
+        // arms were shaped to prevent, reappearing one clause later and unguarded. This arm closes it.
+        Assert.Contains("DISJOINT unit ids", notice, StringComparison.Ordinal);
+
         Assert.DoesNotContain("prevents", notice, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("blocks", notice, StringComparison.OrdinalIgnoreCase);
     }
