@@ -20,9 +20,58 @@ namespace St4i.EdgeCore.Config;
 /// (<see cref="SetAdjustment"/>) is guardrail-checked via <see cref="MachineParameterSchema.ValidateRange"/>
 /// BEFORE it is applied — an out-of-range value is rejected, never clamped, and the store never reaches
 /// a persisted state with an out-of-range adjustment.
+///
+/// <para>🔴 <b>TASK H-1c — THIS STORE IS IN THE SECOND POPULATION, AND THAT IS THE FIRST THING TO KNOW
+/// ABOUT ITS ROOT.</b> F-1 made every directory the product creates under
+/// <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> relocatable by a derivable <c>ST4I_*_DIR</c> variable —
+/// THIRTEEN of them — so two hosts on one machine can be given separate roots. <b>This store is not one
+/// of the thirteen.</b> Its default is <see cref="AppContext.BaseDirectory"/>, beside the built binary,
+/// and the product has exactly THREE such stores:</para>
+/// <list type="bullet">
+/// <item><see cref="MachineConfigStore"/> — <c>machine-operating-config.json</c> (this type).</item>
+/// <item><see cref="ProductConfigStore"/> — <c>products.json</c> + <c>recipes.json</c>.</item>
+/// <item><c>St4i.EngineApi.Config.SimulatedEcosystem</c> — <c>ecosystem/ecosystem-products.json</c> +
+/// <c>ecosystem/ecosystem-recipes.json</c>. (Named as a string, not a <c>cref</c>: it lives in a
+/// downstream assembly this one does not reference.)</item>
+/// </list>
+/// <para>🔴 <b>THE CONSEQUENCE FOR TWO HOSTS, AND IT IS ACCIDENTAL RATHER THAN GUARANTEED.</b> For the
+/// thirteen machine-wide stores, isolation is a MECHANISM: set the variable, get your own root. For these
+/// three it is a SIDE EFFECT of where the installer happened to put the exe. Two hosts installed into two
+/// directories do not share these files — but that is an accident of layout, not a promise, and
+/// <b>two hosts launched from ONE install directory share every one of them</b>. The same distinction
+/// E-5 had to draw for COM ports: a resource that is separate today because nothing has asked it to be
+/// shared is not an isolated resource.</para>
+/// <para>🔴 <b>WHICH two hosts, measured — because the sentence above is broader than the measurement and
+/// was left that way for two rounds (whole-branch review I-7).</b> All three stores are constructed in
+/// exactly ONE place: <c>St4i.EngineApi/Program.cs</c>'s DI registrations. <c>St4i.EdgeService</c> and the
+/// WPF shell construct none of them. So the sharing hazard is REAL for two <c>St4i.EngineApi</c> instances
+/// installed into one directory, and VACUOUS for the <c>EngineApi</c> + <c>EdgeService</c> pair that
+/// README §15.9 is actually written about. It is worth stating rather than deleting for the reason §15.9
+/// exists at all: "only one host constructs it" is a property of today's call sites, and the second host
+/// gaining one of these stores is precisely the change that would make it bite.</para>
+/// <para><b>What H-1c changed and what it deliberately did not.</b> It added the seam —
+/// <see cref="EnvVarDir"/> + <see cref="ResolveRoot"/>, the <c>explicit path &gt; environment variable
+/// &gt; default</c> order F-1 established — so THIS store can at least be pointed somewhere on purpose.
+/// It did NOT move the default: relocating a store's default is a deployment change and was out of scope.
+/// The other two members of the population still have no seam at all. And note what the new variable is
+/// NOT: it is not one of F-1's thirteen, it has no <c>%ProgramData%</c> directory behind it, and
+/// <c>packaging/remove-data.ps1</c> — which purges <c>%ProgramData%</c> — cannot reach it. Relocating
+/// this root puts data somewhere the decommissioning wipe does not look; README §15.9 says so where an
+/// operator reads.</para>
 /// </summary>
 public sealed class MachineConfigStore
 {
+    /// <summary>🔴 H-1c — relocates this store, same <c>explicit &gt; env &gt; default</c> contract as
+    /// <see cref="FleetSettingsStore.EnvVarDir"/> and <c>AssetRegistryStore.EnvVarDir</c>.
+    ///
+    /// <para><b>Read this class's own remarks before treating it as a fourteenth sibling of those.</b> It
+    /// is deliberately NOT derivable from a <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> directory name,
+    /// because this store has no such directory: the default is beside the binary. <c>PerHostDataRootsTests</c>
+    /// partitions the <c>ST4I_*_DIR</c> population on exactly that property, so a reader who finds
+    /// FOURTEEN variables and THIRTEEN machine-wide directories is looking at two populations rather than
+    /// at an off-by-one.</para></summary>
+    public const string EnvVarDir = "ST4I_MACHINE_CONFIG_DIR";
+
     private const string FileName = "machine-operating-config.json";
 
     private static readonly JsonSerializerOptions PersistenceOptions = new()
@@ -37,14 +86,37 @@ public sealed class MachineConfigStore
     /// <summary>Directory holding <c>machine-operating-config.json</c>.</summary>
     public string RootDirectory { get; }
 
-    /// <param name="directory">Defaults to <see cref="AppContext.BaseDirectory"/> — same "beside the
-    /// built binary" convention <see cref="ProductConfigStore"/>/<c>FleetConfig</c> use. Tests pass a
-    /// temp directory so runs don't share state.</param>
+    /// <param name="directory">Explicit directory override (tests), or <see langword="null"/> to resolve
+    /// via <see cref="ResolveRoot"/> (<see cref="EnvVarDir"/>, then <see cref="DefaultRoot"/>). Tests pass
+    /// a temp directory so runs don't share state.</param>
     public MachineConfigStore(string? directory = null)
     {
-        RootDirectory = string.IsNullOrWhiteSpace(directory) ? AppContext.BaseDirectory : directory;
+        RootDirectory = ResolveRoot(directory);
         Directory.CreateDirectory(RootDirectory);
         Load();
+    }
+
+    /// <summary>The default machine-config root: <see cref="AppContext.BaseDirectory"/>, i.e. BESIDE THE
+    /// BUILT BINARY — the same convention <see cref="ProductConfigStore"/> uses and the same folder
+    /// <c>FleetConfig.Load</c> reads <c>fleet.json</c> from, so a hand-edit session finds every simulator
+    /// config file in one place.
+    ///
+    /// <para><b>Unchanged by H-1c, on purpose.</b> This is NOT
+    /// <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> and H-1c did not make it so — moving a store's default
+    /// relocates live customer data on the next start and is a deployment decision, not a seam. See this
+    /// class's own remarks for what that costs two hosts on one machine.</para></summary>
+    public static string DefaultRoot() => AppContext.BaseDirectory;
+
+    /// <summary>Resolves the effective machine-config directory: <paramref name="directory"/> if given,
+    /// else <see cref="EnvVarDir"/> if set, else <see cref="DefaultRoot"/>. Pure path arithmetic — does
+    /// not create anything on disk (the ctor does that). Byte-identical behaviour to the pre-H-1c
+    /// constructor whenever <c>ST4I_MACHINE_CONFIG_DIR</c> is unset, which is every existing deployment
+    /// and every existing test.</summary>
+    public static string ResolveRoot(string? directory = null)
+    {
+        if (!string.IsNullOrWhiteSpace(directory)) return directory;
+        var env = Environment.GetEnvironmentVariable(EnvVarDir);
+        return string.IsNullOrWhiteSpace(env) ? DefaultRoot() : env;
     }
 
     // ─────────────────────────────────────────────────────────────────────

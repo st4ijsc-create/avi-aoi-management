@@ -922,7 +922,32 @@ EXPECT_CONFORMANCE=22
 # [Collection] attribute (it and PerHostDataRootIsolationTests both flip the PROCESS-WIDE ST4I_CREDS_DIR, and
 # two classes doing that in parallel is a real race) — an attribute moves no count, and a moved count there
 # would mean the attribute did more than serialize.
-EXPECT_EDGECORE=1088
+#
+# 🔴 TASK H-1c raises this 1088 -> 1093 (+5), counted from the runner. ONE new file,
+# MachineConfigStoreRootResolutionTests.cs; no existing file rewritten or deleted.
+#   ResolveRoot_NoOverrideAtAll_ReturnsDefaultRoot                          +1
+#   ResolveRoot_EnvOverride_ReturnsConfiguredDirectory                      +1
+#   ResolveRoot_ExplicitDirectory_TakesPriorityOverEnvVar                   +1
+#       The three arms of the explicit > env > default order F-1 established, on the seam H-1c added to
+#       MachineConfigStore. Same three FleetSettingsStoreTests already carries for its own store, because
+#       the contract is meant to be one idiom rather than one dialect per store.
+#   DefaultRoot_IsBesideTheBinary_AndIsNotUnderProgramData                  +1
+#       🔴 THE POPULATION MARKER. H-1c added a seam and deliberately did NOT move the default: moving it
+#       relocates live customer data on the next start with nothing migrating it. This asserts the property
+#       (default is AppContext.BaseDirectory, and is NOT under %ProgramData%\ST4I) rather than a literal
+#       path, and its failure message is the checklist a genuine move would owe — a directory constant, a
+#       derivable variable name, a README §15.9 row, a remove-data.ps1 parameter and the count in every
+#       artefact that spells it.
+#   TheEnvVar_IsHonouredAllTheWayToTheFile_NotJustAtResolution              +1
+#       The arm PerHostDataRootsTests says in as many words that it CANNOT reach: it proves a variable is
+#       declared and read at a resolution site, never that the resolved value is honoured to a file.
+#       Constructs the store with NO explicit directory (the production shape — Program.cs registers a bare
+#       singleton), writes through a real Ensure, and reads the JSON back off the env-var directory.
+#
+# The class joins the existing "St4i.EdgeCore.Tests.MachineWideStoreEnv" collection because it mutates a
+# PROCESS-WIDE variable. That collection's NAME says machine-wide and this store is not — recorded in the
+# class comment rather than renamed, since renaming touches three unrelated classes to no measured end.
+EXPECT_EDGECORE=1093
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -1020,7 +1045,11 @@ EXPECT_EDGESERVICE=50
 #            PFX private key sealed at LocalMachine scope; `connector-config` stores an OPC-UA password
 #            in plaintext). The old test pinned the five-name list, freezing the gap as if closed — so
 #            this one DERIVES the expected set by scanning src/ for each store's own default-path
-#            constant, and a fourteenth store fails it until the script purges that too.
+#            constant, and a fourteenth MACHINE-WIDE store fails it until the script purges that too.
+#            🔴 The qualifier was missing until the whole-branch review (C-2), and H-1c falsified the
+#            sentence without it: MachineConfigStore is a fourteenth STORE, it arrived, and this census
+#            stayed green — correctly, because it writes beside the binary and declares no
+#            "ST4I","sim","<name>" constant. remove-data.ps1 does not purge it and is not meant to.
 #   + 1  I-2  TheWebhookContract_DedupRecipe_NamesTheSignedBodyField_NeverTheUnsignedHeader.
 #            The reviewer changed §3's numbered recipe to dedup on the UNSIGNED X-ST4I-Delivery header
 #            and all six existing doc tests passed — C-3's defect reproduced, in the half of the
@@ -1535,7 +1564,9 @@ EXPECT_EDGESERVICE=50
 #         + 1  EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName — 🔴 THE FIFTH-STORE GUARD,
 #              and the reason F-1 enumerated instead of trusting its brief. The brief named FOUR stores;
 #              the enumeration found THIRTEEN. All thirteen were already relocatable, so this test is not
-#              a fix — it is the thing that makes a FOURTEENTH impossible to add without a variable, which
+#              a fix — it is the thing that makes a FOURTEENTH MACHINE-WIDE store impossible to add without
+#              a variable (H-1c's ST4I_MACHINE_CONFIG_DIR is a fourteenth store that this guard correctly
+#              stayed green for, because it is not machine-wide — see the partition addendum below), which
 #              is where this defect would actually have lived. Derives BOTH sets from src/ and requires the
 #              variable NAME to be derivable from the directory name (ST4I_<NAME>_DIR), because that is the
 #              rule README §15.9 tells an operator; requiring only "thirteen of each exist" would pass
@@ -1543,6 +1574,15 @@ EXPECT_EDGESERVICE=50
 #              plus five named controls, the same shape both siblings carry. The quantity it measures is
 #              "a quoted ST4I_<NAME>_DIR literal exists in src/" — narrower than "relocatable", which is
 #              why fix round 1 added the test below rather than letting README §15.9 lean on this one.
+#              🔴 TASK H-1c CHANGED WHAT THIS COUNTS, AND IT IS A REPAIR, NOT A WEAKENING. It used to floor
+#              on "every ST4I_*_DIR literal in src/", which was a true pairing while every such literal
+#              named a %ProgramData% store. ST4I_MACHINE_CONFIG_DIR names a BESIDE-THE-BINARY store, so
+#              the floor now applies to the MACHINE-WIDE half of the partition and the second half gets
+#              its own guard (below). Leaving it alone would have turned "thirteen directories, thirteen
+#              variables" into "thirteen and fourteen" with no artefact saying which number was which —
+#              the count sentence would have gone false in a direction nobody chose, through an
+#              instrument built for the other question. That is blueprint §8.1(f) exactly, which is why
+#              H-1c repaired the instrument in the same change that made it necessary.
 #         + 1  TheReadme_TellsAnOperatorThatRelocatingARootDoesNotMigrateTheOldData — §8.1's fourth census
 #              tier: a rule stated to an OPERATOR is a different population of text from one stated to a
 #              programmer. Relocating a root on a running deployment silently orphans that store's data,
@@ -1570,13 +1610,15 @@ EXPECT_EDGESERVICE=50
 #       never reading it satisfied the first and violated the second — and neither M3 (no variable) nor M4
 #       (non-derivable name) reaches that shape, so the gap was untested as well as undisclosed. The new
 #       test requires every variable to reach a real Environment.GetEnvironmentVariable call, binding
-#       constants to literals PER FILE so that thirteen stores all naming their constant `EnvVarDir` cannot
-#       vouch for each other, and resolving a qualified Type.Member against Type.cs. Two named controls, one
+#       constants to literals PER FILE so that the stores all naming their constant `EnvVarDir` cannot
+#       vouch for each other (thirteen when this was written; FOURTEEN since H-1c added
+#       MachineConfigStore.EnvVarDir, which is the BESIDE-THE-BINARY population — see the partition note
+#       above), and resolving a qualified Type.Member against Type.cs. Two named controls, one
 #       per resolution form: ST4I_HISTORIAN_DIR (read only as a bare literal, in Program.cs, not on its
 #       store) and ST4I_CREDS_DIR (read only through a same-file constant).
 #       🔴 What it still does NOT measure, disclosed here and in README §15.9 rather than left to a reader:
 #       "declared and read at a resolution site" is not "the resolved value is honoured to a file". Nothing
-#       here executes a store. A sweep that did would have to set thirteen process-wide variables inside a
+#       here executes a store. A sweep that did would have to set every one of those process-wide variables inside a
 #       suite whose other classes boot real hosts that read them — trading a documented narrowness for an
 #       undocumented race.
 #       🔴 WHERE THAT HALF ACTUALLY IS — and this note has been wrong twice, in opposite directions.
@@ -1606,14 +1648,21 @@ EXPECT_EDGESERVICE=50
 # file, ONE test; nothing rewritten, split or deleted.
 #
 #   +1  PerHostDataRootsTests.TheNumberOfMachineWideDirectories_IsDerivedFromSource_AndAgreesWithEvery-
-#       PlaceThatSpellsIt — the three guards in that file floor at `>= 13`, so a fourteenth store that
-#       arrives WITH a variable passes all three while the word "thirteen" rots in six artefacts. It
+#       PlaceThatSpellsIt — the other guards in that file floor at `>= 13`, so a fourteenth MACHINE-WIDE
+#       store that arrives WITH a variable passes them all while the word "thirteen" rots in six
+#       artefacts. (🔴 Whole-branch review I-4: this said "the three guards" and was unqualified, eight
+#       lines above the detail sentence fix round 2 DID qualify — the N5/N7 repair went into the .cs and
+#       was not swept to its mirror here. The count was stale too: that file now holds five [Fact]s, two
+#       of which sit above this one. Written without an ordinal so it cannot rot again.) It
 #       derives the count from src/ and compares it against the number spelled in the two sentences that
 #       state it as a rule: README §15.9's "There are **N** of them today" and remove-data.ps1's
 #       .DESCRIPTION. Those two are each the authoritative sentence of their own artefact; the rest of the
 #       prose repeats them.
 #       🔴 MEASURED, not asserted (branch re-review, N-4). TWO mutations, because the first was not
-#       discriminating and the report said it was: a BARE fourteenth store (variable declared and read,
+#       discriminating and the report said it was. 🔴 BOTH are about a fourteenth MACHINE-WIDE store, and
+#       that qualifier was missing until H-1c fix round 2 (re-review N6): a beside-the-binary fourteenth
+#       store moves none of the three numbers below, which is the whole reason the populations were
+#       split. A BARE fourteenth store (variable declared and read,
 #       but no playwright env entry and no remove-data.ps1 purge entry) is killed by THREE tests — this
 #       one plus the two SET-MEMBERSHIP censuses, TestHarnessIsolationTests and
 #       NotificationDocumentationTests. A FULLY INTEGRATED fourteenth store (variable + playwright entry +
@@ -1711,7 +1760,9 @@ EXPECT_EDGESERVICE=50
 #
 # 🔴 SEVEN TESTS, and here is what the number actually reconciles to. The unit is a THROW SITE, not a member
 # and not a (commit, completion) pair — a test can only witness one consequence of one throw. Five members
-# appear below (S1 was closed by G-1, S6 is refused; neither gets a test):
+# appear below (S1 was closed by G-1; S6 was refused at the time of this block and was closed later by H-1a,
+# from Program.cs and with its own test in another suite — see the "NOT COVERED BY THIS FILE" note below.
+# Neither gets a test HERE):
 #
 #     S2 = 2   the in-lock IUnsPublisher seam, and the deferred-log flush
 #     S3 = 2   the same two throw sites on the start path
@@ -1756,11 +1807,14 @@ EXPECT_EDGESERVICE=50
 #       test covers the revert task's own failure, which ran on an unobserved Task and was dropped by the
 #       finalizer with nothing logged anywhere.
 #
-# NOT COVERED, said out loud rather than implied: S6 (UpdateSettings) is deliberately left OPEN — the
-# uniform try/finally remedy would convert "the edit evaporates at the next restart" into "the service does
-# not start", because Program.cs feeds the persisted triple back into that same method during startup. There
-# is therefore no test for it, and that is a refusal rather than a gap. See FleetCore.UpdateSettings' own
-# comment and the G-2 report.
+# NOT COVERED BY THIS FILE, said out loud rather than implied: S6 (UpdateSettings). 🔴 TASK H-1a CLOSED IT,
+# but not here and not with a test in this class — the fix is in St4i.EngineApi/Program.cs (the startup
+# replay is now guarded and logs at Error, with exactly ONE arm and no env-var fallback) and the persistence in
+# FleetCore.UpdateSettings only THEN became unconditional. The order is the fix. Its coverage is
+# StartupSettingsReplayHardeningTests (St4i.EngineApi.Tests, +2 — see EXPECT_ENGINEAPI's own block below),
+# because the property that had to be measured is "a host replaying an unusable triple still comes up and
+# says so", which is a HOST property and unreachable from a FleetCore-level test. S4's second half and S3's
+# residual are still OPEN and still get no test; H-1a closed S6 alone and claims nothing about the others.
 #
 # 🔴 RUNTIME, disclosed HERE and not only in the task report (G-2 review, Minor 10). This CLASS takes ~8-9 s
 # to run, and TWO tests are the reason: both Burst tests wait on the real BurstDuration (4 s, FleetCore.cs)
@@ -1820,7 +1874,121 @@ EXPECT_EDGESERVICE=50
 # 22: G-2 adds no driver and no connector kind. EXPECT_WARNINGS stays 116 — the new code adds no warning and
 # the one signature change (DisposeOrphanedConnectorDrivers' parameter becoming nullable) is matched by a
 # null guard at its head, so no CS86xx appears.
-EXPECT_ENGINEAPI=1315
+#
+# 🔴 TASK H-1a raises this 1315 -> 1317 (+2), counted from the runner. ONE new file,
+# StartupSettingsReplayHardeningTests.cs; no existing file rewritten or deleted.
+#   AnUnactivatablePersistedTriple_StillBootsTheHost_AndReportsItAtErrorLevel        +1
+#       The claim S6's closure rests on. A hand-edited fleet-settings.json with machineCode "" is replayed
+#       into FleetHost.UpdateSettings before app.Run(); CredentialStore.Load throws at its first statement.
+#       Before H-1a that took the whole service down at EVERY start. Asserts the host answers a REAL
+#       request over the REAL pipeline (not merely that factory.Server did not throw) AND that the
+#       operator-facing line came out at LogLevel.Error. The LEVEL is a separate assertion on purpose:
+#       §10.4 — this product ships no appsettings.json, so a demotion to LogDebug emits NOTHING while every
+#       text assertion stays green, and the capturing provider returns IsEnabled(_) => true precisely so a
+#       demoted call is still captured and can be caught.
+#   AFailedReplay_LeavesThePersistedTripleIntact_AndDoesNotLetTheEnvFloorWin        +1
+#       🔴 REPLACED IN FIX ROUND 1. This slot used to hold
+#       WhenThePersistedTripleFails_TheEnvironmentFloorIsReplayedInstead, which asserted that a failed
+#       replay falls back to the env floor — the remedy exactly as it was SKETCHED, and a data-loss
+#       defect once composed with H-1a's own unconditional persist: the fallback replay goes through
+#       UpdateSettings, so it OVERWROTE the operator's fleet-settings.json with the floor. The fallback
+#       is gone (Program.cs carries the full argument) and this test is its inverse: with a FULL env
+#       floor differing from the file on all three fields, the file must still hold what the operator
+#       wrote (read back through a separate FleetSettingsStore) AND GET /v1/settings must not report the
+#       floor. Count unchanged at +1 — one test replaced by one test, not added.
+#
+# EXPECT_WARNINGS stays 116 for H-1a: the added code is one guarded call site plus a static local function
+# in Program.cs (top-level statements already carry one, LogIfRegisterMachineCollided) and one new test
+# file; no signature changes, no nullability changes, no new package.
+#
+# 🔴 TASK H-1c raises this 1317 -> 1318 (+1), counted from the runner. No new file; the test is added to
+# PerHostDataRootsTests.cs, beside the three guards it partitions.
+#   TheBesideTheBinaryStorePopulation_IsEnumerated_AndKeptDistinctFromTheThirteenMachineWideOnes   +1
+#       The SECOND store population, made checkable. Two halves. (a) The ST4I_*_DIR set is partitioned on
+#       whether the name is derivable from a declared %ProgramData% directory — both halves derived from
+#       src/, neither a list — and the beside-the-binary half must be exactly ST4I_MACHINE_CONFIG_DIR.
+#       (b) The STORES: every file under src/ that names any KNOWN ROUTE to the beside-the-binary root
+#       is pinned as an exact map of repo-relative path -> CATEGORY. THIRTEEN paths, FOUR categories:
+#       three population-two stores (MachineConfigStore, ProductConfigStore, SimulatedEcosystem), three
+#       read-only artefacts (FleetCore/EdgeConnectors/FleetService — fleet.json, connectors.json,
+#       mapping/*.json), four non-stores (App.xaml.cs's --capture dir, MainWindow.xaml.cs's per-USER
+#       %LOCALAPPDATA%, Program.cs's wwwroot, ServiceInstallVerbs.cs's service binPath) and three
+#       prose-only mentions. A fourteenth file entering the set fails until it is classified, and the
+#       CATEGORY is enforced on the axis a text scan can decide: a prose-only entry must have every
+#       occurrence on a /// line, every other category at least one that is not.
+#       🔴 THIS BLOCK DESCRIBED A DELETED INSTRUMENT FOR TWO ROUNDS (whole-branch review C-1) — it still
+#       said "co-occurs with Directory.CreateDirectory(", "exactly six", two categories, and "zero such
+#       routes exist in src/ today". The conjunct was removed in fix round 1 (it was the unstated filter
+#       that made a beside-binary writer with no CreateDirectory invisible) and the completeness claim was
+#       WITHDRAWN in fix round 2, refuted by two live Environment.ProcessPath occurrences in
+#       ServiceInstallVerbs.cs. What the test claims now is a MEASUREMENT, not completeness: these are
+#       the routes that have been swept (AppContext.BaseDirectory, Environment.ProcessPath, and
+#       MachineConfigStore.DefaultRoot/ResolveRoot — the public helper H-1c itself added, through which a
+#       new store can reach the root without naming the token), six more measured at zero, and a seventh
+#       idiom nobody has thought of is still invisible. This file is the one artefact the standing
+#       constraints bind, and a maintainer reads THIS to decide whether the guard will see their store —
+#       so a stale description here is worse than none.
+#       It also repairs a FALSE COMPLETENESS CLAIM that F-1 shipped in this same file's class comment
+#       ("the only place the product writes outside %ProgramData% is DesktopShell's %LOCALAPPDATA%"),
+#       which was wrong the day it was written and is the §8.1(f) failure in its resting state: a sentence
+#       that made a reader stop looking.
+#
+# EXPECT_WARNINGS stays 116 for H-1c: MachineConfigStore gains one const, two static methods and doc
+# comments; every cref resolves (a CS1574 would move this number). No signature of any existing member
+# changes — the constructor keeps `string? directory = null` and only its body's resolution changes.
+#
+# 🔴 TASK H-1a, SECOND PASS raises this 1318 -> 1319 (+1), added during the mutation round and for the
+# reason the mutation round exists. No new file; added to FleetHostSettingsPersistenceTests.cs.
+#   UpdateSettings_WhenActivationThrows_StillPersistsTheTripleItAlreadyCommitted        +1
+#       🔴 S6's ACTUAL CLOSURE, which until this test nothing could turn red. The two
+#       StartupSettingsReplayHardeningTests measure the HARDENING (the host comes up and says so); moving
+#       FleetCore's `Save` back out of its `finally` left all five green, because the persisted file in
+#       those tests already held the bad triple. A `finally` no mutation can kill proves nothing, which
+#       is this repository's own stated rule. The throw site is real rather than injected
+#       (CredentialStore.Load's ArgumentException.ThrowIfNullOrEmpty on an empty machine code, reachable
+#       from PUT /v1/settings and from a hand-edited file), the persisted value is read back through a
+#       SEPARATE store instance, and the REPORTED value is asserted alongside it so a build that rolled
+#       the fields back — remedy (b), a different contract — fails here instead of looking like an
+#       improvement. It also asserts the exception still propagates: H-1a did not swallow it.
+#
+# 🔴 FIX ROUND 2 (re-review N4) raises this 1319 -> 1320 (+1), counted from the runner. No new file; added
+# to StartupSettingsReplayHardeningTests.cs.
+#   TheStartupReplayHasExactlyOneArm_AndTheSettingsFileOneWriterAndOneDeleter          +1
+#       "Exactly one writer of fleet-settings.json at startup" became the load-bearing premise of the
+#       rationale at FleetCore.UpdateSettings when C1 was fixed, and it was true only by inspection.
+#       🔴 AND THE INSTRUMENT THE RE-REVIEW PROPOSED WOULD NOT HAVE CAUGHT C1 — measured, not argued:
+#       C1 added a second call to the startup REPLAY, not a second Save, and the replay persists as a
+#       side effect of UpdateSettings, so a Save-call census returns ONE both before and after it.
+#       Mutation R2 reinstates C1 and shows the Save-site count not moving. So the test asserts THREE
+#       numbers and names which one carries which property: one Save call site (the weaker half, the one
+#       that stays green through C1); one startup replay call site (the number C1 moved, 2 -> 3
+#       occurrences of TryReplayStartupSettings in Program.cs); and — added by the I-3 fix below — one
+#       DELETER call site, so the seed-rollback cannot grow a second one silently.
+#       🔴 This block said "BOTH numbers" and listed two for one round after the third was added (branch
+#       re-review I-4). No count moved when the deleter census landed, so no justification was owed and
+#       none was written — which is exactly how a summary drifts from its list in the one artefact the
+#       standing constraints bind. Same class as C-1, same file, one round later. Its stated non-reach is the shape a
+#       source scan cannot see — a writer through a differently-named local — which is exactly what the
+#       file-property regression witness above covers instead.
+#
+# 🔴 FIX ROUND 3 (whole-branch review I-3) raises this 1320 -> 1321 (+1), counted from the runner. No new
+# file; added to StartupSettingsReplayHardeningTests.cs.
+#   AFailedEnvFloorSeed_LeavesNoFile_SoTheEnvVarsStayTheFloor                          +1
+#       C1's class on the arm that was KEPT. With no fleet-settings.json the replay SEEDS FleetCore from
+#       the env floor; the unconditional persist that closed S6 then CREATES the file even when activation
+#       throws, holding the floor merged with FleetHost's built-in defaults — and from the next boot that
+#       file wins over the env vars, permanently, on the strength of a triple that never activated. Two of
+#       the four consequences the branch enumerated against the DELETED fallback are properties of the
+#       `finally`, not of the fallback, and they survived here. Program.cs now discards that seeded file
+#       on that arm ONLY (a failed RESTORE never deletes anything — that would be C1 with a delete).
+#       🔴 THE INJECTION IS THE INTERESTING PART, and it corrects the review: the WAL example the review
+#       gives is NOT reachable at startup through an env var, because Program.cs calls wal.EnsureDir() on
+#       the same env-derived options ~1550 lines earlier, unwrapped, so a bad ST4I_WAL_DIR stops the host
+#       there and never reaches the replay. The test instead overrides the TransportCoordinator singleton
+#       with a real one whose WalOptions.Directory points at an existing FILE — same throw, same call,
+#       from options the early EnsureDir never saw. It asserts the host is UP and the file does not exist
+#       ON DISK (not merely that Load() returns null, which is also true for a corrupt file).
+EXPECT_ENGINEAPI=1321
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

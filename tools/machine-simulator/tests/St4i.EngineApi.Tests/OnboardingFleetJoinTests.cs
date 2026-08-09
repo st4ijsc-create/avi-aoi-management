@@ -7,6 +7,7 @@ using St4i.EdgeCore.Models;
 using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests;
@@ -20,9 +21,37 @@ namespace St4i.EngineApi.Tests;
 /// <see cref="OnboardingFleetJoin"/>, exercised here directly against a real <see cref="FleetHost"/>
 /// (same composition <see cref="FleetHostHealthAndRegistrationTests"/> uses, minus the ASP.NET host) —
 /// exactly the seam <c>Endpoints/OnboardingEndpoints.cs</c> calls after a successful claim/enroll.
+///
+/// <para>🔴 <b>Fix round 4 (branch re-review I-1) — this class is a WRITER of real credentials and had
+/// neither a collection nor an override.</b> <c>OnboardingService.ClaimAsync</c> reaches
+/// <c>CredentialStore.Save</c>, which resolves the PROCESS-WIDE <c>ST4I_CREDS_DIR</c> on every call. With
+/// no override in effect it sealed real DPAPI <c>mk_</c> blobs for this file's distinctive serials into a
+/// real install's <c>%ProgramData%\ST4I\sim\creds</c> — the directory this project deliberately keeps,
+/// and the exact leak the test-hygiene batch spent a census on (2,999 blobs, 633 of them from e2e runs).
+/// Raced against a class that HAS set the variable, it wrote into that class's temp root instead. Nothing
+/// in this suite suppresses cross-collection parallelism.</para>
+///
+/// <para>Both halves are fixed rather than one: the <c>[Collection]</c> stops the race, and the per-class
+/// <c>ST4I_CREDS_DIR</c> override stops the leak. The collection alone would have left it writing real
+/// credentials, tidily serialized.</para>
 /// </summary>
-public sealed class OnboardingFleetJoinTests
+[Collection(SecurityEnvVarTests.CollectionName)]
+public sealed class OnboardingFleetJoinTests : IDisposable
 {
+    /// <summary>One throwaway creds root for the whole class, restored on dispose. See the class remarks:
+    /// this class WRITES credentials, so serializing it is necessary and not sufficient.</summary>
+    private readonly string _credsDir = Directory.CreateTempSubdirectory("st4i-onboarding-fleetjoin-creds-").FullName;
+    private readonly string? _previousCredsDir = Environment.GetEnvironmentVariable(CredentialStore.EnvVarDir);
+
+    public OnboardingFleetJoinTests() =>
+        Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, _credsDir);
+
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, _previousCredsDir);
+        try { Directory.Delete(_credsDir, recursive: true); } catch { /* best-effort cleanup */ }
+    }
+
     private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(100);
 

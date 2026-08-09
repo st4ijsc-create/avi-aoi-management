@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using St4i.Connector.Abstractions.Models;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Fleet;
@@ -12,7 +13,30 @@ namespace St4i.EngineApi.Tests.Fleet;
 /// pointed at the same directory — the same technique <c>FleetHostSettingsPersistenceTests</c>/
 /// <c>MachineConfigStoreTests</c> already use), the credential-free <see cref="ConnectorConfigStore.ListAsync"/>
 /// projection, and plain delete-by-kind.
+///
+/// <para>🔴 <b>Fix round 4 (branch re-review I-2) — this class WRITES the process-wide
+/// <c>ST4I_CONNECTOR_CONFIG_DIR</c> and was the only writer of it outside the serialized collection.</b>
+/// <c>ResolveRoot_PrefersExplicitDirectory_OverEnvVar_OverDefault</c> below sets it to
+/// <c>C:\somewhere-env</c>, then to <c>null</c>, then restores. <b>EIGHTEEN other classes</b> in this
+/// suite set the same variable and all eighteen are collected.
+/// <para>🔴 <b>That number has now been wrong twice, in opposite directions, and the second time it was
+/// wrong because it was INHERITED rather than measured.</b> This comment first said TWENTY-ONE, which I
+/// took from a review finding; the next review measured NINETEEN. Re-measured here, with the instrument
+/// named: nineteen FILES under <c>tests/St4i.EngineApi.Tests</c> contain a non-<c>///</c>
+/// <c>SetEnvironmentVariable</c> of <c>ST4I_CONNECTOR_CONFIG_DIR</c>/<c>ConnectorConfigStore.EnvVarDir</c>,
+/// each declaring exactly one test class, and <b>that nineteen includes THIS file</b> — so the sentence's
+/// own subject, "other classes", is EIGHTEEN. (The same grep counted by LINES gives 38, because most
+/// classes set and restore.) All eighteen carry the attribute; verified by reading the
+/// <c>[Collection]</c> line of each.
+/// <b>The lesson is §8.1(d), landing on a reviewer:</b> a number that arrives inside a finding is a
+/// CLAIM, not a premise, and this one crossed three artefacts before anyone re-measured it.</para> <c>Program.cs</c> reads it at startup and
+/// <c>ConnectorConfigStore</c>'s constructor does <c>Directory.CreateDirectory(root)</c> plus a SQLite
+/// schema creation — so a host boot sampling this window either creates
+/// <c>C:\somewhere-env\connector-config.db</c> on the developer's C: drive, or (on the <c>null</c> leg)
+/// falls back to a real install's <c>%ProgramData%\ST4I\sim\connector-config</c>. The reverse race
+/// fails this test's own assertion against another class's temp path.</para>
 /// </summary>
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class ConnectorConfigStoreTests
 {
     private static string TempDir() => Directory.CreateTempSubdirectory("st4i-connector-config-tests-").FullName;

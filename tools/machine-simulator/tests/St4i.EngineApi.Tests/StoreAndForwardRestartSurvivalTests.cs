@@ -6,6 +6,7 @@ using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests;
@@ -52,7 +53,26 @@ namespace St4i.EngineApi.Tests;
 /// SDK's real ~7.5s exponential backoff PER failed send before enqueueing) and an injected
 /// <see cref="HttpMessageHandler"/> that throws/succeeds synchronously — no real socket, no OS-timing
 /// dependence, whole test runs in well under the bounded 10s poll budget below.
+/// <para>🔴 <b>Fix round 3 — this class joins the security env-var collection because it uses
+/// <c>CredentialStore</c>, which resolves the PROCESS-WIDE <c>ST4I_CREDS_DIR</c> on EVERY call.</b> It
+/// does not set that variable itself, and that is exactly why it needed the attribute: other classes in
+/// this suite do set it, and a <c>Save</c> here landing in one directory while the <c>Load</c> inside
+/// <c>UpdateSettings</c> resolves another yields an EMPTY mkKey — which short-circuits before the queue
+/// file is ever touched, i.e. this class's assertion fails for a reason that has nothing to do with the
+/// WAL. Caught as a real red run, not by reading: adding a fourth boot to
+/// <c>StartupSettingsReplayHardeningTests</c> widened the window enough to lose the race.
+/// <c>MachineWideStoreEnvCollection</c>'s own doc states this rule ("any future class that reads or
+/// writes a variable a class in here also touches has to join this same collection"); what the sweeps
+/// keep missing is not one HALF of it but whichever members were not in view at the time.
+/// <b>🔴 Fix round 4 corrected this sentence, which asserted the wrong diagnosis.</b> It used to read
+/// "the rule was applied to the writers and not to the READERS" — falsified by the tree in the very next
+/// review: there were NO un-collected readers, and TWO un-collected WRITERS
+/// (<c>OnboardingFleetJoinTests</c>, which writes real credentials, and
+/// <c>Fleet/ConnectorConfigStoreTests</c>, which writes <c>ST4I_CONNECTOR_CONFIG_DIR</c>). A sweep that
+/// names which half it missed is claiming to have found the other half, which is the completeness shape
+/// this branch has now paid for five times. The membership rule is the property; the halves are not.</para>
 /// </summary>
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class StoreAndForwardRestartSurvivalTests
 {
     private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(10);

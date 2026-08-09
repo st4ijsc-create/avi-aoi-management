@@ -23,8 +23,26 @@ namespace St4i.EngineApi.Tests;
 /// </list>
 /// The pattern is not carelessness; it is that a hand-maintained list of stores cannot survive a store
 /// being ADDED. So this test does not hold a list. It discovers every <c>ST4I_*_DIR</c> environment
-/// variable the product declares in <c>src/</c> and requires the harness to set each one — a fifteenth
-/// store fails it until the harness isolates that too.</para>
+/// variable the product declares in <c>src/</c> and requires the harness to set each one — the NEXT
+/// store fails it until the harness isolates that too.
+/// <b>🔴 That sentence used to say "a fifteenth store", and it was off by one when written</b> (branch
+/// review, Minor 4): the product declared THIRTEEN variables then, so the next one was a fourteenth. It
+/// is only accidentally true today, because H-1c added the fourteenth. Written as an ordinal it had to
+/// rot; written as "the next" it cannot, which is the same reason every other count in this file is
+/// derived rather than spelled.</para>
+///
+/// <para>🔴 <b>H-1c — this scan spans BOTH store populations, and that is correct rather than an
+/// oversight.</b> <c>PerHostDataRootsTests</c> now partitions the <c>ST4I_*_DIR</c> set into the THIRTEEN
+/// machine-wide directories under <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> and the beside-the-binary
+/// stores (<c>ST4I_MACHINE_CONFIG_DIR</c> today), because the question there is per-host RELOCATABILITY
+/// and only the first population answers it by mechanism. The question HERE is different: "does the
+/// harness write into a real install's data?" — and a store that writes beside the engine's binary is
+/// just as capable of that. So this test is population-BLIND on purpose, and the count it floors at (13)
+/// is a non-vacuity floor on the scan, not a census of either population.
+/// <b>H-1c is the case that proves the distinction is load-bearing:</b> adding
+/// <c>ST4I_MACHINE_CONFIG_DIR</c> turned this test red until <c>playwright.config.ts</c> isolated it, and
+/// the right response was to isolate it — not to narrow this scan to the machine-wide half, which would
+/// have traded a real isolation guarantee for a tidier number.</para>
 ///
 /// <para>This is the isolation counterpart to
 /// <c>NotificationDocumentationTests.EveryDirectoryTheEngineCreatesUnderProgramData_IsPurgedByTheDecommissioningScript</c>,
@@ -38,6 +56,33 @@ namespace St4i.EngineApi.Tests;
 /// </summary>
 public sealed class TestHarnessIsolationTests
 {
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+    // 🔴 BOOKED, NOT BUILT — the follow-up this file is the natural home for, recorded here rather than
+    // in a report because this is where the machinery already lives.
+    //
+    // THE CASE. A test class can reach a process-wide ST4I_*_DIR through PRODUCT code without naming it:
+    // OnboardingFleetJoinTests reaches ST4I_CREDS_DIR two frames deep (ClaimAsync -> OnboardingService ->
+    // CredentialStore.Save) and mentions nothing. It wrote real DPAPI blobs into a real
+    // %ProgramData%\ST4I\sim\creds for as long as it existed, and every membership sweep on this branch
+    // missed it — four derivations, three of them wrong.
+    //
+    // WHY A "WHICH CLASSES SET THE VARIABLE" CENSUS IS THE WRONG INSTRUMENT, and this is the decisive
+    // part: keyed on the DIRECT half it returns GREEN over exactly the case that was paid for. That is
+    // blueprint §8.1(f) with a completeness claim on top — a recogniser whose domain is inherited from
+    // where its author was standing.
+    //
+    // WHAT IS DECIDABLE TODAY, and would catch a writer at ANY call depth: assert that the REAL
+    // %ProgramData%\ST4I\sim\creds gains no files across a suite run. It measures the consequence rather
+    // than the naming, which is this repository's own idiom (see the D-7a backoff measurement). The
+    // machinery is here and in tests/Shared/TestRunTempRoot.cs.
+    //
+    // WHAT IS NOT: the RACE half — two classes interleaving on one variable — needs a runtime fixture and
+    // its own decision, because a [Collection] omission changes SCHEDULING, not behaviour, and therefore
+    // cannot be killed by a mutation (measured: dropping the attribute compiles and every test passes).
+    //
+    // Neither is built here. Both are named so the next person starts from the set.
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+
     private static string MachineSimulatorRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

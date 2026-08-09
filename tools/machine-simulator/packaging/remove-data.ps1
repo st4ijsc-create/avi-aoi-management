@@ -162,7 +162,25 @@
   through the same -XxxDir > env var > %ProgramData% default order as the five that already did
   (historian, wal, security, creds, notifications).
 
-  Every one of the thirteen directories is now relocatable; there is no longer any exception.
+  Every one of the thirteen MACHINE-WIDE directories is now relocatable; there is no longer any
+  exception within that population.
+
+  TASK H-1c - AND "WITHIN THAT POPULATION" IS NOT A HEDGE. This script purges %ProgramData%, and the
+  thirteen names below are every directory the engine creates there. The product ALSO writes three
+  persistent stores BESIDE THE ENGINE BINARY - MachineConfigStore (machine-operating-config.json),
+  ProductConfigStore (products.json, recipes.json) and SimulatedEcosystem (ecosystem\*.json). This
+  script has never purged them and is not being taught to: they go when the install directory goes,
+  which is what an uninstall does.
+
+  THE ONE CASE THAT LEAVES DATA BEHIND, said here because nothing else would say it. H-1c gave
+  MachineConfigStore a relocation seam, ST4I_MACHINE_CONFIG_DIR. An operator who sets it has put
+  customer data somewhere neither the install directory nor this script covers, and there is
+  deliberately NO -MachineConfigDir parameter: adding one would put a beside-the-binary store into a
+  parameter list whose own count sentences are about %ProgramData%, which is the population confusion
+  H-1c exists to end. If ST4I_MACHINE_CONFIG_DIR is set anywhere in the deployment, delete that
+  directory by hand. README section 15.9's second-population subsection says the same thing where an
+  operator reads. That variable is also why the ST4I_*_DIR literal count in src/ is FOURTEEN while the
+  directory count here is THIRTEEN - two populations, not an off-by-one.
 
   TASK F-1 CENSUS - THE COUNT ABOVE SAID "FOURTEEN" IN THREE PLACES AND "THIRTEEN" IN FOUR, about
   the same set, since Task C-8. Measured rather than reasoned about: this script declares thirteen

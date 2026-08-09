@@ -3,6 +3,7 @@ using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests;
@@ -17,9 +18,34 @@ namespace St4i.EngineApi.Tests;
 /// <see cref="FleetSettingsPersistenceEnvVarTests"/>, which covers the SAME contract end-to-end through
 /// the real <c>Program.cs</c> composition root, plus the env-var-vs-persisted-file precedence decision
 /// that lives there, not in <see cref="FleetHost"/> itself).
+///
+/// <para>🔴 <b>Branch review, Minor 7 — this class is in the security env-var collection so its
+/// <c>ST4I_CREDS_DIR</c> flip cannot race.</b> Every <see cref="FleetHost.UpdateSettings"/> call with a
+/// non-empty machine code reaches <c>CredentialStore.Load</c>, which resolves <c>ST4I_CREDS_DIR</c> per
+/// call — so without an override these tests READ (never write) a real install's
+/// <c>%ProgramData%\ST4I\sim\creds</c>. <c>Load</c> returns null on a missing file, so nothing
+/// leaks and nothing fails; it is fixed anyway because this suite has a documented history of exactly
+/// this shape, and "it only reads" is how the 2,999-blob creds leak was justified for three audits.
+/// The variable is PROCESS-WIDE, and <see cref="StartupSettingsReplayHardeningTests"/> already flips it
+/// from this collection, so joining the collection is what makes the flip safe rather than a new
+/// race.</para>
 /// </summary>
-public sealed class FleetHostSettingsPersistenceTests
+[Collection(SecurityEnvVarTests.CollectionName)]
+public sealed class FleetHostSettingsPersistenceTests : IDisposable
 {
+    /// <summary>One throwaway creds root for the whole class, restored on dispose.</summary>
+    private readonly string _credsDir = Directory.CreateTempSubdirectory("st4i-fleethost-settings-creds-").FullName;
+    private readonly string? _previousCredsDir = Environment.GetEnvironmentVariable(CredentialStore.EnvVarDir);
+
+    public FleetHostSettingsPersistenceTests() =>
+        Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, _credsDir);
+
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, _previousCredsDir);
+        try { Directory.Delete(_credsDir, recursive: true); } catch { /* best-effort cleanup */ }
+    }
+
     private static string TempDir() => Directory.CreateTempSubdirectory("st4i-fleethost-settings-tests-").FullName;
 
     /// <summary>Same Demo-mode-only composition as <see cref="FleetHostHealthAndRegistrationTests.CreateHost"/>
@@ -141,5 +167,55 @@ public sealed class FleetHostSettingsPersistenceTests
         Assert.Equal("", updated.ServerUrl);
         Assert.Equal("", host.GetSettings().ServerUrl);
         Assert.Equal("", store.Load()!.ServerUrl);
+    }
+
+    /// <summary>
+    /// 🔴 <b>Task H-1a — S6's actual closure: the commit's persistence is UNCONDITIONAL, so what
+    /// <c>GET /v1/settings</c> reports and what survives a restart cannot diverge even when the activation
+    /// between them throws.</b>
+    ///
+    /// <para><b>The throw site is real, not injected.</b> <c>FleetCore.UpdateSettings</c> commits the
+    /// triple under its lock and then calls <c>CredentialStore.Load(_machineCode)</c>, whose first
+    /// statement is <c>ArgumentException.ThrowIfNullOrEmpty</c>. An empty machine code is reachable from
+    /// <c>PUT /v1/settings</c> (no <c>MachineCode</c> validation there) and from a hand-edited
+    /// <c>fleet-settings.json</c>. Before H-1a the <c>Save</c> sat after that call, so this exact edit was
+    /// reported by <c>GetSettings</c> and silently evaporated at the next restart.</para>
+    ///
+    /// <para><b>Why the reported state is asserted too.</b> "Persisted" alone would pass on a build that
+    /// rolled the fields back and persisted the OLD triple — a different remedy (option (b)), with a
+    /// different contract. The property is that the two AGREE, so both are read.</para>
+    ///
+    /// <para><b>What this does NOT claim, because H-1a does not do it:</b> the activation still failed.
+    /// The transport was not rebuilt and the exception still reaches the caller — this asserts it is
+    /// thrown, so a build that swallowed it would fail here rather than look like an improvement.</para>
+    /// </summary>
+    [Fact]
+    public void UpdateSettings_WhenActivationThrows_StillPersistsTheTripleItAlreadyCommitted()
+    {
+        var settingsDir = TempDir();
+        var store = new FleetSettingsStore(settingsDir);
+        var (switchable, coordinator) = BuildTransport(TempDir());
+        var host = new FleetHost(switchable, coordinator, new EventBus(), settingsStore: store);
+
+        host.UpdateSettings(new SettingsUpdateRequest(
+            ServerUrl: "http://h1a-before.example.test", VerifyTls: null, Language: null,
+            MachineCode: "H1A-BEFORE"));
+
+        Assert.Throws<ArgumentException>(() => host.UpdateSettings(new SettingsUpdateRequest(
+            ServerUrl: "http://h1a-after.example.test", VerifyTls: false, Language: null, MachineCode: "")));
+
+        // Committed and REPORTED…
+        var reported = host.GetSettings();
+        Assert.Equal("http://h1a-after.example.test", reported.ServerUrl);
+        Assert.Equal("", reported.MachineCode);
+        Assert.False(reported.VerifyTls);
+
+        // …and PERSISTED, read back through a separate store instance pointed at the same directory so
+        // this cannot pass on an in-memory value that never reached disk.
+        var persisted = new FleetSettingsStore(settingsDir).Load();
+        Assert.NotNull(persisted);
+        Assert.Equal("http://h1a-after.example.test", persisted!.ServerUrl);
+        Assert.Equal("", persisted.MachineCode);
+        Assert.False(persisted.VerifyTls);
     }
 }

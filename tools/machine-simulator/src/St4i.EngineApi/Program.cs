@@ -1749,7 +1749,191 @@ var initialSettingsRequest = persistedSettings is not null
         Language: null,
         MachineCode: string.IsNullOrWhiteSpace(initialLiveMachineCode) ? null : initialLiveMachineCode);
 
-fleetHost.UpdateSettings(initialSettingsRequest);
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+// 🔴 H-1a — THE STARTUP REPLAY IS HARDENED HERE, AND IT IS HARDENED **FIRST**.
+//
+// Read the order, because reversing it ships the boot loop G-2 refused: this guard is the PRECONDITION
+// for FleetCore.UpdateSettings persisting unconditionally, not a consequence of it. Until this `try`
+// existed, the uniform S-set remedy (`Save` in a `finally`) was strictly worse than the defect.
+//
+// WHAT IT PREVENTS. `FleetHost.UpdateSettings` commits serverUrl/machineCode/verifyTls under FleetCore's
+// lock and THEN activates them: `CredentialStore.Load` (which throws `ArgumentException` at its very
+// first statement on an empty machine code), `TransportCoordinator.RebuildLive`, and an arbitrary host
+// callback. Every one of those can throw, and this call sits BEFORE `app.Run()`. Unwrapped, a persisted
+// triple that cannot be activated took the whole service down on EVERY subsequent start, with no running
+// process left to correct it through.
+//
+// AND VALIDATING THE ENDPOINT WOULD NOT HAVE CLOSED IT. `fleet-settings.json` is a plain JSON file in a
+// known, relocatable directory: a bad triple can arrive without passing through any `PUT /v1/settings`.
+// Input validation at the endpoint is a good thing to have and is NOT this fix.
+//
+// WHAT IT DOES INSTEAD: the host STARTS, and SAYS SO. The LEVEL is load-bearing and is §10.4 stated as a
+// requirement rather than as a lesson — this product ships no `appsettings.json`, so the framework's own
+// default minimum applies and a `LogDebug` line here would not be quiet, it would be SILENT. `LogError`
+// reaches the console, and under `AddWindowsService` it is a Windows Event Log entry an operator on shift
+// can actually find.
+//
+// 🔴 THERE IS EXACTLY ONE REPLAY, AND NO ENV-VAR FALLBACK — a deliberate departure from the remedy as it
+// was SKETCHED, and the reason is the whole of §8.1(d): a mechanism that arrives with a task is a CLAIM,
+// not a premise. Run it before building on it.
+//
+// The sketch (recorded at FleetCore.UpdateSettings, from G-2's report) read: "wrap the boot-time
+// UpdateSettings call, log, and fall back to the env-var branch". Fix round 1 implemented exactly that,
+// and the branch review measured what it composes into. `UpdateSettings` persists UNCONDITIONALLY now —
+// that is H-1a's own second half — so replaying the env floor here does not merely configure this
+// process, it OVERWRITES `fleet-settings.json` with the floor. Consequences, all of them silent:
+//
+//   * a merely ENVIRONMENTAL failure (a full or read-only WAL root, a throwing host callback) fails a
+//     PERFECTLY GOOD persisted triple and then destroys it. The next start has nothing to retry — which
+//     falsifies, in this very branch, the "the next start retries and succeeds" rationale that argues for
+//     the unconditional persist at FleetCore.UpdateSettings;
+//   * it INVERTS FF-1's precedence, asserted two hundred lines above: the env vars are "only ever the
+//     FLOOR for a machine that has never had these three set before". One failed activation and the floor
+//     becomes the file, permanently;
+//   * a PARTIAL floor (say only ST4I_SERVER_URL) commits the floor's serverUrl over the failed machine
+//     code, throws again, and the `finally` persists a TORN triple no operator ever wrote;
+//   * and the log line below would be stale as it was read: it tells an operator to edit or delete the
+//     file, which no longer holds what failed.
+//
+// A compensating restore (save the floor, then write the operator's triple back) was considered and
+// REJECTED: it leaves a crash window in which the operator's configuration is already gone, and it makes
+// the file's correctness depend on a second write rather than on there being only one writer. The defect
+// is that the hardening introduced a SECOND WRITER of this file and the unconditional persist made it
+// authoritative. So the second writer is removed rather than compensated for.
+//
+// What that costs, stated rather than glossed: a host whose persisted triple cannot be activated does NOT
+// get a Live transport built from the env vars this boot. It comes up on its startup default, reports the
+// triple it is holding, and says at Error what happened. FF-1's precedence stays literally true, the file
+// still holds exactly what the operator wrote, and the next start retries it.
+//
+// 🔴 WHAT THIS DOES **NOT** DO, said here rather than left to be discovered. It does not roll the
+// committed fields back. After a failed replay FleetCore's fields hold the triple that failed to
+// activate, so `GET /v1/settings` reports it — truthfully, as the configuration this process is holding —
+// while the transport stays on whatever it had. Rolling back is remedy (b) at `FleetCore.UpdateSettings`:
+// it changes what a failed call MEANS to its caller and needs an arbitration rule for a rollback racing a
+// concurrent second `UpdateSettings`. Out of scope here, and named there.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+static bool TryReplayStartupSettings(
+    FleetHost host, ILogger logger, SettingsUpdateRequest request, string source, string settingsDir,
+    string remedy)
+{
+    try
+    {
+        host.UpdateSettings(request);
+        return true;
+    }
+    catch (Exception ex)
+    {
+        // Never the mk_ key: these three fields are exactly what GET /v1/settings already returns.
+        // The DIRECTORY rather than the full path, so this does not restate FleetSettingsStore's own
+        // private file-name constant and cannot drift from it.
+        logger.LogError(
+            ex,
+            "STARTUP SETTINGS REPLAY FAILED — {Source} could not be applied and the service is starting " +
+            "WITHOUT it (serverUrl={ServerUrl}, machineCode=\"{MachineCode}\", verifyTls={VerifyTls}). " +
+            "The host is UP and every endpoint works; the Live transport was NOT rebuilt from these " +
+            "values. {Remedy}",
+            source,
+            request.ServerUrl,
+            request.MachineCode,
+            request.VerifyTls,
+            remedy);
+        return false;
+    }
+}
+
+var replayRestoredAFile = persistedSettings is not null;
+var replaySucceeded = TryReplayStartupSettings(
+    fleetHost,
+    app.Logger,
+    initialSettingsRequest,
+    replayRestoredAFile
+        ? "the persisted fleet-settings.json"
+        : "the ST4I_SERVER_URL/ST4I_MACHINE_CODE/ST4I_VERIFY_TLS environment floor",
+    settingsStore.RootDirectory,
+    // 🔴 The remedy differs per ARM, and saying so is branch re-review Minor 6. The restore arm's advice
+    // is to repair the file; the SEED arm's advice must NOT be, because the block below is about to
+    // delete that file — an operator who read the Error line alone would be sent to a path that no
+    // longer exists. Passed in rather than branched inside the helper so the two sentences sit next to
+    // the condition that chooses between them.
+    replayRestoredAFile
+        ? $"Correct them with PUT /v1/settings, or edit/delete fleet-settings.json in " +
+          $"\"{settingsStore.RootDirectory}\" and restart."
+        : "These came from the ST4I_* environment variables and NO settings file existed before this " +
+          "start. Correct those variables and restart, or set the values with PUT /v1/settings. Do not " +
+          "go looking for a settings file — see the next line for what happened to the one this start " +
+          "would otherwise have left behind.");
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+// 🔴 WHOLE-BRANCH REVIEW I-3 — A FAILED **SEED** MUST NOT BECOME THE SOURCE OF TRUTH.
+//
+// Read the condition, because the OTHER arm is branch-review C1 and this must not become it: this runs
+// only when there was NO `fleet-settings.json` before. A failed RESTORE never deletes anything — the
+// operator's file is exactly what C1 exists to protect.
+//
+// THE DEFECT IT CLOSES. With no persisted file, the replay seeds FleetCore from the env-var floor. Any
+// non-null field makes `rebuildNeeded` true, and `UpdateSettings` now persists UNCONDITIONALLY (H-1a's
+// own second half, which is what closed S6). So a throw during activation still reaches the `finally`,
+// and `fleet-settings.json` is CREATED — holding the floor merged with FleetHost's built-in defaults
+// (`DefaultServerUrl = ""`, `DefaultMachineCode = "ENGINE-API-01"`) for whichever variables were unset.
+// From the next boot that file WINS over the env vars, per FF-1's precedence. The env vars have stopped
+// being the floor, permanently, on the strength of a triple that never activated — and an operator who
+// reads the Error line, corrects ST4I_SERVER_URL and restarts finds the correction ignored.
+//
+// This is bullets 2 and 3 of the argument printed above for removing the fix-round-1 fallback ("it
+// INVERTS FF-1's precedence" and "a PARTIAL floor persists a TORN triple"), surviving on the arm that was
+// KEPT — because those two are properties of the `finally`, not of the fallback. The paragraph above
+// attributed all four to the fallback; that accounting was wrong and this is the half it missed.
+//
+// WHY A DELETE IS ACCEPTABLE HERE WHEN A COMPENSATING WRITE WAS NOT (the C1 reasoning, re-derived rather
+// than reused): C1's rejected save-then-restore had a crash window in which the operator's OWN
+// configuration was already gone. Here the file did not exist a moment ago, so the worst a crash between
+// the `finally` and this line can do is leave the state this branch is fixing — a failure to clean up,
+// never a loss of customer data. Different risk class, and that difference is the whole argument.
+//
+// WHAT IT DOES NOT DO: it does not retry, and it does not roll FleetCore's in-memory fields back. The
+// process keeps running on the triple it committed and `GET /v1/settings` reports it — the same honest
+// divergence the primary arm carries.
+//
+// 🔴 HOW REACHABLE IS THIS ARM TODAY — stated here, because this is where someone decides whether the
+// guard earns its keep (branch re-review, Minor 7). The RESTORE arm is demonstrably reachable: a
+// hand-edited `machineCode: ""` throws out of `CredentialStore.Load`'s first statement, and that is the
+// tested case S6's closure rests on. This SEED arm is different: enumerated rather than assumed, NO
+// env-var-only route reaches an activation throw here today. `CredentialStore.Load` throws only on an
+// empty machine code, which this arm cannot produce (a blank ST4I_MACHINE_CODE resolves to null and the
+// built-in default is kept); `RebuildLive`'s WAL arm is pre-empted ~1550 lines above by an unguarded
+// `wal.EnsureDir()` on the same options, MEASURED, which stops the host before this line; and neither
+// the vendored SDK client nor `LiveConfigSyncBackend` parses a URL. What remains is
+// `_onLiveSettingsRebuilt`, documented as an ARBITRARY host callback — so this guard rests on a contract
+// rather than on a demonstrated variable, deliberately. "Benign today" is a property of the current
+// callee, which is the sentence pattern this codebase refuses to rely on everywhere else. The test
+// injects the throw through a real TransportCoordinator holding different WalOptions, which is the same
+// call from options the early EnsureDir never saw.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+if (!replaySucceeded && !replayRestoredAFile)
+{
+    try
+    {
+        settingsStore.Delete();
+        app.Logger.LogWarning(
+            "STARTUP SETTINGS SEED DISCARDED — the environment floor could not be activated, so the " +
+            "fleet-settings.json it would have created in {SettingsDir} was removed. The " +
+            "ST4I_SERVER_URL/ST4I_MACHINE_CODE/ST4I_VERIFY_TLS variables therefore REMAIN the floor and " +
+            "the next start retries them; had the file been left, it would have won over them from now " +
+            "on. Nothing an operator wrote was deleted — no settings file existed before this start.",
+            settingsStore.RootDirectory);
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(
+            ex,
+            "STARTUP SETTINGS SEED COULD NOT BE DISCARDED — the environment floor failed to activate and " +
+            "the fleet-settings.json written from it in {SettingsDir} could NOT be removed. That file " +
+            "now WINS over ST4I_SERVER_URL/ST4I_MACHINE_CODE/ST4I_VERIFY_TLS on every subsequent start, " +
+            "so correcting those variables will have no effect until it is deleted by hand.",
+            settingsStore.RootDirectory);
+    }
+}
 
 app.Logger.LogInformation(
     "St4i.EngineApi ready — {Count} machine(s) in the fleet roster: {Codes} (mode={Mode})",
