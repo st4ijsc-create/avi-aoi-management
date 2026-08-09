@@ -12,6 +12,11 @@ import { useTranslation } from 'react-i18next';
 import { toast } from "sonner";
 import { toastTrpcError } from "@/lib/trpcErrors";
 import { useLocation } from "wouter";
+// ★★★ Pha 7 / vá NHÀ TÙ I-4 — chủ DUY NHẤT của "tài khoản xác thực nội bộ" (`shared/xacThucNoiBo.ts`).
+// ⚠⚠ ĐÂY là **bức tường người dùng NHÌN THẤY**: với `loginMethod = 'password'`, vị từ cũ thay cả
+//    biểu mẫu bằng màn "không thể đổi mật khẩu" — trong khi cổng buộc-đổi-mật-khẩu vừa đẩy họ TỚI
+//    đúng trang này. Client và máy chủ phải hỏi **cùng một chủ**, nếu không luật lại trôi đi.
+import { laXacThucNoiBo } from "@shared/xacThucNoiBo";
 
 export default function ChangePassword() {
   const { t } = useTranslation();
@@ -71,8 +76,8 @@ export default function ChangePassword() {
     });
   };
 
-  // Check if user is local account
-  const isLocalAccount = (user as any)?.loginMethod === "local";
+  // Tài khoản này có được hệ NÀY xác thực bằng mật khẩu không — hỏi chủ duy nhất, KHÔNG so chuỗi.
+  const isLocalAccount = laXacThucNoiBo((user as any)?.loginMethod);
 
   // Password strength indicator
   const getPasswordStrength = (password: string) => {

@@ -11,6 +11,10 @@ import * as db from "../db";
 //   dùng **danh sách CẤM một phần tử** (`const { passwordHash, ...safeUser }`) nên
 //   **`twoFactorSecret` vẫn ra** — đúng lớp *"phần tử thứ N+1"*.
 import { toPublicUser, toPublicUsers, type KhongMangBiMat } from "../_core/publicUser";
+// ★★★ Pha 7 / vá NHÀ TÙ I-4 — chủ DUY NHẤT của khái niệm "tài khoản xác thực nội bộ".
+// ⚠ Ba điểm gọi dưới đây từng mỗi chỗ tự so `loginMethod !== 'local'`, trong khi dữ liệu THẬT mang
+//   `'password'` ⇒ 4/4 tài khoản không-admin đang hoạt động bị khoá ra ngoài. Xem `shared/xacThucNoiBo.ts`.
+import { laXacThucNoiBo } from "@shared/xacThucNoiBo";
 
 // ============ USER ROUTER ============
 export const userRouter = router({
@@ -121,8 +125,8 @@ export const userRouter = router({
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'Không tìm thấy người dùng');
       }
       
-      // Only local users can have password changed
-      if (user.loginMethod !== 'local') {
+      // Chỉ tài khoản xác thực NỘI BỘ mới có mật khẩu để đặt lại — hỏi chủ duy nhất, KHÔNG so chuỗi.
+      if (!laXacThucNoiBo(user.loginMethod)) {
         throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'resetUserPassword' }, 'Chỉ có thể đổi mật khẩu cho tài khoản nội bộ');
       }
       
@@ -195,8 +199,8 @@ export const userRouter = router({
       // ★★★ Pha 7 Task 9 (9c) — hash nay ở `user_secrets`, đọc qua CỬA DUY NHẤT.
       const biMat = await db.layBiMatNguoiDung(user.id);
 
-      // Only local users can change password
-      if (user.loginMethod !== 'local' || !biMat.passwordHash) {
+      // ★★★ Vá NHÀ TÙ I-4 — ĐÂY là cửa đã nhốt 4/4 tài khoản không-admin. Hỏi chủ duy nhất.
+      if (!laXacThucNoiBo(user.loginMethod) || !biMat.passwordHash) {
         throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'changeOwnPassword' }, 'Chỉ tài khoản nội bộ mới có thể đổi mật khẩu');
       }
 
@@ -335,8 +339,11 @@ export const userRouter = router({
       }
 
       // Verify password for local users — hash ở `user_secrets` (Pha 7 Task 9).
+      // ⚠ Vá NHÀ TÙ I-4 khép luôn một lỗ theo chiều MỞ ở đây: với `loginMethod = 'password'` (4 tài
+      //   khoản đang chạy) vị từ cũ cho `false` ⇒ lượt tắt 2FA **bỏ qua** phép kiểm mật khẩu hoàn
+      //   toàn. Nay cùng một chủ trả lời ⇒ có hash thì PHẢI đúng mật khẩu mới tắt được 2FA.
       const biMat = await db.layBiMatNguoiDung(user.id);
-      if (user.loginMethod === 'local' && biMat.passwordHash) {
+      if (laXacThucNoiBo(user.loginMethod) && biMat.passwordHash) {
         const isValidPassword = await bcrypt.compare(input.password, biMat.passwordHash);
         if (!isValidPassword) {
           throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'password' }, 'Mật khẩu không đúng');

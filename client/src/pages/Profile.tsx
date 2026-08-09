@@ -12,6 +12,8 @@ import { trpc } from "@/lib/trpc";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { User, Mail, Phone, Building, Briefcase, Shield, Calendar, Clock, ShieldCheck, ShieldOff, QrCode, Copy, CheckCircle2, AlertTriangle, KeyRound, Monitor } from "lucide-react";
 import SessionManagement from "@/components/SessionManagement";
+// ★★★ Pha 7 / vá NHÀ TÙ I-4 — chủ DUY NHẤT của "tài khoản xác thực nội bộ".
+import { laXacThucNoiBo } from "@shared/xacThucNoiBo";
 import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
 import { toast } from "sonner";
@@ -526,7 +528,9 @@ export default function Profile() {
               </AlertDescription>
             </Alert>
 
-            {(user as any)?.loginMethod === "local" && (
+            {/* ⚠ Phải khớp `user.disable2FA` phía máy chủ: nó kiểm mật khẩu cho ĐÚNG tập này. Lệch
+                một bên ⇒ máy chủ đòi mật khẩu mà biểu mẫu không có ô để gõ. Cùng một chủ. */}
+            {laXacThucNoiBo((user as any)?.loginMethod) && (
               <div className="space-y-2">
                 <Label>{t('auth.currentPassword')}:</Label>
                 <Input

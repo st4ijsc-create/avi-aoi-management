@@ -3,6 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { mapTrpcError } from "@/lib/trpcErrors";
+// ★★★ Pha 7 / vá NHÀ TÙ I-4 — chủ DUY NHẤT của "tài khoản xác thực nội bộ".
+// ⚠ Nút này phải khớp `user.updatePassword`: vị từ cũ giấu ĐÚNG nút mà admin cần để gỡ nhà tù hộ
+//   4 tài khoản `loginMethod = 'password'`.
+import { laXacThucNoiBo } from "@shared/xacThucNoiBo";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -669,7 +673,7 @@ export default function Users() {
                                 <Pencil aria-hidden="true" className="h-4 w-4" />
                               </Button>
                             </PermissionGate>
-                            {user.loginMethod === "local" && (
+                            {laXacThucNoiBo(user.loginMethod) && (
                               <PermissionGate module="admin_users" action="canEdit">
                                 <Button
                                   variant="ghost"

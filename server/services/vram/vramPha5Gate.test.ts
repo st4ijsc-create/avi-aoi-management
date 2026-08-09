@@ -312,7 +312,15 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   ca ghim **lỗ MIỄN TRỪ CỐ Ý** cho vai `admin` (quyết định chủ dự án 2026-08-09).
     //   `server/_core/` **không** có đường bao trong cổng ⇒ thiếu dòng này thì lưới ấy *"theo cấu
     //   tạo không bao giờ được canh"*.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(37); // I-4: +1
+    // ⚠ Pha 7 / vá **NHÀ TÙ I-4**: 37 → 38. **Đúng MỘT** đường mới —
+    //   `server/_core/xacThucNoiBo.test.ts`. Cổng I-4 ở trên cho `user.changePassword` đi qua,
+    //   nhưng **bên trong** thủ tục ấy còn một cửa thứ hai (`loginMethod !== 'local'`) trong khi
+    //   dữ liệu THẬT mang `'password'` ⇒ 4/4 tài khoản không-admin đang hoạt động **bị khoá ra
+    //   ngoài**. Ô chủ của lưới mới là một **neo HAI CHIỀU vào mã SINH DỮ LIỆU** (seed script +
+    //   `server/db/auth.ts`), cộng một **∀ trên AST** cấm mọi phép so `loginMethod` với chuỗi.
+    //   `server/_core/` **không** có đường bao trong cổng ⇒ thiếu dòng này thì lưới ấy *"theo cấu
+    //   tạo không bao giờ được canh"* — đúng lỗ đã để lưới §5 của I-4 khai XANH suốt.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(38); // vá nhà tù I-4: +1
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -422,7 +430,11 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   bộ nhận diện **NỘI DUNG** (tự khai `Pha 5`, có chủ ý). Vì `client/src/lib/` **đã** là một
     //   đường của §Cổng kiểm chung nên `CONG.length` giữ nguyên **37**; chỉ con số này đổi.
     //   ⚠ Đuôi `.unit.test.ts` là bắt buộc — `vitest.config.ts` gom client bằng `*.unit.test.ts`.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(100); // I-4 client: +1
+    // ⚠ Pha 7 / vá **NHÀ TÙ I-4**: 100 → 101. **Đúng MỘT** file mới —
+    //   `server/_core/xacThucNoiBo.test.ts`. Nó vào tập bị canh qua bộ nhận diện **NỘI DUNG** (tự
+    //   khai `Pha 5`, có chủ ý — xem docstring của nó), và phải có đường riêng ở §Cổng kiểm chung
+    //   ⇒ `CONG.length` 37 → **38** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(101); // vá nhà tù I-4: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {
