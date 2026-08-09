@@ -1680,9 +1680,15 @@ EXPECT_EDGESERVICE=50
 # record-then-drain could break had no witness at all, and neither gap was listed in the report's own "what is
 # NOT proven" section, which is what made it a finding rather than a known gap.
 #   ConcurrentRegistrations_NeverRunTwoSeedCallbacksAtOnce_AndDeliverInRosterOrder   +1
-#       The seed-notify lock's actual job. Asserts MaxConcurrentCallbacks == 1 (mutual exclusion itself, not
-#       a shuffled order — order is a probabilistic witness, overlap is the property) plus exactly-once and
-#       roster order, with 8 threads released from a common start line and a dwell inside the callback.
+#       The seed-notify lock's actual job. Asserts MaxConcurrentCallbacks == 1 plus exactly-once and roster
+#       order, with 8 threads released from a common start line and a dwell inside the callback.
+#       🔴 This entry used to add "— order is a probabilistic witness, overlap is the property". The test's
+#       own doc was corrected by MEASUREMENT after that (overlap is what kills the lock-removed mutant, 6 of
+#       6; order is what catches an interleave at the DEQUEUE point, which produces zero overlap and is
+#       invisible to the high-water mark — "do not trim either one"), and this line was not swept with it.
+#       Corrected by G-2 under §8.1(c): the gate script is an operator-facing artifact describing the same
+#       mechanism, and "probabilistic witness" is exactly the wording review N-1 flagged as inviting a
+#       maintainer to delete the assertion that covers the schedule the other one cannot see.
 #   RegisteringIntoARunningFleet_StillNotifiesExactlyOnce_AfterTheRestart            +1
 #       The path that changed most: the drain moved past StopLocked + WaitAndDisposeOldPipeline +
 #       StartLocked. Previously asserted nowhere.
@@ -1694,7 +1700,54 @@ EXPECT_EDGESERVICE=50
 # EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE stay put, same check as
 # above: the review round touches FleetCore.cs, FleetHost.cs, one test file, this script, one blueprint
 # section and mutate-guard.sh's header. EXPECT_WARNINGS stays 116.
-EXPECT_ENGINEAPI=1303
+#
+# 🔴 TASK G-2 (.superpowers/sdd/gate-and-log-channel/task-2-brief.md) raises this 1303 -> 1310 (+7), COUNTED
+# FROM THE RUNNER (`dotnet test --list-tests`: 1303 -> 1310), not by hand. ONE new file; nothing is
+# rewritten, split or deleted. Per file:
+#   FleetHostGateCommitCompletionTests               +7   NEW
+#
+# G-2 closes the defect CLASS G-1 found one instance of: state committed while FleetCore._gate is held whose
+# correctness depends on a step that runs after the lock is released. Seven tests, and the number is what it
+# is because the class has one member per (commit, completion) pair and each member has its own throw site:
+#   Estop_WhenTheUnsSeamThrowsUnderTheGate_TheOldPipelineIsStillDisposed                        +1
+#   Estop_WhenTheHostLoggerThrowsFlushingTheHaltPathLines_TheOldPipelineIsStillDisposed         +1
+#       S2 — the halt path, the most serious member. The two tests are two different throw sites in the same
+#       window, not one property twice: the first is the IUnsPublisher seam called with _gate held (the
+#       enumeration's own item 8); the second is the deferred-log flush that G-1 placed AS THE FIRST
+#       STATEMENT of WaitAndDisposeOldPipeline, ahead of every disposal — a regression G-1 introduced into
+#       the routine whose job is to release the pipeline. Each asserts the driver was disposed EXACTLY once,
+#       so a fix that traded a lost teardown for a doubled one fails.
+#   Start_WhenTheUnsSeamThrowsUnderTheGate_TheOrphanedConnectorDriverIsStillDisposed            +1
+#   Start_WhenTheHostLoggerThrowsFlushingDeferredLines_TheOrphanIsDisposedAndTheRunEventRecorded +1
+#       S3 (same two throw sites, on the start path — the leak here is the orphaned connector driver
+#       "review fix round 2" exists to prevent) and S7 (the historian Start run event, a SECOND completion
+#       owed by the same commit, which sits after the first). The second test is the one that caught a
+#       defect in G-2's own first draft: a throw inside a `finally` abandons the rest of that same `finally`,
+#       so the run event was still exposed until the two statements were nested.
+#   ARestartWhoseTeardownThrows_StillRebuildsThePipeline_RatherThanLeavingTheFleetStopped       +1
+#       S4's first half — the restart chokepoint's rebuild now survives a throwing off-lock teardown. S4's
+#       SECOND half (StartLocked itself throwing) is reported OPEN and is asserted as such in the next test.
+#   Burst_WhenApplyingTheBurstThrows_TheRevertIsStillScheduled                                  +1
+#   Burst_WhenTheScheduledRevertItselfThrows_ItIsReported_NotDroppedOnAnUnobservedTask          +1
+#       S5, and the one genuinely SILENT instance of S4. Review M-5 named only the Cancel half of Burst's
+#       window; the larger half is ApplyScenario, reachable through the enumeration's item 5. The second
+#       test covers the revert task's own failure, which ran on an unobserved Task and was dropped by the
+#       finalizer with nothing logged anywhere.
+#
+# NOT COVERED, said out loud rather than implied: S6 (UpdateSettings) is deliberately left OPEN — the
+# uniform try/finally remedy would convert "the edit evaporates at the next restart" into "the service does
+# not start", because Program.cs feeds the persisted triple back into that same method during startup. There
+# is therefore no test for it, and that is a refusal rather than a gap. See FleetCore.UpdateSettings' own
+# comment and the G-2 report.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE are deliberately UNCHANGED,
+# and that is the check rather than a coincidence: G-2 touches exactly ONE product file
+# (src/St4i.EdgeCore/Fleet/FleetCore.cs) and adds one test file in one suite. A total moving anywhere else
+# would mean this task reached somewhere it had no business reaching. EXPECT_CONFORMANCE in particular stays
+# 22: G-2 adds no driver and no connector kind. EXPECT_WARNINGS stays 116 — the new code adds no warning and
+# the one signature change (DisposeOrphanedConnectorDrivers' parameter becoming nullable) is matched by a
+# null guard at its head, so no CS86xx appears.
+EXPECT_ENGINEAPI=1310
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
