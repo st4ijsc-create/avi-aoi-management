@@ -201,6 +201,32 @@ Bằng chứng, do reviewer chạy lại độc lập trên cả hai nhân chứ
 
 Thứ được bảo vệ là **một cổng COM không bị giữ tới hết đời tiến trình**, và điều đó chỉ đọc được **từ chính cái cổng**. Đây cùng dạng với nguyên tắc thứ BA (mỗi bản sửa đi kèm một phép quét tìm anh em của nó): một cái cò súng cụ thể, gắn vào một khoảnh khắc cụ thể trong lúc viết test.
 
+🔴 **(d) Cơ chế do NGƯỜI GIAO VIỆC cung cấp cũng phải chịu đúng phép kiểm ấy — nó không được miễn vì đã qua một vòng phản biện (G-2).**
+
+Nguyên tắc "chỉ cách một property" ở trên nói về cơ chế do **reviewer** đọc ra. G-2 gặp cùng hình dạng ở một vị trí mới: brief giao cho nó **năm điểm sửa đã được phản biện đo lại**, và điểm số 1 nêu cả **chẩn đoán** (*"`git status --porcelain` in đường dẫn tương đối với gốc repo, nên một phép so khớp ngây thơ KHÔNG BAO GIỜ khớp"*) lẫn **thuốc chữa** (*"dùng `git diff --quiet`"*), kèm điểm số 5 nêu lý do thứ hai (*"để chuẩn hoá CRLF/filter không biến nó thành lệnh từ chối sai vĩnh viễn"*).
+
+Chạy thử từ `tools/machine-simulator` trên một file bẩn, ba biến thể:
+
+| Biến thể | Kết quả |
+|---|---|
+| `git status --porcelain \| grep -q "$p"` | **KHỚP** — đường dẫn in ra *chứa* đối số như một chuỗi con |
+| `git status --porcelain \| awk '{print $2}' \| grep -qx "$p"` | **IM LẶNG** — đây mới là cái bẫy |
+| `git status --porcelain -- "$p"` | **KHỚP** — để git tự phân giải pathspec |
+
+→ *"Không bao giờ khớp"* **quá mạnh**, và *"porcelain là lệnh sai"* **sai hẳn**: dạng thứ ba chạy đúng. Lỗi nằm ở việc **so khớp ĐẦU RA của nó bằng tay**, và biến thể đi im lặng lại chính là biến thể tự nhiên nhất để viết. Lý do ở điểm 5 cũng không đứng được: `git status` và `git diff` đi qua **cùng một phép so với index và cùng bộ clean filter**, nên không có khác biệt CRLF nào giữa hai lệnh.
+
+**Kết luận không đổi, lập luận thì đổi** — `git diff --quiet` vẫn đúng, vì nó **không có đầu ra để phải so**. Và bản sửa được thiết kế sao cho phép kiểm ấy **không chịu lực**: nó chụp ảnh **vô điều kiện** và chỉ dùng phép so để chọn giọng thông báo, nên một phép kiểm sai chỉ tốn một dòng log chứ không tốn công việc.
+
+→ **Quy tắc: cơ chế đến kèm nhiệm vụ là một KHẲNG ĐỊNH, không phải một tiền đề. Chạy nó trước khi xây lên trên nó — kể cả khi nó đã được một vòng phản biện đo lại, vì cái được đo là TẦN SUẤT (1 trên 3 lần mất) chứ không phải CƠ CHẾ.** Cùng hình dạng như ca greet-then-RST, ở một chỗ mà không ai nghĩ là còn phải kiểm.
+
+🔴 **(e) `finally` là một nơi trú của lớp lỗi này, không phải thuốc chữa của nó (G-2).**
+
+G-2 đóng lớp lỗi ấy bằng `try`/`finally` ở từng chỗ. **Một trong các bản sửa mang đúng lỗi nó đang sửa**, và đó là lần thứ tư trong hai đợt (§8.1(b)): một cú ném **bên trong** `finally` **bỏ luôn phần còn lại của chính `finally` ấy**, nên hai câu lệnh viết nối nhau trong một `finally` không phải hai bảo đảm — câu thứ hai vẫn phơi ra trước câu thứ nhất. Đúng cửa sổ mà bản sửa sinh ra để đóng.
+
+**Thứ bắt được nó là bài test, không phải lần đọc lại.** Bản nháp trông đúng, đọc trôi, và giải thích chính nó một cách thuyết phục.
+
+→ **Với mỗi `finally` có nhiều hơn MỘT câu lệnh, hỏi: nếu câu đầu ném thì câu sau còn chạy không? Nếu không, hoặc lồng chúng lại, hoặc nói rõ tại chỗ vì sao câu sau là no-op trên đúng đường ném ấy.**
+
 **Và một phân biệt về bằng chứng:** một diff chỉ sửa chú thích là **bằng chứng kết luận về cây mã, và không nói gì về môi trường**. Cổng đỏ trên một commit như vậy nghĩa là máy bẩn, không phải mã hỏng — nhưng cách chữa là **dọn máy**, không phải nới trần.
 
 **Và một đính chính về chính bộ công cụ này, do D-3 tìm ra.** Brief D-3 của tôi yêu cầu test phụ thuộc phần cứng phải *"bỏ qua sạch sẽ và ồn ào"*, trong khi `verify-suites.sh` — cũng của tôi — **fail khi `skipped != 0`**. Hai chỉ thị loại trừ nhau, và **cái phải đổi là brief, không phải script**: xUnit đếm test bị bỏ qua động vào `Total`, nên một bộ test phụ thuộc phần cứng làm `Skipped` **phụ thuộc môi trường** — và bất kỳ con số kỳ vọng cố định nào cũng sẽ làm **máy trang bị tốt hơn** bị đỏ. Đó là cái bẫy "một con số xanh mang nghĩa khác nhau trên các máy khác nhau", mặc áo phần cứng. **`skipped == 0` chính là thứ làm cho "817" mang cùng một nghĩa ở mọi nơi.**
