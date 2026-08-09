@@ -191,12 +191,21 @@ public sealed class FleetHostSeedNotificationOffGateTests
     ///
     /// <para>🔴 <b>And a PASSIVE contention witness, because all three assertions above are satisfied by a run
     /// in which the property was never exercised.</b> If the eight threads happen to serialise — each
-    /// finishing its drain before the next reaches one — then the high-water mark is legitimately 1, order is
-    /// trivially right, and the test is green having tested nothing. The witness only OBSERVES (it records
-    /// which thread ran each callback); it does not force a schedule. Refusing a <i>synchronising</i> hook is
-    /// right — a barrier inside the callback would make this assert an interleaving production never
-    /// guarantees — but refusing an observation was not, and it is what let the test degrade
-    /// silently.</para></summary>
+    /// finishing before the next starts — then the high-water mark is legitimately 1, order is trivially
+    /// right, and the test is green having tested nothing. The witness only OBSERVES; it does not force a
+    /// schedule. Refusing a <i>synchronising</i> hook is right — a barrier inside the callback would make
+    /// this assert an interleaving production never guarantees — but refusing an observation was not, and it
+    /// is what let the test degrade silently.</para>
+    ///
+    /// <para>🔴 <b>The FIRST witness written for this was wrong, and the mutation round is what caught it —
+    /// worth recording because it is a trap the shape invites.</b> It asked "was any descriptor delivered by
+    /// a thread other than its registrant", which sounds like a question about the schedule and is in fact a
+    /// question about <b>what the lock did</b>: a drainer holding the gate picks up other threads' work,
+    /// so cross-thread delivery is the lock working. Under the lock-removed mutant every thread drains only
+    /// its own descriptor — so that witness fired FIRST and announced "no contention was observed" on a run
+    /// that was maximally contended, sending a reader to the harness instead of the lock. <b>A vacuity guard
+    /// must be independent of the code under test</b>; this one is now wall-clock overlap of the
+    /// <c>RegisterMachine</c> calls, recorded by the test about the test.</para></summary>
     [Fact]
     public void ConcurrentRegistrations_NeverRunTwoSeedCallbacksAtOnce_AndDeliverInRosterOrder()
     {
@@ -210,9 +219,9 @@ public sealed class FleetHostSeedNotificationOffGateTests
         using var go = new ManualResetEventSlim(false);
         var faults = new ConcurrentBag<Exception>();
 
-        // Each worker thread is NAMED for the machine it registers, which is the whole of the contention
-        // witness below: a callback running on a thread whose name is not its own descriptor's code was
-        // delivered by some OTHER registrant's drain, i.e. the two registrations genuinely overlapped.
+        // Each worker times its OWN RegisterMachine call. Those intervals are the contention witness: they
+        // are recorded by the test about the test, so nothing the product does can move them. See (a).
+        var windows = new (long Start, long End)[threads];
         var workers = Enumerable.Range(0, threads).Select(i => RunOnItsOwnThread(
             () =>
             {
@@ -220,7 +229,9 @@ public sealed class FleetHostSeedNotificationOffGateTests
                 {
                     readyToGo.Signal();
                     go.Wait(TimeSpan.FromSeconds(10));
+                    var start = Stopwatch.GetTimestamp();
                     host.RegisterMachine(NewDescriptor($"G1-RACE-{i:D2}"));
+                    windows[i] = (start, Stopwatch.GetTimestamp());
                 }
                 catch (Exception ex) { faults.Add(ex); }
             },
@@ -235,14 +246,26 @@ public sealed class FleetHostSeedNotificationOffGateTests
         var delivered = deliveries.Select(d => d.Code).ToList();
 
         // (a) THE RUN WAS ACTUALLY CONTENDED — checked FIRST, because every assertion after it is satisfied
-        //     by a serialised run in which nothing was ever concurrent. Passive: it reads which thread
-        //     happened to run each callback and forces nothing.
-        var crossThread = deliveries.Count(d => !string.Equals(d.ThreadName, d.Code, StringComparison.Ordinal));
+        //     by a serialised run in which nothing was ever concurrent.
+        //
+        //     🔴 It asks whether two RegisterMachine CALLS overlapped in wall-clock time, which is a fact
+        //     about the harness's schedule alone. The first version of this witness asked instead whether
+        //     any descriptor was delivered by a non-registrant thread — and that is a fact about what the
+        //     LOCK did, not about whether the run was contended: under the lock-removed mutant every thread
+        //     drains only its own descriptor, so that witness fired FIRST and reported "no contention" for a
+        //     run that was fully contended. A vacuity guard that moves when the code under test moves is not
+        //     a vacuity guard; it is a second, worse assertion about the product wearing the guard's name.
+        //     Delivering threads are still recorded, but only for the diagnostic below.
+        var overlapping = (
+            from i in Enumerable.Range(0, threads)
+            from j in Enumerable.Range(i + 1, threads - i - 1)
+            where windows[i].Start < windows[j].End && windows[j].Start < windows[i].End
+            select 1).Any();
         Assert.True(
-            crossThread > 0,
-            $"no contention was observed: all {deliveries.Count} callbacks ran on their own registrant's " +
-            $"thread, so the drain never had to serialise anything and (b)-(d) below prove nothing on this " +
-            $"run. Distinct delivering threads: {deliveries.Select(d => d.ThreadName).Distinct(StringComparer.Ordinal).Count()}.");
+            overlapping,
+            $"no two RegisterMachine calls overlapped in time, so this run never exercised concurrent " +
+            $"registration and (b)-(d) below prove nothing on it. Distinct delivering threads: " +
+            $"{deliveries.Select(d => d.ThreadName).Distinct(StringComparer.Ordinal).Count()}.");
 
         // (b) MUTUAL EXCLUSION — measured to be the assertion that kills the lock-removed mutant
         //     (Expected: 1, Actual: 8, six runs of six). Two host callbacks in flight at once means a
