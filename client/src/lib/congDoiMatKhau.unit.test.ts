@@ -7,21 +7,26 @@
  *   đã che ca đỏ **sáu** lần trong dự án này.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * BA Ô, VÀ Ô §3 LÀ Ô YẾU NHẤT — NÓI RA THAY VÌ GIẤU
+ * BỐN Ô — VÀ Ô §4 TỒN TẠI VÌ MỘT ĐỘT BIẾN ĐÃ SHIP QUA §3
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  *   §1  **VỊ TỪ** — bảng chân trị đầy đủ của `phaiKhoaVaoManDoiMatKhau`, gồm cả biên *"chưa biết"*.
  *   §2  🔴 **MIỄN TRỪ CỐ Ý** — `admin` có cờ ⇒ **KHÔNG** bị khoá (quyết định chủ dự án 2026-08-09),
  *       và tập miễn trừ là **CÙNG MỘT** chủ với máy chủ (không có bản sao thứ hai ở client).
  *   §3  **CẤU TRÚC** — cổng bọc **CHÍNH `<Router/>`** (∀ route theo cấu tạo) · dùng lại **màn đã
  *       có** · và `ChangePassword` **đọc lại `auth.me`** sau khi đổi (nếu không: nhà tù).
+ *   §4  **RENDER THẬT** (`react-dom/server`, không jsdom) — cổng có **THẬT SỰ KHOÁ** không.
  *
- * ⚠⚠ §3 quét **MÃ NGUỒN**, không render. Đó là **giới hạn của hạ tầng**, không phải lựa chọn:
- *    `vitest.config.ts` chạy client ở `environment: "node"`, gom `*.unit.test.ts` (không `.tsx`),
- *    và repo **không** có `jsdom`/`@testing-library`. Một lưới quét mã **yếu hơn** một lượt render
- *    thật — nó bắt được *"ai đó dời cổng xuống dưới `<Router/>`"* nhưng **không** bắt được một lỗi
- *    render. Ghi vào nợ (`i4-report.md` §nợ mới), đừng để nó trôi thành *"đã canh rồi"*.
+ * ⚠⚠⚠ §3 quét **MÃ NGUỒN**. Hai đột biến của lượt vá này đo được **chính xác** nó canh tới đâu:
+ *    · `// await utils.auth.me.invalidate();` (bình luận đúng một dòng) ⇒ **XANH 10/10**, vì ô ấy
+ *      quét mã **THÔ**. Vá: `boComment()` ở **mọi** ô quét mã.
+ *    · `if (true) return <>{children}</>` — **cổng thôi khoá hoàn toàn** ⇒ vẫn **XANH 10/10**.
+ *      §3 canh *"cổng NẰM ĐÚNG CHỖ"*; nó **không thể** canh *"cổng KHOÁ"*. Vá: **§4**.
+ * ⇒ Kết luận mang đi: một lưới quét mã trả lời được câu *"mã có hình dạng ấy không"* và **không**
+ *   trả lời được câu *"mã làm việc ấy không"*. Đừng để §3 trôi thành *"đã canh rồi"*.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -47,6 +52,36 @@ function doc(duongTuongDoi: string): string {
  */
 function boComment(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★★ §4 — **RENDER THẬT**, không jsdom, không `@testing-library`.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO KHỐI NÀY TỒN TẠI: đột biến `if (true) return <>{children}</>` — tức **cổng thôi khoá,
+ * hoàn toàn** — **SHIP ĐƯỢC** với §3 (quét mã nguồn) **XANH 10/10**. Đo được, không suy ra. §3 canh
+ * *"cổng NẰM ĐÚNG CHỖ trong cây"*; nó **không thể** canh *"cổng THẬT SỰ KHOÁ"*.
+ *
+ * `renderToStaticMarkup` (react-dom/server) chạy được ở **`environment: "node"`** — không cần
+ * jsdom, không cần thêm dependency. Ba hook ngoại vi (`useAuth` · `wouter` · `react-i18next`) được
+ * thay bằng bản tối thiểu; `ChangePassword` là `lazy()` nên SSR dừng ở Suspense fallback, tức lưới
+ * **không** kéo cả cây `DashboardLayout` vào.
+ * ⚠ Ba mock ấy là **ngoại vi**, không phải thứ đang được đo: thứ đang đo là **quyết định render**
+ *   của chính `CongDoiMatKhau`.
+ */
+const PHIEN: { user: unknown } = { user: null };
+vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: PHIEN.user }) }));
+vi.mock("wouter", () => ({ useLocation: () => ["/dashboard", () => {}] }));
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+
+/** Dấu nhận biết *"bảng route ĐÃ được render"*. Nó đứng thay cho `<Router/>` thật. */
+const DAU_ROUTER = "DAU-CUA-BANG-ROUTE";
+
+async function renderCong(nguoiDung: unknown): Promise<string> {
+  const { CongDoiMatKhau } = await import("@/components/CongDoiMatKhau");
+  PHIEN.user = nguoiDung;
+  return renderToStaticMarkup(
+    createElement(CongDoiMatKhau, { children: createElement("div", { id: DAU_ROUTER }) }),
+  );
 }
 
 describe("★★★ I-4 §1 (client) — VỊ TỪ: bảng chân trị ĐẦY ĐỦ", () => {
@@ -157,14 +192,24 @@ describe("★★★★ I-4 §3 (client) — CẤU TRÚC: ∀ route theo cấu t�
   });
 
   it("★★★ cổng DÙNG LẠI màn `pages/ChangePassword` đã có, không dựng màn thứ hai", () => {
-    const cong = doc("components/CongDoiMatKhau.tsx");
+    // ⚠ `boComment` ở MỌI ô quét mã — xem lý do (một đột biến đã ship) ở ô "NHÀ TÙ" bên dưới.
+    const cong = boComment(doc("components/CongDoiMatKhau.tsx"));
     expect(
       cong.includes('import("@/pages/ChangePassword")'),
       "cổng phải render ĐÚNG màn mà `<Route path=\"/change-password\">` trỏ tới",
     ).toBe(true);
+    expect(cong.includes("<ChangePassword />"), "cổng phải THẬT SỰ render màn ấy, không chỉ nhập nó").toBe(true);
+    // …và quyết định phải đến từ vị từ có lưới, không từ một `if` viết tay trong JSX.
+    expect(
+      cong.includes("phaiKhoaVaoManDoiMatKhau("),
+      "cổng không gọi vị từ ⇒ nó đang tự quyết định, ngoài tầm mọi ca ở §1/§2",
+    ).toBe(true);
     // Đường của màn là một hằng dùng chung, không phải chuỗi viết tay lần hai.
     expect(DUONG_DOI_MAT_KHAU).toBe("/change-password");
-    expect(doc("App.tsx").includes(`<Route path="${DUONG_DOI_MAT_KHAU}"`), "route của màn phải còn đó").toBe(true);
+    expect(
+      boComment(doc("App.tsx")).includes(`<Route path="${DUONG_DOI_MAT_KHAU}"`),
+      "route của màn phải còn đó",
+    ).toBe(true);
   });
 
   it("★★★★ KHÔNG THÀNH NHÀ TÙ — `ChangePassword` đọc LẠI `auth.me` sau khi đổi thành công", () => {
@@ -175,7 +220,14 @@ describe("★★★★ I-4 §3 (client) — CẤU TRÚC: ∀ route theo cấu t�
      * cổng vẫn đọc `mustChangePassword: true` và đẩy người dùng **ngược lại** đúng màn ấy. Họ đổi
      * mật khẩu bao nhiêu lần cũng không thoát ra. Hỏng **im lặng**: không lỗi, không cảnh báo.
      */
-    const src = doc("pages/ChangePassword.tsx");
+    /**
+     * ⚠⚠⚠ `boComment` ở đây **KHÔNG** phải dọn dẹp — nó là **BẢN VÁ CỦA MỘT ĐỘT BIẾN ĐÃ SHIP.**
+     * Bản đầu của ô này quét mã **THÔ**, và đột biến `// await utils.auth.me.invalidate();`
+     * (bình luận đúng một dòng — cách một người "tạm tắt để thử" hay làm nhất) **đi lọt với lưới
+     * XANH 10/10**. Tức lưới đang canh *"chuỗi ký tự ấy có xuất hiện trong file không"*, chứ không
+     * canh *"lượt gọi ấy có CHẠY không"* — đúng lớp *"lưới canh hẹp hơn TÊN nó nói"*.
+     */
+    const src = boComment(doc("pages/ChangePassword.tsx"));
     const i = src.indexOf("onSuccess");
     const j = src.indexOf("onError", i);
     expect(i, "không tìm thấy `onSuccess` của mutation đổi mật khẩu").toBeGreaterThan(-1);
@@ -190,5 +242,45 @@ describe("★★★★ I-4 §3 (client) — CẤU TRÚC: ∀ route theo cấu t�
       khoiOnSuccess.indexOf("utils.auth.me.invalidate"),
       "lượt đọc lại phải đứng TRƯỚC `setLocation`",
     ).toBeLessThan(khoiOnSuccess.indexOf("setLocation("));
+  });
+});
+
+describe("★★★★ I-4 §4 (client) — RENDER THẬT: cổng có KHOÁ hay không (ô mà §3 KHÔNG THỂ canh)", () => {
+  it("★★★★ CÓ CỜ ⇒ bảng route KHÔNG được render, và màn đổi mật khẩu hiện ra", async () => {
+    /**
+     * ⚠⚠⚠ Đây là ô **CHỦ** của nửa client, và là ô mà đột biến `if (true) return children` đã đi
+     * lọt trước khi có nó. Khẳng định là **VẮNG MẶT**: `children` — toàn bộ bảng route — **không
+     * xuất hiện trong kết xuất**. Đó là cách duy nhất phát biểu *"không route nào lách được"* mà
+     * không phải liệt kê route nào.
+     */
+    const html = await renderCong({ role: "user", mustChangePassword: true });
+    expect(html, "bảng route VẪN được render khi đang khoá ⇒ mọi route lách được cổng").not.toContain(DAU_ROUTER);
+    expect(html, "không thấy lời giải thích ⇒ người dùng bị chặn mà không biết vì sao").toContain(
+      "auth.mustChangePasswordTitle",
+    );
+  });
+
+  it("★★★★ ĐỐI CHỨNG DƯƠNG — KHÔNG cờ ⇒ bảng route render bình thường (cổng không khoá nhầm ai)", async () => {
+    // ⚠ Thiếu ô này, một cổng khoá **TẤT CẢ MỌI NGƯỜI** vẫn qua được ca trên: khẳng định vắng mặt
+    //   là chân lý với một cổng luôn-khoá. Hai ô cùng nhau mới thành một phép đo.
+    const html = await renderCong({ role: "user", mustChangePassword: false });
+    expect(html).toContain(DAU_ROUTER);
+    expect(html).not.toContain("auth.mustChangePasswordTitle");
+  });
+
+  it("★★★ CHƯA ĐĂNG NHẬP (`auth.me` = null) ⇒ render bình thường, KHÔNG nhốt khách vào màn cần phiên", async () => {
+    expect(await renderCong(null)).toContain(DAU_ROUTER);
+  });
+
+  it("🔴🔴 MIỄN TRỪ CỐ Ý, ĐO BẰNG RENDER — `admin` CÓ CỜ vẫn thấy bảng route (chủ dự án 2026-08-09)", async () => {
+    /**
+     * ⚠⚠⚠ Ô §2 ghim **vị từ**; ô này ghim **hành vi hiện ra màn hình**. Cần cả hai: một cổng gọi
+     * đúng vị từ rồi **bỏ qua kết quả** vẫn qua được §2.
+     * Đây là **lỗ CỐ Ý** (rủi ro đã nêu: `admin` là vai nhiều quyền nhất, bí mật của họ nằm trong
+     * đúng 8 cái đã lộ ở Task 8; khuyến nghị kỹ thuật là KHÔNG miễn trừ; chủ dự án vẫn chọn).
+     */
+    const html = await renderCong({ role: "admin", mustChangePassword: true });
+    expect(html, "admin đang có cờ mà bị khoá ⇒ miễn trừ (quyết định chủ dự án) đã mất").toContain(DAU_ROUTER);
+    expect(html).not.toContain("auth.mustChangePasswordTitle");
   });
 });
