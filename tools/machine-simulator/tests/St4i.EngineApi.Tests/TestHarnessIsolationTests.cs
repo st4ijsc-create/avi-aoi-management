@@ -56,6 +56,33 @@ namespace St4i.EngineApi.Tests;
 /// </summary>
 public sealed class TestHarnessIsolationTests
 {
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+    // 🔴 BOOKED, NOT BUILT — the follow-up this file is the natural home for, recorded here rather than
+    // in a report because this is where the machinery already lives.
+    //
+    // THE CASE. A test class can reach a process-wide ST4I_*_DIR through PRODUCT code without naming it:
+    // OnboardingFleetJoinTests reaches ST4I_CREDS_DIR two frames deep (ClaimAsync -> OnboardingService ->
+    // CredentialStore.Save) and mentions nothing. It wrote real DPAPI blobs into a real
+    // %ProgramData%\ST4I\sim\creds for as long as it existed, and every membership sweep on this branch
+    // missed it — four derivations, three of them wrong.
+    //
+    // WHY A "WHICH CLASSES SET THE VARIABLE" CENSUS IS THE WRONG INSTRUMENT, and this is the decisive
+    // part: keyed on the DIRECT half it returns GREEN over exactly the case that was paid for. That is
+    // blueprint §8.1(f) with a completeness claim on top — a recogniser whose domain is inherited from
+    // where its author was standing.
+    //
+    // WHAT IS DECIDABLE TODAY, and would catch a writer at ANY call depth: assert that the REAL
+    // %ProgramData%\ST4I\sim\creds gains no files across a suite run. It measures the consequence rather
+    // than the naming, which is this repository's own idiom (see the D-7a backoff measurement). The
+    // machinery is here and in tests/Shared/TestRunTempRoot.cs.
+    //
+    // WHAT IS NOT: the RACE half — two classes interleaving on one variable — needs a runtime fixture and
+    // its own decision, because a [Collection] omission changes SCHEDULING, not behaviour, and therefore
+    // cannot be killed by a mutation (measured: dropping the attribute compiles and every test passes).
+    //
+    // Neither is built here. Both are named so the next person starts from the set.
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+
     private static string MachineSimulatorRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

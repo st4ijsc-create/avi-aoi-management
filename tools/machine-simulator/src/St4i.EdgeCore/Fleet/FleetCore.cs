@@ -3453,9 +3453,14 @@ internal sealed class FleetCore
         // CREATED from the env floor merged with FleetHost's defaults, and from the next boot it would
         // win over the env vars on the strength of a triple that never activated. Program.cs deletes it
         // in exactly that case and only that case; a failed RESTORE never deletes anything, because the
-        // operator's own file is what branch-review C1 exists to protect. So: ONE writer — the `Save`
-        // twenty lines below, in THIS file — and ONE deleter, at the composition root in Program.cs. Both
-        // are counted by StartupSettingsReplayHardeningTests' source census.
+        // operator's own file is what branch-review C1 exists to protect. So: ONE writer — the `Save` in
+        // the `finally` below, in THIS file — and ONE deleter, at the composition root in Program.cs.
+        // Both are counted by StartupSettingsReplayHardeningTests' source census.
+        //
+        // 🔴 That sentence carried a LINE DISTANCE and it was wrong three times running, in a sentence
+        // rewritten twice for exactly this reason. The distance is gone rather than recounted: a pointer
+        // that has been wrong three times should stop being a pointer, and "the `finally` below" cannot
+        // drift because the thing it names moves with it.
         //
         // 🔴 Both pointers in that sentence were WRONG when first written (branch re-review I-3), in the
         // commit whose subject was this very class: it said both sites are "at the composition root" (the

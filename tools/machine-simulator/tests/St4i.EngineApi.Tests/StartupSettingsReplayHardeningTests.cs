@@ -311,9 +311,14 @@ public sealed class StartupSettingsReplayHardeningTests
             // AnUnactivatablePersistedTriple_…, which REQUIRES that same advice on the restore arm: two
             // assertions that fail in opposite directions, so neither arm's wording can drift into the
             // other's.
+            // 🔴 It keys on the FILE NAME, not on the advice's wording (branch re-review 2, Minor 3). The
+            // first version matched "edit/delete fleet-settings.json", so a REWORDED collapse — "repair
+            // fleet-settings.json", "see fleet-settings.json in …" — would have walked straight past it.
+            // The property is "this arm must not name the file it is about to delete", and the file name
+            // is the part of that sentence that cannot be paraphrased.
             Assert.DoesNotContain(log, e =>
                 e.Message.Contains(ReplayFailureMarker, StringComparison.Ordinal) &&
-                e.Message.Contains("edit/delete fleet-settings.json", StringComparison.Ordinal));
+                e.Message.Contains("fleet-settings.json", StringComparison.Ordinal));
         }
     }
 

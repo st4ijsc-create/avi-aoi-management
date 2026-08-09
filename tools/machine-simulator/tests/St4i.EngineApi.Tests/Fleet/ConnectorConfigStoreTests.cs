@@ -17,8 +17,19 @@ namespace St4i.EngineApi.Tests.Fleet;
 /// <para>🔴 <b>Fix round 4 (branch re-review I-2) — this class WRITES the process-wide
 /// <c>ST4I_CONNECTOR_CONFIG_DIR</c> and was the only writer of it outside the serialized collection.</b>
 /// <c>ResolveRoot_PrefersExplicitDirectory_OverEnvVar_OverDefault</c> below sets it to
-/// <c>C:\somewhere-env</c>, then to <c>null</c>, then restores. TWENTY-ONE other classes in this suite
-/// set the same variable and all twenty-one are collected. <c>Program.cs</c> reads it at startup and
+/// <c>C:\somewhere-env</c>, then to <c>null</c>, then restores. <b>EIGHTEEN other classes</b> in this
+/// suite set the same variable and all eighteen are collected.
+/// <para>🔴 <b>That number has now been wrong twice, in opposite directions, and the second time it was
+/// wrong because it was INHERITED rather than measured.</b> This comment first said TWENTY-ONE, which I
+/// took from a review finding; the next review measured NINETEEN. Re-measured here, with the instrument
+/// named: nineteen FILES under <c>tests/St4i.EngineApi.Tests</c> contain a non-<c>///</c>
+/// <c>SetEnvironmentVariable</c> of <c>ST4I_CONNECTOR_CONFIG_DIR</c>/<c>ConnectorConfigStore.EnvVarDir</c>,
+/// each declaring exactly one test class, and <b>that nineteen includes THIS file</b> — so the sentence's
+/// own subject, "other classes", is EIGHTEEN. (The same grep counted by LINES gives 38, because most
+/// classes set and restore.) All eighteen carry the attribute; verified by reading the
+/// <c>[Collection]</c> line of each.
+/// <b>The lesson is §8.1(d), landing on a reviewer:</b> a number that arrives inside a finding is a
+/// CLAIM, not a premise, and this one crossed three artefacts before anyone re-measured it.</para> <c>Program.cs</c> reads it at startup and
 /// <c>ConnectorConfigStore</c>'s constructor does <c>Directory.CreateDirectory(root)</c> plus a SQLite
 /// schema creation — so a host boot sampling this window either creates
 /// <c>C:\somewhere-env\connector-config.db</c> on the developer's C: drive, or (on the <c>null</c> leg)

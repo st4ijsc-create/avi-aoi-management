@@ -282,6 +282,32 @@ Hai vế rời nhau thì mỗi vế đều để lọt một ca của đợt nà
 
 **Và một phân biệt về bằng chứng:** một diff chỉ sửa chú thích là **bằng chứng kết luận về cây mã, và không nói gì về môi trường**. Cổng đỏ trên một commit như vậy nghĩa là máy bẩn, không phải mã hỏng — nhưng cách chữa là **dọn máy**, không phải nới trần.
 
+🔴 **(g) "CHỈ LÀ CHÚ THÍCH" LÀ MỘT KHẲNG ĐỊNH VỀ MỘT THAY ĐỔI, KHÔNG PHẢI MỘT TÍNH CHẤT CỦA NÓ (H-1).**
+
+Mục (d) nói: cơ chế đến kèm nhiệm vụ là một **khẳng định**, phải chạy trước khi xây lên trên nó. Mục này
+là **cùng quy tắc ấy áp lên NHÃN MỨC ĐỘ mà chính người sửa tự dán** — và nhãn nguy hiểm nhất là nhãn
+khiến người ta bỏ qua vòng đột biến, vì nó tự bào chữa: *"chỉ là chú thích, không có gì chạy được để mà
+hỏng."*
+
+**Ca sinh ra nó.** H-1 sửa một dòng log ở lối khởi động: một bản sửa **trông y hệt chú thích** — nó chỉ
+đổi câu khuyên người vận hành sao cho nhánh "gieo mầm" không còn chỉ tới một file mà host sắp xoá. Đột
+biến **R6** gộp hai câu khuyên trở lại làm một, tức **dựng lại đúng khiếm khuyết vừa sửa**, và **mọi
+assertion trong file vẫn XANH**. Bản sửa ấy suýt được ship như một chú thích đọc-thì-đúng mà **không có
+gì giữ**.
+
+→ **Cái cò súng, và nó SẮC hơn "luôn luôn đột biến" vì luôn-luôn thì bị bỏ đúng lúc cần nhất — một câu
+hỏi tại thời điểm commit:**
+
+> **Bản sửa này có đổi một CHUỖI mà một bài test đang khẳng định — hoặc CÓ THỂ khẳng định — hay không?**
+> Nếu có, nó không phải "chỉ là chú thích": nó là hành vi quan sát được, và nó phải bị đột biến trước khi
+> được gọi là đã sửa.
+
+Chuỗi hướng-người-vận-hành, thông điệp lỗi, nhãn, đơn vị, tên file trong lời khuyên — tất cả đều là **bề
+mặt sản phẩm**. Trình biên dịch không phân biệt chúng với chú thích; **bài test thì có**, nhưng chỉ khi ai
+đó nghĩ tới việc viết ra. Cách phân loại theo "diff này có đổi file `.cs` nào không" trả lời sai ở đúng
+lớp này, và §8.1 đã trả giá cho nó một lần: một diff chỉ-sửa-chú-thích là bằng chứng kết luận **về cây
+mã** (đoạn ngay trên) — nhưng "chỉ-sửa-chú-thích" phải được ĐO chứ không được tự khai.
+
 **Và một đính chính về chính bộ công cụ này, do D-3 tìm ra.** Brief D-3 của tôi yêu cầu test phụ thuộc phần cứng phải *"bỏ qua sạch sẽ và ồn ào"*, trong khi `verify-suites.sh` — cũng của tôi — **fail khi `skipped != 0`**. Hai chỉ thị loại trừ nhau, và **cái phải đổi là brief, không phải script**: xUnit đếm test bị bỏ qua động vào `Total`, nên một bộ test phụ thuộc phần cứng làm `Skipped` **phụ thuộc môi trường** — và bất kỳ con số kỳ vọng cố định nào cũng sẽ làm **máy trang bị tốt hơn** bị đỏ. Đó là cái bẫy "một con số xanh mang nghĩa khác nhau trên các máy khác nhau", mặc áo phần cứng. **`skipped == 0` chính là thứ làm cho "817" mang cùng một nghĩa ở mọi nơi.**
 
 → Quy tắc đúng: **hành vi phụ thuộc phần cứng không bao giờ là một test bị bỏ qua có điều kiện bên trong năm bộ test.** Nó hoặc được **ghi rõ là khoảng trống chưa test** trong báo cáo và trong chú thích của cổng, hoặc được commit thành **một bench harness riêng nằm ngoài năm bộ** (`tools/serial-bench/`). Phép đo không commit được thì không tái lập được — reviewer D-3 phải **viết lại toàn bộ probe** để kiểm chứng các con số của D-3.
