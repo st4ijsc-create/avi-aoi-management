@@ -1224,6 +1224,162 @@ describe("N9 (AST) — `disabled` của TỪNG nút lệnh, và CÁI NUÔI nó, 
     expect(viPham).toEqual([]);
   });
 
+  it("★★★★ Pha 7 / I-5 — GHIM số component con phải giải VÀ độ sâu chặng (chặng thứ HAI ⇒ ĐỎ)", () => {
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ★★★★ review TOÀN NHÁNH **I-5** — *"hôm nay 0 ca"* KHÔNG PHẢI MỘT BẤT BIẾN.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Vùng mù **số 2** khai ở khối "VÙNG MÙ CÒN LẠI" viết: *"Luật đi ĐÚNG MỘT chặng. Một component
+     * con **lại** prop-drill xuống cháu thì chỉ chặng đầu được chứng minh. (Hôm nay: **0** ca như
+     * vậy — cả ba nút dùng `<Button>` một chặng.)"*
+     *
+     * ⚠⚠ *"Hôm nay 0"* là một **quan sát theo thời điểm**, và **không con số nào ghim nó** — trong
+     * khi CHÍNH NHÁNH NÀY ghim `SO_VUNG_MU_2FA = 1` (`sessionGrantScan`), `SO_MIEN = 0`
+     * (`userExposureScan`), `SO_HAM_UY_QUYEN`, `CONG`, `FILE_CANH`. Một kỷ luật **áp không đều** là
+     * một kỷ luật **có phần tử thứ N+1**.
+     * ⇒ Ngày ai đó bọc nút lệnh VRAM qua **HAI** chặng component, đột biến P2 — *"nút GIẾT tiến
+     *   trình mở cho MỌI vai đăng nhập"*, `client/src/lib/` **529/529 XANH** — **ship lại được, im
+     *   lặng**. Ô này biến ngày ấy thành một **ca ĐỎ**, buộc người ta **hoặc** mở rộng luật **hoặc**
+     *   nói ra vùng mù mới.
+     */
+    /**
+     * ★★★ **THẺ ĐIỀU KIỆN** — `const Comp = asChild ? Slot : "button"` (khuôn shadcn/ui).
+     *
+     * ⚠⚠⚠ **ĐÂY LÀ CHỖ CÂU "HÔM NAY 0 CA" CỦA BÁO CÁO REVIEW ĐO SAI, VÀ PHÉP ĐO NÀY BÁC BỎ NÓ.**
+     * Báo cáo I-5 viết *"cả ba nút dùng `<Button>` **một chặng**"*. Đo lại trên cây: `Button` render
+     * `<Comp {...props} />` với `Comp` **viết HOA** ⇒ theo mặt chữ đó **là** một chặng thứ hai, và
+     * lượt ghim đầu tiên của ô này **ĐỎ ở cả ba nút**.
+     * Nhưng `Comp` **không phải một component**: nó là một **biến cục bộ** trỏ tới `"button"` — một
+     * **thẻ NGUYÊN THUỶ**, nơi DOM tự cưỡng chế `disabled`. Nhánh component (`Slot`) **chỉ** với
+     * tới được khi `asChild`, và `asChild` trên một nút lệnh VRAM **đã là ĐỎ** ở ca ∀ bên trên.
+     * ⇒ Nó là **chặng ĐIỀU KIỆN**, không phải chặng thứ hai. Phân biệt hai thứ ấy là **cả điểm**
+     *   của ô này: gộp chúng lại thì lưới **bắt nhầm chính khuôn UI mà cả repo đang dùng**, và một
+     *   lưới bắt nhầm là một lưới sẽ bị người sau tắt đi.
+     * ⚠ Chúng vẫn được **ĐẾM RIÊNG và GHIM** — không im lặng cho qua.
+     */
+    const laTheDieuKien = (sfCon: ts.SourceFile, tenThe: string): boolean => {
+      for (const n of moiNut(sfCon)) {
+        if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === tenThe && n.initializer) {
+          let co = false;
+          const di = (x: ts.Node): void => {
+            if (ts.isStringLiteral(x)) co = true;
+            x.forEachChild(di);
+          };
+          di(n.initializer);
+          if (co) return true;
+        }
+      }
+      return false;
+    };
+
+    /** Component con này có prop-drill `disabled` xuống một thẻ **COMPONENT** (chữ HOA) nữa không? */
+    const changKeTiep = (sfCon: ts.SourceFile, ten: string): { that: string[]; dieuKien: string[] } => {
+      const chau = new Set<string>();
+      const dieuKien = new Set<string>();
+      const thamSo = new Set<string>();
+      const than: ts.Node[] = [];
+      const nhan = (ps: ts.NodeArray<ts.ParameterDeclaration>): void => {
+        for (const p of ps) {
+          if (ts.isIdentifier(p.name)) thamSo.add(p.name.text);
+          else if (ts.isObjectBindingPattern(p.name)) {
+            for (const e of p.name.elements) if (ts.isIdentifier(e.name)) thamSo.add(e.name.text);
+          }
+        }
+      };
+      for (const n of moiNut(sfCon)) {
+        if (ts.isFunctionDeclaration(n) && n.name?.text === ten && n.body !== undefined) {
+          nhan(n.parameters);
+          than.push(n.body);
+        } else if (
+          ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === ten && n.initializer !== undefined
+        ) {
+          const f = boLopBoc(n.initializer);
+          if (ts.isArrowFunction(f) || ts.isFunctionExpression(f)) {
+            nhan(f.parameters);
+            than.push(f.body);
+          }
+        }
+      }
+      for (const b of than) {
+        const di = (x: ts.Node): void => {
+          if (ts.isJsxOpeningElement(x) || ts.isJsxSelfClosingElement(x)) {
+            const el = x as ThePhanTu;
+            const tenThe = el.tagName.getText(sfCon);
+            // Chỉ thẻ **COMPONENT** mới là một chặng nữa; thẻ nguyên thuỷ là ĐÍCH, DOM tự cưỡng chế.
+            if (/^[A-Z]/.test(tenThe)) {
+              const dich = laTheDieuKien(sfCon, tenThe) ? dieuKien : chau;
+              for (const a of el.attributes.properties) {
+                if (ts.isJsxSpreadAttribute(a)) {
+                  const g = gocCuaChuoi(a.expression);
+                  if (g !== null && thamSo.has(g)) dich.add(`${tenThe} ⇠ {...${g}}`);
+                } else if (ts.isJsxAttribute(a) && a.name.getText(sfCon) === "disabled") {
+                  dich.add(`${tenThe} ⇠ disabled=`);
+                }
+              }
+            }
+          }
+          x.forEachChild(di);
+        };
+        di(b);
+      }
+      return { that: [...chau].sort(), dieuKien: [...dieuKien].sort() };
+    };
+
+    const daGiai = new Set<string>();
+    const changHai: string[] = [];
+    const theDieuKien = new Set<string>();
+    for (const [f, src] of NGUON) {
+      if (!src.includes("trpc.vram.")) continue;
+      const sf = ast(f, src);
+      for (const nut of theNutLenh(sf)) {
+        if (nut.asChild || /^[a-z]/.test(nut.ten)) continue;
+        const duong = giaiThe(sf, nut.ten, f);
+        if (duong === null) continue; // ca ∀ ở trên đã bắt chuyện này rồi
+        daGiai.add(`${nut.ten}`);
+        const tiep = changKeTiep(ast(duong), nut.ten);
+        if (tiep.that.length > 0) changHai.push(`${f}:${nut.dong} <${nut.ten}> → ${tiep.that.join(" · ")}`);
+        for (const d of tiep.dieuKien) theDieuKien.add(`${nut.ten} → ${d}`);
+      }
+    }
+
+    /**
+     * ★★★ GHIM. Hôm nay: **1** component con phải giải (`<Button>` của shadcn/ui), **độ sâu 1**.
+     * ⚠ Con số này là một **phép đếm**, không phải một hằng số thẩm mỹ: nó đổi ⇔ bề mặt nút lệnh
+     *   VRAM đổi, và một lượt đổi bề mặt ra lệnh phải là một **quyết định được nói ra**.
+     */
+    expect(
+      [...daGiai].sort().join(" · "),
+      "tập component con mà nút lệnh VRAM phải giải đã ĐỔI.\n" +
+        "⚠ Mỗi component con là một chặng mà luật `disabled` phải đi qua; thêm một cái là mở rộng\n" +
+        "  đúng bề mặt mà P1/P2 đã đo là hỏng ⇒ phải NÓI RA, không trôi im lặng.",
+    ).toBe("Button");
+
+    /**
+     * ★★★ GHIM số **thẻ ĐIỀU KIỆN** gặp được. Hôm nay **1**: `Button → Comp ⇠ {...props}`
+     * (`const Comp = asChild ? Slot : "button"`). Xem lý lẽ ở `laTheDieuKien` — đây là chỗ câu
+     * *"hôm nay 0 ca"* của báo cáo review đo sai, nên nó được **đếm** chứ không bị bỏ qua.
+     */
+    const SO_THE_DIEU_KIEN = 1;
+    expect(
+      [...theDieuKien].sort().join("\n"),
+      `số THẺ ĐIỀU KIỆN đã đổi (${theDieuKien.size} ≠ ${SO_THE_DIEU_KIEN}).\n` +
+        "⚠ Một thẻ điều kiện MỚI là một chỗ `disabled` đi tới một thẻ **có thể là component**;\n" +
+        "  hôm nay nhánh component chỉ với tới được qua `asChild`, thứ ĐÃ LÀ ĐỎ ở ca ∀ bên trên.\n" +
+        "  Nếu điều kiện ấy đổi, ô này phải được đọc lại — đừng chỉ sửa con số.",
+    ).toBe("Button → Comp ⇠ {...props}");
+    expect(theDieuKien.size).toBe(SO_THE_DIEU_KIEN);
+
+    /** ★★★★ ĐỘ SÂU CHẶNG TỐI ĐA. Hôm nay **1**. Chặng thứ HAI là vùng mù số 2 **thành sự thật**. */
+    expect(
+      changHai.join("\n"),
+      "MỘT COMPONENT CON LẠI PROP-DRILL `disabled` XUỐNG CHÁU ⇒ luật chỉ chứng minh được CHẶNG ĐẦU.\n" +
+        "⚠ Đây là **vùng mù số 2** (khối 'VÙNG MÙ CÒN LẠI') vừa thành sự thật: từ đây, một đột biến\n" +
+        "  kiểu P2 — 'nút GIẾT tiến trình mở cho MỌI vai đăng nhập' — ship được với client/src/lib/\n" +
+        "  XANH 100%.\n" +
+        "⇒ Phải HOẶC mở rộng luật cho nhiều chặng, HOẶC khai vùng mù MỚI kèm một con số ghim nó.",
+    ).toBe("");
+  });
+
   it("★★ KHÔNG BẮT NHẦM — `chuyenDisabledXuong` nhận ĐÚNG hai loại bằng chứng, và từ chối phần còn lại", () => {
     /** ⚠ Đối chứng DƯƠNG: khuôn `...props` của shadcn/ui, và khuôn truyền `disabled` tường minh. */
     const dat = [
