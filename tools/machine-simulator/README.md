@@ -1584,6 +1584,21 @@ a resource that is separate today because nothing has asked it to be shared is *
 **Two hosts launched from ONE install directory share every one of these files**, including the machine
 operating-configuration an operator tunes on the Settings screen, and nothing anywhere will say so.
 
+🔴 **WHICH two hosts — measured, because it changes who this warning is for.** All three stores are
+constructed in exactly one place, `St4i.EngineApi`'s own DI registrations. `St4i.EdgeService` and the WPF
+shell construct none of them. So the hazard is **real for two `St4i.EngineApi` instances sharing an install
+directory**, and **vacuous for the `EngineApi` + `EdgeService` pair this section is otherwise about**. It is
+stated rather than dropped because "only one host constructs it" is a fact about today's call sites, and the
+second host gaining one of these stores is exactly the change that would make it bite.
+
+🔴 **`ST4I_MACHINE_CONFIG_DIR` is the one relocation that changes what happens under the fleet's global
+lock — read this before pointing it at a network share.** Starting the fleet writes
+`machine-operating-config.json` for any machine not yet in the store, and that write happens **while the
+fleet's global lock is held** (`FleetCore`'s P5). It is the only one of the fourteen relocatable roots with
+that property. A local directory is what has been measured; a UNC share puts a network filesystem write, and
+a second lock, inside the lock the HALT path also takes, and **nobody has measured that**. Relocating this
+root to a share is not forbidden — it is unmeasured, which is a different and more useful thing to be told.
+
 Three consequences, stated rather than left to be met on site:
 
 1. **`ST4I_MACHINE_CONFIG_DIR` is NOT one of the thirteen.** There are now **fourteen** `ST4I_*_DIR`
@@ -1615,7 +1630,16 @@ nói về **mười ba** thư mục **toàn máy** dưới `%ProgramData%\ST4I\s
 đúng cái phân biệt §24.2 phải nêu cho cổng COM: một tài nguyên hôm nay còn riêng chỉ vì chưa ai đòi dùng chung
 thì **không phải** một tài nguyên đã cô lập. **Hai host chạy từ MỘT thư mục cài đặt dùng chung tất cả các file
 ấy**, kể cả cấu hình vận hành máy mà người vận hành chỉnh trên màn hình Settings, và **sẽ không có chỗ nào báo
-điều đó**. Ba hệ quả: (1) `ST4I_MACHINE_CONFIG_DIR` **KHÔNG** thuộc mười ba — hiện có **mười bốn** biến
+điều đó**. 🔴 **HAI host NÀO — đã đo:** cả ba store chỉ được dựng ở đúng một chỗ, phần đăng ký DI của
+`St4i.EngineApi`; `St4i.EdgeService` và vỏ WPF **không dựng cái nào**. Nên nguy cơ là **THẬT với hai thực thể
+`St4i.EngineApi` chung một thư mục cài**, và **rỗng với cặp `EngineApi` + `EdgeService`** mà mục này vốn nói
+tới — vẫn nêu ra, vì "chỉ một host dựng nó" là tính chất của các call site HÔM NAY.
+🔴 **`ST4I_MACHINE_CONFIG_DIR` là phép dời chỗ DUY NHẤT làm đổi thứ chạy dưới khoá toàn cục của fleet — đọc
+trước khi trỏ nó vào ổ mạng.** Khởi động fleet sẽ ghi `machine-operating-config.json` cho máy chưa có trong
+store, và lần ghi đó xảy ra **khi khoá toàn cục đang được giữ** (P5 của `FleetCore`) — đây là gốc duy nhất
+trong mười bốn gốc có tính chất ấy. Thứ đã được đo là một thư mục cục bộ; một đường UNC đặt một lần ghi qua
+mạng, kèm một cái khoá thứ hai, vào bên trong đúng cái khoá mà đường HALT cũng lấy, và **chưa ai đo điều đó**.
+Không cấm — nhưng **chưa đo**, và đó là điều đáng nói hơn. Ba hệ quả: (1) `ST4I_MACHINE_CONFIG_DIR` **KHÔNG** thuộc mười ba — hiện có **mười bốn** biến
 `ST4I_*_DIR` và **mười ba** thư mục toàn máy; đó là hai con số của hai quần thể, không phải lệch một.
 (2) `packaging/remove-data.ps1` **không với tới được** nó: script xoá `%ProgramData%`, còn file cạnh binary đi
 theo thư mục cài đặt — nhưng nếu bạn **dời** nó bằng biến trên thì bạn đã đặt dữ liệu khách hàng ở chỗ lệnh xoá

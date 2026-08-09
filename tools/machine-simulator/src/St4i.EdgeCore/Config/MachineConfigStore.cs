@@ -41,6 +41,14 @@ namespace St4i.EdgeCore.Config;
 /// <b>two hosts launched from ONE install directory share every one of them</b>. The same distinction
 /// E-5 had to draw for COM ports: a resource that is separate today because nothing has asked it to be
 /// shared is not an isolated resource.</para>
+/// <para>🔴 <b>WHICH two hosts, measured — because the sentence above is broader than the measurement and
+/// was left that way for two rounds (whole-branch review I-7).</b> All three stores are constructed in
+/// exactly ONE place: <c>St4i.EngineApi/Program.cs</c>'s DI registrations. <c>St4i.EdgeService</c> and the
+/// WPF shell construct none of them. So the sharing hazard is REAL for two <c>St4i.EngineApi</c> instances
+/// installed into one directory, and VACUOUS for the <c>EngineApi</c> + <c>EdgeService</c> pair that
+/// README §15.9 is actually written about. It is worth stating rather than deleting for the reason §15.9
+/// exists at all: "only one host constructs it" is a property of today's call sites, and the second host
+/// gaining one of these stores is precisely the change that would make it bite.</para>
 /// <para><b>What H-1c changed and what it deliberately did not.</b> It added the seam —
 /// <see cref="EnvVarDir"/> + <see cref="ResolveRoot"/>, the <c>explicit path &gt; environment variable
 /// &gt; default</c> order F-1 established — so THIS store can at least be pointed somewhere on purpose.

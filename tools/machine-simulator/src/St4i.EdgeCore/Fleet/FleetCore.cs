@@ -342,7 +342,19 @@ internal sealed class FleetCore
     /// fires once per machine that is not yet in the store, i.e. on the first <see cref="Start"/> against a
     /// fresh data root — and it takes a SECOND lock (<c>MachineConfigStore</c>'s own) while this one is
     /// held, on every start thereafter. Every previous count of this backlog was of READ paths. It is also
-    /// the throw that made <see cref="RegisterMachine"/>'s drain need a <c>finally</c>.</item>
+    /// the throw that made <see cref="RegisterMachine"/>'s drain need a <c>finally</c>.
+    /// <para>🔴 <b>H-1c CHANGED WHAT THIS PATH CAN REACH, without touching a line of it — disclosed here
+    /// because no task-scoped review could see it (whole-branch review I-6).</b> H-1c gave
+    /// <c>MachineConfigStore</c> a relocation seam, <c>ST4I_MACHINE_CONFIG_DIR</c>, and README §15.9 now
+    /// tells operators they may set it. <b>Of the fourteen relocatable roots this product has, this is the
+    /// only one whose store is written while <see cref="_gate"/> is held</b> — so it is the only variable
+    /// whose value changes what happens under the fleet's global lock. Point it at
+    /// a UNC share and the write above becomes a NETWORK filesystem write, plus a
+    /// second lock, inside the lock <see cref="Estop"/> takes. P4 immediately above is explicitly qualified
+    /// "on a local SSD"; P5 carries no such qualifier because until H-1c its root could not be anywhere
+    /// else, and nobody has measured it on a share. Nothing here is a defect today — the default is
+    /// unchanged and beside the binary — but a redesign of this chokepoint must treat the root as
+    /// arbitrary rather than local.</para></item>
     /// <item><b>P6 — OPEN.</b> <see cref="StopLocked"/> → <c>slot.Cts.Cancel()</c> → a driver's own
     /// <c>ct.Register</c> callback running a <c>Dispose</c> SYNCHRONOUSLY on this thread — §9.2 violation
     /// 2.</item>
