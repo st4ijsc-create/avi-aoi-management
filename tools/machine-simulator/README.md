@@ -1494,10 +1494,13 @@ CI nào.)*
 Windows machine** (§24). They share no roster, no claim registry and no channel — but by default they share
 **one set of files**. This section is how to give each host its own, and what that costs.
 
-**The rule, and it is the whole mechanism:** every directory this product creates under
+**The rule, and it is the whole mechanism — and it is scoped to the MACHINE-WIDE population:** every
+directory this product creates under
 `%ProgramData%\ST4I\sim\<name>` is relocatable by an environment variable whose name is derived from the
 directory name — **`ST4I_` + `<NAME>` (uppercased, `-` → `_`) + `_DIR`**. There are **thirteen** of them
-today, and there is no exception.
+today, and there is no exception **within that population**. 🔴 **It is not the whole of what this product
+writes**: three more stores live BESIDE THE ENGINE BINARY and are isolated only by accident — see "The
+SECOND store population" below, and read it before concluding two hosts are separated.
 
 🔴 **Read the WRITES/READS columns before you relocate anything.** Relocating a root a host **writes**
 gives that host its own copy of something it produces — that is isolation, and it is what this section is for.
@@ -1556,6 +1559,67 @@ narrower and is the one to carry: **nothing exercises `ST4I_OPCUA_PKI_DIR`, the 
 `historian` is also the one variable read at a composition root (`St4i.EngineApi/Program.cs`) rather than on its store, so a
 host that ever constructed a historian store without going through that root would get the machine-wide default
 with no env-var step. None does today.)*
+
+#### 🔴 The SECOND store population — written BESIDE THE BINARY, and isolated only BY ACCIDENT
+
+**EN** — Everything above is about the **thirteen machine-wide** directories under `%ProgramData%\ST4I\sim\`.
+The product also writes **three** persistent stores **next to the engine's own .exe**
+(`AppContext.BaseDirectory`), and for those the rule above does **not** apply:
+
+| Store | Files | Relocatable? |
+|---|---|---|
+| `MachineConfigStore` | `machine-operating-config.json` — per-machine baselines + operator adjustments | **yes**, `ST4I_MACHINE_CONFIG_DIR` |
+| `ProductConfigStore` | `products.json`, `recipes.json` | **no seam at all** |
+| `SimulatedEcosystem` | `ecosystem\ecosystem-products.json`, `ecosystem\ecosystem-recipes.json` | **no seam at all** |
+
+🔴 **Read this before assuming these are already separate.** Two hosts get their own copies of these files
+**only because the installer happened to put the two exes in two different directories**. That is an
+**ACCIDENT of layout, not a guarantee** — and it is exactly the distinction §24.2 had to draw for a COM port:
+a resource that is separate today because nothing has asked it to be shared is *not* an isolated resource.
+**Two hosts launched from ONE install directory share every one of these files**, including the machine
+operating-configuration an operator tunes on the Settings screen, and nothing anywhere will say so.
+
+Three consequences, stated rather than left to be met on site:
+
+1. **`ST4I_MACHINE_CONFIG_DIR` is NOT one of the thirteen.** There are now **fourteen** `ST4I_*_DIR`
+   variables and **thirteen** machine-wide directories. Those are two numbers about two populations, not an
+   off-by-one — `PerHostDataRootsTests` partitions them on exactly that property so the pairing above stays
+   checkable.
+2. **`packaging/remove-data.ps1` cannot reach it.** That script purges `%ProgramData%`; a
+   `machine-operating-config.json` beside the binary goes when the install directory goes. But if you
+   **relocate** it with `ST4I_MACHINE_CONFIG_DIR`, you have put customer data somewhere the decommissioning
+   wipe does not look, and there is no `-MachineConfigDir` parameter to tell it. Delete that directory by
+   hand, and treat this as the reason to relocate deliberately rather than casually.
+3. **NOTHING IS MIGRATED here either.** Same rule as §15.9's machine-wide roots: pointing
+   `ST4I_MACHINE_CONFIG_DIR` at a new directory on a running deployment orphans the old file, and every
+   machine silently reverts to schema defaults with no adjustments and no error.
+
+The other two stores keep no seam on purpose: adding one is cheap, but a variable nobody reads and a default
+nobody moved is worse than an honest absence — see `PerHostDataRootsTests`'
+`EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared`. If a deployment genuinely needs them separated
+today, **install the two hosts into two directories** — which is what the default installer does.
+
+*(VI: 🔴 **Quần thể store THỨ HAI — ghi CẠNH FILE BINARY, và chỉ cô lập một cách TÌNH CỜ.** Mọi thứ bên trên
+nói về **mười ba** thư mục **toàn máy** dưới `%ProgramData%\ST4I\sim\`. Sản phẩm còn ghi **ba** store bền vững
+**ngay cạnh .exe của engine** (`AppContext.BaseDirectory`), và với ba store ấy quy tắc trên **không** áp dụng:
+`MachineConfigStore` (`machine-operating-config.json` — **dời chỗ được** bằng `ST4I_MACHINE_CONFIG_DIR`),
+`ProductConfigStore` (`products.json`, `recipes.json` — **không có seam nào**) và `SimulatedEcosystem`
+(`ecosystem\ecosystem-products.json`, `ecosystem\ecosystem-recipes.json` — **không có seam nào**).
+🔴 **Đọc kỹ trước khi cho rằng chúng đã tách sẵn.** Hai host có bản riêng của các file này **chỉ vì trình cài
+đặt tình cờ đặt hai .exe vào hai thư mục khác nhau**. Đó là **SỰ TÌNH CỜ về bố cục, KHÔNG PHẢI một bảo đảm** —
+đúng cái phân biệt §24.2 phải nêu cho cổng COM: một tài nguyên hôm nay còn riêng chỉ vì chưa ai đòi dùng chung
+thì **không phải** một tài nguyên đã cô lập. **Hai host chạy từ MỘT thư mục cài đặt dùng chung tất cả các file
+ấy**, kể cả cấu hình vận hành máy mà người vận hành chỉnh trên màn hình Settings, và **sẽ không có chỗ nào báo
+điều đó**. Ba hệ quả: (1) `ST4I_MACHINE_CONFIG_DIR` **KHÔNG** thuộc mười ba — hiện có **mười bốn** biến
+`ST4I_*_DIR` và **mười ba** thư mục toàn máy; đó là hai con số của hai quần thể, không phải lệch một.
+(2) `packaging/remove-data.ps1` **không với tới được** nó: script xoá `%ProgramData%`, còn file cạnh binary đi
+theo thư mục cài đặt — nhưng nếu bạn **dời** nó bằng biến trên thì bạn đã đặt dữ liệu khách hàng ở chỗ lệnh xoá
+khi ngừng sử dụng không tìm tới, và **không có tham số `-MachineConfigDir` nào** để báo cho nó; hãy xoá thư mục
+đó bằng tay. (3) **KHÔNG CÓ DI TRÚ** ở đây cũng vậy: trỏ biến sang thư mục mới trên một triển khai đang chạy sẽ
+bỏ rơi file cũ, mọi máy lặng lẽ quay về mặc định của schema, không điều chỉnh nào và không báo lỗi. Hai store
+còn lại cố ý không có seam: một biến không ai đọc còn tệ hơn một sự vắng mặt trung thực. Nếu một triển khai
+thật sự cần tách chúng ngay hôm nay, **hãy cài hai host vào hai thư mục khác nhau** — đó cũng là điều trình
+cài đặt mặc định đang làm.)*
 
 **How to actually set them — and the two hosts do NOT use the same mechanism.**
 
@@ -1665,7 +1729,9 @@ triển khai bình thường (§24). Hai host không chia sẻ roster, không ch
 nào — nhưng mặc định chúng **dùng chung một bộ file**. Mục này nói cách cho mỗi host một bộ riêng, và cái giá
 phải trả. **Quy tắc:** mọi thư mục sản phẩm tạo dưới `%ProgramData%\ST4I\sim\<tên>` đều dời chỗ được bằng một
 biến môi trường suy ra được từ tên thư mục — **`ST4I_` + `<TÊN>` (viết hoa, `-` → `_`) + `_DIR`**. Hôm nay có
-**mười ba** thư mục, **không có ngoại lệ** (bảng bên trên), và có **hai** test ghim trong
+**mười ba** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên) — 🔴 nhưng đó **không phải toàn bộ
+những gì sản phẩm ghi**: còn **ba** store nữa nằm **cạnh file binary của engine**, chỉ cô lập một cách tình cờ,
+xem mục "Quần thể store THỨ HAI" bên dưới. Và có **hai** test ghim trong
 `PerHostDataRootsTests`: `EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName` suy ra **cả hai** tập
 bằng cách quét `src/` (store thứ mười bốn làm test đỏ cho tới khi nó cũng có biến), và
 `EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared` đòi mỗi biến phải tới được một lời gọi
@@ -5420,10 +5486,14 @@ holds COM3 — and on a **gateway** there is no such protection to reason about 
   is the WAL queue), so nothing regressed — **and E-5 did not change that either: an RS-485 bus opens a COM
   port and a gateway bus opens a socket; neither is a store, and the shared-open bookkeeping is an in-process
   dictionary the host owns.** 🔴 **F-1 changed the "by default": per-host data roots are now a SUPPORTED
-  deployment (§15.9)** — every one of the thirteen directories is relocatable by a derivable `ST4I_*_DIR`
+  deployment (§15.9)** — every one of the thirteen **machine-wide** directories under `%ProgramData%` is
+  relocatable by a derivable `ST4I_*_DIR`
   variable, and a test derives both sets from `src/` so a fourteenth store cannot arrive without one. What
   F-1 did **not** do is set them for you: unset still means one shared set of files, and nothing migrates when
-  you change one. **The decision that was blocking OPC-UA at the edge is therefore closed** — see §24.2 for
+  you change one. 🔴 **H-1c added the qualifier "machine-wide" here because it was load-bearing and missing:**
+  the product writes three further stores BESIDE THE ENGINE BINARY, where isolation between two hosts is
+  accidental rather than mechanical — §15.9's second-population section is the one to read before planning a
+  two-host box. **The decision that was blocking OPC-UA at the edge is therefore closed** — see §24.2 for
   what remains, which is engineering rather than a ruling.
 - **A deleted connector's machine stays in the roster until restart** (§23.5), unchanged.
 
@@ -5655,7 +5725,10 @@ của nó là hàng đợi WAL), nên không có gì thụt lùi — **và E-5 c
 cổng COM còn một tuyến gateway mở một socket; không cái nào là store, và sổ sách chia sẻ lần mở là một
 dictionary trong tiến trình do host sở hữu.** **Máy của một connector đã xoá vẫn nằm trong roster tới khi khởi
 động lại** (§23.5), không đổi. 🔴 **F-1 đổi phần "mặc định" ấy: gốc dữ liệu theo host giờ là hình dạng triển
-khai ĐƯỢC HỖ TRỢ (§15.9)** — cả mười ba thư mục đều dời chỗ được bằng một biến `ST4I_*_DIR` suy ra được, và
+khai ĐƯỢC HỖ TRỢ (§15.9)** — cả mười ba thư mục **toàn máy** dưới `%ProgramData%` đều dời chỗ được bằng một
+biến `ST4I_*_DIR` suy ra được (🔴 H-1c thêm chữ "toàn máy": sản phẩm còn ba store ghi **cạnh binary**, ở đó sự
+cô lập giữa hai host là **tình cờ** — đọc mục quần thể thứ hai của §15.9 trước khi lên kế hoạch một máy hai
+host), và
 một test suy ra cả hai tập từ `src/` nên store thứ mười bốn không thể ra đời mà thiếu biến. Cái F-1 **không**
 làm là đặt chúng thay bạn: không đặt gì thì vẫn là một bộ file dùng chung, và đổi gốc thì **không có gì được
 di trú**. **Do đó quyết định đang chặn OPC-UA ở biên đã ĐÓNG** — xem §24.2, phần còn lại là công việc kỹ

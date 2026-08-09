@@ -26,13 +26,24 @@ namespace St4i.EngineApi.Tests;
 ///
 /// <para>🔴 <b>The SCOPE of "machine-wide", asked rather than assumed.</b> This scans for the
 /// <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> constant, so it is blind by construction to anything the product
-/// writes elsewhere. Enumerated, because "not in view" is the dangerous answer: the only such place in
-/// <c>src/</c> is <c>St4i.DesktopShell</c>'s <c>%LOCALAPPDATA%\St4iMachineSimulator\{logs,WebView2}</c>
-/// (<c>MainWindow.xaml.cs</c>) — an engine log file and a WebView2 browser profile, which are PER-USER rather
-/// than machine-wide and are not product data. Two service hosts under two accounts already have two of them;
-/// under one account they would share, which is a defect only if either ever became a data store. It is out of
-/// scope deliberately, not by oversight, and the sentence is here so the next reader does not have to derive
-/// it again.</para>
+/// writes elsewhere. Enumerated, because "not in view" is the dangerous answer.</para>
+///
+/// <para>🔴 <b>AND THE FIRST VERSION OF THAT ENUMERATION WAS WRONG — corrected by H-1c, and the way it was
+/// wrong is the reason this file now has a fourth guard.</b> It said the only place the product writes
+/// outside <c>%ProgramData%</c> is <c>St4i.DesktopShell</c>'s
+/// <c>%LOCALAPPDATA%\St4iMachineSimulator\{logs,WebView2}</c>. That was a false statement of COMPLETENESS,
+/// and it had been in the tree since F-1: the product also writes THREE persistent stores BESIDE THE
+/// BINARY (<c>MachineConfigStore</c>, <c>ProductConfigStore</c>, <c>SimulatedEcosystem</c> — see
+/// <see cref="TheBesideTheBinaryStorePopulation_IsEnumerated_AndKeptDistinctFromTheThirteenMachineWideOnes"/>
+/// for the enumeration, the exclusions and the instrument's own blind spots). The claim was written from
+/// inside a <c>%ProgramData%</c>-shaped instrument and inherited that instrument's domain — blueprint
+/// §8.1(f) — and its cost is the one §8.1 names as invisible by construction: a reader who believed it
+/// stopped looking.</para>
+///
+/// <para>The <c>%LOCALAPPDATA%</c> half of the original sentence still stands and is still out of scope:
+/// an engine log file and a WebView2 browser profile are PER-USER rather than machine-wide and are not
+/// product data. Two service hosts under two accounts already have two of them; under one account they
+/// would share, which is a defect only if either ever became a data store.</para>
 ///
 /// <para><b>What makes this non-vacuous</b> (the shape both sibling tests already carry): a floor on the
 /// number of directories found, so a refactor that moves the constants fails loudly instead of asserting over
@@ -106,21 +117,8 @@ public sealed class PerHostDataRootsTests
     [Fact]
     public void EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName()
     {
-        var directories = new SortedSet<string>(StringComparer.Ordinal);
-        var variables = new SortedSet<string>(StringComparer.Ordinal);
-
-        // The `"ST4I", "sim", "<name>"` default-path constant every store declares, and every ST4I_*_DIR
-        // literal anywhere in src/ — the same two patterns the two sibling census tests already use, asked
-        // here against each other rather than each against a hand-maintained artefact.
-        var directoryConstant = new Regex("\"ST4I\"\\s*,\\s*\"sim\"\\s*,\\s*\"(?<name>[A-Za-z0-9._-]+)\"");
-        var variableLiteral = new Regex("\"(?<name>ST4I_[A-Z0-9_]*_DIR)\"");
-
-        foreach (var file in ProductSources())
-        {
-            var text = File.ReadAllText(file);
-            foreach (Match m in directoryConstant.Matches(text)) directories.Add(m.Groups["name"].Value);
-            foreach (Match m in variableLiteral.Matches(text)) variables.Add(m.Groups["name"].Value);
-        }
+        var directories = DeclaredDirectoryNames();
+        var (machineWideVariables, besideBinaryVariables) = PartitionRelocationVariables();
 
         // Non-vacuity, both halves. An empty (or collapsed) set on either side must fail loudly rather than
         // pass by asserting over nothing.
@@ -128,9 +126,19 @@ public sealed class PerHostDataRootsTests
             $"Only {directories.Count} data directory constant(s) were found in src/ " +
             $"({string.Join(", ", directories)}). The scan, not the product, is what broke — fix the scan " +
             "rather than deleting this assertion.");
-        Assert.True(variables.Count >= 13,
-            $"Only {variables.Count} ST4I_*_DIR literal(s) were found in src/ " +
-            $"({string.Join(", ", variables)}). The scan, not the product, is what broke.");
+
+        // 🔴 H-1c — this counts the MACHINE-WIDE half of the variable population, not the whole of it, and
+        // that is the repair rather than a weakening. Before H-1c every ST4I_*_DIR literal in src/ named a
+        // %ProgramData% store, so "thirteen directories, thirteen variables" was a true pairing and this
+        // assertion measured it. ST4I_MACHINE_CONFIG_DIR relocates a BESIDE-THE-BINARY store, so counting
+        // all literals here would silently turn thirteen into fourteen on the variable side of a pairing
+        // whose directory side is still thirteen — the number would stop meaning what six artefacts say it
+        // means, in the direction nobody intended. The second population gets its own guard below.
+        Assert.True(machineWideVariables.Count >= 13,
+            $"Only {machineWideVariables.Count} MACHINE-WIDE ST4I_*_DIR literal(s) were found in src/ " +
+            $"({string.Join(", ", machineWideVariables)}); the beside-the-binary population held " +
+            $"{besideBinaryVariables.Count} ({string.Join(", ", besideBinaryVariables)}). The scan, not " +
+            "the product, is what broke.");
 
         // Controls, named explicitly: the credential-bearing stores plus the one whose variable is read at a
         // composition root rather than on the store. A scan that silently stopped matching any of these could
@@ -141,8 +149,8 @@ public sealed class PerHostDataRootsTests
         }
 
         var missing = directories
-            .Select(name => (Directory: name, Variable: "ST4I_" + name.ToUpperInvariant().Replace('-', '_') + "_DIR"))
-            .Where(pair => !variables.Contains(pair.Variable))
+            .Select(name => (Directory: name, Variable: DerivedVariableName(name)))
+            .Where(pair => !machineWideVariables.Contains(pair.Variable))
             .ToList();
 
         Assert.True(missing.Count == 0,
@@ -291,8 +299,12 @@ public sealed class PerHostDataRootsTests
         Assert.Contains("ST4I_HISTORIAN_DIR", readVariables);
         Assert.Contains("ST4I_CREDS_DIR", readVariables);
 
-        var declaredButUnread = DeclaredDirectoryNames()
-            .Select(name => "ST4I_" + name.ToUpperInvariant().Replace('-', '_') + "_DIR")
+        // 🔴 H-1c — this used to derive its subjects from the MACHINE-WIDE directory names, so a variable
+        // belonging to the beside-the-binary population would have been declared, documented and never
+        // checked. The property "a declared-but-unread variable is worse than no variable" does not care
+        // which population the store is in, so the subject set is now EVERY declared literal. The count
+        // floor above stays at 13 deliberately: it is a non-vacuity floor on the recogniser, not a census.
+        var declaredButUnread = DeclaredRelocationVariables()
             .Where(variable => !readVariables.Contains(variable))
             .ToList();
 
@@ -300,12 +312,12 @@ public sealed class PerHostDataRootsTests
             "These relocation variables are declared but never reach an Environment.GetEnvironmentVariable " +
             $"call, so setting them relocates nothing: {string.Join(", ", declaredButUnread)}. A directory " +
             "whose variable is declared and unread is WORSE than one that was never relocatable: README " +
-            "§15.9 tells an operator to set it, the operator sets it, and the store keeps writing to " +
-            "%ProgramData% with no error anywhere.");
+            "§15.9 tells an operator to set it, the operator sets it, and the store keeps writing to its " +
+            "old root with no error anywhere.");
     }
 
     /// <summary>The set of <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> leaves declared in <c>src/</c>, shared by
-    /// both guards so they can never disagree about which directories exist.</summary>
+    /// every guard here so they can never disagree about which directories exist.</summary>
     private static SortedSet<string> DeclaredDirectoryNames()
     {
         var directories = new SortedSet<string>(StringComparer.Ordinal);
@@ -320,6 +332,51 @@ public sealed class PerHostDataRootsTests
         }
 
         return directories;
+    }
+
+    /// <summary>The rule README §15.9 states to an operator, as a function: <c>ST4I_</c> + the directory
+    /// name uppercased with <c>-</c> → <c>_</c> + <c>_DIR</c>.</summary>
+    private static string DerivedVariableName(string directoryName) =>
+        "ST4I_" + directoryName.ToUpperInvariant().Replace('-', '_') + "_DIR";
+
+    /// <summary>Every <c>ST4I_*_DIR</c> literal declared anywhere in <c>src/</c>.</summary>
+    private static SortedSet<string> DeclaredRelocationVariables()
+    {
+        var variables = new SortedSet<string>(StringComparer.Ordinal);
+        var variableLiteral = new Regex("\"(?<name>ST4I_[A-Z0-9_]*_DIR)\"");
+
+        foreach (var file in ProductSources())
+        {
+            foreach (Match m in variableLiteral.Matches(File.ReadAllText(file)))
+            {
+                variables.Add(m.Groups["name"].Value);
+            }
+        }
+
+        return variables;
+    }
+
+    /// <summary>🔴 <b>H-1c — the two populations, split by the one property that actually separates them:
+    /// whether the variable's name is derivable from a declared
+    /// <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> directory.</b>
+    ///
+    /// <para>Both halves are derived from <c>src/</c>; neither is a list. A machine-wide store's variable
+    /// is derivable BY CONSTRUCTION — that is the rule §15.9 tells an operator and the rule
+    /// <see cref="EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName"/> asserts — so anything
+    /// left over relocates something that is not machine-wide, and belongs to the second population by the
+    /// same measurement rather than by anyone's say-so.</para></summary>
+    private static (SortedSet<string> MachineWide, SortedSet<string> BesideBinary) PartitionRelocationVariables()
+    {
+        var derivable = new HashSet<string>(DeclaredDirectoryNames().Select(DerivedVariableName), StringComparer.Ordinal);
+        var machineWide = new SortedSet<string>(StringComparer.Ordinal);
+        var besideBinary = new SortedSet<string>(StringComparer.Ordinal);
+
+        foreach (var variable in DeclaredRelocationVariables())
+        {
+            (derivable.Contains(variable) ? machineWide : besideBinary).Add(variable);
+        }
+
+        return (machineWide, besideBinary);
     }
 
     /// <summary>
@@ -399,6 +456,93 @@ public sealed class PerHostDataRootsTests
             "web/playwright.config.ts and scripts/verify-suites.sh — plus a new -XxxDir parameter, a new " +
             "playwright env entry and a new row in §15.9's WRITES/READS table. This test exists because " +
             "four of those places were already off by one when it was written.");
+    }
+
+    /// <summary>
+    /// 🔴 <b>H-1c — THE SECOND POPULATION: stores the product writes BESIDE THE BINARY. This exists because
+    /// the guards above are an instrument built for a different question, and pointing them at a
+    /// beside-the-binary store is blueprint §8.1(f) in its purest form.</b>
+    ///
+    /// <para><b>The two populations, and why the distinction is not pedantry.</b> The thirteen
+    /// <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> directories are relocatable BY MECHANISM: an operator sets
+    /// a derivable variable and gets their own root, which is how two hosts on one machine stop overwriting
+    /// each other. The three stores enumerated below default to <see cref="AppContext.BaseDirectory"/>, and
+    /// there the isolation between two hosts is <b>ACCIDENTAL</b> — it holds only because two installs
+    /// happen to sit in two directories. <b>Two hosts launched from ONE install directory share every one
+    /// of these files.</b> That is the same distinction E-5 had to draw for COM ports, and it is labelled
+    /// here, in README §15.9, and at each store, because a resource that is separate today only because
+    /// nothing has asked it to be shared is not an isolated resource.</para>
+    ///
+    /// <para><b>THE MEMBERS — enumerated from the tree, not from the three names a brief supplied.</b>
+    /// Starting from the property ("a store that PERSISTS product data to a default root that is not
+    /// machine-wide") rather than from a name: <c>MachineConfigStore</c>
+    /// (<c>machine-operating-config.json</c>), <c>ProductConfigStore</c> (<c>products.json</c> +
+    /// <c>recipes.json</c>) and <c>SimulatedEcosystem</c> (<c>ecosystem/ecosystem-products.json</c> +
+    /// <c>ecosystem/ecosystem-recipes.json</c>). <b>THREE.</b> <c>FleetConfig</c> — which
+    /// <c>MachineConfigStore</c>'s own doc comment named as a sibling of the same shape — is NOT one: it is
+    /// a static class with a single <c>Load</c> and no writer anywhere, so it is a read-only artefact and
+    /// counting it would have inflated the population by taking a doc comment's word for a measurement.</para>
+    ///
+    /// <para><b>What is deliberately NOT in it, said because "not in view" is the dangerous answer.</b>
+    /// (1) <c>fleet.json</c>, <c>connectors.json</c> and <c>mapping/*.json</c> sit beside the binary and are
+    /// shared by accident in exactly the same way — but the product only ever READS them; they are operator
+    /// input, not state the product accumulates, so a shared copy is the intent rather than the defect.
+    /// (2) <c>wwwroot</c>, which <c>Program.cs</c> creates beside the binary, holds the packaged web UI and
+    /// no data. (3) <c>HotFolderAoiDriver</c>/<c>Doc28Writer</c> create directories with no default at all —
+    /// all three paths are required constructor arguments, so there is nothing to relocate.
+    /// (4) <c>St4i.DesktopShell</c>'s <c>%LOCALAPPDATA%</c> log + WebView2 folders are per-USER, already
+    /// excluded by this file's own class remarks for that reason.</para>
+    ///
+    /// <para><b>THE INSTRUMENT, and what it is blind to — stated because §8.1(f) is exactly the failure of
+    /// not stating it.</b> The scan is keyed on the TOKEN <c>AppContext.BaseDirectory</c> co-occurring with
+    /// <c>Directory.CreateDirectory(</c> in one file, and it therefore cannot see a store that reaches the
+    /// same place by another route (<c>Directory.GetCurrentDirectory()</c>, <c>Assembly.Location</c>, a
+    /// bare relative path, or a root handed in by a composition root the way <c>ST4I_HISTORIAN_DIR</c> is).
+    /// Enumerated rather than assumed: <b>no such route exists in <c>src/</c> today</b> — those idioms
+    /// return zero hits, and the only composition-root-supplied roots point at <c>%ProgramData%</c>. What
+    /// this DOES buy is that a seventh file entering the token's intersection cannot arrive silently: it
+    /// fails here and has to be classified.</para>
+    /// </summary>
+    [Fact]
+    public void TheBesideTheBinaryStorePopulation_IsEnumerated_AndKeptDistinctFromTheThirteenMachineWideOnes()
+    {
+        // The variable side first: whatever is NOT derivable from a machine-wide directory relocates
+        // something that is not machine-wide, so the partition itself is the classification.
+        var (machineWide, besideBinary) = PartitionRelocationVariables();
+
+        Assert.Equal(DeclaredDirectoryNames().Count, machineWide.Count);
+        Assert.Equal(new[] { "ST4I_MACHINE_CONFIG_DIR" }, besideBinary.ToArray());
+
+        // The store side. A file is a candidate when it both resolves a root from AppContext.BaseDirectory
+        // and creates a directory — see the remarks for what that misses and why it is still worth having.
+        var candidates = ProductSources()
+            .Where(file =>
+            {
+                var text = File.ReadAllText(file);
+                return text.Contains("AppContext.BaseDirectory", StringComparison.Ordinal)
+                    && text.Contains("Directory.CreateDirectory(", StringComparison.Ordinal);
+            })
+            .Select(Path.GetFileName)
+            .OfType<string>()
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        // Three population-two STORES plus three files that create a beside-the-binary directory for a
+        // reason that is not a data store. Each is classified here rather than filtered out silently,
+        // because an unexplained exclusion is how a population loses a member.
+        var expected = new[]
+        {
+            "App.xaml.cs",             // WPF --capture: a screenshot output directory from a CLI argument.
+            "MachineConfigStore.cs",   // POPULATION TWO — machine-operating-config.json.
+            "MainWindow.xaml.cs",      // DesktopShell: %LOCALAPPDATA% logs + WebView2 profile, per-USER.
+            "ProductConfigStore.cs",   // POPULATION TWO — products.json + recipes.json.
+            "Program.cs",              // EngineApi: wwwroot (packaged web UI) and the %ProgramData% security roots.
+            "SimulatedEcosystem.cs",   // POPULATION TWO — ecosystem/ecosystem-{products,recipes}.json.
+        };
+        // Ordinal, so "ProductConfigStore.cs" precedes "Program.cs" ('d' < 'g'). Sorted rather than
+        // set-compared on purpose: a mismatch then names the ONE file that moved, not two symmetric diffs.
+
+        Assert.Equal(expected, candidates);
     }
 
     /// <summary>

@@ -922,7 +922,32 @@ EXPECT_CONFORMANCE=22
 # [Collection] attribute (it and PerHostDataRootIsolationTests both flip the PROCESS-WIDE ST4I_CREDS_DIR, and
 # two classes doing that in parallel is a real race) — an attribute moves no count, and a moved count there
 # would mean the attribute did more than serialize.
-EXPECT_EDGECORE=1088
+#
+# 🔴 TASK H-1c raises this 1088 -> 1093 (+5), counted from the runner. ONE new file,
+# MachineConfigStoreRootResolutionTests.cs; no existing file rewritten or deleted.
+#   ResolveRoot_NoOverrideAtAll_ReturnsDefaultRoot                          +1
+#   ResolveRoot_EnvOverride_ReturnsConfiguredDirectory                      +1
+#   ResolveRoot_ExplicitDirectory_TakesPriorityOverEnvVar                   +1
+#       The three arms of the explicit > env > default order F-1 established, on the seam H-1c added to
+#       MachineConfigStore. Same three FleetSettingsStoreTests already carries for its own store, because
+#       the contract is meant to be one idiom rather than one dialect per store.
+#   DefaultRoot_IsBesideTheBinary_AndIsNotUnderProgramData                  +1
+#       🔴 THE POPULATION MARKER. H-1c added a seam and deliberately did NOT move the default: moving it
+#       relocates live customer data on the next start with nothing migrating it. This asserts the property
+#       (default is AppContext.BaseDirectory, and is NOT under %ProgramData%\ST4I) rather than a literal
+#       path, and its failure message is the checklist a genuine move would owe — a directory constant, a
+#       derivable variable name, a README §15.9 row, a remove-data.ps1 parameter and the count in every
+#       artefact that spells it.
+#   TheEnvVar_IsHonouredAllTheWayToTheFile_NotJustAtResolution              +1
+#       The arm PerHostDataRootsTests says in as many words that it CANNOT reach: it proves a variable is
+#       declared and read at a resolution site, never that the resolved value is honoured to a file.
+#       Constructs the store with NO explicit directory (the production shape — Program.cs registers a bare
+#       singleton), writes through a real Ensure, and reads the JSON back off the env-var directory.
+#
+# The class joins the existing "St4i.EdgeCore.Tests.MachineWideStoreEnv" collection because it mutates a
+# PROCESS-WIDE variable. That collection's NAME says machine-wide and this store is not — recorded in the
+# class comment rather than renamed, since renaming touches three unrelated classes to no measured end.
+EXPECT_EDGECORE=1093
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -1543,6 +1568,15 @@ EXPECT_EDGESERVICE=50
 #              plus five named controls, the same shape both siblings carry. The quantity it measures is
 #              "a quoted ST4I_<NAME>_DIR literal exists in src/" — narrower than "relocatable", which is
 #              why fix round 1 added the test below rather than letting README §15.9 lean on this one.
+#              🔴 TASK H-1c CHANGED WHAT THIS COUNTS, AND IT IS A REPAIR, NOT A WEAKENING. It used to floor
+#              on "every ST4I_*_DIR literal in src/", which was a true pairing while every such literal
+#              named a %ProgramData% store. ST4I_MACHINE_CONFIG_DIR names a BESIDE-THE-BINARY store, so
+#              the floor now applies to the MACHINE-WIDE half of the partition and the second half gets
+#              its own guard (below). Leaving it alone would have turned "thirteen directories, thirteen
+#              variables" into "thirteen and fourteen" with no artefact saying which number was which —
+#              the count sentence would have gone false in a direction nobody chose, through an
+#              instrument built for the other question. That is blueprint §8.1(f) exactly, which is why
+#              H-1c repaired the instrument in the same change that made it necessary.
 #         + 1  TheReadme_TellsAnOperatorThatRelocatingARootDoesNotMigrateTheOldData — §8.1's fourth census
 #              tier: a rule stated to an OPERATOR is a different population of text from one stated to a
 #              programmer. Relocating a root on a running deployment silently orphans that store's data,
@@ -1570,13 +1604,15 @@ EXPECT_EDGESERVICE=50
 #       never reading it satisfied the first and violated the second — and neither M3 (no variable) nor M4
 #       (non-derivable name) reaches that shape, so the gap was untested as well as undisclosed. The new
 #       test requires every variable to reach a real Environment.GetEnvironmentVariable call, binding
-#       constants to literals PER FILE so that thirteen stores all naming their constant `EnvVarDir` cannot
-#       vouch for each other, and resolving a qualified Type.Member against Type.cs. Two named controls, one
+#       constants to literals PER FILE so that the stores all naming their constant `EnvVarDir` cannot
+#       vouch for each other (thirteen when this was written; FOURTEEN since H-1c added
+#       MachineConfigStore.EnvVarDir, which is the BESIDE-THE-BINARY population — see the partition note
+#       above), and resolving a qualified Type.Member against Type.cs. Two named controls, one
 #       per resolution form: ST4I_HISTORIAN_DIR (read only as a bare literal, in Program.cs, not on its
 #       store) and ST4I_CREDS_DIR (read only through a same-file constant).
 #       🔴 What it still does NOT measure, disclosed here and in README §15.9 rather than left to a reader:
 #       "declared and read at a resolution site" is not "the resolved value is honoured to a file". Nothing
-#       here executes a store. A sweep that did would have to set thirteen process-wide variables inside a
+#       here executes a store. A sweep that did would have to set every one of those process-wide variables inside a
 #       suite whose other classes boot real hosts that read them — trading a documented narrowness for an
 #       undocumented race.
 #       🔴 WHERE THAT HALF ACTUALLY IS — and this note has been wrong twice, in opposite directions.
@@ -1846,7 +1882,31 @@ EXPECT_EDGESERVICE=50
 # EXPECT_WARNINGS stays 116 for H-1a: the added code is one guarded call site plus a static local function
 # in Program.cs (top-level statements already carry one, LogIfRegisterMachineCollided) and one new test
 # file; no signature changes, no nullability changes, no new package.
-EXPECT_ENGINEAPI=1317
+#
+# 🔴 TASK H-1c raises this 1317 -> 1318 (+1), counted from the runner. No new file; the test is added to
+# PerHostDataRootsTests.cs, beside the three guards it partitions.
+#   TheBesideTheBinaryStorePopulation_IsEnumerated_AndKeptDistinctFromTheThirteenMachineWideOnes   +1
+#       The SECOND store population, made checkable. Two halves. (a) The ST4I_*_DIR set is partitioned on
+#       whether the name is derivable from a declared %ProgramData% directory — both halves derived from
+#       src/, neither a list — and the beside-the-binary half must be exactly ST4I_MACHINE_CONFIG_DIR.
+#       (b) The STORES: files under src/ where AppContext.BaseDirectory co-occurs with
+#       Directory.CreateDirectory( must be exactly six, three of them population-two stores
+#       (MachineConfigStore, ProductConfigStore, SimulatedEcosystem) and three classified in place as
+#       non-stores (App.xaml.cs's --capture output dir, MainWindow.xaml.cs's per-USER %LOCALAPPDATA%,
+#       Program.cs's wwwroot). A seventh file entering that intersection fails until it is classified.
+#       The instrument is TOKEN-keyed and its blind spots are stated at the test: it cannot see a store
+#       that reaches the same place via Directory.GetCurrentDirectory()/Assembly.Location/a bare relative
+#       path/a composition-root-supplied root — enumerated rather than assumed, zero such routes exist in
+#       src/ today.
+#       It also repairs a FALSE COMPLETENESS CLAIM that F-1 shipped in this same file's class comment
+#       ("the only place the product writes outside %ProgramData% is DesktopShell's %LOCALAPPDATA%"),
+#       which was wrong the day it was written and is the §8.1(f) failure in its resting state: a sentence
+#       that made a reader stop looking.
+#
+# EXPECT_WARNINGS stays 116 for H-1c: MachineConfigStore gains one const, two static methods and doc
+# comments; every cref resolves (a CS1574 would move this number). No signature of any existing member
+# changes — the constructor keeps `string? directory = null` and only its body's resolution changes.
+EXPECT_ENGINEAPI=1318
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

@@ -147,8 +147,13 @@ export default defineConfig({
       // omits `notifications`, which did not exist yet, and that omission is the C-5 defect described
       // below rather than a typo).
       // 🔴 Dot F branch review, F-7: the four counts in this file were off by one against the
-      // THIRTEEN-member set the product actually declares, and the `env:` block below has always set
-      // exactly thirteen. The list above is left at its historical 12 and labelled as such, because it
+      // THIRTEEN-member set of MACHINE-WIDE directories the product actually declares, and the `env:`
+      // block below set exactly thirteen entries — one per machine-wide store.
+      // 🔴 TASK H-1c: it now sets FOURTEEN, and the extra one is NOT a fourteenth machine-wide store.
+      // `ST4I_MACHINE_CONFIG_DIR` relocates a store whose default is BESIDE THE BINARY, not under
+      // `%ProgramData%`; see its own note at the bottom of the block. Every "thirteen" in this file means
+      // machine-wide directories and is still true; the entry count is fourteen because two populations
+      // are being isolated by one mechanism. The list above is left at its historical 12 and labelled as such, because it
       // is a record of what SM-6 audited, not a claim about today. Before that fix NONE of them were isolated
       // here — every `npm run test:e2e`/`npm run dev` wrote real data into the SAME directory a real
       // install uses, which is how this harness ended up creating real, login-capable "e2e-user-*"
@@ -160,11 +165,14 @@ export default defineConfig({
       // this Playwright-launched engine process.) task-7 (below) isolates historian; task C-5 added
       // `notifications`; the test-hygiene batch added `creds`, the last one out.
       //
-      // 🔴 ALL THIRTEEN stores are now redirected under an isolated `../.e2e-data` root that
+      // 🔴 ALL THIRTEEN MACHINE-WIDE stores are now redirected under an isolated `../.e2e-data` root that
       // `scripts/reset-engine-state.mjs` wipes in full before every boot — isolated AND disposable,
       // not merely relocated to accumulate somewhere else instead. Three separate audits each declared
       // this list complete and each was missing one: SM-6 missed `historian` and `notifications`, C-5
-      // missed `creds`. If a fourteenth store appears, it belongs here — and
+      // missed `creds`. If a fourteenth machine-wide store appears, it belongs here — and so does any
+      // further beside-the-binary store that grows a seam, for the same reason `ST4I_MACHINE_CONFIG_DIR`
+      // is in the block: the property this harness needs is "the engine writes there", not "the default
+      // is under %ProgramData%". And
       // `EveryStoreTheEngineCreates_IsIsolatedByThePlaywrightHarness` in St4i.EngineApi.Tests now fails
       // until it is, so the next omission is caught by a test rather than by a census of a developer's
       // %ProgramData%.
@@ -233,6 +241,18 @@ export default defineConfig({
         // Test-hygiene batch — the 13th store, and the last un-isolated one. See the note above for
         // why the previous audit concluded this suite never wrote here, and what the census found.
         ST4I_CREDS_DIR: join(e2eDataDir, "creds"),
+        // 🔴 TASK H-1c — THE FOURTEENTH VARIABLE, AND IT IS NOT A FOURTEENTH %ProgramData% STORE.
+        // Everything above relocates one of the THIRTEEN machine-wide directories under
+        // `%ProgramData%\ST4I\sim\<name>`. `MachineConfigStore` is in the product's SECOND store
+        // population: it defaults to `AppContext.BaseDirectory`, i.e. beside the built engine binary, and
+        // H-1c added its seam without moving that default. So the entry below is genuinely useful here
+        // (this suite drives machine-config writes, and without it they land in the engine's build output
+        // and persist across runs) while the count sentences above stay correct: thirteen machine-wide
+        // directories, fourteen `ST4I_*_DIR` variables. Those are two numbers about two populations, not
+        // an off-by-one. `EveryStoreTheEngineCreates_IsIsolatedByThePlaywrightHarness` derives its subject
+        // set from EVERY `ST4I_*_DIR` literal in `src/` — its property is "every store the engine writes
+        // to is isolated", which is population-blind on purpose — so this line is required, not optional.
+        ST4I_MACHINE_CONFIG_DIR: join(e2eDataDir, "machine-config"),
       },
     },
   ],

@@ -26,6 +26,19 @@ namespace St4i.EngineApi.Tests;
 /// variable the product declares in <c>src/</c> and requires the harness to set each one — a fifteenth
 /// store fails it until the harness isolates that too.</para>
 ///
+/// <para>🔴 <b>H-1c — this scan spans BOTH store populations, and that is correct rather than an
+/// oversight.</b> <c>PerHostDataRootsTests</c> now partitions the <c>ST4I_*_DIR</c> set into the THIRTEEN
+/// machine-wide directories under <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> and the beside-the-binary
+/// stores (<c>ST4I_MACHINE_CONFIG_DIR</c> today), because the question there is per-host RELOCATABILITY
+/// and only the first population answers it by mechanism. The question HERE is different: "does the
+/// harness write into a real install's data?" — and a store that writes beside the engine's binary is
+/// just as capable of that. So this test is population-BLIND on purpose, and the count it floors at (13)
+/// is a non-vacuity floor on the scan, not a census of either population.
+/// <b>H-1c is the case that proves the distinction is load-bearing:</b> adding
+/// <c>ST4I_MACHINE_CONFIG_DIR</c> turned this test red until <c>playwright.config.ts</c> isolated it, and
+/// the right response was to isolate it — not to narrow this scan to the machine-wide half, which would
+/// have traded a real isolation guarantee for a tidier number.</para>
+///
 /// <para>This is the isolation counterpart to
 /// <c>NotificationDocumentationTests.EveryDirectoryTheEngineCreatesUnderProgramData_IsPurgedByTheDecommissioningScript</c>,
 /// which derives the same set for the DECOMMISSIONING side. The two failure modes are different — a store
