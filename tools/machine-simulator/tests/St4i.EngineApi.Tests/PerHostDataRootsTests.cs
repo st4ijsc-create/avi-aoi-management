@@ -356,6 +356,21 @@ public sealed class PerHostDataRootsTests
         return variables;
     }
 
+    /// <summary>🔴 <b>Fix round 2 (re-review N1) — the KNOWN ROUTES to the beside-the-binary root.</b>
+    /// The instrument's domain is this set, not a single token, because the re-review found two routes the
+    /// single-token version could not see: <c>Environment.ProcessPath</c> (live, two occurrences in
+    /// <c>src/</c>) and the <c>public static</c> helper H-1c itself added, through which a new store can
+    /// reach the root without ever naming <see cref="AppContext.BaseDirectory"/>. Adding an idiom here is
+    /// how a newly-discovered route gets swept; the guard's own remarks say what a text scan can never
+    /// close.</summary>
+    private static readonly string[] BesideBinaryRootIdioms =
+    [
+        "AppContext.BaseDirectory",
+        "Environment.ProcessPath",
+        "MachineConfigStore.DefaultRoot",
+        "MachineConfigStore.ResolveRoot",
+    ];
+
     /// <summary>🔴 <b>H-1c — the two populations, split by the one property that actually separates them:
     /// whether the variable's name is derivable from a declared
     /// <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> directory.</b>
@@ -380,9 +395,14 @@ public sealed class PerHostDataRootsTests
     }
 
     /// <summary>
-    /// 🔴 <b>Branch review F-15 — the COUNT is now derived and compared, because every census in this
-    /// three guards in THIS FILE floor at <c>&gt;= 13</c> and therefore let a fourteenth store arrive
-    /// silently while the word "thirteen" rots in six places.</b>
+    /// 🔴 <b>Branch review F-15 — the COUNT is now derived and compared, because the three guards above
+    /// it in THIS FILE all floor at <c>&gt;= 13</c> and a floor cannot notice a fourteenth MACHINE-WIDE
+    /// store arriving; it would arrive silently while the word "thirteen" rots in six places.</b>
+    /// (🔴 Fix round 2: this sentence was garbled — "because every census in this / three guards in THIS
+    /// FILE floor at &gt;= 13" had a dropped clause, present since <c>19cf8407</c> (re-review N7) — and its
+    /// ordinal was unqualified while the detail sentence below had been qualified in the round before
+    /// (N5). A summary contradicting the list it summarises, for the third time on this branch, which is
+    /// why both halves are fixed in one edit rather than one.)
     ///
     /// <para>🔴 <b>WHAT THIS TEST REACHES — said because the first version of this paragraph overstated it
     /// (branch re-review, N-2).</b> It claimed "this test would have caught all four" of the FOURTEEN
@@ -506,21 +526,56 @@ public sealed class PerHostDataRootsTests
     /// three current members all happen to create a directory in their constructors is a property of where
     /// the author was standing, not of the question. (Branch review, Important 1.)</para>
     ///
-    /// <para><b>The conjunct is gone.</b> The scan is now the path token ALONE: every <c>*.cs</c> under
-    /// <c>src/</c> that mentions <c>AppContext.BaseDirectory</c>, pinned as an exact set of repo-relative
-    /// paths with each entry classified in place. Twelve files, four of which mention it only in prose —
-    /// included deliberately, because a text scan cannot tell a doc comment from a resolution and
-    /// CLASSIFYING each arrival is the whole mechanism. A new store that composes a path from the base
-    /// directory now fails this test whether or not it creates anything.</para>
+    /// <para><b>The conjunct is gone, and fix round 2 widened the domain from one token to the SET OF
+    /// KNOWN ROUTES.</b> The scan is every <c>*.cs</c> under <c>src/</c> that mentions any idiom in
+    /// <see cref="BesideBinaryRootIdioms"/>, pinned as an exact map of repo-relative path to CATEGORY. A
+    /// new store that composes a path from the base directory fails this test whether or not it creates
+    /// anything.</para>
     ///
-    /// <para><b>What it is STILL blind to, stated because that is the half whose omission is the defect.</b>
-    /// The domain is one TOKEN. A store reaching the same place by another route —
-    /// <c>Directory.GetCurrentDirectory()</c>, <c>Assembly.Location</c>,
-    /// <c>AppDomain.CurrentDomain.BaseDirectory</c>, a bare relative path, or a root handed in by a
-    /// composition root the way <c>ST4I_HISTORIAN_DIR</c> is — is invisible here. Enumerated rather than
-    /// assumed: <b>every one of those returns zero hits in <c>src/</c> today</b>, and the only
-    /// composition-root-supplied roots point at <c>%ProgramData%</c>. There is no third conjunct and no
-    /// unstated filter; if this paragraph is ever incomplete again, that is the bug.</para>
+    /// <para>🔴 <b>WHY THE DOMAIN GREW — the re-review answered a question this paragraph asked and got
+    /// it wrong twice (N1).</b> Fix round 1 listed four alternative routes and called them all zero-hit,
+    /// then staked its own completeness ("if this paragraph is ever incomplete again, that is the bug").
+    /// It was incomplete twice over:
+    /// <list type="number">
+    /// <item><b><c>Environment.ProcessPath</c> was missing and is NOT zero-hit</b> — two live occurrences
+    /// in <c>St4i.EngineApi/ServiceHost/ServiceInstallVerbs.cs</c>.
+    /// <c>Path.GetDirectoryName(Environment.ProcessPath)</c> is the same directory as
+    /// <see cref="AppContext.BaseDirectory"/> for every host here, and the file was not pinned.</item>
+    /// <item><b>Cross-file indirection, which H-1c itself created.</b>
+    /// <c>MachineConfigStore.DefaultRoot()</c>/<c>ResolveRoot()</c> are <c>public static</c> and return
+    /// the beside-binary root, so a new store written the way a maintainer would copy the local pattern
+    /// never names the token at all. The pin is per FILE, and the pinned files include the helper —
+    /// which is exactly why reaching the root THROUGH one of them was invisible.</item>
+    /// </list>
+    /// Both are now idioms in the set, so both enter the pin. Neither was a live defect; what made it
+    /// worth the change is that a completeness claim makes a reader stop checking, which is the harm
+    /// §8.1 calls invisible by construction.</para>
+    ///
+    /// <para>🔴 <b>AND THIS PARAGRAPH NO LONGER STAKES COMPLETENESS, because it cannot honestly.</b> The
+    /// domain is a set of TOKENS, and "every way to name a directory" is not a set a text scan can close.
+    /// What is claimed is narrower and is a measurement: these are the routes that have been SWEPT, and
+    /// the sweep is re-runnable. Measured this round —
+    /// <c>Directory.GetCurrentDirectory</c>, <c>Environment.CurrentDirectory</c>,
+    /// <c>AppDomain.CurrentDomain.BaseDirectory</c>, <c>Assembly.Location</c>,
+    /// <c>Process.GetCurrentProcess().MainModule</c> and <c>AppContext.GetData</c> are all genuinely
+    /// ZERO in <c>src/</c>; <c>Assembly.GetEntryAssembly</c> has one hit
+    /// (<c>CapabilitiesEndpoints.cs</c>) and is not a root route — it reads the assembly's VERSION. A
+    /// seventh idiom nobody has thought of is still invisible, and that sentence is the honest ceiling
+    /// of a text scan.</para>
+    ///
+    /// <para>🔴 <b>THE CATEGORY IS ENFORCED, not merely written down (N2) — but on the axis a scan can
+    /// actually decide.</b> The re-review proposed asserting that <c>prose only</c> entries contain no
+    /// write call and no <c>Path.Combine(AppContext.BaseDirectory</c>. <b>That check fails against this
+    /// tree</b>: <c>ConnectorsJsonRegistration.cs:45</c> quotes
+    /// <c>Path.Combine(AppContext.BaseDirectory, "connectors.json")</c> VERBATIM inside a <c>///</c> line
+    /// while being genuinely prose-only. A text scan cannot tell a quoted expression from a live one — so
+    /// the property asserted here is the one it CAN decide: <b>a <c>prose only</c> entry has every idiom
+    /// occurrence on a <c>///</c> line, and every other category has at least one occurrence that is
+    /// NOT.</b> That cannot be satisfied by pasting a path with a plausible comment; it would take moving
+    /// real code into a doc comment. <b>What it still does NOT decide, said plainly: code is code.</b>
+    /// The store / read-only / not-a-store split among the non-prose entries is a HUMAN classification
+    /// and this test cannot check it — a store mislabelled "reads only" passes. That distinction is
+    /// carried by the per-entry comment and by whoever reviews the diff that adds one.</para>
     ///
     /// <para><b>Repo-relative paths, not base names</b> (branch review, Minor 3): <c>src/</c> contains two
     /// <c>Program.cs</c>. Keyed on <see cref="Path.GetFileName(string)"/>, EdgeService's entering the set
@@ -536,43 +591,73 @@ public sealed class PerHostDataRootsTests
         Assert.Equal(DeclaredDirectoryNames().Count, machineWide.Count);
         Assert.Equal(new[] { "ST4I_MACHINE_CONFIG_DIR" }, besideBinary.ToArray());
 
-        // The store side: ONE token, no second conjunct. See the remarks for what that still misses.
-        var root = MachineSimulatorRoot();
-        var candidates = ProductSources()
-            .Where(file => File.ReadAllText(file).Contains("AppContext.BaseDirectory", StringComparison.Ordinal))
-            .Select(file => Path.GetRelativePath(root, file).Replace('\\', '/'))
-            .OrderBy(path => path, StringComparer.Ordinal)
-            .ToArray();
+        // The store side: every file naming any KNOWN ROUTE to the beside-the-binary root, mapped to its
+        // category. See the remarks for why the domain is a set of idioms and what the category check
+        // can and cannot decide.
+        const string Store2 = "POPULATION TWO — persists product data, default root beside the binary";
+        const string ReadOnly = "READS ONLY — operator-authored input beside the binary; a shared copy is the intent";
+        const string NotAStore = "NOT A DATA STORE";
+        const string Prose = "PROSE ONLY — names a root in a doc comment, resolves nothing";
 
-        // Every file in src/ that names the beside-the-binary root, classified. THREE are population-two
-        // stores; the rest are reads, non-data directories, or prose. Nothing is filtered out silently —
-        // an unexplained exclusion is how a population loses a member.
-        var expected = new[]
+        var expected = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            // — POPULATION TWO: persists product data, default root beside the binary —
-            "src/St4i.EdgeCore/Config/MachineConfigStore.cs",       // machine-operating-config.json
-            "src/St4i.EdgeCore/Config/ProductConfigStore.cs",       // products.json + recipes.json
-            "src/St4i.EngineApi/Config/SimulatedEcosystem.cs",      // ecosystem/ecosystem-{products,recipes}.json
+            ["src/St4i.EdgeCore/Config/MachineConfigStore.cs"] = Store2,      // machine-operating-config.json
+            ["src/St4i.EdgeCore/Config/ProductConfigStore.cs"] = Store2,      // products.json + recipes.json
+            ["src/St4i.EngineApi/Config/SimulatedEcosystem.cs"] = Store2,     // ecosystem/ecosystem-{products,recipes}.json
 
-            // — READS ONLY: operator-authored input beside the binary; a shared copy is the intent —
-            "src/St4i.EdgeCore/Fleet/FleetCore.cs",                 // fleet.json + mapping/*.json
-            "src/St4i.EdgeService/EdgeConnectors.cs",               // connectors.json
-            "src/St4iMachineSimulator/Services/FleetService.cs",    // fleet.json
+            ["src/St4i.EdgeCore/Fleet/FleetCore.cs"] = ReadOnly,              // fleet.json + mapping/*.json
+            ["src/St4i.EdgeService/EdgeConnectors.cs"] = ReadOnly,            // connectors.json
+            ["src/St4iMachineSimulator/Services/FleetService.cs"] = ReadOnly, // fleet.json
 
-            // — NOT A DATA STORE —
-            "src/St4i.DesktopShell/MainWindow.xaml.cs",             // engine exe path; its writes are per-USER %LOCALAPPDATA%
-            "src/St4i.EngineApi/Program.cs",                        // connectors.json read + wwwroot (packaged web UI)
-            "src/St4iMachineSimulator/App.xaml.cs",                 // --capture output dir (CLI arg) + a %TEMP% selftest file
+            ["src/St4i.DesktopShell/MainWindow.xaml.cs"] = NotAStore,         // engine exe path; its writes are per-USER %LOCALAPPDATA%
+            ["src/St4i.EngineApi/Program.cs"] = NotAStore,                    // connectors.json read + wwwroot (packaged web UI)
+            ["src/St4i.EngineApi/ServiceHost/ServiceInstallVerbs.cs"] = NotAStore, // Environment.ProcessPath -> the service binPath for sc.exe
+            ["src/St4iMachineSimulator/App.xaml.cs"] = NotAStore,             // --capture output dir (CLI arg) + a %TEMP% selftest file
 
-            // — PROSE ONLY: names the root in a doc comment, resolves nothing —
-            "src/St4i.EdgeCore/Engine/EdgeAgentPipelines.cs",
-            "src/St4i.EdgeCore/Mapping/MappingProfileResolver.cs",
-            "src/St4i.EngineApi/Config/ConnectorsJsonRegistration.cs",
+            ["src/St4i.EdgeCore/Engine/EdgeAgentPipelines.cs"] = Prose,
+            ["src/St4i.EdgeCore/Mapping/MappingProfileResolver.cs"] = Prose,
+            ["src/St4i.EngineApi/Config/ConnectorsJsonRegistration.cs"] = Prose,
         };
-        // Sorted ordinal rather than set-compared on purpose: a mismatch then names the ONE path that
-        // moved, not two symmetric diffs.
 
-        Assert.Equal(expected.OrderBy(p => p, StringComparer.Ordinal).ToArray(), candidates);
+        var root = MachineSimulatorRoot();
+        var found = new SortedDictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var file in ProductSources())
+        {
+            var lines = File.ReadAllLines(file);
+            var hits = lines.Where(line => BesideBinaryRootIdioms.Any(t => line.Contains(t, StringComparison.Ordinal))).ToList();
+            if (hits.Count > 0) found[Path.GetRelativePath(root, file).Replace('\\', '/')] = hits;
+        }
+
+        // Set equality first, so a new arrival names itself rather than failing on a category mismatch.
+        Assert.Equal(
+            expected.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray(),
+            found.Keys.ToArray());
+
+        // 🔴 N2 — the CATEGORY is checked on the one axis a text scan can decide: is the idiom in code, or
+        // only in a `///` line? A `prose only` entry must have EVERY occurrence in a doc comment; every
+        // other category must have at least one that is not. This cannot be satisfied by pasting a path
+        // with a plausible comment. It deliberately does NOT try to tell a store from a read — both are
+        // code, that split is a human judgement, and the remarks say so rather than implying otherwise.
+        static bool IsDocComment(string line) => line.TrimStart().StartsWith("///", StringComparison.Ordinal);
+
+        foreach (var (path, hits) in found)
+        {
+            var category = expected[path];
+            if (category == Prose)
+            {
+                var code = hits.Where(h => !IsDocComment(h)).Select(h => h.Trim()).ToList();
+                Assert.True(code.Count == 0,
+                    $"{path} is categorised \"{Prose}\" but names a beside-the-binary root in CODE: " +
+                    $"{string.Join(" | ", code)}. Either it resolves a root — in which case classify it as a " +
+                    "store, a read, or a non-store and say which — or the scan broke.");
+            }
+            else
+            {
+                Assert.True(hits.Any(h => !IsDocComment(h)),
+                    $"{path} is categorised \"{category}\" but every occurrence is in a `///` line, so it " +
+                    "resolves nothing. Re-categorise it as prose only, or the classification is stale.");
+            }
+        }
     }
 
     /// <summary>

@@ -1651,7 +1651,10 @@ EXPECT_EDGESERVICE=50
 #       .DESCRIPTION. Those two are each the authoritative sentence of their own artefact; the rest of the
 #       prose repeats them.
 #       🔴 MEASURED, not asserted (branch re-review, N-4). TWO mutations, because the first was not
-#       discriminating and the report said it was: a BARE fourteenth store (variable declared and read,
+#       discriminating and the report said it was. 🔴 BOTH are about a fourteenth MACHINE-WIDE store, and
+#       that qualifier was missing until H-1c fix round 2 (re-review N6): a beside-the-binary fourteenth
+#       store moves none of the three numbers below, which is the whole reason the populations were
+#       split. A BARE fourteenth store (variable declared and read,
 #       but no playwright env entry and no remove-data.ps1 purge entry) is killed by THREE tests — this
 #       one plus the two SET-MEMBERSHIP censuses, TestHarnessIsolationTests and
 #       NotificationDocumentationTests. A FULLY INTEGRATED fourteenth store (variable + playwright entry +
@@ -1927,7 +1930,22 @@ EXPECT_EDGESERVICE=50
 #       SEPARATE store instance, and the REPORTED value is asserted alongside it so a build that rolled
 #       the fields back — remedy (b), a different contract — fails here instead of looking like an
 #       improvement. It also asserts the exception still propagates: H-1a did not swallow it.
-EXPECT_ENGINEAPI=1319
+#
+# 🔴 FIX ROUND 2 (re-review N4) raises this 1319 -> 1320 (+1), counted from the runner. No new file; added
+# to StartupSettingsReplayHardeningTests.cs.
+#   TheStartupReplayHasExactlyOneArm_AndTheSettingsFileExactlyOneWriter                +1
+#       "Exactly one writer of fleet-settings.json at startup" became the load-bearing premise of the
+#       rationale at FleetCore.UpdateSettings when C1 was fixed, and it was true only by inspection.
+#       🔴 AND THE INSTRUMENT THE RE-REVIEW PROPOSED WOULD NOT HAVE CAUGHT C1 — measured, not argued:
+#       C1 added a second call to the startup REPLAY, not a second Save, and the replay persists as a
+#       side effect of UpdateSettings, so a Save-call census returns ONE both before and after it.
+#       Mutation R2 reinstates C1 and shows the Save-site count not moving. So the test asserts BOTH
+#       numbers and names which one carries the property: one Save call site (the weaker half, the one
+#       that stays green through C1) and one startup replay call site (the number C1 moved, 2 -> 3
+#       occurrences of TryReplayStartupSettings in Program.cs). Its stated non-reach is the shape a
+#       source scan cannot see — a writer through a differently-named local — which is exactly what the
+#       file-property regression witness above covers instead.
+EXPECT_ENGINEAPI=1320
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

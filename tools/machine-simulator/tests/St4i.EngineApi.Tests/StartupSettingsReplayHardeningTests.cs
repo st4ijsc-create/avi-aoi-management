@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -78,9 +79,12 @@ public sealed class StartupSettingsReplayHardeningTests
         var alarmsDir = Directory.CreateTempSubdirectory("st4i-h1a-alarms-").FullName;
         var bridgeSpoolDir = Directory.CreateTempSubdirectory("st4i-h1a-bridgespool-").FullName;
         var connectorConfigDir = Directory.CreateTempSubdirectory("st4i-h1a-connectorconfig-").FullName;
-        // Isolated even though the failing path throws BEFORE any file read: the FALLBACK arm's
-        // CredentialStore.Load(<a real machine code>) does reach the filesystem, and it must not read
-        // (or create anything under) a real install's %ProgramData%\ST4I\sim\creds.
+        // Isolated even though the replay under test throws BEFORE any file read: other CredentialStore
+        // .Load(<a real machine code>) calls on the boot path do reach the filesystem, and none of them
+        // may read (or create anything under) a real install's %ProgramData%\ST4I\sim\creds.
+        // 🔴 This comment said "the FALLBACK arm's" until fix round 2 — a sentence left pointing at a
+        // mechanism the C1 fix deleted. Found by re-reading the file, not by a grep, which is why the
+        // sweep for the removed fallback had to cover comments in tests/ as well as src/.
         var credsDir = Directory.CreateTempSubdirectory("st4i-h1a-creds-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
@@ -134,8 +138,9 @@ public sealed class StartupSettingsReplayHardeningTests
         WriteUnactivatableSettingsFile(settingsDir, "https://h1a-boot.example.test");
         var log = new List<(LogLevel Level, string Message)>();
 
-        // No env floor at all — the ordinary desktop/service launch. The fallback replay is therefore a
-        // no-op inside UpdateSettings, so this test measures the GUARD and nothing else.
+        // No env floor at all — the ordinary desktop/service launch. There is one replay and it fails, so
+        // this test measures the GUARD and nothing else. (Also stale until fix round 2: this said "the
+        // fallback replay is therefore a no-op", naming a mechanism the C1 fix deleted.)
         await using var factory = await CreateFactoryAsync(new EnvOverrides(null, null, settingsDir), log);
 
         // The host is UP: a real request over the real pipeline, not merely `factory.Server` not throwing.
@@ -219,6 +224,91 @@ public sealed class StartupSettingsReplayHardeningTests
             Assert.Contains(log, e =>
                 e.Level == LogLevel.Error && e.Message.Contains(ReplayFailureMarker, StringComparison.Ordinal));
         }
+    }
+
+    /// <summary>
+    /// 🔴 <b>Fix round 2 (re-review N4) — "exactly one writer of <c>fleet-settings.json</c> at startup" is
+    /// the load-bearing premise of the rationale at <c>FleetCore.UpdateSettings</c>, and until now it was
+    /// true only by inspection. This measures it from <c>src/</c>.</b>
+    ///
+    /// <para>🔴 <b>The re-review's proposed instrument would NOT have caught C1, and that is worth more
+    /// than the test.</b> It said: <i>"assert from src/ that <c>FleetSettingsStore.Save</c> has exactly one
+    /// call site … would have caught C1 at the commit that introduced it."</i> It would not.
+    /// C1 did not add a second <c>Save</c>; it added a second call to the startup REPLAY, and the replay
+    /// persists as a side effect of <c>UpdateSettings</c>. A <c>Save</c> census returns ONE both before and
+    /// after C1 — measured, not reasoned about: the mutation row R2 below reinstates C1 and the
+    /// <c>Save</c>-site count does not move. So this test asserts BOTH numbers and says which one carries
+    /// the property:</para>
+    /// <list type="number">
+    /// <item><b>ONE <c>Save</c> call site</b> — the <c>finally</c> in <c>FleetCore.UpdateSettings</c>. This
+    /// is the "one writer of the file in the product" half. It is the weaker of the two and it is the one
+    /// that would have stayed green through C1.</item>
+    /// <item><b>ONE startup replay call site</b> — <c>Program.cs</c> names
+    /// <c>TryReplayStartupSettings</c> exactly twice: the declaration and one call. <b>This is the number
+    /// C1 moved</b> (2 → 3), and it is the one that maps to the sentence in the rationale.</item>
+    /// </list>
+    ///
+    /// <para><b>What it does not reach:</b> it is a source scan, so it cannot see a writer that reaches
+    /// the store through a differently-named local, nor a third party constructing its own
+    /// <c>FleetSettingsStore</c>. Both are visible to the regression witness above instead — that one
+    /// asserts a property of the FILE, so any second writer of any shape fails it whatever it is called.
+    /// The two instruments answer different questions and are named apart deliberately.</para>
+    /// </summary>
+    [Fact]
+    public void TheStartupReplayHasExactlyOneArm_AndTheSettingsFileExactlyOneWriter()
+    {
+        var root = MachineSimulatorRoot();
+
+        var saveSites = Directory
+            .EnumerateFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                     && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .SelectMany(f => File.ReadAllLines(f)
+                .Select((line, n) => (File: Path.GetRelativePath(root, f).Replace('\\', '/'), Line: n + 1, Text: line.Trim()))
+                .Where(x => Regex.IsMatch(x.Text, @"[Ss]ettings[Ss]tore\s*\??\.Save\s*\(")
+                         || x.Text.Contains("new PersistedFleetSettings", StringComparison.Ordinal)))
+            .Select(x => $"{x.File}:{x.Line}")
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(saveSites.Count == 1,
+            $"fleet-settings.json has {saveSites.Count} writer(s) in src/: {string.Join(", ", saveSites)}. " +
+            "FleetCore.UpdateSettings' rationale — 'the next start retries and succeeds' — depends on the " +
+            "operator's persisted triple surviving a failed activation, and a second writer is how branch " +
+            "review C1 destroyed it. If this is deliberate, the paragraph at that finally has to be " +
+            "rewritten in the same commit, because it currently states the dependency as a fact.");
+
+        var program = File.ReadAllText(Path.Combine(root, "src", "St4i.EngineApi", "Program.cs"));
+        var replayMentions = Regex.Matches(program, @"TryReplayStartupSettings\s*\(").Count;
+
+        Assert.True(replayMentions == 2,
+            $"Program.cs names TryReplayStartupSettings {replayMentions} time(s); expected exactly 2 — the " +
+            "declaration and ONE call. This is the number branch review C1 moved: a second replay arm went " +
+            "through UpdateSettings, which persists unconditionally, and therefore overwrote the operator's " +
+            "fleet-settings.json with the env-var floor. A Save-call census does NOT see that (it stays at " +
+            "one either way), which is why this second assertion exists. If the replay legitimately needs a " +
+            "second arm, it must not be one that persists.");
+    }
+
+    private static string MachineSimulatorRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "README.md")) &&
+                File.Exists(Path.Combine(dir.FullName, "fleet.json")) &&
+                Directory.Exists(Path.Combine(dir.FullName, "docs")))
+            {
+                return dir.FullName;
+            }
+
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException(
+            "Could not locate tools/machine-simulator by walking up from " +
+            $"\"{AppContext.BaseDirectory}\". Fix this walk — do NOT weaken the assertions above.");
     }
 
     /// <summary>Captures LEVEL as well as text. <c>IsEnabled</c> is deliberately unconditional so a
