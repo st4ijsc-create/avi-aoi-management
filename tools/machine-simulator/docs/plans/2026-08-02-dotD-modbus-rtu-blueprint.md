@@ -253,6 +253,26 @@ Bốn tầng ở (a2) — *thành viên → ngữ liệu → quy tắc → regis
 
 → **Trước khi nâng một chẩn đoán thành quy tắc, hãy liệt kê để PHỦ ĐỊNH nó — và đếm xem có bao nhiêu điểm thực sự KHÁC LOẠI.** Ba ca cùng một loại không phải ba bằng chứng; đó là một bằng chứng được đếm ba lần.
 
+🔴 **Hệ quả về PHÂN LOẠI MỨC ĐỘ, thêm sau vòng phản biện cuối — và nó bác bỏ đề xuất của chính người thực thi.**
+
+G-2 đề xuất một quy tắc phân loại: *"một câu sai CHO PHÉP một hành động thì nặng hơn một câu chỉ đưa tin sai"* — đúng, hữu ích, và nó tách được NEW-1 (bảo người ta đi tìm một bài test không tồn tại) khỏi một con số sai trơn. **Nhưng dùng nó làm BỘ LỌC thì lọt, và bằng chứng nằm ngay trong commit đề xuất nó.**
+
+| Vì sao nó lọt | Ca |
+|---|---|
+| Nó **hạ thấp có hệ thống các KHẲNG ĐỊNH VỀ TÍNH ĐẦY ĐỦ.** *"Mọi call site đã được đổi."* *"Phép quét tìm ra sáu."* *"Không có I/O nào dưới khoá."* Chúng cho phép một sự **BỎ SÓT**, không phải một hành động — người đọc **thôi không kiểm nữa**. | NEW-6 chấm điểm thấp theo quy tắc ấy, mà NEW-6 chính là cái chặn merge. |
+| **Tính "cho phép hành động" do chính tác giả chấm, từ bên trong artifact** — tức là §8.1(f) áp lên chính khâu phân loại. | Khi phản biện chặn ở C-1, nó **không nêu được** hành động nào C-1 cho phép; nó chặn trên cơ sở "từ vựng chuẩn". Về sau mới lộ ra C-1 **đã** cho phép một suy luận sai trong một artifact khác. Tính cho phép hành động chỉ nhìn thấy được **khi đã muộn**. |
+| Nó hạ thấp **khẳng định phổ quát sai trong một quy tắc đang được nâng cấp**. | *"Luôn cách một tầng"* không cho phép hành động tức thời nào — nhưng mọi thứ phía sau sẽ được viết dựa trên nó. |
+
+→ **Cặp quy tắc phải đi cùng nhau:**
+
+> **Xếp hạng theo tính CHO PHÉP HÀNH ĐỘNG — một câu sai khiến người đọc LÀM một việc nặng hơn một câu chỉ khiến họ TIN sai. NHƯNG một khẳng định về TÍNH ĐẦY ĐỦ hoặc TÍNH PHỔ QUÁT là NẶNG bất kể xếp hạng, vì tác hại của nó là khiến người đọc THÔI KIỂM, và tác hại ấy vô hình theo đúng cấu trúc của nó.** Liệt kê để PHỦ ĐỊNH một câu phổ quát trước khi ship nó; phần còn lại thì xếp hạng.
+
+Hai vế rời nhau thì mỗi vế đều để lọt một ca của đợt này; đi cùng nhau thì phủ được cả NEW-6, NEW-1 lẫn C-1/C-2.
+
+🔴 **Và ca cuối cùng của (f) trong đợt này là ca sạch nhất: chính phép quét đổi tên P-label.** Phát hiện NEW-5 minh hoạ vấn đề "ba tên cho một thành viên" bằng **ví dụ P5**. Phép quét đi đổi **P5** — và bỏ sót **P8 ở mọi nơi**, tạo ra một trạng thái từ vựng **phụ thuộc thành viên**, tệ hơn cả trạng thái chưa gán nhãn. Miền của phép quét được thừa hưởng từ **VÍ DỤ mà phát hiện dùng**, chứ không suy ra từ **TÍNH CHẤT** (*mọi tham chiếu theo thứ tự tới danh sách này*). Xảy ra **trong chính commit nâng (f) lên blueprint, do chính tác giả của (f)**.
+
+→ **Một ví dụ trong lời phát hiện là một VÍ DỤ, không phải một ĐẶC TẢ MIỀN.** Trước khi quét, hãy viết ra tính chất bằng câu chữ không chứa ví dụ ấy — rồi quét theo tính chất.
+
 **Và một phân biệt về bằng chứng:** một diff chỉ sửa chú thích là **bằng chứng kết luận về cây mã, và không nói gì về môi trường**. Cổng đỏ trên một commit như vậy nghĩa là máy bẩn, không phải mã hỏng — nhưng cách chữa là **dọn máy**, không phải nới trần.
 
 **Và một đính chính về chính bộ công cụ này, do D-3 tìm ra.** Brief D-3 của tôi yêu cầu test phụ thuộc phần cứng phải *"bỏ qua sạch sẽ và ồn ào"*, trong khi `verify-suites.sh` — cũng của tôi — **fail khi `skipped != 0`**. Hai chỉ thị loại trừ nhau, và **cái phải đổi là brief, không phải script**: xUnit đếm test bị bỏ qua động vào `Total`, nên một bộ test phụ thuộc phần cứng làm `Skipped` **phụ thuộc môi trường** — và bất kỳ con số kỳ vọng cố định nào cũng sẽ làm **máy trang bị tốt hơn** bị đỏ. Đó là cái bẫy "một con số xanh mang nghĩa khác nhau trên các máy khác nhau", mặc áo phần cứng. **`skipped == 0` chính là thứ làm cho "817" mang cùng một nghĩa ở mọi nơi.**

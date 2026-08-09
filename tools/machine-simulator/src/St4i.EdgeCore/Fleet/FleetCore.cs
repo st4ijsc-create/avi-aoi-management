@@ -272,18 +272,44 @@ internal sealed class FleetCore
     /// headline number and the list are the same object.</b>
     ///
     /// <para>🔴 <b>The P-labels are the same repair the S-list below got, applied for the same reason.</b>
-    /// This list was identified purely by ORDINAL and referenced from twelve sites under <b>three different
-    /// names for one member</b>: the <c>MachineConfigStore.Ensure</c> write was called <i>"path 5"</i> in this
-    /// file, <i>"item 5"</i> in the tests, and <i>"path B"</i> (G-1's own vocabulary) at
-    /// <see cref="RegisterMachine"/>. No contradiction had surfaced yet — but an ordinal-only vocabulary is
-    /// exactly what let the S-list's rows 4 and 5 transpose silently, and this list is cross-referenced from
-    /// twice as many sites. <b>P5 is now the one name</b>; every call site in this tree has
-    /// been converted, and the historical spellings survive only in review artifacts this branch does not
-    /// own.</para> (G-1's first draft said "eight" and no grouping of its own list
+    /// This list was identified purely by ORDINAL and cross-referenced from a dozen sites under several
+    /// spellings — <i>"path N"</i> here, <i>"item N"</i> in the tests and the gate script, and <i>"path B"</i>
+    /// (G-1's letter vocabulary) at <see cref="RegisterMachine"/>. No contradiction had surfaced yet, but an
+    /// ordinal-only vocabulary is exactly what let the S-list's rows 4 and 5 transpose silently.
+    ///
+    /// <b>Every cross-reference to this list in this repository now uses its P-label</b>, including the ones
+    /// embedded in this banner's own prose ("P1 to P3", "P4 to P7", "P8 and P9"). <b>Three deliberate
+    /// exceptions, named so they are not mistaken for residue:</b> the two sentences immediately above and
+    /// below, which quote the historical spellings in order to retire them; the parenthetical at
+    /// <see cref="RegisterMachine"/> that glosses G-1's "path B"; and two exception-MESSAGE literals in
+    /// <c>FleetHostGateCommitCompletionTests</c> that keep "item 5" because converting them would make a
+    /// comment-only change executable (the reason is recorded at that site).
+    ///
+    /// 🔴 <b>This paragraph previously claimed "every call site in this tree has been converted", and that was
+    /// FALSE when written</b> — six cross-references were unconverted, and <b>P8 had not been converted
+    /// anywhere</b>, so the branch had not ended a two-vocabulary state but created a member-dependent one,
+    /// which is worse. The cause is the rule this same banner promotes: the sweep's domain was inherited from
+    /// the EXAMPLE the finding used (P5) instead of derived from the property (<i>any ordinal cross-reference
+    /// to this list</i>). §8.1(f), of the vocabulary kind, in the change that promotes §8.1(f). Found by
+    /// review; the falsifying grep was the same one that performed the rename.
+    ///
+    /// 🔴 <b>AND THE TOKEN "P&lt;n&gt;" IS NOT UNIQUE IN THIS REPOSITORY — named, not fixed.</b> Found while
+    /// verifying the sweep above, by asking the question the sweep should have asked first: <i>is this label
+    /// free?</i> Two other vocabularies already use it — project-phase tags (<c>P2-1</c>, <c>P2-3</c>) and a
+    /// phase RANGE at <see cref="St4i.Connector.Abstractions.IDeviceDriver"/> (<i>"P3-P5 drivers"</i>, meaning
+    /// phases, not paths) — plus <c>"P1"</c> as a product-code string literal in the historian endpoints and
+    /// the WPF app. A reader grepping <c>P5</c> gets this list AND a driver-phase range.
+    ///
+    /// Kept anyway, and the reasoning is the one this branch has used throughout: no reader is given a WRONG
+    /// answer — the two senses are trivially distinguishable in context — so the cost is friction, not error,
+    /// and renaming nine labels plus every cross-reference at merge time buys less than it risks. <b>What
+    /// would NOT have been acceptable is shipping the completeness claim above while this was unexamined</b>,
+    /// which is what "every call site has been converted" did the first time. If this list is ever renamed,
+    /// <c>L1…L9</c> ("lock path") is free today.</para> (G-1's first draft said "eight" and no grouping of its own list
     /// produced eight — a headline that cannot be reconstructed from the enumeration it summarises is a
     /// defect in the deliverable, since the enumeration IS the deliverable. Corrected by review.)
     ///
-    /// <b>Closed by G-1 — 1 to 3:</b>
+    /// <b>Closed by G-1 — P1 to P3:</b>
     /// <list type="number">
     /// <item><b>P1 — CLOSED.</b> <see cref="RegisterMachine"/>'s <see cref="_onMachineSeeded"/> — §9.2 violation
     /// 3, the one with the number on it: for a real <c>AssetRegistryStore</c> a complete synchronous SQLite
@@ -300,7 +326,7 @@ internal sealed class FleetCore
     /// <item><b>P3 — CLOSED.</b> <see cref="Burst"/>'s <c>previousCts?.Cancel()</c> — §10.3(d)'s second
     /// <c>Cancel</c>. Moved below the lock.</item>
     ///
-    /// <item><b>P4 — OPEN — in this class's own code, 4 to 7.</b> <see cref="StartLocked"/> →
+    /// <item><b>P4 — OPEN — in this class's own code, P4 to P7.</b> <see cref="StartLocked"/> →
     /// <c>MappingProfileResolver.Build</c> → <c>File.Exists</c>/<c>File.ReadAllText</c> per machine — §9.2
     /// violation 1, measured <b>2.39 ms</b> held with 50 machines having mapping files on a local
     /// SSD.</item>
@@ -319,7 +345,7 @@ internal sealed class FleetCore
     /// at that call site as the one place third-party code runs under this lock, but never on the backlog
     /// list).</item>
     ///
-    /// <item><b>P8 — OPEN — in a CALLEE's code, 8 and 9, and not fixable from this class.</b>
+    /// <item><b>P8 — OPEN — in a CALLEE's code, P8 and P9, and not fixable from this class.</b>
     /// <see cref="Start"/>/<see cref="Stop"/>/<see cref="Estop"/> hold this lock across
     /// <see cref="IUnsPublisher.PublishNodeBirth"/>/<see cref="IUnsPublisher.PublishNodeDeath"/>, whose
     /// degraded arms (publisher disposed, publish queue saturated) call the PUBLISHER's own host-supplied
@@ -336,16 +362,16 @@ internal sealed class FleetCore
     /// </list></para>
     ///
     /// <para><b>Where the nine came from.</b> The inherited backlog named <b>five</b> — §9.2's three
-    /// violations (1, 4, 6 here) plus §10.3(a)'s log mechanism (2) and §10.3(d)'s second <c>Cancel</c> (3).
-    /// Item 7 was documented at its own call site but never on that list. Items <b>5, 8 and 9 were on no
+    /// violations (P1, P4, P6 here) plus §10.3(a)'s log mechanism (P2) and §10.3(d)'s second <c>Cancel</c>
+    /// (P3). P7 was documented at its own call site but never on that list. <b>P5, P8 and P9 were on no
     /// list anywhere</b>. 5 + 1 + 3 = 9.</para>
     ///
-    /// <para><b>Why 4 to 7 did not move.</b> 4 and 5 live in the same place and have the same fix: hoist
+    /// <para><b>Why P4 to P7 did not move.</b> P4 and P5 live in the same place and have the same fix: hoist
     /// driver construction out of <see cref="StartLocked"/> entirely. That means reading
     /// <see cref="_fleet"/>/<see cref="_scenario"/> under the lock, building off it, and re-entering — which
     /// introduces a roster-changed-underneath window this class has no answer for today, and silently
-    /// degrades a machine registered in that window to <c>MappingProfile.ForClass</c>. 6 would move the halt
-    /// path's cancel request after the latch. 7 is third-party code. Each is a redesign of the restart
+    /// degrades a machine registered in that window to <c>MappingProfile.ForClass</c>. P6 would move the halt
+    /// path's cancel request after the latch. P7 is third-party code. Each is a redesign of the restart
     /// chokepoint or an operator-observable ordering change, which G-1's brief reserves rather than
     /// delegates.</para>
     ///
@@ -380,11 +406,11 @@ internal sealed class FleetCore
     /// made to agree.</b> The unit of this class is a <b>(commit, completion) pair</b> — that is the rule item
     /// 7 established and review C-1 vindicated: one commit can owe more than one off-lock completion, and each
     /// is separately losable. Apply that rule and you count <b>eight</b>. The list below has <b>seven rows</b>
-    /// because <b>item 2 carries two pairs in one row</b> (the halt teardown and the halt run event) while item
+    /// because <b>S2 carries two pairs in one row</b> (the halt teardown and the halt run event) while item
     /// 7 is a row of its own.
     ///
-    /// <b>That asymmetry is historical, not principled, and it is kept deliberately.</b> Item 7 was found
-    /// first, as a separate member; finding it is what produced item 2's second pair a round later. Folding 7
+    /// <b>That asymmetry is historical, not principled, and it is kept deliberately.</b> S7 was found
+    /// first, as a separate member; finding it is what produced S2's second pair a round later. Folding 7
     /// into 3 — or splitting 2 into two rows — would renumber a vocabulary (S1…S7) that this branch's report,
     /// its tests and its ledger all speak. So: <b>a reader deriving the set from the rule should expect eight
     /// pairs and find seven rows, and <b>S2</b> is where the extra pair lives.</b> Round 2 of review was right
@@ -393,7 +419,7 @@ internal sealed class FleetCore
     /// (Round 1 of G-2 said "the sweep found six more" over a list of five — a count contradicted by the list
     /// beneath it, which is the exact defect the commit BELOW this branch's base was written to fix, and which
     /// G-2's own report claimed to have caught in its commit message while leaving it here. Corrected by
-    /// review. The sweep found FIVE more; re-deriving the set added a sixth, item 7, which the sweep's
+    /// review. The sweep found FIVE more; re-deriving the set added a sixth, S7, which the sweep's
     /// single-completion table could not represent.)
     /// 🔴 <b>EVERY ROW CARRIES ITS S-NUMBER, and that is a repair rather than a decoration.</b> Rows 4 and 5
     /// were TRANSPOSED here — position 4 held <see cref="Burst"/> (S5 everywhere else) and position 5 held the
@@ -1553,7 +1579,7 @@ internal sealed class FleetCore
         // the StartOutcome, two things it could not finish there: the connector drivers a rejecting factory
         // orphaned (which own live sockets, and whose disposal is what "review fix round 2" exists for) and
         // the log lines it deferred. The throw site between commit and completion is `PublishNodeBirth()`
-        // inside the lock — the IUnsPublisher seam, the enumeration's own path 8, whose "never throws" is a
+        // inside the lock — the IUnsPublisher seam, the enumeration's own P8, whose "never throws" is a
         // promise and not a bound. Before this fix, that throw re-opened exactly the orphaned-driver leak
         // round 2 closed, and dropped the connector-rejection warnings with it.
         //
@@ -1733,7 +1759,7 @@ internal sealed class FleetCore
         // TWO THROW SITES SIT BETWEEN THEM, and neither is hypothetical:
         //   1. `_unsPublisher?.PublishNodeDeath()` — INSIDE the lock, on purpose (below). The field is
         //      IUnsPublisher, so this is a property of the SEAM: any host implementation runs here, and the
-        //      interface's "never throws" is a promise, not a bound (this is the enumeration's own path 8).
+        //      interface's "never throws" is a promise, not a bound (this is the enumeration's own P8).
         //   2. `RecordRunEventFireAndForget` — its name says fire-and-forget and its DISPOSED arm is not:
         //      it invokes the host's logWarning synchronously, on this thread, before it returns a Task
         //      (HistorianWriter.cs). A host wires that to an ILogger, whose Log() rethrows a provider's

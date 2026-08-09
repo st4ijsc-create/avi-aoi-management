@@ -1735,7 +1735,7 @@ EXPECT_EDGESERVICE=50
 #   Estop_WhenTheHostLoggerThrowsFlushingTheHaltPathLines_TheOldPipelineIsStillDisposed         +1
 #       S2 — the halt path, the most serious member. The two tests are two different throw sites in the same
 #       window, not one property twice: the first is the IUnsPublisher seam called with _gate held (the
-#       enumeration's own item 8); the second is the deferred-log flush that G-1 placed AS THE FIRST
+#       enumeration's own P8); the second is the deferred-log flush that G-1 placed AS THE FIRST
 #       STATEMENT of WaitAndDisposeOldPipeline, ahead of every disposal — a regression G-1 introduced into
 #       the routine whose job is to release the pipeline. Each asserts the driver was disposed EXACTLY once,
 #       so a fix that traded a lost teardown for a doubled one fails.
@@ -1752,7 +1752,7 @@ EXPECT_EDGESERVICE=50
 #   Burst_WhenApplyingTheBurstThrows_TheRevertIsStillScheduled                                  +1
 #   Burst_WhenTheScheduledRevertItselfThrows_ItIsReported_NotDroppedOnAnUnobservedTask          +1
 #       S5, and the one genuinely SILENT instance of S4. Review M-5 named only the Cancel half of Burst's
-#       window; the larger half is ApplyScenario, reachable through the enumeration's item 5. The second
+#       window; the larger half is ApplyScenario, reachable through the enumeration's P5. The second
 #       test covers the revert task's own failure, which ran on an unobserved Task and was dropped by the
 #       finalizer with nothing logged anywhere.
 #

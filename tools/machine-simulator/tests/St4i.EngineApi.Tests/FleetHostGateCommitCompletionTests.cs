@@ -44,7 +44,7 @@ namespace St4i.EngineApi.Tests;
 /// <item><see cref="IUnsPublisher"/>. Its two node-lifecycle methods are called with <c>_gate</c> HELD, on
 /// purpose (they serialise NBIRTH/NDEATH ordering with the transition). The field is the INTERFACE, so any
 /// host implementation runs there, and the interface's "never throws" is a promise, not a bound — this is
-/// FleetCore's own enumeration item 8.</item>
+/// FleetCore's own enumeration P8.</item>
 /// <item>The host log callbacks. <c>FleetCore</c>'s seam is a plain <c>Action&lt;string&gt;</c>/
 /// <c>Action&lt;Exception,string&gt;</c>; a delegate that throws is a throw site by construction. In
 /// production a host wires them to an <c>ILogger</c> — and

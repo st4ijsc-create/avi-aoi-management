@@ -347,7 +347,7 @@ public sealed class FleetHostSeedNotificationOffGateTests
     /// what makes this a regression rather than an inherited gap. The fix is a <c>finally</c>.</para>
     ///
     /// <para>The throw is injected through the pipeline-injection seam because it is deterministic; the
-    /// REAL reachable throw is path 5 of the <c>_gate</c> enumeration (<c>MachineConfigStore.Ensure</c>'s
+    /// REAL reachable throw is P5 of the <c>_gate</c> enumeration (<c>MachineConfigStore.Ensure</c>'s
     /// config-kind mismatch, and its <c>File.WriteAllText</c>/<c>File.Move</c> on a full or read-only data
     /// root), which needs a poisoned data root to reproduce and would test the same
     /// statement.</para></summary>
