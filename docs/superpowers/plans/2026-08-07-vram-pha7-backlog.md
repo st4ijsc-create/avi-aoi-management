@@ -293,3 +293,30 @@ Chủ dự án duyệt **chạy script xoay (8c)** và **thêm cột buộc đ�
 - [ ] **Điều kiện vào:** Task 9 Bước 8 **ĐẠT** — đã có người đăng ký lại 2FA thành công **trên hệ thật**.
 - [ ] Chạy **lượt khô trước**, dán kết quả. Rồi chạy thật, dán số hàng đổi.
 - [ ] **Nghiệm thu sống ngay sau:** một tài khoản đăng nhập lại được bằng bí mật **mới**.
+
+---
+
+## QUYẾT ĐỊNH CHỦ DỰ ÁN 2026-08-09 (ba câu của Task 9)
+
+| # | Quyết định | Ghi chú |
+|---|---|---|
+| **QĐ-1** | Cột buộc-đổi-mật-khẩu đặt trên **`users`** | ⚠ **Ngược đề xuất** — controller đã nêu rủi ro, chủ dự án chọn `users`. **Cách giải bắt buộc dưới đây.** |
+| **QĐ-2** | `varchar(255)` (controller quyết) | Giữ **một con số** cho lượng từ ∀ so vào; `text` làm `22001` bất khả **nhưng làm luật ∀ RỖNG** |
+| **QĐ-3** | **XOÁ** `idx_backup_codes_code` | 0 truy vấn dùng, trả chi phí ghi cho 10 mã mỗi lượt bật 2FA |
+
+### ⚠ QĐ-1 — rủi ro đã nêu, và cách giải phải làm
+
+Rủi ro: đặt trên `users` mà phân loại `"public"` ⇒ **`user.list` phát cho trình duyệt DANH SÁCH tài khoản đang bị buộc đổi mật khẩu**.
+
+⇒ **Cách giải (bắt buộc, không phải tuỳ chọn):**
+1. Phân loại cột là **`"server-only"`** trong `USER_FIELD_VISIBILITY` — **không** `"public"`. Rủi ro trên biến mất **theo cấu tạo**.
+2. Client vẫn cần biết **người đang đăng nhập** có phải đổi mật khẩu không ⇒ phơi qua **một ô suy ra tường minh** trên **`auth.me`** (ví dụ `mustChangePassword: boolean`), **không** bằng cách mở cột.
+3. **Ca bắt buộc:** `user.list` **KHÔNG** mang ô ấy · `auth.me` **CÓ** ô suy ra · đột biến đổi phân loại sang `"public"` ⇒ **ca đỏ**.
+
+⇒ Đặt ở `users` là quyết định của chủ dự án; **giữ nó không rò là ràng buộc kỹ thuật**, và hai thứ không mâu thuẫn.
+
+### Ràng buộc bổ sung cho Task 9 Bước 5 và Task 10 (từ hai phát hiện của Bước 2)
+
+- ⚠⚠ **R1 — tách bảng làm RỖNG lưới Task 7.** `ServerOnlyUserField` sẽ thành `never` ⇒ `PublicUser` mất phần giao ⇒ cổng *"nhét bí mật lại là lỗi biên dịch"* thành **trang trí**. ⇒ Bước 5 phải **giữ lượng từ sống** khi tập cột bí mật trên `users` co lại (ví dụ: neo vào **`user_secrets`** thay vì `users`, và **ca đỏ khi tập rỗng**).
+- ⚠⚠ **R2 — script xoay sẽ BÁO THÀNH CÔNG mà KHÔNG XOAY GÌ.** `scripts/xoay-bi-mat-2fa.mjs:105` chạy SQL **thô** `UPDATE users SET two_factor_secret = NULL`; sau khi mã trỏ `user_secrets` mà cột cũ còn ⇒ **chạy thành công, in "N hàng", không xoay bí mật đang dùng**, và ảnh chụp hoàn tác chụp **bản chết**. ⇒ Đúng lớp **"làm hỏng rồi BÁO CÁO THÀNH CÔNG"** (Critical Pha 3).
+  ⇒ **Điều kiện vào Task 10 cộng một dòng:** script phải **đọc/ghi đúng nguồn đang dùng**, và có **ca chứng minh nó THẤT BẠI khi trỏ sai bảng** — không được im lặng thành công.
