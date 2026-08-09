@@ -243,6 +243,69 @@ public sealed class FleetService : IDisposable
     /// Fire-and-forget by design (mirrors the exhibition-tool "don't block the caller" shape
     /// <see cref="MachineViewModel.SyncConfigCommand"/> already uses); the eventual revert surfaces
     /// through <see cref="ScenarioChanged"/> like any other <see cref="ApplyScenario"/> call.
+    ///
+    /// <para>🔴 <b>TASK H-1b — THIS METHOD CARRIES AN OPEN DEFECT OF THE SAME CLASS <c>FleetCore</c>'s
+    /// S-SET NAMES, AND IT IS DELIBERATELY NOT FIXED. Named here so the next sweep starts from a set.</b>
+    ///
+    /// <para><b>The mechanism, exactly.</b> Two things are COMMITTED under this service's own
+    /// <see cref="_gate"/>: <see cref="_burstRevertCts"/><c> = cts</c> and (on the first click of an
+    /// episode) <see cref="_burstBaseline"/>. Two things are then owed OFF the lock, and neither is
+    /// guaranteed: the <see cref="ApplyScenario"/> call that raises the multiplier, and
+    /// <c>_ = RevertBurstAfterDelayAsync(baseline, cts)</c>, which is what discharges the commit. If
+    /// <see cref="ApplyScenario"/> throws — it re-takes <see cref="_gate"/>, may
+    /// <see cref="StopLocked"/>/<see cref="StartLocked"/>, and ends by invoking
+    /// <see cref="ScenarioChanged"/>, an arbitrary subscriber-supplied handler — the revert task is never
+    /// started, so <see cref="_burstRevertCts"/> is left non-null forever. Every later <see cref="Burst"/>
+    /// then takes the "a burst is already active" branch, no revert is ever scheduled, and the fleet stays
+    /// at whatever rate it reached. There is a second, narrower window in the same shape:
+    /// <c>previousCts?.Cancel()</c> runs registered callbacks synchronously and rethrows, and it sits
+    /// BEFORE <c>_burstRevertCts = cts</c> inside the lock, so a throwing callback leaves the field
+    /// pointing at a CTS that has just been cancelled and whose task will return without reverting.</para>
+    ///
+    /// <para><b>And the half that is SILENT rather than merely wrong.</b>
+    /// <see cref="RevertBurstAfterDelayAsync"/> is started as <c>_ = …</c>, so its Task is never observed;
+    /// its own <see cref="ApplyScenario"/> call — the one that actually performs the revert — can throw,
+    /// and that fault is collected by the finalizer and dropped. Nothing in this tree subscribes to
+    /// <see cref="TaskScheduler.UnobservedTaskException"/>. <c>FleetCore</c> closed its copy of this by
+    /// reporting the failure on a host <c>logError</c> callback; <b>this service has no log channel of any
+    /// kind</b> (<see cref="LoadFleet"/>'s GP-3 comment states it in as many words: no
+    /// <c>ILogger</c>/structured-logging infra is wired into this class, and the one diagnostic it does
+    /// emit goes to <c>Debug.WriteLine</c>), so closing it here would mean introducing one —
+    /// which is a larger change than the fix, and still unwitnessed for the reason below.</para>
+    ///
+    /// <para><b>What is ALREADY FIXED here and must not be re-reported as broken:</b> the
+    /// <see cref="_burstBaseline"/> capture. The fix-pass described above captures it ONCE per episode, so
+    /// the "second click baselines on the burst value and the fleet is stuck at 6× forever" bug is CLOSED.
+    /// What remains is the commit/completion window in the paragraph above — not a baseline race.</para>
+    ///
+    /// <para><b>Same class as <c>FleetCore</c>'s S5, and NOT the same anything else.</b> This is a
+    /// different type, in a different assembly, in a different host process, under a lock of its own. It is
+    /// NOT <c>FleetCore._gate</c>, and no statement here should ever be read as saying the two hosts share
+    /// one lock — they share a SHAPE, which is why this is worth naming, and nothing else.
+    /// <c>FleetCore</c> is <c>internal</c> to <c>St4i.EdgeCore</c> with
+    /// <c>InternalsVisibleTo("St4i.EngineApi")</c> only, so this assembly cannot reach it even by accident.
+    /// This service also has no <c>Estop</c>, no HALT latch and no safety path at all: the consequence here
+    /// is an exhibition simulator stuck at 6× cycle rate, which is a demo artefact, not a machine-stop
+    /// line.</para>
+    ///
+    /// <para>🔴 <b>WHY IT IS NOT FIXED: THE GATE CANNOT WITNESS THIS HOST.</b> Said plainly rather than as
+    /// "later" — there is no follow-up scheduled and none implied. <c>scripts/verify-suites.sh</c> measures
+    /// FIVE suites (<c>St4i.Connector.Abstractions.Tests</c>, <c>St4i.Connector.Conformance.Tests</c>,
+    /// <c>St4i.EdgeCore.Tests</c>, <c>St4i.EdgeService.Tests</c>, <c>St4i.EngineApi.Tests</c>) and NONE of
+    /// them references <c>St4iMachineSimulator</c> — the assembly appears in no test project's
+    /// <c>ProjectReference</c> anywhere in the tree. A fix applied here would compile and would be measured
+    /// by nothing; this project's own record is a long list of what that costs.
+    /// <b>The target framework is NOT the reason, and stating it as one would be false:</b> three of those
+    /// five suites are themselves <c>net10.0-windows</c>. The obstacle is the absence of a suite, not an
+    /// incompatibility.</para>
+    ///
+    /// <para><b>TRIGGER — write it down so it fires without anyone remembering it.</b> If a test project is
+    /// ever added for the WPF shell, THIS is the first thing it must witness. The same trigger fires on the
+    /// route this repository has actually taken before: relocating the mechanism into <c>St4i.EdgeCore</c>,
+    /// which is how <c>SwitchableTransport</c>/<c>TransportCoordinator</c>/<c>ScenarioAwareDriver</c>
+    /// stopped being untestable (see <c>RelocatedFromWpfTests</c> in <c>St4i.EdgeCore.Tests</c>). Either
+    /// way the FIRST assertion is the one <c>FleetCore</c>'s own S5 test makes: a <see cref="Burst"/> whose
+    /// <see cref="ApplyScenario"/> throws must STILL have scheduled its revert.</para></para>
     /// </summary>
     public void Burst()
     {
