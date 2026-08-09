@@ -330,7 +330,11 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   — lượng từ *"∀ file test: xoá hàng `users` phải giới hạn theo hàng chính nó tạo"*). Nó tự
     //   khai `Pha 8` nên bộ nhận diện THỨ BA (`DAU_KHAI_PHA`) kéo nó vào tập bị canh ⇒ nó phải có
     //   đường riêng ở §Cổng kiểm chung. Gỡ đường ấy ⇒ **hai** ô đỏ trên **hai** trục.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(40); // Pha 8 Task 3: +1
+    // ⚠ Pha 8 Task 1: 40 → **41**. Một lưới MỚI (`server/_core/buocDoiMatKhauMoiBeMat.test.ts` —
+    //   lượng từ *"∀ điểm xác thực HTTP/socket trong `server/**`, cờ buộc-đổi-mật-khẩu phải được
+    //   kiểm"*). Nó tự khai `Pha 8` ⇒ bộ nhận diện THỨ BA (`DAU_KHAI_PHA`) kéo nó vào tập bị canh
+    //   ⇒ nó phải có đường riêng ở §Cổng kiểm chung. Gỡ đường ấy ⇒ **hai** ô đỏ trên **hai** trục.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(41); // Pha 8 Task 1: +1
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -450,7 +454,8 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   §Cổng kiểm chung ⇒ `CONG.length` 38 → **39** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ
     //   trên **hai** trục.
     // ⚠ Pha 8 Task 3: 102 → **103**. Đúng MỘT lưới mới (xem khối lý do ở ô `CONG.length`).
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(103); // Pha 8 Task 3: +1
+    // ⚠ Pha 8 Task 1: 103 → **104**. Đúng MỘT lưới mới (xem khối lý do ở ô `CONG.length`).
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(104); // Pha 8 Task 1: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

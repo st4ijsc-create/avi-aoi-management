@@ -24,6 +24,14 @@ const dbMocks = vi.hoisted(() => {
     getUserByOpenId: vi.fn(),
     upsertUser: vi.fn(),
     getSessionByToken: vi.fn(),
+    /**
+     * ★ Pha 8 Task 1 — `authenticateRequest` nay cưỡng chế cổng buộc-đổi-mật-khẩu ở biên xác thực
+     * (`chanNeuPhaiDoiMatKhau` → `db.phaiDoiMatKhau`). ⚠ Nó **KHÔNG** được cộng vào `dbCallCount()`
+     * bên dưới: các ô của file này đo *"bộ nhớ đệm phiên tiết kiệm được bao nhiêu lượt DB của đường
+     * phân giải danh tính"*, và phép chặn là một lượt đọc **CỐ Ý không cache** (cache nó = giữ
+     * người vừa đổi mật khẩu trong nhà tù thêm một TTL). Gộp vào là làm hỏng đúng thứ đang được đo.
+     */
+    phaiDoiMatKhau: vi.fn(async () => false),
   };
 });
 

@@ -1654,12 +1654,20 @@ async function startServer() {
     if (authHeader?.startsWith("Bearer ")) {
       const token = authHeader.slice(7);
       try {
-        const { sdk } = await import("./sdk");
+        const { sdk, chanNeuPhaiDoiMatKhau } = await import("./sdk");
         const session = await sdk.verifySession(token);
         if (session) {
           const { getUserByOpenId } = await import("../db");
           const user = await getUserByOpenId(session.openId);
           if (user && user.isActive) {
+            // ★★★★ Pha 8 Task 1 — **ĐIỂM XÁC THỰC DUY NHẤT VÒNG QUA `authenticateRequest`.**
+            // Nhánh này tự phân giải phiên (`verifySession` + `getUserByOpenId`), nên phép chặn ở
+            // biên xác thực **theo cấu tạo** không thấy nó — đúng lớp lỗi *"lưới theo ĐƯỜNG THOÁT,
+            // không theo FILE"*. Một `git grep authenticateRequest` cũng mù với nó; nó chỉ lộ ra
+            // khi lượng từ được phát biểu trên **hình dạng phân giải danh tính**, không trên tên
+            // một hàm (`buocDoiMatKhauMoiBeMat.test.ts`, nhánh `phien`).
+            // ⚠ Ném ⇒ rơi vào `catch` ngay dưới ⇒ **401**. Fail-closed, đúng như 12 bề mặt kia.
+            await chanNeuPhaiDoiMatKhau(user);
             (req as any).externalUser = user;
             return next();
           }

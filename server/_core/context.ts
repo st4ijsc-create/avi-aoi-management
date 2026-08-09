@@ -50,7 +50,21 @@ export async function createContext(
   let user: User | null = null;
 
   try {
-    user = await sdk.authenticateRequest(opts.req);
+    /**
+     * 🔴🔴 Pha 8 Task 1 — **NGƯỜI GỌI DUY NHẤT được tắt cổng buộc-đổi-mật-khẩu ở biên xác thực.**
+     *
+     * ⚠⚠⚠ Đây **KHÔNG** phải một lỗ: nó là chỗ phép chặn được làm lại **MỊN HƠN**. Biên xác thực
+     * không biết `path`, nên nếu nó chặn ở đây thì lượt `catch` ngay dưới sẽ đặt `user = null` cho
+     * **mọi** thủ tục — kể cả `auth.me` và `user.changePassword` — và người bị chặn mất đúng ô họ
+     * cần để biết phải đi đâu. Pha 7 đã deploy một lần ra **nhà tù thật 4/4 tài khoản** vì đúng
+     * hình dạng ấy.
+     * ⇒ Phép chặn của tRPC nằm ở `thuTucGoc` (`./trpc.ts::chanKhiPhaiDoiMatKhau`), nơi **biết**
+     *   `path` nên tha được đúng bốn đường của vòng đời đổi mật khẩu (`THU_TUC_CHO_QUA`).
+     * ⚠ Tập "được tắt" gồm **đúng một** phần tử và bị ghim ở
+     *   `server/_core/buocDoiMatKhauMoiBeMat.test.ts` §5 (`BE_MAT_TU_CANH`) — thêm phần tử thứ hai
+     *   là ĐỎ, không phải một dòng lặng lẽ.
+     */
+    user = await sdk.authenticateRequest(opts.req, { boQuaCongDoiMatKhau: true });
   } catch (error) {
     // Authentication is optional for public procedures.
     user = null;

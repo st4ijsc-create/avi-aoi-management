@@ -2,8 +2,15 @@
  * Vitest global setup — runs before every test file.
  *
  * Forces DATABASE_URL to an ISOLATED test database so the integration tests that hit a real
- * DB via getDb() (some DESTRUCTIVE, e.g. auth.setupAdmin wipes users) run WITHOUT ever
- * touching the dev/prod database.
+ * DB via getDb() (they INSERT/UPDATE/DELETE real rows) run WITHOUT ever touching the
+ * dev/prod database.
+ *
+ * ⚠ The old wording here — "some DESTRUCTIVE, e.g. auth.setupAdmin wipes users" — has been WRONG
+ * since 824a5153 (Pha 8 Task 3): that beforeEach/afterEach now deletes ONLY the rows the file
+ * itself created (email prefix `pha8-setupadmin-`). No test file is allowed to wipe the `users`
+ * table any more, and `server/_core/xoaHangKhongGioiHanTrongTest.test.ts` enforces that ∀ over
+ * every `*.test.ts` under `server/`. Keeping the stale sentence would send the next reader
+ * hunting a table-wipe that no longer exists — the exact wrong diagnosis that cost THREE phases.
  *
  * IMPORTANT: we deliberately do NOT load the whole .env — that would inject production
  * feature flags (FOE_ENABLED, AI_*, GGUF_*, …) and break the many tests that assert a flag

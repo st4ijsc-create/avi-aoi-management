@@ -1,5 +1,7 @@
 import { AXIOS_TIMEOUT_MS, COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
+// ★★★★ Pha 8 Task 1 — chủ DUY NHẤT của vị từ "lượt gọi này có bị cổng BUỘC-ĐỔI-MẬT-KHẨU chặn không".
+import { biChanBoiCongDoiMatKhau } from "@shared/buocDoiMatKhau";
 import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
 import type { Request } from "express";
@@ -29,6 +31,41 @@ export type SessionPayload = {
   appId: string;
   name: string;
 };
+
+/** Tuỳ chọn của {@link SDKServer.authenticateRequest}. */
+export type TuyChonXacThuc = {
+  /**
+   * 🔴 Bỏ qua cổng buộc-đổi-mật-khẩu ở biên xác thực. **Một người gọi duy nhất được phép**:
+   * `server/_core/context.ts` — xem khối docstring của `authenticateRequest`, và lưới ghim
+   * `server/_core/buocDoiMatKhauMoiBeMat.test.ts` §5.
+   */
+  boQuaCongDoiMatKhau?: boolean;
+};
+
+/**
+ * ★★★★ Pha 8 Task 1 — **PHÉP CHẶN, DÙNG CHUNG CHO MỌI BỀ MẶT NGOÀI tRPC.**
+ *
+ * Ném khi *(và chỉ khi)* hàng `users` này đang bị buộc đổi mật khẩu **và** vai của nó không nằm
+ * trong tập miễn trừ **cố ý** (`shared/buocDoiMatKhau.ts` — quyết định chủ dự án 2026-08-09).
+ *
+ * ⚠⚠ **ĐỌC DB MỚI, KHÔNG suy từ hàng trong tay.** Hàng đi qua đây đã qua
+ *    `redactServerOnlyUserFields` hoặc đến từ bộ nhớ đệm phiên (tới 60 s) ⇒ mọi phép suy tại chỗ
+ *    sẽ cho `false` **luôn luôn**: một lời nói dối im lặng theo chiều **MỞ**. Đây đúng lớp lỗi đã
+ *    được ghi thành cảnh báo ở `shared/buocDoiMatKhau.ts`.
+ * ⚠ **KHÔNG `try/catch` quanh lượt đọc DB** — DB nấc thì lượt gọi **hỏng** (fail-closed). Bọc lại
+ *   và cho qua là để một `catch` mặc áo của phép đo.
+ * ⚠ Ném `ForbiddenError` (không `TRPCError`): 12/13 người gọi là tuyến REST/socket, và **tất cả**
+ *   đều đã bọc lượt xác thực trong `try/catch` trả 401/403 ⇒ hành vi mới là **fail-closed** ở cả
+ *   13 chỗ mà không phải sửa chỗ nào. Chuỗi `MUST_CHANGE_PASSWORD` nằm trong thông điệp để lượt gỡ
+ *   lỗi phân biệt được nó với một phiên hết hạn thường.
+ */
+export async function chanNeuPhaiDoiMatKhau(user: User): Promise<void> {
+  if (biChanBoiCongDoiMatKhau(user.role, await db.phaiDoiMatKhau(user.id))) {
+    throw ForbiddenError(
+      "MUST_CHANGE_PASSWORD: Bạn phải đổi mật khẩu trước khi tiếp tục sử dụng hệ thống.",
+    );
+  }
+}
 
 const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
 const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
@@ -280,7 +317,49 @@ class SDKServer {
     } as GetUserInfoWithJwtResponse;
   }
 
-  async authenticateRequest(req: Request): Promise<User> {
+  /**
+   * ★★★★ Pha 8 Task 1 — **BIÊN XÁC THỰC LÀ ĐIỂM CHUNG DUY NHẤT CỦA MỌI BỀ MẶT.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ VÌ SAO PHÉP CHẶN NẰM Ở ĐÂY, KHÔNG PHẢI Ở 11 CHỖ
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Pha 7 đặt cổng buộc-đổi-mật-khẩu ở `thuTucGoc` của tRPC. Lượng từ ấy đúng **cho tRPC**, và
+   * chính vì thế nó **theo cấu tạo** không thấy các bề mặt khác. Phép đếm ở Pha 8 Task 1 (bằng AST,
+   * trên toàn `server/**` mã sản xuất) cho **13** điểm xác thực: **12** đi qua chính phương thức
+   * này, **1** vòng qua nó (`_core/index.ts::validateExternalAuth`, nhánh Bearer). Người bị buộc
+   * đổi mật khẩu **vẫn dùng được 12 bề mặt** — SSE của AI, `local-kb`, xuất dữ liệu, đo lường,
+   * tải APK, và **handshake socket**.
+   *
+   * ⇒ Vá ở **ĐÂY**: mọi bề mặt HTTP/socket hỏi *"yêu cầu này là ai"* đều hỏi qua đúng một cửa. Một
+   *   tuyến REST **mới ở một file chưa tồn tại** được cưỡng chế **tự động**, không ai phải nhớ khai
+   *   gì — đúng thứ mà một danh sách 11 chỗ không bao giờ làm được (**"N+1" đã mười tám lần**).
+   *   Lưới của lượng từ ấy: `server/_core/buocDoiMatKhauMoiBeMat.test.ts`.
+   *
+   * ⚠ **PHÂN GIẢI DANH TÍNH và CƯỠNG CHẾ CHÍNH SÁCH là HAI việc**, nên chúng là hai thân hàm:
+   *   `xacThucTho()` trả lời *"ai"*, phương thức này thêm *"và người ấy có được đi tiếp không"*.
+   *   Nhờ một **lối ra DUY NHẤT**, không có nhánh nào (kể cả nhánh trúng bộ nhớ đệm phiên) trả về
+   *   một người dùng chưa qua cổng — lớp lỗi *"1/6 lượt rò, 5/6 lượt sạch"* đã đo được ở Pha 7 trên
+   *   đúng phương thức này.
+   *
+   * ⚠ CHI PHÍ, ghi đúng: **1 `SELECT` hai cột trên `users` theo khoá chính** cho mỗi lượt xác thực
+   *   của một người dùng **không** được miễn trừ. `admin` (miễn trừ) trả **0** đồng chi phí. Không
+   *   cache: một bộ nhớ đệm sẽ giữ người **vừa đổi mật khẩu** trong nhà tù thêm một TTL.
+   *
+   * @param tuyChon.boQuaCongDoiMatKhau ⚠⚠⚠ **CHỈ** `_core/context.ts` được truyền cờ này, và
+   *   `buocDoiMatKhauMoiBeMat.test.ts` §5 **ghim** điều đó. Lý do: tRPC **phải** dựng được
+   *   `ctx.user` cho người đang bị chặn — nếu không, `auth.me` trả `null`, client mất đúng ô nó
+   *   dùng để biết mình phải đi đâu, và cổng thành một **nhà tù** (Pha 7 đã deploy một lần ra nhà
+   *   tù thật **4/4 tài khoản**). Ở đó phép chặn được làm lại **mịn hơn** tại `thuTucGoc`, nơi biết
+   *   `path` nên tha được đúng bốn đường của vòng đời đổi mật khẩu.
+   */
+  async authenticateRequest(req: Request, tuyChon?: TuyChonXacThuc): Promise<User> {
+    const user = await this.xacThucTho(req);
+    if (tuyChon?.boQuaCongDoiMatKhau !== true) await chanNeuPhaiDoiMatKhau(user);
+    return user;
+  }
+
+  /** Phân giải *"yêu cầu này là ai"* — **KHÔNG** quyết định người ấy có được đi tiếp hay không. */
+  private async xacThucTho(req: Request): Promise<User> {
     // Regular authentication flow
     const cookies = this.parseCookies(req.headers.cookie);
     const sessionCookie = cookies.get(COOKIE_NAME);
