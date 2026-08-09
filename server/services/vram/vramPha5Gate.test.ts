@@ -348,7 +348,16 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   tập bị canh qua bộ nhận diện **NỘI DUNG** (tự khai `Pha 5`, có chủ ý — xem docstring của
     //   chúng), và cả ba phải có đường riêng ở §Cổng kiểm chung ⇒ `CONG.length` 22 → **25** cùng
     //   lượt. Gỡ một trong ba khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục, không phải một.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(86); // Pha 7 Task 9: +3
+    // ⚠ Pha 7 Task 3: 86 → 87. **Đúng MỘT** file mới —
+    //   `server/services/vram/vramEventColumnLimits.test.ts` (neo `VARCHAR_LIMITS` của `vram_events`
+    //   vào drizzle bằng lượng từ HAI CHIỀU, đúng phép neo Task 5 Pha 6 đã dựng cho `vram_leases`).
+    //   Nó vào tập bị canh qua bộ nhận diện **VỊ TRÍ** (dưới thư mục `vram`) **và** **TÊN**
+    //   (`vram*`), và đường `server/services/vram/` của §Cổng kiểm chung đã phủ nó ⇒ `CONG.length`
+    //   giữ nguyên **25**; chỉ con số này đổi.
+    //   ⚠ File **không phải test** đi kèm (`drizzleCotDoc.ts` — bộ suy "bóc cột khỏi đối tượng
+    //     drizzle", nay dùng chung với `sharedLedgerIdentityCut.test.ts` để không có bộ suy thứ hai)
+    //     **không** vào con số này: `moiFileTest` chỉ gom `*.test.ts`.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(87); // Pha 7 Task 3: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

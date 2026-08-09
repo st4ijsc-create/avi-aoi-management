@@ -151,9 +151,29 @@ const NUMERIC_COLUMNS = [
 
 /**
  * Độ rộng THẬT của các cột `varchar` trong `drizzle/schema/vram.ts`. Vượt ⇒ Postgres `22001` ⇒
- * MẤT CẢ LÔ, cùng một lớp lỗi với bẫy số. Ai đổi schema phải đổi bảng này (test canh hai bảng khớp).
+ * MẤT CẢ LÔ, cùng một lớp lỗi với bẫy số.
+ *
+ * ★★★ Pha 7 Task 3 — **BẢNG NÀY THÔI LÀ MỘT DANH SÁCH VIẾT TAY.**
+ *
+ * ⚠⚠ Câu cũ ở đây là *"Ai đổi schema phải đổi bảng này"* — một lời **nhờ vả**, không phải một luật.
+ * Đúng lớp lỗi đã tái diễn **mười sáu** lần: *cái gì LIỆT KÊ thì luôn có phần tử thứ N+1*. Pha 6
+ * Task 5 đã đóng nó cho `vram_leases` (`VRAM_LEASE_COLUMN_MAX` + ∀-A/∀-B ở
+ * `sharedLedgerIdentityCut.test.ts`) và **bỏ quên `vram_events`** — bảng ghi nhiều dòng nhất.
+ *
+ * ⇒ Nay `server/services/vram/vramEventColumnLimits.test.ts` cưỡng chế **hai chiều**:
+ *   • **∀-A** MỌI cột `varchar` của `vram_events` trong `drizzle/schema/vram.ts` phải **hoặc** có
+ *     ĐÚNG một mục ở đây với **ĐÚNG con số của drizzle**, **hoặc** nằm ở bản khai
+ *     *"không có chuỗi tự do nào lái được"* **kèm LÝ DO** — và lý do ấy được **ĐO LẠI** trên hàng
+ *     `INSERT` THẬT, không phải chỉ viết ra.
+ *   • **chiều ngược** — một mục ở đây **không có cột thật** ⇒ ĐỎ (nó đang canh một thứ không tồn tại).
+ *
+ * ⚠ **NGUỒN SỰ THẬT LÀ CỘT DB, KHÔNG PHẢI KHẨU VỊ**, và nguồn ĐO là **chính đối tượng drizzle**
+ *   sinh ra DDL (`drizzleCotDoc.ts`) — không phải văn bản `.sql`, không phải một bản chép tay.
+ *
+ * ⚠ Export **có chủ ý**: lượng từ chỉ neo được khi lưới đọc được **chính bảng đang chạy**. Giữ nó
+ *   `const` module-private là buộc lưới giữ một **bản sao thứ hai** — đúng thứ đang đi diệt.
  */
-const VARCHAR_LIMITS: ReadonlyArray<readonly [keyof VramEventInput, number]> = [
+export const VARCHAR_LIMITS: ReadonlyArray<readonly [keyof VramEventInput, number]> = [
   ["event", 24], ["owner", 160], ["leaseKind", 32], ["priority", 16], ["estimateSource", 48],
 ];
 

@@ -51,6 +51,7 @@
  */
 import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import { catChuoi } from "@shared/textSafety";
+import { cotVarchar, moiCot } from "./drizzleCotDoc";
 import { VRAM_LEASE_COLUMN_MAX, type VramLeaseColumn } from "./vramColumnLimits";
 import { __resetBrokerForTests, release, reserve, snapshot } from "./vramBroker";
 import type { VramDecisionContext } from "./vramBroker";
@@ -182,14 +183,13 @@ describe("★★★ Task 5 / ∀-A — bề rộng cột: bảng hằng phải K
      * `VRAM_LEASE_COLUMN_MAX` ⇒ ca này ĐỎ **ngay**, chứ không phải sau một `22001` mất cả lô.
      */
     const { vramLeases } = await import("../../../drizzle/schema/vram");
-    const tuDrizzle = new Map<string, number>();
-    // ⚠ `as unknown as` chứ không `as`: `PgTableWithColumns` KHÔNG có index signature nên `tsc`
-    //   (chỉ `tsconfig.tests.json` mới soi file này — `npm run check` LOẠI TRỪ `*.test.ts`) từ chối
-    //   phép ép một bước. Đây là lý do cổng phải chạy CẢ `check:tests`, không chỉ `check`.
-    for (const [ten, cot] of Object.entries(vramLeases as unknown as Record<string, unknown>)) {
-      const c = cot as { columnType?: string; length?: number };
-      if (c?.columnType === "PgVarchar" && typeof c.length === "number") tuDrizzle.set(ten, c.length);
-    }
+    /**
+     * ⚠ Pha 7 Task 3 — vòng lặp bóc cột đã **chuyển về `drizzleCotDoc.ts`**, dùng chung với lưới
+     *   `vram_events`. Lý do ở docstring file ấy: **hai bộ suy độc lập canh hai nửa của một câu**
+     *   (C-2, Pha 6) — cái yếu hơn rốt cuộc canh nửa nguy hiểm hơn, và cả hai đều xanh.
+     *   Hành vi của ca này **không đổi**: cùng bộ lọc `PgVarchar` + `length` là số.
+     */
+    const tuDrizzle = cotVarchar(vramLeases);
     expect(tuDrizzle.size, "bộ đọc drizzle không thấy cột `varchar` nào — nó đã hỏng?").toBeGreaterThanOrEqual(8);
 
     const thieu = [...tuDrizzle.keys()].filter((k) => !(k in VRAM_LEASE_COLUMN_MAX));
@@ -221,10 +221,8 @@ describe("★★★ Task 5 / ∀-A — bề rộng cột: bảng hằng phải K
    */
   it("★★★ ∀ cột (MỌI KIỂU, không chỉ `varchar`) của `vram_leases` có ĐÚNG một ô ở `SharedLeaseRow`", async () => {
     const { vramLeases } = await import("../../../drizzle/schema/vram");
-    const cotDb = new Set<string>();
-    for (const [ten, cot] of Object.entries(vramLeases as unknown as Record<string, unknown>)) {
-      if ((cot as { columnType?: string })?.columnType !== undefined) cotDb.add(ten);
-    }
+    /** ⚠ Pha 7 Task 3 — cùng bộ suy dùng chung; cửa `moiCot()` cố ý **không** lọc kiểu. */
+    const cotDb = moiCot(vramLeases);
     expect(cotDb.size, "bộ đọc drizzle không thấy cột nào — nó đã hỏng?").toBeGreaterThanOrEqual(15);
 
     /**
