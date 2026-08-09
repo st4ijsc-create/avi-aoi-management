@@ -453,11 +453,18 @@ internal sealed class FleetCore
     /// back changes what a failed call MEANS to its caller; the root cause is P5 above. Both are owner
     /// decisions and both are named in G-2's report rather than decided here.</item>
     /// <item><b>S5 — CLOSED (G-2).</b> <see cref="Burst"/> → <see cref="RevertBurstAfterDelayAsync"/>.</item>
-    /// <item><b>S6 — OPEN, and the uniform remedy is REFUSED here rather than missing.</b>
-    /// <see cref="UpdateSettings"/>'s committed triple versus its off-lock activation and persistence. A
-    /// <c>finally</c> around the persistence would convert "the edit evaporates at the next restart" into
-    /// "the service does not start", because <c>Program.cs</c> feeds the persisted triple back into this same
-    /// method during startup. The full argument and the owner decisions it needs are at that method.</item>
+    /// <item><b>S6 — CLOSED (H-1a), and HOW it closed is the part worth carrying.</b>
+    /// <see cref="UpdateSettings"/>'s committed triple versus its off-lock activation and persistence. G-2
+    /// refused the uniform <c>finally</c> here and was right to: <c>Program.cs</c> replayed the persisted
+    /// triple back into this same method during startup, UNWRAPPED, so persisting a triple that could not be
+    /// activated converted "the edit evaporates at the next restart" into "the service does not start".
+    /// H-1a hardened that replay FIRST — it is guarded, logs at Error and falls back to the env-var floor —
+    /// and only then made the persistence unconditional. <b>The order is the fix; reversing it ships the
+    /// boot loop.</b> What closed is the S-set property (the commit's persistence is now unconditional, so
+    /// the reported and persisted configurations cannot diverge). What did NOT close, and is not claimed:
+    /// within one process a failed activation still leaves the transport on the old values while
+    /// <see cref="GetSettings"/> reports the new ones — that is remedies (a)/(b) at the method, both
+    /// contract changes, both still owner decisions.</item>
     /// <item><b>S7 — CLOSED (G-2), and on no prior list.</b> <see cref="Start"/>'s commit owes a SECOND
     /// off-lock completion after <see cref="CompleteStartOffLock"/> — the historian <c>"Start"</c> run event.
     /// It is load-bearing rather than telemetry, and that is <b>forced by the aggregation code, not
@@ -3385,62 +3392,82 @@ internal sealed class FleetCore
             persistedVerifyTls = _verifyTls;
         }
 
-        // 🔴 G-2 — S6, AND THE ONE MEMBER OF THAT SET THAT IS DELIBERATELY LEFT OPEN. Read this before
-        // "fixing" it the obvious way, because the obvious way is worse than the defect.
+        // 🔴 H-1a — S6, CLOSED, and closed in the ORDER that made it legal. Read the order before touching
+        // this: the `finally` below is safe ONLY because the startup replay in St4i.EngineApi/Program.cs was
+        // hardened FIRST. Reversing the two ships exactly the boot loop G-2 refused.
         //
-        // THE DEFECT IS REAL: the four fields are committed under _gate above and never rolled back, so from
-        // the moment that lock is released GetSettings() — and therefore GET /v1/settings — reports the new
-        // configuration. Everything below is ACTIVATION and every step of it can throw: CredentialStore.Load
-        // is DPAPI plus a file read (and throws ArgumentException outright on an empty machineCode),
-        // RebuildLive builds an St4iDeviceClient/HttpClient and touches the WAL directory, and
-        // _onLiveSettingsRebuilt is an arbitrary host callback. Any of those leaves the process reporting a
-        // configuration it is NOT using and will NOT keep.
+        // THE DEFECT, unchanged: the four fields are committed under _gate above and never rolled back, so
+        // from the moment that lock is released GetSettings() — and therefore GET /v1/settings — reports the
+        // new configuration. Everything below is ACTIVATION and every step of it can throw:
+        // CredentialStore.Load is DPAPI plus a file read (and throws ArgumentException outright on an empty
+        // machineCode), RebuildLive builds an St4iDeviceClient/HttpClient and touches the WAL directory, and
+        // _onLiveSettingsRebuilt is an arbitrary host callback. Before this fix, any of those left the
+        // process reporting a configuration it was NOT using and would NOT keep.
         //
-        // WHY THE UNIFORM REMEDY DOES NOT APPLY HERE. Putting Save in a `finally` — which is what every other
-        // member of this set got — makes the reported configuration survive a restart. It also makes a
-        // configuration that could not be activated survive a restart, and Program.cs feeds
-        // FleetSettingsStore.Load() STRAIGHT BACK INTO THIS METHOD during startup, before app.Run(). For an
-        // ENVIRONMENTAL failure (a full disk during EnsureDir) that is exactly right: the next start retries
-        // and succeeds. For a VALUE-DEPENDENT one it is a boot loop — persist machineCode "" and every
-        // subsequent start throws ArgumentException out of CredentialStore.Load at the same point, with no
-        // running process left to correct it through. Trading "an edit silently evaporates at the next
-        // restart" for "the service does not start" is not an improvement, and choosing between them is not
-        // this task's call.
+        // WHY THE UNIFORM REMEDY WAS REFUSED, AND WHAT CHANGED. G-2 implemented `Save` in a `finally`, then
+        // reverted it, and was right to: Program.cs fed FleetSettingsStore.Load() STRAIGHT BACK INTO THIS
+        // METHOD during startup, before app.Run(), UNWRAPPED. For an ENVIRONMENTAL failure (a full disk
+        // during EnsureDir) persisting is exactly right — the next start retries and succeeds. For a
+        // VALUE-DEPENDENT one it was a boot loop: persist machineCode "" and every subsequent start threw
+        // ArgumentException out of CredentialStore.Load at the same point, with no running process left to
+        // correct it through. That is a property of the REPLAY, not of this method — so the replay is what
+        // was fixed. It is now guarded, logs at Error, and falls back to the env-var floor; a triple that
+        // cannot be activated leaves the host UP and the operator told. The boot loop is gone as a
+        // CONSEQUENCE, which is why this `finally` no longer trades a recoverable failure for an
+        // unrecoverable one.
         //
-        // THREE REMEDIES, all owner decisions, CHEAPEST FIRST:
-        //   (c) 🔴 HARDEN THE STARTUP REPLAY, in Program.cs, not here — wrap the boot-time UpdateSettings
-        //       call, log, and fall back to the env-var branch. Changes NO contract, touches nothing in this
-        //       class, removes the boot loop as a CONSEQUENCE rather than by forbidding the input, and makes
-        //       the uniform `finally` remedy safe afterwards. Probably the smallest correct change.
+        // WHAT THIS CLOSES, precisely, and what it does not. The commit above now ALWAYS owes its
+        // persistence, so the reported configuration and the persisted configuration can no longer diverge
+        // — that is the S-set property, and it is the same remedy S2/S3/S5 got. It does NOT make a failed
+        // activation succeed: within this process the transport is still on the old values while
+        // GetSettings() reports the new ones. Making the fields not-diverge-from-the-transport is remedy
+        // (a) or (b) below; both change this method's contract and neither is in scope here.
+        //
+        // THE TWO REMEDIES THAT REMAIN OWNER DECISIONS, and they are NOT what closed S6:
         //   (a) Validate the inputs BEFORE the commit, so a value-dependent failure never mutates the fields
         //       — changes what UpdateSettings does to its state before throwing, which is observable.
         //   (b) Roll the fields back on a failed activation — changes what a failed call MEANS to its caller
         //       and needs an arbitration rule for a rollback racing a concurrent second UpdateSettings,
         //       which this class does not have.
-        // Reported, not decided.
         //
-        // 🔴 (c) was MISSING from this comment until the whole-branch review, and the omission has a lesson
-        // in it: the two remedies I could see both live in THIS METHOD, and the one I could not lives one
-        // layer up. Enumerating options from inside the file you are editing finds the options that are
-        // inside the file you are editing.
+        // 🔴 The remedy that DID close it — harden the replay one layer up — was MISSING from this comment
+        // until the whole-branch review, and the omission has a lesson in it: the two remedies still listed
+        // above both live in THIS METHOD, and the one that worked lives in Program.cs. Enumerating options
+        // from inside the file you are editing finds the options that are inside the file you are editing.
+        //
+        // 🔴 §8.1(e) — THE `finally` HOLDS EXACTLY ONE STATEMENT, deliberately. A `finally` with two
+        // statements is not two guarantees: a throw from the first abandons the second, which is the very
+        // window a `finally` is added to close. There is nothing to sequence here, and if anything is ever
+        // added below the Save, it must be nested rather than appended.
+        //
+        // AND THE EXCEPTION-REPLACEMENT DIRECTION, disclosed rather than discovered: if the activation
+        // throws AND Save throws, Save's exception REPLACES the activation's. Same direction as S4's row,
+        // and the same reason it is acceptable — a caller that sees an IOException out of this call learns
+        // that the settings write failed, which is true, and the activation failure it masks is already
+        // visible as a transport that did not change.
         if (rebuildNeeded)
         {
-            var mkKey = CredentialStore.Load(_machineCode);
-            _transportCoordinator.RebuildLive(_serverUrl, _machineCode, mkKey, _verifyTls);
-            _onLiveSettingsRebuilt?.Invoke(_serverUrl, _machineCode, mkKey, _verifyTls, _transportCoordinator.Mode);
-
-            // FF-1 — persist serverUrl/machineCode/verifyTls ONLY (never the mk_ key above, never
-            // _language) so this survives a process restart; see FleetSettingsStore's own doc comment for
-            // the file-vs-env-var precedence this enables. The values saved are the ones captured under
-            // _gate above (this call's own effective triple), not a fresh unsynchronized field read, so a
-            // concurrent second UpdateSettings call can never make this write a torn mix of both calls'
-            // values.
-            _settingsStore?.Save(new PersistedFleetSettings
+            try
             {
-                ServerUrl = persistedServerUrl,
-                MachineCode = persistedMachineCode,
-                VerifyTls = persistedVerifyTls,
-            });
+                var mkKey = CredentialStore.Load(_machineCode);
+                _transportCoordinator.RebuildLive(_serverUrl, _machineCode, mkKey, _verifyTls);
+                _onLiveSettingsRebuilt?.Invoke(_serverUrl, _machineCode, mkKey, _verifyTls, _transportCoordinator.Mode);
+            }
+            finally
+            {
+                // FF-1 — persist serverUrl/machineCode/verifyTls ONLY (never the mk_ key above, never
+                // _language) so this survives a process restart; see FleetSettingsStore's own doc comment
+                // for the file-vs-env-var precedence this enables. The values saved are the ones captured
+                // under _gate above (this call's own effective triple), not a fresh unsynchronized field
+                // read, so a concurrent second UpdateSettings call can never make this write a torn mix of
+                // both calls' values.
+                _settingsStore?.Save(new PersistedFleetSettings
+                {
+                    ServerUrl = persistedServerUrl,
+                    MachineCode = persistedMachineCode,
+                    VerifyTls = persistedVerifyTls,
+                });
+            }
         }
 
         return GetSettings();

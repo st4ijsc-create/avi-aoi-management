@@ -1711,7 +1711,9 @@ EXPECT_EDGESERVICE=50
 #
 # 🔴 SEVEN TESTS, and here is what the number actually reconciles to. The unit is a THROW SITE, not a member
 # and not a (commit, completion) pair — a test can only witness one consequence of one throw. Five members
-# appear below (S1 was closed by G-1, S6 is refused; neither gets a test):
+# appear below (S1 was closed by G-1; S6 was refused at the time of this block and was closed later by H-1a,
+# from Program.cs and with its own test in another suite — see the "NOT COVERED BY THIS FILE" note below.
+# Neither gets a test HERE):
 #
 #     S2 = 2   the in-lock IUnsPublisher seam, and the deferred-log flush
 #     S3 = 2   the same two throw sites on the start path
@@ -1756,11 +1758,14 @@ EXPECT_EDGESERVICE=50
 #       test covers the revert task's own failure, which ran on an unobserved Task and was dropped by the
 #       finalizer with nothing logged anywhere.
 #
-# NOT COVERED, said out loud rather than implied: S6 (UpdateSettings) is deliberately left OPEN — the
-# uniform try/finally remedy would convert "the edit evaporates at the next restart" into "the service does
-# not start", because Program.cs feeds the persisted triple back into that same method during startup. There
-# is therefore no test for it, and that is a refusal rather than a gap. See FleetCore.UpdateSettings' own
-# comment and the G-2 report.
+# NOT COVERED BY THIS FILE, said out loud rather than implied: S6 (UpdateSettings). 🔴 TASK H-1a CLOSED IT,
+# but not here and not with a test in this class — the fix is in St4i.EngineApi/Program.cs (the startup
+# replay is now guarded, logs at Error and falls back to the env-var floor) and the persistence in
+# FleetCore.UpdateSettings only THEN became unconditional. The order is the fix. Its coverage is
+# StartupSettingsReplayHardeningTests (St4i.EngineApi.Tests, +2 — see EXPECT_ENGINEAPI's own block below),
+# because the property that had to be measured is "a host replaying an unusable triple still comes up and
+# says so", which is a HOST property and unreachable from a FleetCore-level test. S4's second half and S3's
+# residual are still OPEN and still get no test; H-1a closed S6 alone and claims nothing about the others.
 #
 # 🔴 RUNTIME, disclosed HERE and not only in the task report (G-2 review, Minor 10). This CLASS takes ~8-9 s
 # to run, and TWO tests are the reason: both Burst tests wait on the real BurstDuration (4 s, FleetCore.cs)
