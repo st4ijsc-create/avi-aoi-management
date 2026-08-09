@@ -1135,3 +1135,430 @@ do cả Task 9 tồn tại.
 | tiến trình | máy chủ **PID 36072 → PID 4468** (tắt theo PID, khớp **nguyên văn** `node dist/index.js`; **12 sidecar MCP không bị đụng**) |
 | **KHÔNG** làm | không áp `0315` · không chạy script xoay · không xoá dữ liệu người dùng · không cấp quyền · không `kb:sync` · không trainer · không sinh sub-agent |
 | script tạm | 6 file `scripts/__tmp-task9-*.mjs` + 1 file đột biến M3 — **đã xoá hết** |
+
+---
+---
+
+# PHẦN III — **NHỊP CO**: áp `0315` (2026-08-09, HEAD vào lượt = `ad7789c5`)
+
+> Điều kiện vào của `0315` (§3.2) là **BA** điều. Task 9 Bước 8 (§9) và Task 10 đã khai là **đủ**.
+> **Lượt này KHÔNG tin lời khai** — hai trục dưới đây được **đo lại từ đầu** trước khi gõ câu DDL.
+> Phần này **ghi DẦN sau mỗi bước**.
+
+## 12 · TỰ XÁC MINH LẠI ĐIỀU KIỆN VÀO — **hai trục, đo lại, KHÔNG tin báo cáo**
+
+### 12.1 · Trục (a) — `dist/index.js` **ĐANG CHẠY** có chứa `user_secrets`
+
+```
+$ ls -la dist/index.js
+-rw-r--r-- 1 Admin 197121 10645199 Aug  9 09:09 dist/index.js
+$ grep -c "user_secrets"      dist/index.js   => 2
+$ grep -c "two_factor_secret" dist/index.js   => 0        ★ ô quyết định
+```
+
+Tiến trình (`Win32_Process`, khớp **NGUYÊN VĂN**):
+
+```
+ProcessId 4468 · CommandLine "node dist/index.js" · CreationDate 8/9/2026 9:09:45 AM
+```
+
+⇒ Bản build **đang chạy** (khởi động 09:09:45) là bản của file `dist/index.js` sửa lúc **09:09** —
+nó **có** `user_secrets` và **không có một lần xuất hiện nào** của `two_factor_secret`.
+★ Con số **0** mạnh hơn con số 2: nó nói bản đang chạy **không thể** phát ra một câu `SELECT`/`UPDATE`
+chạm cột cũ, kể cả bằng SQL thô. Task 10 (`ad7789c5`) **không** restart và **không** build lại
+(khai trong thông điệp commit; `CreationDate` xác nhận PID 4468 sống suốt).
+
+### 12.2 · Trục (b) — **không** điểm sản xuất nào còn đọc/ghi hai cột cũ
+
+| phép đo | kết quả |
+|---|---|
+| `git show HEAD:drizzle/schema/auth.ts` | `users` **KHÔNG CÒN** `passwordHash`/`twoFactorSecret`; có `passwordChangedAt`/`passwordInvalidBefore`; bảng `userSecrets` (`user_secrets`) khai đủ 4 cột |
+| `git grep -n "two_factor_secret" -- server scripts client shared` | **12 hit** — **0 hit sản xuất**: 9 là **chú thích**, 1 là **test** (`xoayBiMatNguon.test.ts:190`, chính lưới canh), 2 là **cổng nguồn** của `scripts/xoay-bi-mat-2fa.mjs:80/85` |
+| `git grep -nE 'sql\`[^\`]*users' -- server` | **0** — không một câu SQL thô nào trên `users` ở tầng máy chủ |
+| 12 file `server/**` còn nhắc `passwordHash` (ngoài test) | **0 file** đọc cột của `users`: `authService.ts`/`index.ts`/`userRouters.ts` dùng `biMat.passwordHash` (**từ `layBiMatNguoiDung`** ⇒ `user_secrets`) · `hierarchy.ts`/`mqttService.ts` là **`mqtt_clients.passwordHash`** (bảng KHÁC — bẫy tên trùng §2.1) · `sdk.ts`/`authSessionCache.ts`/`auditTrailService.ts`/`readToolsP2bc.ts`/`routers.ts`/`publicUser.ts` là **chú thích hoặc danh sách che** |
+| `server/db/auth.ts` | **cửa duy nhất**: `layBiMatNguoiDung` `select(...).from(userSecrets)` · `ghiBiMatNguoiDung` `insert(userSecrets).onConflictDoUpdate` · `get2FAStatus` `leftJoin(userSecrets)`. **0 lần** chạm cột cũ |
+
+⚠ **Một hit CẦN NÓI RÕ, vì nó là hit duy nhất SẼ chạy sau 0315:**
+`scripts/xoay-bi-mat-2fa.mjs:77-85` (cổng nguồn `doNguonBiMat()`) **có** đọc `users.two_factor_secret` —
+nhưng **đã được viết để sống qua 0315**: nó hỏi `information_schema` trước
+(`conCotCu`), và **trả về sớm** khi cột đã bị bỏ. ⇒ 0315 **không** biến script xoay thành `42703`.
+(Đã đọc mã, không suy từ tên hàm.)
+
+⇒ **HAI TRỤC ĐẠT.** Không có mâu thuẫn nào với hệ thật ⇒ đi tiếp.
+
+---
+
+## 13 · BƯỚC 1 — CHỤP **TRƯỚC** (nguyên văn, cả hai DB)
+
+Một file dò tạm **trong** repo (`scripts/__tmp-task9-0315-chup.mjs`, gói `postgres` v3 — script
+**ngoài** repo không resolve được `node_modules`; §4 mục 7), **chỉ ĐỌC**, đã xoá sau khi dùng.
+
+```
+===== TRUOC · aoi_management (current_user=aoi) =====
+information_schema · users · HAI CỘT CŨ: 2 hàng
+  passwordHash : character varying(255) null=YES
+  two_factor_secret : character varying(255) null=YES
+users · tổng số cột: 21
+ĐẾM: {"users_tong":8,"cu_co_passwordhash":8,"cu_co_2fa_secret":8,"us_tong":8,
+      "us_co_passwordhash":8,"us_co_2fa_secret":1,"thieu":0,"lech":8,"backup_codes":10}
+__applied_migrations 031*: 0310_vram_broker.sql · 0311_vram_estimate_source_widen.sql ·
+      0312_vram_leases.sql · 0313_totp_consumed_and_identity_truncated.sql ·
+      0314_backup_code_widen_and_user_secrets.sql
+
+===== TRUOC · aoi_management_test (current_user=aoi) =====
+information_schema · users · HAI CỘT CŨ: 2 hàng
+  passwordHash : character varying(255) null=YES
+  two_factor_secret : character varying(255) null=YES
+users · tổng số cột: 21
+ĐẾM: {"users_tong":1,"cu_co_passwordhash":0,"cu_co_2fa_secret":0,"us_tong":1,
+      "us_co_passwordhash":0,"us_co_2fa_secret":0,"thieu":0,"lech":0,"backup_codes":0}
+__applied_migrations 031*: (giống hệt DB thật)
+```
+
+**★ Ba con số đọc được từ ảnh chụp này — mỗi con số nói một điều khác nhau:**
+
+| con số | nghĩa |
+|---|---|
+| `cu_co_2fa_secret = 8` **vs** `us_co_2fa_secret = 1` | **hai cột đi NGƯỢC CHIỀU** — đúng chữ ký Task 10 đã ghim. Cột cũ giữ **8 bí mật ĐÃ LỘ**; nguồn sống chỉ có **1** (`engineer1` đăng ký lại 2FA ở lượt nghiệm thu Task 10). ⇒ **Đây chính là dữ liệu tồn dư mà `0315` sinh ra để dọn.** |
+| `cu_co_passwordhash = 8` **vs** `us_co_passwordhash = 8` | mật khẩu **chưa** bị xoay (Task 10 chỉ xoay 2FA) ⇒ hai bên **cùng giá trị** ở cột này |
+| `thieu = 0` (cả hai DB) | ∀ hàng `users` có đúng một hàng `user_secrets` ⇒ **điều kiện vào của khối chặn cuối đã đủ** |
+
+⚠ **`aoi_management_test` nay có 1 hàng `users`, không phải 5 như §6.2.** Không mâu thuẫn: DB test bị
+chính bộ test dọn/gieo lại giữa hai lượt. Điều quan trọng — `thieu = 0` — **vẫn đúng**.
+
+---
+
+## 14 · BƯỚC 2 — KHỐI `DO $$` CHẶN CUỐI, CHẠY **RIÊNG** TRƯỚC
+
+Chạy **nguyên văn** khối ở §3.2, **một mình**, trước mọi câu `ALTER`. Khối chỉ `SELECT` + `RAISE`.
+
+```
+===== KHỐI CHẶN CUỐI · aoi_management =====
+KẾT QUẢ: KHÔNG NÉM (thieu = 0 ⇒ ∀ hàng users có hàng user_secrets)
+  NOTICE: so hang co cot cu LECH voi user_secrets: 8 (0 = ma moi chua ghi lan nao)
+
+===== KHỐI CHẶN CUỐI · aoi_management_test =====
+KẾT QUẢ: KHÔNG NÉM (thieu = 0 ⇒ ∀ hàng users có hàng user_secrets)
+  NOTICE: so hang co cot cu LECH voi user_secrets: 0 (0 = ma moi chua ghi lan nao)
+EXIT=0
+```
+
+### 14.1 · ★ Phân biệt **EXCEPTION** với **NOTICE có chủ ý** — hai thứ khác nhau, không được gộp
+
+| | `thieu` | `lech` |
+|---|---|---|
+| **cơ chế** | `RAISE EXCEPTION` ⇒ **DỪNG migration** | `RAISE NOTICE` ⇒ **in ra, đi tiếp** |
+| **đo được** | **0** · **0** | **8** (DB thật) · **0** (DB test) |
+| **nghĩa** | không hàng `users` nào mất bản sao bí mật ⇒ **bỏ cột không mất dữ liệu** | *"cột cũ đã chết bao lâu rồi"* |
+| **`lech ≠ 0` là gì** | — | ⚠ **ĐIỀU BÌNH THƯỜNG, ĐÃ KHAI TRƯỚC** (§3.2 dòng 516-519, §6.3): từ lượt deploy Task 9, mã mới **chỉ ghi `user_secrets`**; cột cũ **đứng yên và hoá cũ**. Task 10 xoay 2FA ở nguồn sống ⇒ 8/8 hàng lệch. **KHÔNG phải lỗi.** |
+| **`lech = 0` ở DB test là gì** | — | **KHÔNG** phải "mã mới chưa ghi lần nào" theo nghĩa xấu — DB test có **1** hàng `users` và cả hai bên đều `NULL` ⇒ `IS DISTINCT FROM` cho **false**. Câu chú thích trong SQL (*"0 = ma moi chua ghi lan nao"*) **không đủ** để phân biệt hai nguyên nhân của số 0; ảnh chụp §13 mới phân biệt được |
+
+⇒ Khối chặn cuối **ĐẠT trên cả hai DB**. Không ép qua điều gì.
+
+---
+
+## 15 · BƯỚC 3 — ÁP `0315` — **CẢ HAI DB, owner `aoi`**
+
+File **`drizzle/0315_users_drop_secret_columns.sql`** nay **đã tồn tại** (§6.4 giữ nó ngoài
+`drizzle/` có chủ ý cho tới khi ba điều kiện vào đủ — nay đủ, §12). Thân SQL là **nguyên văn §3.2**;
+phần **thêm** duy nhất là một khối chú thích ghi lại **ba điều kiện vào đã đo lại** ở §12.
+
+⚠ **KHÔNG** dùng `npm run db:push`: `DATABASE_URL` của app là `avi_app` ⇒ `42501` (R5). Áp bằng một
+script tạm nối `postgresql://aoi:aoi@…` — và script ấy **sao chép NGUYÊN VĂN** hai hàm
+`splitStatements()` + `simpleHash()` của `scripts/migrate-standalone.mjs` (dòng 317 và 373), để
+lượt `db:push` kế tiếp thấy **cùng một** `filename` + `checksum` và **bỏ qua** file này.
+★ Đây là chỗ dễ đẻ ra *"hai bộ tách câu cho một file"*: một bộ tách khác sẽ **cắt đôi khối `DO $$`**
+và ném `unterminated dollar-quoted string`.
+
+```
+file=0315_users_drop_secret_columns.sql  checksum=5743910e  số câu=3
+  [1] DO $$ …
+  [2] ALTER TABLE "users" DROP COLUMN IF EXISTS "passwordHash";
+  [3] ALTER TABLE "users" DROP COLUMN IF EXISTS "two_factor_secret";
+
+===== ÁP 0315 · aoi_management =====
+current_user=aoi
+  [1/3] 11.00 ms  DO $$
+        NOTICE: so hang co cot cu LECH voi user_secrets: 8 (0 = ma moi chua ghi lan nao)
+  [2/3]  6.21 ms  ALTER TABLE "users" DROP COLUMN IF EXISTS "passwordHash";
+  [3/3]  2.29 ms  ALTER TABLE "users" DROP COLUMN IF EXISTS "two_factor_secret";
+  ✔ ghi __applied_migrations
+
+===== ÁP 0315 · aoi_management_test =====
+current_user=aoi
+  [1/3] 11.62 ms  DO $$
+        NOTICE: so hang co cot cu LECH voi user_secrets: 0 (0 = ma moi chua ghi lan nao)
+  [2/3]  4.87 ms  ALTER TABLE "users" DROP COLUMN IF EXISTS "passwordHash";
+  [3/3]  1.36 ms  ALTER TABLE "users" DROP COLUMN IF EXISTS "two_factor_secret";
+  ✔ ghi __applied_migrations
+EXIT=0
+```
+
+⚠ Script áp có **một cổng chống chạy hai lần**: nếu `filename` đã có trong `__applied_migrations`
+thì nó **DỪNG, không áp lại**. (`DROP COLUMN IF EXISTS` vốn đã bất biến theo lượt chạy; cổng này chặn
+lượt **ghi lại** bản ghi theo dõi.)
+
+★ **`DROP COLUMN` ở PG là một lượt sửa CATALOG, không phải một lượt viết lại HEAP** — 6,21 ms và
+2,29 ms trên bảng 8 hàng là *"đánh dấu cột đã bỏ"*, chứ **không** phải *"đã lấy lại byte"*.
+Byte của hai cột **vẫn nằm trong heap** cho tới một lượt `VACUUM FULL`/rewrite. §3.7 đã nói điều này
+(*"heap KHÔNG co lại"*) — nhắc lại ở đây vì nó đổi nghĩa của câu *"đã xoá dữ liệu tồn dư"*:
+**không đường SQL nào còn đọc được hai cột ấy**, nhưng một lượt đọc **byte thô của file dữ liệu**
+thì vẫn thấy. Nói ra, đừng hứa quá.
+
+---
+
+## 16 · BƯỚC 4 — CHỤP **SAU** (cùng câu của Bước 1, nguyên văn)
+
+```
+===== SAU · aoi_management (current_user=aoi) =====
+information_schema · users · HAI CỘT CŨ: 0 hàng
+  (KHÔNG CÒN CỘT NÀO — đúng trạng thái SAU 0315)
+users · tổng số cột: 19
+ĐẾM: {"users_tong":8,"cu_co_passwordhash":null,"cu_co_2fa_secret":null,"us_tong":8,
+      "us_co_passwordhash":8,"us_co_2fa_secret":1,"thieu":0,"lech":null,"backup_codes":10}
+__applied_migrations 031*: 0310 · 0311 · 0312 · 0313 · 0314 ·
+      **0315_users_drop_secret_columns.sql**
+
+===== SAU · aoi_management_test (current_user=aoi) =====
+information_schema · users · HAI CỘT CŨ: 0 hàng
+  (KHÔNG CÒN CỘT NÀO — đúng trạng thái SAU 0315)
+users · tổng số cột: 19
+ĐẾM: {"users_tong":1,"cu_co_passwordhash":null,"cu_co_2fa_secret":null,"us_tong":1,
+      "us_co_passwordhash":0,"us_co_2fa_secret":0,"thieu":0,"lech":null,"backup_codes":0}
+__applied_migrations 031*: (giống hệt DB thật)
+```
+
+### 16.1 · TRƯỚC → SAU, đặt cạnh nhau
+
+| đại lượng | `aoi_management` | `aoi_management_test` |
+|---|---|---|
+| `users` có `passwordHash` (cột) | **CÓ** → **KHÔNG** | **CÓ** → **KHÔNG** |
+| `users` có `two_factor_secret` (cột) | **CÓ** → **KHÔNG** | **CÓ** → **KHÔNG** |
+| `users` tổng số cột | **21 → 19** | **21 → 19** |
+| bí mật ở cột CŨ (`passwordHash` / `2fa`) | **8 / 8 → cột không còn** | 0 / 0 → cột không còn |
+| bí mật ở `user_secrets` (nguồn SỐNG) | **8 / 1 → 8 / 1** (KHÔNG ĐỔI) | 0 / 0 → 0 / 0 |
+| `thieu` | 0 → **0** | 0 → **0** |
+| `backup_codes` | 10 → **10** (không chạm) | 0 → 0 |
+| `__applied_migrations` | +`0315…` | +`0315…` |
+
+⇒ **XÁC NHẬN: hai cột đã MẤT trên CẢ HAI DB** (`information_schema` trả **0 hàng**, và số cột
+`users` đi **21 → 19** — hai phép đếm độc lập, cùng kết luận).
+⇒ **Nguồn sống KHÔNG bị chạm**: `user_secrets` giữ nguyên **8/1** trên DB thật.
+**8 bí mật ĐÃ LỘ trong cột chết nay không còn đường SQL nào đọc tới.**
+
+---
+
+## 17 · BƯỚC 5 — ★★★ NGHIỆM THU SỐNG SAU `0315` — ✅ **ĐẠT (3/3 trục)**
+
+Tài khoản **`engineer1` (id 51)** trên **hệ thật**, máy chủ **PID 4468** (**KHÔNG restart** — build
+đang chạy là bản trước 0315, đúng thứ cần chứng minh: **mã cũ không hề biết cột đã bị bỏ, và nó vẫn
+chạy** vì nó đã thôi liệt kê hai cột ấy từ lượt deploy Task 9).
+
+```
+nền: id=51 bật2FA=true secret=ME3FWPSPLY… (dài 52)
+
+=== TRỤC 1 — đăng nhập mật khẩu + 2FA ===
+POST /api/auth/login => 200  {"requires2FA":true,"userId":51,"message":"Vui lòng nhập mã xác thực 2 bước"}
+✔ đăng nhập bằng MẬT KHẨU: 200 — `users.passwordHash` đã bỏ mà hash vẫn đọc được từ `user_secrets`
+✔ máy chủ đòi bước 2FA (requires2FA=true)
+   … chờ 21s cho cửa sổ TOTP mới (verify-2fa)
+POST /api/auth/verify-2fa => 200  {"success":true,"user":{"id":51,…,"role":"engineer"}}
+✔ ★★★ verify-2fa 200 — hạt giống TOTP đọc từ `user_secrets` sau khi cột cũ đã bỏ
+✔ đã nhận cookie phiên — pending_2fa, app_session_id
+
+=== TRỤC 2 — auth.me vẫn SẠCH ===
+auth.me => 200
+{"id":51,"openId":"seed-engineer1","username":"engineer1","name":"Anh Minh (Kỹ sư TĐH)","email":null,
+ "phone":null,"department":null,"position":null,"loginMethod":"password","role":"engineer",
+ "isActive":true,"twoFactorEnabled":true,"loginAttempts":0,"lockedUntil":null,
+ "createdAt":"2026-07-10T22:40:57.616Z","updatedAt":"2026-07-10T22:40:57.616Z",
+ "lastSignedIn":"2026-08-09T06:58:01.397Z","mustChangePassword":true}
+✔ auth.me KHÔNG có `passwordHash`
+✔ auth.me KHÔNG có `twoFactorSecret`
+✔ auth.me KHÔNG có `passwordChangedAt`
+✔ auth.me KHÔNG có `passwordInvalidBefore`
+✔ auth.me CÓ ô suy ra `mustChangePassword` = true
+
+=== TRỤC 3 — bật lại 2FA vẫn ghi được mã dự phòng ===
+backup_codes TRƯỚC: 10
+   … chờ 30s cho cửa sổ TOTP mới (twoFactor.disable)
+twoFactor.disable => 200  {"result":{"data":{"json":{"success":true,"message":"2FA has been disabled"}}}}
+twoFactor.generateSecret => 200
+✔ sinh bí mật MỚI: HZICURDBGR… (dài 52)
+✔ bí mật MỚI nằm trong `user_secrets` (nguồn SỐNG), khớp API
+   … chờ 30s cho cửa sổ TOTP mới (twoFactor.enable)
+twoFactor.enable => 200
+✔ ★★★ NHẬN ĐƯỢC MÃ DỰ PHÒNG — 10 mã: 1090D3BF CD699079 1965CAD4 …
+backup_codes SAU: {"n":10,"lmin":60,"lmax":60,"bcrypt":10}
+✔ ★★★ 10 hàng THẬT trong backup_codes, hash bcrypt dài 60 (9a còn sống sau 0315)
+
+=== VÒNG ĐÓNG KÍN — phiên SẠCH, đăng nhập bằng bí mật MỚI ===
+[phiên SẠCH] POST /api/auth/login => 200  {"requires2FA":true,"userId":51,…}
+   … chờ 29s cho cửa sổ TOTP mới (verify-2fa (bí mật MỚI))
+POST /api/auth/verify-2fa => 200  {"success":true,"user":{"id":51,…,"role":"engineer"}}
+✔ ★★★ ĐĂNG NHẬP ĐƯỢC bằng bí mật MỚI — vòng đăng ký lại + đăng nhập ĐÓNG KÍN
+EXIT=0
+```
+
+**⇒ ✅ BA TRỤC ĐẠT. KHÔNG dùng lượt hoàn tác §3.6.**
+
+### 17.1 · ★ Điều lượt nghiệm thu này chứng minh mà bảng `information_schema` **không** chứng minh được
+
+1. **`DROP COLUMN` KHÔNG làm gãy một đường nào** — vì mã đang chạy đã thôi **liệt kê** hai cột từ
+   lượt deploy Task 9. Đây là **vế còn thiếu** của §3.5: bảng ấy nói *"đảo thứ tự thì `42703`"*;
+   lượt này là **đối chứng dương** cho *"đúng thứ tự thì KHÔNG có `42703`"* — trên **cùng một tiến
+   trình, không restart**.
+2. **Hash mật khẩu và hạt giống TOTP đọc được từ `user_secrets`** — trục 1 dùng **cả hai** bí mật
+   (mật khẩu để qua bước 1, TOTP để qua bước 2). Nếu 0315 lỡ chạm nguồn sống, bước nào cũng vỡ.
+3. **9a còn sống sau nhịp CO** — 10 hàng, `min(length) = max(length) = 60`, **10/10** bắt đầu bằng
+   `$2` ⇒ bcrypt thật, không plaintext. Con số **min = max** loại trừ khả năng *"một hàng dài 60 lọt
+   vào giữa 9 hàng ngắn"*.
+4. **`mustChangePassword = true`** — mốc thu hồi của Task 10 **vẫn ăn** sau khi bỏ cột, và nó **không
+   chặn** đăng nhập (đúng như Task 10 §1.5 đã đo).
+
+### 17.2 · ⚠ Trạng thái dữ liệu ĐỔI ở lượt nghiệm thu — **khai đủ, không giấu**
+
+Trục 3 (*"bật 2FA vẫn ghi được mã dự phòng"*) **buộc phải** tắt rồi bật lại 2FA. Hệ quả trên tài
+khoản thật:
+
+| | trước lượt này | sau lượt này |
+|---|---|---|
+| `engineer1.twoFactorSecret` (nguồn sống) | `ME3FWPSPLY…` (Task 10) | **`HZICURDBGR…`** (mới) |
+| `backup_codes` của `engineer1` | 10 (Task 10, chưa dùng) | **10 mới** — bộ cũ đã bị `enable` xoá |
+| 7 tài khoản còn lại | **không đụng** | **không đụng** |
+
+⚠ **App authenticator đã quét QR ở lượt Task 10 nay VÔ HIỆU cho `engineer1`.**
+**Không ai bị khoá ra ngoài**: `node scripts/print-otp.mjs engineer1` đọc bí mật **từ `user_secrets`**
+và in OTP đúng. Bộ **10 mã dự phòng mới** đã in ra ở nhật ký lượt chạy (3 mã đầu ghi trên).
+⚠ **KHÔNG ghi bí mật đầy đủ vào báo cáo này** (báo cáo được commit) — chỉ 10 ký tự đầu.
+
+---
+
+## 18 · BƯỚC 6 — DẤU VẾT CÒN LẠI CỦA HAI CỘT, VÀ CỔNG CHẠY LẠI
+
+### 18.1 · Lược đồ drizzle — **không còn dấu vết CẤU TRÚC**, nhưng còn dấu vết **LỜI KHAI**
+
+`drizzle/schema/auth.ts` đã **không** khai hai cột từ lượt Task 9 (§7.1) ⇒ **không có gì để bỏ**.
+Nhưng `git grep -n "0315" -- server scripts client drizzle/schema` tìm ra **6 chỗ** nói một câu
+**nay đã SAI**: *"cột cũ **vẫn còn** trên `users` **cho tới** migration 0315"*.
+
+⚠ Đây đúng lớp nợ mà chuỗi pha này liên tục vấp: **một dòng chú thích mô tả một trạng thái không còn
+tồn tại, và người đọc sau sẽ TIN nó.** Sửa **5** chỗ (chỗ thứ 6 —
+`scripts/xoay-bi-mat-2fa.mjs:76` — vốn đã viết đúng: *"Cột cũ **có thể đã bị 0315 bỏ**"*):
+
+| file | sửa |
+|---|---|
+| `drizzle/schema/auth.ts` | *"vẫn còn trong DB cho tới khi 0315 chạy"* → **"đã bị BỎ KHỎI DB, 0315 áp 2026-08-09 trên cả hai DB, `users` 21 → 19 cột"**, cộng con trỏ tới đối chứng dương §17 |
+| `scripts/_lib/nguonBiMat.mjs` | *"cho tới migration 0315"* → **"cửa sổ giữa `0314` và `0315`"** + §18.2 |
+| `scripts/print-otp.mjs` | *"cột còn tới 0315"* → **"0315 đã BỎ (2026-08-09) ⇒ đọc nhầm cột ném `42703` — hỏng ỒN ÀO"** |
+| `scripts/seed-test-data.mjs` | như trên |
+| `scripts/xoay-bi-mat-2fa.mjs` (docstring) · `server/_core/xoayBiMatNguon.test.ts` (docstring) | *"cho tới migration 0315"* → **"cửa sổ giữa `0314` và `0315`"** |
+
+### 18.2 · ★★ MỘT LƯỚI VỪA HOÁ RỖNG — **khai, không giấu, không xoá**
+
+`loiCuaNguonBiMat()` (`scripts/_lib/nguonBiMat.mjs`) có **hai** điều kiện. Sau `0315`, điều kiện **(2)**
+(*"còn tài khoản mang bí mật ở cột CŨ mà THIẾU hàng ở bảng nguồn"*) **không bao giờ bắt được gì nữa**
+trên một DB đã áp: `doNguonBiMat()` hỏi `information_schema` trước, thấy cột đã mất, và trả
+`soHangLechNguon = 0` **theo cấu tạo**.
+
+Đúng khuôn *"cầu chì cho một luật vừa thành chân lý rỗng"* (§7.3 R1(c)) — nên nó được **KHAI ngay
+trong docstring**, cộng lý do vì sao **không** phải một lỗ:
+
+- điều kiện (2) vẫn canh **DB CHƯA áp `0315`** — bản sao, môi trường cũ, DB khôi phục từ sao lưu;
+- trên DB **đã áp**, chính bất biến ấy được cưỡng chế **MẠNH HƠN** — bởi Postgres: mọi câu SQL chạm
+  `users.two_factor_secret` ném **`42703`**. ⇒ Lớp lỗi R2 (*"báo thành công mà không xoay gì"*)
+  chuyển từ **"im lặng sai"** sang **"nổ ồn ào"**. Điều kiện **(1)** (bảng nguồn tồn tại) vẫn là
+  điều kiện **thật sự** đang canh.
+
+★ **Đây là một trường hợp lưới hoá rỗng mà lời giải KHÔNG phải viết thêm lưới** — vì thứ thay nó là
+một **ràng buộc của DB**, mạnh hơn mọi vị từ ở tầng mã. Điều bắt buộc là **nói ra**, để lượt sau
+không tưởng điều kiện (2) đang bảo vệ mình.
+
+### 18.3 · Cổng — **chạy lại đủ bốn đường**
+
+`ls` kiểm **25/25** đường của §"Cổng kiểm chung" tồn tại trên đĩa **trước khi tin** (glob rỗng ⇒
+vitest im lặng khai XANH — đã xảy ra **bốn** lần).
+⚠ **Không** thêm lưới mới ⇒ `CONG` = **25** và `FILE_CANH` = **86** **giữ nguyên**; `vramPha5Gate.test.ts`
+XANH mà không phải sửa.
+
+| đường | kết quả |
+|---|---|
+| `npx vitest run` (25 đường) | **2.068 / 2.069** — 1 ca đỏ, xem 18.4 |
+| `NODE_OPTIONS=--max-old-space-size=8192 npm run check` | **0 lỗi** |
+| `npm run check:tests` | **0 lỗi** |
+| `npm run i18n:check` | `0 placeholder · 0 NEW missing-in-all · 0 NEW missing-in-some · 0 stale · 0 baseline-integrity` (nền đóng băng **817 + 20**, nợ CÓ TRƯỚC) |
+| `--sequence.shuffle.tests` trên 6 lưới liên quan | **53 / 53** |
+
+### 18.4 · ★ Ca đỏ — **BA lượt chạy, BA ca KHÁC NHAU, cùng MỘT file** ⇒ flake, không phải hồi quy
+
+Đây là chỗ dễ khai ẩu nhất (*"nợ có trước"* là câu trả lời tiện nhất trên đời), nên nó được **đo**,
+không **khẳng định**:
+
+| lượt | ca đỏ |
+|---|---|
+| 1 | `totpReplay.test.ts › …mã trộm dùng ở một PHIÊN khác…` **+** `…KHÓA SỔ PHẢI CHỨA userId…` (2 ca) · `visionControl.tools.test.ts` (1) · `sharedLedgerIdentityCrossProcess.test.ts` (1, `timed out`) ⇒ **2.065/2.069** |
+| 2 | `totpReplay.test.ts › …cầu chì của ô trên — chuỗi ấy THẬT SỰ verify nhiều hơn MỘT lần…` ⇒ 123/124 file |
+| 3 | `totpReplay.test.ts › …mục quá hạn bị xoá ở lượt ghi kế tiếp…` ⇒ **2.068/2.069** |
+
+**Đối chứng — chạy RIÊNG từng file, sau khi 0315 đã áp trên DB test:**
+
+```
+npx vitest run server/routers/totpReplay.test.ts                    => 13/13 XANH (743 ms)
+npx vitest run server/services/vram/sharedLedgerIdentityCrossProcess.test.ts \
+               server/services/aiLocalTools/visionControl.tools.test.ts  => 22/22 XANH
+```
+
+⇒ **Ba file đỏ đều XANH khi chạy riêng, TRÊN DB ĐÃ ÁP 0315.** Ca đỏ **đổi chỗ mỗi lượt** trong cùng
+một file ⇒ chữ ký của **tranh chấp trạng thái dùng chung** (`totp_consumed` là **một bảng THẬT**, và
+`totpLedgerDurable.test.ts` ghi cùng bảng ấy trong cùng lượt chạy song song), **không** phải chữ ký
+của một hồi quy do bỏ cột. Cả ba file nằm trong danh sách **Nợ CÓ TRƯỚC** của brief.
+★ **`0315` được LOẠI TRỪ bằng phép đo**, không bằng lời khai: nếu bỏ cột là nguyên nhân, ca đỏ phải
+**cố định** và phải đỏ **cả khi chạy riêng**.
+
+---
+
+## 19 · TRẠNG THÁI CUỐI — nhịp **CO** ĐÃ ĐÓNG
+
+| bước (nhịp CO) | trạng thái |
+|---|---|
+| 0 · tự xác minh **hai trục** điều kiện vào | ✅ **§12** — `dist` đang chạy có `user_secrets`, **0** lần `two_factor_secret`; **0** điểm sản xuất đọc/ghi cột cũ |
+| 1 · chụp **TRƯỚC** (cả hai DB) | ✅ **§13** |
+| 2 · khối `DO $$` chặn cuối, chạy **RIÊNG** | ✅ **§14** — `thieu = 0/0` (**không ném**) · `lech = 8/0` (**NOTICE có chủ ý**) |
+| 3 · áp `0315` — owner `aoi`, **cả hai DB** | ✅ **§15** |
+| 4 · chụp **SAU** | ✅ **§16** — hai cột **MẤT** trên **cả hai** DB; `users` **21 → 19** cột |
+| 5 · **NGHIỆM THU SỐNG** | ✅ **§17** — 3/3 trục, **không** cần hoàn tác |
+| 6 · dấu vết còn lại + chạy lại cổng | ✅ **§18** — 5 chú thích sửa · 1 lưới hoá rỗng **được KHAI** · 4 đường cổng |
+| 7 · commit | ✅ (hash ở cuối mục này) |
+
+### 19.1 · Thứ tự bắt buộc của §11.2 — **ĐÃ ĐÓNG TRỌN**
+
+```
+① 0314 (NỞ)                  ✅ §6
+② deploy mã                  ✅ §7–§8   (PID 4468)
+③ nghiệm thu sống            ✅ §9
+④ Task 10 — xoay bí mật      ✅ báo cáo 2026-08-09-vram-pha7-task10-xoay-bi-mat.md (`ad7789c5`)
+⑤ 0315 (CO)                  ✅ §15  ← lượt này
+```
+
+### 19.2 · Nói rõ những gì lượt này ĐÃ CHẠM trên hệ thật
+
+| | |
+|---|---|
+| DDL | `0315` trên `aoi_management` **và** `aoi_management_test`, owner **`aoi`** (2 câu `ALTER … DROP COLUMN` mỗi DB, sau một khối `DO $$` chỉ đọc) |
+| dữ liệu | **KHÔNG xoá hàng nào.** `user_secrets` giữ nguyên 8/8 trên DB thật. ⚠ `engineer1` (id 51) đổi bí mật 2FA (`ME3FWPSPLY…` → `HZICURDBGR…`) và **10 mã dự phòng mới** thay bộ cũ — hệ quả **bắt buộc** của trục 3 nghiệm thu (§17.2) |
+| tiến trình | **KHÔNG restart.** PID **4468** chạy suốt — và đó là **bằng chứng**, không phải sự tiện: nó chứng minh mã đang chạy không hề liệt kê hai cột vừa bị bỏ |
+| **KHÔNG** làm | không `kb:sync` · không trainer · **không cấp quyền** · không chạy lại script xoay · không `git add -A` · không đụng **243+ mục bẩn** · không sinh sub-agent |
+| script tạm | 4 file `scripts/__tmp-task9-0315-*.mjs` — **đã xoá hết** (`ls scripts/__tmp*` ⇒ rỗng) |
+
+### 19.3 · ⚠ Việc CÒN LẠI cho chủ dự án
+
+1. **7 tài khoản** (ngoài `engineer1`) vẫn đang ở trạng thái sau lượt xoay Task 10: 2FA **tắt**,
+   `mustChangePassword = true`, **0** mã dự phòng. Họ vào lại bằng **mật khẩu**, rồi tự bật lại 2FA.
+   Đường ấy nay đã được chứng minh **chạy được** trên hệ thật **hai lần** (Task 10 §Bước 5 và §17).
+2. **Ảnh chụp hoàn tác của Task 10** ở scratchpad **CHỨA BÍ MẬT PLAINTEXT** và **chưa bị xoá**.
+   Nghiệm thu của lượt này đã ĐẠT ⇒ nó **không còn cần thiết**, và các bí mật trong đó nay **đã cũ
+   hai lần** (Task 10 xoay, rồi §17 xoay tiếp cho `engineer1`). **Đề xuất xoá — chờ chủ dự án gật.**
+   **Chưa bao giờ được commit.**
+3. **Byte cũ chưa được lấy lại.** `DROP COLUMN` sửa **catalog**, không viết lại **heap** (§15).
+   Muốn thu hồi thật thì cần một lượt `VACUUM FULL "users"` (khoá bảng độc quyền — 8 hàng nên rất
+   nhanh, nhưng vẫn là một quyết định vận hành). **KHÔNG chạy ở lượt này.**

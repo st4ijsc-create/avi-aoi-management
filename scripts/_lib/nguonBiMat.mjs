@@ -6,7 +6,7 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * `scripts/xoay-bi-mat-2fa.mjs` chạy SQL **thô**. Bản trước Task 9 viết
  * `UPDATE users SET two_factor_secret = NULL`. Sau khi (9c) chuyển hạt giống TOTP sang
- * **`user_secrets`** mà cột cũ **vẫn còn trên `users`** cho tới migration `0315`, câu ấy:
+ * **`user_secrets`** mà cột cũ **còn trên `users`** (cửa sổ giữa `0314` và `0315`), câu ấy:
  *   · chạy **THÀNH CÔNG**,  · in *"✔ Đã xoay N tài khoản"*,
  *   · và **KHÔNG xoay bí mật đang được dùng** — 2FA của mọi người vẫn chạy bằng hạt giống **ĐÃ
  *     LỘ**, còn ảnh chụp hoàn tác thì chụp một **bản chết**.
@@ -38,6 +38,15 @@ export const BANG_NGUON_BI_MAT = "user_secrets";
  *  2. **KHÔNG** tài khoản nào còn bí mật ở cột CŨ trên `users` mà lại **thiếu** hàng ở bảng nguồn
  *     — tình huống ấy nghĩa là dữ liệu chưa được chép sang, nên xoay bây giờ sẽ để lại một bí mật
  *     **vẫn dùng được** ở chỗ kịch bản không nhìn tới.
+ *
+ * ⚠⚠ **KHAI RÕ, ĐỪNG ĐỂ THÀNH MỘT LƯỚI RỖNG IM LẶNG:** từ khi migration `0315` áp (2026-08-09),
+ *   cột cũ **không còn tồn tại**, nên `doNguonBiMat()` trả `soHangLechNguon = 0` **theo cấu tạo**
+ *   và điều kiện (2) **không bao giờ bắt được gì nữa** trên một DB đã áp `0315`.
+ *   Nó **không** vì thế mà thành vô dụng — và cũng **không** phải một lỗ:
+ *     · nó vẫn canh **DB CHƯA áp `0315`** (bản sao, môi trường cũ, DB khôi phục từ sao lưu);
+ *     · trên DB **đã áp**, chính bất biến ấy được cưỡng chế **mạnh hơn** — bởi Postgres: mọi câu
+ *       SQL chạm `users.two_factor_secret` ném **`42703`**, tức *"hỏng ỒN ÀO"* thay vì
+ *       *"thành công im lặng"*. Điều kiện (1) vẫn là điều kiện **thật sự** đang canh.
  *
  * @param {{coBangNguon: boolean, soHangLechNguon: number}} doDuoc
  * @returns {string | null}

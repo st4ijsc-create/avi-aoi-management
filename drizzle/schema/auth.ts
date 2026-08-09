@@ -20,13 +20,18 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 /**
  * ★★★ Pha 7 Task 9 (9c) — **HAI CỘT BÍ MẬT ĐÃ RỜI BẢNG NÀY.**
  *
- * `passwordHash` và `two_factor_secret` nay sống ở **`user_secrets`** (xem cuối file). Chúng
- * **vẫn còn trong DB** cho tới khi migration **`0315`** chạy — nhưng đã bị **gỡ khỏi lược đồ
- * drizzle ở đây**, và đó là toàn bộ điểm của 9c: drizzle **liệt kê TOÀN BỘ cột** vào mỗi câu
+ * `passwordHash` và `two_factor_secret` nay sống ở **`user_secrets`** (xem cuối file). Chúng đã
+ * bị **BỎ KHỎI DB** — migration **`0315`** áp ngày **2026-08-09** trên cả `aoi_management` lẫn
+ * `aoi_management_test` (`information_schema` trả **0 hàng** cho hai tên ấy; `users` đi 21 → 19
+ * cột). Chúng bị **gỡ khỏi lược đồ drizzle ở đây TRƯỚC** lượt bỏ ấy (nhịp NỞ 0314 → deploy →
+ * nghiệm thu sống → nhịp CO 0315), và đó là toàn bộ điểm của 9c: drizzle **liệt kê TOÀN BỘ cột** vào mỗi câu
  * `SELECT`, nên chừng nào hai cột còn khai ở đây thì **8 hàm** đọc nguyên hàng `users` — kể cả
  * `getUserById`, thứ `sdk.authenticateRequest` gọi **mỗi request** — vẫn kéo bí mật vào bộ nhớ
  * tiến trình. Gỡ khỏi drizzle **trước** khi bỏ khỏi DB là **an toàn** (drizzle chỉ thôi liệt kê);
  * chiều ngược lại mới là `42703` ⇒ ngừng dịch vụ.
+ * ★ Thứ tự ấy đã được **đối chứng dương trên hệ thật**: lượt áp `0315` chạy **KHÔNG restart** máy
+ *   chủ (PID 4468), và ngay sau đó đăng nhập mật khẩu + 2FA + `auth.me` + bật lại 2FA **đều 200**.
+ *   Xem §12–§17 của `docs/superpowers/reports/2026-08-09-vram-pha7-task9-migration-de-xuat.md`.
  *
  * ⚠ Task 7 đóng lượt rò ở **tầng TRẢ VỀ** (`server/_core/publicUser.ts`). Nó đúng và vẫn còn đó.
  *   9c đóng **thêm một tầng**: một hàng `users` **không còn chứa bí mật để mà rò**.

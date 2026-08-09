@@ -25,8 +25,8 @@
  * ★★★ Pha 7 Task 9 / **R2 — SỬA LỚP LỖI "LÀM HỎNG RỒI BÁO CÁO THÀNH CÔNG"**
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * Bản trước chạy SQL **thô** `UPDATE users SET two_factor_secret = NULL`. Sau khi Task 9 (9c)
- * chuyển hạt giống TOTP sang **`user_secrets`** mà cột cũ **vẫn còn trên `users`** cho tới
- * migration `0315`, câu ấy sẽ:
+ * chuyển hạt giống TOTP sang **`user_secrets`** mà cột cũ **còn trên `users`** (cửa sổ giữa
+ * migration `0314` và `0315`), câu ấy sẽ:
  *   · chạy **THÀNH CÔNG**,
  *   · in *"✔ Đã xoay N tài khoản"*,
  *   · và **KHÔNG XOAY BÍ MẬT ĐANG ĐƯỢC DÙNG** — 2FA của mọi người vẫn hoạt động bằng hạt giống

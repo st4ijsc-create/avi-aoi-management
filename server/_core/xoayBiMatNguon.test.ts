@@ -9,7 +9,7 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * `scripts/xoay-bi-mat-2fa.mjs` chạy SQL **thô**. Bản trước Task 9 viết
  * `UPDATE users SET two_factor_secret = NULL`. Sau khi (9c) chuyển hạt giống TOTP sang
- * `user_secrets` **mà cột cũ vẫn còn trên `users`** cho tới migration `0315`, câu ấy:
+ * `user_secrets` **mà cột cũ còn trên `users`** (cửa sổ giữa migration `0314` và `0315`), câu ấy:
  *   · chạy **THÀNH CÔNG** (cột tồn tại),
  *   · in *"✔ Đã xoay N tài khoản"*,
  *   · và **KHÔNG xoay bí mật đang được dùng** — 2FA của mọi người vẫn chạy bằng hạt giống **ĐÃ

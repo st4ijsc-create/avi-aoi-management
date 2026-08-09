@@ -36,9 +36,10 @@ async function ensureUser(username, role, name) {
   const speakeasy = (await import('speakeasy')).default;
   const newSecret = speakeasy.generateSecret({ length: 20 }).base32;
   // ★ Pha 7 Task 9 (9c) — `passwordHash` + hạt giống TOTP nay ở **`user_secrets`**; `users` chỉ
-  //   còn giữ cờ `two_factor_enabled` (công khai). Ghi vào cột cũ trên `users` vẫn CHẠY (cột còn
-  //   tới migration 0315) nhưng mã sẽ không bao giờ đọc nó ⇒ seed "thành công" mà không ai đăng
-  //   nhập được. Đúng lớp "làm hỏng rồi báo cáo thành công".
+  //   còn giữ cờ `two_factor_enabled` (công khai). Trước migration 0315, ghi vào cột cũ trên
+  //   `users` vẫn CHẠY nhưng mã không bao giờ đọc nó ⇒ seed "thành công" mà không ai đăng nhập
+  //   được ("làm hỏng rồi báo cáo thành công"). 0315 đã BỎ hai cột ấy (2026-08-09) ⇒ nay ghi nhầm
+  //   chỗ ném 42703.
   const [existing] = await sql`SELECT id FROM users WHERE username=${username}`;
   let id;
   if (existing) {
