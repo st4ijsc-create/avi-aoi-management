@@ -23,8 +23,13 @@ namespace St4i.EngineApi.Tests;
 /// </list>
 /// The pattern is not carelessness; it is that a hand-maintained list of stores cannot survive a store
 /// being ADDED. So this test does not hold a list. It discovers every <c>ST4I_*_DIR</c> environment
-/// variable the product declares in <c>src/</c> and requires the harness to set each one — a fifteenth
-/// store fails it until the harness isolates that too.</para>
+/// variable the product declares in <c>src/</c> and requires the harness to set each one — the NEXT
+/// store fails it until the harness isolates that too.
+/// <b>🔴 That sentence used to say "a fifteenth store", and it was off by one when written</b> (branch
+/// review, Minor 4): the product declared THIRTEEN variables then, so the next one was a fourteenth. It
+/// is only accidentally true today, because H-1c added the fourteenth. Written as an ordinal it had to
+/// rot; written as "the next" it cannot, which is the same reason every other count in this file is
+/// derived rather than spelled.</para>
 ///
 /// <para>🔴 <b>H-1c — this scan spans BOTH store populations, and that is correct rather than an
 /// oversight.</b> <c>PerHostDataRootsTests</c> now partitions the <c>ST4I_*_DIR</c> set into the THIRTEEN

@@ -1560,7 +1560,9 @@ EXPECT_EDGESERVICE=50
 #         + 1  EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName — 🔴 THE FIFTH-STORE GUARD,
 #              and the reason F-1 enumerated instead of trusting its brief. The brief named FOUR stores;
 #              the enumeration found THIRTEEN. All thirteen were already relocatable, so this test is not
-#              a fix — it is the thing that makes a FOURTEENTH impossible to add without a variable, which
+#              a fix — it is the thing that makes a FOURTEENTH MACHINE-WIDE store impossible to add without
+#              a variable (H-1c's ST4I_MACHINE_CONFIG_DIR is a fourteenth store that this guard correctly
+#              stayed green for, because it is not machine-wide — see the partition addendum below), which
 #              is where this defect would actually have lived. Derives BOTH sets from src/ and requires the
 #              variable NAME to be derivable from the directory name (ST4I_<NAME>_DIR), because that is the
 #              rule README §15.9 tells an operator; requiring only "thirteen of each exist" would pass

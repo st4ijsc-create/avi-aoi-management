@@ -413,7 +413,8 @@ public sealed class PerHostDataRootsTests
     /// two sentences that state it as a rule — README §15.9's "There are **N** of them today" and
     /// <c>packaging/remove-data.ps1</c>'s ".DESCRIPTION … create N directories". Those two were chosen
     /// because each is the authoritative sentence of its own artefact; the remaining prose repeats them. A
-    /// fourteenth store makes the derived number 14 and turns both comparisons red, with a message naming
+    /// fourteenth MACHINE-WIDE store makes the derived number 14 and turns both comparisons red, with a
+    /// message naming
     /// every place the word has to move.</para>
     /// </summary>
     [Fact]
@@ -488,20 +489,42 @@ public sealed class PerHostDataRootsTests
     /// shared by accident in exactly the same way — but the product only ever READS them; they are operator
     /// input, not state the product accumulates, so a shared copy is the intent rather than the defect.
     /// (2) <c>wwwroot</c>, which <c>Program.cs</c> creates beside the binary, holds the packaged web UI and
-    /// no data. (3) <c>HotFolderAoiDriver</c>/<c>Doc28Writer</c> create directories with no default at all —
-    /// all three paths are required constructor arguments, so there is nothing to relocate.
+    /// no data. (3) <c>HotFolderAoiDriver</c>/<c>Doc28Writer</c> write to caller-supplied paths with no
+    /// default at all, so there is nothing to relocate.
     /// (4) <c>St4i.DesktopShell</c>'s <c>%LOCALAPPDATA%</c> log + WebView2 folders are per-USER, already
     /// excluded by this file's own class remarks for that reason.</para>
     ///
-    /// <para><b>THE INSTRUMENT, and what it is blind to — stated because §8.1(f) is exactly the failure of
-    /// not stating it.</b> The scan is keyed on the TOKEN <c>AppContext.BaseDirectory</c> co-occurring with
-    /// <c>Directory.CreateDirectory(</c> in one file, and it therefore cannot see a store that reaches the
-    /// same place by another route (<c>Directory.GetCurrentDirectory()</c>, <c>Assembly.Location</c>, a
-    /// bare relative path, or a root handed in by a composition root the way <c>ST4I_HISTORIAN_DIR</c> is).
-    /// Enumerated rather than assumed: <b>no such route exists in <c>src/</c> today</b> — those idioms
-    /// return zero hits, and the only composition-root-supplied roots point at <c>%ProgramData%</c>. What
-    /// this DOES buy is that a seventh file entering the token's intersection cannot arrive silently: it
-    /// fails here and has to be classified.</para>
+    /// <para>🔴 <b>THE INSTRUMENT — and fix round 1 rebuilt it, because the first version recommitted
+    /// §8.1(f) INSIDE the guard written to repair §8.1(f).</b> That version scanned for
+    /// <c>AppContext.BaseDirectory</c> <b>∩</b> <c>Directory.CreateDirectory(</c>, and its blind-spot
+    /// paragraph enumerated blind spots on the PATH half only — never naming the second conjunct as a
+    /// filter at all. It is the conjunct that actually excludes: <c>AppContext.BaseDirectory</c>
+    /// <b>always exists</b>, so a store written as
+    /// <c>File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "foo.json"), …)</c> has no reason to
+    /// call <c>Directory.CreateDirectory</c> at all. Such a store is a full member of population two and
+    /// was invisible — arriving silently, which is the exact failure the test claimed to prevent. That the
+    /// three current members all happen to create a directory in their constructors is a property of where
+    /// the author was standing, not of the question. (Branch review, Important 1.)</para>
+    ///
+    /// <para><b>The conjunct is gone.</b> The scan is now the path token ALONE: every <c>*.cs</c> under
+    /// <c>src/</c> that mentions <c>AppContext.BaseDirectory</c>, pinned as an exact set of repo-relative
+    /// paths with each entry classified in place. Twelve files, four of which mention it only in prose —
+    /// included deliberately, because a text scan cannot tell a doc comment from a resolution and
+    /// CLASSIFYING each arrival is the whole mechanism. A new store that composes a path from the base
+    /// directory now fails this test whether or not it creates anything.</para>
+    ///
+    /// <para><b>What it is STILL blind to, stated because that is the half whose omission is the defect.</b>
+    /// The domain is one TOKEN. A store reaching the same place by another route —
+    /// <c>Directory.GetCurrentDirectory()</c>, <c>Assembly.Location</c>,
+    /// <c>AppDomain.CurrentDomain.BaseDirectory</c>, a bare relative path, or a root handed in by a
+    /// composition root the way <c>ST4I_HISTORIAN_DIR</c> is — is invisible here. Enumerated rather than
+    /// assumed: <b>every one of those returns zero hits in <c>src/</c> today</b>, and the only
+    /// composition-root-supplied roots point at <c>%ProgramData%</c>. There is no third conjunct and no
+    /// unstated filter; if this paragraph is ever incomplete again, that is the bug.</para>
+    ///
+    /// <para><b>Repo-relative paths, not base names</b> (branch review, Minor 3): <c>src/</c> contains two
+    /// <c>Program.cs</c>. Keyed on <see cref="Path.GetFileName(string)"/>, EdgeService's entering the set
+    /// while EngineApi's left it would have kept this green over a changed population.</para>
     /// </summary>
     [Fact]
     public void TheBesideTheBinaryStorePopulation_IsEnumerated_AndKeptDistinctFromTheThirteenMachineWideOnes()
@@ -513,36 +536,43 @@ public sealed class PerHostDataRootsTests
         Assert.Equal(DeclaredDirectoryNames().Count, machineWide.Count);
         Assert.Equal(new[] { "ST4I_MACHINE_CONFIG_DIR" }, besideBinary.ToArray());
 
-        // The store side. A file is a candidate when it both resolves a root from AppContext.BaseDirectory
-        // and creates a directory — see the remarks for what that misses and why it is still worth having.
+        // The store side: ONE token, no second conjunct. See the remarks for what that still misses.
+        var root = MachineSimulatorRoot();
         var candidates = ProductSources()
-            .Where(file =>
-            {
-                var text = File.ReadAllText(file);
-                return text.Contains("AppContext.BaseDirectory", StringComparison.Ordinal)
-                    && text.Contains("Directory.CreateDirectory(", StringComparison.Ordinal);
-            })
-            .Select(Path.GetFileName)
-            .OfType<string>()
-            .OrderBy(name => name, StringComparer.Ordinal)
+            .Where(file => File.ReadAllText(file).Contains("AppContext.BaseDirectory", StringComparison.Ordinal))
+            .Select(file => Path.GetRelativePath(root, file).Replace('\\', '/'))
+            .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
 
-        // Three population-two STORES plus three files that create a beside-the-binary directory for a
-        // reason that is not a data store. Each is classified here rather than filtered out silently,
-        // because an unexplained exclusion is how a population loses a member.
+        // Every file in src/ that names the beside-the-binary root, classified. THREE are population-two
+        // stores; the rest are reads, non-data directories, or prose. Nothing is filtered out silently —
+        // an unexplained exclusion is how a population loses a member.
         var expected = new[]
         {
-            "App.xaml.cs",             // WPF --capture: a screenshot output directory from a CLI argument.
-            "MachineConfigStore.cs",   // POPULATION TWO — machine-operating-config.json.
-            "MainWindow.xaml.cs",      // DesktopShell: %LOCALAPPDATA% logs + WebView2 profile, per-USER.
-            "ProductConfigStore.cs",   // POPULATION TWO — products.json + recipes.json.
-            "Program.cs",              // EngineApi: wwwroot (packaged web UI) and the %ProgramData% security roots.
-            "SimulatedEcosystem.cs",   // POPULATION TWO — ecosystem/ecosystem-{products,recipes}.json.
-        };
-        // Ordinal, so "ProductConfigStore.cs" precedes "Program.cs" ('d' < 'g'). Sorted rather than
-        // set-compared on purpose: a mismatch then names the ONE file that moved, not two symmetric diffs.
+            // — POPULATION TWO: persists product data, default root beside the binary —
+            "src/St4i.EdgeCore/Config/MachineConfigStore.cs",       // machine-operating-config.json
+            "src/St4i.EdgeCore/Config/ProductConfigStore.cs",       // products.json + recipes.json
+            "src/St4i.EngineApi/Config/SimulatedEcosystem.cs",      // ecosystem/ecosystem-{products,recipes}.json
 
-        Assert.Equal(expected, candidates);
+            // — READS ONLY: operator-authored input beside the binary; a shared copy is the intent —
+            "src/St4i.EdgeCore/Fleet/FleetCore.cs",                 // fleet.json + mapping/*.json
+            "src/St4i.EdgeService/EdgeConnectors.cs",               // connectors.json
+            "src/St4iMachineSimulator/Services/FleetService.cs",    // fleet.json
+
+            // — NOT A DATA STORE —
+            "src/St4i.DesktopShell/MainWindow.xaml.cs",             // engine exe path; its writes are per-USER %LOCALAPPDATA%
+            "src/St4i.EngineApi/Program.cs",                        // connectors.json read + wwwroot (packaged web UI)
+            "src/St4iMachineSimulator/App.xaml.cs",                 // --capture output dir (CLI arg) + a %TEMP% selftest file
+
+            // — PROSE ONLY: names the root in a doc comment, resolves nothing —
+            "src/St4i.EdgeCore/Engine/EdgeAgentPipelines.cs",
+            "src/St4i.EdgeCore/Mapping/MappingProfileResolver.cs",
+            "src/St4i.EngineApi/Config/ConnectorsJsonRegistration.cs",
+        };
+        // Sorted ordinal rather than set-compared on purpose: a mismatch then names the ONE path that
+        // moved, not two symmetric diffs.
+
+        Assert.Equal(expected.OrderBy(p => p, StringComparer.Ordinal).ToArray(), candidates);
     }
 
     /// <summary>

@@ -1531,7 +1531,12 @@ WPF shell's two view-models and **nowhere else**, while `St4i.EdgeService`'s sin
 `OpcUaPkiPaths` only inside a doc comment.)*
 
 Pinned by `PerHostDataRootsTests` — `EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName` derives
-**both** sets by scanning `src/`, so a fourteenth store fails it until it has a variable too, and
+**both** sets by scanning `src/`, so a fourteenth **machine-wide** store fails it until it has a variable too
+(🔴 the qualifier is load-bearing and was missing until H-1c's fix round: `MachineConfigStore` **is** a
+fourteenth store, it **did** arrive, and this guard stayed green — correctly, because it is not machine-wide.
+The guard that turned red was `TestHarnessIsolationTests`, for a different reason. The beside-the-binary
+population has its own guard,
+`TheBesideTheBinaryStorePopulation_IsEnumerated_AndKeptDistinctFromTheThirteenMachineWideOnes`), and
 `EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared` requires each variable to reach a real
 `Environment.GetEnvironmentVariable` call rather than merely existing as a literal somewhere. That is
 deliberate: the mechanism was already complete before this section existed, and the thing that would break
@@ -1733,7 +1738,9 @@ biến môi trường suy ra được từ tên thư mục — **`ST4I_` + `<TÊ
 những gì sản phẩm ghi**: còn **ba** store nữa nằm **cạnh file binary của engine**, chỉ cô lập một cách tình cờ,
 xem mục "Quần thể store THỨ HAI" bên dưới. Và có **hai** test ghim trong
 `PerHostDataRootsTests`: `EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName` suy ra **cả hai** tập
-bằng cách quét `src/` (store thứ mười bốn làm test đỏ cho tới khi nó cũng có biến), và
+bằng cách quét `src/` (store **toàn máy** thứ mười bốn làm test đỏ cho tới khi nó cũng có biến — 🔴 chữ "toàn
+máy" là chịu lực: `MachineConfigStore` ĐÚNG là store thứ mười bốn, nó ĐÃ ra đời, và phép ghim này vẫn XANH,
+đúng như thiết kế, vì nó không thuộc quần thể toàn máy; quần thể cạnh-binary có phép ghim riêng của nó), và
 `EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared` đòi mỗi biến phải tới được một lời gọi
 `Environment.GetEnvironmentVariable` thật, chứ không chỉ tồn tại như một chuỗi ở đâu đó.
 *(🔴 Cái hai phép ghim ấy **KHÔNG** đo: chúng chứng minh biến **được khai báo và được ĐỌC ở một điểm phân
@@ -5488,7 +5495,8 @@ holds COM3 — and on a **gateway** there is no such protection to reason about 
   dictionary the host owns.** 🔴 **F-1 changed the "by default": per-host data roots are now a SUPPORTED
   deployment (§15.9)** — every one of the thirteen **machine-wide** directories under `%ProgramData%` is
   relocatable by a derivable `ST4I_*_DIR`
-  variable, and a test derives both sets from `src/` so a fourteenth store cannot arrive without one. What
+  variable, and a test derives both sets from `src/` so a fourteenth **machine-wide** store cannot arrive
+  without one — a beside-the-binary store can, and does; that is what the second population below is. What
   F-1 did **not** do is set them for you: unset still means one shared set of files, and nothing migrates when
   you change one. 🔴 **H-1c added the qualifier "machine-wide" here because it was load-bearing and missing:**
   the product writes three further stores BESIDE THE ENGINE BINARY, where isolation between two hosts is
@@ -5729,7 +5737,8 @@ khai ĐƯỢC HỖ TRỢ (§15.9)** — cả mười ba thư mục **toàn máy*
 biến `ST4I_*_DIR` suy ra được (🔴 H-1c thêm chữ "toàn máy": sản phẩm còn ba store ghi **cạnh binary**, ở đó sự
 cô lập giữa hai host là **tình cờ** — đọc mục quần thể thứ hai của §15.9 trước khi lên kế hoạch một máy hai
 host), và
-một test suy ra cả hai tập từ `src/` nên store thứ mười bốn không thể ra đời mà thiếu biến. Cái F-1 **không**
+một test suy ra cả hai tập từ `src/` nên store **toàn máy** thứ mười bốn không thể ra đời mà thiếu biến — còn
+một store cạnh-binary thì có thể, và đã có. Cái F-1 **không**
 làm là đặt chúng thay bạn: không đặt gì thì vẫn là một bộ file dùng chung, và đổi gốc thì **không có gì được
 di trú**. **Do đó quyết định đang chặn OPC-UA ở biên đã ĐÓNG** — xem §24.2, phần còn lại là công việc kỹ
 thuật chứ không phải một phán quyết.

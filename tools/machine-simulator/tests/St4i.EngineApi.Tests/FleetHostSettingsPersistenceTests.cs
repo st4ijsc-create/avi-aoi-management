@@ -3,6 +3,7 @@ using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests;
@@ -17,9 +18,34 @@ namespace St4i.EngineApi.Tests;
 /// <see cref="FleetSettingsPersistenceEnvVarTests"/>, which covers the SAME contract end-to-end through
 /// the real <c>Program.cs</c> composition root, plus the env-var-vs-persisted-file precedence decision
 /// that lives there, not in <see cref="FleetHost"/> itself).
+///
+/// <para>🔴 <b>Branch review, Minor 7 — this class is in the security env-var collection so its
+/// <c>ST4I_CREDS_DIR</c> flip cannot race.</b> Every <see cref="FleetHost.UpdateSettings"/> call with a
+/// non-empty machine code reaches <c>CredentialStore.Load</c>, which resolves <c>ST4I_CREDS_DIR</c> per
+/// call — so without an override these tests READ (never write) a real install's
+/// <c>%ProgramData%\ST4I\sim\creds</c>. <c>Load</c> returns null on a missing file, so nothing
+/// leaks and nothing fails; it is fixed anyway because this suite has a documented history of exactly
+/// this shape, and "it only reads" is how the 2,999-blob creds leak was justified for three audits.
+/// The variable is PROCESS-WIDE, and <see cref="StartupSettingsReplayHardeningTests"/> already flips it
+/// from this collection, so joining the collection is what makes the flip safe rather than a new
+/// race.</para>
 /// </summary>
-public sealed class FleetHostSettingsPersistenceTests
+[Collection(SecurityEnvVarTests.CollectionName)]
+public sealed class FleetHostSettingsPersistenceTests : IDisposable
 {
+    /// <summary>One throwaway creds root for the whole class, restored on dispose.</summary>
+    private readonly string _credsDir = Directory.CreateTempSubdirectory("st4i-fleethost-settings-creds-").FullName;
+    private readonly string? _previousCredsDir = Environment.GetEnvironmentVariable(CredentialStore.EnvVarDir);
+
+    public FleetHostSettingsPersistenceTests() =>
+        Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, _credsDir);
+
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable(CredentialStore.EnvVarDir, _previousCredsDir);
+        try { Directory.Delete(_credsDir, recursive: true); } catch { /* best-effort cleanup */ }
+    }
+
     private static string TempDir() => Directory.CreateTempSubdirectory("st4i-fleethost-settings-tests-").FullName;
 
     /// <summary>Same Demo-mode-only composition as <see cref="FleetHostHealthAndRegistrationTests.CreateHost"/>
