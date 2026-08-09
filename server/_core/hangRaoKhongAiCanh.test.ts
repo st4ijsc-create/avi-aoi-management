@@ -59,6 +59,7 @@ import {
   quetThuTucDocBiMat,
   moiFileDuoi,
   laFileTest,
+  phanGiaiToi,
 } from "../routers/deployProcedureScan";
 import { moiCotBiMatCuaUserSecrets } from "./publicUser";
 import { readFileSync } from "node:fs";
@@ -176,5 +177,218 @@ describe("★★★ Pha 8 Task 4a — ∀ thủ tục đọc `user_secrets` PH�
         "  Một điểm MỚI ở đây có thể là một bề mặt mới đang mọc ra ngoài cổng KIỂU ⇒ phải có người\n" +
         "  QUYẾT, rồi cập nhật `SO_DIEM_NGOAI`.\n",
     ).toBe(SO_DIEM_NGOAI);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ §4c (nợ #8) — **LỚP `vi.mock` ĐỔI HÀNH VI MÃ SẢN PHẨM.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Sự cố gốc: `vi.mock("drizzle-orm")` thay các **nguyên thuỷ dựng truy vấn** (`eq` · `and` · `sql`)
+ * bằng bản giả, nên một `DELETE` khớp **0 hàng** — **không ném, không kêu** — và lưới vẫn xanh
+ * **trên một bản mã đã bị thay**. Nguy hiểm của lớp này là nó **im lặng**: mọi cơ chế báo lỗi đều
+ * dựa vào một ngoại lệ, mà ở đây không có ngoại lệ nào.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ CÂU CỦA KẾ HOẠCH **KHÔNG CƯỠNG CHẾ ĐƯỢC NGUYÊN VĂN** — VÀ ĐÂY LÀ SỐ ĐO
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Kế hoạch phát biểu: *"KHÔNG file test nào được `vi.mock` một module hạ tầng DB mà không
+ * `importOriginal`"*. Đếm thật hôm nay (Bước 1 Task 4):
+ *   · `vi.mock(<chuỗi>)` trong test toàn repo: **1.515** lượt
+ *   · nhắm nguyên thuỷ ORM/driver + `db/connection`: **306** lượt, **305** không `importOriginal`
+ *   · nhắm tầng `db` của ứng dụng (`./db`, `./db/*`, `drizzle/schema`): **320** lượt nữa
+ *   ⇒ **~624 lượt / 225+ file**. Một tập ngoại lệ 624 phần tử **không phải một cổng** — nó là một
+ *     ảnh chụp sẽ mục, và mỗi lượt sửa sẽ là một lượt "cập nhật con số" vô nghĩa.
+ * ⇒ **Rút lại phạm vi, và NÓI THẲNG.** Lưới này canh **đúng tiền đề của sự cố**, nơi số vi phạm
+ *   hôm nay là **0** nên nó là một cổng thật:
+ *
+ *   ***∀ file test giả các NGUYÊN THUỶ DỰNG TRUY VẤN của `drizzle-orm` (không `importOriginal`):
+ *   nó PHẢI vô hiệu hoá đường tới một KẾT NỐI DB THẬT (`vi.mock` `server/db/connection.ts`).***
+ *
+ * Vì sao đúng tiền đề: nguyên thuỷ giả **chỉ vô hại** khi không có kết nối thật nào để chạy phải
+ * mệnh đề `WHERE` méo. Giả `eq()` **+ kết nối THẬT** = đúng hình dạng đã đẻ ra `DELETE` khớp 0 hàng.
+ * Đo được: **77** file giả nguyên thuỷ, **77/77** đã chặn `db/connection` ⇒ vi phạm **0**.
+ *
+ * ⚠⚠ VÙNG MÙ ĐƯỢC KHAI (lưới này HẸP HƠN câu của kế hoạch — đừng đọc màu xanh thành "đã phủ hết")
+ *  1. **~624 lượt giả tầng `db`/`drizzle/schema` KHÔNG được canh.** Lớp lỗi ở đó là **TRÔI HÌNH
+ *     DẠNG** (bản giả thiếu một khoá mà mã sản phẩm vừa bắt đầu cần) — Task 1 hôm nay đã đẻ ra
+ *     đúng một ca (`sdk.authCache.test.ts` phải bổ sung `phaiDoiMatKhau` vào bản giả `./db`).
+ *     ⚠ Nó **không quyết định được tĩnh**: "thiếu khoá nào" phụ thuộc mã sản phẩm nào đang được
+ *     đo, tức cần phân tích liên module. Ghi vào **nợ mới** của Task 4, không giả vờ đã phủ.
+ *  2. Lưới đọc **HÌNH DẠNG mã test**, không chạy nó. Nó không biết bản giả có ngữ nghĩa đúng không —
+ *     chỉ biết *"có kết nối thật nào còn với tới được không"*.
+ *  3. `vi.mock` với đường nhập **không phải chuỗi hằng** (biến/`import.meta`) nằm ngoài tầm.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/** Đường nhập bị coi là **nguyên thuỷ dựng truy vấn**. */
+const LA_NGUYEN_THUY = (spec: string): boolean => spec === "drizzle-orm" || spec.startsWith("drizzle-orm/");
+
+/** Dấu khai ngoại lệ có chủ ý, kèm lý do một dòng ngay tại chỗ. */
+const DAU_MIEN_MOCK = "@MOCK-DB-OK";
+/** GHIM số ngoại lệ. Hôm nay: 0. Một ngoại lệ mới phải là một quyết định NÓI RA. */
+const SO_MIEN_MOCK = 0;
+
+/** File **sản xuất** dựng một kết nối drizzle — SUY RA, không viết tay. Hôm nay: 2. */
+function congKetNoi(): string[] {
+  const ra: string[] = [];
+  for (const f of moiFileDuoi(GOC, "server", [".ts"]).filter((x) => !laFileTest(x.duong))) {
+    const ma = readFileSync(f.that, "utf8");
+    if (!ma.includes("drizzle(")) continue;
+    const sf = ts.createSourceFile(f.that, ma, ts.ScriptTarget.Latest, true);
+    let co = false;
+    const di = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "drizzle") co = true;
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+    if (co) ra.push(f.duong);
+  }
+  return ra.sort();
+}
+
+/**
+ * Factory của `vi.mock` có **DÙNG** `importOriginal` không — hỏi theo **VIỆC DÙNG THAM SỐ**, không
+ * theo **TÊN** tham số.
+ * ⚠⚠ Đây là một lỗi THIẾT BỊ đã đo được trong chính lượt Task 4: bản dò đầu tiên hỏi
+ *    `ten.includes("importOriginal")` ⇒ **bỏ sót** `vi.mock("drizzle-orm", async (orig) => …)` ở
+ *    `server/db/stationTraceScope.test.ts` và khai nhầm nó là vi phạm. Tên tham số là quy ước của
+ *    người viết; **việc gọi nó** mới là sự thật.
+ */
+function dungImportOriginal(fab: ts.Node | undefined, sf: ts.SourceFile): boolean {
+  if (!fab || !(ts.isArrowFunction(fab) || ts.isFunctionExpression(fab))) return false;
+  if (fab.parameters.length === 0) return false;
+  const ten = fab.parameters[0]!.name.getText(sf);
+  let dung = false;
+  const di = (n: ts.Node): void => {
+    if (ts.isCallExpression(n)) {
+      let e: ts.Node = n.expression;
+      while (ts.isCallExpression(e) || ts.isPropertyAccessExpression(e)) e = e.expression;
+      if (ts.isIdentifier(e) && e.text === ten) dung = true;
+    }
+    ts.forEachChild(n, di);
+  };
+  di(fab.body ?? fab);
+  return dung;
+}
+
+interface FileGia {
+  readonly duong: string;
+  readonly dong: number;
+  readonly chanKetNoi: boolean;
+  readonly mien: boolean;
+}
+
+/** Mọi file test giả nguyên thuỷ dựng truy vấn, kèm việc nó có chặn kết nối thật hay không. */
+function quetGiaNguyenThuy(): FileGia[] {
+  const ra: FileGia[] = [];
+  const CONN = join(GOC, "server", "db", "connection.ts");
+  for (const nhanh of ["server", "shared", "client"]) {
+    for (const f of moiFileDuoi(GOC, nhanh, [".ts", ".tsx"]).filter((x) => laFileTest(x.duong))) {
+      const ma = readFileSync(f.that, "utf8");
+      if (!ma.includes("vi.mock")) continue;
+      const sf = ts.createSourceFile(f.that, ma, ts.ScriptTarget.Latest, true);
+      let dong: number | null = null;
+      let chan = false;
+      const di = (n: ts.Node): void => {
+        if (
+          ts.isCallExpression(n) &&
+          ts.isPropertyAccessExpression(n.expression) &&
+          ts.isIdentifier(n.expression.expression) &&
+          n.expression.expression.text === "vi" &&
+          n.expression.name.text === "mock" &&
+          n.arguments.length >= 1 &&
+          ts.isStringLiteral(n.arguments[0]!)
+        ) {
+          const spec = (n.arguments[0] as ts.StringLiteral).text;
+          if (LA_NGUYEN_THUY(spec) && !dungImportOriginal(n.arguments[1], sf)) {
+            dong ??= sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
+          }
+          // Danh tính module hỏi bằng **phép nối đường dẫn**, không bằng chính tả chuỗi:
+          // `"./connection"` từ `server/db/x.test.ts` và `"../../db/connection"` là MỘT module.
+          if (phanGiaiToi(f.that, spec, CONN)) chan = true;
+        }
+        ts.forEachChild(n, di);
+      };
+      di(sf);
+      if (dong !== null) ra.push({ duong: f.duong, dong, chanKetNoi: chan, mien: ma.includes(DAU_MIEN_MOCK) });
+    }
+  }
+  return ra.sort((a, b) => a.duong.localeCompare(b.duong));
+}
+
+const GIA = quetGiaNguyenThuy();
+const CONG_KET_NOI = congKetNoi();
+
+describe("★★★ Pha 8 Task 4c — ∀ test giả nguyên thuỷ `drizzle-orm` PHẢI chặn kết nối DB THẬT", () => {
+  it("★★★ cầu chì — quét thấy đủ file giả nguyên thuỷ (0 ⇒ lưới canh tập RỖNG và luôn xanh)", () => {
+    expect(
+      GIA.length,
+      "không thấy file test nào giả `drizzle-orm` — phạm vi quét đã hỏng?\n" +
+        "⚠ Đo được ở Pha 8 Task 4c: 77 file.",
+    ).toBeGreaterThanOrEqual(50);
+  });
+
+  it("★★★★ ∀ — KHÔNG file nào vừa giả nguyên thuỷ truy vấn VỪA để lọt một kết nối DB THẬT", () => {
+    const vp = GIA.filter((g) => !g.chanKetNoi && !g.mien);
+    expect(
+      vp.map((v) => `  · ${v.duong}:${v.dong}`).join("\n"),
+      "MỘT FILE TEST GIẢ NGUYÊN THUỶ DỰNG TRUY VẤN MÀ VẪN VỚI TỚI KẾT NỐI DB THẬT.\n" +
+        "⚠ Đây là tiền đề CHÍNH XÁC của sự cố: `eq()` giả ⇒ mệnh đề `WHERE` méo ⇒ `DELETE` khớp\n" +
+        "  0 hàng, KHÔNG NÉM KHÔNG KÊU ⇒ lưới xanh trên một bản mã đã bị thay.\n" +
+        "⇒ Hoặc `vi.mock` luôn `server/db/connection.ts` (không còn kết nối thật nào để chạy sai),\n" +
+        "  hoặc dùng `importOriginal()` rồi chỉ ghi đè thứ thật sự cần,\n" +
+        "  hoặc khai ngoại lệ bằng dấu `" +
+        DAU_MIEN_MOCK +
+        "` kèm lý do một dòng (và cập nhật SO_MIEN_MOCK).\n",
+    ).toBe("");
+  });
+
+  it("★★★ SỐ ngoại lệ được GHIM — một vùng mù mới phải là một quyết định NÓI RA", () => {
+    const mien = GIA.filter((g) => g.mien);
+    expect(
+      mien.length,
+      "số lượt khai `" + DAU_MIEN_MOCK + "` đã đổi:\n" + mien.map((m) => `  · ${m.duong}`).join("\n"),
+    ).toBe(SO_MIEN_MOCK);
+  });
+
+  it("★★★ CẦU CHÌ CỔNG KẾT NỐI — tập module sản xuất dựng kết nối drizzle được GHIM (nay: 2)", () => {
+    /**
+     * ⚠⚠ Luật ở trên đòi chặn `server/db/connection.ts` vì đó là **cổng chính** ra kết nối thật.
+     * Nhưng nó **không phải cổng duy nhất**: `server/db/timescale.ts` cũng dựng một kết nối riêng.
+     * Một cổng **thứ BA** xuất hiện ngày mai sẽ làm luật trên **hẹp hơn tên gọi của nó** — nên tập
+     * ấy được **SUY RA và GHIM**, thay vì để nó nở ra im lặng.
+     */
+    expect(
+      CONG_KET_NOI.join("\n"),
+      "tập module dựng kết nối drizzle đã đổi — luật ∀ ở trên chỉ đòi chặn `server/db/connection.ts`,\n" +
+        "nên một cổng MỚI nghĩa là có đường tới kết nối thật mà lưới này KHÔNG canh ⇒ phải QUYẾT.\n",
+    ).toBe(["server/db/connection.ts", "server/db/timescale.ts"].join("\n"));
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — `importOriginal` nhận theo VIỆC DÙNG, không theo TÊN tham số", () => {
+    /**
+     * ⚠⚠⚠ Ca này neo vào một lỗi **THIẾT BỊ** đã xảy ra thật trong lượt dựng lưới: bản dò đầu tiên
+     * so tên tham số với chuỗi `"importOriginal"` ⇒ khai nhầm `stationTraceScope.test.ts`
+     * (`async (orig) => { const actual = await orig(); … }`) là vi phạm. Nếu ô này đỏ, bộ dò đã
+     * quay về so tên — và con số 0 vi phạm ở trên sẽ là một con số SAI.
+     */
+    const ca: Array<[string, string, boolean]> = [
+      ["tên `importOriginal`", `vi.mock("drizzle-orm", async (importOriginal) => ({ ...(await importOriginal()) }));`, true],
+      ["tên `orig` — CÙNG cơ chế", `vi.mock("drizzle-orm", async (orig) => ({ ...(await orig()) }));`, true],
+      ["có tham số nhưng KHÔNG dùng", `vi.mock("drizzle-orm", async (orig) => ({ eq: () => 1 }));`, false],
+      ["không factory", `vi.mock("drizzle-orm");`, false],
+      ["factory không tham số", `vi.mock("drizzle-orm", () => ({ eq: () => 1 }));`, false],
+    ];
+    for (const [ten, ma, mong] of ca) {
+      const sf = ts.createSourceFile("x.test.ts", ma, ts.ScriptTarget.Latest, true);
+      let thay: boolean | null = null;
+      const di = (n: ts.Node): void => {
+        if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === "mock") {
+          thay = dungImportOriginal(n.arguments[1], sf);
+        }
+        ts.forEachChild(n, di);
+      };
+      di(sf);
+      expect(thay, `biến thể "${ten}" bị nhận sai`).toBe(mong);
+    }
   });
 });
