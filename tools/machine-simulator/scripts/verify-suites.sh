@@ -1906,7 +1906,21 @@ EXPECT_EDGESERVICE=50
 # EXPECT_WARNINGS stays 116 for H-1c: MachineConfigStore gains one const, two static methods and doc
 # comments; every cref resolves (a CS1574 would move this number). No signature of any existing member
 # changes — the constructor keeps `string? directory = null` and only its body's resolution changes.
-EXPECT_ENGINEAPI=1318
+#
+# 🔴 TASK H-1a, SECOND PASS raises this 1318 -> 1319 (+1), added during the mutation round and for the
+# reason the mutation round exists. No new file; added to FleetHostSettingsPersistenceTests.cs.
+#   UpdateSettings_WhenActivationThrows_StillPersistsTheTripleItAlreadyCommitted        +1
+#       🔴 S6's ACTUAL CLOSURE, which until this test nothing could turn red. The two
+#       StartupSettingsReplayHardeningTests measure the HARDENING (the host comes up and says so); moving
+#       FleetCore's `Save` back out of its `finally` left all five green, because the persisted file in
+#       those tests already held the bad triple. A `finally` no mutation can kill proves nothing, which
+#       is this repository's own stated rule. The throw site is real rather than injected
+#       (CredentialStore.Load's ArgumentException.ThrowIfNullOrEmpty on an empty machine code, reachable
+#       from PUT /v1/settings and from a hand-edited file), the persisted value is read back through a
+#       SEPARATE store instance, and the REPORTED value is asserted alongside it so a build that rolled
+#       the fields back — remedy (b), a different contract — fails here instead of looking like an
+#       improvement. It also asserts the exception still propagates: H-1a did not swallow it.
+EXPECT_ENGINEAPI=1319
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
