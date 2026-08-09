@@ -203,14 +203,60 @@ function mocUtc(nowMs: number) {
  *   biến một tính chất **chứng minh được** thành một hằng số phải tin.
  * ⚠ Lượt dọn hỏng **KHÔNG** làm hỏng lượt xác minh: mã đã được phán quyết xong trước đó. Nuốt lỗi
  *   ở đây là đúng — nhưng **kêu**, để một sổ đang phình không im lặng.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ Pha 7 / review TOÀN NHÁNH **I-3** — **DỌN RÁC THÔI CHẠM HÀNG CỦA NGƯỜI KHÁC.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản trước chạy `DELETE FROM totp_consumed WHERE expiresAt <= <nowMs>` — **KHÔNG giới hạn theo
+ * `userId`**, với `nowMs` do **người gọi** cấp. Đo được (probe, DB test thật):
+ *
+ *     [PROBE] A tiêu mã: hopLe=true · sổ của A = 1
+ *     [PROBE] B verify ở +1h : sổ của A = 0        ← 0 nghĩa là bị XOÁ
+ *     [PROBE] A PHÁT LẠI mã đã tiêu: hopLe=true phatLai=false
+ *
+ * ⇒ **Một lượt xác minh của người dùng B với đồng hồ đi trước xoá sạch mục của người dùng A, và
+ *   ngay sau đó A phát lại được CHÍNH mã đã tiêu.** Đây đúng lỗ **A2/A3** mà bảng `totp_consumed`
+ *   (mig 0313) được sinh ra để đóng — một **lỗi SẢN PHẨM**, không chỉ một lỗi test.
+ * Hệ quả thứ hai, đo được ở cổng: vitest chạy các file test **SONG SONG** và `totpLedgerDurable`
+ * lái đồng hồ `NOW = Date.now() + 1h`, nên mỗi lượt verify của nó **quét sạch** sổ của mọi file
+ * khác ⇒ §Cổng kiểm chung **đỏ KHÔNG TẤT ĐỊNH** (ba lượt chạy, ba tập ca đỏ khác nhau).
+ *
+ * ⚠ Pha 7 đã đóng đúng nửa này cho `__soTotpSize`/`__resetSoTotpChoTest` (xem docstring của chúng)
+ *   và **bỏ quên `donSo`** — cái DUY NHẤT chạy trên **đường sản phẩm**.
+ *
+ * ⚠⚠ **NỢ CÒN LẠI, NÓI RA CHỨ KHÔNG ĐỂ NGẦM:** lượt dọn vẫn lái bằng `nowMs` của người gọi. Với
+ *    giới hạn `userId` ở đây, một đồng hồ lệch **không còn chạm được người khác**; nó chỉ còn có
+ *    thể xoá sớm **mã KHÁC của CHÍNH người ấy** — và chỉ trong topo **nhiều bản sao `ROLE=api`
+ *    lệch > 120 s**, thứ hệ hôm nay không hỗ trợ (xem docstring đầu file). Lời giải **trọn vẹn** là
+ *    đưa đồng hồ của sổ xuống DB — `expiresAt` **ghi** bằng `now()` của Postgres và cả hai phép so
+ *    (`tieuMaTrongSo` **và** hàm này) đọc cùng đồng hồ ấy. Nó đổi nghĩa của tham số `nowMs` trên
+ *    **toàn bộ** dàn chứng minh của Task 5, nên là một **quyết định của chủ dự án**, không phải một
+ *    lượt vá lặng lẽ. ⚠ `tieuMaTrongSo` cũng lái bằng `nowMs` ở nhánh *"thu lại mục quá hạn"* —
+ *    cùng một nợ, cùng một lời giải.
  */
-async function donSo(nowMs: number): Promise<void> {
+async function donSo(userId: number, nowMs: number): Promise<void> {
   try {
     const db = await layDb();
     if (db === null) return;
     const { totpConsumed } = await import("../../drizzle/schema/auth");
-    const { lte } = await import("drizzle-orm");
-    await db.delete(totpConsumed).where(lte(totpConsumed.expiresAt, sql`${mocUtc(nowMs)}`));
+    /**
+     * ⚠⚠⚠ **MỘT MẢNH `sql` THÔ, KHÔNG `and()`/`eq()` — VÀ ĐÂY LÀ MỘT BÀI HỌC ĐÃ TRẢ GIÁ.**
+     * Bản đầu của bản vá I-3 viết `and(eq(totpConsumed.userId, userId), lte(…))`. Đo được:
+     * `server/routers/totpReplay.test.ts:65-68` chạy `vi.mock("drizzle-orm", …)` **thay `eq`/`and`**
+     * bằng bộ dựng vị từ của `FakeDb`. Lượt `await import("drizzle-orm")` **trong hàm này** nhận
+     * bản ĐÃ MOCK ⇒ mệnh đề `WHERE` thành một đối tượng lạ, `DELETE` **khớp 0 hàng** — **KHÔNG ném,
+     * KHÔNG kêu**. Ca *"sổ phải tự dọn: còn ĐÚNG 1 mục"* đỏ với `expected 6 to be 1`, và nếu ai đó
+     * đọc vội thì đây trông y hệt một lỗi của phép dọn.
+     * ⇒ Lớp *"an toàn là HỆ QUẢ của một thứ khác"*: tính đúng của câu này từng phụ thuộc vào việc
+     *   **file test nào tình cờ KHÔNG mock symbol nào**. Một mảnh `sql` thô không có phụ thuộc ấy.
+     * ⚠ `sql` và `lte` hiện **không** bị mock ở file kia (`{ ...actual, eq, and, desc }`) — nhưng
+     *   đó lại đúng là loại điều kiện ngầm vừa nói, nên ta không dựa vào nó nữa.
+     */
+    await db
+      .delete(totpConsumed)
+      .where(
+        sql`${totpConsumed.userId} = ${userId} AND ${totpConsumed.expiresAt} <= ${mocUtc(nowMs)}`,
+      );
   } catch (e) {
     console.warn(
       `[TotpOnce] Lượt TỰ DỌN sổ mã đã tiêu HỎNG (${(e as Error)?.message ?? String(e)}). ` +
@@ -336,7 +382,8 @@ export async function verifyTotpOnce(args: {
   if (giuBoi !== cuaTa) return { hopLe: false, phatLai: true };
 
   // Ta vừa chèn mới / thu lại một mục quá hạn ⇒ đúng lúc bảng CÓ THỂ to thêm ⇒ dọn.
-  await donSo(nowMs);
+  // ⚠ I-3: dọn **của chính người vừa ghi**, không phải toàn bảng — xem docstring `donSo`.
+  await donSo(userId, nowMs);
   return { hopLe: true, phatLai: false };
 }
 

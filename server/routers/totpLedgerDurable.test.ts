@@ -314,3 +314,128 @@ describe("★★★ (A) FAIL-CLOSED — sổ không hỏi được thì TỪ CH�
     keu.mockRestore();
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ Pha 7 / review TOÀN NHÁNH **I-3** — LƯỚI CANH **CHÍNH BẤT BIẾN**, không canh "dọn có chạy".
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Ba ca ở §"SỔ TỰ DỌN" bên trên canh *"lượt dọn CÓ chạy và kéo sổ về đúng tập còn sống"*. Không ca
+ * nào hỏi ***"nó dọn của AI"*** — và đó đúng là chỗ lỗ nằm: `donSo` chạy `DELETE` **TOÀN BẢNG** lái
+ * bằng `nowMs` của **người gọi**, nên một lượt xác minh của B với đồng hồ đi trước **xoá sạch mục
+ * của A**, rồi A **phát lại được** chính mã đã tiêu (đo được — xem docstring `donSo`).
+ *
+ * ⚠⚠ Bất biến được phát biểu ở dạng **∀ CẶP NGƯỜI DÙNG**, không phải "hai userId cụ thể":
+ *   ***∀ lượt xác minh của người dùng P: nó KHÔNG được làm đổi sổ của bất kỳ người dùng Q ≠ P nào,
+ *   với MỌI đồng hồ mà P mang tới.***
+ * ⚠ Đây là lưới **HÀNH VI trên DB THẬT**, đi đúng đường thoát (`verifyTotpOnce` → drizzle →
+ *   Postgres): một lưới giả trong bộ nhớ chính là thứ lỗ này đã lọt qua.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/** Người dùng thứ BA — của riêng khối này, để không tranh với các ca ở trên. */
+const USER_BA = 90_003;
+const SECRET_BA = "MFRGGZDFMZTWQ2LKNNWG23TPOBYGC4TT";
+
+async function demCua(uid: number): Promise<number> {
+  const d = await db();
+  if (!d) return -1;
+  const r = await d.execute<{ n: number }>(
+    sql`SELECT count(*)::int AS n FROM "totp_consumed" WHERE "userId" = ${uid}`,
+  );
+  return Number((r as unknown as { n: number }[])[0]?.n ?? 0);
+}
+
+async function donBa(): Promise<void> {
+  const d = await db();
+  if (!d) return;
+  await d.execute(sql`DELETE FROM "totp_consumed" WHERE "userId" = ${USER_BA}`);
+}
+
+describe("★★★ I-3 — lượt dọn của MỘT người dùng KHÔNG được chạm sổ của người dùng KHÁC", () => {
+  beforeEach(donBa);
+  afterAll(donBa);
+
+  it("★★★★ B xác minh với đồng hồ ĐI TRƯỚC ⇒ mục của A còn nguyên, và A vẫn KHÔNG phát lại được", async () => {
+    const t = await tienTrinhMoi();
+
+    // ── A tiêu một mã ở đồng hồ THẬT ──
+    const gioA = Date.now();
+    const maA = maLuc(SECRET, gioA);
+    expect(
+      (await t.verifyTotpOnce({ userId: USER, secret: SECRET, token: maA, nowMs: gioA })).hopLe,
+      "cầu chì: lượt tiêu mã đầu tiên của A phải QUA",
+    ).toBe(true);
+    expect(await demCua(USER), "cầu chì: sổ của A phải có ĐÚNG mục vừa ghi").toBe(1);
+
+    // ── B xác minh ở +1h (đúng khuôn `NOW` của chính file này, và của mọi lưới lái đồng hồ) ──
+    const gioB = gioA + 3_600_000;
+    expect(
+      (await t.verifyTotpOnce({ userId: USER_BA, secret: SECRET_BA, token: maLuc(SECRET_BA, gioB), nowMs: gioB }))
+        .hopLe,
+      "cầu chì: lượt của B phải QUA (nếu không, ca dưới xanh vì B chẳng làm gì)",
+    ).toBe(true);
+
+    // ── Bất biến 1: sổ của A KHÔNG suy suyển ──
+    expect(
+      await demCua(USER),
+      "một lượt xác minh của NGƯỜI KHÁC xoá mục của A ⇒ `donSo` đang DELETE toàn bảng bằng đồng hồ người gọi",
+    ).toBe(1);
+
+    // ── Bất biến 2 (cái thật sự quan trọng): A phát lại KHÔNG ĐƯỢC ──
+    const phatLai = await t.verifyTotpOnce({ userId: USER, secret: SECRET, token: maA, nowMs: gioA });
+    expect(
+      phatLai.hopLe,
+      "A PHÁT LẠI được chính mã đã tiêu ⇒ lỗ A2/A3 mà mig 0313 sinh ra để đóng đã MỞ LẠI",
+    ).toBe(false);
+    expect(phatLai.phatLai, "và phải nói ĐÚNG LÝ DO: chặn vì SỔ").toBe(true);
+  });
+
+  it("★★★ ĐỐI CHỨNG DƯƠNG — lượt dọn VẪN dọn: mục quá hạn của CHÍNH người ấy bị quét", async () => {
+    /**
+     * ⚠ Không có ô này thì một bản vá *"thôi dọn hẳn"* cũng làm ca trên XANH — và sổ phình vô hạn.
+     * Đây là nửa còn lại của cặp: **thu hẹp**, không phải **tắt**.
+     */
+    const t = await tienTrinhMoi();
+    const t0 = Math.floor(Date.now() / 1000);
+    for (let i = 0; i < 4; i++) {
+      const giay = t0 + i * 30;
+      await t.verifyTotpOnce({
+        userId: USER_BA, secret: SECRET_BA, token: maLuc(SECRET_BA, giay * 1000), nowMs: giay * 1000,
+      });
+    }
+    const dinh = await demCua(USER_BA);
+    expect(dinh, "phải có một ĐỈNH thật thì phép dọn mới đo được").toBeGreaterThan(1);
+
+    const sau = t0 + Math.ceil(t.TOTP_HAN_SO_MS / 1000) + 300;
+    expect(
+      (await t.verifyTotpOnce({
+        userId: USER_BA, secret: SECRET_BA, token: maLuc(SECRET_BA, sau * 1000), nowMs: sau * 1000,
+      })).hopLe,
+    ).toBe(true);
+    expect(
+      await demCua(USER_BA),
+      `lượt dọn của CHÍNH người ấy phải kéo sổ về ĐÚNG 1 mục (đỉnh trước đó ${dinh})`,
+    ).toBe(1);
+  });
+
+  it("★★★ …và lượt dọn ấy vẫn KHÔNG chạm người khác (đối chứng bắc cầu của hai ca trên)", async () => {
+    const t = await tienTrinhMoi();
+    const gioA = Date.now();
+    await t.verifyTotpOnce({ userId: USER, secret: SECRET, token: maLuc(SECRET, gioA), nowMs: gioA });
+    const cuaA = await demCua(USER);
+    expect(cuaA, "cầu chì: A phải có mục").toBeGreaterThan(0);
+
+    // B chạy đúng kịch bản DỌN THẬT ở ca trên — lượt dọn CÓ chạy, và nó vẫn phải bỏ qua A.
+    const t0 = Math.floor(Date.now() / 1000);
+    for (let i = 0; i < 3; i++) {
+      const giay = t0 + i * 30;
+      await t.verifyTotpOnce({
+        userId: USER_BA, secret: SECRET_BA, token: maLuc(SECRET_BA, giay * 1000), nowMs: giay * 1000,
+      });
+    }
+    const sau = t0 + Math.ceil(t.TOTP_HAN_SO_MS / 1000) + 300;
+    await t.verifyTotpOnce({
+      userId: USER_BA, secret: SECRET_BA, token: maLuc(SECRET_BA, sau * 1000), nowMs: sau * 1000,
+    });
+
+    expect(await demCua(USER), "lượt dọn CÓ CHẠY của B vẫn không được chạm hàng của A").toBe(cuaA);
+  });
+});
