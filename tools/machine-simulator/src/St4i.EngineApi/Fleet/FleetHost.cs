@@ -44,11 +44,17 @@ namespace St4i.EngineApi.Fleet;
 /// two shapes for the cut and judged both bad: a shell that reads a gate-protected PAIR through two separate
 /// core calls loses the pair's atomicity, and a shell with a lock of its own creates a real
 /// <c>shell → core</c> ordering that deadlocks the moment the core ever calls back out under its own gate.
-/// The shape here is the third: <b>one lock, in <see cref="FleetCore"/>, and not one paired read left on
-/// this side of the cut.</b> Every member below is either a straight delegation or a delegation plus a pure
+/// The shape here is the third: <b>one lock, in <see cref="FleetCore"/>, and exactly TWO paired reads left
+/// on this side of the cut, both LABELLED at their own declaration</b> — <see cref="CurrentScenarioDto"/>
+/// (found by the E-2 review) and <see cref="MachineDetail"/> (found by the whole-branch review, I2).
+/// 🔴 This sentence said "not one paired read" until G-1's review round; it had been contradicted twice in
+/// this same file since I2, and <see cref="FleetCore"/>'s own banner was corrected to "exactly TWO" at the
+/// time while this one was missed. A banner that says "none" is what stops the next reader counting — which
+/// is the whole reason I2 exists — so it is fixed here even though it predates G-1.
+/// Every OTHER member below is either a straight delegation or a delegation plus a pure
 /// projection of the record the core already resolved atomically. If you ever add a member here that reads
 /// two things from the core and combines them, you have re-created E-1's first bad shape — resolve the pair
-/// inside <see cref="FleetCore"/> instead, and return a record.</para>
+/// inside <see cref="FleetCore"/> instead, and return a record. Do not add a third exception.</para>
 /// </summary>
 public sealed class FleetHost
 {
@@ -105,18 +111,30 @@ public sealed class FleetHost
         _configSyncCoordinator = configSyncCoordinator;
 
         // 🔴 E-2 — NULL when there is no ILogger, deliberately, and NOT a lambda that closes over a null
-        // logger. St4i.EdgeCore's logging convention is a nullable callback pair, and D-7a's Critical is what
+        // logger. St4i.EdgeCore's logging convention is nullable callbacks — a pair everywhere until G-1
+        // added logDebug below, which makes FleetCore the FIRST three-channel type in that assembly
+        // (WalFlushPump and HistorianWriter both carry two). D-7a's Critical is what
         // makes the nullability load-bearing rather than stylistic: `?.` short-circuits the whole argument
         // list, so any mechanism state smuggled into a log call's arguments silently stops working for hosts
         // built without a callback. A never-null callback would make that failure mode unreachable BY TEST
         // while leaving it perfectly reachable in production — FleetHostConnectorVisibilityTests builds its
         // host with no logger precisely so the mutation stays red. See FleetCore._logWarning.
         //
-        // Log LEVEL: fourteen call sites collapse onto two channels here (blueprint §9.5 mandates the pair).
-        // Message-only sites were all LogWarning and stay LogWarning. The ten exception-carrying sites were
-        // five LogWarning, two LogError and three LogDebug; all ten now arrive as LogError. That is a
-        // severity change in the LOG CHANNEL ONLY — no product behaviour, no test and no endpoint observes
-        // it — and it is recorded in blueprint §10 rather than papered over.
+        // Log LEVEL: fourteen call sites, recounted from the pre-E-2 source (commit 5f2b8883) rather than
+        // from the note that records them — four message-only (all LogWarning, all still LogWarning here)
+        // and ten exception-carrying, which were five LogWarning + two LogError + three LogDebug. Blueprint
+        // §10.4's accounting is exact and there is no fourth LogDebug site.
+        //
+        // 🔴 G-1 — E-2 collapsed all ten onto LogError because EdgeCore's convention had only two channels.
+        // The three that were LogDebug are best-effort teardown cleanup, and St4i.EngineApi ships no
+        // appsettings.json, so they did not go from Debug to Error in an operator's eyes: they went from
+        // SILENT to Error, and under AddWindowsService from silent to a synchronous Windows Event Log write.
+        // A third channel restores exactly those three (see FleetCore._logDebug for why LogDebug and not
+        // LogInformation, and for the enumeration behind "exactly three").
+        //
+        // The remaining five drifted sites (LogWarning -> LogError) are LEFT as E-2 recorded them: they
+        // change severity but NOT Event Log presence, because AddEventLog's default filter already admits
+        // Warning. That is the whole of the difference, and it is why this task is three lines and not ten.
         Action<string>? logWarning = logger is null
             ? null
             : msg => logger.LogWarning("{FleetCoreMessage}", msg);
@@ -124,11 +142,22 @@ public sealed class FleetHost
             ? null
             : (ex, msg) => logger.LogError(ex, "{FleetCoreMessage}", msg);
 
-        // 🔴 P2-1, unchanged in every observable way — see FleetCore._onMachineSeeded. `_ =` plus the `Async`
-        // suffix reads as fire-and-forget and is NOT (blueprint §9.2 violation 3: a real AssetRegistryStore
-        // runs its whole SQLite transaction on the calling thread, under FleetCore._gate, blocking a reader
-        // of EstopEngaged by up to 12.35 ms). E-2 is a move, so this stays exactly as costly as it was:
-        // exactly one invocation per seeded machine, no more, and null when no registry is wired.
+        // 🔴 G-1 — the third channel, and NULL when there is no ILogger for exactly the reason the pair
+        // above is: a never-null callback removes the only way to build the core without one, which is what
+        // makes D-7a's Critical testable at all.
+        Action<Exception, string>? logDebug = logger is null
+            ? null
+            : (ex, msg) => logger.LogDebug(ex, "{FleetCoreMessage}", msg);
+
+        // 🔴 P2-1 — see FleetCore._onMachineSeeded. `_ =` plus the `Async` suffix reads as fire-and-forget
+        // and is NOT: Microsoft.Data.Sqlite does not override the async ADO.NET members, so a real
+        // AssetRegistryStore runs its whole SQLite transaction on THIS thread. This lambda is unchanged and
+        // still exactly as costly as it was — one invocation per seeded machine, synchronous, null when no
+        // registry is wired.
+        //
+        // 🔴 G-1 changed WHERE the core invokes it, not what it does: no longer under FleetCore._gate
+        // (blueprint §9.2 violation 3, the 12.35 ms block of an EstopEngaged reader), so the cost lands on
+        // the registering caller instead of on every reader of the halt latch.
         Action<MachineDescriptor>? onMachineSeeded = assetRegistry is null
             ? null
             : descriptor => { _ = assetRegistry.UpsertAsync(descriptor); };
@@ -146,6 +175,7 @@ public sealed class FleetHost
             eventBus,
             logWarning: logWarning,
             logError: logError,
+            logDebug: logDebug,
             onLiveSettingsRebuilt: onLiveSettingsRebuilt,
             configStore: configStore,
             productConfigStore: productConfigStore,

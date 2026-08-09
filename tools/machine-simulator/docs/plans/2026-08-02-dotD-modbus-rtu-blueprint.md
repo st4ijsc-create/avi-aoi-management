@@ -201,6 +201,85 @@ Bằng chứng, do reviewer chạy lại độc lập trên cả hai nhân chứ
 
 Thứ được bảo vệ là **một cổng COM không bị giữ tới hết đời tiến trình**, và điều đó chỉ đọc được **từ chính cái cổng**. Đây cùng dạng với nguyên tắc thứ BA (mỗi bản sửa đi kèm một phép quét tìm anh em của nó): một cái cò súng cụ thể, gắn vào một khoảnh khắc cụ thể trong lúc viết test.
 
+🔴 **(d) Cơ chế do NGƯỜI GIAO VIỆC cung cấp cũng phải chịu đúng phép kiểm ấy — nó không được miễn vì đã qua một vòng phản biện (G-2).**
+
+Nguyên tắc "chỉ cách một property" ở trên nói về cơ chế do **reviewer** đọc ra. G-2 gặp cùng hình dạng ở một vị trí mới: brief giao cho nó **năm điểm sửa đã được phản biện đo lại**, và điểm số 1 nêu cả **chẩn đoán** (*"`git status --porcelain` in đường dẫn tương đối với gốc repo, nên một phép so khớp ngây thơ KHÔNG BAO GIỜ khớp"*) lẫn **thuốc chữa** (*"dùng `git diff --quiet`"*), kèm điểm số 5 nêu lý do thứ hai (*"để chuẩn hoá CRLF/filter không biến nó thành lệnh từ chối sai vĩnh viễn"*).
+
+Chạy thử từ `tools/machine-simulator` trên một file bẩn, ba biến thể:
+
+| Biến thể | Kết quả |
+|---|---|
+| `git status --porcelain \| grep -q "$p"` | **KHỚP** — đường dẫn in ra *chứa* đối số như một chuỗi con |
+| `git status --porcelain \| awk '{print $2}' \| grep -qx "$p"` | **IM LẶNG** — đây mới là cái bẫy |
+| `git status --porcelain -- "$p"` | **KHỚP** — để git tự phân giải pathspec |
+
+→ *"Không bao giờ khớp"* **quá mạnh**, và *"porcelain là lệnh sai"* **sai hẳn**: dạng thứ ba chạy đúng. Lỗi nằm ở việc **so khớp ĐẦU RA của nó bằng tay**, và biến thể đi im lặng lại chính là biến thể tự nhiên nhất để viết. Lý do ở điểm 5 cũng không đứng được: `git status` và `git diff` đi qua **cùng một phép so với index và cùng bộ clean filter**, nên không có khác biệt CRLF nào giữa hai lệnh.
+
+**Kết luận không đổi, lập luận thì đổi** — `git diff --quiet` vẫn đúng, vì nó **không có đầu ra để phải so**. Và bản sửa được thiết kế sao cho phép kiểm ấy **không chịu lực**: nó chụp ảnh **vô điều kiện** và chỉ dùng phép so để chọn giọng thông báo, nên một phép kiểm sai chỉ tốn một dòng log chứ không tốn công việc.
+
+→ **Quy tắc: cơ chế đến kèm nhiệm vụ là một KHẲNG ĐỊNH, không phải một tiền đề. Chạy nó trước khi xây lên trên nó — kể cả khi nó đã được một vòng phản biện đo lại, vì cái được đo là TẦN SUẤT (1 trên 3 lần mất) chứ không phải CƠ CHẾ.** Cùng hình dạng như ca greet-then-RST, ở một chỗ mà không ai nghĩ là còn phải kiểm.
+
+🔴 **(e) `finally` là một nơi trú của lớp lỗi này, không phải thuốc chữa của nó (G-2).**
+
+G-2 đóng lớp lỗi ấy bằng `try`/`finally` ở từng chỗ. **Một trong các bản sửa mang đúng lỗi nó đang sửa**: một cú ném **bên trong** `finally` **bỏ luôn phần còn lại của chính `finally` ấy**, nên hai câu lệnh viết nối nhau trong một `finally` không phải hai bảo đảm — câu thứ hai vẫn phơi ra trước câu thứ nhất. Đúng cửa sổ mà bản sửa sinh ra để đóng.
+
+🔴 **Nó thuộc nguyên tắc thứ BA ("sửa một trường hợp của một lớp lỗi không cho miễn nhiễm với lớp lỗi đó, và có thể còn làm yếu đi" — D-2 tái tạo I-5 ngay trong commit sửa I-5), KHÔNG thuộc §8.1(b).** Bản nháp đầu của mục này xếp nó là "lần thứ tư" của (b) — sai, và sai theo cách mà chính (b) cảnh báo: câu chốt của (b) là *cả ba lần lỗi đều nằm trong **văn xuôi**, không nằm trong logic*, còn ca của G-2 nằm **trong logic**. Nối thêm một thành viên phá đúng bất biến mà lớp ấy tự phát biểu, rồi đếm nó, là làm hỏng cả lớp. (Do phản biện bắt.)
+
+**Thứ bắt được nó là bài test, không phải lần đọc lại.** Bản nháp trông đúng, đọc trôi, và giải thích chính nó một cách thuyết phục.
+
+→ **Với mỗi `finally` có nhiều hơn MỘT câu lệnh, hỏi: nếu câu đầu ném thì câu sau còn chạy không? Nếu không, hoặc lồng chúng lại, hoặc nói rõ tại chỗ vì sao câu sau là no-op trên đúng đường ném ấy.**
+
+🔴 **(f) MIỀN của một dụng cụ được THỪA HƯỞNG từ vị trí của người viết, chứ không được SUY RA từ câu hỏi (G-2, SÁU ca).**
+
+Bốn tầng ở (a2) — *thành viên → ngữ liệu → quy tắc → register* — đều nói về **cái gì** phải quét. Điều này nói về **ở đâu**, và nó là chiều mà (a2) tự dự báo là còn tồn tại mà chưa ai gọi tên.
+
+**Phát biểu:**
+
+> **Miền của một dụng cụ được thừa hưởng từ VỊ TRÍ của người viết, không phải suy ra từ CÂU HỎI. Vị trí ấy khi thì là một TẦNG, khi thì là một TỪ VỰNG. Cả hai đều ngẫu nhiên đối với câu hỏi, và không cái nào NHÌN THẤY ĐƯỢC TỪ BÊN TRONG dụng cụ. Hãy suy miền ra từ TÍNH CHẤT đang săn — "trạng thái ghi ở đây, hoàn tất ở chỗ khác sau", "một seam của host đứng trước phần việc không được phép bỏ" — rồi hỏi tính chất ấy CÓ THỂ SỐNG Ở ĐÂU, TRƯỚC khi chọn cách đi tìm.**
+
+**Sáu ca, phân loại — ba TẦNG, ba TỪ VỰNG:**
+
+| # | Ca | Cái gì đã chặn miền của dụng cụ | Loại |
+|---|---|---|---|
+| 1 | Dòng audit `fleet.estop` (G-2 I-4) | miền của phép quét S-set là "đường có giữ `_gate`"; `FleetHost` không giữ khoá nào | **tầng** |
+| 2 | Phương án (c) của S6 | liệt kê phương án từ **bên trong** `UpdateSettings`; (c) sống ở `Program.cs` | **tầng** |
+| 3 | Đường log thứ năm của G-1 (`UnsPublisher`) | phép census đếm các chỗ `_logger?.` **bên trong `FleetCore.cs`**; chỗ này nằm trong callee | **tầng** |
+| 4 | `StartSlot` (G-2 NEW-1) | cùng file, cùng class. Phép grep khoá vào `_logDebug` **trong vòng lặp dispose**; chỗ này là `_logError` trong handler lỗi | **từ vựng** |
+| 5 | `DrainSeedNotifications` (G-2 m-1) | cùng file, cùng class. Sót vì nó *"không phải vòng lặp dispose, cũng không phải handler lỗi"* | **từ vựng** |
+| 6 | Phép quét đổi nhãn P (G-2 NEW-6) | miền lấy từ **VÍ DỤ** mà phát hiện dùng (`P5`), không lấy từ tính chất (*mọi tham chiếu theo thứ tự tới danh sách ấy*); `P8` sót ở mọi nơi | **từ vựng** |
+
+🔴 **Vì sao ca 6 xếp vào TỪ VỰNG chứ không phải một loại thứ ba** — trục phân loại là *cái gì đã CHẶN miền*, không phải *vì sao nó bị chặn*. Miền của ca 6 bị chặn bởi một **tập từ** ("path 5"/"item 5"/"path B") và sót vì "path 8" không nằm trong tập ấy: đúng định nghĩa nửa từ-vựng. Cái RIÊNG của nó là **nguyên nhân** khiến tập từ ấy sai — một ví dụ minh hoạ bị nhầm thành đặc tả miền — và đó là một **quy tắc con của nửa từ-vựng**, ghi ở cuối mục này. Tách nó thành loại thứ ba sẽ chẻ bảng theo *vì sao*, phá đúng cái trục mà quy tắc dựng trên.
+
+**Nó BAO TRÙM D-7b/D-7c** — *"bắt đầu từ TẬP CÁC LỆNH TRẢ VỀ, không phải từ tên trường"* — đúng bằng nửa từ-vựng của nó. Hai quy tắc ấy vẫn đúng và vẫn là cái cò súng cụ thể; điều này nói **vì sao** chúng cần thiết, và bổ sung nửa còn lại mà chúng không phủ.
+
+🔴 **Và chính lời phát biểu đầu tiên của nguyên tắc này là một ca của (b).** Người thực thi G-2 phát biểu nó là *"thứ tôi không nhìn thấy luôn nằm cách một TẦNG"* — một đường thẳng khớp qua ba điểm mà **hai trong ba cùng loại**, và ca thứ ba (`StartSlot`) **mâu thuẫn với chẩn đoán đã viết sẵn ở chính chỗ ấy**. Nó đã kịp **ship vào một file sản phẩm** trước khi phản biện toàn nhánh bắt được. Một chẩn đoán đang được nâng lên thành quy tắc là chỗ đắt nhất cho một khẳng định phổ quát sai, vì mọi thứ phía sau sẽ được viết dựa trên nó.
+
+→ **Trước khi nâng một chẩn đoán thành quy tắc, hãy liệt kê để PHỦ ĐỊNH nó — và đếm xem có bao nhiêu điểm thực sự KHÁC LOẠI.** Ba ca cùng một loại không phải ba bằng chứng; đó là một bằng chứng được đếm ba lần.
+
+🔴 **Hệ quả về PHÂN LOẠI MỨC ĐỘ, thêm sau vòng phản biện cuối — và nó bác bỏ đề xuất của chính người thực thi.**
+
+G-2 đề xuất một quy tắc phân loại: *"một câu sai CHO PHÉP một hành động thì nặng hơn một câu chỉ đưa tin sai"* — đúng, hữu ích, và nó tách được NEW-1 (bảo người ta đi tìm một bài test không tồn tại) khỏi một con số sai trơn. **Nhưng dùng nó làm BỘ LỌC thì lọt, và bằng chứng nằm ngay trong commit đề xuất nó.**
+
+| Vì sao nó lọt | Ca |
+|---|---|
+| Nó **hạ thấp có hệ thống các KHẲNG ĐỊNH VỀ TÍNH ĐẦY ĐỦ.** *"Mọi call site đã được đổi."* *"Phép quét tìm ra sáu."* *"Không có I/O nào dưới khoá."* Chúng cho phép một sự **BỎ SÓT**, không phải một hành động — người đọc **thôi không kiểm nữa**. | NEW-6 chấm điểm thấp theo quy tắc ấy, mà NEW-6 chính là cái chặn merge. |
+| **Tính "cho phép hành động" do chính tác giả chấm, từ bên trong artifact** — tức là §8.1(f) áp lên chính khâu phân loại. | Khi phản biện chặn ở C-1, nó **không nêu được** hành động nào C-1 cho phép; nó chặn trên cơ sở "từ vựng chuẩn". Về sau mới lộ ra C-1 **đã** cho phép một suy luận sai trong một artifact khác. Tính cho phép hành động chỉ nhìn thấy được **khi đã muộn**. |
+| Nó hạ thấp **khẳng định phổ quát sai trong một quy tắc đang được nâng cấp**. | *"Luôn cách một tầng"* không cho phép hành động tức thời nào — nhưng mọi thứ phía sau sẽ được viết dựa trên nó. |
+
+→ **Cặp quy tắc phải đi cùng nhau:**
+
+> **Xếp hạng theo tính CHO PHÉP HÀNH ĐỘNG — một câu sai khiến người đọc LÀM một việc nặng hơn một câu chỉ khiến họ TIN sai. NHƯNG một khẳng định về TÍNH ĐẦY ĐỦ hoặc TÍNH PHỔ QUÁT là NẶNG bất kể xếp hạng, vì tác hại của nó là khiến người đọc THÔI KIỂM, và tác hại ấy vô hình theo đúng cấu trúc của nó.** Liệt kê để PHỦ ĐỊNH một câu phổ quát trước khi ship nó; phần còn lại thì xếp hạng.
+
+Hai vế rời nhau thì mỗi vế đều để lọt một ca của đợt này; đi cùng nhau thì phủ được cả NEW-6, NEW-1 lẫn C-1/C-2.
+
+🔴 **Và ca cuối cùng của (f) trong đợt này là ca sạch nhất: chính phép quét đổi tên P-label.** Phát hiện NEW-5 minh hoạ vấn đề "ba tên cho một thành viên" bằng **ví dụ P5**. Phép quét đi đổi **P5** — và bỏ sót **P8 ở mọi nơi**, tạo ra một trạng thái từ vựng **phụ thuộc thành viên**, tệ hơn cả trạng thái chưa gán nhãn. Miền của phép quét được thừa hưởng từ **VÍ DỤ mà phát hiện dùng**, chứ không suy ra từ **TÍNH CHẤT** (*mọi tham chiếu theo thứ tự tới danh sách này*). Xảy ra **trong chính commit nâng (f) lên blueprint, do chính tác giả của (f)**.
+
+→ **Một ví dụ trong lời phát hiện là một VÍ DỤ, không phải một ĐẶC TẢ MIỀN.** Trước khi quét, hãy viết ra tính chất bằng câu chữ không chứa ví dụ ấy — rồi quét theo tính chất. *(Đây là quy tắc con của nửa TỪ VỰNG, không phải một loại riêng.)*
+
+🔴 **Và một giới hạn của chính dụng cụ, tìm ra ở vòng cuối (NEW-7): với tính chất "tham chiếu theo thứ tự", GREP KHÔNG PHẢI DỤNG CỤ ĐẦY ĐỦ — ĐỌC ĐOẠN VĂN MỚI LÀ.** Ba tham chiếu còn sót thoát qua **ba** cơ chế chồng lên nhau: danh từ khác (`path`/`item`), chữ hoa (`Item` đầu câu), và — cái không phép grep một-dòng nào với tới được — **ngắt dòng rơi đúng giữa "item" và "7"**. Một chỗ (*"Folding 7 into 3"*) **không có danh từ nào cả**. Mở rộng biểu thức không cứu được: cơ chế thứ ba nằm ngoài khả năng của một phép tìm theo dòng, và cơ chế thứ tư là không có từ khoá.
+
+→ **Khi tính chất là một THAM CHIẾU chứ không phải một TOKEN, hãy chốt phép quét bằng một lượt ĐỌC đoạn văn.** Và đừng gắn khẳng định "đã đổi hết" vào một danh sách mà dụng cụ của bạn về cấu trúc không quét hết được.
+
 **Và một phân biệt về bằng chứng:** một diff chỉ sửa chú thích là **bằng chứng kết luận về cây mã, và không nói gì về môi trường**. Cổng đỏ trên một commit như vậy nghĩa là máy bẩn, không phải mã hỏng — nhưng cách chữa là **dọn máy**, không phải nới trần.
 
 **Và một đính chính về chính bộ công cụ này, do D-3 tìm ra.** Brief D-3 của tôi yêu cầu test phụ thuộc phần cứng phải *"bỏ qua sạch sẽ và ồn ào"*, trong khi `verify-suites.sh` — cũng của tôi — **fail khi `skipped != 0`**. Hai chỉ thị loại trừ nhau, và **cái phải đổi là brief, không phải script**: xUnit đếm test bị bỏ qua động vào `Total`, nên một bộ test phụ thuộc phần cứng làm `Skipped` **phụ thuộc môi trường** — và bất kỳ con số kỳ vọng cố định nào cũng sẽ làm **máy trang bị tốt hơn** bị đỏ. Đó là cái bẫy "một con số xanh mang nghĩa khác nhau trên các máy khác nhau", mặc áo phần cứng. **`skipped == 0` chính là thứ làm cho "817" mang cùng một nghĩa ở mọi nơi.**

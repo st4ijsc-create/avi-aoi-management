@@ -21,6 +21,77 @@
 # A mutation harness asserts "the test failed". It has never asserted "…and I ran the
 # thing I just wrote". These two checks are that.
 #
+# 🔴 COMMIT BEFORE YOU MUTATE. `clean` below checks for mutation RESIDUE; nothing here
+# checks that the tree you are about to restore is one you can afford to lose, and the
+# restore path everyone reaches for is `git checkout -- <file>` — which reverts the
+# WHOLE file to HEAD, not just the mutation. G-1's implementer lost an entire task's
+# uncommitted work to exactly that, THREE times in one session — the third time AFTER
+# writing the warning line above. The mutation round is cheap to repeat; the work it is
+# measuring is not.
+#
+# 🔴 SO USE `restore` INSTEAD OF `git checkout --`. The verb below takes its own snapshot
+# first and then does the checkout, so the recovery point exists whether or not anyone
+# remembered to commit.
+#
+# 🔴 AND BE HONEST ABOUT WHAT THAT BUYS (review of the round that added it). The first
+# draft of this block said "a written rule is not a trigger; the verb is." Half of that is
+# true and half is the same shape this script exists to catch: a claim in the voice of a
+# mechanism. NOTHING HERE MAKES `restore` THE PATH OF LEAST RESISTANCE — no wrapper, no
+# alias, no hook intercepts `git checkout --`. The third loss happened after the person
+# wrote the warning; a fourth can happen after they wrote the verb. What the verb actually
+# changes is the OUTCOME when it IS used, not the odds of using it. Closing that gap needs
+# something that fires without being chosen, which is a bigger change than this one.
+#
+# FOUR THINGS IT DOES DIFFERENTLY FROM THE OBVIOUS VERSION, each because the obvious one
+# was measured and found wanting:
+#
+#   1. IT GUARDS THE RESTORE, NOT `fresh`/`applied`. The first proposal was "refuse to run
+#      fresh/applied when `git status --porcelain` is non-empty". Re-measured against the
+#      three actual losses, that blocks ONE of three. All three happened at the checkout.
+#      Guard the destroying verb.
+#
+#   2. IT SNAPSHOTS RATHER THAN REFUSES. A refusal forbids the edit → test → mutate →
+#      commit loop that this very round used, and the way people adapt to a refusal is a
+#      reflex `--force`. A snapshot also covers a case no structural refusal can: a file
+#      edited WHILE the round is running.
+#      🔴 Two DIFFERENT things were being conflated here, and the first draft stated the
+#      weaker one three times as if it covered both. (a) The DIRTY CHECK is not
+#      load-bearing: it only chooses how loud the message is, so a check that is wrong
+#      costs a log line rather than the work. That was true. (b) The SNAPSHOT is
+#      load-bearing, and in the first draft its `mkdir`/`cp` were UNCHECKED under
+#      `set -uo pipefail` — so a failed copy fell straight through to the checkout and
+#      destroyed the file it had not saved. "Unconditional" described the intent, not the
+#      code. It now refuses to check out anything it could not first copy; see FAIL
+#      CLOSED #3 at the verb.
+#
+#   3. IT USES `git diff --quiet -- <file>` AND COMPARES NO PATHS BY HAND. The hazard is
+#      real and it is worth stating what it actually is, because the version of it I was
+#      handed does not survive being run. Porcelain prints paths relative to the REPO
+#      ROOT while this script runs from tools/machine-simulator. MEASURED, from this cwd,
+#      against a dirty src/St4i.EdgeCore/Fleet/FleetCore.cs:
+#        - `git status --porcelain | grep -q "$p"`            -> FIRES (substring hit:
+#          the printed path CONTAINS the argument)
+#        - `git status --porcelain | awk '{print $2}' | grep -qx "$p"` -> SILENT
+#        - `git status --porcelain -- "$p"`                    -> FIRES (git resolved the
+#          pathspec itself)
+#      So "porcelain never matches" is too strong, and "porcelain is the wrong command"
+#      is wrong outright — the third form works. The defect is COMPARING ITS OUTPUT: the
+#      exact comparison, which is the natural one to write, is the one that goes silent,
+#      and it goes silent in the SAFE-LOOKING direction. `git diff --quiet` has no output
+#      to compare, which is why it is used here — not because porcelain normalises line
+#      endings differently, which it does not; both go through the same index comparison
+#      and the same clean filters.
+#      And because the snapshot at point 2 is unconditional, this comparison only decides
+#      how loud the message is. A latch whose check is wrong still cannot cost you work.
+#
+#   4. AN UNTRACKED FILE GETS ITS OWN MESSAGE AND IS NEVER TOUCHED. `git checkout --`
+#      cannot restore one — there is nothing in the object store to restore it from — so
+#      "I ran the safe restore" must not read as "it was recoverable".
+#
+# IT ONLY EVER TOUCHES THE PATHS YOU NAME. The report, the inventory and the scratch files
+# are allowed to be dirty for the whole round; they are not arguments to this verb, so
+# nothing here can refuse, revert or complain about them.
+#
 # WHY NOT JUST BAN --no-build
 # ---------------------------
 # Because dropping the flag does NOT guarantee a rebuild — MSBuild's up-to-date check can
@@ -40,13 +111,16 @@
 # "the pattern didn't match". It caught that only because five-for-five is implausible —
 # "which is a judgement call, not a check."
 #
-# USAGE — all five verbs. Run them in this order around a mutation round.
+# USAGE — all six verbs. Run them in this order around a mutation round.
 #   scripts/mutate-guard.sh clean   <path...>                          # BEFORE anything, esp. after an
 #                                                                      #   interrupted run: refuses if a
 #                                                                      #   mutant or .bak is still live
 #   scripts/mutate-guard.sh control <"KILLED"|"SURVIVED">              # record the session's control
 #   scripts/mutate-guard.sh applied <source.cs> <marker>               # PER MUTATION: is it really there?
 #   scripts/mutate-guard.sh fresh   <assembly.dll> <mutated-source.cs> # did the build see it?
+#   scripts/mutate-guard.sh restore <mutated-source.cs...>             # PUT THE FILE BACK — snapshot first,
+#                                                                      #   then checkout, then touch. Use
+#                                                                      #   this, not `git checkout --`.
 #   scripts/mutate-guard.sh check                                      # may I believe a SURVIVED?
 #
 # `applied` turned out to catch a DIFFERENT and more common failure than the one it was
@@ -151,6 +225,88 @@ case "${1:-}" in
       exit 3
     fi
     echo "clean: no mutant markers, no .bak/.orig/.mutant files"
+    ;;
+
+  restore)
+    # 🔴 THE LATCH ON THE DESTROYING VERB. See the "COMMIT BEFORE YOU MUTATE" block in the
+    # header for why this exists, why it snapshots instead of refusing, why it uses
+    # `git diff` instead of `git status --porcelain`, and why an untracked file is a
+    # different message rather than a louder one.
+    shift
+    [[ $# -gt 0 ]] || { echo "NO-VERDICT: restore needs at least one path"; exit 3; }
+
+    # Outside the tree on purpose: a recovery point inside it would itself be mutation
+    # residue, and `clean` above would then refuse the next round because of it.
+    recovery="${TMPDIR:-/tmp}/st4i-mutate-recovery-${ST4I_MUTATE_SESSION:-$_tree_key}/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    failed=0
+
+    for p in "$@"; do
+      if [[ ! -e "$p" ]]; then
+        echo "NO-VERDICT: nothing at $p to restore"; failed=1; continue
+      fi
+
+      # 🔴 FAIL CLOSED #1 (review I-6): a DIRECTORY is refused, not snapshotted. `git checkout --`
+      # happily accepts a directory pathspec and reverts every file under it, while `cp -p` on a
+      # directory does nothing but print "omitting directory" — so the obvious code path takes NO
+      # recovery point and then destroys a whole subtree. The brief scopes this verb to the mutated
+      # FILE; naming the files is the fix, not teaching this to copy trees.
+      if [[ -d "$p" ]]; then
+        echo "REFUSED: $p is a directory. This verb restores FILES."
+        echo "  \`git checkout -- <dir>\` would revert every file under it, and no snapshot here would"
+        echo "  cover them. Name the mutated files instead."
+        failed=1
+        continue
+      fi
+
+      if ! git ls-files --error-unmatch -- "$p" >/dev/null 2>&1; then
+        # Point 4. Say the true thing: there is no restore for this, at all.
+        echo "UNTRACKED: $p is not in git — \`git checkout --\` CANNOT restore it, and neither can this."
+        echo "  Left exactly as it is. If it holds a mutation, undo it by hand; if it holds work, commit it."
+        failed=1
+        continue
+      fi
+
+      # 🔴 FAIL CLOSED #2 (review I-6): `..` in an argument would otherwise write the snapshot
+      # OUTSIDE the recovery directory (or over something else). Flatten the path into the file
+      # name rather than trusting it as a subpath.
+      dest="$recovery/$(printf '%s' "$p" | tr -c '[:alnum:]._-' '-')"
+
+      # Point 2: snapshot UNCONDITIONALLY, before anything is destroyed. The comparison
+      # below only chooses the wording.
+      #
+      # 🔴 FAIL CLOSED #3, AND THIS IS THE ONE THAT MATTERED (review I-6). These two commands used
+      # to be unchecked. This script runs `set -uo pipefail` with NO `-e`, so a failed `mkdir` or
+      # `cp` — a full disk, a read-only TMPDIR, a permissions problem — printed to stderr and
+      # execution fell straight through to the `git checkout` below. A safety latch whose snapshot
+      # can fail silently while the destructive step proceeds is WORSE than no latch, because it is
+      # trusted. It now refuses to check out anything it could not first copy.
+      if ! mkdir -p "$(dirname "$dest")" || ! cp -p -- "$p" "$dest"; then
+        echo "NO-VERDICT: could NOT take a recovery point for $p — refusing to check it out."
+        echo "  Nothing was destroyed. Fix the snapshot destination (\$TMPDIR: ${TMPDIR:-/tmp}) and retry."
+        failed=1
+        continue
+      fi
+
+      # Point 3: `git diff --quiet -- <path>`. The reason is NOT that porcelain "never matches" and
+      # NOT line-ending normalisation — both of those were measured and retracted; see the header
+      # block, which carries the three-variant measurement. The reason is that `git diff --quiet`
+      # HAS NO OUTPUT TO COMPARE, so the class of defect that silently disables a hand-written path
+      # comparison cannot arise here at all. And per the snapshot above, this comparison is not
+      # load-bearing anyway: it chooses the wording, never whether the recovery point exists.
+      if git diff --quiet -- "$p" && git diff --quiet --cached -- "$p"; then
+        echo "restore: $p was identical to HEAD; snapshot kept anyway at $dest"
+      else
+        echo "🔴 restore: $p had UNCOMMITTED CHANGES, which the checkout below discards."
+        echo "  Recovery point: $dest"
+      fi
+
+      git checkout -- "$p" || { echo "NO-VERDICT: checkout failed for $p"; failed=1; continue; }
+      # The `clean` verb already tells people to do this by hand; doing it here removes
+      # the step rather than the reminder.
+      touch -- "$p"
+    done
+
+    [[ $failed -eq 0 ]] || exit 3
     ;;
 
   check)

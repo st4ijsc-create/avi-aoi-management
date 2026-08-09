@@ -1642,7 +1642,185 @@ EXPECT_EDGESERVICE=50
 #       grep would have flagged neither, only the historical "every assertion …" / "no arm computes …"
 #       pair that the prose trigger already covers. Bounded recall on a sub-class already covered, versus
 #       a count check whose class has produced four real defects in one branch.
-EXPECT_ENGINEAPI=1295
+# 🔴 TASK G-1 (.superpowers/sdd/gate-and-log-channel/task-1-brief.md) raises this 1295 -> 1300 (+5),
+# COUNTED FROM THE RUNNER (`dotnet test --list-tests`: 1295 -> 1300), not by hand. TWO new files; nothing is
+# rewritten, split or deleted. Per file:
+#   FleetHostSeedNotificationOffGateTests            +2   NEW
+#   FleetHostTeardownLogChannelTests                 +3   NEW
+#
+# WHY EACH TEST EXISTS, and why five is the number rather than "a suite":
+#   - Two of the five are MEASUREMENTS of the same shape, against the two mechanisms G-1 took off
+#     FleetCore._gate: a host callback is made deliberately slow, and a reader of `EstopEngaged` — the very
+#     reader blueprint §9.2 timed at 12.35 ms, and the same lock Estop() takes — is timed while it runs.
+#     That is §8.1's fifth rule applied ("measure the effect on the thing the mechanism protects, on the
+#     production path, with no observer the mechanism does not itself need"), not a shape check on where a
+#     call sits in a file. Both are MUTATION-PROVEN: putting the callback back inside `lock (_gate)` gives
+#     2012.0 ms and 2011.7 ms against a 500 ms budget. Neither hangs under its mutant — the blocks are
+#     bounded on purpose, so a mutant FAILS rather than looking like this script's trap 6.
+#   - One pins the three invariants that moving a call out of a lock could have broken: exactly one
+#     notification per seeded machine, in roster order, never before the machine is in the roster. It tests
+#     what CHANGED, not what was kept.
+#   - Two pin the third log channel end to end through the real FleetHost: the two teardown sites that are
+#     deterministically reachable now arrive as Debug and NOT as Error. The negative is the half that
+#     matters — "no Error on a best-effort teardown path" is the operator-facing claim, because under
+#     AddWindowsService an Error there is a synchronous Windows Event Log write.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE are deliberately
+# UNCHANGED, and that is the check rather than a coincidence: G-1 touches exactly two product files
+# (src/St4i.EdgeCore/Fleet/FleetCore.cs, src/St4i.EngineApi/Fleet/FleetHost.cs) and adds two test files in
+# one suite. A total moving anywhere else would mean this task reached somewhere it had no business
+# reaching. EXPECT_CONFORMANCE in particular stays 22: G-1 adds no driver and no connector kind.
+# EXPECT_WARNINGS stays 116 — the new code adds no warning, and the third log channel adds a parameter to an
+# internal ctor rather than an unused symbol.
+#
+# 🔴 G-1 REVIEW FIX ROUND raises this 1300 -> 1303 (+3), counted from the runner, ALL THREE in the existing
+# FleetHostSeedNotificationOffGateTests. No file added, none rewritten, none deleted. The review's finding was
+# that the invariant MOST at risk from the fix was the one LEAST tested — the two original tests are both
+# single-threaded and both deliberately leave the fleet stopped, so the two properties that only
+# record-then-drain could break had no witness at all, and neither gap was listed in the report's own "what is
+# NOT proven" section, which is what made it a finding rather than a known gap.
+#   ConcurrentRegistrations_NeverRunTwoSeedCallbacksAtOnce_AndDeliverInRosterOrder   +1
+#       The seed-notify lock's actual job. Asserts MaxConcurrentCallbacks == 1 plus exactly-once and roster
+#       order, with 8 threads released from a common start line and a dwell inside the callback.
+#       🔴 This entry used to add "— order is a probabilistic witness, overlap is the property". The test's
+#       own doc was corrected by MEASUREMENT after that (overlap is what kills the lock-removed mutant, 6 of
+#       6; order is what catches an interleave at the DEQUEUE point, which produces zero overlap and is
+#       invisible to the high-water mark — "do not trim either one"), and this line was not swept with it.
+#       Corrected by G-2 under §8.1(c): the gate script is an operator-facing artifact describing the same
+#       mechanism, and "probabilistic witness" is exactly the wording review N-1 flagged as inviting a
+#       maintainer to delete the assertion that covers the schedule the other one cannot see.
+#   RegisteringIntoARunningFleet_StillNotifiesExactlyOnce_AfterTheRestart            +1
+#       The path that changed most: the drain moved past StopLocked + WaitAndDisposeOldPipeline +
+#       StartLocked. Previously asserted nowhere.
+#   WhenTheRestartThrows_TheSeedNotificationIsStillDelivered_NotStrandedInTheQueue   +1
+#       The witness for review I-3, a REGRESSION G-1 introduced: the roster write commits under _gate and is
+#       never rolled back, so a throw between it and the drain left a registered machine owing a notification
+#       forever. Fixed with a try/finally; this test is what makes the finally falsifiable.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE stay put, same check as
+# above: the review round touches FleetCore.cs, FleetHost.cs, one test file, this script, one blueprint
+# section and mutate-guard.sh's header. EXPECT_WARNINGS stays 116.
+#
+# 🔴 TASK G-2 (.superpowers/sdd/gate-and-log-channel/task-2-brief.md) raises this 1303 -> 1310 (+7), COUNTED
+# FROM THE RUNNER (`dotnet test --list-tests`: 1303 -> 1310), not by hand. ONE new file; nothing is
+# rewritten, split or deleted. Per file:
+#   FleetHostGateCommitCompletionTests               +7   NEW
+#
+# G-2 closes the defect CLASS G-1 found one instance of: state committed while FleetCore._gate is held whose
+# correctness depends on a step that runs after the lock is released.
+#
+# 🔴 SEVEN TESTS, and here is what the number actually reconciles to. The unit is a THROW SITE, not a member
+# and not a (commit, completion) pair — a test can only witness one consequence of one throw. Five members
+# appear below (S1 was closed by G-1, S6 is refused; neither gets a test):
+#
+#     S2 = 2   the in-lock IUnsPublisher seam, and the deferred-log flush
+#     S3 = 2   the same two throw sites on the start path
+#     S4 = 1   the throwing off-lock teardown (S4's second half is OPEN and gets no test)
+#     S5 = 2   the scheduling, and the revert's own failure
+#     S7 = 0   🔴 NONE OF ITS OWN — its assertion RIDES INSIDE S3's second test, which is why the per-test
+#              block below attributes that one test to "S3 ... and S7"
+#     ------
+#     2+2+1+2+0 = 7
+#
+# 🔴 S7 = 0 IS THE LOAD-BEARING LINE AND IT WAS WRONG TWICE. The first version of this block derived seven
+# from "one member per (commit, completion) pair", a rule that yields EIGHT. Its replacement said "three
+# members need two tests and two need one" and printed "2+2+1+1+2 = 7" — both of which are EIGHT, over a list
+# of seven, while the correct structure was stated eight lines below in this same file. Recorded rather than
+# quietly fixed because of what it ASSERTS: a maintainer told S7 has a test of its own either hunts for one
+# that does not exist, adds a redundant one, or concludes a CLOSED member is untested and reopens it. A wrong
+# count is embarrassing; a wrong count that is actionable costs someone an afternoon.
+#
+# Per test:
+#   Estop_WhenTheUnsSeamThrowsUnderTheGate_TheOldPipelineIsStillDisposed                        +1
+#   Estop_WhenTheHostLoggerThrowsFlushingTheHaltPathLines_TheOldPipelineIsStillDisposed         +1
+#       S2 — the halt path, the most serious member. The two tests are two different throw sites in the same
+#       window, not one property twice: the first is the IUnsPublisher seam called with _gate held (the
+#       enumeration's own P8); the second is the deferred-log flush that G-1 placed AS THE FIRST
+#       STATEMENT of WaitAndDisposeOldPipeline, ahead of every disposal — a regression G-1 introduced into
+#       the routine whose job is to release the pipeline. Each asserts the driver was disposed EXACTLY once,
+#       so a fix that traded a lost teardown for a doubled one fails.
+#   Start_WhenTheUnsSeamThrowsUnderTheGate_TheOrphanedConnectorDriverIsStillDisposed            +1
+#   Start_WhenTheHostLoggerThrowsFlushingDeferredLines_TheOrphanIsDisposedAndTheRunEventRecorded +1
+#       S3 (same two throw sites, on the start path — the leak here is the orphaned connector driver
+#       "review fix round 2" exists to prevent) and S7 (the historian Start run event, a SECOND completion
+#       owed by the same commit, which sits after the first). The second test is the one that caught a
+#       defect in G-2's own first draft: a throw inside a `finally` abandons the rest of that same `finally`,
+#       so the run event was still exposed until the two statements were nested.
+#   ARestartWhoseTeardownThrows_StillRebuildsThePipeline_RatherThanLeavingTheFleetStopped       +1
+#       S4's first half — the restart chokepoint's rebuild now survives a throwing off-lock teardown. S4's
+#       SECOND half (StartLocked itself throwing) is reported OPEN and is asserted as such in the next test.
+#   Burst_WhenApplyingTheBurstThrows_TheRevertIsStillScheduled                                  +1
+#   Burst_WhenTheScheduledRevertItselfThrows_ItIsReported_NotDroppedOnAnUnobservedTask          +1
+#       S5, and the one genuinely SILENT instance of S4. Review M-5 named only the Cancel half of Burst's
+#       window; the larger half is ApplyScenario, reachable through the enumeration's P5. The second
+#       test covers the revert task's own failure, which ran on an unobserved Task and was dropped by the
+#       finalizer with nothing logged anywhere.
+#
+# NOT COVERED, said out loud rather than implied: S6 (UpdateSettings) is deliberately left OPEN — the
+# uniform try/finally remedy would convert "the edit evaporates at the next restart" into "the service does
+# not start", because Program.cs feeds the persisted triple back into that same method during startup. There
+# is therefore no test for it, and that is a refusal rather than a gap. See FleetCore.UpdateSettings' own
+# comment and the G-2 report.
+#
+# 🔴 RUNTIME, disclosed HERE and not only in the task report (G-2 review, Minor 10). This CLASS takes ~8-9 s
+# to run, and TWO tests are the reason: both Burst tests wait on the real BurstDuration (4 s, FleetCore.cs)
+# because the property under test IS "a revert was scheduled". The other four "waits" are POLLS
+# (PollTimeout 20 s, PollInterval 100 ms) that resolve in milliseconds on a healthy run — only their TIMEOUTS
+# are long, which is what keeps a failure red rather than hung.
+#
+# 🔴 WHAT THIS DOES NOT SAY, corrected by the whole-branch review (m-3): it does NOT say the file adds ~8 s to
+# every gate run. That earlier wording was INSPECTION IN THE VOICE OF A MEASUREMENT. There is no
+# xunit.runner.json and no CollectionBehavior attribute anywhere under tests/, so xunit runs test CLASSES in
+# parallel: the marginal wall clock this class adds to the assembly is at most ~8 s and is ZERO whenever it
+# is not on the critical path. Nobody has measured which it is. The honest figure is per-class, above.
+# If it ever needs to come down, the fix is making BurstDuration injectable — a production change nobody has
+# asked for — NOT loosening a bound (§8's rule).
+#
+# 🔴 G-2 FIX ROUND 1 raises this 1310 -> 1314 (+4), counted from the runner, ALL FOUR in the existing
+# FleetHostGateCommitCompletionTests. No file added, none rewritten, none deleted.
+#   Estop_WhenTheUnsSeamThrowsUnderTheGate_TheHaltRunEventIsStillRecorded              +1
+#   Stop_WhenTheUnsSeamThrowsUnderTheGate_TheStopRunEventIsStillRecorded               +1
+#       Review C-1. Round 1 closed S2's teardown and left S2's OTHER completion — the halt run event —
+#       exposed to the same throw site the member's own test injects. SqliteHistorianStore's OEE query opens
+#       an interval on "Start" and closes it on "Stop"/"Estop", so a dropped halt event INFLATES availability.
+#       Two tests, not one: Estop needed a new latched flag (an unconditional finally would record a halt
+#       StopLocked never completed), Stop already had one.
+#   Estop_WhenTheHostDebugLoggerThrowsOnOneSlot_EverySubsequentSlotIsStillDisposed     +1
+#       Review I-3. DisposeOldSlots called the host _logDebug from INSIDE each per-slot catch — interleaved
+#       with the disposals, not in front of them — so a throwing host logger stranded every later slot's
+#       driver and CTS on the halt path. Two slots; the second one's disposal is the assertion. The same
+#       shape was found by grep in DisposeOrphanedConnectorDrivers and fixed there too — and witnessed, not
+#       argued from similarity:
+#   Start_WhenTheHostDebugLoggerThrowsOnOneOrphan_EveryOtherOrphanIsStillDisposed     +1
+#       The sibling. Two rejecting-but-leaking connector factories, both orphans faulting on dispose, both
+#       disposal counts asserted — so the test does not depend on ConnectorRegistry.RegisteredIds
+#       enumeration order. Added because "identical mechanism, no separate test" is exactly the reasoning
+#       this project has been burned by; a fix nothing can turn red is a fix nobody has measured.
+#
+# 🔴 G-2 FIX ROUND 2 raises this 1314 -> 1315 (+1), counted from the runner. Same file; no file added,
+# rewritten or deleted.
+#   WhenAFaultingSlotsOwnErrorLogThrows_TheFaultIsStillRecordedInLastError            +1
+#       Re-review NEW-1 — the THIRD instance of the same shape in FleetCore.cs, and the one two rounds of
+#       sibling grepping could not reach: StartSlot's per-slot fault handler called the host _logError as its
+#       FIRST statement, ahead of the under-_gate slot removal and the guarded disposal. A throwing host
+#       logger abandoned the whole handler, and the sharp casualty is not the leak — LastError was never set,
+#       so GET /v1/health reported HEALTHY on a faulted fleet, permanently. The assertion is LastError, not a
+#       log line. Both earlier sweeps grepped `_logDebug` in a disposal LOOP; this is `_logError` in a fault
+#       handler with no loop, which is why a grep on wording cannot find a shape.
+#
+# 🔴 RUNTIME, updated with the count: SIX of the twelve tests in this file now wait on something — two Burst
+# tests on the real BurstDuration (4 s), three on a polled fire-and-forget historian write, and this one on a
+# polled LastError. Still ~8-9 s for the file; the polls resolve in milliseconds on a healthy run and only
+# their TIMEOUTS are long, which is what keeps a failure red rather than hung.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE are deliberately UNCHANGED,
+# and that is the check rather than a coincidence: G-2 touches exactly ONE product file
+# (src/St4i.EdgeCore/Fleet/FleetCore.cs) and adds one test file in one suite. A total moving anywhere else
+# would mean this task reached somewhere it had no business reaching. EXPECT_CONFORMANCE in particular stays
+# 22: G-2 adds no driver and no connector kind. EXPECT_WARNINGS stays 116 — the new code adds no warning and
+# the one signature change (DisposeOrphanedConnectorDrivers' parameter becoming nullable) is matched by a
+# null guard at its head, so no CS86xx appears.
+EXPECT_ENGINEAPI=1315
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
