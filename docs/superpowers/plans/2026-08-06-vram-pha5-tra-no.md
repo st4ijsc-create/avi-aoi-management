@@ -101,6 +101,26 @@ create cho module "settings_factory"`). Hành vi sản phẩm **đúng** (vẫn 
 test đã cũ**. Cố ý **KHÔNG sửa** ở lượt này — sửa một lưới không liên quan để cổng xanh chính là
 *"nắn lưới cho vừa mã"*. ⇒ Ghi vào §Nợ CÓ TRƯỚC; chủ dự án quyết định sửa hay bỏ ca ấy.
 
+⚠⚠⚠ **NỢ MỚI DO CHÍNH LƯỢT TRẢ NỢ NÀY ĐẺ RA — VÀ ĐÃ TRUY ĐƯỢC GỐC RỄ.**
+Thêm `server/auth.setupAdmin.test.ts` vào cổng làm **cả cổng dùng chung một DB test với một file
+XOÁ SẠCH BẢNG `users`**:
+```
+server/auth.setupAdmin.test.ts:7-11   beforeEach:
+    const allUsers = await db.getAllUsers();
+    for (const user of allUsers) await db.deleteUser(user.id);   // ← XOÁ MỌI tài khoản
+```
+vitest chạy các file **song song**, nên nó xoá cả tài khoản mà file khác **vừa tạo và đang dùng**.
+Đo được: hai lượt chạy cổng liên tiếp cho **hai nạn nhân KHÁC NHAU** —
+`server/routers/totpReplay.test.ts` (lượt 1) và
+`server/routers/mustChangePassword.test.ts › ĐỐI CHỨNG DƯƠNG …` (lượt 2, thông điệp
+*"hash mới không được ghi vào `user_secrets`"*, `layBiMatNguoiDung()` trả `null` vì **hàng đã bị
+xoá giữa chừng**). Cả hai **XANH khi chạy riêng**.
+⇒ Đây **cùng một gốc** với nợ *"`totpReplay` — ca đỏ đổi mỗi lượt"* đã khai từ Pha 6: **không phải
+`totp_consumed`**, mà là **một `beforeEach` xoá sạch `users`**.
+⇒ **Đường sửa đề xuất (chưa làm — nằm ngoài phạm vi Task 4):** cho `setupAdmin` **chỉ xoá tài khoản
+CHÍNH NÓ tạo** (lọc theo `username` tiền tố), hoặc cho file ấy chạy **cách ly**
+(`describe.sequential` + một DB/schema riêng). **Không** nới cổng để né.
+
 ---
 
 ### Task 1: N13 — chặn NTFS hard link ở `read_project_file`
