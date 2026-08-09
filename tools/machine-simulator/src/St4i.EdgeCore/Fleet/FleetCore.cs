@@ -151,11 +151,15 @@ public enum MachineDriverAvailability
 /// <para><b>Logging is nullable callbacks, not <c>ILogger</c>.</b> <c>St4i.EdgeCore</c> is intentionally
 /// logging-framework-free (<c>MappingProfileResolver.cs</c> states the policy); this class follows the
 /// same <c>Action&lt;string&gt;? logWarning</c> / <c>Action&lt;Exception,string&gt;? logError</c>
-/// convention as every other type here. 🔴 G-1 added a THIRD, <see cref="_logDebug"/> — the shape is not
-/// new (<c>WalFlushPump</c> already carries three), but this doc block said "a callback pair" and the
-/// count is load-bearing enough to be worth keeping true. See <see cref="_logWarning"/> for the D-7a trap
-/// the shape carries and the rule this class holds because of it, and <see cref="_logDebug"/> for the
-/// operator cost that made a third channel worth adding.</para>
+/// convention as every other type here. 🔴 G-1 added a THIRD, <see cref="_logDebug"/>, and <b>this class is
+/// the FIRST three-channel type in <c>St4i.EdgeCore</c></b> — counted, because the sentence that used to
+/// stand here claimed <c>WalFlushPump</c> "already carries three" and it does not: it carries TWO
+/// (<c>logInfo</c>/<c>logError</c>, <c>WalFlushPump.cs:35-36</c>), and <c>HistorianWriter</c> carries two as
+/// well. What <c>WalFlushPump</c> genuinely establishes is narrower and is the part worth citing: an
+/// EdgeCore log callback pair is <b>not</b> required to be warning+error, so a third level is a precedented
+/// choice rather than a new convention. See <see cref="_logWarning"/> for the D-7a trap the shape carries
+/// and the rule this class holds because of it, and <see cref="_logDebug"/> for the operator cost that made
+/// a third channel worth adding.</para>
 ///
 /// <para>🔴 <b>Task E-3 — THIS TYPE IS <c>internal</c>, AND THAT IS THE WHOLE OF BLUEPRINT §3's "an edge
 /// agent's machines are read-only", EXPRESSED AS A COMPILE ERROR RATHER THAN AS A SENTENCE.</b>
@@ -262,61 +266,97 @@ internal sealed class FleetCore
     /// asking of each "can this reach I/O, <c>Dispose</c> or <c>Cancel</c>" — <b>not</b> a count of
     /// host-supplied code points and not a lexical scan of <c>lock</c> bodies (a lexical scan is precisely
     /// what once reported this invariant intact while it was broken three ways; a host-callback census is
-    /// the narrower instrument §8.1(a3) names). The walk found <b>eight</b> paths, of which the inherited
-    /// list named five.</para>
+    /// the narrower instrument §8.1(a3) names).</para>
     ///
-    /// <para><b>CLOSED by G-1 (three mechanisms, six call sites):</b>
+    /// <para><b>🔴 THE SET IS NINE PATHS. Numbered once, closed and open together, so the headline number
+    /// and the list are the same object.</b> (G-1's first draft said "eight" and no grouping of its own list
+    /// produced eight — a headline that cannot be reconstructed from the enumeration it summarises is a
+    /// defect in the deliverable, since the enumeration IS the deliverable. Corrected by review.)
+    ///
+    /// <b>Closed by G-1 — 1 to 3:</b>
     /// <list type="number">
-    /// <item><see cref="RegisterMachine"/>'s <see cref="_onMachineSeeded"/> — §9.2 violation 3, the one with
-    /// the number on it: for a real <c>AssetRegistryStore</c> a complete synchronous SQLite transaction, and
-    /// a thread merely reading <see cref="EstopEngaged"/> (the SAME lock <see cref="Estop"/> takes) was
-    /// measured blocked up to <b>12.35 ms</b>. Now enqueued under the lock and invoked off it — see
-    /// <see cref="DrainSeedNotifications"/>.</item>
-    /// <item>Log calls under this lock — §10.3(a)'s fourth mechanism, four sites.
+    /// <item><b>CLOSED.</b> <see cref="RegisterMachine"/>'s <see cref="_onMachineSeeded"/> — §9.2 violation
+    /// 3, the one with the number on it: for a real <c>AssetRegistryStore</c> a complete synchronous SQLite
+    /// transaction, and a thread merely reading <see cref="EstopEngaged"/> (the SAME lock
+    /// <see cref="Estop"/> takes) was measured blocked up to <b>12.35 ms</b>. Now enqueued under the lock
+    /// and invoked off it — see <see cref="DrainSeedNotifications"/>.</item>
+    /// <item><b>CLOSED.</b> Log calls under this lock — §10.3(a)'s fourth mechanism, <b>four call sites in
+    /// one mechanism</b> (this is where "eight" came from: counting sites here and mechanisms elsewhere).
     /// <see cref="StartLocked"/>'s connector warning and the two <c>MappingProfileResolver.Build</c>
     /// callbacks (up to one per machine), plus <see cref="StopLocked"/>'s cancellation-callback error, all
     /// of which a host wires to its own <c>ILogger</c> and which under <c>AddWindowsService</c> is a
     /// SYNCHRONOUS Event Log write. All four now buffer into a <see cref="DeferredLogEntry"/> list and are
     /// emitted off-lock.</item>
-    /// <item><see cref="Burst"/>'s <c>previousCts?.Cancel()</c> — §10.3(d)'s second <c>Cancel</c>. Moved
-    /// below the lock.</item>
-    /// </list></para>
+    /// <item><b>CLOSED.</b> <see cref="Burst"/>'s <c>previousCts?.Cancel()</c> — §10.3(d)'s second
+    /// <c>Cancel</c>. Moved below the lock.</item>
     ///
-    /// <para><b>STILL OPEN, deliberately, and each for a reason that is not "we forgot" (four):</b>
-    /// <list type="number">
-    /// <item><see cref="StartLocked"/> → <c>MappingProfileResolver.Build</c> → <c>File.Exists</c>/
-    /// <c>File.ReadAllText</c> per machine — §9.2 violation 1, measured <b>2.39 ms</b> held with 50 machines
-    /// having mapping files on a local SSD.</item>
-    /// <item>🔴 <b>NOT ON ANY PRIOR LIST, and it is a WRITE.</b> <see cref="StartLocked"/> →
-    /// <c>SimulatorFactory.Create</c> → <c>SimulatorBase</c>'s constructor →
+    /// <item><b>OPEN — in this class's own code, 4 to 7.</b> <see cref="StartLocked"/> →
+    /// <c>MappingProfileResolver.Build</c> → <c>File.Exists</c>/<c>File.ReadAllText</c> per machine — §9.2
+    /// violation 1, measured <b>2.39 ms</b> held with 50 machines having mapping files on a local
+    /// SSD.</item>
+    /// <item><b>OPEN.</b> 🔴 <b>On no prior list, in any batch, and it is a WRITE.</b>
+    /// <see cref="StartLocked"/> → <c>SimulatorFactory.Create</c> → <c>SimulatorBase</c>'s constructor →
     /// <c>MachineConfigStore.Ensure</c> → <c>Save()</c> → <c>File.WriteAllText</c> + <c>File.Move</c>. It
     /// fires once per machine that is not yet in the store, i.e. on the first <see cref="Start"/> against a
     /// fresh data root — and it takes a SECOND lock (<c>MachineConfigStore</c>'s own) while this one is
-    /// held, on every start thereafter. Every previous count of this backlog was of READ paths.</item>
-    /// <item><see cref="StopLocked"/> → <c>slot.Cts.Cancel()</c> → a driver's own <c>ct.Register</c>
-    /// callback running a <c>Dispose</c> SYNCHRONOUSLY on this thread — §9.2 violation 2.</item>
-    /// <item><see cref="StartLocked"/> → <c>ConnectorRegistry.TryCreateDriver</c> → a THIRD-PARTY
-    /// <c>IConnectorFactory.TryCreate</c>, which this codebase does not get to bound (already documented at
-    /// that call site as the one place third-party code runs under this lock).</item>
-    /// </list>
-    /// (1) and (2) live in the same place and have the same fix: hoist driver construction out of
-    /// <see cref="StartLocked"/> entirely. That means reading <see cref="_fleet"/>/<see cref="_scenario"/>
-    /// under the lock, building off it, and re-entering — which introduces a roster-changed-underneath
-    /// window this class has no answer for today, and silently degrades a machine registered in that window
-    /// to <c>MappingProfile.ForClass</c>. (3) would move the halt path's cancel request after the latch.
-    /// Each is a redesign of the restart chokepoint or an operator-observable ordering change, which G-1's
-    /// brief reserves rather than delegates.</para>
+    /// held, on every start thereafter. Every previous count of this backlog was of READ paths. It is also
+    /// the throw that made <see cref="RegisterMachine"/>'s drain need a <c>finally</c>.</item>
+    /// <item><b>OPEN.</b> <see cref="StopLocked"/> → <c>slot.Cts.Cancel()</c> → a driver's own
+    /// <c>ct.Register</c> callback running a <c>Dispose</c> SYNCHRONOUSLY on this thread — §9.2 violation
+    /// 2.</item>
+    /// <item><b>OPEN.</b> <see cref="StartLocked"/> → <c>ConnectorRegistry.TryCreateDriver</c> → a
+    /// THIRD-PARTY <c>IConnectorFactory.TryCreate</c>, which this codebase does not get to bound (documented
+    /// at that call site as the one place third-party code runs under this lock, but never on the backlog
+    /// list).</item>
     ///
-    /// <para><b>Also reachable, and named so the next count starts from a set:</b>
+    /// <item><b>OPEN — in a CALLEE's code, 8 and 9, and not fixable from this class.</b>
     /// <see cref="Start"/>/<see cref="Stop"/>/<see cref="Estop"/> hold this lock across
-    /// <c>_unsPublisher.PublishNodeBirth()</c>/<c>PublishNodeDeath()</c>, whose degraded arms (publisher
-    /// disposed, publish queue saturated) call <c>UnsPublisher</c>'s OWN host-supplied
-    /// <c>logWarning</c> — a fifth log-under-lock path that §10.3(a)'s four-site count could not see,
-    /// because it counted <c>_logger?.</c> sites inside this file rather than walking callees. Deliberately
-    /// left: keeping those two calls inside this lock is an explicit review fix (it serializes NBIRTH/NDEATH
-    /// order with the transition itself), so the fix belongs in <c>UnsPublisher</c>, not here.
-    /// <see cref="GetDriverHealth"/> likewise reads <c>Driver.Kind</c>/<c>Driver.Health</c> — third-party
-    /// property getters — under this lock.</para></summary>
+    /// <see cref="IUnsPublisher.PublishNodeBirth"/>/<see cref="IUnsPublisher.PublishNodeDeath"/>, whose
+    /// degraded arms (publisher disposed, publish queue saturated) call the PUBLISHER's own host-supplied
+    /// log callback. 🔴 The field is <see cref="IUnsPublisher"/>, not the concrete <c>UnsPublisher</c>, so
+    /// this is a property of the SEAM: any host implementation's two methods run under this lock, and the
+    /// interface's "non-blocking, never throws" wording is a promise, not a bound. A fifth log-under-lock
+    /// path that §10.3(a)'s count could not see, because it counted <c>_logger?.</c> sites inside this file
+    /// rather than walking callees. Deliberately left: keeping those two calls inside this lock is an
+    /// explicit review fix (it serializes NBIRTH/NDEATH order with the transition itself), so the fix
+    /// belongs behind the seam, not here.</item>
+    /// <item><b>OPEN — in a callee's code.</b> <see cref="GetDriverHealth"/> reads <c>Driver.Kind</c> and
+    /// <c>Driver.Health</c> under this lock — third-party property getters on
+    /// <see cref="St4i.Connector.Abstractions.IDeviceDriver"/>, bounded by contract only.</item>
+    /// </list></para>
+    ///
+    /// <para><b>Where the nine came from.</b> The inherited backlog named <b>five</b> — §9.2's three
+    /// violations (1, 4, 6 here) plus §10.3(a)'s log mechanism (2) and §10.3(d)'s second <c>Cancel</c> (3).
+    /// Item 7 was documented at its own call site but never on that list. Items <b>5, 8 and 9 were on no
+    /// list anywhere</b>. 5 + 1 + 3 = 9.</para>
+    ///
+    /// <para><b>Why 4 to 7 did not move.</b> 4 and 5 live in the same place and have the same fix: hoist
+    /// driver construction out of <see cref="StartLocked"/> entirely. That means reading
+    /// <see cref="_fleet"/>/<see cref="_scenario"/> under the lock, building off it, and re-entering — which
+    /// introduces a roster-changed-underneath window this class has no answer for today, and silently
+    /// degrades a machine registered in that window to <c>MappingProfile.ForClass</c>. 6 would move the halt
+    /// path's cancel request after the latch. 7 is third-party code. Each is a redesign of the restart
+    /// chokepoint or an operator-observable ordering change, which G-1's brief reserves rather than
+    /// delegates.</para>
+    ///
+    /// <para><b>🔴 A DIFFERENT AXIS, recorded here because nobody had written it down: this lock is held
+    /// across FIVE other locks.</b> None of these is an I/O/<c>Dispose</c>/<c>Cancel</c> violation, so none
+    /// belongs in the nine — but "which lock may be taken while holding this one" is its own invariant and
+    /// it had no home. In acquisition order, always <see cref="_gate"/> first:
+    /// <c>MachineConfigStore</c>'s own lock (path 5); <c>TransportCoordinator</c>'s and
+    /// <c>SwitchableTransport</c>'s (via <see cref="ApplyNetworkOutageLocked"/>);
+    /// <see cref="ConnectorRegistry"/>'s (<c>SnapshotBindings</c>/<c>RegisteredIds</c>/
+    /// <c>TryCreateDriver</c>); and the UNS publisher's own lifecycle lock (via
+    /// <see cref="IUnsPublisher.PublishNodeBirth"/>/<see cref="IUnsPublisher.PublishNodeDeath"/>). None
+    /// inverts today. <see cref="_seedNotifyGate"/> is deliberately NOT in this list and must never join it —
+    /// see its own doc comment for the order that genuinely exists there and what keeps it one-way.
+    ///
+    /// One of these is quieter than it looks: <see cref="ApplyNetworkOutageLocked"/> reaches
+    /// <c>TransportCoordinator.ApplyMode</c>, which ends in <c>ModeChanged?.Invoke(mode)</c> — a
+    /// HOST-SUBSCRIBED event, i.e. arbitrary code, under this lock. It is dormant only because this call site
+    /// passes the coordinator's CURRENT mode, so <c>changed</c> is always false and the event never fires.
+    /// That is "benign by a property of the current call site", which is the exact sentence pattern the rest
+    /// of this banner warns about — stated plainly rather than relied on silently.</para></summary>
     private readonly object _gate = new();
 
     private readonly object _kpiGate = new();
@@ -372,9 +412,13 @@ internal sealed class FleetCore
     /// presence (<c>AddEventLog</c>'s default filter already admits Warning) — severity only, left as E-2
     /// recorded it.</para>
     ///
-    /// <para>Shape: precedent is <c>WalFlushPump</c>'s own third callback (<c>logInfo</c>) — a separate,
-    /// nullable, host-supplied delegate, not a level argument on an existing one. It carries an exception
-    /// because all three of its sites do. The level the shell maps it to is <c>LogDebug</c>, not
+    /// <para>Shape: a separate, nullable, host-supplied delegate, not a level argument on an existing one.
+    /// It carries an exception because all three of its sites do. <b>The precedent, stated at the size it
+    /// actually is:</b> <c>WalFlushPump</c> carries <c>logInfo</c>/<c>logError</c>
+    /// (<c>WalFlushPump.cs:35-36</c>) — TWO callbacks, not three — which proves an EdgeCore pair need not be
+    /// warning+error, and therefore that choosing a third LEVEL is precedented. It does not prove a
+    /// three-callback type is; nothing in this assembly carried three before this one did. The level the
+    /// shell maps it to is <c>LogDebug</c>, not
     /// <c>LogInformation</c>: the goal is to restore the granularity E-2 collapsed, and Information would
     /// leave these three lines visible on a console path where they were silent before — a different
     /// change, not a restoration.</para>
@@ -556,8 +600,29 @@ internal sealed class FleetCore
 
     /// <summary>🔴 G-1 — serializes <see cref="DrainSeedNotifications"/> against itself. Deliberately NOT
     /// <see cref="_gate"/>: the entire point is that a slow host callback must not block
-    /// <see cref="Estop"/>/<see cref="EstopEngaged"/>. Nothing inside this lock touches
-    /// <see cref="_gate"/>-protected state, so no lock ordering exists to invert.</summary>
+    /// <see cref="Estop"/>/<see cref="EstopEngaged"/>.
+    ///
+    /// <para><b>🔴 There IS a lock order here, and the first version of this comment denied it.</b> It said
+    /// "nothing inside this lock touches <see cref="_gate"/>-protected state, so no lock ordering exists to
+    /// invert" — false, and falsified by this task's own test.
+    /// <see cref="DrainSeedNotifications"/> invokes <see cref="_onMachineSeeded"/> INSIDE this lock; that
+    /// callback is arbitrary host code and may take <see cref="_gate"/>. It does exactly that in
+    /// <c>FleetHostSeedNotificationOffGateTests</c>, whose roster probe calls <see cref="Fleet"/> — itself a
+    /// <c>lock (_gate)</c> getter. So the real order is <b><see cref="_seedNotifyGate"/> →
+    /// <see cref="_gate"/></b>, and it is exercised.
+    ///
+    /// It is never INVERTED, and the reason is a contract, not an absence: <b>nothing may take
+    /// <see cref="_seedNotifyGate"/> while holding <see cref="_gate"/></b>, which is precisely what
+    /// <see cref="DrainSeedNotifications"/>'s "MUST NOT be called while holding <see cref="_gate"/>" rule
+    /// buys — the rule exists for latency, and it pays for deadlock-freedom as well. Both call sites honour
+    /// it (the constructor takes no lock; <see cref="RegisterMachine"/> drains after its lock is released).
+    /// A future caller that drains under <see cref="_gate"/> would not merely reinstate the 12.35 ms block —
+    /// it would create a genuine two-lock cycle against any host callback that reads this class back.</para>
+    ///
+    /// <para>Recorded at this length because a comment asserting "no ordering exists" is exactly what a
+    /// maintainer would rely on before moving the drain, and because it is the same shape as the defect this
+    /// whole task closes: the old <see cref="_onMachineSeeded"/> prose said "fire-and-forget" and nobody
+    /// checked.</para></summary>
     private readonly object _seedNotifyGate = new();
 
     /// <summary>FF-1 (docs/plans/2026-07-27-ws-ff-fast-follows.md) — optional (defaults null, same
@@ -2422,24 +2487,48 @@ internal sealed class FleetCore
             }
         }
 
-        if (restarting)
+        // 🔴 G-1 — the seed notification, off _gate, and in a `finally`. Both halves of that are load-bearing
+        // and the second one was a REVIEW FIX (I-3), not part of the original design.
+        //
+        // WHY LAST, not first-after-the-lock: before G-1 this call ran under the lock BEFORE StopLocked, so a
+        // host callback that threw (a real AssetRegistryStore can throw — blueprint §10.6's "two processes,
+        // one machine-wide data file, no cross-process locking") aborted RegisterMachine with the pipeline
+        // still running. Draining right after the lock would have moved that throw to a point where
+        // StopLocked had ALREADY torn the pipeline down and StartLocked had not yet rebuilt it, turning a
+        // failed registration into a stopped fleet.
+        //
+        // WHY `finally`: the descriptor is committed to _fleet/_states under the lock and is never rolled
+        // back, so from the instant the lock is released the machine EXISTS and owes exactly one
+        // notification. Everything between here and the drain can throw — and one of those throws is
+        // reachable through the very path G-1's own enumeration turned up (path B: StartLocked ->
+        // SimulatorFactory.Create -> SimulatorBase's ctor -> MachineConfigStore.Ensure, which throws
+        // InvalidOperationException on a config-kind mismatch and IOException from its File.WriteAllText/
+        // File.Move on a full or read-only data root). Without the finally, that throw leaves the machine in
+        // the roster with its notification still sitting in _pendingSeedNotifications, delivered only if some
+        // LATER RegisterMachine happens to drain it, and never at all if none does. Pre-G-1 the notification
+        // had already been delivered by that point, so this would be a regression THIS CHANGE introduced,
+        // not an inherited one — it silently weakens the brief's "exactly one notification per seeded
+        // machine" to "at most one, eventually".
+        //
+        // The finally does NOT swallow anything: the restart exception still propagates to the caller
+        // exactly as before, and a callback that itself throws still surfaces (it would replace the
+        // in-flight exception, which is the ordinary .NET behaviour for a throwing finally and is not made
+        // worse here — nothing downstream depends on which of the two the caller sees).
+        try
         {
-            WaitAndDisposeOldPipeline(restartHandle);
-            StartOutcome outcome;
-            lock (_gate) { outcome = StartLocked(); }
-            // Review fix round 2 — off-lock, same reasoning as WaitAndDisposeOldPipeline just above.
-            CompleteStartOffLock(outcome);
+            if (restarting)
+            {
+                WaitAndDisposeOldPipeline(restartHandle);
+                StartOutcome outcome;
+                lock (_gate) { outcome = StartLocked(); }
+                // Review fix round 2 — off-lock, same reasoning as WaitAndDisposeOldPipeline just above.
+                CompleteStartOffLock(outcome);
+            }
         }
-
-        // 🔴 G-1 — the seed notification, off _gate. Position chosen deliberately: it is the LAST statement
-        // of the method, not the first one after the lock. Before G-1 this call ran under the lock BEFORE
-        // StopLocked, so a host callback that threw (a real AssetRegistryStore can throw — blueprint §10.6's
-        // "two processes, one machine-wide data file, no cross-process locking") aborted RegisterMachine with
-        // the pipeline still running. Draining right after the lock would have moved that throw to a point
-        // where StopLocked had ALREADY torn the pipeline down and StartLocked had not yet rebuilt it, turning
-        // a failed registration into a stopped fleet. Draining last keeps the pipeline consistent on both
-        // paths and still propagates the exception to the caller exactly as before.
-        DrainSeedNotifications();
+        finally
+        {
+            DrainSeedNotifications();
+        }
 
         return true;
     }
@@ -2523,6 +2612,15 @@ internal sealed class FleetCore
         // `_burstRevertCts == cts` under _gate before reverting, so if the Cancel lands late and its
         // Task.Delay has already completed normally, the task simply finds it has been superseded and
         // returns without reverting — exactly what the cancellation would have caused.
+        //
+        // 🔴 The one interleaving this reordering DOES change (review M-5), stated rather than left to be
+        // rediscovered: `_burstRevertCts = cts` now commits BEFORE this Cancel instead of after it, so if a
+        // registered cancellation callback throws, _burstRevertCts is left pointing at a CTS whose
+        // RevertBurstAfterDelayAsync (below) was never started — the next Burst then sees previousCts != null
+        // and does not re-capture _burstBaseline. Unreachable today (the only registration on this token is
+        // Task.Delay's own, which does not throw), and the pre-G-1 order was differently broken on the same
+        // path (the throw escaped while _gate was held, aborting the whole method mid-mutation). Named
+        // because "no registration throws" is a property of the current callee, not of this method.
         previousCts?.Cancel();
 
         var applied = ApplyScenario(_scenario with { CycleRateMultiplier = BurstMultiplier }, presetName: "burst");

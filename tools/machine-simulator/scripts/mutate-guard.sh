@@ -21,6 +21,14 @@
 # A mutation harness asserts "the test failed". It has never asserted "…and I ran the
 # thing I just wrote". These two checks are that.
 #
+# 🔴 COMMIT BEFORE YOU MUTATE. `clean` below checks for mutation RESIDUE; nothing here
+# checks that the tree you are about to restore is one you can afford to lose, and the
+# restore path everyone reaches for is `git checkout -- <file>` — which reverts the
+# WHOLE file to HEAD, not just the mutation. G-1's implementer lost an entire task's
+# uncommitted work to exactly that, twice in one session, the second time on the census
+# pass that followed the first recovery. The mutation round is cheap to repeat; the work
+# it is measuring is not. Commit first, then mutate, then `git checkout --` freely.
+#
 # WHY NOT JUST BAN --no-build
 # ---------------------------
 # Because dropping the flag does NOT guarantee a rebuild — MSBuild's up-to-date check can

@@ -1672,7 +1672,29 @@ EXPECT_EDGESERVICE=50
 # reaching. EXPECT_CONFORMANCE in particular stays 22: G-1 adds no driver and no connector kind.
 # EXPECT_WARNINGS stays 116 — the new code adds no warning, and the third log channel adds a parameter to an
 # internal ctor rather than an unused symbol.
-EXPECT_ENGINEAPI=1300
+#
+# 🔴 G-1 REVIEW FIX ROUND raises this 1300 -> 1303 (+3), counted from the runner, ALL THREE in the existing
+# FleetHostSeedNotificationOffGateTests. No file added, none rewritten, none deleted. The review's finding was
+# that the invariant MOST at risk from the fix was the one LEAST tested — the two original tests are both
+# single-threaded and both deliberately leave the fleet stopped, so the two properties that only
+# record-then-drain could break had no witness at all, and neither gap was listed in the report's own "what is
+# NOT proven" section, which is what made it a finding rather than a known gap.
+#   ConcurrentRegistrations_NeverRunTwoSeedCallbacksAtOnce_AndDeliverInRosterOrder   +1
+#       The seed-notify lock's actual job. Asserts MaxConcurrentCallbacks == 1 (mutual exclusion itself, not
+#       a shuffled order — order is a probabilistic witness, overlap is the property) plus exactly-once and
+#       roster order, with 8 threads released from a common start line and a dwell inside the callback.
+#   RegisteringIntoARunningFleet_StillNotifiesExactlyOnce_AfterTheRestart            +1
+#       The path that changed most: the drain moved past StopLocked + WaitAndDisposeOldPipeline +
+#       StartLocked. Previously asserted nowhere.
+#   WhenTheRestartThrows_TheSeedNotificationIsStillDelivered_NotStrandedInTheQueue   +1
+#       The witness for review I-3, a REGRESSION G-1 introduced: the roster write commits under _gate and is
+#       never rolled back, so a throw between it and the drain left a registered machine owing a notification
+#       forever. Fixed with a try/finally; this test is what makes the finally falsifiable.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE stay put, same check as
+# above: the review round touches FleetCore.cs, FleetHost.cs, one test file, this script, one blueprint
+# section and mutate-guard.sh's header. EXPECT_WARNINGS stays 116.
+EXPECT_ENGINEAPI=1303
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

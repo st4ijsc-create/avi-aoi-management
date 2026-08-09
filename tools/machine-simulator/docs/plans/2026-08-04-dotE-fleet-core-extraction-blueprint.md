@@ -556,7 +556,12 @@ vòng đời là "đọc `IsRunning`", nửa chiếu ra là `state.ToDetail(isRu
 `_core.IsRunning`. Bọc thêm một `lock` ở phía vỏ chính là **thêm một khoá cho vỏ** — điều §10.1 cấm. Một lần
 lấy khoá tái nhập dư thừa bị bỏ; giá trị không đổi, hành vi không đổi.
 
-### 10.3 Ba vi phạm `_gate` của §9.2 **VẪN CÒN NGUYÊN**, và cuộc đi bộ ba chặng nói gì
+### 10.3 ~~Ba vi phạm `_gate` của §9.2 **VẪN CÒN NGUYÊN**~~ → 🔴 **G-1: tập là CHÍN đường, ba đã đóng, bốn còn mở trong lõi, hai nằm trong callee** — và cuộc đi bộ ba chặng nói gì
+
+> 🔴 **Tiêu đề cũ giữ lại gạch ngang, không xoá** (đúng quy ước đính chính M4 của chính file này). Nó đúng
+> lúc E-2 viết và **sai kể từ G-1**; một register được quét bằng TIÊU ĐỀ, nên để nguyên chữ "VẪN CÒN NGUYÊN" ở
+> dòng đầu trong khi bản đính chính nằm 60 dòng bên dưới là đúng lớp lỗi mà census tồn tại để bắt. Toàn văn
+> đính chính ở cuối mục này.
 
 Đi bộ theo khả năng với tới, ba chặng, **ở cả hai bên**, bắt đầu từ *tập các lệnh chạy dưới khoá* (kể cả bốn
 helper giả định caller giữ khoá: `StartLocked`/`StopLocked`/`StartSlot`/`ApplyNetworkOutageLocked`), **không
@@ -618,24 +623,58 @@ phải một.
 tập hợp lớn hơn cả con số đã đính chính ở trên.** G-1 dựng lại **tập** thay vì thừa kế danh sách: một cuộc đi bộ
 theo khả năng với tới từ cả **hai mươi** vùng `lock (_gate)` qua các callee, hỏi ở mỗi chỗ *"cái này có với tới
 I/O, `Dispose` hay `Cancel` không"* — **không** phải một bảng đếm "điểm mã do host cung cấp", đúng cái đại lượng
-(c) ở trên nói là sai. Nó tìm ra **tám** đường; danh sách thừa kế nêu **năm**.
+(c) ở trên nói là sai.
 
-**G-1 đóng ba cơ chế, sáu điểm gọi:** vi phạm #3 (`_onMachineSeeded`, đường có con số 12,35 ms — nay xếp hàng
-dưới khoá và gọi ngoài khoá); **cả bốn** lời gọi log của (a); và `Cancel` thứ hai của (d) trong `Burst`.
+🔴 **TẬP LÀ CHÍN ĐƯỜNG, đánh số MỘT LẦN — đóng và mở cùng một danh sách.** (Bản G-1 đầu tiên viết "tám", và
+không cách nhóm nào trên chính danh sách của nó cho ra tám: nó đếm *điểm gọi* ở mục log và đếm *cơ chế* ở mọi
+chỗ khác. Một con số tiêu đề không dựng lại được từ phép liệt kê mà nó tóm tắt là **lỗi trong chính sản phẩm
+bàn giao**, vì phép liệt kê CHÍNH LÀ sản phẩm bàn giao. Review G-1 bắt được; sửa ở đây và trong
+`FleetCore.cs`.)
 
-**Còn mở bốn, mỗi cái kèm lý do:** vi phạm #1 (`MappingProfileResolver.Build`, 2,39 ms); vi phạm #2
-(`slot.Cts.Cancel()`); `IConnectorFactory.TryCreate` của bên thứ ba; và 🔴 **một đường KHÔNG có trong bất kỳ
-danh sách nào trước đây, và nó là một lệnh GHI**: `StartLocked` → `SimulatorFactory.Create` → hàm dựng
-`SimulatorBase` → `MachineConfigStore.Ensure` → `Save()` → `File.WriteAllText` + `File.Move`, một lần mỗi máy
-chưa có trong store (tức lần `Start` đầu tiên trên một data root mới), và **lấy một khoá THỨ HAI trong lúc giữ
-`_gate`** ở mọi lần start sau đó. Mọi phép đếm trước đây của hạng mục này đều đếm đường ĐỌC.
+**Đã ĐÓNG (1–3):**
+1. Vi phạm #3 — `RegisterMachine` → `_onMachineSeeded`, đường mang con số **12,35 ms**. Nay xếp hàng dưới
+   khoá, gọi ngoài khoá.
+2. Lời gọi log dưới khoá — cơ chế thứ tư của (a), **bốn điểm gọi trong MỘT cơ chế** (đây chính là chỗ sinh ra
+   "tám"). Cả bốn nay đệm rồi phát ngoài khoá.
+3. `Cancel` thứ hai của (d), trong `Burst`. Đã đưa xuống dưới khoá.
 
-**Và một đường log THỨ NĂM mà bảng sáu dòng của (a) không thể thấy:** `Start`/`Stop`/`Estop` giữ `_gate` băng qua
-`_unsPublisher.PublishNodeBirth()`/`PublishNodeDeath()`, mà nhánh suy giảm của chúng (publisher đã dispose, hàng
-đợi publish đầy) gọi `logWarning` **của chính `UnsPublisher`** — một callback do host cung cấp, nối tới `ILogger`
-ở `Program.cs`. (a) đếm các điểm `_logger?.` **bên trong FleetCore.cs**; đường này nằm trong callee. G-1 cố ý
-không đụng: giữ hai lời gọi ấy trong khoá là một bản sửa review có chủ đích (nó nối thứ tự NBIRTH/NDEATH với
-chính lần chuyển trạng thái), nên bản sửa thuộc về `UnsPublisher`, không thuộc về `FleetCore`.
+**Còn MỞ, trong mã của chính lõi (4–7):**
+4. Vi phạm #1 — `MappingProfileResolver.Build` → `File.Exists`/`File.ReadAllText` mỗi máy, **2,39 ms**.
+5. 🔴 **KHÔNG có trong bất kỳ danh sách nào trước đây, và nó là một lệnh GHI**: `StartLocked` →
+   `SimulatorFactory.Create` → hàm dựng `SimulatorBase` → `MachineConfigStore.Ensure` → `Save()` →
+   `File.WriteAllText` + `File.Move`, một lần mỗi máy chưa có trong store (tức lần `Start` đầu tiên trên một
+   data root mới), và **lấy một khoá THỨ HAI trong lúc giữ `_gate`** ở mọi lần start sau đó. Mọi phép đếm
+   trước đây của hạng mục này đều đếm đường ĐỌC. Nó cũng chính là cú ném khiến `RegisterMachine` phải drain
+   trong `finally` (review G-1, I-3).
+6. Vi phạm #2 — `StopLocked` → `slot.Cts.Cancel()` → callback `ct.Register` của driver chạy `Dispose` đồng bộ.
+7. `IConnectorFactory.TryCreate` của bên thứ ba — có ghi tại chính điểm gọi, **chưa bao giờ nằm trong danh
+   sách hạng mục**.
+
+**Còn MỞ, trong mã của CALLEE (8–9) — không sửa được từ `FleetCore`:**
+8. `Start`/`Stop`/`Estop` giữ `_gate` băng qua `PublishNodeBirth()`/`PublishNodeDeath()`, mà nhánh suy giảm
+   của chúng (publisher đã dispose, hàng đợi publish đầy) gọi callback log **của chính publisher**. 🔴 Trường
+   là `IUnsPublisher`, **không** phải lớp cụ thể `UnsPublisher` — nên đây là tính chất của **SEAM**: hai
+   phương thức của *bất kỳ* hiện thực nào do host cung cấp đều chạy dưới khoá này, và câu "non-blocking,
+   never throws" của interface là một *lời hứa*, không phải một *chặn trên*. (a) đếm các điểm `_logger?.`
+   **bên trong FleetCore.cs**; đường này nằm trong callee nên nó cấu trúc-tính không thể thấy. G-1 cố ý không
+   đụng: giữ hai lời gọi ấy trong khoá là một bản sửa review có chủ đích (nối thứ tự NBIRTH/NDEATH với chính
+   lần chuyển trạng thái), nên bản sửa thuộc về phía sau seam.
+9. `GetDriverHealth` đọc `Driver.Kind`/`Driver.Health` dưới khoá — getter của bên thứ ba trên `IDeviceDriver`.
+
+**Chín đến từ đâu:** danh sách thừa kế nêu **năm** — ba vi phạm của §9.2 (nay là 1, 4, 6), cơ chế log của (a)
+(2), và `Cancel` thứ hai của (d) (3). Mục 7 có ghi tại điểm gọi nhưng chưa bao giờ vào danh sách. **Mục 5, 8,
+9 không có trong bất kỳ danh sách nào.** 5 + 1 + 3 = 9.
+
+🔴 **Một TRỤC KHÁC, ghi ở đây vì chưa ai viết ra: `_gate` được giữ băng qua NĂM khoá khác.** Không cái nào là
+vi phạm I/O/`Dispose`/`Cancel` nên không cái nào thuộc chín — nhưng "khoá nào được phép lấy trong lúc giữ khoá
+này" là một bất biến riêng và nó không có chỗ trú. Theo thứ tự, luôn `_gate` trước: khoá của
+`MachineConfigStore` (đường 5); của `TransportCoordinator` và `SwitchableTransport` (qua
+`ApplyNetworkOutageLocked`); của `ConnectorRegistry`; và khoá vòng đời của publisher UNS. Chưa cái nào bị đảo.
+`_seedNotifyGate` **cố ý không** nằm trong danh sách này và không bao giờ được phép gia nhập — xem doc của
+chính nó. Và một chỗ im lặng hơn vẻ ngoài: `ApplyNetworkOutageLocked` → `TransportCoordinator.ApplyMode` kết
+thúc bằng `ModeChanged?.Invoke(mode)`, tức **mã do host đăng ký, dưới khoá này**; nó ngủ yên **chỉ vì** điểm
+gọi ấy truyền vào đúng mode hiện tại nên `changed` luôn false. Đó chính là câu "vô hại hôm nay, theo một tính
+chất của điểm gọi hiện tại" mà §8.1 cảnh báo.
 
 ### 10.4 Mười bốn lời gọi log đã port — và một sự trôi mức nghiêm trọng, có chủ đích
 

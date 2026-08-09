@@ -166,6 +166,139 @@ public sealed class FleetHostSeedNotificationOffGateTests
         Assert.Empty(registry.NotifiedBeforeRegistered);
     }
 
+    /// <summary>🔴 Review I-5 — the property <see cref="FleetCore"/>'s private seed-notify lock exists to
+    /// provide, and the one thing record-then-drain could break that the in-lock invocation could not.
+    /// Before this test it rested on reading, which is the distinction the whole method section is built on.
+    ///
+    /// <para>The sharp assertion is <b>MaxConcurrentCallbacks == 1</b>, not the delivered order. Order is
+    /// checked too, but order is a probabilistic witness — two drainers might happen to interleave
+    /// harmlessly — whereas "two callbacks were in flight at once" is the mutual exclusion itself, and a
+    /// deliberate sleep inside the callback makes it near-certain to be observed if the lock is
+    /// removed.</para></summary>
+    [Fact]
+    public void ConcurrentRegistrations_NeverRunTwoSeedCallbacksAtOnce_AndDeliverInRosterOrder()
+    {
+        const int threads = 8;
+
+        var registry = new OrderRecordingAssetRegistry { CallbackDwell = TimeSpan.FromMilliseconds(15) };
+        var host = CreateHost(registry);
+        var seededByCtor = registry.Order.Count;
+
+        using var readyToGo = new CountdownEvent(threads);
+        using var go = new ManualResetEventSlim(false);
+        var faults = new ConcurrentBag<Exception>();
+
+        var workers = Enumerable.Range(0, threads).Select(i => RunOnItsOwnThread(
+            () =>
+            {
+                try
+                {
+                    readyToGo.Signal();
+                    go.Wait(TimeSpan.FromSeconds(10));
+                    host.RegisterMachine(NewDescriptor($"G1-RACE-{i:D2}"));
+                }
+                catch (Exception ex) { faults.Add(ex); }
+            },
+            $"g1-race-{i:D2}")).ToList();
+
+        Assert.True(readyToGo.Wait(TimeSpan.FromSeconds(10)), "every registering thread should have reached the start line");
+        go.Set();
+        foreach (var w in workers) Assert.True(w.Join(TimeSpan.FromSeconds(60)), "every registering thread should finish");
+        Assert.Empty(faults);
+
+        // (a) MUTUAL EXCLUSION — the lock's whole job. Two host callbacks in flight at once would mean a
+        //     drainer entered while another was mid-callback, which is exactly what re-orders delivery.
+        Assert.Equal(1, registry.MaxConcurrentCallbacks);
+
+        // (b) EXACTLY ONCE — no descriptor delivered twice, none dropped.
+        var delivered = registry.Order.Skip(seededByCtor).ToList();
+        Assert.Equal(threads, delivered.Count);
+        Assert.Equal(threads, delivered.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+
+        // (c) ROSTER ORDER — the enqueue happens under _gate, so the queue's FIFO order IS the order the
+        //     machines entered _fleet. Asserted against the roster the host itself ended up with, so it
+        //     holds whichever way the threads raced.
+        Assert.Equal(host.Fleet.Select(d => d.Code).Skip(seededByCtor).ToList(), delivered);
+    }
+
+    /// <summary>🔴 Review I-5 — the path that CHANGED most and had no seed-notification assertion at all:
+    /// registering into a RUNNING fleet, where the drain moved past <c>StopLocked</c> +
+    /// <c>WaitAndDisposeOldPipeline</c> + <c>StartLocked</c>. Both other tests here deliberately leave the
+    /// fleet stopped.</summary>
+    [Fact]
+    public async Task RegisteringIntoARunningFleet_StillNotifiesExactlyOnce_AfterTheRestart()
+    {
+        var registry = new OrderRecordingAssetRegistry();
+        var host = CreateHost(registry);
+        var seededByCtor = registry.Order.Count;
+
+        host.Start();
+        try
+        {
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            while (!host.IsRunning && DateTime.UtcNow < deadline) await Task.Delay(50);
+            Assert.True(host.IsRunning, "the fleet should be running before the registration under test");
+
+            registry.RosterProbe = code => host.Fleet.Any(d => string.Equals(d.Code, code, StringComparison.OrdinalIgnoreCase));
+            Assert.True(host.RegisterMachine(NewDescriptor("G1-RUNNING-01")));
+
+            Assert.Equal(new[] { "G1-RUNNING-01" }, registry.Order.Skip(seededByCtor).ToArray());
+            Assert.Empty(registry.NotifiedBeforeRegistered);
+        }
+        finally
+        {
+            host.Stop();
+        }
+    }
+
+    /// <summary>🔴 Review I-3 — the regression G-1 introduced and this test is the witness for.
+    ///
+    /// <para>The descriptor is committed to the roster under <c>_gate</c> and never rolled back, so from
+    /// the moment the lock is released the machine EXISTS and owes exactly one notification. G-1 moved the
+    /// notification to the end of the method, past the restart — so a throw in the restart left the machine
+    /// registered with its notification still sitting in the queue, delivered only if some LATER
+    /// <c>RegisterMachine</c> happened to drain it. Pre-G-1 the callback had already run by then, which is
+    /// what makes this a regression rather than an inherited gap. The fix is a <c>finally</c>.</para>
+    ///
+    /// <para>The throw is injected through the pipeline-injection seam because it is deterministic; the
+    /// REAL reachable throw is path 5 of the <c>_gate</c> enumeration (<c>MachineConfigStore.Ensure</c>'s
+    /// config-kind mismatch, and its <c>File.WriteAllText</c>/<c>File.Move</c> on a full or read-only data
+    /// root), which needs a poisoned data root to reproduce and would test the same
+    /// statement.</para></summary>
+    [Fact]
+    public async Task WhenTheRestartThrows_TheSeedNotificationIsStillDelivered_NotStrandedInTheQueue()
+    {
+        var registry = new OrderRecordingAssetRegistry();
+        var host = CreateHost(registry);
+        var seededByCtor = registry.Order.Count;
+
+        host.Start();
+        try
+        {
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            while (!host.IsRunning && DateTime.UtcNow < deadline) await Task.Delay(50);
+            Assert.True(host.IsRunning, "the fleet should be running so RegisterMachine takes the restart path");
+
+            // Poison the rebuild: StartLocked invokes this seam, so the restart half of RegisterMachine
+            // throws AFTER the roster write has already committed.
+            host.AdditionalPipelinesForTests = () => throw new InvalidOperationException("g1: injected restart failure");
+
+            Assert.Throws<InvalidOperationException>(() => host.RegisterMachine(NewDescriptor("G1-STRANDED-01")));
+
+            // The machine is in the roster — the write committed under the lock and is never rolled back.
+            Assert.Contains(host.Fleet, d => string.Equals(d.Code, "G1-STRANDED-01", StringComparison.OrdinalIgnoreCase));
+
+            // …so it owes exactly one notification, and it must already have been delivered rather than
+            // waiting for some future registration to flush it.
+            Assert.Equal(new[] { "G1-STRANDED-01" }, registry.Order.Skip(seededByCtor).ToArray());
+        }
+        finally
+        {
+            host.AdditionalPipelinesForTests = null;
+            host.Stop();
+        }
+    }
+
     /// <summary>Test double that reproduces the ONE property of a real <c>AssetRegistryStore</c> that
     /// matters here and that <c>FakeAssetRegistry</c> (a <c>ConcurrentDictionary</c> returning
     /// <see cref="Task.CompletedTask"/>) cannot: the upsert consumes the CALLING thread. Blueprint §9.2's
@@ -219,10 +352,22 @@ public sealed class FleetHostSeedNotificationOffGateTests
     {
         private readonly List<string> _order = new();
         private readonly object _gate = new();
+        private int _inCallback;
+        private int _maxInCallback;
 
         /// <summary>Set AFTER construction (the host reference does not exist during its own ctor). Null
         /// means "do not probe", which is how the constructor-seeding pass is allowed to run.</summary>
         public Func<string, bool>? RosterProbe { get; set; }
+
+        /// <summary>How long each callback holds its calling thread. Zero (the default) for the
+        /// single-threaded tests; non-zero widens the window in which a second drainer would be observed if
+        /// the seed-notify lock were removed, which is what makes
+        /// <see cref="MaxConcurrentCallbacks"/> a sharp assertion rather than a lucky one.</summary>
+        public TimeSpan CallbackDwell { get; set; } = TimeSpan.Zero;
+
+        /// <summary>The high-water mark of callbacks in flight simultaneously. MUST be 1: the drain is
+        /// serialized, so two host callbacks can never overlap.</summary>
+        public int MaxConcurrentCallbacks => Volatile.Read(ref _maxInCallback);
 
         public List<string> NotifiedBeforeRegistered { get; } = new();
 
@@ -233,16 +378,33 @@ public sealed class FleetHostSeedNotificationOffGateTests
 
         public Task UpsertAsync(MachineDescriptor descriptor, CancellationToken ct = default)
         {
-            var probe = RosterProbe;
-            var registered = probe is null || probe(descriptor.Code);
-
-            lock (_gate)
+            var live = Interlocked.Increment(ref _inCallback);
+            int seen;
+            while (live > (seen = Volatile.Read(ref _maxInCallback))
+                   && Interlocked.CompareExchange(ref _maxInCallback, live, seen) != seen)
             {
-                _order.Add(descriptor.Code);
-                if (!registered) NotifiedBeforeRegistered.Add(descriptor.Code);
+                // retry: another thread raised the high-water mark between the read and the exchange
             }
 
-            return Task.CompletedTask;
+            try
+            {
+                var probe = RosterProbe;
+                var registered = probe is null || probe(descriptor.Code);
+
+                if (CallbackDwell > TimeSpan.Zero) Thread.Sleep(CallbackDwell);
+
+                lock (_gate)
+                {
+                    _order.Add(descriptor.Code);
+                    if (!registered) NotifiedBeforeRegistered.Add(descriptor.Code);
+                }
+
+                return Task.CompletedTask;
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _inCallback);
+            }
         }
 
         public Task<AssetRecord?> GetAsync(string code, CancellationToken ct = default) => Task.FromResult<AssetRecord?>(null);
