@@ -1257,6 +1257,17 @@ connector nào trên transport nào") **trực giao** với trục I4. Chủ s�
   đã đúng.
 - **§10.4 kênh log thứ ba** — chưa làm.
 - **§9.4(2) hai tiến trình, một bộ file dữ liệu toàn máy** — chưa chạm; vẫn chặn OPC-UA ở biên.
+  🔴 **ĐÓNG MỘT NỬA bởi Đợt F, F-1 (2026-08-09), và ghi ở đây vì một danh sách thừa kế bị CHÉP chứ
+  không được KIỂM là bài học I7 của chính §13.4.** Gốc dữ liệu theo host giờ là hình dạng triển khai
+  **được hỗ trợ, có tài liệu và có test** (README §15.9; `PerHostDataRootsTests` suy ra cả tập thư mục
+  lẫn tập biến từ `src/` nên store thứ mười bốn không thể ra đời mà thiếu biến;
+  `PerHostDataRootIsolationTests` chứng minh hai gốc là vô hình với nhau QUA chính các store). Cơ chế
+  đã có sẵn từ trước — F-1 không sửa gì; nó ĐO (bốn store trong brief, **mười ba** trong thực tế),
+  DỰNG PHÉP CHẶN, và NÓI RA. **Nửa còn mở:** mặc định vẫn là một bộ file dùng chung, không có gì được
+  di trú khi đổi gốc, và OPC-UA ở biên **vẫn bị từ chối theo tên** — điều kiện chặn đã hết, cái còn
+  thiếu là `OpcUaOptions` riêng cho host đó, nhánh dispatch, và một test hai-gốc-hai-kho-chứng-chỉ.
+  🔴 **Và F-1 KHÔNG đụng chuyện hai host cùng lái một sợi dây** — đó là vấn đề khác, giải bằng một
+  RÀNG BUỘC triển khai chứ không phải một cơ chế phân xử: README §24.7.
 - **§11.1 tra cứu `machineCode → driver` public trên `ConnectorRegistry`** — chưa đóng; hạng mục là
   `ConnectorRegistry`, không phải `FleetCore`. 🔴 **Và E-5 làm nó RỘNG RA, không giữ nguyên** (review E-5,
   M3): driver mà một đoạn dùng bề mặt public ấy dựng được giờ có thể là một `ModbusRtuDriver` trên một cổng

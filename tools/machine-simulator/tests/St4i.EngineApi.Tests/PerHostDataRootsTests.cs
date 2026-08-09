@@ -24,6 +24,16 @@ namespace St4i.EngineApi.Tests;
 /// nine — but only one of the thirteen resolves its variable somewhere other than on the store itself, and
 /// that asymmetry is recorded at the assertion below rather than in a report nobody re-reads.</para>
 ///
+/// <para>🔴 <b>The SCOPE of "machine-wide", asked rather than assumed.</b> This scans for the
+/// <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> constant, so it is blind by construction to anything the product
+/// writes elsewhere. Enumerated, because "not in view" is the dangerous answer: the only such place in
+/// <c>src/</c> is <c>St4i.DesktopShell</c>'s <c>%LOCALAPPDATA%\St4iMachineSimulator\{logs,WebView2}</c>
+/// (<c>MainWindow.xaml.cs</c>) — an engine log file and a WebView2 browser profile, which are PER-USER rather
+/// than machine-wide and are not product data. Two service hosts under two accounts already have two of them;
+/// under one account they would share, which is a defect only if either ever became a data store. It is out of
+/// scope deliberately, not by oversight, and the sentence is here so the next reader does not have to derive
+/// it again.</para>
+///
 /// <para><b>What makes this non-vacuous</b> (the shape both sibling tests already carry): a floor on the
 /// number of directories found, so a refactor that moves the constants fails loudly instead of asserting over
 /// an empty set; and named controls, so a scan that silently stopped matching the credential-bearing stores

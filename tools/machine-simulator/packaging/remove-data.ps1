@@ -80,7 +80,7 @@
 .EXAMPLE
   .\packaging\remove-data.ps1
   Interactive - prompts (Y/N) before stopping/deleting the service and before deleting each of the
-  14 data directories (each resolved per the matching -XxxDir parameter or the matching
+  13 data directories (each resolved per the matching -XxxDir parameter or the matching
   ST4I_*_DIR environment variable or the default %ProgramData%\ST4I\sim\<name> - see the
   WARNING below about relocated directories this script cannot discover on its own).
 
@@ -151,7 +151,22 @@
   would reasonably have believed the machine was clean. All eight are relocatable and each resolves
   through the same -XxxDir > env var > %ProgramData% default order as the original three.
 
-  Every one of the fourteen directories is now relocatable; there is no longer any exception.
+  Every one of the thirteen directories is now relocatable; there is no longer any exception.
+
+  TASK F-1 CENSUS - THE COUNT ABOVE SAID "FOURTEEN" IN THREE PLACES AND "THIRTEEN" IN FOUR, about
+  the same set, since Task C-8. Measured rather than reasoned about: this script declares thirteen
+  `Name = '<dir>'` entries and thirteen -XxxDir parameters, and
+  PerHostDataRootsTests.EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName derives the
+  same thirteen from src/. The number is THIRTEEN; the three "fourteen"/"14" readings were wrong and
+  are corrected here. Nothing about what the script DOES changed.
+
+  TASK F-1 - AND THE WARNING ABOVE IS NOW WORSE THAN IT READS, because a machine can run TWO ST4I
+  hosts (St4i.EngineApi and St4i.EdgeService, README section 24) and per-host data roots are a
+  SUPPORTED deployment (README section 15.9). Each host has its OWN registry Environment value, so a
+  wipe run from a shell without the variables exported can miss BOTH sets. Check each service key
+  (`Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\<service>' -Name Environment`) and run
+  this script once per host with that host's -XxxDir parameters. Data left behind by a "clean-slate"
+  wipe is the exact outcome this script exists to prevent.
 #>
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 # PSScriptAnalyzer matches the substring "Cred" in a [string] parameter name and assumes it carries a
@@ -278,7 +293,7 @@ elseif ($PSCmdlet.ShouldProcess("Windows service '$serviceName'", "Stop and dele
     }
 }
 
-# ---- Step 2: delete the 14 data subdirectories (each already resolved above per -XxxDir / ST4I_*_DIR
+# ---- Step 2: delete the 13 data subdirectories (each already resolved above per -XxxDir / ST4I_*_DIR
 # / the %ProgramData% default - see $subdirs) --------------------------------------------------
 Write-Host ""
 foreach ($d in $subdirs) {

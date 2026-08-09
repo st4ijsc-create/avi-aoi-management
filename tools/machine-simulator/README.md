@@ -5473,13 +5473,12 @@ slave NModbus thật trong tiến trình: CRC thật, khung t3.5 thật, phân p
 thật trên một link dùng chung — nhưng không có đồng), hoặc nhắm vào một cổng loopback ĐÓNG mà lệnh connect
 bị từ chối — một connect bị từ chối không phải là một socket. Không có adapter RS-485
 nào trên bất kỳ máy build nào, và chỉ adapter điều khiển hướng **tự động** mới được hỗ trợ. Bước nghiệm thu
-trên bàn với phần cứng thật vẫn còn đó, và đó là một BƯỚC chứ không phải thủ tục. **Hai tiến trình vẫn dùng chung một bộ file dữ liệu toàn máy** —
+trên bàn với phần cứng thật vẫn còn đó, và đó là một BƯỚC chứ không phải thủ tục. **Hai tiến trình vẫn dùng chung một bộ file dữ liệu toàn máy _theo mặc định_** —
 `AssetRegistryStore`/`CredentialStore`/`FleetSettingsStore` đều nằm dưới `%ProgramData%\ST4I\sim\…`, không
 khoá theo tiến trình; tác nhân biên hôm nay không chạm sổ tài sản lẫn store cài đặt (người ghi có sẵn duy nhất
 của nó là hàng đợi WAL), nên không có gì thụt lùi — **và E-5 cũng không đổi điều đó: một tuyến RS-485 mở một
 cổng COM còn một tuyến gateway mở một socket; không cái nào là store, và sổ sách chia sẻ lần mở là một
-dictionary trong tiến trình do host sở hữu.** Quyết định gốc-dữ-liệu-theo-host vẫn còn để ngỏ, và chính nó vẫn
-đang chặn OPC-UA ở biên (§24.2). **Máy của một connector đã xoá vẫn nằm trong roster tới khi khởi
+dictionary trong tiến trình do host sở hữu.** **Máy của một connector đã xoá vẫn nằm trong roster tới khi khởi
 động lại** (§23.5), không đổi. 🔴 **F-1 đổi phần "mặc định" ấy: gốc dữ liệu theo host giờ là hình dạng triển
 khai ĐƯỢC HỖ TRỢ (§15.9)** — cả mười ba thư mục đều dời chỗ được bằng một biến `ST4I_*_DIR` suy ra được, và
 một test suy ra cả hai tập từ `src/` nên store thứ mười bốn không thể ra đời mà thiếu biến. Cái F-1 **không**
