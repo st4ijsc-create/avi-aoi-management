@@ -226,6 +226,39 @@ export const userRouter = router({
 
       // Generate base32 secret (same encoding the old otplib path produced).
       const user = await db.getUserById(ctx.user.id);
+      /**
+       * ★★★ Pha 7 / review TOÀN NHÁNH **C-1** — HÀNG RÀO BẮT BUỘC TRƯỚC MỌI LƯỢT GHI HẠT GIỐNG.
+       *
+       * ⚠⚠⚠ Thủ tục này là `protectedProcedure` ⇒ nó chỉ đòi **một phiên hợp lệ**. Không mật khẩu,
+       * không OTP, không `requirePerCallFreshTotp`. Trước hàng rào này nó **ghi đè**
+       * `user_secrets.twoFactorSecret` **và trả secret mới về cho người gọi**, trong khi cờ
+       * `users.two_factor_enabled` **giữ nguyên `true`**. Đo được (đột biến review):
+       *   `2FA đang bật=true · secret ĐỔI=true · cờ 2FA sau=true`
+       *   `mã do KẺ TẤN CÔNG sinh qua verifyTotpOnce: hopLe=true`
+       * ⇒ **một phiên bị chiếm là đủ để tự cấp hạt giống mới**, rồi tự sinh mã hợp lệ cho MỌI cổng
+       *   step-up của Pha 4–7 (`requirePerCallFreshTotp` · vé một-lần · sổ `totp_consumed` ·
+       *   `vram.preempt`/`releaseStale`). Kẻ tấn công **không cần ĐỌC** bí mật — nó **GHI**.
+       *
+       * ⚠ Đây **KHÔNG** phải một luật mới: tuyến SONG SONG `twoFactor.generateSecret`
+       *   (`server/routers/twoFactorRouter.ts:80-82`) đã có đúng hàng rào này từ trước. Cặp tuyến
+       *   song song thứ BA (`twoFactor.generateSecret` ≡ `user.setup2FA`) là cặp mà phép đếm ở
+       *   `server/_core/totpOnce.ts:20-24` **SÓT**, và nó chính là cặp **hai bản sao BẤT ĐỒNG**.
+       * ⚠ Lượng từ cưỡng chế câu này nằm ở `server/routers/totpSeedWriteScan.test.ts` — **∀ điểm
+       *   ghi hạt giống TOTP trong `server/**` phải có hàng rào**, để cặp song song thứ TƯ không
+       *   sinh ra im lặng.
+       *
+       * ⚠⚠ Hàng rào **chỉ chặn người ĐÃ BẬT**: người chưa bật 2FA vẫn đăng ký được (đúng nghĩa
+       *    "thu hẹp"), và người đã bật **giữ nguyên hạt giống đang dùng** — đường đổi hợp lệ là
+       *    `user.disable2FA` (đòi **mật khẩu + OTP**) rồi thiết lập lại.
+       */
+      if (user?.twoFactorEnabled) {
+        throw appError(
+          'BAD_REQUEST',
+          'OPERATION_FAILED',
+          { operation: 'regenerateTwoFactorSecret' },
+          '2FA đã được bật. Hãy tắt 2FA trước khi tạo lại hạt giống.',
+        );
+      }
       const appName = 'SYNAPSE';
       const accountName = user?.username || user?.email || `user_${ctx.user.id}`;
       const generated = speakeasy.generateSecret({
