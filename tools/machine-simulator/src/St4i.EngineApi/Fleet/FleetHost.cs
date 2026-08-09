@@ -112,11 +112,21 @@ public sealed class FleetHost
         // while leaving it perfectly reachable in production — FleetHostConnectorVisibilityTests builds its
         // host with no logger precisely so the mutation stays red. See FleetCore._logWarning.
         //
-        // Log LEVEL: fourteen call sites collapse onto two channels here (blueprint §9.5 mandates the pair).
-        // Message-only sites were all LogWarning and stay LogWarning. The ten exception-carrying sites were
-        // five LogWarning, two LogError and three LogDebug; all ten now arrive as LogError. That is a
-        // severity change in the LOG CHANNEL ONLY — no product behaviour, no test and no endpoint observes
-        // it — and it is recorded in blueprint §10 rather than papered over.
+        // Log LEVEL: fourteen call sites, recounted from the pre-E-2 source (commit 5f2b8883) rather than
+        // from the note that records them — four message-only (all LogWarning, all still LogWarning here)
+        // and ten exception-carrying, which were five LogWarning + two LogError + three LogDebug. Blueprint
+        // §10.4's accounting is exact and there is no fourth LogDebug site.
+        //
+        // 🔴 G-1 — E-2 collapsed all ten onto LogError because EdgeCore's convention had only two channels.
+        // The three that were LogDebug are best-effort teardown cleanup, and St4i.EngineApi ships no
+        // appsettings.json, so they did not go from Debug to Error in an operator's eyes: they went from
+        // SILENT to Error, and under AddWindowsService from silent to a synchronous Windows Event Log write.
+        // A third channel restores exactly those three (see FleetCore._logDebug for why LogDebug and not
+        // LogInformation, and for the enumeration behind "exactly three").
+        //
+        // The remaining five drifted sites (LogWarning -> LogError) are LEFT as E-2 recorded them: they
+        // change severity but NOT Event Log presence, because AddEventLog's default filter already admits
+        // Warning. That is the whole of the difference, and it is why this task is three lines and not ten.
         Action<string>? logWarning = logger is null
             ? null
             : msg => logger.LogWarning("{FleetCoreMessage}", msg);
@@ -124,11 +134,22 @@ public sealed class FleetHost
             ? null
             : (ex, msg) => logger.LogError(ex, "{FleetCoreMessage}", msg);
 
-        // 🔴 P2-1, unchanged in every observable way — see FleetCore._onMachineSeeded. `_ =` plus the `Async`
-        // suffix reads as fire-and-forget and is NOT (blueprint §9.2 violation 3: a real AssetRegistryStore
-        // runs its whole SQLite transaction on the calling thread, under FleetCore._gate, blocking a reader
-        // of EstopEngaged by up to 12.35 ms). E-2 is a move, so this stays exactly as costly as it was:
-        // exactly one invocation per seeded machine, no more, and null when no registry is wired.
+        // 🔴 G-1 — the third channel, and NULL when there is no ILogger for exactly the reason the pair
+        // above is: a never-null callback removes the only way to build the core without one, which is what
+        // makes D-7a's Critical testable at all.
+        Action<Exception, string>? logDebug = logger is null
+            ? null
+            : (ex, msg) => logger.LogDebug(ex, "{FleetCoreMessage}", msg);
+
+        // 🔴 P2-1 — see FleetCore._onMachineSeeded. `_ =` plus the `Async` suffix reads as fire-and-forget
+        // and is NOT: Microsoft.Data.Sqlite does not override the async ADO.NET members, so a real
+        // AssetRegistryStore runs its whole SQLite transaction on THIS thread. This lambda is unchanged and
+        // still exactly as costly as it was — one invocation per seeded machine, synchronous, null when no
+        // registry is wired.
+        //
+        // 🔴 G-1 changed WHERE the core invokes it, not what it does: no longer under FleetCore._gate
+        // (blueprint §9.2 violation 3, the 12.35 ms block of an EstopEngaged reader), so the cost lands on
+        // the registering caller instead of on every reader of the halt latch.
         Action<MachineDescriptor>? onMachineSeeded = assetRegistry is null
             ? null
             : descriptor => { _ = assetRegistry.UpsertAsync(descriptor); };
@@ -146,6 +167,7 @@ public sealed class FleetHost
             eventBus,
             logWarning: logWarning,
             logError: logError,
+            logDebug: logDebug,
             onLiveSettingsRebuilt: onLiveSettingsRebuilt,
             configStore: configStore,
             productConfigStore: productConfigStore,
