@@ -1768,6 +1768,22 @@ EXPECT_EDGESERVICE=50
 #       enumeration order. Added because "identical mechanism, no separate test" is exactly the reasoning
 #       this project has been burned by; a fix nothing can turn red is a fix nobody has measured.
 #
+# 🔴 G-2 FIX ROUND 2 raises this 1314 -> 1315 (+1), counted from the runner. Same file; no file added,
+# rewritten or deleted.
+#   WhenAFaultingSlotsOwnErrorLogThrows_TheFaultIsStillRecordedInLastError            +1
+#       Re-review NEW-1 — the THIRD instance of the same shape in FleetCore.cs, and the one two rounds of
+#       sibling grepping could not reach: StartSlot's per-slot fault handler called the host _logError as its
+#       FIRST statement, ahead of the under-_gate slot removal and the guarded disposal. A throwing host
+#       logger abandoned the whole handler, and the sharp casualty is not the leak — LastError was never set,
+#       so GET /v1/health reported HEALTHY on a faulted fleet, permanently. The assertion is LastError, not a
+#       log line. Both earlier sweeps grepped `_logDebug` in a disposal LOOP; this is `_logError` in a fault
+#       handler with no loop, which is why a grep on wording cannot find a shape.
+#
+# 🔴 RUNTIME, updated with the count: SIX of the twelve tests in this file now wait on something — two Burst
+# tests on the real BurstDuration (4 s), three on a polled fire-and-forget historian write, and this one on a
+# polled LastError. Still ~8-9 s for the file; the polls resolve in milliseconds on a healthy run and only
+# their TIMEOUTS are long, which is what keeps a failure red rather than hung.
+#
 # EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE are deliberately UNCHANGED,
 # and that is the check rather than a coincidence: G-2 touches exactly ONE product file
 # (src/St4i.EdgeCore/Fleet/FleetCore.cs) and adds one test file in one suite. A total moving anywhere else
@@ -1775,7 +1791,7 @@ EXPECT_EDGESERVICE=50
 # 22: G-2 adds no driver and no connector kind. EXPECT_WARNINGS stays 116 — the new code adds no warning and
 # the one signature change (DisposeOrphanedConnectorDrivers' parameter becoming nullable) is matched by a
 # null guard at its head, so no CS86xx appears.
-EXPECT_ENGINEAPI=1314
+EXPECT_ENGINEAPI=1315
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

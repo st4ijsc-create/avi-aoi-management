@@ -461,6 +461,62 @@ public sealed class FleetHostGateCommitCompletionTests
         }
     }
 
+    /// <summary>🔴 The THIRD instance of the I-3 shape (re-review NEW-1), and the one two rounds of my own
+    /// sibling sweeps could not reach.
+    ///
+    /// <para><c>StartSlot</c>'s per-slot fault handler called the host <c>_logError</c> as its FIRST
+    /// statement, ahead of the under-<c>_gate</c> slot removal and the guarded disposal. A throwing host
+    /// logger abandoned the whole handler, and the sharpest casualty is not a leak: <b><c>LastError</c> is
+    /// never set, so <c>GET /v1/health</c> reports HEALTHY on a faulted fleet</b> — permanently, because
+    /// nothing else writes that field. The slot also stays in <c>_slots</c>, so the fleet keeps reporting a
+    /// dead slot as live, and the exception escapes into <c>Task.Run</c> where nothing observes it.</para>
+    ///
+    /// <para><b>Why the previous sweeps missed it, since that is the transferable part:</b> both keyed on
+    /// <c>_logDebug</c> inside a per-item <c>catch</c> in a disposal LOOP. This is <c>_logError</c>, in a
+    /// per-slot FAULT handler, with no loop. Same shape, no shared vocabulary — a grep keys on the words an
+    /// author happened to pick, and a shape has none.</para>
+    ///
+    /// <para><b>It is NOT an S-set member</b> and this test does not claim it is: the seam runs BEFORE the
+    /// under-<c>_gate</c> commit, so nothing is committed-then-stranded. It is the same hazard reached from
+    /// the other side.</para></summary>
+    [Fact]
+    public async Task WhenAFaultingSlotsOwnErrorLogThrows_TheFaultIsStillRecordedInLastError()
+    {
+        const string label = "g2-slotfault";
+        var logger = new RecordingLogger { ThrowOnFragment = "faulted" };
+        var host = CreateHost(logger);
+        var driver = new ReadThrowingDriver(label);
+
+        host.AdditionalPipelinesForTests = () => new List<(string, IDeviceDriver, MappingProfile)>
+        {
+            (label, driver, ProfileFor(label)),
+        };
+
+        try
+        {
+            host.Start();
+
+            // THE ASSERTION: the fault reached the field GET /v1/health reads. Before the fix the host's
+            // logger threw first and this stayed null forever.
+            await WaitUntilAsync(
+                () => host.LastError is not null,
+                "the slot fault to reach LastError despite the host's own error log throwing");
+
+            Assert.Contains(InjectedMarker, host.LastError!.Message, StringComparison.Ordinal);
+
+            // …and the slot was genuinely torn down rather than left in _slots holding its driver.
+            await WaitUntilAsync(
+                () => driver.DisposeCount == 1,
+                "the faulted slot's driver to be released");
+        }
+        finally
+        {
+            host.AdditionalPipelinesForTests = null;
+            logger.ThrowOnFragment = null;
+            try { host.Stop(); } catch { /* best-effort */ }
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // S4 (first half) — the restart chokepoint's rebuild.
     // ─────────────────────────────────────────────────────────────────────
@@ -738,6 +794,25 @@ public sealed class FleetHostGateCommitCompletionTests
         {
             Interlocked.Increment(ref _disposeCount);
             return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>Faults out of <c>ReadAsync</c> with something that is NOT an
+    /// <see cref="OperationCanceledException"/> — the only way to reach <c>StartSlot</c>'s general per-slot
+    /// fault handler, which is where re-review NEW-1 lives.</summary>
+    private sealed class ReadThrowingDriver : DisposeCountingDriver
+    {
+        public ReadThrowingDriver(string id) : base(id) { }
+
+        public override async IAsyncEnumerable<DeviceReading> ReadAsync([EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            ct.ThrowIfCancellationRequested();
+            throw new InvalidOperationException($"{InjectedMarker}: this driver's read loop faulted");
+
+#pragma warning disable CS0162 // unreachable: this method is an iterator with no yield on its live path
+            yield break;
+#pragma warning restore CS0162
         }
     }
 

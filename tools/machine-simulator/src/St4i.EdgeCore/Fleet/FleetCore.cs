@@ -366,12 +366,25 @@ internal sealed class FleetCore
     /// siblings. This is the axis, not the count: nothing here overlaps the nine, because none of these paths
     /// is about reaching I/O under the lock.
     ///
-    /// <b>SEVEN MEMBERS. One list, closed and open together, so the headline and the enumeration are the same
-    /// object.</b> (Round 1 of G-2 said "the sweep found six more" over a list of five — a count contradicted
-    /// by the list beneath it, which is the exact defect the commit BELOW this branch's base was written to
-    /// fix, and which G-2's own report claimed to have caught in its commit message while leaving it here.
-    /// Corrected by review. The sweep found FIVE more; re-deriving the set added a sixth, item 7, which the
-    /// sweep's single-completion table could not represent.)
+    /// <b>EIGHT (commit, completion) PAIRS IN SEVEN ROWS, and the two numbers are reconciled here rather than
+    /// made to agree.</b> The unit of this class is a <b>(commit, completion) pair</b> — that is the rule item
+    /// 7 established and review C-1 vindicated: one commit can owe more than one off-lock completion, and each
+    /// is separately losable. Apply that rule and you count <b>eight</b>. The list below has <b>seven rows</b>
+    /// because <b>item 2 carries two pairs in one row</b> (the halt teardown and the halt run event) while item
+    /// 7 is a row of its own.
+    ///
+    /// <b>That asymmetry is historical, not principled, and it is kept deliberately.</b> Item 7 was found
+    /// first, as a separate member; finding it is what produced item 2's second pair a round later. Folding 7
+    /// into 3 — or splitting 2 into two rows — would renumber a vocabulary (S1…S7) that this branch's report,
+    /// its tests and its ledger all speak. So: <b>a reader deriving the set from the rule should expect eight
+    /// pairs and find seven rows, and item 2 is where the extra pair lives.</b> Round 2 of review was right
+    /// that "SEVEN" alone was not re-derivable.
+    ///
+    /// (Round 1 of G-2 said "the sweep found six more" over a list of five — a count contradicted by the list
+    /// beneath it, which is the exact defect the commit BELOW this branch's base was written to fix, and which
+    /// G-2's own report claimed to have caught in its commit message while leaving it here. Corrected by
+    /// review. The sweep found FIVE more; re-deriving the set added a sixth, item 7, which the sweep's
+    /// single-completion table could not represent.)
     /// <list type="number">
     /// <item><b>CLOSED (G-1).</b> The seed-notification queue — commit <see cref="EnqueueSeedNotification"/>,
     /// completion <see cref="DrainSeedNotifications"/>.</item>
@@ -380,8 +393,8 @@ internal sealed class FleetCore
     /// event needed a second round (review C-1) — round 1 guaranteed the teardown and left the run event
     /// exposed to this member's own throw site, which inflates OEE Availability.</item>
     /// <item><b>CLOSED (G-2).</b> <see cref="Start"/> → <see cref="StartLocked"/> →
-    /// <see cref="CompleteStartOffLock"/> — <b>with one residual, named rather than swept: see item 7's
-    /// sibling note below.</b></item>
+    /// <see cref="CompleteStartOffLock"/> — <b>with one residual, named rather than swept: see the
+    /// "NAMED, NOT CLOSED" note directly below this list.</b></item>
     /// <item><b>CLOSED (G-2).</b> <see cref="Burst"/> → <see cref="RevertBurstAfterDelayAsync"/>.</item>
     /// <item><b>PARTLY OPEN.</b> The restart chokepoint. The rebuild is now unconditional over an off-lock
     /// TEARDOWN that throws (<see cref="RegisterMachine"/>/<see cref="ApplyScenario"/>), but a
@@ -1746,6 +1759,16 @@ internal sealed class FleetCore
         // direction and no better. `halted` is set after the two commits the event actually describes, so it
         // is true exactly when an "Estop" is truthful — including for an already-stopped fleet, where
         // StopLocked no-ops and this method has always recorded the event anyway.
+        //
+        // 🔴 IF YOU ARE HERE TO DELETE `halted` BECAUSE NOTHING FAILS WITHOUT IT: NOTHING WILL. Measured —
+        // mutation N5 removed the `if (halted)` guard below and SURVIVED the whole suite, with the round's
+        // positive control on record. The guard is DEFENSIVE and its path is unreachable today: `halted` is
+        // false only if StopLocked() or `_estopEngaged = true` throws, and StopLocked cannot (its
+        // Cts.Cancel() is caught per slot; the unsubscribe/ToList/Clear cannot throw). It is kept because
+        // "effectively non-throwing today" is a property of the current callee, not of this method — this
+        // branch's own recurring rule — and because the day StopLocked gains a throw, the failure this guard
+        // prevents is a FABRICATED halt in the OEE timeline, which no test would catch either. Deleting it is
+        // silent in both directions; that is the argument for keeping it, not against.
         PipelineHandle handle = default;
         var halted = false;
         try
@@ -2385,7 +2408,33 @@ internal sealed class FleetCore
             }
             catch (Exception ex)
             {
-                _logError?.Invoke(ex, $"FleetCore pipeline slot '{label}' faulted");
+                // 🔴 G-2 FIX ROUND 2 (re-review NEW-1) — THE THIRD INSTANCE OF THE I-3 SHAPE IN THIS FILE,
+                // and the one my own sibling grep could not reach. The host `_logError` call below used to be
+                // the FIRST statement of this handler, ahead of everything else in it. A host wires that
+                // delegate to its own ILogger; a throw there abandoned the entire catch:
+                //   - the faulted slot stayed in `_slots`, so `IsRunning` kept reporting a dead slot as live;
+                //   - `LastError` was never set, so `GET /v1/health` reported HEALTHY on a faulted fleet —
+                //     permanently, since nothing else sets it;
+                //   - `_running` was never flipped when the last slot died;
+                //   - the driver and its CTS were never released;
+                //   - and the exception escaped into `Task.Run`, where nothing observes it. Silent.
+                // Moved to the END of the handler. Same message, same channel, same unconditional emission
+                // (it still fires for a superseded slot, where `removed` is false) — only its position
+                // relative to the commit and the disposals changes, and nothing in the tree asserts that
+                // position. Emitting AFTER `LastError = ex` is also strictly better for an operator: a reader
+                // who sees this line and then polls /v1/health can no longer beat the field write to it.
+                //
+                // WHY THE GREP MISSED IT, recorded because the lesson is the transferable part: I swept for
+                // `_logDebug` inside per-item catches in disposal LOOPS. This is `_logError`, in a per-slot
+                // FAULT handler, with no loop. Same shape, no shared vocabulary — a grep keys on the words an
+                // author happened to choose, and a shape has no words. The blueprint's own D-7b correction
+                // says to start from the SET OF SITES (here: every `?.Invoke` on a host log seam) and ask the
+                // question at each, which is what the reviewer did and I did not.
+                //
+                // NOT A MEMBER OF THE S-SET, stated so this does not get miscounted: the seam runs BEFORE the
+                // under-_gate commit below, so nothing is committed-then-stranded. It is the same HAZARD
+                // class (a host seam in front of work that must not be skipped) reached from a different
+                // direction, and closing it reopens no "CLOSED" claim.
 
                 // G2-6 review fix — the disposes below happen OUTSIDE _gate (never dispose while holding
                 // the lock): `removed` is decided under _gate (same slot-membership identity guard as
@@ -2434,6 +2483,9 @@ internal sealed class FleetCore
 
                     cts.Dispose();
                 }
+
+                // 🔴 G-2 fix round 2 — LAST, not first. See this handler's own remarks above.
+                _logError?.Invoke(ex, $"FleetCore pipeline slot '{label}' faulted");
             }
         });
     }
