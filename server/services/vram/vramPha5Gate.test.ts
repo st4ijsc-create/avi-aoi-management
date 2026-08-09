@@ -320,7 +320,13 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   `server/db/auth.ts`), cộng một **∀ trên AST** cấm mọi phép so `loginMethod` với chuỗi.
     //   `server/_core/` **không** có đường bao trong cổng ⇒ thiếu dòng này thì lưới ấy *"theo cấu
     //   tạo không bao giờ được canh"* — đúng lỗ đã để lưới §5 của I-4 khai XANH suốt.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(38); // vá nhà tù I-4: +1
+    // ⚠ Pha 7 / mig `0316`: 38 → **39**, thêm `server/_core/xacThucNoiBoDb.test.ts`. Lý do KHÔNG
+    //   phải "cho đủ": `0316` chốt tập *"phương thức xác thực nội bộ"* **lần thứ hai** (plpgsql,
+    //   trong `kiem_xac_thuc_noi_bo()`) cạnh hằng TS đã có ⇒ **hai nguồn cho một khái niệm**, đúng
+    //   cơ chế đã đẻ ra phần tử thứ N+1 mười bảy lần. Lưới mới đọc `pg_get_functiondef` **từ DB
+    //   đang chạy** rồi neo HAI CHIỀU vào hằng TS. `server/_core/` không có đường bao trong cổng ⇒
+    //   thiếu dòng này thì nó *"theo cấu tạo không bao giờ được canh"*.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(39); // mig 0316: +1
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -434,7 +440,12 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   `server/_core/xacThucNoiBo.test.ts`. Nó vào tập bị canh qua bộ nhận diện **NỘI DUNG** (tự
     //   khai `Pha 5`, có chủ ý — xem docstring của nó), và phải có đường riêng ở §Cổng kiểm chung
     //   ⇒ `CONG.length` 37 → **38** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(101); // vá nhà tù I-4: +1
+    // ⚠ Pha 7 / mig `0316`: 101 → **102**. **Đúng MỘT** file mới
+    //   (`server/_core/xacThucNoiBoDb.test.ts`, xem lý do ở ô `CONG.length`). Nó tự khai `Pha 5`
+    //   nên vào tập bị canh qua bộ nhận diện **THỨ NHẤT** (nội dung), và nó phải có đường riêng ở
+    //   §Cổng kiểm chung ⇒ `CONG.length` 38 → **39** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ
+    //   trên **hai** trục.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(102); // mig 0316: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {
