@@ -242,10 +242,13 @@ dotnet run --project src/St4i.EdgeService -- --fleet fleet.json --smoke 20
 > 🔴 **Since Đợt E this host also HOSTS CONNECTORS — Modbus TCP and, since E-5, Modbus RTU on the wire.**
 > It reads its own `connectors.json` and runs one driver and one pipeline per entry alongside the simulated
 > group; one RTU **bus** entry becomes N instances, one per device on the line. An OPC-UA entry is still
-> **refused by name** — a pinned decision, not a gap, waiting on the per-host data-root question. A machine
+> **refused by name** — a pinned decision, not a gap; 🔴 since F-1 the per-host data-root question it was
+> waiting on is answered (§15.9) and what remains is engineering, so the refusal stands (§24.2). A machine
 > this host drives is **read-only from `St4i.EngineApi`**, and a COM port this host holds is a port
-> `St4i.EngineApi` cannot open. **§24 is the whole statement** — read it before wiring this host to a real
-> device.
+> `St4i.EngineApi` cannot open — 🔴 and on an RTU **gateway** nothing refuses the second host at all
+> (§24.7: one host per wire is a deployment constraint, not something this build enforces). If both hosts run
+> here, give this one its own data roots (§15.9). **§24 is the whole statement** — read it before wiring this
+> host to a real device.
 
 - `--fleet <path>` — load the roster from a `fleet.json`-shaped file via `FleetConfig.Load`. A file that
   parses successfully (with entries, or validly empty — an operator's explicit empty declaration) is
@@ -1250,21 +1253,26 @@ missed hold credentials**:
 The remaining six (`opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`) are customer
 data or trust material rather than bearer credentials, but this script's stated purpose is a clean-slate
 wipe — leaving them meant it did not do that, and an operator reading the old output would reasonably
-have believed the machine was clean. Every directory except `creds` is relocatable and has its own
-`-XxxDir` parameter.
+have believed the machine was clean. 🔴 **All THIRTEEN directories are relocatable and each has its own
+`-XxxDir` parameter** — `creds` included. (This paragraph said "every directory except `creds`" until the
+Đợt F branch review: `creds` became relocatable in the test-hygiene batch via `ST4I_CREDS_DIR`
+(`CredentialStore.cs`), `remove-data.ps1` gained `-CredsDir` in the same change, and this sentence was not
+updated with them. It mattered: it told an operator who HAD relocated `creds` that the wipe would still find
+it at the default, so the DPAPI-sealed machine credential survived a "clean-slate" decommission.)
 
 **Relocated directories (WS-F1 final-review fix F3):** the `ST4I_*_DIR` variables mean a deployment's
 real data doesn't have to live under
 `%ProgramData%\ST4I\sim\*` at all — the script used to assume it always did, silently deleting an
 empty default directory while the real data sat untouched elsewhere. It now resolves **each of the
-twelve relocatable directories** per its own `-XxxDir` parameter, else the matching `ST4I_*_DIR` environment variable
+thirteen relocatable directories** per its own `-XxxDir` parameter, else the matching `ST4I_*_DIR` environment variable
 in **this same PowerShell process**, else the `%ProgramData%` default — printing the resolved path for
 each before doing anything. **It does NOT read the service's own registry `Environment` value** (only
 this shell's own env) — if a relocated directory was only ever configured there, pass the matching
 `-XxxDir` parameter explicitly (check the registry first: `Get-ItemProperty
 'HKLM:\SYSTEM\CurrentControlSet\Services\St4iEngineApi' -Name Environment`), or that directory is
-missed by this script and must be removed by hand. `creds` has no relocation env var (`CredentialStore`
-is not relocatable) — always `%ProgramData%\ST4I\sim\creds`.
+missed by this script and must be removed by hand. 🔴 **That applies to `creds` too** — it resolves through
+`-CredsDir` > `ST4I_CREDS_DIR` > the `%ProgramData%` default like every other directory, so a relocated
+credential store is exactly as easy to miss, and it is the one holding the DPAPI-sealed `mk_`.
 
 *(VI: Gỡ cài đặt chỉ xoá những gì MSI đã cài (Program Files, shortcut, service nếu có bật) — dữ liệu
 `%ProgramData%\ST4I\sim\*` được GIỮ LẠI mặc định vì MSI không hề biết tới các thư mục này (do engine tự
@@ -1283,7 +1291,11 @@ register/node-map, mà node map OPC-UA chứa `password` ở dạng **văn bản
 (`opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`) là dữ liệu khách hàng hoặc vật
 liệu tin cậy chứ không phải thông tin đăng nhập, nhưng mục đích script tự nhận là **xoá sạch để thanh
 lý** — bỏ sót chúng nghĩa là nó không làm đúng điều đó, và người vận hành đọc kết quả cũ sẽ tin rằng máy
-đã sạch. Mọi thư mục trừ `creds` đều chuyển chỗ được và đều có tham số `-XxxDir` riêng; nếu đã chuyển chỗ
+đã sạch. 🔴 **CẢ MƯỜI BA thư mục đều chuyển chỗ được và đều có tham số `-XxxDir` riêng — kể cả `creds`.**
+(Câu này viết "mọi thư mục trừ `creds`" cho tới vòng review nhánh Đợt F: `creds` đã chuyển chỗ được từ đợt
+test-hygiene qua `ST4I_CREDS_DIR`, `remove-data.ps1` nhận `-CredsDir` trong cùng thay đổi ấy, và câu này không
+được cập nhật theo. Nó có hậu quả thật: nó bảo người vận hành ĐÃ dời `creds` rằng lệnh xoá vẫn tìm thấy nó ở
+mặc định, nên khoá máy niêm DPAPI sống sót qua một lần "xoá sạch để thanh lý".) Nếu đã chuyển chỗ
 qua một biến `ST4I_*_DIR` nào đó, truyền tham số `-XxxDir` tương ứng — script KHÔNG tự đọc giá trị
 registry `Environment` của service, chỉ đọc biến môi trường của CHÍNH shell đang chạy nó; nếu không khớp,
 phải xoá thư mục thật bằng tay.)*
@@ -1475,6 +1487,271 @@ vì `IConvertible.ToDouble` không chắn, vốn từng crash trên giá trị n
 `--selftest` (§11) — chạy thật, tự động khi được gọi, báo lỗi rõ nếu bug tái xuất hiện — nhưng
 `--selftest` là một lượt smoke thủ công/có tài liệu riêng, KHÔNG nằm trong `dotnet test` hay bất kỳ cổng
 CI nào.)*
+
+### 15.9 🔴 Two hosts on one machine — per-host data roots / Hai host trên một máy — gốc dữ liệu riêng
+
+**EN** — Since Đợt E it is a normal deployment to run **`St4i.EngineApi` and `St4i.EdgeService` on the same
+Windows machine** (§24). They share no roster, no claim registry and no channel — but by default they share
+**one set of files**. This section is how to give each host its own, and what that costs.
+
+**The rule, and it is the whole mechanism:** every directory this product creates under
+`%ProgramData%\ST4I\sim\<name>` is relocatable by an environment variable whose name is derived from the
+directory name — **`ST4I_` + `<NAME>` (uppercased, `-` → `_`) + `_DIR`**. There are **thirteen** of them
+today, and there is no exception.
+
+🔴 **Read the WRITES/READS columns before you relocate anything.** Relocating a root a host **writes**
+gives that host its own copy of something it produces — that is isolation, and it is what this section is for.
+Relocating a root a host only **reads** disconnects it from data **another host produces**, and no process on
+the machine will ever fill the new directory. The two look identical in a registry value and are opposite in
+effect.
+
+| Directory | Variable | Who WRITES it | Who READS it | What loses visibility if you move it |
+|---|---|---|---|---|
+| `creds` | `ST4I_CREDS_DIR` | **EngineApi** (`OnboardingService`), **WPF shell** (`OnboardingViewModel`/`SettingsViewModel`) | those two **+ EdgeService** (`EdgeWorker`) | the DPAPI-sealed `mk_` key per machine. 🔴 **EdgeService never writes one** — see the recipe below |
+| `wal` | `ST4I_WAL_DIR` | **all three hosts** | all three | the store-and-forward backlog: unsent readings stay in the **old** `<machineCode>.jsonl` and are never sent |
+| `identity` | `ST4I_IDENTITY_DIR` | EngineApi | EngineApi | the device PFX private key **and the node id** — a new root mints a **new device**, and a Site that pinned the old fingerprint no longer trusts it |
+| `historian` | `ST4I_HISTORIAN_DIR` | EngineApi | EngineApi | `historian.db` + `oee-settings.json` — all production history and OEE inputs |
+| `security` | `ST4I_SECURITY_DIR` | EngineApi | EngineApi | `security.db` (users/sessions/audit) + the DataProtection key ring — **every login and the audit trail** |
+| `notifications` | `ST4I_NOTIFICATIONS_DIR` | EngineApi | EngineApi | alarm channels **and their DPAPI-protected credentials** (§22.5) |
+| `connector-config` | `ST4I_CONNECTOR_CONFIG_DIR` | EngineApi | EngineApi | saved device connections (an OPC-UA map carries its password in plaintext) |
+| `opcua-pki` | `ST4I_OPCUA_PKI_DIR` | EngineApi (an `OpcUaDriver` writes its app-instance cert) | EngineApi | the OPC-UA app-instance certificate + trusted-peer store |
+| `alarms` | `ST4I_ALARMS_DIR` | EngineApi | EngineApi | `alarms.db` — active alarms and history |
+| `assets` | `ST4I_ASSETS_DIR` | EngineApi | EngineApi | `assets.db` — the canonical asset registry |
+| `settings` | `ST4I_SETTINGS_DIR` | EngineApi | EngineApi | `fleet-settings.json` — serverUrl/machineCode/verifyTls |
+| `sitelink` | `ST4I_SITELINK_DIR` | EngineApi | EngineApi | the Site link and its operator-pinned PEM |
+| `bridge-spool` | `ST4I_BRIDGE_SPOOL_DIR` | EngineApi | EngineApi | the durable northbound spool |
+
+*(The WRITES/READS columns are an enumeration of CALL SITES in `src/`, not an inference from which assembly
+references which type: `CredentialStore.Save` appears in `St4i.EngineApi/Fleet/OnboardingService.cs` and in the
+WPF shell's two view-models and **nowhere else**, while `St4i.EdgeService`'s single credential call site,
+`EdgeWorker.cs:368`, is a `Load`. `St4i.EdgeService` names `DeviceIdentityStore` nowhere at all, and
+`OpcUaPkiPaths` only inside a doc comment.)*
+
+Pinned by `PerHostDataRootsTests` — `EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName` derives
+**both** sets by scanning `src/`, so a fourteenth store fails it until it has a variable too, and
+`EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared` requires each variable to reach a real
+`Environment.GetEnvironmentVariable` call rather than merely existing as a literal somewhere. That is
+deliberate: the mechanism was already complete before this section existed, and the thing that would break
+per-host roots is not a missing feature but a **new store added without one** — or with one that nothing
+reads.
+
+*(🔴 What those two pins do **not** measure, said here rather than left to be discovered. They prove a
+variable is **declared and read at a resolution site**. They do not execute any store, so they cannot prove the
+resolved value is then **honoured** all the way to a file. Where that last step actually is — **two
+instruments, named apart because they answer different questions** (branch review F-8): (a) counting the files
+under `tests/` that spell a variable's **literal**, and (b) reading each candidate test for a
+`SetEnvironmentVariable(<Store>.EnvVarDir, …)` call. **(a) cannot produce the per-store rows and an earlier
+version of this parenthetical credited it with them** — every store reads through its own constant, so
+`FleetSettingsStoreTests` spells `ST4I_SETTINGS_DIR` **zero** times while driving the seam through
+`FleetSettingsStore.EnvVarDir`, and `BridgeSpoolTests`' only occurrence of its literal is a doc comment. By
+(b): **four** directories have a dedicated env-var witness — `creds` (`CredentialStoreTests`), `settings`
+(`FleetSettingsStoreTests`), `wal` (`WalOptionsTests`), `bridge-spool` (`BridgeSpoolTests`) — plus
+`PerHostDataRootIsolationTests` for the two-root case. **Eight** more are redirected incidentally by host
+harnesses that would read or pollute the real `%ProgramData%` if the redirect were ignored. And
+**`opcua-pki`'s honoured-to-file behaviour IS measured** (branch review F-10, correcting an earlier claim that
+nothing measured it): `OpcUaDriver`'s constructor calls `OpcUaPkiPaths.ResolveRoot(pkiDir)`, and three OPC-UA
+test files hand it a real temporary root and let the driver write its app-instance certificate there — that is
+the **explicit-path** arm, the first tier of the same `explicit > env > default` chain. The residual is
+narrower and is the one to carry: **nothing exercises `ST4I_OPCUA_PKI_DIR`, the environment variable.**
+`historian` is also the one variable read at a composition root (`St4i.EngineApi/Program.cs`) rather than on its store, so a
+host that ever constructed a historian store without going through that root would get the machine-wide default
+with no env-var step. None does today.)*
+
+**How to actually set them — and the two hosts do NOT use the same mechanism.**
+
+🔴 **`St4i.EdgeService` is not a Windows service in this build**, despite the name. `Program.cs` is a plain
+`Host.CreateApplicationBuilder` + `RunAsync()` with **no `AddWindowsService`**; the only `AddWindowsService`
+in `src/` is `St4i.EngineApi`'s, there is no `--install` verb on the edge agent, no WiX component and no
+service key — §15.1 says it in as many words (*"no separate service executable exists"*). **The per-service
+registry `Environment` mechanism of §15.2 therefore does not apply to it.** Set its variables in the shell
+(or scheduled task, or supervisor) that launches the process:
+
+```powershell
+# Host 1 — the ENGINE. It IS a Windows service (St4iEngineApi, §15.1), so §15.2's per-service registry
+# Environment value is the mechanism. Keeping the defaults it already has data in: nothing to do.
+# (unset means %ProgramData%\ST4I\sim\<name>)
+
+# Host 2 — the EDGE AGENT, launched from a shell. Two lines is the WHOLE recipe; see below for why.
+$env:ST4I_WAL_DIR      = 'C:\ProgramData\ST4I\edge\wal'
+$env:ST4I_MACHINE_CODE = 'LINE3-EDGE-01'
+.\St4i.EdgeService.exe            # or: dotnet run --project src/St4i.EdgeService
+```
+
+🔴 **Running the edge agent unattended is out of scope for this build, and that is a gap rather than a
+recipe.** Nothing here registers it with the SCM, so an unattended deployment needs an external supervisor
+(a scheduled task at boot, or a third-party service wrapper) — whichever you use has to carry those two
+variables into the process's own environment, because nothing else will.
+
+🔴 **The second line does MORE than name a queue file, and §15.9 used to describe only half of it.**
+`ST4I_MACHINE_CODE` is the WAL filename's second input **and** the key the edge agent looks its credential up
+by (`EdgeWorker.cs:368`, `CredentialStore.Load(machineCode)`) **and** its Live identity to the platform. So:
+**onboard `LINE3-EDGE-01` on a host that can claim (the engine or the WPF shell, §5) BEFORE starting the edge
+agent** — with the shared creds root recommended below, that claim is what puts the `mk_` where this host will
+find it. Skip that and the host reads `null` forever and never goes Live, which is the identical symptom this
+section attributes to setting `ST4I_CREDS_DIR`, reached by a different route. And changing an
+already-running host's machine code **strands its existing WAL backlog** under the old `<machineCode>.jsonl`,
+which the no-migration warning below does not cover because a machine code is not a root.
+
+🔴 **`ST4I_CREDS_DIR` is deliberately NOT in that block, and adding it would break this host.**
+`St4i.EdgeService` **reads** a credential and can never write one — `CredentialStore.Save` exists only in
+`St4i.EngineApi`'s onboarding service and in the WPF shell, and the edge agent's single credential call site
+(`EdgeWorker.cs:368`) is a `Load`. Point it at a private creds root and nothing on the machine will ever put an
+`mk_` in it: the host reads `null` forever and never goes Live. **The creds root is meant to be SHARED** —
+that sharing is exactly how a machine onboarded on the engine becomes sendable from the edge agent. A private
+creds root is supported but **manual**: onboard the machine on a host that can claim, then copy
+`<machineCode>.bin` into the edge agent's root by hand. DPAPI does not block the copy (both stores seal at
+`LocalMachine` scope, so a blob stays readable anywhere on the **same machine**) — but no `CredentialStore.Save`
+will ever run in that directory to apply the SYSTEM/Administrators lock-down, so apply it yourself with
+`icacls`, because the ACL is then the entire confidentiality boundary.
+
+🔴 **`ST4I_IDENTITY_DIR` is not in that block either, for a weaker reason: it is inert here.**
+`St4i.EdgeService` does not name `DeviceIdentityStore` anywhere. Setting it creates an unused directory and
+implies this host has a device identity of its own, which it does not.
+
+For an **interactive** run the same variables work from the shell that launches the process. Set them before
+starting the second host — nothing is shared between the two processes, which have two environment blocks, and
+that is the entire isolation mechanism. *(🔴 Do not read "set them before starting" as "changing one at
+runtime takes effect". `CredentialStore` genuinely re-resolves on **every call** — it is `static`, with no
+construction point a host could hold — but the other twelve roots are resolved **once**, when the store or its
+options object is constructed at startup. Restart the host after changing any of them.)*
+
+🔴 **Which ones `St4i.EdgeService` actually touches today** — the rest are listed above because they are
+what you would have to move if that changes, not because this host touches them now. It **writes** `wal`,
+**reads** `creds`, and reads `connectors.json`/`fleet.json` beside its own exe. It does **not** touch the asset
+registry, the settings store, the historian, the alarm store, the security database or the device identity.
+**`wal` is the only root both hosts WRITE, so it is the only one where "per-host" means isolation rather than
+disconnection** — which is why the recipe above is two lines and not thirteen.
+
+🔴 **`ST4I_WAL_DIR` is the one that bites first, and it is arithmetic rather than a warning.** The queue file
+is `<walDir>\<machineCode>.jsonl` — a pure function of those two. Two hosts that share **both** share one
+file, and both append to it. Change either one and they do not.
+
+🔴 **NOTHING IS MIGRATED. Moving a root makes the old data INVISIBLE, not copied.** There is no migration
+step, no fallback read of the previous location, and no warning at startup — a store simply finds an empty
+directory and behaves like a fresh install. On a deployment that is already running, that means: saved
+credentials are gone, the WAL backlog is stranded, and — if you move `identity` — the host mints a **new**
+device certificate and node id, so a Site that pinned the old fingerprint stops trusting it. 🔴 **The
+credential remedy depends on WHICH host you moved, and only two of the three can perform it:** `St4i.EngineApi`
+and the WPF shell can claim again (they call `CredentialStore.Save`); **`St4i.EdgeService` cannot claim at
+all** — its only recoveries are to be pointed back at the shared root, or to have the `.bin` copied in by hand
+from a host that did claim. **Move roots on a host that has no data yet, or copy the
+directory contents yourself first.** DPAPI is not an obstacle to copying: both `CredentialStore` and
+`DeviceIdentityStore` seal at `DataProtectionScope.LocalMachine`, so a blob stays readable anywhere on the
+**same machine** — and, for the same reason, the new directory's ACL is the entire confidentiality boundary
+(`CredentialStore.Save` re-applies the SYSTEM/Administrators lock-down on every save; §22.5).
+
+🔴 **The decommissioning wipe follows the roots, but only if you tell it.** `packaging/remove-data.ps1`
+resolves each directory as `-XxxDir` parameter → the matching `ST4I_*_DIR` **in that PowerShell session** →
+the `%ProgramData%` default. It does **not** read a service's registry `Environment` value. A second host's
+relocated data therefore survives a "clean-slate" wipe run from a shell that does not have its variables
+exported — pass the `-XxxDir` parameters explicitly, once per host.
+
+🔴 **This does NOT stop two hosts driving one wire, and the two problems must not be conflated.** Separate
+data roots solve **hosts overwriting each other's files**. They do nothing about **two hosts on one RS-485
+segment**: two hosts with two data directories can still name the same Modbus gateway, or the same COM port.
+That is a separate, unenforced deployment constraint — **§24.7**.
+
+🔴 **OPC-UA at the edge: the blocking condition is cleared, the work is not done.** `St4i.EdgeService` refuses
+an OPC-UA entry by name because dispatching it would make this host a second writer to the machine-wide
+`opcua-pki` root (§24.2). The decision that was missing — *is a per-host data root a supported deployment?* —
+is answered here: **yes**, and `ST4I_OPCUA_PKI_DIR` is the variable. What remains is engineering, and it is
+listed rather than implied: this host has no `OpcUaOptions` of its own (endpoint, node map, PKI root), no
+dispatch arm, and no test that two hosts pointed at two roots keep two certificate stores. **Setting
+`ST4I_OPCUA_PKI_DIR` alone changes nothing** — the entry is still refused by name, and the refusal message
+says so.
+
+*(VI: Từ Đợt E, chạy **`St4i.EngineApi` và `St4i.EdgeService` trên cùng một máy Windows** là một hình dạng
+triển khai bình thường (§24). Hai host không chia sẻ roster, không chia sẻ sổ yêu sách, không chia sẻ kênh
+nào — nhưng mặc định chúng **dùng chung một bộ file**. Mục này nói cách cho mỗi host một bộ riêng, và cái giá
+phải trả. **Quy tắc:** mọi thư mục sản phẩm tạo dưới `%ProgramData%\ST4I\sim\<tên>` đều dời chỗ được bằng một
+biến môi trường suy ra được từ tên thư mục — **`ST4I_` + `<TÊN>` (viết hoa, `-` → `_`) + `_DIR`**. Hôm nay có
+**mười ba** thư mục, **không có ngoại lệ** (bảng bên trên), và có **hai** test ghim trong
+`PerHostDataRootsTests`: `EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName` suy ra **cả hai** tập
+bằng cách quét `src/` (store thứ mười bốn làm test đỏ cho tới khi nó cũng có biến), và
+`EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared` đòi mỗi biến phải tới được một lời gọi
+`Environment.GetEnvironmentVariable` thật, chứ không chỉ tồn tại như một chuỗi ở đâu đó.
+*(🔴 Cái hai phép ghim ấy **KHÔNG** đo: chúng chứng minh biến **được khai báo và được ĐỌC ở một điểm phân
+giải**; chúng không chạy store, nên không chứng minh giá trị đã phân giải rồi **được tôn trọng** tới tận file.
+Bước cuối ấy nằm ở đâu — **HAI dụng cụ, nêu tách nhau vì chúng trả lời hai câu hỏi khác nhau** (review
+nhánh F-8): (a) đếm số file dưới `tests/` có **chuỗi literal** của biến, và (b) đọc từng test ứng viên tìm lời
+gọi `SetEnvironmentVariable(<Store>.EnvVarDir, …)`. **(a) KHÔNG thể sinh ra các dòng theo từng store, mà bản
+trước của đoạn này lại ghi công cho nó** — mọi store đọc qua HẰNG của chính nó, nên `FleetSettingsStoreTests`
+viết `ST4I_SETTINGS_DIR` **không lần nào** trong khi vẫn lái seam qua `FleetSettingsStore.EnvVarDir`, còn
+`BridgeSpoolTests` chỉ nhắc literal của nó trong một chú thích. Theo (b): **bốn** thư mục có nhân chứng riêng
+cho biến — `creds` (`CredentialStoreTests`), `settings` (`FleetSettingsStoreTests`), `wal`
+(`WalOptionsTests`), `bridge-spool` (`BridgeSpoolTests`) — cộng `PerHostDataRootIsolationTests` cho trường hợp
+hai gốc; **tám** thư mục nữa được chuyển hướng **gián tiếp** bởi harness dựng host thật. Và **hành vi
+"tôn trọng tới tận file" của `opcua-pki` CÓ được đo** (review nhánh F-10, đính chính khẳng định trước rằng
+không gì đo nó): hàm dựng `OpcUaDriver` gọi `OpcUaPkiPaths.ResolveRoot(pkiDir)`, và ba file test OPC-UA đưa
+cho nó một gốc tạm thật rồi để driver ghi chứng chỉ app-instance vào đó — đó là nhánh **đường dẫn tường minh**,
+tầng đầu của chính chuỗi `tường minh > env > mặc định`. Phần dư hẹp hơn, và đây mới là thứ phải mang theo:
+**không gì thực thi `ST4I_OPCUA_PKI_DIR`, tức chính biến môi trường.**)*
+
+🔴 **Đọc cột GHI/ĐỌC trước khi dời bất cứ gốc nào.** Dời một gốc mà host **GHI** cho host ấy bản sao
+riêng của thứ chính nó tạo ra — đó là *cô lập*, và đó là mục đích của mục này. Dời một gốc mà host chỉ **ĐỌC**
+sẽ **cắt đứt** nó khỏi dữ liệu do host KHÁC tạo, và **không tiến trình nào trên máy sẽ đổ đầy thư mục mới**.
+Hai việc ấy nhìn trong registry giống hệt nhau và có tác dụng ngược nhau.
+🔴 **Hôm nay `St4i.EdgeService`: GHI `wal`, ĐỌC `creds`**, đọc `connectors.json`/`fleet.json` cạnh exe, và
+**không chạm** sổ tài sản, store cài đặt, historian, store cảnh báo, CSDL bảo mật lẫn danh tính thiết bị.
+**`wal` là gốc DUY NHẤT cả hai host cùng GHI**, nên nó là gốc duy nhất mà "theo host" nghĩa là cô lập chứ không
+phải cắt đứt — vì thế công thức là **`ST4I_WAL_DIR` + `ST4I_MACHINE_CODE` khác nhau**, hai dòng, không phải
+mười ba. File hàng đợi là `<walDir>\<machineCode>.jsonl`, một hàm thuần của hai thứ đó, nên trùng cả hai là
+trùng file và cả hai cùng ghi thêm vào đó.
+🔴 **ĐỪNG đặt `ST4I_CREDS_DIR` cho `St4i.EdgeService` — làm thế là làm HỎNG host đó.** Host này chỉ ĐỌC
+khoá; `CredentialStore.Save` chỉ tồn tại trong onboarding của `St4i.EngineApi` và trong vỏ WPF, còn call site
+duy nhất của tác nhân biên (`EdgeWorker.cs:368`) là một `Load`. Trỏ nó vào một gốc creds riêng thì **không có
+gì trên máy đổ `mk_` vào đó**: host đọc ra `null` mãi mãi và không bao giờ lên Live. **Gốc creds được thiết kế
+để DÙNG CHUNG** — chính việc dùng chung là cách một máy đã onboard trên engine trở nên gửi được từ tác nhân
+biên. Nếu thật sự muốn gốc creds riêng thì được, nhưng **thủ công**: onboard trên host có quyền claim rồi tự
+chép `<machineCode>.bin` sang. DPAPI không cản (cả hai store niêm phong ở phạm vi `LocalMachine`), nhưng sẽ
+không có `CredentialStore.Save` nào chạy ở thư mục ấy để áp khoá ACL SYSTEM/Administrators — hãy tự áp bằng
+`icacls`. **`ST4I_IDENTITY_DIR` cũng không nên đặt**, lý do nhẹ hơn: host này không nhắc `DeviceIdentityStore`
+ở đâu cả, đặt nó chỉ tạo một thư mục vô dụng.
+🔴 **Hai host KHÔNG dùng cùng một cơ chế đặt biến.** `St4i.EngineApi` **là** một Windows service
+(`St4iEngineApi`, §15.1) nên dùng giá trị registry `Environment` của §15.2. **`St4i.EdgeService` KHÔNG phải
+Windows service trong bản build này** dù mang cái tên đó: `Program.cs` của nó là một Generic Host thuần
+(`Host.CreateApplicationBuilder` + `RunAsync()`), **không có `AddWindowsService`** — lời gọi ấy chỉ tồn tại
+trong `St4i.EngineApi` — không có verb `--install`, không có component WiX, không có khoá service; §15.1 nói
+thẳng *"không tồn tại một file thực thi service riêng"*. **Nên cơ chế registry của §15.2 KHÔNG áp dụng cho nó**;
+đặt biến ở chính shell (hoặc scheduled task, hoặc trình giám sát) khởi động tiến trình:
+`$env:ST4I_WAL_DIR = '…'; $env:ST4I_MACHINE_CODE = 'LINE3-EDGE-01'; .\St4i.EdgeService.exe`.
+Chạy tác nhân biên **không cần người trực** nằm NGOÀI phạm vi bản build này — đó là một khoảng trống, không
+phải một công thức: cần một trình giám sát bên ngoài, và chính nó phải mang hai biến ấy vào môi trường của
+tiến trình.
+🔴 **Dòng thứ hai làm NHIỀU hơn những gì §15.9 từng nói.** `ST4I_MACHINE_CODE` vừa là nửa sau tên file
+hàng đợi, vừa là **khoá tra cứu khoá `mk_`** (`EdgeWorker.cs:368`, `CredentialStore.Load(machineCode)`), vừa là
+danh tính Live của host với nền tảng. Vì vậy: **hãy onboard `LINE3-EDGE-01` trên một host claim được (engine
+hoặc vỏ WPF, §5) TRƯỚC khi khởi động tác nhân biên** — với gốc creds dùng chung được khuyến nghị bên dưới,
+chính lần claim ấy đặt `mk_` vào nơi host này sẽ tìm. Bỏ qua bước đó thì host đọc ra `null` mãi mãi và không
+bao giờ lên Live — đúng triệu chứng mục này quy cho việc đặt `ST4I_CREDS_DIR`, chỉ đến bằng đường khác. Và đổi
+mã máy của một host đang chạy sẽ **bỏ lại backlog WAL** dưới tên file cũ, thứ mà cảnh báo không-di-trú bên dưới
+KHÔNG phủ, vì một mã máy không phải một gốc.
+Hai tiến trình có hai khối môi trường — đó là **toàn bộ** cơ chế cô lập.
+*(🔴 Đừng đọc "đặt trước khi khởi động" thành "đổi lúc đang chạy là có tác dụng": `CredentialStore` thật
+sự phân giải lại **mỗi lần gọi** vì nó `static`, còn **mười hai** gốc kia được phân giải **một lần** lúc store
+hoặc options của nó được dựng khi khởi động. Đổi xong phải khởi động lại host.)* 🔴 **KHÔNG CÓ DI TRÚ. Đổi gốc làm dữ liệu cũ trở nên VÔ HÌNH, không
+phải được chép sang** — không có bước di trú, không đọc dự phòng chỗ cũ, không cảnh báo lúc khởi động: store
+thấy thư mục rỗng và hành xử như bản cài mới. Trên một triển khai đang chạy nghĩa là: mất khoá `mk_` đã lưu
+backlog WAL bị bỏ lại, và nếu dời `identity` thì host sinh **chứng chỉ + node id MỚI**, nên Site đã ghim vân
+tay cũ sẽ không còn tin nó. 🔴 **Cách khắc phục khoá `mk_` phụ thuộc host nào bị dời, và chỉ HAI trong ba
+host làm được:** `St4i.EngineApi` và vỏ WPF claim lại được (chúng gọi `CredentialStore.Save`); **`St4i.EdgeService`
+KHÔNG claim được** — nó chỉ có hai đường: trỏ lại gốc dùng chung, hoặc được chép tay file `.bin` từ một host đã
+claim. **Hãy đổi gốc khi host chưa
+có dữ liệu, hoặc tự chép nội dung thư mục trước.** DPAPI không cản việc chép: cả `CredentialStore` lẫn
+`DeviceIdentityStore` niêm phong ở phạm vi `LocalMachine`, nên blob vẫn đọc được ở bất kỳ đâu **trên cùng
+máy** — và cũng vì thế ACL của thư mục mới là **toàn bộ** ranh giới bảo mật. 🔴 **Lệnh xoá dữ liệu đi theo gốc,
+nhưng phải nói cho nó biết:** `packaging/remove-data.ps1` phân giải theo tham số `-XxxDir` → biến `ST4I_*_DIR`
+**trong chính phiên PowerShell đó** → mặc định `%ProgramData%`; nó KHÔNG đọc giá trị registry `Environment`
+của service, nên dữ liệu đã dời chỗ của host thứ hai sẽ **sống sót** qua một lượt "xoá sạch" nếu shell không
+export biến — hãy truyền `-XxxDir` tường minh, mỗi host một lần. 🔴 **Điều này KHÔNG ngăn hai host cùng lái một
+sợi dây, và đừng gộp hai vấn đề:** gốc riêng giải chuyện hai host **ghi đè file của nhau**; hai host với hai
+thư mục khác nhau vẫn trỏ chung một gateway Modbus hoặc chung một cổng COM được — đó là ràng buộc triển khai
+riêng, KHÔNG được thi hành, xem **§24.7**. 🔴 **OPC-UA ở biên: điều kiện chặn đã hết, việc thì chưa xong.**
+Quyết định còn thiếu — *gốc dữ liệu theo host có phải hình dạng được hỗ trợ không?* — được trả lời ở đây:
+**có**, và biến là `ST4I_OPCUA_PKI_DIR`. Cái còn lại là công việc kỹ thuật: host này chưa có `OpcUaOptions`
+riêng (endpoint, node map, gốc PKI), chưa có nhánh dispatch, và chưa có test chứng minh hai host trỏ hai gốc
+giữ được hai kho chứng chỉ. **Chỉ đặt `ST4I_OPCUA_PKI_DIR` thì KHÔNG bật được gì** — entry vẫn bị từ chối theo
+tên, và chính thông điệp từ chối nói vậy.)*
 
 ---
 
@@ -1760,7 +2037,7 @@ fallback profile for every Modbus machine today).
 > arbitration lock. Bus-level keys go beside `devices`, never inside an element, and an unrecognised or
 > misspelled key is **refused** rather than silently ignored.
 >
-> **Two limits, stated here rather than discovered on a bench.** (1) **RS-485 direction control must be
+> **Three limits, stated here rather than discovered on a bench.** (1) **RS-485 direction control must be
 > AUTOMATIC** (auto-DE / TXDEN adapters). This product drives no transmit-enable line and cannot —
 > `System.IO.Ports` exposes no transmit-complete signal, so a software RTS turnaround could only be a
 > timing guess, and a wrong guess corrupts another device's frame on the same segment. An adapter needing
@@ -1769,12 +2046,22 @@ fallback profile for every Modbus machine today).
 > exclusive open, the cancellation latency and the drain primitive were measured against a real COM port
 > by a standalone probe, and the RTU framing is exercised end to end against an in-memory paired
 > transport — neither is a wire. A bench acceptance step with a real RS-485 device remains outstanding.
+> 🔴 (3) **ONE HOST PER SEGMENT, and nothing enforces it — see §24.7, which is the full statement.**
+> Since Đợt E both `St4i.EngineApi` and `St4i.EdgeService` can be configured onto the same segment from
+> their own `connectors.json`. On a directly attached COM port the OPERATING SYSTEM refuses the second
+> open — incidentally, not by this product's design. **On an `rtu-gateway` bus nothing refuses at all:**
+> both hosts connect, neither can see the other, and a stray frame that matches on slave address,
+> function code and byte count is handed back **as the answer** (§24.7 carries the probe). This limit is
+> listed here because §16.4 is where an integrator configures a bus, and it was reachable only from §24
+> until the Đợt F branch review.
 >
 > *(VI: đoạn trên trước đây ghi "Modbus RTU (nối tiếp) chưa có" — nay đã sai. RTU chạy được với HAI
 > transport khai trong `connectors.json`: `"rtu-gateway"` (qua serial device server TCP) và
-> `"rtu-serial"` (cổng COM cắm thẳng). Hai giới hạn: chỉ hỗ trợ adapter RS-485 **tự động đảo chiều**, và
+> `"rtu-serial"` (cổng COM cắm thẳng). BA giới hạn: chỉ hỗ trợ adapter RS-485 **tự động đảo chiều**;
 > **chưa từng có khung tin nào chạy qua transport nối tiếp trên phần cứng thật** — vẫn còn một bước
-> nghiệm thu trên bàn.)*
+> nghiệm thu trên bàn; và 🔴 **MỘT HOST MỘT SEGMENT, không gì thi hành điều đó** — trên cổng COM là hệ
+> điều hành từ chối lần mở thứ hai (tình cờ, không do sản phẩm), còn trên `rtu-gateway` thì **không ai
+> chặn**: xem **§24.7**, đó mới là phát biểu đầy đủ.)*
 
 *(VI: `St4i.EdgeCore.Drivers.Modbus` là driver giao thức trường thật đầu tiên — vòng lặp poll TCP định
 kỳ (NModbus) đọc danh sách thanh ghi cố định từ một Modbus TCP slave, chạy trong pipeline slot cách ly
@@ -5003,7 +5290,7 @@ registers **one instance per entry**, so N entries mean N drivers on N pipelines
 |---|---|---|
 | **Modbus TCP** | **runs it** | `ModbusConnectorFactory` is in `St4i.EdgeCore`; a `ModbusTcpDriver` owns a socket and no machine-wide file. |
 | **Modbus RTU** (an entry declaring a `transport`) | 🔴 **runs it, since E-5** — one entry becomes **N** instances, one per device, each claiming one machine | An RTU entry is a **bus**. Until E-5 this host refused it, because the fan-out reached `RtuBusConfiguration.IsInBusNamespace` in `St4i.EngineApi` — an assembly this host cannot reference. E-5 **moved** that rule (to `ModbusMultidropMap`) and the fan-out (to `St4i.EdgeCore.Config`), so there is still exactly **one** fan-out and one answer to "which registration owns this device"; both hosts call it. Both transports run: a COM line and an RTU-over-TCP gateway. Pinned by `EdgeWorkerConnectorsTests.AnRtuBusEntry_FansOutIntoOneInstancePerDevice_…` and, end to end at the transport, by `St4i.EdgeCore.Tests…ModbusMultidropAgentTests`. |
-| **OPC-UA** | **refused by name** | Not a missing type — `OpcUaConnectorFactory` is right there and would compile. An `OpcUaDriver` writes its app-instance certificate into `%ProgramData%\ST4I\sim\opcua-pki`, **machine-wide, no per-process key**, and dispatching it here would make this host a NEW writer to a machine-wide store. The mechanism to avoid that already exists (`OpcUaConnectorFactory` takes `pkiDir`; `OpcUaPkiPaths.ResolveRoot` honours `ST4I_OPCUA_PKI_DIR`) — **what is missing is a per-host data-root decision, not infrastructure.** Pinned by `AnOpcUaEntry_IsRefusedByName_…`. |
+| **OPC-UA** | **still refused by name** | Not a missing type — `OpcUaConnectorFactory` is right there and would compile. An `OpcUaDriver` writes its app-instance certificate into `%ProgramData%\ST4I\sim\opcua-pki`, **machine-wide, no per-process key**, and dispatching it here would make this host a second writer to the same certificate store `St4i.EngineApi` writes. The mechanism to avoid that already existed (`OpcUaConnectorFactory` takes `pkiDir`; `OpcUaPkiPaths.ResolveRoot` honours `ST4I_OPCUA_PKI_DIR`). 🔴 **F-1 closed the BLOCKING CONDITION** — per-host data roots are a supported deployment (§15.9) — **and the refusal stands anyway, because what is left is work rather than a ruling**: this host has no `OpcUaOptions` of its own (endpoint, node map, PKI root), no dispatch arm, and no test that two hosts on two roots keep two certificate stores. Setting `ST4I_OPCUA_PKI_DIR` alone enables nothing, and the refusal message says so. Pinned by `AnOpcUaEntry_IsRefusedByName_…`. |
 | **Any other kind** | refused | Same as EngineApi: this build has no plugin loader. |
 
 **The OPC-UA refusal is a decision with a test, not an omission** — that is the difference between a refusal
@@ -5127,14 +5414,77 @@ holds COM3 — and on a **gateway** there is no such protection to reason about 
   There is no RS-485 adapter on any build machine, and only adapters with
   **automatic** direction control are supported at all. A bench acceptance step with real hardware remains
   outstanding — a step, not a formality.
-- **Two processes still share one set of machine-wide data files.** `AssetRegistryStore`/`CredentialStore`/
-  `FleetSettingsStore` all live under `%ProgramData%\ST4I\sim\…` with no per-process key. The edge agent
-  touches neither the asset registry nor the settings store today (its only pre-existing writer is the WAL
-  queue), so nothing regressed — **and E-5 did not change that either: an RS-485 bus opens a COM port and a
-  gateway bus opens a socket; neither is a store, and the shared-open bookkeeping is an in-process dictionary
-  the host owns.** The per-host data-root decision is still open, and it is what is still blocking OPC-UA at
-  the edge (§24.2).
+- **Two processes still share one set of machine-wide data files _by default_.** `AssetRegistryStore`/
+  `CredentialStore`/`FleetSettingsStore` all live under `%ProgramData%\ST4I\sim\…` with no per-process key.
+  The edge agent touches neither the asset registry nor the settings store today (its only pre-existing writer
+  is the WAL queue), so nothing regressed — **and E-5 did not change that either: an RS-485 bus opens a COM
+  port and a gateway bus opens a socket; neither is a store, and the shared-open bookkeeping is an in-process
+  dictionary the host owns.** 🔴 **F-1 changed the "by default": per-host data roots are now a SUPPORTED
+  deployment (§15.9)** — every one of the thirteen directories is relocatable by a derivable `ST4I_*_DIR`
+  variable, and a test derives both sets from `src/` so a fourteenth store cannot arrive without one. What
+  F-1 did **not** do is set them for you: unset still means one shared set of files, and nothing migrates when
+  you change one. **The decision that was blocking OPC-UA at the edge is therefore closed** — see §24.2 for
+  what remains, which is engineering rather than a ruling.
 - **A deleted connector's machine stays in the roster until restart** (§23.5), unchanged.
+
+### 24.7 🔴 One host per wire — a CONSTRAINT, not a guarantee / Một host một sợi dây — RÀNG BUỘC, không phải bảo đảm
+
+**EN** — Since E-5 both `St4i.EngineApi` and `St4i.EdgeService` have a configured path from their own
+`connectors.json` to a real RS-485 segment (§24.5). **The deployment rule is that exactly one host owns a
+given segment.** This section says who enforces it, and the answer on one of the two transports is *nobody*.
+
+| Transport | Second host on the same segment | Who stops it | What the operator sees |
+|---|---|---|---|
+| **Direct serial (a COM port)** | the second open **fails** | the **operating system**, incidentally — a `SerialPort` opens exclusively | `SerialPortBusLink.DescribeOpenFailure`'s held-port arm, which names the sibling host **first** of three causes and now says the refusal was the OS's, not this product's |
+| **RTU over a gateway** | **both connect, normally** | **nobody** | nothing — no error, no log line on the other side. So the constraint is stated at REGISTRATION time instead: `ModbusRtuBusSettings.DescribeSegmentOwnership`, logged once per bus by **both** hosts and returned in the `POST /v1/connectors` save response |
+
+🔴 **Read the middle column literally. This product arbitrates nothing, on either transport.** Machine-code
+claims are a `ConcurrentDictionary` inside one process; `ModbusBusRegistry`'s shared-link bookkeeping is
+per-process too. On serial the safety is an **accident** of how Windows opens a COM port — real, but not
+something this build arranges and not something it could extend to a gateway. **Nothing here detects, refuses
+or recovers from two hosts on one wire.** A reader who takes the serial refusal for arbitration will never ask
+the question the gateway needs asked.
+
+🔴 **The consequence on a shared gateway — and the first version of this paragraph had it BACKWARDS.**
+It said two uncoordinated frame sources "do not corrupt data", on the grounds that NModbus validates the slave
+address and the function code. **This repository had already probed the opposite and written it down** in
+`ModbusBus`'s own remarks (`src/St4i.EdgeCore/Drivers/Modbus/ModbusBus.cs`): a differing slave address, a
+differing function code and a bad CRC **are** caught — but **a stale frame matching on all three is NOT caught
+and is returned to the caller as the answer.** Measured, not reasoned: a request for register 99 came back
+with register 0's stale value, silently, with no exception. An RTU response frame carries no transaction id,
+so there is nothing left to check; and `IsDesynchronised` cannot rescue it either, because that flag is raised
+when a transaction FAILS to consume a complete validated response and this one consumes a response it believes.
+
+**Two masters on one segment reach that case whenever they address the same devices** — the ordinary
+situation, since both hosts are configured for the same line; their frames then share the slave address and
+the function code. 🔴 **It is not the only arrangement**, and an earlier version of this paragraph said it
+was: two hosts splitting a segment by **disjoint unit ids** (host A on units 1-3, host B on unit 7) differ on
+slave address, so for them the probe's *caught* branch applies and a stray frame really is refused. The
+notice is unchanged because the remedy is the same for both — but on that split it over-warns, and that is
+worth knowing rather than discovering. So a shared gateway **can** commit a **wrong register value as a real
+reading**, which is what §20.3's entire data-provenance argument exists to prevent, and it can land **write
+commands on `Indeterminate`** (§21.3).
+
+**Both frequencies are UNMEASURED and stay that way.** Nobody has measured how often two masters produce a
+matching stale frame, and nobody has measured the `Indeterminate` rate; there is no RS-485 adapter on any
+machine here. The defect being corrected was an **unhedged reassurance sitting beside a hedged number**, which
+invites a reader to take "your data is safe" as the settled half — so replacing it with a confident adjective
+in the other direction would be the same mistake reversed. These are propositions; do not inherit either as a
+figure.
+
+🔴 **Per-host data roots (§15.9) do NOT solve this, and the two must not be conflated.** Separate roots stop
+two hosts overwriting each other's *files*. Two hosts with two data directories can still name the same
+gateway `host:port`, or the same `COM3`, and everything above applies unchanged.
+
+🔴 **No machine-wide wire lock was built, and that is a decision.** A cross-process claim would need a shared
+path — a named mutex, a lockfile, or a registration channel — which is precisely the shared surface §15.9 is
+deliberately separating, and which §24.4 already prices as "a batch with a safety argument of its own". It is
+the owner's call, not an oversight. The cheap non-solutions were considered and rejected for stated reasons: a
+lockfile under a **per-host** root is invisible to the other host by construction, and a named mutex is a new
+machine-wide shared object of exactly the kind this deployment shape exists to reduce.
+
+**What an operator should actually do:** decide, per segment, which host owns it, and configure only that
+host's `connectors.json` for it. On a gateway, that decision is the whole mechanism.
 
 *(VI — **Đợt D để lại đúng một câu:** `St4i.EdgeService` chạy trên chính cái máy có cổng RS-485 mà không chủ
 trì nổi một connector nào. Đợt E tách lõi vòng đời N-driver ra khỏi `St4i.EngineApi`, cho tác nhân biên một
@@ -5181,8 +5531,11 @@ THEO TÊN**, và **không phải vì thiếu kiểu**: `OpcUaConnectorFactory` n
 là `OpcUaDriver` ghi chứng chỉ app-instance vào `%ProgramData%\ST4I\sim\opcua-pki` — **toàn máy, không khoá
 theo tiến trình** — nên dispatch nó ở đây sẽ biến host này thành **một người ghi MỚI vào một store toàn máy**.
 Cơ chế để tránh điều đó **đã có sẵn** (`OpcUaConnectorFactory` nhận `pkiDir`; `OpcUaPkiPaths.ResolveRoot` tôn
-trọng `ST4I_OPCUA_PKI_DIR`) — **thứ còn thiếu là một QUYẾT ĐỊNH về gốc dữ liệu theo host, không phải một hạ
-tầng.** Ghim bởi `AnOpcUaEntry_IsRefusedByName_…`. **Kind khác — TỪ CHỐI**, giống EngineApi: build này không
+trọng `ST4I_OPCUA_PKI_DIR`). 🔴 **F-1 ĐÃ ĐÓNG ĐIỀU KIỆN CHẶN** — gốc dữ liệu theo host giờ là hình dạng
+triển khai được hỗ trợ (§15.9) — **và lời từ chối VẪN ĐỨNG, vì cái còn lại là CÔNG VIỆC chứ không phải một
+phán quyết**: host này chưa có `OpcUaOptions` riêng (endpoint, node map, gốc PKI), chưa có nhánh dispatch, và
+chưa có test chứng minh hai host trỏ hai gốc giữ được hai kho chứng chỉ. Chỉ đặt `ST4I_OPCUA_PKI_DIR` thì
+không bật được gì, và chính thông điệp từ chối nói vậy. Ghim bởi `AnOpcUaEntry_IsRefusedByName_…`. **Kind khác — TỪ CHỐI**, giống EngineApi: build này không
 có plugin loader. **Lời từ chối OPC-UA là một QUYẾT ĐỊNH có test đi kèm, không phải chỗ sót** — đó là khác
 biệt giữa một lời từ chối sống sót qua review và một lời từ chối bị ai đó "sửa" tháng sau bằng cách thêm một
 nhánh `switch`. Lời từ chối RTU trước đây cũng đúng loại ấy, và **E-5 lật nó CÔNG KHAI**: bài test ghim nó
@@ -5295,11 +5648,60 @@ slave NModbus thật trong tiến trình: CRC thật, khung t3.5 thật, phân p
 thật trên một link dùng chung — nhưng không có đồng), hoặc nhắm vào một cổng loopback ĐÓNG mà lệnh connect
 bị từ chối — một connect bị từ chối không phải là một socket. Không có adapter RS-485
 nào trên bất kỳ máy build nào, và chỉ adapter điều khiển hướng **tự động** mới được hỗ trợ. Bước nghiệm thu
-trên bàn với phần cứng thật vẫn còn đó, và đó là một BƯỚC chứ không phải thủ tục. **Hai tiến trình vẫn dùng chung một bộ file dữ liệu toàn máy** —
+trên bàn với phần cứng thật vẫn còn đó, và đó là một BƯỚC chứ không phải thủ tục. **Hai tiến trình vẫn dùng chung một bộ file dữ liệu toàn máy _theo mặc định_** —
 `AssetRegistryStore`/`CredentialStore`/`FleetSettingsStore` đều nằm dưới `%ProgramData%\ST4I\sim\…`, không
 khoá theo tiến trình; tác nhân biên hôm nay không chạm sổ tài sản lẫn store cài đặt (người ghi có sẵn duy nhất
 của nó là hàng đợi WAL), nên không có gì thụt lùi — **và E-5 cũng không đổi điều đó: một tuyến RS-485 mở một
 cổng COM còn một tuyến gateway mở một socket; không cái nào là store, và sổ sách chia sẻ lần mở là một
-dictionary trong tiến trình do host sở hữu.** Quyết định gốc-dữ-liệu-theo-host vẫn còn để ngỏ, và chính nó vẫn
-đang chặn OPC-UA ở biên (§24.2). **Máy của một connector đã xoá vẫn nằm trong roster tới khi khởi
-động lại** (§23.5), không đổi.)*
+dictionary trong tiến trình do host sở hữu.** **Máy của một connector đã xoá vẫn nằm trong roster tới khi khởi
+động lại** (§23.5), không đổi. 🔴 **F-1 đổi phần "mặc định" ấy: gốc dữ liệu theo host giờ là hình dạng triển
+khai ĐƯỢC HỖ TRỢ (§15.9)** — cả mười ba thư mục đều dời chỗ được bằng một biến `ST4I_*_DIR` suy ra được, và
+một test suy ra cả hai tập từ `src/` nên store thứ mười bốn không thể ra đời mà thiếu biến. Cái F-1 **không**
+làm là đặt chúng thay bạn: không đặt gì thì vẫn là một bộ file dùng chung, và đổi gốc thì **không có gì được
+di trú**. **Do đó quyết định đang chặn OPC-UA ở biên đã ĐÓNG** — xem §24.2, phần còn lại là công việc kỹ
+thuật chứ không phải một phán quyết.
+
+**24.7 — 🔴 Một host một sợi dây: RÀNG BUỘC, không phải bảo đảm.** Từ E-5, cả `St4i.EngineApi` lẫn
+`St4i.EdgeService` đều có đường đã cấu hình từ `connectors.json` của chính nó tới một segment RS-485 thật
+(§24.5). **Luật triển khai là đúng một host sở hữu một segment.** Ai thi hành nó? Trên **serial cắm thẳng**:
+lần mở thứ hai **hỏng**, và bên từ chối là **hệ điều hành** — một cổng COM mở ĐỘC QUYỀN; người vận hành gặp
+nhánh cổng-bị-giữ của `SerialPortBusLink.DescribeOpenFailure`, nhánh này nêu host anh em **đầu tiên** trong ba
+nguyên nhân và giờ nói rõ rằng lần từ chối ấy là của HỆ ĐIỀU HÀNH, không phải của sản phẩm này. Trên **gateway
+RTU**: cả hai **kết nối bình thường**, **không ai** chặn, và **không có gì để nhìn** — không lỗi, không dòng
+log nào ở phía bên kia. Nên trên gateway ràng buộc được phát biểu lúc ĐĂNG KÝ:
+`ModbusRtuBusSettings.DescribeSegmentOwnership`, ghi một lần mỗi bus bởi **cả hai** host và trả kèm trong phản
+hồi `POST /v1/connectors`. 🔴 **Đọc đúng nghĩa đen: sản phẩm này KHÔNG phân xử gì cả, trên cả hai transport.**
+Yêu sách mã máy là một `ConcurrentDictionary` trong một tiến trình; sổ sách link dùng chung của
+`ModbusBusRegistry` cũng trong tiến trình. Trên serial, sự an toàn là một **tai nạn** của cách Windows mở cổng
+COM — có thật, nhưng không do bản build này sắp đặt và không thể mở rộng sang gateway. **Không có gì ở đây
+phát hiện, từ chối hay khôi phục được tình huống hai host trên một dây.** 🔴 **Hệ quả trên gateway dùng chung — và bản đầu của đoạn này nói NGƯỢC:**
+nó viết rằng hai nguồn khung tin không phối hợp "KHÔNG làm hỏng dữ liệu" vì NModbus kiểm địa chỉ slave và mã
+hàm. **Kho mã này đã ĐO điều ngược lại và ghi sẵn ba file cách đó** (chú thích của chính `ModbusBus`): khung
+lạc **khác** địa chỉ slave, **khác** mã hàm, hoặc **sai** CRC thì BỊ BẮT — nhưng **một khung cũ trùng cả ba
+thì KHÔNG bị bắt và được trả về cho bên gọi NHƯ THỂ LÀ CÂU TRẢ LỜI.** Đo trực tiếp: một yêu cầu thanh ghi 99
+nhận về giá trị cũ của thanh ghi 0, lặng lẽ, không ngoại lệ nào. Khung RTU không mang transaction id nên không
+còn gì để kiểm; và `IsDesynchronised` cũng không cứu được, vì cờ ấy chỉ bật khi một giao dịch **KHÔNG** tiêu
+thụ nổi một phản hồi hợp lệ trọn vẹn, còn ở đây giao dịch tiêu thụ một phản hồi mà nó tin. **Hai master trên
+một segment rơi vào trường hợp đó **mỗi khi chúng cùng nhắm một thiết bị** — tình huống thông thường, vì cả
+hai host đều được cấu hình cho cùng một đường dây; khi ấy khung tin của chúng trùng địa chỉ slave và trùng mã
+hàm. 🔴 **Đó không phải cách bố trí DUY NHẤT**, và bản trước của đoạn này nói như thể vậy: hai host chia
+segment theo **unit id RỜI NHAU** (host A giữ unit 1-3, host B giữ unit 7) thì **khác** địa chỉ slave, nên với
+chúng nhánh BỊ BẮT của phép đo mới đúng và khung lạc thật sự bị từ chối. Thông điệp giữ nguyên vì cách xử lý
+là một cho cả hai — nhưng trên kiểu chia ấy nó **cảnh báo quá tay**, và biết trước điều đó tốt hơn là tự phát
+hiện ra. Nên
+một gateway dùng chung có thể ghi nhận **một GIÁ TRỊ THANH GHI SAI như một số đo thật** — đúng thứ toàn bộ lập
+luận nguồn-gốc-dữ-liệu ở §20.3 tồn tại để ngăn — và làm **lệnh ghi rơi vào `Indeterminate`** (§21.3). **Cả hai
+tần suất đều CHƯA ĐO và vẫn để nguyên như vậy:** không ai đo tần suất hai master sinh ra một khung cũ trùng
+khớp, cũng không ai đo tần suất `Indeterminate`; không có adapter RS-485 trên máy nào ở đây. Lỗi đang được sửa
+là **một lời trấn an KHÔNG rào đứng cạnh một con số CÓ rào**, khiến người đọc coi "dữ liệu của bạn an toàn" là
+phần đã chốt — nên thay nó bằng một tính từ chắc nịch theo chiều ngược lại là đúng cái sai ấy lộn ngược. Đây
+là các mệnh đề; đừng thừa kế cái nào như một con số. 🔴 **Gốc dữ liệu theo host (§15.9) KHÔNG giải quyết chuyện này** — gốc riêng ngăn hai host ghi đè
+*file* của nhau; hai host với hai thư mục vẫn trỏ chung một `host:port` gateway hoặc chung một `COM3` được. 🔴
+**KHÔNG xây khoá chiếm-dây toàn máy, và đó là một quyết định:** một yêu sách xuyên tiến trình cần một đường
+dùng chung — mutex có tên, lockfile, hoặc một kênh đăng ký — mà đó đúng là bề mặt chung §15.9 đang cố ý tách
+ra, và §24.4 đã định giá nó là "một đợt việc có lập luận an toàn riêng". Đó là phán quyết của chủ sở hữu, không
+phải một chỗ sót. Hai phương án rẻ đã cân nhắc và bị loại kèm lý do: một lockfile nằm dưới gốc **theo host**
+thì về cấu trúc host kia không nhìn thấy, còn một mutex có tên là một đối tượng dùng chung toàn máy MỚI, đúng
+loại thứ mà hình dạng triển khai này tồn tại để giảm bớt. **Việc người vận hành thật sự phải làm:** với mỗi
+segment, chọn một host sở hữu nó, và chỉ cấu hình `connectors.json` của host đó cho segment ấy. Trên gateway,
+quyết định ấy CHÍNH LÀ toàn bộ cơ chế.)*

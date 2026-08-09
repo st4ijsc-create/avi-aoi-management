@@ -645,6 +645,11 @@ public static class ConnectorEndpoints
                 : "Every machine on this bus was already in the roster — the change applies on the next " +
                   "Stop/Start (or a full application restart), not immediately to an already-running fleet.") +
             (bus.Plan.LimitNotice is null ? string.Empty : " " + bus.Plan.LimitNotice) +
+            // 🔴 Task F-1 — the one-host-per-segment constraint travels with the save response, on the same
+            // terms as the DE limit beside it: the operator who just typed a gateway host:port is the one who
+            // has to decide whether another host already names it, and this is the only surface that answers
+            // them without reading a log file.
+            (bus.Plan.SegmentOwnershipNotice is null ? string.Empty : " " + bus.Plan.SegmentOwnershipNotice) +
             (notices.Count == 0 ? string.Empty : " " + string.Join(" ", notices));
 
         return Results.Ok(new ConnectorCreateResultDto(

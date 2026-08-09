@@ -352,4 +352,92 @@ public sealed record ModbusRtuBusSettings(string Transport, string Host, int Por
     /// <see cref="St4i.Connector.Abstractions.IConnectorFactory.TryCreate"/>'s "no I/O" contract true all the
     /// way down.</summary>
     public Func<CancellationToken, Task<IModbusBusLink>> Opener() => GatewayTcpBusLink.Opener(Host, Port);
+
+    /// <summary>
+    /// 🔴 <b>Task F-1 — the operator-facing statement of the ONE-HOST-PER-SEGMENT deployment constraint, for
+    /// the transport on which nothing whatsoever enforces it.</b> Logged once per gateway bus by every
+    /// composition root that registers one, exactly like <c>ModbusRtuSerialBusSettings.DescribeLimit</c> is
+    /// for the serial transport's hardware limit.
+    ///
+    /// <para><b>Why this exists on the GATEWAY arm and not on the serial one.</b> On a directly attached COM
+    /// line a second holder is refused by the operating system and meets
+    /// <c>SerialPortBusLink.DescribeOpenFailure</c>'s held-port arm, which names the sibling host first. A
+    /// gateway produces <b>no error at all</b>: two hosts dial the same device server, both connects succeed,
+    /// and neither learns of the other — so there is no failure path on which to say this, and the only moment
+    /// an operator can be told is the moment the bus is registered. E-5 gave the serial transport its sentence
+    /// and left this transport with none, which is the gap this closes.</para>
+    ///
+    /// <para><b>It states a CONSTRAINT, never a guarantee, and the wording is load-bearing.</b> This product
+    /// arbitrates nothing on either transport: machine-code claims are a <c>ConcurrentDictionary</c> inside one
+    /// process, and <see cref="ModbusBusRegistry"/>'s shared-link bookkeeping is per-process too. The serial
+    /// refusal is the OS's exclusive open — accidental safety, not a design — and here there is not even that.
+    /// A sentence that let a reader believe the product enforces one host per wire would be worse than
+    /// silence, because it would stop them checking the one thing that actually decides it.</para>
+    ///
+    /// <para>🔴 <b>It names BOTH configuration surfaces, because it is emitted from FOUR producing paths and
+    /// only two of them are a <c>connectors.json</c> (F-1 review, I-3).</b> The other two —
+    /// <c>Program.cs</c>'s persisted-bus startup registration and the <c>POST /v1/connectors</c> save
+    /// response — reach an operator about a bus held in the <b>connector-config store</b>, which no
+    /// <c>connectors.json</c> file mentions. Naming only the file would send that operator to open the
+    /// engine's <c>connectors.json</c>, not find the bus, and conclude the engine is not on the segment: the
+    /// wrong conclusion, produced by the notice written to prevent it. That is D-5's I-1 class — a sentence
+    /// true of some of the paths that generate it — and it is the same class the held-port arm was corrected
+    /// for in E-5.</para>
+    ///
+    /// <para>🔴 <b>THE CONSEQUENCE, and the first version of this paragraph got it backwards (branch review,
+    /// F-1).</b> It said two uncoordinated frame sources "do not corrupt data" because NModbus validates the
+    /// slave address and the function code, so a stray frame becomes a rejected transaction rather than a
+    /// plausible wrong number. <b>This repository had already probed the opposite and written it down three
+    /// files away</b> — see <see cref="ModbusBus"/>'s own remarks: a differing slave address, a differing
+    /// function code and a bad CRC ARE caught, but <b>a stale frame matching on all three is NOT caught and
+    /// is returned to the caller as the answer</b> (measured: a request for register 99 answered with
+    /// register 0's stale value, silently, no exception). RTU has no transaction id, so nothing remains to
+    /// check. And <c>IsDesynchronised</c> cannot rescue it: that flag is set when a transaction FAILS to
+    /// consume a complete validated response, and this transaction consumes one and believes it.</para>
+    ///
+    /// <para><b>Two masters on one segment reach that case whenever they address the SAME devices</b> — then
+    /// their frames share the slave address and the function code, which is exactly the
+    /// same-address/same-function/same-byte-count shape the probe found uncatchable. That is the usual
+    /// shape, because both hosts are configured for the same line. <b>🔴 It is not the only shape, and the
+    /// first version of this paragraph said it was</b> (branch re-review, N-1): two hosts splitting a
+    /// segment by DISJOINT unit ids — host A driving units 1-3, host B driving unit 7 — is a real and
+    /// arguably deliberate deployment, and there the slave addresses differ, so the probe's CAUGHT branch
+    /// applies and a stray frame really is refused. The correction replaced a universal that was false one
+    /// way with a universal that was false the other, over the same population. The remedy is unchanged for
+    /// both sub-cases and the notice therefore stays as it is — but it over-warns on the disjoint split, and
+    /// saying so is cheaper than letting the next reader discover the sentence is too strong and discount
+    /// the whole paragraph. So the honest statement is that a shared segment CAN commit a WRONG REGISTER
+    /// VALUE as a real reading, and this product's whole data-provenance argument (README §20.3) is that
+    /// fabricated numbers never blend into customer-facing ones.</para>
+    ///
+    /// <para><b>The RATE stays labelled UNMEASURED — for both outcomes, and that is the point of the fix
+    /// rather than an afterthought.</b> Nobody has measured how often two masters produce a matching stale
+    /// frame, and nobody has measured the <c>Indeterminate</c> frequency either; there is no RS-485 hardware
+    /// on any machine here. The defect being repaired was an UNHEDGED reassurance sitting next to a hedged
+    /// number, which makes a reader take "your data is safe" as the established half. Replacing it with a
+    /// different unhedged adjective would be the same mistake pointing the other way.</para>
+    /// </summary>
+    public string DescribeSegmentOwnership() =>
+        $"Modbus RTU over a gateway at {Host}:{Port}: this product's deployment rule is ONE HOST PER SEGMENT, " +
+        "and on this transport NOTHING enforces it. St4i.EngineApi and St4i.EdgeService can each be pointed " +
+        "at this same gateway — from their own connectors.json, OR, on St4i.EngineApi, from a bus saved " +
+        "earlier through POST /v1/connectors and re-registered from the connector-config store at every " +
+        "startup. Both connections succeed, neither host can see the other, and no error is raised on either " +
+        "side. That is a CONSTRAINT ON THE DEPLOYMENT, not a guarantee this build provides — on a directly " +
+        "attached COM line the operating system happens to refuse the second open, and a gateway has no " +
+        "equivalent. If a second master is on this segment its frames interleave with this one's, and the " +
+        "checks catch only SOME of them: a reply whose slave address differs, whose function code differs, " +
+        "or whose CRC is bad IS refused. A reply that matches on all three is NOT — it is handed back as the " +
+        "answer to whatever was asked, with no exception and no resynchronisation, because an RTU response " +
+        "frame carries no transaction id and there is nothing left to check (probed against NModbus in this " +
+        "product: a request for register 99 returned register 0's stale value, silently). Two masters poll " +
+        "the SAME devices — the ordinary case, since both are configured for the same line — their frames " +
+        "then share the slave address and the function code, and that is the shape above. (Two hosts that " +
+        "split this segment by DISJOINT unit ids differ on slave address, so for them the stray frame IS " +
+        "refused.) So a shared segment can commit a WRONG REGISTER VALUE as a real reading, and " +
+        "write commands land on Indeterminate. NOBODY HAS MEASURED how often either happens. Before " +
+        "treating an implausible reading, or a slow or indeterminate write, as a device fault, confirm that " +
+        "exactly one host owns this gateway: check BOTH hosts' connectors.json AND the engine's saved " +
+        "connectors (GET /v1/connectors/configured), because a bus that was saved through the API will not " +
+        "appear in any connectors.json file.";
 }

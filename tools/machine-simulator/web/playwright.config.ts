@@ -142,8 +142,14 @@ export default defineConfig({
       // not test runs — this suite has no business touching the network at all, so keep it silent.
       //
       // SM-6 — full audit of every `%ProgramData%\ST4I\sim\*` store `St4i.EngineApi` touches at
-      // runtime (12 total: security, historian, assets, alarms, connector-config, settings, identity,
-      // sitelink, bridge-spool, wal, opcua-pki, creds). Before that fix NONE of them were isolated
+      // runtime, AS IT STOOD THEN (12 names, historical: security, historian, assets, alarms,
+      // connector-config, settings, identity, sitelink, bridge-spool, wal, opcua-pki, creds — note it
+      // omits `notifications`, which did not exist yet, and that omission is the C-5 defect described
+      // below rather than a typo).
+      // 🔴 Dot F branch review, F-7: the four counts in this file were off by one against the
+      // THIRTEEN-member set the product actually declares, and the `env:` block below has always set
+      // exactly thirteen. The list above is left at its historical 12 and labelled as such, because it
+      // is a record of what SM-6 audited, not a claim about today. Before that fix NONE of them were isolated
       // here — every `npm run test:e2e`/`npm run dev` wrote real data into the SAME directory a real
       // install uses, which is how this harness ended up creating real, login-capable "e2e-user-*"
       // Operator accounts (`18-users.spec.ts` mints one per run — its own comment notes "the roster
@@ -154,11 +160,11 @@ export default defineConfig({
       // this Playwright-launched engine process.) task-7 (below) isolates historian; task C-5 added
       // `notifications`; the test-hygiene batch added `creds`, the last one out.
       //
-      // 🔴 ALL FOURTEEN stores are now redirected under an isolated `../.e2e-data` root that
+      // 🔴 ALL THIRTEEN stores are now redirected under an isolated `../.e2e-data` root that
       // `scripts/reset-engine-state.mjs` wipes in full before every boot — isolated AND disposable,
       // not merely relocated to accumulate somewhere else instead. Three separate audits each declared
       // this list complete and each was missing one: SM-6 missed `historian` and `notifications`, C-5
-      // missed `creds`. If a fifteenth store appears, it belongs here — and
+      // missed `creds`. If a fourteenth store appears, it belongs here — and
       // `EveryStoreTheEngineCreates_IsIsolatedByThePlaywrightHarness` in St4i.EngineApi.Tests now fails
       // until it is, so the next omission is caught by a test rather than by a census of a developer's
       // %ProgramData%.
@@ -224,7 +230,7 @@ export default defineConfig({
         ST4I_WAL_DIR: join(e2eDataDir, "wal"),
         ST4I_OPCUA_PKI_DIR: join(e2eDataDir, "opcua-pki"),
         ST4I_HISTORIAN_DIR: join(e2eDataDir, "historian"),
-        // Test-hygiene batch — the 14th store, and the last un-isolated one. See the note above for
+        // Test-hygiene batch — the 13th store, and the last un-isolated one. See the note above for
         // why the previous audit concluded this suite never wrote here, and what the census found.
         ST4I_CREDS_DIR: join(e2eDataDir, "creds"),
       },

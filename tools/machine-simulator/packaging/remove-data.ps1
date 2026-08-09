@@ -73,6 +73,14 @@
 .PARAMETER BridgeSpoolDir
   Task C-8 review (I-1) - the durable northbound bridge spool (ST4I_BRIDGE_SPOOL_DIR).
 
+.PARAMETER CredsDir
+  Dot F branch review (F-9) - the DPAPI-sealed machine credential store, one .bin per machine code
+  (ST4I_CREDS_DIR). THIS BLOCK WAS MISSING while the parameter itself has existed since the test-hygiene
+  batch, so `.NOTES` below could say "one -XxxDir parameter per relocatable directory; see the full list
+  under .PARAMETER above" while pointing at a list of twelve. It is the thirteenth, and it is the one
+  holding bearer credentials - see the test-hygiene note further down for why `creds` stopped being the
+  sole non-relocatable exception.
+
 .EXAMPLE
   .\packaging\remove-data.ps1 -WhatIf
   Preview exactly what would be stopped/deleted, without touching anything.
@@ -80,7 +88,7 @@
 .EXAMPLE
   .\packaging\remove-data.ps1
   Interactive - prompts (Y/N) before stopping/deleting the service and before deleting each of the
-  14 data directories (each resolved per the matching -XxxDir parameter or the matching
+  13 data directories (each resolved per the matching -XxxDir parameter or the matching
   ST4I_*_DIR environment variable or the default %ProgramData%\ST4I\sim\<name> - see the
   WARNING below about relocated directories this script cannot discover on its own).
 
@@ -92,8 +100,9 @@
   .\packaging\remove-data.ps1 -HistorianDir D:\St4iData\historian -WalDir D:\St4iData\wal -SecurityDir D:\St4iData\security -IdentityDir D:\St4iData\identity
   Purges relocated data directories explicitly - needed whenever the service was configured (via its
   registry Environment value, README section 15.2) with a directory that is NOT the default
-  %ProgramData%\ST4I\sim\<name>. There is one -XxxDir parameter per relocatable directory; see the
-  full list under .PARAMETER above.
+  %ProgramData%\ST4I\sim\<name>. There is one -XxxDir parameter per relocatable directory - THIRTEEN of
+  them, all thirteen documented under .PARAMETER above (-CredsDir's block was missing until the Dot F
+  branch review, F-9).
 
 .NOTES
   WS-F1 final-review fix F3 - README section 15.2 advertises ST4I_HISTORIAN_DIR/ST4I_WAL_DIR/
@@ -129,7 +138,8 @@
   decommissioning wipe deleted the machine's own credential and its audit log but left all of THOSE
   behind on a box being handed on, scrapped or returned - the exact outcome this script exists to
   prevent. It is relocatable via ST4I_NOTIFICATIONS_DIR and resolves through the same
-  -NotificationsDir > env var > %ProgramData% default order as the other three.
+  -NotificationsDir > env var > %ProgramData% default order as the four that already had the idiom
+  (historian, wal, security, creds).
 
   TASK C-8 REVIEW ROUND 1 (I-1) - THE PURGE LIST WENT FROM FIVE DIRECTORIES TO ALL THIRTEEN, and the
   reason is that fixing `notifications` alone did not close the class the fix's own argument named.
@@ -149,9 +159,32 @@
   trust material rather than bearer credentials, but this script's stated purpose is a CLEAN-SLATE wipe
   for decommissioning - leaving them meant it did not do that, and an operator reading the old output
   would reasonably have believed the machine was clean. All eight are relocatable and each resolves
-  through the same -XxxDir > env var > %ProgramData% default order as the original three.
+  through the same -XxxDir > env var > %ProgramData% default order as the five that already did
+  (historian, wal, security, creds, notifications).
 
-  Every one of the fourteen directories is now relocatable; there is no longer any exception.
+  Every one of the thirteen directories is now relocatable; there is no longer any exception.
+
+  TASK F-1 CENSUS - THE COUNT ABOVE SAID "FOURTEEN" IN THREE PLACES AND "THIRTEEN" IN FOUR, about
+  the same set, since Task C-8. Measured rather than reasoned about: this script declares thirteen
+  `Name = '<dir>'` entries and thirteen -XxxDir parameters, and
+  PerHostDataRootsTests.EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName derives the
+  same thirteen from src/. The number is THIRTEEN; the three "fourteen"/"14" readings were wrong and
+  are corrected here. Nothing about what the script DOES changed.
+
+  TASK F-1 REVIEW (M-3) - AND THAT SAME COUNTING CENSUS LEFT TWO AMBIGUOUS ANTECEDENTS STANDING IN THE
+  BLOCK IT WAS EDITING: "as the other three" and "as the original three", both of which name a count
+  of directories that had already grown past three by the point each sentence describes. Corrected to
+  name the directories instead of counting them, which is the form a count cannot rot into. A rule that
+  scans for NUMBERS reads digits and spelled-out numerals; "three" inside a comparative clause is both,
+  and it survived a pass of that very rule over this very file.
+
+  TASK F-1 - AND THE WARNING ABOVE IS NOW WORSE THAN IT READS, because a machine can run TWO ST4I
+  hosts (St4i.EngineApi and St4i.EdgeService, README section 24) and per-host data roots are a
+  SUPPORTED deployment (README section 15.9). Each host has its OWN registry Environment value, so a
+  wipe run from a shell without the variables exported can miss BOTH sets. Check each service key
+  (`Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\<service>' -Name Environment`) and run
+  this script once per host with that host's -XxxDir parameters. Data left behind by a "clean-slate"
+  wipe is the exact outcome this script exists to prevent.
 #>
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 # PSScriptAnalyzer matches the substring "Cred" in a [string] parameter name and assumes it carries a
@@ -278,7 +311,7 @@ elseif ($PSCmdlet.ShouldProcess("Windows service '$serviceName'", "Stop and dele
     }
 }
 
-# ---- Step 2: delete the 14 data subdirectories (each already resolved above per -XxxDir / ST4I_*_DIR
+# ---- Step 2: delete the 13 data subdirectories (each already resolved above per -XxxDir / ST4I_*_DIR
 # / the %ProgramData% default - see $subdirs) --------------------------------------------------
 Write-Host ""
 foreach ($d in $subdirs) {

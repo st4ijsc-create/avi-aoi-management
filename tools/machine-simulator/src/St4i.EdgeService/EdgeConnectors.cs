@@ -68,7 +68,16 @@ namespace St4i.EdgeService;
 /// <c>OpcUaPkiPaths.ResolveRoot</c> — <c>%ProgramData%\ST4I\sim\opcua-pki</c>, <b>machine-wide, with no
 /// per-process key</b>. Dispatching it here would make <c>St4i.EdgeService</c> a NEW WRITER to a
 /// machine-wide store, which E-3's brief forbids outright and hands to the owner as the per-host data-root
-/// decision. Enabling it is one <c>switch</c> arm once that decision exists.</item>
+/// decision.
+/// <b>🔴 F-1: THAT DECISION IS NOW MADE, AND THIS ENTRY IS STILL REFUSED — deliberately.</b> Per-host data
+/// roots are a supported deployment shape (README §15.9), and the PKI root was already parameterised
+/// (<c>OpcUaConnectorFactory</c> takes <c>pkiDir</c>; <c>OpcUaPkiPaths.ResolveRoot</c> honours
+/// <c>ST4I_OPCUA_PKI_DIR</c>), so the BLOCKING CONDITION is gone. What remains is work F-1 was told not to
+/// do: this host has no <c>OpcUaOptions</c> of its own to resolve an endpoint, a node map and a PKI root
+/// from, no <c>switch</c> arm here, and no test that two hosts pointed at two roots keep two certificate
+/// stores. Until those exist the refusal stands, and it stands whether or not
+/// <c>ST4I_OPCUA_PKI_DIR</c> happens to be set — the message says so, so that setting the variable and
+/// seeing nothing change is not read as a bug.</item>
 /// <item><b>Any other kind — NO</b>, same as EngineApi: there is no in-process plugin loader in this
 /// build.</item>
 /// </list></para>
@@ -315,6 +324,17 @@ internal static class EdgeConnectors
                 entry.Id, plan.LimitNotice);
         }
 
+        // 🔴 Task F-1 — the one-host-per-segment constraint, and it is emitted HERE for a sharper reason than
+        // symmetry with EngineApi. This host is the one an operator adds SECOND: EngineApi has driven
+        // connectors since long before Đợt E, and a gateway accepts this host's connection whether or not the
+        // other one is already on the segment. Not logging it here would leave the constraint stated only to
+        // the host that was already there.
+        if (plan.SegmentOwnershipNotice is not null && registered > 0)
+        {
+            logger.LogWarning("connectors.json entry '{ConnectorId}': {ModbusRtuSegmentOwnership}",
+                entry.Id, plan.SegmentOwnershipNotice);
+        }
+
         return registered;
     }
 
@@ -336,8 +356,15 @@ internal static class EdgeConnectors
             logger.LogWarning(
                 "connectors.json entry '{ConnectorId}' declares OPC-UA. This host does not dispatch it: an " +
                 "OpcUaDriver writes its app-instance certificate into the machine-wide " +
-                "%ProgramData%\\ST4I\\sim\\opcua-pki root, which has no per-process key, and Task E-3 is not " +
-                "allowed to add a new writer to a machine-wide store. Skipped.",
+                "%ProgramData%\\ST4I\\sim\\opcua-pki root, which has no per-process key, so dispatching it " +
+                "here would make this host a NEW WRITER to a machine-wide store — and, on a deployment where " +
+                "St4i.EngineApi also runs an OPC-UA connector, a second writer to the certificate store that " +
+                "host already writes. Skipped. 🔴 The decision that used to block this is CLOSED — per-host data roots are " +
+                "a supported deployment (README §15.9), and ST4I_OPCUA_PKI_DIR gives this host a PKI root of " +
+                "its own. What is still missing is the work, not the ruling: this host must be given its own " +
+                "OpcUaOptions (endpoint/map/PKI root), the switch arm here, and a test that the two hosts' " +
+                "certificate stores stay separate. Setting ST4I_OPCUA_PKI_DIR alone does NOT enable this " +
+                "entry — it is refused by name either way.",
                 entry.Id);
             return null;
         }

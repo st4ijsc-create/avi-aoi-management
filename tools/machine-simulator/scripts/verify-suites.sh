@@ -56,7 +56,11 @@ set -uo pipefail
 EXPECT_ABSTRACTIONS=151
 EXPECT_CONFORMANCE=22
 # chore/test-hygiene raised this 735 -> 741 (+6): guards proving the test-isolation seam added to
-# CredentialStore, which was the only one of FOURTEEN stores without one — which is exactly why
+# CredentialStore, which was the only one of THIRTEEN stores without one — which is exactly why
+# (🔴 Dot F branch review, F-7: this said FOURTEEN while the same file says THIRTEEN in three later
+# places and the product declares thirteen directories. Dot F's own R4 counts census named this file's
+# directory in its corpus and did not reach this line — it corrected packaging/remove-data.ps1 and
+# stopped there.)
 # 2,999 DPAPI blobs accumulated in the product's REAL credential directory, dating to 2026-07-18.
 # 🔴 Đợt D, D-1 re-review — this total is UNCHANGED at 741, and that is the point. A reviewer's gate run
 # came back EdgeCore 740/741 on WalFlushPumpTests.Pump_DrainsAnIdleBacklogOnItsOwnTimer_..., an IOException
@@ -835,7 +839,90 @@ EXPECT_CONFORMANCE=22
 # here, one ILogger->callback signature change at the call sites. A behavioural change in EngineApi would show
 # up as a moved number. EXPECT_CONFORMANCE in particular stays 22: E-5 adds no driver and no connector kind —
 # ModbusRtuDriver has shipped since D-5 and its conformance wiring since D-6.
-EXPECT_EDGECORE=1082
+# 🔴 TASK F-1 (.superpowers/sdd/per-host-roots/task-1-brief.md) raises EXPECT_EDGECORE 1082 -> 1088 (+6),
+# COUNTED FROM THE RUNNER (`dotnet test --list-tests`), not by hand. Two NEW files; nothing is rewritten,
+# split or deleted, and no existing test in this suite gains or loses a case.
+#
+#   +3  tests/St4i.EdgeCore.Tests/PerHostDataRootIsolationTests.cs (NEW FILE) — the load-bearing half of
+#       F-1 Part 1: TWO HOSTS, TWO ROOTS, and neither observes the other's data. Not a ResolveRoot test: a
+#       resolver can be correct while the store ignores it, which is the defect CredentialStoreTests' own
+#       redirect test exists for.
+#       🔴 WHAT CARRIES EACH ARM, ENUMERATED — fix round 2, review NEW-1. This block has stated a false
+#       UNIVERSAL twice. Round 1 said "every assertion is an observation made through the store", which was
+#       false of the WAL arm; its replacement said "no arm computes a file name or asserts on a path
+#       string", which was false of the CREDENTIAL arm the same day. Ninth instance of that class in four
+#       batches, third inside the correction written for it — so this is a list, and a third universal is
+#       not the fix:
+#         * credential arm — SUBJECT is CredentialStore.Load/ListMachineCodes after only an env var moved.
+#           It ALSO corroborates on disk, and that half DOES compute <machineCode>.bin, under three roots
+#           (host A, host B, CredentialStore.DefaultRoot()). The third is a negative control on the real
+#           %ProgramData% root and earns its duplication of the naming rule; the first two sit on top of
+#           the Load assertions rather than carrying them.
+#         * settings arm — SUBJECT is FleetSettingsStore.Load per instance. Its one path assertion is a
+#           PRECONDITION on two roots this test chose, and can fail only if CreateTempSubdirectory
+#           returned the same path twice.
+#         * WAL arm — SUBJECT is a glob over each root after a real offline SendAsync. Computes no file
+#           name and asserts on no path. It does encode ONE detail the SDK chooses — that a queue file ends
+#           in .jsonl — as the pattern it enumerates with, which is the smallest coupling that keeps the
+#           observation "what appeared under this root" rather than "what appeared at this path".
+#       Anyone editing this block who reaches for "every arm" or "no arm" should enumerate the three
+#       against the claim instead.
+#         + 1  CredentialStore, the static one whose only seam is the env var, driven with ONE machine code
+#              on both sides deliberately: two codes would be separated by the FILENAME even inside one
+#              shared directory, so such a test passes on a build where the redirect does nothing. Both
+#              directions, because "B cannot read A" and "B did not overwrite A" are different failures.
+#         + 1  FleetSettingsStore, via its explicit-directory seam and no env var at all — the store that
+#              holds exactly one (ServerUrl, MachineCode, VerifyTls) triple, so sharing its root is a
+#              last-writer-wins overwrite rather than a merge.
+#         + 1  the WAL, which is the only machine-wide store St4i.EdgeService has ever WRITTEN (blueprint
+#              §11.4) and therefore the collision a two-host deployment hits first. 🔴 FIX ROUND 1 (review
+#              I-1) REWROTE THIS ARM AND THIS JUSTIFICATION WITH IT. The first version resolved the queue
+#              path itself and wrote it with File.WriteAllText, which made it a fact about Path.Combine —
+#              WalOptions.ResolveQueueFile documents itself as a pure function of (Directory, machineCode) —
+#              so the "through the store" sentence above was FALSE of one of the three arms it justified,
+#              in the one place the binding constraint requires a per-file justification to be accurate.
+#              The arm now drives a real TransportCoordinator (whose RebuildLive is what calls EnsureDir()
+#              and ResolveQueueFile and hands the result to LiveTransport.ForMachine) and a real offline
+#              SendAsync, so the bytes are appended by the vendored SDK's own Enqueue. No socket: the
+#              injected CapturingHandler throws HttpRequestException, the same technique and the same reason
+#              as TransportCoordinatorWalTests. Its CONTROL arm is a third send from host A's OWN root with
+#              the SAME machine code, which lands in host A's existing file — one file, two backlogs — so
+#              "the two roots stayed separate" is distinguished from "the WAL wrote nowhere at all".
+#              Costs ~22 s (three real retry-exhaustions at the SDK's fixed maxRetries/backoff); that is the
+#              price of the arm being about this product rather than about Path.Combine.
+#       🔴 MUTATION, and it is the one that discriminates: memoise CredentialStore.CredsDir() into a static
+#       field (`_cache ??= ResolveRoot()`) — a first-resolution-wins shape nobody would flag on review. The
+#       new credential test is KILLED deterministically; the pre-existing redirect test's verdict is
+#       ORDER-DEPENDENT, because it only ever resolves one root. All five verbs of mutate-guard.sh, clean
+#       first, with a positive control reported KILLED in the same session.
+#
+#   +3  tests/St4i.EdgeCore.Tests/Drivers/Modbus/RtuSegmentOwnershipTests.cs (NEW FILE) — F-1 Part 2: the
+#       one-host-per-segment DEPLOYMENT CONSTRAINT, stated on BOTH transports and stated as a constraint
+#       rather than a guarantee. The two transports are asserted in one file on purpose: the claim is a
+#       PAIR (each transport carries the rule exactly once, where its operator can meet it), and E-5 is the
+#       evidence that two tests each looking at one half do not establish it — E-5 rewrote the serial
+#       message and left the gateway with nothing, invisibly.
+#         + 1  the plan's two arms together: a gateway plan carries SegmentOwnershipNotice and no
+#              LimitNotice; a serial plan carries LimitNotice and no SegmentOwnershipNotice. Either arm
+#              alone passes on a build that put the same string on both — the specific mistake available
+#              here, since the RULE is true of both transports and only its DELIVERY differs.
+#         + 1  the wording, because the wording IS the deliverable: names the segment, says NOTHING
+#              enforces it, says CONSTRAINT-not-guarantee, and keeps the write consequence labelled
+#              NOBODY HAS MEASURED. The DoesNotContain arms ("prevents", "blocks") are the discriminating
+#              ones — a notice that reads as a promise stops the operator checking the other host's
+#              connectors.json, which is the only thing that settles it.
+#         + 1  the serial half: DescribeOpenFailure's held arm now attributes the refusal to the OPERATING
+#              SYSTEM and points at the gateway, so the two halves of the rule cannot be learned
+#              separately. E-5's own assertions ("already held", "THE OTHER ST4I HOST") are re-asserted
+#              here so this task cannot be read as having weakened them.
+#
+# No behaviour in this assembly changed. ModbusRtuBusPlan gains a seventh positional member and
+# ModbusRtuBusSettings gains one pure string method; every pre-existing RTU test passes unchanged, which is
+# the check that the record change is additive rather than a rewrite. CredentialStoreTests gains a
+# [Collection] attribute (it and PerHostDataRootIsolationTests both flip the PROCESS-WIDE ST4I_CREDS_DIR, and
+# two classes doing that in parallel is a real race) — an attribute moves no count, and a moved count there
+# would mean the attribute did more than serialize.
+EXPECT_EDGECORE=1088
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -879,7 +966,23 @@ EXPECT_EDGECORE=1082
 # same text. Those two files are the join: the new file proves the text is right, and these prove the two
 # surfaces that render it actually use it. A count that did not move is the evidence that the states were
 # already covered and only the assertion was empty.
-EXPECT_EDGESERVICE=49
+# 🔴 TASK F-1 raises EXPECT_EDGESERVICE 49 -> 50 (+1), counted from the runner. ONE file, ONE test; nothing
+# rewritten, split or deleted.
+#
+#   +1  EdgeWorkerConnectorsTests.AGatewayBus_WarnsThatNothingEnforcesOneHostPerSegment_AndASerialBusDoesNot
+#       — the one-host-per-segment constraint emitted by THIS host. It is not a copy of EngineApi's for
+#       tidiness: this host is the one an operator adds SECOND, and a gateway accepts its connection whether
+#       or not the other host is already on the segment — no error, no log line on either side. Stated only
+#       by EngineApi, the constraint would be stated only to the host that was already there. The serial arm
+#       in the same file is the discriminator (a COM line must NOT get this notice; its operator meets the
+#       rule at the OS's refusal instead). No socket is opened: TryCreate performs no I/O and the link is
+#       dialled lazily inside the first transaction, so gw.example is never resolved.
+#
+# The OPC-UA refusal message in EdgeConnectors.cs is REWORDED by F-1 (the blocking condition — an unmade
+# per-host data-root decision — is now made; the refusal stands because what remains is engineering) and
+# AnOpcUaEntry_IsRefusedByName_… is unchanged and still green: it asserts the refusal and the word
+# "opcua-pki", both of which survive deliberately. A moved count here would mean the reword changed behaviour.
+EXPECT_EDGESERVICE=50
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
 #     +24  NotificationEndpointsTests    (new file — the eleven notification routes)
@@ -1422,7 +1525,124 @@ EXPECT_EDGESERVICE=49
 #       (host.IsRunning true, EstopEngaged false, GetConfiguredConnectorIssues empty) and then asserting
 #       the body. Modbus-kind specifically because ResolveSlotLabelFor excludes Modbus/OPC-UA from the
 #       simulated group unconditionally; a simulated-kind machine would report ReadOnly, the other case.
-EXPECT_ENGINEAPI=1290
+# 🔴 TASK F-1 raises EXPECT_ENGINEAPI 1290 -> 1293 (+3), counted from the runner. Two files; nothing
+# rewritten, split or deleted.
+#
+#   +2  tests/St4i.EngineApi.Tests/PerHostDataRootsTests.cs (NEW FILE) — it lives in THIS suite, not in
+#       EdgeCore's, because it is the THIRD scan-derived census test of the same set and the other two are
+#       already here (NotificationDocumentationTests' decommissioning scan, TestHarnessIsolationTests'
+#       Playwright scan). It also has to see EngineApi's own five stores, which St4i.EdgeCore.Tests cannot.
+#         + 1  EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName — 🔴 THE FIFTH-STORE GUARD,
+#              and the reason F-1 enumerated instead of trusting its brief. The brief named FOUR stores;
+#              the enumeration found THIRTEEN. All thirteen were already relocatable, so this test is not
+#              a fix — it is the thing that makes a FOURTEENTH impossible to add without a variable, which
+#              is where this defect would actually have lived. Derives BOTH sets from src/ and requires the
+#              variable NAME to be derivable from the directory name (ST4I_<NAME>_DIR), because that is the
+#              rule README §15.9 tells an operator; requiring only "thirteen of each exist" would pass
+#              while a directory and its variable named different things. Non-vacuity floors on both sets
+#              plus five named controls, the same shape both siblings carry. The quantity it measures is
+#              "a quoted ST4I_<NAME>_DIR literal exists in src/" — narrower than "relocatable", which is
+#              why fix round 1 added the test below rather than letting README §15.9 lean on this one.
+#         + 1  TheReadme_TellsAnOperatorThatRelocatingARootDoesNotMigrateTheOldData — §8.1's fourth census
+#              tier: a rule stated to an OPERATOR is a different population of text from one stated to a
+#              programmer. Relocating a root on a running deployment silently orphans that store's data,
+#              and a host that cannot read its own saved credential looks exactly like one that was never
+#              onboarded. Pins the three FACTS (the section exists, EN+VI both say nothing is migrated, the
+#              credential consequence is named) and deliberately not the prose.
+#
+#   +1  ConnectorsJsonRegistrationTests.TheOneHostPerSegmentConstraint_IsLoggedOncePerGatewayBus_AndNever-
+#       ForASerialOrADeadBus — the exact mirror of the file's own DE-limit test, and the mirroring is the
+#       argument. Once per SEGMENT (three devices, one notice), never for a serial bus, never for a bus that
+#       registered nothing. It also asserts the two load-bearing phrases reach the log ("NOTHING enforces
+#       it", "NOBODY HAS MEASURED"), because a notice an operator reads as a promise is worse than none.
+#
+# The startup persisted-bus path (Program.cs) and the POST /v1/connectors save response also carry the new
+# notice, and neither gains a test: both were already covered for LimitNotice by tests that assert the
+# notice-carrying branch, and the new statement rides the identical branch. Recorded as a KNOWN GAP rather
+# than claimed as covered — see task-1-report.md.
+# 🔴 TASK F-1 FIX ROUND 1 (review I-4) raises EXPECT_ENGINEAPI 1293 -> 1294 (+1), counted from the runner.
+# ONE file, ONE test; nothing rewritten, split or deleted.
+#
+#   +1  PerHostDataRootsTests.EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared — closes the
+#       instrument/criterion gap the review named. The guard above measures "a quoted ST4I_<NAME>_DIR
+#       literal appears somewhere in src/"; README §15.9 cited it for "there is no exception", i.e. that the
+#       directory is RELOCATABLE. A fourteenth store declaring `const string EnvVarDir = "ST4I_FOO_DIR"` and
+#       never reading it satisfied the first and violated the second — and neither M3 (no variable) nor M4
+#       (non-derivable name) reaches that shape, so the gap was untested as well as undisclosed. The new
+#       test requires every variable to reach a real Environment.GetEnvironmentVariable call, binding
+#       constants to literals PER FILE so that thirteen stores all naming their constant `EnvVarDir` cannot
+#       vouch for each other, and resolving a qualified Type.Member against Type.cs. Two named controls, one
+#       per resolution form: ST4I_HISTORIAN_DIR (read only as a bare literal, in Program.cs, not on its
+#       store) and ST4I_CREDS_DIR (read only through a same-file constant).
+#       🔴 What it still does NOT measure, disclosed here and in README §15.9 rather than left to a reader:
+#       "declared and read at a resolution site" is not "the resolved value is honoured to a file". Nothing
+#       here executes a store. A sweep that did would have to set thirteen process-wide variables inside a
+#       suite whose other classes boot real hosts that read them — trading a documented narrowness for an
+#       undocumented race.
+#       🔴 WHERE THAT HALF ACTUALLY IS — and this note has been wrong twice, in opposite directions.
+#       Fix round 2 removed an over-claim (SecurityEnvVarTests carries NO TEST; it is a
+#       [CollectionDefinition] marker whose only member is a collection name). The branch review found the
+#       replacement wrong as well, on both the instrument and opcua-pki:
+#         * F-8, THE INSTRUMENT. This said the rows came from "counting the files under tests/ that name
+#           each variable" — the very grep PerHostDataRootsTests explains cannot work, because every store
+#           reads through its own constant. FleetSettingsStoreTests spells ST4I_SETTINGS_DIR ZERO times
+#           while driving the seam through FleetSettingsStore.EnvVarDir; BridgeSpoolTests' only occurrence
+#           of its literal is a doc comment. TWO instruments were used and one was named: (a) a literal
+#           count over tests/, which gives the breadth, and (b) reading each candidate for a
+#           SetEnvironmentVariable(<Store>.EnvVarDir, …) call, which gives the per-store rows.
+#         * F-10, OPCUA-PKI. "Nothing measures it" was false. OpcUaDriver's ctor calls
+#           OpcUaPkiPaths.ResolveRoot(pkiDir), and OpcUaDriverConformanceTests / OpcUaDriverLoopbackTests /
+#           OpcUaDriverWriteTests each hand it a real temp root and let it write its app-instance
+#           certificate there — the EXPLICIT-PATH arm of the same explicit > env > default chain. The true
+#           residual: nothing exercises ST4I_OPCUA_PKI_DIR, the env var.
+#       By (b): FOUR dedicated witnesses (creds, settings, wal, bridge-spool); EIGHT redirected
+#       incidentally by host harnesses; opcua-pki covered on its explicit arm and not on its env arm.
+#
+# TheReadme_TellsAnOperator... does NOT move a count and its assertions changed: it used to require the
+# phrase "not onboarded", and review C-2 showed the sentence beside it prescribed a remedy ("until it claims
+# again") that St4i.EdgeService cannot perform. It now pins the ASYMMETRY — that §15.9 says the edge agent
+# cannot claim — in both languages. Same test, different (and correct) subject.
+# 🔴 DOT F BRANCH REVIEW (F-15) raises EXPECT_ENGINEAPI 1294 -> 1295 (+1), counted from the runner. ONE
+# file, ONE test; nothing rewritten, split or deleted.
+#
+#   +1  PerHostDataRootsTests.TheNumberOfMachineWideDirectories_IsDerivedFromSource_AndAgreesWithEvery-
+#       PlaceThatSpellsIt — the three guards in that file floor at `>= 13`, so a fourteenth store that
+#       arrives WITH a variable passes all three while the word "thirteen" rots in six artefacts. It
+#       derives the count from src/ and compares it against the number spelled in the two sentences that
+#       state it as a rule: README §15.9's "There are **N** of them today" and remove-data.ps1's
+#       .DESCRIPTION. Those two are each the authoritative sentence of their own artefact; the rest of the
+#       prose repeats them.
+#       🔴 MEASURED, not asserted (branch re-review, N-4). TWO mutations, because the first was not
+#       discriminating and the report said it was: a BARE fourteenth store (variable declared and read,
+#       but no playwright env entry and no remove-data.ps1 purge entry) is killed by THREE tests — this
+#       one plus the two SET-MEMBERSHIP censuses, TestHarnessIsolationTests and
+#       NotificationDocumentationTests. A FULLY INTEGRATED fourteenth store (variable + playwright entry +
+#       purge entry + parameter, with only the spelled count left alone) is killed by THIS TEST ALONE:
+#       1 failed, 12 passed, both set-membership censuses green. That second shape is the gap F-15 named,
+#       and it is the one that justifies the test existing.
+#       🔴 WHAT THIS TEST REACHES, stated because the first version of this block overstated it (branch
+#       re-review, N-2). It opens exactly two files besides src/: README.md and packaging/remove-data.ps1.
+#       It never opens web/playwright.config.ts or this file. So it would NOT have caught the four
+#       FOURTEENs the Dot F branch review found — at 709df245 the derived count was 13, README said
+#       "thirteen" and remove-data.ps1 said "THIRTEEN", all three compared values agreed, and this test
+#       would have been GREEN with every one of those defects in the tree. What it does do: it fires the
+#       moment src/ and those two rule sentences diverge, and its failure message then names the other
+#       artefacts by hand for a human to walk. The overstatement is recorded rather than deleted because
+#       it was a claim in the VOICE OF A MEASUREMENT about the reach of the instrument built to end that
+#       class, sitting in the binding per-file justification.
+#       🔴 THIS IS THE MECHANICAL CHECK THE LEDGER'S §G.6 TRIGGER ASKED FOR, and the grep for
+#       "every"/"all"/"no arm" was declined — but NOT for the reason first written here. That reason was
+#       "a quantifier grep cannot decide whether a universal is true, so it answers a narrower question
+#       than the criterion". It is wrong, and it would disqualify this count check too: a count does not
+#       decide whether "thirteen" is TRUE either, it decides whether three artefacts AGREE. An instrument
+#       answering a narrower question is a defect only when it is REPORTED as answering the criterion,
+#       which is what F-8 was. The real reason to decline is RECALL: the grep keys on quantifier WORDS,
+#       and this branch's worst false universal used none — "two uncoordinated frame sources on one
+#       segment do not corrupt data" is a universal by generic plural, and so was its replacement. The
+#       grep would have flagged neither, only the historical "every assertion …" / "no arm computes …"
+#       pair that the prose trigger already covers. Bounded recall on a sub-class already covered, versus
+#       a count check whose class has produced four real defects in one branch.
+EXPECT_ENGINEAPI=1295
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

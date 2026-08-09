@@ -58,13 +58,32 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// <param name="LimitNotice">🔴 Blueprint §9's automatic-DE limit, for a serial line only
 /// (<see cref="ModbusRtuSerialBusSettings.DescribeLimit"/>); <see langword="null"/> for a gateway, whose
 /// direction control is the gateway's problem and not this product's. Callers log it once per bus.</param>
+/// <param name="SegmentOwnershipNotice">🔴 <b>Task F-1 — the one-host-per-segment DEPLOYMENT CONSTRAINT, for
+/// the gateway transport only</b> (<see cref="ModbusRtuBusSettings.DescribeSegmentOwnership"/>);
+/// <see langword="null"/> for a serial line. Callers log it once per bus, on the same
+/// <c>registered &gt; 0</c> guard as <paramref name="LimitNotice"/>.
+///
+/// <para><b>The two arms are the mirror image of each other, and the asymmetry is the point.</b> A serial
+/// line has a hardware limit and no need for this notice at registration time, because a second holder is
+/// refused by the operating system and reads
+/// <c>SerialPortBusLink.DescribeOpenFailure</c>'s held-port arm — which E-5 already rewrote to name the
+/// sibling host FIRST, and which F-1 extends to say that the refusal is the OS's rather than this product's.
+/// A gateway has no direction-control problem and no failure path at all: both hosts connect, so registration
+/// is the ONLY moment at which an operator can be told. Hence exactly one notice per arm, each non-null
+/// where the other is null.</para>
+///
+/// <para><b>Not folded into <paramref name="LimitNotice"/></b>, even though no bus ever carries both: they
+/// are answers to different questions (what this transport cannot do, versus what this deployment must not
+/// do), the log statements that carry them name different things, and one nullable string holding either of
+/// two unrelated meanings is how a message ends up rendered under a heading that contradicts it.</para></param>
 public sealed record ModbusRtuBusPlan(
     string Transport,
     string BusKey,
     Func<CancellationToken, Task<IModbusBusLink>> OpenLink,
     string? Host,
     int? Port,
-    string? LimitNotice)
+    string? LimitNotice,
+    string? SegmentOwnershipNotice)
 {
     /// <summary>
     /// Reads the BUS-LEVEL half of <paramref name="settingsJson"/>. The DEVICE half is
@@ -93,7 +112,11 @@ public sealed record ModbusRtuBusPlan(
                 OpenLink: serial.Opener(),
                 Host: serial.Line.PortName,
                 Port: null,
-                LimitNotice: serial.DescribeLimit());
+                LimitNotice: serial.DescribeLimit(),
+                // 🔴 F-1: null here is a decision, not an omission. The one-host-per-segment constraint is
+                // stated to a serial operator by SerialPortBusLink.DescribeOpenFailure's held-port arm, at
+                // the moment the OS refuses the second open — a moment the gateway transport does not have.
+                SegmentOwnershipNotice: null);
         }
 
         var gateway = ModbusRtuBusSettings.Parse(settingsJson);
@@ -103,7 +126,8 @@ public sealed record ModbusRtuBusPlan(
             OpenLink: gateway.Opener(),
             Host: gateway.Host,
             Port: gateway.Port,
-            LimitNotice: null);
+            LimitNotice: null,
+            SegmentOwnershipNotice: gateway.DescribeSegmentOwnership());
     }
 
     /// <summary>🔴 Task D-7b — the operator-facing one-liner naming this physical line, used by the audit

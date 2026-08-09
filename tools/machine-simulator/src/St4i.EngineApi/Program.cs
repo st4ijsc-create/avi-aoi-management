@@ -1418,6 +1418,16 @@ builder.Services.AddSingleton(sp =>
                 group.Key, persistedBus.Plan.LimitNotice);
         }
 
+        // 🔴 Task F-1 — the one-host-per-segment constraint, on the persisted-bus startup path too. A bus
+        // saved through POST /v1/connectors is re-registered from the store on every subsequent boot and
+        // never passes through the connectors.json path, so a notice emitted only there would be said once,
+        // to whoever happened to be watching the console during the save, and never again.
+        if (persistedBus.Plan.SegmentOwnershipNotice is not null)
+        {
+            connectorsLogger.LogWarning("Modbus RTU bus '{BusInstanceId}': {ModbusRtuSegmentOwnership}",
+                group.Key, persistedBus.Plan.SegmentOwnershipNotice);
+        }
+
         foreach (var device in persistedBus.Devices)
         {
             persistedConnectorSeeds.Add(St4i.EngineApi.Fleet.RtuBusConfiguration.DescriptorFor(device));
