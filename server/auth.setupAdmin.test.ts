@@ -3,11 +3,37 @@ import { appRouter } from "./routers";
 import * as db from "./db";
 
 describe("auth.setupAdmin", () => {
+  /**
+   * ★★★★ Pha 7 / review TOÀN NHÁNH **I-3 (chẩn đoán THỨ HAI)** — **THÔI XOÁ SẠCH BẢNG `users`.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ BẢN TRƯỚC: `const allUsers = await db.getAllUsers(); for (…) await db.deleteUser(u.id)`.
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Sổ `totp_consumed` **không** có khoá ngoại tới `users`, nên `donSo` (kẻ phá trạng thái dùng
+   * chung **thứ nhất**, đã vá) và `beforeEach` này là **HAI kẻ khác nhau, trên HAI bảng khác nhau**.
+   * Cả hai đều **thật**, và đây là kẻ thứ hai. Đo được (probe, DB test thật):
+   *
+   *     [PROBE] nạn nhân đã tạo: uid=1025 · đọc lại được = true
+   *     [PROBE] beforeEach của setupAdmin sắp xoá 2 tài khoản
+   *     [PROBE] SAU beforeEach: nạn nhân còn = false · tổng users = 0
+   *
+   * ⇒ Vitest chạy các file test **SONG SONG**. Một lượt `beforeEach` ở đây rơi vào **giữa** một ca
+   *   của file khác sẽ xoá đúng tài khoản mà file ấy vừa dựng trong `beforeAll`
+   *   (`mustChangePassword.test.ts` · `db/authCacheHooks.test.ts` · `totpSeedWriteScan.test.ts` §3)
+   *   — và nạn nhân **đổi mỗi lượt chạy**, đúng triệu chứng *"cổng đỏ KHÔNG TẤT ĐỊNH"*.
+   *   ⚠ `user_secrets` có `ON DELETE CASCADE` ⇒ lượt xoá kéo theo cả bí mật của nạn nhân.
+   *
+   * ⚠⚠ **THU HẸP VỀ ĐÚNG TIỀN ĐỀ MÀ THỦ TỤC ĐÒI, KHÔNG HƠN.** `auth.setupAdmin`
+   * (`server/routers.ts:357-359`) chỉ hỏi **`getUsersByRole('admin').length === 0`** — nó **không**
+   * quan tâm bảng `users` có rỗng hay không. Nên tiền đề của file này là *"không còn ADMIN nào"*,
+   * và mọi lượt xoá rộng hơn thế là **tác dụng phụ**, không phải yêu cầu.
+   * ⇒ Bán kính phá hoại đi từ **MỌI tài khoản** xuống **chỉ các admin**. Ba file nạn nhân ở trên
+   *   đều dựng tài khoản `role: "user"` ⇒ nay chúng sống sót.
+   */
   beforeEach(async () => {
-    // Clean up users table before each test
-    const allUsers = await db.getAllUsers();
-    for (const user of allUsers) {
-      await db.deleteUser(user.id);
+    // Tiền đề THẬT của `auth.setupAdmin`: không còn admin nào. KHÔNG xoá cả bảng.
+    for (const admin of await db.getUsersByRole("admin")) {
+      await db.deleteUser(admin.id);
     }
   });
 
