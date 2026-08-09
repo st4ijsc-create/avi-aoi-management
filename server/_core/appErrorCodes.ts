@@ -65,6 +65,16 @@ export const APP_ERROR_CODES = [
                           // FEATURE_DISABLED (có công tắc, ai đó tắt nó). Review cuối, ca I-A #5:
                           // licenseRouter.ts 12 chỗ dùng FEATURE_DISABLED cho LICENSE_SERVER_URL
                           // thiếu — không có công tắc nào để "bật" cho người dùng đi bật.
+  "MUST_CHANGE_PASSWORD", // params: {} — Pha 7 / I-4. Tài khoản đang bị BUỘC ĐỔI MẬT KHẨU (Task 8
+                          // xoay bí mật trên 8/8 tài khoản vì bí mật cũ đã lộ) nên MỌI thủ tục trừ
+                          // tập tối thiểu (đăng nhập · đọc danh tính mình · đổi mật khẩu · đăng
+                          // xuất) bị từ chối. KHÁC ACCOUNT_LOCKED (khoá brute-force có thời hạn —
+                          // người dùng chỉ có thể CHỜ; ở đây họ có một hành động cụ thể làm được
+                          // NGAY và cửa ấy đang mở), KHÁC ACCOUNT_DISABLED (phải nhờ admin bật
+                          // lại — ở đây tự gỡ được), và KHÁC PERMISSION_DENIED (đi xin quyền là
+                          // sai hướng: quyền không thiếu, chỉ mật khẩu cần đổi). Không mã nào
+                          // trong registry mô tả đúng lối thoát, nên tách như ENTITY_EXPIRED đã
+                          // tách khỏi ENTITY_NOT_FOUND.
   "ENTITY_EXPIRED",       // params: { entity } — bản ghi CÓ TỒN TẠI nhưng đã quá hạn lưu trữ/hiệu
                           // lực, KHÁC ENTITY_NOT_FOUND (chưa từng có/đã bị xoá). Review cuối, ca
                           // I-A #9: reportArtifactRouter.ts gộp nhánh 'expired' vào ENTITY_NOT_FOUND.

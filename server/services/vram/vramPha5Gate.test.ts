@@ -305,7 +305,14 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   `twoFactorEnabled`"*) cộng lưới **HÀNH VI** của cùng bất biến. `server/routers/*.test.ts`
     //   **không** có đường bao trong cổng ⇒ thiếu dòng này thì lưới ấy *"theo cấu tạo không bao giờ
     //   được canh"*, đúng lỗ mà ca ∀ Task 4a bên dưới được dựng ra để bắt.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(36); // C-1: +1
+    // ⚠ Pha 7 / review TOÀN NHÁNH **I-4**: 36 → 37. **Đúng MỘT** đường mới —
+    //   `server/_core/buocDoiMatKhau.test.ts`, lưới của **cổng buộc đổi mật khẩu phía máy chủ**
+    //   (cờ Task 8 đặt ra có **0 người đọc client** + **0 phép cưỡng chế máy chủ** ⇒ một lời hứa
+    //   an ninh không có thật). Ô chủ của nó là một **∀ trên 2.2k thủ tục** của `appRouter`, cộng
+    //   ca ghim **lỗ MIỄN TRỪ CỐ Ý** cho vai `admin` (quyết định chủ dự án 2026-08-09).
+    //   `server/_core/` **không** có đường bao trong cổng ⇒ thiếu dòng này thì lưới ấy *"theo cấu
+    //   tạo không bao giờ được canh"*.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(37); // I-4: +1
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -405,7 +412,11 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   `server/routers/totpSeedWriteScan.test.ts`. Nó vào tập bị canh qua bộ nhận diện **NỘI DUNG**
     //   (tự khai `Pha 5`, có chủ ý — xem docstring của nó), và phải có đường riêng ở §Cổng kiểm
     //   chung ⇒ `CONG.length` 35 → **36** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(98); // C-1: +1
+    // ⚠ Pha 7 / review TOÀN NHÁNH **I-4**: 98 → 99. **Đúng MỘT** file mới —
+    //   `server/_core/buocDoiMatKhau.test.ts`. Nó vào tập bị canh qua bộ nhận diện **NỘI DUNG**
+    //   (tự khai `Pha 5`, có chủ ý — xem docstring của nó), và phải có đường riêng ở §Cổng kiểm
+    //   chung ⇒ `CONG.length` 36 → **37** cùng lượt. Gỡ nó khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(99); // I-4: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

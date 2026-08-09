@@ -56,6 +56,7 @@ npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/_core/backupCodeWidth.test.ts \
   server/_core/xoayBiMatNguon.test.ts \
   server/routers/mustChangePassword.test.ts \
+  server/_core/buocDoiMatKhau.test.ts \
   server/routers/appErrorParamsCoverage.test.ts \
   server/services/aiGgufEngine.test.ts \
   server/services/kbSyncScheduler.evalGate.test.ts \

@@ -3553,6 +3553,7 @@
     "RATE_LIMITED": "Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.",
     "ACCOUNT_LOCKED": "Tài khoản tạm khoá do đăng nhập sai nhiều lần. Thử lại sau {{remainingMinutes}} phút.",
     "ACCOUNT_DISABLED": "Tài khoản này đã bị vô hiệu hoá. Liên hệ quản trị viên để được kích hoạt lại.",
+    "MUST_CHANGE_PASSWORD": "Bạn phải đổi mật khẩu trước khi tiếp tục sử dụng hệ thống.",
     "FEATURE_NOT_CONFIGURED": "Tính năng {{feature}} chưa được cấu hình trên hệ thống này.",
     "ENTITY_EXPIRED": "Đã hết hạn lưu trữ: {{entity}}.",
     "MACHINE_CREDENTIAL_INVALID": "Thông tin xác thực máy không hợp lệ.",

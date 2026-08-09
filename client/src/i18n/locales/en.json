@@ -3552,6 +3552,7 @@
     "RATE_LIMITED": "You're doing this too fast. Please try again in a few minutes.",
     "ACCOUNT_LOCKED": "Account temporarily locked after too many failed logins. Try again in {{remainingMinutes}} minutes.",
     "ACCOUNT_DISABLED": "This account has been disabled. Contact an administrator to reactivate it.",
+    "MUST_CHANGE_PASSWORD": "You must change your password before you can continue using the system.",
     "FEATURE_NOT_CONFIGURED": "The {{feature}} feature is not configured on this system.",
     "ENTITY_EXPIRED": "The {{entity}} has expired.",
     "MACHINE_CREDENTIAL_INVALID": "Machine credentials are invalid.",

@@ -9,6 +9,8 @@ import { verifyTotpOnce, dauLuotGoiMoi } from "./totpOnce";
 // Doc 37 P0-3 — server-side per-module license gate (flag-gated pass-through).
 import { moduleGate } from "./moduleGate";
 import { appError, readAppErrorMeta } from "./appError";
+// ★★★ Pha 7 / I-4 — chủ DUY NHẤT của vị từ cổng buộc-đổi-mật-khẩu + tập miễn trừ CỐ Ý.
+import { biChanBoiCongDoiMatKhau, duocMienTruBuocDoiMatKhau } from "@shared/buocDoiMatKhau";
 
 /**
  * Đợt sửa cuối (Phần 4, khuyến nghị mạnh của review cuối) — CÔNG TẮC QUAY LUI.
@@ -68,7 +70,115 @@ const t = initTRPC.context<TrpcContext>().create({
 });
 
 export const router = t.router;
-export const publicProcedure = t.procedure;
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★★ Pha 7 / review TOÀN NHÁNH **I-4** — **CỔNG BUỘC ĐỔI MẬT KHẨU, PHÍA MÁY CHỦ.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Task 8 xoay bí mật thật trên 8/8 tài khoản và đặt cờ *"phải đổi mật khẩu"*; review đo được cờ ấy
+ * có **0 người đọc client** và **0 phép cưỡng chế máy chủ**. Khối này là nửa máy chủ của bản vá.
+ *
+ * ⚠⚠⚠ **LƯỢNG TỪ, VÀ NÓ LÀ ∀ — KHÔNG PHẢI ∃.** Phát biểu đúng:
+ *
+ *   ***∀ thủ tục tRPC, TRỪ tập tối thiểu cần để một người bị chặn còn đổi được mật khẩu và thoát
+ *   ra: một người đang bị buộc đổi mật khẩu (và không được miễn trừ) KHÔNG gọi được.***
+ *
+ * Câu *"∃ vài thủ tục nhạy cảm bị chặn"* là câu **SAI** ở đây, và nó sai theo một cách đã tái diễn
+ * **MƯỜI BẢY** lần trong chuỗi pha này: cái gì **LIỆT KÊ** thì luôn có phần tử thứ **N+1**. Hệ có
+ * **2.212** thủ tục; một danh sách "thủ tục nhạy cảm" viết tay hôm nay sẽ thiếu thủ tục thứ 2.213
+ * sinh ra ở một file **chưa tồn tại**, và nó sẽ thiếu **im lặng**.
+ *
+ * ⇒ Phép chặn nằm ở **GỐC** — `thuTucGoc` dưới đây — chỗ mà **mọi** builder thủ tục của repo
+ *   (`publicProcedure` · `protectedProcedure` · `adminProcedure` · `roleProcedure()` và mọi thứ
+ *   dẫn xuất: `writeProcedure` · `actuationProcedure` · `deployProcedure` · `moduleProcedure()`)
+ *   **buộc** đi qua. Một thủ tục MỚI **tự động** được chặn; không ai phải nhớ khai gì.
+ *   Lưới của lượng từ ấy: `server/_core/buocDoiMatKhau.test.ts` §1 — nó **phân giải chuỗi
+ *   middleware của cả 2.212 thủ tục** trên `appRouter` và đòi **phần bù RỖNG**.
+ *
+ * ⚠ `t` là **module-local** (không export) ⇒ không ai dựng được một thủ tục vòng qua gốc này mà
+ *   không sửa chính file này. Đó là điều kiện để câu ∀ trên **đúng theo cấu tạo**, chứ không đúng
+ *   nhờ một lượt review nhớ dặn.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ★★★ **TẬP CHO QUA — TỐI THIỂU, VÀ MỖI PHẦN TỬ CÓ MỘT LÝ DO BẮT BUỘC.**
+ *
+ * Bất biến sống-còn của cổng này: ***KHÔNG ĐƯỢC KHOÁ AI RA NGOÀI.*** Người bị chặn phải luôn tới
+ * được màn đổi mật khẩu, đổi xong thì cờ **tự** hạ (`updateUserPassword` ghi `passwordChangedAt`
+ * ⇒ `suyRaPhaiDoiMatKhau` tắt — không ai phải nhớ xoá cờ). Bốn đường dưới đây là **toàn bộ** thứ
+ * cần cho vòng đời ấy:
+ *
+ *   · `auth.login`          — **đăng nhập**. Lượt đăng nhập diễn ra khi `ctx.user` còn `null` nên
+ *                             theo cấu tạo đã không bị chặn; giữ nó ở đây để câu *"đăng nhập luôn
+ *                             tới được"* là một **quyết định được nói ra**, không phải một hệ quả
+ *                             tình cờ của thứ tự middleware (lăng kính *"an toàn là HỆ QUẢ của
+ *                             một thứ khác đang hỏng"* — đã bảy lần).
+ *   · `auth.me`             — **đọc danh tính mình**. Chặn nó là chặn chính ô `mustChangePassword`
+ *                             mà client dùng để biết phải đi đâu ⇒ trắng trang, không lối ra.
+ *   · `auth.logout`         — **đăng xuất**. Lối thoát cuối cùng phải luôn mở.
+ *   · `user.changePassword` — **đổi mật khẩu**. Chặn nó là biến cổng thành nhà tù.
+ *
+ * ⚠⚠ Đây là một danh sách **VIẾT TAY**, tức đúng thứ mà cả khối docstring trên vừa chê. Nó được
+ *    chấp nhận **chỉ vì** nó là tập *cho qua* (thêm nhầm một phần tử là **mở** một lỗ — nhìn thấy
+ *    được trong diff; **quên** một phần tử chỉ làm hỏng theo chiều **ĐÓNG**), và **chỉ khi** nó
+ *    được canh bằng một **lưới HAI CHIỀU**, đúng khuôn `publicUser.ts` dùng cho các cột `users`:
+ *      · chiều A — ∀ đường ở đây **TỒN TẠI** trên `appRouter` (một lượt đổi tên thủ tục làm cổng
+ *        ĐỎ, thay vì lặng lẽ biến phần tử ấy thành mục ma và nhốt người dùng lại);
+ *      · chiều B — ∀ thủ tục **NGOÀI** tập này ⇒ **BỊ CHẶN** thật (không phải "được cho là chặn").
+ *    Cả hai ở `server/_core/buocDoiMatKhau.test.ts` §2/§3.
+ */
+export const THU_TUC_CHO_QUA: readonly string[] = [
+  "auth.login",
+  "auth.me",
+  "auth.logout",
+  "user.changePassword",
+];
+
+const CHO_QUA = new Set<string>(THU_TUC_CHO_QUA);
+
+/**
+ * ★★★★ Middleware của cổng. Đặt ở **GỐC** (`thuTucGoc`), nên nó là middleware **đầu tiên** của
+ * mọi thủ tục — chạy trước cả `requireUser`, trước zod, trước mọi lượt đọc dữ liệu.
+ *
+ * ⚠ **KHÔNG `try/catch` quanh lượt đọc DB.** Nếu `db.phaiDoiMatKhau` ném thì lượt gọi **hỏng** —
+ *   đó là hành vi ĐÚNG (fail-closed). Bọc nó lại và `return next()` là để một `catch` mặc áo của
+ *   phép đo: cổng sẽ khai *"không ai bị buộc đổi"* mỗi lần DB nấc, **không một dòng log nào**.
+ * ⚠ Chi phí, ghi đúng: **1 `SELECT` hai cột trên `users` theo khoá chính, cho mỗi lượt gọi tRPC
+ *   của một người dùng KHÔNG được miễn trừ**. Ba đường thoát sớm ở trên nó (không có người dùng ·
+ *   thủ tục cho qua · vai được miễn trừ) đều **không** chạm DB, nên đường nạp máy (public,
+ *   `ctx.user === null`) và mọi lượt gọi của `admin` trả **0** đồng chi phí. Không cache: một bộ
+ *   nhớ đệm theo `userId` sẽ giữ người vừa đổi mật khẩu trong nhà tù thêm một TTL, còn một bộ nhớ
+ *   đệm theo `ctx` sẽ hỏng đúng ở lưới đối chứng dương (đổi mật khẩu **trong cùng** một ngữ cảnh).
+ */
+export const chanKhiPhaiDoiMatKhau = t.middleware(async (opts) => {
+  const { ctx, next, path } = opts;
+  // Chưa đăng nhập ⇒ không có gì để cưỡng chế (đường nạp máy `publicProcedure` đi lối này).
+  if (!ctx.user) return next();
+  if (CHO_QUA.has(path)) return next();
+  // 🔴 Lỗ CỐ Ý — quyết định chủ dự án 2026-08-09. Chủ của tập miễn trừ: `shared/buocDoiMatKhau.ts`.
+  if (duocMienTruBuocDoiMatKhau(ctx.user.role)) return next();
+
+  // ⚠⚠ Đọc DB **MỚI**. `ctx.user.passwordInvalidBefore` đã bị `redactServerOnlyUserFields` làm
+  //    rỗng (Pha 7 Task 7) ⇒ suy từ đó cho `false` LUÔN LUÔN, tức cổng này thành trang trí.
+  const { phaiDoiMatKhau } = await import("../db");
+  if (!biChanBoiCongDoiMatKhau(ctx.user.role, await phaiDoiMatKhau(ctx.user.id))) return next();
+
+  throw appError(
+    "FORBIDDEN",
+    "MUST_CHANGE_PASSWORD",
+    undefined,
+    "Bạn phải đổi mật khẩu trước khi tiếp tục sử dụng hệ thống.",
+  );
+});
+
+/**
+ * ★★★★ **GỐC của MỌI thủ tục trong repo.** Xem khối lượng từ ∀ ở trên trước khi sửa dòng này.
+ * ⚠ Mọi builder bên dưới **phải** bắt nguồn từ đây, không từ `t.procedure`. Lưới §1 của
+ *   `buocDoiMatKhau.test.ts` đo lại điều đó trên cả 2.212 thủ tục, nên một builder mới quên gốc
+ *   này là **ĐỎ**, không phải một lỗ im lặng.
+ */
+const thuTucGoc = t.procedure.use(chanKhiPhaiDoiMatKhau);
+
+export const publicProcedure = thuTucGoc;
 
 const requireUser = t.middleware(async opts => {
   const { ctx, next } = opts;
@@ -170,7 +280,7 @@ const tenantScopeMiddleware = t.middleware(async (opts) => {
   }
 });
 
-export const protectedProcedure = t.procedure
+export const protectedProcedure = thuTucGoc
   .use(requireUser)
   .use(auditMutationMiddleware)
   .use(tenantScopeMiddleware);
@@ -197,7 +307,7 @@ export function moduleProcedure(moduleCode: string) {
 // `adminProcedure.use(moduleGate('MOD_FEDERATION'))`.
 export { moduleGate };
 
-export const adminProcedure = t.procedure.use(
+export const adminProcedure = thuTucGoc.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;
 
@@ -475,7 +585,7 @@ export const requireFreshTotp = stepUpTotpMiddleware(true);
 export const requirePerCallFreshTotp = stepUpTotpMiddleware(false);
 
 export function roleProcedure(...allowedRoles: UserRole[]) {
-  return t.procedure.use(
+  return thuTucGoc.use(
     t.middleware(async opts => {
       const { ctx, next } = opts;
 

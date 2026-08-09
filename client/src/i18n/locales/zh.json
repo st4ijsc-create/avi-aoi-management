@@ -3544,6 +3544,7 @@
     "RATE_LIMITED": "操作过于频繁，请稍后再试。",
     "ACCOUNT_LOCKED": "由于多次登录失败，账户已被临时锁定。请在 {{remainingMinutes}} 分钟后重试。",
     "ACCOUNT_DISABLED": "此账户已被停用。请联系管理员重新启用。",
+    "MUST_CHANGE_PASSWORD": "您必须先修改密码，然后才能继续使用系统。",
     "FEATURE_NOT_CONFIGURED": "此系统尚未配置{{feature}}功能。",
     "ENTITY_EXPIRED": "{{entity}}已过期。",
     "MACHINE_CREDENTIAL_INVALID": "设备认证信息无效。",
