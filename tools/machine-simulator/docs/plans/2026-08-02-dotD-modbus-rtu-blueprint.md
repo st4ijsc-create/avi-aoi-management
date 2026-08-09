@@ -270,6 +270,39 @@ không ai đi kiểm nó, cho tới lần nó không đúng nữa.
 
 **Cả ba đều do reviewer bắt, không lần nào do tác giả.** Khi ta vừa hiểu ra một cơ chế, phần giải thích ta viết ra *cảm giác* như đã được kiểm bởi chính sự hiểu ấy. Nó không. **Câu văn biện minh cho một bản sửa phải chịu đúng phép kiểm mà bản sửa phải chịu** — và nếu nó khẳng định một điều phổ quát ("mọi chuỗi cũ đều…", "không thành viên nào…"), thì **liệt kê để phủ định nó trước khi commit**, vì đó chính là dạng câu mà lớp lỗi này thích trú.
 
+🔴 **(c) Với MỖI phép đo đã ghi trong `src/`: những khẳng định nói-với-người-vận-hành nào mô tả cùng cơ chế ấy, và chúng có KHỚP với nó không?** (F-1)
+
+Một thông báo cho người vận hành nói khung tin lạc "trở thành một giao dịch bị từ chối chứ không phải một giá trị
+sai, nên hậu quả là suy giảm chứ không phải dữ liệu hỏng". `ModbusBus.cs:102-105` ghi lại phép dò của **chính
+repo này** bác bỏ nó: khung tin cũ cùng địa chỉ slave, cùng mã hàm, cùng số byte thì **không bị bắt và được trả
+về cho người gọi như câu trả lời** — đúng trường hợp mà thông báo ấy sinh ra để cảnh báo. Nó ship trong dòng log
+ở cả hai host và trong thân phản hồi `POST /v1/connectors`.
+
+**Ba vòng phản biện đã ĐỌC câu đó và cho qua.** Bài test câu chữ của chính tác giả khẳng định cái nhãn "chưa đo"
+**có mặt** — một dụng cụ đo *"tần suất đã được rào chưa"* đối chiếu tiêu chí *"câu này có đúng không"*, tức
+(a3) lần thứ tư. Bằng chứng bác bỏ nằm **cùng assembly, cách ba file**.
+
+**Chẩn đoán đầu tiên cũng sai, và sai theo hướng đắt nhất:** tác giả xếp nó là **thiếu một tầng ngữ liệu thứ
+sáu**. Không phải. Câu ấy đã nằm trong ngữ liệu của **hai** quy tắc sẵn có — R3 ("ai phân xử hai host trên một
+dây": câu ấy ở ngay trong đoạn đó) và R5 ("nơi một luật được nói cho người vận hành": nó là dòng log và thân
+HTTP). Cả hai quy tắc **đã lôi nó ra**. Thứ thiếu là **một bước KIỂM CHỨNG áp lên những câu mà các quy tắc sẵn
+có đã đặt trước mặt người ta** — không phải một phép quét. **Xếp một phép kiểm còn thiếu thành một ngữ liệu còn
+thiếu sẽ đẩy đợt sau đi lùng thứ văn bản không ai đọc, trong khi vấn đề là thứ văn bản ba người đã đọc và không
+ai kiểm.**
+
+**Dạng chạy được là dạng ĐẢO NGƯỢC.** Chạy xuôi từ "khẳng định nào mâu thuẫn với một phép đo" thì không có điểm
+khởi đầu máy móc: tập khẳng định vô hạn, và không grep được cái "mâu thuẫn". Nhưng repo này **tự viết một chỉ
+mục nhỏ, đặc thù, grep được cho các phép đo của chính nó** — `Probed directly`, `by probe`, `measured two ways`,
+`established by probe rather than by reading`, `measured rather than read`. Liệt kê tập ấy (hữu hạn và nhỏ), rồi
+với mỗi phép đo **quét xuôi** tới mọi câu nói-với-người-vận-hành về cùng cơ chế. Đi từ "phép dò về khung tin cũ"
+tới "chuỗi vận hành của ta nói gì về khung tin lạc" mất **một bước**, và nó rơi trúng `DescribeSegmentOwnership`.
+
+**Đây là tầng hiếm hoi mà ngữ liệu tự lớn lên theo chính thói quen nó dựa vào** — khác phép grep từ lượng hoá,
+độ bao phủ của nó không bám vào từ ngữ tác giả tự chọn. (Lý do **thật** để từ chối phép grep `every|all|no arm`
+cũng là **độ bao phủ**, chứ không phải "grep không quyết định được đúng/sai" — lý lẽ sau loại luôn cả chốt đếm
+ship cạnh nó, vì chốt đếm cũng chỉ quyết định *sự nhất quán*. Khẳng định phổ quát sai tệ nhất của F-1 **không
+dùng từ lượng hoá nào**.)
+
 ## 9. Giới hạn phải nói thẳng khi xong
 
 - **RS-485: chỉ hỗ trợ adapter có điều khiển hướng TỰ ĐỘNG.** `System.IO.Ports.SerialPort` không có sự kiện "đã phát xong", không có `RTS_CONTROL_TOGGLE`, và `BaseStream.Flush()` chỉ xả bộ đệm ghi của driver chứ **không** xả thanh ghi dịch của UART — nên nó không phải tín hiệu phát-xong. Đảo chiều RTS bằng phần mềm vì thế **chỉ có thể là một phép đoán thời gian**, và trên bus RS-485 một phép đoán sai làm hỏng khung tin của thiết bị khác. Ai dùng adapter phải bật/tắt DE thủ công thì sản phẩm này **không hỗ trợ** — nói thẳng, đừng để khách phát hiện trên bàn thí nghiệm.
