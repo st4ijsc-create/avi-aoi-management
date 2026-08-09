@@ -295,10 +295,16 @@ internal sealed class FleetCore
     ///
     /// 🔴 <b>AND THE TOKEN "P&lt;n&gt;" IS NOT UNIQUE IN THIS REPOSITORY — named, not fixed.</b> Found while
     /// verifying the sweep above, by asking the question the sweep should have asked first: <i>is this label
-    /// free?</i> Two other vocabularies already use it — project-phase tags (<c>P2-1</c>, <c>P2-3</c>) and a
-    /// phase RANGE at <see cref="St4i.Connector.Abstractions.IDeviceDriver"/> (<i>"P3-P5 drivers"</i>, meaning
-    /// phases, not paths) — plus <c>"P1"</c> as a product-code string literal in the historian endpoints and
-    /// the WPF app. A reader grepping <c>P5</c> gets this list AND a driver-phase range.
+    /// free?</i> <b>Four senses of <c>P&lt;n&gt;</c> coexist here</b>, counted rather than characterised:
+    /// <b>36</b> .NET percentage format specifiers (<c>ToString("P1")</c>, <c>{x:P1}</c> — <c>P1</c> meaning
+    /// "percent, one decimal"); <b>34</b> project-phase tags (<c>P2-1</c>, <c>P2-3</c>); one phase RANGE at
+    /// <see cref="St4i.Connector.Abstractions.IDeviceDriver"/> (<i>"P3-P5 drivers"</i>, meaning phases, not
+    /// paths); and these labels. A reader grepping <c>P5</c> gets this list AND a driver-phase range.
+    ///
+    /// 🔴 The first version of this paragraph called the format specifiers <i>"a product-code string
+    /// literal"</i>. That was simply WRONG, and they are the most numerous of the four — I characterised them
+    /// from their shape in a grep result instead of opening two of them, which is §8.1(f) one notch smaller,
+    /// inside the note written to record §8.1(f). Corrected by review.
     ///
     /// Kept anyway, and the reasoning is the one this branch has used throughout: no reader is given a WRONG
     /// answer — the two senses are trivially distinguishable in context — so the cost is friction, not error,

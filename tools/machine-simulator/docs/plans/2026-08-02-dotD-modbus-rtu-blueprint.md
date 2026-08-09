@@ -229,7 +229,7 @@ G-2 đóng lớp lỗi ấy bằng `try`/`finally` ở từng chỗ. **Một tro
 
 → **Với mỗi `finally` có nhiều hơn MỘT câu lệnh, hỏi: nếu câu đầu ném thì câu sau còn chạy không? Nếu không, hoặc lồng chúng lại, hoặc nói rõ tại chỗ vì sao câu sau là no-op trên đúng đường ném ấy.**
 
-🔴 **(f) MIỀN của một dụng cụ được THỪA HƯỞNG từ vị trí của người viết, chứ không được SUY RA từ câu hỏi (G-2, năm ca).**
+🔴 **(f) MIỀN của một dụng cụ được THỪA HƯỞNG từ vị trí của người viết, chứ không được SUY RA từ câu hỏi (G-2, SÁU ca).**
 
 Bốn tầng ở (a2) — *thành viên → ngữ liệu → quy tắc → register* — đều nói về **cái gì** phải quét. Điều này nói về **ở đâu**, và nó là chiều mà (a2) tự dự báo là còn tồn tại mà chưa ai gọi tên.
 
@@ -237,7 +237,7 @@ Bốn tầng ở (a2) — *thành viên → ngữ liệu → quy tắc → regis
 
 > **Miền của một dụng cụ được thừa hưởng từ VỊ TRÍ của người viết, không phải suy ra từ CÂU HỎI. Vị trí ấy khi thì là một TẦNG, khi thì là một TỪ VỰNG. Cả hai đều ngẫu nhiên đối với câu hỏi, và không cái nào NHÌN THẤY ĐƯỢC TỪ BÊN TRONG dụng cụ. Hãy suy miền ra từ TÍNH CHẤT đang săn — "trạng thái ghi ở đây, hoàn tất ở chỗ khác sau", "một seam của host đứng trước phần việc không được phép bỏ" — rồi hỏi tính chất ấy CÓ THỂ SỐNG Ở ĐÂU, TRƯỚC khi chọn cách đi tìm.**
 
-**Năm ca, phân loại — ba TẦNG, hai TỪ VỰNG:**
+**Sáu ca, phân loại — ba TẦNG, ba TỪ VỰNG:**
 
 | # | Ca | Cái gì đã chặn miền của dụng cụ | Loại |
 |---|---|---|---|
@@ -246,6 +246,9 @@ Bốn tầng ở (a2) — *thành viên → ngữ liệu → quy tắc → regis
 | 3 | Đường log thứ năm của G-1 (`UnsPublisher`) | phép census đếm các chỗ `_logger?.` **bên trong `FleetCore.cs`**; chỗ này nằm trong callee | **tầng** |
 | 4 | `StartSlot` (G-2 NEW-1) | cùng file, cùng class. Phép grep khoá vào `_logDebug` **trong vòng lặp dispose**; chỗ này là `_logError` trong handler lỗi | **từ vựng** |
 | 5 | `DrainSeedNotifications` (G-2 m-1) | cùng file, cùng class. Sót vì nó *"không phải vòng lặp dispose, cũng không phải handler lỗi"* | **từ vựng** |
+| 6 | Phép quét đổi nhãn P (G-2 NEW-6) | miền lấy từ **VÍ DỤ** mà phát hiện dùng (`P5`), không lấy từ tính chất (*mọi tham chiếu theo thứ tự tới danh sách ấy*); `P8` sót ở mọi nơi | **từ vựng** |
+
+🔴 **Vì sao ca 6 xếp vào TỪ VỰNG chứ không phải một loại thứ ba** — trục phân loại là *cái gì đã CHẶN miền*, không phải *vì sao nó bị chặn*. Miền của ca 6 bị chặn bởi một **tập từ** ("path 5"/"item 5"/"path B") và sót vì "path 8" không nằm trong tập ấy: đúng định nghĩa nửa từ-vựng. Cái RIÊNG của nó là **nguyên nhân** khiến tập từ ấy sai — một ví dụ minh hoạ bị nhầm thành đặc tả miền — và đó là một **quy tắc con của nửa từ-vựng**, ghi ở cuối mục này. Tách nó thành loại thứ ba sẽ chẻ bảng theo *vì sao*, phá đúng cái trục mà quy tắc dựng trên.
 
 **Nó BAO TRÙM D-7b/D-7c** — *"bắt đầu từ TẬP CÁC LỆNH TRẢ VỀ, không phải từ tên trường"* — đúng bằng nửa từ-vựng của nó. Hai quy tắc ấy vẫn đúng và vẫn là cái cò súng cụ thể; điều này nói **vì sao** chúng cần thiết, và bổ sung nửa còn lại mà chúng không phủ.
 
@@ -271,7 +274,11 @@ Hai vế rời nhau thì mỗi vế đều để lọt một ca của đợt nà
 
 🔴 **Và ca cuối cùng của (f) trong đợt này là ca sạch nhất: chính phép quét đổi tên P-label.** Phát hiện NEW-5 minh hoạ vấn đề "ba tên cho một thành viên" bằng **ví dụ P5**. Phép quét đi đổi **P5** — và bỏ sót **P8 ở mọi nơi**, tạo ra một trạng thái từ vựng **phụ thuộc thành viên**, tệ hơn cả trạng thái chưa gán nhãn. Miền của phép quét được thừa hưởng từ **VÍ DỤ mà phát hiện dùng**, chứ không suy ra từ **TÍNH CHẤT** (*mọi tham chiếu theo thứ tự tới danh sách này*). Xảy ra **trong chính commit nâng (f) lên blueprint, do chính tác giả của (f)**.
 
-→ **Một ví dụ trong lời phát hiện là một VÍ DỤ, không phải một ĐẶC TẢ MIỀN.** Trước khi quét, hãy viết ra tính chất bằng câu chữ không chứa ví dụ ấy — rồi quét theo tính chất.
+→ **Một ví dụ trong lời phát hiện là một VÍ DỤ, không phải một ĐẶC TẢ MIỀN.** Trước khi quét, hãy viết ra tính chất bằng câu chữ không chứa ví dụ ấy — rồi quét theo tính chất. *(Đây là quy tắc con của nửa TỪ VỰNG, không phải một loại riêng.)*
+
+🔴 **Và một giới hạn của chính dụng cụ, tìm ra ở vòng cuối (NEW-7): với tính chất "tham chiếu theo thứ tự", GREP KHÔNG PHẢI DỤNG CỤ ĐẦY ĐỦ — ĐỌC ĐOẠN VĂN MỚI LÀ.** Ba tham chiếu còn sót thoát qua **ba** cơ chế chồng lên nhau: danh từ khác (`path`/`item`), chữ hoa (`Item` đầu câu), và — cái không phép grep một-dòng nào với tới được — **ngắt dòng rơi đúng giữa "item" và "7"**. Một chỗ (*"Folding 7 into 3"*) **không có danh từ nào cả**. Mở rộng biểu thức không cứu được: cơ chế thứ ba nằm ngoài khả năng của một phép tìm theo dòng, và cơ chế thứ tư là không có từ khoá.
+
+→ **Khi tính chất là một THAM CHIẾU chứ không phải một TOKEN, hãy chốt phép quét bằng một lượt ĐỌC đoạn văn.** Và đừng gắn khẳng định "đã đổi hết" vào một danh sách mà dụng cụ của bạn về cấu trúc không quét hết được.
 
 **Và một phân biệt về bằng chứng:** một diff chỉ sửa chú thích là **bằng chứng kết luận về cây mã, và không nói gì về môi trường**. Cổng đỏ trên một commit như vậy nghĩa là máy bẩn, không phải mã hỏng — nhưng cách chữa là **dọn máy**, không phải nới trần.
 
