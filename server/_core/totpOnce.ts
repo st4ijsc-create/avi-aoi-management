@@ -302,7 +302,9 @@ let daKeuSaiTienTrinh = false;
  * `speakeasy.totp.verify` trong `server/**` (cưỡng chế bằng `totpReplayScan.test.ts`).
  *
  * @param userId  chủ của mã — thành phần **bắt buộc** của khoá sổ.
- * @param secret  secret 2FA (base32) đã đọc từ `users.two_factor_secret`.
+ * @param secret  secret 2FA (base32) đã đọc từ `user_secrets.twoFactorSecret` (Pha 7 Task 9 / 9c
+ *                dời nó khỏi `users`; migration `0315` đã BỎ hẳn cột cũ ⇒ tên cũ nay là một
+ *                lý do ĐÃ CHẾT — xem lăng kính ở `laTienTrinhPhucVuHttp()` dưới đây).
  * @param token   mã 6 số người gọi gửi lên.
  * @param luot    dấu của LƯỢT GỌI. Cùng `luot` ⇒ lượt verify thứ N của **cùng** một lượt gọi ⇒
  *                cho qua. Bỏ trống ⇒ mỗi lượt gọi là một lượt riêng (đúng cho mọi điểm gọi chỉ

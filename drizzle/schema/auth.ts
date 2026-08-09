@@ -297,7 +297,9 @@ export type InsertUserFactoryAssignment = typeof userFactoryAssignments.$inferIn
  * `vram_leases.owner`. Lý do thứ hai: không đưa một mã OTP **còn hiệu lực** vào bảng và vào log
  * truy vấn.
  * ⚠ Đây **KHÔNG** phải phép chống một kẻ **đã đọc được DB** — secret 2FA nằm ngay
- *   `users.two_factor_secret` cùng DB. Nó chỉ bỏ plaintext ở nơi không cần plaintext.
+ *   `user_secrets.twoFactorSecret` **cùng DB**. Nó chỉ bỏ plaintext ở nơi không cần plaintext.
+ *   (Pha 7 / M-1: tên cũ `users.two_factor_secret` **đã bị `0315` BỎ**; giữ một lý do trỏ vào một
+ *   cột đã chết là đúng lớp *"hàng rào với một lý do đã chết"* mà `totpOnce.ts:234-243` vừa nêu tên.)
  *
  * ⚠ **KHOÁ CHÍNH GỒM `userId`**: hai người dùng khác secret có thể tình cờ sinh **cùng 6 số**, và
  *   chặn nhầm người thứ hai là một lỗi **có thật**, không phải giả thuyết.

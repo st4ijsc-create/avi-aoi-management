@@ -11,16 +11,47 @@
  * DẠNG một đối tượng người dùng không"* — nên nó dọn cả khoá **chưa ai biết tên**.
  *
  * Hình dạng = có **định danh** (`id` hoặc `openId`) **VÀ** ít nhất một **mẩu danh tính**
- * (`username` · `email` · `passwordHash` · `twoFactorSecret` · `openId` · `loginMethod`). Hai điều
+ * (`username` · `email` · `openId` · `loginMethod` · `twoFactorEnabled` · `lastSignedIn`). Hai điều
  * kiện, để một đối tượng nghiệp vụ bất kỳ có `id`+`name` (máy, sản phẩm, dây chuyền) **không** bị
- * xoá nhầm.
+ * xoá nhầm. ⚠ Xem khối **M-2** ở `MAU_DANH_TINH` — danh sách ấy KHÔNG được suy từ
+ * `PUBLIC_USER_FIELDS` (nó chứa `name`, và phép suy ấy XOÁ NHẦM mọi đối tượng nghiệp vụ).
  */
 
 /** Khoá đã bị bỏ — giữ tên **chỉ để đọc lại lịch sử**, KHÔNG phải điều kiện của phép dọn. */
 export const KHOA_DA_BO = ["manus-runtime-user-info"] as const;
 
-/** Mẩu danh tính: sự có mặt của **một** trong số này (kèm định danh) là đủ để gọi là người dùng. */
-const MAU_DANH_TINH = ["username", "email", "passwordHash", "twoFactorSecret", "openId", "loginMethod"] as const;
+/**
+ * Mẩu danh tính: sự có mặt của **một** trong số này (kèm định danh) là đủ để gọi là người dùng.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ Pha 7 / review TOÀN NHÁNH **M-2** — hai phần tử CHẾT đã được thay bằng hai ô CÒN SỐNG.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `passwordHash` và `twoFactorSecret` **không bao giờ** còn xuất hiện trong `auth.me` sau Task 7
+ * (phép chiếu cho-phép) và Task 9 (hai cột rời sang `user_secrets`) ⇒ hai phần tử **chết**: chúng
+ * không làm sai điều gì, nhưng chúng chiếm chỗ của phép nhận diện thật. Thay bằng
+ * `twoFactorEnabled` + `lastSignedIn` — hai ô **có thật** trong `PUBLIC_USER_FIELDS`, và **riêng
+ * của tài khoản**: không máy/sản phẩm/dây chuyền nào mang chúng.
+ *
+ * ⚠⚠⚠ **VÀ ĐÂY LÀ CHỖ ĐỀ XUẤT CỦA BÁO CÁO REVIEW **KHÔNG** ÁP ĐƯỢC NGUYÊN VĂN.** Báo cáo đề nghị
+ * *"suy `MAU_DANH_TINH` từ `PUBLIC_USER_FIELDS`"*. Đo lại thì phép suy ấy **HỎNG THEO CHIỀU MỞ**:
+ * `PUBLIC_USER_FIELDS` chứa **`name`** (và `createdAt`/`updatedAt`), nên **mọi** đối tượng nghiệp
+ * vụ có `{id, name}` — máy, sản phẩm, dây chuyền — sẽ khớp và **bị XOÁ NHẦM** khỏi `localStorage`.
+ * Đó đúng là điều mà điều kiện hai vế ở docstring trên được dựng ra để chặn.
+ * ⇒ Tập này **KHÔNG** phải "mọi ô công khai của người dùng"; nó là *"những ô mà **chỉ** một tài
+ *   khoản mới có"* — một khái niệm **hẹp hơn**, nên nó vẫn được viết ra ở đây. Nợ còn lại: chưa có
+ *   lưới nào canh *"∀ phần tử của tập này là một ô THẬT của `auth.me`"* (cần đưa danh sách ô công
+ *   khai xuống `shared/` — `publicUser.ts` nhập `drizzle/schema`, không mang sang trình duyệt được).
+ * ⚠ Cổng **vẫn đúng**: `localStorageUserScan.unit.test.ts` suy nguồn từ AST (`auth.me.useQuery`),
+ *   không từ danh sách này; danh sách chỉ lái phép **dọn lúc chạy** của dữ liệu cũ.
+ */
+const MAU_DANH_TINH = [
+  "username",
+  "email",
+  "openId",
+  "loginMethod",
+  "twoFactorEnabled",
+  "lastSignedIn",
+] as const;
 
 /** Giá trị đã đọc từ kho có **hình dạng** một đối tượng người dùng không. */
 export function coHinhDangNguoiDung(gt: string | null): boolean {

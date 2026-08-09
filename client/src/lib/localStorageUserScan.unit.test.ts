@@ -343,6 +343,47 @@ describe("★★★ Pha 5/7 Task 8b — ∀ khoá kho-trên-đĩa: KHÔNG khoá 
     expect(KHOA_DA_BO.includes("manus-runtime-user-info"), "khoá đã bỏ được ghi tên để đọc lại lịch sử").toBe(true);
   });
 
+  it("★★★ M-2 — hai mẩu danh tính MỚI (`twoFactorEnabled`/`lastSignedIn`) dọn được, và `{id,name,role}` VẪN SỐNG", () => {
+    /**
+     * ★★★ Pha 7 / review TOÀN NHÁNH **M-2**, và ô này **BÁC BỎ đề xuất nguyên văn của báo cáo**.
+     *
+     * Báo cáo đề nghị *"suy `MAU_DANH_TINH` từ `PUBLIC_USER_FIELDS`"*. Đo lại: `PUBLIC_USER_FIELDS`
+     * chứa **`name`**, nên phép suy ấy sẽ khớp `{ id, name }` của **mọi** đối tượng nghiệp vụ —
+     * máy, sản phẩm, dây chuyền — và **XOÁ NHẦM** chúng khỏi `localStorage`. Vế thứ hai của ô này
+     * ghim đúng chuyện đó: ngày ai đó "sửa" theo đề xuất ấy, ô này **ĐỎ**.
+     *
+     * Vế thứ nhất đo rằng hai phần tử **chết** (`passwordHash`/`twoFactorSecret` — không bao giờ
+     * còn ra khỏi máy chủ sau Task 7+9) đã được thay bằng hai ô **còn sống** và **riêng của tài
+     * khoản**.
+     */
+    const kho = new Map<string, string>([
+      // Bản ghi cũ KHÔNG có `username`/`email`/`openId`/`loginMethod` — trước M-2 nó SỐNG SÓT.
+      ["phien-cu", JSON.stringify({ id: 7, name: "Ai Đó", role: "admin", twoFactorEnabled: false })],
+      ["phien-cu-2", JSON.stringify({ id: 8, name: "Ai Đó Nữa", lastSignedIn: "2026-08-01T00:00:00Z" })],
+      // …và ba đối tượng NGHIỆP VỤ mang đúng hình dạng `{id, name, …}` phải KHÔNG bị đụng.
+      ["ho-so-may", JSON.stringify({ id: 3, name: "SPI-01", role: "line" })],
+      ["san-pham", JSON.stringify({ id: 4, name: "PCB-A", createdAt: "2026-01-01", updatedAt: "2026-02-02" })],
+      ["day-chuyen", JSON.stringify([{ id: 5, name: "L1" }, { id: 6, name: "L2" }])],
+    ]);
+    const gia = {
+      get length() { return kho.size; },
+      key: (i: number) => [...kho.keys()][i] ?? null,
+      getItem: (k: string) => kho.get(k) ?? null,
+      removeItem: (k: string) => void kho.delete(k),
+    };
+    const daBo = donKhoaMangNguoiDung(gia as unknown as Storage);
+    expect(
+      daBo.sort(),
+      "hai ô danh tính MỚI không dọn được bản ghi cũ ⇒ `MAU_DANH_TINH` vẫn còn phần tử chết",
+    ).toEqual(["phien-cu", "phien-cu-2"]);
+    expect(
+      [...kho.keys()].sort(),
+      "ĐỐI TƯỢNG NGHIỆP VỤ BỊ XOÁ NHẦM.\n" +
+        "⚠ Đây là hậu quả của việc suy `MAU_DANH_TINH` từ `PUBLIC_USER_FIELDS` (nó chứa `name`).\n" +
+        "⇒ Tập ấy phải là *những ô mà CHỈ một tài khoản mới có*, một khái niệm HẸP HƠN.",
+    ).toEqual(["day-chuyen", "ho-so-may", "san-pham"]);
+  });
+
   it("★★ người dọn KHÔNG được nổ khi kho không có / bị chặn", () => {
     expect(() => donKhoaMangNguoiDung(undefined)).not.toThrow();
     const hong = {
