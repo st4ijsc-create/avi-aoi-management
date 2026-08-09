@@ -299,6 +299,20 @@ export const userRouter = router({
 
       // Get user's 2FA secret
       const status = await db.get2FAStatus(ctx.user.id);
+      /**
+       * ★★★ Pha 8 Task 5 — **HÀNG RÀO CÓ Ở TUYẾN SONG SONG, THIẾU Ở ĐÂY.**
+       *
+       * ⚠⚠ `twoFactor.enable` (`server/routers/twoFactorRouter.ts:121-123`) từ chối khi 2FA **đã
+       * bật**; tuyến này thì không. Một lượt gọi lại khi 2FA đang bật **TIÊU một mã OTP hợp lệ** vào
+       * sổ `totp_consumed` mà không đổi lấy gì (`enable2FA` đặt cờ đã `true` thành `true`), tức nó
+       * là một đường **đốt bằng chứng** ngoài mọi luồng nghiệp vụ. Trạng thái "đang bật" chỉ được
+       * rời qua `user.disable2FA` / `twoFactor.disable` — hai tuyến ĐÒI bằng chứng và DỌN vật liệu.
+       * ⚠ Đây là một phép **THU HẸP**: người chưa bật 2FA không bị ảnh hưởng (ca đối chứng dương
+       *   của `hoTuyenSongSong.test.ts` §5 đo lại điều đó mỗi lượt chạy).
+       */
+      if (status?.twoFactorEnabled) {
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'enableTwoFactor' }, '2FA đã được bật.');
+      }
       if (!status?.twoFactorSecret) {
         // Review round 1 (M-5) — verify2FA(): người dùng đang CỐ BẬT 2FA, cần chỉ
         // đường đi thiết lập (KHÁC disable2FA() bên dưới — giữ câu trần ở đó, vì
