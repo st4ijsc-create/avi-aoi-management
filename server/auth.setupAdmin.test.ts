@@ -1,6 +1,16 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { like } from "drizzle-orm";
 import { appRouter } from "./routers";
 import * as db from "./db";
+import { users } from "../drizzle/schema";
+
+/**
+ * ★★★ Pha 8 Task 3 — **DẤU RIÊNG CỦA FILE NÀY.** Mọi tài khoản file này tạo mang tiền tố này ở ô
+ * `email`; lượt dọn khoá **đúng** vào tiền tố ấy. Nhờ thế câu *"chỉ dọn hàng chính nó tạo"* đúng
+ * **theo cấu tạo**, không phải theo thiện chí của người viết ca kế tiếp.
+ */
+const DAU = "pha8-setupadmin-";
+const EMAIL = (s: string) => `${DAU}${s}@test.invalid`;
 
 describe("auth.setupAdmin", () => {
   /**
@@ -30,12 +40,38 @@ describe("auth.setupAdmin", () => {
    * ⇒ Bán kính phá hoại đi từ **MỌI tài khoản** xuống **chỉ các admin**. Ba file nạn nhân ở trên
    *   đều dựng tài khoản `role: "user"` ⇒ nay chúng sống sót.
    */
-  beforeEach(async () => {
-    // Tiền đề THẬT của `auth.setupAdmin`: không còn admin nào. KHÔNG xoá cả bảng.
-    for (const admin of await db.getUsersByRole("admin")) {
-      await db.deleteUser(admin.id);
-    }
-  });
+  /**
+   * ★★★ Pha 8 Task 3 — **BƯỚC THU HẸP THỨ HAI: TỪ "MỌI ADMIN" XUỐNG "HÀNG CỦA CHÍNH TÔI".**
+   *
+   * `03ad466c` đã đi từ *"mọi tài khoản"* xuống *"mọi admin"* — đủ để **hết nhiễu HÔM NAY**, vì đo
+   * được: mọi file test khác dựng hàng `users` thật đều dùng `role: "user"`
+   * (`machineApiPanelOperator` · `operatorBadgeService` · `mustChangePassword` ·
+   * `totpSeedWriteScan` · `buocDoiMatKhau`), và DB test không có tài khoản hạt giống nào.
+   *
+   * ⚠ Nhưng *"hôm nay không ai tạo admin"* là một **quan sát theo thời điểm**, không phải bất biến.
+   * File test thứ N+1 dựng một admin thật là đủ để nợ này sống lại — và nó sẽ sống lại dưới đúng
+   * triệu chứng cũ (**ca đỏ đổi mỗi lượt**) đã làm **ba pha liên tiếp** chẩn đoán sai.
+   * ⇒ Lượt dọn nay khoá vào `DAU`, tức **đúng tập hàng file này tạo ra**. Bán kính phá hoại = 0.
+   *
+   * ⚠⚠ **HỆ QUẢ ĐƯỢC KHAI, ĐỪNG ĐỌC NHẦM THÀNH LỖI:** tiền đề của `auth.setupAdmin` là
+   * `getUsersByRole('admin').length === 0` — một điều kiện **TOÀN CỤC**. File này nay **không**
+   * cưỡng chế nó bằng cách xoá của người khác nữa, nên nếu một file khác dựng admin thật chạy song
+   * song, ca ở đây sẽ **ĐỎ**. Đó là hỏng theo chiều **AN TOÀN**: thà báo động thật còn hơn im lặng
+   * xoá dữ liệu của file khác. Đường sửa lúc ấy là cho file kia mang dấu riêng, **không** phải mở
+   * lại lượt xoá rộng ở đây.
+   *
+   * `afterEach` (chứ không chỉ `beforeEach`) là phần bắt buộc: không có nó, file này để lại rác
+   * admin cho lượt sau — đã đo được **đúng một hàng như thế** còn sót trong DB test
+   * (`id=1161 · name="Test Admin"`), do chính bản trước không hề dọn sau khi chạy.
+   */
+  const donHangCuaChinhFileNay = async () => {
+    const d = await db.getDb();
+    if (!d) return;
+    await d.delete(users).where(like(users.email, `${DAU}%`));
+  };
+
+  beforeEach(donHangCuaChinhFileNay);
+  afterEach(donHangCuaChinhFileNay);
 
   it("should create first admin user successfully", async () => {
     const caller = appRouter.createCaller({
@@ -46,7 +82,7 @@ describe("auth.setupAdmin", () => {
 
     const result = await caller.auth.setupAdmin({
       username: "admin",
-      email: "admin@test.com",
+      email: EMAIL("first"),
       name: "Test Admin",
       password: "password123",
     });
@@ -54,10 +90,12 @@ describe("auth.setupAdmin", () => {
     expect(result.success).toBe(true);
     expect(result.userId).toBeTypeOf("number");
 
-    // Verify user was created with admin role
-    const admins = await db.getUsersByRole("admin");
+    // Verify user was created with admin role.
+    // ⚠ Lọc theo `DAU`: khẳng định nói về **hàng của file này**, không về trạng thái toàn cục của
+    //   bảng `users` — file này không còn sở hữu bảng ấy nữa.
+    const admins = (await db.getUsersByRole("admin")).filter((u) => u.email?.startsWith(DAU));
     expect(admins.length).toBe(1);
-    expect(admins[0].email).toBe("admin@test.com");
+    expect(admins[0].email).toBe(EMAIL("first"));
     expect(admins[0].name).toBe("Test Admin");
     expect(admins[0].role).toBe("admin");
   });
@@ -72,7 +110,7 @@ describe("auth.setupAdmin", () => {
     // Create first admin
     await caller.auth.setupAdmin({
       username: "admin1",
-      email: "admin1@test.com",
+      email: EMAIL("dup1"),
       name: "First Admin",
       password: "password123",
     });
@@ -81,7 +119,7 @@ describe("auth.setupAdmin", () => {
     await expect(
       caller.auth.setupAdmin({
         username: "admin2",
-        email: "admin2@test.com",
+        email: EMAIL("dup2"),
         name: "Second Admin",
         password: "password123",
       })
@@ -115,7 +153,7 @@ describe("auth.setupAdmin", () => {
     await expect(
       caller.auth.setupAdmin({
         username: "admin",
-        email: "admin@test.com",
+        email: EMAIL("shortpw"),
         name: "Test Admin",
         password: "short",
       })
@@ -132,7 +170,7 @@ describe("auth.setupAdmin", () => {
     await expect(
       caller.auth.setupAdmin({
         username: "admin",
-        email: "admin@test.com",
+        email: EMAIL("noname"),
         name: "",
         password: "password123",
       })
@@ -149,12 +187,12 @@ describe("auth.setupAdmin", () => {
     const plainPassword = "password123";
     await caller.auth.setupAdmin({
       username: "testadmin",
-      email: "admin@test.com",
+      email: EMAIL("hash"),
       name: "Test Admin",
       password: plainPassword,
     });
 
-    const admins = await db.getUsersByRole("admin");
+    const admins = (await db.getUsersByRole("admin")).filter((u) => u.email?.startsWith(DAU));
     // ★ Pha 7 Task 9 (9c) — hash KHÔNG còn trên hàng `users`; nó ở `user_secrets`.
     //   ⚠ Ô này cũng là ĐỐI CHỨNG DƯƠNG cho ràng buộc "hai INSERT trong MỘT giao dịch": nếu hàng
     //     `user_secrets` không được tạo cùng lượt, tài khoản admin đầu tiên sẽ KHÔNG đăng nhập
