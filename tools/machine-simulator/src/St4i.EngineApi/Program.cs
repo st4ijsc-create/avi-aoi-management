@@ -1737,19 +1737,111 @@ if (!string.IsNullOrWhiteSpace(initialLiveVerifyTlsRaw))
 // branch below goes through this exact same FleetHost.UpdateSettings call, so the transport/config-sync
 // rebuild + (new) persistence-on-change both happen identically regardless of which source won.
 var persistedSettings = settingsStore.Load();
+
+// The env-var FLOOR, built unconditionally. Before H-1a it was built only in the `else` arm; it is now
+// also the FALLBACK the guard below replays when a persisted triple cannot be activated, so it has to
+// exist on both paths.
+var envFloorSettingsRequest = new SettingsUpdateRequest(
+    ServerUrl: string.IsNullOrWhiteSpace(initialLiveServerUrl) ? null : initialLiveServerUrl,
+    VerifyTls: initialLiveVerifyTls,
+    Language: null,
+    MachineCode: string.IsNullOrWhiteSpace(initialLiveMachineCode) ? null : initialLiveMachineCode);
+
 var initialSettingsRequest = persistedSettings is not null
     ? new SettingsUpdateRequest(
         ServerUrl: persistedSettings.ServerUrl,
         VerifyTls: persistedSettings.VerifyTls,
         Language: null,
         MachineCode: persistedSettings.MachineCode)
-    : new SettingsUpdateRequest(
-        ServerUrl: string.IsNullOrWhiteSpace(initialLiveServerUrl) ? null : initialLiveServerUrl,
-        VerifyTls: initialLiveVerifyTls,
-        Language: null,
-        MachineCode: string.IsNullOrWhiteSpace(initialLiveMachineCode) ? null : initialLiveMachineCode);
+    : envFloorSettingsRequest;
 
-fleetHost.UpdateSettings(initialSettingsRequest);
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+// 🔴 H-1a — THE STARTUP REPLAY IS HARDENED HERE, AND IT IS HARDENED **FIRST**.
+//
+// Read the order, because reversing it ships the boot loop G-2 refused: this guard is the PRECONDITION
+// for FleetCore.UpdateSettings persisting unconditionally, not a consequence of it. Until this `try`
+// existed, the uniform S-set remedy (`Save` in a `finally`) was strictly worse than the defect.
+//
+// WHAT IT PREVENTS. `FleetHost.UpdateSettings` commits serverUrl/machineCode/verifyTls under FleetCore's
+// lock and THEN activates them: `CredentialStore.Load` (which throws `ArgumentException` at its very
+// first statement on an empty machine code), `TransportCoordinator.RebuildLive`, and an arbitrary host
+// callback. Every one of those can throw, and this call sits BEFORE `app.Run()`. Unwrapped, a persisted
+// triple that cannot be activated took the whole service down on EVERY subsequent start, with no running
+// process left to correct it through.
+//
+// AND VALIDATING THE ENDPOINT WOULD NOT HAVE CLOSED IT. `fleet-settings.json` is a plain JSON file in a
+// known, relocatable directory: a bad triple can arrive without passing through any `PUT /v1/settings`.
+// Input validation at the endpoint is a good thing to have and is NOT this fix.
+//
+// WHAT IT DOES INSTEAD: the host STARTS, and SAYS SO. The LEVEL is load-bearing and is §10.4 stated as a
+// requirement rather than as a lesson — this product ships no `appsettings.json`, so the framework's own
+// default minimum applies and a `LogDebug` line here would not be quiet, it would be SILENT. `LogError`
+// reaches the console, and under `AddWindowsService` it is a Windows Event Log entry an operator on shift
+// can actually find.
+//
+// THE FALLBACK IS GUARDED TOO, and that is not belt-and-braces. The env-var floor is operator-supplied
+// input from the same population as the file — an `ST4I_MACHINE_CODE` whose credential cannot be loaded
+// throws at exactly the same statement. Hardening only the first arm would have moved the boot loop one
+// branch to the right: blueprint §8.1's third principle ("fixing one instance of a class grants no
+// immunity to the class"), reproduced inside the fix for it. When the floor is all-null — no env vars set
+// at all, the ordinary desktop launch — `UpdateSettings` is a no-op and there is nothing further to try.
+//
+// 🔴 WHAT THIS DOES **NOT** DO, said here rather than left to be discovered. It does not roll the
+// committed fields back. After a failed replay FleetCore's fields hold the triple that failed to
+// activate, so `GET /v1/settings` reports it — truthfully, as the configuration this process is holding —
+// while the transport stays on whatever it had. Rolling back is remedy (b) at `FleetCore.UpdateSettings`:
+// it changes what a failed call MEANS to its caller and needs an arbitration rule for a rollback racing a
+// concurrent second `UpdateSettings`. Out of scope here, and named there.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+static bool TryReplayStartupSettings(
+    FleetHost host, ILogger logger, SettingsUpdateRequest request, string source, string settingsDir)
+{
+    try
+    {
+        host.UpdateSettings(request);
+        return true;
+    }
+    catch (Exception ex)
+    {
+        // Never the mk_ key: these three fields are exactly what GET /v1/settings already returns.
+        // The DIRECTORY rather than the full path, so this does not restate FleetSettingsStore's own
+        // private file-name constant and cannot drift from it.
+        logger.LogError(
+            ex,
+            "STARTUP SETTINGS REPLAY FAILED — {Source} could not be applied and the service is starting " +
+            "WITHOUT it (serverUrl={ServerUrl}, machineCode=\"{MachineCode}\", verifyTls={VerifyTls}). " +
+            "The host is UP and every endpoint works; the Live transport was NOT rebuilt from these " +
+            "values. Correct them with PUT /v1/settings, or edit/delete fleet-settings.json in " +
+            "{SettingsDir} and restart.",
+            source,
+            request.ServerUrl,
+            request.MachineCode,
+            request.VerifyTls,
+            settingsDir);
+        return false;
+    }
+}
+
+if (!TryReplayStartupSettings(
+        fleetHost,
+        app.Logger,
+        initialSettingsRequest,
+        persistedSettings is not null
+            ? "the persisted fleet-settings.json"
+            : "the ST4I_SERVER_URL/ST4I_MACHINE_CODE/ST4I_VERIFY_TLS environment floor",
+        settingsStore.RootDirectory)
+    && persistedSettings is not null)
+{
+    // The persisted triple could not be activated — replay the env-var floor instead, i.e. the branch
+    // this very startup would have taken had the file not existed at all.
+    TryReplayStartupSettings(
+        fleetHost,
+        app.Logger,
+        envFloorSettingsRequest,
+        "the ST4I_SERVER_URL/ST4I_MACHINE_CODE/ST4I_VERIFY_TLS environment floor (fallback after the " +
+        "persisted file failed)",
+        settingsStore.RootDirectory);
+}
 
 app.Logger.LogInformation(
     "St4i.EngineApi ready — {Count} machine(s) in the fleet roster: {Codes} (mode={Mode})",

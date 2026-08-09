@@ -1820,7 +1820,28 @@ EXPECT_EDGESERVICE=50
 # 22: G-2 adds no driver and no connector kind. EXPECT_WARNINGS stays 116 — the new code adds no warning and
 # the one signature change (DisposeOrphanedConnectorDrivers' parameter becoming nullable) is matched by a
 # null guard at its head, so no CS86xx appears.
-EXPECT_ENGINEAPI=1315
+#
+# 🔴 TASK H-1a raises this 1315 -> 1317 (+2), counted from the runner. ONE new file,
+# StartupSettingsReplayHardeningTests.cs; no existing file rewritten or deleted.
+#   AnUnactivatablePersistedTriple_StillBootsTheHost_AndReportsItAtErrorLevel        +1
+#       The claim S6's closure rests on. A hand-edited fleet-settings.json with machineCode "" is replayed
+#       into FleetHost.UpdateSettings before app.Run(); CredentialStore.Load throws at its first statement.
+#       Before H-1a that took the whole service down at EVERY start. Asserts the host answers a REAL
+#       request over the REAL pipeline (not merely that factory.Server did not throw) AND that the
+#       operator-facing line came out at LogLevel.Error. The LEVEL is a separate assertion on purpose:
+#       §10.4 — this product ships no appsettings.json, so a demotion to LogDebug emits NOTHING while every
+#       text assertion stays green, and the capturing provider returns IsEnabled(_) => true precisely so a
+#       demoted call is still captured and can be caught.
+#   WhenThePersistedTripleFails_TheEnvironmentFloorIsReplayedInstead                 +1
+#       The FALLBACK is a second claim and gets a second test. A guarded call that merely swallows would
+#       pass the first test while leaving the host on no configuration at all. This one seeds a failing
+#       FILE and a good ENV floor, and asserts GET /v1/settings reports the floor — which can only happen
+#       via the replay after the failure, since the file existed and was therefore the primary source.
+#
+# EXPECT_WARNINGS stays 116 for H-1a: the added code is one guarded call site plus a static local function
+# in Program.cs (top-level statements already carry one, LogIfRegisterMachineCollided) and one new test
+# file; no signature changes, no nullability changes, no new package.
+EXPECT_ENGINEAPI=1317
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
