@@ -35,12 +35,16 @@
  *
  * ⇒ Bản này: (1) đọc/ghi **`user_secrets`**; (2) **KIỂM NGUỒN TRƯỚC KHI LÀM GÌ** — nếu bảng
  *   `user_secrets` không tồn tại, hoặc `users` còn hàng mang bí mật mà `user_secrets` **không**
- *   có, thì **DỪNG với mã thoát ≠ 0**. Không có đường nào để nó "im lặng thành công".
+ *   có, thì **DỪNG với mã thoát 3**. Không có đường nào để nó "im lặng thành công".
  *   Ca cưỡng chế: `server/_core/xoayBiMatNguon.test.ts`.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import postgres from "postgres";
+// ★★★ R2 — LUẬT *"bí mật đang nằm ở bảng nào"* có **MỘT chủ**, và chủ ấy ở một file **KHÔNG
+//   shebang** để lưới `server/_core/xoayBiMatNguon.test.ts` nạp được: đo được ở Bước 7, vitest ném
+//   `SyntaxError` khi nạp một `.mjs` có shebang — và lượt ĐẦU còn XANH nhờ cache của vite.
+import { BANG_NGUON_BI_MAT, loiCuaNguonBiMat } from "./_lib/nguonBiMat.mjs";
 
 const argv = process.argv.slice(2);
 const co = (t) => argv.includes(t);
@@ -50,10 +54,9 @@ const gt = (t) => {
 };
 
 /**
- * ★ Pha 7 Task 9 / R2 — file này **vừa là kịch bản vừa là module**: cổng nguồn
- * (`loiCuaNguonBiMat`) phải **cưỡng chế được bằng một ca test**, không chỉ bằng một lượt đọc mã.
- * Nên mọi tác dụng phụ (đọc argv, nối DB, `process.exit`) nằm **trong** `main()`, và `main()` chỉ
- * chạy khi file được gọi **TRỰC TIẾP**.
+ * ★ Pha 7 Task 9 / R2 — mọi tác dụng phụ (đọc argv, nối DB, `process.exit`) nằm **trong** `main()`,
+ * và `main()` chỉ chạy khi file được gọi **TRỰC TIẾP**. Nhờ vậy một lượt `import` (kể cả từ một
+ * kịch bản khác) **không** mở kết nối nào và **không** giết tiến trình gọi.
  */
 const LA_CHAY_TRUC_TIEP =
   process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
@@ -66,39 +69,7 @@ const HOAN_TAC = gt("--hoan-tac");
 /** Kết nối — chỉ dựng trong `main()`; một lượt `import` KHÔNG được mở kết nối nào. */
 let sql = null;
 
-/** Bảng giữ bí mật 2FA **đang được mã dùng** (Pha 7 Task 9, migration `0314`). */
-export const BANG_NGUON_BI_MAT = "user_secrets";
-
-/**
- * ★★★ R2 — **CỔNG NGUỒN.** Trả về `null` khi mọi thứ khớp; trả về một CÂU LỖI khi không.
- * Hàm **thuần**, tách khỏi I/O để cưỡng chế được bằng một ca test (xem docstring đầu file).
- *
- * Hai điều kiện, và cả hai đều là *"nếu sai thì script đang trỏ nhầm chỗ"*:
- *  1. bảng nguồn **tồn tại** — không có nó thì mọi câu `UPDATE` dưới đây chạm một cột đã chết;
- *  2. **KHÔNG** tài khoản nào còn bí mật ở cột CŨ trên `users` mà lại **thiếu** hàng ở bảng nguồn
- *     — tình huống ấy nghĩa là dữ liệu chưa được chép sang, và xoay bây giờ sẽ để lại một bí mật
- *     **vẫn dùng được** ở chỗ script không nhìn tới.
- */
-export function loiCuaNguonBiMat({ coBangNguon, soHangLechNguon }) {
-  if (!coBangNguon) {
-    return (
-      `DỪNG: không thấy bảng \`${BANG_NGUON_BI_MAT}\` trong DB này.\n` +
-      `  Bí mật 2FA đang được mã đọc từ bảng ấy (Pha 7 Task 9 / migration 0314).\n` +
-      `  Chạy tiếp sẽ UPDATE một cột ĐÃ CHẾT trên \`users\`, in "đã xoay N tài khoản",\n` +
-      `  và KHÔNG xoay gì cả — đúng lớp lỗi "làm hỏng rồi BÁO CÁO THÀNH CÔNG".`
-    );
-  }
-  if (soHangLechNguon > 0) {
-    return (
-      `DỪNG: ${soHangLechNguon} tài khoản còn bí mật ở cột CŨ trên \`users\` mà THIẾU hàng ở ` +
-      `\`${BANG_NGUON_BI_MAT}\`.\n  Dữ liệu chưa được chép sang ⇒ xoay bây giờ để lại một bí mật ` +
-      `VẪN DÙNG ĐƯỢC ở chỗ script không nhìn tới.\n  Chạy lại migration 0314 (câu INSERT … SELECT) trước.`
-    );
-  }
-  return null;
-}
-
-/** Đo hai vế của cổng nguồn trên DB đang nối. */
+/** Đo hai vế của cổng nguồn trên DB đang nối. Luật ở `./_lib/nguonBiMat.mjs`; đây chỉ là phép ĐO. */
 async function doNguonBiMat() {
   const [{ co }] = await sql`SELECT to_regclass('public.${sql.unsafe(BANG_NGUON_BI_MAT)}') IS NOT NULL AS co`;
   if (!co) return { coBangNguon: false, soHangLechNguon: 0 };

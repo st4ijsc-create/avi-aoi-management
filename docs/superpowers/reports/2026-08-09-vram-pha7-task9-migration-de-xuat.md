@@ -1018,3 +1018,120 @@ Trước lượt này, `backup_codes` có **0 hàng** cho **8/8** tài khoản b
 | 7 tài khoản còn lại | **không đụng** | — |
 
 ⚠ **KHÔNG chạy script xoay. KHÔNG áp 0315. KHÔNG xoá dữ liệu người dùng nào.**
+
+---
+
+## 10 · BƯỚC 7 — ĐỘT BIẾN — ✅ **XONG (7 lượt · và MỘT lượt bắt được lưới giả)**
+
+Quy trình: **commit trước** (`74d927c0`), đột biến **theo DÒNG**, khôi phục bằng
+`git checkout HEAD -- <file>`, chạy lại **toàn bộ** lưới liên quan sau mỗi lượt.
+
+| # | đột biến (một dòng) | ca ĐỎ — **tên nguyên văn** |
+|---|---|---|
+| **1** | `drizzle/schema/auth.ts` — `backupCodes.code` `varchar(255)` → **`varchar(20)`** | `★★★ Task 9 §1 (9a) — ∀ mã đã băm phải VỪA bề rộng khai của backup_codes.code › ★★★ ∀ — 32 lượt băm THẬT đều vừa bề rộng khai (không viết tay 60, không viết tay 255)` — *"hash dài 60 ký tự > bề rộng khai varchar(20)"* |
+| **2** | `publicUser.ts` — `passwordInvalidBefore: "server-only"` → **`"public"`** | **BỐN** ca, **HAI** file: `★★★ QĐ-1 (b) — ∀ cột users mang chữ "password" phải là server-only` · `★★★ cả hai mốc được phân loại server-only (đây là rủi ro QĐ-1, đóng theo cấu tạo)` · `★★★ user.list — hình dạng trả về KHÔNG mang mốc nào…` · `★★★ §3 — auth.me mang ô mustChangePassword…` |
+| **3** | `publicUser.ts` — nhét `passwordHash`,`twoFactorSecret` vào `COT_HA_TANG_USER_SECRETS` ⇒ **tập bí mật RỖNG** | `★★★ R1 (c) — CẦU CHÌ: tập cột bí mật của user_secrets KHÁC RỖNG (rỗng ⇒ ô trên là chân lý rỗng)` — *"0 cột bí mật ở `user_secrets` ⇒ luật R1 không canh gì cả"* |
+| **4** | `scripts/xoay-bi-mat-2fa.mjs` — **gỡ toàn bộ CỔNG NGUỒN** khỏi `xoay()` | `★★★★ chạy thật script với DB KHÔNG có user_secrets ⇒ mã thoát ≠ 0 và KHÔNG in 'đã xoay'` — ⚠ **xem §10.1: lượt đầu ô này KHÔNG đỏ** |
+| **5 (M3)** | **file MỚI** `scripts/__dotbien-m3-ghi-cot-cu.mjs` chứa `UPDATE users SET two_factor_secret = NULL` | `★★★ ∀ — KHÔNG câu SQL nào GHI vào cột bí mật CŨ trên users` — *"một script GHI bí mật vào cột CŨ trên `users`"*. **Đường mới, file mới, không ai khai báo nó ở đâu** ⇒ lưới theo **ĐƯỜNG THOÁT**, không theo FILE |
+| **6** | `server/routers.ts` — `auth.me` suy `mustChangePassword` từ **`ctx.user`** thay vì `db.phaiDoiMatKhau` | **HAI** ca: `★★★★ §4 — ô suy ra đọc DB MỚI: ctx.user rỗng hai mốc mà auth.me VẪN nói PHẢI ĐỔI` · `★★★ ĐỐI CHỨNG DƯƠNG — người dùng đổi mật khẩu ⇒ vị từ TỰ tắt` |
+| **7** | `server/db/auth.ts` — `updateUserPassword` **bỏ** câu ghi `passwordChangedAt` | `★★★ ĐỐI CHỨNG DƯƠNG — người dùng đổi mật khẩu ⇒ vị từ TỰ tắt (không ai phải nhớ xoá cờ)` — *"đổi mật khẩu xong mà vẫn bị buộc đổi"* |
+
+**KHÔNG BẮT NHẦM** — sau khi khôi phục cả bảy: §Cổng kiểm chung **25 đường** ⇒ **2.068/2.069**
+(một ca đỏ **duy nhất** là flake hạ tầng, xem §10.2) · `npm run check` **0 lỗi** ·
+`npm run check:tests` **0 lỗi** · `npm run i18n:check` **0 vi phạm mới** · một lượt
+`--sequence.shuffle.tests` trên 6 lưới liên quan ⇒ **53/53**.
+
+### 10.1 · ★★★ ĐỘT BIẾN 4 KHÔNG ĐỎ Ở LƯỢT ĐẦU — và **hai** thứ đứng sau nó
+
+**(a) Lưới XANH VÌ LÝ DO SAI.** Gỡ **toàn bộ** cổng nguồn mà ô §2 vẫn **8/8 XANH**. Nguyên do: câu
+truy vấn ngay sau đó (`aiBiAnhHuong`) **tự nổ** với `relation "user_secrets" does not exist` ⇒ mã
+thoát **1**, và chuỗi ngoại lệ ấy **cũng chứa `user_secrets`** ⇒ **cả hai** khẳng định cũ
+(`≠ 0` và `toContain(BANG_NGUON_BI_MAT)`) đúng, trong khi **thứ chúng được dựng ra để canh đã bị
+xoá**.
+
+> ⇒ *"script THẤT BẠI"* **không** đồng nghĩa *"CỔNG đã từ chối"*. Vị từ phải phân biệt hai điều ấy.
+> Bản vá: ghim **mã thoát 3** (do cổng đặt; một ngoại lệ chưa bắt cho **1**) **và** câu **`DỪNG:`**
+> (do cổng in; thông điệp của postgres không có). Đột biến 4 chạy lại ⇒ **ĐỎ**, với đúng câu
+> *"1 ⇒ một truy vấn NỔ, KHÔNG phải cổng từ chối ⇒ cổng đã bị gỡ (đột biến 4)"*.
+
+**(b) ★★ LỚP LỖI Ở TẦNG CÔNG CỤ: vitest KHÔNG NẠP NỔI một `.mjs` có SHEBANG — và lượt đầu vẫn XANH
+nhờ CACHE.** Khi khôi phục đột biến 4, lưới bỗng đổ với `SyntaxError: Invalid or unexpected token`
+**tại điểm import**, trỏ vào… dòng 7 của **file test** (một dòng kẻ khung trong khối chú thích).
+Chuỗi phép đo, có đối chứng hai chiều:
+
+| phép đo | kết quả |
+|---|---|
+| `node --check scripts/xoay-bi-mat-2fa.mjs` | **OK** |
+| `import()` bằng Node thuần | **OK** — in ra `user_secrets` |
+| `npx esbuild` trên chính file test | **OK** |
+| quét byte: BOM · CR đơn lẻ · UTF-8 hợp lệ | sạch (**0** CR đơn lẻ) |
+| lưới tối giản chỉ có đúng một câu `import` từ `.mjs` ấy | **ĐỔ** — cùng lỗi, cột trỏ đúng chuỗi đường dẫn |
+| **bỏ đúng một dòng** `#!/usr/bin/env node` | **XANH ngay** |
+| trả lại dòng shebang | **ĐỔ lại** |
+
+⇒ Nguyên nhân là **shebang**, và điều làm nó nguy hiểm là **nó không đỏ ngay**: những lượt chạy đầu
+XANH nhờ bản dịch còn trong cache của vite. Một lưới *"xanh vì một lý do không liên quan tới thứ nó
+canh"*, ở **tầng công cụ** — cùng họ với `Glob không khớp file nào ⇒ vitest IM LẶNG` (Pha 4) và
+`đổi tên `.unit.test.ts` ⇒ 12 ca biến mất mà không con số nào nhúc nhích` (Pha 7 §4.1).
+
+**Bản vá:** luật *"bí mật đang nằm ở bảng nào"* dời sang **`scripts/_lib/nguonBiMat.mjs`** — file
+**không shebang**, **một chủ**, và **cả kịch bản lẫn lưới** đều `import` từ đó. Không còn bản sao
+nào để trôi, và không còn phụ thuộc vào việc vitest có nạp nổi một kịch bản hay không.
+(`scripts/xoay-bi-mat-2fa.d.mts` bị thay bằng `scripts/_lib/nguonBiMat.d.mts`.)
+
+### 10.2 · Nợ CÓ TRƯỚC gặp lại trong lượt này — **khai, không vá**
+
+| mục | trạng thái |
+|---|---|
+| `server/services/vram/sharedLedgerIdentityCrossProcess.test.ts` — 1 ca `Test timed out in 5000ms` | **flake hạ tầng**: chạy riêng file ⇒ **15/15 XANH** (1.114 ms); chỉ đỏ khi 124 file chạy song song. Không liên quan Task 9 (nó canh sổ chung xuyên tiến trình) |
+| `server/api.test.ts › Factory Router › should reject non-admin from creating factory` | **nợ CÓ TRƯỚC**: chờ `'Admin access required'`, nhận `'Bạn không có quyền create cho module …'`. Hai file sinh ra câu ấy (`routers/_shared.ts:207`, `routers/hierarchyRouters.ts:76`) **KHÔNG nằm trong lượt sửa này** (`git diff HEAD` trên chúng = rỗng). File này cũng nằm trong danh sách cách ly của `tsconfig.tests.json` |
+| `scripts/seed-admin.mjs` | **kịch bản CHẾT** (dùng `mysql2` + `connection.execute("… ?")` trên một repo Postgres) ⇒ nằm ngoài bộ quét §3 của `xoayBiMatNguon.test.ts`, **có khai trong docstring** |
+
+---
+
+## 11 · TRẠNG THÁI CUỐI — và **ĐIỀU KIỆN VÀO của Task 10**
+
+| bước | trạng thái |
+|---|---|
+| 1 · ĐO trước | ✅ §1 |
+| 2 · ĐẾM bề mặt | ✅ §2 — phép đếm **lật hai lần** (§2.5 R1, §2.6 R2) |
+| 3 · SOẠN SQL rồi DỪNG | ✅ §3 |
+| 4 · áp `0314` (cả 2 DB, owner `aoi`) | ✅ **§6** — `information_schema` xác nhận cả hai; R10 đo bằng đối chứng |
+| 5 · cài mã | ✅ **§7** — QĐ-1 · QĐ-3 · **R1 đóng** · **R2 đóng** |
+| 6 · đối chứng dương | ✅ **§8** — trên hệ THẬT sau redeploy |
+| 7 · đột biến | ✅ **§10** — 7 lượt, mỗi lượt một ca đỏ có tên; **KHÔNG bắt nhầm** |
+| 8 · **nghiệm thu sống** | ✅ **§9 — ĐẠT** |
+| 9 · commit | ✅ `74d927c0` + lượt vá sau đột biến |
+
+### 11.1 · ⛔ Điều kiện vào **Task 10** (chạy script xoay) — **BỐN điều, không phải một**
+
+1. **Task 9 Bước 8 ĐẠT** — ✅ `engineer1` đăng ký lại 2FA và **nhận được** 10 mã dự phòng (§9).
+2. **Script đã trỏ đúng nguồn** — ✅ R2 (§7.4): `user_secrets`, cổng nguồn chạy **trước cả lượt khô**,
+   và có ca chứng minh nó **THẤT BẠI (exit 3) khi trỏ sai bảng** — không im lặng thành công.
+3. **Chạy lượt KHÔ trước, dán kết quả** — ⏸ thuộc Task 10.
+4. ⚠ **`0315` VẪN CHƯA ÁP, và KHÔNG chặn Task 10.** Sau lượt deploy này, `users."passwordHash"` và
+   `users.two_factor_secret` là **cột chết**; xoay bây giờ vẫn **đúng** vì script đọc/ghi
+   `user_secrets`. `0315` chỉ là lượt **dọn**.
+
+### 11.2 · Việc CÒN LẠI, xếp theo thứ tự bắt buộc
+
+```
+① 0314        ✅ đã áp (cả hai DB)
+② deploy mã   ✅ PID 4468 đang chạy bản mới
+③ nghiệm thu  ✅ ĐẠT (§9)
+④ Task 10 — chạy script xoay (8 tài khoản · 3 admin · thu hồi phiên)   ⏸ CHỜ CHỦ DỰ ÁN
+⑤ 0315 (CO) — bỏ 2 cột chết khỏi `users`, cả hai DB, owner `aoi`       ⏸ nguyên văn ở §3.2
+```
+
+⚠ **④ và ⑤ đổi chỗ được** (script không còn đọc cột cũ), nhưng **③ phải đứng trước ④** — đó là lý
+do cả Task 9 tồn tại.
+
+### 11.3 · Nói rõ những gì lượt này ĐÃ CHẠM trên hệ thật
+
+| | |
+|---|---|
+| DDL | `0314` trên `aoi_management` **và** `aoi_management_test`, owner `aoi` |
+| dữ liệu | 8 hàng `user_secrets` (bản sao) trên DB thật · 5 trên DB test · `engineer1` có secret 2FA **mới** + 10 mã dự phòng (1 đã dùng ở lượt nghiệm thu) |
+| tiến trình | máy chủ **PID 36072 → PID 4468** (tắt theo PID, khớp **nguyên văn** `node dist/index.js`; **12 sidecar MCP không bị đụng**) |
+| **KHÔNG** làm | không áp `0315` · không chạy script xoay · không xoá dữ liệu người dùng · không cấp quyền · không `kb:sync` · không trainer · không sinh sub-agent |
+| script tạm | 6 file `scripts/__tmp-task9-*.mjs` + 1 file đột biến M3 — **đã xoá hết** |

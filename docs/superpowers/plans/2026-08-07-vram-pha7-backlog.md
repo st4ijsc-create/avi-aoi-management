@@ -155,7 +155,7 @@ Task 6 Pha 6 dựng sổ **trong bộ nhớ** ⇒ hai lỗ: **restart ⇒ sổ r
 - [ ] **Bước 6: ĐỐI CHỨNG DƯƠNG** — (A) mã **mới** vẫn qua; (B) `owner` **ngắn** ⇒ cờ **false**, và **ô BIÊN** (dài **đúng bằng** trần) ⇒ **không** khai là đã cắt.
 - [ ] **Bước 7: đột biến.** (A) restart ⇒ mã cũ **vẫn bị chặn**; hai tiến trình ⇒ mã tiêu ở A **bị chặn** ở B. (B) gỡ cờ ⇒ ca đỏ; anh em đọc ⇒ **thấy** cờ. Cộng **KHÔNG bắt nhầm**.
 - [ ] **Bước 8: sổ phải TỰ DỌN** — nếu không nó phình vô hạn. Ca đo được, không chỉ khai.
-- [ ] **Bước 9: commit.**
+- [x] **Bước 9: commit** — `74d927c0` + lượt vá sau đột biến. Báo cáo: `docs/superpowers/reports/2026-08-09-vram-pha7-task9-migration-de-xuat.md` §6–§11.
 
 **Cổng ra:** (A) mã tiêu rồi ⇒ **chặn qua restart VÀ qua tiến trình khác**; mã mới ⇒ **vẫn qua**. (B) hàng bị cắt ⇒ **mọi** người đọc **thấy cờ**, kể cả tiến trình anh em.
 
@@ -281,11 +281,11 @@ Chủ dự án duyệt **chạy script xoay (8c)** và **thêm cột buộc đ�
 - [ ] **Bước 1: ĐO trước.** 9a: `INSERT` hash 60 ký tự trong giao dịch **rollback** ⇒ ghi lại `22001` (**tái lập**, đừng tin brief). 9b: xác nhận `users` **không có** cột ấy. 9c: đếm mọi điểm đọc/ghi ba cột bí mật.
 - [ ] **Bước 2: ĐẾM bề mặt.** ⚠ **Đếm trước khi đổi** đã lật quyết định **SÁU lần**, và **hai lần** thứ nguy nhất **không phải** cái đang vá.
 - [ ] **Bước 3: SOẠN SQL rồi DỪNG.** Một migration cho cả ba. Kèm **hoàn tác**, **bảng cột→kiểu→lý do→chỉ mục**, **chi phí**, **rủi ro**, và **thứ tự áp** (⚠ GOTCHA Wave 3: drizzle liệt kê **toàn bộ** cột ⇒ thêm/bớt cột chưa migrate thì **cả `INSERT` cũng vỡ**). **TRÌNH CHỦ DỰ ÁN.**
-- [ ] **Bước 4:** (sau duyệt) áp bằng owner **`aoi`** lên **cả hai** DB (`avi_app` ⇒ `42501`), xác nhận bằng `information_schema`.
-- [ ] **Bước 5: cài mã** — dùng lại vị từ/bộ suy đã có.
-- [ ] **Bước 6: ĐỐI CHỨNG DƯƠNG** — bật 2FA **ghi được mã dự phòng thật** (9a); đăng nhập + 2FA **vẫn chạy** (9c).
-- [ ] **Bước 7: đột biến** + **KHÔNG bắt nhầm**.
-- [ ] **Bước 8: NGHIỆM THU SỐNG — bắt buộc trước khi xoay.** Một tài khoản **đăng ký lại 2FA** và **nhận được mã dự phòng**. ⚠ Không đạt bước này thì **KHÔNG được chạy xoay**.
+- [x] **Bước 4:** (sau duyệt) áp bằng owner **`aoi`** lên **cả hai** DB (`avi_app` ⇒ `42501`), xác nhận bằng `information_schema`.
+- [x] **Bước 5: cài mã** — dùng lại vị từ/bộ suy đã có.
+- [x] **Bước 6: ĐỐI CHỨNG DƯƠNG** — bật 2FA **ghi được mã dự phòng thật** (9a); đăng nhập + 2FA **vẫn chạy** (9c).
+- [x] **Bước 7: đột biến** + **KHÔNG bắt nhầm**.
+- [x] **Bước 8: NGHIỆM THU SỐNG — ĐẠT (`engineer1`, 10 mã dự phòng, hash 60, 1 mã đã dùng xác minh OK).** ⇒ **điều kiện vào Task 10 đã mở.**
 - [ ] **Bước 9: commit.**
 
 ### Task 10: chạy script xoay (SAU khi Task 9 Bước 8 ĐẠT)

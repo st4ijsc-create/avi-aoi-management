@@ -23,9 +23,15 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠ VÌ SAO LƯỚI NÀY CÓ HAI TẦNG
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- *  §1 **VỊ TỪ** — `loiCuaNguonBiMat()` được `import` thẳng từ chính file script (script **vừa là
- *     kịch bản vừa là module**; `main()` chỉ chạy khi gọi trực tiếp). Đây là ô nói *"cổng nguồn
- *     TỪ CHỐI đúng lúc cần từ chối"*.
+ *  §1 **VỊ TỪ** — `loiCuaNguonBiMat()` `import` từ `scripts/_lib/nguonBiMat.mjs`, **chủ duy nhất**
+ *     của luật; chính kịch bản cũng `import` từ đó. Đây là ô nói *"cổng nguồn TỪ CHỐI đúng lúc cần
+ *     từ chối"*.
+ *     ⚠⚠ **VÌ SAO KHÔNG import thẳng từ `scripts/xoay-bi-mat-2fa.mjs`** — đo được ở Bước 7:
+ *        vitest **KHÔNG NẠP NỔI** một `.mjs` có **shebang**, nó ném `SyntaxError: Invalid or
+ *        unexpected token` **tại điểm import**. Nguy hơn: lượt chạy ĐẦU vẫn **XANH** nhờ bản dịch
+ *        còn trong cache của vite, rồi mới đỏ ở lượt sau ⇒ một lưới **xanh vì lý do không liên
+ *        quan tới thứ nó canh**. Bằng chứng có đối chứng: bỏ đúng dòng shebang ⇒ nạp được ngay;
+ *        trả lại ⇒ đỏ lại.
  *  §2 **HÀNH VI ĐẦU-CUỐI** — chạy **chính script ấy** như một tiến trình con, trỏ vào một DB
  *     **không có** `user_secrets`, và đòi **mã thoát ≠ 0**. Ô §1 một mình không đủ: nó chứng minh
  *     vị từ đúng, **không** chứng minh script GỌI nó trước khi đụng dữ liệu. Lớp lỗi *"lưới theo
@@ -42,7 +48,7 @@ import { promisify } from "node:util";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BANG_NGUON_BI_MAT, loiCuaNguonBiMat } from "../../scripts/xoay-bi-mat-2fa.mjs";
+import { BANG_NGUON_BI_MAT, loiCuaNguonBiMat } from "../../scripts/_lib/nguonBiMat.mjs";
 
 const chay = promisify(execFile);
 const GOC = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
@@ -94,12 +100,30 @@ describe("★★★ Task 9 / R2 §2 — HÀNH VI ĐẦU-CUỐI: trỏ SAI bảng
       err = x.stderr ?? "";
     }
     const tatCa = `${out}\n${err}`;
+
+    /**
+     * ⚠⚠ **`≠ 0` LÀ CHƯA ĐỦ — ô này từng XANH VÌ LÝ DO SAI.** Đo được ở Bước 7 (đột biến 4): gỡ
+     * **toàn bộ** cổng nguồn khỏi `xoay()` mà ô này **vẫn 8/8 XANH**, vì câu truy vấn tiếp theo
+     * (`aiBiAnhHuong`) tự nổ với `relation "user_secrets" does not exist` ⇒ mã thoát **1**, và
+     * thông điệp ngoại lệ ấy **cũng chứa chuỗi `user_secrets`**. Tức cả hai khẳng định cũ đều đúng
+     * trong khi thứ chúng được dựng ra để canh **đã bị xoá**.
+     *
+     * ⇒ Vị từ phải phân biệt *"CỔNG từ chối"* với *"một truy vấn tình cờ nổ"*. Hai dấu, cả hai đặc
+     *   trưng cho cổng:
+     *     · **mã thoát 3** — do cổng đặt; một ngoại lệ chưa bắt cho **1**;
+     *     · câu **`DỪNG:`** — do cổng in ra; thông điệp của postgres không có nó.
+     */
     expect(
       ma,
-      `script thoát 0 khi trỏ vào một DB KHÔNG có \`${BANG_NGUON_BI_MAT}\`.\n` +
-        "⚠ Đó chính là lượt 'báo cáo thành công mà không xoay gì'.\n---\n" +
+      `script phải thoát **3** (mã của CỔNG NGUỒN) khi trỏ vào DB không có \`${BANG_NGUON_BI_MAT}\`.\n` +
+        "  · 0  ⇒ 'báo cáo thành công mà không xoay gì' — đúng lớp lỗi Critical Pha 3;\n" +
+        "  · 1  ⇒ một truy vấn NỔ, KHÔNG phải cổng từ chối ⇒ cổng đã bị gỡ (đột biến 4).\n---\n" +
         tatCa,
-    ).not.toBe(0);
+    ).toBe(3);
+    expect(
+      tatCa,
+      "không thấy câu `DỪNG:` của CỔNG NGUỒN ⇒ script hỏng vì lý do khác, không phải vì bị chặn",
+    ).toContain("DỪNG:");
     expect(tatCa, "câu lỗi không gọi tên bảng nguồn ⇒ người vận hành không biết phải sửa gì").toContain(
       BANG_NGUON_BI_MAT,
     );
