@@ -1253,21 +1253,26 @@ missed hold credentials**:
 The remaining six (`opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`) are customer
 data or trust material rather than bearer credentials, but this script's stated purpose is a clean-slate
 wipe — leaving them meant it did not do that, and an operator reading the old output would reasonably
-have believed the machine was clean. Every directory except `creds` is relocatable and has its own
-`-XxxDir` parameter.
+have believed the machine was clean. 🔴 **All THIRTEEN directories are relocatable and each has its own
+`-XxxDir` parameter** — `creds` included. (This paragraph said "every directory except `creds`" until the
+Đợt F branch review: `creds` became relocatable in the test-hygiene batch via `ST4I_CREDS_DIR`
+(`CredentialStore.cs`), `remove-data.ps1` gained `-CredsDir` in the same change, and this sentence was not
+updated with them. It mattered: it told an operator who HAD relocated `creds` that the wipe would still find
+it at the default, so the DPAPI-sealed machine credential survived a "clean-slate" decommission.)
 
 **Relocated directories (WS-F1 final-review fix F3):** the `ST4I_*_DIR` variables mean a deployment's
 real data doesn't have to live under
 `%ProgramData%\ST4I\sim\*` at all — the script used to assume it always did, silently deleting an
 empty default directory while the real data sat untouched elsewhere. It now resolves **each of the
-twelve relocatable directories** per its own `-XxxDir` parameter, else the matching `ST4I_*_DIR` environment variable
+thirteen relocatable directories** per its own `-XxxDir` parameter, else the matching `ST4I_*_DIR` environment variable
 in **this same PowerShell process**, else the `%ProgramData%` default — printing the resolved path for
 each before doing anything. **It does NOT read the service's own registry `Environment` value** (only
 this shell's own env) — if a relocated directory was only ever configured there, pass the matching
 `-XxxDir` parameter explicitly (check the registry first: `Get-ItemProperty
 'HKLM:\SYSTEM\CurrentControlSet\Services\St4iEngineApi' -Name Environment`), or that directory is
-missed by this script and must be removed by hand. `creds` has no relocation env var (`CredentialStore`
-is not relocatable) — always `%ProgramData%\ST4I\sim\creds`.
+missed by this script and must be removed by hand. 🔴 **That applies to `creds` too** — it resolves through
+`-CredsDir` > `ST4I_CREDS_DIR` > the `%ProgramData%` default like every other directory, so a relocated
+credential store is exactly as easy to miss, and it is the one holding the DPAPI-sealed `mk_`.
 
 *(VI: Gỡ cài đặt chỉ xoá những gì MSI đã cài (Program Files, shortcut, service nếu có bật) — dữ liệu
 `%ProgramData%\ST4I\sim\*` được GIỮ LẠI mặc định vì MSI không hề biết tới các thư mục này (do engine tự
@@ -1286,7 +1291,11 @@ register/node-map, mà node map OPC-UA chứa `password` ở dạng **văn bản
 (`opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`) là dữ liệu khách hàng hoặc vật
 liệu tin cậy chứ không phải thông tin đăng nhập, nhưng mục đích script tự nhận là **xoá sạch để thanh
 lý** — bỏ sót chúng nghĩa là nó không làm đúng điều đó, và người vận hành đọc kết quả cũ sẽ tin rằng máy
-đã sạch. Mọi thư mục trừ `creds` đều chuyển chỗ được và đều có tham số `-XxxDir` riêng; nếu đã chuyển chỗ
+đã sạch. 🔴 **CẢ MƯỜI BA thư mục đều chuyển chỗ được và đều có tham số `-XxxDir` riêng — kể cả `creds`.**
+(Câu này viết "mọi thư mục trừ `creds`" cho tới vòng review nhánh Đợt F: `creds` đã chuyển chỗ được từ đợt
+test-hygiene qua `ST4I_CREDS_DIR`, `remove-data.ps1` nhận `-CredsDir` trong cùng thay đổi ấy, và câu này không
+được cập nhật theo. Nó có hậu quả thật: nó bảo người vận hành ĐÃ dời `creds` rằng lệnh xoá vẫn tìm thấy nó ở
+mặc định, nên khoá máy niêm DPAPI sống sót qua một lần "xoá sạch để thanh lý".) Nếu đã chuyển chỗ
 qua một biến `ST4I_*_DIR` nào đó, truyền tham số `-XxxDir` tương ứng — script KHÔNG tự đọc giá trị
 registry `Environment` của service, chỉ đọc biến môi trường của CHÍNH shell đang chạy nó; nếu không khớp,
 phải xoá thư mục thật bằng tay.)*
@@ -1528,31 +1537,60 @@ reads.
 
 *(🔴 What those two pins do **not** measure, said here rather than left to be discovered. They prove a
 variable is **declared and read at a resolution site**. They do not execute any store, so they cannot prove the
-resolved value is then **honoured** all the way to a file. Where that last step actually is, counted rather
-than recalled: **four** directories have a test written for their own variable — `creds`
-(`CredentialStoreTests`), `settings` (`FleetSettingsStoreTests`), `wal` (`WalOptionsTests`), `bridge-spool`
-(`BridgeSpoolTests`) — plus `PerHostDataRootIsolationTests` for the two-root case; **eight** more are
-redirected incidentally by host harnesses that would read or pollute the real `%ProgramData%` if the redirect
-were ignored; and **`opcua-pki` has neither**, which makes it the one directory whose honoured-to-file
-behaviour nothing here measures. `historian` is also the one variable read at a composition root (`St4i.EngineApi/Program.cs`) rather than on its store, so a
+resolved value is then **honoured** all the way to a file. Where that last step actually is — **two
+instruments, named apart because they answer different questions** (branch review F-8): (a) counting the files
+under `tests/` that spell a variable's **literal**, and (b) reading each candidate test for a
+`SetEnvironmentVariable(<Store>.EnvVarDir, …)` call. **(a) cannot produce the per-store rows and an earlier
+version of this parenthetical credited it with them** — every store reads through its own constant, so
+`FleetSettingsStoreTests` spells `ST4I_SETTINGS_DIR` **zero** times while driving the seam through
+`FleetSettingsStore.EnvVarDir`, and `BridgeSpoolTests`' only occurrence of its literal is a doc comment. By
+(b): **four** directories have a dedicated env-var witness — `creds` (`CredentialStoreTests`), `settings`
+(`FleetSettingsStoreTests`), `wal` (`WalOptionsTests`), `bridge-spool` (`BridgeSpoolTests`) — plus
+`PerHostDataRootIsolationTests` for the two-root case. **Eight** more are redirected incidentally by host
+harnesses that would read or pollute the real `%ProgramData%` if the redirect were ignored. And
+**`opcua-pki`'s honoured-to-file behaviour IS measured** (branch review F-10, correcting an earlier claim that
+nothing measured it): `OpcUaDriver`'s constructor calls `OpcUaPkiPaths.ResolveRoot(pkiDir)`, and three OPC-UA
+test files hand it a real temporary root and let the driver write its app-instance certificate there — that is
+the **explicit-path** arm, the first tier of the same `explicit > env > default` chain. The residual is
+narrower and is the one to carry: **nothing exercises `ST4I_OPCUA_PKI_DIR`, the environment variable.**
+`historian` is also the one variable read at a composition root (`St4i.EngineApi/Program.cs`) rather than on its store, so a
 host that ever constructed a historian store without going through that root would get the machine-wide default
 with no env-var step. None does today.)*
 
-**How to actually set them.** A Windows Service does not inherit a user environment — use the per-service
-registry `Environment` value §15.2 already documents, once per service key:
+**How to actually set them — and the two hosts do NOT use the same mechanism.**
+
+🔴 **`St4i.EdgeService` is not a Windows service in this build**, despite the name. `Program.cs` is a plain
+`Host.CreateApplicationBuilder` + `RunAsync()` with **no `AddWindowsService`**; the only `AddWindowsService`
+in `src/` is `St4i.EngineApi`'s, there is no `--install` verb on the edge agent, no WiX component and no
+service key — §15.1 says it in as many words (*"no separate service executable exists"*). **The per-service
+registry `Environment` mechanism of §15.2 therefore does not apply to it.** Set its variables in the shell
+(or scheduled task, or supervisor) that launches the process:
 
 ```powershell
-# Host 1 — the engine, keeping the defaults it already has data in.
-# (nothing to do: unset means %ProgramData%\ST4I\sim\<name>)
+# Host 1 — the ENGINE. It IS a Windows service (St4iEngineApi, §15.1), so §15.2's per-service registry
+# Environment value is the mechanism. Keeping the defaults it already has data in: nothing to do.
+# (unset means %ProgramData%\ST4I\sim\<name>)
 
-# Host 2 — the edge agent. Two lines is the WHOLE recipe; see below for why.
-# From an ELEVATED PowerShell:
-New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\St4iEdgeService' -Name Environment `
-  -PropertyType MultiString -Force -Value @(
-    'ST4I_WAL_DIR=C:\ProgramData\ST4I\edge\wal'
-    'ST4I_MACHINE_CODE=LINE3-EDGE-01'
-  )
+# Host 2 — the EDGE AGENT, launched from a shell. Two lines is the WHOLE recipe; see below for why.
+$env:ST4I_WAL_DIR      = 'C:\ProgramData\ST4I\edge\wal'
+$env:ST4I_MACHINE_CODE = 'LINE3-EDGE-01'
+.\St4i.EdgeService.exe            # or: dotnet run --project src/St4i.EdgeService
 ```
+
+🔴 **Running the edge agent unattended is out of scope for this build, and that is a gap rather than a
+recipe.** Nothing here registers it with the SCM, so an unattended deployment needs an external supervisor
+(a scheduled task at boot, or a third-party service wrapper) — whichever you use has to carry those two
+variables into the process's own environment, because nothing else will.
+
+🔴 **The second line does MORE than name a queue file, and §15.9 used to describe only half of it.**
+`ST4I_MACHINE_CODE` is the WAL filename's second input **and** the key the edge agent looks its credential up
+by (`EdgeWorker.cs:368`, `CredentialStore.Load(machineCode)`) **and** its Live identity to the platform. So:
+**onboard `LINE3-EDGE-01` on a host that can claim (the engine or the WPF shell, §5) BEFORE starting the edge
+agent** — with the shared creds root recommended below, that claim is what puts the `mk_` where this host will
+find it. Skip that and the host reads `null` forever and never goes Live, which is the identical symptom this
+section attributes to setting `ST4I_CREDS_DIR`, reached by a different route. And changing an
+already-running host's machine code **strands its existing WAL backlog** under the old `<machineCode>.jsonl`,
+which the no-migration warning below does not cover because a machine code is not a root.
 
 🔴 **`ST4I_CREDS_DIR` is deliberately NOT in that block, and adding it would break this host.**
 `St4i.EdgeService` **reads** a credential and can never write one — `CredentialStore.Save` exists only in
@@ -1634,12 +1672,20 @@ bằng cách quét `src/` (store thứ mười bốn làm test đỏ cho tới k
 `Environment.GetEnvironmentVariable` thật, chứ không chỉ tồn tại như một chuỗi ở đâu đó.
 *(🔴 Cái hai phép ghim ấy **KHÔNG** đo: chúng chứng minh biến **được khai báo và được ĐỌC ở một điểm phân
 giải**; chúng không chạy store, nên không chứng minh giá trị đã phân giải rồi **được tôn trọng** tới tận file.
-Bước cuối ấy nằm ở đâu, **đếm chứ không nhớ**: **bốn** thư mục có test viết riêng cho biến của chúng —
-`creds` (`CredentialStoreTests`), `settings` (`FleetSettingsStoreTests`), `wal` (`WalOptionsTests`),
-`bridge-spool` (`BridgeSpoolTests`) — cộng `PerHostDataRootIsolationTests` cho trường hợp hai gốc; **tám** thư
-mục nữa được chuyển hướng **gián tiếp** bởi các harness dựng host thật, thứ sẽ đọc hoặc làm bẩn
-`%ProgramData%` thật nếu redirect không được tôn trọng; và **`opcua-pki` không có cả hai** — đó là thư mục duy
-nhất mà hành vi "tôn trọng tới tận file" không được gì ở đây đo cả.)*
+Bước cuối ấy nằm ở đâu — **HAI dụng cụ, nêu tách nhau vì chúng trả lời hai câu hỏi khác nhau** (review
+nhánh F-8): (a) đếm số file dưới `tests/` có **chuỗi literal** của biến, và (b) đọc từng test ứng viên tìm lời
+gọi `SetEnvironmentVariable(<Store>.EnvVarDir, …)`. **(a) KHÔNG thể sinh ra các dòng theo từng store, mà bản
+trước của đoạn này lại ghi công cho nó** — mọi store đọc qua HẰNG của chính nó, nên `FleetSettingsStoreTests`
+viết `ST4I_SETTINGS_DIR` **không lần nào** trong khi vẫn lái seam qua `FleetSettingsStore.EnvVarDir`, còn
+`BridgeSpoolTests` chỉ nhắc literal của nó trong một chú thích. Theo (b): **bốn** thư mục có nhân chứng riêng
+cho biến — `creds` (`CredentialStoreTests`), `settings` (`FleetSettingsStoreTests`), `wal`
+(`WalOptionsTests`), `bridge-spool` (`BridgeSpoolTests`) — cộng `PerHostDataRootIsolationTests` cho trường hợp
+hai gốc; **tám** thư mục nữa được chuyển hướng **gián tiếp** bởi harness dựng host thật. Và **hành vi
+"tôn trọng tới tận file" của `opcua-pki` CÓ được đo** (review nhánh F-10, đính chính khẳng định trước rằng
+không gì đo nó): hàm dựng `OpcUaDriver` gọi `OpcUaPkiPaths.ResolveRoot(pkiDir)`, và ba file test OPC-UA đưa
+cho nó một gốc tạm thật rồi để driver ghi chứng chỉ app-instance vào đó — đó là nhánh **đường dẫn tường minh**,
+tầng đầu của chính chuỗi `tường minh > env > mặc định`. Phần dư hẹp hơn, và đây mới là thứ phải mang theo:
+**không gì thực thi `ST4I_OPCUA_PKI_DIR`, tức chính biến môi trường.**)*
 
 🔴 **Đọc cột GHI/ĐỌC trước khi dời bất cứ gốc nào.** Dời một gốc mà host **GHI** cho host ấy bản sao
 riêng của thứ chính nó tạo ra — đó là *cô lập*, và đó là mục đích của mục này. Dời một gốc mà host chỉ **ĐỌC**
@@ -1661,8 +1707,26 @@ chép `<machineCode>.bin` sang. DPAPI không cản (cả hai store niêm phong �
 không có `CredentialStore.Save` nào chạy ở thư mục ấy để áp khoá ACL SYSTEM/Administrators — hãy tự áp bằng
 `icacls`. **`ST4I_IDENTITY_DIR` cũng không nên đặt**, lý do nhẹ hơn: host này không nhắc `DeviceIdentityStore`
 ở đâu cả, đặt nó chỉ tạo một thư mục vô dụng.
-Đặt biến cho service qua giá trị registry `Environment` (§15.2), mỗi khoá service một lần; chạy tương tác thì
-đặt biến ở shell khởi động tiến trình. Hai tiến trình có hai khối môi trường — đó là **toàn bộ** cơ chế cô lập.
+🔴 **Hai host KHÔNG dùng cùng một cơ chế đặt biến.** `St4i.EngineApi` **là** một Windows service
+(`St4iEngineApi`, §15.1) nên dùng giá trị registry `Environment` của §15.2. **`St4i.EdgeService` KHÔNG phải
+Windows service trong bản build này** dù mang cái tên đó: `Program.cs` của nó là một Generic Host thuần
+(`Host.CreateApplicationBuilder` + `RunAsync()`), **không có `AddWindowsService`** — lời gọi ấy chỉ tồn tại
+trong `St4i.EngineApi` — không có verb `--install`, không có component WiX, không có khoá service; §15.1 nói
+thẳng *"không tồn tại một file thực thi service riêng"*. **Nên cơ chế registry của §15.2 KHÔNG áp dụng cho nó**;
+đặt biến ở chính shell (hoặc scheduled task, hoặc trình giám sát) khởi động tiến trình:
+`$env:ST4I_WAL_DIR = '…'; $env:ST4I_MACHINE_CODE = 'LINE3-EDGE-01'; .\St4i.EdgeService.exe`.
+Chạy tác nhân biên **không cần người trực** nằm NGOÀI phạm vi bản build này — đó là một khoảng trống, không
+phải một công thức: cần một trình giám sát bên ngoài, và chính nó phải mang hai biến ấy vào môi trường của
+tiến trình.
+🔴 **Dòng thứ hai làm NHIỀU hơn những gì §15.9 từng nói.** `ST4I_MACHINE_CODE` vừa là nửa sau tên file
+hàng đợi, vừa là **khoá tra cứu khoá `mk_`** (`EdgeWorker.cs:368`, `CredentialStore.Load(machineCode)`), vừa là
+danh tính Live của host với nền tảng. Vì vậy: **hãy onboard `LINE3-EDGE-01` trên một host claim được (engine
+hoặc vỏ WPF, §5) TRƯỚC khi khởi động tác nhân biên** — với gốc creds dùng chung được khuyến nghị bên dưới,
+chính lần claim ấy đặt `mk_` vào nơi host này sẽ tìm. Bỏ qua bước đó thì host đọc ra `null` mãi mãi và không
+bao giờ lên Live — đúng triệu chứng mục này quy cho việc đặt `ST4I_CREDS_DIR`, chỉ đến bằng đường khác. Và đổi
+mã máy của một host đang chạy sẽ **bỏ lại backlog WAL** dưới tên file cũ, thứ mà cảnh báo không-di-trú bên dưới
+KHÔNG phủ, vì một mã máy không phải một gốc.
+Hai tiến trình có hai khối môi trường — đó là **toàn bộ** cơ chế cô lập.
 *(🔴 Đừng đọc "đặt trước khi khởi động" thành "đổi lúc đang chạy là có tác dụng": `CredentialStore` thật
 sự phân giải lại **mỗi lần gọi** vì nó `static`, còn **mười hai** gốc kia được phân giải **một lần** lúc store
 hoặc options của nó được dựng khi khởi động. Đổi xong phải khởi động lại host.)* 🔴 **KHÔNG CÓ DI TRÚ. Đổi gốc làm dữ liệu cũ trở nên VÔ HÌNH, không
@@ -1973,7 +2037,7 @@ fallback profile for every Modbus machine today).
 > arbitration lock. Bus-level keys go beside `devices`, never inside an element, and an unrecognised or
 > misspelled key is **refused** rather than silently ignored.
 >
-> **Two limits, stated here rather than discovered on a bench.** (1) **RS-485 direction control must be
+> **Three limits, stated here rather than discovered on a bench.** (1) **RS-485 direction control must be
 > AUTOMATIC** (auto-DE / TXDEN adapters). This product drives no transmit-enable line and cannot —
 > `System.IO.Ports` exposes no transmit-complete signal, so a software RTS turnaround could only be a
 > timing guess, and a wrong guess corrupts another device's frame on the same segment. An adapter needing
@@ -1982,12 +2046,22 @@ fallback profile for every Modbus machine today).
 > exclusive open, the cancellation latency and the drain primitive were measured against a real COM port
 > by a standalone probe, and the RTU framing is exercised end to end against an in-memory paired
 > transport — neither is a wire. A bench acceptance step with a real RS-485 device remains outstanding.
+> 🔴 (3) **ONE HOST PER SEGMENT, and nothing enforces it — see §24.7, which is the full statement.**
+> Since Đợt E both `St4i.EngineApi` and `St4i.EdgeService` can be configured onto the same segment from
+> their own `connectors.json`. On a directly attached COM port the OPERATING SYSTEM refuses the second
+> open — incidentally, not by this product's design. **On an `rtu-gateway` bus nothing refuses at all:**
+> both hosts connect, neither can see the other, and a stray frame that matches on slave address,
+> function code and byte count is handed back **as the answer** (§24.7 carries the probe). This limit is
+> listed here because §16.4 is where an integrator configures a bus, and it was reachable only from §24
+> until the Đợt F branch review.
 >
 > *(VI: đoạn trên trước đây ghi "Modbus RTU (nối tiếp) chưa có" — nay đã sai. RTU chạy được với HAI
 > transport khai trong `connectors.json`: `"rtu-gateway"` (qua serial device server TCP) và
-> `"rtu-serial"` (cổng COM cắm thẳng). Hai giới hạn: chỉ hỗ trợ adapter RS-485 **tự động đảo chiều**, và
+> `"rtu-serial"` (cổng COM cắm thẳng). BA giới hạn: chỉ hỗ trợ adapter RS-485 **tự động đảo chiều**;
 > **chưa từng có khung tin nào chạy qua transport nối tiếp trên phần cứng thật** — vẫn còn một bước
-> nghiệm thu trên bàn.)*
+> nghiệm thu trên bàn; và 🔴 **MỘT HOST MỘT SEGMENT, không gì thi hành điều đó** — trên cổng COM là hệ
+> điều hành từ chối lần mở thứ hai (tình cờ, không do sản phẩm), còn trên `rtu-gateway` thì **không ai
+> chặn**: xem **§24.7**, đó mới là phát biểu đầy đủ.)*
 
 *(VI: `St4i.EdgeCore.Drivers.Modbus` là driver giao thức trường thật đầu tiên — vòng lặp poll TCP định
 kỳ (NModbus) đọc danh sách thanh ghi cố định từ một Modbus TCP slave, chạy trong pipeline slot cách ly
@@ -5371,12 +5445,26 @@ something this build arranges and not something it could extend to a gateway. **
 or recovers from two hosts on one wire.** A reader who takes the serial refusal for arbitration will never ask
 the question the gateway needs asked.
 
-🔴 **The consequence on a shared gateway, and it is labelled UNMEASURED on purpose.** Two uncoordinated frame
-sources on one segment do not corrupt data: NModbus validates the slave address and the function code, so a
-stray frame becomes a **rejected** transaction rather than a plausible wrong number — degradation, not
-corruption. What it does produce is **write commands landing on `Indeterminate`** — the outcome this product
-is most careful about (§21.3) — **at a frequency nobody has measured.** There is no RS-485 adapter on any
-machine here and no such measurement has been run. It is stated as a proposition; do not inherit it as a
+🔴 **The consequence on a shared gateway — and the first version of this paragraph had it BACKWARDS.**
+It said two uncoordinated frame sources "do not corrupt data", on the grounds that NModbus validates the slave
+address and the function code. **This repository had already probed the opposite and written it down** in
+`ModbusBus`'s own remarks (`src/St4i.EdgeCore/Drivers/Modbus/ModbusBus.cs`): a differing slave address, a
+differing function code and a bad CRC **are** caught — but **a stale frame matching on all three is NOT caught
+and is returned to the caller as the answer.** Measured, not reasoned: a request for register 99 came back
+with register 0's stale value, silently, with no exception. An RTU response frame carries no transaction id,
+so there is nothing left to check; and `IsDesynchronised` cannot rescue it either, because that flag is raised
+when a transaction FAILS to consume a complete validated response and this one consumes a response it believes.
+
+**Two masters on one segment are precisely that case, not an exotic corner of it** — they poll the same
+devices with the same function codes. So a shared gateway can commit a **wrong register value as a real
+reading**, which is what §20.3's entire data-provenance argument exists to prevent, and it can land **write
+commands on `Indeterminate`** (§21.3).
+
+**Both frequencies are UNMEASURED and stay that way.** Nobody has measured how often two masters produce a
+matching stale frame, and nobody has measured the `Indeterminate` rate; there is no RS-485 adapter on any
+machine here. The defect being corrected was an **unhedged reassurance sitting beside a hedged number**, which
+invites a reader to take "your data is safe" as the settled half — so replacing it with a confident adjective
+in the other direction would be the same mistake reversed. These are propositions; do not inherit either as a
 figure.
 
 🔴 **Per-host data roots (§15.9) do NOT solve this, and the two must not be conflated.** Separate roots stop
@@ -5581,13 +5669,22 @@ hồi `POST /v1/connectors`. 🔴 **Đọc đúng nghĩa đen: sản phẩm này
 Yêu sách mã máy là một `ConcurrentDictionary` trong một tiến trình; sổ sách link dùng chung của
 `ModbusBusRegistry` cũng trong tiến trình. Trên serial, sự an toàn là một **tai nạn** của cách Windows mở cổng
 COM — có thật, nhưng không do bản build này sắp đặt và không thể mở rộng sang gateway. **Không có gì ở đây
-phát hiện, từ chối hay khôi phục được tình huống hai host trên một dây.** 🔴 **Hệ quả trên gateway dùng chung,
-và nhãn CHƯA ĐO là cố ý:** hai nguồn khung tin không phối hợp trên một segment KHÔNG làm hỏng dữ liệu — NModbus
-kiểm địa chỉ slave và mã hàm, nên một khung lạc thành một giao dịch **BỊ TỪ CHỐI** chứ không phải một con số
-sai hợp lý; đó là suy giảm, không phải hỏng dữ liệu. Cái nó thật sự sinh ra là **lệnh ghi rơi vào
-`Indeterminate`** — kết quả sản phẩm này cẩn thận nhất (§21.3) — **ở một tần suất KHÔNG AI ĐO.** Không có
-adapter RS-485 trên máy nào ở đây và chưa phép đo nào được chạy. Đây là một mệnh đề; đừng thừa kế nó như một
-con số. 🔴 **Gốc dữ liệu theo host (§15.9) KHÔNG giải quyết chuyện này** — gốc riêng ngăn hai host ghi đè
+phát hiện, từ chối hay khôi phục được tình huống hai host trên một dây.** 🔴 **Hệ quả trên gateway dùng chung — và bản đầu của đoạn này nói NGƯỢC:**
+nó viết rằng hai nguồn khung tin không phối hợp "KHÔNG làm hỏng dữ liệu" vì NModbus kiểm địa chỉ slave và mã
+hàm. **Kho mã này đã ĐO điều ngược lại và ghi sẵn ba file cách đó** (chú thích của chính `ModbusBus`): khung
+lạc **khác** địa chỉ slave, **khác** mã hàm, hoặc **sai** CRC thì BỊ BẮT — nhưng **một khung cũ trùng cả ba
+thì KHÔNG bị bắt và được trả về cho bên gọi NHƯ THỂ LÀ CÂU TRẢ LỜI.** Đo trực tiếp: một yêu cầu thanh ghi 99
+nhận về giá trị cũ của thanh ghi 0, lặng lẽ, không ngoại lệ nào. Khung RTU không mang transaction id nên không
+còn gì để kiểm; và `IsDesynchronised` cũng không cứu được, vì cờ ấy chỉ bật khi một giao dịch **KHÔNG** tiêu
+thụ nổi một phản hồi hợp lệ trọn vẹn, còn ở đây giao dịch tiêu thụ một phản hồi mà nó tin. **Hai master trên
+một segment CHÍNH LÀ trường hợp đó, không phải một góc hiếm** — chúng hỏi cùng thiết bị bằng cùng mã hàm. Nên
+một gateway dùng chung có thể ghi nhận **một GIÁ TRỊ THANH GHI SAI như một số đo thật** — đúng thứ toàn bộ lập
+luận nguồn-gốc-dữ-liệu ở §20.3 tồn tại để ngăn — và làm **lệnh ghi rơi vào `Indeterminate`** (§21.3). **Cả hai
+tần suất đều CHƯA ĐO và vẫn để nguyên như vậy:** không ai đo tần suất hai master sinh ra một khung cũ trùng
+khớp, cũng không ai đo tần suất `Indeterminate`; không có adapter RS-485 trên máy nào ở đây. Lỗi đang được sửa
+là **một lời trấn an KHÔNG rào đứng cạnh một con số CÓ rào**, khiến người đọc coi "dữ liệu của bạn an toàn" là
+phần đã chốt — nên thay nó bằng một tính từ chắc nịch theo chiều ngược lại là đúng cái sai ấy lộn ngược. Đây
+là các mệnh đề; đừng thừa kế cái nào như một con số. 🔴 **Gốc dữ liệu theo host (§15.9) KHÔNG giải quyết chuyện này** — gốc riêng ngăn hai host ghi đè
 *file* của nhau; hai host với hai thư mục vẫn trỏ chung một `host:port` gateway hoặc chung một `COM3` được. 🔴
 **KHÔNG xây khoá chiếm-dây toàn máy, và đó là một quyết định:** một yêu sách xuyên tiến trình cần một đường
 dùng chung — mutex có tên, lockfile, hoặc một kênh đăng ký — mà đó đúng là bề mặt chung §15.9 đang cố ý tách

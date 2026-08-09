@@ -1642,10 +1642,15 @@ export function useConnectorIssues(): UseQueryResult<ConnectorStatus[]> {
 // write-up this UI surfaces.
 // ─────────────────────────────────────────────────────────────────────────
 
-/** Only the two protocols this build actually has a working driver for — deliberately NOT a wider union
- * (Serial/RS-485, S7, EtherNet/IP, SECS/GEM have no driver at all): offering a kind the product can't
- * honour would be exactly the dishonesty this whole batch removes (see `Connectors.tsx`'s own kind
- * picker, which only ever renders these two options). */
+/** Only the two connector KINDS this build dispatches — deliberately NOT a wider union (S7, EtherNet/IP,
+ * SECS/GEM have no driver at all): offering a kind the product can't honour would be exactly the
+ * dishonesty this whole batch removes (see `Connectors.tsx`'s own kind picker, which only ever renders
+ * these two options).
+ * 🔴 Dot F branch review, F-16: this used to list Serial/RS-485 among the things with "no driver at all",
+ * which has been false since D-5/E-5. RS-485 (Modbus RTU) ships and runs on both hosts — it is not a
+ * separate KIND, it is a `Modbus` entry whose settings declare a `transport` (`rtu-serial` or
+ * `rtu-gateway`), so the union below is still exactly right and only the parenthetical was wrong.
+ * Understating a shipped capability is the mirror image of the class this project keeps paying for. */
 export type ConnectorKind = "Modbus" | "OpcUa"
 
 /** `ConnectorConfigSummary` (`Fleet/Dtos.cs`) — the credential-free projection `GET

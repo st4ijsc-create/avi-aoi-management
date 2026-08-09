@@ -73,6 +73,14 @@
 .PARAMETER BridgeSpoolDir
   Task C-8 review (I-1) - the durable northbound bridge spool (ST4I_BRIDGE_SPOOL_DIR).
 
+.PARAMETER CredsDir
+  Dot F branch review (F-9) - the DPAPI-sealed machine credential store, one .bin per machine code
+  (ST4I_CREDS_DIR). THIS BLOCK WAS MISSING while the parameter itself has existed since the test-hygiene
+  batch, so `.NOTES` below could say "one -XxxDir parameter per relocatable directory; see the full list
+  under .PARAMETER above" while pointing at a list of twelve. It is the thirteenth, and it is the one
+  holding bearer credentials - see the test-hygiene note further down for why `creds` stopped being the
+  sole non-relocatable exception.
+
 .EXAMPLE
   .\packaging\remove-data.ps1 -WhatIf
   Preview exactly what would be stopped/deleted, without touching anything.
@@ -92,8 +100,9 @@
   .\packaging\remove-data.ps1 -HistorianDir D:\St4iData\historian -WalDir D:\St4iData\wal -SecurityDir D:\St4iData\security -IdentityDir D:\St4iData\identity
   Purges relocated data directories explicitly - needed whenever the service was configured (via its
   registry Environment value, README section 15.2) with a directory that is NOT the default
-  %ProgramData%\ST4I\sim\<name>. There is one -XxxDir parameter per relocatable directory; see the
-  full list under .PARAMETER above.
+  %ProgramData%\ST4I\sim\<name>. There is one -XxxDir parameter per relocatable directory - THIRTEEN of
+  them, all thirteen documented under .PARAMETER above (-CredsDir's block was missing until the Dot F
+  branch review, F-9).
 
 .NOTES
   WS-F1 final-review fix F3 - README section 15.2 advertises ST4I_HISTORIAN_DIR/ST4I_WAL_DIR/

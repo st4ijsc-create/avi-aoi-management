@@ -110,10 +110,22 @@ public sealed class RtuSegmentOwnershipTests
         Assert.Contains("NOTHING enforces it", notice, StringComparison.Ordinal);
         Assert.Contains("CONSTRAINT ON THE DEPLOYMENT, not a guarantee", notice, StringComparison.Ordinal);
 
-        // The consequence, kept honest at both ends: it degrades rather than corrupts, and the FREQUENCY is
-        // not a number anybody has.
+        // The consequence, and the FREQUENCY is not a number anybody has.
         Assert.Contains("Indeterminate", notice, StringComparison.Ordinal);
         Assert.Contains("NOBODY HAS MEASURED", notice, StringComparison.Ordinal);
+
+        // 🔴 Branch review, F-1 — THE REASSURANCE MUST NOT COME BACK. This notice used to end "the effect is
+        // degradation and not corrupted data", which this repository had already refuted by probe three files
+        // away: ModbusBus's own remarks record that a differing slave address, a differing function code and
+        // a bad CRC are caught, but a stale frame matching on ALL THREE is handed back as the answer (a
+        // request for register 99 answered with register 0's stale value, silently). Two masters poll the
+        // same devices with the same function codes, so that uncatchable shape is the ORDINARY collision
+        // here. The positive arms pin what replaced it — that some frames are refused and matching ones are
+        // not — so a future edit cannot quietly restore the comfort by deleting a clause.
+        Assert.Contains("IS refused", notice, StringComparison.Ordinal);
+        Assert.Contains("WRONG REGISTER VALUE", notice, StringComparison.Ordinal);
+        Assert.DoesNotContain("not corrupted data", notice, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("degradation", notice, StringComparison.OrdinalIgnoreCase);
 
         Assert.DoesNotContain("prevents", notice, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("blocks", notice, StringComparison.OrdinalIgnoreCase);

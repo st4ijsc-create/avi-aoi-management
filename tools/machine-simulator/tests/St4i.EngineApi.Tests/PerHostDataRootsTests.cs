@@ -188,21 +188,37 @@ public sealed class PerHostDataRootsTests
     /// process-wide variables inside a suite whose other classes boot real hosts that read them — trading a
     /// documented narrowness for an undocumented race. README §15.9 carries this same caveat where the
     /// operator reads it.
-    /// <b>🔴 Fix round 2 (review NEW-2) — where that last step actually is, COUNTED.</b> The first
-    /// version of this paragraph said "covered store by store" and listed five or six names, which
-    /// under-claimed the breadth and over-claimed one name: <c>SecurityEnvVarTests</c> carries NO TEST — it is
-    /// a <c>[CollectionDefinition]</c> marker whose only member is a collection name, so citing it as a
-    /// witness was wrong. Measured by counting the files under <c>tests/</c> that name each variable: FOUR
-    /// directories have a dedicated witness (<c>creds</c> to <c>CredentialStoreTests</c>, <c>settings</c> to
-    /// <c>FleetSettingsStoreTests</c>, <c>wal</c> to <c>WalOptionsTests</c>, <c>bridge-spool</c> to
-    /// <c>BridgeSpoolTests</c>), EIGHT are redirected incidentally by host harnesses, and <c>opcua-pki</c> has
-    /// neither — <c>ST4I_OPCUA_PKI_DIR</c> occurs in exactly ONE file under <c>tests/</c>, and that file is
-    /// this one, where it is data being scanned rather than a redirect being exercised.</para>
+    /// <b>🔴 Where that last step actually is — and this sentence has now been wrong twice, in opposite
+    /// directions.</b> Fix round 2 corrected an over-claim (<c>SecurityEnvVarTests</c> carries NO TEST; it is
+    /// a <c>[CollectionDefinition]</c> marker whose only member is a collection name). The branch review then
+    /// found the replacement wrong too, in two ways:
+    /// <list type="bullet">
+    /// <item><b>F-8, the INSTRUMENT.</b> It said the rows came from "counting the files under <c>tests/</c>
+    /// that name each variable". That instrument cannot produce them: every store reads through its own
+    /// constant, so <c>FleetSettingsStoreTests</c> spells <c>ST4I_SETTINGS_DIR</c> <b>zero</b> times while
+    /// driving the seam through <c>FleetSettingsStore.EnvVarDir</c>, and <c>BridgeSpoolTests</c>' only
+    /// occurrence of its literal is a doc comment — it is the very grep the paragraph above explains cannot
+    /// work. TWO instruments were used and only one was named: (a) a literal count over <c>tests/</c>, which
+    /// gives the breadth, and (b) reading each candidate for a
+    /// <c>SetEnvironmentVariable(&lt;Store&gt;.EnvVarDir, …)</c> call, which gives the per-store rows. This
+    /// branch's own rule is "name the instrument that produced each number", failing in the paragraph that
+    /// asserts it.</item>
+    /// <item><b>F-10, <c>opcua-pki</c>.</b> "Nothing measures it" was false. <c>OpcUaDriver</c>'s constructor
+    /// calls <c>OpcUaPkiPaths.ResolveRoot(pkiDir)</c>, and <c>OpcUaDriverConformanceTests</c>,
+    /// <c>OpcUaDriverLoopbackTests</c> and <c>OpcUaDriverWriteTests</c> each pass a real temporary root and
+    /// let the driver write its app-instance certificate there — the EXPLICIT-PATH arm of the same
+    /// <c>explicit &gt; env &gt; default</c> chain. The true residual is narrower: nothing exercises
+    /// <c>ST4I_OPCUA_PKI_DIR</c>, the env var.</item>
+    /// </list>
+    /// By (b): FOUR directories have a dedicated env-var witness (<c>creds</c>, <c>settings</c>, <c>wal</c>,
+    /// <c>bridge-spool</c>); EIGHT are redirected incidentally by host harnesses; <c>opcua-pki</c> is covered
+    /// on its explicit-path arm and not on its env-var arm.</para>
     /// </summary>
     [Fact]
     public void EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared()
     {
-        // name -> literal, per file, so two files that both declare `EnvVarDir` cannot vouch for each other.
+        // name -> literal, per file NAME (see the remarks), so two files that both declare `EnvVarDir`
+        // cannot vouch for each other.
         var constantsByFile = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
         var readVariables = new SortedSet<string>(StringComparer.Ordinal);
         var callsByFile = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -304,6 +320,70 @@ public sealed class PerHostDataRootsTests
         }
 
         return directories;
+    }
+
+    /// <summary>
+    /// 🔴 <b>Branch review F-15 — the COUNT is now derived and compared, because every census in this
+    /// repository floors at <c>&gt;= 13</c> and therefore lets a fourteenth store arrive silently while the
+    /// word "thirteen" rots in six places.</b>
+    ///
+    /// <para><b>This is the mechanical check the ledger's §G.6 trigger asked for, and it is deliberately
+    /// this one rather than a grep for "every"/"all"/"no arm".</b> Both were on the table. A universal-quantifier
+    /// grep cannot tell a TRUE universal from a false one, so it would answer a narrower question than the
+    /// criterion — which is the exact instrument failure this branch has now been caught by four times, and
+    /// building it would be committing the class while claiming to police it. A count, by contrast, is
+    /// mechanically decidable and has actually been wrong: <c>web/playwright.config.ts</c> said FOURTEEN in
+    /// three places and <c>scripts/verify-suites.sh</c> said FOURTEEN in one, about this same thirteen-member
+    /// set, and one of those files is in the corpus a counts census declared it had swept. This test would
+    /// have caught all four.</para>
+    ///
+    /// <para><b>What it compares:</b> the number derived from <c>src/</c> against the number SPELLED in the
+    /// two sentences that state it as a rule — README §15.9's "There are **N** of them today" and
+    /// <c>packaging/remove-data.ps1</c>'s ".DESCRIPTION … create N directories". Those two were chosen
+    /// because each is the authoritative sentence of its own artefact; the remaining prose repeats them. A
+    /// fourteenth store makes the derived number 14 and turns both comparisons red, with a message naming
+    /// every place the word has to move.</para>
+    /// </summary>
+    [Fact]
+    public void TheNumberOfMachineWideDirectories_IsDerivedFromSource_AndAgreesWithEveryPlaceThatSpellsIt()
+    {
+        var derived = DeclaredDirectoryNames().Count;
+
+        // Non-vacuity: the scan must find a plausible set before its count is compared to anything.
+        Assert.InRange(derived, 13, 40);
+
+        var words = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["eleven"] = 11, ["twelve"] = 12, ["thirteen"] = 13, ["fourteen"] = 14,
+            ["fifteen"] = 15, ["sixteen"] = 16, ["seventeen"] = 17,
+        };
+
+        int SpelledCount(string relativePath, string pattern, string what)
+        {
+            var text = File.ReadAllText(Path.Combine(MachineSimulatorRoot(), relativePath));
+            var m = Regex.Match(text, pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            Assert.True(m.Success,
+                $"Could not find {what} in {relativePath}. The SCAN broke, not the product — repair the " +
+                "pattern rather than deleting this assertion, because its whole job is to notice that a " +
+                "number stopped being true.");
+            var raw = m.Groups["n"].Value;
+            return words.TryGetValue(raw, out var word) ? word : int.Parse(raw);
+        }
+
+        var readmeSays = SpelledCount(
+            "README.md", @"There are \*\*(?<n>\w+)\*\* of them\s+today", "README §15.9's count sentence");
+        var scriptSays = SpelledCount(
+            Path.Combine("packaging", "remove-data.ps1"),
+            @"goes on to create (?<n>\w+) directories under", "remove-data.ps1's .DESCRIPTION count");
+
+        Assert.True(derived == readmeSays && derived == scriptSays,
+            $"The product declares {derived} directories under %ProgramData%\\ST4I\\sim, README §15.9 says " +
+            $"{readmeSays}, and packaging/remove-data.ps1 says {scriptSays}. Every place that spells this " +
+            "number has to move together: README §15.4 (EN+VI), §15.9 (EN+VI table and rule sentence), " +
+            "§24.6 (EN+VI), packaging/remove-data.ps1 (.DESCRIPTION, .EXAMPLE, .NOTES, the Step-2 comment), " +
+            "web/playwright.config.ts and scripts/verify-suites.sh — plus a new -XxxDir parameter, a new " +
+            "playwright env entry and a new row in §15.9's WRITES/READS table. This test exists because " +
+            "four of those places were already off by one when it was written.");
     }
 
     /// <summary>

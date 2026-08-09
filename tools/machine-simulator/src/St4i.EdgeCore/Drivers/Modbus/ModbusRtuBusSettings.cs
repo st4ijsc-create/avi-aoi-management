@@ -384,12 +384,29 @@ public sealed record ModbusRtuBusSettings(string Transport, string Host, int Por
     /// true of some of the paths that generate it — and it is the same class the held-port arm was corrected
     /// for in E-5.</para>
     ///
-    /// <para><b>The consequence is labelled UNMEASURED, deliberately.</b> Two uncoordinated frame sources on
-    /// one segment do not corrupt data: NModbus validates the slave address and the function code, so a stray
-    /// frame becomes a REJECTED transaction rather than a plausible wrong number. What it does produce is
-    /// writes landing on <c>Indeterminate</c> — the outcome this product is most careful about — at a rate
-    /// nobody has measured, because there is no RS-485 hardware on any machine here and no such measurement
-    /// has ever been run. Stated as a proposition, not inherited as a fact.</para>
+    /// <para>🔴 <b>THE CONSEQUENCE, and the first version of this paragraph got it backwards (branch review,
+    /// F-1).</b> It said two uncoordinated frame sources "do not corrupt data" because NModbus validates the
+    /// slave address and the function code, so a stray frame becomes a rejected transaction rather than a
+    /// plausible wrong number. <b>This repository had already probed the opposite and written it down three
+    /// files away</b> — see <see cref="ModbusBus"/>'s own remarks: a differing slave address, a differing
+    /// function code and a bad CRC ARE caught, but <b>a stale frame matching on all three is NOT caught and
+    /// is returned to the caller as the answer</b> (measured: a request for register 99 answered with
+    /// register 0's stale value, silently, no exception). RTU has no transaction id, so nothing remains to
+    /// check. And <c>IsDesynchronised</c> cannot rescue it: that flag is set when a transaction FAILS to
+    /// consume a complete validated response, and this transaction consumes one and believes it.</para>
+    ///
+    /// <para><b>Two masters on one segment are the case that defeats it, not an exotic one</b> — they poll
+    /// the same devices with the same function codes, which is exactly the same-address/same-function/
+    /// same-byte-count shape the probe found uncatchable. So the honest statement is that a shared segment
+    /// can commit a WRONG REGISTER VALUE as a real reading, and this product's whole data-provenance
+    /// argument (README §20.3) is that fabricated numbers never blend into customer-facing ones.</para>
+    ///
+    /// <para><b>The RATE stays labelled UNMEASURED — for both outcomes, and that is the point of the fix
+    /// rather than an afterthought.</b> Nobody has measured how often two masters produce a matching stale
+    /// frame, and nobody has measured the <c>Indeterminate</c> frequency either; there is no RS-485 hardware
+    /// on any machine here. The defect being repaired was an UNHEDGED reassurance sitting next to a hedged
+    /// number, which makes a reader take "your data is safe" as the established half. Replacing it with a
+    /// different unhedged adjective would be the same mistake pointing the other way.</para>
     /// </summary>
     public string DescribeSegmentOwnership() =>
         $"Modbus RTU over a gateway at {Host}:{Port}: this product's deployment rule is ONE HOST PER SEGMENT, " +
@@ -399,11 +416,17 @@ public sealed record ModbusRtuBusSettings(string Transport, string Host, int Por
         "startup. Both connections succeed, neither host can see the other, and no error is raised on either " +
         "side. That is a CONSTRAINT ON THE DEPLOYMENT, not a guarantee this build provides — on a directly " +
         "attached COM line the operating system happens to refuse the second open, and a gateway has no " +
-        "equivalent. If a second master is on this segment its frames interleave with this one's: the " +
-        "slave-address and function-code checks turn a stray frame into a REJECTED transaction rather than a " +
-        "wrong value, so the effect is degradation and not corrupted data — but write commands land on " +
-        "Indeterminate at a rate NOBODY HAS MEASURED. Before treating slow or indeterminate writes as a " +
-        "device fault, confirm that exactly one host owns this gateway: check BOTH hosts' connectors.json " +
-        "AND the engine's saved connectors (GET /v1/connectors/configured), because a bus that was saved " +
-        "through the API will not appear in any connectors.json file.";
+        "equivalent. If a second master is on this segment its frames interleave with this one's, and the " +
+        "checks catch only SOME of them: a reply whose slave address differs, whose function code differs, " +
+        "or whose CRC is bad IS refused. A reply that matches on all three is NOT — it is handed back as the " +
+        "answer to whatever was asked, with no exception and no resynchronisation, because an RTU response " +
+        "frame carries no transaction id and there is nothing left to check (probed against NModbus in this " +
+        "product: a request for register 99 returned register 0's stale value, silently). Two masters poll " +
+        "the SAME devices with the SAME function codes, so that is the ORDINARY shape of the collision here, " +
+        "not the exotic one. So a shared segment can commit a WRONG REGISTER VALUE as a real reading, and " +
+        "write commands land on Indeterminate. NOBODY HAS MEASURED how often either happens. Before " +
+        "treating an implausible reading, or a slow or indeterminate write, as a device fault, confirm that " +
+        "exactly one host owns this gateway: check BOTH hosts' connectors.json AND the engine's saved " +
+        "connectors (GET /v1/connectors/configured), because a bus that was saved through the API will not " +
+        "appear in any connectors.json file.";
 }

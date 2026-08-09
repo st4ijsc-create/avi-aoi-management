@@ -217,8 +217,9 @@ public static class MachineWriteGate
                 "being driven by a separate process such as a St4i.EdgeService edge agent (README §24) — " +
                 "this engine cannot see that and cannot write to it. Retrying only helps for (1) and (2). " +
                 "Do NOT add a connector here for a device another process is already driving: over a TCP " +
-                "gateway nothing stops two processes commanding one device, and on a directly-attached COM " +
-                "port the second one simply cannot open it.",
+                "gateway NOTHING stops two processes commanding one device, and on a directly-attached COM " +
+                "port what stops the second one is the OPERATING SYSTEM's exclusive open, not anything this " +
+                "product arbitrates. One host per segment is a deployment rule here, not a guarantee.",
 
             MachineDriverAvailability.ReadOnly =>
                 $"The live driver for machine '{machineCode}' is not a writable one, so nothing can be " +

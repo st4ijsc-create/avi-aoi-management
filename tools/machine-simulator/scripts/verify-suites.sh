@@ -56,7 +56,11 @@ set -uo pipefail
 EXPECT_ABSTRACTIONS=151
 EXPECT_CONFORMANCE=22
 # chore/test-hygiene raised this 735 -> 741 (+6): guards proving the test-isolation seam added to
-# CredentialStore, which was the only one of FOURTEEN stores without one — which is exactly why
+# CredentialStore, which was the only one of THIRTEEN stores without one — which is exactly why
+# (🔴 Dot F branch review, F-7: this said FOURTEEN while the same file says THIRTEEN in three later
+# places and the product declares thirteen directories. Dot F's own R4 counts census named this file's
+# directory in its corpus and did not reach this line — it corrected packaging/remove-data.ps1 and
+# stopped there.)
 # 2,999 DPAPI blobs accumulated in the product's REAL credential directory, dating to 2026-07-18.
 # 🔴 Đợt D, D-1 re-review — this total is UNCHANGED at 741, and that is the point. A reviewer's gate run
 # came back EdgeCore 740/741 on WalFlushPumpTests.Pump_DrainsAnIdleBacklogOnItsOwnTimer_..., an IOException
@@ -1575,24 +1579,48 @@ EXPECT_EDGESERVICE=50
 #       here executes a store. A sweep that did would have to set thirteen process-wide variables inside a
 #       suite whose other classes boot real hosts that read them — trading a documented narrowness for an
 #       undocumented race.
-#       🔴 WHERE THAT HALF ACTUALLY IS, MEASURED — fix round 2, review NEW-2, and the correction runs in
-#       BOTH directions. Round 1 wrote "covered store by store" and listed five or six names, which
-#       under-claimed the breadth AND over-claimed one of the names: SecurityEnvVarTests carries NO TEST —
-#       it is a [CollectionDefinition] marker class whose only member is a collection name. The measured
-#       picture: FOUR directories have a dedicated env-var witness (creds -> CredentialStoreTests,
-#       settings -> FleetSettingsStoreTests, wal -> WalOptionsTests, bridge-spool -> BridgeSpoolTests);
-#       EIGHT more are redirected incidentally by host harnesses that would read or pollute the real
-#       %ProgramData% if the redirect were not honoured; and ONE has neither — ST4I_OPCUA_PKI_DIR occurs
-#       in exactly one file under tests/, and that file is PerHostDataRootsTests itself, where it is data
-#       being scanned rather than a redirect being exercised. opcua-pki is therefore the one directory
-#       whose honoured-to-file behaviour nothing measures. Instrument: a per-variable file count over
-#       tests/, run rather than recalled.
+#       🔴 WHERE THAT HALF ACTUALLY IS — and this note has been wrong twice, in opposite directions.
+#       Fix round 2 removed an over-claim (SecurityEnvVarTests carries NO TEST; it is a
+#       [CollectionDefinition] marker whose only member is a collection name). The branch review found the
+#       replacement wrong as well, on both the instrument and opcua-pki:
+#         * F-8, THE INSTRUMENT. This said the rows came from "counting the files under tests/ that name
+#           each variable" — the very grep PerHostDataRootsTests explains cannot work, because every store
+#           reads through its own constant. FleetSettingsStoreTests spells ST4I_SETTINGS_DIR ZERO times
+#           while driving the seam through FleetSettingsStore.EnvVarDir; BridgeSpoolTests' only occurrence
+#           of its literal is a doc comment. TWO instruments were used and one was named: (a) a literal
+#           count over tests/, which gives the breadth, and (b) reading each candidate for a
+#           SetEnvironmentVariable(<Store>.EnvVarDir, …) call, which gives the per-store rows.
+#         * F-10, OPCUA-PKI. "Nothing measures it" was false. OpcUaDriver's ctor calls
+#           OpcUaPkiPaths.ResolveRoot(pkiDir), and OpcUaDriverConformanceTests / OpcUaDriverLoopbackTests /
+#           OpcUaDriverWriteTests each hand it a real temp root and let it write its app-instance
+#           certificate there — the EXPLICIT-PATH arm of the same explicit > env > default chain. The true
+#           residual: nothing exercises ST4I_OPCUA_PKI_DIR, the env var.
+#       By (b): FOUR dedicated witnesses (creds, settings, wal, bridge-spool); EIGHT redirected
+#       incidentally by host harnesses; opcua-pki covered on its explicit arm and not on its env arm.
 #
 # TheReadme_TellsAnOperator... does NOT move a count and its assertions changed: it used to require the
 # phrase "not onboarded", and review C-2 showed the sentence beside it prescribed a remedy ("until it claims
 # again") that St4i.EdgeService cannot perform. It now pins the ASYMMETRY — that §15.9 says the edge agent
 # cannot claim — in both languages. Same test, different (and correct) subject.
-EXPECT_ENGINEAPI=1294
+# 🔴 DOT F BRANCH REVIEW (F-15) raises EXPECT_ENGINEAPI 1294 -> 1295 (+1), counted from the runner. ONE
+# file, ONE test; nothing rewritten, split or deleted.
+#
+#   +1  PerHostDataRootsTests.TheNumberOfMachineWideDirectories_IsDerivedFromSource_AndAgreesWithEvery-
+#       PlaceThatSpellsIt — every census in this repository floors at `>= 13`, so a FOURTEENTH store that
+#       arrives WITH a variable passes all three of them while the word "thirteen" rots in six artefacts.
+#       It derives the count from src/ and compares it against the number spelled in the two sentences
+#       that state it as a rule: README §15.9's "There are **N** of them today" and remove-data.ps1's
+#       .DESCRIPTION. Those two are each the authoritative sentence of their own artefact; the rest of the
+#       prose repeats them.
+#       🔴 THIS IS THE MECHANICAL CHECK THE LEDGER'S §G.6 TRIGGER ASKED FOR, and it is deliberately this
+#       one rather than a grep for "every"/"all"/"no arm". A universal-quantifier grep cannot distinguish
+#       a TRUE universal from a false one, so it would answer a narrower question than the criterion —
+#       which is the exact instrument failure this branch has now been caught by four times (F-8 most
+#       recently). Building it would be committing the class while claiming to police it. A count is
+#       mechanically decidable and HAS been wrong: web/playwright.config.ts said FOURTEEN in three places
+#       and this file said FOURTEEN in one, about the same thirteen-member set, and one of those files is
+#       in the corpus a counts census declared it had swept. This test would have caught all four.
+EXPECT_ENGINEAPI=1295
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
