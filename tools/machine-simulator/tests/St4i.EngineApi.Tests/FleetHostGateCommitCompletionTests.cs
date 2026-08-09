@@ -54,12 +54,19 @@ namespace St4i.EngineApi.Tests;
 /// contract, not measured here; nothing in these tests depends on it — they inject the throwing delegate
 /// FleetCore actually declares.)</item>
 /// <item><c>AdditionalPipelinesForTests</c>, invoked INSIDE <c>StartLocked</c> under <c>_gate</c>. It stands
-/// in for FleetCore's enumeration item 5 (<c>SimulatorFactory.Create</c> →
+/// in for FleetCore's enumeration P5 (<c>SimulatorFactory.Create</c> →
 /// <c>MachineConfigStore.Ensure</c> → <c>File.WriteAllText</c>/<c>File.Move</c>, which throws
 /// <c>InvalidOperationException</c> on a config-kind mismatch and <c>IOException</c> on a full or read-only
 /// data root). It throws from the same method, under the same lock, at a point between the same two
-/// statements. It is a STAND-IN and is labelled one: a test seam, not the production path — closing item 5
-/// itself is a redesign of the restart chokepoint that G-1's brief reserved and G-2's does too.</item>
+/// statements. It is a STAND-IN and is labelled one: a test seam, not the production path — closing P5
+/// itself is a redesign of the restart chokepoint that G-1's brief reserved and G-2's does too.
+/// <para>🔴 The two exception MESSAGES for this stand-in still spell it "item 5", deliberately. The
+/// whole-branch re-review's NEW-5 gave that member one canonical name, <c>P5</c>, everywhere it is
+/// CROSS-REFERENCED — and a bulk rename swept these two string literals along with the comments, which would
+/// have made a comment-only merge pass carry executable change. Instrument 1 caught it and instrument 2
+/// confirmed it: the TEST assembly's IL moved, both PRODUCT assemblies did not. Reverted, because nobody
+/// resolves a member name out of an exception message — the rename bought nothing here and cost the
+/// comment-only property the branch review had verified.</para></item>
 /// </list></para>
 ///
 /// <para><b>What these tests do NOT prove.</b> That no <b>eighth, ninth or tenth</b> member exists — the set
@@ -605,7 +612,7 @@ public sealed class FleetHostGateCommitCompletionTests
     ///
     /// <para>Review M-5 named only the <c>previousCts?.Cancel()</c> half of that window. The larger half is
     /// <c>ApplyScenario</c>, which reaches <c>StartLocked</c> and is therefore reachable through FleetCore's
-    /// own enumeration item 5. A throw there left the fleet at the burst multiplier with <b>no revert task
+    /// own enumeration P5. A throw there left the fleet at the burst multiplier with <b>no revert task
     /// ever scheduled</b> — indefinitely, until some later Burst.</para>
     ///
     /// <para>This test also pins S4's SECOND half as an open gap rather than a surprise: the fleet IS left

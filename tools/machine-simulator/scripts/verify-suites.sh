@@ -1709,13 +1709,28 @@ EXPECT_EDGESERVICE=50
 # G-2 closes the defect CLASS G-1 found one instance of: state committed while FleetCore._gate is held whose
 # correctness depends on a step that runs after the lock is released.
 #
-# 🔴 SEVEN TESTS, and here is what the number actually reconciles to (whole-branch review m-2 — the earlier
-# wording said "one member per (commit, completion) pair", a rule that yields EIGHT pairs and so could not
-# produce seven). The list below covers FIVE members — S2, S3, S4, S5, S7 — because S1 was closed by G-1 and
-# S6 is refused, and neither gets a test. Three of those five need TWO tests apiece, one per throw site
-# (S2 and S3 each have an in-lock seam and a flush; S5 has the scheduling and the report), and two need one.
-# 2+2+1+1+2 = 7. The unit here is a THROW SITE, not a member and not a pair — a test can only witness one
-# consequence of one throw:
+# 🔴 SEVEN TESTS, and here is what the number actually reconciles to. The unit is a THROW SITE, not a member
+# and not a (commit, completion) pair — a test can only witness one consequence of one throw. Five members
+# appear below (S1 was closed by G-1, S6 is refused; neither gets a test):
+#
+#     S2 = 2   the in-lock IUnsPublisher seam, and the deferred-log flush
+#     S3 = 2   the same two throw sites on the start path
+#     S4 = 1   the throwing off-lock teardown (S4's second half is OPEN and gets no test)
+#     S5 = 2   the scheduling, and the revert's own failure
+#     S7 = 0   🔴 NONE OF ITS OWN — its assertion RIDES INSIDE S3's second test, which is why the per-test
+#              block below attributes that one test to "S3 ... and S7"
+#     ------
+#     2+2+1+2+0 = 7
+#
+# 🔴 S7 = 0 IS THE LOAD-BEARING LINE AND IT WAS WRONG TWICE. The first version of this block derived seven
+# from "one member per (commit, completion) pair", a rule that yields EIGHT. Its replacement said "three
+# members need two tests and two need one" and printed "2+2+1+1+2 = 7" — both of which are EIGHT, over a list
+# of seven, while the correct structure was stated eight lines below in this same file. Recorded rather than
+# quietly fixed because of what it ASSERTS: a maintainer told S7 has a test of its own either hunts for one
+# that does not exist, adds a redundant one, or concludes a CLOSED member is untested and reopens it. A wrong
+# count is embarrassing; a wrong count that is actionable costs someone an afternoon.
+#
+# Per test:
 #   Estop_WhenTheUnsSeamThrowsUnderTheGate_TheOldPipelineIsStillDisposed                        +1
 #   Estop_WhenTheHostLoggerThrowsFlushingTheHaltPathLines_TheOldPipelineIsStillDisposed         +1
 #       S2 — the halt path, the most serious member. The two tests are two different throw sites in the same

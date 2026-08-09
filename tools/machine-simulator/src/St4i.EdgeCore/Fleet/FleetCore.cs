@@ -268,48 +268,58 @@ internal sealed class FleetCore
     /// what once reported this invariant intact while it was broken three ways; a host-callback census is
     /// the narrower instrument §8.1(a3) names).</para>
     ///
-    /// <para><b>🔴 THE SET IS NINE PATHS. Numbered once, closed and open together, so the headline number
-    /// and the list are the same object.</b> (G-1's first draft said "eight" and no grouping of its own list
+    /// <para><b>🔴 THE SET IS NINE PATHS, LABELLED P1…P9. Numbered once, closed and open together, so the
+    /// headline number and the list are the same object.</b>
+    ///
+    /// <para>🔴 <b>The P-labels are the same repair the S-list below got, applied for the same reason.</b>
+    /// This list was identified purely by ORDINAL and referenced from twelve sites under <b>three different
+    /// names for one member</b>: the <c>MachineConfigStore.Ensure</c> write was called <i>"path 5"</i> in this
+    /// file, <i>"item 5"</i> in the tests, and <i>"path B"</i> (G-1's own vocabulary) at
+    /// <see cref="RegisterMachine"/>. No contradiction had surfaced yet — but an ordinal-only vocabulary is
+    /// exactly what let the S-list's rows 4 and 5 transpose silently, and this list is cross-referenced from
+    /// twice as many sites. <b>P5 is now the one name</b>; every call site in this tree has
+    /// been converted, and the historical spellings survive only in review artifacts this branch does not
+    /// own.</para> (G-1's first draft said "eight" and no grouping of its own list
     /// produced eight — a headline that cannot be reconstructed from the enumeration it summarises is a
     /// defect in the deliverable, since the enumeration IS the deliverable. Corrected by review.)
     ///
     /// <b>Closed by G-1 — 1 to 3:</b>
     /// <list type="number">
-    /// <item><b>CLOSED.</b> <see cref="RegisterMachine"/>'s <see cref="_onMachineSeeded"/> — §9.2 violation
+    /// <item><b>P1 — CLOSED.</b> <see cref="RegisterMachine"/>'s <see cref="_onMachineSeeded"/> — §9.2 violation
     /// 3, the one with the number on it: for a real <c>AssetRegistryStore</c> a complete synchronous SQLite
     /// transaction, and a thread merely reading <see cref="EstopEngaged"/> (the SAME lock
     /// <see cref="Estop"/> takes) was measured blocked up to <b>12.35 ms</b>. Now enqueued under the lock
     /// and invoked off it — see <see cref="DrainSeedNotifications"/>.</item>
-    /// <item><b>CLOSED.</b> Log calls under this lock — §10.3(a)'s fourth mechanism, <b>four call sites in
+    /// <item><b>P2 — CLOSED.</b> Log calls under this lock — §10.3(a)'s fourth mechanism, <b>four call sites in
     /// one mechanism</b> (this is where "eight" came from: counting sites here and mechanisms elsewhere).
     /// <see cref="StartLocked"/>'s connector warning and the two <c>MappingProfileResolver.Build</c>
     /// callbacks (up to one per machine), plus <see cref="StopLocked"/>'s cancellation-callback error, all
     /// of which a host wires to its own <c>ILogger</c> and which under <c>AddWindowsService</c> is a
     /// SYNCHRONOUS Event Log write. All four now buffer into a <see cref="DeferredLogEntry"/> list and are
     /// emitted off-lock.</item>
-    /// <item><b>CLOSED.</b> <see cref="Burst"/>'s <c>previousCts?.Cancel()</c> — §10.3(d)'s second
+    /// <item><b>P3 — CLOSED.</b> <see cref="Burst"/>'s <c>previousCts?.Cancel()</c> — §10.3(d)'s second
     /// <c>Cancel</c>. Moved below the lock.</item>
     ///
-    /// <item><b>OPEN — in this class's own code, 4 to 7.</b> <see cref="StartLocked"/> →
+    /// <item><b>P4 — OPEN — in this class's own code, 4 to 7.</b> <see cref="StartLocked"/> →
     /// <c>MappingProfileResolver.Build</c> → <c>File.Exists</c>/<c>File.ReadAllText</c> per machine — §9.2
     /// violation 1, measured <b>2.39 ms</b> held with 50 machines having mapping files on a local
     /// SSD.</item>
-    /// <item><b>OPEN.</b> 🔴 <b>On no prior list, in any batch, and it is a WRITE.</b>
+    /// <item><b>P5 — OPEN.</b> 🔴 <b>On no prior list, in any batch, and it is a WRITE.</b>
     /// <see cref="StartLocked"/> → <c>SimulatorFactory.Create</c> → <c>SimulatorBase</c>'s constructor →
     /// <c>MachineConfigStore.Ensure</c> → <c>Save()</c> → <c>File.WriteAllText</c> + <c>File.Move</c>. It
     /// fires once per machine that is not yet in the store, i.e. on the first <see cref="Start"/> against a
     /// fresh data root — and it takes a SECOND lock (<c>MachineConfigStore</c>'s own) while this one is
     /// held, on every start thereafter. Every previous count of this backlog was of READ paths. It is also
     /// the throw that made <see cref="RegisterMachine"/>'s drain need a <c>finally</c>.</item>
-    /// <item><b>OPEN.</b> <see cref="StopLocked"/> → <c>slot.Cts.Cancel()</c> → a driver's own
+    /// <item><b>P6 — OPEN.</b> <see cref="StopLocked"/> → <c>slot.Cts.Cancel()</c> → a driver's own
     /// <c>ct.Register</c> callback running a <c>Dispose</c> SYNCHRONOUSLY on this thread — §9.2 violation
     /// 2.</item>
-    /// <item><b>OPEN.</b> <see cref="StartLocked"/> → <c>ConnectorRegistry.TryCreateDriver</c> → a
+    /// <item><b>P7 — OPEN.</b> <see cref="StartLocked"/> → <c>ConnectorRegistry.TryCreateDriver</c> → a
     /// THIRD-PARTY <c>IConnectorFactory.TryCreate</c>, which this codebase does not get to bound (documented
     /// at that call site as the one place third-party code runs under this lock, but never on the backlog
     /// list).</item>
     ///
-    /// <item><b>OPEN — in a CALLEE's code, 8 and 9, and not fixable from this class.</b>
+    /// <item><b>P8 — OPEN — in a CALLEE's code, 8 and 9, and not fixable from this class.</b>
     /// <see cref="Start"/>/<see cref="Stop"/>/<see cref="Estop"/> hold this lock across
     /// <see cref="IUnsPublisher.PublishNodeBirth"/>/<see cref="IUnsPublisher.PublishNodeDeath"/>, whose
     /// degraded arms (publisher disposed, publish queue saturated) call the PUBLISHER's own host-supplied
@@ -320,7 +330,7 @@ internal sealed class FleetCore
     /// rather than walking callees. Deliberately left: keeping those two calls inside this lock is an
     /// explicit review fix (it serializes NBIRTH/NDEATH order with the transition itself), so the fix
     /// belongs behind the seam, not here.</item>
-    /// <item><b>OPEN — in a callee's code.</b> <see cref="GetDriverHealth"/> reads <c>Driver.Kind</c> and
+    /// <item><b>P9 — OPEN — in a callee's code.</b> <see cref="GetDriverHealth"/> reads <c>Driver.Kind</c> and
     /// <c>Driver.Health</c> under this lock — third-party property getters on
     /// <see cref="St4i.Connector.Abstractions.IDeviceDriver"/>, bounded by contract only.</item>
     /// </list></para>
@@ -343,7 +353,7 @@ internal sealed class FleetCore
     /// across FIVE other locks.</b> None of these is an I/O/<c>Dispose</c>/<c>Cancel</c> violation, so none
     /// belongs in the nine — but "which lock may be taken while holding this one" is its own invariant and
     /// it had no home. In acquisition order, always <see cref="_gate"/> first:
-    /// <c>MachineConfigStore</c>'s own lock (path 5); <c>TransportCoordinator</c>'s and
+    /// <c>MachineConfigStore</c>'s own lock (P5); <c>TransportCoordinator</c>'s and
     /// <c>SwitchableTransport</c>'s (via <see cref="ApplyNetworkOutageLocked"/>);
     /// <see cref="ConnectorRegistry"/>'s (<c>SnapshotBindings</c>/<c>RegisteredIds</c>/
     /// <c>TryCreateDriver</c>); and the UNS publisher's own lifecycle lock (via
@@ -408,7 +418,7 @@ internal sealed class FleetCore
     /// off-lock TEARDOWN that throws (<see cref="RegisterMachine"/>/<see cref="ApplyScenario"/>), but a
     /// <see cref="StartLocked"/> that throws ITSELF leaves the fleet stopped with the roster/scenario write
     /// already committed, and no <c>finally</c> can start a fleet that failed to start. Rolling the commit
-    /// back changes what a failed call MEANS to its caller; the root cause is path 5 above. Both are owner
+    /// back changes what a failed call MEANS to its caller; the root cause is P5 above. Both are owner
     /// decisions and both are named in G-2's report rather than decided here.</item>
     /// <item><b>S5 — CLOSED (G-2).</b> <see cref="Burst"/> → <see cref="RevertBurstAfterDelayAsync"/>.</item>
     /// <item><b>S6 — OPEN, and the uniform remedy is REFUSED here rather than missing.</b>
@@ -429,7 +439,7 @@ internal sealed class FleetCore
     /// <c>finally</c> in a caller can reach them — and leaves <see cref="_slots"/> non-empty with
     /// <c>_running == false</c>, which <see cref="StopLocked"/>'s <c>if (!_running) return default;</c> then
     /// REFUSES to tear down. Closing it means restructuring <see cref="StartLocked"/> so its partial work is
-    /// owned by the caller, which is the same redesign path 5 needs. Reachability today is only
+    /// owned by the caller, which is the same redesign P5 needs. Reachability today is only
     /// <see cref="StartSlot"/>'s <c>new EdgePipeline</c>/<c>Task.Run</c>, which is why "named with a reason"
     /// is the honest answer rather than a fix.</para>
     ///
@@ -1566,7 +1576,7 @@ internal sealed class FleetCore
         // is that it gets stated.
         //
         // `default(StartOutcome)` is the value CompleteStartOffLock sees when StartLocked itself threw
-        // (reachable — the enumeration's path 5, MachineConfigStore.Ensure); both of its halves return
+        // (reachable — the enumeration's P5, MachineConfigStore.Ensure); both of its halves return
         // immediately on a null list, so the `finally` is a no-op on that path rather than a second fault.
         //
         // Not "lost" traded for "twice": the outcome is produced exactly once per call and consumed exactly
@@ -2908,7 +2918,8 @@ internal sealed class FleetCore
         // WHY `finally`: the descriptor is committed to _fleet/_states under the lock and is never rolled
         // back, so from the instant the lock is released the machine EXISTS and owes exactly one
         // notification. Everything between here and the drain can throw — and one of those throws is
-        // reachable through the very path G-1's own enumeration turned up (path B: StartLocked ->
+        // reachable through the very path G-1's own enumeration turned up (P5, which G-1's prose called
+        // "path B" before that list was labelled: StartLocked ->
         // SimulatorFactory.Create -> SimulatorBase's ctor -> MachineConfigStore.Ensure, which throws
         // InvalidOperationException on a config-kind mismatch and IOException from its File.WriteAllText/
         // File.Move on a full or read-only data root). Without the finally, that throw leaves the machine in
@@ -2959,7 +2970,7 @@ internal sealed class FleetCore
                 // to keep "the pipeline is down" is the trade worth taking, never the reverse.
                 //
                 // What this does NOT close is the other half of S4: if StartLocked ITSELF throws (the
-                // enumeration's path 5), no `finally` can restart a fleet that failed to start. See this
+                // enumeration's P5), no `finally` can restart a fleet that failed to start. See this
                 // method's own remarks below and the G-2 report for why that half needs an owner decision.
                 //
                 // 🔴 The `finally` below holds TWO statements, and a throw from the first ABANDONS the
@@ -3098,7 +3109,7 @@ internal sealed class FleetCore
         //
         // 🔴 G-2 CLOSES THAT, and M-5 turned out to be the small half of a larger window (S5). M-5 named only
         // the Cancel; the other statement in the same window is ApplyScenario, which is REACHABLE — it calls
-        // StartLocked, and StartLocked reaches MachineConfigStore.Ensure (the enumeration's path 5:
+        // StartLocked, and StartLocked reaches MachineConfigStore.Ensure (the enumeration's P5:
         // InvalidOperationException on a config-kind mismatch, IOException on a full or read-only data root).
         // Either throw left the fleet running at BurstMultiplier with no revert task ever scheduled —
         // indefinitely, until some later Burst — because `_burstRevertCts = cts` had already committed under
@@ -3155,7 +3166,7 @@ internal sealed class FleetCore
         if (shouldRevert)
         {
             // 🔴 G-2 — the ONE genuinely SILENT instance of S4, and the reason it is silent is here rather
-            // than in ApplyScenario. ApplyScenario's restart branch can throw (path 5: StartLocked →
+            // than in ApplyScenario. ApplyScenario's restart branch can throw (P5: StartLocked →
             // MachineConfigStore.Ensure), leaving the fleet stopped with `_scenario` already mutated. On its
             // other two entry paths that throw reaches an operator — RegisterMachine and the scenario
             // endpoint both propagate it to their caller, which is an HTTP 500. This one does not: Burst

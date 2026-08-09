@@ -229,6 +229,30 @@ G-2 đóng lớp lỗi ấy bằng `try`/`finally` ở từng chỗ. **Một tro
 
 → **Với mỗi `finally` có nhiều hơn MỘT câu lệnh, hỏi: nếu câu đầu ném thì câu sau còn chạy không? Nếu không, hoặc lồng chúng lại, hoặc nói rõ tại chỗ vì sao câu sau là no-op trên đúng đường ném ấy.**
 
+🔴 **(f) MIỀN của một dụng cụ được THỪA HƯỞNG từ vị trí của người viết, chứ không được SUY RA từ câu hỏi (G-2, năm ca).**
+
+Bốn tầng ở (a2) — *thành viên → ngữ liệu → quy tắc → register* — đều nói về **cái gì** phải quét. Điều này nói về **ở đâu**, và nó là chiều mà (a2) tự dự báo là còn tồn tại mà chưa ai gọi tên.
+
+**Phát biểu:**
+
+> **Miền của một dụng cụ được thừa hưởng từ VỊ TRÍ của người viết, không phải suy ra từ CÂU HỎI. Vị trí ấy khi thì là một TẦNG, khi thì là một TỪ VỰNG. Cả hai đều ngẫu nhiên đối với câu hỏi, và không cái nào NHÌN THẤY ĐƯỢC TỪ BÊN TRONG dụng cụ. Hãy suy miền ra từ TÍNH CHẤT đang săn — "trạng thái ghi ở đây, hoàn tất ở chỗ khác sau", "một seam của host đứng trước phần việc không được phép bỏ" — rồi hỏi tính chất ấy CÓ THỂ SỐNG Ở ĐÂU, TRƯỚC khi chọn cách đi tìm.**
+
+**Năm ca, phân loại — ba TẦNG, hai TỪ VỰNG:**
+
+| # | Ca | Cái gì đã chặn miền của dụng cụ | Loại |
+|---|---|---|---|
+| 1 | Dòng audit `fleet.estop` (G-2 I-4) | miền của phép quét S-set là "đường có giữ `_gate`"; `FleetHost` không giữ khoá nào | **tầng** |
+| 2 | Phương án (c) của S6 | liệt kê phương án từ **bên trong** `UpdateSettings`; (c) sống ở `Program.cs` | **tầng** |
+| 3 | Đường log thứ năm của G-1 (`UnsPublisher`) | phép census đếm các chỗ `_logger?.` **bên trong `FleetCore.cs`**; chỗ này nằm trong callee | **tầng** |
+| 4 | `StartSlot` (G-2 NEW-1) | cùng file, cùng class. Phép grep khoá vào `_logDebug` **trong vòng lặp dispose**; chỗ này là `_logError` trong handler lỗi | **từ vựng** |
+| 5 | `DrainSeedNotifications` (G-2 m-1) | cùng file, cùng class. Sót vì nó *"không phải vòng lặp dispose, cũng không phải handler lỗi"* | **từ vựng** |
+
+**Nó BAO TRÙM D-7b/D-7c** — *"bắt đầu từ TẬP CÁC LỆNH TRẢ VỀ, không phải từ tên trường"* — đúng bằng nửa từ-vựng của nó. Hai quy tắc ấy vẫn đúng và vẫn là cái cò súng cụ thể; điều này nói **vì sao** chúng cần thiết, và bổ sung nửa còn lại mà chúng không phủ.
+
+🔴 **Và chính lời phát biểu đầu tiên của nguyên tắc này là một ca của (b).** Người thực thi G-2 phát biểu nó là *"thứ tôi không nhìn thấy luôn nằm cách một TẦNG"* — một đường thẳng khớp qua ba điểm mà **hai trong ba cùng loại**, và ca thứ ba (`StartSlot`) **mâu thuẫn với chẩn đoán đã viết sẵn ở chính chỗ ấy**. Nó đã kịp **ship vào một file sản phẩm** trước khi phản biện toàn nhánh bắt được. Một chẩn đoán đang được nâng lên thành quy tắc là chỗ đắt nhất cho một khẳng định phổ quát sai, vì mọi thứ phía sau sẽ được viết dựa trên nó.
+
+→ **Trước khi nâng một chẩn đoán thành quy tắc, hãy liệt kê để PHỦ ĐỊNH nó — và đếm xem có bao nhiêu điểm thực sự KHÁC LOẠI.** Ba ca cùng một loại không phải ba bằng chứng; đó là một bằng chứng được đếm ba lần.
+
 **Và một phân biệt về bằng chứng:** một diff chỉ sửa chú thích là **bằng chứng kết luận về cây mã, và không nói gì về môi trường**. Cổng đỏ trên một commit như vậy nghĩa là máy bẩn, không phải mã hỏng — nhưng cách chữa là **dọn máy**, không phải nới trần.
 
 **Và một đính chính về chính bộ công cụ này, do D-3 tìm ra.** Brief D-3 của tôi yêu cầu test phụ thuộc phần cứng phải *"bỏ qua sạch sẽ và ồn ào"*, trong khi `verify-suites.sh` — cũng của tôi — **fail khi `skipped != 0`**. Hai chỉ thị loại trừ nhau, và **cái phải đổi là brief, không phải script**: xUnit đếm test bị bỏ qua động vào `Total`, nên một bộ test phụ thuộc phần cứng làm `Skipped` **phụ thuộc môi trường** — và bất kỳ con số kỳ vọng cố định nào cũng sẽ làm **máy trang bị tốt hơn** bị đỏ. Đó là cái bẫy "một con số xanh mang nghĩa khác nhau trên các máy khác nhau", mặc áo phần cứng. **`skipped == 0` chính là thứ làm cho "817" mang cùng một nghĩa ở mọi nơi.**

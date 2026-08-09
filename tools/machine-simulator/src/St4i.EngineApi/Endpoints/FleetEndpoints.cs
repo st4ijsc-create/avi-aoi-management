@@ -76,10 +76,22 @@ public static class FleetEndpoints
         // `host.Estop()` below is unwrapped, so a throw from it skips `recorder.RecordAsync`. That was
         // already true before G-2 — what CHANGED is what the missing row MEANS. Pre-G-2 a throwing Estop()
         // left a half-done halt (drivers possibly undisposed, no historian run event), so "no audit row"
-        // accompanied "not much happened". Post-G-2 the same throw leaves a COMPLETED halt: EstopEngaged
-        // latched, every driver disposed, and the historian "Estop" run event written — with still no audit
-        // row. So the historian and the audit trail now DISAGREE about a halt that demonstrably happened,
-        // and the line directly above says that trail exists to answer "who pressed HALT".
+        // accompanied "not much happened". Post-G-2 the same throw leaves the halt ITSELF complete on every
+        // path: EstopEngaged latched, every driver disposed. So the audit trail is now silent about a halt
+        // that demonstrably happened — and the line directly above says that trail exists to answer "who
+        // pressed HALT".
+        //
+        // 🔴 ENUMERATED, NOT SUMMARISED, because the first draft of this comment summarised and was wrong on
+        // one of four. Estop() names its throw sites at its own definition; per site, what is true when the
+        // audit row is skipped:
+        //   1. the in-lock PublishNodeDeath seam ....... latch set, drivers disposed, run event WRITTEN
+        //   2. RecordRunEventFireAndForget's disposed arm  latch set, drivers disposed, run event NOT written
+        //      — because on this path the run event IS the throw site
+        //   3. WaitAndDisposeOldPipeline's deferred flush  latch set, drivers disposed, run event written
+        //   4. DisposeOldSlots' buffered _logDebug ...... latch set, drivers disposed, run event written
+        // The first draft said "and the historian run event written" flat, which is false for site 2. The
+        // CONCLUSION survives all four — the halt completed and no audit row records it — but the universal
+        // did not, and it summarised over an enumeration that already existed one file away.
         //
         // NOT A REGRESSION (no row either way) and NOT fixed inside G-2, deliberately: the remedy is a
         // behaviour decision, not a mechanical one — record-before-acting changes what a row MEANS (it would
@@ -87,8 +99,12 @@ public static class FleetEndpoints
         // for a failed call. WS-D-D4's ordering rule already governs that choice and it is not G-2's to make.
         //
         // 🔴 IT IS THE SAME SHAPE AS THE S-SET, ONE LAYER UP, and G-2's instrument structurally could not see
-        // it: that instrument is scoped to FleetCore._gate, and FleetHost holds no lock at all. Same blind
-        // spot that hid the UnsPublisher path from G-1's census and NEW-1 from G-2's grep — third instance.
+        // it: that instrument is scoped to FleetCore._gate, and FleetHost holds no lock at all. This is an
+        // instance of blueprint §8.1(f) — an instrument's domain gets inherited from the author's POSITION
+        // rather than derived from the question — and here the position was a LAYER. (An earlier draft of
+        // this comment paired it with G-2's own StartSlot finding as "the same blind spot"; that one is the
+        // VOCABULARY half of the same rule, not the layer half, and calling them one thing was the very
+        // over-generalisation §8.1(f) exists to prevent. G-1's UnsPublisher path is the layer sibling.)
         // THE SWEEP THIS WANTS, named so it is not re-derived from scratch: every endpoint that mutates
         // fleet state and then records an audit row as a SEPARATE statement. Same shape at fleet.start,
         // fleet.stop, scenario.apply and scenario.burst.
