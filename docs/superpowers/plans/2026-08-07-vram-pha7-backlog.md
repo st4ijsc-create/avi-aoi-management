@@ -258,3 +258,38 @@ POST /api/auth/verify-2fa  (ngay sau đó)   ⇒ 200 + set-cookie
 - [ ] (sau duyệt) áp → cài mã → đối chứng dương → đột biến → **nghiệm thu sống**.
 
 **Cổng ra:** ba cột bí mật **không còn** trên `users`; đăng nhập + 2FA **vẫn chạy** (nghiệm thu sống).
+
+---
+
+## ⚠⚠⚠ THỨ TỰ BẮT BUỘC (chủ dự án duyệt 2026-08-09, controller chèn ràng buộc)
+
+Chủ dự án duyệt **chạy script xoay (8c)** và **thêm cột buộc đổi mật khẩu**. Nhưng **KHÔNG được xoay trước DDL**:
+
+> Xoay ⇒ **8/8 tài khoản mất 2FA** ⇒ phải đăng ký lại ⇒ lượt đăng ký ghi mã dự phòng qua **đường BĂM** ⇒ **đường ấy ĐANG VỠ** (`backup_codes.code` = `varchar(20)`, hash bcrypt = **60**; đo được `22001`).
+> ⇒ **Xoay trước = khoá 8 người ra khỏi hệ, KHÔNG CÓ ĐƯỜNG VÀO LẠI.**
+
+**THỨ TỰ DUY NHẤT ĐÚNG:** ① DDL → ② mã → ③ nghiệm thu đăng ký 2FA lại được → ④ **rồi mới** xoay.
+
+### Task 9 (mở rộng): BA mục DDL trong MỘT migration
+
+| # | Mục | Vì sao |
+|---|---|---|
+| **9a** | **nới `backup_codes.code`** | `varchar(20)` < hash bcrypt **60** ⇒ **đường duy nhất còn lại sau 8a ĐANG VỠ**. Bằng chứng: **8/8 tài khoản bật 2FA** mà bảng **RỖNG**. ⚠ **Mục CHẶN — làm trước hai mục kia.** |
+| **9b** | **cột buộc đổi mật khẩu** | `users` **không có cột nào** mang nghĩa ấy (đã đo). Cần cho lượt xoay. |
+| **9c** | **tách `user_secrets`** | Task 7 đóng ở tầng trả về; bí mật vẫn **cùng bảng** với dữ liệu công khai ⇒ mọi `SELECT *` mới là một lỗ tiềm năng. |
+
+- [ ] **Bước 1: ĐO trước.** 9a: `INSERT` hash 60 ký tự trong giao dịch **rollback** ⇒ ghi lại `22001` (**tái lập**, đừng tin brief). 9b: xác nhận `users` **không có** cột ấy. 9c: đếm mọi điểm đọc/ghi ba cột bí mật.
+- [ ] **Bước 2: ĐẾM bề mặt.** ⚠ **Đếm trước khi đổi** đã lật quyết định **SÁU lần**, và **hai lần** thứ nguy nhất **không phải** cái đang vá.
+- [ ] **Bước 3: SOẠN SQL rồi DỪNG.** Một migration cho cả ba. Kèm **hoàn tác**, **bảng cột→kiểu→lý do→chỉ mục**, **chi phí**, **rủi ro**, và **thứ tự áp** (⚠ GOTCHA Wave 3: drizzle liệt kê **toàn bộ** cột ⇒ thêm/bớt cột chưa migrate thì **cả `INSERT` cũng vỡ**). **TRÌNH CHỦ DỰ ÁN.**
+- [ ] **Bước 4:** (sau duyệt) áp bằng owner **`aoi`** lên **cả hai** DB (`avi_app` ⇒ `42501`), xác nhận bằng `information_schema`.
+- [ ] **Bước 5: cài mã** — dùng lại vị từ/bộ suy đã có.
+- [ ] **Bước 6: ĐỐI CHỨNG DƯƠNG** — bật 2FA **ghi được mã dự phòng thật** (9a); đăng nhập + 2FA **vẫn chạy** (9c).
+- [ ] **Bước 7: đột biến** + **KHÔNG bắt nhầm**.
+- [ ] **Bước 8: NGHIỆM THU SỐNG — bắt buộc trước khi xoay.** Một tài khoản **đăng ký lại 2FA** và **nhận được mã dự phòng**. ⚠ Không đạt bước này thì **KHÔNG được chạy xoay**.
+- [ ] **Bước 9: commit.**
+
+### Task 10: chạy script xoay (SAU khi Task 9 Bước 8 ĐẠT)
+Ảnh hưởng **8/8 tài khoản** (3 `admin`), thu hồi **224 phiên**. Script `scripts/xoay-bi-mat-2fa.mjs` đã soạn, có `--hoan-tac` + ảnh chụp.
+- [ ] **Điều kiện vào:** Task 9 Bước 8 **ĐẠT** — đã có người đăng ký lại 2FA thành công **trên hệ thật**.
+- [ ] Chạy **lượt khô trước**, dán kết quả. Rồi chạy thật, dán số hàng đổi.
+- [ ] **Nghiệm thu sống ngay sau:** một tài khoản đăng nhập lại được bằng bí mật **mới**.
