@@ -62,8 +62,15 @@ namespace St4i.EngineApi.Tests;
 /// WAL. Caught as a real red run, not by reading: adding a fourth boot to
 /// <c>StartupSettingsReplayHardeningTests</c> widened the window enough to lose the race.
 /// <c>MachineWideStoreEnvCollection</c>'s own doc states this rule ("any future class that reads or
-/// writes a variable a class in here also touches has to join this same collection") and the rule was
-/// applied to the writers and not to the READERS.</para>
+/// writes a variable a class in here also touches has to join this same collection"); what the sweeps
+/// keep missing is not one HALF of it but whichever members were not in view at the time.
+/// <b>🔴 Fix round 4 corrected this sentence, which asserted the wrong diagnosis.</b> It used to read
+/// "the rule was applied to the writers and not to the READERS" — falsified by the tree in the very next
+/// review: there were NO un-collected readers, and TWO un-collected WRITERS
+/// (<c>OnboardingFleetJoinTests</c>, which writes real credentials, and
+/// <c>Fleet/ConnectorConfigStoreTests</c>, which writes <c>ST4I_CONNECTOR_CONFIG_DIR</c>). A sweep that
+/// names which half it missed is claiming to have found the other half, which is the completeness shape
+/// this branch has now paid for five times. The membership rule is the property; the halves are not.</para>
 /// </summary>
 [Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class StoreAndForwardRestartSurvivalTests

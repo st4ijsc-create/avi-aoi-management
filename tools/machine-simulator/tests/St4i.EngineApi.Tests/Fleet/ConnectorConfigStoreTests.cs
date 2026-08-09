@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using St4i.Connector.Abstractions.Models;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Fleet;
@@ -12,7 +13,19 @@ namespace St4i.EngineApi.Tests.Fleet;
 /// pointed at the same directory — the same technique <c>FleetHostSettingsPersistenceTests</c>/
 /// <c>MachineConfigStoreTests</c> already use), the credential-free <see cref="ConnectorConfigStore.ListAsync"/>
 /// projection, and plain delete-by-kind.
+///
+/// <para>🔴 <b>Fix round 4 (branch re-review I-2) — this class WRITES the process-wide
+/// <c>ST4I_CONNECTOR_CONFIG_DIR</c> and was the only writer of it outside the serialized collection.</b>
+/// <c>ResolveRoot_PrefersExplicitDirectory_OverEnvVar_OverDefault</c> below sets it to
+/// <c>C:\somewhere-env</c>, then to <c>null</c>, then restores. TWENTY-ONE other classes in this suite
+/// set the same variable and all twenty-one are collected. <c>Program.cs</c> reads it at startup and
+/// <c>ConnectorConfigStore</c>'s constructor does <c>Directory.CreateDirectory(root)</c> plus a SQLite
+/// schema creation — so a host boot sampling this window either creates
+/// <c>C:\somewhere-env\connector-config.db</c> on the developer's C: drive, or (on the <c>null</c> leg)
+/// falls back to a real install's <c>%ProgramData%\ST4I\sim\connector-config</c>. The reverse race
+/// fails this test's own assertion against another class's temp path.</para>
 /// </summary>
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class ConnectorConfigStoreTests
 {
     private static string TempDir() => Directory.CreateTempSubdirectory("st4i-connector-config-tests-").FullName;

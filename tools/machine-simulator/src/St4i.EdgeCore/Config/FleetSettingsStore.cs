@@ -145,6 +145,17 @@ public sealed class FleetSettingsStore
     /// filesystem problem and swallowing it inside the store would hide it from the one caller that has a
     /// log channel. That caller guards it; see the block at its call site for what a failed delete means
     /// (the seeded file survives, the env vars stop being the floor, and the operator is told).</para>
+    ///
+    /// <para>🔴 <b>TWO instruments hold "one deleter", and naming the pairing is the point (branch
+    /// re-review).</b> The cheap one is a NAMING census in
+    /// <c>StartupSettingsReplayHardeningTests.TheStartupReplayHasExactlyOneArm_AndTheSettingsFileOneWriterAndOneDeleter</c>,
+    /// and it cannot see <c>new FleetSettingsStore(dir).Delete()</c> or a raw
+    /// <c>File.Delete(Path.Combine(root, "fleet-settings.json"))</c> — the same stated non-reach as its
+    /// <see cref="Save"/> census. The one that closes it is a PROPERTY witness,
+    /// <c>AFailedReplay_LeavesThePersistedTripleIntact_AndDoesNotLetTheEnvFloorWin</c>, which reads the
+    /// operator's file back through a separate store instance and therefore fails on a deleter of ANY
+    /// shape. Two instruments, two questions — deliberately not one heavier guard, which would buy
+    /// nothing the property witness does not already hold.</para>
     /// </summary>
     public void Delete()
     {

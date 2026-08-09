@@ -335,7 +335,7 @@ public sealed class StartupSettingsReplayHardeningTests
     /// The two instruments answer different questions and are named apart deliberately.</para>
     /// </summary>
     [Fact]
-    public void TheStartupReplayHasExactlyOneArm_AndTheSettingsFileExactlyOneWriter()
+    public void TheStartupReplayHasExactlyOneArm_AndTheSettingsFileOneWriterAndOneDeleter()
     {
         var root = MachineSimulatorRoot();
 

@@ -1814,7 +1814,8 @@ var initialSettingsRequest = persistedSettings is not null
 // concurrent second `UpdateSettings`. Out of scope here, and named there.
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════
 static bool TryReplayStartupSettings(
-    FleetHost host, ILogger logger, SettingsUpdateRequest request, string source, string settingsDir)
+    FleetHost host, ILogger logger, SettingsUpdateRequest request, string source, string settingsDir,
+    string remedy)
 {
     try
     {
@@ -1831,13 +1832,12 @@ static bool TryReplayStartupSettings(
             "STARTUP SETTINGS REPLAY FAILED — {Source} could not be applied and the service is starting " +
             "WITHOUT it (serverUrl={ServerUrl}, machineCode=\"{MachineCode}\", verifyTls={VerifyTls}). " +
             "The host is UP and every endpoint works; the Live transport was NOT rebuilt from these " +
-            "values. Correct them with PUT /v1/settings, or edit/delete fleet-settings.json in " +
-            "{SettingsDir} and restart.",
+            "values. {Remedy}",
             source,
             request.ServerUrl,
             request.MachineCode,
             request.VerifyTls,
-            settingsDir);
+            remedy);
         return false;
     }
 }
@@ -1850,7 +1850,19 @@ var replaySucceeded = TryReplayStartupSettings(
     replayRestoredAFile
         ? "the persisted fleet-settings.json"
         : "the ST4I_SERVER_URL/ST4I_MACHINE_CODE/ST4I_VERIFY_TLS environment floor",
-    settingsStore.RootDirectory);
+    settingsStore.RootDirectory,
+    // 🔴 The remedy differs per ARM, and saying so is branch re-review Minor 6. The restore arm's advice
+    // is to repair the file; the SEED arm's advice must NOT be, because the block below is about to
+    // delete that file — an operator who read the Error line alone would be sent to a path that no
+    // longer exists. Passed in rather than branched inside the helper so the two sentences sit next to
+    // the condition that chooses between them.
+    replayRestoredAFile
+        ? $"Correct them with PUT /v1/settings, or edit/delete fleet-settings.json in " +
+          $"\"{settingsStore.RootDirectory}\" and restart."
+        : "These came from the ST4I_* environment variables and NO settings file existed before this " +
+          "start. Correct those variables and restart, or set the values with PUT /v1/settings. Do not " +
+          "go looking for a settings file — see the next line for what happened to the one this start " +
+          "would otherwise have left behind.");
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════
 // 🔴 WHOLE-BRANCH REVIEW I-3 — A FAILED **SEED** MUST NOT BECOME THE SOURCE OF TRUTH.
@@ -1882,6 +1894,21 @@ var replaySucceeded = TryReplayStartupSettings(
 // WHAT IT DOES NOT DO: it does not retry, and it does not roll FleetCore's in-memory fields back. The
 // process keeps running on the triple it committed and `GET /v1/settings` reports it — the same honest
 // divergence the primary arm carries.
+//
+// 🔴 HOW REACHABLE IS THIS ARM TODAY — stated here, because this is where someone decides whether the
+// guard earns its keep (branch re-review, Minor 7). The RESTORE arm is demonstrably reachable: a
+// hand-edited `machineCode: ""` throws out of `CredentialStore.Load`'s first statement, and that is the
+// tested case S6's closure rests on. This SEED arm is different: enumerated rather than assumed, NO
+// env-var-only route reaches an activation throw here today. `CredentialStore.Load` throws only on an
+// empty machine code, which this arm cannot produce (a blank ST4I_MACHINE_CODE resolves to null and the
+// built-in default is kept); `RebuildLive`'s WAL arm is pre-empted ~1550 lines above by an unguarded
+// `wal.EnsureDir()` on the same options, MEASURED, which stops the host before this line; and neither
+// the vendored SDK client nor `LiveConfigSyncBackend` parses a URL. What remains is
+// `_onLiveSettingsRebuilt`, documented as an ARBITRARY host callback — so this guard rests on a contract
+// rather than on a demonstrated variable, deliberately. "Benign today" is a property of the current
+// callee, which is the sentence pattern this codebase refuses to rely on everywhere else. The test
+// injects the throw through a real TransportCoordinator holding different WalOptions, which is the same
+// call from options the early EnsureDir never saw.
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════
 if (!replaySucceeded && !replayRestoredAFile)
 {

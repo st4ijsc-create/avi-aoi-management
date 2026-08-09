@@ -1953,16 +1953,21 @@ EXPECT_EDGESERVICE=50
 #
 # 🔴 FIX ROUND 2 (re-review N4) raises this 1319 -> 1320 (+1), counted from the runner. No new file; added
 # to StartupSettingsReplayHardeningTests.cs.
-#   TheStartupReplayHasExactlyOneArm_AndTheSettingsFileExactlyOneWriter                +1
+#   TheStartupReplayHasExactlyOneArm_AndTheSettingsFileOneWriterAndOneDeleter          +1
 #       "Exactly one writer of fleet-settings.json at startup" became the load-bearing premise of the
 #       rationale at FleetCore.UpdateSettings when C1 was fixed, and it was true only by inspection.
 #       🔴 AND THE INSTRUMENT THE RE-REVIEW PROPOSED WOULD NOT HAVE CAUGHT C1 — measured, not argued:
 #       C1 added a second call to the startup REPLAY, not a second Save, and the replay persists as a
 #       side effect of UpdateSettings, so a Save-call census returns ONE both before and after it.
-#       Mutation R2 reinstates C1 and shows the Save-site count not moving. So the test asserts BOTH
-#       numbers and names which one carries the property: one Save call site (the weaker half, the one
-#       that stays green through C1) and one startup replay call site (the number C1 moved, 2 -> 3
-#       occurrences of TryReplayStartupSettings in Program.cs). Its stated non-reach is the shape a
+#       Mutation R2 reinstates C1 and shows the Save-site count not moving. So the test asserts THREE
+#       numbers and names which one carries which property: one Save call site (the weaker half, the one
+#       that stays green through C1); one startup replay call site (the number C1 moved, 2 -> 3
+#       occurrences of TryReplayStartupSettings in Program.cs); and — added by the I-3 fix below — one
+#       DELETER call site, so the seed-rollback cannot grow a second one silently.
+#       🔴 This block said "BOTH numbers" and listed two for one round after the third was added (branch
+#       re-review I-4). No count moved when the deleter census landed, so no justification was owed and
+#       none was written — which is exactly how a summary drifts from its list in the one artefact the
+#       standing constraints bind. Same class as C-1, same file, one round later. Its stated non-reach is the shape a
 #       source scan cannot see — a writer through a differently-named local — which is exactly what the
 #       file-property regression witness above covers instead.
 #

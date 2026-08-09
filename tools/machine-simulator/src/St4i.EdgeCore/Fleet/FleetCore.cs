@@ -354,7 +354,19 @@ internal sealed class FleetCore
     /// "on a local SSD"; P5 carries no such qualifier because until H-1c its root could not be anywhere
     /// else, and nobody has measured it on a share. Nothing here is a defect today — the default is
     /// unchanged and beside the binary — but a redesign of this chokepoint must treat the root as
-    /// arbitrary rather than local.</para></item>
+    /// arbitrary rather than local.</para>
+    /// <para>🔴 <b>BOOKED FOR P5, not charged to any task: the product now holds TWO DELIBERATE AND
+    /// OPPOSITE POSTURES on an env-var-driven startup failure, and nothing reconciles them.</b> H-1a
+    /// ruled that a settings root the operator can point anywhere must let the host COME UP AND SAY SO —
+    /// that is the whole of S6's closure. WS-C ruled the opposite for the WAL root, in as many words at
+    /// <c>St4i.EngineApi/Program.cs</c>'s <c>wal.EnsureDir()</c>: <i>"a WAL root that can't be created is
+    /// a fatal misconfiguration that should stop startup, not silently downgrade"</i> — unguarded, before
+    /// <c>app.Run()</c>, with no operator-facing line, on a variable README §15.9's own recipe tells
+    /// operators to set. Both rulings are defensible on their own terms and neither is a defect. What
+    /// does not exist is a sentence anywhere saying WHICH roots crash the host and which do not, so an
+    /// operator relocating two directories in one afternoon gets two different failure semantics with no
+    /// way to predict either. Surfaced by H-1c's own measurement of the WAL path; it needs one owner and
+    /// one artefact, and that owner is whoever takes P5.</para></item>
     /// <item><b>P6 — OPEN.</b> <see cref="StopLocked"/> → <c>slot.Cts.Cancel()</c> → a driver's own
     /// <c>ct.Register</c> callback running a <c>Dispose</c> SYNCHRONOUSLY on this thread — §9.2 violation
     /// 2.</item>
@@ -3441,8 +3453,15 @@ internal sealed class FleetCore
         // CREATED from the env floor merged with FleetHost's defaults, and from the next boot it would
         // win over the env vars on the strength of a triple that never activated. Program.cs deletes it
         // in exactly that case and only that case; a failed RESTORE never deletes anything, because the
-        // operator's own file is what branch-review C1 exists to protect. So: one writer, one deleter,
-        // both at the composition root, both named — and `PerHostDataRootsTests` counts each of them.
+        // operator's own file is what branch-review C1 exists to protect. So: ONE writer — the `Save`
+        // twenty lines below, in THIS file — and ONE deleter, at the composition root in Program.cs. Both
+        // are counted by StartupSettingsReplayHardeningTests' source census.
+        //
+        // 🔴 Both pointers in that sentence were WRONG when first written (branch re-review I-3), in the
+        // commit whose subject was this very class: it said both sites are "at the composition root" (the
+        // writer is here) and credited the census to `PerHostDataRootsTests`, which contains no such
+        // census. Actionable-and-wrong — a maintainer sent to either place finds nothing — and it is the
+        // reason the census is named by its own test rather than by a neighbouring file.
         //
         // WHAT THIS CLOSES, precisely, and what it does not. The commit above now ALWAYS owes its
         // persistence, so the reported configuration and the persisted configuration can no longer diverge
