@@ -47,7 +47,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { moiFileDuoi, laFileTest } from "./deployProcedureScan";
 import { appRouter } from "../routers";
-import type { TrpcContext } from "../_core/trpc";
+import type { TrpcContext } from "../_core/context";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 

@@ -10,7 +10,7 @@ import * as db from "../db";
 //   admin bị chiếm lấy được **hạt giống 2FA của tất cả**, kể cả các admin khác. `getById`/`search`
 //   dùng **danh sách CẤM một phần tử** (`const { passwordHash, ...safeUser }`) nên
 //   **`twoFactorSecret` vẫn ra** — đúng lớp *"phần tử thứ N+1"*.
-import { toPublicUser, toPublicUsers } from "../_core/publicUser";
+import { toPublicUser, toPublicUsers, type KhongMangBiMat } from "../_core/publicUser";
 
 // ============ USER ROUTER ============
 export const userRouter = router({
@@ -367,8 +367,20 @@ export const userRouter = router({
     }),
 
   // Get 2FA status
+  /**
+   * ★★★ Pha 7 / review TOÀN NHÁNH **C-2** — **CỔNG KIỂU trên `user_secrets`.**
+   *
+   * ⚠⚠⚠ Kiểu trả về được **KHAI TƯỜNG MINH** `KhongMangBiMat<…>`, và đó là cả điểm: đây **chính
+   * là** thủ tục mà đột biến của lượt review dùng để chứng minh lỗ —
+   *     `twoFactorSecret: status?.twoFactorSecret ?? null`  ⇒ `npm run check` SẠCH, 58/58 XANH.
+   * Sau khi có phần giao `{ [K in ServerOnlyUserSecretField]?: never }`, đúng dòng ấy là một **LỖI
+   * BIÊN DỊCH**. Cổng ấy **SUY RA** từ `USER_SECRETS_FIELD_VISIBILITY`, nên một cột bí mật **thứ
+   * BA** thêm vào `user_secrets` ngày mai tự vào cổng — không cần ai nhớ sửa file này.
+   * ⚠ `hasSecret` là ô **SUY RA** (`!!`), không phải cột được mở — đúng khuôn `mustChangePassword`
+   *   của QĐ-1: client biết *"đã có hạt giống chưa"* mà **không** cần thấy hạt giống.
+   */
   get2FAStatus: protectedProcedure
-    .query(async ({ ctx }) => {
+    .query(async ({ ctx }): Promise<KhongMangBiMat<{ enabled: boolean; hasSecret: boolean }>> => {
       const status = await db.get2FAStatus(ctx.user.id);
       return {
         enabled: status?.twoFactorEnabled || false,

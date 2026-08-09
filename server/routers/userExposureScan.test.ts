@@ -41,15 +41,22 @@
  *   `sessionGrantScan.test.ts`.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { moiFileDuoi, laFileTest } from "./deployProcedureScan";
+import { moiCotBiMatCuaUserSecrets } from "../_core/publicUser";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url)); // .../server/routers
 const GOC_REPO = join(TEST_DIR, "..", "..");
 const DB_AUTH = join(GOC_REPO, "server", "db", "auth.ts");
+
+/**
+ * ★★★ Pha 7 / review TOÀN NHÁNH **C-2** — cột bí mật của `user_secrets`, **SUY RA** từ chủ duy
+ * nhất (`server/_core/publicUser.ts::USER_SECRETS_FIELD_VISIBILITY`), không chép tay lần thứ hai.
+ */
+const COT_BI_MAT = moiCotBiMatCuaUserSecrets();
 
 /**
  * ★★★ PHÉP LÀM SẠCH DUY NHẤT. **Tập ĐÓNG về khái niệm** (chiếu-cho-phép · chiếu-danh-sách ·
@@ -139,7 +146,76 @@ function nguoiDocTho(): string[] {
   return [...ra].sort();
 }
 
-const DOC_THO = nguoiDocTho();
+/**
+ * ★★★ Pha 7 / review TOÀN NHÁNH **C-2** — **NGƯỜI ĐỌC BÍ MẬT: nửa mà bộ suy cũ MÙ THEO CẤU TẠO.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO CẦN: `nguoiDocTho()` hỏi *"`.select()` KHÔNG phép chiếu nối `.from(users)`"*. Sau 9c,
+ * hai người đọc **duy nhất** còn chạm bí mật — `layBiMatNguoiDung()`
+ * (`select({passwordHash, twoFactorSecret}).from(userSecrets)`) và `get2FAStatus()`
+ * (`leftJoin(userSecrets)`) — **đều CÓ phép chiếu** và **đều không đọc `users` thô** ⇒ **cả hai
+ * nằm ngoài lượng từ theo CẤU TẠO**. Bộ quét bề mặt chặt nhất của nhánh này **mù đúng hai hàm
+ * cuối cùng còn cầm hạt giống TOTP**.
+ *
+ * ⇒ Vị từ ở đây **ngược lại**: một hàm xuất khẩu là **người đọc BÍ MẬT** khi phép chiếu của nó
+ *   **CHẠM một cột bí mật của `user_secrets`** — dù là `.select({ x: userSecrets.<cột> })`, hay
+ *   một khoá chiếu **mang đúng tên cột** (đủ phủ cả `leftJoin`). Tập cột bí mật **SUY RA** từ
+ *   `USER_SECRETS_FIELD_VISIBILITY`, nên một cột bí mật **thứ BA** ngày mai tự vào lượng từ.
+ */
+function nguoiDocBiMat(): string[] {
+  const sf = nguon(DB_AUTH);
+  const ra = new Set<string>();
+  const di = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && tenLoiGoi(n) === "select" && n.arguments.length === 1) {
+      const chieu = n.arguments[0]!;
+      if (ts.isObjectLiteralExpression(chieu)) {
+        const chamBiMat = chieu.properties.some((p) => {
+          const ten = p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? p.name.text : null;
+          if (ten !== null && COT_BI_MAT.includes(ten)) return true;
+          // `{ x: userSecrets.twoFactorSecret }` — đọc theo GIÁ TRỊ, không theo tên khoá.
+          if (ts.isPropertyAssignment(p) && ts.isPropertyAccessExpression(p.initializer)) {
+            return (
+              ts.isIdentifier(p.initializer.expression) &&
+              p.initializer.expression.text === "userSecrets" &&
+              COT_BI_MAT.includes(p.initializer.name.text)
+            );
+          }
+          if (ts.isShorthandPropertyAssignment(p)) return COT_BI_MAT.includes(p.name.text);
+          return false;
+        });
+        if (chamBiMat) {
+          const h = hamBao(n);
+          if (h && ts.isFunctionDeclaration(h) && h.name) ra.add(h.name.text);
+        }
+      }
+    }
+    // …và một lượt `.from(userSecrets)` **thô** (không phép chiếu) là người đọc bí mật theo định nghĩa.
+    if (ts.isCallExpression(n) && tenLoiGoi(n) === "from" && n.arguments.length === 1) {
+      const dich = n.arguments[0]!;
+      if (ts.isIdentifier(dich) && dich.text === "userSecrets") {
+        const truoc = n.expression;
+        if (ts.isPropertyAccessExpression(truoc) && ts.isCallExpression(truoc.expression)) {
+          const sel = truoc.expression;
+          if (tenLoiGoi(sel) === "select" && sel.arguments.length === 0) {
+            const h = hamBao(n);
+            if (h && ts.isFunctionDeclaration(h) && h.name) ra.add(h.name.text);
+          }
+        }
+      }
+    }
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  return [...ra].sort();
+}
+
+const DOC_BI_MAT = nguoiDocBiMat();
+
+/**
+ * ⚠⚠ **HỢP, không thay thế.** Người đọc bí mật vào **luôn** lượng từ "hàng thô không được thoát"
+ * ở dưới (trả `status` trần cũng là rò), **và** vào lượng từ ô-BÍ-MẬT riêng ở §5.
+ */
+const DOC_THO = [...new Set([...nguoiDocTho(), ...DOC_BI_MAT])].sort();
 
 // ── (2) phân tích lan truyền + đường thoát ─────────────────────────────────────────────────────
 type ViPham = { duong: string; dong: number; ham: string; bien: string };
@@ -438,6 +514,206 @@ const KQ = {
   ),
 };
 
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ §5 (C-2) — **Ô BÍ MẬT: một trục KHÁC, vì `dungTran()` MÙ với nó THEO THIẾT KẾ.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Luật ở trên canh *"cả HÀNG thoát ra"*, và `dungTran()` **cố ý** loại `user.id` / `u?.email` ra
+ * khỏi đường thoát — nếu không nó **bắt nhầm** (đã đo: lượt chạy đầu bắt nhầm 6 chỗ). Với `users`
+ * đó là đúng: đọc **một trường** của `users` là vô hại.
+ *
+ * ⚠⚠⚠ Với `user_secrets` thì **NGƯỢC LẠI**: đọc **đúng một trường** *là* lượt rò. Đột biến của
+ * lượt review — `twoFactorSecret: status?.twoFactorSecret ?? null` — là một **ĐỌC TRƯỜNG**, nên nó
+ * đi qua luật trên **theo cấu tạo**, và nó đã đi qua thật: `tsc` sạch, 58/58 XANH.
+ * ⇒ Bất biến thứ hai, trên **cùng bộ quét, khác lượng từ**:
+ *
+ *   ***∀ điểm trong `server/**` đọc một Ô BÍ MẬT của `user_secrets` ra từ một NGƯỜI ĐỌC BÍ MẬT:
+ *   giá trị ấy KHÔNG được thoát khỏi hàm (`return` / `res.json`), trừ khi đã bị GIẢM về boolean.***
+ *
+ * ⚠ **FAIL-CLOSED.** Chỉ một tập **ĐÓNG** các phép giảm được coi là an toàn (`!x` · `!!x` ·
+ *   `Boolean(x)` · so `== null` / `!= null` / `=== null` / `!== null` / `=== undefined` /
+ *   `!== undefined`) — mọi hình dạng khác là **ĐỎ**. `?? null`, `String(x)`, `x.slice(0,4)`,
+ *   `x ? "a" : "b"` đều **không** nằm trong tập ấy, và đó là chủ ý: *"không hiểu thì ĐỎ, không tha"*.
+ * ⚠ Đây là lý do `hasSecret: !!status?.twoFactorSecret` — một ô **SUY RA** — vẫn hợp lệ, còn ô
+ *   **mang giá trị** thì không. Ca ĐỐI CHỨNG DƯƠNG ở dưới đo lại đúng ranh giới ấy.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/** Định danh **GỐC** của một chuỗi truy cập (`user[0].x` → `user`, `a?.b.c` → `a`). */
+function tenGoc(e: ts.Node): string | null {
+  let cur: ts.Node = e;
+  for (;;) {
+    if (ts.isIdentifier(cur)) return cur.text;
+    if (ts.isPropertyAccessExpression(cur) || ts.isElementAccessExpression(cur)) cur = cur.expression;
+    else if (ts.isParenthesizedExpression(cur) || ts.isNonNullExpression(cur) || ts.isAsExpression(cur)) cur = cur.expression;
+    else return null;
+  }
+}
+
+/** Phép so với `null`/`undefined` — cho ra boolean, không mang giá trị đi đâu. */
+function laSoVoiRong(n: ts.BinaryExpression): boolean {
+  const k = n.operatorToken.kind;
+  const laSo =
+    k === ts.SyntaxKind.EqualsEqualsToken ||
+    k === ts.SyntaxKind.ExclamationEqualsToken ||
+    k === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+    k === ts.SyntaxKind.ExclamationEqualsEqualsToken;
+  if (!laSo) return false;
+  const rong = (x: ts.Node): boolean =>
+    x.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(x) && x.text === "undefined");
+  return rong(n.left) || rong(n.right);
+}
+
+/**
+ * ★★★ Người **TIÊU THỤ** bí mật — tập **ĐÓNG**, và cố ý nhỏ.
+ *
+ * ⚠⚠ Vì sao cần: `server/_core/trpc.ts:341` viết `return await verifyTotpOnce({ secret:
+ * u.twoFactorSecret, … })`. Ô bí mật nằm **trong biểu thức `return`**, nhưng cái rời hàm là **KẾT
+ * QUẢ của lượt verify** (`{hopLe, phatLai}`), không phải hạt giống. Bắt nó là **bắt nhầm**, và một
+ * lưới bắt nhầm là một lưới sẽ bị người sau tắt đi.
+ * ⚠⚠⚠ Nhưng *"nằm trong đối số của một lời gọi bất kỳ"* là một luật **QUÁ RỘNG**:
+ * `return { t: String(s.twoFactorSecret) }` cũng có hình dạng ấy, và nó **rò thật**. Nên đây là một
+ * **DANH SÁCH CHO PHÉP** (fail-closed), không phải một luật hình dạng: một người tiêu thụ **thứ
+ * N+1** làm lưới **ĐỎ** cho tới khi ai đó **quyết** rằng nó thật sự tiêu thụ chứ không phát đi.
+ * ⚠ `Boolean` nằm đây **và** trong bộ giảm — hai đường tới cùng một kết luận, không phải bản sao.
+ */
+const TIEU_THU = ["verifyTotpOnce", "compare", "khopMaDuPhong", "Boolean"] as const;
+
+/**
+ * Ô bí mật `tu` (nằm trong biểu thức thoát `chan`) có **an toàn** không.
+ * An toàn ⇔ đã bị **GIẢM về boolean**, **hoặc** đã đi vào đối số của một **NGƯỜI TIÊU THỤ** đã khai.
+ * ⚠ Mọi thứ khác ⇒ **KHÔNG an toàn** (fail-closed).
+ */
+function daAnToan(tu: ts.Node, chan: ts.Node): boolean {
+  let truoc: ts.Node = tu;
+  let cur: ts.Node | undefined = tu.parent;
+  while (cur) {
+    if (ts.isPrefixUnaryExpression(cur) && cur.operator === ts.SyntaxKind.ExclamationToken) return true;
+    if (ts.isBinaryExpression(cur) && laSoVoiRong(cur)) return true;
+    // Đi vào ĐỐI SỐ của một lời gọi (không phải vào `expression` của nó).
+    if (ts.isCallExpression(cur) && cur.arguments.some((a) => a === truoc || a.pos <= truoc.pos && truoc.end <= a.end)) {
+      return (TIEU_THU as readonly string[]).includes(tenLoiGoi(cur));
+    }
+    if (cur === chan) break;
+    truoc = cur;
+    cur = cur.parent;
+  }
+  return false;
+}
+
+/** Mọi lượt ĐỌC một ô bí mật ra từ một biến nhiễm, nằm trong cây `goc`. */
+function oBiMatTrong(goc: ts.Node, nhiem: ReadonlySet<string>): ts.Node[] {
+  const ra: ts.Node[] = [];
+  const di = (n: ts.Node): void => {
+    if (ts.isPropertyAccessExpression(n) && COT_BI_MAT.includes(n.name.text)) {
+      const g = tenGoc(n.expression);
+      if (g !== null && nhiem.has(g)) ra.push(n);
+    }
+    // `status["twoFactorSecret"]`
+    if (
+      ts.isElementAccessExpression(n) &&
+      n.argumentExpression &&
+      ts.isStringLiteral(n.argumentExpression) &&
+      COT_BI_MAT.includes(n.argumentExpression.text)
+    ) {
+      const g = tenGoc(n.expression);
+      if (g !== null && nhiem.has(g)) ra.push(n);
+    }
+    ts.forEachChild(n, di);
+  };
+  di(goc);
+  return ra;
+}
+
+/** Hạt giống nhiễm của một lời gọi người-đọc-bí-mật (phủ cả `const u = [await f(id)]`). */
+function hatGiongCua(goi: ts.CallExpression): Set<string> {
+  const hat = new Set<string>();
+  let cur: ts.Node = goi;
+  while (
+    cur.parent &&
+    (ts.isAwaitExpression(cur.parent) ||
+      ts.isParenthesizedExpression(cur.parent) ||
+      ts.isAsExpression(cur.parent) ||
+      ts.isNonNullExpression(cur.parent) ||
+      // ⚠ `const user = [await get2FAStatus(id)]` — hình dạng THẬT ở `twoFactorRouter.ts` (4 chỗ).
+      //   Thiếu nhánh này thì bốn thủ tục 2FA nguy nhất nằm ngoài lượng từ, im lặng.
+      ts.isArrayLiteralExpression(cur.parent))
+  ) {
+    cur = cur.parent;
+  }
+  if (cur.parent && ts.isVariableDeclaration(cur.parent) && cur.parent.initializer === cur) {
+    tenRangBuoc(cur.parent.name, hat);
+  } else if (
+    cur.parent &&
+    ts.isBinaryExpression(cur.parent) &&
+    cur.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    ts.isIdentifier(cur.parent.left)
+  ) {
+    hat.add(cur.parent.left.text);
+  }
+  return hat;
+}
+
+function quetRoBiMat(): { viPham: ViPham[]; soDiemGoi: number } {
+  const viPham: ViPham[] = [];
+  let soDiemGoi = 0;
+  const SAN_XUAT = moiFileDuoi(GOC_REPO, "server", [".ts"]).filter((f) => !laFileTest(f.duong));
+
+  for (const f of SAN_XUAT) {
+    const src = readFileSync(f.that, "utf8");
+    if (!DOC_BI_MAT.some((r) => src.includes(r))) continue;
+    const sf = nguon(f.that);
+
+    const di = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && DOC_BI_MAT.includes(tenLoiGoi(n))) {
+        const h = hamBao(n);
+        const than = h ? (h as ts.FunctionLikeDeclaration).body : undefined;
+        if (than) {
+          soDiemGoi++;
+          const nhiem = hatGiongCua(n);
+          if (nhiem.size > 0) {
+            // Đường thoát: `return <expr>` và `res.json/send(<expr>)` — cùng hình dạng với luật trên.
+            const soat = (x: ts.Node): void => {
+              const chan: ts.Node[] = [];
+              if (ts.isReturnStatement(x) && x.expression) chan.push(x.expression);
+              if (
+                ts.isCallExpression(x) &&
+                ts.isPropertyAccessExpression(x.expression) &&
+                ["json", "send", "jsonp"].includes(x.expression.name.text)
+              ) {
+                chan.push(...x.arguments);
+              }
+              for (const c of chan) {
+                for (const o of oBiMatTrong(c, nhiem)) {
+                  if (!daAnToan(o, c)) {
+                    viPham.push({
+                      duong: f.duong,
+                      dong: dong(sf, o),
+                      ham: tenHamBao(n),
+                      bien: o.getText(sf).slice(0, 60),
+                    });
+                  }
+                }
+              }
+              ts.forEachChild(x, soat);
+            };
+            soat(than);
+          }
+        }
+      }
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+  }
+  return { viPham, soDiemGoi };
+}
+
+const KQ_BM0 = quetRoBiMat();
+const KQ_BM = {
+  ...KQ_BM0,
+  viPham: KQ_BM0.viPham.filter(
+    (v, i, a) => a.findIndex((x) => x.duong === v.duong && x.dong === v.dong && x.bien === v.bien) === i,
+  ),
+};
+
 describe("★★★ Task 7 / Net 2 — ∀ BỀ MẶT: hàng `users` thô không được RỜI MÁY CHỦ chưa làm sạch", () => {
   it("★★★ cầu chì — tập người đọc THÔ được SUY RA và không rỗng (rỗng ⇒ mọi ô dưới là chân lý rỗng)", () => {
     expect(
@@ -486,5 +762,193 @@ describe("★★★ Task 7 / Net 2 — ∀ BỀ MẶT: hàng `users` thô không
     expect(nham.map((v) => `${v.duong}:${v.dong}`).join(" · "), "bắt nhầm nơi chỉ đọc `u.id`").toBe("");
     const nham2 = KQ.viPham.filter((v) => v.duong.endsWith("server/_core/authService.ts"));
     expect(nham2.map((v) => `${v.duong}:${v.dong}`).join(" · "), "bắt nhầm đường xác minh mật khẩu").toBe("");
+  });
+});
+
+describe("★★★ C-2 §5 — ∀ Ô BÍ MẬT của `user_secrets` KHÔNG được rời máy chủ (trục mà Net 2 mù)", () => {
+  it("★★★ cầu chì — tập cột bí mật và tập NGƯỜI ĐỌC BÍ MẬT đều KHÁC RỖNG (rỗng ⇒ chân lý rỗng)", () => {
+    expect(
+      COT_BI_MAT.length,
+      "0 cột bí mật ⇒ mọi ô của §5 là chân lý rỗng.\n" +
+        "⚠ Nếu `user_secrets` thật sự không còn bí mật nào thì đó là một QUYẾT ĐỊNH KIẾN TRÚC phải " +
+        "nói ra, không phải một lưới im lặng chuyển sang xanh.",
+    ).toBeGreaterThan(0);
+    expect(COT_BI_MAT, "hạt giống TOTP phải nằm trong tập").toContain("twoFactorSecret");
+    expect(COT_BI_MAT, "hash mật khẩu phải nằm trong tập").toContain("passwordHash");
+    // ⚠ Hai người đọc mà bộ suy CŨ mù theo cấu tạo — nếu bộ suy mới trượt chúng, nó đang mù đúng
+    //   thứ nó được dựng ra để thấy.
+    expect(DOC_BI_MAT, "`layBiMatNguoiDung` (select có phép chiếu trên `userSecrets`)").toContain("layBiMatNguoiDung");
+    expect(DOC_BI_MAT, "`get2FAStatus` (leftJoin `userSecrets`)").toContain("get2FAStatus");
+    // …và HỢP phải thật sự NỚI RỘNG tập cũ, nếu không C-2 chưa đóng gì cả.
+    expect(
+      DOC_BI_MAT.filter((d) => !nguoiDocTho().includes(d)).length,
+      "bộ suy BÍ MẬT không bắt thêm hàm nào so với bộ suy HÀNG THÔ ⇒ C-2 chưa nới được lượng từ",
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("★★★ cầu chì — quét thấy đủ ĐIỂM GỌI người-đọc-bí-mật (0 ⇒ lưới đang canh một tập rỗng)", () => {
+    // Đo được ở lượt vá: 14 điểm gọi trên 8 file (`twoFactorRouter` ×4 · `userRouters` ×4 ·
+    // `routers.ts` · `authService` · `_core/index.ts` · `oauth.ts` ×2 · `_core/trpc.ts`).
+    expect(
+      KQ_BM.soDiemGoi,
+      "không tìm thấy điểm gọi người-đọc-bí-mật nào trong server/** — phạm vi quét đã hỏng?",
+    ).toBeGreaterThanOrEqual(10);
+  });
+
+  it("★★★★ ∀ — KHÔNG ô bí mật nào của `user_secrets` thoát ra khỏi máy chủ", () => {
+    const bao = KQ_BM.viPham.map((v) => `  · ${v.duong}:${v.dong}  (${v.ham})  ô: ${v.bien}`).join("\n");
+    expect(
+      bao,
+      "MỘT Ô BÍ MẬT CỦA `user_secrets` RỜI MÁY CHỦ.\n" +
+        "⚠ `twoFactorSecret` là HẠT GIỐNG sinh mọi mã OTP — ai đọc được thì tự sinh mã hợp lệ MÃI\n" +
+        "  MÃI ⇒ vé một-lần · sổ chống phát lại · step-up mỗi lượt ĐỀU THÀNH TRANG TRÍ.\n" +
+        "⇒ Đừng phát giá trị. Phát một ô SUY RA (`!!x`, `Boolean(x)`, `x != null`) — đúng khuôn\n" +
+        "  `hasSecret` của `user.get2FAStatus` và `mustChangePassword` của QĐ-1.\n",
+    ).toBe("");
+  });
+
+  it("★★★★ ĐỘT BIẾN THƯỜNG TRỰC — đúng lượt rò mà reviewer đo (tsc sạch, 58/58 XANH) phải bị BẮT", () => {
+    /**
+     * ⚠⚠⚠ Đây là ca **neo vào cơ chế**: nguyên văn đột biến C-2, chạy qua **chính bộ quét** này.
+     * Trước C-2 nó đi lọt **theo cấu tạo** (một ĐỌC TRƯỜNG, mà `dungTran()` cố ý bỏ qua).
+     */
+    const ma = `
+      export const r = { get2FAStatus: async (ctx: any) => {
+        const status = await db.get2FAStatus(ctx.user.id);
+        return {
+          enabled: status?.twoFactorEnabled || false,
+          hasSecret: !!status?.twoFactorSecret,
+          twoFactorSecret: status?.twoFactorSecret ?? null,
+        };
+      } };`;
+    const sf = ts.createSourceFile("server/x/dot.ts", ma, ts.ScriptTarget.Latest, true);
+    const found: ts.Node[] = [];
+    const di = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && DOC_BI_MAT.includes(tenLoiGoi(n))) {
+        const h = hamBao(n);
+        const than = h ? (h as ts.FunctionLikeDeclaration).body : undefined;
+        const nhiem = hatGiongCua(n);
+        if (than) {
+          const soat = (x: ts.Node): void => {
+            if (ts.isReturnStatement(x) && x.expression) {
+              for (const o of oBiMatTrong(x.expression, nhiem)) {
+                if (!daAnToan(o, x.expression)) found.push(o);
+              }
+            }
+            ts.forEachChild(x, soat);
+          };
+          soat(than);
+        }
+      }
+      ts.forEachChild(n, di);
+    };
+    ts.forEachChild(sf, di);
+    expect(found.length, "đột biến C-2 nguyên văn KHÔNG bị bắt ⇒ lỗ vẫn mở").toBe(1);
+    expect(found[0]!.getText(sf)).toContain("twoFactorSecret");
+  });
+
+  it("★★★ M3 — lượt rò trong **FILE MỚI CHƯA TỒN TẠI**, và bốn biến thể vòng tránh, đều bị bắt", () => {
+    const fileMoi = "server/routers/secretN1Router.ts";
+    expect(existsSync(join(GOC_REPO, fileMoi)), "ca này giả định file ấy chưa tồn tại").toBe(false);
+    const ca: Array<[string, string]> = [
+      ["file MỚI, trả thẳng ô", `const b = await layBiMatNguoiDung(id); return { h: b.passwordHash };`],
+      ["`?? null`", `const s = await get2FAStatus(id); return { t: s?.twoFactorSecret ?? null };`],
+      ["truy cập theo CHUỖI", `const s = await get2FAStatus(id); return { t: s["twoFactorSecret"] };`],
+      ["`res.json`", `const s = await get2FAStatus(id); res.json({ t: s?.twoFactorSecret });`],
+      ["ba ngôi (không phải phép GIẢM)", `const s = await get2FAStatus(id); return { t: s ? s.twoFactorSecret : "" };`],
+      ["qua MẢNG (`[await f()]`)", `const u = [await get2FAStatus(id)]; return { t: u[0]!.twoFactorSecret };`],
+    ];
+    for (const [ten, than] of ca) {
+      const ma = `export async function f(id: number, res: any) { ${than} }`;
+      const sf = ts.createSourceFile(fileMoi, ma, ts.ScriptTarget.Latest, true);
+      let bat = 0;
+      const di = (n: ts.Node): void => {
+        if (ts.isCallExpression(n) && DOC_BI_MAT.includes(tenLoiGoi(n))) {
+          const h = hamBao(n);
+          const thanH = h ? (h as ts.FunctionLikeDeclaration).body : undefined;
+          const nhiem = hatGiongCua(n);
+          if (thanH) {
+            const soat = (x: ts.Node): void => {
+              const chan: ts.Node[] = [];
+              if (ts.isReturnStatement(x) && x.expression) chan.push(x.expression);
+              if (
+                ts.isCallExpression(x) &&
+                ts.isPropertyAccessExpression(x.expression) &&
+                ["json", "send"].includes(x.expression.name.text)
+              ) chan.push(...x.arguments);
+              for (const c of chan) for (const o of oBiMatTrong(c, nhiem)) if (!daAnToan(o, c)) bat++;
+              ts.forEachChild(x, soat);
+            };
+            soat(thanH);
+          }
+        }
+        ts.forEachChild(n, di);
+      };
+      ts.forEachChild(sf, di);
+      expect(bat, `biến thể "${ten}" phải bị bắt`).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — ô SUY RA (`!!` · `Boolean` · `!= null`) và lượt TIÊU THỤ vẫn XANH", () => {
+    const sach: Array<[string, string]> = [
+      ["`!!`", `const s = await get2FAStatus(id); return { hasSecret: !!s?.twoFactorSecret };`],
+      ["`Boolean()`", `const s = await get2FAStatus(id); return { c: Boolean(s?.twoFactorSecret) };`],
+      ["`!= null`", `const s = await get2FAStatus(id); return { c: s?.twoFactorSecret != null };`],
+      ["`!x` một lần", `const s = await get2FAStatus(id); return { thieu: !s?.twoFactorSecret };`],
+      [
+        "TIÊU THỤ (không thoát)",
+        `const s = await get2FAStatus(id);
+         const ok = await verifyTotpOnce({ userId: id, secret: s!.twoFactorSecret!, token: "1" });
+         return { success: ok.hopLe };`,
+      ],
+      [
+        "so mật khẩu (đường đăng nhập THẬT)",
+        `const b = await layBiMatNguoiDung(id);
+         const ok = await bcrypt.compare(mk, b.passwordHash ?? "");
+         return { ok };`,
+      ],
+    ];
+    for (const [ten, than] of sach) {
+      const ma = `export async function f(id: number, mk: string) { ${than} }`;
+      const sf = ts.createSourceFile("server/x/sach.ts", ma, ts.ScriptTarget.Latest, true);
+      let bat = 0;
+      const di = (n: ts.Node): void => {
+        if (ts.isCallExpression(n) && DOC_BI_MAT.includes(tenLoiGoi(n))) {
+          const h = hamBao(n);
+          const thanH = h ? (h as ts.FunctionLikeDeclaration).body : undefined;
+          const nhiem = hatGiongCua(n);
+          if (thanH) {
+            const soat = (x: ts.Node): void => {
+              if (ts.isReturnStatement(x) && x.expression) {
+                for (const o of oBiMatTrong(x.expression, nhiem)) if (!daAnToan(o, x.expression)) bat++;
+              }
+              ts.forEachChild(x, soat);
+            };
+            soat(thanH);
+          }
+        }
+        ts.forEachChild(n, di);
+      };
+      ts.forEachChild(sf, di);
+      expect(bat, `hình dạng SẠCH "${ten}" bị bắt nhầm ⇒ lưới này sẽ bị người sau tắt đi`).toBe(0);
+    }
+  });
+
+  it("★★★ CỔNG KIỂU phải CÒN trên `user.get2FAStatus` — gỡ nó thì tầng biên dịch tắt lặng lẽ", () => {
+    /**
+     * ⚠ Cổng KIỂU (`KhongMangBiMat<…>`) và bộ quét này đóng **hai nửa khác nhau**: cổng bắt lúc
+     * **biên dịch** nhưng **chỉ nơi được khai**; bộ quét bắt **mọi nơi** nhưng lúc chạy lưới. Gỡ
+     * lời khai kiểu ⇒ `tsc` thôi đỏ cho đột biến C-2, và **không ca nào khác** nhận ra.
+     */
+    const src = readFileSync(join(GOC_REPO, "server", "routers", "userRouters.ts"), "utf8");
+    expect(
+      /get2FAStatus:[\s\S]{0,200}?Promise<\s*KhongMangBiMat</.test(src),
+      "`user.get2FAStatus` mất lời khai kiểu `Promise<KhongMangBiMat<…>>` ⇒ cổng lúc BIÊN DỊCH đã tắt",
+    ).toBe(true);
+    const pu = readFileSync(join(GOC_REPO, "server", "_core", "publicUser.ts"), "utf8");
+    expect(
+      /\[K in ServerOnlyUserSecretField\]\?:\s*never/.test(pu),
+      "phần giao `{ [K in ServerOnlyUserSecretField]?: never }` biến mất ⇒ `KhongMangBiMat` thành `T`",
+    ).toBe(true);
   });
 });

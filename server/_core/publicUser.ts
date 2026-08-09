@@ -49,7 +49,7 @@
  *   danh sách riêng — lớp lỗi *"nhiều chủ cho một bất biến"* đã đẻ **ba** Critical.
  */
 import { getTableColumns } from "drizzle-orm";
-import { users, userSecrets, type User } from "../../drizzle/schema";
+import { users, userSecrets, type User, type UserSecrets } from "../../drizzle/schema";
 
 /** Mức hiển thị của một cột `users`. */
 export type UserFieldVisibility = "public" | "server-only";
@@ -212,18 +212,92 @@ export function moiCotCuaBangUsers(): string[] {
  * `user_secrets` ngày mai tự vào lượng từ, **không cần ai nhớ sửa file này** — và ô *"tập rỗng ⇒
  * ĐỎ"* ở `publicUser.test.ts` chặn đúng đường thoát mà §2.5 vừa mô tả. */
 
-/** Hai cột **hạ tầng** của `user_secrets` — không phải bí mật. Suy ra phần bù, không liệt kê bí mật. */
-const COT_HA_TANG_USER_SECRETS = ["userId", "updatedAt"] as const;
+/* ──────────────────────────────────────────────────────────────────────────────────────────────
+ * ★★★ Pha 7 / review TOÀN NHÁNH **C-2** — **CỔNG KIỂU, DỰNG LẠI TRÊN ĐÚNG BẢNG.**
+ * ──────────────────────────────────────────────────────────────────────────────────────────────
+ * ⚠⚠⚠ VÌ SAO KHỐI NÀY TỒN TẠI: **9c GỠ MẤT tầng cưỡng chế lúc BIÊN DỊCH, và không ai thấy.**
+ * Ba tính chất của Task 7 (mặc-định-đóng · phân-loại-toàn-phần · **đổi KIỂU**) đều phát biểu trên
+ * **cột của `users`**. 9c dời `passwordHash` + `twoFactorSecret` sang `user_secrets` ⇒
+ * `keyof User` **không còn** hai tên ấy ⇒ `ServerOnlyUserField` co về hai dấu thời gian ⇒ phần
+ * giao `{ [K in ServerOnlyUserField]?: never }` của `PublicUser` **không còn nhắc tới hai bí mật**.
+ * Tức tính chất (3) **thôi chặn đúng thứ nó được dựng ra để chặn**.
+ *
+ * **ĐO ĐƯỢC, không suy ra** (đột biến của lượt review, đã hoàn nguyên): thêm
+ * `twoFactorSecret: status?.twoFactorSecret ?? null` vào giá trị trả về của `user.get2FAStatus` ⇒
+ *   `npm run check` **SẠCH (0 lỗi)** · sáu lưới của Task 7/8/9 **58/58 XANH**.
+ * ⇒ **Hạt giống TOTP đi thẳng ra trình duyệt qua cổng chính, không ai chặn.**
+ *
+ * ⚠ Bản vá của R1 (`moiCotBiMatCuaUserSecrets`, dưới đây) **đúng nhưng hẹp hơn** câu Task 7 hứa:
+ *   nó khẳng định *"không cột nào của `user_secrets` lọt vào `PUBLIC_USER_FIELDS`"* — mà cột của
+ *   `user_secrets` **theo cấu tạo không thể** nằm trong `keyof User`, nên vế ấy **trống nghĩa**.
+ *   Cái thiếu là **cổng KIỂU**, và nó phải neo vào **chính bảng đang giữ bí mật**.
+ * ────────────────────────────────────────────────────────────────────────────────────────────── */
 
 /**
- * Tập cột **BÍ MẬT** của `user_secrets`, **suy ra** từ `getTableColumns` (nguồn sự thật DUY NHẤT).
- * ⚠ Đây là **phần bù**, không phải một danh sách: thêm cột mới vào `user_secrets` ⇒ nó **mặc định
- * là bí mật**, đúng kỷ luật *"mở một cột là quyết định về an ninh; đóng thì không"*.
+ * ★★★ **PHÂN LOẠI TOÀN PHẦN** mọi cột của bảng `user_secrets` — **cùng khuôn** với
+ * `USER_FIELD_VISIBILITY`, và cùng lý do.
+ *
+ * ⚠⚠ `Record<keyof UserSecrets, …>` khiến **TypeScript** bắt lỗi ngay khi một cột mới xuất hiện ở
+ *    `drizzle/schema/auth.ts` mà không được phân loại ở đây; `publicUser.test.ts` canh chiều còn
+ *    lại (mục ma) bằng `getTableColumns(userSecrets)` — nguồn sự thật DUY NHẤT, không chép tay.
+ * ⚠ Khi thêm cột mới: **mặc định phải là `"server-only"`**. Bảng này tồn tại **chỉ để** giữ bí mật;
+ *   một cột `"public"` ở đây phải là một quyết định được nói ra, không phải một lượt trôi.
+ */
+export const USER_SECRETS_FIELD_VISIBILITY = {
+  /** `users.id` — đã công khai ở bảng kia; đây chỉ là khoá 1:1. */
+  userId: "public",
+  /** 🔴 bcrypt PHC. */
+  passwordHash: "server-only",
+  /** 🔴🔴 HẠT GIỐNG TOTP — ai đọc được thì tự sinh mã hợp lệ **mãi mãi**. */
+  twoFactorSecret: "server-only",
+  /** Một dấu thời gian — không mang bí mật. */
+  updatedAt: "public",
+} as const satisfies Record<keyof UserSecrets, UserFieldVisibility>;
+
+type VisibilityBiMat = typeof USER_SECRETS_FIELD_VISIBILITY;
+
+/** Tên cột của `user_secrets` **KHÔNG BAO GIỜ** được rời máy chủ. */
+export type ServerOnlyUserSecretField = {
+  [K in keyof VisibilityBiMat]: VisibilityBiMat[K] extends "server-only" ? K : never;
+}[keyof VisibilityBiMat];
+
+/** Mọi cột bí mật — **suy ra** từ phân loại, không viết tay lần hai. */
+export const SERVER_ONLY_USER_SECRET_FIELDS = (
+  Object.keys(USER_SECRETS_FIELD_VISIBILITY) as (keyof VisibilityBiMat)[]
+).filter((k) => USER_SECRETS_FIELD_VISIBILITY[k] === "server-only") as readonly ServerOnlyUserSecretField[];
+
+/**
+ * ★★★★ **CỔNG KIỂU** — *"nhét một ô bí mật của `user_secrets` vào một giá trị trả về là **LỖI BIÊN
+ * DỊCH**"*, đúng câu Task 7 hứa, nay neo vào **đúng bảng**.
+ *
+ * ⚠⚠ Phần giao `{ [K in ServerOnlyUserSecretField]?: never }` là **cả điểm mấu chốt**: một hình
+ *    dạng có `twoFactorSecret: string | null` **KHÔNG gán được** vào `KhongMangBiMat<…>`. Nó
+ *    **SUY RA** từ `USER_SECRETS_FIELD_VISIBILITY`, nên một cột bí mật **thứ BA** thêm vào
+ *    `user_secrets` ngày mai **tự vào cổng** — không cần ai nhớ sửa file này.
+ * ⚠ Dùng ở **mọi thủ tục đọc `user_secrets` rồi trả về một hình dạng cho client**. Lượng từ *"ai
+ *   phải mang cổng này"* được cưỡng chế ở `server/routers/userExposureScan.test.ts` (trục BỀ MẶT),
+ *   nên cổng kiểu và bộ quét bề mặt đóng **hai nửa khác nhau** của cùng một bất biến:
+ *     · cổng KIỂU  — bắt lúc **biên dịch**, kể cả ở file chưa tồn tại, nhưng **chỉ nơi được khai**;
+ *     · bộ quét   — bắt **mọi nơi** theo cấu tạo, nhưng lúc **chạy lưới**.
+ */
+export type KhongMangBiMat<T> = T & { [K in ServerOnlyUserSecretField]?: never };
+
+/** Tập cột **thật** của `user_secrets`, đọc từ drizzle — canh lượng từ hai chiều ở `publicUser.test.ts`. */
+export function moiCotCuaBangUserSecrets(): string[] {
+  return Object.keys(getTableColumns(userSecrets)).sort();
+}
+
+/**
+ * Tập cột **BÍ MẬT** của `user_secrets` — nay **suy ra từ chính phân loại ở trên**, không từ một
+ * danh sách "hai cột hạ tầng" thứ hai.
+ *
+ * ⚠⚠ Trước C-2 hàm này lấy **phần bù** của `["userId","updatedAt"]` viết tay. Hai nguồn sự thật cho
+ *    cùng một khái niệm là chỗ luật trôi đi (lớp *"nhiều chủ cho một bất biến"* đã đẻ **ba**
+ *    Critical). Nay **một** chủ: `USER_SECRETS_FIELD_VISIBILITY`. Ô ∀-A/∀-B ở `publicUser.test.ts`
+ *    giữ cho chủ ấy không lệch khỏi schema.
  */
 export function moiCotBiMatCuaUserSecrets(): string[] {
-  return Object.keys(getTableColumns(userSecrets))
-    .filter((c) => !(COT_HA_TANG_USER_SECRETS as readonly string[]).includes(c))
-    .sort();
+  return [...SERVER_ONLY_USER_SECRET_FIELDS].sort();
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════

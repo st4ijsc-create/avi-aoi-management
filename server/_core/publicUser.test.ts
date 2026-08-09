@@ -30,6 +30,11 @@ import {
   redactServerOnlyUserFields,
   moiCotCuaBangUsers,
   moiCotBiMatCuaUserSecrets,
+  // ★★★ Pha 7 / review TOÀN NHÁNH C-2 — cổng KIỂU dựng lại trên `user_secrets`.
+  USER_SECRETS_FIELD_VISIBILITY,
+  SERVER_ONLY_USER_SECRET_FIELDS,
+  moiCotCuaBangUserSecrets,
+  type KhongMangBiMat,
 } from "./publicUser";
 
 /** Một hàng `users` **đầy đủ** — mọi cột có giá trị KHÁC NHAU để phép chiếu không thể "đúng nhờ may". */
@@ -108,6 +113,74 @@ describe("★★★ Task 7 §1 — ∀ CỘT của `users` phải được phân
     for (const c of biMat) {
       expect(c in ra, `cột bí mật '${c}' của user_secrets LỌT qua toPublicUser()`).toBe(false);
     }
+  });
+
+  /**
+   * ★★★★ Pha 7 / review TOÀN NHÁNH **C-2** — **LƯỢNG TỪ HAI CHIỀU TRÊN `user_secrets`.**
+   *
+   * ⚠⚠⚠ R1 dựng `moiCotBiMatCuaUserSecrets()` bằng **phần bù** của một danh sách hai tên hạ tầng
+   * viết tay (`["userId","updatedAt"]`) — đúng hôm nay, nhưng nó là **nguồn sự thật THỨ HAI** cho
+   * khái niệm *"cột nào của `user_secrets` là bí mật"*, và **không ai canh** nó khớp với schema.
+   * C-2 đưa khái niệm ấy về **một chủ** (`USER_SECRETS_FIELD_VISIBILITY`) và canh **hai chiều**,
+   * **đúng khuôn ∀-A/∀-B mà `users` đã dùng** — vì đó chính là phép thử mà một danh sách không bao
+   * giờ vượt qua được:
+   *   ***∀ cột c ∈ getTableColumns(userSecrets): c phải có mặt trong USER_SECRETS_FIELD_VISIBILITY***
+   *   ***∀ mục m ∈ USER_SECRETS_FIELD_VISIBILITY: m phải là một cột THẬT của `user_secrets`***
+   * ⇒ Một cột bí mật **THỨ BA** thêm vào `user_secrets` ngày mai ⇒ **ĐỎ ngay**, buộc một người
+   *   **quyết** — và vì `KhongMangBiMat` suy ra từ cùng bảng phân loại, cột ấy **tự vào cổng KIỂU**.
+   */
+  it("★★★★ C-2 ∀-A — MỌI cột của `user_secrets` có mặt trong USER_SECRETS_FIELD_VISIBILITY", () => {
+    const cot = moiCotCuaBangUserSecrets();
+    expect(cot.length, "getTableColumns(userSecrets) trả rỗng — drizzle đã đổi hình dạng?").toBeGreaterThanOrEqual(4);
+    const chuaPhanLoai = cot.filter((c) => !(c in USER_SECRETS_FIELD_VISIBILITY));
+    expect(
+      chuaPhanLoai.join(" · "),
+      "cột của `user_secrets` CHƯA ĐƯỢC PHÂN LOẠI ở server/_core/publicUser.ts.\n" +
+        '⚠ Bảng này tồn tại CHỈ ĐỂ giữ bí mật ⇒ mặc định phải là "server-only".',
+    ).toBe("");
+  });
+
+  it("★★★★ C-2 ∀-B — MỌI mục trong USER_SECRETS_FIELD_VISIBILITY là cột THẬT (mục ma ⇒ ĐỎ)", () => {
+    const cot = new Set(moiCotCuaBangUserSecrets());
+    const mucMa = Object.keys(USER_SECRETS_FIELD_VISIBILITY).filter((k) => !cot.has(k));
+    expect(
+      mucMa.join(" · "),
+      "mục phân loại KHÔNG có cột thật tương ứng ⇒ phân loại đã trôi khỏi schema.\n" +
+        "⚠ Đây đúng lượt trôi mà 9c đã làm với `users`: hai bí mật rời bảng, và cổng KIỂU hoá trang trí.",
+    ).toBe("");
+  });
+
+  it("★★★★ C-2 — CỔNG KIỂU: tập `server-only` của `user_secrets` KHÁC RỖNG và PHỦ cả hai bí mật", () => {
+    // ⚠ Tập rỗng ⇒ `ServerOnlyUserSecretField` = `never` ⇒ phần giao của `KhongMangBiMat<T>` là `{}`
+    //   ⇒ cổng lúc BIÊN DỊCH thành trang trí, với MỌI ô xanh. Đúng đường thoát mà R1 mô tả cho
+    //   `users`, nay chặn ở `user_secrets`.
+    expect(
+      SERVER_ONLY_USER_SECRET_FIELDS.length,
+      "tập `server-only` của `user_secrets` RỖNG ⇒ `KhongMangBiMat<T>` = `T` ⇒ cổng KIỂU là trang trí",
+    ).toBeGreaterThan(0);
+    expect(SERVER_ONLY_USER_SECRET_FIELDS, "hạt giống TOTP phải ở trong cổng").toContain("twoFactorSecret");
+    expect(SERVER_ONLY_USER_SECRET_FIELDS, "hash mật khẩu phải ở trong cổng").toContain("passwordHash");
+    // …và hai nguồn phải THỐNG NHẤT: `moiCotBiMatCuaUserSecrets()` nay suy từ chính phân loại này.
+    expect(moiCotBiMatCuaUserSecrets()).toEqual([...SERVER_ONLY_USER_SECRET_FIELDS].sort());
+  });
+
+  it("★★★★ C-2 — CỔNG KIỂU CHẶN THẬT: gán một ô bí mật vào `KhongMangBiMat<…>` là LỖI BIÊN DỊCH", () => {
+    /**
+     * ⚠⚠⚠ Đây là **cổng tự canh** — đúng khuôn `backupCodeSecret.ts` đã dùng cho nhãn
+     * `MaDuPhongDaBam`. Nếu ai đó làm `KhongMangBiMat` mất phần giao, `@ts-expect-error` dưới đây
+     * thành **thừa** ⇒ `tsc` ĐỎ ("Unused '@ts-expect-error' directive"). Tức cổng không thể tắt im
+     * lặng: gỡ nó ra là một lỗi biên dịch, không phải một ô test biến mất.
+     */
+    type Trang2Fa = KhongMangBiMat<{ enabled: boolean; hasSecret: boolean }>;
+    const sach: Trang2Fa = { enabled: true, hasSecret: true };
+    expect(sach.enabled).toBe(true);
+    const ro: Trang2Fa = {
+      enabled: true,
+      hasSecret: true,
+      // @ts-expect-error — ĐÂY LÀ CỔNG: nhét hạt giống TOTP vào giá trị trả về KHÔNG BIÊN DỊCH ĐƯỢC.
+      twoFactorSecret: "IA2DCZK5LBKTSOTYGMUXCM2UHZ2G4ULQ",
+    };
+    expect("twoFactorSecret" in ro, "ô này chỉ đo rằng giá trị vẫn dựng được lúc CHẠY — cổng là ở KIỂU").toBe(true);
   });
 
   it("★★★ R1 (c) — CẦU CHÌ: tập cột bí mật của `user_secrets` KHÁC RỖNG (rỗng ⇒ ô trên là chân lý rỗng)", () => {
