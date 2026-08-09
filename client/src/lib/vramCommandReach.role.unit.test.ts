@@ -30,8 +30,8 @@
  *      dạng thì hình dạng thứ N+1 **luôn** tồn tại.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
@@ -804,6 +804,163 @@ function soiNutTheoDuongThoat(sf: ts.SourceFile): { viPham: ViPham[]; soi: numbe
   return { viPham, soi };
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ Pha 7 Task 4b — **I-3 XUYÊN FILE: `disabled` PHẢI ĐI ĐƯỢC TỚI MỘT THẺ THẬT.**
+//
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠⚠ ĐO ĐƯỢC TRƯỚC BẢN VÁ (2026-08-09) — LỖ IM LẶNG, KHÔNG PHẢI "CẦU CHÌ ĐỎ"
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// Kế hoạch Pha 7 chép lại rằng prop-drilling một lệnh VRAM ra file khác là *"cầu chì đỏ"*. **Đo
+// lại thì không.** Hai lượt đột biến:
+//
+//  • **P1** — thêm `<NutPhaHuyDotBien onXoa={() => preempt.mutate(…)} disabled={vramDestructive…}
+//    data-testid="…"/>`, component con ở **FILE KHÁC** nhận `disabled` rồi **vứt đi**:
+//    lưới I-3 (ca ngay trên) **XANH**. Chỉ một ca **GHIM SỐ điểm gọi** ở
+//    `vramPanelStepUp.unit.test.ts` đỏ — tức bị bắt **vì một con số**, không vì bất biến.
+//  • **P2** — **thay hẳn** nút *"Thu hồi"* THẬT bằng chính component ấy (số điểm gọi **không đổi**):
+//    **`client/src/lib/` 529/529 XANH**. Nghĩa là **nút GIẾT tiến trình mở cho MỌI vai đăng nhập**
+//    mà cổng khai xanh 100%.
+//
+// ⇒ Đây **đúng lớp lỗi mà I-3 được dựng ra để đóng**, chỉ **dời sang một FILE khác**: lưới hỏi
+//   *"phần tử này có KHAI `disabled` đúng vị từ không"* và **không bao giờ hỏi** *"thẻ nhận nó có
+//   DÙNG nó không"*. Một `disabled` không ai đọc là một `disabled` **TRANG TRÍ** — cùng lớp
+//   *"an toàn là HỆ QUẢ của một thứ khác đang hoạt động"* (đã sáu lần).
+//
+// ⇒ **Luật mới (fail-CLOSED):** với MỌI phần tử JSX ra lệnh `trpc.vram.*` —
+//     · thẻ **nguyên thuỷ** (chữ thường: `button`, `input`…) ⇒ đạt, DOM tự cưỡng chế `disabled`;
+//     · thẻ **component** ⇒ lưới phải **GIẢI ĐƯỢC** nó về file định nghĩa và **CHỨNG MINH** rằng
+//       component ấy chuyển `disabled` xuống (trải `{...props}` của chính tham số, hoặc truyền
+//       `disabled=` tường minh);
+//     · **không giải được / không chứng minh được ⇒ ĐỎ**, không phải "cho qua". Một lưới im lặng
+//       khi không biết là đúng thứ vừa bị đo là hỏng.
+//     · `asChild` trên nút lệnh ⇒ **ĐỎ**: nó đổi thẻ đích sang `Slot` và `disabled` được chuyển cho
+//       một phần tử con **bất kỳ** — `<a>` nhận `disabled` thì **không có tác dụng gì**.
+//
+// ⚠⚠ **VÙNG MÙ CÒN LẠI — KHAI RA, ĐỪNG ĐỌC MÀU XANH THÀNH "ĐÃ PHỦ":**
+//   1. Luật chứng minh `disabled` **TỚI ĐƯỢC** một vị trí JSX trong component con; nó **KHÔNG**
+//      chứng minh rằng đó **cùng một phần tử** mang `onClick`, cũng không rằng component con
+//      không có **đường thứ hai** gọi lệnh (ví dụ gọi `onXoa` từ `useEffect`).
+//   2. Luật đi **ĐÚNG MỘT chặng**. Một component con **lại** prop-drill xuống cháu thì chỉ chặng
+//      đầu được chứng minh. (Hôm nay: **0** ca như vậy — cả ba nút dùng `<Button>` một chặng.)
+//   3. Chỉ soi `client/src/**.tsx`. Một nút lệnh dựng trong `.ts` (không JSX) nằm ngoài lượng từ.
+//   ⇒ Chi phí đóng nốt ba mục ấy là một bộ phân tích luồng liên module; **chưa làm**, và đây là
+//     lời khai để người sau biết mình đang đứng ở đâu.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Đuôi thử khi giải một đường nhập về file thật. Thứ tự = thứ tự ưu tiên của bundler. */
+const DUOI_MODULE = [".tsx", ".ts", "/index.tsx", "/index.ts"] as const;
+
+/** MỌI phần tử JSX **ra lệnh** VRAM: tên thẻ · dòng · có `asChild` không. */
+function theNutLenh(sf: ts.SourceFile): { ten: string; dong: number; asChild: boolean }[] {
+  const datToi = datToiLenh(sf);
+  const goc = bienMutationVram(sf);
+  const ra: { ten: string; dong: number; asChild: boolean }[] = [];
+  for (const n of moiNut(sf)) {
+    if (!ts.isJsxOpeningElement(n) && !ts.isJsxSelfClosingElement(n)) continue;
+    const el = n as ThePhanTu;
+    let cham = false;
+    const di = (x: ts.Node) => {
+      if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) && x.expression.name.text === "mutate") {
+        const g = gocCuaChuoi(x.expression.expression);
+        if (g !== null && goc.has(g)) cham = true;
+      }
+      if (ts.isIdentifier(x) && (datToi.get(x.text)?.size ?? 0) > 0) cham = true;
+      x.forEachChild(di);
+    };
+    di(el.attributes);
+    if (!cham) continue;
+    const { line } = sf.getLineAndCharacterOfPosition(el.getStart(sf));
+    ra.push({
+      ten: el.tagName.getText(sf),
+      dong: line + 1,
+      asChild: el.attributes.properties.some((a) => ts.isJsxAttribute(a) && a.name.getText(sf) === "asChild"),
+    });
+  }
+  return ra;
+}
+
+/**
+ * Giải một tên thẻ về **file định nghĩa** qua câu `import` của chính file gọi.
+ * `null` ⇔ **không giải được** — và người gọi phải coi đó là **VI PHẠM**, không phải "bỏ qua".
+ */
+function giaiThe(sf: ts.SourceFile, ten: string, fileGoc: string): string | null {
+  for (const st of sf.statements) {
+    if (!ts.isImportDeclaration(st) || st.importClause === undefined) continue;
+    const c = st.importClause;
+    const co =
+      c.name?.text === ten ||
+      (c.namedBindings !== undefined &&
+        ts.isNamedImports(c.namedBindings) &&
+        c.namedBindings.elements.some((e) => e.name.text === ten));
+    if (!co || !ts.isStringLiteral(st.moduleSpecifier)) continue;
+    const spec = st.moduleSpecifier.text;
+    // ⚠ `@/` là alias của `client/src` (`tsconfig.json` `paths`) — đọc đúng một quy ước, không đoán.
+    const nen = spec.startsWith("@/") ? join(CLIENT_SRC, spec.slice(2)) : spec.startsWith(".") ? join(dirname(fileGoc), spec) : null;
+    if (nen === null) return null; // gói NGOÀI repo ⇒ không chứng minh được ⇒ fail-closed
+    for (const d of DUOI_MODULE) if (existsSync(nen + d)) return nen + d;
+    return null;
+  }
+  return null;
+}
+
+/** Gỡ lớp bọc `forwardRef(...)` / `memo(...)` để tới thân component thật. */
+function boLopBoc(n: ts.Expression): ts.Expression {
+  let cur = n;
+  for (let i = 0; i < 4 && ts.isCallExpression(cur) && cur.arguments.length > 0; i++) cur = cur.arguments[0]!;
+  return cur;
+}
+
+/**
+ * Component `ten` trong file `sfCon` có **CHUYỂN `disabled` XUỐNG** không?
+ *
+ * Bằng chứng chấp nhận được, **đúng hai loại** (cả hai đều đọc trên CÂY):
+ *  • một `{...x}` mà `x` là **tham số của chính component** (khuôn `...props` của shadcn/ui);
+ *  • một thuộc tính `disabled=` tường minh trên một phần tử JSX bên trong.
+ *
+ * ⚠ **FAIL-CLOSED**: không tìm thấy khai báo, hoặc không thấy bằng chứng ⇒ `false`.
+ */
+function chuyenDisabledXuong(sfCon: ts.SourceFile, ten: string): boolean {
+  const thamSo = new Set<string>();
+  const than: ts.Node[] = [];
+  const nhanThamSo = (ps: ts.NodeArray<ts.ParameterDeclaration>): void => {
+    for (const p of ps) {
+      if (ts.isIdentifier(p.name)) thamSo.add(p.name.text);
+      else if (ts.isObjectBindingPattern(p.name)) {
+        for (const e of p.name.elements) if (ts.isIdentifier(e.name)) thamSo.add(e.name.text);
+      }
+    }
+  };
+  for (const n of moiNut(sfCon)) {
+    if (ts.isFunctionDeclaration(n) && n.name?.text === ten && n.body !== undefined) {
+      nhanThamSo(n.parameters);
+      than.push(n.body);
+    } else if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === ten && n.initializer !== undefined) {
+      const f = boLopBoc(n.initializer);
+      if (ts.isArrowFunction(f) || ts.isFunctionExpression(f)) {
+        nhanThamSo(f.parameters);
+        than.push(f.body);
+      }
+    }
+  }
+  if (than.length === 0) return false;
+  let ok = false;
+  for (const b of than) {
+    const di = (x: ts.Node) => {
+      if (ts.isJsxOpeningElement(x) || ts.isJsxSelfClosingElement(x)) {
+        for (const a of (x as ThePhanTu).attributes.properties) {
+          if (ts.isJsxSpreadAttribute(a)) {
+            const g = gocCuaChuoi(a.expression);
+            if (g !== null && thamSo.has(g)) ok = true;
+          } else if (ts.isJsxAttribute(a) && a.name.getText(sfCon) === "disabled") ok = true;
+        }
+      }
+      x.forEachChild(di);
+    };
+    di(b);
+  }
+  return ok;
+}
+
 /** TẦNG 3b — `commandReach` truyền vào panel **PHẢI LÀ** lời gọi `vramCommandReach(...)`. */
 function soiCaiNuoi(sf: ts.SourceFile): { viPham: ViPham[]; soi: number } {
   const viPham: ViPham[] = [];
@@ -1021,6 +1178,85 @@ describe("N9 (AST) — `disabled` của TỪNG nút lệnh, và CÁI NUÔI nó, 
     // ⚠ Cầu chì: BA nút lệnh phải đếm được — 0 nút thì mọi khẳng định trên là chân lý rỗng.
     expect(soi, "KHÔNG thấy nút RA LỆNH VRAM nào trong client/src ⇒ LƯỚI ĐANG MÙ").toBeGreaterThanOrEqual(3);
     expect(viPham.map((v) => `${v.file}:${v.dong} ${v.noi}`)).toEqual([]);
+  });
+
+  it("★★★ Pha 7 Task 4b — I-3 XUYÊN FILE: thẻ nhận lệnh phải CHỨNG MINH ĐƯỢC là nó DÙNG `disabled`", () => {
+    /**
+     * ⚠⚠⚠ Ca này đóng lỗ **đo được** P1/P2 (xem khối lý lẽ trên `theNutLenh`): nút *"Thu hồi"*
+     * THẬT dời sang một component ở file khác **vứt `disabled` đi** ⇒ trước bản này
+     * `client/src/lib/` **529/529 XANH**. Lưới cũ hỏi *"có KHAI đúng vị từ không"*; ca này hỏi
+     * ***"cái khai ấy có ĐI TỚI ĐÂU không"***.
+     */
+    const viPham: string[] = [];
+    let soi = 0;
+    for (const [f, src] of NGUON) {
+      if (!src.includes("trpc.vram.")) continue;
+      const sf = ast(f, src);
+      for (const nut of theNutLenh(sf)) {
+        soi++;
+        if (nut.asChild) {
+          viPham.push(
+            `${f}:${nut.dong} <${nut.ten} asChild> — \`asChild\` đổi thẻ đích sang \`Slot\`, ` +
+              "`disabled` đi tới một phần tử con BẤT KỲ (một `<a disabled>` không có tác dụng gì)",
+          );
+          continue;
+        }
+        // Thẻ NGUYÊN THUỶ (chữ thường) — trình duyệt tự cưỡng chế `disabled`, không cần chứng minh.
+        if (/^[a-z]/.test(nut.ten)) continue;
+        const duong = giaiThe(sf, nut.ten, f);
+        if (duong === null) {
+          viPham.push(
+            `${f}:${nut.dong} KHÔNG GIẢI ĐƯỢC thẻ <${nut.ten}> về file định nghĩa ⇒ không chứng minh ` +
+              "được nó dùng `disabled` (fail-CLOSED: im lặng ở đây đúng là thứ vừa bị đo là hỏng)",
+          );
+          continue;
+        }
+        if (!chuyenDisabledXuong(ast(duong), nut.ten)) {
+          viPham.push(
+            `${f}:${nut.dong} <${nut.ten}> (${duong}) KHÔNG chuyển \`disabled\` xuống bất kỳ phần tử nào ` +
+              "⇒ `disabled` của nút lệnh là TRANG TRÍ: nút bấm được với MỌI vai",
+          );
+        }
+      }
+    }
+    // ⚠ Cầu chì: BA nút lệnh phải đếm được — 0 nút thì khẳng định dưới là chân lý rỗng.
+    expect(soi, "KHÔNG thấy nút RA LỆNH VRAM nào trong client/src ⇒ LƯỚI ĐANG MÙ").toBeGreaterThanOrEqual(3);
+    expect(viPham).toEqual([]);
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — `chuyenDisabledXuong` nhận ĐÚNG hai loại bằng chứng, và từ chối phần còn lại", () => {
+    /** ⚠ Đối chứng DƯƠNG: khuôn `...props` của shadcn/ui, và khuôn truyền `disabled` tường minh. */
+    const dat = [
+      'function Nut({ className, ...props }) { return <button className={className} {...props} />; }',
+      'function Nut({ disabled, onXoa }) { return <button disabled={disabled} onClick={onXoa} />; }',
+      'const Nut = ({ ...p }) => <button {...p} />;',
+      'const Nut = forwardRef(({ disabled, ...r }, ref) => <button ref={ref} disabled={disabled} {...r} />);',
+    ];
+    for (const s of dat) expect(chuyenDisabledXuong(ast("n.tsx", s), "Nut"), s).toBe(true);
+
+    /** ⚠ Đối chứng ÂM: nhận rồi vứt · trải một thứ KHÔNG PHẢI tham số · không có component nào. */
+    const khong = [
+      'function Nut({ onXoa, disabled }) { void disabled; return <button onClick={onXoa} />; }',
+      'const khac = { disabled: true }; function Nut({ onXoa }) { return <button {...khac} onClick={onXoa} />; }',
+      'export const a = 1;',
+      'function Khac({ ...props }) { return <button {...props} />; }',
+    ];
+    for (const s of khong) expect(chuyenDisabledXuong(ast("n.tsx", s), "Nut"), s).toBe(false);
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — `giaiThe` giải đúng alias `@/` và đường tương đối, và trả `null` cho gói NGOÀI", () => {
+    const src = 'import { Button } from "@/components/ui/button";\nimport { X } from "lucide-react";\n';
+    const sf = ast(join(CLIENT_SRC, "pages", "T.tsx"), src);
+    expect(giaiThe(sf, "Button", join(CLIENT_SRC, "pages", "T.tsx"))).toBe(
+      join(CLIENT_SRC, "components", "ui", "button.tsx"),
+    );
+    // ⚠ Gói ngoài repo ⇒ **null** ⇒ ca chính coi là VI PHẠM (fail-closed), không phải "bỏ qua".
+    expect(giaiThe(sf, "X", join(CLIENT_SRC, "pages", "T.tsx"))).toBeNull();
+    // ⚠ Tên không được nhập ⇒ null.
+    expect(giaiThe(sf, "KhongCo", join(CLIENT_SRC, "pages", "T.tsx"))).toBeNull();
+    // ⚠ Đường TƯƠNG ĐỐI cũng phải giải được — đây là hình dạng mà một lượt prop-drilling hay dùng.
+    const sf2 = ast(join(CLIENT_SRC, "pages", "T.tsx"), 'import { VramBrokerPanel } from "../components/ai/VramBrokerPanel";\n');
+    expect(giaiThe(sf2, "VramBrokerPanel", join(CLIENT_SRC, "pages", "T.tsx"))).toBe(PANEL);
   });
 
   it("★★ cầu chì phụ — cả BA thủ tục lệnh đều có nút thật (một thủ tục không nút = một nửa bất biến không ai canh)", () => {

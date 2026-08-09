@@ -55,6 +55,16 @@ npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/_core/backupCodeWidth.test.ts \
   server/_core/xoayBiMatNguon.test.ts \
   server/routers/mustChangePassword.test.ts \
+  server/routers/appErrorParamsCoverage.test.ts \
+  server/services/aiGgufEngine.test.ts \
+  server/services/kbSyncScheduler.evalGate.test.ts \
+  server/_core/authService.test.ts \
+  server/api.test.ts \
+  server/auth.sessionCacheLogout.test.ts \
+  server/auth.setupAdmin.test.ts \
+  server/db/authCacheHooks.test.ts \
+  server/sdk.authCache.test.ts \
+  server/services/authSessionCache.test.ts \
   server/services/aiCopilotActions.hardlinkSink.test.ts \
   server/services/aiAgentOrchestrator.authCtx.test.ts client/src/lib/
 NODE_OPTIONS=--max-old-space-size=8192 npm run check
@@ -73,6 +83,23 @@ nó đọc **chính khối lệnh trên** ra khỏi file này, rồi cưỡng ch
 ***"MỌI `*.test.ts` tự khai `Pha 5` phải được một đường của cổng phủ"***, **ghim SỐ file**, và bắt
 mọi đường không tồn tại trên đĩa. Thêm một lưới Pha 5 mới ở bất kỳ đâu ⇒ ca ấy **ĐỎ** cho tới khi
 cổng được sửa. ⚠ Vẫn **KHÔNG dùng glob để CHẠY** — glob rỗng làm vitest im lặng khai XANH.
+
+⚠⚠⚠ **Pha 7 Task 4a (2026-08-09) — DANH SÁCH BA PHẦN TỬ HOÁ RA LÀ MƯỜI, VÀ NAY CÓ LUẬT.**
+Kế hoạch Pha 7 nêu **ba** file *"tự khai một pha nhưng nằm ngoài cổng"* (`appErrorParamsCoverage` ·
+`aiGgufEngine` · `kbSyncScheduler.evalGate`, đo bởi reviewer Pha 6). **Phép đếm độc lập tại
+`d7227094` cho MƯỜI** — bảy file `auth*`/`api` nữa **vừa gia nhập trong chính Pha 7 Task 9** (chúng
+tự khai `Pha 7 Task 9`, và hai trong số đó mang **lượng từ R1** trên `SERVER_ONLY_USER_FIELDS`).
+Tức danh sách ba phần tử đã có **phần tử thứ N+1** trước khi ai kịp đóng nó — lần thứ **MƯỜI BẢY**.
+⇒ Mười đường đã thêm ở trên, **và** `vramPha5Gate.test.ts` nay cưỡng chế một luật **ĐẢO LƯỢNG TỪ**:
+***MỌI `*.test.ts` TỰ KHAI một pha (mẫu `DAU_KHAI_PHA`) PHẢI được một đường của cổng phủ*** — suy ra
+từ một lượt quét đĩa, không từ một danh sách. Phần tử thứ mười một tự làm cổng ĐỎ.
+
+⚠⚠ **MỘT CA ĐỎ CÓ TRƯỚC ĐI KÈM `server/api.test.ts`** (đường mới thêm, **không** do Pha 7 gây ra):
+`Factory Router › should reject non-admin from creating factory` chờ chuỗi **tiếng Anh**
+`"Admin access required"` trong khi RBAC đã bản địa hoá từ **AI Sprint 5** (`Bạn không có quyền
+create cho module "settings_factory"`). Hành vi sản phẩm **đúng** (vẫn từ chối); **kỳ vọng của ca
+test đã cũ**. Cố ý **KHÔNG sửa** ở lượt này — sửa một lưới không liên quan để cổng xanh chính là
+*"nắn lưới cho vừa mã"*. ⇒ Ghi vào §Nợ CÓ TRƯỚC; chủ dự án quyết định sửa hay bỏ ca ấy.
 
 ---
 

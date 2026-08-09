@@ -215,6 +215,27 @@ const FILE_PHA_TRONG_CONG = MOI_FILE.filter(
 )
   .map((f) => f.duong)
   .sort();
+/**
+ * ★★★ Pha 7 Task 4a — **TẬP TỰ-KHAI ĐẦY ĐỦ, KHÔNG GIAO VỚI `duocPhu`.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO PHẢI CÓ TẬP THỨ HAI: `FILE_PHA_TRONG_CONG` **KHÔNG BAO GIỜ ĐỎ ĐƯỢC** cho lỗ này
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bộ nhận diện thứ ba **giao** điều kiện tự-khai với chính `duocPhu` — cố ý, và ca "KHÔNG TÁC HẠI"
+ * ở dưới đo lại điều đó. Nhưng hệ quả là: một lưới **tự khai một pha mà nằm NGOÀI cổng** rơi khỏi
+ * **cả ba** bộ nhận diện, nên **theo cấu tạo** nó không làm con số nào nhúc nhích. Đó chính là
+ * *"hàng rào canh cái đã ở TRONG hàng rào"* — một lượng từ **tự thoả**.
+ *
+ * Đo được tại `d7227094`: **10 file** ở tình trạng ấy, trong khi kế hoạch Pha 7 (soạn từ báo cáo
+ * review Pha 6) nêu **3**. Bảy file kia **vừa gia nhập trong chính Pha 7 Task 9**. ⇒ Một danh sách
+ * ba tên đã có phần tử thứ N+1 **trước khi ai kịp đóng nó** — lần thứ **MƯỜI BẢY** của lớp lỗi ấy.
+ *
+ * ⇒ Tập này **KHÔNG giao với `duocPhu`**, và ca ∀ dưới đòi phần bù của nó **RỖNG**. Phần tử thứ
+ *   mười một tự làm cổng ĐỎ, không cần ai nhớ đếm lại.
+ */
+const FILE_TU_KHAI_PHA = MOI_FILE.filter((f) => DAU_KHAI_PHA.test(readFileSync(f.that, "utf8")))
+  .map((f) => f.duong)
+  .sort();
 /** ⚠ **HỢP**, không phải thay thế: ba vị từ chỉ nới rộng đối tượng bị canh. */
 const FILE_CANH = [...new Set([...FILE_PHA5, ...FILE_VRAM, ...FILE_PHA_TRONG_CONG])].sort();
 
@@ -266,7 +287,19 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //     `server-only`, `auth.me` có ô SUY RA, và ô ấy KHÔNG đến từ `ctx.user` (đã bị làm rỗng).
     //   `server/_core/` và `server/routers/` **không** có đường bao trong cổng ⇒ thiếu ba dòng này
     //   thì cả ba lưới *"theo cấu tạo không bao giờ được canh"*.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(25); // Pha 7 Task 9: +3 (9a · R2 · QĐ-1)
+    // ⚠⚠⚠ Pha 7 Task 4a: 25 → 35. **MƯỜI** đường mới — và con số ấy là **phép đếm độc lập tại
+    //   `d7227094`**, không phải con số của kế hoạch. Kế hoạch Pha 7 nêu **BA** file
+    //   (`appErrorParamsCoverage` · `aiGgufEngine` · `kbSyncScheduler.evalGate`, đo bởi reviewer
+    //   Pha 6); lượt đếm lại tìm **BẢY file nữa** — `server/_core/authService.test.ts` ·
+    //   `server/api.test.ts` · `server/auth.sessionCacheLogout.test.ts` ·
+    //   `server/auth.setupAdmin.test.ts` · `server/db/authCacheHooks.test.ts` ·
+    //   `server/sdk.authCache.test.ts` · `server/services/authSessionCache.test.ts` — **vừa gia
+    //   nhập trong CHÍNH Pha 7 Task 9** (tách `user_secrets`), tự khai `Pha 7 Task 9`, và **hai**
+    //   trong số đó mang lượng từ **R1** trên `SERVER_ONLY_USER_FIELDS`.
+    //   ⇒ Danh sách ba phần tử đã có **phần tử thứ N+1 trước khi ai kịp đóng nó**. Vì thế lượt này
+    //     **không dừng ở việc thêm mười dòng**: ca *"∀ lưới TỰ KHAI một pha phải nằm trong cổng"*
+    //     bên dưới biến danh sách thành **LUẬT**, suy ra từ một lượt quét đĩa.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(35); // Pha 7 Task 4a: +10
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -357,7 +390,12 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   ⚠ File **không phải test** đi kèm (`drizzleCotDoc.ts` — bộ suy "bóc cột khỏi đối tượng
     //     drizzle", nay dùng chung với `sharedLedgerIdentityCut.test.ts` để không có bộ suy thứ hai)
     //     **không** vào con số này: `moiFileTest` chỉ gom `*.test.ts`.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(87); // Pha 7 Task 3: +1
+    // ⚠ Pha 7 Task 4a: 87 → 97. **Đúng MƯỜI** file — không file nào là mã mới; cả mười là lưới
+    //   **CŨ** mà trước lượt này *"theo cấu tạo không bao giờ được canh"* (xem khối lý do ở ô
+    //   `CONG.length`). Chúng vào tập bị canh qua bộ nhận diện **THỨ BA** (`DAU_KHAI_PHA` ∧
+    //   `duocPhu`) — tức **chỉ vì** mười đường vừa được thêm vào §Cổng kiểm chung. Gỡ một đường ra
+    //   ⇒ **hai** ô đỏ trên **hai** trục (`CONG.length` và con số này), cộng ca ∀ mới bên dưới.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(97); // Pha 7 Task 4a: +10
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {
@@ -375,6 +413,36 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     ).toBeGreaterThanOrEqual(1);
     const ngoai = FILE_PHA_TRONG_CONG.filter((f) => !duocPhu(f, CONG));
     expect(ngoai.join(" · "), "bộ thứ ba KHÔNG được đẩy file nằm ngoài cổng vào tập bị canh").toBe("");
+  });
+
+  it("★★★ Pha 7 Task 4a — MỌI lưới TỰ KHAI một pha phải nằm TRONG cổng (đảo lượng từ, phần tử thứ N+1 ⇒ ĐỎ)", () => {
+    /**
+     * ⚠⚠⚠ Đây là ca **CHỦ** của (E), và nó là thứ ba bộ nhận diện cũ **không thể** làm:
+     *  • bộ NỘI DUNG chỉ thấy chuỗi `"Pha 5"` — mù với `Pha 7` / `Pha 2B` / `Pha 1.5`;
+     *  • bộ VỊ TRÍ/TÊN chỉ thấy lưới module VRAM;
+     *  • bộ THỨ BA **giao với `duocPhu`** ⇒ **không bao giờ đỏ được** cho một file ngoài cổng.
+     * ⇒ Câu ở đây phát biểu **cái nó PHẢI LÀ**: *một lưới tự khai thuộc một pha là một lưới của
+     *   công trình này, nên nó PHẢI được cổng chạy.* Suy ra từ một lượt **quét đĩa**, không từ một
+     *   danh sách — nên phần tử thứ N+1 tự vào lượng từ.
+     *
+     * ⚠ Cầu chì trước: 0 file tự khai ⇒ khẳng định dưới là **chân lý rỗng** (đúng lớp "glob rỗng").
+     */
+    expect(FILE_TU_KHAI_PHA.length, "bộ quét TỰ-KHAI không thấy file nào — mẫu đã hỏng?").toBeGreaterThanOrEqual(80);
+    const ngoai = FILE_TU_KHAI_PHA.filter((f) => !duocPhu(f, CONG));
+    expect(
+      ngoai.join("\n"),
+      "lưới TỰ KHAI thuộc một pha mà nằm NGOÀI §Cổng kiểm chung ⇒ theo CẤU TẠO nó không bao giờ " +
+        "được canh: một đột biến trong đúng file ấy ship được với cổng xanh 100%.\n" +
+        "⇒ Thêm đường của nó vào §Cổng kiểm chung (kế hoạch Pha 5), rồi cập nhật `CONG`/`FILE_CANH`.",
+    ).toBe("");
+  });
+
+  it("★★ KHÔNG BẮT NHẦM — tập TỰ-KHAI phải RỘNG HƠN tập trong-cổng-cũ, và không nuốt file không khai gì", () => {
+    // ⚠ Nếu hai tập BẰNG nhau thì ca trên là một phép lặp của bộ thứ ba, không thêm sức mạnh nào.
+    expect(FILE_TU_KHAI_PHA.length).toBeGreaterThanOrEqual(FILE_PHA_TRONG_CONG.length);
+    // ⚠ …và nó KHÔNG được tóm mọi file: một lưới không nhắc pha nào phải nằm ngoài lượng từ.
+    const khongKhai = MOI_FILE.filter((f) => !DAU_KHAI_PHA.test(readFileSync(f.that, "utf8")));
+    expect(khongKhai.length, "MỌI file test đều tự khai một pha? ⇒ mẫu đang bắt bừa").toBeGreaterThan(100);
   });
 
   it("★★★ I-4 — mẫu tự-khai phải nhận `Pha 2B` / `Pha 1.5` / VIẾT HOA (mẫu `\\d+\\b` cũ MÙ ở đây)", () => {
