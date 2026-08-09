@@ -69,6 +69,29 @@ public static class FleetEndpoints
         //
         // WS-D-D4 — logged even though Operator-reachable ("who pressed HALT" is exactly the kind of
         // question this audit trail exists to answer, regardless of which role was allowed to press it).
+        //
+        // 🔴 CARRIED, NOT FIXED — G-2 whole-branch review I-4. NAMED HERE BECAUSE THIS IS WHERE THE NEXT
+        // PERSON LOOKS, and the divergence must not live only in a task report.
+        //
+        // `host.Estop()` below is unwrapped, so a throw from it skips `recorder.RecordAsync`. That was
+        // already true before G-2 — what CHANGED is what the missing row MEANS. Pre-G-2 a throwing Estop()
+        // left a half-done halt (drivers possibly undisposed, no historian run event), so "no audit row"
+        // accompanied "not much happened". Post-G-2 the same throw leaves a COMPLETED halt: EstopEngaged
+        // latched, every driver disposed, and the historian "Estop" run event written — with still no audit
+        // row. So the historian and the audit trail now DISAGREE about a halt that demonstrably happened,
+        // and the line directly above says that trail exists to answer "who pressed HALT".
+        //
+        // NOT A REGRESSION (no row either way) and NOT fixed inside G-2, deliberately: the remedy is a
+        // behaviour decision, not a mechanical one — record-before-acting changes what a row MEANS (it would
+        // assert an action that may not have completed), and a try/finally around the recorder writes a row
+        // for a failed call. WS-D-D4's ordering rule already governs that choice and it is not G-2's to make.
+        //
+        // 🔴 IT IS THE SAME SHAPE AS THE S-SET, ONE LAYER UP, and G-2's instrument structurally could not see
+        // it: that instrument is scoped to FleetCore._gate, and FleetHost holds no lock at all. Same blind
+        // spot that hid the UnsPublisher path from G-1's census and NEW-1 from G-2's grep — third instance.
+        // THE SWEEP THIS WANTS, named so it is not re-derived from scratch: every endpoint that mutates
+        // fleet state and then records an audit row as a SEPARATE statement. Same shape at fleet.start,
+        // fleet.stop, scenario.apply and scenario.burst.
         app.MapPost("/v1/fleet/estop", async (FleetHost host, HttpContext context, AuditRecorder recorder, PolicyEngine policy, CancellationToken ct) =>
         {
             var decision = policy.Evaluate(PolicyRequest.For(context, "fleet.estop", host.GetSafetyStatus()));

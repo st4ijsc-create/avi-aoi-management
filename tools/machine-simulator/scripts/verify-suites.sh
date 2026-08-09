@@ -1707,8 +1707,15 @@ EXPECT_EDGESERVICE=50
 #   FleetHostGateCommitCompletionTests               +7   NEW
 #
 # G-2 closes the defect CLASS G-1 found one instance of: state committed while FleetCore._gate is held whose
-# correctness depends on a step that runs after the lock is released. Seven tests, and the number is what it
-# is because the class has one member per (commit, completion) pair and each member has its own throw site:
+# correctness depends on a step that runs after the lock is released.
+#
+# 🔴 SEVEN TESTS, and here is what the number actually reconciles to (whole-branch review m-2 — the earlier
+# wording said "one member per (commit, completion) pair", a rule that yields EIGHT pairs and so could not
+# produce seven). The list below covers FIVE members — S2, S3, S4, S5, S7 — because S1 was closed by G-1 and
+# S6 is refused, and neither gets a test. Three of those five need TWO tests apiece, one per throw site
+# (S2 and S3 each have an in-lock seam and a flush; S5 has the scheduling and the report), and two need one.
+# 2+2+1+1+2 = 7. The unit here is a THROW SITE, not a member and not a pair — a test can only witness one
+# consequence of one throw:
 #   Estop_WhenTheUnsSeamThrowsUnderTheGate_TheOldPipelineIsStillDisposed                        +1
 #   Estop_WhenTheHostLoggerThrowsFlushingTheHaltPathLines_TheOldPipelineIsStillDisposed         +1
 #       S2 — the halt path, the most serious member. The two tests are two different throw sites in the same
@@ -1740,12 +1747,19 @@ EXPECT_EDGESERVICE=50
 # is therefore no test for it, and that is a refusal rather than a gap. See FleetCore.UpdateSettings' own
 # comment and the G-2 report.
 #
-# 🔴 RUNTIME, disclosed HERE and not only in the task report (G-2 review, Minor 10): this file adds ~8 s of
-# WALL CLOCK to every gate run, and it is not incidental. Two Burst tests wait on the real BurstDuration
-# (4 s, FleetCore.cs) because the property under test IS "a revert was scheduled", and three more poll for a
-# fire-and-forget historian write. If this ever needs to come down, the fix is making BurstDuration
-# injectable — a production change nobody has asked for — NOT loosening a bound (§8's rule). Recorded so the
-# next person asking "why did the gate get slower" finds the answer where they are already looking.
+# 🔴 RUNTIME, disclosed HERE and not only in the task report (G-2 review, Minor 10). This CLASS takes ~8-9 s
+# to run, and TWO tests are the reason: both Burst tests wait on the real BurstDuration (4 s, FleetCore.cs)
+# because the property under test IS "a revert was scheduled". The other four "waits" are POLLS
+# (PollTimeout 20 s, PollInterval 100 ms) that resolve in milliseconds on a healthy run — only their TIMEOUTS
+# are long, which is what keeps a failure red rather than hung.
+#
+# 🔴 WHAT THIS DOES NOT SAY, corrected by the whole-branch review (m-3): it does NOT say the file adds ~8 s to
+# every gate run. That earlier wording was INSPECTION IN THE VOICE OF A MEASUREMENT. There is no
+# xunit.runner.json and no CollectionBehavior attribute anywhere under tests/, so xunit runs test CLASSES in
+# parallel: the marginal wall clock this class adds to the assembly is at most ~8 s and is ZERO whenever it
+# is not on the critical path. Nobody has measured which it is. The honest figure is per-class, above.
+# If it ever needs to come down, the fix is making BurstDuration injectable — a production change nobody has
+# asked for — NOT loosening a bound (§8's rule).
 #
 # 🔴 G-2 FIX ROUND 1 raises this 1310 -> 1314 (+4), counted from the runner, ALL FOUR in the existing
 # FleetHostGateCommitCompletionTests. No file added, none rewritten, none deleted.

@@ -377,7 +377,7 @@ internal sealed class FleetCore
     /// first, as a separate member; finding it is what produced item 2's second pair a round later. Folding 7
     /// into 3 — or splitting 2 into two rows — would renumber a vocabulary (S1…S7) that this branch's report,
     /// its tests and its ledger all speak. So: <b>a reader deriving the set from the rule should expect eight
-    /// pairs and find seven rows, and item 2 is where the extra pair lives.</b> Round 2 of review was right
+    /// pairs and find seven rows, and <b>S2</b> is where the extra pair lives.</b> Round 2 of review was right
     /// that "SEVEN" alone was not re-derivable.
     ///
     /// (Round 1 of G-2 said "the sweep found six more" over a list of five — a count contradicted by the list
@@ -385,36 +385,45 @@ internal sealed class FleetCore
     /// G-2's own report claimed to have caught in its commit message while leaving it here. Corrected by
     /// review. The sweep found FIVE more; re-deriving the set added a sixth, item 7, which the sweep's
     /// single-completion table could not represent.)
+    /// 🔴 <b>EVERY ROW CARRIES ITS S-NUMBER, and that is a repair rather than a decoration.</b> Rows 4 and 5
+    /// were TRANSPOSED here — position 4 held <see cref="Burst"/> (S5 everywhere else) and position 5 held the
+    /// restart chokepoint (S4 everywhere else) — while this same banner declared itself the S1…S7 vocabulary.
+    /// The status labels travelled with the CONTENT, so nothing looked wrong; a maintainer resolving "what is
+    /// S4?" from the canonical definition got the inverse of what the tests, the gate script, the report and
+    /// the ledger mean, and one downstream artifact had already derived a false statement from it. Caught by
+    /// the whole-branch review. <b>Identifying a member by its ORDINAL is what made a silent swap possible;
+    /// the labels below are what make the next one visible.</b> If you reorder these rows, the labels move
+    /// with them and nothing breaks — which is the point.
     /// <list type="number">
-    /// <item><b>CLOSED (G-1).</b> The seed-notification queue — commit <see cref="EnqueueSeedNotification"/>,
-    /// completion <see cref="DrainSeedNotifications"/>.</item>
-    /// <item><b>CLOSED (G-2).</b> <see cref="Stop"/>/<see cref="Estop"/> → <see cref="StopLocked"/> → BOTH
-    /// completions it owes: <see cref="WaitAndDisposeOldPipeline"/> and the historian run event. The run
+    /// <item><b>S1 — CLOSED (G-1).</b> The seed-notification queue — commit
+    /// <see cref="EnqueueSeedNotification"/>, completion <see cref="DrainSeedNotifications"/>.</item>
+    /// <item><b>S2 — CLOSED (G-2).</b> <see cref="Stop"/>/<see cref="Estop"/> → <see cref="StopLocked"/> →
+    /// BOTH completions it owes: <see cref="WaitAndDisposeOldPipeline"/> and the historian run event. The run
     /// event needed a second round (review C-1) — round 1 guaranteed the teardown and left the run event
     /// exposed to this member's own throw site, which inflates OEE Availability.</item>
-    /// <item><b>CLOSED (G-2).</b> <see cref="Start"/> → <see cref="StartLocked"/> →
+    /// <item><b>S3 — CLOSED (G-2).</b> <see cref="Start"/> → <see cref="StartLocked"/> →
     /// <see cref="CompleteStartOffLock"/> — <b>with one residual, named rather than swept: see the
     /// "NAMED, NOT CLOSED" note directly below this list.</b></item>
-    /// <item><b>CLOSED (G-2).</b> <see cref="Burst"/> → <see cref="RevertBurstAfterDelayAsync"/>.</item>
-    /// <item><b>PARTLY OPEN.</b> The restart chokepoint. The rebuild is now unconditional over an off-lock
-    /// TEARDOWN that throws (<see cref="RegisterMachine"/>/<see cref="ApplyScenario"/>), but a
+    /// <item><b>S4 — PARTLY OPEN.</b> The restart chokepoint. The rebuild is now unconditional over an
+    /// off-lock TEARDOWN that throws (<see cref="RegisterMachine"/>/<see cref="ApplyScenario"/>), but a
     /// <see cref="StartLocked"/> that throws ITSELF leaves the fleet stopped with the roster/scenario write
     /// already committed, and no <c>finally</c> can start a fleet that failed to start. Rolling the commit
     /// back changes what a failed call MEANS to its caller; the root cause is path 5 above. Both are owner
     /// decisions and both are named in G-2's report rather than decided here.</item>
-    /// <item><b>OPEN, and the uniform remedy is REFUSED here rather than missing.</b>
+    /// <item><b>S5 — CLOSED (G-2).</b> <see cref="Burst"/> → <see cref="RevertBurstAfterDelayAsync"/>.</item>
+    /// <item><b>S6 — OPEN, and the uniform remedy is REFUSED here rather than missing.</b>
     /// <see cref="UpdateSettings"/>'s committed triple versus its off-lock activation and persistence. A
     /// <c>finally</c> around the persistence would convert "the edit evaporates at the next restart" into
     /// "the service does not start", because <c>Program.cs</c> feeds the persisted triple back into this same
-    /// method during startup. The full argument and the two owner decisions it needs are at that method.</item>
-    /// <item><b>CLOSED (G-2), and on no prior list.</b> <see cref="Start"/>'s commit owes a SECOND off-lock
-    /// completion after <see cref="CompleteStartOffLock"/> — the historian <c>"Start"</c> run event. It is
-    /// load-bearing rather than telemetry, and that is <b>forced by the aggregation code, not chosen</b>:
-    /// <c>SqliteHistorianStore</c>'s OEE query opens an interval on <c>"Start"</c>, closes it on
-    /// <c>"Stop"</c>/<c>"Estop"</c>, and ignores <c>"EstopReset"</c> entirely. Item 2 is its mirror on the
+    /// method during startup. The full argument and the owner decisions it needs are at that method.</item>
+    /// <item><b>S7 — CLOSED (G-2), and on no prior list.</b> <see cref="Start"/>'s commit owes a SECOND
+    /// off-lock completion after <see cref="CompleteStartOffLock"/> — the historian <c>"Start"</c> run event.
+    /// It is load-bearing rather than telemetry, and that is <b>forced by the aggregation code, not
+    /// chosen</b>: <c>SqliteHistorianStore</c>'s OEE query opens an interval on <c>"Start"</c>, closes it on
+    /// <c>"Stop"</c>/<c>"Estop"</c>, and ignores <c>"EstopReset"</c> entirely. <b>S2</b> is its mirror on the
     /// halt path.</item>
     /// </list>
-    /// <b>NAMED, NOT CLOSED — item 3's residual</b> (recorded by the sweep, dropped by G-2's round 1, restored
+    /// <b>NAMED, NOT CLOSED — S3's residual</b> (recorded by the sweep, dropped by G-2's round 1, restored
     /// by review I-5): a throw inside <see cref="StartLocked"/> <i>after</i> the connector loop loses
     /// <c>orphanedConnectorDrivers</c> and <c>deferredLogs</c> outright — they are locals, so no
     /// <c>finally</c> in a caller can reach them — and leaves <see cref="_slots"/> non-empty with
@@ -950,7 +959,25 @@ internal sealed class FleetCore
     /// <para>A caller can block here while another thread's callback runs. That is deliberate and is not a
     /// regression: before G-1 the same caller blocked on <see cref="_gate"/> for the same work, and unlike
     /// <see cref="_gate"/> this lock is invisible to <see cref="Estop"/>, <see cref="EstopEngaged"/> and
-    /// every other lifecycle path.</para></summary>
+    /// every other lifecycle path.</para>
+    ///
+    /// <para>🔴 <b>The drain loop below is the FOURTH instance of the "host seam in a loop with no per-item
+    /// guard" shape</b> (G-2's review I-3 in <see cref="DisposeOldSlots"/>, its sibling in
+    /// <see cref="DisposeOrphanedConnectorDrivers"/>, NEW-1 in <see cref="StartSlot"/>'s fault handler — and
+    /// this one, in G-1's code, missed by both of G-2's sibling sweeps because it is neither a disposal loop
+    /// nor a fault handler. Found by the whole-branch review.) A throwing <see cref="_onMachineSeeded"/>
+    /// abandons the loop with descriptors still queued.
+    ///
+    /// <b>Nothing can actually be stranded today, and this states WHY rather than that it cannot happen</b> —
+    /// which is the sentence pattern this file flags at six other sites and had not written here. Every
+    /// enqueue site drains after its own enqueue: the constructor drains after its loop (and a throw there
+    /// fails construction, so the instance never becomes reachable), and <see cref="RegisterMachine"/> drains
+    /// in a <c>finally</c> after its single enqueue, so a racing thread's own <c>finally</c> discharges
+    /// whatever it enqueued. <b>That is a property of the current call sites, not of this method.</b> A third
+    /// enqueue site that does not drain — or a batched drain — reinstates exactly the "delivered only if some
+    /// LATER RegisterMachine happens to drain it" state that <see cref="RegisterMachine"/>'s <c>finally</c>
+    /// exists to prevent. Left unfixed deliberately: a per-item guard here would have to decide what to do
+    /// with a host callback's exception, and swallowing it is the one thing G-1's design refuses.</para></summary>
     private void DrainSeedNotifications()
     {
         if (_onMachineSeeded is null) return;
@@ -2939,8 +2966,18 @@ internal sealed class FleetCore
                 // second — that is how C# `finally` works and it cost this task one wrong draft in Start().
                 // It is harmless HERE and the reason is specific rather than general: the only way the first
                 // statement throws is StartLocked throwing, which leaves `outcome` at default(StartOutcome),
-                // and CompleteStartOffLock over that value is a no-op on both halves. Nothing is owed, so
-                // nothing is lost. Start() needed nesting because its second statement is NOT a no-op.
+                // and CompleteStartOffLock over that value is a no-op on both halves — so there is nothing
+                // left for THIS `finally` to do. Start() needed nesting because its second statement is not
+                // a no-op.
+                //
+                // 🔴 Scoped to this statement deliberately (whole-branch review I-3). An earlier wording
+                // generalised it to "nothing is owed, so nothing is lost", which is FALSE about that throw:
+                // by then StartLocked has lost `orphanedConnectorDrivers` and `deferredLogs` outright — they
+                // are its locals, unreachable from any caller's finally — and left `_slots` non-empty with
+                // `_running == false`, which StopLocked then refuses to tear down. That is S3's named
+                // residual, at the top of this file, and a reader sent away from it by this comment would
+                // miss the one thing they need. ApplyScenario's copy of this same argument never carried the
+                // generalisation; the two now agree.
                 try
                 {
                     WaitAndDisposeOldPipeline(restartHandle);
@@ -3327,11 +3364,22 @@ internal sealed class FleetCore
         // restart" for "the service does not start" is not an improvement, and choosing between them is not
         // this task's call.
         //
-        // THE TWO REAL REMEDIES, both owner decisions: (a) validate the inputs BEFORE the commit, so a
-        // value-dependent failure never mutates the fields at all — that changes what UpdateSettings does to
-        // its state before throwing, which is observable; or (b) roll the fields back on a failed activation
-        // — that changes what a failed call MEANS to its caller and needs an arbitration rule for a rollback
-        // racing a concurrent second UpdateSettings, which this class does not have. Reported, not decided.
+        // THREE REMEDIES, all owner decisions, CHEAPEST FIRST:
+        //   (c) 🔴 HARDEN THE STARTUP REPLAY, in Program.cs, not here — wrap the boot-time UpdateSettings
+        //       call, log, and fall back to the env-var branch. Changes NO contract, touches nothing in this
+        //       class, removes the boot loop as a CONSEQUENCE rather than by forbidding the input, and makes
+        //       the uniform `finally` remedy safe afterwards. Probably the smallest correct change.
+        //   (a) Validate the inputs BEFORE the commit, so a value-dependent failure never mutates the fields
+        //       — changes what UpdateSettings does to its state before throwing, which is observable.
+        //   (b) Roll the fields back on a failed activation — changes what a failed call MEANS to its caller
+        //       and needs an arbitration rule for a rollback racing a concurrent second UpdateSettings,
+        //       which this class does not have.
+        // Reported, not decided.
+        //
+        // 🔴 (c) was MISSING from this comment until the whole-branch review, and the omission has a lesson
+        // in it: the two remedies I could see both live in THIS METHOD, and the one I could not lives one
+        // layer up. Enumerating options from inside the file you are editing finds the options that are
+        // inside the file you are editing.
         if (rebuildNeeded)
         {
             var mkKey = CredentialStore.Load(_machineCode);

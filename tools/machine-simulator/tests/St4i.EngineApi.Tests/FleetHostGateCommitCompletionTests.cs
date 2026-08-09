@@ -23,7 +23,15 @@ namespace St4i.EngineApi.Tests;
 /// <para><b>The class.</b> State written while <c>FleetCore._gate</c> — the lock <c>Estop()</c> takes — is
 /// held, never rolled back, whose correctness depends on a step that runs AFTER the lock is released. Every
 /// throw in between loses the completion. G-1 closed one member (the seed-notification queue); an independent
-/// sweep found six more.</para>
+/// sweep found <b>five</b> more, and re-deriving the set added a sixth (S7) that the sweep's
+/// single-completion table could not represent — <b>seven members in total</b>. See
+/// <c>FleetCore._gate</c>'s banner, which is the canonical list and labels every row with its S-number.
+///
+/// <para>🔴 This sentence read "found six more" until the whole-branch review. It is the <i>verbatim</i>
+/// sentence a task review had already raised as Critical and corrected in <c>FleetCore.cs</c> — and the
+/// correction pass was scoped to the file being edited, so this copy stood. "Retracted in one place, left
+/// standing in another", for the third time on this branch. Recorded here rather than silently fixed,
+/// because the pattern is the finding.</para>
 ///
 /// <para><b>Why these tests exist in this shape, rather than as assertions about where a call sits.</b> Every
 /// one of them drives a throw through a HOST SEAM and then asserts the CONSEQUENCE the completion exists to
@@ -54,8 +62,10 @@ namespace St4i.EngineApi.Tests;
 /// itself is a redesign of the restart chokepoint that G-1's brief reserved and G-2's does too.</item>
 /// </list></para>
 ///
-/// <para><b>What these tests do NOT prove.</b> That no seventh, eighth or ninth member exists — that is the
-/// enumeration's job, in the report, and an enumeration is not falsifiable by a test. That the framework
+/// <para><b>What these tests do NOT prove.</b> That no <b>eighth, ninth or tenth</b> member exists — the set
+/// is seven, so those are the next candidates; this said "seventh, eighth or ninth" while the section banner
+/// below reads "S3 / S7", i.e. it counted six. That is the enumeration's job, in the report, and an
+/// enumeration is not falsifiable by a test. That the framework
 /// rethrows provider failures (read, not measured — see above). And nothing at all about S6
 /// (<c>UpdateSettings</c>), which is deliberately left OPEN: see that method's own comment for why the
 /// uniform remedy is refused there rather than missing.</para>
