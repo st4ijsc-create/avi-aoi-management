@@ -699,11 +699,25 @@ export const actuationProcedure = roleProcedure(...ACTUATION_ROLES).use(require2
  *   (a) các ca đỏ của lưới vẫn **dựng được** cảnh *"OTP của một lượt khác"* — bỏ nó đi thì
  *       cache biến mất và ca đỏ ấy thành **chân lý rỗng**, không còn chứng minh gì;
  *   (b) hỏng-theo-chiều-an-toàn: gỡ nhầm một trong hai vẫn còn cái kia.
- *   Giá phải trả (★ I-4 — **con số cũ SAI**, đã đếm lại trên chuỗi thật): **2 lượt verify ở MỌI
- *   lượt gọi** (`requireFreshTotp` cache-hit + per-call ở gốc), và **3** khi cache nguội. Riêng
- *   `vram.preempt`/`releaseStale` chain per-call **một lần nữa** ở `vramRouter.ts` ⇒ **3 / 4**.
- *   Mỗi lượt verify = 1 `SELECT users` + 1 `speakeasy.totp.verify`. Lệnh deploy là hiếm + đặc
- *   quyền ⇒ chấp nhận được; nhưng câu cũ (*"hai lần, và chỉ trên đường cache-miss"*) sai **cả hai
- *   con số** và sai **cả điều kiện** — đừng trích lại nó.
+ *   Giá phải trả — ★★ **BẢNG I-4 CỦA CHÍNH KHỐI NÀY CŨNG SAI: +1 Ở CẢ HAI CON SỐ.** Bản trước
+ *   viết *"**2** lượt verify ở MỌI lượt gọi (`requireFreshTotp` cache-hit + per-call ở gốc), và
+ *   **3** khi cache nguội … ⇒ **3 / 4**"*. Số đúng, **đếm trên chuỗi thật của mã này**, và có một
+ *   dấu vết KIỂM CHỨNG ĐƯỢC ở sổ: một lượt `vram.preempt` **nguội** phải để lại đúng
+ *   **1 ins + 2 upd trên MỘT hàng `totp_consumed`, cùng MỘT `luot`** (mỗi lượt verify = 1 lượt ghi
+ *   sổ; xem `_core/totpOnce.ts` §`tieuMaTrongSo`):
+ *     • `deployProcedure` (không chain thêm) — **1 lượt verify khi cache ẤM · 2 khi NGUỘI**;
+ *     • `vram.preempt`/`releaseStale` (chain per-call **một lần nữa** ở `vramRouter.ts`) —
+ *       **2 ấm · 3 nguội**.
+ *   ⚠ **Gốc của cái sai +1:** bảng cũ cộng một **cache-hit** của `requireFreshTotp` như thể nó là
+ *   một lượt verify. Không phải: ở cache-hit `stepUpTotpMiddleware(true)` `return next()` ngay
+ *   (`:475`) — **TRƯỚC** cả lượt đọc raw input lẫn `verifyFreshTotp` — nên một cache-hit tốn **0**
+ *   lượt verify. Con số ở đây vì thế **tự mâu thuẫn** với khối I-4 ở `:559-576` (chỗ ấy ghi đúng
+ *   `cache-miss = 3 · cache-hit = 2` cho chuỗi `vram.preempt`), và **không lưới nào canh** cặp số
+ *   này — nó chỉ là văn bản, nên nó trôi được.
+ *   Mỗi lượt verify = 1 `SELECT users LEFT JOIN user_secrets` (`db.get2FAStatus`) + 1
+ *   `speakeasy.totp.verify` + 1 `INSERT … ON CONFLICT DO UPDATE` trên `totp_consumed`. Lệnh deploy
+ *   là hiếm + đặc quyền ⇒ chấp nhận được; nhưng **đừng trích lại** câu nguyên bản (*"hai lần, và
+ *   chỉ trên đường cache-miss"* — sai cả hai con số lẫn điều kiện) **lẫn** bảng I-4 cũ (+1 ở cả
+ *   hai). Ai đọc để quyết *"có nên chain per-call ở một sàn thứ ba không"* phải dùng cặp số trên.
  */
 export const deployProcedure = actuationProcedure.use(requireFreshTotp).use(requirePerCallFreshTotp);
