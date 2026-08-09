@@ -424,8 +424,17 @@ public sealed class NotificationDocumentationTests
     ///
     /// <para><b>How it cannot rot:</b> the expected list is discovered by scanning <c>src/</c> for the
     /// <c>"ST4I", "sim", "&lt;name&gt;"</c> default-path constant every store declares. Adding a
-    /// fourteenth store therefore fails this test until the script purges it too, which is the only
-    /// arrangement that survives somebody who has not read this comment.</para>
+    /// fourteenth <b>MACHINE-WIDE</b> store therefore fails this test until the script purges it too,
+    /// which is the only arrangement that survives somebody who has not read this comment.</para>
+    ///
+    /// <para>🔴 <b>The qualifier is load-bearing and was missing until the whole-branch review (C-2), and
+    /// this branch is what falsified the sentence without it.</b> H-1c added <c>MachineConfigStore</c> —
+    /// a fourteenth STORE — and this test stayed <b>green</b>, correctly: that store declares no
+    /// <c>"ST4I","sim","&lt;name&gt;"</c> constant because it writes BESIDE THE BINARY, and this script
+    /// purges <c>%ProgramData%</c>. Its root is not purged by <c>remove-data.ps1</c> at all and is not
+    /// meant to be; see README §15.9's second-population subsection for what an operator has to do by
+    /// hand if they relocate it. The identical sentence was qualified in five other artefacts in the same
+    /// branch and missed here — the summary-contradicts-its-list class, at the summary.</para>
     /// </summary>
     [Fact]
     public void EveryDirectoryTheEngineCreatesUnderProgramData_IsPurgedByTheDecommissioningScript()

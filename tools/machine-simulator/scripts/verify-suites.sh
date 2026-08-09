@@ -1045,7 +1045,11 @@ EXPECT_EDGESERVICE=50
 #            PFX private key sealed at LocalMachine scope; `connector-config` stores an OPC-UA password
 #            in plaintext). The old test pinned the five-name list, freezing the gap as if closed — so
 #            this one DERIVES the expected set by scanning src/ for each store's own default-path
-#            constant, and a fourteenth store fails it until the script purges that too.
+#            constant, and a fourteenth MACHINE-WIDE store fails it until the script purges that too.
+#            🔴 The qualifier was missing until the whole-branch review (C-2), and H-1c falsified the
+#            sentence without it: MachineConfigStore is a fourteenth STORE, it arrived, and this census
+#            stayed green — correctly, because it writes beside the binary and declares no
+#            "ST4I","sim","<name>" constant. remove-data.ps1 does not purge it and is not meant to.
 #   + 1  I-2  TheWebhookContract_DedupRecipe_NamesTheSignedBodyField_NeverTheUnsignedHeader.
 #            The reviewer changed §3's numbered recipe to dedup on the UNSIGNED X-ST4I-Delivery header
 #            and all six existing doc tests passed — C-3's defect reproduced, in the half of the
@@ -1644,8 +1648,12 @@ EXPECT_EDGESERVICE=50
 # file, ONE test; nothing rewritten, split or deleted.
 #
 #   +1  PerHostDataRootsTests.TheNumberOfMachineWideDirectories_IsDerivedFromSource_AndAgreesWithEvery-
-#       PlaceThatSpellsIt — the three guards in that file floor at `>= 13`, so a fourteenth store that
-#       arrives WITH a variable passes all three while the word "thirteen" rots in six artefacts. It
+#       PlaceThatSpellsIt — the other guards in that file floor at `>= 13`, so a fourteenth MACHINE-WIDE
+#       store that arrives WITH a variable passes them all while the word "thirteen" rots in six
+#       artefacts. (🔴 Whole-branch review I-4: this said "the three guards" and was unqualified, eight
+#       lines above the detail sentence fix round 2 DID qualify — the N5/N7 repair went into the .cs and
+#       was not swept to its mirror here. The count was stale too: that file now holds five [Fact]s, two
+#       of which sit above this one. Written without an ordinal so it cannot rot again.) It
 #       derives the count from src/ and compares it against the number spelled in the two sentences that
 #       state it as a rule: README §15.9's "There are **N** of them today" and remove-data.ps1's
 #       .DESCRIPTION. Those two are each the authoritative sentence of their own artefact; the rest of the
@@ -1899,15 +1907,27 @@ EXPECT_EDGESERVICE=50
 #       The SECOND store population, made checkable. Two halves. (a) The ST4I_*_DIR set is partitioned on
 #       whether the name is derivable from a declared %ProgramData% directory — both halves derived from
 #       src/, neither a list — and the beside-the-binary half must be exactly ST4I_MACHINE_CONFIG_DIR.
-#       (b) The STORES: files under src/ where AppContext.BaseDirectory co-occurs with
-#       Directory.CreateDirectory( must be exactly six, three of them population-two stores
-#       (MachineConfigStore, ProductConfigStore, SimulatedEcosystem) and three classified in place as
-#       non-stores (App.xaml.cs's --capture output dir, MainWindow.xaml.cs's per-USER %LOCALAPPDATA%,
-#       Program.cs's wwwroot). A seventh file entering that intersection fails until it is classified.
-#       The instrument is TOKEN-keyed and its blind spots are stated at the test: it cannot see a store
-#       that reaches the same place via Directory.GetCurrentDirectory()/Assembly.Location/a bare relative
-#       path/a composition-root-supplied root — enumerated rather than assumed, zero such routes exist in
-#       src/ today.
+#       (b) The STORES: every file under src/ that names any KNOWN ROUTE to the beside-the-binary root
+#       is pinned as an exact map of repo-relative path -> CATEGORY. THIRTEEN paths, FOUR categories:
+#       three population-two stores (MachineConfigStore, ProductConfigStore, SimulatedEcosystem), three
+#       read-only artefacts (FleetCore/EdgeConnectors/FleetService — fleet.json, connectors.json,
+#       mapping/*.json), four non-stores (App.xaml.cs's --capture dir, MainWindow.xaml.cs's per-USER
+#       %LOCALAPPDATA%, Program.cs's wwwroot, ServiceInstallVerbs.cs's service binPath) and three
+#       prose-only mentions. A fourteenth file entering the set fails until it is classified, and the
+#       CATEGORY is enforced on the axis a text scan can decide: a prose-only entry must have every
+#       occurrence on a /// line, every other category at least one that is not.
+#       🔴 THIS BLOCK DESCRIBED A DELETED INSTRUMENT FOR TWO ROUNDS (whole-branch review C-1) — it still
+#       said "co-occurs with Directory.CreateDirectory(", "exactly six", two categories, and "zero such
+#       routes exist in src/ today". The conjunct was removed in fix round 1 (it was the unstated filter
+#       that made a beside-binary writer with no CreateDirectory invisible) and the completeness claim was
+#       WITHDRAWN in fix round 2, refuted by two live Environment.ProcessPath occurrences in
+#       ServiceInstallVerbs.cs. What the test claims now is a MEASUREMENT, not completeness: these are
+#       the routes that have been swept (AppContext.BaseDirectory, Environment.ProcessPath, and
+#       MachineConfigStore.DefaultRoot/ResolveRoot — the public helper H-1c itself added, through which a
+#       new store can reach the root without naming the token), six more measured at zero, and a seventh
+#       idiom nobody has thought of is still invisible. This file is the one artefact the standing
+#       constraints bind, and a maintainer reads THIS to decide whether the guard will see their store —
+#       so a stale description here is worse than none.
 #       It also repairs a FALSE COMPLETENESS CLAIM that F-1 shipped in this same file's class comment
 #       ("the only place the product writes outside %ProgramData% is DesktopShell's %LOCALAPPDATA%"),
 #       which was wrong the day it was written and is the §8.1(f) failure in its resting state: a sentence

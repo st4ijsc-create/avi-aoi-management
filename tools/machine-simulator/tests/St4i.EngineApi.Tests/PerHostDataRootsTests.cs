@@ -15,8 +15,12 @@ namespace St4i.EngineApi.Tests;
 /// <c>TestHarnessIsolationTests.EveryStoreTheEngineCreates_IsIsolatedByThePlaywrightHarness</c> (does the e2e
 /// harness point it somewhere harmless?). Each of those exists because a HAND-KEPT list was audited, declared
 /// complete, and was missing a store that had been added after the audit. This is the third face of the same
-/// question and it fails the same way: a fourteenth store added without an <c>ST4I_*_DIR</c> variable would
-/// be un-separable, two hosts would share it, and nothing anywhere would say so.</para>
+/// question and it fails the same way: a fourteenth <b>MACHINE-WIDE</b> store added without an
+/// <c>ST4I_*_DIR</c> variable would be un-separable, two hosts would share it, and nothing anywhere would
+/// say so. 🔴 <b>A fourteenth BESIDE-THE-BINARY store does NOT fail the same way</b>, and this was the one
+/// paragraph in the file where the qualifier was still missing — the paragraph that introduces the file
+/// (whole-branch review, Minor 8). That is what the fourth guard below exists for; see
+/// <see cref="TheBesideTheBinaryStorePopulation_IsEnumerated_AndKeptDistinctFromTheThirteenMachineWideOnes"/>.</para>
 ///
 /// <para>🔴 <b>The task brief that produced this file named FOUR stores. The enumeration found THIRTEEN, and
 /// the brief's own instruction was to start from the SET rather than from its list</b> (blueprint §8.1: "not
@@ -395,9 +399,15 @@ public sealed class PerHostDataRootsTests
     }
 
     /// <summary>
-    /// 🔴 <b>Branch review F-15 — the COUNT is now derived and compared, because the three guards above
-    /// it in THIS FILE all floor at <c>&gt;= 13</c> and a floor cannot notice a fourteenth MACHINE-WIDE
-    /// store arriving; it would arrive silently while the word "thirteen" rots in six places.</b>
+    /// 🔴 <b>Branch review F-15 — the COUNT is now derived and compared, because the <c>&gt;= 13</c>
+    /// assertions in the two guards above this one are FLOORS, and a floor cannot notice a fourteenth
+    /// MACHINE-WIDE store arriving; it would arrive silently while the word "thirteen" rots in six
+    /// places.</b>
+    /// (🔴 Fix round 3, whole-branch review Minor 9: the round-2 replacement for the garbled original said
+    /// "the three guards above it in THIS FILE" — <b>TWO</b> guards are above it, carrying three
+    /// <c>&gt;= 13</c> assertions between them. A wrong summary replaced by a differently wrong summary,
+    /// in the edit that named the class. Counted this time, and phrased so the number that matters is the
+    /// ASSERTIONS rather than an ordinal position that moves whenever a test is added.)
     /// (🔴 Fix round 2: this sentence was garbled — "because every census in this / three guards in THIS
     /// FILE floor at &gt;= 13" had a dropped clause, present since <c>19cf8407</c> (re-review N7) — and its
     /// ordinal was unqualified while the detail sentence below had been qualified in the round before
