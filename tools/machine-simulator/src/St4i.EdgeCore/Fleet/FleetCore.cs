@@ -3421,7 +3421,16 @@ internal sealed class FleetCore
         // the floor. An environmental failure then destroyed the very triple the next start was supposed
         // to retry, which falsified the paragraph you are reading, in the same branch that wrote it. The
         // fallback was removed (see Program.cs for the full argument); what makes "the next start retries
-        // and succeeds" TRUE is that nothing else writes this file at startup.
+        // and succeeds" TRUE is that nothing else WRITES this file at startup.
+        //
+        // 🔴 One thing does REMOVE it, and saying "nothing else touches it" would be the same class of
+        // false completeness (whole-branch review I-3). On the arm where the replay is a SEED — no
+        // fleet-settings.json existed — a failed activation still reaches this `finally`, so the file is
+        // CREATED from the env floor merged with FleetHost's defaults, and from the next boot it would
+        // win over the env vars on the strength of a triple that never activated. Program.cs deletes it
+        // in exactly that case and only that case; a failed RESTORE never deletes anything, because the
+        // operator's own file is what branch-review C1 exists to protect. So: one writer, one deleter,
+        // both at the composition root, both named — and `PerHostDataRootsTests` counts each of them.
         //
         // WHAT THIS CLOSES, precisely, and what it does not. The commit above now ALWAYS owes its
         // persistence, so the reported configuration and the persisted configuration can no longer diverge

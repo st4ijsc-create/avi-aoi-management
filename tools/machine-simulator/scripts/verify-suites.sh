@@ -1965,7 +1965,25 @@ EXPECT_EDGESERVICE=50
 #       occurrences of TryReplayStartupSettings in Program.cs). Its stated non-reach is the shape a
 #       source scan cannot see — a writer through a differently-named local — which is exactly what the
 #       file-property regression witness above covers instead.
-EXPECT_ENGINEAPI=1320
+#
+# 🔴 FIX ROUND 3 (whole-branch review I-3) raises this 1320 -> 1321 (+1), counted from the runner. No new
+# file; added to StartupSettingsReplayHardeningTests.cs.
+#   AFailedEnvFloorSeed_LeavesNoFile_SoTheEnvVarsStayTheFloor                          +1
+#       C1's class on the arm that was KEPT. With no fleet-settings.json the replay SEEDS FleetCore from
+#       the env floor; the unconditional persist that closed S6 then CREATES the file even when activation
+#       throws, holding the floor merged with FleetHost's built-in defaults — and from the next boot that
+#       file wins over the env vars, permanently, on the strength of a triple that never activated. Two of
+#       the four consequences the branch enumerated against the DELETED fallback are properties of the
+#       `finally`, not of the fallback, and they survived here. Program.cs now discards that seeded file
+#       on that arm ONLY (a failed RESTORE never deletes anything — that would be C1 with a delete).
+#       🔴 THE INJECTION IS THE INTERESTING PART, and it corrects the review: the WAL example the review
+#       gives is NOT reachable at startup through an env var, because Program.cs calls wal.EnsureDir() on
+#       the same env-derived options ~1550 lines earlier, unwrapped, so a bad ST4I_WAL_DIR stops the host
+#       there and never reaches the replay. The test instead overrides the TransportCoordinator singleton
+#       with a real one whose WalOptions.Directory points at an existing FILE — same throw, same call,
+#       from options the early EnsureDir never saw. It asserts the host is UP and the file does not exist
+#       ON DISK (not merely that Load() returns null, which is also true for a corrupt file).
+EXPECT_ENGINEAPI=1321
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

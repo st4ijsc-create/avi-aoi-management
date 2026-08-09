@@ -131,6 +131,30 @@ public sealed class FleetSettingsStore
         }
     }
 
+    /// <summary>
+    /// 🔴 <b>Whole-branch review I-3 — removes <c>fleet-settings.json</c> if it exists. It has exactly ONE
+    /// caller and it is not a general-purpose delete: <c>Program.cs</c>'s startup replay, on the one path
+    /// where the replay was a SEED rather than a restore and the seed did not activate.</b>
+    ///
+    /// <para><b>Why the store owns it rather than the caller.</b> The file name is private here and stays
+    /// private; a caller composing <c>Path.Combine(RootDirectory, "fleet-settings.json")</c> would be a
+    /// second place that has to move if the name ever changes. Takes the same lock as
+    /// <see cref="Save"/>/<see cref="Load"/>, so it cannot interleave with a concurrent write.</para>
+    ///
+    /// <para><b>It throws.</b> Same posture as <see cref="Save"/> — an <c>IOException</c> here is a real
+    /// filesystem problem and swallowing it inside the store would hide it from the one caller that has a
+    /// log channel. That caller guards it; see the block at its call site for what a failed delete means
+    /// (the seeded file survives, the env vars stop being the floor, and the operator is told).</para>
+    /// </summary>
+    public void Delete()
+    {
+        lock (_gate)
+        {
+            var path = Path.Combine(RootDirectory, FileName);
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
     /// <summary>Same crash-safety rationale as <see cref="MachineConfigStore"/>/
     /// <see cref="Historian.OeeSettingsStore"/>'s own copy of this method — writes to a temp file in the
     /// same directory then atomically renames over the real target.</summary>

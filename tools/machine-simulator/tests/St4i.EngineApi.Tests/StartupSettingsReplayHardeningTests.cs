@@ -8,6 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Infrastructure;
+using St4i.EdgeCore.Models;
+using St4i.EdgeCore.Transport;
 using St4i.EngineApi.Fleet;
 using St4i.EngineApi.Tests.Auth;
 using Xunit;
@@ -69,7 +71,8 @@ public sealed class StartupSettingsReplayHardeningTests
     private sealed record EnvOverrides(string? ServerUrl, string? MachineCode, string SettingsDir);
 
     private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync(
-        EnvOverrides overrides, List<(LogLevel Level, string Message)> capturedLog)
+        EnvOverrides overrides, List<(LogLevel Level, string Message)> capturedLog,
+        Action<IServiceCollection>? extraServices = null)
     {
         var securityDir = Directory.CreateTempSubdirectory("st4i-h1a-security-").FullName;
         var historianDir = Directory.CreateTempSubdirectory("st4i-h1a-historian-").FullName;
@@ -115,7 +118,10 @@ public sealed class StartupSettingsReplayHardeningTests
 
             var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
                 b.ConfigureServices(services =>
-                    services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(capturedLog))));
+                {
+                    services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(capturedLog));
+                    extraServices?.Invoke(services);
+                }));
             _ = factory.Server; // force the host to build NOW, while the env vars above are still set.
             return factory;
         }
@@ -227,6 +233,80 @@ public sealed class StartupSettingsReplayHardeningTests
     }
 
     /// <summary>
+    /// 🔴 <b>Whole-branch review I-3 — a failed env-floor SEED must not leave behind a file that
+    /// permanently supersedes the env vars. This is C1's class on the arm that was KEPT.</b>
+    ///
+    /// <para><b>The defect, exactly.</b> With no <c>fleet-settings.json</c>, the replay seeds
+    /// <c>FleetCore</c> from the env floor. Any non-null field makes <c>rebuildNeeded</c> true, and
+    /// <c>UpdateSettings</c> persists UNCONDITIONALLY since H-1a closed S6 — so a throw during activation
+    /// still reaches the <c>finally</c> and CREATES the file, holding the floor merged with
+    /// <c>DefaultServerUrl = ""</c> / <c>DefaultMachineCode = "ENGINE-API-01"</c> for whichever variables
+    /// were unset. From the next boot that file wins over the env vars, per FF-1's precedence: an operator
+    /// who reads the Error line, fixes <c>ST4I_SERVER_URL</c> and restarts finds the fix ignored. Two of
+    /// the four consequences the branch enumerated against the DELETED fallback are properties of the
+    /// <c>finally</c>, not of the fallback, and this is where they survived.</para>
+    ///
+    /// <para>🔴 <b>How the failure is injected, and why this shape rather than a value.</b> The review's
+    /// stated example — a full or read-only WAL root — is <b>not reachable at startup through an env
+    /// var</b>: <c>Program.cs</c> calls <c>wal.EnsureDir()</c> on the same env-derived options ~1550 lines
+    /// earlier, unwrapped, so a bad <c>ST4I_WAL_DIR</c> stops the host there and never reaches the replay.
+    /// Measured, not assumed. What IS reachable is the same throw from a coordinator holding DIFFERENT
+    /// options, which is what the DI override below builds: a real <see cref="TransportCoordinator"/> whose
+    /// <see cref="WalOptions.Directory"/> points at an existing FILE, so
+    /// <c>RebuildLive</c> → <c>EnsureDir</c> → <c>Directory.CreateDirectory</c> throws
+    /// <see cref="IOException"/> — an environmental failure of exactly the class the review names, on the
+    /// exact call the review names, with no value-dependent trickery.</para>
+    ///
+    /// <para><b>Both halves are asserted:</b> the host is UP (a real request), and the file <b>does not
+    /// exist</b> — checked on disk rather than through <c>Load()</c>, which also returns null for a corrupt
+    /// file and would pass for the wrong reason.</para>
+    /// </summary>
+    [Fact]
+    public async Task AFailedEnvFloorSeed_LeavesNoFile_SoTheEnvVarsStayTheFloor()
+    {
+        var settingsDir = Directory.CreateTempSubdirectory("st4i-h1a-settings-seed-").FullName;
+        var settingsFile = Path.Combine(settingsDir, "fleet-settings.json");
+        Assert.False(File.Exists(settingsFile)); // the precondition the whole case rests on
+
+        // A path that IS a file, so Directory.CreateDirectory over it throws.
+        var walBlocker = Path.Combine(Directory.CreateTempSubdirectory("st4i-h1a-walblock-").FullName, "not-a-dir");
+        File.WriteAllText(walBlocker, "this is a file, not a directory");
+
+        var machineCode = "H1A-SEED-" + Guid.NewGuid().ToString("N")[..8];
+        var log = new List<(LogLevel Level, string Message)>();
+
+        await using var factory = await CreateFactoryAsync(
+            new EnvOverrides("https://h1a-seed.example.test", machineCode, settingsDir),
+            log,
+            services => services.AddSingleton(sp => new TransportCoordinator(
+                sp.GetRequiredService<SwitchableTransport>(),
+                sp.GetRequiredService<DemoTransport>(),
+                sp.GetRequiredService<LiveTransport>(),
+                sp.GetRequiredService<AutoTransport>(),
+                TransportMode.Demo,
+                new WalOptions { Directory = walBlocker })));
+
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+        using var response = await client.GetAsync("/v1/settings");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        Assert.False(File.Exists(settingsFile),
+            "The env-floor seed failed to activate and fleet-settings.json was left behind. From the next " +
+            "boot it wins over ST4I_SERVER_URL/ST4I_MACHINE_CODE/ST4I_VERIFY_TLS — permanently, on the " +
+            "strength of a triple that never activated — and correcting those variables would have no " +
+            "effect. Content: " + (File.Exists(settingsFile) ? File.ReadAllText(settingsFile) : "(none)"));
+
+        lock (log)
+        {
+            Assert.Contains(log, e =>
+                e.Level == LogLevel.Error && e.Message.Contains(ReplayFailureMarker, StringComparison.Ordinal));
+            Assert.Contains(log, e =>
+                e.Level == LogLevel.Warning &&
+                e.Message.Contains("STARTUP SETTINGS SEED DISCARDED", StringComparison.Ordinal));
+        }
+    }
+
+    /// <summary>
     /// 🔴 <b>Fix round 2 (re-review N4) — "exactly one writer of <c>fleet-settings.json</c> at startup" is
     /// the load-bearing premise of the rationale at <c>FleetCore.UpdateSettings</c>, and until now it was
     /// true only by inspection. This measures it from <c>src/</c>.</b>
@@ -271,6 +351,27 @@ public sealed class StartupSettingsReplayHardeningTests
             .Distinct(StringComparer.Ordinal)
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToList();
+
+        // 🔴 Whole-branch review I-3 added a DELETER, and a census that counted only writers would have
+        // let it be true-by-inspection in exactly the way this test exists to end. One writer, one
+        // deleter, each asserted and each named.
+        var deleteSites = Directory
+            .EnumerateFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                     && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .SelectMany(f => File.ReadAllLines(f)
+                .Select((line, n) => (File: Path.GetRelativePath(root, f).Replace('\\', '/'), Line: n + 1, Text: line.Trim()))
+                .Where(x => Regex.IsMatch(x.Text, @"[Ss]ettings[Ss]tore\s*\??\.Delete\s*\(")))
+            .Select(x => $"{x.File}:{x.Line}")
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(deleteSites.Count == 1,
+            $"fleet-settings.json has {deleteSites.Count} deleter(s) in src/: {string.Join(", ", deleteSites)}. " +
+            "There must be exactly one, in Program.cs, on the SEED arm only — a failed RESTORE must never " +
+            "delete the operator's own file, which is branch-review C1 with a delete instead of an " +
+            "overwrite. If a second deleter is deliberate, the paragraph at FleetCore's finally has to be " +
+            "rewritten in the same commit: it states 'one writer, one deleter' as a fact.");
 
         Assert.True(saveSites.Count == 1,
             $"fleet-settings.json has {saveSites.Count} writer(s) in src/: {string.Join(", ", saveSites)}. " +
