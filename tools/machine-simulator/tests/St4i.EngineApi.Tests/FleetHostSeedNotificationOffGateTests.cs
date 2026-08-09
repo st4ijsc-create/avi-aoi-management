@@ -219,8 +219,8 @@ public sealed class FleetHostSeedNotificationOffGateTests
         using var go = new ManualResetEventSlim(false);
         var faults = new ConcurrentBag<Exception>();
 
-        // Each worker times its OWN RegisterMachine call. Those intervals are the contention witness: they
-        // are recorded by the test about the test, so nothing the product does can move them. See (a).
+        // Each worker times its OWN RegisterMachine call. Those intervals are the contention witness. See (a)
+        // for what they do and do not establish.
         var windows = new (long Start, long End)[threads];
         var workers = Enumerable.Range(0, threads).Select(i => RunOnItsOwnThread(
             () =>
@@ -248,14 +248,30 @@ public sealed class FleetHostSeedNotificationOffGateTests
         // (a) THE RUN WAS ACTUALLY CONTENDED — checked FIRST, because every assertion after it is satisfied
         //     by a serialised run in which nothing was ever concurrent.
         //
-        //     🔴 It asks whether two RegisterMachine CALLS overlapped in wall-clock time, which is a fact
-        //     about the harness's schedule alone. The first version of this witness asked instead whether
-        //     any descriptor was delivered by a non-registrant thread — and that is a fact about what the
-        //     LOCK did, not about whether the run was contended: under the lock-removed mutant every thread
-        //     drains only its own descriptor, so that witness fired FIRST and reported "no contention" for a
-        //     run that was fully contended. A vacuity guard that moves when the code under test moves is not
-        //     a vacuity guard; it is a second, worse assertion about the product wearing the guard's name.
-        //     Delivering threads are still recorded, but only for the diagnostic below.
+        //     🔴 It asks whether two RegisterMachine CALLS overlapped in wall-clock time. The first version
+        //     of this witness asked instead whether any descriptor was delivered by a non-registrant thread
+        //     — a fact about what the LOCK did, not about whether the run was contended: under the
+        //     lock-removed mutant every thread drains only its own descriptor, so that witness fired FIRST
+        //     and reported "no contention" for a run that was fully contended. A guard that INVERTS under
+        //     the mutation it guards is not a guard; it is a second, worse assertion about the product
+        //     wearing the guard's name. Delivering threads are still recorded, but only for the diagnostic
+        //     in the message below.
+        //
+        //     🔴 What this guard does and does not establish, stated at the size it actually is (review
+        //     NEW-5 — the first wording claimed "nothing the product does can move it", which is stronger
+        //     than the mechanism supports):
+        //       - MEASURED, and the load-bearing property: it does NOT invert under the mutation it guards.
+        //         Re-run against the lock-removed mutant, the witness passes and (b) fires, 5 of 5.
+        //       - NOT independent of the product: the window is [before RegisterMachine, after
+        //         RegisterMachine], and how long that call holds the calling thread is a product property.
+        //         A change that made the call return promptly would narrow every window.
+        //       - COARSER than the property it stands in for: it guards "two CALLS overlapped", not "two
+        //         DRAINS contended". The direction is the safe one — drain contention implies call overlap,
+        //         so no overlap implies certainly no drain contention and the guard fires — so it can never
+        //         let a fully serialised run through. But calls can overlap while the drains do not (one
+        //         thread still inside lock (_gate) while another drains), so a green witness does not PROVE
+        //         the drain was contended. With CallbackDwell inside the drain and eight threads, the gap is
+        //         small; it is a caveat, not a defect.
         var overlapping = (
             from i in Enumerable.Range(0, threads)
             from j in Enumerable.Range(i + 1, threads - i - 1)
@@ -280,6 +296,14 @@ public sealed class FleetHostSeedNotificationOffGateTests
         //     machines entered _fleet. Asserted against the roster the host itself ended up with, so it
         //     holds whichever way the threads raced. This is the one that catches an interleave at the
         //     DEQUEUE point, which produces zero overlap and is therefore invisible to (b).
+        //
+        //     🔴 UNPROVEN, and recorded as such (review NEW-3): (d) is DEFENSIVE. No mutation in any round
+        //     has ever killed through it — the lock-removed mutant is caught by (b) first, and the schedule
+        //     (d) exists for is one this harness does not produce. So (d) has never been demonstrated
+        //     capable of failing. It is kept because the schedule is real in production code, not because
+        //     it is evidenced; treat it as an unwitnessed assertion, not a proven one. The mutant that
+        //     would witness it would have to remove the lock AND move the dwell so the dequeue-point
+        //     interleave becomes the produced schedule — not attempted.
         Assert.Equal(host.Fleet.Select(d => d.Code).Skip(seededByCtor).ToList(), delivered);
     }
 
@@ -407,15 +431,22 @@ public sealed class FleetHostSeedNotificationOffGateTests
             Task.FromResult<AssetRecord?>(null);
     }
 
+    /// <summary>One delivered notification: which machine, and which thread actually ran the callback.
+    ///
+    /// <para>🔴 <b><see cref="ThreadName"/> is a DIAGNOSTIC, not the contention guard</b> — it was the guard
+    /// for one commit and that framing was measured to be wrong. The worker threads are named for the
+    /// machines they register, so <c>ThreadName != Code</c> does soundly imply that two registrations
+    /// overlapped; what a guard needs is the CONVERSE, and the converse is false. Under the lock-removed
+    /// mutant every thread drains only its own descriptor, so cross-thread delivery goes to zero on a run
+    /// where overlap is maximal — cross-thread delivery is a fact about what the lock DID, not about the
+    /// schedule. The guard is now wall-clock overlap of the <c>RegisterMachine</c> calls, in the test body;
+    /// this field only feeds the "distinct delivering threads" figure in that guard's failure
+    /// message.</para></summary>
+    private readonly record struct SeedDelivery(string Code, string? ThreadName);
+
     /// <summary>Records the ORDER and MULTIPLICITY of seed notifications, and — through
     /// <see cref="RosterProbe"/> — whether the roster already contained each machine at the moment it was
     /// announced.</summary>
-    /// <summary>One delivered notification: which machine, and which thread actually ran the callback.
-    /// <see cref="ThreadName"/> is the passive contention witness — the worker threads are named for the
-    /// machines they register, so <c>ThreadName != Code</c> means this descriptor was drained by a DIFFERENT
-    /// registrant, which can only happen if the two registrations overlapped.</summary>
-    private readonly record struct SeedDelivery(string Code, string? ThreadName);
-
     private sealed class OrderRecordingAssetRegistry : IAssetRegistry
     {
         private readonly List<SeedDelivery> _deliveries = new();
@@ -430,7 +461,14 @@ public sealed class FleetHostSeedNotificationOffGateTests
         /// <summary>How long each callback holds its calling thread. Zero (the default) for the
         /// single-threaded tests; non-zero widens the window in which a second drainer would be observed if
         /// the seed-notify lock were removed, which is what makes
-        /// <see cref="MaxConcurrentCallbacks"/> a sharp assertion rather than a lucky one.</summary>
+        /// <see cref="MaxConcurrentCallbacks"/> a sharp assertion rather than a lucky one.
+        ///
+        /// <para>🔴 <b>It is load-bearing for the CONTENTION GUARD too, and that is easy to miss because the
+        /// guard lives in the test body while this lives here.</b> The guard asserts that two
+        /// <c>RegisterMachine</c> calls overlapped in wall-clock time, and this dwell is most of what each
+        /// call's window is made of — zero it and the windows collapse to microseconds, at which point the
+        /// guard becomes exactly the flaky assertion it was added to avoid being. Do not trim this as
+        /// belonging only to <see cref="MaxConcurrentCallbacks"/>.</para></summary>
         public TimeSpan CallbackDwell { get; set; } = TimeSpan.Zero;
 
         /// <summary>The high-water mark of callbacks in flight simultaneously. MUST be 1: the drain is

@@ -2523,13 +2523,22 @@ internal sealed class FleetCore
         // Left as-is rather than aggregated, and the reason is checkable rather than universal: the original
         // wording claimed "nothing downstream depends on which of the two the caller sees", which is an
         // unverified claim about ALL callers. The narrow, checked version is — enumerated, not assumed —
-        // that RegisterMachine has four call sites in this tree (ConnectorEndpoints' single-machine and
-        // RTU-bus paths, OnboardingFleetJoin, and Program.cs's three seed registrations) and NONE of them
-        // wraps it in try/catch at all: every one consumes the bool return and lets any exception propagate.
-        // So no caller branches on the exception type TODAY. That is a property of the current call sites,
-        // not of this method — so if a caller ever does branch, capture-and-aggregate (hold the restart
-        // fault, run the drain, throw an AggregateException when both fired) is the fix, and it is
-        // deliberately not done here because it would be a behaviour change with no test behind it.
+        // that RegisterMachine has SIX call sites in this tree: ConnectorEndpoints' single-machine path and
+        // its RTU-bus loop (2), OnboardingFleetJoin (1), and Program.cs's three seed registrations (3). NONE
+        // of them wraps it in try/catch: every one consumes the bool return and lets any exception
+        // propagate. (The nearest try/catch, in ConnectorEndpoints' rollback block, sits inside a different
+        // branch and does not enclose its RegisterMachine call.) So no caller branches on the exception type
+        // TODAY. That is a property of the current call sites, not of this method — so if a caller ever does
+        // branch, capture-and-aggregate (hold the restart fault, run the drain, throw an AggregateException
+        // when both fired) is the fix, and it is deliberately not done here because it would be a behaviour
+        // change with no test behind it.
+        //
+        // 🔴 This sentence said "four call sites" while its own parenthetical listed 2 + 1 + 3 — corrected by
+        // review. It is worth the extra line because of WHERE it happened: this is the sentence written to
+        // replace an unverified universal with a counted one, and its own words are "enumerated, not
+        // assumed". The enumeration was right and the count in front of it was wrong, which is the fourth
+        // instance of that pairing in this task. The claim it supports never depended on the number — all
+        // six are unwrapped either way — and that is exactly why it would have survived unchallenged.
         try
         {
             if (restarting)
