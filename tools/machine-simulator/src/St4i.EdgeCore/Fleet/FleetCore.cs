@@ -458,8 +458,8 @@ internal sealed class FleetCore
     /// refused the uniform <c>finally</c> here and was right to: <c>Program.cs</c> replayed the persisted
     /// triple back into this same method during startup, UNWRAPPED, so persisting a triple that could not be
     /// activated converted "the edit evaporates at the next restart" into "the service does not start".
-    /// H-1a hardened that replay FIRST — it is guarded, logs at Error and falls back to the env-var floor —
-    /// and only then made the persistence unconditional. <b>The order is the fix; reversing it ships the
+    /// H-1a hardened that replay FIRST — it is guarded and logs at Error — and only then made the
+    /// persistence unconditional. <b>The order is the fix; reversing it ships the
     /// boot loop.</b> What closed is the S-set property (the commit's persistence is now unconditional, so
     /// the reported and persisted configurations cannot diverge). What did NOT close, and is not claimed:
     /// within one process a failed activation still leaves the transport on the old values while
@@ -3411,10 +3411,17 @@ internal sealed class FleetCore
         // VALUE-DEPENDENT one it was a boot loop: persist machineCode "" and every subsequent start threw
         // ArgumentException out of CredentialStore.Load at the same point, with no running process left to
         // correct it through. That is a property of the REPLAY, not of this method — so the replay is what
-        // was fixed. It is now guarded, logs at Error, and falls back to the env-var floor; a triple that
-        // cannot be activated leaves the host UP and the operator told. The boot loop is gone as a
-        // CONSEQUENCE, which is why this `finally` no longer trades a recoverable failure for an
-        // unrecoverable one.
+        // was fixed. It is now guarded and logs at Error; a triple that cannot be activated leaves the
+        // host UP and the operator told. The boot loop is gone as a CONSEQUENCE, which is why this
+        // `finally` no longer trades a recoverable failure for an unrecoverable one.
+        //
+        // 🔴 AND THE RATIONALE BELOW ONLY HOLDS BECAUSE THE REPLAY HAS EXACTLY ONE ARM. Fix round 1 also
+        // gave that guard an env-var-floor FALLBACK, as the remedy was sketched — and a fallback replay
+        // goes through THIS method, so this `finally` overwrote the operator's fleet-settings.json with
+        // the floor. An environmental failure then destroyed the very triple the next start was supposed
+        // to retry, which falsified the paragraph you are reading, in the same branch that wrote it. The
+        // fallback was removed (see Program.cs for the full argument); what makes "the next start retries
+        // and succeeds" TRUE is that nothing else writes this file at startup.
         //
         // WHAT THIS CLOSES, precisely, and what it does not. The commit above now ALWAYS owes its
         // persistence, so the reported configuration and the persisted configuration can no longer diverge

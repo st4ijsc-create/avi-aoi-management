@@ -161,34 +161,59 @@ public sealed class StartupSettingsReplayHardeningTests
         Assert.Contains(replayFailures, e => e.Message.Contains("fleet-settings.json", StringComparison.Ordinal));
     }
 
-    /// <summary>🔴 The FALLBACK arm, which is a separate claim and gets a separate test. A failed persisted
-    /// replay must not merely be survived — the env-var floor is replayed after it, i.e. the branch this
-    /// very startup would have taken had the file not existed.</summary>
+    /// <summary>
+    /// 🔴 <b>Branch review C1 — a failed replay must not DESTROY the operator's persisted triple, and the
+    /// env-var floor must not silently become the source of truth. This is the regression test for a
+    /// data-loss defect fix round 1 introduced and nothing caught.</b>
+    ///
+    /// <para><b>What went wrong, because the test only means something with the defect in view.</b> Fix
+    /// round 1's guard fell back to replaying the env-var floor when the persisted triple could not be
+    /// activated — which is how the remedy was sketched. But a fallback replay goes through
+    /// <c>FleetHost.UpdateSettings</c>, and H-1a's own second half made that method persist
+    /// UNCONDITIONALLY. So the fallback overwrote <c>fleet-settings.json</c> with the floor: an
+    /// environmental failure (a full WAL root, a throwing host callback) destroyed a perfectly good
+    /// operator configuration, permanently, with the next start having nothing left to retry. Two locally
+    /// correct steps composing into exactly the loss G-2's refusal existed to prevent.</para>
+    ///
+    /// <para><b>What it asserts, and why each half is needed.</b> The FILE must still hold what the
+    /// operator wrote — read back through a separate <see cref="FleetSettingsStore"/> so an in-memory
+    /// value cannot pass it. And <c>GET /v1/settings</c> must NOT report the floor: a fix that preserved
+    /// the file but still ran the process on the floor would leave FF-1's precedence inverted for this
+    /// boot and would put a torn triple in front of the operator. The env vars here are deliberately
+    /// DIFFERENT from the file's values, so either half failing is visible rather than coincidental.</para>
+    /// </summary>
     [Fact]
-    public async Task WhenThePersistedTripleFails_TheEnvironmentFloorIsReplayedInstead()
+    public async Task AFailedReplay_LeavesThePersistedTripleIntact_AndDoesNotLetTheEnvFloorWin()
     {
-        var settingsDir = Directory.CreateTempSubdirectory("st4i-h1a-settings-fallback-").FullName;
-        WriteUnactivatableSettingsFile(settingsDir, "https://h1a-file-that-fails.example.test");
-        var machineCode = "H1A-FLOOR-" + Guid.NewGuid().ToString("N")[..8];
+        var settingsDir = Directory.CreateTempSubdirectory("st4i-h1a-settings-notclobbered-").FullName;
+        WriteUnactivatableSettingsFile(settingsDir, "https://h1a-operators-own.example.test");
+        var floorMachineCode = "H1A-FLOOR-" + Guid.NewGuid().ToString("N")[..8];
         var log = new List<(LogLevel Level, string Message)>();
 
+        // A FULL env floor, different from the file on all three fields — so if anything replays it, both
+        // assertions below move together and neither can pass by accident.
         await using var factory = await CreateFactoryAsync(
-            new EnvOverrides("https://h1a-floor.example.test", machineCode, settingsDir), log);
+            new EnvOverrides("https://h1a-floor-must-not-win.example.test", floorMachineCode, settingsDir), log);
 
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
         using var response = await client.GetAsync("/v1/settings");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
+        // (1) The file is intact. This is the data-loss assertion.
+        var persisted = new FleetSettingsStore(settingsDir).Load();
+        Assert.NotNull(persisted);
+        Assert.Equal("https://h1a-operators-own.example.test", persisted!.ServerUrl);
+        Assert.Equal("", persisted.MachineCode);
+        Assert.False(persisted.VerifyTls);
+
+        // (2) The floor did not win. FF-1: env is only ever a floor for a machine that has never had
+        // these three set, and one failed activation must not promote it.
         var settings = await response.Content.ReadFromJsonAsync<SettingsDto>(JsonOptions);
         Assert.NotNull(settings);
+        Assert.Equal("https://h1a-operators-own.example.test", settings!.ServerUrl);
+        Assert.NotEqual(floorMachineCode, settings.MachineCode);
 
-        // The floor won, and it won by being REPLAYED after the failure — not by having been chosen in
-        // the first place, which it was not: the file existed, so the file was the primary source.
-        Assert.Equal("https://h1a-floor.example.test", settings!.ServerUrl);
-        Assert.Equal(machineCode, settings.MachineCode);
-
-        // …and the failure that got us here was still reported. A fallback that succeeds silently would
-        // hide a persisted file that is permanently dead.
+        // …and the failure was still reported, at the level an operator sees.
         lock (log)
         {
             Assert.Contains(log, e =>

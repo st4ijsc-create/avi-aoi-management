@@ -1796,7 +1796,7 @@ EXPECT_EDGESERVICE=50
 #
 # NOT COVERED BY THIS FILE, said out loud rather than implied: S6 (UpdateSettings). 🔴 TASK H-1a CLOSED IT,
 # but not here and not with a test in this class — the fix is in St4i.EngineApi/Program.cs (the startup
-# replay is now guarded, logs at Error and falls back to the env-var floor) and the persistence in
+# replay is now guarded and logs at Error, with exactly ONE arm and no env-var fallback) and the persistence in
 # FleetCore.UpdateSettings only THEN became unconditional. The order is the fix. Its coverage is
 # StartupSettingsReplayHardeningTests (St4i.EngineApi.Tests, +2 — see EXPECT_ENGINEAPI's own block below),
 # because the property that had to be measured is "a host replaying an unusable triple still comes up and
@@ -1873,11 +1873,16 @@ EXPECT_EDGESERVICE=50
 #       §10.4 — this product ships no appsettings.json, so a demotion to LogDebug emits NOTHING while every
 #       text assertion stays green, and the capturing provider returns IsEnabled(_) => true precisely so a
 #       demoted call is still captured and can be caught.
-#   WhenThePersistedTripleFails_TheEnvironmentFloorIsReplayedInstead                 +1
-#       The FALLBACK is a second claim and gets a second test. A guarded call that merely swallows would
-#       pass the first test while leaving the host on no configuration at all. This one seeds a failing
-#       FILE and a good ENV floor, and asserts GET /v1/settings reports the floor — which can only happen
-#       via the replay after the failure, since the file existed and was therefore the primary source.
+#   AFailedReplay_LeavesThePersistedTripleIntact_AndDoesNotLetTheEnvFloorWin        +1
+#       🔴 REPLACED IN FIX ROUND 1. This slot used to hold
+#       WhenThePersistedTripleFails_TheEnvironmentFloorIsReplayedInstead, which asserted that a failed
+#       replay falls back to the env floor — the remedy exactly as it was SKETCHED, and a data-loss
+#       defect once composed with H-1a's own unconditional persist: the fallback replay goes through
+#       UpdateSettings, so it OVERWROTE the operator's fleet-settings.json with the floor. The fallback
+#       is gone (Program.cs carries the full argument) and this test is its inverse: with a FULL env
+#       floor differing from the file on all three fields, the file must still hold what the operator
+#       wrote (read back through a separate FleetSettingsStore) AND GET /v1/settings must not report the
+#       floor. Count unchanged at +1 — one test replaced by one test, not added.
 #
 # EXPECT_WARNINGS stays 116 for H-1a: the added code is one guarded call site plus a static local function
 # in Program.cs (top-level statements already carry one, LogIfRegisterMachineCollided) and one new test
