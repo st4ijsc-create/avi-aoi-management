@@ -363,32 +363,63 @@ internal sealed class FleetCore
     /// state written while <see cref="_gate"/> is held, never rolled back, whose correctness depends on a step
     /// that runs after the lock is released — exposed to every throw in between. G-1 found one instance
     /// (<see cref="RegisterMachine"/>'s seed notification) and said plainly that it had NOT swept for
-    /// siblings; the sweep found six more. This is the axis, not the count: nothing here overlaps the nine,
-    /// because none of these paths is about reaching I/O under the lock.
-    /// <list type="bullet">
+    /// siblings. This is the axis, not the count: nothing here overlaps the nine, because none of these paths
+    /// is about reaching I/O under the lock.
+    ///
+    /// <b>SEVEN MEMBERS. One list, closed and open together, so the headline and the enumeration are the same
+    /// object.</b> (Round 1 of G-2 said "the sweep found six more" over a list of five — a count contradicted
+    /// by the list beneath it, which is the exact defect the commit BELOW this branch's base was written to
+    /// fix, and which G-2's own report claimed to have caught in its commit message while leaving it here.
+    /// Corrected by review. The sweep found FIVE more; re-deriving the set added a sixth, item 7, which the
+    /// sweep's single-completion table could not represent.)
+    /// <list type="number">
     /// <item><b>CLOSED (G-1).</b> The seed-notification queue — commit <see cref="EnqueueSeedNotification"/>,
     /// completion <see cref="DrainSeedNotifications"/>.</item>
-    /// <item><b>CLOSED (G-2).</b> <see cref="Stop"/>/<see cref="Estop"/> → <see cref="StopLocked"/> →
-    /// <see cref="WaitAndDisposeOldPipeline"/>; <see cref="Start"/> → <see cref="StartLocked"/> →
-    /// <see cref="CompleteStartOffLock"/>; <see cref="Burst"/> → <see cref="RevertBurstAfterDelayAsync"/>.
-    /// Each at its own call site, each with the same <c>try</c>/<c>finally</c> and its own note on masking
-    /// and on why a completion cannot run twice.</item>
-    /// <item><b>OPEN, and the uniform remedy is REFUSED here rather than missing.</b>
-    /// <see cref="UpdateSettings"/>'s committed triple versus its off-lock activation and persistence. A
-    /// <c>finally</c> around the persistence would convert "the edit evaporates at the next restart" into
-    /// "the service does not start", because <c>Program.cs</c> feeds the persisted triple back into this same
-    /// method during startup. The full argument and the two owner decisions it needs are at that method.</item>
+    /// <item><b>CLOSED (G-2).</b> <see cref="Stop"/>/<see cref="Estop"/> → <see cref="StopLocked"/> → BOTH
+    /// completions it owes: <see cref="WaitAndDisposeOldPipeline"/> and the historian run event. The run
+    /// event needed a second round (review C-1) — round 1 guaranteed the teardown and left the run event
+    /// exposed to this member's own throw site, which inflates OEE Availability.</item>
+    /// <item><b>CLOSED (G-2).</b> <see cref="Start"/> → <see cref="StartLocked"/> →
+    /// <see cref="CompleteStartOffLock"/> — <b>with one residual, named rather than swept: see item 7's
+    /// sibling note below.</b></item>
+    /// <item><b>CLOSED (G-2).</b> <see cref="Burst"/> → <see cref="RevertBurstAfterDelayAsync"/>.</item>
     /// <item><b>PARTLY OPEN.</b> The restart chokepoint. The rebuild is now unconditional over an off-lock
     /// TEARDOWN that throws (<see cref="RegisterMachine"/>/<see cref="ApplyScenario"/>), but a
     /// <see cref="StartLocked"/> that throws ITSELF leaves the fleet stopped with the roster/scenario write
     /// already committed, and no <c>finally</c> can start a fleet that failed to start. Rolling the commit
     /// back changes what a failed call MEANS to its caller; the root cause is path 5 above. Both are owner
     /// decisions and both are named in G-2's report rather than decided here.</item>
+    /// <item><b>OPEN, and the uniform remedy is REFUSED here rather than missing.</b>
+    /// <see cref="UpdateSettings"/>'s committed triple versus its off-lock activation and persistence. A
+    /// <c>finally</c> around the persistence would convert "the edit evaporates at the next restart" into
+    /// "the service does not start", because <c>Program.cs</c> feeds the persisted triple back into this same
+    /// method during startup. The full argument and the two owner decisions it needs are at that method.</item>
+    /// <item><b>CLOSED (G-2), and on no prior list.</b> <see cref="Start"/>'s commit owes a SECOND off-lock
+    /// completion after <see cref="CompleteStartOffLock"/> — the historian <c>"Start"</c> run event. It is
+    /// load-bearing rather than telemetry, and that is <b>forced by the aggregation code, not chosen</b>:
+    /// <c>SqliteHistorianStore</c>'s OEE query opens an interval on <c>"Start"</c>, closes it on
+    /// <c>"Stop"</c>/<c>"Estop"</c>, and ignores <c>"EstopReset"</c> entirely. Item 2 is its mirror on the
+    /// halt path.</item>
     /// </list>
-    /// <b>Two of these were WIDENED by G-1 rather than inherited from it</b>, and in the same way:
+    /// <b>NAMED, NOT CLOSED — item 3's residual</b> (recorded by the sweep, dropped by G-2's round 1, restored
+    /// by review I-5): a throw inside <see cref="StartLocked"/> <i>after</i> the connector loop loses
+    /// <c>orphanedConnectorDrivers</c> and <c>deferredLogs</c> outright — they are locals, so no
+    /// <c>finally</c> in a caller can reach them — and leaves <see cref="_slots"/> non-empty with
+    /// <c>_running == false</c>, which <see cref="StopLocked"/>'s <c>if (!_running) return default;</c> then
+    /// REFUSES to tear down. Closing it means restructuring <see cref="StartLocked"/> so its partial work is
+    /// owned by the caller, which is the same redesign path 5 needs. Reachability today is only
+    /// <see cref="StartSlot"/>'s <c>new EdgePipeline</c>/<c>Task.Run</c>, which is why "named with a reason"
+    /// is the honest answer rather than a fix.</para>
+    ///
+    /// <para><b>Two of these were WIDENED by G-1 rather than inherited from it</b>, and in the same way:
     /// <see cref="FlushDeferredLogs"/> — a host-supplied delegate, i.e. a throw site — became the FIRST
     /// statement of both completion routines, ahead of the disposals they exist to perform. The remedy is at
-    /// each of those two methods.</para></summary>
+    /// each of those two methods. <b>It was not the only host seam inside a completion routine</b>, and
+    /// saying so was G-2 round 1's own false universal: <see cref="DisposeOldSlots"/> called
+    /// <see cref="_logDebug"/> from inside both per-slot catch handlers, i.e. INTERLEAVED with the disposals
+    /// rather than in front of them, where a throw stranded every later slot. Buffered as of fix round 1. The
+    /// general lesson, since this instrument missed it twice: a completion routine's host seams are not only
+    /// the ones that PRECEDE its load-bearing work.</para></summary>
     private readonly object _gate = new();
 
     private readonly object _kpiGate = new();
@@ -1431,10 +1462,13 @@ internal sealed class FleetCore
     /// leak "review fix round 2" exists to prevent — reopened by the log deferral, in the one routine written
     /// to close it. Order is unchanged (flush first, then dispose); only the guarantee is new.</para>
     ///
-    /// <para><b>Masking, stated rather than left implicit</b> (G-1's N-2 rule): if the flush throws AND a
-    /// disposal throws, the disposal's exception replaces the flush's. That direction is the safe one —
-    /// <see cref="DisposeOrphanedConnectorDrivers"/> catches per-orphan and cannot throw today, and if it ever
-    /// did, "a driver could not be released" is the more actionable of the two.</para>
+    /// <para><b>Masking, stated rather than left implicit</b> (G-1's N-2 rule): if the flush throws AND the
+    /// disposal throws, the disposal's exception replaces the flush's. 🔴 Round 1 said
+    /// <see cref="DisposeOrphanedConnectorDrivers"/> "catches per-orphan and cannot throw today" — FALSE, and
+    /// in the same way review I-3 found for the halt path: it invoked <see cref="_logDebug"/> from inside
+    /// that per-orphan catch, so a throwing host logger both escaped AND stranded every later orphan. Those
+    /// lines are buffered as of fix round 1, so the method can still throw but can no longer skip an orphan.
+    /// Both exceptions are then "a host logger failed", so neither is the more actionable one.</para>
     ///
     /// <para><b>Tolerates <c>default(StartOutcome)</c>.</b> That value became reachable in G-2: every caller
     /// now runs this from a <c>finally</c>, so a <see cref="StartLocked"/> that threw leaves both lists
@@ -1474,11 +1508,22 @@ internal sealed class FleetCore
         // round 2 closed, and dropped the connector-rejection warnings with it.
         //
         // S7 is the SECOND completion the same commit owes, and it sits AFTER the first: the historian's
-        // "Start" run event. It is what makes OEE Availability a Start→Stop pair; a dropped Start corrupts
-        // that timeline exactly as the spurious pair this call site was moved here to avoid would. Stop() and
-        // Estop() emit theirs BEFORE their teardown, so for them the historian call is a throw SITE; Start()
-        // emits its own AFTER CompleteStartOffLock, so for Start() it is a VICTIM — of the very host-log seam
-        // G-1 routed through that window. Both now run in the `finally`, in the same order as before.
+        // "Start" run event. It is what makes OEE Availability a Start→Stop pair — SqliteHistorianStore's OEE
+        // query opens an interval on "Start" and closes it on "Stop"/"Estop" — so a dropped Start corrupts
+        // that timeline exactly as the spurious pair this call site was moved here to avoid would. Both
+        // completions now run in the `finally`, in the same order as before.
+        //
+        // 🔴 Round 1 justified this with "for Stop/Estop the historian call is a throw SITE; for Start it is a
+        // VICTIM", as if those were exclusive. They are not — a call can be both, and there it IS both. That
+        // sentence is why the same fix was not applied to the halt path, where a missing Stop/Estop INFLATES
+        // availability. Corrected by review C-1; see Stop()/Estop().
+        //
+        // MASKING: if CompleteStartOffLock throws AND the run event throws, the run event's exception
+        // replaces it. Round 1 said the replacing exception here "cannot throw short of OOM"; that is FALSE
+        // and the same report's own S2 row said so — RecordRunEventFireAndForget is not async, and its
+        // disposed-writer arm calls a host logWarning synchronously before returning a Task. Both are host
+        // logger failures, so neither is the strictly more important message; it is stated because the rule
+        // is that it gets stated.
         //
         // `default(StartOutcome)` is the value CompleteStartOffLock sees when StartLocked itself threw
         // (reachable — the enumeration's path 5, MachineConfigStore.Ensure); both of its halves return
@@ -1550,10 +1595,11 @@ internal sealed class FleetCore
         // Wait/dispose must happen OUTSIDE _gate — see WaitAndDisposeOldPipeline's remarks. Stop()
         // itself stays synchronous (bounded by RestartTeardownTimeout) so a caller observing it return
         // can trust the old pipeline is actually torn down, not just "cancel requested".
-        // 🔴 G-2 (S2) — see Estop() for the full account of why the teardown is in a `finally`. Stop() and
-        // Estop() are the same member of that set: StopLocked's commit happens under _gate, the teardown it
-        // owes happens off-lock, and both throw sites in between (the in-lock PublishNodeDeath seam and the
-        // historian's disposed-writer arm, which invokes a host logWarning SYNCHRONOUSLY) sit between them.
+        // 🔴 G-2 (S2) — see Estop() for the full account: of why the teardown is in a `finally`, of why the
+        // run event is in one too (review C-1), and of why a latched flag rather than an unconditional call.
+        // Stop() and Estop() are the same member of that set, and this method already HAD the flag Estop had
+        // to grow: `stopped` is computed before the publish call, so it is exactly "a real running→
+        // not-running transition happened", and an already-stopped fleet still emits nothing.
         PipelineHandle handle = default;
         bool stopped = false;
         try
@@ -1573,15 +1619,22 @@ internal sealed class FleetCore
                     _unsPublisher?.PublishNodeDeath();
                 }
             }
-
-            if (stopped)
-            {
-                _ = _historianWriter?.RecordRunEventFireAndForget("Stop");
-            }
         }
         finally
         {
-            WaitAndDisposeOldPipeline(handle);
+            // Nested — see Estop(). The run event's own synchronous prefix can throw, and it must not be able
+            // to abandon the teardown that shares this `finally` with it.
+            try
+            {
+                if (stopped)
+                {
+                    _ = _historianWriter?.RecordRunEventFireAndForget("Stop");
+                }
+            }
+            finally
+            {
+                WaitAndDisposeOldPipeline(handle);
+            }
         }
     }
 
@@ -1655,21 +1708,53 @@ internal sealed class FleetCore
         // guards its disposal on `_slots.Remove(slot)` returning true, which it cannot for a slot already
         // cleared. The handle is passed to this method exactly once on every path, throwing or not.
         //
-        // MASKING (G-1's N-2 rule, applied forwards): if the publish/historian call throws AND the teardown
-        // also throws, the teardown's exception replaces the original. That direction is the safe one —
-        // WaitAndDisposeOldPipeline catches per-slot around both the wait and the DisposeAsync, and its one
-        // remaining throw site (the deferred-log flush) is now itself wrapped so it cannot skip the disposals.
+        // MASKING (G-1's N-2 rule, applied forwards): if the publish call throws AND a later step also
+        // throws, the later exception replaces the original.
+        //
+        // 🔴 The throw sites in this method's off-lock tail are ENUMERATED rather than summarised, because
+        // round 1 summarised them and the summary was false ("its one remaining throw site (the deferred-log
+        // flush)"). There are THREE, all the same host-seam class:
+        //   1. RecordRunEventFireAndForget's disposed arm — a synchronous host logWarning before it returns.
+        //   2. WaitAndDisposeOldPipeline's FlushDeferredLogs — a host logWarning/logError.
+        //   3. DisposeOldSlots' two per-slot _logDebug calls (review I-3).
+        // What none of them can do any more is SKIP a disposal: 2 is wrapped so the disposals still run, and
+        // 3 is buffered so no host code runs between two slots. Every replacement is therefore "a logger
+        // failed" standing in for "a logger failed", never for "the pipeline is down".
         //
         // ORDER NOT CHANGED, deliberately: `_estopEngaged = true` still lands AFTER StopLocked, not before.
         // That the pipeline is torn down before the latch reports success is operator-observable and is this
         // method's documented contract (branch-review C-2/C-3, above) — this task does not get to reorder it.
+        //
+        // 🔴 G-2 FIX ROUND 1 (review C-1) — THE RUN EVENT IS THE SECOND COMPLETION THIS COMMIT OWES, AND IT
+        // WAS STILL BEING DROPPED BY THIS MEMBER'S OWN THROW SITE.
+        //
+        // G-2 applied "a commit can owe MORE THAN ONE off-lock completion" to Start() (that is what turned up
+        // S7) and did not apply it here — the mirror image, on the halt path. `RecordRunEventFireAndForget`
+        // sat inside the `try`, after the lock, so a throw from `PublishNodeDeath()` — the seam this member's
+        // own test injects — skipped it. Treating that call as a throw SITE and therefore not also a VICTIM
+        // was the error; it is both.
+        //
+        // IT IS OPERATOR-VISIBLE, IN THE NUMBER A PLANT MANAGER READS. SqliteHistorianStore's OEE
+        // aggregation opens an interval on "Start" (`activeStart ??= at`) and closes it only on
+        // "Stop"/"Estop"; a missing halt event leaves it open, and the trailing clause then accrues run time
+        // to the end of the window. Availability is INFLATED — the same corruption S7 exists to prevent,
+        // with the sign reversed.
+        //
+        // WHY A LATCHED FLAG AND NOT AN UNCONDITIONAL `finally`. This is not Start()'s mechanical three
+        // lines. An unconditional `finally` would record a halt on a path where `StopLocked` THREW, i.e. one
+        // that never happened — trading "lost" for "spurious", which is the same trade in the other
+        // direction and no better. `halted` is set after the two commits the event actually describes, so it
+        // is true exactly when an "Estop" is truthful — including for an already-stopped fleet, where
+        // StopLocked no-ops and this method has always recorded the event anyway.
         PipelineHandle handle = default;
+        var halted = false;
         try
         {
             lock (_gate)
             {
                 handle = StopLocked();
                 _estopEngaged = true;
+                halted = true;
 
                 // Review fix (Important) — same reasoning as Start()/Stop()'s own moved calls: kept inside
                 // _gate so this NDEATH is serialized with the transition, never racing an off-gate concurrent
@@ -1677,12 +1762,25 @@ internal sealed class FleetCore
                 // fire-and-forget pattern, unchanged here).
                 _unsPublisher?.PublishNodeDeath();
             }
-
-            _ = _historianWriter?.RecordRunEventFireAndForget("Estop");
         }
         finally
         {
-            WaitAndDisposeOldPipeline(handle);
+            // Nested for the reason §8.1(e) now records: a throw inside a `finally` abandons the REST of that
+            // same `finally`, and this first statement CAN throw — `RecordRunEventFireAndForget` is not
+            // `async`, and its disposed-writer arm invokes the host's logWarning synchronously before
+            // returning a Task. That is this member's own throw site (b). Order is unchanged: run event,
+            // then teardown.
+            try
+            {
+                if (halted)
+                {
+                    _ = _historianWriter?.RecordRunEventFireAndForget("Estop");
+                }
+            }
+            finally
+            {
+                WaitAndDisposeOldPipeline(handle);
+            }
         }
     }
 
@@ -2234,6 +2332,13 @@ internal sealed class FleetCore
     {
         if (orphans is null) return;
 
+        // 🔴 G-2 fix round 1 — buffered for the same reason DisposeOldSlots buffers, and found by grepping
+        // for siblings of review I-3 rather than by being told: this method has the IDENTICAL shape — a host
+        // seam (_logDebug) inside a per-orphan catch, i.e. INTERLEAVED with the disposals. A throwing host
+        // logger on orphan N left orphans N+1..M open, each holding whatever socket its factory built. The
+        // review named the halt-path copy; this is the start-path one.
+        var disposeFaults = new List<(Exception Error, string Message)>();
+
         foreach (var orphan in orphans)
         {
             try
@@ -2247,8 +2352,14 @@ internal sealed class FleetCore
                 // 🔴 G-1 — _logDebug, not _logError. This was LogDebug before E-2 (i.e. SILENT, since
                 // St4i.EngineApi ships no appsettings.json); E-2's two-channel convention promoted it to an
                 // Event Log entry under AddWindowsService. See _logDebug.
-                _logDebug?.Invoke(ex, "FleetCore orphaned connector driver dispose observed a fault");
+                disposeFaults.Add((ex, "FleetCore orphaned connector driver dispose observed a fault"));
             }
+        }
+
+        // Every orphan is released by the time any host code runs.
+        foreach (var fault in disposeFaults)
+        {
+            _logDebug?.Invoke(fault.Error, fault.Message);
         }
     }
 
@@ -2439,12 +2550,31 @@ internal sealed class FleetCore
     }
 
     /// <summary>🔴 G-2 — the disposal half of <see cref="WaitAndDisposeOldPipeline"/>, split out for one
-    /// reason only: a <c>finally</c> block may not contain the <c>return</c> the null-handle case needs. The
-    /// body below is verbatim what it was before the split. Nothing else calls this; go read
-    /// <see cref="WaitAndDisposeOldPipeline"/> for what it is for.</summary>
+    /// reason only: a <c>finally</c> block may not contain the <c>return</c> the null-handle case needs.
+    ///
+    /// <para>🔴 <b>G-2 FIX ROUND 1 (review I-3) — the two <see cref="_logDebug"/> calls are BUFFERED and
+    /// emitted after the loop, because they were host seams sitting BETWEEN slot disposals on the halt
+    /// path.</b> Both live inside a per-slot <c>catch</c>, so they run exactly when a driver has actually
+    /// misbehaved — the case the catch exists for. A host wires <see cref="_logDebug"/> to its own
+    /// <c>ILogger</c>; a throw there aborted the loop and <b>every remaining slot's driver and CTS went
+    /// undisposed</b>. That is the same leak <see cref="Estop"/>'s own <c>finally</c> exists to prevent, one
+    /// level in — and round 1 shipped a sentence at <see cref="Estop"/> asserting the deferred-log flush was
+    /// the ONLY remaining throw site here, which was false.</para>
+    ///
+    /// <para>Buffering is the pattern G-1 already established for this exact hazard, applied one level down;
+    /// it introduces no new channel and no arbitration. The messages, their order relative to one another and
+    /// their channel are unchanged — what changes is that no host code runs between two slots' disposals, so
+    /// a throwing (or merely SLOW) logger can no longer truncate or stall a halt. The lines now arrive after
+    /// the last disposal rather than interleaved with them; they are Debug-channel and <c>St4i.EngineApi</c>
+    /// ships no <c>appsettings.json</c>, so nothing observes that interleaving today.</para>
+    ///
+    /// <para>A throw from the emit loop still propagates — nothing is swallowed — but by then every slot has
+    /// been released.</para></summary>
     private void DisposeOldSlots(IReadOnlyList<PipelineSlot>? oldSlots)
     {
         if (oldSlots is null) return;
+
+        var teardownFaults = new List<(Exception Error, string Message)>();
 
         foreach (var slot in oldSlots)
         {
@@ -2462,7 +2592,8 @@ internal sealed class FleetCore
                     // itself somehow throws, this just keeps Task.Wait()'s unwrap-and-rethrow from surfacing
                     // as an unhandled exception on the restart caller instead of a log line.
                     // 🔴 G-1 — _logDebug, not _logError; see _logDebug and the sibling site below.
-                    _logDebug?.Invoke(ex, "FleetCore old pipeline slot teardown wait observed a faulted task");
+                    // 🔴 G-2 fix round 1 — buffered, not emitted here. See this method's own remarks.
+                    teardownFaults.Add((ex, "FleetCore old pipeline slot teardown wait observed a faulted task"));
                 }
             }
 
@@ -2476,10 +2607,17 @@ internal sealed class FleetCore
                 // run-task wait above.
                 // 🔴 G-1 — _logDebug, not _logError; the third of the three best-effort teardown lines E-2
                 // moved from SILENT to Error. See _logDebug.
-                _logDebug?.Invoke(ex, "FleetCore old pipeline slot driver dispose observed a fault");
+                // 🔴 G-2 fix round 1 — buffered, not emitted here. See this method's own remarks.
+                teardownFaults.Add((ex, "FleetCore old pipeline slot driver dispose observed a fault"));
             }
 
             slot.Cts.Dispose();
+        }
+
+        // Every slot is released by the time any host code runs.
+        foreach (var fault in teardownFaults)
+        {
+            _logDebug?.Invoke(fault.Error, fault.Message);
         }
     }
 

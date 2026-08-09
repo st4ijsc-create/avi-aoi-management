@@ -1740,6 +1740,34 @@ EXPECT_EDGESERVICE=50
 # is therefore no test for it, and that is a refusal rather than a gap. See FleetCore.UpdateSettings' own
 # comment and the G-2 report.
 #
+# 🔴 RUNTIME, disclosed HERE and not only in the task report (G-2 review, Minor 10): this file adds ~8 s of
+# WALL CLOCK to every gate run, and it is not incidental. Two Burst tests wait on the real BurstDuration
+# (4 s, FleetCore.cs) because the property under test IS "a revert was scheduled", and three more poll for a
+# fire-and-forget historian write. If this ever needs to come down, the fix is making BurstDuration
+# injectable — a production change nobody has asked for — NOT loosening a bound (§8's rule). Recorded so the
+# next person asking "why did the gate get slower" finds the answer where they are already looking.
+#
+# 🔴 G-2 FIX ROUND 1 raises this 1310 -> 1314 (+4), counted from the runner, ALL FOUR in the existing
+# FleetHostGateCommitCompletionTests. No file added, none rewritten, none deleted.
+#   Estop_WhenTheUnsSeamThrowsUnderTheGate_TheHaltRunEventIsStillRecorded              +1
+#   Stop_WhenTheUnsSeamThrowsUnderTheGate_TheStopRunEventIsStillRecorded               +1
+#       Review C-1. Round 1 closed S2's teardown and left S2's OTHER completion — the halt run event —
+#       exposed to the same throw site the member's own test injects. SqliteHistorianStore's OEE query opens
+#       an interval on "Start" and closes it on "Stop"/"Estop", so a dropped halt event INFLATES availability.
+#       Two tests, not one: Estop needed a new latched flag (an unconditional finally would record a halt
+#       StopLocked never completed), Stop already had one.
+#   Estop_WhenTheHostDebugLoggerThrowsOnOneSlot_EverySubsequentSlotIsStillDisposed     +1
+#       Review I-3. DisposeOldSlots called the host _logDebug from INSIDE each per-slot catch — interleaved
+#       with the disposals, not in front of them — so a throwing host logger stranded every later slot's
+#       driver and CTS on the halt path. Two slots; the second one's disposal is the assertion. The same
+#       shape was found by grep in DisposeOrphanedConnectorDrivers and fixed there too — and witnessed, not
+#       argued from similarity:
+#   Start_WhenTheHostDebugLoggerThrowsOnOneOrphan_EveryOtherOrphanIsStillDisposed     +1
+#       The sibling. Two rejecting-but-leaking connector factories, both orphans faulting on dispose, both
+#       disposal counts asserted — so the test does not depend on ConnectorRegistry.RegisteredIds
+#       enumeration order. Added because "identical mechanism, no separate test" is exactly the reasoning
+#       this project has been burned by; a fix nothing can turn red is a fix nobody has measured.
+#
 # EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE, EXPECT_EDGECORE and EXPECT_EDGESERVICE are deliberately UNCHANGED,
 # and that is the check rather than a coincidence: G-2 touches exactly ONE product file
 # (src/St4i.EdgeCore/Fleet/FleetCore.cs) and adds one test file in one suite. A total moving anywhere else
@@ -1747,7 +1775,7 @@ EXPECT_EDGESERVICE=50
 # 22: G-2 adds no driver and no connector kind. EXPECT_WARNINGS stays 116 — the new code adds no warning and
 # the one signature change (DisposeOrphanedConnectorDrivers' parameter becoming nullable) is matched by a
 # null guard at its head, so no CS86xx appears.
-EXPECT_ENGINEAPI=1310
+EXPECT_ENGINEAPI=1314
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

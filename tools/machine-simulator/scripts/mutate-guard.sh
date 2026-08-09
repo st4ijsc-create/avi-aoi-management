@@ -29,10 +29,18 @@
 # writing the warning line above. The mutation round is cheap to repeat; the work it is
 # measuring is not.
 #
-# 🔴 SO USE `restore` INSTEAD OF `git checkout --`. A written rule is not a trigger; that
-# is the whole lesson of the third loss. The verb below takes its own snapshot first and
-# then does the checkout, so the recovery point exists whether or not anyone remembered
-# to commit.
+# 🔴 SO USE `restore` INSTEAD OF `git checkout --`. The verb below takes its own snapshot
+# first and then does the checkout, so the recovery point exists whether or not anyone
+# remembered to commit.
+#
+# 🔴 AND BE HONEST ABOUT WHAT THAT BUYS (review of the round that added it). The first
+# draft of this block said "a written rule is not a trigger; the verb is." Half of that is
+# true and half is the same shape this script exists to catch: a claim in the voice of a
+# mechanism. NOTHING HERE MAKES `restore` THE PATH OF LEAST RESISTANCE — no wrapper, no
+# alias, no hook intercepts `git checkout --`. The third loss happened after the person
+# wrote the warning; a fourth can happen after they wrote the verb. What the verb actually
+# changes is the OUTCOME when it IS used, not the odds of using it. Closing that gap needs
+# something that fires without being chosen, which is a bigger change than this one.
 #
 # FOUR THINGS IT DOES DIFFERENTLY FROM THE OBVIOUS VERSION, each because the obvious one
 # was measured and found wanting:
@@ -45,9 +53,16 @@
 #   2. IT SNAPSHOTS RATHER THAN REFUSES. A refusal forbids the edit → test → mutate →
 #      commit loop that this very round used, and the way people adapt to a refusal is a
 #      reflex `--force`. A snapshot also covers a case no structural refusal can: a file
-#      edited WHILE the round is running. And the snapshot is UNCONDITIONAL — the
-#      dirty/clean check below only decides how loud the message is, so a check that is
-#      wrong costs a log line rather than the work.
+#      edited WHILE the round is running.
+#      🔴 Two DIFFERENT things were being conflated here, and the first draft stated the
+#      weaker one three times as if it covered both. (a) The DIRTY CHECK is not
+#      load-bearing: it only chooses how loud the message is, so a check that is wrong
+#      costs a log line rather than the work. That was true. (b) The SNAPSHOT is
+#      load-bearing, and in the first draft its `mkdir`/`cp` were UNCHECKED under
+#      `set -uo pipefail` — so a failed copy fell straight through to the checkout and
+#      destroyed the file it had not saved. "Unconditional" described the intent, not the
+#      code. It now refuses to check out anything it could not first copy; see FAIL
+#      CLOSED #3 at the verb.
 #
 #   3. IT USES `git diff --quiet -- <file>` AND COMPARES NO PATHS BY HAND. The hazard is
 #      real and it is worth stating what it actually is, because the version of it I was
@@ -230,6 +245,19 @@ case "${1:-}" in
         echo "NO-VERDICT: nothing at $p to restore"; failed=1; continue
       fi
 
+      # 🔴 FAIL CLOSED #1 (review I-6): a DIRECTORY is refused, not snapshotted. `git checkout --`
+      # happily accepts a directory pathspec and reverts every file under it, while `cp -p` on a
+      # directory does nothing but print "omitting directory" — so the obvious code path takes NO
+      # recovery point and then destroys a whole subtree. The brief scopes this verb to the mutated
+      # FILE; naming the files is the fix, not teaching this to copy trees.
+      if [[ -d "$p" ]]; then
+        echo "REFUSED: $p is a directory. This verb restores FILES."
+        echo "  \`git checkout -- <dir>\` would revert every file under it, and no snapshot here would"
+        echo "  cover them. Name the mutated files instead."
+        failed=1
+        continue
+      fi
+
       if ! git ls-files --error-unmatch -- "$p" >/dev/null 2>&1; then
         # Point 4. Say the true thing: there is no restore for this, at all.
         echo "UNTRACKED: $p is not in git — \`git checkout --\` CANNOT restore it, and neither can this."
@@ -238,16 +266,33 @@ case "${1:-}" in
         continue
       fi
 
+      # 🔴 FAIL CLOSED #2 (review I-6): `..` in an argument would otherwise write the snapshot
+      # OUTSIDE the recovery directory (or over something else). Flatten the path into the file
+      # name rather than trusting it as a subpath.
+      dest="$recovery/$(printf '%s' "$p" | tr -c '[:alnum:]._-' '-')"
+
       # Point 2: snapshot UNCONDITIONALLY, before anything is destroyed. The comparison
       # below only chooses the wording.
-      dest="$recovery/$p"
-      mkdir -p "$(dirname "$dest")"
-      cp -p -- "$p" "$dest"
+      #
+      # 🔴 FAIL CLOSED #3, AND THIS IS THE ONE THAT MATTERED (review I-6). These two commands used
+      # to be unchecked. This script runs `set -uo pipefail` with NO `-e`, so a failed `mkdir` or
+      # `cp` — a full disk, a read-only TMPDIR, a permissions problem — printed to stderr and
+      # execution fell straight through to the `git checkout` below. A safety latch whose snapshot
+      # can fail silently while the destructive step proceeds is WORSE than no latch, because it is
+      # trusted. It now refuses to check out anything it could not first copy.
+      if ! mkdir -p "$(dirname "$dest")" || ! cp -p -- "$p" "$dest"; then
+        echo "NO-VERDICT: could NOT take a recovery point for $p — refusing to check it out."
+        echo "  Nothing was destroyed. Fix the snapshot destination (\$TMPDIR: ${TMPDIR:-/tmp}) and retry."
+        failed=1
+        continue
+      fi
 
-      # Point 3: `git diff --quiet -- <path>` — git resolves the pathspec relative to the
-      # CWD (this script runs from tools/machine-simulator; porcelain would print
-      # repo-root-relative paths and never match), and normalises line endings the same
-      # way the index does.
+      # Point 3: `git diff --quiet -- <path>`. The reason is NOT that porcelain "never matches" and
+      # NOT line-ending normalisation — both of those were measured and retracted; see the header
+      # block, which carries the three-variant measurement. The reason is that `git diff --quiet`
+      # HAS NO OUTPUT TO COMPARE, so the class of defect that silently disables a hand-written path
+      # comparison cannot arise here at all. And per the snapshot above, this comparison is not
+      # load-bearing anyway: it chooses the wording, never whether the recovery point exists.
       if git diff --quiet -- "$p" && git diff --quiet --cached -- "$p"; then
         echo "restore: $p was identical to HEAD; snapshot kept anyway at $dest"
       else

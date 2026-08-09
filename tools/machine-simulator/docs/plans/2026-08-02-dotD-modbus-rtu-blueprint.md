@@ -221,7 +221,9 @@ Chạy thử từ `tools/machine-simulator` trên một file bẩn, ba biến th
 
 🔴 **(e) `finally` là một nơi trú của lớp lỗi này, không phải thuốc chữa của nó (G-2).**
 
-G-2 đóng lớp lỗi ấy bằng `try`/`finally` ở từng chỗ. **Một trong các bản sửa mang đúng lỗi nó đang sửa**, và đó là lần thứ tư trong hai đợt (§8.1(b)): một cú ném **bên trong** `finally` **bỏ luôn phần còn lại của chính `finally` ấy**, nên hai câu lệnh viết nối nhau trong một `finally` không phải hai bảo đảm — câu thứ hai vẫn phơi ra trước câu thứ nhất. Đúng cửa sổ mà bản sửa sinh ra để đóng.
+G-2 đóng lớp lỗi ấy bằng `try`/`finally` ở từng chỗ. **Một trong các bản sửa mang đúng lỗi nó đang sửa**: một cú ném **bên trong** `finally` **bỏ luôn phần còn lại của chính `finally` ấy**, nên hai câu lệnh viết nối nhau trong một `finally` không phải hai bảo đảm — câu thứ hai vẫn phơi ra trước câu thứ nhất. Đúng cửa sổ mà bản sửa sinh ra để đóng.
+
+🔴 **Nó thuộc nguyên tắc thứ BA ("sửa một trường hợp của một lớp lỗi không cho miễn nhiễm với lớp lỗi đó, và có thể còn làm yếu đi" — D-2 tái tạo I-5 ngay trong commit sửa I-5), KHÔNG thuộc §8.1(b).** Bản nháp đầu của mục này xếp nó là "lần thứ tư" của (b) — sai, và sai theo cách mà chính (b) cảnh báo: câu chốt của (b) là *cả ba lần lỗi đều nằm trong **văn xuôi**, không nằm trong logic*, còn ca của G-2 nằm **trong logic**. Nối thêm một thành viên phá đúng bất biến mà lớp ấy tự phát biểu, rồi đếm nó, là làm hỏng cả lớp. (Do phản biện bắt.)
 
 **Thứ bắt được nó là bài test, không phải lần đọc lại.** Bản nháp trông đúng, đọc trôi, và giải thích chính nó một cách thuyết phục.
 

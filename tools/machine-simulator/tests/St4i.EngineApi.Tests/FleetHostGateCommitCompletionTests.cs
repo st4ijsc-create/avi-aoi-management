@@ -208,6 +208,130 @@ public sealed class FleetHostGateCommitCompletionTests
         }
     }
 
+    /// <summary>🔴 S2's SECOND completion — review C-1. Round 1 of G-2 guaranteed the teardown and left this
+    /// one exposed to the same throw site the test above injects.
+    ///
+    /// <para><b>Why this is not decoration.</b> <c>SqliteHistorianStore</c>'s OEE query opens a run interval
+    /// on <c>"Start"</c> (<c>activeStart ??= at</c>) and closes it only on <c>"Stop"</c>/<c>"Estop"</c>; a
+    /// missing halt event leaves the interval open and the trailing clause accrues run time to the end of the
+    /// window. Availability is <b>inflated</b> — the same corruption S7 exists to prevent, sign reversed, in
+    /// the number a plant manager reads.</para>
+    ///
+    /// <para><b>And the fix is not the mechanical one <c>Start</c> got.</b> An unconditional <c>finally</c>
+    /// would record a halt on a path where <c>StopLocked</c> threw — trading "lost" for "spurious". The flag
+    /// is what makes the event truthful, so this test also pins that a fleet which never ran still records
+    /// its Estop (the pre-G-2 behaviour) while nothing invents a Stop for it.</para></summary>
+    [Fact]
+    public async Task Estop_WhenTheUnsSeamThrowsUnderTheGate_TheHaltRunEventIsStillRecorded()
+    {
+        var publisher = new NodeDeathThrowingUnsPublisher();
+        var store = new RunEventRecordingHistorianStore();
+        var writer = new HistorianWriter(store);
+        var host = CreateHost(unsPublisher: publisher, historianWriter: writer);
+
+        try
+        {
+            host.Start();
+            Assert.True(host.IsRunning);
+
+            var thrown = Assert.Throws<InvalidOperationException>(() => host.Estop());
+            Assert.Contains(InjectedMarker, thrown.Message, StringComparison.Ordinal);
+
+            await WaitUntilAsync(
+                () => store.RunEventTypes().Contains("Estop", StringComparer.Ordinal),
+                "the historian to record the Estop run event despite the UNS seam throwing under the lock");
+
+            // The latch really did engage, so the event it records is truthful rather than merely present.
+            Assert.True(host.EstopEngaged);
+        }
+        finally
+        {
+            publisher.Armed = false;
+            try { host.Stop(); } catch { /* best-effort */ }
+            await writer.DisposeAsync();
+        }
+    }
+
+    /// <summary>🔴 The <c>Stop()</c> half of review C-1 — same window, same seam, its own code path. Unlike
+    /// <c>Estop</c>, this method already had the latched flag the fix needs (<c>stopped</c>, computed before
+    /// the publish call), so only the placement changed.</summary>
+    [Fact]
+    public async Task Stop_WhenTheUnsSeamThrowsUnderTheGate_TheStopRunEventIsStillRecorded()
+    {
+        var publisher = new NodeDeathThrowingUnsPublisher();
+        var store = new RunEventRecordingHistorianStore();
+        var writer = new HistorianWriter(store);
+        var host = CreateHost(unsPublisher: publisher, historianWriter: writer);
+
+        try
+        {
+            host.Start();
+            Assert.True(host.IsRunning);
+
+            var thrown = Assert.Throws<InvalidOperationException>(() => host.Stop());
+            Assert.Contains(InjectedMarker, thrown.Message, StringComparison.Ordinal);
+
+            await WaitUntilAsync(
+                () => store.RunEventTypes().Contains("Stop", StringComparer.Ordinal),
+                "the historian to record the Stop run event despite the UNS seam throwing under the lock");
+        }
+        finally
+        {
+            publisher.Armed = false;
+            try { host.Stop(); } catch { /* best-effort */ }
+            await writer.DisposeAsync();
+        }
+    }
+
+    /// <summary>🔴 Review I-3 — the host seam that sits BETWEEN slot disposals, not in front of them.
+    ///
+    /// <para><c>DisposeOldSlots</c> called <see cref="Microsoft.Extensions.Logging.ILogger"/>-backed
+    /// <c>_logDebug</c> from inside each per-slot <c>catch</c> — the handler that runs exactly when a driver
+    /// has actually misbehaved. A throwing host logger there aborted the loop, so <b>every remaining slot's
+    /// driver and CTS went undisposed</b>, on the halt path. Round 1's own comment at <c>Estop</c> asserted
+    /// the deferred-log flush was the only remaining throw site in that routine; it was not.</para>
+    ///
+    /// <para>Two slots, in order: the first faults on <c>DisposeAsync</c> (producing the debug line) and the
+    /// logger throws on it; the second must still be released. That second disposal is the assertion.</para></summary>
+    [Fact]
+    public void Estop_WhenTheHostDebugLoggerThrowsOnOneSlot_EverySubsequentSlotIsStillDisposed()
+    {
+        var logger = new RecordingLogger { ThrowOnFragment = "slot driver dispose observed a fault" };
+        var host = CreateHost(logger);
+        var faulting = new DisposeThrowingCountingDriver("g2-i3-faulting");
+        var later = new DisposeCountingDriver("g2-i3-later");
+
+        host.AdditionalPipelinesForTests = () => new List<(string, IDeviceDriver, MappingProfile)>
+        {
+            ("g2-i3-faulting", faulting, ProfileFor("g2-i3-faulting")),
+            ("g2-i3-later", later, ProfileFor("g2-i3-later")),
+        };
+
+        try
+        {
+            host.Start();
+            Assert.True(host.IsRunning);
+
+            var thrown = Assert.Throws<InvalidOperationException>(() => host.Estop());
+            Assert.Contains(InjectedMarker, thrown.Message, StringComparison.Ordinal);
+
+            // The faulting slot really did reach the debug channel — a green run in which nothing was ever
+            // logged would prove nothing about ordering.
+            Assert.True(
+                logger.Has(LogLevel.Debug, "slot driver dispose observed a fault"),
+                "the faulting slot's teardown line should have reached the host logger");
+
+            // THE ASSERTION: the slot AFTER the one whose log call threw was still released, exactly once.
+            Assert.Equal(1, later.DisposeCount);
+        }
+        finally
+        {
+            host.AdditionalPipelinesForTests = null;
+            logger.ThrowOnFragment = null;
+            try { host.Stop(); } catch { /* best-effort */ }
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // S3 / S7 — Start -> CompleteStartOffLock, and the run event that follows it.
     // ─────────────────────────────────────────────────────────────────────
@@ -290,6 +414,50 @@ public sealed class FleetHostGateCommitCompletionTests
             logger.ThrowOnFragment = null;
             try { host.Stop(); } catch { /* best-effort */ }
             await writer.DisposeAsync();
+        }
+    }
+
+    /// <summary>🔴 The SIBLING of review I-3, found by grepping for the shape rather than by being told, and
+    /// witnessed here so the fix is not the one thing in this file that rests on reading.
+    ///
+    /// <para><c>DisposeOrphanedConnectorDrivers</c> had the identical defect to <c>DisposeOldSlots</c>: a host
+    /// <c>_logDebug</c> call inside the per-orphan <c>catch</c>, i.e. INTERLEAVED with the disposals. A
+    /// throwing host logger on orphan N left orphans N+1..M open, each holding whatever live socket its
+    /// factory built. The review named only the halt-path copy.</para>
+    ///
+    /// <para><b>Both orphans fault on dispose, and both counts are asserted</b> — deliberately, so the test
+    /// does not depend on <c>ConnectorRegistry.RegisteredIds</c> enumeration order. Whichever runs first, the
+    /// other one's disposal is the property under test.</para></summary>
+    [Fact]
+    public void Start_WhenTheHostDebugLoggerThrowsOnOneOrphan_EveryOtherOrphanIsStillDisposed()
+    {
+        var logger = new RecordingLogger { ThrowOnFragment = "orphaned connector driver dispose observed a fault" };
+        var firstOrphan = new DisposeThrowingCountingDriver("g2-i3-orphan-a");
+        var secondOrphan = new DisposeThrowingCountingDriver("g2-i3-orphan-b");
+
+        var registry = new ConnectorRegistry();
+        registry.Register(new OrphanLeakingFactory("vendor.g2.orphana", firstOrphan), config: "garbage");
+        registry.Register(new OrphanLeakingFactory("vendor.g2.orphanb", secondOrphan), config: "garbage");
+
+        var host = CreateHost(logger, connectorRegistry: registry);
+
+        try
+        {
+            var thrown = Assert.Throws<InvalidOperationException>(() => host.Start());
+            Assert.Contains(InjectedMarker, thrown.Message, StringComparison.Ordinal);
+
+            Assert.True(
+                logger.Has(LogLevel.Debug, "orphaned connector driver dispose observed a fault"),
+                "an orphan's dispose fault should have reached the host logger");
+
+            // THE ASSERTION: neither orphan was skipped because the other one's log call threw.
+            Assert.Equal(1, firstOrphan.DisposeCount);
+            Assert.Equal(1, secondOrphan.DisposeCount);
+        }
+        finally
+        {
+            logger.ThrowOnFragment = null;
+            try { host.Stop(); } catch { /* best-effort */ }
         }
     }
 
@@ -566,10 +734,24 @@ public sealed class FleetHostGateCommitCompletionTests
 #pragma warning restore CS0162
         }
 
-        public ValueTask DisposeAsync()
+        public virtual ValueTask DisposeAsync()
         {
             Interlocked.Increment(ref _disposeCount);
             return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>Faults on <c>DisposeAsync</c> — the misbehaving-driver case <c>DisposeOldSlots</c>' per-slot
+    /// catch exists for, and therefore the only way to reach the <c>_logDebug</c> call inside it. Still counts
+    /// the attempt, so a test can tell "was not disposed" from "disposal was attempted and threw".</summary>
+    private sealed class DisposeThrowingCountingDriver : DisposeCountingDriver
+    {
+        public DisposeThrowingCountingDriver(string id) : base(id) { }
+
+        public override ValueTask DisposeAsync()
+        {
+            base.DisposeAsync();
+            throw new InvalidOperationException($"{InjectedMarker}: this driver's DisposeAsync always faults");
         }
     }
 
