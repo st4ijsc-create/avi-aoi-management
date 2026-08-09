@@ -156,6 +156,144 @@ public sealed class PerHostDataRootsTests
     }
 
     /// <summary>
+    /// 🔴 <b>Fix round 1 (review I-4) — the guard above measures a narrower quantity than README §15.9's
+    /// "there is no exception" claims, and this is the half that closes the gap: every relocation variable
+    /// must reach a real <see cref="Environment.GetEnvironmentVariable(string)"/> call.</b>
+    ///
+    /// <para><b>The gap, named exactly.</b> The scan above answers <i>"a quoted <c>ST4I_&lt;NAME&gt;_DIR</c>
+    /// literal exists in <c>src/</c>"</i>. A fourteenth store that declares
+    /// <c>public const string EnvVarDir = "ST4I_FOO_DIR";</c> and never reads it satisfies that, ships
+    /// un-relocatable, and leaves the README saying there are no exceptions. So does a variable named only
+    /// inside a doc comment. Neither M3 (no variable at all) nor M4 (a non-derivable name) reaches that shape,
+    /// so before this test the gap was untested as well as undisclosed.</para>
+    ///
+    /// <para><b>How a read is recognised, and why it is not a bare <c>grep</c>.</b> Every store reads its
+    /// variable through the CONSTANT, not the literal — <c>GetEnvironmentVariable(EnvVarDir)</c> — so a text
+    /// search for the literal at a call site finds nothing. This binds constants to literals per FILE and then
+    /// resolves each call's argument: a string literal counts directly; a bare identifier counts only against
+    /// a constant declared in the SAME file (so that thirteen stores all naming their constant
+    /// <c>EnvVarDir</c> cannot vouch for each other); a qualified <c>Type.Member</c> counts against the
+    /// constant declared in <c>Type.cs</c>. Measured against the tree, that recognises all thirteen: eleven at
+    /// their own store, <c>ST4I_HISTORIAN_DIR</c> as a bare literal in <c>St4i.EngineApi/Program.cs</c>, and
+    /// <c>ST4I_OPCUA_PKI_DIR</c> through both a same-file and a qualified form.</para>
+    ///
+    /// <para>🔴 <b>What this still does NOT measure, stated because the first version of this file did not
+    /// state it.</b> "Declared and read at a resolution site" is not "the resolved value is honoured all the
+    /// way to a file". Nothing here executes a store. That last step is covered store by store —
+    /// <c>CredentialStoreTests</c>, <c>PerHostDataRootIsolationTests</c>, <c>FleetSettingsStoreTests</c>,
+    /// <c>WalOptionsTests</c>, <c>SecurityEnvVarTests</c>, and the <c>ST4I_HISTORIAN_DIR</c> harnesses — and
+    /// deliberately not by a sweep: a sweep would have to set thirteen process-wide variables inside a suite
+    /// whose other classes boot real hosts that read them, which trades a documented narrowness for an
+    /// undocumented race. README §15.9 carries this same caveat where the operator reads it.</para>
+    /// </summary>
+    [Fact]
+    public void EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared()
+    {
+        // name -> literal, per file, so two files that both declare `EnvVarDir` cannot vouch for each other.
+        var constantsByFile = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        var readVariables = new SortedSet<string>(StringComparer.Ordinal);
+        var callsByFile = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        var constantDeclaration = new Regex(
+            @"const\s+string\s+(?<name>\w+)\s*=\s*""(?<literal>ST4I_[A-Z0-9_]*_DIR)""\s*;");
+        var environmentRead = new Regex(
+            @"GetEnvironmentVariable\(\s*(?<arg>""ST4I_[A-Z0-9_]*_DIR""|[A-Za-z_][\w.]*)\s*[,)]");
+
+        foreach (var file in ProductSources())
+        {
+            var text = File.ReadAllText(file);
+            var key = Path.GetFileNameWithoutExtension(file);
+
+            foreach (Match m in constantDeclaration.Matches(text))
+            {
+                if (!constantsByFile.TryGetValue(key, out var map))
+                {
+                    constantsByFile[key] = map = new Dictionary<string, string>(StringComparer.Ordinal);
+                }
+
+                map[m.Groups["name"].Value] = m.Groups["literal"].Value;
+            }
+
+            foreach (Match m in environmentRead.Matches(text))
+            {
+                if (!callsByFile.TryGetValue(key, out var calls))
+                {
+                    callsByFile[key] = calls = new List<string>();
+                }
+
+                calls.Add(m.Groups["arg"].Value);
+            }
+        }
+
+        foreach (var (fileKey, calls) in callsByFile)
+        {
+            foreach (var arg in calls)
+            {
+                if (arg.StartsWith('"'))
+                {
+                    readVariables.Add(arg.Trim('"'));
+                    continue;
+                }
+
+                var segments = arg.Split('.');
+                var member = segments[^1];
+
+                // A bare identifier resolves ONLY against the file it appears in. A qualified Type.Member
+                // resolves against the file named for that type — the file/type naming convention this
+                // repository follows without exception for the store types involved.
+                var owner = segments.Length == 1 ? fileKey : segments[^2];
+                if (constantsByFile.TryGetValue(owner, out var map) && map.TryGetValue(member, out var literal))
+                {
+                    readVariables.Add(literal);
+                }
+            }
+        }
+
+        // Non-vacuity: the recogniser itself must find something, or every assertion below is trivially
+        // satisfiable by a regex that stopped matching.
+        Assert.True(readVariables.Count >= 13,
+            $"Only {readVariables.Count} relocation variable(s) were recognised as READ " +
+            $"({string.Join(", ", readVariables)}). The recogniser, not the product, is what broke — fix it " +
+            "rather than deleting this assertion.");
+
+        // Controls for the two resolution FORMS, so a recogniser that silently lost one of them cannot pass:
+        // ST4I_HISTORIAN_DIR is only ever read as a bare literal (in St4i.EngineApi/Program.cs, not on its
+        // store), and ST4I_CREDS_DIR is only ever read through a same-file constant.
+        Assert.Contains("ST4I_HISTORIAN_DIR", readVariables);
+        Assert.Contains("ST4I_CREDS_DIR", readVariables);
+
+        var declaredButUnread = DeclaredDirectoryNames()
+            .Select(name => "ST4I_" + name.ToUpperInvariant().Replace('-', '_') + "_DIR")
+            .Where(variable => !readVariables.Contains(variable))
+            .ToList();
+
+        Assert.True(declaredButUnread.Count == 0,
+            "These relocation variables are declared but never reach an Environment.GetEnvironmentVariable " +
+            $"call, so setting them relocates nothing: {string.Join(", ", declaredButUnread)}. A directory " +
+            "whose variable is declared and unread is WORSE than one that was never relocatable: README " +
+            "§15.9 tells an operator to set it, the operator sets it, and the store keeps writing to " +
+            "%ProgramData% with no error anywhere.");
+    }
+
+    /// <summary>The set of <c>%ProgramData%\ST4I\sim\&lt;name&gt;</c> leaves declared in <c>src/</c>, shared by
+    /// both guards so they can never disagree about which directories exist.</summary>
+    private static SortedSet<string> DeclaredDirectoryNames()
+    {
+        var directories = new SortedSet<string>(StringComparer.Ordinal);
+        var directoryConstant = new Regex("\"ST4I\"\\s*,\\s*\"sim\"\\s*,\\s*\"(?<name>[A-Za-z0-9._-]+)\"");
+
+        foreach (var file in ProductSources())
+        {
+            foreach (Match m in directoryConstant.Matches(File.ReadAllText(file)))
+            {
+                directories.Add(m.Groups["name"].Value);
+            }
+        }
+
+        return directories;
+    }
+
+    /// <summary>
     /// 🔴 <b>The no-migration warning must exist where an OPERATOR reads, not only in a report.</b>
     ///
     /// <para>Blueprint §8.1's fourth census tier: a rule stated to a programmer and a rule stated to an
@@ -178,11 +316,19 @@ public sealed class PerHostDataRootsTests
         Assert.Matches(new Regex(@"###\s*15\.9\b", RegexOptions.None), readme);
         Assert.Contains("NOTHING IS MIGRATED", readme, StringComparison.Ordinal);
         Assert.Contains("KHÔNG CÓ DI TRÚ", readme, StringComparison.Ordinal);
+        Assert.Contains("ST4I_CREDS_DIR", readme, StringComparison.Ordinal);
 
-        // The consequence an operator actually meets first: a relocated host is not onboarded any more.
+        // 🔴 Fix round 1 (review C-2). This used to require the phrase "not onboarded", which was the
+        // consequence — and the section stated a REMEDY beside it ("until it claims again") that the very
+        // host §15.9 configures cannot perform: `CredentialStore.Save` exists only in St4i.EngineApi's
+        // onboarding service and in the WPF shell, and St4i.EdgeService's one credential call site is a Load.
+        // What must not regress is therefore not the consequence but the ASYMMETRY, so that is what is
+        // pinned: the section has to say that the edge agent cannot claim.
+        // `[\s\S]` rather than `[^\n]`: this file is hard-wrapped at ~110 columns, so a sentence about one
+        // subject routinely straddles a line break, and a same-line requirement would pin the WRAPPING.
         Assert.Matches(
-            new Regex(@"ST4I_CREDS_DIR", RegexOptions.None), readme);
+            new Regex(@"St4i\.EdgeService[\s\S]{0,80}cannot claim", RegexOptions.IgnoreCase), readme);
         Assert.Matches(
-            new Regex(@"not onboarded", RegexOptions.IgnoreCase), readme);
+            new Regex(@"St4i\.EdgeService[\s\S]{0,80}KHÔNG claim được", RegexOptions.None), readme);
     }
 }

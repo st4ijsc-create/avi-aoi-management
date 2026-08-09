@@ -357,8 +357,9 @@ internal static class EdgeConnectors
                 "connectors.json entry '{ConnectorId}' declares OPC-UA. This host does not dispatch it: an " +
                 "OpcUaDriver writes its app-instance certificate into the machine-wide " +
                 "%ProgramData%\\ST4I\\sim\\opcua-pki root, which has no per-process key, so dispatching it " +
-                "here would make this host a second writer to the SAME certificate store St4i.EngineApi " +
-                "writes. Skipped. 🔴 The decision that used to block this is CLOSED — per-host data roots are " +
+                "here would make this host a NEW WRITER to a machine-wide store — and, on a deployment where " +
+                "St4i.EngineApi also runs an OPC-UA connector, a second writer to the certificate store that " +
+                "host already writes. Skipped. 🔴 The decision that used to block this is CLOSED — per-host data roots are " +
                 "a supported deployment (README §15.9), and ST4I_OPCUA_PKI_DIR gives this host a PKI root of " +
                 "its own. What is still missing is the work, not the ruling: this host must be given its own " +
                 "OpcUaOptions (endpoint/map/PKI root), the switch arm here, and a test that the two hosts' " +

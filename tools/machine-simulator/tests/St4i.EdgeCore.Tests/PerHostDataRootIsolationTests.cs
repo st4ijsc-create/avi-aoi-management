@@ -1,8 +1,16 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading.Tasks;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Infrastructure;
+using St4i.EdgeCore.Models;
+using St4i.EdgeCore.Tests.Fakes;
 using St4i.EdgeCore.Transport;
+using St4i.Connector.Abstractions.Models;
 using Xunit;
 
 /// <summary>
@@ -18,18 +26,27 @@ using Xunit;
 /// <para>🔴 <b>Reading <c>ResolveRoot</c> is NOT what is asserted here, deliberately.</b> A resolver can be
 /// perfectly correct while the store it belongs to ignores it — <c>CredentialStoreTests</c>' own
 /// <c>Save_WritesToTheRedirectedDirectory_…</c> exists because exactly that was possible. Every assertion
-/// below is on an OBSERVATION MADE THROUGH THE STORE: a write is performed as host A, and host B is then
-/// asked, through the store's own public read, whether it can see it. Both directions are asserted, because
-/// "B cannot see A" and "B did not overwrite A" are two different failures and a one-directional test sees
-/// only the first.</para>
+/// below is on an OBSERVATION MADE THROUGH THE PRODUCTION WRITE/READ PATH: nothing here computes a file name,
+/// and nothing here asserts on a path string. Each arm gives a ROOT to the code that owns it, lets that code
+/// decide the rest, and then asks the other host whether it can see the result. Both directions are asserted,
+/// because "B cannot see A" and "B did not overwrite A" are two different failures and a one-directional test
+/// sees only the first.
+/// <b>🔴 That sentence was FALSE of the WAL arm until fix round 1</b> (review I-1): that arm resolved the
+/// queue path itself and wrote it with <see cref="File.WriteAllText(string,string)"/>, which made it a claim
+/// about <see cref="Path.Combine(string,string)"/> while this paragraph claimed otherwise for all three. The
+/// arm was rewritten onto <see cref="TransportCoordinator"/> rather than the sentence narrowed, so the charter
+/// is now true of the file it heads — see that arm's own remarks.</para>
 ///
 /// <para><b>Why the credential test flips an environment variable instead of passing a directory.</b>
 /// <c>CredentialStore</c> is <see langword="static"/> — <c>Save</c>/<c>Load</c>/<c>ListMachineCodes</c> take
 /// no directory and there is no construction point a fixture could hook — so the env var IS the seam, and it
-/// is sufficient because two hosts are two PROCESSES with two environment blocks. Flipping it mid-test models
-/// that faithfully precisely because resolution is per call and nothing is cached. F-1 deliberately did NOT
-/// add an explicit seam to it: doing so would mean touching the type that holds the DPAPI blobs, and
-/// <c>DataProtectionScope.LocalMachine</c> is not allowed to move.</para>
+/// is sufficient because two hosts are two PROCESSES with two environment blocks. Flipping it mid-test is the
+/// closest model available IN ONE PROCESS, and it is a model rather than a measurement: <b>this is not a
+/// two-process test, and nothing here proves anything about two real processes.</b> What makes the model
+/// load-bearing rather than decorative is a verifiable property — <c>ResolveRoot</c> resolves on every call
+/// and caches nothing — and the M1 mutation (memoise <c>CredsDir()</c>) is what measures that the property is
+/// doing the work. F-1 deliberately did NOT add an explicit seam here: that would mean touching the type that
+/// holds the DPAPI blobs, and <c>DataProtectionScope.LocalMachine</c> is not allowed to move.</para>
 ///
 /// <para><b>The three stores below are not a sample; they are the three that matter today.</b>
 /// <c>CredentialStore</c> is the one both hosts touch (the engine writes it at onboarding, the edge agent
@@ -145,46 +162,165 @@ public sealed class PerHostDataRootIsolationTests
     }
 
     /// <summary>
-    /// 🔴 The WAL, which is the only machine-wide store <c>St4i.EdgeService</c> has ever WRITTEN (blueprint
-    /// §11.4) — so it is the collision a two-host deployment hits first, and the one an operator is most
-    /// likely to create by accident.
+    /// 🔴 The WAL, which is the only machine-wide store <c>St4i.EdgeService</c> has ever WRITTEN
+    /// (blueprint §11.4) — so it is the collision a two-host deployment hits first, and the one an
+    /// operator is most likely to create by accident.
     ///
-    /// <para><b>The control arm is what makes this test say something.</b> The queue file is
-    /// <c>&lt;dir&gt;\&lt;machineCode&gt;.jsonl</c>, a pure function of two inputs, so the first assertion
-    /// below states the HAZARD in the same terms as the fix: same root plus same machine code IS one file,
-    /// and both hosts would append to it. Without that arm, "two roots give two paths" is a fact about
-    /// <c>Path.Combine</c> rather than about this deployment.</para>
+    /// <para>🔴 <b>Fix round 1 (review I-1): this arm used to resolve the queue path itself and write
+    /// it with <see cref="File.WriteAllText(string,string)"/>, which made it a fact about
+    /// <see cref="Path.Combine(string,string)"/> — and made this class's own "through the store" charter
+    /// false of one of its three arms.</b> <c>WalOptions.ResolveQueueFile</c> says in its own doc comment that
+    /// it is a pure function of (<c>Directory</c>, machineCode), so asserting that two roots give two paths
+    /// asserted that function and nothing else; and writing bytes to an already-resolved path does not
+    /// exercise the resolver either. It now runs on the PRODUCTION path end to end: a real
+    /// <see cref="TransportCoordinator"/> — whose <c>RebuildLive</c> is the code that calls
+    /// <c>EnsureDir()</c> and <c>ResolveQueueFile(machineCode)</c> and hands the result to
+    /// <c>LiveTransport.ForMachine</c> — and a real offline <c>SendAsync</c> whose bytes are appended by
+    /// the vendored SDK's own <c>Enqueue</c>. <b>This test never names a file.</b> It supplies a ROOT and a
+    /// machine code, and then looks at what appeared under each root.</para>
     ///
-    /// <para>Bytes are actually written rather than paths merely compared, for the same reason the credential
-    /// test reads through the store: a path that differs proves nothing if something downstream resolves it
-    /// again.</para>
+    /// <para><b>No socket is opened.</b> The injected <c>CapturingHandler</c> throws
+    /// <see cref="HttpRequestException"/> — the same exception type a dead socket produces, which the SDK
+    /// catches and rethrows as <c>St4iNetworkException</c>, driving its real disk-Enqueue path. Same technique
+    /// and same reason as <c>TransportCoordinatorWalTests</c>. A non-empty <c>mkKey</c> is required: an empty
+    /// one makes the SDK refuse synchronously as "unconfigured" and never reach the queue at all.</para>
+    ///
+    /// <para><b>The control arm is what makes the rest say something.</b> A third send, from a coordinator on
+    /// host A's SAME root with the SAME machine code, lands in host A's existing file — one file, two
+    /// backlogs interleaved. That is the hazard in the operator's own terms (a shared <c>ST4I_WAL_DIR</c> plus
+    /// a shared <c>ST4I_MACHINE_CODE</c>), measured rather than asserted; without it, "two roots stayed
+    /// separate" would not distinguish separation from a WAL that wrote nowhere at all.</para>
     /// </summary>
     [Fact]
-    public void TwoHostsOnTwoWalRoots_GetTwoQueueFiles_WhereOneSharedRootWouldGiveThemOne()
+    public async Task TwoHostsBufferingOffline_EachWriteIntoItsOwnWalRootOnly_WhereOneSharedRootGivesThemOneFile()
     {
         const string machineCode = "LINE3-AOI-01";
 
-        var hostA = new WalOptions { Directory = Directory.CreateTempSubdirectory("st4i-f1-wal-hostA-").FullName };
-        var hostB = new WalOptions { Directory = Directory.CreateTempSubdirectory("st4i-f1-wal-hostB-").FullName };
+        var hostARoot = Directory.CreateTempSubdirectory("st4i-f1-wal-hostA-").FullName;
+        var hostBRoot = Directory.CreateTempSubdirectory("st4i-f1-wal-hostB-").FullName;
 
-        // The hazard, stated as arithmetic: a SECOND host left on host A's root, with the same machine code,
-        // resolves the identical file. This is the control — without it the assertions below are about
-        // Path.Combine rather than about two hosts.
-        var sharedRoot = new WalOptions { Directory = hostA.Directory };
-        Assert.Equal(hostA.ResolveQueueFile(machineCode), sharedRoot.ResolveQueueFile(machineCode));
+        // Host A goes offline and buffers one reading. Nothing here names a path: the coordinator resolves it
+        // from the root and the machine code, and the SDK is what writes it.
+        await BufferOneOfflineSendAsync(hostARoot, machineCode, "A:RC1:000001");
 
-        hostA.EnsureDir();
-        hostB.EnsureDir();
+        Assert.Equal("A:RC1:000001", Assert.Single(QueuedKeys(hostARoot)));
+        Assert.Empty(QueuedKeys(hostBRoot));
 
-        var queueA = hostA.ResolveQueueFile(machineCode);
-        var queueB = hostB.ResolveQueueFile(machineCode);
-        Assert.NotEqual(queueA, queueB);
+        // Host B — its own root, the SAME machine code — buffers too. Neither observes the other, and
+        // B's write does not touch A's backlog.
+        await BufferOneOfflineSendAsync(hostBRoot, machineCode, "B:RC1:000001");
 
-        File.WriteAllText(queueA, "{\"host\":\"engine\"}\n");
+        Assert.Equal("B:RC1:000001", Assert.Single(QueuedKeys(hostBRoot)));
+        Assert.Equal("A:RC1:000001", Assert.Single(QueuedKeys(hostARoot)));
 
-        Assert.False(File.Exists(queueB),
-            "Host B's WAL queue file exists after only host A wrote — the two hosts are appending to one " +
-            "backlog file, which is what a shared ST4I_WAL_DIR plus a shared ST4I_MACHINE_CODE produces.");
-        Assert.Empty(Directory.GetFiles(hostB.EnsureDir()));
+        // 🔴 THE CONTROL: a second host left on host A's root with the same machine code appends into
+        // host A's file. One file, two hosts' backlogs. This is what per-host roots prevent.
+        await BufferOneOfflineSendAsync(hostARoot, machineCode, "SHARED:RC1:000002");
+
+        Assert.Equal(
+            new[] { "A:RC1:000001", "SHARED:RC1:000002" },
+            QueuedKeys(hostARoot).OrderBy(k => k, StringComparer.Ordinal).ToArray());
+        Assert.Single(Directory.GetFiles(hostARoot, "*.jsonl", SearchOption.AllDirectories));
+        Assert.Equal("B:RC1:000001", Assert.Single(QueuedKeys(hostBRoot)));
+    }
+
+    /// <summary>Drives ONE reading through a real <see cref="TransportCoordinator"/> whose server is
+    /// unreachable, so the vendored SDK's own <c>Enqueue</c> appends it to whatever queue file
+    /// <c>RebuildLive</c> resolved from <paramref name="walRoot"/> and <paramref name="machineCode"/>. The
+    /// caller supplies a root and a machine code and never a path — that is the whole point of the
+    /// helper.</summary>
+    private static async Task BufferOneOfflineSendAsync(string walRoot, string machineCode, string idempotencyKey)
+    {
+        var wal = new WalOptions { Directory = walRoot };
+        var handler = new CapturingHandler
+        {
+            Responder = (_, __) => throw new HttpRequestException(
+                "simulated offline server (F-1) — drives the SDK's own disk Enqueue deterministically, no real socket"),
+        };
+
+        var demo = new DemoTransport(latencyMs: 0);
+        var initialLive = LiveTransport.ForMachine("http://localhost:1", "", "INITIAL", null, true);
+        var coordinator = new TransportCoordinator(
+            new SwitchableTransport(demo), demo, initialLive, new AutoTransport(initialLive, demo),
+            TransportMode.Demo, wal, handler);
+
+        coordinator.RebuildLive("http://unit-test.invalid", machineCode, "mk_test", true);
+
+        var ack = await coordinator.Live.SendAsync(
+            new CanonicalEnvelope(
+                ReadingKind.ProcessResult, machineCode, "/api/v1/ingest/process-result",
+                new()
+                {
+                    ["serialNumber"] = "SN1",
+                    ["stepType"] = "screw_tightening",
+                    ["result"] = "pass",
+                    ["idempotencyKey"] = idempotencyKey,
+                },
+                idempotencyKey),
+            default);
+
+        Assert.True(ack.Queued,
+            "the send was not buffered, so this arm would prove nothing about where a backlog lands");
+    }
+
+    /// <summary>Every idempotency key sitting in ANY queue file under <paramref name="walRoot"/> — the
+    /// observation half of the helper above. Deliberately enumerates the ROOT rather than a resolved file
+    /// name: the test owns the root because it chose it, and the production code owns everything below it. A
+    /// root that does not exist yet reads as empty, which is exactly what a host that has never run looks
+    /// like.</summary>
+    private static IReadOnlyList<string> QueuedKeys(string walRoot)
+    {
+        if (!Directory.Exists(walRoot)) return Array.Empty<string>();
+
+        return Directory.GetFiles(walRoot, "*.jsonl", SearchOption.AllDirectories)
+            .SelectMany(File.ReadAllLines)
+            .Where(line => line.Trim().Length > 0)
+            .Select(line => line)
+            .Where(line => line.Contains("idempotencyKey", StringComparison.Ordinal))
+            .Select(ExtractIdempotencyKey)
+            .Where(key => key is not null)
+            .Select(key => key!)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>The idempotency key out of one queued SDK line, without depending on the SDK's envelope
+    /// SHAPE: it scans the parsed JSON for the first <c>idempotencyKey</c> property at any depth. The shape is
+    /// the vendored SDK's to change and this test's subject is WHICH DIRECTORY the line landed in, so pinning
+    /// the nesting here would make an unrelated SDK change look like a data-root regression.</summary>
+    private static string? ExtractIdempotencyKey(string line)
+    {
+        using var doc = JsonDocument.Parse(line);
+        return FindFirst(doc.RootElement);
+
+        static string? FindFirst(JsonElement element)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    foreach (var property in element.EnumerateObject())
+                    {
+                        if (property.NameEquals("idempotencyKey") && property.Value.ValueKind == JsonValueKind.String)
+                        {
+                            return property.Value.GetString();
+                        }
+
+                        if (FindFirst(property.Value) is { } nested) return nested;
+                    }
+
+                    return null;
+
+                case JsonValueKind.Array:
+                    foreach (var item in element.EnumerateArray())
+                    {
+                        if (FindFirst(item) is { } nested) return nested;
+                    }
+
+                    return null;
+
+                default:
+                    return null;
+            }
+        }
     }
 }

@@ -341,10 +341,12 @@ public sealed class SerialPortBusLink : IModbusBusLink
                 "program, a vendor tool, an earlier instance of either host. (3) THIS process opening the " +
                 "same port twice, because two connector entries name it with DIFFERENT line parameters — " +
                 "those are two buses by design, and the second one cannot open; check that every connector " +
-                "on this segment declares the same baudRate/parity/dataBits/stopBits. This refusal came from " +
-                "the OPERATING SYSTEM's exclusive open, not from any arbitration this product performs: the " +
-                "rule is ONE HOST PER SEGMENT, it is a deployment constraint rather than something enforced " +
-                "here, and on an RTU GATEWAY nothing raises this error at all — both hosts simply connect.",
+                "on this segment declares the same baudRate/parity/dataBits/stopBits. Whichever of the three " +
+                "it is, the refusal came from the OPERATING SYSTEM — most often its exclusive open, though " +
+                "the same error is also what a plain ACL/permission denial on the port produces — and never " +
+                "from any arbitration this product performs: the rule is ONE HOST PER SEGMENT, it is a " +
+                "deployment constraint rather than something enforced here, and on an RTU GATEWAY nothing " +
+                "raises this error at all — both hosts simply connect.",
 
             ArgumentException =>
                 $"{prefix} The name '{settings.PortName}' does NOT resolve to a serial port on this machine — " +

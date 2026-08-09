@@ -1488,28 +1488,52 @@ Windows machine** (§24). They share no roster, no claim registry and no channel
 **The rule, and it is the whole mechanism:** every directory this product creates under
 `%ProgramData%\ST4I\sim\<name>` is relocatable by an environment variable whose name is derived from the
 directory name — **`ST4I_` + `<NAME>` (uppercased, `-` → `_`) + `_DIR`**. There are **thirteen** of them
-today, and there is no exception:
+today, and there is no exception.
 
-| Directory | Variable | What loses visibility if you move it |
-|---|---|---|
-| `creds` | `ST4I_CREDS_DIR` | the DPAPI-sealed `mk_` key per machine — a moved host is **not onboarded** until it claims again |
-| `identity` | `ST4I_IDENTITY_DIR` | the device PFX private key **and the node id** — a new root mints a **new device**, and a Site that pinned the old fingerprint no longer trusts it |
-| `wal` | `ST4I_WAL_DIR` | the store-and-forward backlog: unsent readings stay in the **old** `<machineCode>.jsonl` and are never sent |
-| `historian` | `ST4I_HISTORIAN_DIR` | `historian.db` + `oee-settings.json` — all production history and OEE inputs |
-| `security` | `ST4I_SECURITY_DIR` | `security.db` (users/sessions/audit) + the DataProtection key ring — **every login and the audit trail** |
-| `notifications` | `ST4I_NOTIFICATIONS_DIR` | alarm channels **and their DPAPI-protected credentials** (§22.5) |
-| `connector-config` | `ST4I_CONNECTOR_CONFIG_DIR` | saved device connections (an OPC-UA map carries its password in plaintext) |
-| `opcua-pki` | `ST4I_OPCUA_PKI_DIR` | the OPC-UA app-instance certificate + trusted-peer store |
-| `alarms` | `ST4I_ALARMS_DIR` | `alarms.db` — active alarms and history |
-| `assets` | `ST4I_ASSETS_DIR` | `assets.db` — the canonical asset registry |
-| `settings` | `ST4I_SETTINGS_DIR` | `fleet-settings.json` — serverUrl/machineCode/verifyTls |
-| `sitelink` | `ST4I_SITELINK_DIR` | the Site link and its operator-pinned PEM |
-| `bridge-spool` | `ST4I_BRIDGE_SPOOL_DIR` | the durable northbound spool |
+🔴 **Read the WRITES/READS columns before you relocate anything.** Relocating a root a host **writes**
+gives that host its own copy of something it produces — that is isolation, and it is what this section is for.
+Relocating a root a host only **reads** disconnects it from data **another host produces**, and no process on
+the machine will ever fill the new directory. The two look identical in a registry value and are opposite in
+effect.
 
-Pinned by `PerHostDataRootsTests.EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName`, which
-derives **both** sets by scanning `src/` — a fourteenth store fails it until it has a variable too. That is
+| Directory | Variable | Who WRITES it | Who READS it | What loses visibility if you move it |
+|---|---|---|---|---|
+| `creds` | `ST4I_CREDS_DIR` | **EngineApi** (`OnboardingService`), **WPF shell** (`OnboardingViewModel`/`SettingsViewModel`) | those two **+ EdgeService** (`EdgeWorker`) | the DPAPI-sealed `mk_` key per machine. 🔴 **EdgeService never writes one** — see the recipe below |
+| `wal` | `ST4I_WAL_DIR` | **all three hosts** | all three | the store-and-forward backlog: unsent readings stay in the **old** `<machineCode>.jsonl` and are never sent |
+| `identity` | `ST4I_IDENTITY_DIR` | EngineApi | EngineApi | the device PFX private key **and the node id** — a new root mints a **new device**, and a Site that pinned the old fingerprint no longer trusts it |
+| `historian` | `ST4I_HISTORIAN_DIR` | EngineApi | EngineApi | `historian.db` + `oee-settings.json` — all production history and OEE inputs |
+| `security` | `ST4I_SECURITY_DIR` | EngineApi | EngineApi | `security.db` (users/sessions/audit) + the DataProtection key ring — **every login and the audit trail** |
+| `notifications` | `ST4I_NOTIFICATIONS_DIR` | EngineApi | EngineApi | alarm channels **and their DPAPI-protected credentials** (§22.5) |
+| `connector-config` | `ST4I_CONNECTOR_CONFIG_DIR` | EngineApi | EngineApi | saved device connections (an OPC-UA map carries its password in plaintext) |
+| `opcua-pki` | `ST4I_OPCUA_PKI_DIR` | EngineApi (an `OpcUaDriver` writes its app-instance cert) | EngineApi | the OPC-UA app-instance certificate + trusted-peer store |
+| `alarms` | `ST4I_ALARMS_DIR` | EngineApi | EngineApi | `alarms.db` — active alarms and history |
+| `assets` | `ST4I_ASSETS_DIR` | EngineApi | EngineApi | `assets.db` — the canonical asset registry |
+| `settings` | `ST4I_SETTINGS_DIR` | EngineApi | EngineApi | `fleet-settings.json` — serverUrl/machineCode/verifyTls |
+| `sitelink` | `ST4I_SITELINK_DIR` | EngineApi | EngineApi | the Site link and its operator-pinned PEM |
+| `bridge-spool` | `ST4I_BRIDGE_SPOOL_DIR` | EngineApi | EngineApi | the durable northbound spool |
+
+*(The WRITES/READS columns are an enumeration of CALL SITES in `src/`, not an inference from which assembly
+references which type: `CredentialStore.Save` appears in `St4i.EngineApi/Fleet/OnboardingService.cs` and in the
+WPF shell's two view-models and **nowhere else**, while `St4i.EdgeService`'s single credential call site,
+`EdgeWorker.cs:368`, is a `Load`. `St4i.EdgeService` names `DeviceIdentityStore` nowhere at all, and
+`OpcUaPkiPaths` only inside a doc comment.)*
+
+Pinned by `PerHostDataRootsTests` — `EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName` derives
+**both** sets by scanning `src/`, so a fourteenth store fails it until it has a variable too, and
+`EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared` requires each variable to reach a real
+`Environment.GetEnvironmentVariable` call rather than merely existing as a literal somewhere. That is
 deliberate: the mechanism was already complete before this section existed, and the thing that would break
-per-host roots is not a missing feature but a **new store added without one**.
+per-host roots is not a missing feature but a **new store added without one** — or with one that nothing
+reads.
+
+*(🔴 What those two pins do **not** measure, said here rather than left to be discovered. They prove a
+variable is **declared and read at a resolution site**. They do not execute any store, so they cannot prove the
+resolved value is then **honoured** all the way to a file; that last step is covered store by store —
+`CredentialStoreTests`, `PerHostDataRootIsolationTests`, `FleetSettingsStoreTests`, `WalOptionsTests`,
+`SecurityEnvVarTests`, and the `ST4I_HISTORIAN_DIR` harnesses — and not by any single sweep. `historian` is
+also the one variable read at a composition root (`St4i.EngineApi/Program.cs`) rather than on its store, so a
+host that ever constructed a historian store without going through that root would get the machine-wide default
+with no env-var step. None does today.)*
 
 **How to actually set them.** A Windows Service does not inherit a user environment — use the per-service
 registry `Environment` value §15.2 already documents, once per service key:
@@ -1518,25 +1542,44 @@ registry `Environment` value §15.2 already documents, once per service key:
 # Host 1 — the engine, keeping the defaults it already has data in.
 # (nothing to do: unset means %ProgramData%\ST4I\sim\<name>)
 
-# Host 2 — the edge agent, on roots of its own. From an ELEVATED PowerShell:
+# Host 2 — the edge agent. Two lines is the WHOLE recipe; see below for why.
+# From an ELEVATED PowerShell:
 New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\St4iEdgeService' -Name Environment `
   -PropertyType MultiString -Force -Value @(
-    'ST4I_CREDS_DIR=C:\ProgramData\ST4I\edge\creds'
     'ST4I_WAL_DIR=C:\ProgramData\ST4I\edge\wal'
-    'ST4I_IDENTITY_DIR=C:\ProgramData\ST4I\edge\identity'
     'ST4I_MACHINE_CODE=LINE3-EDGE-01'
   )
 ```
 
-For an **interactive** run the same variables work from the shell that launches the process; they are read
-per call, so setting them before starting the second host is all that is required. Nothing is cached across
-hosts — the two processes have two environment blocks and that is the entire isolation mechanism.
+🔴 **`ST4I_CREDS_DIR` is deliberately NOT in that block, and adding it would break this host.**
+`St4i.EdgeService` **reads** a credential and can never write one — `CredentialStore.Save` exists only in
+`St4i.EngineApi`'s onboarding service and in the WPF shell, and the edge agent's single credential call site
+(`EdgeWorker.cs:368`) is a `Load`. Point it at a private creds root and nothing on the machine will ever put an
+`mk_` in it: the host reads `null` forever and never goes Live. **The creds root is meant to be SHARED** —
+that sharing is exactly how a machine onboarded on the engine becomes sendable from the edge agent. A private
+creds root is supported but **manual**: onboard the machine on a host that can claim, then copy
+`<machineCode>.bin` into the edge agent's root by hand. DPAPI does not block the copy (both stores seal at
+`LocalMachine` scope, so a blob stays readable anywhere on the **same machine**) — but no `CredentialStore.Save`
+will ever run in that directory to apply the SYSTEM/Administrators lock-down, so apply it yourself with
+`icacls`, because the ACL is then the entire confidentiality boundary.
 
-🔴 **Which ones `St4i.EdgeService` actually touches today** — the rest are listed above because they are what
-you would have to move if that changes, not because this host writes them now. It **reads** `creds`, **writes**
-`wal`, and reads `connectors.json`/`fleet.json` beside its own exe. It does **not** touch the asset registry,
-the settings store, the historian, the alarm store or the security database. The narrow, honest recipe for two
-hosts on one machine is therefore **`ST4I_WAL_DIR` + a distinct `ST4I_MACHINE_CODE`**; the rest are the future.
+🔴 **`ST4I_IDENTITY_DIR` is not in that block either, for a weaker reason: it is inert here.**
+`St4i.EdgeService` does not name `DeviceIdentityStore` anywhere. Setting it creates an unused directory and
+implies this host has a device identity of its own, which it does not.
+
+For an **interactive** run the same variables work from the shell that launches the process. Set them before
+starting the second host — nothing is shared between the two processes, which have two environment blocks, and
+that is the entire isolation mechanism. *(🔴 Do not read "set them before starting" as "changing one at
+runtime takes effect". `CredentialStore` genuinely re-resolves on **every call** — it is `static`, with no
+construction point a host could hold — but the other twelve roots are resolved **once**, when the store or its
+options object is constructed at startup. Restart the host after changing any of them.)*
+
+🔴 **Which ones `St4i.EdgeService` actually touches today** — the rest are listed above because they are
+what you would have to move if that changes, not because this host touches them now. It **writes** `wal`,
+**reads** `creds`, and reads `connectors.json`/`fleet.json` beside its own exe. It does **not** touch the asset
+registry, the settings store, the historian, the alarm store, the security database or the device identity.
+**`wal` is the only root both hosts WRITE, so it is the only one where "per-host" means isolation rather than
+disconnection** — which is why the recipe above is two lines and not thirteen.
 
 🔴 **`ST4I_WAL_DIR` is the one that bites first, and it is arithmetic rather than a warning.** The queue file
 is `<walDir>\<machineCode>.jsonl` — a pure function of those two. Two hosts that share **both** share one
@@ -1545,9 +1588,12 @@ file, and both append to it. Change either one and they do not.
 🔴 **NOTHING IS MIGRATED. Moving a root makes the old data INVISIBLE, not copied.** There is no migration
 step, no fallback read of the previous location, and no warning at startup — a store simply finds an empty
 directory and behaves like a fresh install. On a deployment that is already running, that means: saved
-credentials are gone (the host is not onboarded and will fail sends until it claims again), the WAL backlog is
-stranded, and — if you move `identity` — the host mints a **new** device certificate and node id, so a Site
-that pinned the old fingerprint stops trusting it. **Move roots on a host that has no data yet, or copy the
+credentials are gone, the WAL backlog is stranded, and — if you move `identity` — the host mints a **new**
+device certificate and node id, so a Site that pinned the old fingerprint stops trusting it. 🔴 **The
+credential remedy depends on WHICH host you moved, and only two of the three can perform it:** `St4i.EngineApi`
+and the WPF shell can claim again (they call `CredentialStore.Save`); **`St4i.EdgeService` cannot claim at
+all** — its only recoveries are to be pointed back at the shared root, or to have the `.bin` copied in by hand
+from a host that did claim. **Move roots on a host that has no data yet, or copy the
 directory contents yourself first.** DPAPI is not an obstacle to copying: both `CredentialStore` and
 `DeviceIdentityStore` seal at `DataProtectionScope.LocalMachine`, so a blob stays readable anywhere on the
 **same machine** — and, for the same reason, the new directory's ACL is the entire confidentiality boundary
@@ -1578,19 +1624,49 @@ triển khai bình thường (§24). Hai host không chia sẻ roster, không ch
 nào — nhưng mặc định chúng **dùng chung một bộ file**. Mục này nói cách cho mỗi host một bộ riêng, và cái giá
 phải trả. **Quy tắc:** mọi thư mục sản phẩm tạo dưới `%ProgramData%\ST4I\sim\<tên>` đều dời chỗ được bằng một
 biến môi trường suy ra được từ tên thư mục — **`ST4I_` + `<TÊN>` (viết hoa, `-` → `_`) + `_DIR`**. Hôm nay có
-**mười ba** thư mục, **không có ngoại lệ** (bảng bên trên), và có test ghim
-(`PerHostDataRootsTests.EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName`) suy ra **cả hai** tập
-bằng cách quét `src/`, nên một store thứ mười bốn sẽ làm test đỏ cho tới khi nó cũng có biến. Đặt biến cho
-service qua giá trị registry `Environment` (§15.2), mỗi khoá service một lần; chạy tương tác thì đặt biến ở
-shell khởi động tiến trình. Hai tiến trình có hai khối môi trường — đó là **toàn bộ** cơ chế cô lập.
-🔴 **Hôm nay `St4i.EdgeService` chỉ thật sự chạm:** ĐỌC `creds`, GHI `wal`, đọc `connectors.json`/`fleet.json`
-cạnh exe. Công thức hẹp và trung thực cho hai host một máy là **`ST4I_WAL_DIR` + `ST4I_MACHINE_CODE` khác
-nhau** — file hàng đợi là `<walDir>\<machineCode>.jsonl`, một hàm thuần của hai thứ đó, nên trùng cả hai là
-trùng file và cả hai cùng ghi thêm vào đó. 🔴 **KHÔNG CÓ DI TRÚ. Đổi gốc làm dữ liệu cũ trở nên VÔ HÌNH, không
+**mười ba** thư mục, **không có ngoại lệ** (bảng bên trên), và có **hai** test ghim trong
+`PerHostDataRootsTests`: `EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName` suy ra **cả hai** tập
+bằng cách quét `src/` (store thứ mười bốn làm test đỏ cho tới khi nó cũng có biến), và
+`EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared` đòi mỗi biến phải tới được một lời gọi
+`Environment.GetEnvironmentVariable` thật, chứ không chỉ tồn tại như một chuỗi ở đâu đó.
+*(🔴 Cái hai phép ghim ấy **KHÔNG** đo: chúng chứng minh biến **được khai báo và được ĐỌC ở một điểm phân
+giải**; chúng không chạy store, nên không chứng minh giá trị đã phân giải rồi **được tôn trọng** tới tận file.
+Bước cuối ấy được phủ theo từng store — `CredentialStoreTests`, `PerHostDataRootIsolationTests`,
+`FleetSettingsStoreTests`, `WalOptionsTests`, `SecurityEnvVarTests`, và các harness `ST4I_HISTORIAN_DIR` — chứ
+không phải bằng một lượt quét nào.)*
+
+🔴 **Đọc cột GHI/ĐỌC trước khi dời bất cứ gốc nào.** Dời một gốc mà host **GHI** cho host ấy bản sao
+riêng của thứ chính nó tạo ra — đó là *cô lập*, và đó là mục đích của mục này. Dời một gốc mà host chỉ **ĐỌC**
+sẽ **cắt đứt** nó khỏi dữ liệu do host KHÁC tạo, và **không tiến trình nào trên máy sẽ đổ đầy thư mục mới**.
+Hai việc ấy nhìn trong registry giống hệt nhau và có tác dụng ngược nhau.
+🔴 **Hôm nay `St4i.EdgeService`: GHI `wal`, ĐỌC `creds`**, đọc `connectors.json`/`fleet.json` cạnh exe, và
+**không chạm** sổ tài sản, store cài đặt, historian, store cảnh báo, CSDL bảo mật lẫn danh tính thiết bị.
+**`wal` là gốc DUY NHẤT cả hai host cùng GHI**, nên nó là gốc duy nhất mà "theo host" nghĩa là cô lập chứ không
+phải cắt đứt — vì thế công thức là **`ST4I_WAL_DIR` + `ST4I_MACHINE_CODE` khác nhau**, hai dòng, không phải
+mười ba. File hàng đợi là `<walDir>\<machineCode>.jsonl`, một hàm thuần của hai thứ đó, nên trùng cả hai là
+trùng file và cả hai cùng ghi thêm vào đó.
+🔴 **ĐỪNG đặt `ST4I_CREDS_DIR` cho `St4i.EdgeService` — làm thế là làm HỎNG host đó.** Host này chỉ ĐỌC
+khoá; `CredentialStore.Save` chỉ tồn tại trong onboarding của `St4i.EngineApi` và trong vỏ WPF, còn call site
+duy nhất của tác nhân biên (`EdgeWorker.cs:368`) là một `Load`. Trỏ nó vào một gốc creds riêng thì **không có
+gì trên máy đổ `mk_` vào đó**: host đọc ra `null` mãi mãi và không bao giờ lên Live. **Gốc creds được thiết kế
+để DÙNG CHUNG** — chính việc dùng chung là cách một máy đã onboard trên engine trở nên gửi được từ tác nhân
+biên. Nếu thật sự muốn gốc creds riêng thì được, nhưng **thủ công**: onboard trên host có quyền claim rồi tự
+chép `<machineCode>.bin` sang. DPAPI không cản (cả hai store niêm phong ở phạm vi `LocalMachine`), nhưng sẽ
+không có `CredentialStore.Save` nào chạy ở thư mục ấy để áp khoá ACL SYSTEM/Administrators — hãy tự áp bằng
+`icacls`. **`ST4I_IDENTITY_DIR` cũng không nên đặt**, lý do nhẹ hơn: host này không nhắc `DeviceIdentityStore`
+ở đâu cả, đặt nó chỉ tạo một thư mục vô dụng.
+Đặt biến cho service qua giá trị registry `Environment` (§15.2), mỗi khoá service một lần; chạy tương tác thì
+đặt biến ở shell khởi động tiến trình. Hai tiến trình có hai khối môi trường — đó là **toàn bộ** cơ chế cô lập.
+*(🔴 Đừng đọc "đặt trước khi khởi động" thành "đổi lúc đang chạy là có tác dụng": `CredentialStore` thật
+sự phân giải lại **mỗi lần gọi** vì nó `static`, còn **mười hai** gốc kia được phân giải **một lần** lúc store
+hoặc options của nó được dựng khi khởi động. Đổi xong phải khởi động lại host.)* 🔴 **KHÔNG CÓ DI TRÚ. Đổi gốc làm dữ liệu cũ trở nên VÔ HÌNH, không
 phải được chép sang** — không có bước di trú, không đọc dự phòng chỗ cũ, không cảnh báo lúc khởi động: store
 thấy thư mục rỗng và hành xử như bản cài mới. Trên một triển khai đang chạy nghĩa là: mất khoá `mk_` đã lưu
-(host chưa onboard, gửi sẽ hỏng cho tới khi claim lại), backlog WAL bị bỏ lại, và nếu dời `identity` thì host
-sinh **chứng chỉ + node id MỚI**, nên Site đã ghim vân tay cũ sẽ không còn tin nó. **Hãy đổi gốc khi host chưa
+backlog WAL bị bỏ lại, và nếu dời `identity` thì host sinh **chứng chỉ + node id MỚI**, nên Site đã ghim vân
+tay cũ sẽ không còn tin nó. 🔴 **Cách khắc phục khoá `mk_` phụ thuộc host nào bị dời, và chỉ HAI trong ba
+host làm được:** `St4i.EngineApi` và vỏ WPF claim lại được (chúng gọi `CredentialStore.Save`); **`St4i.EdgeService`
+KHÔNG claim được** — nó chỉ có hai đường: trỏ lại gốc dùng chung, hoặc được chép tay file `.bin` từ một host đã
+claim. **Hãy đổi gốc khi host chưa
 có dữ liệu, hoặc tự chép nội dung thư mục trước.** DPAPI không cản việc chép: cả `CredentialStore` lẫn
 `DeviceIdentityStore` niêm phong ở phạm vi `LocalMachine`, nên blob vẫn đọc được ở bất kỳ đâu **trên cùng
 máy** — và cũng vì thế ACL của thư mục mới là **toàn bộ** ranh giới bảo mật. 🔴 **Lệnh xoá dữ liệu đi theo gốc,

@@ -93,6 +93,18 @@ public sealed class RtuSegmentOwnershipTests
         Assert.Contains("ONE HOST PER SEGMENT", notice, StringComparison.Ordinal);
         Assert.Contains("gw.example:4001", notice, StringComparison.Ordinal);
 
+        // 🔴 Fix round 1 (review I-3) — BOTH configuration surfaces, because this string has FOUR producing
+        // paths and only two of them are a connectors.json. The other two (the persisted-bus startup
+        // registration in Program.cs, and the POST /v1/connectors save response) describe a bus that lives in
+        // the connector-config store and appears in NO connectors.json file. An operator who followed the old
+        // instruction after reading it on one of those paths would open the engine's connectors.json, not
+        // find the bus, and conclude the engine is not on the segment — the wrong conclusion, produced by the
+        // notice written to prevent it. Both surfaces are asserted, and so is the check instruction, because
+        // naming a surface without telling anyone to look at it is half a fix.
+        Assert.Contains("connectors.json", notice, StringComparison.Ordinal);
+        Assert.Contains("POST /v1/connectors", notice, StringComparison.Ordinal);
+        Assert.Contains("GET /v1/connectors/configured", notice, StringComparison.Ordinal);
+
         // Constraint, not guarantee — both halves, because "nothing enforces it" and "this is a deployment
         // constraint" are two different sentences and an operator may only read one of them.
         Assert.Contains("NOTHING enforces it", notice, StringComparison.Ordinal);

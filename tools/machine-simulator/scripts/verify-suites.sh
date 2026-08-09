@@ -841,8 +841,10 @@ EXPECT_CONFORMANCE=22
 #
 #   +3  tests/St4i.EdgeCore.Tests/PerHostDataRootIsolationTests.cs (NEW FILE) — the load-bearing half of
 #       F-1 Part 1: TWO HOSTS, TWO ROOTS, and neither observes the other's data. Not a ResolveRoot test —
-#       every assertion is an observation made THROUGH the store, because a resolver can be correct while
-#       the store ignores it (which is the defect CredentialStoreTests' own redirect test exists for).
+#       every assertion is an observation made through the PRODUCTION write/read path, because a resolver
+#       can be correct while the store ignores it (the defect CredentialStoreTests' own redirect test
+#       exists for). No arm computes a file name or asserts on a path string: each gives a ROOT to the code
+#       that owns it and then asks the other host what it can see.
 #         + 1  CredentialStore, the static one whose only seam is the env var, driven with ONE machine code
 #              on both sides deliberately: two codes would be separated by the FILENAME even inside one
 #              shared directory, so such a test passes on a build where the redirect does nothing. Both
@@ -851,10 +853,21 @@ EXPECT_CONFORMANCE=22
 #              holds exactly one (ServerUrl, MachineCode, VerifyTls) triple, so sharing its root is a
 #              last-writer-wins overwrite rather than a merge.
 #         + 1  the WAL, which is the only machine-wide store St4i.EdgeService has ever WRITTEN (blueprint
-#              §11.4) and therefore the collision a two-host deployment hits first. Its CONTROL arm is what
-#              makes it say anything: the queue file is <dir>\<machineCode>.jsonl, a pure function of two
-#              inputs, so the test first asserts that one shared root plus one shared machine code IS one
-#              file. Without that arm, "two roots give two paths" is a fact about Path.Combine.
+#              §11.4) and therefore the collision a two-host deployment hits first. 🔴 FIX ROUND 1 (review
+#              I-1) REWROTE THIS ARM AND THIS JUSTIFICATION WITH IT. The first version resolved the queue
+#              path itself and wrote it with File.WriteAllText, which made it a fact about Path.Combine —
+#              WalOptions.ResolveQueueFile documents itself as a pure function of (Directory, machineCode) —
+#              so the "through the store" sentence above was FALSE of one of the three arms it justified,
+#              in the one place the binding constraint requires a per-file justification to be accurate.
+#              The arm now drives a real TransportCoordinator (whose RebuildLive is what calls EnsureDir()
+#              and ResolveQueueFile and hands the result to LiveTransport.ForMachine) and a real offline
+#              SendAsync, so the bytes are appended by the vendored SDK's own Enqueue. No socket: the
+#              injected CapturingHandler throws HttpRequestException, the same technique and the same reason
+#              as TransportCoordinatorWalTests. Its CONTROL arm is a third send from host A's OWN root with
+#              the SAME machine code, which lands in host A's existing file — one file, two backlogs — so
+#              "the two roots stayed separate" is distinguished from "the WAL wrote nowhere at all".
+#              Costs ~22 s (three real retry-exhaustions at the SDK's fixed maxRetries/backoff); that is the
+#              price of the arm being about this product rather than about Path.Combine.
 #       🔴 MUTATION, and it is the one that discriminates: memoise CredentialStore.CredsDir() into a static
 #       field (`_cache ??= ResolveRoot()`) — a first-resolution-wins shape nobody would flag on review. The
 #       new credential test is KILLED deterministically; the pre-existing redirect test's verdict is
@@ -1505,7 +1518,9 @@ EXPECT_EDGESERVICE=50
 #              variable NAME to be derivable from the directory name (ST4I_<NAME>_DIR), because that is the
 #              rule README §15.9 tells an operator; requiring only "thirteen of each exist" would pass
 #              while a directory and its variable named different things. Non-vacuity floors on both sets
-#              plus five named controls, the same shape both siblings carry.
+#              plus five named controls, the same shape both siblings carry. The quantity it measures is
+#              "a quoted ST4I_<NAME>_DIR literal exists in src/" — narrower than "relocatable", which is
+#              why fix round 1 added the test below rather than letting README §15.9 lean on this one.
 #         + 1  TheReadme_TellsAnOperatorThatRelocatingARootDoesNotMigrateTheOldData — §8.1's fourth census
 #              tier: a rule stated to an OPERATOR is a different population of text from one stated to a
 #              programmer. Relocating a root on a running deployment silently orphans that store's data,
@@ -1523,7 +1538,33 @@ EXPECT_EDGESERVICE=50
 # notice, and neither gains a test: both were already covered for LimitNotice by tests that assert the
 # notice-carrying branch, and the new statement rides the identical branch. Recorded as a KNOWN GAP rather
 # than claimed as covered — see task-1-report.md.
-EXPECT_ENGINEAPI=1293
+# 🔴 TASK F-1 FIX ROUND 1 (review I-4) raises EXPECT_ENGINEAPI 1293 -> 1294 (+1), counted from the runner.
+# ONE file, ONE test; nothing rewritten, split or deleted.
+#
+#   +1  PerHostDataRootsTests.EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared — closes the
+#       instrument/criterion gap the review named. The guard above measures "a quoted ST4I_<NAME>_DIR
+#       literal appears somewhere in src/"; README §15.9 cited it for "there is no exception", i.e. that the
+#       directory is RELOCATABLE. A fourteenth store declaring `const string EnvVarDir = "ST4I_FOO_DIR"` and
+#       never reading it satisfied the first and violated the second — and neither M3 (no variable) nor M4
+#       (non-derivable name) reaches that shape, so the gap was untested as well as undisclosed. The new
+#       test requires every variable to reach a real Environment.GetEnvironmentVariable call, binding
+#       constants to literals PER FILE so that thirteen stores all naming their constant `EnvVarDir` cannot
+#       vouch for each other, and resolving a qualified Type.Member against Type.cs. Two named controls, one
+#       per resolution form: ST4I_HISTORIAN_DIR (read only as a bare literal, in Program.cs, not on its
+#       store) and ST4I_CREDS_DIR (read only through a same-file constant).
+#       🔴 What it still does NOT measure, disclosed here and in README §15.9 rather than left to a reader:
+#       "declared and read at a resolution site" is not "the resolved value is honoured to a file". Nothing
+#       here executes a store. A sweep that did would have to set thirteen process-wide variables inside a
+#       suite whose other classes boot real hosts that read them — trading a documented narrowness for an
+#       undocumented race — so that half stays covered store by store (CredentialStoreTests,
+#       PerHostDataRootIsolationTests, FleetSettingsStoreTests, WalOptionsTests, SecurityEnvVarTests, the
+#       ST4I_HISTORIAN_DIR harnesses).
+#
+# TheReadme_TellsAnOperator... does NOT move a count and its assertions changed: it used to require the
+# phrase "not onboarded", and review C-2 showed the sentence beside it prescribed a remedy ("until it claims
+# again") that St4i.EdgeService cannot perform. It now pins the ASYMMETRY — that §15.9 says the edge agent
+# cannot claim — in both languages. Same test, different (and correct) subject.
+EXPECT_ENGINEAPI=1294
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

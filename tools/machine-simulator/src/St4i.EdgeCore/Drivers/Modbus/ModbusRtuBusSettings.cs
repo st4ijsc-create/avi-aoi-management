@@ -374,6 +374,16 @@ public sealed record ModbusRtuBusSettings(string Transport, string Host, int Por
     /// A sentence that let a reader believe the product enforces one host per wire would be worse than
     /// silence, because it would stop them checking the one thing that actually decides it.</para>
     ///
+    /// <para>🔴 <b>It names BOTH configuration surfaces, because it is emitted from FOUR producing paths and
+    /// only two of them are a <c>connectors.json</c> (F-1 review, I-3).</b> The other two —
+    /// <c>Program.cs</c>'s persisted-bus startup registration and the <c>POST /v1/connectors</c> save
+    /// response — reach an operator about a bus held in the <b>connector-config store</b>, which no
+    /// <c>connectors.json</c> file mentions. Naming only the file would send that operator to open the
+    /// engine's <c>connectors.json</c>, not find the bus, and conclude the engine is not on the segment: the
+    /// wrong conclusion, produced by the notice written to prevent it. That is D-5's I-1 class — a sentence
+    /// true of some of the paths that generate it — and it is the same class the held-port arm was corrected
+    /// for in E-5.</para>
+    ///
     /// <para><b>The consequence is labelled UNMEASURED, deliberately.</b> Two uncoordinated frame sources on
     /// one segment do not corrupt data: NModbus validates the slave address and the function code, so a stray
     /// frame becomes a REJECTED transaction rather than a plausible wrong number. What it does produce is
@@ -384,13 +394,16 @@ public sealed record ModbusRtuBusSettings(string Transport, string Host, int Por
     public string DescribeSegmentOwnership() =>
         $"Modbus RTU over a gateway at {Host}:{Port}: this product's deployment rule is ONE HOST PER SEGMENT, " +
         "and on this transport NOTHING enforces it. St4i.EngineApi and St4i.EdgeService can each be pointed " +
-        "at this same gateway from their own connectors.json; both connections succeed, neither host can see " +
-        "the other, and no error is raised on either side. That is a CONSTRAINT ON THE DEPLOYMENT, not a " +
-        "guarantee this build provides — on a directly attached COM line the operating system happens to " +
-        "refuse the second open, and a gateway has no equivalent. If a second master is on this segment its " +
-        "frames interleave with this one's: the slave-address and function-code checks turn a stray frame " +
-        "into a REJECTED transaction rather than a wrong value, so the effect is degradation and not " +
-        "corrupted data — but write commands land on Indeterminate at a rate NOBODY HAS MEASURED. Confirm " +
-        "that exactly one host names this gateway before treating slow or indeterminate writes as a device " +
-        "fault.";
+        "at this same gateway — from their own connectors.json, OR, on St4i.EngineApi, from a bus saved " +
+        "earlier through POST /v1/connectors and re-registered from the connector-config store at every " +
+        "startup. Both connections succeed, neither host can see the other, and no error is raised on either " +
+        "side. That is a CONSTRAINT ON THE DEPLOYMENT, not a guarantee this build provides — on a directly " +
+        "attached COM line the operating system happens to refuse the second open, and a gateway has no " +
+        "equivalent. If a second master is on this segment its frames interleave with this one's: the " +
+        "slave-address and function-code checks turn a stray frame into a REJECTED transaction rather than a " +
+        "wrong value, so the effect is degradation and not corrupted data — but write commands land on " +
+        "Indeterminate at a rate NOBODY HAS MEASURED. Before treating slow or indeterminate writes as a " +
+        "device fault, confirm that exactly one host owns this gateway: check BOTH hosts' connectors.json " +
+        "AND the engine's saved connectors (GET /v1/connectors/configured), because a bus that was saved " +
+        "through the API will not appear in any connectors.json file.";
 }
