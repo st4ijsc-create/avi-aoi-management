@@ -193,7 +193,13 @@ export async function verifyCredentials(
   // chạy sau đó). Thứ tự các nhánh throw bên dưới GIỮ NGUYÊN như trước khi
   // sửa (không tồn tại → vô hiệu hoá → đang khoá → không hỗ trợ mật khẩu →
   // sai mật khẩu) — chỉ có lời gọi bcrypt.compare là được đưa lên đầu.
-  const passwordMatches = await comparePasswordConstantTime(bcrypt, password, user?.passwordHash);
+  // ★★★ Pha 7 Task 9 (9c) — hash mật khẩu nay ở `user_secrets`, KHÔNG còn trên hàng `users`.
+  // ⚠⚠ Lượt đọc này chạy **VÔ ĐIỀU KIỆN**, kể cả khi `user` là `undefined` (hàm nhận `null` và
+  //    vẫn chạy một câu truy vấn hình dạng y hệt). Gọi nó **có điều kiện** sẽ làm nhánh "username
+  //    không tồn tại" trả lời nhanh hơn đúng một lượt truy vấn ⇒ dựng lại chính side-channel F9
+  //    mà đoạn dưới đây được viết ra để đóng.
+  const biMat = await db.layBiMatNguoiDung(user?.id ?? null);
+  const passwordMatches = await comparePasswordConstantTime(bcrypt, password, biMat.passwordHash);
 
   if (!user) {
     await recordAudit("failure", null, username, audit, { reason: "unknown_user" });
@@ -217,7 +223,7 @@ export async function verifyCredentials(
     );
   }
 
-  if (!user.passwordHash) {
+  if (!biMat.passwordHash) {
     await recordAudit("failure", user, username, audit, { reason: "password_unsupported" });
     throw new LoginError(
       "PASSWORD_UNSUPPORTED",

@@ -192,14 +192,17 @@ export const userRouter = router({
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'Không tìm thấy người dùng');
       }
       
+      // ★★★ Pha 7 Task 9 (9c) — hash nay ở `user_secrets`, đọc qua CỬA DUY NHẤT.
+      const biMat = await db.layBiMatNguoiDung(user.id);
+
       // Only local users can change password
-      if (user.loginMethod !== 'local' || !user.passwordHash) {
+      if (user.loginMethod !== 'local' || !biMat.passwordHash) {
         throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'changeOwnPassword' }, 'Chỉ tài khoản nội bộ mới có thể đổi mật khẩu');
       }
 
       // Verify current password
       const bcrypt = await import('bcryptjs');
-      const isValid = await bcrypt.compare(input.currentPassword, user.passwordHash);
+      const isValid = await bcrypt.compare(input.currentPassword, biMat.passwordHash);
       if (!isValid) {
         throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'currentPassword' }, 'Mật khẩu hiện tại không đúng');
       }
@@ -298,9 +301,10 @@ export const userRouter = router({
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'Không tìm thấy người dùng');
       }
 
-      // Verify password for local users
-      if (user.loginMethod === 'local' && user.passwordHash) {
-        const isValidPassword = await bcrypt.compare(input.password, user.passwordHash);
+      // Verify password for local users — hash ở `user_secrets` (Pha 7 Task 9).
+      const biMat = await db.layBiMatNguoiDung(user.id);
+      if (user.loginMethod === 'local' && biMat.passwordHash) {
+        const isValidPassword = await bcrypt.compare(input.password, biMat.passwordHash);
         if (!isValidPassword) {
           throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'password' }, 'Mật khẩu không đúng');
         }

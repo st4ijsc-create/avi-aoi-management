@@ -6,7 +6,12 @@ import postgres from 'postgres';
 const username = process.argv[2] || 'engineer1';
 const sql = postgres(process.env.DATABASE_URL, { max: 1 });
 const speakeasy = (await import('speakeasy')).default;
-const [u] = await sql`SELECT username, two_factor_secret secret, two_factor_enabled en FROM users WHERE username=${username}`;
+// ★ Pha 7 Task 9 (9c) — hạt giống TOTP nay ở `user_secrets`; cờ 2FA vẫn ở `users`.
+//   Đọc cột cũ `users.two_factor_secret` sẽ CHẠY được (cột còn tới migration 0315) nhưng trả một
+//   giá trị ĐÃ CHẾT ⇒ in ra một OTP không bao giờ khớp. Đúng lớp "báo thành công mà sai".
+const [u] = await sql`SELECT u.username, s."twoFactorSecret" AS secret, u.two_factor_enabled AS en
+                        FROM users u LEFT JOIN user_secrets s ON s."userId" = u.id
+                       WHERE u.username=${username}`;
 if (!u) { console.error(`Không tìm thấy user '${username}'.`); process.exit(1); }
 if (!u.en || !u.secret) { console.log(`${username}: 2FA CHƯA bật (login chỉ cần mật khẩu).`); process.exit(0); }
 const otp = speakeasy.totp({ secret: u.secret, encoding: 'base32' });

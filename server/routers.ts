@@ -6,7 +6,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { listEnabledSsoMethods } from "./_core/oauthProviders";
 import { publicProcedure, router } from "./_core/trpc";
 // ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
-import { toPublicUser, type PublicUser } from "./_core/publicUser";
+import { toPublicUser, type MeUser } from "./_core/publicUser";
 import { appError } from "./_core/appError";
 import { invalidateAuthSession } from "./services/authSessionCache";
 import { z } from "zod";
@@ -230,10 +230,25 @@ export const appRouter = router({
      * ⚠ Hai tầng cưỡng chế, cố ý: **GIÁ TRỊ** đã sạch từ `sdk.authenticateRequest`
      * (`redactServerOnlyUserFields`), và **KIỂU** trả về ở đây là `PublicUser` — nhét một ô bí mật
      * trở lại là **lỗi biên dịch**, không phải một lượt review bỏ sót.
+     *
+     * ★★★ Pha 7 Task 9 (9b) / **QĐ-1** — **MỘT Ô SUY RA, KHÔNG PHẢI MỘT CỘT ĐƯỢC MỞ.**
+     * Chủ dự án chọn đặt hai mốc *"buộc đổi mật khẩu"* trên `users`. Nếu phân loại chúng là
+     * `"public"` thì `user.list` sẽ phát cho trình duyệt **danh sách chính xác các tài khoản đang
+     * bị buộc đổi mật khẩu**. Nên chúng là `"server-only"`, và client biết về **CHÍNH NÓ** qua ô
+     * `mustChangePassword` dưới đây.
+     * ⚠⚠ Ô này **PHẢI** suy từ một lượt đọc DB **MỚI** (`db.phaiDoiMatKhau`), **KHÔNG** từ
+     *    `opts.ctx.user`: hai mốc trên `ctx.user` đã bị `redactServerOnlyUserFields` làm **rỗng**
+     *    (đúng theo thiết kế), nên suy ra từ đó cho `false` **luôn luôn** — một lời nói dối im
+     *    lặng **theo chiều MỞ** (không ai bị buộc đổi). Ca §4 của
+     *    `server/routers/mustChangePassword.test.ts` canh đúng chuyện này.
      */
-    me: publicProcedure.query((opts): PublicUser | null =>
-      opts.ctx.user ? toPublicUser(opts.ctx.user) : null,
-    ),
+    me: publicProcedure.query(async (opts): Promise<MeUser | null> => {
+      if (!opts.ctx.user) return null;
+      return {
+        ...toPublicUser(opts.ctx.user),
+        mustChangePassword: await db.phaiDoiMatKhau(opts.ctx.user.id),
+      };
+    }),
     checkSetupRequired: publicProcedure.query(async () => {
       const existingAdmins = await db.getUsersByRole('admin');
       return {

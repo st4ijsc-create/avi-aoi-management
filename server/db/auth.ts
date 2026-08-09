@@ -2,11 +2,14 @@ import { eq, and, desc, like, sql, or, not, lte } from "drizzle-orm";
 import { getDb } from "./connection";
 import {
   InsertUser, users,
+  userSecrets,
   backupCodes,
   userSessions, InsertUserSession,
   userCorporateAssignments, InsertUserCorporateAssignment,
   userFactoryAssignments, InsertUserFactoryAssignment,
 } from "../../drizzle/schema";
+// ★★★ Pha 7 Task 9 (9b) — vị từ "phải đổi mật khẩu" có MỘT chủ; đừng viết bản sao thứ hai ở đây.
+import { suyRaPhaiDoiMatKhau, type MocMatKhau } from "../_core/publicUser";
 import { ENV } from '../_core/env';
 // ★★★ Pha 7 Task 8a — chủ duy nhất của mã dự phòng 2FA (sinh · băm · đối chiếu).
 import { khopMaDuPhong } from '../_core/backupCodeSecret';
@@ -19,6 +22,94 @@ import { khopMaDuPhong } from '../_core/backupCodeSecret';
 import { invalidateAuthUser } from '../services/authSessionCache';
 
 export type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'maintenance' | 'engineer' | 'viewer' | 'user';
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ Pha 7 Task 9 (9c) — **CỬA DUY NHẤT tới `user_secrets`.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Mọi lượt đọc/ghi `passwordHash` · `twoFactorSecret` đi qua **ba** hàm dưới đây. Đó là điều kiện
+ * để lớp lỗi *"hai người ghi dưới một bất biến"* (đã đẻ **ba** Critical trong chuỗi pha) không
+ * mọc lại: trước Task 9 hai cột ấy có **4 người ghi mã + 4 người ghi script**, rải trên 5 file.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/** Hình dạng bí mật của một tài khoản. `null` ở cả hai ô là hợp lệ (tài khoản SSO chưa bật 2FA). */
+export type BiMatNguoiDung = { passwordHash: string | null; twoFactorSecret: string | null };
+
+const BI_MAT_RONG: BiMatNguoiDung = { passwordHash: null, twoFactorSecret: null };
+
+/**
+ * ★★★ Đọc bí mật của **một** tài khoản.
+ *
+ * ⚠⚠ `userId` nhận `null` **có chủ ý**, và đây không phải sự tiện tay: đường đăng nhập gọi hàm này
+ *    **trước** khi biết tài khoản có tồn tại hay không (bản vá side-channel F9 —
+ *    `_core/authService.ts` — bắt buộc `bcrypt.compare` chạy trên **mọi** nhánh). Nếu ta chỉ truy
+ *    vấn khi người dùng CÓ THẬT thì lượt "không tồn tại" trả lời **nhanh hơn một lượt truy vấn**,
+ *    và ta vừa dựng lại đúng cái side-channel vừa vá. Nên `null` vẫn **chạy một câu truy vấn hình
+ *    dạng y hệt** (`userId = -1`, không khớp hàng nào).
+ */
+export async function layBiMatNguoiDung(userId: number | null): Promise<BiMatNguoiDung> {
+  const db = await getDb();
+  if (!db) return BI_MAT_RONG;
+  const [row] = await db
+    .select({ passwordHash: userSecrets.passwordHash, twoFactorSecret: userSecrets.twoFactorSecret })
+    .from(userSecrets)
+    .where(eq(userSecrets.userId, userId ?? -1))
+    .limit(1);
+  return row ?? BI_MAT_RONG;
+}
+
+/**
+ * ★★★ Ghi bí mật của một tài khoản — **upsert**, vì `user_secrets` là 1:1 với `users` và hàng có
+ * thể chưa tồn tại (tài khoản tạo bởi một build cũ, hoặc bởi `upsertUser` đường OAuth).
+ *
+ * ⚠ Chỉ ghi ô nào **được truyền vào**: `ghiBiMatNguoiDung(id, { twoFactorSecret: null })` phải
+ *   **không** đụng tới `passwordHash`. Một `set` liệt kê cả hai ô sẽ **xoá mật khẩu** của người bật
+ *   lại 2FA — im lặng, và không hoàn tác được.
+ */
+export async function ghiBiMatNguoiDung(
+  userId: number,
+  vaCham: Partial<BiMatNguoiDung>,
+  tx?: any,
+): Promise<void> {
+  const db = tx ?? (await getDb());
+  if (!db) throw new Error('Database not available');
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  if ('passwordHash' in vaCham) set.passwordHash = vaCham.passwordHash ?? null;
+  if ('twoFactorSecret' in vaCham) set.twoFactorSecret = vaCham.twoFactorSecret ?? null;
+  await db
+    .insert(userSecrets)
+    .values({
+      userId,
+      passwordHash: 'passwordHash' in vaCham ? vaCham.passwordHash ?? null : null,
+      twoFactorSecret: 'twoFactorSecret' in vaCham ? vaCham.twoFactorSecret ?? null : null,
+    })
+    .onConflictDoUpdate({ target: userSecrets.userId, set });
+}
+
+/**
+ * ★★★ Pha 7 Task 9 (9b) — hai MỐC của lượt buộc đổi mật khẩu, đọc **MỚI TỪ DB**.
+ *
+ * ⚠⚠ **KHÔNG** suy ra từ `ctx.user`: hai cột ấy là `"server-only"` nên `redactServerOnlyUserFields`
+ *    đã làm rỗng chúng ở đó ⇒ suy ra từ đó cho `false` **luôn luôn**, tức hỏng **im lặng theo
+ *    chiều MỞ**. Xem `server/_core/publicUser.ts::suyRaPhaiDoiMatKhau`.
+ */
+export async function layMocMatKhau(userId: number): Promise<MocMatKhau> {
+  const db = await getDb();
+  if (!db) return { passwordChangedAt: null, passwordInvalidBefore: null };
+  const [row] = await db
+    .select({
+      passwordChangedAt: users.passwordChangedAt,
+      passwordInvalidBefore: users.passwordInvalidBefore,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row ?? { passwordChangedAt: null, passwordInvalidBefore: null };
+}
+
+/** Vị từ *"tài khoản này phải đổi mật khẩu"* — đọc DB rồi hỏi **chủ duy nhất** của vị từ. */
+export async function phaiDoiMatKhau(userId: number): Promise<boolean> {
+  return suyRaPhaiDoiMatKhau(await layMocMatKhau(userId));
+}
 
 // ============ USER FUNCTIONS ============
 export async function upsertUser(user: InsertUser): Promise<void> {
@@ -152,24 +243,34 @@ export async function createLocalUser(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
-  
+
   // Generate a unique openId for local users
   const openId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-  
-  const [result] = await db.insert(users).values({
-    openId,
-    username: data.username,
-    passwordHash: data.passwordHash,
-    name: data.name,
-    email: data.email || null,
-    phone: data.phone || null,
-    department: data.department || null,
-    position: data.position || null,
-    loginMethod: 'local',
-    role: data.role || 'user',
-    isActive: true,
-  }).returning({ id: users.id });
-  return { id: Number(result.id), openId };
+
+  // ★★★ Pha 7 Task 9 (9c) — **MỘT GIAO DỊCH.** Một hàng `users` KHÔNG có hàng `user_secrets` là
+  // một tài khoản **không đăng nhập được**, và nó sẽ được tạo ra **im lặng** nếu hai câu `INSERT`
+  // đứng rời nhau (§3.7(b) báo cáo Task 9 — ràng buộc, không phải gợi ý).
+  const id = await db.transaction(async (tx) => {
+    const [result] = await tx.insert(users).values({
+      openId,
+      username: data.username,
+      name: data.name,
+      email: data.email || null,
+      phone: data.phone || null,
+      department: data.department || null,
+      position: data.position || null,
+      loginMethod: 'local',
+      role: data.role || 'user',
+      isActive: true,
+      // Mật khẩu vừa được đặt ⇒ mốc là BÂY GIỜ. Không có nó, một lượt thu hồi cũ sẽ buộc một tài
+      // khoản **vừa tạo** phải đổi mật khẩu ngay.
+      passwordChangedAt: new Date(),
+    }).returning({ id: users.id });
+    const uid = Number(result.id);
+    await ghiBiMatNguoiDung(uid, { passwordHash: data.passwordHash }, tx);
+    return uid;
+  });
+  return { id, openId };
 }
 
 export async function updateUser(userId: number, data: {
@@ -187,10 +288,20 @@ export async function updateUser(userId: number, data: {
   await invalidateAuthUser(userId); // covers role change + ban (isActive:false)
 }
 
+/**
+ * ★★★ Pha 7 Task 9 — lượt đổi mật khẩu ghi **HAI** chỗ, trong **MỘT giao dịch**:
+ *   · `user_secrets.passwordHash` — bí mật mới;
+ *   · `users.passwordChangedAt = now()` — thứ làm vị từ *"phải đổi mật khẩu"* **TỰ** thành false.
+ * ⚠ Bỏ vế thứ hai ⇒ người dùng đổi mật khẩu xong **vẫn bị buộc đổi mãi mãi**. Bỏ vế thứ nhất ⇒
+ *   mật khẩu không đổi. Tách chúng ra hai giao dịch ⇒ có một trạng thái trung gian nói dối.
+ */
 export async function updateUserPassword(userId: number, passwordHash: string) {
   const db = await getDb();
   if (!db) throw new Error('Database not available');
-  await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+  await db.transaction(async (tx) => {
+    await ghiBiMatNguoiDung(userId, { passwordHash }, tx);
+    await tx.update(users).set({ passwordChangedAt: new Date() }).where(eq(users.id, userId));
+  });
   await invalidateAuthUser(userId);
 }
 
@@ -228,24 +339,29 @@ export async function createUser(data: {
   // Hash password using bcrypt
   const bcrypt = await import('bcryptjs');
   const passwordHash = await bcrypt.hash(data.password, 10);
-  
+
   // Generate a unique openId for local users
   const openId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-  
-  const [result] = await db.insert(users).values({
-    openId,
-    username: data.username || data.email.split('@')[0],
-    passwordHash,
-    name: data.name,
-    email: data.email,
-    phone: data.phone || null,
-    department: data.department || null,
-    position: data.position || null,
-    loginMethod: 'local',
-    role: data.role || 'user',
-    isActive: true,
-  }).returning({ id: users.id });
-  return Number(result.id);
+
+  // ★★★ Pha 7 Task 9 (9c) — MỘT giao dịch (xem `createLocalUser`).
+  return db.transaction(async (tx) => {
+    const [result] = await tx.insert(users).values({
+      openId,
+      username: data.username || data.email.split('@')[0],
+      name: data.name,
+      email: data.email,
+      phone: data.phone || null,
+      department: data.department || null,
+      position: data.position || null,
+      loginMethod: 'local',
+      role: data.role || 'user',
+      isActive: true,
+      passwordChangedAt: new Date(),
+    }).returning({ id: users.id });
+    const uid = Number(result.id);
+    await ghiBiMatNguoiDung(uid, { passwordHash }, tx);
+    return uid;
+  });
 }
 
 export async function searchUsers(query: string) {
@@ -263,12 +379,10 @@ export async function searchUsers(query: string) {
 }
 
 // ============ 2FA FUNCTIONS ============
+// ★★★ Pha 7 Task 9 (9c) — hạt giống TOTP nay ở `user_secrets`; `users.two_factor_enabled` (cờ
+// CÔNG KHAI, không phải bí mật) ở lại `users`. Hai ô, hai bảng, đúng theo ngữ nghĩa.
 export async function setup2FA(userId: number, secret: string) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(users)
-    .set({ twoFactorSecret: secret })
-    .where(eq(users.id, userId));
+  await ghiBiMatNguoiDung(userId, { twoFactorSecret: secret });
 }
 
 export async function enable2FA(userId: number) {
@@ -283,19 +397,32 @@ export async function enable2FA(userId: number) {
 export async function disable2FA(userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(users)
-    .set({ twoFactorSecret: null, twoFactorEnabled: false })
-    .where(eq(users.id, userId));
+  await db.transaction(async (tx) => {
+    await ghiBiMatNguoiDung(userId, { twoFactorSecret: null }, tx);
+    await tx.update(users).set({ twoFactorEnabled: false }).where(eq(users.id, userId));
+  });
   await invalidateAuthUser(userId);
 }
 
+/**
+ * ★★★ **NGƯỜI ĐỌC DUY NHẤT** của cặp (cờ 2FA, hạt giống TOTP). Sau Task 9 hai ô ấy nằm ở **hai
+ * bảng**, nên một `LEFT JOIN` — chứ không phải hai lượt gọi rời — giữ cho mọi người gọi thấy một
+ * ảnh chụp **nhất quán** (trước Task 9 chúng ở cùng hàng nên tính chất này là miễn phí; nay nó
+ * phải được viết ra).
+ * ⚠ `LEFT` chứ không `INNER`: một tài khoản chưa có hàng `user_secrets` (tạo bởi build cũ) phải
+ *   trả *"chưa bật 2FA"*, **không** phải biến mất khỏi kết quả.
+ */
 export async function get2FAStatus(userId: number) {
   const db = await getDb();
   if (!db) return null;
   const result = await db.select({
     twoFactorEnabled: users.twoFactorEnabled,
-    twoFactorSecret: users.twoFactorSecret,
-  }).from(users).where(eq(users.id, userId)).limit(1);
+    twoFactorSecret: userSecrets.twoFactorSecret,
+  })
+    .from(users)
+    .leftJoin(userSecrets, eq(userSecrets.userId, users.id))
+    .where(eq(users.id, userId))
+    .limit(1);
   return result.length > 0 ? result[0] : null;
 }
 

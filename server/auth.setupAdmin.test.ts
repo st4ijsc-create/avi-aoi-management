@@ -129,8 +129,15 @@ describe("auth.setupAdmin", () => {
     });
 
     const admins = await db.getUsersByRole("admin");
-    expect(admins[0].passwordHash).toBeDefined();
-    expect(admins[0].passwordHash).not.toBe(plainPassword);
-    expect(admins[0].passwordHash?.length).toBeGreaterThan(20); // bcrypt hash is long
+    // ★ Pha 7 Task 9 (9c) — hash KHÔNG còn trên hàng `users`; nó ở `user_secrets`.
+    //   ⚠ Ô này cũng là ĐỐI CHỨNG DƯƠNG cho ràng buộc "hai INSERT trong MỘT giao dịch": nếu hàng
+    //     `user_secrets` không được tạo cùng lượt, tài khoản admin đầu tiên sẽ KHÔNG đăng nhập
+    //     được — và nó sẽ hỏng **im lặng**.
+    const biMat = await db.layBiMatNguoiDung(admins[0].id);
+    expect(biMat.passwordHash).toBeDefined();
+    expect(biMat.passwordHash).not.toBe(plainPassword);
+    expect(biMat.passwordHash?.length).toBeGreaterThan(20); // bcrypt hash is long
+    // Và hàng `users` KHÔNG mang bí mật nào nữa (đây là toàn bộ điểm của 9c).
+    expect("passwordHash" in admins[0]).toBe(false);
   });
 });

@@ -52,6 +52,9 @@ npx vitest run server/services/vram/ server/services/aiLocalTools/ \
   server/routers/userExposureScan.test.ts \
   server/_core/publicUser.test.ts \
   server/_core/backupCodeWriteScan.test.ts \
+  server/_core/backupCodeWidth.test.ts \
+  server/_core/xoayBiMatNguon.test.ts \
+  server/routers/mustChangePassword.test.ts \
   server/services/aiCopilotActions.hardlinkSink.test.ts \
   server/services/aiAgentOrchestrator.authCtx.test.ts client/src/lib/
 NODE_OPTIONS=--max-old-space-size=8192 npm run check

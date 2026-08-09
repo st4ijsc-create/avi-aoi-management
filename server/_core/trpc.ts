@@ -331,20 +331,14 @@ async function verifyFreshTotp(
   luot: string,
 ): Promise<{ hopLe: boolean; phatLai: boolean }> {
   try {
-    const [{ getDb }, { users }, { eq }] = await Promise.all([
-      import("../db/connection"),
-      import("../../drizzle/schema"),
-      import("drizzle-orm"),
-    ]);
-    const db = await getDb();
-    if (!db) return { hopLe: false, phatLai: false };
-    const [u] = await db
-      .select({ secret: users.twoFactorSecret, enabled: users.twoFactorEnabled })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-    if (!u || !u.enabled || !u.secret) return { hopLe: false, phatLai: false };
-    return await verifyTotpOnce({ userId, secret: u.secret, token: code, luot });
+    // ★★★ Pha 7 Task 9 (9c) — hạt giống TOTP nay ở `user_secrets`, cờ 2FA vẫn ở `users`. Thay vì
+    // dựng ở đây một câu `JOIN` **thứ hai** cho cùng cặp ô, gọi lại **NGƯỜI ĐỌC DUY NHẤT**
+    // (`db.get2FAStatus`) — bản sao thứ hai của một vị từ là chỗ luật trôi đi (lớp lỗi đã đẻ ba
+    // Critical trong chuỗi pha này).
+    const { get2FAStatus } = await import("../db");
+    const u = await get2FAStatus(userId);
+    if (!u || !u.twoFactorEnabled || !u.twoFactorSecret) return { hopLe: false, phatLai: false };
+    return await verifyTotpOnce({ userId, secret: u.twoFactorSecret, token: code, luot });
   } catch {
     return { hopLe: false, phatLai: false }; // fail-closed — lỗi tra cứu/verify ⇒ coi như KHÔNG hợp lệ
   }

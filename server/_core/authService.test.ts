@@ -27,6 +27,9 @@ const dbm = vi.hoisted(() => ({
   getUserByUsername: vi.fn(async (): Promise<any> => undefined),
   updateUserLoginAttempts: vi.fn(async (): Promise<void> => {}),
   createAuditLog: vi.fn(async (): Promise<any> => ({})),
+  // ★ Pha 7 Task 9 (9c) — hash mật khẩu đã rời hàng `users` sang bảng `user_secrets`, nên
+  //   `verifyCredentials` đọc nó qua CỬA DUY NHẤT này. Bản cài đặt nằm ở `beforeEach`.
+  layBiMatNguoiDung: vi.fn(async (_id: number | null): Promise<any> => ({ passwordHash: null, twoFactorSecret: null })),
 }));
 vi.mock("../db", () => dbm);
 
@@ -90,6 +93,16 @@ beforeEach(() => {
   dbm.getUserByUsername.mockReset();
   dbm.updateUserLoginAttempts.mockReset().mockResolvedValue(undefined);
   dbm.createAuditLog.mockReset().mockResolvedValue({});
+  // ★ Pha 7 Task 9 (9c) — CHỖ LƯU đổi (hai bảng), **ngữ nghĩa của bộ dữ liệu thì KHÔNG**: mỗi ca
+  //   dưới đây vẫn khai hash của tài khoản ở **một chỗ duy nhất** (`makeUser({passwordHash})`).
+  //   Nên bản cài đặt này soi lại đúng giá trị ấy thay vì bắt 15 chỗ gọi phải khai hai lần —
+  //   khai hai lần là mở đường cho hai bản sao trôi khỏi nhau, đúng lớp lỗi đang vá.
+  //   ⚠ Hợp lệ vì `verifyCredentials` gọi `getUserByUsername` TRƯỚC `layBiMatNguoiDung`.
+  dbm.layBiMatNguoiDung.mockReset().mockImplementation(async () => {
+    const kq = dbm.getUserByUsername.mock.results.at(-1);
+    const u = kq && kq.type === "return" ? await (kq.value as Promise<any>) : undefined;
+    return { passwordHash: u?.passwordHash ?? null, twoFactorSecret: u?.twoFactorSecret ?? null };
+  });
   bcryptCompareSpy.mockClear();
 });
 

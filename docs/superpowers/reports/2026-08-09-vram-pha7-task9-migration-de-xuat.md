@@ -746,3 +746,275 @@ Máy chủ **PID 36072** không bị đụng tới. File dò tạm **đã xoá**
 
 ⚠ **Không mục nào trong ba mục trên chặn lượt duyệt**: gạch/đổi bất kỳ mục nào cũng chỉ sửa vài dòng
 SQL, **không** đổi thứ tự áp và **không** đổi kết luận của §2.5/§2.6.
+
+---
+---
+
+# PHẦN II — THỰC THI (Bước 4–9), sau khi chủ dự án DUYỆT
+
+> Chủ dự án duyệt nội dung migration + **ba câu QĐ-1/2/3** (2026-08-09). Khối quyết định nằm ở
+> **cuối** `docs/superpowers/plans/2026-08-07-vram-pha7-backlog.md`.
+> **Phần này ghi DẦN sau mỗi bước** — không viết sau khi xong hết.
+
+## 6 · BƯỚC 4 — ÁP `0314` (thuần thêm) — ✅ **XONG**
+
+### 6.1 · Ba quyết định đã đổi gì so với §3.1
+
+| # | quyết định | thay đổi trong SQL |
+|---|---|---|
+| **QĐ-1** | hai mốc đặt trên **`users`** (ngược đề xuất) | hai `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS` thay vì hai cột trong `user_secrets`. `user_secrets` còn **4** cột (`userId` · `passwordHash` · `twoFactorSecret` · `updatedAt`) |
+| **QĐ-2** | `varchar(255)` | **không đổi** — §3.1 đã là 255 |
+| **QĐ-3** | XOÁ `idx_backup_codes_code` | mục "tuỳ chọn" ở §3.1 **vào thân** migration (`DROP INDEX IF EXISTS`) |
+
+⚠ **QĐ-1 KHÔNG được để thành lỗ.** Rủi ro đã nêu (phân loại `"public"` ⇒ `user.list` phát danh sách
+tài khoản đang bị buộc đổi mật khẩu) được đóng **ở tầng mã, theo cấu tạo** — xem §7.
+
+### 6.2 · Đã áp — **CẢ HAI DB, owner `aoi`**
+
+File: **`drizzle/0314_backup_code_widen_and_user_secrets.sql`** · **7 câu lệnh**.
+⚠ **KHÔNG** dùng `npm run db:push`: `DATABASE_URL` của app là `avi_app` ⇒ `42501` (R5). Áp bằng một
+script tạm chạy với `postgresql://aoi:aoi@…` (đã xoá sau khi dùng).
+
+**Nền TRƯỚC khi áp (đo, không đoán):**
+
+| | `aoi_management` | `aoi_management_test` |
+|---|---|---|
+| `backup_codes.code` | `varchar(20)` | `varchar(20)` |
+| `to_regclass('public.user_secrets')` | **`null`** | **`null`** |
+| `users` số cột | 19 | 19 |
+| chỉ mục `backup_codes` | `_pkey` · **`idx_backup_codes_code`** · `idx_backup_codes_user` | như trái |
+| hàng | 8 users · 0 backup_codes · 8 có `passwordHash` · 8 có `two_factor_secret` | 5 users · 0 · 1 · 0 |
+| mig cuối | `0313` | `0313` |
+
+**Đồng hồ mỗi câu (R10 — đo, KHÔNG suy):**
+
+```
+===== aoi_management (current_user=aoi) =====        ===== aoi_management_test =====
+  [1/7] 14.36 ms  DO $$  (ALTER … TYPE varchar(255))   [1/7] 16.34 ms
+  [2/7]  2.42 ms  DROP INDEX IF EXISTS "idx_backup_codes_code";      [2/7]  4.54 ms
+  [3/7]  3.50 ms  ALTER TABLE "users" ADD COLUMN … "passwordChangedAt"      [3/7] 2.25 ms
+  [4/7]  1.54 ms  ALTER TABLE "users" ADD COLUMN … "passwordInvalidBefore"  [4/7] 1.16 ms
+  [5/7] 12.04 ms  CREATE TABLE IF NOT EXISTS "user_secrets"          [5/7] 10.82 ms
+  [6/7]  3.13 ms  INSERT INTO "user_secrets" … SELECT … FROM "users" [6/7]  3.20 ms
+  [7/7]  1.26 ms  GRANT … ON "user_secrets" TO "avi_app";            [7/7]  0.99 ms
+  ✔ ghi __applied_migrations                                          ✔ ghi __applied_migrations
+```
+
+**★ R10 trả lời DỨT ĐIỂM — bằng một thí nghiệm CÓ ĐỐI CHỨNG, không bằng con số 14 ms.**
+14 ms trên một bảng **0 hàng** không chứng minh được gì (0 hàng thì rewrite cũng nhanh). Nên đo thêm
+trên **1.000 hàng thật**, trong một giao dịch tạm, ở **cả hai** DB:
+
+```
+CREATE TEMP TABLE __r10 (c varchar(20)); INSERT 1000 hàng;
+ALTER TABLE __r10 ALTER COLUMN c TYPE varchar(255);
+⇒ aoi_management       relfilenode 205983 -> 205983   KHÔNG rewrite
+⇒ aoi_management_test  relfilenode 205986 -> 205986   KHÔNG rewrite
+```
+
+⇒ **PG 17.10 KHÔNG rewrite khi NỚI `varchar` không đổi collation.** Kỳ vọng ở §3.8 R10 nay là một
+**phép đo**, không còn là một kỳ vọng. (Chiều ngược — **thu hẹp** — vẫn rewrite và vẫn `22001`; đó
+đúng là hành vi §3.6 mô tả.)
+
+### 6.3 · XÁC NHẬN bằng `information_schema` — **CẢ HAI DB**
+
+```
+===== aoi_management =====                       ===== aoi_management_test =====
+information_schema: backup_codes.code varchar(255)   backup_codes.code varchar(255)
+users mốc mới: passwordChangedAt:timestamp null=YES def=NULL
+               passwordInvalidBefore:timestamp null=YES def=NULL      (giống hệt)
+to_regclass('public.user_secrets') = user_secrets                     = user_secrets
+user_secrets: userId:integer null=NO · passwordHash:varchar(255) null=YES
+              · twoFactorSecret:varchar(255) null=YES · updatedAt:timestamp null=NO
+FK: user_secrets_userId_fkey(userId) ON DELETE CASCADE                (giống hệt)
+chỉ mục: backup_codes_pkey · idx_backup_codes_user · user_secrets_pkey  ⇒ idx_backup_codes_code ĐÃ MẤT
+chép: {nu:8, ns:8, lech:0, thieu:0, buoc_doi:0}      chép: {nu:5, ns:5, lech:0, thieu:0, buoc_doi:0}
+quyền avi_app: {s:true, i:true, u:true, d:true}      (giống hệt)
+mig: 0314…=true · 0313…=true                         mig: 0314…=true · 0313…=true
+```
+
+- `thieu = 0` ⇒ **∀ hàng `users` có đúng một hàng `user_secrets`** (điều kiện R9 và điều kiện vào 0315).
+- `lech = 0` ⇒ ảnh chụp khớp **tại thời điểm áp**. ⚠ Nó sẽ **KHÁC 0** ngay khi mã mới ghi lần đầu — đó
+  là **điều bình thường** (0315 in ra như một `NOTICE`, không phải `EXCEPTION`).
+- `buoc_doi = 0` ⇒ migration **TRUNG TÍNH VỀ HÀNH VI**: chưa ai bị buộc đổi mật khẩu.
+- `quyền avi_app` đủ 4 ⇒ **R5 đóng**: app (chạy bằng `avi_app`) đọc/ghi được bảng mới.
+
+### 6.4 · ⚠ `0315` **CHƯA ĐƯỢC TẠO THÀNH FILE** — có chủ ý
+
+`npm run db:push` áp **mọi** file mới trong `drizzle/`. Đặt sẵn `0315_users_drop_secret_columns.sql`
+là dựng một cái bẫy chờ lượt `db:push` kế tiếp — và câu nó chạy là câu **NGỪNG DỊCH VỤ** nếu build
+cũ còn sống. Nguyên văn 0315 giữ ở **§3.2**; nó chỉ được ghi thành file ở lượt sau, khi ba điều kiện
+vào của §3.2 đã đủ.
+
+---
+
+## 7 · BƯỚC 5 — CÀI MÃ — ✅ **XONG**
+
+### 7.1 · ★★★ MỘT SAI LỆCH CÓ CHỦ Ý so với "Nhắc cho lượt sau" #4 — **nói ra, không làm lặng**
+
+Mục #4 của §4 viết: *"**CHỈ SAU 0315** mới bỏ hai cột khỏi `users` trong drizzle"*. **Lượt này bỏ
+NGAY**, và đây là lý do:
+
+> Giữ hai cột trong lược đồ drizzle nghĩa là **mọi** `.select().from(users)` vẫn liệt kê chúng ⇒
+> **8 hàm** đọc nguyên hàng — trong đó `getUserById`, thứ `sdk.authenticateRequest` gọi **mỗi
+> request đã xác thực** — **vẫn kéo `passwordHash` + hạt giống TOTP vào bộ nhớ tiến trình**.
+> ⇒ 9c sẽ **không đổi gì đo được** cho tới lượt deploy *sau* 0315. Nợ nằm im, và lớp R1 nằm im
+> **cùng nó** — chờ nổ ở một lượt mà không ai còn nhớ vì sao.
+
+Câu ngay sau mục #4 đã nói điều làm việc này an toàn, và nó vẫn đúng:
+*"Bỏ trong drizzle **trước** khi bỏ trong DB thì không sao (drizzle chỉ thôi liệt kê); bỏ trong DB
+**trước** khi bỏ trong drizzle thì `42703`."*
+
+**Hệ quả đã tính, không phải bất ngờ:** từ lượt deploy này, `users."passwordHash"` và
+`users.two_factor_secret` **HOÁ CŨ** — mã mới không đọc, không ghi chúng nữa. Đó chính là con số
+`lech` mà lưới chặn của 0315 in ra dưới dạng `NOTICE` (§3.2), và là lý do câu ấy **cố ý không phải**
+`EXCEPTION`. ⚠ Hệ quả thứ hai: hoàn nguyên **mã** về build cũ sau lượt này sẽ đọc bí mật **CŨ** —
+đường hoàn tác đúng là §3.6, không phải "checkout rồi chạy".
+
+### 7.2 · Bảng thay đổi
+
+| tệp | đổi gì |
+|---|---|
+| `drizzle/schema/auth.ts` | `users` **bỏ** `passwordHash`/`twoFactorSecret`, **thêm** `passwordChangedAt`/`passwordInvalidBefore`; `backupCodes.code` **20 → 255**, **bỏ** `idx_backup_codes_code`; **thêm** bảng `userSecrets` (FK `ON DELETE CASCADE`) |
+| `server/db/auth.ts` | **CỬA DUY NHẤT** tới bí mật: `layBiMatNguoiDung` · `ghiBiMatNguoiDung` · `layMocMatKhau` · `phaiDoiMatKhau`. `createLocalUser`/`createUser`/`updateUserPassword`/`disable2FA` chạy trong **MỘT giao dịch**; `get2FAStatus` thành `LEFT JOIN` |
+| `server/_core/publicUser.ts` | phân loại hai mốc `"server-only"`; **neo R1**: `moiCotBiMatCuaUserSecrets()` (phần bù, suy ra); vị từ `suyRaPhaiDoiMatKhau()`; kiểu `MeUser` |
+| `server/routers.ts` | `auth.me` trả `PublicUser` **+ ô SUY RA** `mustChangePassword`, đọc **DB MỚI** |
+| `server/_core/authService.ts` · `server/_core/index.ts` | hash đọc từ `user_secrets`; lượt đọc chạy **VÔ ĐIỀU KIỆN** (giữ bản vá side-channel F9) |
+| `server/_core/trpc.ts` · `server/routers/twoFactorRouter.ts` · `server/routers/userRouters.ts` | thôi tự truy vấn bí mật; gọi lại **người đọc/ghi duy nhất** (`get2FAStatus`/`setup2FA`/`disable2FA`/`layBiMatNguoiDung`). Riêng `twoFactorRouter` bỏ **5** bản sao của cùng một câu `select({twoFactorSecret})` |
+| `scripts/xoay-bi-mat-2fa.mjs` | **R2** — đọc/ghi `user_secrets`, đặt `passwordInvalidBefore = now()`, **CỔNG NGUỒN** chạy trước mọi thứ (kể cả lượt khô), file thành **vừa kịch bản vừa module** |
+| `scripts/print-otp.mjs` · `seed-test-data.mjs` · `audit/audit-account.mjs` | cùng lớp R2 — trỏ `user_secrets` |
+
+⚠ **KHÔNG viết bộ suy thứ N+1**: vị từ *"phải đổi mật khẩu"* có **một** chủ (`publicUser.ts`), và
+`server/db/auth.ts` **gọi lại** nó thay vì chép câu SQL tương đương.
+
+### 7.3 · R1 đã ĐÓNG — không chỉ khai
+
+Phép đếm §2.5 dự báo: bỏ hai cột ⇒ `SERVER_ONLY_USER_FIELDS` rỗng ⇒ cổng kiểu `PublicUser` thành
+`{}` ⇒ **trang trí**; và lượt sửa hiển nhiên (xoá 4 dòng `publicUser.test.ts:76-79`) làm **mọi thứ
+xanh với danh sách rỗng**. Bản vá **không** xoá bốn dòng ấy — nó **đảo lượng từ**, trên **hai bảng**:
+
+| ô | luật | cầu chì |
+|---|---|---|
+| **R1 (a)** | ∀ cột bí mật của **`user_secrets`** ⇒ KHÔNG ra được qua `toPublicUser()` | — |
+| **R1 (c)** | — | tập bí mật của `user_secrets` **KHÁC RỖNG** ⇒ rỗng là **ĐỎ** |
+| **QĐ-1 (b)** | ∀ cột `users` có tên chứa `password` ⇒ **phải** `"server-only"` | tập `password*` khác rỗng · `SERVER_ONLY_USER_FIELDS` khác rỗng |
+
+*"Cột bí mật của `user_secrets`"* là **phần bù** của hai cột hạ tầng (`userId`, `updatedAt`), nên
+một cột **thứ ba** thêm vào bảng ấy ngày mai **mặc định là bí mật** và tự vào lượng từ.
+Ba lưới cùng lớp trong các file khác (`authSessionCache.test.ts` · `sdk.authCache.test.ts` ·
+`publicUser.test.ts §3`) cũng đã **đổi từ hai TÊN sang tập SUY RA**, mỗi chỗ kèm cầu chì rỗng.
+
+### 7.4 · R2 đã ĐÓNG — và cổng chạy **trước cả lượt khô**
+
+`loiCuaNguonBiMat()` từ chối khi (1) `user_secrets` không tồn tại, hoặc (2) còn tài khoản mang bí
+mật ở cột cũ mà **thiếu** hàng ở bảng nguồn. Nó chạy **trước** cả lượt khô — một lượt khô đọc nhầm
+bảng sẽ in ra một **bản kế hoạch SAI**, và người đọc sẽ duyệt nó. Lượt hoàn tác cũng qua cổng ấy, và
+thêm một phép so *"ảnh chụp lấy từ nguồn nào"*.
+
+Đo được (chạy tay, không phải suy):
+
+```
+$ node scripts/xoay-bi-mat-2fa.mjs --db=…/postgres          # DB KHONG co user_secrets
+DỪNG: không thấy bảng `user_secrets` trong DB này. …        EXIT=3
+$ node scripts/xoay-bi-mat-2fa.mjs --db=…/aoi_management_test
+Nguồn bí mật đang dùng: `user_secrets`  (đã kiểm, không giả định)   EXIT=0
+```
+
+### 7.5 · Lưới mới + cổng
+
+**3 file mới**, tất cả tự khai `Pha 5` và **đều có đường riêng** ở §Cổng kiểm chung
+(`docs/superpowers/plans/2026-08-06-vram-pha5-tra-no.md`) — `CONG` **22 → 25**, `FILE_CANH` **83 → 86**:
+
+| file | trục |
+|---|---|
+| `server/_core/backupCodeWidth.test.ts` | **9a** — ∀ giá trị `bamMaDuPhong()` sinh ra vừa bề rộng khai; **cả hai vế SUY RA**, không viết tay 60 cũng không viết tay 255. Cộng một ô **ghi THẬT xuống DB** (drizzle khai 255 mà DB còn 20 thì `tsc` vẫn xanh) |
+| `server/_core/xoayBiMatNguon.test.ts` | **R2** — vị từ + **hành vi đầu-cuối** (chạy chính script như tiến trình con) + ∀ SQL thô trong `scripts/**` |
+| `server/routers/mustChangePassword.test.ts` | **QĐ-1** — bảng chân trị của vị từ · `user.list` sạch · `auth.me` có ô suy ra · **§4: ô suy ra KHÔNG đến từ `ctx.user`** |
+
+---
+
+## 8 · BƯỚC 6 — ĐỐI CHỨNG DƯƠNG **TRÊN HỆ THẬT** — ✅ **ĐẠT**
+
+### 8.1 · Redeploy (nói rõ, theo yêu cầu)
+
+```
+npm run build            => dist/index.js 10.2 MB · worker 4.6 MB · edgeGateway 3.6 MB
+Stop-Process -Id 36072   => CHI SAU khi Win32_Process.CommandLine khop NGUYEN VAN 'node dist/index.js'
+                            (khop long da tung giet nham 12 sidecar MCP — 12 tien trinh playwright
+                             KHONG bi dung, da kiem lai sau khi tat)
+node scripts/__tmp-task9-dongbo.mjs   => CUA SO TROI §3.5, chay khi may chu DA TAT:
+        aoi_management      : lech TRUOC=0 · hang cham=8 · lech SAU=0 · thieu=0
+        aoi_management_test : lech TRUOC=1 · hang cham=1 · lech SAU=0 · thieu=0
+khoi dong lai            => PID 4468 (`node dist/index.js`), "Server running on http://localhost:3000/"
+```
+
+⚠ `lệch TRƯỚC=1` trên DB **test** là một lượt ghi của chính bộ test giữa hai thời điểm — đúng thứ
+"cửa sổ trôi" mô tả, và là lý do câu đồng bộ lại tồn tại. Trên DB **thật** lệch = 0.
+
+### 8.2 · Kết quả (nguyên văn)
+
+```
+✔ POST /api/auth/login => 200   {"requires2FA":true,"userId":51,…}
+✔ máy chủ đòi bước 2FA (requires2FA)
+✔ POST /api/auth/verify-2fa => 200   {"id":51,"name":"Anh Minh (Kỹ sư TĐH)","role":"engineer"}
+✔ đã nhận cookie phiên  — cookie: pending_2fa, app_session_id
+auth.me => 200
+{"id":51,"openId":"seed-engineer1","username":"engineer1","name":"Anh Minh (Kỹ sư TĐH)","email":null,
+ "phone":null,"department":null,"position":null,"loginMethod":"password","role":"engineer",
+ "isActive":true,"twoFactorEnabled":true,"loginAttempts":0,"lockedUntil":null,
+ "createdAt":"2026-07-10T22:40:57.616Z","updatedAt":"2026-07-10T22:40:57.616Z",
+ "lastSignedIn":"2026-08-09T02:12:28.079Z","mustChangePassword":false}
+✔ auth.me KHÔNG có `passwordHash`
+✔ auth.me KHÔNG có `twoFactorSecret`
+✔ auth.me KHÔNG có `passwordChangedAt`/`passwordInvalidBefore`
+✔ auth.me CÓ ô suy ra `mustChangePassword`  — giá trị = false
+```
+
+⇒ **Task 7 KHÔNG hồi quy** · **9c không làm hỏng đăng nhập/2FA** · **QĐ-1 phơi đúng một ô SUY RA**.
+
+---
+
+## 9 · BƯỚC 8 — ★★★ NGHIỆM THU SỐNG (CỔNG CHẶN của Task 10) — ✅ **ĐẠT**
+
+Tài khoản **`engineer1` (id 51)** trên hệ thật, ảnh chụp hoàn tác ghi trước khi chạm:
+`twoFactorSecret` cũ = `O5BSUJKJLVADUOKOFR3SS23WJ4XWGXKG`.
+
+```
+   … chờ 3s cho cửa sổ TOTP mới (sổ chống phát lại đang làm đúng việc)
+✔ twoFactor.disable => 200
+✔ twoFactor.generateSecret => 200
+✔ secret MỚI đã được ghi vào `user_secrets` (KHÔNG phải cột cũ trên `users`) — db=MF3X22ZVK5… api=MF3X22ZVK5…
+✔ cột CŨ `users.two_factor_secret` KHÔNG đổi (nó đã chết, 0315 sẽ bỏ)
+   … chờ 30s cho cửa sổ TOTP mới
+✔ twoFactor.enable => 200
+✔ ★★★ NHẬN ĐƯỢC MÃ DỰ PHÒNG  — 10 mã: AF604161 E7D9DE6B E21ED1D3 …
+✔ ★★★ 10 hàng THẬT trong `backup_codes` (trước 0314: 0 hàng vì 22001) — độ dài hash = 60
+✔ mọi hàng là hash bcrypt (không plaintext)
+✔ ★★★ mã dự phòng ĐẦU TIÊN xác minh ĐƯỢC (đường vào lại có thật)
+✔ mã đã dùng bị đánh dấu (còn 9)
+   … chờ 29s cho cửa sổ TOTP mới
+✔ login+verify-2fa với secret MỚI => 200/200
+```
+
+**★★★ CÂU TRẢ LỜI CHO CỔNG CHẶN: CÓ — một tài khoản đăng ký lại 2FA trên hệ thật và NHẬN ĐƯỢC 10 mã
+dự phòng; hash dài 60 nằm THẬT trong bảng; một mã đã được dùng để xác minh THÀNH CÔNG.**
+Trước lượt này, `backup_codes` có **0 hàng** cho **8/8** tài khoản bật 2FA. Nay `engineer1` có **10**.
+
+### 9.1 · ★ Hai điều lượt nghiệm thu này dạy, mà lưới không dạy được
+
+1. **Lượt chạy ĐẦU của kịch bản THẤT BẠI ở `twoFactor.disable` (400 "Invalid code") — và đó là hệ
+   thống ĐANG ĐÚNG.** Kịch bản tái dùng mã OTP của bước `verify-2fa` ngay trước đó; sổ
+   `totp_consumed` (Pha 7 Task 5) đã **TIÊU** nó. Phải chờ **cửa sổ 30 s mới**, đúng như một người
+   thật nhìn app authenticator đổi số. ⚠ Nếu tôi "sửa" bằng cách nới sổ, tôi đã phá Task 5 để làm
+   xanh Task 9 — đúng lớp *"trả nợ đẻ nợ nặng hơn"*.
+2. **`cột CŨ users.two_factor_secret KHÔNG đổi`** — bằng chứng ĐO ĐƯỢC rằng mã mới thật sự thôi ghi
+   cột cũ, và vì thế **điều kiện vào của Task 10 phải kèm bản script đã sửa** (R2): script cũ sẽ
+   `UPDATE` đúng cái cột vừa được chứng minh là đã chết.
+
+### 9.2 · Trạng thái dữ liệu sau lượt nghiệm thu (khai đủ, không giấu)
+
+| tài khoản | đổi gì | hoàn tác |
+|---|---|---|
+| `engineer1` (51) | `twoFactorSecret` **mới** (`MF3X22ZVK5…`) · 10 mã dự phòng mới, **1 đã dùng** · phiên cũ vẫn nguyên | secret cũ ghi ở §9 trên; `node scripts/print-otp.mjs engineer1` vẫn in OTP đúng từ DB ⇒ **không ai bị khoá ra ngoài** |
+| 7 tài khoản còn lại | **không đụng** | — |
+
+⚠ **KHÔNG chạy script xoay. KHÔNG áp 0315. KHÔNG xoá dữ liệu người dùng nào.**

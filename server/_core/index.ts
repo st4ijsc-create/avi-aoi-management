@@ -1831,7 +1831,7 @@ async function startServer() {
       }
 
       const bcrypt = await import("bcryptjs");
-      const { getUserByUsername, upsertUser, updateUserLoginAttempts } = await import("../db");
+      const { getUserByUsername, upsertUser, updateUserLoginAttempts, layBiMatNguoiDung } = await import("../db");
       const { comparePasswordConstantTime } = await import("./authService");
       const user = await getUserByUsername(username);
 
@@ -1853,9 +1853,12 @@ async function startServer() {
       // 2FA cho route hướng-ra-ngoài này, ngoài phạm vi vá side-channel.
       // Response shape / thông điệp / mã trạng thái HTTP GIỮ NGUYÊN 100%
       // như trước — chỉ thứ tự nội bộ đổi.
-      const passwordMatches = await comparePasswordConstantTime(bcrypt, password, user?.passwordHash);
+      // ★★★ Pha 7 Task 9 (9c) — hash nay ở `user_secrets`. Lượt đọc chạy VÔ ĐIỀU KIỆN (hàm nhận
+      // `null`) đúng vì lý do F9 ở ngay trên: gọi có điều kiện là dựng lại side-channel.
+      const biMat = await layBiMatNguoiDung(user?.id ?? null);
+      const passwordMatches = await comparePasswordConstantTime(bcrypt, password, biMat.passwordHash);
 
-      if (!user || !user.isActive || !user.passwordHash) {
+      if (!user || !user.isActive || !biMat.passwordHash) {
         return res.status(401).json({ success: false, message: "Invalid username or password" });
       }
 

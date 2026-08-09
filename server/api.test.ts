@@ -4,6 +4,11 @@ import type { TrpcContext } from "./_core/context";
 
 // Mock database functions with correct names
 vi.mock("./db", () => ({
+  // ★ Pha 7 Task 9 (9b) — `auth.me` nay kèm ô SUY RA `mustChangePassword`, đọc DB MỚI (KHÔNG suy
+  //   từ `ctx.user`, thứ đã bị `redactServerOnlyUserFields` làm rỗng). Thiếu ô này thì `auth.me` đỏ.
+  phaiDoiMatKhau: vi.fn().mockResolvedValue(false),
+  layMocMatKhau: vi.fn().mockResolvedValue({ passwordChangedAt: null, passwordInvalidBefore: null }),
+  layBiMatNguoiDung: vi.fn().mockResolvedValue({ passwordHash: null, twoFactorSecret: null }),
   getFactories: vi.fn().mockResolvedValue([
     { id: 1, code: "FAC001", name: "Factory 1", isActive: true },
   ]),

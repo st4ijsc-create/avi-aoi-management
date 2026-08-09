@@ -36,12 +36,12 @@ import {
   invalidateAuthSession,
   resetAuthCacheStats,
 } from "./services/authSessionCache";
+import { SERVER_ONLY_USER_FIELDS } from "./_core/publicUser";
 
 const USER_ROW = {
   id: 42,
   openId: "open-42",
   username: "user42",
-  passwordHash: null,
   name: "Cache Test User",
   email: "u42@example.com",
   phone: null,
@@ -50,7 +50,6 @@ const USER_ROW = {
   loginMethod: "local",
   role: "operator",
   isActive: true,
-  twoFactorSecret: null,
   twoFactorEnabled: false,
   loginAttempts: 0,
   lockedUntil: null,
@@ -123,8 +122,11 @@ describe("sdk.authenticateRequest session-user cache (B4)", () => {
     expect(second.role).toBe(first.role);
     expect(second.twoFactorEnabled).toBe(first.twoFactorEnabled);
     expect(second.lastSignedIn).toBeInstanceOf(Date);
-    expect(second.passwordHash).toBeNull();
-    expect(second.twoFactorSecret).toBeNull();
+    // Pha 7 Task 9 / R1 — LUONG TU tren tap SUY RA, khong phai hai ten (hai ten ay da roi `users`).
+    expect(SERVER_ONLY_USER_FIELDS.length).toBeGreaterThan(0);
+    for (const k of SERVER_ONLY_USER_FIELDS) {
+      expect((second as unknown as Record<string, unknown>)[k]).toBeNull();
+    }
   });
 
   it("invalidation on logout: next request goes back to the DB", async () => {

@@ -29,6 +29,7 @@ import {
   toPublicUsers,
   redactServerOnlyUserFields,
   moiCotCuaBangUsers,
+  moiCotBiMatCuaUserSecrets,
 } from "./publicUser";
 
 /** Một hàng `users` **đầy đủ** — mọi cột có giá trị KHÁC NHAU để phép chiếu không thể "đúng nhờ may". */
@@ -36,8 +37,10 @@ function hangDay(): Record<string, unknown> {
   const h: Record<string, unknown> = {};
   for (const c of moiCotCuaBangUsers()) h[c] = `giá-trị-của-${c}`;
   h.id = 49;
-  h.passwordHash = "$2b$10$xY5zPa9lTNrb/YC3ELd/vuFf./ffNN1F8qC3p50oXGsBsulALWlra";
-  h.twoFactorSecret = "IA2DCZK5LBKTSOTYGMUXCM2UHZ2G4ULQ";
+  // ★ Pha 7 Task 9 — hai mốc (9b) là cột `server-only` trên `users`; hai bí mật cũ đã sang
+  //   `user_secrets` (9c) và được ô R1 (a) bơm vào riêng.
+  h.passwordChangedAt = new Date("2026-05-05T00:00:00Z");
+  h.passwordInvalidBefore = new Date("2026-06-06T00:00:00Z");
   h.twoFactorEnabled = true;
   h.isActive = true;
   h.role = "supervisor";
@@ -48,8 +51,11 @@ describe("★★★ Task 7 §1 — ∀ CỘT của `users` phải được phân
   it("★ cầu chì — đọc được tập cột thật, và nó không rỗng (0 cột ⇒ mọi ô dưới là chân lý rỗng)", () => {
     const cot = moiCotCuaBangUsers();
     expect(cot.length, "getTableColumns(users) trả rỗng — drizzle đã đổi hình dạng?").toBeGreaterThanOrEqual(15);
-    expect(cot, "cột `twoFactorSecret` phải tồn tại — nếu không, cả lưới này đang canh một bảng khác").toContain(
-      "twoFactorSecret",
+    // ⚠ Pha 7 Task 9 — neo cũ là `twoFactorSecret`; nó đã sang `user_secrets` (9c). Neo mới là ô
+    //   `server-only` thật sự còn lại trên `users` (9b) — mất nó thì lưới này đang canh một bảng
+    //   khác, hoặc phân loại đã trôi.
+    expect(cot, "cột `passwordInvalidBefore` phải tồn tại — nếu không, cả lưới này đang canh một bảng khác").toContain(
+      "passwordInvalidBefore",
     );
   });
 
@@ -72,11 +78,70 @@ describe("★★★ Task 7 §1 — ∀ CỘT của `users` phải được phân
     ).toBe("");
   });
 
-  it("★★★ hai bí mật ĐO ĐƯỢC ở Bước 1 phải nằm phía `server-only` — neo vào bằng chứng, không vào khẩu vị", () => {
-    expect(USER_FIELD_VISIBILITY.passwordHash).toBe("server-only");
-    expect(USER_FIELD_VISIBILITY.twoFactorSecret).toBe("server-only");
-    expect(SERVER_ONLY_USER_FIELDS).toContain("passwordHash");
-    expect(SERVER_ONLY_USER_FIELDS).toContain("twoFactorSecret");
+  /**
+   * ★★★ Pha 7 Task 9 / **R1 — CHỖ Ô NÀY SUÝT THÀNH TRANG TRÍ.**
+   *
+   * Bản Task 7 của ô này viết bốn dòng theo TÊN:
+   *     expect(USER_FIELD_VISIBILITY.passwordHash).toBe("server-only");   // …và ba dòng nữa
+   * 9c chuyển hai cột ấy sang `user_secrets` ⇒ bốn dòng ấy **không biên dịch được**, và lượt sửa
+   * **hiển nhiên** là **XOÁ CHÚNG** — sau đó `SERVER_ONLY_USER_FIELDS` rỗng, `ServerOnlyUserField`
+   * thành `never`, phần giao `{[K in ServerOnlyUserField]?: never}` của `PublicUser` thành `{}`,
+   * và cổng *"nhét bí mật lại là LỖI BIÊN DỊCH"* **hoá trang trí** — với **mọi ô XANH**.
+   * (Đo được ở Bước 2 §2.5 báo cáo Task 9, TRƯỚC khi đổi. Đây là lớp *"trả nợ đẻ nợ nặng hơn"*.)
+   *
+   * ⇒ Ba ô dưới đây là một **LƯỢNG TỪ trên HAI BẢNG**, cả hai vế đều **SUY RA**:
+   *   (a) ∀ cột bí mật c của `user_secrets` ⇒ c KHÔNG ra được qua phép chiếu;
+   *   (b) ∀ cột của `users` có tên chứa "password" ⇒ phải là `"server-only"`;
+   *   (c) **CẦU CHÌ**: cả hai tập phải KHÁC RỖNG — tập rỗng làm (a),(b) thành chân lý rỗng.
+   */
+  it("★★★ R1 (a) — ∀ cột BÍ MẬT của `user_secrets` KHÔNG BAO GIỜ ra được qua phép chiếu `users`", () => {
+    const biMat = moiCotBiMatCuaUserSecrets();
+    const loLot = biMat.filter((c) => (PUBLIC_USER_FIELDS as readonly string[]).includes(c));
+    expect(
+      loLot.join(" · "),
+      "một cột của `user_secrets` được phân loại CÔNG KHAI trên `users` ⇒ bí mật có đường ra",
+    ).toBe("");
+    // …và phép chiếu THẬT cũng không phát ra chúng, kể cả khi đầu vào có đủ (một hàng JOIN chẳng hạn).
+    const co: Record<string, unknown> = { ...hangDay() };
+    for (const c of biMat) co[c] = `BÍ-MẬT-${c}`;
+    const ra = toPublicUser(co) as Record<string, unknown>;
+    for (const c of biMat) {
+      expect(c in ra, `cột bí mật '${c}' của user_secrets LỌT qua toPublicUser()`).toBe(false);
+    }
+  });
+
+  it("★★★ R1 (c) — CẦU CHÌ: tập cột bí mật của `user_secrets` KHÁC RỖNG (rỗng ⇒ ô trên là chân lý rỗng)", () => {
+    const biMat = moiCotBiMatCuaUserSecrets();
+    expect(
+      biMat.length,
+      "0 cột bí mật ở `user_secrets` ⇒ luật R1 không canh gì cả.\n" +
+        "⚠ Nếu bảng ấy thật sự không còn bí mật nào thì đó là một QUYẾT ĐỊNH KIẾN TRÚC phải nói ra, " +
+        "không phải một lưới im lặng chuyển sang xanh.",
+    ).toBeGreaterThan(0);
+    expect(biMat, "hạt giống TOTP phải nằm ở `user_secrets`").toContain("twoFactorSecret");
+    expect(biMat, "hash mật khẩu phải nằm ở `user_secrets`").toContain("passwordHash");
+  });
+
+  it("★★★ QĐ-1 (b) — ∀ cột `users` mang chữ \"password\" phải là `server-only` (LƯỢNG TỪ, không phải hai tên)", () => {
+    // ⚠ Đây là phép cưỡng chế của QĐ-1: chủ dự án đặt hai mốc "buộc đổi mật khẩu" TRÊN `users`.
+    //   Phân loại chúng `"public"` ⇒ `user.list` phát cho trình duyệt DANH SÁCH CHÍNH XÁC các tài
+    //   khoản đang bị buộc đổi mật khẩu. Luật ở dạng ∀ nên một cột `passwordResetToken` viết ngày
+    //   mai cũng vào lượng từ, không cần ai nhớ sửa file này.
+    const cotMatKhau = moiCotCuaBangUsers().filter((c) => /password/i.test(c));
+    expect(cotMatKhau.length, "0 cột `password*` trên `users` ⇒ luật này là chân lý rỗng").toBeGreaterThan(0);
+    const sai = cotMatKhau.filter(
+      (c) => (USER_FIELD_VISIBILITY as Record<string, string>)[c] !== "server-only",
+    );
+    expect(
+      sai.join(" · "),
+      "cột `users` mang nghĩa MẬT KHẨU mà phân loại KHÔNG phải `server-only`.\n" +
+        "⚠ `user.list` sẽ phát nó cho trình duyệt, cho MỌI người dùng.",
+    ).toBe("");
+    // Cầu chì thứ hai: tập `server-only` không được rỗng (nếu rỗng, cổng KIỂU thành `{}`).
+    expect(
+      SERVER_ONLY_USER_FIELDS.length,
+      "tập `server-only` RỖNG ⇒ phần giao của `PublicUser` là `{}` ⇒ cổng KIỂU thành trang trí",
+    ).toBeGreaterThan(0);
   });
 
   it("★ hai tập RỜI NHAU và HỢP LẠI đúng bằng tập cột (không cột nào ở cả hai / không cột nào rơi ra)", () => {
@@ -158,17 +223,22 @@ describe("★★★ Task 7 §3 — redactServerOnlyUserFields(): giữ KIỂU `U
   });
 
   it("★★ KHÔNG SỬA đối tượng gốc (đường xác thực vẫn cần hàng thô ở tầng dưới)", () => {
+    // ⚠ Pha 7 Task 9 — neo cũ là `twoFactorSecret` (đã sang `user_secrets`). Neo mới **suy ra**
+    //   từ tập `server-only`, nên nó sống qua mọi lượt cột đổi chỗ tiếp theo.
+    expect(SERVER_ONLY_USER_FIELDS.length, "tập `server-only` RỖNG ⇒ ô này là chân lý rỗng").toBeGreaterThan(0);
     const goc = hangDay();
     redactServerOnlyUserFields(goc);
-    expect(goc.twoFactorSecret, "hàm đã sửa TẠI CHỖ ⇒ nó sẽ làm hỏng người gọi khác").toBe(
-      "IA2DCZK5LBKTSOTYGMUXCM2UHZ2G4ULQ",
-    );
+    for (const k of SERVER_ONLY_USER_FIELDS) {
+      expect(goc[k], "hàm đã sửa TẠI CHỖ ⇒ nó sẽ làm hỏng người gọi khác").not.toBeNull();
+    }
   });
 
   it("★★★ CÙNG HÌNH DẠNG với đường cache — cache-hit và cache-miss thôi khác nhau", () => {
     // ⚠ Đo được ở Bước 2 §2.1 TRƯỚC bản vá: 6 lượt `auth.me` liên tiếp ⇒ lượt #1 RÒ, #2..#6 sạch,
     //   vì `authSessionCache` che còn đường DB thì không. Rò NGẮT QUÃNG là rò khó thấy nhất.
-    const quaCache = { ...hangDay(), passwordHash: null, twoFactorSecret: null };
+    // ⚠ Pha 7 Task 9 — "đường cache" nay được dựng bằng **cùng một lượng từ**, không bằng hai tên.
+    const quaCache: Record<string, unknown> = { ...hangDay() };
+    for (const k of SERVER_ONLY_USER_FIELDS) quaCache[k] = null;
     const quaDb = redactServerOnlyUserFields(hangDay());
     expect(Object.keys(quaDb).sort()).toEqual(Object.keys(quaCache).sort());
     expect(quaDb).toEqual(quaCache);

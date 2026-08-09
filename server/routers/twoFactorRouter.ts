@@ -7,9 +7,13 @@ import speakeasy from "speakeasy";
 // ở file này nay **chỉ** còn dùng để **SINH** secret (`generateSecret`), không để verify.
 import { verifyTotpOnce } from "../_core/totpOnce";
 import QRCode from "qrcode";
-import { getDb } from "../db";
+import { getDb, get2FAStatus, setup2FA, disable2FA } from "../db";
 import { users, backupCodes } from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
+// ★★★ Pha 7 Task 9 (9c) — hạt giống TOTP đã rời `users` sang `user_secrets`. Router này KHÔNG
+// truy vấn bảng bí mật trực tiếp: nó gọi `db.get2FAStatus` / `db.setup2FA` — **người đọc/người
+// ghi DUY NHẤT**. Trước Task 9, năm chỗ trong chính file này tự viết `select({twoFactorSecret})`;
+// năm bản sao của một vị từ là năm chỗ luật có thể trôi khỏi nhau.
 // ★★★ Pha 7 Task 8a — sinh/băm/đối chiếu mã dự phòng có **MỘT chủ**. Ba hàm cục bộ ở đây trước
 // bản vá là ba bản sao của ba vị từ đã có chủ; bản sao thứ hai của một vị từ là chỗ luật trôi đi.
 import { sinhMaDuPhong, bamMaDuPhong, khopMaDuPhong } from "../_core/backupCodeSecret";
@@ -84,11 +88,8 @@ export const twoFactorRouter = router({
       length: 32,
     });
 
-    // Store the secret temporarily (not enabled yet)
-    await db
-      .update(users)
-      .set({ twoFactorSecret: secret.base32 })
-      .where(eq(users.id, ctx.user.id));
+    // Store the secret temporarily (not enabled yet) — `user_secrets` (Pha 7 Task 9).
+    await setup2FA(ctx.user.id, secret.base32);
 
     // Generate QR code
     const qrCodeDataUrl = await QRCode.toDataURL(secret.otpauth_url || "");
@@ -109,15 +110,8 @@ export const twoFactorRouter = router({
         throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
-      // Get user's secret
-      const user = await db
-        .select({
-          twoFactorSecret: users.twoFactorSecret,
-          twoFactorEnabled: users.twoFactorEnabled,
-        })
-        .from(users)
-        .where(eq(users.id, ctx.user.id))
-        .limit(1);
+      // Get user's secret — qua NGƯỜI ĐỌC DUY NHẤT (Pha 7 Task 9).
+      const user = [await get2FAStatus(ctx.user.id)];
 
       if (!user[0]) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
@@ -185,15 +179,8 @@ export const twoFactorRouter = router({
         throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
-      // Get user's secret
-      const user = await db
-        .select({
-          twoFactorSecret: users.twoFactorSecret,
-          twoFactorEnabled: users.twoFactorEnabled,
-        })
-        .from(users)
-        .where(eq(users.id, ctx.user.id))
-        .limit(1);
+      // Get user's secret — qua NGƯỜI ĐỌC DUY NHẤT (Pha 7 Task 9).
+      const user = [await get2FAStatus(ctx.user.id)];
 
       if (!user[0]) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
@@ -244,14 +231,8 @@ export const twoFactorRouter = router({
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "twoFactorCode" }, "Invalid code. Please enter a valid TOTP or backup code.");
       }
 
-      // Disable 2FA and clear secret
-      await db
-        .update(users)
-        .set({
-          twoFactorEnabled: false,
-          twoFactorSecret: null,
-        })
-        .where(eq(users.id, ctx.user.id));
+      // Disable 2FA and clear secret — MỘT giao dịch, hai bảng (Pha 7 Task 9).
+      await disable2FA(ctx.user.id);
 
       // Delete all backup codes
       await db
@@ -273,14 +254,8 @@ export const twoFactorRouter = router({
         throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
-      const user = await db
-        .select({
-          twoFactorSecret: users.twoFactorSecret,
-          twoFactorEnabled: users.twoFactorEnabled,
-        })
-        .from(users)
-        .where(eq(users.id, ctx.user.id))
-        .limit(1);
+      // Qua NGƯỜI ĐỌC DUY NHẤT (Pha 7 Task 9 — hạt giống TOTP ở `user_secrets`).
+      const user = [await get2FAStatus(ctx.user.id)];
 
       if (!user[0]) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
@@ -346,14 +321,8 @@ export const twoFactorRouter = router({
         throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
-      const user = await db
-        .select({
-          twoFactorSecret: users.twoFactorSecret,
-          twoFactorEnabled: users.twoFactorEnabled,
-        })
-        .from(users)
-        .where(eq(users.id, ctx.user.id))
-        .limit(1);
+      // Qua NGƯỜI ĐỌC DUY NHẤT (Pha 7 Task 9 — hạt giống TOTP ở `user_secrets`).
+      const user = [await get2FAStatus(ctx.user.id)];
 
       if (!user[0]) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");

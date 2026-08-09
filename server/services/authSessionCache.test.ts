@@ -15,13 +15,14 @@ import {
   resetAuthCacheStats,
   setCachedAuthUser,
 } from "./authSessionCache";
+// ★ Pha 7 Task 9 / R1 — hỏi tập cột `server-only` được SUY RA, đừng viết tay hai cái tên.
+import { SERVER_ONLY_USER_FIELDS } from "../_core/publicUser";
 
 function makeUser(overrides: Partial<User> = {}): User {
   return {
     id: 7,
     openId: "open-7",
     username: "user7",
-    passwordHash: "$2a$10$secret-hash",
     name: "User Seven",
     email: "u7@example.com",
     phone: null,
@@ -30,10 +31,14 @@ function makeUser(overrides: Partial<User> = {}): User {
     loginMethod: "local",
     role: "operator",
     isActive: true,
-    twoFactorSecret: "TOTPSECRET",
     twoFactorEnabled: false,
     loginAttempts: 0,
     lockedUntil: null,
+    // ★ Pha 7 Task 9 — hai mốc (9b) là cột `"server-only"` DUY NHẤT còn lại trên `users`
+    //   sau khi (9c) chuyển hai bí mật sang `user_secrets`. Cho chúng GIÁ TRỊ KHÁC NULL để
+    //   ô "strips secrets" dưới đây có thứ THẬT để làm rỗng — không thì nó xanh một cách tầm thường.
+    passwordChangedAt: new Date("2026-05-05T00:00:00Z"),
+    passwordInvalidBefore: new Date("2026-06-06T00:00:00Z"),
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-02T00:00:00Z"),
     lastSignedIn: new Date("2026-07-01T03:04:05Z"),
@@ -69,8 +74,15 @@ describe("authSessionCache", () => {
     expect(cached!.lastSignedIn).toBeInstanceOf(Date);
     expect(cached!.lastSignedIn.toISOString()).toBe("2026-07-01T03:04:05.000Z");
     // secrets must never be cached (Redis tier would persist them)
-    expect(cached!.passwordHash).toBeNull();
-    expect(cached!.twoFactorSecret).toBeNull();
+    // ★ Pha 7 Task 9 / R1 — **LƯỢNG TỪ, không phải hai tên.** Sau khi (9c) chuyển
+    //   `passwordHash`/`twoFactorSecret` sang `user_secrets`, hai dòng cũ (khai báo theo TÊN) sẽ
+    //   không biên dịch được nữa — và lượt sửa hiển nhiên là **xoá chúng**, tức ô này mất hết
+    //   nội dung mà vẫn XANH. Nên nó hỏi tập `SERVER_ONLY_USER_FIELDS` (SUY RA từ phân loại),
+    //   và có cầu chì "tập rỗng ⇒ ĐỎ".
+    expect(SERVER_ONLY_USER_FIELDS.length, "tập `server-only` RỖNG ⇒ ô này là chân lý rỗng").toBeGreaterThan(0);
+    for (const k of SERVER_ONLY_USER_FIELDS) {
+      expect((cached as unknown as Record<string, unknown>)[k], `ô \`${k}\` đi vào cache`).toBeNull();
+    }
 
     const stats = getAuthCacheStats();
     expect(stats.hits).toBe(1);

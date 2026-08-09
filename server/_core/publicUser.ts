@@ -49,7 +49,7 @@
  *   danh sách riêng — lớp lỗi *"nhiều chủ cho một bất biến"* đã đẻ **ba** Critical.
  */
 import { getTableColumns } from "drizzle-orm";
-import { users, type User } from "../../drizzle/schema";
+import { users, userSecrets, type User } from "../../drizzle/schema";
 
 /** Mức hiển thị của một cột `users`. */
 export type UserFieldVisibility = "public" | "server-only";
@@ -69,8 +69,6 @@ export const USER_FIELD_VISIBILITY = {
   id: "public",
   openId: "public",
   username: "public",
-  /** 🔴 **BÍ MẬT** — bcrypt hash. Rò ra ⇒ bẻ khoá **ngoại tuyến**, không còn rate-limit. */
-  passwordHash: "server-only",
   name: "public",
   email: "public",
   phone: "public",
@@ -79,11 +77,22 @@ export const USER_FIELD_VISIBILITY = {
   loginMethod: "public",
   role: "public",
   isActive: "public",
-  /** 🔴🔴 **BÍ MẬT** — HẠT GIỐNG TOTP. Rò ra ⇒ tự sinh mã hợp lệ vĩnh viễn ⇒ 2FA toàn hệ vô hiệu. */
-  twoFactorSecret: "server-only",
   twoFactorEnabled: "public",
   loginAttempts: "public",
   lockedUntil: "public",
+  /**
+   * 🔴 **Pha 7 Task 9 (9b) — QĐ-1.** Hai MỐC nói *"tài khoản này có đang bị buộc đổi mật khẩu
+   * không"*. Chủ dự án chọn đặt chúng trên `users`; **giữ chúng không rò là ràng buộc kỹ thuật**,
+   * và hai thứ không mâu thuẫn:
+   *   · phân loại **`"server-only"`** ⇒ `user.list` **không** phát ra được một danh sách chính xác
+   *     các tài khoản đang bị buộc đổi mật khẩu (đó là rủi ro đã nêu, nay đóng **theo cấu tạo**);
+   *   · client vẫn biết về **CHÍNH NÓ** qua ô SUY RA `mustChangePassword` ở `auth.me`
+   *     (`suyRaPhaiDoiMatKhau` dưới đây) — **không** bằng cách mở cột.
+   * ⚠ Luật cưỡng chế nằm ở `publicUser.test.ts` và là một **LƯỢNG TỪ**, không phải hai tên:
+   *   ***∀ cột `users` có tên chứa "password" ⇒ phải là `"server-only"`.***
+   */
+  passwordChangedAt: "server-only",
+  passwordInvalidBefore: "server-only",
   createdAt: "public",
   updatedAt: "public",
   lastSignedIn: "public",
@@ -181,3 +190,76 @@ export function redactServerOnlyUserFields<T extends Record<string, unknown>>(us
 export function moiCotCuaBangUsers(): string[] {
   return Object.keys(getTableColumns(users)).sort();
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ Pha 7 Task 9 / R1 — **NEO LẠI LƯỢNG TỪ SANG `user_secrets`.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 9c chuyển `passwordHash` + `twoFactorSecret` sang bảng `user_secrets`. Hệ quả **đo được trước
+ * khi đổi** (§2.5 báo cáo Task 9): nếu luật của Task 7 vẫn chỉ neo vào `users`, thì
+ *   · `SERVER_ONLY_USER_FIELDS` mất hai phần tử ấy,
+ *   · `ServerOnlyUserField` co lại,
+ *   · và cổng *"nhét bí mật lại là LỖI BIÊN DỊCH"* (`PublicUser` giao `{[K]?: never}`) **hoá
+ *     trang trí** — vì phần giao không còn chặn hai tên nguy nhất.
+ * ⚠⚠ Và lượt sửa **hiển nhiên** (xoá bốn dòng test đang đỏ) làm **mọi thứ xanh** với một danh sách
+ *    rỗng. Đó chính là lớp *"trả nợ đẻ ra nợ nặng hơn"*.
+ *
+ * ⇒ Bất biến được phát biểu lại, **trên hai bảng**, và **suy ra** cả hai vế:
+ *
+ *   ***∀ cột bí mật c của `user_secrets`: c KHÔNG BAO GIỜ rời máy chủ.***
+ *
+ * "Cột bí mật của `user_secrets`" = **mọi** cột của bảng ấy **trừ** hai cột hạ tầng (`userId` —
+ * chính là `users.id`, đã công khai; `updatedAt` — một dấu thời gian). Một cột **thứ ba** thêm vào
+ * `user_secrets` ngày mai tự vào lượng từ, **không cần ai nhớ sửa file này** — và ô *"tập rỗng ⇒
+ * ĐỎ"* ở `publicUser.test.ts` chặn đúng đường thoát mà §2.5 vừa mô tả. */
+
+/** Hai cột **hạ tầng** của `user_secrets` — không phải bí mật. Suy ra phần bù, không liệt kê bí mật. */
+const COT_HA_TANG_USER_SECRETS = ["userId", "updatedAt"] as const;
+
+/**
+ * Tập cột **BÍ MẬT** của `user_secrets`, **suy ra** từ `getTableColumns` (nguồn sự thật DUY NHẤT).
+ * ⚠ Đây là **phần bù**, không phải một danh sách: thêm cột mới vào `user_secrets` ⇒ nó **mặc định
+ * là bí mật**, đúng kỷ luật *"mở một cột là quyết định về an ninh; đóng thì không"*.
+ */
+export function moiCotBiMatCuaUserSecrets(): string[] {
+  return Object.keys(getTableColumns(userSecrets))
+    .filter((c) => !(COT_HA_TANG_USER_SECRETS as readonly string[]).includes(c))
+    .sort();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ Pha 7 Task 9 (9b) / QĐ-1 — **Ô SUY RA, KHÔNG PHẢI CỘT ĐƯỢC MỞ.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/** Hai mốc mà vị từ *"phải đổi mật khẩu"* được suy ra từ đó. */
+export type MocMatKhau = {
+  passwordChangedAt: Date | null;
+  passwordInvalidBefore: Date | null;
+};
+
+/**
+ * ★★★ **VỊ TỪ DUY NHẤT** của *"tài khoản này phải đổi mật khẩu ở lượt đăng nhập tới"*.
+ *
+ *   PHẢI_ĐỔI  <=>  passwordInvalidBefore ≠ NULL
+ *                  ∧ (passwordChangedAt = NULL ∨ passwordChangedAt ≤ passwordInvalidBefore)
+ *
+ * Ba giá trị, cùng kỷ luật `TrangThaiTienTrinh`:
+ *   · `passwordInvalidBefore = NULL` → **CHƯA TỪNG thu hồi** ⇒ không buộc ai (mặc định trung tính);
+ *   · `passwordChangedAt = NULL` → **KHÔNG BIẾT** mật khẩu đặt lúc nào. Với một lượt thu hồi đang
+ *     hiệu lực, người đọc **PHẢI** coi là phải đổi — hỏng theo chiều **ĐÓNG**, không mở cửa.
+ *
+ * ⚠⚠ **ĐỪNG gọi hàm này với `ctx.user`.** `redactServerOnlyUserFields()` làm **rỗng** hai mốc ấy
+ *    trên `ctx.user` (chúng là `"server-only"`), nên suy ra từ đó sẽ luôn cho `false` — một lời
+ *    nói dối **im lặng theo chiều MỞ**. Nguồn đúng là một lượt đọc DB **mới**
+ *    (`db.layMocMatKhau`). Có ca riêng canh đúng chuyện này ở
+ *    `server/routers/mustChangePassword.test.ts` (§4).
+ */
+export function suyRaPhaiDoiMatKhau(moc: MocMatKhau): boolean {
+  const thuHoi = moc.passwordInvalidBefore;
+  if (thuHoi == null) return false;
+  const doiLuc = moc.passwordChangedAt;
+  if (doiLuc == null) return true;
+  return doiLuc.getTime() <= thuHoi.getTime();
+}
+
+/** Hình dạng `auth.me` trả về: `PublicUser` **cộng đúng một ô SUY RA**. */
+export type MeUser = PublicUser & { mustChangePassword: boolean };

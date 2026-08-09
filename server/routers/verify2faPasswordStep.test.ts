@@ -33,6 +33,9 @@ const dbm = vi.hoisted(() => ({
   createAuditLog: vi.fn(async (): Promise<any> => ({})),
   upsertUser: vi.fn(async (): Promise<any> => ({})),
   createUserSession: vi.fn(async (): Promise<any> => ({})),
+  // ★ Pha 7 Task 9 (9c) — hash mật khẩu nay đọc từ `user_secrets` qua CỬA DUY NHẤT. Thiếu ô này
+  //   thì `verifyCredentials` gọi `undefined(...)` và **mọi** ca dưới đỏ vì một lý do sai.
+  layBiMatNguoiDung: vi.fn(async (_id: number | null): Promise<any> => ({ passwordHash: null, twoFactorSecret: null })),
 }));
 vi.mock("../db", () => dbm);
 
@@ -159,6 +162,10 @@ beforeEach(async () => {
   );
   dbm.get2FAStatus.mockResolvedValue({ twoFactorEnabled: true, twoFactorSecret: "SECRET32" });
   dbm.verifyBackupCode.mockResolvedValue(false);
+  // ★ Pha 7 Task 9 — hash THẬT nay đến từ `user_secrets`, không từ hàng `users`.
+  dbm.layBiMatNguoiDung.mockImplementation(async (id: number | null) =>
+    id === null ? { passwordHash: null, twoFactorSecret: null } : { passwordHash: HASH_THAT, twoFactorSecret: "SECRET32" },
+  );
   totp.verifyTotpOnce.mockResolvedValue({ hopLe: true });
 });
 

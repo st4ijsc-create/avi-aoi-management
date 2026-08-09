@@ -256,7 +256,17 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   đối số `.values()` không phân tích được. `server/_core/` **không** có đường bao trong cổng
     //   (chỉ `publicUser.test.ts` có đường riêng) ⇒ thiếu dòng này thì lưới ấy *"theo cấu tạo không
     //   bao giờ được canh"*.
-    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(22); // Pha 7 Task 8a: +`backupCodeWriteScan.test.ts` (∀ người ghi)
+    // ⚠ Pha 7 Task 9: 22 → 25. **BA** đường mới, ba trục khác nhau của cùng một lượt DDL:
+    //   · `server/_core/backupCodeWidth.test.ts` — lượng từ **BỀ RỘNG** (9a): ∀ giá trị
+    //     `bamMaDuPhong()` sinh ra phải vừa bề rộng khai của `backup_codes.code`, **cả hai vế suy
+    //     ra**; kèm một ô ghi THẬT xuống DB (drizzle khai 255 mà DB còn 20 thì `tsc` vẫn xanh).
+    //   · `server/_core/xoayBiMatNguon.test.ts` — **R2**: script xoay phải THẤT BẠI khi trỏ sai
+    //     bảng, thay vì "báo cáo thành công mà không xoay gì" (lớp Critical của Pha 3).
+    //   · `server/routers/mustChangePassword.test.ts` — **QĐ-1**: hai mốc trên `users` là
+    //     `server-only`, `auth.me` có ô SUY RA, và ô ấy KHÔNG đến từ `ctx.user` (đã bị làm rỗng).
+    //   `server/_core/` và `server/routers/` **không** có đường bao trong cổng ⇒ thiếu ba dòng này
+    //   thì cả ba lưới *"theo cấu tạo không bao giờ được canh"*.
+    expect(CONG.length, "không rút được đường nào khỏi §Cổng kiểm chung — khối lệnh đã đổi hình dạng?").toBe(25); // Pha 7 Task 9: +3 (9a · R2 · QĐ-1)
   });
 
   it("★★★ MỌI đường của cổng TỒN TẠI trên đĩa (một đường gõ sai là một đường vitest bỏ qua)", () => {
@@ -334,7 +344,11 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   ĐỐI TƯỢNG người dùng"*, suy từ `auth.me` chứ không từ tên khoá). Vì `client/src/lib/`
     //   **đã** là một đường của §Cổng kiểm chung nên `CONG.length` giữ nguyên **22**.
     //   ⚠ Đuôi `.unit.test.ts` là bắt buộc — `vitest.config.ts` gom client bằng `*.unit.test.ts`.
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(83); // Pha 7 Task 8b: +`localStorageUserScan`
+    // ⚠ Pha 7 Task 9: 83 → 86. **Đúng BA** file mới (xem khối lý do ở ô `CONG.length`). Cả ba vào
+    //   tập bị canh qua bộ nhận diện **NỘI DUNG** (tự khai `Pha 5`, có chủ ý — xem docstring của
+    //   chúng), và cả ba phải có đường riêng ở §Cổng kiểm chung ⇒ `CONG.length` 22 → **25** cùng
+    //   lượt. Gỡ một trong ba khỏi cổng ⇒ **hai** ô đỏ trên **hai** trục, không phải một.
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(86); // Pha 7 Task 9: +3
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {

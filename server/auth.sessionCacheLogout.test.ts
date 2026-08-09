@@ -20,7 +20,6 @@ function makeUser(): User {
     id: 21,
     openId: "open-21",
     username: "user21",
-    passwordHash: null,
     name: "Logout Test",
     email: "u21@example.com",
     phone: null,
@@ -29,10 +28,13 @@ function makeUser(): User {
     loginMethod: "local",
     role: "user",
     isActive: true,
-    twoFactorSecret: null,
     twoFactorEnabled: false,
     loginAttempts: 0,
     lockedUntil: null,
+    // ★ Pha 7 Task 9 (9b) — hai mốc "buộc đổi mật khẩu"; `passwordHash`/`twoFactorSecret` đã rời
+    //   bảng `users` sang `user_secrets` (9c).
+    passwordChangedAt: null,
+    passwordInvalidBefore: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     lastSignedIn: new Date(),
